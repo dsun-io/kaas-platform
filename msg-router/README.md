@@ -20,7 +20,7 @@ copy .env.example .env
 | 变量 | 说明 |
 |------|------|
 | `FASTGPT_API_KEY` | 必填，应用 API Key |
-| `FASTGPT_API_BASE` | 默认 `https://api.fastgpt.cn/api` |
+| `FASTGPT_API_BASE` | 默认 `https://cloud.fastgpt.cn/api` |
 | `SQLITE_PATH` | 默认 `data/conversations.db` |
 
 ## 安装与启动
