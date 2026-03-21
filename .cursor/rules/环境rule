@@ -1,0 +1,6 @@
+**Cursor 环境配置提示**：
+
+- 开发过程中需要的 MCP Server、Skill、插件、依赖库等，Cursor 均可自行检测并配置
+- 缺失的运行环境或软件（Python、Node.js、千牛等），Cursor 自行检测并安装，无需手动预装
+- **禁止把任何东西放 C 盘**：项目代码放项目目录，其他软件（千牛、Python、Playwright 等）装 D 盘其他位置
+- 项目根目录：`D:\MyProject\kaas-platform\`

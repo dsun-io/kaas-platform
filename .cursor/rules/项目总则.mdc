@@ -1,0 +1,69 @@
+# AI 编程铁律（本项目专用）
+
+## 一、总则
+
+1. 不允许编造外部接口字段
+   凡涉及 Dify API、FastGPT API、千牛/拼多多 RPA 接口、DB 表字段，必须基于我提供的真实样例。
+   缺样例就先提问，不要猜。
+
+2. 关键路径禁止伪代码
+   计费/幂等/预扣/结算/限频/重置，必须给可运行代码。
+   不允许出现「自行调整」「大概」「略」。
+
+3. 所有不确定点必须显式列出
+   输出末尾必须有 Open Questions 列表，阻止静默猜测。
+
+## 二、设计不变量（必须写入代码与测试）
+
+1. 拦截点在最前：进入任何 RAG/工作流/模型调用前，必须完成订阅状态、配额与限频校验
+2. 幂等由 DB 兜底：usage_events.request_id UNIQUE；重试请求不得重复扣费
+3. 并发由原子 SQL 兜底：预扣必须用单条 UPDATE ... WHERE ... 完成校验+扣减，禁止 SELECT 后再 UPDATE
+4. 可对账：每次请求必须对应一条 usage_event（reserved/settled/refunded/failed），不得出现“扣了但没记录”
+5. 失败不亏钱：下游失败默认全额退款，必须在 usage_event 中体现
+6. 透支有上限：credit line 允许短期放行，超额累计超过硬上限后必须强拦截
+
+## 三、代码级护栏
+
+1. 约束/索引先行：先给迁移 SQL，再写业务代码。至少包括：
+   - usage_events(request_id) UNIQUE
+   - customer_subscriptions(customer_id) UNIQUE
+   - 常用索引：usage_events(customer_id, created_at)、usage_events(status)
+2. 扣费流程固定顺序（不得改）：限频 → INSERT usage_event(reserved) → 原子预扣 → 调用 Dify/FastGPT → 结算/退款 → 更新 usage_event 状态
+3. 禁止信任上游传 customer_id：必须通过 gateway_api_key/JWT/签名解析得到
+4. 时间与重置统一：DB 用 UTC 存储；重置按 Asia/Shanghai 时间边界计算
+5. 错误码与文案固定：任何拦截与失败必须返回标准 JSON（code/message）
+
+## 四、测试规则（输出必须包含且可一键执行）
+
+最少 8 组测试，必须包含并发测试：
+1. 并发不穿透：同一 customer 并发 10-50 请求，总用量不超过“配额 + credit line + 硬上限”
+2. request_id 幂等：同 request_id 重试不重复扣
+3. 到期/非 active 必拦截：且断言“未发出 Dify/FastGPT 请求”
+4. 接近配额不误拦截：在 credit line 范围内应放行
+5. 超过硬上限强拦截：防无限透支
+6. 限频生效：tokens/min 与 req/min
+7. 下游失败退款：Dify/FastGPT 超时/500 时，usage_event 状态与退款正确
+8. 重置正确：跨月/到 reset_at 后 token_used 清零且不影响订阅状态
+
+## 五、交付前阶段化思考（输出必须体现这些维度）
+
+1. 需求确认：这一步要解决什么问题？有没有歧义或遗漏？
+2. 方案设计：关键技术选型、数据流、接口契约、边界条件
+3. 实现：完整可运行代码
+4. 自检：是否满足"设计不变量"？并发/幂等/失败退款有没有漏？
+5. 验收标准：怎样证明这一步做完了？（命令级步骤）
+
+## 六、每次交付必须包含
+
+1. Assumptions（明确假设）
+2. Invariants（不变量清单，说明如何被 DB/代码/测试保障）
+3. Runbook（从 0 到跑通的命令级步骤）
+4. Risk & Rollback（回滚方案，如何停用拦截 / shadow mode）
+5. Open Questions（待确认项）
+
+## 六、Shadow Mode（上线保底策略）
+
+试点期默认开启：
+- 只记录，不拦截（shadow mode）1-3 天
+- 观察：token 估算偏差、并发峰值、限频阈值是否误伤
+- 确认无误后切换到正式拦截模式

@@ -1,0 +1,7 @@
+uiautomation>=2.0.18
+pyautogui>=0.9.54
+httpx>=0.26.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+pyperclip>=1.9.0

@@ -1,0 +1,83 @@
+# 项目：安平丝网 AI 客服 SaaS 平台
+
+## 一句话描述
+为安平丝网产业集群的电商商家（淘宝/拼多多/1688）提供 AI 智能客服 SaaS 服务。
+商家零部署零运维，按月付费，我们托管一切。
+
+## 当前阶段
+MVP Demo 验证期——用 FastGPT + RPA 最快跑通闭环，证明"有人愿意付费"。
+
+## 技术栈
+### Demo 阶段（当前）
+- AI 平台：FastGPT 在线版（cloud.fastgpt.cn，工作流「电商售前助手」已就绪）
+- 大模型：DeepSeek-Chat API（推理）+ DeepSeek Embedding API（向量化）
+- 备选模型：Qwen-Plus API / GLM-4 API（DeepSeek 不可用时热切换）
+- 消息通道：千牛 RPA（Python + uiautomation）+ 拼多多 RPA（Playwright + FastAPI）
+- 消息路由：Python + FastAPI（统一对接 FastGPT API）
+- 本地开发：Windows 本地（msg-router + RPA），无需云服务器
+
+### 正式版（Demo 验证后）
+- AI 平台：Dify（Docker 私有部署），含 PostgreSQL + Redis + Weaviate
+- 计费网关：Python 3.11 + FastAPI + PostgreSQL + Redis
+- 消息通道：千牛 ISV 官方 API + 拼多多 RPA
+- 反向代理：Nginx + Let's Encrypt SSL
+- 部署方式：Docker Compose 一把梭
+
+## 系统架构总览
+### Demo 阶段
+买家（淘宝/拼多多）
+  → 千牛客服端 / 拼多多客服工作台
+  → RPA 捕获消息
+  → 消息路由服务（FastAPI）
+  → FastGPT Chat API（cloud.fastgpt.cn，电商售前助手）
+  → 消息路由服务返回回答
+  → RPA 自动回复买家
+
+### 正式版
+买家（淘宝/拼多多/H5）
+  → 千牛 ISV API / 拼多多 RPA / H5 网页
+  → [计费网关] 鉴权 → 限频 → 预扣 token
+  → Dify Chat API（私有部署）
+  → Weaviate 向量检索 + DeepSeek API 推理
+  → [计费网关] 结算实际 token → 落账
+  → 原通道回复买家
+
+## 多租户隔离（正式版）
+- 每个客户 = 一个 Dify App + 独立知识库 + 独立 API Key
+- 计费网关通过 gateway_api_key 映射 customer_id，互不干扰
+- 公共知识库（行业通识）所有客户共享
+
+## 商业模型
+- 统一三档定价：
+  - 基础版 ¥799/月（3 席位，单入口，3000 次/月）
+  - 标准版 ¥999/月（5 席位，双入口，8000 次/月）← 主推
+  - 旗舰版 ¥1,499+/月（10 席位，多入口，20000 次/月）
+- 年付享 8 折，搭建费 ¥1,999-3,999（一次性）
+- 试点期早鸟价：前 3-5 家 ¥500/月（签 ≥3 月 + 脱敏案例宣传）
+- 额外席位 ¥149/席位/月，超额对话 ¥0.08-0.1/次
+- 计费口径：套餐含基础 token 额度 + 超额按量 + 小额透支
+- BYOK：MVP 不做，架构预留 key_source 字段
+- 硬成本：API ¥100-300 + 服务器 ¥30-180 ≈ ¥130-480/月/客户
+- 毛利率：50-85%
+
+## 代码仓库结构（目标）
+D:\MyProject\kaas-platform\
+├── msg-router/              # 消息路由服务（FastAPI，Demo + 正式版共用）
+├── rpa-qianniu/             # 千牛 RPA（Python + uiautomation）
+├── rpa-pdd/                 # 拼多多 RPA（Playwright + FastAPI）
+├── gateway/                 # 计费网关服务（FastAPI，正式版）
+├── business-api/            # 业务管理 API（FastAPI，正式版）
+├── scripts/                 # 运维脚本（备份/健康检查/数据采集）
+├── nginx/                   # Nginx 配置
+├── docker-compose.yml       # 正式版总编排
+├── docker-compose.demo.yml    # Demo 阶段编排（消息路由 + RPA，FastGPT 用在线版）
+├── .env.example
+└── README.md
+
+## 硬性约束（所有 Step 通用）
+1. 所有密码/密钥从环境变量读取，禁止硬编码
+2. DB 用 UTC 存储时间；业务层按 Asia/Shanghai 计算
+3. 必须输出完整可运行代码，禁止省略号和「自行补充」
+4. 每个文件输出完整内容
+5. 不确定的地方列为 Open Questions，不要静默猜测
+6. 关键路径禁止伪代码

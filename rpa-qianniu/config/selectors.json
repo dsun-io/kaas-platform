@@ -1,0 +1,11 @@
+{
+  "window_title_substrings": [],
+  "session_left_panel_ratio": 0.48,
+  "unread_markers": ["未读"],
+  "buyer_bubble_offset_px": 24,
+  "input_bottom_margin_px": 220,
+  "input_pool_bottom_margin_px": 260,
+  "tree_walk_max_depth": 28,
+  "send_button_include_substrings": ["发送"],
+  "send_button_exclude_substrings": ["图片", "表情"]
+}

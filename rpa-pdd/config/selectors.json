@@ -1,0 +1,13 @@
+{
+  "login_page_url_contains": "",
+  "chat_ready_selector": "",
+  "login_form_selector": "",
+  "session_list": "",
+  "session_item": "",
+  "session_item_unread": "",
+  "message_list": "",
+  "buyer_message_row": "",
+  "buyer_message_text": "",
+  "input_editor": "",
+  "send_button": ""
+}

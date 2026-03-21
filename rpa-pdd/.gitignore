@@ -1,0 +1,8 @@
+.venv/
+.env
+__pycache__/
+*.py[cod]
+data/cookies.json
+data/pdd_state.json
+logs/
+screenshots/
