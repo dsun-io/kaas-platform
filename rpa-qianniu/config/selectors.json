@@ -1,11 +1,24 @@
 {
-  "window_title_substrings": [],
-  "session_left_panel_ratio": 0.48,
-  "unread_markers": ["未读"],
-  "buyer_bubble_offset_px": 24,
+  "window_title_substrings": ["接待", "千牛"],
+  "session_left_panel_ratio": 0.55,
+  "unread_markers": [
+    "未读",
+    "待回复",
+    "待处理",
+    "新消息",
+    "条未读",
+    "条新消息",
+    "提醒",
+    "秒前",
+    "分钟前",
+    "分前",
+    "刚刚"
+  ],
+  "unread_badge_numeric": true,
+  "buyer_bubble_offset_px": 8,
   "input_bottom_margin_px": 220,
   "input_pool_bottom_margin_px": 260,
   "tree_walk_max_depth": 28,
   "send_button_include_substrings": ["发送"],
-  "send_button_exclude_substrings": ["图片", "表情"]
+  "send_button_exclude_substrings": ["图片", "表情", "链接", "卡片", "宝贝", "商品", "足迹", "推荐"]
 }
