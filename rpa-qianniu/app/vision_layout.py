@@ -32,6 +32,8 @@ class VisionLayout:
     """各区域均为屏幕坐标。"""
 
     window: ScreenRect
+    # 最左侧图标导航（消息/进店等），未读检测不用此条，仅标定图展示
+    left_nav_strip: ScreenRect
     left_panel: ScreenRect
     chat_panel: ScreenRect
     right_panel: ScreenRect
@@ -51,22 +53,31 @@ def rect_from_window(win: auto.Control) -> ScreenRect:
 
 def layout_from_rect(window: ScreenRect) -> VisionLayout:
     """
-    默认三栏：左 [0, left_end) | 聊天 [left_end, chat_end) | 右 [chat_end, 1]；
-    聊天列内：顶部 strip 为标题等，底部 strip 为输入+发送。
+    水平方向：
+    - [0, left_start)：左侧图标导航（角标易误判未读，红点检测排除）
+    - [left_start, left_end)：会话列表（left_panel，未读红点只在此裁剪）
+    - [left_end, chat_end)：聊天列（含标题+气泡+输入）
+    - [chat_end, 1]：右侧商品/订单
+
+    聊天列内垂直：message_area 去掉顶/底 strip。
     """
     wl, wt = window.left, window.top
     ww, wh = max(1, window.w), max(1, window.h)
 
+    ls = float(settings.vision_left_start_ratio)
     le = float(settings.vision_left_end_ratio)
     ce = float(settings.vision_chat_end_ratio)
-    le = max(0.05, min(0.45, le))
-    ce = max(le + 0.15, min(0.92, ce))
+    ls = max(0.0, min(0.25, ls))
+    le = max(ls + 0.04, min(0.48, le))
+    ce = max(le + 0.12, min(0.92, ce))
 
+    x_nav1 = wl + int(ww * ls)
     x_left1 = wl + int(ww * le)
     x_chat1 = wl + int(ww * ce)
     x_right = wl + ww
 
-    left_panel = ScreenRect(wl, wt, x_left1, window.bottom)
+    left_nav_strip = ScreenRect(wl, wt, x_nav1, window.bottom)
+    left_panel = ScreenRect(x_nav1, wt, x_left1, window.bottom)
     chat_panel = ScreenRect(x_left1, wt, x_chat1, window.bottom)
     right_panel = ScreenRect(x_chat1, wt, x_right, window.bottom)
 
@@ -82,6 +93,7 @@ def layout_from_rect(window: ScreenRect) -> VisionLayout:
 
     return VisionLayout(
         window=window,
+        left_nav_strip=left_nav_strip,
         left_panel=left_panel,
         chat_panel=chat_panel,
         right_panel=right_panel,

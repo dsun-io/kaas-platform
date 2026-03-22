@@ -17,7 +17,11 @@ import cv2
 import numpy as np
 
 from app.config import settings
-from app.qianniu_driver import capture_window_frame_bgr, locate_main_window_with_retry
+from app.qianniu_driver import (
+    capture_window_frame_bgr,
+    locate_main_window_with_retry,
+    locate_window_title_hint,
+)
 from app.vision_layout import layout_from_rect, rect_from_window
 
 
@@ -35,7 +39,8 @@ def main() -> int:
     Path(settings.vision_debug_dir).mkdir(parents=True, exist_ok=True)
     win = locate_main_window_with_retry()
     if win is None:
-        print("未找到千牛窗口，请打开「接待中心」后再试。")
+        print("未找到千牛窗口（脚本只匹配「顶层窗口标题」中的关键字，与界面是否在 CEF 内无关）。")
+        print(locate_window_title_hint())
         return 1
     bgr = capture_window_frame_bgr(win)
     if bgr is None or bgr.size == 0:
@@ -64,8 +69,9 @@ def main() -> int:
             cv2.LINE_AA,
         )
 
-    # BGR
-    box(lay.left_panel, (0, 255, 255), "left_panel")
+    # BGR（黄=left 会话列表；青=left 图标栏，未读检测不扫此条）
+    box(lay.left_nav_strip, (255, 255, 0), "left_nav_icons")
+    box(lay.left_panel, (0, 255, 255), "left_panel_session_list")
     box(lay.chat_panel, (0, 200, 0), "chat_panel")
     box(lay.right_panel, (200, 200, 200), "right_panel")
     box(lay.message_area, (0, 128, 255), "message_area")

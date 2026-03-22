@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     qianniu_window_substring: str = "千牛"
     window_locate_retries: int = 15
     window_locate_interval_sec: float = 2.0
+    # 为 True 时：匹配标题时不过滤 IsEnabled（部分机器上最小化/后台窗 UIA 会报 IsEnabled=False）
+    window_locate_skip_enabled_filter: bool = False
 
     poll_interval_sec: float = 3.0
 
@@ -62,12 +64,13 @@ class Settings(BaseSettings):
     # 若 True 则走旧版 UIA 混合逻辑（仅窗口内控件可访问时可用）
     legacy_uia_pipeline: bool = False
 
-    # 窗口内水平比例：左侧列表右缘 | 聊天列右缘（其余为右侧商品/订单区）
-    vision_left_end_ratio: float = 0.20
-    vision_chat_end_ratio: float = 0.65
-    # 聊天列内：顶部去掉比例（标题栏）、底部为输入+发送条
-    vision_message_top_ratio: float = 0.10
-    vision_input_bottom_ratio: float = 0.15
+    # 窗口宽 0~1：左侧图标栏右缘（会话列表起点）| 会话列表右缘 | 聊天列右缘
+    vision_left_start_ratio: float = 0.07
+    vision_left_end_ratio: float = 0.15
+    vision_chat_end_ratio: float = 0.56
+    # 聊天列内：顶部去掉比例（买家标题栏等）、底部为输入+发送条
+    vision_message_top_ratio: float = 0.15
+    vision_input_bottom_ratio: float = 0.13
 
     vision_debug_screenshots: bool = True
     vision_debug_dir: str = "debug"
