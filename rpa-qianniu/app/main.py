@@ -113,11 +113,164 @@ def _log_attempt(attempt: int, w) -> None:
         log.info("定位尝试 %s：匹配窗口 %s", attempt, title)
 
 
-def run() -> None:
-    setup_logging()
-    state = _load_state()
-    get_selectors()
+def _run_vision_pipeline(state: AppState) -> None:
+    """CEF 场景：仅用 uiautomation 取窗口矩形，其余截图 + OCR + pyautogui。"""
+    import time
 
+    import pyautogui
+    from app.ocr_paddle import invalidate_ocr_cache, paddle_available
+    from app.qianniu_driver import (
+        capture_window_frame_bgr,
+        human_delay,
+        locate_main_window_with_retry,
+        window_alive,
+    )
+    from app.vision_debug import save_debug_bgr, sleep_after_capture
+    from app.vision_layout import layout_from_rect, rect_from_window
+    from app.vision_message import latest_buyer_message_ocr
+    from app.vision_reply import send_reply_vision
+    from app.vision_unread import detect_unread_dots
+
+    if not paddle_available():
+        print(
+            "纯视觉模式需要 PaddleOCR。请安装: pip install paddleocr paddlepaddle\n"
+            "或改用旧版：在 .env 设 LEGACY_UIA_PIPELINE=true"
+        )
+        log.error("PaddleOCR 不可用，无法启动纯视觉流水线")
+        sys.exit(1)
+
+    print("正在定位千牛主窗口（仅用语义矩形）…")
+    win = locate_main_window_with_retry(on_attempt=_log_attempt)
+    if win is None:
+        print("无法定位千牛窗口。")
+        sys.exit(1)
+    try:
+        title = win.Name or ""
+    except Exception:
+        title = ""
+    print(f"[纯视觉] 窗口: {title}")
+    log.info("纯视觉流水线启动: %s", title)
+
+    if settings.ai_stub_mode:
+        print(f"[桩模式] 回复固定为：{settings.ai_stub_reply!r}")
+
+    paused = threading.Event()
+    if start_f12_pause_toggle(paused):
+        print("快捷键：F12 暂停/继续")
+    wait_hint_ts = 0.0
+    _WAIT_HINT_INTERVAL_SEC = 25.0
+
+    while True:
+        try:
+            if paused.is_set():
+                time.sleep(0.2)
+                continue
+            if not window_alive(win):
+                log.warning("窗口丢失，重新定位")
+                win = locate_main_window_with_retry(on_attempt=_log_attempt)
+                if win is None:
+                    time.sleep(5.0)
+                    continue
+
+            bgr = capture_window_frame_bgr(win)
+            if bgr is None or bgr.size == 0:
+                time.sleep(1.0)
+                continue
+
+            win_rect = rect_from_window(win)
+            lay = layout_from_rect(win_rect)
+            save_debug_bgr(bgr, "vision_full_window")
+
+            dots = detect_unread_dots(bgr, win_rect, lay.left_panel)
+            msg: str | None = None
+            buyer_id: str | None = None
+
+            if dots:
+                d0 = dots[0]
+                pyautogui.click(d0.cx_screen, d0.cy_screen)
+                sleep_after_capture()
+                time.sleep(1.0)
+                invalidate_ocr_cache()
+                bgr = capture_window_frame_bgr(win)
+                if bgr is None or bgr.size == 0:
+                    time.sleep(max(3.0, float(settings.poll_interval_sec)))
+                    continue
+                win_rect = rect_from_window(win)
+                lay = layout_from_rect(win_rect)
+                save_debug_bgr(bgr, "vision_after_click_session")
+                buyer_id = normalize_buyer_id(d0.buyer or "unknown_buyer")
+                msg = latest_buyer_message_ocr(bgr, win_rect, lay.message_area)
+            elif settings.fallback_open_chat_without_unread:
+                buyer_id = normalize_buyer_id("vision_active")
+                msg = latest_buyer_message_ocr(bgr, win_rect, lay.message_area)
+            else:
+                now = time.time()
+                if now - wait_hint_ts >= _WAIT_HINT_INTERVAL_SEC:
+                    print("[纯视觉] 左侧无红点；未开启兜底则仅等待。可设 FALLBACK_OPEN_CHAT_WITHOUT_UNREAD=true")
+                    wait_hint_ts = now
+                time.sleep(max(3.0, float(settings.wait_no_unread_poll_sec)))
+                continue
+
+            msg = (msg or "").strip()
+            if not msg:
+                time.sleep(max(3.0, float(settings.poll_interval_sec)))
+                continue
+            if is_non_message_ui_text(msg) or is_system_message(msg):
+                log.debug("系统/占位文案，跳过: %s", msg[:80])
+                time.sleep(max(3.0, float(settings.poll_interval_sec)))
+                continue
+            if not has_substantive_buyer_text(msg):
+                log.debug("无实质正文，跳过: %r", msg[:80])
+                time.sleep(max(3.0, float(settings.poll_interval_sec)))
+                continue
+
+            fp = fingerprint_key(buyer_id or "unknown", msg, None, None)
+            if state.last_replied_fingerprint.get(buyer_id or "") == fp or fp in state.dedup_set():
+                log.debug("去重跳过 vision buyer=%s", buyer_id)
+                time.sleep(max(3.0, float(settings.poll_interval_sec)))
+                continue
+
+            print(f"[收到] 买家ID: {buyer_id} | 消息: {msg}")
+            log.info("收到 vision buyer=%s text=%s", buyer_id, msg)
+
+            conv_id = state.conversations.get(buyer_id or "")
+            reply, new_conv, elapsed_ms = ai_chat(
+                buyer_id=buyer_id or "unknown",
+                message=msg,
+                conversation_id=conv_id,
+            )
+            if new_conv and buyer_id:
+                state.conversations[buyer_id] = new_conv
+            print(f"[AI回复] {reply} | 耗时: {elapsed_ms}ms")
+
+            human_delay()
+            bgr_send = capture_window_frame_bgr(win)
+            win_rect = rect_from_window(win)
+            lay = layout_from_rect(win_rect)
+            save_debug_bgr(bgr_send, "vision_before_send")
+            ok = False
+            if bgr_send is not None and bgr_send.size > 0:
+                ok = send_reply_vision(bgr_send, win_rect, lay.input_area, reply)
+            if ok:
+                state.remember_dedup(fp)
+                if buyer_id:
+                    state.last_replied_fingerprint[buyer_id] = fp
+                _save_state(state)
+                print(f"[已发送] 买家ID: {buyer_id}")
+            else:
+                print("[发送失败] 请保持接待中心在前台；可查看 debug/ 下截图")
+
+            time.sleep(max(3.0, float(settings.poll_interval_sec)))
+        except KeyboardInterrupt:
+            print("已停止")
+            _save_state(state)
+            return
+        except Exception as exc:
+            log.exception("纯视觉主循环异常: %s", exc)
+            time.sleep(max(3.0, float(settings.poll_interval_sec)))
+
+
+def _run_legacy_uia(state: AppState) -> None:
     print("正在定位千牛主窗口（带重试）…")
     win = locate_main_window_with_retry(on_attempt=_log_attempt)
     if win is None:
@@ -353,6 +506,18 @@ def run() -> None:
         except Exception as exc:
             log.exception("主循环异常: %s", exc)
             time.sleep(max(3.0, float(settings.poll_interval_sec)))
+
+
+def run() -> None:
+    setup_logging()
+    state = _load_state()
+    get_selectors()
+
+    if settings.use_vision_pipeline and not settings.legacy_uia_pipeline:
+        _run_vision_pipeline(state)
+        return
+
+    _run_legacy_uia(state)
 
 
 if __name__ == "__main__":

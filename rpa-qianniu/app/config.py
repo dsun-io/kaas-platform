@@ -57,6 +57,26 @@ class Settings(BaseSettings):
     # UI 选择器 JSON（相对 rpa-qianniu 根目录）；可拷贝修改而无需改 Python
     selectors_path: str = "config/selectors.json"
 
+    # ---------- 纯视觉流水线（CEF 内无 UIA）：截图 + OCR + 坐标点击 ----------
+    use_vision_pipeline: bool = True
+    # 若 True 则走旧版 UIA 混合逻辑（仅窗口内控件可访问时可用）
+    legacy_uia_pipeline: bool = False
+
+    # 窗口内水平比例：左侧列表右缘 | 聊天列右缘（其余为右侧商品/订单区）
+    vision_left_end_ratio: float = 0.20
+    vision_chat_end_ratio: float = 0.65
+    # 聊天列内：顶部去掉比例（标题栏）、底部为输入+发送条
+    vision_message_top_ratio: float = 0.10
+    vision_input_bottom_ratio: float = 0.15
+
+    vision_debug_screenshots: bool = True
+    vision_debug_dir: str = "debug"
+    vision_capture_settle_sec: float = 0.12
+
+    # 未读红点：连通域面积范围（像素²）
+    vision_unread_dot_area_min: int = 40
+    vision_unread_dot_area_max: int = 900
+
     @property
     def state_path(self) -> Path:
         p = Path(self.state_dir)
