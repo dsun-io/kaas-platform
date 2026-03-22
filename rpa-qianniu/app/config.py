@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     window_locate_skip_enabled_filter: bool = False
 
     poll_interval_sec: float = 3.0
+    # 纯视觉：有未读/已处理一轮后的休眠（秒），宜 <=1 以压低端到端延迟
+    vision_poll_active_sec: float = 1.0
+    # 0=按需落盘（异常必存）；1=关键事件；2=全量（等同旧版每轮截图）
+    rpa_debug_level: int = 0
 
     # 左侧列表无未读时：是否仍轮询当前已打开会话的聊天区（易与历史气泡形成空转；默认关）
     fallback_open_chat_without_unread: bool = False
@@ -55,6 +59,8 @@ class Settings(BaseSettings):
 
     state_dir: str = "data"
     log_dir: str = "logs"
+    # 将控制台 print / stderr 同步追加到 logs/console.log（与 logging 文件分流，避免混写冲突）
+    log_console_tee: bool = True
 
     # UI 选择器 JSON（相对 rpa-qianniu 根目录）；可拷贝修改而无需改 Python
     selectors_path: str = "config/selectors.json"
@@ -72,13 +78,28 @@ class Settings(BaseSettings):
     vision_message_top_ratio: float = 0.15
     vision_input_bottom_ratio: float = 0.13
 
-    vision_debug_screenshots: bool = True
+    vision_debug_screenshots: bool = False
     vision_debug_dir: str = "debug"
+    # 主循环整窗调试图 vision_full_window 最小间隔（秒）；0=每轮都存（易刷屏占盘）
+    vision_debug_full_window_interval_sec: float = 25.0
     vision_capture_settle_sec: float = 0.12
+    # OCR 锚点校准结果缓存（相对 rpa-qianniu 根目录）；window_size 一致时复用
+    vision_calibration_path: str = "config/vision_calibration.json"
+    # 为 True 时优先自动校准，失败则回退 VISION_*_RATIO
+    vision_auto_calibrate: bool = True
+
+    # 左栏：会话列表上方导航/搜索/标签高度（屏幕像素量级，用于跳过后再找红点，避免 y 偏到下一行）
+    vision_left_panel_unread_top_skip_px: int = 100
+    # 右栏：跳过窗口标题+千牛顶栏后，再取昵称带（与 vision_right_nick_top_frac 配合）
+    vision_right_nick_top_skip_px: int = 96
+    # 右栏昵称 ROI：从「顶栏下缘」起占右栏总高度比例（约 1/3，避免裁到标题栏按钮）
+    vision_right_nick_top_frac: float = 0.33
 
     # 未读红点：连通域面积范围（像素²）
     vision_unread_dot_area_min: int = 40
     vision_unread_dot_area_max: int = 900
+    # 纯视觉：同一买家会话成功回复后，多少秒内不再处理（防连点）
+    vision_session_cooldown_sec: float = 30.0
 
     @property
     def state_path(self) -> Path:

@@ -1,46 +1,285 @@
 """
-左侧列表：红点（HSV）+ 连通域 + 可选 OCR 昵称（纯视觉）。
+左侧列表：主流程用 OCR 找「待回复」分组并点击首条会话；
+保留 HSV 红点检测（detect_unread_dots）供 smoke/调试。
 """
 
 from __future__ import annotations
 
+import re
+import sys
 from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 
 import cv2
 import numpy as np
 
 from app.config import settings
+from app.debug_manager import should_save
+from app.logger import get_logger
 from app.ocr_paddle import ocr_bgr_to_boxes, paddle_available
+from app.vision_coords import (
+    bgr_crop_origin_to_screen,
+    bgr_point_to_screen,
+    crop_window_bgr,
+    screen_point_to_bgr_xy,
+)
 from app.vision_debug import save_debug_bgr
 from app.vision_layout import ScreenRect
 
+log = get_logger("vision_unread")
 
-def _crop_window(bgr: np.ndarray, win: ScreenRect, region: ScreenRect) -> np.ndarray:
-    x0 = max(0, region.left - win.left)
-    y0 = max(0, region.top - win.top)
-    x1 = min(bgr.shape[1], region.right - win.left)
-    y1 = min(bgr.shape[0], region.bottom - win.top)
-    if x1 <= x0 + 1 or y1 <= y0 + 1:
-        return np.array([])
-    return bgr[y0:y1, x0:x1].copy()
+DWMWA_EXTENDED_FRAME_BOUNDS = 9
 
 
-def _red_mask(bgr: np.ndarray) -> np.ndarray | None:
+def get_screenshot_origin(hwnd: int) -> tuple[int, int]:
+    """BGR 像素 (0,0) 对应屏幕点：优先 DWM 可见边框，避免 GetWindowRect 含阴影导致点击偏行。"""
+    if sys.platform != "win32" or not hwnd:
+        raise ValueError("get_screenshot_origin requires win32 HWND")
+    import ctypes
+    from ctypes import wintypes
+
+    class RECT(ctypes.Structure):
+        _fields_ = [
+            ("left", ctypes.c_long),
+            ("top", ctypes.c_long),
+            ("right", ctypes.c_long),
+            ("bottom", ctypes.c_long),
+        ]
+
+    r = RECT()
+    hr = ctypes.windll.dwmapi.DwmGetWindowAttribute(
+        wintypes.HWND(hwnd),
+        DWMWA_EXTENDED_FRAME_BOUNDS,
+        ctypes.byref(r),
+        ctypes.sizeof(r),
+    )
+    if hr == 0:
+        return int(r.left), int(r.top)
+    rr = RECT()
+    ctypes.windll.user32.GetWindowRect(wintypes.HWND(hwnd), ctypes.byref(rr))
+    return int(rr.left), int(rr.top)
+
+
+def align_win_rect_to_screenshot_origin(win: ScreenRect, hwnd: int | None) -> ScreenRect:
+    """将 UIA 窗口矩形平移到 DWM 截图原点，后续布局与 BGR 换算一致。"""
+    if not hwnd or sys.platform != "win32":
+        return win
+    try:
+        ox, oy = get_screenshot_origin(hwnd)
+    except Exception:
+        return win
+    dx = ox - win.left
+    dy = oy - win.top
+    return ScreenRect(
+        win.left + dx,
+        win.top + dy,
+        win.right + dx,
+        win.bottom + dy,
+    )
+
+
+def find_pending_session(
+    bgr: np.ndarray,
+    win: ScreenRect,
+    left: ScreenRect,
+    _hwnd: int | None,
+) -> tuple[int, int] | None:
+    """
+    OCR 左栏，找「待回复」分组下首条会话：点击「待回复」与「已回复」标签之间的竖直中点（屏幕坐标）。
+    无待回复或数量为 0 时返回 None。
+    """
+    if not paddle_available():
+        log.info("[会话检测] Paddle 不可用")
+        return None
+    crop, ox, oy = crop_window_bgr(bgr, win, left)
+    save_debug_bgr(crop, "unread_left_crop")
+    if crop.size == 0:
+        return None
+    sx0, sy0 = bgr_crop_origin_to_screen(win, bgr, ox, oy)
+    boxes = ocr_bgr_to_boxes(
+        crop,
+        win_left=sx0,
+        win_top=sy0,
+        cache_ttl_sec=0.0,
+    )
+    if not boxes:
+        log.info("[会话检测] 左侧面板 OCR 无结果")
+        return None
+
+    pending_bottom: int | None = None
+    pending_top: int | None = None
+    replied_top: int | None = None
+
+    for b in boxes:
+        raw = (b.text or "").strip()
+        t = re.sub(r"\s+", "", raw)
+        if "待回复" not in t and "待回复" not in raw:
+            continue
+        m = re.search(r"[\(（]\s*(\d+)\s*[\)）]", raw)
+        if m and int(m.group(1)) == 0:
+            log.info("[会话检测] 待回复数量为 0，跳过: %r", raw)
+            return None
+        pending_bottom = b.bottom if pending_bottom is None else max(pending_bottom, b.bottom)
+        pending_top = b.top if pending_top is None else min(pending_top, b.top)
+
+    if pending_bottom is None:
+        log.info("[会话检测] 未找到「待回复」分组")
+        return None
+
+    for b in boxes:
+        raw = (b.text or "").strip()
+        t = re.sub(r"\s+", "", raw)
+        if "已回复" not in t and "已回复" not in raw:
+            continue
+        if b.top > pending_bottom - 5:
+            replied_top = b.top if replied_top is None else min(replied_top, b.top)
+
+    click_sx = (left.left + left.right) // 2
+    if replied_top is not None and replied_top > pending_bottom:
+        click_sy = (pending_bottom + replied_top) // 2
+    else:
+        click_sy = pending_bottom + max(40, min(80, left.h // 14))
+
+    log.info(
+        "[会话检测] 待回复底=%s 已回复顶=%s → 屏幕点击=(%s,%s)",
+        pending_bottom,
+        replied_top,
+        click_sx,
+        click_sy,
+    )
+
+    if should_save("unread_detected"):
+        try:
+            root = Path(settings.vision_debug_dir)
+            root.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+            dbg = crop.copy()
+            ch, cw = dbg.shape[:2]
+            bw, bh = bgr.shape[1], bgr.shape[0]
+            ww, wh = max(1, win.w), max(1, win.h)
+            bx = (click_sx - win.left) * bw / ww
+            by = (click_sy - win.top) * bh / wh
+            lcx = int(bx - ox)
+            lcy = int(by - oy)
+            pb = int((pending_bottom - win.top) * bh / wh - oy)
+            rt = (
+                int((replied_top - win.top) * bh / wh - oy)
+                if replied_top is not None
+                else None
+            )
+            if 0 <= pb < ch:
+                cv2.line(dbg, (0, pb), (cw, pb), (0, 255, 0), 1)
+            if rt is not None and 0 <= rt < ch:
+                cv2.line(dbg, (0, rt), (cw, rt), (255, 0, 0), 1)
+            lcx = max(0, min(cw - 1, lcx))
+            lcy = max(0, min(ch - 1, lcy))
+            cv2.drawMarker(
+                dbg,
+                (lcx, lcy),
+                (0, 0, 255),
+                markerType=cv2.MARKER_CROSS,
+                markerSize=18,
+                thickness=2,
+            )
+            cv2.imwrite(str(root / f"{ts}_pending_session.png"), dbg)
+        except Exception:
+            pass
+
+    return int(click_sx), int(click_sy)
+
+
+def _unread_badge_mask(bgr: np.ndarray) -> np.ndarray | None:
+    """
+    未读：纯红 + 千牛常见的橙/珊瑚角标（H 约 5–20°）。
+    S/V 略放宽以覆盖浅色主题。
+    """
     if bgr.size == 0 or bgr.ndim != 3:
         return None
     hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
-    m1 = cv2.inRange(hsv, (0, 120, 120), (10, 255, 255))
-    m2 = cv2.inRange(hsv, (170, 120, 120), (180, 255, 255))
-    return cv2.bitwise_or(m1, m2)
+    m1 = cv2.inRange(hsv, (0, 100, 100), (10, 255, 255))
+    m2 = cv2.inRange(hsv, (170, 100, 100), (180, 255, 255))
+    red = cv2.bitwise_or(m1, m2)
+    orange = cv2.inRange(hsv, (5, 85, 85), (22, 255, 255))
+    return cv2.bitwise_or(red, orange)
 
 
 @dataclass
 class UnreadDot:
-    """屏幕坐标系下的红点中心；buyer 为 OCR 昵称（可能为空）。"""
+    """屏幕坐标：点击目标（左栏水平中心 × 红点所在行）。"""
 
     cx_screen: int
     cy_screen: int
     buyer: str
+
+
+def _save_dots_and_clicks_debug(
+    bgr: np.ndarray,
+    win: ScreenRect,
+    _session_rect: ScreenRect,
+    crop_x0: int,
+    crop_y0: int,
+    crop: np.ndarray,
+    cx: float,
+    cy: float,
+    click_sx: int,
+    click_sy: int,
+) -> None:
+    if not should_save("unread_detected"):
+        return
+    root = Path(settings.vision_debug_dir)
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+    overlay = bgr.copy()
+    try:
+        dot_bx = int(crop_x0 + cx)
+        dot_by = int(crop_y0 + cy)
+        cx_d = max(0, min(bgr.shape[1] - 1, dot_bx))
+        cy_d = max(0, min(bgr.shape[0] - 1, dot_by))
+        cv2.circle(overlay, (cx_d, cy_d), 12, (0, 255, 0), 2)
+        cv2.putText(
+            overlay,
+            "DOT",
+            (min(bgr.shape[1] - 40, cx_d + 14), cy_d),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.45,
+            (0, 255, 0),
+            1,
+            cv2.LINE_AA,
+        )
+        clk_x, clk_y = screen_point_to_bgr_xy(win, bgr, click_sx, click_sy)
+        clk_x = max(0, min(bgr.shape[1] - 1, clk_x))
+        clk_y = max(0, min(bgr.shape[0] - 1, clk_y))
+        cv2.drawMarker(
+            overlay,
+            (clk_x, clk_y),
+            (0, 0, 255),
+            markerType=cv2.MARKER_CROSS,
+            markerSize=20,
+            thickness=2,
+        )
+        cv2.putText(
+            overlay,
+            "CLICK",
+            (min(bgr.shape[1] - 50, clk_x + 14), clk_y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.45,
+            (0, 0, 255),
+            1,
+            cv2.LINE_AA,
+        )
+        cv2.imwrite(str(root / f"{ts}_dots_and_clicks.png"), overlay)
+    except Exception:
+        return
+
+
+def _session_list_region(left: ScreenRect, top_skip_px: int) -> ScreenRect:
+    """左栏内跳过导航/搜索/标签条，仅对会话列表区域做红点检测与坐标换算。"""
+    skip = min(max(0, top_skip_px), max(0, left.h - 48))
+    return ScreenRect(left.left, left.top + skip, left.right, left.bottom)
 
 
 def detect_unread_dots(
@@ -50,16 +289,18 @@ def detect_unread_dots(
 ) -> list[UnreadDot]:
     """
     在左侧列表区域检测未读红点，返回按 y 排序的列表（靠上优先）。
+    点击位置：左栏水平中心 × 红点质心所在行（避免只点角标导致点到下一行）。
+    裁剪从「会话列表」上缘开始（跳过顶栏），避免 ROI 红点 y 与点击换算错行。
     """
-    crop = _crop_window(bgr, win, left)
+    session = _session_list_region(left, int(settings.vision_left_panel_unread_top_skip_px))
+    crop, crop_x0, crop_y0 = crop_window_bgr(bgr, win, session)
     save_debug_bgr(crop, "unread_left_crop")
     if crop.size == 0:
         return []
 
-    mask = _red_mask(crop)
+    mask = _unread_badge_mask(crop)
     if mask is None or mask.size == 0:
         return []
-    # 去噪
     k = max(1, min(5, crop.shape[0] // 120))
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k * 2 + 1, k * 2 + 1))
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
@@ -87,32 +328,53 @@ def detect_unread_dots(
 
     dots.sort(key=lambda t: t[0])
     out: list[UnreadDot] = []
-    for cy, cx, _ in dots:
-        # crop 相对 left 面板左上角 → 屏幕坐标
-        cx_s = int(left.left + cx)
-        cy_s = int(left.top + cy)
-        buyer = ""
-        if paddle_available():
-            # 红点右侧至左栏中部：会话昵称常见区域
-            h, w = crop.shape[:2]
-            ix = int(min(w - 2, max(0, cx + 4)))
-            row_t = max(0, int(cy - 14))
-            row_b = min(h, int(cy + 28))
-            name_roi = crop[row_t:row_b, ix : min(w, ix + max(120, w // 2))]
-            if name_roi.size > 0:
-                save_debug_bgr(name_roi, "unread_name_roi")
-                boxes = ocr_bgr_to_boxes(
-                    name_roi,
-                    win_left=left.left + ix,
-                    win_top=left.top + row_t,
-                    cache_ttl_sec=0.0,
-                )
-                parts = sorted(
-                    [b.text.strip() for b in boxes if b.text and len(b.text.strip()) >= 2],
-                    key=len,
-                    reverse=True,
-                )
-                if parts:
-                    buyer = parts[0][:64]
-        out.append(UnreadDot(cx_screen=cx_s, cy_screen=cy_s, buyer=buyer))
+    ch, cw = crop.shape[:2]
+    for idx, (cy, cx, _) in enumerate(dots):
+        # 行内水平中心（左栏会话条）× 红点行 y，映射到屏幕
+        row_click_bx = float(crop_x0) + float(cw) / 2.0
+        row_click_by = float(crop_y0) + cy
+        click_sx, click_sy = bgr_point_to_screen(win, bgr, row_click_bx, row_click_by)
+
+        log.info(
+            "[DEBUG-CLICK] 窗口=(%s,%s) left_panel=(%s,%s)-(%s,%s) session_left=(%s,%s)-(%s,%s) "
+            "crop_size=(%sx%s) crop_origin_bgr=(%s,%s) ROI红点=(%.1f,%.1f) "
+            "BGR点击=(%.1f,%.1f) 屏幕点击=(%s,%s)",
+            win.left,
+            win.top,
+            left.left,
+            left.top,
+            left.right,
+            left.bottom,
+            session.left,
+            session.top,
+            session.right,
+            session.bottom,
+            cw,
+            ch,
+            crop_x0,
+            crop_y0,
+            cx,
+            cy,
+            row_click_bx,
+            row_click_by,
+            click_sx,
+            click_sy,
+        )
+
+        if idx == 0:
+            _save_dots_and_clicks_debug(
+                bgr,
+                win,
+                session,
+                crop_x0,
+                crop_y0,
+                crop,
+                cx,
+                cy,
+                click_sx,
+                click_sy,
+            )
+
+        out.append(UnreadDot(cx_screen=click_sx, cy_screen=click_sy, buyer=""))
+
     return out

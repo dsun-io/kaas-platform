@@ -156,6 +156,20 @@ def _window_title_score(name: str) -> int:
     return s
 
 
+def locate_window_title_hint() -> str:
+    """定位失败时在终端打印的说明（标题匹配规则）。"""
+    sel = get_selectors()
+    subs = [s.strip() for s in sel.window_title_substrings if s and str(s).strip()]
+    joined = "、".join(subs) if subs else "(未配置)"
+    return (
+        f"当前要求：顶层窗口「标题」中至少包含以下关键字之一：{joined}。\n"
+        f"  修改方式：编辑 config/selectors.json 的 window_title_substrings，"
+        f"或 .env 的 QIANNIU_WINDOW_SUBSTRING（会合并进列表）。\n"
+        f"  请确认已打开千牛「接待中心」，并在任务栏点开该窗口后重试。\n"
+        f"  若仍失败可设 WINDOW_LOCATE_SKIP_ENABLED_FILTER=true 再试（部分环境后台窗 IsEnabled 为 false）。"
+    )
+
+
 def locate_main_window_once() -> Control | None:
     sel = get_selectors()
     subs = [s.strip() for s in sel.window_title_substrings if s and str(s).strip()]
@@ -171,7 +185,7 @@ def locate_main_window_once() -> Control | None:
             name = w.Name or ""
             if not any(s in name for s in subs):
                 continue
-            if not w.IsEnabled:
+            if not settings.window_locate_skip_enabled_filter and not w.IsEnabled:
                 continue
             matches.append(w)
         except Exception:

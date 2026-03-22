@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     # 开发排障：将 FastGPT 失败时的状态码与响应片段写入日志（勿在生产长期开启大量敏感内容）
     fastgpt_log_failures: bool = True
 
+    # 为 true 时：在调用 FastGPT 前根据买家原文做意图归类，并注入「像真人、先答具体问题」等行为约束（推荐开启）
+    chat_augment_enabled: bool = True
+
+    # 为 true 时：不调用 FastGPT，直接返回 chat_stub_reply（省积分；转人工逻辑仍生效）
+    chat_stub_mode: bool = False
+    chat_stub_reply: str = "回复测试~"
+
     # 相对 msg-router 工作目录
     sqlite_path: str = "data/conversations.db"
 

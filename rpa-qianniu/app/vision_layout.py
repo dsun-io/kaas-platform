@@ -4,8 +4,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from typing import Any
 
+import numpy as np
 import uiautomation as auto
 
 from app.config import settings
@@ -39,6 +41,9 @@ class VisionLayout:
     right_panel: ScreenRect
     message_area: ScreenRect
     input_area: ScreenRect
+    # 校准得到的「发送」中心（屏幕坐标）；无则回复流程需 OCR 找「发送」
+    send_button_center_screen: tuple[int, int] | None = None
+    cal_source: str = "ratio"
 
 
 def rect_from_window(win: auto.Control) -> ScreenRect:
@@ -99,4 +104,92 @@ def layout_from_rect(window: ScreenRect) -> VisionLayout:
         right_panel=right_panel,
         message_area=message_area,
         input_area=input_area,
+        send_button_center_screen=None,
+        cal_source="ratio",
     )
+
+
+def _screen_rect_from_cal_window(window: ScreenRect, r: dict[str, Any]) -> ScreenRect:
+    wl, wt = window.left, window.top
+    return ScreenRect(
+        wl + int(r["x1"]),
+        wt + int(r["y1"]),
+        wl + int(r["x2"]),
+        wt + int(r["y2"]),
+    )
+
+
+def layout_from_calibration_dict(
+    window: ScreenRect,
+    cal: dict[str, Any],
+    *,
+    cal_source: str = "calibration",
+) -> VisionLayout:
+    """将 auto_calibrate 返回的窗口内坐标转为屏幕矩形。"""
+    nav = cal["left_nav_strip"]
+    left_panel = cal["left_panel"]
+    chat = cal["chat_panel"]
+    right = cal["right_panel"]
+    msg = cal["message_area"]
+    inp = cal["input_area"]
+    sb = cal.get("send_button")
+    send_xy: tuple[int, int] | None = None
+    if isinstance(sb, dict):
+        try:
+            send_xy = (
+                window.left + int(sb["x"]),
+                window.top + int(sb["y"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            send_xy = None
+    return VisionLayout(
+        window=window,
+        left_nav_strip=_screen_rect_from_cal_window(window, nav),
+        left_panel=_screen_rect_from_cal_window(window, left_panel),
+        chat_panel=_screen_rect_from_cal_window(window, chat),
+        right_panel=_screen_rect_from_cal_window(window, right),
+        message_area=_screen_rect_from_cal_window(window, msg),
+        input_area=_screen_rect_from_cal_window(window, inp),
+        send_button_center_screen=send_xy,
+        cal_source=cal_source,
+    )
+
+
+def build_vision_layout(window: ScreenRect, bgr: np.ndarray | None) -> VisionLayout:
+    """
+    优先读 vision_calibration.json（window_size 与截图一致）→ 否则 OCR 校准 → 失败则 .env 比例。
+    """
+    from app.logger import get_logger
+    from app.vision_calibrate import (
+        auto_calibrate,
+        save_calibration_cache,
+        try_load_calibration_cache,
+    )
+
+    log = get_logger("vision_layout")
+
+    if not settings.vision_auto_calibrate:
+        return layout_from_rect(window)
+
+    wh: tuple[int, int] | None = None
+    if bgr is not None and bgr.size > 0:
+        wh = (int(bgr.shape[1]), int(bgr.shape[0]))
+
+    if wh is not None:
+        cached = try_load_calibration_cache(wh)
+        if cached:
+            log.debug("[校准] 复用缓存 window_size=%sx%s", wh[0], wh[1])
+            return layout_from_calibration_dict(window, cached, cal_source="cache")
+
+    if bgr is None or bgr.size == 0:
+        log.warning("[校准] 无有效截图，使用 .env 比例")
+        return layout_from_rect(window)
+
+    cal = auto_calibrate(bgr)
+    if cal:
+        save_calibration_cache(cal)
+        log.info("[校准] 自动校准成功（调试图已由 auto_calibrate 写出）")
+        return layout_from_calibration_dict(window, cal, cal_source="calibration")
+
+    log.warning("[WARNING] 自动校准失败，使用默认比例")
+    return replace(layout_from_rect(window), cal_source="ratio_fallback")

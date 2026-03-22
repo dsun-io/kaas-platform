@@ -117,6 +117,7 @@ async def chat_completion(
     *,
     user_message: str,
     chat_id: str,
+    variables: dict[str, Any] | None = None,
 ) -> tuple[str, bool]:
     """
     调用 FastGPT OpenAPI。
@@ -133,7 +134,7 @@ async def chat_completion(
         "stream": False,
         "detail": settings.fastgpt_chat_detail,
         "messages": [{"role": "user", "content": user_message}],
-        "variables": {},
+        "variables": dict(variables) if variables else {},
     }
     timeout = httpx.Timeout(settings.fastgpt_timeout_seconds)
     try:

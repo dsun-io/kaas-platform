@@ -5,3 +5,11 @@ pydantic>=2.5.0
 pydantic-settings>=2.1.0
 python-dotenv>=1.0.0
 pyperclip>=1.9.0
+pynput>=1.7.6
+numpy>=1.24.0
+opencv-python-headless>=4.8.0
+Pillow>=10.0.0
+# 聊天列 OCR 锚定（PaddleOCR + paddlepaddle，包体较大；不需要可注释并设 CHAT_OCR_ENABLED=false）
+# paddlepaddle 3.3.0+ 在 CPU+oneDNN 上有已知 PIR 崩溃（Paddle#77340），暂限制 <3.3
+paddlepaddle>=3.2.2,<3.3.0
+paddleocr>=2.7.0.3

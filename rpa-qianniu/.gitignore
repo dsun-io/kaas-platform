@@ -3,4 +3,8 @@
 __pycache__/
 *.py[cod]
 logs/
+debug/*.png
 data/
+# 会话留档与单实例锁（若仅忽略 data/ 可省略下列行）
+data/chat_logs.jsonl
+data/.rpa.lock

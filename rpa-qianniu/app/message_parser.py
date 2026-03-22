@@ -1,5 +1,330 @@
 import re
 
+# 千牛右侧数据条、角标等易被误当成买家昵称
+_JUNK_BUYER_ID = re.compile(r"^\d+(?:\.\d+)?%$")
+_PRICE_LIKE = re.compile(r"^[￥¥]?\s*[\d,]+(?:\.\d+)?\s*(?:元)?$")
+# 纯小数金额（订单卡片常见 102.00）
+_DECIMAL_MONEY_ONLY = re.compile(r"^[\d,]+(?:\.\d{2})\s*$")
+
+_UI_LABEL_EXACT = frozenset(
+    {
+        "分享",
+        "库存",
+        "仓库",
+        "首页",
+        "数据",
+        "商品",
+        "订单",
+        "营销",
+        "交易",
+        "服务",
+        "插件",
+        "应用",
+    }
+)
+
+# 千牛右侧买家信息 / 订单卡片 / 物流 / 推荐区短标签（整句精确匹配，避免误杀真咨询）
+_PANEL_LABEL_EXACT = frozenset(
+    {
+        # 时间
+        "发货时间",
+        "付款时间",
+        "下单时间",
+        "成交时间",
+        "关闭时间",
+        "创建时间",
+        "预约配送",
+        "预计送达",
+        "送达时间",
+        "签收时间",
+        "退款时间",
+        "申请时间",
+        "处理时间",
+        "剩余时间",
+        "有效期至",
+        "截止时间",
+        # 物流
+        "物流信息",
+        "物流详情",
+        "物流跟踪",
+        "查看物流",
+        "物流进度",
+        "快递公司",
+        "承运商",
+        "配送方式",
+        "自提点",
+        "收货人",
+        "收货地址",
+        "发货地",
+        "发货地址",
+        "修改地址",
+        "默认地址",
+        "复制地址",
+        "快递单号",
+        "运单号",
+        "物流单号",
+        "发货单号",
+        # 订单 / 交易
+        "订单编号",
+        "订单详情",
+        "订单状态",
+        "主订单",
+        "子订单",
+        "主子订单",
+        "交易快照",
+        "商品快照",
+        "交易关闭",
+        "交易成功",
+        "等待买家付款",
+        "等待卖家发货",
+        "等待买家确认",
+        "买家已付款",
+        "卖家已发货",
+        "已发货",
+        "待发货",
+        "待收货",
+        "待评价",
+        "已评价",
+        "未评价",
+        "已追评",
+        "追评",
+        "去评价",
+        "写评价",
+        "查看评价",
+        "评价有礼",
+        "双方已评",
+        "买家已评",
+        "卖家已评",
+        "有图评价",
+        "好评率",
+        "退款中",
+        "退款成功",
+        "售后维权",
+        "申请退款",
+        "退换货",
+        # 金额
+        "实付款",
+        "实收款",
+        "应付金额",
+        "商品总价",
+        "订单金额",
+        "优惠金额",
+        "店铺优惠",
+        "跨店满减",
+        "运费",
+        "服务费",
+        "税费",
+        "定金",
+        "尾款",
+        "分期付款",
+        # 商品信息区
+        "商品详情",
+        "商品信息",
+        "商品标题",
+        "品牌",
+        "型号",
+        "货号",
+        "SKU",
+        "规格",
+        "数量",
+        "库存",
+        "现货",
+        "仓库中",
+        "已售罄",
+        "下架",
+        # 右侧互动 / 足迹
+        "足迹",
+        "推荐",
+        "猜你喜欢",
+        "看了又看",
+        "相似宝贝",
+        "历史订单",
+        "历史足迹",
+        "浏览记录",
+        "买家信息",
+        "卖家信息",
+        "联系买家",
+        "店铺名片",
+        "进店逛逛",
+        # 客服操作
+        "备注",
+        "标旗",
+        "星标",
+        "置顶会话",
+        "转交同事",
+        "智能客服",
+        "机器人回复",
+        "推荐回复",
+        "快捷短语",
+        "常用语",
+        # 空态 / 列表操作
+        "暂无数据",
+        "暂无订单",
+        "暂无足迹",
+        "加载中",
+        "点击加载",
+        "查看更多",
+        "查看全部",
+        "查看详情",
+        "展开",
+        "收起",
+        "复制",
+        "复制单号",
+        "一键复制",
+        # 千牛 / 平台提示短句
+        "接待中心",
+        "平台通知",
+        "服务提醒",
+        "违规预警",
+        "点击直接查看",
+        "点击查看详情",
+        # 价保 / 规则类标题（易被扫成「消息」）
+        "价保信息",
+        "价保服务",
+        "价保险",
+        "价格保护",
+        "发票信息",
+        "保修信息",
+        "赠品信息",
+        "套餐信息",
+        "活动信息",
+        "优惠信息",
+        "价格说明",
+        "活动规则",
+        "服务说明",
+        "购买须知",
+        "配送说明",
+        "退换说明",
+        "用户评价",
+        "问大家",
+        "宝贝评价",
+    }
+)
+
+# 侧栏标题行：「前缀 + 信息/说明/须知/提示 + 冒号」，整句无正文（非买家完整问句）
+_PANEL_INFO_HEADER_RE = re.compile(
+    r"^[\u4e00-\u9fff]{2,14}(信息|说明|须知|提示)\s*[：:]\s*$"
+)
+
+# 订单/交易进度常见「已xx」状态角标（整句仅此三字）
+_PANEL_STATUS_YI_RE = re.compile(
+    r"^已(付款|发货|签收|评价|追评|关闭|确认|退款|成交)$"
+)
+
+# 整句形态像商品/订单条（仅 fullmatch 级，避免「满200包邮」等真咨询被前缀误杀）
+_PANEL_LINE_RE = (
+    re.compile(r"^共\d+(件|个|款|条)$"),
+    re.compile(r"^合计[：:]\s*[￥¥]?[\d,.]+$"),
+)
+
+# 订单/侧栏里单独一行的「字段名+冒号」无正文（如聊天区误扫到的「实收：」）；须 fullmatch，避免杀「实收是多少」
+_PANEL_FIELD_COLON_STUB = re.compile(
+    r"^(?:实收|实付|应收|应付|已收|已付|合计|小计|共计|总计|明细|运费|保价|优惠|折扣|立减|满减|单价|数量|件数|"
+    r"库存|赠品|发票|快照|退款|售后|维权|物流|发货|收货|付款|下单|成交|价保|满赠|赠送|实发|实到|"
+    r"买家留言|卖家备注|订单备注|交易说明|商品总额|店铺合计|平台优惠|红包|积分)"
+    r"(?:金额|款|额|价|量|费|信息|说明|时间|状态)?[：:]\s*$"
+)
+
+# 会话元信息里单独一行的「角色+冒号」，无正文
+_PANEL_ROLE_COLON_STUB = frozenset(
+    ("买家：", "买家:", "卖家：", "卖家:", "客服：", "客服:", "店主：", "店主:", "系统：", "系统:", "平台：", "平台:", "店铺：", "店铺:", "掌柜：", "掌柜:")
+)
+
+
+def is_panel_colon_stub(text: str) -> bool:
+    """整句仅为订单/金额区「字段名+冒号」或无正文的角色标签。"""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _PANEL_FIELD_COLON_STUB.match(t):
+        return True
+    if t in _PANEL_ROLE_COLON_STUB:
+        return True
+    return False
+
+
+_SUBSTANTIVE = re.compile(r"[\u4e00-\u9fffA-Za-z0-9]|[？！?!]")
+
+# 单字/碎片常被 OCR 或侧栏截断扫进「最后一条」（如「共」「件」）
+_MIN_BUYER_MESSAGE_LEN = 2
+# 短句里出现以下词且无问句痕迹时，多为订单/商品条，非买家打字
+_SHORT_NOISE_KEYWORDS = (
+    "库存",
+    "销量",
+    "SKU",
+    "sku",
+    "雇佣",
+    "已评价",
+    "订单",
+    "物流",
+    "收货",
+    "付款",
+)
+_LIKELY_QUESTION_TAIL = re.compile(r"[？?！!吗呢嘛吧呀么咯蛤呐]$")
+_LIKELY_QUESTION_HINT = (
+    "怎么",
+    "什么",
+    "多少",
+    "为什么",
+    "为啥",
+    "请问",
+    "有没有",
+    "能不能",
+    "可以吗",
+    "行吗",
+    "多久",
+    "几天",
+    "包邮",
+    "有货",
+)
+
+# 右侧面板常见「共 N 件」类碎片（非完整买家句）
+_PANEL_COUNT_FRAG_RE = re.compile(r"^共\d*[件个台条款]?$")
+
+
+def is_short_buyer_keyword_noise(text: str) -> bool:
+    """
+    短文本侧栏/订单噪声：含典型电商字段且不像问句。
+    长句不据此拒绝（避免「订单什么时候发」被误杀）。
+    """
+    t = (text or "").strip()
+    if len(t) < _MIN_BUYER_MESSAGE_LEN:
+        return True
+    if _PANEL_COUNT_FRAG_RE.match(t):
+        return True
+    if len(t) > 10:
+        return False
+    if _LIKELY_QUESTION_TAIL.search(t):
+        return False
+    for hint in _LIKELY_QUESTION_HINT:
+        if hint in t:
+            return False
+    for kw in _SHORT_NOISE_KEYWORDS:
+        if kw in t:
+            return True
+    if "￥" in t or "¥" in t:
+        return True
+    return False
+
+
+def has_substantive_buyer_text(text: str) -> bool:
+    """至少含一个汉字/字母/数字或明显问句标点；长度须 >=2，排除单字碎片。"""
+    t = (text or "").strip()
+    if len(t) < _MIN_BUYER_MESSAGE_LEN:
+        return False
+    return _SUBSTANTIVE.search(t) is not None
+
+
+def _looks_like_buyer_question(t: str) -> bool:
+    """含明显问句形态时，不因正文里出现「订单/物流」等词整体判为系统提示。"""
+    if _LIKELY_QUESTION_TAIL.search(t):
+        return True
+    for hint in _LIKELY_QUESTION_HINT:
+        if hint in t:
+            return True
+    return False
+
+
 _SYSTEM_HINTS = (
     "订单",
     "物流",
@@ -23,35 +348,133 @@ _SYSTEM_HINTS = (
 )
 
 
+def is_ocr_noise_message(text: str) -> bool:
+    """
+    OCR 在聊天列里扫到的订单价、纯数字条等，非客户打字内容。
+    （比 is_system_message 更偏「金额/货号形态」，用于 OCR 路径。）
+    """
+    t = (text or "").strip()
+    if not t:
+        return True
+    if _PRICE_LIKE.match(t):
+        return True
+    if _DECIMAL_MONEY_ONLY.match(t.replace(" ", "")):
+        return True
+    if re.fullmatch(r"[￥¥]\s*[\d,.]+", t.replace(" ", "")):
+        return True
+    if re.fullmatch(r"[\d,]+(?:\.\d{1,4})?", t.replace(",", "")) and len(t) <= 14:
+        return True
+    return False
+
+
+def is_non_message_ui_text(text: str) -> bool:
+    """
+    千牛聊天区占位/状态文案，不是买家发送的内容。
+    仅用整句匹配，避免把「对方输入慢」等真咨询误判掉。
+    """
+    t = (text or "").strip()
+    if not t:
+        return True
+    core = re.sub(r"[.。…·\s]+$", "", t).strip()
+    # 常见：双方输入中 / 对方输入中 / 对方正在输入…
+    if re.fullmatch(r"(双方输入中|对方输入中|对方正在输入|正在输入)(\.{0,3}|…{0,2})?", core):
+        return True
+    if core in ("说点什么", "点此输入", "请输入消息"):
+        return True
+    return False
+
+
 def is_system_message(text: str) -> bool:
     t = (text or "").strip()
     if not t:
         return True
+    if is_non_message_ui_text(t):
+        return True
+    if is_panel_colon_stub(t):
+        return True
+    if is_ocr_noise_message(t):
+        return True
     if len(t) > 2000:
+        return True
+    if t in _UI_LABEL_EXACT:
+        return True
+    if t in _PANEL_LABEL_EXACT:
+        return True
+    t_no_colon = re.sub(r"[：:]\s*$", "", t)
+    if t_no_colon in _PANEL_LABEL_EXACT:
+        return True
+    if _PANEL_INFO_HEADER_RE.fullmatch(t):
+        return True
+    if _PANEL_STATUS_YI_RE.fullmatch(t):
+        return True
+    for pat in _PANEL_LINE_RE:
+        if pat.match(t):
+            return True
+    if re.match(r"^仓库中\(\d+\)$", t):
         return True
     for h in _SYSTEM_HINTS:
         if h in t:
+            if _looks_like_buyer_question(t) and len(t) >= 5:
+                continue
             return True
+    if is_short_buyer_keyword_noise(t):
+        return True
     return False
 
 
 _TIME_TAIL = re.compile(
     r"(?:\s|^)(\d{1,2}:\d{2}(?::\d{2})?)\s*$"
 )
+# 气泡内常见日期前缀（与 HH:mm 二选一或并存）
+_DATE_HINT = re.compile(r"(昨天|今日|今天|前天|\d{1,2}[-/月]\d{1,2})")
 
 
 def extract_time_token(text: str) -> str | None:
+    """从气泡文案末尾取 HH:mm（或 :ss），用于区分同文不同条。"""
     m = _TIME_TAIL.search((text or "").strip())
     return m.group(1) if m else None
+
+
+def extract_date_time_hints(text: str) -> str:
+    """尾缀时钟以外的日期词（与 extract_time_token 互补）。"""
+    t = (text or "").strip()
+    if not t:
+        return ""
+    parts = [m.group(1) for m in _DATE_HINT.finditer(t)]
+    return "|".join(parts) if parts else ""
 
 
 def normalize_buyer_id(raw: str) -> str:
     s = (raw or "").strip()
     s = re.sub(r"\s+", " ", s)
-    return s or "unknown_buyer"
+    if not s:
+        return "unknown_buyer"
+    compact = re.sub(r"\s+", "", s)
+    if _JUNK_BUYER_ID.match(compact):
+        return "active_chat"
+    if _PRICE_LIKE.match(s.strip()):
+        return "active_chat"
+    if re.fullmatch(r"[\d.,\s]+", s.strip()):
+        return "active_chat"
+    return s
 
 
-def fingerprint_key(buyer_id: str, message: str, time_token: str | None) -> str:
+def fingerprint_key(
+    buyer_id: str,
+    message: str,
+    time_token: str | None,
+    bubble_bottom_y: float | None = None,
+) -> str:
+    """
+    唯一标识「这一回合买家消息」：正文 + 解析到的时间 + 气泡在屏幕上的底边 Y。
+    同一句文案新发一条时，时间或 Y 通常与上一条不同；仅点开会话不发送时仍显示旧气泡则与已处理指纹一致。
+    """
     msg = (message or "").strip()
     tt = time_token if time_token else "__no_ts__"
-    return f"{buyer_id}\x1f{msg}\x1f{tt}"
+    hints = extract_date_time_hints(msg)
+    th = hints if hints else "__no_date__"
+    if bubble_bottom_y is not None:
+        yb = f"{float(bubble_bottom_y):.1f}"
+    else:
+        yb = "__no_y__"
+    return f"{buyer_id}\x1f{msg}\x1f{tt}\x1f{th}\x1f{yb}"
