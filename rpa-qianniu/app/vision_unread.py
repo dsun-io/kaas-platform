@@ -109,47 +109,31 @@ def find_pending_session(
 
     pending_bottom: int | None = None
     pending_top: int | None = None
+    pending_count_zero = False
     replied_top: int | None = None
 
+    # 同时扫描「待回复」和「已回复」两个标签
     for b in boxes:
         raw = (b.text or "").strip()
         t = re.sub(r"\s+", "", raw)
-        if "待回复" not in t and "待回复" not in raw:
-            continue
-        m = re.search(r"[\(（]\s*(\d+)\s*[\)）]", raw)
-        if m and int(m.group(1)) == 0:
-            log.info("[会话检测] 待回复数量为 0，跳过: %r", raw)
-            return None
-        pending_bottom = b.bottom if pending_bottom is None else max(pending_bottom, b.bottom)
-        pending_top = b.top if pending_top is None else min(pending_top, b.top)
 
-    if pending_bottom is None:
-        log.info("[会话检测] 未找到「待回复」分组")
-        return None
+        # 检测「待回复」标签
+        if "待回复" in t or "待回复" in raw:
+            m = re.search(r"[\(（]\s*(\d+)\s*[\)）]", raw)
+            if m and int(m.group(1)) == 0:
+                log.info("[会话检测] 待回复数量为 0: %r", raw)
+                pending_count_zero = True
+            else:
+                pending_bottom = b.bottom if pending_bottom is None else max(pending_bottom, b.bottom)
+                pending_top = b.top if pending_top is None else min(pending_top, b.top)
 
-    for b in boxes:
-        raw = (b.text or "").strip()
-        t = re.sub(r"\s+", "", raw)
-        if "已回复" not in t and "已回复" not in raw:
-            continue
-        if b.top > pending_bottom - 5:
+        # 检测「已回复」标签（不依赖 pending_bottom）
+        if "已回复" in t or "已回复" in raw:
+            # 取所有已回复标签的最小 top
             replied_top = b.top if replied_top is None else min(replied_top, b.top)
 
-    click_sx = (left.left + left.right) // 2
-    if replied_top is not None and replied_top > pending_bottom:
-        click_sy = (pending_bottom + replied_top) // 2
-    else:
-        click_sy = pending_bottom + max(40, min(80, left.h // 14))
-
-    log.info(
-        "[会话检测] 待回复底=%s 已回复顶=%s → 屏幕点击=(%s,%s)",
-        pending_bottom,
-        replied_top,
-        click_sx,
-        click_sy,
-    )
-
     # 检测「已回复」分组中带有橙色时间气泡的会话（买家再次发消息后会产生）
+    # 优先级：橙色气泡 > 待回复首条（橙色气泡代表买家再次催促，时效性更高）
     replied_session = _find_replied_with_orange_badge(
         bgr, win, left, _hwnd, pending_bottom, replied_top
     )
@@ -161,44 +145,64 @@ def find_pending_session(
         )
         return replied_session
 
-    if should_save("unread_detected"):
-        try:
-            root = Path(settings.vision_debug_dir)
-            root.mkdir(parents=True, exist_ok=True)
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
-            dbg = crop.copy()
-            ch, cw = dbg.shape[:2]
-            bw, bh = bgr.shape[1], bgr.shape[0]
-            ww, wh = max(1, win.w), max(1, win.h)
-            bx = (click_sx - win.left) * bw / ww
-            by = (click_sy - win.top) * bh / wh
-            lcx = int(bx - ox)
-            lcy = int(by - oy)
-            pb = int((pending_bottom - win.top) * bh / wh - oy)
-            rt = (
-                int((replied_top - win.top) * bh / wh - oy)
-                if replied_top is not None
-                else None
-            )
-            if 0 <= pb < ch:
-                cv2.line(dbg, (0, pb), (cw, pb), (0, 255, 0), 1)
-            if rt is not None and 0 <= rt < ch:
-                cv2.line(dbg, (0, rt), (cw, rt), (255, 0, 0), 1)
-            lcx = max(0, min(cw - 1, lcx))
-            lcy = max(0, min(ch - 1, lcy))
-            cv2.drawMarker(
-                dbg,
-                (lcx, lcy),
-                (0, 0, 255),
-                markerType=cv2.MARKER_CROSS,
-                markerSize=18,
-                thickness=2,
-            )
-            cv2.imwrite(str(root / f"{ts}_pending_session.png"), dbg)
-        except Exception:
-            pass
+    # 当「待回复」存在且有会话时，点击待回复首条
+    if pending_bottom is not None and not pending_count_zero:
+        click_sx = (left.left + left.right) // 2
+        if replied_top is not None and replied_top > pending_bottom:
+            click_sy = (pending_bottom + replied_top) // 2
+        else:
+            click_sy = pending_bottom + max(40, min(80, left.h // 14))
 
-    return int(click_sx), int(click_sy)
+        log.info(
+            "[会话检测] 待回复底=%s 已回复顶=%s → 屏幕点击=(%s,%s)",
+            pending_bottom,
+            replied_top,
+            click_sx,
+            click_sy,
+        )
+
+        if should_save("unread_detected"):
+            try:
+                root = Path(settings.vision_debug_dir)
+                root.mkdir(parents=True, exist_ok=True)
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+                dbg = crop.copy()
+                ch, cw = dbg.shape[:2]
+                bw, bh = bgr.shape[1], bgr.shape[0]
+                ww, wh = max(1, win.w), max(1, win.h)
+                bx = (click_sx - win.left) * bw / ww
+                by = (click_sy - win.top) * bh / wh
+                lcx = int(bx - ox)
+                lcy = int(by - oy)
+                pb = int((pending_bottom - win.top) * bh / wh - oy)
+                rt = (
+                    int((replied_top - win.top) * bh / wh - oy)
+                    if replied_top is not None
+                    else None
+                )
+                if 0 <= pb < ch:
+                    cv2.line(dbg, (0, pb), (cw, pb), (0, 255, 0), 1)
+                if rt is not None and 0 <= rt < ch:
+                    cv2.line(dbg, (0, rt), (cw, rt), (255, 0, 0), 1)
+                lcx = max(0, min(cw - 1, lcx))
+                lcy = max(0, min(ch - 1, lcy))
+                cv2.drawMarker(
+                    dbg,
+                    (lcx, lcy),
+                    (0, 0, 255),
+                    markerType=cv2.MARKER_CROSS,
+                    markerSize=18,
+                    thickness=2,
+                )
+                cv2.imwrite(str(root / f"{ts}_pending_session.png"), dbg)
+            except Exception:
+                pass
+
+        return int(click_sx), int(click_sy)
+
+    # 待回复为空且已回复无橙色气泡
+    log.info("[会话检测] 待回复为空且已回复无橙色气泡，无会话需要处理")
+    return None
 
 
 def _unread_badge_mask(bgr: np.ndarray) -> np.ndarray | None:
@@ -432,9 +436,11 @@ def _find_replied_with_orange_badge(
 
     # 构建「已回复」分组区域（整段会话列表）
     replied_bottom = left.bottom
+
+    # 仅在 pending_bottom 存在时进行位置合理性校验
     if pending_bottom is not None and replied_top < pending_bottom:
         # 异常情况：已回复在待回复上方，不处理
-        log.debug("[已回复检测] 已回复标签位置异常，跳过")
+        log.debug("[已回复检测] 已回复标签位置异常（在待回复上方），跳过")
         return None
 
     # 裁剪左栏区域进行 OCR
