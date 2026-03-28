@@ -12,29 +12,26 @@ alwaysApply: true
 
 ## 2) 任务页面结构（必须遵守）
 - 属性用于筛选：`任务名`、`状态`、`优先级`、`关联模块`、`任务类型`、`产出物`、`验收结果`、`创建时间`、`最后更新`。
-- 正文固定 3 个选项卡：
+- 正文固定 2 个选项卡：
   - `📋 任务 Spec`：Nano 维护需求、方案、验收标准、执行指令
   - `📝 执行日志`：所有角色按时间顺序追加
-  - `🔧 Nano 返修记录`：Nano 返修诊断、路由、修复操作
 - 页面底部独立区块：`🔍 David 验收反馈`。
 
-## 3) 完整状态列表（8 个）
+## 3) 完整状态列表（7 个）
 - `编辑中`（灰，to_do）
 - `待启动`（橙，to_do）
 - `Nano规划`（蓝，in_progress）
 - `Cursor开发`（紫，in_progress）
 - `Nano验收`（蓝，in_progress）
 - `David验收`（红，to_do）
-- `Nano返修`（橙，in_progress）
 - `已完成`（绿，complete）
 
 ## 4) 状态前置校验表（严格执行）
 - `待启动` <- `编辑中`
-- `Nano规划` <- `待启动 / Nano返修 / Cursor开发`
-- `Cursor开发` <- `Nano规划 / Nano验收 / Nano返修`
+- `Nano规划` <- `待启动 / David验收 / Cursor开发`
+- `Cursor开发` <- `Nano规划 / Nano验收 / David验收`
 - `Nano验收` <- `Cursor开发`
-- `David验收` <- `Nano验收 / Nano规划 / Nano返修`
-- `Nano返修` <- `David验收`
+- `David验收` <- `Nano验收 / Nano规划`
 - `已完成` <- `David验收`
 - 非法流转必须拒绝，并在 `📝 执行日志` 追加：`[角色] YYYY-MM-DD HH:mm 非法状态流转：A -> B（已拒绝）`。
 
@@ -121,12 +118,11 @@ alwaysApply: true
 - next_action:
 ```
 
-## 7) Nano返修路由与全局约束
-- 返修路由：
+## 7) David验收打回路由与全局约束
+- 打回路由：
   - Spec 问题 -> `Nano规划`
   - 实现问题 -> `Cursor开发`
-  - 小问题 Nano 可自修 -> `David验收`
-- 单任务限制：同一时间仅允许一个活跃任务（`Nano规划 / Cursor开发 / Nano验收 / Nano返修`）。
+- 单任务限制：同一时间仅允许一个活跃任务（`Nano规划 / Cursor开发 / Nano验收`）。
 - 循环上限：`Cursor开发 <-> Nano验收` 超过 3 次，需升级到 `David验收` 并记录人工介入。
 
 ## 8) Cursor 执行铁律（提交前必做，不可跳过）
