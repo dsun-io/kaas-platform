@@ -35,6 +35,11 @@ async def chat(req: ChatRequest) -> ChatResponse:
             status_code=400,
             detail='platform 必须是 "qianniu" 或 "pdd"',
         )
+    if not req.message or not req.message.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="message 不能为空",
+        )
     need_fastgpt = (
         not check_transfer_intent(req.message).should_transfer
         and not settings.chat_stub_mode

@@ -166,11 +166,13 @@ def main() -> None:
                 log.info("收到 buyer=%s msg=%s", buyer, msg)
 
                 conv = state.conversations.get(buyer)
-                reply, new_conv, elapsed_ms = ai_chat(
+                reply, new_conv, elapsed_ms, err = ai_chat(
                     buyer_id=buyer,
                     message=msg,
                     conversation_id=conv,
                 )
+                if err:
+                    log.warning("AI 调用失败: %s", err)
                 if new_conv:
                     state.conversations[buyer] = new_conv
 

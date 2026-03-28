@@ -52,3 +52,29 @@ def test_chat_invalid_platform() -> None:
     with TestClient(app) as client:
         resp = client.post("/v1/chat", json=payload)
     assert resp.status_code == 400
+
+
+def test_chat_empty_message() -> None:
+    """测试空消息校验：message 为空字符串时应返回 400"""
+    payload = {
+        "platform": "qianniu",
+        "buyer_id": "buyer-1",
+        "message": "",
+    }
+    with TestClient(app) as client:
+        resp = client.post("/v1/chat", json=payload)
+    assert resp.status_code == 400
+    assert "不能为空" in resp.json()["detail"]
+
+
+def test_chat_whitespace_message() -> None:
+    """测试空白消息校验：message 为纯空白时应返回 400"""
+    payload = {
+        "platform": "pdd",
+        "buyer_id": "buyer-1",
+        "message": "   ",
+    }
+    with TestClient(app) as client:
+        resp = client.post("/v1/chat", json=payload)
+    assert resp.status_code == 400
+    assert "不能为空" in resp.json()["detail"]
