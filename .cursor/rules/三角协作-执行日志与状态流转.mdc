@@ -1,0 +1,130 @@
+---
+description: 三角协作执行器规则（新版状态机与选项卡日志）
+alwaysApply: true
+---
+
+# 三角协作执行器（Cursor）规则
+
+## 1) 角色与真相源
+- 仅存在三个角色：`Nano Auto`、`Cursor`、`David`；规则中禁止出现 `QClaw`。
+- Notion 是唯一真相源；执行时以任务卡正文 `📋 任务 Spec` 为唯一输入依据。
+- `三角协作工作流规范` 页面只读，仅查看，不写入。
+
+## 2) 任务页面结构（必须遵守）
+- 属性用于筛选：`任务名`、`状态`、`优先级`、`关联模块`、`任务类型`、`产出物`、`验收结果`、`创建时间`、`最后更新`。
+- 正文固定 3 个选项卡：
+  - `📋 任务 Spec`：Nano 维护需求、方案、验收标准、执行指令
+  - `📝 执行日志`：所有角色按时间顺序追加
+  - `🔧 Nano 返修记录`：Nano 返修诊断、路由、修复操作
+- 页面底部独立区块：`🔍 David 验收反馈`。
+
+## 3) 完整状态列表（8 个）
+- `编辑中`（灰，to_do）
+- `待启动`（橙，to_do）
+- `Nano规划`（蓝，in_progress）
+- `Cursor开发`（紫，in_progress）
+- `Nano验收`（蓝，in_progress）
+- `David验收`（红，to_do）
+- `Nano返修`（橙，in_progress）
+- `已完成`（绿，complete）
+
+## 4) 状态前置校验表（严格执行）
+- `待启动` <- `编辑中`
+- `Nano规划` <- `待启动 / Nano返修 / Cursor开发`
+- `Cursor开发` <- `Nano规划 / Nano验收 / Nano返修`
+- `Nano验收` <- `Cursor开发`
+- `David验收` <- `Nano验收 / Nano规划 / Nano返修`
+- `Nano返修` <- `David验收`
+- `已完成` <- `David验收`
+- 非法流转必须拒绝，并在 `📝 执行日志` 追加：`[角色] YYYY-MM-DD HH:mm 非法状态流转：A -> B（已拒绝）`。
+
+## 5) Cursor 执行规则
+- 启动前读取 `📋 任务 Spec`，不得按猜测扩需求。
+- 完成后必须按顺序做四件事（顺序不可变）：
+  - 先执行 `git add`、`git commit`、`git push`
+  - push 成功后更新属性 `产出物`（PR/分支/commit）
+  - 向 `📝 执行日志` 追加结构化记录（必须含 commit hash 与 push 结果）
+  - 状态从 `Cursor开发` 流转到 `Nano验收`
+- 阻塞时在 `📝 执行日志` 写明原因，并将状态回退到 `Nano规划`。
+
+## 6) 执行日志规范（写入📝选项卡，必须高密度可审计）
+- 格式：`[Nano/Cursor/David] YYYY-MM-DD HH:mm 内容`
+- 只允许追加，不覆盖历史。
+- Cursor 日志必须包含以下 12 项（缺一不可）：
+  - `任务元数据`：task_id、task_url、spec_version、repo、branch、pr_or_commit、operator
+  - `目标与范围`：本次做什么/不做什么，边界条件
+  - `输入快照`：读取了哪些 Notion 区块与关键字段
+  - `环境快照`：关键命令版本/运行环境摘要（如与任务相关）
+  - `执行时间线`：按序号记录每一步动作、原因、结果
+  - `改动明细`：每个文件的改动点、目的、影响面
+  - `验证矩阵`：命令、预期、实际、结论、证据摘要
+  - `验收映射`：验收标准 -> 证据 -> 结论
+  - `异常与处置`：失败/重试/降级策略与最终状态
+  - `风险与回滚`：风险触发条件、监控信号、回滚步骤
+  - `产出清单`：PR/分支/文件路径/制品链接
+  - `待办与建议`：后续动作、人工确认项、依赖方动作
+- 推荐使用以下骨架（追加到 `📝 执行日志`）：
+```markdown
+[Cursor] YYYY-MM-DD HH:mm 开发完成
+## 1. 任务元数据
+- task_id:
+- task_url:
+- spec_version:
+- repo/branch:
+- pr_or_commit:
+- operator:
+
+## 2. 目标与范围
+- in_scope:
+- out_of_scope:
+- constraints:
+
+## 3. 输入快照
+- notion_spec:
+- acceptance_items:
+- current_status:
+
+## 4. 执行时间线
+1) action -> reason -> result
+2) ...
+
+## 5. 改动明细
+- file: <path>
+  - change:
+  - purpose:
+  - impact:
+
+## 6. 验证矩阵
+- cmd:
+  - expected:
+  - actual:
+  - result: PASS/FAIL
+  - evidence:
+
+## 7. 验收映射
+- criterion -> evidence -> PASS/FAIL
+
+## 8. 异常与处置
+- issue:
+- handling:
+- final:
+
+## 9. 风险与回滚
+- risk:
+- trigger:
+- rollback:
+
+## 10. 产出清单
+- artifact:
+
+## 11. 待办与建议
+- next_action:
+```
+
+## 7) Nano返修路由与全局约束
+- 返修路由：
+  - Spec 问题 -> `Nano规划`
+  - 实现问题 -> `Cursor开发`
+  - 小问题 Nano 可自修 -> `David验收`
+- 单任务限制：同一时间仅允许一个活跃任务（`Nano规划 / Cursor开发 / Nano验收 / Nano返修`）。
+- 循环上限：`Cursor开发 <-> Nano验收` 超过 3 次，需升级到 `David验收` 并记录人工介入。
