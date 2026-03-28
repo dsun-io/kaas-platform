@@ -347,6 +347,23 @@ _SYSTEM_HINTS = (
     "维权",
 )
 
+# 系统通知消息正则（句首匹配，无需问句保护，因为模式足够精确）
+# 用于过滤千牛系统推送的交易状态、物流、评价等通知
+_SYSTEM_NOTIFICATION_RE = (
+    re.compile(r"^(您的)?订单.*已(创建|发货|签收|关闭|退款)"),
+    re.compile(r"^(买家|卖家)已(付款|发货|签收|确认|评价)"),
+    re.compile(r"^交易(创建成功|成功|关闭)"),
+    re.compile(r"^退款(成功|已到账|关闭|取消)"),
+    re.compile(r"^快递已?(签收|揽收|派送|发货)"),
+    re.compile(r"^包裹.*派送"),
+    re.compile(r"^请对本次服务"),
+    re.compile(r"^邀请您.*评价"),
+    re.compile(r"^以下[为是].*消息"),
+    re.compile(r"^系统(提示|通知|消息)"),
+    re.compile(r"^自动回复"),
+    re.compile(r"^机器人"),
+)
+
 
 def is_ocr_noise_message(text: str) -> bool:
     """
@@ -363,6 +380,16 @@ def is_ocr_noise_message(text: str) -> bool:
     if re.fullmatch(r"[￥¥]\s*[\d,.]+", t.replace(" ", "")):
         return True
     if re.fullmatch(r"[\d,]+(?:\.\d{1,4})?", t.replace(",", "")) and len(t) <= 14:
+        return True
+    # 订单号/运单号碎片过滤（OCR 识别到的订单卡片中的长数字）
+    # 纯长数字（12位以上）
+    if re.fullmatch(r"\d{12,}", t):
+        return True
+    # "订单号：xxx" 或 "订单号: xxx" 格式
+    if re.match(r"^订单号[：:]?\s*\d+", t):
+        return True
+    # "运单号"/"快递单号"/"物流单号" + 字母数字
+    if re.match(r"^(运单号|快递单号|物流单号)[：:]?\s*[A-Za-z0-9]+", t):
         return True
     return False
 
@@ -412,6 +439,10 @@ def is_system_message(text: str) -> bool:
             return True
     if re.match(r"^仓库中\(\d+\)$", t):
         return True
+    # 系统通知正则检查（句首匹配，无需问句保护）
+    for pat in _SYSTEM_NOTIFICATION_RE:
+        if pat.match(t):
+            return True
     for h in _SYSTEM_HINTS:
         if h in t:
             if _looks_like_buyer_question(t) and len(t) >= 5:

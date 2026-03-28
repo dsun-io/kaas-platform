@@ -510,6 +510,10 @@ def ocr_message_area_with_roles(
         box_left = float(b.left)
         box_right = float(b.right)
         role = _role_for_box(cx, mid_x, half_w, box_width, msg_area_width, box_left, box_right, msg_area_left, msg_area_right)
+        # 对 unknown 角色增加系统消息检测：如果文本匹配系统消息，标记为 system
+        if role == "unknown" and is_system_message(t):
+            role = "system"
+            log.debug("[消息OCR] unknown box 文本匹配系统消息，标记为 system: %r", t)
         visuals.append(OcrLineVisual(box=b, role=role))
     # 阅读顺序：自上而下
     visuals.sort(key=lambda v: (v.box.top, v.box.left))
