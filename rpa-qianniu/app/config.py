@@ -107,6 +107,14 @@ class Settings(BaseSettings):
     # 右栏昵称 ROI：从「顶栏下缘」起占右栏总高度比例（默认 0.30）
     vision_right_nick_top_frac: float = 0.30
 
+    # ---------- 全链路联调配置（多轮对话+日志记录） ----------
+    # 会话切换后等待时间（秒）：点击待回复后等待千牛 CEF 渲染完成
+    vision_session_switch_wait_sec: float = 1.5
+    # 发送后验证开关：是否 OCR 验证回复已出现在聊天窗口
+    send_verify_enabled: bool = True
+    # 发送后验证等待时间（秒）：点击发送后等待消息渲染再截图验证
+    send_verify_wait_sec: float = 0.8
+
     @property
     def state_path(self) -> Path:
         p = Path(self.state_dir)

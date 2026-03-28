@@ -32,6 +32,9 @@ def log_conversation(
     status: str = "sent",
     error: str | None = None,
     platform: str = "qianniu",
+    conversation_id: str | None = None,
+    round_index: int | None = None,
+    buyer_id_source: str | None = None,
 ) -> None:
     record = {
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -48,6 +51,9 @@ def log_conversation(
         "tokens_out": tokens_out,
         "status": status,
         "error": error,
+        "conversation_id": conversation_id,
+        "round_index": round_index,
+        "buyer_id_source": buyer_id_source,
     }
     path = _log_path()
     try:

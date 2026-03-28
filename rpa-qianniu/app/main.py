@@ -121,6 +121,8 @@ class AppState:
     last_replied_fingerprint: dict[str, str] = field(default_factory=dict)
     # 纯视觉：各买家上次成功回复的 monotonic 时间戳（会话冷却）
     vision_last_reply_mono: dict[str, float] = field(default_factory=dict)
+    # 各买家的对话轮次计数器（用于多轮对话日志记录）
+    round_counters: dict[str, int] = field(default_factory=dict)
 
     def dedup_set(self) -> set[str]:
         return set(self.dedup_keys)
@@ -144,6 +146,7 @@ def _load_state() -> AppState:
         keys = raw.get("dedup_keys") or []
         lrf = raw.get("last_replied_fingerprint") or {}
         vlr = raw.get("vision_last_reply_mono") or {}
+        rc = raw.get("round_counters") or {}  # 兼容旧状态文件
         if not isinstance(conv, dict):
             conv = {}
         if not isinstance(keys, list):
@@ -152,6 +155,8 @@ def _load_state() -> AppState:
             lrf = {}
         if not isinstance(vlr, dict):
             vlr = {}
+        if not isinstance(rc, dict):
+            rc = {}
         return AppState(
             conversations={str(k): str(v) for k, v in conv.items()},
             dedup_keys=[str(x) for x in keys][-_MAX_DEDUP:],
@@ -159,6 +164,7 @@ def _load_state() -> AppState:
             vision_last_reply_mono={
                 str(k): float(v) for k, v in vlr.items() if isinstance(v, (int, float))
             },
+            round_counters={str(k): int(v) for k, v in rc.items() if isinstance(v, (int, float))},
         )
     except Exception as exc:
         log.warning("状态文件读取失败，使用空状态: %s", exc)
@@ -174,6 +180,7 @@ def _save_state(st: AppState) -> None:
         "dedup_keys": st.dedup_keys[-_MAX_DEDUP:],
         "last_replied_fingerprint": st.last_replied_fingerprint,
         "vision_last_reply_mono": st.vision_last_reply_mono,
+        "round_counters": st.round_counters,
     }
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(path)
@@ -327,7 +334,8 @@ def _run_vision_pipeline(state: AppState) -> None:
                     log.info("[点击] 待回复会话 屏幕=(%s,%s)", click_sx, click_sy)
                     pyautogui.click(click_sx, click_sy)
                     sleep_after_capture()
-                    if _sleep_until_shutdown(1.0):
+                    # 使用配置的会话切换等待时间（默认 1.5s，可配置以适配不同机器渲染速度）
+                    if _sleep_until_shutdown(float(settings.vision_session_switch_wait_sec)):
                         break
                     invalidate_ocr_cache()
                     bgr = capture_window_frame_bgr(win)
@@ -371,8 +379,14 @@ def _run_vision_pipeline(state: AppState) -> None:
                 nick_hdr = extract_buyer_nick_from_right_panel(
                     bgr, win_rect, lay.right_panel
                 )
+                buyer_id_source = "right_panel"  # 默认来源
                 if (nick_hdr or "").strip():
                     buyer_id = normalize_buyer_id(nick_hdr.strip())
+                else:
+                    # 右侧面板昵称提取失败，基于时间戳生成唯一临时 ID
+                    # 避免多个不同买家共享 "unknown_buyer" 导致上下文串台
+                    buyer_id = normalize_buyer_id(f"anonymous_{int(time.time())}")
+                    buyer_id_source = "anonymous_fallback"
 
                 msg = (msg or "").strip()
                 if not msg:
@@ -477,6 +491,10 @@ def _run_vision_pipeline(state: AppState) -> None:
                 else:
                     send_status = "sent"
                     send_error = None
+                # 获取或创建 conversation_id
+                conv_id = state.conversations.get(buyer_id or "")
+                # 获取并递增 round_index
+                current_round = state.round_counters.get(buyer_id, 0) + 1
                 log_conversation(
                     buyer_nick=buyer_id or "",
                     buyer_msg=msg,
@@ -490,6 +508,9 @@ def _run_vision_pipeline(state: AppState) -> None:
                     tokens_out=None,
                     status=send_status,
                     error=send_error,
+                    conversation_id=conv_id,
+                    round_index=current_round,
+                    buyer_id_source=buyer_id_source,
                 )
 
                 if ok:
@@ -501,6 +522,8 @@ def _run_vision_pipeline(state: AppState) -> None:
                             state.last_replied_fingerprint[buyer_id] = fp
                         if buyer_id != normalize_buyer_id("vision_active"):
                             state.vision_last_reply_mono[buyer_id] = time.monotonic()
+                        # 更新 round_counters（多轮对话计数）
+                        state.round_counters[buyer_id] = current_round
                     _save_state(state)
                     print(f"[已发送] 买家ID: {buyer_id}")
                     try:
@@ -762,6 +785,10 @@ def _run_legacy_uia(state: AppState) -> None:
                     else:
                         send_status = "sent"
                         send_error = None
+                    # 获取或创建 conversation_id
+                    conv_id_legacy = state.conversations.get(buyer_id or "")
+                    # 获取并递增 round_index
+                    current_round_legacy = state.round_counters.get(buyer_id, 0) + 1
                     log_conversation(
                         buyer_nick=buyer_id or "",
                         buyer_msg=msg,
@@ -775,10 +802,15 @@ def _run_legacy_uia(state: AppState) -> None:
                         tokens_out=None,
                         status=send_status,
                         error=send_error,
+                        conversation_id=conv_id_legacy,
+                        round_index=current_round_legacy,
+                        buyer_id_source="legacy_uia",
                     )
                     if ok:
                         state.remember_dedup(fp)
                         state.last_replied_fingerprint[buyer_id] = fp
+                        # 更新 round_counters（多轮对话计数）
+                        state.round_counters[buyer_id] = current_round_legacy
                         _save_state(state)
                         print(f"[已发送] 买家ID: {buyer_id}（已通过输入框读回校验）")
                         log.info("已发送 buyer=%s", buyer_id)
