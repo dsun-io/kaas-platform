@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
@@ -102,7 +103,8 @@ def screenshot_on_error(page: Page | None, tag: str) -> None:
     d = Path(settings.screenshot_dir)
     d.mkdir(parents=True, exist_ok=True)
     safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in tag)[:80]
-    path = d / f"{safe}.png"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = d / f"{safe}_{ts}.png"
     try:
         page.screenshot(path=str(path), full_page=True)
         log.error("已保存异常截图: %s", path)

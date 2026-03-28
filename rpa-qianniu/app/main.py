@@ -49,14 +49,14 @@ _MAX_DEDUP = 5000
 
 
 def perf_log(msg: str, *args: object) -> None:
-    """[PERF] 专用：写入后立即 flush，避免多行缓冲混在一起。"""
+    """[PERF] 专用：仅刷新控制台 handler，避免高频文件 I/O。"""
     log.info(msg, *args)
-    for h in log.handlers:
-        try:
-            h.flush()
-        except Exception:
-            pass
     for h in logging.root.handlers:
+        if not isinstance(h, logging.StreamHandler):
+            continue
+        stream = getattr(h, "stream", None)
+        if stream not in (sys.stdout, sys.stderr):
+            continue
         try:
             h.flush()
         except Exception:

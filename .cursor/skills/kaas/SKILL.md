@@ -14,6 +14,7 @@ description: Executes KAAS Notion workflow orchestration. Use when the user inpu
 - 优先级顺序固定：`P0 紧急 > P1 重要 > P2 常规`。
 - 同优先级按创建时间从早到晚。
 - **同一时间只执行一个任务**：在当前任务完成并切到 `Nano验收` 前，不得启动下一条。
+- **强制命令**：每次执行日志必须完整包含“12项骨架”，缺任一项都不得更新 `Nano验收`。
 
 ## Task Selection
 1. 查询任务流水线（view: `https://www.notion.so/fad40cb1006b4c71ab041a362a32334c?v=54a797e284664ff4b549abe408c4def8`）。
@@ -31,10 +32,10 @@ description: Executes KAAS Notion workflow orchestration. Use when the user inpu
    - 属性 `产出物`：PR/分支/commit（必须包含可追溯标识）
    - `📝 执行日志` 选项卡：追加结构化详细日志（含 commit hash、push结果）
 5. 状态流转：`Cursor开发 -> Nano验收`。
-5. 向用户汇报本次任务完成情况；不自动继续下一条，等待用户下一次 `kaas` 指令。
+6. 向用户汇报本次任务完成情况；不自动继续下一条，等待用户下一次 `kaas` 指令。
 
 ## Execution Log Format (Append to 📝)
-执行日志必须做到“可复盘全貌”。只允许追加，不覆盖历史。最低结构如下：
+执行日志必须做到“可复盘全貌”。只允许追加，不覆盖历史。以下 **12项骨架为强制命令**，缺一不可：
 
 ```markdown
 [Cursor] YYYY-MM-DD HH:mm 开发完成
@@ -89,9 +90,14 @@ description: Executes KAAS Notion workflow orchestration. Use when the user inpu
 
 ## 11. 待办与建议
 - next_action:
+
+## 12. 附录证据索引
+- evidence_links:
+- raw_outputs:
 ```
 
 ## Failure Handling
 - 若 Notion/MCP 暂时失败：重试一次；仍失败则向用户报告阻塞原因与下一步建议。
 - 若状态前置不合法：拒绝流转，并在 `📝 执行日志` 记录“非法状态流转已拒绝”。
 - 若 `git push` 失败：不得切换 `Nano验收`；在 `📝 执行日志` 记录失败原因并保持 `Cursor开发`。
+- 若日志未满足12项骨架：视为未完成，禁止写“开发完成”与禁止状态流转。

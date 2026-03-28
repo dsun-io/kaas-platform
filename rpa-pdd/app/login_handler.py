@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from app.browser_manager import BrowserManager, screenshot_on_error
@@ -27,10 +28,23 @@ def _is_login_like(page: Page) -> bool:
 
 def _wait_console_continue(reason: str) -> None:
     print(f"\n{reason}\n完成登录后，回到此窗口按 **回车** 继续…\n")
-    try:
-        input()
-    except EOFError:
-        pass
+    done = threading.Event()
+
+    def _read_stdin() -> None:
+        try:
+            input()
+        except EOFError:
+            pass
+        finally:
+            done.set()
+
+    t = threading.Thread(target=_read_stdin, daemon=True)
+    t.start()
+    timeout = max(1, int(settings.login_console_wait_timeout_sec))
+    done.wait(timeout=timeout)
+    if not done.is_set():
+        log.error("控制台等待登录确认超时（%ss）", timeout)
+        raise RuntimeError(f"登录确认超时（{timeout}s）")
 
 
 def needs_relogin(page: Page) -> bool:

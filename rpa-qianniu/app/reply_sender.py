@@ -59,7 +59,6 @@ def _bump_verify_streak() -> None:
             "或按 F12 暂停；可开启 CHAT_DEBUG_SCREENSHOTS=true 查看 %s",
             settings.chat_debug_dir,
         )
-        _verify_fail_streak = 0
 
 
 def _composer_shows_body(read_val: str, body: str) -> bool:

@@ -334,8 +334,12 @@ def ocr_bgr_to_boxes(
 
 
 def invalidate_ocr_cache() -> None:
-    global _CACHE_KEY, _CACHE_TS, _CACHE_LINES, _PADDLE_PREDICT_BROKEN
+    global _CACHE_KEY, _CACHE_TS, _CACHE_LINES
     _CACHE_KEY = None
     _CACHE_TS = 0.0
     _CACHE_LINES = []
+
+
+def reset_paddle_broken_flag() -> None:
+    global _PADDLE_PREDICT_BROKEN
     _PADDLE_PREDICT_BROKEN = False

@@ -1,8 +1,12 @@
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
 from app.config import settings
+
+
+_DB_WRITE_LOCK = threading.Lock()
 
 
 def _connect() -> sqlite3.Connection:
@@ -46,27 +50,28 @@ def insert_log(
     should_transfer: bool,
     response_time_ms: int,
 ) -> int:
-    conn = _connect()
-    try:
-        cur = conn.execute(
-            """
-            INSERT INTO chat_logs (
-                platform, buyer_id, message, reply, conversation_id,
-                should_transfer, response_time_ms, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                platform,
-                buyer_id,
-                message,
-                reply,
-                conversation_id,
-                int(should_transfer),
-                response_time_ms,
-                datetime.now(timezone.utc).isoformat(),
-            ),
-        )
-        conn.commit()
-        return int(cur.lastrowid or 0)
-    finally:
-        conn.close()
+    with _DB_WRITE_LOCK:
+        conn = _connect()
+        try:
+            cur = conn.execute(
+                """
+                INSERT INTO chat_logs (
+                    platform, buyer_id, message, reply, conversation_id,
+                    should_transfer, response_time_ms, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    platform,
+                    buyer_id,
+                    message,
+                    reply,
+                    conversation_id,
+                    int(should_transfer),
+                    response_time_ms,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            conn.commit()
+            return int(cur.lastrowid or 0)
+        finally:
+            conn.close()
