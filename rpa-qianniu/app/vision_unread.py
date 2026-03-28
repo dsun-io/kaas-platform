@@ -134,8 +134,9 @@ def find_pending_session(
 
     # 检测「已回复」分组中带有橙色时间气泡的会话（买家再次发消息后会产生）
     # 优先级：橙色气泡 > 待回复首条（橙色气泡代表买家再次催促，时效性更高）
+    # 性能优化：复用已有的 OCR boxes，避免重复推理
     replied_session = _find_replied_with_orange_badge(
-        bgr, win, left, _hwnd, pending_bottom, replied_top
+        bgr, win, left, _hwnd, pending_bottom, replied_top, boxes
     )
     if replied_session:
         log.info(
@@ -420,11 +421,14 @@ def _find_replied_with_orange_badge(
     _hwnd: int | None,
     pending_bottom: int | None,
     replied_top: int | None,
+    boxes: list[OcrTextBox] | None = None,
 ) -> tuple[int, int] | None:
     """
     在「已回复」分组中检测带有橙色时间气泡的会话。
     买家再次发消息后，会话会留在「已回复」分组并显示橙色时间气泡（如「33秒」「2分钟」）。
     返回点击坐标（屏幕坐标），无则返回 None。
+
+    性能优化：如果传入 boxes 参数，直接复用，避免重复 OCR。
     """
     if not paddle_available():
         return None
@@ -443,23 +447,27 @@ def _find_replied_with_orange_badge(
         log.debug("[已回复检测] 已回复标签位置异常（在待回复上方），跳过")
         return None
 
-    # 裁剪左栏区域进行 OCR
-    crop, ox, oy = crop_window_bgr(bgr, win, left)
-    if crop.size == 0:
-        return None
+    # 如果没有传入 boxes，则进行 OCR；否则复用传入的 boxes（性能优化）
+    if boxes is None:
+        # 裁剪左栏区域进行 OCR
+        crop, ox, oy = crop_window_bgr(bgr, win, left)
+        if crop.size == 0:
+            return None
 
-    sx0, sy0 = bgr_crop_origin_to_screen(win, bgr, ox, oy)
+        sx0, sy0 = bgr_crop_origin_to_screen(win, bgr, ox, oy)
 
-    # OCR 获取已回复区域内的所有文本框
-    boxes = ocr_bgr_to_boxes(
-        crop,
-        win_left=sx0,
-        win_top=sy0,
-        cache_ttl_sec=0.0,
-    )
-    if not boxes:
-        log.debug("[已回复检测] OCR 无结果")
-        return None
+        # OCR 获取已回复区域内的所有文本框
+        boxes = ocr_bgr_to_boxes(
+            crop,
+            win_left=sx0,
+            win_top=sy0,
+            cache_ttl_sec=0.0,
+        )
+        if not boxes:
+            log.debug("[已回复检测] OCR 无结果")
+            return None
+    else:
+        log.debug("[已回复检测] 复用已有 OCR 结果，避免重复推理")
 
     # 在已回复区域内寻找会话行：每行右侧检测橙色时间气泡
     # 会话行特征：在已回复标签下方，通常是买家昵称/ID

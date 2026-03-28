@@ -409,7 +409,14 @@ def _run_vision_pipeline(state: AppState) -> None:
                         continue
 
                 fp = fingerprint_key(buyer_id or "unknown", msg, _ts or None, None)
-                if state.last_replied_fingerprint.get(buyer_id or "") == fp or fp in state.dedup_set():
+                # 当 buyer_id 为 unknown_buyer 时，跳过 last_replied_fingerprint 检查
+                # 避免多个不同买家都被当作 "unknown_buyer" 而误判为已回复
+                _unknown_buyer_id = normalize_buyer_id("unknown_buyer")
+                is_unknown_buyer = buyer_id == _unknown_buyer_id
+                fingerprint_matched = (
+                    not is_unknown_buyer and state.last_replied_fingerprint.get(buyer_id or "") == fp
+                )
+                if fingerprint_matched or fp in state.dedup_set():
                     _vision_skip(
                         f"去重：本条与已回复指纹相同 buyer={buyer_id!r} msg[:40]={msg[:40]!r}…",
                         interval_sec=18.0,
@@ -462,14 +469,14 @@ def _run_vision_pipeline(state: AppState) -> None:
                 total_ms = int((t_total_end - t_round) * 1000)
 
                 if not ok:
-                    st = "send_failed"
-                    err_s = "send_reply_vision_failed"
+                    send_status = "send_failed"
+                    send_error = "send_reply_vision_failed"
                 elif ai_err:
-                    st = "ai_failed"
-                    err_s = ai_err
+                    send_status = "ai_failed"
+                    send_error = ai_err
                 else:
-                    st = "sent"
-                    err_s = None
+                    send_status = "sent"
+                    send_error = None
                 log_conversation(
                     buyer_nick=buyer_id or "",
                     buyer_msg=msg,
@@ -481,14 +488,17 @@ def _run_vision_pipeline(state: AppState) -> None:
                     latency_total_ms=total_ms,
                     tokens_in=None,
                     tokens_out=None,
-                    status=st,
-                    error=err_s,
+                    status=send_status,
+                    error=send_error,
                 )
 
                 if ok:
                     state.remember_dedup(fp)
                     if buyer_id:
-                        state.last_replied_fingerprint[buyer_id] = fp
+                        # 仅当 buyer_id 不是 unknown_buyer 时才保存 fingerprint
+                        # 避免多个不同买家都被当作 unknown_buyer 处理
+                        if buyer_id != normalize_buyer_id("unknown_buyer"):
+                            state.last_replied_fingerprint[buyer_id] = fp
                         if buyer_id != normalize_buyer_id("vision_active"):
                             state.vision_last_reply_mono[buyer_id] = time.monotonic()
                     _save_state(state)
@@ -744,14 +754,14 @@ def _run_legacy_uia(state: AppState) -> None:
                     send_ms = int((t_legacy_done - t_legacy_send) * 1000)
                     total_ms = int((t_legacy_done - t_legacy_ai) * 1000)
                     if not ok:
-                        st = "send_failed"
-                        err_s = "send_reply_failed"
+                        send_status = "send_failed"
+                        send_error = "send_reply_failed"
                     elif ai_err:
-                        st = "ai_failed"
-                        err_s = ai_err
+                        send_status = "ai_failed"
+                        send_error = ai_err
                     else:
-                        st = "sent"
-                        err_s = None
+                        send_status = "sent"
+                        send_error = None
                     log_conversation(
                         buyer_nick=buyer_id or "",
                         buyer_msg=msg,
@@ -763,8 +773,8 @@ def _run_legacy_uia(state: AppState) -> None:
                         latency_total_ms=total_ms,
                         tokens_in=None,
                         tokens_out=None,
-                        status=st,
-                        error=err_s,
+                        status=send_status,
+                        error=send_error,
                     )
                     if ok:
                         state.remember_dedup(fp)
