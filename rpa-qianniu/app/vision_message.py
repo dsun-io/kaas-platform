@@ -29,20 +29,18 @@ from app.vision_layout import ScreenRect
 log = get_logger("vision_message")
 
 _MIN_CONF = 0.55
-# 横幅 + AI 摘要条约占 message_area 顶部约 120px（可通过环境变量配置）
-def _get_banner_skip_px() -> int:
-    """获取横幅跳过像素数，可通过 MSG_BANNER_SKIP_PX 环境变量配置，默认 120"""
-    import os
+# UI 界面通用噪声词（在 banner 和右栏昵称中都会出现的）
+_COMMON_UI_NOISE = (
+    "收起",
+    "展开",
+    "查看",
+    "详情",
+    "好评",
+)
 
-    env_val = os.environ.get("MSG_BANNER_SKIP_PX", "")
-    if env_val.isdigit():
-        return int(env_val)
-    return 120
-
-
-BANNER_SKIP_PX = _get_banner_skip_px()
 # 顶部系统横幅 / AI 摘要条（裁剪后仍可能漏入时由文本过滤兜底）
-_BANNER_SUBSTR = (
+# 注意：此列表只应包含真正的系统横幅词，买家咨询词（物流/退款/售后等）不应在此
+_BANNER_SUBSTR = _COMMON_UI_NOISE + (
     "当前消息较多",
     "点此快速获取",
     "集中处理",
@@ -51,52 +49,17 @@ _BANNER_SUBSTR = (
     "7天内自动总结",
     "AI一键总结",
     "AI咨询摘要",
-    "收起",
-    "展开",
     "一键总结",
     "自动总结",
     "hanha41409854",
     "radiobalabala",
-    # 新增常见系统文本
-    "AI咨询摘要",
-    "快速获取买家",
-    "自动回复",
-    "机器人",
-    "转接",
-    "排队",
-    "评价",
-    "好评",
-    "物流",
-    "快递单号",
-    "已发货",
-    "待发货",
-    "退款",
-    "售后",
-    "订单信息",
-    "订单详情",
-    "查看物流",
-    "确认收货",
-    "延长收货",
-    "申请退款",
-    "换货",
-    "补发",
-    "投诉",
-    "举报",
-    "拉黑",
-    "屏蔽",
-    "免打扰",
-    "置顶",
-    "标为未读",
-    "删除会话",
-    "清空记录",
 )
 _MSG_LINE_NOISE_SUB = ("未读", "已读")
 _TS_LINE_HEAD = re.compile(
     r"^\s*\d{4}[-/年]\s*\d{1,2}[-/月]\s*\d{1,2}"
 )
 # 右侧信息栏昵称 ROI 内常见噪声
-_RIGHT_NICK_NOISE = (
-    "好评",
+_RIGHT_NICK_NOISE = _COMMON_UI_NOISE + (
     "%",
     "客服",
     "各服",
@@ -159,11 +122,7 @@ _RIGHT_NICK_NOISE = (
     "标签",
     "会员",
     "粉丝",
-    "查看",
-    "详情",
     "更多",
-    "展开",
-    "收起",
     "编辑",
     "删除",
     "管理",
@@ -205,19 +164,43 @@ def _is_timestamp_only(text: str) -> bool:
 def message_body_area(message_area: ScreenRect) -> ScreenRect:
     """去掉 message_area 顶部横幅区再 OCR 正文气泡。"""
     h = max(1, message_area.h)
-    skip = min(BANNER_SKIP_PX, max(0, h - 48))
+    skip = min(int(settings.msg_banner_skip_px), max(0, h - 48))
     new_top = message_area.top + skip
     if new_top >= message_area.bottom - 64:
         new_top = message_area.top + min(40, h // 5)
     return ScreenRect(message_area.left, new_top, message_area.right, message_area.bottom)
 
 
+# 问句检测：用于 banner 过滤的豁免机制（避免误杀买家咨询）
+_LIKELY_QUESTION_TAIL = re.compile(r"[?？！!吗呢吧嘛]$")
+_LIKELY_QUESTION_HINT = re.compile(r"(怎么|什么|多少|请问|哪里|为何|为什么|吗|呢|么)")
+
+
+def _looks_like_buyer_question(text: str) -> bool:
+    """判断文本是否像买家问句，用于 banner 过滤豁免。"""
+    t = (text or "").strip()
+    if len(t) < 5:
+        return False
+    if _LIKELY_QUESTION_TAIL.search(t):
+        return True
+    if _LIKELY_QUESTION_HINT.search(t):
+        return True
+    return False
+
+
 def _is_qianniu_banner_text(text: str) -> bool:
+    """
+    检测是否为千牛系统横幅文本。
+    增加问句豁免：若文本含 banner 关键词但同时像买家问句，则不判定为横幅。
+    """
     t = (text or "").strip()
     if not t:
         return True
     for s in _BANNER_SUBSTR:
         if s in t:
+            # 问句豁免：如果是买家问句（如"退款怎么办"），不误判为横幅
+            if _looks_like_buyer_question(t):
+                return False
             return True
     return False
 
@@ -427,22 +410,44 @@ def _save_message_ocr_debug_images(
         )
 
 
-def _role_for_box(cx: float, mid_x: float, half_w: float, box_width: float, msg_area_width: float) -> str:
+def _role_for_box(
+    cx: float,
+    mid_x: float,
+    half_w: float,
+    box_width: float,
+    msg_area_width: float,
+    box_left: float,
+    box_right: float,
+    msg_area_left: float,
+    msg_area_right: float,
+) -> str:
     """buyer：靠左；seller：靠右；中间条带视为非买家气泡。
 
     优化点：
-    1. margin 阈值从 max(12.0, half_w*0.04) 改为 max(20.0, half_w*0.08)，拉大中间「不确定」带
-    2. 增加宽度辅助判断：若单个 box 宽度 > message_area 宽度的 70% 且居中，大概率是系统横幅而非气泡
+    1. margin 阈值从 max(20.0, half_w*0.08) 改为 max(15.0, half_w*0.06)，缩小死区
+    2. 宽度辅助判断阈值从 0.70 降至 0.60，居中判定从 0.10 放宽至 0.15
+    3. 增加边缘锚定辅助判断：若 box 紧贴左侧边缘，优先判为 buyer；紧贴右侧边缘，优先判为 seller
     """
-    # 阈值优化：拉大中间「不确定」带，减少误判
-    margin = max(20.0, float(half_w) * 0.08)
+    # 阈值优化：略微缩小死区，让更多偏左文本能被归为 buyer
+    margin = max(15.0, float(half_w) * 0.06)
 
-    # 宽度辅助判断：太宽且居中的可能是系统横幅
-    if box_width > msg_area_width * 0.70:
-        # 判断是否居中：cx 在中线附近 ±10% 范围内
-        if abs(cx - mid_x) < half_w * 0.10:
+    # 边缘锚定辅助判断：千牛买家气泡紧贴左侧，卖家气泡紧贴右侧
+    left_edge_dist = box_left - msg_area_left
+    right_edge_dist = msg_area_right - box_right
+    edge_threshold = half_w * 0.25  # 距离边缘 < 25% 半宽视为紧贴
+
+    # 宽度辅助判断：太宽且居中的可能是系统横幅（阈值放宽至 0.60，居中判定放宽至 0.15）
+    if box_width > msg_area_width * 0.60:
+        if abs(cx - mid_x) < half_w * 0.15:
             return "unknown"  # 可能是系统横幅
 
+    # 边缘锚定优先：紧贴左侧 → buyer，紧贴右侧 → seller
+    if left_edge_dist < edge_threshold and cx < mid_x:
+        return "buyer"
+    if right_edge_dist < edge_threshold and cx > mid_x:
+        return "seller"
+
+    # 中线判定
     if cx < mid_x - margin:
         return "buyer"
     if cx > mid_x + margin:
@@ -485,6 +490,8 @@ def ocr_message_area_with_roles(
     mid_x = (float(message_area.left) + float(message_area.right)) / 2.0
     half_w = float(message_area.w) / 2.0
     msg_area_width = float(message_area.w)
+    msg_area_left = float(message_area.left)
+    msg_area_right = float(message_area.right)
 
     visuals: list[OcrLineVisual] = []
     for b in boxes:
@@ -500,7 +507,9 @@ def ocr_message_area_with_roles(
                 continue
         cx = (float(b.left) + float(b.right)) / 2.0
         box_width = float(b.right) - float(b.left)
-        role = _role_for_box(cx, mid_x, half_w, box_width, msg_area_width)
+        box_left = float(b.left)
+        box_right = float(b.right)
+        role = _role_for_box(cx, mid_x, half_w, box_width, msg_area_width, box_left, box_right, msg_area_left, msg_area_right)
         visuals.append(OcrLineVisual(box=b, role=role))
     # 阅读顺序：自上而下
     visuals.sort(key=lambda v: (v.box.top, v.box.left))
