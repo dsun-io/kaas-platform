@@ -10,9 +10,16 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    # ========== 服务配置 ==========
+    api_host: str = "0.0.0.0"
+    api_port: int = 8000
+    api_workers: int = 1  # 工作进程数，生产环境可设为 CPU 核心数
+
+    # ========== FastGPT 配置 ==========
     fastgpt_api_key: str = ""
     fastgpt_api_base: str = "https://cloud.fastgpt.cn/api"
-    fastgpt_timeout_seconds: float = 30.0
+    # 优化：降低默认超时以控制RPA端到端延迟（配合RPA的10s超时）
+    fastgpt_timeout_seconds: float = 10.0  # 优化: 10s（原30s）
     # 工作流应用若 choices.message.content 为空，可设 true 让 FastGPT 返回 responseData 便于解析
     fastgpt_chat_detail: bool = False
     # 开发排障：将 FastGPT 失败时的状态码与响应片段写入日志（勿在生产长期开启大量敏感内容）
