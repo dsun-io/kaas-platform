@@ -29,8 +29,18 @@ from app.vision_layout import ScreenRect
 log = get_logger("vision_message")
 
 _MIN_CONF = 0.55
-# 横幅 + AI 摘要条约占 message_area 顶部约 100px
-BANNER_SKIP_PX = 100
+# 横幅 + AI 摘要条约占 message_area 顶部约 120px（可通过环境变量配置）
+def _get_banner_skip_px() -> int:
+    """获取横幅跳过像素数，可通过 MSG_BANNER_SKIP_PX 环境变量配置，默认 120"""
+    import os
+
+    env_val = os.environ.get("MSG_BANNER_SKIP_PX", "")
+    if env_val.isdigit():
+        return int(env_val)
+    return 120
+
+
+BANNER_SKIP_PX = _get_banner_skip_px()
 # 顶部系统横幅 / AI 摘要条（裁剪后仍可能漏入时由文本过滤兜底）
 _BANNER_SUBSTR = (
     "当前消息较多",
@@ -47,6 +57,38 @@ _BANNER_SUBSTR = (
     "自动总结",
     "hanha41409854",
     "radiobalabala",
+    # 新增常见系统文本
+    "AI咨询摘要",
+    "快速获取买家",
+    "自动回复",
+    "机器人",
+    "转接",
+    "排队",
+    "评价",
+    "好评",
+    "物流",
+    "快递单号",
+    "已发货",
+    "待发货",
+    "退款",
+    "售后",
+    "订单信息",
+    "订单详情",
+    "查看物流",
+    "确认收货",
+    "延长收货",
+    "申请退款",
+    "换货",
+    "补发",
+    "投诉",
+    "举报",
+    "拉黑",
+    "屏蔽",
+    "免打扰",
+    "置顶",
+    "标为未读",
+    "删除会话",
+    "清空记录",
 )
 _MSG_LINE_NOISE_SUB = ("未读", "已读")
 _TS_LINE_HEAD = re.compile(
@@ -95,10 +137,48 @@ _RIGHT_NICK_NOISE = (
     "计量",
     "收藏",
     "历史",
+    # 新增噪声词
+    "加购",
+    "浏览",
+    "支付",
+    "咨询宝贝",
+    "商品",
+    "宝贝",
+    "买家",
+    "卖家",
+    "旺旺",
+    "信誉",
+    "等级",
+    "地址",
+    "电话",
+    "手机",
+    "微信",
+    "QQ",
+    "复制",
+    "备注",
+    "标签",
+    "会员",
+    "粉丝",
+    "查看",
+    "详情",
+    "更多",
+    "展开",
+    "收起",
+    "编辑",
+    "删除",
+    "管理",
+    "返回",
+    "首页",
+    "上一页",
+    "下一页",
 )
 _ICON_CHARS = set("□○●◎△▽◇◆★☆♠♥♦♣→←↑↓⊙⊕⊗")
 # 过短视为噪声（单字常为 OCR 碎片）
 _MIN_BUYER_TEXT_LEN = 2
+# 昵称过滤：纯数字、纯标点、价格行
+_NICK_PURE_DIGITS = re.compile(r"^\d+$")
+_NICK_PURE_PUNCT = re.compile(r"^[\s\p{P}\p{S}]+$", re.UNICODE)
+_NICK_PRICE_CHARS = re.compile(r"[¥元￥€$£]|")
 # 日期 + 时间
 _TS_FULL = re.compile(
     r"\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}(?::\d{2})?"
@@ -157,6 +237,13 @@ def _right_nick_line_junk(text: str) -> bool:
         return True
     if len(t) <= 1:
         return True
+    # 新增：正则过滤
+    if _NICK_PURE_DIGITS.match(t):
+        return True  # 纯数字行（如价格、ID）
+    if _NICK_PURE_PUNCT.match(t):
+        return True  # 纯标点行
+    if _NICK_PRICE_CHARS.search(t):
+        return True  # 包含价格符号
     stub = (settings.ai_stub_reply or "").strip()
     if stub and (t == stub or stub in t):
         return True
@@ -207,7 +294,8 @@ def extract_buyer_nick_from_right_panel(
         int(settings.vision_right_nick_top_skip_px),
         max(0, rh - 64),
     )
-    frac = min(0.45, max(0.18, float(settings.vision_right_nick_top_frac)))
+    # 缩小 ROI frac 从 0.45/0.33 → 0.30，减少无关 UI 区域
+    frac = min(0.30, max(0.18, float(settings.vision_right_nick_top_frac)))
     y1 = right_panel.top + skip
     remain = max(1, right_panel.bottom - y1)
     # 顶栏之下的「剩余高度」里取一段（默认约 1/3），专扫昵称/标签，不裁最顶标题按钮区
@@ -239,7 +327,10 @@ def extract_buyer_nick_from_right_panel(
     raw_preview = [(b.text, round(float(b.confidence), 2)) for b in boxes]
     log.info("[DEBUG-OCR] 右侧面板昵称 OCR 原始: %s", raw_preview)
 
-    scored: list[tuple[OcrTextBox, int, str]] = []
+    # 候选收集：相同 text 只保留字高最大的（去重）
+    candidate_heights: dict[str, int] = {}
+    candidate_boxes: dict[str, OcrTextBox] = {}
+
     for b in boxes:
         if float(b.confidence) < _MIN_CONF:
             continue
@@ -249,12 +340,21 @@ def extract_buyer_nick_from_right_panel(
         if _right_nick_line_junk(t):
             continue
         h = max(1, int(b.bottom) - int(b.top))
-        scored.append((b, h, t))
+
+        # 去重：相同 text 保留字高最大的
+        if t in candidate_heights:
+            if h <= candidate_heights[t]:
+                continue  # 已有更高字高的同名候选，跳过
+        candidate_heights[t] = h
+        candidate_boxes[t] = b
         log.info("[昵称候选] text=%r 字高=%s", t, h)
-    scored.sort(key=lambda x: x[1], reverse=True)
-    for _b, h, t in scored:
+
+    # 按字高排序，取最高的有效昵称
+    sorted_candidates = sorted(candidate_heights.items(), key=lambda x: x[1], reverse=True)
+    for t, h in sorted_candidates:
         log.info("[昵称] 选定: %r (字高=%s)", t, h)
         return t
+
     log.info("[DEBUG-OCR] 右侧面板未解析到有效昵称")
     return ""
 
@@ -327,9 +427,22 @@ def _save_message_ocr_debug_images(
         )
 
 
-def _role_for_box(cx: float, mid_x: float, half_w: float) -> str:
-    """buyer：靠左；seller：靠右；中间条带视为非买家气泡。"""
-    margin = max(12.0, float(half_w) * 0.04)
+def _role_for_box(cx: float, mid_x: float, half_w: float, box_width: float, msg_area_width: float) -> str:
+    """buyer：靠左；seller：靠右；中间条带视为非买家气泡。
+
+    优化点：
+    1. margin 阈值从 max(12.0, half_w*0.04) 改为 max(20.0, half_w*0.08)，拉大中间「不确定」带
+    2. 增加宽度辅助判断：若单个 box 宽度 > message_area 宽度的 70% 且居中，大概率是系统横幅而非气泡
+    """
+    # 阈值优化：拉大中间「不确定」带，减少误判
+    margin = max(20.0, float(half_w) * 0.08)
+
+    # 宽度辅助判断：太宽且居中的可能是系统横幅
+    if box_width > msg_area_width * 0.70:
+        # 判断是否居中：cx 在中线附近 ±10% 范围内
+        if abs(cx - mid_x) < half_w * 0.10:
+            return "unknown"  # 可能是系统横幅
+
     if cx < mid_x - margin:
         return "buyer"
     if cx > mid_x + margin:
@@ -371,6 +484,7 @@ def ocr_message_area_with_roles(
 
     mid_x = (float(message_area.left) + float(message_area.right)) / 2.0
     half_w = float(message_area.w) / 2.0
+    msg_area_width = float(message_area.w)
 
     visuals: list[OcrLineVisual] = []
     for b in boxes:
@@ -379,8 +493,14 @@ def ocr_message_area_with_roles(
         t = (b.text or "").strip()
         if _is_extra_message_line_noise(t):
             continue
+        # 增加「已读/未读」标记过滤
+        if "已读" in t or "未读" in t:
+            if len(t) <= 4:  # 小字标记通常是 2-4 个字符
+                log.debug("[消息OCR] 过滤已读/未读标记: %r", t)
+                continue
         cx = (float(b.left) + float(b.right)) / 2.0
-        role = _role_for_box(cx, mid_x, half_w)
+        box_width = float(b.right) - float(b.left)
+        role = _role_for_box(cx, mid_x, half_w, box_width, msg_area_width)
         visuals.append(OcrLineVisual(box=b, role=role))
     # 阅读顺序：自上而下
     visuals.sort(key=lambda v: (v.box.top, v.box.left))

@@ -101,6 +101,12 @@ class Settings(BaseSettings):
     # 纯视觉：同一买家会话成功回复后，多少秒内不再处理（防连点）
     vision_session_cooldown_sec: float = 30.0
 
+    # ---------- 消息区域 OCR 配置 ----------
+    # 消息区域顶部横幅跳过像素（默认 120，可通过环境变量 MSG_BANNER_SKIP_PX 覆盖）
+    msg_banner_skip_px: int = 120
+    # 右栏昵称 ROI：从「顶栏下缘」起占右栏总高度比例（默认 0.30）
+    vision_right_nick_top_frac: float = 0.30
+
     @property
     def state_path(self) -> Path:
         p = Path(self.state_dir)

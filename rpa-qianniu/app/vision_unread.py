@@ -17,7 +17,7 @@ import numpy as np
 from app.config import settings
 from app.debug_manager import should_save
 from app.logger import get_logger
-from app.ocr_paddle import ocr_bgr_to_boxes, paddle_available
+from app.ocr_paddle import OcrTextBox, ocr_bgr_to_boxes, paddle_available
 from app.vision_coords import (
     bgr_crop_origin_to_screen,
     bgr_point_to_screen,
@@ -149,6 +149,18 @@ def find_pending_session(
         click_sy,
     )
 
+    # 检测「已回复」分组中带有橙色时间气泡的会话（买家再次发消息后会产生）
+    replied_session = _find_replied_with_orange_badge(
+        bgr, win, left, _hwnd, pending_bottom, replied_top
+    )
+    if replied_session:
+        log.info(
+            "[会话检测] 发现已回复分组有新消息: 屏幕点击=(%s,%s)",
+            replied_session[0],
+            replied_session[1],
+        )
+        return replied_session
+
     if should_save("unread_detected"):
         try:
             root = Path(settings.vision_debug_dir)
@@ -202,6 +214,23 @@ def _unread_badge_mask(bgr: np.ndarray) -> np.ndarray | None:
     red = cv2.bitwise_or(m1, m2)
     orange = cv2.inRange(hsv, (5, 85, 85), (22, 255, 255))
     return cv2.bitwise_or(red, orange)
+
+
+def _orange_time_badge_mask(bgr: np.ndarray) -> np.ndarray | None:
+    """
+    已回复分组中的橙色时间气泡（如「33秒」「2分钟」）检测。
+    千牛橙色时间气泡 H 约 10-25°，饱和度较高。
+    """
+    if bgr.size == 0 or bgr.ndim != 3:
+        return None
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+    # 橙色时间气泡的HSV范围（比红点更宽的橙色范围）
+    orange = cv2.inRange(hsv, (8, 80, 80), (25, 255, 255))
+    # 同时包含红色（部分时间气泡偏红）
+    m1 = cv2.inRange(hsv, (0, 80, 80), (10, 255, 255))
+    m2 = cv2.inRange(hsv, (170, 80, 80), (180, 255, 255))
+    red = cv2.bitwise_or(m1, m2)
+    return cv2.bitwise_or(orange, red)
 
 
 @dataclass
@@ -378,3 +407,132 @@ def detect_unread_dots(
         out.append(UnreadDot(cx_screen=click_sx, cy_screen=click_sy, buyer=""))
 
     return out
+
+
+def _find_replied_with_orange_badge(
+    bgr: np.ndarray,
+    win: ScreenRect,
+    left: ScreenRect,
+    _hwnd: int | None,
+    pending_bottom: int | None,
+    replied_top: int | None,
+) -> tuple[int, int] | None:
+    """
+    在「已回复」分组中检测带有橙色时间气泡的会话。
+    买家再次发消息后，会话会留在「已回复」分组并显示橙色时间气泡（如「33秒」「2分钟」）。
+    返回点击坐标（屏幕坐标），无则返回 None。
+    """
+    if not paddle_available():
+        return None
+
+    # 确定「已回复」分组区域：从「已回复」标签顶部到底部，或左栏底部
+    if replied_top is None:
+        log.debug("[已回复检测] 未找到已回复标签，跳过")
+        return None
+
+    # 构建「已回复」分组区域（整段会话列表）
+    replied_bottom = left.bottom
+    if pending_bottom is not None and replied_top < pending_bottom:
+        # 异常情况：已回复在待回复上方，不处理
+        log.debug("[已回复检测] 已回复标签位置异常，跳过")
+        return None
+
+    # 裁剪左栏区域进行 OCR
+    crop, ox, oy = crop_window_bgr(bgr, win, left)
+    if crop.size == 0:
+        return None
+
+    sx0, sy0 = bgr_crop_origin_to_screen(win, bgr, ox, oy)
+
+    # OCR 获取已回复区域内的所有文本框
+    boxes = ocr_bgr_to_boxes(
+        crop,
+        win_left=sx0,
+        win_top=sy0,
+        cache_ttl_sec=0.0,
+    )
+    if not boxes:
+        log.debug("[已回复检测] OCR 无结果")
+        return None
+
+    # 在已回复区域内寻找会话行：每行右侧检测橙色时间气泡
+    # 会话行特征：在已回复标签下方，通常是买家昵称/ID
+    replied_region_top = replied_top
+
+    # 筛选在已回复区域内的文本框
+    session_candidates: list[tuple[OcrTextBox, int]] = []
+    for b in boxes:
+        if b.top <= replied_region_top:
+            continue  # 跳过已回复标签本身及其上方
+        if b.top >= replied_bottom:
+            continue  # 跳过左栏底部之外
+        # 会话行通常不是时间戳或系统文本
+        t = (b.text or "").strip()
+        if not t or len(t) < 2:
+            continue
+        # 排除明显的时间戳行（如「3分钟前」「33秒」）- 这些会在下面单独检测橙色气泡
+        if re.search(r"(\d+\s*秒|\d+\s*分钟?|\d+\s*小时?|\d{1,2}:\d{2})", t):
+            continue
+        session_candidates.append((b, b.top))
+
+    if not session_candidates:
+        log.debug("[已回复检测] 无会话候选")
+        return None
+
+    # 按 y 坐标分组（每行会话）
+    session_candidates.sort(key=lambda x: x[1])
+
+    # 对每个会话行，检测其右侧区域的橙色像素
+    for b, y in session_candidates:
+        # 计算该会话行右侧区域（会话行通常在左栏中间偏右的位置结束）
+        # 检测区域：从会话行文本右边界到左栏右边界，上下扩展一定范围
+        right_region_left = b.right
+        right_region_top = max(left.top, b.top - 5)
+        right_region_bottom = min(left.bottom, b.bottom + 5)
+
+        # 确保右侧区域有足够宽度
+        if right_region_left >= left.right - 10:
+            continue
+
+        right_region = ScreenRect(
+            right_region_left,
+            right_region_top,
+            left.right,
+            right_region_bottom,
+        )
+
+        # 裁剪右侧区域
+        r_crop, r_ox, r_oy = crop_window_bgr(bgr, win, right_region)
+        if r_crop.size == 0:
+            continue
+
+        # 检测橙色像素
+        mask = _orange_time_badge_mask(r_crop)
+        if mask is None or mask.size == 0:
+            continue
+
+        orange_pixels = int(cv2.countNonZero(mask))
+        log.debug(
+            "[已回复检测] 会话行 %r y=%s 右侧橙色像素=%s",
+            b.text,
+            y,
+            orange_pixels,
+        )
+
+        # 阈值：检测到足够橙色像素即认为有时间气泡
+        min_orange_pixels = 30  # 最小橙色像素数
+        if orange_pixels >= min_orange_pixels:
+            # 点击位置：会话行水平中心，垂直位置取会话行中间
+            click_sx = (left.left + left.right) // 2
+            click_sy = (b.top + b.bottom) // 2
+            log.info(
+                "[会话检测] 已回复分组新消息: 会话=%r 屏幕点击=(%s,%s) 橙色像素=%s",
+                b.text,
+                click_sx,
+                click_sy,
+                orange_pixels,
+            )
+            return int(click_sx), int(click_sy)
+
+    log.debug("[已回复检测] 未检测到橙色时间气泡")
+    return None
