@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     poll_interval_sec: float = 3.0
     # 纯视觉：有未读/已处理一轮后的休眠（秒），宜 <=1 以压低端到端延迟
-    vision_poll_active_sec: float = 1.0
+    vision_poll_active_sec: float = 0.3  # 优化: 0.3s 快速轮询以压低端到端延迟
     # 0=按需落盘（异常必存）；1=关键事件；2=全量（等同旧版每轮截图）
     rpa_debug_level: int = 0
 
@@ -48,10 +48,10 @@ class Settings(BaseSettings):
     chat_ocr_cache_sec: float = 3.0
     chat_debug_screenshots: bool = False
     chat_debug_dir: str = "data/debug_chat"
-    action_delay_ms_min: int = 200
-    action_delay_ms_max: int = 500
+    action_delay_ms_min: int = 50   # 优化: 降低人工延迟下限
+    action_delay_ms_max: int = 150  # 优化: 降低人工延迟上限，目标 <5s 端到端
 
-    ai_http_timeout_sec: float = 15.0
+    ai_http_timeout_sec: float = 10.0  # 优化: 10s 超时，快速失败以控制延迟
 
     # true：不调 msg-router/FastGPT，直接返回 ai_stub_reply（调千牛 UI 时省积分）
     ai_stub_mode: bool = True
@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     vision_debug_dir: str = "debug"
     # 主循环整窗调试图 vision_full_window 最小间隔（秒）；0=每轮都存（易刷屏占盘）
     vision_debug_full_window_interval_sec: float = 25.0
-    vision_capture_settle_sec: float = 0.12
+    vision_capture_settle_sec: float = 0.05  # 优化: 降低截图后稳定等待时间
     # OCR 锚点校准结果缓存（相对 rpa-qianniu 根目录）；window_size 一致时复用
     vision_calibration_path: str = "config/vision_calibration.json"
     # 为 True 时优先自动校准，失败则回退 VISION_*_RATIO
@@ -109,7 +109,8 @@ class Settings(BaseSettings):
 
     # ---------- 全链路联调配置（多轮对话+日志记录） ----------
     # 会话切换后等待时间（秒）：点击待回复后等待千牛 CEF 渲染完成
-    vision_session_switch_wait_sec: float = 1.5
+    # 优化: 0.8s 快速切换，目标端到端延迟 <5s
+    vision_session_switch_wait_sec: float = 0.8
     # 发送后验证开关：是否 OCR 验证回复已出现在聊天窗口
     send_verify_enabled: bool = True
     # 发送后验证等待时间（秒）：点击发送后等待消息渲染再截图验证

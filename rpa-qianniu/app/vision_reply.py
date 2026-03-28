@@ -30,7 +30,7 @@ def ensure_qianniu_focus(input_area: ScreenRect) -> None:
     cx = int((input_area.left + input_area.right) / 2)
     cy = int((input_area.top + input_area.bottom) / 2)
     pyautogui.click(cx, cy)
-    time.sleep(0.3)
+    time.sleep(0.15)  # 优化: 0.15s 足够稳定
 
 
 def send_reply_vision(
@@ -97,17 +97,17 @@ def send_reply_vision(
 
     try:
         pyautogui.click(inp_x, inp_y)
-        time.sleep(0.12)
+        time.sleep(0.08)  # 优化: 减少点击后等待
         pyautogui.hotkey("ctrl", "a")
-        time.sleep(0.05)
+        time.sleep(0.04)  # 优化: 减少快捷键等待
         pyautogui.press("delete")
-        time.sleep(0.06)
+        time.sleep(0.04)  # 优化: 减少删除等待
         pyperclip.copy(body)
         pyautogui.hotkey("ctrl", "v")
-        time.sleep(max(0.35, float(settings.vision_capture_settle_sec)))
+        time.sleep(0.15)  # 优化: 减少粘贴后等待（原0.35s）
         human_delay()
         pyautogui.click(scx, scy)
-        time.sleep(0.45)
+        time.sleep(0.25)  # 优化: 减少发送后等待（原0.45s）
         return True
     except Exception as exc:
         log.exception("vision 发送异常: %s", exc)
