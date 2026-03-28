@@ -6,6 +6,7 @@ import signal
 import sys
 import threading
 import time
+import uuid
 from time import perf_counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -46,6 +47,11 @@ from app.rpa_lock import acquire_lock
 log = get_logger("main")
 
 _MAX_DEDUP = 5000
+
+# 浸泡测试配置
+_SOAK_ERROR_THRESHOLD = 10  # 连续异常阈值
+_SOAK_ERROR_RESET_SEC = 30.0  # 触发熔断后的长等待
+_SOAK_STATS_INTERVAL_SEC = 300.0  # 5分钟统计间隔
 
 
 def perf_log(msg: str, *args: object) -> None:
@@ -256,6 +262,14 @@ def _run_vision_pipeline(state: AppState) -> None:
     _vision_skip_log_ts: dict[str, float] = {}
     _active_sleep = max(0.05, float(settings.vision_poll_active_sec))
 
+    # 浸泡测试统计
+    session_id = str(uuid.uuid4())[:8]
+    start_mono = time.monotonic()
+    consecutive_errors = 0
+    processed_count = 0
+    last_stats_time = start_mono
+    log.info("[SOAK] 纯视觉流水线启动 session_id=%s", session_id)
+
     def _vision_skip(reason: str, *, interval_sec: float = 14.0) -> None:
         """节流 INFO，避免刷屏；便于排查「只截图不回复」。"""
         now = time.monotonic()
@@ -274,11 +288,13 @@ def _run_vision_pipeline(state: AppState) -> None:
                     continue
                 if not window_alive(win):
                     log.warning("窗口丢失，重新定位")
+                    consecutive_errors += 1
                     win = locate_main_window_with_retry(on_attempt=_log_attempt)
                     if win is None:
                         if _sleep_until_shutdown(5.0):
                             break
                         continue
+                    consecutive_errors = 0  # 成功恢复，重置异常计数
 
                 t_round = perf_counter()
                 t_cap = perf_counter()
@@ -511,10 +527,13 @@ def _run_vision_pipeline(state: AppState) -> None:
                     conversation_id=conv_id,
                     round_index=current_round,
                     buyer_id_source=buyer_id_source,
+                    session_id=session_id,
                 )
 
                 if ok:
                     state.remember_dedup(fp)
+                    processed_count += 1
+                    consecutive_errors = 0  # 成功处理，重置异常计数
                     if buyer_id:
                         # 仅当 buyer_id 不是 unknown_buyer 时才保存 fingerprint
                         # 避免多个不同买家都被当作 unknown_buyer 处理
@@ -543,6 +562,7 @@ def _run_vision_pipeline(state: AppState) -> None:
                 break
             except Exception as exc:
                 log.exception("纯视觉主循环异常: %s", exc)
+                consecutive_errors += 1
                 try:
                     bgr_err = capture_window_frame_bgr(win)
                     save_debug_bgr(bgr_err, "vision_loop_error", event_type="error")
@@ -551,6 +571,8 @@ def _run_vision_pipeline(state: AppState) -> None:
                 if _sleep_until_shutdown(max(3.0, float(settings.poll_interval_sec))):
                     break
     finally:
+        elapsed_total = (time.monotonic() - start_mono) / 60
+        log.info("[SOAK] 纯视觉流水线结束 session_id=%s，总运行 %.1f 分钟，处理 %d 条消息", session_id, elapsed_total, processed_count)
         print("[INFO] 正在保存状态…", flush=True)
         try:
             _save_state(state)
@@ -593,9 +615,30 @@ def _run_legacy_uia(state: AppState) -> None:
     # 兜底读当前会话时：同一买家指纹首次出现时间（monotonic），用于「非新消息」超时丢弃
     fallback_fp_first_mono: dict[str, tuple[str, float]] = {}
 
+    # 浸泡测试统计
+    session_id = str(uuid.uuid4())[:8]
+    start_mono = time.monotonic()
+    consecutive_errors = 0
+    processed_count = 0
+    last_stats_time = start_mono
+    log.info("[SOAK] Legacy UIA 流水线启动 session_id=%s", session_id)
+
     try:
         while not _shutdown_requested.is_set():
             try:
+                # 运行时长统计（每5分钟）
+                now_mono = time.monotonic()
+                elapsed_total = now_mono - start_mono
+                if now_mono - last_stats_time >= _SOAK_STATS_INTERVAL_SEC:
+                    log.info("[SOAK] 已运行 %.1f 分钟，已处理 %d 条消息", elapsed_total / 60, processed_count)
+                    last_stats_time = now_mono
+
+                # 连续异常熔断检查
+                if consecutive_errors >= _SOAK_ERROR_THRESHOLD:
+                    log.error("[SOAK] 连续异常 ≥ %d，建议检查窗口状态，休眠 %.0f 秒", _SOAK_ERROR_THRESHOLD, _SOAK_ERROR_RESET_SEC)
+                    time.sleep(_SOAK_ERROR_RESET_SEC)
+                    consecutive_errors = 0  # 重置计数器，尝试恢复
+
                 maybe_cleanup()
                 if paused.is_set():
                     if _sleep_until_shutdown(0.2):
@@ -605,12 +648,14 @@ def _run_legacy_uia(state: AppState) -> None:
                 if not window_alive(win):
                     print("[窗口丢失] 尝试重新定位…")
                     log.warning("窗口丢失，重新定位")
+                    consecutive_errors += 1
                     win = locate_main_window_with_retry(on_attempt=_log_attempt)
                     if win is None:
                         print("重新定位失败，5s 后再试")
                         if _sleep_until_shutdown(5.0):
                             break
                         continue
+                    consecutive_errors = 0  # 成功恢复，重置异常计数
                     try:
                         title = win.Name or ""
                     except Exception:
@@ -805,9 +850,12 @@ def _run_legacy_uia(state: AppState) -> None:
                         conversation_id=conv_id_legacy,
                         round_index=current_round_legacy,
                         buyer_id_source="legacy_uia",
+                        session_id=session_id,
                     )
                     if ok:
                         state.remember_dedup(fp)
+                        processed_count += 1
+                        consecutive_errors = 0  # 成功处理，重置异常计数
                         state.last_replied_fingerprint[buyer_id] = fp
                         # 更新 round_counters（多轮对话计数）
                         state.round_counters[buyer_id] = current_round_legacy
@@ -837,9 +885,12 @@ def _run_legacy_uia(state: AppState) -> None:
                 break
             except Exception as exc:
                 log.exception("主循环异常: %s", exc)
+                consecutive_errors += 1
                 if _sleep_until_shutdown(max(3.0, float(settings.poll_interval_sec))):
                     break
     finally:
+        elapsed_total = (time.monotonic() - start_mono) / 60
+        log.info("[SOAK] Legacy UIA 流水线结束 session_id=%s，总运行 %.1f 分钟，处理 %d 条消息", session_id, elapsed_total, processed_count)
         print("[INFO] 正在保存状态…", flush=True)
         try:
             _save_state(state)

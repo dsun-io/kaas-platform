@@ -1,9 +1,8 @@
-"""追加写入 JSON Lines 对话留档（无数据库）。"""
+"""追加写入 JSON Lines 对话留档（无数据库）。- 拼多多版本"""
 
 from __future__ import annotations
 
 import json
-import os
 import time
 from pathlib import Path
 
@@ -31,12 +30,13 @@ def log_conversation(
     tokens_out: int | None = None,
     status: str = "sent",
     error: str | None = None,
-    platform: str = "qianniu",
+    platform: str = "pdd",
     conversation_id: str | None = None,
     round_index: int | None = None,
     buyer_id_source: str | None = None,
     session_id: str | None = None,
 ) -> None:
+    """记录对话日志，支持浸泡测试 session_id 标记"""
     record = {
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "platform": platform,
