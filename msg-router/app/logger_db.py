@@ -13,9 +13,19 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def _add_column_if_not_exists(conn: sqlite3.Connection, column: str, col_type: str) -> None:
+    """安全地添加列（如果尚不存在）"""
+    try:
+        conn.execute(f"ALTER TABLE chat_logs ADD COLUMN {column} {col_type}")
+    except sqlite3.OperationalError:
+        # 列已存在，忽略错误
+        pass
+
+
 def init_db() -> None:
     conn = _connect()
     try:
+        # 创建基础表（如果不存在）
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS chat_logs (
@@ -31,6 +41,15 @@ def init_db() -> None:
             )
             """
         )
+        # 平滑迁移：添加新列（兼容已有数据）
+        _add_column_if_not_exists(conn, "ai_source", "TEXT DEFAULT 'unknown'")
+        _add_column_if_not_exists(conn, "ai_latency_ms", "INTEGER DEFAULT NULL")
+        _add_column_if_not_exists(conn, "tokens_in", "INTEGER DEFAULT NULL")
+        _add_column_if_not_exists(conn, "tokens_out", "INTEGER DEFAULT NULL")
+        _add_column_if_not_exists(conn, "status", "TEXT DEFAULT 'sent'")
+        _add_column_if_not_exists(conn, "error_type", "TEXT DEFAULT NULL")
+        _add_column_if_not_exists(conn, "error_detail", "TEXT DEFAULT NULL")
+        _add_column_if_not_exists(conn, "inquiry_type", "TEXT DEFAULT NULL")
         conn.commit()
     finally:
         conn.close()
@@ -45,6 +64,14 @@ def insert_log(
     conversation_id: str,
     should_transfer: bool,
     response_time_ms: int,
+    ai_source: str = "unknown",
+    ai_latency_ms: int | None = None,
+    tokens_in: int | None = None,
+    tokens_out: int | None = None,
+    status: str = "sent",
+    error_type: str | None = None,
+    error_detail: str | None = None,
+    inquiry_type: str | None = None,
 ) -> int:
     conn = _connect()
     try:
@@ -52,8 +79,10 @@ def insert_log(
             """
             INSERT INTO chat_logs (
                 platform, buyer_id, message, reply, conversation_id,
-                should_transfer, response_time_ms, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                should_transfer, response_time_ms, created_at,
+                ai_source, ai_latency_ms, tokens_in, tokens_out,
+                status, error_type, error_detail, inquiry_type
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 platform,
@@ -64,6 +93,14 @@ def insert_log(
                 int(should_transfer),
                 response_time_ms,
                 datetime.now(timezone.utc).isoformat(),
+                ai_source,
+                ai_latency_ms,
+                tokens_in,
+                tokens_out,
+                status,
+                error_type,
+                error_detail,
+                inquiry_type,
             ),
         )
         conn.commit()

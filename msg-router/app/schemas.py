@@ -13,3 +13,5 @@ class ChatResponse(BaseModel):
     conversation_id: str
     should_transfer: bool
     response_time_ms: int
+    ai_source: str = Field(default="unknown", description="fastgpt | fallback | transfer")
+    status: str = Field(default="sent", description="sent | send_failed | ai_failed | transfer | skipped")
