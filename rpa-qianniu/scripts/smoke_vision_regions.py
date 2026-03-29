@@ -281,7 +281,7 @@ def main() -> int:
     if args.mode == "ratio":
         lay = layout_from_rect(wr)
     else:
-        lay = build_vision_layout(wr, bgr)
+        lay = build_vision_layout(wr, bgr, win)
 
     if args.mode == "unread":
         dots = detect_unread_dots(bgr, wr, lay.left_panel)

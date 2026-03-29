@@ -398,6 +398,15 @@ def select_session(item: Control) -> None:
 
 
 def _win_rect(win: Control) -> auto.Rect:
+    """获取窗口精确边界（优先DWM，解决UIA 9px偏移问题）"""
+    from app.window_rect import get_precise_rect_for_control, rect_to_auto_rect
+    
+    # 尝试使用 DWM 精确边界（不含不可见边框）
+    precise_rect = get_precise_rect_for_control(win)
+    if precise_rect:
+        return rect_to_auto_rect(precise_rect)
+    
+    # fallback 到原始 UIA 边界
     return win.BoundingRectangle
 
 
@@ -558,11 +567,111 @@ def _text_from(ctrl: Control) -> str:
         return ""
 
 
+def _read_buyer_info_from_right_panel(win: Control) -> dict[str, str] | None:
+    """
+    从右侧面板(Pane"千牛工作台")UIA直读买家信息
+    
+    基于阶段一探测: 右侧面板 x>=1958 内有大量Text节点
+    (买家昵称、信用分、消费记录等)，可UIA直接读取
+    
+    Returns:
+        {"nickname": str} 或 None（如果未找到有效昵称）
+    """
+    try:
+        wr = _win_rect(win)
+        window_width = wr.right - wr.left
+        
+        # 右侧面板判定: x > 窗口宽度 * 0.6
+        right_panel_threshold = window_width * 0.6 + wr.left
+        
+        candidates = []
+        
+        # 遍历控件树，只遍历右侧面板区域（max_depth=6足够）
+        for c in _walk(win, max_depth=6):
+            try:
+                if c.ControlType != auto.ControlType.TextControl:
+                    continue
+                
+                r = c.BoundingRectangle
+                # 只取右侧面板内的Text
+                if r.left < right_panel_threshold:
+                    continue
+                
+                t = _text_from(c).strip()
+                if len(t) < 2 or len(t) > 64:
+                    continue
+                
+                # 排除系统标签（探测阶段一已知的右侧面板控件）
+                system_tags = (
+                    "千牛工作台", "智能客服", "发送宝贝", "邀请下单",
+                    "专属优惠", "优惠计算", "收藏", "上一页", "下一页",
+                    "查看详情", "发票", "备注", "小额收款", "小额打款",
+                    "快捷复制", "补发", "店铺身份", "非会员", "粉丝", "新客",
+                    "店铺消费", "购买", "次", "累计消费", "平均客单价",
+                    "优惠券", "添加备注", "邀请入会", "发优惠券", "邀请入群",
+                    "咨询宝贝", "足迹", "已评价", "下单", "付款",
+                    "查看物流", "收货信息", "商品", "件", "含邮费",
+                    "正品", "高质量", "围栏网", "羊群", "使用时间",
+                    "金属网", "丝网", "草原", "ID", "淘宝",
+                    "●", "〇", "◆", "★", "☆",
+                )
+                if any(tag in t for tag in system_tags):
+                    continue
+                
+                # 排除纯数字、百分比、金额格式
+                if t.replace(".", "").replace(",", "").replace(" ", "").isdigit():
+                    continue
+                if "%" in t:
+                    continue
+                if re.search(r"[￥¥]\s*\d", t):
+                    continue
+                
+                # 计算候选得分: 面积越大越可能是昵称（大字）
+                area = (r.right - r.left) * (r.bottom - r.top)
+                
+                # 额外加分: 包含常见买家昵称关键词
+                bonus = 0
+                if any(kw in t for kw in ("买家", "访客", "用户", "客户")):
+                    bonus += 50
+                
+                candidates.append((t, area + bonus, r))
+            except Exception:
+                continue
+        
+        if not candidates:
+            return None
+        
+        # 按面积+得分排序，取最大（最可能是昵称大字）
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        best_nickname = candidates[0][0]
+        
+        # 如果最高分候选仍然包含系统词，返回None让fallback生效
+        if any(sys in best_nickname for sys in ("客服", "服", "淘宝", "系统")):
+            return None
+        
+        return {"nickname": best_nickname}
+        
+    except Exception as e:
+        log.debug("右侧面板UIA直读失败: %s", e)
+        return None
+
+
 def guess_active_buyer_title(win: Control) -> str:
     """
     当前已打开会话标题（用于左侧列表无未读 UIA 时的兜底 buyer_id）。
-    取窗口上部带状区域内的 TextControl，排除店铺/卖家昵称与常见 chrome。
+    优先从右侧面板UIA直读买家昵称，失败时fallback到原有逻辑。
     """
+    # Task 2B: 优先尝试右侧面板UIA直读（解决#3昵称OCR误读问题）
+    try:
+        uia_info = _read_buyer_info_from_right_panel(win)
+        if uia_info and uia_info.get("nickname"):
+            nickname = uia_info["nickname"]
+            log.debug("右侧面板UIA直读买家昵称: %s", nickname)
+            return nickname
+    except Exception as e:
+        log.debug("右侧面板UIA直读失败，fallback到原有逻辑: %s", e)
+    
+    # 原有逻辑: 上部带状区域扫描（保留作为fallback）
     sel = get_selectors()
     seller_hint = ""
     try:

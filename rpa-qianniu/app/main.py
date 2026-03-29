@@ -397,7 +397,7 @@ def _run_vision_pipeline(state: AppState) -> None:
                         )
                     except Exception as exc:
                         log.debug("[COORD] 跳过: %s", exc)
-                lay = build_vision_layout(win_rect, bgr)
+                lay = build_vision_layout(win_rect, bgr, win)
                 save_debug_bgr(
                     bgr,
                     "vision_full_window",
@@ -434,7 +434,7 @@ def _run_vision_pipeline(state: AppState) -> None:
                         continue
                     wr2 = rect_from_window(win)
                     win_rect = align_win_rect_to_screenshot_origin(wr2, hwnd)
-                    lay = build_vision_layout(win_rect, bgr)
+                    lay = build_vision_layout(win_rect, bgr, win)
                     save_debug_bgr(bgr, "vision_after_click_session")
                     buyer_id = normalize_buyer_id("unknown_buyer")
                     t_ocr = perf_counter()
@@ -567,7 +567,7 @@ def _run_vision_pipeline(state: AppState) -> None:
                 win_rect = align_win_rect_to_screenshot_origin(
                     rect_from_window(win), hwnd
                 )
-                lay = build_vision_layout(win_rect, bgr_send)
+                lay = build_vision_layout(win_rect, bgr_send, win)
                 save_debug_bgr(bgr_send, "vision_before_send")
                 ok = False
                 if bgr_send is not None and bgr_send.size > 0:
