@@ -415,6 +415,15 @@ def is_ocr_noise_message(text: str) -> bool:
     # "运单号"/"快递单号"/"物流单号" + 字母数字
     if re.match(r"^(运单号|快递单号|物流单号)[：:]?\s*[A-Za-z0-9]+", t):
         return True
+    # "价格：xxx" 格式（右侧商品/订单信息）
+    if re.match(r"^价格[：:]\s*[\d,]+(?:\.\d+)?", t):
+        return True
+    # "¥xxx" 或 "￥xxx" 价格格式（订单金额）
+    if re.match(r"^[¥￥]\s*[\d,]+(?:\.\d+)?", t):
+        return True
+    # "共x件" / "共x个" 商品数量格式
+    if re.match(r"^共\d+[件个条]", t):
+        return True
     return False
 
 
