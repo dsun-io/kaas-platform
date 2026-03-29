@@ -34,20 +34,20 @@ alwaysApply: true
 - `Nano验收` <- `Cursor开发`
 - `David验收` <- `Nano验收 / Nano规划`
 - `已完成` <- `David验收`
-- 非法流转必须拒绝，并在 `📝 执行日志` 追加：`[角色] YYYY-MM-DD HH:mm 非法状态流转：A -> B（已拒绝）`。
+- 非法流转必须拒绝，并在 `🔧 Runner 执行日志` 追加：`[角色] YYYY-MM-DD HH:mm 非法状态流转：A -> B（已拒绝）`。
 
 ## 5) Cursor 执行规则
 - 启动前读取 `📋 任务 Spec`，不得按猜测扩需求。
 - 完成后必须按顺序做四件事（顺序不可变）：
   - 先执行 `git add`、`git commit`、`git push`
   - push 成功后更新属性 `产出物`（PR/分支/commit）
-  - 向 `📝 执行日志` 追加结构化记录（必须含 commit hash 与 push 结果）
+  - 向 `🔧 Runner 执行日志` 选项卡追加结构化记录（必须完整包含以下12项骨架，缺一不可）
   - 状态从 `Cursor开发` 流转到 `Nano验收`
-- 阻塞时在 `📝 执行日志` 写明原因，并将状态回退到 `Nano规划`。
+- 阻塞时在 `🔧 Runner 执行日志` 写明原因，并将状态回退到 `Nano规划`。
 
-## 6) 执行日志规范（写入📝选项卡，必须高密度可审计）
+## 6) 执行日志规范（写入 `🔧 Runner 执行日志` 选项卡，必须高密度可审计）
 - 格式：`[Nano/Cursor/David] YYYY-MM-DD HH:mm 内容`
-- 只允许追加，不覆盖历史。
+- **只允许追加，不覆盖历史** - 必须使用 `notion-update-page` 工具的 `update_content` 命令追加，**绝对禁止**使用 `replace_content`。
 - Cursor 日志必须包含以下 12 项（缺一不可）：
   - `任务元数据`：task_id、task_url、spec_version、repo、branch、pr_or_commit、operator
   - `目标与范围`：本次做什么/不做什么，边界条件
@@ -132,7 +132,7 @@ alwaysApply: true
 > 开发完成、提交验收之前，必须逐项对照任务 Spec 输出自检清单。格式：Spec编号 → 修改的文件 → commit 中的具体改动 → PASS/SKIP/FAIL。存在 FAIL 必须先修复再提交。SKIP 必须写原因。没有自检清单 = Nano 验收直接打回。
 
 > **铁律二：强制详细日志且禁止删除历史日志**
-> 每次写入执行日志必须包含：task_id、变更文件清单、测试命令与结果、自检清单、git commit hash、git push 状态。**严禁删除、覆盖、截断之前的任何日志内容**，只允许在末尾追加。违反 = Nano 验收直接打回。
+> 每次写入 `🔧 Runner 执行日志` 必须完整包含 12 项骨架：任务元数据、目标与范围、输入快照、执行时间线、改动明细、验证矩阵、验收映射、异常与处置、风险与回滚、产出清单、待办与建议。**严禁删除、覆盖、截断之前的任何日志内容**，只允许在末尾追加。缺任一项 = Nano 验收直接打回。
 
 > **铁律三：强制推送远程仓库**
 > 所有开发完成后必须执行 `git push` 将所有 commit 推送到远程仓库。未推送到远程 = 任务未完成，不允许改状态为 Nano验收。产出物字段必须包含可在 GitHub 上验证的 commit hash 或 PR 链接。本地 commit 不算交付。违反 = Nano 验收直接打回。
@@ -144,6 +144,17 @@ alwaysApply: true
 > ❌ **禁止做法**：创建 `scripts/update_notion.py`、`scripts/create_task.py` 等脚本
 > 
 > 违反 = 立即删除脚本，重新使用 MCP 方式更新。
+
+> **铁律五：强制 12 项完成后才流转状态**
+> 未完成 12 项日志骨架（任务元数据、目标与范围、输入快照、执行时间线、改动明细、验证矩阵、验收映射、异常与处置、风险与回滚、产出清单、待办与建议、附录证据索引）、未执行 git push、未输出自检清单，一律禁止将状态从 `Cursor开发` 改为 `Nano验收`。违反 = 必须回退并补全。
+
+> **铁律六：强制使用 update_content 追加日志，绝对禁止 replace_content**
+> **严禁使用 `replace_content` 命令更新 Notion 页面内容**，该命令会删除/覆盖所有历史日志，严重违反铁律二。
+> 
+> ✅ **正确做法**：使用 `update_content` 命令，通过 `old_str` 定位已有内容（如 `"\t</tab>"` 或 `"YYYY-MM-DD HH:mm"`），`new_str` 在末尾追加新日志
+> ❌ **绝对禁止**：使用 `replace_content` 替换整个页面内容
+> 
+> 违反 = 立即恢复被删除的日志，重新使用 update_content 追加，并接受处罚。
 
 ## 9) Cursor 异常援助任务规范
 
