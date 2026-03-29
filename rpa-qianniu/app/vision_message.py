@@ -230,6 +230,11 @@ def _right_nick_line_junk(text: str) -> bool:
         return True  # 纯标点行
     if _NICK_PRICE_CHARS.search(t):
         return True  # 包含价格符号
+    # 过滤看起来像代码文件名的文本（可能是背后 IDE 漏出）
+    if re.search(r"\.[a-zA-Z]{1,4}$", t) and not any(
+        "\u4e00" <= c <= "\u9fff" for c in t
+    ):
+        return True  # 纯 ASCII + 扩展名，如 safety_filter.py
     stub = (settings.ai_stub_reply or "").strip()
     if stub and (t == stub or stub in t):
         return True

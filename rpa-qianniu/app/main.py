@@ -99,6 +99,27 @@ def _fuzzy_text_match(a: str, b: str, threshold: int = 3) -> bool:
     return prev[-1] <= threshold
 
 
+import re as _re
+
+_TS_PREFIX_RE = _re.compile(
+    r"^.*?\d{4}-\d{1,2}-\d{1,2}\s*\d{1,2}:\d{2}(?::\d{2})?\s*"
+)
+
+
+def _normalize_msg_for_dedup(msg: str, buyer_id: str) -> str:
+    """去除消息开头的昵称+时间戳前缀，留下纯正文。"""
+    t = (msg or "").strip()
+    # 去除开头的 buyer_id 昵称
+    bid = (buyer_id or "").strip()
+    if bid and t.startswith(bid):
+        t = t[len(bid):].strip()
+    # 去除开头的时间戳模式
+    t = _TS_PREFIX_RE.sub("", t).strip()
+    # 去除开头的换行符
+    t = t.lstrip("\n").strip()
+    return t if t else (msg or "").strip()
+
+
 def perf_log(msg: str, *args: object) -> None:
     """[PERF] 专用：仅刷新控制台 handler，避免高频文件 I/O。"""
     log.info(msg, *args)
@@ -509,7 +530,10 @@ def _run_vision_pipeline(state: AppState) -> None:
 
                 # 文本模糊去重：OCR 每帧微小差异不应触发重新回复
                 last_text = state.last_replied_text.get(buyer_id or "")
-                if last_text and _fuzzy_text_match(last_text, msg):
+                if last_text and _fuzzy_text_match(
+                    _normalize_msg_for_dedup(last_text, buyer_id or ""),
+                    _normalize_msg_for_dedup(msg, buyer_id or ""),
+                ):
                     _vision_skip(
                         f"模糊去重：消息与上次回复内容高度相似 buyer={buyer_id!r}",
                         interval_sec=18.0,
