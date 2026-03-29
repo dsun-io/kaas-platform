@@ -88,7 +88,13 @@ async def handle_chat(req: ChatRequest) -> ChatResponse:
 
     if settings.safety_filter_enabled and reply and not api_err:
         filter_result = run_safety_pipeline(reply)
-        reply = filter_result.filtered_reply if filter_result.filtered_reply else reply
+        # 修复：显式判断 None 而非 falsy，避免空字符串（拦截时）回退到原始回复
+        if filter_result.should_transfer:
+            # 被安全过滤拦截，使用空回复（由 should_transfer 标记转人工）
+            reply = ""
+        elif filter_result.filtered_reply is not None:
+            reply = filter_result.filtered_reply
+        # else: 保持原始 reply（理论上不会发生）
         should_transfer = filter_result.should_transfer or api_err
         transfer_reason = filter_result.transfer_reason if filter_result.should_transfer else None
 
