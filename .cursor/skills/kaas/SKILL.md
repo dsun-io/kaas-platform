@@ -14,8 +14,10 @@ description: Executes KAAS Notion workflow orchestration. Use when the user inpu
 - 优先级顺序固定：`P0 紧急 > P1 重要 > P2 常规`。
 - 同优先级按创建时间从早到晚。
 - **同一时间只执行一个任务**：在当前任务完成并切到 `Nano验收` 前，不得启动下一条。
-- **强制命令**：每次执行日志必须完整包含"12项骨架"，缺任一项都不得更新 `Nano验收`。
+- **强制命令**：每次执行日志必须完整包含"12项骨架"，缺任一项都不得更新 `Nano验收`。12项包括：任务元数据、目标与范围、输入快照、执行时间线、改动明细、验证矩阵、验收映射、异常与处置、风险与回滚、产出清单、待办与建议、附录证据索引。
 - **强制使用 MCP 更新 Notion**：**严禁创建任何脚本**（Python/PowerShell/Bash 等）来更新 Notion。所有 Notion 操作（读取、更新页面、追加日志、状态流转）必须且只能使用 Cursor 内置 MCP 工具（`user-Notion` 服务器）。违反此规则 = 立即删除脚本并重新使用 MCP 方式执行。
+- **强制完成 12 项日志后才可流转状态**：未完成 12 项骨架、未执行 git push、未输出自检清单，一律禁止将状态改为 `Nano验收`。
+- **强制使用 update_content 追加日志，绝对禁止 replace_content**：严禁使用 `replace_content` 命令更新 Notion 页面，该命令会删除/覆盖历史日志。只允许使用 `update_content` 命令追加日志。
 
 ## Task Selection
 1. 查询任务流水线（view: `https://www.notion.so/fad40cb1006b4c71ab041a362a32334c?v=54a797e284664ff4b549abe408c4def8`）。
@@ -29,14 +31,18 @@ description: Executes KAAS Notion workflow orchestration. Use when the user inpu
 3. 完成代码后先执行 Git 交付：
    - `git add` -> `git commit` -> `git push`
    - 未 push 成功前，禁止写"开发完成"到 Notion
-4. push 成功后再回写 Notion：
+4. **强制自检（提交前必做）**：
+   - 输出自检清单表格：Spec编号 → 修改文件 → commit 改动 → PASS/SKIP/FAIL
+   - 存在 FAIL 必须先修复再提交
+   - 没有此清单 = 禁止继续
+5. push 成功后再回写 Notion：
    - 属性 `产出物`：PR/分支/commit（必须包含可追溯标识）
-   - `📝 执行日志` 选项卡：追加结构化详细日志（含 commit hash、push结果）
-5. 状态流转：`Cursor开发 -> Nano验收`。
-6. 向用户汇报本次任务完成情况；不自动继续下一条，等待用户下一次 `kaas` 指令。
+   - `🔧 Runner 执行日志` 选项卡：追加结构化详细日志（必须完整包含以下12项骨架，缺一不可）
+6. 状态流转：`Cursor开发 -> Nano验收`（未完成12项日志禁止流转）。
+7. 向用户汇报本次任务完成情况；不自动继续下一条，等待用户下一次 `kaas` 指令。
 
 ## Execution Log Format (Append to 🔧 Runner 执行日志)
-执行日志必须做到"可复盘全貌"。只允许追加，不覆盖历史。以下 **12项骨架为强制命令**，缺一不可：
+执行日志必须做到"可复盘全貌"。**只允许追加，不覆盖历史 - 必须使用 `update_content` 命令追加，绝对禁止 `replace_content`**。以下 **12项骨架为强制命令**，缺一不可：
 
 ```markdown
 [Cursor] YYYY-MM-DD HH:mm 开发完成
@@ -99,8 +105,8 @@ description: Executes KAAS Notion workflow orchestration. Use when the user inpu
 
 ## Failure Handling
 - 若 Notion/MCP 暂时失败：重试一次；仍失败则向用户报告阻塞原因与下一步建议。
-- 若状态前置不合法：拒绝流转，并在 `📝 执行日志` 记录"非法状态流转已拒绝"。
-- 若 `git push` 失败：不得切换 `Nano验收`；在 `📝 执行日志` 记录失败原因并保持 `Cursor开发`。
+- 若状态前置不合法：拒绝流转，并在 `🔧 Runner 执行日志` 记录"非法状态流转已拒绝"。
+- 若 `git push` 失败：不得切换 `Nano验收`；在 `🔧 Runner 执行日志` 记录失败原因并保持 `Cursor开发`。
 - 若日志未满足12项骨架：视为未完成，禁止写"开发完成"与禁止状态流转。
 
 ## 自检清单模板（每次提交前必须输出）
