@@ -14,10 +14,55 @@ description: Executes KAAS Notion workflow orchestration. Use when the user inpu
 - 优先级顺序固定：`P0 紧急 > P1 重要 > P2 常规`。
 - 同优先级按创建时间从早到晚。
 - **同一时间只执行一个任务**：在当前任务完成并切到 `Nano验收` 前，不得启动下一条。
+- **【强制执行】绝对禁止删除/覆盖历史日志，只追加**：
+  - **必须使用** `update_content` 命令追加日志
+  - **绝对禁止**使用 `replace_content` 命令（会删除/覆盖整个页面历史）
+  - **绝对禁止**删除、修改、覆盖、截断任何已有日志内容
+  - **绝对禁止**清空日志后重新写入
+  - **只能**在已有内容的**末尾追加**新日志
+  - `old_str` 必须匹配**最后一条已有日志**或 **Tab标题行** `🔧 **Runner 执行日志**`
+  - `new_str` 必须**完整保留** `old_str` 的全部内容 + `\n\n` + 新增日志（带缩进）
+  - **违反 = Nano验收直接打回，必须恢复原日志，重新执行**
 - **强制命令**：每次执行日志必须完整包含"12项骨架"，缺任一项都不得更新 `Nano验收`。12项包括：任务元数据、目标与范围、输入快照、执行时间线、改动明细、验证矩阵、验收映射、异常与处置、风险与回滚、产出清单、待办与建议、附录证据索引。
 - **强制使用 MCP 更新 Notion**：**严禁创建任何脚本**（Python/PowerShell/Bash 等）来更新 Notion。所有 Notion 操作（读取、更新页面、追加日志、状态流转）必须且只能使用 Cursor 内置 MCP 工具（`user-Notion` 服务器）。违反此规则 = 立即删除脚本并重新使用 MCP 方式执行。
 - **强制完成 12 项日志后才可流转状态**：未完成 12 项骨架、未执行 git push、未输出自检清单，一律禁止将状态改为 `Nano验收`。
-- **强制使用 update_content 追加日志，绝对禁止 replace_content**：严禁使用 `replace_content` 命令更新 Notion 页面，该命令会删除/覆盖历史日志。只允许使用 `update_content` 命令追加日志。
+
+## 铁律（提交前必做，不可跳过）
+
+> **铁律一：强制自检（提交前必做，不可跳过）**
+> 开发完成、提交验收之前，必须逐项对照任务 Spec 输出自检清单。格式：Spec编号 → 修改的文件 → commit 中的具体改动 → PASS/SKIP/FAIL。存在 FAIL 必须先修复再提交。SKIP 必须写原因。没有自检清单 = Nano 验收直接打回。
+
+> **铁律二：强制详细日志且绝对禁止删除/修改/覆盖历史日志**
+> 每次写入 `🔧 Runner 执行日志` 必须完整包含 12 项骨架。 **绝对禁止删除、修改、覆盖、截断任何已有日志内容**，包括：
+> - 禁止删除任何历史日志行
+> - 禁止修改任何已有日志内容 
+> - 禁止替换整个日志内容
+> - 禁止清空日志后重新写入
+> 
+> **只允许一种操作：在已有内容的末尾追加新日志**。历史日志必须永久保留完整。违反 = Nano 验收直接打回。
+
+> **铁律三：强制推送远程仓库**
+> 所有开发完成后必须执行 `git push` 将所有 commit 推送到远程仓库。未推送到远程 = 任务未完成，不允许改状态为 Nano验收。产出物字段必须包含可在 GitHub 上验证的 commit hash 或 PR 链接。本地 commit 不算交付。违反 = Nano 验收直接打回。
+
+> **铁律四：强制使用 MCP 更新 Notion**
+> **严禁创建任何 Python 脚本、PowerShell 脚本或其他外部工具来更新 Notion。** 所有 Notion 页面更新（包括执行日志、状态流转、属性更新）必须且只能使用 Cursor 内置的 MCP 工具（`user-Notion` 服务器）。
+> 
+> ✅ **正确做法**：使用 `CallMcpTool` 调用 `notion-update-page`、`notion-fetch` 等工具
+> ❌ **禁止做法**：创建 `scripts/update_notion.py`、`scripts/create_task.py` 等脚本
+> 
+> 违反 = 立即删除脚本，重新使用 MCP 方式更新。
+
+> **铁律五：强制 12 项完成后才流转状态**
+> 未完成 12 项日志骨架（任务元数据、目标与范围、输入快照、执行时间线、改动明细、验证矩阵、验收映射、异常与处置、风险与回滚、产出清单、待办与建议、附录证据索引）、未执行 git push、未输出自检清单，一律禁止将状态从 `Cursor开发` 改为 `Nano验收`。违反 = 必须回退并补全。
+
+> **铁律六：强制使用 update_content 追加日志，绝对禁止 replace_content**
+> **严禁使用 `replace_content` 命令更新 Notion 页面内容**，该命令会删除/覆盖所有历史日志，严重违反铁律二。
+> 
+> ✅ **正确做法**：使用 `update_content` 命令，通过 `old_str` 定位已有内容（如 `"\t\t🔧 **Runner 执行日志**"`），`new_str` 保留原内容并在末尾追加新日志
+> ❌ **绝对禁止**：使用 `replace_content` 替换整个页面内容
+> ❌ **绝对禁止**：任何会删除、修改、覆盖历史日志的操作
+> 
+> **关键原则**：new_str 必须包含 old_str 的完整内容 + 新增内容，不能有任何删除或修改。
 
 ## Task Selection
 1. 查询任务流水线（view: `https://www.notion.so/fad40cb1006b4c71ab041a362a32334c?v=54a797e284664ff4b549abe408c4def8`）。
@@ -43,6 +88,54 @@ description: Executes KAAS Notion workflow orchestration. Use when the user inpu
 
 ## Execution Log Format (Append to 🔧 Runner 执行日志)
 执行日志必须做到"可复盘全貌"。**只允许追加，不覆盖历史 - 必须使用 `update_content` 命令追加，绝对禁止 `replace_content`**。以下 **12项骨架为强制命令**，缺一不可：
+
+### Notion MCP 写入规范（关键）
+
+#### 核心原则：只能追加，严禁删除/修改/覆盖历史
+- **绝对禁止**使用 `replace_content` 命令（会删除整个页面历史）
+- **绝对禁止**删除任何历史日志行
+- **绝对禁止**修改任何已有日志内容
+- **只允许一种操作**：在已有内容的末尾追加新日志
+
+#### 正确的追加格式
+使用Tab标题作为锚点（经过验证的有效方法）：
+
+```json
+{
+  "page_id": "页面ID",
+  "command": "update_content",
+  "content_updates": [
+    {
+      "old_str": "\t\t🔧 **Runner 执行日志**",
+      "new_str": "\t\t🔧 **Runner 执行日志**\n\n\t\t[Cursor] YYYY-MM-DD HH:mm 开发完成\n\t\t## 1. 任务元数据\n\t\t- task_id: xxx"
+    }
+  ]
+}
+```
+
+**关键要点**：
+1. 使用 `\t\t` (两个制表符) 作为缩进
+2. `old_str` 匹配Tab标题行 `🔧 **Runner 执行日志**`
+3. `new_str` 必须**完整保留** `old_str` 的全部内容，然后添加 `\n\n` 和新日志内容
+4. 新日志内容每行也需要 `\t\t` 缩进
+5. **严禁**只保留部分内容或修改 `old_str` 中的任何字符
+
+#### 写入步骤
+1. **先fetch页面**：调用 `notion-fetch` 获取页面当前XML内容
+2. **找到锚点**：从返回的XML中确认Tab标题行的精确字符串（通常是 `\t\t🔧 **Runner 执行日志**`）
+3. **构造update_content**：`new_str` = `old_str`（完整保留）+ `\n\n` + 新日志内容（带缩进）
+4. **验证写入**：写入后立即调用 `notion-fetch` 验证内容是否实际写入且历史完整
+
+#### 追加操作模板
+```
+new_str = old_str + "\n\n" + 新日志内容（每行带\t\t缩进）
+```
+
+**黄金法则**：
+- 你不是在"更新"日志，你是在"追加"日志
+- 已有日志 = 不可触碰的历史档案
+- 你的任务 = 在末尾添加新的记录
+- 任何删除、修改、覆盖 = 严重违规
 
 ```markdown
 [Cursor] YYYY-MM-DD HH:mm 开发完成
