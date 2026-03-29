@@ -1,3 +1,13 @@
+"""
+千牛 RPA 主程序。
+
+支持两种运行模式：
+1. 传统模式（默认）：直接使用 driver 函数
+2. Adapter + Orchestrator 模式（新架构）：通过 adapter_base.py 实现
+
+切换方式：在 .env 中设置 USE_ADAPTER_MODE=true
+"""
+
 from __future__ import annotations
 
 import json
@@ -43,6 +53,15 @@ from app.debug_cleanup import maybe_cleanup
 from app.debug_unread_probe import run_unread_probe
 from app.chat_logger import log_conversation
 from app.rpa_lock import acquire_lock
+
+# 新架构导入（可选）
+try:
+    from app.adapter import QianniuAdapter
+    from app.models import AdapterConfig, Reply
+    from app.orchestrator import Orchestrator
+    _ADAPTER_AVAILABLE = True
+except ImportError:
+    _ADAPTER_AVAILABLE = False
 
 log = get_logger("main")
 
@@ -913,5 +932,52 @@ def run() -> None:
     _run_legacy_uia(state)
 
 
+async def run_with_adapter() -> None:
+    """
+    使用 Adapter + Orchestrator 新模式运行。
+
+    这是新架构的入口点，展示如何使用统一的 PlatformAdapter 接口。
+    """
+    if not _ADAPTER_AVAILABLE:
+        print("[ERROR] Adapter 模式不可用，请确保已安装新架构依赖")
+        sys.exit(1)
+
+    print("[INFO] 启动 Adapter + Orchestrator 模式")
+    setup_logging()
+    acquire_lock()
+
+    # 创建适配器
+    config = AdapterConfig(
+        platform="qianniu",
+        poll_interval_sec=settings.poll_interval_sec,
+        wait_no_unread_poll_sec=settings.wait_no_unread_poll_sec,
+        session_cooldown_sec=3.0,
+    )
+    adapter = QianniuAdapter(config)
+
+    # 创建编排器
+    orchestrator = Orchestrator(
+        adapter=adapter,
+        ai_client=None,  # 使用默认 AI 客户端
+        state_path=settings.state_path,
+        session_cooldown_sec=3.0,
+    )
+
+    # 运行
+    await orchestrator.run()
+
+
+def main() -> None:
+    """主入口：根据配置选择运行模式。"""
+    import asyncio
+
+    # 检查是否使用新架构
+    use_adapter = getattr(settings, "use_adapter_mode", False)
+    if use_adapter and _ADAPTER_AVAILABLE:
+        asyncio.run(run_with_adapter())
+    else:
+        run()
+
+
 if __name__ == "__main__":
-    run()
+    main()

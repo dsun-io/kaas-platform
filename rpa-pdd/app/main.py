@@ -1,3 +1,13 @@
+"""
+拼多多客服工作台 RPA（Playwright headed）。
+
+支持两种运行模式：
+1. 传统模式（默认）：直接使用 driver 函数
+2. Adapter + Orchestrator 模式（新架构）：通过 adapter.py 实现
+
+切换方式：在 .env 中设置 USE_ADAPTER_MODE=true
+"""
+
 from __future__ import annotations
 
 import json
@@ -24,6 +34,15 @@ from app.pdd_driver import (
     selectors_configured_for_automation,
     send_reply,
 )
+
+# 新架构导入（可选）
+try:
+    from app.adapter import PddAdapter
+    from app.models import AdapterConfig, Reply
+    from app.orchestrator import Orchestrator
+    _ADAPTER_AVAILABLE = True
+except ImportError:
+    _ADAPTER_AVAILABLE = False
 
 log = get_logger("main")
 
@@ -291,9 +310,55 @@ def main() -> None:
         bm.close()
 
 
+async def run_with_adapter() -> None:
+    """
+    使用 Adapter + Orchestrator 新模式运行。
+
+    这是新架构的入口点，展示如何使用统一的 PlatformAdapter 接口。
+    """
+    if not _ADAPTER_AVAILABLE:
+        print("[ERROR] Adapter 模式不可用，请确保已安装新架构依赖")
+        sys.exit(1)
+
+    print("[INFO] 启动 Adapter + Orchestrator 模式")
+    setup_logging()
+
+    # 创建适配器
+    config = AdapterConfig(
+        platform="pdd",
+        poll_interval_sec=settings.dom_poll_interval_sec,
+        wait_no_unread_poll_sec=5.0,
+        session_cooldown_sec=12.0,
+    )
+    adapter = PddAdapter(config)
+
+    # 创建编排器
+    orchestrator = Orchestrator(
+        adapter=adapter,
+        ai_client=None,  # 使用默认 AI 客户端
+        state_path=settings.state_path,
+        session_cooldown_sec=12.0,
+    )
+
+    # 运行
+    await orchestrator.run()
+
+
+def main_entry() -> None:
+    """主入口：根据配置选择运行模式。"""
+    import asyncio
+
+    # 检查是否使用新架构
+    use_adapter = getattr(settings, "use_adapter_mode", False)
+    if use_adapter and _ADAPTER_AVAILABLE:
+        asyncio.run(run_with_adapter())
+    else:
+        main()
+
+
 if __name__ == "__main__":
     try:
-        main()
+        main_entry()
     except Exception as exc:
         get_logger("main").exception("致命错误: %s", exc)
         sys.exit(1)
