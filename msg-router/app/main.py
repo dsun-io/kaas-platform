@@ -46,11 +46,7 @@ app = FastAPI(
 @app.get("/health")
 def health() -> dict[str, str]:
     """健康检查端点。"""
-    return {
-        "status": "ok",
-        "version": "0.2.0",
-        "supported_platforms": ",".join(sorted(SUPPORTED_PLATFORMS)),
-    }
+    return {"status": "ok"}
 
 
 @app.get("/v1/platforms")
