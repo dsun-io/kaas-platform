@@ -61,7 +61,7 @@
 4. Risk & Rollback（回滚方案，如何停用拦截 / shadow mode）
 5. Open Questions（待确认项）
 
-## 六、Shadow Mode（上线前的试运行策略）
+## 七、Shadow Mode（上线前的试运行策略）
 
 新功能上线时，先开「影子模式」观察几天：
 - **第一阶段（1-3天）**：只记录日志，不真正拦截请求
