@@ -533,8 +533,11 @@ def ocr_message_area_with_roles(
         debug_t = t[:30] + "..." if len(t) > 30 else t
         is_noise = _is_extra_message_line_noise(t)
         if is_noise:
-            log.debug("[消息OCR] 过滤噪声文本: %r", debug_t)
+            log.info("[消息OCR-过滤] %r", debug_t)  # 提升到INFO级别
             continue
+        else:
+            # 记录非噪声文本（角色判定前）
+            log.info("[消息OCR-通过] %r", debug_t)
         
         # 增加「已读/未读」标记过滤
         if "已读" in t or "未读" in t:
