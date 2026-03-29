@@ -23,6 +23,7 @@ from app.qianniu_driver import (
     read_edit_value,
     window_alive,
 )
+from app.window_rect import get_precise_rect_for_control, rect_to_auto_rect
 
 log = get_logger("reply_sender")
 
@@ -365,7 +366,9 @@ def send_reply(
             pass
         human_delay()
 
-        wr = win.BoundingRectangle
+        # Fix 1: 坐标系一致性 - 使用DWM精确坐标替代UIA BoundingRectangle
+        precise = get_precise_rect_for_control(win)
+        wr = rect_to_auto_rect(precise) if precise else win.BoundingRectangle
         edit, strat_used = _find_composer_edit_strategies(win, panel)
         if edit is None:
             log.warning(

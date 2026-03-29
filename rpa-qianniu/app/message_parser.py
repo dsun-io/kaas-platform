@@ -427,6 +427,49 @@ _SYSTEM_NOTIFICATION_RE = (
     re.compile(r"^机器人"),
 )
 
+# ========== Fix 3a: 商品卡片文本过滤 ==========
+# 匹配商品卡片价格格式："价格：9999.00" / "售价:9999" / "￥ 9,999.00" 等
+_PRODUCT_CARD_PRICE_RE = re.compile(
+    r"^(价格|售价|原价|到手价|优惠价|活动价|拍下|下单)[：:]?\s*[￥¥]?\s*[\d,]+(?:\.\d+)?"
+)
+
+# 匹配商品卡片内常见文字片段（整句匹配）
+_PRODUCT_CARD_TEXT_PATTERNS = [
+    re.compile(r"^[\d,]+(?:\.\d{2})?\s*[元件个台]$"),  # "102.00 元", "99 件"
+    re.compile(r"^共\d+[件个条]$"),  # "共1件", "共2个"
+    re.compile(r"^(立即购买|去购买|去下单|马上抢|加入购物车|立即下单|确认下单)$"),
+    re.compile(r"^(查看宝贝|查看详情|进店看看|去逛逛|去看看|查看商品)$"),
+    re.compile(r"^(已拍下|已下单|已付款|待发货|待付款|待评价)$"),
+    re.compile(r"^(月销|已售|库存|销量)[：:]?\s*[\d,]+"),
+    re.compile(r"^库存\d+[件个]$"),  # "库存99件"
+    re.compile(r"^剩余\d+[件个]$"),  # "剩余5件"
+]
+
+
+def is_product_card_text(text: str) -> bool:
+    """
+    判断文本是否来自商品/订单卡片。
+    问句豁免：如果像买家问句，返回False（不误杀真实咨询）。
+    """
+    t = (text or "").strip()
+    if not t:
+        return True
+
+    # 问句豁免：如果像买家问句，不判定为卡片
+    if _looks_like_buyer_question(t):
+        return False
+
+    # 价格格式匹配
+    if _PRODUCT_CARD_PRICE_RE.match(t):
+        return True
+
+    # 其他商品卡片文本模式匹配
+    for pat in _PRODUCT_CARD_TEXT_PATTERNS:
+        if pat.match(t):
+            return True
+
+    return False
+
 
 def is_ocr_noise_message(text: str) -> bool:
     """
@@ -478,6 +521,16 @@ def is_ocr_noise_message(text: str) -> bool:
     # "商品ID" / "宝贝ID" / "SKUID"
     if re.match(r"^(商品|宝贝|SKU|item)[_-]?ID[：:]?\s*\w*", t, re.I):
         return True
+    # Fix 3a: 增强价格格式过滤（商品卡片常见格式）
+    # "价格：xxx" / "售价：xxx" / "原价：xxx"（带中文前缀）
+    if re.match(r"^(价格|售价|原价|到手价)[：:]\s*[￥¥]?[\d,.]+", t):
+        return True
+    # "¥ 9999.00" / "￥ 9,999.00"（货币符号后带空格）
+    if re.match(r"^[￥¥]\s+[\d,]+(?:\.\d{2})?", t):
+        return True
+    # 商品卡片常见格式：数字+元/件/个
+    if re.match(r"^[\d,]+(?:\.\d{2})?\s*[元件个]$", t):
+        return True
     return False
 
 
@@ -510,6 +563,10 @@ def is_system_message(text: str) -> bool:
         return True
     if is_ocr_noise_message(t):
         log.info("[消息过滤] is_ocr_noise_message 过滤: %r", t[:20])
+        return True
+    # Fix 3a: 商品卡片文本过滤
+    if is_product_card_text(t):
+        log.info("[消息过滤] is_product_card_text 过滤: %r", t[:20])
         return True
     log.info("[消息过滤] 通过所有过滤: %r", t[:20])
     if len(t) > 2000:

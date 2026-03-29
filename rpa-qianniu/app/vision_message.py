@@ -222,10 +222,14 @@ def _is_extra_message_line_noise(text: str) -> bool:
 
 
 def is_probable_buyer_bubble_text(text: str) -> bool:
-    """聊天正文区：排除横幅与系统占位（与 is_system_message 配合）。"""
+    """聊天正文区：排除横幅、系统占位与商品卡片（与 is_system_message 配合）。"""
     if _is_extra_message_line_noise(text):
         return False
     if is_system_message(text):
+        return False
+    # Fix 3b: 商品卡片文本过滤
+    from app.message_parser import is_product_card_text
+    if is_product_card_text(text):
         return False
     return True
 
@@ -497,6 +501,13 @@ def ocr_message_area_with_roles(
         if role == "unknown" and is_system_message(t):
             role = "system"
             log.debug("[消息OCR] unknown box 文本匹配系统消息，标记为 system: %r", t)
+        # --- Fix 3b: 商品卡片内容过滤 ---
+        if role == "buyer":
+            from app.message_parser import is_product_card_text
+            if is_product_card_text(t):
+                role = "card"  # 标记为卡片文本，不参与买家消息提取
+                log.info("[消息OCR] buyer box 内容匹配商品卡片，降级为 card: %r", t[:20])
+        # --- 过滤结束 ---
         visuals.append(OcrLineVisual(box=b, role=role))
     # 阅读顺序：自上而下
     visuals.sort(key=lambda v: (v.box.top, v.box.left))
@@ -512,14 +523,17 @@ def _merge_latest_buyer_cluster(
     buyer_boxes: list[OcrTextBox],
 ) -> tuple[str, list[OcrTextBox]]:
     """
-    从底部往上取最近一条买家气泡簇（靠左、非横幅、非系统句）。
+    从底部往上取最近一条买家气泡簇（靠左、非横幅、非系统句、非商品卡片）。
     """
+    # Fix 3b: 增加商品卡片文本过滤
+    from app.message_parser import is_product_card_text
     usable = [
         b
         for b in buyer_boxes
         if not _is_timestamp_only(b.text or "")
         and _text_substantive(b.text or "")
         and is_probable_buyer_bubble_text(b.text or "")
+        and not is_product_card_text((b.text or "").strip())  # 过滤商品卡片文本
     ]
     if not usable:
         return "", []

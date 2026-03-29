@@ -910,6 +910,33 @@ def _run_legacy_uia(state: AppState) -> None:
                     t_legacy_send = perf_counter()
                     panel = ocr_ctx.panel if ocr_ctx is not None else None
                     ok = send_reply(win, reply, chat_panel=panel)
+                    # --- Fix 2: UIA 发送失败时 fallback 到纯视觉发送 ---
+                    if not ok:
+                        log.warning("输入框 UIA 定位失败，fallback 到 vision 发送")
+                        try:
+                            # 局部导入避免循环依赖
+                            from app.vision_layout import build_vision_layout, rect_from_window
+                            from app.vision_reply import send_reply_vision
+                            from app.vision_unread import align_win_rect_to_screenshot_origin, get_screenshot_origin
+
+                            bgr_fb = capture_window_frame_bgr(win)
+                            if bgr_fb is not None and bgr_fb.size > 0:
+                                wr_fb = rect_from_window(win)
+                                win_rect_fb = align_win_rect_to_screenshot_origin(wr_fb, 0)
+                                lay_fb = build_vision_layout(win_rect_fb, bgr_fb, win)
+                                ok = send_reply_vision(
+                                    bgr_fb,
+                                    win_rect_fb,
+                                    lay_fb.input_area,
+                                    reply,
+                                    send_button_screen=lay_fb.send_button_center_screen,
+                                )
+                                if ok:
+                                    log.info("vision fallback 发送成功")
+                        except Exception as vfb_exc:
+                            log.warning("vision fallback 异常: %s", vfb_exc)
+                    # --- fallback 结束 ---
+
                     t_legacy_done = perf_counter()
                     send_ms = int((t_legacy_done - t_legacy_send) * 1000)
                     total_ms = int((t_legacy_done - t_legacy_ai) * 1000)
