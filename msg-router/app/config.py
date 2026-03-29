@@ -35,9 +35,21 @@ class Settings(BaseSettings):
     # 相对 msg-router 工作目录
     sqlite_path: str = "data/conversations.db"
 
+    # 安全过滤配置
+    safety_rules_path: str | None = None  # 安全规则配置文件路径，默认使用 data/safety_rules.json
+    safety_filter_enabled: bool = True  # 是否启用安全过滤
+
     @property
     def sqlite_absolute_path(self) -> Path:
         return Path(self.sqlite_path).resolve()
+
+    @property
+    def safety_rules_absolute_path(self) -> Path | None:
+        if self.safety_rules_path:
+            return Path(self.safety_rules_path).resolve()
+        # 默认路径
+        base_dir = Path(__file__).parent.parent
+        return base_dir / "data" / "safety_rules.json"
 
 
 settings = Settings()

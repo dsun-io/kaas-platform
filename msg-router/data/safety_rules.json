@@ -1,0 +1,91 @@
+{
+  "version": "1.0.0",
+  "description": "AI回复安全过滤规则配置",
+  "sensitive_words": {
+    "competitor_brands": {
+      "description": "竞品品牌名，替换为【其他品牌】",
+      "action": "replace",
+      "replacement": "【其他品牌】",
+      "words": [
+        "小客服",
+        "客服宝",
+        "晓多",
+        "美洽",
+        "智齿客服",
+        "UDESK",
+        "容联七陌",
+        "网易七鱼",
+        "环信",
+        "Live800",
+        "53客服"
+      ]
+    },
+    "absolute_terms": {
+      "description": "绝对化用语，替换为软性表述",
+      "action": "replace",
+      "patterns": [
+        {"word": "最好", "replacement": "很不错"},
+        {"word": "最优", "replacement": "很优秀"},
+        {"word": "第一", "replacement": "名列前茅"},
+        {"word": "顶级", "replacement": "高品质"},
+        {"word": "极品", "replacement": "精品"},
+        {"word": "绝对", "replacement": "比较"},
+        {"word": "肯定", "replacement": "大概率"},
+        {"word": "保证", "replacement": "尽力确保"},
+        {"word": "一定", "replacement": "尽量"},
+        {"word": "百分百", "replacement": "大概率"},
+        {"word": "百分之百", "replacement": "大概率"}
+      ]
+    },
+    "political_sensitive": {
+      "description": "政治敏感词，触发拦截",
+      "action": "block",
+      "words": [
+        "法轮功",
+        "台独",
+        "疆独",
+        "藏独",
+        "港独"
+      ],
+      "block_message": "检测到敏感内容，已转人工处理"
+    },
+    "inappropriate_promise": {
+      "description": "不当承诺用语，替换为软性表述",
+      "action": "replace",
+      "patterns": [
+        {"word": "包退", "replacement": "支持退货"},
+        {"word": "包换", "replacement": "支持换货"},
+        {"word": "包赔", "replacement": "协商赔偿"},
+        {"word": "包满意", "replacement": "尽量让您满意"},
+        {"word": "无效退款", "replacement": "可协商退款"},
+        {"word": "假一赔十", "replacement": "正品保障"}
+      ]
+    }
+  },
+  "price_validation": {
+    "description": "价格合理性校验规则",
+    "enabled": true,
+    "price_pattern": "\\d+\\.?\\d*",
+    "unit_suffixes": ["元", "块", "w", "万"],
+    "ranges": [
+      {
+        "category": "default",
+        "min": 0.01,
+        "max": 999999,
+        "unit": "元"
+      }
+    ],
+    "custom_rules": [],
+    "out_of_range_action": "replace",
+    "out_of_range_message": "价格相关问题已为您转接人工客服"
+  },
+  "fallback": {
+    "description": "兜底配置",
+    "max_modification_ratio": 0.4,
+    "fallback_action": "transfer",
+    "fallback_message": "回复内容需要人工审核，已为您转接人工客服"
+  },
+  "performance": {
+    "max_filter_time_ms": 200
+  }
+}

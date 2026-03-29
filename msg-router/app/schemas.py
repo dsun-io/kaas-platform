@@ -56,3 +56,12 @@ class ChatResponse(BaseModel):
         "text",
         description="回复类型"
     )
+    # 安全过滤相关字段
+    filtered: bool = Field(
+        False,
+        description="是否经过安全过滤处理"
+    )
+    filter_log: dict | None = Field(
+        None,
+        description="过滤日志（包含原始回复、过滤动作等）"
+    )

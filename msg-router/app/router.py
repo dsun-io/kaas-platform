@@ -1,4 +1,5 @@
 import asyncio
+import json
 import time
 
 from app import fastgpt_client
@@ -7,6 +8,7 @@ from app.conversation import ensure_conversation_id
 from app.intent import infer_buyer_intent
 from app.logger_db import insert_log
 from app.prompting import build_augmented_user_message
+from app.safety_filter import run_safety_pipeline
 from app.schemas import ChatRequest, ChatResponse
 from app.transfer import check_transfer_intent
 
@@ -77,7 +79,30 @@ async def handle_chat(req: ChatRequest) -> ChatResponse:
         chat_id=conv_id,
         variables=fgt_variables if fgt_variables else None,
     )
+
+    # 安全过滤管道（AI回复后、记录日志前）
+    original_reply = reply
+    filter_result = None
+    should_transfer = api_err
+    transfer_reason = None
+
+    if settings.safety_filter_enabled and reply and not api_err:
+        filter_result = run_safety_pipeline(reply)
+        reply = filter_result.filtered_reply if filter_result.filtered_reply else reply
+        should_transfer = filter_result.should_transfer or api_err
+        transfer_reason = filter_result.transfer_reason if filter_result.should_transfer else None
+
     elapsed_ms = int((time.perf_counter() - started) * 1000)
+
+    # 构建过滤日志
+    filter_action = None
+    if filter_result:
+        filter_action = json.dumps({
+            "is_filtered": filter_result.is_filtered,
+            "should_transfer": filter_result.should_transfer,
+            "filter_log": filter_result.filter_log,
+            "elapsed_ms": filter_result.elapsed_ms,
+        }, ensure_ascii=False)
 
     await asyncio.to_thread(
         insert_log,
@@ -86,13 +111,18 @@ async def handle_chat(req: ChatRequest) -> ChatResponse:
         message=req.message,
         reply=reply,
         conversation_id=conv_id,
-        should_transfer=api_err,
+        should_transfer=should_transfer,
         response_time_ms=elapsed_ms,
+        original_reply=original_reply if (filter_result and filter_result.is_filtered) else None,
+        filter_action=filter_action,
     )
 
     return ChatResponse(
         reply=reply,
         conversation_id=conv_id,
-        should_transfer=api_err,
+        should_transfer=should_transfer,
         response_time_ms=elapsed_ms,
+        filtered=filter_result.is_filtered if filter_result else False,
+        filter_log=filter_result.filter_log if filter_result else None,
+        transfer_reason=transfer_reason,
     )
