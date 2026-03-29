@@ -331,6 +331,48 @@ def _looks_like_buyer_question(t: str) -> bool:
     return False
 
 
+# 千牛系统横幅关键词（UIA和OCR路径共用）
+_BANNER_SUBSTR = (
+    "当前消息较多",
+    "点此快速获取",
+    "集中处理",
+    "消息较多",
+    "快速获取买家",
+    "7天内自动总结",
+    "AI一键总结",
+    "AI咨询摘要",
+    "一键总结",
+    "自动总结",
+)
+
+
+def _is_qianniu_banner_text(text: str) -> bool:
+    """
+    检测是否为千牛系统横幅文本。
+    增加问句豁免：若文本含 banner 关键词但同时像买家问句，则不判定为横幅。
+    增加空格容忍：OCR识别的文本可能包含空格。
+    """
+    t = (text or "").strip()
+    if not t:
+        return True
+    # 标准化：去除所有空格，便于匹配
+    t_normalized = re.sub(r"\s+", "", t)
+    for s in _BANNER_SUBSTR:
+        # 原始匹配
+        if s in t:
+            # 问句豁免：如果是买家问句（如"退款怎么办"），不误判为横幅
+            if _looks_like_buyer_question(t):
+                return False
+            return True
+        # 标准化匹配（去除空格后）
+        s_normalized = re.sub(r"\s+", "", s)
+        if s_normalized in t_normalized:
+            if _looks_like_buyer_question(t):
+                return False
+            return True
+    return False
+
+
 _SYSTEM_HINTS = (
     "订单",
     "物流",
@@ -497,6 +539,10 @@ def is_system_message(text: str) -> bool:
             if _looks_like_buyer_question(t) and len(t) >= 5:
                 continue
             return True
+    # 横幅文本过滤（UIA路径复用OCR的横幅过滤逻辑）
+    if _is_qianniu_banner_text(t):
+        log.info("[消息过滤] _is_qianniu_banner_text 过滤: %r", t[:20])
+        return True
     if is_short_buyer_keyword_noise(t):
         return True
     return False

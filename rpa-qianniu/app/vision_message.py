@@ -17,7 +17,11 @@ from app.config import settings
 from app.debug_manager import should_save
 from app.logger import get_logger
 from app.ocr_paddle import OcrTextBox, ocr_bgr_to_boxes, paddle_available
-from app.message_parser import is_ocr_noise_message, is_system_message
+from app.message_parser import (
+    _is_qianniu_banner_text,
+    is_ocr_noise_message,
+    is_system_message,
+)
 from app.vision_coords import (
     bgr_crop_origin_to_screen,
     crop_window_bgr,
@@ -38,22 +42,6 @@ _COMMON_UI_NOISE = (
     "好评",
 )
 
-# 顶部系统横幅 / AI 摘要条（裁剪后仍可能漏入时由文本过滤兜底）
-# 注意：此列表只应包含真正的系统横幅词，买家咨询词（物流/退款/售后等）不应在此
-_BANNER_SUBSTR = _COMMON_UI_NOISE + (
-    "当前消息较多",
-    "点此快速获取",
-    "集中处理",
-    "消息较多",
-    "快速获取买家",
-    "7天内自动总结",
-    "AI一键总结",
-    "AI咨询摘要",
-    "一键总结",
-    "自动总结",
-    "hanha41409854",
-    "radiobalabala",
-)
 _MSG_LINE_NOISE_SUB = ("未读", "已读")
 _TS_LINE_HEAD = re.compile(
     r"^\s*\d{4}[-/年]\s*\d{1,2}[-/月]\s*\d{1,2}"
@@ -172,50 +160,6 @@ def message_body_area(message_area: ScreenRect) -> ScreenRect:
     if new_top >= message_area.bottom - 64:
         new_top = message_area.top + min(40, h // 5)
     return ScreenRect(message_area.left, new_top, message_area.right, message_area.bottom)
-
-
-# 问句检测：用于 banner 过滤的豁免机制（避免误杀买家咨询）
-_LIKELY_QUESTION_TAIL = re.compile(r"[?？！!吗呢吧嘛]$")
-_LIKELY_QUESTION_HINT = re.compile(r"(怎么|什么|多少|请问|哪里|为何|为什么|吗|呢|么)")
-
-
-def _looks_like_buyer_question(text: str) -> bool:
-    """判断文本是否像买家问句，用于 banner 过滤豁免。"""
-    t = (text or "").strip()
-    if len(t) < 5:
-        return False
-    if _LIKELY_QUESTION_TAIL.search(t):
-        return True
-    if _LIKELY_QUESTION_HINT.search(t):
-        return True
-    return False
-
-
-def _is_qianniu_banner_text(text: str) -> bool:
-    """
-    检测是否为千牛系统横幅文本。
-    增加问句豁免：若文本含 banner 关键词但同时像买家问句，则不判定为横幅。
-    增加空格容忍：OCR识别的文本可能包含空格。
-    """
-    t = (text or "").strip()
-    if not t:
-        return True
-    # 标准化：去除所有空格，便于匹配
-    t_normalized = re.sub(r"\s+", "", t)
-    for s in _BANNER_SUBSTR:
-        # 原始匹配
-        if s in t:
-            # 问句豁免：如果是买家问句（如"退款怎么办"），不误判为横幅
-            if _looks_like_buyer_question(t):
-                return False
-            return True
-        # 标准化匹配（去除空格后）
-        s_normalized = re.sub(r"\s+", "", s)
-        if s_normalized in t_normalized:
-            if _looks_like_buyer_question(t):
-                return False
-            return True
-    return False
 
 
 def _is_icon_only_nick_text(text: str) -> bool:
