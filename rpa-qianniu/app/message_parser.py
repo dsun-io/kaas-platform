@@ -461,11 +461,15 @@ def is_system_message(text: str) -> bool:
     if not t:
         return True
     if is_non_message_ui_text(t):
+        log.info("[消息过滤] is_non_message_ui_text 过滤: %r", t[:20])
         return True
     if is_panel_colon_stub(t):
+        log.info("[消息过滤] is_panel_colon_stub 过滤: %r", t[:20])
         return True
     if is_ocr_noise_message(t):
+        log.info("[消息过滤] is_ocr_noise_message 过滤: %r", t[:20])
         return True
+    log.info("[消息过滤] 通过所有过滤: %r", t[:20])
     if len(t) > 2000:
         return True
     if t in _UI_LABEL_EXACT:
