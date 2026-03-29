@@ -12,9 +12,10 @@ alwaysApply: true
 
 ## 2) 任务页面结构（必须遵守）
 - 属性用于筛选：`任务名`、`状态`、`优先级`、`关联模块`、`任务类型`、`产出物`、`验收结果`、`创建时间`、`最后更新`。
-- 正文固定 2 个选项卡：
+- 正文固定 3 个选项卡：
   - `📋 任务 Spec`：Nano 维护需求、方案、验收标准、执行指令
-  - `📝 执行日志`：所有角色按时间顺序追加
+  - `📝 执行日志`：Nano/David 执行记录
+  - `🔧 Runner 执行日志`：Cursor 开发执行记录（Cursor日志写入此选项卡）
 - 页面底部独立区块：`🔍 David 验收反馈`。
 
 ## 3) 完整状态列表（7 个）
@@ -60,7 +61,7 @@ alwaysApply: true
   - `风险与回滚`：风险触发条件、监控信号、回滚步骤
   - `产出清单`：PR/分支/文件路径/制品链接
   - `待办与建议`：后续动作、人工确认项、依赖方动作
-- 推荐使用以下骨架（追加到 `📝 执行日志`）：
+- 推荐使用以下骨架（追加到 `🔧 Runner 执行日志`）：
 ```markdown
 [Cursor] YYYY-MM-DD HH:mm 开发完成
 ## 1. 任务元数据
@@ -135,6 +136,14 @@ alwaysApply: true
 
 > **铁律三：强制推送远程仓库**
 > 所有开发完成后必须执行 `git push` 将所有 commit 推送到远程仓库。未推送到远程 = 任务未完成，不允许改状态为 Nano验收。产出物字段必须包含可在 GitHub 上验证的 commit hash 或 PR 链接。本地 commit 不算交付。违反 = Nano 验收直接打回。
+
+> **铁律四：强制使用 MCP 更新 Notion**
+> **严禁创建任何 Python 脚本、PowerShell 脚本或其他外部工具来更新 Notion。** 所有 Notion 页面更新（包括执行日志、状态流转、属性更新）必须且只能使用 Cursor 内置的 MCP 工具（`user-Notion` 服务器）。
+> 
+> ✅ **正确做法**：使用 `CallMcpTool` 调用 `notion-update-page`、`notion-fetch` 等工具
+> ❌ **禁止做法**：创建 `scripts/update_notion.py`、`scripts/create_task.py` 等脚本
+> 
+> 违反 = 立即删除脚本，重新使用 MCP 方式更新。
 
 ## 9) Cursor 异常援助任务规范
 

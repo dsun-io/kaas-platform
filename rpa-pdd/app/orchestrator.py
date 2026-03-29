@@ -24,9 +24,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Protocol
 
+from app.models import Reply
+
 if TYPE_CHECKING:
     from app.adapter_base import PlatformAdapter
-    from app.models import AdapterConfig, Message, Reply
+    from app.models import AdapterConfig, Message
 
 
 # 简化的 AI 客户端接口
@@ -278,8 +280,11 @@ class Orchestrator:
             self._last_stats_time = now
 
         try:
-            # 获取未读会话
-            for session in self.adapter.poll_unread_sessions():
+            # 获取未读会话（使用 list_sessions 获取快照，过滤未读数>0的会话）
+            sessions = self.adapter.list_sessions()
+            unread_sessions = [s for s in sessions if s.unread_count > 0]
+
+            for session in unread_sessions:
                 if self._shutdown.is_set():
                     return False
 

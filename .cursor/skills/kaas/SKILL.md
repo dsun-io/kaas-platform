@@ -15,6 +15,7 @@ description: Executes KAAS Notion workflow orchestration. Use when the user inpu
 - 同优先级按创建时间从早到晚。
 - **同一时间只执行一个任务**：在当前任务完成并切到 `Nano验收` 前，不得启动下一条。
 - **强制命令**：每次执行日志必须完整包含"12项骨架"，缺任一项都不得更新 `Nano验收`。
+- **强制使用 MCP 更新 Notion**：**严禁创建任何脚本**（Python/PowerShell/Bash 等）来更新 Notion。所有 Notion 操作（读取、更新页面、追加日志、状态流转）必须且只能使用 Cursor 内置 MCP 工具（`user-Notion` 服务器）。违反此规则 = 立即删除脚本并重新使用 MCP 方式执行。
 
 ## Task Selection
 1. 查询任务流水线（view: `https://www.notion.so/fad40cb1006b4c71ab041a362a32334c?v=54a797e284664ff4b549abe408c4def8`）。
@@ -34,7 +35,7 @@ description: Executes KAAS Notion workflow orchestration. Use when the user inpu
 5. 状态流转：`Cursor开发 -> Nano验收`。
 6. 向用户汇报本次任务完成情况；不自动继续下一条，等待用户下一次 `kaas` 指令。
 
-## Execution Log Format (Append to 📝)
+## Execution Log Format (Append to 🔧 Runner 执行日志)
 执行日志必须做到"可复盘全貌"。只允许追加，不覆盖历史。以下 **12项骨架为强制命令**，缺一不可：
 
 ```markdown
