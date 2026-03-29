@@ -211,6 +211,12 @@ _PANEL_STATUS_YI_RE = re.compile(
     r"^已(付款|发货|签收|评价|追评|关闭|确认|退款|成交)$"
 )
 
+# 聊天区消息头上方的时间戳显示（非买家发送内容）
+_TIMESTAMP_ONLY_RE = re.compile(
+    r"^(?:昨天|今天|今日|前天|\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2})?"
+    r"\s*\d{1,2}:\d{2}(?::\d{2})?$"
+)
+
 # 整句形态像商品/订单条（仅 fullmatch 级，避免「满200包邮」等真咨询被前缀误杀）
 _PANEL_LINE_RE = (
     re.compile(r"^共\d+(件|个|款|条)$"),
@@ -387,6 +393,9 @@ def is_ocr_noise_message(text: str) -> bool:
     """
     t = (text or "").strip()
     if not t:
+        return True
+    # 聊天区消息头上方的时间戳显示（非买家发送内容）
+    if _TIMESTAMP_ONLY_RE.match(t):
         return True
     if _PRICE_LIKE.match(t):
         return True

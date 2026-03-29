@@ -127,6 +127,28 @@ def _verify_edit_accepts_probe(edit: auto.Control) -> bool:
                 return True
     except Exception:
         pass
+    # 回退：剪贴板写入探测（部分 CEF 控件不支持 SetValue 但支持粘贴）
+    try:
+        _focus_edit(edit)
+        _try_clear_edit(edit)
+        time.sleep(0.07)
+        pyperclip.copy(probe)
+        pyautogui.hotkey("ctrl", "a")
+        time.sleep(0.05)
+        pyautogui.press("delete")
+        time.sleep(0.05)
+        pyautogui.hotkey("ctrl", "v")
+        time.sleep(0.15)
+        v = read_edit_value(edit)
+        if probe in v:
+            # 清理探测字符
+            pyautogui.hotkey("ctrl", "a")
+            time.sleep(0.05)
+            pyautogui.press("delete")
+            time.sleep(0.05)
+            return True
+    except Exception:
+        pass
     return False
 
 
