@@ -249,6 +249,10 @@ def _is_extra_message_line_noise(text: str) -> bool:
     t = (text or "").strip()
     if not t:
         return True
+    # 新增：过滤系统自身的回复文本（stub 或 AI 回复的固定前缀/尾缀）
+    stub = (settings.ai_stub_reply or "").strip()
+    if stub and (t == stub or t.startswith(stub)):
+        return True
     if any(s in t for s in _MSG_LINE_NOISE_SUB):
         return True
     if _TS_LINE_HEAD.match(t):
@@ -426,23 +430,21 @@ def _role_for_box(
 ) -> str:
     """buyer：靠左；seller：靠右；中间条带视为非买家气泡。
 
-    优化点：
-    1. margin 阈值从 max(20.0, half_w*0.08) 改为 max(15.0, half_w*0.06)，缩小死区
-    2. 宽度辅助判断阈值从 0.70 降至 0.60，居中判定从 0.10 放宽至 0.15
-    3. 增加边缘锚定辅助判断：若 box 紧贴左侧边缘，优先判为 buyer；紧贴右侧边缘，优先判为 seller
+    Spec 要求：
+    1. margin 阈值 max(20.0, half_w*0.08) —— 加大死区，避免误判
+    2. edge_threshold half_w * 0.12 —— 收紧边缘锚定，防止卖家气泡误判
+    3. 不使用气泡宽度判断买家/卖家（买家长文本同样会产生宽气泡）
     """
-    # 阈值优化：略微缩小死区，让更多偏左文本能被归为 buyer
-    margin = max(15.0, float(half_w) * 0.06)
+    # Spec 阈值：加大死区，避免卖家消息被误判为买家
+    margin = max(20.0, float(half_w) * 0.08)
 
-    # 边缘锚定辅助判断：千牛买家气泡紧贴左侧，卖家气泡紧贴右侧
+    # 边缘锚定辅助判断：收紧阈值，避免误判
     left_edge_dist = box_left - msg_area_left
     right_edge_dist = msg_area_right - box_right
-    edge_threshold = half_w * 0.25  # 距离边缘 < 25% 半宽视为紧贴
+    edge_threshold = half_w * 0.12  # 距离边缘 < 12% 半宽视为紧贴（收紧）
 
-    # 宽度辅助判断：太宽且居中的可能是系统横幅（阈值放宽至 0.60，居中判定放宽至 0.15）
-    if box_width > msg_area_width * 0.60:
-        if abs(cx - mid_x) < half_w * 0.15:
-            return "unknown"  # 可能是系统横幅
+    # 不使用气泡宽度判断 —— 买家长文本同样会产生宽气泡
+    # 卖家欢迎语的误判由内容过滤兜底
 
     # 边缘锚定优先：紧贴左侧 → buyer，紧贴右侧 → seller
     if left_edge_dist < edge_threshold and cx < mid_x:

@@ -73,6 +73,32 @@ _SOAK_ERROR_RESET_SEC = 30.0  # 触发熔断后的长等待
 _SOAK_STATS_INTERVAL_SEC = 300.0  # 5分钟统计间隔
 
 
+def _fuzzy_text_match(a: str, b: str, threshold: int = 3) -> bool:
+    """两段文本前 N 字符相同，或编辑距离 <= threshold 时视为匹配。"""
+    a, b = (a or "").strip(), (b or "").strip()
+    if not a or not b:
+        return False
+    # 快速路径：前 20 字符相同
+    if a[:20] == b[:20]:
+        return True
+    # 编辑距离（仅在文本较短时计算，避免性能问题）
+    if max(len(a), len(b)) > 200:
+        return a[:50] == b[:50]
+    if abs(len(a) - len(b)) > threshold:
+        return False
+    # 简化 Levenshtein
+    if len(a) > len(b):
+        a, b = b, a
+    prev = list(range(len(a) + 1))
+    for j in range(1, len(b) + 1):
+        curr = [j] + [0] * len(a)
+        for i in range(1, len(a) + 1):
+            cost = 0 if a[i-1] == b[j-1] else 1
+            curr[i] = min(curr[i-1]+1, prev[i]+1, prev[i-1]+cost)
+        prev = curr
+    return prev[-1] <= threshold
+
+
 def perf_log(msg: str, *args: object) -> None:
     """[PERF] 专用：仅刷新控制台 handler，避免高频文件 I/O。"""
     log.info(msg, *args)
@@ -148,6 +174,8 @@ class AppState:
     vision_last_reply_mono: dict[str, float] = field(default_factory=dict)
     # 各买家的对话轮次计数器（用于多轮对话日志记录）
     round_counters: dict[str, int] = field(default_factory=dict)
+    # 各买家上次回复的消息原文（用于模糊去重，应对OCR漂移）
+    last_replied_text: dict[str, str] = field(default_factory=dict)
 
     def dedup_set(self) -> set[str]:
         return set(self.dedup_keys)
@@ -172,6 +200,7 @@ def _load_state() -> AppState:
         lrf = raw.get("last_replied_fingerprint") or {}
         vlr = raw.get("vision_last_reply_mono") or {}
         rc = raw.get("round_counters") or {}  # 兼容旧状态文件
+        lrt = raw.get("last_replied_text") or {}  # 新增：上次回复的消息原文
         if not isinstance(conv, dict):
             conv = {}
         if not isinstance(keys, list):
@@ -182,6 +211,8 @@ def _load_state() -> AppState:
             vlr = {}
         if not isinstance(rc, dict):
             rc = {}
+        if not isinstance(lrt, dict):
+            lrt = {}
         return AppState(
             conversations={str(k): str(v) for k, v in conv.items()},
             dedup_keys=[str(x) for x in keys][-_MAX_DEDUP:],
@@ -190,6 +221,7 @@ def _load_state() -> AppState:
                 str(k): float(v) for k, v in vlr.items() if isinstance(v, (int, float))
             },
             round_counters={str(k): int(v) for k, v in rc.items() if isinstance(v, (int, float))},
+            last_replied_text={str(k): str(v) for k, v in lrt.items()},
         )
     except Exception as exc:
         log.warning("状态文件读取失败，使用空状态: %s", exc)
@@ -206,6 +238,7 @@ def _save_state(st: AppState) -> None:
         "last_replied_fingerprint": st.last_replied_fingerprint,
         "vision_last_reply_mono": st.vision_last_reply_mono,
         "round_counters": st.round_counters,
+        "last_replied_text": st.last_replied_text,  # 新增：上次回复的消息原文
     }
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(path)
@@ -474,6 +507,17 @@ def _run_vision_pipeline(state: AppState) -> None:
                         break
                     continue
 
+                # 文本模糊去重：OCR 每帧微小差异不应触发重新回复
+                last_text = state.last_replied_text.get(buyer_id or "")
+                if last_text and _fuzzy_text_match(last_text, msg):
+                    _vision_skip(
+                        f"模糊去重：消息与上次回复内容高度相似 buyer={buyer_id!r}",
+                        interval_sec=18.0,
+                    )
+                    if _sleep_until_shutdown(_active_sleep):
+                        break
+                    continue
+
                 print(f"[收到] 买家ID: {buyer_id} | 消息: {msg}")
                 log.info("收到 vision buyer=%s text=%s", buyer_id, msg)
 
@@ -562,6 +606,8 @@ def _run_vision_pipeline(state: AppState) -> None:
                             state.vision_last_reply_mono[buyer_id] = time.monotonic()
                         # 更新 round_counters（多轮对话计数）
                         state.round_counters[buyer_id] = current_round
+                        # 记录上次回复的消息原文（用于模糊去重）
+                        state.last_replied_text[buyer_id] = msg
                     _save_state(state)
                     print(f"[已发送] 买家ID: {buyer_id}")
                     try:
@@ -569,6 +615,9 @@ def _run_vision_pipeline(state: AppState) -> None:
                         save_debug_bgr(bgr_ok, "vision_after_send", event_type="send_success")
                     except Exception:
                         pass
+                    # 回复后等待千牛 UI 刷新，让会话从「待回复」移走
+                    if _sleep_until_shutdown(2.0):
+                        break
                 else:
                     print("[发送失败] 请保持接待中心在前台；可查看 debug/ 下截图")
                     save_debug_bgr(bgr_send, "vision_send_fail", event_type="error")
