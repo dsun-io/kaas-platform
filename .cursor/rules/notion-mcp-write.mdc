@@ -1,0 +1,175 @@
+---
+description: Notion MCP工具写入规范 - 确保成功写入Runner执行日志
+globs: ".cursor/rules/*.mdc"
+alwaysApply: true
+---
+
+# Notion MCP 写入规范
+
+## 问题背景
+
+Notion页面使用XML格式存储tabs，写入时需要**精确字符串匹配**，否则会出现"返回成功但内容未写入"的问题。
+
+## 关键规则
+
+### 1. 必须使用 `update_content` 命令（追加模式，严禁替换）
+
+**核心原则：只能追加，不能删除或修改已有内容**
+
+```json
+{
+  "page_id": "3311eed381018020975ae3df943a0a84",
+  "command": "update_content",
+  "content_updates": [
+    {
+      "old_str": "旧内容的精确字符串（必须完整保留）",
+      "new_str": "旧内容的精确字符串（必须完整保留）\n\n新增内容（只能在末尾追加）"
+    }
+  ]
+}
+```
+
+**追加规则**：
+- `old_str` 必须是页面上已存在的精确字符串
+- `new_str` 必须包含 `old_str` 的完整内容 + 换行 + 新内容
+- **严禁**只保留部分内容或修改 `old_str`
+- **严禁**删除任何已有内容
+- 新内容只能追加在末尾
+
+### 2. 匹配 Tab 的正确格式
+
+Notion页面的XML格式示例：
+```xml
+<tabs>
+	<tab>
+		🔧 **Runner 执行日志**
+	</tab>
+</tabs>
+```
+
+**正确的匹配方式** - 使用Tab标题本身作为锚点（已验证有效）：
+
+```json
+{
+  "old_str": "\t\t🔧 **Runner 执行日志**",
+  "new_str": "\t\t🔧 **Runner 执行日志**\n\n\t\t[Cursor] 2026-03-29 18:00 开发完成\n\t\t## 1. 任务元数据\n\t\t- task_id: xxx"
+}
+```
+
+**关键要点**:
+- 使用 `\t\t` (两个制表符) 作为缩进
+- 匹配Tab标题行 `🔧 **Runner 执行日志**`
+- 在 `new_str` 中保留原标题，然后添加换行 `\n\n` 和日志内容
+- 日志内容每行也需要 `\t\t` 缩进
+
+### 3. 写入步骤（必须遵循）
+
+**Step 1**: 先调用 `notion-fetch` 获取页面当前内容
+```json
+{
+  "server": "user-Notion",
+  "toolName": "notion-fetch", 
+  "arguments": {"id": "页面ID"}
+}
+```
+
+**Step 2**: 从返回的XML中找到要匹配的确切字符串
+- 通常是tab内的描述行或最后一条日志
+- 注意：使用**真实制表符**(`\t`)而非空格
+
+**Step 3**: 使用 `update_content` 追加内容（严禁删除/修改历史）
+- `old_str`: 页面上存在的**最后一条日志或Tab标题**的精确字符串
+- `new_str`: **必须完整保留** `old_str` 的全部内容 + `\n\n` + 新增内容（保持相同缩进）
+- **关键**: 新内容只能追加在末尾，不能删除或修改任何已有内容
+
+### 4. 常见错误
+
+| 错误 | 原因 | 正确做法 |
+|------|------|----------|
+| 返回成功但未写入 | `old_str` 与页面内容不匹配 | 使用`notion-fetch`返回的精确字符串 |
+| 缩进丢失 | 未使用`\t`制表符 | 用`\t\t`表示两个制表符缩进 |
+| 格式错乱 | 未保留原内容 | `new_str`必须包含`old_str`的完整内容 |
+| **历史日志被删除** | 使用了`replace_content`或`old_str`匹配错误 | **绝对禁止**！必须重新fetch并追加 |
+| **历史日志被覆盖** | `new_str`没有完整包含`old_str` | `new_str`必须完整保留旧内容再加新内容 |
+
+## 工作示例
+
+### 示例：追加Runner执行日志（已验证成功）
+
+```python
+# 1. 先fetch页面获取当前内容
+fetch_result = call_notion_fetch("3311eed381018020975ae3df943a0a84")
+
+# 2. 从返回的XML中找到Tab标题行（关键！）
+# 使用Tab标题作为锚点，而不是描述行：
+anchor_text = "\t\t🔧 **Runner 执行日志**"
+
+# 3. 构造update_content调用
+update_payload = {
+  "page_id": "3311eed381018020975ae3df943a0a84",
+  "command": "update_content",
+  "content_updates": [
+    {
+      "old_str": anchor_text,
+      "new_str": anchor_text + "\n\n\t\t[Cursor] 2026-03-29 18:00 开发完成\n\t\t- 修复了xxx问题\n\t\t- 测试通过"
+    }
+  ]
+}
+```
+
+**关键区别**: 使用 `🔧 **Runner 执行日志**` Tab标题行作为锚点，而不是描述行。这是经过验证的成功方法。
+
+**追加原理**: `new_str` = `old_str`（完整保留）+ `\n\n`（两个换行）+ `新日志内容`（带缩进）
+
+**严禁的操作**：
+- ❌ 删除历史日志
+- ❌ 修改已有日志内容
+- ❌ 替换整个日志
+- ❌ 清空后重新写入
+- ❌ 使用 `replace_content` 命令
+
+### 示例：写入12项骨架日志（已验证成功）
+
+```json
+{
+  "page_id": "3311eed381018020975ae3df943a0a84",
+  "command": "update_content",
+  "content_updates": [
+    {
+      "old_str": "\t\t🔧 **Runner 执行日志**",
+      "new_str": "\t\t🔧 **Runner 执行日志**\n\n\t\t[Cursor] 2026-03-29 18:00 开发完成\n\t\t## 1. 任务元数据\n\t\t- task_id: xxx\n\t\t- commit: xxx\n\t\t## 2. 目标与范围\n\t\t...\n\t\t## 3. 执行时间线\n\t\t...\n\t\t## 4. 改动明细\n\t\t...\n\t\t## 5. 验证矩阵\n\t\t...\n\t\t## 6. 验收映射\n\t\t...\n\t\t## 7. 异常与处置\n\t\t...\n\t\t## 8. 风险与回滚\n\t\t...\n\t\t## 9. 产出清单\n\t\t...\n\t\t## 10. 待办与建议\n\t\t...\n\t\t## 11. 附录证据索引\n\t\t..."
+    }
+  ]
+}
+```
+
+**注意**: 使用 `\t\t🔧 **Runner 执行日志**` 作为 `old_str`，这是经过验证的有效方法。
+
+## 验证写入成功
+
+写入后**必须**调用 `notion-fetch` 验证内容是否实际写入：
+
+```python
+# 写入后验证
+result = call_notion_fetch(page_id)
+if "你的日志内容" in result.text:
+    print("✅ 写入成功")
+else:
+    print("❌ 写入失败 - 需要检查old_str匹配")
+```
+
+## 追加日志的黄金法则
+
+1. **永远先fetch** - 获取页面精确内容，了解已有日志
+2. **使用Tab标题或最后一条日志作为锚点** - 获取精确的 `old_str`
+3. **保持原内容完整+追加** - `new_str` 必须完整包含 `old_str` 的全部内容，只能在末尾新增
+4. **严禁删除/修改历史** - 任何情况下都不能删除或修改已有日志
+5. **验证后再报告成功** - 写入后立即fetch验证，确保历史完整且新内容已追加
+
+## 追加操作的正确心态
+
+**你不是在"更新"日志，你是在"追加"日志。**
+
+- 已有日志 = 不可触碰的历史档案
+- 你的任务 = 在末尾添加新的记录
+- 任何删除、修改、覆盖 = 严重违规

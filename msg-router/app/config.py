@@ -30,7 +30,8 @@ class Settings(BaseSettings):
 
     # 为 true 时：不调用 FastGPT，直接返回 chat_stub_reply（省积分；转人工逻辑仍生效）
     chat_stub_mode: bool = False
-    chat_stub_reply: str = "回复测试~"
+    # 更人性化的桩回复，模拟真实客服语气
+    chat_stub_reply: str = "亲，您好呀~ 欢迎光临我们的店铺！有什么可以帮您的吗？"
 
     # 相对 msg-router 工作目录
     sqlite_path: str = "data/conversations.db"

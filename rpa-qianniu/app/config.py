@@ -55,7 +55,8 @@ class Settings(BaseSettings):
 
     # true：不调 msg-router/FastGPT，直接返回 ai_stub_reply（调千牛 UI 时省积分）
     ai_stub_mode: bool = True
-    ai_stub_reply: str = "回复测试~"
+    # 更人性化的桩回复，模拟真实客服语气
+    ai_stub_reply: str = "亲，您好呀~ 欢迎光临我们的店铺！有什么可以帮您的吗？"
 
     state_dir: str = "data"
     log_dir: str = "logs"
