@@ -92,9 +92,6 @@ class Settings(BaseSettings):
     vision_left_panel_unread_top_skip_px: int = 100
     # 右栏：跳过窗口标题+千牛顶栏后，再取昵称带（与 vision_right_nick_top_frac 配合）
     vision_right_nick_top_skip_px: int = 96
-    # 右栏昵称 ROI：从「顶栏下缘」起占右栏总高度比例（约 1/3，避免裁到标题栏按钮）
-    vision_right_nick_top_frac: float = 0.33
-
     # 未读红点：连通域面积范围（像素²）
     vision_unread_dot_area_min: int = 40
     vision_unread_dot_area_max: int = 900
