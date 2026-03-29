@@ -10,6 +10,7 @@ from app.logger_db import insert_log
 from app.prompting import build_augmented_user_message
 from app.safety_filter import run_safety_pipeline
 from app.schemas import ChatRequest, ChatResponse
+from app.stub_replies import get_stub_reply
 from app.transfer import check_transfer_intent
 
 
@@ -39,7 +40,15 @@ async def handle_chat(req: ChatRequest) -> ChatResponse:
         )
 
     if settings.chat_stub_mode:
-        reply = (settings.chat_stub_reply or "回复测试~").strip() or "回复测试~"
+        # 优先使用单条固定回复（向后兼容）
+        if settings.chat_stub_reply and settings.chat_stub_reply.strip():
+            reply = settings.chat_stub_reply.strip()
+        else:
+            # 使用话术池 + 关键词匹配 + 随机选取
+            reply = get_stub_reply(
+                req.message,
+                config_path=settings.stub_replies_absolute_path,
+            )
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         await asyncio.to_thread(
             insert_log,

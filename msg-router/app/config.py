@@ -30,8 +30,10 @@ class Settings(BaseSettings):
 
     # 为 true 时：不调用 FastGPT，直接返回 chat_stub_reply（省积分；转人工逻辑仍生效）
     chat_stub_mode: bool = False
-    # 更人性化的桩回复，模拟真实客服语气
-    chat_stub_reply: str = "亲，您好呀~ 欢迎光临我们的店铺！有什么可以帮您的吗？"
+    # 桩模式回复话术（向后兼容：非空则使用单条固定回复；空则使用话术池）
+    chat_stub_reply: str = ""
+    # 桩模式话术池配置文件路径（默认使用 data/stub_replies.json）
+    chat_stub_replies_path: str | None = None
 
     # 相对 msg-router 工作目录
     sqlite_path: str = "data/conversations.db"
@@ -51,6 +53,14 @@ class Settings(BaseSettings):
         # 默认路径
         base_dir = Path(__file__).parent.parent
         return base_dir / "data" / "safety_rules.json"
+
+    @property
+    def stub_replies_absolute_path(self) -> Path | None:
+        if self.chat_stub_replies_path:
+            return Path(self.chat_stub_replies_path).resolve()
+        # 默认路径
+        base_dir = Path(__file__).parent.parent
+        return base_dir / "data" / "stub_replies.json"
 
 
 settings = Settings()
