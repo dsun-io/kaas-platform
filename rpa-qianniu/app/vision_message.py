@@ -528,8 +528,14 @@ def ocr_message_area_with_roles(
         if float(b.confidence) < _MIN_CONF:
             continue
         t = (b.text or "").strip()
-        if _is_extra_message_line_noise(t):
+        
+        # 调试：打印每个OCR文本（前30字符）
+        debug_t = t[:30] + "..." if len(t) > 30 else t
+        is_noise = _is_extra_message_line_noise(t)
+        if is_noise:
+            log.debug("[消息OCR] 过滤噪声文本: %r", debug_t)
             continue
+        
         # 增加「已读/未读」标记过滤
         if "已读" in t or "未读" in t:
             if len(t) <= 4:  # 小字标记通常是 2-4 个字符
