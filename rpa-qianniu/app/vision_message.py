@@ -482,9 +482,19 @@ def ocr_message_area_with_roles(
     对 message_area 内「正文带」做 OCR（已去掉顶部横幅区域），返回带角色标签的行列表。
     """
     body = message_body_area(message_area)
+    
+    # 调试：打印裁剪范围
+    log.debug(
+        "[OCR裁剪] message_area: (%d,%d,%d,%d) | body: (%d,%d,%d,%d)",
+        message_area.left, message_area.top, message_area.right, message_area.bottom,
+        body.left, body.top, body.right, body.bottom
+    )
+    
     crop, ox, oy = crop_window_bgr(bgr, win, body)
     if crop.size == 0 or not paddle_available():
         return [], []
+    
+    log.debug("[OCR裁剪] 裁剪后尺寸: %dx%d | 偏移: (%d,%d)", crop.shape[1], crop.shape[0], ox, oy)
 
     save_debug_bgr(crop, "message_area_ocr", event_type="ocr_extract")
 

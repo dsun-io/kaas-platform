@@ -424,6 +424,18 @@ def is_ocr_noise_message(text: str) -> bool:
     # "共x件" / "共x个" 商品数量格式
     if re.match(r"^共\d+[件个条]", t):
         return True
+    # "ID" 单独出现（右侧商品ID/订单ID）
+    if t == "ID" or re.match(r"^ID[：:]\s*\w+", t):
+        return True
+    # 长数字（15位以上，订单号/商品ID）
+    if re.fullmatch(r"\d{15,}", t):
+        return True
+    # "订单" 开头且包含数字（如"订单2261674959339979893"）
+    if re.match(r"^订单\d{10,}", t):
+        return True
+    # "商品ID" / "宝贝ID" / "SKUID"
+    if re.match(r"^(商品|宝贝|SKU|item)[_-]?ID[：:]?\s*\w*", t, re.I):
+        return True
     return False
 
 
