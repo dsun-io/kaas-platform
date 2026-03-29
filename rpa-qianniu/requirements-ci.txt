@@ -1,0 +1,20 @@
+# CI-only: 剔除 GUI/OCR 重依赖，仅用于 GitHub Actions 自动化测试
+# 此文件从 requirements.txt 派生，移除了以下 CI 环境无法使用的包：
+#   - paddlepaddle (包体过大，Windows CI 安装超时)
+#   - paddleocr (依赖 paddlepaddle)
+#   - uiautomation (需要 Windows GUI 子系统)
+#   - pyautogui (需要 Windows GUI 子系统)
+#   - pynput (需要 Windows GUI 子系统)
+# 本地开发请继续使用 requirements.txt
+
+httpx>=0.26.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+pyperclip>=1.9.0
+numpy>=1.24.0
+opencv-python-headless>=4.8.0
+Pillow>=10.0.0
+
+# 测试依赖
+pytest>=8.0.0

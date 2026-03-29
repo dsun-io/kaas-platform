@@ -136,8 +136,11 @@ _ICON_CHARS = set("□○●◎△▽◇◆★☆♠♥♦♣→←↑↓⊙⊕�
 _MIN_BUYER_TEXT_LEN = 2
 # 昵称过滤：纯数字、纯标点、价格行
 _NICK_PURE_DIGITS = re.compile(r"^\d+$")
-_NICK_PURE_PUNCT = re.compile(r"^[\s\p{P}\p{S}]+$", re.UNICODE)
-_NICK_PRICE_CHARS = re.compile(r"[¥元￥€$£]|")
+# Unicode 标点和符号（兼容Python标准库re）
+_PUNCTUATION_CHARS = r"\s\-_=+\[\]{}|;:'"",<>./?`~!@#$%^&*()\\"
+_SYMBOL_CHARS = r"¥￥€$£¢¤§¶†‡•◦‣⁃◘◙■□▢▣▤▥▦▧▨▩▪▫▬▭▮▯▰▱▲△▴▵▶▷▸▹►▻▼▽▾▿◀◁◂◃◄◅◆◇◈◉◊○◌◍◎●◐◑◒◓◔◕◖◗◘◙◚◛◜◝◞◟◠◡◢◣◤◥◦◧◨◩◪◫◬◭◮◯◰◱◲◳◴◵◶◷◸◹◺◻◼◽◾◿"
+_NICK_PURE_PUNCT = re.compile(r"^[" + _PUNCTUATION_CHARS + _SYMBOL_CHARS + r"]+$", re.UNICODE)
+_NICK_PRICE_CHARS = re.compile(r"[¥元￥€$£]")
 # 日期 + 时间
 _TS_FULL = re.compile(
     r"\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}(?::\d{2})?"

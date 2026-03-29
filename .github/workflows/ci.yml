@@ -25,12 +25,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.pip/cache
-          key: ${{ runner.os }}-pip-${{ hashFiles('rpa-qianniu/requirements.txt') }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('rpa-qianniu/requirements-ci.txt') }}
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-ci.txt
 
       - name: Run syntax check
         run: |
