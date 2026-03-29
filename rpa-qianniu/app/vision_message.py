@@ -195,13 +195,23 @@ def _is_qianniu_banner_text(text: str) -> bool:
     """
     检测是否为千牛系统横幅文本。
     增加问句豁免：若文本含 banner 关键词但同时像买家问句，则不判定为横幅。
+    增加空格容忍：OCR识别的文本可能包含空格。
     """
     t = (text or "").strip()
     if not t:
         return True
+    # 标准化：去除所有空格，便于匹配
+    t_normalized = re.sub(r"\s+", "", t)
     for s in _BANNER_SUBSTR:
+        # 原始匹配
         if s in t:
             # 问句豁免：如果是买家问句（如"退款怎么办"），不误判为横幅
+            if _looks_like_buyer_question(t):
+                return False
+            return True
+        # 标准化匹配（去除空格后）
+        s_normalized = re.sub(r"\s+", "", s)
+        if s_normalized in t_normalized:
             if _looks_like_buyer_question(t):
                 return False
             return True
