@@ -263,9 +263,31 @@ class QuotationEngine:
         cost.roll_weight = roll_weight
         cost.quantity = request.quantity
         
-        # 1. 生产成本 = 卷重 × 单价
-        cost_per_kg = self.price_catalog["cost_per_kg"].get(request.wire_diameter, 8.5)
-        cost.production_cost = roll_weight * cost_per_kg
+        # 根据网孔类型选择计算模型
+        if request.mesh_type == "均孔":
+            # 均孔网：按面积计算（面积 × 每平米单价）
+            # 面积 (㎡) = 高度(m) × 卷长(m)
+            height_m = request.height / 100.0
+            length_m = request.roll_length
+            area_sqm = height_m * length_m
+            
+            price_per_sqm = self.price_catalog.get("price_per_sqm", {}).get(request.wire_diameter, 15.0)
+            cost.production_cost = area_sqm * price_per_sqm
+            
+        elif request.mesh_type == "立柱":
+            # 立柱：按固定单价计算
+            post_price = self.price_catalog.get("post_unit_prices", {}).get(request.wire_diameter, 5.0)
+            cost.production_cost = post_price
+            cost.roll_weight = 0 # 立柱不按重量算生产成本
+            # 立柱通常不需要额外的表面处理费（已含）
+            cost.surface_treatment_cost = 0
+            cost.processing_fee = 0 # 无加工费
+            cost.packaging_cost = 0 # 简单包装或无
+            
+        else:
+            # 默认/上疏下密：按重量计算（卷重 × 每公斤单价）
+            cost_per_kg = self.price_catalog["cost_per_kg"].get(request.wire_diameter, 8.5)
+            cost.production_cost = roll_weight * cost_per_kg
         
         # 2. 表面处理费
         surface_data = self.price_catalog["surface_treatment"].get(request.surface_treatment, {})
