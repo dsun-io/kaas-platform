@@ -259,6 +259,62 @@ MVP Demo 验证期 —— 用 FastGPT + 本地代码最快跑通报价和话术�
 
 ## S3. 三方协作流程
 
+### ⚠️ 任务创建规范（Runner创建任务时必须遵守）
+
+#### 标准任务页面结构（使用Notion页面模板）
+
+**创建新任务时，必须使用Notion数据库的页面模板**，模板包含以下固定结构：
+
+```
+📋 任务 Spec（Tab选项卡）
+  - 需求背景
+  - 任务类型  
+  - 产出定义
+  - 验收标准
+  - 执行方式
+
+📝 Nano 执行日志（Tab选项卡）
+  - Nano/David执行记录
+
+🔧 Runner 执行日志（Tab选项卡）
+  - Runner开发执行记录（格式：[Runner] YYYY-MM-DD HH:mm 内容）
+
+🔍 David 反馈（独立区块，页面底部）
+  - David验收时填写
+```
+
+**创建步骤**：
+1. 使用Notion API创建页面时，**必须指定模板ID**（`inlined_page_template_id`）
+2. 如果无法使用模板，**必须手动创建上述4个部分**（3个Tab + 1个反馈区块）
+3. 写入任务Spec内容到「📋 任务 Spec」Tab
+4. 初始化「🔧 Runner 执行日志」Tab为空状态（等待开发时填写）
+
+#### Runner执行日志规范（铁律）
+
+**每次执行任务后，必须立即写入Runner执行日志**，包含12项完整骨架：
+
+1. 任务元数据（task_id, task_url, spec_version, repo/branch, pr_or_commit, operator）
+2. 目标与范围（in_scope, out_of_scope, constraints）
+3. 输入快照（notion_spec, acceptance_items, current_status）
+4. 执行时间线（按序号记录每一步动作、原因、结果）
+5. 改动明细（每个文件的改动点、目的、影响面）
+6. 验证矩阵（命令、预期、实际、结果、证据）
+7. 验收映射（验收标准 → 证据 → PASS/FAIL）
+8. 异常与处置（遇到的问题、解决方案、最终结果）
+9. 风险与回滚（可能的风险、如何发现、回滚步骤）
+10. 产出清单（commit/PR/文件路径/制品链接）
+11. 待办与建议（后续动作、人工确认项）
+12. 附录证据索引（证据链接、原始输出）
+
+**写入规则**：
+- 使用Notion MCP `update_content` 命令追加日志
+- 匹配Tab标题作为锚点：`\t\t🔧 **Runner 执行日志**`
+- new_str必须完整保留old_str + 新增内容
+- **绝对禁止**删除/修改/覆盖已有日志
+- 每条日志以 `[Runner] YYYY-MM-DD HH:mm` 开头
+
+**违反此规范 = Nano验收直接打回**
+
 ### Runner 执行规则
 
 #### 启动前
