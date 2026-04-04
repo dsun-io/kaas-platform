@@ -13,67 +13,9 @@ from app.schemas import ChatRequest, ChatResponse
 from app.stub_replies import get_stub_reply
 from app.transfer import check_transfer_intent
 
-# 报价引擎集成
-from app.quotation_engine import QuotationEngine, QuoteRequest, extract_params_from_text, apply_defaults
-from app.quote_templates import QuoteResponseGenerator
-
-# 初始化报价引擎（全局单例）
-_pricing_engine = None
-
-def get_pricing_engine() -> QuotationEngine:
-    """获取报价引擎单例"""
-    global _pricing_engine
-    if _pricing_engine is None:
-        _pricing_engine = QuotationEngine()
-    return _pricing_engine
-
-
-async def _handle_quote_request(message: str) -> tuple[str, dict]:
-    """
-    处理报价请求（代码引擎，不调用FastGPT）
-    
-    Args:
-        message: 用户消息
-        
-    Returns:
-        (回复话术, 报价数据)
-    """
-    try:
-        engine = get_pricing_engine()
-        
-        # 1. 从文本提取参数
-        params = extract_params_from_text(message)
-        
-        # 2. 应用默认值
-        params = apply_defaults(params)
-        
-        # 3. 构造报价请求
-        request = QuoteRequest(
-            wire_diameter=params.get('wire_diameter', '2.0×1.8'),
-            height=params.get('height', 0),
-            mesh_width=params.get('mesh_width', '15cm'),
-            roll_length=params.get('roll_length', 50),
-            quantity=params.get('quantity', 1),
-            mesh_type=params.get('mesh_type', '上疏下密'),
-            surface_treatment=params.get('surface_treatment', '热镀锌'),
-            packaging=params.get('packaging', '标准简包'),
-            trade_type=params.get('trade_type', '内贸'),
-            exchange_rate=params.get('exchange_rate', 7.25),
-            profit_margin=params.get('profit_margin', 0.18)
-        )
-        
-        # 4. 计算报价
-        result = engine.calculate(request)
-        
-        # 5. 生成话术
-        reply = QuoteResponseGenerator.generate(result)
-        
-        return reply, result.to_dict()
-        
-    except Exception as e:
-        # 降级到FastGPT（如果引擎失败）
-        error_reply = f"抱歉，报价系统暂时不可用：{str(e)}\n请稍后重试或联系人工客服。"
-        return error_reply, {"status": "error", "message": str(e)}
+# 报价引擎已重构为纯计算器模式
+# FastGPT 负责参数提取和知识库查询，通过 /api/v1/quote 端点调用计算
+# 此处不再需要本地报价逻辑
 
 
 async def handle_chat(req: ChatRequest) -> ChatResponse:
@@ -132,30 +74,9 @@ async def handle_chat(req: ChatRequest) -> ChatResponse:
     # 3. 意图识别
     intent = infer_buyer_intent(req.message)
     
-    # 4. 报价查询路由（新增：优先走代码引擎）
-    if "询价议价" in intent.labels:
-        elapsed_ms = int((time.perf_counter() - started) * 1000)
-        reply, quote_data = await _handle_quote_request(req.message)
-        
-        await asyncio.to_thread(
-            insert_log,
-            platform=req.platform,
-            buyer_id=req.buyer_id,
-            message=req.message,
-            reply=reply,
-            conversation_id=conv_id,
-            should_transfer=False,
-            response_time_ms=elapsed_ms,
-        )
-        
-        return ChatResponse(
-            reply=reply,
-            conversation_id=conv_id,
-            should_transfer=False,
-            response_time_ms=elapsed_ms,
-        )
-
-    # 5. 其他意图走FastGPT
+    # 4. 所有意图走FastGPT（报价逻辑已重构为纯计算器模式）
+    # FastGPT 负责参数提取和知识库查询，通过 /api/v1/quote 端点调用计算
+    # 不再在本地处理报价请求
     if settings.chat_augment_enabled:
         user_for_model = build_augmented_user_message(
             raw_buyer_message=req.message,
