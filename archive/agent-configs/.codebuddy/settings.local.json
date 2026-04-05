@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__notion__API_retrieve_a_page",
+      "mcp__notion__API_get_block_children",
+      "mcp__notion__API_retrieve_a_data_source"
+    ]
+  }
+}
