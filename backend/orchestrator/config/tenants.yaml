@@ -11,11 +11,6 @@ tenants:
     enabled: true
     fastgpt:
       app_id: "test_app_id_liankai"
-      datasets:
-        L1_共通: "dataset_L1_common"
-        L1_牛栏网_行业: "dataset_L1_industry"
-        L2_牛栏网_产品: "dataset_L2_product"
-        L3_联凯_牛栏网: "dataset_L3_liankai"
     product_categories:
       - 牛栏网
     db_schema: public
@@ -27,8 +22,6 @@ tenants:
     enabled: true
     fastgpt:
       app_id: "test_app_id_client_b"
-      datasets:
-        L1_共通: "dataset_L1_common"
     product_categories:
       - 石笼网
     db_schema: public
