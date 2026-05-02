@@ -1,1 +1,54 @@
-.aider*
+# ─── Kaas v2 .gitignore ───
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# Environment Variables (NEVER commit secrets)
+.env
+backend/.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# Node (frontend)
+node_modules/
+.next/
+.nuxt/
+dist/
+
+# Logs
+*.log
+
+# Database
+*.sqlite3
+
+# MinIO data (local dev)
+minio_data/
+
+# Alembic
+*.pyc
+
+# Legacy Qwen config (已迁移至 .ai/)
+.qwen/

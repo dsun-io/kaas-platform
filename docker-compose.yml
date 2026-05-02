@@ -1,0 +1,89 @@
+# ─── Kaas v2 · Docker Compose · 本地开发环境 ───
+# 包含: PostgreSQL + Redis + MinIO + Backend
+# v2 设计文档 Q5: 本地优先（Docker + FastAPI + PostgreSQL + Redis）
+
+services:
+  # ─── PostgreSQL (L4 quotations + customer_capabilities + L0 events) ───
+  postgres:
+    image: postgres:16-alpine
+    container_name: kaas-postgres
+    environment:
+      POSTGRES_USER: kaas
+      POSTGRES_PASSWORD: kaas_dev
+      POSTGRES_DB: kaas_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - kaas_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kaas -d kaas_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Redis (L5 会话短期记忆 · TTL 24h) ───
+  redis:
+    image: redis:7-alpine
+    container_name: kaas-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── MinIO (L0 events OSS 归档 · §3.7.4 约束3) ───
+  minio:
+    image: minio/minio:latest
+    container_name: kaas-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"    # API
+      - "9001:9001"    # Console
+    volumes:
+      - kaas_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─── Backend (Kaas v2 Orchestrator) ───
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: kaas-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://kaas:kaas_dev@postgres:5432/kaas_dev
+      - REDIS_URL=redis://redis:6379/0
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET=kaas-events-archive
+      - MINIO_SECURE=false
+      - APP_ENV=development
+      - LOG_LEVEL=DEBUG
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    volumes:
+      - ./backend:/app  # 开发模式热重载
+
+volumes:
+  kaas_pgdata:
+  kaas_minio_data:

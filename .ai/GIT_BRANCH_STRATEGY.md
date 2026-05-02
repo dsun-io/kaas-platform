@@ -1,7 +1,7 @@
 # Git 分支策略与合并规范（铁律）
 
 > **来源**：Nano Auto 规划，David 验收通过
-> **版本**：v1.0 | 2026-04-04
+> **版本**：v2.0 | 2026-05-02
 > **适用仓库**：davidsun0124/kaas-platform
 > **维护者**：David + Nano Auto + Runner
 > 

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "notion": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "@ramidecodes/mcp-server-notion@latest",
+        "--api-key=***REMOVED***"
+      ],
+      "env": {}
+    }
+  }
+}
