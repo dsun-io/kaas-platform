@@ -55,7 +55,7 @@ services:
   # ─── Backend (Kaas v2 Orchestrator) ───
   backend:
     build:
-      context: ./backend
+      context: ./backend/orchestrator
       dockerfile: Dockerfile
     container_name: kaas-backend
     ports:
@@ -82,7 +82,7 @@ services:
       start_period: 15s
       retries: 3
     volumes:
-      - ./backend:/app  # 开发模式热重载
+      - ./backend/orchestrator:/app  # 开发模式热重载
 
 volumes:
   kaas_pgdata:

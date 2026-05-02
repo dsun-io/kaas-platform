@@ -2,14 +2,8 @@
 Kaas v2 · SQLAlchemy ORM 模型
 ────────────────────────────
 严格对应 v2 设计文档 §3.5 / §3.7 的表结构。
-
-铁律遵守:
-- 所有事实表有 schema_version (§3.7.2)
-- events 表 INSERT-only (铁律5)
-- quotations 表 INSERT-only, 不存 effective_to (§3.5.2)
-- 字段命名: created_at (非 occurred_at), quote.response (非 quote.requested)
 """
-
+import uuid
 from sqlalchemy import (
     Column,
     BigInteger,
@@ -20,48 +14,46 @@ from sqlalchemy import (
     DateTime,
     Index,
     func,
+    String
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from app.db.base import Base
-
 
 class Event(Base):
     """
     L0 原始事件流（飞轮唯一入口 · 永久归档 · 铁律5）
-
-    所有原始事件统一落此表，不分散到各业务表。
-    INSERT-only: 禁止 UPDATE / DELETE。
     """
-
     __tablename__ = "events"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    schema_version = Column(Integer, nullable=False, default=1)
-    tenant_id = Column(Text, nullable=False)
-    event_type = Column(Text, nullable=False)     # chat.turn / quote.request / quote.response / ...
-    event_source = Column(Text, nullable=False)   # frontend / orchestrator / fastgpt_callback / scheduled
-    actor_id = Column(Text, nullable=True)
-    session_id = Column(Text, nullable=True)
+    # For partitioned tables, SQLAlchemy doesn't support auto-generation well, but we mapped it manually in Alembic.
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at = Column(DateTime(timezone=True), primary_key=True, default=func.now())
+    trace_id = Column(String(64), nullable=False)
+    route_version = Column(String(10), nullable=False)
+    tenant_id = Column(String(32), nullable=False)
+    event_type = Column(String(64), nullable=False)
+    schema_version = Column(String(10), nullable=False)
     payload = Column(JSONB, nullable=False)
-    trace_id = Column(Text, nullable=True)
-    sampled = Column(Boolean, nullable=False, default=True)
-    # v2 修正: 使用 created_at (非 occurred_at)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    sampled = Column(Boolean, nullable=False, default=False)
+    source = Column(String(64), nullable=False)
 
-    __table_args__ = (
-        Index("idx_events_tenant_type_time", "tenant_id", "event_type", created_at.desc()),
-        Index("idx_events_session", "session_id", postgresql_where=(session_id.isnot(None))),
-    )
+class EventsArchiveLog(Base):
+    """
+    L0 事件归档记录表
+    """
+    __tablename__ = "events_archive_log"
 
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(String(32), nullable=False)
+    month = Column(String(7), nullable=False)
+    minio_path = Column(String(255), nullable=False)
+    status = Column(String(20), nullable=False)
+    archived_at = Column(DateTime(timezone=True), nullable=False, default=func.now())
 
 class Quotation(Base):
     """
     L4 报价事实表（永远 INSERT，不 UPDATE · 铁律5）
-
-    不存 effective_to，靠 INSERT-only + ORDER BY effective_from DESC LIMIT 1
-    永远取到最新一条（§3.5.2）。
     """
-
     __tablename__ = "quotations"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
@@ -70,16 +62,15 @@ class Quotation(Base):
     product_category = Column(Text, nullable=False)
     product_spec = Column(JSONB, nullable=False)
     spec_hash = Column(Text, nullable=False)
-    unit_price = Column(Numeric(10, 4), nullable=True)   # NULL = 显式废止
+    unit_price = Column(Numeric(10, 4), nullable=True)
     currency = Column(Text, nullable=False, default="CNY")
-    unit = Column(Text, nullable=False)                   # 元/米 | 元/平 | 元/吨 | 元/卷
+    unit = Column(Text, nullable=False)
     discount = Column(Numeric(5, 4), nullable=True)
     min_quantity = Column(Integer, nullable=True)
     effective_from = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    source = Column(Text, nullable=False)                 # manual | chat_extracted | system_estimated
+    source = Column(Text, nullable=False)
     notes = Column(Text, nullable=True)
     created_by = Column(Text, nullable=True)
-    # v2 修正: 使用 created_at (非 occurred_at)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     __table_args__ = (
@@ -92,14 +83,10 @@ class Quotation(Base):
         ),
     )
 
-
 class CustomerCapability(Base):
     """
-    客户支持的生产规格（David Q2 补充：防止 AI 推荐做不出的规格）
-
-    权威数据源在 PostgreSQL，L3 FastGPT dataset 仅放可读副本。
+    客户支持的生产规格
     """
-
     __tablename__ = "customer_capabilities"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
