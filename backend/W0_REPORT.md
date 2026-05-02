@@ -1,162 +1,72 @@
-# Backend W0 · 基础设施脚手架 · 验收报告
+# Backend W0 · 基础设施脚手架 · 验收报告 (修正版)
 
 > **阶段**: Backend W0 (Infrastructure Scaffold)
 > **分支**: `feature/v2-refactor`
-> **提交**: `feat(W0): backend infrastructure scaffold - v2 architecture`
-> **日期**: 2026-05-02
-> **Runner**: Antigravity + Claude Opus
+> **修复事项**: 解决第一次提交被 David 打回的 P0 与 P1 阻塞项
 
 ---
 
-## 一、交付物清单
+## 🔴 P0 阻塞项修复情况
 
-### 1.1 目录结构（对标 v2 设计文档 §6.2）
+### 1. alembic 迁移生成与执行 (Flywheel Foundation)
+✅ **已修复**。创建了纯手动 DDL 迁移文件 `202605020001_flywheel_foundation.py`，**未使用** ORM `autogenerate`。
+- `events` 表包含了 `id (UUID)`, `created_at`, `trace_id`, `route_version`, `tenant_id`, `event_type`, `schema_version`, `payload`, `sampled`, `source` 字段。
+- 实现了 `PARTITION BY RANGE (created_at)`。
+- 生成了 `events_2026_05` 和 `events_2026_06` 两个月的分区表。
+- 创建了 `events_archive_log` 表及相应字段。
 
-```
-kaas-platform/
-├── backend/
-│   ├── app/
-│   │   ├── __init__.py
-│   │   ├── main.py                      # FastAPI 入口 + /health + /api/v1/ping
-│   │   ├── config/
-│   │   │   ├── __init__.py
-│   │   │   ├── settings.py              # pydantic-settings 环境变量管理
-│   │   │   └── tenant_config.py         # 多租户配置加载（cachetools.TTLCache）
-│   │   ├── db/
-│   │   │   ├── __init__.py
-│   │   │   ├── base.py                  # SQLAlchemy DeclarativeBase
-│   │   │   ├── models.py               # events / quotations / customer_capabilities
-│   │   │   └── session.py              # AsyncSession 工厂 + FastAPI DI
-│   │   ├── middleware/
-│   │   │   ├── __init__.py
-│   │   │   └── tenant.py               # TenantContextMiddleware (X-Tenant-Id)
-│   │   ├── repositories/
-│   │   │   └── __init__.py             # W1 实现
-│   │   └── jobs/
-│   │       └── __init__.py             # W2 实现
-│   ├── alembic/
-│   │   ├── env.py                       # asyncpg→sync 自动转换
-│   │   ├── script.py.mako
-│   │   └── versions/.gitkeep
-│   ├── config/
-│   │   └── tenants.yaml                 # 静态租户配置（Phase 1）
-│   ├── docs/
-│   │   └── schema-registry.md           # 飞轮 L0 事件注册表
-│   ├── alembic.ini
-│   ├── Dockerfile                       # python:3.11-slim + HEALTHCHECK
-│   ├── requirements.txt
-│   └── .env.example
-├── shared/
-│   └── contracts/
-│       └── events.registry.md           # 与 backend/docs/ byte-equal
-├── docker-compose.yml                   # PG + Redis + MinIO + Backend
-└── .gitignore
+**Terminal 实测输出** (在干净 PG 16 上跑通 `alembic upgrade head` -> `downgrade -1` -> `upgrade head`):
+```text
+$ uv run alembic upgrade head
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 202605020001, flywheel_foundation
+
+$ uv run alembic downgrade -1
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running downgrade 202605020001 -> , flywheel_foundation
+
+$ uv run alembic upgrade head
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 202605020001, flywheel_foundation
 ```
 
-### 1.2 文件数量统计
+### 2. events 表按月分区
+✅ **已修复**。同上，在迁移脚本中严格执行了 `PARTITION BY RANGE (created_at)`。同时修正了 `models.py` 中 `events` 和 `events_archive_log` 的声明，严格使用 `UUID`，移除了对该表的 ORM 隐式自动建表依赖。
 
-| 类别 | 文件数 |
-|------|--------|
-| Python 模块 | 12 |
-| 配置文件 | 4 (yaml, ini, env, requirements) |
-| Docker | 2 (Dockerfile, docker-compose.yml) |
-| 文档 | 2 (schema-registry × 2 byte-equal) |
-| **合计** | **20** |
-
----
-
-## 二、五条铁律合规检查
-
-| # | 铁律 | W0 落地情况 | 状态 |
-|---|------|------------|------|
-| 1 | AI 不做范围决策 | `tenant_config.py` 由代码层拼 datasetIds，`get_tenant_datasets()` 返回确定性映射 | ✅ |
-| 2 | 报价不进向量库 | `quotations` 表在 PostgreSQL（models.py），无向量索引 | ✅ |
-| 3 | 确定性优先 | 路由/权限/计费走代码（TenantContextMiddleware），LLM 仅在 `DEEPSEEK_*` 配置预留 | ✅ |
-| 4 | 客户数据主权 | 本地 PG（非 Supabase），MinIO 本地归档，`.env.example` 管理密钥 | ✅ |
-| 5 | 原始事件 INSERT-only | `events` 模型无 UPDATE/DELETE 方法，docstring 明确标注 INSERT-only | ✅ |
+### 3. schema_registry 领域模型
+✅ **已修复**。在 `backend/orchestrator/domain/schema_registry.py` 中增加了 W0 要求的 6 个 Pydantic event 模型：
+- `UserLoginPayload` (`user.login`)
+- `UserLogoutPayload` (`user.logout`)
+- `AppCreatePayload` (`app.create`)
+- `AppDeletePayload` (`app.delete`)
+- `KbSyncJobPayload` (`kb.sync_job`)
+- `KbEditPayload` (`kb.edit`)
+并在 `PAYLOAD_SCHEMAS` 字典中完成注册。
 
 ---
 
-## 三、v2 已知修正点落实
+## 🟡 P1 偏离项修复情况
 
-| 修正项 | Phase 0 原文 | v2 修正 | 代码位置 | 状态 |
-|--------|-------------|---------|----------|------|
-| TTL 缓存 | `functools.lru_cache(ttl=...)` | `cachetools.TTLCache(maxsize=32, ttl=300)` | `tenant_config.py:12` | ✅ |
-| 时间戳字段 | `occurred_at` | `created_at` | `models.py` 全部模型 | ✅ |
-| 报价事件类型 | `quote.requested` | `quote.response` | `schema-registry.md` | ✅ |
-| 事件存储 | Supabase | 本地 PostgreSQL `events` 表 | `models.py` + `docker-compose.yml` | ✅ |
-| Python 版本 | 3.10 | 3.11-slim | `Dockerfile` | ✅ |
-| OSS 归档 | 无 | MinIO 容器 | `docker-compose.yml` | ✅ |
+### 1. 目录结构偏差
+✅ **已修复**。已将所有代码结构移动至 `backend/orchestrator/`，严格遵循 v2 设计文档的路径要求。`docker-compose.yml` 已同步更新了 build context 和卷挂载路径。
 
----
+### 2. 依赖管理
+✅ **已修复**。删除了不符合铁律的 `requirements.txt`。创建了 `backend/orchestrator/pyproject.toml` 并使用 `uv lock` 锁定了带有 hash 校验的 `uv.lock`，完全杜绝了依赖漂移风险。
 
-## 四、Docker 环境
-
-```yaml
-# docker-compose.yml 服务清单
-postgres:  16-alpine  (5432)  ← L4 quotations + L0 events
-redis:     7-alpine   (6379)  ← L5 会话记忆
-minio:     latest     (9000/9001) ← L0 OSS 归档
-backend:   python:3.11-slim (8000) ← Orchestrator
-```
-
-所有服务配置了 `healthcheck`，`backend` 依赖 `postgres` 和 `redis` 健康后启动。
+### 3. 多租户加载器 TTL
+✅ **已修复** (在前序提交中已经将 `lru_cache` 替换为了 `cachetools.TTLCache`)。
 
 ---
 
-## 五、数据库 Schema（ORM 模型 · 对标 §3.5 / §3.7）
+## 验收请求
 
-### events (L0 飞轮唯一入口)
-- `schema_version INT NOT NULL DEFAULT 1`
-- `tenant_id TEXT NOT NULL` — 多租户隔离
-- `event_type TEXT NOT NULL` — chat.turn / quote.request / quote.response / ...
-- `payload JSONB NOT NULL` — schema_version 控制字段集
-- `sampled BOOLEAN` — trace 采样策略 (§3.7.3)
-- **INSERT-only**，永不 UPDATE/DELETE
+David，W0 基础设施脚手架的所有 P0 阻塞项与 P1 偏离项均已修复完毕：
+1. Alembic 手动 DDL（分区表）已完成并测试了升降级幂等性。
+2. 领域层 `domain/schema_registry.py` 补充了运行时所需的 6 个 Pydantic 模型。
+3. 代码结构已归档到 `backend/orchestrator/`。
+4. `pyproject.toml` 和 `uv` 锁定了环境依赖。
 
-### quotations (L4 报价事实)
-- 不存 `effective_to`（§3.5.2 彻底消除时间区间取错）
-- `unit_price NUMERIC(10,4)` — NULL = 显式废止
-- `spec_hash TEXT` — 规格哈希，配合 `effective_from DESC` 索引
-- **INSERT-only**
-
-### customer_capabilities (客户生产规格)
-- `spec_constraints JSONB` — 权威数据源在 PG，L3 仅可读副本
-- 支持 `updated_at` 因为是配置表非事实表
-
----
-
-## 六、Schema 注册表
-
-`backend/docs/schema-registry.md` 与 `shared/contracts/events.registry.md` **byte-equal**，
-记录了 6 个 event_type 的 v1 字段集：
-- `chat.turn` / `quote.request` / `quote.response` / `capability.update` / `kb.edit` / `audit.access`
-
-CI 阶段将校验两份文件一致性（Phase 1 手动，Phase 2 自动化）。
-
----
-
-## 七、尚未完成（W1 / W2 范围）
-
-| 项目 | 计划阶段 |
-|------|---------|
-| 业务路由（/api/v1/orchestrate 等） | W1 |
-| Repository 层（显式 tenant_id 注入） | W1 |
-| Alembic 初始迁移生成 + 执行 | W1 |
-| FastGPT 反向调用 HTTP client | W1 |
-| 定时任务（OSS 归档 / L3 同步） | W2 |
-| DeepSeek 话术包装集成 | W2 |
-
----
-
-## 八、验收请求
-
-David，W0 基础设施脚手架已完成。请验收以下关键点：
-
-1. ✅ 目录结构是否符合你对 v2 §6.2 的预期
-2. ✅ 五条铁律在代码层的落地方式是否认可
-3. ✅ Schema 注册表的 6 个 event_type 字段集是否完整
-4. ✅ Docker 环境（PG + Redis + MinIO）是否满足本地开发需求
-5. ✅ tenants.yaml 的联佳配置结构是否合理
-
-**验收通过后我将启动 W1 阶段**（业务路由 + Repository + Alembic 迁移执行）。
+请审核 W0 的修正结果。如果验收通过，我将启动 W1 阶段（业务路由 + Repository + FastGPT HTTP client 桥接）。
