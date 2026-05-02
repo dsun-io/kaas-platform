@@ -37,7 +37,7 @@ def get_all_tenants() -> Dict[str, Any]:
     return _load_tenants_yaml()
 
 
-def get_tenant(tenant_id: str) -> Optional[Dict[str, Any]]:
+def load_tenant_config(tenant_id: str) -> Optional[Dict[str, Any]]:
     """
     获取指定租户配置。
 
@@ -62,12 +62,12 @@ def get_tenant_datasets(tenant_id: str) -> Dict[str, str]:
     获取租户的 FastGPT dataset ID 映射。
     用于 Orchestrator 代码层拼 datasetIds（铁律1: AI 不参与范围决策）。
     """
-    tenant = get_tenant(tenant_id)
+    tenant = load_tenant_config(tenant_id)
     if not tenant:
         return {}
     return tenant.get("fastgpt", {}).get("datasets", {})
 
 
-def invalidate_cache() -> None:
+def reload_all_tenants() -> None:
     """手动清除租户缓存（用于管理接口热更新）。"""
     _tenant_cache.clear()
