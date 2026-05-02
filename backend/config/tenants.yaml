@@ -1,0 +1,24 @@
+# ─── Kaas v2 · 多租户静态配置 ───
+# Phase 1: 静态 YAML 配置
+# Phase 2+: 迁移至 PostgreSQL 动态加载
+#
+# 每个租户必须有唯一 tenant_id，对应 X-Tenant-Id header
+# 所有 FastGPT dataset ID 由代码层拼接，AI 不参与范围决策（铁律1）
+
+tenants:
+  lianjia:
+    display_name: "联佳五金"
+    enabled: true
+    # FastGPT 知识库 dataset IDs (由 Orchestrator 代码层拼 datasetIds)
+    fastgpt:
+      app_id: ""                          # FastGPT 应用 ID (待填)
+      datasets:
+        L1_共通: ""                        # dataset ID (待填)
+        L1_牛栏网_行业: ""
+        L2_牛栏网_产品: ""
+        L3_联佳_牛栏网: ""
+    # 支持的产品品类
+    product_categories:
+      - 牛栏网
+    # 数据库 schema (Phase 1 单库单 schema, Phase 2 可按租户隔离)
+    db_schema: public

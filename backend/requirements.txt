@@ -1,0 +1,28 @@
+# Kaas v2 Backend Dependencies
+# Core
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+pydantic==2.11.3
+pydantic-settings==2.9.1
+
+# Database
+sqlalchemy==2.0.41
+asyncpg==0.30.0
+alembic==1.15.2
+psycopg2-binary==2.9.10
+
+# Cache (v2 correction: cachetools.TTLCache, NOT functools.lru_cache with ttl)
+cachetools==5.5.2
+
+# Configuration
+pyyaml==6.0.2
+python-dotenv==1.1.0
+
+# HTTP Client (for FastGPT reverse-call)
+httpx==0.28.1
+
+# Observability
+structlog==25.4.0
+
+# MinIO / OSS (events L0 archive · §3.7.4 constraint #3)
+minio==7.2.16
