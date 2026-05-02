@@ -57,15 +57,8 @@ def load_tenant_config(tenant_id: str) -> Optional[Dict[str, Any]]:
     return tenant
 
 
-def get_tenant_datasets(tenant_id: str) -> Dict[str, str]:
-    """
-    获取租户的 FastGPT dataset ID 映射。
-    用于 Orchestrator 代码层拼 datasetIds（铁律1: AI 不参与范围决策）。
-    """
-    tenant = load_tenant_config(tenant_id)
-    if not tenant:
-        return {}
-    return tenant.get("fastgpt", {}).get("datasets", {})
+# get_tenant_datasets 已移除 —— datasetIds 由代码层 build_dataset_ids() 拼接，
+# 不在 tenants.yaml 配置层面存储（R3 铁律1）。
 
 
 def reload_all_tenants() -> None:
