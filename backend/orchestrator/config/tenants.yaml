@@ -6,19 +6,31 @@
 # 所有 FastGPT dataset ID 由代码层拼接，AI 不参与范围决策（铁律1）
 
 tenants:
-  lianjia:
-    display_name: "联佳五金"
+  liankai:
+    display_name: "联凯五金"
     enabled: true
-    # FastGPT 知识库 dataset IDs (由 Orchestrator 代码层拼 datasetIds)
     fastgpt:
-      app_id: ""                          # FastGPT 应用 ID (待填)
+      app_id: "test_app_id_liankai"
       datasets:
-        L1_共通: ""                        # dataset ID (待填)
-        L1_牛栏网_行业: ""
-        L2_牛栏网_产品: ""
-        L3_联佳_牛栏网: ""
-    # 支持的产品品类
+        L1_共通: "dataset_L1_common"
+        L1_牛栏网_行业: "dataset_L1_industry"
+        L2_牛栏网_产品: "dataset_L2_product"
+        L3_联凯_牛栏网: "dataset_L3_liankai"
     product_categories:
       - 牛栏网
-    # 数据库 schema (Phase 1 单库单 schema, Phase 2 可按租户隔离)
     db_schema: public
+    feature_flags:
+      use_v2: true
+
+  client_b:
+    display_name: "客户 B"
+    enabled: true
+    fastgpt:
+      app_id: "test_app_id_client_b"
+      datasets:
+        L1_共通: "dataset_L1_common"
+    product_categories:
+      - 石笼网
+    db_schema: public
+    feature_flags:
+      use_v2: false
