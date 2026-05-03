@@ -1,29 +1,34 @@
 /**
  * Single source of truth: v2 design document §3.4 (knowledge base model)
  */
+import { z } from 'zod';
 
-export interface KbDocument {
-  id: string;
-  dataset_id: string;
-  title: string;
-  content: string;
-  metadata: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
-}
+export const KbDocumentSchema = z.object({
+  id: z.string(),
+  dataset_id: z.string(),
+  title: z.string(),
+  content: z.string(),
+  metadata: z.record(z.unknown()),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
 
-export interface KbChunk {
-  id: string;
-  document_id: string;
-  dataset_id: string;
-  content: string;
-  embedding?: number[];
-  metadata: Record<string, unknown>;
-}
+export const KbChunkSchema = z.object({
+  id: z.string(),
+  document_id: z.string(),
+  dataset_id: z.string(),
+  content: z.string(),
+  embedding: z.array(z.number()).optional(),
+  metadata: z.record(z.unknown()),
+});
 
-export interface KbEditPayload {
-  dataset_name: string;
-  chunk_id: string | null;
-  action: 'create' | 'update' | 'delete';
-  actor_id: string;
-}
+export const KbEditPayloadSchema = z.object({
+  dataset_name: z.string(),
+  chunk_id: z.string().nullable(),
+  action: z.enum(['create', 'update', 'delete']),
+  actor_id: z.string(),
+});
+
+export type KbDocument = z.infer<typeof KbDocumentSchema>;
+export type KbChunk = z.infer<typeof KbChunkSchema>;
+export type KbEditPayload = z.infer<typeof KbEditPayloadSchema>;

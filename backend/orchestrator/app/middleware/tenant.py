@@ -21,6 +21,7 @@ _PUBLIC_PATHS = frozenset([
     "/docs",
     "/openapi.json",
     "/redoc",
+    "/metrics",
 ])
 
 
@@ -46,9 +47,9 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
 
         if not tenant_id:
             return JSONResponse(
-                status_code=400,
+                status_code=401,
                 content={
-                    "error": "missing_tenant",
+                    "error": "tenant_unauthorized",
                     "message": "X-Tenant-Id header is required",
                 },
             )
