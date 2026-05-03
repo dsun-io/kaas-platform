@@ -1,41 +1,40 @@
+"""
+Kaas v2 · 路由版本中间件 (§3.7.17)
+──────────────────────────────────
+读 X-Use-V2 Header → 确定路由版本。
+  - true/1/yes → True
+  - false/0/no → False
+  - 缺失/非法 → 读 tenants.yaml feature_flags.use_v2 兜底
+输出 request.state.use_v2: bool
+"""
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse
 from app.domain.tenant_config import load_tenant_config
 
-_VALID_VERSIONS = frozenset({"v1", "v2"})
+_V2_TRUTHY = frozenset({"true", "1", "yes"})
+_V2_FALSY = frozenset({"false", "0", "no"})
 
 
 class RouteVersionMiddleware(BaseHTTPMiddleware):
-    """
-    路由版本中间件。
-    根据 X-Route-Version header 决定路由版本，缺失时从租户 feature_flags.use_v2 回退。
-    X-Route-Version 不识别 → 400。
-    """
+    """路由版本中间件。"""
 
     async def dispatch(self, request: Request, call_next):
-        header_version = request.headers.get("X-Route-Version")
+        header_val = request.headers.get("X-Use-V2", "").strip().lower()
 
-        if header_version is not None:
-            if header_version not in _VALID_VERSIONS:
-                return JSONResponse(
-                    status_code=400,
-                    content={
-                        "error": "invalid_route_version",
-                        "message": f"X-Route-Version must be 'v1' or 'v2', got '{header_version}'",
-                    },
-                )
-            request.state.route_version = header_version
+        if header_val in _V2_TRUTHY:
+            request.state.use_v2 = True
+        elif header_val in _V2_FALSY:
+            request.state.use_v2 = False
         else:
-            # 回退：从租户配置读取 use_v2 标志
-            tenant_id = request.headers.get("X-Tenant-Id")
+            # 回退：从租户配置读取
             use_v2 = False
+            tenant_id = request.headers.get("X-Tenant-Id")
             if tenant_id:
                 tenant_config = load_tenant_config(tenant_id)
                 if tenant_config:
                     use_v2 = tenant_config.get("feature_flags", {}).get("use_v2", False)
-            request.state.route_version = "v2" if use_v2 else "v1"
+            request.state.use_v2 = use_v2
 
         response = await call_next(request)
-        response.headers["X-Route-Version"] = request.state.route_version
+        response.headers["X-Route-Version"] = "v2" if request.state.use_v2 else "v1"
         return response

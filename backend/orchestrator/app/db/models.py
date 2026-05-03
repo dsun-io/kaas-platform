@@ -3,7 +3,6 @@ Kaas v2 · SQLAlchemy ORM 模型
 ────────────────────────────
 严格对应 v2 设计文档 §3.5 / §3.7 的表结构。
 """
-import uuid
 from sqlalchemy import (
     Column,
     BigInteger,
@@ -19,36 +18,40 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from app.db.base import Base
 
+
 class Event(Base):
     """
-    L0 原始事件流（飞轮唯一入口 · 永久归档 · 铁律5）
+    L0 原始事件流（飞轮唯一入口 · 永久归档 · 铁律5 · §3.7.1）
+    id: BIGSERIAL PK, INSERT-only, 禁止 UPDATE/DELETE
     """
     __tablename__ = "events"
 
-    # For partitioned tables, SQLAlchemy doesn't support auto-generation well, but we mapped it manually in Alembic.
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    created_at = Column(DateTime(timezone=True), primary_key=True, default=func.now())
-    trace_id = Column(String(64), nullable=False)
-    route_version = Column(String(10), nullable=False)
-    tenant_id = Column(String(32), nullable=False)
-    event_type = Column(String(64), nullable=False)
-    schema_version = Column(String(10), nullable=False)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    schema_version = Column(Integer, nullable=False, default=1)
+    tenant_id = Column(Text, nullable=False)
+    event_type = Column(Text, nullable=False)
+    event_source = Column(Text, nullable=False)
+    actor_id = Column(Text, nullable=True)
+    session_id = Column(Text, nullable=True)
     payload = Column(JSONB, nullable=False)
-    sampled = Column(Boolean, nullable=False, default=False)
-    source = Column(String(64), nullable=False)
+    trace_id = Column(Text, nullable=True)
+    sampled = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
 
 class EventsArchiveLog(Base):
     """
-    L0 事件归档记录表
+    L0 事件归档记录表 (§3.7.13)
     """
     __tablename__ = "events_archive_log"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=func.gen_random_uuid())
     tenant_id = Column(String(32), nullable=False)
     month = Column(String(7), nullable=False)
     minio_path = Column(String(255), nullable=False)
     status = Column(String(20), nullable=False)
-    archived_at = Column(DateTime(timezone=True), nullable=False, default=func.now())
+    archived_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
 
 class Quotation(Base):
     """
@@ -82,6 +85,7 @@ class Quotation(Base):
             effective_from.desc(),
         ),
     )
+
 
 class CustomerCapability(Base):
     """

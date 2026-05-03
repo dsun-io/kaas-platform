@@ -8,6 +8,17 @@ from app.repositories.events import (
     get_events_by_partition,
 )
 from app.repositories.admin import insert_archive_log, get_archive_logs
+from app.repositories.quotations_repo import (
+    insert_quotation,
+    get_latest_price,
+    list_quotations,
+    count_quotations,
+)
+from app.repositories.capabilities_repo import (
+    upsert_capability,
+    get_capabilities,
+    list_capabilities,
+)
 
 __all__ = [
     "insert_event",
@@ -17,4 +28,11 @@ __all__ = [
     "get_events_by_partition",
     "insert_archive_log",
     "get_archive_logs",
+    "insert_quotation",
+    "get_latest_price",
+    "list_quotations",
+    "count_quotations",
+    "upsert_capability",
+    "get_capabilities",
+    "list_capabilities",
 ]

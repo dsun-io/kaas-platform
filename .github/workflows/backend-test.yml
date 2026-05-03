@@ -1,0 +1,74 @@
+name: backend:test
+
+on:
+  push:
+    paths:
+      - 'backend/**'
+  pull_request:
+    paths:
+      - 'backend/**'
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+
+    env:
+      UV_LINK_MODE: copy
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        working-directory: ./backend/orchestrator
+        run: uv sync
+
+      - name: Run unit tests
+        working-directory: ./backend/orchestrator
+        run: uv run pytest -m unit --tb=short -q
+        env:
+          LLM_PROVIDER: stub
+          KB_PROVIDER: stub
+
+  db-tests:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kaas
+          POSTGRES_PASSWORD: kaas_dev_pw
+          POSTGRES_DB: kaas_v2_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kaas -d kaas_v2_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://kaas:kaas_dev_pw@localhost:5432/kaas_v2_test
+      UV_LINK_MODE: copy
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        working-directory: ./backend/orchestrator
+        run: uv sync
+
+      - name: Run DB tests
+        working-directory: ./backend/orchestrator
+        run: uv run pytest -m db --tb=short -q
+        env:
+          LLM_PROVIDER: stub
+          KB_PROVIDER: stub

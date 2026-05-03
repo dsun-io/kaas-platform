@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: kaas_v2_test
+      POSTGRES_USER: kaas
+      POSTGRES_PASSWORD: kaas_dev_pw
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kaas -d kaas_v2_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

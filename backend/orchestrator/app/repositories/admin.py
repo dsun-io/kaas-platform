@@ -1,3 +1,4 @@
+import uuid
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -13,6 +14,7 @@ async def insert_archive_log(
 ) -> EventsArchiveLog:
     """写入归档日志记录 (INSERT-only · 铁律5)。"""
     log = EventsArchiveLog(
+        id=uuid.uuid4(),
         tenant_id=tenant_id,
         month=month,
         minio_path=minio_path,

@@ -1,15 +1,29 @@
 /**
  * Single source of truth: v2 design document §3.1 (dataset model)
  *
- * R3 铁律1: 前端不构造 datasetId，只定义类型。
- * datasetId 由后端 build_dataset_ids 拼，前端只接收。
+ * R3 rule 1: frontend never constructs datasetId, only types it.
+ * datasetId is assembled by backend build_dataset_ids.
  */
+import { z } from 'zod';
 
-export type DatasetScope = 'L1_共通' | 'L1_牛栏网_行业' | 'L2_牛栏网_产品' | 'L3_联凯_牛栏网';
+export const DatasetScope = {
+  L1_COMMON: 'L1_共通',
+  L1_CATTLE_FENCE_INDUSTRY: 'L1_牛栏网_行业',
+  L2_CATTLE_FENCE_PRODUCT: 'L2_牛栏网_产品',
+  L3_LIANKAI_CATTLE_FENCE: 'L3_联凯_牛栏网',
+} as const;
+export type DatasetScope = (typeof DatasetScope)[keyof typeof DatasetScope];
 
 export type DatasetId = string & { readonly __brand: 'DatasetId' };
 
-export interface DatasetRef {
-  scope: DatasetScope;
-  dataset_id: DatasetId;
-}
+export const DatasetRefSchema = z.object({
+  scope: z.enum([
+    'L1_共通',
+    'L1_牛栏网_行业',
+    'L2_牛栏网_产品',
+    'L3_联凯_牛栏网',
+  ]),
+  dataset_id: z.string(),
+});
+
+export type DatasetRef = z.infer<typeof DatasetRefSchema>;

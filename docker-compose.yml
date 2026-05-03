@@ -60,6 +60,7 @@ services:
     container_name: kaas-backend
     ports:
       - "8000:8000"
+    env_file: ./backend/orchestrator/.env
     environment:
       - DATABASE_URL=postgresql+asyncpg://kaas:kaas_dev@postgres:5432/kaas_dev
       - REDIS_URL=redis://redis:6379/0
@@ -70,11 +71,14 @@ services:
       - MINIO_SECURE=false
       - APP_ENV=development
       - LOG_LEVEL=DEBUG
+      - UV_LINK_MODE=copy  # 解决开发环境中代码热重载导致的链接问题
+
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -83,6 +87,7 @@ services:
       retries: 3
     volumes:
       - ./backend/orchestrator:/app  # 开发模式热重载
+      - /app/.venv  # 持久化虚拟环境（可选）
 
 volumes:
   kaas_pgdata:

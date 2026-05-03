@@ -1,17 +1,21 @@
 /**
  * Single source of truth: v2 design document §3.7 (capability management)
  */
+import { z } from 'zod';
 
-export interface Capability {
-  product_category: string;
-  spec_constraints: Record<string, unknown>;
-  is_active: boolean;
-}
+export const CapabilitySchema = z.object({
+  product_category: z.string(),
+  spec_constraints: z.record(z.unknown()),
+  is_active: z.boolean(),
+});
 
-export interface CapabilityUpdate {
-  customer_id: string;
-  product_category: string;
-  spec_constraints_before: Record<string, unknown>;
-  spec_constraints_after: Record<string, unknown>;
-  actor_id: string;
-}
+export const CapabilityUpdateSchema = z.object({
+  customer_id: z.string(),
+  product_category: z.string(),
+  spec_constraints_before: z.record(z.unknown()),
+  spec_constraints_after: z.record(z.unknown()),
+  actor_id: z.string(),
+});
+
+export type Capability = z.infer<typeof CapabilitySchema>;
+export type CapabilityUpdate = z.infer<typeof CapabilityUpdateSchema>;

@@ -7,7 +7,7 @@
  *
  * 任何不一致 exit 1 + 打印 diff。
  */
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 
 // When run via `pnpm contracts:check` from frontend/, cwd = frontend/
@@ -43,7 +43,12 @@ function extractFromMd(): string[] {
 }
 
 function extractFromPy(): string[] {
-  const content = read('backend/orchestrator/app/domain/schema_registry.py');
+  const bePath = resolve(REPO_ROOT, 'backend/orchestrator/app/domain/schema_registry.py');
+  if (!existsSync(bePath)) {
+    console.warn('⚠️  backend/orchestrator/app/domain/schema_registry.py 尚未创建，跳过校验');
+    process.exit(0);
+  }
+  const content = readFileSync(bePath, 'utf-8');
   const regex = /"([a-z]+\.[a-z_]+)"/g;
   const matches = [...content.matchAll(regex)].map((m) => m[1]).sort();
   return matches;

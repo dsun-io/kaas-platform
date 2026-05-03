@@ -20,6 +20,7 @@ dist/
 
 # types
 next-env.d.ts
+*.tsbuildinfo
 
 # debug
 npm-debug.log*
