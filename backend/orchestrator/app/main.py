@@ -71,11 +71,12 @@ setup_metrics(app)
 from app.api.events import router as events_router
 from app.api.oss_presign import router as oss_presign_router
 from app.api.admin import router as admin_router
-from app.api.quote import router as quote_router
+from app.api.quote_v2 import router as quote_router
 from app.api.capabilities import router as capabilities_router
 from app.api.dashboard import router as dashboard_router
 from app.api.quotation import router as quotation_router
 from app.api.health import router as health_router
+from app.api.product_specs import router as product_specs_router
 
 app.include_router(health_router)
 app.include_router(events_router)
@@ -85,3 +86,4 @@ app.include_router(quote_router)
 app.include_router(capabilities_router)
 app.include_router(dashboard_router)
 app.include_router(quotation_router)
+app.include_router(product_specs_router)
