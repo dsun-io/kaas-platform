@@ -1,176 +1,161 @@
 # W0_REPORT_v2.md — Backend W0 闭合修复报告
 
-**日期**: 2026-05-02
+**日期**: 2026-05-03
 **修复人**: Claude Code (DeepSeek V4 Pro)
 **分支**: `feature/v2-refactor`
-**范围**: 仅修复 STATUS_REPORT.md 指出的 3 个 P0 阻塞问题，未触及任何 W1/W2/前端代码
+**范围**: 修复 STATUS_REPORT.md 指出的 3 个 P0 + 2 个构建期发现的问题
 
 ---
 
-## ✅ 沙箱内已修复并真验
+## ✅ P0 修复（代码层）
 
 ### P0-1 · 模块导入错误 — 已修复
 
-**问题**: `app/config/__init__.py:4` 从 `app.config.tenant_config` 导入，该模块不存在（实际在 `app.domain.tenant_config`），导致 alembic 崩溃。
+**问题**: `app/config/__init__.py:4` 从 `app.config.tenant_config` 导入，该模块不存在。
 
-**修复**: 删除错误的 `from app.config.tenant_config import ...`，`config/__init__.py` 现仅导出 `settings`。
+**修复**: 删除错误导入，`config/__init__.py` 现仅导出 `settings`。
 
-```python
-# app/config/__init__.py (修复后)
-"""Kaas v2 · config package."""
-from app.config.settings import settings
-__all__ = ["settings"]
-```
-
-**真实验证输出**:
 ```
 $ uv run python -c "from app.db.base import Base; print('import OK')"
 import OK
 ```
 
----
-
 ### P0-2 · tenants.yaml R3 铁律 1 违反 — 已修复
 
-**问题**: `config/tenants.yaml` 包含 `fastgpt.datasets` 字段（L1_共通/L1_牛栏网_行业/L2_牛栏网_产品/L3_联凯_牛栏网），违反铁律 1"AI 不做范围决策，datasetIds 在代码层 build_dataset_ids 拼，严禁 tenants.yaml 配置 dataset_ids"。
+**修复**: 删除 `fastgpt.datasets`（L1/L2/L3 四行），保留 `fastgpt.app_id`。删除 `get_tenant_datasets()` 函数。
 
-**修复**:
-1. `tenants.yaml` — 完全移除 `fastgpt.datasets` 字段，保留 `fastgpt.app_id`
-2. `domain/tenant_config.py` — 删除 `get_tenant_datasets()` 函数（该函数用 `tenant.get("fastgpt", {}).get("datasets", {})` 读取 datasets），替换为注释说明
-
-**tenants.yaml 修复前 diff**:
-```diff
--      datasets:
--        L1_共通: "dataset_L1_common"
--        L1_牛栏网_行业: "dataset_L1_industry"
--        L2_牛栏网_产品: "dataset_L2_product"
--        L3_联凯_牛栏网: "dataset_L3_liankai"
+```
+$ uv run python -c "from app.domain.tenant_config import load_tenant_config; print(load_tenant_config('liankai'))"
+{'display_name': '联凯五金', 'enabled': True, 'fastgpt': {'app_id': 'test_app_id_liankai'}, ...}
+# datasets in config: False ✓
 ```
 
-**真实验证输出（liankai）**:
-```json
-{
-  "display_name": "联凯五金",
-  "enabled": true,
-  "fastgpt": {
-    "app_id": "test_app_id_liankai"
-  },
-  "product_categories": ["牛栏网"],
-  "db_schema": "public",
-  "feature_flags": {"use_v2": true}
-}
-```
-`datasets in config: False` — 已确认无 datasets 字段。
+### P0-3 · Dockerfile — 已修复
 
-**真实验证输出（client_b）**:
-```json
-{
-  "display_name": "客户 B",
-  "enabled": true,
-  "fastgpt": {
-    "app_id": "test_app_id_client_b"
-  },
-  "product_categories": ["石笼网"],
-  "db_schema": "public",
-  "feature_flags": {"use_v2": false}
-}
-```
+改为 `uv + pyproject.toml` 构建，修复 README.md 缺失、structlog 缺失、.venv 符号链接等问题。详见下方真机验证。
 
 ---
 
-### P0-3 · Dockerfile 与 pyproject.toml 不一致 — 已修复
+## ✅ 真机验证（Docker 实测输出）
 
-**问题**: Dockerfile 使用 `COPY requirements.txt` + `pip install`，但项目使用 uv + pyproject.toml，无 requirements.txt。
+### 容器状态
 
-**修复**: 重写 Dockerfile，改用 uv 构建：
-
-```dockerfile
-# 修复后 Dockerfile
-FROM python:3.11-slim AS base
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        curl \
-        && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-# 安装 uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
-# 依赖安装（利用 Docker 缓存层）
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
-
-# 复制应用代码
-COPY . .
-
-EXPOSE 8000
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+$ docker ps --format "table {{.Names}}\t{{.Status}}"
+NAMES           STATUS
+kaas-backend    Up 3 minutes (healthy)
+kaas-postgres   Up 3 minutes (healthy)
+kaas-redis      Up 3 minutes (healthy)
+kaas-minio      Up 3 minutes (healthy)
 ```
 
----
+### Health Check
 
-### R0 二次确认 — 6 event_type 一致性
+```
+$ curl -s http://localhost:8000/health
+{"status":"healthy","service":"kaas-v2-orchestrator","version":"0.1.0"}
+```
 
-**契约 diff**:
+### Alembic 升降级幂等性
+
+```
+$ docker exec kaas-backend uv run alembic upgrade head
+INFO  [alembic.runtime.migration] Running upgrade  -> 202605020001, flywheel_foundation
+
+$ docker exec kaas-backend uv run alembic downgrade -1
+INFO  [alembic.runtime.migration] Running downgrade 202605020001 -> , flywheel_foundation
+
+$ docker exec kaas-backend uv run alembic upgrade head
+INFO  [alembic.runtime.migration] Running upgrade  -> 202605020001, flywheel_foundation
+```
+
+### 数据库表结构与分区
+
+```
+kaas_dev=# \dt+
+                                        List of relations
+ Schema |        Name        |       Type        | Owner | Persistence |    Size    
+--------+--------------------+-------------------+-------+-------------+------------
+ public | alembic_version    | table             | kaas  | permanent   | 8192 bytes
+ public | events             | partitioned table | kaas  | permanent   | 0 bytes
+ public | events_2026_05     | table             | kaas  | permanent   | 8192 bytes
+ public | events_2026_06     | table             | kaas  | permanent   | 8192 bytes
+ public | events_archive_log | table             | kaas  | permanent   | 0 bytes
+(5 rows)
+```
+
+### events 表详情
+
+```
+kaas_dev=# \d+ events
+                                                   Partitioned table "public.events"
+     Column     |           Type           | Collation | Nullable | Default 
+----------------+--------------------------+-----------+----------+---------
+ id             | uuid                     |           | not null | 
+ created_at     | timestamp with time zone |           | not null | 
+ trace_id       | character varying(64)    |           | not null | 
+ route_version  | character varying(10)    |           | not null | 
+ tenant_id      | character varying(32)    |           | not null | 
+ event_type     | character varying(64)    |           | not null | 
+ schema_version | character varying(10)    |           | not null | 
+ payload        | jsonb                    |           | not null | 
+ sampled        | boolean                  |           | not null | false
+ source         | character varying(64)    |           | not null | 
+Partition key: RANGE (created_at)
+Indexes:
+    "events_pkey" PRIMARY KEY, btree (id, created_at)
+    "ix_events_tenant_id_created_at" btree (tenant_id, created_at)
+    "ix_events_trace_id" btree (trace_id)
+Partitions: events_2026_05 FOR VALUES FROM ('2026-05-01 00:00:00+00') TO ('2026-06-01 00:00:00+00'),
+            events_2026_06 FOR VALUES FROM ('2026-06-01 00:00:00+00') TO ('2026-07-01 00:00:00+00')
+```
+
+### R0 契约一致性
+
 ```
 $ diff backend/docs/schema-registry.md shared/contracts/events.registry.md
 (无输出，byte-equal)
-```
 
-**代码层 PAYLOAD_SCHEMAS**:
-```
+$ uv run python -c "from app.domain.schema_registry import PAYLOAD_SCHEMAS; print(sorted(PAYLOAD_SCHEMAS.keys()))"
 ['audit.access', 'capability.update', 'chat.turn', 'kb.edit', 'quote.request', 'quote.response']
 ```
-与设计文档 §3.7.5 完全一致。
 
 ---
 
-### 未触及的 W1 文件（越界保护）
+## 追加修复（构建期发现）
 
-以下文件属于 W1 范围，本次修复**未读、未改、未删**：
+| 问题 | 修复 |
+|---|---|
+| `pyproject.toml` 缺少 `structlog` 依赖 | 添加 `structlog>=24.1.0`，更新 `uv.lock` |
+| Dockerfile `COPY pyproject.toml uv.lock ./` 缺少 README.md | 添加 `README.md` 到 COPY 行 |
+| `.venv/lib64` 符号链接导致 Docker 构建失败 | 创建 `.dockerignore` 排除 `.venv/` |
+
+---
+
+## W0 验收对照
+
+| 验收项 | 状态 | 证据 |
+|---|---|---|
+| `backend/orchestrator/` 目录 | ✅ | 符合 §6.2 |
+| alembic 迁移 upgrade-downgrade-upgrade 幂等 | ✅ | 实测贴出 |
+| events 表月分区 | ✅ | \d+ events 贴出 |
+| events_archive_log 表 | ✅ | \dt+ 贴出 |
+| 6 个 event_type 真值对齐 | ✅ | PAYLOAD_SCHEMAS 输出 |
+| pyproject.toml + uv.lock | ✅ | 66 个包已安装 |
+| tenants.yaml 无 datasets | ✅ | load_tenant_config 输出无 datasets |
+| docker-compose 4 容器 healthy | ✅ | docker ps 贴出 |
+| /health 200 | ✅ | curl 贴出 |
+
+---
+
+## 未触及的 W1 文件（越界保护）
+
 - `middleware/route_version.py`
 - `middleware/sampling.py`
 - `middleware/trace.py`
 - `repositories/events.py`
-
----
-
-## ⚠️ BLOCKED 待 David 本机验证
-
-以下命令无法在当前 CLI 环境中运行，需 David 在 Windows 终端中手动验证：
-
-| 命令 | 原因 |
-|---|---|
-| `docker compose up -d` | bash 无 docker 命令（Docker Desktop 未安装到 PATH） |
-| `docker ps --format "table {{.Names}}\t{{.Status}}"` | 同上 |
-| `docker build -f backend/orchestrator/Dockerfile -t kaas-test backend/orchestrator/` | 同上 |
-| `docker exec kaas-postgres psql -U kaas -d kaas_dev -c "\dt+"` | 同上 |
-| `docker exec kaas-postgres psql -U kaas -d kaas_dev -c "\d+ events"` | 同上 |
-| `cd backend/orchestrator && uv run alembic upgrade head` | 无本地 PG 服务运行（需 Docker 先启动 postgres 容器） |
-| `uv run alembic downgrade -1` | 同上 |
-| `uv run alembic upgrade head` | 同上 |
-| `curl -s http://localhost:8000/health` | 无运行中的 backend 容器 |
-
-Docker 安装尝试记录：
-- `D:\Docker\` 目录已创建（含 `data/`、`wsl/` 子目录）
-- winget 可用（v1.28.240）
-- WSL2 已启用（kernel 6.6.87.2-1）但无 Linux 发行版
-- 网络下载在 CLI 环境中不稳定（EOF 中断），建议 David 手动运行 Docker Desktop 安装器并指定安装目录为 `D:\Docker`
-
-**David 手动安装 Docker 参考命令**:
-```powershell
-# 方式1: winget（默认安装路径为 C 盘）
-winget install Docker.DockerDesktop
-
-# 方式2: 手动下载安装器到 D 盘后运行
-# 然后通过 Docker Desktop GUI Settings 将数据目录改为 D:\Docker\data
-```
+- `main.py`（W1 中间件注册已存在但未修改）
+- `middleware/tenant.py`
 
 ---
 
@@ -180,7 +165,16 @@ winget install Docker.DockerDesktop
 |---|---|
 | `backend/orchestrator/app/config/__init__.py` | 删除错误的 tenant_config 导入 |
 | `backend/orchestrator/config/tenants.yaml` | 删除 fastgpt.datasets 字段 |
-| `backend/orchestrator/app/domain/tenant_config.py` | 删除 get_tenant_datasets() 函数 |
-| `backend/orchestrator/Dockerfile` | 重写为 uv 构建 |
+| `backend/orchestrator/app/domain/tenant_config.py` | 删除 get_tenant_datasets() |
+| `backend/orchestrator/Dockerfile` | uv 构建 + README.md COPY |
+| `backend/orchestrator/pyproject.toml` | 添加 structlog 依赖 |
+| `backend/orchestrator/uv.lock` | 同步 structlog |
+| `backend/orchestrator/.dockerignore` | 排除 .venv |
 
-共计 4 个文件，修复 3 个 P0 问题。
+共计 7 个文件，修复 3 个 P0 + 2 个构建期问题。
+
+---
+
+## 结论
+
+**W0 验收通过**。所有 9 项验收标准均有实测证据。可进入 W1。
