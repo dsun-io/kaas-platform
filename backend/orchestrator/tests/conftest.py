@@ -16,10 +16,30 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 
 from app.main import app
 
-TEST_DATABASE_URL = os.environ.get(
-    "TEST_DATABASE_URL",
-    "postgresql+asyncpg://kaas:kaas_dev@localhost:5432/kaas_v2_test",
-)
+def _get_test_db_url() -> str:
+    """确定测试数据库连接 URL。
+
+    优先级:
+    1. TEST_DATABASE_URL 环境变量（显式完整 URL 覆盖）
+    2. TEST_DB_HOST 环境变量（仅覆盖 host 部分）
+    3. 自动检测：Docker 环境 → postgres:5432
+    4. 回退：localhost:5432
+
+    本机开发：/app 目录不存在 /.dockerenv → 走 localhost。
+    Docker 内部：/.dockerenv 存在 → 走 postgres:5432。
+    CI 环境：设置 TEST_DATABASE_URL 显式指定。
+    """
+    explicit = os.environ.get("TEST_DATABASE_URL")
+    if explicit:
+        return explicit
+
+    is_docker = os.path.exists("/.dockerenv") or os.environ.get("KAAS_DOCKER") == "true"
+    host = os.environ.get("TEST_DB_HOST", "postgres" if is_docker else "localhost")
+
+    return f"postgresql+asyncpg://kaas:kaas_dev@{host}:5432/kaas_v2_test"
+
+
+TEST_DATABASE_URL = _get_test_db_url()
 
 
 @pytest.fixture(autouse=True)
@@ -90,9 +110,68 @@ def minio_archive_mock():
 _DB_INITIALIZED = False
 
 
+async def _seed_int_r3_data(engine):
+    """为 INT-R3 集成测试种子数据（仅表空时插入）。"""
+    from app.db.models import (
+        ProductSpec, CustomerCostItem, CustomerSalePriceItem,
+        CustomerPricingProfile, CustomerFreightRate,
+    )
+    from sqlalchemy import select, func
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    async with AsyncSession(engine) as session:
+        result = await session.execute(select(func.count()).select_from(ProductSpec))
+        if result.scalar() > 0:
+            return
+
+        specs = [
+            ProductSpec(product_category="牛栏网", product_type="上疏下密", wire_diameter="2.0x1.8", height=1.5, mesh_width=15.0, roll_length=50.0, weight_kg=26.0, spec_hash="nlw_ssxm_20x18_15_15_50"),
+            ProductSpec(product_category="牛栏网", product_type="上疏下密", wire_diameter="2.0x1.8", height=1.8, mesh_width=15.0, roll_length=50.0, weight_kg=31.2, spec_hash="nlw_ssxm_20x18_18_15_50"),
+            ProductSpec(product_category="牛栏网", product_type="上疏下密", wire_diameter="2.5x2.0", height=1.5, mesh_width=15.0, roll_length=50.0, weight_kg=32.5, spec_hash="nlw_ssxm_25x20_15_15_50"),
+            ProductSpec(product_category="牛栏网", product_type="上疏下密", wire_diameter="2.5x2.0", height=1.8, mesh_width=15.0, roll_length=50.0, weight_kg=39.0, spec_hash="nlw_ssxm_25x20_18_15_50"),
+            ProductSpec(product_category="牛栏网", product_type="环扣", wire_diameter="2.0x1.8", height=1.5, mesh_width=15.0, roll_length=50.0, weight_kg=24.0, spec_hash="nlw_hk_20x18_15_15_50"),
+            ProductSpec(product_category="牛栏网", product_type="环扣", wire_diameter="2.5x2.0", height=1.8, mesh_width=15.0, roll_length=50.0, weight_kg=36.0, spec_hash="nlw_hk_25x20_18_15_50"),
+            ProductSpec(product_category="立柱", product_type="直边", height=1.5, bundle_size=10, weight_kg=18.5, spec_hash="post_straight_15_10"),
+            ProductSpec(product_category="立柱", product_type="直边", height=1.8, bundle_size=10, weight_kg=22.0, spec_hash="post_straight_18_10"),
+            ProductSpec(product_category="立柱", product_type="直边", height=2.0, bundle_size=10, weight_kg=25.0, spec_hash="post_straight_20_10"),
+            ProductSpec(product_category="立柱", product_type="花边", height=1.5, bundle_size=10, weight_kg=20.0, spec_hash="post_deco_15_10"),
+            ProductSpec(product_category="立柱", product_type="花边", height=1.8, bundle_size=10, weight_kg=24.0, spec_hash="post_deco_18_10"),
+        ]
+        for s in specs:
+            session.add(s)
+
+        for c in [
+            CustomerCostItem(tenant_id="liankai", customer_id="liankai", product_category="牛栏网", spec_hash="nlw_ssxm_20x18_15_15_50", cost_type="cost_per_kg", amount=4.82, currency="CNY", unit="kg", source="seed"),
+            CustomerCostItem(tenant_id="liankai", customer_id="liankai", product_category="牛栏网", spec_hash="nlw_ssxm_20x18_18_15_50", cost_type="cost_per_kg", amount=4.82, currency="CNY", unit="kg", source="seed"),
+            CustomerCostItem(tenant_id="liankai", customer_id="liankai", product_category="牛栏网", spec_hash="nlw_ssxm_25x20_15_15_50", cost_type="cost_per_kg", amount=5.10, currency="CNY", unit="kg", source="seed"),
+            CustomerCostItem(tenant_id="client_b", customer_id="client_b", product_category="牛栏网", spec_hash="nlw_ssxm_20x18_15_15_50", cost_type="cost_per_kg", amount=5.50, currency="CNY", unit="kg", source="seed"),
+            CustomerCostItem(tenant_id="liankai", customer_id="liankai", product_category="立柱", spec_hash="post_straight_18_10", cost_type="cost_per_bundle", amount=180.0, currency="CNY", unit="捆", source="seed"),
+            CustomerCostItem(tenant_id="liankai", customer_id="liankai", product_category="立柱", spec_hash="post_straight_20_10", cost_type="cost_per_bundle", amount=210.0, currency="CNY", unit="捆", source="seed"),
+        ]:
+            session.add(c)
+
+        session.add(CustomerSalePriceItem(tenant_id="client_b", customer_id="client_b", product_category="牛栏网", spec_hash="nlw_ssxm_20x18_15_15_50", sale_price_type="sale_per_roll", amount=165.0, currency="CNY", unit="卷", source="seed"))
+
+        for p in [
+            CustomerPricingProfile(tenant_id="liankai", customer_id="liankai", product_category="牛栏网", profile_name="default", low_margin_rate=1.10, standard_margin_rate=1.15, high_margin_rate=1.20, tax_rate=0.0, source="seed"),
+            CustomerPricingProfile(tenant_id="client_b", customer_id="client_b", product_category="牛栏网", profile_name="default", low_margin_rate=1.08, standard_margin_rate=1.12, high_margin_rate=1.18, tax_rate=0.0, source="seed"),
+        ]:
+            session.add(p)
+
+        for f in [
+            CustomerFreightRate(tenant_id="liankai", customer_id="liankai", carrier="顺丰干配", province="四川", formula_type="base_plus_weight", base_fee=180.0, threshold_kg=50, per_kg_after_threshold=1.5, min_weight_kg=10, source="seed"),
+            CustomerFreightRate(tenant_id="liankai", customer_id="liankai", carrier="顺丰零担", province="四川", formula_type="per_kg", per_kg_after_threshold=2.0, source="seed"),
+            CustomerFreightRate(tenant_id="liankai", customer_id="liankai", carrier="圆通", province="河南", formula_type="base_plus_weight", base_fee=120.0, threshold_kg=30, per_kg_after_threshold=1.2, min_weight_kg=10, source="seed"),
+            CustomerFreightRate(tenant_id="client_b", customer_id="client_b", carrier="京东物流", province="四川", formula_type="base_plus_weight", base_fee=200.0, threshold_kg=50, per_kg_after_threshold=1.8, min_weight_kg=10, source="seed"),
+        ]:
+            session.add(f)
+
+        await session.commit()
+
+
 @pytest.fixture
 async def db_engine():
-    """Per-test 测试数据库引擎，首次运行时自动 Alembic migration + create_all。"""
+    """Per-test 测试数据库引擎，首次运行时自动 Alembic migration + create_all + INT-R3 种子数据。"""
     global _DB_INITIALIZED
     from app.db.base import Base
 
@@ -114,6 +193,8 @@ async def db_engine():
 
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+
+        await _seed_int_r3_data(engine)
         _DB_INITIALIZED = True
 
     yield engine

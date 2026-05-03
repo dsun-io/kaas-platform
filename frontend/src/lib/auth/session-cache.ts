@@ -18,7 +18,7 @@ export interface Session {
 export function getCurrentSession(): Session {
   return {
     tenant: {
-      tenant_id: 'default-tenant',
+      tenant_id: "liankai",
     },
     accessToken: null,
   };

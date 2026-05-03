@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   LayoutDashboard,
   ScrollText,
@@ -16,8 +16,9 @@ import {
   ToggleLeft,
   BookOpen,
   History,
-} from 'lucide-react';
-import { useState } from 'react';
+  Zap,
+} from "lucide-react";
+import { useState } from "react";
 
 interface NavItem {
   href: `/${string}`;
@@ -33,26 +34,32 @@ interface NavGroup {
 
 const navGroups: NavGroup[] = [
   {
-    label: '业务',
+    label: "业务",
     items: [
-      { href: '/dashboard', label: '仪表盘', icon: LayoutDashboard },
-      { href: '/customers', label: '客户管理', icon: Users },
-      { href: '/quotations', label: '报价历史', icon: FileText },
+      { href: "/dashboard", label: "仪表盘", icon: LayoutDashboard },
+      { href: "/customers", label: "客户管理", icon: Users },
+      { href: "/quotations", label: "报价历史", icon: FileText },
+      { href: "/quotations/v2-quote", label: "智能报价", icon: Zap },
     ],
   },
   {
-    label: '审计',
+    label: "审计",
     items: [
-      { href: '/events', label: '事件审计', icon: ScrollText },
-      { href: '/audit-log', label: '操作日志', icon: History },
+      { href: "/events", label: "事件审计", icon: ScrollText },
+      { href: "/audit-log", label: "操作日志", icon: History },
     ],
   },
   {
-    label: '管理',
+    label: "管理",
     items: [
-      { href: '/admin/gray-release', label: '灰度切换', icon: ToggleLeft, adminOnly: true },
-      { href: '/kb', label: '知识库', icon: BookOpen, adminOnly: true },
-      { href: '/settings', label: '系统设置', icon: Settings, adminOnly: true },
+      {
+        href: "/admin/gray-release",
+        label: "灰度切换",
+        icon: ToggleLeft,
+        adminOnly: true,
+      },
+      { href: "/kb", label: "知识库", icon: BookOpen, adminOnly: true },
+      { href: "/settings", label: "系统设置", icon: Settings, adminOnly: true },
     ],
   },
 ];
@@ -66,7 +73,7 @@ function SidebarNav({ collapsed }: { collapsed: boolean }) {
     <nav className="flex flex-col gap-4 px-2">
       {navGroups.map((group) => {
         const visibleItems = group.items.filter(
-          (item) => !item.adminOnly || isAdmin
+          (item) => !item.adminOnly || isAdmin,
         );
         if (visibleItems.length === 0) return null;
 
@@ -82,11 +89,11 @@ function SidebarNav({ collapsed }: { collapsed: boolean }) {
               return (
                 <Link key={item.href} href={{ pathname: item.href }}>
                   <Button
-                    variant={active ? 'secondary' : 'ghost'}
+                    variant={active ? "secondary" : "ghost"}
                     size="default"
                     className={cn(
-                      'w-full',
-                      collapsed ? 'justify-center px-0' : 'justify-start'
+                      "w-full",
+                      collapsed ? "justify-center px-0" : "justify-start",
                     )}
                   >
                     <item.icon className="size-4 shrink-0" />
@@ -108,8 +115,8 @@ function DesktopSidebar() {
   return (
     <aside
       className={cn(
-        'hidden h-screen flex-col border-r bg-sidebar pt-4 transition-all duration-200 lg:flex',
-        collapsed ? 'w-16' : 'w-56'
+        "hidden h-screen flex-col border-r bg-sidebar pt-4 transition-all duration-200 lg:flex",
+        collapsed ? "w-16" : "w-56",
       )}
     >
       <div className="flex items-center px-4 pb-4">
@@ -121,13 +128,13 @@ function DesktopSidebar() {
         <Button
           variant="ghost"
           size="icon"
-          className={cn('ml-auto size-7', collapsed && 'mx-auto')}
+          className={cn("ml-auto size-7", collapsed && "mx-auto")}
           onClick={() => setCollapsed(!collapsed)}
         >
           <ChevronLeft
             className={cn(
-              'size-4 transition-transform',
-              collapsed && 'rotate-180'
+              "size-4 transition-transform",
+              collapsed && "rotate-180",
             )}
           />
         </Button>
@@ -157,7 +164,7 @@ function MobileSidebar() {
         <nav className="flex flex-col gap-4 p-2">
           {navGroups.map((group) => {
             const visibleItems = group.items.filter(
-              (item) => !item.adminOnly || isAdmin
+              (item) => !item.adminOnly || isAdmin,
             );
             if (visibleItems.length === 0) return null;
 
@@ -175,7 +182,7 @@ function MobileSidebar() {
                       onClick={() => setOpen(false)}
                     >
                       <Button
-                        variant={active ? 'secondary' : 'ghost'}
+                        variant={active ? "secondary" : "ghost"}
                         size="default"
                         className="w-full justify-start"
                       >
