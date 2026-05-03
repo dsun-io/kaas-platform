@@ -5,7 +5,9 @@ GET/POST /api/v1/capabilities — 查询/更新客户生产规格能力。
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 from app.db.session import get_db_session
+from app.db.models import CustomerCapability
 from app.repositories.capabilities_repo import (
     get_capabilities,
     list_capabilities,
@@ -14,6 +16,40 @@ from app.repositories.capabilities_repo import (
 from app.schemas.capabilities import CapabilityListResponse, CapabilityItem
 
 router = APIRouter(prefix="/api/v1", tags=["capabilities"])
+
+
+@router.get("/customers")
+async def list_customers(
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """前台客户列表 — 从 customer_capabilities 聚合。"""
+    stmt = (
+        select(
+            CustomerCapability.customer_id,
+            CustomerCapability.customer_name,
+            func.count(CustomerCapability.id).label("category_count"),
+            func.max(CustomerCapability.updated_at).label("updated_at"),
+        )
+        .group_by(CustomerCapability.customer_id, CustomerCapability.customer_name)
+        .order_by(CustomerCapability.customer_name)
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+    return JSONResponse(
+        status_code=200,
+        content=[
+            {
+                "customer_id": r.customer_id,
+                "customer_name": r.customer_name,
+                "category_count": r.category_count,
+                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+                "locale": "zh-CN",
+                "region": "CN",
+            }
+            for r in rows
+        ],
+    )
 
 
 @router.get("/capabilities", response_model=CapabilityListResponse)

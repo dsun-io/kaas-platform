@@ -1,38 +1,29 @@
-# ─── Kaas v2 · 多租户静态配置 (§3.7.15) ───
-# Phase 1: 静态 YAML 配置
-# Phase 2+: 迁移至 PostgreSQL 动态加载
-#
-# 每个租户必须有唯一 tenant_id，对应 X-Tenant-Id header
-# 所有 FastGPT dataset ID 由代码层拼接，AI 不参与范围决策（铁律1）
-# 热加载使用 cachetools.TTLCache（不是 functools.lru_cache）
-
 tenants:
-  liankai:
-    display_name: "联凯五金"
-    locale: "zh-CN"
-    region: "cn-east-1"
-    status: "active"
-    fastgpt:
-      app_id: "test_app_id_liankai"
-    fastgpt_api_key_ref: "ENV:FASTGPT_API_KEY_LIANKAI"
-    product_categories:
-      - 牛栏网
-    db_schema: public
-    feature_flags:
-      use_v2: true
-      sampling_rate: 0.1
-
   client_b:
-    display_name: "客户 B"
-    locale: "zh-CN"
-    region: "cn-east-1"
-    status: "active"
-    fastgpt:
-      app_id: "test_app_id_client_b"
-    fastgpt_api_key_ref: "ENV:FASTGPT_API_KEY_CLIENT_B"
-    product_categories:
-      - 石笼网
     db_schema: public
+    display_name: 客户 B
+    fastgpt:
+      app_id: test_app_id_client_b
+    fastgpt_api_key_ref: ENV:FASTGPT_API_KEY_CLIENT_B
     feature_flags:
-      use_v2: false
       sampling_rate: 0.1
+      use_v2: false
+    locale: zh-CN
+    product_categories:
+    - 石笼网
+    region: cn-east-1
+    status: active
+  liankai:
+    db_schema: public
+    display_name: 联凯五金
+    fastgpt:
+      app_id: test_app_id_liankai
+    fastgpt_api_key_ref: ENV:FASTGPT_API_KEY_LIANKAI
+    feature_flags:
+      sampling_rate: 0.1
+      use_v2: true
+    locale: zh-CN
+    product_categories:
+    - 牛栏网
+    region: cn-east-1
+    status: active

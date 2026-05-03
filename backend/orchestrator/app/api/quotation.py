@@ -93,27 +93,30 @@ async def get_quotations(
     )
     total = await count_quotations(db, customer_id=cid if customer_id else None)
 
+    serialized = [
+        {
+            "id": str(q.id),
+            "customer_id": q.customer_id,
+            "product_category": q.product_category,
+            "product_spec": q.product_spec,
+            "spec_hash": q.spec_hash,
+            "unit_price": float(q.unit_price) if q.unit_price else None,
+            "currency": q.currency,
+            "unit": q.unit,
+            "discount": float(q.discount) if q.discount else None,
+            "min_quantity": q.min_quantity,
+            "source": q.source,
+            "notes": q.notes,
+            "effective_from": q.effective_from.isoformat(),
+            "created_at": q.created_at.isoformat(),
+        }
+        for q in quotes
+    ]
     return JSONResponse(
         status_code=200,
         content={
-            "quotations": [
-                {
-                    "id": q.id,
-                    "customer_id": q.customer_id,
-                    "product_category": q.product_category,
-                    "product_spec": q.product_spec,
-                    "spec_hash": q.spec_hash,
-                    "unit_price": float(q.unit_price) if q.unit_price else None,
-                    "currency": q.currency,
-                    "unit": q.unit,
-                    "discount": float(q.discount) if q.discount else None,
-                    "min_quantity": q.min_quantity,
-                    "source": q.source,
-                    "notes": q.notes,
-                    "created_at": q.created_at.isoformat(),
-                }
-                for q in quotes
-            ],
+            "items": serialized,
+            "quotations": serialized,
             "total": total,
             "limit": min(limit, 500),
         },

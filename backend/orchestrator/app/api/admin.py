@@ -109,11 +109,16 @@ async def set_feature_flag(
     request: Request,
     _token: str = Depends(verify_admin_token),
 ):
-    """设置租户 feature flag（写 tenants.yaml + 审计）。"""
+    """设置租户 feature flag（写 tenants.yaml + 审计）。
+
+    兼容两种请求体格式:
+    - 后端格式: { tenant_id, flag_name, flag_value }
+    - 前端格式: { flag_key, enabled, reason, actor_id }
+    """
     body = await request.json()
-    tenant_id = body.get("tenant_id")
-    flag_name = body.get("flag_name")
-    flag_value = body.get("flag_value")
+    tenant_id = body.get("tenant_id") or getattr(request.state, "tenant_id", None)
+    flag_name = body.get("flag_name") or body.get("flag_key")
+    flag_value = body.get("flag_value") if "flag_value" in body else body.get("enabled")
 
     if not tenant_id or not flag_name:
         return JSONResponse(
@@ -154,10 +159,20 @@ async def set_feature_flag(
 
     # 清除缓存 + 审计
     reload_all_tenants()
+    actor_id = body.get("actor_id", "admin")
+    reason = body.get("reason", "")
     _append_audit(
         "feature_flag_change",
         tenant_id,
-        {"flag_name": flag_name, "old_value": old_value, "new_value": flag_value},
+        {
+            "flag_name": flag_name,
+            "old_value": old_value,
+            "new_value": flag_value,
+            "actor_id": actor_id,
+            "reason": reason,
+            "resource_type": "feature_flag",
+            "resource_id": flag_name,
+        },
     )
 
     return JSONResponse(
@@ -197,10 +212,7 @@ async def get_feature_flag(
         )
     return JSONResponse(
         status_code=200,
-        content={
-            "tenant_id": tid,
-            "feature_flags": tenant.get("feature_flags", {}),
-        },
+        content=tenant.get("feature_flags", {}),
     )
 
 
@@ -237,6 +249,53 @@ async def get_deployment_audit(
     records = records[-limit:]
 
     # 前端期望 {items, total} 格式
+    items = [
+        {
+            "id": r.get("timestamp", ""),
+            "action": r.get("action", ""),
+            "actor_id": r.get("actor_id", ""),
+            "resource_type": r.get("resource_type", ""),
+            "resource_id": r.get("resource_id", ""),
+            "reason": r.get("reason", ""),
+            "timestamp": r.get("timestamp", ""),
+        }
+        for r in records
+    ]
+    return JSONResponse(
+        status_code=200,
+        content={"items": items, "total": len(items)},
+    )
+
+
+@router.get("/audit-log", response_model=AuditLogResponse)
+async def get_audit_log(
+    request: Request,
+    since: str = None,
+    limit: int = 200,
+):
+    """前端兼容: /admin/audit-log → 复用 deployment_audit。"""
+    if not AUDIT_LOG_PATH.exists():
+        return JSONResponse(
+            status_code=200,
+            content={"items": [], "total": 0},
+        )
+
+    records = []
+    with open(AUDIT_LOG_PATH, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+                if since and record.get("timestamp", "") < since:
+                    continue
+                records.append(record)
+            except json.JSONDecodeError:
+                continue
+
+    records = records[-limit:]
+
     items = [
         {
             "id": r.get("timestamp", ""),
