@@ -6,4 +6,3 @@
 export type TenantId = string & { readonly __brand: 'TenantId' };
 export type TraceId = string & { readonly __brand: 'TraceId' };
 export type RouteVersion = string & { readonly __brand: 'RouteVersion' };
-export type ProductCategory = string & { readonly __brand: 'ProductCategory' };
