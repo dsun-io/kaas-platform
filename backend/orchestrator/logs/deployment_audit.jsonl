@@ -1,0 +1,2 @@
+{"timestamp": "2026-05-03T09:52:31.202504+00:00", "action": "feature_flag_change", "tenant_id": "liankai", "flag_name": "use_v2", "old_value": true, "new_value": true, "actor_id": "david", "reason": "INT-R2 test", "resource_type": "feature_flag", "resource_id": "use_v2"}
+{"timestamp": "2026-05-03T10:04:05.097507+00:00", "action": "feature_flag_change", "tenant_id": "liankai", "flag_name": "use_v2", "old_value": true, "new_value": true, "actor_id": "david", "reason": "INT-R2 smoke test", "resource_type": "feature_flag", "resource_id": "use_v2"}

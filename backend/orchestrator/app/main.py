@@ -73,6 +73,7 @@ from app.api.oss_presign import router as oss_presign_router
 from app.api.admin import router as admin_router
 from app.api.quote import router as quote_router
 from app.api.capabilities import router as capabilities_router
+from app.api.dashboard import router as dashboard_router
 from app.api.quotation import router as quotation_router
 from app.api.health import router as health_router
 
@@ -82,4 +83,5 @@ app.include_router(oss_presign_router)
 app.include_router(admin_router)
 app.include_router(quote_router)
 app.include_router(capabilities_router)
+app.include_router(dashboard_router)
 app.include_router(quotation_router)

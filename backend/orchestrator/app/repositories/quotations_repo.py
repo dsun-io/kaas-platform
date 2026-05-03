@@ -70,7 +70,7 @@ async def list_quotations(
     limit: int = 100,
 ) -> list[Quotation]:
     """查询报价列表，可按客户/品类过滤。"""
-    stmt = select(Quotation).order_by(Quotation.created_at.desc())
+    stmt = select(Quotation).order_by(Quotation.effective_from.desc())
     if customer_id:
         stmt = stmt.where(Quotation.customer_id == customer_id)
     if product_category:
