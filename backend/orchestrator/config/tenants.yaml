@@ -16,6 +16,7 @@ tenants:
     db_schema: public
     feature_flags:
       use_v2: true
+      sampling_rate: 0.1
 
   client_b:
     display_name: "客户 B"
@@ -27,3 +28,4 @@ tenants:
     db_schema: public
     feature_flags:
       use_v2: false
+      sampling_rate: 0.1

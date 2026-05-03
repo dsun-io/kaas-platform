@@ -13,7 +13,7 @@ Kaas v2 · 多租户中间件
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from app.config.tenant_config import get_tenant
+from app.domain.tenant_config import load_tenant_config
 
 # 不需要租户鉴权的路径前缀
 _PUBLIC_PATHS = frozenset([
@@ -54,7 +54,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
             )
 
         # 验证租户
-        tenant_config = get_tenant(tenant_id)
+        tenant_config = load_tenant_config(tenant_id)
         if tenant_config is None:
             return JSONResponse(
                 status_code=403,
