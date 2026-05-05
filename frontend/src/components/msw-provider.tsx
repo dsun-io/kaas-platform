@@ -1,27 +1,26 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { isMockMode } from '@/lib/api/config';
+import { useEffect, useRef } from "react";
+import { isMockMode } from "@/lib/api/config";
+
+let globalStarted = false;
 
 export function MswProvider({ children }: { children: React.ReactNode }) {
-  const [ready, setReady] = useState(!isMockMode);
+  const started = useRef(false);
 
   useEffect(() => {
-    if (isMockMode) {
-      setReady(false);
-      import('@/mocks/browser')
-        .then((m) => m.worker.start({ onUnhandledRequest: 'bypass' }))
-        .finally(() => setReady(true));
-    }
-  }, []);
+    if (!isMockMode || started.current) return;
+    started.current = true;
 
-  if (!ready) {
-    return (
-      <div className="flex h-screen items-center justify-center text-muted-foreground text-sm">
-        Loading mock service...
-      </div>
-    );
-  }
+    if (globalStarted) return;
+    globalStarted = true;
+
+    import("@/mocks/browser")
+      .then((m) => m.worker.start({ onUnhandledRequest: "bypass" }))
+      .catch(() => {
+        // MSW init failure in non-mock builds is expected — ignore silently
+      });
+  }, []);
 
   return <>{children}</>;
 }

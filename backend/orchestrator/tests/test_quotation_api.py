@@ -10,7 +10,7 @@ class TestQuotationAPI:
         """GET /api/v1/quotations 返回 200。"""
         response = await client.get(
             "/api/v1/quotations",
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -22,7 +22,7 @@ class TestQuotationAPI:
         """带过滤条件查询。"""
         response = await client.get(
             "/api/v1/quotations?product_category=牛栏网&limit=10",
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -38,12 +38,12 @@ class TestQuotationAPI:
                 "product_category": "牛栏网",
                 "product_spec": {"mesh": "50x50", "wire": "2.5"},
             },
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
 
         response = await client.get(
             "/api/v1/quotations?customer_id=cust-1",
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -60,7 +60,7 @@ class TestQuotationAPI:
         """limit 参数上限 500。"""
         response = await client.get(
             "/api/v1/quotations?limit=1000",
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -70,7 +70,7 @@ class TestQuotationAPI:
         """不存在的品类返回空列表。"""
         response = await client.get(
             "/api/v1/quotations?product_category=nonexistent_category",
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         data = response.json()

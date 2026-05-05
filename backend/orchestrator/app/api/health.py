@@ -4,6 +4,7 @@
 /health/ready — K8s readiness（DB 可用）
 /health/deep  — 全链路深度检查（DB + LLM + KB）
 """
+import os
 import structlog
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
@@ -67,16 +68,30 @@ async def health_deep(db: AsyncSession = Depends(get_db_session)):
     except Exception as e:
         checks["llm"] = f"error: {e}"
 
-    # KB（stub 模式跳过）
+    # KB — 使用 KnowledgeRetrievalProvider (默认 postgres，不依赖 FastGPT)
+    # FASTGPT_ENABLED=false 时不会报错，只报告为 disabled
+    fastgpt_enabled = os.getenv("FASTGPT_ENABLED", "false").lower() == "true"
     try:
-        from app.services.kb_client import get_kb_client
-        kb = get_kb_client("__healthcheck__")
-        checks["kb"] = "stub" if type(kb).__name__ == "StubKBClient" else "ok"
+        from app.services.knowledge_provider import get_knowledge_provider
+        provider = get_knowledge_provider("__healthcheck__")
+        pname = type(provider).__name__
+        if "PostgreSQL" in pname:
+            checks["kb"] = "ok (postgres)"
+        elif "FastGPT" in pname:
+            if fastgpt_enabled:
+                checks["kb"] = "ok (fastgpt)"
+            else:
+                checks["kb"] = "disabled (fastgpt not enabled)"
+        else:
+            checks["kb"] = f"ok ({pname})"
     except Exception as e:
         checks["kb"] = f"error: {e}"
 
-    all_ok = all(v in ("ok", "stub") for v in checks.values())
-    logger.info("health.deep_check", checks=checks)
+    def _is_ok(val: str) -> bool:
+        return val.startswith("ok") or val == "stub" or "disabled" in val
+
+    all_ok = all(_is_ok(v) for v in checks.values())
+    logger.info("health.deep_check", checks=checks, all_ok=all_ok)
     return JSONResponse(
         status_code=200 if all_ok else 503,
         content={"status": "healthy" if all_ok else "degraded", "checks": checks},

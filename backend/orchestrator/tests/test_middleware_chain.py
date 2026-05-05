@@ -50,7 +50,7 @@ class TestTenantMiddleware:
         response = await client.post(
             "/api/v1/events",
             json={"event_type": "invalid.type", "schema_version": 1, "payload": {}, "event_source": "orchestrator"},
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 400
         data = response.json()
@@ -61,11 +61,11 @@ class TestRouteVersionMiddleware:
     """RouteVersion 中间件测试（§3.7.17）。"""
 
     async def test_missing_header_falls_back_to_tenant_flag(self, client):
-        """缺 X-Use-V2 时回退到租户 feature_flag。liankai 的 use_v2=true。"""
+        """缺 X-Use-V2 时回退到租户 feature_flag。lianjia 的 use_v2=true。"""
         body = make_event_body("chat.turn")
         response = await client.post(
             "/api/v1/events", json=body,
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 201
         assert response.headers["X-Route-Version"] == "v2"
@@ -85,7 +85,7 @@ class TestRouteVersionMiddleware:
         body = make_event_body("chat.turn")
         response = await client.post(
             "/api/v1/events", json=body,
-            headers={"X-Tenant-Id": "liankai", "X-Use-V2": "true"},
+            headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
         assert response.status_code == 201
         assert response.headers["X-Route-Version"] == "v2"
@@ -95,7 +95,7 @@ class TestRouteVersionMiddleware:
         body = make_event_body("chat.turn")
         response = await client.post(
             "/api/v1/events", json=body,
-            headers={"X-Tenant-Id": "liankai", "X-Use-V2": "false"},
+            headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "false"},
         )
         assert response.status_code == 201
         assert response.headers["X-Route-Version"] == "v1"
@@ -109,7 +109,7 @@ class TestTraceMiddleware:
         body = make_event_body("chat.turn")
         response = await client.post(
             "/api/v1/events", json=body,
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 201
         trace_id = response.headers.get("X-Trace-Id")
@@ -125,7 +125,7 @@ class TestSamplingMiddleware:
         body = make_event_body("chat.turn")
         response = await client.post(
             "/api/v1/events", json=body,
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 201
         assert "X-Sampled" in response.headers
@@ -134,7 +134,7 @@ class TestSamplingMiddleware:
         """管理 API 路径的 X-Sampled 始终为 true。"""
         response = await client.get(
             "/api/v1/admin/tenants",
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         assert response.headers["X-Sampled"] == "true"
@@ -148,11 +148,11 @@ class TestMiddlewareChainOrder:
         body = make_event_body("chat.turn", event_source="orchestrator")
         response = await client.post(
             "/api/v1/events", json=body,
-            headers={"X-Tenant-Id": "liankai", "X-Use-V2": "true"},
+            headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
         assert response.status_code == 201
         data = response.json()
-        assert data["tenant_id"] == "liankai"
+        assert data["tenant_id"] == "lianjia"
         assert data["event_type"] == "chat.turn"
         assert "id" in data
         assert "X-Trace-Id" in response.headers
@@ -169,8 +169,8 @@ class TestSamplingBoundary:
 
         def _mock_load(tenant_id):
             tenants = {
-                "liankai": {
-                    "display_name": "联凯五金",
+                "lianjia": {
+                    "display_name": "联佳丝网",
                     "enabled": True,
                     "feature_flags": {"use_v2": True, "sampling_rate": sampling_rate},
                     "product_categories": ["牛栏网"],
@@ -202,7 +202,7 @@ class TestSamplingBoundary:
         body = make_event_body("chat.turn")
         response = await client.post(
             "/api/v1/events", json=body,
-            headers={"X-Tenant-Id": "liankai", "X-Use-V2": "true"},
+            headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
         assert response.status_code == 201
         assert response.headers["X-Sampled"] == "false"
@@ -213,7 +213,7 @@ class TestSamplingBoundary:
         body = make_event_body("chat.turn")
         response = await client.post(
             "/api/v1/events", json=body,
-            headers={"X-Tenant-Id": "liankai", "X-Use-V2": "true"},
+            headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
         assert response.status_code == 201
         assert response.headers["X-Sampled"] == "true"
@@ -224,7 +224,7 @@ class TestSamplingBoundary:
         response = await client.post(
             "/api/v1/events",
             json={"event_type": "custom.invalid", "schema_version": 1, "payload": {}, "event_source": "orchestrator"},
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 400
         assert response.headers["X-Sampled"] == "true"
@@ -271,7 +271,7 @@ class TestSamplingBoundary:
         self._patch_sampling_config(monkeypatch, sampling_rate=0.0)
         response = await client.get(
             "/api/v1/admin/tenants",
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         assert response.headers["X-Sampled"] == "true"

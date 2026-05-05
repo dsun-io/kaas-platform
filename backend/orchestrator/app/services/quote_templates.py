@@ -18,7 +18,6 @@ async def generate_quote_response(
     notes: str | None = None,
     spec_summary: str = "",
     price_range: str = "",
-    kb_chunks: list[dict] | None = None,
 ) -> str:
     """根据报价结果生成客户响应文本。"""
     if status == "matched":

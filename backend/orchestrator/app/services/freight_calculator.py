@@ -47,7 +47,7 @@ async def calculate_freight(
             "province": province,
             "chosen": None,
             "options": [],
-            "notes": f"未配置 {province} 运费方案，请联系管理员录入",
+            "notes": f"未配置 {province} 运费方案，请人工确认",
         }
 
     options = []

@@ -48,14 +48,14 @@ class TestFastGPTKBClient:
     def fastgpt_client(self, monkeypatch):
         monkeypatch.setenv("KB_PROVIDER", "fastgpt")
         monkeypatch.setenv("FASTGPT_BASE_URL", "https://fastgpt-test.example.com")
-        monkeypatch.setenv("FASTGPT_API_KEY_LIANKAI", "fg-test-key")
+        monkeypatch.setenv("FASTGPT_API_KEY_LIANJIA", "fg-test-key")
         monkeypatch.setenv("KB_TIMEOUT_SECONDS", "5")
         monkeypatch.setenv("EXTERNAL_API_RETRY_MAX", "0")
 
-        mock_cfg = {"fastgpt_api_key_ref": "ENV:FASTGPT_API_KEY_LIANKAI"}
+        mock_cfg = {"fastgpt_api_key_ref": "ENV:FASTGPT_API_KEY_LIANJIA"}
         # load_tenant_config is imported inside FastGPTKBClient.__init__
         with patch("app.domain.tenant_config.load_tenant_config", return_value=mock_cfg):
-            return FastGPTKBClient(tenant_id="liankai")
+            return FastGPTKBClient(tenant_id="lianjia")
 
     @pytest.mark.anyio
     async def test_search_normal(self, fastgpt_client):

@@ -27,6 +27,7 @@ async def get_current_sale_price(
             CustomerSalePriceItem.customer_id == customer_id,
             CustomerSalePriceItem.spec_hash == spec_hash,
             CustomerSalePriceItem.status == "active",
+            CustomerSalePriceItem.amount > 0,
             or_(
                 CustomerSalePriceItem.effective_to.is_(None),
                 CustomerSalePriceItem.effective_to > now,

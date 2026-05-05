@@ -12,6 +12,7 @@ from app.db.session import get_db_session
 from app.schemas.quote_v2 import QuoteV2Request, QuoteV2Response
 from app.services.quote_engine import create_quote
 from app.core.permissions import require_permission, sanitize_payload
+from app.core.auth import get_auth_context, AuthContext, require_customer_access
 from app.core.metrics import QUOTE_REQUESTS, QUOTE_LATENCY
 from app.middleware.rate_limit import limiter
 from app.repositories.events import insert_event
@@ -30,15 +31,25 @@ async def create_quote_v2(
     """创建报价 (V2 引擎)。"""
     start = time.perf_counter()
 
-    # ── Auth Context (永远从 header/state 取，不信任 body) ──
+    # ── Auth Context (永远从 auth context 取，不信任 body/header) ──
+    auth: AuthContext = getattr(request.state, "auth", None)
     tenant_id: str = getattr(request.state, "tenant_id", "")
-    customer_id: str = request.headers.get("X-Customer-Id", "") or tenant_id
+
+    if auth is None:
+        return JSONResponse(
+            status_code=401,
+            content={"error": "unauthorized", "message": "Authentication required"},
+        )
 
     if not tenant_id:
         return JSONResponse(
             status_code=401,
             content={"error": "tenant_required", "message": "Missing tenant context"},
         )
+
+    # customer_id 来自 auth context，不信任 header/body
+    # 使用 customer_id_str 兼容现有 Text 类型 customer_id 查询
+    customer_id: str = auth.customer_id_str if auth.customer_id_str else tenant_id
 
     # ── 权限校验 ──
     try:
@@ -77,24 +88,27 @@ async def create_quote_v2(
             content={"error": "quote_failed", "message": "Internal quote error"},
         )
 
-    # ── 事件记录（脱敏后） ──
+    # ── 事件记录（脱敏后 · 独立 session 隔离，避免脏 session 污染报价主流程） ──
     try:
+        from app.db.session import async_session_factory
         sanitized = sanitize_payload(request_dict)
-        await insert_event(
-            session=db,
-            tenant_id=tenant_id,
-            trace_id=None,
-            event_type="quote.request",
-            schema_version=2,
-            event_source="kaas-web",
-            payload={
-                "customer_id": customer_id,
-                "product_category": quote_req.product_category,
-                "request": sanitized,
-                "result_status": result.get("status"),
-            },
-            sampled=True,
-        )
+        async with async_session_factory() as event_session:
+            await insert_event(
+                session=event_session,
+                tenant_id=tenant_id,
+                trace_id=None,
+                event_type="quote.request",
+                schema_version=2,
+                event_source="kaas-web",
+                payload={
+                    "customer_id": customer_id,
+                    "product_category": quote_req.product_category,
+                    "request": sanitized,
+                    "result_status": result.get("status"),
+                },
+                sampled=True,
+            )
+            await event_session.commit()
     except Exception as e:
         logger.warning("quote_event_log_failed", error=str(e))
 

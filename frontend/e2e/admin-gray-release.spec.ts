@@ -6,7 +6,7 @@ test.describe('Admin Gray Release', () => {
     await page.waitForLoadState('networkidle');
 
     // Should show toggle cards for tenants
-    const cards = page.locator('text=/联凯|client-b/i');
+    const cards = page.locator('text=/联佳|client-b/i');
     const count = await cards.count();
     expect(count).toBeGreaterThanOrEqual(1);
 

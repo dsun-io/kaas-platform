@@ -23,7 +23,7 @@ class TestBodySizeLimit:
                 "/api/v1/quote",
                 json={"test": "data"},
                 headers={
-                    "X-Tenant-Id": "liankai",
+                    "X-Tenant-Id": "lianjia",
                     "Content-Length": str(2 * 1024 * 1024),  # 2MB
                 },
             )
@@ -51,6 +51,6 @@ class TestQuoteRequestConstraints:
                     "customer_id": "cust-1",
                     "raw_text": long_text,
                 },
-                headers={"X-Tenant-Id": "liankai"},
+                headers={"X-Tenant-Id": "lianjia"},
             )
         assert r.status_code == 422

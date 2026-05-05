@@ -1,6 +1,8 @@
 """Kaas v2 · 报价 API (§5 T8 / §13 集成)
 
-POST /api/v1/quote — 提交报价请求，串联 LLM 提参 + KB 检索 + 定价引擎 + 话术。
+POST /api/v1/quote — 提交报价请求，串联 LLM 提参 + 定价引擎 + 话术。
+
+铁律4: FastGPT 不参与报价决策。报价链路不依赖 FastGPT。
 """
 import os
 import time
@@ -12,8 +14,6 @@ from app.db.session import get_db_session
 from app.services.extractor import extract_product_spec
 from app.services.pricing import get_price, record_quotation
 from app.services.quote_templates import generate_quote_response
-from app.services.kb_client import get_kb_client
-from app.domain.dataset_routing import build_dataset_ids
 from app.domain.session_store import session_store
 from app.core.metrics import QUOTE_REQUESTS, QUOTE_LATENCY
 from app.middleware.rate_limit import limiter
@@ -64,7 +64,8 @@ async def create_quote(request: Request, db: AsyncSession = Depends(get_db_sessi
             },
         )
 
-    # Step 2: 定价引擎（SQL 精确匹配 / KB 估算）
+    # Step 2: 定价引擎（SQL 精确匹配 / spec_not_supported）
+    # 铁律4: FastGPT 不参与报价决策。不使用 KB 做定价估算。
     try:
         result = await get_price(
             db=db,
@@ -92,18 +93,7 @@ async def create_quote(request: Request, db: AsyncSession = Depends(get_db_sessi
     except Exception as e:
         logger.warning("record_quotation_failed", error=str(e))
 
-    # Step 4: KB 检索补充上下文（供话术润色用）
-    kb_chunks = None
-    spec_summary = str(product_spec)
-    try:
-        if result.status != "matched":
-            datasets = build_dataset_ids(product_category, customer_id, product_spec)
-            kb = get_kb_client(customer_id)
-            kb_chunks = await kb.search(datasets, raw_text or spec_summary, top_k=3)
-    except Exception as e:
-        logger.warning("kb_search_failed", error=str(e))
-
-    # Step 5: 话术生成
+    # Step 4: 话术生成（零 KB 依赖 — kb_chunks 已移除，kb 不参与话术）
     price_range = ""
     if result.unit_price is not None:
         price_range = f"{result.unit_price} {result.currency}/{result.unit}"
@@ -116,15 +106,14 @@ async def create_quote(request: Request, db: AsyncSession = Depends(get_db_sessi
             product_category=product_category,
             confidence=result.confidence,
             notes=result.notes,
-            spec_summary=spec_summary,
+            spec_summary=str(product_spec),
             price_range=price_range,
-            kb_chunks=kb_chunks,
         )
     except Exception as e:
         logger.warning("script_generation_failed", error=str(e))
         script = f"【{result.status}】{product_category} 报价 {price_range or 'N/A'}"
 
-    # Step 6: 更新会话上下文
+    # Step 5: 更新会话上下文
     if session_id:
         try:
             session_store.update(session_id, {

@@ -74,7 +74,7 @@ def _format_spec_summary(spec: ProductSpec) -> str:
     if spec.height:
         parts.append(f"{spec.height}m高")
     if spec.mesh_width:
-        parts.append(f"{spec.mesh_width}m网宽")
+        parts.append(f"{spec.mesh_width}cm网宽")
     if spec.mesh_spec:
         parts.append(f"{spec.mesh_spec}网孔")
     if spec.roll_length:

@@ -2,6 +2,30 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 浏览器自动填充检测 - Chrome fires animationstart when :-webkit-autofill is applied */
+@keyframes autoFillStart {
+  from {
+    background-color: transparent;
+  }
+  to {
+    background-color: transparent;
+  }
+}
+@keyframes autoFillEnd {
+  from {
+    background-color: transparent;
+  }
+  to {
+    background-color: transparent;
+  }
+}
+input:-webkit-autofill {
+  animation-name: autoFillStart;
+}
+input:not(:-webkit-autofill) {
+  animation-name: autoFillEnd;
+}
+
 @layer base {
   :root {
     --background: oklch(1 0 0);

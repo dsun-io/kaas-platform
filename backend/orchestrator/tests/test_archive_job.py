@@ -15,7 +15,7 @@ from datetime import datetime, timezone, timedelta
 
 def _make_mock_event(
     evt_id: str = "evt-1",
-    tenant_id: str = "liankai",
+    tenant_id: str = "lianjia",
     schema_version: int = 1,
     event_type: str = "chat.turn",
 ):

@@ -14,6 +14,7 @@ from app.repositories.capabilities_repo import (
     upsert_capability,
 )
 from app.schemas.capabilities import CapabilityListResponse, CapabilityItem
+from app.core.auth import AuthContext, require_customer_access
 
 router = APIRouter(prefix="/api/v1", tags=["capabilities"])
 
@@ -60,16 +61,25 @@ async def list_customer_capabilities(
 ):
     """查询客户能力列表。
 
+    AUTH-WX-R1: customer 账号只能查看自己的数据。
     Query params:
-    - customer_id: str (可选，默认取当前租户)
+    - customer_id: str (可选，internal 可指定，customer 被忽略)
     """
+    auth: AuthContext = getattr(request.state, "auth", None)
     tenant_id: str = getattr(request.state, "tenant_id", "unknown")
-    cid = customer_id or tenant_id
 
-    if customer_id:
+    # customer 账号只能查看自己的数据，使用 customer_code 匹配旧 Text customer_id
+    if auth and auth.is_customer():
+        cid = auth.customer_code or tenant_id
         caps = await get_capabilities(db, customer_id=cid)
+    elif auth and auth.is_internal():
+        if customer_id:
+            caps = await get_capabilities(db, customer_id=customer_id)
+        else:
+            caps = await list_capabilities(db)
     else:
-        caps = await list_capabilities(db)
+        cid = customer_id or tenant_id
+        caps = await get_capabilities(db, customer_id=cid) if customer_id else await list_capabilities(db)
 
     return JSONResponse(
         status_code=200,
@@ -180,15 +190,23 @@ async def update_customer_capability(
 ):
     """新增或更新客户能力。
 
+    AUTH-WX-R1: customer 账号只能更新自己的数据。
+
     请求 body:
-    - customer_id: str
+    - customer_id: str (customer 账号传了其他 customer_id 也会被忽略)
     - customer_name: str
     - product_category: str
     - spec_constraints: dict
     - notes: str (可选)
     """
+    auth: AuthContext = getattr(request.state, "auth", None)
     body = await request.json()
+
     customer_id = body.get("customer_id", "")
+    if auth and auth.is_customer():
+        # customer 账号强制使用自己的 customer_code（Text 类型)
+        customer_id = auth.customer_code or ""
+
     customer_name = body.get("customer_name", "")
     product_category = body.get("product_category", "")
     spec_constraints = body.get("spec_constraints", {})

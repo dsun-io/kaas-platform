@@ -20,11 +20,11 @@ class TestEventInsert:
         response = await client.post(
             "/api/v1/events",
             json=body,
-            headers={"X-Tenant-Id": "liankai", "X-Use-V2": "true"},
+            headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
         assert response.status_code == 201
         data = response.json()
-        assert data["tenant_id"] == "liankai"
+        assert data["tenant_id"] == "lianjia"
         assert data["event_type"] == "chat.turn"
         assert data["id"] is not None
 
@@ -34,7 +34,7 @@ class TestEventInsert:
         response = await client.post(
             "/api/v1/events",
             json=body,
-            headers={"X-Tenant-Id": "liankai", "X-Use-V2": "true"},
+            headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
         assert response.status_code == 201
         data = response.json()
@@ -45,7 +45,7 @@ class TestEventInsert:
         response = await client.post(
             "/api/v1/events",
             json={"event_type": "custom.event", "schema_version": 1, "payload": {}, "event_source": "orchestrator"},
-            headers={"X-Tenant-Id": "liankai", "X-Use-V2": "true"},
+            headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
         assert response.status_code == 400
         data = response.json()
@@ -56,7 +56,7 @@ class TestEventInsert:
         response = await client.post(
             "/api/v1/events",
             json={"schema_version": 1, "payload": {}, "event_source": "orchestrator"},
-            headers={"X-Tenant-Id": "liankai", "X-Use-V2": "true"},
+            headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
         assert response.status_code == 400
         assert response.json()["error"] == "event_type_unknown"
@@ -68,7 +68,7 @@ class TestEventInsert:
         response = await client.post(
             "/api/v1/events",
             json=body,
-            headers={"X-Tenant-Id": "liankai", "X-Use-V2": "true"},
+            headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
         assert response.status_code == 400
         assert response.json()["error"] == "schema_version_required"
@@ -80,13 +80,13 @@ class TestTenantIsolation:
     async def test_different_tenants_produce_different_tenant_ids(self, client):
         """不同租户写入的事件包含各自的 tenant_id。"""
         body1 = make_event_body("chat.turn", event_source="orchestrator",
-                                 session_id="iso-1", raw_text="liankai test")
+                                 session_id="iso-1", raw_text="lianjia test")
         body2 = make_event_body("chat.turn", event_source="orchestrator",
                                  session_id="iso-2", raw_text="client_b test")
 
         r1 = await client.post(
             "/api/v1/events", json=body1,
-            headers={"X-Tenant-Id": "liankai", "X-Use-V2": "true"},
+            headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
         r2 = await client.post(
             "/api/v1/events", json=body2,
@@ -97,7 +97,7 @@ class TestTenantIsolation:
         assert r2.status_code == 201
         body1_resp = r1.json()
         body2_resp = r2.json()
-        assert body1_resp["tenant_id"] == "liankai"
+        assert body1_resp["tenant_id"] == "lianjia"
         assert body2_resp["tenant_id"] == "client_b"
         assert body1_resp["id"] != body2_resp["id"]
 
@@ -110,7 +110,7 @@ class TestPayloadValidation:
         body = make_event_body("chat.turn", schema_version=99)
         response = await client.post(
             "/api/v1/events", json=body,
-            headers={"X-Tenant-Id": "liankai", "X-Use-V2": "true"},
+            headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
         assert response.status_code == 400
         assert response.json()["error"] == "schema_version_unsupported"
@@ -125,7 +125,7 @@ class TestPayloadValidation:
                 "payload": {"session_id": "x"},
                 "event_source": "orchestrator",
             },
-            headers={"X-Tenant-Id": "liankai", "X-Use-V2": "true"},
+            headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
         assert response.status_code == 400
         assert response.json()["error"] == "payload_schema_mismatch"

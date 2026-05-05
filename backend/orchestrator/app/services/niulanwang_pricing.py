@@ -60,10 +60,12 @@ async def calculate_base_cost(
         spec_hash=spec_hash,
     )
     if cost_item is not None:
-        # 针对 cost_per_kg 类型，按重量换算为单卷成本
+        # 不同成本类型换算为单件成本
         amount = cost_item.amount
         if cost_item.cost_type == "cost_per_kg" and spec.weight_kg:
             amount = cost_item.amount * spec.weight_kg
+        elif cost_item.cost_type == "cost_per_bundle" and spec.bundle_size and spec.bundle_size > 0:
+            amount = cost_item.amount / spec.bundle_size
         return {
             "amount": amount,
             "cost_type": cost_item.cost_type,
@@ -78,7 +80,7 @@ async def calculate_base_cost(
         "cost_type": None,
         "currency": "CNY",
         "status": "cost_pending",
-        "notes": "未找到该规格的成本价或销售价，请联系管理员录入",
+        "notes": "未找到该规格的成本价或销售价，请人工确认",
     }
 
 
@@ -91,6 +93,7 @@ async def calculate_tiers(
     base_cost_status: str = "cost_pending",
     quantity: int = 1,
     need_invoice: bool = False,
+    tax_rate_override: Optional[float] = None,
 ) -> dict:
     """基于定价策略 + 基准成本计算三档报价。
 
@@ -119,44 +122,45 @@ async def calculate_tiers(
             "status": "pricing_profile_missing",
             "tiers": [],
             "tax_rate": 0.0,
-            "notes": "未配置客户定价策略，请联系管理员设置利润率",
+            "notes": "未配置客户定价策略，请人工确认",
         }
 
-    tax_rate = profile.tax_rate or 0.0
+    if not need_invoice:
+        tax_rate = 0.0
+    else:
+        tax_rate = tax_rate_override if tax_rate_override is not None else (profile.tax_rate or 0.0)
 
     if cost_amount is None:
         return {
             "status": "cost_pending",
             "tiers": [],
+            "base_cost": None,
             "tax_rate": tax_rate,
             "notes": "基准成本为空，无法计算报价梯度",
         }
+
+    margin_rates = {
+        "低": profile.low_margin_rate,
+        "标准": profile.standard_margin_rate,
+        "高": profile.high_margin_rate,
+    }
 
     # 销售价覆盖时三档统一
     if base_cost_status == "sale_price_matched":
         tiers = [
             {
-                "label": "低",
+                "label": label,
+                "margin_rate": None,
                 "unit_price": round(cost_amount, 2),
                 "subtotal": round(cost_amount * quantity, 2),
                 "total": round(cost_amount * quantity * (1 + tax_rate), 2),
-            },
-            {
-                "label": "标准",
-                "unit_price": round(cost_amount, 2),
-                "subtotal": round(cost_amount * quantity, 2),
-                "total": round(cost_amount * quantity * (1 + tax_rate), 2),
-            },
-            {
-                "label": "高",
-                "unit_price": round(cost_amount, 2),
-                "subtotal": round(cost_amount * quantity, 2),
-                "total": round(cost_amount * quantity * (1 + tax_rate), 2),
-            },
+            }
+            for label in ["低", "标准", "高"]
         ]
         return {
             "status": "matched",
             "tiers": tiers,
+            "base_cost": round(cost_amount, 2),
             "tax_rate": tax_rate,
             "notes": "基于客户销售价覆盖，三档统一报价",
         }
@@ -168,28 +172,19 @@ async def calculate_tiers(
 
     tiers = [
         {
-            "label": "低",
-            "unit_price": round(low_price, 2),
-            "subtotal": round(low_price * quantity, 2),
-            "total": round(low_price * quantity * (1 + tax_rate), 2),
-        },
-        {
-            "label": "标准",
-            "unit_price": round(standard_price, 2),
-            "subtotal": round(standard_price * quantity, 2),
-            "total": round(standard_price * quantity * (1 + tax_rate), 2),
-        },
-        {
-            "label": "高",
-            "unit_price": round(high_price, 2),
-            "subtotal": round(high_price * quantity, 2),
-            "total": round(high_price * quantity * (1 + tax_rate), 2),
-        },
+            "label": label,
+            "margin_rate": margin_rates[label],
+            "unit_price": round(price, 2),
+            "subtotal": round(price * quantity, 2),
+            "total": round(price * quantity * (1 + tax_rate), 2),
+        }
+        for label, price in [("低", low_price), ("标准", standard_price), ("高", high_price)]
     ]
 
     return {
         "status": "matched",
         "tiers": tiers,
+        "base_cost": round(cost_amount, 2),
         "tax_rate": tax_rate,
         "notes": f"基于利润率 (低{profile.low_margin_rate*100:.0f}%/标准{profile.standard_margin_rate*100:.0f}%/高{profile.high_margin_rate*100:.0f}%) 计算",
     }

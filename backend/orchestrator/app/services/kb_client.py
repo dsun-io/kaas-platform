@@ -2,10 +2,16 @@
 Kaas v2 · KB Client 抽象层 (§13.2)
 ────────────────────────────────────
 ABC + StubKBClient + FastGPTKBClient。
-KB provider 工厂函数，组件可热替换（铁律5）。
+
+⚠️ DEPRECATED — 请使用 knowledge_provider 模块
+   KnowledgeRetrievalProvider / PostgreSQLTextKnowledgeProvider。
+   此模块仅保留用于向后兼容的可选 FastGPT provider 包装。
+   新代码不得直接 import 此模块中的类或函数。
+   核心路径 (quote / pricing / orchestrator) 已禁止直接 import。
 """
 import os
 import time
+import warnings
 from abc import ABC, abstractmethod
 
 import httpx
@@ -79,6 +85,7 @@ class FastGPTKBClient(KBClient):
         cfg = load_tenant_config(tenant_id)
         if not cfg:
             raise ValueError(f"Unknown tenant: {tenant_id}")
+        self._tenant_id = tenant_id
         api_key_ref = cfg.get("fastgpt_api_key_ref", "")
         env_key = api_key_ref.replace("ENV:", "")
         self.api_key = os.environ[env_key]
@@ -142,8 +149,19 @@ _KB_CLIENTS: dict[str, type] = {
 def get_kb_client(tenant_id: str = "") -> KBClient:
     """工厂函数，读 KB_PROVIDER env 决定实例。
 
+    ⚠️ DEPRECATED — 请使用 knowledge_provider.get_knowledge_provider()。
+       此函数仅保留用于 FastGPTKnowledgeProvider 的向后兼容包装。
+       新代码应使用：
+         from app.services.knowledge_provider import get_knowledge_provider
+         provider = get_knowledge_provider(tenant_id)
+
     tenant_id 仅在 FastGPT 模式下需要（获取 API key ref）。
     """
+    warnings.warn(
+        "get_kb_client() is DEPRECATED. Use get_knowledge_provider() from knowledge_provider module instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     provider = os.getenv("KB_PROVIDER", "stub")
     if provider == "fastgpt":
         return FastGPTKBClient(tenant_id)

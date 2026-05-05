@@ -69,8 +69,9 @@ async def price_accessories(
                 "unit": "",
                 "unit_price": None,
                 "total": None,
+                "weight_kg": None,
                 "status": "no_match",
-                "notes": f"未找到配件 {product_category} 的规格记录",
+                "notes": f"未找到 {product_category} 的规格记录",
             })
             continue
 
@@ -82,15 +83,17 @@ async def price_accessories(
                 "unit": "",
                 "unit_price": None,
                 "total": None,
+                "weight_kg": None,
                 "status": "too_many",
-                "notes": f"配件 {product_category} 匹配到 {len(specs)} 条记录，需细化",
+                "notes": f"{product_category} 匹配到 {len(specs)} 条记录，需细化",
             })
             continue
 
         spec = specs[0]
         spec_summary = _format_accessory_summary(spec)
-        unit = "根" if spec.product_type == "立柱" else "个"
+        unit = "根" if spec.product_category == "立柱" else "个"
         spec_hash = spec.spec_hash
+        spec_weight_kg = spec.weight_kg
 
         # 优先查销售价，其次成本价
         sale_item = await get_current_sale_price(
@@ -101,6 +104,23 @@ async def price_accessories(
         )
         if sale_item is not None:
             unit_price = sale_item.amount
+            # 按捆计价时换算为单支价（与成本路径的 cost_per_bundle 对应）
+            if sale_item.sale_price_type == "sale_per_bundle":
+                if spec.bundle_size and spec.bundle_size > 0:
+                    unit_price = sale_item.amount / spec.bundle_size
+                else:
+                    results.append({
+                        "product_category": product_category,
+                        "spec_summary": spec_summary,
+                        "quantity": quantity,
+                        "unit": unit,
+                        "unit_price": None,
+                        "total": None,
+                        "weight_kg": spec_weight_kg,
+                        "status": "cost_pending",
+                        "notes": f"{product_category} 按捆计价但未配置每捆支数",
+                    })
+                    continue
             total = round(unit_price * quantity, 2)
             results.append({
                 "product_category": product_category,
@@ -109,6 +129,7 @@ async def price_accessories(
                 "unit": unit,
                 "unit_price": unit_price,
                 "total": total,
+                "weight_kg": spec_weight_kg,
                 "status": "matched",
                 "notes": f"销售价 {unit_price} 元/{unit}",
             })
@@ -124,6 +145,9 @@ async def price_accessories(
             unit_price = cost_item.amount
             if cost_item.cost_type == "cost_per_kg" and spec.weight_kg:
                 unit_price = cost_item.amount * spec.weight_kg
+            elif cost_item.cost_type == "cost_per_bundle" and spec.bundle_size and spec.bundle_size > 0:
+                # 按捆计价 ÷ 每捆支数 = 单支单价
+                unit_price = cost_item.amount / spec.bundle_size
             total = round(unit_price * quantity, 2)
             results.append({
                 "product_category": product_category,
@@ -132,6 +156,7 @@ async def price_accessories(
                 "unit": unit,
                 "unit_price": unit_price,
                 "total": total,
+                "weight_kg": spec_weight_kg,
                 "status": "matched",
                 "notes": f"成本价 {cost_item.amount} 元/{cost_item.unit}",
             })
@@ -145,8 +170,9 @@ async def price_accessories(
             "unit": unit,
             "unit_price": None,
             "total": None,
+            "weight_kg": spec_weight_kg,
             "status": "cost_pending",
-            "notes": f"配件 {product_category} 未配置价格",
+            "notes": f"{product_category} 未配置价格",
         })
 
     return results

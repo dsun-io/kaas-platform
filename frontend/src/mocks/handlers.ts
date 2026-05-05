@@ -1,7 +1,6 @@
-import { http, HttpResponse, delay } from "msw";
+import { http, HttpResponse } from "msw";
 import {
   makeEvent,
-  makeDashboardSummary,
   makeTenant,
   makeFeatureFlags,
   MOCK_CUSTOMERS,
@@ -13,7 +12,12 @@ import {
   makeQuotation,
   makeQuoteV2Response,
   makeProductSpecsOptions,
+  makeQuotableSpecs,
 } from "./data/factory";
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 const EVENTS_LIST = Array.from({ length: 12 }, (_, i) =>
   makeEvent({
@@ -38,16 +42,22 @@ const capabilitiesStore = new Map<
   ReturnType<typeof makeCapability>[]
 >();
 capabilitiesStore.set(
-  "cust-liankai",
-  JSON.parse(JSON.stringify(MOCK_CAPABILITIES["cust-liankai"])),
+  "cust-lianjia",
+  JSON.parse(JSON.stringify(MOCK_CAPABILITIES["cust-lianjia"])),
 );
 capabilitiesStore.set(
   "cust-client-b",
   JSON.parse(JSON.stringify(MOCK_CAPABILITIES["cust-client-b"])),
 );
 
-// Stateful store for feature flags
-let featureFlagsStore = { use_v2: false, sampling_enabled: true };
+// Stateful store for feature flags (per-tenant, persists across HMR)
+const defaultFlags: Record<string, Record<string, boolean>> = {
+  "cust-lianjia": { use_v2: true, sampling_enabled: true },
+  "cust-client-b": { use_v2: false, sampling_enabled: true },
+};
+let featureFlagsStore: Record<string, Record<string, boolean>> = JSON.parse(
+  JSON.stringify(defaultFlags),
+);
 
 // Test-only MSW override: forces quote API to return a specific status.
 // This variable is module-scoped in the browser bundle — resets on page reload.
@@ -118,24 +128,32 @@ export const handlers = [
     return HttpResponse.json({ id: created.id }, { status: 201 });
   }),
 
-  // ── Dashboard ────────────────────────────────────────────────────
+  // ── Dashboard (matches real backend aggregation) ──────────────────
   http.get("/api/v1/dashboard/summary", ({ request }) => {
     const url = new URL(request.url);
     const range = url.searchParams.get("range") ?? "today";
-    const ranges: Record<string, ReturnType<typeof makeDashboardSummary>> = {
-      today: makeDashboardSummary({ range: "today", quotations_total: 42 }),
-      "7d": makeDashboardSummary({
-        range: "7d",
-        quotations_total: 310,
-        quotations_sampled: 75,
-      }),
-      "30d": makeDashboardSummary({
-        range: "30d",
-        quotations_total: 1240,
-        quotations_sampled: 300,
-      }),
+    const multipliers: Record<string, number> = {
+      today: 1,
+      "7d": 7,
+      "30d": 30,
     };
-    return HttpResponse.json(ranges[range] ?? ranges.today);
+    const m = multipliers[range] ?? 1;
+    return HttpResponse.json({
+      range,
+      quotations_total: Math.round(42 * m),
+      quotations_sampled: Math.round(10 * m),
+      active_customers: Math.min(Math.round(3 * m), 8),
+      customers_sampled: Math.min(Math.round(2 * m), 5),
+      dataset_hits: {
+        L1_共通: Math.round(15 * m),
+        L2_牛栏网_产品: Math.round(20 * m),
+        L3_联佳丝网_牛栏网: Math.round(7 * m),
+      },
+      token_total: Math.round(125000 * m),
+      token_sampled: Math.round(30000 * m),
+      p95_latency_ms: +(320 + Math.random() * 40).toFixed(1),
+      latency_sampled: Math.round(80 * m),
+    });
   }),
 
   // ── OSS ──────────────────────────────────────────────────────────
@@ -271,6 +289,7 @@ export const handlers = [
   http.get("/api/v1/product-specs", ({ request }) => {
     const url = new URL(request.url);
     const category = url.searchParams.get("product_category") || "牛栏网";
+    const quotable = url.searchParams.get("quotable") === "true";
     const specs = makeProductSpecsOptions({ product_category: category });
     // Return different data per category to match real backend
     if (category === "石笼网") {
@@ -287,6 +306,35 @@ export const handlers = [
         },
         accessory_categories: [],
       });
+    }
+    // quotable 过滤：从实际 quotable_specs 推导各字段的可用选项
+    // 不允许硬编码选项，避免出现"下拉有选项但实际无成本数据"的情况
+    if (quotable) {
+      const qs = specs.quotable_specs as Array<Record<string, unknown>>;
+      const opts = specs.options as Record<string, unknown>;
+      if (qs.length === 0) {
+        opts.product_types = [];
+        opts.wire_diameters = [];
+        opts.heights = [];
+        opts.mesh_widths = [];
+        opts.roll_lengths = [];
+      } else {
+        opts.product_types = [
+          ...new Set(qs.map((s) => s.product_type).filter(Boolean)),
+        ].sort() as string[];
+        opts.wire_diameters = [
+          ...new Set(qs.map((s) => s.wire_diameter).filter(Boolean)),
+        ].sort() as string[];
+        opts.heights = [
+          ...new Set(qs.map((s) => s.height).filter((v) => v != null)),
+        ].sort() as number[];
+        opts.mesh_widths = [
+          ...new Set(qs.map((s) => s.mesh_width).filter((v) => v != null)),
+        ].sort() as number[];
+        opts.roll_lengths = [
+          ...new Set(qs.map((s) => s.roll_length).filter((v) => v != null)),
+        ].sort() as number[];
+      }
     }
     return HttpResponse.json(specs);
   }),
@@ -306,7 +354,7 @@ export const handlers = [
         { status: 401 },
       );
     }
-    if (tenantId !== "liankai" && tenantId !== "client_b") {
+    if (tenantId !== "lianjia" && tenantId !== "client_b") {
       return HttpResponse.json(
         {
           error: "invalid_tenant",
@@ -342,8 +390,8 @@ export const handlers = [
         accessory_lines: [],
         freight: null,
         totals: { low: 0.0, standard: 0.0, high: 0.0 },
-        notes: [`暂不支持品类: ${category}，仅支持 牛栏网`],
-        copyable_script: `【牛栏网报价 - 暂不支持品类】\n\n产品: ${category}\n\n说明:\n  - 暂不支持品类: ${category}，仅支持 牛栏网\n\n---\n请联系管理员处理，或尝试调整规格参数后重新报价。`,
+        notes: [`暂不支持品类: ${category}，请人工确认`],
+        copyable_script: `【牛栏网报价 - 暂不支持品类】\n\n产品: ${category}\n\n说明:\n  - 暂不支持品类: ${category}，请人工确认\n\n---\n请人工确认处理，或尝试调整规格参数后重新报价。`,
       });
     }
 
@@ -371,7 +419,7 @@ export const handlers = [
         freight: null,
         totals: { low: 0.0, standard: 0.0, high: 0.0 },
         notes: [`未找到 ${category} 匹配的规格记录`],
-        copyable_script: `【牛栏网报价 - 规格未匹配】\n\n产品: ${category}\n\n说明:\n  - 未找到 ${category} 匹配的规格记录\n\n---\n请联系管理员处理，或尝试调整规格参数后重新报价。`,
+        copyable_script: `【牛栏网报价 - 规格未匹配】\n\n产品: ${category}\n\n说明:\n  - 未找到 ${category} 匹配的规格记录\n\n---\n请人工确认处理，或尝试调整规格参数后重新报价。`,
       });
     }
 
@@ -392,7 +440,7 @@ export const handlers = [
         freight: null,
         totals: { low: 0.0, standard: 0.0, high: 0.0 },
         notes: ["找到 3 条匹配记录，请细化筛选条件"],
-        copyable_script: `【牛栏网报价 - 规格匹配过多】\n\n产品: ${category}\n\n说明:\n  - 找到 3 条匹配记录，请细化筛选条件\n\n---\n请联系管理员处理，或尝试调整规格参数后重新报价。`,
+        copyable_script: `【牛栏网报价 - 规格匹配过多】\n\n产品: ${category}\n\n说明:\n  - 找到 3 条匹配记录，请细化筛选条件\n\n---\n请人工确认处理，或尝试调整规格参数后重新报价。`,
       });
     }
 
@@ -413,7 +461,7 @@ export const handlers = [
         freight: null,
         totals: { low: 0.0, standard: 0.0, high: 0.0 },
         notes: ["规格匹配成功", "该规格成本待维护，暂不能自动报价（mock）"],
-        copyable_script: `【牛栏网报价 - 价格待录入】\n\n产品: 牛栏网 | 上疏下密 | 2.5x2.0丝径\n\n说明:\n  - 规格匹配成功\n  - 该规格成本待维护，暂不能自动报价（mock）\n\n---\n请联系管理员处理，或尝试调整规格参数后重新报价。`,
+        copyable_script: `【牛栏网报价 - 价格待录入】\n\n产品: 牛栏网 | 上疏下密 | 2.5x2.0丝径\n\n说明:\n  - 规格匹配成功\n  - 该规格成本待维护，暂不能自动报价（mock）\n\n---\n请人工确认处理，或尝试调整规格参数后重新报价。`,
       });
     }
 
@@ -433,39 +481,89 @@ export const handlers = [
         accessory_lines: [],
         freight: null,
         totals: { low: 0.0, standard: 0.0, high: 0.0 },
-        notes: [`暂不支持品类: ${category}，仅支持 牛栏网`],
-        copyable_script: `【牛栏网报价 - 暂不支持品类】\n\n产品: ${category}\n\n说明:\n  - 暂不支持品类: ${category}，仅支持 牛栏网\n\n---\n请联系管理员处理，或尝试调整规格参数后重新报价。`,
+        notes: [`暂不支持品类: ${category}，请人工确认`],
+        copyable_script: `【牛栏网报价 - 暂不支持品类】\n\n产品: ${category}\n\n说明:\n  - 暂不支持品类: ${category}，请人工确认\n\n---\n请人工确认处理，或尝试调整规格参数后重新报价。`,
       });
     }
 
     // --- matched response (mimics real backend) ---
     const quantity = (body.quantity as number) || 100;
-    const wireDiam = (body.wire_diameter as string) || "2.5x2.0";
-    const prodType = (body.product_type as string) || "上疏下密";
-    const h = (body.height as number) || 1.5;
+    const wireDiam = (body.wire_diameter as string) || "";
+    const prodType = (body.product_type as string) || "";
+    const h = body.height != null ? (body.height as number) : null;
+    const mw = body.mesh_width != null ? (body.mesh_width as number) : null;
+    const rl = body.roll_length != null ? (body.roll_length as number) : null;
     const weightKg = 32.5;
-    const specSummary = `牛栏网 | ${prodType} | ${wireDiam}丝径 | ${h}m高 | 15.0m网宽 | 50.0m长`;
 
-    const tiers = [
+    // 校验完整规格组合是否存在于 quotable_specs（有成本数据的组合）
+    // 仅校验 wire_diameter 是不够的——必须整个 tuple 都命中
+    const quotableSpecs = makeQuotableSpecs(category);
+    const isQuotableCombo = quotableSpecs.some(
+      (spec) =>
+        spec.product_type === prodType &&
+        spec.wire_diameter === wireDiam &&
+        spec.height === h &&
+        spec.mesh_width === (mw ?? spec.mesh_width) &&
+        spec.roll_length === (rl ?? spec.roll_length),
+    );
+
+    if (!isQuotableCombo) {
+      return HttpResponse.json({
+        status: "cost_pending",
+        product_category: category,
+        main_line: {
+          product_category: category,
+          spec_summary: `牛栏网 | ${prodType || "?"} | ${wireDiam || "?"}丝径${h != null ? ` | ${h}m高` : ""}`,
+          quantity,
+          unit: "卷",
+          weight_kg: weightKg,
+          tiers: [],
+          status: "unavailable",
+        },
+        accessory_lines: [],
+        freight: null,
+        totals: { low: 0.0, standard: 0.0, high: 0.0 },
+        notes: ["该规格组合成本待维护，暂不能自动报价"],
+        copyable_script: `【牛栏网报价 - 价格待录入】\n\n产品: 牛栏网 | ${prodType || "?"} | ${wireDiam || "?"}丝径\n\n说明:\n  - 该规格组合成本待维护，暂不能自动报价\n\n---\n请人工确认处理，或尝试调整规格参数后重新报价。`,
+      });
+    }
+
+    // 模拟成本模型（与真实后端计算逻辑一致：成本单价 × 重量 × 利润率）
+    // 使用模拟 cost_per_kg=5.1，由 weight_kg 反算 baseCost，而非硬编码单价
+    const simulatedCostPerKg = 5.1;
+    const baseCost = +(simulatedCostPerKg * weightKg).toFixed(2);
+    const marginRates = { low: 1.1, standard: 1.15, high: 1.2 };
+    const tiers: Array<{
+      label: string;
+      margin_rate: number;
+      unit_price: number;
+      subtotal: number;
+      total: number;
+    }> = [
       {
         label: "低",
-        unit_price: 182.33,
-        subtotal: Math.round(182.33 * quantity * 100) / 100,
-        total: Math.round(182.33 * quantity * 100) / 100,
+        margin_rate: 1.1,
+        unit_price: +(baseCost * 1.1).toFixed(2),
+        subtotal: +(baseCost * 1.1 * quantity).toFixed(2),
+        total: +(baseCost * 1.1 * quantity).toFixed(2),
       },
       {
         label: "标准",
-        unit_price: 190.61,
-        subtotal: Math.round(190.61 * quantity * 100) / 100,
-        total: Math.round(190.61 * quantity * 100) / 100,
+        margin_rate: 1.15,
+        unit_price: +(baseCost * 1.15).toFixed(2),
+        subtotal: +(baseCost * 1.15 * quantity).toFixed(2),
+        total: +(baseCost * 1.15 * quantity).toFixed(2),
       },
       {
         label: "高",
-        unit_price: 198.9,
-        subtotal: Math.round(198.9 * quantity * 100) / 100,
-        total: Math.round(198.9 * quantity * 100) / 100,
+        margin_rate: 1.2,
+        unit_price: +(baseCost * 1.2).toFixed(2),
+        subtotal: +(baseCost * 1.2 * quantity).toFixed(2),
+        total: +(baseCost * 1.2 * quantity).toFixed(2),
       },
     ];
+
+    const specSummary = `牛栏网 | ${prodType} | ${wireDiam}丝径 | ${h}m高 | ${mw ?? 15.0}m网宽 | ${rl ?? 50.0}m长`;
 
     // Accessories
     interface AccessoryLineItem {
@@ -484,13 +582,14 @@ export const handlers = [
     if (hasAccessories) {
       accessoryLines = (body.accessories as Record<string, unknown>[]).map(
         (acc) => {
-          const productCategory = String(acc.product_category || "立柱");
+          const accCategory = String(acc.product_category || "立柱");
+          const accQty = Number(acc.quantity) || 1;
           return {
-            product_category: productCategory,
-            spec_summary: `${productCategory} | 直边 | 1.8m | 10支/捆`,
-            quantity: Number(acc.quantity) || 1,
+            product_category: accCategory,
+            spec_summary: `${accCategory} | 直边 | 1.8m | 10支/捆`,
+            quantity: accQty,
             unit: "个",
-            total: (Number(acc.quantity) || 1) * 180.0,
+            total: accQty * 180.0,
             status: "matched",
           };
         },
@@ -524,9 +623,9 @@ export const handlers = [
       ? ((freightInfo.chosen as Record<string, unknown>).amount as number)
       : 0;
     const totals = {
-      low: Math.round((182.33 * quantity + freightAmount) * 100) / 100,
-      standard: Math.round((190.61 * quantity + freightAmount) * 100) / 100,
-      high: Math.round((198.9 * quantity + freightAmount) * 100) / 100,
+      low: +(tiers[0]!.total + freightAmount).toFixed(2),
+      standard: +(tiers[1]!.total + freightAmount).toFixed(2),
+      high: +(tiers[2]!.total + freightAmount).toFixed(2),
     };
 
     return HttpResponse.json({
@@ -538,6 +637,7 @@ export const handlers = [
         quantity,
         unit: "卷",
         weight_kg: weightKg,
+        base_cost: baseCost,
         tiers,
         status: "matched",
       },
@@ -546,35 +646,56 @@ export const handlers = [
       totals,
       notes: [
         `已匹配规格: ${specSummary}`,
-        "命中客户成本价: 5.1 CNY/kg",
+        `成本基准: ${simulatedCostPerKg} CNY/kg × ${weightKg} kg = ${baseCost} 元/卷`,
         "基于利润率 (低110%/标准115%/高120%) 计算",
         ...(hasFreight
           ? ["已计算运费: 顺丰干配 " + freightAmount + " 元"]
           : []),
       ],
-      copyable_script: `【牛栏网报价单】\n\n产品: ${specSummary}\n数量: ${quantity} 卷\n单卷重量: ${weightKg} kg\n总重量: ${weightKg * quantity} kg\n\n报价梯度（元/卷）:\n  低: 182.33 元/卷，合计 ${tiers[0]!.total} 元\n  标准: 190.61 元/卷，合计 ${tiers[1]!.total} 元\n  高: 198.9 元/卷，合计 ${tiers[2]!.total} 元\n${hasAccessories ? `\n配件:\n  ${accessoryLines.map((a) => `${a.spec_summary} x ${a.quantity}${a.unit} = ${a.total} 元`).join("\n  ")}\n` : ""}${hasFreight ? `\n运费 (${String(body.province)}): 顺丰干配 ${freightAmount} 元\n` : ""}\n合计:\n  低配: ${totals.low} 元\n  标准: ${totals.standard} 元\n  高配: ${totals.high} 元\n\n---\n以上报价为系统自动生成，仅供客户参考，实际成交价以合同为准。\n如需调整数量、规格或配送地址，请与您的专属客服联系。`,
+      copyable_script: `【牛栏网报价单】\n\n产品: ${specSummary}\n数量: ${quantity} 卷\n单卷重量: ${weightKg} kg\n总重量: ${(weightKg * quantity).toFixed(1)} kg\n\n报价梯度（元/卷）:\n  逼单方案: ${tiers[0]!.unit_price} 元/卷，合计 ${tiers[0]!.total} 元\n  让利方案: ${tiers[1]!.unit_price} 元/卷，合计 ${tiers[1]!.total} 元\n  优选方案: ${tiers[2]!.unit_price} 元/卷，合计 ${tiers[2]!.total} 元\n${hasAccessories ? `\n立柱:\n  ${accessoryLines.map((a) => `${a.spec_summary} x ${a.quantity}${a.unit} = ${a.total} 元`).join("\n  ")}\n` : ""}${hasFreight ? `\n运费 (${String(body.province)}): 顺丰干配 ${freightAmount} 元\n` : ""}\n合计:\n  逼单方案: ${totals.low} 元\n  让利方案: ${totals.standard} 元\n  优选方案: ${totals.high} 元\n\n---\n以上报价为系统自动生成，仅供客户参考，实际成交价以合同为准。\n如需调整数量、规格或配送地址，请与您的专属客服联系。`,
     });
   }),
 
-  // ── Feature Flags ────────────────────────────────────────────────
+  // ── Feature Flags (per-tenant) ─────────────────────────────────────
   http.get("/api/v1/admin/feature_flag", () => {
     return HttpResponse.json({ ...featureFlagsStore });
   }),
 
   http.post("/api/v1/admin/feature_flag", async ({ request }) => {
     const body = (await request.json()) as {
+      tenant_id: string;
       flag_key: string;
       enabled: boolean;
       reason: string;
       actor_id: string;
     };
-    const before =
-      featureFlagsStore[body.flag_key as keyof typeof featureFlagsStore] ??
-      false;
-    (featureFlagsStore as Record<string, boolean>)[body.flag_key] =
-      body.enabled;
-    const after = body.enabled;
-    return HttpResponse.json({ flag_key: body.flag_key, before, after });
+
+    const tenantFlags = (featureFlagsStore[body.tenant_id] ??= {});
+    const before = tenantFlags[body.flag_key] ?? false;
+    tenantFlags[body.flag_key] = body.enabled;
+
+    // Append to deployment audit store
+    const auditEntry = {
+      id: `da-${Date.now()}`,
+      action: "feature_flag_change",
+      actor_id: body.actor_id,
+      resource_type: "feature_flag",
+      resource_id: body.flag_key,
+      tenant_id: body.tenant_id,
+      flag_key: body.flag_key,
+      enabled_before: before,
+      enabled_after: body.enabled,
+      reason: body.reason,
+      timestamp: new Date().toISOString(),
+    };
+    MOCK_DEPLOYMENT_AUDITS.unshift(auditEntry);
+
+    return HttpResponse.json({
+      tenant_id: body.tenant_id,
+      flag_name: body.flag_key,
+      old_value: before,
+      new_value: body.enabled,
+    });
   }),
 
   // ── Deployment Audit ─────────────────────────────────────────────
@@ -588,9 +709,23 @@ export const handlers = [
         (a) => new Date(a.timestamp).getTime() >= sinceDate,
       );
     }
+    // Return fields matching AuditTimeline expectations
+    const items = filtered.slice(0, 200).map((a) => ({
+      id: a.id,
+      action: a.action ?? "feature_flag_change",
+      actor_id: a.actor_id,
+      resource_type: a.resource_type,
+      resource_id: a.resource_id,
+      flag_key: a.flag_key,
+      tenant_id: a.tenant_id,
+      enabled_before: a.enabled_before,
+      enabled_after: a.enabled_after,
+      reason: a.reason,
+      timestamp: a.timestamp,
+    }));
     return HttpResponse.json({
-      items: filtered.slice(0, 200),
-      total: filtered.length,
+      items,
+      total: items.length,
     });
   }),
 
@@ -610,7 +745,7 @@ export const handlers = [
         action: "tenant.reload",
         actor_id: "admin-1",
         resource_type: "tenant",
-        resource_id: "liankai",
+        resource_id: "lianjia",
         reason: "手动刷新租户配置",
         timestamp: new Date(Date.now() - 3600000).toISOString(),
       },
@@ -674,14 +809,16 @@ export const handlers = [
 
   // ── Tenants / Reload ─────────────────────────────────────────────
   http.get("/api/v1/admin/tenants", () => {
-    return HttpResponse.json([
-      makeTenant({ tenant_id: "liankai", name: "联凯五金", is_active: true }),
-      makeTenant({
-        tenant_id: "client-b",
-        name: "备选客户 B",
-        is_active: true,
-      }),
-    ]);
+    return HttpResponse.json({
+      tenants: [
+        makeTenant({ tenant_id: "lianjia", name: "联佳丝网", is_active: true }),
+        makeTenant({
+          tenant_id: "client-b",
+          name: "备选客户 B",
+          is_active: true,
+        }),
+      ],
+    });
   }),
 
   http.post("/api/v1/admin/tenants/reload", () => {
@@ -689,8 +826,8 @@ export const handlers = [
       reloaded_count: 2,
       active_tenants: [
         {
-          tenant_id: "liankai",
-          display_name: "联凯五金",
+          tenant_id: "lianjia",
+          display_name: "联佳丝网",
           locale: "zh-CN",
           region: "cn-north",
         },

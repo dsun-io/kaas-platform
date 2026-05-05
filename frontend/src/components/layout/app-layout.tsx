@@ -1,5 +1,5 @@
-import { Sidebar } from './sidebar';
-import { Header } from './header';
+import { Sidebar } from "./sidebar";
+import { Header } from "./header";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -7,7 +7,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header />
-        <main className="flex-1 overflow-auto p-4">{children}</main>
+        <main className="flex-1 overflow-auto p-3 md:p-4 lg:p-6">
+          {children}
+        </main>
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
-'use client';
+"use client";
 
-import type { ReactNode } from 'react';
+import type { ReactNode } from "react";
+import { useAuth } from "@/lib/auth/auth-context";
 
 interface RouteGuardProps {
   children: ReactNode;
@@ -8,10 +9,14 @@ interface RouteGuardProps {
   fallback?: ReactNode;
 }
 
-// Phase 0: hardcoded admin; Phase 1 → session.user.role check
-const isAdmin = true;
+export function RouteGuard({
+  children,
+  adminOnly = false,
+  fallback,
+}: RouteGuardProps) {
+  const { user } = useAuth();
+  const isAdmin = user?.account_type === "internal";
 
-export function RouteGuard({ children, adminOnly = false, fallback }: RouteGuardProps) {
   if (adminOnly && !isAdmin) {
     return (
       fallback ?? (

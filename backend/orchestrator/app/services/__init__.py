@@ -9,7 +9,20 @@ from app.services.llm_client import (
     get_llm_client,
     llm_with_fallback,
 )
+# 保留向后兼容的 KB client 导出，但不再作为核心依赖
 from app.services.kb_client import KBClient, StubKBClient, FastGPTKBClient, get_kb_client
+from app.services.knowledge_provider import (
+    KnowledgeRetrievalProvider,
+    TextKnowledgeHit,
+    PostgreSQLTextKnowledgeProvider,
+    FastGPTKnowledgeProvider,
+    get_knowledge_provider,
+)
+from app.services.knowledge_service import (
+    KnowledgeRetrievalService,
+    get_knowledge_service,
+    close_knowledge_service,
+)
 from app.services.extractor import extract_product_spec
 from app.services.pricing import get_price, record_quotation, PricingResult
 from app.services.quote_templates import generate_quote_response, render_script_template_only
@@ -22,6 +35,7 @@ from app.services.quote_engine import create_quote
 from app.services.quote_script_renderer import render_quote_script
 
 __all__ = [
+    # LLM
     "LLMClient",
     "StubLLMClient",
     "DeepSeekClient",
@@ -29,10 +43,21 @@ __all__ = [
     "TemplateOnlyClient",
     "get_llm_client",
     "llm_with_fallback",
+    # KB (向后兼容 · 不再作为核心)
     "KBClient",
     "StubKBClient",
     "FastGPTKBClient",
     "get_kb_client",
+    # Knowledge Provider (新 · 推荐使用)
+    "KnowledgeRetrievalProvider",
+    "TextKnowledgeHit",
+    "PostgreSQLTextKnowledgeProvider",
+    "FastGPTKnowledgeProvider",
+    "get_knowledge_provider",
+    "KnowledgeRetrievalService",
+    "get_knowledge_service",
+    "close_knowledge_service",
+    # 其他服务
     "extract_product_spec",
     "get_price",
     "record_quotation",

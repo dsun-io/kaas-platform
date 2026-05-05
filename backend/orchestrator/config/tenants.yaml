@@ -13,12 +13,12 @@ tenants:
     - 石笼网
     region: cn-east-1
     status: active
-  liankai:
+  lianjia:
     db_schema: public
-    display_name: 联凯五金
+    display_name: 联佳丝网
     fastgpt:
-      app_id: test_app_id_liankai
-    fastgpt_api_key_ref: ENV:FASTGPT_API_KEY_LIANKAI
+      app_id: test_app_id_lianjia
+    fastgpt_api_key_ref: ENV:FASTGPT_API_KEY_LIANJIA
     feature_flags:
       sampling_rate: 0.1
       use_v2: true

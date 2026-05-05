@@ -186,24 +186,25 @@ async def set_feature_flag(
     )
 
 
-@router.get("/feature_flag", response_model=FeatureFlagResponse)
+@router.get("/feature_flag")
 async def get_feature_flag(
     request: Request,
     tenant_id: str | None = None,
 ):
-    """读取租户当前 feature flags。
+    """读取租户 feature flags。
 
-    如果未提供 tenant_id，默认使用请求上下文的 tenant_id。
+    如果未提供 tenant_id，返回所有租户的 flags map；
+    否则返回指定租户的 flags。
     """
+    if not tenant_id:
+        tenants = get_all_tenants()
+        result = {
+            tid: t.get("feature_flags", {})
+            for tid, t in tenants.items()
+        }
+        return JSONResponse(status_code=200, content=result)
+
     tid = tenant_id or getattr(request.state, "tenant_id", None)
-    if not tid:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error_code": "TENANT_REQUIRED",
-                "message": "tenant_id query param or X-Tenant-Id header is required",
-            },
-        )
     tenant = load_tenant_config(tid)
     if tenant is None:
         return JSONResponse(
@@ -254,8 +255,12 @@ async def get_deployment_audit(
             "id": r.get("timestamp", ""),
             "action": r.get("action", ""),
             "actor_id": r.get("actor_id", ""),
-            "resource_type": r.get("resource_type", ""),
+            "resource_type": r.get("resource_type", "feature_flag"),
             "resource_id": r.get("resource_id", ""),
+            "tenant_id": r.get("tenant_id", ""),
+            "flag_key": r.get("flag_name") or r.get("flag_key", ""),
+            "enabled_before": r.get("old_value"),
+            "enabled_after": r.get("new_value"),
             "reason": r.get("reason", ""),
             "timestamp": r.get("timestamp", ""),
         }

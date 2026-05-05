@@ -37,7 +37,7 @@ class TestBusinessMetrics:
                     "product_category": "牛栏网",
                     "product_spec": {"mesh": "50x50", "wire": "2.5"},
                 },
-                headers={"X-Tenant-Id": "liankai"},
+                headers={"X-Tenant-Id": "lianjia"},
             )
 
         response = await client.get("/metrics")
@@ -48,7 +48,7 @@ class TestBusinessMetrics:
         """GET /api/v1/admin/metrics/summary 返回结构化数据。"""
         response = await client.get(
             "/api/v1/admin/metrics/summary",
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -62,6 +62,6 @@ class TestAdminCacheClear:
         """无 token → 401。"""
         response = await client.post(
             "/api/v1/admin/cache/clear",
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 401

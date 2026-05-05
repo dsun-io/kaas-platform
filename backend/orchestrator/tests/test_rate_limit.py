@@ -10,10 +10,10 @@ class TestRateLimitKey:
         """rate limit key 包含 X-Tenant-Id。"""
         from unittest.mock import MagicMock
         req = MagicMock()
-        req.headers = {"X-Tenant-Id": "liankai"}
+        req.headers = {"X-Tenant-Id": "lianjia"}
         req.client.host = "127.0.0.1"
         key = get_rate_limit_key(req)
-        assert "liankai" in key
+        assert "lianjia" in key
         assert "127.0.0.1" in key
 
     def test_key_defaults_to_unknown(self):

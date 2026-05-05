@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { buttonVariants, Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   LayoutDashboard,
@@ -18,10 +18,11 @@ import {
   History,
   Zap,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, Fragment } from "react";
+import { useAuth } from "@/lib/auth/auth-context";
 
 interface NavItem {
-  href: `/${string}`;
+  href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   adminOnly?: boolean;
@@ -64,45 +65,63 @@ const navGroups: NavGroup[] = [
   },
 ];
 
-const isAdmin = true;
-
 function SidebarNav({ collapsed }: { collapsed: boolean }) {
   const pathname = usePathname();
+  const { user } = useAuth();
+  const isAdmin = user?.account_type === "internal";
 
   return (
     <nav className="flex flex-col gap-4 px-2">
-      {navGroups.map((group) => {
+      {navGroups.map((group, index) => {
         const visibleItems = group.items.filter(
           (item) => !item.adminOnly || isAdmin,
         );
         if (visibleItems.length === 0) return null;
 
         return (
-          <div key={group.label} className="flex flex-col gap-1">
-            {!collapsed && (
-              <span className="px-2 text-xs font-medium text-muted-foreground">
-                {group.label}
+          <Fragment key={group.label}>
+            <div className="flex flex-col gap-1">
+              <span
+                className={cn(
+                  "px-2 text-xs font-medium text-muted-foreground",
+                  collapsed && "text-[10px] truncate",
+                )}
+              >
+                {collapsed ? group.label.slice(0, 4) : group.label}
               </span>
-            )}
-            {visibleItems.map((item) => {
-              const active = pathname.startsWith(item.href);
-              return (
-                <Link key={item.href} href={{ pathname: item.href }}>
-                  <Button
-                    variant={active ? "secondary" : "ghost"}
-                    size="default"
+              {visibleItems.map((item) => {
+                const active = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    // eslint-disable-next-line no-restricted-syntax
+                    href={item.href as any}
+                    prefetch={true}
                     className={cn(
-                      "w-full",
-                      collapsed ? "justify-center px-0" : "justify-start",
+                      buttonVariants({
+                        variant: active ? "secondary" : "ghost",
+                        size: "default",
+                      }),
+                      "w-full inline-flex items-center gap-2 no-underline",
+                      collapsed &&
+                        "flex-col justify-center gap-0.5 px-0 h-auto py-1.5 [&>svg]:mx-auto",
                     )}
                   >
                     <item.icon className="size-4 shrink-0" />
-                    {!collapsed && <span className="ml-2">{item.label}</span>}
-                  </Button>
-                </Link>
-              );
-            })}
-          </div>
+                    <span
+                      className={cn(
+                        "truncate",
+                        collapsed ? "text-[10px] leading-tight" : "",
+                      )}
+                    >
+                      {collapsed ? item.label.slice(0, 4) : item.label}
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
+            {index < navGroups.length - 1 && <div className="h-px bg-border" />}
+          </Fragment>
         );
       })}
     </nav>
@@ -116,7 +135,7 @@ function DesktopSidebar() {
     <aside
       className={cn(
         "hidden h-screen flex-col border-r bg-sidebar pt-4 transition-all duration-200 lg:flex",
-        collapsed ? "w-16" : "w-56",
+        collapsed ? "w-24" : "w-56",
       )}
     >
       <div className="flex items-center px-4 pb-4">
@@ -147,6 +166,8 @@ function DesktopSidebar() {
 function MobileSidebar() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const { user } = useAuth();
+  const isAdmin = user?.account_type === "internal";
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -174,21 +195,24 @@ function MobileSidebar() {
                   {group.label}
                 </span>
                 {visibleItems.map((item) => {
-                  const active = pathname.startsWith(item.href);
+                  const active = pathname === item.href;
                   return (
                     <Link
                       key={item.href}
-                      href={{ pathname: item.href }}
+                      // eslint-disable-next-line no-restricted-syntax
+                      href={item.href as any}
+                      prefetch={true}
                       onClick={() => setOpen(false)}
+                      className={cn(
+                        buttonVariants({
+                          variant: active ? "secondary" : "ghost",
+                          size: "default",
+                        }),
+                        "w-full justify-start gap-2 no-underline",
+                      )}
                     >
-                      <Button
-                        variant={active ? "secondary" : "ghost"}
-                        size="default"
-                        className="w-full justify-start"
-                      >
-                        <item.icon className="size-4" />
-                        <span className="ml-2">{item.label}</span>
-                      </Button>
+                      <item.icon className="size-4 shrink-0" />
+                      <span className="truncate">{item.label}</span>
                     </Link>
                   );
                 })}

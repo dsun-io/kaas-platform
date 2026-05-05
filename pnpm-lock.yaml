@@ -14,6 +14,9 @@ importers:
       '@commitlint/config-conventional':
         specifier: ^20.5.3
         version: 20.5.3
+      '@types/node':
+        specifier: ^20.19.39
+        version: 20.19.39
       eslint:
         specifier: ^8.57.0
         version: 8.57.1

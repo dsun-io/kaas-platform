@@ -9,7 +9,7 @@ import httpx
 pytestmark = pytest.mark.integration
 
 BASE_URL = "http://localhost:8000"
-TENANT_HEADERS = {"X-Tenant-Id": "liankai"}
+TENANT_HEADERS = {"X-Tenant-Id": "lianjia"}
 
 
 @pytest.fixture
@@ -87,7 +87,7 @@ class TestBackendSmoke:
         """GET /api/v1/admin/feature_flag → 200。"""
         r = await client.get(
             "/api/v1/admin/feature_flag",
-            params={"tenant_id": "liankai"},
+            params={"tenant_id": "lianjia"},
             headers=TENANT_HEADERS,
         )
         assert r.status_code == 200

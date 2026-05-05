@@ -17,7 +17,22 @@ from alembic import context
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.db.base import Base
-from app.db.models import Event, Quotation, CustomerCapability  # noqa: F401 - 确保模型被导入
+from app.db.models import (  # noqa: F401
+    Event,
+    Quotation,
+    CustomerCapability,
+    TextKnowledge,
+    User,
+    Customer,
+    UserCustomer,
+    WechatBotAccount,
+    WechatConversation,
+    ChannelLink,
+    Conversation,
+    ConversationMessage,
+    UsageEvent,
+    WechatMessageEvent,
+)
 
 # Alembic Config 对象
 config = context.config

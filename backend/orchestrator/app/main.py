@@ -22,6 +22,7 @@ setup_logging()
 from app.middleware.request_context import RequestContextMiddleware
 from app.middleware.body_limit import BodySizeLimitMiddleware
 from app.middleware.tenant import TenantContextMiddleware
+from app.middleware.auth import AuthContextMiddleware
 from app.middleware.route_version import RouteVersionMiddleware
 from app.middleware.trace import TraceMiddleware
 from app.middleware.sampling import SamplingMiddleware
@@ -51,6 +52,7 @@ setup_rate_limiter(app)
 app.add_middleware(BodySizeLimitMiddleware)
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(TenantContextMiddleware)
+app.add_middleware(AuthContextMiddleware)
 app.add_middleware(SamplingMiddleware)
 app.add_middleware(TraceMiddleware)
 app.add_middleware(RouteVersionMiddleware)
@@ -77,8 +79,11 @@ from app.api.dashboard import router as dashboard_router
 from app.api.quotation import router as quotation_router
 from app.api.health import router as health_router
 from app.api.product_specs import router as product_specs_router
+from app.api.auth import router as auth_router
+from app.api.wechat import router as wechat_router
 
 app.include_router(health_router)
+app.include_router(auth_router)
 app.include_router(events_router)
 app.include_router(oss_presign_router)
 app.include_router(admin_router)
@@ -86,4 +91,5 @@ app.include_router(quote_router)
 app.include_router(capabilities_router)
 app.include_router(dashboard_router)
 app.include_router(quotation_router)
+app.include_router(wechat_router)
 app.include_router(product_specs_router)

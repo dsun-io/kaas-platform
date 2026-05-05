@@ -22,7 +22,7 @@ class TestQuoteV2Integration:
                 "roll_length": 50,
                 "quantity": 10,
             },
-            headers={"X-Tenant-Id": "liankai", "X-Role": "tenant_owner"},
+            headers={"X-Tenant-Id": "lianjia", "X-Role": "tenant_owner"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -78,7 +78,7 @@ class TestQuoteV2Integration:
                 "quantity": 10,
                 "province": "四川",
             },
-            headers={"X-Tenant-Id": "liankai", "X-Role": "tenant_owner"},
+            headers={"X-Tenant-Id": "lianjia", "X-Role": "tenant_owner"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -98,7 +98,7 @@ class TestQuoteV2Integration:
                 "height": 99.9,
                 "quantity": 1,
             },
-            headers={"X-Tenant-Id": "liankai", "X-Role": "tenant_owner"},
+            headers={"X-Tenant-Id": "lianjia", "X-Role": "tenant_owner"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -118,7 +118,7 @@ class TestQuoteV2Integration:
                 "roll_length": 50,
                 "quantity": 10,
             },
-            headers={"X-Tenant-Id": "liankai", "X-Role": "tenant_owner"},
+            headers={"X-Tenant-Id": "lianjia", "X-Role": "tenant_owner"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -137,7 +137,7 @@ class TestQuoteV2Integration:
                 "height": 99.9,
                 "quantity": 1,
             },
-            headers={"X-Tenant-Id": "liankai", "X-Role": "tenant_owner"},
+            headers={"X-Tenant-Id": "lianjia", "X-Role": "tenant_owner"},
         )
         assert response.status_code == 200
         data = response.json()
