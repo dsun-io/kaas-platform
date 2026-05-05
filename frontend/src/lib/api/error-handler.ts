@@ -1,6 +1,7 @@
 import { AxiosError } from "axios";
 import { toast } from "sonner";
 import { captureException, addBreadcrumb } from "@/lib/error/sentry";
+import { clearAuthSession } from "@/lib/auth/token-store";
 
 export interface ApiErrorResponse {
   error_code: string;
@@ -43,6 +44,9 @@ function isLoginPage(): boolean {
 function redirectToLogin(): void {
   if (typeof window === "undefined") return;
   if (isLoginPage()) return; // Already on login, no redirect needed
+
+  // Clear stored session so the Next.js middleware won't bounce us back
+  clearAuthSession();
 
   const currentPath = window.location.pathname + window.location.search;
   const redirect = encodeURIComponent(currentPath);
