@@ -19,7 +19,7 @@ export function makeEvent(
     id: `evt-${Math.random().toString(36).slice(2, 10)}`,
     event_type: "chat.turn" as EventType,
     schema_version: 1,
-    tenant_id: "liankai",
+    tenant_id: "lianjia",
     actor_id: "user-1",
     session_id: "sess-1",
     trace_id: "trace-1",
@@ -60,7 +60,7 @@ export function makeDashboardSummary(
     quotations_sampled: 10,
     active_customers: 8,
     customers_sampled: 3,
-    dataset_hits: { L1_共通: 15, L2_牛栏网_产品: 20, L3_联凯_牛栏网: 7 },
+    dataset_hits: { L1_共通: 15, L2_牛栏网_产品: 20, L3_联佳丝网_牛栏网: 7 },
     token_total: 125000,
     token_sampled: 30000,
     p95_latency_ms: 320,
@@ -77,8 +77,8 @@ export function makeTenant(
   }>,
 ) {
   return {
-    tenant_id: "liankai",
-    name: "联凯五金",
+    tenant_id: "lianjia",
+    name: "联佳丝网",
     is_active: true,
     ...overrides,
   };
@@ -101,8 +101,8 @@ export function makeCustomer(
   }>,
 ) {
   return {
-    customer_id: "cust-liankai",
-    customer_name: "联佳五金",
+    customer_id: "cust-lianjia",
+    customer_name: "联佳丝网",
     category_count: 2,
     updated_at: new Date().toISOString(),
     locale: "zh-CN",
@@ -123,7 +123,7 @@ export function makeCapability(
 ) {
   return {
     id: `cap-${Math.random().toString(36).slice(2, 8)}`,
-    customer_id: "cust-liankai",
+    customer_id: "cust-lianjia",
     product_category: "牛栏网",
     spec_constraints: { 丝径: "1.5-4.0", 网孔: "50x50-100x100", 包塑: true },
     is_active: true,
@@ -154,7 +154,7 @@ export function makeQuotation(
   return {
     id: `q-${Math.random().toString(36).slice(2, 10)}`,
     quotation_id: `Q-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 9999)).padStart(4, "0")}`,
-    customer_id: "cust-liankai",
+    customer_id: "cust-lianjia",
     product_category: "牛栏网",
     product_spec: { 丝径: "2.5mm", 网孔: "75x75", 包塑: "PVC" },
     quantity: 1000,
@@ -179,6 +179,7 @@ export function makeDeploymentAudit(
     resource_type: string;
     resource_id: string;
     flag_key: string;
+    tenant_id: string;
     enabled_before: boolean;
     enabled_after: boolean;
     reason: string;
@@ -192,6 +193,7 @@ export function makeDeploymentAudit(
     resource_type: "feature_flag",
     resource_id: "use_v2",
     flag_key: "use_v2",
+    tenant_id: "lianjia",
     enabled_before: false,
     enabled_after: true,
     reason: "灰度测试通过，全量发布",
@@ -223,8 +225,8 @@ export function makeSyncJob(
 
 export const MOCK_CUSTOMERS = [
   makeCustomer({
-    customer_id: "cust-liankai",
-    customer_name: "联佳五金",
+    customer_id: "cust-lianjia",
+    customer_name: "联佳丝网",
     category_count: 2,
   }),
   makeCustomer({
@@ -238,16 +240,16 @@ export const MOCK_CAPABILITIES: Record<
   string,
   ReturnType<typeof makeCapability>[]
 > = {
-  "cust-liankai": [
+  "cust-lianjia": [
     makeCapability({
       id: "cap-001",
-      customer_id: "cust-liankai",
+      customer_id: "cust-lianjia",
       product_category: "牛栏网",
       spec_constraints: { 丝径: "1.5-4.0", 网孔: "50x50-100x100", 包塑: true },
     }),
     makeCapability({
       id: "cap-002",
-      customer_id: "cust-liankai",
+      customer_id: "cust-lianjia",
       product_category: "立柱",
       spec_constraints: { 高度: "1.5-3.0m", 材质: "热镀锌", 直径: "48-60mm" },
     }),
@@ -394,56 +396,109 @@ export function makeQuoteV2Response(
     copyable_script: string;
   }>,
 ) {
+  // 使用模拟成本模型：成本单价 × 重量 × 利润率，与真实后端计算逻辑一致
+  const weightKg = 32.5;
+  const quantity = 100;
+  const simulatedCostPerKg = 5.1;
+  const baseCost = +(simulatedCostPerKg * weightKg).toFixed(2); // 165.75
+  const marginRates = { low: 1.1, standard: 1.15, high: 1.2 };
+  const tiers = (["低", "标准", "高"] as const).map((label) => {
+    const key = label === "低" ? "low" : label === "标准" ? "standard" : "high";
+    const margin = marginRates[key];
+    const unitPrice = +(baseCost * margin).toFixed(2);
+    return {
+      label,
+      margin_rate: margin,
+      unit_price: unitPrice,
+      subtotal: +(unitPrice * quantity).toFixed(2),
+      total: +(unitPrice * quantity).toFixed(2),
+    };
+  });
   const specSummary =
-    "牛栏网 | 上疏下密 | 2.5x2.0丝径 | 1.5m高 | 15.0m网宽 | 50.0m长";
-  const tiers = [
-    { label: "低", unit_price: 182.33, subtotal: 18232.5, total: 18232.5 },
-    { label: "标准", unit_price: 190.61, subtotal: 19061.25, total: 19061.25 },
-    { label: "高", unit_price: 198.9, subtotal: 19890.0, total: 19890.0 },
-  ];
+    "牛栏网 | 上疏下密 | 2.0x1.8丝径 | 1.5m高 | 15.0m网宽 | 50.0m长";
   return {
     status: "matched",
     product_category: "牛栏网",
     main_line: {
       product_category: "牛栏网",
       spec_summary: specSummary,
-      quantity: 100,
+      quantity,
       unit: "卷",
-      weight_kg: 32.5,
+      weight_kg: weightKg,
+      base_cost: baseCost,
       tiers,
       status: "matched",
     },
     accessory_lines: [],
     freight: null,
-    totals: { low: 18232.5, standard: 19061.25, high: 19890.0 },
+    totals: {
+      low: tiers[0]!.total,
+      standard: tiers[1]!.total,
+      high: tiers[2]!.total,
+    },
     notes: [
-      "已匹配规格: 牛栏网 | 上疏下密 | 2.5x2.0丝径 | 1.5m高 | 15.0m网宽 | 50.0m长",
-      "命中客户成本价: 5.1 CNY/kg",
+      `已匹配规格: ${specSummary}`,
+      `成本基准: ${simulatedCostPerKg} CNY/kg × ${weightKg} kg = ${baseCost} 元/卷`,
       "基于利润率 (低110%/标准115%/高120%) 计算",
     ],
-    copyable_script: `【牛栏网报价单】\n\n产品: 牛栏网 | 上疏下密 | 2.5x2.0丝径 | 1.5m高 | 15.0m网宽 | 50.0m长\n数量: 100 卷\n单卷重量: 32.5 kg\n总重量: 3250.0 kg\n\n报价梯度（元/卷）:\n  低: 182.33 元/卷，合计 18232.5 元\n  标准: 190.61 元/卷，合计 19061.25 元\n  高: 198.9 元/卷，合计 19890.0 元\n\n合计:\n  低配: 18232.5 元\n  标准: 19061.25 元\n  高配: 19890.0 元\n\n---\n以上报价为系统自动生成，仅供客户参考，实际成交价以合同为准。\n如需调整数量、规格或配送地址，请与您的专属客服联系。`,
+    copyable_script: `【牛栏网报价单】\n\n产品: ${specSummary}\n数量: ${quantity} 卷\n单卷重量: ${weightKg} kg\n总重量: ${(weightKg * quantity).toFixed(1)} kg\n\n报价梯度（元/卷）:\n  逼单方案: ${tiers[0]!.unit_price} 元/卷，合计 ${tiers[0]!.total} 元\n  让利方案: ${tiers[1]!.unit_price} 元/卷，合计 ${tiers[1]!.total} 元\n  优选方案: ${tiers[2]!.unit_price} 元/卷，合计 ${tiers[2]!.total} 元\n\n合计:\n  逼单方案: ${tiers[0]!.total} 元\n  让利方案: ${tiers[1]!.total} 元\n  优选方案: ${tiers[2]!.total} 元\n\n---\n以上报价为系统自动生成，仅供客户参考，实际成交价以合同为准。\n如需调整数量、规格或配送地址，请与您的专属客服联系。`,
     ...overrides,
   };
+}
+
+/** 模拟 quotable_specs（有成本数据的完整规格组合列表，前端用于 tuple 匹配 + cascading）。 */
+export function makeQuotableSpecs(productCategory: string) {
+  if (productCategory !== "牛栏网") return [];
+
+  const types = ["上疏下密", "环扣"];
+  const wires = ["2.0x1.8", "1.8x1.8"];
+  const heights = [1.5, 1.8];
+  const result: Array<{
+    product_type: string;
+    wire_diameter: string;
+    height: number;
+    mesh_width: number;
+    mesh_spec: null;
+    roll_length: number;
+  }> = [];
+  for (const t of types) {
+    for (const w of wires) {
+      for (const h of heights) {
+        result.push({
+          product_type: t,
+          wire_diameter: w,
+          height: h,
+          mesh_width: 15.0,
+          mesh_spec: null,
+          roll_length: 50.0,
+        });
+      }
+    }
+  }
+  return result;
 }
 
 export function makeProductSpecsOptions(
   overrides?: Partial<{
     product_category: string;
     options: Record<string, unknown>;
+    quotable_specs: Array<Record<string, unknown>>;
     accessory_categories: string[];
   }>,
 ) {
+  // 默认 options 仅包含有成本数据的规格组合，与 quotable_specs 一致
   return {
     product_category: "牛栏网",
     options: {
       product_types: ["上疏下密", "环扣"],
-      wire_diameters: ["2.0x1.8", "2.5x2.0"],
+      wire_diameters: ["2.0x1.8", "1.8x1.8"],
       heights: [1.5, 1.8],
       mesh_widths: [15.0],
       mesh_specs: [],
       roll_lengths: [50.0],
       bundle_sizes: [],
     },
+    quotable_specs: makeQuotableSpecs("牛栏网"),
     accessory_categories: ["立柱"],
     ...overrides,
   };

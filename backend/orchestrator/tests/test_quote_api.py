@@ -19,7 +19,7 @@ class TestQuoteV2API:
                 "roll_length": 50,
                 "quantity": 10,
             },
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -39,7 +39,7 @@ class TestQuoteV2API:
                 "height": 99.9,
                 "quantity": 1,
             },
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -54,7 +54,7 @@ class TestQuoteV2API:
                 "product_category": "钢板网",
                 "quantity": 1,
             },
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -73,7 +73,7 @@ class TestQuoteV2API:
                 "roll_length": 50,
                 "quantity": 1,
             },
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -102,7 +102,7 @@ class TestQuoteV2API:
                     {"product_category": "立柱", "product_type": "直边", "height": 1.8, "quantity": 10},
                 ],
             },
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -122,7 +122,7 @@ class TestQuoteV2API:
                 "quantity": 10,
                 "province": "四川",
             },
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -146,6 +146,6 @@ class TestQuoteV2API:
         response = await client.post(
             "/api/v1/quote",
             json={},
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 422

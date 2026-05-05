@@ -72,6 +72,6 @@ PAYLOAD_SCHEMAS: Dict[str, Dict[int, type[BaseModel]]] = {
 
 VALID_EVENT_TYPES = frozenset(PAYLOAD_SCHEMAS.keys())
 VALID_EVENT_SOURCES = frozenset(
-    {"frontend", "orchestrator", "fastgpt_callback", "scheduled"}
+    {"frontend", "orchestrator", "scheduled"}
 )
 MAX_PAYLOAD_BYTES = 10 * 1024  # 10KB

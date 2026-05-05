@@ -10,7 +10,7 @@ export const DatasetScope = {
   L1_COMMON: 'L1_共通',
   L1_CATTLE_FENCE_INDUSTRY: 'L1_牛栏网_行业',
   L2_CATTLE_FENCE_PRODUCT: 'L2_牛栏网_产品',
-  L3_LIANKAI_CATTLE_FENCE: 'L3_联凯_牛栏网',
+  L3_LIANJIA_CATTLE_FENCE: 'L3_联佳丝网_牛栏网',
 } as const;
 export type DatasetScope = (typeof DatasetScope)[keyof typeof DatasetScope];
 
@@ -21,7 +21,7 @@ export const DatasetRefSchema = z.object({
     'L1_共通',
     'L1_牛栏网_行业',
     'L2_牛栏网_产品',
-    'L3_联凯_牛栏网',
+    'L3_联佳丝网_牛栏网',
   ]),
   dataset_id: z.string(),
 });

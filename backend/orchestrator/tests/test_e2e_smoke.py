@@ -36,11 +36,11 @@ class TestEventWriteE2E:
                                 session_id="e2e-sess-1", raw_text="端到端测试消息")
         response = await client.post(
             "/api/v1/events", json=body,
-            headers={"X-Tenant-Id": "liankai", "X-Use-V2": "true"},
+            headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
         assert response.status_code == 201
         data = response.json()
-        assert data["tenant_id"] == "liankai"
+        assert data["tenant_id"] == "lianjia"
         assert data["event_type"] == "chat.turn"
         event_id = data["id"]
 
@@ -49,7 +49,7 @@ class TestEventWriteE2E:
         )
         row = result.scalar_one_or_none()
         assert row is not None
-        assert row.tenant_id == "liankai"
+        assert row.tenant_id == "lianjia"
         assert row.event_type == "chat.turn"
         assert row.event_source == "orchestrator"
 
@@ -58,7 +58,7 @@ class TestEventWriteE2E:
         body = make_event_body("quote.request", event_source="orchestrator")
         response = await client.post(
             "/api/v1/events", json=body,
-            headers={"X-Tenant-Id": "liankai", "X-Use-V2": "true"},
+            headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
         assert response.status_code == 201
         data = response.json()
@@ -78,7 +78,7 @@ class TestAdminE2E:
         """GET /api/v1/admin/tenants 返回 200 且包含租户列表。"""
         response = await client.get(
             "/api/v1/admin/tenants",
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         body = response.json()
@@ -88,18 +88,18 @@ class TestAdminE2E:
     async def test_get_specific_tenant_returns_200(self, client):
         """GET /api/v1/admin/tenants/{tenant_id} 返回租户详情。"""
         response = await client.get(
-            "/api/v1/admin/tenants/liankai",
-            headers={"X-Tenant-Id": "liankai"},
+            "/api/v1/admin/tenants/lianjia",
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         body = response.json()
-        assert body["tenant_id"] == "liankai"
+        assert body["tenant_id"] == "lianjia"
 
     async def test_unknown_tenant_returns_404(self, client):
         """GET /api/v1/admin/tenants/unknown 返回 404。"""
         response = await client.get(
             "/api/v1/admin/tenants/nonexistent_tenant",
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 404
 
@@ -107,7 +107,7 @@ class TestAdminE2E:
         """GET /api/v1/admin/archive-logs 返回 200。"""
         response = await client.get(
             "/api/v1/admin/archive-logs",
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         body = response.json()
@@ -127,7 +127,7 @@ class TestFullChainE2E:
         body = make_event_body("chat.turn", event_source="orchestrator")
         r = await client.post(
             "/api/v1/events", json=body,
-            headers={"X-Tenant-Id": "liankai", "X-Use-V2": "true"},
+            headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
         assert r.status_code == 201
         event = r.json()
@@ -135,11 +135,11 @@ class TestFullChainE2E:
         # Step 3: 查管理端点
         a = await client.get(
             "/api/v1/admin/tenants",
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert a.status_code == 200
 
         # Step 4: 验证一致性
-        assert event["tenant_id"] == "liankai"
+        assert event["tenant_id"] == "lianjia"
         assert "X-Trace-Id" in r.headers
         assert r.headers["X-Route-Version"] == "v2"

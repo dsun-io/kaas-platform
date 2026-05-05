@@ -33,33 +33,39 @@ def render_quote_script(quote_result: dict) -> str:
     spec_summary = quote_result.get("spec_summary", "")
     quantity = quote_result.get("quantity", 1)
     weight_kg = quote_result.get("weight_kg")
+    product_category = quote_result.get("product_category", "")
+    unit = _unit_for_category(product_category)
 
     # 抬头
-    lines.append("【牛栏网报价单】")
+    header_name = {"牛栏网": "牛栏网", "立柱": "立柱"}.get(product_category, product_category)
+    lines.append(f"【{header_name}报价单】")
     lines.append("")
 
     # 产品信息
     lines.append(f"产品: {spec_summary}")
-    lines.append(f"数量: {quantity} 卷")
-    if weight_kg:
-        lines.append(f"单卷重量: {weight_kg} kg")
+    lines.append(f"数量: {quantity} {unit}")
+    if weight_kg and product_category != "立柱":
+        lines.append(f"单{unit}重量: {weight_kg} kg")
         lines.append(f"总重量: {round(weight_kg * quantity, 1)} kg")
     lines.append("")
 
     # 三档报价
+    tier_display = {"低": "逼单方案", "标准": "让利方案", "高": "优选方案"}
     tiers = quote_result.get("tiers", [])
-    lines.append("报价梯度（元/卷）:")
+    lines.append(f"报价梯度（元/{unit}）:")
     for t in tiers:
-        label = t.get("label", "")
+        label = tier_display.get(t.get("label", ""), t.get("label", ""))
         unit_price = t.get("unit_price", 0)
         total = t.get("total", 0)
-        lines.append(f"  {label}: {unit_price} 元/卷，合计 {total} 元")
+        margin_rate = t.get("margin_rate")
+        margin_str = f"（利润率 {((margin_rate - 1) * 100):.0f}%）" if margin_rate else ""
+        lines.append(f"  {label}{margin_str}: {unit_price} 元/{unit}，合计 {total} 元")
     lines.append("")
 
-    # 配件
+    # 立柱
     accessories = quote_result.get("accessory_lines", [])
     if accessories:
-        lines.append("配件:")
+        lines.append("立柱:")
         for acc in accessories:
             acc_total = acc.get("total", 0) or 0
             lines.append(
@@ -82,9 +88,9 @@ def render_quote_script(quote_result: dict) -> str:
     # 三档合计
     totals = quote_result.get("totals", {})
     lines.append("合计:")
-    lines.append(f"  低配: {totals.get('low', 0)} 元")
-    lines.append(f"  标准: {totals.get('standard', 0)} 元")
-    lines.append(f"  高配: {totals.get('high', 0)} 元")
+    lines.append(f"  经济方案: {totals.get('low', 0)} 元")
+    lines.append(f"  标准方案: {totals.get('standard', 0)} 元")
+    lines.append(f"  优选方案: {totals.get('high', 0)} 元")
     lines.append("")
 
     # Disclaimer
@@ -118,7 +124,7 @@ def _render_error_script(quote_result: dict) -> str:
         lines.append("")
 
     lines.append("---")
-    lines.append("请联系管理员处理，或尝试调整规格参数后重新报价。")
+    lines.append("请人工确认，或尝试调整规格参数后重新报价。")
 
     return "\n".join(lines)
 
@@ -134,3 +140,8 @@ def _status_label(status: str) -> str:
         "unsupported_category": "暂不支持品类",
     }
     return labels.get(status, f"未知状态({status})")
+
+
+def _unit_for_category(product_category: str) -> str:
+    """根据产品品类返回计价单位。"""
+    return {"牛栏网": "卷", "立柱": "根"}.get(product_category, "个")

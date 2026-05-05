@@ -22,6 +22,15 @@ dist/
 next-env.d.ts
 *.tsbuildinfo
 
+# test artifacts
+test-results/
+playwright-report/
+blob-report/
+
+# coverage & turbo
+coverage/
+.turbo/
+
 # debug
 npm-debug.log*
 yarn-debug.log*

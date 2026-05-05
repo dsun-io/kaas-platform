@@ -23,11 +23,13 @@ class QuoteV2Request(BaseModel):
     accessories: list[AccessoryRequest] = Field(default_factory=list)
     province: Optional[str] = None
     need_invoice: bool = False
+    tax_rate: Optional[float] = None  # 前端可覆盖税率，不传则用定价策略默认值
     preferred_carrier: Optional[str] = None
 
 
 class TierItem(BaseModel):
     label: str
+    margin_rate: Optional[float] = None
     unit_price: float
     subtotal: float
     total: float
@@ -51,6 +53,7 @@ class MainLine(BaseModel):
     quantity: int
     unit: str = "卷"
     weight_kg: Optional[float] = None
+    base_cost: Optional[float] = None
     tiers: list[TierItem] = Field(default_factory=list)
     status: str = "matched"
 

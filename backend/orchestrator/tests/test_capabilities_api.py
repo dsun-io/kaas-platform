@@ -10,7 +10,7 @@ class TestCapabilitiesAPI:
         """GET /api/v1/capabilities 返回 200。"""
         response = await client.get(
             "/api/v1/capabilities",
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -20,8 +20,8 @@ class TestCapabilitiesAPI:
     async def test_list_capabilities_with_customer_filter(self, client):
         """按 customer_id 查询过滤。"""
         response = await client.get(
-            "/api/v1/capabilities?customer_id=liankai",
-            headers={"X-Tenant-Id": "liankai"},
+            "/api/v1/capabilities?customer_id=lianjia",
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -38,7 +38,7 @@ class TestCapabilitiesAPI:
                 "spec_constraints": {"mesh": "50x50-100x100", "wire": "2.0-4.0"},
                 "notes": "测试数据",
             },
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -57,7 +57,7 @@ class TestCapabilitiesAPI:
                 "product_category": "石笼网",
                 "spec_constraints": {"mesh": "80x100"},
             },
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         # 再更新
         response = await client.post(
@@ -68,7 +68,7 @@ class TestCapabilitiesAPI:
                 "product_category": "石笼网",
                 "spec_constraints": {"mesh": "80x100-120x150"},
             },
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -80,7 +80,7 @@ class TestCapabilitiesAPI:
         response = await client.post(
             "/api/v1/capabilities",
             json={"customer_id": "x"},
-            headers={"X-Tenant-Id": "liankai"},
+            headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 400
         assert response.json()["error"] == "missing_fields"

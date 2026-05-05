@@ -54,12 +54,14 @@ export const QuoteV2RequestSchema = z.object({
   accessories: z.array(AccessoryRequestSchema).optional().default([]),
   province: z.string().optional(),
   need_invoice: z.boolean().optional().default(false),
+  tax_rate: z.number().optional(),
   preferred_carrier: z.string().optional(),
 });
 export type QuoteV2Request = z.infer<typeof QuoteV2RequestSchema>;
 
 export const TierItemSchema = z.object({
   label: z.string(),
+  margin_rate: z.number().optional(),
   unit_price: z.number(),
   subtotal: z.number(),
   total: z.number(),
@@ -86,6 +88,7 @@ export const MainLineSchema = z.object({
   quantity: z.number(),
   unit: z.string().default('卷'),
   weight_kg: z.number().nullable().optional(),
+  base_cost: z.number().optional(),
   tiers: z.array(TierItemSchema).default([]),
   status: z.string().default('matched'),
 });
@@ -120,6 +123,18 @@ export const QuoteV2ResponseSchema = z.object({
 });
 export type QuoteV2Response = z.infer<typeof QuoteV2ResponseSchema>;
 
+// ── Quotable Spec Item (tuple for client-side cascading) ────────────────────
+
+export const QuotableSpecItemSchema = z.object({
+  product_type: z.string().nullable().optional(),
+  wire_diameter: z.string().nullable().optional(),
+  height: z.number().nullable().optional(),
+  mesh_width: z.number().nullable().optional(),
+  mesh_spec: z.string().nullable().optional(),
+  roll_length: z.number().nullable().optional(),
+});
+export type QuotableSpecItem = z.infer<typeof QuotableSpecItemSchema>;
+
 // ── Product Specs ──────────────────────────────────────────────────────────
 
 export const ProductSpecsOptionsSchema = z.object({
@@ -133,6 +148,8 @@ export const ProductSpecsOptionsSchema = z.object({
     roll_lengths: z.array(z.number()).default([]),
     bundle_sizes: z.array(z.number()).default([]),
   }),
+  quotable_specs: z.array(QuotableSpecItemSchema).default([]),
   accessory_categories: z.array(z.string()).default([]),
+  weight_kg: z.number().nullable().optional(),
 });
 export type ProductSpecsOptions = z.infer<typeof ProductSpecsOptionsSchema>;

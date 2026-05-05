@@ -19,7 +19,7 @@ async def create_quote(
     customer_id: str,
     request: dict,
 ) -> dict:
-    """创建报价主流程（牛栏网专用）。
+    """创建报价主流程。
 
     Args:
         request: QuoteV2Request 格式的字典:
@@ -43,11 +43,11 @@ async def create_quote(
     product_category = request.get("product_category", "")
 
     # ── Step 0: 品类校验 ──
-    if product_category != "牛栏网":
+    if product_category not in ("牛栏网", "立柱"):
         return _build_response(
             status="unsupported_category",
             product_category=product_category,
-            notes=[f"暂不支持品类: {product_category}，仅支持 牛栏网"],
+            notes=[f"暂不支持品类: {product_category}，请人工确认"],
         )
 
     quantity = request.get("quantity", 1)
@@ -106,12 +106,13 @@ async def create_quote(
         base_cost_status=cost_result["status"],
         quantity=quantity,
         need_invoice=request.get("need_invoice", False),
+        tax_rate_override=request.get("tax_rate"),
     )
     items.append(tier_result["notes"])
 
-    if tier_result["status"] == "pricing_profile_missing":
+    if tier_result["status"] in ("pricing_profile_missing", "cost_pending"):
         return _build_response(
-            status="pricing_profile_missing",
+            status=tier_result["status"],
             product_category=product_category,
             spec_summary=spec_summary,
             quantity=quantity,
@@ -119,9 +120,14 @@ async def create_quote(
             weight_kg=spec.weight_kg,
         )
 
+    # 对外报价响应不得包含 margin_rate（铁律: NEVER 暴露利润率）
+    for t in tier_result.get("tiers", []):
+        t.pop("margin_rate", None)
+
     # ── Step 4: 配件计价 ──
     accessory_lines: list[dict] = []
     raw_accessories = request.get("accessories", [])
+    acc_results: list[dict] = []
     if raw_accessories:
         acc_results = await price_accessories(
             db=db,
@@ -140,15 +146,14 @@ async def create_quote(
                 "status": acc["status"],
             })
 
-    # ── Step 5: 总重量 ──
+    # ── Step 5: 总重量（复用 price_accessories 已匹配的规格，避免二次查库且字段不一致） ──
     total_weight_kg = 0.0
     if spec.weight_kg:
         total_weight_kg += spec.weight_kg * quantity
-    for acc in (raw_accessories or []):
-        acc_qty = acc.get("quantity", 1)
-        acc_specs = await _get_accessory_weight(db, acc)
-        if acc_specs and acc_specs[0].weight_kg:
-            total_weight_kg += acc_specs[0].weight_kg * acc_qty
+    for acc_result in acc_results:
+        acc_weight = acc_result.get("weight_kg")
+        if acc_weight:
+            total_weight_kg += acc_weight * acc_result.get("quantity", 1)
 
     # ── Step 6: 运费计算 ──
     freight_info = None
@@ -197,6 +202,7 @@ async def create_quote(
         spec_summary=spec_summary,
         quantity=quantity,
         weight_kg=spec.weight_kg,
+        base_cost=tier_result.get("base_cost"),
         tiers=tier_result["tiers"],
         accessory_lines=accessory_lines,
         freight=freight_info,
@@ -230,12 +236,33 @@ async def _get_accessory_weight(db: AsyncSession, acc: dict) -> list:
     )
 
 
+def _unit_for(category: str) -> str:
+    """根据产品品类返回计价单位。"""
+    return {"牛栏网": "卷", "立柱": "根"}.get(category, "个")
+
+
+def _filter_internal_notes(notes: list[str]) -> list[str]:
+    """过滤内部经营数据，notes 不暴露成本/利润率等敏感信息。"""
+    blocked_keywords = ["成本价", "利润率", "命中客户成本价", "配件"]
+    result = []
+    for n in notes:
+        if any(kw in n for kw in blocked_keywords):
+            if "利润率" in n:
+                result.append("已应用报价倍率")
+            else:
+                result.append("已应用客户价格")
+        else:
+            result.append(n)
+    return result
+
+
 def _build_response(
     status: str = "matched",
     product_category: str = "",
     spec_summary: str = "",
     quantity: int = 1,
     weight_kg: Optional[float] = None,
+    base_cost: Optional[float] = None,
     tiers: Optional[list] = None,
     accessory_lines: Optional[list] = None,
     freight: Optional[dict] = None,
@@ -249,6 +276,8 @@ def _build_response(
     """
     from app.services.quote_script_renderer import render_quote_script
 
+    unit = _unit_for(product_category)
+
     result = {
         "status": status,
         "product_category": product_category,
@@ -256,15 +285,16 @@ def _build_response(
             "product_category": product_category,
             "spec_summary": spec_summary,
             "quantity": quantity,
-            "unit": "卷",
+            "unit": unit,
             "weight_kg": weight_kg,
+            "base_cost": base_cost,
             "tiers": tiers or [],
             "status": status if status in ("matched",) else "unavailable",
         },
         "accessory_lines": accessory_lines or [],
         "freight": freight,
         "totals": totals or {"low": 0.0, "standard": 0.0, "high": 0.0},
-        "notes": notes or [],
+        "notes": _filter_internal_notes(notes) if notes else [],
         "copyable_script": copyable_script,
     }
 

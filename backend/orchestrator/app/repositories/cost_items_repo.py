@@ -28,6 +28,7 @@ async def get_current_cost(
             CustomerCostItem.customer_id == customer_id,
             CustomerCostItem.spec_hash == spec_hash,
             CustomerCostItem.status == "active",
+            CustomerCostItem.amount > 0,
             or_(
                 CustomerCostItem.effective_to.is_(None),
                 CustomerCostItem.effective_to > now,

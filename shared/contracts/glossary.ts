@@ -1,6 +1,6 @@
 /**
  * Single source of truth: v2 design document §2.2 (business domain)
- * 联凯五金业务术语表。
+ * 联佳丝网业务术语表。
  */
 
 import { ProductCategory } from './categories';

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db_session
 from app.repositories.quotations_repo import list_quotations, count_quotations
 from app.schemas.quotation import QuotationListResponse
+from app.core.auth import AuthContext
 
 router = APIRouter(prefix="/api/v1", tags=["quotations"])
 
@@ -22,7 +23,13 @@ async def create_quotation_manual(
     from app.domain.spec_hash import compute_spec_hash
 
     body = await request.json()
-    customer_id = body.get("customer_id") or getattr(request.state, "tenant_id", None)
+    auth: AuthContext = getattr(request.state, "auth", None)
+
+    # customer 账号只能创建自己的报价
+    if auth and auth.is_customer():
+        customer_id = auth.customer_id_str
+    else:
+        customer_id = body.get("customer_id") or getattr(request.state, "tenant_id", None)
     product_category = body.get("product_category")
     product_spec = body.get("product_spec", {})
     unit_price = body.get("unit_price")
@@ -83,15 +90,21 @@ async def get_quotations(
     - limit: int (默认 100)
     """
     tenant_id: str = getattr(request.state, "tenant_id", "unknown")
-    cid = customer_id or tenant_id
+    auth: AuthContext = getattr(request.state, "auth", None)
+
+    # customer 账号只能查看自己的报价
+    if auth and auth.is_customer():
+        cid = auth.customer_id_str or tenant_id
+    else:
+        cid = customer_id or tenant_id
 
     quotes = await list_quotations(
         db,
-        customer_id=cid if customer_id else None,
+        customer_id=cid if (customer_id or (auth and auth.is_customer())) else None,
         product_category=product_category,
         limit=min(limit, 500),
     )
-    total = await count_quotations(db, customer_id=cid if customer_id else None)
+    total = await count_quotations(db, customer_id=cid if (customer_id or (auth and auth.is_customer())) else None)
 
     serialized = [
         {

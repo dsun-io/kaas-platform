@@ -69,8 +69,9 @@ class TestHealthDeep:
             assert key in data["checks"]
 
     async def test_deep_stub_mode_all_ok(self, client):
-        """Stub 模式下 LLM/KB 返回 'stub'。"""
+        """默认配置下 LLM=stub, KB=postgres，全链路健康。"""
         response = await client.get("/health/deep")
         data = response.json()
         assert data["checks"]["llm"] == "stub"
-        assert data["checks"]["kb"] == "stub"
+        # 默认 Provider 为 PostgreSQLTextKnowledgeProvider
+        assert "ok" in data["checks"]["kb"]

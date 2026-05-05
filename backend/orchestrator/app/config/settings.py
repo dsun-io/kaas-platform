@@ -41,7 +41,9 @@ class Settings(BaseSettings):
     minio_bucket: str = Field(default="kaas-events-archive", alias="MINIO_BUCKET")
     minio_secure: bool = Field(default=False, alias="MINIO_SECURE")
 
-    # ─── FastGPT (反向调用知识库检索引擎 · Q6) ───
+    # ─── Knowledge Provider (自包含知识检索 · 去 FastGPT 架构) ───
+    knowledge_provider: str = Field(default="postgres", alias="KNOWLEDGE_PROVIDER")
+    # FastGPT (可选 · 向后兼容 · 降级为 runtime adapter)
     fastgpt_base_url: str = Field(default="", alias="FASTGPT_BASE_URL")
     fastgpt_api_key: str = Field(default="", alias="FASTGPT_API_KEY")
 
@@ -50,6 +52,18 @@ class Settings(BaseSettings):
     deepseek_base_url: str = Field(
         default="https://api.deepseek.com", alias="DEEPSEEK_BASE_URL"
     )
+
+    # ─── Auth (AUTH-WX-R1: JWT 鉴权) ───
+    jwt_secret: str = Field(default="kaas-dev-jwt-secret-change-in-prod", alias="JWT_SECRET")
+    jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
+    jwt_expire_minutes: int = Field(default=1440, alias="JWT_EXPIRE_MINUTES")  # 24h
+
+    # ─── Admin Bootstrap ───
+    admin_setup_token: str = Field(default="", alias="ADMIN_SETUP_TOKEN")
+
+    # ─── WeChat ClawBot (AUTH-WX-R1) ───
+    clawbot_base_url: str = Field(default="", alias="CLAWBOT_BASE_URL")
+    clawbot_api_key: str = Field(default="", alias="CLAWBOT_API_KEY")
 
     @property
     def cors_origins_list(self) -> List[str]:

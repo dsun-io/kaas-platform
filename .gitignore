@@ -16,6 +16,9 @@ env/
 
 # Environment Variables (NEVER commit secrets)
 .env
+.env.*
+!backend/.env.example
+!frontend/.env.example
 backend/.env
 
 # IDE
@@ -44,11 +47,26 @@ dist/
 # Database
 *.sqlite3
 
+# Local data (seed / dev snapshots)
+data/
+
 # MinIO data (local dev)
 minio_data/
 
-# Alembic
-*.pyc
+# Frontend test artifacts
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+
+# Frontend build artifacts
+frontend/coverage/
+frontend/.turbo/
+frontend/out/
+
+# Backend test artifacts
+backend/orchestrator/.pytest_cache/
+backend/orchestrator/htmlcov/
+backend/orchestrator/.coverage*
 
 # Legacy Qwen config (已迁移至 .ai/)
 .qwen/
