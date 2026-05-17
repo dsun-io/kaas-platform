@@ -15,6 +15,7 @@ from app.api.schema_registry import (
 )
 from app.repositories.events import insert_event
 from app.schemas.events import EventResponse
+from app.core.auth import AuthContext
 
 router = APIRouter(prefix="/api/v1", tags=["events"])
 
@@ -40,7 +41,11 @@ async def list_events_endpoint(
     offset: int = 0,
 ):
     """查询事件列表，支持过滤和分页。"""
-    tenant_id: str | None = getattr(request.state, "tenant_id", None)
+    auth = getattr(request.state, "auth", None)
+    if auth and auth.is_customer():
+        tenant_id: str | None = auth.tenant_id
+    else:
+        tenant_id: str | None = getattr(request.state, "tenant_id", None)
     from app.repositories.events import list_events as repo_list_events
 
     events, total = await repo_list_events(
@@ -83,10 +88,15 @@ async def list_events_endpoint(
 
 @router.post("/events", response_model=EventResponse)
 async def create_event(request: Request, db: AsyncSession = Depends(get_db_session)):
-    """写入原始事件。tenant_id 从中间件注入，严禁从 body 读。"""
+    """写入原始事件。tenant_id 从 AuthContext 取，严禁从 body 读。"""
 
-    # 1. tenant_id 必须存在（从 TenantContextMiddleware 注入）
-    tenant_id: str | None = getattr(request.state, "tenant_id", None)
+    # 1. tenant_id — customer 以 auth 为准，internal 从中间件注入
+    auth = getattr(request.state, "auth", None)
+    if auth and auth.is_customer():
+        tenant_id: str | None = auth.tenant_id
+    else:
+        tenant_id: str | None = getattr(request.state, "tenant_id", None)
+
     if not tenant_id:
         return JSONResponse(
             status_code=400,
@@ -97,6 +107,11 @@ async def create_event(request: Request, db: AsyncSession = Depends(get_db_sessi
         )
 
     body = await request.json()
+
+    # customer/free: 拒绝 body 中携带的不匹配 tenant_id
+    from app.core.auth_utils import require_tenant_match
+    if auth:
+        require_tenant_match(auth, body.get("tenant_id"))
 
     # 2. event_type 校验
     event_type = body.get("event_type")

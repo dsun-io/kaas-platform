@@ -22,7 +22,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth/auth-context";
-import { LogOut, User } from "lucide-react";
+import { LogOut, User, CreditCard } from "lucide-react";
 
 const labelMap: Record<string, string> = {
   dashboard: "仪表盘",
@@ -35,6 +35,9 @@ const labelMap: Record<string, string> = {
   admin: "系统管理",
   "gray-release": "灰度发布",
   settings: "系统设置",
+  "pricing-data": "报价数据",
+  onboarding: "新手引导",
+  billing: "升级订阅",
 };
 
 export function Header() {
@@ -46,6 +49,8 @@ export function Header() {
     user?.display_name?.slice(0, 2) ??
     user?.email?.slice(0, 2).toUpperCase() ??
     "?";
+
+  const isFree = user?.plan === "free";
 
   return (
     <header className="flex h-12 items-center gap-3 border-b px-4">
@@ -101,6 +106,18 @@ export function Header() {
                 {user.account_type === "internal" ? "内部账号" : "客户账号"}
               </Badge>
             </div>
+            {isFree && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => (window.location.href = "/billing")}
+                >
+                  <CreditCard className="mr-2 size-4" />
+                  升级订阅
+                </DropdownMenuItem>
+              </>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={logout} className="cursor-pointer">
               <LogOut className="mr-2 size-4" />

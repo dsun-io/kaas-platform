@@ -1,11 +1,15 @@
 """Kaas v2 · INT-R3 报价引擎主流程 (§5 T6)
 
 编排 spec 匹配 → 成本计算 → 梯度定价 → 配件计价 → 运费计算 → 话术生成。
+SKU 优先路径: 先查 product_skus + product_sku_prices，命中则短路返回。
 """
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_
 
-from app.db.models import ProductSpec
+from app.db.models import ProductSpec, ProductSku, ProductSkuPrice, ProductCategory
+from app.domain.category_normalizer import normalize_category
+from app.domain.spec_hash import compute_sku_hash
 from app.services.spec_matcher import match_spec, _format_spec_summary
 from app.services.niulanwang_pricing import calculate_base_cost, calculate_tiers
 from app.services.accessory_pricing import price_accessories
@@ -40,20 +44,26 @@ async def create_quote(
         符合 QuoteV2Response 格式的完整报价结果字典。
         NEVER 包含: cost_amount, margin_rate, base_fee, per_kg_after_threshold
     """
-    product_category = request.get("product_category", "")
+    raw_category = request.get("product_category", "")
+    product_category = normalize_category(raw_category)
 
     # ── Step 0: 品类校验 ──
-    if product_category not in ("牛栏网", "立柱"):
+    if product_category not in ("niulanwang", "gouhuawang", "post", "gabion"):
         return _build_response(
             status="unsupported_category",
             product_category=product_category,
-            notes=[f"暂不支持品类: {product_category}，请人工确认"],
+            notes=[f"暂不支持品类: {raw_category or product_category}，请人工确认"],
         )
 
     quantity = request.get("quantity", 1)
     items: list[str] = []
 
-    # ── Step 1: 规格匹配 ──
+    # ── Step 0.5: SKU 优先查询路径 ──
+    sku_result = await _try_sku_path(db, tenant_id, product_category, request, quantity)
+    if sku_result is not None:
+        return sku_result
+
+    # ── Step 1: 规格匹配（fallback 到老 product_specs）──
     spec_result = await match_spec(
         db=db,
         product_category=product_category,
@@ -238,7 +248,7 @@ async def _get_accessory_weight(db: AsyncSession, acc: dict) -> list:
 
 def _unit_for(category: str) -> str:
     """根据产品品类返回计价单位。"""
-    return {"牛栏网": "卷", "立柱": "根"}.get(category, "个")
+    return {"niulanwang": "卷", "gouhuawang": "卷", "post": "根", "gabion": "个"}.get(category, "个")
 
 
 def _filter_internal_notes(notes: list[str]) -> list[str]:
@@ -303,3 +313,105 @@ def _build_response(
         result["copyable_script"] = render_quote_script(result)
 
     return result
+
+
+async def _try_sku_path(
+    db: AsyncSession,
+    tenant_id: str,
+    product_category: str,
+    request: dict,
+    quantity: int,
+) -> Optional[dict]:
+    """
+    SKU 优先查询路径:
+    1. 按品类 + spec_values 计算 hash
+    2. 在 product_skus 中查找匹配
+    3. 在 product_sku_prices 中查找 active 价格
+    4. 命中则构造简化的报价响应返回; 未命中返回 None
+    """
+    # 构建 spec_values（只取有值的字段）
+    spec_keys = ["product_type", "wire_diameter", "height", "mesh_width", "mesh_spec", "roll_length"]
+    spec_values = {}
+    for k in spec_keys:
+        v = request.get(k)
+        if v is not None and v != "":
+            spec_values[k] = v
+
+    if not spec_values:
+        return None
+
+    # 查找品类 code → id
+    cat_result = await db.execute(
+        select(ProductCategory.id).where(ProductCategory.code == product_category)
+    )
+    cat_row = cat_result.first()
+    if not cat_row:
+        return None
+    category_id = cat_row[0]
+
+    # 计算 spec_hash（使用新系统）
+    spec_hash = compute_sku_hash(product_category, spec_values, None, None)
+
+    # 查找 SKU
+    sku_result = await db.execute(
+        select(ProductSku).where(
+            and_(
+                ProductSku.tenant_id == tenant_id,
+                ProductSku.category_id == category_id,
+                ProductSku.spec_hash == spec_hash,
+            )
+        )
+    )
+    sku = sku_result.scalar_one_or_none()
+    if not sku:
+        return None
+
+    # 查找 active 价格
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    price_result = await db.execute(
+        select(ProductSkuPrice).where(
+            and_(
+                ProductSkuPrice.sku_id == sku.id,
+                ProductSkuPrice.tenant_id == tenant_id,
+                ProductSkuPrice.status == "active",
+                ProductSkuPrice.effective_from <= now,
+            )
+        )
+    )
+    price = price_result.scalar_one_or_none()
+
+    # 构建 spec_summary
+    spec_summary_parts = [f"{k}={v}" for k, v in spec_values.items() if v]
+    spec_summary = " | ".join(spec_summary_parts) if spec_summary_parts else "—"
+
+    # 如果有价格，构造完整响应
+    if price:
+        unit_price = float(price.price)
+        total = unit_price * quantity
+
+        return _build_response(
+            status="matched",
+            product_category=product_category,
+            spec_summary=spec_summary,
+            quantity=quantity,
+            weight_kg=float(sku.weight_kg) if sku.weight_kg else None,
+            base_cost=unit_price,
+            tiers=[{
+                "label": "标准",
+                "unit_price": unit_price,
+                "subtotal": total,
+                "total": total,
+            }],
+            notes=[f"SKU 路径命中 (sku_id={sku.id}, revision={sku.revision})"],
+        )
+
+    # SKU 存在但无价格
+    return _build_response(
+        status="cost_pending",
+        product_category=product_category,
+        spec_summary=spec_summary,
+        quantity=quantity,
+        weight_kg=float(sku.weight_kg) if sku.weight_kg else None,
+        notes=[f"SKU 存在但未配置价格 (sku_id={sku.id})"],
+    )

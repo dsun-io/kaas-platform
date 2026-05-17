@@ -18,7 +18,12 @@ import type {
   ProductSpecsOptions,
   QuotableSpecItem,
 } from "@contracts/quote";
-import { ProductCategory } from "@contracts/categories";
+import {
+  ProductCategory,
+  categoryLabel,
+  CATEGORY_CODES,
+  CATEGORY_LABEL,
+} from "@contracts/categories";
 import { REQUIRED_SPEC_FIELDS } from "@contracts/validation";
 import { resolveProvincePinyin } from "@/lib/utils";
 
@@ -40,22 +45,30 @@ interface Props {
   isLoading: boolean;
 }
 
-const CATEGORIES = Object.values(ProductCategory);
+const CATEGORIES = [...CATEGORY_CODES]; // codes for API
 
-const CATEGORY_PINYIN: Record<string, { initial: string; full: string }> = {
-  牛栏网: { initial: "nlw", full: "niulanwang" },
-  勾花网: { initial: "ghw", full: "gouhuawang" },
-  立柱: { initial: "lz", full: "lizhu" },
-  石笼网: { initial: "slw", full: "shilongwang" },
+/** 拼音匹配映射: code → 拼音 */
+const CATEGORY_PINYIN: Record<
+  string,
+  { initial: string; full: string; label: string }
+> = {
+  niulanwang: { initial: "nlw", full: "niulanwang", label: "牛栏网" },
+  gouhuawang: { initial: "ghw", full: "gouhuawang", label: "勾花网" },
+  post: { initial: "lz", full: "lizhu", label: "立柱" },
+  gabion: { initial: "slw", full: "shilongwang", label: "石笼网" },
 };
 
-function matchCategory(name: string, query: string): boolean {
+function matchCategory(code: string, query: string): boolean {
   const q = query.toLowerCase().trim();
   if (!q) return true;
-  if (name.includes(q)) return true;
-  const p = CATEGORY_PINYIN[name];
-  if (!p) return false;
-  return p.initial.includes(q) || p.full.includes(q);
+  const info = CATEGORY_PINYIN[code];
+  if (!info) return code.includes(q);
+  return (
+    info.label.includes(q) ||
+    code.includes(q) ||
+    info.initial.includes(q) ||
+    info.full.includes(q)
+  );
 }
 
 /** 与后端 ProductSpec 字段对应的前端表单字段列表（用于 cascading 过滤）。 */
@@ -107,13 +120,15 @@ function ProductLineCard({
   onRemove: (key: string) => void;
   canRemove: boolean;
 }) {
-  // 品类搜索 combobox 状态
-  const [catSearch, setCatSearch] = useState(item.product_category ?? "");
+  // 品类搜索 combobox 状态（显示 label，存储 code）
+  const [catSearch, setCatSearch] = useState(
+    categoryLabel(item.product_category) ?? "",
+  );
   const [catOpen, setCatOpen] = useState(false);
   const [catFiltering, setCatFiltering] = useState(false);
   const catRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    setCatSearch(item.product_category ?? "");
+    setCatSearch(categoryLabel(item.product_category) ?? "");
   }, [item.product_category]);
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -196,9 +211,12 @@ function ProductLineCard({
                 setCatSearch(v);
                 setCatFiltering(true);
                 setCatOpen(true);
-                // 直接输入完整品类名 → 即时更新
-                if ((CATEGORIES as readonly string[]).includes(v)) {
-                  onUpdate(item.key, "product_category", v);
+                // 匹配 label → code 即时更新
+                const matchedCode = CATEGORIES.find(
+                  (c) => CATEGORY_PINYIN[c]?.label === v || c === v,
+                );
+                if (matchedCode) {
+                  onUpdate(item.key, "product_category", matchedCode);
                   onUpdate(item.key, "product_type", "");
                   onUpdate(item.key, "wire_diameter", "");
                   onUpdate(item.key, "height", "");
@@ -208,9 +226,22 @@ function ProductLineCard({
                 }
               }}
               onBlur={() => {
-                // 失焦时若输入匹配品类则选中
-                if ((CATEGORIES as readonly string[]).includes(catSearch)) {
-                  onUpdate(item.key, "product_category", catSearch);
+                // 失焦时将可能输入的 label 转为 code
+                const matchedCode = CATEGORIES.find(
+                  (c) =>
+                    CATEGORY_PINYIN[c]?.label === catSearch || c === catSearch,
+                );
+                if (matchedCode && item.product_category !== matchedCode) {
+                  onUpdate(item.key, "product_category", matchedCode);
+                  onUpdate(item.key, "product_type", "");
+                  onUpdate(item.key, "wire_diameter", "");
+                  onUpdate(item.key, "height", "");
+                  onUpdate(item.key, "mesh_width", "");
+                  onUpdate(item.key, "mesh_spec", "");
+                  onUpdate(item.key, "roll_length", "");
+                }
+                if (!matchedCode && catSearch) {
+                  setCatSearch(categoryLabel(item.product_category) ?? "");
                 }
               }}
               onFocus={() => {
@@ -238,7 +269,7 @@ function ProductLineCard({
                           className="relative flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-xs outline-hidden select-none hover:bg-accent hover:text-accent-foreground"
                           onMouseDown={(e) => {
                             e.preventDefault();
-                            setCatSearch(c);
+                            setCatSearch(CATEGORY_PINYIN[c]?.label ?? c);
                             setCatFiltering(false);
                             setCatOpen(false);
                             onUpdate(item.key, "product_category", c);
@@ -250,7 +281,7 @@ function ProductLineCard({
                             onUpdate(item.key, "roll_length", "");
                           }}
                         >
-                          {c}
+                          {CATEGORY_PINYIN[c]?.label ?? c}
                         </div>
                       ))
                     )}

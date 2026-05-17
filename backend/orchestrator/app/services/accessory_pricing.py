@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.product_specs_repo import match_specs
 from app.repositories.sale_price_repo import get_current_sale_price
 from app.repositories.cost_items_repo import get_current_cost
+from app.domain.category_normalizer import normalize_category
 
 
 async def price_accessories(
@@ -91,7 +92,7 @@ async def price_accessories(
 
         spec = specs[0]
         spec_summary = _format_accessory_summary(spec)
-        unit = "根" if spec.product_category == "立柱" else "个"
+        unit = "根" if normalize_category(spec.product_category) == "post" else "个"
         spec_hash = spec.spec_hash
         spec_weight_kg = spec.weight_kg
 

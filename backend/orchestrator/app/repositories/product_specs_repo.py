@@ -6,6 +6,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import ProductSpec
+from app.domain.category_normalizer import expand_category_search
 
 
 async def list_specs(
@@ -15,7 +16,7 @@ async def list_specs(
 ) -> list[ProductSpec]:
     """按品类（+可选类型）列出所有活跃规格。"""
     stmt = select(ProductSpec).where(
-        ProductSpec.product_category == product_category,
+        ProductSpec.product_category.in_(expand_category_search(product_category)),
         ProductSpec.is_active == True,
     )
     if product_type:
@@ -54,7 +55,7 @@ async def match_specs(
     返回匹配列表供调用方判断 matched / no_match / too_many。
     """
     stmt = select(ProductSpec).where(
-        ProductSpec.product_category == product_category,
+        ProductSpec.product_category.in_(expand_category_search(product_category)),
         ProductSpec.is_active == True,
     )
     if product_type is not None:

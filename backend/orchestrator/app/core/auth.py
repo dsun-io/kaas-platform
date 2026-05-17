@@ -53,6 +53,8 @@ class AuthContext:
         self,
         user_id: int,
         account_type: str,
+        role: str = "user",
+        plan: str = "free",
         customer_id: Optional[int] = None,
         customer_code: Optional[str] = None,
         customer_name: Optional[str] = None,
@@ -60,8 +62,10 @@ class AuthContext:
     ):
         self.user_id = user_id
         self.account_type = account_type
+        self.role = role
+        self.plan = plan
         self.customer_id = customer_id
-        self.customer_code = customer_code  # 兼容现有 Text customer_id
+        self.customer_code = customer_code
         self.customer_name = customer_name
         self.tenant_id = tenant_id
 
@@ -71,15 +75,19 @@ class AuthContext:
     def is_customer(self) -> bool:
         return self.account_type == "customer"
 
+    def is_admin(self) -> bool:
+        return self.role in ("system_admin", "admin")
+
     @property
     def customer_id_str(self) -> str:
-        """返回 Text 格式的 customer_id，用于兼容现有表查询。"""
         return self.customer_code or str(self.customer_id) if self.customer_id else ""
 
     def to_dict(self) -> dict:
         return {
             "user_id": self.user_id,
             "account_type": self.account_type,
+            "role": self.role,
+            "plan": self.plan,
             "customer_id": self.customer_id,
             "customer_code": self.customer_code,
             "customer_name": self.customer_name,
@@ -138,11 +146,13 @@ async def get_auth_context(
                     customer_code = customer.code
                     customer_name = customer.name
 
-            tenant_id = getattr(request.state, "tenant_id", None)
+            tenant_id = customer.tenant_id if customer else getattr(request.state, "tenant_id", None)
 
             return AuthContext(
                 user_id=user_id,
                 account_type=account_type,
+                role=getattr(user, "role", "user"),
+                plan=getattr(user, "plan", "free"),
                 customer_id=customer_id,
                 customer_code=customer_code,
                 customer_name=customer_name,

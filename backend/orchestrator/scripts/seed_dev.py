@@ -1,4 +1,8 @@
-"""seed_dev.py — INT-R3 种子数据（真实数据来源：Notion 联佳—知识库 2026-04-12）
+"""seed_dev.py — 开发环境种子数据
+
+默认只初始化业务/demo 数据（产品规格、成本价、运费、报价策略）。
+开发测试账号需通过 SEED_DEV_ACCOUNTS=true + DEV_* 环境变量显式启用。
+生产环境禁止运行本脚本。
 
 数据覆盖：
   - 牛栏网：上疏下密 2.0×1.8 / 1.8×1.8 / 2.2mm / 2.5mm，环扣 2.0×1.8
@@ -10,6 +14,8 @@
 import asyncio
 import hashlib
 import json
+import os
+import sys
 from datetime import datetime, timedelta, timezone
 
 from app.db.session import async_session_factory
@@ -21,6 +27,7 @@ from app.db.models import (
 from app.repositories.capabilities_repo import upsert_capability
 from app.repositories.events import insert_event
 from app.repositories.quotations_repo import insert_quotation
+from app.config.settings import settings
 
 
 def _spec_hash(spec: dict) -> str:
@@ -404,8 +411,84 @@ SEED_EVENTS = [
 
 
 # ════════════════════════════════════════════════════════════════
-# Seeding Logic
+# Seeding Logic (业务数据: 产品规格、成本、运费、报价策略、Capabilities、Events)
 # ════════════════════════════════════════════════════════════════
+
+async def seed_int_r3(session=None):
+    """INT-R3 种子数据（产品规格、定价、运费等）。"""
+    own_session = session is None
+    if own_session:
+        s = async_session_factory()
+    else:
+        s = session
+
+    try:
+        # ── 清理旧版不规范 spec_hash ──
+        await _clean_old_specs(s)
+
+        # ── Product Specs（平台规格） ──
+        await _seed_product_specs(s)
+
+        # ── 客户私有数据 ──
+        await _seed_cost_items(s)
+        await _seed_sale_prices(s)
+        await _seed_pricing_profiles(s)
+        await _seed_freight_rates(s)
+
+        # ── Capabilities ──
+        print("\nSeeding capabilities …")
+        for c in SEED_CAPABILITIES:
+            cap = await upsert_capability(
+                session=s, customer_id=c["customer_id"],
+                customer_name=c["customer_name"],
+                product_category=c["product_category"],
+                spec_constraints=c["spec_constraints"],
+            )
+            print(f"  {cap.customer_id}/{cap.product_category}")
+
+        # ── Quotations ──
+        print("\nSeeding quotations …")
+        for q in SEED_QUOTATIONS:
+            spec_hash = _spec_hash(q["product_spec"])
+            effective_from = datetime.now(timezone.utc) + timedelta(days=q.get("effective_from_offset_days", 0))
+            ins = await insert_quotation(
+                session=s, customer_id=q["customer_id"],
+                product_category=q["product_category"], product_spec=q["product_spec"],
+                spec_hash=spec_hash, unit_price=q["unit_price"], currency="CNY",
+                unit="平方米", discount=None, min_quantity=None,
+                source=q["source"], notes=q["notes"], created_by="seed_dev",
+            )
+            if q.get("effective_from_offset_days"):
+                ins.effective_from = effective_from
+            print(f"  {q['customer_id']}/{q['product_category']} ¥{q['unit_price']}")
+
+        # ── Events ──
+        print("\nSeeding events …")
+        for e in SEED_EVENTS:
+            ev = await insert_event(
+                session=s, tenant_id=e["tenant_id"], trace_id=None,
+                event_type=e["event_type"], schema_version=e["schema_version"],
+                event_source=e["event_source"], payload=e["payload"], sampled=e["sampled"],
+            )
+            print(f"  {ev.tenant_id}/{ev.event_type}")
+
+        if own_session:
+            await s.commit()
+
+        nlw_count = sum(1 for sp in PRODUCT_SPECS if sp["product_category"] == "牛栏网")
+        post_count = sum(1 for sp in PRODUCT_SPECS if sp["product_category"] == "立柱")
+        print(f"\nSeed complete: {nlw_count} 牛栏网 specs + {post_count} 立柱 specs + "
+              f"{len(CUSTOMER_COST_ITEMS)} cost items + "
+              f"{len(CUSTOMER_SALE_PRICES)} sale prices + "
+              f"{len(CUSTOMER_PRICING_PROFILES)} profiles + "
+              f"{len(CUSTOMER_FREIGHT_RATES)} freight rates + "
+              f"{len(SEED_CAPABILITIES)} capas + {len(SEED_QUOTATIONS)} quotes + "
+              f"{len(SEED_EVENTS)} events")
+    finally:
+        if own_session:
+            await s.close()
+
+
 async def _seed_product_specs(session):
     print("Seeding product_specs …")
     count = 0
@@ -517,107 +600,11 @@ async def _clean_old_specs(session):
         print(f"  cleaned {len(old)} old Chinese-hash specs")
 
 
-async def seed_int_r3(session=None):
-    """INT-R3 种子数据（产品规格、定价、运费等）。"""
-    own_session = session is None
-    if own_session:
-        s = async_session_factory()
-    else:
-        s = session
-
-    try:
-        # ── 清理旧版不规范 spec_hash ──
-        await _clean_old_specs(s)
-
-        # ── Product Specs（平台规格） ──
-        await _seed_product_specs(s)
-
-        # ── 客户私有数据 ──
-        await _seed_cost_items(s)
-        await _seed_sale_prices(s)
-        await _seed_pricing_profiles(s)
-        await _seed_freight_rates(s)
-
-        # ── Capabilities ──
-        print("\nSeeding capabilities …")
-        for c in SEED_CAPABILITIES:
-            cap = await upsert_capability(
-                session=s, customer_id=c["customer_id"],
-                customer_name=c["customer_name"],
-                product_category=c["product_category"],
-                spec_constraints=c["spec_constraints"],
-            )
-            print(f"  {cap.customer_id}/{cap.product_category}")
-
-        # ── Quotations ──
-        print("\nSeeding quotations …")
-        for q in SEED_QUOTATIONS:
-            spec_hash = _spec_hash(q["product_spec"])
-            effective_from = datetime.now(timezone.utc) + timedelta(days=q.get("effective_from_offset_days", 0))
-            ins = await insert_quotation(
-                session=s, customer_id=q["customer_id"],
-                product_category=q["product_category"], product_spec=q["product_spec"],
-                spec_hash=spec_hash, unit_price=q["unit_price"], currency="CNY",
-                unit="平方米", discount=None, min_quantity=None,
-                source=q["source"], notes=q["notes"], created_by="seed_dev",
-            )
-            if q.get("effective_from_offset_days"):
-                ins.effective_from = effective_from
-            print(f"  {q['customer_id']}/{q['product_category']} ¥{q['unit_price']}")
-
-        # ── Events ──
-        print("\nSeeding events …")
-        for e in SEED_EVENTS:
-            ev = await insert_event(
-                session=s, tenant_id=e["tenant_id"], trace_id=None,
-                event_type=e["event_type"], schema_version=e["schema_version"],
-                event_source=e["event_source"], payload=e["payload"], sampled=e["sampled"],
-            )
-            print(f"  {ev.tenant_id}/{ev.event_type}")
-
-        if own_session:
-            await s.commit()
-
-        nlw_count = sum(1 for sp in PRODUCT_SPECS if sp["product_category"] == "牛栏网")
-        post_count = sum(1 for sp in PRODUCT_SPECS if sp["product_category"] == "立柱")
-        print(f"\nSeed complete: {nlw_count} 牛栏网 specs + {post_count} 立柱 specs + "
-              f"{len(CUSTOMER_COST_ITEMS)} cost items + "
-              f"{len(CUSTOMER_SALE_PRICES)} sale prices + "
-              f"{len(CUSTOMER_PRICING_PROFILES)} profiles + "
-              f"{len(CUSTOMER_FREIGHT_RATES)} freight rates + "
-              f"{len(SEED_CAPABILITIES)} capas + {len(SEED_QUOTATIONS)} quotes + "
-              f"{len(SEED_EVENTS)} events")
-    finally:
-        if own_session:
-            await s.close()
-
-
 # ════════════════════════════════════════════════════════════════
-# AUTH-WX-R1: 种子账号 & 客户 & 微信 Bot
+# 开发测试账号 seed（可选 · 需 SEED_DEV_ACCOUNTS=true 显式启用）
 # ════════════════════════════════════════════════════════════════
 
-AUTH_SEED_USERS = [
-    {
-        "email": "david@kaas.local",
-        "password": "kaas123",
-        "display_name": "David",
-        "account_type": "internal",
-    },
-    {
-        "email": "lianjia@test.local",
-        "password": "test123",
-        "display_name": "联佳业务员",
-        "account_type": "customer",
-    },
-    {
-        "email": "clientb@test.local",
-        "password": "test123",
-        "display_name": "客户B业务员",
-        "account_type": "customer",
-    },
-]
-
-AUTH_SEED_CUSTOMERS = [
+_DEV_CUSTOMERS = [
     {
         "tenant_id": "lianjia",
         "code": "lianjia",
@@ -630,14 +617,7 @@ AUTH_SEED_CUSTOMERS = [
     },
 ]
 
-# user_email → customer_code 绑定
-AUTH_SEED_USER_CUSTOMERS = [
-    {"email": "lianjia@test.local", "customer_code": "lianjia"},
-    {"email": "clientb@test.local", "customer_code": "client_b"},
-]
-
-# 微信 ClawBot 种子
-AUTH_SEED_WECHAT_BOT = {
+_WECHAT_BOT_CONFIG = {
     "customer_code": "lianjia",
     "tenant_id": "lianjia",
     "bot_name": "联佳ClawBot",
@@ -646,17 +626,63 @@ AUTH_SEED_WECHAT_BOT = {
 }
 
 
+def _is_production() -> bool:
+    """检查当前环境是否为生产环境。"""
+    app_env = (os.environ.get("APP_ENV") or "").lower()
+    env = (os.environ.get("ENV") or "").lower()
+    return app_env == "production" or env == "production"
+
+
+def _validate_dev_account_config() -> dict:
+    """校验 SEED_DEV_ACCOUNTS 配置，返回用户配置字典或退出。"""
+    required_vars = {
+        "DEV_ADMIN_EMAIL": settings.dev_admin_email,
+        "DEV_ADMIN_PASSWORD": settings.dev_admin_password,
+        "DEV_LIANJIA_EMAIL": settings.dev_lianjia_email,
+        "DEV_LIANJIA_PASSWORD": settings.dev_lianjia_password,
+        "DEV_CLIENTB_EMAIL": settings.dev_clientb_email,
+        "DEV_CLIENTB_PASSWORD": settings.dev_clientb_password,
+    }
+    missing = [k for k, v in required_vars.items() if not v]
+    if missing:
+        print(
+            f"ERROR: SEED_DEV_ACCOUNTS=true but required env vars missing: "
+            f"{', '.join(missing)}"
+        )
+        print("Set all DEV_*_EMAIL and DEV_*_PASSWORD env vars to proceed.")
+        sys.exit(1)
+    return required_vars
+
+
 async def seed_auth():
-    """种子账号 & 客户 & 微信 Bot 数据（幂等）。"""
+    """种子开发测试账号（仅当 SEED_DEV_ACCOUNTS=true 且非生产环境时执行）。
+
+    账号邮箱和密码全部来自环境变量，不包含任何硬编码密码。
+    幂等 —— 可重复运行。
+    """
+    # ── 开关检查 ──
+    if not settings.seed_dev_accounts:
+        print("  [auth] SEED_DEV_ACCOUNTS not enabled. Skipping dev account creation.")
+        return None
+
+    # ── 生产环境拒绝 ──
+    if _is_production():
+        print("ERROR: seed_dev.py refused to run in production environment.")
+        print("Production admin accounts must be created via /setup-admin or /api/v1/auth/bootstrap-admin.")
+        sys.exit(1)
+
+    # ── 校验环境变量 ──
+    env_config = _validate_dev_account_config()
+
     import base64
     from app.db.models import User, Customer, UserCustomer, WechatBotAccount
     from app.core.auth import hash_password
+    from sqlalchemy import select
 
     async with async_session_factory() as session:
         # ── Customers ──
         customer_map = {}  # code → Customer
-        for c_data in AUTH_SEED_CUSTOMERS:
-            from sqlalchemy import select
+        for c_data in _DEV_CUSTOMERS:
             stmt = select(Customer).where(Customer.code == c_data["code"])
             result = await session.execute(stmt)
             existing = result.scalar_one_or_none()
@@ -670,10 +696,42 @@ async def seed_auth():
                 customer_map[c_data["code"]] = existing
                 print(f"  [auth] Customer exists: {c_data['code']} (id={existing.id})")
 
+        # ── Dev Account Definitions (全部来自环境变量) ──
+        dev_users = [
+            {
+                "email": env_config["DEV_ADMIN_EMAIL"],
+                "password": env_config["DEV_ADMIN_PASSWORD"],
+                "display_name": "David",
+                "account_type": "internal",
+                "role": "system_admin",
+                "plan": "internal",
+            },
+            {
+                "email": env_config["DEV_LIANJIA_EMAIL"],
+                "password": env_config["DEV_LIANJIA_PASSWORD"],
+                "display_name": "联佳业务员",
+                "account_type": "customer",
+                "role": "owner",
+                "plan": "free",
+            },
+            {
+                "email": env_config["DEV_CLIENTB_EMAIL"],
+                "password": env_config["DEV_CLIENTB_PASSWORD"],
+                "display_name": "客户B业务员",
+                "account_type": "customer",
+                "role": "owner",
+                "plan": "free",
+            },
+        ]
+
+        dev_user_customer_bindings = [
+            {"email": env_config["DEV_LIANJIA_EMAIL"], "customer_code": "lianjia"},
+            {"email": env_config["DEV_CLIENTB_EMAIL"], "customer_code": "client_b"},
+        ]
+
         # ── Users ──
         user_map = {}  # email → User
-        for u_data in AUTH_SEED_USERS:
-            from sqlalchemy import select
+        for u_data in dev_users:
             stmt = select(User).where(User.email == u_data["email"])
             result = await session.execute(stmt)
             existing = result.scalar_one_or_none()
@@ -683,6 +741,8 @@ async def seed_auth():
                     password_hash=hash_password(u_data["password"]),
                     display_name=u_data["display_name"],
                     account_type=u_data["account_type"],
+                    role=u_data["role"],
+                    plan=u_data["plan"],
                     status="active",
                 )
                 session.add(user)
@@ -690,15 +750,21 @@ async def seed_auth():
                 user_map[u_data["email"]] = user
                 print(f"  [auth] Created user: {u_data['email']} ({u_data['account_type']}, id={user.id})")
             else:
+                # 幂等更新 — 同步密码、角色等配置变更
+                existing.password_hash = hash_password(u_data["password"])
+                existing.display_name = u_data["display_name"]
+                existing.account_type = u_data["account_type"]
+                existing.role = u_data["role"]
+                existing.plan = u_data["plan"]
+                existing.status = "active"
                 user_map[u_data["email"]] = existing
-                print(f"  [auth] User exists: {u_data['email']} ({existing.account_type}, id={existing.id})")
+                print(f"  [auth] Updated user: {u_data['email']} ({u_data['account_type']}, id={existing.id})")
 
         # ── UserCustomer bindings ──
-        for uc_data in AUTH_SEED_USER_CUSTOMERS:
+        for uc_data in dev_user_customer_bindings:
             user = user_map.get(uc_data["email"])
             cust = customer_map.get(uc_data["customer_code"])
             if user and cust:
-                from sqlalchemy import select
                 stmt = select(UserCustomer).where(
                     UserCustomer.user_id == user.id,
                     UserCustomer.customer_id == cust.id,
@@ -713,23 +779,22 @@ async def seed_auth():
                     print(f"  [auth] Binding exists: {uc_data['email']} → {uc_data['customer_code']}")
 
         # ── Wechat Bot Account ──
-        bot_cust = customer_map.get(AUTH_SEED_WECHAT_BOT["customer_code"])
+        bot_cust = customer_map.get(_WECHAT_BOT_CONFIG["customer_code"])
         if bot_cust:
-            from sqlalchemy import select
             stmt = select(WechatBotAccount).where(
                 WechatBotAccount.customer_id == bot_cust.id,
-                WechatBotAccount.bot_name == AUTH_SEED_WECHAT_BOT["bot_name"],
+                WechatBotAccount.bot_name == _WECHAT_BOT_CONFIG["bot_name"],
             )
             result = await session.execute(stmt)
             existing = result.scalar_one_or_none()
             if existing is None:
                 bot = WechatBotAccount(
                     customer_id=bot_cust.id,
-                    tenant_id=AUTH_SEED_WECHAT_BOT["tenant_id"],
-                    bot_name=AUTH_SEED_WECHAT_BOT["bot_name"],
-                    bot_type=AUTH_SEED_WECHAT_BOT["bot_type"],
+                    tenant_id=_WECHAT_BOT_CONFIG["tenant_id"],
+                    bot_name=_WECHAT_BOT_CONFIG["bot_name"],
+                    bot_type=_WECHAT_BOT_CONFIG["bot_type"],
                     bot_token_encrypted=base64.b64encode(
-                        AUTH_SEED_WECHAT_BOT["bot_token"].encode()
+                        _WECHAT_BOT_CONFIG["bot_token"].encode()
                     ).decode(),
                     status="active",
                     created_by="seed",
@@ -741,17 +806,25 @@ async def seed_auth():
                 print(f"  [auth] Wechat bot exists: {existing.bot_name} (id={existing.id})")
 
         await session.commit()
-        print("  [auth] Auth seed complete")
+        print("  [auth] Dev account seed complete")
         return customer_map
 
 
 async def seed():
-    """幂等种子主入口（INT-R3 + AUTH-WX-R1）。"""
-    # 先种 auth 数据
+    """幂等种子主入口。
+
+    默认只 seed 业务数据（产品规格、成本、运费、报价策略等）。
+    开发测试账号需通过 SEED_DEV_ACCOUNTS=true + DEV_* 环境变量显式启用。
+    """
+    # 先种 auth 数据（可选）
     await seed_auth()
-    # 再种 INT-R3 数据
+    # 再种 INT-R3 数据（始终 seed 业务数据）
     await seed_int_r3()
 
 
 if __name__ == "__main__":
+    # 生产环境保护 — 直接运行脚本也拒绝
+    if _is_production():
+        print("ERROR: seed_dev.py is for development only and cannot run in production.")
+        sys.exit(1)
     asyncio.run(seed())

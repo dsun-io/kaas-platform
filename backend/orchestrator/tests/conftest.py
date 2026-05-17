@@ -220,11 +220,18 @@ async def db_session(db_engine):
 _TEST_AUTH_PUBLIC_PATHS = frozenset([
     "/health", "/docs", "/openapi.json", "/redoc", "/metrics",
     "/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/auth/logout",
+    "/api/v1/auth/bootstrap-admin", "/api/v1/auth/forgot-password",
 ])
 
 
 def _install_auth_mock(monkeypatch):
-    """Monkeypatch AuthContextMiddleware.dispatch，注入测试 AuthContext。"""
+    """Monkeypatch AuthContextMiddleware.dispatch，注入测试 AuthContext。
+
+    通过 header 控制注入的账号类型:
+    - 未设置 X-Account-Type 或 "internal": internal 账号（默认，允许跨租户）
+    - X-Account-Type: customer: customer 账号（受限，检测 tenant mismatch）
+      可配合 X-Auth-Tenant-Id 设置 customer 的真实 tenant（默认与 X-Tenant-Id 相同）
+    """
     from app.middleware.auth import AuthContextMiddleware
     from app.core.auth import AuthContext
 
@@ -232,17 +239,49 @@ def _install_auth_mock(monkeypatch):
         path = request.url.path
         if any(path.startswith(p) for p in _TEST_AUTH_PUBLIC_PATHS):
             return await call_next(request)
-        # 直接从 header 读取 tenant_id（AuthContextMiddleware 在 TenantContextMiddleware 之前运行，
-        # 此时 request.state.tenant_id 尚未设置）
-        tenant_id = request.headers.get("X-Tenant-Id", "lianjia")
-        request.state.auth = AuthContext(
-            user_id=1,
-            account_type="internal",
-            customer_id=1,
-            customer_code=tenant_id,
-            customer_name=tenant_id,
-            tenant_id=tenant_id,
-        )
+
+        account_type = request.headers.get("X-Account-Type", "internal")
+        header_tenant = request.headers.get("X-Tenant-Id")
+
+        if account_type == "customer":
+            # 模拟 customer 用户：auth_tenant 来自 DB 查询（X-Auth-Tenant-Id）
+            auth_tenant = request.headers.get(
+                "X-Auth-Tenant-Id",
+                "fe4a98df-bc3f-4f50-97b1-86470867454d",
+            )
+
+            # tenant mismatch 检测（与 AuthContextMiddleware 逻辑一致）
+            if header_tenant and header_tenant != auth_tenant:
+                from starlette.responses import JSONResponse
+                return JSONResponse(
+                    status_code=403,
+                    content={
+                        "error": "forbidden",
+                        "message": "X-Tenant-Id does not match your authorized tenant",
+                    },
+                )
+
+            request.state.tenant_id = auth_tenant
+            request.state.auth = AuthContext(
+                user_id=17,
+                account_type="customer",
+                role="owner",
+                plan="free",
+                customer_id=10,
+                customer_code="cust_0f162b",
+                customer_name="卡思(河北)数字科技有限公司",
+                tenant_id=auth_tenant,
+            )
+        else:
+            tenant_id = header_tenant or "lianjia"
+            request.state.auth = AuthContext(
+                user_id=1,
+                account_type="internal",
+                customer_id=1,
+                customer_code=tenant_id,
+                customer_name=tenant_id,
+                tenant_id=tenant_id,
+            )
         return await call_next(request)
 
     monkeypatch.setattr(AuthContextMiddleware, "dispatch", _mock_dispatch)

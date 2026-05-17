@@ -61,6 +61,15 @@ class Settings(BaseSettings):
     # ─── Admin Bootstrap ───
     admin_setup_token: str = Field(default="", alias="ADMIN_SETUP_TOKEN")
 
+    # ─── Seed Dev Accounts (SEED_DEV_ACCOUNTS 开关) ───
+    seed_dev_accounts: bool = Field(default=False, alias="SEED_DEV_ACCOUNTS")
+    dev_admin_email: str = Field(default="", alias="DEV_ADMIN_EMAIL")
+    dev_admin_password: str = Field(default="", alias="DEV_ADMIN_PASSWORD")
+    dev_lianjia_email: str = Field(default="", alias="DEV_LIANJIA_EMAIL")
+    dev_lianjia_password: str = Field(default="", alias="DEV_LIANJIA_PASSWORD")
+    dev_clientb_email: str = Field(default="", alias="DEV_CLIENTB_EMAIL")
+    dev_clientb_password: str = Field(default="", alias="DEV_CLIENTB_PASSWORD")
+
     # ─── WeChat ClawBot (AUTH-WX-R1) ───
     clawbot_base_url: str = Field(default="", alias="CLAWBOT_BASE_URL")
     clawbot_api_key: str = Field(default="", alias="CLAWBOT_API_KEY")

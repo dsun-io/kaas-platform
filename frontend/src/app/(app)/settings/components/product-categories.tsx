@@ -8,7 +8,7 @@ import {
   CardDescription,
   CardContent,
 } from "@/components/ui/card";
-import { ProductCategory } from "@contracts/categories";
+import { ProductCategory, categoryLabel } from "@contracts/categories";
 
 const DEFAULT_CATEGORIES = Object.values(ProductCategory);
 
@@ -25,7 +25,7 @@ export function ProductCategories() {
         <div className="flex flex-wrap gap-2">
           {DEFAULT_CATEGORIES.map((cat) => (
             <Badge key={cat} variant="secondary" className="text-sm px-3 py-1">
-              {cat}
+              {categoryLabel(cat)}
             </Badge>
           ))}
         </div>

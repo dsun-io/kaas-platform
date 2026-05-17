@@ -15,6 +15,7 @@ from app.repositories.capabilities_repo import (
 )
 from app.schemas.capabilities import CapabilityListResponse, CapabilityItem
 from app.core.auth import AuthContext, require_customer_access
+from app.core.auth_utils import require_internal, require_customer_code_access, require_tenant_match, require_customer_match
 
 router = APIRouter(prefix="/api/v1", tags=["capabilities"])
 
@@ -24,7 +25,17 @@ async def list_customers(
     request: Request,
     db: AsyncSession = Depends(get_db_session),
 ):
-    """前台客户列表 — 从 customer_capabilities 聚合。"""
+    """客户列表。
+
+    AUTH: internal 可查看全部，customer/free 只能查看自己。
+    """
+    auth: AuthContext = getattr(request.state, "auth", None)
+    if not auth:
+        return JSONResponse(
+            status_code=401,
+            content={"error": "unauthorized", "message": "Authentication required"},
+        )
+
     stmt = (
         select(
             CustomerCapability.customer_id,
@@ -35,6 +46,11 @@ async def list_customers(
         .group_by(CustomerCapability.customer_id, CustomerCapability.customer_name)
         .order_by(CustomerCapability.customer_name)
     )
+
+    # customer/free 只能看自己
+    if auth.is_customer() and auth.customer_code:
+        stmt = stmt.where(CustomerCapability.customer_id == auth.customer_code)
+
     result = await db.execute(stmt)
     rows = result.all()
     return JSONResponse(
@@ -66,18 +82,19 @@ async def list_customer_capabilities(
     - customer_id: str (可选，internal 可指定，customer 被忽略)
     """
     auth: AuthContext = getattr(request.state, "auth", None)
-    tenant_id: str = getattr(request.state, "tenant_id", "unknown")
 
-    # customer 账号只能查看自己的数据，使用 customer_code 匹配旧 Text customer_id
+    # customer 账号只能查看自己的数据，拒绝不匹配的 customer_id 查询参数
     if auth and auth.is_customer():
-        cid = auth.customer_code or tenant_id
-        caps = await get_capabilities(db, customer_id=cid)
+        require_customer_match(auth, customer_id)
+        cid = auth.customer_code
+        caps = await get_capabilities(db, customer_id=cid, tenant_id=auth.tenant_id)
     elif auth and auth.is_internal():
         if customer_id:
             caps = await get_capabilities(db, customer_id=customer_id)
         else:
             caps = await list_capabilities(db)
     else:
+        tenant_id = getattr(request.state, "tenant_id", "unknown")
         cid = customer_id or tenant_id
         caps = await get_capabilities(db, customer_id=cid) if customer_id else await list_capabilities(db)
 
@@ -107,8 +124,19 @@ async def get_customer_capabilities_by_id(
     request: Request,
     db: AsyncSession = Depends(get_db_session),
 ):
-    """兼容前端路径: GET /api/v1/customer/{customer_id}/capabilities"""
-    caps = await get_capabilities(db, customer_id=customer_id)
+    """兼容前端路径: GET /api/v1/customer/{customer_id}/capabilities
+
+    AUTH: internal 可读任意客户，customer/free 只能读自己。
+    """
+    auth: AuthContext = getattr(request.state, "auth", None)
+    if not auth:
+        return JSONResponse(
+            status_code=401,
+            content={"error": "unauthorized", "message": "Authentication required"},
+        )
+    require_customer_code_access(auth, customer_id)
+
+    caps = await get_capabilities(db, customer_id=customer_id, tenant_id=auth.tenant_id if not auth.is_internal() else None)
     return JSONResponse(
         status_code=200,
         content=[
@@ -134,7 +162,18 @@ async def patch_customer_capability(
     request: Request,
     db: AsyncSession = Depends(get_db_session),
 ):
-    """兼容前端路径: PATCH /api/v1/customer/{customer_id}/capabilities"""
+    """兼容前端路径: PATCH /api/v1/customer/{customer_id}/capabilities
+
+    AUTH: internal 可写任意客户，customer/free 只能写自己。
+    """
+    auth: AuthContext = getattr(request.state, "auth", None)
+    if not auth:
+        return JSONResponse(
+            status_code=401,
+            content={"error": "unauthorized", "message": "Authentication required"},
+        )
+    require_customer_code_access(auth, customer_id)
+
     body = await request.json()
     cap_id = body.get("id")
     spec_constraints = body.get("spec_constraints")
@@ -154,6 +193,7 @@ async def patch_customer_capability(
         customer_id=customer_id,
         spec_constraints=spec_constraints,
         is_active=is_active,
+        tenant_id=auth.tenant_id if not auth.is_internal() else None,
     )
     if not updated:
         return JSONResponse(
@@ -202,10 +242,14 @@ async def update_customer_capability(
     auth: AuthContext = getattr(request.state, "auth", None)
     body = await request.json()
 
-    customer_id = body.get("customer_id", "")
     if auth and auth.is_customer():
-        # customer 账号强制使用自己的 customer_code（Text 类型)
+        require_tenant_match(auth, body.get("tenant_id"))
+        require_customer_match(auth, body.get("customer_id"))
         customer_id = auth.customer_code or ""
+        tenant_id = auth.tenant_id or ""
+    else:
+        customer_id = body.get("customer_id", "")
+        tenant_id = body.get("tenant_id") or getattr(request.state, "tenant_id", "")
 
     customer_name = body.get("customer_name", "")
     product_category = body.get("product_category", "")
@@ -223,6 +267,7 @@ async def update_customer_capability(
 
     cap = await upsert_capability(
         session=db,
+        tenant_id=tenant_id,
         customer_id=customer_id,
         customer_name=customer_name,
         product_category=product_category,

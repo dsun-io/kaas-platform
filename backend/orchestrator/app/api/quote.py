@@ -85,6 +85,7 @@ async def create_quote(request: Request, db: AsyncSession = Depends(get_db_sessi
     try:
         await record_quotation(
             db=db,
+            tenant_id=tenant_id,
             customer_id=customer_id,
             product_category=product_category,
             product_spec=product_spec,

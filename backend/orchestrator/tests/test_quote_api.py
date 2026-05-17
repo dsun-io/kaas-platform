@@ -24,7 +24,7 @@ class TestQuoteV2API:
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "matched"
-        assert data["product_category"] == "牛栏网"
+        assert data["product_category"] == "niulanwang"
         assert data["main_line"]["quantity"] == 10
         assert len(data["main_line"]["tiers"]) >= 1
         assert "copyable_script" in data

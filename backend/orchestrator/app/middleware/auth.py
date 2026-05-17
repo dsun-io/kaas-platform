@@ -23,6 +23,8 @@ _PUBLIC_PATHS = frozenset([
     "/api/v1/auth/register",
     "/api/v1/auth/login",
     "/api/v1/auth/logout",
+    "/api/v1/auth/bootstrap-admin",
+    "/api/v1/auth/forgot-password",
 ])
 
 
@@ -117,10 +119,29 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
                         customer_name = customer.name
                         tenant_id = customer.tenant_id
 
+                # customer/free 用户：拒绝携带不匹配的 X-Tenant-Id
+                # 注意：AuthContextMiddleware 在 TenantContextMiddleware 之前执行，
+                # 因此直接从 header 读取 X-Tenant-Id（而非 request.state.tenant_id）
+                header_tenant = request.headers.get("X-Tenant-Id")
+                if account_type in ("customer", "free") and tenant_id:
+                    if header_tenant and header_tenant != tenant_id:
+                        return JSONResponse(
+                            status_code=403,
+                            content={
+                                "error": "forbidden",
+                                "message": "X-Tenant-Id does not match your authorized tenant",
+                            },
+                        )
+                    # 将 DB 查出的真实 tenant_id 注入 request.state，
+                    # 后续 TenantContextMiddleware 检测到已设置则跳过 header 覆盖
+                    request.state.tenant_id = tenant_id
+
                 # 注入 auth context
                 request.state.auth = AuthContext(
                     user_id=user_id,
                     account_type=account_type,
+                    role=getattr(user, "role", "user"),
+                    plan=getattr(user, "plan", "free"),
                     customer_id=customer_id,
                     customer_code=customer_code,
                     customer_name=customer_name,
