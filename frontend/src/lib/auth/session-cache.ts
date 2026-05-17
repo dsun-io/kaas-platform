@@ -18,7 +18,7 @@ export interface Session {
 }
 
 let _session: Session = {
-  tenant: { tenant_id: "lianjia" },
+  tenant: { tenant_id: "" },
   accessToken: null,
 };
 
@@ -28,6 +28,22 @@ export function getCurrentSession(): Session {
     const token = getToken();
     if (token) {
       _session.accessToken = token;
+    }
+  }
+  // Hydrate tenant from stored user if not yet set
+  if (!_session.tenant.tenant_id) {
+    try {
+      const stored =
+        localStorage.getItem("kaas_user") ||
+        sessionStorage.getItem("kaas_user");
+      if (stored) {
+        const user = JSON.parse(stored);
+        if (user?.tenant_id) {
+          _session.tenant.tenant_id = user.tenant_id;
+        }
+      }
+    } catch {
+      // ignore parse errors
     }
   }
   return _session;
@@ -44,8 +60,12 @@ export function updateSession(partial: {
     _session.user = {
       id: String(partial.user.user_id),
       email: partial.user.email,
-      role: partial.user.account_type,
+      role: partial.user.role ?? partial.user.account_type,
     };
+    // 从 auth 响应中同步真实 tenant_id，而非硬编码值
+    if (partial.user.tenant_id) {
+      _session.tenant.tenant_id = partial.user.tenant_id;
+    }
   } else if (partial.user === null) {
     _session.user = undefined;
   }
@@ -53,7 +73,7 @@ export function updateSession(partial: {
 
 export function resetSession(): void {
   _session = {
-    tenant: { tenant_id: "lianjia" },
+    tenant: { tenant_id: "" },
     accessToken: null,
     user: undefined,
   };

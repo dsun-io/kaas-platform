@@ -1,12 +1,13 @@
 /**
  * 产品品类验证规则 — 各品类所需的规格字段。
  *
- * 添加新品类时在此处定义其必填字段即可，
- * 前端/后端共用，无需修改组件逻辑。
+ * @deprecated 新规格系统使用 category_attribute_bindings 动态驱动验证。
+ * 旧字段验证保留用于向后兼容老报价流程。
+ * 新流程请使用 BindingWithAttribute.is_required 进行校验。
  */
 import { ProductCategory } from './categories';
 
-/** 各品类对应的必填规格字段列表。 */
+/** 各品类对应的必填规格字段列表（向后兼容）。 */
 export const REQUIRED_SPEC_FIELDS: Record<
   string,
   { field: string; label: string }[]
@@ -23,3 +24,23 @@ export const REQUIRED_SPEC_FIELDS: Record<
     { field: 'height', label: '高度' },
   ],
 };
+
+/**
+ * 基于 bindings 的动态验证。
+ * 用于新规格系统的 Wizard 和表单。
+ */
+export function validateSpecValuesFromBindings(
+  specValues: Record<string, unknown>,
+  bindings: { attribute: { id: number; code: string; name: string }; is_required: boolean }[],
+): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  for (const b of bindings) {
+    if (b.is_required) {
+      const v = specValues[b.attribute.code] ?? specValues[String(b.attribute.id)];
+      if (v === undefined || v === null || v === '') {
+        errors.push(`${b.attribute.name} 为必填项`);
+      }
+    }
+  }
+  return { valid: errors.length === 0, errors };
+}

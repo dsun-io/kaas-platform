@@ -6,13 +6,13 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db_session
 from app.domain.tenant_config import get_all_tenants, load_tenant_config, reload_all_tenants
 from app.repositories.admin import get_archive_logs
-from app.api.deps import verify_admin_token
+from app.core.auth import AuthContext
 from app.schemas.admin import (
     TenantListResponse,
     TenantDetailResponse,
@@ -25,7 +25,26 @@ from app.schemas.admin import (
     ArchiveLogResponse,
 )
 
-router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
+def require_admin_auth(request: Request):
+    """所有 admin 端点必须由 internal 账号访问。
+
+    AuthContextMiddleware 确保 JWT 有效，
+    此处只校验账号类型。
+    """
+    auth: AuthContext | None = getattr(request.state, "auth", None)
+    if auth is None or not auth.is_internal():
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "forbidden", "message": "Admin access required"},
+        )
+    return auth
+
+
+router = APIRouter(
+    prefix="/api/v1/admin",
+    tags=["admin"],
+    dependencies=[Depends(require_admin_auth)],
+)
 
 AUDIT_LOG_PATH = Path(__file__).resolve().parent.parent.parent / "logs" / "deployment_audit.jsonl"
 VALID_AUDIT_ACTIONS = frozenset(
@@ -89,7 +108,6 @@ async def get_tenant(request: Request, tenant_id: str):
 @router.post("/tenants/reload", response_model=TenantReloadResponse)
 async def reload_tenants(
     request: Request,
-    _token: str = Depends(verify_admin_token),
 ):
     """热重载租户缓存（需 admin token）。"""
     reload_all_tenants()
@@ -107,7 +125,6 @@ async def reload_tenants(
 @router.post("/feature_flag", response_model=FeatureFlagSetResponse)
 async def set_feature_flag(
     request: Request,
-    _token: str = Depends(verify_admin_token),
 ):
     """设置租户 feature flag（写 tenants.yaml + 审计）。
 
@@ -366,9 +383,7 @@ async def metrics_summary():
 
 
 @router.post("/cache/clear", response_model=CacheClearResponse)
-async def clear_cache(
-    _token: str = Depends(verify_admin_token),
-):
+async def clear_cache():
     """清空 session_store（需 admin token）。"""
     from app.domain.session_store import session_store
     count = session_store.clear()

@@ -10,6 +10,7 @@ from app.db.models import Quotation
 
 async def insert_quotation(
     session: AsyncSession,
+    tenant_id: str,
     customer_id: str,
     product_category: str,
     product_spec: dict,
@@ -25,6 +26,7 @@ async def insert_quotation(
 ) -> Quotation:
     """插入报价记录 (INSERT-only · 铁律5)。"""
     q = Quotation(
+        tenant_id=tenant_id,
         customer_id=customer_id,
         product_category=product_category,
         product_spec=product_spec,
@@ -48,9 +50,10 @@ async def get_latest_price(
     customer_id: str,
     product_category: str,
     spec_hash: str,
+    tenant_id: Optional[str] = None,
 ) -> Optional[Quotation]:
     """按客户+品类+spec_hash 查询最新报价。"""
-    result = await session.execute(
+    stmt = (
         select(Quotation)
         .where(
             Quotation.customer_id == customer_id,
@@ -60,17 +63,23 @@ async def get_latest_price(
         .order_by(Quotation.effective_from.desc())
         .limit(1)
     )
+    if tenant_id:
+        stmt = stmt.where(Quotation.tenant_id == tenant_id)
+    result = await session.execute(stmt)
     return result.scalar_one_or_none()
 
 
 async def list_quotations(
     session: AsyncSession,
+    tenant_id: Optional[str] = None,
     customer_id: Optional[str] = None,
     product_category: Optional[str] = None,
     limit: int = 100,
 ) -> list[Quotation]:
-    """查询报价列表，可按客户/品类过滤。"""
+    """查询报价列表，可按租户/客户/品类过滤。"""
     stmt = select(Quotation).order_by(Quotation.effective_from.desc())
+    if tenant_id:
+        stmt = stmt.where(Quotation.tenant_id == tenant_id)
     if customer_id:
         stmt = stmt.where(Quotation.customer_id == customer_id)
     if product_category:
@@ -82,10 +91,13 @@ async def list_quotations(
 
 async def count_quotations(
     session: AsyncSession,
+    tenant_id: Optional[str] = None,
     customer_id: Optional[str] = None,
 ) -> int:
     """统计报价条数。"""
     stmt = select(func.count()).select_from(Quotation)
+    if tenant_id:
+        stmt = stmt.where(Quotation.tenant_id == tenant_id)
     if customer_id:
         stmt = stmt.where(Quotation.customer_id == customer_id)
     result = await session.execute(stmt)

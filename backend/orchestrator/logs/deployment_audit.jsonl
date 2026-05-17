@@ -1,2 +1,27 @@
 {"timestamp": "2026-05-03T09:52:31.202504+00:00", "action": "feature_flag_change", "tenant_id": "liankai", "flag_name": "use_v2", "old_value": true, "new_value": true, "actor_id": "david", "reason": "INT-R2 test", "resource_type": "feature_flag", "resource_id": "use_v2"}
 {"timestamp": "2026-05-03T10:04:05.097507+00:00", "action": "feature_flag_change", "tenant_id": "liankai", "flag_name": "use_v2", "old_value": true, "new_value": true, "actor_id": "david", "reason": "INT-R2 smoke test", "resource_type": "feature_flag", "resource_id": "use_v2"}
+{"timestamp": "2026-05-05T09:54:11.688988+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T09:54:12.374122+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T09:54:12.499803+00:00", "action": "feature_flag_change", "tenant_id": "lianjia", "flag_name": "test", "old_value": null, "new_value": true, "actor_id": "admin", "reason": "", "resource_type": "feature_flag", "resource_id": "test"}
+{"timestamp": "2026-05-05T09:59:11.973774+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T10:02:04.392504+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T10:02:17.411156+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T10:09:21.879241+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T10:10:05.886975+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T10:15:32.151061+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T10:16:01.494374+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T10:18:37.908516+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T10:20:53.696553+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T10:21:09.662546+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T10:22:27.294930+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T10:36:02.223844+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T10:37:45.952491+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T10:39:02.696439+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T10:39:22.743402+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T10:42:11.948426+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T10:42:58.575947+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T10:43:44.956036+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T10:51:50.880743+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T12:42:23.245864+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T12:52:56.714654+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}
+{"timestamp": "2026-05-05T13:51:21.780551+00:00", "action": "tenants_reload", "tenant_id": "*", "tenant_count": 2}

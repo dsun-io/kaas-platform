@@ -2,10 +2,15 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 // Paths that middleware should NOT protect
-const PUBLIC_PATHS = ["/login"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/register",
+  "/setup-admin",
+  "/forgot-password",
+];
 
 // Path prefixes that are always allowed
-const EXCLUDED_PREFIXES = ["/_next", "/api", "/favicon.ico"];
+const EXCLUDED_PREFIXES = ["/_next", "/api", "/favicon.ico", "/favicon.svg"];
 
 // File extensions that are static assets
 const STATIC_EXTENSIONS =
@@ -25,17 +30,19 @@ export function middleware(request: NextRequest) {
   }
 
   const hasToken = request.cookies.get("has_token")?.value === "1";
-  const isLoginPage = pathname === "/login";
+  const isPublic = PUBLIC_PATHS.includes(pathname);
+  const isSetupAdmin = pathname === "/setup-admin";
 
-  if (!hasToken && !isLoginPage) {
-    // Not authenticated, not on login — redirect to login
+  if (!hasToken && !isPublic) {
+    // Not authenticated, not on a public page — redirect to login
     const redirectUrl = new URL("/login", request.url);
     redirectUrl.searchParams.set("redirect", pathname);
     return NextResponse.redirect(redirectUrl);
   }
 
-  if (hasToken && isLoginPage) {
-    // Already authenticated, on login — redirect to dashboard
+  if (hasToken && isPublic && !isSetupAdmin) {
+    // Already authenticated, on login/register/forgot-password — redirect to dashboard
+    // setup-admin is exempt: backend decides if already initialized
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 

@@ -7,6 +7,7 @@ from typing import Optional
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import CustomerCostItem
+from app.domain.category_normalizer import expand_category_search
 
 
 async def get_current_cost(
@@ -58,7 +59,9 @@ async def list_cost_items(
         ),
     )
     if product_category:
-        stmt = stmt.where(CustomerCostItem.product_category == product_category)
+        stmt = stmt.where(CustomerCostItem.product_category.in_(
+            expand_category_search(product_category)
+        ))
     stmt = stmt.order_by(CustomerCostItem.effective_from.desc())
     result = await session.execute(stmt)
     return list(result.scalars().all())
@@ -103,3 +106,59 @@ async def insert_cost_item(
     session.add(item)
     await session.flush()
     return item
+
+
+async def get_cost_item_by_id(
+    session: AsyncSession,
+    item_id: int,
+    tenant_id: str,
+    customer_id: str,
+) -> Optional[CustomerCostItem]:
+    """按 ID 查询客户成本价记录（必须匹配 tenant+ustomer）。"""
+    result = await session.execute(
+        select(CustomerCostItem).where(
+            CustomerCostItem.id == item_id,
+            CustomerCostItem.tenant_id == tenant_id,
+            CustomerCostItem.customer_id == customer_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def update_cost_item(
+    session: AsyncSession,
+    item_id: int,
+    tenant_id: str,
+    customer_id: str,
+    updates: dict,
+) -> Optional[CustomerCostItem]:
+    """更新客户成本价记录（同一事务内）。
+
+    updates 可包含: amount, cost_type, unit, spec_hash, product_spec_id,
+    product_spec_json, effective_from, effective_to, notes, product_category.
+    """
+    item = await get_cost_item_by_id(session, item_id, tenant_id, customer_id)
+    if item is None:
+        return None
+
+    for key, value in updates.items():
+        if hasattr(item, key) and value is not None:
+            setattr(item, key, value)
+
+    await session.flush()
+    return item
+
+
+async def soft_delete_cost_item(
+    session: AsyncSession,
+    item_id: int,
+    tenant_id: str,
+    customer_id: str,
+) -> bool:
+    """软删除客户成本价记录（设 status='inactive'）。"""
+    item = await get_cost_item_by_id(session, item_id, tenant_id, customer_id)
+    if item is None:
+        return False
+    item.status = "inactive"
+    await session.flush()
+    return True

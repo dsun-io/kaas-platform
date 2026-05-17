@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useAuth } from "@/lib/auth/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +20,7 @@ export default function LoginPage() {
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -33,7 +35,7 @@ export default function LoginPage() {
 
     setSubmitting(true);
     try {
-      await login(email.trim(), password);
+      await login(email.trim(), password, rememberMe);
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { message?: string } } })?.response?.data
@@ -77,13 +79,39 @@ export default function LoginPage() {
                 disabled={submitting}
               />
             </div>
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="size-4 rounded border-muted-foreground/30"
+                />
+                记住我
+              </label>
+              <Link
+                href="/forgot-password"
+                className="text-sm text-muted-foreground hover:text-foreground"
+              >
+                忘记密码？
+              </Link>
+            </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
           </CardContent>
-          <CardFooter>
+          <CardFooter className="flex flex-col gap-3">
             <Button type="submit" className="w-full" disabled={submitting}>
               {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
               登录
             </Button>
+            <p className="text-sm text-muted-foreground text-center">
+              没有账号？
+              <Link
+                href="/register"
+                className="text-primary hover:underline ml-1"
+              >
+                免费注册
+              </Link>
+            </p>
           </CardFooter>
         </form>
       </Card>

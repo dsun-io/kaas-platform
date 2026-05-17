@@ -21,6 +21,7 @@ tenants:
     fastgpt_api_key_ref: ENV:FASTGPT_API_KEY_LIANJIA
     feature_flags:
       sampling_rate: 0.1
+      test: true
       use_v2: true
     locale: zh-CN
     product_categories:

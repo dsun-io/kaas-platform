@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/select";
 import type { QuotationFilters as Filters } from "../hooks/use-quotations";
 import { Search, X } from "lucide-react";
-import { ProductCategory } from "@contracts/categories";
+import { ProductCategory, categoryLabel } from "@contracts/categories";
 
 const CATEGORIES = Object.values(ProductCategory);
 
@@ -49,7 +49,7 @@ export function QuotationFilters({ filters, onChange }: Props) {
           <SelectItem value="all">全部品类</SelectItem>
           {CATEGORIES.map((c) => (
             <SelectItem key={c} value={c}>
-              {c}
+              {categoryLabel(c)}
             </SelectItem>
           ))}
         </SelectContent>

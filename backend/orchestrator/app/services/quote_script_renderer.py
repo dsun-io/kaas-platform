@@ -3,6 +3,7 @@
 根据报价结果字典生成客服可复制的中文话术脚本。
 纯模板渲染，零 LLM 调用（铁律3）。
 """
+from app.domain.category_normalizer import normalize_category, category_label
 
 
 def render_quote_script(quote_result: dict) -> str:
@@ -37,14 +38,14 @@ def render_quote_script(quote_result: dict) -> str:
     unit = _unit_for_category(product_category)
 
     # 抬头
-    header_name = {"牛栏网": "牛栏网", "立柱": "立柱"}.get(product_category, product_category)
+    header_name = category_label(product_category)
     lines.append(f"【{header_name}报价单】")
     lines.append("")
 
     # 产品信息
     lines.append(f"产品: {spec_summary}")
     lines.append(f"数量: {quantity} {unit}")
-    if weight_kg and product_category != "立柱":
+    if weight_kg and normalize_category(product_category) != "post":
         lines.append(f"单{unit}重量: {weight_kg} kg")
         lines.append(f"总重量: {round(weight_kg * quantity, 1)} kg")
     lines.append("")
@@ -143,5 +144,5 @@ def _status_label(status: str) -> str:
 
 
 def _unit_for_category(product_category: str) -> str:
-    """根据产品品类返回计价单位。"""
-    return {"牛栏网": "卷", "立柱": "根"}.get(product_category, "个")
+    cat = normalize_category(product_category)
+    return {"niulanwang": "卷", "gouhuawang": "卷", "post": "根", "gabion": "个"}.get(cat, "个")

@@ -1,8 +1,17 @@
-/** Auth types — aligned with backend POST /api/v1/auth/login & GET /api/v1/auth/me */
+/** Auth types — aligned with backend POST /api/v1/auth/login, /register, GET /api/v1/auth/me */
 
 export interface LoginRequest {
   email: string;
   password: string;
+}
+
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  display_name: string;
+  company_name: string;
+  product_category: string;
+  contact?: string;
 }
 
 export interface UserInfo {
@@ -10,6 +19,8 @@ export interface UserInfo {
   email: string;
   display_name: string;
   account_type: "internal" | "customer";
+  role: string;
+  plan: string;
   customer_id: number | null;
   customer_code: string | null;
   customer_name: string | null;

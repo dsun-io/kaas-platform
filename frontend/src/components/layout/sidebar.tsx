@@ -17,6 +17,9 @@ import {
   BookOpen,
   History,
   Zap,
+  Database,
+  Compass,
+  CreditCard,
 } from "lucide-react";
 import { useState, Fragment } from "react";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -38,10 +41,24 @@ const navGroups: NavGroup[] = [
     label: "业务",
     items: [
       { href: "/dashboard", label: "仪表盘", icon: LayoutDashboard },
-      { href: "/customers", label: "客户管理", icon: Users },
-      { href: "/quotations", label: "报价历史", icon: FileText },
       { href: "/quotations/v2-quote", label: "智能报价", icon: Zap },
+      { href: "/quotations", label: "报价历史", icon: FileText },
     ],
+  },
+  {
+    label: "数据",
+    items: [
+      { href: "/pricing-data", label: "报价数据", icon: Database },
+      { href: "/onboarding", label: "新手引导", icon: Compass },
+    ],
+  },
+  {
+    label: "订阅",
+    items: [{ href: "/billing", label: "升级订阅", icon: CreditCard }],
+  },
+  {
+    label: "客户",
+    items: [{ href: "/customers", label: "客户管理", icon: Users }],
   },
   {
     label: "审计",
@@ -65,16 +82,24 @@ const navGroups: NavGroup[] = [
   },
 ];
 
+// Groups accessible to all authenticated users
+const PUBLIC_GROUP_LABELS = new Set(["业务", "数据", "订阅"]);
+
 function SidebarNav({ collapsed }: { collapsed: boolean }) {
   const pathname = usePathname();
   const { user } = useAuth();
-  const isAdmin = user?.account_type === "internal";
+  const isInternal = user?.account_type === "internal";
 
   return (
     <nav className="flex flex-col gap-4 px-2">
       {navGroups.map((group, index) => {
+        // Hide admin-only groups for free users
+        if (!isInternal && !PUBLIC_GROUP_LABELS.has(group.label)) {
+          return null;
+        }
+
         const visibleItems = group.items.filter(
-          (item) => !item.adminOnly || isAdmin,
+          (item) => !item.adminOnly || isInternal,
         );
         if (visibleItems.length === 0) return null;
 
@@ -90,7 +115,9 @@ function SidebarNav({ collapsed }: { collapsed: boolean }) {
                 {collapsed ? group.label.slice(0, 4) : group.label}
               </span>
               {visibleItems.map((item) => {
-                const active = pathname === item.href;
+                const active =
+                  pathname === item.href ||
+                  (item.href !== "/" && pathname.startsWith(item.href + "/"));
                 return (
                   <Link
                     key={item.href}
@@ -167,7 +194,7 @@ function MobileSidebar() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const { user } = useAuth();
-  const isAdmin = user?.account_type === "internal";
+  const isInternal = user?.account_type === "internal";
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -184,8 +211,12 @@ function MobileSidebar() {
         </div>
         <nav className="flex flex-col gap-4 p-2">
           {navGroups.map((group) => {
+            if (!isInternal && !PUBLIC_GROUP_LABELS.has(group.label)) {
+              return null;
+            }
+
             const visibleItems = group.items.filter(
-              (item) => !item.adminOnly || isAdmin,
+              (item) => !item.adminOnly || isInternal,
             );
             if (visibleItems.length === 0) return null;
 
@@ -195,7 +226,9 @@ function MobileSidebar() {
                   {group.label}
                 </span>
                 {visibleItems.map((item) => {
-                  const active = pathname === item.href;
+                  const active =
+                    pathname === item.href ||
+                    (item.href !== "/" && pathname.startsWith(item.href + "/"));
                   return (
                     <Link
                       key={item.href}

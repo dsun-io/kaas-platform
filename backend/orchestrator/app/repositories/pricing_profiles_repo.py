@@ -6,6 +6,7 @@ from typing import Optional
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import CustomerPricingProfile
+from app.domain.category_normalizer import expand_category_search
 
 
 async def get_current_profile(
@@ -25,7 +26,9 @@ async def get_current_profile(
         .where(
             CustomerPricingProfile.tenant_id == tenant_id,
             CustomerPricingProfile.customer_id == customer_id,
-            CustomerPricingProfile.product_category == product_category,
+            CustomerPricingProfile.product_category.in_(
+                expand_category_search(product_category)
+            ),
             CustomerPricingProfile.status == "active",
             or_(
                 CustomerPricingProfile.effective_to.is_(None),

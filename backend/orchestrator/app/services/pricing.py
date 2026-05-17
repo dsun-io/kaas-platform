@@ -102,6 +102,7 @@ async def get_price(
 
 async def record_quotation(
     db: AsyncSession,
+    tenant_id: str,
     customer_id: str,
     product_category: str,
     product_spec: dict,
@@ -111,6 +112,7 @@ async def record_quotation(
     """将报价结果写入 quotations 表 (INSERT-only · 铁律5)。"""
     await insert_quotation(
         session=db,
+        tenant_id=tenant_id,
         customer_id=customer_id,
         product_category=product_category,
         product_spec=product_spec,

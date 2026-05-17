@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.db.session import get_db_session
 from app.db.models import ProductSpec, CustomerCostItem, CustomerSalePriceItem
+from app.domain.category_normalizer import normalize_category, expand_category_search
 
 router = APIRouter(prefix="/api/v1", tags=["product_specs"])
 
@@ -15,7 +16,7 @@ router = APIRouter(prefix="/api/v1", tags=["product_specs"])
 @router.get("/product-specs")
 async def list_product_specs(
     request: Request,
-    product_category: str = Query(..., description="产品品类"),
+    product_category: str = Query(..., description="产品品类（code 或 label，均接受）"),
     product_type: str = Query(None, description="产品类型（可选过滤）"),
     wire_diameter: str = Query(None, description="丝径（可选过滤）"),
     height: float = Query(None, description="高度/m（可选过滤）"),
@@ -34,22 +35,32 @@ async def list_product_specs(
     当 quotable=True 时，额外返回 quotable_specs（完整规格组合列表），
     供前端做客户端联动过滤和精确 tuple 匹配校验。
     """
+    normalized_category = normalize_category(product_category)
+    category_search = expand_category_search(normalized_category)
+
     stmt = select(ProductSpec).where(
-        ProductSpec.product_category == product_category,
+        ProductSpec.product_category.in_(category_search),
         ProductSpec.is_active == True,
     )
 
     quotable_hashes_subquery = None
     if quotable:
-        tenant_id: str = getattr(request.state, "tenant_id", "")
-        customer_id: str = request.headers.get("X-Customer-Id", "") or tenant_id
+        # tenant/customer 永远从 AuthContext 取，不信任 header
+        auth = getattr(request.state, "auth", None)
+        if auth and auth.is_customer():
+            tenant_id: str = auth.tenant_id or ""
+        else:
+            tenant_id: str = getattr(request.state, "tenant_id", "")
+        customer_id: str = auth.customer_id_str if auth else ""
+        if not customer_id:
+            customer_id = tenant_id
         if tenant_id and customer_id:
             from sqlalchemy import or_
             now = func.now()
             cost_hashes = select(CustomerCostItem.spec_hash).where(
                 CustomerCostItem.tenant_id == tenant_id,
                 CustomerCostItem.customer_id == customer_id,
-                CustomerCostItem.product_category == product_category,
+                CustomerCostItem.product_category.in_(category_search),
                 CustomerCostItem.status == "active",
                 CustomerCostItem.amount > 0,
                 or_(
@@ -60,7 +71,7 @@ async def list_product_specs(
             sale_hashes = select(CustomerSalePriceItem.spec_hash).where(
                 CustomerSalePriceItem.tenant_id == tenant_id,
                 CustomerSalePriceItem.customer_id == customer_id,
-                CustomerSalePriceItem.product_category == product_category,
+                CustomerSalePriceItem.product_category.in_(category_search),
                 CustomerSalePriceItem.status == "active",
                 CustomerSalePriceItem.amount > 0,
                 or_(
@@ -102,7 +113,7 @@ async def list_product_specs(
     if quotable and quotable_hashes_subquery is not None:
         all_quotable = await db.execute(
             select(ProductSpec).where(
-                ProductSpec.product_category == product_category,
+                ProductSpec.product_category.in_(category_search),
                 ProductSpec.is_active == True,
                 ProductSpec.spec_hash.in_(quotable_hashes_subquery),
             )
@@ -119,7 +130,7 @@ async def list_product_specs(
 
     # Accessory options (立柱/post type products)
     acc_stmt = select(ProductSpec).where(
-        ProductSpec.product_category != product_category,
+        ProductSpec.product_category.notin_(category_search),
         ProductSpec.is_active == True,
     ).distinct(ProductSpec.product_category, ProductSpec.product_type)
     acc_result = await db.execute(acc_stmt)
@@ -131,7 +142,7 @@ async def list_product_specs(
     return JSONResponse(
         status_code=200,
         content={
-            "product_category": product_category,
+            "product_category": normalized_category,
             "options": {
                 "product_types": product_types,
                 "wire_diameters": wire_diameters,

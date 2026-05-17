@@ -10,6 +10,7 @@ from app.db.models import CustomerCapability
 
 async def upsert_capability(
     session: AsyncSession,
+    tenant_id: str,
     customer_id: str,
     customer_name: str,
     product_category: str,
@@ -19,6 +20,7 @@ async def upsert_capability(
     """插入或更新客户能力记录（存在则更新 spec_constraints）。"""
     result = await session.execute(
         select(CustomerCapability).where(
+            CustomerCapability.tenant_id == tenant_id,
             CustomerCapability.customer_id == customer_id,
             CustomerCapability.product_category == product_category,
         ).limit(1)
@@ -33,6 +35,7 @@ async def upsert_capability(
         await session.refresh(existing)
         return existing
     cap = CustomerCapability(
+        tenant_id=tenant_id,
         customer_id=customer_id,
         customer_name=customer_name,
         product_category=product_category,
@@ -48,12 +51,15 @@ async def upsert_capability(
 async def get_capabilities(
     session: AsyncSession,
     customer_id: str,
+    tenant_id: Optional[str] = None,
     product_category: Optional[str] = None,
 ) -> list[CustomerCapability]:
     """查询客户的能力列表。"""
     stmt = select(CustomerCapability).where(
         CustomerCapability.customer_id == customer_id,
     )
+    if tenant_id:
+        stmt = stmt.where(CustomerCapability.tenant_id == tenant_id)
     if product_category:
         stmt = stmt.where(CustomerCapability.product_category == product_category)
     stmt = stmt.order_by(CustomerCapability.created_at.desc())
@@ -67,14 +73,17 @@ async def update_capability(
     customer_id: str,
     spec_constraints: Optional[dict] = None,
     is_active: Optional[bool] = None,
+    tenant_id: Optional[str] = None,
 ) -> Optional[CustomerCapability]:
     """更新客户能力的 spec_constraints（前端 PATCH 兼容）。"""
-    result = await session.execute(
-        select(CustomerCapability).where(
-            CustomerCapability.id == cap_id,
-            CustomerCapability.customer_id == customer_id,
-        ).limit(1)
+    stmt = select(CustomerCapability).where(
+        CustomerCapability.id == cap_id,
+        CustomerCapability.customer_id == customer_id,
     )
+    if tenant_id:
+        stmt = stmt.where(CustomerCapability.tenant_id == tenant_id)
+    stmt = stmt.limit(1)
+    result = await session.execute(stmt)
     existing = result.scalar_one_or_none()
     if not existing:
         return None
@@ -88,12 +97,15 @@ async def update_capability(
 async def list_capabilities(
     session: AsyncSession,
     customer_id: Optional[str] = None,
+    tenant_id: Optional[str] = None,
     limit: int = 100,
 ) -> list[CustomerCapability]:
-    """查询能力列表，可选按客户过滤。"""
+    """查询能力列表，可选按客户/租户过滤。"""
     stmt = select(CustomerCapability).order_by(CustomerCapability.created_at.desc())
     if customer_id:
         stmt = stmt.where(CustomerCapability.customer_id == customer_id)
+    if tenant_id:
+        stmt = stmt.where(CustomerCapability.tenant_id == tenant_id)
     stmt = stmt.limit(limit)
     result = await session.execute(stmt)
     return list(result.scalars().all())

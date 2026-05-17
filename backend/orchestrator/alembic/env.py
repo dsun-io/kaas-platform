@@ -32,6 +32,18 @@ from app.db.models import (  # noqa: F401
     ConversationMessage,
     UsageEvent,
     WechatMessageEvent,
+    ProductCategory,
+    UnitGroup,
+    Unit,
+    PriceUnit,
+    SpecAttribute,
+    SpecAttributeValue,
+    CategoryAttributeBinding,
+    IndustryTemplate,
+    ProductSku,
+    ProductSkuPrice,
+    ProductSkuRevision,
+    AttributeProposal,
 )
 
 # Alembic Config 对象

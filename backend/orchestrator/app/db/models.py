@@ -197,6 +197,7 @@ class Quotation(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     schema_version = Column(Integer, nullable=False, default=1)
+    tenant_id = Column(Text, nullable=False, index=True)
     customer_id = Column(Text, nullable=False)
     product_category = Column(Text, nullable=False)
     product_spec = Column(JSONB, nullable=False)
@@ -212,6 +213,11 @@ class Quotation(Base):
     created_by = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
+    # Spec system v2 references (nullable for backward compatibility)
+    sku_id = Column(BigInteger, ForeignKey("product_skus.id"), nullable=True)
+    price_id = Column(BigInteger, ForeignKey("product_sku_prices.id"), nullable=True)
+    schema_version_v2 = Column(Integer, nullable=True)
+
     __table_args__ = (
         Index(
             "idx_quotations_lookup",
@@ -220,6 +226,7 @@ class Quotation(Base):
             "spec_hash",
             effective_from.desc(),
         ),
+        Index("idx_quotations_tenant", "tenant_id", "customer_id"),
     )
 
 
@@ -231,6 +238,7 @@ class CustomerCapability(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     schema_version = Column(Integer, nullable=False, default=1)
+    tenant_id = Column(Text, nullable=False, index=True)
     customer_id = Column(Text, nullable=False)
     customer_name = Column(Text, nullable=False)
     product_category = Column(Text, nullable=False)
@@ -242,6 +250,7 @@ class CustomerCapability(Base):
 
     __table_args__ = (
         Index("idx_capabilities_lookup", "customer_id", "product_category"),
+        Index("idx_capabilities_tenant", "tenant_id", "customer_id"),
     )
 
 
@@ -307,6 +316,7 @@ class User(Base):
     account_type = Column(Text, nullable=False)  # 'internal' | 'customer'
     role = Column(Text, nullable=False, default="user")  # 'system_admin' | 'admin' | 'owner' | 'user'
     plan = Column(Text, nullable=False, default="free")  # 'free' | 'pro' | 'enterprise' | 'internal'
+    is_tenant_admin = Column(Boolean, nullable=False, default=False)
     status = Column(Text, nullable=False, default="active")  # active | disabled
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
@@ -509,4 +519,266 @@ class WechatMessageEvent(Base):
     __table_args__ = (
         Index("idx_wx_msg_event_bot", "bot_account_id"),
         Index("idx_wx_msg_event_session", "wechat_session_id"),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# SPEC SYSTEM: 类目-属性-SKU-Price 可扩展规格体系
+# ═══════════════════════════════════════════════════════════════
+
+
+class ProductCategory(Base):
+    """品类树"""
+    __tablename__ = "product_categories"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    code = Column(Text, nullable=False, unique=True)
+    name = Column(Text, nullable=False)
+    parent_id = Column(BigInteger, ForeignKey("product_categories.id", ondelete="RESTRICT"), nullable=True)
+    path = Column(Text, nullable=False)
+    level = Column(Integer, nullable=False, default=1)
+    industry_code = Column(Text, nullable=False)
+    sort_order = Column(Integer, nullable=False, default=0)
+    is_leaf = Column(Boolean, nullable=False, default=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_pc_path", "path"),
+        Index("idx_pc_industry", "industry_code"),
+        Index("idx_pc_parent", "parent_id"),
+    )
+
+
+class UnitGroup(Base):
+    """单位族字典"""
+    __tablename__ = "unit_groups"
+
+    code = Column(Text, primary_key=True)
+    name = Column(Text, nullable=False)
+    base_unit = Column(Text, nullable=False)
+
+
+class Unit(Base):
+    """单位字典"""
+    __tablename__ = "units"
+
+    code = Column(Text, primary_key=True)
+    label = Column(Text, nullable=False)
+    unit_group = Column(Text, ForeignKey("unit_groups.code"), nullable=False)
+    to_base_factor = Column(Numeric(20, 10), nullable=False)
+    sort_order = Column(Integer, nullable=False, default=0)
+
+
+class PriceUnit(Base):
+    """计价单位字典"""
+    __tablename__ = "price_units"
+
+    code = Column(Text, primary_key=True)
+    label = Column(Text, nullable=False)
+    currency = Column(Text, nullable=False)
+    unit = Column(Text, nullable=False)
+    unit_group = Column(Text, nullable=False)
+    applicable_categories = Column(JSONB, nullable=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+
+
+class SpecAttribute(Base):
+    """属性库"""
+    __tablename__ = "spec_attributes"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    code = Column(Text, nullable=False)
+    name = Column(Text, nullable=False)
+    aliases = Column(JSONB, nullable=False, default=[])
+    group_code = Column(Text, nullable=False)  # identity/variant/spec/pricing/temporal
+    data_type = Column(Text, nullable=False)  # enum/multi_enum/number/text/bool
+    unit = Column(Text, nullable=True)
+    unit_group = Column(Text, nullable=True)
+    number_min = Column(Numeric, nullable=True)
+    number_max = Column(Numeric, nullable=True)
+    number_step = Column(Numeric, nullable=True)
+    description = Column(Text, nullable=True)
+    scope = Column(Text, nullable=False, default="private")  # public/private/proposal
+    tenant_id = Column(Text, nullable=True)
+    source = Column(Text, nullable=False, default="tenant")
+    status = Column(Text, nullable=False, default="active")
+    promoted_from = Column(BigInteger, nullable=True)
+    created_by = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_sa_scope_status", "scope", "status"),
+        Index("idx_sa_group", "group_code"),
+    )
+
+
+class SpecAttributeValue(Base):
+    """属性枚举值库"""
+    __tablename__ = "spec_attribute_values"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    attribute_id = Column(BigInteger, ForeignKey("spec_attributes.id", ondelete="CASCADE"), nullable=False)
+    value_code = Column(Text, nullable=False)
+    value_label = Column(Text, nullable=False)
+    value_number = Column(Numeric, nullable=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    scope = Column(Text, nullable=False, default="public")
+    tenant_id = Column(Text, nullable=True)
+    status = Column(Text, nullable=False, default="active")
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_sav_attr", "attribute_id", "status"),
+    )
+
+
+class CategoryAttributeBinding(Base):
+    """类目-属性挂载"""
+    __tablename__ = "category_attribute_bindings"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    category_id = Column(BigInteger, ForeignKey("product_categories.id", ondelete="CASCADE"), nullable=False)
+    attribute_id = Column(BigInteger, ForeignKey("spec_attributes.id", ondelete="CASCADE"), nullable=False)
+    group_code = Column(Text, nullable=False)
+    attr_role = Column(Text, nullable=False)  # key/sku/descriptive
+    is_required = Column(Boolean, nullable=False, default=False)
+    is_locked = Column(Boolean, nullable=False, default=False)
+    sort_order = Column(Integer, nullable=False, default=0)
+    default_value = Column(JSONB, nullable=True)
+    depends_on = Column(JSONB, nullable=True)
+    scope = Column(Text, nullable=False, default="public")
+    tenant_id = Column(Text, nullable=True)
+    schema_version = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_cab_cat", "category_id", "scope", "tenant_id"),
+    )
+
+
+class IndustryTemplate(Base):
+    """行业/客户模板"""
+    __tablename__ = "industry_templates"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    code = Column(Text, nullable=False)
+    name = Column(Text, nullable=False)
+    description = Column(Text, nullable=True)
+    industry_code = Column(Text, nullable=False)
+    template_type = Column(Text, nullable=False)  # official/tenant/shared
+    tenant_id = Column(Text, nullable=True)
+    snapshot = Column(JSONB, nullable=False)
+    snapshot_version = Column(Integer, nullable=False, default=1)
+    usage_count = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_by = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_it_industry", "industry_code", "is_active"),
+    )
+
+
+class ProductSku(Base):
+    """规格 SKU"""
+    __tablename__ = "product_skus"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    category_id = Column(BigInteger, ForeignKey("product_categories.id", ondelete="RESTRICT"), nullable=False)
+    spec_values = Column(JSONB, nullable=False)
+    spec_hash = Column(Text, nullable=False)
+    schema_version = Column(Integer, nullable=False, default=1)
+    revision = Column(Integer, nullable=False, default=1)
+    weight_kg = Column(Numeric, nullable=True)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_by = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_psk_lookup", "tenant_id", "category_id", "is_active"),
+    )
+
+
+class ProductSkuPrice(Base):
+    """价格历史表"""
+    __tablename__ = "product_sku_prices"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    sku_id = Column(BigInteger, ForeignKey("product_skus.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(Text, nullable=False)
+    price = Column(Numeric(18, 4), nullable=False)
+    currency = Column(Text, nullable=False, default="CNY")
+    price_unit = Column(Text, ForeignKey("price_units.code"), nullable=False)
+    min_qty = Column(Numeric, nullable=True)
+    tier_rules = Column(JSONB, nullable=True)
+    effective_from = Column(DateTime(timezone=True), nullable=False)
+    effective_to = Column(DateTime(timezone=True), nullable=True)
+    status = Column(Text, nullable=False, default="active")
+    note = Column(Text, nullable=True)
+    change_reason = Column(Text, nullable=True)
+    created_by = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_psp_sku_active", "sku_id", "status", "effective_from"),
+    )
+
+
+class ProductSkuRevision(Base):
+    """SKU 修订历史"""
+    __tablename__ = "product_sku_revisions"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    sku_id = Column(BigInteger, ForeignKey("product_skus.id", ondelete="CASCADE"), nullable=False)
+    revision = Column(Integer, nullable=False)
+    spec_values = Column(JSONB, nullable=False)
+    spec_hash = Column(Text, nullable=False)
+    schema_version = Column(Integer, nullable=False)
+    change_reason = Column(Text, nullable=True)
+    created_by = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_psr_sku", "sku_id"),
+    )
+
+
+class AttributeProposal(Base):
+    """属性沉淀池"""
+    __tablename__ = "attribute_proposals"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    category_id = Column(BigInteger, ForeignKey("product_categories.id", ondelete="CASCADE"), nullable=False)
+    group_code = Column(Text, nullable=False)
+    proposed_name = Column(Text, nullable=False)
+    proposed_aliases = Column(JSONB, nullable=True, default=[])
+    proposed_unit = Column(Text, nullable=True)
+    proposed_unit_group = Column(Text, nullable=True)
+    proposed_type = Column(Text, nullable=False)
+    sample_values = Column(JSONB, nullable=True)
+    occurrence_count = Column(Integer, nullable=False, default=1)
+    similar_attribute_id = Column(BigInteger, ForeignKey("spec_attributes.id"), nullable=True)
+    similarity_score = Column(Numeric, nullable=True)
+    private_attribute_id = Column(BigInteger, ForeignKey("spec_attributes.id"), nullable=True)
+    recommended_for_promotion = Column(Boolean, nullable=False, default=False)
+    recommendation_score = Column(Numeric, nullable=True)
+    recommended_at = Column(DateTime(timezone=True), nullable=True)
+    status = Column(Text, nullable=False, default="pending")
+    reviewer = Column(Text, nullable=True)
+    review_note = Column(Text, nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    promoted_attribute_id = Column(BigInteger, ForeignKey("spec_attributes.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_ap_status", "status", "category_id"),
     )

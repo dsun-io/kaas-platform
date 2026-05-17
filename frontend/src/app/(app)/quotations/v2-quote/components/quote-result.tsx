@@ -7,6 +7,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Copy, Check, AlertCircle, Info, Truck } from "lucide-react";
+import { categoryLabel } from "@contracts/categories";
 import type { QuoteV2Response, TierItem } from "@contracts/quote";
 
 interface Props {
@@ -188,11 +189,11 @@ function generateSingleTierScript(
   const weightKg = result.main_line.weight_kg;
   const lines: string[] = [];
 
-  lines.push(`【${result.product_category}报价单】`);
+  lines.push(`【${categoryLabel(result.product_category)}报价单】`);
   lines.push("");
   lines.push(`产品: ${specSummary}`);
   lines.push(`数量: ${quantity} ${unit}`);
-  if (weightKg && result.product_category !== "立柱") {
+  if (weightKg && result.product_category !== "post") {
     lines.push(`单${unit}重量: ${weightKg} kg`);
     lines.push(`总重量: ${(weightKg * quantity).toFixed(1)} kg`);
   }

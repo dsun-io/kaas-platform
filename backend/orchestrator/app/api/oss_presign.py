@@ -1,13 +1,18 @@
 """
 Kaas v2 · OSS Presign API 路由 (§3.7.9)
 POST /api/v1/oss/presign — 生成预签名上传 URL
+
+鉴权:
+- customer/free: 必须 auth，key 自动绑定 tenant
+- internal: 必须 auth + body 显式 tenant_id
 """
 import uuid
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
 from minio import Minio
 from app.config.settings import settings
+from app.core.auth import AuthContext
 
 router = APIRouter(prefix="/api/v1/oss", tags=["oss"])
 
@@ -27,8 +32,43 @@ def _get_minio_client() -> Minio:
 
 @router.post("/presign")
 async def create_presigned_url(request: Request):
-    """生成 OSS 预签名上传 URL (§3.7.9)。"""
+    """生成 OSS 预签名上传 URL (§3.7.9)。
+
+    AUTH:
+    - internal: body 必须传 tenant_id，key 使用指定租户
+    - customer/free: 自动使用自己的 tenant_id，拒绝跨租户
+    """
+    # ── 鉴权 ──
+    auth: AuthContext | None = getattr(request.state, "auth", None)
+    if auth is None:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "unauthorized", "message": "Authentication required"},
+        )
+
     body = await request.json()
+
+    # ── 确定 tenant_id ──
+    if auth.is_internal():
+        tenant_id = body.get("tenant_id")
+        if not tenant_id:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "missing_tenant",
+                    "message": "tenant_id is required in body for internal access",
+                },
+            )
+    else:
+        tenant_id = auth.tenant_id
+        if not tenant_id:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "forbidden",
+                    "message": "Customer account has no tenant binding",
+                },
+            )
 
     purpose = body.get("purpose", "event_payload")
     if purpose not in VALID_PURPOSES:
@@ -53,10 +93,10 @@ async def create_presigned_url(request: Request):
     content_type = body.get("content_type", "application/octet-stream")
     event_type = body.get("event_type", "unknown")
 
-    # OSS key 格式: events-archive/{yyyy}/{mm}/{dd}/{event_type}/{uuid}.json
+    # OSS key 格式: events-archive/{tenant_id}/{yyyy}/{mm}/{dd}/{event_type}/{uuid}.json
     now = datetime.now(timezone.utc)
     oss_key = (
-        f"events-archive/{now.year:04d}/{now.month:02d}/{now.day:02d}/"
+        f"events-archive/{tenant_id}/{now.year:04d}/{now.month:02d}/{now.day:02d}/"
         f"{event_type}/{uuid.uuid4().hex}.json"
     )
 

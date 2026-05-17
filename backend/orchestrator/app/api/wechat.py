@@ -71,8 +71,23 @@ async def create_bot(
     auth: AuthContext = request.state.auth
 
     body = await request.json()
-    customer_id = body.get("customer_id")
-    tenant_id = body.get("tenant_id", "") or auth.tenant_id or ""
+
+    # customer 账号只能创建自己的 bot，拒绝不匹配的覆盖参数
+    if auth.is_customer():
+        if auth.customer_id is None:
+            return JSONResponse(
+                status_code=403,
+                content={"error": "forbidden", "message": "Customer account not bound to any customer"},
+            )
+        from app.core.auth_utils import require_tenant_match, require_customer_match
+        require_tenant_match(auth, body.get("tenant_id"))
+        require_customer_match(auth, body.get("customer_id"))
+        customer_id = auth.customer_id
+        tenant_id = auth.tenant_id or ""
+    else:
+        customer_id = body.get("customer_id")
+        tenant_id = body.get("tenant_id", "") or auth.tenant_id or ""
+
     bot_name = body.get("bot_name", "")
     bot_token = body.get("bot_token", "")
     bot_type = body.get("bot_type", "clawbot")
@@ -82,15 +97,6 @@ async def create_bot(
             status_code=422,
             content={"error": "validation_error", "message": "bot_name and bot_token are required"},
         )
-
-    # customer 账号只能创建自己的 bot
-    if auth.is_customer():
-        if auth.customer_id is None:
-            return JSONResponse(
-                status_code=403,
-                content={"error": "forbidden", "message": "Customer account not bound to any customer"},
-            )
-        customer_id = auth.customer_id
 
     if not customer_id:
         return JSONResponse(
@@ -229,14 +235,19 @@ async def create_link(
     auth: AuthContext = request.state.auth
     body = await request.json()
 
-    customer_id = body.get("customer_id")
-    tenant_id = body.get("tenant_id", "") or auth.tenant_id or ""
     channel = body.get("channel", "wechat_clawbot")
     name = body.get("name")
     scenario = body.get("scenario")
 
     if auth.is_customer():
+        from app.core.auth_utils import require_tenant_match, require_customer_match
+        require_tenant_match(auth, body.get("tenant_id"))
+        require_customer_match(auth, body.get("customer_id"))
         customer_id = auth.customer_id
+        tenant_id = auth.tenant_id or ""
+    else:
+        customer_id = body.get("customer_id")
+        tenant_id = body.get("tenant_id", "") or auth.tenant_id or ""
 
     if not customer_id or not tenant_id:
         return JSONResponse(

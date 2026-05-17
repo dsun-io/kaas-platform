@@ -1,0 +1,6 @@
+[mcp_servers.notion]
+args = [
+    "@ramidecodes/mcp-server-notion@latest",
+    "--api-key=ntn_o83018058255ItCdbxaCiQzTNqSIVj3a2qqaXUTUB7sgN9",
+]
+command = "npx"
