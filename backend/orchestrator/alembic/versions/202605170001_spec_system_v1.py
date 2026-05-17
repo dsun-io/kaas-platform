@@ -80,7 +80,7 @@ def upgrade() -> None:
         sa.Column('id', sa.BigInteger, sa.Identity(always=True), primary_key=True),
         sa.Column('code', sa.Text, nullable=False),
         sa.Column('name', sa.Text, nullable=False),
-        sa.Column('aliases', postgresql.JSONB, nullable=False, server_default="'[]'::jsonb"),
+        sa.Column('aliases', postgresql.JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
         sa.Column('group_code', sa.Text, nullable=False),
         sa.Column('data_type', sa.Text, nullable=False),
         sa.Column('unit', sa.Text, nullable=True),
@@ -89,10 +89,10 @@ def upgrade() -> None:
         sa.Column('number_max', sa.Numeric, nullable=True),
         sa.Column('number_step', sa.Numeric, nullable=True),
         sa.Column('description', sa.Text, nullable=True),
-        sa.Column('scope', sa.Text, nullable=False, server_default="'private'"),
+        sa.Column('scope', sa.Text, nullable=False, server_default='private'),
         sa.Column('tenant_id', sa.Text, nullable=True),
-        sa.Column('source', sa.Text, nullable=False, server_default="'tenant'"),
-        sa.Column('status', sa.Text, nullable=False, server_default="'active'"),
+        sa.Column('source', sa.Text, nullable=False, server_default='tenant'),
+        sa.Column('status', sa.Text, nullable=False, server_default='active'),
         sa.Column('promoted_from', sa.BigInteger, nullable=True),
         sa.Column('created_by', sa.Text, nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
@@ -119,9 +119,9 @@ def upgrade() -> None:
         sa.Column('value_label', sa.Text, nullable=False),
         sa.Column('value_number', sa.Numeric, nullable=True),
         sa.Column('sort_order', sa.Integer, nullable=False, server_default='0'),
-        sa.Column('scope', sa.Text, nullable=False, server_default="'public'"),
+        sa.Column('scope', sa.Text, nullable=False, server_default='public'),
         sa.Column('tenant_id', sa.Text, nullable=True),
-        sa.Column('status', sa.Text, nullable=False, server_default="'active'"),
+        sa.Column('status', sa.Text, nullable=False, server_default='active'),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
     )
     op.execute("ALTER TABLE spec_attribute_values ADD CONSTRAINT chk_sav_scope CHECK (scope IN ('public','private','proposal'))")
@@ -142,7 +142,7 @@ def upgrade() -> None:
         sa.Column('sort_order', sa.Integer, nullable=False, server_default='0'),
         sa.Column('default_value', postgresql.JSONB, nullable=True),
         sa.Column('depends_on', postgresql.JSONB, nullable=True),
-        sa.Column('scope', sa.Text, nullable=False, server_default="'public'"),
+        sa.Column('scope', sa.Text, nullable=False, server_default='public'),
         sa.Column('tenant_id', sa.Text, nullable=True),
         sa.Column('schema_version', sa.Integer, nullable=False, server_default='1'),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
@@ -204,13 +204,13 @@ def upgrade() -> None:
         sa.Column('sku_id', sa.BigInteger, sa.ForeignKey('product_skus.id', ondelete='CASCADE'), nullable=False),
         sa.Column('tenant_id', sa.Text, nullable=False),
         sa.Column('price', sa.Numeric(18, 4), nullable=False),
-        sa.Column('currency', sa.Text, nullable=False, server_default="'CNY'"),
+        sa.Column('currency', sa.Text, nullable=False, server_default='CNY'),
         sa.Column('price_unit', sa.Text, sa.ForeignKey('price_units.code'), nullable=False),
         sa.Column('min_qty', sa.Numeric, nullable=True),
         sa.Column('tier_rules', postgresql.JSONB, nullable=True),
         sa.Column('effective_from', sa.DateTime(timezone=True), nullable=False),
         sa.Column('effective_to', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('status', sa.Text, nullable=False, server_default="'active'"),
+        sa.Column('status', sa.Text, nullable=False, server_default='active'),
         sa.Column('note', sa.Text, nullable=True),
         sa.Column('change_reason', sa.Text, nullable=True),
         sa.Column('created_by', sa.Text, nullable=True),
@@ -251,7 +251,7 @@ def upgrade() -> None:
         sa.Column('category_id', sa.BigInteger, sa.ForeignKey('product_categories.id', ondelete='CASCADE'), nullable=False),
         sa.Column('group_code', sa.Text, nullable=False),
         sa.Column('proposed_name', sa.Text, nullable=False),
-        sa.Column('proposed_aliases', postgresql.JSONB, nullable=True, server_default="'[]'::jsonb"),
+        sa.Column('proposed_aliases', postgresql.JSONB, nullable=True, server_default=sa.text("'[]'::jsonb")),
         sa.Column('proposed_unit', sa.Text, nullable=True),
         sa.Column('proposed_unit_group', sa.Text, nullable=True),
         sa.Column('proposed_type', sa.Text, nullable=False),
@@ -263,7 +263,7 @@ def upgrade() -> None:
         sa.Column('recommended_for_promotion', sa.Boolean, nullable=False, server_default='false'),
         sa.Column('recommendation_score', sa.Numeric, nullable=True),
         sa.Column('recommended_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('status', sa.Text, nullable=False, server_default="'pending'"),
+        sa.Column('status', sa.Text, nullable=False, server_default='pending'),
         sa.Column('reviewer', sa.Text, nullable=True),
         sa.Column('review_note', sa.Text, nullable=True),
         sa.Column('reviewed_at', sa.DateTime(timezone=True), nullable=True),
@@ -480,11 +480,12 @@ def upgrade() -> None:
     """)
 
     # ── 官方模板（立柱）──
-    op.execute("""
-        INSERT INTO industry_templates (code, name, industry_code, template_type, snapshot) VALUES
-        ('lizhu_official_v1', '立柱-标准模板', 'fence', 'official',
-         '{"categories":[{"category_code":"lizhu","attributes":[{"code":"edge_style","group":"variant","role":"sku","required":true,"locked":true,"sort":1},{"code":"surface_finish","group":"variant","role":"sku","required":true,"locked":true,"sort":2},{"code":"height","group":"spec","role":"sku","required":true,"locked":true,"sort":3},{"code":"wall_thickness","group":"spec","role":"sku","required":true,"locked":true,"sort":4}]}]}'::jsonb);
-    """)
+    snapshot_json = '{"categories":[{"category_code":"lizhu","attributes":[{"code":"edge_style","group":"variant","role":"sku","required":true,"locked":true,"sort":1},{"code":"surface_finish","group":"variant","role":"sku","required":true,"locked":true,"sort":2},{"code":"height","group":"spec","role":"sku","required":true,"locked":true,"sort":3},{"code":"wall_thickness","group":"spec","role":"sku","required":true,"locked":true,"sort":4}]}]}'
+    conn = op.get_bind()
+    conn.execute(
+        sa.text("INSERT INTO industry_templates (code, name, industry_code, template_type, snapshot) VALUES (:code, :name, :industry, :type, CAST(:snap AS jsonb))"),
+        {"code": "lizhu_official_v1", "name": "立柱-标准模板", "industry": "fence", "type": "official", "snap": snapshot_json},
+    )
 
 
 def downgrade() -> None:

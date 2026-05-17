@@ -274,9 +274,11 @@ def _install_auth_mock(monkeypatch):
             )
         else:
             tenant_id = header_tenant or "lianjia"
+            role = request.headers.get("X-Test-Role", "user")
             request.state.auth = AuthContext(
                 user_id=1,
                 account_type="internal",
+                role=role,
                 customer_id=1,
                 customer_code=tenant_id,
                 customer_name=tenant_id,
