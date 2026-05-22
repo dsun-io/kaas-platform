@@ -189,8 +189,7 @@ async def patch_customer_capability(
             "updated_at": updated.updated_at.isoformat() if updated.updated_at else None,
         },
         "sync_job_id": f"sync-{cap_id}-{int(__import__('time').time())}",
-        },
-    )
+    }
 
 
 @router.post("/capabilities", response_model=CapabilityItem)

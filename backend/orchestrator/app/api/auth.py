@@ -20,7 +20,6 @@ from typing import Optional
 
 import structlog
 from fastapi import APIRouter, Request, Depends, HTTPException
-from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.session import get_db_session
@@ -133,42 +132,24 @@ async def register(
 
     # ── 校验 ──
     if not email or not password or not display_name:
-        return JSONResponse(
-            status_code=422,
-            content={"error": "validation_error", "message": "email, password, display_name are required"},
-        )
+        raise HTTPException(status_code=422, detail="validation_error: email, password, display_name are required")
 
     if not company_name:
-        return JSONResponse(
-            status_code=422,
-            content={"error": "validation_error", "message": "company_name is required"},
-        )
+        raise HTTPException(status_code=422, detail="validation_error: company_name is required")
 
     if not product_category or product_category not in _CATEGORIES:
-        return JSONResponse(
-            status_code=422,
-            content={"error": "validation_error", "message": "product_category is required and must be one of: " + ", ".join(sorted(_CATEGORIES))},
-        )
+        raise HTTPException(status_code=422, detail="validation_error: product_category is required and must be one of: " + ", ".join(sorted(_CATEGORIES)))
 
     if len(password) < 8:
-        return JSONResponse(
-            status_code=422,
-            content={"error": "validation_error", "message": "Password must be at least 8 characters"},
-        )
+        raise HTTPException(status_code=422, detail="validation_error: Password must be at least 8 characters")
 
     if "@" not in email or "." not in email.split("@")[-1]:
-        return JSONResponse(
-            status_code=422,
-            content={"error": "validation_error", "message": "Invalid email format"},
-        )
+        raise HTTPException(status_code=422, detail="validation_error: Invalid email format")
 
     # ── 检查邮箱唯一 ──
     existing = await _find_user_by_email(db, email)
     if existing is not None:
-        return JSONResponse(
-            status_code=409,
-            content={"error": "conflict", "message": "Email already registered"},
-        )
+        raise HTTPException(status_code=409, detail="conflict: Email already registered")
 
     # ── 创建 User（强制 customer + owner + free） ──
     user = User(
@@ -220,15 +201,12 @@ async def register(
 
     logger.info("user_registered", user_id=user.id, email=email, tenant_id=tenant_id, code=code)
 
-    return JSONResponse(
-        status_code=201,
-        content=_auth_response(user, {
-            "customer_id": customer.id,
-            "customer_code": code,
-            "customer_name": company_name,
-            "tenant_id": tenant_id,
-        }, token),
-    )
+    return _auth_response(user, {
+        "customer_id": customer.id,
+        "customer_code": code,
+        "customer_name": company_name,
+        "tenant_id": tenant_id,
+    }, token)
 
 
 @router.post("/login")
@@ -242,43 +220,28 @@ async def login(
     password = body.get("password") or ""
 
     if not email or not password:
-        return JSONResponse(
-            status_code=422,
-            content={"error": "validation_error", "message": "email and password are required"},
-        )
+        raise HTTPException(status_code=422, detail="validation_error: email and password are required")
 
     user = await _find_user_by_email(db, email)
 
     if user is None or not verify_password(password, user.password_hash):
-        return JSONResponse(
-            status_code=401,
-            content={"error": "unauthorized", "message": "Invalid email or password"},
-        )
+        raise HTTPException(status_code=401, detail="unauthorized: Invalid email or password")
 
     if user.status != "active":
-        return JSONResponse(
-            status_code=403,
-            content={"error": "forbidden", "message": "Account is disabled"},
-        )
+        raise HTTPException(status_code=403, detail="forbidden: Account is disabled")
 
     binding = await _get_customer_binding(db, user)
     token = create_access_token(user.id, user.account_type)
 
     logger.info("user_login", user_id=user.id, account_type=user.account_type)
 
-    return JSONResponse(
-        status_code=200,
-        content=_auth_response(user, binding, token),
-    )
+    return _auth_response(user, binding, token)
 
 
 @router.post("/logout")
 async def logout(request: Request):
     """登出（stateless JWT — 客户端丢弃 token 即可）。"""
-    return JSONResponse(
-        status_code=200,
-        content={"message": "Logged out (client should discard token)"},
-    )
+    return {"message": "Logged out (client should discard token)"}
 
 
 @router.get("/me")
@@ -336,10 +299,7 @@ async def bootstrap_admin(
     """
     # ── 检查配置 ──
     if not settings.admin_setup_token:
-        return JSONResponse(
-            status_code=503,
-            content={"error": "not_configured", "message": "ADMIN_SETUP_TOKEN not configured"},
-        )
+        raise HTTPException(status_code=503, detail="not_configured: ADMIN_SETUP_TOKEN not configured")
 
     # ── 检查是否已初始化 ──
     existing_admin = await db.execute(
@@ -349,26 +309,17 @@ async def bootstrap_admin(
         )
     )
     if existing_admin.scalar_one_or_none() is not None:
-        return JSONResponse(
-            status_code=403,
-            content={"error": "forbidden", "message": "System already initialized. A system_admin exists."},
-        )
+        raise HTTPException(status_code=403, detail="forbidden: System already initialized. A system_admin exists.")
 
     # ── 提取 token ──
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
-        return JSONResponse(
-            status_code=401,
-            content={"error": "unauthorized", "message": "Authorization: Bearer <token> required"},
-        )
+        raise HTTPException(status_code=401, detail="unauthorized: Authorization: Bearer <token> required")
     provided_token = auth_header[7:]
 
     # ── 常数时间比对 ──
     if not _constant_time_compare(provided_token, settings.admin_setup_token):
-        return JSONResponse(
-            status_code=403,
-            content={"error": "forbidden", "message": "Invalid setup token"},
-        )
+        raise HTTPException(status_code=403, detail="forbidden: Invalid setup token")
 
     # ── 读取请求体 ──
     body = await request.json()
@@ -377,24 +328,15 @@ async def bootstrap_admin(
     display_name = (body.get("display_name") or "").strip()
 
     if not email or not password or not display_name:
-        return JSONResponse(
-            status_code=422,
-            content={"error": "validation_error", "message": "email, password, display_name are required"},
-        )
+        raise HTTPException(status_code=422, detail="validation_error: email, password, display_name are required")
 
     if len(password) < 8:
-        return JSONResponse(
-            status_code=422,
-            content={"error": "validation_error", "message": "Password must be at least 8 characters"},
-        )
+        raise HTTPException(status_code=422, detail="validation_error: Password must be at least 8 characters")
 
     # ── 检查邮箱唯一 ──
     existing = await _find_user_by_email(db, email)
     if existing is not None:
-        return JSONResponse(
-            status_code=409,
-            content={"error": "conflict", "message": "Email already registered"},
-        )
+        raise HTTPException(status_code=409, detail="conflict: Email already registered")
 
     # ── 创建 system_admin ──
     user = User(
@@ -413,12 +355,9 @@ async def bootstrap_admin(
 
     logger.info("system_admin_bootstrapped", user_id=user.id, email=email)
 
-    return JSONResponse(
-        status_code=201,
-        content=_auth_response(user, {
-            "customer_id": None,
-            "customer_code": None,
-            "customer_name": None,
-            "tenant_id": None,
-        }, token),
-    )
+    return _auth_response(user, {
+        "customer_id": None,
+        "customer_code": None,
+        "customer_name": None,
+        "tenant_id": None,
+    }, token)
