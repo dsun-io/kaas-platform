@@ -1,4 +1,4 @@
-"""Kaas v2 · INT-R3 权限系统（§2）
+"""Kaas v2 · INT-R3 权限系统（§2）— 三层角色体系
 
 权限点:
 - cost:read / cost:write
@@ -9,22 +9,19 @@
 - quote:sensitive_debug
 - admin:customer_read
 
-角色默认权限:
-- tenant_owner: all
-- tenant_finance: cost, sale_price, pricing_profile, freight_rate (read+write) + quote:run
-- tenant_pricing_admin: same as finance
-- tenant_sales_manager: sale_price:read + quote:run
-- tenant_sales: quote:run + sale_price:read (no cost)
-- external_buyer: quote:run only
-- platform_admin: all (audit required for cost access)
+三层角色权限映射 (Wave 2 · T4):
+- system_admin (L1): 所有权限（平台管理员）
+- customer_owner (L2): 客户域全部权限（读+写）
+- customer_member (L3): 基本权限（quote:run, sale_price:read）
+
+向后兼容: 旧角色（tenant_owner 等）仍通过 X-Role header 支持。
 """
 from typing import Optional
 from fastapi import Request, HTTPException
-from fastapi.responses import JSONResponse
 
-# ── Role → Permission mapping ──
-ROLE_PERMISSIONS: dict[str, set[str]] = {
-    "platform_admin": {
+# ── 三层角色 → 权限映射 (新体系) ──
+EFFECTIVE_ROLE_PERMISSIONS: dict[str, set[str]] = {
+    "system_admin": {
         "cost:read", "cost:write",
         "sale_price:read", "sale_price:write",
         "pricing_profile:read", "pricing_profile:write",
@@ -32,7 +29,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "quote:run", "quote:sensitive_debug",
         "admin:customer_read",
     },
-    "tenant_owner": {
+    "customer_owner": {
         "cost:read", "cost:write",
         "sale_price:read", "sale_price:write",
         "pricing_profile:read", "pricing_profile:write",
@@ -40,37 +37,37 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "quote:run",
         "admin:customer_read",
     },
-    "tenant_finance": {
-        "cost:read", "cost:write",
-        "sale_price:read", "sale_price:write",
-        "pricing_profile:read", "pricing_profile:write",
-        "freight_rate:read", "freight_rate:write",
+    "customer_member": {
         "quote:run",
-    },
-    "tenant_pricing_admin": {
-        "cost:read", "cost:write",
-        "sale_price:read", "sale_price:write",
-        "pricing_profile:read", "pricing_profile:write",
-        "freight_rate:read", "freight_rate:write",
-        "quote:run",
-    },
-    "tenant_sales_manager": {
         "sale_price:read",
-        "quote:run",
-    },
-    "tenant_sales": {
-        "quote:run",
-    },
-    "external_buyer": {
-        "quote:run",
     },
 }
 
-DEFAULT_ROLE = "tenant_sales"
+# ── 旧角色 → 权限映射 (兼容层，过渡期使用) ──
+ROLE_PERMISSIONS: dict[str, set[str]] = {
+    "platform_admin": EFFECTIVE_ROLE_PERMISSIONS["system_admin"],
+    "tenant_owner": EFFECTIVE_ROLE_PERMISSIONS["customer_owner"],
+    "tenant_finance": EFFECTIVE_ROLE_PERMISSIONS["customer_owner"],
+    "tenant_pricing_admin": EFFECTIVE_ROLE_PERMISSIONS["customer_owner"],
+    "tenant_sales_manager": {"sale_price:read", "quote:run"},
+    "tenant_sales": {"quote:run"},
+    "external_buyer": {"quote:run"},
+}
+
+DEFAULT_ROLE = "customer_member"
 
 
 def get_role(request: Request) -> str:
-    """从请求头提取角色。dev 阶段用 X-Role header。"""
+    """提取当前请求的有效角色。
+
+    优先级:
+    1. request.state.auth.effective_role (AuthContext，推荐)
+    2. X-Role header (旧兼容层，dev 阶段)
+    3. DEFAULT_ROLE (customer_member)
+    """
+    auth = getattr(request.state, "auth", None)
+    if auth is not None:
+        return getattr(auth, "effective_role", DEFAULT_ROLE)
     return request.headers.get("X-Role", DEFAULT_ROLE)
 
 
@@ -79,7 +76,8 @@ def get_actor_id(request: Request) -> str:
 
 
 def has_permission(role: str, permission: str) -> bool:
-    perms = ROLE_PERMISSIONS.get(role, set())
+    """检查角色是否拥有指定权限。同时支持三层新角色和旧角色兼容层。"""
+    perms = EFFECTIVE_ROLE_PERMISSIONS.get(role) or ROLE_PERMISSIONS.get(role, set())
     return permission in perms
 
 

@@ -76,7 +76,20 @@ class AuthContext:
         return self.account_type == "customer"
 
     def is_admin(self) -> bool:
-        return self.role in ("system_admin", "admin")
+        return self.effective_role == "system_admin"
+
+    @property
+    def effective_role(self) -> str:
+        """应用层角色映射：旧角色 → 新三层角色体系。"""
+        ROLE_MAP = {
+            "system_admin": "system_admin",
+            "admin": "system_admin",
+            "owner": "customer_owner",
+            "customer_owner": "customer_owner",
+            "user": "customer_member",
+            "customer_member": "customer_member",
+        }
+        return ROLE_MAP.get(self.role, "customer_member")
 
     @property
     def customer_id_str(self) -> str:
