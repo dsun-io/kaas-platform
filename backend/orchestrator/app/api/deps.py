@@ -5,7 +5,6 @@ Kaas v2 · Admin API 鉴权依赖 (§3.7.18)
 """
 import os
 from fastapi import Request, HTTPException
-from fastapi.responses import JSONResponse
 
 ADMIN_RELOAD_TOKEN = os.environ.get("ADMIN_RELOAD_TOKEN", "dev-admin-token")
 
