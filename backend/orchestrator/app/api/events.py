@@ -3,8 +3,7 @@ Kaas v2 · Events API 路由 (§3.7.8)
 POST /api/v1/events — 写入原始事件 (INSERT-only · 铁律5)
 """
 import json
-from fastapi import APIRouter, Request, Depends
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Request, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db_session
 from app.api.schema_registry import (
@@ -60,30 +59,27 @@ async def list_events_endpoint(
         offset=offset,
     )
 
-    return JSONResponse(
-        status_code=200,
-        content={
-            "items": [
-                {
-                    "id": str(e.id),
-                    "event_type": e.event_type,
-                    "schema_version": e.schema_version,
-                    "tenant_id": e.tenant_id,
-                    "actor_id": e.actor_id,
-                    "session_id": e.session_id,
-                    "trace_id": e.trace_id,
-                    "event_source": e.event_source,
-                    "payload": e.payload,
-                    "sampled": e.sampled,
-                    "created_at": e.created_at.isoformat(),
-                }
-                for e in events
-            ],
-            "total": total,
-            "page": (offset // max(limit, 1)) + 1 if limit > 0 else 1,
-            "page_size": limit,
-        },
-    )
+    return {
+        "items": [
+            {
+                "id": str(e.id),
+                "event_type": e.event_type,
+                "schema_version": e.schema_version,
+                "tenant_id": e.tenant_id,
+                "actor_id": e.actor_id,
+                "session_id": e.session_id,
+                "trace_id": e.trace_id,
+                "event_source": e.event_source,
+                "payload": e.payload,
+                "sampled": e.sampled,
+                "created_at": e.created_at.isoformat(),
+            }
+            for e in events
+        ],
+        "total": total,
+        "page": (offset // max(limit, 1)) + 1 if limit > 0 else 1,
+        "page_size": limit,
+    }
 
 
 @router.post("/events", response_model=EventResponse)
@@ -98,13 +94,7 @@ async def create_event(request: Request, db: AsyncSession = Depends(get_db_sessi
         tenant_id: str | None = getattr(request.state, "tenant_id", None)
 
     if not tenant_id:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": ERROR_TENANT_ID_MISSING,
-                "message": "tenant_id is required; ensure X-Tenant-Id header is set",
-            },
-        )
+        raise HTTPException(status_code=400, detail=f"{ERROR_TENANT_ID_MISSING}: tenant_id is required; ensure X-Tenant-Id header is set")
 
     body = await request.json()
 
@@ -116,45 +106,21 @@ async def create_event(request: Request, db: AsyncSession = Depends(get_db_sessi
     # 2. event_type 校验
     event_type = body.get("event_type")
     if not event_type:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": ERROR_EVENT_TYPE_UNKNOWN,
-                "message": f"event_type is required, must be one of {sorted(VALID_EVENT_TYPES)}",
-            },
-        )
+        raise HTTPException(status_code=400, detail=f"{ERROR_EVENT_TYPE_UNKNOWN}: event_type is required, must be one of {sorted(VALID_EVENT_TYPES)}")
     if event_type not in VALID_EVENT_TYPES:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": ERROR_EVENT_TYPE_UNKNOWN,
-                "message": f"Unknown event_type '{event_type}', must be one of {sorted(VALID_EVENT_TYPES)}",
-            },
-        )
+        raise HTTPException(status_code=400, detail=f"{ERROR_EVENT_TYPE_UNKNOWN}: Unknown event_type '{event_type}', must be one of {sorted(VALID_EVENT_TYPES)}")
 
     # 3. schema_version 校验
     schema_version = body.get("schema_version")
     if schema_version is None:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": ERROR_SCHEMA_VERSION_REQUIRED,
-                "message": "schema_version is required",
-            },
-        )
+        raise HTTPException(status_code=400, detail=f"{ERROR_SCHEMA_VERSION_REQUIRED}: schema_version is required")
 
     schemas_for_type = PAYLOAD_SCHEMAS.get(event_type, {})
     if schema_version not in schemas_for_type:
         valid_versions = sorted(schemas_for_type.keys())
-        return JSONResponse(
+        raise HTTPException(
             status_code=400,
-            content={
-                "error": ERROR_SCHEMA_VERSION_UNSUPPORTED,
-                "message": (
-                    f"schema_version {schema_version} not supported for '{event_type}', "
-                    f"must be one of {valid_versions}"
-                ),
-            },
+            detail=f"{ERROR_SCHEMA_VERSION_UNSUPPORTED}: schema_version {schema_version} not supported for '{event_type}', must be one of {valid_versions}",
         )
 
     # 4. payload 校验（字段集必须匹配注册表）
@@ -165,39 +131,25 @@ async def create_event(request: Request, db: AsyncSession = Depends(get_db_sessi
         payload_dict = validated.model_dump()
     except Exception as e:
         missing = [err["loc"][0] for err in e.errors()] if hasattr(e, "errors") else []
-        return JSONResponse(
+        raise HTTPException(
             status_code=400,
-            content={
-                "error": ERROR_PAYLOAD_SCHEMA_MISMATCH,
-                "message": f"Payload schema mismatch for '{event_type}' v{schema_version}",
-                "missing_fields": missing,
-                "detail": str(e),
-            },
+            detail=f"{ERROR_PAYLOAD_SCHEMA_MISMATCH}: Payload schema mismatch for '{event_type}' v{schema_version}, missing_fields={missing}, detail={e}",
         )
 
     # 5. payload 大小限制（> 10KB 走 OSS presign）
     payload_json = json.dumps(payload_dict, ensure_ascii=False)
     if len(payload_json.encode("utf-8")) > MAX_PAYLOAD_BYTES:
-        return JSONResponse(
+        raise HTTPException(
             status_code=400,
-            content={
-                "error": ERROR_PAYLOAD_TOO_LARGE,
-                "message": (
-                    f"Payload size exceeds {MAX_PAYLOAD_BYTES // 1024}KB limit, "
-                    "use POST /api/v1/oss/presign for large payloads"
-                ),
-            },
+            detail=f"{ERROR_PAYLOAD_TOO_LARGE}: Payload size exceeds {MAX_PAYLOAD_BYTES // 1024}KB limit, use POST /api/v1/oss/presign for large payloads",
         )
 
     # 6. event_source 校验
     event_source = body.get("event_source", "orchestrator")
     if event_source not in VALID_EVENT_SOURCES:
-        return JSONResponse(
+        raise HTTPException(
             status_code=400,
-            content={
-                "error": ERROR_EVENT_TYPE_UNKNOWN,
-                "message": f"Invalid event_source '{event_source}', must be one of {sorted(VALID_EVENT_SOURCES)}",
-            },
+            detail=f"{ERROR_EVENT_TYPE_UNKNOWN}: Invalid event_source '{event_source}', must be one of {sorted(VALID_EVENT_SOURCES)}",
         )
 
     # 7. 隐式注入
@@ -217,14 +169,11 @@ async def create_event(request: Request, db: AsyncSession = Depends(get_db_sessi
         session_id=body.get("session_id"),
     )
 
-    return JSONResponse(
-        status_code=201,
-        content={
-            "id": event.id,
-            "event_type": event.event_type,
-            "tenant_id": event.tenant_id,
-            "trace_id": event.trace_id,
-            "schema_version": event.schema_version,
-            "created_at": event.created_at.isoformat(),
-        },
-    )
+    return {
+        "id": event.id,
+        "event_type": event.event_type,
+        "tenant_id": event.tenant_id,
+        "trace_id": event.trace_id,
+        "schema_version": event.schema_version,
+        "created_at": event.created_at.isoformat(),
+    }

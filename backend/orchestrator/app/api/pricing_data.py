@@ -14,8 +14,7 @@ from datetime import date, datetime, timezone
 from typing import Optional
 
 import structlog
-from fastapi import APIRouter, Request, Depends
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Request, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -122,10 +121,7 @@ async def create_pricing_data(
     """
     auth: AuthContext = getattr(request.state, "auth", None)
     if auth is None:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "unauthorized", "message": "Authentication required"},
-        )
+        raise HTTPException(status_code=401, detail="Authentication required")
 
     # customer/free: tenant 必须以 AuthContext 为准
     if auth.is_customer():
@@ -134,10 +130,7 @@ async def create_pricing_data(
         tenant_id: str = getattr(request.state, "tenant_id", "") or ""
 
     if not tenant_id:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "tenant_required", "message": "Missing tenant context"},
-        )
+        raise HTTPException(status_code=401, detail="Missing tenant context")
 
     # customer_id 使用 customer_code（与 quote engine 一致）
     customer_id: str = auth.customer_id_str or tenant_id
@@ -152,50 +145,29 @@ async def create_pricing_data(
     raw_category = (body.get("product_category") or "").strip()
     product_category = normalize_category(raw_category)
     if not product_category:
-        return JSONResponse(
-            status_code=422,
-            content={
-                "error": "validation_error",
-                "message": "product_category is required",
-            },
-        )
+        raise HTTPException(status_code=422, detail="product_category is required")
 
     cost_amount = body.get("cost_amount")
     if cost_amount is None or not isinstance(cost_amount, (int, float)) or cost_amount <= 0:
-        return JSONResponse(
-            status_code=422,
-            content={"error": "validation_error", "message": "cost_amount must be > 0"},
-        )
+        raise HTTPException(status_code=422, detail="cost_amount must be > 0")
 
     cost_unit = (body.get("cost_unit") or "").strip()
     cost_type = _UNIT_TO_COST_TYPE.get(cost_unit)
     if cost_type is None:
-        return JSONResponse(
-            status_code=422,
-            content={
-                "error": "validation_error",
-                "message": f"cost_unit must be one of: {', '.join(_UNIT_TO_COST_TYPE.keys())}",
-            },
-        )
+        raise HTTPException(status_code=422, detail=f"cost_unit must be one of: {list(_UNIT_TO_COST_TYPE.keys())}")
 
     # ── 解析可选字段 ──
     effective_from = _parse_date(body.get("effective_from"))
     effective_to = _parse_date(body.get("effective_to"))
     status = (body.get("status") or "active").strip()
     if status not in ("active", "inactive", "deprecated"):
-        return JSONResponse(
-            status_code=422,
-            content={"error": "validation_error", "message": "status must be active, inactive, or deprecated"},
-        )
+        raise HTTPException(status_code=422, detail="status must be active, inactive, or deprecated")
 
     # ── 同一事务: 写 product_specs + customer_cost_items ──
     try:
         spec_dict = _build_spec_dict(body)
         if not spec_dict:
-            return JSONResponse(
-                status_code=422,
-                content={"error": "validation_error", "message": "At least one spec field is required beyond product_category"},
-            )
+            raise HTTPException(status_code=422, detail="At least one spec field is required beyond product_category")
 
         spec = await _find_or_create_spec(db, spec_dict, body)
         spec_hash = spec.spec_hash
@@ -238,33 +210,30 @@ async def create_pricing_data(
             cost_item_id=cost_item.id,
         )
 
-        return JSONResponse(
-            status_code=201,
-            content={
-                "id": cost_item.id,
-                "product_category": product_category,
-                "spec_hash": spec_hash,
-                "spec_id": spec.id,
-                "cost_type": cost_type,
-                "amount": cost_item.amount,
-                "currency": cost_item.currency,
-                "unit": cost_item.unit,
-                "effective_from": effective_from.isoformat() if effective_from else None,
-                "effective_to": effective_to.isoformat() if effective_to else None,
-                "status": cost_item.status,
-                "product_spec": {
-                    "id": spec.id,
-                    "product_category": spec.product_category,
-                    "product_type": spec.product_type,
-                    "wire_diameter": spec.wire_diameter,
-                    "height": spec.height,
-                    "mesh_width": spec.mesh_width,
-                    "mesh_spec": spec.mesh_spec,
-                    "roll_length": spec.roll_length,
-                    "weight_kg": spec.weight_kg,
-                },
+        return {
+            "id": cost_item.id,
+            "product_category": product_category,
+            "spec_hash": spec_hash,
+            "spec_id": spec.id,
+            "cost_type": cost_type,
+            "amount": cost_item.amount,
+            "currency": cost_item.currency,
+            "unit": cost_item.unit,
+            "effective_from": effective_from.isoformat() if effective_from else None,
+            "effective_to": effective_to.isoformat() if effective_to else None,
+            "status": cost_item.status,
+            "product_spec": {
+                "id": spec.id,
+                "product_category": spec.product_category,
+                "product_type": spec.product_type,
+                "wire_diameter": spec.wire_diameter,
+                "height": spec.height,
+                "mesh_width": spec.mesh_width,
+                "mesh_spec": spec.mesh_spec,
+                "roll_length": spec.roll_length,
+                "weight_kg": spec.weight_kg,
             },
-        )
+        }
 
     except Exception:
         await db.rollback()
@@ -279,10 +248,7 @@ async def list_pricing_data(
     """查询当前客户的定价数据列表。"""
     auth: AuthContext = getattr(request.state, "auth", None)
     if auth is None:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "unauthorized", "message": "Authentication required"},
-        )
+        raise HTTPException(status_code=401, detail="Authentication required")
 
     if auth.is_customer():
         tenant_id: str = auth.tenant_id or ""
@@ -290,10 +256,7 @@ async def list_pricing_data(
         tenant_id: str = getattr(request.state, "tenant_id", "") or ""
 
     if not tenant_id:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "tenant_required", "message": "Missing tenant context"},
-        )
+        raise HTTPException(status_code=401, detail="Missing tenant context")
 
     customer_id: str = auth.customer_id_str or tenant_id
 
@@ -357,16 +320,13 @@ async def list_pricing_data(
             } if spec else None,
         })
 
-    return JSONResponse(
-        status_code=200,
-        content={
-            "items": results,
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-            "pages": (total + page_size - 1) // page_size if total > 0 else 0,
-        },
-    )
+    return {
+        "items": results,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": (total + page_size - 1) // page_size if total > 0 else 0,
+    }
 
 
 @router.patch("/pricing-data/{item_id}")
@@ -382,10 +342,7 @@ async def update_pricing_data(
     """
     auth: AuthContext = getattr(request.state, "auth", None)
     if auth is None:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "unauthorized", "message": "Authentication required"},
-        )
+        raise HTTPException(status_code=401, detail="Authentication required")
 
     if auth.is_customer():
         tenant_id: str = auth.tenant_id or ""
@@ -393,10 +350,7 @@ async def update_pricing_data(
         tenant_id: str = getattr(request.state, "tenant_id", "") or ""
 
     if not tenant_id:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "tenant_required", "message": "Missing tenant context"},
-        )
+        raise HTTPException(status_code=401, detail="Missing tenant context")
 
     customer_id: str = auth.customer_id_str or tenant_id
 
@@ -411,10 +365,7 @@ async def update_pricing_data(
         from app.repositories.cost_items_repo import get_cost_item_by_id, update_cost_item
         cost_item = await get_cost_item_by_id(db, item_id, tenant_id, customer_id)
         if cost_item is None:
-            return JSONResponse(
-                status_code=404,
-                content={"error": "not_found", "message": "Pricing data not found"},
-            )
+            raise HTTPException(status_code=404, detail="Pricing data not found")
 
         # ── 构建更新字段 ──
         updates: dict = {}
@@ -423,10 +374,7 @@ async def update_pricing_data(
         new_amount = body.get("cost_amount")
         if new_amount is not None:
             if not isinstance(new_amount, (int, float)) or new_amount <= 0:
-                return JSONResponse(
-                    status_code=422,
-                    content={"error": "validation_error", "message": "cost_amount must be > 0"},
-                )
+                raise HTTPException(status_code=422, detail="cost_amount must be > 0")
             updates["amount"] = float(new_amount)
 
         # 成本单位 → cost_type
@@ -434,13 +382,7 @@ async def update_pricing_data(
         if new_unit is not None:
             new_cost_type = _UNIT_TO_COST_TYPE.get(new_unit.strip())
             if new_cost_type is None:
-                return JSONResponse(
-                    status_code=422,
-                    content={
-                        "error": "validation_error",
-                        "message": f"cost_unit must be one of: {', '.join(_UNIT_TO_COST_TYPE.keys())}",
-                    },
-                )
+                raise HTTPException(status_code=422, detail=f"cost_unit must be one of: {list(_UNIT_TO_COST_TYPE.keys())}")
             updates["cost_type"] = new_cost_type
             updates["unit"] = new_unit.strip()
 
@@ -498,10 +440,7 @@ async def update_pricing_data(
         if "status" in body:
             new_status = str(body["status"]).strip()
             if new_status not in ("active", "inactive", "deprecated"):
-                return JSONResponse(
-                    status_code=422,
-                    content={"error": "validation_error", "message": "status must be active, inactive, or deprecated"},
-                )
+                raise HTTPException(status_code=422, detail="status must be active, inactive, or deprecated")
             updates["status"] = new_status
 
         # 备注
@@ -509,18 +448,12 @@ async def update_pricing_data(
             updates["notes"] = body["notes"]
 
         if not updates:
-            return JSONResponse(
-                status_code=422,
-                content={"error": "validation_error", "message": "No fields to update"},
-            )
+            raise HTTPException(status_code=422, detail="No fields to update")
 
         updated = await update_cost_item(db, item_id, tenant_id, customer_id, updates)
         if updated is None:
             await db.rollback()
-            return JSONResponse(
-                status_code=500,
-                content={"error": "update_failed", "message": "Failed to update cost item"},
-            )
+            raise HTTPException(status_code=500, detail="Failed to update cost item")
 
         logger.info(
             "pricing_data_updated",
@@ -537,33 +470,30 @@ async def update_pricing_data(
             )
             spec = spec_result.scalar_one_or_none()
 
-        return JSONResponse(
-            status_code=200,
-            content={
-                "id": updated.id,
-                "product_category": updated.product_category,
-                "spec_hash": updated.spec_hash,
-                "spec_id": updated.product_spec_id,
-                "cost_type": updated.cost_type,
-                "amount": updated.amount,
-                "currency": updated.currency,
-                "unit": updated.unit,
-                "effective_from": updated.effective_from.isoformat() if updated.effective_from else None,
-                "effective_to": updated.effective_to.isoformat() if updated.effective_to else None,
-                "status": updated.status,
-                "product_spec": {
-                    "id": spec.id,
-                    "product_category": spec.product_category,
-                    "product_type": spec.product_type,
-                    "wire_diameter": spec.wire_diameter,
-                    "height": spec.height,
-                    "mesh_width": spec.mesh_width,
-                    "mesh_spec": spec.mesh_spec,
-                    "roll_length": spec.roll_length,
-                    "weight_kg": spec.weight_kg,
-                } if spec else None,
-            },
-        )
+        return {
+            "id": updated.id,
+            "product_category": updated.product_category,
+            "spec_hash": updated.spec_hash,
+            "spec_id": updated.product_spec_id,
+            "cost_type": updated.cost_type,
+            "amount": updated.amount,
+            "currency": updated.currency,
+            "unit": updated.unit,
+            "effective_from": updated.effective_from.isoformat() if updated.effective_from else None,
+            "effective_to": updated.effective_to.isoformat() if updated.effective_to else None,
+            "status": updated.status,
+            "product_spec": {
+                "id": spec.id,
+                "product_category": spec.product_category,
+                "product_type": spec.product_type,
+                "wire_diameter": spec.wire_diameter,
+                "height": spec.height,
+                "mesh_width": spec.mesh_width,
+                "mesh_spec": spec.mesh_spec,
+                "roll_length": spec.roll_length,
+                "weight_kg": spec.weight_kg,
+            } if spec else None,
+        }
 
     except Exception:
         await db.rollback()
@@ -582,10 +512,7 @@ async def delete_pricing_data(
     """
     auth: AuthContext = getattr(request.state, "auth", None)
     if auth is None:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "unauthorized", "message": "Authentication required"},
-        )
+        raise HTTPException(status_code=401, detail="Authentication required")
 
     if auth.is_customer():
         tenant_id: str = auth.tenant_id or ""
@@ -593,10 +520,7 @@ async def delete_pricing_data(
         tenant_id: str = getattr(request.state, "tenant_id", "") or ""
 
     if not tenant_id:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "tenant_required", "message": "Missing tenant context"},
-        )
+        raise HTTPException(status_code=401, detail="Missing tenant context")
 
     customer_id: str = auth.customer_id_str or tenant_id
 
@@ -604,10 +528,7 @@ async def delete_pricing_data(
         from app.repositories.cost_items_repo import soft_delete_cost_item
         deleted = await soft_delete_cost_item(db, item_id, tenant_id, customer_id)
         if not deleted:
-            return JSONResponse(
-                status_code=404,
-                content={"error": "not_found", "message": "Pricing data not found or access denied"},
-            )
+            raise HTTPException(status_code=404, detail="Pricing data not found or access denied")
 
         logger.info(
             "pricing_data_deleted",
@@ -617,10 +538,7 @@ async def delete_pricing_data(
             item_id=item_id,
         )
 
-        return JSONResponse(
-            status_code=200,
-            content={"id": item_id, "status": "inactive", "message": "Pricing data deactivated"},
-        )
+        return {"id": item_id, "status": "inactive", "message": "Pricing data deactivated"}
 
     except Exception:
         await db.rollback()

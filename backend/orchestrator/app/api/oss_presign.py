@@ -9,7 +9,6 @@ POST /api/v1/oss/presign — 生成预签名上传 URL
 import uuid
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Request, HTTPException
-from fastapi.responses import JSONResponse
 from minio import Minio
 from app.config.settings import settings
 from app.core.auth import AuthContext
@@ -52,43 +51,19 @@ async def create_presigned_url(request: Request):
     if auth.is_internal():
         tenant_id = body.get("tenant_id")
         if not tenant_id:
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "error": "missing_tenant",
-                    "message": "tenant_id is required in body for internal access",
-                },
-            )
+            raise HTTPException(status_code=400, detail="missing_tenant: tenant_id is required in body for internal access")
     else:
         tenant_id = auth.tenant_id
         if not tenant_id:
-            return JSONResponse(
-                status_code=403,
-                content={
-                    "error": "forbidden",
-                    "message": "Customer account has no tenant binding",
-                },
-            )
+            raise HTTPException(status_code=403, detail="forbidden: Customer account has no tenant binding")
 
     purpose = body.get("purpose", "event_payload")
     if purpose not in VALID_PURPOSES:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": "invalid_purpose",
-                "message": f"purpose must be one of {sorted(VALID_PURPOSES)}",
-            },
-        )
+        raise HTTPException(status_code=400, detail=f"invalid_purpose: purpose must be one of {sorted(VALID_PURPOSES)}")
 
     size_bytes = body.get("size_bytes", 0)
     if size_bytes > MAX_SIZE_BYTES:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": "size_too_large",
-                "message": f"size_bytes {size_bytes} exceeds {MAX_SIZE_BYTES // 1024 // 1024}MB limit",
-            },
-        )
+        raise HTTPException(status_code=400, detail=f"size_too_large: size_bytes {size_bytes} exceeds {MAX_SIZE_BYTES // 1024 // 1024}MB limit")
 
     content_type = body.get("content_type", "application/octet-stream")
     event_type = body.get("event_type", "unknown")
@@ -114,18 +89,12 @@ async def create_presigned_url(request: Request):
             expires=timedelta(seconds=PRESIGN_EXPIRES),
         )
     except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": "minio_error", "message": str(e)},
-        )
+        raise HTTPException(status_code=500, detail=f"minio_error: {e}")
 
-    return JSONResponse(
-        status_code=200,
-        content={
-            "oss_key": oss_key,
-            "presigned_url": url,
-            "expires_in": PRESIGN_EXPIRES,
-            "method": "PUT",
-            "content_type": content_type,
-        },
-    )
+    return {
+        "oss_key": oss_key,
+        "presigned_url": url,
+        "expires_in": PRESIGN_EXPIRES,
+        "method": "PUT",
+        "content_type": content_type,
+    }
