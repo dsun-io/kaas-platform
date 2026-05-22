@@ -1,0 +1,4 @@
+# 本目录存放真实种子数据，绝不提交到 git
+*
+!.gitignore
+!README.md

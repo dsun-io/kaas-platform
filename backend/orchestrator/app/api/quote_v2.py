@@ -6,7 +6,6 @@ import os
 import time
 import structlog
 from fastapi import APIRouter, Request, Depends, HTTPException
-from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db_session
 from app.schemas.quote_v2 import QuoteV2Request, QuoteV2Response
@@ -36,15 +35,13 @@ async def create_quote_v2(
     tenant_id: str = getattr(request.state, "tenant_id", "")
 
     if auth is None:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "unauthorized", "message": "Authentication required"},
+        raise HTTPException(
+            status_code=401, detail="unauthorized: Authentication required"
         )
 
     if not tenant_id:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "tenant_required", "message": "Missing tenant context"},
+        raise HTTPException(
+            status_code=401, detail="tenant_required: Missing tenant context"
         )
 
     # customer_id 来自 auth context，不信任 header/body
@@ -57,9 +54,8 @@ async def create_quote_v2(
     except HTTPException:
         raise
     except Exception:
-        return JSONResponse(
-            status_code=403,
-            content={"error": "forbidden", "message": "Insufficient permissions"},
+        raise HTTPException(
+            status_code=403, detail="forbidden: Insufficient permissions"
         )
 
     # ── 解析请求体 ──
@@ -67,9 +63,8 @@ async def create_quote_v2(
     try:
         quote_req = QuoteV2Request(**body)
     except Exception as e:
-        return JSONResponse(
-            status_code=422,
-            content={"error": "validation_error", "message": str(e)},
+        raise HTTPException(
+            status_code=422, detail=f"validation_error: {e}"
         )
 
     # ── 执行报价 ──
@@ -83,9 +78,8 @@ async def create_quote_v2(
         )
     except Exception as e:
         logger.error("quote_v2_failed", tenant_id=tenant_id, error=str(e))
-        return JSONResponse(
-            status_code=500,
-            content={"error": "quote_failed", "message": "Internal quote error"},
+        raise HTTPException(
+            status_code=500, detail="quote_failed: Internal quote error"
         )
 
     # ── 事件记录（脱敏后 · 独立 session 隔离，避免脏 session 污染报价主流程） ──
@@ -118,4 +112,4 @@ async def create_quote_v2(
     QUOTE_REQUESTS.labels(tenant_id=tenant_id, path=path, status="success").inc()
     QUOTE_LATENCY.labels(tenant_id=tenant_id, path=path).observe(elapsed)
 
-    return JSONResponse(status_code=200, content=result)
+    return result
