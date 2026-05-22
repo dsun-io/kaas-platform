@@ -7,7 +7,6 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import APIRouter, Request, Depends, HTTPException
-from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db_session
 from app.domain.tenant_config import get_all_tenants, load_tenant_config, reload_all_tenants
@@ -72,19 +71,16 @@ def _append_audit(action: str, tenant_id: str, detail: dict) -> None:
 async def list_tenants(request: Request):
     """列出所有启用租户。"""
     tenants = get_all_tenants()
-    return JSONResponse(
-        status_code=200,
-        content={
-            "tenants": [
-                {
-                    "tenant_id": tid,
-                    "display_name": t.get("display_name"),
-                    "enabled": t.get("enabled", True),
-                }
-                for tid, t in tenants.items()
-            ]
-        },
-    )
+    return {
+        "tenants": [
+            {
+                "tenant_id": tid,
+                "display_name": t.get("display_name"),
+                "enabled": t.get("enabled", True),
+            }
+            for tid, t in tenants.items()
+        ]
+    }
 
 
 @router.get("/tenants/{tenant_id}", response_model=TenantDetailResponse)
@@ -92,14 +88,11 @@ async def get_tenant(request: Request, tenant_id: str):
     """获取指定租户配置。"""
     tenant = load_tenant_config(tenant_id)
     if tenant is None:
-        return JSONResponse(
+        raise HTTPException(
             status_code=404,
-            content={"error": "tenant_not_found", "message": f"Tenant '{tenant_id}' not found"},
+            detail=f"tenant_not_found: Tenant '{tenant_id}' not found",
         )
-    return JSONResponse(
-        status_code=200,
-        content={"tenant_id": tenant_id, "config": tenant},
-    )
+    return {"tenant_id": tenant_id, "config": tenant}
 
 
 # ─── Auth-required endpoints (§3.7.18) ───
@@ -113,13 +106,10 @@ async def reload_tenants(
     reload_all_tenants()
     tenants = get_all_tenants()
     _append_audit("tenants_reload", "*", {"tenant_count": len(tenants)})
-    return JSONResponse(
-        status_code=200,
-        content={
-            "message": "Tenant cache reloaded",
-            "tenant_count": len(tenants),
-        },
-    )
+    return {
+        "message": "Tenant cache reloaded",
+        "tenant_count": len(tenants),
+    }
 
 
 @router.post("/feature_flag", response_model=FeatureFlagSetResponse)
@@ -138,12 +128,9 @@ async def set_feature_flag(
     flag_value = body.get("flag_value") if "flag_value" in body else body.get("enabled")
 
     if not tenant_id or not flag_name:
-        return JSONResponse(
+        raise HTTPException(
             status_code=400,
-            content={
-                "error": "invalid_request",
-                "message": "tenant_id and flag_name are required",
-            },
+            detail="invalid_request: tenant_id and flag_name are required",
         )
 
     # 读现有配置
@@ -155,12 +142,9 @@ async def set_feature_flag(
 
     tenants = config.get("tenants", {})
     if tenant_id not in tenants:
-        return JSONResponse(
+        raise HTTPException(
             status_code=404,
-            content={
-                "error": "tenant_not_found",
-                "message": f"Tenant '{tenant_id}' not found",
-            },
+            detail=f"tenant_not_found: Tenant '{tenant_id}' not found",
         )
 
     # 更新 feature_flag
@@ -192,15 +176,12 @@ async def set_feature_flag(
         },
     )
 
-    return JSONResponse(
-        status_code=200,
-        content={
-            "tenant_id": tenant_id,
-            "flag_name": flag_name,
-            "old_value": old_value,
-            "new_value": flag_value,
-        },
-    )
+    return {
+        "tenant_id": tenant_id,
+        "flag_name": flag_name,
+        "old_value": old_value,
+        "new_value": flag_value,
+    }
 
 
 @router.get("/feature_flag")
@@ -215,23 +196,19 @@ async def get_feature_flag(
     """
     if not tenant_id:
         tenants = get_all_tenants()
-        result = {
+        return {
             tid: t.get("feature_flags", {})
             for tid, t in tenants.items()
         }
-        return JSONResponse(status_code=200, content=result)
 
     tid = tenant_id or getattr(request.state, "tenant_id", None)
     tenant = load_tenant_config(tid)
     if tenant is None:
-        return JSONResponse(
+        raise HTTPException(
             status_code=404,
-            content={"error": "tenant_not_found", "message": f"Tenant '{tid}' not found"},
+            detail=f"tenant_not_found: Tenant '{tid}' not found",
         )
-    return JSONResponse(
-        status_code=200,
-        content=tenant.get("feature_flags", {}),
-    )
+    return tenant.get("feature_flags", {})
 
 
 @router.get("/deployment_audit", response_model=AuditLogResponse)
@@ -242,10 +219,7 @@ async def get_deployment_audit(
 ):
     """查询部署审计日志（tail jsonl）。"""
     if not AUDIT_LOG_PATH.exists():
-        return JSONResponse(
-            status_code=200,
-            content={"items": [], "total": 0},
-        )
+        return {"items": [], "total": 0}
 
     records = []
     with open(AUDIT_LOG_PATH, "r", encoding="utf-8") as f:
@@ -283,10 +257,7 @@ async def get_deployment_audit(
         }
         for r in records
     ]
-    return JSONResponse(
-        status_code=200,
-        content={"items": items, "total": len(items)},
-    )
+    return {"items": items, "total": len(items)}
 
 
 @router.get("/audit-log", response_model=AuditLogResponse)
@@ -297,10 +268,7 @@ async def get_audit_log(
 ):
     """前端兼容: /admin/audit-log → 复用 deployment_audit。"""
     if not AUDIT_LOG_PATH.exists():
-        return JSONResponse(
-            status_code=200,
-            content={"items": [], "total": 0},
-        )
+        return {"items": [], "total": 0}
 
     records = []
     with open(AUDIT_LOG_PATH, "r", encoding="utf-8") as f:
@@ -330,10 +298,7 @@ async def get_audit_log(
         }
         for r in records
     ]
-    return JSONResponse(
-        status_code=200,
-        content={"items": items, "total": len(items)},
-    )
+    return {"items": items, "total": len(items)}
 
 
 @router.get("/archive-logs", response_model=ArchiveLogResponse)
@@ -344,22 +309,19 @@ async def list_archive_logs(
 ):
     """查询归档日志记录。"""
     logs = await get_archive_logs(session=db, tenant_id=tenant_id)
-    return JSONResponse(
-        status_code=200,
-        content={
-            "logs": [
-                {
-                    "id": str(log.id),
-                    "tenant_id": log.tenant_id,
-                    "month": log.month,
-                    "minio_path": log.minio_path,
-                    "status": log.status,
-                    "archived_at": log.archived_at.isoformat(),
-                }
-                for log in logs
-            ]
-        },
-    )
+    return {
+        "logs": [
+            {
+                "id": str(log.id),
+                "tenant_id": log.tenant_id,
+                "month": log.month,
+                "minio_path": log.minio_path,
+                "status": log.status,
+                "archived_at": log.archived_at.isoformat(),
+            }
+            for log in logs
+        ]
+    }
 
 
 # ─── Metrics summary (§9.2) ───
@@ -371,12 +333,9 @@ async def metrics_summary():
     from app.core.metrics import ACTIVE_SESSIONS, QUOTE_REQUESTS, LLM_FALLBACK_TOTAL
     from app.domain.session_store import session_store
 
-    return JSONResponse(
-        status_code=200,
-        content={
-            "active_sessions": len(session_store),
-        },
-    )
+    return {
+        "active_sessions": len(session_store),
+    }
 
 
 # ─── Cache control (§9.2) ───
@@ -387,7 +346,4 @@ async def clear_cache():
     """清空 session_store（需 admin token）。"""
     from app.domain.session_store import session_store
     count = session_store.clear()
-    return JSONResponse(
-        status_code=200,
-        content={"cleared_sessions": count},
-    )
+    return {"cleared_sessions": count}

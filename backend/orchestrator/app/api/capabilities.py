@@ -2,8 +2,7 @@
 
 GET/POST /api/v1/capabilities — 查询/更新客户生产规格能力。
 """
-from fastapi import APIRouter, Request, Depends
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Request, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.db.session import get_db_session
@@ -31,10 +30,7 @@ async def list_customers(
     """
     auth: AuthContext = getattr(request.state, "auth", None)
     if not auth:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "unauthorized", "message": "Authentication required"},
-        )
+        raise HTTPException(status_code=401, detail="unauthorized: Authentication required")
 
     stmt = (
         select(
@@ -53,20 +49,17 @@ async def list_customers(
 
     result = await db.execute(stmt)
     rows = result.all()
-    return JSONResponse(
-        status_code=200,
-        content=[
-            {
-                "customer_id": r.customer_id,
-                "customer_name": r.customer_name,
-                "category_count": r.category_count,
-                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
-                "locale": "zh-CN",
-                "region": "CN",
-            }
-            for r in rows
-        ],
-    )
+    return [
+        {
+            "customer_id": r.customer_id,
+            "customer_name": r.customer_name,
+            "category_count": r.category_count,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            "locale": "zh-CN",
+            "region": "CN",
+        }
+        for r in rows
+    ]
 
 
 @router.get("/capabilities", response_model=CapabilityListResponse)
@@ -98,24 +91,21 @@ async def list_customer_capabilities(
         cid = customer_id or tenant_id
         caps = await get_capabilities(db, customer_id=cid) if customer_id else await list_capabilities(db)
 
-    return JSONResponse(
-        status_code=200,
-        content={
-            "capabilities": [
-                {
-                    "id": c.id,
-                    "customer_id": c.customer_id,
-                    "customer_name": c.customer_name,
-                    "product_category": c.product_category,
-                    "spec_constraints": c.spec_constraints,
-                    "notes": c.notes,
-                    "effective_from": c.effective_from.isoformat(),
-                    "updated_at": c.updated_at.isoformat() if c.updated_at else None,
-                }
-                for c in caps
-            ]
-        },
-    )
+    return {
+        "capabilities": [
+            {
+                "id": c.id,
+                "customer_id": c.customer_id,
+                "customer_name": c.customer_name,
+                "product_category": c.product_category,
+                "spec_constraints": c.spec_constraints,
+                "notes": c.notes,
+                "effective_from": c.effective_from.isoformat(),
+                "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+            }
+            for c in caps
+        ]
+    }
 
 
 @router.get("/customer/{customer_id}/capabilities")
@@ -130,30 +120,24 @@ async def get_customer_capabilities_by_id(
     """
     auth: AuthContext = getattr(request.state, "auth", None)
     if not auth:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "unauthorized", "message": "Authentication required"},
-        )
+        raise HTTPException(status_code=401, detail="unauthorized: Authentication required")
     require_customer_code_access(auth, customer_id)
 
     caps = await get_capabilities(db, customer_id=customer_id, tenant_id=auth.tenant_id if not auth.is_internal() else None)
-    return JSONResponse(
-        status_code=200,
-        content=[
-            {
-                "id": c.id,
-                "customer_id": c.customer_id,
-                "customer_name": c.customer_name,
-                "product_category": c.product_category,
-                "spec_constraints": c.spec_constraints,
-                "notes": c.notes,
-                "is_active": True,
-                "effective_from": c.effective_from.isoformat(),
-                "updated_at": c.updated_at.isoformat() if c.updated_at else None,
-            }
-            for c in caps
-        ],
-    )
+    return [
+        {
+            "id": c.id,
+            "customer_id": c.customer_id,
+            "customer_name": c.customer_name,
+            "product_category": c.product_category,
+            "spec_constraints": c.spec_constraints,
+            "notes": c.notes,
+            "is_active": True,
+            "effective_from": c.effective_from.isoformat(),
+            "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+        }
+        for c in caps
+    ]
 
 
 @router.patch("/customer/{customer_id}/capabilities")
@@ -168,10 +152,7 @@ async def patch_customer_capability(
     """
     auth: AuthContext = getattr(request.state, "auth", None)
     if not auth:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "unauthorized", "message": "Authentication required"},
-        )
+        raise HTTPException(status_code=401, detail="unauthorized: Authentication required")
     require_customer_code_access(auth, customer_id)
 
     body = await request.json()
@@ -180,10 +161,7 @@ async def patch_customer_capability(
     is_active = body.get("is_active")
 
     if not cap_id:
-        return JSONResponse(
-            status_code=400,
-            content={"error_code": "MISSING_FIELD", "message": "id is required"},
-        )
+        raise HTTPException(status_code=400, detail="MISSING_FIELD: id is required")
 
     from app.repositories.capabilities_repo import update_capability
 
@@ -196,29 +174,21 @@ async def patch_customer_capability(
         tenant_id=auth.tenant_id if not auth.is_internal() else None,
     )
     if not updated:
-        return JSONResponse(
-            status_code=404,
-            content={
-                "error_code": "CAPABILITY_NOT_FOUND",
-                "message": "Capability not found",
-            },
-        )
+        raise HTTPException(status_code=404, detail="CAPABILITY_NOT_FOUND: Capability not found")
 
-    return JSONResponse(
-        status_code=200,
-        content={
-            "capability": {
-                "id": updated.id,
-                "customer_id": updated.customer_id,
-                "customer_name": updated.customer_name,
-                "product_category": updated.product_category,
-                "spec_constraints": updated.spec_constraints,
-                "notes": updated.notes,
-                "is_active": True,
-                "effective_from": updated.effective_from.isoformat(),
-                "updated_at": updated.updated_at.isoformat() if updated.updated_at else None,
-            },
-            "sync_job_id": f"sync-{cap_id}-{int(__import__('time').time())}",
+    return {
+        "capability": {
+            "id": updated.id,
+            "customer_id": updated.customer_id,
+            "customer_name": updated.customer_name,
+            "product_category": updated.product_category,
+            "spec_constraints": updated.spec_constraints,
+            "notes": updated.notes,
+            "is_active": True,
+            "effective_from": updated.effective_from.isoformat(),
+            "updated_at": updated.updated_at.isoformat() if updated.updated_at else None,
+        },
+        "sync_job_id": f"sync-{cap_id}-{int(__import__('time').time())}",
         },
     )
 
@@ -257,12 +227,9 @@ async def update_customer_capability(
     notes = body.get("notes")
 
     if not customer_id or not product_category:
-        return JSONResponse(
+        raise HTTPException(
             status_code=400,
-            content={
-                "error": "missing_fields",
-                "message": "customer_id and product_category are required",
-            },
+            detail="missing_fields: customer_id and product_category are required",
         )
 
     cap = await upsert_capability(
@@ -275,15 +242,12 @@ async def update_customer_capability(
         notes=notes,
     )
 
-    return JSONResponse(
-        status_code=200,
-        content={
-            "id": cap.id,
-            "customer_id": cap.customer_id,
-            "customer_name": cap.customer_name,
-            "product_category": cap.product_category,
-            "spec_constraints": cap.spec_constraints,
-            "notes": cap.notes,
-            "updated_at": cap.updated_at.isoformat() if cap.updated_at else None,
-        },
-    )
+    return {
+        "id": cap.id,
+        "customer_id": cap.customer_id,
+        "customer_name": cap.customer_name,
+        "product_category": cap.product_category,
+        "spec_constraints": cap.spec_constraints,
+        "notes": cap.notes,
+        "updated_at": cap.updated_at.isoformat() if cap.updated_at else None,
+    }

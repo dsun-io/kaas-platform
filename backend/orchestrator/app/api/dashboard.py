@@ -4,7 +4,6 @@
 - 报价数、活跃客户、Token 消耗、P95 延迟、数据集命中、采样覆盖率。
 """
 from fastapi import APIRouter, Request, Query, Depends
-from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text
 from app.db.session import get_db_session
@@ -164,18 +163,15 @@ async def dashboard_summary(
     if not dataset_hits:
         dataset_hits = {"kb_query": 0}
 
-    return JSONResponse(
-        status_code=200,
-        content={
-            "range": range,
-            "quotations_total": quotations_total,
-            "quotations_sampled": quotations_sampled,
-            "active_customers": active_customers,
-            "customers_sampled": customers_sampled,
-            "dataset_hits": dataset_hits,
-            "token_total": token_total,
-            "token_sampled": token_sampled,
-            "p95_latency_ms": p95_latency_ms,
-            "latency_sampled": latency_sampled,
-        },
-    )
+    return {
+        "range": range,
+        "quotations_total": quotations_total,
+        "quotations_sampled": quotations_sampled,
+        "active_customers": active_customers,
+        "customers_sampled": customers_sampled,
+        "dataset_hits": dataset_hits,
+        "token_total": token_total,
+        "token_sampled": token_sampled,
+        "p95_latency_ms": p95_latency_ms,
+        "latency_sampled": latency_sampled,
+    }
