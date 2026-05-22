@@ -304,26 +304,21 @@ async def me(
         tenant_id = binding.get("tenant_id")
 
     if user is None:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "unauthorized", "message": "User not found"},
-        )
+        raise HTTPException(status_code=401, detail="unauthorized: User not found")
 
-    return JSONResponse(
-        status_code=200,
-        content={
-            "user_id": user.id,
-            "email": user.email,
-            "display_name": user.display_name,
-            "account_type": user.account_type,
-            "role": user.role,
-            "plan": user.plan,
-            "customer_id": customer_id,
-            "customer_code": customer_code,
-            "customer_name": customer_name,
-            "tenant_id": tenant_id,
-        },
-    )
+    return {
+        "user_id": user.id,
+        "email": user.email,
+        "display_name": user.display_name,
+        "account_type": user.account_type,
+        "role": user.role,
+        "effective_role": user.effective_role,
+        "plan": user.plan,
+        "customer_id": customer_id,
+        "customer_code": customer_code,
+        "customer_name": customer_name,
+        "tenant_id": tenant_id,
+    }
 
 
 @router.post("/bootstrap-admin")

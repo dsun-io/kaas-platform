@@ -10,10 +10,10 @@ from app.core.auth import AuthContext
 def require_internal(auth: AuthContext) -> None:
     """要求账号类型为 internal（管理员）。
 
-    - account_type == "internal" 且 role 为 system_admin/admin 时通过
+    - account_type == "internal" 且 effective_role 为 system_admin 时通过
     - 否则 403，不泄露权限细节
     """
-    if auth.account_type == "internal" and auth.role in ("system_admin", "admin"):
+    if auth.account_type == "internal" and auth.effective_role == "system_admin":
         return
     raise HTTPException(
         status_code=403,
