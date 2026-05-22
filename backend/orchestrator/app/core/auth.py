@@ -3,7 +3,6 @@ Kaas v2 · AUTH-WX-R1: JWT 鉴权 + 密码哈希 + Auth Context
 ────────────────────────────────────────────────────────
 JWT 签发/验证、密码哈希、Auth Context 提取。
 """
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -14,11 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.session import get_db_session
 from app.db.models import User, UserCustomer
+from app.config.settings import settings
 
 # ── JWT 配置 ──
-JWT_SECRET = os.environ.get("JWT_SECRET", "kaas-dev-jwt-secret-change-in-prod")
-JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
-JWT_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", "1440"))  # 24h
+JWT_SECRET = settings.jwt_secret
+JWT_ALGORITHM = settings.jwt_algorithm
+JWT_EXPIRE_MINUTES = settings.jwt_expire_minutes
 
 
 def hash_password(password: str) -> str:

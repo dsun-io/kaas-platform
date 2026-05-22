@@ -58,6 +58,22 @@ frontend/test-results/
 frontend/playwright-report/
 frontend/blob-report/
 
+# AI 辅助工具本地配置
+.mcp.json
+.mvn/
+.claude/settings.local.json
+.codex/
+
+# 真实种子数据（本地开发使用，不提交）
+backend/orchestrator/scripts/seed_data/*.yaml
+backend/orchestrator/scripts/seed_data/*.json
+!backend/orchestrator/scripts/seed_data/.gitignore
+!backend/orchestrator/scripts/seed_data/README.md
+
+# 运行时日志
+backend/orchestrator/logs/*.jsonl
+backend/orchestrator/logs/*.log
+
 # Frontend build artifacts
 frontend/coverage/
 frontend/.turbo/

@@ -321,9 +321,49 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
+    @property
+    def effective_role(self) -> str:
+        """应用层角色映射：旧角色 → 新三层角色体系。
+
+        映射规则:
+        - system_admin → system_admin
+        - admin → system_admin (合并)
+        - owner → customer_owner (迁移)
+        - customer_owner → customer_owner
+        - user → customer_member (预留)
+        - customer_member → customer_member
+        """
+        ROLE_MAP = {
+            "system_admin": "system_admin",
+            "admin": "system_admin",
+            "owner": "customer_owner",
+            "customer_owner": "customer_owner",
+            "user": "customer_member",
+            "customer_member": "customer_member",
+        }
+        return ROLE_MAP.get(self.role, "customer_member")
+
     __table_args__ = (
         Index("idx_users_email", "email"),
         Index("idx_users_account_type", "account_type"),
+    )
+
+
+class UserRole(Base):
+    """用户角色扩展表 — 为 L3 细粒度权限预留。"""
+    __tablename__ = "user_roles"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
+    tenant_id = Column(Text, nullable=False)
+    role = Column(Text, nullable=False)  # 'customer_owner' | 'customer_member'
+    permissions = Column(JSONB, nullable=True)  # 细粒度权限（L3 时使用）
+    granted_by = Column(BigInteger, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("idx_user_roles_user_tenant", "user_id", "tenant_id"),
     )
 
 

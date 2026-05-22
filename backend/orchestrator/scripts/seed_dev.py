@@ -29,6 +29,15 @@ from app.repositories.events import insert_event
 from app.repositories.quotations_repo import insert_quotation
 from app.config.settings import settings
 
+# ════════════════════════════════════════════════════════════════
+# 生产环境防护 — seed_dev.py 禁止在生产环境运行
+# ════════════════════════════════════════════════════════════════
+if settings.app_env == "production":
+    raise RuntimeError(
+        "seed_dev.py 禁止在生产环境运行。"
+        "如需初始化数据，请使用独立的 production_seed.py 并通过审批流程。"
+    )
+
 
 def _spec_hash(spec: dict) -> str:
     raw = json.dumps(spec, sort_keys=True, ensure_ascii=False)
@@ -152,22 +161,22 @@ PRODUCT_SPECS.extend(_build_hk_specs())
 # 数据格式：(产品类型, 高度m, 进价元/根, bundle_size, 5根重kg, 10根重kg)
 POST_DATA = {
     "直边": [
-        (1.3, 4.6, 5.2, 10.4),
-        (1.5, 5.3, 6.0, 12.0),
-        (1.7, 6.0, 6.8, 13.6),
-        (1.8, 6.3, 7.2, 14.4),
-        (2.0, 7.0, 8.0, 16.0),
-        (2.3, 8.0, 9.2, 18.4),
-        (2.5, 8.8, 10.0, 20.0),
+        (1.3, 99.99, 5.2, 10.4),  # 虚构进价
+        (1.5, 99.99, 6.0, 12.0),
+        (1.7, 99.99, 6.8, 13.6),
+        (1.8, 99.99, 7.2, 14.4),
+        (2.0, 99.99, 8.0, 16.0),
+        (2.3, 99.99, 9.2, 18.4),
+        (2.5, 99.99, 10.0, 20.0),
     ],
     "花边": [
-        (1.3, 7.4, 7.15, 14.3),
-        (1.5, 7.4, 8.25, 16.5),
-        (1.7, 8.4, 9.35, 18.7),
-        (1.8, 8.9, 9.9, 19.8),
-        (2.0, 9.8, 11.0, 22.0),
-        (2.3, 11.3, 12.65, 25.3),
-        (2.5, 12.2, 13.75, 27.5),
+        (1.3, 99.99, 7.15, 14.3),  # 虚构进价
+        (1.5, 99.99, 8.25, 16.5),
+        (1.7, 99.99, 9.35, 18.7),
+        (1.8, 99.99, 9.9, 19.8),
+        (2.0, 99.99, 11.0, 22.0),
+        (2.3, 99.99, 12.65, 25.3),
+        (2.5, 99.99, 13.75, 27.5),
     ],
 }
 
@@ -187,19 +196,15 @@ for ptype, rows in POST_DATA.items():
 
 
 # ════════════════════════════════════════════════════════════════
-# 2. Customer Cost Items — 客户私有成本价
-#    来源：Notion 联佳—知识库
-#    - 牛栏网 2.0×1.8: 4.6 元/kg ✓
-#    - 牛栏网 1.8×1.8: 4.7 元/kg ✓
-#    - 牛栏网 2.2/2.5mm: pending_review（Notion 无明确成本数据）
-#    - 立柱：见 POST_DATA 进价列 ✓
+# 2. Customer Cost Items — 客户私有成本价（DEMO 数据）
+#    真实数据通过 Admin API 录入，代码中不硬编码商业机密
 # ════════════════════════════════════════════════════════════════
 CUSTOMER_COST_ITEMS = []
 
-# 牛栏网成本（按丝径 × 元/kg）
+# 牛栏网成本（DEMO 数据 — 明显虚构值）
 COST_PER_KG = {
-    "2.0x1.8": 4.6,
-    "1.8x1.8": 4.7,
+    "2.0x1.8": 99.99,
+    "1.8x1.8": 99.99,
 }
 for wd, ckg in COST_PER_KG.items():
     # 找到匹配该丝径的所有 spec_hash
@@ -215,11 +220,11 @@ for wd, ckg in COST_PER_KG.items():
                 "cost_type": "cost_per_kg",
                 "amount": ckg,
                 "unit": "kg",
-                "source": "notion:lianjai_knowledge_base",
-                "notes": f"Notion 确认: {wd} {ckg}元/kg",
+                "source": "demo",
+                "notes": f"Demo 数据: {wd} {ckg}元/kg（请通过 Admin API 录入真实数据）",
             })
 
-# 立柱成本（按根计价）
+# 立柱成本（DEMO 数据）
 for ptype, rows in POST_DATA.items():
     type_short = "straight" if ptype == "直边" else "deco"
     for h, cost, _, _ in rows:
@@ -232,33 +237,33 @@ for ptype, rows in POST_DATA.items():
             "cost_type": "cost_per_item",
             "amount": cost,
             "unit": "根",
-            "source": "notion:lianjai_knowledge_base",
-            "notes": f"Y型{ptype} {h}m 进价 {cost}元/根",
+            "source": "demo",
+            "notes": f"Demo 数据: Y型{ptype} {h}m 进价 {cost}元/根（请通过 Admin API 录入真实数据）",
         })
 
 
 # ════════════════════════════════════════════════════════════════
-# 3. Customer Pricing Profiles — 报价策略
-#    保持原有 margin 合理值，Notion 确认报价默认不含税
+# 3. Customer Pricing Profiles — 报价策略（DEMO 数据）
+#    真实数据通过 Admin API 录入，代码中不硬编码商业机密
 # ════════════════════════════════════════════════════════════════
 CUSTOMER_PRICING_PROFILES = [
     {
         "tenant_id": "lianjia", "customer_id": "lianjia",
         "product_category": "牛栏网", "profile_name": "default",
-        "low_margin_rate": 1.10,
-        "standard_margin_rate": 1.15,
-        "high_margin_rate": 1.20,
-        "tax_rate": 0.03,  # Notion：报价默认不含税，开票加 3 个税点
-        "source": "notion:lianjai_knowledge_base",
+        "low_margin_rate": 9.99,   # DEMO 虚构值
+        "standard_margin_rate": 8.88,  # DEMO 虚构值
+        "high_margin_rate": 7.77,  # DEMO 虚构值
+        "tax_rate": 0.03,
+        "source": "demo",
     },
     {
         "tenant_id": "lianjia", "customer_id": "lianjia",
         "product_category": "立柱", "profile_name": "default",
-        "low_margin_rate": 1.10,
-        "standard_margin_rate": 1.15,
-        "high_margin_rate": 1.20,
+        "low_margin_rate": 9.99,   # DEMO 虚构值
+        "standard_margin_rate": 8.88,  # DEMO 虚构值
+        "high_margin_rate": 7.77,  # DEMO 虚构值
         "tax_rate": 0.03,
-        "source": "notion:lianjai_knowledge_base",
+        "source": "demo",
     },
     {
         "tenant_id": "client_b", "customer_id": "client_b",
@@ -279,39 +284,39 @@ CUSTOMER_PRICING_PROFILES = [
 #    数据格式：(省份, 首重价, 续重元/kg) 干配
 # ════════════════════════════════════════════════════════════════
 _LINGDAN = [
-    ("河南", 20, 1.1), ("河北", 21, 1.1),
-    ("四川", 22, 1.02), ("山东", 22, 1.1),
-    ("安徽", 24, 1.05), ("湖北", 24, 1.1),
-    ("福建", 24, 1.15), ("浙江", 25, 1.1),
-    ("江苏", 26, 1.1), ("湖南", 26, 1.15),
-    ("重庆", 26, 1.1), ("广东", 27, 1.1),
-    ("山西", 27, 1.3), ("江西", 28, 1.1),
-    ("天津", 28, 1.4), ("陕西", 28, 1.4),
-    ("贵州", 30, 1.35), ("北京", 31, 1.54),
-    ("甘肃", 32, 1.6), ("上海", 32, 1.6),
-    ("云南", 34, 1.35), ("海南", 34, 1.43),
-    ("广西", 37, 1.35), ("辽宁", 37, 1.75),
-    ("宁夏", 37, 1.8), ("吉林", 42, 1.75),
-    ("青海", 42, 1.81), ("内蒙古", 42, 2.1),
-    ("黑龙江", 57, 2.7),
+    ("河南", 999.99, 1.1), ("河北", 999.99, 1.1),
+    ("四川", 999.99, 1.02), ("山东", 999.99, 1.1),
+    ("安徽", 999.99, 1.05), ("湖北", 999.99, 1.1),
+    ("福建", 999.99, 1.15), ("浙江", 999.99, 1.1),
+    ("江苏", 999.99, 1.1), ("湖南", 999.99, 1.15),
+    ("重庆", 999.99, 1.1), ("广东", 999.99, 1.1),
+    ("山西", 999.99, 1.3), ("江西", 999.99, 1.1),
+    ("天津", 999.99, 1.4), ("陕西", 999.99, 1.4),
+    ("贵州", 999.99, 1.35), ("北京", 999.99, 1.54),
+    ("甘肃", 999.99, 1.6), ("上海", 999.99, 1.6),
+    ("云南", 999.99, 1.35), ("海南", 999.99, 1.43),
+    ("广西", 999.99, 1.35), ("辽宁", 999.99, 1.75),
+    ("宁夏", 999.99, 1.8), ("吉林", 999.99, 1.75),
+    ("青海", 999.99, 1.81), ("内蒙古", 999.99, 2.1),
+    ("黑龙江", 999.99, 2.7),
 ]
 
 _GANPEI = [
-    ("山西", 17.82, 0.9), ("陕西", 17.96, 1.21),
-    ("河南", 18.01, 0.96), ("河北", 19.28, 0.99),
-    ("山东", 19.28, 0.99), ("四川", 20.01, 0.92),
-    ("湖北", 22.16, 1.03), ("安徽", 22.68, 0.97),
-    ("福建", 22.68, 1.05), ("辽宁", 23.33, 1.04),
-    ("浙江", 23.49, 1.05), ("天津", 23.8, 1.19),
-    ("重庆", 23.9, 1.03), ("江苏", 24.06, 1.09),
-    ("湖南", 24.5, 1.07), ("上海", 24.5, 1.16),
-    ("广东", 25.16, 1.1), ("江西", 26.73, 1.07),
-    ("贵州", 28.76, 1.3), ("北京", 28.8, 1.44),
-    ("云南", 32.81, 1.3), ("宁夏", 33.4, 1.67),
-    ("海南", 34.02, 1.38), ("青海", 34.2, 1.71),
-    ("内蒙古", 35.4, 1.77), ("吉林", 35.6, 1.78),
-    ("广西", 35.64, 1.3), ("新疆", 43.4, 2.17),
-    ("黑龙江", 44.6, 2.23),
+    ("山西", 999.99, 0.9), ("陕西", 999.99, 1.21),
+    ("河南", 999.99, 0.96), ("河北", 999.99, 0.99),
+    ("山东", 999.99, 0.99), ("四川", 999.99, 0.92),
+    ("湖北", 999.99, 1.03), ("安徽", 999.99, 0.97),
+    ("福建", 999.99, 1.05), ("辽宁", 999.99, 1.04),
+    ("浙江", 999.99, 1.05), ("天津", 999.99, 1.19),
+    ("重庆", 999.99, 1.03), ("江苏", 999.99, 1.09),
+    ("湖南", 999.99, 1.07), ("上海", 999.99, 1.16),
+    ("广东", 999.99, 1.1), ("江西", 999.99, 1.07),
+    ("贵州", 999.99, 1.3), ("北京", 999.99, 1.44),
+    ("云南", 999.99, 1.3), ("宁夏", 999.99, 1.67),
+    ("海南", 999.99, 1.38), ("青海", 999.99, 1.71),
+    ("内蒙古", 999.99, 1.77), ("吉林", 999.99, 1.78),
+    ("广西", 999.99, 1.3), ("新疆", 999.99, 2.17),
+    ("黑龙江", 999.99, 2.23),
 ]
 
 CUSTOMER_FREIGHT_RATES = []
@@ -324,7 +329,7 @@ for prov, base, per_kg in _LINGDAN:
         "threshold_kg": 20,
         "per_kg_after_threshold": per_kg,
         "min_weight_kg": 1,
-        "source": "notion:lianjai_knowledge_base",
+        "source": "demo",
     })
 
 for prov, base, per_kg in _GANPEI:
@@ -336,14 +341,14 @@ for prov, base, per_kg in _GANPEI:
         "threshold_kg": 1,
         "per_kg_after_threshold": per_kg,
         "min_weight_kg": 1,
-        "source": "notion:lianjai_knowledge_base",
+        "source": "demo",
     })
 
 # client_b 原有运费（保留隔离测试数据）
 CUSTOMER_FREIGHT_RATES.extend([
     {"tenant_id": "client_b", "customer_id": "client_b", "carrier": "京东物流", "province": "四川",
-     "formula_type": "base_plus_weight", "base_fee": 200.0, "threshold_kg": 50,
-     "per_kg_after_threshold": 1.8, "min_weight_kg": 10, "source": "seed"},
+     "formula_type": "base_plus_weight", "base_fee": 999.99, "threshold_kg": 50,
+     "per_kg_after_threshold": 1.8, "min_weight_kg": 10, "source": "demo"},
 ])
 
 
@@ -622,7 +627,7 @@ _WECHAT_BOT_CONFIG = {
     "tenant_id": "lianjia",
     "bot_name": "联佳ClawBot",
     "bot_type": "clawbot",
-    "bot_token": "clawbot-test-token-000000",
+    "bot_token": "demo-bot-token-999999",  # 虚构 token，生产环境通过环境变量配置
 }
 
 
