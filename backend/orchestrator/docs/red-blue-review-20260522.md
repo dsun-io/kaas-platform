@@ -9,6 +9,7 @@
 | Wave 3 | test_effective_role.py, rbac-v2.md | ✅ 通过 |
 | Wave 4 | admin.py, dashboard.py, capabilities.py, deps.py | ⚠️ 发现遗漏 |
 | Wave 5 (红蓝修复) | auth.py, capabilities.py | ✅ 已修复 |
+| Wave 6 | pricing_data.py, wechat.py | ✅ 已修复 |
 
 ---
 
@@ -134,10 +135,42 @@
 | 工程攻击 | 2 (auth.py 遗漏, capabilities.py 语法错误) | ⚠️ → ✅ 已修复 |
 | 兼容性攻击 | 0 | ✅ |
 
+---
+
+## Wave 6 追加审查
+
+### 🔴 攻击点 12：pricing_data.py 批量替换引入语法错误
+
+**红方**：Wave 4 遗漏了 `pricing_data.py`（24 处 JSONResponse）。Wave 6 使用脚本批量替换后，出现多处缩进错误和 f-string 截断。
+
+**蓝方**：逐行修复 6 处 IndentationError + 2 处 f-string 截断。运行 `py_compile` 全量语法检查确认通过。
+
+**结论**：⚠️ → ✅ 已修复
+
+### 🔴 攻击点 13：wechat.py 残留语法错误
+
+**红方**：Wave 5 修复 capabilities.py 时，wechat.py 也存在类似的 `JSONResponse→dict` 替换导致的缩进/括号不匹配。
+
+**蓝方**：修复 return dict 的缩进和多余 `)`。
+
+**结论**：⚠️ → ✅ 已修复
+
+---
+
+## 最终状态
+
+| 攻击维度 | 发现问题 | 状态 |
+|:---|:---|:---:|
+| 安全攻击 | 0 | ✅ |
+| 权限攻击 | 0 | ✅ |
+| 工程攻击 | 2 (auth.py 遗漏, capabilities.py 语法错误) | ✅ 已修复 |
+| 兼容性攻击 | 0 | ✅ |
+
 **最终状态**：所有发现的问题已修复，代码 0 语法错误，16/16 测试通过。
 
 **提交记录**：
 ```
+a6dfdd4  refactor(wave6): pricing_data JSONResponse cleanup + fix wechat.py syntax
 6649f2e  refactor(red-blue-fix): auth.py JSONResponse cleanup + capabilities.py syntax fix
 1a9bcad  refactor(wave4): unify remaining JSONResponse to HTTPException/dict
 a27d47f  test(wave3): effective_role tests + rbac-v2 documentation
