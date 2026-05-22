@@ -16,7 +16,6 @@ import os
 import uuid
 import structlog
 from fastapi import APIRouter, Request, Depends, HTTPException
-from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db_session
 from app.db.models import User, Customer
@@ -75,10 +74,7 @@ async def create_bot(
     # customer 账号只能创建自己的 bot，拒绝不匹配的覆盖参数
     if auth.is_customer():
         if auth.customer_id is None:
-            return JSONResponse(
-                status_code=403,
-                content={"error": "forbidden", "message": "Customer account not bound to any customer"},
-            )
+            raise HTTPException(status_code=403, detail="forbidden: Customer account not bound to any customer")
         from app.core.auth_utils import require_tenant_match, require_customer_match
         require_tenant_match(auth, body.get("tenant_id"))
         require_customer_match(auth, body.get("customer_id"))
@@ -93,29 +89,17 @@ async def create_bot(
     bot_type = body.get("bot_type", "clawbot")
 
     if not bot_name or not bot_token:
-        return JSONResponse(
-            status_code=422,
-            content={"error": "validation_error", "message": "bot_name and bot_token are required"},
-        )
+        raise HTTPException(status_code=422, detail="validation_error: bot_name and bot_token are required")
 
     if not customer_id:
-        return JSONResponse(
-            status_code=422,
-            content={"error": "validation_error", "message": "customer_id is required"},
-        )
+        raise HTTPException(status_code=422, detail="validation_error: customer_id is required")
 
     if not tenant_id:
-        return JSONResponse(
-            status_code=422,
-            content={"error": "validation_error", "message": "tenant_id is required"},
-        )
+        raise HTTPException(status_code=422, detail="validation_error: tenant_id is required")
 
     # internal 账号可创建任意 customer 的 bot
     if auth.is_internal() and not require_customer_access(auth, customer_id):
-        return JSONResponse(
-            status_code=403,
-            content={"error": "forbidden", "message": "Access denied"},
-        )
+        raise HTTPException(status_code=403, detail="forbidden: Access denied")
 
     bot = await create_bot_account(
         session=db,
@@ -129,20 +113,17 @@ async def create_bot(
 
     logger.info("wechat_bot_created", bot_id=bot.id, customer_id=customer_id)
 
-    return JSONResponse(
-        status_code=201,
-        content={
-            "id": bot.id,
-            "customer_id": bot.customer_id,
-            "tenant_id": bot.tenant_id,
-            "bot_name": bot.bot_name,
-            "bot_type": bot.bot_type,
-            "status": bot.status,
-            "created_by": bot.created_by,
-            "created_at": bot.created_at.isoformat(),
-            "updated_at": bot.updated_at.isoformat(),
-        },
-    )
+    return {
+        "id": bot.id,
+        "customer_id": bot.customer_id,
+        "tenant_id": bot.tenant_id,
+        "bot_name": bot.bot_name,
+        "bot_type": bot.bot_type,
+        "status": bot.status,
+        "created_by": bot.created_by,
+        "created_at": bot.created_at.isoformat(),
+        "updated_at": bot.updated_at.isoformat(),
+    }
 
 
 @router.get("/bots")
@@ -161,27 +142,24 @@ async def list_bots(
         bots = await get_active_bots(db)
     else:
         if auth.customer_id is None:
-            return JSONResponse(status_code=200, content={"bots": []})
+            return {"bots": []}
         bots = await get_bots_by_customer(db, auth.customer_id)
 
-    return JSONResponse(
-        status_code=200,
-        content={
-            "bots": [
-                {
-                    "id": b.id,
-                    "customer_id": b.customer_id,
-                    "tenant_id": b.tenant_id,
-                    "bot_name": b.bot_name,
-                    "bot_type": b.bot_type,
-                    "status": b.status,
-                    "created_at": b.created_at.isoformat(),
-                    "updated_at": b.updated_at.isoformat(),
-                }
-                for b in bots
-            ]
-        },
-    )
+    return {
+        "bots": [
+            {
+                "id": b.id,
+                "customer_id": b.customer_id,
+                "tenant_id": b.tenant_id,
+                "bot_name": b.bot_name,
+                "bot_type": b.bot_type,
+                "status": b.status,
+                "created_at": b.created_at.isoformat(),
+                "updated_at": b.updated_at.isoformat(),
+            }
+            for b in bots
+        ]
+    }
 
 
 @router.post("/bots/{bot_id}/pause")
@@ -195,13 +173,13 @@ async def pause_bot(
     bot = await get_bot_by_id(db, bot_id)
 
     if bot is None:
-        return JSONResponse(status_code=404, content={"error": "not_found", "message": "Bot not found"})
+        raise HTTPException(status_code=404, detail="not_found: Bot not found")
 
     if not require_customer_access(auth, bot.customer_id):
-        return JSONResponse(status_code=403, content={"error": "forbidden", "message": "Access denied"})
+        raise HTTPException(status_code=403, detail="forbidden: Access denied")
 
     await update_bot_status(db, bot_id, "paused")
-    return JSONResponse(status_code=200, content={"message": "Bot paused"})
+    return {"message": "Bot paused"}
 
 
 @router.post("/bots/{bot_id}/resume")
@@ -215,13 +193,13 @@ async def resume_bot(
     bot = await get_bot_by_id(db, bot_id)
 
     if bot is None:
-        return JSONResponse(status_code=404, content={"error": "not_found", "message": "Bot not found"})
+        raise HTTPException(status_code=404, detail="not_found: Bot not found")
 
     if not require_customer_access(auth, bot.customer_id):
-        return JSONResponse(status_code=403, content={"error": "forbidden", "message": "Access denied"})
+        raise HTTPException(status_code=403, detail="forbidden: Access denied")
 
     await update_bot_status(db, bot_id, "active")
-    return JSONResponse(status_code=200, content={"message": "Bot resumed"})
+    return {"message": "Bot resumed"}
 
 
 # ── 渠道链接 ──
@@ -250,10 +228,7 @@ async def create_link(
         tenant_id = body.get("tenant_id", "") or auth.tenant_id or ""
 
     if not customer_id or not tenant_id:
-        return JSONResponse(
-            status_code=422,
-            content={"error": "validation_error", "message": "customer_id and tenant_id are required"},
-        )
+        raise HTTPException(status_code=422, detail="validation_error: customer_id and tenant_id are required")
 
     link_token = uuid.uuid4().hex[:16]
     link = await create_channel_link(

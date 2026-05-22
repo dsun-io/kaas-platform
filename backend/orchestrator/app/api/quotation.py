@@ -2,8 +2,7 @@
 
 GET /api/v1/quotations — 查询历史报价记录。
 """
-from fastapi import APIRouter, Request, Depends
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Request, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db_session
 from app.repositories.quotations_repo import list_quotations, count_quotations
@@ -47,13 +46,7 @@ async def create_quotation_manual(
     unit = body.get("unit", "meter")
 
     if not customer_id or not product_category:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error_code": "MISSING_FIELDS",
-                "message": "customer_id and product_category are required",
-            },
-        )
+        raise HTTPException(status_code=400, detail="MISSING_FIELDS: customer_id and product_category are required")
 
     spec_hash = compute_spec_hash(product_spec)
 
@@ -73,13 +66,10 @@ async def create_quotation_manual(
         notes=notes,
     )
 
-    return JSONResponse(
-        status_code=201,
-        content={
-            "id": str(q.id),
-            "spec_hash": spec_hash,
-        },
-    )
+    return {
+        "id": str(q.id),
+        "spec_hash": spec_hash,
+    }
 
 
 @router.get("/quotations", response_model=QuotationListResponse)
@@ -142,12 +132,9 @@ async def get_quotations(
         }
         for q in quotes
     ]
-    return JSONResponse(
-        status_code=200,
-        content={
-            "items": serialized,
-            "quotations": serialized,
-            "total": total,
-            "limit": min(limit, 500),
-        },
-    )
+    return {
+        "items": serialized,
+        "quotations": serialized,
+        "total": total,
+        "limit": min(limit, 500),
+    }

@@ -6,8 +6,7 @@
 """
 import os
 import structlog
-from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db_session
@@ -35,10 +34,9 @@ async def health_readiness(db: AsyncSession = Depends(get_db_session)):
         logger.error("health.db_check_failed", error=str(e))
 
     all_ok = all(v == "ok" for v in checks.values())
-    return JSONResponse(
-        status_code=200 if all_ok else 503,
-        content={"status": "ready" if all_ok else "degraded", "checks": checks},
-    )
+    if not all_ok:
+        raise HTTPException(status_code=503, detail={"status": "degraded", "checks": checks})
+    return {"status": "ready", "checks": checks}
 
 
 @router.get("/health/deep", response_model=DeepCheckResponse)
@@ -92,7 +90,6 @@ async def health_deep(db: AsyncSession = Depends(get_db_session)):
 
     all_ok = all(_is_ok(v) for v in checks.values())
     logger.info("health.deep_check", checks=checks, all_ok=all_ok)
-    return JSONResponse(
-        status_code=200 if all_ok else 503,
-        content={"status": "healthy" if all_ok else "degraded", "checks": checks},
-    )
+    if not all_ok:
+        raise HTTPException(status_code=503, detail={"status": "degraded", "checks": checks})
+    return {"status": "healthy", "checks": checks}
