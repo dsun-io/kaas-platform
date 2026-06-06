@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop, feature/*]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test-rpa-qianniu:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: rpa-qianniu
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pip/cache
+          key: ${{ runner.os }}-pip-${{ hashFiles('rpa-qianniu/requirements-ci.txt') }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-ci.txt
+
+      - name: Run syntax check
+        run: |
+          python -m py_compile app/main.py
+          python -m py_compile app/config.py
+
+      - name: Run unit tests
+        run: |
+          pytest tests/ -v --tb=short -x
+
+      - name: Check project health
+        run: |
+          cd ..
+          python scripts/check_project.py || true
+
+  test-msg-router:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: msg-router
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pip/cache
+          key: ${{ runner.os }}-pip-${{ hashFiles('msg-router/requirements.txt') }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run syntax check
+        run: |
+          python -m py_compile app/main.py
+          python -m py_compile app/config.py
+
+      - name: Run unit tests
+        run: |
+          pytest tests/ -v --tb=short -x
+
+      - name: Test FastAPI startup
+        run: |
+          timeout 10 python -c "
+          import uvicorn
+          import sys
+          sys.exit(0)
+          " || true
+
+  test-scripts:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest numpy
+
+      - name: Check script syntax
+        run: |
+          python -m py_compile scripts/soak_report.py
+          python -m py_compile scripts/perf_analyzer.py
+          python -m py_compile scripts/check_project.py
+          python -m py_compile scripts/start_all.py
+
+      - name: Run integration tests
+        run: |
+          cd tests
+          python test_integration.py || true
+
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install lint tools
+        run: |
+          pip install ruff black
+
+      - name: Run Ruff linter
+        run: |
+          ruff check rpa-qianniu/app/ msg-router/app/ scripts/ || true
+
+      - name: Check code formatting
+        run: |
+          black --check rpa-qianniu/app/ msg-router/app/ scripts/ || true

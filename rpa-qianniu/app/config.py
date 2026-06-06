@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     window_locate_skip_enabled_filter: bool = False
 
     poll_interval_sec: float = 3.0
+    # 纯视觉：有未读/已处理一轮后的休眠（秒），宜 <=1 以压低端到端延迟
+    vision_poll_active_sec: float = 0.3  # 优化: 0.3s 快速轮询以压低端到端延迟
+    # 0=按需落盘（异常必存）；1=关键事件；2=全量（等同旧版每轮截图）
+    rpa_debug_level: int = 0
 
     # 左侧列表无未读时：是否仍轮询当前已打开会话的聊天区（易与历史气泡形成空转；默认关）
     fallback_open_chat_without_unread: bool = False
@@ -44,17 +48,20 @@ class Settings(BaseSettings):
     chat_ocr_cache_sec: float = 3.0
     chat_debug_screenshots: bool = False
     chat_debug_dir: str = "data/debug_chat"
-    action_delay_ms_min: int = 200
-    action_delay_ms_max: int = 500
+    action_delay_ms_min: int = 50   # 优化: 降低人工延迟下限
+    action_delay_ms_max: int = 150  # 优化: 降低人工延迟上限，目标 <5s 端到端
 
-    ai_http_timeout_sec: float = 15.0
+    ai_http_timeout_sec: float = 10.0  # 优化: 10s 超时，快速失败以控制延迟
 
     # true：不调 msg-router/FastGPT，直接返回 ai_stub_reply（调千牛 UI 时省积分）
     ai_stub_mode: bool = True
-    ai_stub_reply: str = "回复测试~"
+    # 更人性化的桩回复，模拟真实客服语气
+    ai_stub_reply: str = "亲，您好呀~ 欢迎光临我们的店铺！有什么可以帮您的吗？"
 
     state_dir: str = "data"
     log_dir: str = "logs"
+    # 将控制台 print / stderr 同步追加到 logs/console.log（与 logging 文件分流，避免混写冲突）
+    log_console_tee: bool = True
 
     # UI 选择器 JSON（相对 rpa-qianniu 根目录）；可拷贝修改而无需改 Python
     selectors_path: str = "config/selectors.json"
@@ -72,13 +79,40 @@ class Settings(BaseSettings):
     vision_message_top_ratio: float = 0.15
     vision_input_bottom_ratio: float = 0.13
 
-    vision_debug_screenshots: bool = True
+    vision_debug_screenshots: bool = False
     vision_debug_dir: str = "debug"
-    vision_capture_settle_sec: float = 0.12
+    # 主循环整窗调试图 vision_full_window 最小间隔（秒）；0=每轮都存（易刷屏占盘）
+    vision_debug_full_window_interval_sec: float = 25.0
+    vision_capture_settle_sec: float = 0.05  # 优化: 降低截图后稳定等待时间
+    # OCR 锚点校准结果缓存（相对 rpa-qianniu 根目录）；window_size 一致时复用
+    vision_calibration_path: str = "config/vision_calibration.json"
+    # 为 True 时优先自动校准，失败则回退 VISION_*_RATIO
+    vision_auto_calibrate: bool = True
 
+    # 左栏：会话列表上方导航/搜索/标签高度（屏幕像素量级，用于跳过后再找红点，避免 y 偏到下一行）
+    vision_left_panel_unread_top_skip_px: int = 100
+    # 右栏：跳过窗口标题+千牛顶栏后，再取昵称带（与 vision_right_nick_top_frac 配合）
+    vision_right_nick_top_skip_px: int = 96
     # 未读红点：连通域面积范围（像素²）
     vision_unread_dot_area_min: int = 40
     vision_unread_dot_area_max: int = 900
+    # 纯视觉：同一买家会话成功回复后，多少秒内不再处理（防连点）
+    vision_session_cooldown_sec: float = 30.0
+
+    # ---------- 消息区域 OCR 配置 ----------
+    # 消息区域顶部横幅跳过像素（默认 120，可通过环境变量 MSG_BANNER_SKIP_PX 覆盖）
+    msg_banner_skip_px: int = 120
+    # 右栏昵称 ROI：从「顶栏下缘」起占右栏总高度比例（默认 0.30）
+    vision_right_nick_top_frac: float = 0.30
+
+    # ---------- 全链路联调配置（多轮对话+日志记录） ----------
+    # 会话切换后等待时间（秒）：点击待回复后等待千牛 CEF 渲染完成
+    # 优化: 0.8s 快速切换，目标端到端延迟 <5s
+    vision_session_switch_wait_sec: float = 0.8
+    # 发送后验证开关：是否 OCR 验证回复已出现在聊天窗口
+    send_verify_enabled: bool = True
+    # 发送后验证等待时间（秒）：点击发送后等待消息渲染再截图验证
+    send_verify_wait_sec: float = 0.8
 
     @property
     def state_path(self) -> Path:

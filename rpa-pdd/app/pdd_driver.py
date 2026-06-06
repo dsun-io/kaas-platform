@@ -140,6 +140,21 @@ def send_reply(page: Page, body: str) -> bool:
         human_delay()
         _retry("点击发送", lambda: btn.click(timeout=8000))
         human_delay()
+        # 验证发送是否成功：检查输入框是否被清空
+        try:
+            input_value = ed.input_value(timeout=3000)
+            if input_value.strip():
+                log.warning("发送后输入框未清空，可能发送失败: %r", input_value[:100])
+                return False
+        except Exception as exc:
+            # input_value 可能不支持（如 contenteditable），尝试 inner_text
+            try:
+                inner_text = ed.inner_text(timeout=3000)
+                if inner_text.strip():
+                    log.warning("发送后输入框未清空，可能发送失败: %r", inner_text[:100])
+                    return False
+            except Exception:
+                pass  # 无法验证，继续返回 True
         return True
     except Exception as exc:
         log.exception("发送消息失败: %s", exc)

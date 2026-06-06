@@ -1,1 +1,1 @@
-"""RPA ↔ FastGPT 消息路由服务。"""
+# msg-router app package

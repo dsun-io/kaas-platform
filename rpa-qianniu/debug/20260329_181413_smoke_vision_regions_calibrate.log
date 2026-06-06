@@ -1,0 +1,12 @@
+time_utc=2026-03-29T18:14:13.914737+08:00
+mode=calibrate
+cal_source=uia_anchor
+window: (901,572)-(2557,1377) screen | w=1656 h=805
+left_nav_strip: (901,572)-(1016,1377) screen | w=115px h=805px
+left_panel: (1016,572)-(1149,1377) screen | w=133px h=805px
+chat_panel: (1149,572)-(1955,1377) screen | w=806px h=805px
+right_panel: (1955,572)-(2557,1377) screen | w=602px h=805px
+message_area: (1149,692)-(1955,1273) screen | w=806px h=581px
+input_area: (1149,1273)-(1955,1377) screen | w=806px h=104px
+send_button_center_screen=None
+screenshot_png=D:\MyProject\kaas-platform\rpa-qianniu\debug\20260329_181413_smoke_vision_regions_calibrate.png

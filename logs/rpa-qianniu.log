@@ -1,0 +1,3 @@
+2026-03-22 17:09:28 | INFO | ui_selectors | 已加载 UI 选择器: config/selectors.json
+2026-03-22 17:10:40 | WARNING | vision_calibrate | [校准] 未找到「发送」锚点
+2026-03-22 17:10:40 | WARNING | vision_layout | [WARNING] 自动校准失败，使用默认比例

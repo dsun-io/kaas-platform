@@ -32,8 +32,12 @@ class Settings(BaseSettings):
     action_max_retries: int = 3
 
     ai_http_timeout_sec: float = 15.0
+    ai_stub_mode: bool = False
+    # 更人性化的桩回复，模拟真实客服语气
+    ai_stub_reply: str = "亲，您好呀~ 欢迎光临我们的店铺！有什么可以帮您的吗？"
     dom_poll_interval_sec: float = 2.0
     login_nav_timeout_ms: int = 60_000
+    login_console_wait_timeout_sec: int = 300
 
     screenshot_dir: str = "screenshots"
     log_dir: str = "logs"

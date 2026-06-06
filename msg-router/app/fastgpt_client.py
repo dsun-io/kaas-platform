@@ -11,6 +11,22 @@ from app.config import settings
 log = logging.getLogger("fastgpt_client")
 
 _FALLBACK_REPLY = "稍等，我帮您转接人工客服"
+_CLIENT: httpx.AsyncClient | None = None
+
+
+async def _get_client() -> httpx.AsyncClient:
+    global _CLIENT
+    if _CLIENT is None:
+        timeout = httpx.Timeout(settings.fastgpt_timeout_seconds)
+        _CLIENT = httpx.AsyncClient(timeout=timeout)
+    return _CLIENT
+
+
+async def close_client() -> None:
+    global _CLIENT
+    if _CLIENT is not None:
+        await _CLIENT.aclose()
+        _CLIENT = None
 
 
 @dataclass
@@ -160,7 +176,7 @@ async def chat_completion(
         "stream": False,
         "detail": settings.fastgpt_chat_detail,
         "messages": [{"role": "user", "content": user_message}],
-        "variables": {},
+        "variables": dict(variables) if variables else {},
     }
     timeout = httpx.Timeout(settings.fastgpt_timeout_seconds)
 
@@ -169,8 +185,8 @@ async def chat_completion(
     error_detail: str | None = None
 
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(url, json=payload, headers=headers)
+        client = await _get_client()
+        resp = await client.post(url, json=payload, headers=headers)
     except httpx.HTTPError as exc:
         error_type = "http_error"
         error_detail = f"{exc!r}"[:500]

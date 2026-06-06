@@ -1,0 +1,103 @@
+{
+  "_comment": "运费费率表 - 用于报价引擎计算运费",
+  "_source": "联佳实际报价数据",
+  "_updated_at": "2026-04-04",
+  
+  "sf_ltl": {
+    "_name": "顺丰零担",
+    "first_weight_kg": 20,
+    "insurance": {
+      "under_100kg": 5,
+      "over_100kg": 10
+    },
+    "rates": {
+      "河南": {"first_price": 20, "per_kg": 1.1},
+      "河北": {"first_price": 21, "per_kg": 1.1},
+      "四川": {"first_price": 22, "per_kg": 1.02},
+      "山东": {"first_price": 22, "per_kg": 1.1},
+      "安徽": {"first_price": 24, "per_kg": 1.05},
+      "湖北": {"first_price": 24, "per_kg": 1.1},
+      "福建": {"first_price": 24, "per_kg": 1.15},
+      "浙江": {"first_price": 25, "per_kg": 1.1},
+      "江苏": {"first_price": 26, "per_kg": 1.1},
+      "湖南": {"first_price": 26, "per_kg": 1.15},
+      "重庆": {"first_price": 26, "per_kg": 1.1},
+      "广东": {"first_price": 27, "per_kg": 1.1},
+      "山西": {"first_price": 27, "per_kg": 1.3},
+      "江西": {"first_price": 28, "per_kg": 1.1},
+      "天津": {"first_price": 28, "per_kg": 1.4},
+      "陕西": {"first_price": 28, "per_kg": 1.4},
+      "贵州": {"first_price": 30, "per_kg": 1.35},
+      "北京": {"first_price": 31, "per_kg": 1.54},
+      "甘肃": {"first_price": 32, "per_kg": 1.6},
+      "上海": {"first_price": 32, "per_kg": 1.6},
+      "云南": {"first_price": 34, "per_kg": 1.35},
+      "海南": {"first_price": 34, "per_kg": 1.43},
+      "广西": {"first_price": 37, "per_kg": 1.35},
+      "辽宁": {"first_price": 37, "per_kg": 1.75},
+      "宁夏": {"first_price": 37, "per_kg": 1.8},
+      "吉林": {"first_price": 42, "per_kg": 1.75},
+      "青海": {"first_price": 42, "per_kg": 1.81},
+      "内蒙古": {"first_price": 42, "per_kg": 2.1},
+      "黑龙江": {"first_price": 57, "per_kg": 2.7}
+    }
+  },
+  
+  "sf_ganpei": {
+    "_name": "顺丰干配",
+    "first_weight_kg": 20,
+    "_note": "3000泡",
+    "rates": {
+      "山西": {"first_price": 17.82, "per_kg": 0.9},
+      "陕西": {"first_price": 17.96, "per_kg": 1.21},
+      "河南": {"first_price": 18.01, "per_kg": 0.96},
+      "河北": {"first_price": 19.28, "per_kg": 0.99},
+      "山东": {"first_price": 19.28, "per_kg": 0.99},
+      "四川": {"first_price": 20.01, "per_kg": 0.92},
+      "湖北": {"first_price": 22.16, "per_kg": 1.03},
+      "安徽": {"first_price": 22.68, "per_kg": 0.97},
+      "福建": {"first_price": 22.68, "per_kg": 1.05},
+      "辽宁": {"first_price": 23.33, "per_kg": 1.04},
+      "浙江": {"first_price": 23.49, "per_kg": 1.05},
+      "天津": {"first_price": 23.8, "per_kg": 1.19},
+      "重庆": {"first_price": 23.9, "per_kg": 1.03},
+      "江苏": {"first_price": 24.06, "per_kg": 1.09},
+      "湖南": {"first_price": 24.5, "per_kg": 1.07},
+      "上海": {"first_price": 24.5, "per_kg": 1.16},
+      "广东": {"first_price": 25.16, "per_kg": 1.1},
+      "江西": {"first_price": 26.73, "per_kg": 1.07},
+      "贵州": {"first_price": 28.76, "per_kg": 1.3},
+      "北京": {"first_price": 28.8, "per_kg": 1.44},
+      "云南": {"first_price": 32.81, "per_kg": 1.3},
+      "宁夏": {"first_price": 33.4, "per_kg": 1.67},
+      "海南": {"first_price": 34.02, "per_kg": 1.38},
+      "青海": {"first_price": 34.2, "per_kg": 1.71},
+      "内蒙古": {"first_price": 35.4, "per_kg": 1.77},
+      "吉林": {"first_price": 35.6, "per_kg": 1.78},
+      "广西": {"first_price": 35.64, "per_kg": 1.3},
+      "新疆": {"first_price": 43.4, "per_kg": 2.17},
+      "黑龙江": {"first_price": 44.6, "per_kg": 2.23}
+    }
+  },
+  
+  "yuantong": {
+    "_name": "圆通",
+    "_note": "立柱专用，5kg起送",
+    "formula": "weight_kg * 1.8 + 4",
+    "min_weight_kg": 5
+  },
+  
+  "jd": {
+    "_name": "京东",
+    "_note": "立柱专用",
+    "first_weight_kg": 20,
+    "first_price": 31,
+    "per_kg_after_first": 1.3
+  },
+  
+  "tax": {
+    "default_includes_tax": false,
+    "invoice_surcharge_rate": 1.03,
+    "_note": "默认不含税；客户要开票则报价×1.03"
+  }
+}
