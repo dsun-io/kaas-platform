@@ -371,11 +371,13 @@ class ReconciliationService:
                 "message": "Reconciliation completed successfully",
             }
 
+        except HTTPException:
+            raise  # 透传已知业务异常，不篡改状态码
         except Exception as e:
             report.status = "failed"
             await self.db.commit()
             logger.error("reconciliation_failed", report_id=report_id, error=str(e))
-            raise HTTPException(status_code=500, detail=f"Reconciliation failed: {str(e)}")
+            raise HTTPException(status_code=500, detail="Reconciliation failed: internal error")
 
     # ═══════════════════════════════════════════════════════════
     # ReconciliationDiff
@@ -422,10 +424,27 @@ class ReconciliationService:
         if not diff:
             raise HTTPException(status_code=404, detail="Diff not found")
 
+        previous_status = diff.resolution_status
+
         diff.resolution_status = data.resolution_status
         diff.resolved_by_user_id = auth.user_id
         diff.resolved_at = datetime.now(timezone.utc)
         diff.resolution_notes = data.resolution_notes
+
+        # 审计日志（复用 events 基础设施）
+        from app.repositories.events import insert_event
+        await insert_event(
+            self.db,
+            tenant_id=tenant_id,
+            event_type="reconciliation_diff_resolved",
+            payload={
+                "diff_id": diff_id,
+                "previous_status": previous_status,
+                "new_status": data.resolution_status,
+                "resolved_by": auth.user_id,
+                "notes": data.resolution_notes,
+            },
+        )
 
         await self.db.commit()
         return diff

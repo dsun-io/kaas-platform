@@ -113,9 +113,9 @@ class ReconciliationReportOut(BaseModel):
     report_period_start: date
     report_period_end: date
     platform_ids: List[int]
-    platform_config_snapshot: Optional[Dict[str, Any]]
+    platform_config_snapshot: Optional[List[Dict[str, Any]]]
     logistics_provider_ids: List[int]
-    logistics_config_snapshot: Optional[Dict[str, Any]]
+    logistics_config_snapshot: Optional[List[Dict[str, Any]]]
     total_platform_order_count: int
     total_platform_amount: Decimal
     total_logistics_bill_count: int

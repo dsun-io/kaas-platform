@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
 from app.core.auth import get_auth_context, AuthContext
-from app.core.auth_utils import require_internal
+from app.core.auth_utils import require_internal, require_tenant_access
 from app.schemas.reconciliation import (
     EcommercePlatformConfigCreate,
     EcommercePlatformConfigOut,
@@ -55,6 +55,7 @@ async def get_dashboard(
 ):
     """对账仪表盘统计。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.get_dashboard_stats(tenant_id)
@@ -74,6 +75,7 @@ async def create_platform_config(
     """创建电商平台配置 — 需管理员权限。"""
     require_internal(auth)
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.create_platform_config(tenant_id, data, auth)
@@ -87,6 +89,7 @@ async def list_platform_configs(
 ):
     """列出电商平台配置。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.list_platform_configs(tenant_id)
@@ -106,6 +109,7 @@ async def create_logistics_config(
     """创建物流商配置 — 需管理员权限。"""
     require_internal(auth)
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.create_logistics_config(tenant_id, data, auth)
@@ -119,6 +123,7 @@ async def list_logistics_configs(
 ):
     """列出物流商配置。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.list_logistics_configs(tenant_id)
@@ -137,6 +142,7 @@ async def create_report(
 ):
     """创建对账报告。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.create_report(tenant_id, data, auth)
@@ -153,6 +159,7 @@ async def list_reports(
 ):
     """列出对账报告。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.list_reports(tenant_id, status, page, page_size)
@@ -167,6 +174,7 @@ async def get_report(
 ):
     """获取对账报告详情。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.get_report(tenant_id, report_id)
@@ -182,6 +190,7 @@ async def run_reconciliation(
 ):
     """执行对账。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.run_reconciliation(tenant_id, report_id, data, auth)
@@ -204,6 +213,7 @@ async def list_diffs(
 ):
     """列出差异明细。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.list_diffs(tenant_id, report_id, diff_type, resolution_status, page, page_size)
@@ -219,6 +229,7 @@ async def resolve_diff(
 ):
     """处理差异。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.resolve_diff(tenant_id, diff_id, data, auth)
