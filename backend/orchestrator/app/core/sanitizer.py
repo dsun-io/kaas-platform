@@ -17,3 +17,11 @@ def sanitize_log_value(value: str) -> str:
     for pattern, replacement in SENSITIVE_PATTERNS:
         result = pattern.sub(replacement, result)
     return result
+
+
+def escape_like(value: str) -> str:
+    """转义 SQL LIKE 通配符 % _ 和转义符 \\。
+
+    与 SQLAlchemy ilike(..., escape="\\") 配合使用。
+    """
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

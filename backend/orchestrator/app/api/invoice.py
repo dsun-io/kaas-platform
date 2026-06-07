@@ -61,6 +61,7 @@ async def create_invoice_request(
 ):
     """从企业微信消息创建开票请求。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.create_request(tenant_id, data, auth)
@@ -78,6 +79,7 @@ async def list_invoice_requests(
 ):
     """列出开票请求。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.list_requests(
@@ -98,6 +100,7 @@ async def get_invoice_request(
 ):
     """获取开票请求详情。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.get_request(tenant_id, request_id)
@@ -117,6 +120,7 @@ async def confirm_invoice_request(
     - 乐观锁防并发
     """
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.confirm_request(tenant_id, request_id, data, auth)
@@ -132,6 +136,7 @@ async def reject_invoice_request(
 ):
     """拒绝开票请求。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.reject_request(tenant_id, request_id, data, auth)
@@ -150,6 +155,7 @@ async def create_customer_header(
 ):
     """创建客户发票抬头。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.create_header(tenant_id, data, auth)
@@ -167,6 +173,7 @@ async def list_customer_headers(
 ):
     """列出客户发票抬头。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.list_headers(
@@ -187,6 +194,7 @@ async def get_customer_header(
 ):
     """获取客户抬头详情。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.get_header(tenant_id, header_id)
@@ -201,6 +209,7 @@ async def verify_customer_header(
 ):
     """触发税务校验（异步）。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.verify_header(tenant_id, header_id, auth)
@@ -220,6 +229,7 @@ async def create_platform_config(
     """创建开票平台配置 — 需管理员权限。"""
     require_internal(auth)
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.create_platform_config(tenant_id, data, auth)
@@ -233,6 +243,7 @@ async def list_platform_configs(
 ):
     """列出开票平台配置。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.list_platform_configs(tenant_id)
@@ -247,6 +258,7 @@ async def health_check_platform(
 ):
     """触发平台健康检查。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.health_check_platform(tenant_id, config_id)
@@ -265,6 +277,7 @@ async def create_invoice_template(
 ):
     """创建开票模板。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.create_template(tenant_id, data, auth)
@@ -280,6 +293,7 @@ async def list_invoice_templates(
 ):
     """列出开票模板，支持搜索。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.list_templates(tenant_id, category=category, q=q)
@@ -298,6 +312,7 @@ async def get_workstation_todo(
 ):
     """获取工位待办列表。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.get_todo_list(tenant_id, status, auth)
@@ -312,6 +327,7 @@ async def claim_workstation(
 ):
     """原子抢占工位。"""
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.claim_workstation(tenant_id, invoice_request_id, auth)
@@ -334,6 +350,7 @@ async def list_audit_logs(
     """查询审计日志 — 需管理员权限。"""
     require_internal(auth)
     tenant_id = getattr(request.state, "tenant_id", None)
+    require_tenant_access(auth, tenant_id)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
     return await service.list_audit_logs(

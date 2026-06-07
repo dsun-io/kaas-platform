@@ -289,7 +289,7 @@ class InvoiceService:
         req.extracted_data_override = data.extracted_data_override
         req.override_reason = data.override_reason
         req.override_approved_by = data.override_approved_by
-        req.platform_config_id = data.platform_config_id
+        req.invoice_platform_config_id = data.platform_config_id
         req.status = "confirmed"
         req.confirmed_by_user_id = auth.user_id
         req.confirmation_timestamp = datetime.now(timezone.utc)
@@ -590,20 +590,12 @@ class InvoiceService:
         if category:
             stmt = stmt.where(InvoiceTemplate.category == category)
         if q:
-            stmt = stmt.where(
-                and_(
-                    InvoiceTemplate.tenant_id == tenant_id,
-                    InvoiceTemplate.status == "active",
-                ).
-                # 简单搜索：nickname / tax_code_name / synonyms
-                # 更复杂的搜索应使用 PostgreSQL tsvector
-                # 这里用 OR 条件简化
-            )
             from sqlalchemy import or_
+            from app.core.sanitizer import escape_like
             stmt = stmt.where(
                 or_(
-                    InvoiceTemplate.nickname.ilike(f"%{q}%"),
-                    InvoiceTemplate.tax_code_name.ilike(f"%{q}%"),
+                    InvoiceTemplate.nickname.ilike(f"%{escape_like(q)}%", escape="\\"),
+                    InvoiceTemplate.tax_code_name.ilike(f"%{escape_like(q)}%", escape="\\"),
                 )
             )
 
@@ -619,9 +611,12 @@ class InvoiceService:
         self,
         tenant_id: str,
         status: str,
-        auth: AuthContext,
     ) -> dict:
-        """获取工位待办列表。"""
+        """获取工位待办列表。
+
+        TODO: 实现超时检查 — 查询 workstation_session 表过滤过期分配。
+        当前返回全部匹配状态的请求，不含超时过滤。
+        """
         q = select(InvoiceRequest).where(
             InvoiceRequest.tenant_id == tenant_id,
             InvoiceRequest.status == status,
@@ -629,13 +624,6 @@ class InvoiceService:
 
         result = await self.db.execute(q)
         items = result.scalars().all()
-
-        # 懒检查超时
-        now = datetime.now(timezone.utc)
-        for item in items:
-            # 这里简化处理，实际应查询 workstation_session 表
-            pass
-
         return {"items": items, "total": len(items)}
 
     async def claim_workstation(
