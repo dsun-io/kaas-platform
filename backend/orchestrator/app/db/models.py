@@ -1,4 +1,4 @@
-"""
+﻿"""
 Kaas v2 · SQLAlchemy ORM 模型
 ────────────────────────────
 INT-R3: 平台规格与客户私有数据分离。
@@ -17,6 +17,9 @@ from sqlalchemy import (
     String,
     Float,
     ForeignKey,
+    UniqueConstraint,
+    CheckConstraint,
+    Date,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID, ARRAY
 from app.db.base import Base
@@ -822,3 +825,372 @@ class AttributeProposal(Base):
     __table_args__ = (
         Index("idx_ap_status", "status", "category_id"),
     )
+
+
+# ═══════════════════════════════════════════════════════════════
+# FINANCIAL WORKSTATION: 智能开票工位模块 (v2 红蓝修复版)
+# ═══════════════════════════════════════════════════════════════
+
+
+class InvoiceRequest(Base):
+    """
+    开票请求表 — 红蓝修复版
+
+    安全设计：
+    - version 乐观锁 (SQLAlchemy version_id_col)
+    - 覆盖审批机制（override_approved_by 需权限校验）
+    - 状态机严格校验
+    """
+    __tablename__ = "invoice_requests"
+    __mapper_args__ = {"version_id_col": "version"}
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False, index=True)
+    customer_id = Column(BigInteger, ForeignKey("customers.id"), nullable=False)
+
+    # ── 消息来源 ──
+    wechat_message_id = Column(Text, nullable=False, unique=True)
+    from_wechat_user_id = Column(Text, nullable=False)
+    from_wechat_username = Column(Text, nullable=True)
+    wechat_bot_account_id = Column(BigInteger, ForeignKey("wechat_bot_accounts.id"), nullable=False)
+    wechat_conversation_id = Column(BigInteger, ForeignKey("wechat_conversations.id"), nullable=False)
+
+    # ── 消息内容（纯文本存储，XSS 安全） ──
+    raw_message_content = Column(Text, nullable=False)
+    message_type = Column(Text, nullable=False)
+    attached_image_urls = Column(ARRAY(Text), nullable=True)
+    voice_transcription = Column(Text, nullable=True)
+
+    # ── 提取参数 ──
+    extracted_data = Column(JSONB, nullable=True)
+    extraction_confidence = Column(Numeric(5, 4), nullable=True)
+    extraction_issues = Column(JSONB, nullable=True)
+
+    # ── 抬头匹配 ──
+    matched_customer_header_id = Column(
+        BigInteger, ForeignKey("customer_invoice_headers.id"), nullable=True
+    )
+
+    # ── 最终拼接的开票参数 ──
+    merged_invoice_params = Column(JSONB, nullable=True)
+
+    # ── 覆盖审批（红蓝修复：需权限校验） ──
+    extracted_data_override = Column(JSONB, nullable=True)
+    override_reason = Column(Text, nullable=True)
+    override_approved_by = Column(BigInteger, ForeignKey("users.id"), nullable=True)
+    override_approved_at = Column(DateTime(timezone=True), nullable=True)
+
+    # ── 平台配置 ──
+    invoice_platform_config_id = Column(
+        BigInteger, ForeignKey("invoice_platform_configs.id"), nullable=True
+    )
+
+    # ── 开票结果 ──
+    invoice_record_id = Column(BigInteger, ForeignKey("invoice_records.id"), nullable=True)
+
+    # ── 状态与流程 ──
+    status = Column(Text, nullable=False, default="pending_extraction", index=True)
+
+    # ── 乐观锁（SQLAlchemy 自动管理） ──
+    version = Column(Integer, nullable=False, default=1)
+
+    # ── 人工处理 ──
+    confirmed_by_user_id = Column(BigInteger, ForeignKey("users.id"), nullable=True)
+    confirmation_timestamp = Column(DateTime(timezone=True), nullable=True)
+    confirmation_notes = Column(Text, nullable=True)
+
+    # ── 拒绝 ──
+    rejection_reason = Column(Text, nullable=True)
+    resubmitted_from_id = Column(BigInteger, nullable=True)
+
+    # ── 时间戳 ──
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    extraction_completed_at = Column(DateTime(timezone=True), nullable=True)
+    confirmation_deadline = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    # ── 事件追踪 ──
+    trace_id = Column(Text, nullable=True)
+    sampled = Column(Boolean, nullable=False, default=True)
+
+    __table_args__ = (
+        Index("idx_invoice_request_tenant_status", "tenant_id", "status"),
+        Index("idx_invoice_request_customer", "customer_id", "created_at"),
+        Index("idx_invoice_request_wechat_msg", "wechat_message_id"),
+        Index("idx_invoice_request_conv", "wechat_conversation_id"),
+        Index("idx_invoice_request_deadline", "confirmation_deadline"),
+        UniqueConstraint("invoice_record_id", name="uq_invoice_request_record"),
+    )
+
+
+class InvoiceRecord(Base):
+    """
+    发票记录表 — INSERT-only（数据库触发器强制执行）
+
+    铁律：
+    - 禁止 UPDATE/DELETE（数据库触发器阻止）
+    - 如需修正，创建新版本记录
+    """
+    __tablename__ = "invoice_records"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False, index=True)
+    invoice_request_id = Column(BigInteger, ForeignKey("invoice_requests.id"), nullable=False)
+
+    invoice_number = Column(Text, nullable=False, unique=True)
+    invoice_type = Column(Text, nullable=False)
+    invoice_date = Column(Date, nullable=False)
+
+    amount = Column(Numeric(12, 2), nullable=False)
+    tax_amount = Column(Numeric(12, 2), nullable=False)
+    total_amount = Column(Numeric(12, 2), nullable=False)
+
+    pdf_url = Column(Text, nullable=True)
+    pdf_hash = Column(Text, nullable=True)
+    pdf_page_count = Column(Integer, nullable=True)
+
+    platform_request_id = Column(Text, nullable=True)
+    platform_response = Column(JSONB, nullable=True)
+
+    status = Column(Text, nullable=False, default="issued")
+
+    confirmed_by_user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
+    confirmed_at = Column(DateTime(timezone=True), nullable=False)
+
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_invoice_record_tenant", "tenant_id", "invoice_date"),
+        Index("idx_invoice_record_request", "invoice_request_id"),
+        Index("idx_invoice_record_number", "invoice_number"),
+    )
+
+
+class CustomerInvoiceHeader(Base):
+    """
+    客户发票抬头库 — 税务校验 + 版本控制
+
+    安全设计：
+    - verification_status 强制校验（pending 不可用于开票）
+    - 银行账户 KMS 信封加密
+    """
+    __tablename__ = "customer_invoice_headers"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False, index=True)
+    customer_id = Column(BigInteger, ForeignKey("customers.id"), nullable=False)
+
+    company_name = Column(Text, nullable=False)
+    uscc = Column(Text, nullable=True)
+    tax_id = Column(Text, nullable=False)
+
+    # ── 税务校验状态 ──
+    verification_status = Column(
+        Text, nullable=False, default="pending"
+    )  # pending | verified | failed | expired
+    verification_source = Column(Text, nullable=True)
+    verification_checked_at = Column(DateTime(timezone=True), nullable=True)
+    verification_response = Column(JSONB, nullable=True)
+
+    registered_address = Column(Text, nullable=False)
+    registered_province = Column(Text, nullable=True)
+    registered_city = Column(Text, nullable=True)
+    phone_number = Column(Text, nullable=True)
+
+    # ── 银行账户（KMS 信封加密） ──
+    bank_name = Column(Text, nullable=True)
+    bank_account_encrypted = Column(Text, nullable=True)
+    bank_account_kms_key_id = Column(Text, nullable=True)
+
+    is_primary = Column(Boolean, nullable=False, default=False)
+    status = Column(Text, nullable=False, default="active")
+
+    effective_from = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    effective_to = Column(DateTime(timezone=True), nullable=True)
+    previous_version_id = Column(BigInteger, nullable=True)
+
+    created_by = Column(BigInteger, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_invoice_header_customer", "customer_id", "is_primary"),
+        Index("idx_invoice_header_tax_id", "tax_id"),
+        Index("idx_invoice_header_active", "customer_id", "status", "effective_to"),
+    )
+
+
+class InvoicePlatformConfig(Base):
+    """
+    开票平台对接配置 — KMS 加密 + HTTPS 强制
+
+    安全设计：
+    - credentials_kms_key_id 白名单校验
+    - api_endpoint HTTPS 强制（数据库 CHECK 约束）
+    - 每日配额控制
+    """
+    __tablename__ = "invoice_platform_configs"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False, index=True)
+
+    # ── 平台标识（可扩展：任意平台名称，不硬编码） ──
+    platform_name = Column(Text, nullable=False)
+    platform_display_name = Column(Text, nullable=False)
+
+    api_endpoint = Column(Text, nullable=False)
+    api_version = Column(Text, nullable=True, default="v1")
+
+    # ── KMS 信封加密 ──
+    credentials_encrypted = Column(Text, nullable=False)
+    credentials_kms_key_id = Column(Text, nullable=False)
+    credentials_encryption_context = Column(JSONB, nullable=False)
+
+    config_params = Column(JSONB, nullable=True)
+
+    is_enabled = Column(Boolean, nullable=False, default=True)
+    is_primary = Column(Boolean, nullable=False, default=False)
+
+    last_health_check_at = Column(DateTime(timezone=True), nullable=True)
+    health_check_status = Column(Text, nullable=True)
+    health_check_error_msg = Column(Text, nullable=True)
+
+    daily_quota = Column(Integer, nullable=True)
+    daily_used_count = Column(Integer, nullable=False, default=0)
+    quota_reset_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_by = Column(BigInteger, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_platform_config_tenant", "tenant_id", "is_enabled"),
+        Index("idx_platform_config_primary", "tenant_id", "is_primary"),
+        CheckConstraint("api_endpoint LIKE 'https://%'", name="chk_platform_https"),
+    )
+
+
+class InvoiceTemplate(Base):
+    """
+    开票模板库 — 商品编码映射（可扩展）
+
+    设计目标：
+    - 支持任意商品编码体系（不绑定特定税务系统）
+    - 租户可自定义映射
+    - 使用频率排序，AI 优先推荐
+    """
+    __tablename__ = "invoice_templates"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False, index=True)
+    customer_id = Column(BigInteger, nullable=True)
+
+    tax_code = Column(Text, nullable=False)
+    tax_code_name = Column(Text, nullable=False)
+    nickname = Column(Text, nullable=False)
+    synonyms = Column(ARRAY(Text), nullable=True)
+
+    default_tax_rate = Column(Numeric(5, 4), nullable=False)
+    tax_rate_options = Column(ARRAY(Numeric(5, 4)), nullable=True)
+
+    default_unit = Column(Text, nullable=False, default="项")
+    unit_options = Column(ARRAY(Text), nullable=True)
+
+    category = Column(Text, nullable=True)
+    sub_category = Column(Text, nullable=True)
+
+    priority_score = Column(Integer, nullable=False, default=0)
+    usage_count = Column(Integer, nullable=False, default=0)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+
+    status = Column(Text, nullable=False, default="active")
+
+    created_by = Column(BigInteger, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_template_tenant_category", "tenant_id", "category"),
+        Index("idx_template_tax_code", "tax_code"),
+        Index("idx_template_priority", "priority_score", "usage_count"),
+    )
+
+
+class FinancialWorkstationSession(Base):
+    """
+    财务工位会话表 — 原子抢占 + 超时回收
+
+    安全设计：
+    - claim 使用 FOR UPDATE SKIP LOCKED
+    - 查询时懒检查超时（不依赖 cron）
+    """
+    __tablename__ = "financial_workstation_sessions"
+    __mapper_args__ = {"version_id_col": "version"}
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False, index=True)
+    invoice_request_id = Column(BigInteger, ForeignKey("invoice_requests.id"), nullable=False)
+
+    assigned_to_user_id = Column(BigInteger, ForeignKey("users.id"), nullable=True)
+    workstation_name = Column(Text, nullable=True)
+
+    status = Column(Text, nullable=False, default="pending")
+
+    assigned_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    viewed_at = Column(DateTime(timezone=True), nullable=True)
+    processing_started_at = Column(DateTime(timezone=True), nullable=True)
+    timeout_at = Column(DateTime(timezone=True), nullable=True)
+
+    action_history = Column(JSONB, nullable=True)
+
+    device_ip = Column(Text, nullable=True)
+    device_user_agent = Column(Text, nullable=True)
+
+    priority = Column(Integer, nullable=False, default=0)
+
+    version = Column(Integer, nullable=False, default=1)
+
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_workstation_session_user", "assigned_to_user_id", "status"),
+        Index("idx_workstation_session_invoice", "invoice_request_id"),
+        Index("idx_workstation_session_timeout", "timeout_at"),
+    )
+
+
+class InvoiceAuditLog(Base):
+    """
+    审计日志 — 哈希链 + 外部不可变存储
+
+    安全设计：
+    - 同一事务写入（原子性）
+    - previous_hash / current_hash 链式校验
+    - MinIO 异步归档（最终一致性）
+    """
+    __tablename__ = "invoice_audit_logs"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False, index=True)
+
+    event_type = Column(Text, nullable=False)
+    actor_id = Column(BigInteger, nullable=True)
+    resource_type = Column(Text, nullable=False)
+    resource_id = Column(Text, nullable=False)
+    action = Column(Text, nullable=False)
+    changes = Column(JSONB, nullable=True)
+
+    previous_hash = Column(Text, nullable=True)
+    current_hash = Column(Text, nullable=False)
+
+    minio_status = Column(Text, nullable=False, default="pending")  # pending | archived | failed
+    minio_object_key = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_inv_audit_tenant_event", "tenant_id", "event_type", "created_at"),
+        Index("idx_inv_audit_resource", "resource_type", "resource_id"),
+    )
+
