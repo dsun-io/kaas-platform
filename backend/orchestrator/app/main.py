@@ -89,6 +89,7 @@ from app.api.quote_wizard import router as quote_wizard_router
 from app.api.skus import router as skus_router
 from app.api.prices import router as prices_router
 from app.api.admin_proposals import router as admin_proposals_router
+from app.api.reconciliation import router as reconciliation_router
 
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -109,3 +110,4 @@ app.include_router(quote_wizard_router)
 app.include_router(skus_router)
 app.include_router(prices_router)
 app.include_router(admin_proposals_router)
+app.include_router(reconciliation_router)

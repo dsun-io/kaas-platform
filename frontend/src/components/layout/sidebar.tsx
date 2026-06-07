@@ -20,6 +20,7 @@ import {
   Database,
   Compass,
   CreditCard,
+  Calculator,
 } from "lucide-react";
 import { useState, Fragment } from "react";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -51,6 +52,10 @@ const navGroups: NavGroup[] = [
       { href: "/pricing-data", label: "报价数据", icon: Database },
       { href: "/onboarding", label: "新手引导", icon: Compass },
     ],
+  },
+  {
+    label: "对账",
+    items: [{ href: "/reconciliation", label: "电商对账", icon: Calculator }],
   },
   {
     label: "订阅",

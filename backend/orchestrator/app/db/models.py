@@ -1,4 +1,4 @@
-"""
+﻿"""
 Kaas v2 · SQLAlchemy ORM 模型
 ────────────────────────────
 INT-R3: 平台规格与客户私有数据分离。
@@ -17,6 +17,9 @@ from sqlalchemy import (
     String,
     Float,
     ForeignKey,
+    UniqueConstraint,
+    CheckConstraint,
+    Date,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID, ARRAY
 from app.db.base import Base
@@ -822,3 +825,263 @@ class AttributeProposal(Base):
     __table_args__ = (
         Index("idx_ap_status", "status", "category_id"),
     )
+
+# ═══════════════════════════════════════════════════════════════
+# ECOMMERCE RECONCILIATION: 电商对账模块 (v2 红蓝修复版)
+# ═══════════════════════════════════════════════════════════════
+
+
+class ReconciliationReport(Base):
+    """
+    对账报告表 — 红蓝修复版
+
+    安全设计：
+    - 平台与物流商配置通过外键约束
+    - diff_summary 只存摘要，明细在 reconciliation_diffs 表
+    - 状态机严格校验
+    """
+    __tablename__ = "reconciliation_reports"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False, index=True)
+    report_name = Column(Text, nullable=False)
+    report_period_start = Column(Date, nullable=False)
+    report_period_end = Column(Date, nullable=False)
+
+    # ── 参与对账的平台 ──
+    platform_ids = Column(ARRAY(BigInteger), nullable=False)
+    platform_config_snapshot = Column(JSONB, nullable=False)
+
+    # ── 参与对账的物流商 ──
+    logistics_provider_ids = Column(ARRAY(BigInteger), nullable=False)
+    logistics_config_snapshot = Column(JSONB, nullable=False)
+
+    # ── 汇总数据 ──
+    total_platform_order_count = Column(Integer, nullable=False)
+    total_platform_amount = Column(Numeric(12, 2), nullable=False)
+    total_logistics_bill_count = Column(Integer, nullable=False)
+    total_logistics_amount = Column(Numeric(12, 2), nullable=False)
+
+    # ── 差异摘要 ──
+    diff_summary = Column(JSONB, nullable=True)
+    unmatched_platform_orders = Column(Integer, nullable=False, default=0)
+    unmatched_logistics_bills = Column(Integer, nullable=False, default=0)
+
+    # ── 状态 ──
+    status = Column(Text, nullable=False, default="pending")  # pending | running | completed | failed
+
+    # ── 执行人 ──
+    triggered_by_user_id = Column(BigInteger, ForeignKey("users.id"), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_recon_report_tenant", "tenant_id", "report_period_start", "report_period_end"),
+        Index("idx_recon_report_status", "tenant_id", "status"),
+    )
+
+
+class ReconciliationDiff(Base):
+    """
+    对账差异明细表
+
+    设计原则：
+    - 一条差异 = 一个平台订单 vs 一个物流账单项
+    - 支持单侧缺失（平台有 / 物流无，或反之）
+    - 支持金额差异
+    """
+    __tablename__ = "reconciliation_diffs"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False, index=True)
+    reconciliation_report_id = Column(BigInteger, ForeignKey("reconciliation_reports.id", ondelete="CASCADE"), nullable=False)
+
+    # ── 差异类型 ──
+    diff_type = Column(Text, nullable=False)  # missing_platform | missing_logistics | amount_mismatch | duplicate
+
+    # ── 平台侧 ──
+    platform_order_id = Column(Text, nullable=True)
+    platform_name = Column(Text, nullable=True)
+    platform_sku = Column(Text, nullable=True)
+    platform_quantity = Column(Integer, nullable=True)
+    platform_amount = Column(Numeric(12, 2), nullable=True)
+    platform_order_date = Column(Date, nullable=True)
+
+    # ── 物流侧 ──
+    logistics_bill_id = Column(Text, nullable=True)
+    logistics_provider = Column(Text, nullable=True)
+    logistics_bill_no = Column(Text, nullable=True)
+    logistics_freight_fee = Column(Numeric(12, 2), nullable=True)
+    logistics_bill_date = Column(Date, nullable=True)
+
+    # ── 差异金额 ──
+    diff_amount = Column(Numeric(12, 2), nullable=True)
+    diff_reason = Column(Text, nullable=True)
+
+    # ── 处理状态 ──
+    resolution_status = Column(Text, nullable=False, default="open")  # open | investigating | resolved | ignored
+    resolved_by_user_id = Column(BigInteger, ForeignKey("users.id"), nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolution_notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_recon_diff_report", "reconciliation_report_id", "diff_type"),
+        Index("idx_recon_diff_resolution", "tenant_id", "resolution_status"),
+        Index("idx_recon_diff_platform_order", "tenant_id", "platform_order_id"),
+        Index("idx_recon_diff_logistics_bill", "tenant_id", "logistics_bill_id"),
+    )
+
+
+class EcommercePlatformConfig(Base):
+    """
+    电商平台对接配置 — 可扩展、不硬编码
+
+    安全设计：
+    - api_endpoint HTTPS 强制
+    - credentials KMS 加密
+    """
+    __tablename__ = "ecommerce_platform_configs"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False, index=True)
+
+    platform_name = Column(Text, nullable=False)  # 不枚举，任意名称
+    platform_display_name = Column(Text, nullable=False)
+    platform_type = Column(Text, nullable=False)  # 可扩展：taobao | jd | pdd | douyin | custom
+
+    api_endpoint = Column(Text, nullable=False)
+    api_version = Column(Text, nullable=True, default="v1")
+
+    # ── KMS 加密 ──
+    credentials_encrypted = Column(Text, nullable=False)
+    credentials_kms_key_id = Column(Text, nullable=False)
+    credentials_encryption_context = Column(JSONB, nullable=False)
+
+    # ── 配置参数 ──
+    config_params = Column(JSONB, nullable=True)
+    supported_fields = Column(ARRAY(Text), nullable=True)  # 该平台导出的字段列表
+
+    is_enabled = Column(Boolean, nullable=False, default=True)
+    last_sync_at = Column(DateTime(timezone=True), nullable=True)
+    sync_status = Column(Text, nullable=True)
+
+    created_by = Column(BigInteger, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_ecom_platform_tenant", "tenant_id", "is_enabled"),
+        CheckConstraint("api_endpoint LIKE 'https://%'", name="chk_ecom_platform_https"),
+    )
+
+
+class LogisticsProviderConfig(Base):
+    """
+    物流商对接配置 — 可扩展、不硬编码
+    """
+    __tablename__ = "logistics_provider_configs"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False, index=True)
+
+    provider_name = Column(Text, nullable=False)  # 不枚举，任意名称
+    provider_display_name = Column(Text, nullable=False)
+    provider_type = Column(Text, nullable=False)  # express | freight | courier | custom
+
+    api_endpoint = Column(Text, nullable=False)
+    api_version = Column(Text, nullable=True, default="v1")
+
+    credentials_encrypted = Column(Text, nullable=False)
+    credentials_kms_key_id = Column(Text, nullable=False)
+    credentials_encryption_context = Column(JSONB, nullable=False)
+
+    config_params = Column(JSONB, nullable=True)
+    supported_bill_formats = Column(ARRAY(Text), nullable=True)  # csv | xlsx | pdf | api
+
+    is_enabled = Column(Boolean, nullable=False, default=True)
+    last_sync_at = Column(DateTime(timezone=True), nullable=True)
+    sync_status = Column(Text, nullable=True)
+
+    created_by = Column(BigInteger, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_logistics_tenant", "tenant_id", "is_enabled"),
+        CheckConstraint("api_endpoint LIKE 'https://%'", name="chk_logistics_https"),
+    )
+
+
+class PlatformOrderStaging(Base):
+    """
+    平台订单暂存表 — 对账前的原始数据
+
+    设计目标：
+    - 支持任意字段映射（通过 raw_data JSONB）
+    - 与对账报告关联，支持历史追溯
+    """
+    __tablename__ = "platform_order_staging"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False, index=True)
+    reconciliation_report_id = Column(BigInteger, ForeignKey("reconciliation_reports.id", ondelete="CASCADE"), nullable=False)
+    platform_config_id = Column(BigInteger, ForeignKey("ecommerce_platform_configs.id"), nullable=False)
+
+    platform_order_id = Column(Text, nullable=False)
+    order_date = Column(Date, nullable=True)
+    sku = Column(Text, nullable=True)
+    quantity = Column(Integer, nullable=True)
+    unit_price = Column(Numeric(12, 2), nullable=True)
+    total_amount = Column(Numeric(12, 2), nullable=True)
+    currency = Column(Text, nullable=True, default="CNY")
+
+    # ── 原始数据（保留完整原始字段，便于追溯） ──
+    raw_data = Column(JSONB, nullable=False)
+
+    # ── 匹配状态 ──
+    matched_logistics_bill_id = Column(Text, nullable=True)
+    match_confidence = Column(Numeric(5, 4), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_pos_report", "reconciliation_report_id", "platform_config_id"),
+        Index("idx_pos_order", "tenant_id", "platform_order_id"),
+    )
+
+
+class LogisticsBillStaging(Base):
+    """
+    物流账单暂存表 — 对账前的原始数据
+    """
+    __tablename__ = "logistics_bill_staging"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False, index=True)
+    reconciliation_report_id = Column(BigInteger, ForeignKey("reconciliation_reports.id", ondelete="CASCADE"), nullable=False)
+    logistics_config_id = Column(BigInteger, ForeignKey("logistics_provider_configs.id"), nullable=False)
+
+    bill_no = Column(Text, nullable=False)
+    bill_date = Column(Date, nullable=True)
+    waybill_no = Column(Text, nullable=True)
+    order_id = Column(Text, nullable=True)
+    freight_fee = Column(Numeric(12, 2), nullable=True)
+    weight = Column(Numeric(10, 3), nullable=True)
+    destination = Column(Text, nullable=True)
+
+    raw_data = Column(JSONB, nullable=False)
+
+    matched_platform_order_id = Column(Text, nullable=True)
+    match_confidence = Column(Numeric(5, 4), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_lbs_report", "reconciliation_report_id", "logistics_config_id"),
+        Index("idx_lbs_bill", "tenant_id", "bill_no"),
+    )
+
