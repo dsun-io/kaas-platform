@@ -12,7 +12,7 @@
 三层角色权限映射 (Wave 2 · T4):
 - system_admin (L1): 所有权限（平台管理员）
 - customer_owner (L2): 客户域全部权限（读+写）
-- customer_member (L3): 基本权限（quote:run, sale_price:read）
+- customer_member (L3): 基本权限（quote:run, sale_price:read, intel:shipments:read）
 
 向后兼容: 旧角色（tenant_owner 等）仍通过 X-Role header 支持。
 """
@@ -28,6 +28,9 @@ EFFECTIVE_ROLE_PERMISSIONS: dict[str, set[str]] = {
         "freight_rate:read", "freight_rate:write",
         "quote:run", "quote:sensitive_debug",
         "admin:customer_read",
+        "intel:shipments:read", "intel:shipments:write",
+        "intel:entities:read", "intel:entities:write",
+        "intel:categories:read", "intel:categories:write",
     },
     "customer_owner": {
         "cost:read", "cost:write",
@@ -36,10 +39,14 @@ EFFECTIVE_ROLE_PERMISSIONS: dict[str, set[str]] = {
         "freight_rate:read", "freight_rate:write",
         "quote:run",
         "admin:customer_read",
+        "intel:shipments:read", "intel:shipments:write",
+        "intel:entities:read", "intel:entities:write",
+        "intel:categories:read", "intel:categories:write",
     },
     "customer_member": {
         "quote:run",
         "sale_price:read",
+        "intel:shipments:read",
     },
 }
 

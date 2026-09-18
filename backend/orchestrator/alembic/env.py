@@ -44,6 +44,9 @@ from app.db.models import (  # noqa: F401
     ProductSkuPrice,
     ProductSkuRevision,
     AttributeProposal,
+    IntelEntity,
+    IntelProductCategory,
+    IntelShipment,
 )
 
 # Alembic Config 对象
