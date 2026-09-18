@@ -6,41 +6,52 @@
 浏览器 ──> Cloudflare Pages (frontend · kaas.powervoy.com)
               │  /api/v1/* (HTTPS)
               ▼
-          FastAPI 后端 (Docker · 任意 VPS, 建议 api.kaas.powervoy.com)
-              │
+          Cloudflare Worker (Python · kaas-intel-api · api.kaas.powervoy.com)
+              │  Hyperdrive (连接池/聚合)
               ▼
           Neon PostgreSQL (project falling-salad-31662168 · branch production)
 ```
 
-## 1. 后端部署（Docker）
+> 后端已改为 Cloudflare Workers 部署（Python Worker + Hyperdrive），不再使用 VPS/Docker。
+> `backend/orchestrator` 保留为本地开发/数据迁移工具（alembic、采集脚本）。
 
-前置：任意 Linux 服务器 + Docker + Docker Compose（或单容器运行）。
+## 1. 后端部署（Cloudflare Workers）
+
+前置：uv 已安装；wrangler 已登录（`npx wrangler whoami` 验证）。
+
+```bash
+cd backend/worker
+
+# 本地开发（Hyperdrive 本地模拟指向 Neon）
+$env:CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="postgres://neondb_owner:<pwd>@ep-small-brook-b54t5318-pooler.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require"
+uv run pywrangler dev
+
+# 生产密钥（JWT_SECRET 用随机值；ADMIN_SETUP_TOKEN 仅在首次初始化管理员时需要）
+"$(python -c 'import secrets; print(secrets.token_urlsafe(48))')" | uv run pywrangler secret put JWT_SECRET
+"<one-time-setup-token>" | uv run pywrangler secret put ADMIN_SETUP_TOKEN
+
+# 部署（wrangler.jsonc 已含 Hyperdrive binding + api.kaas.powervoy.com 自定义域名）
+uv run pywrangler deploy
+```
+
+Worker 运行时：`compatibility_flags = ["python_workers"]`（open beta），
+数据库访问为**每请求 asyncpg 连接 + Hyperdrive 聚合**（连接池模式在 Workers 中不可用）。
+
+数据库迁移（Neon schema 变更，本地 venv 执行，需 DATABASE_URL 指向 Neon）：
 
 ```bash
 cd backend/orchestrator
-cp .env.production.template .env   # 填入 Neon URL、JWT_SECRET 等
-docker build -t kaas-backend .
-docker run -d --name kaas-backend --restart unless-stopped \
-  -p 8000:8000 --env-file .env kaas-backend
-```
-
-数据库迁移（在容器内或本机 venv 执行，需 DATABASE_URL 指向 Neon）：
-
-```bash
 alembic upgrade head
 ```
 
-初始化管理员（一次性）：
+初始化管理员（一次性，对线上 Worker 执行；当前线上已初始化，会返回 403）：
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/v1/auth/bootstrap-admin \
+curl -X POST https://api.kaas.powervoy.com/api/v1/auth/bootstrap-admin \
   -H "Authorization: Bearer <ADMIN_SETUP_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@kaas.dev","password":"<强密码>","display_name":"系统管理员"}'
 ```
-
-建议用 Caddy/Nginx 反代 `api.kaas.powervoy.com` → `127.0.0.1:8000`（自动 HTTPS），
-并在 Cloudflare DNS 添加 A/CNAME 记录。
 
 ## 2. 前端部署（Cloudflare Pages）
 

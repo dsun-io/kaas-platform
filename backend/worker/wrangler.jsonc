@@ -1,0 +1,19 @@
+{
+  "name": "kaas-intel-api",
+  "main": "src/main.py",
+  "compatibility_date": "2026-09-18",
+  "compatibility_flags": ["python_workers"],
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "f53fed49705043008737032e4bfa2b8e"
+    }
+  ],
+  "routes": [
+    {
+      "pattern": "api.kaas.powervoy.com",
+      "zone_name": "powervoy.com",
+      "custom_domain": true
+    }
+  ]
+}
