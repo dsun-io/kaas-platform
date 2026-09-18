@@ -1,14 +1,20 @@
 """Intel Workstation API — 商情雷达进出口数据端点"""
 from typing import Optional, List
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
-from app.db.models import IntelShipment, IntelEntity, IntelProductCategory
+from app.db.models import (
+    IntelShipment, IntelEntity, IntelProductCategory,
+    IntelSource, IntelTradeStat, IntelDataChannel,
+    IntelAdapterRun, IntelKeywordRule, IntelMatch,
+)
 from app.core.permissions import require_permission
 from app.core.auth import AuthContext, get_auth_context
+from app.services.intel.comtrade_collector import ComtradeCollector
+from app.services.intel.shipment_importer import ShipmentImporter
 
 router = APIRouter(prefix="/api/v1/intel", tags=["intel"])
 
@@ -103,7 +109,41 @@ class IntelShipmentListResponse(BaseModel):
     items: List[IntelShipmentResponse]
 
 
-# ── Endpoints ──
+class IntelTradeStatResponse(BaseModel):
+    id: int
+    hs_code: str
+    period: str
+    reporter_country: Optional[str]
+    partner_country: str
+    trade_flow: str
+    qty: Optional[float]
+    qty_unit: Optional[str]
+    value_usd: Optional[float]
+
+    class Config:
+        from_attributes = True
+
+
+class IntelAdapterRunResponse(BaseModel):
+    id: int
+    status: str
+    started_at: datetime
+    finished_at: Optional[datetime]
+    items_processed: int
+    items_inserted: int
+    error_message: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
+class ComtradeCollectRequest(BaseModel):
+    reporter_country: str
+    period: str  # YYYY-MM
+    trade_flow: str = "import"
+
+
+# ── Shipment Endpoints ──
 
 
 @router.get("/shipments", response_model=IntelShipmentListResponse)
@@ -233,3 +273,153 @@ async def create_shipment(
     await db.flush()
     await db.refresh(shipment)
     return shipment
+
+
+# ── Import Endpoints ──
+
+
+@router.post("/import/csv")
+async def import_csv(
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db_session),
+    auth: AuthContext = Depends(get_auth_context),
+):
+    """从 CSV 文件批量导入进出口数据"""
+    await require_permission(request, "intel:shipments:write")
+
+    content = await file.read()
+    importer = ShipmentImporter(
+        db=db,
+        tenant_id=auth.tenant_id,
+        created_by=str(auth.user_id),
+    )
+
+    result = await importer.import_csv(
+        file_content=content,
+        source_channel="manual_csv",
+        source_ref=file.filename,
+    )
+
+    return result
+
+
+# ── Trade Stats Endpoints ──
+
+
+@router.get("/trade-stats", response_model=List[IntelTradeStatResponse])
+async def list_trade_stats(
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+    auth: AuthContext = Depends(get_auth_context),
+    hs_code: Optional[str] = None,
+    period: Optional[str] = None,
+    partner_country: Optional[str] = None,
+    trade_flow: Optional[str] = None,
+    limit: int = Query(100, le=500),
+):
+    """列出贸易统计数据"""
+    await require_permission(request, "intel:shipments:read")
+
+    query = select(IntelTradeStat).where(IntelTradeStat.tenant_id == auth.tenant_id)
+
+    if hs_code:
+        query = query.where(IntelTradeStat.hs_code == hs_code)
+    if period:
+        query = query.where(IntelTradeStat.period == period)
+    if partner_country:
+        query = query.where(IntelTradeStat.partner_country.ilike(f"%{partner_country}%"))
+    if trade_flow:
+        query = query.where(IntelTradeStat.trade_flow == trade_flow)
+
+    query = query.order_by(IntelTradeStat.period.desc()).limit(limit)
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+@router.post("/collect/comtrade")
+async def collect_comtrade(
+    data: ComtradeCollectRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+    auth: AuthContext = Depends(get_auth_context),
+):
+    """触发 UN Comtrade 数据采集"""
+    await require_permission(request, "intel:shipments:write")
+
+    collector = ComtradeCollector(db=db, tenant_id=auth.tenant_id)
+
+    try:
+        result = await collector.collect(
+            reporter_country=data.reporter_country,
+            period=data.period,
+            trade_flow=data.trade_flow,
+        )
+        return result
+    finally:
+        await collector.close()
+
+
+# ── Adapter Runs Endpoints ──
+
+
+@router.get("/adapter-runs", response_model=List[IntelAdapterRunResponse])
+async def list_adapter_runs(
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+    auth: AuthContext = Depends(get_auth_context),
+    status: Optional[str] = None,
+    limit: int = Query(50, le=200),
+):
+    """列出采集任务运行日志"""
+    await require_permission(request, "intel:shipments:read")
+
+    query = select(IntelAdapterRun).where(IntelAdapterRun.tenant_id == auth.tenant_id)
+
+    if status:
+        query = query.where(IntelAdapterRun.status == status)
+
+    query = query.order_by(IntelAdapterRun.started_at.desc()).limit(limit)
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+# ── Data Channels Endpoints ──
+
+
+@router.get("/channels")
+async def list_channels(
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+    auth: AuthContext = Depends(get_auth_context),
+):
+    """列出数据渠道（免费/付费）"""
+    await require_permission(request, "intel:shipments:read")
+
+    result = await db.execute(
+        select(IntelDataChannel).where(IntelDataChannel.tenant_id == auth.tenant_id)
+    )
+    channels = result.scalars().all()
+
+    # Return with frontend-friendly format
+    return {
+        "free_channels": [
+            {
+                "id": c.id,
+                "name": c.name,
+                "type": c.channel_type,
+                "enabled": c.is_enabled,
+            }
+            for c in channels if c.tier == "free"
+        ],
+        "paid_channels": [
+            {
+                "id": c.id,
+                "name": c.name,
+                "type": c.channel_type,
+                "enabled": c.is_enabled,
+                "message": "未开通" if not c.is_enabled else "已开通",
+            }
+            for c in channels if c.tier == "paid"
+        ],
+    }
