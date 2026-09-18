@@ -19,6 +19,20 @@ from app.services.intel.shipment_importer import ShipmentImporter
 router = APIRouter(prefix="/api/v1/intel", tags=["intel"])
 
 
+# ── Helpers ──
+
+DEFAULT_TENANT = "default"
+
+
+def _tenant_id(auth: AuthContext) -> str:
+    """解析有效租户 ID。
+
+    内部管理员（system_admin）没有关联客户租户，intel_shipments.tenant_id
+    为 NOT NULL，因此回退到 DEFAULT_TENANT，保证单一租户场景下数据互通。
+    """
+    return auth.tenant_id or DEFAULT_TENANT
+
+
 # ── Schemas ──
 
 from pydantic import BaseModel
@@ -164,7 +178,7 @@ async def list_shipments(
     """列出进出口数据（支持筛选）"""
     await require_permission(request, "intel:shipments:read")
 
-    query = select(IntelShipment).where(IntelShipment.tenant_id == auth.tenant_id)
+    query = select(IntelShipment).where(IntelShipment.tenant_id == _tenant_id(auth))
 
     if shipper:
         query = query.where(IntelShipment.shipper.ilike(f"%{shipper}%"))
@@ -213,7 +227,7 @@ async def get_shipment(
         select(IntelShipment).where(
             and_(
                 IntelShipment.id == shipment_id,
-                IntelShipment.tenant_id == auth.tenant_id,
+                IntelShipment.tenant_id == _tenant_id(auth),
             )
         )
     )
@@ -234,7 +248,7 @@ async def create_shipment(
     await require_permission(request, "intel:shipments:write")
 
     shipment = IntelShipment(
-        tenant_id=auth.tenant_id,
+        tenant_id=_tenant_id(auth),
         shipper=data.shipper,
         ship_date=data.ship_date,
         carrier=data.carrier,
@@ -291,7 +305,7 @@ async def import_csv(
     content = await file.read()
     importer = ShipmentImporter(
         db=db,
-        tenant_id=auth.tenant_id,
+        tenant_id=_tenant_id(auth),
         created_by=str(auth.user_id),
     )
 
@@ -321,7 +335,7 @@ async def list_trade_stats(
     """列出贸易统计数据"""
     await require_permission(request, "intel:shipments:read")
 
-    query = select(IntelTradeStat).where(IntelTradeStat.tenant_id == auth.tenant_id)
+    query = select(IntelTradeStat).where(IntelTradeStat.tenant_id == _tenant_id(auth))
 
     if hs_code:
         query = query.where(IntelTradeStat.hs_code == hs_code)
@@ -347,7 +361,7 @@ async def collect_comtrade(
     """触发 UN Comtrade 数据采集"""
     await require_permission(request, "intel:shipments:write")
 
-    collector = ComtradeCollector(db=db, tenant_id=auth.tenant_id)
+    collector = ComtradeCollector(db=db, tenant_id=_tenant_id(auth))
 
     try:
         result = await collector.collect(
@@ -374,7 +388,7 @@ async def list_adapter_runs(
     """列出采集任务运行日志"""
     await require_permission(request, "intel:shipments:read")
 
-    query = select(IntelAdapterRun).where(IntelAdapterRun.tenant_id == auth.tenant_id)
+    query = select(IntelAdapterRun).where(IntelAdapterRun.tenant_id == _tenant_id(auth))
 
     if status:
         query = query.where(IntelAdapterRun.status == status)
@@ -397,7 +411,7 @@ async def list_channels(
     await require_permission(request, "intel:shipments:read")
 
     result = await db.execute(
-        select(IntelDataChannel).where(IntelDataChannel.tenant_id == auth.tenant_id)
+        select(IntelDataChannel).where(IntelDataChannel.tenant_id == _tenant_id(auth))
     )
     channels = result.scalars().all()
 

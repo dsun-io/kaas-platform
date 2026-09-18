@@ -4,13 +4,6 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -164,16 +157,18 @@ export function ShipmentsTable() {
                   {data.items.map((shipment) => (
                     <TableRow key={shipment.id}>
                       <TableCell className="font-medium">
-                        {shipment.shipper_name}
+                        {shipment.shipper}
                       </TableCell>
-                      <TableCell>{shipment.consignee_name}</TableCell>
+                      <TableCell>{shipment.consignee}</TableCell>
                       <TableCell className="max-w-xs truncate">
                         {shipment.product_desc}
                       </TableCell>
                       <TableCell>{shipment.dest_country || "-"}</TableCell>
                       <TableCell>{shipment.hs_code || "-"}</TableCell>
                       <TableCell>
-                        {shipment.departure_date || shipment.arrival_date || "-"}
+                        {shipment.ship_date
+                          ? shipment.ship_date.slice(0, 10)
+                          : "-"}
                       </TableCell>
                       <TableCell>
                         <Badge

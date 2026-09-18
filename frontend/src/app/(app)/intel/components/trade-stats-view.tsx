@@ -19,13 +19,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Search } from "lucide-react";
 
-const PAGE_SIZE = 20;
-
 export function TradeStatsView() {
-  const [filters, setFilters] = useState<IntelTradeStatFilters>({
-    page: 1,
-    page_size: PAGE_SIZE,
-  });
+  const [filters, setFilters] = useState<IntelTradeStatFilters>({});
   const [searchInput, setSearchInput] = useState({
     hs_code: "",
     partner_country: "",
@@ -36,11 +31,7 @@ export function TradeStatsView() {
   const { data, isLoading, error } = useIntelTradeStats(filters);
 
   const handleSearch = () => {
-    setFilters((prev) => ({
-      ...prev,
-      ...searchInput,
-      page: 1,
-    }));
+    setFilters({ ...searchInput });
   };
 
   const formatValue = (value?: number) => {
@@ -50,8 +41,6 @@ export function TradeStatsView() {
     if (value >= 1e3) return `${(value / 1e3).toFixed(2)}K`;
     return value.toString();
   };
-
-  const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0;
 
   return (
     <Card>
@@ -109,7 +98,7 @@ export function TradeStatsView() {
           <div className="text-center py-8 text-muted-foreground">
             加载失败，请稍后重试
           </div>
-        ) : data && data.items.length > 0 ? (
+        ) : data && data.length > 0 ? (
           <>
             <div className="rounded-md border">
               <Table>
@@ -124,7 +113,7 @@ export function TradeStatsView() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.items.map((stat) => (
+                  {data.map((stat) => (
                     <TableRow key={stat.id}>
                       <TableCell className="font-medium">{stat.hs_code}</TableCell>
                       <TableCell>{stat.period}</TableCell>
@@ -133,7 +122,7 @@ export function TradeStatsView() {
                         {stat.trade_flow === "import" ? "进口" : "出口"}
                       </TableCell>
                       <TableCell className="text-right">
-                        {stat.quantity?.toLocaleString() || "-"} {stat.quantity_unit}
+                        {stat.qty?.toLocaleString() || "-"} {stat.qty_unit}
                       </TableCell>
                       <TableCell className="text-right">
                         {formatValue(stat.value_usd)}
@@ -143,34 +132,9 @@ export function TradeStatsView() {
                 </TableBody>
               </Table>
             </div>
-
-            {totalPages > 1 && (
-              <div className="flex items-center justify-center gap-2 mt-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setFilters((prev) => ({ ...prev, page: prev.page! - 1 }))
-                  }
-                  disabled={filters.page === 1}
-                >
-                  上一页
-                </Button>
-                <span className="text-sm text-muted-foreground">
-                  第 {filters.page} 页 / 共 {totalPages} 页（共 {data.total} 条）
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setFilters((prev) => ({ ...prev, page: prev.page! + 1 }))
-                  }
-                  disabled={filters.page === totalPages}
-                >
-                  下一页
-                </Button>
-              </div>
-            )}
+            <p className="text-sm text-muted-foreground mt-2">
+              共 {data.length} 条记录
+            </p>
           </>
         ) : (
           <div className="text-center py-8 text-muted-foreground">
