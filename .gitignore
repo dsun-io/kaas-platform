@@ -86,3 +86,9 @@ backend/orchestrator/.coverage*
 
 # Legacy Qwen config (已迁移至 .ai/)
 .qwen/
+
+# Neon local config
+.neon
+.env.local
+.agents/
+skills-lock.json
