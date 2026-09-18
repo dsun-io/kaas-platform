@@ -47,6 +47,12 @@ from app.db.models import (  # noqa: F401
     IntelEntity,
     IntelProductCategory,
     IntelShipment,
+    IntelSource,
+    IntelTradeStat,
+    IntelDataChannel,
+    IntelAdapterRun,
+    IntelKeywordRule,
+    IntelMatch,
 )
 
 # Alembic Config 对象
