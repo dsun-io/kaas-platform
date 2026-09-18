@@ -20,6 +20,7 @@ import {
   Database,
   Compass,
   CreditCard,
+  Radar,
 } from "lucide-react";
 import { useState, Fragment } from "react";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -50,6 +51,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/pricing-data", label: "报价数据", icon: Database },
       { href: "/onboarding", label: "新手引导", icon: Compass },
+      { href: "/intel", label: "商情雷达", icon: Radar, adminOnly: true },
     ],
   },
   {

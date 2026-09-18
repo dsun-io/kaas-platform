@@ -38,4 +38,13 @@ export const queryKeys = {
     list: (status?: string) => ["proposals", "list", status] as const,
     recommended: ["proposals", "recommended"] as const,
   },
+  intel: {
+    shipments: (filters: Record<string, unknown>) =>
+      ["intel", "shipments", filters] as const,
+    shipment: (id: number) => ["intel", "shipment", id] as const,
+    tradeStats: (filters: Record<string, unknown>) =>
+      ["intel", "tradeStats", filters] as const,
+    adapterRuns: ["intel", "adapterRuns"] as const,
+    channels: ["intel", "channels"] as const,
+  },
 } as const;
