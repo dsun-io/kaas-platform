@@ -1,6 +1,5 @@
 import { type ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface SectionCardProps {
   title?: string;
@@ -8,35 +7,32 @@ interface SectionCardProps {
   action?: ReactNode;
   children: ReactNode;
   className?: string;
-  contentClassName?: string;
+  bodyClassName?: string;
+  hover?: boolean;
 }
 
-/**
- * Standard section container: title + optional description + optional action + content.
- * Use this for every content block so new features inherit the same visual style.
- */
+/** Standard content section: title + optional action + body. */
 export function SectionCard({
   title,
   description,
   action,
   children,
   className,
-  contentClassName,
+  bodyClassName,
+  hover = false,
 }: SectionCardProps) {
   return (
-    <Card className={cn("card-elevated", className)}>
+    <div className={cn(hover ? "card-base card-hover" : "card-base", className)}>
       {(title || action) && (
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-          <div className="space-y-1">
-            {title && <CardTitle className="text-base font-semibold">{title}</CardTitle>}
-            {description && <CardDescription className="text-sm">{description}</CardDescription>}
+        <div className="flex items-center justify-between border-b px-5 py-4">
+          <div className="space-y-0.5">
+            {title && <h3 className="text-[0.9375rem] font-semibold">{title}</h3>}
+            {description && <p className="text-sm text-muted-foreground">{description}</p>}
           </div>
           {action}
-        </CardHeader>
+        </div>
       )}
-      <CardContent className={cn(title || action ? "pt-0" : "", contentClassName)}>
-        {children}
-      </CardContent>
-    </Card>
+      <div className={cn("p-5", bodyClassName)}>{children}</div>
+    </div>
   );
 }

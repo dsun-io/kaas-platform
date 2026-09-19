@@ -22,18 +22,19 @@ export default function DashboardPage() {
   const summary = data;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <PageHeader
         title="仪表盘"
         description="实时业务指标与系统运行概览"
         actions={<RangeSelector value={range} onChange={setRange} />}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard
           label="今日报价数"
           icon={FileText}
           value={summary?.quotations_total ?? "—"}
+          variant="gradient"
           hint={
             summary
               ? `采样 ${summary.quotations_sampled}/${summary.quotations_total}`
@@ -84,7 +85,7 @@ export default function DashboardPage() {
           value={
             isLoading
               ? "—"
-              : summary
+              : summary && summary.quotations_total > 0
                 ? `${(
                     (summary.quotations_sampled / summary.quotations_total) *
                     100

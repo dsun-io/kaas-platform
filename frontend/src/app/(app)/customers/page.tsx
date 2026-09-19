@@ -473,7 +473,7 @@ function CustomerDetailPanel({ customer, onClose }: { customer: Customer; onClos
                     <p className="text-sm text-muted-foreground">No contacts yet</p>
                   )}
                   {detail.contacts.map((c) => (
-                    <div key={c.id} className="border rounded-md p-3">
+                    <div key={c.id} className="rounded-lg border bg-card p-4 shadow-[var(--shadow-xs)] transition-shadow hover:shadow-[var(--shadow-sm)]">
                       <p className="font-medium text-sm">
                         {c.name}
                         {c.is_primary && <Badge variant="default" className="ml-2">Primary</Badge>}
@@ -504,7 +504,7 @@ function CustomerDetailPanel({ customer, onClose }: { customer: Customer; onClos
                     <p className="text-sm text-muted-foreground">No inquiries yet</p>
                   )}
                   {detail.inquiries.map((inq) => (
-                    <div key={inq.id} className="border rounded-md p-3">
+                    <div key={inq.id} className="rounded-lg border bg-card p-4 shadow-[var(--shadow-xs)]">
                       <div className="flex items-center justify-between">
                         <p className="font-medium text-sm">
                           {inq.product_name_raw ?? `Inquiry #${inq.id}`}
@@ -531,7 +531,7 @@ function CustomerDetailPanel({ customer, onClose }: { customer: Customer; onClos
                   <p className="text-sm text-muted-foreground">No history</p>
                 ) : (
                   detail.stage_log.map((log) => (
-                    <div key={log.id} className="border rounded-md p-3 text-sm">
+                    <div key={log.id} className="rounded-lg border bg-card p-4 text-sm shadow-[var(--shadow-xs)]">
                       <div className="flex items-center justify-between">
                         <span>
                           {log.from_stage ? (STAGE_LABELS[log.from_stage] ?? log.from_stage) : "Created"}
@@ -608,7 +608,7 @@ export default function CustomersPage() {
               {listData?.items.map((c) => (
                 <div
                   key={c.id}
-                  className="border rounded-md p-3 hover:bg-muted/50 cursor-pointer transition-colors"
+                  className="rounded-lg border bg-card p-4 cursor-pointer transition-all hover:shadow-[var(--shadow-md)] hover:border-primary/20"
                   onClick={() => setSelectedCustomer(c)}
                 >
                   <div className="flex items-center justify-between">
