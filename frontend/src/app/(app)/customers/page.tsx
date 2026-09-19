@@ -9,6 +9,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader, StatusBadge, SectionCard, EmptyState } from "@/components/shared";
 import { Plus, Search, UserPlus } from "lucide-react";
 
 const STAGE_LABELS: Record<string, string> = {
@@ -21,14 +22,14 @@ const STAGE_LABELS: Record<string, string> = {
   inactive: "Inactive",
 };
 
-const STAGE_VARIANTS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  lead: "outline",
-  inquiry: "secondary",
-  quoted: "secondary",
-  negotiating: "default",
-  won: "default",
-  lost: "destructive",
-  inactive: "outline",
+const STAGE_TONES: Record<string, import("@/components/shared").StatusTone> = {
+  lead: "default",
+  inquiry: "info",
+  quoted: "purple",
+  negotiating: "warning",
+  won: "success",
+  lost: "danger",
+  inactive: "default",
 };
 
 interface Customer {
@@ -440,9 +441,9 @@ function CustomerDetailPanel({ customer, onClose }: { customer: Customer; onClos
                   </div>
                   <div>
                     <span className="text-muted-foreground">Stage:</span>
-                    <Badge variant={STAGE_VARIANTS[detail.stage] ?? "outline"} className="ml-1">
+                    <StatusBadge tone={STAGE_TONES[detail.stage] ?? "default"} className="ml-1">
                       {STAGE_LABELS[detail.stage] ?? detail.stage}
-                    </Badge>
+                    </StatusBadge>
                   </div>
                   {detail.notes && (
                     <div className="col-span-2">
@@ -508,9 +509,9 @@ function CustomerDetailPanel({ customer, onClose }: { customer: Customer; onClos
                         <p className="font-medium text-sm">
                           {inq.product_name_raw ?? `Inquiry #${inq.id}`}
                         </p>
-                        <Badge variant={inq.status === "won" ? "default" : inq.status === "lost" ? "destructive" : "secondary"}>
+                        <StatusBadge tone={inq.status === "won" ? "success" : inq.status === "lost" ? "danger" : "default"}>
                           {inq.status}
-                        </Badge>
+                        </StatusBadge>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         {inq.channel && `${inq.channel} · `}
@@ -565,15 +566,15 @@ export default function CustomersPage() {
   return (
     <RouteGuard adminOnly>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">Customer Management</h1>
-            <p className="text-sm text-muted-foreground mt-1">Track inquiries, stages, and contacts</p>
-          </div>
-          <Button onClick={() => setShowCreateForm(true)}>
-            <UserPlus className="size-4 mr-1" />New customer
-          </Button>
-        </div>
+        <PageHeader
+          title="Customer Management"
+          description="Track inquiries, stages, and contacts"
+          actions={
+            <Button onClick={() => setShowCreateForm(true)}>
+              <UserPlus className="size-4 mr-1" />New customer
+            </Button>
+          }
+        />
 
         {showCreateForm && (
           <Card>
@@ -612,9 +613,9 @@ export default function CustomersPage() {
                 >
                   <div className="flex items-center justify-between">
                     <p className="font-medium text-sm">{c.company_name}</p>
-                    <Badge variant={STAGE_VARIANTS[c.stage] ?? "outline"}>
+                    <StatusBadge tone={STAGE_TONES[c.stage] ?? "default"}>
                       {STAGE_LABELS[c.stage] ?? c.stage}
-                    </Badge>
+                    </StatusBadge>
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
                     {c.country && `${c.country} · `}
