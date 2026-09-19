@@ -8,18 +8,15 @@ interface PageHeaderProps {
   className?: string;
 }
 
-/**
- * Standard page header used across all pages.
- * Future pages automatically get consistent title/description/action layout.
- */
+/** Standard page header: bold title + description + action buttons. */
 export function PageHeader({ title, description, actions, className }: PageHeaderProps) {
   return (
     <div className={cn("page-header", className)}>
       <div className="min-w-0">
-        <h1 className="page-header-title">{title}</h1>
-        {description && <p className="page-header-description">{description}</p>}
+        <h1 className="page-title">{title}</h1>
+        {description && <p className="page-description">{description}</p>}
       </div>
-      {actions && <div className="page-header-actions">{actions}</div>}
+      {actions && <div className="page-actions">{actions}</div>}
     </div>
   );
 }

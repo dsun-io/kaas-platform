@@ -9,7 +9,6 @@ import { Label } from "@/components/ui/label";
 import {
   Card,
   CardHeader,
-  CardTitle,
   CardDescription,
   CardContent,
   CardFooter,
@@ -50,7 +49,11 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-muted/40 px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Kaas AI</CardTitle>
+          <img
+            src="/assets/brand/logo-lockup.png"
+            alt="PowerVoy"
+            className="mx-auto mb-2 h-10 w-auto"
+          />
           <CardDescription>登录报价管理平台</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>

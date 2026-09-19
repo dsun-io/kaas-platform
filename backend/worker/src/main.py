@@ -720,6 +720,62 @@ async def list_bundles(request: Request, user: dict = Depends(_get_current_user)
     return [_row_to_dict(r) for r in rows]
 
 
+# ── Dashboard Summary ──
+@app.get("/api/v1/dashboard/summary")
+async def dashboard_summary(
+    request: Request,
+    user: dict = Depends(_get_current_user),
+    range: str = Query("today"),
+):
+    """仪表盘汇总：基于真实业务表统计（当前无采样层，sampled=total）。"""
+    since_map = {
+        "today": timedelta(days=1),
+        "7d": timedelta(days=7),
+        "30d": timedelta(days=30),
+    }
+    since = datetime.now(timezone.utc) - since_map.get(range, timedelta(days=1))
+    async with _acquire(request) as conn:
+        quotations_total = await conn.fetchval(
+            "SELECT count(*) FROM quotations WHERE tenant_id=$1", DEFAULT_TENANT
+        ) or 0
+        quotations_total += await conn.fetchval(
+            "SELECT count(*) FROM quote_orders WHERE tenant_id=$1", DEFAULT_TENANT
+        ) or 0
+        quotations_total += await conn.fetchval(
+            "SELECT count(*) FROM cust_inquiries WHERE tenant_id=$1", DEFAULT_TENANT
+        ) or 0
+        active_customers = await conn.fetchval(
+            "SELECT count(*) FROM cust_customers WHERE tenant_id=$1", DEFAULT_TENANT
+        ) or 0
+        ports = await conn.fetchval(
+            "SELECT count(*) FROM market_ports WHERE tenant_id=$1", DEFAULT_TENANT
+        ) or 0
+        shipments = await conn.fetchval(
+            "SELECT count(*) FROM intel_shipments WHERE tenant_id=$1", DEFAULT_TENANT
+        ) or 0
+        events_cnt = await conn.fetchval(
+            "SELECT count(*) FROM events WHERE tenant_id=$1 AND created_at >= $2",
+            DEFAULT_TENANT, since,
+        ) or 0
+    return {
+        "range": range,
+        "quotations_total": int(quotations_total),
+        "quotations_sampled": int(quotations_total),
+        "active_customers": int(active_customers),
+        "customers_sampled": int(active_customers),
+        "dataset_hits": {
+            "港口库": int(ports),
+            "船运情报": int(shipments),
+            "平台事件": int(events_cnt),
+        },
+        # usage_events 尚无 token/延迟字段，占位为 0
+        "token_total": 0,
+        "token_sampled": 0,
+        "p95_latency_ms": 0,
+        "latency_sampled": 0,
+    }
+
+
 # ── Health ──
 @app.get("/health")
 async def health():

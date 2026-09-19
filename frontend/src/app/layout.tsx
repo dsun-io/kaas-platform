@@ -12,9 +12,9 @@ import { Toaster } from "@/components/ui/toaster";
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
-  title: "Kaas AI 报价平台",
-  description: "Kaas v2 — 牛栏网智能报价系统",
-  icons: { icon: "/favicon.svg" },
+  title: "PowerVoy 智能报价平台",
+  description: "PowerVoy — 牛栏网智能报价系统",
+  icons: { icon: "/assets/brand/logo.png" },
 };
 
 export const viewport: Viewport = {

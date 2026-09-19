@@ -7,8 +7,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header />
-        <main className="flex-1 overflow-auto p-3 md:p-4 lg:p-6">
-          {children}
+        <main className="flex-1 overflow-auto" style={{ background: "var(--gradient-subtle)" }}>
+          <div className="page-container">{children}</div>
         </main>
       </div>
     </div>
