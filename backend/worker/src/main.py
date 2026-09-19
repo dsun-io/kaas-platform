@@ -403,6 +403,52 @@ async def health():
     return {"status": "ok", "service": "kaas-intel-worker"}
 
 
+# ── Events Ingest (前端事件采集平台级基础设施，所有工位共用) ──
+class EventCreate(BaseModel):
+    schema_version: int = 1
+    event_type: str
+    event_source: str = "frontend"
+    tenant_id: Optional[str] = None
+    actor_id: Optional[str] = None
+    session_id: Optional[str] = None
+    trace_id: Optional[str] = None
+    payload: Optional[dict] = None
+
+
+@app.post("/api/v1/events")
+async def create_event(body: EventCreate, request: Request):
+    """接收前端事件采集器上报，写入 events 表（表不存在时静默吸收）。"""
+    import json as _json
+    async with _acquire(request) as conn:
+        # 检测 events 表是否存在
+        tbl = await conn.fetchrow(
+            "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='events'"
+        )
+        if not tbl:
+            return {"id": "absorbed"}
+        try:
+            payload_json = _json.dumps(body.payload or {})
+            row = await conn.fetchrow(
+                """INSERT INTO events
+                   (schema_version, tenant_id, event_type, event_source,
+                    actor_id, session_id, trace_id, payload, sampled, created_at)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,false,now())
+                   RETURNING id""",
+                body.schema_version,
+                body.tenant_id or DEFAULT_TENANT,
+                body.event_type,
+                body.event_source,
+                body.actor_id,
+                body.session_id,
+                body.trace_id,
+                payload_json,
+            )
+            return {"id": str(row["id"])}
+        except Exception:
+            # 落库失败也吸收，避免前端疯狂重试
+            return {"id": "absorbed"}
+
+
 # ── Worker Entrypoint ──
 class Default(WorkerEntrypoint):
     async def fetch(self, request):
