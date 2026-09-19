@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useDashboard } from "./hooks/use-dashboard";
-import { StatCard } from "./components/stat-card";
 import { RangeSelector } from "./components/range-selector";
 import { usePageView } from "@/lib/events/use-page-view";
+import { PageHeader, StatCard } from "@/components/shared";
 import {
   FileText,
   Users,
@@ -23,57 +23,52 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold md:text-2xl">仪表盘</h1>
-        <RangeSelector value={range} onChange={setRange} />
-      </div>
+      <PageHeader
+        title="仪表盘"
+        description="实时业务指标与系统运行概览"
+        actions={<RangeSelector value={range} onChange={setRange} />}
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard
-          title="今日报价数"
+          label="今日报价数"
           icon={FileText}
-          total={summary?.quotations_total ?? "—"}
-          sampledCount={summary?.quotations_sampled}
-          samplingRate={
+          value={summary?.quotations_total ?? "—"}
+          hint={
             summary
-              ? summary.quotations_sampled / summary.quotations_total
+              ? `采样 ${summary.quotations_sampled}/${summary.quotations_total}`
               : undefined
           }
         />
         <StatCard
-          title="活跃客户"
+          label="活跃客户"
           icon={Users}
-          total={summary?.active_customers ?? "—"}
-          sampledCount={summary?.customers_sampled}
-          samplingRate={
+          value={summary?.active_customers ?? "—"}
+          hint={
             summary
-              ? summary.customers_sampled / summary.active_customers
+              ? `采样 ${summary.customers_sampled}/${summary.active_customers}`
               : undefined
           }
         />
         <StatCard
-          title="Token 消耗"
+          label="Token 消耗"
           icon={Cpu}
-          total={summary?.token_total ?? "—"}
-          sampledCount={summary?.token_sampled}
-          samplingRate={
-            summary ? summary.token_sampled / summary.token_total : undefined
+          value={summary?.token_total ?? "—"}
+          hint={
+            summary ? `采样 ${summary.token_sampled}/${summary.token_total}` : undefined
           }
         />
         <StatCard
-          title="P95 延迟"
+          label="P95 延迟"
           icon={Clock}
-          total={summary?.p95_latency_ms ?? "—"}
-          unit="ms"
+          value={summary ? `${summary.p95_latency_ms} ms` : "—"}
           hint={summary ? `采样 ${summary.latency_sampled} 次请求` : undefined}
         />
         <StatCard
-          title="数据集命中率"
+          label="数据集命中率"
           icon={Database}
-          total={
-            summary
-              ? `${Object.keys(summary.dataset_hits).length} 个数据集`
-              : "—"
+          value={
+            summary ? `${Object.keys(summary.dataset_hits).length} 个数据集` : "—"
           }
           hint={
             summary
@@ -84,9 +79,9 @@ export default function DashboardPage() {
           }
         />
         <StatCard
-          title="采样覆盖率"
+          label="采样覆盖率"
           icon={TrendingUp}
-          total={
+          value={
             isLoading
               ? "—"
               : summary
