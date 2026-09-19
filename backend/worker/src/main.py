@@ -21,6 +21,23 @@ from workers import WorkerEntrypoint, asgi
 
 DEFAULT_TENANT = "default"
 
+import json as _json
+
+_JSONB_COLS = {"suitable_cargo", "suitable_shipping_modes", "connected_corridors", "major_carriers"}
+
+
+def _row_to_dict(row: asyncpg.Record) -> dict:
+    """asyncpg returns jsonb as str in some Workers contexts; parse known jsonb columns."""
+    d = dict(row)
+    for k in _JSONB_COLS & d.keys():
+        v = d[k]
+        if isinstance(v, str):
+            try:
+                d[k] = _json.loads(v)
+            except Exception:
+                pass
+    return d
+
 
 # ── Config ──
 def _cfg(key: str, default: str = "") -> str:
@@ -255,7 +272,7 @@ async def list_shipments(
                 ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx + 1}""",
             *params, page_size, (page - 1) * page_size,
         )
-    return {"items": [dict(r) for r in rows], "total": total, "page": page, "page_size": page_size}
+    return {"items": [_row_to_dict(r) for r in rows], "total": total, "page": page, "page_size": page_size}
 
 
 @app.get("/api/v1/intel/shipments/{shipment_id}")
@@ -357,7 +374,7 @@ async def list_trade_stats(
                 ORDER BY period DESC LIMIT ${idx}""",
             *params, limit,
         )
-    return [dict(r) for r in rows]
+    return [_row_to_dict(r) for r in rows]
 
 
 @app.get("/api/v1/intel/adapter-runs")
@@ -378,7 +395,7 @@ async def list_adapter_runs(
                 ORDER BY started_at DESC LIMIT ${idx}""",
             *params, limit,
         )
-    return [dict(r) for r in rows]
+    return [_row_to_dict(r) for r in rows]
 
 
 @app.get("/api/v1/intel/channels")
@@ -388,7 +405,7 @@ async def list_channels(request: Request, user: dict = Depends(_get_current_user
             "SELECT * FROM intel_data_channels WHERE tenant_id=$1 ORDER BY tier, name",
             DEFAULT_TENANT,
         )
-    channels = [dict(r) for r in rows]
+    channels = [_row_to_dict(r) for r in rows]
     return {
         "free_channels": [c for c in channels if c.get("tier") == "free"],
         "paid_channels": [
@@ -463,7 +480,7 @@ async def list_customers(
             f"SELECT * FROM cust_customers WHERE {where_sql} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx+1}",
             *params, page_size, (page - 1) * page_size,
         )
-    return {"items": [dict(r) for r in rows], "total": total, "page": page, "page_size": page_size}
+    return {"items": [_row_to_dict(r) for r in rows], "total": total, "page": page, "page_size": page_size}
 
 
 @app.post("/api/v1/customers", status_code=201)
@@ -610,7 +627,7 @@ async def list_region_products(region_code: str, request: Request, user: dict = 
     for r in rows:
         pid = r["id"]
         if pid not in products:
-            d = dict(r)
+            d = _row_to_dict(r)
             d["specs"] = []
             products[pid] = d
         if r.get("spec_key"):
@@ -635,7 +652,7 @@ async def name_lookup(
             f"SELECT * FROM market_product_name_mappings WHERE {' AND '.join(where)} ORDER BY is_verified DESC, created_at DESC LIMIT 50",
             *params,
         )
-    return [dict(r) for r in rows]
+    return [_row_to_dict(r) for r in rows]
 
 
 @app.post("/api/v1/market/name-mappings", status_code=201)
@@ -659,7 +676,7 @@ async def list_usages(request: Request, user: dict = Depends(_get_current_user))
         rows = await conn.fetch(
             "SELECT * FROM market_product_usages WHERE tenant_id=$1 ORDER BY usage_code", DEFAULT_TENANT,
         )
-    return [dict(r) for r in rows]
+    return [_row_to_dict(r) for r in rows]
 
 
 @app.get("/api/v1/market/ports")
@@ -681,7 +698,7 @@ async def list_ports(
             f"SELECT * FROM market_ports WHERE {' AND '.join(where)} ORDER BY country_code, name_en",
             *params,
         )
-    return [dict(r) for r in rows]
+    return [_row_to_dict(r) for r in rows]
 
 
 # ── Subscriptions Endpoints ──
@@ -691,7 +708,7 @@ async def list_subscriptions(request: Request, user: dict = Depends(_get_current
         rows = await conn.fetch(
             "SELECT * FROM subscriptions WHERE tenant_id=$1 AND status='active' ORDER BY plan_code", DEFAULT_TENANT,
         )
-    return [dict(r) for r in rows]
+    return [_row_to_dict(r) for r in rows]
 
 
 @app.get("/api/v1/subscriptions/bundles")
@@ -700,7 +717,7 @@ async def list_bundles(request: Request, user: dict = Depends(_get_current_user)
         rows = await conn.fetch(
             "SELECT * FROM subscription_bundles WHERE is_active=true ORDER BY bundle_code",
         )
-    return [dict(r) for r in rows]
+    return [_row_to_dict(r) for r in rows]
 
 
 # ── Health ──
