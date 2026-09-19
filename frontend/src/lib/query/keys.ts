@@ -39,10 +39,10 @@ export const queryKeys = {
     recommended: ["proposals", "recommended"] as const,
   },
   intel: {
-    shipments: (filters: Record<string, unknown>) =>
+    shipments: (filters: object) =>
       ["intel", "shipments", filters] as const,
     shipment: (id: number) => ["intel", "shipment", id] as const,
-    tradeStats: (filters: Record<string, unknown>) =>
+    tradeStats: (filters: object) =>
       ["intel", "tradeStats", filters] as const,
     adapterRuns: ["intel", "adapterRuns"] as const,
     channels: ["intel", "channels"] as const,

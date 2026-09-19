@@ -6,14 +6,24 @@ const nextConfig = {
   experimental: {
     typedRoutes: true,
   },
-  async rewrites() {
-    return [
-      {
-        source: "/api/v1/:path*",
-        destination: `${process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"}/api/v1/:path*`,
-      },
-    ];
-  },
+  // Cloudflare deploy: static export (assets-only Worker). Rewrites only apply
+  // in dev/server mode; the exported site calls the API directly via
+  // NEXT_PUBLIC_API_BASE_URL.
+  ...(process.env.NEXT_EXPORT === "1"
+    ? {
+        output: "export",
+        images: { unoptimized: true },
+      }
+    : {
+        async rewrites() {
+          return [
+            {
+              source: "/api/v1/:path*",
+              destination: `${process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"}/api/v1/:path*`,
+            },
+          ];
+        },
+      }),
 };
 
 export default withSentryConfig(nextConfig, {

@@ -124,6 +124,34 @@ class ShipmentCreate(BaseModel):
 # ── App ──
 app = FastAPI(title="KaaS Intel API", version="1.0.0")
 
+# 允许的生产前端来源（本地开发端口放行 localhost）
+ALLOWED_ORIGINS = {
+    "https://kaas.powervoy.com",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+}
+
+
+@app.middleware("http")
+async def cors_middleware(request: Request, call_next):
+    origin = request.headers.get("Origin", "")
+    allowed = origin if origin in ALLOWED_ORIGINS else "https://kaas.powervoy.com"
+    if request.method == "OPTIONS":
+        from fastapi import Response
+        return Response(
+            status_code=204,
+            headers={
+                "Access-Control-Allow-Origin": allowed,
+                "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Tenant-Id, X-Use-V2",
+                "Access-Control-Max-Age": "86400",
+            },
+        )
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = allowed
+    response.headers["Vary"] = "Origin"
+    return response
+
 
 @asynccontextmanager
 async def _acquire(request: Request):

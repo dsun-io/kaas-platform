@@ -59,7 +59,12 @@ export function CustomerTable({ customers, loading }: Props) {
                 variant="ghost"
                 size="icon-xs"
                 render={
-                  <Link href={{ pathname: `/customers/${c.customer_id}` }}>
+                  <Link
+                    href={{
+                      pathname: "/customers/detail",
+                      query: { id: c.customer_id },
+                    }}
+                  >
                     <ChevronRight className="size-4" />
                   </Link>
                 }

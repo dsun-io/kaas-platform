@@ -10,7 +10,7 @@ export default function SpecConfigPage() {
   const { data: categories, isLoading } = useCategoryTree();
 
   function handleSelect(categoryId: number) {
-    router.push(`/spec-config/${categoryId}`);
+    router.push(`/spec-config/wizard?categoryId=${categoryId}`);
   }
 
   if (isLoading) {
