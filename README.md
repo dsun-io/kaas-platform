@@ -50,8 +50,10 @@ kaas-platform/
 │   ├── vitest.config.ts
 │   └── playwright.config.ts
 ├── backend/
-│   ├── worker/                        # ★ 生产后端: Cloudflare Workers (Python + FastAPI)
-│   │   └── src/main.py                #   商情雷达 API · 经 Hyperdrive 连 Neon PG
+│   ├── worker/                        # ★ 生产: 单 Cloudflare Worker "kaas" (Python + FastAPI + 静态资产)
+│   │   ├── wrangler.jsonc             #   前后端一体: /api/*→FastAPI, 其余→Next.js 静态导出+SPA回退
+│   │   ├── src/main.py                #   商情雷达 API + 事件采集 · 经 Hyperdrive 连 Neon PG
+│   │   └── python_modules/            #   vendored 依赖 (asyncpg, fastapi, ...)
 │   └── orchestrator/                  # FastAPI 核心编排服务 (本地开发/数据迁移)
 │       ├── app/
 │       │   ├── api/                   # REST 路由 (events, quote_v2, product_specs, admin, ...)

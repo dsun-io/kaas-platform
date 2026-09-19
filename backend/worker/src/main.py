@@ -10,6 +10,7 @@ import hmac
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
+from urllib.parse import urlparse
 
 import asyncpg
 import bcrypt
@@ -450,6 +451,11 @@ async def create_event(body: EventCreate, request: Request):
 
 
 # ── Worker Entrypoint ──
+# 单 Worker 架构：/api/* 走 FastAPI，其余请求交给静态资产绑定
+#（Next.js 导出资源 + SPA 回退），资产命中时 Worker 代码不执行。
 class Default(WorkerEntrypoint):
     async def fetch(self, request):
-        return await asgi.fetch(app, request, self.env)
+        path = urlparse(request.url).path
+        if path.startswith("/api/"):
+            return await asgi.fetch(app, request, self.env)
+        return await self.env.ASSETS.fetch(request)

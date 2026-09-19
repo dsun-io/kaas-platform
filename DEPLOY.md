@@ -3,19 +3,22 @@
 ## 架构
 
 ```
-浏览器 ──> Cloudflare Pages (frontend · kaas.powervoy.com)
-              │  /api/v1/* (HTTPS)
-              ▼
-          Cloudflare Worker (Python · kaas-intel-api · api.kaas.powervoy.com)
-              │  Hyperdrive (连接池/聚合)
-              ▼
+浏览器 ──> Cloudflare Worker "kaas" (单 Worker · Python FastAPI + 静态资产)
+              ├─ kaas.powervoy.com      → 前端页面 + /api/v1/*（同源，无 CORS）
+              ├─ api.kaas.powervoy.com  → 仅 API（历史域名，保留兼容）
+              │
+              │  /api/*  → FastAPI（asgi）
+              │  其余     → [assets] Next.js 静态导出 + SPA 回退
+              │
+              ▼  Hyperdrive (连接池/聚合)
           Neon PostgreSQL (project falling-salad-31662168 · branch production)
 ```
 
-> 后端已改为 Cloudflare Workers 部署（Python Worker + Hyperdrive），不再使用 VPS/Docker。
-> `backend/orchestrator` 保留为本地开发/数据迁移工具（alembic、采集脚本）。
+> **2026-09-19 合并**：原 `kaas-intel-api`（后端 API）+ `kaas-platform`（前端静态资产）
+> 已合并为单 Worker `kaas`。工位独立是系统设计层面（表前缀 / API 命名空间 / 路由隔离），
+> 与 Worker 数量无关——所有工位（含未来报价/订单/票据/市场/询盘）都跑在这一个 Worker 里。
 
-## 1. 后端部署（Cloudflare Workers）
+## 1. 部署（单 Worker，前后端一体）
 
 前置：uv 已安装；wrangler 已登录（`npx wrangler whoami` 验证）。
 
@@ -26,13 +29,16 @@ cd backend/worker
 $env:CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="postgres://neondb_owner:<pwd>@ep-small-brook-b54t5318-pooler.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require"
 uv run pywrangler dev
 
-# 生产密钥（JWT_SECRET 用随机值；ADMIN_SETUP_TOKEN 仅在首次初始化管理员时需要）
-"$(python -c 'import secrets; print(secrets.token_urlsafe(48))')" | uv run pywrangler secret put JWT_SECRET
+# 生产密钥（一次性；Worker 更换后需重新设置并重新初始化管理员）
+"<随机 JWT secret>" | uv run pywrangler secret put JWT_SECRET
 "<one-time-setup-token>" | uv run pywrangler secret put ADMIN_SETUP_TOKEN
 
-# 部署（wrangler.jsonc 已含 Hyperdrive binding + api.kaas.powervoy.com 自定义域名）
+# 部署（wrangler.jsonc 已含 Hyperdrive + ASSETS + 两个自定义域名）
 uv run pywrangler deploy
 ```
+
+> **重要**：更换 Worker 名称（如本次合并）后，旧 Worker 的 secrets **不会**自动迁移，
+> 必须重新 `secret put` 并重新执行管理员初始化（bootstrap-admin），否则登录报 401。
 
 Worker 运行时：`compatibility_flags = ["python_workers"]`（open beta），
 数据库访问为**每请求 asyncpg 连接 + Hyperdrive 聚合**（连接池模式在 Workers 中不可用）。
@@ -57,26 +63,24 @@ curl -X POST https://api.kaas.powervoy.com/api/v1/auth/bootstrap-admin \
   -d '{"email":"admin@kaas.dev","password":"<强密码>","display_name":"系统管理员"}'
 ```
 
-## 2. 前端部署（Cloudflare Pages）
+## 2. 前端构建（静态导出，随 Worker 一起部署）
 
-前置：wrangler 已登录（`wrangler whoami` 验证）。
+前端已改为 **Next.js 静态导出**（`NEXT_EXPORT=1 next build` → `out/`），
+由 `kaas` Worker 的 `[assets]` 直接服务，**不再需要单独部署 Pages/前端 Worker**。
 
 ```bash
 cd frontend
 
-# 生产环境变量（写入 .env.production 或 Pages 项目 Settings → Environment Variables）
+# 生产环境变量（写入 .env.production）
 NEXT_PUBLIC_API_MODE=real
-NEXT_PUBLIC_API_BASE_URL=https://api.kaas.powervoy.com
+NEXT_PUBLIC_API_BASE_URL=https://kaas.powervoy.com   # 同源，无 CORS
 
 npm install --legacy-peer-deps
-npm run build
-npx wrangler pages deploy .next --project-name=kaas-platform
+npm run build          # 输出到 out/
 ```
 
-> 注意：`wrangler.toml` 中的 `pages_build_output_dir` 用于 CI 自动构建；
-> 手动部署用上面的 `pages deploy .next` 命令。
-
-Pages 项目 Settings → Custom domains 绑定 `kaas.powervoy.com`。
+`backend/worker/wrangler.jsonc` 的 `assets.directory` 指向 `../../frontend/out`，
+部署 Worker 时自动带上最新构建产物。
 
 ## 3. 验证清单
 

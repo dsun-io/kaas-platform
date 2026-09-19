@@ -1,8 +1,14 @@
 {
-  "name": "kaas-intel-api",
+  // KaaS 统一 Worker：Python FastAPI（/api/*）+ 前端静态资产（Next.js 导出，../../frontend/out）
+  // 一个 Worker 同时服务两个自定义域名：
+  //   kaas.powervoy.com      → 前端页面 + /api/*（同源，无 CORS）
+  //   api.kaas.powervoy.com  → 仅 API（历史域名，保留兼容）
+  // 工位独立是系统设计层面的（表前缀 / API 命名空间 / 路由隔离），不依赖 Worker 数量。
+  "name": "kaas",
   "main": "src/main.py",
   "compatibility_date": "2026-09-18",
   "compatibility_flags": ["python_workers"],
+  "workers_dev": false,
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
@@ -11,9 +17,19 @@
   ],
   "routes": [
     {
+      "pattern": "kaas.powervoy.com",
+      "zone_name": "powervoy.com",
+      "custom_domain": true
+    },
+    {
       "pattern": "api.kaas.powervoy.com",
       "zone_name": "powervoy.com",
       "custom_domain": true
     }
-  ]
+  ],
+  "assets": {
+    "directory": "../../frontend/out",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  }
 }
