@@ -44,6 +44,10 @@ cd backend/orchestrator
 alembic upgrade head
 ```
 
+当前迁移头：`20260919_workstation_links` —— 为报价 / 订单 / 外贸票据工位
+建立数据库口子（`quote_*` / `orders_*` / `trade_doc_*` 主表 + 跨工位 `*_refs`
+关联表）。仅建表，业务逻辑后续按 `docs/WORKSTATION_DESIGN.md` 填充。
+
 初始化管理员（一次性，对线上 Worker 执行；当前线上已初始化，会返回 403）：
 
 ```bash

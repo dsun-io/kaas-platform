@@ -1065,3 +1065,21 @@ class IntelMatch(Base):
     __table_args__ = (
         Index('idx_intel_matches_tenant', 'tenant_id', 'match_type', 'status'),
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 工作站互联 Schema 口子（Workstation Links）
+# 依据 docs/WORKSTATION_DESIGN.md §5-§6 建立。
+# ─────────────────────────────────────────────────────────────────────────────
+from app.db.workstation_links import (  # noqa: E402,F401
+    QuoteOrder,
+    QuoteOrderItem,
+    QuoteOrderShipmentRef,
+    Order,
+    OrderItem,
+    OrderQuoteRef,
+    OrderShipmentRef,
+    TradeDoc,
+    TradeDocItem,
+    TradeDocOrderRef,
+)
