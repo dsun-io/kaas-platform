@@ -52,6 +52,7 @@ const navGroups: NavGroup[] = [
       { href: "/pricing-data", label: "报价数据", icon: Database },
       { href: "/onboarding", label: "新手引导", icon: Compass },
       { href: "/intel", label: "商情雷达", icon: Radar, adminOnly: true },
+      { href: "/market", label: "产品市场对照", icon: BookOpen, adminOnly: true },
     ],
   },
   {
