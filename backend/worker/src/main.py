@@ -398,6 +398,311 @@ async def list_channels(request: Request, user: dict = Depends(_get_current_user
     }
 
 
+# ── Customers Endpoints ──
+class CustomerCreate(BaseModel):
+    company_name: str
+    country: Optional[str] = None
+    address: Optional[str] = None
+    default_port: Optional[str] = None
+    credit_level: Optional[str] = None
+    stage: str = "lead"
+    notes: Optional[str] = None
+
+
+class ContactCreate(BaseModel):
+    customer_id: int
+    name: str
+    position: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    whatsapp: Optional[str] = None
+    wechat: Optional[str] = None
+    is_primary: bool = False
+
+
+class InquiryCreate(BaseModel):
+    customer_id: int
+    channel: Optional[str] = None
+    category_id: Optional[int] = None
+    product_name_raw: Optional[str] = None
+    quantity: Optional[float] = None
+    quantity_unit: Optional[str] = None
+    application: Optional[str] = None
+    status: str = "inquiry"
+    notes: Optional[str] = None
+
+
+class StageUpdate(BaseModel):
+    stage: str
+    reason: Optional[str] = None
+
+
+@app.get("/api/v1/customers")
+async def list_customers(
+    request: Request,
+    user: dict = Depends(_get_current_user),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    stage: Optional[str] = None,
+    country: Optional[str] = None,
+    q: Optional[str] = None,
+):
+    where = ["tenant_id = $1"]
+    params: list = [DEFAULT_TENANT]
+    idx = 2
+    if stage:
+        where.append(f"stage = ${idx}"); params.append(stage); idx += 1
+    if country:
+        where.append(f"country ILIKE ${idx}"); params.append(f"%{country}%"); idx += 1
+    if q:
+        where.append(f"company_name ILIKE ${idx}"); params.append(f"%{q}%"); idx += 1
+    where_sql = " AND ".join(where)
+    async with _acquire(request) as conn:
+        total = await conn.fetchval(f"SELECT COUNT(*) FROM cust_customers WHERE {where_sql}", *params)
+        rows = await conn.fetch(
+            f"SELECT * FROM cust_customers WHERE {where_sql} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx+1}",
+            *params, page_size, (page - 1) * page_size,
+        )
+    return {"items": [dict(r) for r in rows], "total": total, "page": page, "page_size": page_size}
+
+
+@app.post("/api/v1/customers", status_code=201)
+async def create_customer(request: Request, body: CustomerCreate, user: dict = Depends(_get_current_user)):
+    async with _acquire(request) as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO cust_customers
+               (tenant_id, company_name, country, address, default_port, credit_level, stage, notes, created_by)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *""",
+            DEFAULT_TENANT, body.company_name, body.country, body.address,
+            body.default_port, body.credit_level, body.stage, body.notes, str(user["id"]),
+        )
+    return dict(row)
+
+
+@app.get("/api/v1/customers/{customer_id}")
+async def get_customer(customer_id: int, request: Request, user: dict = Depends(_get_current_user)):
+    async with _acquire(request) as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM cust_customers WHERE id=$1 AND tenant_id=$2", customer_id, DEFAULT_TENANT,
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Customer not found")
+        contacts = await conn.fetch(
+            "SELECT * FROM cust_contacts WHERE customer_id=$1 ORDER BY is_primary DESC, created_at", customer_id,
+        )
+        inquiries = await conn.fetch(
+            "SELECT * FROM cust_inquiries WHERE customer_id=$1 ORDER BY created_at DESC", customer_id,
+        )
+        stage_log = await conn.fetch(
+            "SELECT * FROM cust_stage_log WHERE customer_id=$1 ORDER BY created_at DESC LIMIT 20", customer_id,
+        )
+    return {**dict(row), "contacts": [dict(c) for c in contacts], "inquiries": [dict(i) for i in inquiries], "stage_log": [dict(s) for s in stage_log]}
+
+
+@app.post("/api/v1/customers/{customer_id}/contacts", status_code=201)
+async def add_contact(customer_id: int, request: Request, body: ContactCreate, user: dict = Depends(_get_current_user)):
+    async with _acquire(request) as conn:
+        exists = await conn.fetchval("SELECT 1 FROM cust_customers WHERE id=$1 AND tenant_id=$2", customer_id, DEFAULT_TENANT)
+        if not exists:
+            raise HTTPException(status_code=404, detail="Customer not found")
+        row = await conn.fetchrow(
+            """INSERT INTO cust_contacts
+               (tenant_id, customer_id, name, position, phone, email, whatsapp, wechat, is_primary)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *""",
+            DEFAULT_TENANT, customer_id, body.name, body.position, body.phone,
+            body.email, body.whatsapp, body.wechat, body.is_primary,
+        )
+    return dict(row)
+
+
+@app.post("/api/v1/customers/{customer_id}/inquiries", status_code=201)
+async def add_inquiry(customer_id: int, request: Request, body: InquiryCreate, user: dict = Depends(_get_current_user)):
+    async with _acquire(request) as conn:
+        exists = await conn.fetchval("SELECT 1 FROM cust_customers WHERE id=$1 AND tenant_id=$2", customer_id, DEFAULT_TENANT)
+        if not exists:
+            raise HTTPException(status_code=404, detail="Customer not found")
+        row = await conn.fetchrow(
+            """INSERT INTO cust_inquiries
+               (tenant_id, customer_id, channel, category_id, product_name_raw,
+                quantity, quantity_unit, application, status, notes, created_by)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *""",
+            DEFAULT_TENANT, customer_id, body.channel, body.category_id, body.product_name_raw,
+            body.quantity, body.quantity_unit, body.application, body.status, body.notes, str(user["id"]),
+        )
+    return dict(row)
+
+
+@app.patch("/api/v1/customers/{customer_id}/stage")
+async def update_stage(customer_id: int, request: Request, body: StageUpdate, user: dict = Depends(_get_current_user)):
+    async with _acquire(request) as conn:
+        cust = await conn.fetchrow("SELECT id, stage FROM cust_customers WHERE id=$1 AND tenant_id=$2", customer_id, DEFAULT_TENANT)
+        if not cust:
+            raise HTTPException(status_code=404, detail="Customer not found")
+        from_stage = cust["stage"]
+        await conn.execute(
+            "UPDATE cust_customers SET stage=$1, updated_at=NOW() WHERE id=$2", body.stage, customer_id,
+        )
+        await conn.execute(
+            """INSERT INTO cust_stage_log (tenant_id, customer_id, from_stage, to_stage, changed_by, reason)
+               VALUES ($1,$2,$3,$4,$5,$6)""",
+            DEFAULT_TENANT, customer_id, from_stage, body.stage, str(user["id"]), body.reason,
+        )
+        row = await conn.fetchrow("SELECT * FROM cust_customers WHERE id=$1", customer_id)
+    return dict(row)
+
+
+# ── Market Endpoints ──
+class MarketProductCreate(BaseModel):
+    region_code: str
+    category_id: Optional[int] = None
+    demand_level: Optional[str] = None
+    popularity_rank: Optional[int] = None
+    cert_requirements: Optional[List[str]] = None
+    standards: Optional[List[str]] = None
+    seasonality: Optional[str] = None
+    source: str = "manual"
+    confidence: Optional[str] = None
+
+
+class MarketSpecCreate(BaseModel):
+    market_product_id: int
+    spec_key: str
+    spec_value: str
+    unit: Optional[str] = None
+    frequency_rank: Optional[int] = None
+    sku_id: Optional[int] = None
+
+
+class NameMappingCreate(BaseModel):
+    category_id: Optional[int] = None
+    region_code: str
+    lang: str
+    local_name: str
+    alt_names: Optional[List[str]] = None
+    hs_code: Optional[str] = None
+    source: str = "manual"
+    confidence: Optional[str] = None
+    is_verified: bool = False
+
+
+@app.get("/api/v1/market/regions")
+async def list_market_regions(request: Request, user: dict = Depends(_get_current_user)):
+    async with _acquire(request) as conn:
+        rows = await conn.fetch(
+            """SELECT DISTINCT region_code FROM market_region_products WHERE tenant_id=$1 ORDER BY region_code""",
+            DEFAULT_TENANT,
+        )
+    return [r["region_code"] for r in rows]
+
+
+@app.get("/api/v1/market/regions/{region_code}/products")
+async def list_region_products(region_code: str, request: Request, user: dict = Depends(_get_current_user)):
+    async with _acquire(request) as conn:
+        rows = await conn.fetch(
+            """SELECT mrp.*, mrps.spec_key, mrps.spec_value, mrps.unit, mrps.frequency_rank
+               FROM market_region_products mrp
+               LEFT JOIN market_region_product_specs mrps ON mrps.market_product_id = mrp.id
+               WHERE mrp.tenant_id=$1 AND mrp.region_code=$2
+               ORDER BY mrp.popularity_rank NULLS LAST""",
+            DEFAULT_TENANT, region_code.upper(),
+        )
+    products: dict = {}
+    for r in rows:
+        pid = r["id"]
+        if pid not in products:
+            d = dict(r)
+            d["specs"] = []
+            products[pid] = d
+        if r.get("spec_key"):
+            products[pid]["specs"].append({"key": r["spec_key"], "value": r["spec_value"], "unit": r["unit"], "rank": r["frequency_rank"]})
+    return list(products.values())
+
+
+@app.get("/api/v1/market/name-lookup")
+async def name_lookup(
+    request: Request,
+    user: dict = Depends(_get_current_user),
+    q: str = Query(..., min_length=1),
+    region_code: Optional[str] = None,
+):
+    where = ["tenant_id = $1", "(local_name ILIKE $2 OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(alt_names,'[]'::jsonb)) t WHERE t ILIKE $2))"]
+    params: list = [DEFAULT_TENANT, f"%{q}%"]
+    idx = 3
+    if region_code:
+        where.append(f"region_code = ${idx}"); params.append(region_code.upper()); idx += 1
+    async with _acquire(request) as conn:
+        rows = await conn.fetch(
+            f"SELECT * FROM market_product_name_mappings WHERE {' AND '.join(where)} ORDER BY is_verified DESC, created_at DESC LIMIT 50",
+            *params,
+        )
+    return [dict(r) for r in rows]
+
+
+@app.post("/api/v1/market/name-mappings", status_code=201)
+async def create_name_mapping(request: Request, body: NameMappingCreate, user: dict = Depends(_get_current_user)):
+    import json as _json
+    async with _acquire(request) as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO market_product_name_mappings
+               (tenant_id, category_id, region_code, lang, local_name, alt_names, hs_code, source, confidence, is_verified)
+               VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10) RETURNING *""",
+            DEFAULT_TENANT, body.category_id, body.region_code.upper(), body.lang,
+            body.local_name, _json.dumps(body.alt_names or []), body.hs_code,
+            body.source, body.confidence, body.is_verified,
+        )
+    return dict(row)
+
+
+@app.get("/api/v1/market/usages")
+async def list_usages(request: Request, user: dict = Depends(_get_current_user)):
+    async with _acquire(request) as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM market_product_usages WHERE tenant_id=$1 ORDER BY usage_code", DEFAULT_TENANT,
+        )
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/v1/market/ports")
+async def list_ports(
+    request: Request,
+    user: dict = Depends(_get_current_user),
+    country_code: Optional[str] = None,
+    port_type: Optional[str] = None,
+):
+    where = ["tenant_id = $1"]
+    params: list = [DEFAULT_TENANT]
+    idx = 2
+    if country_code:
+        where.append(f"country_code = ${idx}"); params.append(country_code.upper()); idx += 1
+    if port_type:
+        where.append(f"port_type = ${idx}"); params.append(port_type); idx += 1
+    async with _acquire(request) as conn:
+        rows = await conn.fetch(
+            f"SELECT * FROM market_ports WHERE {' AND '.join(where)} ORDER BY country_code, name_en",
+            *params,
+        )
+    return [dict(r) for r in rows]
+
+
+# ── Subscriptions Endpoints ──
+@app.get("/api/v1/subscriptions")
+async def list_subscriptions(request: Request, user: dict = Depends(_get_current_user)):
+    async with _acquire(request) as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM subscriptions WHERE tenant_id=$1 AND status='active' ORDER BY plan_code", DEFAULT_TENANT,
+        )
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/v1/subscriptions/bundles")
+async def list_bundles(request: Request, user: dict = Depends(_get_current_user)):
+    async with _acquire(request) as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM subscription_bundles WHERE is_active=true ORDER BY bundle_code",
+        )
+    return [dict(r) for r in rows]
+
+
 # ── Health ──
 @app.get("/health")
 async def health():
