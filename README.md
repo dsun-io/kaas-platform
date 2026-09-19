@@ -1,10 +1,9 @@
 # KaaS Platform v2
 
-> **Knowledge as a Service** — 为传统制造业提供 AI 岗位能力托管
+> **Knowledge as a Service** — 为传统制造业提供 AI 岗位能力托管。
 >
-> 当前业务重点：丝网行业 AI 智能客服 (SaaS)，基于 CoR (Chain of Role) 架构实现复杂咨询的自动化处理。
->
-> v2 架构重构阶段 — 已进入 Deep Integration (Int R1-R4) 阶段。
+> 平台以「工作站 (Workstation)」为最小交付单元，各工位可独立运行、也可上下游数据连通。
+> 首个工位 **商情雷达** 已上线（贸易情报采集 → 货运记录 → 竞争分析）。
 
 ---
 
@@ -14,12 +13,16 @@ KaaS 不只是通用的 AI 聊天工具，而是深入制造业垂直场景，�
 
 **护城河**：理解复杂的非标报价计算、行业专业知识，以及产业带生态，并将这些能力以 SaaS 形式托管给制造业商家。
 
+**工作站体系**：见 `docs/WORKSTATION_DESIGN.md`（总体设计 + 数据连通契约 + 演进路线）。
+
 ---
 
 ## 项目架构
 
 ```
 kaas-platform/
+├── docs/
+│   └── WORKSTATION_DESIGN.md          # ★ 工作站总体设计（先读这个）
 ├── frontend/                          # Next.js 14 管理后台
 │   ├── src/app/                       # 页面路由
 │   │   ├── admin/gray-release/        # 灰度发布管理 (flag-toggle, audit-timeline)
@@ -27,6 +30,7 @@ kaas-platform/
 │   │   ├── customers/                 # 客户管理 + 能力编辑器
 │   │   ├── dashboard/                 # 仪表盘 (6 统计卡片 + 区间选择)
 │   │   ├── events/                    # 事件列表 + 详情 + 采样标记
+│   │   ├── intel/                     # ★ 商情雷达工位 (货运/统计/渠道/任务)
 │   │   ├── kb/                        # 知识库概览
 │   │   ├── quotations/                # 报价管理列表
 │   │   │   └── v2-quote/              # V2 丝网报价引擎 (form + result)
@@ -46,7 +50,9 @@ kaas-platform/
 │   ├── vitest.config.ts
 │   └── playwright.config.ts
 ├── backend/
-│   └── orchestrator/                  # FastAPI 核心编排服务
+│   ├── worker/                        # ★ 生产后端: Cloudflare Workers (Python + FastAPI)
+│   │   └── src/main.py                #   商情雷达 API · 经 Hyperdrive 连 Neon PG
+│   └── orchestrator/                  # FastAPI 核心编排服务 (本地开发/数据迁移)
 │       ├── app/
 │       │   ├── api/                   # REST 路由 (events, quote_v2, product_specs, admin, ...)
 │       │   ├── middleware/            # 中间件链 (tenant, trace, sampling, route_version, rate_limit, body_limit)
@@ -58,7 +64,7 @@ kaas-platform/
 │       │   ├── jobs/                 # 定时任务 (archive)
 │       │   └── config/               # 应用配置
 │       ├── tests/                    # Pytest 测试套件 (30+ 测试文件)
-│       ├── alembic/                  # 数据库迁移 (4 个版本)
+│       ├── alembic/                  # 数据库迁移
 │       ├── scripts/                  # seed_dev, export_openapi
 │       └── Dockerfile
 ├── shared/
@@ -200,6 +206,19 @@ pnpm dev
 | **Int R3 — 报价领域** | ✅ 完成 | Quote Engine v2, 产品规格/报价/定价/运费/配件服务, 4 条数据库迁移, 45 文件 (+5209) |
 | **Int R4 — 契约校验** | ✅ 完成 | contracts-check.ts 三方比对, quote 契约字段一致性验证, real-backend E2E |
 | **Int R5** | 📋 规划中 | |
+
+## 工作站进度 (Workstation)
+
+> 工作站体系设计见 `docs/WORKSTATION_DESIGN.md`。
+
+| 工位 | 状态 | 说明 |
+|---|---|---|
+| **商情雷达 (Intel Radar)** | ✅ 已上线 | Cloudflare Workers 部署，数据链起点。见 `DEPLOY.md` |
+| **报价工位 (Quotation)** | 🅿️ Schema 口子已建 | `quote_orders`/`quote_order_items` + 商情雷达信号关联。业务逻辑待开发 |
+| **订单工位 (Orders)** | 🅿️ Schema 口子已建 | `orders`/`order_items` + 报价单/货运关联。业务逻辑待开发 |
+| **外贸票据工位 (Trade Docs)** | 🅿️ Schema 口子已建 | `trade_docs`/`trade_doc_items` + 订单关联。业务逻辑待开发 |
+
+迁移：`20260919_workstation_links` 已为三个工位建表（仅建表，业务逻辑后续填充）。
 
 ## 协作规范
 
