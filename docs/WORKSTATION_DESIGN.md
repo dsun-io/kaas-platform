@@ -145,6 +145,79 @@ UNIQUE(tenant_id, {domain}_id, ref_type, ref_target_id)   -- 幂等
   便于高频查询场景下避免 JOIN 关联表。
 - 关联表 `ref_type` 用开放字符串，新业务语义无需 ALTER TABLE 即可接入。
 
+### 5.4 订阅化改造（Phase 6 前置设计）
+
+> 工位独立不仅是逻辑分层，更是**商业边界**。客户可单独订阅任一工位，
+> 也可订阅场景包（多工位组合）。不订阅的工位代码不执行、接口不暴露、数据不写入。
+
+**订阅模型**：
+
+```sql
+-- 订阅主表
+subscriptions (
+  id BIGSERIAL PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  plan_code TEXT NOT NULL,          -- 'intel' / 'customers' / 'market' / 'quote' / 'orders' / 'docs'
+  plan_type TEXT NOT NULL,          -- 'single' / 'bundle' / 'enterprise'
+  bundle_code TEXT,                 -- 场景包编码, 如 'export_starter'
+  status TEXT NOT NULL,             -- 'active' / 'expired' / 'cancelled'
+  started_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ,
+  UNIQUE(tenant_id, plan_code, status)   -- 同一工位同时只有一条有效订阅
+)
+
+-- 场景包定义（哪几个工位组合成一个包）
+subscription_bundles (
+  id BIGSERIAL PRIMARY KEY,
+  bundle_code TEXT UNIQUE NOT NULL,  -- 'export_starter' / 'export_pro' / 'full_chain'
+  name TEXT NOT NULL,
+  description TEXT,
+  plan_codes TEXT[] NOT NULL,        -- ['customers','market','quote']
+  price_cny NUMERIC,
+  is_active BOOLEAN DEFAULT true
+)
+```
+
+**订阅场景包示例**：
+
+| 场景包 | 包含工位 | 目标客户 |
+|--------|---------|---------|
+| `export_starter` | customers + market + quote | 刚起步外贸企业 |
+| `export_pro` | customers + market + quote + orders + docs | 成熟外贸企业 |
+| `full_chain` | intel + customers + market + quote + orders + docs | 全链路数字化 |
+
+**订阅生效控制三层防线**：
+
+```
+① API 层：中间件检查 subscription，未订阅 → 404（不是 403，不暴露存在性）
+② 前端层：侧边栏只渲染已订阅工位入口，路由未订阅 → 重定向到订阅页
+③ 数据层：跨工位写入前检查订阅，未订阅工位不产生任何写入
+```
+
+**订阅状态判定规则**：
+
+| 场景 | 判定 |
+|------|------|
+| 单工位订阅 | `subscriptions.plan_code = X AND status = 'active'` |
+| 场景包订阅 | `subscription_bundles.plan_codes @> ARRAY[X] AND 对应 subscription.status = 'active'` |
+| 企业版 | 所有工位默认生效，跳过单工位检查 |
+
+**降级行为（关键体验约束）**：
+
+| 未订阅工位被触发 | 行为 |
+|----------------|------|
+| 前端路由访问 | 显示"该工位未订阅"引导页，提供订阅入口 |
+| API 直接调用 | 返回 `{"error": "workstation_not_subscribed", "plan_code": "X"}`，HTTP 404 |
+| 下游工位依赖未订阅上游 | 显示降级提示，不阻断当前工位已订阅功能 |
+
+**新增工位接入订阅的检查清单**：
+
+- [ ] `subscription_bundles.plan_codes` 数组加入新工位编码
+- [ ] 该工位所有 API 路由加订阅中间件
+- [ ] 前端侧边栏入口加订阅条件渲染
+- [ ] 跨工位写入点加订阅检查（防绕过）
+- [ ] 未订阅时前端展示引导页而非空白
+
 ---
 
 ## 6. 各工位 Schema 概要
@@ -398,6 +471,9 @@ UNIQUE(tenant_id, {domain}_id, ref_type, ref_target_id)   -- 幂等
 5. **业务编码唯一**：`order_no` / `quote_no` / `doc_no` 等全局唯一，作为幂等键
 6. **迁移单向**：生产库迁移只增不改历史表结构（允许新增列，禁止重命名/删除已有列）
 7. **独立部署**：任何工位可单独部署/回滚，不影响其它工位
+8. **订阅可见性**：未订阅工位的 API 返回 404（不暴露存在性），前端显示引导页
+9. **订阅隔离**：未订阅工位的代码不执行、数据不写入、入口不渲染
+10. **订阅防绕过**：跨工位写入前必须检查目标工位订阅状态
 
 ---
 
