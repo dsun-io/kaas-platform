@@ -1,6 +1,7 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { useCategory } from "../hooks/use-categories";
 import { QuoteWizard } from "../components/QuoteWizard";
 import { Loader2 } from "lucide-react";
@@ -8,9 +9,9 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 
-export default function CategoryWizardPage() {
-  const params = useParams();
-  const categoryId = Number(params.categoryId);
+function CategoryWizardInner() {
+  const searchParams = useSearchParams();
+  const categoryId = Number(searchParams.get("categoryId"));
   const { data: category, isLoading } = useCategory(categoryId);
 
   if (isLoading) {
@@ -54,5 +55,13 @@ export default function CategoryWizardPage() {
       </div>
       <QuoteWizard categoryId={categoryId} categoryName={category.name} />
     </div>
+  );
+}
+
+export default function CategoryWizardPage() {
+  return (
+    <Suspense fallback={null}>
+      <CategoryWizardInner />
+    </Suspense>
   );
 }

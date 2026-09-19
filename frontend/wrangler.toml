@@ -1,6 +1,13 @@
+# KaaS frontend — deployed as a Cloudflare Worker serving the Next.js static
+# export (`out/` produced by `NEXT_EXPORT=1 next build`).
 name = "kaas-platform"
-compatibility_date = "2024-01-01"
-pages_build_output_dir = ".vercel/output/static"
+compatibility_date = "2026-09-18"
 
-[env.production]
-compatibility_date = "2024-01-01"
+routes = [
+  { pattern = "kaas.powervoy.com", zone_name = "powervoy.com", custom_domain = true },
+]
+
+[assets]
+directory = "./out"
+# Client-side routing fallback: unknown paths serve the app shell.
+not_found_handling = "single-page-application"

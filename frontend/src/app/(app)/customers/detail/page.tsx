@@ -1,6 +1,7 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { useCapabilities } from "../hooks/use-capabilities";
 import { CapabilityForm } from "../components/capability-form";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -8,10 +9,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { usePageView } from "@/lib/events/use-page-view";
 import { RouteGuard } from "@/components/route-guard";
 
-export default function CustomerDetailPage() {
+function CustomerDetailInner() {
   usePageView({ resource_id: "/customers/:id" });
-  const params = useParams();
-  const customerId = params.id as string;
+  const searchParams = useSearchParams();
+  const customerId = searchParams.get("id") ?? "";
   const { data: capabilities, isLoading } = useCapabilities(customerId);
 
   return (
@@ -55,5 +56,13 @@ export default function CustomerDetailPage() {
         </Card>
       </div>
     </RouteGuard>
+  );
+}
+
+export default function CustomerDetailPage() {
+  return (
+    <Suspense fallback={null}>
+      <CustomerDetailInner />
+    </Suspense>
   );
 }
