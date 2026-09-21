@@ -90,6 +90,8 @@ from app.api.skus import router as skus_router
 from app.api.prices import router as prices_router
 from app.api.admin_proposals import router as admin_proposals_router
 from app.api.intel import router as intel_router
+from app.api.enums import router as enums_router
+from app.api.customers import router as customers_router
 
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -111,3 +113,5 @@ app.include_router(skus_router)
 app.include_router(prices_router)
 app.include_router(admin_proposals_router)
 app.include_router(intel_router)
+app.include_router(enums_router)
+app.include_router(customers_router)
