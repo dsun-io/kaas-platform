@@ -161,6 +161,15 @@ def start_scheduler():
         name="Daily events archive to OSS",
         replace_existing=True,
     )
+    # P5 询盘接入：每 15 分钟扫描 replied 线索 → 建 cust_inquiries
+    from app.jobs.lead_scan import scan_replied_leads_job
+    _scheduler.add_job(
+        scan_replied_leads_job,
+        trigger=CronTrigger(minute="*/15"),
+        id="scan_replied_leads",
+        name="Scan replied leads -> create inquiries",
+        replace_existing=True,
+    )
     _scheduler.start()
 
 
