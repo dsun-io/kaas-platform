@@ -261,6 +261,102 @@ class ZhipuClient(LLMClient):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# KimiClient (Moonshot · OpenAI 兼容 API)
+# ═══════════════════════════════════════════════════════════════════
+
+async def openai_compat_chat(
+    base_url: str,
+    api_key: str,
+    model: str,
+    messages: list[dict],
+    timeout: float = 30.0,
+    temperature: float = 0.3,
+    max_tokens: int = 2000,
+    json_mode: bool = False,
+) -> tuple[str, dict]:
+    """OpenAI 兼容 /chat/completions 通用调用。
+
+    返回 (content, usage)。usage 含 prompt_tokens / completion_tokens（对账用）。
+    """
+    headers = {"Authorization": f"Bearer {api_key}"}
+    payload: dict = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(
+            f"{base_url.rstrip('/')}/chat/completions",
+            headers=headers, json=payload,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    content = data["choices"][0]["message"]["content"] or ""
+    usage = data.get("usage") or {}
+    return content, usage
+
+
+class KimiClient(LLMClient):
+    """Kimi (Moonshot AI) 客户端，OpenAI 兼容协议，与 ZhipuClient 并存。"""
+
+    def __init__(self):
+        self.api_key = os.environ.get("KIMI_API_KEY", "")
+        self.base_url = os.getenv("KIMI_BASE_URL", "https://api.moonshot.cn/v1")
+        self.model = os.getenv("KIMI_MODEL", "kimi-k2-0905-preview")
+        self.timeout = float(os.getenv("LLM_TIMEOUT_SECONDS", "30"))
+
+    async def function_call(
+        self,
+        prompt: str,
+        function_name: str,
+        function_schema: dict,
+        context: dict | None = None,
+    ) -> dict:
+        start = time.perf_counter()
+        try:
+            system_prompt = "你是一个参数提取助手。从用户消息中提取结构化参数，以 JSON 返回。"
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": (
+                    f"请提取参数并严格按此 JSON Schema 返回：\n{json.dumps(function_schema, ensure_ascii=False)}\n\n"
+                    f"用户消息：{prompt}"
+                )},
+            ]
+            content, _ = await openai_compat_chat(
+                self.base_url, self.api_key, self.model, messages,
+                timeout=self.timeout, temperature=0, json_mode=True,
+            )
+            m = re.search(r"\{.*\}", content, re.DOTALL)
+            return json.loads(m.group(0)) if m else {}
+        finally:
+            elapsed = time.perf_counter() - start
+            LLM_LATENCY.labels(provider="kimi", operation="function_call").observe(elapsed)
+
+    async def generate_script(self, template_context: dict) -> str:
+        start = time.perf_counter()
+        try:
+            prompt = (
+                f"你是一个五金丝网行业的报价助手。\\n"
+                f"产品：{template_context.get('product_category', '')}\\n"
+                f"规格：{template_context.get('spec_summary', '')}\\n"
+                f"参考价区间：{template_context.get('price_range', '')}\\n"
+                f"⚠️ 必须包含'参考价 - 需人工确认'的提醒。"
+            )
+            content, _ = await openai_compat_chat(
+                self.base_url, self.api_key, self.model,
+                [{"role": "user", "content": prompt}],
+                timeout=self.timeout, max_tokens=300,
+            )
+            return content
+        finally:
+            elapsed = time.perf_counter() - start
+            LLM_LATENCY.labels(provider="kimi", operation="generate_script").observe(elapsed)
+
+
+# ═══════════════════════════════════════════════════════════════════
 # TemplateOnlyClient (§13.1 · 零 LLM 终极降级)
 # ═══════════════════════════════════════════════════════════════════
 
@@ -284,6 +380,7 @@ class TemplateOnlyClient(LLMClient):
 
 _LLM_CLIENTS: dict[str, type[LLMClient]] = {
     "deepseek": DeepSeekClient,
+    "kimi": KimiClient,
     "zhipu": ZhipuClient,
     "template": TemplateOnlyClient,
     "stub": StubLLMClient,

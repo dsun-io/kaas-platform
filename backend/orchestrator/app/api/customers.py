@@ -83,7 +83,8 @@ def _row_to_customer(c: CustCustomer) -> dict:
 
 def _row_to_inquiry(i: CustInquiry) -> dict:
     return {
-        "id": i.id, "customer_id": i.customer_id, "channel": i.channel,
+        "id": i.id, "customer_id": i.customer_id, "lead_id": i.lead_id,
+        "channel": i.channel,
         "category_id": i.category_id, "product_name_raw": i.product_name_raw,
         "quantity": float(i.quantity) if i.quantity is not None else None,
         "quantity_unit": i.quantity_unit, "application": i.application,
@@ -153,6 +154,7 @@ class ContactCreate(BaseModel):
 
 class InquiryCreate(BaseModel):
     channel: Optional[str] = None
+    lead_id: Optional[int] = None      # 线索池转化来源（§7.1）
     category_id: Optional[int] = None
     product_name_raw: Optional[str] = None
     quantity: Optional[float] = None
@@ -346,6 +348,9 @@ async def change_stage(
     # 批量关闭询盘（与客户 stage 同步变更）
     for inq in closing:
         inq.status = target  # won | lost
+        if inq.lead_id is not None:
+            from app.jobs.lead_scan import sync_inquiry_status
+            await sync_inquiry_status(db, tenant_id, inq)
         await _log_stage(db, tenant_id, customer_id, from_stage, target,
                          str(auth.user_id),
                          f"客户阶段变更联动关闭 inquiry#{inq.id}" + (f"：{body.reason}" if body.reason else ""))
@@ -429,6 +434,7 @@ async def create_inquiry(
     owner_scope = validate_enum("owner_scope", body.owner_scope) or "private"
     inq = CustInquiry(
         tenant_id=tenant_id, customer_id=customer_id, channel=channel,
+        lead_id=body.lead_id,
         category_id=body.category_id, product_name_raw=body.product_name_raw,
         quantity=body.quantity, quantity_unit=body.quantity_unit,
         application=body.application, notes=body.notes,
@@ -528,6 +534,11 @@ async def update_inquiry(
                                          str(auth.user_id), f"inquiry#{inq.id} quoted 联动")
                         c.stage = 'quoted'
                 # new_status == 'lost'：客户 stage 不变（§10.1）
+
+            # P5 状态同步：回写线索池 lead_candidates.inquiry_status（§7.2）
+            if inq.lead_id is not None:
+                from app.jobs.lead_scan import sync_inquiry_status
+                await sync_inquiry_status(db, tenant_id, inq)
 
     if "channel" in data:
         validate_enum("inquiry_channel", data["channel"])

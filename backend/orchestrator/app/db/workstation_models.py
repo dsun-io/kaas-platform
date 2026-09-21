@@ -15,6 +15,7 @@ from sqlalchemy import (
     Column, BigInteger, Integer, Text, Boolean, Numeric,
     DateTime, Date, Index, func, ForeignKey,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from app.db.base import Base
 
 
@@ -73,6 +74,7 @@ class CustInquiry(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     tenant_id = Column(Text, nullable=False)
     customer_id = Column(BigInteger, ForeignKey('cust_customers.id', ondelete='CASCADE'), nullable=False)
+    lead_id = Column(BigInteger, nullable=True)   # 线索池转化来源（最终设计 §7.1）
     channel = Column(Text, nullable=True)
     category_id = Column(BigInteger, nullable=True)
     product_name_raw = Column(Text, nullable=True)
@@ -288,4 +290,240 @@ class UnitConversion(Base):
 
     __table_args__ = (
         Index('uq_unit_conversions', 'tenant_id', 'sku_id', 'from_unit', 'to_unit', unique=True),
+    )
+
+
+# ── P1 AI 层（20260921_ai_layer）────────────────────────────────────────────
+
+class AiProvider(Base):
+    """客户自配 AI Provider（DS / Kimi / Zhipu），API Key 每租户独立"""
+    __tablename__ = 'ai_providers'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    provider = Column(Text, nullable=False)   # deepseek | kimi | zhipu
+    api_key = Column(Text, nullable=True)
+    model = Column(Text, nullable=True)
+    base_url = Column(Text, nullable=True)
+    enabled = Column(Boolean, nullable=False, server_default='false')
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index('uq_ai_providers_tenant_provider', 'tenant_id', 'provider', unique=True),
+    )
+
+
+class AiTaskBinding(Base):
+    """任务绑定：每任务选 Provider/模型/是否启用；"不用 AI"= enabled false"""
+    __tablename__ = 'ai_task_bindings'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    task_key = Column(Text, nullable=False)
+    provider = Column(Text, nullable=True)
+    model = Column(Text, nullable=True)
+    enabled = Column(Boolean, nullable=False, server_default='false')
+    config = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index('uq_ai_task_bindings_tenant_task', 'tenant_id', 'task_key', unique=True),
+    )
+
+
+class AiUsage(Base):
+    """AI 调用对账（铁律：每次调用必落一条，失败可退款核对）"""
+    __tablename__ = 'ai_usage'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    task_key = Column(Text, nullable=False)
+    provider = Column(Text, nullable=True)
+    model = Column(Text, nullable=True)
+    prompt_tokens = Column(Integer, nullable=True)
+    completion_tokens = Column(Integer, nullable=True)
+    cost_usd = Column(Numeric(12, 6), nullable=True)
+    status = Column(Text, nullable=False, server_default='success')
+    error = Column(Text, nullable=True)
+    latency_ms = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index('idx_ai_usage_tenant_time', 'tenant_id', 'created_at'),
+        Index('idx_ai_usage_tenant_task', 'tenant_id', 'task_key'),
+    )
+
+
+# ── P2-P6 工位链（20260921_leadgen_outreach）─────────────────────────────────
+
+class LeadCandidate(Base):
+    """线索池共享表（owner=客户开发工位；触达/询盘只读）。
+
+    outreach_status / inquiry_status 是三个工位间的唯一通信接口（§3.4）。
+    """
+    __tablename__ = 'lead_candidates'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    place_id = Column(Text, nullable=True)
+    company_name = Column(Text, nullable=False)
+    country = Column(Text, nullable=True)
+    region = Column(Text, nullable=True)
+    city = Column(Text, nullable=True)
+    address = Column(Text, nullable=True)
+    phone = Column(Text, nullable=True)
+    website = Column(Text, nullable=True)
+    email = Column(Text, nullable=True)
+    industry = Column(Text, nullable=True)
+    source = Column(Text, nullable=True)
+    google_rating = Column(Numeric(3, 2), nullable=True)
+    google_reviews = Column(Integer, nullable=True)
+    fit_score = Column(Integer, nullable=True)
+    fit_reasons = Column(JSONB, nullable=True)
+    opening_line = Column(Text, nullable=True)
+    outreach_status = Column(Text, nullable=False, server_default='none')
+    inquiry_status = Column(Text, nullable=False, server_default='none')
+    leadgen_run_id = Column(BigInteger, nullable=True)
+    raw = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    owner_id = Column(Text, nullable=True)
+    owner_scope = Column(Text, nullable=False, server_default='private')
+
+    __table_args__ = (
+        Index('uq_lead_candidates_place', 'tenant_id', 'place_id', unique=True),
+        Index('idx_lead_candidates_outreach', 'tenant_id', 'outreach_status'),
+        Index('idx_lead_candidates_inquiry', 'tenant_id', 'inquiry_status'),
+        Index('idx_lead_candidates_score', 'tenant_id', 'fit_score'),
+    )
+
+
+class LeadgenRun(Base):
+    """客户开发运行记录（tenant+config_hash 唯一防重复 run）"""
+    __tablename__ = 'leadgen_runs'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    config = Column(JSONB, nullable=False)
+    config_hash = Column(Text, nullable=False)
+    status = Column(Text, nullable=False, server_default='running')
+    leads_found = Column(Integer, nullable=True)
+    leads_kept = Column(Integer, nullable=True)
+    error = Column(Text, nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    created_by = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index('uq_leadgen_runs_config', 'tenant_id', 'config_hash', unique=True),
+    )
+
+
+class IntelDemandIndex(Base):
+    """商情雷达需求指数空表（P6 口子：填数据即生效）"""
+    __tablename__ = 'intel_demand_index'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    country = Column(Text, nullable=True)
+    region = Column(Text, nullable=True)
+    product_category = Column(Text, nullable=True)
+    hs_code = Column(Text, nullable=True)
+    demand_index = Column(Numeric(12, 4), nullable=True)
+    blank_index = Column(Numeric(12, 4), nullable=True)
+    month = Column(Text, nullable=True)
+    source = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index('idx_intel_demand_index_lookup', 'tenant_id', 'country', 'product_category', 'month'),
+    )
+
+
+class OutreachMailbox(Base):
+    """发件邮箱（表支持多行，第一版只用 is_default 一行）"""
+    __tablename__ = 'outreach_mailboxes'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    email = Column(Text, nullable=False)
+    name = Column(Text, nullable=True)
+    provider = Column(Text, nullable=False, server_default='resend')
+    api_key = Column(Text, nullable=True)
+    is_default = Column(Boolean, nullable=False, server_default='false')
+    daily_limit = Column(Integer, nullable=True)
+    sent_today = Column(Integer, nullable=False, server_default='0')
+    last_sent_date = Column(Date, nullable=True)
+    enabled = Column(Boolean, nullable=False, server_default='true')
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index('uq_outreach_mailboxes_email', 'tenant_id', 'email', unique=True),
+    )
+
+
+class OutreachCampaign(Base):
+    """触达活动（批量模板：主题+正文+变量占位）"""
+    __tablename__ = 'outreach_campaigns'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    name = Column(Text, nullable=False)
+    subject_template = Column(Text, nullable=False)
+    body_template = Column(Text, nullable=False)
+    mailbox_id = Column(BigInteger, nullable=True)
+    status = Column(Text, nullable=False, server_default='draft')
+    total_count = Column(Integer, nullable=False, server_default='0')
+    sent_count = Column(Integer, nullable=False, server_default='0')
+    failed_count = Column(Integer, nullable=False, server_default='0')
+    created_by = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class OutreachMessage(Base):
+    """触达消息（收件人独立一行；tenant+resend_message_id 唯一防重复发送）"""
+    __tablename__ = 'outreach_messages'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    campaign_id = Column(BigInteger, nullable=True)
+    lead_id = Column(BigInteger, nullable=True)
+    to_email = Column(Text, nullable=False)
+    to_name = Column(Text, nullable=True)
+    subject = Column(Text, nullable=False)
+    body_rendered = Column(Text, nullable=False)
+    resend_message_id = Column(Text, nullable=True)
+    status = Column(Text, nullable=False, server_default='pending')
+    error = Column(Text, nullable=True)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+    opened_at = Column(DateTime(timezone=True), nullable=True)
+    replied_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index('uq_outreach_messages_resend', 'tenant_id', 'resend_message_id', unique=True),
+        Index('idx_outreach_messages_campaign', 'tenant_id', 'campaign_id'),
+        Index('idx_outreach_messages_lead', 'tenant_id', 'lead_id'),
+    )
+
+
+class TenantSubscription(Base):
+    """订阅编码（§9.1）：未订阅工位 API 返回 404"""
+    __tablename__ = 'tenant_subscriptions'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    code = Column(Text, nullable=False)
+    active = Column(Boolean, nullable=False, server_default='true')
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index('uq_tenant_subscriptions_code', 'tenant_id', 'code', unique=True),
     )
