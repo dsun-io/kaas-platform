@@ -21,6 +21,9 @@ import {
   Compass,
   CreditCard,
   Radar,
+  Target,
+  Send,
+  Sparkles,
 } from "lucide-react";
 import { useState, Fragment } from "react";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -64,6 +67,13 @@ const navGroups: NavGroup[] = [
     items: [{ href: "/customers", label: "客户管理", icon: Users }],
   },
   {
+    label: "增长",
+    items: [
+      { href: "/leadgen", label: "线索开发", icon: Target },
+      { href: "/outreach", label: "客户触达", icon: Send },
+    ],
+  },
+  {
     label: "审计",
     items: [
       { href: "/events", label: "事件审计", icon: ScrollText },
@@ -76,6 +86,7 @@ const navGroups: NavGroup[] = [
       { href: "/admin/gray-release", label: "灰度切换", icon: ToggleLeft, adminOnly: true },
       { href: "/kb", label: "知识库", icon: BookOpen, adminOnly: true },
       { href: "/settings", label: "系统设置", icon: Settings, adminOnly: true },
+      { href: "/settings/ai-providers", label: "AI Providers", icon: Sparkles, adminOnly: true },
     ],
   },
 ];
