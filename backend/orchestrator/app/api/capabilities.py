@@ -19,12 +19,15 @@ from app.core.auth_utils import require_internal, require_customer_code_access, 
 router = APIRouter(prefix="/api/v1", tags=["capabilities"])
 
 
-@router.get("/customers")
-async def list_customers(
+@router.get("/capability-customers")
+async def list_capability_customers(
     request: Request,
     db: AsyncSession = Depends(get_db_session),
 ):
-    """客户列表。
+    """有能力档案的客户列表（按 customer_capabilities 聚合）。
+
+    注意：路径从 /customers 改名，避免与客户工位 GET /customers 冲突。
+    原路径无前端消费者（2026-09-21 核实）。
 
     AUTH: internal 可查看全部，customer/free 只能查看自己。
     """

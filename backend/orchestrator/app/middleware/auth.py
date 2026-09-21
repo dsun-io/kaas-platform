@@ -152,6 +152,13 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
                 return response
 
             except Exception as e:
+                # 记录真实 traceback，避免下游异常被静默吞掉（排查全靠它）
+                import structlog
+                structlog.get_logger(__name__).exception(
+                    "auth.middleware.downstream_error",
+                    path=path,
+                    error=str(e),
+                )
                 return JSONResponse(
                     status_code=500,
                     content={
