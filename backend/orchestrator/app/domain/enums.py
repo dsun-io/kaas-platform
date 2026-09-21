@@ -27,6 +27,9 @@ INQUIRY_CHANNEL = ("email", "whatsapp", "alibaba", "expo", "website", "other")
 # ── 单证类型（§6.3 单证类型×生成阶段）────────────────────────────────────────
 DOC_TYPE = ("quotation", "pi", "contract", "ci", "pl", "bl", "co", "insurance", "other")
 
+# ── 单证状态 ─────────────────────────────────────────────────────────────────
+DOC_STATUS = ("draft", "issued", "void")
+
 # ── 币种（以 fx_rates 实际支持为准，这里是初始白名单）────────────────────────
 CURRENCY = ("USD", "CNY", "EUR", "GBP", "JPY", "AUD", "CAD", "HKD")
 
@@ -51,6 +54,7 @@ ENUMS: dict[str, tuple[str, ...]] = {
     "shipment_status": SHIPMENT_STATUS,
     "inquiry_channel": INQUIRY_CHANNEL,
     "doc_type": DOC_TYPE,
+    "doc_status": DOC_STATUS,
     "currency": CURRENCY,
     "owner_scope": OWNER_SCOPE,
     "schedule_type": SCHEDULE_TYPE,
