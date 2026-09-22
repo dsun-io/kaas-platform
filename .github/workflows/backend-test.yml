@@ -33,6 +33,12 @@ jobs:
           LLM_PROVIDER: stub
           KB_PROVIDER: stub
 
+      # Worker 侧纯函数测试（产品提取 / 规格正则 / SSRF 防护 / 三态过滤）。
+      # 只需 fastapi，故复用 orchestrator 的 venv；不依赖 Cloudflare runtime 与数据库。
+      - name: Worker chain unit tests
+        working-directory: ./backend/orchestrator
+        run: uv run python ../worker/tests/test_product_extract.py
+
   db-tests:
     runs-on: ubuntu-latest
 

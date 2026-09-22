@@ -56,11 +56,11 @@ workers.dev 默认关闭；旧名 `kaas-intel-api` 已合并为单 Worker，见 
 
 ## 源码结构
 
-- `src/main.py` — 核心 API：认证、商情雷达 (intel)、客户/询盘、报价、订单、出运、单证、订阅等
-- `src/chain.py` — P1-P7 工位链（raw asyncpg 移植，由 `main.py` 末尾 `import chain` 挂载）：
-  AI 层（任务/Provider/绑定/用量）、开发工位+线索池（leadgen runs/leads/scan-replied）、
-  触达工位（mailboxes/campaigns/messages/webhook 预留）
-- 出站 HTTP（AI Provider / Resend）双后端：`from js import fetch`（Pyodide）→
+- `src/main.py` — 核心 API：认证、进出口情报 (intel)、客户/询盘、报价、订单、出运、单证、订阅等
+- `src/chain.py` — 工位链（raw asyncpg 移植，由 `main.py` 末尾 `import chain` 挂载）：
+  AI 层（任务/Provider/绑定/用量）、地图源客户信息获取（leadgen runs/leads/官网爬取）、
+  市场调研（research products/runs/from-leadgen/stats）、客户触达（mailboxes/campaigns/messages/webhook 预留）
+- 出站 HTTP（AI Provider / Resend / 官网爬取）双后端：`from js import fetch`（Pyodide）→
   ImportError 回退 `urllib.request`（本地 CPython）
 
 ## API 一览
@@ -89,14 +89,24 @@ workers.dev 默认关闭；旧名 `kaas-intel-api` 已合并为单 Worker，见 
 | GET | `/api/v1/ai/usage` | 用量审计（items + stats） |
 | GET/POST | `/api/v1/leadgen/runs` `…/runs/from-csv` | 抓取运行（demo/CSV，config_hash 幂等） |
 | POST | `/api/v1/leadgen/validate` | 配置校验（AI 任务） |
-| GET/POST/PATCH | `/api/v1/leads[/{id}]` | 线索池（共享表，跨工位状态只读） |
+| GET/POST/PATCH | `/api/v1/leads[/{id}]` | 线索池（共享表，跨工位状态只读）；产品字段（图片/中文对照/规格/能否提供）可写 |
 | POST | `/api/v1/leads/scan-replied` | replied 扫描建询盘（Worker 无 cron，手动触发） |
+| POST | `/api/v1/leads/{id}/crawl` | 爬单条官网提取产品信息（名称/图片/规格/链接） |
+| POST | `/api/v1/leads/crawl-batch` | 批量爬取（默认只爬 pending，上限 20） |
+| GET | `/api/v1/research/products` | 市场调研列表（国家/城市/品类/能否提供/搜索 + 分页） |
+| POST | `/api/v1/research/products` | 手工录入，或带 `source_ref` 从线索挑选（字段自动回填） |
+| PATCH/DELETE | `/api/v1/research/products/{id}` | 深化字段编辑 / 从调研集移除 |
+| POST | `/api/v1/research/from-leadgen` | 批量挑选（重复自动跳过） |
+| GET | `/api/v1/research/stats` `…/categories` `…/runs` | 按国家·品类·供给聚合 / 品类枚举 / 运行记录 |
 | GET/POST/PATCH | `/api/v1/outreach/mailboxes[/{id}]` `…/test` | 发件邮箱（单默认，Resend） |
 | GET/POST | `/api/v1/outreach/campaigns` `…/{id}/send` | 活动 + 发送（原子抢占，失败可 retry） |
 | GET/POST | `/api/v1/outreach/messages[/{id}/retry]` | 消息列表/详情/重发 |
 | * | `/api/v1/outreach/webhook` | 501 预留（inbound 回写） |
 
-订阅治理：leadgen/outreach 端点未订阅返回 404 `SUBSCRIPTION_REQUIRED`；`/ai/*` 不查订阅。
+订阅治理：leadgen/outreach/research/intel 端点未订阅返回 404 `SUBSCRIPTION_REQUIRED`；
+`/ai/*` 不查订阅。编码登记见 `chain.py` `SUB_CODES`（本期不激活，`default` 仍为 `full_chain`）：
+`intel_trade_starter` / `intel_research_starter` / `intel_full` / `leadgen_starter` /
+`outreach_starter` / `full_chain`。
 
 ## 已知限制（Python Workers beta）
 

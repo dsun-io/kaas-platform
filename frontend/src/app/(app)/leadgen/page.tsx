@@ -79,7 +79,8 @@ function scoreTone(score: number | null): import("@/components/shared").StatusTo
 }
 
 const CRAWL_TONES: Record<string, import("@/components/shared").StatusTone> = {
-  pending: "default", success: "success", failed: "danger", no_website: "default",
+  pending: "default", success: "success", failed: "danger",
+  blocked: "danger", no_website: "default",
 };
 
 function supplyCell(v: boolean | null) {
@@ -202,10 +203,12 @@ export default function LeadgenPage() {
         crawled: number;
         success: number;
         failed: number;
+        blocked: number;
         no_website: number;
       }>("/leads/crawl-batch", { only_pending: true, limit: 10 });
       toast.success(
-        `Crawled ${data.crawled}: ${data.success} ok, ${data.failed} failed, ${data.no_website} no website`,
+        `Crawled ${data.crawled}: ${data.success} ok, ${data.failed} failed, ` +
+          `${data.no_website} no website${data.blocked ? `, ${data.blocked} blocked` : ""}`,
       );
       qc.invalidateQueries({ queryKey: ["leads"] });
     } catch {

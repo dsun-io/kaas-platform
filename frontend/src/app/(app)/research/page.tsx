@@ -146,8 +146,8 @@ export default function ResearchPage() {
       if (search) params.set("search", search);
       if (country) params.set("country", country);
       if (category) params.set("product_category", category);
-      if (canSupply === "true") params.set("can_supply", "true");
-      if (canSupply === "false") params.set("can_supply", "false");
+      // 服务端三态过滤：true / false / unknown(未填)
+      if (canSupply) params.set("can_supply", canSupply);
       return (
         await apiClient.get<{ items: ResearchProduct[]; total: number }>(
           `/research/products?${params}`,
@@ -155,11 +155,7 @@ export default function ResearchPage() {
       ).data;
     },
   });
-  let products = productsQuery.data?.items ?? [];
-  // "not filled" 由前端过滤（后端只区分 true/false）
-  if (canSupply === "unknown") {
-    products = products.filter((p) => p.can_supply === null);
-  }
+  const products = productsQuery.data?.items ?? [];
 
   const leadsQuery = useQuery({
     queryKey: ["research-lead-options"],
@@ -633,7 +629,7 @@ export default function ResearchPage() {
                             tone={
                               l.crawl_status === "success"
                                 ? "success"
-                                : l.crawl_status === "failed"
+                                : l.crawl_status === "failed" || l.crawl_status === "blocked"
                                   ? "danger"
                                   : "default"
                             }

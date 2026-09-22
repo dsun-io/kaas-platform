@@ -86,6 +86,7 @@ npm run build          # 输出到 out/
 
 - [ ] `https://api.kaas.powervoy.com/health` 返回 200
 - [ ] `https://kaas.powervoy.com/login` 可登录
-- [ ] 登录后侧边栏「数据 → 商情雷达」可见（内部管理员账号）
+- [ ] 登录后侧边栏「情报体系 → 进出口情报 / 市场调研 / 地图源客户信息获取」三项可见（内部管理员账号）
 - [ ] 货运记录页能看到导入/采集的数据
+- [ ] `/research` 页面可加载（列表/统计/挑选/运行记录三个标签）
 - [ ] `POST /api/v1/intel/import/csv` 上传 CSV 成功
