@@ -558,7 +558,12 @@ class TaskRun(BaseModel):
 
 
 @app.get("/api/v1/ai/tasks")
-async def ai_tasks():
+async def ai_tasks(user: dict = Depends(_get_current_user)):
+    """AI 任务元信息。需鉴权——即使内容不敏感，也不应匿名暴露内部任务清单。
+
+    （2026-09-22 冒烟测试发现：此前无鉴权，未带 token 也能 200；
+    其余 /ai/* 端点均有 Depends(_get_current_user)）
+    """
     return {"items": [
         {"task_key": k, "name": v["name"],
          "recommended_provider": v["recommended_provider"]}
