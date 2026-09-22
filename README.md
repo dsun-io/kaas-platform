@@ -52,9 +52,10 @@ kaas-platform/
 │   └── playwright.config.ts
 ├── backend/
 │   ├── worker/                        # ★ 生产: 单 Cloudflare Worker "kaas" (Python + FastAPI + 静态资产)
-│   │   ├── wrangler.jsonc             #   前后端一体: /api/*→FastAPI, 其余→Next.js 静态导出+SPA回退
-│   │   ├── src/main.py                #   商情雷达/客户/询盘等核心 API · 经 Hyperdrive 连 Neon PG
+│   │   ├── wrangler.jsonc             #   前后端一体: /api/*+/health→FastAPI(显式 run_worker_first), 其余→静态资产
+│   │   ├── src/main.py                #   进出口情报/客户/询盘等核心 API · 经 Hyperdrive 连 Neon PG
 │   │   ├── src/chain.py               #   工位链 (AI层/线索池/触达/市场调研+爬取) raw asyncpg 移植版
+│   │   ├── src/dbjson.py              #   ★ 唯一 JSONB 列映射 + row_to_dict(row, table)
 │   │   └── python_modules/            #   vendored 依赖 (asyncpg, fastapi, ...)
 │   └── orchestrator/                  # FastAPI 核心编排服务 (本地开发/数据迁移)
 │       ├── app/
@@ -83,8 +84,20 @@ kaas-platform/
 │   ├── KAAS_RULES.md                 # 核心规则与设计不变量
 │   ├── KAAS_SKILL.md                 # 任务流水线技能
 │   └── GIT_BRANCH_STRATEGY.md        # 分支策略
-└── .github/workflows/                # CI 配置 (backend-test, frontend-ci)
+└── .github/workflows/                # CI 配置 (backend-test, frontend-ci, contracts-check, deploy)
 ```
+
+### 生产 Worker 关键约束（2026-09-22 校准）
+
+1. **绑定值只能在请求期读**：import 期 `os.environ.get("JWT_SECRET")` 一定是空值
+   （生产实证）。一律用 `request.scope["env"]` / `main.py:_binding()`；
+   **secret 不得保留公开默认值**（缺失则 503）。详见 `DEPLOY.md §0.5`。
+2. **路由显式声明**：`/api/*` 与 `/health` 在 `wrangler.jsonc` 的
+   `assets.run_worker_first` 里声明；静态页面由边缘直接返回、**不执行 Python 代码**。
+3. **鉴权默认闭合**：仅 `login` / `health` 公开（`bootstrap-admin` 用一次性 token），
+   其余 `/api/*` 必须 Bearer；actor/tenant 一律取自 token。
+4. **发布后数分钟内会有冷启动 5xx 窗口**（自愈）：不要因间歇报错反复回滚，
+   判定规则见 `DEPLOY.md §0.2`。
 
 ## 技术栈
 
