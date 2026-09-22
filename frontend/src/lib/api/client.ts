@@ -46,10 +46,34 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
-// ── Response interceptor ─────────────────────────────────────────────
+// ── 幂等请求的 5xx 重试 ───────────────────────────────────────────────
+// Cloudflare Workers（Python/Pyodide）冷启动偶发抛异常，表现为 5xx/网络错误；
+// 新版本切换后的一段时间内更明显。GET/HEAD 幂等，可安全重试。
+// 写请求（POST/PATCH/DELETE）不自动重试，避免重复副作用。
+const RETRY_METHODS = new Set(["get", "head", "options"]);
+const MAX_RETRIES = 3;
+const RETRY_BASE_DELAY_MS = 400;
+
 apiClient.interceptors.response.use(
   (response) => response,
-  (error: AxiosError<ApiErrorResponse>) => {
+  async (error: AxiosError<ApiErrorResponse>) => {
+    const config = error.config as (typeof error.config & { __retryCount?: number }) | undefined;
+    const status = error.response?.status;
+    const method = (config?.method ?? "").toLowerCase();
+    const retriable =
+      status === undefined || (status >= 500 && status < 600);
+
+    if (config && retriable && RETRY_METHODS.has(method)) {
+      const attempt = config.__retryCount ?? 0;
+      if (attempt < MAX_RETRIES) {
+        config.__retryCount = attempt + 1;
+        await new Promise((r) =>
+          setTimeout(r, RETRY_BASE_DELAY_MS * 3 ** attempt),
+        );
+        return apiClient.request(config);
+      }
+    }
+
     handleApiError(error);
     return Promise.reject(error);
   },

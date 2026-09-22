@@ -829,12 +829,16 @@ async def create_event(body: EventCreate, request: Request):
 
 
 # ── Worker Entrypoint ──
-# 单 Worker 架构：/api/* 走 FastAPI，其余请求交给静态资产绑定
+# 单 Worker 架构：/api/* 与 /health 走 FastAPI，其余请求交给静态资产绑定
 #（Next.js 导出资源 + SPA 回退），资产命中时 Worker 代码不执行。
+#
+# 注意：/health 必须显式走 Worker，否则会被 assets 的 SPA 回退吃掉，
+# 永远返回 index.html（状态码 200 但内容不是健康检查结果）——曾导致
+# CI 冒烟测试形同虚设，Worker 实际已挂却仍然"通过"。
 class Default(WorkerEntrypoint):
     async def fetch(self, request):
         path = urlparse(request.url).path
-        if path.startswith("/api/"):
+        if path.startswith("/api/") or path == "/health":
             return await asgi.fetch(app, request, self.env)
         return await self.env.ASSETS.fetch(request)
 

@@ -3,13 +3,16 @@ name = "kaas-intel-worker"
 version = "0.1.0"
 description = "KaaS Intel Workstation API on Cloudflare Workers"
 requires-python = ">=3.13"
+# 只保留运行时真正 import 的依赖：出站 HTTP 用 js.fetch（回退 urllib），
+# 不需要 httpx；配置全部走 os.environ，不需要 pydantic-settings。
+# 二者的传递依赖（httpcore/h11/sniffio/certifi/anyio 等）曾被打进 Worker 包，
+# 直接抬高冷启动时间（Cloudflare 对启动 CPU 有限额，超限会让部分 isolate
+# 启动失败 → 间歇性 500）。
 dependencies = [
     "fastapi",
     "asyncpg",
     "pydantic",
-    "pydantic-settings",
     "pyjwt",
-    "httpx",
     "python-multipart",
     "bcrypt>=5.0.0",
 ]

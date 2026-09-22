@@ -80,10 +80,48 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: uv run pywrangler deploy
 
+      # 冒烟测试必须验证「Worker 真的活着」，而不是只看状态码：
+      #   - /health 由 Worker 处理，必须返回 JSON（旧版只查状态码，被静态资产的
+      #     SPA 回退返回的 index.html 200 骗过，Worker 挂掉也能"通过"）
+      #   - /api/* 未带 token 必须返回 401（证明脚本启动 + 路由注册 + 鉴权生效）
+      #   - 新版本切换存在数分钟窗口，故带重试
       - name: Smoke test (production)
         run: |
-          set -e
-          curl -fsS -o /dev/null -w "health: %{http_code}\n" https://api.kaas.powervoy.com/health
-          for p in /leadgen /outreach /settings/ai-providers; do
-            curl -fsS -o /dev/null -w "$p: %{http_code}\n" "https://kaas.powervoy.com$p"
+          set -uo pipefail
+          API=https://api.kaas.powervoy.com
+          WEB=https://kaas.powervoy.com
+
+          echo "── 1) Worker 存活（/health 返回 JSON）──"
+          ok=0
+          for i in $(seq 1 24); do
+            body=$(curl -fsS --max-time 10 "$API/health" 2>/dev/null || true)
+            if printf '%s' "$body" | grep -q '"status":"ok"'; then
+              echo "attempt $i: $body"; ok=1; break
+            fi
+            echo "attempt $i: not ready yet"
+            sleep 10
           done
+          if [ "$ok" != "1" ]; then
+            echo "::error::Worker /health 未返回 JSON（脚本可能启动失败）"; exit 1
+          fi
+
+          echo "── 2) API 路由与鉴权（未带 token 必须 401）──"
+          for p in /api/v1/research/categories /api/v1/research/stats \
+                   /api/v1/leads /api/v1/ai/tasks; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API$p")
+            echo "$p -> $code"
+            if [ "$code" != "401" ]; then
+              echo "::error::$p 期望 401（路由存在且需鉴权），实际 $code"; exit 1
+            fi
+          done
+
+          echo "── 3) 前端页面（静态资产）──"
+          for p in /research /leadgen /intel /outreach /settings/ai-providers; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$WEB$p")
+            echo "$p -> $code"
+            if [ "$code" != "200" ]; then
+              echo "::error::$p 期望 200，实际 $code"; exit 1
+            fi
+          done
+
+          echo "✅ smoke test passed"
