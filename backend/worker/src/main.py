@@ -7,6 +7,7 @@ import os
 import csv
 import io
 import hmac
+import contextvars
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
@@ -19,35 +20,59 @@ from fastapi import FastAPI, Request, HTTPException, Query, UploadFile, File, De
 from pydantic import BaseModel
 from workers import WorkerEntrypoint, asgi
 
+from dbjson import row_to_dict
+
 DEFAULT_TENANT = "default"
 
 import json as _json
 
-_JSONB_COLS = {"suitable_cargo", "suitable_shipping_modes", "connected_corridors", "major_carriers"}
-
 
 def _row_to_dict(row: asyncpg.Record) -> dict:
-    """asyncpg returns jsonb as str in some Workers contexts; parse known jsonb columns."""
-    d = dict(row)
-    for k in _JSONB_COLS & d.keys():
-        v = d[k]
-        if isinstance(v, str):
-            try:
-                d[k] = _json.loads(v)
-            except Exception:
-                pass
-    return d
+    """兼容旧调用点（未指定表名 → 仅按 market_ports 的 jsonb 列解码）。
+
+    jsonb 列映射的唯一真源已收敛到 dbjson.py；新增表请在那里登记，
+    并优先使用 `row_to_dict(row, "表名")` 精确解码。
+    """
+    return row_to_dict(row)
 
 
-# ── Config ──
-def _cfg(key: str, default: str = "") -> str:
-    v = os.environ.get(key)
-    return v if v else default
+# ── Config（⚠️ 必须按请求读取绑定）───────────────────────────────
+# Python Workers 在**模块导入期** os.environ 是空的，只有请求期通过
+# request.scope["env"] 才能拿到 vars/secrets（env.HYPERDRIVE 也是这么用的）。
+#
+# 历史踩坑（生产实证）：JWT_SECRET / ADMIN_SETUP_TOKEN 原先在 import 期用
+# os.environ 读取 → 生产一直是空值。后果：
+#   - ADMIN_SETUP_TOKEN 失效，bootstrap-admin 恒 503；
+#   - JWT_SECRET 回退到公开默认串 "kaas-dev-jwt-secret-change-in-prod"，
+#     意味任何知道该字符串的人都能伪造管理员 token。
+# 故此处一律在请求期读取，且**不保留任何公开默认值**。
+_CURRENT_ENV: contextvars.ContextVar = contextvars.ContextVar("worker_env", default=None)
 
 
-JWT_SECRET = _cfg("JWT_SECRET", "kaas-dev-jwt-secret-change-in-prod")
+def _binding(key: str, request: Optional[Request] = None) -> str:
+    """请求期读取 vars/secrets。
+
+    优先级：显式传入的 request.scope["env"] → 中间件写入的 ContextVar → os.environ。
+    最后一项只是兜底（本地 CPython / 未来运行时行为变化）。
+    """
+    env = request.scope.get("env") if request is not None else None
+    if env is None:
+        env = _CURRENT_ENV.get()
+    value = getattr(env, key, None) if env is not None else None
+    if value is None:
+        value = os.environ.get(key)
+    return value or ""
+
+
+def _jwt_secret(request: Optional[Request] = None) -> str:
+    """JWT 签名密钥。缺失则 503（绝不回退到任何默认值）。"""
+    secret = _binding("JWT_SECRET", request)
+    if not secret:
+        raise HTTPException(status_code=503, detail="JWT_SECRET not configured")
+    return secret
+
+
 JWT_ALGORITHM = "HS256"
-ADMIN_SETUP_TOKEN = _cfg("ADMIN_SETUP_TOKEN")
 
 
 # ── Auth helpers ──
@@ -60,18 +85,18 @@ def _verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
 
 
-def _create_token(user_id: int) -> str:
+def _create_token(user_id: int, request: Optional[Request] = None) -> str:
     payload = {
         "sub": str(user_id),
         "exp": datetime.now(timezone.utc) + timedelta(minutes=1440),
         "iat": datetime.now(timezone.utc),
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return jwt.encode(payload, _jwt_secret(request), algorithm=JWT_ALGORITHM)
 
 
-def _decode_token(token: str) -> dict:
+def _decode_token(token: str, request: Optional[Request] = None) -> dict:
     try:
-        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return jwt.decode(token, _jwt_secret(request), algorithms=[JWT_ALGORITHM])
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
@@ -82,7 +107,7 @@ async def _get_current_user(request: Request) -> dict:
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
-    payload = _decode_token(auth[7:])
+    payload = _decode_token(auth[7:], request)
     async with _acquire(request) as conn:
         row = await conn.fetchrow(
             "SELECT id, email, display_name, account_type, role, status FROM users WHERE id=$1",
@@ -171,6 +196,17 @@ async def cors_middleware(request: Request, call_next):
     return response
 
 
+@app.middleware("http")
+async def bind_worker_env(request: Request, call_next):
+    """把当前请求的 Worker env 写进 ContextVar。
+
+    供没有 request 参数的深层函数（如 chain.py 的邮件密钥解析）在请求期读到绑定值。
+    后注册的中间件在最外层，故它先于 CORS 中间件执行。
+    """
+    _CURRENT_ENV.set(request.scope.get("env"))
+    return await call_next(request)
+
+
 @asynccontextmanager
 async def _acquire(request: Request):
     """每请求建立一个 Hyperdrive 连接（官方推荐的 Python Workers 模式）。
@@ -195,10 +231,11 @@ async def _acquire(request: Request):
 # ── Auth Endpoints ──
 @app.post("/api/v1/auth/bootstrap-admin")
 async def bootstrap_admin(request: Request, body: BootstrapRequest):
-    if not ADMIN_SETUP_TOKEN:
+    setup_token = _binding("ADMIN_SETUP_TOKEN", request)
+    if not setup_token:
         raise HTTPException(status_code=503, detail="ADMIN_SETUP_TOKEN not configured")
     auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer ") or not hmac.compare_digest(auth[7:], ADMIN_SETUP_TOKEN):
+    if not auth.startswith("Bearer ") or not hmac.compare_digest(auth[7:], setup_token):
         raise HTTPException(status_code=403, detail="Invalid setup token")
 
     async with _acquire(request) as conn:
@@ -214,7 +251,7 @@ async def bootstrap_admin(request: Request, body: BootstrapRequest):
                RETURNING id, email, display_name, account_type, role""",
             body.email.lower(), _hash_password(body.password), body.display_name,
         )
-    token = _create_token(row["id"])
+    token = _create_token(row["id"], request)
     return {"access_token": token, "token_type": "bearer", "user": dict(row)}
 
 
@@ -230,7 +267,7 @@ async def login(request: Request, body: LoginRequest):
     if not _verify_password(body.password, row["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    token = _create_token(row["id"])
+    token = _create_token(row["id"], request)
     user = {k: v for k, v in dict(row).items() if k != "password_hash"}
     return {"access_token": token, "token_type": "bearer", "user": user}
 
@@ -787,6 +824,8 @@ class EventCreate(BaseModel):
     schema_version: int = 1
     event_type: str
     event_source: str = "frontend"
+    # 已弃用：tenant 一律取自 token（早期允许调用方指定，等于跨租户可写）。
+    # 保留字段仅为兼容旧客户端，服务端忽略。
     tenant_id: Optional[str] = None
     actor_id: Optional[str] = None
     session_id: Optional[str] = None
@@ -795,18 +834,17 @@ class EventCreate(BaseModel):
 
 
 @app.post("/api/v1/events")
-async def create_event(body: EventCreate, request: Request):
-    """接收前端事件采集器上报，写入 events 表（表不存在时静默吸收）。"""
-    import json as _json
-    async with _acquire(request) as conn:
-        # 检测 events 表是否存在
-        tbl = await conn.fetchrow(
-            "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='events'"
-        )
-        if not tbl:
-            return {"id": "absorbed"}
-        try:
-            payload_json = _json.dumps(body.payload or {})
+async def create_event(body: EventCreate, request: Request,
+                       user: dict = Depends(_get_current_user)):
+    """接收前端事件采集器上报，写入 events 表。
+
+    鉴权：与其他端点一致，必须带 token——此前该端点是唯一无鉴权的写入口，
+    任何人都能直接刷库，且可通过 body.tenant_id 指定跨租户写入。
+    tenant/actor 现在一律取自 token，落库失败静默吸收（避免前端疯狂重试）。
+    """
+    payload_json = _json.dumps(body.payload or {})
+    try:
+        async with _acquire(request) as conn:
             row = await conn.fetchrow(
                 """INSERT INTO events
                    (schema_version, tenant_id, event_type, event_source,
@@ -814,18 +852,18 @@ async def create_event(body: EventCreate, request: Request):
                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,false,now())
                    RETURNING id""",
                 body.schema_version,
-                body.tenant_id or DEFAULT_TENANT,
+                DEFAULT_TENANT,
                 body.event_type,
                 body.event_source,
-                body.actor_id,
+                str(user["id"]),
                 body.session_id,
                 body.trace_id,
                 payload_json,
             )
             return {"id": str(row["id"])}
-        except Exception:
-            # 落库失败也吸收，避免前端疯狂重试
-            return {"id": "absorbed"}
+    except Exception:
+        # 落库失败也吸收，避免前端疯狂重试
+        return {"id": "absorbed"}
 
 
 # ── Worker Entrypoint ──

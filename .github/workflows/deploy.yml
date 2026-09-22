@@ -7,6 +7,15 @@ on:
   push:
     branches:
       - feature/intel-workstation-v1
+    # 纯文档 / 临时脚本提交不触发生产重部署。
+    # 每次部署都会让全部 isolate 失效并经历数分钟冷启动窗口（见 DEPLOY.md §0.2），
+    # 不能因为改一个 .md 就重发一次生产版本。
+    # 需要强制重发时走 workflow_dispatch。
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.tools/**'
+      - '**/.tools/**'
   workflow_dispatch:
 
 # 串行部署，避免并发 push 把旧版本覆盖到新版本之后
