@@ -26,9 +26,9 @@ export default function IntelPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold md:text-2xl">商情雷达</h1>
+          <h1 className="text-xl font-semibold md:text-2xl">进出口情报</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            进出口贸易数据监测与分析工作台
+            海关贸易数据采集与宏观市场分析
           </p>
         </div>
       </div>

@@ -92,3 +92,6 @@ backend/orchestrator/.coverage*
 .env.local
 .agents/
 skills-lock.json
+
+# 临时脚本/构建产物（本地工具，不入库）
+.tools/
