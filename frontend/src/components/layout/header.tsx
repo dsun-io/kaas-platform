@@ -37,8 +37,8 @@ const labelMap: Record<string, string> = {
   "pricing-data": "报价数据",
   onboarding: "新手引导",
   billing: "升级订阅",
-  intel: "商情雷达",
-  market: "产品市场对照",
+  intel: "进出口情报",
+  market: "市场调研",
   "spec-config": "规格配置",
   "spec-proposals": "规格提案",
 };
