@@ -19,6 +19,7 @@ import time
 import hashlib
 from datetime import date, datetime, timezone
 from typing import List, Optional
+from urllib.parse import urlparse
 
 from fastapi import Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
@@ -67,9 +68,11 @@ async def _openai_chat(base_url: str, api_key: str, model: str, messages: list,
 
 # ── jsonb 列（asyncpg 在 Workers 里返回 str，需手动解析）───────────────────
 _JSONB_COLS = {
-    "lead_candidates": {"fit_reasons", "raw"},
+    "lead_candidates": {"fit_reasons", "raw", "spec_normalized"},
     "leadgen_runs": {"config"},
     "outreach_campaigns": set(),
+    "research_products": {"spec_normalized"},
+    "research_runs": {"config"},
 }
 
 
@@ -92,11 +95,136 @@ def _mask(key: Optional[str]) -> Optional[str]:
 
 
 # ═══════════════════════════════════════════════════════════════════
+# 官网爬取（地图源工位的「产品信息」来源）
+#
+# Google Places 只能给出店铺信息（名称/地址/电话/评分/website/primary_type）。
+# 产品信息（图片 / 当地叫法 / 规格）看不到，必须爬官网。
+# Workers 里没有 BeautifulSoup，用正则提取（脚本为主 = 确定性规则）。
+# ═══════════════════════════════════════════════════════════════════
+CRAWL_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/125.0 Safari/537.36")
+CRAWL_TIMEOUT = 15
+
+_META_TAG_RE = re.compile(r"<meta\b[^>]*>", re.IGNORECASE)
+_ATTR_RE = re.compile(r"([a-zA-Z:_-]+)\s*=\s*[\"']([^\"']*)[\"']")
+_SCRIPT_STYLE_RE = re.compile(r"<(script|style|noscript)\b.*?</\1>", re.IGNORECASE | re.DOTALL)
+_TAG_RE = re.compile(r"<[^>]+>")
+_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+_H1_RE = re.compile(r"<h1[^>]*>(.*?)</h1>", re.IGNORECASE | re.DOTALL)
+_LINK_RE = re.compile(r"<a\b[^>]*href\s*=\s*[\"']([^\"']+)[\"'][^>]*>(.*?)</a>",
+                      re.IGNORECASE | re.DOTALL)
+# 产品页特征路径（脚本规则，命中最先出现的一个）
+PRODUCT_PATH_HINTS = ("/product", "/products", "/catalog", "/catalogue",
+                      "/shop", "/store", "/category", "/collections", "/goods")
+
+
+def _strip_html(fragment: str) -> str:
+    """去标签 + 压缩空白（正则版，够用且无依赖）。"""
+    text = _SCRIPT_STYLE_RE.sub(" ", fragment or "")
+    text = _TAG_RE.sub(" ", text)
+    text = (text.replace("&nbsp;", " ").replace("&amp;", "&")
+                .replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"')
+                .replace("&#39;", "'"))
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _meta_content(html: str, keys: tuple) -> Optional[str]:
+    """按 property/name 抓 meta 的 content。"""
+    for tag in _META_TAG_RE.findall(html or ""):
+        attrs = {k.lower(): v for k, v in _ATTR_RE.findall(tag)}
+        key = (attrs.get("property") or attrs.get("name") or "").lower()
+        if key in keys and attrs.get("content"):
+            return attrs["content"].strip()
+    return None
+
+
+def _abs_url(base: str, href: str) -> str:
+    if href.startswith(("http://", "https://")):
+        return href
+    if href.startswith("//"):
+        return "https:" + href
+    parsed = urlparse(base)
+    root = f"{parsed.scheme}://{parsed.netloc}"
+    if href.startswith("/"):
+        return root + href
+    return root + "/" + href.lstrip("./")
+
+
+def extract_product_from_html(html: str, base_url: str) -> dict:
+    """从官网 HTML 提取产品信息（确定性脚本，AI 不参与）。
+
+    返回：product_name / product_name_raw_source / product_image_url /
+          spec_raw / link_url
+    """
+    og_image = _meta_content(html, ("og:image", "og:image:secure_url",
+                                    "twitter:image", "image"))
+    description = _meta_content(html, ("description", "og:description"))
+    title_m = _TITLE_RE.search(html or "")
+    title = _strip_html(title_m.group(1)) if title_m else ""
+    h1_m = _H1_RE.search(html or "")
+    h1 = _strip_html(h1_m.group(1)) if h1_m else ""
+
+    # 产品页链接：优先命中所选路径特征词
+    link_url = None
+    for href, anchor in _LINK_RE.findall(html or ""):
+        low = href.lower()
+        if any(hint in low for hint in PRODUCT_PATH_HINTS):
+            link_url = _abs_url(base_url, href)
+            break
+
+    # 主体文本（去脚本样式）作为规格原文
+    body_text = _strip_html(html)
+    spec_parts = []
+    if description:
+        spec_parts.append(description)
+    if body_text:
+        # 截断到 1200 字符，避免 raw 过大
+        spec_parts.append(body_text[:1200])
+
+    return {
+        "product_name": h1 or title or None,
+        "product_name_source": "h1" if h1 else ("title" if title else None),
+        "page_title": title or None,
+        "product_image_url": og_image,
+        "spec_raw": "\n".join(p for p in spec_parts if p) or None,
+        "link_url": link_url,
+    }
+
+
+async def _http_get_text(url: str, timeout: int = CRAWL_TIMEOUT):
+    """出站 GET：Workers 用 js.fetch，本地 CPython 回退 urllib。"""
+    try:
+        from js import fetch  # type: ignore  (Pyodide / Python Workers)
+    except ImportError:
+        import urllib.request
+        req = urllib.request.Request(url, headers={"User-Agent": CRAWL_UA})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, resp.read().decode("utf-8", "replace")
+    resp = await fetch(url, {
+        "method": "GET",
+        "headers": {"User-Agent": CRAWL_UA, "Accept": "text/html,*/*"},
+        "redirect": "follow",
+    })
+    return int(resp.status), await resp.text()
+
+
+# ═══════════════════════════════════════════════════════════════════
 # 订阅治理（P7）
+#
+# 编码语义（变更档 §六）—— 本期不激活订阅治理（default 仍为 full_chain），
+# 仅在此登记编码，待商业化时把 tenant_subscriptions 填行即生效。
+#   intel_trade_starter      进出口情报
+#   intel_research_starter   市场调研
+#   intel_full               情报体系三工位
+#   leadgen_starter          地图源客户信息获取 + 线索池
+#   outreach_starter         客户触达（含产品手册附件）
+#   full_chain               全工位
 # ═══════════════════════════════════════════════════════════════════
 SUB_CODES = {
     "leadgen": ["leadgen_starter", "leadgen_pro", "full_chain"],
     "outreach": ["outreach_starter", "outreach_pro", "full_chain"],
+    "intel": ["intel_trade_starter", "intel_full", "full_chain"],
+    "research": ["intel_research_starter", "intel_full", "full_chain"],
 }
 
 
@@ -199,6 +327,40 @@ def _extract_json(text: str) -> str:
     return m.group(0)
 
 
+# ── 市场调研：规格结构化（脚本为主，AI 为辅）──────────────────────────────
+_GRID_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m)?",
+                      re.IGNORECASE)
+_DIM_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(mm|cm|m)\b", re.IGNORECASE)
+_MATERIALS = ("hdpe", "pvc", "galvanized", "galvanised", "stainless", "steel",
+              "polyester", "nylon", "aluminium", "aluminum", "copper", "pp", "pe")
+
+
+def _template_spec_extract(payload: dict) -> dict:
+    """确定性规则提取规格（AI 未启用时的兜底，也可作为 AI 结果的自校验基线）。"""
+    text = f"{payload.get('product_name') or ''} {payload.get('spec_raw') or ''}"
+    out: dict = {}
+    grid = _GRID_RE.search(text)
+    if grid:
+        unit = grid.group(3) or "mm"
+        out["size_a"] = grid.group(1)
+        out["size_b"] = grid.group(2)
+        out["size_unit"] = unit
+    dims = [f"{d}{u}" for d, u in _DIM_RE.findall(text)][:8]
+    if dims:
+        out["dimensions"] = dims
+    low = text.lower()
+    mats = [m for m in _MATERIALS if m in low]
+    if mats:
+        out["materials"] = mats
+    return {"spec_normalized": out or None, "source": "template"}
+
+
+def _template_product_translate(payload: dict) -> dict:
+    """无 AI 时不做翻译（避免乱猜），返回空并提示人工填写。"""
+    return {"product_name_cn": None, "confidence": "template",
+            "note": "AI 未启用，中文对照需人工填写"}
+
+
 TASKS = {
     "config_validation": {
         "name": "配置校验", "recommended_provider": "deepseek",
@@ -245,6 +407,30 @@ TASKS = {
             "类别枚举：chain_link_fence / welded_mesh / gabion / temporary_fence / "
             "security_fence / farm_fence / other\n"
             f"询盘：{json.dumps(p, ensure_ascii=False)}"),
+        "parse": lambda t: json.loads(_extract_json(t)),
+    },
+    # ── 市场调研工位：AI 为辅（难量化的才用 AI，能算的用脚本）─────────────
+    "spec_extract": {
+        "name": "规格结构化", "recommended_provider": "deepseek",
+        "template_fn": _template_spec_extract,
+        "build_prompt": lambda p: (
+            "从产品名与规格原文中提取结构化规格，以 JSON 返回 "
+            "{\"spec_normalized\": {\"size_a\": string, \"size_b\": string, "
+            "\"size_unit\": string, \"dimensions\": [...], \"materials\": [...]}}。"
+            "只提取原文中确实出现的数值与材质，不要编造；无法确定的字段省略。\n"
+            f"产品：{json.dumps(p, ensure_ascii=False)}"),
+        "parse": lambda t: {"spec_normalized": json.loads(_extract_json(t)).get("spec_normalized"),
+                            "source": "ai"},
+    },
+    "product_translate": {
+        "name": "产品名翻译", "recommended_provider": "kimi",
+        "template_fn": _template_product_translate,
+        "build_prompt": lambda p: (
+            "把产品名翻译成简体中文（外贸丝网/围栏行业标准叫法），以 JSON 返回 "
+            "{\"product_name_cn\": string, \"confidence\": \"high\"|\"low\"}。"
+            "只输出译文，不要解释。\n"
+            f"原文：{json.dumps({'product_name': p.get('product_name'),
+                                  'spec': p.get('spec_raw')}, ensure_ascii=False)}"),
         "parse": lambda t: json.loads(_extract_json(t)),
     },
 }
@@ -598,6 +784,29 @@ def _fetch_demo(config: dict) -> List[dict]:
     return leads
 
 
+def _as_bool(value: Optional[str]) -> Optional[bool]:
+    """把 TRUE/FALSE/是/否/1/0 解析成布尔；空值返回 None（不臆测）。"""
+    if value is None:
+        return None
+    v = str(value).strip().lower()
+    if v in ("", "none", "null", "n/a", "-"):
+        return None
+    if v in ("true", "1", "yes", "y", "是", "能", "可以"):
+        return True
+    if v in ("false", "0", "no", "n", "否", "不能", "不可以"):
+        return False
+    return None
+
+
+# CSV 可选列（对齐业务表格：产品图片/中文对照/规格/国家/城市/来源/店铺/
+# 店铺类型/电话/链接/官网地址/地址/能否提供）
+_CSV_OPTIONAL = (
+    "region", "city", "address", "phone", "website", "email", "industry",
+    "place_id", "shop_type", "product_name", "product_name_cn",
+    "product_image_url", "spec_raw", "link_url", "can_supply", "supply_notes",
+)
+
+
 def _fetch_csv(content: bytes) -> List[dict]:
     text = content.decode("utf-8-sig", errors="replace")
     reader = csv.DictReader(io.StringIO(text))
@@ -605,19 +814,28 @@ def _fetch_csv(content: bytes) -> List[dict]:
     if not reader.fieldnames or not required.issubset({f.strip().lower() for f in reader.fieldnames}):
         raise HTTPException(status_code=422, detail={
             "error": "validation", "code": "BAD_CSV",
-            "detail": f"CSV needs columns: {sorted(required)} (optional: region/city/email/website/industry/place_id)"})
+            "detail": f"CSV needs columns: {sorted(required)} "
+                      f"(optional: {', '.join(_CSV_OPTIONAL)})"})
     leads = []
     for row in reader:
         low = {k.strip().lower(): (v or "").strip() for k, v in row.items() if k}
-        leads.append({
+        lead = {
             "place_id": low.get("place_id") or None,
             "company_name": low["company_name"], "country": low.get("country") or None,
-            "region": low.get("region") or None, "city": low.get("city") or None,
-            "address": low.get("address") or None, "phone": low.get("phone") or None,
-            "website": low.get("website") or None, "email": low.get("email") or None,
-            "industry": low.get("industry") or None, "source": "csv",
+            "source": "csv",
             "raw": {"csv_row": low},
-        })
+        }
+        for key in _CSV_OPTIONAL:
+            if key in ("can_supply",):
+                continue
+            if low.get(key):
+                lead[key] = low[key]
+        # 「能否提供」由用户填写，不猜
+        lead["can_supply"] = _as_bool(low.get("can_supply"))
+        # 有产品信息即视为已爬取，避免进入待爬队列
+        lead["crawl_status"] = "success" if (lead.get("product_name") or
+                                             lead.get("product_image_url")) else "no_website"
+        leads.append(lead)
     return leads
 
 
@@ -630,6 +848,31 @@ def _hard_filter(raw: List[dict]) -> List[dict]:
         seen.add(key)
         kept.append(lead)
     return kept
+
+
+async def _enrich_product(conn, lead: dict) -> None:
+    """产品信息增强（原地修改 lead）。
+
+    分工（脚本为主 / AI 为辅）：
+      - spec_normalized：优先脚本正则提取（确定性）；绑定 AI 时由 AI 细化
+      - product_name_cn：难量化 → AI 翻译，AI 未启用则留空待人工填写
+    """
+    if not (lead.get("product_name") or lead.get("spec_raw")):
+        return
+    if lead.get("spec_normalized") is None:
+        try:
+            res = await run_ai_task(conn, "spec_extract", lead)
+            lead["spec_normalized"] = res["result"].get("spec_normalized")
+        except Exception:
+            pass
+    if lead.get("product_name") and not lead.get("product_name_cn"):
+        try:
+            res = await run_ai_task(conn, "product_translate", lead)
+            cn = res["result"].get("product_name_cn")
+            if cn:
+                lead["product_name_cn"] = cn
+        except Exception:
+            pass
 
 
 async def _run_pipeline(conn, run_id: int, config: dict, csv_content: Optional[bytes],
@@ -651,13 +894,18 @@ async def _run_pipeline(conn, run_id: int, config: dict, csv_content: Optional[b
             lead["fit_reasons"] = s.get("reasons")
             opening = await run_ai_task(conn, "opening_line", lead)
             lead["opening_line"] = opening["result"].get("opening_line")
+            # 已带产品信息的行（CSV 导入）：脚本提规格 + AI 补中文对照
+            await _enrich_product(conn, lead)
             row = await conn.fetchrow(
                 """INSERT INTO lead_candidates
                    (tenant_id, place_id, company_name, country, region, city, address,
                     phone, website, email, industry, source, google_rating, google_reviews,
                     fit_score, fit_reasons, opening_line, leadgen_run_id, raw,
-                    owner_id, owner_scope)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'tenant')
+                    owner_id, shop_type, product_name, product_name_cn,
+                    product_image_url, spec_raw, spec_normalized, link_url,
+                    can_supply, supply_notes, crawl_status, owner_scope)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
+                           $20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,'tenant')
                    ON CONFLICT (tenant_id, place_id) DO NOTHING RETURNING id""",
                 DEFAULT_TENANT, lead.get("place_id"), lead["company_name"],
                 lead.get("country"), lead.get("region"), lead.get("city"),
@@ -669,7 +917,13 @@ async def _run_pipeline(conn, run_id: int, config: dict, csv_content: Optional[b
                 lead.get("opening_line"),
                 run_id,
                 json.dumps(lead.get("raw")) if lead.get("raw") is not None else None,
-                created_by)
+                created_by,
+                lead.get("shop_type"), lead.get("product_name"),
+                lead.get("product_name_cn"), lead.get("product_image_url"),
+                lead.get("spec_raw"),
+                json.dumps(lead.get("spec_normalized")) if lead.get("spec_normalized") is not None else None,
+                lead.get("link_url"), lead.get("can_supply"), lead.get("supply_notes"),
+                lead.get("crawl_status") or "pending")
             if row is not None:
                 inserted += 1
         await conn.execute(
@@ -804,6 +1058,15 @@ class LeadCreate(BaseModel):
     industry: Optional[str] = None
     place_id: Optional[str] = None
     opening_line: Optional[str] = None
+    # 产品信息（Google Places 拿不到；由爬官网或导入提供）
+    shop_type: Optional[str] = None
+    product_name: Optional[str] = None
+    product_name_cn: Optional[str] = None
+    product_image_url: Optional[str] = None
+    spec_raw: Optional[str] = None
+    link_url: Optional[str] = None
+    can_supply: Optional[bool] = None
+    supply_notes: Optional[str] = None
 
 
 @app.post("/api/v1/leads", status_code=201)
@@ -821,12 +1084,19 @@ async def lead_create(body: LeadCreate, request: Request,
         row = await conn.fetchrow(
             """INSERT INTO lead_candidates
                (tenant_id, place_id, company_name, country, region, city, address,
-                phone, website, email, industry, source, opening_line, owner_id, owner_scope)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'manual',$12,$13,'tenant')
+                phone, website, email, industry, source, opening_line,
+                shop_type, product_name, product_name_cn, product_image_url,
+                spec_raw, link_url, can_supply, supply_notes, crawl_status,
+                owner_id, owner_scope)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'manual',$12,
+                       $13,$14,$15,$16,$17,$18,$19,$20,'no_website',$21,'tenant')
                RETURNING *""",
             DEFAULT_TENANT, place_id, body.company_name, body.country, body.region,
             body.city, body.address, body.phone, body.website, body.email,
-            body.industry, body.opening_line, str(user["id"]))
+            body.industry, body.opening_line,
+            body.shop_type, body.product_name, body.product_name_cn,
+            body.product_image_url, body.spec_raw, body.link_url,
+            body.can_supply, body.supply_notes, str(user["id"]))
     return _row_to_lead(dict(row))
 
 
@@ -938,6 +1208,23 @@ class LeadPatch(BaseModel):
     opening_line: Optional[str] = None
     notes_raw: Optional[dict] = None     # 合并入 raw 字段
     owner_scope: Optional[str] = None
+    # 产品信息（地图源工位 owner：「能否提供」等由用户编辑，不由 AI 判定）
+    shop_type: Optional[str] = None
+    product_name: Optional[str] = None
+    product_name_cn: Optional[str] = None
+    product_image_url: Optional[str] = None
+    spec_raw: Optional[str] = None
+    link_url: Optional[str] = None
+    can_supply: Optional[bool] = None
+    supply_notes: Optional[str] = None
+
+
+# lead_patch 允许直接落库的字段（白名单，防止越权改状态列）
+_LEAD_PATCHABLE = ("company_name", "email", "website", "phone", "industry",
+                   "fit_score", "opening_line", "owner_scope",
+                   "shop_type", "product_name", "product_name_cn",
+                   "product_image_url", "spec_raw", "link_url",
+                   "can_supply", "supply_notes")
 
 
 @app.patch("/api/v1/leads/{lead_id}")
@@ -954,8 +1241,7 @@ async def lead_patch(lead_id: int, body: LeadPatch, request: Request,
             raise HTTPException(status_code=404, detail={"error": "not_found", "code": "LEAD_NOT_FOUND"})
         fields = body.model_dump(exclude_none=True)
         sets, params = [], [DEFAULT_TENANT, lead_id]
-        for k in ("company_name", "email", "website", "phone", "industry",
-                  "fit_score", "opening_line", "owner_scope"):
+        for k in _LEAD_PATCHABLE:
             if k in fields:
                 params.append(fields[k])
                 sets.append(f"{k} = ${len(params)}")
@@ -1379,3 +1665,429 @@ async def outreach_webhook(request: Request):
     raise HTTPException(status_code=501, detail={
         "error": "not_implemented", "code": "INBOUND_WEBHOOK_RESERVED",
         "detail": "Inbound webhook reserved — manual scan available via POST /api/v1/leads/scan-replied"})
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 官网爬取（地图源客户信息获取工位）
+#
+# Google Places 看不到产品；产品信息只能从官网提取。
+# 手动触发（不自动爬），避免被目标站限流/封禁。
+# ═══════════════════════════════════════════════════════════════════
+async def _crawl_one(conn, lead: dict) -> dict:
+    """爬单条线索的官网并回写产品字段。"""
+    lead_id = lead["id"]
+    website = (lead.get("website") or "").strip()
+    if not website:
+        await conn.execute(
+            """UPDATE lead_candidates SET crawl_status='no_website', crawled_at=NOW(),
+               updated_at=NOW() WHERE tenant_id=$1 AND id=$2""",
+            DEFAULT_TENANT, lead_id)
+        return {"lead_id": lead_id, "status": "no_website", "error": None}
+    url = website if website.startswith("http") else "https://" + website
+    try:
+        status, html = await _http_get_text(url)
+        if status and int(status) >= 400:
+            raise ValueError(f"HTTP {status}")
+        if not html:
+            raise ValueError("空响应")
+        data = extract_product_from_html(html, url)
+        merged = dict(lead)
+        for k, v in data.items():
+            if v:
+                merged[k] = v
+        await _enrich_product(conn, merged)
+        await conn.execute(
+            """UPDATE lead_candidates SET
+                 product_name=$3, product_name_cn=$4, product_image_url=$5,
+                 spec_raw=$6, spec_normalized=$7, link_url=$8,
+                 crawl_status='success', crawled_at=NOW(), updated_at=NOW()
+               WHERE tenant_id=$1 AND id=$2""",
+            DEFAULT_TENANT, lead_id,
+            merged.get("product_name"), merged.get("product_name_cn"),
+            merged.get("product_image_url"), merged.get("spec_raw"),
+            json.dumps(merged.get("spec_normalized")) if merged.get("spec_normalized") else None,
+            merged.get("link_url"))
+        return {"lead_id": lead_id, "status": "success", "error": None,
+                "product_name": merged.get("product_name"),
+                "has_image": bool(merged.get("product_image_url")),
+                "has_spec": bool(merged.get("spec_raw"))}
+    except Exception as e:
+        await conn.execute(
+            """UPDATE lead_candidates SET crawl_status='failed', crawled_at=NOW(),
+               updated_at=NOW() WHERE tenant_id=$1 AND id=$2""",
+            DEFAULT_TENANT, lead_id)
+        return {"lead_id": lead_id, "status": "failed", "error": str(e)[:200]}
+
+
+@app.post("/api/v1/leads/{lead_id}/crawl")
+async def lead_crawl(lead_id: int, request: Request,
+                     user: dict = Depends(_get_current_user)):
+    """手动爬取单条线索官网，提取产品信息（名称/图片/规格/链接）。"""
+    async with _acquire(request) as conn:
+        await _require_sub(conn, "leadgen")
+        lead = await conn.fetchrow(
+            "SELECT * FROM lead_candidates WHERE id=$1 AND tenant_id=$2",
+            lead_id, DEFAULT_TENANT)
+        if not lead:
+            raise HTTPException(status_code=404, detail={
+                "error": "not_found", "code": "LEAD_NOT_FOUND"})
+        result = await _crawl_one(conn, dict(lead))
+        row = await conn.fetchrow(
+            "SELECT * FROM lead_candidates WHERE id=$1 AND tenant_id=$2",
+            lead_id, DEFAULT_TENANT)
+    return {"result": result, "lead": _row_to_lead(row)}
+
+
+class CrawlBatch(BaseModel):
+    lead_ids: Optional[List[int]] = None
+    only_pending: bool = True
+    limit: int = 10
+
+
+@app.post("/api/v1/leads/crawl-batch")
+async def lead_crawl_batch(body: CrawlBatch, request: Request,
+                           user: dict = Depends(_get_current_user)):
+    """批量爬取（默认只爬待爬的）；limit 上限 20，避免单次请求超时。"""
+    limit = max(1, min(int(body.limit or 10), 20))
+    async with _acquire(request) as conn:
+        await _require_sub(conn, "leadgen")
+        if body.lead_ids:
+            rows = await conn.fetch(
+                """SELECT * FROM lead_candidates
+                   WHERE tenant_id=$1 AND id = ANY($2) LIMIT $3""",
+                DEFAULT_TENANT, body.lead_ids, limit)
+        elif body.only_pending:
+            rows = await conn.fetch(
+                """SELECT * FROM lead_candidates
+                   WHERE tenant_id=$1 AND crawl_status='pending' AND website IS NOT NULL
+                   ORDER BY id LIMIT $2""",
+                DEFAULT_TENANT, limit)
+        else:
+            rows = await conn.fetch(
+                """SELECT * FROM lead_candidates
+                   WHERE tenant_id=$1 AND website IS NOT NULL
+                   ORDER BY id DESC LIMIT $2""",
+                DEFAULT_TENANT, limit)
+        results = []
+        for row in rows:
+            results.append(await _crawl_one(conn, dict(row)))
+    return {"crawled": len(results),
+            "success": sum(1 for r in results if r["status"] == "success"),
+            "failed": sum(1 for r in results if r["status"] == "failed"),
+            "no_website": sum(1 for r in results if r["status"] == "no_website"),
+            "items": results}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 市场调研工位（情报体系 · 微观）
+#
+# 定位：从「地图源」产出中挑选有价值的数据，再深入细化。
+#   挑选 = source_ref 指向 lead_candidates.id
+#   细化 = product_category / price_local / market_note / can_supply
+# ═══════════════════════════════════════════════════════════════════
+RESEARCH_CATEGORIES = [
+    "chain_link_fence", "welded_mesh", "gabion", "temporary_fence",
+    "security_fence", "farm_fence", "razor_wire", "hinge_joint_fence",
+    "accessories", "other",
+]
+
+# 从线索挑选时复制的字段（产品 + 店铺信息）
+_PICK_FIELDS = (
+    "product_name", "product_name_cn", "product_image_url", "spec_raw",
+    "spec_normalized", "country", "region", "city",
+    "shop_name", "shop_type", "address", "phone", "email", "website",
+    "link_url", "can_supply", "supply_notes", "source",
+)
+
+
+def _row_to_research(r) -> dict:
+    return _row_to_dict(r, "research_products")
+
+
+class ResearchCreate(BaseModel):
+    """手工录入 / 从线索挑选（source_ref 给定时自动回填线索字段）。"""
+    source_ref: Optional[int] = None
+    source: Optional[str] = None
+    product_name: Optional[str] = None
+    product_name_cn: Optional[str] = None
+    product_image_url: Optional[str] = None
+    spec_raw: Optional[str] = None
+    product_category: Optional[str] = None
+    country: Optional[str] = None
+    region: Optional[str] = None
+    city: Optional[str] = None
+    shop_name: Optional[str] = None
+    shop_type: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    website: Optional[str] = None
+    link_url: Optional[str] = None
+    price_local: Optional[float] = None
+    price_currency: Optional[str] = None
+    market_note: Optional[str] = None
+    can_supply: Optional[bool] = None
+    supply_notes: Optional[str] = None
+
+
+async def _insert_research(conn, data: dict, owner_id: str) -> dict:
+    cols = list(data.keys())
+    placeholders = ", ".join(f"${i + 2}" for i in range(len(cols)))
+    values = [
+        json.dumps(data[c]) if c == "spec_normalized" and data[c] is not None else data[c]
+        for c in cols
+    ]
+    row = await conn.fetchrow(
+        f"""INSERT INTO research_products
+            (tenant_id, {', '.join(cols)}, owner_id, owner_scope)
+            VALUES ($1, {placeholders}, ${len(cols) + 2}, 'tenant')
+            RETURNING *""",
+        DEFAULT_TENANT, *values, owner_id)
+    return _row_to_research(row)
+
+
+@app.get("/api/v1/research/categories")
+async def research_categories(request: Request, user: dict = Depends(_get_current_user)):
+    return {"items": RESEARCH_CATEGORIES}
+
+
+@app.get("/api/v1/research/products")
+async def research_list(request: Request, user: dict = Depends(_get_current_user),
+                        country: Optional[str] = None,
+                        city: Optional[str] = None,
+                        product_category: Optional[str] = None,
+                        can_supply: Optional[bool] = None,
+                        research_status: Optional[str] = None,
+                        search: Optional[str] = None,
+                        page: int = Query(1, ge=1),
+                        page_size: int = Query(20, ge=1, le=200)):
+    where = ["tenant_id = $1"]
+    params: list = [DEFAULT_TENANT]
+    idx = 2
+    for col, val in (("country", country), ("city", city),
+                     ("product_category", product_category),
+                     ("research_status", research_status)):
+        if val:
+            where.append(f"{col} = ${idx}"); params.append(val); idx += 1
+    if can_supply is not None:
+        where.append(f"can_supply = ${idx}"); params.append(can_supply); idx += 1
+    if search:
+        where.append(f"(product_name ILIKE ${idx} OR product_name_cn ILIKE ${idx} "
+                     f"OR shop_name ILIKE ${idx})")
+        params.append(f"%{search}%"); idx += 1
+    where_sql = " AND ".join(where)
+    async with _acquire(request) as conn:
+        await _require_sub(conn, "research")
+        total = await conn.fetchval(
+            f"SELECT COUNT(*) FROM research_products WHERE {where_sql}", *params)
+        rows = await conn.fetch(
+            f"""SELECT * FROM research_products WHERE {where_sql}
+                ORDER BY id DESC LIMIT ${idx} OFFSET ${idx + 1}""",
+            *params, page_size, (page - 1) * page_size)
+    return {"items": [_row_to_research(r) for r in rows], "total": total,
+            "page": page, "page_size": page_size}
+
+
+@app.get("/api/v1/research/stats")
+async def research_stats(request: Request, user: dict = Depends(_get_current_user)):
+    """按国家/品类/供给能力聚合（供情报体系统计与空白指数消费）。"""
+    async with _acquire(request) as conn:
+        await _require_sub(conn, "research")
+        by_country = await conn.fetch(
+            """SELECT country, COUNT(*) AS total,
+                      COUNT(*) FILTER (WHERE can_supply IS TRUE) AS can_supply
+               FROM research_products WHERE tenant_id=$1 AND country IS NOT NULL
+               GROUP BY country ORDER BY total DESC LIMIT 50""", DEFAULT_TENANT)
+        by_category = await conn.fetch(
+            """SELECT COALESCE(product_category, 'unclassified') AS product_category,
+                      COUNT(*) AS total
+               FROM research_products WHERE tenant_id=$1
+               GROUP BY 1 ORDER BY total DESC""", DEFAULT_TENANT)
+        total = await conn.fetchval(
+            "SELECT COUNT(*) FROM research_products WHERE tenant_id=$1", DEFAULT_TENANT)
+        supply_yes = await conn.fetchval(
+            """SELECT COUNT(*) FROM research_products
+               WHERE tenant_id=$1 AND can_supply IS TRUE""", DEFAULT_TENANT)
+    return {"total": total, "can_supply_yes": supply_yes,
+            "by_country": [dict(r) for r in by_country],
+            "by_category": [dict(r) for r in by_category]}
+
+
+@app.post("/api/v1/research/products", status_code=201)
+async def research_create(body: ResearchCreate, request: Request,
+                          user: dict = Depends(_get_current_user)):
+    """手工录入，或从线索挑选（source_ref → 自动回填线索上的产品/店铺字段）。"""
+    async with _acquire(request) as conn:
+        await _require_sub(conn, "research")
+        data = body.model_dump(exclude_none=True)
+        source_ref = data.pop("source_ref", None)
+        if source_ref is not None:
+            existing = await conn.fetchrow(
+                """SELECT id FROM research_products
+                   WHERE tenant_id=$1 AND source_ref=$2""",
+                DEFAULT_TENANT, source_ref)
+            if existing:
+                raise HTTPException(status_code=409, detail={
+                    "error": "conflict", "code": "ALREADY_PICKED",
+                    "research_id": existing["id"]})
+            lead = await conn.fetchrow(
+                "SELECT * FROM lead_candidates WHERE id=$1 AND tenant_id=$2",
+                source_ref, DEFAULT_TENANT)
+            if not lead:
+                raise HTTPException(status_code=404, detail={
+                    "error": "not_found", "code": "LEAD_NOT_FOUND"})
+            lead_d = dict(lead)
+            for f in _PICK_FIELDS:
+                if data.get(f) is None and lead_d.get(f) is not None:
+                    data[f] = lead_d[f]
+            data.setdefault("shop_name", lead_d.get("company_name"))
+            data["source_ref"] = source_ref
+            if not data.get("source"):
+                data["source"] = lead_d.get("source")
+        row = await _insert_research(conn, data, str(user["id"]))
+        # 挑选动作落一条 run（审计 + 幂等语义）
+        cfg = {"action": "pick", "source_ref": source_ref}
+        cfg_hash = hashlib.sha256(repr(sorted(cfg.items())).encode()).hexdigest()[:32]
+        await conn.execute(
+            """INSERT INTO research_runs
+               (tenant_id, config, config_hash, status, leads_scanned,
+                products_found, products_kept, started_at, finished_at, created_by)
+               VALUES ($1,$2,$3,'succeeded',$4,1,1,NOW(),NOW(),$5)
+               ON CONFLICT (tenant_id, config_hash) DO NOTHING""",
+            DEFAULT_TENANT, json.dumps(cfg), cfg_hash,
+            1 if source_ref is not None else 0, str(user["id"]))
+    return row
+
+
+class ResearchPatch(BaseModel):
+    product_name: Optional[str] = None
+    product_name_cn: Optional[str] = None
+    product_image_url: Optional[str] = None
+    spec_raw: Optional[str] = None
+    spec_normalized: Optional[dict] = None
+    product_category: Optional[str] = None
+    country: Optional[str] = None
+    region: Optional[str] = None
+    city: Optional[str] = None
+    shop_name: Optional[str] = None
+    shop_type: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    website: Optional[str] = None
+    link_url: Optional[str] = None
+    price_local: Optional[float] = None
+    price_currency: Optional[str] = None
+    market_note: Optional[str] = None
+    can_supply: Optional[bool] = None
+    supply_notes: Optional[str] = None
+    research_status: Optional[str] = None
+
+
+@app.patch("/api/v1/research/products/{research_id}")
+async def research_patch(research_id: int, body: ResearchPatch, request: Request,
+                         user: dict = Depends(_get_current_user)):
+    """深化字段编辑（含「能否提供」——由用户判定，不由 AI 推断）。"""
+    fields = body.model_dump(exclude_none=True)
+    async with _acquire(request) as conn:
+        await _require_sub(conn, "research")
+        row = await conn.fetchrow(
+            "SELECT * FROM research_products WHERE id=$1 AND tenant_id=$2",
+            research_id, DEFAULT_TENANT)
+        if not row:
+            raise HTTPException(status_code=404, detail={
+                "error": "not_found", "code": "RESEARCH_NOT_FOUND"})
+        allowed = tuple(ResearchPatch.model_fields.keys())
+        sets, params = [], [DEFAULT_TENANT, research_id]
+        for k in allowed:
+            if k in fields:
+                v = fields[k]
+                if k == "spec_normalized" and v is not None:
+                    v = json.dumps(v)
+                params.append(v)
+                sets.append(f"{k} = ${len(params)}")
+        if sets:
+            await conn.execute(
+                f"""UPDATE research_products SET {', '.join(sets)}, updated_at=NOW()
+                    WHERE tenant_id=$1 AND id=$2""",
+                *params)
+        updated = await conn.fetchrow(
+            "SELECT * FROM research_products WHERE id=$1 AND tenant_id=$2",
+            research_id, DEFAULT_TENANT)
+    return _row_to_research(updated)
+
+
+@app.delete("/api/v1/research/products/{research_id}")
+async def research_delete(research_id: int, request: Request,
+                          user: dict = Depends(_get_current_user)):
+    """从调研集移除（仅删本工位记录，不动地图源线索）。"""
+    async with _acquire(request) as conn:
+        await _require_sub(conn, "research")
+        deleted = await conn.fetchval(
+            """DELETE FROM research_products WHERE tenant_id=$1 AND id=$2
+               RETURNING id""", DEFAULT_TENANT, research_id)
+        if deleted is None:
+            raise HTTPException(status_code=404, detail={
+                "error": "not_found", "code": "RESEARCH_NOT_FOUND"})
+    return {"deleted": deleted}
+
+
+class PickFromLeadgen(BaseModel):
+    lead_ids: List[int]
+
+
+@app.post("/api/v1/research/from-leadgen", status_code=201)
+async def research_from_leadgen(body: PickFromLeadgen, request: Request,
+                                user: dict = Depends(_get_current_user)):
+    """从地图源批量挑选进市场调研（已挑选过的跳过，不报错）。"""
+    if not body.lead_ids:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "EMPTY_SELECTION"})
+    async with _acquire(request) as conn:
+        await _require_sub(conn, "research")
+        leads = await conn.fetch(
+            """SELECT * FROM lead_candidates
+               WHERE tenant_id=$1 AND id = ANY($2)""",
+            DEFAULT_TENANT, body.lead_ids)
+        created, skipped = [], 0
+        for lead in leads:
+            lead_d = dict(lead)
+            dup = await conn.fetchval(
+                "SELECT id FROM research_products WHERE tenant_id=$1 AND source_ref=$2",
+                DEFAULT_TENANT, lead_d["id"])
+            if dup:
+                skipped += 1
+                continue
+            data = {f: lead_d.get(f) for f in _PICK_FIELDS if lead_d.get(f) is not None}
+            data["shop_name"] = lead_d.get("company_name")
+            data["source_ref"] = lead_d["id"]
+            row = await _insert_research(conn, data, str(user["id"]))
+            created.append(row)
+        cfg = {"action": "from_leadgen", "lead_ids": sorted(body.lead_ids)}
+        cfg_hash = hashlib.sha256(repr(sorted(cfg.items())).encode()).hexdigest()[:32]
+        await conn.execute(
+            """INSERT INTO research_runs
+               (tenant_id, config, config_hash, status, leads_scanned,
+                products_found, products_kept, started_at, finished_at, created_by)
+               VALUES ($1,$2,$3,'succeeded',$4,$5,$6,NOW(),NOW(),$7)
+               ON CONFLICT (tenant_id, config_hash) DO NOTHING""",
+            DEFAULT_TENANT, json.dumps(cfg), cfg_hash,
+            len(leads), len(leads), len(created), str(user["id"]))
+    return {"scanned": len(leads), "created": len(created), "skipped": skipped,
+            "items": created}
+
+
+@app.get("/api/v1/research/runs")
+async def research_runs(request: Request, user: dict = Depends(_get_current_user),
+                        page: int = Query(1, ge=1),
+                        page_size: int = Query(20, ge=1, le=100)):
+    async with _acquire(request) as conn:
+        await _require_sub(conn, "research")
+        total = await conn.fetchval(
+            "SELECT COUNT(*) FROM research_runs WHERE tenant_id=$1", DEFAULT_TENANT)
+        rows = await conn.fetch(
+            """SELECT * FROM research_runs WHERE tenant_id=$1
+               ORDER BY id DESC LIMIT $2 OFFSET $3""",
+            DEFAULT_TENANT, page_size, (page - 1) * page_size)
+    return {"items": [_row_to_dict(r, "research_runs") for r in rows],
+            "total": total, "page": page, "page_size": page_size}

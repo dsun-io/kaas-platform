@@ -23,21 +23,69 @@
 
 ## 2. 工作站全景视图
 
+### 2.0 命名口径（2026-09-22 变更）
+
+| 原名称 | 最终名称 | 性质 |
+|--------|---------|------|
+| 商情雷达 | **进出口情报** | 改名，不重建 |
+| 客户开发 | **地图源客户信息获取** | 改名 |
+| （无） | **市场调研** | 新建 |
+
+> 所有文档、代码、界面、订阅编码统一使用最终名称。
+> URL / API 前缀 / 表名不变（`/intel`、`/leadgen`、`intel_*`、`lead_candidates`），
+> 改名只影响展示层命名，避免破坏性迁移。
+
+### 2.0.1 情报体系（三工位）
+
+情报体系由三个工位组成，层次为「宏观 → 微观 → 源头」：
+
+```
+情报体系
+├── 进出口情报             （宏观）海关/贸易数据、货运记录、竞争格局
+├── 市场调研               （微观）从地图源挑选数据并深化：规格/价格/能否提供
+└── 地图源客户信息获取     （源头）Google Places 抓取店铺 + 爬官网提取产品
+```
+
+**地图源客户信息获取是双重身份**：属于情报体系，同时是主业务链起点。
+前端菜单归入「情报体系」，产出（线索池）被业务链消费。
+
+### 2.0.2 分工原则：脚本为主，AI 为辅
+
+两个数据加工工位共用同一条原则 —— **能算的用脚本，难量化的才用 AI**：
+
+| 环节 | 手段 | 理由 |
+|------|------|------|
+| 店铺信息（名称/地址/电话/评分/类型/link） | Google Places API | 权威、结构化 |
+| 产品信息（图片/当地叫法/规格） | **爬官网 + 正则提取** | Google Places 看不到产品 |
+| 规格结构化（尺寸/材质） | **脚本正则**（`_template_spec_extract`） | 确定性、可复现、零成本 |
+| 中文对照（当地叫法→中文） | AI 翻译（`product_translate`） | 难量化，AI 未启用则留空待人工填写 |
+| 能否提供 | **用户手动判定** | 商业判断，禁止 AI 推断 |
+| 产品品类归类 | 用户选择 | 枚举约束，避免漂移 |
+
+> AI 未绑定时的降级路径已定义：规格仍由脚本产出，中文对照留空，
+> 系统不阻塞、不臆测、不写错数据。
+
 ### 2.1 已交付
 
 | 工作站 | 域 | 状态 | 说明 |
 |--------|----|------|------|
-| **商情雷达** (Intel Radar) | 贸易情报 | ✅ 已上线 | 海关/贸易数据采集、货运记录、竞争分析。数据链起点：发现「谁 在什么地区 买什么货」 |
+| **进出口情报** (原 Intel Radar) | 贸易情报 | ✅ 已上线 | 海关/贸易数据采集、货运记录、竞争分析。发现「谁 在什么地区 买什么货」 |
+| **地图源客户信息获取** (原 客户开发) | 线索获取 | ✅ 已上线 | Google Places 抓取店铺 → 线路池；官网爬取补产品信息 |
+| **线索池** | 线索共享 | ✅ 已上线 | `lead_candidates` 共享池，三工位唯一通信接口 |
+| **客户管理 / 询盘** (customers) | 客户全生命周期 | ✅ 已上线 | 询盘录入→建档→阶段跟踪→成交→自动生成订单 |
+| **智能报价工位** (quote_orders) | 智能报价 | ✅ 已上线 | 三档方案 + FOB/CFR/CIF，锁汇率快照 |
+| **订单工位** (orders) | 订单履约 | ✅ 已上线 | 报价转化、履约状态机、应收与汇兑损益 |
+| **外贸票据工位** (trade_docs) | 单证票据 | ✅ 已上线 | 从订单/报价/询盘生成 PI/CI/PL 等 |
+| **客户触达工位** (outreach) | 邮件触达 | ✅ 已上线 | 发件邮箱/活动/消息、回写 `outreach_status` |
+| **AI 层** | AI 能力托管 | ✅ 已上线 | 5+ 任务注册表、Provider 绑定、互备降级、用量落库 |
+| **市场调研** (research) | 微观市场数据 | ✅ 已上线 | 从地图源挑选 → 深化（品类/价格/观察/能否提供） |
 
 ### 2.2 规划中（按优先级）
 
 | 工作站 | 域 | 优先级 | 与现有数据链的关系 |
 |--------|----|--------|-------------------|
-| **客户管理** (Customers，含询盘入口) | 客户全生命周期 | P0 | 询盘录入→建档→阶段跟踪→成交→自动生成订单；统一底座 |
-| **产品市场对照** (Market，含港口情报) | 地区×产品×规格知识 | P0 | 支撑客户工位询盘匹配：地区/品名/用途→规格/港口 |
-| **智能报价工位** (Smart Quote) | 智能报价 | P0 | 输入=客户工位成交意向 + 规格；输出=三档方案 + FOB/CFR/CIF |
-| **订单工位** (Orders) | 订单履约 | P0 | 输入=客户工位"已成交"询盘；输出=履约订单 |
-| **外贸票据工位** (Trade Docs) | 单证票据 | P1 | 输入=订单工位履约数据；输出=PI/CI/PL/B/L 等全套票据 |
+| **产品市场对照** (market) | 地区×产品×规格知识 | P1 | 支撑报价工位：地区/品名/用途→规格/港口 |
+| **事件流联通** | 异步联动 | P2 | 引入 `domain_events`，替代手动触发扫描 |
 
 > 优先级不代表开发顺序，实际排期由业务驱动。各工位可**独立先行**开发，
 > 只要遵循 §5 的数据连通契约即可保证后续无缝集成。
@@ -368,10 +416,115 @@ subscription_bundles (
 
 数据填充路线：手工录入 → 商情雷达品名词频沉淀（`source=intel_signal`）→ AI 批量提取（Phase 7）。
 
-### 6.6 与现有模型的关系
-- 三个工位均通过 `customer_id` 关联到现有 `customers` 表（只读引用）
+### 6.6 市场调研工位 `research`（已上线，2026-09-22）
+
+> 情报体系 · 微观层。定位：**从「地图源」产出中挑选有价值的数据，再深入细化。**
+
+**核心表**：
+
+| 表 | 作用 | 关键字段 |
+|----|------|---------|
+| `research_products` | 挑选 + 深化结果 | `source_ref`（→ `lead_candidates.id`）、`product_category`、`price_local`、`market_note`、`can_supply`、`spec_normalized` |
+| `research_runs` | 运行记录（幂等 + 审计） | `config` / `config_hash` UNIQUE、`leads_scanned` / `products_found` / `products_kept` |
+
+**字段分工（与地图源的关系）**：
+
+```
+地图源 lead_candidates（信息最全的原始层）
+    ├─ Google Places 采集：company_name / address / phone / website /
+    │                      place_id / google_rating / shop_type
+    └─ 爬官网提取：product_image_url / product_name / spec_raw / link_url
+         ↓ 用户挑选（UNIQUE(tenant_id, source_ref) 防重复挑选）
+市场调研 research_products（筛选 + 深化层）
+    └─ 深化字段：product_category / price_local / price_currency /
+                 market_note / can_supply / supply_notes / research_status
+```
+
+设计取舍：深化层**冗余**产品与店铺字段（不强制 JOIN），换取本工位可独立渲染；
+`source_ref` 保留溯源能力。两条记录各存各的，互不覆盖。
+
+**「能否提供」的归属**：由用户在**两个工位**都可编辑（地图源侧为线索级初判，
+调研侧为最终结论）。数据库层 `can_supply` 三态：`TRUE` / `FALSE` / `NULL`（未填），
+**不设默认值**，避免把"未填"误读为"不能提供"。
+
+**API**：
+
+| 端点 | 作用 |
+|------|------|
+| `GET /api/v1/research/products` | 列表（国家/城市/品类/能否提供/搜索 + 分页） |
+| `POST /api/v1/research/products` | 手工录入，或带 `source_ref` 从线索挑选（字段自动回填） |
+| `PATCH /api/v1/research/products/{id}` | 深化字段编辑 |
+| `DELETE /api/v1/research/products/{id}` | 从调研集移除（不动地图源线索） |
+| `POST /api/v1/research/from-leadgen` | 批量挑选（重复自动跳过） |
+| `GET /api/v1/research/stats` | 按国家/品类/供给能力聚合 |
+| `GET /api/v1/research/runs` | 运行记录 |
+| `GET /api/v1/research/categories` | 品类枚举 |
+
+### 6.7 官网爬取（地图源工位的产品信息通道）
+
+**为什么必须爬官网**：Google Places 的字段全部是**店铺级**（名称/地址/电话/评分/
+`primary_type`/`website`），**没有任何产品字段**。产品（图片、当地叫法、规格）
+只能从官网 HTML 提取。
+
+```
+POST /api/v1/leads/{id}/crawl        单条爬取
+POST /api/v1/leads/crawl-batch       批量（默认只爬 crawl_status='pending'，上限 20）
+```
+
+爬取管线（全部为**确定性脚本**，无 AI）：
+
+```
+GET website（js.fetch，浏览器 UA）
+   ↓
+去 <script>/<style> → 正则提取
+   ├─ <meta property="og:image">       → product_image_url
+   ├─ <h1> / <title>                   → product_name
+   ├─ <meta name="description"> + 正文  → spec_raw（截断 1200 字符）
+   └─ href 命中 /product|/catalog|…    → link_url
+   ↓
+规格结构化（脚本正则：尺寸/材质）
+   ↓
+crawl_status ← success | failed | no_website
+```
+
+**手动触发，不自动爬**：避免对目标站高频请求被封禁。
+
+**CSV 导入**：地图源工位支持一次性导入完整业务表格（产品图片 URL、中文对照、
+规格、国家、城市、店铺、店铺类型、电话、链接、官网、地址、能否提供），
+无需逐条爬取。`能否提供` 列解析 `TRUE/FALSE/是/否/1/0`，**未知值一律落 NULL**。
+
+### 6.8 情报体系数据回流闭环（第一版不接，接口预留）
+
+```
+地图源客户信息获取 ──→ 已抓取数 ──┐
+市场调研           ──→ 已调研数 ──┤
+客户触达           ──→ 已触达数 ──┼──→ 进出口情报计算空白指数
+询盘               ──→ 已成交数 ──┘         ↓
+                                    地图源工位消费（地区排序）
+```
+
+```
+已开发量 = 已抓取数 + 已调研数 + 已触达数 + 已成交数
+空白指数 = 需求量（进出口情报自有） − 已开发量
+```
+
+| 数据 | 来源工位 | 现有落点 |
+|------|---------|---------|
+| 需求量 | 进出口情报 | `intel_demand_index.demand_index` |
+| 已抓取数 | 地图源客户信息获取 | `COUNT(lead_candidates)` |
+| 已调研数 | 市场调研 | `COUNT(research_products)` |
+| 已触达数 | 客户触达 | `COUNT(outreach_messages WHERE status='sent')` |
+| 已成交数 | 询盘 | `COUNT(cust_inquiries WHERE status='won')` |
+
+**当前状态**：四源的计数端点尚未实现；`intel_demand_index` 为空表（口子已建），
+`/leads` 排序接口恒定返回 `demand_index=null` / `blank_index=null` 占位。
+填数据即生效，无需改接口。
+
+### 6.9 与现有模型的关系
+- 工位通过 `customer_id` 关联到现有 `customers` 表（只读引用）
 - 行项均通过 `sku_id` 关联到现有 `product_skus` 表（只读引用）
-- 商情雷达 `intel_shipments` 作为订单/报价的**信号源**被引用，本身不变
+- 进出口情报 `intel_shipments` 作为订单/报价的**信号源**被引用，本身不变
+- `research_products.source_ref` → `lead_candidates.id`：调研引用地图源，单向只读
 
 ---
 

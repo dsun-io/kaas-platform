@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ import {
   Target,
   Send,
   Sparkles,
+  PackageSearch,
 } from "lucide-react";
 import { useState, Fragment } from "react";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -53,7 +55,7 @@ const navGroups: NavGroup[] = [
     label: "情报体系",
     items: [
       { href: "/intel", label: "进出口情报", icon: Radar, adminOnly: true },
-      { href: "/market", label: "市场调研", icon: BookOpen, adminOnly: true },
+      { href: "/research", label: "市场调研", icon: PackageSearch, adminOnly: true },
       { href: "/leadgen", label: "地图源客户信息获取", icon: Target, adminOnly: true },
     ],
   },
@@ -62,6 +64,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/pricing-data", label: "报价数据", icon: Database },
       { href: "/onboarding", label: "新手引导", icon: Compass },
+      { href: "/market", label: "产品市场对照", icon: BookOpen, adminOnly: true },
     ],
   },
   {
@@ -123,7 +126,7 @@ function SidebarNav({ collapsed }: { collapsed: boolean }) {
                 return (
                   <Link
                     key={item.href}
-                    href={item.href}
+                    href={item.href as Route}
                     prefetch={true}
                     className={cn(
                       "nav-item no-underline",
