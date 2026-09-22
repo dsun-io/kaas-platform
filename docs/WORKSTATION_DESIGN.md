@@ -232,7 +232,34 @@ subscription_bundles (
 |--------|---------|---------|
 | `export_starter` | customers + market + quote | 刚起步外贸企业 |
 | `export_pro` | customers + market + quote + orders + docs | 成熟外贸企业 |
-| `full_chain` | intel + customers + market + quote + orders + docs | 全链路数字化 |
+| `full_chain` | 全工位 | 全链路数字化 |
+
+### 5.4.1 实际落地的订阅编码（2026-09-22 口径）
+
+> **本期不激活订阅治理**：`tenant_subscriptions` 保持 `default = full_chain`，
+> 前端不暴露订阅入口。编码已在 `chain.py` `SUB_CODES` 登记，填行即生效。
+
+| 编码 | 包含 | 工位 key |
+|------|------|---------|
+| `intel_trade_starter` | 进出口情报 | `intel` |
+| `intel_research_starter` | 市场调研 | `research` |
+| `intel_full` | 情报体系三工位 | `intel` + `research` + `leadgen` |
+| `leadgen_starter` | 地图源客户信息获取 + 线索池 | `leadgen` |
+| `outreach_starter` | 客户触达（含产品手册附件） | `outreach` |
+| `full_chain` | 全工位 | 全部 |
+
+**生效方式**（未订阅 → 404 `SUBSCRIPTION_REQUIRED`）：
+
+```python
+SUB_CODES = {
+    "leadgen":  ["leadgen_starter", "full_chain"],
+    "outreach": ["outreach_starter", "full_chain"],
+    "intel":    ["intel_trade_starter", "intel_full", "full_chain"],
+    "research": ["intel_research_starter", "intel_full", "full_chain"],
+}
+```
+
+> 历史遗留：`leadgen_pro` / `outreach_pro` 为预留档位，保留在 `SUB_CODES` 中向后兼容。
 
 **订阅生效控制三层防线**：
 
@@ -573,7 +600,7 @@ crawl_status ← success | failed | no_website
 
 各工位可**拆分开单独使用**（独立价值），组合后形成完整业务闭环。
 
-### 8.2 商情雷达 → 报价工位
+### 8.2 进出口情报 → 报价工位
 1. 商情雷达采集货运记录 / 买家询盘信号
 2. 业务员在报价工位选取信号（引用 `intel_shipments`），触发报价单草稿
 3. 报价工位结合 `product_skus` 定价，生成 `quote_orders` + `quote_order_items`
@@ -592,7 +619,7 @@ crawl_status ← success | failed | no_website
 3. 写入 `trade_doc_order_refs`，记录票据来源
 4. 票据可下载/发送/归档
 
-### 8.5 订单工位 → 商情雷达（回写）
+### 8.5 订单工位 → 进出口情报（回写）
 1. 订单实际出运后，业务员录入出运信息
 2. 写入 `intel_shipments`（商情雷达作为下游接收）
 3. 写入 `order_shipment_refs`，完成物流闭环
@@ -601,15 +628,37 @@ crawl_status ← success | failed | no_website
 
 ## 9. 演进路线
 
+### 9.1 工位链开发顺序（2026-09-22 变更档口径）
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| **P1** | AI 层 | ✅ 已上线 |
+| **P2** | 地图源客户信息获取工位（原「客户开发」改名） | ✅ 已上线 |
+| **P3** | 线索池 | ✅ 已上线 |
+| **P4** | 客户触达工位（含产品手册附件 ⏳） | ✅ 工位上线；附件待 P6 数据成熟 |
+| **P5** | 询盘接入 | ✅ 已上线 |
+| **P6** | 市场调研工位（新建） | ✅ 已上线 |
+| **P7** | 进出口情报改名 + 接入口子 | ✅ 改名完成；回流闭环口子已建（未接） |
+| **P8** | 联调 + E2E + 订阅编码 | ⏳ 进行中 |
+
+> **P4 产品手册附件**依赖 P6 的市场调研数据（`research_products` 筛选：
+> 地区 + 行业 + 店铺类型 + 产品 + 能否提供=是）。P6 已上线，附件功能可随时接入。
+> 附件格式：PDF（第一版）；生成方式：浏览器端生成（Worker 无 PDF 库），
+> 存 R2 后作为附件随邮件发送；匹配到 0 个产品时提示用户可跳过。
+
+### 9.2 平台演进
+
 | 阶段 | 内容 | 出口标准 |
 |------|------|---------|
-| **Phase 1** ✅ | 商情雷达上线 | 已交付（见 DEPLOY.md） |
-| **Phase 2** ✅ | 三工位 Schema 口子 | 本迁移 `20260919_workstation_links` |
-| **Phase 3** | 报价工位 MVP | 报价单 CRUD + 信号引用 + 前端页面 |
-| **Phase 4** | 订单工位 MVP | 报价转化 + 订单履约 + 前端页面 |
-| **Phase 5** | 票据工位 MVP | 票据生成 + 下载 + 前端页面 |
-| **Phase 6** | 事件流联通 | 引入 `domain_events`，实现异步联动 |
+| **Phase 1** ✅ | 进出口情报上线（原商情雷达） | 已交付（见 DEPLOY.md） |
+| **Phase 2** ✅ | 三工位 Schema 口子 | 迁移 `20260919_workstation_links` |
+| **Phase 3** ✅ | 报价工位 MVP | 报价单 CRUD + 信号引用 + 前端页面 |
+| **Phase 4** ✅ | 订单工位 MVP | 报价转化 + 订单履约 + 前端页面 |
+| **Phase 5** ✅ | 票据工位 MVP | 票据生成 + refs 溯源 + 前端页面 |
+| **Phase 5.5** ✅ | 工位链（AI/线索/触达/调研） | 迁移 `20260921_*` + `20260922_research_workstation` |
+| **Phase 6** | 产品手册附件 + 事件流联通 | R2 附件 + 引入 `domain_events`，替代手动触发扫描 |
 | **Phase 7** | 智能闭环 | AI 驱动的报价推荐、风险预警、自动单证 |
+| **Phase 8** | 情报回流闭环 | 已开发量四源聚合 → 空白指数 → 地图源地区排序 |
 
 ---
 
@@ -627,17 +676,23 @@ crawl_status ← success | failed | no_website
 8. **订阅可见性**：未订阅工位的 API 返回 404（不暴露存在性），前端显示引导页
 9. **订阅隔离**：未订阅工位的代码不执行、数据不写入、入口不渲染
 10. **订阅防绕过**：跨工位写入前必须检查目标工位订阅状态
+11. **脚本优先**：能确定性计算的（规格提取、去重、过滤、计数）用脚本，
+    不用 AI。AI 只用于难量化环节，且必须有降级路径（模板/留空），禁止臆测写入
+12. **人工判定优先**：商业判断字段（如 `can_supply`）由用户填写，三态存储
+    （`TRUE`/`FALSE`/`NULL`），不设默认值，禁止 AI 推断
+13. **改名不迁移**：展示层命名变更不改表名/URL/API 前缀，避免破坏性迁移
 
 ---
 
 ## 11. 相关文档
 
 - `DEPLOY.md` — 部署架构与操作手册
-- `backend/worker/README.md` — 商情雷达 Worker 详情
+- `backend/worker/README.md` — 单 Worker `kaas` 详情（API 一览 / 已知限制）
 - `backend/docs/schema-registry.md` — 数据字典
 - `shared/contracts/` — 前后端共享契约（zod）
+- `.github/workflows/deploy.yml` — push 自动部署（前端构建 + Worker 部署 + 生产冒烟）
 
 ---
 
-**最后更新**: 2026-09-19
+**最后更新**: 2026-09-22
 **维护者**: David Sun

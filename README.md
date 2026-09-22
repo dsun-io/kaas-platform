@@ -3,7 +3,7 @@
 > **Knowledge as a Service** — 为传统制造业提供 AI 岗位能力托管。
 >
 > 平台以「工作站 (Workstation)」为最小交付单元，各工位可独立运行、也可上下游数据连通。
-> 多个工位已上线：商情雷达（贸易情报 → 货运记录 → 竞争分析）、客户/询盘、报价、订单、出运、外贸票据，以及 AI 层 + 开发工位/线索池 + 触达工位增长链。
+> 多个工位已上线：情报体系三工位（进出口情报 · 市场调研 · 地图源客户信息获取）、客户/询盘、报价、订单、出运、外贸票据，以及 AI 层 + 线索池 + 客户触达增长链。
 
 ---
 
@@ -30,7 +30,8 @@ kaas-platform/
 │   │   ├── customers/                 # 客户管理 + 能力编辑器
 │   │   ├── dashboard/                 # 仪表盘 (6 统计卡片 + 区间选择)
 │   │   ├── events/                    # 事件列表 + 详情 + 采样标记
-│   │   ├── intel/                     # ★ 商情雷达工位 (货运/统计/渠道/任务)
+│   │   ├── intel/                     # ★ 进出口情报工位 (货运/统计/渠道/任务)
+│   │   ├── research/                  # ★ 市场调研工位 (挑选/深化/导出/运行记录)
 │   │   ├── kb/                        # 知识库概览
 │   │   ├── quotations/                # 报价管理列表
 │   │   │   └── v2-quote/              # V2 丝网报价引擎 (form + result)
@@ -53,7 +54,7 @@ kaas-platform/
 │   ├── worker/                        # ★ 生产: 单 Cloudflare Worker "kaas" (Python + FastAPI + 静态资产)
 │   │   ├── wrangler.jsonc             #   前后端一体: /api/*→FastAPI, 其余→Next.js 静态导出+SPA回退
 │   │   ├── src/main.py                #   商情雷达/客户/询盘等核心 API · 经 Hyperdrive 连 Neon PG
-│   │   ├── src/chain.py               #   P1-P7 工位链 (AI层/线索池/触达) raw asyncpg 移植版
+│   │   ├── src/chain.py               #   工位链 (AI层/线索池/触达/市场调研+爬取) raw asyncpg 移植版
 │   │   └── python_modules/            #   vendored 依赖 (asyncpg, fastapi, ...)
 │   └── orchestrator/                  # FastAPI 核心编排服务 (本地开发/数据迁移)
 │       ├── app/
@@ -216,17 +217,37 @@ pnpm dev
 
 | 工位 | 状态 | 说明 |
 |---|---|---|
-| **商情雷达 (Intel Radar)** | ✅ 已上线 | Cloudflare Workers 部署，数据链起点。见 `DEPLOY.md` |
+| **进出口情报 (Intel)** | ✅ 已上线 | Cloudflare Workers 部署。情报体系 · 宏观层（原「商情雷达」改名，URL/表名不变）。见 `DEPLOY.md` |
+| **市场调研 (Research)** | ✅ 已上线 | 情报体系 · 微观层。从地图源挑选数据并深化（品类/价格/观察/能否提供），导出 CSV |
+| **地图源客户信息获取 (Leadgen)** | ✅ 已上线 | 情报体系 · 源头层（双重身份：也是业务链起点）。Google Places 拓店铺 + 爬官网提产品 + CSV 导入 |
+| **线索池 (Lead Pool)** | ✅ 已上线 | `lead_candidates` 共享池，三工位唯一通信接口（跨工位状态只读） |
 | **客户/询盘 (Customers/Inquiries)** | ✅ 已上线 | 客户 stage 状态机 + 询盘全生命周期，批量关闭循环 |
 | **报价工位 (Quotation)** | ✅ 已上线 | 报价单 CRUD + 状态机 + 汇率锁定快照 |
 | **订单工位 (Orders)** | ✅ 已上线 | 报价转化 + 订单状态机 + 应收/付款计划 + 汇兑损益 |
 | **外贸票据工位 (Trade Docs)** | ✅ 已上线 | 从订单/报价/询盘生成单证，raw_payload 冻结快照 + refs 溯源 |
 | **出运台账 (Shipments)** | ✅ 已上线 | 自有出运记录，producing→shipped 联动 + order 关联 |
-| **AI 层 (BYOK)** | ✅ 已上线 | 5 任务模板/Provider 绑定/用量审计，每次调用落 usage |
-| **开发工位+线索池 (Leadgen)** | ✅ 已上线 | demo/CSV 抓取 + AI 评分 + 幂等线索池（跨工位状态隔离） |
-| **触达工位 (Outreach)** | ✅ 已上线 | 邮箱/campaign/发送（原子抢占）/重发，inbound webhook 501 预留 |
+| **AI 层 (BYOK)** | ✅ 已上线 | 7 任务模板/Provider 绑定/用量审计，每次调用落 usage |
+| **客户触达工位 (Outreach)** | ✅ 已上线 | 邮箱/campaign/发送（原子抢占）/重发，inbound webhook 501 预留 |
 
-迁移：`20260919_workstation_links` 建三工位表；`20260921_business_foundation`（汇率/单号/出运/付款/应收）、`20260921_ai_layer` + `20260921_leadgen_outreach`（AI 层 + 线索池 + 触达）已应用生产库。
+### 情报体系（三工位）
+
+```
+宏观 ── 进出口情报          海关/贸易数据、货运记录、竞争格局
+微观 ── 市场调研            从地图源挑选 → 深化（品类/价格/能否提供）
+源头 ── 地图源客户信息获取  Google Places 拓店铺 → 爬官网提产品 → 线索池
+```
+
+**分工原则：脚本为主，AI 为辅**
+
+| 数据 | 手段 |
+|------|------|
+| 店铺信息（名称/地址/电话/评分/类型） | Google Places API |
+| 产品信息（图片/当地叫法/规格） | 爬官网 + 正则提取（Google Places 看不到产品） |
+| 规格结构化（尺寸/材质） | 脚本正则（确定性、零成本） |
+| 中文对照 | AI 翻译（AI 未启用则留空待人工填写） |
+| 能否提供 | 用户手动判定（三态：是/否/未填），**禁止 AI 推断** |
+
+迁移：`20260919_workstation_links` 建三工位表；`20260921_business_foundation`（汇率/单号/出运/付款/应收）、`20260921_ai_layer` + `20260921_leadgen_outreach`（AI 层 + 线索池 + 触达）、`20260922_research_workstation`（产品字段 + 市场调研两表）已应用生产库。
 
 > **生产部署口径**：以上工位 API 全部经由单 Worker `kaas`（`backend/worker`，Python FastAPI + 原生 asyncpg）部署在 Cloudflare Workers，前端静态导出由同一 Worker 资产服务。编排器（`backend/orchestrator`，SQLAlchemy）为本地开发/参考实现，生产以 Worker 版为准（`backend/worker/src/chain.py` 为工位链移植实现）。
 

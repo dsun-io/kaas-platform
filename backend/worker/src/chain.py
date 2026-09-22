@@ -104,6 +104,25 @@ def _mask(key: Optional[str]) -> Optional[str]:
 CRAWL_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
             "(KHTML, like Gecko) Chrome/125.0 Safari/537.36")
 CRAWL_TIMEOUT = 15
+# 单次爬取只读前 400KB：避免超大页面耗尽 Worker CPU/内存额度
+MAX_CRAWL_BYTES = 400_000
+# SSRF 防护：只允许公网 http(s)，拒绝内网/回环/云元数据地址
+_BLOCKED_HOST_RE = re.compile(
+    r"^(?:localhost|0\.0\.0\.0|127\.|10\.|192\.168\.|169\.254\.|"
+    r"172\.(?:1[6-9]|2\d|3[01])\.|\[?::1\]?$|fc|fd|fe80)",
+    re.IGNORECASE,
+)
+
+
+def _is_safe_crawl_url(url: str) -> bool:
+    """只允许抓取公网 http(s) 地址（防御 CSV/线索注入内网地址）。"""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return False
+    host = (parsed.hostname or "").lower()
+    if not host or "." not in host:
+        return False
+    return not _BLOCKED_HOST_RE.match(host)
 
 _META_TAG_RE = re.compile(r"<meta\b[^>]*>", re.IGNORECASE)
 _ATTR_RE = re.compile(r"([a-zA-Z:_-]+)\s*=\s*[\"']([^\"']*)[\"']")
@@ -192,20 +211,24 @@ def extract_product_from_html(html: str, base_url: str) -> dict:
 
 
 async def _http_get_text(url: str, timeout: int = CRAWL_TIMEOUT):
-    """出站 GET：Workers 用 js.fetch，本地 CPython 回退 urllib。"""
+    """出站 GET：Workers 用 js.fetch，本地 CPython 回退 urllib。读取上限 400KB。"""
     try:
         from js import fetch  # type: ignore  (Pyodide / Python Workers)
     except ImportError:
         import urllib.request
         req = urllib.request.Request(url, headers={"User-Agent": CRAWL_UA})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.status, resp.read().decode("utf-8", "replace")
+            raw = resp.read(MAX_CRAWL_BYTES)
+            return resp.status, raw.decode("utf-8", "replace")
     resp = await fetch(url, {
         "method": "GET",
         "headers": {"User-Agent": CRAWL_UA, "Accept": "text/html,*/*"},
         "redirect": "follow",
     })
-    return int(resp.status), await resp.text()
+    text = await resp.text()
+    if len(text) > MAX_CRAWL_BYTES:
+        text = text[:MAX_CRAWL_BYTES]
+    return int(resp.status), text
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1684,6 +1707,13 @@ async def _crawl_one(conn, lead: dict) -> dict:
             DEFAULT_TENANT, lead_id)
         return {"lead_id": lead_id, "status": "no_website", "error": None}
     url = website if website.startswith("http") else "https://" + website
+    if not _is_safe_crawl_url(url):
+        await conn.execute(
+            """UPDATE lead_candidates SET crawl_status='blocked', crawled_at=NOW(),
+               updated_at=NOW() WHERE tenant_id=$1 AND id=$2""",
+            DEFAULT_TENANT, lead_id)
+        return {"lead_id": lead_id, "status": "blocked",
+                "error": "URL 不在允许抓取的公网 http(s) 范围内"}
     try:
         status, html = await _http_get_text(url)
         if status and int(status) >= 400:
@@ -1774,6 +1804,7 @@ async def lead_crawl_batch(body: CrawlBatch, request: Request,
     return {"crawled": len(results),
             "success": sum(1 for r in results if r["status"] == "success"),
             "failed": sum(1 for r in results if r["status"] == "failed"),
+            "blocked": sum(1 for r in results if r["status"] == "blocked"),
             "no_website": sum(1 for r in results if r["status"] == "no_website"),
             "items": results}
 
@@ -1856,7 +1887,7 @@ async def research_list(request: Request, user: dict = Depends(_get_current_user
                         country: Optional[str] = None,
                         city: Optional[str] = None,
                         product_category: Optional[str] = None,
-                        can_supply: Optional[bool] = None,
+                        can_supply: Optional[str] = None,
                         research_status: Optional[str] = None,
                         search: Optional[str] = None,
                         page: int = Query(1, ge=1),
@@ -1869,8 +1900,13 @@ async def research_list(request: Request, user: dict = Depends(_get_current_user
                      ("research_status", research_status)):
         if val:
             where.append(f"{col} = ${idx}"); params.append(val); idx += 1
-    if can_supply is not None:
-        where.append(f"can_supply = ${idx}"); params.append(can_supply); idx += 1
+    # can_supply 三态：true / false / unknown(未填 → IS NULL)
+    if can_supply == "true":
+        where.append("can_supply IS TRUE")
+    elif can_supply == "false":
+        where.append("can_supply IS FALSE")
+    elif can_supply == "unknown":
+        where.append("can_supply IS NULL")
     if search:
         where.append(f"(product_name ILIKE ${idx} OR product_name_cn ILIKE ${idx} "
                      f"OR shop_name ILIKE ${idx})")
