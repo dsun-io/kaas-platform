@@ -3,7 +3,7 @@
 > **Knowledge as a Service** — 为传统制造业提供 AI 岗位能力托管。
 >
 > 平台以「工作站 (Workstation)」为最小交付单元，各工位可独立运行、也可上下游数据连通。
-> 首个工位 **商情雷达** 已上线（贸易情报采集 → 货运记录 → 竞争分析）。
+> 多个工位已上线：商情雷达（贸易情报 → 货运记录 → 竞争分析）、客户/询盘、报价、订单、出运、外贸票据，以及 AI 层 + 开发工位/线索池 + 触达工位增长链。
 
 ---
 
@@ -52,7 +52,8 @@ kaas-platform/
 ├── backend/
 │   ├── worker/                        # ★ 生产: 单 Cloudflare Worker "kaas" (Python + FastAPI + 静态资产)
 │   │   ├── wrangler.jsonc             #   前后端一体: /api/*→FastAPI, 其余→Next.js 静态导出+SPA回退
-│   │   ├── src/main.py                #   商情雷达 API + 事件采集 · 经 Hyperdrive 连 Neon PG
+│   │   ├── src/main.py                #   商情雷达/客户/询盘等核心 API · 经 Hyperdrive 连 Neon PG
+│   │   ├── src/chain.py               #   P1-P7 工位链 (AI层/线索池/触达) raw asyncpg 移植版
 │   │   └── python_modules/            #   vendored 依赖 (asyncpg, fastapi, ...)
 │   └── orchestrator/                  # FastAPI 核心编排服务 (本地开发/数据迁移)
 │       ├── app/
@@ -216,11 +217,18 @@ pnpm dev
 | 工位 | 状态 | 说明 |
 |---|---|---|
 | **商情雷达 (Intel Radar)** | ✅ 已上线 | Cloudflare Workers 部署，数据链起点。见 `DEPLOY.md` |
-| **报价工位 (Quotation)** | 🅿️ Schema 口子已建 | `quote_orders`/`quote_order_items` + 商情雷达信号关联。业务逻辑待开发 |
-| **订单工位 (Orders)** | 🅿️ Schema 口子已建 | `orders`/`order_items` + 报价单/货运关联。业务逻辑待开发 |
-| **外贸票据工位 (Trade Docs)** | 🅿️ Schema 口子已建 | `trade_docs`/`trade_doc_items` + 订单关联。业务逻辑待开发 |
+| **客户/询盘 (Customers/Inquiries)** | ✅ 已上线 | 客户 stage 状态机 + 询盘全生命周期，批量关闭循环 |
+| **报价工位 (Quotation)** | ✅ 已上线 | 报价单 CRUD + 状态机 + 汇率锁定快照 |
+| **订单工位 (Orders)** | ✅ 已上线 | 报价转化 + 订单状态机 + 应收/付款计划 + 汇兑损益 |
+| **外贸票据工位 (Trade Docs)** | ✅ 已上线 | 从订单/报价/询盘生成单证，raw_payload 冻结快照 + refs 溯源 |
+| **出运台账 (Shipments)** | ✅ 已上线 | 自有出运记录，producing→shipped 联动 + order 关联 |
+| **AI 层 (BYOK)** | ✅ 已上线 | 5 任务模板/Provider 绑定/用量审计，每次调用落 usage |
+| **开发工位+线索池 (Leadgen)** | ✅ 已上线 | demo/CSV 抓取 + AI 评分 + 幂等线索池（跨工位状态隔离） |
+| **触达工位 (Outreach)** | ✅ 已上线 | 邮箱/campaign/发送（原子抢占）/重发，inbound webhook 501 预留 |
 
-迁移：`20260919_workstation_links` 已为三个工位建表（仅建表，业务逻辑后续填充）。
+迁移：`20260919_workstation_links` 建三工位表；`20260921_business_foundation`（汇率/单号/出运/付款/应收）、`20260921_ai_layer` + `20260921_leadgen_outreach`（AI 层 + 线索池 + 触达）已应用生产库。
+
+> **生产部署口径**：以上工位 API 全部经由单 Worker `kaas`（`backend/worker`，Python FastAPI + 原生 asyncpg）部署在 Cloudflare Workers，前端静态导出由同一 Worker 资产服务。编排器（`backend/orchestrator`，SQLAlchemy）为本地开发/参考实现，生产以 Worker 版为准（`backend/worker/src/chain.py` 为工位链移植实现）。
 
 ## 协作规范
 
