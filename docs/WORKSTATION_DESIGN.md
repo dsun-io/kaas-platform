@@ -681,6 +681,16 @@ crawl_status ← success | failed | no_website
 12. **人工判定优先**：商业判断字段（如 `can_supply`）由用户填写，三态存储
     （`TRUE`/`FALSE`/`NULL`），不设默认值，禁止 AI 推断
 13. **改名不迁移**：展示层命名变更不改表名/URL/API 前缀，避免破坏性迁移
+14. **绑定只在请求期读**：Worker 的 vars/secrets 在 import 期读一定是空值
+    （`os.environ` 不可靠），必须走 `request.scope["env"]` / `_binding()`；
+    **secret 一律不得保留公开默认值**（缺失则 503，宁可不服务）
+15. **路由显式声明**：`/api/*` 与 `/health` 必须在 assets 的 `run_worker_first` 中声明，
+    禁止依赖“资产未命中才落到 Worker”的隐式行为（否则健康检查会被 SPA 回退伪装成 200）
+16. **默认闭合的鉴权**：新增端点必须带 `Depends(_get_current_user)`；
+    公开端点仅限 `login` / `health`（`bootstrap-admin` 用一次性 token）；
+    **actor/tenant 一律取自 token，绝不信任请求体**
+17. **埋点不阻断业务**：事件上报失败必须静默吸收（不重试风暴），
+    但写入权限受鉴权约束（未登录不上报）
 
 ---
 

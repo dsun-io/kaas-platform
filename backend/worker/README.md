@@ -4,8 +4,15 @@ KaaS 平台**生产后端**：单 Cloudflare Worker `kaas`（Python FastAPI + �
 通过 **Hyperdrive** 连接 Neon PostgreSQL。
 
 - `/api/*` → FastAPI（本目录 `src/`，原生 asyncpg 手写 SQL）
-- 其余 → ASSETS（Next.js 静态导出，`../../frontend/out`，SPA 回退）
-- 自定义域名：`kaas.powervoy.com`（前端+API 同源）与 `api.kaas.powervoy.com`（仅 API）
+- `/health` → FastAPI（**必须在 assets 的 `run_worker_first` 里显式声明**，否则会被 SPA 回退吃掉）
+- 其余 → ASSETS（Next.js 静态导出，`../../frontend/out`，SPA 回退，**不执行 Python 代码**）
+- 自定义域名：`kaas.powervoy.com`（前端+API）与 `api.kaas.powervoy.com`（仅 API）
+
+> ⚠️ **铁律：Worker 绑定值（vars/secrets）只能在请求期读。**
+> import 期 `os.environ.get("JWT_SECRET")` **一定是空值**（2026-09-22 生产实证）。
+> 一律用 `request.scope["env"]`；无 `request` 参数的深层函数用 `main.py` 的
+> `_binding(key)`（它读中间件 `bind_worker_env` 写入的 ContextVar）。
+> **禁止给 secret 保留公开默认值**（曾导致任何人都能伪造管理员 token）。
 
 ## 技术栈
 
@@ -57,6 +64,8 @@ workers.dev 默认关闭；旧名 `kaas-intel-api` 已合并为单 Worker，见 
 ## 源码结构
 
 - `src/main.py` — 核心 API：认证、进出口情报 (intel)、客户/询盘、报价、订单、出运、单证、订阅等
+- `src/dbjson.py` — **唯一的** JSONB 列映射与 `row_to_dict(row, table)`（
+  main.py / chain.py 共用；新增表必须在此登记 JSONB 列，否则前端会拿到字符串）
 - `src/chain.py` — 工位链（raw asyncpg 移植，由 `main.py` 末尾 `import chain` 挂载）：
   AI 层（任务/Provider/绑定/用量）、地图源客户信息获取（leadgen runs/leads/官网爬取）、
   市场调研（research products/runs/from-leadgen/stats）、客户触达（mailboxes/campaigns/messages/webhook 预留）
@@ -78,7 +87,11 @@ workers.dev 默认关闭；旧名 `kaas-intel-api` 已合并为单 Worker，见 
 | GET | `/api/v1/intel/trade-stats` | 贸易统计 |
 | GET | `/api/v1/intel/adapter-runs` | 采集任务运行记录 |
 | GET | `/api/v1/intel/channels` | 数据源渠道（免费/付费） |
-| GET | `/health` | 健康检查 |
+| POST | `/api/v1/events` | 前端事件采集上报（**必需 Bearer**，actor/tenant 取自 token） |
+| GET | `/health` | 健康检查（公开） |
+
+> 鉴权约定：**除 `login` / `health` 之外，所有 `/api/*` 均需 Bearer token**
+> （`bootstrap-admin` 用一次性 setup token）。“匿名返回 401”是路由健康的关键标志。
 
 ### 工位链（chain.py）
 

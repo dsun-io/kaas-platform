@@ -66,6 +66,7 @@ Python Worker（Pyodide）冷启动开销较大（`pywrangler deploy` 会报告
 | 主域名 5xx 但静态页面（`/research`）仍 200 | 静态资产由边缘直接服务、**不经过 Python Worker**；说明坏的是 Worker isolate，不是站点 |
 | 用浏览器 fetch 测 `api.kaas.powervoy.com/health` 得到 `ERR` | `/health` 不带 CORS 头，跨域读取会被浏览器拦截；**不是宕机**。判断 api 域名健康度请用 `/api/v1/*`（有 ACAO） |
 | 线索池里出现 `E2E_*` 测试行 | 中断的 E2E 无法自清理：线索池**没有 DELETE 端点**，需直接改库（见 §0.4） |
+| 改了 secret 却“不生效” | Worker 绑定值**只能在请求期读**，import 期读一定是空（见 §0.5） |
 
 ### 0.4 测试数据清理（无端点，需改库）
 
@@ -81,6 +82,36 @@ uv run python ..\..\.tools\cleanup_orphan_lead.py   # 删 E2E_PROD_CHECK% / E2EL
   `invalid connection option "ssl"`）。
 - `research_runs` 是审计流水，**刻意保留**（记录何时挑选了哪些线索）。
 - 写路径 E2E 必须用 `try/finally` 保证清理；否则一旦中途 5xx，数据会残留在生产库。
+
+### 0.5 Worker 环境变量：只能在请求期读（重要，曾导致生产鉴权漏洞）
+
+> **2026-09-22 生产实证：import 期用 `os.environ` 读绑定值为空。**
+
+后果（修复前）：
+
+| 表现 | 后果 |
+|------|------|
+| `JWT_SECRET` 回退到**公开默认串** `kaas-dev-jwt-secret-change-in-prod` | **任何人可伪造管理员 token**（严重） |
+| `ADMIN_SETUP_TOKEN` 失效 | `bootstrap-admin` 恒返回 503 |
+| `HYPERDRIVE` 正常 | 因为它走的是 `request.scope["env"]`（请求期） |
+
+正确做法：
+
+- 一律在**请求期**取值：`request.scope["env"]`；`main.py` 的 `_binding()` 已封装
+  （优先级：显式 `request` → 中间件写入的 ContextVar → `os.environ` 兜底），
+  中间件 `bind_worker_env` 对每个请求写入 ContextVar，供无 `request` 参数的深层函数使用。
+- **禁止保留任何公开默认值**：缺失时直接 503（`JWT_SECRET` / `ADMIN_SETUP_TOKEN`）。
+- 修复后**所有旧 token 失效**（它们是用默认串签发的）—— 用户需重新登录一次，属预期。
+
+验证绑定是否可读（不泄露 secret）：
+
+```bash
+# 403 = 绑定读到了；503 = 读不到
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+  https://api.kaas.powervoy.com/api/v1/auth/bootstrap-admin \
+  -H "Authorization: Bearer wrong" -H "Content-Type: application/json" \
+  -d '{"email":"a@b.co","password":"xxxxxxxx"}'
+```
 
 ## 1. 部署（单 Worker，前后端一体）
 
@@ -106,6 +137,11 @@ uv run pywrangler deploy
 
 Worker 运行时：`compatibility_flags = ["python_workers"]`（open beta），
 数据库访问为**每请求 asyncpg 连接 + Hyperdrive 聚合**（连接池模式在 Workers 中不可用）。
+
+路由（`wrangler.jsonc`）：`/api/*` 与 `/health` 在 assets 的 `run_worker_first` 中**显式声明**，
+不再依赖“资产未命中才落到 Worker”的隐式行为（历史上它把 `/health` 让给了 SPA 回退，
+导致冒烟测试形同虚设）。其余路径由边缘直接返回静态资产、**不执行 Python 代码**——
+这也是“静态页面 200 但 Worker 路由 5xx”现象的成因。
 
 数据库迁移（Neon schema 变更，本地 venv 执行，需 DATABASE_URL 指向 Neon）：
 
@@ -154,9 +190,24 @@ npm run build          # 输出到 out/
 - [ ] `https://api.kaas.powervoy.com/health` 返回 200 **且 body 为**
       `{"status":"ok","service":"kaas-intel-worker"}`（不是 HTML！）
 - [ ] 匿名访问 `/api/v1/leads`、`/api/v1/research/categories`、`/api/v1/research/stats`、
-      `/api/v1/ai/tasks` 均返回 **401**（401 = 路由存在且已鉴权；200 = 鉴权漏洞）
+      `/api/v1/ai/tasks`、`/api/v1/events` 均返回 **401**（401 = 路由存在且已鉴权；200 = 鉴权漏洞）
+- [ ] 登录仍可用（验证 `JWT_SECRET` 请求期可读；若登录 503 就是绑定没读到，见 §0.5）
 - [ ] `https://kaas.powervoy.com/login` 可登录
 - [ ] 登录后侧边栏「情报体系 → 进出口情报 / 市场调研 / 地图源客户信息获取」三项可见（内部管理员账号）
 - [ ] 货运记录页能看到导入/采集的数据
 - [ ] `/research` 页面可加载（列表/统计/挑选/运行记录三个标签）
 - [ ] `POST /api/v1/intel/import/csv` 上传 CSV 成功
+
+## 4. CI 自动部署
+
+`.github/workflows/deploy.yml`：push 到 `feature/intel-workstation-v1` →
+TypeScript 构建前端 → `pywrangler deploy` → 生产冒烟测试（`concurrency: deploy-production` 串行）。
+
+**路径过滤（2026-09-22 加）**：`**.md` / `docs/**` / `.tools/**` / `**/.tools/**` 的**纯文档提交
+不触发部署**——因为每次部署都会让全部 isolate 失效、重新经历一次冷启动窗口（§0.2），
+不适当地触发部署等于凭空制造一次生产风险窗口。
+
+需要强制部署（例如只改了文档但要同步 Worker）时：Actions 页面手动 `Run workflow`。
+
+其他工作流：`backend-test.yml`（orchestrator 单测 + DB 测试 + Worker 纯函数单测，
+已带 `paths: backend/**`）、`frontend-ci.yml`、`contracts-check.yml`。
