@@ -387,6 +387,18 @@ class LeadCandidate(Base):
     inquiry_status = Column(Text, nullable=False, server_default='none')
     leadgen_run_id = Column(BigInteger, nullable=True)
     raw = Column(JSONB, nullable=True)
+    # ── 产品信息（Google Places 拿不到，须爬官网；采集阶段只写 shop_type）──
+    shop_type = Column(Text, nullable=True)           # Google primary_type
+    product_image_url = Column(Text, nullable=True)   # 爬官网 OG:image
+    product_name = Column(Text, nullable=True)        # 当地叫法原文
+    product_name_cn = Column(Text, nullable=True)     # 中文对照（AI/用户）
+    spec_raw = Column(Text, nullable=True)            # 规格原文
+    spec_normalized = Column(JSONB, nullable=True)    # 结构化规格（AI）
+    link_url = Column(Text, nullable=True)            # 产品/店铺链接
+    can_supply = Column(Boolean, nullable=True)       # 能否提供（用户编辑）
+    supply_notes = Column(Text, nullable=True)        # 供货备注（用户编辑）
+    crawl_status = Column(Text, nullable=True, server_default='pending')
+    crawled_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     owner_id = Column(Text, nullable=True)
@@ -397,6 +409,7 @@ class LeadCandidate(Base):
         Index('idx_lead_candidates_outreach', 'tenant_id', 'outreach_status'),
         Index('idx_lead_candidates_inquiry', 'tenant_id', 'inquiry_status'),
         Index('idx_lead_candidates_score', 'tenant_id', 'fit_score'),
+        Index('idx_lead_candidates_crawl', 'tenant_id', 'crawl_status'),
     )
 
 
@@ -440,6 +453,85 @@ class IntelDemandIndex(Base):
 
     __table_args__ = (
         Index('idx_intel_demand_index_lookup', 'tenant_id', 'country', 'product_category', 'month'),
+    )
+
+
+# ── 市场调研工位（20260922_research_workstation）─────────────────────────────
+#
+# 情报体系 = 进出口情报（宏观）+ 市场调研（微观）+ 地图源客户信息获取（源头）
+# 市场调研定位 = 从「地图源」产出中挑选有价值的数据，再深入细化：
+#   - 挑选：source_ref 指向 lead_candidates.id
+#   - 细化：price_local / product_category / market_note / spec_normalized
+
+class ResearchProduct(Base):
+    """市场调研 · 产品（挑选 + 深化结果）"""
+    __tablename__ = 'research_products'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    source_ref = Column(BigInteger, nullable=True)   # lead_candidates.id
+    source = Column(Text, nullable=True)             # google_places/website_crawl/csv/manual
+    # 产品
+    product_name = Column(Text, nullable=True)
+    product_name_cn = Column(Text, nullable=True)
+    product_image_url = Column(Text, nullable=True)
+    spec_raw = Column(Text, nullable=True)
+    spec_normalized = Column(JSONB, nullable=True)
+    product_category = Column(Text, nullable=True)
+    # 市场位置
+    country = Column(Text, nullable=True)
+    region = Column(Text, nullable=True)
+    city = Column(Text, nullable=True)
+    # 店铺（冗余自地图源，便于本工位独立渲染）
+    shop_name = Column(Text, nullable=True)
+    shop_type = Column(Text, nullable=True)
+    address = Column(Text, nullable=True)
+    phone = Column(Text, nullable=True)
+    email = Column(Text, nullable=True)
+    website = Column(Text, nullable=True)
+    link_url = Column(Text, nullable=True)
+    # 深化字段
+    price_local = Column(Numeric(12, 2), nullable=True)
+    price_currency = Column(Text, nullable=True)
+    market_note = Column(Text, nullable=True)
+    can_supply = Column(Boolean, nullable=True)
+    supply_notes = Column(Text, nullable=True)
+    # 元数据
+    research_status = Column(Text, nullable=False, server_default='draft')
+    owner_id = Column(Text, nullable=True)
+    owner_scope = Column(Text, nullable=False, server_default='private')
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False,
+                        server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index('uq_research_products_source', 'tenant_id', 'source_ref', unique=True),
+        Index('idx_research_products_geo', 'tenant_id', 'country', 'city'),
+        Index('idx_research_products_category', 'tenant_id', 'product_category'),
+        Index('idx_research_products_supply', 'tenant_id', 'can_supply'),
+    )
+
+
+class ResearchRun(Base):
+    """市场调研运行记录（tenant+config_hash 唯一，重复执行幂等）"""
+    __tablename__ = 'research_runs'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    config = Column(JSONB, nullable=False)
+    config_hash = Column(Text, nullable=False)
+    status = Column(Text, nullable=False, server_default='running')
+    leads_scanned = Column(Integer, nullable=True)
+    products_found = Column(Integer, nullable=True)
+    products_kept = Column(Integer, nullable=True)
+    error = Column(Text, nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    created_by = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index('uq_research_runs_config', 'tenant_id', 'config_hash', unique=True),
     )
 
 

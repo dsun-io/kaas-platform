@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader, StatusBadge, SectionCard, EmptyState } from "@/components/shared";
 import { toast } from "sonner";
-import { Play, ShieldCheck, RefreshCw } from "lucide-react";
+import { Play, ShieldCheck, RefreshCw, Globe, ImageOff, CheckCircle2, XCircle } from "lucide-react";
 
 /* ── types ─────────────────────────────────────────────────────────────── */
 interface LeadgenRun {
@@ -45,6 +45,17 @@ interface Lead {
   demand_index: number | null;
   blank_index: number | null;
   created_at: string;
+  // 产品信息（Google Places 拿不到，来自爬官网 / CSV 导入）
+  shop_type: string | null;
+  product_name: string | null;
+  product_name_cn: string | null;
+  product_image_url: string | null;
+  spec_raw: string | null;
+  link_url: string | null;
+  can_supply: boolean | null;
+  supply_notes: string | null;
+  crawl_status: string | null;
+  crawled_at: string | null;
 }
 
 interface LeadDetail extends Lead {
@@ -67,6 +78,16 @@ function scoreTone(score: number | null): import("@/components/shared").StatusTo
   return "default";
 }
 
+const CRAWL_TONES: Record<string, import("@/components/shared").StatusTone> = {
+  pending: "default", success: "success", failed: "danger", no_website: "default",
+};
+
+function supplyCell(v: boolean | null) {
+  if (v === true) return <StatusBadge tone="success">Yes</StatusBadge>;
+  if (v === false) return <StatusBadge tone="danger">No</StatusBadge>;
+  return <span className="text-xs text-muted-foreground">—</span>;
+}
+
 /* ── page ──────────────────────────────────────────────────────────────── */
 export default function LeadgenPage() {
   usePageView({ resource_id: "/leadgen" });
@@ -80,6 +101,7 @@ export default function LeadgenPage() {
   const [inquiryFilter, setInquiryFilter] = useState("");
   const [sort, setSort] = useState("score");
   const [detail, setDetail] = useState<LeadDetail | null>(null);
+  const [crawling, setCrawling] = useState<number | null>(null);
 
   const { data: regionsData } = useQuery({
     queryKey: ["leadgen-regions"],
@@ -152,6 +174,58 @@ export default function LeadgenPage() {
     setDetail(data);
   };
 
+  /* ── 爬官网（产品信息唯一来源；Google Places 看不到产品）───────────── */
+  const crawlOne = async (id: number) => {
+    setCrawling(id);
+    try {
+      const { data } = await apiClient.post<{
+        result: { status: string; error: string | null };
+        lead: LeadDetail;
+      }>(`/leads/${id}/crawl`);
+      const st = data.result.status;
+      if (st === "success") toast.success("Crawled: product info extracted");
+      else if (st === "no_website") toast.info("No website on this lead");
+      else toast.error(`Crawl failed: ${data.result.error ?? "unknown"}`);
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      if (detail?.id === id) setDetail(data.lead);
+    } catch {
+      toast.error("Crawl request failed");
+    } finally {
+      setCrawling(null);
+    }
+  };
+
+  const crawlPending = async () => {
+    setCrawling(-1);
+    try {
+      const { data } = await apiClient.post<{
+        crawled: number;
+        success: number;
+        failed: number;
+        no_website: number;
+      }>("/leads/crawl-batch", { only_pending: true, limit: 10 });
+      toast.success(
+        `Crawled ${data.crawled}: ${data.success} ok, ${data.failed} failed, ${data.no_website} no website`,
+      );
+      qc.invalidateQueries({ queryKey: ["leads"] });
+    } catch {
+      toast.error("Batch crawl failed");
+    } finally {
+      setCrawling(null);
+    }
+  };
+
+  /* ── 能否提供：由用户判定，不由 AI 推断 ── */
+  const setSupply = async (id: number, value: boolean | null) => {
+    try {
+      await apiClient.patch(`/leads/${id}`, { can_supply: value });
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      if (detail?.id === id) setDetail({ ...detail, can_supply: value });
+    } catch {
+      toast.error("Update failed");
+    }
+  };
+
   const setNum = (v: string) => setCfg({ ...cfg, quantity: Math.max(1, parseInt(v || "1", 10)) });
 
   return (
@@ -186,6 +260,9 @@ export default function LeadgenPage() {
             </Button>
             <Button variant="outline" size="sm" onClick={scanReplied}>
               <RefreshCw className="mr-1 h-4 w-4" /> Scan replied → inquiries
+            </Button>
+            <Button variant="outline" size="sm" onClick={crawlPending} disabled={crawling !== null}>
+              <Globe className="mr-1 h-4 w-4" /> {crawling === -1 ? "Crawling…" : "Crawl websites (10)"}
             </Button>
             {validation && (
               <div className="flex items-center gap-2 text-sm">
@@ -250,12 +327,16 @@ export default function LeadgenPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">
+                    <th className="p-2">Image</th>
                     <th className="p-2">Company</th>
                     <th className="p-2">Location</th>
+                    <th className="p-2">Shop type</th>
+                    <th className="p-2">Product (local / CN)</th>
+                    <th className="p-2">Spec</th>
+                    <th className="p-2">Crawl</th>
+                    <th className="p-2">Supply</th>
                     <th className="p-2">Score</th>
                     <th className="p-2">Outreach</th>
-                    <th className="p-2">Inquiry</th>
-                    <th className="p-2">Demand (P6)</th>
                     <th className="p-2" />
                   </tr>
                 </thead>
@@ -263,14 +344,52 @@ export default function LeadgenPage() {
                   {leads.map((l) => (
                     <tr key={l.id} className="border-b hover:bg-muted/40">
                       <td className="p-2">
+                        {l.product_image_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={l.product_image_url}
+                            alt={l.product_name ?? "product"}
+                            className="h-10 w-10 rounded object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="flex h-10 w-10 items-center justify-center rounded bg-secondary">
+                            <ImageOff className="h-3.5 w-3.5 text-muted-foreground" />
+                          </div>
+                        )}
+                      </td>
+                      <td className="p-2">
                         <div className="font-medium">{l.company_name}</div>
                         <div className="text-xs text-muted-foreground">{l.email ?? "—"}</div>
                       </td>
                       <td className="p-2 text-xs">{[l.city, l.region, l.country].filter(Boolean).join(", ") || "—"}</td>
+                      <td className="p-2 text-xs">{l.shop_type ?? l.industry ?? "—"}</td>
+                      <td className="p-2 text-xs">
+                        <div>{l.product_name ?? "—"}</div>
+                        <div className="text-muted-foreground">{l.product_name_cn ?? ""}</div>
+                      </td>
+                      <td className="p-2 max-w-[180px] truncate text-xs text-muted-foreground">{l.spec_raw ?? "—"}</td>
+                      <td className="p-2">
+                        <div className="flex items-center gap-1">
+                          <StatusBadge tone={CRAWL_TONES[l.crawl_status ?? "pending"] ?? "default"}>
+                            {l.crawl_status ?? "pending"}
+                          </StatusBadge>
+                          {(l.crawl_status === "pending" || l.crawl_status === "failed") && l.website && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Crawl website for product info"
+                              disabled={crawling !== null}
+                              onClick={() => crawlOne(l.id)}
+                            >
+                              <Globe className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-2">{supplyCell(l.can_supply)}</td>
                       <td className="p-2"><StatusBadge tone={scoreTone(l.fit_score)}>{l.fit_score ?? "—"}</StatusBadge></td>
                       <td className="p-2"><StatusBadge tone={OUTREACH_TONES[l.outreach_status] ?? "default"}>{l.outreach_status}</StatusBadge></td>
-                      <td className="p-2"><StatusBadge tone={INQUIRY_TONES[l.inquiry_status] ?? "default"}>{l.inquiry_status}</StatusBadge></td>
-                      <td className="p-2 text-xs text-muted-foreground">{l.demand_index ?? "—"}</td>
                       <td className="p-2"><Button variant="ghost" size="sm" onClick={() => openDetail(l.id)}>Detail</Button></td>
                     </tr>
                   ))}
@@ -289,10 +408,56 @@ export default function LeadgenPage() {
               <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm md:grid-cols-3">
                 <div><span className="text-muted-foreground">Website:</span> {detail.website ? <a className="text-blue-600 underline" href={detail.website} target="_blank" rel="noreferrer">{detail.website}</a> : "—"}</div>
                 <div><span className="text-muted-foreground">Phone:</span> {detail.phone ?? "—"}</div>
-                <div><span className="text-muted-foreground">Industry:</span> {detail.industry ?? "—"}</div>
+                <div><span className="text-muted-foreground">Shop type:</span> {detail.shop_type ?? detail.industry ?? "—"}</div>
                 <div><span className="text-muted-foreground">Google:</span> {detail.google_rating ?? "—"} ({detail.google_reviews ?? 0} reviews)</div>
                 <div><span className="text-muted-foreground">Fit reasons:</span> {(detail.fit_reasons ?? []).join(", ") || "—"}</div>
                 <div><span className="text-muted-foreground">Place ID:</span> {detail.place_id ?? "—"}</div>
+              </div>
+
+              {/* 产品信息（爬官网）：Google Places 拿不到产品 */}
+              <div className="mt-4 rounded-md border p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <h4 className="text-sm font-semibold">Product info (from website crawl)</h4>
+                  <div className="flex items-center gap-2">
+                    <StatusBadge tone={CRAWL_TONES[detail.crawl_status ?? "pending"] ?? "default"}>
+                      {detail.crawl_status ?? "pending"}
+                    </StatusBadge>
+                    <Button variant="outline" size="sm" disabled={crawling !== null} onClick={() => crawlOne(detail.id)}>
+                      <Globe className="mr-1 h-4 w-4" /> Crawl
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                  <div>
+                    {detail.product_image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={detail.product_image_url} alt={detail.product_name ?? "product"} className="h-28 w-28 rounded object-cover" />
+                    ) : (
+                      <div className="flex h-28 w-28 items-center justify-center rounded bg-secondary">
+                        <ImageOff className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="md:col-span-3 space-y-1 text-sm">
+                    <div><span className="text-muted-foreground">Name (local):</span> {detail.product_name ?? "—"}</div>
+                    <div><span className="text-muted-foreground">Name (CN):</span> {detail.product_name_cn ?? "—"}</div>
+                    <div><span className="text-muted-foreground">Spec:</span> {detail.spec_raw ?? "—"}</div>
+                    <div>
+                      <span className="text-muted-foreground">Link:</span>{" "}
+                      {detail.link_url ? <a className="text-blue-600 underline" href={detail.link_url} target="_blank" rel="noreferrer">open</a> : "—"}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">Can supply (you decide):</span>
+                      <Button variant={detail.can_supply === true ? "default" : "outline"} size="sm" onClick={() => setSupply(detail.id, true)}>
+                        <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Yes
+                      </Button>
+                      <Button variant={detail.can_supply === false ? "default" : "outline"} size="sm" onClick={() => setSupply(detail.id, false)}>
+                        <XCircle className="mr-1 h-3.5 w-3.5" /> No
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setSupply(detail.id, null)}>Clear</Button>
+                    </div>
+                  </div>
+                </div>
               </div>
               {detail.opening_line && (
                 <div className="mt-3 rounded bg-muted p-2 text-sm italic">“{detail.opening_line}”</div>
