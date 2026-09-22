@@ -16,6 +16,10 @@ import { handleApiError } from "@/lib/api/error-handler";
 import type { QuoteV2Request, QuoteV2Response } from "@contracts/quote";
 import { Button } from "@/components/ui/button";
 import { RotateCcw } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { PricingDataManager } from "../../pricing-data/pricing-data-manager";
+
+type QuoteTab = "assistant" | "pricing-data";
 
 export default function V2QuotePage() {
   usePageView({ resource_id: "/quotations/v2-quote" });
@@ -23,6 +27,7 @@ export default function V2QuotePage() {
   const quoteMutation = useQuoteV2();
   const [result, setResult] = useState<QuoteV2Response | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<QuoteTab>("assistant");
   const formRef = useRef<QuoteFormHandle>(null);
 
   const handleSubmit = async (input: QuoteV2Request) => {
@@ -53,6 +58,31 @@ export default function V2QuotePage() {
         </p>
       </div>
 
+      <div className="flex gap-2 border-b">
+        {(
+          [
+            { key: "assistant", label: "报价助手" },
+            { key: "pricing-data", label: "报价数据" },
+          ] as { key: QuoteTab; label: string }[]
+        ).map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={cn(
+              "px-4 pb-2 text-sm border-b-2 -mb-px transition-colors",
+              tab === t.key
+                ? "border-primary font-medium text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "pricing-data" && <PricingDataManager />}
+
+      {tab === "assistant" && (
       <div className="grid gap-6 lg:grid-cols-5">
         <div className="lg:col-span-2">
           <Card>
@@ -95,6 +125,7 @@ export default function V2QuotePage() {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }

@@ -66,15 +66,19 @@ jobs:
           name: frontend-out
           path: frontend/out
 
-      - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v3
+      # Python Workers 需要 pywrangler 打包 WASM 依赖（pylock.toml → python_modules/）
+      # npx wrangler deploy 不会自动做这一步，会报 ModuleNotFoundError: No module named 'asyncpg'
+      - name: Setup Python + uv
+        uses: astral-sh/setup-uv@v5
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: "4.136.1"
-          workingDirectory: backend/worker
-          # secrets 已在线上 Worker，deploy 不会清除；仅部署代码+资产
-          command: deploy
+          python-version: "3.14"
+
+      - name: Deploy to Cloudflare Workers
+        working-directory: backend/worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: uv run pywrangler deploy
 
       - name: Smoke test (production)
         run: |
