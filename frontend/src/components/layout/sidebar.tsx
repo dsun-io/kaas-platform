@@ -123,7 +123,7 @@ function SidebarNav({ collapsed }: { collapsed: boolean }) {
                 return (
                   <Link
                     key={item.href}
-                    href={item.href as any}
+                    href={item.href}
                     prefetch={true}
                     className={cn(
                       "nav-item no-underline",
