@@ -1,0 +1,85 @@
+name: deploy
+
+# push 到开发主分支即自动构建前端并部署单 Worker "kaas"（含静态资产）。
+# 生产 secrets（JWT_SECRET / ADMIN_SETUP_TOKEN / RESEND_API_KEY）已绑定在
+# Worker 上，wrangler deploy 不会清除，无需在 CI 中重设。
+on:
+  push:
+    branches:
+      - feature/intel-workstation-v1
+  workflow_dispatch:
+
+# 串行部署，避免并发 push 把旧版本覆盖到新版本之后
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  build-frontend:
+    name: Build frontend (static export)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            shared/package-lock.json
+
+      # shared/ 是独立 npm 包（zod 契约），前端构建引用 ../shared/contracts，
+      # 必须先装，否则 "Can't resolve 'zod'"
+      - name: Install shared deps
+        working-directory: ./shared
+        run: npm ci --no-audit --no-fund
+
+      # next 14 与 @cloudflare/next-on-pages 存在 peer 冲突，沿用本地构建口径
+      - name: Install frontend deps
+        working-directory: ./frontend
+        run: npm ci --no-audit --no-fund --legacy-peer-deps
+
+      - name: Build (NEXT_EXPORT=1 → out/)
+        working-directory: ./frontend
+        run: npm run build
+        env:
+          NEXT_EXPORT: "1"
+
+      - name: Upload out/ artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-out
+          path: frontend/out
+          retention-days: 7
+
+  deploy-worker:
+    name: Deploy Worker kaas (api + assets)
+    needs: build-frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frontend build
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-out
+          path: frontend/out
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.136.1"
+          workingDirectory: backend/worker
+          # secrets 已在线上 Worker，deploy 不会清除；仅部署代码+资产
+          command: deploy
+
+      - name: Smoke test (production)
+        run: |
+          set -e
+          curl -fsS -o /dev/null -w "health: %{http_code}\n" https://api.kaas.powervoy.com/health
+          for p in /leadgen /outreach /settings/ai-providers; do
+            curl -fsS -o /dev/null -w "$p: %{http_code}\n" "https://kaas.powervoy.com$p"
+          done
