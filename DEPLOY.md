@@ -8,6 +8,7 @@
               ├─ api.kaas.powervoy.com  → 仅 API（历史域名，保留兼容）
               │
               │  /api/*  → FastAPI（asgi）
+              │  /health → FastAPI（健康检查）
               │  其余     → [assets] Next.js 静态导出 + SPA 回退
               │
               ▼  Hyperdrive (连接池/聚合)
@@ -17,6 +18,42 @@
 > **2026-09-19 合并**：原 `kaas-intel-api`（后端 API）+ `kaas-platform`（前端静态资产）
 > 已合并为单 Worker `kaas`。工位独立是系统设计层面（表前缀 / API 命名空间 / 路由隔离），
 > 与 Worker 数量无关——所有工位（含未来报价/订单/票据/市场/询盘）都跑在这一个 Worker 里。
+>
+> **2026-09-22 修正**：`/health` 原先由静态资产层接管，被 SPA 回退成 index.html
+> （状态码 200 但内容不是健康检查结果），导致冒烟测试形同虚设。
+> 现已在 Worker 入口显式把 `/health` 交给 FastAPI。
+
+## 0. 运维速查（事故时先看这里）
+
+### 0.1 一键回滚 / 前滚到指定版本（秒级，无需重新构建）
+
+```bash
+cd backend/worker
+npx wrangler deployments list --name kaas      # 看版本历史（含时间与版本 ID）
+npx wrangler versions deploy <version-id>@100% --name kaas --yes
+```
+
+生产事故（例如发布后大面积 5xx）时，这是**最快的恢复手段**。
+
+### 0.2 已知特性：发布后有数分钟的错误窗口
+
+Python Worker（Pyodide）冷启动开销较大（`pywrangler deploy` 会报告
+`Worker Startup Time`，曾观测到 ~2.8s）。新版本发布后，新 isolate 启动期间
+**部分请求会返回 5xx**（实测约 1/5），几分钟后自行恢复。
+
+应对：
+- CI 冒烟测试**带重试**等待 Worker 就绪（见 §3），不会误报失败
+- 前端 axios 对**幂等请求**（GET/HEAD/OPTIONS）自动指数退避重试 3 次
+- 降低启动开销的手段：裁剪 `pyproject.toml` 中运行时未使用的依赖
+  （2026-09-22 移除 `httpx` / `pydantic-settings`，包体 586→508 模块）
+
+### 0.3 常见误判
+
+| 现象 | 真相 |
+|------|------|
+| `curl /health` 返回 200 但内容是 HTML | 说明请求被静态资产 SPA 回退接管（不是 Worker 响应）；2026-09-22 后 `/health` 应返回 JSON |
+| 冒烟测试通过 ≠ Worker 健康 | 旧版冒烟只查状态码；现版会断言 `/health` 内容与 `/api/*` 的 401 |
+| `api.kaas.powervoy.com` 正常但主域名 5xx | 多为发布窗口的间歇性失败，重试即可；必要时用 §0.1 回滚 |
 
 ## 1. 部署（单 Worker，前后端一体）
 
@@ -50,9 +87,8 @@ cd backend/orchestrator
 alembic upgrade head
 ```
 
-当前迁移头：`20260919_workstation_links` —— 为报价 / 订单 / 外贸票据工位
-建立数据库口子（`quote_*` / `orders_*` / `trade_doc_*` 主表 + 跨工位 `*_refs`
-关联表）。仅建表，业务逻辑后续按 `docs/WORKSTATION_DESIGN.md` 填充。
+当前迁移头：`20260922_research_workstation` —— 市场调研工位（`research_products` /
+`research_runs`）+ 地图源工位产品字段（`lead_candidates` 补 11 列）。
 
 初始化管理员（一次性，对线上 Worker 执行；当前线上已初始化，会返回 403）：
 
