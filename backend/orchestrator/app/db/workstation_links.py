@@ -5,7 +5,7 @@
 # 当前阶段仅建表（Phase 2），业务逻辑在后续工位开发时填充。
 # ─────────────────────────────────────────────────────────────────────────────
 from sqlalchemy import (
-    Column, BigInteger, Integer, Text, Numeric, DateTime, Date, Index, func,
+    Column, BigInteger, Integer, Text, Numeric, DateTime, Index, func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from app.db.base import Base
@@ -25,13 +25,9 @@ class QuoteOrder(Base):
     total_amount = Column(Numeric, nullable=True)
     valid_until = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
-    fx_rate = Column(Numeric(20, 8), nullable=True)       # §10.2 报价时锁定的汇率快照
-    fx_rate_date = Column(Date, nullable=True)
     created_by = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
-    owner_id = Column(Text, nullable=True)
-    owner_scope = Column(Text, nullable=False, server_default="private")
 
     __table_args__ = (
         Index("idx_quote_orders_tenant", "tenant_id", "status"),
@@ -97,13 +93,9 @@ class Order(Base):
     order_date = Column(DateTime(timezone=True), nullable=True)
     delivery_date = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
-    fx_rate = Column(Numeric(20, 8), nullable=True)       # §10.2 订单确认时锁定的汇率快照
-    fx_rate_date = Column(Date, nullable=True)
     created_by = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
-    owner_id = Column(Text, nullable=True)
-    owner_scope = Column(Text, nullable=False, server_default="private")
 
     __table_args__ = (
         Index("idx_orders_tenant", "tenant_id", "status"),

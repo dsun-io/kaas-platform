@@ -93,12 +93,6 @@ from app.api.intel import router as intel_router
 from app.api.ai import router as ai_router
 from app.api.leadgen import router as leadgen_router
 from app.api.outreach import router as outreach_router
-from app.api.enums import router as enums_router
-from app.api.customers import router as customers_router
-from app.api.quotes import router as quotes_router
-from app.api.orders import router as orders_router
-from app.api.shipments import router as shipments_router
-from app.api.trade_docs import router as trade_docs_router
 
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -123,9 +117,3 @@ app.include_router(intel_router)
 app.include_router(ai_router)
 app.include_router(leadgen_router)
 app.include_router(outreach_router)
-app.include_router(enums_router)
-app.include_router(customers_router)
-app.include_router(quotes_router)
-app.include_router(orders_router)
-app.include_router(shipments_router)
-app.include_router(trade_docs_router)
