@@ -6,7 +6,8 @@
 """
 import os
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db_session
@@ -35,7 +36,8 @@ async def health_readiness(db: AsyncSession = Depends(get_db_session)):
 
     all_ok = all(v == "ok" for v in checks.values())
     if not all_ok:
-        raise HTTPException(status_code=503, detail={"status": "degraded", "checks": checks})
+        # DB 宕机必须返回标准「不健康」响应体（status 在最外层，供监控直接读取）
+        return JSONResponse(status_code=503, content={"status": "degraded", "checks": checks})
     return {"status": "ready", "checks": checks}
 
 
@@ -91,5 +93,5 @@ async def health_deep(db: AsyncSession = Depends(get_db_session)):
     all_ok = all(_is_ok(v) for v in checks.values())
     logger.info("health.deep_check", checks=checks, all_ok=all_ok)
     if not all_ok:
-        raise HTTPException(status_code=503, detail={"status": "degraded", "checks": checks})
+        return JSONResponse(status_code=503, content={"status": "degraded", "checks": checks})
     return {"status": "healthy", "checks": checks}
