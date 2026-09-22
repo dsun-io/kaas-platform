@@ -47,6 +47,15 @@ Python Worker（Pyodide）冷启动开销较大（`pywrangler deploy` 会报告
 - 降低启动开销的手段：裁剪 `pyproject.toml` 中运行时未使用的依赖
   （2026-09-22 移除 `httpx` / `pydantic-settings`，包体 586→508 模块）
 
+> ⚠️ **回滚也会重置冷启动窗口**（2026-09-22 实测踩坑）：
+> `wrangler versions deploy` 无论前滚还是回滚，都会让全部 isolate 失效，
+> 重新经历数分钟的冷启动窗口。**连续反复回滚会把短故障拖成长故障。**
+>
+> 判定规则：
+> 1. 错误**间歇性**、且 5 分钟内自愈 → **不要操作**，等待即可。
+> 2. 仅当 **100% 请求持续失败 > 5 分钟** 时才考虑 §0.1 回滚。
+> 3. 回滚后若仍有间歇性 5xx，属于预期，不要再次回滚（会再次重置窗口）。
+
 ### 0.3 常见误判
 
 | 现象 | 真相 |
@@ -54,6 +63,24 @@ Python Worker（Pyodide）冷启动开销较大（`pywrangler deploy` 会报告
 | `curl /health` 返回 200 但内容是 HTML | 说明请求被静态资产 SPA 回退接管（不是 Worker 响应）；2026-09-22 后 `/health` 应返回 JSON |
 | 冒烟测试通过 ≠ Worker 健康 | 旧版冒烟只查状态码；现版会断言 `/health` 内容与 `/api/*` 的 401 |
 | `api.kaas.powervoy.com` 正常但主域名 5xx | 多为发布窗口的间歇性失败，重试即可；必要时用 §0.1 回滚 |
+| 主域名 5xx 但静态页面（`/research`）仍 200 | 静态资产由边缘直接服务、**不经过 Python Worker**；说明坏的是 Worker isolate，不是站点 |
+| 用浏览器 fetch 测 `api.kaas.powervoy.com/health` 得到 `ERR` | `/health` 不带 CORS 头，跨域读取会被浏览器拦截；**不是宕机**。判断 api 域名健康度请用 `/api/v1/*`（有 ACAO） |
+| 线索池里出现 `E2E_*` 测试行 | 中断的 E2E 无法自清理：线索池**没有 DELETE 端点**，需直接改库（见 §0.4） |
+
+### 0.4 测试数据清理（无端点，需改库）
+
+`lead_candidates`（线索池）**没有 DELETE 端点**（`DELETE /api/v1/leads/{id}` → 405），
+异常中断的 E2E 测试线索只能直接改库清理。可复用脚本：
+
+```bash
+cd backend/orchestrator
+uv run python ..\..\.tools\cleanup_orphan_lead.py   # 删 E2E_PROD_CHECK% / E2ELOCAL% / E2EZZ%
+```
+
+- Neon DSN 与 psycopg2 连法见 `backend/.tools/*.py`（`?sslmode=require`，缺它会报
+  `invalid connection option "ssl"`）。
+- `research_runs` 是审计流水，**刻意保留**（记录何时挑选了哪些线索）。
+- 写路径 E2E 必须用 `try/finally` 保证清理；否则一旦中途 5xx，数据会残留在生产库。
 
 ## 1. 部署（单 Worker，前后端一体）
 
@@ -109,7 +136,9 @@ cd frontend
 
 # 生产环境变量（写入 .env.production）
 NEXT_PUBLIC_API_MODE=real
-NEXT_PUBLIC_API_BASE_URL=https://kaas.powervoy.com   # 同源，无 CORS
+# 生产实际走独立 API 域名（跨域，Worker 已放行 https://kaas.powervoy.com 来源）。
+# 主域名 kaas.powervoy.com 的同源 /api/* 仅为历史兼容，前端并不依赖。
+NEXT_PUBLIC_API_BASE_URL=https://api.kaas.powervoy.com
 
 npm install --legacy-peer-deps
 npm run build          # 输出到 out/
@@ -120,7 +149,12 @@ npm run build          # 输出到 out/
 
 ## 3. 验证清单
 
-- [ ] `https://api.kaas.powervoy.com/health` 返回 200
+> 部署后立即执行时，请记得 §0.2 的冷启动窗口：连续失败请**重试**，不要马上判定失败。
+
+- [ ] `https://api.kaas.powervoy.com/health` 返回 200 **且 body 为**
+      `{"status":"ok","service":"kaas-intel-worker"}`（不是 HTML！）
+- [ ] 匿名访问 `/api/v1/leads`、`/api/v1/research/categories`、`/api/v1/research/stats`、
+      `/api/v1/ai/tasks` 均返回 **401**（401 = 路由存在且已鉴权；200 = 鉴权漏洞）
 - [ ] `https://kaas.powervoy.com/login` 可登录
 - [ ] 登录后侧边栏「情报体系 → 进出口情报 / 市场调研 / 地图源客户信息获取」三项可见（内部管理员账号）
 - [ ] 货运记录页能看到导入/采集的数据
