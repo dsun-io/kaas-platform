@@ -30,6 +30,10 @@
   "assets": {
     "directory": "../../frontend/out",
     "binding": "ASSETS",
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    // /api/* 与 /health 显式交给 Worker，不再依赖「资产未命中才落到 Worker」的隐式行为。
+    // 历史上正是那条隐式路径让 /health 被 SPA 回退返回 index.html（状态码 200 但内容不是
+    // 健康检查结果），使 CI 冒烟测试形同虚设、Worker 已挂仍“通过”。
+    "run_worker_first": ["/api/*", "/health"]
   }
 }

@@ -2,7 +2,7 @@ import axios from "axios";
 import type { AxiosError } from "axios";
 import { getCurrentSession } from "@/lib/auth/session-cache";
 import { resolveUseV2 } from "./use-v2-resolver";
-import { isMockMode, API_BASE_URL } from "./config";
+import { API_BASE_URL } from "./config";
 import { handleApiError } from "./error-handler";
 import type { ApiErrorResponse } from "./error-handler";
 
@@ -51,8 +51,20 @@ apiClient.interceptors.request.use((config) => {
 // 新版本切换后的一段时间内更明显。GET/HEAD 幂等，可安全重试。
 // 写请求（POST/PATCH/DELETE）不自动重试，避免重复副作用。
 const RETRY_METHODS = new Set(["get", "head", "options"]);
+// 登录是幂等的（重放不会产生副作用），而冷启动窗口内用户最可能就卡在这一步，
+// 故对 POST /auth/login 单独放行重试。其余写请求一律不重试，避免重复副作用。
+const RETRY_POST_PATHS = [/\/auth\/login$/];
 const MAX_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 400;
+
+function isRetryableRequest(method: string, url: string | undefined): boolean {
+  if (RETRY_METHODS.has(method)) return true;
+  return (
+    method === "post" &&
+    !!url &&
+    RETRY_POST_PATHS.some((re) => re.test(url))
+  );
+}
 
 apiClient.interceptors.response.use(
   (response) => response,
@@ -63,7 +75,7 @@ apiClient.interceptors.response.use(
     const retriable =
       status === undefined || (status >= 500 && status < 600);
 
-    if (config && retriable && RETRY_METHODS.has(method)) {
+    if (config && retriable && isRetryableRequest(method, config.url)) {
       const attempt = config.__retryCount ?? 0;
       if (attempt < MAX_RETRIES) {
         config.__retryCount = attempt + 1;

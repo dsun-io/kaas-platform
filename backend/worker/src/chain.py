@@ -26,6 +26,10 @@ from pydantic import BaseModel
 
 from main import app, _acquire, _get_current_user, DEFAULT_TENANT
 
+# jsonb 列解析的唯一真源在 dbjson.py（历史上本文件与 main.py 各存一份，
+# 且签名不一致，新增表时容易漏改）。调用处均传入表名，故此处直接别名。
+from dbjson import row_to_dict as _row_to_dict
+
 RESEND_API_URL = "https://api.resend.com/emails"
 VAR_RE = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 
@@ -66,26 +70,7 @@ async def _openai_chat(base_url: str, api_key: str, model: str, messages: list,
                      "completion_tokens": u.get("completion_tokens")}
 
 
-# ── jsonb 列（asyncpg 在 Workers 里返回 str，需手动解析）───────────────────
-_JSONB_COLS = {
-    "lead_candidates": {"fit_reasons", "raw", "spec_normalized"},
-    "leadgen_runs": {"config"},
-    "outreach_campaigns": set(),
-    "research_products": {"spec_normalized"},
-    "research_runs": {"config"},
-}
-
-
-def _row_to_dict(row, table: str) -> dict:
-    d = dict(row)
-    for k in _JSONB_COLS.get(table, set()) & d.keys():
-        v = d[k]
-        if isinstance(v, str) and v:
-            try:
-                d[k] = json.loads(v)
-            except Exception:
-                pass
-    return d
+# ── jsonb 列解析见 dbjson.py（_row_to_dict 已从该模块引入）─────────────────
 
 
 def _mask(key: Optional[str]) -> Optional[str]:
@@ -1315,7 +1300,10 @@ def _lead_variables(lead: dict, mailbox: dict) -> dict:
 
 
 async def _resolve_api_key(mailbox: dict) -> Optional[str]:
-    return mailbox.get("api_key") or os.environ.get("RESEND_API_KEY")
+    # 必须用请求期绑定读取：Worker env 在模块 import 期不可用（os.environ 为空）。
+    from main import _binding
+
+    return mailbox.get("api_key") or _binding("RESEND_API_KEY")
 
 
 async def _send_one(conn, msg: dict, mailbox: dict) -> dict:
