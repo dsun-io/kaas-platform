@@ -837,3 +837,8 @@ class Default(WorkerEntrypoint):
         if path.startswith("/api/"):
             return await asgi.fetch(app, request, self.env)
         return await self.env.ASSETS.fetch(request)
+
+
+# ── P1-P7 工位链（AI 层/线索池/触达）：chain.py 注册到 app ──
+import chain  # noqa: E402,F401
+
