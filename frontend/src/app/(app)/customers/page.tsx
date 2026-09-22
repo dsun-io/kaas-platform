@@ -13,13 +13,20 @@ import { PageHeader, StatusBadge, SectionCard, EmptyState } from "@/components/s
 import { Plus, Search, UserPlus } from "lucide-react";
 
 const STAGE_LABELS: Record<string, string> = {
-  lead: "Lead",
-  inquiry: "Inquiry",
-  quoted: "Quoted",
-  negotiating: "Negotiating",
-  won: "Won",
-  lost: "Lost",
-  inactive: "Inactive",
+  lead: "线索",
+  inquiry: "询盘",
+  quoted: "已报价",
+  negotiating: "洽谈中",
+  won: "成交",
+  lost: "流失",
+  inactive: "沉寂",
+};
+
+const INQUIRY_STATUS_LABELS: Record<string, string> = {
+  open: "进行中",
+  quoted: "已报价",
+  won: "成交",
+  lost: "流失",
 };
 
 const STAGE_TONES: Record<string, import("@/components/shared").StatusTone> = {
@@ -107,7 +114,7 @@ function useCustomerDetail(id: number | null) {
 
 function errMsg(e: unknown): string {
   const err = e as { response?: { data?: { detail?: string } }; message?: string };
-  return err?.response?.data?.detail ?? err?.message ?? "Request failed";
+  return err?.response?.data?.detail ?? err?.message ?? "请求失败";
 }
 
 type CustomerFormState = {
@@ -157,13 +164,13 @@ function CustomerForm({ onClose, onCreated }: { onClose: () => void; onCreated: 
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
-        <Input placeholder="Company name *" value={form.company_name} onChange={set("company_name")} />
-        <Input placeholder="Country" value={form.country} onChange={set("country")} />
+        <Input placeholder="公司名称 *" value={form.company_name} onChange={set("company_name")} />
+        <Input placeholder="国家" value={form.country} onChange={set("country")} />
       </div>
-      <Input placeholder="Address" value={form.address} onChange={set("address")} />
+      <Input placeholder="地址" value={form.address} onChange={set("address")} />
       <div className="grid grid-cols-2 gap-3">
-        <Input placeholder="Default port" value={form.default_port} onChange={set("default_port")} />
-        <Input placeholder="Credit level" value={form.credit_level} onChange={set("credit_level")} />
+        <Input placeholder="默认港口" value={form.default_port} onChange={set("default_port")} />
+        <Input placeholder="信用等级" value={form.credit_level} onChange={set("credit_level")} />
       </div>
       <select
         value={form.stage}
@@ -174,13 +181,13 @@ function CustomerForm({ onClose, onCreated }: { onClose: () => void; onCreated: 
           <option key={k} value={k}>{v}</option>
         ))}
       </select>
-      <Input placeholder="Notes" value={form.notes} onChange={set("notes")} />
+      <Input placeholder="备注" value={form.notes} onChange={set("notes")} />
       {error && <p className="text-sm text-red-500">{error}</p>}
       <div className="flex gap-2">
         <Button onClick={handleSubmit} disabled={!form.company_name || isPending}>
-          {isPending ? "Creating..." : "Create customer"}
+          {isPending ? "创建中…" : "创建客户"}
         </Button>
-        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button variant="outline" onClick={onClose}>取消</Button>
       </div>
     </div>
   );
@@ -238,21 +245,21 @@ function InquiryForm({ customerId, onClose }: { customerId: number; onClose: () 
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
-        <Input placeholder="Channel (Alibaba / Expo / Web)" value={form.channel} onChange={set("channel")} />
-        <Input placeholder="Product name (raw)" value={form.product_name_raw} onChange={set("product_name_raw")} />
+        <Input placeholder="渠道（Alibaba / Expo / Web）" value={form.channel} onChange={set("channel")} />
+        <Input placeholder="产品名称（原始）" value={form.product_name_raw} onChange={set("product_name_raw")} />
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Input placeholder="Quantity" type="number" value={form.quantity} onChange={set("quantity")} />
-        <Input placeholder="Unit (sqm / roll / ton)" value={form.quantity_unit} onChange={set("quantity_unit")} />
+        <Input placeholder="数量" type="number" value={form.quantity} onChange={set("quantity")} />
+        <Input placeholder="单位（平方米 / 卷 / 吨）" value={form.quantity_unit} onChange={set("quantity_unit")} />
       </div>
-      <Input placeholder="Application" value={form.application} onChange={set("application")} />
-      <Input placeholder="Notes" value={form.notes} onChange={set("notes")} />
+      <Input placeholder="用途" value={form.application} onChange={set("application")} />
+      <Input placeholder="备注" value={form.notes} onChange={set("notes")} />
       {error && <p className="text-sm text-red-500">{error}</p>}
       <div className="flex gap-2">
         <Button onClick={handleSubmit} disabled={isPending}>
-          {isPending ? "Submitting..." : "Add inquiry"}
+          {isPending ? "提交中…" : "添加询盘"}
         </Button>
-        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button variant="outline" onClick={onClose}>取消</Button>
       </div>
     </div>
   );
@@ -307,12 +314,12 @@ function ContactForm({ customerId, onClose }: { customerId: number; onClose: () 
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
-        <Input placeholder="Name *" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        <Input placeholder="Position" value={form.position} onChange={(e) => setForm({ ...form, position: e.target.value })} />
+        <Input placeholder="姓名 *" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <Input placeholder="职位" value={form.position} onChange={(e) => setForm({ ...form, position: e.target.value })} />
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Input placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-        <Input placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+        <Input placeholder="电话" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+        <Input placeholder="邮箱" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
       </div>
       <Input placeholder="WhatsApp" value={form.whatsapp} onChange={(e) => setForm({ ...form, whatsapp: e.target.value })} />
       <label className="flex items-center gap-2 text-sm">
@@ -322,14 +329,14 @@ function ContactForm({ customerId, onClose }: { customerId: number; onClose: () 
           onChange={(e) => setForm({ ...form, is_primary: e.target.checked })}
           className="rounded border"
         />
-        Primary contact
+        主要联系人
       </label>
       {error && <p className="text-sm text-red-500">{error}</p>}
       <div className="flex gap-2">
         <Button onClick={handleSubmit} disabled={!form.name || isPending}>
-          {isPending ? "Submitting..." : "Add contact"}
+          {isPending ? "提交中…" : "添加联系人"}
         </Button>
-        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button variant="outline" onClick={onClose}>取消</Button>
       </div>
     </div>
   );
@@ -367,13 +374,13 @@ function StageUpdate({ customer, onClose }: { customer: Customer; onClose: () =>
           <option key={k} value={k}>{v}</option>
         ))}
       </select>
-      <Input placeholder="Reason (optional)" value={reason} onChange={(e) => setReason(e.target.value)} />
+      <Input placeholder="原因（可选）" value={reason} onChange={(e) => setReason(e.target.value)} />
       {error && <p className="text-sm text-red-500">{error}</p>}
       <div className="flex gap-2">
         <Button onClick={handleUpdate} disabled={isPending}>
-          {isPending ? "Updating..." : "Update stage"}
+          {isPending ? "更新中…" : "更新阶段"}
         </Button>
-        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button variant="outline" onClick={onClose}>取消</Button>
       </div>
     </div>
   );
@@ -389,10 +396,10 @@ function CustomerDetailPanel({ customer, onClose }: { customer: Customer; onClos
   const [showStageUpdate, setShowStageUpdate] = useState(false);
 
   const tabs: { key: DetailTab; label: string }[] = [
-    { key: "info", label: "Info" },
-    { key: "contacts", label: `Contacts (${detail?.contacts.length ?? 0})` },
-    { key: "inquiries", label: `Inquiries (${detail?.inquiries.length ?? 0})` },
-    { key: "history", label: "History" },
+    { key: "info", label: "信息" },
+    { key: "contacts", label: `联系人 (${detail?.contacts.length ?? 0})` },
+    { key: "inquiries", label: `询盘 (${detail?.inquiries.length ?? 0})` },
+    { key: "history", label: "历史" },
   ];
 
   return (
@@ -400,11 +407,11 @@ function CustomerDetailPanel({ customer, onClose }: { customer: Customer; onClos
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle>{customer.company_name}</CardTitle>
-          <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
+          <Button variant="ghost" size="sm" onClick={onClose}>关闭</Button>
         </div>
       </CardHeader>
       <CardContent>
-        {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
+        {isLoading && <p className="text-sm text-muted-foreground">加载中…</p>}
         {detail && (
           <div>
             <div className="flex gap-2 border-b mb-4">
@@ -424,36 +431,36 @@ function CustomerDetailPanel({ customer, onClose }: { customer: Customer; onClos
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <span className="text-muted-foreground">Country:</span>
+                    <span className="text-muted-foreground">国家：</span>
                     <span className="ml-1">{detail.country ?? "-"}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">Credit:</span>
+                    <span className="text-muted-foreground">信用等级：</span>
                     <span className="ml-1">{detail.credit_level ?? "-"}</span>
                   </div>
                   <div className="col-span-2">
-                    <span className="text-muted-foreground">Address:</span>
+                    <span className="text-muted-foreground">地址：</span>
                     <span className="ml-1">{detail.address ?? "-"}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">Port:</span>
+                    <span className="text-muted-foreground">默认港口：</span>
                     <span className="ml-1">{detail.default_port ?? "-"}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">Stage:</span>
+                    <span className="text-muted-foreground">阶段：</span>
                     <StatusBadge tone={STAGE_TONES[detail.stage] ?? "default"} className="ml-1">
                       {STAGE_LABELS[detail.stage] ?? detail.stage}
                     </StatusBadge>
                   </div>
                   {detail.notes && (
                     <div className="col-span-2">
-                      <span className="text-muted-foreground">Notes:</span>
+                      <span className="text-muted-foreground">备注：</span>
                       <span className="ml-1">{detail.notes}</span>
                     </div>
                   )}
                 </div>
                 <Button variant="outline" size="sm" onClick={() => setShowStageUpdate(true)}>
-                  Update stage
+                  更新阶段
                 </Button>
                 {showStageUpdate && <StageUpdate customer={customer} onClose={() => setShowStageUpdate(false)} />}
               </div>
@@ -462,21 +469,21 @@ function CustomerDetailPanel({ customer, onClose }: { customer: Customer; onClos
             {activeTab === "contacts" && (
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">{detail.contacts.length} contacts</span>
+                  <span className="text-sm text-muted-foreground">{detail.contacts.length} 位联系人</span>
                   <Button size="sm" onClick={() => setShowContactForm(true)}>
-                    <Plus className="size-4 mr-1" />Add contact
+                    <Plus className="size-4 mr-1" />添加联系人
                   </Button>
                 </div>
                 {showContactForm && <ContactForm customerId={customer.id} onClose={() => setShowContactForm(false)} />}
                 <div className="space-y-2">
                   {detail.contacts.length === 0 && (
-                    <p className="text-sm text-muted-foreground">No contacts yet</p>
+                    <p className="text-sm text-muted-foreground">暂无联系人</p>
                   )}
                   {detail.contacts.map((c) => (
                     <div key={c.id} className="rounded-lg border bg-card p-4 shadow-[var(--shadow-xs)] transition-shadow hover:shadow-[var(--shadow-sm)]">
                       <p className="font-medium text-sm">
                         {c.name}
-                        {c.is_primary && <Badge variant="default" className="ml-2">Primary</Badge>}
+                        {c.is_primary && <Badge variant="default" className="ml-2">主要</Badge>}
                       </p>
                       <p className="text-xs text-muted-foreground mt-1">
                         {c.position && `${c.position} · `}
@@ -493,24 +500,24 @@ function CustomerDetailPanel({ customer, onClose }: { customer: Customer; onClos
             {activeTab === "inquiries" && (
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">{detail.inquiries.length} inquiries</span>
+                  <span className="text-sm text-muted-foreground">{detail.inquiries.length} 条询盘</span>
                   <Button size="sm" onClick={() => setShowInquiryForm(true)}>
-                    <Plus className="size-4 mr-1" />Add inquiry
+                    <Plus className="size-4 mr-1" />添加询盘
                   </Button>
                 </div>
                 {showInquiryForm && <InquiryForm customerId={customer.id} onClose={() => setShowInquiryForm(false)} />}
                 <div className="space-y-2">
                   {detail.inquiries.length === 0 && (
-                    <p className="text-sm text-muted-foreground">No inquiries yet</p>
+                    <p className="text-sm text-muted-foreground">暂无询盘</p>
                   )}
                   {detail.inquiries.map((inq) => (
                     <div key={inq.id} className="rounded-lg border bg-card p-4 shadow-[var(--shadow-xs)]">
                       <div className="flex items-center justify-between">
                         <p className="font-medium text-sm">
-                          {inq.product_name_raw ?? `Inquiry #${inq.id}`}
+                          {inq.product_name_raw ?? `询盘 #${inq.id}`}
                         </p>
                         <StatusBadge tone={inq.status === "won" ? "success" : inq.status === "lost" ? "danger" : "default"}>
-                          {inq.status}
+                          {INQUIRY_STATUS_LABELS[inq.status] ?? inq.status}
                         </StatusBadge>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
@@ -528,13 +535,13 @@ function CustomerDetailPanel({ customer, onClose }: { customer: Customer; onClos
             {activeTab === "history" && (
               <div className="space-y-2">
                 {detail.stage_log.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No history</p>
+                  <p className="text-sm text-muted-foreground">暂无历史记录</p>
                 ) : (
                   detail.stage_log.map((log) => (
                     <div key={log.id} className="rounded-lg border bg-card p-4 text-sm shadow-[var(--shadow-xs)]">
                       <div className="flex items-center justify-between">
                         <span>
-                          {log.from_stage ? (STAGE_LABELS[log.from_stage] ?? log.from_stage) : "Created"}
+                          {log.from_stage ? (STAGE_LABELS[log.from_stage] ?? log.from_stage) : "创建"}
                           {" -> "}
                           {STAGE_LABELS[log.to_stage] ?? log.to_stage}
                         </span>
@@ -567,11 +574,11 @@ export default function CustomersPage() {
     <RouteGuard adminOnly>
       <div className="space-y-6">
         <PageHeader
-          title="Customer Management"
-          description="Track inquiries, stages, and contacts"
+          title="客户管理"
+          description="跟进询盘、阶段与联系人"
           actions={
             <Button onClick={() => setShowCreateForm(true)}>
-              <UserPlus className="size-4 mr-1" />New customer
+              <UserPlus className="size-4 mr-1" />新建客户
             </Button>
           }
         />
@@ -579,7 +586,7 @@ export default function CustomersPage() {
         {showCreateForm && (
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle>New customer</CardTitle>
+              <CardTitle>新建客户</CardTitle>
             </CardHeader>
             <CardContent>
               <CustomerForm onClose={() => setShowCreateForm(false)} onCreated={setSelectedCustomer} />
@@ -592,7 +599,7 @@ export default function CustomersPage() {
             <div className="flex items-center gap-2">
               <Search className="size-4 text-muted-foreground" />
               <Input
-                placeholder="Search customers..."
+                placeholder="搜索客户…"
                 value={searchQ}
                 onChange={(e) => setSearchQ(e.target.value)}
                 className="max-w-sm"
@@ -600,9 +607,9 @@ export default function CustomersPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
+            {isLoading && <p className="text-sm text-muted-foreground">加载中…</p>}
             {!isLoading && listData?.items.length === 0 && (
-              <p className="text-sm text-muted-foreground">No customers yet</p>
+              <p className="text-sm text-muted-foreground">暂无客户</p>
             )}
             <div className="space-y-2">
               {listData?.items.map((c) => (
@@ -620,7 +627,7 @@ export default function CustomersPage() {
                   <p className="text-xs text-muted-foreground mt-1">
                     {c.country && `${c.country} · `}
                     {c.default_port && `${c.default_port} · `}
-                    Updated {new Date(c.updated_at).toLocaleDateString()}
+                    更新于 {new Date(c.updated_at).toLocaleDateString()}
                   </p>
                 </div>
               ))}
