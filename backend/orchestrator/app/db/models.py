@@ -971,6 +971,25 @@ class IntelMatch(Base):
 # 工作站互联 Schema 口子（Workstation Links）
 # 依据 docs/WORKSTATION_DESIGN.md §5-§6 建立。
 # ─────────────────────────────────────────────────────────────────────────────
+class BusinessEvent(Base):
+    """跨工位业务事件流水（阶段 6 · 工位能力网事件流，共 11 类）。"""
+    __tablename__ = "business_events"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    event_type = Column(Text, nullable=False)
+    from_workstation = Column(Text, nullable=True)
+    to_workstation = Column(Text, nullable=True)
+    payload = Column(JSONB, nullable=True)
+    actor_id = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_business_events_tenant_time", "tenant_id", "created_at"),
+        Index("idx_business_events_tenant_type", "tenant_id", "event_type"),
+    )
+
+
 from app.db.workstation_links import (  # noqa: E402,F401
     QuoteOrder,
     QuoteOrderItem,
