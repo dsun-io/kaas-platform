@@ -1,6 +1,7 @@
 """Kaas v2 · INT-R3 报价引擎主流程 (§5 T6)
 
 编排 spec 匹配 → 成本计算 → 梯度定价 → 配件计价 → 运费计算 → 话术生成。
+（说明：步骤化编排是报价场景的能力节点链——工位能力网内的路由路径，不是强制流水线。）
 SKU 优先路径: 先查 product_skus + product_sku_prices，命中则短路返回。
 """
 from typing import Optional

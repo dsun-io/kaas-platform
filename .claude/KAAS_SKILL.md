@@ -7,16 +7,17 @@
 
 ## S1. 报价引擎开发模式
 
-### 数据流
+### 数据流（报价能力节点链——工位能力网内的路由路径，不是强制流水线）
 ```
-用户输入 → Step 0: 品类校验
-  → Step 1: spec 匹配（spec_matcher.py）
-  → Step 2: 成本计算（niulanwang_pricing.py）
-  → Step 3: 三档定价（calculate_tiers）
-  → Step 4: 配件计价（price_accessories）
-  → Step 5: 运费计算（freight_calculator.py）
-  → Step 6: 话术渲染（render_quote_script）
+用户输入 → 品类校验（能力节点）
+  → spec 匹配（spec_matcher.py · 能力节点）
+  → 成本计算（niulanwang_pricing.py · 能力节点）
+  → 三档定价（calculate_tiers · 能力节点）
+  → 配件计价（price_accessories · 能力节点）
+  → 运费计算（freight_calculator.py · 能力节点）
+  → 话术渲染（render_quote_script · 能力节点）
 ```
+> 说明：以上是报价场景在工位能力网内的路由顺序，各环节是能力网中的能力节点，不是强制流水线（见 docs/WORKSTATION_DESIGN.md）。
 
 ### 关键服务文件
 | 文件 | 职责 |
