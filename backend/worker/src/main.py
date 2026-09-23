@@ -2075,5 +2075,192 @@ class Default(WorkerEntrypoint):
 
 
 # ── P1-P7 工位链（AI 层/线索池/触达）：chain.py 注册到 app ──
+# ── 阶段 6 · 订单工位（线上 /api/v1/orders*，对齐 orchestrator orders.py §10）──
+# 线上简化（详见 docs/UNCERTAIN.md #16）：
+# - 单租户 DEFAULT_TENANT，未做 owner_scope 可见范围过滤
+# - 汇率锁定简化为 1.0（完整汇率表在 orchestrator ws_common.lock_fx_rate）
+# - 单号用时间戳格式 ORD-YYYYMMDDHHMMSS
+# - 报价转化只记录来源与业务事件，不复制报价行项（quotations 结构确认后补）
+
+ORDER_NEXT = {
+    "pending": ("confirmed", "cancelled"),
+    "confirmed": ("producing", "cancelled"),
+    "producing": ("shipped",),
+    "shipped": ("completed",),
+}
+
+
+def _order_dict(row) -> dict:
+    d = dict(row)
+    for k in ("order_date", "delivery_date", "fx_rate_date", "created_at"):
+        v = d.get(k)
+        if v is not None and hasattr(v, "isoformat"):
+            d[k] = v.isoformat()
+    return d
+
+
+async def _record_business_event(
+    request, event_type: str, payload: dict, from_ws: str = None, to_ws: str = None
+):
+    """跨工位业务事件流水（阶段 6 · business_events）。"""
+    await db.execute(
+        request,
+        """INSERT INTO business_events
+               (tenant_id, event_type, from_workstation, to_workstation, payload, actor_id)
+           VALUES ($1, $2, $3, $4, $5, $6)""",
+        DEFAULT_TENANT, event_type, from_ws, to_ws,
+        _json.dumps(payload), payload.get("actor_id"),
+    )
+
+
+@app.get("/api/v1/orders")
+async def list_orders_api(
+    request: Request,
+    page: int = 1,
+    page_size: int = 20,
+    status: str = "",
+    q: str = "",
+    user: dict = Depends(_get_current_user),
+):
+    where, params = ["tenant_id = $1"], [DEFAULT_TENANT]
+    if status:
+        params.append(status)
+        where.append(f"status = ${len(params)}")
+    if q:
+        params.append(f"%{q}%")
+        where.append(
+            f"(customer_name ILIKE ${len(params)} OR order_no ILIKE ${len(params)})"
+        )
+    cond = " AND ".join(where)
+    total = await db.fetchval(
+        request, f"SELECT count(*) FROM orders WHERE {cond}", *params
+    )
+    rows = await db.fetch(
+        request,
+        f"SELECT * FROM orders WHERE {cond} ORDER BY created_at DESC, id DESC LIMIT $%d OFFSET $%d"
+        % (len(params) + 1, len(params) + 2),
+        *params,
+        max(1, min(page_size, 200)),
+        (max(1, page) - 1) * max(1, min(page_size, 200)),
+        table="orders",
+    )
+    return {
+        "items": [_order_dict(r) for r in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@app.post("/api/v1/orders", status_code=201)
+async def create_order_api(
+    request: Request, body: dict, user: dict = Depends(_get_current_user)
+):
+    items = body.get("items") or []
+    currency = (body.get("currency") or "USD").upper()
+    order_no = f"ORD-{datetime.now(timezone.utc):%Y%m%d%H%M%S}"
+    total = 0.0
+    computed_lines = []
+    for it in items:
+        line = it.get("line_amount")
+        if line is None and it.get("unit_price") is not None:
+            qty = float(it.get("qty") if it.get("qty") is not None else 1)
+            line = round(qty * float(it["unit_price"]), 2)
+        if line is not None:
+            total += float(line)
+        computed_lines.append(line)
+
+    row = await db.fetchrow(
+        request,
+        """INSERT INTO orders
+               (tenant_id, order_no, customer_id, customer_name, status, currency,
+                total_amount, order_date, delivery_date, notes,
+                created_by, owner_id, owner_scope)
+           VALUES ($1,$2,$3,$4,'pending',$5,$6,$7,$8,$9,$10,$10,$11)
+           RETURNING *""",
+        DEFAULT_TENANT, order_no, body.get("customer_id"), body.get("customer_name"),
+        currency, total or None, parse_date(body.get("order_date")),
+        parse_date(body.get("delivery_date")), body.get("notes"),
+        str(user["id"]), body.get("owner_scope") or "private",
+    )
+    order_id = row["id"]
+    for idx, it in enumerate(items):
+        await db.execute(
+            request,
+            """INSERT INTO order_items
+                   (tenant_id, order_id, sku_id, product_name, spec_snapshot, qty, qty_unit,
+                    unit_price, currency, line_amount, sort_order)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)""",
+            DEFAULT_TENANT, order_id, it.get("sku_id"), it.get("product_name"),
+            _json.dumps(it["spec_snapshot"]) if it.get("spec_snapshot") is not None else None,
+            it.get("qty") if it.get("qty") is not None else 1, it.get("qty_unit"),
+            it.get("unit_price"), (it.get("currency") or currency),
+            computed_lines[idx], it.get("sort_order") or idx,
+        )
+    quotation_id = body.get("quotation_id")
+    if quotation_id is not None:
+        await _record_business_event(
+            request,
+            "quotation.converted",
+            {
+                "quotation_id": str(quotation_id),
+                "order_id": str(order_id),
+                "customer_id": body.get("customer_id") or "",
+                "actor_id": str(user["id"]),
+            },
+            from_ws="quotation",
+            to_ws="order",
+        )
+    return _order_dict(row)
+
+
+@app.get("/api/v1/orders/{order_id}")
+async def get_order_api(
+    request: Request, order_id: int, user: dict = Depends(_get_current_user)
+):
+    row = await db.fetchrow(
+        request,
+        "SELECT * FROM orders WHERE tenant_id = $1 AND id = $2",
+        DEFAULT_TENANT, order_id, table="orders",
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="ORDER_NOT_FOUND")
+    items = await db.fetch(
+        request,
+        """SELECT * FROM order_items WHERE tenant_id = $1 AND order_id = $2
+           ORDER BY sort_order, id""",
+        DEFAULT_TENANT, order_id, table="order_items",
+    )
+    return {
+        **_order_dict(row),
+        "items": [row_to_dict(r, "order_items") for r in items],
+    }
+
+
+@app.patch("/api/v1/orders/{order_id}")
+async def update_order_api(
+    request: Request, order_id: int, body: dict, user: dict = Depends(_get_current_user)
+):
+    row = await db.fetchrow(
+        request,
+        "SELECT * FROM orders WHERE tenant_id = $1 AND id = $2",
+        DEFAULT_TENANT, order_id, table="orders",
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="ORDER_NOT_FOUND")
+    updated = await db.fetchrow(
+        request,
+        """UPDATE orders SET
+               customer_name = COALESCE($3, customer_name),
+               delivery_date = COALESCE($4, delivery_date),
+               notes = COALESCE($5, notes)
+           WHERE tenant_id = $1 AND id = $2 RETURNING *""",
+        DEFAULT_TENANT, order_id, body.get("customer_name"),
+        parse_date(body.get("delivery_date")), body.get("notes"),
+        table="orders",
+    )
+    return _order_dict(updated)
+
+
 import chain  # noqa: E402,F401
 
