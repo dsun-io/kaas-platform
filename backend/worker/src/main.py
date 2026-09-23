@@ -1357,6 +1357,179 @@ async def delete_pricing_data(
     return {"id": item_id, "status": "inactive", "message": "Pricing data deactivated"}
 
 
+# ── 阶段 3 · SKU 价格（/api/v1/spec/skus/{id}/prices + /api/v1/spec/prices/{id}）──
+# 规则同 orchestrator services/price_engine.upsert_price：INSERT-only，
+# 改价 = 截断/作废旧价 + 插入新价，不原地修改历史价格。
+# 与 orchestrator 的差异：所有查询带 tenant_id（计划硬要求）；
+# 新价被旧价完全包含时返回 422（orchestrator 为异常 500），错误更清晰。
+
+
+async def _upsert_price(
+    request: Request,
+    *,
+    sku_id: int,
+    tenant_id: str,
+    price: float,
+    price_unit: str,
+    effective_from: datetime,
+    effective_to: Optional[datetime] = None,
+    min_qty: Optional[float] = None,
+    tier_rules: Optional[list] = None,
+    note: Optional[str] = None,
+    change_reason: Optional[str] = None,
+    created_by: Optional[str] = None,
+) -> int:
+    overlapping = await db.fetch(
+        request,
+        """SELECT id, effective_from, effective_to FROM product_sku_prices
+           WHERE sku_id = $1 AND tenant_id = $2 AND status = 'active'
+             AND tstzrange(effective_from,
+                           COALESCE(effective_to, 'infinity'::timestamptz), '[)')
+                 && tstzrange($3::timestamptz,
+                              COALESCE($4::timestamptz, 'infinity'::timestamptz), '[)')
+           FOR UPDATE""",
+        sku_id,
+        tenant_id,
+        effective_from,
+        effective_to,
+    )
+    for old in overlapping:
+        old_from, old_to = old["effective_from"], old["effective_to"]
+        if old_from >= effective_from and (
+            effective_to is None or (old_to is not None and old_to <= effective_to)
+        ):
+            await db.execute(
+                request,
+                "UPDATE product_sku_prices SET status = 'superseded' WHERE id = $1",
+                old["id"],
+            )
+        elif old_from < effective_from:
+            await db.execute(
+                request,
+                "UPDATE product_sku_prices SET effective_to = $1 WHERE id = $2",
+                effective_from,
+                old["id"],
+            )
+        else:
+            raise HTTPException(
+                status_code=422,
+                detail="New price is fully contained in an existing active price range.",
+            )
+    row = await db.fetchrow(
+        request,
+        """INSERT INTO product_sku_prices
+           (sku_id, tenant_id, price, price_unit, min_qty, tier_rules,
+            effective_from, effective_to, status, note, change_reason, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,'active',$9,$10,$11)
+           RETURNING id""",
+        sku_id,
+        tenant_id,
+        price,
+        price_unit,
+        min_qty,
+        _json.dumps(tier_rules) if tier_rules is not None else None,
+        effective_from,
+        effective_to,
+        note,
+        change_reason,
+        created_by,
+    )
+    return row["id"]
+
+
+@app.post("/api/v1/spec/skus/{sku_id}/prices")
+async def create_price(
+    sku_id: int,
+    body: dict,
+    request: Request,
+    user: dict = Depends(_get_current_user),
+):
+    """为 SKU 设定价格（INSERT-only 改价规则同 orchestrator）。"""
+    sku = await db.fetchrow(
+        request,
+        "SELECT id FROM product_skus WHERE id = $1 AND tenant_id = $2",
+        sku_id,
+        DEFAULT_TENANT,
+    )
+    if sku is None:
+        return {"error": "not_found"}
+    price = body.get("price")
+    if not isinstance(price, (int, float)) or price <= 0:
+        raise HTTPException(status_code=422, detail="price must be > 0")
+    price_unit = (body.get("price_unit") or "").strip()
+    if not price_unit:
+        raise HTTPException(status_code=422, detail="price_unit is required")
+    unit = await db.fetchrow(
+        request, "SELECT code FROM price_units WHERE code = $1", price_unit
+    )
+    if unit is None:
+        raise HTTPException(
+            status_code=422, detail=f"Unknown price_unit: {price_unit}"
+        )
+    change_reason = (body.get("change_reason") or "").strip()
+    if not change_reason:
+        raise HTTPException(status_code=422, detail="change_reason is required")
+    # 价格按天生效：parse_date 截断到当天（同定价数据）
+    effective_from = parse_date(body.get("effective_from"))
+    if effective_from is None:
+        raise HTTPException(status_code=422, detail="effective_from is required")
+    price_id = await _upsert_price(
+        request,
+        sku_id=sku_id,
+        tenant_id=DEFAULT_TENANT,
+        price=float(price),
+        price_unit=price_unit,
+        effective_from=effective_from,
+        effective_to=parse_date(body.get("effective_to")),
+        min_qty=to_float(body.get("min_qty")),
+        tier_rules=body.get("tier_rules"),
+        note=body.get("note"),
+        change_reason=change_reason,
+        created_by=str(user["id"]),
+    )
+    return {"id": price_id}
+
+
+@app.patch("/api/v1/spec/prices/{price_id}")
+async def patch_price(
+    price_id: int,
+    body: dict,
+    request: Request,
+    user: dict = Depends(_get_current_user),
+):
+    """价格条目维护（只允许改 status / note / effective_to，同 orchestrator）。"""
+    current = await db.fetchrow(
+        request,
+        "SELECT id FROM product_sku_prices WHERE id = $1 AND tenant_id = $2",
+        price_id,
+        DEFAULT_TENANT,
+    )
+    if current is None:
+        return {"error": "not_found"}
+    updates: dict = {}
+    if body.get("status") is not None:
+        updates["status"] = str(body["status"]).strip()
+    if body.get("note") is not None:
+        updates["note"] = body["note"]
+    if body.get("effective_to") is not None:
+        _et = parse_date(body["effective_to"])
+        if _et is not None:
+            updates["effective_to"] = _et
+    if not updates:
+        return {"id": price_id, "status": None}
+    set_parts = [f"{col} = ${i}" for i, col in enumerate(updates.keys(), start=1)]
+    params = list(updates.values()) + [price_id, DEFAULT_TENANT]
+    n = len(updates)
+    row = await db.fetchrow(
+        request,
+        f"""UPDATE product_sku_prices SET {', '.join(set_parts)}
+            WHERE id = ${n + 1} AND tenant_id = ${n + 2}
+            RETURNING id, status""",
+        *params,
+    )
+    return {"id": row["id"], "status": row["status"]}
+
+
 # ── Worker Entrypoint ──
 # 单 Worker 架构：/api/* 与 /health 走 FastAPI，其余请求交给静态资产绑定
 #（Next.js 导出资源 + SPA 回退），资产命中时 Worker 代码不执行。
