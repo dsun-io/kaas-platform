@@ -42,3 +42,4 @@
 | # | 改动 | 结论 |
 |---|------|------|
 | 1a | 删除微信对外接口（/api/v1/wechat）及其数据描述文件，主路由登记同步移除 | ✅ 冒烟加载通过；定向测试 32 通过 / 1 报错（连不上本机数据库的环境问题，与基线一致） |
+| 1b | `[Cleanup] 删除微信适配器 wechat_adapter` | app/services/wechat_adapter.py 删除；tests/test_auth_wx_r1.py 摘除 TestWechatAdapter（-128 行）。wechat_repo 暂留（聊天编排器仍在调用）。 | 28 过 / 1 跳 / 1 错（数据库缺失误差，同基线），零新增失败 |
