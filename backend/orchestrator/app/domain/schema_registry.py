@@ -1,16 +1,6 @@
 from typing import Any, Dict, Optional, Literal
 from pydantic import BaseModel, Field
 
-class ChatTurnPayload(BaseModel):
-    session_id: str
-    raw_text: str
-    agent_id: str
-    customer_id: str
-    response_text: str
-    llm_model: str
-    llm_tokens_in: int
-    llm_tokens_out: int
-
 class QuoteRequestPayload(BaseModel):
     session_id: str
     customer_id: str
@@ -45,7 +35,6 @@ class AuditAccessPayload(BaseModel):
     ip: Optional[str]
 
 PAYLOAD_SCHEMAS: Dict[str, type[BaseModel]] = {
-    "chat.turn": ChatTurnPayload,
     "quote.request": QuoteRequestPayload,
     "quote.response": QuoteResponsePayload,
     "capability.update": CapabilityUpdatePayload,

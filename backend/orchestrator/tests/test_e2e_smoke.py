@@ -32,8 +32,8 @@ class TestEventWriteE2E:
 
     async def test_post_event_persists_to_db(self, client, db_session):
         """POST /api/v1/events 返回 201 且 session 内可查询到记录。"""
-        body = make_event_body("chat.turn", event_source="orchestrator",
-                                session_id="e2e-sess-1", raw_text="端到端测试消息")
+        body = make_event_body("audit.access", event_source="orchestrator",
+                                resource_id="e2e-sess-1")
         response = await client.post(
             "/api/v1/events", json=body,
             headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
@@ -41,7 +41,7 @@ class TestEventWriteE2E:
         assert response.status_code == 201
         data = response.json()
         assert data["tenant_id"] == "lianjia"
-        assert data["event_type"] == "chat.turn"
+        assert data["event_type"] == "audit.access"
         event_id = data["id"]
 
         result = await db_session.execute(
@@ -50,7 +50,7 @@ class TestEventWriteE2E:
         row = result.scalar_one_or_none()
         assert row is not None
         assert row.tenant_id == "lianjia"
-        assert row.event_type == "chat.turn"
+        assert row.event_type == "audit.access"
         assert row.event_source == "orchestrator"
 
     async def test_post_quote_request_persists_to_db(self, client, db_session):
@@ -124,7 +124,7 @@ class TestFullChainE2E:
         assert h.status_code == 200
 
         # Step 2: 写入事件
-        body = make_event_body("chat.turn", event_source="orchestrator")
+        body = make_event_body("audit.access", event_source="orchestrator")
         r = await client.post(
             "/api/v1/events", json=body,
             headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},

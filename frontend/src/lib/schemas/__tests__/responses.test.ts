@@ -12,7 +12,7 @@ describe('EventsResponseSchema', () => {
     const result = EventsResponseSchema.safeParse({
       items: [
         {
-          id: 'evt-1', event_type: 'chat.turn', event_source: 'backend',
+          id: 'evt-1', event_type: 'audit.access', event_source: 'backend',
           schema_version: 1, actor_id: 'user-1', tenant_id: 't1',
           session_id: 's1', trace_id: 'tr-1',
           payload: { raw_text: 'hello' },

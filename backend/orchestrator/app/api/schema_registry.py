@@ -10,17 +10,6 @@ from pydantic import BaseModel, Field
 # ─── v1 Payload Schemas (§3.7.5) ───
 
 
-class ChatTurnV1(BaseModel):
-    session_id: str
-    raw_text: str
-    agent_id: str
-    customer_id: str
-    response_text: str
-    llm_model: str
-    llm_tokens_in: int
-    llm_tokens_out: int
-
-
 class QuoteRequestV1(BaseModel):
     session_id: str
     customer_id: str
@@ -62,7 +51,6 @@ class AuditAccessV1(BaseModel):
 # ─── Registry: (event_type, schema_version) → BaseModel ───
 
 PAYLOAD_SCHEMAS: Dict[str, Dict[int, type[BaseModel]]] = {
-    "chat.turn": {1: ChatTurnV1},
     "quote.request": {1: QuoteRequestV1},
     "quote.response": {1: QuoteResponseV1},
     "capability.update": {1: CapabilityUpdateV1},

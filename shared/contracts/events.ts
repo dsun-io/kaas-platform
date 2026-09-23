@@ -2,12 +2,11 @@
  * Single source of truth: backend/orchestrator/app/domain/schema_registry.py
  * Reference: v2 design document §3.7.5
  *
- * 6 event_type literals must exactly match PAYLOAD_SCHEMAS keys (R0 redline).
+ * event_type literals must exactly match PAYLOAD_SCHEMAS keys (R0 redline).
  */
 import { z } from 'zod';
 
 export const LATEST_SCHEMA_VERSION = {
-  'chat.turn': 1,
   'quote.request': 1,
   'quote.response': 1,
   'capability.update': 1,
@@ -18,17 +17,6 @@ export const LATEST_SCHEMA_VERSION = {
 export type EventType = keyof typeof LATEST_SCHEMA_VERSION;
 
 // ── Payload schemas per event_type:version ──
-
-export const ChatTurnPayloadSchema = z.object({
-  session_id: z.string(),
-  raw_text: z.string(),
-  agent_id: z.string(),
-  customer_id: z.string(),
-  response_text: z.string(),
-  llm_model: z.string(),
-  llm_tokens_in: z.number().int(),
-  llm_tokens_out: z.number().int(),
-});
 
 export const QuoteRequestPayloadSchema = z.object({
   session_id: z.string(),
@@ -70,7 +58,6 @@ export const AuditAccessPayloadSchema = z.object({
 
 /** Maps event_type:version → zod schema */
 export const EVENT_PAYLOAD_SCHEMAS: Record<`${EventType}:${number}`, z.ZodSchema> = {
-  'chat.turn:1': ChatTurnPayloadSchema,
   'quote.request:1': QuoteRequestPayloadSchema,
   'quote.response:1': QuoteResponsePayloadSchema,
   'capability.update:1': CapabilityUpdatePayloadSchema,

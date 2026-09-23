@@ -240,7 +240,7 @@ class TestTenantIsolationEndToEnd:
         resp = await async_client.post(
             "/api/v1/events",
             json={
-                "event_type": "chat.turn",
+                "event_type": "audit.access",
                 "schema_version": 1,
                 "payload": {"raw_text": "test"},
             },

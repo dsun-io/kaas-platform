@@ -5,16 +5,6 @@
 > - 新增 event_type 或 schema_version 必须同步更新两处
 > - 参见 v2 设计文档 §3.7.5
 
-## chat.turn (v1)
-- session_id: string
-- raw_text: string
-- agent_id: string
-- customer_id: string
-- response_text: string
-- llm_model: string
-- llm_tokens_in: int
-- llm_tokens_out: int
-
 ## quote.request (v1)
 - session_id: string
 - customer_id: string

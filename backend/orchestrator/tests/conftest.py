@@ -327,7 +327,7 @@ async def async_client():
 
 
 def make_event_body(
-    event_type: str = "chat.turn",
+    event_type: str = "audit.access",
     schema_version: int = 1,
     event_source: str = "frontend",
     payload: dict | None = None,
@@ -339,16 +339,12 @@ def make_event_body(
         "schema_version": schema_version,
         "event_source": event_source,
     }
-    if event_type == "chat.turn":
+    if event_type == "audit.access":
         defaults.setdefault("payload", {
-            "session_id": kwargs.pop("session_id", "sess-test"),
-            "raw_text": kwargs.pop("raw_text", "测试消息"),
-            "agent_id": kwargs.pop("agent_id", "agent-1"),
-            "customer_id": kwargs.pop("customer_id", "cust-1"),
-            "response_text": kwargs.pop("response_text", "响应"),
-            "llm_model": kwargs.pop("llm_model", "test-model"),
-            "llm_tokens_in": kwargs.pop("llm_tokens_in", 10),
-            "llm_tokens_out": kwargs.pop("llm_tokens_out", 5),
+            "resource_type": kwargs.pop("resource_type", "api"),
+            "resource_id": kwargs.pop("resource_id", "evt-test"),
+            "actor_id": kwargs.pop("actor_id", "tester"),
+            "ip": kwargs.pop("ip", None),
         })
     elif event_type == "quote.request":
         defaults.setdefault("payload", {

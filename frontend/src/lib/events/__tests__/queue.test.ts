@@ -19,7 +19,7 @@ describe('events queue (memory fallback)', () => {
     const queue = await getQueue();
 
     const id = await queue.enqueuePending({
-      event_type: 'chat.turn',
+      event_type: 'audit.access',
       schema_version: 1,
       payload: { session_id: 's1', raw_text: 'hello' },
       event_source: 'frontend',
@@ -30,7 +30,7 @@ describe('events queue (memory fallback)', () => {
 
     const batch = await queue.getPendingBatch(10);
     expect(batch).toHaveLength(1);
-    expect(batch[0]!.event_type).toBe('chat.turn');
+    expect(batch[0]!.event_type).toBe('audit.access');
 
     await queue.markSent(id);
     const after = await queue.getPendingBatch(10);
@@ -53,13 +53,12 @@ describe('events queue (memory fallback)', () => {
     expect(batch).toHaveLength(3);
   });
 
-  it('handles all 6 event types', async () => {
+  it('handles all 5 event types', async () => {
     const queue = await getQueue();
 
     const types = [
       'audit.access',
       'capability.update',
-      'chat.turn',
       'kb.edit',
       'quote.request',
       'quote.response',
@@ -75,7 +74,7 @@ describe('events queue (memory fallback)', () => {
     }
 
     const batch = await queue.getPendingBatch(10);
-    expect(batch).toHaveLength(6);
+    expect(batch).toHaveLength(5);
   });
 
   it('moveToDead removes from pending', async () => {

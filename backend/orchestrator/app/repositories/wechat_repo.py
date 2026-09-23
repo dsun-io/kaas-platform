@@ -7,8 +7,6 @@ from app.db.models import (
     WechatBotAccount,
     WechatConversation,
     ChannelLink,
-    Conversation,
-    ConversationMessage,
     UsageEvent,
     WechatMessageEvent,
 )
@@ -146,91 +144,6 @@ async def get_channel_link_by_token(session: AsyncSession, token: str) -> Channe
     )
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
-
-
-# ── Conversation ──
-
-async def create_conversation(
-    session: AsyncSession,
-    customer_id: int,
-    tenant_id: str,
-    channel: str,
-) -> Conversation:
-    conv = Conversation(
-        customer_id=customer_id,
-        tenant_id=tenant_id,
-        channel=channel,
-        status="active",
-    )
-    session.add(conv)
-    await session.flush()
-    return conv
-
-
-async def get_conversation(session: AsyncSession, conv_id: int) -> Conversation | None:
-    stmt = select(Conversation).where(Conversation.id == conv_id)
-    result = await session.execute(stmt)
-    return result.scalar_one_or_none()
-
-
-async def list_conversations(
-    session: AsyncSession,
-    customer_id: int | None = None,
-    limit: int = 50,
-) -> list[Conversation]:
-    stmt = select(Conversation).order_by(Conversation.updated_at.desc())
-    if customer_id is not None:
-        stmt = stmt.where(Conversation.customer_id == customer_id)
-    stmt = stmt.limit(limit)
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
-
-
-# ── ConversationMessage ──
-
-async def insert_message(
-    session: AsyncSession,
-    conversation_id: int,
-    role: str,
-    raw_content: str | None = None,
-    normalized_content: str | None = None,
-    intent: str | None = None,
-    product_category: str | None = None,
-    extracted_params_json: dict | None = None,
-    quote_status: str | None = None,
-    latency_ms: int | None = None,
-    error_code: str | None = None,
-) -> ConversationMessage:
-    msg = ConversationMessage(
-        conversation_id=conversation_id,
-        role=role,
-        raw_content=raw_content,
-        normalized_content=normalized_content,
-        intent=intent,
-        product_category=product_category,
-        extracted_params_json=extracted_params_json,
-        quote_status=quote_status,
-        latency_ms=latency_ms,
-        error_code=error_code,
-    )
-    session.add(msg)
-    await session.flush()
-    return msg
-
-
-async def get_messages_by_conversation(
-    session: AsyncSession,
-    conversation_id: int,
-    limit: int = 100,
-) -> list[ConversationMessage]:
-    stmt = (
-        select(ConversationMessage)
-        .where(ConversationMessage.conversation_id == conversation_id)
-        .order_by(ConversationMessage.created_at.asc())
-        .limit(limit)
-    )
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
 
 
 # ── UsageEvent ──
