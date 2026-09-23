@@ -90,6 +90,24 @@ NEW_ROUTES: set[tuple[str, str]] = {
     ("/api/v1/pricing-data/{item_id}", "DELETE"),
     ("/api/v1/spec/skus/{sku_id}/prices", "POST"),
     ("/api/v1/spec/prices/{price_id}", "PATCH"),
+    # 第二批：规格分类树 / 向导 / 事件列表 / 管理 / 能力
+    ("/api/v1/spec/categories", "GET"),
+    ("/api/v1/spec/categories/{category_id}", "GET"),
+    ("/api/v1/spec/categories/{category_id}/bindings", "GET"),
+    ("/api/v1/spec/wizard/submit", "POST"),
+    ("/api/v1/spec/wizard/propose-attribute", "POST"),
+    ("/api/v1/events", "GET"),
+    ("/api/v1/admin/feature_flag", "GET"),
+    ("/api/v1/admin/feature_flag", "POST"),
+    ("/api/v1/admin/tenants", "GET"),
+    ("/api/v1/admin/tenants/reload", "POST"),
+    ("/api/v1/admin/audit-log", "GET"),
+    ("/api/v1/admin/archive-logs", "GET"),
+    ("/api/v1/capability-customers", "GET"),
+    ("/api/v1/capabilities", "GET"),
+    ("/api/v1/capabilities", "POST"),
+    ("/api/v1/customer/{customer_id}/capabilities", "GET"),
+    ("/api/v1/customer/{customer_id}/capabilities", "PATCH"),
 }
 
 
