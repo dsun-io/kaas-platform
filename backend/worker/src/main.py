@@ -973,6 +973,390 @@ async def create_quotation_manual(
     return {"id": str(row["id"]), "spec_hash": row["spec_hash"]}
 
 
+# ── 阶段 3 · 定价数据（/api/v1/pricing-data，前端「定价数据」页）──
+from pricing_rules import (  # noqa: E402
+    UNIT_TO_COST_TYPE,
+    build_spec_dict,
+    expand_category_search,
+    normalize_category,
+    parse_date,
+    to_float,
+)
+
+_COST_STATUSES = ("active", "inactive", "deprecated")
+_SPEC_DETAIL_COLS = (
+    "product_type", "wire_diameter", "height",
+    "mesh_width", "mesh_spec", "roll_length",
+)
+
+
+def _spec_json_of(spec: dict) -> dict:
+    """规格快照（写入成本条目的 product_spec_json，形状同 orchestrator）。"""
+    return {
+        "spec_id": spec["id"],
+        "product_category": spec["product_category"],
+        "product_type": spec["product_type"],
+        "wire_diameter": spec["wire_diameter"],
+        "height": spec["height"],
+        "mesh_width": spec["mesh_width"],
+        "mesh_spec": spec["mesh_spec"],
+        "roll_length": spec["roll_length"],
+        "weight_kg": spec["weight_kg"],
+    }
+
+
+def _spec_detail_of(spec: Optional[dict]) -> Optional[dict]:
+    if spec is None:
+        return None
+    return {
+        "id": spec["id"],
+        "product_category": spec["product_category"],
+        "product_type": spec["product_type"],
+        "wire_diameter": spec["wire_diameter"],
+        "height": spec["height"],
+        "mesh_width": spec["mesh_width"],
+        "mesh_spec": spec["mesh_spec"],
+        "roll_length": spec["roll_length"],
+        "weight_kg": spec["weight_kg"],
+    }
+
+
+async def _find_or_create_spec(request: Request, spec_dict: dict, body: dict) -> dict:
+    """按 spec_hash 查找平台通用规格，不存在则创建（规则同 orchestrator）。
+
+    规格是平台通用资产（不带 tenant）；spec_hash 用 body 原始值计算以保持跨运行时一致，
+    数值列入库前才转 float（asyncpg 严格类型要求）。
+    """
+    spec_hash = _compute_spec_hash(spec_dict)
+    row = await db.fetchrow(
+        request,
+        """SELECT id, product_category, product_type, wire_diameter, height,
+                  mesh_width, mesh_spec, roll_length, weight_kg
+           FROM product_specs WHERE spec_hash = $1""",
+        spec_hash,
+    )
+    if row is not None:
+        return dict(row)
+    created = await db.fetchrow(
+        request,
+        """INSERT INTO product_specs
+           (product_category, product_type, wire_diameter, height, mesh_width,
+            mesh_spec, roll_length, weight_kg, spec_hash)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+           RETURNING id, product_category, product_type, wire_diameter, height,
+                     mesh_width, mesh_spec, roll_length, weight_kg""",
+        normalize_category(
+            str(spec_dict.get("product_category") or body.get("product_category") or "")
+        ),
+        spec_dict.get("product_type"),
+        spec_dict.get("wire_diameter"),
+        to_float(spec_dict.get("height")),
+        to_float(spec_dict.get("mesh_width")),
+        spec_dict.get("mesh_spec"),
+        to_float(spec_dict.get("roll_length")),
+        to_float(body.get("weight_kg")),
+        spec_hash,
+    )
+    return dict(created)
+
+
+@app.get("/api/v1/pricing-data")
+async def list_pricing_data(
+    request: Request,
+    product_category: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 20,
+    user: dict = Depends(_get_current_user),
+):
+    """查询当前用户的定价数据列表（tenant/customer 不信任请求体）。"""
+    customer_id = str(user["id"])
+    where = ["tenant_id = $1", "customer_id = $2"]
+    params: list = [DEFAULT_TENANT, customer_id]
+    idx = 3
+    if product_category:
+        normalized = normalize_category(product_category)
+        where.append(f"product_category = ANY(${idx})")
+        params.append(expand_category_search(normalized))
+        idx += 1
+    w = " AND ".join(where)
+    pg = max(1, page)
+    ps = min(100, max(1, page_size))
+    total = await db.fetchval(
+        request, f"SELECT COUNT(*) FROM customer_cost_items WHERE {w}", *params
+    )
+    rows = await db.fetch(
+        request,
+        f"""SELECT id, product_category, spec_hash, product_spec_id, cost_type,
+                   amount, currency, unit, effective_from, effective_to,
+                   status, source, notes, created_at
+            FROM customer_cost_items WHERE {w}
+            ORDER BY id DESC LIMIT {ps} OFFSET {(pg - 1) * ps}""",
+        *params,
+        table="customer_cost_items",
+    )
+    spec_ids = [r["product_spec_id"] for r in rows if r["product_spec_id"]]
+    spec_map: dict = {}
+    if spec_ids:
+        specs = await db.fetch(
+            request,
+            """SELECT id, product_category, product_type, wire_diameter, height,
+                      mesh_width, mesh_spec, roll_length, weight_kg
+               FROM product_specs WHERE id = ANY($1)""",
+            spec_ids,
+        )
+        spec_map = {s["id"]: dict(s) for s in specs}
+    items = []
+    for r in rows:
+        items.append({
+            "id": r["id"],
+            "product_category": r["product_category"],
+            "spec_hash": r["spec_hash"],
+            "spec_id": r["product_spec_id"],
+            "cost_type": r["cost_type"],
+            "amount": r["amount"],
+            "currency": r["currency"],
+            "unit": r["unit"],
+            "effective_from": r["effective_from"],
+            "effective_to": r["effective_to"],
+            "status": r["status"],
+            "source": r["source"],
+            "notes": r["notes"],
+            "created_at": r["created_at"],
+            "product_spec": _spec_detail_of(
+                spec_map.get(r["product_spec_id"]) if r["product_spec_id"] else None
+            ),
+        })
+    return {
+        "items": items,
+        "total": total,
+        "page": pg,
+        "page_size": ps,
+        "pages": (total + ps - 1) // ps if total > 0 else 0,
+    }
+
+
+@app.post("/api/v1/pricing-data", status_code=201)
+async def create_pricing_data(
+    body: dict,
+    request: Request,
+    user: dict = Depends(_get_current_user),
+):
+    """录入客户规格 + 成本价数据：同一事务写 product_specs + customer_cost_items。
+
+    tenant/customer 归属以登录用户为准，不信任请求体（规则同 orchestrator）。
+    """
+    customer_id = str(user["id"])
+    raw_category = (body.get("product_category") or "").strip()
+    product_category = normalize_category(raw_category)
+    if not product_category:
+        raise HTTPException(status_code=422, detail="product_category is required")
+    cost_amount = body.get("cost_amount")
+    if cost_amount is None or not isinstance(cost_amount, (int, float)) or cost_amount <= 0:
+        raise HTTPException(status_code=422, detail="cost_amount must be > 0")
+    cost_unit = (body.get("cost_unit") or "").strip()
+    cost_type = UNIT_TO_COST_TYPE.get(cost_unit)
+    if cost_type is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"cost_unit must be one of: {list(UNIT_TO_COST_TYPE.keys())}",
+        )
+    status = (body.get("status") or "active").strip()
+    if status not in _COST_STATUSES:
+        raise HTTPException(
+            status_code=422, detail="status must be active, inactive, or deprecated"
+        )
+    spec_dict = build_spec_dict(body)
+    if not spec_dict:
+        raise HTTPException(
+            status_code=422,
+            detail="At least one spec field is required beyond product_category",
+        )
+    spec = await _find_or_create_spec(request, spec_dict, body)
+    spec_hash = _compute_spec_hash(spec_dict)
+    row = await db.fetchrow(
+        request,
+        """INSERT INTO customer_cost_items
+           (tenant_id, customer_id, product_category, product_spec_id,
+            product_spec_json, spec_hash, cost_type, amount, currency, unit,
+            effective_from, effective_to, status, source, notes, created_by)
+           VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+           RETURNING id, amount, currency, unit, status, effective_from,
+                     effective_to""",
+        DEFAULT_TENANT,
+        customer_id,
+        product_category,
+        spec["id"],
+        _json.dumps(_spec_json_of(spec)),
+        spec_hash,
+        cost_type,
+        float(cost_amount),
+        (body.get("cost_currency") or "CNY").strip(),
+        cost_unit,
+        # effective_from 列 NOT NULL：不传 = 立即生效（同 server_default 语义）
+        parse_date(body.get("effective_from")) or datetime.now(timezone.utc),
+        parse_date(body.get("effective_to")),
+        status,
+        "manual",
+        body.get("notes"),
+        str(user["id"]),
+    )
+    return {
+        "id": row["id"],
+        "product_category": product_category,
+        "spec_hash": spec_hash,
+        "spec_id": spec["id"],
+        "cost_type": cost_type,
+        "amount": row["amount"],
+        "currency": row["currency"],
+        "unit": row["unit"],
+        "effective_from": row["effective_from"],
+        "effective_to": row["effective_to"],
+        "status": row["status"],
+        "product_spec": _spec_detail_of(spec),
+    }
+
+
+@app.patch("/api/v1/pricing-data/{item_id}")
+async def update_pricing_data(
+    item_id: int,
+    body: dict,
+    request: Request,
+    user: dict = Depends(_get_current_user),
+):
+    """编辑客户规格 + 成本价数据（仅本人数据；规格变更时重建 spec_hash）。"""
+    customer_id = str(user["id"])
+    current = await db.fetchrow(
+        request,
+        """SELECT id, product_category, spec_hash, product_spec_id, product_spec_json
+           FROM customer_cost_items
+           WHERE id = $1 AND tenant_id = $2 AND customer_id = $3""",
+        item_id,
+        DEFAULT_TENANT,
+        customer_id,
+        table="customer_cost_items",
+    )
+    if current is None:
+        raise HTTPException(status_code=404, detail="Pricing data not found")
+
+    updates: dict = {}
+    new_amount = body.get("cost_amount")
+    if new_amount is not None:
+        if not isinstance(new_amount, (int, float)) or new_amount <= 0:
+            raise HTTPException(status_code=422, detail="cost_amount must be > 0")
+        updates["amount"] = float(new_amount)
+    new_unit = body.get("cost_unit")
+    if new_unit is not None:
+        new_cost_type = UNIT_TO_COST_TYPE.get(str(new_unit).strip())
+        if new_cost_type is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"cost_unit must be one of: {list(UNIT_TO_COST_TYPE.keys())}",
+            )
+        updates["cost_type"] = new_cost_type
+        updates["unit"] = str(new_unit).strip()
+    new_category = body.get("product_category")
+    if new_category is not None:
+        updates["product_category"] = normalize_category(str(new_category).strip())
+
+    spec_changed = any(f in body for f in _SPEC_DETAIL_COLS)
+    if spec_changed:
+        old_snap = current["product_spec_json"] or {}
+        full_spec = {
+            "product_category": updates.get(
+                "product_category", current["product_category"]
+            ),
+        }
+        for f in _SPEC_DETAIL_COLS:
+            full_spec[f] = body[f] if f in body else old_snap.get(f)
+        non_null = {k: v for k, v in full_spec.items() if v is not None}
+        spec = await _find_or_create_spec(request, non_null, body)
+        updates["spec_hash"] = _compute_spec_hash(non_null)
+        updates["product_spec_id"] = spec["id"]
+        updates["product_spec_json"] = _spec_json_of(spec)
+    if "effective_from" in body:
+        # 列 NOT NULL：空值 = 保持原样，不更新
+        _ef = parse_date(body["effective_from"])
+        if _ef is not None:
+            updates["effective_from"] = _ef
+    if "effective_to" in body:
+        updates["effective_to"] = parse_date(body["effective_to"])
+    if "status" in body:
+        new_status = str(body["status"]).strip()
+        if new_status not in _COST_STATUSES:
+            raise HTTPException(
+                status_code=422,
+                detail="status must be active, inactive, or deprecated",
+            )
+        updates["status"] = new_status
+    if "notes" in body:
+        updates["notes"] = body["notes"]
+    if not updates:
+        raise HTTPException(status_code=422, detail="No fields to update")
+
+    set_parts = []
+    params: list = []
+    for i, (col, val) in enumerate(updates.items(), start=1):
+        if col == "product_spec_json":
+            set_parts.append(f"{col} = ${i}::jsonb")
+            params.append(_json.dumps(val))
+        else:
+            set_parts.append(f"{col} = ${i}")
+            params.append(val)
+    params += [item_id, DEFAULT_TENANT, customer_id]
+    n = len(updates)
+    row = await db.fetchrow(
+        request,
+        f"""UPDATE customer_cost_items SET {', '.join(set_parts)}
+            WHERE id = ${n + 1} AND tenant_id = ${n + 2} AND customer_id = ${n + 3}
+            RETURNING id, product_category, spec_hash, product_spec_id,
+                      cost_type, amount, currency, unit, effective_from,
+                      effective_to, status, product_spec_json""",
+        *params,
+        table="customer_cost_items",
+    )
+    if row is None:
+        raise HTTPException(status_code=500, detail="Failed to update cost item")
+    snap = row["product_spec_json"] or {}
+    spec = {"id": snap.get("spec_id"), **snap} if snap.get("spec_id") else None
+    return {
+        "id": row["id"],
+        "product_category": row["product_category"],
+        "spec_hash": row["spec_hash"],
+        "spec_id": row["product_spec_id"],
+        "cost_type": row["cost_type"],
+        "amount": row["amount"],
+        "currency": row["currency"],
+        "unit": row["unit"],
+        "effective_from": row["effective_from"],
+        "effective_to": row["effective_to"],
+        "status": row["status"],
+        "product_spec": _spec_detail_of(spec),
+    }
+
+
+@app.delete("/api/v1/pricing-data/{item_id}")
+async def delete_pricing_data(
+    item_id: int,
+    request: Request,
+    user: dict = Depends(_get_current_user),
+):
+    """软删除定价数据（设为 inactive，仅本人数据）。"""
+    row = await db.fetchrow(
+        request,
+        """UPDATE customer_cost_items SET status = 'inactive'
+           WHERE id = $1 AND tenant_id = $2 AND customer_id = $3
+           RETURNING id""",
+        item_id,
+        DEFAULT_TENANT,
+        str(user["id"]),
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=404, detail="Pricing data not found or access denied"
+        )
+    return {"id": item_id, "status": "inactive", "message": "Pricing data deactivated"}
+
+
 # ── Worker Entrypoint ──
 # 单 Worker 架构：/api/* 与 /health 走 FastAPI，其余请求交给静态资产绑定
 #（Next.js 导出资源 + SPA 回退），资产命中时 Worker 代码不执行。
