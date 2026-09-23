@@ -21,7 +21,11 @@ from pydantic import BaseModel
 from workers import WorkerEntrypoint, asgi
 
 from dbjson import row_to_dict
-from spec_hash import compute_spec_hash as _compute_spec_hash
+from spec_hash import (
+    compute_spec_hash as _compute_spec_hash,
+    compute_sku_hash as _compute_sku_hash,
+    normalize_value as _normalize_value,
+)
 
 # ── 阶段 3 统一数据库封装（platform/db.py 按文件加载）──
 # 本包目录与标准库模块 `platform` 同名，不能按包导入，见 platform/db.py 顶部说明。
@@ -1528,6 +1532,531 @@ async def patch_price(
         *params,
     )
     return {"id": row["id"], "status": row["status"]}
+
+
+# ══════════ 阶段 3 · 第二批：规格分类树 / 向导 / 事件列表 / 管理 / 能力 ══════════
+# 形状与 backend/orchestrator 对齐（契约 shared/contracts/spec-system.ts）；
+# 存储语义差（tenants.yaml→单租户 / reload no-op 等）见 docs/CLEANUP_LOG.md。
+
+
+def _build_category_tree(flat: list, parent_id=None):
+    """分类嵌套树（同 orchestrator categories._build_tree 的返回形状）。"""
+    nodes = []
+    for cat in flat:
+        if cat["parent_id"] == parent_id:
+            node = {
+                k: cat[k]
+                for k in (
+                    "id", "code", "name", "parent_id", "path",
+                    "level", "industry_code", "is_leaf", "is_active",
+                )
+            }
+            node["children"] = _build_category_tree(flat, cat["id"])
+            nodes.append(node)
+    return nodes
+
+
+def _category_recursive_ids(flat: list, root_id: int) -> list:
+    """收集 root_id 及全部子孙分类 id（分类量小，Python 展开足够）。"""
+    ids = [root_id]
+    changed = True
+    while changed:
+        changed = False
+        for c in flat:
+            if c["parent_id"] in ids and c["id"] not in ids:
+                ids.append(c["id"])
+                changed = True
+    return ids
+
+
+@app.get("/api/v1/spec/categories")
+async def list_spec_categories(request: Request, user: dict = Depends(_get_current_user)):
+    """品类树（GET /api/v1/spec/categories，形状同 orchestrator：{"items": 树}）。"""
+    rows = await db.fetch(
+        request,
+        """SELECT id, code, name, parent_id, path, level, industry_code,
+                  sort_order, is_leaf, is_active
+             FROM product_categories
+            WHERE is_active = TRUE
+            ORDER BY sort_order, id""",
+        table="product_categories",
+    )
+    flat = [_row_to_dict(r) for r in rows]
+    return {"items": _build_category_tree(flat)}
+
+
+@app.get("/api/v1/spec/categories/{category_id}")
+async def get_spec_category(
+    category_id: int, request: Request, user: dict = Depends(_get_current_user)
+):
+    row = await db.fetchrow(
+        request,
+        """SELECT id, code, name, parent_id, path, level, industry_code, is_leaf
+             FROM product_categories WHERE id = $1""",
+        category_id,
+    )
+    if row is None:
+        return {"error": "not_found"}
+    return _row_to_dict(row)
+
+
+@app.get("/api/v1/spec/categories/{category_id}/bindings")
+async def get_spec_category_bindings(
+    category_id: int, request: Request, user: dict = Depends(_get_current_user)
+):
+    """分类绑定的规格属性 + 可选值（同 orchestrator get_bindings 形状）。"""
+    rows = await db.fetch(
+        request,
+        """SELECT b.id AS binding_id, b.attr_role, b.is_required, b.is_locked,
+                  b.sort_order, b.group_code,
+                  a.id AS attr_id, a.code, a.name, a.data_type,
+                  a.group_code AS attr_group, a.scope, a.unit, a.unit_group,
+                  a.number_min, a.number_max, a.number_step
+             FROM category_attribute_bindings b
+             JOIN spec_attributes a ON a.id = b.attribute_id
+            WHERE b.category_id = $1
+              AND (a.scope = 'global' OR a.tenant_id = $2)
+              AND a.status = 'active'
+            ORDER BY b.sort_order, b.id""",
+        category_id, DEFAULT_TENANT,
+    )
+    items = []
+    for r in rows:
+        values = await db.fetch(
+            request,
+            """SELECT id, value_code AS code, value_label AS label
+                 FROM spec_attribute_values
+                WHERE attribute_id = $1
+                  AND (scope = 'global' OR tenant_id = $2)
+                  AND status = 'active'
+                ORDER BY sort_order, id""",
+            r["attr_id"], DEFAULT_TENANT,
+        )
+        items.append({
+            "binding_id": r["binding_id"],
+            "attr_role": r["attr_role"],
+            "is_required": r["is_required"],
+            "is_locked": r["is_locked"],
+            "sort_order": r["sort_order"],
+            "group_code": r["group_code"],
+            "attribute": {
+                "id": r["attr_id"],
+                "code": r["code"],
+                "name": r["name"],
+                "data_type": r["data_type"],
+                "group_code": r["attr_group"],
+                "scope": r["scope"],
+                "unit": r["unit"],
+                "unit_group": r["unit_group"],
+                "number_min": float(r["number_min"]) if r["number_min"] is not None else None,
+                "number_max": float(r["number_max"]) if r["number_max"] is not None else None,
+                "number_step": float(r["number_step"]) if r["number_step"] is not None else None,
+                "values": [{"id": v["id"], "code": v["code"], "label": v["label"]} for v in values],
+            },
+        })
+    return {"items": items}
+
+
+# ── 阶段 3 · 规格向导（/api/v1/spec/wizard，契约 shared/contracts/spec-system.ts）──
+@app.post("/api/v1/spec/wizard/submit")
+async def wizard_submit(body: dict, request: Request, user: dict = Depends(_get_current_user)):
+    """向导提交：生成/命中 SKU（可选带价格）。
+    响应形状 = WizardSubmitResponse {sku_id, price_id, spec_hash, is_new_sku, revision}。"""
+    category_id = body.get("category_id")
+    spec_values = body.get("spec_values") or {}
+    if not isinstance(category_id, int) or not isinstance(spec_values, dict) or not spec_values:
+        raise HTTPException(status_code=422, detail="category_id and spec_values are required")
+    cat = await db.fetchrow(
+        request, "SELECT id, code FROM product_categories WHERE id = $1", category_id
+    )
+    if cat is None:
+        return {"error": "not_found"}
+    spec_for_hash = {str(k): (v or {}).get("value") for k, v in spec_values.items()}
+    spec_hash = _compute_sku_hash(cat["code"], spec_for_hash)
+    existing = await db.fetchrow(
+        request,
+        """SELECT id, revision FROM product_skus
+            WHERE tenant_id = $1 AND category_id = $2 AND spec_hash = $3 AND is_active = TRUE
+            ORDER BY revision DESC LIMIT 1""",
+        DEFAULT_TENANT, category_id, spec_hash,
+    )
+    if existing is not None:
+        sku_id, revision, is_new = existing["id"], existing["revision"], False
+    else:
+        row = await db.fetchrow(
+            request,
+            """INSERT INTO product_skus
+                   (tenant_id, category_id, spec_values, spec_hash, schema_version,
+                    revision, weight_kg, description, is_active, created_by)
+                 VALUES ($1, $2, $3, $4, 1, 1, $5, $6, TRUE, $7)
+                 RETURNING id, revision""",
+            DEFAULT_TENANT, category_id, _json.dumps(spec_values), spec_hash,
+            to_float(body.get("weight_kg")), body.get("description"), str(user["id"]),
+        )
+        sku_id, revision, is_new = row["id"], row["revision"], True
+    price_id = None
+    pricing = body.get("pricing")
+    if is_new and isinstance(pricing, dict):
+        price = pricing.get("price")
+        price_unit = (pricing.get("price_unit") or "").strip()
+        change_reason = (pricing.get("change_reason") or "").strip()
+        effective_from = parse_date(pricing.get("effective_from"))
+        if (
+            isinstance(price, (int, float)) and price > 0
+            and price_unit and change_reason and effective_from is not None
+        ):
+            price_id = await _upsert_price(
+                request,
+                sku_id=sku_id,
+                tenant_id=DEFAULT_TENANT,
+                price=float(price),
+                price_unit=price_unit,
+                effective_from=effective_from,
+                effective_to=parse_date(pricing.get("effective_to")),
+                min_qty=to_float(pricing.get("min_qty")),
+                tier_rules=pricing.get("tier_rules"),
+                note=pricing.get("note"),
+                change_reason=change_reason,
+                created_by=str(user["id"]),
+            )
+    return {
+        "sku_id": sku_id,
+        "price_id": price_id,
+        "spec_hash": spec_hash,
+        "is_new_sku": is_new,
+        "revision": revision,
+    }
+
+
+@app.post("/api/v1/spec/wizard/propose-attribute")
+async def wizard_propose_attribute(
+    body: dict, request: Request, user: dict = Depends(_get_current_user)
+):
+    """向导属性建议：未登记属性进 attribute_proposals（响应 {id, status}）。"""
+    category_id = body.get("category_id")
+    proposed_name = (body.get("proposed_name") or "").strip()
+    group_code = (body.get("group_code") or "").strip()
+    proposed_type = (body.get("proposed_type") or "string").strip()
+    if not isinstance(category_id, int) or not proposed_name:
+        raise HTTPException(status_code=422, detail="category_id and proposed_name are required")
+    sample_values = body.get("sample_values")
+    sample_values = [str(v) for v in sample_values] if isinstance(sample_values, list) else None
+    import difflib
+
+    existing = await db.fetch(
+        request,
+        "SELECT name, aliases FROM spec_attributes WHERE status = 'active'",
+        table="spec_attributes",
+    )
+    pool: set = set()
+    for r in existing:
+        pool.add(r["name"])
+        if r["aliases"]:
+            pool.update(str(a) for a in r["aliases"])
+    suggestions = difflib.get_close_matches(proposed_name, sorted(pool), n=3, cutoff=0.5)
+    row = await db.fetchrow(
+        request,
+        """INSERT INTO attribute_proposals
+               (tenant_id, category_id, group_code, proposed_name, proposed_aliases,
+                proposed_unit, proposed_unit_group, proposed_type, sample_values,
+                occurrence_count, recommended_for_promotion, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, FALSE, 'pending')
+             RETURNING id, status""",
+        DEFAULT_TENANT, category_id, group_code, proposed_name,
+        _json.dumps(suggestions), body.get("proposed_unit"), body.get("proposed_unit_group"),
+        proposed_type,
+        _json.dumps(sample_values) if sample_values is not None else None,
+    )
+    return {"id": row["id"], "status": row["status"]}
+
+
+# ── 阶段 3 · 事件列表（GET /api/v1/events，与既有 POST 同表，倒序分页）──
+@app.get("/api/v1/events")
+async def list_events_api(
+    request: Request,
+    page: int = 1,
+    page_size: int = 20,
+    event_type: str = "",
+    user: dict = Depends(_get_current_user),
+):
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 100)
+    where = "WHERE tenant_id = $1"
+    args: list = [DEFAULT_TENANT]
+    if event_type:
+        args.append(event_type)
+        where += f" AND event_type = ${len(args)}"
+    total = await db.fetchval(request, f"SELECT count(*) FROM events {where}", *args)
+    args.extend([page_size, (page - 1) * page_size])
+    rows = await db.fetch(
+        request,
+        f"""SELECT * FROM events {where}
+              ORDER BY id DESC LIMIT ${len(args) - 1} OFFSET ${len(args)}""",
+        *args,
+    )
+    return {
+        "items": [_row_to_dict(r) for r in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+# ── 阶段 3 · 管理（/api/v1/admin/*；yaml→DB 等语义差见 docs/CLEANUP_LOG.md）──
+@app.get("/api/v1/admin/feature_flag")
+async def get_feature_flag(
+    flag_name: str, request: Request, user: dict = Depends(_get_current_user)
+):
+    row = await db.fetchrow(
+        request,
+        "SELECT flag_value FROM feature_flags WHERE tenant_id = $1 AND flag_name = $2",
+        DEFAULT_TENANT, flag_name,
+    )
+    return {"flag_name": flag_name, "flag_value": bool(row["flag_value"]) if row else False}
+
+
+@app.post("/api/v1/admin/feature_flag")
+async def set_feature_flag(body: dict, request: Request, user: dict = Depends(_get_current_user)):
+    """功能开关写 DB（orchestrator 写 tenants.yaml，存储差见 UNCERTAIN #13），并记审计。"""
+    flag_name = (body.get("flag_name") or "").strip()
+    if not flag_name:
+        raise HTTPException(status_code=422, detail="flag_name is required")
+    flag_value = bool(body.get("flag_value", False))
+    tenant_id = (body.get("tenant_id") or DEFAULT_TENANT).strip()
+    old = await db.fetchrow(
+        request,
+        "SELECT flag_value FROM feature_flags WHERE tenant_id = $1 AND flag_name = $2",
+        tenant_id, flag_name,
+    )
+    old_value = bool(old["flag_value"]) if old else False
+    row = await db.fetchrow(
+        request,
+        """INSERT INTO feature_flags (tenant_id, flag_name, flag_value, updated_by)
+             VALUES ($1, $2, $3, $4)
+           ON CONFLICT (tenant_id, flag_name)
+             DO UPDATE SET flag_value = EXCLUDED.flag_value,
+                           updated_at = now(),
+                           updated_by = EXCLUDED.updated_by
+           RETURNING id""",
+        tenant_id, flag_name, flag_value, str(user["id"]),
+    )
+    await db.execute(
+        request,
+        """INSERT INTO feature_flag_audit
+               (action, actor_id, tenant_id, resource_type, resource_id,
+                flag_name, old_value, new_value, reason)
+             VALUES ('feature_flag_change', $1, $2, 'feature_flag', $3, $4, $5, $6, $7)""",
+        str(user["id"]), tenant_id, str(row["id"]), flag_name,
+        str(old_value), str(flag_value), body.get("reason"),
+    )
+    return {"flag_name": flag_name, "flag_value": flag_value}
+
+
+@app.get("/api/v1/admin/tenants")
+async def list_tenants(user: dict = Depends(_get_current_user)):
+    # Worker 单租户形态：tenants.yaml 不可移植，固定返回默认租户（UNCERTAIN #13）
+    return {"items": [{"tenant_id": DEFAULT_TENANT, "name": DEFAULT_TENANT}]}
+
+
+@app.post("/api/v1/admin/tenants/reload")
+async def reload_tenants(request: Request, user: dict = Depends(_get_current_user)):
+    """租户重载：Worker 无 yaml，仅记审计 no-op（语义差见 docs/CLEANUP_LOG.md）。"""
+    await db.execute(
+        request,
+        """INSERT INTO feature_flag_audit (action, actor_id, tenant_id, resource_type, reason)
+             VALUES ('tenants_reload', $1, $2, 'tenants', 'worker 单租户无 yaml，no-op 记账')""",
+        str(user["id"]), DEFAULT_TENANT,
+    )
+    return {"reloaded": True, "items": [{"tenant_id": DEFAULT_TENANT, "name": DEFAULT_TENANT}]}
+
+
+@app.get("/api/v1/admin/audit-log")
+async def get_audit_log(
+    request: Request,
+    page: int = 1,
+    page_size: int = 20,
+    user: dict = Depends(_get_current_user),
+):
+    """审计日志（源=feature_flag_audit 表；orchestrator 源=deployment_audit.jsonl）。"""
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 100)
+    total = await db.fetchval(request, "SELECT count(*) FROM feature_flag_audit")
+    rows = await db.fetch(
+        request,
+        """SELECT id, action, actor_id, resource_type, resource_id, tenant_id,
+                  flag_name, old_value, new_value, reason, created_at
+             FROM feature_flag_audit
+            ORDER BY id DESC LIMIT $1 OFFSET $2""",
+        page_size, (page - 1) * page_size,
+    )
+    items = [
+        {
+            "id": r["id"],
+            "action": r["action"],
+            "actor_id": r["actor_id"],
+            "resource_type": r["resource_type"],
+            "resource_id": r["resource_id"],
+            "tenant_id": r["tenant_id"],
+            "flag_key": r["flag_name"],
+            "enabled_before": r["old_value"],
+            "enabled_after": r["new_value"],
+            "reason": r["reason"],
+            "timestamp": r["created_at"].isoformat() if r["created_at"] else None,
+        }
+        for r in rows
+    ]
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@app.get("/api/v1/admin/archive-logs")
+async def get_archive_logs(user: dict = Depends(_get_current_user)):
+    # Worker 无文件系统，归档日志占位空列表（语义差见 docs/CLEANUP_LOG.md）
+    return {"items": [], "total": 0}
+
+
+# ── 阶段 3 · 客户能力（/api/v1/capabilities*，表 customer_capabilities）──
+def _capability_row(r) -> dict:
+    """customer_capabilities 行 → API 形状（spec_constraints JSON 手动解码）。"""
+    sc = r["spec_constraints"]
+    if isinstance(sc, str):
+        try:
+            sc = _json.loads(sc)
+        except ValueError:
+            sc = {}
+    return {
+        "id": r["id"],
+        "customer_id": r["customer_id"],
+        "customer_name": r["customer_name"],
+        "product_category": r["product_category"],
+        "spec_constraints": sc or {},
+        "notes": r["notes"],
+        "effective_from": r["effective_from"],
+        "updated_at": r["updated_at"],
+    }
+
+
+@app.get("/api/v1/capability-customers")
+async def list_capability_customers(request: Request, user: dict = Depends(_get_current_user)):
+    rows = await db.fetch(
+        request,
+        """SELECT customer_id, customer_name,
+                  count(DISTINCT product_category) AS category_count,
+                  max(updated_at) AS updated_at
+             FROM customer_capabilities
+            WHERE tenant_id = $1
+            GROUP BY customer_id, customer_name
+            ORDER BY max(updated_at) DESC""",
+        DEFAULT_TENANT,
+    )
+    items = []
+    for r in rows:
+        d = _row_to_dict(r)
+        d["locale"] = "zh-CN"
+        d["region"] = "CN"
+        items.append(d)
+    return {"items": items}
+
+
+@app.get("/api/v1/capabilities")
+async def list_capabilities_api(
+    request: Request, customer_id: str = "", user: dict = Depends(_get_current_user)
+):
+    if customer_id:
+        rows = await db.fetch(
+            request,
+            """SELECT * FROM customer_capabilities
+                WHERE tenant_id = $1 AND customer_id = $2
+                ORDER BY product_category""",
+            DEFAULT_TENANT, customer_id,
+        )
+    else:
+        rows = await db.fetch(
+            request,
+            """SELECT * FROM customer_capabilities
+                WHERE tenant_id = $1 ORDER BY customer_id, product_category""",
+            DEFAULT_TENANT,
+        )
+    return {"capabilities": [_capability_row(r) for r in rows]}
+
+
+@app.post("/api/v1/capabilities")
+async def upsert_capability_api(body: dict, request: Request, user: dict = Depends(_get_current_user)):
+    """客户能力登记/更新（按 租户+客户+品类 幂等 upsert，同 capabilities_repo）。"""
+    customer_id = (body.get("customer_id") or "").strip()
+    customer_name = (body.get("customer_name") or "").strip()
+    product_category = (body.get("product_category") or "").strip()
+    if not customer_id or not product_category:
+        raise HTTPException(status_code=422, detail="customer_id and product_category are required")
+    spec_constraints = body.get("spec_constraints") or {}
+    notes = body.get("notes")
+    effective_from = body.get("effective_from")
+    existing = await db.fetchrow(
+        request,
+        """SELECT id FROM customer_capabilities
+            WHERE tenant_id = $1 AND customer_id = $2 AND product_category = $3""",
+        DEFAULT_TENANT, customer_id, product_category,
+    )
+    if existing is not None:
+        row = await db.fetchrow(
+            request,
+            """UPDATE customer_capabilities
+                  SET customer_name = $1, spec_constraints = $2, notes = $3,
+                      effective_from = COALESCE($4, effective_from), updated_at = now()
+                WHERE id = $5 RETURNING id""",
+            customer_name or None, _json.dumps(spec_constraints), notes, effective_from,
+            existing["id"],
+        )
+    else:
+        row = await db.fetchrow(
+            request,
+            """INSERT INTO customer_capabilities
+                   (tenant_id, customer_id, customer_name, product_category,
+                    spec_constraints, notes, effective_from, schema_version)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, 1) RETURNING id""",
+            DEFAULT_TENANT, customer_id, customer_name or None, product_category,
+            _json.dumps(spec_constraints), notes, effective_from,
+        )
+    return {"id": row["id"]}
+
+
+@app.get("/api/v1/customer/{customer_id}/capabilities")
+async def get_customer_capabilities(
+    customer_id: str, request: Request, user: dict = Depends(_get_current_user)
+):
+    rows = await db.fetch(
+        request,
+        """SELECT * FROM customer_capabilities
+            WHERE tenant_id = $1 AND customer_id = $2 ORDER BY product_category""",
+        DEFAULT_TENANT, customer_id,
+    )
+    items = []
+    for r in rows:
+        d = _capability_row(r)
+        d["is_active"] = True
+        items.append(d)
+    return items
+
+
+@app.patch("/api/v1/customer/{customer_id}/capabilities")
+async def patch_customer_capability(
+    customer_id: str, body: dict, request: Request, user: dict = Depends(_get_current_user)
+):
+    """更新单条能力（body {id, spec_constraints, is_active}；is_active 无存储列，见 CLEANUP_LOG）。"""
+    cap_id = body.get("id")
+    if not isinstance(cap_id, int):
+        raise HTTPException(status_code=422, detail="id is required")
+    row = await db.fetchrow(
+        request,
+        """UPDATE customer_capabilities
+              SET spec_constraints = $1, updated_at = now()
+            WHERE id = $2 AND tenant_id = $3 AND customer_id = $4
+            RETURNING id""",
+        _json.dumps(body.get("spec_constraints") or {}),
+        cap_id, DEFAULT_TENANT, customer_id,
+    )
+    if row is None:
+        return {"error": "not_found"}
+    return {"id": row["id"], "is_active": body.get("is_active", True)}
 
 
 # ── Worker Entrypoint ──
