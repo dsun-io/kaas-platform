@@ -176,8 +176,8 @@ NEXT_PUBLIC_API_MODE=real
 # 主域名 kaas.powervoy.com 的同源 /api/* 仅为历史兼容，前端并不依赖。
 NEXT_PUBLIC_API_BASE_URL=https://api.kaas.powervoy.com
 
-npm install --legacy-peer-deps
-npm run build          # 输出到 out/
+pnpm install --frozen-lockfile   # monorepo 单锁装齐 shared + frontend（pnpm 12 口径）
+cd frontend && npm run build     # 输出到 out/
 ```
 
 `backend/worker/wrangler.jsonc` 的 `assets.directory` 指向 `../../frontend/out`，
