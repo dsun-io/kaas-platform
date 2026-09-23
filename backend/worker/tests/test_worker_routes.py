@@ -108,6 +108,11 @@ NEW_ROUTES: set[tuple[str, str]] = {
     ("/api/v1/capabilities", "POST"),
     ("/api/v1/customer/{customer_id}/capabilities", "GET"),
     ("/api/v1/customer/{customer_id}/capabilities", "PATCH"),
+    # 阶段 6 任务 2：订单工位（D1 订单 CRUD）
+    ("/api/v1/orders", "GET"),
+    ("/api/v1/orders", "POST"),
+    ("/api/v1/orders/{order_id}", "GET"),
+    ("/api/v1/orders/{order_id}", "PATCH"),
 }
 
 
@@ -131,9 +136,18 @@ def test_new_routes_answer_auth_challenge():
             .replace("{sku_id}", "1")
             .replace("{price_id}", "1")
             .replace("{category_id}", "1")
+            .replace("{order_id}", "1")
+            .replace("{schedule_id}", "1")
         )
         resp = client.request(method, probe)
         assert resp.status_code != 404, f"{method} {path} 未注册"
         assert resp.status_code in (401, 403, 422), (
             f"{method} {path} 无凭据应先被鉴权拦截，实际 {resp.status_code}"
         )
+
+
+def test_stage6_orders_unauthorized():
+    resp = client.get("/api/v1/orders")
+    assert resp.status_code == 401
+    resp = client.post("/api/v1/orders", json={"customer_name": "x"})
+    assert resp.status_code == 401
