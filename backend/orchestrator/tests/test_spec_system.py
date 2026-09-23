@@ -13,6 +13,8 @@
 """
 import pytest
 from datetime import datetime, timezone, timedelta
+
+pytestmark = pytest.mark.db
 from decimal import Decimal
 from sqlalchemy import text, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession

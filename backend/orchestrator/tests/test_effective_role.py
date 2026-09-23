@@ -10,6 +10,8 @@
 import pytest
 from unittest.mock import MagicMock
 
+pytestmark = pytest.mark.unit
+
 
 # ═══════════════════════════════════════════════════════════════
 # AuthContext effective_role 映射测试

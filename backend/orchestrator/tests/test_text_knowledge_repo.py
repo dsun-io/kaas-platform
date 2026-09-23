@@ -8,7 +8,7 @@ Kaas v2 · TextKnowledge Repository 测试
   - 组合检索 (keywords / tags / ILIKE / FTS)
 """
 import pytest
-pytestmark = pytest.mark.unit
+pytestmark = pytest.mark.db
 
 from app.repositories.text_knowledge_repo import (
     create_text_knowledge,
