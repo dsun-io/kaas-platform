@@ -10,22 +10,6 @@ from pydantic import BaseModel, Field
 # ─── v1 Payload Schemas (§3.7.5) ───
 
 
-class QuoteRequestV1(BaseModel):
-    session_id: str
-    customer_id: str
-    product_category: str
-    product_spec: Dict[str, Any]
-    quantity: int
-
-
-class QuoteResponseV1(BaseModel):
-    session_id: str
-    status: Literal["matched", "estimated", "spec_not_supported"]
-    source: Literal["quotations_db", "L1_L2_formula"]
-    unit_price: Optional[float] = None
-    confidence: Literal["high", "medium", "low"]
-
-
 class CapabilityUpdateV1(BaseModel):
     customer_id: str
     product_category: str
@@ -44,8 +28,6 @@ class AuditAccessV1(BaseModel):
 # ─── Registry: (event_type, schema_version) → BaseModel ───
 
 PAYLOAD_SCHEMAS: Dict[str, Dict[int, type[BaseModel]]] = {
-    "quote.request": {1: QuoteRequestV1},
-    "quote.response": {1: QuoteResponseV1},
     "capability.update": {1: CapabilityUpdateV1},
     "audit.access": {1: AuditAccessV1},
 }

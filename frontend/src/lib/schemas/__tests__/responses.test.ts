@@ -36,7 +36,7 @@ describe('EventsResponseSchema', () => {
     const result = EventsResponseSchema.safeParse({
       items: [
         {
-          id: 'evt-2', event_type: 'quote.request', event_source: 'frontend',
+          id: 'evt-2',           event_type: 'capability.update', event_source: 'frontend',
           schema_version: 1, tenant_id: 't1',
           payload: {}, created_at: new Date().toISOString(),
         },

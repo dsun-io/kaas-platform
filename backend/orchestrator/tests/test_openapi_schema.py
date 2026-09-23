@@ -23,13 +23,13 @@ class TestOpenAPISchema:
         paths = openapi_doc.get("paths", {})
         assert len(paths) >= 10
 
-    def test_quote_response_schema_exists(self, openapi_doc):
-        """POST /api/v1/quote 有 200 response schema。"""
-        path = openapi_doc["paths"].get("/api/v1/quote", {})
+    def test_wizard_submit_response_schema_exists(self, openapi_doc):
+        """POST /api/v1/spec/wizard/submit 有 200 response schema。"""
+        path = openapi_doc["paths"].get("/api/v1/spec/wizard/submit", {})
         post = path.get("post", {})
         resp200 = post.get("responses", {}).get("200", {})
         schema = resp200.get("content", {}).get("application/json", {}).get("schema")
-        assert schema is not None, "QuoteResponse schema missing"
+        assert schema is not None, "WizardSubmitResponse schema missing"
 
     def test_health_paths_have_schema(self, openapi_doc):
         """/health 系列的 200 response 有 schema。"""

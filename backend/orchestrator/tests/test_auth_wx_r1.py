@@ -8,7 +8,7 @@
 - 意图识别 & 参数提取
 - 话术渲染
 - wechat_adapter 异常安全
-- API 端点: login/register/me/logout/quote (需 DB)
+- API 端点: login/register/me/logout/spec/wizard/submit (需 DB)
 """
 
 import pytest
@@ -141,9 +141,10 @@ class TestAuthEndpoints:
         # Accept 200 (mock middleware works, injecting test auth) or 401 (real middleware)
         assert res.status_code in (200, 401)
 
-    async def test_quote_requires_auth(self, async_client: AsyncClient):
-        res = await async_client.post("/api/v1/quote", json={})
-        assert res.status_code == 401
+    async def test_wizard_submit_requires_auth(self, async_client: AsyncClient):
+        res = await async_client.post("/api/v1/spec/wizard/submit", json={})
+        # 管理员许可门：未登录/非管理员 → 403（比登录门更严），先于业务校验
+        assert res.status_code == 403
 
     async def test_login_rejects_empty_body(self, async_client: AsyncClient):
         res = await async_client.post("/api/v1/auth/login", json={})

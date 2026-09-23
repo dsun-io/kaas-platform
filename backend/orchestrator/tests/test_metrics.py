@@ -23,20 +23,16 @@ class TestMetricsEndpoint:
 class TestBusinessMetrics:
     """业务指标自增测试。"""
 
-    async def test_quote_request_increments_counter(self, client):
-        """报价请求后 kaas_quote_requests_total 指标存在。"""
+    async def test_business_metrics_counter_present(self, client):
+        """调用业务接口后 /metrics 存在业务计数器指标。"""
         with patch(
             "app.services.pricing.get_latest_price", new_callable=AsyncMock
         ) as mock_price:
             mock_price.return_value = None
 
             await client.post(
-                "/api/v1/quote",
-                json={
-                    "customer_id": "cust-1",
-                    "product_category": "牛栏网",
-                    "product_spec": {"mesh": "50x50", "wire": "2.5"},
-                },
+                "/api/v1/spec/wizard/submit",
+                json={"category_id": 1, "spec_values": {}},
                 headers={"X-Tenant-Id": "lianjia"},
             )
 

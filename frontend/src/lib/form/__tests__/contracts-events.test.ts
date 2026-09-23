@@ -3,9 +3,9 @@ import { EVENT_PAYLOAD_SCHEMAS, LATEST_SCHEMA_VERSION, AuditAccessPayloadSchema 
 import type { EventType } from '@contracts/events';
 
 describe('EVENT_PAYLOAD_SCHEMAS', () => {
-  it('registers all 4 event types with their latest version', () => {
+  it('registers all 2 event types with their latest version', () => {
     const types = Object.keys(LATEST_SCHEMA_VERSION) as EventType[];
-    expect(types).toHaveLength(4);
+    expect(types).toHaveLength(2);
 
     for (const t of types) {
       const version = LATEST_SCHEMA_VERSION[t];

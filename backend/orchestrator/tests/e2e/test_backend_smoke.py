@@ -56,27 +56,9 @@ class TestBackendSmoke:
         )
         assert r.status_code in (200, 201)
 
-    async def test_quote_returns_response(self, client):
-        """POST /api/v1/quote → 200。"""
-        r = await client.post(
-            "/api/v1/quote",
-            json={
-                "customer_id": "cust-1",
-                "product_category": "牛栏网",
-                "product_spec": {"mesh": "50x50", "wire": "2.5"},
-            },
-            headers=TENANT_HEADERS,
-        )
-        assert r.status_code == 200
-
     async def test_capabilities_returns_200(self, client):
         """GET /api/v1/capabilities → 200。"""
         r = await client.get("/api/v1/capabilities", headers=TENANT_HEADERS)
-        assert r.status_code == 200
-
-    async def test_quotations_returns_200(self, client):
-        """GET /api/v1/quotations → 200。"""
-        r = await client.get("/api/v1/quotations", headers=TENANT_HEADERS)
         assert r.status_code == 200
 
     async def test_admin_flags_returns_200(self, client):

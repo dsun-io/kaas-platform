@@ -20,7 +20,7 @@ class TestBodySizeLimit:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as c:
             r = await c.post(
-                "/api/v1/quote",
+                "/api/v1/spec/wizard/submit",
                 json={"test": "data"},
                 headers={
                     "X-Tenant-Id": "lianjia",
@@ -38,22 +38,23 @@ class TestBodySizeLimit:
 
 
 class TestQuoteRequestConstraints:
-    """QuoteRequest 校验顺序 — 先查登录，再查长度（2026-09-22 David 确认）。"""
+    """超长文本校验顺序 — 先查权限，再查长度（2026-09-22 David 确认）。"""
 
     async def test_login_checked_before_length(self):
-        """未登录 + 超长文本 → 401（登录检查在长度检查之前）。"""
+        """未登录 + 超长描述 → 403（权限检查在长度检查之前）。"""
         transport = ASGITransport(app=app)
         long_text = "x" * 2001
         async with AsyncClient(transport=transport, base_url="http://test") as c:
             r = await c.post(
-                "/api/v1/quote",
+                "/api/v1/spec/wizard/submit",
                 json={
-                    "customer_id": "cust-1",
-                    "raw_text": long_text,
+                    "category_id": 1,
+                    "spec_values": {},
+                    "description": long_text,
                 },
                 headers={"X-Tenant-Id": "lianjia"},
             )
-        assert r.status_code == 401
+        assert r.status_code == 403
 
     async def test_raw_text_too_long_rejected(self):
         """登录之后长度检查生效：raw_text > 2000 → 校验失败（对应 422）。"""

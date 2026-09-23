@@ -28,9 +28,20 @@ class TestEventInsert:
         assert data["event_type"] == "audit.access"
         assert data["id"] is not None
 
-    async def test_insert_quote_request_success(self, client):
-        """写入 quote.request 事件成功。"""
-        body = make_event_body("quote.request", schema_version=1, event_source="orchestrator")
+    async def test_insert_capability_update_payload_success(self, client):
+        """写入 capability.update 事件成功。"""
+        body = make_event_body(
+            "capability.update",
+            schema_version=1,
+            event_source="orchestrator",
+            payload={
+                "customer_id": "cust-1",
+                "product_category": "牛栏网",
+                "spec_constraints_before": {},
+                "spec_constraints_after": {},
+                "actor_id": "agent-1",
+            },
+        )
         response = await client.post(
             "/api/v1/events",
             json=body,
@@ -38,7 +49,7 @@ class TestEventInsert:
         )
         assert response.status_code == 201
         data = response.json()
-        assert data["event_type"] == "quote.request"
+        assert data["event_type"] == "capability.update"
 
     async def test_invalid_event_type_rejected(self, client):
         """无效 event_type 返回 400 + event_type_unknown。"""

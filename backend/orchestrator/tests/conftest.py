@@ -346,14 +346,6 @@ def make_event_body(
             "actor_id": kwargs.pop("actor_id", "tester"),
             "ip": kwargs.pop("ip", None),
         })
-    elif event_type == "quote.request":
-        defaults.setdefault("payload", {
-            "session_id": kwargs.pop("session_id", "sess-test"),
-            "customer_id": kwargs.pop("customer_id", "cust-1"),
-            "product_category": kwargs.pop("product_category", "牛栏网"),
-            "product_spec": kwargs.pop("product_spec", {"mesh": "50x50"}),
-            "quantity": kwargs.pop("quantity", 100),
-        })
     elif payload is not None:
         defaults["payload"] = payload
     else:

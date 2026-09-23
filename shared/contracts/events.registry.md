@@ -5,20 +5,6 @@
 > - 新增 event_type 或 schema_version 必须同步更新两处
 > - 参见 v2 设计文档 §3.7.5
 
-## quote.request (v1)
-- session_id: string
-- customer_id: string
-- product_category: string
-- product_spec: object
-- quantity: int
-
-## quote.response (v1)
-- session_id: string
-- status: enum [matched | estimated | spec_not_supported]
-- source: enum [quotations_db | L1_L2_formula]
-- unit_price: decimal | null
-- confidence: enum [high | medium | low]
-
 ## capability.update (v1)
 - customer_id: string
 - product_category: string

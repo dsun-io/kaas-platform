@@ -89,13 +89,361 @@
         }
       }
     },
+    "/api/v1/auth/register": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Register",
+        "description": "注册新用户（仅限 customer 账号）。\n\n安全规则（反伪造）:\n- 忽略 body 中的 account_type / role / plan\n- 强制: account_type='customer', role='owner', plan='free'\n- 自动创建 Customer + UserCustomer 绑定",
+        "operationId": "register_api_v1_auth_register_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Login",
+        "description": "登录。",
+        "operationId": "login_api_v1_auth_login_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Logout",
+        "description": "登出（stateless JWT — 客户端丢弃 token 即可）。",
+        "operationId": "logout_api_v1_auth_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Me",
+        "description": "获取当前用户信息。",
+        "operationId": "me_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/bootstrap-admin": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Bootstrap Admin",
+        "description": "一次性管理员初始化。\n\n安全规则:\n- ADMIN_SETUP_TOKEN 为空 → 503（未配置）\n- 任一 system_admin 已存在 → 403（已初始化）\n- Token 通过 Authorization: Bearer <token> 传入，常数时间比对\n- 创建后永久禁用此端点",
+        "operationId": "bootstrap_admin_api_v1_auth_bootstrap_admin_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pricing-data": {
+      "get": {
+        "tags": [
+          "pricing_data"
+        ],
+        "summary": "List Pricing Data",
+        "description": "查询当前客户的定价数据列表。",
+        "operationId": "list_pricing_data_api_v1_pricing_data_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "pricing_data"
+        ],
+        "summary": "Create Pricing Data",
+        "description": "录入客户规格 + 成本价数据。\n\n同一事务内:\n1. 查找或创建 product_specs 规格记录\n2. 插入 customer_cost_items 成本记录\n\ntenant/customer 信息永远从 AuthContext 取，不信任请求体。",
+        "operationId": "create_pricing_data_api_v1_pricing_data_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pricing-data/{item_id}": {
+      "patch": {
+        "tags": [
+          "pricing_data"
+        ],
+        "summary": "Update Pricing Data",
+        "description": "编辑客户规格 + 成本价数据。\n\n仅允许编辑当前用户 tenant/customer 下的数据。\n同一事务内更新 product_specs 和 customer_cost_items。",
+        "operationId": "update_pricing_data_api_v1_pricing_data__item_id__patch",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "pricing_data"
+        ],
+        "summary": "Delete Pricing Data",
+        "description": "删除/停用客户定价数据（软删除，设为 inactive）。\n\n仅允许操作当前用户 tenant/customer 下的数据。",
+        "operationId": "delete_pricing_data_api_v1_pricing_data__item_id__delete",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/events": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "List Events Endpoint",
+        "description": "查询事件列表，支持过滤和分页。",
+        "operationId": "list_events_endpoint_api_v1_events_get",
+        "parameters": [
+          {
+            "name": "event_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Event Type"
+            }
+          },
+          {
+            "name": "schema_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Schema Version"
+            }
+          },
+          {
+            "name": "actor_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actor Id"
+            }
+          },
+          {
+            "name": "event_source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Event Source"
+            }
+          },
+          {
+            "name": "sampled",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sampled"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "tags": [
           "events"
         ],
         "summary": "Create Event",
-        "description": "写入原始事件。tenant_id 从中间件注入，严禁从 body 读。",
+        "description": "写入原始事件。tenant_id 从 AuthContext 取，严禁从 body 读。",
         "operationId": "create_event_api_v1_events_post",
         "responses": {
           "200": {
@@ -117,7 +465,7 @@
           "oss"
         ],
         "summary": "Create Presigned Url",
-        "description": "生成 OSS 预签名上传 URL (§3.7.9)。",
+        "description": "生成 OSS 预签名上传 URL (§3.7.9)。\n\nAUTH:\n- internal: body 必须传 tenant_id，key 使用指定租户\n- customer/free: 自动使用自己的 tenant_id，拒绝跨租户",
         "operationId": "create_presigned_url_api_v1_oss_presign_post",
         "responses": {
           "200": {
@@ -224,7 +572,7 @@
           "admin"
         ],
         "summary": "Set Feature Flag",
-        "description": "设置租户 feature flag（写 tenants.yaml + 审计）。",
+        "description": "设置租户 feature flag（写 tenants.yaml + 审计）。\n\n兼容两种请求体格式:\n- 后端格式: { tenant_id, flag_name, flag_value }\n- 前端格式: { flag_key, enabled, reason, actor_id }",
         "operationId": "set_feature_flag_api_v1_admin_feature_flag_post",
         "responses": {
           "200": {
@@ -244,15 +592,22 @@
           "admin"
         ],
         "summary": "Get Feature Flag",
-        "description": "读取租户当前 feature flags。",
+        "description": "读取租户 feature flags。\n\n如果未提供 tenant_id，返回所有租户的 flags map；\n否则返回指定租户的 flags。",
         "operationId": "get_feature_flag_api_v1_admin_feature_flag_get",
         "parameters": [
           {
             "name": "tenant_id",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": "string",
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "Tenant Id"
             }
           }
@@ -262,9 +617,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FeatureFlagResponse"
-                }
+                "schema": {}
               }
             }
           },
@@ -289,6 +642,59 @@
         "summary": "Get Deployment Audit",
         "description": "查询部署审计日志（tail jsonl）。",
         "operationId": "get_deployment_audit_api_v1_admin_deployment_audit_get",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Since"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 200,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditLogResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/audit-log": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Audit Log",
+        "description": "前端兼容: /admin/audit-log → 复用 deployment_audit。",
+        "operationId": "get_audit_log_api_v1_admin_audit_log_get",
         "parameters": [
           {
             "name": "since",
@@ -421,22 +827,20 @@
         }
       }
     },
-    "/api/v1/quote": {
-      "post": {
+    "/api/v1/capability-customers": {
+      "get": {
         "tags": [
-          "quote"
+          "capabilities"
         ],
-        "summary": "Create Quote",
-        "description": "创建报价。串联整个报价链路。",
-        "operationId": "create_quote_api_v1_quote_post",
+        "summary": "List Capability Customers",
+        "description": "有能力档案的客户列表（按 customer_capabilities 聚合）。\n\n注意：路径从 /customers 改名，避免与客户工位 GET /customers 冲突。\n原路径无前端消费者（2026-09-21 核实）。\n\nAUTH: internal 可查看全部，customer/free 只能查看自己。",
+        "operationId": "list_capability_customers_api_v1_capability_customers_get",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/QuoteResponse"
-                }
+                "schema": {}
               }
             }
           }
@@ -449,7 +853,7 @@
           "capabilities"
         ],
         "summary": "List Customer Capabilities",
-        "description": "查询客户能力列表。\n\nQuery params:\n- customer_id: str (可选，默认取当前租户)",
+        "description": "查询客户能力列表。\n\nAUTH-WX-R1: customer 账号只能查看自己的数据。\nQuery params:\n- customer_id: str (可选，internal 可指定，customer 被忽略)",
         "operationId": "list_customer_capabilities_api_v1_capabilities_get",
         "parameters": [
           {
@@ -497,7 +901,7 @@
           "capabilities"
         ],
         "summary": "Update Customer Capability",
-        "description": "新增或更新客户能力。\n\n请求 body:\n- customer_id: str\n- customer_name: str\n- product_category: str\n- spec_constraints: dict\n- notes: str (可选)",
+        "description": "新增或更新客户能力。\n\nAUTH-WX-R1: customer 账号只能更新自己的数据。\n\n请求 body:\n- customer_id: str (customer 账号传了其他 customer_id 也会被忽略)\n- customer_name: str\n- product_category: str\n- spec_constraints: dict\n- notes: str (可选)",
         "operationId": "update_customer_capability_api_v1_capabilities_post",
         "responses": {
           "200": {
@@ -513,55 +917,22 @@
         }
       }
     },
-    "/api/v1/quotations": {
+    "/api/v1/customer/{customer_id}/capabilities": {
       "get": {
         "tags": [
-          "quotations"
+          "capabilities"
         ],
-        "summary": "Get Quotations",
-        "description": "查询历史报价记录。\n\nQuery params:\n- customer_id: str (可选)\n- product_category: str (可选)\n- limit: int (默认 100)",
-        "operationId": "get_quotations_api_v1_quotations_get",
+        "summary": "Get Customer Capabilities By Id",
+        "description": "兼容前端路径: GET /api/v1/customer/{customer_id}/capabilities\n\nAUTH: internal 可读任意客户，customer/free 只能读自己。",
+        "operationId": "get_customer_capabilities_by_id_api_v1_customer__customer_id__capabilities_get",
         "parameters": [
           {
             "name": "customer_id",
-            "in": "query",
-            "required": false,
+            "in": "path",
+            "required": true,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
+              "type": "string",
               "title": "Customer Id"
-            }
-          },
-          {
-            "name": "product_category",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Product Category"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 100,
-              "title": "Limit"
             }
           }
         ],
@@ -570,8 +941,620 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/QuotationListResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "capabilities"
+        ],
+        "summary": "Patch Customer Capability",
+        "description": "兼容前端路径: PATCH /api/v1/customer/{customer_id}/capabilities\n\nAUTH: internal 可写任意客户，customer/free 只能写自己。",
+        "operationId": "patch_customer_capability_api_v1_customer__customer_id__capabilities_patch",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/summary": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "Dashboard Summary",
+        "description": "聚合仪表盘数据，全部从 DB 采集。",
+        "operationId": "dashboard_summary_api_v1_dashboard_summary_get",
+        "parameters": [
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "时间范围: today/week/month",
+              "default": "today",
+              "title": "Range"
+            },
+            "description": "时间范围: today/week/month"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/product-specs": {
+      "get": {
+        "tags": [
+          "product_specs"
+        ],
+        "summary": "List Product Specs",
+        "description": "查询平台通用规格选项。\n\n返回规格选项和可选 accessory 选项。\n不返回任何成本、售价、利润、运费字段。\n所有 spec 参数为可选过滤 — 前端逐步选填时逐层过滤。\n\n当 quotable=True 时，额外返回 quotable_specs（完整规格组合列表），\n供前端做客户端联动过滤和精确 tuple 匹配校验。",
+        "operationId": "list_product_specs_api_v1_product_specs_get",
+        "parameters": [
+          {
+            "name": "product_category",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "产品品类（code 或 label，均接受）",
+              "title": "Product Category"
+            },
+            "description": "产品品类（code 或 label，均接受）"
+          },
+          {
+            "name": "product_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "产品类型（可选过滤）",
+              "title": "Product Type"
+            },
+            "description": "产品类型（可选过滤）"
+          },
+          {
+            "name": "wire_diameter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "丝径（可选过滤）",
+              "title": "Wire Diameter"
+            },
+            "description": "丝径（可选过滤）"
+          },
+          {
+            "name": "height",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "description": "高度/m（可选过滤）",
+              "title": "Height"
+            },
+            "description": "高度/m（可选过滤）"
+          },
+          {
+            "name": "mesh_width",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "description": "网孔宽度/cm（可选过滤）",
+              "title": "Mesh Width"
+            },
+            "description": "网孔宽度/cm（可选过滤）"
+          },
+          {
+            "name": "mesh_spec",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "网孔规格（可选过滤）",
+              "title": "Mesh Spec"
+            },
+            "description": "网孔规格（可选过滤）"
+          },
+          {
+            "name": "roll_length",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "description": "卷长/m（可选过滤）",
+              "title": "Roll Length"
+            },
+            "description": "卷长/m（可选过滤）"
+          },
+          {
+            "name": "quotable",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "仅返回有成本价/销售价的规格",
+              "default": false,
+              "title": "Quotable"
+            },
+            "description": "仅返回有成本价/销售价的规格"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/spec/categories": {
+      "get": {
+        "tags": [
+          "spec-categories"
+        ],
+        "summary": "List Categories",
+        "operationId": "list_categories_api_v1_spec_categories_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/spec/categories/{category_id}": {
+      "get": {
+        "tags": [
+          "spec-categories"
+        ],
+        "summary": "Get Category",
+        "operationId": "get_category_api_v1_spec_categories__category_id__get",
+        "parameters": [
+          {
+            "name": "category_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Category Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/spec/categories/{category_id}/bindings": {
+      "get": {
+        "tags": [
+          "spec-categories"
+        ],
+        "summary": "Get Bindings",
+        "operationId": "get_bindings_api_v1_spec_categories__category_id__bindings_get",
+        "parameters": [
+          {
+            "name": "category_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Category Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/spec/attributes": {
+      "get": {
+        "tags": [
+          "spec-attributes"
+        ],
+        "summary": "List Attributes",
+        "operationId": "list_attributes_api_v1_spec_attributes_get",
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scope"
+            }
+          },
+          {
+            "name": "group_code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Code"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "spec-attributes"
+        ],
+        "summary": "Create Attribute",
+        "operationId": "create_attribute_api_v1_spec_attributes_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/spec/attributes/search": {
+      "get": {
+        "tags": [
+          "spec-attributes"
+        ],
+        "summary": "Search Attributes",
+        "operationId": "search_attributes_api_v1_spec_attributes_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Q"
+            }
+          },
+          {
+            "name": "group_code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "spec",
+              "title": "Group Code"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/spec/attributes/{attribute_id}": {
+      "get": {
+        "tags": [
+          "spec-attributes"
+        ],
+        "summary": "Get Attribute",
+        "operationId": "get_attribute_api_v1_spec_attributes__attribute_id__get",
+        "parameters": [
+          {
+            "name": "attribute_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Attribute Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/spec/attributes/{attribute_id}/values": {
+      "post": {
+        "tags": [
+          "spec-attributes"
+        ],
+        "summary": "Add Value",
+        "operationId": "add_value_api_v1_spec_attributes__attribute_id__values_post",
+        "parameters": [
+          {
+            "name": "attribute_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Attribute Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/spec/templates": {
+      "get": {
+        "tags": [
+          "spec-templates"
+        ],
+        "summary": "List Templates",
+        "operationId": "list_templates_api_v1_spec_templates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/spec/templates/{template_id}": {
+      "get": {
+        "tags": [
+          "spec-templates"
+        ],
+        "summary": "Get Template",
+        "operationId": "get_template_api_v1_spec_templates__template_id__get",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/spec/wizard/submit": {
+      "post": {
+        "tags": [
+          "spec-wizard"
+        ],
+        "summary": "Wizard Submit",
+        "operationId": "wizard_submit_api_v1_spec_wizard_submit_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WizardSubmitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WizardSubmitResponse"
                 }
               }
             }
@@ -583,6 +1566,2576 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/spec/wizard/propose-attribute": {
+      "post": {
+        "tags": [
+          "spec-wizard"
+        ],
+        "summary": "Propose Attribute",
+        "operationId": "propose_attribute_api_v1_spec_wizard_propose_attribute_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttributeProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttributeProposalResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/spec/skus": {
+      "get": {
+        "tags": [
+          "spec-skus"
+        ],
+        "summary": "List Skus",
+        "operationId": "list_skus_api_v1_spec_skus_get",
+        "parameters": [
+          {
+            "name": "category_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category Id"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/spec/skus/{sku_id}": {
+      "get": {
+        "tags": [
+          "spec-skus"
+        ],
+        "summary": "Get Sku",
+        "operationId": "get_sku_api_v1_spec_skus__sku_id__get",
+        "parameters": [
+          {
+            "name": "sku_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Sku Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "spec-skus"
+        ],
+        "summary": "Patch Sku",
+        "operationId": "patch_sku_api_v1_spec_skus__sku_id__patch",
+        "parameters": [
+          {
+            "name": "sku_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Sku Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkuPatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/spec/skus/{sku_id}/prices": {
+      "post": {
+        "tags": [
+          "spec-prices"
+        ],
+        "summary": "Create Price",
+        "operationId": "create_price_api_v1_spec_skus__sku_id__prices_post",
+        "parameters": [
+          {
+            "name": "sku_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Sku Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriceCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/spec/prices/{price_id}": {
+      "patch": {
+        "tags": [
+          "spec-prices"
+        ],
+        "summary": "Patch Price",
+        "operationId": "patch_price_api_v1_spec_prices__price_id__patch",
+        "parameters": [
+          {
+            "name": "price_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Price Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PricePatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/spec/attribute-proposals": {
+      "get": {
+        "tags": [
+          "admin-proposals"
+        ],
+        "summary": "List Proposals",
+        "operationId": "list_proposals_api_v1_admin_spec_attribute_proposals_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/spec/attribute-proposals/recommended": {
+      "get": {
+        "tags": [
+          "admin-proposals"
+        ],
+        "summary": "List Recommended",
+        "operationId": "list_recommended_api_v1_admin_spec_attribute_proposals_recommended_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/spec/attribute-proposals/{proposal_id}": {
+      "patch": {
+        "tags": [
+          "admin-proposals"
+        ],
+        "summary": "Review Proposal",
+        "operationId": "review_proposal_api_v1_admin_spec_attribute_proposals__proposal_id__patch",
+        "parameters": [
+          {
+            "name": "proposal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Proposal Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/intel/shipments": {
+      "get": {
+        "tags": [
+          "intel"
+        ],
+        "summary": "List Shipments",
+        "description": "列出进出口数据（支持筛选）",
+        "operationId": "list_shipments_api_v1_intel_shipments_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "shipper",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shipper"
+            }
+          },
+          {
+            "name": "consignee",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Consignee"
+            }
+          },
+          {
+            "name": "dest_country",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dest Country"
+            }
+          },
+          {
+            "name": "origin_country",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Origin Country"
+            }
+          },
+          {
+            "name": "hs_code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hs Code"
+            }
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntelShipmentListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "intel"
+        ],
+        "summary": "Create Shipment",
+        "description": "手动录入进出口数据",
+        "operationId": "create_shipment_api_v1_intel_shipments_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntelShipmentCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntelShipmentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/intel/shipments/{shipment_id}": {
+      "get": {
+        "tags": [
+          "intel"
+        ],
+        "summary": "Get Shipment",
+        "description": "获取单条进出口数据详情",
+        "operationId": "get_shipment_api_v1_intel_shipments__shipment_id__get",
+        "parameters": [
+          {
+            "name": "shipment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Shipment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntelShipmentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/intel/import/csv": {
+      "post": {
+        "tags": [
+          "intel"
+        ],
+        "summary": "Import Csv",
+        "description": "从 CSV 文件批量导入进出口数据",
+        "operationId": "import_csv_api_v1_intel_import_csv_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_csv_api_v1_intel_import_csv_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/intel/trade-stats": {
+      "get": {
+        "tags": [
+          "intel"
+        ],
+        "summary": "List Trade Stats",
+        "description": "列出贸易统计数据",
+        "operationId": "list_trade_stats_api_v1_intel_trade_stats_get",
+        "parameters": [
+          {
+            "name": "hs_code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hs Code"
+            }
+          },
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Period"
+            }
+          },
+          {
+            "name": "partner_country",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Partner Country"
+            }
+          },
+          {
+            "name": "trade_flow",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Trade Flow"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IntelTradeStatResponse"
+                  },
+                  "title": "Response List Trade Stats Api V1 Intel Trade Stats Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/intel/collect/comtrade": {
+      "post": {
+        "tags": [
+          "intel"
+        ],
+        "summary": "Collect Comtrade",
+        "description": "触发 UN Comtrade 数据采集",
+        "operationId": "collect_comtrade_api_v1_intel_collect_comtrade_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComtradeCollectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/intel/adapter-runs": {
+      "get": {
+        "tags": [
+          "intel"
+        ],
+        "summary": "List Adapter Runs",
+        "description": "列出采集任务运行日志",
+        "operationId": "list_adapter_runs_api_v1_intel_adapter_runs_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IntelAdapterRunResponse"
+                  },
+                  "title": "Response List Adapter Runs Api V1 Intel Adapter Runs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/intel/channels": {
+      "get": {
+        "tags": [
+          "intel"
+        ],
+        "summary": "List Channels",
+        "description": "列出数据渠道（免费/付费）",
+        "operationId": "list_channels_api_v1_intel_channels_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/tasks": {
+      "get": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "List Tasks",
+        "operationId": "list_tasks_api_v1_ai_tasks_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/providers": {
+      "get": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "List Providers",
+        "operationId": "list_providers_api_v1_ai_providers_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/providers/{name}": {
+      "put": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Upsert Provider",
+        "operationId": "upsert_provider_api_v1_ai_providers__name__put",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderUpsert"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/providers/{name}/test": {
+      "post": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Test Provider",
+        "description": "连通性测试：最小 chat 调用，返回延迟与模型应答。",
+        "operationId": "test_provider_api_v1_ai_providers__name__test_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/task-bindings": {
+      "get": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "List Bindings",
+        "operationId": "list_bindings_api_v1_ai_task_bindings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/task-bindings/{task_key}": {
+      "put": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Upsert Binding",
+        "operationId": "upsert_binding_api_v1_ai_task_bindings__task_key__put",
+        "parameters": [
+          {
+            "name": "task_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BindingUpsert"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/usage": {
+      "get": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "List Usage",
+        "operationId": "list_usage_api_v1_ai_usage_get",
+        "parameters": [
+          {
+            "name": "task_key",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task Key"
+            }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/tasks/{task_key}/run": {
+      "post": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Run Task",
+        "operationId": "run_task_api_v1_ai_tasks__task_key__run_post",
+        "parameters": [
+          {
+            "name": "task_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskRun"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leadgen/validate": {
+      "post": {
+        "tags": [
+          "leadgen"
+        ],
+        "summary": "Validate Config",
+        "description": "AI 校验（任务绑定可关，关则纯本地格式检查）。",
+        "operationId": "validate_config_api_v1_leadgen_validate_post",
+        "parameters": [
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "leadgen",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeadgenConfig"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leadgen/runs": {
+      "post": {
+        "tags": [
+          "leadgen"
+        ],
+        "summary": "Create Run",
+        "description": "触发一次抓取（JSON，source != csv）。",
+        "operationId": "create_run_api_v1_leadgen_runs_post",
+        "parameters": [
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "leadgen",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeadgenConfig"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "leadgen"
+        ],
+        "summary": "List Runs",
+        "operationId": "list_runs_api_v1_leadgen_runs_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "leadgen",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leadgen/runs/from-csv": {
+      "post": {
+        "tags": [
+          "leadgen"
+        ],
+        "summary": "Create Run Csv",
+        "description": "CSV 导入式抓取（multipart）。",
+        "operationId": "create_run_csv_api_v1_leadgen_runs_from_csv_post",
+        "parameters": [
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "leadgen",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_run_csv_api_v1_leadgen_runs_from_csv_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leadgen/runs/{run_id}": {
+      "get": {
+        "tags": [
+          "leadgen"
+        ],
+        "summary": "Get Run",
+        "operationId": "get_run_api_v1_leadgen_runs__run_id__get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "leadgen",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leads/scan-replied": {
+      "post": {
+        "tags": [
+          "leadgen"
+        ],
+        "summary": "Scan Replied",
+        "description": "P5 询盘接入：手动触发扫描（定时任务每 15 分钟自动跑）。",
+        "operationId": "scan_replied_api_v1_leads_scan_replied_post",
+        "parameters": [
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "leadgen",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leadgen/regions": {
+      "get": {
+        "tags": [
+          "leadgen"
+        ],
+        "summary": "List Regions",
+        "operationId": "list_regions_api_v1_leadgen_regions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leads": {
+      "post": {
+        "tags": [
+          "leadgen"
+        ],
+        "summary": "Create Lead",
+        "operationId": "create_lead_api_v1_leads_post",
+        "parameters": [
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "leadgen",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeadCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "leadgen"
+        ],
+        "summary": "List Leads",
+        "description": "线索池列表。P6 商情排序口子：sort=score 时若商情数据就绪可按 blank_index\n排序——当前 intel_demand_index 为空，等价 fit_score 排序（§5.5 布局预留）。",
+        "operationId": "list_leads_api_v1_leads_get",
+        "parameters": [
+          {
+            "name": "outreach_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Outreach Status"
+            }
+          },
+          {
+            "name": "inquiry_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Inquiry Status"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "min_score",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 100,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Score"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(score|recent|name)$",
+              "default": "score",
+              "title": "Sort"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "leadgen",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leads/{lead_id}": {
+      "get": {
+        "tags": [
+          "leadgen"
+        ],
+        "summary": "Get Lead",
+        "operationId": "get_lead_api_v1_leads__lead_id__get",
+        "parameters": [
+          {
+            "name": "lead_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Lead Id"
+            }
+          },
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "leadgen",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "leadgen"
+        ],
+        "summary": "Update Lead",
+        "description": "线索池 owner=开发工位。outreach_status / inquiry_status 是其他工位\n的写入接口，本端点拒绝修改（跨工位禁止写，§不变量）。",
+        "operationId": "update_lead_api_v1_leads__lead_id__patch",
+        "parameters": [
+          {
+            "name": "lead_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Lead Id"
+            }
+          },
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "leadgen",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeadPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/outreach/mailboxes": {
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "summary": "List Mailboxes",
+        "operationId": "list_mailboxes_api_v1_outreach_mailboxes_get",
+        "parameters": [
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "outreach",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "outreach"
+        ],
+        "summary": "Create Mailbox",
+        "operationId": "create_mailbox_api_v1_outreach_mailboxes_post",
+        "parameters": [
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "outreach",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MailboxCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/outreach/mailboxes/{mailbox_id}": {
+      "patch": {
+        "tags": [
+          "outreach"
+        ],
+        "summary": "Update Mailbox",
+        "operationId": "update_mailbox_api_v1_outreach_mailboxes__mailbox_id__patch",
+        "parameters": [
+          {
+            "name": "mailbox_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Mailbox Id"
+            }
+          },
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "outreach",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MailboxPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/outreach/mailboxes/{mailbox_id}/test": {
+      "post": {
+        "tags": [
+          "outreach"
+        ],
+        "summary": "Test Mailbox",
+        "description": "连通性测试：真实发送一封测试邮件。",
+        "operationId": "test_mailbox_api_v1_outreach_mailboxes__mailbox_id__test_post",
+        "parameters": [
+          {
+            "name": "mailbox_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Mailbox Id"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "To"
+            }
+          },
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "outreach",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/outreach/campaigns": {
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "summary": "List Campaigns",
+        "operationId": "list_campaigns_api_v1_outreach_campaigns_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "outreach",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "outreach"
+        ],
+        "summary": "Create Campaign",
+        "operationId": "create_campaign_api_v1_outreach_campaigns_post",
+        "parameters": [
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "outreach",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CampaignCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/outreach/generate": {
+      "post": {
+        "tags": [
+          "outreach"
+        ],
+        "summary": "Generate Email",
+        "operationId": "generate_email_api_v1_outreach_generate_post",
+        "parameters": [
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "outreach",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateEmail"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/outreach/campaigns/{campaign_id}/send": {
+      "post": {
+        "tags": [
+          "outreach"
+        ],
+        "summary": "Send Campaign",
+        "description": "选客户 → 渲染 → 生成消息 → 逐封发送（原子抢占防重复，失败可重发）。\n\n发送节奏预留：当前逐封顺序发送；rate limit 字段在 mailboxes 表。",
+        "operationId": "send_campaign_api_v1_outreach_campaigns__campaign_id__send_post",
+        "parameters": [
+          {
+            "name": "campaign_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Campaign Id"
+            }
+          },
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "outreach",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CampaignSend"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/outreach/messages": {
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "summary": "List Messages",
+        "description": "收件人独立列表（§6.7）：每行一个收件人。",
+        "operationId": "list_messages_api_v1_outreach_messages_get",
+        "parameters": [
+          {
+            "name": "campaign_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Campaign Id"
+            }
+          },
+          {
+            "name": "lead_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lead Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "outreach",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/outreach/messages/{message_id}": {
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "summary": "Get Message",
+        "description": "消息详情：完整正文 + 时间线（§6.7 展开看完整正文/历史触达）。",
+        "operationId": "get_message_api_v1_outreach_messages__message_id__get",
+        "parameters": [
+          {
+            "name": "message_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Message Id"
+            }
+          },
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "outreach",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/outreach/messages/{message_id}/retry": {
+      "post": {
+        "tags": [
+          "outreach"
+        ],
+        "summary": "Retry Message",
+        "description": "失败/退信人工重发（§6.5）：重置为 pending 后走发送流程。",
+        "operationId": "retry_message_api_v1_outreach_messages__message_id__retry_post",
+        "parameters": [
+          {
+            "name": "message_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Message Id"
+            }
+          },
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "outreach",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/outreach/webhook": {
+      "post": {
+        "tags": [
+          "outreach"
+        ],
+        "summary": "Inbound Webhook",
+        "description": "Inbound 邮件解析 webhook 预留。第一版返回 501 未实现（路由已就位）。",
+        "operationId": "inbound_webhook_api_v1_outreach_webhook_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           }
@@ -646,6 +4199,100 @@
         ],
         "title": "ArchiveLogResponse"
       },
+      "AttributeProposalRequest": {
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "title": "Category Id"
+          },
+          "proposed_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Proposed Name"
+          },
+          "proposed_type": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Proposed Type"
+          },
+          "group_code": {
+            "type": "string",
+            "pattern": "^(variant|spec)$",
+            "title": "Group Code"
+          },
+          "proposed_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Unit"
+          },
+          "proposed_unit_group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Unit Group"
+          },
+          "sample_values": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Values"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category_id",
+          "proposed_name",
+          "proposed_type",
+          "group_code"
+        ],
+        "title": "AttributeProposalRequest"
+      },
+      "AttributeProposalResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status"
+        ],
+        "title": "AttributeProposalResponse"
+      },
       "AuditLogResponse": {
         "properties": {
           "audit_logs": {
@@ -668,6 +4315,85 @@
         ],
         "title": "AuditLogResponse"
       },
+      "BindingUpsert": {
+        "properties": {
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config"
+          }
+        },
+        "type": "object",
+        "title": "BindingUpsert"
+      },
+      "Body_create_run_csv_api_v1_leadgen_runs_from_csv_post": {
+        "properties": {
+          "csv_file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "Csv File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "csv_file"
+        ],
+        "title": "Body_create_run_csv_api_v1_leadgen_runs_from_csv_post"
+      },
+      "Body_import_csv_api_v1_intel_import_csv_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_import_csv_api_v1_intel_import_csv_post"
+      },
       "CacheClearResponse": {
         "properties": {
           "cleared_sessions": {
@@ -680,6 +4406,56 @@
           "cleared_sessions"
         ],
         "title": "CacheClearResponse"
+      },
+      "CampaignCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "subject_template": {
+            "type": "string",
+            "title": "Subject Template"
+          },
+          "body_template": {
+            "type": "string",
+            "title": "Body Template"
+          },
+          "mailbox_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mailbox Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "subject_template",
+          "body_template"
+        ],
+        "title": "CampaignCreate"
+      },
+      "CampaignSend": {
+        "properties": {
+          "lead_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Lead Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lead_ids"
+        ],
+        "title": "CampaignSend"
       },
       "CapabilityItem": {
         "properties": {
@@ -776,6 +4552,29 @@
         ],
         "title": "CapabilityListResponse"
       },
+      "ComtradeCollectRequest": {
+        "properties": {
+          "reporter_country": {
+            "type": "string",
+            "title": "Reporter Country"
+          },
+          "period": {
+            "type": "string",
+            "title": "Period"
+          },
+          "trade_flow": {
+            "type": "string",
+            "title": "Trade Flow",
+            "default": "import"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reporter_country",
+          "period"
+        ],
+        "title": "ComtradeCollectRequest"
+      },
       "DeepCheckResponse": {
         "properties": {
           "status": {
@@ -845,25 +4644,6 @@
         ],
         "title": "EventResponse"
       },
-      "FeatureFlagResponse": {
-        "properties": {
-          "tenant_id": {
-            "type": "string",
-            "title": "Tenant Id"
-          },
-          "feature_flags": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Feature Flags"
-          }
-        },
-        "type": "object",
-        "required": [
-          "tenant_id",
-          "feature_flags"
-        ],
-        "title": "FeatureFlagResponse"
-      },
       "FeatureFlagSetResponse": {
         "properties": {
           "tenant_id": {
@@ -898,6 +4678,18 @@
         ],
         "title": "FeatureFlagSetResponse"
       },
+      "GenerateEmail": {
+        "properties": {
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "title": "GenerateEmail"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -910,6 +4702,1180 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "IntelAdapterRunResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "items_processed": {
+            "type": "integer",
+            "title": "Items Processed"
+          },
+          "items_inserted": {
+            "type": "integer",
+            "title": "Items Inserted"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "started_at",
+          "finished_at",
+          "items_processed",
+          "items_inserted",
+          "error_message"
+        ],
+        "title": "IntelAdapterRunResponse"
+      },
+      "IntelShipmentCreate": {
+        "properties": {
+          "shipper": {
+            "type": "string",
+            "title": "Shipper"
+          },
+          "ship_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ship Date"
+          },
+          "carrier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carrier"
+          },
+          "notify_party": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notify Party"
+          },
+          "origin_port": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Port"
+          },
+          "origin_country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Country"
+          },
+          "dest_port": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Port"
+          },
+          "dest_country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Country"
+          },
+          "consignee": {
+            "type": "string",
+            "title": "Consignee"
+          },
+          "product_desc": {
+            "type": "string",
+            "title": "Product Desc"
+          },
+          "product_desc_norm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Desc Norm"
+          },
+          "hs_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hs Code"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "qty": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qty"
+          },
+          "qty_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qty Unit"
+          },
+          "gross_weight_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gross Weight Kg"
+          },
+          "net_weight_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Weight Kg"
+          },
+          "volume_cbm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume Cbm"
+          },
+          "container_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container No"
+          },
+          "container_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Type"
+          },
+          "bl_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bl No"
+          },
+          "voyage_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voyage No"
+          },
+          "declared_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Declared Value"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "marks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marks"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          },
+          "shipment_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipment Type"
+          },
+          "incoterm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incoterm"
+          },
+          "freight_prepaid": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freight Prepaid"
+          },
+          "source_channel": {
+            "type": "string",
+            "title": "Source Channel",
+            "default": "manual_excel"
+          },
+          "source_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ref"
+          },
+          "raw_data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "shipper",
+          "consignee",
+          "product_desc"
+        ],
+        "title": "IntelShipmentCreate"
+      },
+      "IntelShipmentListResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IntelShipmentResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "page",
+          "page_size",
+          "items"
+        ],
+        "title": "IntelShipmentListResponse"
+      },
+      "IntelShipmentResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "tenant_id": {
+            "type": "string",
+            "title": "Tenant Id"
+          },
+          "shipper": {
+            "type": "string",
+            "title": "Shipper"
+          },
+          "ship_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ship Date"
+          },
+          "carrier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carrier"
+          },
+          "notify_party": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notify Party"
+          },
+          "origin_port": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Port"
+          },
+          "origin_country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Country"
+          },
+          "dest_port": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Port"
+          },
+          "dest_country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Country"
+          },
+          "consignee": {
+            "type": "string",
+            "title": "Consignee"
+          },
+          "product_desc": {
+            "type": "string",
+            "title": "Product Desc"
+          },
+          "product_desc_norm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Desc Norm"
+          },
+          "hs_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hs Code"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "qty": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qty"
+          },
+          "qty_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qty Unit"
+          },
+          "gross_weight_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gross Weight Kg"
+          },
+          "net_weight_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Weight Kg"
+          },
+          "volume_cbm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume Cbm"
+          },
+          "container_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container No"
+          },
+          "container_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Type"
+          },
+          "bl_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bl No"
+          },
+          "voyage_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voyage No"
+          },
+          "declared_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Declared Value"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "marks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marks"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          },
+          "shipment_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipment Type"
+          },
+          "incoterm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incoterm"
+          },
+          "freight_prepaid": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freight Prepaid"
+          },
+          "source_channel": {
+            "type": "string",
+            "title": "Source Channel"
+          },
+          "source_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ref"
+          },
+          "is_verified": {
+            "type": "boolean",
+            "title": "Is Verified"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id",
+          "shipper",
+          "ship_date",
+          "carrier",
+          "notify_party",
+          "origin_port",
+          "origin_country",
+          "dest_port",
+          "dest_country",
+          "consignee",
+          "product_desc",
+          "product_desc_norm",
+          "hs_code",
+          "category_id",
+          "qty",
+          "qty_unit",
+          "gross_weight_kg",
+          "net_weight_kg",
+          "volume_cbm",
+          "container_no",
+          "container_type",
+          "bl_no",
+          "voyage_no",
+          "declared_value",
+          "currency",
+          "marks",
+          "remarks",
+          "shipment_type",
+          "incoterm",
+          "freight_prepaid",
+          "source_channel",
+          "source_ref",
+          "is_verified",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "IntelShipmentResponse"
+      },
+      "IntelTradeStatResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "hs_code": {
+            "type": "string",
+            "title": "Hs Code"
+          },
+          "period": {
+            "type": "string",
+            "title": "Period"
+          },
+          "reporter_country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporter Country"
+          },
+          "partner_country": {
+            "type": "string",
+            "title": "Partner Country"
+          },
+          "trade_flow": {
+            "type": "string",
+            "title": "Trade Flow"
+          },
+          "qty": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qty"
+          },
+          "qty_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qty Unit"
+          },
+          "value_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Usd"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "hs_code",
+          "period",
+          "reporter_country",
+          "partner_country",
+          "trade_flow",
+          "qty",
+          "qty_unit",
+          "value_usd"
+        ],
+        "title": "IntelTradeStatResponse"
+      },
+      "LeadCreate": {
+        "properties": {
+          "company_name": {
+            "type": "string",
+            "title": "Company Name"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "website": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "industry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industry"
+          },
+          "place_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place Id"
+          },
+          "opening_line": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening Line"
+          },
+          "owner_scope": {
+            "type": "string",
+            "title": "Owner Scope",
+            "default": "private"
+          }
+        },
+        "type": "object",
+        "required": [
+          "company_name"
+        ],
+        "title": "LeadCreate"
+      },
+      "LeadPatch": {
+        "properties": {
+          "company_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "website": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "industry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industry"
+          },
+          "fit_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fit Score"
+          },
+          "opening_line": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening Line"
+          },
+          "notes_raw": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes Raw"
+          },
+          "owner_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Scope"
+          }
+        },
+        "type": "object",
+        "title": "LeadPatch"
+      },
+      "LeadgenConfig": {
+        "properties": {
+          "region": {
+            "type": "string",
+            "title": "Region"
+          },
+          "industry": {
+            "type": "string",
+            "title": "Industry"
+          },
+          "icp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icp"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity",
+            "default": 10
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": "demo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "region",
+          "industry"
+        ],
+        "title": "LeadgenConfig"
       },
       "LivenessResponse": {
         "properties": {
@@ -924,6 +5890,118 @@
         ],
         "title": "LivenessResponse"
       },
+      "MailboxCreate": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default",
+            "default": false
+          },
+          "daily_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Limit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "title": "MailboxCreate"
+      },
+      "MailboxPatch": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "is_default": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Default"
+          },
+          "daily_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Limit"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "title": "MailboxPatch"
+      },
       "MetricsSummaryResponse": {
         "properties": {
           "active_sessions": {
@@ -937,200 +6015,24 @@
         ],
         "title": "MetricsSummaryResponse"
       },
-      "QuotationItem": {
+      "PriceCreateRequest": {
         "properties": {
-          "id": {
-            "type": "integer",
-            "title": "Id"
+          "price": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Price"
           },
-          "customer_id": {
+          "price_unit": {
             "type": "string",
-            "title": "Customer Id"
-          },
-          "product_category": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Product Category"
-          },
-          "product_spec": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Product Spec"
-          },
-          "spec_hash": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Spec Hash"
-          },
-          "unit_price": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit Price"
-          },
-          "currency": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Currency"
-          },
-          "unit": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit"
-          },
-          "discount": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Discount"
-          },
-          "min_quantity": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Min Quantity"
-          },
-          "source": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "created_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "customer_id"
-        ],
-        "title": "QuotationItem"
-      },
-      "QuotationListResponse": {
-        "properties": {
-          "quotations": {
-            "items": {
-              "$ref": "#/components/schemas/QuotationItem"
-            },
-            "type": "array",
-            "title": "Quotations"
-          },
-          "total": {
-            "type": "integer",
-            "title": "Total"
-          },
-          "limit": {
-            "type": "integer",
-            "title": "Limit"
-          }
-        },
-        "type": "object",
-        "required": [
-          "quotations",
-          "total",
-          "limit"
-        ],
-        "title": "QuotationListResponse"
-      },
-      "QuoteResponse": {
-        "properties": {
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "unit_price": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit Price"
+            "minLength": 1,
+            "title": "Price Unit"
           },
           "currency": {
             "type": "string",
             "title": "Currency",
             "default": "CNY"
           },
-          "unit": {
-            "type": "string",
-            "title": "Unit",
-            "default": "meter"
-          },
-          "confidence": {
+          "min_qty": {
             "anyOf": [
               {
                 "type": "number"
@@ -1139,14 +6041,38 @@
                 "type": "null"
               }
             ],
-            "title": "Confidence"
+            "title": "Min Qty"
           },
-          "source": {
+          "tier_rules": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tier Rules"
+          },
+          "effective_from": {
             "type": "string",
-            "title": "Source",
-            "default": "stub"
+            "format": "date-time",
+            "title": "Effective From"
           },
-          "spec_hash": {
+          "effective_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective To"
+          },
+          "note": {
             "anyOf": [
               {
                 "type": "string"
@@ -1155,24 +6081,208 @@
                 "type": "null"
               }
             ],
-            "title": "Spec Hash"
+            "title": "Note"
           },
-          "notes": {
+          "change_reason": {
             "type": "string",
-            "title": "Notes",
-            "default": ""
-          },
-          "script": {
-            "type": "string",
-            "title": "Script",
-            "default": ""
+            "minLength": 1,
+            "title": "Change Reason"
           }
         },
         "type": "object",
         "required": [
-          "status"
+          "price",
+          "price_unit",
+          "effective_from",
+          "change_reason"
         ],
-        "title": "QuoteResponse"
+        "title": "PriceCreateRequest"
+      },
+      "PricePatchRequest": {
+        "properties": {
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "effective_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective To"
+          }
+        },
+        "type": "object",
+        "title": "PricePatchRequest"
+      },
+      "PricingPayload": {
+        "properties": {
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Price"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency",
+            "default": "CNY"
+          },
+          "price_unit": {
+            "type": "string",
+            "title": "Price Unit"
+          },
+          "min_qty": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Qty"
+          },
+          "tier_rules": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tier Rules"
+          },
+          "effective_from": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Effective From"
+          },
+          "effective_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective To"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "change_reason": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Change Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "price",
+          "price_unit",
+          "effective_from",
+          "change_reason"
+        ],
+        "title": "PricingPayload"
+      },
+      "ProviderUpsert": {
+        "properties": {
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "title": "ProviderUpsert"
       },
       "ReadinessResponse": {
         "properties": {
@@ -1192,6 +6302,94 @@
           "checks"
         ],
         "title": "ReadinessResponse"
+      },
+      "SkuPatchRequest": {
+        "properties": {
+          "spec_values": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Spec Values"
+          },
+          "change_reason": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Change Reason"
+          },
+          "weight_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight Kg"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "spec_values",
+          "change_reason"
+        ],
+        "title": "SkuPatchRequest"
+      },
+      "SpecValueEntry": {
+        "properties": {
+          "v": {
+            "title": "V"
+          },
+          "u": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "U"
+          },
+          "g": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "G"
+          }
+        },
+        "type": "object",
+        "required": [
+          "v"
+        ],
+        "title": "SpecValueEntry"
+      },
+      "TaskRun": {
+        "properties": {
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "title": "TaskRun"
       },
       "TenantDetailResponse": {
         "properties": {
@@ -1314,6 +6512,104 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WizardSubmitRequest": {
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "title": "Category Id",
+            "description": "G1 必填，叶子类目"
+          },
+          "spec_values": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SpecValueEntry"
+            },
+            "type": "object",
+            "title": "Spec Values",
+            "description": "G2 + G3 合并"
+          },
+          "pricing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PricingPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "weight_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight Kg"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category_id",
+          "spec_values"
+        ],
+        "title": "WizardSubmitRequest"
+      },
+      "WizardSubmitResponse": {
+        "properties": {
+          "sku_id": {
+            "type": "integer",
+            "title": "Sku Id"
+          },
+          "price_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Id"
+          },
+          "spec_hash": {
+            "type": "string",
+            "title": "Spec Hash"
+          },
+          "is_new_sku": {
+            "type": "boolean",
+            "title": "Is New Sku"
+          },
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sku_id",
+          "spec_hash",
+          "is_new_sku",
+          "schema_version"
+        ],
+        "title": "WizardSubmitResponse"
       }
     }
   }

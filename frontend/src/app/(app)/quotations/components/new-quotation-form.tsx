@@ -15,7 +15,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useCreateQuotation } from "../hooks/use-quotations";
-import { useCreateEvent } from "@/lib/events/use-create-event";
 import { Loader2 } from "lucide-react";
 import { ProductCategory } from "@contracts/categories";
 
@@ -32,7 +31,6 @@ interface Props {
 
 export function NewQuotationForm({ onSuccess }: Props) {
   const createMutation = useCreateQuotation();
-  const createEvent = useCreateEvent();
 
   const {
     register,
@@ -71,18 +69,6 @@ export function NewQuotationForm({ onSuccess }: Props) {
       confidence: item.confidence,
       discount: 0,
       notes: "",
-    });
-
-    createEvent.mutate({
-      event_type: "quote.response",
-      event_source: "frontend",
-      payload: {
-        session_id: `manual-${Date.now()}`,
-        status: "estimated",
-        source: "quotations_db",
-        unit_price: item.unit_price ?? null,
-        confidence: item.confidence,
-      },
     });
 
     reset();
