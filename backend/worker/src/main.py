@@ -21,6 +21,20 @@ from pydantic import BaseModel
 from workers import WorkerEntrypoint, asgi
 
 from dbjson import row_to_dict
+from spec_hash import compute_spec_hash as _compute_spec_hash
+
+# ── 阶段 3 统一数据库封装（platform/db.py 按文件加载）──
+# 本包目录与标准库模块 `platform` 同名，不能按包导入，见 platform/db.py 顶部说明。
+from importlib.util import (
+    spec_from_file_location as _spec_from_file,
+    module_from_spec as _module_from_spec,
+)
+
+_db_spec = _spec_from_file(
+    "platform_db", os.path.join(os.path.dirname(__file__), "platform", "db.py")
+)
+db = _module_from_spec(_db_spec)
+_db_spec.loader.exec_module(db)
 
 DEFAULT_TENANT = "default"
 
@@ -864,6 +878,99 @@ async def create_event(body: EventCreate, request: Request,
     except Exception:
         # 落库失败也吸收，避免前端疯狂重试
         return {"id": "absorbed"}
+
+
+# ── 阶段 3 补线上接口（统一走 platform.db；所有查询带 tenant_id）──
+
+
+class QuotationCreateBody(BaseModel):
+    """手动录入报价记录（POST /api/v1/quotations）。"""
+
+    customer_id: str
+    product_category: str
+    product_spec: dict = {}
+    quantity: Optional[int] = None
+    unit_price: Optional[float] = None
+    currency: str = "CNY"
+    unit: str = "meter"
+    discount: Optional[float] = None
+    notes: Optional[str] = None
+    source: str = "manual"
+
+
+@app.get("/api/v1/quotations")
+async def list_quotations_api(
+    request: Request,
+    customer_id: Optional[str] = None,
+    product_category: Optional[str] = None,
+    spec_hash: Optional[str] = None,
+    limit: int = 100,
+    user: dict = Depends(_get_current_user),
+):
+    """查询历史报价记录（保留入口之一，前端「报价历史」页）。"""
+    where = ["tenant_id = $1"]
+    params: list = [DEFAULT_TENANT]
+    idx = 2
+    for col, val in (
+        ("customer_id", customer_id),
+        ("product_category", product_category),
+        ("spec_hash", spec_hash),
+    ):
+        if val:
+            where.append(f"{col} = ${idx}")
+            params.append(val)
+            idx += 1
+    w = " AND ".join(where)
+    lim = max(1, min(limit, 500))
+    items = await db.fetch(
+        request,
+        f"""SELECT id, customer_id, product_category, product_spec, spec_hash,
+                   unit_price, currency, unit, discount, min_quantity,
+                   source, notes, effective_from, created_at
+            FROM quotations WHERE {w}
+            ORDER BY effective_from DESC LIMIT {lim}""",
+        *params,
+        table="quotations",
+    )
+    total = await db.fetchval(
+        request, f"SELECT COUNT(*) FROM quotations WHERE {w}", *params
+    )
+    for r in items:
+        r["id"] = str(r["id"])
+    return {"items": items, "total": total}
+
+
+@app.post("/api/v1/quotations", status_code=201)
+async def create_quotation_manual(
+    body: QuotationCreateBody,
+    request: Request,
+    user: dict = Depends(_get_current_user),
+):
+    """手动录入报价记录。报价账以 SKU 价格表 + quotations 为准（David 确认）。"""
+    spec_hash = _compute_spec_hash(body.product_spec)
+    row = await db.fetchrow(
+        request,
+        """INSERT INTO quotations
+           (tenant_id, customer_id, product_category, product_spec, spec_hash,
+            unit_price, currency, unit, discount, min_quantity, source, notes,
+            created_by)
+           VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+           RETURNING id, spec_hash""",
+        DEFAULT_TENANT,
+        body.customer_id,
+        body.product_category,
+        _json.dumps(body.product_spec),
+        spec_hash,
+        body.unit_price,
+        body.currency,
+        body.unit,
+        body.discount,
+        body.quantity,
+        body.source,
+        body.notes,
+        str(user["id"]),
+    )
+    return {"id": str(row["id"]), "spec_hash": row["spec_hash"]}
 
 
 # ── Worker Entrypoint ──
