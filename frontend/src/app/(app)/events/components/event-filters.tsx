@@ -15,7 +15,6 @@ import { Search, X } from "lucide-react";
 const EVENT_TYPES = [
   "audit.access",
   "capability.update",
-  "kb.edit",
   "quote.request",
   "quote.response",
 ];

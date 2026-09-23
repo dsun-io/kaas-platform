@@ -34,13 +34,6 @@ class CapabilityUpdateV1(BaseModel):
     actor_id: str
 
 
-class KbEditV1(BaseModel):
-    dataset_name: str
-    chunk_id: Optional[str] = None
-    action: Literal["create", "update", "delete"]
-    actor_id: str
-
-
 class AuditAccessV1(BaseModel):
     resource_type: Literal["page", "api", "dataset"]
     resource_id: str
@@ -54,7 +47,6 @@ PAYLOAD_SCHEMAS: Dict[str, Dict[int, type[BaseModel]]] = {
     "quote.request": {1: QuoteRequestV1},
     "quote.response": {1: QuoteResponseV1},
     "capability.update": {1: CapabilityUpdateV1},
-    "kb.edit": {1: KbEditV1},
     "audit.access": {1: AuditAccessV1},
 }
 
