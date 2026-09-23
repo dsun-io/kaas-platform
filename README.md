@@ -59,7 +59,7 @@ kaas-platform/
 │   │   └── python_modules/            #   vendored 依赖 (asyncpg, fastapi, ...)
 │   └── orchestrator/                  # FastAPI 核心编排服务 (本地开发/数据迁移)
 │       ├── app/
-│       │   ├── api/                   # REST 路由 (events, quote_v2, product_specs, admin, ...)
+│       │   ├── api/                   # REST 路由 (events, quote_wizard, product_specs, admin, ...)
 │       │   ├── middleware/            # 中间件链 (tenant, trace, sampling, route_version, rate_limit, body_limit)
 │       │   ├── domain/               # 领域逻辑 (schema_registry, tenant_config, spec_hash)
 │       │   ├── repositories/         # 数据访问层 (events, admin, quotations, pricing, specs, ...)
@@ -103,9 +103,9 @@ kaas-platform/
 
 | 层 | 技术 |
 |---|---|
-| **AI 编排** | Orchestrator + CoR (Chain of Role) |
-| **AI 引擎** | FastGPT / Dify API 集成 |
-| **后端** | Python 3.12, FastAPI, SQLAlchemy 2.0, Alembic, structlog |
+| **业务架构** | 工位能力网 + 情报体系 + 业务事件流 |
+| **AI 引擎** | BYOK LLM 客户端（llm_client：DeepSeek / 智谱等 Provider + fallback 链） |
+| **后端** | Python 3.12, FastAPI；生产 Worker 用原生 asyncpg，开发编排器用 SQLAlchemy 2.0 + Alembic, structlog |
 | **前端** | Next.js 14 (App Router), TypeScript, Tailwind CSS, shadcn/ui |
 | **测试** | Pytest (后端), Playwright E2E + Vitest (前端), MSW |
 | **数据库** | PostgreSQL (业务数据), Redis (缓存/状态), MinIO (OSS 归档) |
@@ -202,8 +202,8 @@ pnpm dev
 
 ## 核心概念
 
-### CoR (Chain of Role)
-将丝网行业电商客服流程标准化为多个角色分工处理：咨询引导 → 规格确认 → 报价计算 → 议价促成 → 订单追踪。不同 Role 可调用 AI 或执行业务逻辑。
+### 工位能力网（Workstation Graph）
+各工位是能力节点（情报三工位、客户/询盘、报价、订单、出运、外贸票据、AI 层、线索池、触达），跨工位通过线索池和业务事件流协作，**不是线性流水线**。报价向导（quote_wizard / quote_engine）内部的步骤化流程只是该能力节点的引导步骤，不是强制全局流程。
 
 ### 设计不变量 (R3)
 - 幂等由 DB 兜底：`usage_events.request_id` UNIQUE
@@ -274,13 +274,14 @@ pnpm dev
 ## 分支策略
 
 - **`main`** — 经过验证的交付版本
-- **`feature/v2-refactor`** — v2 重构主分支（当前活跃）
+- **`feature/v2-refactor`** — v2 重构主分支
+- **`feature/intel-workstation-v1`** — 工位能力网 + 情报体系（当前活跃）
 - **`archive/`** — 历史 v1 备份
 
 ## PR 规范
 
 每个 PR 需附带 §10 自检清单，涵盖：
-- 调用链铁律 (不直连 PG/FastGPT/LLM)
+- 调用链铁律 (不直连 PG/LLM)
 - 类型契约校验 (zod parse, 无手写后端类型)
 - 数据获取 (TanStack Query, 无 useEffect+fetch)
 - 错误处理 (toast + 错误边界)
@@ -291,12 +292,14 @@ pnpm dev
 
 ---
 
-**最后更新**: 2026-05-17
+**最后更新**: 2026-09-22
 **维护者**: David Sun
 
 ---
 
 ## 今日进度归档 (2026-05-03)
+
+> ⚠️ 历史存档 · 反映 2026-05-03 时点状态，不反映当前架构（当前状态见上方「工作站进度」）
 
 ### 已完成
 
@@ -322,6 +325,8 @@ pnpm dev
 ---
 
 ## Spec System v1 实施报告 (2026-05-17)
+
+> ⚠️ 历史存档 · 反映 2026-05-17 时点状态，不反映当前架构（当前状态见上方「工作站进度」）
 
 ### 概述
 
