@@ -26,6 +26,7 @@ JSONB_COLS: dict[str, set[str]] = {
     "product_sku_prices": {"tier_rules"},
     "order_items": {"spec_snapshot"},
     "business_events": {"payload"},
+    "trade_docs": {"raw_payload"},
     "market_ports": {
         "suitable_cargo",
         "suitable_shipping_modes",

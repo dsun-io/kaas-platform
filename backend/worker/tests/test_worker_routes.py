@@ -119,6 +119,11 @@ NEW_ROUTES: set[tuple[str, str]] = {
     ("/api/v1/orders/{order_id}/payment-schedules", "POST"),
     ("/api/v1/payment-schedules/{schedule_id}", "PATCH"),
     ("/api/v1/receivables", "GET"),
+    # E：外贸票据工位
+    ("/api/v1/trade-docs", "GET"),
+    ("/api/v1/trade-docs", "POST"),
+    ("/api/v1/trade-docs/{doc_id}", "GET"),
+    ("/api/v1/trade-docs/{doc_id}", "PATCH"),
 }
 
 
@@ -144,6 +149,7 @@ def test_new_routes_answer_auth_challenge():
             .replace("{category_id}", "1")
             .replace("{order_id}", "1")
             .replace("{schedule_id}", "1")
+            .replace("{doc_id}", "1")
         )
         resp = client.request(method, probe)
         assert resp.status_code != 404, f"{method} {path} 未注册"

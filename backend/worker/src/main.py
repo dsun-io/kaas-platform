@@ -2482,5 +2482,195 @@ async def list_receivables(request: Request, status: str = None, page: int = 1,
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
+# ── 阶段 6 任务2：外贸票据工位 + shipment.documented 事件 ──────────────────
+
+DOC_TYPE_SET = ("quotation", "pi", "contract", "ci", "pl", "bl", "co", "insurance", "other")
+DOC_NEXT = {"draft": ("issued", "void"), "issued": ("void",)}
+
+
+def _doc_dict(row) -> dict:
+    from decimal import Decimal as _D
+    d = dict(row)
+    for k in ("issued_at", "created_at", "updated_at"):
+        v = d.get(k)
+        d[k] = v.isoformat() if v is not None and hasattr(v, "isoformat") else v
+    if isinstance(d.get("total_amount"), _D):
+        d["total_amount"] = float(d["total_amount"])
+    return d
+
+
+@app.get("/api/v1/trade-docs")
+async def list_trade_docs(request: Request, doc_type: str = None, status: str = None,
+                          order_id: int = None, page: int = 1, page_size: int = 20,
+                          user: dict = Depends(_get_current_user)):
+    cond = ""
+    params = [DEFAULT_TENANT]
+    if doc_type:
+        if doc_type not in DOC_TYPE_SET:
+            raise HTTPException(status_code=422, detail={"error": "bad_doc_type"})
+        params.append(doc_type)
+        cond += f" AND doc_type=${len(params)}"
+    if status:
+        if status not in DOC_NEXT:
+            raise HTTPException(status_code=422, detail={"error": "bad_doc_status"})
+        params.append(status)
+        cond += f" AND status=${len(params)}"
+    if order_id:
+        params.append(order_id)
+        cond += f" AND order_id=${len(params)}"
+    rows = await db.fetch(
+        request,
+        f"SELECT * FROM trade_docs WHERE tenant_id=$1{cond} ORDER BY created_at DESC"
+        f" LIMIT ${len(params) + 1} OFFSET ${len(params) + 2}",
+        *params, page_size, (page - 1) * page_size, table="trade_docs",
+    )
+    total = await db.fetchval(
+        request, f"SELECT count(*) FROM trade_docs WHERE tenant_id=$1{cond}", *params,
+    )
+    return {"items": [_doc_dict(r) for r in rows], "total": total,
+            "page": page, "page_size": page_size}
+
+
+@app.post("/api/v1/trade-docs", status_code=201)
+async def create_trade_doc(request: Request, body: dict,
+                           user: dict = Depends(_get_current_user)):
+    """生成单证（上游快照入 raw_payload 冻结 + refs 溯源）。
+    线上简化：doc_no 自行取号、quote/inquiry 只存引用不拉快照（见 UNCERTAIN #16）。"""
+    order_id = body.get("order_id")
+    quote_order_id = body.get("quote_order_id")
+    inquiry_id = body.get("inquiry_id")
+    if not any([order_id, quote_order_id, inquiry_id]):
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "SOURCE_REQUIRED",
+            "detail": "单证需至少一个上游来源：order_id / quote_order_id / inquiry_id",
+        })
+    doc_type = (body.get("doc_type") or "").strip()
+    if doc_type not in DOC_TYPE_SET:
+        raise HTTPException(status_code=422, detail={"error": "bad_doc_type"})
+    currency = (body.get("currency") or "USD").strip()
+
+    payload = {"sources": {}, "custom": body.get("raw_payload") or {}}
+    total_amount = None
+    customer_id = body.get("customer_id")
+    if order_id:
+        o = await db.fetchrow(request, "SELECT * FROM orders WHERE tenant_id=$1 AND id=$2",
+                              DEFAULT_TENANT, order_id, table="orders")
+        if not o:
+            raise HTTPException(status_code=404, detail={"error": "order_not_found"})
+        o = _order_dict(o)
+        payload["sources"]["order"] = {
+            "order_id": order_id, "order_no": o["order_no"],
+            "customer_name": o["customer_name"], "total_amount": o["total_amount"],
+        }
+        total_amount = o["total_amount"]
+        if customer_id is None:
+            customer_id = o["customer_id"]
+    if quote_order_id:
+        payload["sources"]["quote"] = {"quote_order_id": quote_order_id}
+        if customer_id is None:
+            customer_id = body.get("customer_id")
+    if inquiry_id:
+        payload["sources"]["inquiry"] = {"inquiry_id": inquiry_id}
+
+    doc_no = f"DOC-{datetime.now(timezone.utc):%Y%m%d%H%M%S}-{uuid4().hex[:6]}"
+    d = await db.fetchrow(
+        request,
+        "INSERT INTO trade_docs (tenant_id, doc_no, doc_type, order_id, customer_id,"
+        " status, currency, total_amount, raw_payload)"
+        " VALUES ($1,$2,$3,$4,$5,'draft',$6,$7,$8) RETURNING *",
+        DEFAULT_TENANT, doc_no, doc_type, order_id, customer_id, currency,
+        total_amount, _json.dumps(payload), table="trade_docs",
+    )
+    for ref_table, ref_col, ref_id in (
+        ("trade_doc_order_refs", "order_id", order_id),
+        ("trade_doc_quote_refs", "quote_order_id", quote_order_id),
+        ("trade_doc_inquiry_refs", "inquiry_id", inquiry_id),
+    ):
+        if ref_id:
+            await db.execute(
+                request,
+                f"INSERT INTO {ref_table} (tenant_id, trade_doc_id, {ref_col}, ref_type)"
+                " VALUES ($1,$2,$3,'generated_from')",
+                DEFAULT_TENANT, d["id"], ref_id, table=ref_table,
+            )
+    await _record_business_event(
+        request, "shipment.documented",
+        {"doc_id": d["id"], "doc_no": doc_no, "doc_type": doc_type,
+         "order_id": order_id, "actor_id": user["id"]},
+        from_ws="trade_docs", to_ws="trade_docs",
+    )
+    return _doc_dict(d)
+
+
+@app.get("/api/v1/trade-docs/{doc_id}")
+async def get_trade_doc(doc_id: int, request: Request,
+                        user: dict = Depends(_get_current_user)):
+    d = await db.fetchrow(request, "SELECT * FROM trade_docs WHERE tenant_id=$1 AND id=$2",
+                          DEFAULT_TENANT, doc_id, table="trade_docs")
+    if not d:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "DOC_NOT_FOUND"})
+    refs = {"orders": [], "quotes": [], "inquiries": []}
+    rows = await db.fetch(request,
+                          "SELECT order_id, ref_type FROM trade_doc_order_refs"
+                          " WHERE tenant_id=$1 AND trade_doc_id=$2", DEFAULT_TENANT, doc_id)
+    refs["orders"] = [dict(r) for r in rows]
+    rows = await db.fetch(request,
+                          "SELECT quote_order_id, ref_type FROM trade_doc_quote_refs"
+                          " WHERE tenant_id=$1 AND trade_doc_id=$2", DEFAULT_TENANT, doc_id)
+    refs["quotes"] = [dict(r) for r in rows]
+    rows = await db.fetch(request,
+                          "SELECT inquiry_id, ref_type FROM trade_doc_inquiry_refs"
+                          " WHERE tenant_id=$1 AND trade_doc_id=$2", DEFAULT_TENANT, doc_id)
+    refs["inquiries"] = [dict(r) for r in rows]
+    return {**_doc_dict(d), "refs": refs}
+
+
+@app.patch("/api/v1/trade-docs/{doc_id}")
+async def update_trade_doc(doc_id: int, request: Request, body: dict,
+                           user: dict = Depends(_get_current_user)):
+    d = await db.fetchrow(request, "SELECT * FROM trade_docs WHERE tenant_id=$1 AND id=$2",
+                          DEFAULT_TENANT, doc_id, table="trade_docs")
+    if not d:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "DOC_NOT_FOUND"})
+    d = _doc_dict(d)
+    new_status = (body.get("status") or d["status"]).strip()
+    allowed = DOC_NEXT.get(d["status"], ())
+    if new_status != d["status"] and new_status not in allowed:
+        raise HTTPException(status_code=409, detail={
+            "error": "conflict", "code": "ILLEGAL_TRANSITION",
+            "field": "status", "from": d["status"], "to": new_status,
+            "allowed": list(allowed),
+        })
+    now = datetime.now(timezone.utc)
+    raw_payload = body.get("raw_payload")
+    if raw_payload is not None and d["status"] != "draft":
+        raise HTTPException(status_code=409, detail={
+            "error": "conflict", "code": "PAYLOAD_LOCKED",
+            "detail": "issued 后单证内容锁定，不可修改",
+        })
+    if new_status == "issued" and d["status"] == "draft":
+        await db.execute(
+            request,
+            "UPDATE trade_docs SET status=$3, issued_at=$4, issued_by=$5,"
+            " raw_payload=COALESCE($6, raw_payload), updated_at=$7"
+            " WHERE tenant_id=$1 AND id=$2",
+            DEFAULT_TENANT, doc_id, new_status, now, user["id"],
+            _json.dumps(raw_payload) if raw_payload is not None else None, now,
+            table="trade_docs",
+        )
+    else:
+        await db.execute(
+            request,
+            "UPDATE trade_docs SET status=$3, raw_payload=COALESCE($4, raw_payload),"
+            " updated_at=$5 WHERE tenant_id=$1 AND id=$2",
+            DEFAULT_TENANT, doc_id, new_status,
+            _json.dumps(raw_payload) if raw_payload is not None else None, now,
+            table="trade_docs",
+        )
+    d2 = await db.fetchrow(request, "SELECT * FROM trade_docs WHERE tenant_id=$1 AND id=$2",
+                           DEFAULT_TENANT, doc_id, table="trade_docs")
+    return _doc_dict(d2)
+
+
 import chain  # noqa: E402,F401
 
