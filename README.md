@@ -266,8 +266,8 @@ pnpm dev
 
 ## 协作规范
 
-1. **三方协作**：Nano Auto (Notion AI Agent，拆任务/验收) → Runner (AI 编程工具，编码) → David (决策者)
-2. **Notion 是唯一真相源**：所有任务 Spec、验收标准在 Notion 任务流水线数据库
+1. **三方协作**：Nano Auto (Notion AI Agent，拆任务/验收) → Runner (AI 编程工具，编码) → David (决策者)〔历史流程，现已停用〕
+2. **真相源分层**：技术真相源是代码库（含 shared/contracts 共享契约）；Notion 只做任务管理，不是技术真相源（详见 docs/README.md）
 3. **设计不变量优先**：进入 AI 引擎前必须完成订阅校验、配额校验、限频
 4. **交付三要素**：自检清单 + 详细日志 + git push
 

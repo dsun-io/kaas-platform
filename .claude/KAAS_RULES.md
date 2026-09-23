@@ -57,7 +57,7 @@
 5. 双方确认完成
 
 ### 外部数据源
-- **Notion**：通过 HTTPS REST API 直连（`api.notion.com/v1/`）读取数据，**不依赖 MCP 工具**
+- **Notion**：只做任务管理与资料存放（技术真相源是代码库，详见 docs/README.md）；如需读取，通过 HTTPS REST API 直连（`api.notion.com/v1/`），**不依赖 MCP 工具**
 - **API Token**：保存在 `notion_token.md` 记忆文件中
 
 ---

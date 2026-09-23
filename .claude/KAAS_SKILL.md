@@ -37,6 +37,7 @@
 ## S2. 外部 API 集成模式
 
 ### Notion 数据读取
+> 口径：Notion 只做任务管理与资料存放，技术真相源是代码库（详见 docs/README.md）。
 ```bash
 curl -s "https://api.notion.com/v1/blocks/{page_id}/children?page_size=100" \
   -H "Authorization: Bearer $NOTION_TOKEN" \
@@ -78,7 +79,7 @@ v2-quote/
 ```
 
 ### 关键模式
-- 品类枚举从 `@contracts/categories` 导入（唯一真相源）
+- 品类枚举从 `@contracts/categories` 导入（技术真相源）
 - 规格选项从 API 动态获取（不硬编码）
 - API 请求/响应类型共享自 `@contracts/quote`
 

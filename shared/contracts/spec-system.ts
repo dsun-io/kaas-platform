@@ -1,7 +1,8 @@
 /**
  * Spec System v1 — Category → Attribute → SKU → Price
  *
- * Single source of truth: Notion "Kaas Wizard + SKU + Price" §9.4
+ * Technical source of truth: 代码库（shared/contracts）。Notion 只做任务管理，不作技术真相源。
+ * Historical reference: Notion "Kaas Wizard + SKU + Price" §9.4
  */
 import { z } from 'zod';
 
