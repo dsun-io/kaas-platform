@@ -2262,5 +2262,81 @@ async def update_order_api(
     return _order_dict(updated)
 
 
+# ── 阶段 6 任务2：订单状态机 + 确认建应收 + order.shipped 跨工位事件 ──────
+
+async def _create_receivable_for_order(request: Request, o: dict):
+    """确认时建应收台账（幂等：tenant+order 唯一，§10.2）。
+    锁定汇率线上简化为 1.0（外币折算待接汇率服务，见 UNCERTAIN #16）。"""
+    existing = await db.fetchrow(
+        request,
+        "SELECT id FROM receivables WHERE tenant_id=$1 AND order_id=$2",
+        DEFAULT_TENANT, o["id"],
+    )
+    if existing:
+        return
+    total = o["total_amount"] or 0
+    await db.execute(
+        request,
+        "INSERT INTO receivables (tenant_id, order_id, currency, total_amount,"
+        " fx_rate, fx_rate_date, base_currency, base_amount, received_amount,"
+        " status, owner_scope) VALUES ($1,$2,$3,$4,$5,$6,'CNY',$7,0,'unpaid','default')",
+        DEFAULT_TENANT, o["id"], o.get("currency") or "USD", total,
+        1.0, datetime.now(timezone.utc).date(), total,
+        table="receivables",
+    )
+
+
+@app.post("/api/v1/orders/{order_id}/status")
+async def change_order_status(order_id: int, request: Request, body: dict,
+                              user: dict = Depends(_get_current_user)):
+    """订单状态流转（§10.4 状态机）。确认时建应收；发货时发 order.shipped 跨工位事件。"""
+    row = await db.fetchrow(
+        request,
+        "SELECT * FROM orders WHERE tenant_id=$1 AND id=$2",
+        DEFAULT_TENANT, order_id,
+        table="orders",
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail={"error": "order_not_found"})
+    o = _order_dict(row)
+    target = (body.get("status") or "").strip()
+    allowed = ORDER_NEXT.get(o["status"], ())
+    if target != o["status"] and target not in allowed:
+        raise HTTPException(status_code=409, detail={
+            "error": "conflict", "code": "ILLEGAL_TRANSITION",
+            "field": "status", "from": o["status"], "to": target,
+            "allowed": list(allowed),
+        })
+
+    now = datetime.now(timezone.utc)
+    await db.execute(
+        request,
+        "UPDATE orders SET status=$3, updated_at=$4 WHERE tenant_id=$1 AND id=$2",
+        DEFAULT_TENANT, order_id, target, now, table="orders",
+    )
+    if target == "confirmed" and o["status"] == "pending":
+        await db.execute(
+            request,
+            "UPDATE orders SET fx_rate=1.0, fx_rate_date=$3 WHERE tenant_id=$1 AND id=$2",
+            DEFAULT_TENANT, order_id, now.date(), table="orders",
+        )
+        await _create_receivable_for_order(request, o)
+    if target == "shipped":
+        await _record_business_event(
+            request, "order.shipped",
+            {"order_id": order_id, "shipment_ref": (body.get("shipment_ref") or ""),
+             "actor_id": user["id"]},
+            from_ws="orders", to_ws="trade_docs",
+        )
+
+    row2 = await db.fetchrow(
+        request,
+        "SELECT * FROM orders WHERE tenant_id=$1 AND id=$2",
+        DEFAULT_TENANT, order_id,
+        table="orders",
+    )
+    return _order_dict(row2)
+
+
 import chain  # noqa: E402,F401
 
