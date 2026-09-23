@@ -81,7 +81,10 @@ EXISTING_ROUTES = {
 }
 
 # 阶段 3 新补的线上接口（每补一个接口在此追加一条）
-NEW_ROUTES: set[tuple[str, str]] = set()
+NEW_ROUTES: set[tuple[str, str]] = {
+    ("/api/v1/quotations", "GET"),
+    ("/api/v1/quotations", "POST"),
+}
 
 
 def test_existing_routes_intact():
