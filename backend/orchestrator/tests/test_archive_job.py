@@ -17,7 +17,7 @@ def _make_mock_event(
     evt_id: str = "evt-1",
     tenant_id: str = "lianjia",
     schema_version: int = 1,
-    event_type: str = "chat.turn",
+    event_type: str = "audit.access",
 ):
     """创建模拟事件对象（§3.7.1 schema 对齐）。"""
     evt = MagicMock()

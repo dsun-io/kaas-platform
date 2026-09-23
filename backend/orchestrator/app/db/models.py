@@ -477,50 +477,6 @@ class ChannelLink(Base):
     )
 
 
-# ═══════════════════════════════════════════════════════════════
-# AUTH-WX-R1: 对话编排 & 日志 (§10, §14)
-# ═══════════════════════════════════════════════════════════════
-
-class Conversation(Base):
-    """对话记录"""
-    __tablename__ = "conversations"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    customer_id = Column(BigInteger, ForeignKey("customers.id"), nullable=False)
-    tenant_id = Column(Text, nullable=False)
-    channel = Column(Text, nullable=False)  # wechat_clawbot | wechat_h5 | web
-    status = Column(Text, nullable=False, default="active")
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
-
-    __table_args__ = (
-        Index("idx_conv_customer", "customer_id"),
-        Index("idx_conv_channel", "channel"),
-    )
-
-
-class ConversationMessage(Base):
-    """对话消息"""
-    __tablename__ = "conversation_messages"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    conversation_id = Column(BigInteger, ForeignKey("conversations.id"), nullable=False)
-    role = Column(Text, nullable=False)  # user | assistant | system
-    raw_content = Column(Text, nullable=True)
-    normalized_content = Column(Text, nullable=True)
-    intent = Column(Text, nullable=True)
-    product_category = Column(Text, nullable=True)
-    extracted_params_json = Column(JSONB, nullable=True)
-    quote_status = Column(Text, nullable=True)
-    latency_ms = Column(Integer, nullable=True)
-    error_code = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-
-    __table_args__ = (
-        Index("idx_conv_msg_conv", "conversation_id"),
-    )
-
-
 class UsageEvent(Base):
     """用量事件"""
     __tablename__ = "usage_events"

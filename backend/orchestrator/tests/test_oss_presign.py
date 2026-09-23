@@ -69,7 +69,7 @@ class TestOSSPresignAuth:
             json={
                 "tenant_id": "client_b",
                 "purpose": "event_payload",
-                "event_type": "chat.turn",
+                "event_type": "audit.access",
                 "content_type": "application/json",
                 "size_bytes": 1024,
             },
@@ -118,7 +118,7 @@ class TestOSSPresignAuth:
                 "/api/v1/oss/presign",
                 json={
                     "purpose": "event_payload",
-                    "event_type": "chat.turn",
+                    "event_type": "audit.access",
                 },
                 headers={"X-Tenant-Id": "lianjia"},
             )

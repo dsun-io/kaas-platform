@@ -12,7 +12,6 @@ function read(path: string): string {
 const KNOWN_EVENTS: readonly string[] = [
   'audit.access',
   'capability.update',
-  'chat.turn',
   'kb.edit',
   'quote.request',
   'quote.response',

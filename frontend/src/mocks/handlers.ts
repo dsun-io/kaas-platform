@@ -23,7 +23,6 @@ const EVENTS_LIST = Array.from({ length: 12 }, (_, i) =>
   makeEvent({
     event_type: (
       [
-        "chat.turn",
         "quote.request",
         "quote.response",
         "audit.access",

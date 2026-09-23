@@ -19,7 +19,7 @@ class TestTenantMiddleware:
 
     async def test_missing_tenant_id_returns_401(self, client):
         """缺 X-Tenant-Id 返回 401 tenant_unauthorized。"""
-        body = make_event_body("chat.turn")
+        body = make_event_body("audit.access")
         response = await client.post("/api/v1/events", json=body)
         assert response.status_code == 401
         data = response.json()
@@ -27,7 +27,7 @@ class TestTenantMiddleware:
 
     async def test_disabled_tenant_returns_403(self, client):
         """禁用租户返回 403。"""
-        body = make_event_body("chat.turn")
+        body = make_event_body("audit.access")
         response = await client.post(
             "/api/v1/events", json=body,
             headers={"X-Tenant-Id": "disabled_tenant"},
@@ -38,7 +38,7 @@ class TestTenantMiddleware:
 
     async def test_unknown_tenant_returns_403(self, client):
         """未知租户返回 403。"""
-        body = make_event_body("chat.turn")
+        body = make_event_body("audit.access")
         response = await client.post(
             "/api/v1/events", json=body,
             headers={"X-Tenant-Id": "nonexistent"},
@@ -62,7 +62,7 @@ class TestRouteVersionMiddleware:
 
     async def test_missing_header_falls_back_to_tenant_flag(self, client):
         """缺 X-Use-V2 时回退到租户 feature_flag。lianjia 的 use_v2=true。"""
-        body = make_event_body("chat.turn")
+        body = make_event_body("audit.access")
         response = await client.post(
             "/api/v1/events", json=body,
             headers={"X-Tenant-Id": "lianjia"},
@@ -72,7 +72,7 @@ class TestRouteVersionMiddleware:
 
     async def test_client_b_use_v2_false_fallback(self, client):
         """client_b 的 use_v2=false，缺 header 时回退到 v1。"""
-        body = make_event_body("chat.turn")
+        body = make_event_body("audit.access")
         response = await client.post(
             "/api/v1/events", json=body,
             headers={"X-Tenant-Id": "client_b"},
@@ -82,7 +82,7 @@ class TestRouteVersionMiddleware:
 
     async def test_explicit_v2_true_header(self, client):
         """X-Use-V2: true 显式设为 v2。"""
-        body = make_event_body("chat.turn")
+        body = make_event_body("audit.access")
         response = await client.post(
             "/api/v1/events", json=body,
             headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
@@ -92,7 +92,7 @@ class TestRouteVersionMiddleware:
 
     async def test_explicit_v2_false_overrides_tenant_flag(self, client):
         """X-Use-V2: false 覆盖租户 use_v2=true。"""
-        body = make_event_body("chat.turn")
+        body = make_event_body("audit.access")
         response = await client.post(
             "/api/v1/events", json=body,
             headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "false"},
@@ -106,7 +106,7 @@ class TestTraceMiddleware:
 
     async def test_trace_id_injected_in_response(self, client):
         """正常请求后 response header 包含 X-Trace-Id。"""
-        body = make_event_body("chat.turn")
+        body = make_event_body("audit.access")
         response = await client.post(
             "/api/v1/events", json=body,
             headers={"X-Tenant-Id": "lianjia"},
@@ -122,7 +122,7 @@ class TestSamplingMiddleware:
 
     async def test_sampling_header_set(self, client):
         """响应 header 包含 X-Sampled 标识。"""
-        body = make_event_body("chat.turn")
+        body = make_event_body("audit.access")
         response = await client.post(
             "/api/v1/events", json=body,
             headers={"X-Tenant-Id": "lianjia"},
@@ -145,7 +145,7 @@ class TestMiddlewareChainOrder:
 
     async def test_full_chain_happy_path(self, client):
         """完整链: 所有 header 正确的请求成功返回。"""
-        body = make_event_body("chat.turn", event_source="orchestrator")
+        body = make_event_body("audit.access", event_source="orchestrator")
         response = await client.post(
             "/api/v1/events", json=body,
             headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
@@ -153,7 +153,7 @@ class TestMiddlewareChainOrder:
         assert response.status_code == 201
         data = response.json()
         assert data["tenant_id"] == "lianjia"
-        assert data["event_type"] == "chat.turn"
+        assert data["event_type"] == "audit.access"
         assert "id" in data
         assert "X-Trace-Id" in response.headers
         assert "X-Route-Version" in response.headers
@@ -199,7 +199,7 @@ class TestSamplingBoundary:
     async def test_sampling_rate_zero_never_samples(self, client, monkeypatch):
         """sampling_rate=0.0 时非管理/非错误路径始终不采样。"""
         self._patch_sampling_config(monkeypatch, sampling_rate=0.0)
-        body = make_event_body("chat.turn")
+        body = make_event_body("audit.access")
         response = await client.post(
             "/api/v1/events", json=body,
             headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
@@ -210,7 +210,7 @@ class TestSamplingBoundary:
     async def test_sampling_rate_one_always_samples(self, client, monkeypatch):
         """sampling_rate=1.0 时非管理/非错误路径始终采样。"""
         self._patch_sampling_config(monkeypatch, sampling_rate=1.0)
-        body = make_event_body("chat.turn")
+        body = make_event_body("audit.access")
         response = await client.post(
             "/api/v1/events", json=body,
             headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
@@ -231,7 +231,7 @@ class TestSamplingBoundary:
 
     async def test_disabled_tenant_on_protected_path_skipped(self, client):
         """禁用租户访问需要租户上下文的路径返回 403。"""
-        body = make_event_body("chat.turn")
+        body = make_event_body("audit.access")
         response = await client.post(
             "/api/v1/events", json=body,
             headers={"X-Tenant-Id": "disabled_tenant"},
@@ -242,7 +242,7 @@ class TestSamplingBoundary:
 
     async def test_invalid_tenant_returns_403_not_500(self, client):
         """无效租户 ID 返回 403 不是 500。"""
-        body = make_event_body("chat.turn")
+        body = make_event_body("audit.access")
         response = await client.post(
             "/api/v1/events", json=body,
             headers={"X-Tenant-Id": "this_tenant_does_not_exist"},
@@ -253,7 +253,7 @@ class TestSamplingBoundary:
 
     async def test_missing_tenant_id_returns_401(self, client):
         """缺少 X-Tenant-Id 返回 401 不是 500。"""
-        body = make_event_body("chat.turn")
+        body = make_event_body("audit.access")
         response = await client.post("/api/v1/events", json=body)
         assert response.status_code == 401
         data = response.json()

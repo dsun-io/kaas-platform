@@ -42,18 +42,14 @@ class TestBackendSmoke:
         r = await client.post(
             "/api/v1/events",
             json={
-                "event_type": "chat.turn",
+                "event_type": "audit.access",
                 "schema_version": 1,
                 "event_source": "frontend",
                 "payload": {
-                    "session_id": "smoke-test",
-                    "raw_text": "smoke test",
-                    "agent_id": "agent-1",
-                    "customer_id": "cust-1",
-                    "response_text": "ok",
-                    "llm_model": "test",
-                    "llm_tokens_in": 1,
-                    "llm_tokens_out": 1,
+                    "resource_type": "api",
+                    "resource_id": "smoke-test",
+                    "actor_id": "agent-1",
+                    "ip": None,
                 },
             },
             headers=TENANT_HEADERS,

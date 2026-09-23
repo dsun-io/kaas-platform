@@ -14,9 +14,9 @@ from tests.conftest import make_event_body
 class TestEventInsert:
     """事件写入测试。"""
 
-    async def test_insert_chat_turn_success(self, client):
-        """写入 chat.turn 事件成功，返回 201。"""
-        body = make_event_body("chat.turn", schema_version=1, event_source="orchestrator")
+    async def test_insert_audit_access_success(self, client):
+        """写入 audit.access 事件成功，返回 201。"""
+        body = make_event_body("audit.access", schema_version=1, event_source="orchestrator")
         response = await client.post(
             "/api/v1/events",
             json=body,
@@ -25,7 +25,7 @@ class TestEventInsert:
         assert response.status_code == 201
         data = response.json()
         assert data["tenant_id"] == "lianjia"
-        assert data["event_type"] == "chat.turn"
+        assert data["event_type"] == "audit.access"
         assert data["id"] is not None
 
     async def test_insert_quote_request_success(self, client):
@@ -63,7 +63,7 @@ class TestEventInsert:
 
     async def test_missing_schema_version_rejected(self, client):
         """缺 schema_version 返回 400 + schema_version_required。"""
-        body = make_event_body("chat.turn", schema_version=1)
+        body = make_event_body("audit.access", schema_version=1)
         del body["schema_version"]
         response = await client.post(
             "/api/v1/events",
@@ -79,10 +79,10 @@ class TestTenantIsolation:
 
     async def test_different_tenants_produce_different_tenant_ids(self, client):
         """不同租户写入的事件包含各自的 tenant_id。"""
-        body1 = make_event_body("chat.turn", event_source="orchestrator",
-                                 session_id="iso-1", raw_text="lianjia test")
-        body2 = make_event_body("chat.turn", event_source="orchestrator",
-                                 session_id="iso-2", raw_text="client_b test")
+        body1 = make_event_body("audit.access", event_source="orchestrator",
+                                 resource_id="iso-1")
+        body2 = make_event_body("audit.access", event_source="orchestrator",
+                                 resource_id="iso-2")
 
         r1 = await client.post(
             "/api/v1/events", json=body1,
@@ -107,7 +107,7 @@ class TestPayloadValidation:
 
     async def test_invalid_schema_version_rejected(self, client):
         """不支持的 schema_version 返回 400。"""
-        body = make_event_body("chat.turn", schema_version=99)
+        body = make_event_body("audit.access", schema_version=99)
         response = await client.post(
             "/api/v1/events", json=body,
             headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
@@ -120,9 +120,9 @@ class TestPayloadValidation:
         response = await client.post(
             "/api/v1/events",
             json={
-                "event_type": "chat.turn",
+                "event_type": "audit.access",
                 "schema_version": 1,
-                "payload": {"session_id": "x"},
+                "payload": {"resource_type": "api"},
                 "event_source": "orchestrator",
             },
             headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},

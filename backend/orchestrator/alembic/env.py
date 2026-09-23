@@ -28,8 +28,6 @@ from app.db.models import (  # noqa: F401
     WechatBotAccount,
     WechatConversation,
     ChannelLink,
-    Conversation,
-    ConversationMessage,
     UsageEvent,
     WechatMessageEvent,
     ProductCategory,
