@@ -2603,11 +2603,78 @@ async def list_trade_docs(request: Request, doc_type: str = None, status: str = 
             "page": page, "page_size": page_size}
 
 
+def _snap_rows(rows):
+    """快照行 Decimal→float（JSON 序列化安全）。"""
+    from decimal import Decimal
+    return [{k: (float(v) if isinstance(v, Decimal) else v) for k, v in dict(r).items()}
+            for r in rows]
+
+
+async def _order_snapshot(request: Request, order_id: int) -> dict:
+    """订单冻结快照（表头+行项，与 dev trade_docs._order_snapshot 对齐）。"""
+    o = await db.fetchrow(request, "SELECT * FROM orders WHERE tenant_id=$1 AND id=$2",
+                          DEFAULT_TENANT, order_id, table="orders")
+    if not o:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "ORDER_NOT_FOUND"})
+    o = _order_dict(o)
+    items = await db.fetch(
+        request,
+        "SELECT product_name, qty, qty_unit, unit_price, line_amount FROM order_items"
+        " WHERE tenant_id=$1 AND order_id=$2 ORDER BY sort_order, id",
+        DEFAULT_TENANT, order_id, table="order_items",
+    )
+    return {
+        "order_id": o["id"], "order_no": o["order_no"],
+        "customer_id": o["customer_id"], "customer_name": o["customer_name"],
+        "status": o["status"], "currency": o["currency"],
+        "total_amount": o["total_amount"], "fx_rate": o["fx_rate"],
+        "items": _snap_rows(items),
+    }
+
+
+async def _quote_snapshot(request: Request, quote_order_id: int) -> dict:
+    """报价冻结快照（quote_orders 表头+行项，与 dev 对齐）。"""
+    q = await db.fetchrow(
+        request, "SELECT * FROM quote_orders WHERE tenant_id=$1 AND id=$2",
+        DEFAULT_TENANT, quote_order_id, table="quote_orders")
+    if not q:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "QUOTE_NOT_FOUND"})
+    items = await db.fetch(
+        request,
+        "SELECT product_name, qty, qty_unit, unit_price, line_amount FROM quote_order_items"
+        " WHERE tenant_id=$1 AND quote_order_id=$2 ORDER BY sort_order, id",
+        DEFAULT_TENANT, quote_order_id, table="quote_order_items",
+    )
+    qd = _snap_rows([q])[0]
+    return {
+        "quote_order_id": quote_order_id,
+        "quote_no": qd.get("quote_no"), "customer_id": qd.get("customer_id"),
+        "customer_name": qd.get("customer_name"), "status": qd.get("status"),
+        "currency": qd.get("currency"), "total_amount": qd.get("total_amount"),
+        "items": _snap_rows(items),
+    }
+
+
+async def _inquiry_snapshot(request: Request, inquiry_id: int) -> dict:
+    """询价冻结快照（cust_inquiries，与 dev 对齐）。"""
+    r = await db.fetchrow(
+        request, "SELECT * FROM cust_inquiries WHERE tenant_id=$1 AND id=$2",
+        DEFAULT_TENANT, inquiry_id, table="cust_inquiries")
+    if not r:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "INQUIRY_NOT_FOUND"})
+    rd = _snap_rows([r])[0]
+    return {
+        "inquiry_id": rd.get("id"), "customer_id": rd.get("customer_id"),
+        "status": rd.get("status"), "channel": rd.get("channel"),
+        "product_name_raw": rd.get("product_name_raw"), "quantity": rd.get("quantity"),
+        "quantity_unit": rd.get("quantity_unit"), "application": rd.get("application"),
+    }
+
+
 @app.post("/api/v1/trade-docs", status_code=201)
 async def create_trade_doc(request: Request, body: dict,
                            user: dict = Depends(_get_current_user)):
-    """生成单证（上游快照入 raw_payload 冻结 + refs 溯源）。
-    线上简化：quote/inquiry 只存引用不拉快照（见 UNCERTAIN #16）。"""
+    """生成单证（上游快照入 raw_payload 冻结 + refs 溯源，与 dev trade_docs 对齐）。"""
     order_id = body.get("order_id")
     quote_order_id = body.get("quote_order_id")
     inquiry_id = body.get("inquiry_id")
@@ -2625,24 +2692,18 @@ async def create_trade_doc(request: Request, body: dict,
     total_amount = None
     customer_id = body.get("customer_id")
     if order_id:
-        o = await db.fetchrow(request, "SELECT * FROM orders WHERE tenant_id=$1 AND id=$2",
-                              DEFAULT_TENANT, order_id, table="orders")
-        if not o:
-            raise HTTPException(status_code=404, detail={"error": "order_not_found"})
-        o = _order_dict(o)
-        payload["sources"]["order"] = {
-            "order_id": order_id, "order_no": o["order_no"],
-            "customer_name": o["customer_name"], "total_amount": o["total_amount"],
-        }
-        total_amount = o["total_amount"]
+        payload["sources"]["order"] = await _order_snapshot(request, order_id)
+        total_amount = payload["sources"]["order"]["total_amount"]
         if customer_id is None:
-            customer_id = o["customer_id"]
+            customer_id = payload["sources"]["order"]["customer_id"]
     if quote_order_id:
-        payload["sources"]["quote"] = {"quote_order_id": quote_order_id}
+        payload["sources"]["quote"] = await _quote_snapshot(request, quote_order_id)
+        if total_amount is None:
+            total_amount = payload["sources"]["quote"]["total_amount"]
         if customer_id is None:
-            customer_id = body.get("customer_id")
+            customer_id = payload["sources"]["quote"]["customer_id"]
     if inquiry_id:
-        payload["sources"]["inquiry"] = {"inquiry_id": inquiry_id}
+        payload["sources"]["inquiry"] = await _inquiry_snapshot(request, inquiry_id)
 
     doc_no = await _next_doc_no(request, doc_type)
     d = await db.fetchrow(
