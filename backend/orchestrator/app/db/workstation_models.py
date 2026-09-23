@@ -20,31 +20,8 @@ from app.db.base import Base
 
 
 # ── 客户工位 ─────────────────────────────────────────────────────────────────
-
-class CustCustomer(Base):
-    """客户档案（§5.4）"""
-    __tablename__ = 'cust_customers'
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    tenant_id = Column(Text, nullable=False)
-    company_name = Column(Text, nullable=False)
-    country = Column(Text, nullable=True)
-    address = Column(Text, nullable=True)
-    default_port = Column(Text, nullable=True)
-    credit_level = Column(Text, nullable=True)
-    stage = Column(Text, nullable=False, server_default='lead')
-    notes = Column(Text, nullable=True)
-    created_by = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
-    owner_id = Column(Text, nullable=True)
-    owner_scope = Column(Text, nullable=False, server_default='private')
-
-    __table_args__ = (
-        Index('idx_cust_customers_tenant_stage', 'tenant_id', 'stage'),
-        Index('idx_cust_customers_tenant_country', 'tenant_id', 'country'),
-    )
-
+# 阶段2 客户表合并（2026-09-22）：CustCustomer（cust_customers）已并入 app.db.models.Customer，
+# 客户档案以 customers 表为准；以下三张子表保持原名，指针已改指 customers.id。
 
 class CustContact(Base):
     """客户联系人（§5.4）"""
@@ -52,7 +29,7 @@ class CustContact(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     tenant_id = Column(Text, nullable=False)
-    customer_id = Column(BigInteger, ForeignKey('cust_customers.id', ondelete='CASCADE'), nullable=False)
+    customer_id = Column(BigInteger, ForeignKey('customers.id', ondelete='CASCADE'), nullable=False)
     name = Column(Text, nullable=False)
     position = Column(Text, nullable=True)
     phone = Column(Text, nullable=True)
@@ -73,7 +50,7 @@ class CustInquiry(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     tenant_id = Column(Text, nullable=False)
-    customer_id = Column(BigInteger, ForeignKey('cust_customers.id', ondelete='CASCADE'), nullable=False)
+    customer_id = Column(BigInteger, ForeignKey('customers.id', ondelete='CASCADE'), nullable=False)
     lead_id = Column(BigInteger, nullable=True)   # 线索池转化来源（最终设计 §7.1）
     channel = Column(Text, nullable=True)
     category_id = Column(BigInteger, nullable=True)
@@ -101,7 +78,7 @@ class CustStageLog(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     tenant_id = Column(Text, nullable=False)
-    customer_id = Column(BigInteger, ForeignKey('cust_customers.id', ondelete='CASCADE'), nullable=False)
+    customer_id = Column(BigInteger, ForeignKey('customers.id', ondelete='CASCADE'), nullable=False)
     from_stage = Column(Text, nullable=True)
     to_stage = Column(Text, nullable=False)
     changed_by = Column(Text, nullable=True)

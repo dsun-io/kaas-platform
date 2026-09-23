@@ -48,3 +48,12 @@
 | 1e | `[Cleanup] 删除 FastGPT 知识库残留` | 删除知识库客户端（kb_client）、数据集路由（dataset_routing）及对应测试；知识检索提供器中的 FastGPT 类与登记项移除（**当前在用的 Postgres 知识检索与工厂函数保留**，详见 UNCERTAIN #8）；kb.edit 事件类型全套登记移除（契约三源、前后端、测试同步，事件类型 5→4）。另顺手一处：验证删除效果的测试用 Windows 默认编码读中文注释文件必崩，按 UTF-8 读取修正一行（属阶段 4 计划内的 GBK 家族，详见 UNCERTAIN #9），不动业务逻辑。 | 冒烟加载通过、收集 294 条无导入错误、知识/定价定向测试 12 条全过、契约检查通过（4 类事件 3 处一致）、前端单测 68/68、类型检查通过，零新增失败 |
 | 1f | `[Cleanup] 删除旧报价入口` | 删除 3 个报价入口（/api/v1/quote、/api/v1/quote_v2、/api/v1/quotation）+ quote.request/quote.response 两类旧事件（事件类型 4→2，契约三源/前后端/采样强制名单/测试同步）。⚠️ 命名分叉（quotes/quotations/quotation 三名）记录 UNCERTAIN #10，留待阶段 2/3 收敛。API 规格导出文件（docs/openapi.json）随删除后的真实接口面重新导出（78 条路径）。两处测试期望码修正：quote_wizard 的门是**管理员许可**（拒绝码 403 而非 401），"先查权限再查长度"语义在 /api/v1/spec/wizard/submit 上实证成立（超长正文照样先被 403 拒绝）——阶段 0 在 /quote 上做的顺序修复随该接口删除自然消亡，语义现由 wizard/submit 承载。保留：app/schemas/quote.py + quote_v2.py（字段约束与契约校验仍在读）、seed 历史事件行、dashboard 的 kb.query 历史统计口径（阶段 6 接新口径）、前端 mock 里的旧路由（阶段 2 收敛时改）。知识检索一条测试为既有跨文件顺序噪音（asyncpg 跨事件循环复用，单跑/整文件跑全绿），详见 UNCERTAIN #11。 | 冒烟加载通过、收集 273 条无导入错误、契约检查通过（2 类事件 3 处一致 + 9 数据结构）、前端单测 68/68、类型检查通过；五文件组 34 过 / 1 噪音失败 / 6 错（连不上本机数据库的历史噪音家族），零新增失败 |
 | 1g | 删除报价账 quote_orders | ⏭️ **跳过待确认**（UNCERTAIN #12）：报价账实为三张表（报价单/行项/发运关联），且订单转单、票据开单两个**明确要求保留**的工位都依赖它复制数据，报价单管理（保留项）也存在它上面；"以 quotations 为准"的命名问题（UNCERTAIN #10）未决。删表与保留指令互斥，按"不确定记录后跳过"规则挂起，零文件改动。 | 不适用（挂起） |
+
+---
+
+## 阶段 2：报价入口收敛 + 客户表合并（2026-09-23）
+
+| # | 改动 | 结论 |
+|---|------|------|
+| 2-1 | `[Cleanup] 报价入口收敛到 quotations`（补记：提交 9ab279a 当时漏登本日志） | UNCERTAIN #10 解决（"quotations"三义辨析）：① quotations 表 + 报价仓储**保留**（只进不出铁律）；② 旧 /quotation、/quotations 两个入口是前端"历史报价"页在用的，重建为单一复数入口 /api/v1/quotations（查列表 + 新增，quotations_api.py）；③ quotes.py 的报价单（#12 范围）保持不挂载。前端 mock 旧入口块删除、新增调用改指复数入口；"报价列表响应"数据结构补 items 字段（修复了旧代码丢列表内容的既有毛病）。API 规格导出 78→79 条路径。UNCERTAIN #10 标记已解决。 | 全量回归零新增失败（后端 154 过/10 既有噪音失败/1 既有跳过/109 既有连接错误；worker 11 过；前端单测 68/68；契约检查通过；类型检查通过；e2e 4 过/26 既有失败/1 跳过） |
+| 2-2 | `[Cleanup] 客户表合并到 customers` | 以 customers 为准合并 cust_customers：customers 补齐客户档案 10 列 + legacy_cust_id 映射键（旧 id 备查）；旧表数据全部迁入（id 重新分配、旧 id 存入映射键）；三张子表（联系人/询盘/阶段变更记录）指向改到 customers.id；可回滚迁移 202609230004（downgrade 全量还原旧表含编号对齐）。模型、客户接口、线索扫描后台任务、线上 Worker 的客户 SQL 全部改读 customers；**对外字段 company_name 保持不变**（内部列改名 name，查询层以别名原样输出，前端无感）。不动情报/获客/触达逻辑。 | 7 项全绿（零新增失败）：pytest 10F/154P/1S/109E/274（与基线一致）✓；worker 11P ✓；vitest 68P/8 文件 ✓；contracts-check PASS（2 事件/9 schema）✓；openapi 79 路径不变 ✓；tsc 干净 ✓；e2e 4P/26F/1S（与基线一致，dev-server 起服实测）✓ |

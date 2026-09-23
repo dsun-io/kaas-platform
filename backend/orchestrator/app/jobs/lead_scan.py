@@ -18,8 +18,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import async_session_factory
+from app.db.models import Customer
 from app.db.workstation_models import (
-    CustCustomer, CustInquiry, LeadCandidate,
+    CustInquiry, LeadCandidate,
 )
 
 logger = structlog.get_logger(__name__)
@@ -52,13 +53,13 @@ async def scan_replied_leads(db: AsyncSession, tenant_id: str, limit: int = 100)
 
         # 客户档案：同名客户复用（按租户+公司名匹配），否则新建
         customer = (await db.execute(
-            select(CustCustomer).where(
-                CustCustomer.tenant_id == tenant_id,
-                CustCustomer.company_name == lead.company_name)
+            select(Customer).where(
+                Customer.tenant_id == tenant_id,
+                Customer.name == lead.company_name)
         )).scalar_one_or_none()
         if customer is None:
-            customer = CustCustomer(
-                tenant_id=tenant_id, company_name=lead.company_name,
+            customer = Customer(
+                tenant_id=tenant_id, name=lead.company_name,
                 country=lead.country, address=lead.address,
                 stage="inquiry",  # 直接进 inquiry 阶段（触达已回复）
                 owner_id=lead.owner_id, owner_scope="tenant",

@@ -26,8 +26,9 @@ from sqlalchemy import select, func, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
+from app.db.models import Customer
 from app.db.workstation_models import (
-    CustCustomer, CustContact, CustInquiry, CustStageLog,
+    CustContact, CustInquiry, CustStageLog,
 )
 from app.core.auth import AuthContext, get_auth_context
 from app.domain.enums import (
@@ -71,9 +72,9 @@ def _check_write_access(row, auth: AuthContext):
         })
 
 
-def _row_to_customer(c: CustCustomer) -> dict:
+def _row_to_customer(c: Customer) -> dict:
     return {
-        "id": c.id, "company_name": c.company_name, "country": c.country,
+        "id": c.id, "company_name": c.name, "country": c.country,
         "address": c.address, "default_port": c.default_port,
         "credit_level": c.credit_level, "stage": c.stage, "notes": c.notes,
         "created_at": c.created_at.isoformat() if c.created_at else None,
@@ -101,11 +102,11 @@ async def _log_stage(db, tenant_id, customer_id, from_stage, to_stage, changed_b
     ))
 
 
-async def _get_customer_or_404(db, tenant_id, customer_id, auth) -> CustCustomer:
-    stmt = select(CustCustomer).where(
-        CustCustomer.tenant_id == tenant_id, CustCustomer.id == customer_id,
+async def _get_customer_or_404(db, tenant_id, customer_id, auth) -> Customer:
+    stmt = select(Customer).where(
+        Customer.tenant_id == tenant_id, Customer.id == customer_id,
     )
-    stmt = _scope_filter(stmt, CustCustomer, auth)
+    stmt = _scope_filter(stmt, Customer, auth)
     c = (await db.execute(stmt)).scalar_one_or_none()
     if c is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "CUSTOMER_NOT_FOUND"})
@@ -187,18 +188,18 @@ async def list_customers(
     db: AsyncSession = Depends(get_db_session),
 ):
     tenant_id = _tenant_id(auth)
-    stmt = select(CustCustomer).where(CustCustomer.tenant_id == tenant_id)
-    stmt = _scope_filter(stmt, CustCustomer, auth)
+    stmt = select(Customer).where(Customer.tenant_id == tenant_id)
+    stmt = _scope_filter(stmt, Customer, auth)
     if q:
-        stmt = stmt.where(CustCustomer.company_name.ilike(f"%{q}%"))
+        stmt = stmt.where(Customer.name.ilike(f"%{q}%"))
     if stage:
         validate_enum("customer_stage", stage)
-        stmt = stmt.where(CustCustomer.stage == stage)
+        stmt = stmt.where(Customer.stage == stage)
 
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total = (await db.execute(count_stmt)).scalar() or 0
 
-    stmt = stmt.order_by(CustCustomer.updated_at.desc())
+    stmt = stmt.order_by(Customer.updated_at.desc())
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
     rows = (await db.execute(stmt)).scalars().all()
     return {"items": [_row_to_customer(c) for c in rows], "total": total,
@@ -214,8 +215,8 @@ async def create_customer(
     tenant_id = _tenant_id(auth)
     stage = validate_enum("customer_stage", body.stage or "lead")
     owner_scope = validate_enum("owner_scope", body.owner_scope) or "private"
-    c = CustCustomer(
-        tenant_id=tenant_id, company_name=body.company_name,
+    c = Customer(
+        tenant_id=tenant_id, name=body.company_name,
         country=body.country, address=body.address,
         default_port=body.default_port, credit_level=body.credit_level,
         stage=stage, notes=body.notes,
@@ -462,8 +463,8 @@ async def list_inquiries(
 ):
     """询盘列表：按客户归类、时间倒序（§10.1 列表规则）。"""
     tenant_id = _tenant_id(auth)
-    stmt = select(CustInquiry, CustCustomer.company_name).join(
-        CustCustomer, CustInquiry.customer_id == CustCustomer.id,
+    stmt = select(CustInquiry, Customer.name).join(
+        Customer, CustInquiry.customer_id == Customer.id,
     ).where(CustInquiry.tenant_id == tenant_id)
     stmt = _scope_filter(stmt, CustInquiry, auth)
     if status:
@@ -515,9 +516,9 @@ async def update_inquiry(
 
         # 联动客户 stage（§10.1）
         if old_status != new_status:
-            c_stmt = select(CustCustomer).where(
-                CustCustomer.tenant_id == tenant_id,
-                CustCustomer.id == inq.customer_id,
+            c_stmt = select(Customer).where(
+                Customer.tenant_id == tenant_id,
+                Customer.id == inq.customer_id,
             )
             c = (await db.execute(c_stmt)).scalar_one_or_none()
             if c is not None:

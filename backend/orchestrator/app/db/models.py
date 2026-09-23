@@ -377,6 +377,17 @@ class Customer(Base):
     name = Column(Text, nullable=False)
     plan = Column(Text, nullable=False, default="free")  # 'free' | 'pro' | 'enterprise' | 'internal'
     status = Column(Text, nullable=False, default="active")
+    # ── 阶段2 客户表合并：吸收 cust_customers 的档案列（2026-09-22）──
+    country = Column(Text, nullable=True)
+    address = Column(Text, nullable=True)
+    default_port = Column(Text, nullable=True)
+    credit_level = Column(Text, nullable=True)
+    stage = Column(Text, nullable=False, default="lead", server_default="lead")
+    notes = Column(Text, nullable=True)
+    created_by = Column(Text, nullable=True)
+    owner_id = Column(Text, nullable=True)
+    owner_scope = Column(Text, nullable=False, default="private", server_default="private")
+    legacy_cust_id = Column(BigInteger, nullable=True)  # 合并映射键（旧 cust_customers.id），仅供 downgrade 还原
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 

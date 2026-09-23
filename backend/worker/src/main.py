@@ -509,12 +509,12 @@ async def list_customers(
     if country:
         where.append(f"country ILIKE ${idx}"); params.append(f"%{country}%"); idx += 1
     if q:
-        where.append(f"company_name ILIKE ${idx}"); params.append(f"%{q}%"); idx += 1
+        where.append(f"name ILIKE ${idx}"); params.append(f"%{q}%"); idx += 1
     where_sql = " AND ".join(where)
     async with _acquire(request) as conn:
-        total = await conn.fetchval(f"SELECT COUNT(*) FROM cust_customers WHERE {where_sql}", *params)
+        total = await conn.fetchval(f"SELECT COUNT(*) FROM customers WHERE {where_sql}", *params)
         rows = await conn.fetch(
-            f"SELECT * FROM cust_customers WHERE {where_sql} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx+1}",
+            f"SELECT *, name AS company_name FROM customers WHERE {where_sql} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx+1}",
             *params, page_size, (page - 1) * page_size,
         )
     return {"items": [_row_to_dict(r) for r in rows], "total": total, "page": page, "page_size": page_size}
@@ -524,9 +524,9 @@ async def list_customers(
 async def create_customer(request: Request, body: CustomerCreate, user: dict = Depends(_get_current_user)):
     async with _acquire(request) as conn:
         row = await conn.fetchrow(
-            """INSERT INTO cust_customers
-               (tenant_id, company_name, country, address, default_port, credit_level, stage, notes, created_by)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *""",
+            """INSERT INTO customers
+               (tenant_id, name, country, address, default_port, credit_level, stage, notes, created_by)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *, name AS company_name""",
             DEFAULT_TENANT, body.company_name, body.country, body.address,
             body.default_port, body.credit_level, body.stage, body.notes, str(user["id"]),
         )
@@ -537,7 +537,7 @@ async def create_customer(request: Request, body: CustomerCreate, user: dict = D
 async def get_customer(customer_id: int, request: Request, user: dict = Depends(_get_current_user)):
     async with _acquire(request) as conn:
         row = await conn.fetchrow(
-            "SELECT * FROM cust_customers WHERE id=$1 AND tenant_id=$2", customer_id, DEFAULT_TENANT,
+            "SELECT *, name AS company_name FROM customers WHERE id=$1 AND tenant_id=$2", customer_id, DEFAULT_TENANT,
         )
         if not row:
             raise HTTPException(status_code=404, detail="Customer not found")
@@ -556,7 +556,7 @@ async def get_customer(customer_id: int, request: Request, user: dict = Depends(
 @app.post("/api/v1/customers/{customer_id}/contacts", status_code=201)
 async def add_contact(customer_id: int, request: Request, body: ContactCreate, user: dict = Depends(_get_current_user)):
     async with _acquire(request) as conn:
-        exists = await conn.fetchval("SELECT 1 FROM cust_customers WHERE id=$1 AND tenant_id=$2", customer_id, DEFAULT_TENANT)
+        exists = await conn.fetchval("SELECT 1 FROM customers WHERE id=$1 AND tenant_id=$2", customer_id, DEFAULT_TENANT)
         if not exists:
             raise HTTPException(status_code=404, detail="Customer not found")
         row = await conn.fetchrow(
@@ -572,7 +572,7 @@ async def add_contact(customer_id: int, request: Request, body: ContactCreate, u
 @app.post("/api/v1/customers/{customer_id}/inquiries", status_code=201)
 async def add_inquiry(customer_id: int, request: Request, body: InquiryCreate, user: dict = Depends(_get_current_user)):
     async with _acquire(request) as conn:
-        exists = await conn.fetchval("SELECT 1 FROM cust_customers WHERE id=$1 AND tenant_id=$2", customer_id, DEFAULT_TENANT)
+        exists = await conn.fetchval("SELECT 1 FROM customers WHERE id=$1 AND tenant_id=$2", customer_id, DEFAULT_TENANT)
         if not exists:
             raise HTTPException(status_code=404, detail="Customer not found")
         row = await conn.fetchrow(
@@ -589,19 +589,19 @@ async def add_inquiry(customer_id: int, request: Request, body: InquiryCreate, u
 @app.patch("/api/v1/customers/{customer_id}/stage")
 async def update_stage(customer_id: int, request: Request, body: StageUpdate, user: dict = Depends(_get_current_user)):
     async with _acquire(request) as conn:
-        cust = await conn.fetchrow("SELECT id, stage FROM cust_customers WHERE id=$1 AND tenant_id=$2", customer_id, DEFAULT_TENANT)
+        cust = await conn.fetchrow("SELECT id, stage FROM customers WHERE id=$1 AND tenant_id=$2", customer_id, DEFAULT_TENANT)
         if not cust:
             raise HTTPException(status_code=404, detail="Customer not found")
         from_stage = cust["stage"]
         await conn.execute(
-            "UPDATE cust_customers SET stage=$1, updated_at=NOW() WHERE id=$2", body.stage, customer_id,
+            "UPDATE customers SET stage=$1, updated_at=NOW() WHERE id=$2", body.stage, customer_id,
         )
         await conn.execute(
             """INSERT INTO cust_stage_log (tenant_id, customer_id, from_stage, to_stage, changed_by, reason)
                VALUES ($1,$2,$3,$4,$5,$6)""",
             DEFAULT_TENANT, customer_id, from_stage, body.stage, str(user["id"]), body.reason,
         )
-        row = await conn.fetchrow("SELECT * FROM cust_customers WHERE id=$1", customer_id)
+        row = await conn.fetchrow("SELECT *, name AS company_name FROM customers WHERE id=$1", customer_id)
     return dict(row)
 
 
@@ -782,7 +782,7 @@ async def dashboard_summary(
             "SELECT count(*) FROM cust_inquiries WHERE tenant_id=$1", DEFAULT_TENANT
         ) or 0
         active_customers = await conn.fetchval(
-            "SELECT count(*) FROM cust_customers WHERE tenant_id=$1", DEFAULT_TENANT
+            "SELECT count(*) FROM customers WHERE tenant_id=$1", DEFAULT_TENANT
         ) or 0
         ports = await conn.fetchval(
             "SELECT count(*) FROM market_ports WHERE tenant_id=$1", DEFAULT_TENANT
