@@ -12,8 +12,6 @@ function read(path: string): string {
 const KNOWN_EVENTS: readonly string[] = [
   'audit.access',
   'capability.update',
-  'quote.request',
-  'quote.response',
 ];
 
 function extractFromTs(): string[] {

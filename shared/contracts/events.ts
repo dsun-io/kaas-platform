@@ -7,8 +7,6 @@
 import { z } from 'zod';
 
 export const LATEST_SCHEMA_VERSION = {
-  'quote.request': 1,
-  'quote.response': 1,
   'capability.update': 1,
   'audit.access': 1,
 } as const;
@@ -16,22 +14,6 @@ export const LATEST_SCHEMA_VERSION = {
 export type EventType = keyof typeof LATEST_SCHEMA_VERSION;
 
 // ── Payload schemas per event_type:version ──
-
-export const QuoteRequestPayloadSchema = z.object({
-  session_id: z.string(),
-  customer_id: z.string(),
-  product_category: z.string(),
-  product_spec: z.record(z.unknown()),
-  quantity: z.number().int().positive(),
-});
-
-export const QuoteResponsePayloadSchema = z.object({
-  session_id: z.string(),
-  status: z.enum(['matched', 'estimated', 'spec_not_supported']),
-  source: z.enum(['quotations_db', 'L1_L2_formula']),
-  unit_price: z.number().nullable(),
-  confidence: z.enum(['high', 'medium', 'low']),
-});
 
 export const CapabilityUpdatePayloadSchema = z.object({
   customer_id: z.string(),
@@ -50,8 +32,6 @@ export const AuditAccessPayloadSchema = z.object({
 
 /** Maps event_type:version → zod schema */
 export const EVENT_PAYLOAD_SCHEMAS: Record<`${EventType}:${number}`, z.ZodSchema> = {
-  'quote.request:1': QuoteRequestPayloadSchema,
-  'quote.response:1': QuoteResponsePayloadSchema,
   'capability.update:1': CapabilityUpdatePayloadSchema,
   'audit.access:1': AuditAccessPayloadSchema,
 };

@@ -53,16 +53,26 @@ class TestEventWriteE2E:
         assert row.event_type == "audit.access"
         assert row.event_source == "orchestrator"
 
-    async def test_post_quote_request_persists_to_db(self, client, db_session):
-        """POST /api/v1/events quote.request 类型也成功写入。"""
-        body = make_event_body("quote.request", event_source="orchestrator")
+    async def test_post_capability_update_persists_to_db(self, client, db_session):
+        """POST /api/v1/events capability.update 类型也成功写入。"""
+        body = make_event_body(
+            "capability.update",
+            event_source="orchestrator",
+            payload={
+                "customer_id": "cust-1",
+                "product_category": "牛栏网",
+                "spec_constraints_before": {},
+                "spec_constraints_after": {},
+                "actor_id": "agent-1",
+            },
+        )
         response = await client.post(
             "/api/v1/events", json=body,
             headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
         assert response.status_code == 201
         data = response.json()
-        assert data["event_type"] == "quote.request"
+        assert data["event_type"] == "capability.update"
 
         result = await db_session.execute(
             select(Event).where(Event.event_source == "orchestrator")

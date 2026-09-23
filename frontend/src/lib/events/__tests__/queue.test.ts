@@ -53,14 +53,12 @@ describe('events queue (memory fallback)', () => {
     expect(batch).toHaveLength(3);
   });
 
-  it('handles all 4 event types', async () => {
+  it('handles all 2 event types', async () => {
     const queue = await getQueue();
 
     const types = [
       'audit.access',
       'capability.update',
-      'quote.request',
-      'quote.response',
     ] as const;
 
     for (const t of types) {
@@ -73,7 +71,7 @@ describe('events queue (memory fallback)', () => {
     }
 
     const batch = await queue.getPendingBatch(10);
-    expect(batch).toHaveLength(4);
+    expect(batch).toHaveLength(2);
   });
 
   it('moveToDead removes from pending', async () => {

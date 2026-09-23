@@ -17,9 +17,7 @@ from app.domain.tenant_config import load_tenant_config
 
 NORMAL_SAMPLING_RATE = float(os.environ.get("NORMAL_SAMPLING_RATE", "0.1"))
 P95_THRESHOLD_MS = int(os.environ.get("P95_THRESHOLD_MS", "1500"))
-FORCE_SAMPLE_EVENT_TYPES = frozenset(
-    {"capability.update", "quote.request", "quote.response"}
-)
+FORCE_SAMPLE_EVENT_TYPES = frozenset({"capability.update"})
 
 
 class SamplingMiddleware(BaseHTTPMiddleware):

@@ -23,12 +23,10 @@ const EVENTS_LIST = Array.from({ length: 12 }, (_, i) =>
   makeEvent({
     event_type: (
       [
-        "quote.request",
-        "quote.response",
         "audit.access",
         "capability.update",
       ] as const
-    )[i % 4],
+    )[i % 2],
     created_at: new Date(Date.now() - i * 3600000).toISOString(),
     sampled: i % 5 === 0,
   }),

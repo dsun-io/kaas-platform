@@ -18,8 +18,6 @@ const EVENT_TYPE_VARIANT: Record<string, "default" | "secondary" | "outline"> =
   {
     "audit.access": "default",
     "capability.update": "secondary",
-    "quote.request": "secondary",
-    "quote.response": "outline",
   };
 
 interface EventRow {

@@ -105,43 +105,10 @@ async def dashboard_summary(
     token_total = row._mapping["token_total"] if row else 0
     token_sampled = row._mapping["token_sampled"] if row else 0
 
-    # ── P95 latency from event timestamps ──────────────────────────────
-    # Use quote.response events and compute latency from quote.request -> quote.response
-    latency_tenant_filter = "AND tenant_id = :tenant_id" if tenant_id else ""
-    latency_q = text(f"""
-        WITH request_times AS (
-            SELECT
-                tenant_id,
-                EXTRACT(EPOCH FROM created_at) AS req_time,
-                payload->>'request_id' AS req_id
-            FROM events
-            WHERE event_type = 'quote.request'
-              AND created_at >= :since
-              {latency_tenant_filter}
-        ),
-        response_times AS (
-            SELECT
-                tenant_id,
-                EXTRACT(EPOCH FROM created_at) AS resp_time,
-                payload->>'request_id' AS req_id
-            FROM events
-            WHERE event_type = 'quote.response'
-              AND created_at >= :since
-              {latency_tenant_filter}
-        )
-        SELECT
-            percentile_cont(0.95) WITHIN GROUP (ORDER BY (r.resp_time - q.req_time) * 1000) AS p95_ms,
-            COUNT(*) AS latency_count
-        FROM request_times q
-        JOIN response_times r USING (req_id)
-    """)
-    latency_params = {"since": since}
-    if tenant_id:
-        latency_params["tenant_id"] = tenant_id
-    result = await db.execute(latency_q, latency_params)
-    row = result.fetchone()
-    p95_latency_ms = round(row._mapping["p95_ms"], 1) if row and row._mapping["p95_ms"] else 0
-    latency_sampled = row._mapping["latency_count"] if row and row._mapping["latency_count"] else 0
+    # P95 latency 原基于旧报价事件（quote.request/quote.response）配对统计，
+    # 事件已随旧报价入口移除；Stage 6 新事件流落位后接新口径，暂以 0 占位保持返回结构。
+    p95_latency_ms = 0
+    latency_sampled = 0
 
     # ── Fallback / dataset hits from event payloads ─────────────────────
     dataset_tenant_filter = "AND tenant_id = :tenant_id" if tenant_id else ""

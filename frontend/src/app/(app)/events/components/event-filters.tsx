@@ -15,8 +15,6 @@ import { Search, X } from "lucide-react";
 const EVENT_TYPES = [
   "audit.access",
   "capability.update",
-  "quote.request",
-  "quote.response",
 ];
 
 interface Props {

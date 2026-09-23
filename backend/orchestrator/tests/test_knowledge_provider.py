@@ -83,10 +83,6 @@ class TestFastGPTDisabledBehavior:
         # 能导入就说明不依赖 FastGPT
         assert get_price is not None
 
-        # quote.py 已移除 get_kb_client + build_dataset_ids 导入
-        from app.api.quote import create_quote
-        assert create_quote is not None
-
         # 验证 V2 quote engine 无 FastGPT 依赖
         from app.services.quote_engine import create_quote as create_quote_v2
         assert create_quote_v2 is not None
