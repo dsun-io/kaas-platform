@@ -22,12 +22,6 @@ class CapabilityUpdatePayload(BaseModel):
     spec_constraints_after: Dict[str, Any]
     actor_id: str
 
-class KbEditPayload(BaseModel):
-    dataset_name: str
-    chunk_id: Optional[str]
-    action: Literal['create', 'update', 'delete']
-    actor_id: str
-
 class AuditAccessPayload(BaseModel):
     resource_type: Literal['page', 'api', 'dataset']
     resource_id: str
@@ -38,6 +32,5 @@ PAYLOAD_SCHEMAS: Dict[str, type[BaseModel]] = {
     "quote.request": QuoteRequestPayload,
     "quote.response": QuoteResponsePayload,
     "capability.update": CapabilityUpdatePayload,
-    "kb.edit": KbEditPayload,
     "audit.access": AuditAccessPayload,
 }

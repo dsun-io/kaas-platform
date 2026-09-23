@@ -3,13 +3,12 @@ Kaas v2 · Knowledge Retrieval Provider 抽象层
 ───────────────────────────────────────────
 可插拔的文本知识检索 Provider。
 默认使用 PostgreSQL text_knowledge 表。
-FastGPT 降级为可选的 runtime adapter，不是核心依赖。
 
-引用: § 去 FastGPT 架构
   - KnowledgeRetrievalProvider — ABC
   - PostgreSQLTextKnowledgeProvider — 默认实现 (Phase 1)
-  - FastGPTKnowledgeProvider — 可选 fallback (向后兼容)
   - get_knowledge_provider — 工厂函数
+
+（FastGPT 相关 Provider 已在清理阶段移除。）
 """
 import os
 from abc import ABC, abstractmethod
@@ -117,82 +116,10 @@ class PostgreSQLTextKnowledgeProvider(KnowledgeRetrievalProvider):
         ]
 
 
-class FastGPTKnowledgeProvider(KnowledgeRetrievalProvider):
-    """
-    可选 Provider — 包装 FastGPTKBClient 为 KnowledgeRetrievalProvider。
-
-    注意:
-      - 此 Provider 只做文本召回，不做任何定价/决策
-      - FastGPT 不可用时，系统仍可运行（调用方应处理空结果）
-      - 仅作为向后兼容的 fallback，不是默认
-    """
-
-    def __init__(self, tenant_id: str):
-        self._tenant_id = tenant_id
-        self._client = None
-
-    async def _get_client(self):
-        if self._client is None:
-            from app.services.kb_client import FastGPTKBClient
-            self._client = FastGPTKBClient(self._tenant_id)
-        return self._client
-
-    async def search(
-        self,
-        tenant_id: str,
-        query_text: str,
-        customer_id: Optional[str] = None,
-        product_category: Optional[str] = None,
-        knowledge_types: Optional[list[str]] = None,
-        limit: int = 5,
-    ) -> list[TextKnowledgeHit]:
-        """通过 FastGPT 做向量检索。"""
-        from app.domain.dataset_routing import build_dataset_ids
-
-        try:
-            client = await self._get_client()
-            dataset_ids = build_dataset_ids(
-                product_category or "",
-                customer_id,
-            )
-            results = await client.search(
-                dataset_ids=dataset_ids,
-                query=query_text,
-                top_k=limit,
-            )
-        except Exception:
-            # FastGPT 异常不阻断主流程
-            return []
-
-        return [
-            TextKnowledgeHit(
-                id=str(idx),
-                tenant_id=tenant_id,
-                customer_id=customer_id,
-                scope="tenant",
-                product_category=product_category,
-                knowledge_type="fastgpt",
-                title=item.get("question", ""),
-                content=item.get("content", ""),
-                tags=[],
-                keywords=[],
-                source="fastgpt",
-                confidence=None,
-                score=item.get("score"),
-            )
-            for idx, item in enumerate(results)
-        ]
-
-    async def close(self):
-        if self._client:
-            await self._client.close()
-
-
 # ─── Provider registry ───
 
 _PROVIDER_REGISTRY: dict[str, type[KnowledgeRetrievalProvider]] = {
     "postgres": PostgreSQLTextKnowledgeProvider,
-    "fastgpt": FastGPTKnowledgeProvider,
 }
 
 
@@ -203,21 +130,14 @@ def get_knowledge_provider(
     """
     工厂函数 — 返回指定的 KnowledgeRetrievalProvider。
 
-    provider_name 未指定时，从 KNOWLEDGE_PROVIDER / KB_PROVIDER env 读取。
+    provider_name 未指定时，从 KNOWLEDGE_PROVIDER env 读取。
     默认: postgres (Phase 1)
-    向后兼容: fastgpt 仍可使用，但不再是默认
     """
     if provider_name is None:
-        provider_name = os.getenv("KNOWLEDGE_PROVIDER", "")
-        if not provider_name:
-            # 向后兼容: 用 KB_PROVIDER，但截获 stub→postgres
-            kb_provider = os.getenv("KB_PROVIDER", "stub")
-            provider_name = "fastgpt" if kb_provider == "fastgpt" else "postgres"
+        provider_name = os.getenv("KNOWLEDGE_PROVIDER", "") or "postgres"
 
     provider_cls = _PROVIDER_REGISTRY.get(provider_name)
     if provider_cls is None:
         raise ValueError(f"Unknown knowledge provider: {provider_name}")
 
-    if provider_name == "fastgpt":
-        return provider_cls(tenant_id)
     return provider_cls()

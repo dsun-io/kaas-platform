@@ -26,12 +26,6 @@
 - spec_constraints_after: object
 - actor_id: string
 
-## kb.edit (v1)
-- dataset_name: string
-- chunk_id: string | null
-- action: enum [create | update | delete]
-- actor_id: string
-
 ## audit.access (v1)
 - resource_type: enum [page | api | dataset]
 - resource_id: string

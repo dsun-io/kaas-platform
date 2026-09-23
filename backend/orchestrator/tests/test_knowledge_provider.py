@@ -4,9 +4,7 @@ Kaas v2 · KnowledgeRetrievalProvider 测试
 
 覆盖:
   - PostgreSQLTextKnowledgeProvider 正常返回
-  - FastGPT disabled 时不调用 FastGPT
-  - FastGPT 异常不阻断主流程
-  - Orchestrator 不直接依赖 FastGPT client
+  - Service 层检索
 """
 import pytest
 pytestmark = pytest.mark.unit
@@ -15,7 +13,6 @@ import os
 from app.services.knowledge_provider import (
     get_knowledge_provider,
     PostgreSQLTextKnowledgeProvider,
-    FastGPTKnowledgeProvider,
 )
 from app.services.knowledge_service import (
     get_knowledge_service,
@@ -35,15 +32,6 @@ class TestGetKnowledgeProvider:
     def test_explicit_postgres(self):
         provider = get_knowledge_provider(provider_name="postgres")
         assert isinstance(provider, PostgreSQLTextKnowledgeProvider)
-
-    def test_fastgpt_provider(self, monkeypatch):
-        monkeypatch.setenv("FASTGPT_BASE_URL", "https://test.example.com")
-        monkeypatch.setenv("FASTGPT_API_KEY", "test-key")
-        provider = get_knowledge_provider(
-            tenant_id="lianjia",
-            provider_name="fastgpt",
-        )
-        assert isinstance(provider, FastGPTKnowledgeProvider)
 
     def test_knowledge_provider_env_var(self, monkeypatch):
         monkeypatch.setenv("KNOWLEDGE_PROVIDER", "postgres")
@@ -102,9 +90,3 @@ class TestFastGPTDisabledBehavior:
         # 验证 V2 quote engine 无 FastGPT 依赖
         from app.services.quote_engine import create_quote as create_quote_v2
         assert create_quote_v2 is not None
-
-    async def test_fastgpt_client_importable_but_not_required(self):
-        """FastGPT client 可以导入但不作核心依赖。"""
-        from app.services.kb_client import FastGPTKBClient, StubKBClient
-        assert FastGPTKBClient is not None
-        assert StubKBClient is not None

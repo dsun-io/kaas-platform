@@ -9,13 +9,10 @@ from app.services.llm_client import (
     get_llm_client,
     llm_with_fallback,
 )
-# 保留向后兼容的 KB client 导出，但不再作为核心依赖
-from app.services.kb_client import KBClient, StubKBClient, FastGPTKBClient, get_kb_client
 from app.services.knowledge_provider import (
     KnowledgeRetrievalProvider,
     TextKnowledgeHit,
     PostgreSQLTextKnowledgeProvider,
-    FastGPTKnowledgeProvider,
     get_knowledge_provider,
 )
 from app.services.knowledge_service import (
@@ -43,16 +40,10 @@ __all__ = [
     "TemplateOnlyClient",
     "get_llm_client",
     "llm_with_fallback",
-    # KB (向后兼容 · 不再作为核心)
-    "KBClient",
-    "StubKBClient",
-    "FastGPTKBClient",
-    "get_kb_client",
-    # Knowledge Provider (新 · 推荐使用)
+    # Knowledge Provider
     "KnowledgeRetrievalProvider",
     "TextKnowledgeHit",
     "PostgreSQLTextKnowledgeProvider",
-    "FastGPTKnowledgeProvider",
     "get_knowledge_provider",
     "KnowledgeRetrievalService",
     "get_knowledge_service",

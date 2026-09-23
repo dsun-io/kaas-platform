@@ -27,9 +27,8 @@ const EVENTS_LIST = Array.from({ length: 12 }, (_, i) =>
         "quote.response",
         "audit.access",
         "capability.update",
-        "kb.edit",
       ] as const
-    )[i % 6],
+    )[i % 4],
     created_at: new Date(Date.now() - i * 3600000).toISOString(),
     sampled: i % 5 === 0,
   }),

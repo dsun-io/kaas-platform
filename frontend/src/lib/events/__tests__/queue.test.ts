@@ -53,13 +53,12 @@ describe('events queue (memory fallback)', () => {
     expect(batch).toHaveLength(3);
   });
 
-  it('handles all 5 event types', async () => {
+  it('handles all 4 event types', async () => {
     const queue = await getQueue();
 
     const types = [
       'audit.access',
       'capability.update',
-      'kb.edit',
       'quote.request',
       'quote.response',
     ] as const;
@@ -74,16 +73,16 @@ describe('events queue (memory fallback)', () => {
     }
 
     const batch = await queue.getPendingBatch(10);
-    expect(batch).toHaveLength(5);
+    expect(batch).toHaveLength(4);
   });
 
   it('moveToDead removes from pending', async () => {
     const queue = await getQueue();
 
     const id = await queue.enqueuePending({
-      event_type: 'kb.edit',
+      event_type: 'audit.access',
       schema_version: 1,
-      payload: { dataset_name: 'd1', chunk_id: null, action: 'create', actor_id: 'a1' },
+      payload: {},
       event_source: 'frontend',
     });
 

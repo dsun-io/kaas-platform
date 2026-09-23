@@ -64,7 +64,7 @@ kaas-platform/
 │       │   ├── domain/               # 领域逻辑 (schema_registry, tenant_config, spec_hash)
 │       │   ├── repositories/         # 数据访问层 (events, admin, quotations, pricing, specs, ...)
 │       │   ├── schemas/              # Pydantic 请求/响应模型
-│       │   ├── services/             # 业务服务 (quote_engine, pricing, llm_client, kb_client, ...)
+│       │   ├── services/             # 业务服务 (quote_engine, pricing, llm_client, ...)
 │       │   ├── db/                   # 数据库模型与会话管理
 │       │   ├── jobs/                 # 定时任务 (archive)
 │       │   └── config/               # 应用配置

@@ -88,7 +88,7 @@ class TestPricingService:
     async def test_no_fastgpt_import(self):
         """验证 pricing 模块不依赖 FastGPT。"""
         import app.services.pricing as pricing_mod
-        source = open(pricing_mod.__file__).read()
+        source = open(pricing_mod.__file__, encoding="utf-8").read()
         assert "kb_client" not in source
         assert "build_dataset_ids" not in source
         assert "get_kb_client" not in source

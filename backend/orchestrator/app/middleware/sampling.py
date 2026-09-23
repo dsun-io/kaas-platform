@@ -4,7 +4,7 @@ Kaas v2 · 采样中间件（最外层 · §3.7.11）
 5 档采样决策:
   - HTTP 4xx/5xx: 100%
   - 慢请求 P95 之上: 100%
-  - capability.update / kb.edit / 调价: 100%
+  - capability.update / 调价: 100%
   - audit.access: 100%
   - 正常请求: env NORMAL_SAMPLING_RATE (default 10%)
 """
@@ -18,7 +18,7 @@ from app.domain.tenant_config import load_tenant_config
 NORMAL_SAMPLING_RATE = float(os.environ.get("NORMAL_SAMPLING_RATE", "0.1"))
 P95_THRESHOLD_MS = int(os.environ.get("P95_THRESHOLD_MS", "1500"))
 FORCE_SAMPLE_EVENT_TYPES = frozenset(
-    {"capability.update", "kb.edit", "quote.request", "quote.response"}
+    {"capability.update", "quote.request", "quote.response"}
 )
 
 

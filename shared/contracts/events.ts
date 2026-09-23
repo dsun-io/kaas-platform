@@ -10,7 +10,6 @@ export const LATEST_SCHEMA_VERSION = {
   'quote.request': 1,
   'quote.response': 1,
   'capability.update': 1,
-  'kb.edit': 1,
   'audit.access': 1,
 } as const;
 
@@ -42,13 +41,6 @@ export const CapabilityUpdatePayloadSchema = z.object({
   actor_id: z.string(),
 });
 
-export const KbEditPayloadSchema = z.object({
-  dataset_name: z.string(),
-  chunk_id: z.string().nullable(),
-  action: z.enum(['create', 'update', 'delete']),
-  actor_id: z.string(),
-});
-
 export const AuditAccessPayloadSchema = z.object({
   resource_type: z.enum(['page', 'api', 'dataset']),
   resource_id: z.string(),
@@ -61,7 +53,6 @@ export const EVENT_PAYLOAD_SCHEMAS: Record<`${EventType}:${number}`, z.ZodSchema
   'quote.request:1': QuoteRequestPayloadSchema,
   'quote.response:1': QuoteResponsePayloadSchema,
   'capability.update:1': CapabilityUpdatePayloadSchema,
-  'kb.edit:1': KbEditPayloadSchema,
   'audit.access:1': AuditAccessPayloadSchema,
 };
 
