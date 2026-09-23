@@ -1165,12 +1165,12 @@ async def lead_scan_replied(request: Request, user: dict = Depends(_get_current_
                 existing += 1
                 continue
             cust = await conn.fetchrow(
-                "SELECT id FROM cust_customers WHERE tenant_id=$1 AND company_name=$2",
+                "SELECT id FROM customers WHERE tenant_id=$1 AND name=$2",
                 DEFAULT_TENANT, lead["company_name"])
             if cust is None:
                 cust = await conn.fetchrow(
-                    """INSERT INTO cust_customers
-                       (tenant_id, company_name, country, address, stage, owner_id, owner_scope)
+                    """INSERT INTO customers
+                       (tenant_id, name, country, address, stage, owner_id, owner_scope)
                        VALUES ($1,$2,$3,$4,'inquiry',$5,'tenant') RETURNING id""",
                     DEFAULT_TENANT, lead["company_name"], lead["country"],
                     lead["address"], lead["owner_id"] or str(user["id"]))
