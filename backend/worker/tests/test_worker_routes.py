@@ -114,6 +114,11 @@ NEW_ROUTES: set[tuple[str, str]] = {
     ("/api/v1/orders/{order_id}", "GET"),
     ("/api/v1/orders/{order_id}", "PATCH"),
     ("/api/v1/orders/{order_id}/status", "POST"),
+    # D3：付款计划 + 应收台账
+    ("/api/v1/orders/{order_id}/payment-schedules", "GET"),
+    ("/api/v1/orders/{order_id}/payment-schedules", "POST"),
+    ("/api/v1/payment-schedules/{schedule_id}", "PATCH"),
+    ("/api/v1/receivables", "GET"),
 }
 
 
