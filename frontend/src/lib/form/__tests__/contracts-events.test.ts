@@ -3,9 +3,9 @@ import { EVENT_PAYLOAD_SCHEMAS, LATEST_SCHEMA_VERSION, AuditAccessPayloadSchema 
 import type { EventType } from '@contracts/events';
 
 describe('EVENT_PAYLOAD_SCHEMAS', () => {
-  it('registers all 2 event types with their latest version', () => {
+  it('registers all 11 event types with their latest version', () => {
     const types = Object.keys(LATEST_SCHEMA_VERSION) as EventType[];
-    expect(types).toHaveLength(2);
+    expect(types).toHaveLength(11);
 
     for (const t of types) {
       const version = LATEST_SCHEMA_VERSION[t];
@@ -20,6 +20,30 @@ describe('EVENT_PAYLOAD_SCHEMAS', () => {
       const [type, version] = k.split(':') as [EventType, string];
       expect(LATEST_SCHEMA_VERSION[type]).toBe(Number(version));
     }
+  });
+});
+
+describe('workstation & intel event payloads', () => {
+  const cases: Array<[string, unknown]> = [
+    ['market.selected', { market_id: 'm1', market_name: '华北丝网', actor_id: 'a1' }],
+    ['lead.discovered', { lead_id: 'l1', source: 'manual', actor_id: 'a1' }],
+    ['lead.enriched', { lead_id: 'l1', fields_added: ['phone'], actor_id: 'a1' }],
+    ['lead.outreach_ready', { lead_id: 'l1', channel: 'wechat', actor_id: 'a1' }],
+    ['outreach.sent', { lead_id: 'l1', channel: 'wechat', actor_id: 'a1' }],
+    ['outreach.replied', { lead_id: 'l1', channel: 'wechat', reply_summary: null, actor_id: 'a1' }],
+    ['quotation.converted', { quotation_id: 'q1', order_id: null, customer_id: 'c1', actor_id: 'a1' }],
+    ['order.shipped', { order_id: 'o1', shipment_ref: null, actor_id: 'a1' }],
+    ['shipment.documented', { order_id: 'o1', doc_id: null, doc_type: 'packing_list', actor_id: 'a1' }],
+    ['capability.update', {
+      customer_id: 'c1', product_category: 'niulanwang',
+      spec_constraints_before: {}, spec_constraints_after: { mesh: '5x10' }, actor_id: 'a1',
+    }],
+  ];
+
+  it.each(cases)('%s payload validates', (type, payload) => {
+    const version = LATEST_SCHEMA_VERSION[type as EventType];
+    const schema = EVENT_PAYLOAD_SCHEMAS[`${type}:${version}` as keyof typeof EVENT_PAYLOAD_SCHEMAS];
+    expect(schema!.safeParse(payload).success).toBe(true);
   });
 });
 
