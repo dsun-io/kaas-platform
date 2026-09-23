@@ -84,6 +84,10 @@ EXISTING_ROUTES = {
 NEW_ROUTES: set[tuple[str, str]] = {
     ("/api/v1/quotations", "GET"),
     ("/api/v1/quotations", "POST"),
+    ("/api/v1/pricing-data", "GET"),
+    ("/api/v1/pricing-data", "POST"),
+    ("/api/v1/pricing-data/{item_id}", "PATCH"),
+    ("/api/v1/pricing-data/{item_id}", "DELETE"),
 }
 
 
