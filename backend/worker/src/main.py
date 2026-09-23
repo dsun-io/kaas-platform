@@ -2338,5 +2338,149 @@ async def change_order_status(order_id: int, request: Request, body: dict,
     return _order_dict(row2)
 
 
+# ── 阶段 6 任务2：付款计划 + 标记收款（汇兑损益）+ 应收台账 ─────────────
+
+def _schedule_dict(row) -> dict:
+    from decimal import Decimal as _D
+    d = dict(row)
+    for k in ("due_date", "actual_date", "created_at", "updated_at"):
+        v = d.get(k)
+        d[k] = v.isoformat() if v is not None and hasattr(v, "isoformat") else v
+    for k in ("ratio", "amount", "fx_rate", "exchange_gain_loss"):
+        if isinstance(d.get(k), _D):
+            d[k] = float(d[k])
+    return d
+
+
+@app.get("/api/v1/orders/{order_id}/payment-schedules")
+async def list_schedules(order_id: int, request: Request,
+                         user: dict = Depends(_get_current_user)):
+    o = await db.fetchrow(request, "SELECT id FROM orders WHERE tenant_id=$1 AND id=$2",
+                          DEFAULT_TENANT, order_id)
+    if not o:
+        raise HTTPException(status_code=404, detail={"error": "order_not_found"})
+    rows = await db.fetch(
+        request,
+        "SELECT * FROM payment_schedules WHERE tenant_id=$1 AND order_id=$2"
+        " ORDER BY due_date NULLS LAST, id",
+        DEFAULT_TENANT, order_id, table="payment_schedules",
+    )
+    return {"items": [_schedule_dict(r) for r in rows], "total": len(rows)}
+
+
+@app.post("/api/v1/orders/{order_id}/payment-schedules", status_code=201)
+async def create_schedule(order_id: int, request: Request, body: dict,
+                          user: dict = Depends(_get_current_user)):
+    from decimal import Decimal, ROUND_HALF_UP
+    row = await db.fetchrow(request, "SELECT * FROM orders WHERE tenant_id=$1 AND id=$2",
+                            DEFAULT_TENANT, order_id, table="orders")
+    if not row:
+        raise HTTPException(status_code=404, detail={"error": "order_not_found"})
+    o = _order_dict(row)
+    stype = (body.get("schedule_type") or "full").strip()
+    if stype not in ("deposit", "balance", "full"):
+        raise HTTPException(status_code=422, detail={"error": "bad_schedule_type"})
+    ratio = body.get("ratio")
+    amount = body.get("amount")
+    if (ratio is None) == (amount is None):
+        raise HTTPException(status_code=422,
+                            detail={"error": "ratio_xor_amount_required"})
+    if ratio is not None:
+        amount = (Decimal(str(o["total_amount"] or 0)) * Decimal(str(ratio))) \
+            .quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    row2 = await db.fetchrow(
+        request,
+        "INSERT INTO payment_schedules (tenant_id, order_id, schedule_type, ratio,"
+        " amount, currency, due_date, notes, status, owner_scope)"
+        " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending','default') RETURNING *",
+        DEFAULT_TENANT, order_id, stype, ratio, amount,
+        o.get("currency") or "USD", parse_date(body.get("due_date")),
+        body.get("notes") or None, table="payment_schedules",
+    )
+    return _schedule_dict(row2)
+
+
+@app.patch("/api/v1/payment-schedules/{schedule_id}")
+async def update_schedule(schedule_id: int, request: Request, body: dict,
+                          user: dict = Depends(_get_current_user)):
+    from decimal import Decimal, ROUND_HALF_UP
+    s = await db.fetchrow(request, "SELECT * FROM payment_schedules WHERE tenant_id=$1 AND id=$2",
+                          DEFAULT_TENANT, schedule_id, table="payment_schedules")
+    if not s:
+        raise HTTPException(status_code=404, detail={"error": "schedule_not_found"})
+    s = _schedule_dict(s)
+    new_status = (body.get("status") or s["status"]).strip()
+    if s["status"] == "paid" and new_status != "paid":
+        raise HTTPException(status_code=409, detail={
+            "error": "conflict", "code": "ILLEGAL_TRANSITION",
+            "field": "status", "from": "paid", "to": new_status,
+        })
+    now = datetime.now(timezone.utc)
+    if new_status == "paid" and s["status"] != "paid":
+        # 标记收款：按实际汇率差记汇兑损益（锁定汇率线上简化 1.0）
+        actual_rate = Decimal(str(body.get("fx_rate") or 1.0))
+        amt = Decimal(str(s["amount"] or 0))
+        gl = (amt * (actual_rate - Decimal("1"))).quantize(Decimal("0.01"),
+                                                         rounding=ROUND_HALF_UP)
+        actual_date = parse_date(body.get("actual_date")) or now.date()
+        await db.execute(
+            request,
+            "UPDATE payment_schedules SET status='paid', actual_date=$3, fx_rate=$4,"
+            " exchange_gain_loss=$5, updated_at=$6 WHERE tenant_id=$1 AND id=$2",
+            DEFAULT_TENANT, schedule_id, actual_date, float(actual_rate), gl, now,
+            table="payment_schedules",
+        )
+        await db.execute(
+            request,
+            "UPDATE receivables SET received_amount=received_amount+$3,"
+            " exchange_gain_loss=COALESCE(exchange_gain_loss,0)+$4,"
+            " status=CASE WHEN received_amount+$3>=total_amount THEN 'paid'"
+            " ELSE 'partial' END, updated_at=$5 WHERE tenant_id=$1 AND order_id=$2",
+            DEFAULT_TENANT, s["order_id"], amt, gl, now, table="receivables",
+        )
+    else:
+        await db.execute(
+            request,
+            "UPDATE payment_schedules SET due_date=COALESCE($3, due_date),"
+            " notes=COALESCE($4, notes), updated_at=$5 WHERE tenant_id=$1 AND id=$2",
+            DEFAULT_TENANT, schedule_id, parse_date(body.get("due_date")),
+            body.get("notes"), now, table="payment_schedules",
+        )
+    s2 = await db.fetchrow(request, "SELECT * FROM payment_schedules WHERE tenant_id=$1 AND id=$2",
+                           DEFAULT_TENANT, schedule_id, table="payment_schedules")
+    return _schedule_dict(s2)
+
+
+@app.get("/api/v1/receivables")
+async def list_receivables(request: Request, status: str = None, page: int = 1,
+                           page_size: int = 20, user: dict = Depends(_get_current_user)):
+    cond = ""
+    params = [DEFAULT_TENANT]
+    if status:
+        status = status.strip()
+        if status not in ("unpaid", "partial", "paid"):
+            raise HTTPException(status_code=422, detail={"error": "bad_receivable_status"})
+        cond = " AND r.status=$2"
+        params.append(status)
+    rows = await db.fetch(
+        request,
+        "SELECT r.*, o.order_no, o.customer_name FROM receivables r"
+        " LEFT JOIN orders o ON o.id=r.order_id AND o.tenant_id=r.tenant_id"
+        f" WHERE r.tenant_id=$1{cond} ORDER BY r.id DESC"
+        f" LIMIT ${len(params) + 1} OFFSET ${len(params) + 2}",
+        *params, page_size, (page - 1) * page_size, table="receivables",
+    )
+    total = await db.fetchval(
+        request,
+        f"SELECT count(*) FROM receivables r WHERE r.tenant_id=$1{cond}",
+        *params,
+    )
+    items = []
+    for r in rows:
+        d = _schedule_dict(r)
+        items.append(d)
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
 import chain  # noqa: E402,F401
 
