@@ -88,6 +88,8 @@ NEW_ROUTES: set[tuple[str, str]] = {
     ("/api/v1/pricing-data", "POST"),
     ("/api/v1/pricing-data/{item_id}", "PATCH"),
     ("/api/v1/pricing-data/{item_id}", "DELETE"),
+    ("/api/v1/spec/skus/{sku_id}/prices", "POST"),
+    ("/api/v1/spec/prices/{price_id}", "PATCH"),
 }
 
 
