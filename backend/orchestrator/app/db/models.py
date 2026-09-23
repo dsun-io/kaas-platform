@@ -403,54 +403,8 @@ class UserCustomer(Base):
 
 
 # ═══════════════════════════════════════════════════════════════
-# AUTH-WX-R1: 微信 ClawBot 接入底座 (§7-8)
+# AUTH-WX-R1: 渠道链接与用量事件（保留；微信表已于清理阶段删除）
 # ═══════════════════════════════════════════════════════════════
-
-class WechatBotAccount(Base):
-    """微信机器人账号"""
-    __tablename__ = "wechat_bot_accounts"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    customer_id = Column(BigInteger, ForeignKey("customers.id"), nullable=False)
-    tenant_id = Column(Text, nullable=False)
-    bot_name = Column(Text, nullable=False)
-    bot_type = Column(Text, nullable=False, default="clawbot")
-    status = Column(Text, nullable=False, default="active")  # active | paused | revoked | error
-    bot_token_encrypted = Column(Text, nullable=True)
-    last_get_updates_buf = Column(Text, nullable=True)  # JSON string
-    created_by = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
-
-    __table_args__ = (
-        Index("idx_wx_bot_customer", "customer_id"),
-        Index("idx_wx_bot_tenant", "tenant_id"),
-        Index("idx_wx_bot_status", "status"),
-    )
-
-
-class WechatConversation(Base):
-    """微信会话（按 from_user_id + bot 维度）"""
-    __tablename__ = "wechat_conversations"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    customer_id = Column(BigInteger, ForeignKey("customers.id"), nullable=False)
-    tenant_id = Column(Text, nullable=False)
-    bot_account_id = Column(BigInteger, ForeignKey("wechat_bot_accounts.id"), nullable=False)
-    wechat_session_id = Column(Text, nullable=False)
-    from_user_id = Column(Text, nullable=False)
-    last_context_token_encrypted = Column(Text, nullable=True)
-    status = Column(Text, nullable=False, default="active")
-    last_message_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
-
-    __table_args__ = (
-        Index("idx_wx_conv_customer", "customer_id"),
-        Index("idx_wx_conv_bot_account", "bot_account_id"),
-        Index("idx_wx_conv_session", "wechat_session_id"),
-        Index("idx_wx_conv_from_user", "bot_account_id", "from_user_id"),
-    )
 
 
 class ChannelLink(Base):
@@ -494,27 +448,6 @@ class UsageEvent(Base):
     __table_args__ = (
         Index("idx_usage_events_customer", "customer_id"),
         Index("idx_usage_events_type", "event_type"),
-    )
-
-
-class WechatMessageEvent(Base):
-    """微信消息事件日志"""
-    __tablename__ = "wechat_message_events"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    bot_account_id = Column(BigInteger, ForeignKey("wechat_bot_accounts.id"), nullable=False)
-    wechat_session_id = Column(Text, nullable=True)
-    from_user_id = Column(Text, nullable=True)
-    message_id = Column(Text, nullable=True)
-    direction = Column(Text, nullable=False)  # inbound | outbound
-    message_type = Column(Text, nullable=False, default="text")  # text | voice | image
-    status = Column(Text, nullable=False, default="received")
-    error_code = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-
-    __table_args__ = (
-        Index("idx_wx_msg_event_bot", "bot_account_id"),
-        Index("idx_wx_msg_event_session", "wechat_session_id"),
     )
 
 
