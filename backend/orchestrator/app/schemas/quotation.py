@@ -19,6 +19,7 @@ class QuotationItem(BaseModel):
 
 
 class QuotationListResponse(BaseModel):
-    quotations: list[QuotationItem]
+    items: list[QuotationItem] = []
+    quotations: list[QuotationItem] = []
     total: int
     limit: int
