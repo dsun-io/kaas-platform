@@ -16,6 +16,8 @@ import jwt
 from unittest.mock import patch, AsyncMock, MagicMock
 from httpx import AsyncClient
 
+pytestmark = pytest.mark.db
+
 
 # ═══════════════════════════════════════════════════════════════
 # AuthContext tests (unit)

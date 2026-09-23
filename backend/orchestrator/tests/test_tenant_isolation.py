@@ -12,6 +12,8 @@ import pytest
 from fastapi import HTTPException
 from app.core.auth import AuthContext
 
+pytestmark = pytest.mark.db
+
 
 class TestRequireTenantMatch:
     """auth_utils.require_tenant_match 单元测试"""
