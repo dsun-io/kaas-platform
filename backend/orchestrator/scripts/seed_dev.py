@@ -623,14 +623,6 @@ _DEV_CUSTOMERS = [
     },
 ]
 
-_WECHAT_BOT_CONFIG = {
-    "customer_code": "lianjia",
-    "tenant_id": "lianjia",
-    "bot_name": "联佳ClawBot",
-    "bot_type": "clawbot",
-    "bot_token": "demo-bot-token-999999",  # 虚构 token，生产环境通过环境变量配置
-}
-
 
 def _is_production() -> bool:
     """检查当前环境是否为生产环境。"""
@@ -680,8 +672,7 @@ async def seed_auth():
     # ── 校验环境变量 ──
     env_config = _validate_dev_account_config()
 
-    import base64
-    from app.db.models import User, Customer, UserCustomer, WechatBotAccount
+    from app.db.models import User, Customer, UserCustomer
     from app.core.auth import hash_password
     from sqlalchemy import select
 
@@ -783,33 +774,6 @@ async def seed_auth():
                     print(f"  [auth] Bound user {uc_data['email']} → customer {uc_data['customer_code']}")
                 else:
                     print(f"  [auth] Binding exists: {uc_data['email']} → {uc_data['customer_code']}")
-
-        # ── Wechat Bot Account ──
-        bot_cust = customer_map.get(_WECHAT_BOT_CONFIG["customer_code"])
-        if bot_cust:
-            stmt = select(WechatBotAccount).where(
-                WechatBotAccount.customer_id == bot_cust.id,
-                WechatBotAccount.bot_name == _WECHAT_BOT_CONFIG["bot_name"],
-            )
-            result = await session.execute(stmt)
-            existing = result.scalar_one_or_none()
-            if existing is None:
-                bot = WechatBotAccount(
-                    customer_id=bot_cust.id,
-                    tenant_id=_WECHAT_BOT_CONFIG["tenant_id"],
-                    bot_name=_WECHAT_BOT_CONFIG["bot_name"],
-                    bot_type=_WECHAT_BOT_CONFIG["bot_type"],
-                    bot_token_encrypted=base64.b64encode(
-                        _WECHAT_BOT_CONFIG["bot_token"].encode()
-                    ).decode(),
-                    status="active",
-                    created_by="seed",
-                )
-                session.add(bot)
-                await session.flush()
-                print(f"  [auth] Created wechat bot: {bot.bot_name} (id={bot.id})")
-            else:
-                print(f"  [auth] Wechat bot exists: {existing.bot_name} (id={existing.id})")
 
         await session.commit()
         print("  [auth] Dev account seed complete")
