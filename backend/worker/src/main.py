@@ -2079,8 +2079,33 @@ class Default(WorkerEntrypoint):
 # 线上简化（详见 docs/UNCERTAIN.md #16）：
 # - 单租户 DEFAULT_TENANT，未做 owner_scope 可见范围过滤
 # - 汇率锁定简化为 1.0（完整汇率表在 orchestrator ws_common.lock_fx_rate）
-# - 单号用时间戳格式 ORD-YYYYMMDDHHMMSS
 # - 报价转化只记录来源与业务事件，不复制报价行项（quotations 结构确认后补）
+
+DOC_TYPE_PREFIX = {
+    "quotation": "QUO", "pi": "PI", "contract": "CON", "ci": "CI", "pl": "PL",
+    "bl": "BL", "co": "CO", "insurance": "INS", "other": "DOC",
+    "order": "ORD", "shipment": "SHP",
+}
+
+
+async def _next_doc_no(request, doc_type: str) -> str:
+    """段号取单号（同步 orchestrator ws_common.next_doc_no）：月度分段、四位流水。"""
+    period = datetime.now(timezone.utc).strftime("%Y%m")
+    await db.execute(
+        request,
+        "INSERT INTO doc_sequences (tenant_id, doc_type, period, last_seq) VALUES ($1,$2,$3,0)"
+        " ON CONFLICT DO NOTHING",
+        DEFAULT_TENANT, doc_type, period,
+    )
+    seq = await db.fetchval(
+        request,
+        "UPDATE doc_sequences SET last_seq = last_seq + 1"
+        " WHERE tenant_id=$1 AND doc_type=$2 AND period=$3 RETURNING last_seq",
+        DEFAULT_TENANT, doc_type, period,
+    )
+    prefix = DOC_TYPE_PREFIX.get(doc_type, doc_type.upper()[:3])
+    return f"{prefix}-{period}-{seq:04d}"
+
 
 ORDER_NEXT = {
     "pending": ("confirmed", "cancelled"),
@@ -2158,7 +2183,7 @@ async def create_order_api(
 ):
     items = body.get("items") or []
     currency = (body.get("currency") or "USD").upper()
-    order_no = f"ORD-{datetime.now(timezone.utc):%Y%m%d%H%M%S}"
+    order_no = await _next_doc_no(request, "order")
     total = 0.0
     computed_lines = []
     for it in items:
@@ -2535,7 +2560,7 @@ async def list_trade_docs(request: Request, doc_type: str = None, status: str = 
 async def create_trade_doc(request: Request, body: dict,
                            user: dict = Depends(_get_current_user)):
     """生成单证（上游快照入 raw_payload 冻结 + refs 溯源）。
-    线上简化：doc_no 自行取号、quote/inquiry 只存引用不拉快照（见 UNCERTAIN #16）。"""
+    线上简化：quote/inquiry 只存引用不拉快照（见 UNCERTAIN #16）。"""
     order_id = body.get("order_id")
     quote_order_id = body.get("quote_order_id")
     inquiry_id = body.get("inquiry_id")
@@ -2572,7 +2597,7 @@ async def create_trade_doc(request: Request, body: dict,
     if inquiry_id:
         payload["sources"]["inquiry"] = {"inquiry_id": inquiry_id}
 
-    doc_no = f"DOC-{datetime.now(timezone.utc):%Y%m%d%H%M%S}-{uuid4().hex[:6]}"
+    doc_no = await _next_doc_no(request, doc_type)
     d = await db.fetchrow(
         request,
         "INSERT INTO trade_docs (tenant_id, doc_no, doc_type, order_id, customer_id,"
