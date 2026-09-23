@@ -9,7 +9,7 @@ const STATS = [
   { label: "知识条目", value: 48, icon: FileText },
   { label: "产品品类", value: 6, icon: Layers },
   { label: "最近更新", value: "2 小时前", icon: Clock },
-  { label: "数据源", value: "L1 / L2 / L3", icon: BookOpen },
+  { label: "数据源", value: "工位能力网", icon: BookOpen },
 ];
 
 export default function KbPage() {
@@ -50,7 +50,7 @@ export default function KbPage() {
               <BookOpen className="size-12 mx-auto opacity-30" />
               <p className="text-sm">知识库管理功能即将上线</p>
               <p className="text-xs">
-                支持 L1/L2/L3 层级知识编辑、规格参数管理、公式配置
+                支持工位能力网知识分层编辑、规格参数管理、公式配置
               </p>
             </div>
           </CardContent>
