@@ -2077,7 +2077,7 @@ class Default(WorkerEntrypoint):
 # ── P1-P7 工位链（AI 层/线索池/触达）：chain.py 注册到 app ──
 # ── 阶段 6 · 订单工位（线上 /api/v1/orders*，对齐 orchestrator orders.py §10）──
 # 线上简化（详见 docs/UNCERTAIN.md #16）：
-# - 单租户 DEFAULT_TENANT，未做 owner_scope 可见范围过滤
+# - 单租户 DEFAULT_TENANT；订单归属隔离已同步（owner_id/owner_scope，与 dev ws_common 对齐）
 # - 汇率锁定 fx_rates（缺汇率后补，与 dev ws_common.lock_fx_rate 对齐）
 # - 报价转化只记录来源与业务事件，不复制报价行项（quotations 结构确认后补）
 
@@ -2138,6 +2138,32 @@ async def _record_business_event(
     )
 
 
+def _can_see_all(user: dict) -> bool:
+    """管理员可见全部（与 dev ws_common.can_see_all 对齐）。"""
+    return str(user.get("role") or "") == "system_admin"
+
+
+def _owner_visible(user: dict, row) -> bool:
+    """归属范围：非管理员只见自己名下或租户共享数据（与 dev ws_common.scope_filter 对齐）。"""
+    if _can_see_all(user):
+        return True
+    d = dict(row)
+    if d.get("owner_id") is not None and str(d["owner_id"]) == str(user["id"]):
+        return True
+    return d.get("owner_scope") == "tenant"
+
+
+def _check_write_access(user: dict, row):
+    """写权限：非管理员只能改自己名下的数据（与 dev ws_common.check_write_access 对齐）。"""
+    if not _can_see_all(user):
+        d = dict(row)
+        if d.get("owner_id") is not None and str(d["owner_id"]) != str(user["id"]):
+            raise HTTPException(status_code=403, detail={
+                "error": "forbidden", "code": "NOT_OWNER",
+                "detail": "只能修改自己账号的数据",
+            })
+
+
 @app.get("/api/v1/orders")
 async def list_orders_api(
     request: Request,
@@ -2156,6 +2182,9 @@ async def list_orders_api(
         where.append(
             f"(customer_name ILIKE ${len(params)} OR order_no ILIKE ${len(params)})"
         )
+    if not _can_see_all(user):
+        params.append(str(user["id"]))
+        where.append(f"(owner_id = ${len(params)} OR owner_scope = 'tenant')")
     cond = " AND ".join(where)
     total = await db.fetchval(
         request, f"SELECT count(*) FROM orders WHERE {cond}", *params
@@ -2250,6 +2279,8 @@ async def get_order_api(
     )
     if row is None:
         raise HTTPException(status_code=404, detail="ORDER_NOT_FOUND")
+    if not _owner_visible(user, row):
+        raise HTTPException(status_code=404, detail="ORDER_NOT_FOUND")
     items = await db.fetch(
         request,
         """SELECT * FROM order_items WHERE tenant_id = $1 AND order_id = $2
@@ -2273,6 +2304,9 @@ async def update_order_api(
     )
     if row is None:
         raise HTTPException(status_code=404, detail="ORDER_NOT_FOUND")
+    if not _owner_visible(user, row):
+        raise HTTPException(status_code=404, detail="ORDER_NOT_FOUND")
+    _check_write_access(user, row)
     updated = await db.fetchrow(
         request,
         """UPDATE orders SET
@@ -2330,9 +2364,10 @@ async def _create_receivable_for_order(request: Request, o: dict):
         request,
         "INSERT INTO receivables (tenant_id, order_id, currency, total_amount,"
         " fx_rate, fx_rate_date, base_currency, base_amount, received_amount,"
-        " status, owner_scope) VALUES ($1,$2,$3,$4,$5,$6,'CNY',$7,0,'unpaid','default')",
+        " status, owner_id, owner_scope) VALUES ($1,$2,$3,$4,$5,$6,'CNY',$7,0,'unpaid',$8,$9)",
         DEFAULT_TENANT, o["id"], o.get("currency") or "USD", total,
         float(rate) if rate is not None else None, o.get("fx_rate_date"), base,
+        o.get("owner_id"), o.get("owner_scope") or "private",
         table="receivables",
     )
 
@@ -2349,6 +2384,9 @@ async def change_order_status(order_id: int, request: Request, body: dict,
     )
     if not row:
         raise HTTPException(status_code=404, detail={"error": "order_not_found"})
+    if not _owner_visible(user, row):
+        raise HTTPException(status_code=404, detail={"error": "order_not_found"})
+    _check_write_access(user, row)
     o = _order_dict(row)
     target = (body.get("status") or "").strip()
     allowed = ORDER_NEXT.get(o["status"], ())
@@ -2410,9 +2448,11 @@ def _schedule_dict(row) -> dict:
 @app.get("/api/v1/orders/{order_id}/payment-schedules")
 async def list_schedules(order_id: int, request: Request,
                          user: dict = Depends(_get_current_user)):
-    o = await db.fetchrow(request, "SELECT id FROM orders WHERE tenant_id=$1 AND id=$2",
-                          DEFAULT_TENANT, order_id)
+    o = await db.fetchrow(request, "SELECT * FROM orders WHERE tenant_id=$1 AND id=$2",
+                          DEFAULT_TENANT, order_id, table="orders")
     if not o:
+        raise HTTPException(status_code=404, detail={"error": "order_not_found"})
+    if not _owner_visible(user, o):
         raise HTTPException(status_code=404, detail={"error": "order_not_found"})
     rows = await db.fetch(
         request,
@@ -2431,6 +2471,9 @@ async def create_schedule(order_id: int, request: Request, body: dict,
                             DEFAULT_TENANT, order_id, table="orders")
     if not row:
         raise HTTPException(status_code=404, detail={"error": "order_not_found"})
+    if not _owner_visible(user, row):
+        raise HTTPException(status_code=404, detail={"error": "order_not_found"})
+    _check_write_access(user, row)
     o = _order_dict(row)
     stype = (body.get("schedule_type") or "full").strip()
     if stype not in ("deposit", "balance", "full"):
@@ -2446,11 +2489,12 @@ async def create_schedule(order_id: int, request: Request, body: dict,
     row2 = await db.fetchrow(
         request,
         "INSERT INTO payment_schedules (tenant_id, order_id, schedule_type, ratio,"
-        " amount, currency, due_date, notes, status, owner_scope)"
-        " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending','default') RETURNING *",
+        " amount, currency, due_date, notes, status, owner_id, owner_scope)"
+        " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',$9,$10) RETURNING *",
         DEFAULT_TENANT, order_id, stype, ratio, amount,
         o.get("currency") or "USD", parse_date(body.get("due_date")),
-        body.get("notes") or None, table="payment_schedules",
+        body.get("notes") or None, str(user["id"]), o.get("owner_scope") or "private",
+        table="payment_schedules",
     )
     return _schedule_dict(row2)
 
@@ -2463,6 +2507,14 @@ async def update_schedule(schedule_id: int, request: Request, body: dict,
                           DEFAULT_TENANT, schedule_id, table="payment_schedules")
     if not s:
         raise HTTPException(status_code=404, detail={"error": "schedule_not_found"})
+    o_row = await db.fetchrow(
+        request, "SELECT owner_id, owner_scope FROM orders WHERE tenant_id=$1 AND id=$2",
+        DEFAULT_TENANT, s["order_id"], table="orders",
+    )
+    if o_row is not None and not _owner_visible(user, o_row):
+        raise HTTPException(status_code=404, detail={"error": "schedule_not_found"})
+    if o_row is not None:
+        _check_write_access(user, dict(o_row))
     s = _schedule_dict(s)
     new_status = (body.get("status") or s["status"]).strip()
     if s["status"] == "paid" and new_status != "paid":
