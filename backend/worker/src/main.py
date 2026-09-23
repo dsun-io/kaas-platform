@@ -2078,7 +2078,7 @@ class Default(WorkerEntrypoint):
 # ── 阶段 6 · 订单工位（线上 /api/v1/orders*，对齐 orchestrator orders.py §10）──
 # 线上简化（详见 docs/UNCERTAIN.md #16）：
 # - 单租户 DEFAULT_TENANT，未做 owner_scope 可见范围过滤
-# - 汇率锁定简化为 1.0（完整汇率表在 orchestrator ws_common.lock_fx_rate）
+# - 汇率锁定 fx_rates（缺汇率后补，与 dev ws_common.lock_fx_rate 对齐）
 # - 报价转化只记录来源与业务事件，不复制报价行项（quotations 结构确认后补）
 
 DOC_TYPE_PREFIX = {
@@ -2289,9 +2289,29 @@ async def update_order_api(
 
 # ── 阶段 6 任务2：订单状态机 + 确认建应收 + order.shipped 跨工位事件 ──────
 
+async def _lock_fx_rate(request: Request, currency: str):
+    """锁定汇率（与 dev ws_common 对齐）：fx_rates 取 ≤今天的最近一条；
+    同币种=1.0；缺记录返回 (None, None)=汇率后补，单据照建。fx_rates 全局表无租户过滤。"""
+    from datetime import date as _date
+    from decimal import Decimal
+    cur = (currency or "USD").upper()
+    if cur == "CNY":
+        return Decimal("1"), _date.today()
+    row = await db.fetchrow(
+        request,
+        "SELECT rate, rate_date FROM fx_rates"
+        " WHERE base_currency=$1 AND quote_currency='CNY' AND rate_date<=CURRENT_DATE"
+        " ORDER BY rate_date DESC LIMIT 1",
+        cur, table="fx_rates",
+    )
+    if not row or row["rate"] is None:
+        return None, None
+    return row["rate"], row["rate_date"]
+
+
 async def _create_receivable_for_order(request: Request, o: dict):
     """确认时建应收台账（幂等：tenant+order 唯一，§10.2）。
-    锁定汇率线上简化为 1.0（外币折算待接汇率服务，见 UNCERTAIN #16）。"""
+    汇率用订单锁定值（fx_rates 取得；缺汇率则 base_amount 空=汇率后补）。"""
     existing = await db.fetchrow(
         request,
         "SELECT id FROM receivables WHERE tenant_id=$1 AND order_id=$2",
@@ -2300,13 +2320,19 @@ async def _create_receivable_for_order(request: Request, o: dict):
     if existing:
         return
     total = o["total_amount"] or 0
+    rate = o.get("fx_rate")
+    base = None
+    if rate is not None:
+        from decimal import Decimal, ROUND_HALF_UP
+        base = (Decimal(str(total)) * Decimal(str(rate))).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP)
     await db.execute(
         request,
         "INSERT INTO receivables (tenant_id, order_id, currency, total_amount,"
         " fx_rate, fx_rate_date, base_currency, base_amount, received_amount,"
         " status, owner_scope) VALUES ($1,$2,$3,$4,$5,$6,'CNY',$7,0,'unpaid','default')",
         DEFAULT_TENANT, o["id"], o.get("currency") or "USD", total,
-        1.0, datetime.now(timezone.utc).date(), total,
+        float(rate) if rate is not None else None, o.get("fx_rate_date"), base,
         table="receivables",
     )
 
@@ -2340,11 +2366,15 @@ async def change_order_status(order_id: int, request: Request, body: dict,
         DEFAULT_TENANT, order_id, target, now, table="orders",
     )
     if target == "confirmed" and o["status"] == "pending":
+        rate, rate_date = await _lock_fx_rate(request, o.get("currency") or "USD")
         await db.execute(
             request,
-            "UPDATE orders SET fx_rate=1.0, fx_rate_date=$3 WHERE tenant_id=$1 AND id=$2",
-            DEFAULT_TENANT, order_id, now.date(), table="orders",
+            "UPDATE orders SET fx_rate=$3, fx_rate_date=$4 WHERE tenant_id=$1 AND id=$2",
+            DEFAULT_TENANT, order_id,
+            float(rate) if rate is not None else None, rate_date, table="orders",
         )
+        o["fx_rate"] = rate
+        o["fx_rate_date"] = rate_date
         await _create_receivable_for_order(request, o)
     if target == "shipped":
         await _record_business_event(
@@ -2442,17 +2472,33 @@ async def update_schedule(schedule_id: int, request: Request, body: dict,
         })
     now = datetime.now(timezone.utc)
     if new_status == "paid" and s["status"] != "paid":
-        # 标记收款：按实际汇率差记汇兑损益（锁定汇率线上简化 1.0）
-        actual_rate = Decimal(str(body.get("fx_rate") or 1.0))
+        # 标记收款：按实际汇率与锁定汇率差记汇兑损益（缺汇率则后补，不记损益）
+        from decimal import Decimal, ROUND_HALF_UP
+        actual_rate = Decimal(str(body["fx_rate"])) if body.get("fx_rate") is not None else None
+        recv = await db.fetchrow(
+            request, "SELECT fx_rate FROM receivables WHERE tenant_id=$1 AND order_id=$2",
+            DEFAULT_TENANT, s["order_id"], table="receivables",
+        )
+        o_row = await db.fetchrow(
+            request, "SELECT fx_rate FROM orders WHERE tenant_id=$1 AND id=$2",
+            DEFAULT_TENANT, s["order_id"], table="orders",
+        )
+        lock_raw = (recv["fx_rate"] if recv and recv["fx_rate"] is not None else None)
+        if lock_raw is None and o_row:
+            lock_raw = o_row["fx_rate"]
         amt = Decimal(str(s["amount"] or 0))
-        gl = (amt * (actual_rate - Decimal("1"))).quantize(Decimal("0.01"),
-                                                         rounding=ROUND_HALF_UP)
+        gl = None
+        if actual_rate is not None and lock_raw is not None:
+            lock_rate = Decimal(str(lock_raw))
+            gl = (amt * (actual_rate - lock_rate)).quantize(Decimal("0.01"),
+                                                          rounding=ROUND_HALF_UP)
         actual_date = parse_date(body.get("actual_date")) or now.date()
         await db.execute(
             request,
             "UPDATE payment_schedules SET status='paid', actual_date=$3, fx_rate=$4,"
             " exchange_gain_loss=$5, updated_at=$6 WHERE tenant_id=$1 AND id=$2",
-            DEFAULT_TENANT, schedule_id, actual_date, float(actual_rate), gl, now,
+            DEFAULT_TENANT, schedule_id, actual_date,
+            float(actual_rate) if actual_rate is not None else None, gl, now,
             table="payment_schedules",
         )
         await db.execute(
@@ -2461,7 +2507,8 @@ async def update_schedule(schedule_id: int, request: Request, body: dict,
             " exchange_gain_loss=COALESCE(exchange_gain_loss,0)+$4,"
             " status=CASE WHEN received_amount+$3>=total_amount THEN 'paid'"
             " ELSE 'partial' END, updated_at=$5 WHERE tenant_id=$1 AND order_id=$2",
-            DEFAULT_TENANT, s["order_id"], amt, gl, now, table="receivables",
+            DEFAULT_TENANT, s["order_id"], amt,
+            gl if gl is not None else Decimal("0"), now, table="receivables",
         )
     else:
         await db.execute(
