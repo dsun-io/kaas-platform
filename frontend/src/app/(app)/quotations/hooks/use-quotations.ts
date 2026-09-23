@@ -69,7 +69,7 @@ export function useCreateQuotation() {
       >,
     ) => {
       const { data } = await apiClient.post<{ id: string; spec_hash: string }>(
-        "/quotation",
+        "/quotations",
         {
           ...input,
           source: "manual",

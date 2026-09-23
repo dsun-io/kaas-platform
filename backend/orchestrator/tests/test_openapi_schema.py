@@ -55,3 +55,12 @@ class TestOpenAPISchema:
                 if method in ("parameters",):
                     continue
                 assert "responses" in detail, f"{method.upper()} {p} missing responses"
+
+    def test_quotations_entry_converged(self, openapi_doc):
+        """阶段 2 报价入口收敛：保留 quotations（GET+POST），已删入口不复存在。"""
+        paths = openapi_doc["paths"]
+        entry = paths.get("/api/v1/quotations", {})
+        assert "get" in entry, "GET /api/v1/quotations missing"
+        assert "post" in entry, "POST /api/v1/quotations missing"
+        for gone in ("/api/v1/quotation", "/api/v1/quote", "/api/v1/quote_v2"):
+            assert gone not in paths, f"{gone} should be removed"
