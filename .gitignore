@@ -95,3 +95,6 @@ skills-lock.json
 
 # 临时脚本/构建产物（本地工具，不入库）
 .tools/
+
+# Playwright e2e generated auth state
+frontend/e2e/.auth/
