@@ -91,6 +91,7 @@ from app.api.intel import router as intel_router
 from app.api.ai import router as ai_router
 from app.api.leadgen import router as leadgen_router
 from app.api.outreach import router as outreach_router
+from app.api.export_quote import router as export_quote_router
 
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -113,3 +114,4 @@ app.include_router(intel_router)
 app.include_router(ai_router)
 app.include_router(leadgen_router)
 app.include_router(outreach_router)
+app.include_router(export_quote_router)
