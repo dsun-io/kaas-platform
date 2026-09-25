@@ -143,7 +143,7 @@ describe("QuoteV2RequestSchema", () => {
   it("validates a full quote request with all fields (real backend format)", () => {
     const result = QuoteV2RequestSchema.safeParse({
       product_category: "牛栏网",
-      product_type: "上疏下密",
+      product_type: "拧编型上疏下密",
       wire_diameter: "2.5x2.0",
       height: 1.5,
       mesh_width: 15,
@@ -207,7 +207,7 @@ describe("QuoteV2ResponseSchema", () => {
     main_line: {
       product_category: "牛栏网",
       spec_summary:
-        "牛栏网 | 上疏下密 | 2.5x2.0丝径 | 1.5m高 | 15.0m网宽 | 50.0m长",
+        "牛栏网 | 拧编型上疏下密 | 2.5x2.0丝径 | 1.5m高 | 15.0m网宽 | 50.0m长",
       quantity: 100,
       unit: "卷",
       weight_kg: 32.5,
@@ -227,10 +227,10 @@ describe("QuoteV2ResponseSchema", () => {
     freight: null,
     totals: { low: 18232.5, standard: 19061.25, high: 19890.0 },
     notes: [
-      "已匹配规格: 牛栏网 | 上疏下密 | 2.5x2.0丝径 | 1.5m高 | 15.0m网宽 | 50.0m长",
+      "已匹配规格: 牛栏网 | 拧编型上疏下密 | 2.5x2.0丝径 | 1.5m高 | 15.0m网宽 | 50.0m长",
     ],
     copyable_script:
-      "【牛栏网报价单】\n\n产品: 牛栏网 | 上疏下密 | 2.5x2.0丝径 | 1.5m高 | 15.0m网宽 | 50.0m长",
+      "【牛栏网报价单】\n\n产品: 牛栏网 | 拧编型上疏下密 | 2.5x2.0丝径 | 1.5m高 | 15.0m网宽 | 50.0m长",
   };
 
   it("validates a matched response", () => {
@@ -486,12 +486,12 @@ describe("ProductSpecsOptionsSchema", () => {
     const result = ProductSpecsOptionsSchema.safeParse({
       product_category: "牛栏网",
       options: {
-        product_types: ["上疏下密", "环扣"],
-        wire_diameters: ["2.0x1.8", "2.5x2.0"],
-        heights: [1.5, 1.8],
-        mesh_widths: [15.0],
+        product_types: ["拧编型上疏下密"],
+        wire_diameters: ["2.0x2.0", "2.5x2.5", "2.5x2.0"],
+        heights: [1.2, 1.5],
+        mesh_widths: [10, 15],
         mesh_specs: [],
-        roll_lengths: [50.0],
+        roll_lengths: [100, 50],
         bundle_sizes: [],
       },
       accessory_categories: ["立柱"],

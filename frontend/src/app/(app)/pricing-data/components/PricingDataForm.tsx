@@ -22,8 +22,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2, X } from "lucide-react";
+import { NIULANWANG_SKU_AXES } from "@contracts/niulanwang";
 import type { PricingEntry } from "../hooks/use-pricing-data";
-
 const CATEGORIES = [
   { value: "niulanwang", label: "牛栏网" },
   { value: "gouhuawang", label: "勾花网" },
@@ -46,7 +46,6 @@ const WIRE_DIAMETERS = ["1.5", "2.0", "2.5", "3.0", "3.5", "4.0", "5.0"];
 const COST_UNITS = ["元/卷", "元/kg", "元/捆", "元/平方米", "元/个", "元/根"];
 
 const PRODUCT_TYPES: Record<string, string[]> = {
-  niulanwang: ["上疏下密", "环扣"],
   gouhuawang: ["普通"],
   post: ["直边", "花边"],
   fence: ["双边", "框架"],
@@ -55,6 +54,53 @@ const PRODUCT_TYPES: Record<string, string[]> = {
   steel_grating: ["压焊", "插接"],
   other: ["其他"],
 };
+
+/**
+ * 牛栏网的规格取值来自共享契约（`@contracts/niulanwang`），不再手写。
+ *
+ * 这里刻意与上面的全局列表分开：那些全局值是**通用成本录入**用的宽松范围，
+ * 而牛栏网的取值子集已核对过（网高只有 1.2/1.5、竖丝间距只有 10/15、
+ * 丝径是「边丝x内丝」方案）。混用会让表单出现产品里不存在的组合，
+ * 从而录进一批查不到规格的成本数据。
+ *
+ * 网孔分布按品种固定为「拧编型上疏下密」（对应契约的 product_form），
+ * 不是可选项 —— 「环扣」属于鹿网，是另一套规格空间。
+ */
+const NIULANWANG_PRODUCT_TYPES = ["拧编型上疏下密"];
+const NIULANWANG_WIRE_OPTIONS = NIULANWANG_SKU_AXES.wire_option.options.map(
+  (o) => `${o.edgeWireMm}x${o.innerWireMm}`,
+);
+const NIULANWANG_HEIGHTS = NIULANWANG_SKU_AXES.height.options.map(
+  (o) => o.value,
+);
+const NIULANWANG_SPACINGS =
+  NIULANWANG_SKU_AXES.vertical_wire_spacing.options.map((o) => o.value);
+const NIULANWANG_ROLL_LENGTHS = [
+  ...new Set(NIULANWANG_SKU_AXES.wire_option.options.map((o) => o.rollLengthM)),
+].sort((a, b) => b - a);
+
+/** 按品类取规格候选；未收录的品类沿用宽松全局列表。 */
+function specOptionsFor(category: string) {
+  if (category === "niulanwang") {
+    return {
+      productTypes: NIULANWANG_PRODUCT_TYPES,
+      wireDiameters: NIULANWANG_WIRE_OPTIONS,
+      // 牛栏网的丝径是「边丝x内丝」方案，不带 mm 后缀
+      wireSuffix: "",
+      heights: NIULANWANG_HEIGHTS,
+      meshWidths: NIULANWANG_SPACINGS,
+      rollLengths: NIULANWANG_ROLL_LENGTHS,
+    };
+  }
+  return {
+    productTypes: PRODUCT_TYPES[category] ?? [],
+    wireDiameters: WIRE_DIAMETERS,
+    wireSuffix: "mm",
+    heights: HEIGHTS,
+    meshWidths: MESH_WIDTHS,
+    rollLengths: ROLL_LENGTHS,
+  };
+}
 
 const NO_EXPIRY = "__no_expiry__";
 
@@ -209,18 +255,20 @@ export function PricingDataForm({
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      {(PRODUCT_TYPES[productCategory] ?? []).map((v) => (
-                        <SelectItem key={v} value={v}>
-                          {v}
-                        </SelectItem>
-                      ))}
+                      {(specOptionsFor(productCategory).productTypes ?? []).map(
+                        (v) => (
+                          <SelectItem key={v} value={v}>
+                            {v}
+                          </SelectItem>
+                        ),
+                      )}
                     </SelectContent>
                   </Select>
                 )}
               />
             </div>
             <div className="space-y-2">
-              <Label>丝径 (mm)</Label>
+              <Label>丝径</Label>
               <Controller
                 name="wire_diameter"
                 control={control}
@@ -232,15 +280,20 @@ export function PricingDataForm({
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="请选择">
-                        {field.value ? `${field.value}mm` : "请选择"}
+                        {field.value
+                          ? `${field.value}${specOptionsFor(productCategory).wireSuffix}`
+                          : "请选择"}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      {WIRE_DIAMETERS.map((v) => (
-                        <SelectItem key={v} value={v}>
-                          {v}mm
-                        </SelectItem>
-                      ))}
+                      {specOptionsFor(productCategory).wireDiameters.map(
+                        (v) => (
+                          <SelectItem key={v} value={v}>
+                            {v}
+                            {specOptionsFor(productCategory).wireSuffix}
+                          </SelectItem>
+                        ),
+                      )}
                     </SelectContent>
                   </Select>
                 )}
@@ -266,7 +319,7 @@ export function PricingDataForm({
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      {HEIGHTS.map((v) => (
+                      {specOptionsFor(productCategory).heights.map((v) => (
                         <SelectItem key={v} value={String(v)}>
                           {v}m
                         </SelectItem>
@@ -277,7 +330,12 @@ export function PricingDataForm({
               />
             </div>
             <div className="space-y-2">
-              <Label>网宽 (cm)</Label>
+              {/* 牛栏网这里填的是**竖丝间距**（10/15cm），不是网宽 */}
+              <Label>
+                {productCategory === "niulanwang"
+                  ? "竖丝间距 (cm)"
+                  : "网宽 (cm)"}
+              </Label>
               <Controller
                 name="mesh_width"
                 control={control}
@@ -293,7 +351,7 @@ export function PricingDataForm({
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      {MESH_WIDTHS.map((v) => (
+                      {specOptionsFor(productCategory).meshWidths.map((v) => (
                         <SelectItem key={v} value={String(v)}>
                           {v}cm
                         </SelectItem>
@@ -331,7 +389,7 @@ export function PricingDataForm({
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      {ROLL_LENGTHS.map((v) => (
+                      {specOptionsFor(productCategory).rollLengths.map((v) => (
                         <SelectItem key={v} value={String(v)}>
                           {v}m
                         </SelectItem>

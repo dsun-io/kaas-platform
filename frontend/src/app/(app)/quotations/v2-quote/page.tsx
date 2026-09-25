@@ -12,6 +12,7 @@ import { usePageView } from "@/lib/events/use-page-view";
 import { useQuoteV2 } from "./hooks/use-v2-quote";
 import { QuoteForm, type QuoteFormHandle } from "./components/quote-form";
 import { QuoteResult } from "./components/quote-result";
+import { BulkImportPanel } from "./components/bulk-import-panel";
 import { handleApiError } from "@/lib/api/error-handler";
 import type { QuoteV2Request, QuoteV2Response } from "@contracts/quote";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,7 @@ import { RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PricingDataManager } from "../../pricing-data/pricing-data-manager";
 
-type QuoteTab = "assistant" | "pricing-data";
+type QuoteTab = "assistant" | "bulk-import" | "pricing-data";
 
 export default function V2QuotePage() {
   usePageView({ resource_id: "/quotations/v2-quote" });
@@ -61,7 +62,14 @@ export default function V2QuotePage() {
       <div className="flex gap-2 border-b">
         {(
           [
-            { key: "assistant", label: "报价助手" },
+            {
+              key: "assistant",
+              label: "报价助手",
+            },
+            {
+              key: "bulk-import",
+              label: "批量导入",
+            },
             { key: "pricing-data", label: "报价数据" },
           ] as { key: QuoteTab; label: string }[]
         ).map((t) => (
@@ -82,49 +90,51 @@ export default function V2QuotePage() {
 
       {tab === "pricing-data" && <PricingDataManager />}
 
+      {tab === "bulk-import" && <BulkImportPanel />}
+
       {tab === "assistant" && (
-      <div className="grid gap-6 lg:grid-cols-5">
-        <div className="lg:col-span-2">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">报价参数</CardTitle>
-              <CardAction>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-auto px-2 py-1 text-xs text-muted-foreground"
-                  onClick={() => formRef.current?.resetAll()}
-                >
-                  <RotateCcw className="mr-1 size-3" />
-                  清空
-                </Button>
-              </CardAction>
-            </CardHeader>
-            <CardContent>
-              <QuoteForm
-                ref={formRef}
-                onSubmit={handleSubmit}
-                isLoading={quoteMutation.isPending}
-              />
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="lg:col-span-3">
-          {(result || error) && <QuoteResult result={result} error={error} />}
-
-          {!result && !error && (
+        <div className="grid gap-6 lg:grid-cols-5">
+          <div className="lg:col-span-2">
             <Card>
-              <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-                <p className="text-sm text-muted-foreground">
-                  请填写报价参数，点击&ldquo;获取报价&rdquo;查看结果
-                </p>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">报价参数</CardTitle>
+                <CardAction>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto px-2 py-1 text-xs text-muted-foreground"
+                    onClick={() => formRef.current?.resetAll()}
+                  >
+                    <RotateCcw className="mr-1 size-3" />
+                    清空
+                  </Button>
+                </CardAction>
+              </CardHeader>
+              <CardContent>
+                <QuoteForm
+                  ref={formRef}
+                  onSubmit={handleSubmit}
+                  isLoading={quoteMutation.isPending}
+                />
               </CardContent>
             </Card>
-          )}
+          </div>
+
+          <div className="lg:col-span-3">
+            {(result || error) && <QuoteResult result={result} error={error} />}
+
+            {!result && !error && (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    请填写报价参数，点击&ldquo;获取报价&rdquo;查看结果
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </div>
-      </div>
       )}
     </div>
   );

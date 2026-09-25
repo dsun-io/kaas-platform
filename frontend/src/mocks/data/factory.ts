@@ -1,4 +1,5 @@
 import type { EventType } from "@contracts/events";
+import { NIULANWANG_SKU_AXES } from "@contracts/niulanwang";
 
 export function makeEvent(
   overrides?: Partial<{
@@ -446,13 +447,38 @@ export function makeQuoteV2Response(
   };
 }
 
+/** 品类归一化：code / 中文标签双收 → 统一返回 code。
+ * 对齐真实后端 normalize_category（category_normalizer.py）的约定，
+ * 修复 mock 只认中文标签、前端按 code 传参导致的品类匹配失效。 */
+const CATEGORY_CODE_BY_INPUT: Record<string, string> = {
+  niulanwang: "niulanwang",
+  gouhuawang: "gouhuawang",
+  post: "post",
+  gabion: "gabion",
+  牛栏网: "niulanwang",
+  勾花网: "gouhuawang",
+  立柱: "post",
+  石笼网: "gabion",
+};
+
+export function normalizeCategoryCode(input: string): string {
+  return CATEGORY_CODE_BY_INPUT[input.trim()] ?? input.trim();
+}
+
 /** 模拟 quotable_specs（有成本数据的完整规格组合列表，前端用于 tuple 匹配 + cascading）。 */
 export function makeQuotableSpecs(productCategory: string) {
-  if (productCategory !== "牛栏网") return [];
+  if (normalizeCategoryCode(productCategory) !== "niulanwang") return [];
 
-  const types = ["上疏下密", "环扣"];
-  const wires = ["2.0x1.8", "1.8x1.8"];
-  const heights = [1.5, 1.8];
+  // 取值全部来自共享契约（@contracts/niulanwang），不手写：
+  // 旧 mock 用的 2.0x1.8 / 1.8x1.8 / 高度 1.8 都不是牛栏网的真实取值。
+  const wires = NIULANWANG_SKU_AXES.wire_option.options.map(
+    (o) => `${o.edgeWireMm}x${o.innerWireMm}`,
+  );
+  const heights = NIULANWANG_SKU_AXES.height.options.map((o) => o.value);
+  const spacings = NIULANWANG_SKU_AXES.vertical_wire_spacing.options.map((o) => o.value);
+  const rollLengths = [
+    ...new Set(NIULANWANG_SKU_AXES.wire_option.options.map((o) => o.rollLengthM)),
+  ];
   const result: Array<{
     product_type: string;
     wire_diameter: string;
@@ -461,16 +487,20 @@ export function makeQuotableSpecs(productCategory: string) {
     mesh_spec: null;
     roll_length: number;
   }> = [];
-  for (const t of types) {
-    for (const w of wires) {
-      for (const h of heights) {
+  for (const w of wires) {
+    // 卷长随丝径方案联动：全丝2.5 → 50m/卷，其余 → 100m/卷
+    const rollLength =
+      w === "2.5x2.5" ? rollLengths.find((l) => l === 50) : rollLengths.find((l) => l === 100);
+    for (const h of heights) {
+      for (const s of spacings) {
         result.push({
-          product_type: t,
+          product_type: "拧编型上疏下密",
           wire_diameter: w,
           height: h,
-          mesh_width: 15.0,
+          // 旧扁平模型把这个字段当竖丝间距用（cm）
+          mesh_width: s,
           mesh_spec: null,
-          roll_length: 50.0,
+          roll_length: rollLength ?? 100,
         });
       }
     }
@@ -487,18 +517,19 @@ export function makeProductSpecsOptions(
   }>,
 ) {
   // 默认 options 仅包含有成本数据的规格组合，与 quotable_specs 一致
+  const specs = makeQuotableSpecs("niulanwang");
   return {
-    product_category: "牛栏网",
+    product_category: "niulanwang",
     options: {
-      product_types: ["上疏下密", "环扣"],
-      wire_diameters: ["2.0x1.8", "1.8x1.8"],
-      heights: [1.5, 1.8],
-      mesh_widths: [15.0],
+      product_types: ["拧编型上疏下密"],
+      wire_diameters: [...new Set(specs.map((s) => s.wire_diameter))],
+      heights: [...new Set(specs.map((s) => s.height))],
+      mesh_widths: [...new Set(specs.map((s) => s.mesh_width))],
       mesh_specs: [],
-      roll_lengths: [50.0],
+      roll_lengths: [...new Set(specs.map((s) => s.roll_length))],
       bundle_sizes: [],
     },
-    quotable_specs: makeQuotableSpecs("牛栏网"),
+    quotable_specs: specs,
     accessory_categories: ["立柱"],
     ...overrides,
   };
