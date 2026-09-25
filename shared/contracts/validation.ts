@@ -4,6 +4,13 @@
  * @deprecated 新规格系统使用 category_attribute_bindings 动态驱动验证。
  * 旧字段验证保留用于向后兼容老报价流程。
  * 新流程请使用 BindingWithAttribute.is_required 进行校验。
+ *
+ * ⚠ 沿用本表时注意：牛栏网在新规格系统里的 SKU 轴是
+ *   丝径方案 / 网高 / 竖丝间距 / 镀锌量 / 工艺（共 48 组合），
+ *   而下列旧字段是扁平模型的遗留命名，语义并不一一对应：
+ *     · 这里的 `mesh_width` 实际填的是**竖丝间距**（10/15cm），不是网宽
+ *     · 这里的 `wire_diameter` 填「边丝x内丝」方案（如 2.5x2.0），不是单一直径
+ *   牛栏网的权威取值见 `@contracts/niulanwang`。
  */
 import { ProductCategory } from './categories';
 

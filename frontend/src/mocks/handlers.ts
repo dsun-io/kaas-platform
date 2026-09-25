@@ -13,6 +13,7 @@ import {
   makeQuoteV2Response,
   makeProductSpecsOptions,
   makeQuotableSpecs,
+  normalizeCategoryCode,
 } from "./data/factory";
 
 function delay(ms: number): Promise<void> {
@@ -21,12 +22,7 @@ function delay(ms: number): Promise<void> {
 
 const EVENTS_LIST = Array.from({ length: 12 }, (_, i) =>
   makeEvent({
-    event_type: (
-      [
-        "audit.access",
-        "capability.update",
-      ] as const
-    )[i % 2],
+    event_type: (["audit.access", "capability.update"] as const)[i % 2],
     created_at: new Date(Date.now() - i * 3600000).toISOString(),
     sampled: i % 5 === 0,
   }),
@@ -284,13 +280,15 @@ export const handlers = [
   // ── Product Specs (V2 — aligned with real backend) ───────────────
   http.get("/api/v1/product-specs", ({ request }) => {
     const url = new URL(request.url);
-    const category = url.searchParams.get("product_category") || "牛栏网";
+    const category = normalizeCategoryCode(
+      url.searchParams.get("product_category") || "niulanwang",
+    );
     const quotable = url.searchParams.get("quotable") === "true";
     const specs = makeProductSpecsOptions({ product_category: category });
     // Return different data per category to match real backend
-    if (category === "石笼网") {
+    if (category === "gabion") {
       return HttpResponse.json({
-        product_category: "石笼网",
+        product_category: "gabion",
         options: {
           product_types: [],
           wire_diameters: ["2.0x1.8", "2.5x2.0"],

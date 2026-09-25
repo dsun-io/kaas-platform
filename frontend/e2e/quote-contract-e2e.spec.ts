@@ -31,7 +31,19 @@ test.describe('V2 Quote — MSW Contract / Status Override', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/quotations/v2-quote');
     await page.waitForLoadState('networkidle');
-    await expect(page.getByRole('combobox')).toHaveCount(6, { timeout: 10000 });
+    // 品类选择器是搜索输入框（非下拉）。选品类（牛栏网）后，
+    // 6 个规格下拉（产品类型/丝径/高度/网宽/网孔/卷长）才级联渲染。
+    await page.getByPlaceholder('搜索或选择品类（支持拼音）').click();
+    await page.getByText('牛栏网', { exact: true }).first().click();
+    // 牛栏网 mock 数据的"网孔规格"无选项 → 该字段不渲染，实际 5 个下拉，
+    // 恰好对应 5 个必填规格。选满必填值，提交时才能通过前端校验发出请求。
+    const combos = page.getByRole('combobox');
+    await expect(combos).toHaveCount(5, { timeout: 10000 });
+    await combos.nth(0).selectOption('拧编型上疏下密');
+    await combos.nth(1).selectOption('2.0x2.0');
+    await combos.nth(2).selectOption('1.5');
+    await combos.nth(3).selectOption('15');
+    await combos.nth(4).selectOption('50');
   });
 
   test('unsupported_category — badge and status message shown', async ({ page }) => {
