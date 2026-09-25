@@ -41,6 +41,19 @@ class Settings(BaseSettings):
     minio_bucket: str = Field(default="kaas-events-archive", alias="MINIO_BUCKET")
     minio_secure: bool = Field(default=False, alias="MINIO_SECURE")
 
+    # ─── Export Quote (出口报价工位) ───
+    # 税务档案目录；留空用包内自带的 rate_sets/
+    export_quote_rate_sets_dir: str = Field(
+        default="", alias="EXPORT_QUOTE_RATE_SETS_DIR"
+    )
+    # 出口退税率查询服务（需自行订阅或自建；目前无免鉴权的官方 API）
+    # 未配置时退税率查询只走本地税务档案库
+    rebate_rate_api_url: str = Field(default="", alias="REBATE_RATE_API_URL")
+    rebate_rate_api_key: str = Field(default="", alias="REBATE_RATE_API_KEY")
+    rebate_rate_cache_ttl: int = Field(
+        default=24 * 3600, alias="REBATE_RATE_CACHE_TTL"
+    )
+
     # ─── Knowledge Provider (自包含知识检索 · 去 FastGPT 架构) ───
     knowledge_provider: str = Field(default="postgres", alias="KNOWLEDGE_PROVIDER")
     # FastGPT (可选 · 向后兼容 · 降级为 runtime adapter)
