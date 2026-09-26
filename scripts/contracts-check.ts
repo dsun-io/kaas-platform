@@ -124,6 +124,137 @@ const ZOD_TO_PY: Record<string, string> = {
   QuoteV2Response: 'QuoteV2Response',
 };
 
+// ── R2: 工位元数据（shared/contracts/workstations.ts ↔ 后端镜像） ────────
+
+interface WsEntry {
+  name: string;
+  route: string;
+  status: string;
+}
+
+/** 从 workstations.ts 的 WORKSTATIONS 数组提取 {key -> {name,route,status}} */
+function extractWorkstationsTs(): Map<string, WsEntry> {
+  const content = read('shared/contracts/workstations.ts');
+  const start = content.indexOf('export const WORKSTATIONS');
+  if (start === -1) return new Map();
+  const body = content.slice(start);
+  const result = new Map<string, WsEntry>();
+  const objRe = /\{([^{}]*)\}/g; // 工位对象内部无嵌套花括号
+  let m: RegExpExecArray | null;
+  while ((m = objRe.exec(body)) !== null) {
+    const o = m[1];
+    const key = /\bkey:\s*'([^']+)'/.exec(o)?.[1];
+    const name = /\bname:\s*'([^']+)'/.exec(o)?.[1];
+    const route = /\broute:\s*'([^']+)'/.exec(o)?.[1];
+    const status = /\bstatus:\s*'([^']+)'/.exec(o)?.[1];
+    if (key && name && route && status) result.set(key, { name, route, status });
+  }
+  return result;
+}
+
+/** 从 workstations.py 的 WORKSTATIONS 列表提取同名映射 */
+function extractWorkstationsPy(): Map<string, WsEntry> {
+  const content = read('backend/orchestrator/app/domain/workstations.py');
+  const start = content.indexOf('WORKSTATIONS = [');
+  if (start === -1) return new Map();
+  const body = content.slice(start);
+  const result = new Map<string, WsEntry>();
+  const objRe = /\{([\s\S]*?)\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = objRe.exec(body)) !== null) {
+    const o = m[1];
+    const key = /"key":\s*"([^"]+)"/.exec(o)?.[1];
+    const name = /"name":\s*"([^"]+)"/.exec(o)?.[1];
+    const route = /"route":\s*"([^"]+)"/.exec(o)?.[1];
+    const status = /"status":\s*"([^"]+)"/.exec(o)?.[1];
+    if (key && name && route && status) result.set(key, { name, route, status });
+  }
+  return result;
+}
+
+// ── R3: 单证类型清单（前端模板 ↔ 后端枚举字典 ↔ 编号前缀）───────────────
+// 为什么需要：这三份清单必须同时包含同一批单证类型。
+//   模板有而字典没有 → 业务上“该类单证开不出来”；
+//   字典有而模板没有 → 开得出单据但渲染不出（印出来是空白）；
+//   编号前缀漏登记   → 单号退化成前三位大写，变成 SA-202609-0001 这种无含义编号。
+// 三个都校对上，才能真正避免“菜单有、能力没有”的老问题。
+
+function extractManifestDocTypes(): string[] {
+  const manifest = JSON.parse(read('frontend/src/lib/trade-doc/manifest.json')) as Record<
+    string,
+    unknown
+  >;
+  return Object.keys(manifest);
+}
+
+/** 抓取 Python 具名元组里的字符串元素：NAME = ( "a", "b", ) */
+function extractPyTuple(name: string): string[] {
+  const content = read('backend/orchestrator/app/domain/enums.py');
+  const start = content.indexOf(`${name} = (`);
+  if (start === -1) return [];
+  const close = content.indexOf(')', start);
+  if (close === -1) return [];
+  const body = content.slice(start, close);
+  const values: string[] = [];
+  for (const m of body.matchAll(/"([^"]+)"/g)) values.push(m[1]);
+  return values;
+}
+
+/** 抓取 DOC_TYPE_PREFIX = { "type": "PFX", ... } 的键 */
+function extractDocTypePrefixKeys(): string[] {
+  const content = read('backend/orchestrator/app/api/ws_common.py');
+  const start = content.indexOf('DOC_TYPE_PREFIX');
+  if (start === -1) return [];
+  const close = content.indexOf('}', start);
+  if (close === -1) return [];
+  const body = content.slice(start, close);
+  const keys: string[] = [];
+  for (const m of body.matchAll(/"([^"]+)"\s*:/g)) keys.push(m[1]);
+  return keys;
+}
+
+// ── R4: 线上 Worker 镜像一致性 ────────────────────────────────────────────
+// 为什么需要：本项目架构是「orchestrator 开发 → 手工同步到 worker/main.py 单文件上线」。
+// 【手工同步】就是漏同步的来源：本地能开单、线上报 422；或本地去掉某个类型、线上还能开。
+// 所以把三份东西钉死：单证类型集合、编号前缀覆盖、单号字段映射（两侧逐项相等）。
+
+function pyTupleFrom(content: string, name: string): string[] {
+  const start = content.indexOf(`${name} = (`);
+  if (start === -1) return [];
+  const close = content.indexOf(')', start);
+  if (close === -1) return [];
+  return [...content.slice(start, close).matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+}
+
+function pyDictKeysFrom(content: string, name: string): string[] {
+  // 允许类型注解形式（NAME: dict[...] = { ... }）：直接找名字之后的第一个 {
+  const nameAt = content.indexOf(`${name}`);
+  if (nameAt === -1) return [];
+  const start = content.indexOf('{', nameAt);
+  if (start === -1) return [];
+  const close = content.indexOf('}', start);
+  if (close === -1) return [];
+  return [...content.slice(start, close).matchAll(/"([^"]+)"\s*:/g)].map((m) => m[1]);
+}
+
+/** 抽取 `"key": ("a", "b"),` 形式映射的取值（用于逐项比对，而不是只比键） */
+function pyTupleMapValues(content: string, name: string): Record<string, string> {
+  // 允许类型注解形式（NAME: dict[...] = { ... }）
+  const nameAt = content.indexOf(`${name}`);
+  if (nameAt === -1) return {};
+  const start = content.indexOf('{', nameAt);
+  if (start === -1) return {};
+  // 收尾用行首的 } （字典缩进体内不会出现列 0 的 }）
+  const closeAbs = content.indexOf('\n}', start);
+  const body = content.slice(start, closeAbs === -1 ? undefined : closeAbs);
+  const out: Record<string, string> = {};
+  for (const m of body.matchAll(/"([a-z_]+)":\s*\(([^)]*)\)/g)) {
+    const fields = [...m[2].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]);
+    out[m[1]] = fields.join(',');
+  }
+  return out;
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────
 
 let allOk = true;
@@ -186,6 +317,131 @@ for (const [zodName, pyName] of Object.entries(ZOD_TO_PY)) {
 
 if (allOk) {
   console.log('PASS R1: ' + Object.keys(ZOD_TO_PY).length + ' schemas match');
+}
+
+// ── R2: 工位元数据一致性 ────────────────────────────────────────────────
+// 为什么需要：页面名曾有多处来源并产生过真实不一致（面包屑 /market 写成「市场调研」，
+// 与工位「市场调研」重名；4 个工位漏登记显示英文 slug）。
+// 契约建立后若两侧漂移，就会出现「菜单有但后端没有」或反向的情况 ——
+// 即团队反复踩的「遗漏 / 不同步」。本规则使漂移直接 CI 失败。
+const wsTs = extractWorkstationsTs();
+const wsPy = extractWorkstationsPy();
+
+if (wsTs.size === 0 || wsPy.size === 0) {
+  allOk = false;
+  console.error('FAIL R2: 无法解析工位清单（ts=' + wsTs.size + ', py=' + wsPy.size + '）');
+} else {
+  const onlyTs = [...wsTs.keys()].filter((k) => !wsPy.has(k));
+  const onlyPy = [...wsPy.keys()].filter((k) => !wsTs.has(k));
+  if (onlyTs.length || onlyPy.length) {
+    allOk = false;
+    console.error('FAIL R2: 工位 key 不一致');
+    if (onlyTs.length) console.error('  仅前端有: ' + onlyTs.join(', '));
+    if (onlyPy.length) console.error('  仅后端有: ' + onlyPy.join(', '));
+  } else {
+    const diffs: string[] = [];
+    for (const [k, a] of wsTs) {
+      const b = wsPy.get(k)!;
+      if (a.name !== b.name) diffs.push(k + '.name: ts="' + a.name + '" py="' + b.name + '"');
+      if (a.route !== b.route) diffs.push(k + '.route: ts="' + a.route + '" py="' + b.route + '"');
+      if (a.status !== b.status) diffs.push(k + '.status: ts="' + a.status + '" py="' + b.status + '"');
+    }
+    if (diffs.length) {
+      allOk = false;
+      console.error('FAIL R2: 字段不一致');
+      diffs.forEach((d) => console.error('  ' + d));
+    } else {
+      console.log('PASS R2: ' + wsTs.size + ' workstations consistent (ts <-> py)');
+    }
+  }
+}
+
+// ── R3: 单证类型三方一致 ────────────────────────────────────────────────
+const manifestDocTypes = extractManifestDocTypes().sort();
+const pyDocTypes = extractPyTuple('DOC_TYPE').sort();
+const prefixKeys = extractDocTypePrefixKeys();
+
+if (manifestDocTypes.length === 0 || pyDocTypes.length === 0) {
+  allOk = false;
+  console.error(
+    'FAIL R3: 无法解析单证类型清单（manifest=' +
+      manifestDocTypes.length +
+      ', py=' +
+      pyDocTypes.length +
+      '）',
+  );
+} else {
+  const onlyTpl = manifestDocTypes.filter((t) => !pyDocTypes.includes(t));
+  const onlyEnum = pyDocTypes.filter((t) => !manifestDocTypes.includes(t));
+  const noPrefix = pyDocTypes.filter((t) => !prefixKeys.includes(t));
+
+  if (onlyTpl.length || onlyEnum.length) {
+    allOk = false;
+    console.error('FAIL R3: 单证模板清单与后端类型字典不一致');
+    if (onlyTpl.length) console.error('  仅模板有（该类型开不出单）: ' + onlyTpl.join(', '));
+    if (onlyEnum.length) console.error('  仅字典有（开得出但渲染不出）: ' + onlyEnum.join(', '));
+  }
+  if (noPrefix.length) {
+    allOk = false;
+    console.error('FAIL R3: 单证类型未登记编号前缀（单号会退化成前三位大写）: ' + noPrefix.join(', '));
+  }
+  if (!onlyTpl.length && !onlyEnum.length && !noPrefix.length) {
+    console.log('PASS R3: ' + manifestDocTypes.length + ' doc types consistent (tpl <-> enum <-> prefix)');
+  }
+}
+
+// ── R4: 线上 Worker 镜像 ────────────────────────────────────────────────
+const workerSrc = read('backend/worker/src/main.py');
+const workerDocTypes = pyTupleFrom(workerSrc, 'DOC_TYPE_SET').sort();
+const workerPrefixes = pyDictKeysFrom(workerSrc, 'DOC_TYPE_PREFIX');
+const workerNoFields = pyTupleMapValues(workerSrc, 'DOC_NO_FIELDS');
+const orchNoFields = pyTupleMapValues(
+  read('backend/orchestrator/app/services/trade_doc_payload.py'),
+  'DOC_NO_FIELDS',
+);
+
+if (workerDocTypes.length === 0) {
+  allOk = false;
+  console.error('FAIL R4: 无法从 worker/main.py 解析 DOC_TYPE_SET');
+} else {
+  const workerOnly = workerDocTypes.filter((t) => !pyDocTypes.includes(t));
+  const localOnly = pyDocTypes.filter((t) => !workerDocTypes.includes(t));
+  const workerNoPrefix = workerDocTypes.filter((t) => !workerPrefixes.includes(t));
+  const mapDiffs = Object.keys({ ...workerNoFields, ...orchNoFields }).filter(
+    (t) => workerNoFields[t] !== orchNoFields[t],
+  );
+
+  if (workerOnly.length || localOnly.length) {
+    allOk = false;
+    console.error('FAIL R4: 线上/本地单证类型不一致');
+    if (workerOnly.length) console.error('  仅线上有（本地开不出）: ' + workerOnly.join(', '));
+    if (localOnly.length) console.error('  仅本地有（线上会报 422）: ' + localOnly.join(', '));
+  }
+  if (workerNoPrefix.length) {
+    allOk = false;
+    console.error('FAIL R4: 线上编号前缀未覆盖: ' + workerNoPrefix.join(', '));
+  }
+  if (mapDiffs.length) {
+    allOk = false;
+    console.error('FAIL R4: 单号字段映射两侧不一致（会把合同号印成发票号）');
+    mapDiffs.forEach((t) =>
+      console.error(
+        `  ${t}: 本地="${orchNoFields[t] ?? '(缺)'}" 线上="${workerNoFields[t] ?? '(缺)'}"`,
+      ),
+    );
+  }
+  if (!workerOnly.length && !localOnly.length && !workerNoPrefix.length && !mapDiffs.length) {
+    console.log(
+      'PASS R4: worker mirror consistent (' +
+        workerDocTypes.length +
+        ' types, ' +
+        Object.keys(workerNoFields).length +
+        ' no-field mappings)',
+    );
+  }
+}
+
+if (allOk) {
   process.exit(0);
 } else {
   console.error('FAIL: one or more checks failed');
