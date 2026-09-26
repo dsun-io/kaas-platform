@@ -42,6 +42,29 @@ def _get_test_db_url() -> str:
 TEST_DATABASE_URL = _get_test_db_url()
 
 
+def _probe_test_db() -> None:
+    """测试库的 TCP 端口不通就跳过（而不是让每条 db 用例都 ERROR）。
+
+    只做「端口能不能连上」这一件事，不尝试连接/认证 ——
+    认证失败、库不存在、迁移出错都属于**真问题**，必须照常报错。
+    """
+    import socket
+
+    from sqlalchemy.engine.url import make_url
+
+    url = make_url(TEST_DATABASE_URL)
+    host, port = url.host or "localhost", url.port or 5432
+    try:
+        with socket.create_connection((host, port), timeout=1.5):
+            return
+    except OSError as exc:
+        pytest.skip(
+            f"本地测试库不可用（{host}:{port} 连不上：{exc}）—— "
+            f"需要 PostgreSQL 才能跑 db 类用例；"
+            f"可用 TEST_DATABASE_URL 指向别处，或启动本地库后重跑。"
+        )
+
+
 @pytest.fixture(autouse=True)
 def _override_tenant_config(monkeypatch):
     """注入测试用租户配置（§3.7.15 schema 对齐）。"""
@@ -121,8 +144,14 @@ async def _seed_int_r3_data(engine):
 
     async with AsyncSession(engine) as session:
         # Truncate 确保种子数据始终与当前代码一致
+        #
+        # 注意 customer_quote_profiles（客户税率档案）**只 truncate、不 seed**：
+        # 它是纯运行时数据（用户自己保存的档案），没有任何需要预置的种子。
+        # 但它必须在这张清单里 —— 否则测试保存的档案会漏到下一条用例里，
+        # 表现为「单跑通过、全跑失败」。
         for tbl in ("product_specs", "customer_cost_items", "customer_sale_price_items",
-                     "customer_pricing_profiles", "customer_freight_rates"):
+                     "customer_pricing_profiles", "customer_freight_rates",
+                     "customer_quote_profiles"):
             await session.execute(text(f"TRUNCATE TABLE {tbl} CASCADE"))
         await session.commit()
 
@@ -176,6 +205,16 @@ async def db_engine():
     """Per-test 测试数据库引擎，首次运行时自动 Alembic migration + create_all + INT-R3 种子数据。"""
     global _DB_INITIALIZED
     from app.db.base import Base
+
+    # 本机没起测试库时**跳过**，而不是抛一堆 ERROR。
+    #
+    # 为什么值得这么做：`pytest tests` 在没起测试库的机器上会产出上百个 ERROR，
+    # 于是「测试到底通没通」变得无法判断 —— 真正的回归就是被这些噪声盖住的。
+    # 报个明确的 skip 理由，比让人挨个去看 traceback 有用得多。
+    #
+    # 只探测 **TCP 端口**：端口通、但迁移/建表过程中出错，仍然照常失败。
+    # 那种失败是真问题（迁移写坏了 / schema 冲突），不能一并吞掉。
+    _probe_test_db()
 
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 

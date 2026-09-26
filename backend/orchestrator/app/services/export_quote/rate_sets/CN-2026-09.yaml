@@ -12,7 +12,6 @@ effective_to: null            # null = 至今仍生效
 source: "税率以财政部/税务总局及海关总署最新公告为准，本档案为业务基线，调整前请核对公告"
 
 vat:
-  levy_rate: 0.13             # 征税率（法定增值税率）  ← 13 调 12 时改这里
   output_rate_default: 0.13   # 默认销项税率
   output_rate_export: 0.00    # 出口零税率（出口业务用这个）
   output_rate_reduced: 0.09   # 低税率档（备用）
@@ -35,7 +34,6 @@ export_rebate:
   by_hs_code:
     "7314410000": null        # 牛栏网（热镀锌机织钢丝网）—— 待按 HS 编码核实后填入，如 0.10
     "7314490000": null        # 其他钢铁丝机织网 —— 待核实
-    "7306309000": null        # 焊管（圆形截面焊接钢管）—— 待核实
   default: null               # 未收录时的兜底。null = 不猜、直接报错
   source: "待填写：以 HS 编码在税务总局退税率文库核实"
 

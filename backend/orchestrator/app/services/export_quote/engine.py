@@ -18,11 +18,11 @@ import keyword
 import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from decimal import localcontext
+from decimal import Decimal, InvalidOperation, localcontext
 from typing import Any, Mapping
 
 from . import expr as expr_mod
-from .models import Column, FormulaSpec, OrderSpec, ProductSpec
+from .models import Column, FormulaSpec, OrderSpec, ProductSpec, pricing_key_of
 from .numeric import DECIMAL, FRACTION, PRECISION, is_integral
 from .pricing import PricingError, PricingPolicy
 from .rates import RateSet
@@ -62,6 +62,10 @@ class QuoteRequest:
     constants_override: Mapping[str, Any] = field(default_factory=dict)
     # 变体/规格覆盖：{"coating": {"普锌40g/㎡": {"raw_price": 4.6}}}
     variant_overrides: Mapping[str, Any] = field(default_factory=dict)
+    # 客户定价数据（成本表）：{"de=2.0|coating_code=zinc_40": 4.4, ...}
+    # 由 API 层按「当前客户 + 产品定价键」查库后注入，引擎本身不碰数据库。
+    # 命中则用表里的成本；未命中回退产品定义的内联成本值（老报价行为不变）。
+    cost_table: Mapping[str, Any] = field(default_factory=dict)
     currency: str = "CNY"
     quote_currency: str = "USD"
     customer_id: str = ""
@@ -341,7 +345,12 @@ def _loose_eq(a, b) -> bool:
         return a == b
     try:
         return Decimal(str(a)) == Decimal(str(b))
-    except Exception:  # noqa: BLE001 - 非数值就退回字符串比较
+    except (InvalidOperation, TypeError, ValueError):
+        # 只有「真·非数值」（如 "abc"、"1.5mm"）才退回字符串比较。
+        # 这里**不能**用宽泛的 `except Exception`：它会把 NameError / AttributeError
+        # 这类编程错误一并吞掉，使上面的数值分支静默失效。
+        # 历史缺陷即由此产生：模块内原本缺少 `Decimal` 导入，导致 2.0 与 2
+        # 被当成两个不同的值，导出 Excel 再回导会丢掉一半规格行。
         return str(a).strip() == str(b).strip()
 
 
@@ -532,7 +541,6 @@ def policy_scope(policy: PricingPolicy) -> dict:
         "profit_mode": policy.profit_mode,
         "profit_value": policy.profit_value,
         "rebate_rate": policy.rebate_rate if policy.rebate_rate is not None else 0,
-        "levy_rate": policy.levy_rate if policy.levy_rate is not None else 0,
     }
 
 
@@ -591,13 +599,19 @@ def build(request: QuoteRequest, mode=DECIMAL) -> QuoteResult:
 
             derived = _run_specs(product.derived, scope, "派生公式", diagnostics, mode, idx)
 
-            # 成本取值
-            if product.cost_field not in scope:
-                raise EngineError(
-                    f"成本字段 {product.cost_field!r} 不在可用变量中；"
-                    f"现有变量: {', '.join(sorted(k for k in scope if not k.startswith('_')))}"
-                )
-            raw_cost = mode.convert(scope[product.cost_field])
+            # 成本取值：先按「定价键」查客户定价数据，查不到再回退产品定义的内联成本。
+            # 两条路径都必须给出明确结果 —— 都没有就报错，绝不用 0 或默认价糊过去。
+            cost_key = pricing_key_of(product, scope)
+            table_cost = request.cost_table.get(cost_key) if (cost_key and request.cost_table) else None
+            if table_cost is not None:
+                raw_cost = mode.convert(table_cost)
+            else:
+                if product.cost_field not in scope:
+                    raise EngineError(
+                        f"成本字段 {product.cost_field!r} 不在可用变量中；"
+                        f"现有变量: {', '.join(sorted(k for k in scope if not k.startswith('_')))}"
+                    )
+                raw_cost = mode.convert(scope[product.cost_field])
             vat = mode.convert(policy.input_vat_rate)
             if product.cost_basis == "incl_tax":
                 cost_pretax = mode.quantize(raw_cost * (mode.convert(1) - vat), 6)

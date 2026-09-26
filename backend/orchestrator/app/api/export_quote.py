@@ -28,7 +28,10 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, ValidationError
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.auth import AuthContext, get_auth_context
+from app.db.session import get_db_session
 from app.deps.rbac import require_tenant_admin
 from app.services.export_quote import (
     DEFAULT_VALIDITY_DAYS,
@@ -45,6 +48,7 @@ from app.services.export_quote import (
     policy_from_dict,
     product_keys,
 )
+from app.services.export_quote.models import ProductSpec
 from app.services.export_quote.engine import resolve_space_deduction
 from app.services.export_quote.formulas import (
     PRICE_METRICS,
@@ -108,10 +112,9 @@ class PolicyIn(BaseModel):
     profit_value: Optional[float] = None
     give_ratio: Optional[float] = Field(default=None, description="让出可退进项增值税额的比例")
     refund_ratio: Optional[Any] = Field(
-        default=None, description="可退税比例；'auto' = 出口退税率 ÷ 征税率"
+        default=None, description="可退税比例；'auto' = 出口退税率 ÷ 进项票税点"
     )
     rebate_rate: Optional[float] = Field(default=None, description="出口退税率（auto 模式使用）")
-    levy_rate: Optional[float] = Field(default=None, description="征税率（auto 模式使用）")
     stamp_rate: Optional[float] = Field(default=None, description="印花税率")
     stamp_base: Optional[str] = Field(default=None, description="profit | cost | base_quote")
     extras: Optional[List[dict]] = None
@@ -213,6 +216,7 @@ async def get_product_formulas(
     product_key: str,
     with_columns: bool = False,
     auth: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db_session),
 ):
     """返回产品的完整「计算说明书」。
 
@@ -221,9 +225,14 @@ async def get_product_formulas(
 
     报价工位据此把「波弯款怎么加」「实际占用体积怎么扣」直接展示给业务，
     不需要回来问开发。
+
+    规格空间按**当前客户的有效档位**给出：客户在定价数据里加过的丝径/镀锌量，
+    这里就会多出对应选项 —— 不这样做，客户就只能录一个选不到的档位。
     """
     spec = _get_product_or_404(product_key)
-    return describe_product(spec, with_columns=with_columns)
+    return describe_product(
+        await _with_customer_options(db, auth, spec), with_columns=with_columns
+    )
 
 
 @router.get("/products/{product_key}/import-template",
@@ -395,7 +404,6 @@ async def list_rate_sets(auth: AuthContext = Depends(get_auth_context)):
                 "country": rs.country,
                 "effective_from": rs.effective_from.isoformat() if rs.effective_from else None,
                 "effective_to": rs.effective_to.isoformat() if rs.effective_to else None,
-                "levy_rate": rs.levy_rate,
                 "output_rate_default": rs.output_rate_default,
                 "output_rate_export": rs.output_rate_export,
                 "stamp_duty": {"rate": rs.stamp_duty.rate, "base": rs.stamp_duty.base},
@@ -409,6 +417,20 @@ async def list_rate_sets(auth: AuthContext = Depends(get_auth_context)):
             }
         )
     return {"rate_sets": out, "total": len(out)}
+
+
+@router.get("/terms/template")
+async def terms_template(auth: AuthContext = Depends(get_auth_context)):
+    """平台默认的出口费用结构（贸易术语阶梯 + 费用项）。
+
+    结构与金额分离：结构由平台声明一次，报价时只需填金额。
+    界面据此渲染输入框，不必把「FOB 包含哪些费」这类业务知识写死在前端。
+    返回的形状就是报价请求里 `terms` 的形状，界面原样回传、只填 value。
+    """
+    # 局部导入：该模块只有本接口用得到，不放模块顶部以免与 terms 的循环依赖留隐患
+    from app.services.export_quote.terms_template import default_terms_template
+
+    return default_terms_template()
 
 
 @router.post("/rate-sets/reload", summary="重新加载税务档案（管理员）")
@@ -630,7 +652,83 @@ def _require_admin(auth: AuthContext) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # 报价计算
 # ─────────────────────────────────────────────────────────────────────────────
-def _assemble_request(body: CalculateIn, auth: AuthContext) -> QuoteRequest:
+async def _with_customer_options(
+    db: AsyncSession,
+    auth: AuthContext,
+    product: ProductSpec,
+) -> ProductSpec:
+    """把「客户自己在定价数据里加的档位」并入产品定义。
+
+    只在这里拼一次，然后同时喂给「规格空间接口」与「算价接口」——
+    两边看到的选项必须**完全一致**：只要有一边用了原始定义，
+    就会出现「下拉里能选、一算就报错」或者「算了但下拉里选不到」。
+    """
+    if not product.pricing_key:
+        return product
+
+    from app.services.pricing_table import load_option_extensions
+    from app.services.export_quote.models import extend_product
+
+    tenant_id = auth_tenant(auth)
+    customer_id = auth.customer_id_str or tenant_id
+    exts = await load_option_extensions(db, tenant_id, customer_id, product)
+    return extend_product(product, exts)
+
+
+async def _effective_product(
+    db: AsyncSession,
+    auth: AuthContext,
+    product_key: str,
+) -> ProductSpec | None:
+    """有效规格空间；产品不存在时返回 None。
+
+    「产品不存在」在算价入口交给引擎按它自己的口径报（400 product_error），
+    在规格空间入口由调用方报 404 —— 同一个错误在不同入口的状态码本来就不同，
+    所以这里不替调用方决定，只负责「拿不到就明说拿不到」。
+    """
+    if not product_key:
+        return None
+    try:
+        product = get_product(product_key)
+    except Exception:
+        return None
+    return await _with_customer_options(db, auth, product)
+
+
+async def _load_cost_table(
+    db: AsyncSession,
+    auth: AuthContext,
+    body: CalculateIn,
+    product: ProductSpec | None = None,
+) -> dict:
+    """按「当前客户 + 产品定价键」把客户定价数据读成引擎用的成本表。
+
+    读不到（产品没声明定价键 / 产品不存在 / 客户还没配价）就返回空表，
+    引擎随即回退到产品定义里的内联成本 —— 这是「未配置不影响老报价」的关键。
+    """
+    if not body.product_key:
+        return {}
+    if product is None:
+        try:
+            product = get_product(body.product_key)
+        except Exception:
+            return {}  # 产品不存在时让引擎报它自己的错，这里不抢先
+    if not product.pricing_key:
+        return {}
+
+    from app.services.pricing_table import load_cost_table
+
+    tenant_id = auth_tenant(auth)
+    customer_id = auth.customer_id_str or tenant_id
+    return await load_cost_table(db, tenant_id, customer_id, product)
+
+
+def _assemble_request(
+    body: CalculateIn,
+    auth: AuthContext,
+    cost_table: dict | None = None,
+    product: ProductSpec | None = None,
+) -> QuoteRequest:
     reg = _get_registry()
     try:
         rs = reg.resolve(body.rate_set_code, body.quote_date)
@@ -642,7 +740,7 @@ def _assemble_request(body: CalculateIn, auth: AuthContext) -> QuoteRequest:
         "input_vat_rate": 0.10,
         "output_vat": {"rate": rs.output_rate_export, "mode": "additive"},
         "profit": {"mode": "fixed", "value": 0.1},
-        "refund": {"refund_ratio": "auto", "give_ratio": 0.8, "levy_rate": rs.levy_rate},
+        "refund": {"refund_ratio": "auto", "give_ratio": 0.8},
         "stamp": {"rate": rs.stamp_duty.rate, "base": rs.stamp_duty.base},
     }
     if body.policy is not None:
@@ -655,7 +753,7 @@ def _assemble_request(body: CalculateIn, auth: AuthContext) -> QuoteRequest:
         for k in ("profit_mode", "profit_value"):
             if k in p:
                 base_cfg.setdefault("profit", {})[k.replace("profit_", "")] = p.pop(k)
-        for k in ("give_ratio", "refund_ratio", "rebate_rate", "levy_rate"):
+        for k in ("give_ratio", "refund_ratio", "rebate_rate"):
             if k in p:
                 base_cfg.setdefault("refund", {})[k] = p.pop(k)
         for k in ("stamp_rate", "stamp_base"):
@@ -692,6 +790,7 @@ def _assemble_request(body: CalculateIn, auth: AuthContext) -> QuoteRequest:
 
     return QuoteRequest(
         product_key=body.product_key,
+        product=product,
         policy=policy,
         fx_rate=body.fx_rate,
         fx_source=body.fx_source,
@@ -710,6 +809,7 @@ def _assemble_request(body: CalculateIn, auth: AuthContext) -> QuoteRequest:
         quote_date=body.quote_date,
         constants_override=body.constants_override or {},
         variant_overrides=body.variant_overrides or {},
+        cost_table=cost_table or {},
         currency=body.currency,
         quote_currency=body.quote_currency,
         tenant_id=auth_tenant(auth),
@@ -720,8 +820,14 @@ def auth_tenant(auth: AuthContext) -> str:
     return auth.tenant_id or "default"
 
 
-def _run_calculation(body: CalculateIn, auth: AuthContext, view: str) -> dict:
-    req = _assemble_request(body, auth)
+def _run_calculation(
+    body: CalculateIn,
+    auth: AuthContext,
+    view: str,
+    cost_table: dict | None = None,
+    product: ProductSpec | None = None,
+) -> dict:
+    req = _assemble_request(body, auth, cost_table, product)
     try:
         result = build(req)
     except EngineError as exc:
@@ -752,29 +858,48 @@ def _run_calculation(body: CalculateIn, auth: AuthContext, view: str) -> dict:
 
 
 @router.post("/calculate", summary="计算出口报价（客户视图）")
-async def calculate_quote(body: CalculateIn, auth: AuthContext = Depends(get_auth_context)):
+async def calculate_quote(
+    body: CalculateIn,
+    auth: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db_session),
+):
     """返回客户报价视图：只含规格、重量体积、外币价，不含成本与税额推导。
 
     这样即使前端直接用这个接口渲染客户页面，也不会泄露成本利润率。
     """
-    return _run_calculation(body, auth, "customer")
+    product = await _effective_product(db, auth, body.product_key)
+    return _run_calculation(
+        body, auth, "customer", await _load_cost_table(db, auth, body, product), product
+    )
 
 
 @router.post("/calculate-internal", summary="计算出口报价（内部核算视图，管理员）")
 async def calculate_quote_internal(
-    body: CalculateIn, auth: AuthContext = Depends(require_tenant_admin)
+    body: CalculateIn,
+    auth: AuthContext = Depends(require_tenant_admin),
+    db: AsyncSession = Depends(get_db_session),
 ):
     """返回含成本、利润、税额、退税推导的内部核算明细。
 
     需要租户管理员权限 —— 成本与利润率属内部数据，不得对客户暴露。
     """
-    return _run_calculation(body, auth, "internal")
+    product = await _effective_product(db, auth, body.product_key)
+    return _run_calculation(
+        body, auth, "internal", await _load_cost_table(db, auth, body, product), product
+    )
 
 
 @router.post("/verify", summary="对一次报价跑三遍核验（管理员）")
-async def verify_quote(body: CalculateIn, auth: AuthContext = Depends(require_tenant_admin)):
+async def verify_quote(
+    body: CalculateIn,
+    auth: AuthContext = Depends(require_tenant_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
     body.with_verification = True
-    req = _assemble_request(body, auth)
+    product = await _effective_product(db, auth, body.product_key)
+    req = _assemble_request(
+        body, auth, await _load_cost_table(db, auth, body, product), product
+    )
     try:
         result = build(req)
     except (EngineError, PricingError, TermsError) as exc:

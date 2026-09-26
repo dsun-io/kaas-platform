@@ -71,8 +71,10 @@ export function BulkImportPanel() {
   const [rateSetCode, setRateSetCode] = useState<string>("");
   const [orderTotal, setOrderTotal] = useState("30000");
   const [fxRate, setFxRate] = useState("6.7019");
-  const [giveRatio, setGiveRatio] = useState("0.8");
-  const [inputVatRate, setInputVatRate] = useState("0.1");
+  // 政策参数一律按【百分比】填写（10 = 10%），提交前除以 100 —— 与「产品报价」页同一口径
+  const [giveRatioPct, setGiveRatioPct] = useState("80");
+  const [inputVatRatePct, setInputVatRatePct] = useState("10");
+  const [outputVatRatePct, setOutputVatRatePct] = useState("0");
   const [quoteDate, setQuoteDate] = useState(today());
   const [view, setView] = useState<"customer" | "internal">("customer");
 
@@ -100,8 +102,9 @@ export function BulkImportPanel() {
       orders: [{ total: Number(orderTotal) || 0, unit: "m" }],
       validity_days: 7,
       policy: {
-        input_vat_rate: Number(inputVatRate) || 0,
-        give_ratio: Number(giveRatio) || 0,
+        input_vat_rate: (Number(inputVatRatePct) || 0) / 100,
+        give_ratio: (Number(giveRatioPct) || 0) / 100,
+        output_vat_rate: (Number(outputVatRatePct) || 0) / 100,
       },
     }),
     [
@@ -110,8 +113,9 @@ export function BulkImportPanel() {
       fxRate,
       quoteDate,
       orderTotal,
-      inputVatRate,
-      giveRatio,
+      inputVatRatePct,
+      giveRatioPct,
+      outputVatRatePct,
     ],
   );
 
@@ -353,23 +357,34 @@ export function BulkImportPanel() {
             </div>
             <div className="space-y-1">
               <Label className="text-xs" htmlFor="bi-vat">
-                进项票税点
+                进项票税点（%）
               </Label>
               <Input
                 id="bi-vat"
-                value={inputVatRate}
-                onChange={(e) => setInputVatRate(e.target.value)}
+                value={inputVatRatePct}
+                onChange={(e) => setInputVatRatePct(e.target.value)}
+                inputMode="decimal"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs" htmlFor="bi-out">
+                销项税率（%）
+              </Label>
+              <Input
+                id="bi-out"
+                value={outputVatRatePct}
+                onChange={(e) => setOutputVatRatePct(e.target.value)}
                 inputMode="decimal"
               />
             </div>
             <div className="space-y-1">
               <Label className="text-xs" htmlFor="bi-give">
-                让利比例
+                让利比例（%）
               </Label>
               <Input
                 id="bi-give"
-                value={giveRatio}
-                onChange={(e) => setGiveRatio(e.target.value)}
+                value={giveRatioPct}
+                onChange={(e) => setGiveRatioPct(e.target.value)}
                 inputMode="decimal"
               />
             </div>

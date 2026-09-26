@@ -42,7 +42,7 @@ def registry() -> RateSetRegistry:
                     "effective_from": "2026-01-01",
                     # 已被 CN-B 取代 → 有明确结束日，避免"新旧档案同时无限生效"
                     "effective_to": "2026-12-31",
-                    "vat": {"levy_rate": 0.13, "output_rate_export": 0.0},
+                    "vat": {"output_rate_export": 0.0},
                     "stamp_duty": {"rate": 0.05, "base": "profit"},
                     "export_rebate": {"by_hs_code": {"7314410000": 0.13}},
                 }
@@ -52,7 +52,7 @@ def registry() -> RateSetRegistry:
                     "code": "CN-B",
                     "country": "CN",
                     "effective_from": "2027-01-01",
-                    "vat": {"levy_rate": 0.12, "output_rate_export": 0.0},
+                    "vat": {"output_rate_export": 0.0},
                     # 印花税从 5% 提到 6%：只改新档案，不动旧档案
                     "stamp_duty": {"rate": 0.06, "base": "profit"},
                     "export_rebate": {"by_hs_code": {"7314410000": 0.12}},
@@ -68,7 +68,7 @@ def registry() -> RateSetRegistry:
 class TestRateSetRegistry:
     def test_resolve_by_code_is_exact(self):
         reg = registry()
-        assert reg.get("CN-A").levy_rate == 0.13
+        assert reg.get("CN-A").output_rate_export == 0.0
         assert reg.get("CN-B").stamp_duty.rate == 0.06
 
     def test_unknown_code_lists_available(self):
@@ -98,11 +98,9 @@ class TestRateSetRegistry:
         """政策变化只加新档案；旧档案依旧给出旧税率（历史报价可复现）。"""
         reg = registry()
         old = reg.get("CN-A")
-        assert old.levy_rate == 0.13
         assert old.stamp_duty.rate == 0.05
         # 解析 2027 的档案不会改动 2026 的
         reg.resolve(None, date(2027, 6, 1))
-        assert reg.get("CN-A").levy_rate == 0.13
         assert reg.get("CN-A").stamp_duty.rate == 0.05
 
     def test_repo_rate_sets_load_and_are_authoritative(self):
@@ -127,11 +125,11 @@ class TestRateSetRegistry:
         assert combined.resolve(None, date(2027, 6, 1)).code == "CN-2027-01"
 
     def test_policy_change_adds_archive_without_touching_engine(self):
-        """13%→12%、印花税 5%→6% 的变化只体现在新档案里，旧档案原样不动。"""
+        """销项默认税率 13%→12%、印花税 5%→6% 的变化只体现在新档案里，旧档案原样不动。"""
         real = RateSetRegistry.from_dir().get("CN-2026-09")
         demo = RateSetRegistry.from_dir(RATE_SETS_DIR / "examples").get("CN-2027-01")
-        assert real.levy_rate == 0.13 and real.stamp_duty.rate == 0.05
-        assert demo.levy_rate == 0.12 and demo.stamp_duty.rate == 0.06
+        assert real.output_rate_default == 0.13 and real.stamp_duty.rate == 0.05
+        assert demo.output_rate_default == 0.12 and demo.stamp_duty.rate == 0.06
         assert demo.stamp_duty.base == "profit", "印花税基数仍按加工利润"
 
     def test_missing_code_rejected(self):
@@ -140,15 +138,11 @@ class TestRateSetRegistry:
 
 
 class TestRateSetAudit:
-    def test_warnings_flag_missing_levy_and_rebate(self):
+    def test_warnings_flag_missing_stamp_and_rebate(self):
         rs = rate_set_from_dict({"code": "EMPTY"})
         joined = " ".join(rs.warnings())
-        assert "levy_rate" in joined
+        assert "印花税率" in joined
         assert "退税率" in joined
-
-    def test_levy_must_be_positive(self):
-        rs = rate_set_from_dict({"code": "Z", "vat": {"levy_rate": 0}})
-        assert any("必须 > 0" in w for w in rs.warnings())
 
     def test_healthy_rate_set_is_quiet(self):
         rs = registry().get("CN-A")
@@ -424,9 +418,8 @@ class TestProviderIntrospection:
 
 
 class TestRepoArchives:
-    def test_every_archive_has_levy_and_stamp(self):
+    def test_every_archive_has_stamp(self):
         for rs in RateSetRegistry.from_dir().all():
-            assert rs.levy_rate is not None, f"{rs.code} 缺征税率"
             assert rs.stamp_duty.rate is not None, f"{rs.code} 缺印花税率"
             assert rs.stamp_duty.base == "profit", f"{rs.code} 印花税基数应为加工利润"
 

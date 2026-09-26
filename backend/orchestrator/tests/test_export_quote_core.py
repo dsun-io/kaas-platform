@@ -62,28 +62,34 @@ class TestPriceChain:
         assert bd["input_vat"] == D("0.6222")
         assert bd["give_amount"] == D("0.4978")
 
-    def test_refund_ratio_from_rebate_over_levy(self):
-        """可退税比例 = 出口退税率 ÷ 征税率；差额成为不可退进项税额（真成本）。"""
+    def test_refund_ratio_from_rebate_over_invoice_point(self):
+        """可退税比例 = 出口退税率 ÷ **进项票税点**；差额成为不可退进项税额（真成本）。
+
+        分母是进项票税点（供应商发票上的实际税点），不是法定征税率 ——
+        要回答的是「实际交出去的进项税额里有多少能退回来」。
+        """
         bd = policy(
-            refund_ratio="auto", rebate_rate=D("0.10"), levy_rate=D("0.13")
+            refund_ratio="auto", rebate_rate=D("0.09"), input_vat_rate=D("0.10")
         ).breakdown(D("4.4"))
-        assert bd["refund_ratio_used"] == D("0.769231")
+        assert bd["refund_ratio_used"] == D("0.900000")
         assert bd["input_vat"] == D("0.4889")
-        assert bd["refundable_input_vat"] == D("0.3761")
-        assert bd["non_refundable_input_vat"] == D("0.1128")
+        assert bd["refundable_input_vat"] == D("0.4400")
+        assert bd["non_refundable_input_vat"] == D("0.0489")
         # 回收不到的部分抬高售价
-        assert bd["quote_excl_vat"] == D("4.6930")
+        assert bd["quote_excl_vat"] == D("4.6419")
 
     def test_partial_refund_is_more_expensive_than_full(self):
+        """退税率低于进项票税点 → 退不满 → 不可退部分抬高售价。"""
         full = policy().breakdown(D("4.4"))["quote_excl_vat"]
         part = policy(
-            refund_ratio="auto", rebate_rate=D("0.09"), levy_rate=D("0.13")
+            refund_ratio="auto", rebate_rate=D("0.09"), input_vat_rate=D("0.10")
         ).breakdown(D("4.4"))["quote_excl_vat"]
         assert part > full
 
-    def test_ratio_one_when_rebate_equals_levy(self):
+    def test_ratio_one_when_rebate_equals_invoice_point(self):
+        """退税率 = 进项票税点 → 全额可退。"""
         bd = policy(
-            refund_ratio="auto", rebate_rate=D("0.13"), levy_rate=D("0.13")
+            refund_ratio="auto", rebate_rate=D("0.10"), input_vat_rate=D("0.10")
         ).breakdown(D("4.4"))
         assert bd["refund_ratio_used"] == D("1.000000")
         assert bd["non_refundable_input_vat"] == D("0.0000")
@@ -97,7 +103,7 @@ class TestRefundRatioCappedAtInputVat:
 
     def test_rebate_above_invoice_point_is_capped(self):
         """丝厂开票价税点 10%，出口退税率 13% → 按 10 点（取低），比例封顶 1。"""
-        pol = policy(refund_ratio="auto", rebate_rate=D("0.13"), levy_rate=D("0.10"))
+        pol = policy(refund_ratio="auto", rebate_rate=D("0.13"))
         ratio, warn = pol.resolve_refund_ratio()
         assert ratio == D("1"), "应取低者，比例封顶为 1"
         assert warn and "上限" in warn
@@ -106,21 +112,20 @@ class TestRefundRatioCappedAtInputVat:
         assert bd["refundable_input_vat"] == D("0.4889")
         assert bd["non_refundable_input_vat"] == D("0.0000")
 
-    def test_capped_result_equals_filling_the_levy_as_statutory_rate(self):
-        """填 10 点 与 填法定 13% 得到同一结果 —— 这正是「取低」的含义。"""
-        a = policy(refund_ratio="auto", rebate_rate=D("0.13"), levy_rate=D("0.13"))
-        b = policy(refund_ratio="auto", rebate_rate=D("0.13"), levy_rate=D("0.10"))
-        assert a.breakdown(D("4.4")) == b.breakdown(D("4.4"))
+    def test_policy_has_no_levy_rate_knob(self):
+        """征税率已从设计上删除。
 
-    def test_refundable_never_exceeds_input_vat_for_any_ratio(self):
-        """横扫一片比例，可退额恒 ≤ 进项税额。"""
-        for rebate, levy in (("0.13", "0.13"), ("0.13", "0.10"), ("0.09", "0.13"),
-                             ("0.13", "0.09"), ("0.20", "0.13"), ("0.01", "0.13")):
+        它的存在本身就会诱导后人拿它当分母 —— 历史上就是这么错的
+        （可退税比例的分母应该是「进项票税点」）。这里钉住：它不得回来。
+        """
+        assert "levy_rate" not in PricingPolicy.__dataclass_fields__
+
+    def test_refundable_never_exceeds_input_vat_for_any_rebate(self):
+        """横扫一片退税率（含高于税点的），可退额恒 ≤ 进项税额。"""
+        for rebate in ("0.13", "0.10", "0.09", "0.20", "0.01"):
             bd = policy(refund_ratio="auto", rebate_rate=D(rebate),
-                        levy_rate=D(levy)).breakdown(D("4.4"))
-            assert D(str(bd["refundable_input_vat"])) <= D(str(bd["input_vat"])), (
-                rebate, levy
-            )
+                        input_vat_rate=D("0.10")).breakdown(D("4.4"))
+            assert D(str(bd["refundable_input_vat"])) <= D(str(bd["input_vat"])), rebate
 
     def test_explicit_ratio_above_one_is_capped_not_error(self):
         """显式给 1.3 也按 1 计 —— 报错会阻断出单，封顶 + 提示更合适。"""
@@ -135,30 +140,31 @@ class TestRefundRatioCappedAtInputVat:
         """封顶不改变基准报价：基准本来就是「全额可回收」。"""
         assert policy().breakdown(D("4.4"))["quote_excl_vat"] == D("4.6028")
         assert policy(
-            refund_ratio="auto", rebate_rate=D("0.13"), levy_rate=D("0.10")
+            refund_ratio="auto", rebate_rate=D("0.13")
         ).breakdown(D("4.4"))["quote_excl_vat"] == D("4.6028")
 
     def test_rebate_below_invoice_point_still_discounts(self):
-        """反向情形：退税率 10% < 征税率 13%，差额成为不可退成本。"""
-        pol = policy(refund_ratio="auto", rebate_rate=D("0.10"), levy_rate=D("0.13"))
+        """退税率 9% < 进项票税点 10%，差额成为不可退成本。"""
+        pol = policy(refund_ratio="auto", rebate_rate=D("0.09"), input_vat_rate=D("0.10"))
         ratio, warn = pol.resolve_refund_ratio()
-        assert ratio == D("10") / D("13")
+        assert ratio == D("0.9")
         assert warn is None
         bd = pol.breakdown(D("4.4"))
         assert bd["refundable_input_vat"] < bd["input_vat"]
-        assert bd["non_refundable_input_vat"] == D("0.1128")
+        assert bd["non_refundable_input_vat"] == D("0.0489")
 
-    def test_levy_zero_is_unconfigured_not_a_divisor(self):
+    def test_invoice_point_zero_is_unconfigured_not_a_divisor(self):
+        """进项票税点为 0 → 视为「未配置」，不去做除零，退回全额并提示。"""
         ratio, warn = policy(
-            refund_ratio="auto", rebate_rate=D("0.13"), levy_rate=D("0")
+            refund_ratio="auto", rebate_rate=D("0.13"), input_vat_rate=D("0")
         ).resolve_refund_ratio()
         assert ratio == D("1")
         assert warn and "未配置" in warn
 
-    def test_negative_levy_raises(self):
-        with pytest.raises(PricingError, match="征税率"):
+    def test_negative_invoice_point_raises(self):
+        with pytest.raises(PricingError, match="进项票税点"):
             policy(refund_ratio="auto", rebate_rate=D("0.13"),
-                   levy_rate=D("-0.13")).resolve_refund_ratio()
+                   input_vat_rate=D("-0.13")).resolve_refund_ratio()
 
     def test_negative_ratio_raises(self):
         with pytest.raises(PricingError, match="可退税比例"):
@@ -276,7 +282,7 @@ class TestIdentity:
         for out_rate in ("0", "0.13"):
             for rr, kw in (
                 (D("1"), {}),
-                ("auto", {"rebate_rate": D("0.09"), "levy_rate": D("0.13")}),
+                ("auto", {"rebate_rate": D("0.09")}),
                 (D("0.5"), {}),
             ):
                 p = policy(output_vat_rate=D(out_rate), refund_ratio=rr, **kw)
@@ -320,7 +326,7 @@ class TestPolicyConfig:
                 "profit": {"mode": "fixed", "value": 0.1},
                 "refund": {
                     "refund_ratio": "auto", "rebate_rate": 0.10,
-                    "levy_rate": 0.13, "give_ratio": 0.8,
+                    "give_ratio": 0.8,
                 },
                 "stamp": {"rate": 0.05, "base": "profit"},
             }
@@ -343,7 +349,7 @@ class TestPolicyConfig:
         assert p.breakdown(D("4.4"))["quote_excl_vat"] == D("4.6028")
 
     def test_auto_without_rebate_warns_and_assumes_full(self):
-        p = policy(refund_ratio="auto", rebate_rate=None, levy_rate=D("0.13"))
+        p = policy(refund_ratio="auto", rebate_rate=None)
         ratio, warn = p.resolve_refund_ratio()
         assert ratio == D("1")
         assert warn and "rebate_rate" in warn

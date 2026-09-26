@@ -119,7 +119,17 @@
   },
 
   "known_junk": {
-    "desc": "已确认的垃圾（零引用 / 运行时产物）。【精确匹配】—— 必须写明具体文件，不能写目录，避免绕过保护。当前为空（2026-09-26 已清理 4 个死代码文件：2 个重复实现 + 1 个零引用组件 + 1 个零引用鉴权副本）；运行时审计日志 deployment_audit.jsonl 属于【数据而非代码垃圾】，已改用 git 忽略处理，未删除",
-    "paths": []
+    "desc": "已确认的垃圾（零引用 / 运行时产物）。【精确匹配】—— 必须写明具体文件，不能写目录，避免绕过保护。2026-09-26 已清理 4 个死代码文件：2 个重复实现 + 1 个零引用组件 + 1 个零引用鉴权副本；运行时审计日志 deployment_audit.jsonl 属于【数据而非代码垃圾】，已改用 git 忽略处理，未删除。2026-09-27 增补：报价工位重设计后遗留的【重复路由壳 + 死组件】（用户明确批准删除）—— 注意这里只列具体文件，父目录 frontend/src/app/(app)/quotations 仍在 protected 内，因为其 components/ 与 hooks/ 被 /quotes 工位复用，必须保留",
+    "paths": [
+      "frontend/src/app/(app)/quotations/page.tsx",
+      "frontend/src/app/(app)/quotations/error.tsx",
+      "frontend/src/app/(app)/quotations/loading.tsx",
+      "frontend/src/app/(app)/quotations/v2-quote/page.tsx",
+      "frontend/src/app/(app)/quotations/v2-quote/error.tsx",
+      "frontend/src/app/(app)/quotations/v2-quote/loading.tsx",
+      "frontend/src/app/(app)/quotations/v2-quote/components/quote-form.tsx",
+      "frontend/src/app/(app)/quotations/v2-quote/components/quote-result.tsx",
+      "frontend/src/app/(app)/quotations/v2-quote/hooks/use-v2-quote.ts"
+    ]
   }
 }

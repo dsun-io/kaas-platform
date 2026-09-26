@@ -1,194 +1,198 @@
 "use client";
 
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Upload, Plus, X, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useRole } from "@/hooks/use-role";
+import { useExportProducts } from "../quotations/v2-quote/hooks/use-export-quote-import";
 import {
-  usePricingData,
-  useCreatePricingData,
-  useUpdatePricingData,
-  useDeletePricingData,
-  type PricingEntry,
+  useDeactivatePricingCell,
+  usePricingMatrix,
+  useSavePricingCell,
 } from "./hooks/use-pricing-data";
-import { PricingDataForm } from "./components/PricingDataForm";
-import { PricingDataTable } from "./components/PricingDataTable";
+import { AddOptionPanel } from "./components/AddOptionPanel";
+import {
+  PricingAllCustomersTable,
+  PricingDataTable,
+} from "./components/PricingDataTable";
+import type { PricingCell, SavePricingCell } from "@contracts/export-quote";
 
-export function PricingDataManager() {
-  const { data: entries = [], isLoading: loadingEntries } = usePricingData();
-  const createMutation = useCreatePricingData();
-  const updateMutation = useUpdatePricingData();
-  const deleteMutation = useDeletePricingData();
+/**
+ * 定价数据（成本价表）—— 算价的输入数据。
+ *
+ * 一个产品一张矩阵：行 = 产品的「定价键」组合（牛栏网 = 边丝径 × 镀锌量），
+ * 列 = 成本、来源、生效日期。矩阵是**完整**的，没配过的组合也在表里，
+ * 显示为「产品兜底」—— 这样业务一眼能看出还差哪几格没配。
+ *
+ * `embedded`：作为工位内部视图嵌入时，外层容器已有标题，这里不再重复渲染。
+ */
+export function PricingDataManager({
+  embedded = false,
+}: { embedded?: boolean } = {}) {
+  const { data: productsData, isLoading: loadingProducts } =
+    useExportProducts();
+  const products = productsData?.products ?? [];
 
-  const [showForm, setShowForm] = useState(false);
-  const [editingEntry, setEditingEntry] = useState<PricingEntry | null>(null);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
+  // 跨客户查看是内部视图：只有租户管理员才看得到这个开关。
+  // 给客户展示一个点了就 403 的选项，等于请人去撞墙。
+  const { isTenantAdmin } = useRole();
 
-  const submitting = createMutation.isPending || updateMutation.isPending;
+  const [productKey, setProductKey] = useState("");
+  // 默认落在第一个产品上；产品列表加载完后自动选中，省一次点击
+  useEffect(() => {
+    const first = products[0];
+    if (!productKey && first) setProductKey(first.key);
+  }, [productKey, products]);
 
-  function startEdit(entry: PricingEntry) {
-    setEditingEntry(entry);
-    setShowForm(true);
-    setFormError(null);
-  }
+  const [showAllCustomers, setShowAllCustomers] = useState(false);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [addingOption, setAddingOption] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  function cancelForm() {
-    setEditingEntry(null);
-    setShowForm(false);
-    setFormError(null);
-  }
+  // 权限降级（如登录态刷新）后不能继续停在 cross-customer 视图上
+  useEffect(() => {
+    if (!isTenantAdmin && showAllCustomers) setShowAllCustomers(false);
+  }, [isTenantAdmin, showAllCustomers]);
 
-  async function handleSubmit(
-    values: {
-      product_category: string;
-      product_type?: string;
-      wire_diameter?: string;
-      height?: string;
-      mesh_width?: string;
-      mesh_spec?: string;
-      roll_length?: string;
-      weight_kg?: string;
-      cost_amount: number;
-      cost_unit: string;
-      effective_from?: string;
-      effective_to?: string;
-      notes?: string;
-    },
-    editingId: number | null,
-  ) {
-    setFormError(null);
-    const payload = {
-      product_category: values.product_category,
-      product_type: values.product_type || undefined,
-      wire_diameter: values.wire_diameter || undefined,
-      height: values.height ? parseFloat(values.height) : undefined,
-      mesh_width: values.mesh_width ? parseFloat(values.mesh_width) : undefined,
-      mesh_spec: values.mesh_spec || undefined,
-      roll_length: values.roll_length
-        ? parseFloat(values.roll_length)
-        : undefined,
-      weight_kg: values.weight_kg ? parseFloat(values.weight_kg) : undefined,
-      cost_amount: values.cost_amount,
-      cost_unit: values.cost_unit,
-      effective_from: values.effective_from || undefined,
-      effective_to: values.effective_to || undefined,
-      notes: values.notes || undefined,
-    };
+  const scope = showAllCustomers && isTenantAdmin ? "all" : "own";
+  const {
+    data: matrix,
+    isLoading,
+    error,
+  } = usePricingMatrix(productKey, scope);
+  const saveCell = useSavePricingCell(productKey);
+  const deactivateCell = useDeactivatePricingCell(productKey);
 
+  const forbidden =
+    showAllCustomers &&
+    !!error &&
+    (error as { response?: { status?: number } })?.response?.status === 403;
+
+  async function handleSave(payload: SavePricingCell, key: string) {
+    setSavingKey(key);
+    setNotice(null);
     try {
-      if (editingId != null) {
-        await updateMutation.mutateAsync({ id: editingId, payload });
-      } else {
-        await createMutation.mutateAsync(payload);
-      }
-      cancelForm();
+      await saveCell.mutateAsync(payload);
+      setNotice("已保存。该组合的成本从下一张报价单起生效。");
     } catch (err: unknown) {
       const msg =
-        (err as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message ?? "保存失败";
-      setFormError(msg);
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ?? "保存失败";
+      setNotice(typeof msg === "string" ? msg : "保存失败");
+    } finally {
+      setSavingKey(null);
     }
   }
 
-  async function handleDelete() {
-    if (deleteConfirmId == null) return;
+  async function handleAddOption(payload: SavePricingCell) {
+    setAddingOption(true);
+    setNotice(null);
     try {
-      await deleteMutation.mutateAsync(deleteConfirmId);
-    } catch {
-      // ignore
+      const r = await saveCell.mutateAsync(payload);
+      setNotice(
+        `已新增档位：${r?.key ?? ""}，成本 ${payload.amount} 元/${payload.unit}。` +
+          "报价页的规格下拉已同步。",
+      );
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ?? "新增失败";
+      setNotice(typeof msg === "string" ? msg : "新增失败");
     } finally {
-      setDeleteConfirmId(null);
+      setAddingOption(false);
+    }
+  }
+
+  async function handleReset(cell: PricingCell) {
+    if (cell.item_id == null) return;
+    setNotice(null);
+    try {
+      await deactivateCell.mutateAsync(cell.item_id);
+      setNotice("已停用自定义成本，该组合回退到产品定义的兜底值。");
+    } catch {
+      setNotice("停用失败");
     }
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">报价数据</h1>
-          <p className="text-muted-foreground mt-1">管理产品规格与成本价数据</p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            disabled
-            title="即将支持 CSV / Excel 导入"
-            className="gap-2"
-          >
-            <Upload className="size-4" />
-            上传规格/报价表
-          </Button>
-          <Button
-            onClick={() => {
-              if (editingEntry) cancelForm();
-              else setShowForm(!showForm);
-            }}
-            className="gap-2"
-          >
-            {editingEntry ? (
-              <>
-                <X className="size-4" />
-                取消编辑
-              </>
-            ) : (
-              <>
-                <Plus className="size-4" />
-                新增
-              </>
-            )}
-          </Button>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {!embedded && (
+          <div>
+            <h1 className="text-2xl font-bold">定价数据</h1>
+            <p className="text-muted-foreground mt-1">
+              每个客户的成本价表，是报价计算的输入
+            </p>
+          </div>
+        )}
+        {isTenantAdmin && (
+          <label className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              className="size-4"
+              checked={showAllCustomers}
+              onChange={(e) => setShowAllCustomers(e.target.checked)}
+            />
+            查看所有客户（管理员）
+          </label>
+        )}
       </div>
 
-      {showForm && (
-        <PricingDataForm
-          editingEntry={editingEntry}
-          onSubmit={handleSubmit}
-          onCancel={cancelForm}
-          submitting={submitting}
-          error={formError}
-        />
-      )}
-
-      <PricingDataTable
-        entries={entries}
-        loading={loadingEntries}
-        onEdit={startEdit}
-        onDelete={(id) => setDeleteConfirmId(id)}
-        editingId={editingEntry?.id ?? null}
-      />
-
-      {/* Delete Confirmation Dialog */}
-      {deleteConfirmId != null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-background rounded-lg border shadow-lg p-6 max-w-sm w-full mx-4">
-            <h3 className="text-lg font-semibold mb-2">确认停用</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              停用后该规格将在报价页中不再可选，已有报价不受影响。
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setDeleteConfirmId(null)}
-                disabled={deleteMutation.isPending}
-              >
-                取消
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={handleDelete}
-                disabled={deleteMutation.isPending}
-              >
-                {deleteMutation.isPending && (
-                  <Loader2 className="mr-1 size-3 animate-spin" />
-                )}
-                确认停用
-              </Button>
+      {loadingProducts ? (
+        <p className="text-sm text-muted-foreground">加载产品…</p>
+      ) : products.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          还没有已注册的产品定义，无法配置定价数据。
+        </p>
+      ) : (
+        <>
+          {products.length > 1 && (
+            <div className="flex flex-wrap gap-2">
+              {products.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => setProductKey(p.key)}
+                  className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+                    p.key === productKey
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-background hover:bg-muted"
+                  }`}
+                >
+                  {p.name}
+                </button>
+              ))}
             </div>
-          </div>
-        </div>
+          )}
+
+          {notice && (
+            <p className="text-sm text-muted-foreground rounded-lg bg-muted px-3 py-2">
+              {notice}
+            </p>
+          )}
+
+          {forbidden ? (
+            <p className="text-sm text-muted-foreground">
+              只有租户管理员可以查看所有客户的定价数据。
+            </p>
+          ) : scope === "all" ? (
+            <PricingAllCustomersTable matrix={matrix} />
+          ) : (
+            <>
+              <AddOptionPanel
+                matrix={matrix}
+                busy={addingOption}
+                onSave={handleAddOption}
+              />
+              <PricingDataTable
+                matrix={matrix}
+                loading={isLoading}
+                savingKey={savingKey}
+                onSave={handleSave}
+                onReset={handleReset}
+                onNotice={setNotice}
+              />
+            </>
+          )}
+        </>
       )}
     </div>
   );

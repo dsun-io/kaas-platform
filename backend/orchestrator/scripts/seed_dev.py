@@ -202,28 +202,35 @@ for ptype, rows in POST_DATA.items():
 # ════════════════════════════════════════════════════════════════
 CUSTOMER_COST_ITEMS = []
 
-# 牛栏网成本（DEMO 数据 — 明显虚构值）
-COST_PER_KG = {
-    "2.0x1.8": 99.99,
-    "1.8x1.8": 99.99,
+# 牛栏网成本 —— 定价键 = 边丝径 × 镀锌量（与产品定义 field_fence.pricing_key 一致）。
+# 取值就是产品定义里的内联兜底成本（普锌 4.4 / 重镀锌 5.6 元/kg）。
+# 曾经这里写的是 99.99 虚构占位值 —— 那是**算价的输入**，虚构值会让报价
+# 「看起来正常、数字全错」，比报错危险；真实成本由 scripts/seed_pricing_data.py 维护。
+FIELD_FENCE_COST = {
+    ("2.0", "zinc_40"): 4.4,
+    ("2.0", "zinc_200"): 5.6,
+    ("2.5", "zinc_40"): 4.4,
+    ("2.5", "zinc_200"): 5.6,
 }
-for wd, ckg in COST_PER_KG.items():
-    # 找到匹配该丝径的所有 spec_hash
-    for spec in PRODUCT_SPECS:
-        if spec["product_category"] != "牛栏网":
-            continue
-        if spec["wire_diameter"] == wd:
-            CUSTOMER_COST_ITEMS.append({
-                "tenant_id": "lianjia",
-                "customer_id": "lianjia",
-                "product_category": "牛栏网",
-                "spec_hash": spec["spec_hash"],
-                "cost_type": "cost_per_kg",
-                "amount": ckg,
-                "unit": "kg",
-                "source": "demo",
-                "notes": f"Demo 数据: {wd} {ckg}元/kg（请通过 Admin API 录入真实数据）",
-            })
+for (de, coating_code), amount in FIELD_FENCE_COST.items():
+    pricing_key = f"de={de}|coating_code={coating_code}"
+    CUSTOMER_COST_ITEMS.append({
+        "tenant_id": "lianjia",
+        "customer_id": "lianjia",
+        "product_category": "牛栏网",
+        "spec_hash": f"field_fence:{pricing_key}",
+        "cost_type": "cost_per_kg",
+        "amount": amount,
+        "unit": "kg",
+        "source": "seed",
+        "product_spec_json": {
+            "kind": "pricing_key",
+            "product_key": "field_fence",
+            "pricing_key": pricing_key,
+            "values": {"de": de, "coating_code": coating_code},
+        },
+        "notes": "牛栏网基准成本（与产品定义内联兜底值一致）",
+    })
 
 # 立柱成本（DEMO 数据）
 for ptype, rows in POST_DATA.items():

@@ -5,7 +5,7 @@
 - POST   /api/v1/customers                 新建客户
 - GET    /api/v1/customers/{id}            客户详情（联系人 + 询盘 + 阶段日志）
 - PATCH  /api/v1/customers/{id}            更新档案
-- POST   /api/v1/customers/{id}/stage      变更阶段（won/lost 触发询盘二次确认流程）
+- PATCH  /api/v1/customers/{id}/stage      变更阶段（won/lost 触发询盘二次确认流程）
 - POST   /api/v1/customers/{id}/contacts   新建联系人
 - GET    /api/v1/customers/{id}/inquiries  客户询盘列表（时间倒序）
 - POST   /api/v1/customers/{id}/inquiries  新建询盘（lead 客户自动进 inquiry 阶段）
@@ -299,7 +299,7 @@ async def update_customer(
 
 # ── 阶段变更（§10.1 二次确认）───────────────────────────────────────────────
 
-@router.post("/customers/{customer_id}/stage")
+@router.patch("/customers/{customer_id}/stage")
 async def change_stage(
     customer_id: int,
     body: StageChange,

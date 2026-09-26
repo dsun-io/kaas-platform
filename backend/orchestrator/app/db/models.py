@@ -128,6 +128,68 @@ class CustomerPricingProfile(Base):
     )
 
 
+class CustomerQuoteProfile(Base):
+    """客户报价税率档案 —— 「这个客户填过的那套税率，下次一键套用」。
+
+    只装**税率类**参数（进项票税点 / 销项税率 / 出口退税率 / 印花税率 + 基数），
+    外加它当时绑定的**法定税务档案编号**。
+
+    为什么必须连 rate_set_code 一起存
+    ---------------------------------
+    报价页把「法定税务档案」和「客户档案」放在同一个下拉里（业务选择：并入现有下拉），
+    所以选中某份客户档案时，法定档案也必须跟着切回它当时那一份。
+    否则「客户档案 + 另一份法定档案」会算出一个谁都没确认过的组合 ——
+    而且金额看起来完全正常，没人会发现。
+
+    为什么另建一张表，不去用 customer_pricing_profiles
+    ------------------------------------------------
+    那张旧表是 INT-R3 时代的模型（三档加价倍率 + 单一税点），**仍被旧线性流水线
+    读取**（services/quote_engine → niulanwang_pricing → get_current_profile）。
+    若把新模型的行插进去，那条老路径会按「加价倍率」解读它们 ——
+    读到 null / 垃圾值继续算，不报错、不告警。分开两张表，各自服务各自的模型。
+
+    tax_overrides 用 JSONB 而非展开成列
+    ----------------------------------
+    它是**报价政策的一份覆盖**，形状与 policy 保持一致，引擎消费的本来就是个 dict。
+    税率项还在增加（以后可能加消费税等），展开成列会让每加一项都动一次迁移。
+    代价是键名没有数据库层约束 —— 所以在 API 写入时按白名单校验，不让错键进库。
+    """
+    __tablename__ = "customer_quote_profiles"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    customer_id = Column(Text, nullable=False)
+    # 用引擎的产品 key（如 field_fence），不用中文名 —— 全链路一个标识，避免两套对不上
+    product_key = Column(Text, nullable=False)
+    profile_name = Column(Text, nullable=False)
+    # 当时绑定的法定税务档案（如 CN-2026-09）；选中本档案时一并切过去
+    rate_set_code = Column(Text, nullable=False)
+    # 税率覆盖项，见 API 层的白名单
+    tax_overrides = Column(JSONB, nullable=False, default=dict)
+    status = Column(Text, nullable=False, default="active")
+    source = Column(Text, nullable=False, default="manual")
+    created_by = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    # onupdate：改名/改内容时由 SQLAlchemy 自动刷成 now()。
+    # 不能靠 server_default —— 那只作用于 INSERT，UPDATE 时不会变。
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        Index(
+            "idx_quote_profile_lookup",
+            "tenant_id",
+            "customer_id",
+            "product_key",
+            "status",
+        ),
+    )
+
+
 class CustomerFreightRate(Base):
     """客户私有运费表（INT-R3 §1.5）"""
     __tablename__ = "customer_freight_rates"

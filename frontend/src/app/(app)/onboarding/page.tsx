@@ -46,13 +46,13 @@ export default function OnboardingPage() {
             <div>
               <CardTitle className="text-lg">录入规格与成本</CardTitle>
               <CardDescription>
-                在报价数据页面录入您的产品规格和成本价。系统将基于您的数据生成报价，不会使用其他客户的数据。
+                在「报价」工位的「定价数据」里录入您的成本价。系统将基于您的数据生成报价，不会使用其他客户的数据。
               </CardDescription>
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          <Link href="/pricing-data">
+          <Link href="/quotes?tab=pricing">
             <Button className="gap-2">
               <Database className="size-4" />
               去录入报价数据
@@ -77,7 +77,7 @@ export default function OnboardingPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <Link href="/quotations/v2-quote">
+          <Link href="/quotes?tab=product">
             <Button variant="outline" className="gap-2">
               <Calculator className="size-4" />
               智能报价

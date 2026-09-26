@@ -51,14 +51,41 @@ feature/intel-workstation-v1   05718bd   ← 部署分支（push 触发 CI 部�
 | **线上后端** | `backend/worker/src/main.py` | — | 线上真实运行的是它 |
 | **开发后端** | `backend/orchestrator/app/api/*.py` | — | 开发环境运行 |
 | **共享业务逻辑** | `backend/kaas_common/`（新建，唯一源） | 两侧各手写一份（历史做法） | 收敛方案 §3 |
-| **报价引擎** | `backend/orchestrator/app/api/export_quote.py`（`/export-quote/*`，9 个接口） | — | 提交 `cc89b3b`/`d918214` 引入；前端 v2-quote 在用 |
+| **报价引擎** | `backend/orchestrator/app/api/export_quote.py`（`/export-quote/*`，14 个接口） | — | 提交 `cc89b3b`/`d918214` 引入；前端 v2-quote 在用 |
+| **客户税率档案** | `backend/orchestrator/app/api/quote_profiles.py`（`/api/v1/quote-profiles`，4 个接口）+ 表 `customer_quote_profiles` | ⛔ 旧表 `customer_pricing_profiles`（三档加价倍率 + 单一税点）**仍被旧线性流水线读**，不要写 | 2026-09-27 新增；见下方说明 |
 | **报价历史** | `backend/orchestrator/app/api/quotations_api.py`（`/api/v1/quotations`） | — | 前端 `use-quotations.ts` 在用；线上也有 |
 | **旧报价 CRUD** | — | ⛔ `backend/orchestrator/app/api/quotes.py`（5 个 `/quotes` 接口，9.4KB） | **前端零调用 + 线上无此路由** → 遗留 |
 | **规格向导** | `quote_wizard.py`（`/spec/wizard/*`） | 注意它**名字有误导性**：不是报价接口 | 路由 prefix 实为 `/api/v1/spec/wizard` |
 | **规格体系（权威）** | 后端 `app/services/export_quote/products/field_fence.py` + `GET /export-quote/products/{key}/formulas` | 旧扁平模型（见 §4） | `niulanwang.ts` 注释明确"运行时权威来源仍是后端" |
 | **前端共享组件** | `frontend/src/components/shared/stat-card.tsx` | ⛔ `app/(app)/dashboard/components/stat-card.tsx`（孤儿，重复实现） | 死代码检测（§5） |
 | **认证** | 线上 `POST /auth/login`（worker 有） | ⚠️ `POST /auth/register`、`POST /auth/logout` 线上**没有** | 路由审计 |
-| **报价计算（前端调用）** | 应为 `/export-quote/calculate` | ⛔ `POST /quote`（**两边后端都不存在**） | 见 §6 |
+| **报价计算（前端调用）** | ✅ `/export-quote/calculate`（客户视图）/ `/export-quote/calculate-internal`（内部视图），见 `use-export-quote-calc.ts` | — | 已于报价工位重写时改正（原为 ⛔ `POST /quote`，两边后端都不存在） |
+
+### 3.1 两个「档案」不是一回事（2026-09-27 起）
+
+报价页里叫「档案」的东西有**两层**，现在在同一个下拉里，但归属完全不同：
+
+| | 法定税务档案 | 客户税率档案 |
+|---|---|---|
+| 是什么 | 国家政策：销项税率、印花税率、按 HS 编码的出口退税率 | 这个客户自己填的那套税率 |
+| 谁维护 | 平台（`services/export_quote/rate_sets/*.yaml`） | 用户（界面上自己存、自己起名） |
+| 粒度 | 全国一份，按生效日期版本化 | 每个**客户 + 产品**一份，可存多份 |
+| 变动 | 政策变一次新增一份，从不改旧文件 | 随时增删 |
+| 存储 | yaml 文件（只读） | 表 `customer_quote_profiles` |
+
+**为什么客户档案必须记住它绑定的法定档案编号**：两层在同一个下拉里一起选，
+只套税率不切法定档案的话，「客户档案 + 另一份法定档案」会算出一个谁都没确认过的组合，
+而金额看着完全正常。
+
+**为什么另建一张表而不用 `customer_pricing_profiles`**：那张旧表是 INT-R3 时代的模型
+（三档加价倍率 + 单一税点），**且仍有一条活的读取路径** ——
+`services/quote_engine` → `services/niulanwang_pricing` → `repositories.pricing_profiles_repo.get_current_profile`。
+把新模型的行插进去，那条老路径会按「加价倍率」解读它们，读到 null / 垃圾值继续算，
+**不报错也不告警**。所以两张表分开，各自服务各自的模型。
+
+**档案不是一条新的算价路径**：套用档案做的事就是「把表单填好」，
+与用户手敲一遍的结果逐字段相同，引擎收到的仍然是 `rate_set_code` + `policy` 覆盖。
+这条约束保证「用档案算出来的价」与「手填算出来的价」不可能分叉。
 
 ---
 

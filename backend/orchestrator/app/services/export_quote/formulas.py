@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .models import FormulaSpec, ProductSpec
+from .models import FormulaSpec, ProductSpec, pricing_key_value
 from .numeric import DECIMAL
 
 
@@ -41,7 +41,11 @@ def _axis_row(ax) -> dict:
         "label": ax.label or ax.name,
         "label_en": ax.label_en,
         "kind": "axis",
-        "options": [{"value": o} for o in ax.options],
+        # value = 参与计算的原始取值（保持数字类型）；
+        # label = 给人看的写法。两者**不能合并**：数值过一遍 JSON 会把
+        # 2.0 变成 2，而业务要看到的是 2.0；位数的权威写法就是产品定义里
+        # 怎么写的（这里写 2.0）→ str(2.0) = "2.0"。
+        "options": [{"value": o, "label": str(o)} for o in ax.options],
     }
 
 
@@ -124,6 +128,83 @@ def describe_params(product: ProductSpec) -> list[dict]:
     return out
 
 
+def describe_piece_inputs(product: ProductSpec) -> list[dict]:
+    """数量区可按件改写的规格参数声明。
+
+    只给**映射关系**（属性名 + 所属变体组），默认值由界面从「当前选中项」的
+    属性里取，改完回写成 variant_overrides —— 属性名与取值始终留在产品数据里，
+    界面不写死任何产品知识。
+
+    单位信息一并给界面：`unit` 是引擎内部单位，`ui_unit` / `ui_scale` 是界面呈现与
+    输入用的（界面值 = 引擎值 × ui_scale）。界面只负责换算，不拥有业务单位知识。
+    """
+    return [
+        {
+            "key": pi.key,
+            "label": pi.label or pi.key,
+            "label_en": pi.label_en,
+            "unit": pi.unit,
+            "ui_unit": pi.ui_unit or pi.unit,
+            "ui_scale": pi.ui_scale,
+            "variant": pi.variant,
+            "note": pi.note,
+            "unit_quantity": pi.unit_quantity,
+        }
+        for pi in product.piece_inputs
+    ]
+
+
+def describe_pricing_key(product: ProductSpec) -> list[dict]:
+    """定价键的维度声明 + 每一维的取值清单（给界面画「定价数据」矩阵用）。
+
+    维度与取值全部来自产品定义，界面不写死任何产品知识 —— 换个产品、改个档位，
+    定价页自动跟着变。
+
+    每一维形如::
+
+        {"field": "de", "label": "边丝径", "unit": "mm",
+         "options": [{"value": 2.0, "label": "2.0"}, ...]}
+
+    `value` 是拼查价键用的稳定值，`label` 是给人看的名字。
+    取值为空的维度会被跳过（界面上就少一列，而不是画出一列空列）。
+    """
+    axis_map = {ax.name: ax for ax in product.axes}
+    dims: list[dict] = []
+    for dim in (product.pricing_key or []):
+        field = dim.get("field")
+        if not field:
+            continue
+        options: list[dict] = []
+        if field in axis_map:
+            # value 用**规范写法**（2.0 → "2"），label 仍给人看（"2.0"）。
+            # 两边必须是同一把钥匙：界面拿 value 回传、引擎拿取值拼键，
+            # 写法不一致就会出现「存进去了但查不到」。
+            options = [
+                {"value": pricing_key_value(v), "label": str(v)}
+                for v in axis_map[field].options
+            ]
+        else:
+            for vg in product.variants:
+                if field == vg.name:
+                    options = [{"value": o.get("name"), "label": o.get("name")} for o in vg.options]
+                    break
+                if field == f"{vg.name}_code":
+                    options = [
+                        {"value": o.get("code"), "label": o.get("name") or o.get("code")}
+                        for o in vg.options
+                    ]
+                    break
+        if not options:
+            continue
+        dims.append({
+            "field": field,
+            "label": dim.get("label") or field,
+            "unit": dim.get("unit", ""),
+            "options": options,
+        })
+    return dims
+
+
 def describe_product(product: ProductSpec, with_columns: bool = False) -> dict:
     """一份产品的完整计算说明书。"""
     payload = {
@@ -142,6 +223,8 @@ def describe_product(product: ProductSpec, with_columns: bool = False) -> dict:
             ),
         },
         "space": describe_space(product),
+        "piece_inputs": describe_piece_inputs(product),
+        "pricing_key": describe_pricing_key(product),
         "calculations": describe_calculations(product),
         "space_deduction": describe_deduction(product),
         "invariants": describe_invariants(product),

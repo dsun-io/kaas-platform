@@ -25,6 +25,7 @@ from ..models import (
     FormulaSpec,
     Invariant,
     OrderSpec,
+    PieceInput,
     ProductSpec,
     SpaceDeduction,
     VariantGroup,
@@ -34,7 +35,7 @@ from . import register
 # ── 固定参数 ────────────────────────────────────────────────────────────────
 HORIZONTAL_WIRE_COUNT = 10  # 横丝（径丝）根数 n
 WAVE_ADD_PER_100M = 3  # 波弯款每 100 米增重 kg
-ROLL_LEN_SHORT = 50  # 全丝 2.5 用 50 米卷
+ROLL_LEN_SHORT = 50  # 内丝 2.5 用 50 米卷（卷长跟随内丝径）
 ROLL_LEN_LONG = 100
 ROLL_DIA_SHORT = 0.25  # 50 米卷卷径 m
 ROLL_DIA_LONG = 0.30  # 100 米卷卷径 m
@@ -55,6 +56,13 @@ def build_spec() -> ProductSpec:
         cost_unit="CNY/kg",
         hs_codes=list(HS_CODES),
 
+        # 定价键：成本只随「边丝径 × 镀锌量」变，与网高/网孔无关 → 2×2 = 4 行定价数据。
+        # 下面是**内联兜底值**：客户在「定价数据」里没配过的组合，用这里的 raw_price。
+        pricing_key=[
+            {"field": "de", "label": "边丝径", "unit": "mm"},
+            {"field": "coating_code", "label": "镀锌量", "label_field": "coating"},
+        ],
+
         constants={
             "n": HORIZONTAL_WIRE_COUNT,
             "product_name": "牛栏网",
@@ -72,27 +80,32 @@ def build_spec() -> ProductSpec:
         axes=[
             Axis("height_m", (1.2, 1.5), "网高(m)", "Net Height (m)"),
             Axis("mesh_mm", (100, 150), "竖丝间距(mm)", "Vertical Wire Spacing (mm)"),
+            # 边丝径：与「内丝径」分开选择。
+            # 变量名沿用 de —— 重量与边丝重公式里用的就是 de，改名会牽动全部公式。
+
+            Axis("de", (2.0, 2.5), "边丝径(mm)", "Edge Wire Dia. (mm)"),
         ],
 
         # 关联属性：一选全变
         variants=[
             VariantGroup(
-                "wire",
+                "inner_wire",
                 (
+                    # 内丝径一次选定即确定：内横丝径 dm、竖丝径 dv、卷长、卷径。
+                    # 口径依据（与原有 3 套丝径方案等价）：
+                    #   · 内横丝与竖丝总是同值 → 合成一个「内丝」
+                    #   · 卷长/卷径**跟随内丝**：内丝 2.0 → 100m 卷 / 30cm 卷径；
+                    #     内丝 2.5 → 50m 卷 / 25cm 卷径
                     # code 与 DB 迁移里的 value_code 一致（spec_attribute_values.value_code），
                     # 这样「产品定义 ↔ 数据库 ↔ 表格导入」共用同一套标识，不会各写各的
-                    {"code": "all_wire_20", "name": "全丝2.0", "de": 2.0, "dm": 2.0, "dv": 2.0,
+                    {"code": "inner_20", "name": "内丝2.0", "dm": 2.0, "dv": 2.0,
                      "roll_len_m": ROLL_LEN_LONG, "roll_dia_m": ROLL_DIA_LONG,
-                     "name_en": "All wires 2.0"},
-                    {"code": "all_wire_25", "name": "全丝2.5", "de": 2.5, "dm": 2.5, "dv": 2.5,
+                     "name_en": "Inner 2.0"},
+                    {"code": "inner_25", "name": "内丝2.5", "dm": 2.5, "dv": 2.5,
                      "roll_len_m": ROLL_LEN_SHORT, "roll_dia_m": ROLL_DIA_SHORT,
-                     "name_en": "All wires 2.5"},
-                    {"code": "edge25_inner20", "name": "边丝2.5+内丝2.0", "de": 2.5, "dm": 2.0,
-                     "dv": 2.0,
-                     "roll_len_m": ROLL_LEN_LONG, "roll_dia_m": ROLL_DIA_LONG,
-                     "name_en": "Edge 2.5 + inner 2.0"},
+                     "name_en": "Inner 2.5"},
                 ),
-                "丝径方案", "Wire Diameter Option",
+                "内丝径", "Inner Wire Diameter",
             ),
             VariantGroup(
                 "coating",
@@ -276,10 +289,12 @@ def build_spec() -> ProductSpec:
             Column("spec.height_m", "网高(m)", "Net Height (m)", width=10),
             Column("derived.mesh_cm", "竖丝间距(cm)", "Vertical Wire Spacing (cm)", width=14),
             Column("derived.wire_count", "横丝数(根)", "No. of Horizontal Wires", width=12),
-            Column("spec.wire", "丝径方案", "Wire Diameter Option", width=18),
-            Column("spec.de", "边丝径(mm)", "Edge Wire Dia. (mm)", width=12),
-            Column("spec.dm", "内横丝径(mm)", "Inner Horizontal Wire Dia. (mm)", width=15),
-            Column("spec.dv", "竖丝径(mm)", "Vertical Wire Dia. (mm)", width=12),
+            # 丝径类列统一 1 位小数：写成 2.0 而不是 2 —— 工厂口径就是一位小数，
+            # 位数写在产品定义里，界面不自己判断“哪个是丝径”。
+            Column("spec.de", "边丝径(mm)", "Edge Wire Dia. (mm)", 1, width=12),
+            Column("spec.inner_wire", "内丝径", "Inner Wire Dia.", width=13),
+            Column("spec.dm", "内横丝径(mm)", "Inner Horizontal Wire Dia. (mm)", 1, width=15),
+            Column("spec.dv", "竖丝径(mm)", "Vertical Wire Dia. (mm)", 1, width=12),
             Column("spec.wave", "工艺", "Wave Bend", width=10),
             Column("spec.surface_treatment", "表面处理", "Surface Treatment", width=10),
             Column("spec.coating", "镀锌量", "Zinc Coating", width=18),
@@ -336,6 +351,29 @@ def build_spec() -> ProductSpec:
              "每卷按**长方体**累计后扣减 2~3 m³，取中位数 2.5；每单只扣一次"],
             ["卷径", "30（100米卷）/ 25（50米卷）", "cm",
              "随丝径方案联动的默认值；可用 variant_overrides 覆盖"],
+        ],
+
+        # 可按件改写的规格参数 —— 界面「数量区」据此渲染输入框，改完回写成
+        # variant_overrides；属性名与默认值始终留在本文件，界面不写死产品知识。
+        # 卷长与卷径**必须成对维护**：卷径决定体积（π/4 × 卷径² × 网高），
+        # 而体积是对外报运价/报关的口径，只改卷长不改卷径会把体积算错。
+        piece_inputs=[
+            PieceInput(
+                key="roll_len_m", variant="inner_wire",
+                label="单件米数", label_en="Length per Roll", unit="m",
+                unit_quantity=True,
+                note="每卷多少米（即「卷长」）。默认随内丝径联动"
+                     "（内丝2.0 → 100m、内丝2.5 → 50m），可改。"
+                     "它直接进重量公式，所以改了会连带改变重量、体积与单价。",
+            ),
+            PieceInput(
+                key="roll_dia_m", variant="inner_wire",
+                label="卷径", label_en="Roll Diameter",
+                unit="m", ui_unit="公分", ui_scale=100,
+                note="决定单卷占用体积（π/4 × 卷径² × 网高），是对外报运价/报关的口径。"
+                     "默认随内丝径联动（100米卷 30 公分、50米卷 25 公分），可改。"
+                     "与「单件米数」是同一件物理规格的两个面，改一个务必检查另一个。",
+            ),
         ],
 
         notes=[

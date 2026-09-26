@@ -20,7 +20,6 @@ effective_to: null
 source: "示例档案：用于演示政策变化时如何切换，数值非官方"
 
 vat:
-  levy_rate: 0.12             # 征税率 13% → 12%
   output_rate_default: 0.12   # 销项税率随之调整
   output_rate_export: 0.00
   output_rate_reduced: 0.09

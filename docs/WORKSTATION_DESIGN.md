@@ -358,7 +358,7 @@ backend/orchestrator/app/services/export_quote/
 ├── engine.py     组装：规格展开 → 派生 → 价链 → 术语 → 指标 → 列投影
 ├── verify.py     三遍交叉核验 + 关系式 + 阶梯 + 档案自检
 ├── report.py     xlsx / csv / dict（内部与客户双投影）
-├── products/     产品知识（牛栏网、焊管），引擎本身不认识任何产品
+├── products/     产品知识（牛栏网），引擎本身不认识任何产品
 └── rate_sets/    税务档案 yaml（带生效日期）
 ```
 

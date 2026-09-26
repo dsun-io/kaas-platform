@@ -1,12 +1,12 @@
 """出口报价引擎测试：规格展开、价链落地、订单指标、术语阶梯、三遍核验。
 
 锁定的事实：
-  · 牛栏网 3 丝径 × 2 镀锌 × 2 工艺 × 2 网高 × 2 竖丝间距 = 48 个组合
+  · 牛栏网 2 边丝径 × 2 内丝径 × 2 镀锌 × 2 工艺 × 2 网高 × 2 竖丝间距 = 64 个组合
   · 单卷售价 × 卷数 = 总价，且 每米价 × 总米数 = 总价，两者必须同时成立
   · 实际占用体积 = 长方体体积 − 2.5 m³（2~3 取中位数）
   · 报价有效期 7 天
   · 核验必须**抓得住**被篡改的数值 —— 发现不了错误的核验等于没有核验
-  · 换产品只换产品类，引擎一行不改（用焊管反证通用性）
+  · 换产品只换产品类，引擎一行不改（用内联探针 spec 反证通用性）
 """
 from datetime import date, timedelta
 from decimal import Decimal
@@ -29,7 +29,8 @@ from app.services.export_quote import (
     verify_roundtrip,
     verify_terms,
 )
-from app.services.export_quote.products import field_fence, welded_pipe
+from app.services.export_quote.models import Axis, ProductSpec, VariantGroup
+from app.services.export_quote.products import field_fence
 from app.services.export_quote.rates import normalize_hs
 from app.services.export_quote.report import build_customer_view, build_internal_view, write_csv, write_xlsx
 
@@ -45,7 +46,7 @@ def policy(**kw):
         "input_vat_rate": 0.10,
         "output_vat": {"rate": 0.0, "mode": "additive"},
         "profit": {"mode": "fixed", "value": 0.1},
-        "refund": {"refund_ratio": "auto", "give_ratio": 0.8, "levy_rate": 0.13},
+        "refund": {"refund_ratio": "auto", "give_ratio": 0.8},
         "stamp": {"rate": 0.05, "base": "profit"},
     }
 
@@ -77,39 +78,48 @@ def result():
 # ─────────────────────────────────────────────────────────────────────────────
 class TestSpecExpansion:
     def test_field_fence_has_48_combinations(self):
-        assert len(expand_specs(field_fence.build_spec())) == 3 * 2 * 2 * 2 * 2
+        assert len(expand_specs(field_fence.build_spec())) == 2 * 2 * 2 * 2 * 2 * 2
 
     def test_every_axis_is_covered_exactly_once(self, result):
         combos = [
             (
                 r.spec["height_m"],
                 r.spec["mesh_mm"],
-                r.spec["wire"],
+                r.spec["de"],
+                r.spec["inner_wire"],
                 r.spec["coating"],
                 r.spec["wave"],
             )
             for r in result.rows
         ]
-        assert len(set(combos)) == 48, "组合必须充分排列且不重复"
+        assert len(set(combos)) == 64, "组合必须充分排列且不重复"
 
-    def test_engine_is_product_agnostic(self, result):
-        """同一套引擎跑焊管，不需要改引擎代码。"""
-        pipe = build(
-            QuoteRequest(
-                product_key="welded_pipe",
-                policy=result.request.policy,
-                fx_rate=D("6.7019"),
-                orders=welded_pipe.build_spec().order_metrics and [
-                    __import__(
-                        "app.services.export_quote.models", fromlist=["OrderSpec"]
-                    ).OrderSpec(name="o1", total=1000, unit="m", label="1000米")
-                ],
-                rate_set=result.request.rate_set,
-                quote_date=date(2026, 9, 24),
-            )
+    def test_engine_is_product_agnostic(self):
+        """引擎只认 ProductSpec、不认识任何具体产品：换一份 spec 就能展开，引擎代码一行不改。
+
+        用**测试内联的探针 spec** 验证通用性（不注册进产品表）——
+        产品表里只放真实产品，不为了验证而挂一个假产品（假产品会漏进业务的产品清单）。
+        """
+        probe = ProductSpec(
+            key="__engine_probe__",
+            name="通用性探针",
+            cost_field="cost_per_kg",
+            axes=[Axis("length_m", (6, 12), "定尺(m)", "Length (m)")],
+            variants=[
+                VariantGroup(
+                    "size",
+                    (
+                        {"name": "A", "od_mm": 32, "cost_per_kg": 4.0},
+                        {"name": "B", "od_mm": 48, "cost_per_kg": 3.9},
+                        {"name": "C", "od_mm": 60, "cost_per_kg": 3.8},
+                    ),
+                    "规格",
+                    "Size",
+                )
+            ],
         )
-        assert pipe.combo_count > 0
-        assert "field_fence" in product_keys() and "welded_pipe" in product_keys()
+        assert len(expand_specs(probe)) == 2 * 3, "引擎应按 spec 展开，与具体产品无关"
+        assert "__engine_probe__" not in product_keys(), "探针不得进入产品表"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -176,8 +186,10 @@ class TestPieceAndOrderMetrics:
             (a, b)
             for a in r.rows if a.spec["wave"] == "无波款"
             for b in r.rows if b.spec["wave"] == "波弯款"
-            if (a.spec["height_m"], a.spec["mesh_mm"], a.spec["wire"], a.spec["coating"])
-            == (b.spec["height_m"], b.spec["mesh_mm"], b.spec["wire"], b.spec["coating"])
+            if (a.spec["height_m"], a.spec["mesh_mm"], a.spec["de"],
+                a.spec["inner_wire"], a.spec["coating"])
+            == (b.spec["height_m"], b.spec["mesh_mm"], b.spec["de"],
+                b.spec["inner_wire"], b.spec["coating"])
         ]
         assert same, "找不到同规格的波弯/无波配对"
         for a, b in same:
@@ -190,7 +202,7 @@ class TestPieceAndOrderMetrics:
 
     def test_roll_length_by_wire_option(self, result):
         for r in result.rows:
-            want = 50 if r.spec["wire"] == "全丝2.5" else 100
+            want = 50 if r.spec["inner_wire"] == "内丝2.5" else 100
             assert r.spec["roll_len_m"] == want
 
     def test_volume_is_box_minus_median_deduction(self, result):
@@ -437,7 +449,7 @@ class TestViews:
     def test_customer_view_row_and_column_shape(self, result):
         view = build_customer_view(result)
         header = view["header"]
-        assert len(view["rows"]) == 48
+        assert len(view["rows"]) == 64
         assert all(len(row) == len(header) for row in view["rows"])
 
     def test_customer_view_has_bilingual_headers(self, result):

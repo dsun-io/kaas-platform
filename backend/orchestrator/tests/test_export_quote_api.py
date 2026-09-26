@@ -18,6 +18,48 @@ BASE = "/api/v1/export-quote"
 ADMIN = {"X-Test-Role": "admin"}
 
 
+@pytest.fixture(autouse=True)
+def _no_customer_pricing_data():
+    """让报价接口在单测里读到「这个客户还没配过定价数据」。
+
+    计算接口会按「当前客户 + 产品定价键」去查客户成本表；单测不应该依赖真实数据库，
+    所以这里用一个返回空结果集的会话替身 —— 语义上等价于**客户未配置定价数据**，
+    此时引擎按设计回退到产品定义里的兜底成本，报价结果与配置前逐分钱一致。
+
+    注意：不要把它换成「查库失败就当没配」—— 那样数据库故障会静默变成
+    用兜底成本报价，属于拿错价当真价，比报错危险得多。
+    """
+    from app.db.session import get_db_session
+    from app.main import app
+
+    class _EmptyScalars:
+        def all(self):
+            return []
+
+    class _EmptyResult:
+        def scalars(self):
+            return _EmptyScalars()
+
+    class _StubSession:
+        async def execute(self, *_args, **_kwargs):
+            return _EmptyResult()
+
+        async def commit(self):
+            return None
+
+        async def rollback(self):
+            return None
+
+    async def _override():
+        yield _StubSession()
+
+    app.dependency_overrides[get_db_session] = _override
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(get_db_session, None)
+
+
 def payload(**kw) -> dict:
     body = {
         "product_key": "field_fence",
@@ -47,9 +89,11 @@ class TestMeta:
         assert r.status_code == 200
         data = r.json()
         keys = {p["key"] for p in data["products"]}
-        assert {"field_fence", "welded_pipe"} <= keys
+        # 产品表只放真实业务产品；焊管（原「引擎通用性验证样本」）已移除
+        assert {"field_fence"} <= keys
+        assert "welded_pipe" not in keys
         fence = next(p for p in data["products"] if p["key"] == "field_fence")
-        assert fence["combo_count"] == 48
+        assert fence["combo_count"] == 64
         assert fence["hs_codes"]
 
     async def test_rate_sets_are_listed_with_warnings(self, async_client):
@@ -61,7 +105,9 @@ class TestMeta:
         # 示例档案不得出现在生产档案列表里
         assert "CN-2027-01" not in codes
         rs = next(x for x in data["rate_sets"] if x["code"] == "CN-2026-09")
-        assert rs["levy_rate"] == 0.13
+        # 征税率已从设计上删除（它曾错误地被当成退税比例的分母），接口不得再返回
+        assert "levy_rate" not in rs
+        assert rs["output_rate_export"] == 0.0
         assert rs["stamp_duty"] == {"rate": 0.05, "base": "profit"}
 
     async def test_reload_requires_admin(self, async_client):
@@ -227,7 +273,7 @@ class TestFormulasEndpoints:
         r = await async_client.get(f"{BASE}/products/field_fence/formulas")
         assert r.status_code == 200
         d = r.json()
-        assert d["space"]["combo_count"] == 48
+        assert d["space"]["combo_count"] == 64
         calc = d["calculations"]
         assert calc["derived"] and calc["piece"] and calc["order"]
         # 每条都要有单位与口径说明，否则业务看不懂
@@ -256,7 +302,8 @@ class TestFormulasEndpoints:
     async def test_explain_step_by_step_reproduces_baseline(self, async_client):
         r = await async_client.post(
             f"{BASE}/products/field_fence/explain",
-            json={"spec": {"height_m": 1.2, "mesh_mm": 100, "wire": "全丝2.0",
+            json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2.0,
+                           "inner_wire": "内丝2.0",
                            "coating": "普锌40g/㎡", "wave": "无波款"},
                   "total": 30000},
         )
@@ -274,7 +321,8 @@ class TestFormulasEndpoints:
     async def test_explain_wave_adds_three_kg_on_100m_roll(self, async_client):
         r = await async_client.post(
             f"{BASE}/products/field_fence/explain",
-            json={"spec": {"height_m": 1.2, "mesh_mm": 100, "wire": "全丝2.0",
+            json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2.0,
+                           "inner_wire": "内丝2.0",
                            "coating": "普锌40g/㎡", "wave": "波弯款"},
                   "total": 30000},
         )
@@ -285,7 +333,8 @@ class TestFormulasEndpoints:
     async def test_explain_wave_adds_only_1_5kg_on_50m_roll(self, async_client):
         r = await async_client.post(
             f"{BASE}/products/field_fence/explain",
-            json={"spec": {"height_m": 1.2, "mesh_mm": 100, "wire": "全丝2.5",
+            json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2.5,
+                           "inner_wire": "内丝2.5",
                            "coating": "普锌40g/㎡", "wave": "波弯款"},
                   "total": 30000},
         )
@@ -297,7 +346,8 @@ class TestFormulasEndpoints:
         """只取几个量时，依赖项仍须求值，否则下游是空。"""
         r = await async_client.post(
             f"{BASE}/products/field_fence/explain",
-            json={"spec": {"height_m": 1.2, "mesh_mm": 100, "wire": "全丝2.0",
+            json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2.0,
+                           "inner_wire": "内丝2.0",
                            "coating": "普锌40g/㎡", "wave": "无波款"},
                   "total": 30000,
                   "metrics": ["volume_effective_m3", "wave_add_kg"]},
@@ -311,7 +361,8 @@ class TestFormulasEndpoints:
         """价格类量不在本接口算 —— 给 0 会让人误以为价格是 0。"""
         r = await async_client.post(
             f"{BASE}/products/field_fence/explain",
-            json={"spec": {"height_m": 1.2, "mesh_mm": 100, "wire": "全丝2.0",
+            json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2,
+                           "inner_wire": "内丝2.0",
                            "coating": "普锌40g/㎡", "wave": "无波款"}},
         )
         j = r.json()
@@ -332,7 +383,8 @@ class TestFormulasEndpoints:
     async def test_explain_unknown_variant_is_400(self, async_client):
         r = await async_client.post(
             f"{BASE}/products/field_fence/explain",
-            json={"spec": {"height_m": 1.2, "mesh_mm": 100, "wire": "不存在",
+            json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2,
+                           "inner_wire": "不存在",
                            "coating": "普锌40g/㎡", "wave": "无波款"}},
         )
         assert r.status_code == 400
@@ -342,7 +394,8 @@ class TestFormulasEndpoints:
         """解释口径不涉及成本利润，普通用户即可调用。"""
         r = await async_client.post(
             f"{BASE}/products/field_fence/explain",
-            json={"spec": {"height_m": 1.2, "mesh_mm": 100, "wire": "全丝2.0",
+            json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2,
+                           "inner_wire": "内丝2.0",
                            "coating": "普锌40g/㎡", "wave": "无波款"}},
         )
         assert r.status_code == 200

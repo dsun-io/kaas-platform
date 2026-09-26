@@ -87,7 +87,6 @@ class RateSet:
     effective_to: date | None = None
     source: str = ""
 
-    levy_rate: Any = None  # 征税率（法定增值税率）
     output_rate_default: Any = None  # 默认销项税率
     output_rate_export: Any = 0  # 出口零税率
     output_rate_reduced: Any = None  # 低税率档
@@ -122,10 +121,6 @@ class RateSet:
 
     def warnings(self) -> list[str]:
         out: list[str] = []
-        if self.levy_rate is None:
-            out.append(f"档案 {self.code} 未配置 levy_rate（征税率）")
-        if self.levy_rate is not None and dec(self.levy_rate) <= 0:
-            out.append(f"档案 {self.code} 的征税率必须 > 0")
         if self.stamp_duty.rate is None:
             out.append(f"档案 {self.code} 未配置印花税率")
         if not self.rebate_by_hs and self.rebate_default is None:
@@ -165,7 +160,6 @@ def rate_set_from_dict(raw: Mapping[str, Any]) -> RateSet:
         effective_from=_as_date(raw.get("effective_from")),
         effective_to=_as_date(raw.get("effective_to")),
         source=str(raw.get("source") or ""),
-        levy_rate=vat.get("levy_rate"),
         output_rate_default=vat.get("output_rate_default"),
         output_rate_export=vat.get("output_rate_export", 0),
         output_rate_reduced=vat.get("output_rate_reduced"),

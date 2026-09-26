@@ -149,6 +149,64 @@ async def update_cost_item(
     return item
 
 
+# ── 定价键成本（「定价数据」页用的那套）─────────────────────────────────────
+# 与上面按规格字段算 hash 的老记录共存但不互相干扰：定价键记录的 spec_hash 形如
+# "field_fence:de=2.0|coating_code=zinc_40"，用产品前缀把它和老 hash 区分开。
+
+def _pricing_prefix(product_key: str) -> str:
+    return f"{product_key}:"
+
+
+async def list_pricing_key_items(
+    session: AsyncSession,
+    tenant_id: str,
+    customer_id: Optional[str],
+    product_key: str,
+) -> list[CustomerCostItem]:
+    """列出某产品下的定价键成本记录（按最新在前）。
+
+    customer_id=None 表示**不限定客户**（租户管理员视角：看到所有客户的配置）。
+    """
+    stmt = select(CustomerCostItem).where(
+        CustomerCostItem.tenant_id == tenant_id,
+        # autoescape=True 关键：产品 key 里的下划线（field_fence）在 LIKE 里是通配符，
+        # 不转义会把 fieldXfence 之类的键也捞进来。
+        CustomerCostItem.spec_hash.startswith(_pricing_prefix(product_key), autoescape=True),
+        CustomerCostItem.status == "active",
+    )
+    if customer_id is not None:
+        stmt = stmt.where(CustomerCostItem.customer_id == customer_id)
+    stmt = stmt.order_by(CustomerCostItem.id.desc())
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def deactivate_pricing_key_items(
+    session: AsyncSession,
+    tenant_id: str,
+    customer_id: str,
+    spec_hash: str,
+) -> int:
+    """把某客户某个定价键的旧版本置为 inactive（保留历史，不物理删除）。
+
+    没有这一步的话，同一个键会有多条 active，取「最新一条」就依赖时间排序，
+    一旦两条时间戳相同就会取到旧价 —— 显式停用旧版本可以彻底消除这种不确定性。
+    """
+    from sqlalchemy import update as sa_update
+
+    result = await session.execute(
+        sa_update(CustomerCostItem)
+        .where(
+            CustomerCostItem.tenant_id == tenant_id,
+            CustomerCostItem.customer_id == customer_id,
+            CustomerCostItem.spec_hash == spec_hash,
+            CustomerCostItem.status == "active",
+        )
+        .values(status="inactive")
+    )
+    return result.rowcount or 0
+
+
 async def soft_delete_cost_item(
     session: AsyncSession,
     item_id: int,
