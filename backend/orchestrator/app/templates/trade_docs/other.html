@@ -1,39 +1,49 @@
-﻿<!DOCTYPE html>
-<html lang="zh-CN">
+<!DOCTYPE html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>$title</title>
 <style>
-  @page { size: A4; margin: 15mm; }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: "Microsoft YaHei", "SimSun", Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #000; }
-  .container { max-width: 210mm; margin: 0 auto; padding: 10mm; }
-  .header { text-align: center; margin-bottom: 8mm; border-bottom: 2px solid #000; padding-bottom: 4mm; }
-  .header h1 { font-size: 18pt; font-weight: bold; }
-  .doc-info { text-align: right; margin-bottom: 6mm; font-size: 10pt; }
-  .content { margin: 6mm 0; }
-  .signature-section { margin-top: 20mm; text-align: right; }
-  .signature-line { border-top: 1px solid #000; margin-top: 18mm; padding-top: 2mm; width: 60mm; display: inline-block; text-align: center; }
+/*__SHARED_STYLE__*/
 </style>
 </head>
 <body>
-<div class="container">
-  <div class="header">
+<div class="doc">
+
+  <div class="lh">$seller</div>
+
+  <div class="title">
     <h1>$title</h1>
   </div>
 
-  <div class="doc-info">
-    <div>编号 No.: $doc_no</div>
-    <div>日期 Date: $doc_date</div>
-  </div>
+  <table class="meta">
+    <tr>
+      <td class="k">Document No.</td><td class="v">$doc_no</td>
+      <td class="k">Date</td><td class="v">$doc_date</td>
+    </tr>
+    <tr>
+      <td class="k">Invoice No.</td><td class="v">$invoice_no</td>
+      <td class="k">L/C No.</td><td class="v">$lc_no</td>
+    </tr>
+  </table>
 
-  <div class="content">
-    $content
-  </div>
+  <div class="certify">$content</div>
 
-  <div class="signature-section">
-    <div class="signature-line">签章 Signature & Stamp</div>
-  </div>
+  <table class="sign">
+    <tr>
+      <td style="width: 50%"></td>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">Authorised Signature &amp; Company Stamp</div>
+          <div class="stamp-hint">For and on behalf of $seller_name</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="foot">$footer_note</div>
+
 </div>
 </body>
 </html>

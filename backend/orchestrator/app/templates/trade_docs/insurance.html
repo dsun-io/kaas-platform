@@ -1,114 +1,103 @@
-﻿<!DOCTYPE html>
-<html lang="zh-CN">
+<!DOCTYPE html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>货物运输保险单 INSURANCE POLICY</title>
+<title>Insurance Policy - $policy_no</title>
 <style>
-  @page { size: A4; margin: 15mm; }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: "Microsoft YaHei", "SimSun", Arial, sans-serif; font-size: 10pt; line-height: 1.4; color: #000; }
-  .container { max-width: 210mm; margin: 0 auto; padding: 8mm; }
-  .header { text-align: center; margin-bottom: 5mm; border-bottom: 2px solid #000; padding-bottom: 3mm; }
-  .header h1 { font-size: 16pt; font-weight: bold; margin-bottom: 1mm; }
-  .header .en { font-size: 12pt; color: #333; }
-  .policy-no { text-align: right; margin-bottom: 3mm; }
-  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2mm 6mm; margin: 3mm 0; font-size: 10pt; }
-  .info-item { padding: 1mm 0; }
-  .info-label { font-weight: bold; font-size: 9pt; color: #333; }
-  .box { border: 1px solid #000; padding: 2mm; margin-bottom: 2mm; }
-  .box-title { font-weight: bold; font-size: 9pt; margin-bottom: 1mm; }
-  .goods-table { width: 100%; border-collapse: collapse; margin: 3mm 0; font-size: 10pt; }
-  .goods-table th, .goods-table td { border: 1px solid #000; padding: 2mm; }
-  .goods-table th { background: #f0f0f0; font-weight: bold; text-align: center; }
-  .amount-box { border: 2px solid #000; padding: 3mm; margin: 4mm 0; text-align: center; }
-  .amount-box .amount { font-size: 14pt; font-weight: bold; }
-  .clause { margin: 3mm 0; font-size: 9pt; line-height: 1.5; }
-  .signature { text-align: right; margin-top: 10mm; }
-  .signature-line { border-top: 1px solid #000; margin-top: 15mm; padding-top: 2mm; width: 60mm; display: inline-block; text-align: center; }
+/*__SHARED_STYLE__*/
 </style>
 </head>
 <body>
-<div class="container">
-  <div class="header">
-    <h1>货物运输保险单</h1>
-    <div class="en">CARGO TRANSPORTATION INSURANCE POLICY</div>
+<div class="doc">
+
+  <!--
+    重要：海运货物保险单由保险公司签发，出口商只能提交「投保单 / 投保信息」。
+    本模板输出投保信息，签发栏归保险公司，避免误当作已生效保单使用。
+  -->
+  <div class="title">
+    <h1>Insurance Policy</h1>
+    <div class="sub">Marine Cargo Transportation &mdash; To Be Issued by the Insurer</div>
   </div>
 
-  <div class="policy-no">
-    <strong>保单号 Policy No.:</strong> $policy_no
-  </div>
-
-  <div class="box">
-    <div class="box-title">被保险人 The Insured:</div>
-    $insured
-  </div>
-
-  <div class="info-grid">
-    <div class="info-item">
-      <div class="info-label">发票号 Invoice No.:</div>
-      $invoice_no
-    </div>
-    <div class="info-item">
-      <div class="info-label">合同号 Contract No.:</div>
-      $contract_no
-    </div>
-    <div class="info-item">
-      <div class="info-label">信用证号 L/C No.:</div>
-      $lc_no
-    </div>
-    <div class="info-item">
-      <div class="info-label">运输工具 Conveyance:</div>
-      $conveyance
-    </div>
-    <div class="info-item">
-      <div class="info-label">起运港 From:</div>
-      $port_of_loading
-    </div>
-    <div class="info-item">
-      <div class="info-label">目的港 To:</div>
-      $port_of_destination
-    </div>
-    <div class="info-item">
-      <div class="info-label">开航日期 Sailing Date:</div>
-      $sailing_date
-    </div>
-    <div class="info-item">
-      <div class="info-label">险别 Coverage:</div>
-      $coverage
-    </div>
-  </div>
-
-  <table class="goods-table">
-    <thead>
-      <tr>
-        <th>唛头 Marks & Nos.</th>
-        <th>数量 Quantity</th>
-        <th>货物描述 Description of Goods</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>$shipping_marks</td>
-        <td style="text-align:center">$quantity</td>
-        <td>$description_of_goods</td>
-      </tr>
-    </tbody>
+  <table class="meta">
+    <tr>
+      <td class="k">Policy No.</td><td class="v">$policy_no</td>
+      <td class="k">Invoice No.</td><td class="v">$invoice_no</td>
+    </tr>
+    <tr>
+      <td class="k">Contract No.</td><td class="v">$contract_no</td>
+      <td class="k">L/C No.</td><td class="v">$lc_no</td>
+    </tr>
+    <tr>
+      <td class="k">Currency</td><td class="v">$currency</td>
+      <td class="k">Insured Amount</td><td class="v">$currency $insured_amount</td>
+    </tr>
   </table>
 
-  <div class="amount-box">
-    <div>保险金额 Amount Insured</div>
-    <div class="amount">$currency $insured_amount</div>
+  <div class="words">
+    <div class="lbl">Insured Amount in Words</div>
+    <div class="val">$insured_amount_words</div>
   </div>
 
-  <div class="clause">
-    <strong>承保险别 Conditions:</strong> $coverage<br>
-    按中国人民保险公司海洋运输货物保险条款承保。Covering risks as per Ocean Marine Cargo Clauses of The People's Insurance Company of China.
+  <table class="parties" style="margin-top: 4mm;">
+    <tr>
+      <td class="party">
+        <div class="lbl">Insured</div>
+        <div class="bd">$insured</div>
+      </td>
+      <td class="gap"></td>
+      <td class="party">
+        <div class="lbl">Coverage</div>
+        <div class="bd">$coverage</div>
+      </td>
+    </tr>
+  </table>
+
+  <table class="meta">
+    <tr>
+      <td class="k">Description of Goods</td><td class="v">$description_of_goods</td>
+      <td class="k">Quantity</td><td class="v">$quantity</td>
+    </tr>
+    <tr>
+      <td class="k">Conveyance</td><td class="v">$conveyance</td>
+      <td class="k">Sailing Date</td><td class="v">$sailing_date</td>
+    </tr>
+    <tr>
+      <td class="k">From</td><td class="v">$port_of_loading</td>
+      <td class="k">To</td><td class="v">$port_of_destination</td>
+    </tr>
+    <tr>
+      <td class="k">Marks &amp; Nos.</td><td class="v">$shipping_marks</td>
+      <td class="k">Date of Issue</td><td class="v">$issue_date</td>
+    </tr>
+  </table>
+
+  <div class="certify">
+    This document sets out the particulars for the marine cargo insurance application. The policy
+    will be issued and signed by the insurance company. Cover is subject to the terms, conditions
+    and exclusions of the insurer's policy wording and to the Institute Cargo Clauses as stated above.
   </div>
 
-  <div class="signature">
-    <div>签发日期 Date of Issue: $issue_date</div>
-    <div class="signature-line">保险公司签章 Insurance Company's Signature</div>
-  </div>
+  <table class="sign">
+    <tr>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">Applicant for Insurance</div>
+        </div>
+      </td>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">For and on Behalf of the Insurer</div>
+          <div class="stamp-hint">Insurance Company &mdash; Signature &amp; Stamp</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="foot">$footer_note</div>
+
 </div>
 </body>
 </html>

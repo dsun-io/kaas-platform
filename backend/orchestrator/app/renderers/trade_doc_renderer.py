@@ -24,6 +24,11 @@ from typing import Any
 TEMPLATES_DIR = Path(__file__).parent.parent / "templates" / "trade_docs"
 _SHARED_STYLE_PATH = TEMPLATES_DIR / "_shared.css"
 
+# 共享样式注入占位符（模板中写 /*__SHARED_STYLE__*/）。
+# 采用「渲染完成后字符串替换」而非模板变量：CSS 内容不经过 string.Template 解析，
+# 即便将来在 CSS 里使用 $ 也不会被误当作占位符。
+_STYLE_PLACEHOLDER = "/*__SHARED_STYLE__*/"
+
 # 允许透传原始 HTML 的字段（其余值一律转义）
 _RAW_HTML_FIELDS = {"content"}
 
@@ -91,9 +96,9 @@ def render_trade_doc(doc_type: str, data: dict[str, Any]) -> str:
     template_content = template_path.read_text(encoding="utf-8-sig")
 
     processed = _preprocess_data(doc_type, data)
-    # 注入共享样式（每次读取，便于开发期改 CSS 立即生效）
-    processed["__style__"] = _load_shared_style()
-    return Template(template_content).substitute(_RenderDict(processed))
+    rendered = Template(template_content).substitute(_RenderDict(processed))
+    # 共享样式最后注入：CSS 不经过模板引擎，避免其中出现 $ 时被误当作占位符
+    return rendered.replace(_STYLE_PLACEHOLDER, _load_shared_style())
 
 
 def _load_shared_style() -> str:
@@ -109,15 +114,36 @@ def _esc(value: Any) -> str:
     return html.escape(str(value), quote=True)
 
 
+# 可由行项自动汇总的合计字段：合计字段 → 行项候选键（取第一个命中的）
+_AUTO_SUMS: dict[str, tuple[str, ...]] = {
+    "total_qty": ("qty", "quantity"),
+    "total_packages": ("package", "packages", "carton_no"),
+    "total_gross_weight": ("gross_weight",),
+    "total_net_weight": ("net_weight",),
+    "total_volume": ("volume",),
+}
+
+# 取整展示的合计（其余合计保留 2 位小数）
+_INT_TOTALS = {"total_qty", "total_packages"}
+
+
 def _preprocess_data(doc_type: str, data: dict[str, Any]) -> dict[str, str]:
     """预处理数据：复杂类型转 HTML 片段，标量按语义格式化/转义"""
+    # 汇总上下文：业务未显式提供合计时由行项汇总，供表格 TOTAL 行与汇总栏使用
+    context: dict[str, Any] = dict(data)
+    for field, item_keys in _AUTO_SUMS.items():
+        if context.get(field) in (None, ""):
+            summed = _sum_numeric(data.get("items"), item_keys)
+            if summed is not None:
+                context[field] = summed
+
     result: dict[str, str] = {}
 
     for key, value in data.items():
         if value is None or value == "":
             result[key] = ""
         elif isinstance(value, (list, tuple)):
-            result[key] = _render_items_table(list(value), doc_type, data) if value else ""
+            result[key] = _render_items_table(list(value), doc_type, context) if value else ""
         elif isinstance(value, dict):
             result[key] = _render_address_block(value)
         elif isinstance(value, _NUMERIC_TYPES):
@@ -129,25 +155,28 @@ def _preprocess_data(doc_type: str, data: dict[str, Any]) -> dict[str, str]:
         else:
             result[key] = _esc(value)
 
-    result.update(_derive_fields(doc_type, data, result))
+    result.update(_derive_fields(doc_type, data, context, result))
     return result
 
 
-def _derive_fields(doc_type: str, data: dict[str, Any], result: dict[str, str]) -> dict[str, str]:
+def _derive_fields(doc_type: str, data: dict[str, Any], context: dict[str, Any],
+                   result: dict[str, str]) -> dict[str, str]:
     """派生模板常用字段：金额大写、数量合计、卖方名、页脚"""
     derived: dict[str, str] = {}
 
     # 金额英文大写（报关 / 信用证审单必需）
     currency = str(data.get("currency") or "USD").strip().upper()
-    total_amount = data.get("total_amount")
-    if total_amount not in (None, ""):
-        derived["total_amount_words"] = _esc(amount_in_words(total_amount, currency))
+    for field, amount_key in (("total_amount_words", "total_amount"),
+                              ("insured_amount_words", "insured_amount")):
+        amount = data.get(amount_key)
+        if amount not in (None, ""):
+            derived[field] = _esc(amount_in_words(amount, currency))
 
-    # 商品数量合计（未显式提供时由行项汇总）
-    if not result.get("total_qty") and isinstance(data.get("items"), list):
-        qty_sum = _sum_qty(data["items"])
-        if qty_sum is not None:
-            derived["total_qty"] = _format_qty(qty_sum)
+    # 合计字段（数量/件数/毛净重/体积）：模板未自带时补上
+    for field in _AUTO_SUMS:
+        if not result.get(field) and context.get(field) not in (None, ""):
+            raw = context[field]
+            derived[field] = _format_qty(raw) if field in _INT_TOTALS else f"{float(raw):,.2f}"
 
     # 卖方名称（签章区提示语用）
     seller = data.get("seller") if isinstance(data.get("seller"), dict) else {}
@@ -376,7 +405,11 @@ _ITEM_COLUMNS: dict[str, list[tuple[str, str, str]]] = {
 }
 
 # 汇总行取值来源：列 key → 汇总数据 key
-_TOTAL_SOURCE = {"qty": "total_qty", "line_amount": "total_amount"}
+_TOTAL_SOURCE = {
+    "qty": "total_qty",
+    "package": "total_packages",
+    "line_amount": "total_amount",
+}
 
 
 def _render_items_table(items: list[dict], doc_type: str | None = None,
@@ -398,8 +431,9 @@ def _render_fixed_table(items: list[dict], columns: list[tuple[str, str, str]],
     for index, item in enumerate(items, start=1):
         cells = []
         for key, _label, align in columns:
-            raw = index if key == "no" else item.get(key, "")
-            cells.append(f'<td class="{align}">{_render_cell(key, raw)}</td>')
+            # 序号列由行号生成（不受数字格式化影响），其余取行项字段，缺列留空以固定版面
+            rendered = str(index) if key == "no" else _render_cell(key, item.get(key, ""))
+            cells.append(f'<td class="{align}">{rendered}</td>')
         rows.append("<tr>" + "".join(cells) + "</tr>")
 
     total_row = _render_total_row(columns, context)
@@ -436,16 +470,18 @@ def _format_qty(value: Any) -> str:
     return str(int(num)) if num.is_integer() else f"{num:g}"
 
 
-def _sum_qty(items: list[dict]) -> float | None:
-    """汇总行项数量（qty 优先，兼容 quantity）"""
+def _sum_numeric(items: Any, keys: tuple[str, ...]) -> float | None:
+    """汇总行项中的指定数值字段（按 keys 顺序取第一个命中的键）；无命中返回 None"""
+    if not isinstance(items, list):
+        return None
     total = 0.0
     found = False
     for item in items:
         if not isinstance(item, dict):
             continue
-        for key in ("qty", "quantity"):
+        for key in keys:
             raw = item.get(key)
-            if isinstance(raw, (int, float, Decimal)) and not isinstance(raw, bool):
+            if isinstance(raw, _NUMERIC_TYPES) and not isinstance(raw, bool):
                 try:
                     total += float(raw)
                 except (TypeError, ValueError):
