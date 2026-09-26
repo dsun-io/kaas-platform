@@ -168,7 +168,7 @@ export default function ShipmentsPage() {
             建出货单
           </Button>
           {orders.data?.length === 0 && (
-            <span className="text-xs text-amber-700">
+            <span className="text-xs text-warning">
               还没有订单 —— 请先在「订单」工位建单。
             </span>
           )}

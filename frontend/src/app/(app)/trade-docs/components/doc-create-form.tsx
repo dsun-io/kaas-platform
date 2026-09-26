@@ -163,7 +163,7 @@ export function DocCreateForm({
             />
           )}
           {sourceKind === "order" && orders.data?.length === 0 && (
-            <span className="block text-xs text-amber-700">
+            <span className="block text-xs text-warning">
               还没有订单。请先在「订单」工位建单，或改选「报价单」。
             </span>
           )}
