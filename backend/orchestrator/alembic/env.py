@@ -63,15 +63,39 @@ target_metadata = Base.metadata
 
 def get_sync_url() -> str:
     """
-    将 DATABASE_URL 中的 asyncpg scheme 转为同步 psycopg2。
-    Alembic 自身不支持 asyncpg。
+    将 DATABASE_URL 转为同步 psycopg2 可用形式。Alembic 自身不支持 asyncpg。
+
+    除了把 `+asyncpg` 去掉，还必须把 SSL 参数改成 libpq 写法：
+      · 应用（asyncpg）用 `?ssl=require`
+      · 迁移（psycopg2）用 `?sslmode=require`
+      · asyncpg 不认 sslmode，psycopg2 不认 ssl
+    但两者读的是**同一个** DATABASE_URL，且环境变量优先级高于 .env ，
+    所以不能靠“手工传两套值”绕过去 —— 在这里自动转换。
+
+    背景：本项目开发库是 Neon（必须 SSL），直接传原始 DSN 会报
+    `connect() got an unexpected keyword argument 'sslmode'`（应用侧）
+    或连不上。
     """
-    url = os.environ.get(
+    # 局部导入：保持 env.py 顶部导入不动，也避免与 app 包导入顺序纠缠
+    from sqlalchemy.engine import make_url
+
+    raw = os.environ.get(
         "DATABASE_URL",
         config.get_main_option("sqlalchemy.url", ""),
     )
     # postgresql+asyncpg:// → postgresql://
-    return url.replace("+asyncpg", "")
+    url = make_url(raw.replace("+asyncpg", ""))
+
+    params = dict(url.query)
+    if "ssl" in params and "sslmode" not in params:
+        ssl_value = str(params.pop("ssl")).lower()
+        # 归一化到 libpq 认可的档位
+        params["sslmode"] = {
+            "require": "require",
+            "true": "require",
+            "false": "disable",
+        }.get(ssl_value, ssl_value)
+    return url.set(query=params).render_as_string(hide_password=False)
 
 
 def run_migrations_offline() -> None:

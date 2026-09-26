@@ -5,7 +5,7 @@
 # 当前阶段仅建表（Phase 2），业务逻辑在后续工位开发时填充。
 # ─────────────────────────────────────────────────────────────────────────────
 from sqlalchemy import (
-    Column, BigInteger, Integer, Text, Numeric, DateTime, Index, func,
+    Column, BigInteger, Integer, Text, Numeric, DateTime, Date, Index, func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from app.db.base import Base
@@ -25,7 +25,25 @@ class QuoteOrder(Base):
     total_amount = Column(Numeric, nullable=True)
     valid_until = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
+    # 汇率快照（§10.2）：迁移 20260921_business_foundation 已建列，
+    # 但 ORM 之前漏了，导致 POST /quotes 构造对象时报
+    # TypeError: 'fx_rate' is an invalid keyword argument for QuoteOrder。
+    # 报价生成时锁定汇率，用于本币折算与后续订单继承。
+    fx_rate = Column(Numeric(20, 8), nullable=True)
+    fx_rate_date = Column(Date, nullable=True)
+    # 贸易条款（202609260001 加正列）：报价谈定的条款必须能被单证继承，
+    # 否则信用证审单时单证与合同不一致 →「不符点」
+    incoterm = Column(Text, nullable=True)
+    payment_terms = Column(Text, nullable=True)
+    port_of_loading = Column(Text, nullable=True)
+    port_of_destination = Column(Text, nullable=True)
+    shipping_marks = Column(Text, nullable=True)
+    country_of_origin = Column(Text, nullable=True)
     created_by = Column(Text, nullable=True)
+    # 数据可见范围（§10.3）：与 cust_inquiries / shipments / receivables 等表一致。
+    # 迁移 202609260002 补建；API 的 scope_filter() 依赖这两列。
+    owner_id = Column(Text, nullable=True)
+    owner_scope = Column(Text, nullable=False, default="private", server_default="private")
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
@@ -93,7 +111,20 @@ class Order(Base):
     order_date = Column(DateTime(timezone=True), nullable=True)
     delivery_date = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
+    # 汇率快照（§10.2）：迁移已建列，ORM 之前漏了（与 QuoteOrder 同因）
+    fx_rate = Column(Numeric(20, 8), nullable=True)
+    fx_rate_date = Column(Date, nullable=True)
+    # 贸易条款（202609260001 加正列）：与报价单同理由，单据需继承订单上的条款
+    incoterm = Column(Text, nullable=True)
+    payment_terms = Column(Text, nullable=True)
+    port_of_loading = Column(Text, nullable=True)
+    port_of_destination = Column(Text, nullable=True)
+    shipping_marks = Column(Text, nullable=True)
+    country_of_origin = Column(Text, nullable=True)
     created_by = Column(Text, nullable=True)
+    # 数据可见范围（§10.3）：与报价单同因，由迁移 202609260002 补建
+    owner_id = Column(Text, nullable=True)
+    owner_scope = Column(Text, nullable=False, default="private", server_default="private")
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 

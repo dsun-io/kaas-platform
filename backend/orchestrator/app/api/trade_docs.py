@@ -17,16 +17,22 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
+from app.db.models import Customer
 from app.db.workstation_links import (
     Order, OrderItem, QuoteOrder, QuoteOrderItem,
     TradeDoc, TradeDocOrderRef,
 )
 from app.db.workstation_models import (
-    CustInquiry, TradeDocQuoteRef, TradeDocInquiryRef,
+    CustInquiry, CustContact, TenantCompanyProfile,
+    TradeDocQuoteRef, TradeDocInquiryRef,
 )
 from app.core.auth import AuthContext, get_auth_context
 from app.domain.enums import validate_enum, DOC_TYPE, CURRENCY, DOC_STATUS
 from app.api.ws_common import tenant_id_of, scope_filter, next_doc_no
+from app.api.company_profile import seller_block
+from app.services.trade_doc_payload import (
+    build_render_data, buyer_block, trade_terms_of,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["trade-docs"])
 
@@ -82,11 +88,20 @@ async def _order_snapshot(db, tenant_id, order_id) -> dict:
         "customer_name": o.customer_name, "status": o.status, "currency": o.currency,
         "total_amount": float(o.total_amount) if o.total_amount is not None else None,
         "fx_rate": float(o.fx_rate) if o.fx_rate is not None else None,
+        # 贸易条款冻进快照：单据上的条款必须等于开单当时的条款，
+        # 而不是"现在去订单表读"（订单改了会污染历史单据）
+        "incoterm": o.incoterm, "payment_terms": o.payment_terms,
+        "port_of_loading": o.port_of_loading,
+        "port_of_destination": o.port_of_destination,
+        "shipping_marks": o.shipping_marks,
+        "country_of_origin": o.country_of_origin,
         "items": [{
             "product_name": i.product_name, "qty": float(i.qty) if i.qty is not None else None,
             "qty_unit": i.qty_unit,
             "unit_price": float(i.unit_price) if i.unit_price is not None else None,
             "line_amount": float(i.line_amount) if i.line_amount is not None else None,
+            # 规格快照必须带：报关/装箱的核心列（规格、HS Code、毛净重）都在里面
+            "spec_snapshot": i.spec_snapshot,
         } for i in items],
     }
 
@@ -107,11 +122,17 @@ async def _quote_snapshot(db, tenant_id, quote_id) -> dict:
         "quote_no": q.quote_no, "customer_id": q.customer_id,
         "customer_name": q.customer_name, "status": q.status, "currency": q.currency,
         "total_amount": float(q.total_amount) if q.total_amount is not None else None,
+        "incoterm": q.incoterm, "payment_terms": q.payment_terms,
+        "port_of_loading": q.port_of_loading,
+        "port_of_destination": q.port_of_destination,
+        "shipping_marks": q.shipping_marks,
+        "country_of_origin": q.country_of_origin,
         "items": [{
             "product_name": i.product_name, "qty": float(i.qty) if i.qty is not None else None,
             "qty_unit": i.qty_unit,
             "unit_price": float(i.unit_price) if i.unit_price is not None else None,
             "line_amount": float(i.line_amount) if i.line_amount is not None else None,
+            "spec_snapshot": i.spec_snapshot,
         } for i in items],
     }
 
@@ -298,4 +319,150 @@ async def update_trade_doc(
     await db.commit()
     await db.refresh(d)
     return _row_to_doc(d)
+
+
+# ── 渲染数据（前端负责排版，后端只提供数据）─────────────────────────────────
+
+async def _company_profile(db, tenant_id):
+    return (await db.execute(
+        select(TenantCompanyProfile).where(TenantCompanyProfile.tenant_id == tenant_id)
+    )).scalar_one_or_none()
+
+
+async def _buyer_of(db, tenant_id, customer_id):
+    """客户档案 + 主联系人 → 买方区块。customer_id 存的是字符串，这里做容错转换。"""
+    if not customer_id:
+        return {}
+    try:
+        cid = int(customer_id)
+    except (TypeError, ValueError):
+        return {}
+    customer = (await db.execute(
+        select(Customer).where(Customer.tenant_id == tenant_id, Customer.id == cid)
+    )).scalar_one_or_none()
+    if customer is None:
+        return {}
+    contact = (await db.execute(
+        select(CustContact).where(
+            CustContact.tenant_id == tenant_id, CustContact.customer_id == cid,
+        ).order_by(CustContact.is_primary.desc(), CustContact.id)
+    )).scalars().first()
+    return buyer_block(customer, contact)
+
+
+def _payload_parts(d: TradeDoc) -> tuple[dict, dict]:
+    payload = d.raw_payload or {}
+    return payload.get("sources") or {}, payload.get("custom") or {}
+
+
+@router.get("/trade-docs/{doc_id}/render-data")
+async def get_trade_doc_render_data(
+    doc_id: int,
+    auth: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """返回渲染一份单据所需的全部数据（前端用它排版/预览/打印）。
+
+    为什么由后端装配：数据来源跨 5 张表（单证/客户/联系人/报价/订单）+ 企业主体信息，
+    把这套映射放在后端只有一份，前后端不会各自猜一遍字段名。
+    """
+    tenant_id = tenant_id_of(auth)
+    d = (await db.execute(
+        select(TradeDoc).where(TradeDoc.tenant_id == tenant_id, TradeDoc.id == doc_id)
+    )).scalar_one_or_none()
+    if d is None:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "DOC_NOT_FOUND"})
+
+    profile = await _company_profile(db, tenant_id)
+    sources, custom = _payload_parts(d)
+    upstream = sources.get("order") or sources.get("quote") or {}
+
+    data = build_render_data(
+        doc_type=d.doc_type,
+        doc_no=d.doc_no,
+        doc_status=d.status,
+        currency=d.currency or "USD",
+        total_amount=float(d.total_amount) if d.total_amount is not None else None,
+        created_at=d.created_at,
+        issued_at=d.issued_at,
+        seller=seller_block(profile),
+        buyer=await _buyer_of(db, tenant_id, d.customer_id),
+        bank_info=seller_block(profile),
+        sources=sources,
+        trade_terms=trade_terms_of(upstream),
+        custom=custom,
+        defaults={
+            "incoterm": profile.default_incoterm if profile else None,
+            "payment_terms": profile.default_payment_terms if profile else None,
+            "country_of_origin": profile.default_country_of_origin if profile else None,
+        },
+    )
+    return {
+        "doc": _row_to_doc(d),
+        "data": data,
+        # 企业主体未配置时明确告知，避免用户对着空白抬头单据猜原因
+        "company_profile_configured": bool(profile and profile.name_en),
+    }
+
+
+@router.post("/trade-docs/{doc_id}/refresh-sources")
+async def refresh_trade_doc_sources(
+    doc_id: int,
+    auth: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """从上游重新带入快照（仅 draft 可调用）。
+
+    场景：报价改了但单据还没签发，允许一键同步；手工在 custom 里改过的字段保留
+    （因为 custom 优先级最高）。已签发（issued）单据是法律凭证，彻底冻结。
+    """
+    tenant_id = tenant_id_of(auth)
+    d = (await db.execute(
+        select(TradeDoc).where(TradeDoc.tenant_id == tenant_id, TradeDoc.id == doc_id)
+    )).scalar_one_or_none()
+    if d is None:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "DOC_NOT_FOUND"})
+    if d.status != "draft":
+        raise HTTPException(status_code=409, detail={
+            "error": "conflict", "code": "NOT_DRAFT",
+            "detail": "仅 draft 状态可重新带入上游数据（已签发单据已冻结）",
+        })
+
+    sources, custom = _payload_parts(d)
+    new_sources: dict = {}
+    if d.order_id:
+        new_sources["order"] = await _order_snapshot(db, tenant_id, d.order_id)
+    if "quote" in sources:
+        quote_ref = (await db.execute(
+            select(TradeDocQuoteRef).where(
+                TradeDocQuoteRef.tenant_id == tenant_id,
+                TradeDocQuoteRef.trade_doc_id == d.id,
+            )
+        )).scalars().first()
+        if quote_ref is not None:
+            new_sources["quote"] = await _quote_snapshot(db, tenant_id, quote_ref.quote_order_id)
+    if "inquiry" in sources:
+        inquiry_ref = (await db.execute(
+            select(TradeDocInquiryRef).where(
+                TradeDocInquiryRef.tenant_id == tenant_id,
+                TradeDocInquiryRef.trade_doc_id == d.id,
+            )
+        )).scalars().first()
+        if inquiry_ref is not None:
+            new_sources["inquiry"] = await _inquiry_snapshot(db, tenant_id, inquiry_ref.inquiry_id)
+
+    if not new_sources:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "NO_UPSTREAM",
+            "detail": "该单据没有可重新带入的上游来源",
+        })
+
+    upstream = new_sources.get("order") or new_sources.get("quote") or {}
+    d.raw_payload = {"sources": new_sources, "custom": custom}
+    if d.total_amount is None and upstream.get("total_amount") is not None:
+        d.total_amount = upstream["total_amount"]
+
+    await db.commit()
+    await db.refresh(d)
+    return {"doc": _row_to_doc(d), "sources": list(new_sources.keys())}
 

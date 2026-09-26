@@ -53,6 +53,13 @@ class QuoteCreate(BaseModel):
     valid_until: Optional[str] = None
     notes: Optional[str] = None
     owner_scope: str = "private"
+    # 贸易条款（202609260001 新增正列）：报价阶段谈定的条款要能一路传到订单与单证
+    incoterm: Optional[str] = None
+    payment_terms: Optional[str] = None
+    port_of_loading: Optional[str] = None
+    port_of_destination: Optional[str] = None
+    shipping_marks: Optional[str] = None
+    country_of_origin: Optional[str] = None
     items: List[QuoteItemIn] = []
 
 
@@ -62,6 +69,12 @@ class QuotePatch(BaseModel):
     valid_until: Optional[str] = None
     notes: Optional[str] = None
     status: Optional[str] = None
+    incoterm: Optional[str] = None
+    payment_terms: Optional[str] = None
+    port_of_loading: Optional[str] = None
+    port_of_destination: Optional[str] = None
+    shipping_marks: Optional[str] = None
+    country_of_origin: Optional[str] = None
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -77,6 +90,12 @@ def _row_to_quote(q: QuoteOrder) -> dict:
         "fx_rate_date": q.fx_rate_date.isoformat() if q.fx_rate_date else None,
         "created_at": q.created_at.isoformat() if q.created_at else None,
         "owner_id": q.owner_id, "owner_scope": q.owner_scope,
+        # 贸易条款（订单与单证要继承）
+        "incoterm": q.incoterm, "payment_terms": q.payment_terms,
+        "port_of_loading": q.port_of_loading,
+        "port_of_destination": q.port_of_destination,
+        "shipping_marks": q.shipping_marks,
+        "country_of_origin": q.country_of_origin,
     }
 
 
@@ -174,6 +193,11 @@ async def create_quote(
         notes=body.notes, fx_rate=rate, fx_rate_date=rate_date,
         created_by=str(auth.user_id),
         owner_id=str(auth.user_id), owner_scope=owner_scope,
+        incoterm=body.incoterm, payment_terms=body.payment_terms,
+        port_of_loading=body.port_of_loading,
+        port_of_destination=body.port_of_destination,
+        shipping_marks=body.shipping_marks,
+        country_of_origin=body.country_of_origin,
     )
     db.add(q)
     await db.flush()  # 取 q.id 挂行项
@@ -211,6 +235,12 @@ async def update_quote(
     tenant_id = tenant_id_of(auth)
     q = await _get_quote_or_404(db, tenant_id, quote_id, auth)
     check_write_access(q, auth)
+
+    for field in ("incoterm", "payment_terms", "port_of_loading",
+                  "port_of_destination", "shipping_marks", "country_of_origin"):
+        value = getattr(body, field, None)
+        if value is not None:
+            setattr(q, field, value)
 
     if body.status is not None:
         target = validate_enum("quote_status", body.status)

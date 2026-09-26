@@ -2090,10 +2090,19 @@ class Default(WorkerEntrypoint):
 # - 汇率锁定 fx_rates（缺汇率后补，与 dev ws_common.lock_fx_rate 对齐）
 # - 报价转化只记录来源与业务事件，不复制报价行项（quotations 结构确认后补）
 
+# 必须覆盖全部单证类型（与 orchestrator/app/api/ws_common.py 一致）：
+# 漏登记会用前三位大写兜底，产生 SA/NON/WEI 这类无业务含义的编号。
 DOC_TYPE_PREFIX = {
+    # 出口商自制
     "quotation": "QUO", "pi": "PI", "contract": "CON", "ci": "CI", "pl": "PL",
-    "bl": "BL", "co": "CO", "insurance": "INS", "other": "DOC",
-    "order": "ORD", "shipment": "SHP",
+    "shipping_advice": "SA", "draft": "DR", "beneficiary_cert": "BEN",
+    "non_wood_packing": "NWP", "weight_list": "WL", "quality_cert": "QC",
+    "manufacturer_cert": "MC",
+    # 第三方签发
+    "bl": "BL", "co": "CO", "insurance": "INS",
+    "customs_declaration": "CD", "fumigation_cert": "FUM",
+    # 通用与其它单据
+    "other": "DOC", "order": "ORD", "shipment": "SHP",
 }
 
 
@@ -2617,8 +2626,193 @@ async def list_receivables(request: Request, status: str = None, page: int = 1,
 
 # ── 阶段 6 任务2：外贸票据工位 + shipment.documented 事件 ──────────────────
 
-DOC_TYPE_SET = ("quotation", "pi", "contract", "ci", "pl", "bl", "co", "insurance", "other")
+# 18 类单证（与前端模板清单及 dev domain/enums.DOC_TYPE 三方一致，
+# 由 scripts/contracts-check.ts 的 R3 规则校验）
+DOC_TYPE_SET = (
+    # 出口商自制
+    "quotation", "pi", "contract", "ci", "pl",
+    "shipping_advice", "draft", "beneficiary_cert", "non_wood_packing",
+    "weight_list", "quality_cert", "manufacturer_cert",
+    # 第三方签发
+    "bl", "co", "insurance", "customs_declaration", "fumigation_cert",
+    # 通用
+    "other",
+)
 DOC_NEXT = {"draft": ("issued", "void"), "issued": ("void",)}
+
+# ── 单证渲染数据装配（镜像 backend/orchestrator/app/services/trade_doc_payload.py）──
+# Worker 是刻意精简的单文件实现（不引入额外依赖），无法 import orchestrator 的模块，
+# 所以这里是**镜像实现**。最容易漂移的是「单证类型 → 本单编号字段名」映射 ——
+# 猜错就会把合同号印成发票号，因此由 scripts/contracts-check.ts 的 R4 规则逐项比对两侧。
+TRADE_TERM_FIELDS = ("incoterm", "payment_terms", "port_of_loading",
+                     "port_of_destination", "shipping_marks", "country_of_origin")
+
+# 模板里占位符名字按单证惯例定（发票 $invoice_no、装箱单 $pl_no…），不能用启发式规则去猜：
+# 商业发票同时有 contract_no / lc_no，猜错就印错单号。
+DOC_NO_FIELDS = {
+    "quotation": ("quote_no", "quote_date"),
+    "pi": ("pi_no", "pi_date"),
+    "contract": ("contract_no", "contract_date"),
+    "ci": ("invoice_no", "invoice_date"),
+    "pl": ("pl_no", "pl_date"),
+    "shipping_advice": ("advice_no", "advice_date"),
+    "draft": ("draft_no", "draft_date"),
+    "beneficiary_cert": ("cert_no", "cert_date"),
+    "non_wood_packing": ("declaration_no", "declaration_date"),
+    "weight_list": ("weight_list_no", "weight_list_date"),
+    "quality_cert": ("quality_cert_no", "quality_cert_date"),
+    "manufacturer_cert": ("mfr_cert_no", "mfr_cert_date"),
+    "bl": ("bl_no", None),
+    "co": ("co_no", None),
+    "insurance": ("policy_no", None),
+    "customs_declaration": ("customs_decl_no", "customs_decl_date"),
+    "fumigation_cert": ("fumi_cert_no", "fumi_cert_date"),
+    "other": (None, None),
+}
+
+# 行项里可由规格快照带出的申报要素（报关/装箱必需）
+_SPEC_FIELDS = ("specification", "hs_code", "package", "gross_weight", "net_weight", "volume")
+
+
+def _clean(value):
+    """空串视为「未填写」，避免覆盖上游值。"""
+    if value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    return value
+
+
+def _spec_to_text(spec):
+    """规格快照（JSONB）→ 单据上的一行规格描述。"""
+    if not spec:
+        return None
+    if isinstance(spec, str):
+        return spec.strip() or None
+    if not isinstance(spec, dict):
+        return None
+    parts = []
+    for key in ("specification", "spec", "size", "mesh", "wire_diameter", "height", "length"):
+        value = _clean(spec.get(key))
+        if value is not None:
+            parts.append(str(value))
+    if parts:
+        return ", ".join(parts)
+    fallback = [f"{k}: {v}" for k, v in spec.items() if _clean(v) is not None]
+    return ", ".join(fallback) or None
+
+
+def _item_from_source(raw: dict) -> dict:
+    """上游行项 → 渲染行项（规格/HS Code/毛净重摊平到行项上）。"""
+    spec = raw.get("spec_snapshot") if isinstance(raw, dict) else None
+    item = {
+        "product_name": raw.get("product_name"),
+        "qty": raw.get("qty"),
+        "qty_unit": raw.get("qty_unit"),
+        "unit_price": raw.get("unit_price"),
+        "line_amount": raw.get("line_amount"),
+        "specification": _spec_to_text(spec),
+    }
+    if isinstance(spec, dict):
+        for field in _SPEC_FIELDS:
+            if field == "specification":
+                continue
+            value = _clean(spec.get(field))
+            if value is not None:
+                item[field] = value
+    for field in _SPEC_FIELDS:
+        value = _clean(raw.get(field))
+        if value is not None:
+            item[field] = value
+    return {k: v for k, v in item.items() if v is not None}
+
+
+def _buyer_block(customer, contact) -> dict:
+    """客户档案 + 主联系人 → 单证买方区块。
+
+    Consignee 只有公司名是清关大忌：目的国海关要求收货人名称与地址齐全。
+    """
+    block = {}
+    if customer is not None:
+        c = dict(customer)
+        block["company"] = c.get("name")
+        block["address"] = c.get("address")
+    if contact is not None:
+        ct = dict(contact)
+        block["contact"] = ct.get("name")
+        block["phone"] = ct.get("phone")
+        block["email"] = ct.get("email")
+    return {k: v for k, v in block.items() if _clean(v) is not None}
+
+
+def _build_render_data(*, doc_type, doc_no, currency, total_amount, created_at, issued_at,
+                       seller, buyer, bank_info, sources, trade_terms, custom, defaults) -> dict:
+    """装配渲染数据。字段优先级（后者覆盖前者）：
+    公司默认条款 → 上游条款与货物 → 买卖双方主体 → 单据自身编号/日期/金额 → 手工填写。
+
+    手工填写放最后：业务员在单据上改过的内容不能被自动带入悄悄覆盖。
+    """
+    data = {}
+    # ① 公司级默认条款（省去每张单据重填）
+    for key, value in (defaults or {}).items():
+        if _clean(value) is not None:
+            data[key] = value
+
+    # ② 上游快照：货物与条款
+    sources = sources or {}
+    upstream = sources.get("order") or sources.get("quote") or {}
+    items = [_item_from_source(i) for i in (upstream.get("items") or [])]
+    if items:
+        data["items"] = items
+    if _clean(upstream.get("currency")) is not None:
+        data["currency"] = upstream["currency"]
+    for key, value in (trade_terms or {}).items():
+        data[key] = value
+
+    # ③ 交易双方（企业主体 / 客户档案）
+    if seller:
+        data["seller"] = seller
+        # 卖方同时是托运人/出口商（各单证叫法不同，指向同一主体）
+        data["shipper"] = seller
+        data["exporter"] = seller
+    if buyer:
+        data["buyer"] = buyer
+        data["consignee"] = buyer
+        data["insured"] = buyer
+    if bank_info:
+        data["bank_info"] = bank_info
+
+    # ④ 单据自身（编号 / 日期 / 金额）
+    no_field, date_field = DOC_NO_FIELDS.get(doc_type, (None, None))
+    if no_field:
+        data[no_field] = doc_no
+    if date_field:
+        data[date_field] = issued_at or created_at
+    data["currency"] = data.get("currency") or currency
+    if _clean(total_amount) is not None:
+        data["total_amount"] = total_amount
+
+    # ⑤ 手工填写覆盖最后应用
+    for key, value in (custom or {}).items():
+        data[key] = value
+    return data
+
+
+def _seller_block(profile) -> dict:
+    """企业主体信息 → 单证卖方区块（渲染器认 company/address/phone/email/bank/account/swift）。"""
+    if not profile:
+        return {}
+    p = dict(profile)
+    return {k: v for k, v in {
+        "company": p.get("name_en"),
+        "address": p.get("address_en"),
+        "phone": p.get("phone"),
+        "email": p.get("email"),
+        "bank": p.get("bank_name"),
+        "account": p.get("bank_account"),
+        "swift": p.get("swift_code"),
+    }.items() if v}
+
 
 
 def _doc_dict(row) -> dict:
@@ -2672,7 +2866,11 @@ def _snap_rows(rows):
 
 
 async def _order_snapshot(request: Request, order_id: int) -> dict:
-    """订单冻结快照（表头+行项，与 dev trade_docs._order_snapshot 对齐）。"""
+    """订单冻结快照（表头+行项，与 dev trade_docs._order_snapshot 对齐）。
+
+    贸易条款与规格快照必须一起冻进来：单证上的条款要等于开单当时的条款，
+    而不是「现在去订单表读」——订单改了不能污染已开出的单据。
+    """
     o = await db.fetchrow(request, "SELECT * FROM orders WHERE tenant_id=$1 AND id=$2",
                           DEFAULT_TENANT, order_id, table="orders")
     if not o:
@@ -2680,17 +2878,21 @@ async def _order_snapshot(request: Request, order_id: int) -> dict:
     o = _order_dict(o)
     items = await db.fetch(
         request,
-        "SELECT product_name, qty, qty_unit, unit_price, line_amount FROM order_items"
+        "SELECT product_name, qty, qty_unit, unit_price, line_amount, spec_snapshot"
+        " FROM order_items"
         " WHERE tenant_id=$1 AND order_id=$2 ORDER BY sort_order, id",
         DEFAULT_TENANT, order_id, table="order_items",
     )
-    return {
+    snap = {
         "order_id": o["id"], "order_no": o["order_no"],
         "customer_id": o["customer_id"], "customer_name": o["customer_name"],
         "status": o["status"], "currency": o["currency"],
         "total_amount": o["total_amount"], "fx_rate": o["fx_rate"],
         "items": _snap_rows(items),
     }
+    for field in TRADE_TERM_FIELDS:
+        snap[field] = o.get(field)
+    return snap
 
 
 async def _quote_snapshot(request: Request, quote_order_id: int) -> dict:
@@ -2702,18 +2904,22 @@ async def _quote_snapshot(request: Request, quote_order_id: int) -> dict:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "QUOTE_NOT_FOUND"})
     items = await db.fetch(
         request,
-        "SELECT product_name, qty, qty_unit, unit_price, line_amount FROM quote_order_items"
+        "SELECT product_name, qty, qty_unit, unit_price, line_amount, spec_snapshot"
+        " FROM quote_order_items"
         " WHERE tenant_id=$1 AND quote_order_id=$2 ORDER BY sort_order, id",
         DEFAULT_TENANT, quote_order_id, table="quote_order_items",
     )
     qd = _snap_rows([q])[0]
-    return {
+    snap = {
         "quote_order_id": quote_order_id,
         "quote_no": qd.get("quote_no"), "customer_id": qd.get("customer_id"),
         "customer_name": qd.get("customer_name"), "status": qd.get("status"),
         "currency": qd.get("currency"), "total_amount": qd.get("total_amount"),
         "items": _snap_rows(items),
     }
+    for field in TRADE_TERM_FIELDS:
+        snap[field] = qd.get(field)
+    return snap
 
 
 async def _inquiry_snapshot(request: Request, inquiry_id: int) -> dict:
@@ -2864,6 +3070,124 @@ async def update_trade_doc(doc_id: int, request: Request, body: dict,
     d2 = await db.fetchrow(request, "SELECT * FROM trade_docs WHERE tenant_id=$1 AND id=$2",
                            DEFAULT_TENANT, doc_id, table="trade_docs")
     return _doc_dict(d2)
+
+
+# ── 企业主体信息（卖方抬头）────────────────────────────────────────────────
+# 为什么需要：对外单据第一行是卖方信头（英文公司名/地址/联系方式），
+# PI/合同/汇票还要收款银行与 SWIFT。没有它，每张单据抬头都是空白、每次都要手填。
+# 保存一次，所有单据自动带入。
+
+_COMPANY_FIELDS = ("name_en", "name_zh", "address_en", "address_zh", "phone", "email",
+                   "website", "bank_name", "bank_account", "swift_code", "logo_url",
+                   "default_incoterm", "default_payment_terms", "default_country_of_origin")
+
+
+@app.get("/api/v1/tenant/company-profile")
+async def get_company_profile(request: Request, user: dict = Depends(_get_current_user)):
+    row = await db.fetchrow(
+        request, "SELECT * FROM tenant_company_profile WHERE tenant_id=$1",
+        DEFAULT_TENANT, table="tenant_company_profile",
+    )
+    # 未配置时返回空结构而不是 404：前端表单可直接绑定，不会把页面变成错误页
+    if not row:
+        return {**{f: None for f in _COMPANY_FIELDS}, "configured": False}
+    r = _snap_rows([row])[0]
+    return {**{f: r.get(f) for f in _COMPANY_FIELDS}, "configured": bool(r.get("name_en"))}
+
+
+@app.put("/api/v1/tenant/company-profile")
+async def put_company_profile(request: Request, body: dict,
+                              user: dict = Depends(_get_current_user)):
+    name_en = (body.get("name_en") or "").strip()
+    if not name_en:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "NAME_EN_REQUIRED",
+            "detail": "英文公司名必填（对外单据的卖方主体名）",
+        })
+    # 逐字段覆盖（含 NULL）：允许把填错的字段清空，而不是"擦不掉"
+    values = [body.get(f) if f != "name_en" else name_en for f in _COMPANY_FIELDS]
+    cols = ", ".join(_COMPANY_FIELDS)
+    placeholders = ", ".join(f"${i + 2}" for i in range(len(_COMPANY_FIELDS)))
+    updates = ", ".join(f"{f}=EXCLUDED.{f}" for f in _COMPANY_FIELDS)
+    await db.execute(
+        request,
+        f"INSERT INTO tenant_company_profile (tenant_id, {cols}) VALUES ($1, {placeholders})"
+        f" ON CONFLICT (tenant_id) DO UPDATE SET {updates}, updated_at=now()",
+        DEFAULT_TENANT, *values, table="tenant_company_profile",
+    )
+    return await get_company_profile(request, user)
+
+
+@app.get("/api/v1/trade-docs/{doc_id}/render-data")
+async def get_trade_doc_render_data(doc_id: int, request: Request,
+                                    user: dict = Depends(_get_current_user)):
+    """返回渲染一份单据所需的全部数据（前端负责排版/预览/打印）。
+
+    为什么由后端装配：数据来源跨 5 张表（单证/客户/联系人/订单/报价）+ 企业主体信息，
+    这套映射放在后端只有一份，前后端不会各自猜一遍字段名。
+    """
+    d = await db.fetchrow(request, "SELECT * FROM trade_docs WHERE tenant_id=$1 AND id=$2",
+                          DEFAULT_TENANT, doc_id, table="trade_docs")
+    if not d:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "DOC_NOT_FOUND"})
+    doc = _doc_dict(d)
+
+    payload = doc.get("raw_payload") or {}
+    if isinstance(payload, str):
+        payload = _json.loads(payload)
+    sources = payload.get("sources") or {}
+    custom = payload.get("custom") or {}
+    upstream = sources.get("order") or sources.get("quote") or {}
+
+    profile = await db.fetchrow(
+        request, "SELECT * FROM tenant_company_profile WHERE tenant_id=$1",
+        DEFAULT_TENANT, table="tenant_company_profile",
+    )
+    profile_dict = dict(profile) if profile else {}
+
+    buyer = {}
+    cid = doc.get("customer_id")
+    if cid:
+        try:
+            cid_int = int(cid)
+        except (TypeError, ValueError):
+            cid_int = None
+        if cid_int is not None:
+            customer = await db.fetchrow(
+                request,
+                "SELECT id, name, address FROM customers WHERE tenant_id=$1 AND id=$2",
+                DEFAULT_TENANT, cid_int, table="customers",
+            )
+            contact = await db.fetchrow(
+                request,
+                "SELECT name, phone, email FROM cust_contacts"
+                " WHERE tenant_id=$1 AND customer_id=$2 ORDER BY is_primary DESC, id LIMIT 1",
+                DEFAULT_TENANT, cid_int,
+            )
+            buyer = _buyer_block(customer, contact)
+
+    data = _build_render_data(
+        doc_type=doc["doc_type"], doc_no=doc["doc_no"],
+        currency=doc.get("currency") or "USD",
+        total_amount=doc.get("total_amount"),
+        created_at=doc.get("created_at"), issued_at=doc.get("issued_at"),
+        seller=_seller_block(profile), buyer=buyer, bank_info=_seller_block(profile),
+        sources=sources,
+        trade_terms={f: upstream.get(f) for f in TRADE_TERM_FIELDS
+                     if _clean(upstream.get(f)) is not None},
+        custom=custom,
+        defaults={
+            "incoterm": profile_dict.get("default_incoterm"),
+            "payment_terms": profile_dict.get("default_payment_terms"),
+            "country_of_origin": profile_dict.get("default_country_of_origin"),
+        },
+    )
+    return {
+        "doc": doc,
+        "data": data,
+        # 企业主体未配置时明确告知，避免用户对着空白抬头单据猜原因
+        "company_profile_configured": bool(profile_dict.get("name_en")),
+    }
 
 
 import chain  # noqa: E402,F401

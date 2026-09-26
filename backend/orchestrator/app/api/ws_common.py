@@ -15,11 +15,20 @@ from app.db.workstation_models import DocSequence, FxRate
 
 DEFAULT_TENANT = "default"
 
-# 单证/单据类型 → 编号前缀（§10.7；未列出类型用前三位大写兜底）
+# 单证/单据类型 → 编号前缀（§10.7）
+# 必须覆盖全部单证类型；未列出类型会用前三位大写兜底，
+# 但兜底会产生 SA/NON/WEI 这类无业务含义的编号，所以新类型要显式登记。
 DOC_TYPE_PREFIX = {
+    # 出口商自制
     "quotation": "QUO", "pi": "PI", "contract": "CON", "ci": "CI", "pl": "PL",
-    "bl": "BL", "co": "CO", "insurance": "INS", "other": "DOC",
-    "order": "ORD", "shipment": "SHP",
+    "shipping_advice": "SA", "draft": "DR", "beneficiary_cert": "BEN",
+    "non_wood_packing": "NWP", "weight_list": "WL", "quality_cert": "QC",
+    "manufacturer_cert": "MC",
+    # 第三方签发
+    "bl": "BL", "co": "CO", "insurance": "INS",
+    "customs_declaration": "CD", "fumigation_cert": "FUM",
+    # 通用与其它单据
+    "other": "DOC", "order": "ORD", "shipment": "SHP",
 }
 
 

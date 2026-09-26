@@ -118,6 +118,44 @@ class TradeDocInquiryRef(Base):
     )
 
 
+# ── 企业主体信息（202609260001）───────────────────────────────────────────
+
+class TenantCompanyProfile(Base):
+    """租户级企业主体信息 —— 所有对外单据的卖方抬头。
+
+    为什么单独建表：单证、报价单、合同、汇票都要印卖方信头与收款银行，
+    原先全库只在注册流程存过公司名，导致每张单据的抬头都是空白、每次都要手填。
+    这里保存一次，所有单据自动带入。
+    """
+    __tablename__ = 'tenant_company_profile'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    # 对外签约主体用英文；中文名仅内部识别用
+    name_en = Column(Text, nullable=False)
+    name_zh = Column(Text, nullable=True)
+    address_en = Column(Text, nullable=True)
+    address_zh = Column(Text, nullable=True)
+    phone = Column(Text, nullable=True)
+    email = Column(Text, nullable=True)
+    website = Column(Text, nullable=True)
+    # 收款银行（PI / 合同 / 汇票使用）
+    bank_name = Column(Text, nullable=True)
+    bank_account = Column(Text, nullable=True)
+    swift_code = Column(Text, nullable=True)
+    logo_url = Column(Text, nullable=True)
+    # 新开单时的预填条款，省去每张重填
+    default_incoterm = Column(Text, nullable=True)
+    default_payment_terms = Column(Text, nullable=True)
+    default_country_of_origin = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index('uq_tenant_company_profile_tenant', 'tenant_id', unique=True),
+    )
+
+
 # ── Phase 2.5 基础表（§10）──────────────────────────────────────────────────
 
 class FxRate(Base):

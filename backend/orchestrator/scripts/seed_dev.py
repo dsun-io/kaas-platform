@@ -444,8 +444,14 @@ async def seed_int_r3(session=None):
         # ── Capabilities ──
         print("\nSeeding capabilities …")
         for c in SEED_CAPABILITIES:
+            # tenant_id 取 customer_id：与本脚本内事件的 tenant_id 约定一致
+            # （见上方 SEED_EVENTS 的 "tenant_id": "client_b"）。
+            # 说明：upsert_capability 后来加了 tenant_id 必填参数，这里必须同步，
+            # 否则种子脚本会在这一步抛 TypeError 而中断 —— 连带的后果是
+            # 后面的「开发账号创建」步骤根本不执行，登录不了。
             cap = await upsert_capability(
-                session=s, customer_id=c["customer_id"],
+                session=s, tenant_id=c["customer_id"],
+                customer_id=c["customer_id"],
                 customer_name=c["customer_name"],
                 product_category=c["product_category"],
                 spec_constraints=c["spec_constraints"],
