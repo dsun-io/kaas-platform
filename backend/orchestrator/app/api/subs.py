@@ -6,6 +6,8 @@
 | leadgen_pro | + 商情排序（预留） |
 | outreach_starter | 客户触达 |
 | outreach_pro | + 多邮箱 + AI 生成（预留） |
+| intel_research_starter | 市场调研 |
+| intel_full | 情报体系全套 |
 | full_chain | 全工位 |
 
 未订阅工位 API 返回 404。
@@ -25,6 +27,10 @@ from app.api.ws_common import tenant_id_of
 WORKSTATION_CODES = {
     "leadgen": ("leadgen_starter", "leadgen_pro", "full_chain"),
     "outreach": ("outreach_starter", "outreach_pro", "full_chain"),
+    # 市场调研：编码与线上 Worker chain.py 的 SUB_CODES["research"] 逐字对齐，
+    # 两个运行时用同一张 tenant_subscriptions 表，写错编码会出现
+    # 「线上能用、本地 404」的怪病。
+    "research": ("intel_research_starter", "intel_full", "full_chain"),
 }
 
 
@@ -57,3 +63,4 @@ async def require_subscription(
 # 预绑定工位的依赖（FastAPI Depends 不透传 kwargs，用 partial 预绑定）
 require_leadgen = partial(require_subscription, workstation="leadgen")
 require_outreach = partial(require_subscription, workstation="outreach")
+require_research = partial(require_subscription, workstation="research")

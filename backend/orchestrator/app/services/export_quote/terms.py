@@ -266,9 +266,32 @@ class TermLadder:
 
 
 def ladder_from_dict(cfg: Mapping[str, Any] | None) -> TermLadder | None:
-    """从配置构造阶梯；未配置返回 None（保持纯 EXW 行为）。"""
+    """从配置构造阶梯；未配置返回 None（保持纯 EXW 行为）。
+
+    为什么对未知键名**直接报错**
+    -----------------------------
+    这里的键名一旦拼错（例如把费用项写在 `fees` 而不是 `items`），
+    费用就会全部落空：
+
+      · `items` 取不到 → 费用表为空
+      · 梯档引用的 `items` 为空 → 没有任何费用被累加
+
+    结果是**术语阶梯全等于 EXW，而且不报错** —— 一张 FOB/CIF 报价单
+    实际报的却是不含运费的出厂价，客户拿到手就是个错价。
+    相比“配错了”，这种静默降级贵得多，所以未知键名一律拒绝。
+
+    注：费用项**内部的**展示用键（unit_hint、note 等）不校验 ——
+    界面要把模板原样回传，多几个不参与计算的键是正常的。
+    """
     if not cfg:
         return None
+
+    unknown = set(cfg) - {"items", "ladder", "quote_as", "base", "weight_field"}
+    if unknown:
+        raise TermsError(
+            f"terms 存在未知配置项: {', '.join(sorted(unknown))}"
+            "（可用 items | ladder | quote_as | base | weight_field）"
+        )
 
     items: dict[str, FeeItem] = {}
     for key, item in (cfg.get("items") or {}).items():
@@ -292,6 +315,12 @@ def ladder_from_dict(cfg: Mapping[str, Any] | None) -> TermLadder | None:
             continue
         if not isinstance(r, Mapping) or "code" not in r:
             raise TermsError(f"terms.ladder 第 {i + 1} 项必须含 code")
+        unknown_rung = set(r) - {"code", "label", "label_en", "items"}
+        if unknown_rung:
+            raise TermsError(
+                f"terms.ladder 第 {i + 1} 项存在未知配置项: "
+                f"{', '.join(sorted(unknown_rung))}（可用 code | label | label_en | items）"
+            )
         rungs.append(
             TermRung(
                 code=str(r["code"]),

@@ -151,9 +151,8 @@ class PricingPolicy:
     profit_mode: str = "fixed"  # fixed | ratio
     profit_value: Any = 0
     give_ratio: Any = 0  # 让出可退进项增值税税额的比例
-    refund_ratio: Any = 1  # 可退税比例；'auto' = 出口退税率 ÷ 征税率
+    refund_ratio: Any = 1  # 可退税比例；'auto' = 出口退税率 ÷ 进项票税点
     rebate_rate: Any = None  # 出口退税率（auto 模式使用）
-    levy_rate: Any = None  # 征税率（auto 模式使用）
     stamp_rate: Any = 0
     stamp_base: str = "profit"
     extras: tuple = ()
@@ -164,14 +163,28 @@ class PricingPolicy:
     def resolve_refund_ratio(self, mode=DECIMAL):
         """返回 (可退税比例, 提示信息)。
 
-        可退税比例 = 出口退税率 ÷ 征税率，**上限为 1**。
+        可退税比例 = 出口退税率 ÷ 进项票税点，**上限为 1**。
+
+        为什么分母是「进项票税点」而不是「征税率」
+        ------------------------------------------
+        这一步要回答的问题是：**我们实际交出去的进项税额里，有多少能退回来。**
+
+        进项税额是**按发票上的税点**实际缴纳的（供应商开 10 个点，我们就按 10 个点
+        交了这笔税）；而国家退的是**按退税率**算的。两个率不同源，所以要相除：
+
+            可退进项增值税税额 = 进项税额 × (出口退税率 ÷ 进项票税点)
+
+        拿「进项票税点」当分母，才是「按实际交的税」折算。用法定征税率当分母会把
+        「发票只开了 10 个点」这件事忽略掉 —— 那笔钱本来就没交过，退不出来。
+
+        （征税率 levy_rate 是国家法定基准，**不参与本式**。它保留在政策对象与税务
+        档案里作为参考值，不再作为本式的分母。）
 
         为什么上限必须是 1（即「取低的那个」）
         ------------------------------------
-        可退进项增值税税额 = 进项税额 × 可退税比例。进项税额是采购发票上
-        **实际缴纳**的税额；没交过的税是退不回来的。所以：
+        没交过的税是退不回来的。所以：
 
-          · 退税率 ≤ 征税率（常态）→ 比例 = 退税率 ÷ 征税率 < 1，
+          · 退税率 ≤ 进项票税点（常态）→ 比例 < 1，
             差额即「不可退进项税额」，是实打实的成本，留在价链里
           · 退税率 > 进项票税点 → 比例本会 > 1，但那等于「退得比交的多」，
             不成立。此时按 1 计，即取两者中**低**的那个为准
@@ -186,24 +199,23 @@ class PricingPolicy:
         raw = self.refund_ratio
         warn: str | None = None
         if isinstance(raw, str) and raw.strip().lower() == "auto":
-            if self.rebate_rate is None or self.levy_rate in (None, 0, "0", "0.0"):
+            point = self.input_vat_rate
+            if self.rebate_rate is None or point in (None, 0, "0", "0.0"):
                 return mode.convert(1), (
                     "refund.refund_ratio 使用 auto 模式，但 rebate_rate（出口退税率）"
-                    "或 levy_rate（征税率）未配置，暂按「进项税额全额可回收」计算；"
+                    "或 input_vat_rate（进项票税点）未配置，暂按「进项税额全额可回收」计算；"
                     "请填入实际退税率后重算"
                 )
-            levy = _num(self.levy_rate, mode)
-            if levy <= 0:
-                raise PricingError("征税率必须 > 0")
+            point_num = _num(point, mode)
+            if point_num < 0:
+                raise PricingError("进项票税点不能为负")
             rebate = _num(self.rebate_rate, mode)
-            ratio = mode.divide(rebate, levy)
+            ratio = mode.divide(rebate, point_num)
             if ratio > 1:
                 warn = (
-                    f"出口退税率（{rebate}）高于进项票税点／征税率（{levy}），"
+                    f"出口退税率（{rebate}）高于进项票税点（{point_num}），"
                     "可退税比例按 1 计：可退进项增值税税额以**实际缴纳的进项税额**"
                     "为上限，不会退到超过已缴税额（取两者中低者）。"
-                    "若这两个率口径不同源（如发票税点 10 点、法定退税率 13%），"
-                    "填 10 点即可得到同一结果。"
                 )
         else:
             ratio = _num(raw, mode)
@@ -399,7 +411,6 @@ def policy_from_dict(cfg: dict | None) -> PricingPolicy:
         give_ratio=refund.get("give_ratio", 0),
         refund_ratio=refund.get("refund_ratio", 1),
         rebate_rate=refund.get("rebate_rate"),
-        levy_rate=refund.get("levy_rate"),
         stamp_rate=stamp.get("rate", 0),
         stamp_base=stamp.get("base", "profit"),
         extras=tuple(extras),

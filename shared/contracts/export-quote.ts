@@ -21,6 +21,15 @@ export const QuoteTableSchema = z.object({
   view: z.string(),
   header: z.array(z.string()),
   rows: z.array(z.array(CellSchema)),
+  /**
+   * 每一列的**显示位数**，与 header 等长；null 表示这一列不做定长显示。
+   *
+   * 为什么位数要后端给：它是业务口径（金额两位、丝径一位），写在产品定义里；
+   * 界面自己猜就成了第二份真源，两边一改就分叉。
+   * 注意：数值本身后端已经按位数四舍五入过，这里是**呈现**要求 ——
+   * 301 要显示成 301.00，而不是把 301 改数值。
+   */
+  decimals: z.array(z.number().nullable()).default([]),
   horizontal_header: z.array(z.string()).default([]),
   vertical_header: z.array(z.string()).default([]),
   vertical_data: z.array(z.array(CellSchema)).default([]),
@@ -74,12 +83,10 @@ export const ExportPolicyInSchema = z.object({
   profit_value: z.number().optional(),
   /** 让出可退进项增值税额的比例（0.8 = 让利 80%，自留 20% 对冲风险） */
   give_ratio: z.number().min(0).max(1).optional(),
-  /** 可退税比例；'auto' = 出口退税率 ÷ 征税率 */
+  /** 可退税比例；'auto' = 出口退税率 ÷ 进项票税点 */
   refund_ratio: z.union([z.number().min(0).max(1), z.literal('auto')]).optional(),
   /** 出口退税率（refund_ratio='auto' 时使用） */
   rebate_rate: z.number().min(0).max(1).optional(),
-  /** 征税率（refund_ratio='auto' 时使用） */
-  levy_rate: z.number().min(0).max(1).optional(),
   stamp_rate: z.number().min(0).max(1).optional(),
   /** 印花税计税基数；默认按加工利润 */
   stamp_base: z.enum(['profit', 'cost', 'base_quote']).optional(),
@@ -87,8 +94,49 @@ export const ExportPolicyInSchema = z.object({
 });
 export type ExportPolicyIn = z.infer<typeof ExportPolicyInSchema>;
 
+/**
+ * 出口费用结构（贸易术语阶梯）。
+ *
+ * 结构与金额分离：结构由**平台声明一次**（有哪些费用项、怎么计价、每档累加哪些），
+ * 报价时只需填金额。
+ *
+ * 重要：这个形状**就是**报价请求里 `terms` 的形状 —— 界面拿到模板后原样回传、
+ * 只把每个费用项的 value 填成数字，不做任何结构转换，也不把结构写死在前端。
+ */
+export const ExportTermsFeeSchema = z.object({
+  name: z.string().default(''),
+  name_en: z.string().default(''),
+  /** per_piece | per_shipment | per_weight_kg | per_weight_ton | ratio_of_subtotal | insurance_of_cif */
+  mode: z.string(),
+  /** 界面提示：这一项该填什么单位 */
+  unit_hint: z.string().default(''),
+  note: z.string().default(''),
+  value: z.number().nullable().default(null),
+});
+export type ExportTermsFee = z.infer<typeof ExportTermsFeeSchema>;
+
+export const ExportTermsRungSchema = z.object({
+  code: z.string(),
+  label: z.string().default(''),
+  label_en: z.string().default(''),
+  /** 本档**新增**的费用项（阶梯逐档累加，不是全量清单） */
+  items: z.array(z.string()).default([]),
+});
+export type ExportTermsRung = z.infer<typeof ExportTermsRungSchema>;
+
+export const ExportTermsTemplateSchema = z.object({
+  base: z.string().default('EXW'),
+  /** 对外报价用哪个术语（默认 CIF） */
+  quote_as: z.string().default('CIF'),
+  weight_field: z.string().default(''),
+  /** 费用项表：键名必须叫 items，写错名字会被引擎拒绝（避免静默退化成 EXW） */
+  items: z.record(ExportTermsFeeSchema),
+  ladder: z.array(ExportTermsRungSchema).default([]),
+});
+export type ExportTermsTemplate = z.infer<typeof ExportTermsTemplateSchema>;
+
 export const ExportQuoteRequestSchema = z.object({
-  /** 产品模型 key，如 field_fence（牛栏网）、welded_pipe（焊管） */
+  /** 产品模型 key，如 field_fence（牛栏网） */
   product_key: z.string().min(1),
   /** 税务档案编号；留空则按报价日取当期生效的一份 */
   rate_set_code: z.string().optional(),
@@ -192,7 +240,6 @@ export const ExportRateSetSchema = z.object({
   country: z.string().default(''),
   effective_from: z.string().nullable(),
   effective_to: z.string().nullable(),
-  levy_rate: z.number().nullable(),
   output_rate_default: z.number().nullable().optional(),
   output_rate_export: z.number().nullable().optional(),
   stamp_duty: StampDutySchema,
@@ -211,6 +258,76 @@ export const ExportRateSetListSchema = z.object({
   rate_sets: z.array(ExportRateSetSchema),
   total: z.number().int(),
 });
+
+/**
+ * 客户税率档案 —— 「这个客户填过的那套税率，下次一键套用」。
+ *
+ * 与 `ExportRateSet` 的区别（两者在界面上是同一个下拉里的两层）：
+ *   · `ExportRateSet` = **法定**税率（国家政策，平台维护的 yaml）：销项税率、
+ *     印花税率、按 HS 编码的出口退税率。很少变动。
+ *   · 本结构 = **这个客户自己填的**：进项票税点、销项税率、出口退税率、
+ *     印花税率 + 基数。每个客户（+每个产品）一套，可以有多份、各起名字。
+ *
+ * `rate_set_code` 是这份档案**当时绑定的法定档案**。因为两层放在同一个下拉里，
+ * 选中客户档案时要连法定档案一起切过去；否则「客户档案 + 另一份法定档案」
+ * 会算出一个谁都没确认过的组合，而金额看着完全正常。
+ */
+export const QuoteProfileTaxSchema = z
+  .object({
+    /** 进项票税点（供应商属性），如 0.1 */
+    input_vat_rate: z.number().optional(),
+    /** 销项税率；出口零税率填 0 */
+    output_vat_rate: z.number().optional(),
+    /** 出口退税率（按 HS 编码核实） */
+    rebate_rate: z.number().optional(),
+    /** 印花税率 */
+    stamp_rate: z.number().optional(),
+    /** 印花税计税基数 */
+    stamp_base: z.enum(['profit', 'cost', 'base_quote']).optional(),
+  })
+  // 刻意不丢弃未知键：Zod 的 .object() 默认会**静默删掉**没声明的键，
+  // 那正是「后端存了、界面取不到」这类看不见的失败的成因。
+  // 写入侧由后端白名单把关（未知键直接 422），所以这里的宽松不会放进垃圾数据 ——
+  // 反而能保证「后端加了新税率项但前端还没接」时暴露出来，而不是悄悄丢掉。
+  .passthrough();
+export type QuoteProfileTax = z.infer<typeof QuoteProfileTaxSchema>;
+
+export const QuoteProfileSchema = z.object({
+  id: z.number().int(),
+  customer_id: z.string(),
+  /** 引擎的产品 key（如 field_fence），与报价请求里用的是同一个 */
+  product_key: z.string(),
+  /** 产品显示名，仅用于展示 */
+  product_name: z.string().default(''),
+  /** 自定义名称，用户保存时自己起 */
+  profile_name: z.string(),
+  /** 当时绑定的法定税务档案编号 */
+  rate_set_code: z.string(),
+  tax_overrides: QuoteProfileTaxSchema.default({}),
+  source: z.string().default('manual'),
+  created_at: z.string().nullable().default(null),
+  updated_at: z.string().nullable().default(null),
+});
+export type QuoteProfile = z.infer<typeof QuoteProfileSchema>;
+
+export const QuoteProfileListSchema = z.object({
+  scope: z.string().default('own'),
+  product_key: z.string(),
+  /**
+   * 按创建时间**倒序**（新的在前）。界面「默认选择最新创建的」直接取第一条，
+   * 不要在前端再排一次 —— 排序规则两处实现就会两处不一致。
+   */
+  profiles: z.array(QuoteProfileSchema).default([]),
+});
+export type QuoteProfileList = z.infer<typeof QuoteProfileListSchema>;
+
+export const SaveQuoteProfileSchema = z.object({
+  product_key: z.string().min(1),
+  profile_name: z.string().min(1, '请给这份档案起个名字'),
+  rate_set_code: z.string().min(1),
+  tax_overrides: QuoteProfileTaxSchema,
+});
+export type SaveQuoteProfile = z.infer<typeof SaveQuoteProfileSchema>;
 
 export const RebateRateLookupRequestSchema = z.object({
   hs_code: z.string().min(4, '请输入 HS 编码'),
@@ -269,6 +386,12 @@ export type MetricFormula = z.infer<typeof MetricFormulaSchema>;
 
 export const SpaceOptionSchema = z.object({
   value: z.unknown(),
+  /**
+   * 给人看的写法（如丝径 2.0、镀锌「普锌40g/㎡」）。
+   * 与 value 分开是必须的：value 过一遍 JSON 会把 2.0 变成 2，
+   * 而业务要看到的是 2.0 —— 界面显示 label、提交 value。
+   */
+  label: z.string().optional(),
   label_en: z.string().optional(),
   attributes: z.record(z.unknown()).optional(),
 });
@@ -289,6 +412,88 @@ export const SpaceDeductionSchema = z.object({
   note: z.string(),
 });
 
+/**
+ * 数量区可按件改写的规格参数声明。
+ *
+ * 只给**映射关系**：`key` 是变体属性名，`variant` 是它所属的变体组。
+ * 界面据此从「当前选中项」的属性里取默认值，改动回写成 variant_overrides ——
+ * 属性名与取值始终留在产品数据里，界面不写死任何产品知识。
+ */
+export const PieceInputSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  label_en: z.string().default(''),
+  /** 引擎内部单位（公式里用的那个，如 m） */
+  unit: z.string().default(''),
+  /** 界面呈现与输入用的单位（如 公分）；留空则同 unit */
+  ui_unit: z.string().default(''),
+  /** 界面值 = 引擎值 × ui_scale（m→cm 填 100）。界面只负责换算，不拥有业务单位知识。 */
+  ui_scale: z.number().default(1),
+  variant: z.string().default(''),
+  note: z.string().default(''),
+  /** 本项是「每件的数量」→ 界面的总数 = 本项 × 件数 */
+  unit_quantity: z.boolean().default(false),
+});
+export type PieceInput = z.infer<typeof PieceInputSchema>;
+
+// ── 定价数据（按产品定价键的客户成本表）────────────────────────────────────
+
+/** 定价键的一个维度：取值 + 给人的显示名，全部来自产品定义。 */
+export const PricingKeyDimSchema = z.object({
+  field: z.string(),
+  label: z.string(),
+  unit: z.string().default(''),
+  options: z.array(z.object({
+    value: z.union([z.string(), z.number()]),
+    label: z.string(),
+  })),
+});
+export type PricingKeyDim = z.infer<typeof PricingKeyDimSchema>;
+
+/** 定价矩阵的一格 = 一个定价键组合（客户配过的有 item_id，没配的为空）。 */
+export const PricingCellSchema = z.object({
+  key: z.string(),
+  values: z.record(z.union([z.string(), z.number()])),
+  labels: z.array(z.string()),
+  amount: z.number().nullable(),
+  unit: z.string().default(''),
+  item_id: z.number().nullable().default(null),
+  effective_from: z.string().nullable().default(null),
+  /** manual = 客户自己配的；product_default = 尚未配置，用产品定义的兜底成本 */
+  source: z.string().default(''),
+  notes: z.string().nullable().default(null),
+  configured: z.boolean(),
+});
+export type PricingCell = z.infer<typeof PricingCellSchema>;
+
+export const PricingMatrixSchema = z.object({
+  product_key: z.string(),
+  product_name: z.string(),
+  cost_unit: z.string().default(''),
+  scope: z.enum(['own', 'all']),
+  dims: z.array(PricingKeyDimSchema),
+  rows: z.array(PricingCellSchema),
+  /** scope=all 时才有：租户下每个客户的配置情况 */
+  customers: z.array(z.object({
+    customer_id: z.string(),
+    rows: z.array(PricingCellSchema),
+    configured_count: z.number().int(),
+  })).optional(),
+});
+export type PricingMatrix = z.infer<typeof PricingMatrixSchema>;
+
+export const SavePricingCellSchema = z.object({
+  product_key: z.string(),
+  values: z.record(z.union([z.string(), z.number()])),
+  /** 客户自加档位的显示名（如「镀锌60g/㎡」）；已有档位不必给 */
+  labels: z.record(z.string()).optional(),
+  amount: z.number().positive(),
+  unit: z.string().default(''),
+  effective_from: z.string().optional(),
+  notes: z.string().optional(),
+});
+export type SavePricingCell = z.infer<typeof SavePricingCellSchema>;
+
 export const ProductFormulasResponseSchema = z.object({
   product_key: z.string(),
   name: z.string(),
@@ -308,6 +513,13 @@ export const ProductFormulasResponseSchema = z.object({
     summary: z.string(),
     formula: z.string(),
   }),
+  /** 数量区可按件改写的规格参数（默认随变体联动，可覆盖） */
+  piece_inputs: z.array(PieceInputSchema).default([]),
+  /**
+   * 定价键：决定「去定价数据里查哪一行」的维度组合（如牛栏网 = 边丝径 × 镀锌量）。
+   * 维度与取值全部来自产品定义 —— 定价数据页据此画矩阵，前端不写死产品知识。
+   */
+  pricing_key: z.array(PricingKeyDimSchema).default([]),
   calculations: z.object({
     derived: z.array(MetricFormulaSchema),
     piece: z.array(MetricFormulaSchema),

@@ -22,6 +22,7 @@ from app.services.export_quote import (
     worked_example,
 )
 from app.services.export_quote.formulas import PRICE_METRICS
+from app.services.export_quote.models import pricing_key_of, pricing_key_value
 from app.services.export_quote.products import field_fence
 
 pytestmark = pytest.mark.unit
@@ -34,7 +35,19 @@ def spec():
     return field_fence.build_spec()
 
 
-def find(res, **want):
+# 丝径拆分前的「方案名」→ 拆分后的 (边丝径, 内丝径)。
+# 保留旧名是为了让下面按规格定位的用例读起来仍然直观（对应关系是确定的）。
+WIRE_SPLIT = {
+    "全丝2.0": {"de": 2.0, "inner_wire": "内丝2.0"},
+    "全丝2.5": {"de": 2.5, "inner_wire": "内丝2.5"},
+    "边丝2.5+内丝2.0": {"de": 2.5, "inner_wire": "内丝2.0"},
+}
+
+
+def find(res, wire=None, **want):
+    """按规格取值定位一行；给 `wire`（旧方案名）会展开成 边丝径 + 内丝径。"""
+    if wire is not None:
+        want.update(WIRE_SPLIT[wire])
     for r in res.rows:
         if all(r.spec.get(k) == v for k, v in want.items()):
             return r
@@ -221,7 +234,7 @@ class TestEffectiveVolume:
             orders=field_fence.order_specs((30000,)),
             rate_set=RateSetRegistry.from_dir().get("CN-2026-09"),
             quote_date=date(2026, 9, 24),
-            variant_overrides={"wire": {"全丝2.0": {"roll_dia_m": D("0.32")}}},
+            variant_overrides={"inner_wire": {"内丝2.0": {"roll_dia_m": D("0.32")}}},
         ))
         r2 = over.rows[0]
         assert D(str(r2.derived["roll_dia_cm"])) == D("32.00")
@@ -307,7 +320,7 @@ class TestCalculationIsExplainable:
 
     def test_space_description_matches_48_combos(self):
         space = describe_space(spec())
-        assert space["combo_count"] == 48
+        assert space["combo_count"] == 64
         assert "48" not in space["formula"]  # formula 只描述轴，不含结论数字
         assert space["summary"]
 
@@ -407,3 +420,60 @@ class TestCalculationIsExplainable:
         declared = {f.name for f in p.derived} | {f.name for f in p.piece_metrics} \
             | {f.name for f in p.order_metrics}
         assert described == declared
+
+
+class TestPricingKey:
+    """定价键必须**跨入口稳定**。
+
+    这条被真实事故验证过：界面回传的值经过 JSON 会把 2.0 变成 2，
+    而引擎拿到的还是 2.0（浮点）。两边各自拼字符串就成了
+    `de=2` 与 `de=2.0` 两把钥匙 —— 症状是「成本存进去了，
+    界面不显示、报价也不变」，业务眼里就是"存不上"。
+    所以取值一律规范化，且下面这些入口必须拼出同一个键。
+    """
+
+    def test_float_and_int_spell_the_same_key(self):
+        p = field_fence.build_spec()
+        as_float = pricing_key_of(p, {"de": 2.0, "coating_code": "zinc_40"})
+        as_int = pricing_key_of(p, {"de": 2, "coating_code": "zinc_40"})
+        as_str = pricing_key_of(p, {"de": "2", "coating_code": "zinc_40"})
+        assert as_float == as_int == as_str == "de=2|coating_code=zinc_40"
+
+    def test_no_trailing_zero_or_scientific_notation(self):
+        """2.0 → "2"（不是 "2.0"）；100 → "100"（不是 "1E+2"）。"""
+        assert pricing_key_value(2.0) == "2"
+        assert pricing_key_value(2.5) == "2.5"
+        assert pricing_key_value(100) == "100"
+        assert pricing_key_value(30000) == "30000"
+        assert pricing_key_value(0.30) == "0.3"
+        assert pricing_key_value("zinc_40") == "zinc_40"
+
+    def test_matrix_options_are_the_same_keys_the_engine_looks_up(self):
+        """界面拿到的取值清单，必须能拼出引擎查价用的那个键。
+
+        界面只负责把 value 原样回传，所以两处必须完全一致 ——
+        这一条正是把「存了却查不到」钉死的地方。
+        """
+        p = field_fence.build_spec()
+        for dim in describe_product(p)["pricing_key"]:
+            assert all(isinstance(o["value"], str) for o in dim["options"]), \
+                f"{dim['field']} 的取值必须已规范化成字符串，否则过一遍 JSON 就会变样"
+
+        rows = [
+            pricing_key_of(p, {"de": o["value"], "coating_code": c["value"]})
+            for o in next(d for d in describe_product(p)["pricing_key"] if d["field"] == "de")["options"]
+            for c in next(d for d in describe_product(p)["pricing_key"] if d["field"] == "coating_code")["options"]
+        ]
+        assert rows == [
+            "de=2|coating_code=zinc_40",
+            "de=2|coating_code=zinc_200",
+            "de=2.5|coating_code=zinc_40",
+            "de=2.5|coating_code=zinc_200",
+        ]
+        assert len(set(rows)) == len(rows), "4 个组合必须互不相同，否则会互相覆盖"
+
+    def test_missing_dimension_yields_no_key(self):
+        """少一个维度就不能拼键 —— 宁可回退，也不要用半截键查到错价。"""
+        p = field_fence.build_spec()
+        assert pricing_key_of(p, {"de": 2.0}) == ""
+        assert pricing_key_of(p, {}) == ""

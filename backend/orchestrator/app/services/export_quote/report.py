@@ -41,16 +41,21 @@ def _number_format(decimals) -> str:
 def build_internal_view(result: QuoteResult) -> dict:
     """内部核算视图（含成本与税链）。"""
     header, body = result.table("internal")
+    cols = result.columns("internal")
     return {
         "view": "internal",
         "header": header,
         "rows": [[_plain(v) for v in row] for row in body],
-        "horizontal_header": [c.label for c in result.columns("internal")],
-        "vertical_header": [c.label_en or c.label for c in result.columns("internal")],
+        # 每列的小数位数：金额显示位数是**业务口径**（产品定义里声明的），
+        # 界面只负责按它补齐尾零，不得自己拿主意 —— 否则同一张表里
+        # 有的列 2 位、有的列 4 位会显得像算错了。
+        "decimals": [c.decimals for c in cols],
+        "horizontal_header": [c.label for c in cols],
+        "vertical_header": [c.label_en or c.label for c in cols],
         "vertical_data": [
             [d.resolve(c.key) if not _is_number(d.resolve(c.key)) else float(to_decimal(d.resolve(c.key)))
              for d in result.rows]
-            for c in result.columns("internal")
+            for c in cols
         ],
     }
 
@@ -74,6 +79,8 @@ def build_customer_view(result: QuoteResult, english: bool = False) -> dict:
         "view": "customer",
         "header": header,
         "rows": body,
+        # 每列的小数位数（同内部视图：位数由产品定义声明，界面只负责补齐）
+        "decimals": [c.decimals for c in cols],
         "horizontal_header": header,
         "vertical_header": [(c.label_en or c.label) if english else c.label for c in cols],
         "vertical_data": [

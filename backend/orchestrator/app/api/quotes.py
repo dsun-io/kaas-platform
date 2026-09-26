@@ -20,9 +20,12 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
+from app.db.models import Quotation
 from app.db.workstation_links import QuoteOrder, QuoteOrderItem
 from app.core.auth import AuthContext, get_auth_context
 from app.domain.enums import validate_enum, QUOTE_STATUS, CURRENCY, OWNER_SCOPE
+from app.domain.spec_hash import compute_spec_hash
+from app.repositories.quotations_repo import insert_quotation
 from app.api.ws_common import (
     tenant_id_of, scope_filter, check_write_access, next_doc_no, lock_fx_rate,
 )
@@ -30,6 +33,9 @@ from app.api.ws_common import (
 router = APIRouter(prefix="/api/v1", tags=["quotes"])
 
 ORDER_NEXT = {"draft": ("sent", "expired"), "sent": ("accepted", "rejected", "expired")}
+
+# 报价记录台账的来源标记：由报价单签发自动入账（区别于 quotations_db / L1_L2_formula / manual）
+LEDGER_SOURCE_QUOTE_ISSUED = "quote_issued"
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
@@ -125,6 +131,83 @@ async def _get_quote_or_404(db, tenant_id, quote_id, auth) -> QuoteOrder:
 
 def _parse_dt(value: Optional[str]):
     return datetime.fromisoformat(value) if value else None
+
+
+async def _record_quote_issued(db: AsyncSession, q: QuoteOrder, auth: AuthContext) -> None:
+    """报价单签发 → 向「报价记录」台账入账（**一张单一条**）。
+
+    为什么只在此处写：台账只记业务节点（报价单签发 / 订单成交），
+    算价试算不落账 —— 否则台账会被垃圾流水淹没。
+
+    为什么是整单一条（用户确认的粒度）：
+    - 台账按客户+产品类目组织，而一张报价单可含多个类目，拆行会丢上下文；
+    - 行项明细放进 product_spec 快照，条数不膨胀、明细仍可追溯。
+
+    为什么用 other 类目：整单记录不属于单一产品类目，
+    用既有的 other 档而不是新增枚举值（避免动契约）。
+    """
+    if not q.customer_id:
+        # 台账按客户归属；没有客户无法入账。不阻断签发，只跳过。
+        return
+
+    items = (await db.execute(
+        select(QuoteOrderItem)
+        .where(QuoteOrderItem.tenant_id == q.tenant_id,
+               QuoteOrderItem.quote_order_id == q.id)
+        .order_by(QuoteOrderItem.sort_order, QuoteOrderItem.id)
+    )).scalars().all()
+
+    total = float(q.total_amount) if q.total_amount is not None else None
+    snapshot = {
+        "doc": "quotation",
+        "quote_no": q.quote_no,
+        "customer_name": q.customer_name,
+        "currency": q.currency,
+        "total_amount": total,
+        "fx_rate": float(q.fx_rate) if q.fx_rate is not None else None,
+        "incoterm": q.incoterm,
+        "items": [
+            {
+                "product_name": i.product_name,
+                "qty": float(i.qty) if i.qty is not None else None,
+                "qty_unit": i.qty_unit,
+                "unit_price": float(i.unit_price) if i.unit_price is not None else None,
+                "line_amount": float(i.line_amount) if i.line_amount is not None else None,
+            }
+            for i in items
+        ],
+    }
+    spec_hash = compute_spec_hash(snapshot)
+
+    # 幂等：同一张报价单只入账一次。
+    # 状态机虽已限制 draft→sent 只能走一次，但重试/重复提交仍可能触发，
+    # 而台账是 INSERT-only 的事实表，脏数据清不掉。
+    exists = (await db.execute(
+        select(func.count()).select_from(Quotation).where(
+            Quotation.tenant_id == q.tenant_id,
+            Quotation.source == LEDGER_SOURCE_QUOTE_ISSUED,
+            Quotation.spec_hash == spec_hash,
+        )
+    )).scalar_one()
+    if exists:
+        return
+
+    await insert_quotation(
+        session=db,
+        tenant_id=q.tenant_id,
+        customer_id=q.customer_id,
+        product_category="other",
+        product_spec=snapshot,
+        spec_hash=spec_hash,
+        unit_price=total,
+        currency=q.currency or "USD",
+        unit="单",
+        discount=None,
+        min_quantity=None,
+        source=LEDGER_SOURCE_QUOTE_ISSUED,
+        notes=f"由报价单 {q.quote_no} 签发自动入账（整单一条）",
+        created_by=getattr(auth, "user_id", None),
+    )
 
 
 # ── 端点 ─────────────────────────────────────────────────────────────────────
@@ -250,7 +333,11 @@ async def update_quote(
                 "error": "conflict", "code": "ILLEGAL_TRANSITION",
                 "field": "status", "from": q.status, "to": target, "allowed": list(allowed),
             })
+        previous_status = q.status
         q.status = target
+        # 「签发」= draft → sent：这是报价单对外发出的业务节点，此时才落台账
+        if target == "sent" and previous_status == "draft":
+            await _record_quote_issued(db, q, auth)
 
     if body.customer_name is not None:
         q.customer_name = body.customer_name

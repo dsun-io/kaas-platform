@@ -5,6 +5,7 @@ import { apiClient } from "@/lib/api/client";
 import type {
   ExportProduct,
   ExportRateSet,
+  ExportTermsTemplate,
   ImportCalculateResponse,
   ImportPreviewResponse,
   ImportTemplateInfo,
@@ -20,7 +21,7 @@ import {
   triggerBlobDownload,
 } from "@/lib/export-quote/import-file";
 
-/** 已注册的产品模型（牛栏网、焊管…）。 */
+/** 已注册的产品模型（牛栏网…）。 */
 export function useExportProducts() {
   return useQuery({
     queryKey: ["export-quote", "products"],
@@ -49,7 +50,25 @@ export function useExportRateSets() {
     staleTime: 10 * 60 * 1000,
   });
 }
-
+/**
+ * 平台默认的出口费用结构（贸易术语阶梯 + 费用项）。
+ *
+ * 界面据此渲染运费/附加费输入框，并把模板**原样回传**（只填 value）——
+ * 所以「FOB 包含哪些费」这类业务知识留在后端，前端不写死。
+ */
+export function useExportTermsTemplate() {
+  return useQuery({
+    queryKey: ["export-quote", "terms-template"],
+    queryFn: async () => {
+      const { data } = await apiClient.get<ExportTermsTemplate>(
+        `${EXPORT_QUOTE_BASE}/terms/template`,
+      );
+      return data;
+    },
+    // 结构与计价方式很稳定，没必要频繁拉
+    staleTime: 30 * 60 * 1000,
+  });
+}
 /**
  * 模板说明：有哪些列、哪些必填、单位、可选值。
  *
