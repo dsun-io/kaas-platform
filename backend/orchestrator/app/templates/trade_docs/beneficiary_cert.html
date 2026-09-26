@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Beneficiary's Certificate - $cert_no</title>
+<style>
+/*__SHARED_STYLE__*/
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <div class="lh">$seller</div>
+
+  <div class="title">
+    <h1>Beneficiary's Certificate</h1>
+  </div>
+
+  <table class="meta">
+    <tr>
+      <td class="k">Certificate No.</td><td class="v">$cert_no</td>
+      <td class="k">Date</td><td class="v">$cert_date</td>
+    </tr>
+    <tr>
+      <td class="k">Invoice No.</td><td class="v">$invoice_no</td>
+      <td class="k">L/C No.</td><td class="v">$lc_no</td>
+    </tr>
+    <tr>
+      <td class="k">Contract No.</td><td class="v">$contract_no</td>
+      <td class="k">B/L No.</td><td class="v">$bl_no</td>
+    </tr>
+  </table>
+
+  <table class="parties">
+    <tr>
+      <td class="party">
+        <div class="lbl">To</div>
+        <div class="bd">$buyer</div>
+      </td>
+      <td class="gap"></td>
+      <td class="party">
+        <div class="lbl">Re: Description of Goods</div>
+        <div class="bd">$description_of_goods</div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- 信用证项下受益人证明的标准声明；custom.content 可补充该证额外要求的声明 -->
+  <div class="certify">
+    We, the beneficiary, hereby certify that the goods shipped under the above-mentioned documents
+    are in strict conformity with the terms and conditions of the contract and/or the letter of
+    credit, and that all the documents required by the credit have been forwarded to the applicant
+    within the period stipulated therein.
+  </div>
+
+  <div class="clauses">
+    <div class="clause">$content</div>
+  </div>
+
+  <table class="sign">
+    <tr>
+      <td style="width: 50%"></td>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">Authorised Signature &amp; Company Stamp</div>
+          <div class="stamp-hint">For and on behalf of $seller_name</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="foot">$footer_note</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Fumigation Certificate - $fumi_cert_no</title>
+<style>
+/*__SHARED_STYLE__*/
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <!--
+    熏蒸/热处理证书由具备资质的熏蒸服务单位签发，出口商只能提交熏蒸申请信息。
+    本模板输出申请要素，签发栏归熏蒸服务单位（及海关监管场所）。
+  -->
+  <div class="title">
+    <h1>Fumigation Certificate</h1>
+    <div class="sub">To Be Issued by the Fumigation Service Provider</div>
+  </div>
+
+  <table class="meta">
+    <tr>
+      <td class="k">Certificate No.</td><td class="v">$fumi_cert_no</td>
+      <td class="k">Date</td><td class="v">$fumi_cert_date</td>
+    </tr>
+    <tr>
+      <td class="k">Invoice No.</td><td class="v">$invoice_no</td>
+      <td class="k">Contract No.</td><td class="v">$contract_no</td>
+    </tr>
+  </table>
+
+  <table class="parties">
+    <tr>
+      <td class="party">
+        <div class="lbl">Consignee</div>
+        <div class="bd">$buyer</div>
+      </td>
+      <td class="gap"></td>
+      <td class="party">
+        <div class="lbl">Description of Goods</div>
+        <div class="bd">$description_of_goods</div>
+      </td>
+    </tr>
+  </table>
+
+  <table class="meta">
+    <tr>
+      <td class="k">Container No.</td><td class="v">$container_no</td>
+      <td class="k">Seal No.</td><td class="v">$seal_no</td>
+    </tr>
+    <tr>
+      <td class="k">Quantity</td><td class="v">$total_packages</td>
+      <td class="k">Volume</td><td class="v">$total_volume CBM</td>
+    </tr>
+    <tr>
+      <td class="k">Port of Loading</td><td class="v">$port_of_loading</td>
+      <td class="k">Port of Discharge</td><td class="v">$port_of_destination</td>
+    </tr>
+  </table>
+
+  <table class="meta">
+    <tr>
+      <td class="k">Treatment</td><td class="v">$treatment</td>
+      <td class="k">Fumigant</td><td class="v">$fumigant</td>
+    </tr>
+    <tr>
+      <td class="k">Dosage</td><td class="v">$dosage</td>
+      <td class="k">Duration</td><td class="v">$duration</td>
+    </tr>
+    <tr>
+      <td class="k">Temperature</td><td class="v">$temperature</td>
+      <td class="k">Treatment Date</td><td class="v">$treatment_date</td>
+    </tr>
+  </table>
+
+  <div class="certify">
+    This is to certify that the consignment described above has been treated in accordance with the
+    phytosanitary requirements of the importing country, using the treatment, fumigant, dosage,
+    duration and temperature stated above. The official certificate will be issued and signed by
+    the fumigation service provider.
+  </div>
+
+  <table class="sign">
+    <tr>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">Applicant for Fumigation</div>
+        </div>
+      </td>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">For the Fumigation Service Provider</div>
+          <div class="stamp-hint">Signature &amp; Stamp</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="foot">$footer_note</div>
+
+</div>
+</body>
+</html>

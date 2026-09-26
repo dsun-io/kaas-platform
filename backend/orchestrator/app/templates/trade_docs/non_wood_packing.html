@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Non-Wood Packing Declaration - $declaration_no</title>
+<style>
+/*__SHARED_STYLE__*/
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <div class="lh">$seller</div>
+
+  <div class="title">
+    <h1>Non-Wood Packing Declaration</h1>
+    <div class="sub">Declaration on Packing Materials</div>
+  </div>
+
+  <table class="meta">
+    <tr>
+      <td class="k">Declaration No.</td><td class="v">$declaration_no</td>
+      <td class="k">Date</td><td class="v">$declaration_date</td>
+    </tr>
+    <tr>
+      <td class="k">Invoice No.</td><td class="v">$invoice_no</td>
+      <td class="k">B/L No.</td><td class="v">$bl_no</td>
+    </tr>
+    <tr>
+      <td class="k">Vessel / Voyage</td><td class="v">$vessel</td>
+      <td class="k">Shipping Marks</td><td class="v">$shipping_marks</td>
+    </tr>
+  </table>
+
+  <table class="parties">
+    <tr>
+      <td class="party">
+        <div class="lbl">Consignee</div>
+        <div class="bd">$buyer</div>
+      </td>
+      <td class="gap"></td>
+      <td class="party">
+        <div class="lbl">Description of Goods</div>
+        <div class="bd">$description_of_goods</div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- 澳新、欧盟、美国等对木质包装有严格检疫要求（ISPM 15）；
+       本声明用于申明未使用实木包装，可免于熏蒸/热处理。 -->
+  <div class="certify">
+    We hereby declare that the packing materials used for the above-mentioned consignment are
+    entirely free from solid wood. The packing materials are made of alternative materials such as
+    plywood, particle board, oriented strand board, veneer, or other processed materials.
+    No solid wood packing material, including dunnage, pallets, crates, or bracing, has been used
+    in this shipment. Should any solid wood packing material be found, we shall bear full
+    responsibility for any resulting loss or expense.
+  </div>
+
+  <table class="sign">
+    <tr>
+      <td style="width: 50%"></td>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">Authorised Signature &amp; Company Stamp</div>
+          <div class="stamp-hint">For and on behalf of $seller_name</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="foot">$footer_note</div>
+
+</div>
+</body>
+</html>

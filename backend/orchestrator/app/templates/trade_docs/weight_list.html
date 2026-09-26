@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Weight List - $weight_list_no</title>
+<style>
+/*__SHARED_STYLE__*/
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <div class="lh">$seller</div>
+
+  <div class="title">
+    <h1>Weight List</h1>
+  </div>
+
+  <table class="meta">
+    <tr>
+      <td class="k">Weight List No.</td><td class="v">$weight_list_no</td>
+      <td class="k">Date</td><td class="v">$weight_list_date</td>
+    </tr>
+    <tr>
+      <td class="k">Invoice No.</td><td class="v">$invoice_no</td>
+      <td class="k">Country of Origin</td><td class="v">$country_of_origin</td>
+    </tr>
+    <tr>
+      <td class="k">Vessel / Voyage</td><td class="v">$vessel</td>
+      <td class="k">Shipping Marks</td><td class="v">$shipping_marks</td>
+    </tr>
+  </table>
+
+  <table class="parties">
+    <tr>
+      <td class="party">
+        <div class="lbl">Consignee</div>
+        <div class="bd">$buyer</div>
+      </td>
+      <td class="gap"></td>
+      <td class="party">
+        <div class="lbl">Notify Party</div>
+        <div class="bd">$notify_party</div>
+      </td>
+    </tr>
+  </table>
+
+  $items
+
+  <table class="meta">
+    <tr>
+      <td class="k">Total Gross Weight</td><td class="v">$total_gross_weight KGS</td>
+      <td class="k">Total Net Weight</td><td class="v">$total_net_weight KGS</td>
+    </tr>
+  </table>
+
+  <div class="certify">
+    We hereby certify that the weights stated above are true and correct in every respect, and are
+    based on the actual weighing carried out at the time of packing. The difference between gross
+    weight and net weight represents the weight of the packing materials.
+  </div>
+
+  <table class="sign">
+    <tr>
+      <td style="width: 50%"></td>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">Authorised Signature &amp; Company Stamp</div>
+          <div class="stamp-hint">For and on behalf of $seller_name</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="foot">$footer_note</div>
+
+</div>
+</body>
+</html>

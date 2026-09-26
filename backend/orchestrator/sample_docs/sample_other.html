@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Beneficiary Certificate</title>
+<title>Exporter&#x27;s Declaration</title>
 <style>
 /* ==========================================================================
    外贸单证 · 共享打印样式（印刷级 A4）
@@ -209,6 +209,22 @@ table.sign td { vertical-align: bottom; font-size: 8pt; }
   color: #93a1ad;
 }
 
+/* ── 汇票（Bill of Exchange）──────────────────────────────────────────── */
+/* 汇票是金融票据，按国际惯例用「句子式」排版而非表格：             */
+/* 出票金额与日期靠右、付款指令居中、付款人(To)与出票人签章分列两侧。 */
+table.draft-top { width: 100%; border-collapse: collapse; margin-bottom: 7mm; }
+table.draft-top td { vertical-align: top; font-size: 9pt; line-height: 1.7; }
+table.draft-top td.right { text-align: right; }
+table.draft-top .amount { font-size: 10.5pt; font-weight: 700; color: #0f2740; }
+.draft-sentence { font-size: 9.5pt; line-height: 2.2; text-align: justify; }
+.draft-sentence .fill {
+  font-weight: 700;
+  border-bottom: .8pt solid #9aa5b1;
+  padding: 0 1.5mm;
+}
+.draft-party { font-size: 8.6pt; line-height: 1.7; }
+.draft-party .hint { color: #7a8794; font-size: 7.6pt; }
+
 </style>
 </head>
 <body>
@@ -217,7 +233,7 @@ table.sign td { vertical-align: bottom; font-size: 8pt; }
   <div class="lh"><strong>ANPING HENGTAI WIRE MESH PRODUCTS CO., LTD.</strong><br>Wire Mesh Industrial Park, Anping County, Hengshui, Hebei 053600, China<br>Tel: +86-318-765-4321<br>E-mail: export@hengtai-mesh.com</div>
 
   <div class="title">
-    <h1>Beneficiary Certificate</h1>
+    <h1>Exporter&#x27;s Declaration</h1>
   </div>
 
   <table class="meta">
@@ -231,7 +247,7 @@ table.sign td { vertical-align: bottom; font-size: 8pt; }
     </tr>
   </table>
 
-  <div class="certify"><p>We hereby certify that one complete set of the shipping documents as required by the above-mentioned letter of credit has been sent to the applicant by courier within the period stipulated in the credit.</p></div>
+  <div class="certify"><p>We hereby declare that the goods described in the above-mentioned invoice have been exported from the People's Republic of China in accordance with the applicable laws and regulations, and that all statements made herein are true and correct.</p></div>
 
   <table class="sign">
     <tr>

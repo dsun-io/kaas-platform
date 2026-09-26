@@ -117,17 +117,48 @@ BASE = {
     # ── 装箱汇总（未提供时由行项自动汇总）──────────────────────
     "total_gross_weight": 26500, "total_net_weight": 26000, "total_volume": 37.50,
 
-    # ── 货物描述（提单 / 保单用）────────────────────────────────
+    # ── 货物描述（提单 / 保单 / 各类证明用）─────────────────────
     "description_of_goods": "CATTLE FENCE, Y POST AND CHAIN LINK FENCE",
     "gross_weight": 26500, "volume": 37.50, "quantity": "2800",
 
-    # ── 通用单证（other）───────────────────────────────────────
-    "title": "Beneficiary Certificate",
-    "content": (
-        "<p>We hereby certify that one complete set of the shipping documents as required by the "
-        "above-mentioned letter of credit has been sent to the applicant by courier within the "
-        "period stipulated in the credit.</p>"
-    ),
+    # ── 装运通知 ───────────────────────────────────────────────
+    "advice_no": "SA-202609-0001", "advice_date": "2026-10-21",
+    "etd": "2026-10-24", "eta": "2026-11-08",
+
+    # ── 汇票（信用证议付）──────────────────────────────────────
+    "draft_no": "DR-202609-0001", "draft_date": "2026-10-21",
+    "tenor": "SIGHT",   # 模板已含 At ... of this FIRST of Exchange，此处只填期限本身
+    "payee": "BANK OF CHINA, HEBEI BRANCH",
+    "drawee": "WESTPAC BANKING CORPORATION, BRISBANE",
+    "issuing_bank": "WESTPAC BANKING CORPORATION, BRISBANE",
+    "lc_date": "2026-09-15",
+
+    # ── 受益人证明 / 非木质包装声明 ─────────────────────────────
+    "cert_no": "BEN-202609-0001", "cert_date": "2026-10-21",
+    "declaration_no": "NWP-202609-0001", "declaration_date": "2026-10-21",
+
+    # ── 重量单 ─────────────────────────────────────────────────
+    "weight_list_no": "WL-202609-0001", "weight_list_date": "2026-10-20",
+
+    # ── 质量证明 ───────────────────────────────────────────────
+    "quality_cert_no": "QC-202609-0001", "quality_cert_date": "2026-10-19",
+    "batch_no": "HT2026-0918",
+    "standard_applied": "GB/T 26941.1-2004 and contract specification",
+    "inspection_result": "QUALIFIED",
+
+    # ── 制造商证明 ─────────────────────────────────────────────
+    "mfr_cert_no": "MC-202609-0001", "mfr_cert_date": "2026-10-19",
+    "factory_address": "Wire Mesh Industrial Park, Anping County, Hengshui, Hebei, China",
+
+    # ── 报关信息 / 熏蒸申请 ───────────────────────────────────
+    "customs_decl_no": "CD-202609-0001", "customs_decl_date": "2026-10-21",
+    "trade_mode": "General Trade (0110)", "transport_mode": "By Sea",
+    "destination_country": "Australia",
+    "container_no": "CSNU7654321", "seal_no": "CN1234567",
+    "fumi_cert_no": "FUM-202609-0001", "fumi_cert_date": "2026-10-22",
+    "treatment": "FUMIGATION", "fumigant": "METHYL BROMIDE",
+    "dosage": "48 g/m3", "duration": "24 HOURS",
+    "temperature": "21 C MINIMUM", "treatment_date": "2026-10-22",
 
     # ── 合同条款 ────────────────────────────────────────────────
     "inspection": "Inspection by CIQ at port of loading; certificate to form part of documents",
@@ -137,19 +168,39 @@ BASE = {
 }
 
 OUT_DIR = Path(__file__).parent.parent / "sample_docs"
-DOC_TYPES = ["quotation", "pi", "contract", "ci", "pl", "bl", "co", "insurance", "other"]
+DOC_TYPES = [
+    # 出口商自制（正式件）
+    "quotation", "pi", "contract", "ci", "pl",
+    "shipping_advice", "draft", "beneficiary_cert", "non_wood_packing",
+    "weight_list", "quality_cert", "manufacturer_cert",
+    # 第三方签发（本系统产出申报 / 申请信息）
+    "bl", "co", "insurance", "customs_declaration", "fumigation_cert",
+    # 通用
+    "other",
+]
+
+# 通用单证演示内容（content 字段按原始 HTML 透传）
+OTHER_DOC_CONTENT = (
+    "<p>We hereby declare that the goods described in the above-mentioned invoice have been "
+    "exported from the People's Republic of China in accordance with the applicable laws and "
+    "regulations, and that all statements made herein are true and correct.</p>"
+)
 
 
 def main() -> None:
     OUT_DIR.mkdir(exist_ok=True)
     for doc_type in DOC_TYPES:
-        html = trade_doc_renderer.render_trade_doc(doc_type, BASE)
+        data = dict(BASE)
+        if doc_type == "other":
+            data["title"] = "Exporter's Declaration"
+            data["content"] = OTHER_DOC_CONTENT
+        html = trade_doc_renderer.render_trade_doc(doc_type, data)
         out = OUT_DIR / f"sample_{doc_type}.html"
         out.write_text(html, encoding="utf-8")
-        print(f"OK {doc_type:10s} -> {out.name} ({len(html)} bytes)")
+        print(f"OK {doc_type:20s} -> {out.name} ({len(html)} bytes)")
 
     print()
-    print("模板清单:", [t["doc_type"] for t in trade_doc_renderer.get_available_templates()])
+    print("模板总数:", len(trade_doc_renderer.get_available_templates()))
     print("金额大写:", trade_doc_renderer.amount_in_words(26450.00, "USD"))
 
 

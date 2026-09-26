@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Manufacturer's Certificate - $mfr_cert_no</title>
+<style>
+/*__SHARED_STYLE__*/
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <div class="lh">$seller</div>
+
+  <div class="title">
+    <h1>Manufacturer's Certificate</h1>
+  </div>
+
+  <table class="meta">
+    <tr>
+      <td class="k">Certificate No.</td><td class="v">$mfr_cert_no</td>
+      <td class="k">Date</td><td class="v">$mfr_cert_date</td>
+    </tr>
+    <tr>
+      <td class="k">Invoice No.</td><td class="v">$invoice_no</td>
+      <td class="k">L/C No.</td><td class="v">$lc_no</td>
+    </tr>
+  </table>
+
+  <table class="parties">
+    <tr>
+      <td class="party">
+        <div class="lbl">Consignee</div>
+        <div class="bd">$buyer</div>
+      </td>
+      <td class="gap"></td>
+      <td class="party">
+        <div class="lbl">Description of Goods</div>
+        <div class="bd">$description_of_goods</div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="certify">
+    We hereby certify that we are the actual manufacturer of the goods described above, that the
+    said goods have been manufactured in our own factory located at $factory_address, and that the
+    goods are of Chinese origin. We further certify that the goods are in conformity with the
+    technical specifications and quality requirements stipulated in the contract and/or the
+    letter of credit.
+  </div>
+
+  <div class="clauses">
+    <div class="clause">$content</div>
+  </div>
+
+  <table class="sign">
+    <tr>
+      <td style="width: 50%"></td>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">Authorised Signature &amp; Company Stamp</div>
+          <div class="stamp-hint">For and on behalf of $seller_name</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="foot">$footer_note</div>
+
+</div>
+</body>
+</html>

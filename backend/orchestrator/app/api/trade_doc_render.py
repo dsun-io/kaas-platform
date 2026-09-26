@@ -152,6 +152,12 @@ def _build_render_data(doc: TradeDoc) -> dict:
         "doc_date": doc.created_at.strftime("%Y-%m-%d") if doc.created_at else "",
         "content": custom.get("content", ""),
     }
+
+    # 透传 custom 中尚未映射的字段（含单证类型专属字段，如庄票、装运通知等的专有项）：
+    # 新增单证类型时只需在 custom 里填对应字段，无需修改本函数。
+    for key, value in custom.items():
+        data.setdefault(key, value)
+
     return data
 
 
