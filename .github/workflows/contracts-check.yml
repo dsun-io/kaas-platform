@@ -1,16 +1,32 @@
 name: contracts:check
 
+# 触发条件必须覆盖【所有契约源】—— 否则改了契约却没人校验，规则形同虚设。
+# R0 事件 · R1 报价 schema · R2 工位元数据 · R3 单证类型 · R4 线上 Worker 镜像
 on:
   push:
     paths:
       - 'shared/contracts/**'
       - 'backend/orchestrator/app/domain/schema_registry.py'
+      - 'backend/orchestrator/app/domain/workstations.py'
+      - 'backend/orchestrator/app/domain/enums.py'
+      - 'backend/orchestrator/app/api/ws_common.py'
+      - 'backend/orchestrator/app/services/trade_doc_payload.py'
+      - 'backend/worker/src/main.py'
+      - 'frontend/src/lib/trade-doc/**'
       - 'backend/docs/schema-registry.md'
+      - 'scripts/contracts-check.ts'
   pull_request:
     paths:
       - 'shared/contracts/**'
       - 'backend/orchestrator/app/domain/schema_registry.py'
+      - 'backend/orchestrator/app/domain/workstations.py'
+      - 'backend/orchestrator/app/domain/enums.py'
+      - 'backend/orchestrator/app/api/ws_common.py'
+      - 'backend/orchestrator/app/services/trade_doc_payload.py'
+      - 'backend/worker/src/main.py'
+      - 'frontend/src/lib/trade-doc/**'
       - 'backend/docs/schema-registry.md'
+      - 'scripts/contracts-check.ts'
 
 jobs:
   check:
