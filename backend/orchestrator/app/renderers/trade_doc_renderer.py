@@ -190,9 +190,13 @@ def _derive_fields(doc_type: str, data: dict[str, Any], context: dict[str, Any],
     return derived
 
 
+# 不带 _date 后缀、但语义为日期的字段：同样格式化为 26-Sep-2026
+_DATE_KEYS = {"date", "valid_until", "etd", "eta"}
+
+
 def _is_date_key(key: str) -> bool:
     kl = key.lower()
-    return kl.endswith("_date") or kl in {"date", "valid_until"}
+    return kl.endswith("_date") or kl in _DATE_KEYS
 
 
 def _format_number(key: str, value: Any) -> str:
@@ -401,6 +405,47 @@ _ITEM_COLUMNS: dict[str, list[tuple[str, str, str]]] = {
         ("gross_weight", "G.W. (KGS)", "r"),
         ("net_weight", "N.W. (KGS)", "r"),
         ("hs_code", "HS Code", "c"),
+    ],
+    # 重量单：只关心数量与重量，不含包装细节
+    "weight_list": [
+        ("no", "No.", "c"),
+        ("product_name", "Description of Goods", "l"),
+        ("specification", "Specification", "l"),
+        ("qty", "Quantity", "r"),
+        ("qty_unit", "Unit", "c"),
+        ("gross_weight", "G.W. (KGS)", "r"),
+        ("net_weight", "N.W. (KGS)", "r"),
+    ],
+    # 装运通知：货物摘要 + 包装与毛重
+    "shipping_advice": [
+        ("no", "No.", "c"),
+        ("product_name", "Description of Goods", "l"),
+        ("specification", "Specification", "l"),
+        ("qty", "Quantity", "r"),
+        ("qty_unit", "Unit", "c"),
+        ("package", "Packages", "c"),
+        ("gross_weight", "G.W. (KGS)", "r"),
+    ],
+    # 质量/检验证明：以 HS Code 与规格为核心
+    "quality_cert": [
+        ("no", "No.", "c"),
+        ("product_name", "Description of Goods", "l"),
+        ("specification", "Specification", "l"),
+        ("qty", "Quantity", "r"),
+        ("qty_unit", "Unit", "c"),
+        ("hs_code", "HS Code", "c"),
+    ],
+    # 报关信息：按申报要素排列（项号 / 商品编号 / 品名规格 / 数量 / 单价总价），
+    # 重量等汇总项置于表格下方的汇总栏，避免表格列过多影响可读性
+    "customs_declaration": [
+        ("no", "Item No.", "c"),
+        ("product_name", "Description of Goods", "l"),
+        ("specification", "Specification", "l"),
+        ("hs_code", "HS Code", "c"),
+        ("qty", "Quantity", "r"),
+        ("qty_unit", "Unit", "c"),
+        ("unit_price", "Unit Price", "r"),
+        ("line_amount", "Amount", "r"),
     ],
 }
 

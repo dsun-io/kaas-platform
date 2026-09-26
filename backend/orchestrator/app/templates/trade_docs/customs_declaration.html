@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Customs Declaration Data - $customs_decl_no</title>
+<style>
+/*__SHARED_STYLE__*/
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <!--
+    报关单由中国海关/报关行按法定格式申报与签发，出口商无权自行出具报关单。
+    本表汇总的是「报关申报要素」，供报关行录入制单，因此签章栏区分
+    申报单位（出口商）与输单单位（报关行）。
+  -->
+  <div class="lh">$seller</div>
+
+  <div class="title">
+    <h1>Customs Declaration Data</h1>
+    <div class="sub">Particulars for Export Declaration &mdash; To Be Lodged by the Customs Broker</div>
+  </div>
+
+  <table class="meta">
+    <tr>
+      <td class="k">Declaration No.</td><td class="v">$customs_decl_no</td>
+      <td class="k">Date</td><td class="v">$customs_decl_date</td>
+    </tr>
+    <tr>
+      <td class="k">Contract No.</td><td class="v">$contract_no</td>
+      <td class="k">Invoice No.</td><td class="v">$invoice_no</td>
+    </tr>
+    <tr>
+      <td class="k">Terms of Delivery</td><td class="v">$incoterm</td>
+      <td class="k">Trade Mode</td><td class="v">$trade_mode</td>
+    </tr>
+    <tr>
+      <td class="k">Transport Mode</td><td class="v">$transport_mode</td>
+      <td class="k">Vessel / Voyage</td><td class="v">$vessel</td>
+    </tr>
+    <tr>
+      <td class="k">Port of Loading</td><td class="v">$port_of_loading</td>
+      <td class="k">Destination Country</td><td class="v">$destination_country</td>
+    </tr>
+    <tr>
+      <td class="k">Currency</td><td class="v">$currency</td>
+      <td class="k">Country of Origin</td><td class="v">$country_of_origin</td>
+    </tr>
+  </table>
+
+  $items
+
+  <table class="meta">
+    <tr>
+      <td class="k">Total Amount</td><td class="v">$currency $total_amount</td>
+      <td class="k">Total Packages</td><td class="v">$total_packages</td>
+    </tr>
+    <tr>
+      <td class="k">Gross Weight</td><td class="v">$total_gross_weight KGS</td>
+      <td class="k">Net Weight</td><td class="v">$total_net_weight KGS</td>
+    </tr>
+    <tr>
+      <td class="k">Container No.</td><td class="v">$container_no</td>
+      <td class="k">Seal No.</td><td class="v">$seal_no</td>
+    </tr>
+  </table>
+
+  <div class="certify">
+    The particulars above are provided for the preparation and lodgement of the export customs
+    declaration. The official declaration will be lodged with and released by China Customs through
+    the customs broker in the prescribed format. The exporter confirms that the information given
+    is true, accurate and complete.
+  </div>
+
+  <table class="sign">
+    <tr>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">Prepared by the Exporter</div>
+        </div>
+      </td>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">Lodged by the Customs Broker</div>
+          <div class="stamp-hint">Customs Broker &mdash; Signature &amp; Stamp</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="foot">$footer_note</div>
+
+</div>
+</body>
+</html>

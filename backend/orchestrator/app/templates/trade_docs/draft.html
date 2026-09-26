@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Bill of Exchange - $draft_no</title>
+<style>
+/*__SHARED_STYLE__*/
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <!--
+    汇票（Bill of Exchange / Draft）：信用证议付与托收的核心金融票据。
+    按国际惯例采用「句子式」排版，金额与日期靠右、付款指令居中，
+    付款人(Drawee)与出票人(Drawer)分列左右。汇票由出口商出具，但须经银行流转。
+  -->
+  <div class="title">
+    <h1>Bill of Exchange</h1>
+    <div class="sub">First of Exchange</div>
+  </div>
+
+  <table class="draft-top">
+    <tr>
+      <td>No. <span class="fill">$draft_no</span></td>
+      <td class="right">
+        <span class="amount">Exchange for $currency $total_amount</span><br>
+        <span>$place_of_issue, $draft_date</span>
+      </td>
+    </tr>
+  </table>
+
+  <div class="draft-sentence">
+    At <span class="fill">$tenor</span> of this FIRST of Exchange (Second of the same tenor and date
+    being unpaid), pay to the order of <span class="fill">$payee</span>
+    the sum of <span class="fill">$total_amount_words</span>
+    for value received.
+  </div>
+
+  <table class="meta" style="margin-top: 7mm;">
+    <tr>
+      <td class="k">Drawn Under</td><td class="v">$issuing_bank</td>
+    </tr>
+    <tr>
+      <td class="k">L/C No.</td><td class="v">$lc_no</td>
+    </tr>
+    <tr>
+      <td class="k">L/C Date</td><td class="v">$lc_date</td>
+    </tr>
+    <tr>
+      <td class="k">Invoice No.</td><td class="v">$invoice_no</td>
+    </tr>
+  </table>
+
+  <table class="sign" style="margin-top: 10mm;">
+    <tr>
+      <td style="width: 50%">
+        <div class="draft-party">
+          To: <strong>$drawee</strong><br>
+          <span class="hint">(Drawee)</span>
+        </div>
+      </td>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="draft-party">For and on behalf of<br><strong>$seller_name</strong></div>
+          <div class="rule" style="margin-top: 14mm;"></div>
+          <div class="cap">Authorised Signature</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="foot">$footer_note</div>
+
+</div>
+</body>
+</html>

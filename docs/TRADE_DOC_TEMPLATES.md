@@ -28,20 +28,41 @@
 
 ⚠️ **这是最容易出错的地方**：并非所有单证都由出口商出具。做错会构成单据造假。
 
-| 类型 | 单据名 | 出具方 | 本系统产出的性质 |
-|---|---|---|---|
-| `quotation` | Quotation | **出口商** | 正式报价单 |
-| `pi` | Proforma Invoice | **出口商** | 正式形式发票 |
-| `contract` | Sales Contract | **买卖双方** | 正式合同（双签） |
-| `ci` | Commercial Invoice | **出口商** | 正式发票，可直接报关、议付、收汇 |
-| `pl` | Packing List | **出口商** | 正式装箱单 |
-| `bl` | Bill of Lading | **承运人 / 船公司** | ❗仅为**托运单/提单确认件（Draft）**，页面明确标注 *To Be Issued by the Carrier*，正本由船公司签发 |
-| `co` | Certificate of Origin | **贸促会（CCPIT）/ 海关** | ❗仅为**申报信息表**，正式证书按法定格式（FORM A / CO / FORM E 等）由签证机构出具 |
-| `insurance` | Insurance Policy | **保险公司** | ❗仅为**投保信息**，正式保单由保险公司签发 |
-| `other` | 通用单证 | 视具体单据而定 | 受益人证明、装运通知等由出口商出具的辅助单据 |
+### A. 出口商自制（正式件，可直接对外使用）
 
-后三类单据模板底部均带**声明条款**说明签发方，签章栏也按真实签发方设置（承运人 / 签证机构 / 保险公司），
-不会误导使用者把它当成已生效的正式凭证。
+| 类型 | 单据名 | 用途 |
+|---|---|---|
+| `quotation` | Quotation 报价单 | 对外报价 |
+| `pi` | Proforma Invoice 形式发票 | 客户确认订单、申请进口许可、开立信用证 |
+| `contract` | Sales Contract 销售合同 | 正式合同（买卖双方双签） |
+| `ci` | Commercial Invoice 商业发票 | 报关、清关、付汇、信用证议付 |
+| `pl` | Packing List 装箱单 | 报关、清关、收货核对 |
+| `shipping_advice` | Shipping Advice 装运通知 | 装运后通知买方（信用证常要求限期内发出） |
+| `draft` | Bill of Exchange 汇票 | 信用证议付 / 托收的核心金融票据 |
+| `beneficiary_cert` | Beneficiary's Certificate 受益人证明 | 信用证项下自我声明（已按要求寄单等） |
+| `non_wood_packing` | Non-Wood Packing Declaration 非木质包装声明 | 声明未用实木包装（ISPM 15），可免于熏蒸 |
+| `weight_list` | Weight List 重量单 | 逐项列明毛重与净重 |
+| `quality_cert` | Certificate of Quality 质量证明 | 证明质量符合约定标准 |
+| `manufacturer_cert` | Manufacturer's Certificate 制造商证明 | 转口贸易、反倾销、原产国核查 |
+
+### B. 第三方签发（本系统只产出「申报 / 申请信息」，正式件由对方出具）
+
+| 类型 | 单据名 | 签发方 | 本系统产出的性质 |
+|---|---|---|---|
+| `bl` | Bill of Lading 提单 | 承运人 / 船公司 | ❗托运单 / 提单确认件（Draft），标注 *To Be Issued by the Carrier* |
+| `co` | Certificate of Origin 原产地证 | 贸促会（CCPIT）/ 海关 | ❗申报信息表，正式证书按法定格式（FORM A / CO / FORM E 等）出具 |
+| `insurance` | Insurance Policy 保险单 | 保险公司 | ❗投保信息 |
+| `customs_declaration` | Customs Declaration 报关单 | 报关行 / 海关 | ❗申报要素汇总表 |
+| `fumigation_cert` | Fumigation Certificate 熏蒸证书 | 熏蒸服务单位 | ❗熏蒸申请信息 |
+
+### C. 通用
+
+| 类型 | 单据名 | 说明 |
+|---|---|---|
+| `other` | 通用单证 | 出口商声明、船公司证明等；`content` 字段支持原始 HTML |
+
+**B 类单据模板底部均带声明条款说明签发方**，签章栏也按真实签发方设置
+（承运人 / 签证机构 / 保险公司 / 报关行 / 熏蒸单位），不会误导使用者把它当成已生效的正式凭证。
 
 ---
 
@@ -116,7 +137,9 @@ python scripts/render_all_samples.py
    （格式：`(字段 key, 英文表头, 对齐 c/l/r)`）。
 4. 在 `tests/test_trade_doc_renderer.py` 补对应的渲染与字段用例。
 
-**待扩展的常见单证**（当前未做，可按上述步骤添加）：
-装运通知（Shipping Advice）、受益人证明（Beneficiary Certificate，现可用 `other`）、
-汇票（Bill of Exchange / Draft）、报关单、商检证书、船公司证明（Certificate of Ownership）、
-SASO / COC 等目的国认证文件。
+**已验证的约束**：凡模板使用 `$items` 的，必须同时在 `_ITEM_COLUMNS` 定义固定列
+（由 `test_every_template_using_items_defines_fixed_columns` 自动化卡住）。
+
+**待扩展的常见单证**（可按上述步骤添加）：
+SASO / COC 等目的国认证文件、船公司证明（Certificate of Vessel's Ownership）、
+出口许可证、商检证书（CIQ）、受益人声明（Beneficiary's Declaration）等。

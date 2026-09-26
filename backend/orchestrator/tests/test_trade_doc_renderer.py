@@ -16,10 +16,20 @@ MINIMAL_DATA = {
 }
 
 
+# 全部单证类型：出口商自制 + 第三方签发（申报/申请信息） + 通用
+ALL_DOC_TYPES = [
+    "quotation", "pi", "contract", "ci", "pl",
+    "shipping_advice", "draft", "beneficiary_cert", "non_wood_packing",
+    "weight_list", "quality_cert", "manufacturer_cert",
+    "bl", "co", "insurance", "customs_declaration", "fumigation_cert",
+    "other",
+]
+
+
 @pytest.mark.unit
 def test_list_templates_covers_all_doc_types():
     types = {t["doc_type"] for t in trade_doc_renderer.get_available_templates()}
-    assert types == {"quotation", "pi", "contract", "ci", "pl", "bl", "co", "insurance", "other"}
+    assert types == set(ALL_DOC_TYPES)
 
 
 @pytest.mark.unit
@@ -31,7 +41,7 @@ def test_get_template_fields():
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("doc_type", ["quotation", "pi", "contract", "ci", "pl", "bl", "co", "insurance", "other"])
+@pytest.mark.parametrize("doc_type", ALL_DOC_TYPES)
 def test_render_all_doc_types_without_exception(doc_type):
     html = trade_doc_renderer.render_trade_doc(doc_type, MINIMAL_DATA)
     assert "<html" in html
@@ -168,3 +178,70 @@ def test_shared_print_style_is_inlined():
     assert "/*__SHARED_STYLE__*/" not in html
     assert "@page" in html
     assert "table.items" in html
+
+
+# ── 新增单证类型 ──────────────────────────────────────────────────────
+
+@pytest.mark.unit
+def test_draft_renders_amount_in_words_and_tenor():
+    """汇票：金额大写 + 付款期限 + 付款人必须正确出现"""
+    html = trade_doc_renderer.render_trade_doc("draft", {
+        **MINIMAL_DATA,
+        "draft_no": "DR-TEST-0001", "draft_date": "2026-10-21",
+        "tenor": "SIGHT",
+        "payee": "BANK OF CHINA",
+        "drawee": "WESTPAC BANKING CORPORATION",
+    })
+    assert "DR-TEST-0001" in html
+    # tenor 值渲染在 <span class="fill"> 内，断言需按渲染后的 HTML 写
+    assert ">SIGHT</span> of this FIRST of Exchange" in html
+    assert "BANK OF CHINA" in html
+    assert "WESTPAC BANKING CORPORATION" in html
+    assert "SAY US DOLLARS TWENTY-SIX THOUSAND FOUR HUNDRED AND FIFTY ONLY" in html
+    assert "21-Oct-2026" in html
+
+
+@pytest.mark.unit
+def test_shipping_advice_formats_etd_eta():
+    """装运通知：ETD/ETA 同样按国际写法格式化"""
+    html = trade_doc_renderer.render_trade_doc("shipping_advice", {
+        **MINIMAL_DATA,
+        "advice_no": "SA-TEST-0001", "advice_date": "2026-10-21",
+        "etd": "2026-10-24", "eta": "2026-11-08",
+    })
+    assert "24-Oct-2026" in html
+    assert "08-Nov-2026" in html
+
+
+@pytest.mark.unit
+def test_non_wood_packing_declaration_text():
+    """非木质包装声明必须含免熏蒸关键表述（ISPM 15 场景）"""
+    html = trade_doc_renderer.render_trade_doc("non_wood_packing", MINIMAL_DATA)
+    assert "free from solid wood" in html
+    assert "Non-Wood Packing Declaration" in html
+
+
+@pytest.mark.unit
+def test_third_party_docs_state_issuing_party():
+    """第三方签发的单证必须在页面上标明签发方，避免被误当作正式凭证"""
+    assert "To Be Issued by the Carrier" in trade_doc_renderer.render_trade_doc("bl", MINIMAL_DATA)
+    assert "CCPIT" in trade_doc_renderer.render_trade_doc("co", MINIMAL_DATA)
+    assert "To Be Issued by the Insurer" in trade_doc_renderer.render_trade_doc("insurance", MINIMAL_DATA)
+    assert "Fumigation Service Provider" in trade_doc_renderer.render_trade_doc("fumigation_cert", MINIMAL_DATA)
+    assert "Customs Broker" in trade_doc_renderer.render_trade_doc("customs_declaration", MINIMAL_DATA)
+
+
+@pytest.mark.unit
+def test_every_template_using_items_defines_fixed_columns():
+    """结构性约束：凡使用 $items 的模板都必须定义固定列。
+
+    否则会静默回退到「列由数据键决定」，导致同一类单据的列序随数据漂移
+    （比如报关表里冒出装箱单的毛净重列）——审单场景下这是硬伤。
+    """
+    missing: list[str] = []
+    for doc_type, spec in trade_doc_renderer._TEMPLATES_MANIFEST.items():
+        template = (trade_doc_renderer.TEMPLATES_DIR / spec["template_file"]).read_text(
+            encoding="utf-8-sig")
+        if "$items" in template and doc_type not in trade_doc_renderer._ITEM_COLUMNS:
+            missing.append(doc_type)
+    assert missing == [], f"以下模板使用 $items 但未定义固定列: {missing}"
