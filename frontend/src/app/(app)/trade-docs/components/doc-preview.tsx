@@ -79,7 +79,7 @@ export function DocPreview({
       </div>
 
       {missing.length > 0 && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+        <div className="rounded-md border border-warning/40 bg-warning-muted p-3 text-sm text-warning-muted-foreground">
           <div className="mb-1 flex items-center gap-1 font-medium">
             <AlertTriangle className="h-4 w-4" />
             这张单据还不能直接发给客户 / 报关（以下必填项为空）
@@ -88,18 +88,18 @@ export function DocPreview({
             {missing.map((item) => (
               <li key={item.field}>
                 {item.label}
-                <span className="ml-1 text-amber-700">({item.field})</span>
+                <span className="ml-1 opacity-80">({item.field})</span>
               </li>
             ))}
           </ul>
-          <p className="mt-1 text-xs text-amber-800">
+          <p className="mt-1 text-xs opacity-80">
             常见原因：企业主体信息未填（卖方抬头）、客户档案缺地址/联系人、上游订单未填贸易条款。
           </p>
         </div>
       )}
 
       {missing.length === 0 && (
-        <div className="flex items-center gap-1 text-sm text-emerald-700">
+        <div className="flex items-center gap-1 text-sm text-success">
           <CheckCircle2 className="h-4 w-4" />
           必填项齐全，可直接打印或签发。
         </div>

@@ -120,7 +120,7 @@ export default function OrdersPage() {
             转为订单
           </Button>
           {quotes.data?.length === 0 && (
-            <span className="text-xs text-amber-700">
+            <span className="text-xs text-warning">
               还没有报价单 —— 请先在「报价」工位出报价。
             </span>
           )}
@@ -182,16 +182,14 @@ export default function OrdersPage() {
                           )}`}
                     </td>
                     <td className="p-2">
-                      {o.incoterm || (
-                        <span className="text-amber-700">未填</span>
-                      )}
+                      {o.incoterm || <span className="text-warning">未填</span>}
                     </td>
                     <td
                       className="p-2 max-w-[220px] truncate"
                       title={o.payment_terms ?? ""}
                     >
                       {o.payment_terms || (
-                        <span className="text-amber-700">未填</span>
+                        <span className="text-warning">未填</span>
                       )}
                     </td>
                     <td className="p-2">{o.port_of_destination || "—"}</td>

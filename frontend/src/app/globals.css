@@ -3,52 +3,109 @@
 @tailwind utilities;
 
 /* 浏览器自动填充检测 */
-@keyframes autoFillStart { from { background-color: transparent; } to { background-color: transparent; } }
-@keyframes autoFillEnd { from { background-color: transparent; } to { background-color: transparent; } }
-input:-webkit-autofill { animation-name: autoFillStart; }
-input:not(:-webkit-autofill) { animation-name: autoFillEnd; }
+@keyframes autoFillStart {
+  from {
+    background-color: transparent;
+  }
+  to {
+    background-color: transparent;
+  }
+}
+@keyframes autoFillEnd {
+  from {
+    background-color: transparent;
+  }
+  to {
+    background-color: transparent;
+  }
+}
+input:-webkit-autofill {
+  animation-name: autoFillStart;
+}
+input:not(:-webkit-autofill) {
+  animation-name: autoFillEnd;
+}
 
 @layer base {
   :root {
     /* ── Brand: vibrant indigo gradient accent ── */
-    --background: oklch(0.982 0.004 250);
-    --foreground: oklch(0.19 0.02 265);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.19 0.02 265);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.19 0.02 265);
+    --background: 0.982 0.004 250;
+    --foreground: 0.19 0.02 265;
+    --card: 1 0 0;
+    --card-foreground: 0.19 0.02 265;
+    --popover: 1 0 0;
+    --popover-foreground: 0.19 0.02 265;
 
     /* Primary: rich indigo with gradient feel */
-    --primary: oklch(0.48 0.19 278);
-    --primary-foreground: oklch(0.985 0.003 250);
+    --primary: 0.48 0.19 278;
+    --primary-foreground: 0.985 0.003 250;
     --primary-glow: oklch(0.55 0.22 278 / 0.25);
 
-    --secondary: oklch(0.96 0.006 250);
-    --secondary-foreground: oklch(0.28 0.02 265);
-    --muted: oklch(0.96 0.006 250);
-    --muted-foreground: oklch(0.48 0.015 265);
-    --accent: oklch(0.945 0.015 278);
-    --accent-foreground: oklch(0.42 0.15 278);
-    --destructive: oklch(0.60 0.21 25);
-    --destructive-foreground: oklch(0.985 0.003 250);
+    --secondary: 0.96 0.006 250;
+    --secondary-foreground: 0.28 0.02 265;
+    --muted: 0.96 0.006 250;
+    --muted-foreground: 0.48 0.015 265;
+    --accent: 0.945 0.015 278;
+    --accent-foreground: 0.42 0.15 278;
+    --destructive: 0.6 0.21 25;
+    --destructive-foreground: 0.985 0.003 250;
 
-    --border: oklch(0.915 0.005 250);
-    --input: oklch(0.915 0.005 250);
-    --ring: oklch(0.48 0.19 278);
+    --border: 0.915 0.005 250;
+    --input: 0.915 0.005 250;
+    --ring: 0.48 0.19 278;
+
+    /* ── Semantic status ──
+       success/warning/info 三档。每档四个令牌：
+         --x           强色（文字/图标/边框）
+         --x-foreground  实底背景上的文字色
+         --x-muted       淡底背景（标签、提示框）
+         --x-muted-foreground  淡底上的文字色
+       页面一律使用这些令牌，不得直接引用调色板 —— 那是暗色模式不可读的根因。 */
+    --success: 0.52 0.13 155;
+    --success-foreground: 0.985 0.003 250;
+    --success-muted: 0.955 0.035 155;
+    --success-muted-foreground: 0.4 0.1 155;
+    --warning: 0.5 0.12 70;
+    --warning-foreground: 0.2 0.02 72;
+    --warning-muted: 0.965 0.045 85;
+    --warning-muted-foreground: 0.42 0.09 68;
+    --info: 0.54 0.14 245;
+    --info-foreground: 0.985 0.003 250;
+    --info-muted: 0.955 0.035 245;
+    --info-muted-foreground: 0.4 0.11 245;
+    /* 危险档同样提供淡底对，与其它三档一致（不再用「实底+透明度」拼） */
+    --destructive-muted: 0.955 0.03 25;
+    --destructive-muted-foreground: 0.44 0.17 25;
 
     /* ── Elevation & radius ── */
     --radius: 0.625rem;
     --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.04);
-    --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06);
-    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.07);
-    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.08);
-    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.08), 0 8px 10px -6px rgb(0 0 0 / 0.08);
+    --shadow-sm:
+      0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06);
+    --shadow-md:
+      0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.07);
+    --shadow-lg:
+      0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.08);
+    --shadow-xl:
+      0 20px 25px -5px rgb(0 0 0 / 0.08), 0 8px 10px -6px rgb(0 0 0 / 0.08);
     --shadow-brand: 0 4px 14px -2px oklch(0.48 0.19 278 / 0.35);
 
     /* ── Gradients ── */
-    --gradient-brand: linear-gradient(135deg, oklch(0.55 0.20 278) 0%, oklch(0.45 0.18 295) 100%);
-    --gradient-sidebar: linear-gradient(180deg, oklch(0.22 0.025 275) 0%, oklch(0.19 0.02 280) 100%);
-    --gradient-subtle: linear-gradient(180deg, oklch(0.985 0.004 250) 0%, oklch(0.97 0.006 250) 100%);
+    --gradient-brand: linear-gradient(
+      135deg,
+      oklch(0.55 0.2 278) 0%,
+      oklch(0.45 0.18 295) 100%
+    );
+    --gradient-sidebar: linear-gradient(
+      180deg,
+      oklch(0.22 0.025 275) 0%,
+      oklch(0.19 0.02 280) 100%
+    );
+    --gradient-subtle: linear-gradient(
+      180deg,
+      oklch(0.985 0.004 250) 0%,
+      oklch(0.97 0.006 250) 100%
+    );
 
     /* ── Charts ── */
     --chart-1: oklch(0.48 0.19 278);
@@ -58,52 +115,73 @@ input:not(:-webkit-autofill) { animation-name: autoFillEnd; }
     --chart-5: oklch(0.58 0.16 40);
 
     /* ── Sidebar ── */
-    --sidebar: oklch(0.22 0.025 275);
-    --sidebar-foreground: oklch(0.93 0.008 250);
-    --sidebar-primary: oklch(0.65 0.15 278);
-    --sidebar-primary-foreground: oklch(0.985 0.003 250);
-    --sidebar-accent: oklch(0.28 0.03 275);
-    --sidebar-accent-foreground: oklch(0.95 0.01 250);
-    --sidebar-border: oklch(0.28 0.025 275);
-    --sidebar-ring: oklch(0.65 0.15 278);
+    --sidebar: 0.22 0.025 275;
+    --sidebar-foreground: 0.93 0.008 250;
+    --sidebar-primary: 0.65 0.15 278;
+    --sidebar-primary-foreground: 0.985 0.003 250;
+    --sidebar-accent: 0.28 0.03 275;
+    --sidebar-accent-foreground: 0.95 0.01 250;
+    --sidebar-border: 0.28 0.025 275;
+    --sidebar-ring: 0.65 0.15 278;
   }
 
   .dark {
-    --background: oklch(0.16 0.015 265);
-    --foreground: oklch(0.95 0.008 250);
-    --card: oklch(0.20 0.018 265);
-    --card-foreground: oklch(0.95 0.008 250);
-    --popover: oklch(0.20 0.018 265);
-    --popover-foreground: oklch(0.95 0.008 250);
-    --primary: oklch(0.68 0.16 278);
-    --primary-foreground: oklch(0.16 0.015 265);
-    --secondary: oklch(0.24 0.02 265);
-    --secondary-foreground: oklch(0.92 0.008 250);
-    --muted: oklch(0.24 0.02 265);
-    --muted-foreground: oklch(0.62 0.012 265);
-    --accent: oklch(0.28 0.05 278);
-    --accent-foreground: oklch(0.85 0.10 278);
-    --destructive: oklch(0.68 0.20 25);
-    --destructive-foreground: oklch(0.16 0.015 265);
-    --border: oklch(0.26 0.018 265);
-    --input: oklch(0.28 0.02 265);
-    --ring: oklch(0.68 0.16 278);
-    --sidebar: oklch(0.18 0.015 275);
-    --sidebar-foreground: oklch(0.90 0.008 250);
-    --sidebar-primary: oklch(0.70 0.15 278);
-    --sidebar-primary-foreground: oklch(0.16 0.015 265);
-    --sidebar-accent: oklch(0.24 0.02 275);
-    --sidebar-accent-foreground: oklch(0.92 0.008 250);
-    --sidebar-border: oklch(0.24 0.018 275);
-    --sidebar-ring: oklch(0.70 0.15 278);
+    --background: 0.16 0.015 265;
+    --foreground: 0.95 0.008 250;
+    --card: 0.2 0.018 265;
+    --card-foreground: 0.95 0.008 250;
+    --popover: 0.2 0.018 265;
+    --popover-foreground: 0.95 0.008 250;
+    --primary: 0.68 0.16 278;
+    --primary-foreground: 0.16 0.015 265;
+    --secondary: 0.24 0.02 265;
+    --secondary-foreground: 0.92 0.008 250;
+    --muted: 0.24 0.02 265;
+    --muted-foreground: 0.62 0.012 265;
+    --accent: 0.28 0.05 278;
+    --accent-foreground: 0.85 0.1 278;
+    --destructive: 0.68 0.2 25;
+    --destructive-foreground: 0.16 0.015 265;
+    --border: 0.26 0.018 265;
+    --input: 0.28 0.02 265;
+    --ring: 0.68 0.16 278;
+
+    /* 语义状态色 · 暗色模式（亮底改为深底 + 浅字，保证对比度） */
+    --success: 0.76 0.15 155;
+    --success-foreground: 0.16 0.015 265;
+    --success-muted: 0.27 0.05 155;
+    --success-muted-foreground: 0.88 0.11 155;
+    --warning: 0.8 0.13 80;
+    --warning-foreground: 0.16 0.015 265;
+    --warning-muted: 0.29 0.05 72;
+    --warning-muted-foreground: 0.9 0.1 82;
+    --info: 0.74 0.12 245;
+    --info-foreground: 0.16 0.015 265;
+    --info-muted: 0.27 0.05 245;
+    --info-muted-foreground: 0.87 0.09 245;
+    --destructive-muted: 0.28 0.06 25;
+    --destructive-muted-foreground: 0.86 0.13 25;
+
+    --sidebar: 0.18 0.015 275;
+    --sidebar-foreground: 0.9 0.008 250;
+    --sidebar-primary: 0.7 0.15 278;
+    --sidebar-primary-foreground: 0.16 0.015 265;
+    --sidebar-accent: 0.24 0.02 275;
+    --sidebar-accent-foreground: 0.92 0.008 250;
+    --sidebar-border: 0.24 0.018 275;
+    --sidebar-ring: 0.7 0.15 278;
   }
 
-  * { @apply border-border; }
+  * {
+    @apply border-border;
+  }
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
-  html { @apply font-sans; }
+  html {
+    @apply font-sans;
+  }
 }
 
 /* ═══════════════════════════════════════════════════
@@ -146,7 +224,9 @@ input:not(:-webkit-autofill) { animation-name: autoFillEnd; }
   }
   .card-glow {
     @apply rounded-xl border bg-card;
-    box-shadow: var(--shadow-sm), 0 0 0 1px oklch(0.48 0.19 278 / 0.08);
+    box-shadow:
+      var(--shadow-sm),
+      0 0 0 1px oklch(0.48 0.19 278 / 0.08);
   }
 
   /* ── Stats ── */
@@ -174,22 +254,35 @@ input:not(:-webkit-autofill) { animation-name: autoFillEnd; }
     @apply text-[0.8125rem] font-medium text-muted-foreground;
   }
   .stat-trend-up {
-    @apply inline-flex items-center gap-0.5 text-xs font-semibold text-emerald-600;
+    @apply inline-flex items-center gap-0.5 text-xs font-semibold text-success;
   }
   .stat-trend-down {
-    @apply inline-flex items-center gap-0.5 text-xs font-semibold text-red-500;
+    @apply inline-flex items-center gap-0.5 text-xs font-semibold text-destructive;
   }
 
   /* ── Status badges ── */
   .badge {
     @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium;
   }
-  .badge-success { @apply bg-emerald-50 text-emerald-700; }
-  .badge-warning { @apply bg-amber-50 text-amber-700; }
-  .badge-danger { @apply bg-red-50 text-red-700; }
-  .badge-info { @apply bg-sky-50 text-sky-700; }
-  .badge-purple { @apply bg-violet-50 text-violet-700; }
-  .badge-default { @apply bg-secondary text-secondary-foreground; }
+  /* 状态色统一走语义令牌（自带暗色模式）。页面不得再直接引用调色板。 */
+  .badge-success {
+    @apply bg-success-muted text-success-muted-foreground;
+  }
+  .badge-warning {
+    @apply bg-warning-muted text-warning-muted-foreground;
+  }
+  .badge-danger {
+    @apply bg-destructive-muted text-destructive-muted-foreground;
+  }
+  .badge-info {
+    @apply bg-info-muted text-info-muted-foreground;
+  }
+  .badge-purple {
+    @apply bg-accent text-accent-foreground;
+  }
+  .badge-default {
+    @apply bg-secondary text-secondary-foreground;
+  }
   .badge-dot::before {
     content: "";
     @apply h-1.5 w-1.5 rounded-full bg-current opacity-60;
@@ -228,7 +321,7 @@ input:not(:-webkit-autofill) { animation-name: autoFillEnd; }
   }
   .nav-group-label {
     @apply px-3 pb-1.5 pt-4 text-[0.6875rem] font-semibold uppercase tracking-[0.1em];
-    color: color-mix(in oklab, var(--sidebar-foreground) 50%, transparent);
+    color: oklch(var(--sidebar-foreground) / 0.5);
   }
 
   /* ── Gradient text for brand moments ── */
@@ -256,7 +349,7 @@ input:not(:-webkit-autofill) { animation-name: autoFillEnd; }
     @apply transition-colors;
   }
   .table-row-hover:hover {
-    background: color-mix(in oklab, var(--accent) 50%, transparent);
+    background: oklch(var(--accent) / 0.5);
   }
 
   /* ── Section card with header action ── */
@@ -286,21 +379,45 @@ input:not(:-webkit-autofill) { animation-name: autoFillEnd; }
   .animate-scale-in {
     animation: scaleIn 0.2s ease-out;
   }
-  .stagger-1 { animation-delay: 0.05s; }
-  .stagger-2 { animation-delay: 0.1s; }
-  .stagger-3 { animation-delay: 0.15s; }
-  .stagger-4 { animation-delay: 0.2s; }
+  .stagger-1 {
+    animation-delay: 0.05s;
+  }
+  .stagger-2 {
+    animation-delay: 0.1s;
+  }
+  .stagger-3 {
+    animation-delay: 0.15s;
+  }
+  .stagger-4 {
+    animation-delay: 0.2s;
+  }
 
   @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
   @keyframes slideUp {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
   @keyframes scaleIn {
-    from { opacity: 0; transform: scale(0.96); }
-    to { opacity: 1; transform: scale(1); }
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
   }
 }
