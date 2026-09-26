@@ -19,33 +19,57 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { usePathname } from "next/navigation";
+import { useMemo } from "react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { LogOut, User, CreditCard } from "lucide-react";
 import { StatusBadge } from "@/components/shared";
+import {
+  NAV_GROUPS,
+  SUB_ROUTE_LABELS,
+  workstationByRoute,
+} from "@contracts/workstations";
 
-const labelMap: Record<string, string> = {
-  dashboard: "仪表盘",
-  events: "事件审计",
-  customers: "客户管理",
-  quotations: "报价管理",
-  "v2-quote": "智能报价",
-  "audit-log": "审计日志",
-  kb: "知识库",
-  admin: "系统管理",
-  "gray-release": "灰度发布",
-  settings: "系统设置",
-  "pricing-data": "报价数据",
-  onboarding: "新手引导",
-  billing: "升级订阅",
-  intel: "进出口情报",
-  market: "市场调研",
-  "spec-config": "规格配置",
-  "spec-proposals": "规格提案",
-};
+interface Crumb {
+  label: string;
+  href?: string;
+}
+
+/**
+ * 面包屑（单一来源）。
+ * 页面名一律来自工位契约（shared/contracts/workstations.ts），不再维护独立的 labelMap ——
+ * 历史问题正是这么产生的：
+ *   · /market 面包屑写成「市场调研」，与工位「市场调研」(/research) 重名
+ *   · research / leadgen / outreach / ai-providers 漏登记 → 直接显示英文 slug
+ */
+function useBreadcrumbs(pathname: string): Crumb[] {
+  return useMemo(() => {
+    const ws = workstationByRoute(pathname);
+    if (!ws) return [];
+
+    const crumbs: Crumb[] = [];
+    const group = NAV_GROUPS.find((g) => g.key === ws.group);
+    if (group?.label) crumbs.push({ label: group.label });
+
+    // 工位之后的子路径（如 /customers/123 的 "123"）
+    const rest = pathname.slice(ws.route.length).replace(/^\//, "");
+    crumbs.push({ label: ws.name, href: rest ? ws.route : undefined });
+
+    if (rest) {
+      const last = rest.split("/").filter(Boolean).pop() ?? "";
+      // 已知子路由用契约里的中文名（否则会把 company-profile 这种 slug 露给用户）；
+      // 长十六进制串视为资源 ID，统一显示为「详情」
+      const label = /^[0-9a-f-]{20,}$/i.test(last)
+        ? "详情"
+        : (SUB_ROUTE_LABELS[last] ?? last);
+      crumbs.push({ label });
+    }
+    return crumbs;
+  }, [pathname]);
+}
 
 export function Header() {
   const pathname = usePathname();
-  const segments = pathname.split("/").filter(Boolean);
+  const crumbs = useBreadcrumbs(pathname);
   const { user, logout } = useAuth();
 
   const initials =
@@ -60,23 +84,28 @@ export function Header() {
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbLink href="/" className="text-muted-foreground hover:text-foreground">
+            <BreadcrumbLink
+              href="/"
+              className="text-muted-foreground hover:text-foreground"
+            >
               首页
             </BreadcrumbLink>
           </BreadcrumbItem>
-          {segments.map((seg, i) => {
-            const href = `/${segments.slice(0, i + 1).join("/")}`;
-            const label =
-              labelMap[seg] ?? (/^[0-9a-f-]{20,}$/i.test(seg) ? "详情" : seg);
-            const isLast = i === segments.length - 1;
+          {crumbs.map((c, i) => {
+            const isLast = i === crumbs.length - 1;
             return (
-              <BreadcrumbItem key={href}>
+              <BreadcrumbItem key={`${c.label}-${i}`}>
                 <BreadcrumbSeparator />
-                {isLast ? (
-                  <BreadcrumbPage className="font-medium">{label}</BreadcrumbPage>
+                {isLast || !c.href ? (
+                  <BreadcrumbPage className="font-medium">
+                    {c.label}
+                  </BreadcrumbPage>
                 ) : (
-                  <BreadcrumbLink href={href} className="text-muted-foreground hover:text-foreground">
-                    {label}
+                  <BreadcrumbLink
+                    href={c.href}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    {c.label}
                   </BreadcrumbLink>
                 )}
               </BreadcrumbItem>
@@ -100,13 +129,17 @@ export function Header() {
           <DropdownMenuContent align="end" className="w-60">
             <DropdownMenuLabel className="font-normal">
               <div className="flex flex-col gap-1">
-                <p className="text-sm font-semibold">{user.display_name || user.email}</p>
+                <p className="text-sm font-semibold">
+                  {user.display_name || user.email}
+                </p>
                 <p className="text-xs text-muted-foreground">{user.email}</p>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <div className="px-2 py-1.5">
-              <StatusBadge tone={user.account_type === "internal" ? "purple" : "default"}>
+              <StatusBadge
+                tone={user.account_type === "internal" ? "purple" : "default"}
+              >
                 {user.account_type === "internal" ? "内部账号" : "客户账号"}
               </StatusBadge>
             </div>
@@ -123,7 +156,10 @@ export function Header() {
               </>
             )}
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={logout} className="cursor-pointer text-red-600 focus:text-red-600">
+            <DropdownMenuItem
+              onClick={logout}
+              className="cursor-pointer text-red-600 focus:text-red-600"
+            >
               <LogOut className="mr-2 size-4" />
               退出登录
             </DropdownMenuItem>

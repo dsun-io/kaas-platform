@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Sales Contract - SC-202609-0001</title>
+<style>
+/* ==========================================================================
+   外贸单证 · 共享打印样式（印刷级 A4）
+   --------------------------------------------------------------------------
+   由 trade_doc_renderer 在渲染完成后注入到各模板的 <style> 中
+   （模板内写占位注释，标记见 renderer 的 _STYLE_PLACEHOLDER）。
+   9 类单证共用一份，避免样式重复维护、保证系列单据视觉统一。
+
+   命名约定：
+     .lh      卖方信头(Letterhead)      .meta   元信息表
+     .party   收发货人区块              .items  商品明细表
+     .words   金额英文大写              .clause 条款 / .certify 声明
+     .sign    签章区                    .foot   页脚
+
+   打印策略：屏幕预览模拟 A4 纸（210mm 宽 + 投影），打印时铺满 @page 版面。
+   ========================================================================== */
+
+@page { size: A4; margin: 13mm 13mm 11mm; }
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+body {
+  font-family: Arial, Helvetica, "Helvetica Neue", "Microsoft YaHei", sans-serif;
+  font-size: 9.5pt;
+  line-height: 1.4;
+  color: #101820;
+  background: #eef1f4;
+}
+
+/* 纸张容器：宽 210mm - 左右各 13mm 内边距 = 184mm，与打印区宽度一致 */
+.doc {
+  width: 210mm;
+  margin: 8mm auto;
+  padding: 13mm 13mm 11mm;
+  background: #fff;
+  box-shadow: 0 3px 18px rgba(16, 24, 32, .16);
+}
+
+@media print {
+  body { background: #fff; }
+  .doc { width: auto; margin: 0; padding: 0; box-shadow: none; }
+  .no-print { display: none !important; }
+  /* 避免表格行 / 区块被拦腰截断 */
+  table.items tr, .party, .sign-box, .words { page-break-inside: avoid; }
+}
+
+/* ── 卖方信头 ─────────────────────────────────────────────────────────── */
+.lh {
+  padding-bottom: 3mm;
+  border-bottom: 2.4pt solid #0f2740;
+  margin-bottom: 4.5mm;
+  font-size: 7.8pt;
+  line-height: 1.6;
+  color: #4d5a66;
+}
+.lh strong {
+  display: block;
+  font-size: 14.5pt;
+  font-weight: 700;
+  letter-spacing: .4pt;
+  line-height: 1.25;
+  color: #0f2740;
+  margin-bottom: 1.5mm;
+}
+
+/* ── 单据标题 ─────────────────────────────────────────────────────────── */
+.title { text-align: center; margin-bottom: 5mm; }
+.title h1 {
+  font-size: 15pt;
+  font-weight: 700;
+  letter-spacing: 4pt;
+  text-transform: uppercase;
+  color: #0f2740;
+}
+.title .sub {
+  font-size: 7.4pt;
+  letter-spacing: 1.8pt;
+  text-transform: uppercase;
+  color: #7a8794;
+  margin-top: 1.2mm;
+}
+
+/* ── 元信息表（标签 / 值 成对） ────────────────────────────────────────── */
+/* fixed 布局：标签列固定 32mm，值列自动等分 —— 避免长字段挤压导致编号折行 */
+table.meta { width: 100%; border-collapse: collapse; margin-bottom: 4mm; table-layout: fixed; }
+table.meta td {
+  border: .9pt solid #ccd4dc;
+  padding: 1.5mm 2.2mm;
+  font-size: 8.6pt;
+  vertical-align: top;
+  word-wrap: break-word;
+}
+table.meta td.k {
+  width: 32mm;
+  background: #f5f8fa;
+  color: #55636f;
+  font-size: 7.5pt;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .3pt;
+  white-space: nowrap;
+}
+table.meta td.v { font-weight: 600; color: #101820; }
+
+/* ── 收发货人区块 ─────────────────────────────────────────────────────── */
+table.parties { width: 100%; border-collapse: collapse; margin-bottom: 4mm; }
+table.parties td.party {
+  border: .9pt solid #ccd4dc;
+  padding: 2mm 2.4mm;
+  vertical-align: top;
+}
+table.parties td.gap { width: 3mm; border: none; }
+.party .lbl {
+  font-size: 7.4pt;
+  font-weight: 700;
+  letter-spacing: 1pt;
+  text-transform: uppercase;
+  color: #0f2740;
+  margin-bottom: 1.2mm;
+}
+.party .bd { font-size: 8.8pt; line-height: 1.5; }
+.party .bd strong { font-weight: 700; }
+
+/* ── 商品明细表 ───────────────────────────────────────────────────────── */
+table.items { width: 100%; border-collapse: collapse; font-size: 8.7pt; }
+table.items th, table.items td { border: .9pt solid #ccd4dc; padding: 1.5mm 1.8mm; }
+table.items thead th {
+  background: #0f2740;
+  color: #fff;
+  font-size: 7.7pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .35pt;
+  text-align: center;
+  line-height: 1.3;
+}
+table.items tbody tr:nth-child(even) td { background: #fafbfc; }
+table.items td.c { text-align: center; white-space: nowrap; }
+table.items td.l { text-align: left; }
+table.items td.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.items tr.total td {
+  background: #eaeff4;
+  font-weight: 700;
+  border-top: 1.6pt solid #0f2740;
+}
+
+/* ── 金额英文大写 ─────────────────────────────────────────────────────── */
+.words {
+  margin-top: 2.6mm;
+  border: .9pt solid #ccd4dc;
+  border-left: 2.4pt solid #0f2740;
+  background: #f7fafc;
+  padding: 2mm 2.6mm;
+}
+.words .lbl {
+  font-size: 7.2pt;
+  letter-spacing: .9pt;
+  text-transform: uppercase;
+  color: #55636f;
+  font-weight: 700;
+  margin-bottom: .8mm;
+}
+.words .val { font-size: 8.8pt; font-weight: 700; letter-spacing: .25pt; color: #101820; }
+
+/* ── 条款 / 声明 ──────────────────────────────────────────────────────── */
+.clauses { margin-top: 3.4mm; }
+.clause { margin-bottom: 1.8mm; font-size: 8.3pt; line-height: 1.55; }
+.clause .lbl { font-weight: 700; color: #0f2740; letter-spacing: .3pt; }
+.certify {
+  margin-top: 3.4mm;
+  padding: 2.4mm 3mm;
+  background: #f7fafc;
+  border-left: 2.4pt solid #0f2740;
+  font-size: 8.1pt;
+  line-height: 1.6;
+  color: #2b3641;
+  text-align: justify;
+}
+
+/* ── 签章区 ───────────────────────────────────────────────────────────── */
+table.sign { width: 100%; border-collapse: collapse; margin-top: 9mm; }
+table.sign td { vertical-align: bottom; font-size: 8pt; }
+.sign-box { text-align: center; }
+.sign-box .rule { width: 60mm; margin: 0 auto 1.2mm; border-top: .9pt solid #7a8794; }
+.sign-box .cap { font-size: 7.6pt; color: #55636f; }
+.stamp-hint {
+  font-size: 7.2pt;
+  color: #93a1ad;
+  font-style: italic;
+  text-align: center;
+  margin-top: 1.4mm;
+}
+
+/* ── 页脚 ─────────────────────────────────────────────────────────────── */
+.foot {
+  margin-top: 5mm;
+  padding-top: 2mm;
+  border-top: .9pt solid #e4e9ee;
+  text-align: center;
+  font-size: 7pt;
+  letter-spacing: .3pt;
+  color: #93a1ad;
+}
+
+/* ── 汇票（Bill of Exchange）──────────────────────────────────────────── */
+/* 汇票是金融票据，按国际惯例用「句子式」排版而非表格：             */
+/* 出票金额与日期靠右、付款指令居中、付款人(To)与出票人签章分列两侧。 */
+table.draft-top { width: 100%; border-collapse: collapse; margin-bottom: 7mm; }
+table.draft-top td { vertical-align: top; font-size: 9pt; line-height: 1.7; }
+table.draft-top td.right { text-align: right; }
+table.draft-top .amount { font-size: 10.5pt; font-weight: 700; color: #0f2740; }
+.draft-sentence { font-size: 9.5pt; line-height: 2.2; text-align: justify; }
+.draft-sentence .fill {
+  font-weight: 700;
+  border-bottom: .8pt solid #9aa5b1;
+  padding: 0 1.5mm;
+}
+.draft-party { font-size: 8.6pt; line-height: 1.7; }
+.draft-party .hint { color: #7a8794; font-size: 7.6pt; }
+
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <div class="lh"><strong>ANPING HENGTAI WIRE MESH PRODUCTS CO., LTD.</strong><br>Wire Mesh Industrial Park, Anping County, Hengshui, Hebei 053600, China<br>Tel: +86-318-765-4321<br>E-mail: export@hengtai-mesh.com</div>
+
+  <div class="title">
+    <h1>Sales Contract</h1>
+  </div>
+
+  <table class="meta">
+    <tr>
+      <td class="k">Contract No.</td><td class="v">SC-202609-0001</td>
+      <td class="k">Date</td><td class="v">06-Oct-2026</td>
+    </tr>
+    <tr>
+      <td class="k">Signed At</td><td class="v">Tianjin, China</td>
+      <td class="k">Currency</td><td class="v">USD</td>
+    </tr>
+  </table>
+
+  <table class="parties">
+    <tr>
+      <td class="party">
+        <div class="lbl">The Seller</div>
+        <div class="bd"><strong>ANPING HENGTAI WIRE MESH PRODUCTS CO., LTD.</strong><br>Wire Mesh Industrial Park, Anping County, Hengshui, Hebei 053600, China<br>Tel: +86-318-765-4321<br>E-mail: export@hengtai-mesh.com</div>
+      </td>
+      <td class="gap"></td>
+      <td class="party">
+        <div class="lbl">The Buyer</div>
+        <div class="bd"><strong>Australian Rural Fencing Pty Ltd</strong><br>45 Outback Road, Toowoomba QLD 4350, Australia<br>Attn: Mr. Jack Thompson<br>Tel: +61-7-4635-8899<br>E-mail: jack.t@ausruralfencing.com.au</div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="certify">
+    This contract is made by and between the Seller and the Buyer, whereby the Seller agrees to sell
+    and the Buyer agrees to buy the under-mentioned goods subject to the terms and conditions
+    stipulated below. Both parties have read and accepted all the terms hereof.
+  </div>
+
+  <table class="items"><thead><tr><th>No.</th><th>Description of Goods</th><th>Specification</th><th>Quantity</th><th>Unit</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody><tr><td class="c">1</td><td class="l">Cattle Fence (Hinge Joint)</td><td class="l">2.5mm wire, 8/150/15, H1.5m x L50m/roll</td><td class="r">500</td><td class="c">Rolls</td><td class="r">28.50</td><td class="r">14,250.00</td></tr><tr><td class="c">2</td><td class="l">Y Post (Plain, Galvanised)</td><td class="l">H1.8m, 1.8mm thickness, with clips</td><td class="r">2000</td><td class="c">Pcs</td><td class="r">2.80</td><td class="r">5,600.00</td></tr><tr><td class="c">3</td><td class="l">Chain Link Fence (Galvanised)</td><td class="l">50x50mm mesh, 3.0mm wire, H1.8m x L25m/roll</td><td class="r">300</td><td class="c">Rolls</td><td class="r">22.00</td><td class="r">6,600.00</td></tr><tr class="total"><td class="l" colspan="3">TOTAL</td><td class="r">2800</td><td></td><td></td><td class="r">USD 26,450.00</td></tr></tbody></table>
+
+  <div class="words">
+    <div class="lbl">Total Amount in Words</div>
+    <div class="val">SAY US DOLLARS TWENTY-SIX THOUSAND FOUR HUNDRED AND FIFTY ONLY</div>
+  </div>
+
+  <table class="meta">
+    <tr>
+      <td class="k">Terms of Delivery</td><td class="v">FOB Tianjin</td>
+      <td class="k">Terms of Payment</td><td class="v">T/T 30% deposit upon contract signing, balance against copy of B/L</td>
+    </tr>
+    <tr>
+      <td class="k">Time of Delivery</td><td class="v">Within 25 days after receipt of deposit</td>
+      <td class="k">Port of Loading</td><td class="v">Xingang, Tianjin, China</td>
+    </tr>
+    <tr>
+      <td class="k">Port of Destination</td><td class="v">Brisbane, Australia</td>
+      <td class="k">Shipping Marks</td><td class="v">N/M</td>
+    </tr>
+  </table>
+
+  <div class="clauses">
+    <div class="clause"><span class="lbl">Inspection</span> Inspection by CIQ at port of loading; certificate to form part of documents</div>
+    <div class="clause"><span class="lbl">Claims</span> Claims to be raised within 30 days after arrival of goods at destination</div>
+    <div class="clause"><span class="lbl">Force Majeure</span> Standard force majeure clause applies; affected party to notify within 14 days</div>
+    <div class="clause"><span class="lbl">Arbitration</span> Disputes to be settled by CIETAC arbitration in Beijing</div>
+  </div>
+
+  <table class="sign">
+    <tr>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">The Seller</div>
+        </div>
+      </td>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">The Buyer</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="foot">Sales Contract</div>
+
+</div>
+</body>
+</html>
