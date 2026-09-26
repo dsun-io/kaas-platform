@@ -12,8 +12,8 @@
 ⚠️ 本文件**需要 PostgreSQL**（数据真的写进表、再读回来，用桩替代就只是在测桩）。
    本机没起测试库时会整体 skip（理由见 conftest 的 `_probe_test_db`），
    所以「本机跑出来的全绿」**不能**当作这几个用例通过。
-   本机可复现的功能证据是 `D:\\Temp\\kaas_verify\\verify_quote_profiles.py`
-   与 `verify_profile_e2e.py`（对着开发库走真实 HTTP，逐项断言）。
+   本机可复现的功能证据是 `scripts/verify/verify_quote_profiles.py`
+   与 `scripts/verify/verify_profile_e2e.py`（对着开发库走真实 HTTP，逐项断言）。
 """
 import pytest
 
