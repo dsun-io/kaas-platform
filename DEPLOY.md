@@ -12,7 +12,7 @@
               │  其余     → [assets] Next.js 静态导出 + SPA 回退
               │
               ▼  Hyperdrive (连接池/聚合)
-          Neon PostgreSQL (project falling-salad-31662168 · branch production)
+          Neon PostgreSQL (project falling-salad-31662168 · 分支 production / 开发用 dev)
 ```
 
 > **2026-09-19 合并**：原 `kaas-intel-api`（后端 API）+ `kaas-platform`（前端静态资产）
@@ -120,8 +120,8 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 ```bash
 cd backend/worker
 
-# 本地开发（Hyperdrive 本地模拟指向 Neon）
-$env:CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="postgres://neondb_owner:<pwd>@ep-small-brook-b54t5318-pooler.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require"
+# 本地开发（Hyperdrive 本地模拟指向 Neon 分支 dev）
+$env:CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="postgres://neondb_owner:<pwd>@ep-wandering-frost-b5d9zoaq-pooler.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require"
 uv run pywrangler dev
 
 # 生产密钥（一次性；Worker 更换后需重新设置并重新初始化管理员）
