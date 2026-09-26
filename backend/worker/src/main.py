@@ -832,9 +832,18 @@ async def dashboard_summary(
 
 
 # ── Health ──
+# 共享内核自检。降级保护：即使打包时未带上 kaas_common，也不影响 Worker 启动，
+# 只在 /health 里显示 loaded=false —— 部署后一眼就能确认打包链路是否通。
+try:
+    from kaas_common import core_health as _core_health
+except Exception:  # noqa: BLE001 - 任何加载失败都不应阻断 Worker
+    def _core_health():  # type: ignore[misc]
+        return {"core": "kaas_common", "loaded": False}
+
+
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "kaas-intel-worker"}
+    return {"status": "ok", "service": "kaas-intel-worker", "shared": _core_health()}
 
 
 # ── Events Ingest (前端事件采集平台级基础设施，所有工位共用) ──

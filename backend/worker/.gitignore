@@ -7,3 +7,7 @@ __pycache__/
 .tools/
 python_modules/
 pylock.toml
+
+# 共享内核镜像：由 scripts/sync-shared.ps1 从 backend/kaas_common/ 自动生成，
+# 勿手工编辑（唯一源在 backend/kaas_common/）。
+src/kaas_common/
