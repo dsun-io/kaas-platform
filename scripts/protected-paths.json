@@ -1,0 +1,125 @@
+{
+  "_note": "业务功能保护清单（Business Feature Registry）。任何删除/归档动作都必须先过 scripts/cleanup-guard.py；命中本清单即中止。清单【只增不减】，移除须用户明确指令。",
+  "version": 1,
+  "updated": "2026-09-26",
+
+  "protected": {
+    "frontend_workstations": {
+      "desc": "前端工位页面（用户可见的业务功能）",
+      "paths": [
+        "frontend/src/app/(app)/dashboard",
+        "frontend/src/app/(app)/quotations",
+        "frontend/src/app/(app)/customers",
+        "frontend/src/app/(app)/intel",
+        "frontend/src/app/(app)/research",
+        "frontend/src/app/(app)/leadgen",
+        "frontend/src/app/(app)/outreach",
+        "frontend/src/app/(app)/pricing-data",
+        "frontend/src/app/(app)/market",
+        "frontend/src/app/(app)/spec-config",
+        "frontend/src/app/(app)/settings",
+        "frontend/src/app/(app)/admin",
+        "frontend/src/app/(app)/quotes",
+        "frontend/src/app/(app)/trade-docs",
+        "frontend/src/app/(app)/orders",
+        "frontend/src/app/(app)/shipments"
+      ]
+    },
+    "frontend_shell_and_lib": {
+      "desc": "前端外壳、共享组件与基础库（含埋点上报：页面可摘，上报必须保留）",
+      "paths": [
+        "frontend/src/components/layout",
+        "frontend/src/components/shared",
+        "frontend/src/components/ui",
+        "frontend/src/lib/api",
+        "frontend/src/lib/auth",
+        "frontend/src/lib/error",
+        "frontend/src/lib/events",
+        "frontend/src/lib/export-quote",
+        "frontend/src/lib/form",
+        "frontend/src/lib/query",
+        "frontend/src/lib/schemas",
+        "frontend/src/lib/workstation"
+      ]
+    },
+    "backend_business_api": {
+      "desc": "后端业务能力。注意：customers/orders/shipments/trade_docs/quotes/enums 是【写好但未接线】，不是垃圾",
+      "paths": [
+        "backend/orchestrator/app/api/customers.py",
+        "backend/orchestrator/app/api/orders.py",
+        "backend/orchestrator/app/api/shipments.py",
+        "backend/orchestrator/app/api/trade_docs.py",
+        "backend/orchestrator/app/api/quotes.py",
+        "backend/orchestrator/app/api/enums.py",
+        "backend/orchestrator/app/api/export_quote.py",
+        "backend/orchestrator/app/api/quotations_api.py",
+        "backend/orchestrator/app/api/company_profile.py",
+        "backend/orchestrator/app/services/trade_doc_payload.py",
+        "backend/orchestrator/app/api/subs.py",
+        "backend/orchestrator/app/api/ws_common.py",
+        "backend/orchestrator/app/services/export_quote",
+        "backend/orchestrator/app/services/freight_calculator.py",
+        "backend/orchestrator/app/repositories/freight_rates_repo.py",
+        "backend/orchestrator/app/domain/enums.py"
+      ]
+    },
+    "backend_worker_online": {
+      "desc": "线上实际运行的 Worker 单文件实现（改它等于改生产）",
+      "paths": [
+        "backend/worker/src/main.py",
+        "backend/worker/src/kaas_common"
+      ]
+    },
+    "trade_doc_templates": {
+      "desc": "18 类外贸单证模板与渲染器（单证工位的成品能力）。X′ 方案：渲染已迁前端 TS，Python 侧为已被取代的历史实现（见 pending_removal）",
+      "paths": [
+        "frontend/src/lib/trade-doc"
+      ]
+    },
+    "shared_kernel": {
+      "desc": "跨后端共享内核（本地/线上一致性的地基）",
+      "paths": [
+        "backend/kaas_common"
+      ]
+    },
+    "data_layer": {
+      "desc": "数据模型与迁移。不变量 6：历史迁移只增不改，禁止删除",
+      "paths": [
+        "backend/orchestrator/app/db",
+        "backend/orchestrator/alembic"
+      ]
+    },
+    "archived_originals": {
+      "desc": "已归档的历史实现（X′ 方案中被取代的 Python 渲染器与 18 类单证模板原件）。它是「逐字节对齐」验证的黄金基线来源，长期保留，禁止删除",
+      "paths": [
+        "archive"
+      ]
+    }
+  },
+
+  "pending_reuse": {
+    "desc": "已写好但尚未被引用基建 —— P2 复用候选，【不是垃圾】",
+    "paths": [
+      "frontend/src/components/ui/virtual-table.tsx",
+      "frontend/src/components/ui/scroll-area.tsx",
+      "frontend/src/lib/form/form-utils.ts",
+      "frontend/src/hooks/use-role.ts"
+    ]
+  },
+
+  "pending_removal": {
+    "desc": "已批准摘除（摘菜单 + 页面归档）。允许移动/归档，但【不得物理删除】，除非用户再次确认。注：单证渲染器的 6 个 Python 文件已完成归档，现改由 protected.archived_originals 看护",
+    "paths": [
+      "frontend/src/app/(app)/onboarding",
+      "frontend/src/app/(app)/kb",
+      "frontend/src/app/(app)/audit-log",
+      "frontend/src/app/(app)/events",
+      "frontend/src/app/(app)/admin/gray-release"
+    ]
+  },
+
+  "known_junk": {
+    "desc": "已确认的垃圾（零引用 / 运行时产物）。【精确匹配】—— 必须写明具体文件，不能写目录，避免绕过保护。当前为空（2026-09-26 已清理 4 个死代码文件：2 个重复实现 + 1 个零引用组件 + 1 个零引用鉴权副本）；运行时审计日志 deployment_audit.jsonl 属于【数据而非代码垃圾】，已改用 git 忽略处理，未删除",
+    "paths": []
+  }
+}
