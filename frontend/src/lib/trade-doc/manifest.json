@@ -1,0 +1,1281 @@
+{
+  "quotation": {
+    "name_zh": "报价单",
+    "name_en": "Quotation",
+    "description": "向客户提供产品报价,包含价格、付款方式、有效期等",
+    "template_file": "quotation.html",
+    "fields": {
+      "seller": {
+        "type": "object",
+        "required": true,
+        "description": "卖方信息(公司名称、地址、电话、邮箱)"
+      },
+      "buyer": {
+        "type": "object",
+        "required": true,
+        "description": "买方信息(公司名称、地址、联系人)"
+      },
+      "quote_no": {
+        "type": "string",
+        "required": true,
+        "description": "报价单号"
+      },
+      "quote_date": {
+        "type": "date",
+        "required": true,
+        "description": "报价日期"
+      },
+      "valid_until": {
+        "type": "date",
+        "required": false,
+        "description": "有效期至"
+      },
+      "currency": {
+        "type": "string",
+        "required": true,
+        "description": "币种(USD/CNY等)"
+      },
+      "items": {
+        "type": "array",
+        "required": true,
+        "description": "商品明细(品名、规格、数量、单价、金额)"
+      },
+      "total_amount": {
+        "type": "number",
+        "required": true,
+        "description": "总金额"
+      },
+      "payment_terms": {
+        "type": "string",
+        "required": false,
+        "description": "付款方式(如 T/T 30% 定金)"
+      },
+      "delivery_time": {
+        "type": "string",
+        "required": false,
+        "description": "交货期"
+      },
+      "incoterm": {
+        "type": "string",
+        "required": false,
+        "description": "贸易术语(FOB/CIF/EXW等)"
+      },
+      "port_of_loading": {
+        "type": "string",
+        "required": false,
+        "description": "装运港"
+      },
+      "port_of_destination": {
+        "type": "string",
+        "required": false,
+        "description": "目的港"
+      },
+      "remarks": {
+        "type": "string",
+        "required": false,
+        "description": "备注"
+      }
+    }
+  },
+  "pi": {
+    "name_zh": "形式发票",
+    "name_en": "Proforma Invoice",
+    "description": "预开发票,用于客户确认订单、申请进口许可、开立信用证",
+    "template_file": "pi.html",
+    "fields": {
+      "seller": {
+        "type": "object",
+        "required": true,
+        "description": "卖方信息"
+      },
+      "buyer": {
+        "type": "object",
+        "required": true,
+        "description": "买方信息"
+      },
+      "pi_no": {
+        "type": "string",
+        "required": true,
+        "description": "PI 编号"
+      },
+      "pi_date": {
+        "type": "date",
+        "required": true,
+        "description": "PI 日期"
+      },
+      "currency": {
+        "type": "string",
+        "required": true,
+        "description": "币种"
+      },
+      "items": {
+        "type": "array",
+        "required": true,
+        "description": "商品明细"
+      },
+      "total_amount": {
+        "type": "number",
+        "required": true,
+        "description": "总金额"
+      },
+      "payment_terms": {
+        "type": "string",
+        "required": true,
+        "description": "付款方式"
+      },
+      "delivery_time": {
+        "type": "string",
+        "required": false,
+        "description": "交货期"
+      },
+      "incoterm": {
+        "type": "string",
+        "required": true,
+        "description": "贸易术语"
+      },
+      "port_of_loading": {
+        "type": "string",
+        "required": false,
+        "description": "装运港"
+      },
+      "port_of_destination": {
+        "type": "string",
+        "required": false,
+        "description": "目的港"
+      },
+      "bank_info": {
+        "type": "object",
+        "required": false,
+        "description": "收款银行信息(开户行、账号、SWIFT)"
+      }
+    }
+  },
+  "contract": {
+    "name_zh": "销售合同",
+    "name_en": "Sales Contract",
+    "description": "正式销售合同,具有法律效力",
+    "template_file": "contract.html",
+    "fields": {
+      "seller": {
+        "type": "object",
+        "required": true,
+        "description": "卖方信息"
+      },
+      "buyer": {
+        "type": "object",
+        "required": true,
+        "description": "买方信息"
+      },
+      "contract_no": {
+        "type": "string",
+        "required": true,
+        "description": "合同编号"
+      },
+      "contract_date": {
+        "type": "date",
+        "required": true,
+        "description": "签订日期"
+      },
+      "currency": {
+        "type": "string",
+        "required": true,
+        "description": "币种"
+      },
+      "items": {
+        "type": "array",
+        "required": true,
+        "description": "商品明细"
+      },
+      "total_amount": {
+        "type": "number",
+        "required": true,
+        "description": "总金额"
+      },
+      "payment_terms": {
+        "type": "string",
+        "required": true,
+        "description": "付款方式"
+      },
+      "delivery_time": {
+        "type": "string",
+        "required": true,
+        "description": "交货期"
+      },
+      "incoterm": {
+        "type": "string",
+        "required": true,
+        "description": "贸易术语"
+      },
+      "port_of_loading": {
+        "type": "string",
+        "required": false,
+        "description": "装运港"
+      },
+      "port_of_destination": {
+        "type": "string",
+        "required": false,
+        "description": "目的港"
+      },
+      "inspection": {
+        "type": "string",
+        "required": false,
+        "description": "检验条款"
+      },
+      "claims": {
+        "type": "string",
+        "required": false,
+        "description": "索赔条款"
+      },
+      "force_majeure": {
+        "type": "string",
+        "required": false,
+        "description": "不可抗力条款"
+      },
+      "arbitration": {
+        "type": "string",
+        "required": false,
+        "description": "仲裁条款"
+      }
+    }
+  },
+  "ci": {
+    "name_zh": "商业发票",
+    "name_en": "Commercial Invoice",
+    "description": "正式发票，用于报关、清关、付汇与信用证议付；由出口商自行出具",
+    "template_file": "ci.html",
+    "fields": {
+      "seller": {
+        "type": "object",
+        "required": true,
+        "description": "卖方信息(公司名/地址/电话/邮箱，英文)"
+      },
+      "buyer": {
+        "type": "object",
+        "required": true,
+        "description": "买方信息(公司名/地址/联系人)"
+      },
+      "notify_party": {
+        "type": "object",
+        "required": false,
+        "description": "通知方(信用证或提单要求时填写)"
+      },
+      "invoice_no": {
+        "type": "string",
+        "required": true,
+        "description": "发票号"
+      },
+      "invoice_date": {
+        "type": "date",
+        "required": true,
+        "description": "发票日期"
+      },
+      "contract_no": {
+        "type": "string",
+        "required": false,
+        "description": "合同号"
+      },
+      "lc_no": {
+        "type": "string",
+        "required": false,
+        "description": "信用证号"
+      },
+      "currency": {
+        "type": "string",
+        "required": true,
+        "description": "币种(USD/CNY等)"
+      },
+      "items": {
+        "type": "array",
+        "required": true,
+        "description": "商品明细(品名/规格/数量/单位/单价/金额/HS编码，列固定)"
+      },
+      "total_amount": {
+        "type": "number",
+        "required": true,
+        "description": "总金额(自动生成英文大写)"
+      },
+      "incoterm": {
+        "type": "string",
+        "required": true,
+        "description": "贸易术语(如 FOB Tianjin)"
+      },
+      "payment_terms": {
+        "type": "string",
+        "required": false,
+        "description": "付款方式"
+      },
+      "vessel": {
+        "type": "string",
+        "required": false,
+        "description": "船名/航次"
+      },
+      "port_of_loading": {
+        "type": "string",
+        "required": true,
+        "description": "装运港"
+      },
+      "port_of_destination": {
+        "type": "string",
+        "required": true,
+        "description": "目的港"
+      },
+      "country_of_origin": {
+        "type": "string",
+        "required": false,
+        "description": "原产国(默认 China)"
+      },
+      "shipping_marks": {
+        "type": "string",
+        "required": false,
+        "description": "唛头(无唛填 N/M)"
+      }
+    }
+  },
+  "pl": {
+    "name_zh": "装箱单",
+    "name_en": "Packing List",
+    "description": "详细列明货物包装情况,用于报关、清关、收货核对",
+    "template_file": "pl.html",
+    "fields": {
+      "seller": {
+        "type": "object",
+        "required": true,
+        "description": "卖方信息"
+      },
+      "buyer": {
+        "type": "object",
+        "required": true,
+        "description": "买方信息"
+      },
+      "pl_no": {
+        "type": "string",
+        "required": true,
+        "description": "装箱单号"
+      },
+      "pl_date": {
+        "type": "date",
+        "required": true,
+        "description": "装箱单日期"
+      },
+      "invoice_no": {
+        "type": "string",
+        "required": true,
+        "description": "对应发票号"
+      },
+      "items": {
+        "type": "array",
+        "required": true,
+        "description": "商品明细(品名、规格、数量、毛重、净重、体积)"
+      },
+      "total_qty": {
+        "type": "number",
+        "required": true,
+        "description": "总数量"
+      },
+      "total_gross_weight": {
+        "type": "number",
+        "required": true,
+        "description": "总毛重(KGS)"
+      },
+      "total_net_weight": {
+        "type": "number",
+        "required": true,
+        "description": "总净重(KGS)"
+      },
+      "total_volume": {
+        "type": "number",
+        "required": true,
+        "description": "总体积(CBM)"
+      },
+      "shipping_marks": {
+        "type": "string",
+        "required": false,
+        "description": "唛头"
+      }
+    }
+  },
+  "bl": {
+    "name_zh": "提单(托运单/补料)",
+    "name_en": "Bill of Lading",
+    "description": "海运提单草稿/托运单(Shipping Instruction)；正本提单由承运人或船公司签发，出口商无权出具",
+    "template_file": "bl.html",
+    "fields": {
+      "shipper": {
+        "type": "object",
+        "required": true,
+        "description": "发货人信息"
+      },
+      "consignee": {
+        "type": "object",
+        "required": true,
+        "description": "收货人信息"
+      },
+      "notify_party": {
+        "type": "object",
+        "required": false,
+        "description": "通知方信息"
+      },
+      "bl_no": {
+        "type": "string",
+        "required": true,
+        "description": "提单号"
+      },
+      "booking_no": {
+        "type": "string",
+        "required": false,
+        "description": "订舱号"
+      },
+      "vessel": {
+        "type": "string",
+        "required": true,
+        "description": "船名/航次"
+      },
+      "port_of_loading": {
+        "type": "string",
+        "required": true,
+        "description": "装运港"
+      },
+      "port_of_discharge": {
+        "type": "string",
+        "required": true,
+        "description": "卸货港"
+      },
+      "place_of_delivery": {
+        "type": "string",
+        "required": false,
+        "description": "交货地点"
+      },
+      "shipping_marks": {
+        "type": "string",
+        "required": false,
+        "description": "唛头"
+      },
+      "description_of_goods": {
+        "type": "string",
+        "required": true,
+        "description": "货物描述"
+      },
+      "gross_weight": {
+        "type": "number",
+        "required": true,
+        "description": "毛重(KGS)"
+      },
+      "volume": {
+        "type": "number",
+        "required": true,
+        "description": "体积(CBM)"
+      },
+      "freight_terms": {
+        "type": "string",
+        "required": true,
+        "description": "运费条款(Prepaid/Collect)"
+      },
+      "issue_date": {
+        "type": "date",
+        "required": true,
+        "description": "签发日期"
+      }
+    }
+  },
+  "co": {
+    "name_zh": "原产地证",
+    "name_en": "Certificate of Origin",
+    "description": "原产地证申报信息表；正式证书由贸促会(CCPIT)或海关按法定格式签发，企业不得自行制式",
+    "template_file": "co.html",
+    "fields": {
+      "exporter": {
+        "type": "object",
+        "required": true,
+        "description": "出口商信息"
+      },
+      "consignee": {
+        "type": "object",
+        "required": true,
+        "description": "收货人信息"
+      },
+      "co_no": {
+        "type": "string",
+        "required": true,
+        "description": "证书编号"
+      },
+      "invoice_no": {
+        "type": "string",
+        "required": true,
+        "description": "发票号"
+      },
+      "invoice_date": {
+        "type": "date",
+        "required": true,
+        "description": "发票日期"
+      },
+      "transport_details": {
+        "type": "string",
+        "required": true,
+        "description": "运输方式(海运/空运/陆运)"
+      },
+      "port_of_loading": {
+        "type": "string",
+        "required": true,
+        "description": "起运港"
+      },
+      "port_of_destination": {
+        "type": "string",
+        "required": true,
+        "description": "目的港"
+      },
+      "country_of_origin": {
+        "type": "string",
+        "required": true,
+        "description": "原产国"
+      },
+      "items": {
+        "type": "array",
+        "required": true,
+        "description": "商品明细(品名、HS编码、数量、重量)"
+      },
+      "issue_date": {
+        "type": "date",
+        "required": true,
+        "description": "签发日期"
+      }
+    }
+  },
+  "insurance": {
+    "name_zh": "保险单",
+    "name_en": "Insurance Policy",
+    "description": "海运货物投保信息；正式保单由保险公司签发，出口商仅提交投保申请",
+    "template_file": "insurance.html",
+    "fields": {
+      "insured": {
+        "type": "object",
+        "required": true,
+        "description": "被保险人信息"
+      },
+      "policy_no": {
+        "type": "string",
+        "required": true,
+        "description": "保单号"
+      },
+      "invoice_no": {
+        "type": "string",
+        "required": true,
+        "description": "发票号"
+      },
+      "contract_no": {
+        "type": "string",
+        "required": false,
+        "description": "合同号"
+      },
+      "lc_no": {
+        "type": "string",
+        "required": false,
+        "description": "信用证号"
+      },
+      "currency": {
+        "type": "string",
+        "required": true,
+        "description": "币种"
+      },
+      "insured_amount": {
+        "type": "number",
+        "required": true,
+        "description": "保险金额"
+      },
+      "description_of_goods": {
+        "type": "string",
+        "required": true,
+        "description": "货物描述"
+      },
+      "quantity": {
+        "type": "number",
+        "required": true,
+        "description": "数量"
+      },
+      "conveyance": {
+        "type": "string",
+        "required": true,
+        "description": "运输工具(船名/航次)"
+      },
+      "port_of_loading": {
+        "type": "string",
+        "required": true,
+        "description": "起运港"
+      },
+      "port_of_destination": {
+        "type": "string",
+        "required": true,
+        "description": "目的港"
+      },
+      "sailing_date": {
+        "type": "date",
+        "required": true,
+        "description": "开航日期"
+      },
+      "coverage": {
+        "type": "string",
+        "required": true,
+        "description": "险别(如 All Risks)"
+      },
+      "issue_date": {
+        "type": "date",
+        "required": true,
+        "description": "签发日期"
+      }
+    }
+  },
+  "shipping_advice": {
+    "name_zh": "装运通知",
+    "name_en": "Shipping Advice",
+    "description": "装运后发给买方的发货通知；信用证常要求装运后若干日内发出",
+    "template_file": "shipping_advice.html",
+    "fields": {
+      "seller": {
+        "type": "object",
+        "required": true,
+        "description": "卖方信息"
+      },
+      "buyer": {
+        "type": "object",
+        "required": true,
+        "description": "买方(收件方)信息"
+      },
+      "advice_no": {
+        "type": "string",
+        "required": true,
+        "description": "通知编号"
+      },
+      "advice_date": {
+        "type": "date",
+        "required": true,
+        "description": "通知日期"
+      },
+      "invoice_no": {
+        "type": "string",
+        "required": true,
+        "description": "发票号"
+      },
+      "contract_no": {
+        "type": "string",
+        "required": false,
+        "description": "合同号"
+      },
+      "lc_no": {
+        "type": "string",
+        "required": false,
+        "description": "信用证号"
+      },
+      "bl_no": {
+        "type": "string",
+        "required": false,
+        "description": "提单号"
+      },
+      "vessel": {
+        "type": "string",
+        "required": true,
+        "description": "船名/航次"
+      },
+      "port_of_loading": {
+        "type": "string",
+        "required": true,
+        "description": "装运港"
+      },
+      "port_of_destination": {
+        "type": "string",
+        "required": true,
+        "description": "目的港"
+      },
+      "etd": {
+        "type": "date",
+        "required": false,
+        "description": "预计开船日"
+      },
+      "eta": {
+        "type": "date",
+        "required": false,
+        "description": "预计到港日"
+      },
+      "shipping_marks": {
+        "type": "string",
+        "required": false,
+        "description": "唛头"
+      },
+      "items": {
+        "type": "array",
+        "required": true,
+        "description": "货物摘要(品名/规格/数量/件数/毛重)"
+      }
+    }
+  },
+  "draft": {
+    "name_zh": "汇票",
+    "name_en": "Bill of Exchange",
+    "description": "信用证议付与托收的核心金融票据；由出口商出具，经银行流转",
+    "template_file": "draft.html",
+    "fields": {
+      "seller": {
+        "type": "object",
+        "required": true,
+        "description": "出票人(卖方)信息"
+      },
+      "draft_no": {
+        "type": "string",
+        "required": true,
+        "description": "汇票编号"
+      },
+      "draft_date": {
+        "type": "date",
+        "required": true,
+        "description": "出票日期"
+      },
+      "place_of_issue": {
+        "type": "string",
+        "required": false,
+        "description": "出票地"
+      },
+      "currency": {
+        "type": "string",
+        "required": true,
+        "description": "币种"
+      },
+      "total_amount": {
+        "type": "number",
+        "required": true,
+        "description": "票据金额(自动生成英文大写)"
+      },
+      "tenor": {
+        "type": "string",
+        "required": true,
+        "description": "付款期限；只填期限本身，如 SIGHT 或 30 DAYS AFTER SIGHT(模板已含 At ... of this FIRST of Exchange)"
+      },
+      "payee": {
+        "type": "string",
+        "required": true,
+        "description": "收款人(通常为议付行)"
+      },
+      "drawee": {
+        "type": "string",
+        "required": true,
+        "description": "付款人(通常为开证行)"
+      },
+      "issuing_bank": {
+        "type": "string",
+        "required": false,
+        "description": "开证行(出票依据)"
+      },
+      "lc_no": {
+        "type": "string",
+        "required": false,
+        "description": "信用证号"
+      },
+      "lc_date": {
+        "type": "date",
+        "required": false,
+        "description": "信用证开立日期"
+      },
+      "invoice_no": {
+        "type": "string",
+        "required": false,
+        "description": "对应发票号"
+      }
+    }
+  },
+  "beneficiary_cert": {
+    "name_zh": "受益人证明",
+    "name_en": "Beneficiary's Certificate",
+    "description": "信用证项下受益人自我声明(已按要求寄单/发运等)；由出口商出具",
+    "template_file": "beneficiary_cert.html",
+    "fields": {
+      "seller": {
+        "type": "object",
+        "required": true,
+        "description": "卖方(受益人)信息"
+      },
+      "buyer": {
+        "type": "object",
+        "required": true,
+        "description": "买方(申请人)信息"
+      },
+      "cert_no": {
+        "type": "string",
+        "required": true,
+        "description": "证明编号"
+      },
+      "cert_date": {
+        "type": "date",
+        "required": true,
+        "description": "证明日期"
+      },
+      "invoice_no": {
+        "type": "string",
+        "required": true,
+        "description": "发票号"
+      },
+      "lc_no": {
+        "type": "string",
+        "required": false,
+        "description": "信用证号"
+      },
+      "contract_no": {
+        "type": "string",
+        "required": false,
+        "description": "合同号"
+      },
+      "bl_no": {
+        "type": "string",
+        "required": false,
+        "description": "提单号"
+      },
+      "description_of_goods": {
+        "type": "string",
+        "required": true,
+        "description": "货物描述"
+      },
+      "content": {
+        "type": "string",
+        "required": false,
+        "description": "附加声明(支持 HTML，可留空用默认声明)"
+      }
+    }
+  },
+  "non_wood_packing": {
+    "name_zh": "非木质包装声明",
+    "name_en": "Non-Wood Packing Declaration",
+    "description": "声明未使用实木包装(ISPM 15)；釜新、欧盟、美洲等普遍要求，可免于熏蒸",
+    "template_file": "non_wood_packing.html",
+    "fields": {
+      "seller": {
+        "type": "object",
+        "required": true,
+        "description": "卖方信息"
+      },
+      "buyer": {
+        "type": "object",
+        "required": true,
+        "description": "收货人信息"
+      },
+      "declaration_no": {
+        "type": "string",
+        "required": true,
+        "description": "声明编号"
+      },
+      "declaration_date": {
+        "type": "date",
+        "required": true,
+        "description": "声明日期"
+      },
+      "invoice_no": {
+        "type": "string",
+        "required": true,
+        "description": "发票号"
+      },
+      "bl_no": {
+        "type": "string",
+        "required": false,
+        "description": "提单号"
+      },
+      "vessel": {
+        "type": "string",
+        "required": false,
+        "description": "船名/航次"
+      },
+      "description_of_goods": {
+        "type": "string",
+        "required": true,
+        "description": "货物描述"
+      },
+      "shipping_marks": {
+        "type": "string",
+        "required": false,
+        "description": "唛头"
+      }
+    }
+  },
+  "weight_list": {
+    "name_zh": "重量单",
+    "name_en": "Weight List",
+    "description": "逐项列明毛重与净重的重量明细单据；由出口商出具",
+    "template_file": "weight_list.html",
+    "fields": {
+      "seller": {
+        "type": "object",
+        "required": true,
+        "description": "卖方信息"
+      },
+      "buyer": {
+        "type": "object",
+        "required": true,
+        "description": "收货人信息"
+      },
+      "notify_party": {
+        "type": "object",
+        "required": false,
+        "description": "通知方信息"
+      },
+      "weight_list_no": {
+        "type": "string",
+        "required": true,
+        "description": "重量单号"
+      },
+      "weight_list_date": {
+        "type": "date",
+        "required": true,
+        "description": "单据日期"
+      },
+      "invoice_no": {
+        "type": "string",
+        "required": true,
+        "description": "对应发票号"
+      },
+      "currency": {
+        "type": "string",
+        "required": false,
+        "description": "币种"
+      },
+      "items": {
+        "type": "array",
+        "required": true,
+        "description": "商品明细(品名/规格/数量/单位/毛重/净重)"
+      },
+      "vessel": {
+        "type": "string",
+        "required": false,
+        "description": "船名/航次"
+      },
+      "shipping_marks": {
+        "type": "string",
+        "required": false,
+        "description": "唛头"
+      },
+      "country_of_origin": {
+        "type": "string",
+        "required": false,
+        "description": "原产国(默认 China)"
+      }
+    }
+  },
+  "quality_cert": {
+    "name_zh": "质量证明",
+    "name_en": "Certificate of Quality",
+    "description": "证明货物质量符合约定标准；由出口商或检验机构出具",
+    "template_file": "quality_cert.html",
+    "fields": {
+      "seller": {
+        "type": "object",
+        "required": true,
+        "description": "卖方信息"
+      },
+      "buyer": {
+        "type": "object",
+        "required": true,
+        "description": "收货人信息"
+      },
+      "quality_cert_no": {
+        "type": "string",
+        "required": true,
+        "description": "证书编号"
+      },
+      "quality_cert_date": {
+        "type": "date",
+        "required": true,
+        "description": "证书日期"
+      },
+      "invoice_no": {
+        "type": "string",
+        "required": true,
+        "description": "发票号"
+      },
+      "lc_no": {
+        "type": "string",
+        "required": false,
+        "description": "信用证号"
+      },
+      "contract_no": {
+        "type": "string",
+        "required": false,
+        "description": "合同号"
+      },
+      "batch_no": {
+        "type": "string",
+        "required": false,
+        "description": "批次号"
+      },
+      "description_of_goods": {
+        "type": "string",
+        "required": true,
+        "description": "货物描述"
+      },
+      "items": {
+        "type": "array",
+        "required": true,
+        "description": "商品明细(品名/规格/数量/单位/HS编码)"
+      },
+      "standard_applied": {
+        "type": "string",
+        "required": false,
+        "description": "检验依据标准(如 GB/T、ASTM、合同附件)"
+      },
+      "inspection_result": {
+        "type": "string",
+        "required": false,
+        "description": "检验结果(如 PASS / QUALIFIED)"
+      }
+    }
+  },
+  "manufacturer_cert": {
+    "name_zh": "制造商证明",
+    "name_en": "Manufacturer's Certificate",
+    "description": "声明为货物实际制造商；用于转口贸易、反倾销、原产国核查等场景",
+    "template_file": "manufacturer_cert.html",
+    "fields": {
+      "seller": {
+        "type": "object",
+        "required": true,
+        "description": "卖方(制造商)信息"
+      },
+      "buyer": {
+        "type": "object",
+        "required": true,
+        "description": "收货人信息"
+      },
+      "mfr_cert_no": {
+        "type": "string",
+        "required": true,
+        "description": "证明编号"
+      },
+      "mfr_cert_date": {
+        "type": "date",
+        "required": true,
+        "description": "证明日期"
+      },
+      "invoice_no": {
+        "type": "string",
+        "required": true,
+        "description": "发票号"
+      },
+      "lc_no": {
+        "type": "string",
+        "required": false,
+        "description": "信用证号"
+      },
+      "description_of_goods": {
+        "type": "string",
+        "required": true,
+        "description": "货物描述"
+      },
+      "factory_address": {
+        "type": "string",
+        "required": false,
+        "description": "生产工厂地址"
+      },
+      "content": {
+        "type": "string",
+        "required": false,
+        "description": "补充声明(支持 HTML)"
+      }
+    }
+  },
+  "customs_declaration": {
+    "name_zh": "报关信息表",
+    "name_en": "Customs Declaration Data",
+    "description": "出口报关申报要素汇总；报关单由报关行/海关按法定格式申报与签发",
+    "template_file": "customs_declaration.html",
+    "fields": {
+      "seller": {
+        "type": "object",
+        "required": true,
+        "description": "境内发货人信息"
+      },
+      "customs_decl_no": {
+        "type": "string",
+        "required": true,
+        "description": "申报编号"
+      },
+      "customs_decl_date": {
+        "type": "date",
+        "required": true,
+        "description": "申报日期"
+      },
+      "contract_no": {
+        "type": "string",
+        "required": false,
+        "description": "合同号"
+      },
+      "invoice_no": {
+        "type": "string",
+        "required": true,
+        "description": "发票号"
+      },
+      "incoterm": {
+        "type": "string",
+        "required": true,
+        "description": "成交方式(FOB/CIF/CFR)"
+      },
+      "trade_mode": {
+        "type": "string",
+        "required": false,
+        "description": "监管方式(如 一般贸易 0110)"
+      },
+      "transport_mode": {
+        "type": "string",
+        "required": false,
+        "description": "运输方式(海运/空运/陆运)"
+      },
+      "vessel": {
+        "type": "string",
+        "required": false,
+        "description": "船名/航次"
+      },
+      "port_of_loading": {
+        "type": "string",
+        "required": true,
+        "description": "出境口岸"
+      },
+      "destination_country": {
+        "type": "string",
+        "required": true,
+        "description": "运抵国/地区"
+      },
+      "currency": {
+        "type": "string",
+        "required": true,
+        "description": "币种"
+      },
+      "country_of_origin": {
+        "type": "string",
+        "required": false,
+        "description": "原产国(默认 China)"
+      },
+      "items": {
+        "type": "array",
+        "required": true,
+        "description": "商品明细(品名/规格/数量/单位/单价/金额/HS编码)"
+      },
+      "container_no": {
+        "type": "string",
+        "required": false,
+        "description": "集装箱号"
+      },
+      "seal_no": {
+        "type": "string",
+        "required": false,
+        "description": "封志号"
+      }
+    }
+  },
+  "fumigation_cert": {
+    "name_zh": "熏蒸证书(申请信息)",
+    "name_en": "Fumigation Certificate",
+    "description": "熏蒸/热处理证书申请信息；正式证书由熏蒸服务单位签发",
+    "template_file": "fumigation_cert.html",
+    "fields": {
+      "buyer": {
+        "type": "object",
+        "required": true,
+        "description": "收货人信息"
+      },
+      "fumi_cert_no": {
+        "type": "string",
+        "required": true,
+        "description": "证书编号"
+      },
+      "fumi_cert_date": {
+        "type": "date",
+        "required": true,
+        "description": "证书日期"
+      },
+      "invoice_no": {
+        "type": "string",
+        "required": true,
+        "description": "发票号"
+      },
+      "contract_no": {
+        "type": "string",
+        "required": false,
+        "description": "合同号"
+      },
+      "description_of_goods": {
+        "type": "string",
+        "required": true,
+        "description": "货物描述"
+      },
+      "container_no": {
+        "type": "string",
+        "required": false,
+        "description": "集装箱号"
+      },
+      "seal_no": {
+        "type": "string",
+        "required": false,
+        "description": "封志号"
+      },
+      "port_of_loading": {
+        "type": "string",
+        "required": false,
+        "description": "装运港"
+      },
+      "port_of_destination": {
+        "type": "string",
+        "required": false,
+        "description": "目的港"
+      },
+      "treatment": {
+        "type": "string",
+        "required": true,
+        "description": "处理方式(如 FUMIGATION / HEAT TREATMENT)"
+      },
+      "fumigant": {
+        "type": "string",
+        "required": false,
+        "description": "熏蒸药剂(如 METHYL BROMIDE)"
+      },
+      "dosage": {
+        "type": "string",
+        "required": false,
+        "description": "用药量(如 48 g/m3)"
+      },
+      "duration": {
+        "type": "string",
+        "required": false,
+        "description": "处理时长(如 24 HOURS)"
+      },
+      "temperature": {
+        "type": "string",
+        "required": false,
+        "description": "处理温度(如 21 C MINIMUM)"
+      },
+      "treatment_date": {
+        "type": "date",
+        "required": false,
+        "description": "处理日期"
+      }
+    }
+  },
+  "other": {
+    "name_zh": "其他单证",
+    "name_en": "Other Document",
+    "description": "其他类型的外贸单证",
+    "template_file": "other.html",
+    "fields": {
+      "title": {
+        "type": "string",
+        "required": true,
+        "description": "单证标题"
+      },
+      "doc_no": {
+        "type": "string",
+        "required": true,
+        "description": "单证编号"
+      },
+      "doc_date": {
+        "type": "date",
+        "required": true,
+        "description": "单证日期"
+      },
+      "content": {
+        "type": "string",
+        "required": true,
+        "description": "单证内容(支持 HTML)"
+      }
+    }
+  }
+}

@@ -1,60 +1,66 @@
 "use client";
 
 import { useState } from "react";
-import { ShipmentsTable } from "./components/shipments-table";
-import { TradeStatsView } from "./components/trade-stats-view";
-import { AdapterRunsList } from "./components/adapter-runs-list";
-import { ChannelsView } from "./components/channels-view";
+import { IntelSection } from "./components/intel-section";
+import { MarketView } from "../market/components/market-view";
 import { usePageView } from "@/lib/events/use-page-view";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-type TabKey = "shipments" | "trade-stats" | "channels" | "runs";
+/**
+ * 情报工位（一个工位 = 一个侧边栏入口）
+ * ────────────────────────────────────────
+ * 合并前是两个独立菜单：「进出口情报」与「产品市场对照」。
+ * 但两者本质同类 —— 都是“看市场数据”（一个是海关/贸易，一个是地区需求/当地品名/港口），
+ * 所以整合为一个工位、内部两个板块。
+ */
 
-const TABS: { key: TabKey; label: string }[] = [
-  { key: "shipments", label: "货运记录" },
-  { key: "trade-stats", label: "贸易统计" },
-  { key: "channels", label: "数据渠道" },
-  { key: "runs", label: "采集任务" },
+type SectionKey = "intel" | "market";
+
+const SECTIONS: { key: SectionKey; label: string; desc: string }[] = [
+  {
+    key: "intel",
+    label: "进出口情报",
+    desc: "海关贸易数据采集与宏观市场分析",
+  },
+  {
+    key: "market",
+    label: "产品市场对照",
+    desc: "什么地方卖什么、当地叫什么、走哪个港口",
+  },
 ];
 
-export default function IntelPage() {
+export default function IntelWorkstationPage() {
   usePageView({ resource_id: "/intel" });
-  const [activeTab, setActiveTab] = useState<TabKey>("shipments");
+  const [section, setSection] = useState<SectionKey>("intel");
+  const current = SECTIONS.find((s) => s.key === section)!;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold md:text-2xl">进出口情报</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            海关贸易数据采集与宏观市场分析
-          </p>
-        </div>
+      <div>
+        <h1 className="text-xl font-semibold md:text-2xl">市场情报</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{current.desc}</p>
       </div>
 
       <div className="flex gap-2 border-b">
-        {TABS.map((tab) => (
-          <Button
-            key={tab.key}
-            variant="ghost"
+        {SECTIONS.map((s) => (
+          <button
+            key={s.key}
+            type="button"
+            onClick={() => setSection(s.key)}
             className={cn(
-              "rounded-none border-b-2 border-transparent px-4 pb-2",
-              activeTab === tab.key && "border-primary font-medium"
+              "-mb-px border-b-2 px-4 pb-2 text-sm transition-colors",
+              section === s.key
+                ? "border-primary font-medium text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground",
             )}
-            onClick={() => setActiveTab(tab.key)}
           >
-            {tab.label}
-          </Button>
+            {s.label}
+          </button>
         ))}
       </div>
 
-      <div className="mt-6">
-        {activeTab === "shipments" && <ShipmentsTable />}
-        {activeTab === "trade-stats" && <TradeStatsView />}
-        {activeTab === "channels" && <ChannelsView />}
-        {activeTab === "runs" && <AdapterRunsList />}
-      </div>
+      {section === "intel" && <IntelSection />}
+      {section === "market" && <MarketView showHeader={false} />}
     </div>
   );
 }
