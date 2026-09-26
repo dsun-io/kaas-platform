@@ -1,0 +1,100 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>报价单 QUOTATION</title>
+<style>
+  @page { size: A4; margin: 15mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", "SimSun", Arial, sans-serif; font-size: 11pt; line-height: 1.4; color: #000; }
+  .container { max-width: 210mm; margin: 0 auto; padding: 10mm; }
+  .header { text-align: center; margin-bottom: 8mm; border-bottom: 2px solid #000; padding-bottom: 4mm; }
+  .header h1 { font-size: 18pt; font-weight: bold; margin-bottom: 2mm; }
+  .header .en { font-size: 14pt; color: #333; }
+  .info-section { margin-bottom: 6mm; }
+  .info-row { display: flex; margin-bottom: 2mm; }
+  .info-label { width: 40mm; font-weight: bold; }
+  .info-value { flex: 1; border-bottom: 1px dotted #999; }
+  .two-col { display: flex; gap: 10mm; }
+  .two-col > div { flex: 1; }
+  .box { border: 1px solid #000; padding: 3mm; min-height: 30mm; }
+  .box-title { font-weight: bold; margin-bottom: 2mm; font-size: 10pt; }
+  table.items-table { width: 100%; border-collapse: collapse; margin: 4mm 0; font-size: 10pt; }
+  table.items-table th, table.items-table td { border: 1px solid #000; padding: 2mm; text-align: center; }
+  table.items-table th { background: #f0f0f0; font-weight: bold; }
+  table.items-table td { text-align: left; }
+  table.items-table td:nth-child(n+3) { text-align: right; }
+  .total-row { font-weight: bold; background: #f9f9f9; }
+  .terms { margin: 4mm 0; font-size: 10pt; }
+  .terms div { margin-bottom: 1.5mm; }
+  .signature-section { margin-top: 15mm; }
+  .signature-line { border-top: 1px solid #000; margin-top: 20mm; padding-top: 2mm; width: 45%; }
+  .footer { margin-top: 10mm; text-align: center; font-size: 9pt; color: #666; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>报价单</h1>
+    <div class="en">QUOTATION</div>
+  </div>
+
+  <div class="two-col">
+    <div class="box">
+      <div class="box-title">报价方 FROM:</div>
+      $seller
+    </div>
+    <div class="box">
+      <div class="box-title">客户 TO:</div>
+      $buyer
+    </div>
+  </div>
+
+  <div class="info-section">
+    <div class="info-row">
+      <div class="info-label">报价单号 Quotation No.:</div>
+      <div class="info-value">$quote_no</div>
+    </div>
+    <div class="info-row">
+      <div class="info-label">报价日期 Date:</div>
+      <div class="info-value">$quote_date</div>
+    </div>
+    <div class="info-row">
+      <div class="info-label">有效期 Valid Until:</div>
+      <div class="info-value">$valid_until</div>
+    </div>
+    <div class="info-row">
+      <div class="info-label">币种 Currency:</div>
+      <div class="info-value">$currency</div>
+    </div>
+  </div>
+
+  $items
+
+  <div class="info-section">
+    <div class="info-row total-row">
+      <div class="info-label">总金额 TOTAL:</div>
+      <div class="info-value">$currency $total_amount</div>
+    </div>
+  </div>
+
+  <div class="terms">
+    <div><strong>付款方式 Payment Terms:</strong> $payment_terms</div>
+    <div><strong>交货期 Delivery Time:</strong> $delivery_time</div>
+    <div><strong>贸易术语 Trade Terms:</strong> $incoterm</div>
+    <div><strong>装运港 Port of Loading:</strong> $port_of_loading</div>
+    <div><strong>目的港 Port of Destination:</strong> $port_of_destination</div>
+    <div><strong>备注 Remarks:</strong> $remarks</div>
+  </div>
+
+  <div class="signature-section">
+    <div>报价方签章 Issued By:</div>
+    <div class="signature-line"></div>
+  </div>
+
+  <div class="footer">
+    本报价自报价日起至有效期内有效 | This quotation is valid until the date stated above
+  </div>
+</div>
+</body>
+</html>

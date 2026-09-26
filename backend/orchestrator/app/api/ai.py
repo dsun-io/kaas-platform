@@ -1,4 +1,4 @@
-"""AI 层 API（最终设计 §4.7）
+﻿"""AI 层 API（最终设计 §4.7）
 
 - GET   /api/v1/ai/tasks               任务清单（平台预置，含推荐 Provider）
 - GET   /api/v1/ai/providers           Provider 列表（API Key 脱敏返回）
@@ -14,6 +14,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
 from app.db.workstation_models import AiProvider, AiTaskBinding, AiUsage
@@ -299,3 +300,4 @@ async def run_task(
             "error": "validation", "code": "BAD_TASK",
             "field": "task_key", "value": task_key, "allowed": list(TASKS)})
     return outcome
+

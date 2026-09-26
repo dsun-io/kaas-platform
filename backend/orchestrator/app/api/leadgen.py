@@ -1,4 +1,4 @@
-"""客户开发工位 + 线索池 API（最终设计 §五；P2 开发工位 / P3 线索池）
+﻿"""客户开发工位 + 线索池 API（最终设计 §五；P2 开发工位 / P3 线索池）
 
 流程（§5.2）：
     提交配置 → AI 校验（可关）→ 创建 run → 抓取 → 硬过滤 → AI 评分（可关）→ 写入线索池
@@ -30,6 +30,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy import select, func, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
 from app.db.workstation_models import (
@@ -560,3 +561,4 @@ async def update_lead(
     await db.commit()
     await db.refresh(lead)
     return _row_to_lead(lead)
+

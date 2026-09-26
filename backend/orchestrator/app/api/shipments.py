@@ -1,4 +1,4 @@
-"""自有出运台账 API（WORKSTATION_DESIGN.md §10.6 / §10.7）
+﻿"""自有出运台账 API（WORKSTATION_DESIGN.md §10.6 / §10.7）
 
 区别于 intel_shipments（海关情报）。shipments 记我们自己的出运，
 关键字段做快照冗余（客户名/收货人/货物），目标是查数据能还原当时具体情况。
@@ -17,6 +17,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
 from app.db.workstation_links import Order, OrderItem, OrderShipmentRef
@@ -275,3 +276,4 @@ async def update_shipment(
     await db.commit()
     await db.refresh(s)
     return _row_to_shipment(s)
+

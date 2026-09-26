@@ -1,0 +1,99 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>装箱单 PACKING LIST</title>
+<style>
+  @page { size: A4; margin: 15mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", "SimSun", Arial, sans-serif; font-size: 11pt; line-height: 1.4; color: #000; }
+  .container { max-width: 210mm; margin: 0 auto; padding: 10mm; }
+  .header { text-align: center; margin-bottom: 8mm; border-bottom: 2px solid #000; padding-bottom: 4mm; }
+  .header h1 { font-size: 18pt; font-weight: bold; margin-bottom: 2mm; }
+  .header .en { font-size: 14pt; color: #333; }
+  .info-section { margin-bottom: 5mm; }
+  .info-row { display: flex; margin-bottom: 2mm; }
+  .info-label { width: 45mm; font-weight: bold; font-size: 10pt; }
+  .info-value { flex: 1; border-bottom: 1px dotted #999; }
+  .two-col { display: flex; gap: 10mm; }
+  .two-col > div { flex: 1; }
+  .box { border: 1px solid #000; padding: 3mm; min-height: 28mm; }
+  .box-title { font-weight: bold; margin-bottom: 2mm; font-size: 10pt; }
+  table.items-table { width: 100%; border-collapse: collapse; margin: 4mm 0; font-size: 9pt; }
+  table.items-table th, table.items-table td { border: 1px solid #000; padding: 1.5mm; text-align: center; }
+  table.items-table th { background: #f0f0f0; font-weight: bold; }
+  .totals { margin: 4mm 0; border: 1px solid #000; padding: 3mm; }
+  .totals .info-row { margin-bottom: 1.5mm; }
+  .signature-section { margin-top: 12mm; text-align: right; }
+  .signature-line { border-top: 1px solid #000; margin-top: 18mm; padding-top: 2mm; width: 60mm; display: inline-block; text-align: center; }
+  .footer { margin-top: 8mm; text-align: center; font-size: 9pt; color: #666; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>装箱单</h1>
+    <div class="en">PACKING LIST</div>
+  </div>
+
+  <div class="two-col">
+    <div class="box">
+      <div class="box-title">发货人 SHIPPER:</div>
+      $seller
+    </div>
+    <div class="box">
+      <div class="box-title">收货人 CONSIGNEE:</div>
+      $buyer
+    </div>
+  </div>
+
+  <div class="info-section">
+    <div class="info-row">
+      <div class="info-label">装箱单号 Packing List No.:</div>
+      <div class="info-value">$pl_no</div>
+    </div>
+    <div class="info-row">
+      <div class="info-label">日期 Date:</div>
+      <div class="info-value">$pl_date</div>
+    </div>
+    <div class="info-row">
+      <div class="info-label">发票号 Invoice No.:</div>
+      <div class="info-value">$invoice_no</div>
+    </div>
+    <div class="info-row">
+      <div class="info-label">唛头 Shipping Marks:</div>
+      <div class="info-value">$shipping_marks</div>
+    </div>
+  </div>
+
+  $items
+
+  <div class="totals">
+    <div class="info-row">
+      <div class="info-label">总数量 Total Quantity:</div>
+      <div class="info-value">$total_qty</div>
+    </div>
+    <div class="info-row">
+      <div class="info-label">总毛重 Total Gross Weight:</div>
+      <div class="info-value">$total_gross_weight KGS</div>
+    </div>
+    <div class="info-row">
+      <div class="info-label">总净重 Total Net Weight:</div>
+      <div class="info-value">$total_net_weight KGS</div>
+    </div>
+    <div class="info-row">
+      <div class="info-label">总体积 Total Volume:</div>
+      <div class="info-value">$total_volume CBM</div>
+    </div>
+  </div>
+
+  <div class="signature-section">
+    <div class="signature-line">发货人签章 Shipper's Signature & Stamp</div>
+  </div>
+
+  <div class="footer">
+    本装箱单用于报关、清关及收货核对 | This packing list is for customs clearance and cargo verification
+  </div>
+</div>
+</body>
+</html>
