@@ -71,6 +71,14 @@ class OrderCreate(BaseModel):
     delivery_date: Optional[str] = None
     notes: Optional[str] = None
     owner_scope: str = "private"
+    # 贸易条款（202609260001 新增正列）：报价转订单时未传则从报价单继承，
+    # 后续单证要拿这些值印在发票/合同/提单上
+    incoterm: Optional[str] = None
+    payment_terms: Optional[str] = None
+    port_of_loading: Optional[str] = None
+    port_of_destination: Optional[str] = None
+    shipping_marks: Optional[str] = None
+    country_of_origin: Optional[str] = None
     items: List[OrderItemIn] = []
 
 
@@ -78,6 +86,12 @@ class OrderPatch(BaseModel):
     customer_name: Optional[str] = None
     delivery_date: Optional[str] = None
     notes: Optional[str] = None
+    incoterm: Optional[str] = None
+    payment_terms: Optional[str] = None
+    port_of_loading: Optional[str] = None
+    port_of_destination: Optional[str] = None
+    shipping_marks: Optional[str] = None
+    country_of_origin: Optional[str] = None
 
 
 class StatusChange(BaseModel):
@@ -125,6 +139,12 @@ def _row_to_order(o: Order) -> dict:
         "fx_rate_date": o.fx_rate_date.isoformat() if o.fx_rate_date else None,
         "created_at": o.created_at.isoformat() if o.created_at else None,
         "owner_id": o.owner_id, "owner_scope": o.owner_scope,
+        # 贸易条款（单证要继承印在单据上）
+        "incoterm": o.incoterm, "payment_terms": o.payment_terms,
+        "port_of_loading": o.port_of_loading,
+        "port_of_destination": o.port_of_destination,
+        "shipping_marks": o.shipping_marks,
+        "country_of_origin": o.country_of_origin,
     }
 
 
@@ -296,6 +316,14 @@ async def create_order(
         if line is not None:
             total += line
 
+    # 贸易条款：本次传入优先，否则从报价单继承（报价谈定的条款不能丢，
+    # 否则后面开单证时只能手工重填，极易与合同不一致）
+    def _term(field: str):
+        value = getattr(body, field, None)
+        if value is None and quote is not None:
+            value = getattr(quote, field, None)
+        return value
+
     o = Order(
         tenant_id=tenant_id, order_no=await next_doc_no(db, tenant_id, "order"),
         customer_id=customer_id, customer_name=customer_name,
@@ -304,6 +332,11 @@ async def create_order(
         delivery_date=_parse_dt(body.delivery_date),
         notes=body.notes, created_by=str(auth.user_id),
         owner_id=str(auth.user_id), owner_scope=owner_scope,
+        incoterm=_term("incoterm"), payment_terms=_term("payment_terms"),
+        port_of_loading=_term("port_of_loading"),
+        port_of_destination=_term("port_of_destination"),
+        shipping_marks=_term("shipping_marks"),
+        country_of_origin=_term("country_of_origin"),
     )
     db.add(o)
     await db.flush()
@@ -376,6 +409,11 @@ async def update_order(
         o.delivery_date = _parse_dt(body.delivery_date)
     if body.notes is not None:
         o.notes = body.notes
+    for field in ("incoterm", "payment_terms", "port_of_loading",
+                  "port_of_destination", "shipping_marks", "country_of_origin"):
+        value = getattr(body, field, None)
+        if value is not None:
+            setattr(o, field, value)
     await db.commit()
     await db.refresh(o)
     return _row_to_order(o)

@@ -25,7 +25,20 @@ SHIPMENT_STATUS = ("booking", "in_transit", "arrived", "customs", "delivered")
 INQUIRY_CHANNEL = ("email", "whatsapp", "alibaba", "expo", "website", "other")
 
 # ── 单证类型（§6.3 单证类型×生成阶段）────────────────────────────────────────
-DOC_TYPE = ("quotation", "pi", "contract", "ci", "pl", "bl", "co", "insurance", "other")
+# 必须与前端模板清单（frontend/src/lib/trade-doc/manifest.json）逐项一致：
+# 模板有而这里没有 → 该类型无法开单；这里多了 → 开出单来渲染不出。
+# 由 scripts/contracts-check.ts 的 R3 规则强制校验（防前后端漂移）。
+# 分三组：出口商自制 / 第三方签发（本系统出申报或申请信息） / 通用。
+DOC_TYPE = (
+    # 出口商自制
+    "quotation", "pi", "contract", "ci", "pl",
+    "shipping_advice", "draft", "beneficiary_cert", "non_wood_packing",
+    "weight_list", "quality_cert", "manufacturer_cert",
+    # 第三方签发
+    "bl", "co", "insurance", "customs_declaration", "fumigation_cert",
+    # 通用
+    "other",
+)
 
 # ── 单证状态 ─────────────────────────────────────────────────────────────────
 DOC_STATUS = ("draft", "issued", "void")

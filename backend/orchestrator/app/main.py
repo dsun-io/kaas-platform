@@ -92,7 +92,18 @@ from app.api.ai import router as ai_router
 from app.api.leadgen import router as leadgen_router
 from app.api.outreach import router as outreach_router
 from app.api.export_quote import router as export_quote_router
-from app.api.trade_doc_render import router as trade_doc_render_router
+# 注：单证渲染已改为前端实现（X′ 方案）——模板与渲染逻辑属前端静态资产，
+# 预览/打印本就在浏览器发生，后端的 render 路由已归档（archive/2026-09-trade-doc-xprime-python）。
+# ── 工位业务模块（P3 接线）──
+# 这 6 个模块早已实现但未挂载，导致「后端写好了、前端用不到」。
+# 客户管理 / 报价单 / 订单 / 出货 / 单证台账 / 业务字典 均在此接入。
+from app.api.customers import router as customers_router
+from app.api.quotes import router as quotes_router
+from app.api.orders import router as orders_router
+from app.api.shipments import router as shipments_router
+from app.api.trade_docs import router as trade_docs_router
+from app.api.enums import router as enums_router
+from app.api.company_profile import router as company_profile_router
 
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -116,5 +127,12 @@ app.include_router(ai_router)
 app.include_router(leadgen_router)
 app.include_router(outreach_router)
 app.include_router(export_quote_router)
-app.include_router(trade_doc_render_router)
+# ── 工位业务模块（P3 接线）──
+app.include_router(enums_router)
+app.include_router(customers_router)
+app.include_router(quotes_router)
+app.include_router(orders_router)
+app.include_router(shipments_router)
+app.include_router(trade_docs_router)
+app.include_router(company_profile_router)
 
