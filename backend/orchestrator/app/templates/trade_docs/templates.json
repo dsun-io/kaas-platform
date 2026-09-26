@@ -69,22 +69,26 @@
   "ci": {
     "name_zh": "商业发票",
     "name_en": "Commercial Invoice",
-    "description": "正式发票,用于报关、清关、付款",
+    "description": "正式发票，用于报关、清关、付汇与信用证议付；由出口商自行出具",
     "template_file": "ci.html",
     "fields": {
-      "seller": { "type": "object", "required": true, "description": "卖方信息" },
-      "buyer": { "type": "object", "required": true, "description": "买方信息" },
+      "seller": { "type": "object", "required": true, "description": "卖方信息(公司名/地址/电话/邮箱，英文)" },
+      "buyer": { "type": "object", "required": true, "description": "买方信息(公司名/地址/联系人)" },
+      "notify_party": { "type": "object", "required": false, "description": "通知方(信用证或提单要求时填写)" },
       "invoice_no": { "type": "string", "required": true, "description": "发票号" },
       "invoice_date": { "type": "date", "required": true, "description": "发票日期" },
       "contract_no": { "type": "string", "required": false, "description": "合同号" },
       "lc_no": { "type": "string", "required": false, "description": "信用证号" },
-      "currency": { "type": "string", "required": true, "description": "币种" },
-      "items": { "type": "array", "required": true, "description": "商品明细" },
-      "total_amount": { "type": "number", "required": true, "description": "总金额" },
-      "incoterm": { "type": "string", "required": true, "description": "贸易术语" },
+      "currency": { "type": "string", "required": true, "description": "币种(USD/CNY等)" },
+      "items": { "type": "array", "required": true, "description": "商品明细(品名/规格/数量/单位/单价/金额/HS编码，列固定)" },
+      "total_amount": { "type": "number", "required": true, "description": "总金额(自动生成英文大写)" },
+      "incoterm": { "type": "string", "required": true, "description": "贸易术语(如 FOB Tianjin)" },
+      "payment_terms": { "type": "string", "required": false, "description": "付款方式" },
+      "vessel": { "type": "string", "required": false, "description": "船名/航次" },
       "port_of_loading": { "type": "string", "required": true, "description": "装运港" },
       "port_of_destination": { "type": "string", "required": true, "description": "目的港" },
-      "shipping_marks": { "type": "string", "required": false, "description": "唛头" }
+      "country_of_origin": { "type": "string", "required": false, "description": "原产国(默认 China)" },
+      "shipping_marks": { "type": "string", "required": false, "description": "唛头(无唛填 N/M)" }
     }
   },
   "pl": {
@@ -107,15 +111,16 @@
     }
   },
   "bl": {
-    "name_zh": "提单",
+    "name_zh": "提单(托运单/补料)",
     "name_en": "Bill of Lading",
-    "description": "海运提单,物权凭证,由船公司或货代签发",
+    "description": "海运提单草稿/托运单(Shipping Instruction)；正本提单由承运人或船公司签发，出口商无权出具",
     "template_file": "bl.html",
     "fields": {
       "shipper": { "type": "object", "required": true, "description": "发货人信息" },
       "consignee": { "type": "object", "required": true, "description": "收货人信息" },
       "notify_party": { "type": "object", "required": false, "description": "通知方信息" },
       "bl_no": { "type": "string", "required": true, "description": "提单号" },
+      "booking_no": { "type": "string", "required": false, "description": "订舱号" },
       "vessel": { "type": "string", "required": true, "description": "船名/航次" },
       "port_of_loading": { "type": "string", "required": true, "description": "装运港" },
       "port_of_discharge": { "type": "string", "required": true, "description": "卸货港" },
@@ -131,7 +136,7 @@
   "co": {
     "name_zh": "原产地证",
     "name_en": "Certificate of Origin",
-    "description": "证明货物原产地的官方文件,用于享受关税优惠",
+    "description": "原产地证申报信息表；正式证书由贸促会(CCPIT)或海关按法定格式签发，企业不得自行制式",
     "template_file": "co.html",
     "fields": {
       "exporter": { "type": "object", "required": true, "description": "出口商信息" },
@@ -150,7 +155,7 @@
   "insurance": {
     "name_zh": "保险单",
     "name_en": "Insurance Policy",
-    "description": "货物运输保险单,保障运输途中货物安全",
+    "description": "海运货物投保信息；正式保单由保险公司签发，出口商仅提交投保申请",
     "template_file": "insurance.html",
     "fields": {
       "insured": { "type": "object", "required": true, "description": "被保险人信息" },

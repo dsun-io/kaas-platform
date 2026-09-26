@@ -1,126 +1,127 @@
-﻿<!DOCTYPE html>
-<html lang="zh-CN">
+<!DOCTYPE html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>海运提单 BILL OF LADING</title>
+<title>Bill of Lading (Draft) - $bl_no</title>
 <style>
-  @page { size: A4; margin: 15mm; }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: "Microsoft YaHei", "SimSun", Arial, sans-serif; font-size: 10pt; line-height: 1.3; color: #000; }
-  .container { max-width: 210mm; margin: 0 auto; padding: 8mm; }
-  .header { text-align: center; margin-bottom: 6mm; }
-  .header h1 { font-size: 16pt; font-weight: bold; margin-bottom: 1mm; }
-  .header .en { font-size: 12pt; color: #333; }
-  .bl-no { text-align: right; margin-bottom: 3mm; font-size: 9pt; }
-  .box { border: 1px solid #000; padding: 2mm; margin-bottom: 2mm; min-height: 20mm; }
-  .box-title { font-weight: bold; font-size: 9pt; margin-bottom: 1mm; }
-  .two-col { display: flex; gap: 2mm; }
-  .two-col > div { flex: 1; }
-  .three-col { display: flex; gap: 2mm; }
-  .three-col > div { flex: 1; }
-  .info-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2mm; margin: 3mm 0; font-size: 9pt; }
-  .info-item { border: 1px solid #000; padding: 2mm; }
-  .info-label { font-weight: bold; font-size: 8pt; }
-  .goods-table { width: 100%; border-collapse: collapse; margin: 3mm 0; font-size: 9pt; }
-  .goods-table th, .goods-table td { border: 1px solid #000; padding: 2mm; text-align: left; }
-  .goods-table th { background: #f0f0f0; font-weight: bold; text-align: center; }
-  .footer-info { display: flex; justify-content: space-between; margin-top: 5mm; font-size: 9pt; }
-  .signature { text-align: right; margin-top: 8mm; }
+/*__SHARED_STYLE__*/
 </style>
 </head>
 <body>
-<div class="container">
-  <div class="header">
-    <h1>海运提单</h1>
-    <div class="en">BILL OF LADING</div>
+<div class="doc">
+
+  <!--
+    重要：海运提单由承运人 / 船公司签发，出口商无权出具正本提单。
+    本单证是出口商提供给货代的「托运单 / 补料（Shipping Instruction）」或提单确认件，
+    因此不设卖方信头，签发栏明确归属承运人。
+  -->
+  <div class="title">
+    <h1>Bill of Lading</h1>
+    <div class="sub">Draft / Shipping Instruction &mdash; To Be Issued by the Carrier</div>
   </div>
 
-  <div class="bl-no">
-    <strong>提单号 B/L No.:</strong> $bl_no
-  </div>
+  <table class="meta">
+    <tr>
+      <td class="k">B/L No.</td><td class="v">$bl_no</td>
+      <td class="k">Booking No.</td><td class="v">$booking_no</td>
+    </tr>
+    <tr>
+      <td class="k">Vessel / Voyage</td><td class="v">$vessel</td>
+      <td class="k">Date of Issue</td><td class="v">$issue_date</td>
+    </tr>
+  </table>
 
-  <div class="box">
-    <div class="box-title">发货人 Shipper:</div>
-    $shipper
-  </div>
+  <table class="parties">
+    <tr>
+      <td class="party">
+        <div class="lbl">Shipper</div>
+        <div class="bd">$shipper</div>
+      </td>
+      <td class="gap"></td>
+      <td class="party">
+        <div class="lbl">Consignee</div>
+        <div class="bd">$consignee</div>
+      </td>
+    </tr>
+    <tr><td colspan="3" style="height: 3mm; border: none;"></td></tr>
+    <tr>
+      <td class="party">
+        <div class="lbl">Notify Party</div>
+        <div class="bd">$notify_party</div>
+      </td>
+      <td class="gap"></td>
+      <td class="party">
+        <div class="lbl">Place of Delivery</div>
+        <div class="bd">$place_of_delivery</div>
+      </td>
+    </tr>
+  </table>
 
-  <div class="box">
-    <div class="box-title">收货人 Consignee:</div>
-    $consignee
-  </div>
+  <table class="meta">
+    <tr>
+      <td class="k">Port of Loading</td><td class="v">$port_of_loading</td>
+      <td class="k">Port of Discharge</td><td class="v">$port_of_discharge</td>
+    </tr>
+    <tr>
+      <td class="k">Freight Terms</td><td class="v">$freight_terms</td>
+      <td class="k">Place of Issue</td><td class="v">$place_of_issue</td>
+    </tr>
+  </table>
 
-  <div class="box">
-    <div class="box-title">通知方 Notify Party:</div>
-    $notify_party
-  </div>
-
-  <div class="two-col">
-    <div class="info-item">
-      <div class="info-label">船名/航次 Vessel/Voyage:</div>
-      $vessel
-    </div>
-    <div class="info-item">
-      <div class="info-label">装运港 Port of Loading:</div>
-      $port_of_loading
-    </div>
-  </div>
-
-  <div class="two-col">
-    <div class="info-item">
-      <div class="info-label">卸货港 Port of Discharge:</div>
-      $port_of_discharge
-    </div>
-    <div class="info-item">
-      <div class="info-label">交货地点 Place of Delivery:</div>
-      $place_of_delivery
-    </div>
-  </div>
-
-  <table class="goods-table">
+  <table class="items">
     <thead>
       <tr>
-        <th>唛头 Marks & Nos.</th>
-        <th>件数 No. of Packages</th>
-        <th>货物描述 Description of Goods</th>
-        <th>毛重 Gross Weight</th>
-        <th>体积 Measurement</th>
+        <th>Marks &amp; Nos.</th>
+        <th>No. of Packages</th>
+        <th>Description of Goods</th>
+        <th>Gross Weight</th>
+        <th>Measurement</th>
       </tr>
     </thead>
     <tbody>
       <tr>
-        <td>$shipping_marks</td>
-        <td style="text-align:center">$quantity</td>
-        <td>$description_of_goods</td>
-        <td style="text-align:right">$gross_weight KGS</td>
-        <td style="text-align:right">$volume CBM</td>
+        <td class="c">$shipping_marks</td>
+        <td class="c">$total_packages</td>
+        <td class="l">$description_of_goods</td>
+        <td class="r">$gross_weight KGS</td>
+        <td class="r">$volume CBM</td>
       </tr>
     </tbody>
   </table>
 
-  <div class="info-grid">
-    <div class="info-item">
-      <div class="info-label">运费条款 Freight Terms:</div>
-      $freight_terms
-    </div>
-    <div class="info-item">
-      <div class="info-label">签发地点 Place of Issue:</div>
-      $place_of_issue
-    </div>
-    <div class="info-item">
-      <div class="info-label">签发日期 Date of Issue:</div>
-      $issue_date
-    </div>
+  <table class="meta" style="margin-top: 3mm;">
+    <tr>
+      <td class="k">No. of Original B/L</td><td class="v">THREE (3)</td>
+      <td class="k">Freight &amp; Charges</td><td class="v">$freight_terms</td>
+    </tr>
+  </table>
+
+  <div class="certify">
+    This document is a draft prepared by the shipper for the carrier's reference only. The original
+    Bill of Lading will be issued and signed by the carrier or its authorised agent. This draft does
+    not constitute a document of title and is not negotiable.
   </div>
 
-  <div class="footer-info">
-    <div>正本提单份数 No. of Original B/L: THREE (3)</div>
-    <div>运费 Freight: $freight_terms</div>
-  </div>
+  <table class="sign">
+    <tr>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">Shipper's Confirmation</div>
+        </div>
+      </td>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">Signed for the Carrier</div>
+          <div class="stamp-hint">As Carrier or Authorised Agent</div>
+        </div>
+      </td>
+    </tr>
+  </table>
 
-  <div class="signature">
-    <div>承运人或其代理人签章 Signed for the Carrier</div>
-    <div style="margin-top: 15mm; border-top: 1px solid #000; display: inline-block; width: 60mm; text-align: center;">Signature</div>
-  </div>
+  <div class="foot">$footer_note</div>
+
 </div>
 </body>
 </html>

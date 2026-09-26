@@ -58,6 +58,113 @@ def test_render_unknown_type_raises():
 
 @pytest.mark.unit
 def test_render_with_missing_optional_fields_safe():
-    # safe_substitute 保证缺失字段不抛异常
+    # 缺失字段由 _RenderDict 渲染为空串，不抛异常也不残留 $placeholder
     html = trade_doc_renderer.render_trade_doc("quotation", {"currency": "USD"})
     assert "<html" in html
+    assert "$remarks" not in html
+
+
+# ── 英文印刷级单证能力 ──────────────────────────────────────────────────────
+
+@pytest.mark.unit
+@pytest.mark.parametrize("amount,currency,expected", [
+    (26450.0, "USD", "SAY US DOLLARS TWENTY-SIX THOUSAND FOUR HUNDRED AND FIFTY ONLY"),
+    (1000.5, "USD", "SAY US DOLLARS ONE THOUSAND AND CENTS FIFTY ONLY"),
+    (0, "USD", "SAY US DOLLARS ZERO ONLY"),
+    (1250000, "EUR", "SAY EUROS ONE MILLION TWO HUNDRED AND FIFTY THOUSAND ONLY"),
+    (15, "CNY", "SAY CHINESE YUAN FIFTEEN ONLY"),
+])
+def test_amount_in_words(amount, currency, expected):
+    """金额英文大写供报关与信用证审单使用"""
+    assert trade_doc_renderer.amount_in_words(amount, currency) == expected
+
+
+@pytest.mark.unit
+def test_amount_in_words_invalid_returns_empty():
+    assert trade_doc_renderer.amount_in_words(None) == ""
+    assert trade_doc_renderer.amount_in_words("abc") == ""
+    assert trade_doc_renderer.amount_in_words(-1) == ""
+
+
+@pytest.mark.unit
+def test_item_columns_are_fixed_per_doc_type():
+    """商业发票不得出现毛净重列（属装箱单），但必须含 HS Code"""
+    html = trade_doc_renderer.render_trade_doc("ci", MINIMAL_DATA)
+    assert "G.W. (KGS)" not in html
+    assert "N.W. (KGS)" not in html
+    assert "HS Code" in html
+
+
+@pytest.mark.unit
+def test_packing_list_has_package_and_weight_columns():
+    html = trade_doc_renderer.render_trade_doc("pl", MINIMAL_DATA)
+    assert "Packages" in html
+    assert "G.W. (KGS)" in html
+    assert "Meas. (CBM)" in html
+
+
+@pytest.mark.unit
+def test_date_reformatted_to_international_style():
+    html = trade_doc_renderer.render_trade_doc(
+        "ci", {**MINIMAL_DATA, "invoice_date": "2026-10-20"})
+    assert "20-Oct-2026" in html
+    assert "2026-10-20" not in html
+
+
+@pytest.mark.unit
+def test_line_number_is_integer_not_amount():
+    html = trade_doc_renderer.render_trade_doc("ci", MINIMAL_DATA)
+    assert ">1.00<" not in html
+
+
+@pytest.mark.unit
+def test_total_row_shows_quantity_and_amount():
+    html = trade_doc_renderer.render_trade_doc("ci", MINIMAL_DATA)
+    assert "TOTAL" in html
+    assert "USD 26,450.00" in html
+    assert ">500<" in html  # 数量合计由行项汇总
+
+
+@pytest.mark.unit
+def test_auto_totals_derived_from_items():
+    """件数/毛重/净重/体积未显式提供时，由行项自动汇总"""
+    data = {
+        **MINIMAL_DATA,
+        "items": [
+            {"product_name": "A", "qty": 10, "package": 2,
+             "gross_weight": 100, "net_weight": 95, "volume": 1.5},
+            {"product_name": "B", "qty": 5, "package": 1,
+             "gross_weight": 50, "net_weight": 48, "volume": 0.5},
+        ],
+    }
+    html = trade_doc_renderer.render_trade_doc("pl", data)
+    assert "150.00 KGS" in html   # 毛重 100 + 50
+    assert "143.00 KGS" in html   # 净重 95 + 48
+    assert "2.00 CBM" in html     # 体积 1.5 + 0.5
+
+
+@pytest.mark.unit
+def test_values_are_html_escaped():
+    """业务值一律转义，防止单据被注入脚本"""
+    html = trade_doc_renderer.render_trade_doc("ci", {
+        **MINIMAL_DATA, "shipping_marks": "<script>alert(1)</script>"})
+    assert "<script>alert(1)</script>" not in html
+    assert "&lt;script&gt;" in html
+
+
+@pytest.mark.unit
+def test_other_doc_type_allows_raw_html_content():
+    """通用单证的 content 字段按原始 HTML 透传"""
+    html = trade_doc_renderer.render_trade_doc("other", {
+        **MINIMAL_DATA, "title": "Beneficiary Certificate",
+        "content": "<p>We hereby certify.</p>"})
+    assert "<p>We hereby certify.</p>" in html
+
+
+@pytest.mark.unit
+def test_shared_print_style_is_inlined():
+    """共享样式注入到模板，且不残留占位符"""
+    html = trade_doc_renderer.render_trade_doc("ci", MINIMAL_DATA)
+    assert "/*__SHARED_STYLE__*/" not in html
+    assert "@page" in html
+    assert "table.items" in html

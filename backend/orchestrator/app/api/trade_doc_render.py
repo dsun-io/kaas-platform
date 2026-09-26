@@ -124,6 +124,7 @@ def _build_render_data(doc: TradeDoc) -> dict:
         "consignee": custom.get("consignee") or buyer_default,
         "notify_party": custom.get("notify_party", {}),
         "vessel": custom.get("vessel", ""),
+        "booking_no": custom.get("booking_no", ""),
         "place_of_delivery": custom.get("place_of_delivery", ""),
         "place_of_issue": custom.get("place_of_issue", ""),
         "description_of_goods": custom.get("description_of_goods", ""),

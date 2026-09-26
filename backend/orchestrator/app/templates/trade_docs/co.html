@@ -1,120 +1,89 @@
-﻿<!DOCTYPE html>
-<html lang="zh-CN">
+<!DOCTYPE html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>原产地证 CERTIFICATE OF ORIGIN</title>
+<title>Certificate of Origin - $co_no</title>
 <style>
-  @page { size: A4; margin: 15mm; }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: "Microsoft YaHei", "SimSun", Arial, sans-serif; font-size: 10pt; line-height: 1.3; color: #000; }
-  .container { max-width: 210mm; margin: 0 auto; padding: 8mm; }
-  .header { text-align: center; margin-bottom: 5mm; border-bottom: 2px solid #000; padding-bottom: 3mm; }
-  .header h1 { font-size: 16pt; font-weight: bold; margin-bottom: 1mm; }
-  .header .en { font-size: 12pt; color: #333; }
-  .cert-no { text-align: right; margin-bottom: 3mm; font-size: 9pt; }
-  .box { border: 1px solid #000; padding: 2mm; margin-bottom: 2mm; min-height: 18mm; }
-  .box-title { font-weight: bold; font-size: 9pt; margin-bottom: 1mm; }
-  .two-col { display: flex; gap: 2mm; }
-  .two-col > div { flex: 1; }
-  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2mm; margin: 3mm 0; font-size: 9pt; }
-  .info-item { border: 1px solid #000; padding: 2mm; }
-  .info-label { font-weight: bold; font-size: 8pt; }
-  .goods-table { width: 100%; border-collapse: collapse; margin: 3mm 0; font-size: 9pt; }
-  .goods-table th, .goods-table td { border: 1px solid #000; padding: 2mm; text-align: left; }
-  .goods-table th { background: #f0f0f0; font-weight: bold; text-align: center; }
-  .declaration { margin: 4mm 0; padding: 3mm; border: 1px solid #000; font-size: 9pt; line-height: 1.5; }
-  .footer { margin-top: 6mm; display: flex; justify-content: space-between; font-size: 9pt; }
-  .signature-box { text-align: center; }
-  .signature-line { border-top: 1px solid #000; margin-top: 12mm; padding-top: 2mm; width: 50mm; }
+/*__SHARED_STYLE__*/
 </style>
 </head>
 <body>
-<div class="container">
-  <div class="header">
-    <h1>原产地证书</h1>
-    <div class="en">CERTIFICATE OF ORIGIN</div>
+<div class="doc">
+
+  <!--
+    重要：原产地证为中国海关 / 贸促会（CCPIT）按法定格式签发的官方证书
+    （如 FORM A、一般 CO、FORM E 等），企业无权自定格式。
+    本模板输出的是「申报信息表」，供代理在官方系统中录入制单，因此
+    末尾保留签发机构签证栏。
+  -->
+  <div class="title">
+    <h1>Certificate of Origin</h1>
+    <div class="sub">Particulars for Declaration &mdash; Official Certificate Issued by CCPIT / China Customs</div>
   </div>
 
-  <div class="cert-no">
-    <strong>证书编号 Certificate No.:</strong> $co_no
-  </div>
-
-  <div class="box">
-    <div class="box-title">出口商 Exporter:</div>
-    $exporter
-  </div>
-
-  <div class="box">
-    <div class="box-title">收货人 Consignee:</div>
-    $consignee
-  </div>
-
-  <div class="info-grid">
-    <div class="info-item">
-      <div class="info-label">运输方式 Means of Transport:</div>
-      $transport_details
-    </div>
-    <div class="info-item">
-      <div class="info-label">发票号及日期 Invoice No. & Date:</div>
-      $invoice_no, $invoice_date
-    </div>
-  </div>
-
-  <div class="two-col">
-    <div class="info-item">
-      <div class="info-label">起运港 Port of Loading:</div>
-      $port_of_loading
-    </div>
-    <div class="info-item">
-      <div class="info-label">目的港 Port of Destination:</div>
-      $port_of_destination
-    </div>
-  </div>
-
-  <div class="info-grid">
-    <div class="info-item">
-      <div class="info-label">原产国 Country of Origin:</div>
-      $country_of_origin
-    </div>
-    <div class="info-item">
-      <div class="info-label">签发日期 Date of Issue:</div>
-      $issue_date
-    </div>
-  </div>
-
-  <table class="goods-table">
-    <thead>
-      <tr>
-        <th>唛头 Marks & Nos.</th>
-        <th>商品名称 Description of Goods</th>
-        <th>HS编码 HS Code</th>
-        <th>数量 Quantity</th>
-        <th>重量 Weight</th>
-      </tr>
-    </thead>
-    <tbody>
-      $items_rows
-    </tbody>
+  <table class="meta">
+    <tr>
+      <td class="k">Certificate No.</td><td class="v">$co_no</td>
+      <td class="k">Invoice No.</td><td class="v">$invoice_no</td>
+    </tr>
+    <tr>
+      <td class="k">Invoice Date</td><td class="v">$invoice_date</td>
+      <td class="k">Country of Origin</td><td class="v">$country_of_origin</td>
+    </tr>
+    <tr>
+      <td class="k">Transport</td><td class="v">$transport_details</td>
+      <td class="k">Vessel / Flight</td><td class="v">$vessel</td>
+    </tr>
+    <tr>
+      <td class="k">Port of Loading</td><td class="v">$port_of_loading</td>
+      <td class="k">Port of Destination</td><td class="v">$port_of_destination</td>
+    </tr>
   </table>
 
-  <div class="declaration">
-    <strong>声明 Declaration:</strong><br>
-    兹证明上述货物原产于中华人民共和国。<br>
-    We hereby certify that the above mentioned goods are of Chinese origin.<br>
-    本证书所填内容真实准确，如有虚假，愿承担法律责任。<br>
-    The undersigned declares that the above details and statements are correct and that all the goods were produced in China.
+  <table class="parties">
+    <tr>
+      <td class="party">
+        <div class="lbl">Exporter</div>
+        <div class="bd">$exporter</div>
+      </td>
+      <td class="gap"></td>
+      <td class="party">
+        <div class="lbl">Consignee</div>
+        <div class="bd">$consignee</div>
+      </td>
+    </tr>
+  </table>
+
+  $items
+
+  <div class="certify">
+    The particulars above are declared for the issuance of a Certificate of Origin. The official
+    certificate will be issued by the China Council for the Promotion of International Trade (CCPIT)
+    or China Customs in the prescribed format. The exporter hereby declares that the goods are of
+    Chinese origin and that the information given above is true and correct.
   </div>
 
-  <div class="footer">
-    <div class="signature-box">
-      <div>出口商声明 Exporter's Declaration</div>
-      <div class="signature-line"></div>
-    </div>
-    <div class="signature-box">
-      <div>签证机构盖章 Certifying Authority</div>
-      <div class="signature-line"></div>
-    </div>
-  </div>
+  <table class="sign">
+    <tr>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">Declaration by the Exporter</div>
+          <div class="stamp-hint">Signature, Company Stamp &amp; Date</div>
+        </div>
+      </td>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">Certification by the Issuing Authority</div>
+          <div class="stamp-hint">CCPIT / China Customs &mdash; Stamp &amp; Signature</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="foot">$footer_note</div>
+
 </div>
 </body>
 </html>
