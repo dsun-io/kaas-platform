@@ -1,87 +1,95 @@
 ﻿<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>商业发票 COMMERCIAL INVOICE</title>
+<title>Commercial Invoice - $invoice_no</title>
 <style>
-  @page { size: A4; margin: 15mm; }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: "Microsoft YaHei", "SimSun", Arial, sans-serif; font-size: 11pt; line-height: 1.4; color: #000; }
-  .container { max-width: 210mm; margin: 0 auto; padding: 10mm; }
-  .header { text-align: center; margin-bottom: 8mm; border-bottom: 2px solid #000; padding-bottom: 4mm; }
-  .header h1 { font-size: 18pt; font-weight: bold; margin-bottom: 2mm; }
-  .header .en { font-size: 14pt; color: #333; }
-  .info-section { margin-bottom: 5mm; }
-  .info-row { display: flex; margin-bottom: 2mm; }
-  .info-label { width: 45mm; font-weight: bold; font-size: 10pt; }
-  .info-value { flex: 1; border-bottom: 1px dotted #999; }
-  .two-col { display: flex; gap: 10mm; }
-  .two-col > div { flex: 1; }
-  .box { border: 1px solid #000; padding: 3mm; min-height: 28mm; }
-  .box-title { font-weight: bold; margin-bottom: 2mm; font-size: 10pt; }
-  table.items-table { width: 100%; border-collapse: collapse; margin: 4mm 0; font-size: 10pt; }
-  table.items-table th, table.items-table td { border: 1px solid #000; padding: 2mm; text-align: center; }
-  table.items-table th { background: #f0f0f0; font-weight: bold; }
-  table.items-table td { text-align: left; }
-  table.items-table td:nth-child(n+3) { text-align: right; }
-  .total-row { font-weight: bold; background: #f9f9f9; }
-  .amount-words { margin: 3mm 0; font-weight: bold; }
-  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2mm 8mm; margin: 4mm 0; font-size: 10pt; }
-  .signature-section { margin-top: 12mm; text-align: right; }
-  .signature-line { border-top: 1px solid #000; margin-top: 18mm; padding-top: 2mm; width: 60mm; display: inline-block; text-align: center; }
-  .footer { margin-top: 8mm; text-align: center; font-size: 9pt; color: #666; }
+$__style__
 </style>
 </head>
 <body>
-<div class="container">
-  <div class="header">
-    <h1>商业发票</h1>
-    <div class="en">COMMERCIAL INVOICE</div>
+<div class="doc">
+
+  <!-- 卖方信头：正式单证必须以卖方抬头开篇 -->
+  <div class="lh">$seller</div>
+
+  <div class="title">
+    <h1>Commercial Invoice</h1>
   </div>
 
-  <div class="two-col">
-    <div class="box">
-      <div class="box-title">卖方 SELLER:</div>
-      $seller
-    </div>
-    <div class="box">
-      <div class="box-title">买方 BUYER:</div>
-      $buyer
-    </div>
-  </div>
+  <table class="meta">
+    <tr>
+      <td class="k">Invoice No.</td><td class="v">$invoice_no</td>
+      <td class="k">Date</td><td class="v">$invoice_date</td>
+    </tr>
+    <tr>
+      <td class="k">Contract No.</td><td class="v">$contract_no</td>
+      <td class="k">L/C No.</td><td class="v">$lc_no</td>
+    </tr>
+    <tr>
+      <td class="k">Terms of Delivery</td><td class="v">$incoterm</td>
+      <td class="k">Terms of Payment</td><td class="v">$payment_terms</td>
+    </tr>
+    <tr>
+      <td class="k">Currency</td><td class="v">$currency</td>
+      <td class="k">Total Amount</td><td class="v">$currency $total_amount</td>
+    </tr>
+  </table>
 
-  <div class="info-grid">
-    <div class="info-row"><div class="info-label">发票号 Invoice No.:</div><div class="info-value">$invoice_no</div></div>
-    <div class="info-row"><div class="info-label">发票日期 Date:</div><div class="info-value">$invoice_date</div></div>
-    <div class="info-row"><div class="info-label">合同号 Contract No.:</div><div class="info-value">$contract_no</div></div>
-    <div class="info-row"><div class="info-label">信用证号 L/C No.:</div><div class="info-value">$lc_no</div></div>
-    <div class="info-row"><div class="info-label">贸易术语 Terms:</div><div class="info-value">$incoterm</div></div>
-    <div class="info-row"><div class="info-label">币种 Currency:</div><div class="info-value">$currency</div></div>
-    <div class="info-row"><div class="info-label">装运港 From:</div><div class="info-value">$port_of_loading</div></div>
-    <div class="info-row"><div class="info-label">目的港 To:</div><div class="info-value">$port_of_destination</div></div>
-  </div>
+  <table class="parties">
+    <tr>
+      <td class="party">
+        <div class="lbl">Consignee</div>
+        <div class="bd">$buyer</div>
+      </td>
+      <td class="gap"></td>
+      <td class="party">
+        <div class="lbl">Notify Party</div>
+        <div class="bd">$notify_party</div>
+      </td>
+    </tr>
+  </table>
 
-  <div class="info-row">
-    <div class="info-label">唛头 Shipping Marks:</div>
-    <div class="info-value">$shipping_marks</div>
-  </div>
+  <table class="meta">
+    <tr>
+      <td class="k">Vessel / Flight</td><td class="v">$vessel</td>
+      <td class="k">Port of Loading</td><td class="v">$port_of_loading</td>
+    </tr>
+    <tr>
+      <td class="k">Port of Discharge</td><td class="v">$port_of_destination</td>
+      <td class="k">Shipping Marks</td><td class="v">$shipping_marks</td>
+    </tr>
+  </table>
 
   $items
 
-  <div class="info-section">
-    <div class="info-row total-row">
-      <div class="info-label">总金额 TOTAL AMOUNT:</div>
-      <div class="info-value">$currency $total_amount</div>
-    </div>
+  <div class="words">
+    <div class="lbl">Amount in Words</div>
+    <div class="val">$total_amount_words</div>
   </div>
 
-  <div class="signature-section">
-    <div class="signature-line">卖方签章 Seller's Signature & Stamp</div>
+  <!-- 报关 / 清关 / 议付通用声明条款 -->
+  <div class="certify">
+    We hereby certify that the goods described in this invoice are of Chinese origin, that the
+    particulars stated above are true and correct in every respect, and that this invoice is
+    issued for customs clearance and payment purposes only.
   </div>
 
-  <div class="footer">
-    本发票为正式商业发票,用于报关、清关及收汇 | This is an official commercial invoice for customs clearance and payment
-  </div>
+  <table class="sign">
+    <tr>
+      <td style="width: 50%"></td>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">Authorised Signature &amp; Company Stamp</div>
+          <div class="stamp-hint">For and on behalf of $seller_name</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="foot">$footer_note</div>
+
 </div>
 </body>
 </html>
