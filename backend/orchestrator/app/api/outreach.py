@@ -1,4 +1,4 @@
-"""客户触达工位 API（最终设计 §六；P4）
+﻿"""客户触达工位 API（最终设计 §六；P4）
 
 流程（§6.2）：
     选客户 → 编辑邮件（可 AI 生成，可关）→ 选发件邮箱
@@ -30,6 +30,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, func, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
 from app.db.workstation_models import (
@@ -578,3 +579,4 @@ async def inbound_webhook():
     raise HTTPException(status_code=501, detail={
         "error": "not_implemented", "code": "INBOUND_WEBHOOK_RESERVED",
         "detail": "Inbound webhook 路由预留，后续版本实现解析"})
+

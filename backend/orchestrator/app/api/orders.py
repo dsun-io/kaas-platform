@@ -1,4 +1,4 @@
-"""订单工位 API（WORKSTATION_DESIGN.md §5-§6 / §10.2 / §10.5 / §10.7）
+﻿"""订单工位 API（WORKSTATION_DESIGN.md §5-§6 / §10.2 / §10.5 / §10.7）
 
 端点：
 - GET   /api/v1/orders                          订单列表（分页 + 筛选 + 可见范围）
@@ -23,6 +23,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
 from app.db.workstation_links import (
@@ -552,3 +553,4 @@ async def list_receivables(
     for r, order_no, customer_name in rows:
         items.append({**_row_to_receivable(r), "order_no": order_no, "customer_name": customer_name})
     return {"items": items, "total": total, "page": page, "page_size": page_size}
+

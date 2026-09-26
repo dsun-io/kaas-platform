@@ -1,4 +1,4 @@
-"""报价工位 API（WORKSTATION_DESIGN.md §5-§6 / §10.2 / §10.7）
+﻿"""报价工位 API（WORKSTATION_DESIGN.md §5-§6 / §10.2 / §10.7）
 
 端点：
 - GET   /api/v1/quotes            报价单列表（分页 + status 筛选 + 可见范围）
@@ -17,6 +17,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
 from app.db.workstation_links import QuoteOrder, QuoteOrderItem
@@ -233,3 +234,4 @@ async def update_quote(
     await db.commit()
     await db.refresh(q)  # UPDATE 后 server-onupdate 列需显式 refresh（MissingGreenlet 坑）
     return _row_to_quote(q)
+

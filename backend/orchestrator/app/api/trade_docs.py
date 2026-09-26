@@ -1,4 +1,4 @@
-"""外贸单证工位 API（WORKSTATION_DESIGN.md §6.3 / §10.7）
+﻿"""外贸单证工位 API（WORKSTATION_DESIGN.md §6.3 / §10.7）
 
 单证从上游实体生成（询盘 / 报价单 / 订单任一类），通过 refs 关联表溯源：
 - trade_doc_inquiry_refs / trade_doc_quote_refs / trade_doc_order_refs
@@ -14,6 +14,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
 from app.db.workstation_links import (
@@ -297,3 +298,4 @@ async def update_trade_doc(
     await db.commit()
     await db.refresh(d)
     return _row_to_doc(d)
+

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Kaas v2 · FastAPI 应用入口
 ──────────────────────────
 - /health            → 健康检查（Docker HEALTHCHECK 用）
@@ -92,6 +92,7 @@ from app.api.ai import router as ai_router
 from app.api.leadgen import router as leadgen_router
 from app.api.outreach import router as outreach_router
 from app.api.export_quote import router as export_quote_router
+from app.api.trade_doc_render import router as trade_doc_render_router
 
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -115,3 +116,5 @@ app.include_router(ai_router)
 app.include_router(leadgen_router)
 app.include_router(outreach_router)
 app.include_router(export_quote_router)
+app.include_router(trade_doc_render_router)
+

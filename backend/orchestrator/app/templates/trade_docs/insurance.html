@@ -1,0 +1,114 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>货物运输保险单 INSURANCE POLICY</title>
+<style>
+  @page { size: A4; margin: 15mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", "SimSun", Arial, sans-serif; font-size: 10pt; line-height: 1.4; color: #000; }
+  .container { max-width: 210mm; margin: 0 auto; padding: 8mm; }
+  .header { text-align: center; margin-bottom: 5mm; border-bottom: 2px solid #000; padding-bottom: 3mm; }
+  .header h1 { font-size: 16pt; font-weight: bold; margin-bottom: 1mm; }
+  .header .en { font-size: 12pt; color: #333; }
+  .policy-no { text-align: right; margin-bottom: 3mm; }
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2mm 6mm; margin: 3mm 0; font-size: 10pt; }
+  .info-item { padding: 1mm 0; }
+  .info-label { font-weight: bold; font-size: 9pt; color: #333; }
+  .box { border: 1px solid #000; padding: 2mm; margin-bottom: 2mm; }
+  .box-title { font-weight: bold; font-size: 9pt; margin-bottom: 1mm; }
+  .goods-table { width: 100%; border-collapse: collapse; margin: 3mm 0; font-size: 10pt; }
+  .goods-table th, .goods-table td { border: 1px solid #000; padding: 2mm; }
+  .goods-table th { background: #f0f0f0; font-weight: bold; text-align: center; }
+  .amount-box { border: 2px solid #000; padding: 3mm; margin: 4mm 0; text-align: center; }
+  .amount-box .amount { font-size: 14pt; font-weight: bold; }
+  .clause { margin: 3mm 0; font-size: 9pt; line-height: 1.5; }
+  .signature { text-align: right; margin-top: 10mm; }
+  .signature-line { border-top: 1px solid #000; margin-top: 15mm; padding-top: 2mm; width: 60mm; display: inline-block; text-align: center; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>货物运输保险单</h1>
+    <div class="en">CARGO TRANSPORTATION INSURANCE POLICY</div>
+  </div>
+
+  <div class="policy-no">
+    <strong>保单号 Policy No.:</strong> $policy_no
+  </div>
+
+  <div class="box">
+    <div class="box-title">被保险人 The Insured:</div>
+    $insured
+  </div>
+
+  <div class="info-grid">
+    <div class="info-item">
+      <div class="info-label">发票号 Invoice No.:</div>
+      $invoice_no
+    </div>
+    <div class="info-item">
+      <div class="info-label">合同号 Contract No.:</div>
+      $contract_no
+    </div>
+    <div class="info-item">
+      <div class="info-label">信用证号 L/C No.:</div>
+      $lc_no
+    </div>
+    <div class="info-item">
+      <div class="info-label">运输工具 Conveyance:</div>
+      $conveyance
+    </div>
+    <div class="info-item">
+      <div class="info-label">起运港 From:</div>
+      $port_of_loading
+    </div>
+    <div class="info-item">
+      <div class="info-label">目的港 To:</div>
+      $port_of_destination
+    </div>
+    <div class="info-item">
+      <div class="info-label">开航日期 Sailing Date:</div>
+      $sailing_date
+    </div>
+    <div class="info-item">
+      <div class="info-label">险别 Coverage:</div>
+      $coverage
+    </div>
+  </div>
+
+  <table class="goods-table">
+    <thead>
+      <tr>
+        <th>唛头 Marks & Nos.</th>
+        <th>数量 Quantity</th>
+        <th>货物描述 Description of Goods</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>$shipping_marks</td>
+        <td style="text-align:center">$quantity</td>
+        <td>$description_of_goods</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="amount-box">
+    <div>保险金额 Amount Insured</div>
+    <div class="amount">$currency $insured_amount</div>
+  </div>
+
+  <div class="clause">
+    <strong>承保险别 Conditions:</strong> $coverage<br>
+    按中国人民保险公司海洋运输货物保险条款承保。Covering risks as per Ocean Marine Cargo Clauses of The People's Insurance Company of China.
+  </div>
+
+  <div class="signature">
+    <div>签发日期 Date of Issue: $issue_date</div>
+    <div class="signature-line">保险公司签章 Insurance Company's Signature</div>
+  </div>
+</div>
+</body>
+</html>
