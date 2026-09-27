@@ -296,23 +296,29 @@ flowchart LR
 | 3 | 后端 | `pytest tests/ -q -k "quote or export_quote or trade_doc"` 全绿 |
 | 4 | 端到端（开发后端） | 询盘 → 3 个产品行 → 汇总 = 3 行小计之和（**逐分一致**）→ 存为报价单（`QUO-…`，3 行，`sort_order` 0/1/2）→ 从该报价单生成 quotation + PI |
 | 5 | **一致性断言** | 报价工作台汇总金额 == 生成的 PI/CI 渲染结果里 `
-| 7 | 数量口径 | 单证行项为 `卷数 / ROLLS / 单卷外币价`，`卷数 × 单卷价 = Amount`（逐分精确）；汇总区总米数 = Σ(卷数 × 每卷米数)，与 `Specification` 里写的每卷米数一致 |total_amount` / TOTAL 行金额（同数据逐位相同） |
+| 7 | 数量口径 | 单证行项为 `卷数 / ROLLS / 单卷外币价`，`卷数 × 单卷价 = Amount`（逐分精确）；汇总区总米数 = Σ(卷数 × 每卷米数)，与 `Specification` 里写的每卷米数一致 |
+
+> **实际结果**：前端 220 测试全绿、`tsc` 0 error、`contracts:check` 5/5、
+> 生产构建通过、HTTP 端到端 **17/17**（详见 §12.1）。total_amount` / TOTAL 行金额（同数据逐位相同） |
 | 6 | 抗回退 | 单产品路径行为不变；单证 18 类逐字节基准测试**期望值零改动** |
 
 ---
 
-## 8. 决策项（请拍板，未定项我会按"推荐"实现）
+## 8. 决策项（状态）
+
+> 用户已拍板：**D1 = 不做部分上线、要求完全同步**（执行进度见 §12）；**D3 = 按卷**（见 §10）。
+> 其余按下列推荐实施，均已在开发环境落地并验证。
 
 | # | 问题 | 选项 | 推荐 |
 |---|---|---|---|
-| **D0** | `quotes.py` 被判"遗留"，但它是唯一报价单实现 | ①新建 `quote_orders.py` 并退役旧的 ②在旧文件上继续加 | **①** |
+| **D0** | `quotes.py` 被判"遗留"，但它是唯一报价单实现 | ①新建 `quote_orders.py` 并退役旧的 ②在旧文件上继续加 | ✅ **已按①实现**，旧文件保留留档 + 退役说明（受保护清单约束） |
 | **D1** | 本次交付范围 | ①开发环境跑通 + 把线上同步列清单 ②含线上（需先补齐 worker 的 ~50 个接口，见 §9） | **①**（先跑通再排上线）；上线路线见 §9.3，需你选 A/B |
-| **D2** | 加工利润 / 让利比例：整单级还是每行级？ | ①整单一份（简单） ②每行可覆盖（不同产品毛利不同） | **②：整单默认 + 行内可覆盖** |
+| **D2** | 加工利润 / 让利比例：整单级还是每行级？ | ①整单一份（简单） ②每行可覆盖（不同产品毛利不同） | ✅ **已按②实现**：整单默认 + 行内“加工利润覆盖” |
 | **D3** | 单证上的数量口径 | — | ✅ **已定（2026-09-27 用户决定）：每行 `Quantity = 卷数`、`Unit = ROLLS`、`Unit Price = 单卷外币价`；每卷米数写进 `Specification` 列 + 汇总区给总米数**。国际惯例依据与完整落法见 §10 |
 | **D4** | 工作台入口 | ①报价工位内新 tab（自选客户） ②从「客户/询盘」页"为此询盘报价"进入（带出客户+询盘） | **②为主 + ①为兜底**（两个入口，共用同一组件） |
-| **D5** | "整套单证"预设包含哪些 | 默认 `quotation → pi → contract → ci → pl` | 按此，可调 |
-| **D6** | 多产品工作台与现有"产品报价"的关系 | ①新增平级 tab「多产品报价」 ②把"产品报价"升级为工作台（单行时就是现在的样子） | **②**：一个入口两种用法，避免同一工位两个页面算出两套口径 |
-| **D7** | 是否需要"AI 补全商品英文描述" | ①本次只做规则化 ②同时接 AI（需人工审核） | **①**（AI 那条按 `TRADE_DOC_WORKSTATION_PLAN §1.5` 单独立项） |
+| **D5** | "整套单证"预设包含哪些 | 默认 `quotation → pi → contract → ci → pl` | ✅ 默认勾选 `quotation + pi`，其余可手勾（含 contract/ci/pl/co/报关等） |
+| **D6** | 多产品工作台与现有"产品报价"的关系 | ①新增平级 tab「多产品报价」 ②把"产品报价"升级为工作台（单行时就是现在的样子） | ✅ **已按②实现**：工作台无条件取代旧单产品视图（后者保留但不再被引用） |
+| **D7** | 是否需要"AI 补全商品英文描述" | ①本次只做规则化 ②同时接 AI（需人工审核） | ✅ 本次只做规则化（`lib/trade-doc/spec-to-text.ts`，30 条单测覆盖） |
 
 ---
 
@@ -427,7 +433,71 @@ git rev-list --count HEAD..feature/intel-workstation-v1 → 0     ← 无分叉�
 
 ---
 
-## 11. 与既有文档的关系
+## 12. 执行进度与剩余工作（2026-09-27）
+
+### 12.1 已完成并验证（开发环境）
+
+| 项 | 证据 |
+|---|---|
+| 纯函数层：规格→英文描述、引擎行→单证行项、整批费用按件数分摊 | 前端 220 测试全绿（含新增 30 条） |
+| 报价单现行实现 `app/api/quote_orders.py`（多行 + 行项整批替换 + 询盘关联 + 签发入台账） | 迁移 `202609270002` 已应用（head） |
+| `quote_orders.inquiry_id` 正列 + 索引 | 同上 |
+| 多产品工作台（整单参数 / 逐行算价 / 汇总 / 保存 / 生成整套单证） | `apps/(app)/quotes/views/quote-workbench-view.tsx` |
+| 单证开单改为**多选类型 + 逐张报错** | `trade-docs/components/doc-create-form.tsx` |
+| 契约 `shared/contracts/quote-order.ts` | `contracts:check` R0–R4 全绿 |
+| 类型 / 构建 | `tsc --noEmit` 0 error；`NEXT_EXPORT=1 npm run build` 通过 |
+| **端到端（HTTP 实测 17/17）** | 脚本：`D:\Temp\kaas_verify\e2e_multi_product_quote.ps1` |
+
+端到端覆盖：建含 2 个产品的报价单 → 合计正确（3010.30+1262.00=4272.30）→ 询盘关联落库 →
+详情含 2 行且行序正确 → 行项整批替换后合计重算 → 从该报价单生成 PI →
+PI 继承行项/英文规格/HS Code 且金额与报价单一致 → 签发（同时入台账）→ sent→accepted →
+签发后改行项被拒（409）。
+
+> 顺带修掉一个**历史潜伏缺陷**：`quotations.created_by` 是 VARCHAR，
+> 而旧 `quotes.py` 传的是整数 `auth.user_id` —— 因为"前端零调用"，这条路径从未被执行过，
+> 一旦真被调用必然 500。新实现显式 `str(...)`，并把「签发 + 入台账」放进同一事务
+> （先 commit 再入账会留下"状态已 sent、台账没有"的不一致）。
+
+### 12.2 未完成：线上同步（阻塞项）
+
+**结论：本次不动部署分支。** 原因见下，这不是可以"顺手同步"的工作量。
+
+`backend/worker/src/main.py`（线上唯一运行时）**完全没有**：`/api/v1/export-quote/*`(14)、
+`/api/v1/quotes/*`(5)、`/api/v1/quote-profiles/*`(4)、`/api/v1/shipments/*`(4)，
+以及 AI(6) / outreach(~10) / leadgen·leads(~10) 等 —— 合计见 §9.2。
+
+若现在把开发分支快进到部署分支：**线上会多出一个点进去算价必 404 的报价工位**
+（今天线上根本没有这个入口）—— 比现状更差，也与"把功能做好"相悖。
+
+**执行清单（建议单独立项，约 1,200–1,500 行新代码）**
+
+| 步骤 | 内容 | 关键坑 |
+|---|---|---|
+| P1 | 把引擎移入共享内核 `backend/kaas_common/export_quote/`（14 文件、~4,200 行，DB 无关），orchestrator 改为从这里 import | 两侧共用一份实现；`sync-shared.ps1` 已有 Plan B（自动复制 + CI 校验） |
+| P2 | 去掉 Worker 不需要的依赖：`rates.py` 的 yaml → 把 `rate_sets/*.yaml` 生成 Python 常量；`openpyxl` → **惰性 import**（只在 xlsx 路径用），Worker 先支持 CSV，xlsx 端点返回 501 并提示改用 CSV | Worker 是 Pyodide：**C 扩展不可用**；且**启动 CPU 有硬限额**（超限会让 isolate 间歇 5xx，历史修过 `ecf50ad`）—— 依赖与模块体积要克制 |
+| P3 | Worker 侧实现 `/api/v1/quote-profiles`(4) + `/api/v1/quotes`(5)（裸 asyncpg + 手写 SQL） | 用 `dbjson.row_to_dict(row, "表名")` 登记新表，否则 JSONB 会以字符串下发（前端 `.map()` 会崩，已踩过） |
+| P4 | Worker 侧实现 `/api/v1/export-quote/*`：products / formulas / rate-sets / terms·template / calculate / calculate-internal / import·preview / import·calculate / import·template / explain / verify / rebate-rate·lookup / rate-sets·reload | `_load_cost_table` 要从 `customer_cost_items` 取定价数据（SQLAlchemy → asyncpg 重写）；`httpx` 换成 `js.fetch` |
+| P5 | `/api/v1/shipments`(4) 及其余漂移域 | 按业务优先级分批，不阻塞报价/单证主链路 |
+| P6 | 本地验证：`uv sync --group dev`（已验证可用）→ `uv run pywrangler dev` → 用同一份 E2E 脚本打本地 Worker | 必须真跑接口；后端/Worker 都不热重载 |
+| P7 | 门禁：`route-parity-audit.py` 的【线上坏】归零 + `contracts:check`（R4 校验 Worker 镜像） | 白名单只减不增 |
+| P8 | 快进部署分支 → push → **等 CI 部署 + 冷启动窗口**（§0.2，数分钟内 5xx 属正常，别急着判定失败）→ 线上冒烟 | 部署前先 `git ls-remote` 复核远程 SHA（本机需代理，缓存 ref 会失真） |
+
+### 12.3 顺带记下的三条事实
+
+1. `docs/CURRENT_IMPLEMENTATION_MAP.md` 说 `quotes.py`「前端零调用」**已过期** ——
+   `frontend/src/lib/workstation/use-upstream.ts` 的「报价单」下拉确实在调 `GET /quotes`。
+   本次已把现行实现收敛到 `quote_orders.py`，旧文件保留留档并加退役说明
+   （`frontend/src/app/(app)/quotes` 与 `backend/.../api/quotes.py` 都在 `protected-paths.json` 里，
+   删除须用户明确指令，故未物理删除）。
+2. 后端全量测试 `449 passed / 9 failed / 129 skipped`：9 个失败**均与本次改动无关** ——
+   8 个 `tests/e2e/test_backend_smoke.py` 打 `http://localhost:8000`（需已运行的服务），
+   1 个 `test_tenant_isolation` 在 `/auth/me` 上 401（环境/凭据问题），单独跑同样失败。
+3. 本机 `git` 直连 GitHub 会 `Connection was reset`，**必须走代理**
+   `git -c http.proxy=http://127.0.0.1:7897`；`gh` 未登录，但推送凭据可用。
+
+---
+
+## 13. 与既有文档的关系
 
 - 本文是 `PLATFORM_UPGRADE_PLAN.md` **P3.3「报价单接线」** 与 **P4「报价工位一键生成报价单」** 的具体化实施方案。
 - 复用 `TRADE_DOC_WORKSTATION_PLAN.md` §1.3（G1–G4 缺口补法）与 §1.5（商品描述归一的 AI 落点），不重复其内容。
