@@ -20,6 +20,9 @@ class QuoteOrder(Base):
     quote_no = Column(Text, nullable=False, unique=True)
     customer_id = Column(Text, nullable=True)
     customer_name = Column(Text, nullable=True)
+    # 询盘来源（迁移 202609270002 加正列）：一个询盘可以有多次报价（改价重报），
+    # 因此是"询盘 1 : N 报价单"。可空 —— 历史报价单没有询盘来源属正常。
+    inquiry_id = Column(BigInteger, nullable=True)
     status = Column(Text, nullable=False, default="draft")
     currency = Column(Text, nullable=False, default="USD")
     total_amount = Column(Numeric, nullable=True)

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { usePageView } from "@/lib/events/use-page-view";
-import { ProductQuoteView } from "./views/product-quote-view";
+import { QuoteWorkbenchView } from "./views/quote-workbench-view";
 import { QuotationRecordsView } from "./views/quotation-records-view";
 // 复用既有组件，不复制业务逻辑：
 //   · 批量导入面板已正确接线算价引擎（下载模板 → 上传 → 预览 → 一次算完）
@@ -32,7 +32,7 @@ const TABS: { key: QuoteTab; label: string; hint: string }[] = [
   {
     key: "product",
     label: "产品报价",
-    hint: "选产品与规格 → 自动算价（客户视图 / 内部核算）",
+    hint: "一个询盘多个产品：逐行算价 → 汇总 → 存成报价单 → 生成整套单证",
   },
   { key: "bulk", label: "批量报价", hint: "表格导入 → 一次算完" },
   { key: "records", label: "报价记录", hint: "历史台账" },
@@ -91,7 +91,7 @@ export default function QuotesWorkstationPage() {
         ))}
       </div>
 
-      {tab === "product" && <ProductQuoteView />}
+      {tab === "product" && <QuoteWorkbenchView />}
       {tab === "bulk" && <BulkImportPanel />}
       {tab === "records" && <QuotationRecordsView />}
       {tab === "pricing" && <PricingDataManager embedded />}
