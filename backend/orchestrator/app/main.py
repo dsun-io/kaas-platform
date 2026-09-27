@@ -101,7 +101,11 @@ from app.api.quote_profiles import router as quote_profiles_router
 # 这 6 个模块早已实现但未挂载，导致「后端写好了、前端用不到」。
 # 客户管理 / 报价单 / 订单 / 出货 / 单证台账 / 业务字典 均在此接入。
 from app.api.customers import router as customers_router
-from app.api.quotes import router as quotes_router
+# 报价单：现行实现是 `quote_orders.py`。
+# 旧的 `quotes.py` 已退役（docs/CURRENT_IMPLEMENTATION_MAP.md 判其为遗留：
+# 前端零调用、线上无此路由，且缺少多行整批编辑/询盘关联）。两者路由前缀相同，
+# **同时挂载会因先注册者优先而产生隐性遮蔽**，因此这里只挂新的那个。
+from app.api.quote_orders import router as quote_orders_router
 from app.api.orders import router as orders_router
 from app.api.shipments import router as shipments_router
 from app.api.trade_docs import router as trade_docs_router
@@ -139,7 +143,7 @@ app.include_router(quote_profiles_router)
 # ── 工位业务模块（P3 接线）──
 app.include_router(enums_router)
 app.include_router(customers_router)
-app.include_router(quotes_router)
+app.include_router(quote_orders_router)
 app.include_router(orders_router)
 app.include_router(shipments_router)
 app.include_router(trade_docs_router)

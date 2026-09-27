@@ -27,13 +27,21 @@ export type QuoteView = "customer" | "internal";
  * 产品的规格空间定义（轴 + 变体）。
  * 轴是独立规格（如网高、竖丝间距）；变体是「一次选定、联动多个属性」的组合
  * （如丝径方案一选定，边丝/内横丝/竖丝直径与卷长、卷径同时确定）。
+ *
+ * `withColumns=true` 会一并带回**列定义**（`key` / `label` / `decimals` / `internal`）。
+ * 多产品工作台必须用它：结果表只有表头文字，没有列键 —— 按表头中文名去找
+ * "哪一列是单卷外币价"是猜测，猜错会静默把错的列当成单价落库。
  */
-export function useProductFormulas(productKey: string | null) {
+export function useProductFormulas(
+  productKey: string | null,
+  withColumns = false,
+) {
   return useQuery({
-    queryKey: ["export-quote", "formulas", productKey],
+    queryKey: ["export-quote", "formulas", productKey, withColumns],
     queryFn: async () => {
       const { data } = await apiClient.get<ProductFormulasResponse>(
         `${EXPORT_QUOTE_BASE}/products/${productKey}/formulas`,
+        withColumns ? { params: { with_columns: true } } : undefined,
       );
       return data;
     },
