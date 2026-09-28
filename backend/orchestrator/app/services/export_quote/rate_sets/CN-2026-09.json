@@ -1,0 +1,29 @@
+{
+  "code": "CN-2026-09",
+  "name": "中国大陆 · 2026年9月",
+  "country": "CN",
+  "effective_from": "2026-09-01",
+  "effective_to": null,
+  "source": "税率以财政部/税务总局及海关总署最新公告为准，本档案为业务基线，调整前请核对公告",
+  "vat": {
+    "output_rate_default": 0.13,
+    "output_rate_export": 0.0,
+    "output_rate_reduced": 0.09
+  },
+  "stamp_duty": {
+    "rate": 0.05,
+    "base": "profit"
+  },
+  "export_rebate": {
+    "by_hs_code": {
+      "7314410000": null,
+      "7314490000": null
+    },
+    "default": null,
+    "source": "待填写：以 HS 编码在税务总局退税率文库核实"
+  },
+  "notes": [
+    "报价单引用本档案编号，政策变化时新增一份档案而非修改本文件。",
+    "出口退税率未核实前，报价政策里的可退税比例请显式填写，不要使用 auto 模式。"
+  ]
+}
