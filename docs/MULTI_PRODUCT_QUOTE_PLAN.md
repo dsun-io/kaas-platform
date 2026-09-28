@@ -495,6 +495,36 @@ PI 继承行项/英文规格/HS Code 且金额与报价单一致 → 签发（�
 3. 本机 `git` 直连 GitHub 会 `Connection was reset`，**必须走代理**
    `git -c http.proxy=http://127.0.0.1:7897`；`gh` 未登录，但推送凭据可用。
 
+### 12.4 分支与上线切换（2026-09-28）
+
+**根因复盘**：线上落后不是"分支不对"，而是**部署分支被当成了开发分支**：
+CI 挂在 `feature/intel-workstation-v1`，没人做 fast-forward → 它停在 16 个提交之前（它是开发分支的祖先、0 个独有提交）。
+于是"本地改了很多、线上毫无变化"。`main` 则是另一条 5 月就停摆的岔路（2 个独有提交，无业务价值）。
+
+**切换后的形态**
+
+```
+main                        ← 生产分支（push 触发 CI 部署）  cbef0d9
+feat/trade-doc-templates    ← 唯一的开发分支（未完成的功能留在这里）
+（已删除）feature/intel-workstation-v1
+（归档）  tag archive/main-old-9752f3d = 旧 main
+```
+
+**上线门禁**（本次没上线的功能，代码都在开发分支、未删）
+
+| 被门禁 | 缺什么 | 挡在哪 |
+|---|---|---|
+| 报价工位（产品报价/批量报价/定价数据） | `/api/v1/export-quote/*`(14)、`/api/v1/quotes`(5)、`/api/v1/quote-profiles`(4) | `workstations.ts` → `quotes.status='planned'`（`workstations.py` 同步） |
+| 出货工位 | `/api/v1/shipments/*`(4) | `workstations.ts` → `shipments.status='planned'` |
+| 报价单选项（订单转化 / 单证上游） | `GET /api/v1/quotes` | `use-upstream.ts` → `QUOTE_ORDER_API_GATED = true` |
+
+用 `status: 'planned'`（工位元数据里既有的官方机制：**不上侧边栏**）而不是删代码，是为了让
+"补完后端 → 合入 main"时**不产生删改冲突**：放开就是把这 3 处改回来 + 复跑 `contracts:check`（R2）。
+清单与放开条件另见 `docs/CURRENT_IMPLEMENTATION_MAP.md`「上线门禁」。
+
+> ⚠️ 门禁只在 **main** 上生效；开发分支保持 `active`，方便继续在本地调试未完成的功能。
+> 因此**不要把 main 强推回开发分支**（会连门禁一起丢掉）。
+
 ---
 
 ## 13. 与既有文档的关系
