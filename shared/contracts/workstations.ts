@@ -156,12 +156,10 @@ export const WORKSTATIONS: readonly Workstation[] = [
     order: 40,
     icon: 'Zap',
     adminOnly: false,
-    // ⚠️ 上线门禁（2026-09-28）：报价工位依赖的后端接口族尚未上线 ——
-    //   /api/v1/export-quote/*（算价/规格/导入模板）、/api/v1/quotes（报价单）、
-    //   /api/v1/quote-profiles（客户税率档案）在 Worker（线上唯一运行时）里不存在。
-    //   工作台代码已完成并在开发环境验证通过，但**上了会 404**，因此暂不上侧边栏。
-    //   放开条件与步骤：docs/CURRENT_IMPLEMENTATION_MAP.md「上线门禁」。
-    status: 'planned',
+    // 2026-09-28 已解禁：/api/v1/export-quote/*、/api/v1/quotes、
+    // /api/v1/quote-profiles 已随 backend/worker/src/quote_api.py 落到 Worker（线上唯一运行时），
+    // 并在测试台 + 生产冒烟中实测通过，因此上侧边栏。
+    status: 'active',
     subscription: null,
   },
   {
