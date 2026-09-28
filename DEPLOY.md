@@ -201,7 +201,21 @@ cd frontend && npm run build     # 输出到 out/
 ## 4. CI 自动部署
 
 `.github/workflows/deploy.yml`：push 到 **`main`（生产分支）** →
-TypeScript 构建前端 → `pywrangler deploy` → 生产冒烟测试（`concurrency: deploy-production` 串行）。
+TypeScript 构建前端 → **同步共享内核并校验** → `pywrangler deploy` → 生产冒烟测试
+（`concurrency: deploy-production` 串行）。
+
+> ### ⚠️ 「同步共享内核」这一步不能删（2026-09-28 补上，此前完全缺失）
+>
+> `backend/worker/.gitignore` 忽略了 `src/kaas_common/` —— 那是
+> `scripts/sync-shared.ps1` 从 `backend/kaas_common/` 与
+> `backend/orchestrator/app/services/export_quote/` **复制**出来的镜像（2 + 16 个文件），
+> **不进版本控制**，runner 上必须现生成。
+>
+> 该工作流此前只有 `pywrangler deploy`，于是线上 bundle 里根本没有这个目录：
+> `/health` 的 `shared.loaded` 长期是 `false`，报价引擎整包缺失。
+> 现在流程是「`sync-shared.ps1` → `sync-shared.ps1 -Check`」，
+> 且冒烟测试会断言 `shared.loaded=true` 与报价 4 条路由返回 401 ——
+> 这两条断言就是针对这个事故加的探针（只查 `status:ok` 是发现不了的）。
 
 分支策略（2026-09-28 切换）
 -------------------------
