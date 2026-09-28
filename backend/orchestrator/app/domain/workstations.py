@@ -53,7 +53,10 @@ WORKSTATIONS = [
     {
         "key": "quotes", "name": "报价", "route": "/quotes",
         "group": "business", "order": 40,
-        "admin_only": False, "status": "active", "subscription": None,
+        # 上线门禁（2026-09-28）：export-quote / quotes / quote-profiles 接口族
+        # 尚未在 Worker 落地 → 上了会 404。放开条件见
+        # docs/CURRENT_IMPLEMENTATION_MAP.md「上线门禁」。
+        "admin_only": False, "status": "planned", "subscription": None,
     },
     {
         "key": "quote-records", "name": "报价记录", "route": "/quotations",
@@ -73,7 +76,8 @@ WORKSTATIONS = [
     {
         "key": "shipments", "name": "出货", "route": "/shipments",
         "group": "business", "order": 70,
-        "admin_only": False, "status": "active", "subscription": None,
+        # 上线门禁（2026-09-28）：/api/v1/shipments 只在开发后端存在。
+        "admin_only": False, "status": "planned", "subscription": None,
     },
     # 情报
     {

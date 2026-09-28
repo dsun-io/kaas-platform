@@ -156,7 +156,12 @@ export const WORKSTATIONS: readonly Workstation[] = [
     order: 40,
     icon: 'Zap',
     adminOnly: false,
-    status: 'active',
+    // ⚠️ 上线门禁（2026-09-28）：报价工位依赖的后端接口族尚未上线 ——
+    //   /api/v1/export-quote/*（算价/规格/导入模板）、/api/v1/quotes（报价单）、
+    //   /api/v1/quote-profiles（客户税率档案）在 Worker（线上唯一运行时）里不存在。
+    //   工作台代码已完成并在开发环境验证通过，但**上了会 404**，因此暂不上侧边栏。
+    //   放开条件与步骤：docs/CURRENT_IMPLEMENTATION_MAP.md「上线门禁」。
+    status: 'planned',
     subscription: null,
   },
   {
@@ -201,7 +206,9 @@ export const WORKSTATIONS: readonly Workstation[] = [
     order: 70,
     icon: 'Truck',
     adminOnly: false,
-    status: 'active', // 已上线：订舱/船期/提单信息 + 出运状态推进
+    // ⚠️ 上线门禁（2026-09-28）：/api/v1/shipments（订舱/船期/提单 4 个接口）
+    //   只在开发后端存在，Worker 没有 → 上了会 404。详见「上线门禁」。
+    status: 'planned',
     subscription: null,
   },
 
