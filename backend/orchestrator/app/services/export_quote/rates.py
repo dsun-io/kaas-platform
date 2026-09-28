@@ -32,14 +32,13 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Protocol, runtime_checkable
-
-import yaml
 
 from .numeric import dec
 
@@ -189,9 +188,22 @@ class RateSetRegistry:
         base = Path(directory) if directory else RATE_SETS_DIR
         sets: list[RateSet] = []
         if base.is_dir():
-            for path in sorted(base.glob("*.y*ml")):
+            # 同时支持 .json 与 .yaml：
+            #   · 开发后端（CPython）用 yaml，历史文件不动；
+            #   · 线上 Worker（Pyodide）**装不了/不该装 yaml**，镜像里只放 .json。
+            # 因此 yaml 的 import 必须**惰性**（写在分支里）—— 顶层 import yaml
+            # 会让整个引擎在 Worker 里根本导不进来，这是本次移植的第一个硬障碍。
+            for path in sorted(base.iterdir()):
+                suffix = path.suffix.lower()
+                if suffix not in (".json", ".yaml", ".yml"):
+                    continue
                 with path.open("r", encoding="utf-8") as fh:
-                    raw = yaml.safe_load(fh) or {}
+                    if suffix == ".json":
+                        raw = json.load(fh) or {}
+                    else:
+                        import yaml  # noqa: PLC0415 - 惰性：仅在读到 yaml 时才需要
+
+                        raw = yaml.safe_load(fh) or {}
                 rs = rate_set_from_dict(raw)
                 if not rs.code:
                     rs = RateSet(**{**rs.__dict__, "code": path.stem})
@@ -302,9 +314,19 @@ class HttpRebateProvider:
         if not self.enabled:
             raise RebateRateNotFound("未配置 REBATE_RATE_API_URL，HTTP 退税率查询未启用")
 
-        import httpx
+        # httpx 与 retry_request 都**只能惰性导入**：
+        #   · 线上 Worker（Pyodide）里没有 httpx，也没有 app.services.* 这个包路径；
+        #   · 只有显式配置了 REBATE_RATE_API_URL 才会走到这里。
+        # 所以这里把 ImportError 翻译成业务异常 —— 否则线上只会得到一个看不懂的
+        # ModuleNotFoundError，而"退税率查不到"本就是一个明确的业务结论。
+        try:
+            import httpx
 
-        from app.services.http_utils import retry_request
+            from app.services.http_utils import retry_request
+        except ImportError as exc:  # pragma: no cover - 仅 Worker/裁剪环境触发
+            raise RebateRateNotFound(
+                "当前运行环境不支持 HTTP 退税率查询（未内置 httpx），请改用本地退税表"
+            ) from exc
 
         headers = {"Accept": "application/json"}
         if self.api_key:

@@ -236,8 +236,27 @@ export function BulkImportPanel() {
               </Select>
             </div>
 
+            {/* 为什么 CSV 是主按钮、Excel 降为次按钮：
+                线上运行时是 Cloudflare Worker（Pyodide），**装不了 openpyxl**（C 扩展），
+                因此生产环境无法生成/解析 xlsx —— 按「下载 Excel 模板」只会得到 501。
+                CSV 则是线上与本地都跑得通的那条路，所以把它放在首位。 */}
             <Button
               type="button"
+              disabled={!effectiveProduct || loadingTemplate}
+              onClick={() =>
+                download.mutate({ productKey: effectiveProduct, format: "csv" })
+              }
+            >
+              {loadingTemplate ? (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              ) : (
+                <Download className="mr-2 size-4" />
+              )}
+              下载 CSV 模板（仅表头）
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
               disabled={!effectiveProduct || loadingTemplate}
               onClick={() =>
                 download.mutate({
@@ -246,23 +265,8 @@ export function BulkImportPanel() {
                 })
               }
             >
-              {loadingTemplate ? (
-                <Loader2 className="mr-2 size-4 animate-spin" />
-              ) : (
-                <Download className="mr-2 size-4" />
-              )}
-              下载 Excel 模板
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={!effectiveProduct || loadingTemplate}
-              onClick={() =>
-                download.mutate({ productKey: effectiveProduct, format: "csv" })
-              }
-            >
               <Download className="mr-2 size-4" />
-              CSV（只有表头）
+              Excel 模板（仅本地开发）
             </Button>
 
             {download.isSuccess && (
@@ -405,7 +409,7 @@ export function BulkImportPanel() {
             <input
               ref={inputRef}
               type="file"
-              accept=".csv,.xlsx,.xlsm,.txt"
+                accept=".csv,.txt"
               className="hidden"
               onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
             />

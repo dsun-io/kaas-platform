@@ -82,6 +82,20 @@ jobs:
         with:
           python-version: "3.14"
 
+      # 为什么必须有这一步（2026-09 踩过的坑）：
+      #   `backend/worker/.gitignore` 忽略 `src/kaas_common/`，镜像**不进仓库**；
+      #   而本工作流此前只有 `pywrangler deploy`，没人跑同步脚本。
+      #   后果：线上 bundle 里根本没有 kaas_common —— /health 显示
+      #   shared.loaded=false，且报价引擎整包缺失（报价工位全部 503）。
+      # 同步是幂等的、无人工判断的：把唯一源复制进 Worker 的 src/ 树。
+      - name: Sync shared kernel + quote engine into worker
+        shell: pwsh
+        run: ./scripts/sync-shared.ps1
+
+      - name: Verify mirror is complete
+        shell: pwsh
+        run: ./scripts/sync-shared.ps1 -Check
+
       - name: Deploy to Cloudflare Workers
         working-directory: backend/worker
         env:
@@ -115,14 +129,27 @@ jobs:
           fi
 
           echo "── 2) API 路由与鉴权（未带 token 必须 401）──"
+          # 报价工位相关的 4 条：若共享内核/引擎漏打包，这里会变成 503（而不是 401），
+          # 从而在最前面就把「镜像没进包」这个事故拦住。
           for p in /api/v1/research/categories /api/v1/research/stats \
-                   /api/v1/leads /api/v1/ai/tasks; do
+                   /api/v1/leads /api/v1/ai/tasks \
+                   /api/v1/export-quote/products /api/v1/export-quote/rate-sets \
+                   /api/v1/export-quote/quote-profiles /api/v1/quotes; do
             code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API$p")
             echo "$p -> $code"
             if [ "$code" != "401" ]; then
               echo "::error::$p 期望 401（路由存在且需鉴权），实际 $code"; exit 1
             fi
           done
+
+          echo "── 2b) 共享内核已随包发布 ──"
+          # /health 里的 shared.loaded 是「kaas_common 是否打进 bundle」的唯一直接探针。
+          # 这条断言就是为上面那个坑加的：只查 status:ok 是发现不了的。
+          health=$(curl -fsS --max-time 10 "$API/health" 2>/dev/null || true)
+          if ! printf '%s' "$health" | grep -q '"loaded":true'; then
+            echo "::error::共享内核未随包发布（/health shared.loaded != true）: $health"; exit 1
+          fi
+          echo "$health"
 
           echo "── 3) 前端页面（静态资产）──"
           for p in /research /leadgen /intel /outreach /settings/ai-providers; do
