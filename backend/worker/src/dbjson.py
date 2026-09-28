@@ -23,6 +23,13 @@ JSONB_COLS: dict[str, set[str]] = {
     "research_runs": {"config"},
     "quotations": {"product_spec"},
     "customer_cost_items": {"product_spec_json"},
+    # 报价工位（quote_api.py）用到的两张 jsonb 表：
+    #   customer_quote_profiles.tax_overrides 是税率覆盖项，前端要当对象读；
+    #   quote_order_items.spec_snapshot 是行项规格快照，单证装配层按它的键摊平。
+    # 漏登记这两项的表现是"字段在、但值是字符串" —— 前端 zod 会报类型错，
+    # 或者更糟：单证把整段 JSON 当规格文字印上去。
+    "customer_quote_profiles": {"tax_overrides"},
+    "quote_order_items": {"spec_snapshot"},
     "product_sku_prices": {"tier_rules"},
     "order_items": {"spec_snapshot"},
     "business_events": {"payload"},
