@@ -1,12 +1,16 @@
 name: deploy
 
-# push 到开发主分支即自动构建前端并部署单 Worker "kaas"（含静态资产）。
+# push 到生产分支 main 即自动构建前端并部署单 Worker "kaas"（含静态资产）。
 # 生产 secrets（JWT_SECRET / ADMIN_SETUP_TOKEN / RESEND_API_KEY）已绑定在
 # Worker 上，wrangler deploy 不会清除，无需在 CI 中重设。
+#
+# 分支策略（2026-09-28 切换）：
+#   · main = 生产分支（本文件只监听它）；已归档旧的 feature/intel-workstation-v1
+#   · feat/trade-doc-templates = 唯一的开发分支（未完成的功能留在这里，完成后合入 main）
 on:
   push:
     branches:
-      - feature/intel-workstation-v1
+      - main
     # 纯文档 / 临时脚本提交不触发生产重部署。
     # 每次部署都会让全部 isolate 失效并经历数分钟冷启动窗口（见 DEPLOY.md §0.2），
     # 不能因为改一个 .md 就重发一次生产版本。

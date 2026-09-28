@@ -22,16 +22,40 @@
 
 ## 二、分支与「防覆盖」机制
 
-### 现状（已零写入核验远程）
+### 现状（2026-09-28 切换后，已零写入核验远程）
 
 ```
-feature/intel-workstation-v1   05718bd   ← 部署分支（push 触发 CI 部署）
-        │  0 个独有提交
-        └─→ feat/trade-doc-templates  e97a358  ← 我们的开发分支（领先 4，2 个未推送）
+main                         ← 生产分支（push 触发 CI 部署）
+    │
+    └─→ 线上实际运行的版本（由 main 构建）
+
+feat/trade-doc-templates     ← 唯一的开发分支（未完成的功能留在这里）
+    │
+    └─→ 完成后合入 main
+
+（已归档）feature/intel-workstation-v1 = 旧生产分支，
+         它是开发分支的**祖先**（0 个独有提交），已删除；旧 main 另存 tag。
 ```
 
-**结论：当前线性、无分叉**，将来可 **fast-forward 合并、零冲突**。
-（远程 SHA 与本地缓存一致，缓存未过期——用 `git ls-remote` 核验过，不依赖 fetch。）
+**背景**：切换前部署挂在 `feature/intel-workstation-v1` 上，而它被当成了“开发分支的旧快照”：
+没人做 fast-forward → 落后 16 个提交 → 表现为“本地改了很多、线上毫无变化”。
+根因不是“分支不对”，而是**部署分支与开发分支被当成了同一个东西**。
+现在：`main` 只做生产，开发只在 `feat/trade-doc-templates`。
+
+### ⚠️ 上线门禁（2026-09-28）
+
+有些功能**前端已完成并验证、但后端接口尚未在 Worker 落地**。
+它们一律用 `workstations.ts` 的 `status: 'planned'`（或代码里的门禁常量）挡在用户可见范围之外，
+**不得**靠“后端以后再补”直接上线（否则用户点进去就是 404）。
+
+| 被门禁的能力 | 缺什么 | 挡在哪 | 放开条件 |
+|---|---|---|---|
+| 报价工位（产品报价 / 批量报价） | `/api/v1/export-quote/*`(14)、`/api/v1/quotes`(5)、`/api/v1/quote-profiles`(4) | `workstations.ts` 的 `quotes.status='planned'`（`workstations.py` 同步） | Worker 实现上述 23 个路由并验证 |
+| 出货工位 | `/api/v1/shipments/*`(4) | `workstations.ts` 的 `shipments.status='planned'` | 同上 |
+| 报价单选项（订单「由报价单转订单」、单证「报价单」上游） | `GET /api/v1/quotes` | `frontend/src/lib/workstation/use-upstream.ts` 的 `QUOTE_ORDER_API_GATED = true` | 同上 |
+
+> **放开时请一并删除**：上表三处的门禁注释/常量，并复跑 `contracts:check`（R2 会校验两侧工位清单一致）。
+> 工作台与相关代码**未删除**，仍在开发分支上 —— 目标是“补后端”而不是“重写前端”。
 
 ### 风险与对策
 

@@ -273,10 +273,12 @@ pnpm dev
 
 ## 分支策略
 
-- **`main`** — 经过验证的交付版本
-- **`feature/v2-refactor`** — v2 重构主分支
-- **`feature/intel-workstation-v1`** — 工位能力网 + 情报体系（当前活跃）
+- **`main`** — 生产分支：经过验证的交付版本；**push 到它会触发自动部署**
+- **`feat/trade-doc-templates`** — 唯一的开发分支：未完成的功能留在这里，完成并验证后再合入 `main`
 - **`archive/`** — 历史 v1 备份
+
+> 2026-09-28 起，生产分支由 `feature/intel-workstation-v1` 切到 `main`（前者已归档）。
+> 上线门禁（前端已就绪但后端未上线的功能）见 `docs/CURRENT_IMPLEMENTATION_MAP.md`。
 
 ## PR 规范
 
