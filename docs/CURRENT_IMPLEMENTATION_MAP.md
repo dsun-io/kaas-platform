@@ -50,12 +50,19 @@ feat/trade-doc-templates     ← 唯一的开发分支（未完成的功能留�
 
 | 被门禁的能力 | 缺什么 | 挡在哪 | 放开条件 |
 |---|---|---|---|
-| 报价工位（产品报价 / 批量报价） | `/api/v1/export-quote/*`(14)、`/api/v1/quotes`(5)、`/api/v1/quote-profiles`(4) | `workstations.ts` 的 `quotes.status='planned'`（`workstations.py` 同步） | Worker 实现上述 23 个路由并验证 |
-| 出货工位 | `/api/v1/shipments/*`(4) | `workstations.ts` 的 `shipments.status='planned'` | 同上 |
-| 报价单选项（订单「由报价单转订单」、单证「报价单」上游） | `GET /api/v1/quotes` | `frontend/src/lib/workstation/use-upstream.ts` 的 `QUOTE_ORDER_API_GATED = true` | 同上 |
+| ~~报价工位（产品报价 / 批量报价）~~ **2026-09-28 已解禁** | 已补齐：`backend/worker/src/quote_api.py` 实现 `/api/v1/export-quote/*`、`/api/v1/quotes`、`/api/v1/quote-profiles` | 已改回 `quotes.status='active'`（`workstations.ts` 与 `workstations.py` 同步） | ✅ 已满足（测试台 25 条路由实测 + 生产冒烟） |
+| ~~报价单选项（订单「由报价单转订单」、单证「报价单」上游）~~ **2026-09-28 已解禁** | 已补齐 `GET /api/v1/quotes` | 已删除 `QUOTE_ORDER_API_GATED` | ✅ 已满足 |
+| 出货工位 | `/api/v1/shipments/*`(4) | `workstations.ts` 的 `shipments.status='planned'` | Worker 实现上述 4 个路由并验证 |
 
-> **放开时请一并删除**：上表三处的门禁注释/常量，并复跑 `contracts:check`（R2 会校验两侧工位清单一致）。
+> **解禁前必做**：上表三处（现只剩 shipments 一处）的注释/常量一并删除，并复跑 `contracts:check`
+> （R2 会校验两侧工位清单一致）。2026-09-28 解禁时已执行：R0–R4 全 PASS。
 > 工作台与相关代码**未删除**，仍在开发分支上 —— 目标是“补后端”而不是“重写前端”。
+>
+> **另一个必须同时满足的前提**：`deploy.yml` 必须在部署前跑 `scripts/sync-shared.ps1`。
+> `backend/worker/.gitignore` 忽略了 `src/kaas_common/`（镜像不进版本控制），
+> 而该工作流此前**只有 `pywrangler deploy`** —— 线上 `/health` 返回
+> `shared.loaded=false` 就是这个漏洞的表现。现已补上「同步 + `-Check`」两步，
+> 并在冒烟里加了 `shared.loaded=true` 与报价 4 路由 401 的断言。
 
 ### 风险与对策
 
