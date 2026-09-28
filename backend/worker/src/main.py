@@ -961,13 +961,17 @@ async def create_quotation_manual(
 ):
     """手动录入报价记录。报价账以 SKU 价格表 + quotations 为准（David 确认）。"""
     spec_hash = _compute_spec_hash(body.product_spec)
+    # schema_version 必须显式写入：它 NOT NULL 且**没有数据库默认值**，
+    # 而 orchestrator 侧的 `default=1` 只是 SQLAlchemy 客户端行为、不会生成 DDL 默认。
+    # 漏写会稳定触发 NotNullViolationError（即这条接口在线上必 500）。
+    # 这里直接写字面量 1，避免改动后面 13 个占位符的编号。
     row = await db.fetchrow(
         request,
         """INSERT INTO quotations
-           (tenant_id, customer_id, product_category, product_spec, spec_hash,
-            unit_price, currency, unit, discount, min_quantity, source, notes,
-            created_by)
-           VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+           (schema_version, tenant_id, customer_id, product_category, product_spec,
+            spec_hash, unit_price, currency, unit, discount, min_quantity, source,
+            notes, created_by)
+           VALUES (1,$1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9,$10,$11,$12,$13)
            RETURNING id, spec_hash""",
         DEFAULT_TENANT,
         body.customer_id,
@@ -3191,4 +3195,9 @@ async def get_trade_doc_render_data(doc_id: int, request: Request,
 
 
 import chain  # noqa: E402,F401
+
+# ── 报价工位（/api/v1/export-quote/* · /api/v1/quotes · /api/v1/quote-profiles）──
+# 与 chain 同一挂载方式：复用本模块的 app / _get_current_user / db 连接封装。
+# 位置放在 chain 之后，保持"先核心工位链、后业务工位"的挂载顺序。
+import quote_api  # noqa: E402,F401
 
