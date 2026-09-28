@@ -200,8 +200,24 @@ cd frontend && npm run build     # 输出到 out/
 
 ## 4. CI 自动部署
 
-`.github/workflows/deploy.yml`：push 到 `feature/intel-workstation-v1` →
+`.github/workflows/deploy.yml`：push 到 **`main`（生产分支）** →
 TypeScript 构建前端 → `pywrangler deploy` → 生产冒烟测试（`concurrency: deploy-production` 串行）。
+
+分支策略（2026-09-28 切换）
+-------------------------
+| 分支 | 角色 |
+|---|---|
+| **`main`** | **生产分支** —— 只有它触发部署 |
+| `feat/trade-doc-templates` | **唯一的开发分支** —— 未完成的功能留在这里，完成并验证后再合入 `main` |
+| ~~`feature/intel-workstation-v1`~~ | 已归档（旧部署分支，内容已全部包含在开发分支里） |
+
+> 切换前的历史：部署曾挂在 `feature/intel-workstation-v1` 上，它是开发分支的祖先，
+> 因没人做 fast-forward 而落后 16 个提交 —— 于是“改了但线上没动静”。
+> 现在生产分支 = `main`，部署分支不再兼作开发分支。
+>
+> **上线门禁**：部分功能的前端已完成、但后端接口尚未在 Worker 落地，
+> 它们以 `workstations.ts` 的 `status: 'planned'` 挡在侧边栏之外。
+> 清单与放开条件见 `docs/CURRENT_IMPLEMENTATION_MAP.md`「上线门禁」。
 
 **路径过滤（2026-09-22 加）**：`**.md` / `docs/**` / `.tools/**` / `**/.tools/**` 的**纯文档提交
 不触发部署**——因为每次部署都会让全部 isolate 失效、重新经历一次冷启动窗口（§0.2），
