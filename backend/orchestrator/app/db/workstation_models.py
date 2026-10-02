@@ -13,7 +13,7 @@ trade_doc_quote_refs / trade_doc_inquiry_refs。
 """
 from sqlalchemy import (
     Column, BigInteger, Integer, Text, Boolean, Numeric,
-    DateTime, Date, Index, func, ForeignKey,
+    DateTime, Date, Index, func, ForeignKey, LargeBinary, text as sa_text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from app.db.base import Base
@@ -633,4 +633,60 @@ class TenantSubscription(Base):
 
     __table_args__ = (
         Index('uq_tenant_subscriptions_code', 'tenant_id', 'code', unique=True),
+    )
+
+class TenantCompanySeal(Base):
+    """公司公章（租户级，多枚 + 一枚默认）—— 单证签章区盖章用。
+
+    只存 PNG：打印色彩稳定、可透明底。其他格式（jpg/webp/bmp…）由 API 层
+    用 Pillow 转 PNG + 白底转透明后入库，前端永远拿到的是 PNG。
+    权限：仅 internal/admin 可管；取图接口校验 tenant_id 后才回字节，防越权。
+    对应迁移：202609300001_trade_doc_seal_derive_items.py
+    """
+    __tablename__ = 'tenant_company_seals'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    name = Column(Text, nullable=False)               # 公章 / 财务章 / 法人章
+    mime = Column(Text, nullable=False, server_default='image/png')
+    png_bytes = Column(LargeBinary, nullable=False)
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    is_default = Column(Boolean, nullable=False, server_default='false')
+    created_by = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False,
+                        server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index('uq_tenant_company_seals_name', 'tenant_id', 'name', unique=True),
+        # 每租户至多一枚默认章
+        Index('uq_tenant_company_seals_default', 'tenant_id', unique=True,
+              postgresql_where=sa_text('is_default')),
+        Index('idx_tenant_company_seals_tenant', 'tenant_id'),
+    )
+
+
+class TradeDocDocRef(Base):
+    """单证→单证派生引用（QUO→PI→CI→PL/CO 出单链溯源）。
+
+    与 trade_doc_order_refs / trade_doc_quote_refs / trade_doc_inquiry_refs
+    并列，语义一致：开单时冻结源单证快照入 raw_payload，事后源单变更不污染
+    已派生单据。派生前置约束（仅 issued 源可派生）在 API 层校验。
+    对应迁移：202609300001_trade_doc_seal_derive_items.py
+    """
+    __tablename__ = 'trade_doc_doc_refs'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    trade_doc_id = Column(BigInteger, nullable=False)
+    source_trade_doc_id = Column(BigInteger, nullable=False)
+    ref_type = Column(Text, nullable=False, server_default='derived_from')
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index('uq_trade_doc_doc_refs', 'tenant_id', 'trade_doc_id', 'ref_type',
+              'source_trade_doc_id', unique=True),
+        Index('idx_trade_doc_doc_refs_doc', 'tenant_id', 'trade_doc_id'),
+        Index('idx_trade_doc_doc_refs_source', 'tenant_id', 'source_trade_doc_id'),
     )

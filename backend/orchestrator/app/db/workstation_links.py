@@ -6,6 +6,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 from sqlalchemy import (
     Column, BigInteger, Integer, Text, Numeric, DateTime, Date, Index, func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from app.db.base import Base
@@ -240,7 +241,12 @@ class TradeDocItem(Base):
     unit_price = Column(Numeric, nullable=True)
     currency = Column(Text, nullable=False, default="USD")
     line_amount = Column(Numeric, nullable=True)
-    sort_order = Column(Integer, nullable=False, default=0)
+    sort_order = Column(Integer, nullable=False, default=0)    # ── 202609300001：产品段 / 方案价 / 来源（单证工位独立化）──
+    group_no = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    # 多方案单价：{"o30000": {"unit_price": ..., "line_amount": ...}, ...}
+    scheme_prices = Column(JSONB, nullable=True)
+    # generated（规格轴展开/派生带入）| manual（自由行手填）
+    source = Column(Text, nullable=False, default="manual", server_default="manual")
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     __table_args__ = (

@@ -194,6 +194,7 @@ cd frontend && npm run build     # 输出到 out/
 - [ ] 登录仍可用（验证 `JWT_SECRET` 请求期可读；若登录 503 就是绑定没读到，见 §0.5）
 - [ ] `https://kaas.powervoy.com/login` 可登录
 - [ ] 登录后侧边栏「情报体系 → 进出口情报 / 市场调研 / 地图源客户信息获取」三项可见（内部管理员账号）
+- [ ] **QA 测试账号**可登录且单证/公章功能正常（账号由 `scripts/seed_qa.py` 落库，设计与越权审计清单见 `docs/QA_TEST_ACCOUNTS.md`）
 - [ ] 货运记录页能看到导入/采集的数据
 - [ ] `/research` 页面可加载（列表/统计/挑选/运行记录三个标签）
 - [ ] `POST /api/v1/intel/import/csv` 上传 CSV 成功

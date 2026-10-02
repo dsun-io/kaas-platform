@@ -25,6 +25,7 @@ from sqlalchemy import select
 
 from app.db.workstation_models import AiProvider, AiTaskBinding, AiUsage
 from app.services.llm_client import openai_compat_chat
+from kaas_common.trade_doc import SYSTEM_PROMPT as _KERNEL_TRANSLATE_SYSTEM
 
 logger = structlog.get_logger(__name__)
 
@@ -178,6 +179,20 @@ TASKS: dict[str, dict[str, Any]] = {
             "类别枚举：chain_link_fence / welded_mesh / gabion / temporary_fence / "
             "security_fence / farm_fence / other\n"
             f"询盘：{json.dumps(p, ensure_ascii=False)}"
+        ),
+        "parse": lambda t: json.loads(_extract_json(t)),
+    },
+    "trade_doc_translate": {
+        "name": "单证中译英",
+        "recommended_provider": "kimi",
+        # 无 AI 降级：原样回传（提示人工翻译），不丢数据
+        "template_fn": lambda p: dict(p.get("fields") or {}),
+        # prompt 构造与响应解析复用共享内核（G1 一份代码，Worker 同源）
+        "build_prompt": lambda p: (
+            _KERNEL_TRANSLATE_SYSTEM
+            + "\n\nTranslate these trade document fields to English:\n"
+            + json.dumps({k: str(v) for k, v in (p.get("fields") or {}).items()},
+                         ensure_ascii=False)
         ),
         "parse": lambda t: json.loads(_extract_json(t)),
     },
