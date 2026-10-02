@@ -244,13 +244,26 @@ async def db_engine():
 
 @pytest.fixture
 async def db_session(db_engine):
-    """Per-test DB 会话，事务隔离 + rollback（不污染数据）。"""
+    """Per-test DB 会话：外层事务回滚隔离（不污染数据）。
+
+    关键：API 端点普遍调用 db.commit()。若让 commit 提交外层事务，
+    测试数据会泄漏、且外层事务被关闭（teardown rollback 报
+    ResourceClosedError: This transaction is closed）。
+    join_transaction_mode="create_savepoint"：应用的 commit() 只释放
+    SAVEPOINT，外层事务始终由 fixture 回滚。
+    """
     _async_session = async_sessionmaker(
         db_engine, class_=AsyncSession, expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
     )
-    async with _async_session() as session:
-        async with session.begin() as trans:
-            yield session
+    async with db_engine.connect() as connection:
+        trans = await connection.begin()
+        try:
+            async with _async_session(bind=connection) as session:
+                yield session
+        finally:
+            # 显式回滚：connection.begin() 上下文正常退出默认是 COMMIT，
+            # 不显式 rollback 会把测试数据真落库（跨测试泄漏 → 409 串台）。
             await trans.rollback()
 
 

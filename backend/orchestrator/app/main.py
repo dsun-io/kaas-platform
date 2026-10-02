@@ -111,6 +111,7 @@ from app.api.shipments import router as shipments_router
 from app.api.trade_docs import router as trade_docs_router
 from app.api.enums import router as enums_router
 from app.api.company_profile import router as company_profile_router
+from app.api.company_seals import router as company_seals_router
 
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -148,4 +149,5 @@ app.include_router(orders_router)
 app.include_router(shipments_router)
 app.include_router(trade_docs_router)
 app.include_router(company_profile_router)
+app.include_router(company_seals_router)
 

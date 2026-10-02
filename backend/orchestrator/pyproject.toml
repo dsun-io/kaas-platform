@@ -31,6 +31,7 @@ dependencies = [
     "python-multipart>=0.0.12",
     "httpx>=0.27.0",
     "openpyxl>=3.1.2",
+    "Pillow>=10.0.0",
 ]
 
 [dependency-groups]
@@ -53,6 +54,8 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 asyncio_default_test_loop_scope = "function"
 testpaths = ["tests"]
+# backend/ 入路径，供 import kaas_common（共享内核，G1 一份代码）
+pythonpath = ["..", "."]
 markers = [
     "unit: tests without external services",
     "db: tests requiring PostgreSQL",
