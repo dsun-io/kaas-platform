@@ -253,7 +253,7 @@
 | 文档 | 关系 |
 |---|---|
 | `WORKSTATION_DESIGN.md` | **上位权威**。本方案的工位划分、数据链、不变量均以其为准 |
-| `SYSTEM_AUDIT.md` | 系统审计（含待确认项），本方案执行前须复核 |
+| `archive/2026-09-30-doc-cleanup/SYSTEM_AUDIT.md` | 系统审计（**已归档** 2026-09-30；含待确认项），本方案执行前须复核 |
 | `CLEANUP_LOG.md` / `UNCERTAIN.md` | 清理与不确定项记录，P5 前须复核 |
 | `CURRENT_IMPLEMENTATION_MAP.md` | 现行实现地图，P1/P3 的输入 |
 | `WORKER_ORCHESTRATOR_DRIFT.md` / `DUAL_BACKEND_CONVERGENCE.md` | 双后端收敛方案，P3/P5 的依据 |
