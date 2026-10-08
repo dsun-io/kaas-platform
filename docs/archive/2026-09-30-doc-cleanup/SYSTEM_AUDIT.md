@@ -1,3 +1,8 @@
+> ⚠️ 已归档 · 不反映当前架构
+> 归档日期：2026-09-30
+> 归档原因：2026-09-22 体检报告，所列整改已随 CLEANUP_LOG 阶段 0–6 全部执行完毕
+> 当前替代文档：../../CURRENT_IMPLEMENTATION_MAP.md
+
 # KaaS Platform 系统体检报告（只读审计）
 
 - **审计日期**：2026-09-22
@@ -54,7 +59,7 @@
 | 数据库迁移（19 个迁移文件） | DB | ✅ | 全阶段 | **留** | 数据库变更历史，删了会出事 | 数据安全 |
 | [scripts/seed_dev.py](../backend/orchestrator/scripts/seed_dev.py)（开发种子数据） | 脚本 | ✅ | 中期 | **修**（去掉真实数据） | 里面带**真实商业报价/客户资料**（标注「Notion 确认 2026-04-12」），有泄密风险 | 商业机密 |
 | [.claude/KAAS_SKILL.md](../.claude/KAAS_SKILL.md) + [KAAS_RULES.md](../.claude/KAAS_RULES.md)（AI 协作规范） | 脚本/规范 | ✅（每个 AI 会话都读） | 早期 | **修** | 还在教 AI「线性报价流水线 + Notion 真相源」，会把新会话带偏 | 所有 AI 协作 |
-| [README.md](../README.md) + [CODEBASE_AUDIT_REPORT_2026-05-13.md](../CODEBASE_AUDIT_REPORT_2026-05-13.md) | 文档 | ✅ | 中期 | **修** | README 写的还是上一个方向（Notion 流水线）；旧审计报告是 5 月的参考件 | 新人/AI 的第一印象 |
+| [README.md](../README.md) + [CODEBASE_AUDIT_REPORT_2026-05-13.md](../2026-09-22-pre-workstation-graph/CODEBASE_AUDIT_REPORT_2026-05-13.md) | 文档 | ✅ | 中期 | **修** | README 写的还是上一个方向（Notion 流水线）；旧审计报告是 5 月的参考件 | 新人/AI 的第一印象 |
 | [.github/workflows](../.github/workflows)（发布/测试流水线） | 脚本 | ✅ | 现在 | **修** | 发布盯的分支、域名、包管理方式三处不一致（详见漂移清单） | 发布安全 |
 | 测试全家桶（后端 37 个文件 + 线上后端 1 + 前端单测 8 文件 + 端到端 10 文件） | 脚本 | ✅ | 全阶段 | **修** | 单元测试健康；但端到端 31 条挂 26 条，界面验收门禁已失灵 | 质量保障 |
 | docker-compose、DEPLOY.md、.tools/.neon/.husky 等开发配套 | 配置/脚本 | ✅ | 现在 | **留** | 开发/部署配套，无异常 | 开发体验 |

@@ -151,3 +151,15 @@
 - **裁决 2（UNCERTAIN #13 功能开关两套账）**：David 确认"开发环境存哪无所谓，生产环境设计正常就行"。生产侧数据库开关保持（本来就是正常设计），开发侧配置文件不动，无需统一。零代码改动，落档即完。
 - **裁决 3（UNCERTAIN #14 微信残留测试）**："删掉"——test_auth_wx_r1.py 已删除（`23fc031`），报错清单少一处噪音。
 - **裁决 4（UNCERTAIN #16 四处简化）**："同步"——生产 Worker 与开发 orchestrator 逐一补齐：①单号段表取号 doc_sequences（`0244508`）；②汇率锁定 fx_rates（`41a30bd`）；③单证上游全量快照（`3731e50`）；④订单归属隔离 owner_id/owner_scope（`907addd`）。每项 worker 15 条测试全过。创建订单处无报价单查找可过滤（quotation_id 只发事件），已在提交说明留档。
+
+---
+
+## 文档过时清理（2026-09-30）
+
+| # | 改动 | 结论 |
+|---|------|------|
+| 1 | 归档 `docs/SYSTEM_AUDIT.md`（2026-09-22 体检报告） | 所列整改已随阶段 0–6 全部执行完毕，移入 `docs/archive/2026-09-30-doc-cleanup/` 并加归档横幅；docs/README 与 PLATFORM_UPGRADE_PLAN 的引用同步改指归档位置 |
+| 2 | 归档 `backend/orchestrator/docs/red-blue-review-20260522.md`（2026-05-22 红蓝审查过程记录） | 过程性报告，所涉代码已大幅演化（wechat.py 等已删除），移入同一归档目录；现行权限设计 `rbac-v2.md` 保留原位不动 |
+| 3 | 删除根目录 `CODEBASE_AUDIT_REPORT_2026-05-13.md` | 内容完整保存在 `docs/archive/2026-09-22-pre-workstation-graph/` 归档副本（仅多横幅），删除重复原件，零信息损失 |
+
+**处置口径**：过时文档一律「移入 docs/archive/」留档（即 UNCERTAIN #15 ②「复制还是移动」的执行口径，2026-09-30 起按「移动」执行）；唯一例外是第 3 项这种「归档区已有完整副本」的重复原件，直接删除。删除/归档前已过 `scripts/cleanup-guard.py` 门禁（3 个路径全部通过）。**保留未动**：CLEANUP_LOG / UNCERTAIN、各现行方案与计划（PLATFORM_UPGRADE_PLAN、MULTI_PRODUCT_QUOTE_PLAN、QUOTE_WORKSTATION_WIRING_PLAN、TRADE_DOC_WORKSTATION_PLAN、DUAL_BACKEND_CONVERGENCE）、WORKER_ORCHESTRATOR_DRIFT（仍是双后端收敛的事实依据）、TRADE_DOC_DELIVERY_2026-09-26（交付验收记录）、E2E_GUIDE、QA_TEST_ACCOUNTS、TRADE_DOC_TEMPLATES、WORKSTATION_DESIGN、CURRENT_IMPLEMENTATION_MAP 等在用文档。
