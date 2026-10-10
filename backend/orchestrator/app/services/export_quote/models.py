@@ -170,6 +170,14 @@ class ProductSpec:
     pricing_key: list = field(default_factory=list)
     notes: list = field(default_factory=list)
     hs_codes: list = field(default_factory=list)  # 用于退税率查询
+    # ── 产品级利润配置（租户可配，留权限口子）──
+    # profit_mode: margin_on_price（默认，售价加成）| fixed | ratio
+    # profit_value: 利润率（margin_on_price/ratio 模式）或固定额（fixed 模式）
+    # misc_fee_rate: 综合税费系数（默认 0.03，含印花税等杂税，对销项计征）
+    # 优先级：产品级配置 > 报价单级配置 > 税务档案默认值
+    profit_mode: str = "margin_on_price"
+    profit_value: Any = 0.06
+    misc_fee_rate: Any = 0.03
 
     # ---------- 便捷 ----------
     @property
