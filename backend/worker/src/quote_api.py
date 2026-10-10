@@ -593,8 +593,12 @@ class _PolicyIn(BaseModel):
     input_vat_rate: Optional[float] = Field(default=None, description="进项票税点，如 0.10")
     output_vat_rate: Optional[float] = Field(default=None, description="销项税率；出口零税率填 0")
     output_vat_mode: Optional[str] = Field(default=None, description="additive | inclusive")
-    profit_mode: Optional[str] = Field(default=None, description="fixed | ratio")
+    profit_mode: Optional[str] = Field(default=None, description="fixed | ratio | margin_on_price")
     profit_value: Optional[float] = None
+    misc_fee_rate: Optional[float] = Field(
+        default=None,
+        description="综合税费系数（除销项增值税外的杂税总和，相对销项计征；售价加成模式使用）",
+    )
     give_ratio: Optional[float] = Field(default=None, description="让出可退进项增值税额的比例")
     refund_ratio: Optional[Any] = Field(
         default=None, description="可退税比例；'auto' = 出口退税率 ÷ 进项票税点")
@@ -644,7 +648,8 @@ def _assemble_request(body: _CalculateIn, user: dict, cost_table: Optional[dict]
         "input_vat_rate": 0.10,
         "output_vat": {"rate": rs.output_rate_export, "mode": "additive"},
         "profit": {"mode": "fixed", "value": 0.1},
-        "refund": {"refund_ratio": "auto", "give_ratio": 0.8},
+        "misc_fee_rate": 0.03,
+        "refund": {"refund_ratio": "auto", "give_ratio": 1},
         "stamp": {"rate": rs.stamp_duty.rate, "base": rs.stamp_duty.base},
     }
     if body.policy is not None:
@@ -660,6 +665,8 @@ def _assemble_request(body: _CalculateIn, user: dict, cost_table: Optional[dict]
         for k in ("give_ratio", "refund_ratio", "rebate_rate"):
             if k in p:
                 base_cfg.setdefault("refund", {})[k] = p.pop(k)
+        if "misc_fee_rate" in p:
+            base_cfg["misc_fee_rate"] = p.pop("misc_fee_rate")
         for k in ("stamp_rate", "stamp_base"):
             if k in p:
                 base_cfg.setdefault("stamp", {})[k.replace("stamp_", "")] = p.pop(k)
