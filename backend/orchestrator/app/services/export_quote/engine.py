@@ -568,6 +568,15 @@ def build(request: QuoteRequest, mode=DECIMAL) -> QuoteResult:
 
     diagnostics: list[str] = []
     policy = request.policy
+    # ── 产品级利润配置优先：产品级 > 报价单级 > 税务档案默认 ──
+    # 产品定义了 profit_mode/profit_value/misc_fee_rate 时，若报价单未显式覆盖，
+    # 则用产品级值（租户可配，见 models.ProductSpec 注释）。
+    if product.profit_mode and not getattr(request.policy, "_explicit_profit", False):
+        policy = policy.with_(
+            profit_mode=product.profit_mode,
+            profit_value=product.profit_value,
+            misc_fee_rate=product.misc_fee_rate,
+        )
     if mode is DECIMAL:
         _, refund_warn = policy.resolve_refund_ratio(mode)
         if refund_warn:
