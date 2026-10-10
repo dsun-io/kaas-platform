@@ -150,8 +150,7 @@ cd backend/orchestrator
 alembic upgrade head
 ```
 
-当前迁移头：`20260922_research_workstation` —— 市场调研工位（`research_products` /
-`research_runs`）+ 地图源工位产品字段（`lead_candidates` 补 11 列）。
+当前迁移头：`202610100005_external_doc_uploads` —— 报价行项手动干预/多产品逐行 + 实际采购成本档案 + 订单/询价字段（收货地/船公司/海运费有效期/询价历史）+ 客户软删除 + 外部单证上传。
 
 初始化管理员（一次性，对线上 Worker 执行；当前线上已初始化，会返回 403）：
 
