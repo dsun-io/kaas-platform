@@ -90,9 +90,9 @@ class TestWaveBend:
     def test_increment_follows_roll_length(self, wire, roll_len, expect):
         res = build_res()
         plain = find(res, wire=wire, height_m=1.2, mesh_mm=100,
-                     coating="普锌40g/㎡", wave="无波款")
+                     coating="热镀锌 40g/㎡", wave="无波款")
         waved = find(res, wire=wire, height_m=1.2, mesh_mm=100,
-                     coating="普锌40g/㎡", wave="波弯款")
+                     coating="热镀锌 40g/㎡", wave="波弯款")
         assert plain.spec["roll_len_m"] == roll_len
         assert D(str(waved.derived["wave_add_kg"])) == expect
 
@@ -115,9 +115,9 @@ class TestWaveBend:
         """波弯不改变卷径，因此不影响体积。"""
         res = build_res()
         plain = find(res, wire="全丝2.0", height_m=1.2, mesh_mm=100,
-                     coating="普锌40g/㎡", wave="无波款")
+                     coating="热镀锌 40g/㎡", wave="无波款")
         waved = find(res, wire="全丝2.0", height_m=1.2, mesh_mm=100,
-                     coating="普锌40g/㎡", wave="波弯款")
+                     coating="热镀锌 40g/㎡", wave="波弯款")
         assert plain.derived["volume_per_piece_m3"] == waved.derived["volume_per_piece_m3"]
         assert plain.derived["roll_dia_cm"] == waved.derived["roll_dia_cm"]
 
@@ -125,9 +125,9 @@ class TestWaveBend:
         """同样规格下波弯款单卷更重 → 单卷售价更高，但每米价也更贵。"""
         res = build_res()
         plain = find(res, wire="全丝2.0", height_m=1.2, mesh_mm=100,
-                     coating="普锌40g/㎡", wave="无波款")
+                     coating="热镀锌 40g/㎡", wave="无波款")
         waved = find(res, wire="全丝2.0", height_m=1.2, mesh_mm=100,
-                     coating="普锌40g/㎡", wave="波弯款")
+                     coating="热镀锌 40g/㎡", wave="波弯款")
         assert (D(str(waved.piece["price_per_piece"]))
                 > D(str(plain.piece["price_per_piece"])))
         assert (D(str(waved.piece["price_per_meter"]))
@@ -167,7 +167,7 @@ class TestEffectiveVolume:
         """每单只扣一次，不随卷数放大。"""
         res = build_res()
         r = find(res, wire="全丝2.0", height_m=1.2, mesh_mm=100,
-                 coating="普锌40g/㎡", wave="无波款")
+                 coating="热镀锌 40g/㎡", wave="无波款")
         for oname in ("o30000", "o50000"):
             m = r.orders[oname]
             ded = D(str(m["volume_box_m3"])) - D(str(m["volume_effective_m3"]))
@@ -210,7 +210,7 @@ class TestEffectiveVolume:
         """对外报的体积仍是长方体口径，故客户看到的数字不受圆柱体改动影响。"""
         res = build_res()
         r = find(res, wire="全丝2.0", height_m=1.2, mesh_mm=100,
-                 coating="普锌40g/㎡", wave="无波款")
+                 coating="热镀锌 40g/㎡", wave="无波款")
         assert D(str(r.derived["volume_box_per_piece_m3"])) == D("0.1080")
         assert D(str(r.orders["o30000"]["volume_box_m3"])) == D("32.4000")
         assert D(str(r.orders["o30000"]["volume_effective_m3"])) == D("29.9000")
@@ -220,9 +220,9 @@ class TestEffectiveVolume:
         """卷径有默认值（随丝径方案联动）且可覆盖。"""
         res = build_res()
         long_roll = find(res, wire="全丝2.0", height_m=1.2, mesh_mm=100,
-                         coating="普锌40g/㎡", wave="无波款")
+                         coating="热镀锌 40g/㎡", wave="无波款")
         short_roll = find(res, wire="全丝2.5", height_m=1.2, mesh_mm=100,
-                          coating="普锌40g/㎡", wave="无波款")
+                          coating="热镀锌 40g/㎡", wave="无波款")
         assert D(str(long_roll.derived["roll_dia_cm"])) == D("30.0")
         assert D(str(short_roll.derived["roll_dia_cm"])) == D("25.0")
 
@@ -245,7 +245,7 @@ class TestEffectiveVolume:
     def test_50m_roll_diameter_is_25cm(self):
         res = build_res()
         r = find(res, wire="全丝2.5", height_m=1.5, mesh_mm=150,
-                 coating="普锌40g/㎡", wave="无波款")
+                 coating="热镀锌 40g/㎡", wave="无波款")
         assert D(str(r.derived["roll_dia_cm"])) == 25
         assert r.spec["roll_len_m"] == 50
 
@@ -275,14 +275,14 @@ class TestOtherDerivedMetrics:
         """0.01234 × 50 × 2.5² = 3.85625 → 3.8563（半进位）。"""
         res = build_res()
         r = find(res, wire="全丝2.5", height_m=1.2, mesh_mm=100,
-                 coating="普锌40g/㎡", wave="无波款")
+                 coating="热镀锌 40g/㎡", wave="无波款")
         assert D(str(r.derived["edge_weight_kg"])) == D("3.8563")
 
     def test_base_weight_formula_reproduces_hand_value(self):
         """1.2m / 10cm / 全丝2.0 / 100m 无波 → 65.402 kg（手工核对值）。"""
         res = build_res()
         r = find(res, wire="全丝2.0", height_m=1.2, mesh_mm=100,
-                 coating="普锌40g/㎡", wave="无波款")
+                 coating="热镀锌 40g/㎡", wave="无波款")
         assert D(str(r.derived["weight_per_piece_kg"])) == D("65.4020")
 
     def test_roll_count_depends_on_wire_option(self):
@@ -318,9 +318,10 @@ class TestCalculationIsExplainable:
                     missing.append((f["code"], "label"))
         assert not missing, f"缺少单位/口径/中文名: {missing}"
 
-    def test_space_description_matches_48_combos(self):
+    def test_space_description_matches_product_combos(self):
         space = describe_space(spec())
-        assert space["combo_count"] == 64
+        # 2×2×2 轴 × 2×5×2 变体包 = 160 组合（表面处理扩到 5 档后）
+        assert space["combo_count"] == 160
         assert "48" not in space["formula"]  # formula 只描述轴，不含结论数字
         assert space["summary"]
 
@@ -335,7 +336,7 @@ class TestCalculationIsExplainable:
         """逐步代入必须复现手工核对值，否则「自证」没意义。"""
         res = build_res()
         r = find(res, wire="全丝2.0", height_m=1.2, mesh_mm=100,
-                 coating="普锌40g/㎡", wave="波弯款")
+                 coating="热镀锌 40g/㎡", wave="波弯款")
         scope: dict = {}
         scope.update(spec().constants)
         scope.update(r.spec)
@@ -367,7 +368,7 @@ class TestCalculationIsExplainable:
         """无波款单卷 301.03 元 → 300 卷 90309.00 元（基准表第 1 行）。"""
         res = build_res()
         r = find(res, wire="全丝2.0", height_m=1.2, mesh_mm=100,
-                 coating="普锌40g/㎡", wave="无波款")
+                 coating="热镀锌 40g/㎡", wave="无波款")
         scope: dict = {}
         scope.update(spec().constants)
         scope.update(r.spec)
@@ -393,7 +394,7 @@ class TestCalculationIsExplainable:
         """只返回关心的量，但依赖项仍要被求值 —— 否则下游算出空结果。"""
         res = build_res()
         r = find(res, wire="全丝2.0", height_m=1.2, mesh_mm=100,
-                 coating="普锌40g/㎡", wave="无波款")
+                 coating="热镀锌 40g/㎡", wave="无波款")
         scope: dict = {}
         scope.update(spec().constants)
         scope.update(r.spec)
@@ -467,10 +468,16 @@ class TestPricingKey:
         assert rows == [
             "de=2|coating_code=zinc_40",
             "de=2|coating_code=zinc_200",
+            "de=2|coating_code=zinc_260",
+            "de=2|coating_code=elec_galv",
+            "de=2|coating_code=pvc_black",
             "de=2.5|coating_code=zinc_40",
             "de=2.5|coating_code=zinc_200",
+            "de=2.5|coating_code=zinc_260",
+            "de=2.5|coating_code=elec_galv",
+            "de=2.5|coating_code=pvc_black",
         ]
-        assert len(set(rows)) == len(rows), "4 个组合必须互不相同，否则会互相覆盖"
+        assert len(set(rows)) == len(rows), "组合必须互不相同，否则会互相覆盖"
 
     def test_missing_dimension_yields_no_key(self):
         """少一个维度就不能拼键 —— 宁可回退，也不要用半截键查到错价。"""

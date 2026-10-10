@@ -110,12 +110,20 @@ def build_spec() -> ProductSpec:
             VariantGroup(
                 "coating",
                 (
-                    {"code": "zinc_40", "name": "普锌40g/㎡", "raw_price": 4.4,
-                     "zinc_g_m2": 40, "name_en": "Economical 40 g/m²"},
-                    {"code": "zinc_200", "name": "重镀锌≥200g/㎡", "raw_price": 5.6,
-                     "zinc_g_m2": 200, "name_en": "Heavier hot-dip ≥200 g/m²"},
+                    # 锌层规格对齐业务在用报价表的表面处理选项
+                    # （电镀锌 / 热镀锌 40g / 200g / 260g / PVC涂塑 等）
+                    {"code": "zinc_40", "name": "热镀锌 40g/㎡", "raw_price": 4.4,
+                     "zinc_g_m2": 40, "name_en": "Hot-dip galvanized 40 g/m²"},
+                    {"code": "zinc_200", "name": "热镀锌 200g/㎡", "raw_price": 5.6,
+                     "zinc_g_m2": 200, "name_en": "Hot-dip galvanized 200 g/m²"},
+                    {"code": "zinc_260", "name": "热镀锌 260g/㎡", "raw_price": 5.9,
+                     "zinc_g_m2": 260, "name_en": "Hot-dip galvanized 260 g/m²"},
+                    {"code": "elec_galv", "name": "电镀锌", "raw_price": 4.8,
+                     "zinc_g_m2": 0, "name_en": "Electro-galvanized"},
+                    {"code": "pvc_black", "name": "PVC涂塑(黑色)", "raw_price": 6.4,
+                     "zinc_g_m2": 0, "name_en": "PVC coated (black)"},
                 ),
-                "镀锌量", "Zinc Coating",
+                "表面处理", "Surface Treatment",
             ),
             VariantGroup(
                 "wave",
@@ -296,8 +304,10 @@ def build_spec() -> ProductSpec:
             Column("spec.dm", "内横丝径(mm)", "Inner Horizontal Wire Dia. (mm)", 1, width=15),
             Column("spec.dv", "竖丝径(mm)", "Vertical Wire Dia. (mm)", 1, width=12),
             Column("spec.wave", "工艺", "Wave Bend", width=10),
-            Column("spec.surface_treatment", "表面处理", "Surface Treatment", width=10),
-            Column("spec.coating", "镀锌量", "Zinc Coating", width=18),
+            # 表面处理列直接取变体包 spec.coating（完整选项名，如「热镀锌 40g/㎡」）。
+            # 不用常量 surface_treatment（纯「热镀锌」短名）—— 那样导出后回填会与
+            # 变体包完整选项名冲突，「导出→导入」闭环会报「无法识别的取值」。
+            Column("spec.coating", "表面处理", "Surface Treatment", width=18),
             Column("spec.packing", "包装", "Packing", width=10),
             Column("spec.roll_len_m", "卷长(m/卷)", "Roll Length (m/roll)", width=12),
             Column("derived.roll_dia_cm", "卷径(cm)", "Roll Diameter (cm)", width=11),

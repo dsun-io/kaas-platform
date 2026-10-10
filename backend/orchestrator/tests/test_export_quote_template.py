@@ -5,7 +5,7 @@
     模板表头 ≡ 导出表头 ≡ 解析认得的表头，将来改列名只有一处要改
   · 模板必须覆盖**全部**规格轴与变体包（漏一列整表就都算不了）
   · 反向也要成立：产品输出列里解析器认得、又不是计算列的，不许被漏掉
-    （这正是「模板只剩丝径方案/镀锌量/工艺、缺了网高与竖丝间距」那个缺陷）
+    （这正是「模板只剩丝径方案/表面处理/工艺、缺了网高与竖丝间距」那个缺陷）
   · 示例值按**表头单位**给：内部 100mm 的竖丝间距，模板里写 10（cm）
   · Excel 默认带下拉框与说明表；CSV 默认只出表头（给脚本生成用）
   · 真正闭环：下载模板 → 填行 → 上传 → 结果与逐条计算一致
@@ -97,7 +97,7 @@ class TestHeaderNormalisation:
         p = spec()
         maps = _build_header_map(p)
         for header in ("单卷净重(kg)", "单卷售价(元/卷)", "单价(元/米)",
-                       "税前成本(元/kg)", "产品", "表面处理"):
+                       "税前成本(元/kg)", "产品"):
             assert _resolve_column(p, header, maps) is None
 
 
@@ -125,19 +125,23 @@ class TestTemplateColumns:
 
         这条就是那个缺陷的回归测试 —— 模板曾只按 variants 生成，
         于是「网高(m)」「竖丝间距(cm)」两列缺失，下载的模板根本填不出规格。
+        「镀锌量」是 spec.coating 的输出列（锌层克数），与「表面处理」
+        （变体包标签）语义不同，不进模板是有意为之，故排除。
         """
         p = spec()
         maps = _build_header_map(p)
+        excluded = {"镀锌量"}
         should = {c.label for c in p.columns
                   if c.label and _resolve_column(p, c.label, maps) is not None}
+        should -= excluded
         assert should <= set(template_headers(p))
-        assert len(should) >= 8  # 2 轴 + 3 变体包 + 3 丝径覆盖 + 卷长 + 卷径
+        assert len(should) >= 10  # 2 轴 + 3 变体包(内丝/表面处理/工艺) + 3 丝径覆盖 + 卷长 + 卷径
 
     def test_required_flags(self):
         cols = {c.header: c for c in template_columns(spec())}
         assert cols["网高(m)"].required and cols["竖丝间距(cm)"].required
         assert cols["边丝径(mm)"].required and cols["内丝径"].required
-        assert cols["镀锌量"].required
+        assert cols["表面处理"].required
         assert cols["工艺"].required
         # 边丝径已是独立规格轴（必填），不再是「可留空的覆盖项」
         for optional in ("内横丝径(mm)", "竖丝径(mm)",
@@ -379,14 +383,14 @@ class TestTemplateClosedLoop:
         headers = template_headers(spec())
         cols = {c.header: c for c in template_columns(spec())}
         # 按模板列顺序填：网高 / 竖丝间距(cm) / 边丝径(mm) / 内丝径 /
-        # 内横丝径 / 竖丝径 / 工艺 / 镀锌量 / 卷长(m/卷) / 卷径(cm)
+        # 内横丝径 / 竖丝径 / 工艺 / 表面处理 / 卷长(m/卷) / 卷径(cm)
         rows = [
             [1.2, cols["竖丝间距(cm)"].options[0], 2.0, "内丝2.0", "", "",
-             "波弯款", "普锌40g/㎡", "", ""],
+             "波弯款", "热镀锌 40g/㎡", "", ""],
             [1.5, cols["竖丝间距(cm)"].options[1], 2.5, "内丝2.5", "", "",
-             "无波款", "重镀锌≥200g/㎡", "", ""],
+             "无波款", "热镀锌 200g/㎡", "", ""],
             [1.2, cols["竖丝间距(cm)"].options[1], 2.5, "内丝2.0", "", "",
-             "波弯款", "重镀锌≥200g/㎡", "", ""],
+             "波弯款", "热镀锌 200g/㎡", "", ""],
         ]
         assert len(rows[0]) == len(headers)
 
@@ -444,4 +448,4 @@ class TestTemplateClosedLoop:
         j = r.json()
         # 导出的规格列，模板里都有（模板是导出表的一个子集且列名一致）
         assert set(j["mapping"]) <= set(template_headers(spec()))
-        assert j["usable_rows"] == 64
+        assert j["usable_rows"] == 160

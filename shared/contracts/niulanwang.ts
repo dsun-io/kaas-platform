@@ -75,12 +75,15 @@ export const NIULANWANG_SKU_AXES = {
       { value: 15, label: '15cm' },
     ],
   },
-  /** 镀锌量 */
+  /** 表面处理 / 镀锌量（选项对齐业务在用报价表） */
   zinc_coating: {
-    label: '镀锌量',
+    label: '表面处理',
     options: [
-      { value: 'zinc_40', label: '普锌40g/㎡', zincGm2: 40 },
-      { value: 'zinc_200', label: '重镀锌≥200g/㎡', zincGm2: 200 },
+      { value: 'zinc_40', label: '热镀锌 40g/㎡', zincGm2: 40 },
+      { value: 'zinc_200', label: '热镀锌 200g/㎡', zincGm2: 200 },
+      { value: 'zinc_260', label: '热镀锌 260g/㎡', zincGm2: 260 },
+      { value: 'elec_galv', label: '电镀锌', zincGm2: 0 },
+      { value: 'pvc_black', label: 'PVC涂塑(黑色)', zincGm2: 0 },
     ],
   },
   /** 工艺：波弯款按每 100 米增重 3kg 折算 */
@@ -93,7 +96,7 @@ export const NIULANWANG_SKU_AXES = {
   },
 } as const;
 
-export const NIULANWANG_COMBO_COUNT = 48;
+export const NIULANWANG_COMBO_COUNT = 160;
 
 /** 记录在案但不参与 SKU 编码的量（由上面的轴决定，或按品种固定）。 */
 export const NIULANWANG_DESCRIPTIVE = {
