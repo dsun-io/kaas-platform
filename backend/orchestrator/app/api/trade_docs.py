@@ -10,6 +10,7 @@
 - PATCH /api/v1/trade-docs/{id}       更新（draft 可改 payload）/ 状态流转（draft→issued→void）
 """
 from typing import Optional
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -341,6 +342,13 @@ async def create_trade_doc(
         if total_amount is None:
             total_amount = items_total
             d.total_amount = total_amount
+        # ── 金额勾稽：单证合计必须等于行项目合计（信用证不符点防线）──
+        elif items_total is not None and abs(Decimal(str(total_amount)) - items_total) > Decimal("0.01"):
+            raise HTTPException(status_code=422, detail={
+                "error": "amount_mismatch", "code": "AMOUNT_MISMATCH",
+                "detail": f"单证合计 {total_amount} ≠ 行项目合计 {items_total}；"
+                          "信用证下这是致命不符点，请核对后重试",
+            })
 
     # ── refs 溯源（§6.3 单证类型×生成阶段）───────────────────────────
     if body.order_id:
