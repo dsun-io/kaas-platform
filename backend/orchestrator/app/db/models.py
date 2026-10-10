@@ -498,6 +498,30 @@ class TenantProduct(Base):
     )
 
 
+class TenantWorkstationProduct(Base):
+    """租户开通报价工位后选择启用产品（多对多）。
+
+    权限矩阵：
+    - is_system=true：系统级产品，所有租户可见，仅平台管理员可编辑
+    - is_system=false：租户级产品，仅本租户可见，租户管理员可编辑
+    详见 docs/PRODUCT_CONFIG_TENANT_UNFINISHED.md
+    """
+    __tablename__ = "tenant_workstation_products"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    workstation = Column(Text, nullable=False)  # e.g. "quote"
+    product_key = Column(Text, nullable=False)
+    is_enabled = Column(Boolean, nullable=False, default=True, server_default="true")
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("uq_tenant_ws_product", "tenant_id", "workstation", "product_key", unique=True),
+        Index("idx_tenant_ws_product_tenant", "tenant_id", "workstation", "is_enabled"),
+    )
+
+
 class UserCustomer(Base):
     """用户-客户绑定表"""
     __tablename__ = "user_customers"

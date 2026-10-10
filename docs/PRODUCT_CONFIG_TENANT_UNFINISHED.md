@@ -1,7 +1,9 @@
 # 产品定义配置化（租户级）—— 未完成事项说明
 
-> **更新（2026-10-10）**：已实施 `tenant_products` 表 + `TenantProductLoader` 加载器。
-> 权限矩阵（租户开通报价工位后选择启用产品）**仍未实现**，留口子。
+> **更新（2026-10-10）**：已实施 `tenant_products` 表 + `TenantProductLoader` 加载器 +
+> 管理界面（`/settings/tenant-products`）+ 权限矩阵 API（`/api/v1/workstation-products`）。
+> 权限矩阵基础过滤已实现（is_system/is_active），但「租户开通报价工位后选择启用产品」
+> 的完整流程（UI 交互 + 工位订阅校验）**仍未完成**，留口子。
 
 ## 现状
 
@@ -81,9 +83,10 @@ CREATE TABLE tenant_products (
 
 1. [x] 建 `tenant_products` 表（迁移 `202610100006`）
 2. [x] `TenantProductLoader` 加载逻辑（先查数据库，再回退 Python 定义）
-3. [ ] 管理界面：产品列表 + 可视化编辑器（规格轴/变体/公式）
-4. [ ] 权限控制：租户开通报价工位 → 选择启用产品
-5. [ ] 租户级 vs 系统级产品权限矩阵
+3. [x] 管理界面：产品列表 + 表单编辑（`/settings/tenant-products`）
+4. [x] 权限矩阵 API：`/api/v1/workstation-products`（启用/停用产品，多对多表 `tenant_workstation_products`）
+5. [ ] 租户开通报价工位 UI 交互（选择启用产品）
+6. [ ] 工位订阅校验（租户开通报价工位后才能启用产品）
 
 ## 关联决策
 
