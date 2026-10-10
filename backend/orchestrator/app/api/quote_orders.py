@@ -135,51 +135,13 @@ class QuoteItemsReplace(BaseModel):
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _row_to_quote(q: QuoteOrder, item_count: int = 0) -> dict:
-    return {
-        "id": q.id, "quote_no": q.quote_no,
-        "customer_id": q.customer_id, "customer_name": q.customer_name,
-        "inquiry_id": q.inquiry_id,
-        "status": q.status, "currency": q.currency,
-        "total_amount": float(q.total_amount) if q.total_amount is not None else None,
-        "valid_until": q.valid_until.isoformat() if q.valid_until else None,
-        "notes": q.notes,
-        "fx_rate": float(q.fx_rate) if q.fx_rate is not None else None,
-        "fx_rate_date": q.fx_rate_date.isoformat() if q.fx_rate_date else None,
-        "created_at": q.created_at.isoformat() if q.created_at else None,
-        "owner_id": q.owner_id, "owner_scope": q.owner_scope,
-        "item_count": item_count,
-        "incoterm": q.incoterm, "payment_terms": q.payment_terms,
-        "port_of_loading": q.port_of_loading,
-        "port_of_destination": q.port_of_destination,
-        "shipping_marks": q.shipping_marks,
-        "country_of_origin": q.country_of_origin,
-        "destination_country": q.destination_country,
-        "destination_region": q.destination_region,
-        "carrier": q.carrier,
-        "freight_valid_from": q.freight_valid_from.isoformat() if q.freight_valid_from else None,
-        "freight_valid_to": q.freight_valid_to.isoformat() if q.freight_valid_to else None,
-    }
+    from kaas_common.workstation.quote_serializers import row_to_quote
+    return row_to_quote(q, item_count)
 
 
 def _row_to_item(it: QuoteOrderItem) -> dict:
-    return {
-        "id": it.id, "quote_order_id": it.quote_order_id, "sku_id": it.sku_id,
-        "product_name": it.product_name, "spec_snapshot": it.spec_snapshot,
-        "qty": float(it.qty) if it.qty is not None else None,
-        "qty_unit": it.qty_unit,
-        "unit_price": float(it.unit_price) if it.unit_price is not None else None,
-        "currency": it.currency,
-        "line_amount": float(it.line_amount) if it.line_amount is not None else None,
-        "sort_order": it.sort_order,
-        "policy_override": it.policy_override,
-        "price_source": it.price_source,
-        "cost_override": float(it.cost_override) if it.cost_override is not None else None,
-        "price_override": float(it.price_override) if it.price_override is not None else None,
-        "weight_override": float(it.weight_override) if it.weight_override is not None else None,
-        "volume_override": float(it.volume_override) if it.volume_override is not None else None,
-        "image_url": it.image_url,
-        "created_at": it.created_at.isoformat() if it.created_at else None,
-    }
+    from kaas_common.workstation.quote_serializers import row_to_item
+    return row_to_item(it)
 
 
 def _build_items(tenant_id: str, currency: str, rows: List[QuoteItemIn]) -> tuple[list, Decimal]:

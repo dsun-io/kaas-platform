@@ -569,9 +569,13 @@ def build(request: QuoteRequest, mode=DECIMAL) -> QuoteResult:
     diagnostics: list[str] = []
     policy = request.policy
     # ── 产品级利润配置优先：产品级 > 报价单级 > 税务档案默认 ──
-    # 产品定义了 profit_mode/profit_value/misc_fee_rate 时，若报价单未显式覆盖，
-    # 则用产品级值（租户可配，见 models.ProductSpec 注释）。
-    if product.profit_mode and not getattr(request.policy, "_explicit_profit", False):
+    # 仅当报价单**未显式指定**利润参数时才用产品级默认（避免测试/历史配置被覆盖）。
+    # 判断口径：报价单 policy 的 profit_mode 为默认 fixed 且 profit_value 为 0 视为「未指定」。
+    _profit_unspecified = (
+        getattr(request.policy, "profit_mode", "fixed") == "fixed"
+        and not getattr(request.policy, "profit_value", 0)
+    )
+    if product.profit_mode and _profit_unspecified:
         policy = policy.with_(
             profit_mode=product.profit_mode,
             profit_value=product.profit_value,
