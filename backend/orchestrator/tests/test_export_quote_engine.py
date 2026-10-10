@@ -1,7 +1,7 @@
 """出口报价引擎测试：规格展开、价链落地、订单指标、术语阶梯、三遍核验。
 
 锁定的事实：
-  · 牛栏网 2 边丝径 × 2 内丝径 × 2 镀锌 × 2 工艺 × 2 网高 × 2 竖丝间距 = 64 个组合
+  · 牛栏网 2 边丝径 × 2 内丝径 × 5 表面处理 × 2 工艺 × 2 网高 × 2 竖丝间距 = 160 个组合
   · 单卷售价 × 卷数 = 总价，且 每米价 × 总米数 = 总价，两者必须同时成立
   · 实际占用体积 = 长方体体积 − 2.5 m³（2~3 取中位数）
   · 报价有效期 7 天
@@ -77,8 +77,9 @@ def result():
 # 规格展开
 # ─────────────────────────────────────────────────────────────────────────────
 class TestSpecExpansion:
-    def test_field_fence_has_48_combinations(self):
-        assert len(expand_specs(field_fence.build_spec())) == 2 * 2 * 2 * 2 * 2 * 2
+    def test_field_fence_combos_match_surface_options(self):
+        # 2 网高 × 2 竖丝间距 × 2 边丝径 × 2 内丝径 × 5 表面处理 × 2 工艺 = 160
+        assert len(expand_specs(field_fence.build_spec())) == 2 * 2 * 2 * 2 * 5 * 2
 
     def test_every_axis_is_covered_exactly_once(self, result):
         combos = [
@@ -92,7 +93,7 @@ class TestSpecExpansion:
             )
             for r in result.rows
         ]
-        assert len(set(combos)) == 64, "组合必须充分排列且不重复"
+        assert len(set(combos)) == 160, "组合必须充分排列且不重复"
 
     def test_engine_is_product_agnostic(self):
         """引擎只认 ProductSpec、不认识任何具体产品：换一份 spec 就能展开，引擎代码一行不改。
@@ -129,15 +130,15 @@ class TestPriceChainOnRows:
     def test_pretax_cost_is_4_4_and_5_6(self, result):
         """客户口径：4.4/5.6 已是税前成本（4.5/5.7 含 0.1 利润，不得再加一次）。"""
         by_coating = {r.spec["coating"]: r.price["cost_pretax"] for r in result.rows}
-        assert by_coating["普锌40g/㎡"] == D("4.4")
-        assert by_coating["重镀锌≥200g/㎡"] == D("5.6")
+        assert by_coating["热镀锌 40g/㎡"] == D("4.4")
+        assert by_coating["热镀锌 200g/㎡"] == D("5.6")
 
     def test_quote_matches_hand_verified_values(self, result):
         seen = {}
         for r in result.rows:
             seen.setdefault(r.spec["coating"], r.price["quote_excl_vat"])
-        assert seen["普锌40g/㎡"] == D("4.6028")
-        assert seen["重镀锌≥200g/㎡"] == D("5.8294")
+        assert seen["热镀锌 40g/㎡"] == D("4.6028")
+        assert seen["热镀锌 200g/㎡"] == D("5.8294")
 
     def test_export_zero_rated_means_no_output_vat(self, result):
         for r in result.rows:
@@ -304,7 +305,7 @@ class TestVerification:
         rep = verify_invariants(result)
         assert rep.ok, rep.summary()
         # 牛栏网声明了 18 条关系式 × 行数 × 订单数
-        assert rep.checks >= 48 * 18
+        assert rep.checks >= 160 * 18
 
     def test_rate_set_audit_warns_on_unconfirmed_rebate(self, result):
         rep = verify_rate_set(result)
@@ -449,7 +450,7 @@ class TestViews:
     def test_customer_view_row_and_column_shape(self, result):
         view = build_customer_view(result)
         header = view["header"]
-        assert len(view["rows"]) == 64
+        assert len(view["rows"]) == 160
         assert all(len(row) == len(header) for row in view["rows"])
 
     def test_customer_view_has_bilingual_headers(self, result):

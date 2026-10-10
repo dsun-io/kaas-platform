@@ -93,7 +93,7 @@ class TestMeta:
         assert {"field_fence"} <= keys
         assert "welded_pipe" not in keys
         fence = next(p for p in data["products"] if p["key"] == "field_fence")
-        assert fence["combo_count"] == 64
+        assert fence["combo_count"] == 160
         assert fence["hs_codes"]
 
     async def test_rate_sets_are_listed_with_warnings(self, async_client):
@@ -273,7 +273,7 @@ class TestFormulasEndpoints:
         r = await async_client.get(f"{BASE}/products/field_fence/formulas")
         assert r.status_code == 200
         d = r.json()
-        assert d["space"]["combo_count"] == 64
+        assert d["space"]["combo_count"] == 160
         calc = d["calculations"]
         assert calc["derived"] and calc["piece"] and calc["order"]
         # 每条都要有单位与口径说明，否则业务看不懂
@@ -304,7 +304,7 @@ class TestFormulasEndpoints:
             f"{BASE}/products/field_fence/explain",
             json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2.0,
                            "inner_wire": "内丝2.0",
-                           "coating": "普锌40g/㎡", "wave": "无波款"},
+                           "coating": "热镀锌 40g/㎡", "wave": "无波款"},
                   "total": 30000},
         )
         assert r.status_code == 200, r.text
@@ -323,7 +323,7 @@ class TestFormulasEndpoints:
             f"{BASE}/products/field_fence/explain",
             json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2.0,
                            "inner_wire": "内丝2.0",
-                           "coating": "普锌40g/㎡", "wave": "波弯款"},
+                           "coating": "热镀锌 40g/㎡", "wave": "波弯款"},
                   "total": 30000},
         )
         got = {s["code"]: s["value"] for s in r.json()["steps"]}
@@ -335,7 +335,7 @@ class TestFormulasEndpoints:
             f"{BASE}/products/field_fence/explain",
             json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2.5,
                            "inner_wire": "内丝2.5",
-                           "coating": "普锌40g/㎡", "wave": "波弯款"},
+                           "coating": "热镀锌 40g/㎡", "wave": "波弯款"},
                   "total": 30000},
         )
         got = {s["code"]: s["value"] for s in r.json()["steps"]}
@@ -348,7 +348,7 @@ class TestFormulasEndpoints:
             f"{BASE}/products/field_fence/explain",
             json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2.0,
                            "inner_wire": "内丝2.0",
-                           "coating": "普锌40g/㎡", "wave": "无波款"},
+                           "coating": "热镀锌 40g/㎡", "wave": "无波款"},
                   "total": 30000,
                   "metrics": ["volume_effective_m3", "wave_add_kg"]},
         )
@@ -363,7 +363,7 @@ class TestFormulasEndpoints:
             f"{BASE}/products/field_fence/explain",
             json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2,
                            "inner_wire": "内丝2.0",
-                           "coating": "普锌40g/㎡", "wave": "无波款"}},
+                           "coating": "热镀锌 40g/㎡", "wave": "无波款"}},
         )
         j = r.json()
         codes = {s["code"] for s in j["steps"]}
@@ -385,7 +385,7 @@ class TestFormulasEndpoints:
             f"{BASE}/products/field_fence/explain",
             json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2,
                            "inner_wire": "不存在",
-                           "coating": "普锌40g/㎡", "wave": "无波款"}},
+                           "coating": "热镀锌 40g/㎡", "wave": "无波款"}},
         )
         assert r.status_code == 400
         assert r.json()["detail"]["error"] == "unknown_variant"
@@ -396,7 +396,7 @@ class TestFormulasEndpoints:
             f"{BASE}/products/field_fence/explain",
             json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2,
                            "inner_wire": "内丝2.0",
-                           "coating": "普锌40g/㎡", "wave": "无波款"}},
+                           "coating": "热镀锌 40g/㎡", "wave": "无波款"}},
         )
         assert r.status_code == 200
         # 不得泄露任何成本/利润字样

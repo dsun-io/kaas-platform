@@ -87,8 +87,9 @@ _ALIASES: tuple[tuple[str, str, dict[str, Any]], ...] = (
 _VARIANT_ALIASES = {
     "wire": ("丝径方案", "丝径", "wire", "wire diameter option", "wireoption",
              "wireoption", "wire_option", "网片丝径"),
-    "coating": ("镀锌量", "镀锌", "锌层", "coating", "zinc", "zinc coating",
-                "zinccoating", "zinc_coating"),
+    "coating": ("表面处理", "镀锌量", "镀锌", "锌层", "coating", "zinc", "zinc coating",
+                "zinccoating", "zinc_coating", "surface treatment", "surfacetreatment",
+                "surface_treatment"),
     "wave": ("工艺", "波型", "波弯", "wave", "wave type", "wavetype", "wave_type",
              "wave bend", "wavebend"),
 }
@@ -263,12 +264,22 @@ def _build_header_map(product: ProductSpec) -> tuple[dict, dict, set]:
             compact = re.sub(r"[\s_\-·.]", "", alias).lower()
             variant.setdefault(compact, group)
 
-    # 产品变体包自身的名字与标签也认（wire / 丝径方案）
+    # 产品变体包自身的名字与标签也认（wire / 丝径方案）。
+    # 注意只在该键尚未被 _VARIANT_ALIASES 认领时才登记 ——
+    # 否则「镀锌量」这种输出列标签（spec.coating，锌层克数）会与变体包
+    # 的 label（表面处理）指向同一个包，导致「表面处理」列被误判为可填参数。
     for v in product.variants:
         for alias in (v.name, v.label, v.label_en):
             if alias:
                 compact = re.sub(r"[\s_\-·.]", "", str(alias)).lower()
+                if compact in variant:
+                    continue
                 variant.setdefault(compact, v.name)
+
+    # 变体包 label 的**前缀**也认（如「表面处理」导出为「表面处理」，
+    # 但值列可能写「热镀锌」而非完整选项名 —— 值级模糊匹配由 _coerce_variant 负责，
+    # 这里只负责把「表头」映射到包）。
+    # 已在上面按完整 label 登记，无需额外处理。
 
     known_variant_codes = set()
     for v in product.variants:
@@ -337,14 +348,24 @@ def _coerce_variant(product: ProductSpec, group: str, value: Any) -> str:
     # 3) 去掉单位/空白再试一次
     squeeze = re.sub(r"[\s]", "", raw)
     for opt in vg.options:
-        if re.sub(r"[\s]", "", str(opt.get("name"))) == squeeze:
+        if squeeze == re.sub(r"[\s]", "", str(opt.get("name"))):
             return str(opt.get("name"))
-    alias = _VALUE_ALIASES.get(squeeze)
-    if alias:
-        return alias
+    # 4) 前缀/包含匹配（如导出列写「热镀锌」而完整选项是「热镀锌 40g/㎡」）
+    #    只在唯一命中时才认，避免「热镀锌」同时匹配 40/200/260 三档而静默选错。
+    candidates = [
+        str(opt.get("name"))
+        for opt in vg.options
+        if str(opt.get("name")).startswith(raw) or raw.startswith(str(opt.get("name")))
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
+    if candidates:
+        raise ValueError(
+            f"取值 {raw!r} 匹配到多个选项: {candidates}；请写完整选项名"
+        )
     raise ValueError(
-        "无法识别的取值；可选: %s"
-        % ", ".join(str(o.get("name")) for o in vg.options)
+        f"无法识别的取值 {raw!r}；可选: "
+        + ", ".join(str(o.get("name")) for o in vg.options)
     )
 
 
