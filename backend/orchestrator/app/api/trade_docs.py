@@ -343,11 +343,13 @@ async def create_trade_doc(
             total_amount = items_total
             d.total_amount = total_amount
         # ── 金额勾稽：单证合计必须等于行项目合计（信用证不符点防线）──
-        elif items_total is not None and abs(Decimal(str(total_amount)) - items_total) > Decimal("0.01"):
+        from kaas_common.workstation.amount_rules import check_amount_reconciliation, AmountMismatchError
+        try:
+            check_amount_reconciliation(total_amount, items_total)
+        except AmountMismatchError as exc:
             raise HTTPException(status_code=422, detail={
                 "error": "amount_mismatch", "code": "AMOUNT_MISMATCH",
-                "detail": f"单证合计 {total_amount} ≠ 行项目合计 {items_total}；"
-                          "信用证下这是致命不符点，请核对后重试",
+                "detail": str(exc),
             })
 
     # ── refs 溯源（§6.3 单证类型×生成阶段）───────────────────────────
