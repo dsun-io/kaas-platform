@@ -115,6 +115,7 @@ from app.api.company_seals import router as company_seals_router
 from app.api.fx_rates import router as fx_rates_router
 from app.api.actual_costs import router as actual_costs_router
 from app.api.external_docs import router as external_docs_router
+from app.api.tenant_products import router as tenant_products_router
 
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -156,4 +157,5 @@ app.include_router(company_seals_router)
 app.include_router(fx_rates_router)
 app.include_router(actual_costs_router)
 app.include_router(external_docs_router)
+app.include_router(tenant_products_router)
 

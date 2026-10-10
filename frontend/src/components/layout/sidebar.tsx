@@ -26,6 +26,7 @@ import {
   Send,
   Sparkles,
   PackageSearch,
+  Package,
   ClipboardList,
   ClipboardCheck,
   Truck,
@@ -47,6 +48,7 @@ const STATION_ICONS: Record<
 > = {
   LayoutDashboard,
   PackageSearch,
+  Package,
   Target,
   Send,
   Zap,
