@@ -1,5 +1,8 @@
 # 产品定义配置化（租户级）—— 未完成事项说明
 
+> **更新（2026-10-10）**：已实施 `tenant_products` 表 + `TenantProductLoader` 加载器。
+> 权限矩阵（租户开通报价工位后选择启用产品）**仍未实现**，留口子。
+
 ## 现状
 
 产品知识（规格轴、变体包、公式、成本口径、列定义）目前以 **Python 代码**定义：
@@ -74,10 +77,10 @@ CREATE TABLE tenant_products (
 当前实现：`ProductSpec.profit_mode/profit_value/misc_fee_rate` 已支持产品级配置，
 但**加载来源只有 Python 代码**，未接数据库。接线工作待后续完成。
 
-## 实施步骤（待执行）
+## 实施步骤（部分完成）
 
-1. [ ] 建 `tenant_products` 表（迁移）
-2. [ ] `products/__init__.py` 加载逻辑改为「先查数据库，再回退 Python 定义」
+1. [x] 建 `tenant_products` 表（迁移 `202610100006`）
+2. [x] `TenantProductLoader` 加载逻辑（先查数据库，再回退 Python 定义）
 3. [ ] 管理界面：产品列表 + 可视化编辑器（规格轴/变体/公式）
 4. [ ] 权限控制：租户开通报价工位 → 选择启用产品
 5. [ ] 租户级 vs 系统级产品权限矩阵
