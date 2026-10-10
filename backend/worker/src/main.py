@@ -2709,6 +2709,33 @@ from kaas_common.trade_doc.payload_shared import (  # noqa: E402
 )
 
 
+@app.get("/api/v1/trade-docs")
+async def list_trade_docs(request: Request, doc_type: str = None, status: str = None,
+                          order_id: int = None, page: int = 1, page_size: int = 20,
+                          user: dict = Depends(_get_current_user)):
+    """单证列表（分页 + doc_type/status/order 筛选）。"""
+    where = ["tenant_id = $1"]
+    params: list = [DEFAULT_TENANT]
+    idx = 2
+    if doc_type:
+        where.append(f"doc_type = ${idx}"); params.append(doc_type); idx += 1
+    if status:
+        where.append(f"status = ${idx}"); params.append(status); idx += 1
+    if order_id:
+        where.append(f"order_id = ${idx}"); params.append(order_id); idx += 1
+    where_sql = " AND ".join(where)
+    async with _acquire(request) as conn:
+        total = await conn.fetchval(f"SELECT COUNT(*) FROM trade_docs WHERE {where_sql}", *params)
+        rows = await conn.fetch(
+            f"SELECT * FROM trade_docs WHERE {where_sql} ORDER BY created_at DESC, id DESC LIMIT ${idx} OFFSET ${idx+1}",
+            *params, page_size, (max(1, page) - 1) * page_size,
+        )
+    return {
+        "items": [_row_to_dict(r, "trade_docs") for r in rows],
+        "total": total, "page": page, "page_size": page_size,
+    }
+
+
 @app.post("/api/v1/trade-docs", status_code=201)
 async def create_trade_doc(request: Request, body: dict,
                            user: dict = Depends(_get_current_user)):
