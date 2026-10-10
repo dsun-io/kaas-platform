@@ -49,10 +49,7 @@ from app.api.ws_common import (
 router = APIRouter(prefix="/api/v1", tags=["quote-orders"])
 
 # 状态机（§10.4）：draft → sent → accepted / rejected / expired
-ORDER_NEXT = {
-    "draft": ("sent", "expired"),
-    "sent": ("accepted", "rejected", "expired"),
-}
+from kaas_common.workstation.state_machines import QUOTE_NEXT as ORDER_NEXT  # noqa: E402
 
 # 报价记录台账的来源标记：由报价单签发自动入账（区别于 quotations_db / 手工录入）
 LEDGER_SOURCE_QUOTE_ISSUED = "quote_issued"
