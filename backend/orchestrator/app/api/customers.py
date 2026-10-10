@@ -48,7 +48,8 @@ def _tenant_id(auth: AuthContext) -> str:
 
 def _can_see_all(auth: AuthContext) -> bool:
     """system_admin 看全部；企业管理员（Phase 6）同样看全部。"""
-    return auth.is_admin()
+    from kaas_common.workstation.customer_rules import can_see_all
+    return can_see_all(auth)
 
 
 def _scope_filter(stmt, model, auth: AuthContext):
@@ -73,25 +74,13 @@ def _check_write_access(row, auth: AuthContext):
 
 
 def _row_to_customer(c: Customer) -> dict:
-    return {
-        "id": c.id, "company_name": c.name, "country": c.country,
-        "address": c.address, "default_port": c.default_port,
-        "credit_level": c.credit_level, "stage": c.stage, "notes": c.notes,
-        "created_at": c.created_at.isoformat() if c.created_at else None,
-        "updated_at": c.updated_at.isoformat() if c.updated_at else None,
-    }
+    from kaas_common.workstation.customer_serializers import row_to_customer
+    return row_to_customer(c)
 
 
 def _row_to_inquiry(i: CustInquiry) -> dict:
-    return {
-        "id": i.id, "customer_id": i.customer_id, "lead_id": i.lead_id,
-        "channel": i.channel,
-        "category_id": i.category_id, "product_name_raw": i.product_name_raw,
-        "quantity": float(i.quantity) if i.quantity is not None else None,
-        "quantity_unit": i.quantity_unit, "application": i.application,
-        "status": i.status,
-        "created_at": i.created_at.isoformat() if i.created_at else None,
-    }
+    from kaas_common.workstation.customer_serializers import row_to_inquiry
+    return row_to_inquiry(i)
 
 
 async def _log_stage(db, tenant_id, customer_id, from_stage, to_stage, changed_by, reason):
