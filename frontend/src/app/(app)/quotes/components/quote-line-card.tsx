@@ -372,7 +372,12 @@ export function QuoteLineCard({
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">加工利润覆盖（元/kg）</Label>
+            <Label
+              className="text-xs"
+              title="逐行覆盖加工利润（元/kg）。不同产品的供货厂与竞争情况不同，利润常常不一样；留空 = 继承整单默认值，填了 = 只对本行生效"
+            >
+              加工利润覆盖（元/kg）
+            </Label>
             <Input
               type="number"
               step="0.01"
