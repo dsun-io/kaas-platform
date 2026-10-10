@@ -101,6 +101,12 @@ class QuoteOrderCreate(BaseModel):
     shipping_marks: Optional[str] = None
     country_of_origin: Optional[str] = None
     items: List[QuoteItemIn] = []
+    # ── 202610100003 订单/运输补字段 ──
+    destination_country: Optional[str] = None
+    destination_region: Optional[str] = None
+    carrier: Optional[str] = None
+    freight_valid_from: Optional[str] = None
+    freight_valid_to: Optional[str] = None
 
 
 class QuoteOrderPatch(BaseModel):
@@ -115,6 +121,11 @@ class QuoteOrderPatch(BaseModel):
     port_of_destination: Optional[str] = None
     shipping_marks: Optional[str] = None
     country_of_origin: Optional[str] = None
+    destination_country: Optional[str] = None
+    destination_region: Optional[str] = None
+    carrier: Optional[str] = None
+    freight_valid_from: Optional[str] = None
+    freight_valid_to: Optional[str] = None
 
 
 class QuoteItemsReplace(BaseModel):
@@ -142,6 +153,11 @@ def _row_to_quote(q: QuoteOrder, item_count: int = 0) -> dict:
         "port_of_destination": q.port_of_destination,
         "shipping_marks": q.shipping_marks,
         "country_of_origin": q.country_of_origin,
+        "destination_country": q.destination_country,
+        "destination_region": q.destination_region,
+        "carrier": q.carrier,
+        "freight_valid_from": q.freight_valid_from.isoformat() if q.freight_valid_from else None,
+        "freight_valid_to": q.freight_valid_to.isoformat() if q.freight_valid_to else None,
     }
 
 

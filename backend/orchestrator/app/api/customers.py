@@ -299,6 +299,23 @@ async def update_customer(
 
 # ── 阶段变更（§10.1 二次确认）───────────────────────────────────────────────
 
+@router.delete("/customers/{customer_id}", status_code=204)
+async def soft_delete_customer(
+    customer_id: int,
+    auth: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """客户软删除：标记 is_deleted，保留历史单据引用不物理删除。"""
+    tenant_id = _tenant_id(auth)
+    c = await _get_customer_or_404(db, tenant_id, customer_id, auth)
+    _check_write_access(c, auth)
+    from datetime import datetime, timezone
+    c.is_deleted = True
+    c.deleted_at = datetime.now(timezone.utc)
+    await db.commit()
+    return None
+
+
 @router.patch("/customers/{customer_id}/stage")
 async def change_stage(
     customer_id: int,
@@ -395,6 +412,79 @@ async def create_contact(
     return {"id": ct.id, "name": ct.name, "position": ct.position,
             "phone": ct.phone, "email": ct.email, "whatsapp": ct.whatsapp,
             "is_primary": ct.is_primary}
+
+
+class ContactUpdate(BaseModel):
+    name: Optional[str] = None
+    position: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    whatsapp: Optional[str] = None
+    wechat: Optional[str] = None
+    is_primary: Optional[bool] = None
+
+
+@router.patch("/customers/{customer_id}/contacts/{contact_id}")
+async def update_contact(
+    customer_id: int,
+    contact_id: int,
+    body: ContactUpdate,
+    auth: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db_session),
+):
+    tenant_id = _tenant_id(auth)
+    await _get_customer_or_404(db, tenant_id, customer_id, auth)
+    ct = (await db.execute(
+        select(CustContact).where(
+            CustContact.tenant_id == tenant_id,
+            CustContact.customer_id == customer_id,
+            CustContact.id == contact_id,
+        )
+    )).scalar_one_or_none()
+    if ct is None:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "CONTACT_NOT_FOUND"})
+    data = body.model_dump(exclude_unset=True)
+    if data.get("is_primary"):
+        await db.execute(
+            update(CustContact)
+            .where(
+                CustContact.tenant_id == tenant_id,
+                CustContact.customer_id == customer_id,
+                CustContact.is_primary == True,  # noqa: E712
+                CustContact.id != contact_id,
+            )
+            .values(is_primary=False)
+        )
+    for k, v in data.items():
+        setattr(ct, k, v)
+    await db.commit()
+    await db.refresh(ct)
+    return {"id": ct.id, "name": ct.name, "position": ct.position,
+            "phone": ct.phone, "email": ct.email, "whatsapp": ct.whatsapp,
+            "is_primary": ct.is_primary}
+
+
+@router.delete("/customers/{customer_id}/contacts/{contact_id}", status_code=204)
+async def delete_contact(
+    customer_id: int,
+    contact_id: int,
+    auth: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db_session),
+):
+    tenant_id = _tenant_id(auth)
+    await _get_customer_or_404(db, tenant_id, customer_id, auth)
+    ct = (await db.execute(
+        select(CustContact).where(
+            CustContact.tenant_id == tenant_id,
+            CustContact.customer_id == customer_id,
+            CustContact.id == contact_id,
+        )
+    )).scalar_one_or_none()
+    if ct is None:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "CONTACT_NOT_FOUND"})
+    await db.delete(ct)
+    await db.commit()
+    return None
 
 
 # ── 询盘 ─────────────────────────────────────────────────────────────────────

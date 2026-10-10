@@ -450,6 +450,9 @@ class Customer(Base):
     owner_id = Column(Text, nullable=True)
     owner_scope = Column(Text, nullable=False, default="private", server_default="private")
     legacy_cust_id = Column(BigInteger, nullable=True)  # 合并映射键（旧 cust_customers.id），仅供 downgrade 还原
+    # ── 202610100004 客户软删除（保留历史单据引用，不物理删除）──
+    is_deleted = Column(Boolean, nullable=False, default=False, server_default="false")
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 

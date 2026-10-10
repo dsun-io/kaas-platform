@@ -43,6 +43,13 @@ class QuoteOrder(Base):
     port_of_destination = Column(Text, nullable=True)
     shipping_marks = Column(Text, nullable=True)
     country_of_origin = Column(Text, nullable=True)
+    # ── 202610100003 订单/运输补字段 ──
+    # 收货地（订单地区 ≠ 客户地区：经销商/中间商场景下两者常不同）
+    destination_country = Column(Text, nullable=True)
+    destination_region = Column(Text, nullable=True)
+    carrier = Column(Text, nullable=True)  # 船公司
+    freight_valid_from = Column(Date, nullable=True)  # 海运费有效期起
+    freight_valid_to = Column(Date, nullable=True)  # 海运费有效期止
     created_by = Column(Text, nullable=True)
     # 数据可见范围（§10.3）：与 cust_inquiries / shipments / receivables 等表一致。
     # 迁移 202609260002 补建；API 的 scope_filter() 依赖这两列。
@@ -135,6 +142,13 @@ class Order(Base):
     port_of_destination = Column(Text, nullable=True)
     shipping_marks = Column(Text, nullable=True)
     country_of_origin = Column(Text, nullable=True)
+    # ── 202610100003 订单/运输补字段 ──
+    # 收货地（订单地区 ≠ 客户地区：经销商/中间商场景下两者常不同）
+    destination_country = Column(Text, nullable=True)
+    destination_region = Column(Text, nullable=True)
+    carrier = Column(Text, nullable=True)  # 船公司
+    freight_valid_from = Column(Date, nullable=True)  # 海运费有效期起
+    freight_valid_to = Column(Date, nullable=True)  # 海运费有效期止
     created_by = Column(Text, nullable=True)
     # 数据可见范围（§10.3）：与报价单同因，由迁移 202609260002 补建
     owner_id = Column(Text, nullable=True)
