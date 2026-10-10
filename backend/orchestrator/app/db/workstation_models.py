@@ -60,6 +60,11 @@ class CustInquiry(Base):
     application = Column(Text, nullable=True)
     status = Column(Text, nullable=False, server_default='open')
     notes = Column(Text, nullable=True)
+    # ── 202610100003 询价历史留存：同客户多次询价（不同产品/规格）+ 时间线 ──
+    # inquiry_seq：该客户下第几次询价（同订单多次询价时区分）
+    # spec_snapshot：本次询价的产品/规格快照（JSONB），与报价行 spec_snapshot 同构
+    inquiry_seq = Column(Integer, nullable=True)
+    spec_snapshot = Column(JSONB, nullable=True)
     created_by = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
