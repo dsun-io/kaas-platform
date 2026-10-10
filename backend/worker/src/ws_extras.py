@@ -19,8 +19,6 @@ app = _main.app
 _get_current_user = _main._get_current_user
 _acquire = _main._acquire
 
-router = APIRouter(prefix="/api/v1")
-
 
 # ── 汇率 ───────────────────────────────────────────────────────────────────
 
