@@ -80,9 +80,9 @@ GROUP BY c.id;
 ## 已实施
 
 - [x] `backend/kaas_common/db/queries.py`：客户/报价单/订单/询盘 SQL 模板
-- [ ] orchestrator 接线（SQLAlchemy text() 调用共享 SQL）
-- [ ] worker 接线（asyncpg 调用共享 SQL）
-- [ ] Repository 模式（后续）
+- [x] `backend/kaas_common/db/repositories.py`：Repository 模式（CustomerRepository/QuoteRepository/OrderRepository/InquiryRepository）
+- [ ] orchestrator 接线（SQLAlchemy 适配器 + API 层改用 Repository）
+- [ ] worker 接线（asyncpg 适配器 + API 层改用 Repository）
 
 ## 关联
 
