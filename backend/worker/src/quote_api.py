@@ -1419,42 +1419,16 @@ def _parse_dt(value: Optional[str]):
 
 
 def _quote_json(row: dict, item_count: int = 0) -> dict:
-    """报价单头 → 出参（逐字段对齐 dev `_row_to_quote`）。"""
-    d = dict(row)
-    return {
-        "id": d["id"], "quote_no": d["quote_no"],
-        "customer_id": d.get("customer_id"), "customer_name": d.get("customer_name"),
-        "inquiry_id": d.get("inquiry_id"),
-        "status": d.get("status"), "currency": d.get("currency"),
-        "total_amount": _f(d.get("total_amount")),
-        "valid_until": _iso(d.get("valid_until")),
-        "notes": d.get("notes"),
-        "fx_rate": _f(d.get("fx_rate")),
-        "fx_rate_date": _iso(d.get("fx_rate_date")),
-        "created_at": _iso(d.get("created_at")),
-        "owner_id": d.get("owner_id"), "owner_scope": d.get("owner_scope"),
-        "item_count": item_count,
-        "incoterm": d.get("incoterm"), "payment_terms": d.get("payment_terms"),
-        "port_of_loading": d.get("port_of_loading"),
-        "port_of_destination": d.get("port_of_destination"),
-        "shipping_marks": d.get("shipping_marks"),
-        "country_of_origin": d.get("country_of_origin"),
-    }
+    """报价单头 → 出参（与 dev `_row_to_quote` 共用共享内核序列化）。"""
+    from kaas_common.workstation.quote_serializers import row_to_quote
+    return row_to_quote(dict(row), item_count)
 
 
 def _quote_item_json(row) -> dict:
     """行项 → 出参。spec_snapshot 必须经 dbjson 解码（jsonb 在 Workers 里是 str）。"""
+    from kaas_common.workstation.quote_serializers import row_to_item
     d = _row_to_dict(row, "quote_order_items")
-    return {
-        "id": d["id"], "quote_order_id": d["quote_order_id"], "sku_id": d.get("sku_id"),
-        "product_name": d.get("product_name"), "spec_snapshot": d.get("spec_snapshot"),
-        "qty": _f(d.get("qty")), "qty_unit": d.get("qty_unit"),
-        "unit_price": _f(d.get("unit_price")),
-        "currency": d.get("currency"),
-        "line_amount": _f(d.get("line_amount")),
-        "sort_order": d.get("sort_order"),
-        "created_at": _iso(d.get("created_at")),
-    }
+    return row_to_item(d)
 
 
 def _build_items(currency: str, rows: List[_QuoteItemIn]):
