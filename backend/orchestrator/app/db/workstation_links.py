@@ -73,6 +73,16 @@ class QuoteOrderItem(Base):
     currency = Column(Text, nullable=False, default="USD")
     line_amount = Column(Numeric, nullable=True)
     sort_order = Column(Integer, nullable=False, default=0)
+    # ── 202610100001：多产品逐行计算上下文 + 手动干预 ──
+    # 行级报价政策覆盖（利润率/综合税费系数/成本口径等），空则继承报价单共享政策
+    policy_override = Column(JSONB, nullable=True)
+    # auto（公式自动）| manual（非标产品手动给价）| overridden（覆盖公式结果）
+    price_source = Column(Text, nullable=False, default="auto", server_default="auto")
+    cost_override = Column(Numeric(20, 6), nullable=True)
+    price_override = Column(Numeric(20, 6), nullable=True)
+    weight_override = Column(Numeric(20, 6), nullable=True)
+    volume_override = Column(Numeric(20, 6), nullable=True)
+    image_url = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     __table_args__ = (
@@ -154,6 +164,14 @@ class OrderItem(Base):
     currency = Column(Text, nullable=False, default="USD")
     line_amount = Column(Numeric, nullable=True)
     sort_order = Column(Integer, nullable=False, default=0)
+    # ── 202610100001：多产品逐行计算上下文 + 手动干预（与报价单行项同构）──
+    policy_override = Column(JSONB, nullable=True)
+    price_source = Column(Text, nullable=False, default="auto", server_default="auto")
+    cost_override = Column(Numeric(20, 6), nullable=True)
+    price_override = Column(Numeric(20, 6), nullable=True)
+    weight_override = Column(Numeric(20, 6), nullable=True)
+    volume_override = Column(Numeric(20, 6), nullable=True)
+    image_url = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     __table_args__ = (

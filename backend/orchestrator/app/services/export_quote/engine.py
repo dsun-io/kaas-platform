@@ -540,6 +540,7 @@ def policy_scope(policy: PricingPolicy) -> dict:
         "stamp_base": policy.stamp_base,
         "profit_mode": policy.profit_mode,
         "profit_value": policy.profit_value,
+        "misc_fee_rate": policy.misc_fee_rate,
         "rebate_rate": policy.rebate_rate if policy.rebate_rate is not None else 0,
     }
 
