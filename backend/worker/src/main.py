@@ -44,6 +44,8 @@ DEFAULT_TENANT = "default"
 
 import json as _json
 
+from kaas_common.workstation.customer_serializers import row_to_customer, row_to_inquiry
+
 
 def _row_to_dict(row: asyncpg.Record) -> dict:
     """兼容旧调用点（未指定表名 → 仅按 market_ports 的 jsonb 列解码）。
@@ -548,7 +550,7 @@ async def create_customer(request: Request, body: CustomerCreate, user: dict = D
             DEFAULT_TENANT, body.company_name, body.country, body.address,
             body.default_port, body.credit_level, body.stage, body.notes, str(user["id"]),
         )
-    return dict(row)
+    return row_to_customer(dict(row))
 
 
 @app.get("/api/v1/customers/{customer_id}")
@@ -568,7 +570,12 @@ async def get_customer(customer_id: int, request: Request, user: dict = Depends(
         stage_log = await conn.fetch(
             "SELECT * FROM cust_stage_log WHERE customer_id=$1 ORDER BY created_at DESC LIMIT 20", customer_id,
         )
-    return {**dict(row), "contacts": [dict(c) for c in contacts], "inquiries": [dict(i) for i in inquiries], "stage_log": [dict(s) for s in stage_log]}
+    return {
+        **row_to_customer(dict(row)),
+        "contacts": [dict(c) for c in contacts],
+        "inquiries": [row_to_inquiry(dict(i)) for i in inquiries],
+        "stage_log": [dict(s) for s in stage_log],
+    }
 
 
 @app.post("/api/v1/customers/{customer_id}/contacts", status_code=201)
@@ -2193,12 +2200,8 @@ ORDER_NEXT = {
 
 
 def _order_dict(row) -> dict:
-    d = dict(row)
-    for k in ("order_date", "delivery_date", "fx_rate_date", "created_at"):
-        v = d.get(k)
-        if v is not None and hasattr(v, "isoformat"):
-            d[k] = v.isoformat()
-    return d
+    from kaas_common.workstation.order_serializers import row_to_order
+    return row_to_order(dict(row))
 
 
 async def _record_business_event(
