@@ -587,6 +587,61 @@ async def add_contact(customer_id: int, request: Request, body: ContactCreate, u
     return dict(row)
 
 
+class ContactUpdate(BaseModel):
+    name: Optional[str] = None
+    position: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    whatsapp: Optional[str] = None
+    wechat: Optional[str] = None
+    is_primary: Optional[bool] = None
+
+
+@app.patch("/api/v1/customers/{customer_id}/contacts/{contact_id}")
+async def update_contact(customer_id: int, contact_id: int, request: Request,
+                         body: ContactUpdate, user: dict = Depends(_get_current_user)):
+    async with _acquire(request) as conn:
+        ct = await conn.fetchrow(
+            "SELECT * FROM cust_contacts WHERE id=$1 AND customer_id=$2 AND tenant_id=$3",
+            contact_id, customer_id, DEFAULT_TENANT)
+        if not ct:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        if body.is_primary:
+            await conn.execute(
+                "UPDATE cust_contacts SET is_primary=false WHERE customer_id=$1 AND tenant_id=$2 AND id != $3",
+                customer_id, DEFAULT_TENANT, contact_id)
+        row = await conn.fetchrow(
+            """UPDATE cust_contacts SET
+               name=COALESCE($2,name), position=COALESCE($3,position),
+               phone=COALESCE($4,phone), email=COALESCE($5,email),
+               whatsapp=COALESCE($6,whatsapp), wechat=COALESCE($7,wechat),
+               is_primary=COALESCE($8,is_primary)
+               WHERE id=$1 RETURNING *""",
+            contact_id, body.name, body.position, body.phone, body.email,
+            body.whatsapp, body.wechat, body.is_primary)
+    return dict(row)
+
+
+@app.delete("/api/v1/customers/{customer_id}/contacts/{contact_id}", status_code=204)
+async def delete_contact(customer_id: int, contact_id: int, request: Request,
+                         user: dict = Depends(_get_current_user)):
+    async with _acquire(request) as conn:
+        await conn.execute(
+            "DELETE FROM cust_contacts WHERE id=$1 AND customer_id=$2 AND tenant_id=$3",
+            contact_id, customer_id, DEFAULT_TENANT)
+    return None
+
+
+@app.delete("/api/v1/customers/{customer_id}", status_code=204)
+async def soft_delete_customer(customer_id: int, request: Request,
+                               user: dict = Depends(_get_current_user)):
+    async with _acquire(request) as conn:
+        await conn.execute(
+            "UPDATE customers SET is_deleted=true, deleted_at=now() WHERE id=$1 AND tenant_id=$2",
+            customer_id, DEFAULT_TENANT)
+    return None
+
+
 @app.post("/api/v1/customers/{customer_id}/inquiries", status_code=201)
 async def add_inquiry(customer_id: int, request: Request, body: InquiryCreate, user: dict = Depends(_get_current_user)):
     async with _acquire(request) as conn:
@@ -3200,4 +3255,7 @@ import chain  # noqa: E402,F401
 # 与 chain 同一挂载方式：复用本模块的 app / _get_current_user / db 连接封装。
 # 位置放在 chain 之后，保持"先核心工位链、后业务工位"的挂载顺序。
 import quote_api  # noqa: E402,F401
+
+# ── 汇率 / 实际采购成本 / 外部单证上传 ──
+import ws_extras  # noqa: E402,F401
 

@@ -37,23 +37,38 @@ import { getAvailableTemplates } from "@/lib/trade-doc/render";
 import { useCustomerOptions } from "@/lib/workstation/use-upstream";
 import type { QuoteProfile } from "@contracts/export-quote";
 
-import { useExportRateSets, useExportTermsTemplate } from "../../quotations/v2-quote/hooks/use-export-quote-import";
+import {
+  useExportRateSets,
+  useExportTermsTemplate,
+} from "../../quotations/v2-quote/hooks/use-export-quote-import";
 import type { QuoteView } from "../../quotations/v2-quote/hooks/use-export-quote-calc";
 import {
   useDeleteQuoteProfile,
   useQuoteProfiles,
   useSaveQuoteProfile,
 } from "../../quotations/v2-quote/hooks/use-quote-profiles";
-import { QuoteLineCard, newLineDraft, type LineDraft } from "../components/quote-line-card";
+import {
+  QuoteLineCard,
+  newLineDraft,
+  type LineDraft,
+} from "../components/quote-line-card";
 import { QuoteSummaryCard } from "../components/quote-summary-card";
 import {
   useCreateQuoteOrder,
   useReplaceQuoteItems,
   useUpdateQuoteOrder,
 } from "../hooks/use-quote-orders";
-import { applySpaceDeduction, summarizeLines, type BuiltLineItem } from "../lib/line-to-item";
+import {
+  applySpaceDeduction,
+  summarizeLines,
+  type BuiltLineItem,
+} from "../lib/line-to-item";
 import { buildTermsPerLine } from "../lib/terms-amortize";
-import type { ProfitMode, SharedQuoteParams, StampBase } from "../lib/build-request";
+import type {
+  ProfitMode,
+  SharedQuoteParams,
+  StampBase,
+} from "../lib/build-request";
 import apiClient from "@/lib/api/client";
 
 /** 上次用过的汇率，避免每次报价重复输入（仅作预填，仍需业务确认）。 */
@@ -84,12 +99,24 @@ export function QuoteWorkbenchView() {
   const [customerId, setCustomerId] = useState("");
   const [inquiryId, setInquiryId] = useState("");
   const [rateSetCode, setRateSetCode] = useState("");
-  const [inputVatRatePct, setInputVatRatePct] = useState(POLICY_DEFAULTS.inputVatRatePct);
-  const [giveRatioPct, setGiveRatioPct] = useState(POLICY_DEFAULTS.giveRatioPct);
-  const [outputVatRatePct, setOutputVatRatePct] = useState(POLICY_DEFAULTS.outputVatRatePct);
-  const [rebateRatePct, setRebateRatePct] = useState(POLICY_DEFAULTS.rebateRatePct);
-  const [stampRatePct, setStampRatePct] = useState(POLICY_DEFAULTS.stampRatePct);
-  const [stampBase, setStampBase] = useState<StampBaseValue>(POLICY_DEFAULTS.stampBase);
+  const [inputVatRatePct, setInputVatRatePct] = useState(
+    POLICY_DEFAULTS.inputVatRatePct,
+  );
+  const [giveRatioPct, setGiveRatioPct] = useState(
+    POLICY_DEFAULTS.giveRatioPct,
+  );
+  const [outputVatRatePct, setOutputVatRatePct] = useState(
+    POLICY_DEFAULTS.outputVatRatePct,
+  );
+  const [rebateRatePct, setRebateRatePct] = useState(
+    POLICY_DEFAULTS.rebateRatePct,
+  );
+  const [stampRatePct, setStampRatePct] = useState(
+    POLICY_DEFAULTS.stampRatePct,
+  );
+  const [stampBase, setStampBase] = useState<StampBaseValue>(
+    POLICY_DEFAULTS.stampBase,
+  );
   const [profitMode, setProfitMode] = useState<ProfitMode>("fixed");
   const [profitValue, setProfitValue] = useState("0.1");
   const [quoteCurrency, setQuoteCurrency] = useState("USD");
@@ -104,8 +131,15 @@ export function QuoteWorkbenchView() {
 
   // ── 报价单与单证 ─────────────────────────────────────────────────────────
   const [quoteOrderId, setQuoteOrderId] = useState<number | null>(null);
-  const [savedDoc, setSavedDoc] = useState<{ id: number; quote_no: string; status: string } | null>(null);
-  const [notice, setNotice] = useState<{ tone: "info" | "error"; text: string } | null>(null);
+  const [savedDoc, setSavedDoc] = useState<{
+    id: number;
+    quote_no: string;
+    status: string;
+  } | null>(null);
+  const [notice, setNotice] = useState<{
+    tone: "info" | "error";
+    text: string;
+  } | null>(null);
   const [docPick, setDocPick] = useState<string[]>(DEFAULT_DOC_PICK);
   const [generating, setGenerating] = useState(false);
 
@@ -166,14 +200,25 @@ export function QuoteWorkbenchView() {
       profitValue,
     }),
     [
-      rateSetCode, fxRate, quoteCurrency, quoteDate, validityDays,
-      inputVatRatePct, giveRatioPct, outputVatRatePct, rebateRatePct,
-      stampRatePct, stampBase, profitMode, profitValue,
+      rateSetCode,
+      fxRate,
+      quoteCurrency,
+      quoteDate,
+      validityDays,
+      inputVatRatePct,
+      giveRatioPct,
+      outputVatRatePct,
+      rebateRatePct,
+      stampRatePct,
+      stampBase,
+      profitMode,
+      profitValue,
     ],
   );
 
   const computed: BuiltLineItem[] = useMemo(
-    () => lines.map((l) => l.built).filter((b): b is BuiltLineItem => b !== null),
+    () =>
+      lines.map((l) => l.built).filter((b): b is BuiltLineItem => b !== null),
     [lines],
   );
   const summary = useMemo(() => summarizeLines(computed), [computed]);
@@ -197,7 +242,8 @@ export function QuoteWorkbenchView() {
   );
 
   // ── 客户税率档案（按「客户 + 产品」存，因此以第 1 行产品为准）──────────────
-  const firstProductKey = lines[0]?.productKey || lines[0]?.result?.meta.product_key || "";
+  const firstProductKey =
+    lines[0]?.productKey || lines[0]?.result?.meta.product_key || "";
   const profilesQuery = useQuoteProfiles(firstProductKey || null);
   const saveProfile = useSaveQuoteProfile(firstProductKey);
   const deleteProfile = useDeleteQuoteProfile(firstProductKey);
@@ -213,8 +259,12 @@ export function QuoteWorkbenchView() {
   const applyProfile = (p: QuoteProfile) => {
     const t = p.tax_overrides ?? {};
     setRateSetCode(p.rate_set_code);
-    setInputVatRatePct(rateToPct(t.input_vat_rate, POLICY_DEFAULTS.inputVatRatePct));
-    setOutputVatRatePct(rateToPct(t.output_vat_rate, POLICY_DEFAULTS.outputVatRatePct));
+    setInputVatRatePct(
+      rateToPct(t.input_vat_rate, POLICY_DEFAULTS.inputVatRatePct),
+    );
+    setOutputVatRatePct(
+      rateToPct(t.output_vat_rate, POLICY_DEFAULTS.outputVatRatePct),
+    );
     setRebateRatePct(rateToPct(t.rebate_rate, POLICY_DEFAULTS.rebateRatePct));
     setStampRatePct(rateToPct(t.stamp_rate, POLICY_DEFAULTS.stampRatePct));
     setStampBase((t.stamp_base as StampBaseValue) ?? POLICY_DEFAULTS.stampBase);
@@ -235,10 +285,18 @@ export function QuoteWorkbenchView() {
     }
     try {
       const t = {
-        ...(pctToRate(inputVatRatePct) !== undefined ? { input_vat_rate: pctToRate(inputVatRatePct) } : {}),
-        ...(pctToRate(outputVatRatePct) !== undefined ? { output_vat_rate: pctToRate(outputVatRatePct) } : {}),
-        ...(pctToRate(rebateRatePct) !== undefined ? { rebate_rate: pctToRate(rebateRatePct) } : {}),
-        ...(pctToRate(stampRatePct) !== undefined ? { stamp_rate: pctToRate(stampRatePct) } : {}),
+        ...(pctToRate(inputVatRatePct) !== undefined
+          ? { input_vat_rate: pctToRate(inputVatRatePct) }
+          : {}),
+        ...(pctToRate(outputVatRatePct) !== undefined
+          ? { output_vat_rate: pctToRate(outputVatRatePct) }
+          : {}),
+        ...(pctToRate(rebateRatePct) !== undefined
+          ? { rebate_rate: pctToRate(rebateRatePct) }
+          : {}),
+        ...(pctToRate(stampRatePct) !== undefined
+          ? { stamp_rate: pctToRate(stampRatePct) }
+          : {}),
         ...(stampBase ? { stamp_base: stampBase } : {}),
       };
       const created = await saveProfile.mutateAsync({
@@ -249,9 +307,15 @@ export function QuoteWorkbenchView() {
       });
       setProfileName("");
       setTaxPick(`profile:${created.id}`);
-      setNotice({ tone: "info", text: `已保存档案「${created.profile_name}」（按客户 + 第 1 行产品存）` });
+      setNotice({
+        tone: "info",
+        text: `已保存档案「${created.profile_name}」（按客户 + 第 1 行产品存）`,
+      });
     } catch (err) {
-      setNotice({ tone: "error", text: handleApiError(err as Parameters<typeof handleApiError>[0]) });
+      setNotice({
+        tone: "error",
+        text: handleApiError(err as Parameters<typeof handleApiError>[0]),
+      });
     }
   };
 
@@ -260,15 +324,22 @@ export function QuoteWorkbenchView() {
       await deleteProfile.mutateAsync(p.id);
       setTaxPick("");
       clearProfileTax();
-      setNotice({ tone: "info", text: `已移除档案「${p.profile_name}」（历史报价不受影响）` });
+      setNotice({
+        tone: "info",
+        text: `已移除档案「${p.profile_name}」（历史报价不受影响）`,
+      });
     } catch (err) {
-      setNotice({ tone: "error", text: handleApiError(err as Parameters<typeof handleApiError>[0]) });
+      setNotice({
+        tone: "error",
+        text: handleApiError(err as Parameters<typeof handleApiError>[0]),
+      });
     }
   };
 
   // ── 保存 / 签发 / 生成单证 ────────────────────────────────────────────────
   const headerPatch = () => ({
-    customer_name: customers.data?.find((c) => String(c.id) === customerId)?.name ?? null,
+    customer_name:
+      customers.data?.find((c) => String(c.id) === customerId)?.name ?? null,
     currency: quoteCurrency,
     valid_until: validUntil(),
     incoterm: termsEnabled ? effectiveQuoteAs : "EXW",
@@ -309,12 +380,23 @@ export function QuoteWorkbenchView() {
           items: items(),
         });
         setQuoteOrderId(created.id);
-        setSavedDoc({ id: created.id, quote_no: created.quote_no, status: created.status });
+        setSavedDoc({
+          id: created.id,
+          quote_no: created.quote_no,
+          status: created.status,
+        });
         setNotice({ tone: "info", text: `已保存为报价单 ${created.quote_no}` });
       } else {
         await update.mutateAsync({ id: quoteOrderId, patch: headerPatch() });
-        const res = await replaceItems.mutateAsync({ id: quoteOrderId, items: items() });
-        setSavedDoc({ id: quoteOrderId, quote_no: savedDoc?.quote_no ?? "", status: savedDoc?.status ?? "draft" });
+        const res = await replaceItems.mutateAsync({
+          id: quoteOrderId,
+          items: items(),
+        });
+        setSavedDoc({
+          id: quoteOrderId,
+          quote_no: savedDoc?.quote_no ?? "",
+          status: savedDoc?.status ?? "draft",
+        });
         setNotice({
           tone: "info",
           text: `已保存（${res.items.length} 行，合计 ${res.total_amount ?? "—"}）`,
@@ -322,7 +404,10 @@ export function QuoteWorkbenchView() {
       }
       window.localStorage.setItem(FX_KEY, fxRate);
     } catch (err) {
-      setNotice({ tone: "error", text: handleApiError(err as Parameters<typeof handleApiError>[0]) });
+      setNotice({
+        tone: "error",
+        text: handleApiError(err as Parameters<typeof handleApiError>[0]),
+      });
     }
   };
 
@@ -334,10 +419,20 @@ export function QuoteWorkbenchView() {
         id: quoteOrderId,
         patch: { status: "sent" as const },
       });
-      setSavedDoc({ id: updated.id, quote_no: updated.quote_no, status: updated.status });
-      setNotice({ tone: "info", text: `${updated.quote_no} 已签发，并已向报价记录台账入账一条` });
+      setSavedDoc({
+        id: updated.id,
+        quote_no: updated.quote_no,
+        status: updated.status,
+      });
+      setNotice({
+        tone: "info",
+        text: `${updated.quote_no} 已签发，并已向报价记录台账入账一条`,
+      });
     } catch (err) {
-      setNotice({ tone: "error", text: handleApiError(err as Parameters<typeof handleApiError>[0]) });
+      setNotice({
+        tone: "error",
+        text: handleApiError(err as Parameters<typeof handleApiError>[0]),
+      });
     }
   };
 
@@ -356,11 +451,14 @@ export function QuoteWorkbenchView() {
     const failed: string[] = [];
     for (const docType of docPick) {
       try {
-        const { data } = await apiClient.post<{ doc_no: string }>("/trade-docs", {
-          doc_type: docType,
-          quote_order_id: quoteOrderId,
-          currency: quoteCurrency,
-        });
+        const { data } = await apiClient.post<{ doc_no: string }>(
+          "/trade-docs",
+          {
+            doc_type: docType,
+            quote_order_id: quoteOrderId,
+            currency: quoteCurrency,
+          },
+        );
         created.push(data.doc_no);
       } catch {
         failed.push(docType);
@@ -369,20 +467,36 @@ export function QuoteWorkbenchView() {
     setGenerating(false);
     if (created.length > 0) {
       toast.success(`已生成 ${created.length} 张单证：${created.join("、")}`);
-      setNotice({ tone: "info", text: `已生成：${created.join("、")}（到「单证」工位预览/签发）` });
+      setNotice({
+        tone: "info",
+        text: `已生成：${created.join("、")}（到「单证」工位预览/签发）`,
+      });
     }
     if (failed.length > 0) {
-      setNotice({ tone: "error", text: `以下类型生成失败：${failed.join("、")}` });
+      setNotice({
+        tone: "error",
+        text: `以下类型生成失败：${failed.join("、")}`,
+      });
     }
   };
 
   const docTypes = useMemo(
     () =>
       getAvailableTemplates()
-        .filter((t) => [
-          "quotation", "pi", "contract", "ci", "pl", "shipping_advice",
-          "weight_list", "quality_cert", "co", "customs_declaration",
-        ].includes(t.doc_type))
+        .filter((t) =>
+          [
+            "quotation",
+            "pi",
+            "contract",
+            "ci",
+            "pl",
+            "shipping_advice",
+            "weight_list",
+            "quality_cert",
+            "co",
+            "customs_declaration",
+          ].includes(t.doc_type),
+        )
         .map((t) => ({ value: t.doc_type, label: t.name_zh })),
     [],
   );
@@ -393,7 +507,8 @@ export function QuoteWorkbenchView() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base">整单参数</CardTitle>
           <CardDescription>
-            这些参数整单只有一份（所有产品行共用）—— 币种、汇率、税率、报价日期与整批费用。
+            这些参数整单只有一份（所有产品行共用）——
+            币种、汇率、税率、报价日期与整批费用。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -445,7 +560,9 @@ export function QuoteWorkbenchView() {
                   }
                   // 切回法定档案 = 不再套用客户档案 → 税率项回到默认。
                   // 不这么做的话，用户以为"取消套用了"，实际还在用档案里的数字。
-                  setRateSetCode(v.startsWith("rate:") ? v.slice("rate:".length) : "");
+                  setRateSetCode(
+                    v.startsWith("rate:") ? v.slice("rate:".length) : "",
+                  );
                   clearProfileTax();
                 }}
                 className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -471,12 +588,12 @@ export function QuoteWorkbenchView() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs">档案名称</Label>
+              <Label className="text-xs">客户税率档案名称</Label>
               <div className="flex gap-1.5">
                 <Input
                   value={profileName}
                   onChange={(e) => setProfileName(e.target.value)}
-                  placeholder="存为档案时的名字"
+                  placeholder="按客户+产品存的常用税率组合名"
                   className="h-8 text-xs"
                   maxLength={60}
                 />
@@ -496,7 +613,9 @@ export function QuoteWorkbenchView() {
                   type="button"
                   className="text-[11px] text-muted-foreground underline"
                   onClick={() => {
-                    const p = profiles.find((x) => `profile:${x.id}` === taxPick);
+                    const p = profiles.find(
+                      (x) => `profile:${x.id}` === taxPick,
+                    );
                     if (p) void onDeleteProfile(p);
                   }}
                 >
@@ -509,37 +628,67 @@ export function QuoteWorkbenchView() {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div className="space-y-1.5">
               <Label className="text-xs">进项票税点（%）</Label>
-              <Input type="number" step="0.1" value={inputVatRatePct}
-                onChange={(e) => setInputVatRatePct(e.target.value)} className="h-8 text-xs" />
+              <Input
+                type="number"
+                step="0.1"
+                value={inputVatRatePct}
+                onChange={(e) => setInputVatRatePct(e.target.value)}
+                className="h-8 text-xs"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">出口退税率（%）</Label>
-              <Input type="number" step="0.1" value={rebateRatePct}
-                onChange={(e) => setRebateRatePct(e.target.value)} className="h-8 text-xs" />
+              <Input
+                type="number"
+                step="0.1"
+                value={rebateRatePct}
+                onChange={(e) => setRebateRatePct(e.target.value)}
+                className="h-8 text-xs"
+              />
               <p className="text-[11px] text-muted-foreground">
-                {rebateRatePct === "" ? "⚠ 未填：按进项税额全额可退估算，报价可能偏低" : "按 HS 核实"}
+                {rebateRatePct === ""
+                  ? "⚠ 未填：按进项税额全额可退估算，报价可能偏低"
+                  : "按 HS 核实"}
               </p>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">让利比例（%）</Label>
-              <Input type="number" step="1" value={giveRatioPct}
-                onChange={(e) => setGiveRatioPct(e.target.value)} className="h-8 text-xs" />
+              <Input
+                type="number"
+                step="1"
+                value={giveRatioPct}
+                onChange={(e) => setGiveRatioPct(e.target.value)}
+                className="h-8 text-xs"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">销项税率（%）</Label>
-              <Input type="number" step="0.1" value={outputVatRatePct}
-                onChange={(e) => setOutputVatRatePct(e.target.value)} className="h-8 text-xs" />
+              <Input
+                type="number"
+                step="0.1"
+                value={outputVatRatePct}
+                onChange={(e) => setOutputVatRatePct(e.target.value)}
+                className="h-8 text-xs"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">印花税率（%）</Label>
-              <Input type="number" step="0.01" placeholder="留空 = 用档案法定值" value={stampRatePct}
-                onChange={(e) => setStampRatePct(e.target.value)} className="h-8 text-xs" />
+              <Input
+                type="number"
+                step="0.01"
+                placeholder="留空 = 用档案法定值"
+                value={stampRatePct}
+                onChange={(e) => setStampRatePct(e.target.value)}
+                className="h-8 text-xs"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">印花税计税基数</Label>
-              <select value={stampBase}
+              <select
+                value={stampBase}
                 onChange={(e) => setStampBase(e.target.value as StampBaseValue)}
-                className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
                 <option value="">跟随档案（现为加工利润）</option>
                 <option value="profit">加工利润</option>
                 <option value="cost">税前成本</option>
@@ -549,12 +698,27 @@ export function QuoteWorkbenchView() {
             <div className="space-y-1.5">
               <Label className="text-xs">整单默认加工利润（元/kg）</Label>
               <div className="flex gap-1.5">
-                <Input type="number" step="0.01" value={profitValue}
-                  onChange={(e) => { setProfitValue(e.target.value); setProfitMode("fixed"); }}
-                  className="h-8 text-xs" />
-                <Input type="number" step="0.1" placeholder="利润率%" value={profitMode === "ratio" ? profitValue : ""}
-                  onChange={(e) => { setProfitValue(e.target.value); setProfitMode("ratio"); }}
-                  className="h-8 text-xs" />
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={profitValue}
+                  onChange={(e) => {
+                    setProfitValue(e.target.value);
+                    setProfitMode("fixed");
+                  }}
+                  className="h-8 text-xs"
+                />
+                <Input
+                  type="number"
+                  step="0.1"
+                  placeholder="利润率%"
+                  value={profitMode === "ratio" ? profitValue : ""}
+                  onChange={(e) => {
+                    setProfitValue(e.target.value);
+                    setProfitMode("ratio");
+                  }}
+                  className="h-8 text-xs"
+                />
               </div>
               <p className="text-[11px] text-muted-foreground">
                 左侧填金额、右侧填利润率，改哪个用哪个；逐行可覆盖
@@ -562,34 +726,59 @@ export function QuoteWorkbenchView() {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">报价币种</Label>
-              <select value={quoteCurrency} onChange={(e) => setQuoteCurrency(e.target.value)}
-                className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <select
+                value={quoteCurrency}
+                onChange={(e) => setQuoteCurrency(e.target.value)}
+                className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
                 {["USD", "EUR", "GBP", "AUD", "CAD", "JPY", "CNY"].map((c) => (
-                  <option key={c} value={c}>{c}</option>
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
                 ))}
               </select>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">汇率（1 CNY = ? {quoteCurrency}）</Label>
-              <Input type="number" step="0.0001" value={fxRate}
-                onChange={(e) => setFxRate(e.target.value)} className="h-8 text-xs" />
+              <Label className="text-xs">
+                汇率（1 CNY = ? {quoteCurrency}）
+              </Label>
+              <Input
+                type="number"
+                step="0.0001"
+                value={fxRate}
+                onChange={(e) => setFxRate(e.target.value)}
+                className="h-8 text-xs"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">报价日期</Label>
-              <Input type="date" value={quoteDate}
-                onChange={(e) => setQuoteDate(e.target.value)} className="h-8 text-xs" />
+              <Input
+                type="date"
+                value={quoteDate}
+                onChange={(e) => setQuoteDate(e.target.value)}
+                className="h-8 text-xs"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">报价有效期（天）</Label>
-              <Input type="number" min={1} max={365} value={validityDays}
-                onChange={(e) => setValidityDays(e.target.value)} className="h-8 text-xs" />
+              <Input
+                type="number"
+                min={1}
+                max={365}
+                value={validityDays}
+                onChange={(e) => setValidityDays(e.target.value)}
+                className="h-8 text-xs"
+              />
             </div>
           </div>
 
           <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
             <label className="flex items-center gap-2 text-xs">
-              <input type="checkbox" checked={termsEnabled}
-                onChange={(e) => setTermsEnabled(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={termsEnabled}
+                onChange={(e) => setTermsEnabled(e.target.checked)}
+              />
               启用出口费用（FOB / CFR / CIF）—— 不启用则按**出厂价 EXW**报价
             </label>
             {termsEnabled && termsTemplate && (
@@ -597,22 +786,45 @@ export function QuoteWorkbenchView() {
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <div className="space-y-1.5">
                     <Label className="text-xs">对外报价条款</Label>
-                    <select value={effectiveQuoteAs} onChange={(e) => setQuoteAs(e.target.value)}
-                      className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <select
+                      value={effectiveQuoteAs}
+                      onChange={(e) => setQuoteAs(e.target.value)}
+                      className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
                       {termsTemplate.ladder.map((r) => (
-                        <option key={r.code} value={r.code}>{r.label || r.code}</option>
+                        <option key={r.code} value={r.code}>
+                          {r.label || r.code}
+                        </option>
                       ))}
                     </select>
                   </div>
-                  {Object.entries(termsTemplate.items ?? {}).map(([key, fee]) => (
-                    <div key={key} className="space-y-1.5">
-                      <Label className="text-xs">{fee.name}{fee.unit_hint ? `（${fee.unit_hint}）` : ""}</Label>
-                      <Input type="number" step="any" value={feeInputs[key] ?? ""}
-                        onChange={(e) => setFeeInputs((p) => ({ ...p, [key]: e.target.value }))}
-                        className="h-8 text-xs" />
-                      {fee.note && <p className="text-[11px] text-muted-foreground">{fee.note}</p>}
-                    </div>
-                  ))}
+                  {Object.entries(termsTemplate.items ?? {}).map(
+                    ([key, fee]) => (
+                      <div key={key} className="space-y-1.5">
+                        <Label className="text-xs">
+                          {fee.name}
+                          {fee.unit_hint ? `（${fee.unit_hint}）` : ""}
+                        </Label>
+                        <Input
+                          type="number"
+                          step="any"
+                          value={feeInputs[key] ?? ""}
+                          onChange={(e) =>
+                            setFeeInputs((p) => ({
+                              ...p,
+                              [key]: e.target.value,
+                            }))
+                          }
+                          className="h-8 text-xs"
+                        />
+                        {fee.note && (
+                          <p className="text-[11px] text-muted-foreground">
+                            {fee.note}
+                          </p>
+                        )}
+                      </div>
+                    ),
+                  )}
                 </div>
                 <p className="text-[11px] text-muted-foreground">
                   整批费用按**件数比例**分摊到每个产品行；摊到单卷后各行一致，逐行累加等于整批金额。
@@ -620,7 +832,9 @@ export function QuoteWorkbenchView() {
               </>
             )}
             {termsEnabled && termsQuery.isError && (
-              <p className="text-xs text-destructive">费用结构加载失败，请刷新重试</p>
+              <p className="text-xs text-destructive">
+                费用结构加载失败，请刷新重试
+              </p>
             )}
           </div>
 
@@ -628,20 +842,31 @@ export function QuoteWorkbenchView() {
             <div className="space-y-1.5">
               <Label className="text-xs">结果视图</Label>
               <div className="flex gap-2">
-                {([["customer", "客户视图"], ["internal", "内部核算"]] as [QuoteView, string][]).map(
-                  ([k, label]) => (
-                    <button key={k} type="button"
-                      onClick={() => { setView(k); setLines((prev) => prev.map((l) => ({ ...l, result: null, built: null }))); }}
-                      className={cn(
-                        "rounded-lg border px-3 py-1.5 text-xs transition-colors",
-                        view === k
-                          ? "border-primary bg-primary/10 font-medium text-foreground"
-                          : "border-input text-muted-foreground hover:text-foreground",
-                      )}>
-                      {label}
-                    </button>
-                  ),
-                )}
+                {(
+                  [
+                    ["customer", "客户视图"],
+                    ["internal", "内部核算"],
+                  ] as [QuoteView, string][]
+                ).map(([k, label]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => {
+                      setView(k);
+                      setLines((prev) =>
+                        prev.map((l) => ({ ...l, result: null, built: null })),
+                      );
+                    }}
+                    className={cn(
+                      "rounded-lg border px-3 py-1.5 text-xs transition-colors",
+                      view === k
+                        ? "border-primary bg-primary/10 font-medium text-foreground"
+                        : "border-input text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
             <p className="text-[11px] text-muted-foreground">
@@ -662,9 +887,13 @@ export function QuoteWorkbenchView() {
           terms={termsByLine?.terms[index] ?? null}
           lineCount={lines.length}
           onChange={(patch) =>
-            setLines((prev) => prev.map((l) => (l.id === line.id ? { ...l, ...patch } : l)))
+            setLines((prev) =>
+              prev.map((l) => (l.id === line.id ? { ...l, ...patch } : l)),
+            )
           }
-          onRemove={() => setLines((prev) => prev.filter((l) => l.id !== line.id))}
+          onRemove={() =>
+            setLines((prev) => prev.filter((l) => l.id !== line.id))
+          }
         />
       ))}
 
@@ -672,7 +901,9 @@ export function QuoteWorkbenchView() {
         type="button"
         variant="outline"
         className="w-full"
-        onClick={() => setLines((prev) => [...prev, newLineDraft(prev[0]?.productKey ?? "")])}
+        onClick={() =>
+          setLines((prev) => [...prev, newLineDraft(prev[0]?.productKey ?? "")])
+        }
       >
         <Plus className="mr-1.5 size-4" />
         再添加一个产品

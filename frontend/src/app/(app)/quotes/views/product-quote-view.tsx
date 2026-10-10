@@ -750,7 +750,7 @@ export function ProductQuoteView() {
                 )}
                 {(products.data?.products ?? []).map((p) => (
                   <option key={p.key} value={p.key}>
-                    {p.name}（{p.spec_summary || `${p.combo_count} 种规格`}）
+                    {p.name}
                   </option>
                 ))}
               </select>

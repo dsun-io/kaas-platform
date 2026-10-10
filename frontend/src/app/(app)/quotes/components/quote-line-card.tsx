@@ -114,7 +114,8 @@ export function QuoteLineCard({
   // 换产品 → 规格空间变了 → 回到"未选择"。
   // 不预置第一组取值：预置会让人不填就报价，而规格决定成本/重量/体积。
   useEffect(() => {
-    if (formulas.data) onChange({ spec: {}, result: null, built: null, error: null });
+    if (formulas.data)
+      onChange({ spec: {}, result: null, built: null, error: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formulas.data]);
 
@@ -133,20 +134,25 @@ export function QuoteLineCard({
   const baseOf = (variant: string, key: string): string =>
     pieceDefault(groups, line.spec, variant, key);
 
-  const displayOf = (
-    pi: { key: string; variant: string; ui_scale?: number; ui_unit?: string; unit: string },
-  ): { value: string; hint: string } => {
+  const displayOf = (pi: {
+    key: string;
+    variant: string;
+    ui_scale?: number;
+    ui_unit?: string;
+    unit: string;
+  }): { value: string; hint: string } => {
     const typed = line.pieceOverrides[pi.key];
     const d = baseOf(pi.variant, pi.key);
     const scale = pieceScale(pi as never);
-    const hint = d
-      ? String(scale6((Number(d) || 0) * scale))
-      : "";
+    const hint = d ? String(scale6((Number(d) || 0) * scale)) : "";
     if (typed !== undefined && typed !== "") return { value: typed, hint };
     return { value: hint, hint };
   };
 
-  const baseOverrideOf = (pi: { key: string; ui_scale?: number }) : number | null => {
+  const baseOverrideOf = (pi: {
+    key: string;
+    ui_scale?: number;
+  }): number | null => {
     const typed = line.pieceOverrides[pi.key];
     if (typed === undefined || typed === "") return null;
     const n = Number(typed);
@@ -158,7 +164,7 @@ export function QuoteLineCard({
     ? Number(baseOf(unitQtyInput.variant, unitQtyInput.key)) || 0
     : 0;
   const unitQty = unitQtyInput
-    ? baseOverrideOf(unitQtyInput) ?? unitQtyDefault
+    ? (baseOverrideOf(unitQtyInput) ?? unitQtyDefault)
     : 0;
   const total = unitQty * (Number(line.pieces) || 0);
 
@@ -175,7 +181,9 @@ export function QuoteLineCard({
     return out;
   })();
 
-  const specReady = formulas.data ? isSpecComplete(formulas.data, line.spec) : false;
+  const specReady = formulas.data
+    ? isSpecComplete(formulas.data, line.spec)
+    : false;
   const canSubmit =
     !!effectiveProduct && specReady && Number(shared.fxRate) > 0 && total > 0;
 
@@ -300,7 +308,7 @@ export function QuoteLineCard({
               )}
               {(products.data?.products ?? []).map((p) => (
                 <option key={p.key} value={p.key}>
-                  {p.name}（{p.spec_summary || `${p.combo_count} 种规格`}）
+                  {p.name}
                 </option>
               ))}
             </select>
@@ -400,7 +408,9 @@ export function QuoteLineCard({
               disabled={!canSubmit || calc.isPending}
               onClick={compute}
             >
-              {calc.isPending && <Loader2 className="mr-2 size-3.5 animate-spin" />}
+              {calc.isPending && (
+                <Loader2 className="mr-2 size-3.5 animate-spin" />
+              )}
               {calc.isPending ? "计算中…" : "计算本行"}
             </Button>
             {!canSubmit && !calc.isPending && (
@@ -413,7 +423,9 @@ export function QuoteLineCard({
           {line.built && (
             <dl className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
               <div>
-                <dt className="text-muted-foreground">单卷价（{shared.quoteCurrency}/卷）</dt>
+                <dt className="text-muted-foreground">
+                  单卷价（{shared.quoteCurrency}/卷）
+                </dt>
                 <dd className="tabular-nums">
                   {unitPriceFx === null ? "—" : unitPriceFx.toFixed(4)}
                 </dd>
@@ -425,7 +437,9 @@ export function QuoteLineCard({
                 </dd>
               </div>
               <div>
-                <dt className="text-muted-foreground">行小计（{shared.quoteCurrency}）</dt>
+                <dt className="text-muted-foreground">
+                  行小计（{shared.quoteCurrency}）
+                </dt>
                 <dd className="font-medium tabular-nums">
                   {lineAmount === null ? "—" : lineAmount.toFixed(2)}
                 </dd>
@@ -445,8 +459,8 @@ export function QuoteLineCard({
             <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
             <p>
               单证要素缺失：{line.built.missing.join("、")}。
-              缺项会在单证上留空白（**不会填 0** —— 报关表上印 0 重量比空白更危险），
-              请在单证工位补齐后再签发。
+              缺项会在单证上留空白（**不会填 0** —— 报关表上印 0
+              重量比空白更危险）， 请在单证工位补齐后再签发。
             </p>
           </div>
         )}
@@ -469,7 +483,10 @@ export function QuoteLineCard({
               )}
             >
               <ChevronDown
-                className={cn("size-3.5 transition-transform", expanded && "rotate-180")}
+                className={cn(
+                  "size-3.5 transition-transform",
+                  expanded && "rotate-180",
+                )}
               />
               {expanded ? "收起完整算价表" : "查看完整算价表"}
             </button>
