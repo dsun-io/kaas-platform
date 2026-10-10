@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from ..models import ProductSpec, Axis, VariantGroup, FormulaSpec, Column, Invariant, SpaceDeduction
+from .models import ProductSpec, Axis, VariantGroup, FormulaSpec, Column, Invariant, SpaceDeduction
 
 
 def spec_from_dict(data: dict) -> ProductSpec:

@@ -80,6 +80,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
 export const SUB_ROUTE_LABELS: Record<string, string> = {
   'company-profile': '企业信息',
   'ai-providers': 'AI Providers',
+  'tenant-products': '产品定义管理',
   'spec-proposals': '属性提案审核',
   wizard: '向导',
   'v2-quote': '产品报价',
@@ -285,6 +286,17 @@ export const WORKSTATIONS: readonly Workstation[] = [
     icon: 'Sparkles',
     adminOnly: true,
     status: 'active', // 已并入系统设置内部（侧边栏项保留，位置紧随设置）
+    subscription: null,
+  },
+  {
+    key: 'tenant-products',
+    name: '产品定义管理',
+    route: '/settings/tenant-products',
+    group: 'admin',
+    order: 21,
+    icon: 'Package',
+    adminOnly: true,
+    status: 'active', // 租户级产品配置化（权限矩阵未完成，见 docs/PRODUCT_CONFIG_TENANT_UNFINISHED.md）
     subscription: null,
   },
 
