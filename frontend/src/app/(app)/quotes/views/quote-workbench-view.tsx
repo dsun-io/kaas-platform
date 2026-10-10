@@ -627,7 +627,12 @@ export function QuoteWorkbenchView() {
 
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div className="space-y-1.5">
-              <Label className="text-xs">进项票税点（%）</Label>
+              <Label
+                className="text-xs"
+                title="供应商开票的税点（如 10%）。用于换算含税采购价、进项税额，以及「可退进项税额 = 进项税额 × 退税率 ÷ 票税点」"
+              >
+                进项票税点（%）
+              </Label>
               <Input
                 type="number"
                 step="0.1"
@@ -637,7 +642,12 @@ export function QuoteWorkbenchView() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">出口退税率（%）</Label>
+              <Label
+                className="text-xs"
+                title="按产品 HS 编码确定的出口退税率。可退进项增值税税额 = 进项税额 × (退税率 ÷ 票税点)，未填时按全额可退估算（报价会偏高）"
+              >
+                出口退税率（%）
+              </Label>
               <Input
                 type="number"
                 step="0.1"
@@ -652,7 +662,12 @@ export function QuoteWorkbenchView() {
               </p>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">让利比例（%）</Label>
+              <Label
+                className="text-xs"
+                title="让出可退进项增值税额的比例（100% = 全部让利给客户换竞争力，0% = 自留对冲风险）。让利额 = 可退进项税额 × 让利比例"
+              >
+                让利比例（%）
+              </Label>
               <Input
                 type="number"
                 step="1"
@@ -662,7 +677,12 @@ export function QuoteWorkbenchView() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">销项税率（%）</Label>
+              <Label
+                className="text-xs"
+                title="销项增值税税率（出口零税率填 0）。计税基数是售价不是成本：销项税额 = 不含税售价 × 销项税率"
+              >
+                销项税率（%）
+              </Label>
               <Input
                 type="number"
                 step="0.1"
@@ -672,7 +692,12 @@ export function QuoteWorkbenchView() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">印花税率（%）</Label>
+              <Label
+                className="text-xs"
+                title="印花税率。margin_on_price 售价加成模式下已并入「综合税费系数」（0.03），此处不再单独计征"
+              >
+                印花税率（%）
+              </Label>
               <Input
                 type="number"
                 step="0.01"
@@ -696,7 +721,12 @@ export function QuoteWorkbenchView() {
               </select>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">整单默认加工利润（元/kg）</Label>
+              <Label
+                className="text-xs"
+                title="整单默认加工利润。多产品报价时各行可单独覆盖；留空则所有行用此值。固定额模式 = 元/kg，利润率模式 = 税前成本 × 利润率"
+              >
+                整单默认加工利润
+              </Label>
               <div className="flex gap-1.5">
                 <Input
                   type="number"

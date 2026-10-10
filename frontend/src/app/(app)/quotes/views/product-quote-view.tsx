@@ -985,7 +985,12 @@ export function ProductQuoteView() {
 
             {/* 金额与利润率是一对，互为换算，必须相邻同排 */}
             <div className="space-y-1.5">
-              <Label className="text-xs">加工利润（元/kg）</Label>
+              <Label
+                className="text-xs"
+                title="每公斤的加工所得，全单只计一次。利润率模式下 = 税前成本 × 利润率"
+              >
+                加工利润（元/kg）
+              </Label>
               <Input
                 type="number"
                 step="0.01"
@@ -1000,7 +1005,12 @@ export function ProductQuoteView() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs">利润率（%）</Label>
+              <Label
+                className="text-xs"
+                title="按税前成本计：利润率 = 加工利润 ÷ 税前成本。margin_on_price 模式下售价 = 成本 ÷ (1 − 利润率 − 综合税费系数)"
+              >
+                利润率（%）
+              </Label>
               <Input
                 type="number"
                 step="0.1"
@@ -1023,7 +1033,12 @@ export function ProductQuoteView() {
           />
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <div className="space-y-1.5">
-              <Label className="text-xs">进项票税点（%）</Label>
+              <Label
+                className="text-xs"
+                title="供应商开票的税点（如 10%）。决定含税采购价 = 税前成本 ÷ (1 − 票税点)，以及可退进项税额 = 进项税额 × 退税率 ÷ 票税点"
+              >
+                进项票税点（%）
+              </Label>
               <Input
                 type="number"
                 step="0.1"
@@ -1038,7 +1053,12 @@ export function ProductQuoteView() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs">出口退税率（%）</Label>
+              <Label
+                className="text-xs"
+                title="按 HS 编码确定的出口退税率。可退进项增值税税额 = 进项税额 × (退税率 ÷ 票税点)，上限为已缴进项税额"
+              >
+                出口退税率（%）
+              </Label>
               <Input
                 type="number"
                 step="0.1"
@@ -1055,7 +1075,12 @@ export function ProductQuoteView() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs">让利比例（%）</Label>
+              <Label
+                className="text-xs"
+                title="让出可退进项增值税额的比例（100% = 全部让利换竞争力，0% = 自留对冲风险）。让利额 = 可退进项税额 × 让利比例"
+              >
+                让利比例（%）
+              </Label>
               <Input
                 type="number"
                 step="1"
