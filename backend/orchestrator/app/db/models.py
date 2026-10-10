@@ -462,6 +462,42 @@ class Customer(Base):
     )
 
 
+class TenantProduct(Base):
+    """租户级产品定义（运行时配置化）。
+
+    加载优先级：tenant_products（租户级）> products/ Python 定义（系统级兜底）。
+    权限矩阵（**未完成**）：is_system=true 系统级产品所有租户可见，
+    is_system=false 租户级产品仅本租户可见。
+    详见 docs/PRODUCT_CONFIG_TENANT_UNFINISHED.md
+    """
+    __tablename__ = "tenant_products"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    product_key = Column(Text, nullable=False)
+    product_name = Column(Text, nullable=False)
+    product_name_en = Column(Text, nullable=True)
+    category_code = Column(Text, nullable=True)
+    cost_field = Column(Text, nullable=True, default="raw_price")
+    cost_basis = Column(Text, nullable=True, default="pretax")
+    cost_unit = Column(Text, nullable=True)
+    # 产品级利润配置（优先级：产品级 > 报价单级 > 税务档案）
+    profit_mode = Column(Text, nullable=True, default="margin_on_price")
+    profit_value = Column(Numeric(10, 6), nullable=True, default=0.06)
+    misc_fee_rate = Column(Numeric(10, 6), nullable=True, default=0.03)
+    # 完整 ProductSpec（JSONB，含 axes/variants/derived/columns/invariants）
+    spec = Column(JSONB, nullable=False)
+    is_system = Column(Boolean, nullable=False, default=False, server_default="false")
+    is_active = Column(Boolean, nullable=False, default=True, server_default="true")
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("uq_tenant_products_key", "tenant_id", "product_key", unique=True),
+        Index("idx_tenant_products_tenant", "tenant_id", "is_active"),
+    )
+
+
 class UserCustomer(Base):
     """用户-客户绑定表"""
     __tablename__ = "user_customers"
