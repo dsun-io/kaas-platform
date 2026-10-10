@@ -1,4 +1,4 @@
-﻿"""订单工位 API（WORKSTATION_DESIGN.md §5-§6 / §10.2 / §10.5 / §10.7）
+"""订单工位 API（WORKSTATION_DESIGN.md §5-§6 / §10.2 / §10.5 / §10.7）
 
 端点：
 - GET   /api/v1/orders                          订单列表（分页 + 筛选 + 可见范围）
@@ -128,68 +128,23 @@ def _parse_date(value: Optional[str]):
 
 
 def _row_to_order(o: Order) -> dict:
-    return {
-        "id": o.id, "order_no": o.order_no, "customer_id": o.customer_id,
-        "customer_name": o.customer_name, "status": o.status, "currency": o.currency,
-        "total_amount": float(o.total_amount) if o.total_amount is not None else None,
-        "order_date": o.order_date.isoformat() if o.order_date else None,
-        "delivery_date": o.delivery_date.isoformat() if o.delivery_date else None,
-        "notes": o.notes,
-        "fx_rate": float(o.fx_rate) if o.fx_rate is not None else None,
-        "fx_rate_date": o.fx_rate_date.isoformat() if o.fx_rate_date else None,
-        "created_at": o.created_at.isoformat() if o.created_at else None,
-        "owner_id": o.owner_id, "owner_scope": o.owner_scope,
-        # 贸易条款（单证要继承印在单据上）
-        "incoterm": o.incoterm, "payment_terms": o.payment_terms,
-        "port_of_loading": o.port_of_loading,
-        "port_of_destination": o.port_of_destination,
-        "shipping_marks": o.shipping_marks,
-        "country_of_origin": o.country_of_origin,
-    }
+    from kaas_common.workstation.order_serializers import row_to_order
+    return row_to_order(o)
 
 
 def _row_to_item(it: OrderItem) -> dict:
-    return {
-        "id": it.id, "sku_id": it.sku_id, "product_name": it.product_name,
-        "spec_snapshot": it.spec_snapshot,
-        "qty": float(it.qty) if it.qty is not None else None,
-        "qty_unit": it.qty_unit,
-        "unit_price": float(it.unit_price) if it.unit_price is not None else None,
-        "currency": it.currency,
-        "line_amount": float(it.line_amount) if it.line_amount is not None else None,
-        "sort_order": it.sort_order,
-    }
+    from kaas_common.workstation.order_serializers import row_to_order_item
+    return row_to_order_item(it)
 
 
 def _row_to_schedule(s: PaymentSchedule) -> dict:
-    return {
-        "id": s.id, "order_id": s.order_id, "trade_doc_id": s.trade_doc_id,
-        "schedule_type": s.schedule_type,
-        "ratio": float(s.ratio) if s.ratio is not None else None,
-        "amount": float(s.amount) if s.amount is not None else None,
-        "currency": s.currency, "due_date": s.due_date.isoformat() if s.due_date else None,
-        "actual_date": s.actual_date.isoformat() if s.actual_date else None,
-        "status": s.status,
-        "fx_rate": float(s.fx_rate) if s.fx_rate is not None else None,
-        "exchange_gain_loss": float(s.exchange_gain_loss) if s.exchange_gain_loss is not None else None,
-        "notes": s.notes,
-        "created_at": s.created_at.isoformat() if s.created_at else None,
-    }
+    from kaas_common.workstation.order_serializers import row_to_schedule
+    return row_to_schedule(s)
 
 
 def _row_to_receivable(r: Receivable) -> dict:
-    return {
-        "id": r.id, "order_id": r.order_id, "currency": r.currency,
-        "total_amount": float(r.total_amount),
-        "fx_rate": float(r.fx_rate) if r.fx_rate is not None else None,
-        "fx_rate_date": r.fx_rate_date.isoformat() if r.fx_rate_date else None,
-        "base_currency": r.base_currency,
-        "base_amount": float(r.base_amount) if r.base_amount is not None else None,
-        "received_amount": float(r.received_amount),
-        "exchange_gain_loss": float(r.exchange_gain_loss) if r.exchange_gain_loss is not None else None,
-        "status": r.status,
-        "created_at": r.created_at.isoformat() if r.created_at else None,
-    }
+    from kaas_common.workstation.order_serializers import row_to_receivable
+    return row_to_receivable(r)
 
 
 async def _get_order_or_404(db, tenant_id, order_id, auth) -> Order:
