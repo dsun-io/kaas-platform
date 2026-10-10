@@ -148,11 +148,19 @@ class PricingPolicy:
     input_vat_rate: Any = 0  # 进项票税点（供应商属性，非国家法定）
     output_vat_rate: Any = 0  # 销项税率；出口零税率填 0
     output_vat_mode: str = "additive"  # additive(价外) | inclusive(价内拆解)
-    profit_mode: str = "fixed"  # fixed | ratio
+    # fixed: 加工利润 = 固定额；ratio: 加工利润 = 税前成本 × 利润率；
+    # margin_on_price: 售价加成模型（对齐业务在用的报价口径）
+    #     不含税售价 = 税前成本 ÷ (1 − 利润率 − 综合税费系数)
+    #     利润(对销项口径) = 不含税售价 × (1 − 综合税费系数) − 税前成本
+    #     其中「综合税费系数」是除销项增值税外的印花税/土地税/个税等杂税总和，
+    #     相对销项计征（本模式下已并入售价，不再单独计印花税）。
+    profit_mode: str = "fixed"  # fixed | ratio | margin_on_price
     profit_value: Any = 0
+    misc_fee_rate: Any = 0  # 综合税费系数（margin_on_price 模式使用，默认 0.03）
     give_ratio: Any = 0  # 让出可退进项增值税税额的比例
     refund_ratio: Any = 1  # 可退税比例；'auto' = 出口退税率 ÷ 进项票税点
     rebate_rate: Any = None  # 出口退税率（auto 模式使用）
+    # 印花税（仅 fixed/ratio 模式生效；margin_on_price 模式已并入综合税费系数）
     stamp_rate: Any = 0
     stamp_base: str = "profit"
     extras: tuple = ()
@@ -244,15 +252,35 @@ class PricingPolicy:
 
         # ① 采购与利润
         cost_incl = mode.quantize(mode.divide(cost, one - vat), nd["cost_incl"])
+        misc_rate = _num(self.misc_fee_rate, mode) or mode.convert(0)
+        if misc_rate < 0 or misc_rate >= one:
+            raise PricingError(f"综合税费系数必须在 [0, 1) 内（当前 {misc_rate}）")
+        margin_mode = self.profit_mode == "margin_on_price"
         if self.profit_mode == "fixed":
             profit = _num(self.profit_value, mode)
         elif self.profit_mode == "ratio":
             profit = cost * _num(self.profit_value, mode)
+        elif margin_mode:
+            # 售价加成模型（对齐在用业务口径）：不含税售价 = 税前成本 ÷ (1 − 利润率 − 综合税费系数)
+            profit_margin = _num(self.profit_value, mode)
+            denom = one - profit_margin - misc_rate
+            if denom <= 0:
+                raise PricingError(
+                    f"售价加成模型要求 利润率 + 综合税费系数 < 1（当前 {profit_margin} + {misc_rate}）"
+                )
+            # 先按原始精度算出售价，再由「售价 × (1 − 综合税费系数) − 成本」导出利润，
+            # 保证利润与售价口径自洽（与业务在用表格的 0.97 折算一致）。
+            base_quote_raw = mode.divide(cost, denom)
+            profit_raw = base_quote_raw * (one - misc_rate) - cost
+            profit = mode.quantize(profit_raw, nd["profit_amount"])
+            pretax_quote = mode.quantize(cost + profit, nd["pretax_quote"])
+            base_quote = mode.quantize(base_quote_raw, nd["base_quote"])
         else:
             raise PricingError(f"未知的利润模式: {self.profit_mode}")
-        profit = mode.quantize(profit, nd["profit_amount"])
-        pretax_quote = mode.quantize(cost + profit, nd["pretax_quote"])
-        base_quote = mode.quantize(cost_incl + profit, nd["base_quote"])
+        if not margin_mode:
+            profit = mode.quantize(profit, nd["profit_amount"])
+            pretax_quote = mode.quantize(cost + profit, nd["pretax_quote"])
+            base_quote = mode.quantize(cost_incl + profit, nd["base_quote"])
 
         # ② 进项增值税与退税
         input_vat = mode.quantize(cost_incl - cost, nd["input_vat"])
@@ -274,10 +302,19 @@ class PricingPolicy:
             raise PricingError(
                 f"未知的印花税基数: {self.stamp_base}（可选 {' | '.join(STAMP_BASES)}）"
             )
-        stamp = mode.quantize(stamp_base_val * _num(self.stamp_rate, mode), nd["stamp_duty"])
+        if margin_mode:
+            # 综合税费系数已并入售价加成模型，不再单独计印花税（印花税是其组成部分之一）
+            stamp = mode.convert(0)
+        else:
+            stamp = mode.quantize(stamp_base_val * _num(self.stamp_rate, mode), nd["stamp_duty"])
 
         # ④ 不含税售价（价链输出，与税制无关）
-        chain_amount = mode.quantize(base_quote - give + stamp, nd["quote_excl_vat"])
+        if margin_mode:
+            # 售价加成模型：售价直接由成本与利润率决定，不叠加让利/印花税
+            # （让利与退税信息保留在价链明细里，作为内部核算口径）
+            chain_amount = base_quote
+        else:
+            chain_amount = mode.quantize(base_quote - give + stamp, nd["quote_excl_vat"])
 
         # ⑤ 销项增值税：价外税，基数是售价
         out_vat = _num(self.output_vat_rate, mode)
@@ -312,14 +349,25 @@ class PricingPolicy:
             extras_total = extras_total + amt
         quote_final = mode.quantize(quote_incl_vat + extras_total, nd["quote_final"])
 
-        # 等价式自检：不含税售价 = 成本 + 利润 + 不可退进项税额 + 自留可退税额 + 印花税
-        check = pretax_quote + non_refundable + retained + stamp
-        if mode.quantize(check, nd["quote_excl_vat"]) != chain_amount:
-            raise PricingError(
-                "价链不闭合: 不含税售价 = "
-                f"{chain_amount}, 成本+利润+不可退进项税额+自留可退税额+印花税 = "
-                f"{mode.quantize(check, nd['quote_excl_vat'])}"
-            )
+        if margin_mode:
+            # 售价加成模型自检：售价 = 成本 ÷ (1 − 利润率 − 综合税费系数)
+            # 且 利润 = 售价 × (1 − 综合税费系数) − 成本（与业务口径一致）
+            denom = one - _num(self.profit_value, mode) - misc_rate
+            want_price = mode.quantize(mode.divide(cost, denom), nd["quote_excl_vat"])
+            if chain_amount != want_price:
+                raise PricingError(
+                    f"售价加成模型不闭合: 不含税售价 {chain_amount} ≠ "
+                    f"成本 ÷ (1 − 利润率 − 综合税费系数) = {want_price}"
+                )
+        else:
+            # 等价式自检：不含税售价 = 成本 + 利润 + 不可退进项税额 + 自留可退税额 + 印花税
+            check = pretax_quote + non_refundable + retained + stamp
+            if mode.quantize(check, nd["quote_excl_vat"]) != chain_amount:
+                raise PricingError(
+                    "价链不闭合: 不含税售价 = "
+                    f"{chain_amount}, 成本+利润+不可退进项税额+自留可退税额+印花税 = "
+                    f"{mode.quantize(check, nd['quote_excl_vat'])}"
+                )
 
         return {
             # ①
@@ -337,6 +385,8 @@ class PricingPolicy:
             "retained_refundable": retained,
             # ③
             "stamp_duty": stamp,
+            "misc_fee_rate": misc_rate,
+            "profit_margin": _num(self.profit_value, mode) if margin_mode else None,
             # ④
             "chain_amount": chain_amount,
             # ⑤
@@ -408,6 +458,7 @@ def policy_from_dict(cfg: dict | None) -> PricingPolicy:
         output_vat_mode=out_vat_mode,
         profit_mode=profit.get("mode", "fixed"),
         profit_value=profit.get("value", 0),
+        misc_fee_rate=cfg.get("misc_fee_rate", profit.get("misc_fee_rate", 0)),
         give_ratio=refund.get("give_ratio", 0),
         refund_ratio=refund.get("refund_ratio", 1),
         rebate_rate=refund.get("rebate_rate"),

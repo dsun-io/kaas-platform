@@ -310,6 +310,30 @@ class TestIdentity:
         bd = policy(profit_mode="ratio", profit_value=D("0.06")).breakdown(D("4.0"))
         assert bd["profit_amount"] == D("0.2400")
 
+    def test_margin_on_price_matches_business_formula(self):
+        """售价加成模型：不含税售价 = 成本 ÷ (1 − 利润率 − 综合税费系数)。
+
+        取自业务在用报价表（牛栏网，成本 281.9561，利润率 6%，综合税费系数 3%）：
+        售价应为 309.8419（表格 309.841918…），利润 = 售价 × 0.97 − 成本 = 18.5905。
+        """
+        bd = policy(
+            profit_mode="margin_on_price",
+            profit_value=D("0.06"),
+            misc_fee_rate=D("0.03"),
+            stamp_rate=D("0"),
+        ).breakdown(D("281.9561"))
+        assert bd["quote_excl_vat"] == D("309.8419")
+        assert bd["profit_amount"] == D("18.5905")
+        assert bd["stamp_duty"] == 0
+
+    def test_margin_on_price_rejects_invalid_denominator(self):
+        with pytest.raises(PricingError, match="售价加成模型"):
+            policy(
+                profit_mode="margin_on_price",
+                profit_value=D("0.98"),
+                misc_fee_rate=D("0.03"),
+            ).breakdown(D("10"))
+
     def test_extras_stack_on_incl_vat_price(self):
         p = policy(extras=(ExtraFee("银行费用", "ratio_of_quote", D("0.001")),))
         bd = p.breakdown(D("4.4"))

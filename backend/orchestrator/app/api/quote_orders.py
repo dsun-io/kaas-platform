@@ -73,6 +73,16 @@ class QuoteItemIn(BaseModel):
     currency: Optional[str] = None
     line_amount: Optional[Decimal] = None
     sort_order: int = 0
+    # ── 多产品逐行计算上下文 + 手动干预 ──
+    # 行级报价政策覆盖（利润率/综合税费系数等），空则继承报价单共享政策
+    policy_override: Optional[dict] = None
+    # auto（公式自动）| manual（非标产品手动给价）| overridden（覆盖公式结果）
+    price_source: str = "auto"
+    cost_override: Optional[Decimal] = None
+    price_override: Optional[Decimal] = None
+    weight_override: Optional[Decimal] = None
+    volume_override: Optional[Decimal] = None
+    image_url: Optional[str] = None
 
 
 class QuoteOrderCreate(BaseModel):
@@ -145,6 +155,13 @@ def _row_to_item(it: QuoteOrderItem) -> dict:
         "currency": it.currency,
         "line_amount": float(it.line_amount) if it.line_amount is not None else None,
         "sort_order": it.sort_order,
+        "policy_override": it.policy_override,
+        "price_source": it.price_source,
+        "cost_override": float(it.cost_override) if it.cost_override is not None else None,
+        "price_override": float(it.price_override) if it.price_override is not None else None,
+        "weight_override": float(it.weight_override) if it.weight_override is not None else None,
+        "volume_override": float(it.volume_override) if it.volume_override is not None else None,
+        "image_url": it.image_url,
         "created_at": it.created_at.isoformat() if it.created_at else None,
     }
 
@@ -171,6 +188,13 @@ def _build_items(tenant_id: str, currency: str, rows: List[QuoteItemIn]) -> tupl
             unit_price=row.unit_price,
             currency=validate_enum("currency", row.currency) if row.currency else currency,
             line_amount=line, sort_order=row.sort_order,
+            policy_override=row.policy_override,
+            price_source=row.price_source,
+            cost_override=row.cost_override,
+            price_override=row.price_override,
+            weight_override=row.weight_override,
+            volume_override=row.volume_override,
+            image_url=row.image_url,
         ))
         if line is not None:
             total += line

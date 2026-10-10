@@ -79,8 +79,14 @@ export const ExportPolicyInSchema = z.object({
   /** 销项税率；出口零税率填 0。政策变化时改为 0.13 等即可 */
   output_vat_rate: z.number().min(0).max(1).optional(),
   output_vat_mode: z.enum(['additive', 'inclusive']).optional(),
-  profit_mode: z.enum(['fixed', 'ratio']).optional(),
+  profit_mode: z.enum(['fixed', 'ratio', 'margin_on_price']).optional(),
   profit_value: z.number().optional(),
+  /**
+   * 综合税费系数（margin_on_price 售价加成模式使用，默认 0.03）。
+   * 含义：除销项增值税外的印花税、土地税、个人所得税等杂税总和，
+   * 相对销项计征。售价公式：不含税售价 = 税前成本 ÷ (1 − 利润率 − 综合税费系数)
+   */
+  misc_fee_rate: z.number().min(0).max(1).optional(),
   /** 让出可退进项增值税额的比例（0.8 = 让利 80%，自留 20% 对冲风险） */
   give_ratio: z.number().min(0).max(1).optional(),
   /** 可退税比例；'auto' = 出口退税率 ÷ 进项票税点 */
@@ -280,6 +286,8 @@ export const QuoteProfileTaxSchema = z
     output_vat_rate: z.number().optional(),
     /** 出口退税率（按 HS 编码核实） */
     rebate_rate: z.number().optional(),
+    /** 综合税费系数（除销项增值税外的杂税总和，相对销项计征；售价加成模式使用） */
+    misc_fee_rate: z.number().optional(),
     /** 印花税率 */
     stamp_rate: z.number().optional(),
     /** 印花税计税基数 */
