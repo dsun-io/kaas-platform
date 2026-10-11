@@ -62,8 +62,8 @@ host 匹配**大小写不敏感、允许端口、条目允许其子域**（`cdn.
 Chromium 忽略 `break-before/after: avoid`，跨 Chrome 版本分页可能变）；④ **真实上传/归档验收暂缓**（用户已决定）：
 生产 R2 的 `S3_ACCESS_KEY` 报 `Credential access key has length 13, should be 32` ⇒ 需用户重建 32 位
 密钥后再验；**在此之前不要写成"上传已验证成功"**（服务端落档走 `_store_bytes` 的 binding/inline
-回退，不依赖直传，但"上传到对象存储"这一条实测仍未通过）；⑤ C 方案的**前端那一行没有自动化测试**
-（见 §〇.2 末尾"未覆盖"）。
+回退，不依赖直传，但"上传到对象存储"这一条实测仍未通过）；⑤ C 方案的**前端那一行已有自动化测试**
+（**4 条**），但**页面级接线**仍只有 `typecheck` 保驾（见 §〇.2 末尾"未覆盖"与"补测抓到并已修的真实漏洞"）。
 
 ## 〇.2 C 方案落地（签发时冻结「渲染输入快照指纹」，2026-10-12）
 
@@ -110,9 +110,10 @@ orchestrator 会给 `float`、Worker 的 asyncpg 会给 `Decimal`，不归一两
 
 **C 方案的未覆盖**：① `_render` 存的是**指纹**不是快照本体（本任务口径就是指纹：不把 ~1.4MB 的
 图片 data URI 抄进 `raw_payload`）⇒ 能证明"输入是否一致"，但**不能**凭它重出当时那一版；
-若要"按快照重出"，仍需另存装配输入（本文 §3.2 第 2 步原始设计，**未做**）。② 前端那一行
-**没有自动化测试**（`doc-preview.tsx` 加了可选 prop `renderMeta` + 导出 `renderMetaOf`，
-接线在 `page.tsx` 1 行；本任务写范围不含前端测试文件）⇒ 该行的真实渲染**只有 typecheck 保驾**。
+若要"按快照重出"，仍需另存装配输入（本文 §3.2 第 2 步原始设计，**未做**）。② 前端那一行**有**自动化测试
+（`frontend/src/app/(app)/trade-docs/components/__tests__/doc-preview-auto-pdf.test.tsx` 新增 **4 条**：
+显示 / 不显示 / 坏形状 / 装配失败）；但**页面级接线**（`page.tsx` 传 `renderMetaOf(raw_payload)`）
+仍只有 `typecheck` 保驾 —— **没有组件之上的页面测试**。
 ③ 指纹**没有对账消费者**：目前没有"用归档时的指纹复核现在数据是否被改过"的脚本/接口，
 只有库里那个键 + 界面上一行。④ **orchestrator 侧 `confirm` 的落库路径没有单测**
 （worker 侧有：`tests/test_four_domains.py::test_trade_doc_confirm_locks_draft` 从
@@ -120,6 +121,16 @@ orchestrator 会给 `float`、Worker 的 asyncpg 会给 `Decimal`，不归一两
 `_freeze_render_fingerprint` 这个壳（装配成功 ⇒ 有摘要；装配抛错 ⇒ `input_sha256: null` + note）。
 ⑤ 指纹**不覆盖签发之后的文件变化**：签发后仍可归档新的 PDF 版本（`render_pdf` 版本让位），
 新版本并没有自己的 `_render`（版本链与指纹是两件事）。
+
+**补测抓到并已修的真实漏洞（2026-10-12）**：`renderMetaOf` 原先只判
+`typeof === "object" && !== null` —— **数组也满足** ⇒ `[]` 会被当成指纹，界面渲染出
+`渲染指纹 v? · 未冻结`（**看着像真的、其实是坏的**）。现在**排除数组**，且**必须**有数值型
+`render_version`，否则返回 `null`、整行不显示（`frontend/src/app/(app)/trade-docs/components/doc-preview.tsx:115-122`）。
+
+**`RENDER_VERSION` 已钉值**：`backend/orchestrator/tests/test_trade_doc_render_fingerprint.py`
+断言 `RENDER_VERSION == 1`（`:189`），并在注释里注明"改 `render.ts` / `assets.json` / `manifest.json`
+就必须 bump，并**同步改这一行**"（`:185`）。理由：`input_sha256` 只能证明"输入没变"，
+**证不了"输出没变"**；而渲染器在前端 TS，**没有 CI 能自动发现"模板改了却没 bump"**。
 
 ## 一句话结论
 

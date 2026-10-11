@@ -108,12 +108,18 @@ export interface RenderFingerprintMeta {
  *
  * 为什么需要它：`TradeDocRow.raw_payload` 的类型只声明了 `sources`/`custom`，
  * 而 `_render` 是**后端在签发时追加的保留键** —— 与其在调用点写一个 `as any`，
- * 不如在这里收窄一次（形状不对/没有 ⇒ `null`，组件据此不渲染那一行）。
+ * 不如在这里收窄一次。
+ *
+ * 形状不对一律 `null`（**不渲染**那一行）：坏形状若照渲染，界面会出现
+ * `渲染指纹 v? · 未冻结` 这种"看起来像真的、其实是坏的"指纹 —— 比不显示更糟。
+ * 注意 `Array.isArray`：数组的 `typeof` 也是 `"object"`，只判 null 会把它放进来。
  */
 export function renderMetaOf(rawPayload: unknown): RenderFingerprintMeta | null {
   if (typeof rawPayload !== "object" || rawPayload === null) return null;
   const meta = (rawPayload as Record<string, unknown>)["_render"];
-  if (typeof meta !== "object" || meta === null) return null;
+  if (typeof meta !== "object" || meta === null || Array.isArray(meta)) return null;
+  // 内核**必定**写 `render_version`；没有它就不是我们冻结的那份指纹（宁可不显示）
+  if (typeof (meta as RenderFingerprintMeta).render_version !== "number") return null;
   return meta as RenderFingerprintMeta;
 }
 

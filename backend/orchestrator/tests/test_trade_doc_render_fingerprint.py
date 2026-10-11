@@ -181,7 +181,12 @@ class TestFingerprintShape:
             "frozen_at": FROZEN_AT,
         }
         assert RENDER_KEY == "_render"
-        assert RENDER_VERSION >= 1
+        # 🔒 **钉住当前版本值**：改 `render.ts` / `assets.json` / `manifest.json`（或渲染器行为）
+        # 就必须 bump `RENDER_VERSION`，并**同步改这一行**。这一步是故意的：
+        # `input_sha256` 只能证明"输入没变"，证明不了"输出没变"，而渲染器在前端 TS 里 ——
+        # 没有 CI 能自动看出"模板改了却没 bump"。把值钉住，让"忘了 bump"在评审里
+        # 以一次**显式**改动暴露出来（而不是静默失真）。
+        assert RENDER_VERSION == 1
 
     def test_unavailable_input_is_marked_not_faked(self):
         meta = render_fingerprint(None, frozen_at=FROZEN_AT)
