@@ -56,6 +56,14 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["quote_profiles"])
 
+# 路径别名（本地联调修复，2026-10-11）
+# 线上 Worker 对税率档案**同时注册两条路径**（quote_api.py：
+#   /api/v1/quote-profiles 与 /api/v1/export-quote/quote-profiles），
+# 而前端用的是 export-quote 那条（lib/export-quote/import-file.ts 的
+# EXPORT_QUOTE_BASE = "/export-quote"）。orchestrator 只有前者 →
+# 本地联调必 404（生产反而是对的）。这里补上同样的别名，使两端路由面一致。
+# 别名不进 OpenAPI 文档：同一个 handler 没必要在 schema 里出现两次。
+
 # 允许存进档案的税率项 —— **白名单**，不是黑名单。
 #
 # 为什么必须是白名单：tax_overrides 是 JSONB，数据库不会拦任何键名。
@@ -170,6 +178,7 @@ def _serialize(profile) -> dict[str, Any]:
     }
 
 
+@router.get("/export-quote/quote-profiles", include_in_schema=False)
 @router.get("/quote-profiles", summary="客户报价税率档案（列表）")
 async def list_quote_profiles(
     request: Request,
@@ -207,6 +216,7 @@ async def list_quote_profiles(
     }
 
 
+@router.post("/export-quote/quote-profiles", include_in_schema=False, status_code=201)
 @router.post("/quote-profiles", summary="保存一份税率档案", status_code=201)
 async def create_quote_profile(
     request: Request,
@@ -260,6 +270,7 @@ async def create_quote_profile(
     return _serialize(profile)
 
 
+@router.patch("/export-quote/quote-profiles/{profile_id}", include_in_schema=False)
 @router.patch("/quote-profiles/{profile_id}", summary="改名 / 改内容")
 async def patch_quote_profile(
     request: Request,
@@ -309,6 +320,7 @@ async def patch_quote_profile(
     return _serialize(profile)
 
 
+@router.delete("/export-quote/quote-profiles/{profile_id}", include_in_schema=False)
 @router.delete("/quote-profiles/{profile_id}", summary="停用一份档案")
 async def delete_quote_profile(
     request: Request,
