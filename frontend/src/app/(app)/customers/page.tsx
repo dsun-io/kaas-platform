@@ -629,7 +629,7 @@ function CustomerDetailPanel({
           {detail?.contacts?.length === 0 && (
                     <p className="text-sm text-muted-foreground">暂无联系人</p>
                   )}
-                  {detail.contacts.map((c) => (
+            {detail?.contacts?.map((c) => (
                     <div
                       key={c.id}
                       className="rounded-lg border bg-card p-4 shadow-[var(--shadow-xs)] transition-shadow hover:shadow-[var(--shadow-sm)]"
@@ -675,7 +675,7 @@ function CustomerDetailPanel({
           {detail?.inquiries?.length === 0 && (
                     <p className="text-sm text-muted-foreground">暂无询盘</p>
                   )}
-                  {detail.inquiries.map((inq) => (
+            {detail?.inquiries?.map((inq) => (
                     <div
                       key={inq.id}
                       className="rounded-lg border bg-card p-4 shadow-[var(--shadow-xs)]"
@@ -714,7 +714,7 @@ function CustomerDetailPanel({
             {detail?.stage_log?.length === 0 ? (
                   <p className="text-sm text-muted-foreground">暂无历史记录</p>
                 ) : (
-                  detail.stage_log.map((log) => (
+            detail?.stage_log?.map((log) => (
                     <div
                       key={log.id}
                       className="rounded-lg border bg-card p-4 text-sm shadow-[var(--shadow-xs)]"
@@ -820,7 +820,7 @@ export default function CustomersPage() {
               <p className="text-sm text-muted-foreground">暂无客户</p>
             )}
             <div className="space-y-2">
-              {listData?.items.map((c) => (
+            {listData?.items?.map((c) => (
                 <div
                   key={c.id}
                   className="rounded-lg border bg-card p-4 cursor-pointer transition-all hover:shadow-[var(--shadow-md)] hover:border-primary/20"
