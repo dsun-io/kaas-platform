@@ -70,6 +70,13 @@ WORKSTATIONS = [
         "admin_only": False, "status": "active", "subscription": None,
     },
     {
+        # 产品素材（图片 + 基础信息）：单证/报价都要**引用**它 ⇒ 属"我的"配置、
+        # 不按工位收费（subscription=None ⇒ 永不被订阅拦）。
+        "key": "products", "name": "产品", "route": "/products",
+        "group": "business", "order": 5,
+        "admin_only": False, "status": "active", "subscription": None,
+    },
+    {
         "key": "orders", "name": "订单", "route": "/orders",
         "group": "business", "order": 30,
         "admin_only": False, "status": "active", "subscription": None,
