@@ -127,7 +127,7 @@ python scripts/render_all_samples.py
 |---|---|---|
 | GET | `/api/v1/trade-doc-templates` | 模板清单 |
 | GET | `/api/v1/trade-doc-templates/{doc_type}` | 单类字段定义（供前端动态表单 / AI 填充） |
-| GET | `/api/v1/trade-docs/{id}/render` | 按业务数据渲染 HTML（可浏览器打印为 PDF） |
+| GET | `/api/v1/trade-docs/{id}/render-data` | 装配渲染一份单据所需的全部数据（前端据此排版/预览/打印为 PDF） |
 
 ### 界面入口：填写单据内容（2026-10-11 新增）
 
