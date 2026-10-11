@@ -444,6 +444,32 @@ export const PieceInputSchema = z.object({
 });
 export type PieceInput = z.infer<typeof PieceInputSchema>;
 
+/**
+ * 自由数值规格参数：取值是**连续量**（丝径 / 网高 / 间距 / 卷长 / 卷径 …）。
+ *
+ * 界面据此渲染**输入框**而不是下拉 —— 客户给 2.3mm 就是 2.3mm，不枚举。
+ * 引擎只按 min/max 挡明显填错的，取值自由度保留；重量与价格由公式折算。
+ * `default` / `min_value` / `max_value` 都是**字符串**（后端从 Decimal 转来，
+ * 避免浮点尾差），界面按需解析。
+ */
+export const NumericInputSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  label_en: z.string().default(''),
+  /** 引擎内部单位（公式里用的那个） */
+  unit: z.string().default(''),
+  /** 界面呈现与输入用的单位（如 公分）；留空则同 unit */
+  ui_unit: z.string().default(''),
+  /** 界面值 = 引擎值 × ui_scale（m→cm 填 100） */
+  ui_scale: z.number().default(1),
+  default: z.string().nullable().default(null),
+  min_value: z.string().nullable().default(null),
+  max_value: z.string().nullable().default(null),
+  decimals: z.number().int().nullable().default(null),
+  note: z.string().default(''),
+});
+export type NumericInput = z.infer<typeof NumericInputSchema>;
+
 // ── 定价数据（按产品定价键的客户成本表）────────────────────────────────────
 
 /** 定价键的一个维度：取值 + 给人的显示名，全部来自产品定义。 */
@@ -451,6 +477,14 @@ export const PricingKeyDimSchema = z.object({
   field: z.string(),
   label: z.string(),
   unit: z.string().default(''),
+  /**
+   * `numeric` = 自由数值维度：**没有可选值清单**（连续量枚举不出来），
+   * 界面渲染输入框而不是下拉。注意不能整维丢掉 —— 丢了界面少一列，
+   * 而查价键仍带着这一维，就变成「存进去了但查不到」。
+   */
+  kind: z.enum(['axis', 'variant', 'numeric']).default('axis'),
+  ui_unit: z.string().default(''),
+  ui_scale: z.number().default(1),
   options: z.array(z.object({
     value: z.union([z.string(), z.number()]),
     label: z.string(),
@@ -523,6 +557,11 @@ export const ProductFormulasResponseSchema = z.object({
   }),
   /** 数量区可按件改写的规格参数（默认随变体联动，可覆盖） */
   piece_inputs: z.array(PieceInputSchema).default([]),
+  /**
+   * 自由数值规格参数（界面渲染输入框）。
+   * **不参与 `space.combo_count`** —— 连续量没有"组合数"。
+   */
+  numeric_inputs: z.array(NumericInputSchema).default([]),
   /**
    * 定价键：决定「去定价数据里查哪一行」的维度组合（如牛栏网 = 边丝径 × 镀锌量）。
    * 维度与取值全部来自产品定义 —— 定价数据页据此画矩阵，前端不写死产品知识。
