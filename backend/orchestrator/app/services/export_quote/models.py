@@ -330,14 +330,19 @@ def pricing_key_of(product: "ProductSpec", scope: dict) -> str:
 def pricing_key_dimensions(product: "ProductSpec") -> dict[str, tuple[str, Any]]:
     """定价键字段 → 它在产品定义里的「维度」。
 
-    返回值：``{字段: ("axis", Axis) | ("variant", VariantGroup)}``。
+    返回值：``{字段: ("axis", Axis) | ("variant", VariantGroup) | ("numeric", NumericInput)}``。
 
     把「哪个字段对应哪个维度」的判断**收在一处**：扩展档位、列出已定义取值、
     拼查价键都靠它，三处各写一遍迟早会分叉。
+
+    尺寸类改成自由数值后，原先的轴维度会落到 `"numeric"` 上 ——
+    调用方必须认得这一种，否则就会出现
+    「`formulas.describe_pricing_key` 说 de 是维度、这里说不是」的分叉。
     """
     out: dict[str, tuple[str, Any]] = {}
     axes = {ax.name: ax for ax in product.axes}
     variants = {f"{vg.name}_code": vg for vg in product.variants}
+    numerics = {ni.key: ni for ni in product.numeric_inputs}
     for dim in (product.pricing_key or []):
         field = dim.get("field")
         if not field:
@@ -346,6 +351,8 @@ def pricing_key_dimensions(product: "ProductSpec") -> dict[str, tuple[str, Any]]
             out[field] = ("axis", axes[field])
         elif field in variants:
             out[field] = ("variant", variants[field])
+        elif field in numerics:
+            out[field] = ("numeric", numerics[field])
     return out
 
 
@@ -353,7 +360,11 @@ def pricing_key_defined_values(product: "ProductSpec") -> dict[str, set[str]]:
     """定价键每个维度在产品定义里**已经定义**的取值（规范化字符串形式）。"""
     out: dict[str, set[str]] = {}
     for field, (kind, dim) in pricing_key_dimensions(product).items():
-        if kind == "axis":
+        if kind == "numeric":
+            # 自由数值维度**没有预定义取值**（客户填什么就是什么）。
+            # 给一个非空集合会让界面误以为这里要枚举。
+            out[field] = set()
+        elif kind == "axis":
             out[field] = {pricing_key_value(o) for o in dim.options}
         else:
             out[field] = {pricing_key_value(o.get("code")) for o in dim.options}
@@ -392,6 +403,13 @@ def extend_product(
         if not items or field not in dims:
             continue
         kind, dim = dims[field]
+
+        if kind == "numeric":
+            # 自由数值维度**不需要也不能扩展**：客户填 3.0 就是 3.0，
+            # 没有"可选值清单"可追加。
+            # （原先是枚举轴，客户要加档位才能选到自己要的丝径；
+            #   改成自由数值后这条路自然消失 —— 这正是不再需要它的原因。）
+            continue
 
         if kind == "axis":
             have = {pricing_key_value(o) for o in dim.options}

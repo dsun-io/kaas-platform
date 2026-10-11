@@ -176,6 +176,9 @@ def describe_pricing_key(product: ProductSpec) -> list[dict]:
         if not field:
             continue
         options: list[dict] = []
+        # 这一维在**产品定义**里是什么：轴 / 变体包 / 自由数值。
+        # 界面靠它决定渲染下拉还是输入框；报错了会让界面画出一列空下拉。
+        kind = "axis"
         if field in numeric_map:
             # 自由数值维度：取值是**连续量**，无法枚举 —— 不能像轴那样列 options，
             # 但也不能整维跳过：跳了界面就少一列，查价键却仍带着这个维度，
@@ -201,6 +204,7 @@ def describe_pricing_key(product: ProductSpec) -> list[dict]:
                 for v in axis_map[field].options
             ]
         else:
+            kind = "variant"
             for vg in product.variants:
                 if field == vg.name:
                     options = [{"value": o.get("name"), "label": o.get("name")} for o in vg.options]
@@ -217,6 +221,7 @@ def describe_pricing_key(product: ProductSpec) -> list[dict]:
             "field": field,
             "label": dim.get("label") or field,
             "unit": dim.get("unit", ""),
+            "kind": kind,
             "options": options,
         })
     return dims
