@@ -51,6 +51,14 @@ dist/
 
 # Local data (seed / dev snapshots)
 data/
+# ⚠️ 例外：`frontend/src/mocks/data/` **是源码**，必须被跟踪。
+# 上面那条裸 `data/` 会匹配**任意层级**的 data 目录 ⇒ 该目录下**新增文件会被静默忽略**
+# （`git status` 里都看不到，提交无声漏掉，别人机器上 import 崩）。
+# `factory.ts` 之所以没事，只是因为它在这条规则之前就已被跟踪。
+# 这里做**最小例外**（不放宽全局规则）：只重新纳入这一个目录。
+# 实测：加这行前，`git check-ignore -v frontend/src/mocks/data/新文件.ts` 命中 `.gitignore:53:data/`，
+# 且 `git status` 看不到它；加这行后不再被忽略。
+!frontend/src/mocks/data/
 
 # MinIO data (local dev)
 minio_data/
