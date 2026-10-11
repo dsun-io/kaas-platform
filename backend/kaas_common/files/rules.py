@@ -22,6 +22,7 @@ __all__ = [
     "OWNER_TYPES", "FILE_KINDS", "MEDIA_KINDS", "KIND_MIME", "MAX_BYTES",
     "FileRuleError", "validate_upload", "object_key", "file_ext",
     "next_version", "current_of", "MEDIA_KIND_LABELS",
+    "is_file_ref", "to_data_uri",
 ]
 
 OWNER_TYPES = ("product", "trade_doc", "customer", "company")
@@ -186,3 +187,42 @@ def next_version(current: Optional[dict]) -> tuple[int, Optional[int]]:
     if not current:
         return 1, None
     return int(current.get("version") or 1) + 1, current.get("id")
+
+
+# ── 单证引用产品图：把 `{file_id}` 解析成图片源 ─────────────────────────────
+#
+# 口径：单证的 `product_photos` 允许两种条目混排 ——
+#   1) 已是图片源：`{"image": "data:..." | "https://...", "caption": ...}`（原样透传，
+#      向后兼容：老数据、离线 payload 都还能用）
+#   2) **引用产品图库**：`{"file_id": 12, "caption": ...}` → 由装配层取字节转 data URI
+#
+# 为什么在装配层解析而不是渲染器：渲染器的图片白名单只认 `data:` 与 `http(s)`
+# （那是防注入的设计，不放开），而 `{file_id}` 不是图片源 —— 解析放在喂给渲染器之前，
+# 渲染器一行都不用改。
+
+def is_file_ref(entry: Any) -> bool:
+    """是不是"引用产品图库"的条目（有 `file_id` 且没有直接给图源）。"""
+    return (
+        isinstance(entry, dict)
+        and entry.get("file_id") is not None
+        and not entry.get("image")
+        and not entry.get("src")
+    )
+
+
+def to_data_uri(content_type: Optional[str], data: bytes, file_name: Optional[str] = None) -> str:
+    """字节 → `data:` URI（渲染器把内联图片当作合法图源）。
+
+    mime 缺失时按扩展名兜底；实在认不出就用 `application/octet-stream`
+    （渲染器会因白名单把它丢掉 —— 这是有意的：宁可不显示，也不放来路不明的类型）。
+    """
+    import base64
+
+    mime = ""
+    if content_type:
+        mime = content_type.split(";")[0].strip().lower()
+    if not mime:
+        ext = file_ext(None, file_name)
+        mime = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp",
+                "pdf": "application/pdf"}.get(ext.lstrip("."), "application/octet-stream")
+    return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"

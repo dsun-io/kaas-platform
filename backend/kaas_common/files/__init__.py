@@ -15,8 +15,10 @@ from .rules import (  # noqa: F401
     FileRuleError,
     current_of,
     file_ext,
+    is_file_ref,
     next_version,
     object_key,
+    to_data_uri,
     validate_upload,
 )
 
@@ -24,4 +26,5 @@ __all__ = [
     "OWNER_TYPES", "FILE_KINDS", "MEDIA_KINDS", "MEDIA_KIND_LABELS",
     "KIND_MIME", "MAX_BYTES", "FileRuleError",
     "validate_upload", "object_key", "file_ext", "next_version", "current_of",
+    "is_file_ref", "to_data_uri",
 ]

@@ -44,6 +44,7 @@ from kaas_common.trade_doc import (
     normalize_items, derive_payload, freeze_snapshot,
     append_audit, protected_custom_fields,
 )
+from kaas_common.files import is_file_ref, to_data_uri
 from kaas_common.workstation.entity_links import (
     LINK_INSERT_SQL_NAMED, EdgeError, normalize_edge,
 )
@@ -718,6 +719,35 @@ async def _resolve_doc_quote_id(db, tenant_id: str, d: TradeDoc):
     return links[0]["dst_id"] if links else None
 
 
+async def _resolve_product_photos(db, tenant_id: str, data: dict) -> dict:
+    """把单证 `product_photos` 里的 `{file_id}` 引用解析成图片源（data URI）。
+
+    为什么在装配层做：渲染器的图片白名单只认 `data:` 与 `http(s)`（防注入设计，不放开），
+    而 `{file_id}` 不是图片源 —— 解析放在喂给渲染器之前，**渲染器一行都不用改**。
+    取不到字节（例如本侧没有对象存储、或文件已下线）就**跳过该条**，不印一个坏图。
+    """
+    photos = data.get("product_photos")
+    if not isinstance(photos, list) or not photos:
+        return data
+    resolved = []
+    for entry in photos:
+        if not is_file_ref(entry):
+            resolved.append(entry)          # 已是图片源（data:/http(s)）→ 原样透传
+            continue
+        row = (await db.execute(text(
+            "SELECT name, content_type, file_name, content FROM file_objects"
+            " WHERE tenant_id=:t AND id=:id AND is_current"
+        ), {"t": tenant_id, "id": int(entry["file_id"])})).mappings().first()
+        if row is None or row["content"] is None:
+            continue
+        resolved.append({
+            "image": to_data_uri(row["content_type"], bytes(row["content"]), row["file_name"]),
+            "caption": entry.get("caption") or row["name"],
+        })
+    data["product_photos"] = resolved
+    return data
+
+
 @router.get("/trade-docs/{doc_id}/render-data")
 async def get_trade_doc_render_data(
     doc_id: int,
@@ -760,6 +790,8 @@ async def get_trade_doc_render_data(
             "country_of_origin": profile.default_country_of_origin if profile else None,
         },
     )
+    # 单证引用产品图：把 `{file_id}` 解析成图片源（渲染器只认 data:/http(s)，不放开白名单）
+    data = await _resolve_product_photos(db, tenant_id, data)
     return {
         "doc": _row_to_doc(d),
         "data": data,
