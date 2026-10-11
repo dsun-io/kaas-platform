@@ -1,4 +1,5 @@
 import { readFileSync, existsSync } from 'fs';
+import { execFileSync } from 'child_process';
 import { resolve } from 'path';
 
 const REPO_ROOT = resolve(process.cwd(), '..');
@@ -659,6 +660,151 @@ const R5_BODY_RULES: R5BodyRule[] = [
   },
 ];
 
+// ── R6: openapi.json 新鲜度（基准 = 已提交的 HEAD 快照）──────────────────
+//
+// 为什么：backend/orchestrator/docs/openapi.json 陈旧过 14 小时（10:43 的产物），
+// 0a66e9b 已统一 /admin/tenants 契约而它仍写着 enabled/tenant_count；**没有任何校验**
+// ⇒ 漂移无人发现。刷新那一次实测 79 → 171 paths、48 → 115 schemas。
+//
+// 基准怎么取（task-17 要求 2）：**两侧都取 HEAD**，都用 `git show HEAD:<path>` ——
+// 工作树里 backend/orchestrator/app/** 经常有别人的半成品（实测 files.py/trade_docs.py），
+// 拿工作树当基准就等于把半成品当成"当前契约"。task-17 原文也把 `git show HEAD:<file>`
+// 列为可接受的取基准方式。
+//
+// 比什么是结构化的（不逐字节比文件）：
+//   R6.1 路径集合：HEAD 源码的路由装饰器 + `APIRouter(prefix=)` → 完整 path 集合。
+//        跳过 `include_in_schema=False`（FastAPI 注册但**不进 schema**，实测 4 条 alias 路由）；
+//        非装饰器注入的路径走**声明式例外**（R6_NON_DECORATOR_PATHS）。
+//   R6.2 每个 path 的 HTTP 方法集合。
+//   R6.3 `response_model=X` 的路由：artifact 的 2xx 响应必须 $ref 到 X。
+//   R6.4 Pydantic 模型字段键集合（`class X(BaseModel)`，含 `alias=`）↔
+//        `components.schemas[X].properties`；同名类多处定义时**任一处一致即算一致**。
+//
+// 为什么不是「跑 app.main 生成再比」：contracts-check.yml 只装 node/pnpm（无 Python/FastAPI），
+// 生成式比对在 CI 里只能 WARN+跳过 —— 而 CI 正是门禁必须生效的地方；且本工作区
+// app/** 常被并发编辑，从工作树生成会把半成品固化。结构解析两侧都取 HEAD：无环境依赖、
+// 无跳过分支、CI 可跑。解析器已用"当前 171 paths / 103 模型**零差异**"自校验。
+
+const R6_BASELINE_REV = 'HEAD';
+const R6_ARTIFACT = { rev: 'HEAD', path: 'backend/orchestrator/docs/openapi.json' };
+const R6_APP_DIR = 'backend/orchestrator/app';
+/** 非装饰器注入的路径（源码里没有对应 `@router/@app` 装饰器）：
+ *  `/metrics` 由 app/main.py 的 `setup_metrics(app)`（app/core/metrics.py）注入。 */
+const R6_NON_DECORATOR_PATHS = ['/metrics'];
+/** FastAPI 自动生成、或 UploadFile 参数产生的 schema，源码里没有同名类 */
+function r6SkipSchema(name: string): boolean {
+  return (
+    name === 'HTTPValidationError' ||
+    name === 'ValidationError' ||
+    name.startsWith('Body_')
+  );
+}
+
+/** `git show <rev>:<path>`。
+ *  `rev === ''` 或 path 是绝对路径时退化为直接读文件 —— 仅用于自证/临时指向副本。 */
+function readAtRev(rev: string, path: string): string {
+  if (rev === '' || /^([A-Za-z]:[\\/]|\/)/.test(path)) {
+    return readFileSync(resolve(REPO_ROOT, path), 'utf-8');
+  }
+  return execFileSync('git', ['-C', REPO_ROOT, 'show', `${rev}:${path}`], {
+    encoding: 'utf-8',
+    maxBuffer: 64 * 1024 * 1024,
+  });
+}
+
+function gitLsTreeAt(rev: string, dir: string): string[] {
+  return execFileSync(
+    'git',
+    ['-C', REPO_ROOT, 'ls-tree', '-r', '--name-only', rev, dir],
+    { encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 },
+  )
+    .split('\n')
+    .map((s) => s.trim())
+    .filter((s) => s !== '');
+}
+
+/** 括号配平（跳过字符串字面量）—— python 装饰器常跨行、参数里还有嵌套括号。 */
+function matchingParen(text: string, openIdx: number): number {
+  let depth = 0;
+  for (let i = openIdx; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"' || c === "'") {
+      const q = c;
+      i++;
+      while (i < text.length && text[i] !== q) {
+        if (text[i] === '\\') i++;
+        i++;
+      }
+      continue;
+    }
+    if (c === '(') depth++;
+    else if (c === ')') {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/** 模块级 `APIRouter(prefix="...")` 的前缀；没有 prefix（health/prices）→ ""。 */
+function pyRouterPrefix(src: string): string {
+  const at = src.indexOf('APIRouter(');
+  if (at === -1) return '';
+  const open = src.indexOf('(', at);
+  const end = matchingParen(src, open);
+  const args = src.slice(open + 1, end === -1 ? src.length : end);
+  const m = /prefix\s*=\s*"([^"]*)"/.exec(args);
+  return m ? m[1] : '';
+}
+
+interface PyRoute {
+  method: string;
+  path: string;
+  args: string;
+}
+
+function pyRoutes(src: string): PyRoute[] {
+  const out: PyRoute[] = [];
+  for (const m of src.matchAll(
+    /@(?:router|app)\.(get|post|put|patch|delete)\(/g,
+  )) {
+    const open = m.index + m[0].length - 1;
+    const end = matchingParen(src, open);
+    const args = src.slice(open + 1, end === -1 ? src.length : end);
+    const pm = /^\s*"([^"]*)"/.exec(args);
+    if (!pm) continue;
+    out.push({ method: m[1].toUpperCase(), path: pm[1], args });
+  }
+  return out;
+}
+
+/** `class X(BaseModel)` 的顶层字段键（有 `alias=` 时取别名；openapi 用别名做属性名）。 */
+function pyModelFields(src: string): Map<string, string[]> {
+  const res = new Map<string, string[]>();
+  for (const m of src.matchAll(/^class (\w+)\(BaseModel\):/gm)) {
+    // class body：到下一个顶层语句（行首非空白）为止 —— 否则会把后面的函数体当字段
+    const after = src.slice(m.index + m[0].length);
+    const stop = after.search(/\n(?=\S)/);
+    const body = stop === -1 ? after : after.slice(0, stop);
+    const fields: string[] = [];
+    for (const line of body.split('\n')) {
+      const fm = /^ {4}(\w+)\s*:/.exec(line);
+      if (!fm) continue;
+      const alias = /alias\s*=\s*"([^"]+)"/.exec(line);
+      fields.push(alias ? alias[1] : fm[1]);
+    }
+    if (fields.length > 0) res.set(m[1], uniq(fields));
+  }
+  return res;
+}
+
+interface R6Artifact {
+  paths?: Record<string, Record<string, unknown>>;
+  components?: {
+    schemas?: Record<string, { properties?: Record<string, unknown> }>;
+  };
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────
 
 let allOk = true;
@@ -1088,32 +1234,242 @@ for (const rule of R5_BODY_RULES) {
   }
 }
 
-const r5Found = new Set(r5Deviations.map((d) => d.key));
-const r5Unregistered = r5Deviations.filter((d) => !r5Registered.has(d.key));
+// ── R6 执行：openapi.json 新鲜度（两侧基准都取 HEAD 快照）────────────────
+const r6Deviations: R5Deviation[] = [];
+let r6Stats = { paths: 0, models: 0, responseModels: 0, outOfSchema: 0 };
+
+try {
+  const r6HeadShort = execFileSync(
+    'git',
+    ['-C', REPO_ROOT, 'rev-parse', '--short', 'HEAD'],
+    { encoding: 'utf-8' },
+  ).trim();
+  const artifact = JSON.parse(
+    readAtRev(R6_ARTIFACT.rev, R6_ARTIFACT.path),
+  ) as R6Artifact;
+
+  // 1) 解析 HEAD 源码：路由（path+method、response_model）与模型字段
+  const routes = new Map<string, Set<string>>();
+  const responseModels: Array<{ method: string; path: string; declared: string[] }> = [];
+  const modelVariants = new Map<string, string[][]>();
+  let outOfSchema = 0;
+  for (const f of gitLsTreeAt(R6_BASELINE_REV, R6_APP_DIR)) {
+    if (!f.endsWith('.py')) continue;
+    const src = readAtRev(R6_BASELINE_REV, f);
+    const prefix = pyRouterPrefix(src);
+    for (const r of pyRoutes(src)) {
+      // include_in_schema=False：FastAPI 注册但不进 OpenAPI —— 不能算 artifact 缺失
+      if (/include_in_schema\s*=\s*False/.test(r.args)) {
+        outOfSchema++;
+        continue;
+      }
+      const full = prefix + r.path;
+      let set = routes.get(full);
+      if (!set) {
+        set = new Set<string>();
+        routes.set(full, set);
+      }
+      set.add(r.method);
+      const rm = /response_model\s*=\s*([A-Za-z_][\w.\[\], ]*)/.exec(r.args);
+      if (rm) {
+        responseModels.push({
+          method: r.method,
+          path: full,
+          declared: [...rm[1].matchAll(/\b([A-Z]\w+)\b/g)].map((x) => x[1]),
+        });
+      }
+    }
+    for (const [name, fields] of pyModelFields(src)) {
+      const list = modelVariants.get(name) ?? [];
+      list.push(fields);
+      modelVariants.set(name, list);
+    }
+  }
+
+  const artPaths = new Set(Object.keys(artifact.paths ?? {}));
+  const parsedPaths = new Set([...routes.keys(), ...R6_NON_DECORATOR_PATHS]);
+  const onlyArtifact = [...artPaths].filter((p) => !parsedPaths.has(p)).sort();
+  const onlySource = [...parsedPaths].filter((p) => !artPaths.has(p)).sort();
+  // 每条漂移**单独一个 key**（而不是 `R6 paths` 这种粗粒度 key）：
+  // 粗 key 会让"登记了一条缺路径"把**之后所有**路径漂移都吞成 KNOWN ⇒ 棘轮失效。
+  const baselineNote =
+    '（源码基准 rev=' +
+    r6HeadShort +
+    '；产物基准 rev=' +
+    (R6_ARTIFACT.rev === '' ? 'FILE:' + R6_ARTIFACT.path : R6_ARTIFACT.rev) +
+    '；非装饰器例外: ' +
+    R6_NON_DECORATOR_PATHS.join(', ') +
+    '；include_in_schema=False 跳过 ' +
+    outOfSchema +
+    ' 条）';
+  for (const p of onlySource) {
+    r6Deviations.push({
+      key: 'R6.path-missing:' + p,
+      details: ['HEAD 源码有、artifact 未登记 ' + baselineNote],
+    });
+  }
+  for (const p of onlyArtifact) {
+    r6Deviations.push({
+      key: 'R6.path-extra:' + p,
+      details: ['artifact 登记了 HEAD 源码解析不到的路径 ' + baselineNote],
+    });
+  }
+  if (onlyArtifact.length > 0 || onlySource.length > 0) {
+    console.log(
+      'INFO R6: 路径漂移 源码有而 artifact 无 ' +
+        onlySource.length +
+        ' 条、artifact 有而源码无 ' +
+        onlyArtifact.length +
+        ' 条',
+    );
+  }
+
+  // 2) 每个 path 的 HTTP 方法集合
+  for (const p of artPaths) {
+    const routeSet = routes.get(p);
+    if (!routeSet) continue; // 例外路径（/metrics）没有源码装饰器
+    const inArtifact = Object.keys(artifact.paths![p])
+      .filter((k) => k !== 'parameters')
+      .map((k) => k.toUpperCase())
+      .sort();
+    const inSource = [...routeSet].sort();
+    if (inArtifact.join(',') !== inSource.join(',')) {
+      r6Deviations.push({
+        key: 'R6.methods:' + p,
+        details: ['artifact=[' + inArtifact + '] src=[' + inSource + ']'],
+      });
+    }
+  }
+
+  // 3) response_model 引用
+  for (const rm of responseModels) {
+    const entry = artifact.paths?.[rm.path];
+    if (!entry) continue; // 路径缺失已由 R6.1 报出
+    const op = entry[rm.method.toLowerCase()] as
+      | { responses?: Record<string, unknown> }
+      | undefined;
+    if (!op) continue;
+    const success = Object.entries(op.responses ?? {}).find(([code]) =>
+      /^2\d\d$/.test(code),
+    );
+    const refs = success
+      ? [
+          ...JSON.stringify(success[1]).matchAll(
+            /"#\/components\/schemas\/(\w+)"/g,
+          ),
+        ].map((x) => x[1])
+      : [];
+    if (rm.declared.length > 0 && refs.length === 0) {
+      r6Deviations.push({
+        key: 'R6.response-model:' + rm.method + ' ' + rm.path,
+        details: [
+          '声明 response_model=' +
+            rm.declared.join('|') +
+            '，artifact 2xx 响应无 $ref',
+        ],
+      });
+    } else if (refs.length > 0 && !refs.every((r) => rm.declared.includes(r))) {
+      r6Deviations.push({
+        key: 'R6.response-model:' + rm.method + ' ' + rm.path,
+        details: [
+          '声明 [' + rm.declared + '] 而 artifact 引用 [' + refs + ']',
+        ],
+      });
+    }
+  }
+
+  // 4) 模型字段键集合（同名类多处定义 ⇒ 任一处一致即算一致）
+  const schemas = artifact.components?.schemas ?? {};
+  let compared = 0;
+  for (const name of Object.keys(schemas)) {
+    if (r6SkipSchema(name)) continue;
+    const variants = modelVariants.get(name);
+    if (!variants) continue; // 源码里没有同名类（内联/自动生成）⇒ 无可比
+    compared++;
+    if (variants.length > 1) {
+      console.log(
+        'INFO R6: 同名模型多处定义 ' +
+          name +
+          ' × ' +
+          variants.length +
+          '（任一处与 artifact 一致即通过）',
+      );
+    }
+    const inArtifact = Object.keys(schemas[name].properties ?? {}).sort();
+    const ok = variants.some(
+      (v) => [...new Set(v)].sort().join(',') === inArtifact.join(','),
+    );
+    if (!ok) {
+      r6Deviations.push({
+        key: 'R6.schema:' + name,
+        details: [
+          '字段键集合不一致 artifact=[' +
+            inArtifact +
+            '] src=[' +
+            variants.map((v) => [...new Set(v)].sort().join('|')).join(' / ') +
+            ']',
+        ],
+      });
+    }
+  }
+
+  r6Stats = {
+    paths: artPaths.size,
+    models: compared,
+    responseModels: responseModels.length,
+    outOfSchema,
+  };
+} catch (e) {
+  r6Deviations.push({
+    key: 'R6 baseline',
+    details: [
+      '无法从 ' +
+        R6_ARTIFACT.rev +
+        ' 快照读取基准（' +
+        R6_ARTIFACT.path +
+        '）: ' +
+        String(e),
+    ],
+  });
+}
+
+const allDeviations = [...r5Deviations, ...r6Deviations];
+const r5Found = new Set(allDeviations.map((d) => d.key));
+const r5Unregistered = allDeviations.filter((d) => !r5Registered.has(d.key));
 // 棘轮的另一半：登记了但**偏差已经不存在**（修好却忘删行）同样是失败。
 const r5Overdue = [...r5Registered.keys()].filter((k) => !r5Found.has(k));
 
-for (const d of r5Deviations) {
+for (const d of allDeviations) {
   if (r5Registered.has(d.key)) {
-    console.warn('KNOWN R5: ' + d.key + ' —— ' + (r5Registered.get(d.key) || '(未写原因)'));
+    console.warn('KNOWN: ' + d.key + ' —— ' + (r5Registered.get(d.key) || '(未写原因)'));
   }
 }
 
 if (r5Unregistered.length > 0) {
   allOk = false;
-  console.error('FAIL R5: admin 端点响应键集合出现**未登记**的偏差');
-  for (const d of r5Unregistered) {
+  console.error('FAIL R5/R6: 契约比对出现**未登记**的偏差');
+  // 每条漂移一个 key ⇒ 整片陈旧时会很多条：最多列 30 条，其余只报总数（不静默吞掉）
+  for (const d of r5Unregistered.slice(0, 30)) {
     console.error('  ' + d.key);
     d.details.forEach((x) => console.error('    - ' + x));
   }
+  if (r5Unregistered.length > 30) {
+    console.error(
+      '  …还有 ' +
+        (r5Unregistered.length - 30) +
+        ' 条未列出（未登记偏差共 ' +
+        r5Unregistered.length +
+        ' 条）',
+    );
+  }
   console.error('  => 有意变更契约：改 ' + R5_ALLOWLIST + ' 并写清「待哪个修复还掉」；');
-  console.error('     期望形状过时：改 scripts/contracts-check.ts 的 R5_RULES。');
+  console.error('     期望形状过时：改 scripts/contracts-check.ts 的 R5_RULES / R6 配置。');
 }
 
 if (r5Overdue.length > 0) {
   allOk = false;
   console.error(
-    'FAIL R5: 棘轮登记已过期（偏差已修好，请删掉这些行）: ' + r5Overdue.join(', '),
+    'FAIL R5/R6: 棘轮登记已过期（偏差已修好，请删掉这些行）: ' + r5Overdue.join(', '),
   );
 }
 
@@ -1129,6 +1485,20 @@ if (r5Unregistered.length === 0 && r5Overdue.length === 0) {
       r5Deviations.length +
       ' 侧为已登记偏差，见 ' +
       R5_ALLOWLIST +
+      '）',
+  );
+  console.log(
+    'PASS R6: openapi.json 新鲜度（基准 rev=HEAD 快照）：' +
+      r6Stats.paths +
+      ' paths / ' +
+      r6Stats.models +
+      ' 模型字段键集合 / ' +
+      r6Stats.responseModels +
+      ' response_model 引用 一致' +
+      '（include_in_schema=False 跳过 ' +
+      r6Stats.outOfSchema +
+      ' 条，非装饰器例外 ' +
+      R6_NON_DECORATOR_PATHS.join(',') +
       '）',
   );
 }
