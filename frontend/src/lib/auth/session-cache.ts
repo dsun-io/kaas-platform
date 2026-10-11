@@ -6,9 +6,6 @@ import type { UserInfo } from "./types";
 import { getToken } from "./token-store";
 
 export interface Session {
-  tenant: {
-    tenant_id: string;
-  };
   accessToken: string | null;
   user?: {
     id: string;
@@ -18,7 +15,6 @@ export interface Session {
 }
 
 let _session: Session = {
-  tenant: { tenant_id: "" },
   accessToken: null,
 };
 
@@ -28,22 +24,6 @@ export function getCurrentSession(): Session {
     const token = getToken();
     if (token) {
       _session.accessToken = token;
-    }
-  }
-  // Hydrate tenant from stored user if not yet set
-  if (!_session.tenant.tenant_id) {
-    try {
-      const stored =
-        localStorage.getItem("kaas_user") ||
-        sessionStorage.getItem("kaas_user");
-      if (stored) {
-        const user = JSON.parse(stored);
-        if (user?.tenant_id) {
-          _session.tenant.tenant_id = user.tenant_id;
-        }
-      }
-    } catch {
-      // ignore parse errors
     }
   }
   return _session;
@@ -62,9 +42,12 @@ export function updateSession(partial: {
       email: partial.user.email,
       role: partial.user.role ?? partial.user.account_type,
     };
-    // 账号不再有"租户"（业务不以租户鉴权，见 docs/TEAMS_AND_VISIBILITY.md）：
-    // 这里不再从 auth 响应写 X-Tenant-Id —— 后端要么忽略它（Worker 固定 DEFAULT_TENANT），
-    // 要么从登录态自行推导。保留默认空值，避免把"团队 id"塞进租户头造成误解。
+    // 账号**不再有"租户"**（业务不以租户鉴权，见 docs/TEAMS_AND_VISIBILITY.md）：
+    // `tenant_id` 已全量统一为 `default`，隔离边界是**团队**（team_id）。
+    // 所以这里连"租户"这个字段都不再保留 —— 原先那个 `tenant.{tenant_id}`
+    // 只会从 **localStorage 里过期的 `kaas_user`** 反推（本函数从不写它），
+    // 发出去的可能是早已失效的旧值，属于"看着有用、实际误导"。
+    // 后端不需要它：`middleware/auth.py` 鉴权后自行设 DEFAULT_TENANT。
   } else if (partial.user === null) {
     _session.user = undefined;
   }
@@ -72,7 +55,6 @@ export function updateSession(partial: {
 
 export function resetSession(): void {
   _session = {
-    tenant: { tenant_id: "" },
     accessToken: null,
     user: undefined,
   };
