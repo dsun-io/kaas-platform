@@ -109,9 +109,18 @@ capabilitiesStore.set(
 );
 
 // Stateful store for feature flags (per-tenant, persists across HMR)
+//
+// ⚠️ key 必须是**租户号**，不是客户号。
+// 消费方 gray-release/page.tsx:39-46 拿 `GET /admin/tenants` 的 `tenant_id` 去查
+// `flags?.[t.tenant_id]?.["use_v2"]`（第 45 行）；而该接口返回的是
+// `lianjia` / `client-b`（见下面 /admin/tenants handler + factory.ts 的 makeTenant）。
+// 后端同口径：orchestrator/app/api/admin.py:197-202 用租户号做 key 返回全量 map，
+// 租户号见 tests/conftest.py:87/96（"lianjia" / "client_b"）。
+// 原先这里写成 `cust-lianjia` / `cust-client-b`（客户风格的 id）→ 查不到 →
+// 灰度页所有开关**恒显示 OFF**，`lianjia 的 use_v2=true` 这条种子数据等于丢了。
 const defaultFlags: Record<string, Record<string, boolean>> = {
-  "cust-lianjia": { use_v2: true, sampling_enabled: true },
-  "cust-client-b": { use_v2: false, sampling_enabled: true },
+  lianjia: { use_v2: true, sampling_enabled: true },
+  "client-b": { use_v2: false, sampling_enabled: true },
 };
 let featureFlagsStore: Record<string, Record<string, boolean>> = JSON.parse(
   JSON.stringify(defaultFlags),
