@@ -56,3 +56,49 @@
   `C:\Users\HJ\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe`
   + `...\pnpm\bin\pnpm.mjs`。跑 `.ps1` 前先
   `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force`。
+
+## 4. 这个工作区可能**同时有多个任务在写** —— 提交纪律
+
+2026-10-11 实测：同一工作区里**多条线并行**（不同的 DSH 会话 / 队友），
+`git status` 里随时有**别人的未提交改动**。
+
+- **`git commit -- <pathspec>` 不足以保证"没提交别人的东西"** ✗
+  它记录的是**工作树内容**，不是 index ⇒ **同一个文件里别人的未提交 hunk 会被一起提交**。
+  （实测：`backend/worker/src/main.py` 里两拨人的 hunk 混在一起，且别人的 hunk 依赖一个
+  **未跟踪**文件 ⇒ 那提交必然 ImportError / CI 红。）
+  ⇒ 改用**私有 `GIT_INDEX_FILE`**（指向 `%TEMP%`）只装自己的 hunk，**不碰共享 index、不碰他人工作树**。
+- **提交前自检**：`git diff --cached --stat` 只应出现自己的文件；
+  `git diff --cached -- <file>` 只应含自己的 hunk。
+- **提交后自检**：`git status --short` 里**别人的改动必须原样还在**。
+- **部分 hunk 提交要先转 LF**：本仓库工作树是 **CRLF**、index blob 是 **LF**
+  ⇒ `git diff` 出的补丁含 CR ⇒ 对 LF 的 index blob 直接 `patch does not apply`
+  （实测 130 个 CR）⇒ 转 LF-only 后 `git apply --cached --check` 通过。
+- **不要拿别人的文件做自证**（例如为了演示门禁能抓到而临时改错一个键）：
+  **一律只在自己的写入范围内做**；确实需要跨范围，**先问**。
+  实测发生过一次"险过"——临时改的文件正被别人并发编辑。
+- **不要用 `git add -A` / `git add .` / 裸 `git commit`**。本项目已因此**断过一次 HEAD**。
+
+### `frontend/.next` 是硬冲突资源
+
+并发 `next build` / `NEXT_EXPORT=1 pnpm build` 会**覆盖 `frontend/.next`**，而 e2e 的
+`next dev` 也读写同一目录 ⇒ 客户端分块变 500（`Cannot find module './xxxx.js'`）⇒
+**不 hydration ⇒ MSW 不运行 ⇒ 零请求 ⇒ 页面全白** ⇒ **e2e 那一轮数字全部作废**（不是产品信号）。
+
+- **构建/导出 与 e2e 不能同时跑**；跑 e2e 前先确认 `/_next/static/chunks/main-app.js` 返回 200。
+- **构建门的数字只在工作区静止时作数**（`NEXT_DIST_DIR` 只隔离产物目录，**不隔离源码并发写**）。
+
+## 5. 测量纪律（本项目已因此错过多次）
+
+- **宣布任何"通过 / 失败 / 归零"之前，必须先打印完整、不过滤的摘要**，
+  并核对 `passed + failed + skipped == playwright test --list 的总数`。
+  **数字对不上就是证据不足，不是"没问题"。**（曾用过滤视图得出过假的"0 failed"，
+  并用整轮撤回。）
+- **"没匹配上" ≠ "没有"**：grep **0 命中**可能只是**命令没跑在预期对象上**；
+  `[绕过MSW]` 这类探针在请求 **abort 时不会打日志** ⇒ "日志里没有" 不等于 "被拦住了"。
+  下结论前要用**阳性对照**或打印 cwd 确认工具确实作用在预期对象上。
+- **不要用关键字 grep 当"某文案 / 控件不存在"的证据** —— 要**真实报错**或**渲染快照**。
+  （曾据此错判 `events`、`kb` 两条，被迫更正。）
+- **通过数在环境不稳时没有比较意义**。只有**确定性信号**（错误消息、请求/响应证据、
+  源码事实）配作为依据；"通过数变好了"不能当改善的证据。
+- **并发会让门禁出现瞬态红**（别人改到一半）⇒ 先复查再认领，**但也不能拿它当借口**：
+  要复跑确认"现在通过"才能下结论。
