@@ -122,8 +122,15 @@ export default function ProductsPage() {
     if (!file) return toast.error("先选一张图片");
     if (!name.trim()) return toast.error("给图片起个名字（要求：上传后可命名）");
     try {
-      await upload.mutateAsync({ file, name: name.trim(), mediaKind: kind });
-      toast.success("已上传");
+      const media = await upload.mutateAsync({ file, name: name.trim(), mediaKind: kind });
+      // 直传失败但**服务端代理兜底成功**时，上传是成了 —— 但必须如实说出来：
+      // 否则"对象存储配错了、所有图都在经服务端中转"永远没人发现（直传路径形同废弃）。
+      const fallbackReason = media.fallbackReason || "原因未知";
+      toast.success(
+        media.fellBackToProxy
+          ? `已上传（直传失败：${fallbackReason}；已走服务端兜底）`
+          : "已上传",
+      );
       setName("");
       setFile(null);
     } catch {

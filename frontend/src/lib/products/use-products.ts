@@ -113,10 +113,59 @@ async function sha256Hex(file: File): Promise<string> {
     .join("");
 }
 
+/** 出错原因归一成人能读的短句（axios 错误优先给 HTTP 状态码） */
+function describeUploadError(err: unknown): string {
+  const status = (err as { response?: { status?: number } } | null)?.response
+    ?.status;
+  const message = err instanceof Error ? err.message : String(err);
+  return status ? `HTTP ${status}（${message}）` : message;
+}
+
+/**
+ * 服务端代理上传（multipart）：字节经服务端中转。
+ * Worker 侧 `_store_bytes` 在 S3 失败时会自己回退 R2 binding / inline ——
+ * 也就是说**这条路比直传更耐配错**，所以直传用不了时它是兜底而不是降级。
+ */
+async function uploadViaProxy(
+  productKey: string,
+  file: File,
+  name: string,
+  mediaKind: string,
+): Promise<ProductMedia> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("name", name);
+  form.append("media_kind", mediaKind);
+  const { data } = await apiClient.post(`/products/${productKey}/media`, form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data as ProductMedia;
+}
+
+/**
+ * 上传结果 = 图片元数据 + **这次到底走没走成直传**。
+ *
+ * 为什么必须把这件事带出来：直传被拒（生产实测：S3 密钥填错，R2 回
+ * `400 InvalidArgument: Credential access key has length 13, should be 32`）
+ * 现在会**自动回退**到服务端代理，上传最终成功 —— 返回体若不带标记，界面只会看到
+ * "成功"，于是"对象存储配错了、所有图都在经服务端中转"永远没人发现
+ * （直传路径形同废弃，带宽/成本与预期不符）。
+ */
+export type UploadedProductMedia = ProductMedia & {
+  /** true = 直传没用上，字节实际由服务端代理上传（落到哪看返回体里的 `storage`） */
+  fellBackToProxy: boolean;
+  /** 回退原因（`预签名失败…` / `直传被拒：HTTP 400` / `直传异常…`）；未回退为 undefined */
+  fallbackReason?: string;
+};
+
 export function useUploadProductMedia(productKey: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { file: File; name: string; mediaKind: string }) => {
+    mutationFn: async (input: {
+      file: File;
+      name: string;
+      mediaKind: string;
+    }): Promise<UploadedProductMedia> => {
       const { file, name, mediaKind } = input;
       const contentType = file.type || "application/octet-stream";
       const meta = {
@@ -133,33 +182,63 @@ export function useUploadProductMedia(productKey: string) {
 
       // ① 直传优先：服务端只发短时效预签名 URL，**字节不经过服务端**
       //    （生产 R2 / 本地 MinIO 都是这条；没配对象存储时 configured=false）
-      const { data: presign } = await apiClient.post<{
-        configured: boolean;
-        upload_url?: string;
-      }>("/file-objects/presign", { ...meta, sha256 });
-      if (presign.configured && presign.upload_url) {
-        const res = await fetch(presign.upload_url, {
-          method: "PUT",
-          body: file,
-          headers: { "Content-Type": contentType },
-        });
-        if (!res.ok) throw new Error(`直传失败：HTTP ${res.status}`);
-        const { data } = await apiClient.post<ProductMedia>("/file-objects/register", {
-          ...meta,
-          sha256,
-        });
-        return data;
+      let presign: { configured: boolean; upload_url?: string } | null = null;
+      let fallbackReason: string | undefined;
+      try {
+        const { data } = await apiClient.post<{
+          configured: boolean;
+          upload_url?: string;
+        }>("/file-objects/presign", { ...meta, sha256 });
+        presign = data;
+      } catch (err) {
+        // presign 自己失败（403/500/网络）⇒ 代理那条路可能还是好的，不整体失败
+        fallbackReason = `预签名失败：${describeUploadError(err)}`;
       }
 
-      // ② 回退：服务端代传（multipart）。功能不缺失，只是字节经服务端中转。
-      const form = new FormData();
-      form.append("file", file);
-      form.append("name", name);
-      form.append("media_kind", mediaKind);
-      const { data } = await apiClient.post(`/products/${productKey}/media`, form, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      return data as ProductMedia;
+      if (presign?.configured && presign.upload_url) {
+        let putOk = false;
+        try {
+          const res = await fetch(presign.upload_url, {
+            method: "PUT",
+            body: file,
+            headers: { "Content-Type": contentType },
+          });
+          if (res.ok) putOk = true;
+          else fallbackReason = `直传被拒：HTTP ${res.status}`;
+        } catch (err) {
+          // 网络异常 / CORS / 证书问题：同样不能整体失败
+          fallbackReason = `直传异常：${describeUploadError(err)}`;
+        }
+
+        if (putOk) {
+          // 字节已经落在对象存储里了。register 失败**绝不**回退重传：
+          // 同一份字节会被服务端再写一次，而直传那条已经落盘 ⇒ 重复对象 + 重复流量；
+          // 且 object_key 由 sha256 决定，用户重试是幂等的。
+          // 所以这里明确报错（而不是偷偷走 multipart），让用户/界面知道"字节传上去了、登记没成"。
+          try {
+            const { data } = await apiClient.post<ProductMedia>(
+              "/file-objects/register",
+              { ...meta, sha256 },
+            );
+            return { ...data, fellBackToProxy: false };
+          } catch (err) {
+            throw new Error(
+              `图片已直传成功，但登记失败（${describeUploadError(err)}）—— 请重试上传（字节不会重复写）`,
+            );
+          }
+        }
+      } else if (presign?.configured && !presign.upload_url) {
+        // configured=true 却不给 URL：服务端状态不对，如实标记，别当成"没配对象存储"
+        fallbackReason = "预签名未返回 upload_url";
+      }
+
+      // ② 兜底：服务端代传（multipart）。功能不缺失，只是字节经服务端中转。
+      const media = await uploadViaProxy(productKey, file, name, mediaKind);
+      if (!fallbackReason) {
+        // 没配对象存储 = 设计如此（本来就走服务端），不算"回退"
+        return { ...media, fellBackToProxy: false };
+      }
+      return { ...media, fellBackToProxy: true, fallbackReason };
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: productKeys.all }),
   });

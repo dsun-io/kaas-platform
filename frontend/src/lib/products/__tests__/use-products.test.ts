@@ -33,6 +33,10 @@ vi.mock("@/lib/api/client", () => ({
  * 静默走错方向不会有任何报错：直传失败却仍登记元数据 ⇒ 库里有一条指向空对象
  * 的记录（图片永远打不开）；该直传时走了 multipart ⇒ 大文件把服务端当流量中转站。
  * 所以这里把三条路径都钉死在断言上。
+ *
+ * 生产验收补的一课（task-14）：直传**被拒**（S3 密钥填错 ⇒ R2 `400 InvalidArgument`）
+ * 不能让用户的上传整体失败 —— 代理那条路（Worker `_store_bytes` 会回退 R2 binding/inline）
+ * 本来就更能扛配错。回退可以，但**不许静默**：返回体必须带 `fellBackToProxy` + 原因。
  */
 type GetResp = Awaited<ReturnType<typeof apiClient.get>>;
 const ok = (data: unknown): GetResp => ({ data }) as unknown as GetResp;
@@ -132,7 +136,14 @@ function posted(index: number) {
 
 const MEDIA_RE = /\/media$/;
 
-describe("产品图上传 · 直传优先（字节不过服务端）", () => {
+/** 造一个"服务端拒绝"的错误（带 response.status，让回退原因能带出 HTTP 码） */
+function httpError(status: number): Error {
+  return Object.assign(new Error(`Request failed with status code ${status}`), {
+    response: { status },
+  });
+}
+
+describe("产品图上传 · 直传优先与失败回退（字节不过服务端）", () => {
   let view: ReturnType<typeof renderUploadHook> | undefined;
 
   beforeAll(() => {
@@ -173,6 +184,9 @@ describe("产品图上传 · 直传优先（字节不过服务端）", () => {
     const result = await v.run(() => v.hook().mutateAsync({ file, ...INPUT }));
 
     expect(result).toMatchObject({ id: 91, name: "主图" });
+    // 直传走成了就不能报"已回退"
+    expect(result.fellBackToProxy).toBe(false);
+    expect(result.fallbackReason).toBeUndefined();
 
     // ① presign → ② PUT 直传 → ③ register（顺序固定）
     expect(post).toHaveBeenCalledTimes(2);
@@ -212,12 +226,98 @@ describe("产品图上传 · 直传优先（字节不过服务端）", () => {
     expect(init.headers).toMatchObject({ "Content-Type": "image/png" });
   });
 
-  it("直传 PUT 非 2xx：抛错，且**不登记元数据**（不留指向空对象的记录）", async () => {
+  it("直传 PUT 400 ⇒ 不整体失败：回退 multipart 且带回退标记（真相不被吞掉）", async () => {
     const file = helloFile();
     const post = vi.mocked(apiClient.post);
     post.mockResolvedValueOnce(ok({ configured: true, upload_url: UPLOAD_URL }));
+    post.mockResolvedValueOnce(ok({ id: 92, name: "主图", storage: "r2_binding" }));
 
-    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 403 });
+    // 生产实测：S3 密钥填错时 R2 对预签名 PUT 直接回 400 InvalidArgument
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 400 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    view = renderUploadHook();
+    const v = view;
+    const result = await v.run(() => v.hook().mutateAsync({ file, ...INPUT }));
+
+    // 最终成功，但**如实**标记走了兜底（返回体里的 storage 说明字节落在哪）
+    expect(result).toMatchObject({ id: 92, storage: "r2_binding" });
+    expect(result.fellBackToProxy).toBe(true);
+    expect(result.fallbackReason).toContain("直传被拒");
+    expect(result.fallbackReason).toContain("HTTP 400");
+
+    // 只 PUT 一次；**没有** register（字节没上去就登记 ⇒ 库里留一条指向空对象的记录）
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledTimes(2); // presign → media
+    expect(posted(0).url).toBe("/file-objects/presign");
+    expect(posted(1).url).toBe("/products/field_fence/media");
+    expect(post.mock.calls.some(([url]) => String(url) === "/file-objects/register")).toBe(false);
+    // 兜底那条路径本身必须是完整的（multipart 三件套都在）
+    expect(posted(1).form.get("file")).toBe(file);
+    expect(posted(1).form.get("name")).toBe("主图");
+    expect(posted(1).form.get("media_kind")).toBe("production");
+    expect(posted(1).config.headers?.["Content-Type"]).toBe("multipart/form-data");
+  });
+
+  it("直传 PUT 抛异常（网络/CORS）⇒ 同样回退 multipart，不整体失败", async () => {
+    const file = helloFile();
+    const post = vi.mocked(apiClient.post);
+    post.mockResolvedValueOnce(ok({ configured: true, upload_url: UPLOAD_URL }));
+    post.mockResolvedValueOnce(ok({ id: 93 }));
+
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    view = renderUploadHook();
+    const v = view;
+    const result = await v.run(() => v.hook().mutateAsync({ file, ...INPUT }));
+
+    expect(result).toMatchObject({ id: 93 });
+    expect(result.fellBackToProxy).toBe(true);
+    expect(result.fallbackReason).toContain("直传异常");
+    expect(result.fallbackReason).toContain("Failed to fetch");
+    expect(posted(1).url).toBe("/products/field_fence/media");
+  });
+
+  it.each([500, 403])(
+    "presign 自身 %i ⇒ 依然回退 multipart（代理那条路可能还是好的）",
+    async (status) => {
+      const file = helloFile();
+      const post = vi.mocked(apiClient.post);
+      post.mockRejectedValueOnce(httpError(status));
+      post.mockResolvedValueOnce(ok({ id: 94 }));
+
+      const fetchMock = vi.fn(() => {
+        throw new Error("presign 都没成功，不该有直传 PUT");
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      view = renderUploadHook();
+      const v = view;
+      const result = await v.run(() => v.hook().mutateAsync({ file, ...INPUT }));
+
+      expect(result).toMatchObject({ id: 94 });
+      expect(result.fellBackToProxy).toBe(true);
+      expect(result.fallbackReason).toContain("预签名失败");
+      expect(result.fallbackReason).toContain(`HTTP ${status}`);
+      // presign(失败) → media；没有 register，也没有盲目的 PUT
+      expect(post).toHaveBeenCalledTimes(2);
+      expect(posted(0).url).toBe("/file-objects/presign");
+      expect(posted(1).url).toBe("/products/field_fence/media");
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("字节已直传成功但 register 失败：明确报错，**不回退重传**（避免重复对象/重复流量）", async () => {
+    // 取舍理由：此刻字节已经落在对象存储里（流量已付），若默默改走 multipart，
+    // 同一份字节会被服务端再写一次 ⇒ 重复对象 + 重复流量；而 object_key 由 sha256 决定，
+    // 用户重试本身幂等 ⇒ 选"报错让用户重试"，并在文案里说清"字节已上去、登记没成"。
+    const file = helloFile();
+    const post = vi.mocked(apiClient.post);
+    post.mockResolvedValueOnce(ok({ configured: true, upload_url: UPLOAD_URL }));
+    post.mockRejectedValueOnce(httpError(500)); // register 失败
+
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
     vi.stubGlobal("fetch", fetchMock);
 
     view = renderUploadHook();
@@ -225,14 +325,13 @@ describe("产品图上传 · 直传优先（字节不过服务端）", () => {
     const err = await v.runCatching(() => v.hook().mutateAsync({ file, ...INPUT }));
 
     expect(err).toBeInstanceOf(Error);
-    expect((err as Error).message).toBe("直传失败：HTTP 403");
+    expect((err as Error).message).toContain("登记失败");
+    expect((err as Error).message).toContain("HTTP 500");
+    // 字节只写一次；没有再走 multipart（否则同一份字节写两次）
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    // 只有 presign，没有 register、没有 multipart
-    expect(post).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledTimes(2);
     expect(posted(0).url).toBe("/file-objects/presign");
-    expect(
-      post.mock.calls.some(([url]) => String(url) === "/file-objects/register"),
-    ).toBe(false);
+    expect(posted(1).url).toBe("/file-objects/register");
     expect(post.mock.calls.some(([url]) => MEDIA_RE.test(String(url)))).toBe(false);
   });
 });
@@ -265,6 +364,9 @@ describe("产品图上传 · 未配对象存储时回退 multipart", () => {
     const result = await v.run(() => v.hook().mutateAsync({ file, ...INPUT }));
 
     expect(result).toMatchObject({ id: 5 });
+    // 没配对象存储 = 设计如此，不算"回退"，界面不该被吓到
+    expect(result.fellBackToProxy).toBe(false);
+    expect(result.fallbackReason).toBeUndefined();
     expect(post).toHaveBeenCalledTimes(2);
     expect(posted(0).url).toBe("/file-objects/presign");
     expect(posted(0).body.sha256).toBe(HELLO_SHA256);
@@ -298,6 +400,9 @@ describe("产品图上传 · 未配对象存储时回退 multipart", () => {
     const result = await v.run(() => v.hook().mutateAsync({ file, ...INPUT }));
 
     expect(result).toMatchObject({ id: 6 });
+    // configured=true 却不给 URL 是服务端异常 ⇒ 如实标记为回退（别当成"没配"）
+    expect(result.fellBackToProxy).toBe(true);
+    expect(result.fallbackReason).toContain("upload_url");
     expect(post).toHaveBeenCalledTimes(2);
     expect(posted(1).url).toBe("/products/field_fence/media");
     expect(posted(1).form.get("media_kind")).toBe("production");
