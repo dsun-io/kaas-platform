@@ -1,5 +1,11 @@
 # 漂移审计报告：orchestrator（开发版） vs Worker（线上版）
 
+> ⚠️ **本文数字口径已过期**：当时 `route-parity-audit.py` 只读 `worker/src/main.py`
+> 一个文件，worker 现已拆成 18 个模块，故"A 类 33 / 线上 65"等数字失真
+> （修正后：线上坏 6、反向漂移 8）。检查器已修复，结论以
+> [PROBLEM_STATUS_2026-10-11.md](./PROBLEM_STATUS_2026-10-11.md) 与
+> `python scripts/route-parity.py` 为准。
+
 > 审计日期：2026-09-26 ｜ 方法：静态路由比对（`scripts/route-parity-audit.py`，可复现）
 > 触发原因：单证工位开发中发现"模板与渲染接口线上不存在"，遂做全量核对。
 > 处置方案见：`docs/DUAL_BACKEND_CONVERGENCE.md`（双后端收敛方案）

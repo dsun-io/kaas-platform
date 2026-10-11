@@ -13,6 +13,7 @@
 
 | 文档 | 内容 |
 |---|---|
+| [PROBLEM_STATUS_2026-10-11.md](./PROBLEM_STATUS_2026-10-11.md) | **现存问题当前口径**（实跑门禁取证；旧文档结论已被它取代时以此为准） |
 | [../README.md](../README.md) | 项目总览与协作规范 |
 | [WORKSTATION_DESIGN.md](./WORKSTATION_DESIGN.md) | 工位能力网 + 情报体系 设计 |
 | [archive/2026-09-30-doc-cleanup/SYSTEM_AUDIT.md](./archive/2026-09-30-doc-cleanup/SYSTEM_AUDIT.md) | 系统体检报告（2026-09-22 只读审计，**已归档**：整改已执行完） |
