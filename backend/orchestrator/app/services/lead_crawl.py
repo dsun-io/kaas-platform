@@ -35,6 +35,12 @@ from kaas_common.net import (  # noqa: F401  (is_safe_crawl_url 供调用方直�
     next_redirect_url,
 )
 
+# 产品信息抽取：同样是共享内核（纯确定性脚本，无平台依赖）
+from kaas_common.crawl_extract import (  # noqa: F401
+    extract_product_from_html,
+    strip_html,
+)
+
 __all__ = [
     "CRAWL_TIMEOUT",
     "CRAWL_UA",
@@ -42,6 +48,8 @@ __all__ = [
     "http_get_text",
     "is_safe_crawl_url",
     "next_redirect_url",
+    "extract_product_from_html",
+    "strip_html",
 ]
 
 

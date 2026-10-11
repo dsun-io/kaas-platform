@@ -151,90 +151,19 @@ def _urllib_get(url: str, timeout: int):
     raise ValueError("重定向次数过多")
 
 
-_META_TAG_RE = re.compile(r"<meta\b[^>]*>", re.IGNORECASE)
-_ATTR_RE = re.compile(r"([a-zA-Z:_-]+)\s*=\s*[\"']([^\"']*)[\"']")
-_SCRIPT_STYLE_RE = re.compile(r"<(script|style|noscript)\b.*?</\1>", re.IGNORECASE | re.DOTALL)
-_TAG_RE = re.compile(r"<[^>]+>")
-_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
-_H1_RE = re.compile(r"<h1[^>]*>(.*?)</h1>", re.IGNORECASE | re.DOTALL)
-_LINK_RE = re.compile(r"<a\b[^>]*href\s*=\s*[\"']([^\"']+)[\"'][^>]*>(.*?)</a>",
-                      re.IGNORECASE | re.DOTALL)
-# 产品页特征路径（脚本规则，命中最先出现的一个）
-PRODUCT_PATH_HINTS = ("/product", "/products", "/catalog", "/catalogue",
-                      "/shop", "/store", "/category", "/collections", "/goods")
-
-
-def _strip_html(fragment: str) -> str:
-    """去标签 + 压缩空白（正则版，够用且无依赖）。"""
-    text = _SCRIPT_STYLE_RE.sub(" ", fragment or "")
-    text = _TAG_RE.sub(" ", text)
-    text = (text.replace("&nbsp;", " ").replace("&amp;", "&")
-                .replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"')
-                .replace("&#39;", "'"))
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def _meta_content(html: str, keys: tuple) -> Optional[str]:
-    """按 property/name 抓 meta 的 content。"""
-    for tag in _META_TAG_RE.findall(html or ""):
-        attrs = {k.lower(): v for k, v in _ATTR_RE.findall(tag)}
-        key = (attrs.get("property") or attrs.get("name") or "").lower()
-        if key in keys and attrs.get("content"):
-            return attrs["content"].strip()
-    return None
-
-
-def _abs_url(base: str, href: str) -> str:
-    if href.startswith(("http://", "https://")):
-        return href
-    if href.startswith("//"):
-        return "https:" + href
-    parsed = urlparse(base)
-    root = f"{parsed.scheme}://{parsed.netloc}"
-    if href.startswith("/"):
-        return root + href
-    return root + "/" + href.lstrip("./")
-
-
-def extract_product_from_html(html: str, base_url: str) -> dict:
-    """从官网 HTML 提取产品信息（确定性脚本，AI 不参与）。
-
-    返回：product_name / product_name_raw_source / product_image_url /
-          spec_raw / link_url
-    """
-    og_image = _meta_content(html, ("og:image", "og:image:secure_url",
-                                    "twitter:image", "image"))
-    description = _meta_content(html, ("description", "og:description"))
-    title_m = _TITLE_RE.search(html or "")
-    title = _strip_html(title_m.group(1)) if title_m else ""
-    h1_m = _H1_RE.search(html or "")
-    h1 = _strip_html(h1_m.group(1)) if h1_m else ""
-
-    # 产品页链接：优先命中所选路径特征词
-    link_url = None
-    for href, anchor in _LINK_RE.findall(html or ""):
-        low = href.lower()
-        if any(hint in low for hint in PRODUCT_PATH_HINTS):
-            link_url = _abs_url(base_url, href)
-            break
-
-    # 主体文本（去脚本样式）作为规格原文
-    body_text = _strip_html(html)
-    spec_parts = []
-    if description:
-        spec_parts.append(description)
-    if body_text:
-        # 截断到 1200 字符，避免 raw 过大
-        spec_parts.append(body_text[:1200])
-
-    return {
-        "product_name": h1 or title or None,
-        "product_name_source": "h1" if h1 else ("title" if title else None),
-        "page_title": title or None,
-        "product_image_url": og_image,
-        "spec_raw": "\n".join(p for p in spec_parts if p) or None,
-        "link_url": link_url,
-    }
+# 产品信息抽取（纯确定性脚本，只用 re + urlparse）—— **与 orchestrator 共用同一份**
+# （`backend/kaas_common/crawl_extract.py`，由 scripts/sync-shared.ps1 镜像到 worker）。
+#
+# 搬走的理由与 SSRF 守卫相同：`chain.py` 依赖 Pyodide，
+# 在 CPython 测试环境里**根本 import 不了** —— 这段解析逻辑一直测不到，
+# 而它偏偏是最容易出错的一类（正则、HTML 变体、实体转义）。
+from kaas_common.crawl_extract import (  # noqa: E402
+    PRODUCT_PATH_HINTS,
+    abs_url as _abs_url,
+    extract_product_from_html,
+    meta_content as _meta_content,
+    strip_html as _strip_html,
+)
 
 
 async def _http_get_text(url: str, timeout: int = CRAWL_TIMEOUT):

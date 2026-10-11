@@ -182,9 +182,21 @@ own redirect policy**」。
 #### 顺带把一个更大的隐患修掉了：安全件不再有两份
 
 补 orchestrator 时，我一度把守卫在 orchestrator 复制了一份，并给 worker 那份
-配了测试 —— 结果**测试被 skip 了**：`chain.py` 模块级 `from main import ...`，
-而 `main.py` 依赖 Pyodide，**在 CPython 测试环境里根本 import 不了**。
-也就是说：守卫留在 `chain.py` 里 = **永远测不到**。
+配了一条测试，结果**测试被 skip 了**，于是我把成因写成
+「`chain.py` 依赖 Pyodide，在 CPython 测试里根本 import 不了」。
+
+**这条结论是错的，在此更正**：`chain.py` 是**可以**在测试里导入的 ——
+`tests/test_product_extract.py` 早就有现成办法：stub 一个 `main` 模块
+（`app` / `_acquire` / `_get_current_user`）、把 `src` 加进 `sys.path`，
+再 `import chain`。那条测试甚至**已经在覆盖** `_is_safe_crawl_url`、
+`extract_product_from_html`、`_abs_url`。
+
+我的测试之所以被 skip，纯粹是**没做这个 stub 与 sys.path 设置**，
+不是"做不到"。**把"我没搭起来"写成"根本测不了"，是把自己环境的局限
+当成了事实** —— 这类错误比代码 bug 更难发现，因为它看起来像一条结论。
+
+（搬进共享内核这件事**仍然成立**，只是理由不同：不是为了"能测"，
+而是为了**不留两份**、避免将来漂移。）
 
 一条跳过的安全测试比没有更糟 —— 它看起来像有覆盖。
 
