@@ -3,6 +3,11 @@ from decimal import Decimal
 
 import pytest
 
+# 本文件是纯函数测试（无 DB、无外部服务）⇒ 必须进 `-m unit` 门禁。
+# 2026-10-11 补：此前漏标，导致「单证内容边界（金额/行项不得被 custom 覆盖）」等
+# 回归只有全量跑才看得见 —— 漏标的代价是门禁形同虚设。
+pytestmark = pytest.mark.unit
+
 from kaas_common.trade_doc import (
     RuleError, PngError,
     assert_draft, assert_derivable, assert_transition, can_transition,
