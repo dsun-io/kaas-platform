@@ -118,3 +118,87 @@ Q8=**建试算 + 收敛路由** / D3/D4=**保留 NULL + 仅管理员可见 + 新
 | `docs/PRODUCT_MODULE_P1_REPORT.md` | P1 基础设施与政策（本地无 Postgres 的实测结论、迁移号、回填政策、写权尺子、账本接回最小范围） |
 | `docs/E2E_ROUTE_ENDPOINT_INVENTORY.md` | e2e 路由→端点清单与 mock 缺口 |
 | `AGENTS.md` §4/§5 | 多线并发提交纪律 + 测量纪律 |
+
+***
+
+# 当日收尾快照（2026-10-12，用户指示"补上以后记录当前状态，将代码推送到远程，到此为止今天"）
+
+## 一、用户当轮裁定
+
+> worker 的 `/explain` 对数值入参做 **min/max 越界校验**（越界 ⇒ 400 `invalid_numeric`），
+> **orchestrator 不做** ⇒ 同草稿 + 越界取值，两端状态码可能不同。
+> **用户裁定：给 orchestrator 补上** ✓（保持 worker 现有行为与既有用例不动）
+> —— 该项为**今天最后一件代码改动**，在 `task-27` 执行中。
+
+## 二、当日实际交付（在 task-1…task-26 之上）
+
+| 步骤 | 提交 | 一句话 |
+|---|---|---|
+| **P11** | `8f3e615` | 共享内核「两把尺 + 三层可见性」（Q1=B / Q5 / Q6 用**结构断言**钉住；**不提供工位可见性函数**） |
+| **P5/P6** | `4ce9992` | 迁移 `202610110019`：3 表加可空 `team_id` + 唯一键改 `(tenant_id, COALESCE(team_id,0), …)`；**upgrade/downgrade 离线双证** |
+| **P16 复核** | `b76bbe4` | `/explain` **不够**用 ⇒ 结论是**改造而非新建**（避免两套解释器）+ P12 ② remove-warning 契约（200 + warnings） |
+| **P9** | `a08cfc5` | 唯一键按团队收敛 + **两端 `ON CONFLICT` 同批**；**新增门禁**：迁移 DDL ↔ 三处冲突目标**逐元素比对**（挡"库改了代码没改"这类**单测全绿也发现不了**的错） |
+| **读路径谓词** | `deec73a` | `product_profiles`：本团队可读 / **别团队 404** / 历史 NULL **仅管理员**；**HTTP 层证**（含**阳性对照**） |
+| **file_objects + worker 同构** | `08de678` | P7 剩余 + P8；**两端各带静态审计用例**（落点必须带谓词、写入必须带 `team_id`） |
+| **P16 改造** | `d4783ec` + `2679d9b` | `/explain` 加可选 `spec_override`（草稿定义，不落库）+ `ok`/`errors`/`warnings`；**顺带查出 `spec_from_dict` 静默丢 3 个字段** |
+| **worker `/explain` 同构** | `0e9f0fe` | worker 侧同构（解析器**复用引擎包同一份**，经 `_ENGINE` 惰性符号表）；**两端用同一份期望字面量各自钉住** |
+
+## 三、门禁状态（**如实标注**）
+
+- **最后一次全套门禁是在 HEAD `6e8a04a`**：orchestrator **946** / worker **217** / `route-parity` PASS /
+  `sync-shared -Check` exit 0 / 前端 `typecheck` **0** / 前端 `test` **363** / `contracts:check` **PASS R0–R6** /
+  **`NEXT_EXPORT=1 build` exit 0（35/35 静态页）**。⚠️ 那一遍**漏跑 `lint`**（已如实标注过）。
+- **其后每一项改动都各自跑了相关门禁**（orchestrator `-m unit` / worker `pytest` / `sync-shared -Check` /
+  `contracts:check`，逐项数字见各任务报告），**但未再跑过一次全套（含 build）** ✗
+  ⇒ 下次开工的第一件事建议就是**在工作区静止时补跑一次全套**（含 build），再继续。
+
+## 四、⚠️ 未完成项与**阻塞**（按归属分类，非"未做"）
+
+### A. 被**另一条线的未提交改动**长期占位（**今天无法推进** ✗）
+
+| 文件 | 状态 |
+|---|---|
+| `backend/worker/src/main.py` | `MM`（**已暂存未提交**），mtime **10-11 23:24** |
+| `backend/worker/src/dbjson.py` | `MM`，mtime 10-11 23:27 |
+| `backend/worker/src/ws_docs_ext.py` | `MM`，mtime 10-12 01:06 |
+| `backend/orchestrator/app/api/trade_docs.py` | `MM`，mtime 10-12 01:06 |
+| `frontend/src/app/(app)/products/page.tsx` | `MM`，mtime 10-11 23:38 |
+
+**因此被卡住的具体工作**：
+1. **装配层 `resolve_photo_refs`** ⇒ **唯一还漏的跨团队取图路径** ✗（`main.py`）
+2. `main.py:3691` 的 product_profiles 读路径 ✗
+3. `app/api/trade_docs.py:829` 的产品基础信息读点 ✗
+4. **前端可视化编辑器**（目标里明确列出的"产品定义可视化编辑器"）✗ —— 它要落在 `/products` 工位，
+   而 `products/page.tsx` 正被占位。
+
+> **处置**：全程**没有去动别人的在飞文件**（这正是本次没再重演"断 HEAD"的原因 ✓），
+> 改为**逐轮复查**；一旦释放即可继续。**但今天到此为止，这批占位仍是下一次开工的最大前置。**
+
+### B. 需真库（本机无 Postgres）⇒ 挂 CI `db-tests`
+
+1. P6 的**回填语义**；2. `PRODUCT_MODULE_IMPL_PLAN.md` §8.6 的 **Q1=B 行为验收 SQL**
+（两团队各插同一 `product_key` ⇒ 都应成功；同团队重复 ⇒ 23505；两条 NULL ⇒ 第二条 23505）；
+3. §8.8 谓词在真库上的**实际过滤效果**。
+
+### C. 其它已登记、未开工
+
+- **§8.5**：`notes`/`hs_codes` 是**标量列表** ⇒ `add`/`remove` 会**抛错而非 warning**（文案没说清"不支持按条增删"）；
+  已批准扩范围到引擎包（需重跑 `sync-shared`），**排在 P9 之后**。
+- **团队覆盖参与试算**（`spec_override` 只解决"草稿定义"；"团队覆盖参与"仍需 `db`）⇒ 建议与 P13 一起做。
+- **前端编辑器接线**（P16 剩余：草稿表单 → `/explain`，用 `ok`/`errors` 做即时红标，`warnings` 展示被默认掉的字段）。
+- **依赖漏洞**：98→78；余 2 critical 需 Next ≥ 15.5.24（**用户已定单独排期**）。
+- **单证投产联调**：卡在生产 **R2 密钥长度 13≠32**。
+
+## 五、本会话新增到 `AGENTS.md` 的规则（都来自真实踩坑）
+
+1. **§4 私有 index 配方**：提交后**必须** `git reset -q HEAD -- <自家路径>` 归位，否则你新增的文件
+   在别人眼里变成 **`D ` staged 删除 + `??`**（下次裸提交会删掉它们）。
+2. **§4 `frontend/.next` 是硬冲突资源**：并发 build ⇒ 分块 500 ⇒ 不 hydration ⇒ **e2e 整轮作废**。
+3. **§5 测量纪律**：完整不过滤摘要 + 算术核对；"没匹配上" ≠ "没有"；不要用关键字 grep 当"不存在"的证据；
+   **通过数在环境不稳时没有比较意义**。
+4. **门禁段新增**：改 Pydantic 模型/路由时 `contracts:check` 的"绿"可能是**假绿**（R6 两侧都取 HEAD 快照）
+   ⇒ 正确顺序 **改 → 重生成产物 → 提交 → 再跑一次** ✓
+
+> 另有 6 条同类"检查对象错了"的教训散见于 `PRODUCT_MODULE_IMPL_PLAN.md` §8.x
+> （正则扫源码 vs `ast.parse`、`Select-String` 通配符不递归、`team_id` 被 `tenant_id` 误命中、
+> 测试名带 `'`/`.` 直接 SyntaxError 等）。
