@@ -10,6 +10,9 @@
  * - 产品本体来自**代码里的 ProductSpec**（勾花网/牛栏网/鹿网），这里只维护
  *   **租户可编辑**的补充信息（`product_profiles.info`）与图片。
  * - 产品图**并存**：一个产品可以有多张生产图/尺寸图，用 `media_kind` 区分，用 `name` 命名。
+ * - 产品图**可排序**：`sort_order` 是产品图库自己的位次（主图恒排最前），
+ *   一次维护、所有引用它的单证同步生效 —— 所以顺序存在文件元数据上，
+ *   与单证自己的 `trade_doc_files.sort_order` 分开（同一张图在不同单证可排不同位次）。
  * - 单证**引用**这些图（`trade_doc_files.file_id`）⇒ 一次维护、重复使用。
  *
  * 为什么图片要经过 blob：`/file-objects/{id}/content` 需要 Bearer 鉴权，
@@ -29,6 +32,7 @@ export interface ProductMedia {
   content_type: string | null;
   file_size: number | null;
   is_primary: boolean;
+  sort_order: number;
   version: number;
   created_at: string | null;
 }
@@ -172,10 +176,34 @@ export async function fetchFileDirectUrl(fileId: number): Promise<string | null>
 export function usePatchFile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { id: number; name?: string; is_primary?: boolean }) => {
+    mutationFn: async (input: {
+      id: number;
+      name?: string;
+      is_primary?: boolean;
+      sort_order?: number;
+    }) => {
       const { id, ...body } = input;
       const { data } = await apiClient.patch(`/file-objects/${id}`, body);
       return data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: productKeys.all }),
+  });
+}
+
+/**
+ * 重排产品图：把**整个顺序**压成 0..n-1 逐条 PATCH。
+ *
+ * 为什么不是"交换两张图的 sort_order"：新上传的图 `sort_order` 都是默认 0，
+ * 交换两个 0 等于没动。整体重排一次，就把"隐式顺序"固化成显式顺序；
+ * 调用方只需把**期望的最终顺序**（含每条的位次）交进来，未变的位次不用发请求。
+ */
+export function useReorderProductMedia() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (order: { id: number; sort_order: number }[]) => {
+      await Promise.all(
+        order.map(({ id, sort_order }) => apiClient.patch(`/file-objects/${id}`, { sort_order })),
+      );
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: productKeys.all }),
   });

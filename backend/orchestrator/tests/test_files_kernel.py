@@ -173,3 +173,54 @@ class TestDocPhotoRefs:
         # mime 缺失时按扩展名兜底；认不出就用 octet-stream（渲染器会丢弃 —— 有意：宁可不显示）
         assert to_data_uri(None, b"x", "a.PNG").startswith("data:image/png;base64,")
         assert to_data_uri(None, b"x", "a.bin").startswith("data:application/octet-stream;base64,")
+
+    def test_coerce_file_ref_id_rejects_untrusted_values(self):
+        """`product_photos` 是用户可写的 custom 字段；坏 `file_id` 不能把 render-data 打成 500。
+
+        实测缺陷（队友在 Worker 侧发现）：`int(entry["file_id"])` 遇到 `"abc"` 抛 ValueError
+        ⇒ `/api/v1/trade-docs/{id}/render-data` 500，而设计意图是"取不到就跳过该条"。
+        """
+        from kaas_common.files import coerce_file_ref_id
+
+        assert coerce_file_ref_id({"file_id": 7}) == 7
+        assert coerce_file_ref_id({"file_id": "12"}) == 12       # 数字字符串可接受
+        assert coerce_file_ref_id({"file_id": " 12 "}) == 12
+        # 以下都不能被当成文件 id（否则 int() 抛错或静默指到别的文件）
+        assert coerce_file_ref_id({"file_id": "abc"}) is None
+        assert coerce_file_ref_id({"file_id": "1.9"}) is None
+        assert coerce_file_ref_id({"file_id": 1.9}) is None
+        assert coerce_file_ref_id({"file_id": True}) is None     # bool 是 int 子类，必须单独挡
+        assert coerce_file_ref_id({"file_id": 0}) is None
+        assert coerce_file_ref_id({"file_id": -3}) is None
+        assert coerce_file_ref_id({"file_id": None}) is None
+        assert coerce_file_ref_id({}) is None
+        assert coerce_file_ref_id("不是字典") is None
+        assert coerce_file_ref_id(None) is None
+
+    def test_is_file_ref_uses_the_same_rule(self):
+        """`is_file_ref` 与 `coerce_file_ref_id` 必须是同一判定，不能一个说"是引用"、另一个转不出来。"""
+        assert is_file_ref({"file_id": "12"})
+        assert not is_file_ref({"file_id": "abc"}), "坏 id 不算引用（会被跳过，而不是让预览 500）"
+        assert not is_file_ref({"file_id": True})
+
+    def test_bad_file_id_does_not_500_and_does_not_query_db(self):
+        """坏 `file_id` 的端到端回归（orchestrator 侧装配函数）。
+
+        为什么 `db=None` 是证据：坏 id 会被 `is_file_ref` 判为"不是引用"→ 原样透传，
+        **根本不会去查库**。若哪天有人在判 `is_file_ref` 之前就 `int()`/查库，
+        这里会立刻炸错而不是悄悄变成 500。
+        """
+        import asyncio
+
+        from app.api.trade_docs import _resolve_product_photos
+
+        entry = {"file_id": "abc", "caption": "坏引用"}
+        out = asyncio.run(_resolve_product_photos(None, "default", {"product_photos": [entry]}))
+        assert out["product_photos"] == [entry]
+
+        # 对照组：合法引用必须真的去查库（db=None ⇒ 必然抛错），证明上面不是"整段没执行"
+        import pytest as _pytest
+
+        with _pytest.raises(Exception):
+            asyncio.run(_resolve_product_photos(
+                None, "default", {"product_photos": [{"file_id": 1, "caption": "正常引用"}]}))

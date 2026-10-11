@@ -56,20 +56,28 @@ db = _main.db
 _META_COLS = (
     "id, tenant_id, team_id, owner_type, owner_id, kind, media_kind, name, storage, "
     "object_key, file_name, content_type, file_size, sha256, version, supersedes_id, "
-    "is_current, is_primary, uploaded_by, created_at"
+    "is_current, is_primary, sort_order, uploaded_by, created_at"
 )
 _FILE_COLS_F = (
     "f.id, f.tenant_id, f.team_id, f.owner_type, f.owner_id, f.kind, f.media_kind, f.name, "
     "f.storage, f.object_key, f.file_name, f.content_type, f.file_size, f.sha256, f.version, "
-    "f.supersedes_id, f.is_current, f.is_primary, f.uploaded_by, f.created_at"
+    "f.supersedes_id, f.is_current, f.is_primary, f.sort_order, f.uploaded_by, f.created_at"
 )
+
+# 产品图**展示顺序**的唯一排序口径（orchestrator 与 worker 逐字一致）：
+#   主图恒排最前 → 自定义顺序 → id 兜底（sort_order 相同也不抖）
+_FILE_ORDER_BY = "is_primary DESC, sort_order, id"
+
+# 排序值上界：展示位次是人工维护的，正常不会超过图片张数；给个明确上界
+# 防止误填天文数字把某张图排到"看不见的地方"。
+_MAX_SORT_ORDER = 9999
 
 
 def _row_to_file(row) -> dict:
     d = dict(row)
     if d.get("created_at") is not None and hasattr(d["created_at"], "isoformat"):
         d["created_at"] = d["created_at"].isoformat()
-    for k in ("id", "team_id", "file_size", "version", "supersedes_id"):
+    for k in ("id", "team_id", "file_size", "version", "supersedes_id", "sort_order"):
         if d.get(k) is not None:
             d[k] = int(d[k])
     return d
@@ -306,7 +314,7 @@ async def list_media(product_key: str, request: Request, user: dict = Depends(_g
         request,
         f"SELECT {_META_COLS} FROM file_objects WHERE tenant_id=$1 AND owner_type='product'"
         " AND owner_id=$2 AND kind='product_photo' AND is_current"
-        " ORDER BY is_primary DESC, media_kind, id", DEFAULT_TENANT, product_key,
+        f" ORDER BY {_FILE_ORDER_BY}", DEFAULT_TENANT, product_key,
         table=None)
     return {"items": [_row_to_file(r) for r in rows], "media_kinds": MEDIA_KIND_LABELS}
 
@@ -330,6 +338,8 @@ async def upload_media(product_key: str, request: Request,
 class FilePatch(BaseModel):
     name: Optional[str] = None
     is_primary: Optional[bool] = None
+    caption: Optional[str] = None
+    sort_order: Optional[int] = None
 
 
 @app.patch("/api/v1/file-objects/{file_id}")
@@ -357,6 +367,15 @@ async def patch_file(file_id: int, body: FilePatch, request: Request,
                 DEFAULT_TENANT, row["owner_type"], row["owner_id"], row["kind"])
         await db.execute(request, "UPDATE file_objects SET is_primary=$1, updated_at=now() WHERE id=$2",
                          body.is_primary, file_id)
+    if body.sort_order is not None:
+        # 排序值是人工维护的展示位次：给个明确上界，防误填天文数字把图排到看不见的地方
+        if body.sort_order < 0 or body.sort_order > _MAX_SORT_ORDER:
+            raise _fail(FileRuleError(
+                "SORT_ORDER_OUT_OF_RANGE",
+                f"排序值需在 0 ~ {_MAX_SORT_ORDER} 之间"))
+        await db.execute(request,
+                         "UPDATE file_objects SET sort_order=$1, updated_at=now() WHERE id=$2",
+                         body.sort_order, file_id)
     return {"ok": True}
 
 
@@ -396,7 +415,7 @@ async def list_files(owner_type: str, request: Request, owner_id: Optional[str] 
     if kind:
         sql += " AND kind=$4"
         params.append(kind)
-    sql += " ORDER BY is_primary DESC, id"
+    sql += f" ORDER BY {_FILE_ORDER_BY}"
     rows = await db.fetch(request, sql, *params, table=None)
     return {"items": [_row_to_file(r) for r in rows]}
 
@@ -431,7 +450,9 @@ async def list_doc_files(doc_id: int, request: Request, user: dict = Depends(_ge
 @app.post("/api/v1/trade-docs/{doc_id}/files", status_code=201)
 async def attach_doc_file(doc_id: int, body: DocFileIn, request: Request,
                           user: dict = Depends(_get_current_user)):
-    """引用已有文件到单证；`role='stamp_scan'` 时旧回传件让位（版本化留档）。"""
+    """引用已有文件到单证；`role` 属于版本化角色（`stamp_scan` 盖章回传 /
+    `render_pdf` 系统出的 PDF）时，旧的"当前件"链接让位（改挂 `<role>_superseded`，
+    **不物理删**，历史可回溯）。"""
     if body.file_id is None:
         raise HTTPException(status_code=422, detail={"error": "validation", "code": "FILE_REQUIRED"})
     file_row = await db.fetchrow(
@@ -442,11 +463,13 @@ async def attach_doc_file(doc_id: int, body: DocFileIn, request: Request,
 
     async with _main._acquire(request) as conn:
         async with conn.transaction():
-            if body.role == "stamp_scan":
+            if body.role in ("stamp_scan", "render_pdf"):
+                # 版本化角色：旧链接改挂 `<role>_superseded`，行保留可追溯。
+                # 让位只针对**同一个 role**：盖章件与系统 PDF 各自只留一条"当前"。
                 await conn.execute(
-                    "UPDATE trade_doc_files SET role='stamp_scan_superseded'"
-                    " WHERE tenant_id=$1 AND trade_doc_id=$2 AND role='stamp_scan'",
-                    DEFAULT_TENANT, doc_id)
+                    "UPDATE trade_doc_files SET role=$1"
+                    " WHERE tenant_id=$2 AND trade_doc_id=$3 AND role=$4",
+                    f"{body.role}_superseded", DEFAULT_TENANT, doc_id, body.role)
             row = await conn.fetchrow(
                 "INSERT INTO trade_doc_files (tenant_id, trade_doc_id, file_id, role, caption, sort_order)"
                 " VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, role, caption, sort_order",
