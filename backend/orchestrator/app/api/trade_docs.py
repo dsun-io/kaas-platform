@@ -43,6 +43,7 @@ from kaas_common.trade_doc import (
     RuleError, assert_draft, assert_derivable, assert_transition, validate_confirm,
     normalize_items, derive_payload, freeze_snapshot,
     append_audit, protected_custom_fields,
+    apply_product_defaults, product_key_of,
 )
 from kaas_common.files import apply_default_seal, is_file_ref, to_data_uri
 from kaas_common.workstation.entity_links import (
@@ -779,6 +780,44 @@ async def _apply_default_seal(db, tenant_id: str, data: dict, custom) -> dict:
     return apply_default_seal(data, custom, await _default_seal_row(db, tenant_id))
 
 
+# ── 产品基础信息带入（一次维护、重复使用）────────────────────────────────────
+# 判定（填哪些字段/覆盖优先级/空值处理）在**共享内核**：G1 只允许一份 ——
+# `kaas_common/trade_doc/product_defaults.py`。
+# 本文件只保留"怎么取到产品档案"（本侧走 SQLAlchemy session），并做**注册表校验**：
+# 注册表（代码里的 ProductSpec）才是"有哪些产品"的唯一来源，info 只是它的补充。
+
+
+async def _product_info_of(db, tenant_id: str, product_key: str):
+    """产品档案 `info`；产品不在注册表 / 没维护过 → None。"""
+    from app.services.export_quote.products import has as has_product  # 惰性：不拖累模块加载
+    if not has_product(product_key):
+        return None
+    row = (await db.execute(text(
+        "SELECT info FROM product_profiles WHERE tenant_id=:t AND product_key=:k"
+    ), {"t": tenant_id, "k": product_key})).mappings().first()
+    if row is None:
+        return None
+    info = row["info"]
+    # 形状容错：正常路径上 JSONB 列回来就是 dict，但历史/直连驱动可能给 JSON 文本。
+    # 与 Worker 侧同一口径（两端都收两种形状），避免"字段在、值是字符串"而静默不生效。
+    if isinstance(info, str):
+        import json
+        try:
+            info = json.loads(info)
+        except (TypeError, ValueError):
+            return None
+    return dict(info) if isinstance(info, dict) else None
+
+
+async def _apply_product_defaults(db, tenant_id: str, doc_type: str, data: dict, custom) -> dict:
+    """装配层：单据**显式关联了产品**才查档案（没关联 → 一次查询都不发，回归旧行为）。"""
+    key = product_key_of(custom)
+    if not key:
+        return data
+    info = await _product_info_of(db, tenant_id, key)
+    return apply_product_defaults(data, custom, doc_type, info)
+
+
 @router.get("/trade-docs/{doc_id}/render-data")
 async def get_trade_doc_render_data(
     doc_id: int,
@@ -825,6 +864,8 @@ async def get_trade_doc_render_data(
     data = await _resolve_product_photos(db, tenant_id, data)
     # 单据没显式给 company_stamp → 自动带出租户默认公章（同样转 data URI）
     data = await _apply_default_seal(db, tenant_id, data, custom)
+    # 单据关联了产品 → 把产品档案的基础信息补进仍为空的行项（见共享内核 product_defaults）
+    data = await _apply_product_defaults(db, tenant_id, d.doc_type, data, custom)
     return {
         "doc": _row_to_doc(d),
         "data": data,

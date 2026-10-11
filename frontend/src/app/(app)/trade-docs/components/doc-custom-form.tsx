@@ -20,9 +20,13 @@
  *   （后端整块替换，漏了就抹掉上游快照 —— 见 `buildPayloadPatch` 的测试）。
  * - **仅 draft 可改**：签发后服务端返回 `PAYLOAD_LOCKED`，界面先把话说清楚，
  *   不让用户白填一遍。
+ * - **`custom.product_key`（关联产品）**：产品基础信息在「产品」工位维护一次，
+ *   单据只记"本单属于哪个产品"；render-data 装配时由后端把产品档案里对应的字段
+ *   补进**仍为空**的行项（HS 编码）。字段名与优先级由共享内核
+ *   `kaas_common/trade_doc/product_defaults.py` 定，这里只是选择器。
  */
 import { useMemo, useState } from "react";
-import { FileJson2, ImageUp, Lock, Save, Undo2 } from "lucide-react";
+import { FileJson2, ImageUp, Lock, Package, Save, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -37,9 +41,13 @@ import {
   type CustomFieldDef,
   type TradeDocRawPayload,
 } from "@/lib/trade-doc/custom-fields";
+import { useProducts } from "@/lib/products/use-products";
 
 import { useUpdateTradeDoc } from "../hooks/use-trade-docs";
 import { DocPhotoPicker } from "./doc-photo-picker";
+
+/** 单据关联的产品 key 存在 custom 的这个键上（后端共享内核同一口径） */
+const PRODUCT_KEY = "product_key";
 
 export function DocCustomForm({
   docId,
@@ -55,10 +63,15 @@ export function DocCustomForm({
   const update = useUpdateTradeDoc();
   const custom = (payload?.custom ?? {}) as Record<string, unknown>;
   const fields = useMemo(() => listCustomFields(docType), [docType]);
+  const products = useProducts();
 
   const [texts, setTexts] = useState<Record<string, string>>(() =>
     Object.fromEntries(fields.map((f) => [f.name, toInputText(custom[f.name])])),
   );
+  // 关联产品（`custom.product_key`）：不是模板字段，所以单独一个状态，
+  // 保存时并进同一份 `values` —— 清空即删掉该键（buildCustom 的 undefined 语义）。
+  const savedProductKey = typeof custom[PRODUCT_KEY] === "string" ? (custom[PRODUCT_KEY] as string) : "";
+  const [productKey, setProductKey] = useState<string>(savedProductKey);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const editable = status === "draft";
@@ -77,6 +90,7 @@ export function DocCustomForm({
     setTexts(
       Object.fromEntries(fields.map((f) => [f.name, toInputText(custom[f.name])])),
     );
+    setProductKey(savedProductKey);
     setErrors({});
   };
 
@@ -88,6 +102,7 @@ export function DocCustomForm({
       if (!parsed.ok) nextErrors[field.name] = parsed.error ?? "格式不对";
       else values[field.name] = parsed.value;
     }
+    values[PRODUCT_KEY] = productKey.trim() ? productKey.trim() : undefined;
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
       toast.error("有字段格式不对，先改完再保存");
@@ -172,6 +187,38 @@ export function DocCustomForm({
       )}
 
       <div className="grid gap-3 p-3 sm:grid-cols-2">
+        {/* 关联产品：决定"产品基础信息"能否带入本单据（后端按字段声明与空值判定） */}
+        <div className="space-y-1 rounded-md border border-dashed bg-muted/20 p-2 sm:col-span-2">
+          <span className="flex items-center gap-1 text-xs font-medium">
+            <Package className="h-3.5 w-3.5" />
+            关联产品
+            <code className="rounded bg-muted px-1 text-[10px] text-muted-foreground">
+              {PRODUCT_KEY}
+            </code>
+          </span>
+          <select
+            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            value={productKey}
+            disabled={!editable}
+            onChange={(e) => setProductKey(e.target.value)}
+          >
+            <option value="">（不关联）</option>
+            {(products.data?.items ?? []).map((p) => (
+              <option key={p.product_key} value={p.product_key}>
+                {p.name}（{p.product_key}）
+              </option>
+            ))}
+          </select>
+          <p className="text-[11px] text-muted-foreground">
+            选定后，该产品在「产品」工位维护的基础信息会自动带入本单据：目前是
+            <b> HS 编码</b>
+            （仅商业发票 / 原产地证 / 质量证明 / 报关信息表，且行项该栏为空时）。
+            产品档案改了，所有关联单据同步生效，不必逐张重填。
+          </p>
+          {products.isError && (
+            <p className="text-[11px] text-destructive">产品列表加载失败，稍后重试</p>
+          )}
+        </div>
         {fields.map((field) => (
           <FieldRow
             key={field.name}

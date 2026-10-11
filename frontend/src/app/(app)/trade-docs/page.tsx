@@ -466,6 +466,7 @@ export default function TradeDocsPage() {
                 docType={renderData.data.doc.doc_type}
                 docNo={renderData.data.doc.doc_no}
                 data={renderData.data.data}
+                docId={renderData.data.doc.id}
                 companyProfileConfigured={
                   renderData.data.company_profile_configured
                 }
