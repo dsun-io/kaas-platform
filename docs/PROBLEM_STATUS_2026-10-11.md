@@ -464,6 +464,38 @@ hasTeam: typeof body["has_team"] === "boolean" ? body["has_team"] : null,
 我上一轮把"多数用例仍通过"当成了"影响不大"的证据 ——
 其实是那 9 条恰好依赖首屏数据，其余的运气好而已。
 
+#### 试过 `onUnhandledRequest: "error"` 来自证缺口 —— **失败，已回退**
+
+想法：让未匹配的请求**直接抛错**，这样它会出现在 Playwright 的失败信息里
+（自带请求路径），不必再去转发浏览器控制台。
+
+**实测不行**：9 failed / 15 passed → **19 failed / 5 passed**（明显更差），
+且 MSW 的点名**仍然没进 stdout**。
+
+从日志里能确认这一点 —— 那些错误**不是** MSW 的，而是 dev server 在
+**自己代理自己**：
+
+```
+28 × [WebServer] Error: connect EADDRINUSE ::1:3000
+28 × [WebServer] Error: connect EADDRINUSE 127.0.0.1:3000
+14 × [WebServer] Error: connect ENOBUFS ::1:3000
+14 × [WebServer] Error: connect ENOBUFS 127.0.0.1:3000
+ 4 × Error: expect(locator).toBeVisible() failed
+```
+
+（`ENOBUFS` = no buffer space，出现 14 次，值得留意是资源症状。）
+
+**结论**：`error` 只让套件更差、没换来可见性，**已 `git checkout` 回退 `warn`**（9/15）。
+
+#### 剩下唯一可行的取证路径
+
+MSW 的 `warn` 走 `console.warn`，而 **Playwright 默认不转发页面 console 到
+stdout**。要拿到"是哪个请求没匹配"，只有一条路：
+
+**加一个 fixture 转发 `page.on('console')`** —— 而这需要把 8 个 spec 文件的
+`import { test } from '@playwright/test'` 改成从 fixture 导入（每个文件一行，
+机械且有风险低）。这是下一步的**唯一**选项，不要再试 `error` 模式。
+
 **关键发现：那两个 critical/high 的来源不是"版本旧"，是依赖放错了位置。**
 
 | 漏洞 | 来源链 | 真实问题 |
