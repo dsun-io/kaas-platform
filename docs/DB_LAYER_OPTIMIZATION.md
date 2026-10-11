@@ -1,5 +1,11 @@
 # 数据库层优化方案（除单运行时外）
 
+> ⚠️ **方案 1、2 已于 2026-10-11 退役，代码已删除，不要再接线。**
+> 真正的双份维护痛点在「业务规则」与「序列化」，不在 SQL 字符串 ——
+> 该问题后来由 `kaas_common/workstation/*` 与 `kaas_common/trade_doc/*`
+> 的共享规则解决，并由 `sync-shared.ps1` 镜像进 Worker。
+> 详见文末「结局：方案 1、2 已退役」。
+
 ## 现状
 
 orchestrator（SQLAlchemy ORM + asyncpg）与 worker（asyncpg 直连 Hyperdrive）
@@ -71,18 +77,44 @@ GROUP BY c.id;
 
 ## 推荐
 
-**短期（已实施）**：方案1（SQL 查询模板共享）—— 零风险，立即消除 SQL 双份维护。
+**短期**：~~方案 1（SQL 查询模板共享）~~ → **已退役**（见下）。
 
-**中期**：方案2（Repository 模式）—— 把数据访问逻辑抽成类，API 层代码完全一致。
+**中期**：~~方案 2（Repository 模式）~~ → **已退役**（见下）。
 
 **长期**：合并为单运行时（用户已认可是最优解）—— 彻底消除双份维护。
 
+## 结局：方案 1、2 已退役（2026-10-11）
+
+`backend/kaas_common/db/`（`queries.py` + `repositories.py` + `__init__.py`）**已删除**。
+
+### 为什么是删除，而不是接线
+
+1. **从来没被接线过**：全仓（含测试）零引用 —— 唯一命中是这两个文件自己的
+   docstring 示例。`Adapter` 协议在 orchestrator 与 Worker 两侧都**没有实现**，
+   Repository 类根本无法构造。
+2. **接上去会绕过团队隔离**：模板写死 `WHERE tenant_id = :tenant_id`，
+   **完全没有 `team_id` / `owner_id` / `owner_scope` 过滤**；而真实实现是
+   `(owner_id = $x OR owner_scope = 'tenant' OR team_id = $y)`。
+   它们是 2026-10-11 三层组织（管理员/团队/成员）**之前**写的东西，
+   直接接线等于给刚修好的隔离开一个口子。
+3. **真正的问题已用更好的方式解决**：共享的是**业务规则与序列化** ——
+   `kaas_common/workstation/*`（scope / customer_rules / state_machines /
+   amount_rules / teams / `*_serializers`）与 `kaas_common/trade_doc/*`，
+   由 `scripts/sync-shared.ps1` 镜像进 Worker。规则只有一份，
+   两端各自用擅长的绑定方式执行 —— 这正是方案 2 想要的"只换适配器"效果，
+   但不需要共享 SQL 字符串。
+4. **参数风格不兼容**：模板用 `:named`（SQLAlchemy），Worker 用 `$1` 位置参数。
+   本方案自己就承认"需要一层参数转换（或统一用位置参数）"——
+   而那层转换正是"接线"的主要工作量，收益却低于共享规则。
+
+需要时从 git 历史取回：`git show 6645092:backend/kaas_common/db/repositories.py`。
+
 ## 已实施
 
-- [x] `backend/kaas_common/db/queries.py`：客户/报价单/订单/询盘 SQL 模板
-- [x] `backend/kaas_common/db/repositories.py`：Repository 模式（CustomerRepository/QuoteRepository/OrderRepository/InquiryRepository）
-- [ ] orchestrator 接线（SQLAlchemy 适配器 + API 层改用 Repository）
-- [ ] worker 接线（asyncpg 适配器 + API 层改用 Repository）
+- [x] ~~`queries.py`：客户/报价单/订单/询盘 SQL 模板~~ → **已删除**（未接线 + 缺团队隔离）
+- [x] ~~`repositories.py`：Repository 模式~~ → **已删除**（无 Adapter 实现，无法构造）
+- [x] ~~orchestrator 接线~~ → **不做**（改由共享规则 + 序列化承担）
+- [x] ~~worker 接线~~ → **不做**（同上）
 
 ## 关联
 
