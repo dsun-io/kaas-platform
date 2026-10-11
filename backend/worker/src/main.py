@@ -2236,24 +2236,53 @@ async def list_events_api(
 # ── 阶段 3 · 管理（/api/v1/admin/*；yaml→DB 等语义差见 docs/CLEANUP_LOG.md）──
 @app.get("/api/v1/admin/feature_flag")
 async def get_feature_flag(
-    flag_name: str, request: Request, user: dict = Depends(_get_current_user)
+    request: Request,
+    tenant_id: str = "",
+    flag_name: str = "",
+    user: dict = Depends(_get_current_user),
 ):
-    row = await db.fetchrow(
+    """读取 feature flags —— 形状是前端消费契约的 `Record<tenant_id, Record<flag, bool>>`。
+
+    前端 gray-release 页读 `flags?.[t.tenant_id]?.["use_v2"]`（page.tsx:45），
+    所以**必须**返回「租户号 → {开关: bool}」的映射；旧版这里要求 `flag_name` **必填**、
+    只回单值 `{flag_name, flag_value}` ⇒ 灰度页所有开关恒 OFF（real 模式实测症状）。
+    worker 是单租户部署：只可能返回 DEFAULT_TENANT 那一项；显式要别的租户 = 不存在 ⇒ 404
+    （不泄露存在性，与 orchestrator 同口径）。`flag_name` 参数过渡期保留但不再改变形状。
+    """
+    tid = (tenant_id or DEFAULT_TENANT).strip() or DEFAULT_TENANT
+    if tid != DEFAULT_TENANT:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "not_found", "code": "TENANT_NOT_FOUND"},
+        )
+    rows = await db.fetch(
         request,
-        "SELECT flag_value FROM feature_flags WHERE tenant_id = $1 AND flag_name = $2",
-        DEFAULT_TENANT, flag_name,
+        "SELECT flag_name, flag_value FROM feature_flags WHERE tenant_id = $1",
+        DEFAULT_TENANT,
     )
-    return {"flag_name": flag_name, "flag_value": bool(row["flag_value"]) if row else False}
+    return {
+        DEFAULT_TENANT: {
+            r["flag_name"]: bool(r["flag_value"]) for r in rows
+        }
+    }
 
 
 @app.post("/api/v1/admin/feature_flag")
 async def set_feature_flag(body: dict, request: Request, user: dict = Depends(_get_current_user)):
-    """功能开关写 DB（orchestrator 写 tenants.yaml，存储差见 UNCERTAIN #13），并记审计。"""
-    flag_name = (body.get("flag_name") or "").strip()
+    """功能开关写 DB（orchestrator 写 tenants.yaml，存储差见 UNCERTAIN #13），并记审计。
+
+    兼容两种请求体（与 orchestrator app/api/admin.py:120-134 同口径）：
+    - 后端格式: { tenant_id, flag_name, flag_value }
+    - 前端格式: { tenant_id, flag_key, enabled, reason, actor_id }
+      （gray-release 的 useToggleFeatureFlag 发的是后者，旧版只认 flag_name ⇒ 线上 422）
+    """
+    flag_name = str(body.get("flag_name") or body.get("flag_key") or "").strip()
     if not flag_name:
         raise HTTPException(status_code=422, detail="flag_name is required")
-    flag_value = bool(body.get("flag_value", False))
-    tenant_id = (body.get("tenant_id") or DEFAULT_TENANT).strip()
+    flag_value = bool(
+        body["flag_value"] if "flag_value" in body else body.get("enabled", False)
+    )
+    tenant_id = str(body.get("tenant_id") or DEFAULT_TENANT).strip() or DEFAULT_TENANT
     old = await db.fetchrow(
         request,
         "SELECT flag_value FROM feature_flags WHERE tenant_id = $1 AND flag_name = $2",
@@ -2280,25 +2309,57 @@ async def set_feature_flag(body: dict, request: Request, user: dict = Depends(_g
         str(user["id"]), tenant_id, str(row["id"]), flag_name,
         str(old_value), str(flag_value), body.get("reason"),
     )
-    return {"flag_name": flag_name, "flag_value": flag_value}
+    return {
+        "tenant_id": tenant_id,
+        "flag_name": flag_name,
+        "old_value": old_value,
+        "new_value": flag_value,
+        "flag_value": flag_value,
+    }
 
 
 @app.get("/api/v1/admin/tenants")
 async def list_tenants(user: dict = Depends(_get_current_user)):
-    # Worker 单租户形态：tenants.yaml 不可移植，固定返回默认租户（UNCERTAIN #13）
-    return {"items": [{"tenant_id": DEFAULT_TENANT, "name": DEFAULT_TENANT}]}
+    # Worker 单租户形态：tenants.yaml 不可移植，固定返回默认租户（UNCERTAIN #13）。
+    # 形状按前端消费契约（tenant-list.tsx:41-49 读 display_name/is_active，不读 name）。
+    # ⚠️ 内容**永远 1 条**：这是部署形态决定的，不为"看起来一致"伪造多条（报告 §4.3）。
+    return {
+        "tenants": [
+            {
+                "tenant_id": DEFAULT_TENANT,
+                "display_name": DEFAULT_TENANT,
+                "is_active": True,
+            }
+        ]
+    }
 
 
 @app.post("/api/v1/admin/tenants/reload")
 async def reload_tenants(request: Request, user: dict = Depends(_get_current_user)):
-    """租户重载：Worker 无 yaml，仅记审计 no-op（语义差见 docs/CLEANUP_LOG.md）。"""
+    """租户重载：Worker 无 yaml，仅记审计 no-op（语义差见 docs/CLEANUP_LOG.md）。
+
+    形状按前端消费契约返回**重载后的启用租户清单**（reload-button.tsx:56-66 直接
+    `active_tenants.map(...)`）；单租户部署永远 1 条，同样不伪造多条。
+    locale/region 用 worker 侧既有口径（见 list_capability_customers 的 zh-CN/CN）。
+    """
     await db.execute(
         request,
         """INSERT INTO feature_flag_audit (action, actor_id, tenant_id, resource_type, reason)
              VALUES ('tenants_reload', $1, $2, 'tenants', 'worker 单租户无 yaml，no-op 记账')""",
         str(user["id"]), DEFAULT_TENANT,
     )
-    return {"reloaded": True, "items": [{"tenant_id": DEFAULT_TENANT, "name": DEFAULT_TENANT}]}
+    return {
+        "reloaded_count": 1,
+        "active_tenants": [
+            {
+                "tenant_id": DEFAULT_TENANT,
+                "display_name": DEFAULT_TENANT,
+                "locale": "zh-CN",
+                "region": "CN",
+                "is_active": True,
+            }
+        ],
+    }
 
 
 @app.get("/api/v1/admin/audit-log")

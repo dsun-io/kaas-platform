@@ -69,14 +69,19 @@ def _append_audit(action: str, tenant_id: str, detail: dict) -> None:
 
 @router.get("/tenants", response_model=TenantListResponse)
 async def list_tenants(request: Request):
-    """列出所有启用租户。"""
+    """列出所有租户。
+
+    前端消费契约（用户裁决 P1/P2）：`{tenants:[{tenant_id, display_name, is_active}]}` ——
+    渲染组件读的就是这三个键（settings/components/tenant-list.tsx:41-49）。
+    键集合是精确的（旧键 `enabled` 已按 Lead 裁决移除，见 schemas/admin.py）。
+    """
     tenants = get_all_tenants()
     return {
         "tenants": [
             {
                 "tenant_id": tid,
-                "display_name": t.get("display_name"),
-                "enabled": t.get("enabled", True),
+                "display_name": t.get("display_name") or tid,
+                "is_active": bool(t.get("enabled", True)),
             }
             for tid, t in tenants.items()
         ]
@@ -102,13 +107,29 @@ async def get_tenant(request: Request, tenant_id: str):
 async def reload_tenants(
     request: Request,
 ):
-    """热重载租户缓存（需 admin token）。"""
+    """热重载租户缓存（需 admin token）。
+
+    前端消费契约（用户裁决 P4）：必须返回**重载后的启用租户清单** ——
+    reload-button.tsx:56-66 直接 `result.active_tenants.map(...)` 渲染表格，
+    只回计数会让线上点「重载」就崩（undefined.map）。
+    键集合精确为 `reloaded_count` + `active_tenants`（旧键 message/tenant_count 已移除）。
+    """
     reload_all_tenants()
     tenants = get_all_tenants()
     _append_audit("tenants_reload", "*", {"tenant_count": len(tenants)})
     return {
-        "message": "Tenant cache reloaded",
-        "tenant_count": len(tenants),
+        "reloaded_count": len(tenants),
+        "active_tenants": [
+            {
+                "tenant_id": tid,
+                "display_name": t.get("display_name") or tid,
+                "locale": t.get("locale", ""),
+                "region": t.get("region", ""),
+                "is_active": bool(t.get("enabled", True)),
+            }
+            for tid, t in tenants.items()
+            if t.get("enabled", True)
+        ],
     }
 
 
