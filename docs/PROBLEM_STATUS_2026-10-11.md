@@ -63,13 +63,44 @@
 
 ### 还没做的（建议顺序）
 
-1. **旧表 `customer_pricing_profiles` 活读取路径收口** —— 文档里挂着的**真缺陷**：
-   插新模型的行进去会被按加价倍率**静默误读**，不报错不告警。
-2. **反向漂移 8 条**（worker 独有：`outreach/webhook`×4、`subscriptions`×2、`leads/crawl`×2）。
-3. **前端认证契约残留**（`session-cache.ts` 的 tenant 结构、`client.ts` 的 `X-Tenant-Id`）。
-4. **接口级测试**（#2b 与均价都只有纯函数单测）、**前端档位管理界面**。
-5. 规格库 11 条接口 / 依赖漏洞 98 个 + next 14→15 / e2e 26 条归真 /
+1. **反向漂移 8 条**（worker 独有：`outreach/webhook`×4、`subscriptions`×2、`leads/crawl`×2）。
+2. **前端认证契约残留**（`session-cache.ts` 的 tenant 结构、`client.ts` 的 `X-Tenant-Id`）。
+3. **接口级测试**（#2b 与均价都只有纯函数单测）、**前端档位管理界面**。
+4. 规格库 11 条接口 / 依赖漏洞 98 个 + next 14→15 / e2e 26 条归真 /
    产品定义可视化编辑器 / 团队管理员转让 / 单证投产联调。
+
+### 旧表 `customer_pricing_profiles` 活读取路径已收口（`51e26f9` 之后）
+
+文档里挂着的那条**真缺陷**关掉了。它是一条**静默误读**链路：
+
+```
+services/quote_engine.create_quote
+  → services/niulanwang_pricing.calculate_base_cost / calculate_tiers
+    → repositories/pricing_profiles_repo.get_current_profile
+      → customer_pricing_profiles（INT-R3 时代的三档加价倍率模型）
+```
+
+模型注释自己写着风险：**把新模型的行插进旧表，老路径会按「加价倍率」解读它们
+—— 读到 null / 垃圾值继续算，不报错、不告警。**
+
+**处置：整链删除**（三个文件），理由是它已是死代码 ——
+`create_quote` 的唯一引用是 `services/__init__` 的再导出，
+加一个测试里的 `assert is not None`；**没有任何 API 调用它**
+（`app/api/quotes.py:254` 那个同名 `create_quote` 是路由处理器，不相干）。
+
+连带改动：
+
+- `services/__init__.py` / `repositories/__init__.py` 去掉对应 import 与 `__all__` 条目
+- `tests/test_knowledge_provider.py` 里那条"报价链不依赖 FastGPT"的断言
+  改断言**现役引擎** `app.services.export_quote.build`（原断言对象已删除）
+- `models.CustomerQuoteProfile` 的注释更新（原文写"仍被旧线性流水线读取"，已不成立）
+
+**表本身保留**（里面有历史数据；删表是破坏性动作，需单独决定）。
+它现在是**退役状态**：没有任何代码读它，也没有新的写入路径 ——
+隐患来自"被读"，读路径没了，隐患即消失。
+
+验证：`app.main` 可导入；orchestrator **511 passed**（不变）；
+     worker **142 passed**；`route-parity` PASS；`sync-shared -Check` exit 0。
 
 ***
 

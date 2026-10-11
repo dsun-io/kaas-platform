@@ -69,6 +69,8 @@ backend/orchestrator/scripts/seed_data/*.yaml
 backend/orchestrator/scripts/seed_data/*.json
 !backend/orchestrator/scripts/seed_data/.gitignore
 !backend/orchestrator/scripts/seed_data/README.md
+# 核算脚本的产物（`scripts/verify/verify_against_sheet.py` 每次运行会重写）
+backend/orchestrator/scripts/verify/sheet_niulanwang*.json
 
 # 运行时日志
 backend/orchestrator/logs/*.jsonl
