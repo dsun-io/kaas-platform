@@ -35,6 +35,10 @@
 | 6 | **生产缺 `POST /auth/logout`**：前端点登出就是 404（allowlist 里唯一"前端已调用"的待补项） | `e319f26` |
 | 7 | **`quote-profiles` 本地联调 404**：Worker 双路径、orchestrator 只有一条，前端用的是缺的那条 | `440e81d` |
 | 8 | **CI unit 任务红**：`test_knowledge_provider` 被标 `unit` 却真连 PostgreSQL，CI unit 任务无 postgres service | `d04dd2d` |
+| 9 | **单证金额勾稽生产端缺失**：内核 `validate_confirm` 只校验到**行级**，「单证合计 = 行项目合计」只有 dev 有 → 线上能确认"合计≠明细"的单据（信用证不符点） | `c2ee256` |
+| 10 | **管理员判定有两份**：`customer_rules.can_see_all` 把 `account_type='internal'` 也算管理员 → `qa_user` 这类内部普通账号能看全部租户 | `7688b77` |
+| 11 | **共享 Repository 死代码**：零引用，且 SQL 模板完全没有 `team_id`/归属过滤 —— 接线会**绕过团队隔离** | `e6b54e5` |
+| 12 | **生产 schema 落后 14 个迁移**：线上库停在 `202609300001`，代码 head 是 `202610110014`；8 张表 2 个列在生产根本不存在，而对应端点早已上线 | 见下「生产库对齐」 |
 
 **另一批"文档写着未完成、实际早已完成"的**（本轮只做核对，未改代码）：
 
@@ -59,19 +63,46 @@
 
 | # | 问题 | 证据 | 严重度 |
 |---|---|---|---|
-| 1 | **单租户硬编码**：Worker 所有查询固定 `tenant_id='default'`，而数据里存在 `lianjia` / `client_b` 租户 → `联佳丝网` 在生产**对任何人不可见**，联佳新建的数据落 `default` 被别家看到 | `worker/src/platform/db.py:28`；`chain.py` 数十处 | 高（数据隔离） |
-| 2 | **共享 Repository 层是死代码**：4 个 Repository 类 + SQL 模板**零 importer**，API 仍走 `app/repositories/*`（SQLAlchemy）与裸 asyncpg → 双份维护没消除，还多一份没人用的 | `kaas_common/db/repositories.py`、`queries.py` | 中 |
-| 3 | **旧表仍有一条活读取路径**：`quote_engine.py:15 → niulanwang_pricing.py:12,113 → pricing_profiles_repo.get_current_profile` 读 `customer_pricing_profiles`；插入新模型行会被按加价倍率**静默误读**，不报错不告警 | `backend/orchestrator/app/services/niulanwang_pricing.py` | 中高（静默错误） |
-| 4 | **反向漂移 8 条**：`outreach/webhook`×4 方法、`subscriptions`×2、`leads/crawl`×2 —— 只存在于 worker，用 orchestrator 重新生成 worker 会丢功能 | `route-parity.py` worker 独有清单 | 中 |
-| 5 | **`outreach/webhook` 线上攻击面更宽**：worker 允许 GET/POST/PUT/PATCH/DELETE，orchestrator 只有 POST | `worker/src/chain.py:1685` | 中（安全面待复核） |
-| 6 | **待补路由 22 条**：其中 11 条规格库（`/product-specs`、`/spec/attributes*`、`/spec/skus*`、`/spec/templates*`）前端未直接调用，allowlist 标"按需补" | `scripts/route-parity-allowlist.txt` | 低 |
-| 7 | **`_can_see_all` 口径窄**：worker 只认 `role == "system_admin"`，dev 的 `effective_role` 还会把历史 `'admin'` 映射过来；将来出现 legacy admin 账号会被当普通成员，改动需三处同改 | `worker/src/main.py` | 低（潜伏） |
-| 8 | **产品组合数三方不一致**：前端按轴相乘得 **120**，常量是 **160**，测试断言 **48**；后端 4 处断言 `combo_count == 160` | `shared/contracts/niulanwang.ts:99,175`；`test_export_quote_api.py:96,276`、`test_export_quote_formulas.py:324`、`test_export_quote_import.py:82,283` | 中（影响"共 N 种规格"展示；且无法判断是前端轴缺项还是后端数过期） |
-| 9 | **前端认证契约残留**（不影响功能，`tsc` exit 0）：`lib/auth/session-cache.ts` 仍有 `tenant` 结构与 `user?.tenant_id` 读取；`lib/api/client.ts:43-46` 仍会注入 `X-Tenant-Id`（值恒为空，实际不发） | 只读扫描 | 低（死代码） |
-| 10 | **依赖债**：next `^14.2.0 → 15.x` 专项未做；升级后终态仍有 82 漏洞（3 严重 / 24 高危 / 42 中 / 13 低） | `CLEANUP_LOG.md:108-110` | 中 |
-| 11 | **e2e 26 条失败未归真**：依赖本机后端 + 数据库，属"页面没数据"，本轮未复跑 | `CLEANUP_LOG.md:32-34`、`E2E_GUIDE.md:38` | 中 |
+| 1 | **旧表仍有一条活读取路径**：`quote_engine.py:15 → niulanwang_pricing.py:12,113 → pricing_profiles_repo.get_current_profile` 读 `customer_pricing_profiles`；插入新模型行会被按加价倍率**静默误读**，不报错不告警 | `backend/orchestrator/app/services/niulanwang_pricing.py` | 中高（静默错误） |
+| 2 | **反向漂移 8 条**：`outreach/webhook`×4 方法、`subscriptions`×2、`leads/crawl`×2 —— 只存在于 worker，用 orchestrator 重新生成 worker 会丢功能 | `route-parity.py` worker 独有清单 | 中 |
+| 3 | **`outreach/webhook` 线上攻击面更宽**：worker 允许 GET/POST/PUT/PATCH/DELETE，orchestrator 只有 POST。**注意**：处理体是预留桩，任何方法都直接返回 501、无副作用 → 不是安全洞，只是两端不一致 | `worker/src/chain.py:1685` | 低（待复核） |
+| 4 | **待补路由 22 条**：其中 11 条规格库（`/product-specs`、`/spec/attributes*`、`/spec/skus*`、`/spec/templates*`）前端未直接调用，allowlist 标"按需补" | `scripts/route-parity-allowlist.txt` | 低 |
+| 5 | **产品组合数三方不一致**：前端按轴相乘得 **120**，常量是 **160**，测试断言 **48**；后端 4 处断言 `combo_count == 160` | `shared/contracts/niulanwang.ts:99,175`；`test_export_quote_api.py:96,276`、`test_export_quote_formulas.py:324`、`test_export_quote_import.py:82,283` | 中（A2 一并解决：轴改自由数值后该口径作废） |
+| 6 | **前端认证契约残留**（不影响功能，`tsc` exit 0）：`lib/auth/session-cache.ts` 仍有 `tenant` 结构与 `user?.tenant_id` 读取；`lib/api/client.ts:43-46` 仍会注入 `X-Tenant-Id`（值恒为空，实际不发） | 只读扫描 | 低（死代码） |
+| 7 | **依赖债**：next `^14.2.0 → 15.x` 专项未做。**实测 98 个漏洞**（3 严重 / 24 高危 / 56 中 / 15 低）—— 比 `CLEANUP_LOG.md:110` 记的 82 **更差** | `pnpm audit`（2026-10-11 实测） | 中 |
+| 8 | **e2e 26 条失败未归真**：依赖本机后端 + 数据库，属"页面没数据"，本轮未复跑 | `CLEANUP_LOG.md:32-34`、`E2E_GUIDE.md:38` | 中 |
 
-### 关于 #8 的取证（**未擅自改**，涉及报价规格空间）
+### 生产库对齐（2026-10-11 已执行，先演练后上生产）
+
+**这一步推翻了本文早先以及多份文档的说法。** 文档一直写「联佳丝网在生产对任何人不可见」，
+但直连生产库（Neon 项目 `KaaS` / `production` 分支）实测是另一回事：
+
+| 项 | 迁移前 | 迁移后 |
+|---|---|---|
+| `alembic_version` | `202609300001`（落后仓库 head **14 个迁移**） | `202610110014`（= head） |
+| 缺表 | `teams` / `team_invites` / `team_subscriptions` / `user_subscriptions` / `tenant_products` / `tenant_workstation_products` / `entity_links` | 全部建好 |
+| 缺列 | `customers.team_id`、`customers.is_deleted` | 已有 |
+| `customers` 数据 | 只有 1 行 QA 冒烟，`tenant_id='qa-smoke-0000-…'` —— **根本没有「联佳丝网」这一行** | 该行 `tenant_id` 已统一为 `default` |
+| `teams` | （表不存在） | 1 行：「安平县联佳丝网制品有限公司」，`tenant_id='default'` |
+
+**真实的生产事故是「线上跑的代码，schema 没跟上」** —— 这些端点早已上线，
+而它们依赖的表/列在生产根本不存在。
+文档里「联佳在生产不可见」描述的其实是 **dev 分支**（当时已在 head，
+有 teams=1 / customers=2 / quote_orders=3）。
+
+执行方式（**先演练再上生产**）：
+
+1. 从 `production` 克隆 Neon 分支 `migrate-rehearsal`；
+2. 在演练分支跑 `alembic upgrade head` —— 20 个迁移全部通过；
+3. 核对演练分支 schema 无误后，才对 `production` 执行同一条命令（同样 20 个，exit 0）；
+4. 删掉演练分支。
+
+**验证**（不依赖 token，沿用本项目自己的 PREPARE 手法）：
+在生产库上对 15 条**真实端点 SQL 形态**逐个 `PREPARE`（只编译不执行）——
+14 条一次通过；第 15 条 `entity_links` 是探针自己把列名写成 `src_kind`
+（实际是 `src_type`），改正后通过 → **15/15**。
+
+### 关于组合数（§二 #5）的取证（**未擅自改**，已并入 A2）
 
 | 值 | 来源 | 推导 |
 |---|---|---|
@@ -90,12 +121,18 @@
 
 ## 三、需要产品决策（不擅自改）
 
-1. **租户模型**（对应上面 #1）：`联佳丝网` 的 `tenant_id` 要不要统一到 `default`，
-   即收敛为"单租户 + 团队隔离"？—— 改则它在生产可见；不改则它在生产不可见且两套隔离模型并存。
-2. **新团队试用工位**：现在新建团队时**所有工位都是未开通**，必须管理员手动开。
-   新用户建完团队会看到"什么都用不了"。
-3. **Repository 取舍**（对应 #2）：投入接线（SQLAlchemy + asyncpg 两个适配器 + API 层改造），还是删掉这段死代码？
-4. **`outreach/webhook` 是否收紧到 POST**（对应 #5）：可能有外部系统在用 `GET`，需确认后再动。
+1. **A2 的柜级体积扣减层级**：2–3 m³ 是「圆柱体按长方体算、对**整柜**多占的量」（工厂经验总结）。
+   现在引擎 `resolve_space_deduction` 把它解析成**一个数、只扣一次**（等价"每单一次"）。
+   一单多柜时应改为 `扣除额 × 柜数` —— 需你确认按「每单一次」还是「每柜一次」。
+2. **`outreach/webhook` 是否收紧到 POST**（对应 §二 #3）：处理体是 501 预留桩、
+   任何方法都无副作用，所以不急；但将来若实现 inbound 回写，`GET` 必须去掉
+   —— 邮件客户端预取链接会误触发（标记已回复之类）。
+
+**已定的（记录口径，勿再当作待决）**：
+
+- **租户模型** → 统一到 `default`（收敛为「单租户 + 团队隔离」）。**已于生产执行**（见上「生产库对齐」）。
+- **新团队试用工位** → **维持现状**（不给试用，由管理员开通）。
+- **共享 Repository 层** → **删除**，不接线（`e6b54e5`）；理由见 `DB_LAYER_OPTIMIZATION.md`。
 
 ---
 
