@@ -857,6 +857,43 @@ Playwright **每个用例新建 context**，于是**每次首屏都踩**这个�
 > 所以这道门**减轻了竞态、没有消除它**。假设方向对，但**还有别的路径**
 > 让请求绕过 mock（尚未查清）。**不能因为"数字变好一点"就宣布修好了。**
 
+#### 🎯 决定性仪器：`response.fromServiceWorker()` 直接点名绕过者
+
+换了个**能直接回答**的仪器 —— Playwright 的 `response.fromServiceWorker()`：
+它明确告诉你"这个响应**是不是 MSW（Service Worker）给的**"。
+比从 dev server 的反向报错去猜准得多（那个既看不到是**哪个**请求，
+也分不清"没匹配"与"没被接管"）。
+
+加进 `e2e/fixtures.ts` 后，`/api/v1/*` 里绕过 MSW 的请求**逐个被点名**：
+
+```
+[绕过MSW] GET  /api/v1/auth/me     -> 500
+[绕过MSW] GET  /api/v1/customers?  -> 500
+[绕过MSW] POST /api/v1/events      -> 500
+```
+
+**正是页面最先发出的那几个请求，且返回 HTTP 500**（自代理失败的产物）。
+
+##### 完整因果链（至此闭合）
+
+```
+① 首屏最先的几个请求绕过了 MSW（未走 Service Worker）
+② 它们直连 Next dev server → 命中 /api/v1/* rewrite → rewrite 指向页面源
+   → 自己代理自己（EADDRINUSE）→ 返回 500
+③ /auth/me 拿到 500 → AuthProvider catch → 清会话 → user === null
+④ route-guard 在 adminOnly && !isAdmin 时渲染「您没有访问此页面的权限」
+⑤ 其他请求拿 500 → 页面进错误边界「页面加载异常 / 后端繁忙」
+⑥ 挂起的连接让 waitForLoadState('networkidle') 永不满足 → 用例超时
+```
+
+**同一条链解释了此前所有看起来互不相关的现象**：权限文案、错误边界、
+`networkidle` 超时、以及"每次通过数都不一样"（竞态）。
+
+**仍未查清**：为什么这几个**首屏**请求能绕过 SW 控制（已排除
+"MSW 未启动"与"SW 未 claim"）。下一步可用同一仪器继续定位 ——
+例如在 fixture 里同时记录 `request.timing()` / 发起时刻，
+或把它们与 `page.goto` 的时间线对齐。
+
 **关键发现：那两个 critical/high 的来源不是"版本旧"，是依赖放错了位置。**
 
 | 漏洞 | 来源链 | 真实问题 |
