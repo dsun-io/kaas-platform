@@ -527,14 +527,29 @@ Remove-Item Env:\GIT_INDEX_FILE
 | 纯标准库自证 | AST 解析后**绝对导入只有** `__future__ / copy / dataclasses / hashlib / json / typing`（全部标准库）+ **相对导入 `.models`**；无 `sqlalchemy`、无 `app.*`、无三方 ⇒ Pyodide 可跑 |
 | 与线上同源 | 选项层**直接复用** `models.apply_option_overrides`（与 `export_quote.py:_with_team_overrides` 同一份实现）⇒ 不存在"合并语义与线上分叉" |
 | 测试 | `backend/orchestrator/tests/test_spec_delta.py`（**42 条，`-m unit` 全绿、无 skip**）——覆盖 缺失/null/改名/列表三态/未知 key/哈希闸门/版本闸门/add-remove 冲突/选项层复用，以及"上游改了未覆盖字段⇒跟着变"与"覆盖后上游再改⇒被覆盖字段不变"两条 |
-| ⚠️ 镜像待同步 | `sync-shared.ps1 -Check` 现在报 **exit 1**（报价引擎 源 20 / 镜像 19，缺 `spec_delta.py`）。**修法一条命令** `& ./scripts/sync-shared.ps1`，但它会写入 `backend/worker/src/kaas_common/`（该目录**被 git 忽略**、由部署流程 `deploy.yml:93,97` 自行同步，`backend/worker/.gitignore:13` 注明"勿手工编辑"）。本任务的硬约束是"不碰 `backend/worker/**`" ⇒ **未执行同步**，留给 lead/后续步骤。**当前无害**：worker 尚无任何代码 import 本模块（P13 才会接线） |
+| ⚠️ 镜像待同步 | ~~`sync-shared.ps1 -Check` 报 exit 1（报价引擎 源 20 / 镜像 19，缺 `spec_delta.py`）~~ → **已在 task-19 解决**：跑同步后 `-Check` **exit 0**（报价引擎 20/20）。镜像目录**被 git 忽略**（`backend/worker/.gitignore:13`），同步**不产生 tracked diff** |
+
+### 8.3 已落地的第 2 个增量：**P11**（共享内核的产品域「两把尺 + 三层可见性」）
+
+| 项 | 内容 |
+|---|---|
+| 模块 | `backend/kaas_common/workstation/product_scope.py`（新建，纯函数、零三方依赖） |
+| 落地的裁决 | **Q1=B**：产品**定义**人人可读（`definition_readable`）；产品**相关信息**（图片/基础信息）**一律团队私有**（`product_info_access`）；历史 `team_id IS NULL` 的行 **仅管理员可见**；**系统级不是例外**（函数签名里**没有** `is_system`，用结构断言钉住）。**Q5**：另立 `is_same_team`（团队成员尺）**与 `is_team_admin` 并存**，名字**不叫** `can_write`（该名被客户域属主尺占用）。**Q6**：本模块**只管数据可见性**，**不提供**工位可见性函数/参数（用结构断言钉住），工位那层属 P15 契约。 |
+| 与客户域**刻意分叉** | `scope.can_view` 对 `team_id IS NULL` 的行"不因团队规则改变可见性"；产品域裁决是"**仅管理员可见**"。有专门用例把这个分叉钉死（谁改回 `can_view` 就会红）。 |
+| 测试 | `backend/orchestrator/tests/test_product_scope.py`（**30 条，`pytestmark = pytest.mark.unit`，全绿无 skip**）——覆盖三层可见性、失败语义与状态码映射（401→403 `NO_TEAM`→404）、写=团队任意成员、两把尺并存且语义不同、系统级无后门、Q6 两层不压平 |
+| 门禁 | `pytest -m unit` ⇒ **976 passed, 1 skipped, 324 deselected, exit 0**（那 1 skip 是既有的 `test_knowledge_provider.py:56`，需 PostgreSQL）；`sync-shared.ps1` + `-Check` ⇒ **exit 0**（共享内核 31 / 报价引擎 20 / 枚举 1，全一致） |
+| 尚未做 | **接线**（P7/P8/P9 把判定接到 13+ 个落点）与**工位层**（P15 契约）仍属后续步骤；本步只交付**可离线证明**的纯逻辑层 |
 
 ---
 
-## 9. 本次任务的只读自证（**已被 task-16 更新**）
+## 9. 本文件的状态与自证（**滚动更新**）
 
 - task-3 的那一轮：只新增 `docs/PRODUCT_MODULE_IMPL_PLAN.md`，并在 `docs/PRODUCT_MODULE_MERGE_PLAN.md` 追加 §11；当时**未修改任何代码**。
-- **task-16（本轮）起本文件不再"只读"**：允许写入的是本文件 + 本任务新建的两个代码文件（见 §8.2）。
-  仍**未碰** `frontend/**`、`backend/worker/**`、`shared/**`，也未碰另一条任务在改的 `files` / `trade_docs` / `products` 相关文件。
+- **task-16**：折进 8 条裁决（§8/§8.1）+ 交付 §5 的 ① 层 `spec_delta.py`（§8.2）。
+- **task-19**：交付 **P11** 的纯逻辑层 `kaas_common/workstation/product_scope.py`（§8.3），并跑通共享内核同步。
+  自此本文件由**同一个作者滚动维护**；它**不是**"口径文档"（口径看 `docs/PROBLEM_STATUS_2026-10-11.md`）。
+- 三轮都**未碰** `frontend/**`、`backend/worker/**`（tracked 源码）、`shared/**`，也未碰另一条任务在改的
+  `files` / `trade_docs` / `products` 相关文件（同步脚本只写**被 git 忽略**的镜像目录）。
 - 提交纪律（2026-10-11 起）：**私有 `GIT_INDEX_FILE`** + 提交前后自检 + 提交后确认别人的改动原样还在
-  （`git commit -- <pathspec>` 会把**工作树**里别人的未提交 hunk 一起带走，已由用户规则判定为不足）。
+  + **收尾 `git reset -q HEAD -- <本次路径>`**（否则共享 index 停在旧 HEAD，会把新增文件显示成 staged 删除）。
+  （`git commit -- <pathspec>` 会把**工作树**里别人的未提交 hunk 一起带走，已由用户规则判定为不足。）
