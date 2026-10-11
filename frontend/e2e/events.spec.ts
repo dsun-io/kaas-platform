@@ -19,11 +19,20 @@ test.describe('Events', () => {
     await page.goto('/events');
     await page.waitForLoadState('networkidle');
 
-    // Find and interact with the event type filter
+    // **2026-10-11 修正：确定性陈旧（字符串层，有源码依据）**
+    // 事件类型只有两种 —— `events/components/event-filters.tsx:15-18`
+    //   `const EVENT_TYPES = ["audit.access", "capability.update"]`
+    // 旧正则 `/chat/i` **永远匹配不到任何一个选项** ⇒ 这段交互
+    // （点击下拉 → 选择类型）**从未真正执行过**，一直被
+    // `if (await option.isVisible())` 静默吞掉。
+    //
+    // ⚠️ 诚实标注：**这条不计为"已验证的修复"**。本任务的取数环境
+    // （`E2E_FALLBACK=0`）下 `/events` 被 RouteGuard 拒绝渲染，连 combobox
+    // 都不存在，所以改完无法在此环境验证；其失败原因见下方整表断言（数据层）。
     const filter = page.getByRole('combobox').first();
     if (await filter.isVisible()) {
       await filter.click();
-      const option = page.getByRole('option', { name: /chat/i });
+      const option = page.getByRole('option', { name: /audit\.access/i });
       if (await option.isVisible()) {
         await option.click();
         await page.waitForLoadState('networkidle');
