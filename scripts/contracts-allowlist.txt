@@ -31,13 +31,15 @@
 #   scripts/contracts-check.ts 的 R5 是**解析源码结构**取键，不是 grep 关键字。
 
 # ── R5.1 GET /admin/tenants：期望 {tenants:[{tenant_id,display_name,is_active}]} ──
-R5.1 orchestrator    # 条目键是 display_name/enabled，缺 is_active；待 S2（orchestrator 补 is_active，保留旧键作兼容）还掉
-R5.1 worker          # 包封键是 items（非 tenants）、条目键是 name、无 is_active；待 S1（worker = 生产，单独发布即可修好线上）还掉
+# 2026-10-11 S3（task-10）：orchestrator 与 worker 都已返回目标键集合并**删掉旧键**
+# ⇒ 上面两条登记已还掉、按棘轮纪律删除（代码见 backend/orchestrator/app/api/admin.py:70-88、
+# backend/worker/src/main.py:2321-2334；证明：pnpm contracts:check 不再点名它们）。
 R5.1 frontend-api    # hooks/use-tenants.ts 的 Tenant 用 name，而渲染侧 components/types.ts 用 display_name（前端自己两套）；待 S4（前端内部统一到 display_name）还掉
 
 # ── R5.2 POST /admin/tenants/reload：期望 {reloaded_count, active_tenants:[...]} ──
-R5.2 orchestrator    # 只回 message/tenant_count，缺 reloaded_count/active_tenants（前端要靠它渲染重载后的清单）；待 S2 还掉
-R5.2 worker          # 回 reloaded/items，缺 reloaded_count/active_tenants；待 S1 还掉
+# 2026-10-11 S3（task-10）：orchestrator 与 worker 都改为返回重载后的启用租户清单
+# （旧键 message/tenant_count 与 reloaded/items 均已删除，P4）
+# ⇒ 上面两条登记已还掉、按棘轮纪律删除。
 
 # ⚠️ 与 S1/S2 的协同纪律（**不是状态快照，是长期规则**）：
 #   worker / orchestrator 修好、且**删掉兼容旧键**之后，必须**同时删掉对应的登记行**，
@@ -46,7 +48,8 @@ R5.2 worker          # 回 reloaded/items，缺 reloaded_count/active_tenants；
 #   那几行就应当保留；只有删旧键时才删行。步骤见 docs/ADMIN_TENANTS_CONTRACT_REPORT.md §6.2。
 
 # ── R5.3 GET /admin/feature_flag：期望 tenant_id → {flag: bool} 映射 ──
-R5.3 worker          # 必填 flag_name 且返回单值 {flag_name,flag_value} ⇒ 灰度页 flags[t.tenant_id] 恒 undefined、开关恒 OFF；待 S1 还掉
+# 2026-10-11 S3（task-10）：worker 已改为返回 tenant_id → {flag: bool} 映射
+# （不再要求 flag_name 必填、不再返单值）⇒ 登记已还掉、按棘轮纪律删除。
 
 # ── 未纳入本门禁的相邻项（记录，不产生 R5 偏差）──────────────────────────────
 # · mock 的 POST /admin/tenants/reload 的 active_tenants 缺 is_active ——

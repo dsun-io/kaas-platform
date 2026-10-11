@@ -62,7 +62,10 @@ class TestAdminAPIAuthIsolation:
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["message"] == "Tenant cache reloaded"
+        # 契约（用户裁决 P4）：必须返回重载后的清单，旧键 message/tenant_count 已移除。
+        # 字段级断言在 tests/test_admin_tenants_contract.py（无 DB 也能跑）。
+        assert data["reloaded_count"] >= 1
+        assert isinstance(data["active_tenants"], list) and data["active_tenants"]
 
     async def test_internal_can_clear_cache(self, client):
         """internal → POST /api/v1/admin/cache/clear → 200。"""
