@@ -416,6 +416,36 @@ hasTeam: typeof body["has_team"] === "boolean" ? body["has_team"] : null,
 `/dashboard/summary`、`/admin/*`）—— 说明还有一层时序原因没查（不再是缺 handler），
 但影响已显著减小。
 
+#### 开放问题：为什么**已有 handler 的路径仍被绕过**（已排除两个假设）
+
+**已排除 ①：挂载层级不对。** 查 `frontend/src/app/layout.tsx`：
+
+```
+34: <MswProvider>
+36:   <AuthProvider>
+43:   </AuthProvider>
+45: </MswProvider>
+```
+
+`MswProvider` **在 AuthProvider 外层** ✓ —— 就绪门理应拦住 `AuthProvider`
+发出的 `/auth/me`。所以"gate 包错层"这个假设不成立。
+
+**已排除 ②：handler 缺失。** 这些路径的 handler 逐个核对过，都在。
+
+**剩下的方向**（下一轮用证据查，不猜）：
+
+- MSW 的 `warn` 消息打在**浏览器控制台**，而 Playwright 默认**不转发**到
+  stdout（所以我在 server 日志里只看到 rewrite 的 `EADDRINUSE`，
+  看不到"哪个请求没匹配"）。**下一步应该先加
+  `page.on('console')`** 把控制台转出来 —— 那样"未匹配请求"会被**逐个点名**，
+  比现在从 rewrite 报错反推可靠得多。
+- 也要看是否为**首次导航**特有（service worker 激活竞态），
+  还是每次导航都发生。
+
+**注意**：这 8 条"被绕过"与剩余 9 条失败**不是一一对应**——多数用例仍然通过了，
+说明被绕过的影响已从"挂死 `networkidle`"降到"少一次数据"。所以这条线索的
+优先级低于先看那 9 条失败各自的真实原因。
+
 **关键发现：那两个 critical/high 的来源不是"版本旧"，是依赖放错了位置。**
 
 | 漏洞 | 来源链 | 真实问题 |
