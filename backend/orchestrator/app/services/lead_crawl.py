@@ -49,6 +49,7 @@ __all__ = [
     "is_safe_crawl_url",
     "next_redirect_url",
     "extract_product_from_html",
+    "enrich_product",
     "strip_html",
 ]
 
@@ -87,3 +88,41 @@ async def http_get_text(url: str, timeout: int = CRAWL_TIMEOUT) -> tuple:
                 continue
             return resp.status_code, resp.text[:MAX_CRAWL_BYTES]
     raise ValueError("重定向次数过多")
+
+
+async def enrich_product(db, tenant_id: str, lead: dict,
+                         ai_runner=None) -> None:
+    """产品信息增补（**原地修改** `lead`）。分工与 worker 一致：脚本为主 / AI 为辅。
+
+    - `spec_normalized`：脚本规则确定性提取；AI 启用时才由 AI 细化
+    - `product_name_cn`：难量化 → 交 AI 翻译；AI 未启用则**留空待人工填**
+
+    `ai_runner` 可注入（默认 `app.services.ai_tasks.run_ai_task`），
+    一是便于测试，二是显式声明"本函数依赖一个 AI 执行器"这件事。
+
+    两条必须保留的性质（都有对应测试）：
+      1. **无事可做时不调 AI** —— 既省一次调用，也避免把空字段喂给模型。
+      2. **AI 失败一律吞掉**（best-effort）。爬取的**主体成果是网页抽取**，
+         AI 只是增补；AI 挂了不能让整次爬取判为失败。
+    """
+    if not (lead.get("product_name") or lead.get("spec_raw")):
+        return
+
+    if ai_runner is None:
+        from app.services.ai_tasks import run_ai_task as ai_runner  # noqa: PLC0415
+
+    if lead.get("spec_normalized") is None:
+        try:
+            res = await ai_runner(db, tenant_id, "spec_extract", lead)
+            lead["spec_normalized"] = res["result"].get("spec_normalized")
+        except Exception:      # noqa: BLE001  —— best-effort，见 docstring 第 2 条
+            pass
+
+    if lead.get("product_name") and not lead.get("product_name_cn"):
+        try:
+            res = await ai_runner(db, tenant_id, "product_translate", lead)
+            cn = res["result"].get("product_name_cn")
+            if cn:              # 只认**非空**结果，别把空串写进去（空串看着像"已翻译"）
+                lead["product_name_cn"] = cn
+        except Exception:      # noqa: BLE001
+            pass
