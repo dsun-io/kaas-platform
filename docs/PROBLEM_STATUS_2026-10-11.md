@@ -186,6 +186,37 @@ allowlist 里已写注释提醒后来者：**这片区域不是整片死的，�
 （`process.env.E2E_WEB_SERVER ?? 'npm run dev'`）——保留原默认，
 又不把整个套件锁死在 `npm` 上。
 
+#### ✅ 已修：`E2E_WEB_SERVER` 可覆盖（已验证）
+
+`frontend/playwright.config.ts` 的 `command` 改为
+`process.env.E2E_WEB_SERVER ?? 'npm run dev'`。
+已实测：设 `E2E_WEB_SERVER` 后 **Playwright 自己起服务并把整套跑完** ✓
+（不再需要手工起 server）。
+
+#### 🎯 18 条失败的**根因已定位**：e2e 的 mock 夹具缺 auth（**不是应用缺陷**）
+
+追查链条：
+
+1. 页面快照里主区域只有一句 **「您没有访问此页面的权限」**（不是白屏、不是报错）
+2. 该文案出自 `components/route-guard.tsx`，触发条件是
+   `adminOnly && user?.account_type !== "internal"`
+3. `lib/auth/auth-context.tsx:60`：
+   `account_type: (data.account_type as ...) ?? "customer"` ——
+   **缺失时默认成 `"customer"`**（非管理员）
+4. 而 `mocks/handlers.ts` 里**根本没有 auth 处理器**（`auth/login`、`auth/me` 都没 mock）
+   → mock 模式下会话里没有用户 → `account_type` 缺失 → 一律按 `"customer"` 处理
+
+**交叉验证**：失败清单 `/events`、`/customers`、`/kb`、`/settings`、
+`/audit-log`、`/admin/gray-release` **正好等于**用 `<RouteGuard adminOnly>` 的页面
+（全仓共 7 处），而 6 条通过的用例都是**不需要**该守卫的页面。
+
+**结论：应用没问题，是 e2e 的假数据层缺了 auth。**
+
+**下一步（已明确）**：在 `mocks/handlers.ts` 补 `POST /auth/login` 与
+`GET /auth/me` 两个 handler，返回一个 `account_type: "internal"` 的管理员用户。
+补完应大幅减少失败数；剩下若仍有失败，才是真正需要查的应用问题
+（`/quotations` 那几条不在这 7 个 adminOnly 页面里，可能另有原因）。
+
 **关键发现：那两个 critical/high 的来源不是"版本旧"，是依赖放错了位置。**
 
 | 漏洞 | 来源链 | 真实问题 |

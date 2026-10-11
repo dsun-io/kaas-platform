@@ -25,7 +25,12 @@ export default defineConfig({
   webServer: {
     // 用 npm run dev 而非 pnpm dev：pnpm 在部分 Windows 环境被依赖构建门禁拦（ERR_PNPM_IGNORED_BUILDS），
     // 导致 e2e 起不了服务（UNCERTAIN #4/#6）。npm 不受该门禁影响。
-    command: 'npm run dev',
+    //
+    // 但**不能把整套 e2e 锁死在 npm 上**：有些环境（如 DSH 的托管 node 运行时）
+    // 根本没有 npm，于是 webServer 起不来 → 所有用例 ERR_CONNECTION_REFUSED，
+    // 看起来像"一大批产品缺陷"，实际是环境没配好（2026-10-11 实测：26 条里
+    // 约 10 条由此产生）。所以允许用 E2E_WEB_SERVER 覆盖，默认仍是 npm。
+    command: process.env.E2E_WEB_SERVER ?? 'npm run dev',
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
     cwd: __dirname,
