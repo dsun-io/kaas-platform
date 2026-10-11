@@ -277,12 +277,19 @@ async def put_profile(product_key: str, body: ProfileIn,
                       auth: AuthContext = Depends(get_auth_context),
                       db: AsyncSession = Depends(get_db_session)):
     tenant_id = tenant_id_of(auth)
+    # P9：唯一键已按团队收敛为 (tenant_id, COALESCE(team_id,0), product_key)
+    # ⇒ ① 写入必须带 team（否则所有团队都落进 team_key=0 桶，照样互撞 —— Q1=B/D4 的"新写入强制"）；
+    #    ② ON CONFLICT 目标必须与索引表达式**逐字一致**，且表达式要**加括号**
+    #       （PG16 文法：conflict_target := ( index_column_name | ( index_expression ) [, …] )）。
+    # 团队口径与 file_objects 的插入一致（`getattr(auth, "team_id", None)`，见本文件上传处）。
     await db.execute(text(
-        "INSERT INTO product_profiles (tenant_id, product_key, info, updated_by)"
-        " VALUES (:t,:k,CAST(:info AS jsonb),:by)"
-        " ON CONFLICT (tenant_id, product_key) DO UPDATE SET info=EXCLUDED.info,"
+        "INSERT INTO product_profiles (tenant_id, team_id, product_key, info, updated_by)"
+        " VALUES (:t,:team,:k,CAST(:info AS jsonb),:by)"
+        " ON CONFLICT (tenant_id, (COALESCE(team_id, 0)), product_key) DO UPDATE"
+        " SET info=EXCLUDED.info,"
         " updated_by=EXCLUDED.updated_by, updated_at=now()"
-    ), {"t": tenant_id, "k": product_key, "info": _json_dumps(body.info),
+    ), {"t": tenant_id, "team": getattr(auth, "team_id", None),
+        "k": product_key, "info": _json_dumps(body.info),
         "by": str(getattr(auth, "user_id", "") or "") or None})
     return await get_profile(product_key, auth, db)
 

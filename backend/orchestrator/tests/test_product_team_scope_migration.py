@@ -168,25 +168,45 @@ class TestNullCollapsing:
         assert "ON file_objects (tenant_id, team_id, owner_type" not in flat
 
 
-# ── 3. 故意不做的，必须仍然没做（防止"顺手改坏"）───────────────────────────
+# ── 3. P9 补做的两处唯一键（**不再是"故意不做"**）──────────────────────────
 
-class TestDeliberateExclusions:
-    def test_不许动product_profiles主键(self, ddl):
-        """两端都用 `ON CONFLICT (tenant_id, product_key)` 锁定主键列：
-        `files.py:283`（orchestrator）与 `ws_files.py:319`（worker）。
-        本迁移改它 ⇒ 两端保存基础信息全挂。必须留给 P9 与代码同批。
-        """
-        flat = _flat(ddl)
-        assert "product_profiles_pkey" not in flat, flat
-        # 本迁移只 ADD CONSTRAINT（外键），**不** DROP 任何约束/主键
-        assert "DROP CONSTRAINT" not in flat, flat
+class TestP9UniqueKeyConvergence:
+    """首版 019 把这两处**故意留给 P9**（理由：调用方用 `ON CONFLICT` 锁定了列，
+    只改库不改代码会让 INSERT 直接报 "no unique or exclusion constraint matching …"）。
+    P9 已把库与两端代码**同批**改完 ⇒ 本类断言它们**现在必须做到**。
 
-    def test_不许动uq_tenant_ws_product(self, ddl):
-        """`ws_products.py:347` 用 ON CONFLICT (tenant_id, workstation, product_key)，
-        `test_ws_products_seals.py:149` 还断言了这个字面量。"""
+    两端是否真的对齐，另有一条跨文件用例
+    （`test_team_scope_unique_keys_consistency.py`）把索引键与三处冲突目标逐元素比对。
+    """
+
+    def test_product_profiles主键换成按团队的唯一索引(self, ddl):
         flat = _flat(ddl)
-        assert "uq_tenant_ws_product" not in flat, flat
-        assert "tenant_workstation_products (tenant_id, team_id" not in flat
+        assert "ALTER TABLE product_profiles DROP CONSTRAINT product_profiles_pkey" in flat, flat
+        assert ("CREATE UNIQUE INDEX uq_product_profiles_scope ON product_profiles "
+                "(tenant_id, COALESCE(team_id, 0), product_key)") in flat, flat
+
+    def test_uq_tenant_ws_product改成按团队(self, ddl):
+        flat = _flat(ddl)
+        assert "DROP INDEX uq_tenant_ws_product" in flat, flat
+        assert ("CREATE UNIQUE INDEX uq_tenant_ws_product ON tenant_workstation_products "
+                "(tenant_id, COALESCE(team_id, 0), workstation, product_key)") in flat, flat
+
+    def test_两处新索引都折叠NULL_而不是裸team_id(self, ddl):
+        flat = _flat(ddl)
+        assert "CREATE UNIQUE INDEX uq_product_profiles_scope ON product_profiles (tenant_id, team_id" not in flat
+        assert "CREATE UNIQUE INDEX uq_tenant_ws_product ON tenant_workstation_products (tenant_id, team_id" not in flat
+
+    def test_团队字段仍不许是NOT_NULL(self, ddl):
+        """裁决：**新写入**强制、**历史容忍 NULL** ⇒ 库上不能 NOT NULL（理由见迁移 docstring）。"""
+        flat = _flat(ddl)
+        assert "team_id BIGINT NOT NULL" not in flat
+        assert "ALTER COLUMN team_id SET NOT NULL" not in flat
+
+    def test_主键换掉后不能再出现旧形态主键(self, ddl):
+        flat = _flat(ddl)
+        # 只许 DROP（换掉），不许再 CREATE 出 (tenant_id, product_key) 的主键
+        assert "ADD CONSTRAINT product_profiles_pkey" not in flat
+        assert "PRIMARY KEY (tenant_id, product_key)" not in flat
 
 
 # ── 4. downgrade 也必须能离线渲染（回滚不通的迁移等于没有回滚）──────────────
@@ -195,17 +215,26 @@ class TestDowngradeRenders:
     def test_downgrade反向渲染成功(self, down_ddl):
         assert f"Running downgrade {THIS_REV} -> {PREV_REV}" in down_ddl
         flat = _flat(down_ddl)
-        # 把两个唯一键还原成迁移前的定义
+        # 把四个唯一键/主键还原成迁移前的定义
         assert ("CREATE UNIQUE INDEX uq_tenant_products_key ON tenant_products "
                 "(tenant_id, product_key)") in flat
         assert ("CREATE UNIQUE INDEX uq_file_primary ON file_objects "
                 "(tenant_id, owner_type, owner_id, kind) "
                 "WHERE is_primary AND is_current") in flat
+        assert ("CREATE UNIQUE INDEX uq_tenant_ws_product ON tenant_workstation_products "
+                "(tenant_id, workstation, product_key)") in flat
+        assert "ADD CONSTRAINT product_profiles_pkey PRIMARY KEY (tenant_id, product_key)" in flat
         # 撤掉 team_id 三件套
         for table in ("product_profiles", "tenant_products", "tenant_workstation_products"):
             assert f"ALTER TABLE {table} DROP COLUMN team_id" in flat, table
 
-    def test_downgrade不碰主键与ws唯一键(self, down_ddl):
+    def test_downgrade把两处P9唯一键也还原了(self, down_ddl):
+        """P9 补做的两处必须**成对**可回滚（换掉的不还回去 = 回滚不完整）。"""
         flat = _flat(down_ddl)
-        assert "product_profiles_pkey" not in flat
-        assert "uq_tenant_ws_product" not in flat
+        assert "ADD CONSTRAINT product_profiles_pkey PRIMARY KEY (tenant_id, product_key)" in flat
+        assert ("CREATE UNIQUE INDEX uq_tenant_ws_product ON tenant_workstation_products "
+                "(tenant_id, workstation, product_key)") in flat
+        # 新形态的唯一索引在 downgrade 里必须先被丢掉
+        assert "DROP INDEX uq_product_profiles_scope" in flat
+        assert "DROP INDEX uq_tenant_ws_product" in flat
+

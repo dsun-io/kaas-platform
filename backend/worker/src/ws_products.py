@@ -342,12 +342,12 @@ async def set_workstation_product(
             })
         r = await conn.fetchrow(
             "INSERT INTO tenant_workstation_products"
-            " (tenant_id, workstation, product_key, is_enabled)"
-            " VALUES ($1,$2,$3,$4)"
-            " ON CONFLICT (tenant_id, workstation, product_key)"
+            " (tenant_id, team_id, workstation, product_key, is_enabled)"
+            " VALUES ($1,$2,$3,$4,$5)"
+            " ON CONFLICT (tenant_id, (COALESCE(team_id, 0)), workstation, product_key)"
             " DO UPDATE SET is_enabled = EXCLUDED.is_enabled, updated_at = now()"
             " RETURNING product_key, is_enabled",
-            tid, workstation, body.product_key, body.is_enabled,
+            tid, user.get("team_id"), workstation, body.product_key, body.is_enabled,
         )
     return {
         "product_key": r["product_key"],

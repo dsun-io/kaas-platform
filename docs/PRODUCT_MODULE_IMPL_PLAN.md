@@ -340,7 +340,7 @@ SELECT count(*), count(*) FILTER (WHERE is_system) FROM tenant_products;
 |---|---|---|---|---|---|---|
 | **P7** | orchestrator 侧：`files.py` §1.4 的 13 处 + `trade_docs.py:740` 加团队谓词；越权一律 **404**；`put_profile` 的 `ON CONFLICT` 键同步改 | `backend/orchestrator/app/api/files.py`、`backend/orchestrator/app/api/trade_docs.py` ⚠️*正在被另一条任务改* | `pytest -m unit`；`route-parity`；**验收信号**：团队 A 的 token 调 `GET /file-objects/{团队B的文件id}/content` → **404 `FILE_NOT_FOUND`**；`PATCH`/`DELETE` 同 → 404 | `git revert` | P5、P6 | ✅ 与 P8 并行开发（文件不相交），但**必须同批验收** |
 | **P8** | worker 侧：`ws_files.py` §1.4 的 ~11 处 + 单证挂件同类落点 | `backend/worker/src/ws_files.py` ⚠️*正在被另一条任务改* | worker `pytest`；`route-parity`；**验收信号**：与 P7 同一组用例在 worker 上同样 404（两端同构） | `git revert` | P5、P6 | ✅ 与 P7 并行 |
-| **P9** | 产品定义/矩阵隔离：`tenant_products.py`、`workstation_products.py`、worker `ws_products.py`；唯一键断言更新 | 上述 3 文件 + `backend/worker/tests/test_ws_products_seals.py` | `pytest -m unit`；worker `pytest`；**验收信号**：跨团队改/删 → 404；系统级 → 403；两团队各建同名 key → 均 201（现唯一键不允许）；⚠️ **这些测试断言了 SQL 字面量**（`test_ws_products_seals.py:171, 180, 149`），改 SQL 必须同步改断言 | `git revert` | P5、P6、P7 | — |
+| **P9** | 产品定义/矩阵隔离：`tenant_products.py`、`workstation_products.py`、worker `ws_products.py`；唯一键断言更新。**唯一键部分已交付（§8.6）**：唯一键按团队收敛 + **两端 `ON CONFLICT` 与断言同批改**；"跨团队改/删 → 404；系统级 → 403"的**越权面**仍待（属 P7/P8 的读路径过滤） | 上述 3 文件 + `backend/worker/tests/test_ws_products_seals.py` | `pytest -m unit`（已绿 **1017**）+ worker `pytest`（已绿 **217**）；**验收信号**：跨团队改/删 → 404；系统级 → 403；**两团队各建同名 key → 均 201**（唯一键已允许；行为验证见 §8.6 的验收 SQL）；⚠️ **这些测试断言了 SQL 字面量**（`test_ws_products_seals.py`），改 SQL 必须同步改断言（**本轮已同步**） | `git revert` | P5、P6、P7 | — |
 | **P10** | 越权回归测试（跨团队负例矩阵，两端各一份） | `backend/orchestrator/tests/test_file_team_scope.py`（新）、`backend/worker/tests/test_ws_files_team_scope.py`（新） | 两端 `pytest`；**验收信号**：**12 条负例**（§1.4 的 13 个落点里除聚合外每条一个：读/写/删/字节/挂件/选图器）全部 404；正例（本团队）全部 200 | `git revert` | P7、P8、P9 | — |
 
 ### 阶段 4：R2 可见性 + R3 存储
@@ -646,6 +646,79 @@ P16 应改为"**改造 + 接线**"：
 
 **"上层还没实现"的现状**：`app/api` 里还没有"存差异"的端点 ⇒ 本任务**只钉契约 + 记录结论，不改上层**。
 
+### 8.6 已落地的第 5 个增量：**P9** —— 唯一键按团队收敛 + 两端 `ON CONFLICT` 同批
+
+**这是什么**：task-20 留白的那两处（`product_profiles` 主键、`uq_tenant_ws_product`）。
+它们是 **Q1=B 的最后一块** —— 改完才谈得上"两个团队各自持有同一 `product_key` 的基础信息"。
+
+**迁移选择：就地修订 019（不新增 020）**，依据（三条，都可复查）：
+1. **没有任何 workflow/脚本会跑 `alembic upgrade`** —— `.github/workflows/*.yml` 全仓检索 **0 命中** `alembic`
+   （`deploy.yml` 只部署 Worker/静态资源、只监听 push main）；仓库脚本里也没有；
+2. 本地**无 Postgres** ⇒ 不可能有库把 019 记进 `alembic_version`；
+3. 019 提交于 **2026-10-12 01:59:37**，距本次修订十余分钟。
+⇒ 若拆成 020，会出现"019 先把唯一键留成旧形态、020 立刻改掉"的中间态，历史更难读。
+
+⚠️ **前提条件（部署前必须确认一次）**：任何要跑的库执行
+`SELECT version_num FROM alembic_version;` **不得已经是 `202610110019`**。
+若已是（说明该库跑过 019 首版）⇒ **必须改用增量迁移 020**，其 DDL 备忘如下：
+
+```sql
+-- 020（仅在"某库已应用过 019 首版"时才需要；正常情况不要建）
+DROP INDEX uq_tenant_ws_product;
+CREATE UNIQUE INDEX uq_tenant_ws_product ON tenant_workstation_products
+    (tenant_id, COALESCE(team_id, 0), workstation, product_key);
+ALTER TABLE product_profiles DROP CONSTRAINT product_profiles_pkey;
+CREATE UNIQUE INDEX uq_product_profiles_scope ON product_profiles
+    (tenant_id, COALESCE(team_id, 0), product_key);
+-- downgrade：反向还原 007 的 (tenant_id, workstation, product_key) 与 016 的主键
+```
+（`revision="202610110020"`, `down_revision="202610110019"`；两端 `ON CONFLICT` 目标已经是新形态，无需再改。）
+
+**改了哪 5 个文件 / 各自为什么**
+
+| 文件 | 改动 | 为什么必须同批 |
+|---|---|---|
+| `alembic/versions/202610110019_*.py` | 主键 → `uq_product_profiles_scope`；`uq_tenant_ws_product` 改按团队（含 downgrade 还原） | 库侧的"真相" |
+| `app/api/files.py` | `put_profile` 写入 `team_id` + 冲突目标换新形态 | 只改库不改它 ⇒ INSERT 报"no unique or exclusion constraint matching" |
+| `backend/worker/src/ws_files.py` | 同上（worker 侧） | 两端同构，缺一边就是半边坏 |
+| `backend/worker/src/ws_products.py` | `set_workstation_product` 写入 `team_id` + 冲突目标换新形态 | 同上 |
+| `backend/worker/tests/test_ws_products_seals.py` | 那条**断言 SQL 字面量**的用例同步 | 它是"同批"的可见信号：漏改就红 |
+
+**`ON CONFLICT` 的写法（照 PG16 官方文法，已取证）**
+`conflict_target := ( { index_column_name | ( index_expression ) } [, …] )`
+⇒ 表达式**必须加括号**：`ON CONFLICT (tenant_id, (COALESCE(team_id, 0)), product_key)`。
+少了那层括号 ⇒ 推断失败 ⇒ 运行时报错。**离线**由 §8.6 的跨文件用例把"索引键列表"与
+"三处冲突目标"逐元素比对（含"旧形态已彻底消失"），这是本步最关键的自动化守卫。
+
+**写入必须带 team（否则收窄唯一键等于没收）**：`team_key = COALESCE(team_id, 0)` ⇒
+若 INSERT 不写 `team_id`，所有团队都落进 `team_key=0` 桶，**照样互撞**。三条写路径都已补 `team_id`。
+
+**⚠️ 诚实交代：Q1=B 的验收点只做到了"结构性证明"，行为证明仍需真库**
+- **已证（离线、可复跑）**：① DDL 里 `product_profiles` 已无 `(tenant_id, product_key)` 主键，
+  唯一性 = `(tenant_id, COALESCE(team_id,0), product_key)`；② 三条写路径都写 `team_id`；
+  ③ 三处 `ON CONFLICT` 目标与索引表达式逐元素一致；④ 旧形态零残留；
+  ⑤ `upgrade`/`downgrade` 离线渲染 `--sql` 均 exit 0、`heads` 单一。
+- **未证（需要 Postgres）**："真的能插入两行"。**本机没有库** ⇒ 我把验收 SQL 放在这里，交给有库的环境/CI：
+
+```sql
+-- 验收：两团队各持同一 product_key 的基础信息（Q1=B）
+INSERT INTO product_profiles (tenant_id, team_id, product_key, info) VALUES ('default', 1, 'field_fence', '{}'::jsonb);  -- 成功
+INSERT INTO product_profiles (tenant_id, team_id, product_key, info) VALUES ('default', 2, 'field_fence', '{}'::jsonb);  -- 必须成功（019 之前会撞主键）
+-- 同团队同 key 第二次必须仍然被挡（唯一性没被放宽成"人人可重复"）
+INSERT INTO product_profiles (tenant_id, team_id, product_key, info) VALUES ('default', 1, 'field_fence', '{}'::jsonb);  -- 期望 23505
+-- 无归属（历史）行：至多一行
+INSERT INTO product_profiles (tenant_id, team_id, product_key, info) VALUES ('default', NULL, 'chain_link', '{}'::jsonb);  -- 成功
+INSERT INTO product_profiles (tenant_id, team_id, product_key, info) VALUES ('default', NULL, 'chain_link', '{}'::jsonb);  -- 期望 23505（COALESCE 折叠成 0）
+```
+**为什么不顺手写一个 `db`-marked 测试**：本机无库 ⇒ 我**无法真跑它**，写下去就是"没验证过的测试"，
+在 CI 里红了我也不会知道 —— 风险大于价值。因此改为把可复制的验收 SQL 写进文档（属 §1.4 的 L2 通路）。
+
+**测试工程上的一条教训（值得记）**：跨文件一致性用例的第一版**用正则扫原始源码**，
+对 `ws_products.py` 的两条断言**全红** —— 因为仓库 SQL 普遍写成**相邻字符串字面量隐式拼接**
+（`"INSERT INTO x"` 换行 `" (a, b)"`），原始文本里夹着引号与换行 ⇒ 任何"整串去 in 一下"都是**假阴性**。
+改用 `ast.parse`（它会把隐式拼接**合并成一个 Constant**）后 26 条全绿。
+⇒ **凡是要从源码里取 SQL/字面量做断言，先过 AST，别扫文本。**
+
 ---
 
 ## 9. 本文件的状态与自证（**滚动更新**）
@@ -653,9 +726,12 @@ P16 应改为"**改造 + 接线**"：
 - task-3 的那一轮：只新增 `docs/PRODUCT_MODULE_IMPL_PLAN.md`，并在 `docs/PRODUCT_MODULE_MERGE_PLAN.md` 追加 §11；当时**未修改任何代码**。
 - **task-16**：折进 8 条裁决（§8/§8.1）+ 交付 §5 的 ① 层 `spec_delta.py`（§8.2）。
 - **task-19**：交付 **P11** 的纯逻辑层 `kaas_common/workstation/product_scope.py`（§8.3），并跑通共享内核同步。
-  自此本文件由**同一个作者滚动维护**；它**不是**"口径文档"（口径看 `docs/PROBLEM_STATUS_2026-10-11.md`）。
-- 三轮都**未碰** `frontend/**`、`backend/worker/**`（tracked 源码）、`shared/**`，也未碰另一条任务在改的
-  `files` / `trade_docs` / `products` 相关文件（同步脚本只写**被 git 忽略**的镜像目录）。
+- **task-20**：交付 **P5/P6（离线部分）** 迁移 `202610110019`（§8.4）。
+- **task-21**：**P16 复核**（结论：不够，不新建接口）+ **P12 ② 层契约**（§8.5）。
+- **task-22**：**P9** —— 唯一键按团队收敛 + 两端 `ON CONFLICT` 同批（§8.6）；**就地修订 019**。
+  本文件由**同一个作者滚动维护**；它**不是**"口径文档"（口径看 `docs/PROBLEM_STATUS_2026-10-11.md`）。
+- 各轮都**未碰**另一条任务在飞的 `trade_docs.py` / `worker/src/{main,dbjson,ws_docs_ext}.py` / `frontend/**`，
+  也未碰 `shared/**`；task-22 按任务授权改了 `files.py` 与两个 worker 端点（当时实测均为 clean）。
 - 提交纪律（2026-10-11 起）：**私有 `GIT_INDEX_FILE`** + 提交前后自检 + 提交后确认别人的改动原样还在
   + **收尾 `git reset -q HEAD -- <本次路径>`**（否则共享 index 停在旧 HEAD，会把新增文件显示成 staged 删除）。
   （`git commit -- <pathspec>` 会把**工作树**里别人的未提交 hunk 一起带走，已由用户规则判定为不足。）
