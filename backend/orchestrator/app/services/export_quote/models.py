@@ -163,15 +163,33 @@ class SpaceDeduction:
     """体积按长方体累计后的扣减口径。
 
     业务口径：每卷按长方体（卷径² × 网高）累加得到总体积，
-    再扣减 2~3 m³，取中位数 2.5 m³。扣减的由来是卷与卷之间并非完美
-    网格堆叠，边界余量实际堆不到满箱。
+    再扣掉一部分。扣减的由来是卷与卷之间并非完美网格堆叠，
+    边界余量实际堆不到满箱。
+
+    两种形态（可叠加，公式为
+    `volume_box_m3 * (1 - space_deduction_ratio) - space_deduction`）：
+
+    · **按比例**（`mode="ratio"`，`value` = 扣减比例）—— 推荐。
+      随数量自然缩放，且**永远不会算出负体积**。
+      工厂经验值可换算：满柜多占 2~3 m³ ÷ 整柜容量。
+    · **按绝对值**（`fixed` / `median` / `mean` / `formula`，解析成一个 m³ 数）。
+      注意：固定值在**小单上会扣除超过总体积**，算出负体积
+      （实测牛栏网 < 2314 米时 `volume_effective_m3` 为负），所以只适合
+      数量级稳定的场景。
     """
 
-    mode: str = "fixed"  # fixed | median | mean | formula
+    mode: str = "fixed"  # fixed | median | mean | formula | ratio
     value: Any = 0
     range: tuple | None = None
     expr: str = ""
     note: str = ""
+
+    @property
+    def ratio(self):
+        """按比例扣减时的**扣减比例**（0.037 = 扣掉 3.7%）；其他模式为 0。"""
+        if self.mode != "ratio":
+            return 0
+        return self.value or 0
 
 
 @dataclass

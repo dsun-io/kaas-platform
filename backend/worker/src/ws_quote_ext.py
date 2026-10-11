@@ -67,7 +67,10 @@ def _ensure_engine() -> dict:
     quote_api._require_engine()
     try:  # 引擎残缺时给可执行的修复指引，而不是把 ImportError 原样抛成 500
         from kaas_common.export_quote import RateSetError
-        from kaas_common.export_quote.engine import resolve_space_deduction
+        from kaas_common.export_quote.engine import (
+            resolve_space_deduction,
+            resolve_space_deduction_ratio,
+        )
         from kaas_common.export_quote.formulas import PRICE_METRICS, worked_example
         from kaas_common.export_quote.numeric import DECIMAL, to_decimal
         from kaas_common.export_quote.rates import (
@@ -86,6 +89,7 @@ def _ensure_engine() -> dict:
     _ENGINE.update({
         "RateSetError": RateSetError,
         "resolve_space_deduction": resolve_space_deduction,
+        "resolve_space_deduction_ratio": resolve_space_deduction_ratio,
         "PRICE_METRICS": PRICE_METRICS,
         "worked_example": worked_example,
         "DECIMAL": DECIMAL,
@@ -277,6 +281,7 @@ async def export_quote_explain_product(
         scope["total"] = 0
         scope["pieces"] = 0
     scope["space_deduction"] = eng["resolve_space_deduction"](spec, scope, DECIMAL)
+    scope["space_deduction_ratio"] = eng["resolve_space_deduction_ratio"](spec)
     # 价格类量不在本接口范围内，给 0 占位以免公式求值失败
     scope.setdefault("terms_enabled", 0)
     scope.setdefault("main_price_incl", 0)
@@ -300,6 +305,7 @@ async def export_quote_explain_product(
         "spec": picked,
         "total": body.total,
         "space_deduction": str(scope["space_deduction"]),
+        "space_deduction_ratio": str(scope["space_deduction_ratio"]),
         "steps": steps,
     }
     if price_omitted:

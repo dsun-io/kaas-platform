@@ -49,7 +49,10 @@ from app.services.export_quote import (
     product_keys,
 )
 from app.services.export_quote.models import ProductSpec
-from app.services.export_quote.engine import resolve_space_deduction
+from app.services.export_quote.engine import (
+    resolve_space_deduction,
+    resolve_space_deduction_ratio,
+)
 from app.services.export_quote.formulas import (
     PRICE_METRICS,
     describe_product,
@@ -365,6 +368,7 @@ async def explain_product(
         scope["total"] = 0
         scope["pieces"] = 0
     scope["space_deduction"] = resolve_space_deduction(spec, scope, DECIMAL)
+    scope["space_deduction_ratio"] = resolve_space_deduction_ratio(spec)
     # 价格类量不在本接口范围内，给 0 占位以免公式求值失败
     scope.setdefault("terms_enabled", 0)
     scope.setdefault("main_price_incl", 0)
@@ -389,6 +393,7 @@ async def explain_product(
         "spec": picked,
         "total": body.total,
         "space_deduction": str(scope["space_deduction"]),
+        "space_deduction_ratio": str(scope["space_deduction_ratio"]),
         "steps": steps,
     }
     if price_omitted:
