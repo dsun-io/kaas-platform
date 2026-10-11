@@ -35,19 +35,32 @@ PDF 选回来，走 `POST /api/v1/trade-docs/{id}/files/upload`（multipart：`f
 **安全边界（硬要求）**：这个端点等于"用我们账号里的无头浏览器渲染请求体"，因此入参 HTML 必过共享内核
 `backend/kaas_common/files/render_pdf.py::validate_render_html`：`<script>`/`<iframe>`/`<object>`/
 `<embed>`/`<link>`/`<base>`/`<form>`、`on*=` 事件属性、`javascript:`、`<meta refresh>`、
-**任何非 `data:` 的资源地址（含 CSS `url()`/`@import`）** 一律 **422**；HTML ≤2MB。
+`data:text/html`、`@import` 一律 **422**；HTML ≤2MB。
+**外链策略（2026-10-12 用户裁决：从"严格拒绝任何非 `data:`"改为"白名单自家域名"）**：资源地址
+（`src`/`srcset`/`href`/`poster`/`background`/`data`/`formaction`/`action`/`xlink:href` + CSS `url()`）
+只放行 **`data:` URI** 或 **host 命中白名单的 http(s) 地址**；白名单可配置
+`PDF_HTML_ALLOWED_HOSTS`（逗号分隔，默认 **`kaas.powervoy.com,api.kaas.powervoy.com`**；
+两端都**请求期读取**：orchestrator 走 `os.environ`、Worker 走 `main._binding`）。
+host 匹配**大小写不敏感、允许端口、条目允许其子域**（`cdn.kaas.powervoy.com` 命中 `kaas.powervoy.com`）；
+**协议相对地址 `//host/x`、其它域名、`blob:`/`file:`、以及 `a.com.evil.com` / `evila.com` 这类
+"像域名但不是"的形状全部继续 422 `HTML_EXTERNAL_RESOURCE`**。白名单只放宽"外链资源"，
+脚本类拒斥与白名单无关（自家域名下的 `<script src>` 同样 422）。
 未配渲染器 → **503 `PDF_RENDERER_NOT_CONFIGURED`**（不假装成功）；上游失败/返回非 PDF → **502**。
 证据：`backend/orchestrator/tests/test_render_pdf.py`、`backend/worker/tests/test_ws_render_pdf.py`、
 `frontend/src/app/(app)/trade-docs/components/__tests__/doc-preview-auto-pdf.test.tsx`。
 其中 `test_render_pdf.py` 另用 **18 份渲染基线**（`frontend/src/lib/trade-doc/__fixtures__/html/*.html`，
 渲染器真实产物、与归档 Python 版逐字节对账）断言**全部**通过安全校验 —— 证明这道门不会误伤自家单据，
-同时钉住"渲染器不得产出脚本/外链"。
+同时钉住"渲染器不得产出脚本/外链"；白名单的"像域名但不是"反例（后缀伪造 / 前缀拼接 /
+协议相对 / 域名藏在路径里 / userinfo 伪装）也逐条钉在测试里。
 
 **仍未做 / 未验证**：① 自动出字节**依赖在真实环境配好 binding（生产）或 token（本地）**，
 未配置时接口如实 503；② 本仓库**没有**用真实单证跑过一次端到端（实测用的是最小 HTML 探针，
 不是 18 类单证的真实 HTML）；③ **版面/分页仍然无法在无头环境验证**（见下文 §四 风险 1、风险 2：
 Chromium 忽略 `break-before/after: avoid`，跨 Chrome 版本分页可能变）；④ C 方案（签发时冻结渲染输入
-快照 + 模板指纹）**仍未做**，本文 §3.2 第 2 步仍是待办。
+快照 + 模板指纹）**仍未做**，本文 §3.2 第 2 步仍是待办；⑤ **真实上传/归档验收暂缓**（用户已决定）：
+生产 R2 的 `S3_ACCESS_KEY` 报 `Credential access key has length 13, should be 32` ⇒ 需用户重建 32 位
+密钥后再验；**在此之前不要写成"上传已验证成功"**（服务端落档走 `_store_bytes` 的 binding/inline
+回退，不依赖直传，但"上传到对象存储"这一条实测仍未通过）。
 
 ## 一句话结论
 

@@ -273,7 +273,13 @@ region 漂移 / 方法互换 **4/4 被拒**。
 
 ### 6. ⏳ 仍未做（保持待办，别写成已完成）
 
-1. **真实上传端到端**：工具已备 `scripts/verify-file-storage-e2e.mjs`，但需要**一次带登录的生产上传**。
+1. **真实上传端到端（用户已决定：暂缓）**：工具已备 `scripts/verify-file-storage-e2e.mjs`，但需要
+   **一次带登录的生产上传**。2026-10-12 实测生产侧 R2 报
+   `Credential access key has length 13, should be 32`（用户设的 `S3_ACCESS_KEY` 不是 32 位）
+   ⇒ 需用户在 Cloudflare dashboard 的 *Manage R2 API Tokens* 重建密钥并
+   `wrangler secret put S3_ACCESS_KEY` / `S3_SECRET_KEY` 后再验。
+   **在重建密钥并真实跑通之前，任何文档都不得写成"上传已验证成功"**
+   （当前生产会按落点优先级回退到 R2 binding / inline，功能不缺，但"直传/对象存储"这一条未验证）。
 2. **真实 PostgreSQL / db 级用例**：部分唯一索引唯一性、跨租户隔离、`bytea` 往返 —— **未做**。
 3. **盖章在 PI 版式中的位置/尺寸无视觉验证**（没有逐页渲染 QA）。
 4. **排序的页面级过滤逻辑**（`products/page.tsx` 里"只对位次真变的图发请求"）**未被测试覆盖** ——
@@ -386,20 +392,27 @@ CREATE TABLE trade_doc_files (
 | 再回传一版 | 新行 version+1，`supersedes_id` 指向旧行，旧行 `is_current=false` | **单证当前展示的是最新盖章件**；历史版本仍在库里留档 |
 | 留档 | 所有版本都保留，按 `supersedes_id` 可串成版本链 | 出争议时能拿出"当时那一版" |
 
-**PDF 留档（`render_pdf`）：已实现的归档路径 + 仍未做「自动出字节」** —— 前端归档入口已实现：
-单证预览区（`frontend/src/app/(app)/trade-docs/components/doc-preview.tsx`）新增「归档本版 PDF」，
-单据工位 `page.tsx` 已接线 `docId`（「样板预览」没有真实单据 ⇒ 不渲染该区块）；用户把
-「打印 / 导出 PDF」在打印对话框里另存下来的那份 PDF 选回来，即走
+**PDF 留档（`render_pdf`）：两条路都已实现（人工归档兜底 + 自动出字节）** —— 前端归档入口已实现：
+单证预览区（`frontend/src/app/(app)/trade-docs/components/doc-preview.tsx`）有「归档本版 PDF」（人工兜底）
+与「自动出 PDF 并归档」（2026-10-12 新增）；
+单据工位 `page.tsx` 已接线 `docId`（「样板预览」没有真实单据 ⇒ 不渲染这两个入口）。
+人工路径：用户把「打印 / 导出 PDF」在打印对话框里另存下来的那份 PDF 选回来，即走
 `POST /api/v1/trade-docs/{id}/files/upload`（multipart：`file` + `role="render_pdf"` + `name`）
-落进 `file_objects`，再归档 = 新版本上位、旧版挂 `render_pdf_superseded` 留档（**不物理删**）；
-前端在送字节前**当场校验** `application/pdf` 与 ≤32MB（与内核 `MAX_BYTES['render_pdf']` 一致），
-不把 422 丢给用户猜；归档成功即失效 `["trade-docs", id, "files"]`，单据文件区
-（`DocStampReturn` 的「系统出的 PDF」分区）随即刷新。**仍未做：自动出字节** —— 生产是
-Pyodide Worker（无无头浏览器），系统拿不到 `window.print()` 的产物，所以这份归档**依赖人工**
-选文件（保真度最高、零新依赖）；服务端自动出字节（Cloudflare Browser Rendering `/pdf`
-或 CI/本机无头 Chrome）**仍未实现**，路径分析见 `docs/TRADE_DOC_PDF_ARCHIVAL.md`。
-**未验证**：无头环境只验证了"上传的字节与服务端收到的一致"（`doc-preview-archive.test.tsx`
-逐字节比对 + multipart body 取样），**没有也无法验证真实 PDF 的版面/分页**。
+落进 `file_objects`；前端在送字节前**当场校验** `application/pdf` 与 ≤32MB（与内核
+`MAX_BYTES['render_pdf']` 一致），不把 422 丢给用户猜。自动路径：`POST /api/v1/trade-docs/{id}/pdf`
+（入参是**与预览同源的那份 HTML**）→ 服务端 Cloudflare Browser Rendering 出 PDF 字节 → 复用同一套
+落档链路（`_store_bytes` → `_create_file(kind='render_pdf', supersede=True)` → `attach_doc_file`）。
+两条路都是**再归档 = 新版本上位、旧版挂 `render_pdf_superseded` 留档（不物理删）**，成功后都失效
+`["trade-docs", id, "files"]`，单据文件区（`DocStampReturn` 的「系统出的 PDF」分区）随即刷新。
+渲染器配置：生产 Worker 用 `wrangler.jsonc` 的 `"browser": {"binding": "BROWSER"}`（无需 token）；
+orchestrator/本地用 `BROWSER_RENDERING_ACCOUNT_ID` + `BROWSER_RENDERING_TOKEN`；**未配置时接口返回
+503 `PDF_RENDERER_NOT_CONFIGURED`（不假装成功）**。入参 HTML 过内核安全校验（拒脚本/事件属性；
+外链**只放行 `data:` URI 或白名单域名**，白名单 `PDF_HTML_ALLOWED_HOSTS` 可配，默认
+`kaas.powervoy.com,api.kaas.powervoy.com`）—— 细节见 `docs/TRADE_DOC_PDF_ARCHIVAL.md §〇`。
+**未验证/已暂缓**：无头环境只验证了"上传的字节与服务端收到的一致"（`doc-preview-archive.test.tsx`
+逐字节比对 + multipart body 取样），**没有也无法验证真实 PDF 的版面/分页**；
+**真实上传验收暂缓**（用户已决定）—— 生产 R2 报 `S3_ACCESS_KEY` 长度 13≠32，需用户重建 32 位密钥后
+再验，**在此之前不得写成"上传已验证成功"**。
 
 ## 五、单证引用产品图的链路（渲染器不用改）
 

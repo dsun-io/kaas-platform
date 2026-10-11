@@ -50,7 +50,7 @@ GOOD_HTML = (
 
 _ENV_KEYS = (
     "BROWSER", "BROWSER_RENDERING_ACCOUNT_ID", "CLOUDFLARE_ACCOUNT_ID",
-    "BROWSER_RENDERING_TOKEN", "CLOUDFLARE_API_TOKEN",
+    "BROWSER_RENDERING_TOKEN", "CLOUDFLARE_API_TOKEN", "PDF_HTML_ALLOWED_HOSTS",
 )
 
 
@@ -271,6 +271,42 @@ class TestRenderDocPdfEndpoint:
                 _FakeRequest({}), {"id": 1}))
         assert ei.value.status_code == 422
         assert ei.value.detail["code"] == "HTML_EXTERNAL_RESOURCE"
+
+    def test_default_whitelist_allows_own_domain(self, archived):
+        """默认白名单（自家域名）放行 ⇒ 走到 503（未配渲染器），而不是被 422 挡住。"""
+        html = '<html><body><img src="https://kaas.powervoy.com/a.png"></body></html>'
+        with pytest.raises(HTTPException) as ei:
+            _run(wsf.render_doc_pdf(5, wsf.RenderPdfIn(html=html), _FakeRequest({}), {"id": 1}))
+        assert ei.value.status_code == 503
+        assert ei.value.detail["code"] == "PDF_RENDERER_NOT_CONFIGURED"
+
+    def test_configured_whitelist_read_from_request_env(self, archived):
+        """Worker 侧白名单必须走**请求期**读取（`main._binding`）：env 里配的 CDN 放行，
+        默认域名此时不在白名单 ⇒ 422。证明两端读的是同一份配置、且是替换而非追加。"""
+        html = '<html><body><img src="https://files.example.com/a.png"></body></html>'
+        request = _FakeRequest({"PDF_HTML_ALLOWED_HOSTS": "files.example.com"})
+        with pytest.raises(HTTPException) as ei:
+            _run(wsf.render_doc_pdf(5, wsf.RenderPdfIn(html=html), request, {"id": 1}))
+        assert ei.value.status_code == 503
+        assert ei.value.detail["code"] == "PDF_RENDERER_NOT_CONFIGURED"
+
+        html_default = '<html><body><img src="https://kaas.powervoy.com/a.png"></body></html>'
+        with pytest.raises(HTTPException) as ei2:
+            _run(wsf.render_doc_pdf(5, wsf.RenderPdfIn(html=html_default), request, {"id": 1}))
+        assert ei2.value.status_code == 422
+        assert ei2.value.detail["code"] == "HTML_EXTERNAL_RESOURCE"
+
+    def test_lookalike_domain_still_rejected(self, archived):
+        """白名单最容易写错的"像域名但不是"：后缀伪造与协议相对地址都必须继续拒。"""
+        for url in ("https://kaas.powervoy.com.evil.com/a.png",
+                    "https://evilkaas.powervoy.com/a.png",
+                    "//kaas.powervoy.com/a.png"):
+            with pytest.raises(HTTPException) as ei:
+                _run(wsf.render_doc_pdf(
+                    5, wsf.RenderPdfIn(html=f'<html><body><img src="{url}"></body></html>'),
+                    _FakeRequest({}), {"id": 1}))
+            assert ei.value.status_code == 422
+            assert ei.value.detail["code"] == "HTML_EXTERNAL_RESOURCE"
 
     def test_not_configured_is_503(self, archived):
         with pytest.raises(HTTPException) as ei:
