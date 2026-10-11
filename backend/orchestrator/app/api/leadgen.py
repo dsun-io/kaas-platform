@@ -1,4 +1,4 @@
-﻿"""客户开发工位 + 线索池 API（最终设计 §五；P2 开发工位 / P3 线索池）
+"""客户开发工位 + 线索池 API（最终设计 §五；P2 开发工位 / P3 线索池）
 
 流程（§5.2）：
     提交配置 → AI 校验（可关）→ 创建 run → 抓取 → 硬过滤 → AI 评分（可关）→ 写入线索池
@@ -38,6 +38,7 @@ from app.db.workstation_models import (
 )
 from app.core.auth import AuthContext, get_auth_context
 from app.services.ai_tasks import run_ai_task
+from app.services.lead_crawl import crawl_one
 from app.api.ws_common import tenant_id_of, scope_filter, check_write_access
 from app.api.subs import require_leadgen
 
@@ -497,6 +498,77 @@ async def list_leads(
     rows = (await db.execute(stmt)).scalars().all()
     return {"items": [_row_to_lead(l) for l in rows],
             "total": total, "page": page, "page_size": page_size}
+
+
+@router.post("/leads/{lead_id}/crawl")
+async def crawl_lead(
+    lead_id: int,
+    auth: AuthContext = Depends(require_leadgen),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """手动爬取单条线索官网，提取产品信息（名称/图片/规格/链接）。
+
+    与 worker 的 `POST /api/v1/leads/{lead_id}/crawl` 同语义。
+    **前端按 worker 的接口写的**，而 orchestrator 一直没有 ——
+    于是 dev 环境下这个按钮是 404。
+
+    团队隔离走 `scope_filter`：**别的团队的线索必须查不到**，
+    查不到就 404（而不是 403 —— 403 等于承认这条线索存在）。
+    """
+    tenant_id = tenant_id_of(auth)
+    stmt = scope_filter(
+        select(LeadCandidate).where(
+            LeadCandidate.id == lead_id,
+            LeadCandidate.tenant_id == tenant_id,
+        ),
+        LeadCandidate, auth,
+    )
+    lead = (await db.execute(stmt)).scalars().first()
+    if lead is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "LEAD_NOT_FOUND"})
+    result = await crawl_one(db, tenant_id, lead)
+    await db.commit()
+    return result
+
+
+class CrawlBatchIn(BaseModel):
+    lead_ids: Optional[List[int]] = None
+    only_pending: bool = False
+    limit: int = 10
+
+
+@router.post("/leads/crawl-batch")
+async def crawl_lead_batch(
+    body: CrawlBatchIn,
+    auth: AuthContext = Depends(require_leadgen),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """批量爬取（默认只爬待爬的）；`limit` 上限 20，避免单次请求超时。
+
+    与 worker 的 `POST /api/v1/leads/crawl-batch` 同语义。
+
+    单条失败**不中断整批** —— `crawl_one` 内部已把异常收成
+    `crawl_status='failed'`，这里照常收集结果并继续。
+    """
+    tenant_id = tenant_id_of(auth)
+    limit = max(1, min(int(body.limit or 10), 20))
+
+    stmt = select(LeadCandidate).where(LeadCandidate.tenant_id == tenant_id)
+    if body.lead_ids:
+        stmt = stmt.where(LeadCandidate.id.in_(body.lead_ids))
+    elif body.only_pending:
+        stmt = stmt.where(LeadCandidate.crawl_status == "pending",
+                          LeadCandidate.website.isnot(None))
+    else:
+        stmt = stmt.where(LeadCandidate.website.isnot(None)) \
+                   .order_by(LeadCandidate.id.desc())
+    stmt = scope_filter(stmt, LeadCandidate, auth).limit(limit)
+
+    rows = (await db.execute(stmt)).scalars().all()
+    results = [await crawl_one(db, tenant_id, lead) for lead in rows]
+    await db.commit()
+    return {"results": results, "total": len(results)}
 
 
 @router.get("/leads/{lead_id}")
