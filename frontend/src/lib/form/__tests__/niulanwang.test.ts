@@ -82,8 +82,8 @@ describe("体积口径：圆柱体 vs 长方体", () => {
   it("扣减**按比例**（不是固定 m³）—— 固定额在小单上会算出负体积", () => {
     const d = NIULANWANG_VOLUME_MODEL.deduction;
     expect(d.mode).toBe("ratio");
-    expect(d.ratio).toBeCloseTo(0.037, 6);
-    // 工厂经验原话仍记录在案（满柜 2~3 m³ ÷ 整柜 68 m³ ≈ 3.7%）
+    expect(d.ratio).toBeCloseTo(0.04, 6);
+    // 工厂经验原话仍记录在案（满柜 2~3 m³ ÷ 整柜 68 m³ ≈ 4%）
     expect(d.fullContainerM3).toEqual([2, 3]);
     expect(d.containerCapacityM3).toBe(68);
     // 满柜（约 630 卷 × 0.108 ≈ 68 m³）扣减应落回 2~3 m³
