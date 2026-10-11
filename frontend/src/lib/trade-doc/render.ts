@@ -35,6 +35,18 @@ export interface TradeDocTemplateInfo {
 /** 允许透传原始 HTML 的字段（其余值一律转义） */
 const RAW_HTML_FIELDS = new Set(["content"]);
 
+/**
+ * 图片字段（2026-10-11 新增能力）：值只允许是「图片源」，由渲染器生成 <img>，
+ * 而不是让调用方传原始 HTML 片段 —— 本渲染器的口径是「业务值一律转义」，
+ * 给图片单开一个原始 HTML 的口子等于把 XSS 缺口重新打开
+ * （单据要发给境外客户与银行，不能只是"看着没问题"）。
+ *
+ * 图片源只接受两类（见 safeImageSrc）：`data:image/*;base64,...`（上传后内联，
+ * 自包含 HTML 不依赖外部文件）与 `http(s)` 绝对地址。
+ */
+const IMAGE_FIELDS = new Set(["company_stamp"]);
+const IMAGE_LIST_FIELDS = new Set(["product_photos"]);
+
 /** 共享样式注入占位符（模板中写 `/*__SHARED_STYLE__*​/`） */
 const STYLE_PLACEHOLDER = "/*__SHARED_STYLE__*/";
 
@@ -331,6 +343,93 @@ function renderAddressBlock(obj: Record<string, unknown>): string {
   if (obj.account) lines.push(`A/C: ${esc(obj.account)}`);
   if (obj.swift) lines.push(`SWIFT: ${esc(obj.swift)}`);
   return lines.join("<br>");
+}
+
+/**
+ * 图片源白名单：`data:image/*;base64,<base64>` 或 `http(s)` 绝对地址。
+ * 其余（javascript:、相对路径、空值、非字符串）一律返回空串 ——
+ * 宁可不出图，也不让来路不明的字符串进到 `<img src>`。
+ */
+function safeImageSrc(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const raw = value.trim();
+  if (/^https?:\/\/\S+$/i.test(raw)) return raw;
+  // base64 里允许换行（手工粘贴的长串常见），比对前先归一
+  const compact = raw.replace(/\s+/g, "");
+  if (/^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/i.test(compact)) {
+    return compact;
+  }
+  return "";
+}
+
+/**
+ * 公章 / 公司签章：渲染在签章区内（叠印在签字线上方）。
+ * 用行内样式，而不是往 `_shared.css` 加规则 —— 共享样式一改，18 份逐字节
+ * 基线全部作废（`scripts/verify-trade-doc-fixtures.py` 会全线报差异），
+ * 为两个类名付这个代价不值得。
+ */
+function renderStampImage(value: unknown): string {
+  const src = safeImageSrc(value);
+  if (!src) return "";
+  return (
+    `<img class="stamp-img" src="${esc(src)}" alt="Company Stamp"` +
+    ` style="display:block;width:52mm;height:auto;margin:0 auto 1.6mm;">`
+  );
+}
+
+/**
+ * 产品照片：`[{ image, caption? }]`，两列网格，排在「金额大写」之后。
+ *
+ * 空数组 / 无有效图片时返回**空串**（而不是空容器）：模板里的
+ * `$product_photos` 紧跟在已有标签之后，因此"没有照片"时输出与新增本能力
+ * 之前逐字节一致 —— 18 份基线不需要重生成，迁移等价性证明继续有效。
+ */
+function renderPhotoGrid(value: unknown): string {
+  if (!Array.isArray(value)) return "";
+  const photos = value
+    .filter(
+      (item): item is Record<string, unknown> =>
+        typeof item === "object" && item !== null,
+    )
+    .map((item) => {
+      const caption = item.caption ?? item.description;
+      return {
+        src: safeImageSrc(item.image ?? item.src),
+        caption: typeof caption === "string" ? caption : "",
+      };
+    })
+    .filter((photo) => photo.src !== "");
+  if (photos.length === 0) return "";
+
+  const cells = photos.map(
+    (photo, index) =>
+      `<td><img src="${esc(photo.src)}" alt="${esc(`Product photo ${index + 1}`)}">` +
+      (photo.caption ? `<div class="photo-cap">${esc(photo.caption)}</div>` : "") +
+      `</td>`,
+  );
+  if (cells.length % 2 === 1) cells.push("<td></td>"); // 单数张时补空格，保持两列版面对齐
+
+  const rows: string[] = [];
+  for (let i = 0; i < cells.length; i += 2) {
+    rows.push(`<tr>${cells[i] ?? ""}${cells[i + 1] ?? ""}</tr>`);
+  }
+
+  return [
+    "",
+    "",
+    `  <div class="photos">`,
+    `    <style>`,
+    `      .photos{margin-top:5mm;page-break-inside:avoid;}`,
+    `      .photos .photos-title{font-size:8.4pt;font-weight:700;color:#0f2740;margin-bottom:1.6mm;}`,
+    `      .photos table{width:100%;border-collapse:collapse;table-layout:fixed;}`,
+    `      .photos td{width:50%;padding:2mm;border:.3mm solid #ccd4dc;vertical-align:top;text-align:center;}`,
+    `      .photos img{max-width:100%;max-height:62mm;height:auto;}`,
+    `      .photos .photo-cap{margin-top:1.4mm;font-size:8pt;color:#40515f;}`,
+    `    </style>`,
+    `    <div class="photos-title">Product Photos</div>`,
+    `    <table><tbody>${rows.join("")}</tbody></table>`,
+    `  </div>`,
+  ].join("\n");
 }
 
 // ── 商品明细表 ──────────────────────────────────────────────────────────────
@@ -635,6 +734,10 @@ function preprocessData(
   for (const [key, value] of Object.entries(data)) {
     if (isEmpty(value)) {
       result[key] = "";
+    } else if (IMAGE_FIELDS.has(key)) {
+      result[key] = renderStampImage(value);
+    } else if (IMAGE_LIST_FIELDS.has(key)) {
+      result[key] = renderPhotoGrid(value);
     } else if (Array.isArray(value)) {
       result[key] = value.length
         ? renderItemsTable(value as Record<string, unknown>[], docType, context)
