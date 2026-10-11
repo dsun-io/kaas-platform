@@ -419,3 +419,38 @@ async def upload_doc_file(doc_id: int, request: Request,
     link = await attach_doc_file(
         doc_id, DocFileIn(file_id=row["id"], role=role, caption=caption), request, user)
     return {"file": row, "link": link}
+
+
+async def resolve_photo_refs(request: Request, data: dict) -> dict:
+    """把单证 `product_photos` 里的 `{file_id}` 引用解析成 data URI。
+
+    由 `main.get_trade_doc_render_data` 在**装配层**调用：渲染器的图片白名单只认
+    `data:` 与 `http(s)`（防注入设计，不放开），而 `{file_id}` 不是图片源 ——
+    在这里解析，渲染器一行都不用改。取不到字节（未上线/R2 读失败）就跳过该条，不印坏图。
+    """
+    from kaas_common.files import is_file_ref, to_data_uri
+
+    photos = data.get("product_photos")
+    if not isinstance(photos, list) or not photos:
+        return data
+    resolved = []
+    for entry in photos:
+        if not is_file_ref(entry):
+            resolved.append(entry)
+            continue
+        row = await db.fetchrow(
+            request,
+            "SELECT name, content_type, file_name, content, object_key, storage FROM file_objects"
+            " WHERE tenant_id=$1 AND id=$2 AND is_current",
+            DEFAULT_TENANT, int(entry["file_id"]))
+        if not row:
+            continue
+        blob = await _load_bytes(row)
+        if blob is None:
+            continue
+        resolved.append({
+            "image": to_data_uri(row.get("content_type"), blob, row.get("file_name")),
+            "caption": entry.get("caption") or row.get("name") or "",
+        })
+    data["product_photos"] = resolved
+    return data

@@ -13,8 +13,10 @@ from kaas_common.files import (
     FileRuleError,
     current_of,
     file_ext,
+    is_file_ref,
     next_version,
     object_key,
+    to_data_uri,
     validate_upload,
 )
 
@@ -131,7 +133,6 @@ class TestFileExt:
 
 class TestVersioning:
     """盖章回传「覆盖」= 版本化：新版本上位、旧版本留档（用户已裁决）。"""
-
     def test_first_upload_is_version_one(self):
         assert next_version(None) == (1, None)
 
@@ -149,3 +150,26 @@ class TestVersioning:
         no_flag = [{"id": 1, "version": 1}, {"id": 2, "version": 5}]
         assert current_of(no_flag)["id"] == 2
         assert current_of([]) is None
+
+
+class TestDocPhotoRefs:
+    """单证 `product_photos` 允许「引用产品图库」的条目；解析在装配层，渲染器不改。"""
+
+    def test_is_file_ref(self):
+        assert is_file_ref({"file_id": 12})
+        assert is_file_ref({"file_id": 12, "caption": "尺寸图"})
+        # 已给出图源的条目**不是**引用（原样透传，向后兼容老数据/离线 payload）
+        assert not is_file_ref({"image": "data:image/png;base64,AAA"})
+        assert not is_file_ref({"src": "https://x/y.jpg"})
+        assert not is_file_ref({"caption": "没有 file_id"})
+        assert not is_file_ref("不是字典")
+        assert not is_file_ref(None)
+
+    def test_to_data_uri(self):
+        uri = to_data_uri("image/png", b"\x89PNG")
+        assert uri.startswith("data:image/png;base64,")
+        # 带参数的 content-type 也要能归一（否则渲染器白名单会把它丢掉）
+        assert to_data_uri("image/jpeg; charset=binary", b"x").startswith("data:image/jpeg;base64,")
+        # mime 缺失时按扩展名兜底；认不出就用 octet-stream（渲染器会丢弃 —— 有意：宁可不显示）
+        assert to_data_uri(None, b"x", "a.PNG").startswith("data:image/png;base64,")
+        assert to_data_uri(None, b"x", "a.bin").startswith("data:application/octet-stream;base64,")

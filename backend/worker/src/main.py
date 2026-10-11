@@ -3643,6 +3643,9 @@ async def get_trade_doc_render_data(doc_id: int, request: Request,
             "country_of_origin": profile_dict.get("default_country_of_origin"),
         },
     )
+    # 单证引用产品图：把 `{file_id}` 解析成图片源（装配层做，渲染器一行不改）
+    import ws_files as _ws_files  # 模块在文件末尾导入，函数内惰性引用
+    data = await _ws_files.resolve_photo_refs(request, data)
     return {
         "doc": doc,
         "data": data,
