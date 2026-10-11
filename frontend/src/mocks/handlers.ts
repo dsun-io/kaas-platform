@@ -1,4 +1,4 @@
-﻿import { http, HttpResponse } from "msw";
+import { http, HttpResponse } from "msw";
 import {
   makeEvent,
   makeTenant,
@@ -58,7 +58,43 @@ let featureFlagsStore: Record<string, Record<string, boolean>> = JSON.parse(
 // NOT present in the real backend. NEVER used in production.
 let __test_quote_status_override: string | null = null;
 
+// ── Auth（登录态）的假身份 ────────────────────────────────────────────────
+// **e2e 登录身份的唯一来源**：`e2e/global-setup.ts` 只写了 `has_token` cookie，
+// 用户本身来自这里（webServer 锁定 `NEXT_PUBLIC_API_MODE=mock`）。
+//
+// 原先 `/auth/me` 与 `/auth/login` **没有 mock**，后果隐蔽：
+//   mock 模式下拿不到用户 → `account_type` 缺失 →
+//   `auth-context.tsx` 里 `?? "customer"` 把它默认成**非管理员** →
+//   所有 `<RouteGuard adminOnly>` 页面渲染「您没有访问此页面的权限」。
+//   表现为"一大批 e2e 失败"，而失败清单**正好等于**用 adminOnly 的 7 个页面
+//   （/events、/customers、/kb、/settings、/audit-log、/admin/gray-release、/team）。
+//   看着像产品缺陷，其实是夹具缺了这块。
+//
+// 所以这里给**平台管理员**身份（role=system_admin），e2e 才测得到管理页。
+const MOCK_ADMIN_USER = {
+  user_id: 1,
+  email: "admin@kaas.local",
+  display_name: "平台管理员",
+  account_type: "internal" as const,
+  role: "system_admin",
+  plan: "enterprise",
+  team_id: null,
+  team_name: null,
+  console_access: true,
+};
+
 export const handlers = [
+  http.get("/api/v1/auth/me", () => HttpResponse.json(MOCK_ADMIN_USER)),
+  http.post("/api/v1/auth/login", () =>
+    HttpResponse.json({
+      ...MOCK_ADMIN_USER,
+      access_token: "mock-access-token",
+      token_type: "bearer",
+      expires_in: 3600,
+    }),
+  ),
+  http.post("/api/v1/auth/logout", () => HttpResponse.json({ ok: true })),
+
   // ── Test-only MSW override endpoint ──────────────────────────────
   // Exists ONLY in frontend MSW handlers for Playwright / dev contract tests.
   // NOT implemented by the real backend. Must NEVER be used in production.

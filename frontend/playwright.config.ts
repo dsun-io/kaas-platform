@@ -39,6 +39,19 @@ export default defineConfig({
       ...(process.env as Record<string, string>),
       // 锁定假数据模式 = 自动造数（MSW handlers 即种子数据，无需数据库）
       NEXT_PUBLIC_API_MODE: 'mock',
+      // ⚠️ 必须同时把 BASE_URL 指回**页面源**，否则 e2e 全是假的失败。
+      //
+      // 原因：MSW 的 handler 写的是**相对路径**（`http.get("/api/v1/events")`，见
+      // mocks/handlers.ts），在浏览器里只匹配**页面源** = http://localhost:3000。
+      // 而 `NEXT_PUBLIC_API_BASE_URL` 没被这里覆盖时会走 `.env.development`
+      // 的 http://localhost:8000 → 客户端请求变成**跨源** → MSW 匹配不上 →
+      // `onUnhandledRequest: "bypass"` 把它放行到真实的 :8000（无人监听）→
+      // **所有数据请求失败**，页面只剩外壳；连 `/auth/me` 也失败，
+      // 于是 `<RouteGuard adminOnly>` 判定"无权限"，表现为一大批用例失败
+      // （失败清单正好等于用 adminOnly 的 7 个页面，极具误导性）。
+      //
+      // 2026-10-11 实测：补上这一行前 18 failed / 6 passed。
+      NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3000',
       // 给 next dev 更大堆内存，防止并发编译时 OOM 崩掉服务
       NODE_OPTIONS: '--max-old-space-size=2048',
     },
