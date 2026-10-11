@@ -34,9 +34,6 @@ from app.repositories.sale_price_repo import (
     get_current_sale_price,
     insert_sale_price_item,
 )
-from app.repositories.pricing_profiles_repo import (
-    get_current_profile,
-)
 from app.repositories.freight_rates_repo import (
     get_freight_rates,
 )
@@ -65,6 +62,5 @@ __all__ = [
     "insert_cost_item",
     "get_current_sale_price",
     "insert_sale_price_item",
-    "get_current_profile",
     "get_freight_rates",
 ]

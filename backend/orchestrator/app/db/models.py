@@ -143,10 +143,19 @@ class CustomerQuoteProfile(Base):
 
     为什么另建一张表，不去用 customer_pricing_profiles
     ------------------------------------------------
-    那张旧表是 INT-R3 时代的模型（三档加价倍率 + 单一税点），**仍被旧线性流水线
-    读取**（services/quote_engine → niulanwang_pricing → get_current_profile）。
-    若把新模型的行插进去，那条老路径会按「加价倍率」解读它们 ——
-    读到 null / 垃圾值继续算，不报错、不告警。分开两张表，各自服务各自的模型。
+    那张旧表是 INT-R3 时代的模型（三档加价倍率 + 单一税点）。
+    **它的读取路径已于 2026-10-11 整体删除**：
+    `services/quote_engine.py` → `services/niulanwang_pricing.py` →
+    `repositories/pricing_profiles_repo.py` 三个文件全链删除
+    （死代码：没有任何 API 调用它，唯一引用是 `services/__init__` 的再导出
+    和一个测试里的 `assert is not None`）。
+
+    原先的隐患正是那条路径造成的：把新模型的行插进旧表，
+    老路径会按「加价倍率」解读它们 —— 读到 null / 垃圾值继续算，
+    **不报错、不告警**。读取路径删掉后，这个隐患随之消失。
+
+    表本身**保留**（里面有历史数据；删表是破坏性动作，需单独决定）。
+    它现在是**退役状态**：没有任何代码读它，也没有新的写入路径。
 
     tax_overrides 用 JSONB 而非展开成列
     ----------------------------------

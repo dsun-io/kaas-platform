@@ -88,6 +88,10 @@ class TestFastGPTDisabledBehavior:
         # 能导入就说明不依赖 FastGPT
         assert get_price is not None
 
-        # 验证 V2 quote engine 无 FastGPT 依赖
-        from app.services.quote_engine import create_quote as create_quote_v2
-        assert create_quote_v2 is not None
+        # 报价引擎（`export_quote` 那套）同样不依赖 FastGPT。
+        # 注：原先这里断言的是旧线性流水线 `services/quote_engine.create_quote`，
+        # 那条链已随「旧表 customer_pricing_profiles 活读取路径收口」一并删除
+        # （它没有任何 API 调用，是死代码）。改断言现役引擎。
+        from app.services.export_quote import build as build_quote
+
+        assert build_quote is not None
