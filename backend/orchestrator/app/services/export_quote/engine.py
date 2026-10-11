@@ -581,10 +581,18 @@ def _run_specs(
 
 
 def resolve_space_deduction(product: ProductSpec, scope: dict, mode=DECIMAL):
-    """把体积扣减口径解析为一个数值。"""
+    """把体积扣减口径解析为一个**绝对值**（m³）。
+
+    按比例的模式（`ratio`）没有固定额 —— 它的修正量随订单体积变，
+    由 `resolve_space_deduction_ratio` 给系数、在公式里乘出来，
+    所以这里返回 0。两者可叠加：
+        `volume_effective_m3 = volume_box_m3 * (1 - ratio) - space_deduction`
+    """
     sd = product.space_deduction
     if sd.mode == "formula" and sd.expr:
         return mode.convert(expr_mod.evaluate(sd.expr, scope, mode))
+    if sd.mode == "ratio":
+        return mode.convert(0)
     if sd.mode == "fixed":
         return mode.convert(sd.value)
     if sd.mode in ("median", "mean"):
@@ -593,6 +601,17 @@ def resolve_space_deduction(product: ProductSpec, scope: dict, mode=DECIMAL):
         lo, hi = mode.convert(sd.range[0]), mode.convert(sd.range[1])
         return mode.divide(lo + hi, mode.convert(2))
     raise EngineError(f"未知的 space_deduction 模式: {sd.mode}")
+
+
+def resolve_space_deduction_ratio(product: ProductSpec) -> Any:
+    """体积扣减里**按比例**的那一部分（0.037 = 扣掉 3.7%）；非比例模式为 0。
+
+    为什么不并进 `resolve_space_deduction`：扣减在**派生公式之前**就要落进作用域，
+    而订单体积（`volume_box_m3`）要到订单指标阶段才知道。
+    固定额与比例是两种不同性质的东西（一个是 m³、一个是无量纲系数），
+    分开给、在公式里合成，才不会出现"比例被当成 2.5 立方米扣掉"这种事故。
+    """
+    return product.space_deduction.ratio
 
 
 def policy_scope(policy: PricingPolicy) -> dict:
@@ -680,6 +699,7 @@ def build(request: QuoteRequest, mode=DECIMAL) -> QuoteResult:
             scope.update(combo)
             row_spec = dict(scope)
             scope["space_deduction"] = resolve_space_deduction(product, scope, mode)
+            scope["space_deduction_ratio"] = resolve_space_deduction_ratio(product)
 
             derived = _run_specs(product.derived, scope, "派生公式", diagnostics, mode, idx)
 
@@ -860,6 +880,7 @@ def order_scopes(result: QuoteResult):
             scope["order_unit"] = order.unit
             scope.update({k: v for k, v in metrics.items() if not k.startswith("_")})
             scope["space_deduction"] = resolve_space_deduction(result.product, scope, DECIMAL)
+            scope["space_deduction_ratio"] = resolve_space_deduction_ratio(result.product)
             yield row, order, scope
 
 

@@ -282,7 +282,8 @@ class TestFormulasEndpoints:
             for f in calc[stage]:
                 assert f["unit"], f
                 assert f["note"], f
-        assert d["space_deduction"]["range"] == [2, 3]
+        # 按比例扣减（不再是 2~3 m³ 的固定额）
+        assert d["space_deduction"]["mode"] == "ratio"
         assert "实际占用体积" in d["space_deduction"]["note"]
 
     async def test_wave_and_volume_formulas_are_documented(self, async_client):
@@ -315,7 +316,8 @@ class TestFormulasEndpoints:
         assert got["volume_per_piece_m3"] == "0.0848"
         assert got["volume_box_per_piece_m3"] == "0.1080"
         assert got["volume_box_m3"] == "32.4000"
-        assert got["volume_effective_m3"] == "29.9000"
+        # 32.4 × (1 − 0.037) = 31.2012
+        assert got["volume_effective_m3"] == "31.2012"
         assert got["pieces"] == "300"
 
     async def test_explain_wave_adds_three_kg_on_100m_roll(self, async_client):
@@ -354,7 +356,7 @@ class TestFormulasEndpoints:
         steps = r.json()["steps"]
         assert {s["code"] for s in steps} == {"volume_effective_m3", "wave_add_kg"}
         vals = {s["code"]: s["value"] for s in steps}
-        assert vals["volume_effective_m3"] == "29.9000"
+        assert vals["volume_effective_m3"] == "31.2012"
 
     async def test_explain_omits_price_metrics_with_hint(self, async_client):
         """价格类量不在本接口算 —— 给 0 会让人误以为价格是 0。"""

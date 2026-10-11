@@ -59,15 +59,29 @@ export const NIULANWANG_VOLUME_MODEL = {
   perRollCylinderFormula: 'pi / 4 * 卷径² * 网高',
   perRollBoxFormula: '卷径² * 网高',
   orderTotalFormula: '单卷长方体体积 * 卷数',
+  /**
+   * 扣减**按比例**（2026-10-11 用户裁决），不是固定 m³。
+   *
+   * 固定额每单只扣一次、不随卷数缩放，**小单上会算出负体积**
+   * （实测牛栏网 < 2314 米 / 23 卷时 `volume_effective_m3` 为负），
+   * 而这个数是要给货代/报关的。
+   *
+   * 比例来源：工厂原话「满柜减 2~3 m³」取中位 2.5 m³
+   * ÷ 40HQ 可用容积约 68 m³ ≈ 3.7% —— 满柜（约 630 卷）时扣 2.52 m³，
+   * 正好落回工厂经验值。
+   */
   deduction: {
-    mode: 'median',
-    range: [2, 3] as const,
-    valueM3: 2.5,
-    /** 每单只扣一次，不随卷数放大 */
-    appliesPer: 'order' as const,
+    mode: 'ratio',
+    /** 扣减比例（装柜系数 = 1 − 它） */
+    ratio: 0.037,
+    /** 工厂经验原话的记录：满柜 2~3 m³ */
+    fullContainerM3: [2, 3] as const,
+    containerCapacityM3: 68,
   },
-  effectiveFormula: '长方体总体积 - 空间扣减',
-  note: '实际占用体积 = 长方体总体积 − 2~3 m³（取中位数 2.5 m³），每单只扣一次。',
+  effectiveFormula: '长方体总体积 * (1 - 扣减比例)',
+  note: '实际占用体积 = 长方体总体积 × 装柜系数 0.963（= 1 − 3.7%）。'
+    + '按比例而非固定额：发得越少扣得越少，且永远不会出现负体积。'
+    + '运行时权威值以 `/export-quote/products/{key}/formulas` 为准。',
 } as const;
 
 /** 派生量代号 —— 与后端指标名一一对应，供前端按名取数。 */
