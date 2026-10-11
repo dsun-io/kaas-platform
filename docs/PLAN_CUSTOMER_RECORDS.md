@@ -1,5 +1,10 @@
 # 执行计划：业务客户的往来记录（报价 / 订单 / 单证 包含关系）
 
+> ⚠️ **本计划的多项待办已完成**（dev 侧 `/records`、前端 A/B/D、`/documents` 收口等），
+> 且其中「前端 vitest 1 个既有失败（niulanwang）」的真实原因是**产品组合数三方不一致**，
+> 不是测试写法问题。当前状态以
+> [PROBLEM_STATUS_2026-10-11.md](./PROBLEM_STATUS_2026-10-11.md) 为准。
+
 > 2026-10-11 制定。设计依据：[CUSTOMER_DOCUMENTS_VIEW.md](CUSTOMER_DOCUMENTS_VIEW.md)
 > 原则：**包含关系是业务逻辑的必然结果**，不是查询层的拼装。因此先固化数据模型与写入侧，再做读侧与前端。
 
