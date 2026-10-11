@@ -216,6 +216,31 @@
   而档位目录改团队级后两者关系要明确。计划：**保留自动反推作为兜底**
   （不破坏"加档位只有一步：录成本"这个设计），显式目录负责**改 / 停用**。
 
+**#2b 进度**：机制层已完成（存储 + 应用 + 读路径接线），**写接口待做**。
+
+| 部分 | 状态 |
+|---|---|
+| 表 `team_option_overrides`（键 `(team_id, product_key)`，JSONB） | ✅ 模型 + 迁移 `202610110015` |
+| `models.apply_option_overrides`（改名 + 标记停用） | ✅ |
+| `models.visible_options`（界面清单过滤，引擎不用） | ✅ |
+| `describe_space` / `describe_pricing_key` 滤掉停用项 | ✅ |
+| `services/option_overrides.py`（读 / 整体写 / 增量合并 / 载荷归一） | ✅ |
+| `_with_team_overrides` 接进有效产品定义 | ✅ |
+| **写接口（增删改查 REST）** | ❌ 下轮 |
+| **迁移应用到生产库** | ❌ 待做（表是空表，无数据风险） |
+
+两条约束在**代码里**落实（不只是注释）：
+
+1. **改名只动 `name`，`code` 一字不改** —— 查价键用 code，
+   实测改名后 `describe_pricing_key` 仍输出 `zinc_40`、引擎仍能按 code 解析。
+2. **停用是"标记"不是"移除"** —— 停用档位**留在 `options` 里**并打 `disabled: true`，
+   于是引擎仍能解析它（已引用它的历史报价单可重算），
+   而 `describe_space` / `describe_pricing_key` 把它滤掉（界面看不到）。
+   专门有一条测试断言"引擎能解析停用档位"。
+
+`_with_team_overrides` 在 `auth.team_id` 为空时**不做任何事**，
+**不退化到全实例** —— 否则会把别的团队的档位混进来，正是本次要避免的粒度错误。
+
 公式取自表格的公式字段：
 
 ```

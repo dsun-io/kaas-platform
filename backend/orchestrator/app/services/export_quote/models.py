@@ -444,6 +444,82 @@ def extend_product(
     return replace(product, axes=new_axes, variants=new_variants)
 
 
+def apply_option_overrides(
+    product: "ProductSpec",
+    overrides: Mapping[str, Any] | None,
+) -> "ProductSpec":
+    """把**团队级**的档位覆盖（改显示名 / 软停用）套到有效规格空间上。
+
+    粒度是**团队**（2026-10-11 用户裁决）：档位 = 公司能做什么，
+    不该因买家而异。成本价相反 —— 那是"不同买家拿到不同价"，仍在定价数据里。
+
+    ``overrides`` 形如::
+
+        {"coating_code": {"rename": {"zinc_40": "40克锌层"},
+                          "disabled": ["pvc_black"]}}
+
+    键可以是变体包的**稳定 code 字段**（``coating_code``）或包名（``coating``）。
+
+    两条硬约束（在代码里落实，不只是注释）：
+
+    1. **只改显示名，不改 code**。code 是查价键的一半
+       （``pricing_key_of`` 拼的就是它），一改，历史定价数据与报价单就对不上。
+       所以这里只动 ``name``。
+    2. **停用是"标记"，不是"移除"**。若把停用档位从 ``options`` 里删掉，
+       ``spec_from_partial`` 就解析不了它 —— 已引用该档位的**历史报价单重算会失败**。
+       所以保留在 options 里、打上 ``disabled: True``，由
+       `visible_options` 在**给界面看的清单**里滤掉。引擎据此仍能解析。
+    """
+    if not overrides:
+        return product
+
+    changed = False
+    new_variants = []
+    for vg in product.variants:
+        ov = None
+        for key in (f"{vg.name}_code", vg.name):
+            if key in overrides:
+                ov = overrides.get(key) or {}
+                break
+        if not ov:
+            new_variants.append(vg)
+            continue
+
+        rename = {pricing_key_value(k): str(v)
+                  for k, v in (ov.get("rename") or {}).items()}
+        disabled = {pricing_key_value(x) for x in (ov.get("disabled") or [])}
+        if not rename and not disabled:
+            new_variants.append(vg)
+            continue
+
+        options = []
+        for opt in vg.options:
+            merged = dict(opt)
+            for ident in (opt.get("code"), opt.get("name")):
+                canonical = pricing_key_value(ident)
+                if canonical in disabled:
+                    merged["disabled"] = True
+                if canonical in rename:
+                    merged["name"] = rename[canonical]
+            options.append(merged)
+        new_variants.append(
+            VariantGroup(vg.name, tuple(options), vg.label, vg.label_en))
+        changed = True
+
+    if not changed:
+        return product
+    return replace(product, variants=new_variants)
+
+
+def visible_options(options) -> list:
+    """从一组变体选项里滤掉**软停用**的 —— 只给界面用。
+
+    单独抽出来，是为了让"停用只影响展示、不影响解析"这条约束有唯一落点，
+    免得有人在引擎路径上也顺手过滤一遍，把历史报价单弄坏。
+    """
+    return [o for o in options if not o.get("disabled")]
+
+
 def _coerce_axis_value(axis: "Axis", raw: Any) -> Any:
     """把客户填的新取值转成与轴上已有取值**同类型**的值。
 

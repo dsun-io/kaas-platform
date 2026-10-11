@@ -701,7 +701,8 @@ async def _with_customer_options(
     就会出现「下拉里能选、一算就报错」或者「算了但下拉里选不到」。
     """
     if not product.pricing_key:
-        return product
+        # 没有定价键 → 没有"客户自加档位"这条路，但**团队级覆盖仍要套**
+        return await _with_team_overrides(db, auth, product)
 
     from app.services.pricing_table import load_option_extensions
     from app.services.export_quote.models import extend_product
@@ -709,7 +710,32 @@ async def _with_customer_options(
     tenant_id = auth_tenant(auth)
     customer_id = auth.customer_id_str or tenant_id
     exts = await load_option_extensions(db, tenant_id, customer_id, product)
-    return extend_product(product, exts)
+    return await _with_team_overrides(db, auth, extend_product(product, exts))
+
+
+async def _with_team_overrides(
+    db: AsyncSession,
+    auth: AuthContext,
+    product: ProductSpec,
+) -> ProductSpec:
+    """再套一层**团队级**覆盖：改显示名 / 软停用（2026-10-11 用户裁决）。
+
+    与上一层的分工：
+      · 定价数据里"客户自加的档位" —— 解决**有没有**这个档位（按买家客户存）
+      · 本层 —— 解决这个档位**叫什么、还开不开**（按**团队**存）
+
+    顺序固定为「产品定义 → 并入买家自加 → 套团队覆盖」，两层都能作用到。
+    团队为空（未归属团队）时不做任何事 —— **不退化到全实例**，
+    否则会把别的团队的档位混进来，正是本次要避免的粒度错误。
+    """
+    from app.services.export_quote.models import apply_option_overrides
+    from app.services.option_overrides import load_team_option_overrides
+
+    team_id = getattr(auth, "team_id", None)
+    if not team_id:
+        return product
+    overrides = await load_team_option_overrides(db, team_id, product.key)
+    return apply_option_overrides(product, overrides)
 
 
 async def _effective_product(
