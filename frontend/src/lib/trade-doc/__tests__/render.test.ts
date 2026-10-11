@@ -86,22 +86,26 @@ describe("逐字节基准比对（Python 版输出 → TypeScript 版输出）",
         ...(docType === "other" ? payload.other_extra : {}),
       };
       const actual = renderTradeDoc(docType, data);
-      const expected = readFileSync(
-        join(GOLDEN_HTML, `sample_${docType}.html`),
-        "utf-8",
+      // 基准在 git 中以 LF 存储；Windows（core.autocrlf=true）检出会变成 CRLF，
+      // 而渲染器输出 LF —— 两侧不归一会让 18 类单证在 Windows 上全线假红，
+      // 真实回归反而被换行噪音淹没。与 scripts/verify-trade-doc-fixtures.py 同口径。
+      const normalize = (s: string) => s.replace(/\r\n/g, "\n");
+      const actualNorm = normalize(actual);
+      const expectedNorm = normalize(
+        readFileSync(join(GOLDEN_HTML, `sample_${docType}.html`), "utf-8"),
       );
-      if (actual !== expected) {
+      if (actualNorm !== expectedNorm) {
         // 给出首个差异位置，方便定位（而不是只报"不相等"）
         let idx = 0;
         while (
-          idx < Math.min(actual.length, expected.length) &&
-          actual[idx] === expected[idx]
+          idx < Math.min(actualNorm.length, expectedNorm.length) &&
+          actualNorm[idx] === expectedNorm[idx]
         )
           idx += 1;
         mismatches.push(
-          `${docType}: 长度 ${actual.length} vs 基准 ${expected.length}；` +
-            `首个差异 @${idx} 实际=${JSON.stringify(actual.slice(idx, idx + 40))} ` +
-            `基准=${JSON.stringify(expected.slice(idx, idx + 40))}`,
+          `${docType}: 长度 ${actualNorm.length} vs 基准 ${expectedNorm.length}；` +
+            `首个差异 @${idx} 实际=${JSON.stringify(actualNorm.slice(idx, idx + 40))} ` +
+            `基准=${JSON.stringify(expectedNorm.slice(idx, idx + 40))}`,
         );
       }
     }
