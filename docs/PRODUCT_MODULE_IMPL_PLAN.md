@@ -842,6 +842,59 @@ worker `pytest` ⇒ **231 passed, exit 0**；`route-parity` ⇒ PASS；`sync-sha
 2. **假库要"按谓词过滤"**：让假库按 `params["team"]` 决定那行是否"存在"，404 才是**真的被谓词挡掉**
    （否则只测到"路径对不对"，测不到隔离）—— 这也是阳性对照能成立的前提。
 
+### 8.9 已落地的第 8 个增量：**P16 改造第一步** —— `/explain` 的草稿试算（`spec_override`）+ 汇总键
+
+**依据**：§8.5（task-21 A）的结论 —— **不新建接口**，改造现有 `/explain`。做完的是**决定性缺口之一**：
+"入参只有取值、没有定义 ⇒ 草稿根本无法试算"。
+
+**改了什么**
+
+| 项 | 内容 |
+|---|---|
+| 新入参 | `ExplainIn.spec_override: Optional[dict]`（**草稿定义**）：用这份**未保存**的 ProductSpec 代替注册表定义试算，**只本次请求生效、不落库** |
+| 新引擎模块 | `services/export_quote/spec_override.py`（纯标准库：绝对导入只有 `__future__/dataclasses/typing`） |
+| 新键 | `ok: bool`（本次试算有没有坏）、`errors: [{code, error, expr}]`、`warnings: [str]` |
+| 兼容性 | 老键（`product_key`/`product_name`/`spec`/`total`/`space_deduction`/`space_deduction_ratio`/`steps` [+`price_metrics_omitted`/`price_hint`]）**一个不改、不改名**；`steps[i]` 的 8 个键也不动 |
+
+**草稿解析为什么单独一层（`spec_override.py`）**：`spec_from_dict` 是**宽松构造**（`tenant_products.py:19-44`），
+三处静默 —— 缺字段取默认、**顶层未知字段被忽略**、列表 `null` 与缺失等价。
+编辑器传来的是"人正在敲的半成品"⇒ 静默会把"打错字段名"变成"一份看起来正常的试算结果"。
+本层契约：**结构错 ⇒ 422**（未知字段 / `null` / 类型不对 / `key` 与路径不符 / 嵌套不符）；
+**合法但缺字段 ⇒ 允许**，但把**被默认掉的字段名**放进 `warnings` **如实回传**（不静默）。
+
+**⚠️ 本轮查出的一个真问题（已修，且留了兜底）**：`spec_from_dict` **静默丢弃 3 个字段** ——
+`numeric_inputs` / `piece_inputs` / `params`（实测它只覆盖 22 个键）。
+草稿里写了数值入参，构造出来却是空的 ⇒ 公式报"未定义变量"。
+⇒ `spec_override` 手动带上这 3 个字段（`_CARRIED_MANUALLY`），并做**兜底检查**
+（提供了的字段必须真的进了 spec，否则抛内部错误）—— 防止将来又吞字段而无人察觉。
+
+**`ok`/`errors` 的一个关键选择**：先算**全部**步骤再过滤 `steps`。
+`metrics` 只影响**返回哪些步骤**，而 `ok`/`errors` 覆盖**所有**步骤 ——
+否则"只看过滤后剩下的"会得出"没问题"的错觉（有用例钉住）。
+
+**测试**：`tests/test_explain_spec_override.py`（**21 条 `-m unit`，全离线**：该端点不需要 DB/前端）——
+草稿正常 / 8 类非法草稿各自 422 且 code 精确 / 坏公式 ⇒ **200 但 `ok=false` + `errors` 非空**（含语法坏、引用不存在的量）/
+**老请求逐键不变**（顶层键集 + `steps` 键集 + 与直接调引擎的结果一致）/ `errors` 不被 `metrics` 过滤影响 /
+**未注册的 key 带草稿能试算、不带草稿则 404**（新团队自建 key 的前置）。
+
+**⚠️ 三项明确留待（本轮没做）**
+1. **团队覆盖那一半**（§8.5 A 的第 2 条缺口："只取系统级注册表 ⇒ 团队覆盖不参与"）：需要 **db 会话** ⇒
+   本任务（离线要求 + 不改端点签名以保零影响）**有意不做**；有用例**钉住"端点上仍没有 db 依赖"**，
+   接进来时会变红以提醒同步文档。
+2. **worker 侧未同构**：worker **也有** `/explain`（`ws_quote_ext.py:181` + 自己的 `_ExplainIn`，
+   注释写着"与 orchestrator 逐字段一致"）⚠️ —— 但 `worker/src/**` 本任务**不授权** ⇒
+   **worker 的 explain 目前不接受 `spec_override`、也没有 `ok/errors/warnings`**。
+   两端**语义源已共享**（解析器在引擎包里、镜像已同步 21 文件 ✓），**只差接线**：
+   照 `export_quote.py` 加字段 + 3 键即可（建议下一个授权 worker 的任务做）。
+3. **编辑器侧**（前端）接线 —— 属 P16 后续小步。
+
+**门禁**：orchestrator `pytest -m unit` ⇒ **1068 passed, 1 skipped, 324 deselected, exit 0**；
+`contracts:check` ⇒ **PASS**（含 R6 openapi 新鲜度）；`sync-shared` + `-Check` ⇒ **exit 0**（引擎 21 文件一致；
+镜像被 git 忽略 ⇒ **不产生 tracked diff** ✓）。未跑 build。
+
+**测试工程上又踩一次同类坑（第 3 次了）**：测试函数名里带 `'`（引号）⇒ **SyntaxError 直接收集失败**。
+（前两次分别是带 `.` 与带 `'`。）⇒ 写中文测试名**只用中文、数字、下划线**。
+
 ---
 
 ## 9. 本文件的状态与自证（**滚动更新**）
@@ -855,6 +908,8 @@ worker `pytest` ⇒ **231 passed, exit 0**；`route-parity` ⇒ PASS；`sync-sha
   的同类读点列进 P8/P7 剩余清单。
 - **task-24**：**file_objects 落点**（§8.8）—— `files.py` 的 19 处 + worker `ws_files.py` 同构，
   各带"静态审计"用例；`main.py`（含装配层 `resolve_photo_refs`）与 `trade_docs.py` 未授权 ⇒ 已清点。
+- **task-25**：**P16 改造第一步**（§8.9）—— `/explain` 加 `spec_override`（草稿定义）+ `ok`/`errors`/`warnings`，
+  向后兼容；**团队覆盖那半**（需 db）与 **worker 侧同构**（未授权）明确留待。
   本文件由**同一个作者滚动维护**；它**不是**"口径文档"（口径看 `docs/PROBLEM_STATUS_2026-10-11.md`）。
 - 各轮都**未碰**另一条任务在飞的 `trade_docs.py` / `worker/src/{main,dbjson,ws_docs_ext}.py` / `frontend/**`，
   也未碰 `shared/**`；task-22 按任务授权改了 `files.py` 与两个 worker 端点（当时实测均为 clean）。

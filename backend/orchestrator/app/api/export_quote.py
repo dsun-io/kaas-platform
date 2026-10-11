@@ -71,6 +71,10 @@ from app.services.export_quote.numeric import DECIMAL, to_decimal
 from app.services.export_quote.products import get as get_product
 from app.services.export_quote.rates import build_default_provider, normalize_hs
 from app.services.export_quote.report import quote_meta
+from app.services.export_quote.spec_override import (
+    SpecOverrideError,
+    parse_spec_override,
+)
 from app.services.export_quote.terms import ladder_from_dict
 from app.services.export_quote.verify import verify_all
 from app.config.settings import settings
@@ -188,6 +192,12 @@ class ExplainIn(BaseModel):
     metrics: Optional[List[str]] = Field(
         default=None, description="只算这些指标；不传则全算"
     )
+    spec_override: Optional[dict] = Field(
+        default=None,
+        description="**草稿定义**（可选）：用这份**未保存**的 ProductSpec 代替注册表里的定义来试算。"
+                    "只在本次请求内生效、**不落库**；结构不合法会 422（未知字段/类型不对都报错，"
+                    "不会静默取默认）。缺字段则按默认值参与，并在响应的 `warnings` 里如实列出。",
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -289,8 +299,26 @@ async def explain_product(
 
     只做「把公式摊开算一遍」，不进价链、不查档案，因此不涉及成本与利润，
     普通登录用户即可调用 —— 客户/业务问「这个 29.9 立方怎么来的」时能当场自证。
+
+    **草稿试算（P16 改造第一步）**：带 `spec_override` 时，用这份**未保存**的定义代替
+    注册表里的定义来算 —— 这正是可视化编辑器"改一个数值/公式后即时看到结果"的后端前提。
+    只在本请求内生效、不落库；草稿合法则连"产品是否已在注册表里"都不再要求
+    （新团队自建 key 的前置）。**仍待**：团队覆盖（需要 db 会话）⇒ 见 §8.9。
     """
-    spec = _get_product_or_404(product_key)
+    warnings: List[str] = []
+    if body.spec_override is not None:
+        try:
+            parsed = parse_spec_override(body.spec_override, product_key=product_key)
+        except SpecOverrideError as exc:
+            raise HTTPException(status_code=422, detail={
+                "error": exc.code, "message": str(exc), "field": exc.field})
+        spec = parsed.spec
+        warnings.append("本次试算使用请求内的**草稿定义**（spec_override）：不落库、不影响线上产品")
+        if parsed.defaulted:
+            warnings.append("草稿未提供这些字段，按**默认值**参与试算："
+                            + "、".join(parsed.defaulted))
+    else:
+        spec = _get_product_or_404(product_key)
 
     # 用引擎把规格取值解析成完整作用域（含变体联动与常量），再交给渲染器
     picked: dict = {}
@@ -383,9 +411,16 @@ async def explain_product(
     )
     only = None if requested is None else sorted(requested - PRICE_METRICS)
 
-    steps = worked_example(spec, scope, only)
+    # 先算**全部**步骤：`ok`/`errors` 必须反映**所有**步骤的失败，
+    # 不能被 `metrics` 过滤掉的那些漏掉（"只看通过的"正是要避免的错觉）。
+    all_steps = worked_example(spec, scope, None)
     if requested is None:
-        steps = [s for s in steps if s["code"] not in PRICE_METRICS]
+        steps = [s for s in all_steps if s["code"] not in PRICE_METRICS]
+    else:
+        wanted = set(only)
+        steps = [s for s in all_steps if s["code"] in wanted]
+    errors = [{"code": s["code"], "error": s["error"], "expr": s.get("expr")}
+              for s in all_steps if "error" in s]
 
     payload = {
         "product_key": spec.key,
@@ -402,6 +437,15 @@ async def explain_product(
             "价格类指标未在此接口计算：它们由完整价链（成本 → 进项税 → 退税让利 → "
             "印花税 → 销项税）与税务档案决定，请调用 /calculate 或 /calculate-internal。"
         )
+        warnings.append("价格类指标未计算（见 price_hint）：本次只自证数量口径")
+    # ── 加性汇总键（P16 改造第一步）─────────────────────────────────────────
+    # `ok`：一眼看出"这次试算有没有坏"（`worked_example` 的失败是"error 取代 value 且仍 200"，
+    # 只看 HTTP 状态码是看不出来的）。
+    # `warnings`：沿用仓库既有契约（`verify.py:89` 的 `ok`/`warnings` 组合、`warnings` 不阻断），
+    # 元素为**字符串**（与 `rates.py:121` / `spec_delta.DeltaReport.warnings()` 同形）。
+    payload["ok"] = not errors
+    payload["errors"] = errors
+    payload["warnings"] = warnings
     return payload
 
 
