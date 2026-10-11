@@ -74,6 +74,11 @@
         "type": "string",
         "required": false,
         "description": "备注"
+      },
+      "country_of_origin": {
+        "type": "string",
+        "required": false,
+        "description": "原产国（如 China）"
       }
     }
   },
@@ -162,6 +167,21 @@
         "type": "boolean",
         "required": false,
         "description": "是否印出买方回签栏(签名+盖章+日期);true=用买方公司名,也可填自定义抬头。默认不印"
+      },
+      "country_of_origin": {
+        "type": "string",
+        "required": false,
+        "description": "原产国（如 China）"
+      },
+      "remarks": {
+        "type": "string",
+        "required": false,
+        "description": "备注（支持多行：换行会保留为 <br>，逐点换行）"
+      },
+      "shipping_marks": {
+        "type": "string",
+        "required": false,
+        "description": "运输唛头（外包装标记，须与发票/装箱单一致）"
       }
     }
   },
@@ -250,6 +270,16 @@
         "type": "string",
         "required": false,
         "description": "仲裁条款"
+      },
+      "place_of_issue": {
+        "type": "string",
+        "required": false,
+        "description": "签发地"
+      },
+      "shipping_marks": {
+        "type": "string",
+        "required": false,
+        "description": "运输唛头（外包装标记，须与发票/装箱单一致）"
       }
     }
   },
@@ -406,6 +436,31 @@
         "type": "string",
         "required": false,
         "description": "唛头"
+      },
+      "country_of_origin": {
+        "type": "string",
+        "required": false,
+        "description": "原产国（如 China）"
+      },
+      "notify_party": {
+        "type": "object",
+        "required": false,
+        "description": "通知方（公司名/地址/联系方式）"
+      },
+      "port_of_destination": {
+        "type": "string",
+        "required": false,
+        "description": "目的港"
+      },
+      "port_of_loading": {
+        "type": "string",
+        "required": false,
+        "description": "装运港"
+      },
+      "vessel": {
+        "type": "string",
+        "required": false,
+        "description": "船名 / 航次（空运填航班）"
       }
     }
   },
@@ -489,6 +544,11 @@
         "type": "date",
         "required": true,
         "description": "签发日期"
+      },
+      "place_of_issue": {
+        "type": "string",
+        "required": false,
+        "description": "签发地"
       }
     }
   },
@@ -552,6 +612,11 @@
         "type": "date",
         "required": true,
         "description": "签发日期"
+      },
+      "vessel": {
+        "type": "string",
+        "required": false,
+        "description": "船名 / 航次（空运填航班）"
       }
     }
   },
@@ -635,6 +700,11 @@
         "type": "date",
         "required": true,
         "description": "签发日期"
+      },
+      "shipping_marks": {
+        "type": "string",
+        "required": false,
+        "description": "运输唛头（外包装标记，须与发票/装箱单一致）"
       }
     }
   },
@@ -1174,6 +1244,11 @@
         "type": "string",
         "required": false,
         "description": "封志号"
+      },
+      "total_amount": {
+        "type": "number",
+        "required": false,
+        "description": "总金额"
       }
     }
   },
@@ -1290,6 +1365,21 @@
         "type": "string",
         "required": true,
         "description": "单证内容(支持 HTML)"
+      },
+      "invoice_no": {
+        "type": "string",
+        "required": false,
+        "description": "发票号"
+      },
+      "lc_no": {
+        "type": "string",
+        "required": false,
+        "description": "信用证号（L/C No.）"
+      },
+      "seller": {
+        "type": "object",
+        "required": false,
+        "description": "卖方信息（默认取企业主体，可手工覆盖）"
       }
     }
   }

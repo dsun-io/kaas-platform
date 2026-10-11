@@ -243,6 +243,52 @@ SASO / COC 等目的国认证文件、船公司证明（Certificate of Vessel's 
 
 ### 还未做（本次范围外）
 
-- **上传入口**：工位页面还没有「上传公章 / 上传产品图」的控件与文件存储，
-  目前要手工把图片转成 data URI 放进 `custom`。
+- ✅ **填写入口已落地**（2026-10-11）：单证详情页的「填写单据内容」面板里，
+  `image` 字段就是**选文件 → 转 data URI**，不必再手工拼字符串。
+- 仍未做：图片走**对象存储**（现在是内联进 `raw_payload.custom`，一张 PI 约 1.4MB base64）；
+  以及独立的「公章/产品图素材库」。
 - 两个字段都**不是必填**（不带图也是合法单据，`compliance.ts` 不会因此拦住签发）。
+
+---
+
+## 八、占位符一致性门禁（2026-10-11 新增）
+
+渲染器的口径是「**缺失字段渲染为空串**」：好处是单据上不会印出 `$remarks`，
+**代价是占位符拼错、或模板用了但 manifest 没声明都不会报错 —— 只是那一格静静空白**。
+这类问题肉眼看模板查不出来，所以配了一台仪器：
+
+```powershell
+pnpm -C frontend trade-doc:check        # exit 0 = 无问题；1 = 有「模板用了但界面填不到」的字段
+# 等价于：tsx ../scripts/check-trade-doc-placeholders.ts
+#   --json                     机器可读
+#   --fix                      打印修复方案（不改盘）
+#   --fix --write              外科式写入 manifest.json（不重排 JSON）
+#   --fix --dump <path>        把候选文本写到别处供人工核对
+```
+
+**首轮运行就抓出 9 类单证、18 个字段**（例：PI 的 `remarks` / `shipping_marks` /
+`country_of_origin` 从未声明 ⇒「填写单据内容」面板**列不出唛头与备注**）。
+现已补齐 18 个字段，检查为 **0 ERROR**。
+
+安全措施（都是踩出来的）：`--fix --write` 只插入 `required: false` 的声明、
+**不重排 JSON**、写前 `JSON.parse` 校验、**校验不过拒绝写盘**；可重复执行（幂等）。
+开发中它两次拦住了我写错的结构（多一个空行、多一个尾逗号）。
+
+## 九、分页：签章区不许被切开（2026-10-11 新增）
+
+共享样式的 `@media print` 新增（**TS 的 `assets.json` 与归档 `_shared.css` 同步改** ——
+只改一边，`verify-trade-doc-fixtures.py` 的逐字节证明立刻断）：
+
+```css
+table.sign, table.sign tr, table.sign td,
+.certify, .foot { page-break-inside: avoid; break-inside: avoid; }
+```
+
+- **为什么 `table.sign` 自己也要 avoid**：原先只保护了内层 `.sign-box`，
+  签章表的左右两格**可能被分到两页**（买方回签在上一页、卖方公章在下一页）——
+  这是最难看的失败形态。
+- **实测结论**（Chromium，2026-10-11）：`break-before/after: avoid` **被忽略** ——
+  给 `table.sign` 加与不加，产物 SHA256 完全相同。所以「签章区绝不成为新页上的
+  唯一内容」**无法用纯 CSS 保证**；能保证的是**不被切开**，以及声明条款随它同块移动。
+  真要杜绝"孤单落在新页"，得让模板把末尾几块包进一个 `break-inside: avoid` 容器
+  （会动到全部 18 个模板，本次未做）。
