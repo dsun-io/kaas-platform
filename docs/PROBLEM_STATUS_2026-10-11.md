@@ -116,6 +116,40 @@
   | `leads/crawl-batch`、`leads/{id}/crawl` | ✅ 前端在调 | **补到 orchestrator** |
   | `subscriptions` ×2 | 待确认 | 先查清再定 |
 
+### `leads/crawl-batch` 补到 orchestrator：施工方案（**未开工，原因见下**）
+
+用户已定「补到 orchestrator」。取证后发现**这不是小活**，故作罢交下一轮，
+避免半成品。
+
+**落点**：`app/api/leadgen.py`（orchestrator 已有 `/leads` 列表、`/leads/{id}` 详情、
+`/leads/scan-replied`、`/leads` 创建），缺失的是爬取两条：
+`POST /leads/{lead_id}/crawl`、`POST /leads/crawl-batch`。
+
+**为什么不能顺手补**：worker 侧的两条端点依赖 4 个助手，
+经逐项核对，**orchestrator 侧 4 个全缺**：
+
+| 助手 | 作用 | orchestrator |
+|---|---|---|
+| `_is_safe_crawl_url` | **SSRF 防护**（只允许公网 http(s)） | ❌ 缺 |
+| `_http_get_text` | 抓取网页文本 | ❌ 缺 |
+| `extract_product_from_html` | 从 HTML 抽产品名/图片/规格 | ❌ 缺 |
+| `_enrich_product` | 把抽取结果富集并回写 | ❌ 缺 |
+
+其中 **`_is_safe_crawl_url` 是安全敏感件**（对外发起网络请求的入口），
+必须**逐行照搬 worker 的实现**，不能凭理解重写 —— 这类防护少一条判断就是 SSRF 洞。
+
+**已有的可复用件**：
+
+- 订阅门禁：orchestrator 侧是 `app.api.subs.require_leadgen`（对应 worker 的
+  `_require_sub(conn, "leadgen")`）✅
+- 查询风格：worker 用内联 SQL + Hyperdrive；orchestrator 的 `leadgen.py`
+  用 SQLAlchemy（且 `lead_candidates` **没有 ORM 模型**，需用 `text()` 或裸 SQL）
+- 两条端点的业务逻辑本身很短（worker 侧 `chain.py:1709-1810`），
+  真正的分量在那 4 个助手上
+
+**建议顺序**（下一轮照此做）：先逐行搬 `_is_safe_crawl_url` 并**为它补测试**
+（拒绝内网/回环/非 http(s)/重定向到内网），再搬抓取与抽取，最后接两条端点。
+
 文档里挂着的那条**真缺陷**关掉了。它是一条**静默误读**链路：
 
 ```
