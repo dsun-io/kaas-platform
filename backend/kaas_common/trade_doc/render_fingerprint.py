@@ -40,12 +40,14 @@ from typing import Any, Optional
 from .payload_shared import DOC_NO_FIELDS
 
 __all__ = [
+    "RENDER_CHECK_VERDICTS",
     "RENDER_KEY",
     "RENDER_VERSION",
     "RENDER_DIGEST_IGNORED_FIELDS",
     "canonical_render_input",
     "read_render_fingerprint",
     "render_fingerprint",
+    "render_fingerprint_check",
     "render_input_digest",
 ]
 
@@ -211,3 +213,90 @@ def read_render_fingerprint(raw_payload: Any) -> Optional[dict]:
         return None
     meta = raw_payload.get(RENDER_KEY)
     return meta if isinstance(meta, dict) else None
+
+
+# ── 对账（消费者）：现在的数据与签发时冻结的那一份，还一致吗？──────────────────
+#
+# 结论码（`reason`）是**保守**的：只在两边都拿得到摘要、且确实相等时才说"一致"。
+# 特别注意它把"模板改过"与"数据被改"分成两件事：
+#   · `data_changed`      —— 摘要不等 ⇒ 客户看到的**内容**变了；
+#   · `version_drift`     —— 摘要相等但 `render_version` 不同 ⇒ 内容没变，
+#                            但当前渲染器/模板已不是当时那一版（重出会不一样）。
+# 只拿 sha 不等就下"数据被改"的结论是错的（模板变了也可能让 sha 变），所以两者分开报。
+RENDER_CHECK_VERDICTS = (
+    "matched",              # 数据一致 + 版本一致
+    "version_drift",        # 数据一致，但模板/渲染器版本不同
+    "data_changed",         # 数据变了（内容摘要不等）
+    "no_fingerprint",       # 这张单据没冻结过（草稿/老单据）⇒ 没有基线，谈不上"一致"
+    "frozen_unavailable",   # 冻结时就装配失败过（input_sha256=null）⇒ 无从比对
+    "current_unavailable",  # 现在装配失败 ⇒ 比不了（**绝不**给"看起来匹配"的假结论）
+)
+
+
+def _render_check_reason(
+    *, has_fingerprint: bool, frozen_sha: Any, current_sha: Any, version_drift: bool
+) -> str:
+    if not has_fingerprint:
+        return "no_fingerprint"
+    if not isinstance(frozen_sha, str):
+        return "frozen_unavailable"
+    if not isinstance(current_sha, str):
+        return "current_unavailable"
+    if current_sha != frozen_sha:
+        return "data_changed"
+    return "version_drift" if version_drift else "matched"
+
+
+def render_fingerprint_check(
+    frozen_meta: Any,
+    current_data: Any,
+    *,
+    current_version: Optional[int] = None,
+    checked_at: Optional[str] = None,
+    current_error: Optional[str] = None,
+) -> dict:
+    """把"冻结的指纹"与"用**现在**的数据重算的摘要"比一比（两端同一份判定）。
+
+    - `frozen_meta`：`read_render_fingerprint(raw_payload)` 的结果（没有 ⇒ `None`）；
+    - `current_data`：**现在**装配好的渲染数据；装配失败请传 `None` 并给 `current_error`；
+    - `current_version`：当前渲染器版本（默认 `RENDER_VERSION`）；测试可注入以模拟模板变更。
+
+    返回的字段即两端端点的响应契约（逐字相同）：
+    `has_fingerprint / frozen / current_sha256 / matches / render_version_frozen /
+     render_version_current / render_version_drift / reason / checked_at / current_note / frozen_note`
+
+    `matches=True` **当且仅当**两边都有摘要且完全相等 —— 装配失败、没有基线、
+    冻结时就没摘要，一律 `False`（宁可说"比不了"，也不给假的"一致"）。
+    """
+    frozen = frozen_meta if isinstance(frozen_meta, dict) else None
+    frozen_sha = frozen.get("input_sha256") if frozen else None
+    frozen_version = frozen.get("render_version") if frozen else None
+    current_sha = render_input_digest(current_data)
+    drift = isinstance(frozen_version, int) and frozen_version != (
+        RENDER_VERSION if current_version is None else current_version
+    )
+    return {
+        "has_fingerprint": frozen is not None,
+        "frozen": frozen,
+        "current_sha256": current_sha,
+        "matches": bool(
+            frozen is not None
+            and isinstance(frozen_sha, str)
+            and isinstance(current_sha, str)
+            and current_sha == frozen_sha
+        ),
+        "render_version_frozen": frozen_version if isinstance(frozen_version, int) else None,
+        "render_version_current": RENDER_VERSION if current_version is None else current_version,
+        "render_version_drift": bool(drift),
+        "reason": _render_check_reason(
+            has_fingerprint=frozen is not None,
+            frozen_sha=frozen_sha,
+            current_sha=current_sha,
+            version_drift=bool(drift),
+        ),
+        "checked_at": checked_at or datetime.now(timezone.utc).isoformat(),
+        # 现在这一次装配失败的原因（None = 装配成功）；不吞掉，用户才知道"比不了"为什么
+        "current_note": None if current_sha is not None else (current_error or "input_unavailable"),
+        # 冻结那次就失败过的话，把当时的说明原样带出来（别让读取侧以为有基线）
+        "frozen_note": (frozen or {}).get("note"),
+    }

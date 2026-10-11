@@ -44,7 +44,7 @@ from kaas_common.trade_doc import (
     normalize_items, derive_payload, freeze_snapshot,
     append_audit, protected_custom_fields,
     apply_product_defaults, product_key_of,
-    RENDER_KEY, render_fingerprint,
+    RENDER_KEY, read_render_fingerprint, render_fingerprint, render_fingerprint_check,
 )
 from kaas_common.files import apply_default_seal, is_file_ref, to_data_uri
 from kaas_common.workstation.entity_links import (
@@ -905,6 +905,46 @@ async def get_trade_doc_render_data(
         # 企业主体未配置时明确告知，避免用户对着空白抬头单据猜原因
         "company_profile_configured": bool(profile and profile.name_en),
     }
+
+
+@router.get("/trade-docs/{doc_id}/render-fingerprint-check",
+            summary="渲染指纹对账（现在数据是否与签发时一致）")
+async def check_trade_doc_render_fingerprint(
+    doc_id: int,
+    auth: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """**只读**对账：用**现在**的数据重新装配渲染输入、重算摘要，与签发时冻结的 `_render` 比。
+
+    这是 C 方案（签发时冻结渲染指纹）的消费者 —— 回答"这张单据现在的数据跟签发时还一致吗"。
+
+    语义保守且可解释（判定全在共享内核 `render_fingerprint_check`，两端同一份）：
+    - 没有 `_render`（草稿 / C 方案之前的老单据）⇒ `has_fingerprint=false`，其余字段如实给当前值，**不报错**；
+    - 现在装配失败 ⇒ `current_sha256=null` + `current_note`，`matches=false`
+      （**绝不**返回"看起来匹配"的假结论）；
+    - `render_version` 漂移单独体现在 `render_version_drift` / `reason` ——
+      "模板改过"与"数据被改"是**两件不同的事**，不能只凭 sha 不等就下结论。
+
+    复用与 `confirm` **同一套装配**（`get_trade_doc_render_data`）+ 内核同一个摘要函数，
+    否则比对没有意义。
+    """
+    tenant_id = tenant_id_of(auth)
+    d = (await db.execute(
+        select(TradeDoc).where(TradeDoc.tenant_id == tenant_id, TradeDoc.id == doc_id)
+    )).scalar_one_or_none()
+    if d is None:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "DOC_NOT_FOUND"})
+
+    frozen = read_render_fingerprint(d.raw_payload)
+    checked_at = datetime.now(timezone.utc).isoformat()
+    try:
+        assembled = await get_trade_doc_render_data(doc_id, auth, db)
+        return render_fingerprint_check(frozen, assembled.get("data"), checked_at=checked_at)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[trade-docs] 对账时装配失败（如实标出，不假装匹配）："
+              f"{type(exc).__name__}: {exc}")
+        return render_fingerprint_check(
+            frozen, None, checked_at=checked_at, current_error=type(exc).__name__)
 
 
 @router.post("/trade-docs/{doc_id}/refresh-sources")

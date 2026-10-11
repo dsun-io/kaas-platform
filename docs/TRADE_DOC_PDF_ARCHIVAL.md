@@ -114,8 +114,10 @@ orchestrator 会给 `float`、Worker 的 asyncpg 会给 `Decimal`，不归一两
 （`frontend/src/app/(app)/trade-docs/components/__tests__/doc-preview-auto-pdf.test.tsx` 新增 **4 条**：
 显示 / 不显示 / 坏形状 / 装配失败）；但**页面级接线**（`page.tsx` 传 `renderMetaOf(raw_payload)`）
 仍只有 `typecheck` 保驾 —— **没有组件之上的页面测试**。
-③ 指纹**没有对账消费者**：目前没有"用归档时的指纹复核现在数据是否被改过"的脚本/接口，
-只有库里那个键 + 界面上一行。④ **orchestrator 侧 `confirm` 的落库路径没有单测**
+③ **已有对账消费者**：`GET /api/v1/trade-docs/{id}/render-fingerprint-check`（两端同契约，见 §〇.3）
+能回答"现在的数据是否还与签发时一致"，并把**"数据被改"（`reason=data_changed`）**与
+**"模板改过"（`render_version_drift`）**分开报；**仍未做**的是"批量/定时对账"与前端"已变更"提示。
+④ **orchestrator 侧 `confirm` 的落库路径没有单测**
 （worker 侧有：`tests/test_four_domains.py::test_trade_doc_confirm_locks_draft` 从
 `UPDATE ... raw_payload=...` 的**实参**里验了 `_render` 的形状）；orchestrator 只单测了
 `_freeze_render_fingerprint` 这个壳（装配成功 ⇒ 有摘要；装配抛错 ⇒ `input_sha256: null` + note）。
@@ -131,6 +133,54 @@ orchestrator 会给 `float`、Worker 的 asyncpg 会给 `Decimal`，不归一两
 断言 `RENDER_VERSION == 1`（`:189`），并在注释里注明"改 `render.ts` / `assets.json` / `manifest.json`
 就必须 bump，并**同步改这一行**"（`:185`）。理由：`input_sha256` 只能证明"输入没变"，
 **证不了"输出没变"**；而渲染器在前端 TS，**没有 CI 能自动发现"模板改了却没 bump"**。
+
+## 〇.3 对账端点（task-17 落地，2026-10-12）
+
+**路径与语义**：`GET /api/v1/trade-docs/{id}/render-fingerprint-check` —— **只读**对账，
+回答"这张单据**现在**的数据跟**签发时**冻结的指纹还一致吗"。两端**逐字相同**
+（orchestrator `backend/orchestrator/app/api/trade_docs.py:910`；
+worker `backend/worker/src/ws_docs_ext.py:304`），判定全在共享内核
+`kaas_common/trade_doc/render_fingerprint.py::render_fingerprint_check`。
+它走与 `POST /trade-docs/{id}/confirm` **同一套装配**（`get_trade_doc_render_data`）
+＋ **同一个摘要函数** —— 否则比对没有意义。
+
+**返回 11 个字段**（内核 `render_fingerprint.py:278-301`，就是两端响应契约）：
+`has_fingerprint` / `frozen` / `current_sha256` / `matches` / `render_version_frozen` /
+`render_version_current` / `render_version_drift` / `reason` / `checked_at` /
+`current_note` / `frozen_note`。
+
+最该被记住的三个：
+
+| 字段 | 语义 |
+|---|---|
+| `matches` | **当且仅当**两边都有摘要且完全相等才 `true`（`render_fingerprint.py:282-287`） |
+| `reason` | `matched` / `version_drift` / `data_changed` / `no_fingerprint` / `frozen_unavailable` / `current_unavailable`（`:227-232`） |
+| `render_version_drift` | 模板/渲染器版本是否变了 —— 与"数据被改"**分开报**（`:290`） |
+
+**保守语义（宁可比不了，也不给假结论）**：
+- 没有 `_render`（草稿 / C 方案之前的老单据）⇒ `has_fingerprint=false`，其余字段如实给当前值，**不报错**（`reason=no_fingerprint`）；
+- **现在装配失败** ⇒ `current_sha256=null` + `current_note`，`matches=false`（`reason=current_unavailable`），
+  **绝不给"看起来匹配"的假结论**；
+- 冻结时就没摘要 ⇒ `reason=frozen_unavailable`，同样**不报 matched**；
+- 单据不存在 ⇒ **404** `DOC_NOT_FOUND`（`trade_docs.py:935-936`）。
+
+**五情形证据**（`backend/orchestrator/tests/test_trade_doc_render_fingerprint.py`）：
+匹配（`test_matched:300`）、不匹配（`test_data_changed_is_detected:324` —— **真的改了被纳入摘要的业务数据**：
+`total_amount` / `currency` / 买方抬头 / 行项，**4 个参数化用例** `:317-322`）、
+无指纹（`test_no_fingerprint_is_not_an_error:337`）、装配失败
+（`test_current_assembly_failure_never_reports_match:365`、`test_unusable_frozen_never_reports_match:356`）、
+版本漂移（`test_version_drift_is_reported_separately_from_data_change:378`）；
+另有契约字段固定（`test_response_contract_is_stable:398`）。
+worker 侧 `backend/worker/tests/test_ws_render_fingerprint_check.py` 含"路由确已注册进 OpenAPI"的断言（`:206-207`）。
+
+**仍未做（如实标注，别当成已完成）**：
+1. **前端"已变更"提示未做**：对账目前只有 **API 层**（curl / 脚本可查）。要做前端提示需动 **3 个文件**
+   （hook + 展示 + 接线），而 **task-17 的写范围不含前端** ⇒ 界面**不会**自动告诉用户"这张单被改过"。
+2. **没有批量/定时对账**：只能**人主动查一张**；"生产上到底哪些单据被改过"仍需自己遍历。
+
+**性质说明（不是 bug，但值得留档）**：对账的前提是"两边同一套装配"。若将来给 `render-data`
+加了**新数据源**却忘了同步到**签发冻结**那条路径，两边会**一起变**、`matches` 仍报 `true` ——
+对账**发现不了**这种"新增字段没被纳入"的偏差。
 
 ## 一句话结论
 

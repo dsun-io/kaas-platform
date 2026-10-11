@@ -63,8 +63,8 @@ from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from kaas_common.trade_doc import (
-    RENDER_KEY, RuleError, assert_draft, assert_transition, render_fingerprint,
-    validate_confirm,
+    RENDER_KEY, RuleError, assert_draft, assert_transition, read_render_fingerprint,
+    render_fingerprint, render_fingerprint_check, validate_confirm,
 )
 from kaas_common.trade_doc.translate import build_messages, parse_translation
 from kaas_common.workstation.amount_rules import (
@@ -299,6 +299,36 @@ async def _payload_with_render_fingerprint(
     # 与 `_audit` 同风格：顶层保留键，客户端自带的 `_render` 一律被这里覆盖
     payload[RENDER_KEY] = meta
     return payload
+
+
+@app.get("/api/v1/trade-docs/{doc_id}/render-fingerprint-check")
+async def check_trade_doc_render_fingerprint(
+    doc_id: int,
+    request: Request,
+    user: dict = Depends(_get_current_user),
+):
+    """**只读**对账：现在数据是否与签发时冻结的渲染指纹一致（与 orchestrator 同契约）。
+
+    判定全在共享内核 `render_fingerprint_check`（两端同一函数对象）⇒ 字段与语义逐字一致：
+    `has_fingerprint / frozen / current_sha256 / matches / render_version_frozen /
+     render_version_current / render_version_drift / reason / checked_at /
+     current_note / frozen_note`。
+
+    保守语义：没有 `_render`（草稿/老单据）⇒ `has_fingerprint=false` 不报错；
+    现在装配失败 ⇒ `current_sha256=null` + `current_note`，`matches=false`（不假装匹配）；
+    "模板改过"（`render_version_drift`）与"数据被改"（`reason=data_changed`）分开报。
+    """
+    d = await _get_doc_or_404(request, doc_id)
+    frozen = read_render_fingerprint(_payload_of(d))
+    checked_at = datetime.now(timezone.utc).isoformat()
+    try:
+        assembled = await _main.get_trade_doc_render_data(doc_id, request, user)
+        return render_fingerprint_check(frozen, assembled.get("data"), checked_at=checked_at)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[trade-docs] 对账时装配失败（如实标出，不假装匹配）："
+              f"{type(exc).__name__}: {exc}")
+        return render_fingerprint_check(
+            frozen, None, checked_at=checked_at, current_error=type(exc).__name__)
 
 
 # ── 中译英（AI 翻译，draft-only）────────────────────────────────────────────

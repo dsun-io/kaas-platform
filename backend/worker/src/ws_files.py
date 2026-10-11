@@ -294,8 +294,18 @@ async def get_profile(product_key: str, request: Request, user: dict = Depends(_
         request, "SELECT product_key, info, updated_at FROM product_profiles"
         " WHERE tenant_id=$1 AND product_key=$2", DEFAULT_TENANT, product_key,
         table="product_profiles")
+    # `info` 有两种形状：登记过 jsonb 的列会被 dbjson 解码成 dict；漏登记/未来新增的读取点
+    # 可能拿到 **JSON 字符串** —— 那时 `dict(str)` 会抛 500（一个只读探针把整页打成错误页，
+    # 代价与收益完全不成比例）。**根因已由 dbjson 登记修复**（`product_profiles.info` 进了
+    # `JSONB_COLS`）；这里是**防御**：两种形状都收，坏值回落 `{}` 而不是 500。
+    info = row.get("info") if row else None
+    if isinstance(info, str):
+        try:
+            info = _json.loads(info)
+        except (TypeError, ValueError):
+            info = {}
     return {"product_key": product_key,
-            "info": dict(row["info"]) if row and row.get("info") else {},
+            "info": dict(info) if isinstance(info, dict) else {},
             "updated_at": row["updated_at"].isoformat() if row and row.get("updated_at") else None}
 
 

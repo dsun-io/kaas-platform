@@ -19,19 +19,23 @@
 from __future__ import annotations
 
 import hashlib
+import types
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 
 from kaas_common.trade_doc import (
+    RENDER_CHECK_VERDICTS,
     RENDER_DIGEST_IGNORED_FIELDS,
     RENDER_KEY,
     RENDER_VERSION,
     canonical_render_input,
     read_render_fingerprint,
     render_fingerprint,
+    render_fingerprint_check,
     render_input_digest,
 )
 from kaas_common.trade_doc.payload_shared import DOC_NO_FIELDS
@@ -281,3 +285,213 @@ class TestFreezeHelper:
             doc_id=5, auth=None, db=None, now=datetime(2026, 10, 12, tzinfo=timezone.utc))
         assert meta["input_sha256"] == render_input_digest({})
         assert "note" not in meta
+
+
+# ── 对账（消费者）：五种情形 ─────────────────────────────────────────────────
+#
+# 为什么"匹配"与"不匹配"要分别构造成**真的两件事**：如果两例都用同一个表达式
+# 生成期望值，测试就只是在自证"函数等于它自己"。所以这里：
+#   · 匹配例：冻结一份数据 A，再用**另一种键顺序**独立构造的同一份内容去比对
+#     （证明摘要与顺序无关、且确实相等）；
+#   · 不匹配例：真的改一处**被纳入摘要的业务数据**（总金额 / 卖方抬头），
+#     断言它被检出，并断言差异**不是**来自版本漂移（两件事分开）。
+
+class TestFingerprintCheck:
+    def test_matched(self):
+        frozen = render_fingerprint(ASSEMBLED, frozen_at=FROZEN_AT)
+        # 独立构造：键顺序打乱、容器新建（不是同一个对象引用）
+        current = {k: ASSEMBLED[k] for k in sorted(ASSEMBLED, reverse=True)}
+        current["items"] = [dict(ASSEMBLED["items"][0])]
+
+        out = render_fingerprint_check(frozen, current, checked_at=FROZEN_AT)
+
+        assert out["has_fingerprint"] is True
+        assert out["matches"] is True
+        assert out["reason"] == "matched"
+        assert out["current_sha256"] == frozen["input_sha256"]
+        assert out["render_version_frozen"] == out["render_version_current"] == RENDER_VERSION
+        assert out["render_version_drift"] is False
+        assert out["current_note"] is None and out["frozen_note"] is None
+        assert out["checked_at"] == FROZEN_AT
+
+    @pytest.mark.parametrize("changed", [
+        {"total_amount": 9999.0},                       # 金额
+        {"currency": "EUR"},                            # 币种
+        {"seller": {"company": "IMPOSTOR CO", "address": "Hebei, China"}},  # 卖方抬头
+        {"items": [{"product_name": "Chain Link Fence", "qty": 999,
+                    "unit_price": 12.5, "line_amount": 12487.5}]},          # 行项
+    ])
+    def test_data_changed_is_detected(self, changed):
+        frozen = render_fingerprint(ASSEMBLED, frozen_at=FROZEN_AT)
+
+        out = render_fingerprint_check(frozen, _copy(**changed), checked_at=FROZEN_AT)
+
+        assert out["has_fingerprint"] is True
+        assert out["matches"] is False
+        assert out["reason"] == "data_changed"
+        assert out["current_sha256"] != frozen["input_sha256"]
+        # 数据变了 ≠ 模板变了：这一例里版本没漂移，不能被混为一谈
+        assert out["render_version_drift"] is False
+        assert out["render_version_frozen"] == out["render_version_current"]
+
+    def test_no_fingerprint_is_not_an_error(self):
+        out = render_fingerprint_check(None, ASSEMBLED, checked_at=FROZEN_AT)
+
+        assert out["has_fingerprint"] is False
+        assert out["frozen"] is None
+        assert out["matches"] is False          # 没有基线，谈不上"一致"
+        assert out["reason"] == "no_fingerprint"
+        # 其它字段如实给当前值（不是 null / 不是报错）
+        assert out["current_sha256"] == render_input_digest(ASSEMBLED)
+        assert out["render_version_frozen"] is None
+        assert out["render_version_current"] == RENDER_VERSION
+        assert out["current_note"] is None
+
+    @pytest.mark.parametrize("frozen_payload", [
+        {"_render": {"render_version": RENDER_VERSION, "input_sha256": None,
+                     "frozen_at": FROZEN_AT, "note": "input_unavailable"}},
+        {"sources": {}, "custom": {}},          # 根本没有 `_render`
+        {"_render": "not-a-dict"},
+    ])
+    def test_unusable_frozen_never_reports_match(self, frozen_payload):
+        frozen = read_render_fingerprint(frozen_payload)
+        out = render_fingerprint_check(frozen, ASSEMBLED, checked_at=FROZEN_AT)
+
+        assert out["matches"] is False
+        assert out["reason"] in ("no_fingerprint", "frozen_unavailable")
+        if out["reason"] == "frozen_unavailable":
+            assert out["frozen_note"] == "input_unavailable"
+
+    def test_current_assembly_failure_never_reports_match(self):
+        frozen = render_fingerprint(ASSEMBLED, frozen_at=FROZEN_AT)
+
+        out = render_fingerprint_check(
+            frozen, None, checked_at=FROZEN_AT, current_error="RuntimeError")
+
+        assert out["has_fingerprint"] is True          # 有基线
+        assert out["current_sha256"] is None           # 但这次算不出来
+        assert out["matches"] is False                 # **绝不**假匹配
+        assert out["reason"] == "current_unavailable"
+        assert out["current_note"] == "RuntimeError"   # 明确标出为什么比不了
+        assert out["frozen"] == frozen
+
+    def test_version_drift_is_reported_separately_from_data_change(self):
+        frozen = render_fingerprint(ASSEMBLED, frozen_at=FROZEN_AT)
+
+        # 数据一模一样，只是渲染器/模板版本不同 ⇒ 内容一致，但重出会不一样
+        out = render_fingerprint_check(
+            frozen, _copy(), current_version=RENDER_VERSION + 2, checked_at=FROZEN_AT)
+
+        assert out["matches"] is True                  # 数据确实一致
+        assert out["reason"] == "version_drift"
+        assert out["render_version_drift"] is True
+        assert out["render_version_frozen"] == RENDER_VERSION
+        assert out["render_version_current"] == RENDER_VERSION + 2
+
+        # 两者同时发生时，"数据被改"优先报（版本漂移不掩盖内容变化）
+        both = render_fingerprint_check(
+            frozen, _copy(total_amount=1.0), current_version=RENDER_VERSION + 2,
+            checked_at=FROZEN_AT)
+        assert both["reason"] == "data_changed"
+        assert both["render_version_drift"] is True
+
+    def test_response_contract_is_stable(self):
+        """字段即两端契约：多一个少一个都会让前端解析错（route-parity 只查路由，查不了体）。"""
+        out = render_fingerprint_check(None, ASSEMBLED, checked_at=FROZEN_AT)
+        assert set(out) == {
+            "has_fingerprint", "frozen", "current_sha256", "matches",
+            "render_version_frozen", "render_version_current", "render_version_drift",
+            "reason", "checked_at", "current_note", "frozen_note",
+        }
+        assert out["reason"] in RENDER_CHECK_VERDICTS
+
+    def test_accepts_raw_payload_string(self):
+        """`raw_payload` 可能是未解码的 JSON 文本（老数据/异常路径）—— 对账不能因此挂掉。"""
+        import json
+        payload = json.dumps({RENDER_KEY: render_fingerprint(ASSEMBLED, frozen_at=FROZEN_AT)})
+        frozen = read_render_fingerprint(payload)
+        assert render_fingerprint_check(frozen, ASSEMBLED)["matches"] is True
+
+
+# ── 端点壳（只读，不碰 DB：session 与装配都替换）─────────────────────────────
+
+class _FakeResult:
+    def __init__(self, doc):
+        self._doc = doc
+
+    def scalar_one_or_none(self):
+        return self._doc
+
+
+class _FakeSession:
+    def __init__(self, doc):
+        self._doc = doc
+
+    async def execute(self, *args, **kwargs):
+        return _FakeResult(self._doc)
+
+
+def _auth():
+    return types.SimpleNamespace(tenant_id="default", team_id=None, user_id=1)
+
+
+def _doc_with(frozen_payload):
+    return types.SimpleNamespace(raw_payload=frozen_payload)
+
+
+class TestCheckEndpoint:
+    async def test_reports_match_for_unchanged_document(self, monkeypatch):
+        frozen = render_fingerprint(ASSEMBLED, frozen_at=FROZEN_AT)
+        doc = _doc_with({"sources": {}, "custom": {}, RENDER_KEY: frozen})
+
+        async def _fake(doc_id, auth, db):
+            return {"data": _copy()}
+
+        monkeypatch.setattr(trade_docs_api, "get_trade_doc_render_data", _fake)
+        out = await trade_docs_api.check_trade_doc_render_fingerprint(
+            doc_id=11, auth=_auth(), db=_FakeSession(doc))
+
+        assert out["has_fingerprint"] is True
+        assert out["matches"] is True
+        assert out["reason"] == "matched"
+
+    async def test_reports_change_when_data_moved(self, monkeypatch):
+        """真的改一处被纳入摘要的数据（不是改 mock 的返回值形状）。"""
+        frozen = render_fingerprint(ASSEMBLED, frozen_at=FROZEN_AT)
+        doc = _doc_with({RENDER_KEY: frozen})
+
+        async def _fake(doc_id, auth, db):
+            return {"data": _copy(total_amount=7777.0)}
+
+        monkeypatch.setattr(trade_docs_api, "get_trade_doc_render_data", _fake)
+        out = await trade_docs_api.check_trade_doc_render_fingerprint(
+            doc_id=11, auth=_auth(), db=_FakeSession(doc))
+
+        assert out["matches"] is False
+        assert out["reason"] == "data_changed"
+
+    async def test_assembly_failure_is_flagged_not_hidden(self, monkeypatch):
+        frozen = render_fingerprint(ASSEMBLED, frozen_at=FROZEN_AT)
+        doc = _doc_with({RENDER_KEY: frozen})
+
+        async def _boom(doc_id, auth, db):
+            raise RuntimeError("assembly exploded")
+
+        monkeypatch.setattr(trade_docs_api, "get_trade_doc_render_data", _boom)
+        out = await trade_docs_api.check_trade_doc_render_fingerprint(
+            doc_id=11, auth=_auth(), db=_FakeSession(doc))
+
+        assert out["matches"] is False
+        assert out["current_sha256"] is None
+        assert out["reason"] == "current_unavailable"
+        assert out["current_note"] == "RuntimeError"
+
+    async def test_missing_document_is_404(self, monkeypatch):
+        out = None
+        try:
+            out = await trade_docs_api.check_trade_doc_render_fingerprint(
+                doc_id=999, auth=_auth(), db=_FakeSession(None))
+        except HTTPException as exc:
+            assert exc.status_code == 404
+            assert exc.detail["code"] == "DOC_NOT_FOUND"
+        assert out is None      # 不能"没这张单据"却返回一份报告
