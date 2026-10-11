@@ -22,6 +22,70 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * 客户详情响应体 —— `row_to_customer()` + 三个子资源。
+ *
+ * 后端形状：backend/orchestrator/app/api/customers.py:274-287
+ *   `{...row_to_customer(c), contacts, inquiries, stage_log}`
+ *   · contacts 字段名见 customers.py:276-280（id/name/position/phone/email/whatsapp/is_primary）
+ *   · inquiries 见 customer_serializers.row_to_inquiry()（id/customer_id/lead_id/channel/
+ *     category_id/product_name_raw/quantity/quantity_unit/application/status/created_at）
+ *   · stage_log 见 customers.py:282-286（id/from_stage/to_stage/reason/created_at）
+ *
+ * 消费方：frontend/src/app/(app)/customers/page.tsx:520 `useCustomerDetail(customer.id)`，
+ * 面板在 page.tsx:565-591 读 country/credit_level/address/default_port/stage/notes，
+ * 在 page.tsx:528-529 / 629-740 读 contacts / inquiries / stage_log 的 length 与内容。
+ * 子资源一律挂**数字客户号**（后端是 BIGINT），与列表项 `id` 同源。
+ */
+function makeCustomerDetail(customer: (typeof MOCK_CUSTOMERS)[number]) {
+  const now = Date.now();
+  return {
+    ...customer,
+    contacts: [
+      {
+        id: 1,
+        name: "王经理",
+        position: "采购经理",
+        phone: "+86-138-0000-0001",
+        email: "wang@example.com",
+        whatsapp: null,
+        is_primary: true,
+      },
+    ],
+    inquiries: [
+      {
+        id: 1,
+        customer_id: customer.id,
+        lead_id: null,
+        channel: "alibaba",
+        category_id: null,
+        product_name_raw: "牛栏网 2.5mm × 1.5m",
+        quantity: 1000,
+        quantity_unit: "m",
+        application: "牧场围栏",
+        status: "quoted",
+        created_at: new Date(now - 5 * 86400000).toISOString(),
+      },
+    ],
+    stage_log: [
+      {
+        id: 1,
+        from_stage: null,
+        to_stage: "lead",
+        reason: "新建客户",
+        created_at: new Date(now - 30 * 86400000).toISOString(),
+      },
+      {
+        id: 2,
+        from_stage: "lead",
+        to_stage: customer.stage,
+        reason: "收到询盘",
+        created_at: new Date(now - 5 * 86400000).toISOString(),
+      },
+    ],
+  };
+}
+
 const EVENTS_LIST = Array.from({ length: 12 }, (_, i) =>
   makeEvent({
     event_type: (["audit.access", "capability.update"] as const)[i % 2],
@@ -231,12 +295,44 @@ export const handlers = [
   }),
 
   // ── Customers ────────────────────────────────────────────────────
-  http.get("/api/v1/customers", () => {
-    return HttpResponse.json(MOCK_CUSTOMERS);
+  // ⚠️ 形状必须对齐后端 `GET /customers`
+  // （backend/orchestrator/app/api/customers.py:188-216）：
+  //   {items:[row_to_customer...], total, page, page_size}
+  // 原先返回**裸数组**，于是两个消费方都读 `data.items` 拿到 undefined：
+  //   · 客户管理页 `useCustomerList`（frontend/src/app/(app)/customers/page.tsx:97-110，
+  //     渲染处 page.tsx:819/823 读 `listData?.items`）→ 永远「暂无客户」0 行；
+  //   · 客户选择器 `useCustomerOptions` / `useCustomerSearch`
+  //     （frontend/src/lib/workstation/use-upstream.ts:110-150，消费处
+  //      frontend/src/components/customer-picker.tsx:100 `list.data?.items ?? []`）
+  //     → 报价/订单/单证的下拉里一个客户都选不到。
+  // `q` 过滤照后端 `Customer.name.ilike("%q%")`（customers.py:203-204 + 列表页
+  // 搜索框 page.tsx:102 传的 `q`）。
+  http.get("/api/v1/customers", ({ request }) => {
+    const url = new URL(request.url);
+    const q = url.searchParams.get("q")?.trim();
+    const filtered = q
+      ? MOCK_CUSTOMERS.filter((c) => c.company_name.includes(q))
+      : MOCK_CUSTOMERS;
+    // 分页参数与后端 Query(1, ge=1) / Query(20, ge=1, le=200) 同口径
+    const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+    const pageSize = Math.min(
+      200,
+      Math.max(1, Number(url.searchParams.get("page_size")) || 20),
+    );
+    const start = (page - 1) * pageSize;
+    const items = filtered.slice(start, start + pageSize);
+    return HttpResponse.json({
+      items,
+      total: filtered.length,
+      page,
+      page_size: pageSize,
+    });
   }),
 
+  // 详情 = row_to_customer + contacts/inquiries/stage_log（见 makeCustomerDetail）。
+  // 客户号按数字匹配 —— 列表项 `id` 是 number（factory.ts 的 makeCustomer）。
   http.get("/api/v1/customers/:id", ({ params }) => {
-    const customer = MOCK_CUSTOMERS.find((c) => c.customer_id === params.id);
+    const customer = MOCK_CUSTOMERS.find((c) => c.id === Number(params.id));
     if (!customer) {
       return HttpResponse.json(
         {
@@ -247,7 +343,7 @@ export const handlers = [
         { status: 404 },
       );
     }
-    return HttpResponse.json(customer);
+    return HttpResponse.json(makeCustomerDetail(customer));
   }),
 
   // ── 客户往来记录（docs/CUSTOMER_DOCUMENTS_VIEW.md §3）─────────────
@@ -255,14 +351,15 @@ export const handlers = [
   // 让「客户详情 → 往来记录树」在 mock 模式下能被看到与校对。
   // 真实模式下这条 handler 不生效，请求打到后端；读不到时由
   // useCustomerRecords 降级成"暂无往来记录 / 加载失败"。
-  // 注意：mock 里客户 id 是字符串（见 MOCK_CUSTOMERS），因此对任意 id 都返回同一棵树。
+  // 注意：客户 id 已对齐后端为数字（见 MOCK_CUSTOMERS）；这里对任意 id 都返回同一棵树，
+  // 只把 `customer` 节点按真实客户回填（查不到就退化成请求里的 id 文本）。
+  // 为什么要回填数字 id：normalizeCustomerRecords 用 asInteger 读 `customer.id`
+  // （frontend/src/lib/customer/customer-records.ts:243），字符串 id 会被判成 null。
   http.get("/api/v1/customers/:id/records", ({ params }) => {
-    const customerId = String(params.id ?? "");
-    const customerName =
-      MOCK_CUSTOMERS.find((c) => c.customer_id === customerId)?.customer_name ??
-      customerId;
+    const customer = MOCK_CUSTOMERS.find((c) => c.id === Number(params.id));
+    const customerName = customer?.company_name ?? String(params.id ?? "");
     return HttpResponse.json({
-      customer: { id: customerId, name: customerName, team_id: 1 },
+      customer: { id: customer?.id ?? null, name: customerName, team_id: 1 },
       counts: { quotes: 2, orders: 2, documents: 6 },
       quotes: [
         {

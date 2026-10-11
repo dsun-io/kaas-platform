@@ -90,23 +90,47 @@ export function makeFeatureFlags(overrides?: Record<string, boolean>) {
 
 // ── Round 3 additions ──────────────────────────────────────────────
 
+/**
+ * 客户行 —— 形状**逐字对齐**后端 `row_to_customer()`：
+ *   backend/kaas_common/workstation/customer_serializers.py:10-27
+ *   → id / company_name / country / address / default_port / credit_level /
+ *     stage / notes / created_at / updated_at
+ *
+ * 为什么不能再用旧的 `{customer_id, customer_name, category_count, locale, region}`：
+ *   页面契约是 `Customer`（frontend/src/app/(app)/customers/page.tsx:48-59），
+ *   按 `c.id` / `c.company_name` / `c.stage` / `c.country` / `c.default_port` /
+ *   `c.updated_at` 渲染卡片（page.tsx:822-842）。旧字段名一个都对不上，
+ *   客户列表在 mock 模式下恒为 0 行。
+ *   `id` 必须是 number：前端把它直接插进 `GET /customers/{id}`（page.tsx:117）
+ *   与 `/customers/{id}/records`（lib/customer/use-customer-records.ts:44），
+ *   后端该主键是 BIGINT（backend/orchestrator/app/api/customers.py:246）。
+ */
 export function makeCustomer(
   overrides?: Partial<{
-    customer_id: string;
-    customer_name: string;
-    category_count: number;
+    id: number;
+    company_name: string;
+    country: string | null;
+    address: string | null;
+    default_port: string | null;
+    credit_level: string | null;
+    stage: string;
+    notes: string | null;
+    created_at: string;
     updated_at: string;
-    locale: string;
-    region: string;
   }>,
 ) {
   return {
-    customer_id: "cust-lianjia",
-    customer_name: "联佳丝网",
-    category_count: 2,
-    updated_at: new Date().toISOString(),
-    locale: "zh-CN",
-    region: "cn-north",
+    id: 1,
+    company_name: "联佳丝网",
+    country: "CN",
+    address: null,
+    default_port: "Shanghai",
+    credit_level: "A",
+    // 必须是 page.tsx:21-29 STAGE_LABELS 里的 key，否则状态徽章显示原始英文
+    stage: "inquiry",
+    notes: null,
+    created_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+    updated_at: new Date(Date.now() - 2 * 3600000).toISOString(),
     ...overrides,
   };
 }
@@ -225,14 +249,20 @@ export function makeSyncJob(
 
 export const MOCK_CUSTOMERS = [
   makeCustomer({
-    customer_id: "cust-lianjia",
-    customer_name: "联佳丝网",
-    category_count: 2,
+    id: 1,
+    company_name: "联佳丝网",
+    country: "CN",
+    default_port: "Shanghai",
+    credit_level: "A",
+    stage: "inquiry",
   }),
   makeCustomer({
-    customer_id: "cust-client-b",
-    customer_name: "备选客户 B",
-    category_count: 1,
+    id: 2,
+    company_name: "备选客户 B",
+    country: "US",
+    default_port: "Los Angeles",
+    credit_level: "B",
+    stage: "lead",
   }),
 ];
 
