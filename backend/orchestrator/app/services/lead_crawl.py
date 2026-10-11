@@ -31,7 +31,10 @@ worker 跑在 Pyodide 里没法做 socket 级校验，只能如此；
 from __future__ import annotations
 
 import re
-from urllib.parse import urlparse
+from typing import Optional
+from urllib.parse import urljoin, urlparse
+
+import httpx
 
 # SSRF 防护：只允许公网 http(s)，拒绝内网/回环/云元数据地址
 # （与 `backend/worker/src/chain.py` 的 `_BLOCKED_HOST_RE` 逐字一致）
@@ -60,3 +63,67 @@ def is_safe_crawl_url(url: str) -> bool:
     if not host or "." not in host:
         return False
     return not _BLOCKED_HOST_RE.match(host)
+
+
+# ── 出站抓取 ────────────────────────────────────────────────────────────────
+
+CRAWL_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/122.0 Safari/537.36")
+CRAWL_TIMEOUT = 15          # 与 worker 的 CRAWL_TIMEOUT 一致
+MAX_CRAWL_BYTES = 400_000   # 与 worker 的 MAX_CRAWL_BYTES 一致
+MAX_REDIRECTS = 5
+
+
+def next_redirect_url(current_url: str, location: str) -> Optional[str]:
+    """返回**经过校验**的下一跳绝对地址；不安全或非法则返回 None。
+
+    为什么必须逐跳校验（而不是让客户端自动跟随）
+    --------------------------------------------
+    只校验"请求前的 URL"挡不住这种绕过：
+
+        http://evil.com  --302-->  http://169.254.169.254/latest/meta-data/
+
+    请求的确发往 evil.com（合法），但客户端**自动跟随**到了内网。
+    worker 侧用的是 `redirect: "follow"`，所以那里存在同一个绕过面
+    （已作为发现记入 `docs/PROBLEM_STATUS_2026-10-11.md`）。
+
+    正确做法：**关掉自动跟随**，每一跳都拿 Location 过同一把尺子。
+    """
+    if not location:
+        return None
+    target = urljoin(current_url, location.strip())
+    return target if is_safe_crawl_url(target) else None
+
+
+async def http_get_text(url: str, timeout: int = CRAWL_TIMEOUT) -> tuple:
+    """出站 GET，返回 ``(status, text)``；读取上限 `MAX_CRAWL_BYTES`。
+
+    与 worker 的 `_http_get_text` **语义一致**（同样的 UA / 超时 / 字节上限），
+    但两处刻意不同：
+
+    1. **用 httpx，而不是 worker 那个 `urllib` 同步回退** ——
+       同步 `urlopen` 在 FastAPI 的 async 端点里会**阻塞整个事件循环**，
+       一次爬取最长 15 秒，期间 dev 服务全体卡住。
+    2. **逐跳校验重定向**（见 `next_redirect_url`），补上 worker 侧的绕过面。
+
+    `is_safe_crawl_url` 在任何网络动作**之前**执行，不可跳过。
+    """
+    if not is_safe_crawl_url(url):
+        raise ValueError("URL 不在允许抓取的公网 http(s) 范围内")
+
+    headers = {"User-Agent": CRAWL_UA, "Accept": "text/html,*/*"}
+    current = url
+    async with httpx.AsyncClient(
+        timeout=timeout, follow_redirects=False, headers=headers
+    ) as client:
+        for _ in range(MAX_REDIRECTS + 1):
+            resp = await client.get(current)
+            if resp.status_code in (301, 302, 303, 307, 308):
+                nxt = next_redirect_url(current, resp.headers.get("location", ""))
+                if nxt is None:
+                    raise ValueError(
+                        "重定向指向的地址不在允许抓取的公网 http(s) 范围内")
+                current = nxt
+                continue
+            return resp.status_code, resp.text[:MAX_CRAWL_BYTES]
+    raise ValueError("重定向次数过多")
