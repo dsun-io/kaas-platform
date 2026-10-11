@@ -68,8 +68,30 @@
 2. ~~**前端认证契约残留**~~ ✅ **已收口**（`35a89a8`）：前端不再发 `X-Tenant-Id`，
    `Session` 不再带 `tenant` 字段。原因见下。
 3. **接口级测试**（#2b 与均价都只有纯函数单测）、**前端档位管理界面**。
-4. 规格库 11 条接口 / 依赖漏洞 98 个 + next 14→15 / e2e 26 条归真 /
-   产品定义可视化编辑器 / 团队管理员转让 / 单证投产联调。
+4. 规格库 11 条接口 / e2e 26 条归真 / 产品定义可视化编辑器 /
+   团队管理员转让 / 单证投产联调。
+5. ~~依赖漏洞 98 个~~ 🔶 **部分**：已降到 **78**，critical 3 → 2；
+   余下 2 个 critical **全是 `next`**，只能在 Next ≥ 15.5.24 修
+   （即 14→15 跳大版本，而 Next 15 又要求 React 19）——用户已定**单独排期**。
+
+### 依赖漏洞已降 98 → 78（`b5b6f4d`）
+
+**关键发现：那两个 critical/high 的来源不是"版本旧"，是依赖放错了位置。**
+
+| 漏洞 | 来源链 | 真实问题 |
+|---|---|---|
+| `proxy-addr`（critical） | `express` ← MCP SDK ← **`shadcn`** | shadcn 是 **CLI 工具**却放在 `dependencies`，把整个 express 服务栈拖进依赖图 |
+| `undici@5.29.0`（high） | `miniflare` ← **`@cloudflare/next-on-pages`** | **废弃的 devDependency**：部署走 `pywrangler deploy`，仓库里无任何配置引用它（只出现在过期的 npm lockfile 里） |
+
+处置：删除 `@cloudflare/next-on-pages`（连带 miniflare 与 undici@5.29.0 消失）；
+`shadcn` 移入 `devDependencies`；`proxy-addr` 用 override 固定 `2.0.8`。
+
+**踩坑记录**：override 第一版写在 `package.json` 的 `pnpm` 字段里，**没生效** ——
+**pnpm v11 不再读 package.json 里的 `pnpm.overrides`**（WARN 明说 keys were ignored），
+正确位置是 `pnpm-workspace.yaml`。写错位置的坏处**不是报错，而是"看着有、其实不生效"**。
+
+验证：typecheck exit 0；lint 无 error；前端 280 passed；contracts R0–R4 PASS；
+`NEXT_EXPORT=1` build exit 0（34 静态页）；orchestrator 589 passed。
 
 ### 旧表 `customer_pricing_profiles` 活读取路径已收口（`51e26f9` 之后）
 
