@@ -65,12 +65,38 @@
 
 1. ~~**反向漂移 8 条**~~ ✅ **已结**：6 条修掉（webhook 收敛 4 + 爬取端点 2），
    余 2 条 `subscriptions` 有既有裁决「有意保留」。详见下「反向漂移：逐条取证与处置」。
-2. **前端认证契约残留**（`session-cache.ts` 的 tenant 结构、`client.ts` 的 `X-Tenant-Id`）。
+2. ~~**前端认证契约残留**~~ ✅ **已收口**（`35a89a8`）：前端不再发 `X-Tenant-Id`，
+   `Session` 不再带 `tenant` 字段。原因见下。
 3. **接口级测试**（#2b 与均价都只有纯函数单测）、**前端档位管理界面**。
 4. 规格库 11 条接口 / 依赖漏洞 98 个 + next 14→15 / e2e 26 条归真 /
    产品定义可视化编辑器 / 团队管理员转让 / 单证投产联调。
 
 ### 旧表 `customer_pricing_profiles` 活读取路径已收口（`51e26f9` 之后）
+
+### 前端认证契约残留已收口（`35a89a8`）
+
+**症状**：前端仍保留 `tenant.{tenant_id}`，并据此注入 `X-Tenant-Id`。
+
+**为什么是隐患（两层）**：
+
+1. `tenant_id` 已全量统一为 `default`（迁移 `202610110005` unify_tenant），
+   **租户不再是隔离边界，团队（team_id）才是**；账号身上根本没有"租户"。
+2. 更关键的是这个值**从哪来**：`updateSession` **从来不写** `tenant`，
+   唯一来源是 `getCurrentSession` 里从 **localStorage 的过期 `kaas_user`** 反推。
+   于是发出去的可能是**早已失效的旧值**，而后端还拿它做限流分桶与日志上下文 ——
+   属于"**看着有用、实际误导**"。
+
+**处置**：删掉注入与字段。后端本就不需要它
+（`middleware/auth.py` 鉴权后自行设 `request.state.tenant_id = DEFAULT_TENANT`）。
+
+**顺带更正一处与事实不符的注释**：`middleware/rate_limit.py` 写着
+"每租户限流、不同租户独立限流"，而租户已统一 —— key 里的 tenant 部分
+实际恒为同值，**真正起区分作用的是 IP**。读不到头时落 `"unknown"`，
+与原先"所有人都发同一个 default"是**同一种分桶**，限流效果不变。
+保留该前缀是因为限流要在**鉴权之前**判定，那时拿不到可靠的 team_id。
+
+验证：前端 `typecheck` exit 0；`lint` 仅既有 `<img>` warning；
+测试 **280 passed / 21 files**；后端仅改 docstring。
 
 ### 反向漂移：逐条取证与处置（2026-10-11）
 
