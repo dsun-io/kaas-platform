@@ -52,12 +52,14 @@ from .product_defaults import (  # noqa: F401
     product_key_of,
 )
 from .render_fingerprint import (  # noqa: F401
+    RENDER_CHECK_VERDICTS,
     RENDER_DIGEST_IGNORED_FIELDS,
     RENDER_KEY,
     RENDER_VERSION,
     canonical_render_input,
     read_render_fingerprint,
     render_fingerprint,
+    render_fingerprint_check,
     render_input_digest,
 )
 
@@ -73,7 +75,7 @@ __all__ = [
     "build_messages", "parse_translation",
     "PRODUCT_KEY_FIELD", "PRODUCT_INFO_KEYS", "HS_ITEM_DOC_TYPES",
     "product_key_of", "apply_product_defaults",
-    "RENDER_KEY", "RENDER_VERSION", "RENDER_DIGEST_IGNORED_FIELDS",
+    "RENDER_KEY", "RENDER_VERSION", "RENDER_DIGEST_IGNORED_FIELDS", "RENDER_CHECK_VERDICTS",
     "canonical_render_input", "render_input_digest", "render_fingerprint",
-    "read_render_fingerprint",
+    "render_fingerprint_check", "read_render_fingerprint",
 ]
