@@ -9,7 +9,11 @@
 """
 import pytest
 
-from app.services.lead_crawl import is_safe_crawl_url
+from app.services.lead_crawl import (
+    http_get_text,
+    is_safe_crawl_url,
+    next_redirect_url,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -80,3 +84,50 @@ class TestRejectsBadShape:
 
     def test_none_is_rejected_not_crashing(self):
         assert is_safe_crawl_url(None) is False
+
+
+class TestRedirectHopValidation:
+    """**逐跳校验**：只校验请求前的 URL 挡不住"302 跳到内网"。
+
+    这是本次移植时发现的绕过面 —— worker 侧用的是 `redirect: "follow"`，
+    存在同一个洞。
+    """
+
+    def test_relative_location_is_resolved_against_current(self):
+        got = next_redirect_url("https://example.com/a/b", "/products")
+        assert got == "https://example.com/products"
+
+    def test_absolute_public_location_passes(self):
+        assert next_redirect_url(
+            "https://example.com/", "https://other.example.org/x") \
+            == "https://other.example.org/x"
+
+    @pytest.mark.parametrize("location", [
+        "http://127.0.0.1/",
+        "http://localhost/",
+        "http://169.254.169.254/latest/meta-data/",   # 云元数据：最经典的 SSRF 目标
+        "http://10.0.0.1/",
+        "http://192.168.0.1/",
+        "http://[::1]/",
+        "file:///etc/passwd",
+    ])
+    def test_internal_redirect_is_refused(self, location):
+        assert next_redirect_url("https://example.com/", location) is None
+
+    def test_empty_location_is_refused(self):
+        assert next_redirect_url("https://example.com/", "") is None
+        assert next_redirect_url("https://example.com/", None) is None
+
+
+class TestGuardRunsBeforeAnyNetwork:
+    """尺子必须在**任何网络动作之前**执行 —— 否则它只是事后检查。"""
+
+    async def test_unsafe_url_raises_without_requesting(self):
+        for url in ("http://127.0.0.1/", "http://169.254.169.254/",
+                    "file:///etc/passwd", "http://localhost/"):
+            with pytest.raises(ValueError):
+                await http_get_text(url)
+
+    async def test_no_scheme_raises(self):
+        with pytest.raises(ValueError):
+            await http_get_text("example.com")
