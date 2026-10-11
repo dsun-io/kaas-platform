@@ -39,6 +39,7 @@ import {
 } from "@/lib/trade-doc/custom-fields";
 
 import { useUpdateTradeDoc } from "../hooks/use-trade-docs";
+import { DocPhotoPicker } from "./doc-photo-picker";
 
 export function DocCustomForm({
   docId,
@@ -101,6 +102,49 @@ export function DocCustomForm({
     );
   };
 
+  // ── 产品图引用（用户要求：单证直接调用产品管理页面的图片）────────────────
+  // `product_photos` 支持 `{"file_id": N, "caption": …}` 条目：引用产品图库里的图，
+  // 由后端 render-data 装配层解析成 data URI（渲染器白名单不放开，也不需要放开）。
+  const photosField = useMemo(() => fields.find((f) => f.name === "product_photos"), [fields]);
+  const pickedIds = useMemo(() => {
+    const raw = texts["product_photos"];
+    if (!raw?.trim()) return [] as number[];
+    try {
+      const arr: unknown = JSON.parse(raw);
+      if (!Array.isArray(arr)) return [] as number[];
+      return arr
+        .map((e) => (e && typeof e === "object" ? (e as { file_id?: number }).file_id : undefined))
+        .filter((n): n is number => typeof n === "number");
+    } catch {
+      return [] as number[]; // 用户正在手改 JSON 时不让选择器报错
+    }
+  }, [texts]);
+
+  const appendPhoto = (entry: { file_id: number; caption: string }) => {
+    const current = texts["product_photos"] ?? "";
+    let arr: unknown[] = [];
+    if (current.trim()) {
+      try {
+        const parsed: unknown = JSON.parse(current);
+        if (!Array.isArray(parsed)) {
+          toast.error("产品照片需要是数组形式，先改好再加图");
+          return;
+        }
+        arr = parsed;
+      } catch {
+        toast.error("现有内容不是合法 JSON，先修好再加图");
+        return;
+      }
+    }
+    if (arr.some((e) => e && typeof e === "object" && (e as { file_id?: number }).file_id === entry.file_id)) {
+      toast.info("这张图已经在单据里了");
+      return;
+    }
+    arr.push({ file_id: entry.file_id, caption: entry.caption });
+    setText("product_photos", JSON.stringify(arr, null, 2));
+    toast.success("已添加引用（点「保存内容」后生效）");
+  };
+
   return (
     <div className="mb-4 rounded-md border">
       <div className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-3 py-2">
@@ -138,6 +182,9 @@ export function DocCustomForm({
             onChange={(value) => setText(field.name, value)}
           />
         ))}
+        {photosField && (
+          <DocPhotoPicker onPick={appendPhoto} disabled={!editable} pickedIds={pickedIds} />
+        )}
       </div>
     </div>
   );

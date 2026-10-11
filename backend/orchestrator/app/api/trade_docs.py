@@ -729,19 +729,24 @@ async def _resolve_product_photos(db, tenant_id: str, data: dict) -> dict:
     photos = data.get("product_photos")
     if not isinstance(photos, list) or not photos:
         return data
+    from app.api.files import load_file_bytes  # 局部导入避免模块级循环依赖
+
     resolved = []
     for entry in photos:
         if not is_file_ref(entry):
             resolved.append(entry)          # 已是图片源（data:/http(s)）→ 原样透传
             continue
         row = (await db.execute(text(
-            "SELECT name, content_type, file_name, content FROM file_objects"
+            "SELECT name, content_type, file_name, content, object_key, storage FROM file_objects"
             " WHERE tenant_id=:t AND id=:id AND is_current"
         ), {"t": tenant_id, "id": int(entry["file_id"])})).mappings().first()
-        if row is None or row["content"] is None:
+        if row is None:
+            continue
+        blob = await load_file_bytes(dict(row))   # inline 读列 / s3 预签名回源
+        if blob is None:
             continue
         resolved.append({
-            "image": to_data_uri(row["content_type"], bytes(row["content"]), row["file_name"]),
+            "image": to_data_uri(row["content_type"], blob, row["file_name"]),
             "caption": entry.get("caption") or row["name"],
         })
     data["product_photos"] = resolved

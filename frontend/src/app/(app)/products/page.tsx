@@ -17,7 +17,7 @@
  * - 右边概览里的图片数即单证可引用的库存：单证**引用**这些图，改一次全同步。
  */
 import { useEffect, useMemo, useState } from "react";
-import { ImagePlus, Package, Save, Star, Trash2 } from "lucide-react";
+import { ImagePlus, Link2, Package, Save, Star, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/shared/page-header";
@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 import {
+  fetchFileDirectUrl,
   useFileObjectUrl,
   usePatchFile,
   useProductMedia,
@@ -36,7 +37,7 @@ import {
   useSaveProductProfile,
   useUploadProductMedia,
   type ProductMedia,
-} from "./hooks/use-products";
+} from "@/lib/products/use-products";
 
 /** 基础信息字段（存进 product_profiles.info，键名稳定、可被单证/报价引用） */
 const PROFILE_FIELDS: [string, string, string][] = [
@@ -304,6 +305,23 @@ function MediaCard({ media, kindLabel }: { media: ProductMedia; kindLabel: strin
         >
           <Trash2 className="mr-1 h-3.5 w-3.5" />
           下线
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={async () => {
+            // 短时效直链（预签名 GET）：给货代/客户看大图或下载，不必登录我们的系统
+            const url = await fetchFileDirectUrl(media.id);
+            if (!url) {
+              toast.error("该文件不在对象存储里（可能是回退落库的旧文件）");
+              return;
+            }
+            await navigator.clipboard.writeText(url);
+            toast.success("已复制短时效直链（默认 15 分钟有效）");
+          }}
+        >
+          <Link2 className="mr-1 h-3.5 w-3.5" />
+          直链
         </Button>
       </div>
     </div>

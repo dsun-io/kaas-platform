@@ -36,6 +36,9 @@ from kaas_common.files import (
     current_of,
     next_version,
     object_key,
+    presign_get_url,
+    presign_put_url,
+    s3_config,
     validate_upload,
 )
 
@@ -77,7 +80,40 @@ def _fail(exc: FileRuleError) -> HTTPException:
         "error": "validation", "code": exc.code, "detail": exc.detail})
 
 
-# ── 文件本体：R2 binding 优先，失败回退 inline ─────────────────────────────
+# ── 文件本体：S3（预签名）优先 → R2 binding → inline ───────────────────────
+#
+# 三种落点存在的理由：
+#   · **S3**（生产 R2 / 本地 MinIO）：与 orchestrator **同一段签名代码**，
+#     字节走预签名 PUT/GET，浏览器还能直传（不经服务端）。
+#   · **R2 binding**：没配 S3 密钥时的平台直连（同样进 R2，只是访问方式不同）。
+#   · **inline**：都没配时的兜底（写库）—— 上传是用户显式动作，不能直接失败。
+# 无论走哪条，真实落点都写进 `file_objects.storage`，可审计。
+
+def _s3(request: Request) -> Optional[dict]:
+    """读请求期绑定里的 S3 配置（Python Workers 在 import 期读不到绑定）。"""
+    return s3_config(lambda key: _main._binding(key, request))
+
+
+async def _js_fetch_bytes(url: str, method: str,
+                          data: Optional[bytes] = None,
+                          content_type: str = "") -> Optional[bytes]:
+    """用 JS `fetch` 访问对象存储（Pyodide 里没有 httpx/requests）。"""
+    from js import Uint8Array, fetch  # type: ignore  (Pyodide / Python Workers)
+    from pyodide.ffi import to_js  # type: ignore
+
+    opts = {"method": method}
+    if content_type:
+        opts["headers"] = to_js({"Content-Type": content_type})
+    if data is not None:
+        opts["body"] = Uint8Array.new(data)
+    res = await fetch(url, to_js(opts))
+    if not res.ok:
+        raise RuntimeError(f"S3 {method} {res.status}")
+    if method.upper() == "GET":
+        buf = await res.arrayBuffer()
+        return bytes(buf.to_py())
+    return None
+
 
 def _r2_bucket():
     """拿 R2 binding（`FILES`）。不在 Pyodide / 没配 binding 时返回 None。
@@ -91,8 +127,21 @@ def _r2_bucket():
         return None
 
 
-async def _store_bytes(key: str, data: bytes, content_type: str) -> tuple[str, Optional[str], Optional[bytes]]:
+async def _store_bytes(request: Request, key: str, data: bytes,
+                       content_type: str) -> tuple[str, Optional[str], Optional[bytes]]:
     """返回 `(storage, object_key, inline_content)` —— 三者如实反映字节的真实落点。"""
+    cfg = _s3(request)
+    if cfg:
+        try:
+            url = presign_put_url(
+                cfg["endpoint"], cfg["bucket"], key,
+                access_key=cfg["access_key"], secret_key=cfg["secret_key"],
+                region=cfg["region"], expires=cfg["expires"])
+            await _js_fetch_bytes(url, "PUT", data, content_type)
+            return "s3", key, None
+        except Exception as exc:  # noqa: BLE001
+            print(f"[files] S3 put 失败，回退 binding：{type(exc).__name__}: {exc}")
+
     bucket = _r2_bucket()
     if bucket is not None:
         try:
@@ -106,11 +155,23 @@ async def _store_bytes(key: str, data: bytes, content_type: str) -> tuple[str, O
     return "inline", key, data
 
 
-async def _load_bytes(row) -> Optional[bytes]:
+async def _load_bytes(request: Request, row) -> Optional[bytes]:
     if row.get("content") is not None:
         return bytes(row["content"])
+    if not row.get("object_key"):
+        return None
+    cfg = _s3(request)
+    if cfg:
+        try:
+            url = presign_get_url(
+                cfg["endpoint"], cfg["bucket"], row["object_key"],
+                access_key=cfg["access_key"], secret_key=cfg["secret_key"],
+                region=cfg["region"], expires=cfg["expires"])
+            return await _js_fetch_bytes(url, "GET")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[files] S3 get 失败，回退 binding：{type(exc).__name__}: {exc}")
     bucket = _r2_bucket()
-    if bucket is None or not row.get("object_key"):
+    if bucket is None:
         return None
     try:
         obj = await bucket.get(row["object_key"])
@@ -138,7 +199,8 @@ async def _current_file(conn, tenant_id: str, owner_type: str, owner_id: Optiona
 
 async def _create_file(*, request: Request, user: dict, owner_type: str, owner_id: Optional[str],
                        kind: str, media_kind: Optional[str], name: str, content: bytes,
-                       content_type: str, file_name: Optional[str], supersede: bool) -> dict:
+                       content_type: str, file_name: Optional[str], supersede: bool,
+                       pre_uploaded: Optional[tuple[str, str]] = None) -> dict:
     try:
         validate_upload(owner_type=owner_type, kind=kind, media_kind=media_kind, name=name,
                         content_type=content_type, size=len(content))
@@ -149,7 +211,11 @@ async def _create_file(*, request: Request, user: dict, owner_type: str, owner_i
     key = object_key(tenant_id=DEFAULT_TENANT, owner_type=owner_type, owner_id=owner_id,
                      kind=kind, media_kind=media_kind, sha256=sha,
                      content_type=content_type, file_name=file_name)
-    storage, object_key_value, inline = await _store_bytes(key, content, content_type)
+    if pre_uploaded is not None:
+        # 浏览器已直传对象存储（预签名 PUT）→ 只登记元数据，字节不再经服务端
+        storage, object_key_value, inline = pre_uploaded[0], pre_uploaded[1], None
+    else:
+        storage, object_key_value, inline = await _store_bytes(request, key, content, content_type)
     actor = str(user.get("id") or "") or None
 
     async with _main._acquire(request) as conn:
@@ -314,7 +380,7 @@ async def get_file_content(file_id: int, request: Request, user: dict = Depends(
         " WHERE tenant_id=$1 AND id=$2", DEFAULT_TENANT, file_id, table=None)
     if row is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "FILE_NOT_FOUND"})
-    data = await _load_bytes(dict(row))
+    data = await _load_bytes(request, dict(row))
     if data is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "FILE_BODY_NOT_FOUND"})
     return Response(content=data, media_type=row.get("content_type") or "application/octet-stream",
@@ -445,7 +511,7 @@ async def resolve_photo_refs(request: Request, data: dict) -> dict:
             DEFAULT_TENANT, int(entry["file_id"]))
         if not row:
             continue
-        blob = await _load_bytes(row)
+        blob = await _load_bytes(request, row)
         if blob is None:
             continue
         resolved.append({
@@ -454,3 +520,84 @@ async def resolve_photo_refs(request: Request, data: dict) -> dict:
         })
     data["product_photos"] = resolved
     return data
+
+
+# ── 直传（预签名）：字节不过服务端 ────────────────────────────────────────
+# 与 orchestrator 同契约（`app/api/files.py`）：配好 S3 时返回预签名 PUT，
+# 浏览器直连对象存储；没配就 `{"configured": false}`，前端回退 multipart 代理上传。
+
+class PresignIn(BaseModel):
+    owner_type: str
+    owner_id: Optional[str] = None
+    kind: str
+    media_kind: Optional[str] = None
+    name: str
+    content_type: str
+    size: int
+    sha256: str
+    file_name: Optional[str] = None
+
+
+class RegisterIn(PresignIn):
+    supersede: bool = False
+
+
+def _validate_direct(body: PresignIn) -> str:
+    try:
+        validate_upload(owner_type=body.owner_type, kind=body.kind, media_kind=body.media_kind,
+                        name=body.name, content_type=body.content_type, size=body.size)
+    except FileRuleError as exc:
+        raise _fail(exc)
+    sha = (body.sha256 or "").strip().lower()
+    if len(sha) != 64 or any(c not in "0123456789abcdef" for c in sha):
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "SHA256_REQUIRED",
+            "detail": "直传必须先算好文件的 sha256（64 位十六进制）"})
+    return sha
+
+
+@app.post("/api/v1/file-objects/presign")
+async def presign_upload(body: PresignIn, request: Request, user: dict = Depends(_get_current_user)):
+    sha = _validate_direct(body)
+    cfg = _s3(request)
+    if not cfg:
+        return {"configured": False}
+    key = object_key(tenant_id=DEFAULT_TENANT, owner_type=body.owner_type, owner_id=body.owner_id,
+                     kind=body.kind, media_kind=body.media_kind, sha256=sha,
+                     content_type=body.content_type, file_name=body.file_name)
+    url = presign_put_url(
+        cfg["endpoint"], cfg["bucket"], key, access_key=cfg["access_key"],
+        secret_key=cfg["secret_key"], region=cfg["region"], expires=cfg["expires"])
+    return {"configured": True, "upload_url": url, "object_key": key,
+            "method": "PUT", "expires_in": cfg["expires"]}
+
+
+@app.post("/api/v1/file-objects/register", status_code=201)
+async def register_upload(body: RegisterIn, request: Request, user: dict = Depends(_get_current_user)):
+    sha = _validate_direct(body)
+    key = object_key(tenant_id=DEFAULT_TENANT, owner_type=body.owner_type, owner_id=body.owner_id,
+                     kind=body.kind, media_kind=body.media_kind, sha256=sha,
+                     content_type=body.content_type, file_name=body.file_name)
+    return await _create_file(
+        request=request, user=user, owner_type=body.owner_type, owner_id=body.owner_id,
+        kind=body.kind, media_kind=body.media_kind, name=body.name, content=b"",
+        content_type=body.content_type, file_name=body.file_name, supersede=body.supersede,
+        pre_uploaded=("s3", key))
+
+
+@app.get("/api/v1/file-objects/{file_id}/url")
+async def get_file_url(file_id: int, request: Request, user: dict = Depends(_get_current_user)):
+    """短时效直链（预签名 GET）；没配 S3 就明确说不可用。"""
+    row = await db.fetchrow(
+        request,
+        "SELECT object_key, content_type, file_name FROM file_objects"
+        " WHERE tenant_id=$1 AND id=$2 AND is_current", DEFAULT_TENANT, file_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "FILE_NOT_FOUND"})
+    cfg = _s3(request)
+    if not (cfg and row.get("object_key")):
+        return {"configured": False, "reason": "该文件不在对象存储里（inline 或未上传）"}
+    url = presign_get_url(
+        cfg["endpoint"], cfg["bucket"], row["object_key"], access_key=cfg["access_key"],
+        secret_key=cfg["secret_key"], region=cfg["region"], expires=cfg["expires"])
+    return {"configured": True, "url": url, "expires_in": cfg["expires"]}
