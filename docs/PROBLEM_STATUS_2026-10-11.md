@@ -117,14 +117,37 @@
 - 新增 7 条测试钉死该能力；单元测试 453 → **460 passed**
 - 向后兼容：`numeric_inputs` 默认空，`field_fence` 行为不变
 
-**未完成 —— 产品与界面**：
+**已打通到对外接口**（`8b11b20`）：`describe_product` 暴露 `numeric_inputs`；
+定价键的自由数值维度显式声明 `kind="numeric"`（不整维跳过，否则"存了查不到"）；
+`explain` 端点接受自由数值（非数值 → 400 `invalid_numeric`）；
+引擎容忍同单位后缀（"1.2m"/"100mm"）但不跨单位换算。
 
-1. `field_fence` 把 `de` / `height_m` / `mesh_mm` 及 `inner_wire` 变体包
-   （dm/dv/roll_len_m/roll_dia_m）改为 `numeric_inputs`。改完 `combo_count`
-   会从 160 降到 10（只剩表面处理 5 × 工艺 2），§二 #5 的 120/160/48 之争随之作废。
-2. 新增 **鹿网**、**勾花网** 两个产品（表格公式已提取，见下）。
-3. 前端 `shared/contracts/niulanwang.ts` 的枚举轴与 `NIULANWANG_COMBO_COUNT` 退役，
-   改为从 `/export-quote/products/{key}/formulas` 读 `numeric_inputs`。
+**未完成 —— 产品与界面（2026-10-11 尝试过 `field_fence` 改造，验证后回退）**
+
+改造本身是可行的：把 `de`/`height_m`/`mesh_mm` 与 `inner_wire` 变体包
+（dm/dv/roll_len_m/roll_dia_m）改成 `numeric_inputs` 后，`combo_count` 从 160
+降到 10（表面处理 5 × 工艺 2），§二 #5 的 120/160/48 之争随之作废；
+`explain` 基线（65.4020kg / 0.1080m³ / 29.9000m³）逐项不变。
+
+但**集成点比预想多**。实测清单（下次照单推进，别漏）：
+
+| # | 集成点 | 状态 |
+|---|---|---|
+| 1 | `models.NumericInput` + `ProductSpec.numeric_inputs` | ✅ 已做 |
+| 2 | `engine.expand_specs` / `spec_from_partial` | ✅ 已做 |
+| 3 | `engine._numeric_value`（含单位后缀容忍） | ✅ 已做 |
+| 4 | `app/api/export_quote.py` 的 `explain` 自建规格解析 | ✅ 已做 |
+| 5 | `formulas.describe_product` / `describe_pricing_key`（含 `kind="numeric"`） | ✅ 已做 |
+| 6 | **`importers.py` 的表头映射 + 模板列生成** | ❌ **未做** |
+| 7 | 前端 `niulanwang.ts` 枚举轴与 `NIULANWANG_COMBO_COUNT` 退役 | ❌ 未做 |
+
+**第 6 项是回退的原因**：导表（CSV/Excel 导入导出）的表头映射在
+`importers._build_header_map` / `_resolve_column` / `template_columns` 里，
+它按 `product.axes` / `variants` 建表，不认识 `numeric_inputs` ——
+不补这一环，`field_fence` 的报价表**整个导入不出来**。
+而这里映射错了会**静默导错报价数据**（不是报错），风险高于收益，
+所以没有在同一轮里硬塞。正确顺序是：先补 importers + 模板生成，
+再改产品定义，最后动前端。
 
 **表格公式（已逐项核对）**：牛栏网的代码实现与表格**完全等价** ——
 代码 `0.00617×L×[2·d边²+(n−2)·d横²+d竖²(w+(n−1)×50)/s]`
