@@ -93,6 +93,13 @@
   `C:\Users\HJ\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe`
   + `...\pnpm\bin\pnpm.mjs`。
 - 跑 `.ps1` 前必须 `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force`。
+- **本地产物不进仓库**：PI 导出、QA 快照、一次性生成脚本一律放 `artifacts/`
+  （已在 `.gitignore`）；仓库根目录不留快照。成果要归档走数据库或正式文档。
+- **出 PDF 不要用 ego 浏览器打印**：它会把光标/「DeepSeek」浮标（`position:fixed`
+  的注入元素）印进 PDF 并在**每页重复**，而 PDF 内容流是压缩的 ——
+  拿"字节里搜不到 DeepSeek"当证据是**伪证**。正确做法：系统 Chrome 无头打印
+  （`--headless=new --no-pdf-header-footer --print-to-pdf`），再用
+  `libreoffice-kit render`（pdfium 后端）渲图**逐页肉眼看**复核。
 - `wecom-cli` 在 `C:\Users\HJ\wecom-cli-tool\node_modules\.bin`；
   前置检查 `--version` ≥ 1.2.1 + `auth show --status`。
 - 生产库 = Neon `KaaS` / `production` 分支。DSN 取
