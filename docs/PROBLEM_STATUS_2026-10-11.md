@@ -68,7 +68,8 @@
 2. ~~**前端认证契约残留**~~ ✅ **已收口**（`35a89a8`）：前端不再发 `X-Tenant-Id`，
    `Session` 不再带 `tenant` 字段。原因见下。
 3. **接口级测试**（#2b 与均价都只有纯函数单测）、**前端档位管理界面**。
-4. ~~规格库 11 条接口~~ ✅ **已退役**（`8225bbf`）/ e2e 26 条归真 /
+4. ~~规格库 11 条接口~~ ✅ **已退役**（`8225bbf`）/ e2e 归真 🔶 **进行中**
+   （"26 条"里大部分是环境问题，已修到 18 条真实失败，见下）/
    产品定义可视化编辑器 / 团队管理员转让 / 单证投产联调。
 5. ~~依赖漏洞 98 个~~ 🔶 **部分**：已降到 **78**，critical 3 → 2；
    余下 2 个 critical **全是 `next`**，只能在 Next ≥ 15.5.24 修
@@ -155,6 +156,35 @@ SKU 价格表 → 定价键 + 定价数据（按买家）+ 团队级档位覆盖
 - 同一片区域的 `/spec/categories` 与 `/spec/wizard/*`（前端 `spec-config` 页面**在用**）
 
 allowlist 里已写注释提醒后来者：**这片区域不是整片死的，不要顺手清**。
+
+### e2e「26 条失败」：大部分是**环境问题**，不是产品缺陷（2026-10-11 实测）
+
+逐层查下去的结果 —— **不要因为门禁里写着"26 条失败"就去改应用代码**：
+
+| 层 | 发现 |
+|---|---|
+| ① | `frontend/playwright.config.ts` 的 `webServer.command` 是 **`npm run dev`**，而**本环境没有 `npm`** → 服务起不来 → 全部 `ERR_CONNECTION_REFUSED` |
+| ② | 手工起 dev server 后，报错变成明确的 **`pnpm exec playwright install`** → **Playwright 浏览器压根没装** |
+| ③ | 装上 Chromium（`playwright install chromium`，111.5 MiB）后重跑 |
+
+**结果：25 失败 → 18 失败 / 6 通过 / 1 跳过。**
+
+也就是说：**7 条纯粹是"浏览器没装"，约 10 条是"服务没起来"**，
+真正需要查的是剩下 **18 条**（可能是应用问题，也可能是 mock/fixture 没跟上）。
+
+复现方式（本环境）：
+
+```powershell
+# 1) 手工起 dev server（配置里的 npm 在本环境不可用）
+#    NEXT_PUBLIC_API_MODE=mock，mock 模式不需要数据库
+# 2) 不设 CI，让 Playwright 复用已在跑的服务（reuseExistingServer）
+# 3) 跑：playwright test --reporter=line
+```
+
+**待修（不该拖）**：`webServer.command` 硬编码 `npm run dev`，
+导致**任何没有 `npm` 的环境都跑不了 e2e**。建议改成可覆盖
+（`process.env.E2E_WEB_SERVER ?? 'npm run dev'`）——保留原默认，
+又不把整个套件锁死在 `npm` 上。
 
 **关键发现：那两个 critical/high 的来源不是"版本旧"，是依赖放错了位置。**
 
