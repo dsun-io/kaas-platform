@@ -173,6 +173,9 @@ NEW_ROUTES: set[tuple[str, str]] = {
 # 单独列出来是因为它们不应答 401 —— 断言方式与 NEW_ROUTES 不同。
 PUBLIC_ROUTES: set[tuple[str, str]] = {
     ("/api/v1/enums", "GET"),
+    # 登出：stateless JWT，无凭据也应答 200（与 orchestrator 同口径）。
+    # 此前线上缺这条路由，前端点登出直接 404。
+    ("/api/v1/auth/logout", "POST"),
 }
 
 

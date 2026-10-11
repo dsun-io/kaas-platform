@@ -29,9 +29,6 @@ GET /health/ready  # 同上
 POST /api/v1/oss/presign  # 依赖阿里云 OSS SDK（C 扩展），Pyodide 装不了；前端有直传兜底
 POST /api/v1/intel/collect/comtrade  # 采集任务由本地定时器调度，不在请求线程里跑
 
-# ── 待补：前端代码里能直接看到调用点 ───────────────────────────────────────
-POST /api/v1/auth/logout  # 待补·前端已调用(auth-context.tsx:175)｜无状态 JWT，但前端会打这个端点
-
 # ── 待补：前端未直接调用（能力差，按需补）──────────────────────────────────
 GET /api/v1/product-specs  # 待补·规格清单（前端当前只在 mocks 里引用）
 GET /api/v1/spec/attributes  # 待补·规格属性库
