@@ -1,11 +1,15 @@
 /**
- * mock 客户契约回归测试 —— 钉住 2026-10-11 修掉的那个真实缺陷。
+ * mock 契约回归测试 —— 钉住 2026-10-11 修掉的真实缺陷。
  *
- * 缺陷（修复前）：
- *   `GET /api/v1/customers` 返回**裸数组**、元素是 `{customer_id, customer_name}`；
- *   而页面契约是 `{items:[{id, company_name, ...}]}`（后端 backend/orchestrator/app/api/
- *   customers.py:215 的 `{items, total}`）。后果是 mock 模式下客户列表恒为 0 行，
- *   客户选择器也一个候选都没有。
+ * 1) 客户（本文件主体）
+ *    `GET /api/v1/customers` 原先返回**裸数组**、元素是 `{customer_id, customer_name}`；
+ *    而页面契约是 `{items:[{id, company_name, ...}]}`（后端 backend/orchestrator/app/api/
+ *    customers.py:215 的 `{items, total}`）。后果是 mock 模式下客户列表恒为 0 行，
+ *    客户选择器也一个候选都没有。
+ * 2) 灰度开关
+ *    `GET /api/v1/admin/feature_flag` 的 key 原先写成客户风格 id
+ *    （`cust-lianjia`/`cust-client-b`），而消费方按 `tenant_id`
+ *    （`lianjia`/`client-b`）查 → 灰度页开关恒显示 OFF。
  *
  * 这里用**同一份 handlers**（浏览器 worker 用的就是它）跑 MSW node server，
  * 断言响应形状 + 页面实际用到的字段，而不是断言实现细节。
@@ -126,5 +130,25 @@ describe("mock GET /api/v1/customers/:id/records（normalizeCustomerRecords）",
     // customer-records.ts:243 `customerId: asInteger(customerRaw.id)`；
     // 修复前 mock 给的是字符串 "1"，会被判成 null
     expect(Number.isInteger(body.customer.id)).toBe(true);
+  });
+});
+
+describe("mock 灰度开关按**租户号**做 key（gray-release/page.tsx:39-46）", () => {
+  it("每个租户都能在 feature_flag map 里查到自己的开关", async () => {
+    const tenants = (await (await fetch(`${BASE}/admin/tenants`)).json()) as {
+      tenants: Array<{ tenant_id: string; name: string }>;
+    };
+    const flags = (await (
+      await fetch(`${BASE}/admin/feature_flag`)
+    ).json()) as Record<string, Record<string, boolean>>;
+
+    expect(tenants.tenants.length).toBeGreaterThanOrEqual(1);
+    for (const t of tenants.tenants) {
+      // 修复前 key 是 "cust-lianjia"/"cust-client-b" → 这里查出来是 undefined
+      // → 灰度页 `flags?.[t.tenant_id]?.["use_v2"] ?? false` 恒为 OFF
+      expect(flags[t.tenant_id]).toBeDefined();
+    }
+    // 种子意图：lianjia 的 use_v2 是开的（后端 tests/conftest.py:93 同值）
+    expect(flags["lianjia"]?.use_v2).toBe(true);
   });
 });
