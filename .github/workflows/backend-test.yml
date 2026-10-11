@@ -4,9 +4,13 @@ on:
   push:
     paths:
       - 'backend/**'
+      - 'scripts/route-parity.py'
+      - 'scripts/route-parity-allowlist.txt'
   pull_request:
     paths:
       - 'backend/**'
+      - 'scripts/route-parity.py'
+      - 'scripts/route-parity-allowlist.txt'
 
 jobs:
   unit-tests:
@@ -38,6 +42,44 @@ jobs:
       - name: Worker chain unit tests
         working-directory: ./backend/orchestrator
         run: uv run python ../worker/tests/test_product_extract.py
+
+      # 路由对等：orchestrator 有、worker 没有的路由必须登记在
+      # scripts/route-parity-allowlist.txt，否则线上会 404（历史多次踩坑）。
+      # 只做静态解析，不需要装 Worker 依赖，秒级完成。
+      - name: Route parity (orchestrator vs worker)
+        run: uv run --no-project python scripts/route-parity.py
+
+  worker-tests:
+    name: "worker:tests（路由面 + 无 DB 行为测试）"
+    runs-on: ubuntu-latest
+
+    env:
+      UV_LINK_MODE: copy
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Worker 目标运行时是 Pyodide，requires-python >= 3.13；与 orchestrator 分作业装。
+      - name: Setup Python + uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.14'
+
+      # worker 测试要 import main，而 main 依赖 src/kaas_common 镜像（被 .gitignore 忽略）。
+      # 与 deploy.yml 同一步：镜像缺失时报价引擎整包不在，测试会真实失败而不是假绿。
+      - name: Sync shared kernel + quote engine into worker
+        shell: pwsh
+        run: ./scripts/sync-shared.ps1
+
+      - name: Install worker deps
+        working-directory: ./backend/worker
+        run: uv sync
+
+      # httpx2：starlette >= 1.0 的 TestClient 依赖它。不写进项目依赖，
+      # 因为线上 bundle 用不到它（Cloudflare 对启动 CPU 有额度）。
+      - name: Run worker tests
+        working-directory: ./backend/worker
+        run: uv run --frozen --with pytest --with httpx2 python -m pytest tests -q
 
   db-tests:
     runs-on: ubuntu-latest

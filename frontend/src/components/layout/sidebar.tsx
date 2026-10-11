@@ -33,9 +33,12 @@ import {
   Layers,
   Circle,
 } from "lucide-react";
-import { useState, Fragment } from "react";
+import { useState, useMemo, Fragment } from "react";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useTeam } from "@/lib/team/team-context";
+import { Skeleton } from "@/components/ui/skeleton";
 import { visibleNavGroups, workstationByRoute } from "@contracts/workstations";
+import { filterNavGroups } from "@/lib/workstation/visibility";
 
 /**
  * 图标名 → 组件映射。
@@ -70,19 +73,63 @@ const STATION_ICONS: Record<
   ToggleLeft,
 };
 
+/**
+ * 首屏骨架：团队/工位信息回来之前先占位。
+ *
+ * 为什么必须有：导航是按"已开通工位"过滤的，如果先渲染全量入口再过滤，
+ * 用户会看到入口"闪现后消失"（以为自己点错了）。宁可先给骨架。
+ */
+function SidebarNavSkeleton({ collapsed }: { collapsed: boolean }) {
+  return (
+    <div className="flex flex-col gap-4 px-3" aria-hidden="true">
+      {[0, 1, 2].map((group) => (
+        <div key={group} className="flex flex-col gap-1">
+          {!collapsed && (
+            <Skeleton className="mb-1 h-3 w-12 bg-sidebar-foreground/15" />
+          )}
+          {[0, 1].map((row) => (
+            <div
+              key={row}
+              className={cn(
+                "flex items-center gap-2 px-2 py-2",
+                collapsed && "flex-col",
+              )}
+            >
+              <Skeleton className="size-[18px] rounded-md bg-sidebar-foreground/15" />
+              {!collapsed && (
+                <Skeleton className="h-3.5 flex-1 bg-sidebar-foreground/15" />
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // 导航数据来自契约（shared/contracts/workstations.ts），此处不再硬编码：
 //   · 分组顺序 = 业务推进顺序
 //   · 展示名是侧边栏/面包屑/页面标题的唯一来源
 //   · status 控制可见性（planned/hidden 不上侧边栏）
+//   · 已开通工位再过滤一层（未开通的工位点了就是 404，入口不该出现）
 function SidebarNav({ collapsed }: { collapsed: boolean }) {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
+  const { snapshot } = useTeam();
   const isInternal = user?.account_type === "internal";
 
-  const groups = visibleNavGroups();
+  const groups = useMemo(
+    () => filterNavGroups(visibleNavGroups(), snapshot),
+    [snapshot],
+  );
   // 当前工位（最长前缀匹配）—— 用它判断高亮，
   // 避免 /settings 与 /settings/ai-providers 同时高亮
   const current = workstationByRoute(pathname);
+
+  // 登录态或工位信息未就绪时先出骨架，避免入口闪现后消失
+  if (authLoading || snapshot.loading) {
+    return <SidebarNavSkeleton collapsed={collapsed} />;
+  }
 
   return (
     <nav className="flex flex-col px-3">

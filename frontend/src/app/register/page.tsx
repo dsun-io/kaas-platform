@@ -1,11 +1,31 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+/**
+ * 注册页 —— 账号 + **首次团队动作**。
+ *
+ * 为什么注册就要选团队/工位（docs/FRONTEND_PRODUCTION_READINESS.md §B1）：
+ *   生产是单租户部署，数据隔离靠**团队**、能力边界靠**工位订阅**；
+ *   注册后没有团队 = 看不到任何数据，且无法自救（要再找管理员）。
+ *   所以注册时就把"新建团队（顺带开通工位）/ 凭邀请码加入"二选一做掉；
+ *   也保留"稍后再说" —— 一个人只能属于一个团队，先随便建一个就再也加不进同事的团队了。
+ *
+ * 两个易错点：
+ *   ① 新建团队与加入团队**互斥**（后端 422 TEAM_ACTION_CONFLICT），UI 只允许选一个；
+ *   ② 工位多选默认全选，且**不允许全不选** —— 传空数组会得到一个"进得去但什么都用不了"
+ *      的团队（后端把 `workstations=[]` 当成"一个都不开"）。
+ */
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth/auth-context";
+import type { RegisterRequest } from "@/lib/auth/types";
+import { teamErrorMessage } from "@/lib/team/team-errors";
+import { extractInviteToken } from "@/lib/team/invites";
+import { subscribableWorkstationOptions } from "@/lib/workstation/visibility";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { WorkstationPicker } from "@/components/workstation-picker";
 import {
   Card,
   CardHeader,
@@ -14,7 +34,7 @@ import {
   CardContent,
   CardFooter,
 } from "@/components/ui/card";
-import { Loader2 } from "lucide-react";
+import { Loader2, Users } from "lucide-react";
 
 const CATEGORIES = [
   { value: "fencing", label: "围网/护栏类" },
@@ -29,8 +49,14 @@ const CATEGORIES = [
   { value: "other", label: "其他丝网产品" },
 ];
 
+/** 工位选项来自契约（顺序与名称 = 侧边栏同一份，避免两处不一致） */
+const ALL_STATION_KEYS = subscribableWorkstationOptions().map((s) => s.key);
+
+type TeamMode = "create" | "join" | "none";
+
 export default function RegisterPage() {
   const { register } = useAuth();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -40,6 +66,22 @@ export default function RegisterPage() {
   const [contact, setContact] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // 团队动作（三选一，互斥：新建 / 加入 / 稍后再说）
+  const [teamMode, setTeamMode] = useState<TeamMode>("create");
+  const [teamName, setTeamName] = useState("");
+  // 新建团队默认全选：当前所有工位免费，新团队一建好就能用（避免空壳团队）
+  const [stations, setStations] = useState<string[]>(ALL_STATION_KEYS);
+  const [inviteToken, setInviteToken] = useState("");
+
+  // 从邀请链接进来（/register?token=xxx）→ 默认走"加入团队"并预填邀请码，
+  // 这样同事发来的链接点开即用，不需要再手抄一遍码
+  const tokenFromLink = searchParams?.get("token") ?? "";
+  useEffect(() => {
+    if (!tokenFromLink) return;
+    setTeamMode("join");
+    setInviteToken(tokenFromLink);
+  }, [tokenFromLink]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -70,21 +112,44 @@ export default function RegisterPage() {
       return;
     }
 
+    if (teamMode === "create") {
+      if (!teamName.trim()) {
+        setError("请填写团队名称");
+        return;
+      }
+      if (stations.length === 0) {
+        setError("请至少勾选一个要开通的工位（当前全部免费）");
+        return;
+      }
+    } else if (teamMode === "join" && extractInviteToken(inviteToken) === "") {
+      setError("请填写邀请码或整条邀请链接");
+      return;
+    }
+
+    // 团队动作二选一（也可以都不选）：只带其中一个参数，
+    // 避免后端 422 TEAM_ACTION_CONFLICT
+    const payload: RegisterRequest = {
+      email: email.trim(),
+      password,
+      display_name: displayName.trim(),
+      company_name: companyName.trim(),
+      product_category: productCategory,
+      contact: contact.trim() || undefined,
+    };
+    if (teamMode === "create") {
+      payload.team_name = teamName.trim();
+      payload.workstations = stations;
+    } else if (teamMode === "join") {
+      // 整条邀请链接也可以：后端 normalize_invite_token 会自己取 ?token=
+      payload.invite_token = inviteToken.trim();
+    }
+
     setSubmitting(true);
     try {
-      await register({
-        email: email.trim(),
-        password,
-        display_name: displayName.trim(),
-        company_name: companyName.trim(),
-        product_category: productCategory,
-        contact: contact.trim() || undefined,
-      });
+      await register(payload);
     } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message ?? "注册失败，请稍后重试";
-      setError(msg);
+      // 团队类错误码给中文（并保留后端 message/detail，不吞掉）
+      setError(teamErrorMessage(err, "注册失败，请稍后重试"));
     } finally {
       setSubmitting(false);
     }
@@ -187,6 +252,94 @@ export default function RegisterPage() {
                 disabled={submitting}
               />
             </div>
+
+            {/* ── 团队（二选一）────────────────────────────────────────── */}
+            <div className="space-y-3 rounded-lg border p-3">
+              <div className="flex items-center gap-2">
+                <Users className="size-4 text-muted-foreground" />
+                <span className="text-sm font-medium">团队</span>
+                <span className="text-xs text-muted-foreground">
+                  二选一；工位订阅挂在团队上
+                </span>
+              </div>
+
+              <div className="flex flex-wrap gap-4 text-sm">
+                <label className="flex cursor-pointer items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="teamMode"
+                    checked={teamMode === "create"}
+                    onChange={() => setTeamMode("create")}
+                    disabled={submitting}
+                  />
+                  新建团队（我当管理员）
+                </label>
+                <label className="flex cursor-pointer items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="teamMode"
+                    checked={teamMode === "join"}
+                    onChange={() => setTeamMode("join")}
+                    disabled={submitting}
+                  />
+                  加入现有团队
+                </label>
+                <label className="flex cursor-pointer items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="teamMode"
+                    checked={teamMode === "none"}
+                    onChange={() => setTeamMode("none")}
+                    disabled={submitting}
+                  />
+                  稍后再说
+                </label>
+              </div>
+
+              {teamMode === "none" && (
+                <p className="text-xs text-muted-foreground">
+                  可以先进去：登录后在「团队与工位」里创建或凭邀请码加入团队。
+                  注意一个人同一时刻只能属于一个团队 ——
+                  先随便建一个团队，之后就没法再加入同事的团队了，所以不确定时选这一项。
+                </p>
+              )}
+
+              {teamMode === "create" ? (
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="teamName">团队名称 *</Label>
+                    <Input
+                      id="teamName"
+                      placeholder="如：安平县联佳丝网制品有限公司"
+                      value={teamName}
+                      onChange={(e) => setTeamName(e.target.value)}
+                      disabled={submitting}
+                    />
+                  </div>
+                  <WorkstationPicker
+                    value={stations}
+                    onChange={setStations}
+                    disabled={submitting}
+                    idPrefix="register"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="inviteToken">邀请码 / 邀请链接 *</Label>
+                  <Input
+                    id="inviteToken"
+                    placeholder="粘贴同事发来的邀请链接或邀请码"
+                    value={inviteToken}
+                    onChange={(e) => setInviteToken(e.target.value)}
+                    disabled={submitting}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    整条邀请链接直接粘贴即可，系统会自动识别其中的邀请码。
+                  </p>
+                </div>
+              )}
+            </div>
+
             {error && <p className="text-sm text-destructive">{error}</p>}
           </CardContent>
           <CardFooter className="flex flex-col gap-3">

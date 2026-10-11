@@ -85,6 +85,10 @@ export type QuoteOrderCreate = z.infer<typeof QuoteOrderCreateSchema>;
 
 /** 单头可改字段 + 状态流转（draft → sent → accepted/rejected/expired）。 */
 export const QuoteOrderPatchSchema = TradeTermsSchema.extend({
+  // 允许改客户：报价单挂错客户要能纠正。
+  // 后端契约：客户必须存在、未删除、且属于本团队（否则 404 CUSTOMER_NOT_FOUND）；
+  // 改客户时应同时回填 customer_name 快照（单据显示的是开单当时的客户名）。
+  customer_id: z.string().nullable().optional(),
   customer_name: z.string().nullable().optional(),
   currency: z.string().optional(),
   valid_until: z.string().nullable().optional(),

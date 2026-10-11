@@ -6,7 +6,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 from sqlalchemy import (
     Column, BigInteger, Integer, Text, Numeric, DateTime, Date, Index, func,
-    text,
+    ForeignKey, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from app.db.base import Base
@@ -19,7 +19,11 @@ class QuoteOrder(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     tenant_id = Column(Text, nullable=False)
     quote_no = Column(Text, nullable=False, unique=True)
-    customer_id = Column(Text, nullable=True)
+    # 业务客户外键（迁移 202610110009 由 TEXT 改成 BIGINT + 外键）：
+    # 以前是自由文本、无约束，导致客户详情页聚合不出该客户的报价单。
+    # ON DELETE SET NULL：客户行被硬删时报价单**保留**（历史凭证不能跟着消失），
+    # 只是不再挂客户。customer_name 快照仍保留"开单当时的客户名"，改客户名不影响它。
+    customer_id = Column(BigInteger, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
     customer_name = Column(Text, nullable=True)
     # 询盘来源（迁移 202609270002 加正列）：一个询盘可以有多次报价（改价重报），
     # 因此是"询盘 1 : N 报价单"。可空 —— 历史报价单没有询盘来源属正常。
@@ -55,6 +59,8 @@ class QuoteOrder(Base):
     # 迁移 202609260002 补建；API 的 scope_filter() 依赖这两列。
     owner_id = Column(Text, nullable=True)
     owner_scope = Column(Text, nullable=False, default="private", server_default="private")
+    # 三层组织：本行归属的团队（写入时取创建者的团队；NULL = 未分组，保持原有可见性）
+    team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
@@ -124,7 +130,9 @@ class Order(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     tenant_id = Column(Text, nullable=False)
     order_no = Column(Text, nullable=False, unique=True)
-    customer_id = Column(Text, nullable=True)
+    # 业务客户外键（迁移 202610110009 由 TEXT 改成 BIGINT + 外键），语义同 QuoteOrder
+    customer_id = Column(BigInteger, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
+    quote_id = Column(BigInteger, ForeignKey("quote_orders.id", ondelete="SET NULL"), nullable=True)
     customer_name = Column(Text, nullable=True)
     status = Column(Text, nullable=False, default="pending")
     currency = Column(Text, nullable=False, default="USD")
@@ -153,6 +161,8 @@ class Order(Base):
     # 数据可见范围（§10.3）：与报价单同因，由迁移 202609260002 补建
     owner_id = Column(Text, nullable=True)
     owner_scope = Column(Text, nullable=False, default="private", server_default="private")
+    # 三层组织：本行归属的团队（写入时取创建者的团队；NULL = 未分组，保持原有可见性）
+    team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
@@ -194,7 +204,12 @@ class OrderItem(Base):
 
 
 class OrderQuoteRef(Base):
-    """关联表：销售订单 ↔ 报价单（转化来源）"""
+    """【已退场·勿用】销售订单 ↔ 报价单（转化来源）。
+
+    物理表已随迁移 `202610110014` 改名 `order_quote_refs_legacy`（只留档）。
+    归属改由**列** `orders.quote_id` 表达，关系由触发器 `trg_orders_links`
+    自动派生进 `entity_links` —— 这里保留 ORM 类只为历史迁移留证。
+    """
     __tablename__ = "order_quote_refs"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
@@ -242,13 +257,19 @@ class TradeDoc(Base):
     doc_no = Column(Text, nullable=False, unique=True)
     doc_type = Column(Text, nullable=False)
     order_id = Column(BigInteger, nullable=True)
-    customer_id = Column(Text, nullable=True)
+    # 业务客户外键（迁移 202610110009 由 TEXT 改成 BIGINT + 外键），语义同 QuoteOrder。
+    # 注意：单证表**没有** customer_name 列 —— 买方名字冻结在
+    # raw_payload.sources.{order|quote}.customer_name 快照里（开单当时的名字）。
+    customer_id = Column(BigInteger, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
+    quote_id = Column(BigInteger, ForeignKey("quote_orders.id", ondelete="SET NULL"), nullable=True)
     status = Column(Text, nullable=False, default="draft")
     currency = Column(Text, nullable=False, default="USD")
     total_amount = Column(Numeric, nullable=True)
     issued_at = Column(DateTime(timezone=True), nullable=True)
     issued_by = Column(Text, nullable=True)
     raw_payload = Column(JSONB, nullable=True)
+    # 三层组织：本行归属的团队（写入时取创建者的团队；NULL = 未分组，保持原有可见性）
+    team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
@@ -287,7 +308,12 @@ class TradeDocItem(Base):
 
 
 class TradeDocOrderRef(Base):
-    """关联表：票据 ↔ 销售订单（票据来源）"""
+    """【已退场·勿用】票据 ↔ 销售订单（票据来源）。
+
+    物理表已随迁移 `202610110014` 改名 `trade_doc_order_refs_legacy`（只留档）。
+    归属改由**列** `trade_docs.order_id` 表达，关系由触发器 `trg_trade_docs_links`
+    自动派生进 `entity_links`。
+    """
     __tablename__ = "trade_doc_order_refs"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)

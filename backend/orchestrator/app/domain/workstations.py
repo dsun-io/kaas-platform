@@ -16,10 +16,13 @@ from typing import Optional
 
 NAV_GROUPS = [
     {"key": "overview", "label": "", "order": 0, "internal_only": False},
-    {"key": "business", "label": "业务", "order": 10, "internal_only": False},
-    {"key": "intel", "label": "情报", "order": 20, "internal_only": True},
-    {"key": "data", "label": "数据", "order": 30, "internal_only": False},
-    {"key": "customer", "label": "客户", "order": 90, "internal_only": False},
+    {"key": "leadgen", "label": "获客", "order": 10, "internal_only": False},
+    {"key": "intel", "label": "情报", "order": 12, "internal_only": True},
+    {"key": "data", "label": "数据", "order": 70, "internal_only": False},
+    {"key": "account", "label": "账号", "order": 80, "internal_only": False},
+    {"key": "audit", "label": "审计", "order": 85, "internal_only": True},
+    {"key": "customer", "label": "客户", "order": 20, "internal_only": False},
+    {"key": "business", "label": "业务", "order": 30, "internal_only": False},
     {"key": "admin", "label": "管理", "order": 99, "internal_only": True},
 ]
 
@@ -37,43 +40,43 @@ WORKSTATIONS = [
     # 业务主链（按业务推进排序）
     {
         "key": "research", "name": "市场调研", "route": "/research",
-        "group": "business", "order": 10,
+        "group": "leadgen", "order": 10,
         "admin_only": True, "status": "active", "subscription": None,
     },
     {
         "key": "leadgen", "name": "地图源客户信息获取", "route": "/leadgen",
-        "group": "business", "order": 20,
+        "group": "leadgen", "order": 20,
         "admin_only": True, "status": "active", "subscription": "leadgen_starter",
     },
     {
         "key": "outreach", "name": "客户触达", "route": "/outreach",
-        "group": "business", "order": 30,
+        "group": "leadgen", "order": 30,
         "admin_only": False, "status": "active", "subscription": "outreach_starter",
     },
     {
         "key": "quotes", "name": "报价", "route": "/quotes",
-        "group": "business", "order": 40,
+        "group": "business", "order": 10,
         # 2026-09-28 已解禁：export-quote / quotes / quote-profiles 接口族已落到 Worker。
         "admin_only": False, "status": "active", "subscription": None,
     },
     {
         "key": "quote-records", "name": "报价记录", "route": "/quotations",
-        "group": "business", "order": 45,
+        "group": "business", "order": 20,
         "admin_only": False, "status": "hidden", "subscription": None,
     },
     {
         "key": "trade-docs", "name": "单证", "route": "/trade-docs",
-        "group": "business", "order": 50,
+        "group": "business", "order": 40,
         "admin_only": False, "status": "active", "subscription": None,
     },
     {
         "key": "orders", "name": "订单", "route": "/orders",
-        "group": "business", "order": 60,
+        "group": "business", "order": 30,
         "admin_only": False, "status": "active", "subscription": None,
     },
     {
         "key": "shipments", "name": "出货", "route": "/shipments",
-        "group": "business", "order": 70,
+        "group": "business", "order": 50,
         # 上线门禁（2026-09-28）：/api/v1/shipments 只在开发后端存在。
         "admin_only": False, "status": "planned", "subscription": None,
     },
@@ -112,6 +115,13 @@ WORKSTATIONS = [
         "admin_only": True, "status": "active", "subscription": None,
     },
     # 不上侧边栏
+    {
+        # 团队与工位：入口在右上角头像菜单。**不属于计费工位 → 永远可达**，
+        # 这也是"某个工位未开通"时的自救入口（若它自己被锁，用户就没法去开通了）。
+        "key": "team", "name": "团队与工位", "route": "/team",
+        "group": "account", "order": 5,
+        "admin_only": False, "status": "hidden", "subscription": None,
+    },
     {
         "key": "billing", "name": "升级订阅", "route": "/billing",
         "group": "account", "order": 10,

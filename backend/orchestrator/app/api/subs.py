@@ -31,6 +31,10 @@ WORKSTATION_CODES = {
     # 两个运行时用同一张 tenant_subscriptions 表，写错编码会出现
     # 「线上能用、本地 404」的怪病。
     "research": ("intel_research_starter", "intel_full", "full_chain"),
+    # 报价工位：目前只有全工位包 full_chain（docs/WORKSTATION_DESIGN.md §5.4.1
+    # 没有单列的 quote 编码）。同样必须与 Worker ws_products.py 的
+    # QUOTE_SUB_CODES 逐字一致。
+    "quote": ("full_chain",),
 }
 
 
@@ -64,3 +68,4 @@ async def require_subscription(
 require_leadgen = partial(require_subscription, workstation="leadgen")
 require_outreach = partial(require_subscription, workstation="outreach")
 require_research = partial(require_subscription, workstation="research")
+require_quote = partial(require_subscription, workstation="quote")

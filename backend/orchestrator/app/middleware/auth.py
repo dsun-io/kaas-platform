@@ -4,12 +4,24 @@ Kaas v2 · AUTH-WX-R1: JWT 鉴权中间件
 从 Authorization: Bearer <token> 验证 JWT，注入 AuthContext 到 request.state。
 
 公共路径豁免列表与 TenantContextMiddleware 一致。
+
+2026-10-11 拆分「团队 / 用户(账号) / 业务客户」
+----------------------------------------------
+本中间件**不再要求 customer 账号有 `user_customers` 绑定**。
+原先的判定是"账号必须绑定一个 customer，否则 403"，而那个绑定指向的是
+**公司身份行**（`customers.code='lianjia'`）—— 该行已被迁移 202610110008 删除。
+若保留旧判定，绑定一删、`customer_id` 变 NULL，**所有 customer 账号都会被锁在门外**。
+现在：
+- 团队归属看 `users.team_id`（真源），据此取 `team_name`；
+- 业务客户绑定只用于填 `customer_id/customer_code/customer_name`（有就填、没有就 None）；
+- `tenant_id` 固定 `"default"`（业务不以租户鉴权）。
+取值逻辑与 `app.core.auth.get_auth_context` 共用 `load_team_and_console`，避免两处漂移。
 """
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from app.core.auth import decode_access_token, AuthContext
-from app.db.models import User, UserCustomer, Customer
+from app.core.auth import DEFAULT_TENANT, decode_access_token, load_team_and_console, AuthContext
+from app.db.models import User
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,7 +44,7 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
     """JWT 鉴权中间件。
 
     从 Authorization header 提取 Bearer token，
-    验证 JWT，查询用户和 customer 绑定，
+    验证 JWT，查询用户、团队与业务客户绑定，
     注入 request.state.auth (AuthContext)。
 
     公共路径（/health, /auth/login, /auth/register 等）跳过鉴权。
@@ -73,7 +85,7 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
         user_id = int(payload["sub"])
         account_type = payload.get("account_type", "customer")
 
-        # 查询用户和 customer 绑定
+        # 查询用户、团队与业务客户绑定
         from app.db.session import async_session_factory
 
         async with async_session_factory() as db:
@@ -91,50 +103,13 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
                         },
                     )
 
-                customer_id = None
-                customer_code = None
-                customer_name = None
-                tenant_id = None
+                # 团队名 / 业务客户绑定 / 官网数据后台权限 —— 只取值，不做鉴权否决
+                extra = await load_team_and_console(db, user)
 
-                if account_type == "customer":
-                    uc_stmt = select(UserCustomer).where(UserCustomer.user_id == user_id)
-                    uc_result = await db.execute(uc_stmt)
-                    uc = uc_result.scalar_one_or_none()
-                    if uc is None:
-                        return JSONResponse(
-                            status_code=403,
-                            content={
-                                "error": "forbidden",
-                                "message": "Customer account must be bound to a customer",
-                            },
-                        )
-                    customer_id = uc.customer_id
-
-                if customer_id:
-                    c_stmt = select(Customer).where(Customer.id == customer_id)
-                    c_result = await db.execute(c_stmt)
-                    customer = c_result.scalar_one_or_none()
-                    if customer:
-                        customer_code = customer.code
-                        customer_name = customer.name
-                        tenant_id = customer.tenant_id
-
-                # customer/free 用户：拒绝携带不匹配的 X-Tenant-Id
-                # 注意：AuthContextMiddleware 在 TenantContextMiddleware 之前执行，
-                # 因此直接从 header 读取 X-Tenant-Id（而非 request.state.tenant_id）
-                header_tenant = request.headers.get("X-Tenant-Id")
-                if account_type in ("customer", "free") and tenant_id:
-                    if header_tenant and header_tenant != tenant_id:
-                        return JSONResponse(
-                            status_code=403,
-                            content={
-                                "error": "forbidden",
-                                "message": "X-Tenant-Id does not match your authorized tenant",
-                            },
-                        )
-                    # 将 DB 查出的真实 tenant_id 注入 request.state，
-                    # 后续 TenantContextMiddleware 检测到已设置则跳过 header 覆盖
-                    request.state.tenant_id = tenant_id
+                # 租户固定 default（业务不以租户做鉴权边界，与 Worker 同口径）。
+                # 同时注入 request.state.tenant_id：下游 TenantContextMiddleware
+                # 见到它就不再要求 X-Tenant-Id header。
+                request.state.tenant_id = DEFAULT_TENANT
 
                 # 注入 auth context
                 request.state.auth = AuthContext(
@@ -142,10 +117,11 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
                     account_type=account_type,
                     role=getattr(user, "role", "user"),
                     plan=getattr(user, "plan", "free"),
-                    customer_id=customer_id,
-                    customer_code=customer_code,
-                    customer_name=customer_name,
-                    tenant_id=tenant_id,
+                    tenant_id=DEFAULT_TENANT,
+                    team_id=getattr(user, "team_id", None),
+                    team_name=extra["team_name"],
+                    console_access=extra["console_access"],
+                    **extra["binding"],
                 )
 
                 response = await call_next(request)

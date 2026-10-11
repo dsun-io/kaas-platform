@@ -25,6 +25,7 @@ from app.db.session import get_db_session
 from app.db.workstation_models import TenantCompanyProfile
 from app.core.auth import AuthContext, get_auth_context
 from app.api.ws_common import tenant_id_of
+from kaas_common.trade_doc.payload_shared import seller_block as _seller_block_shared
 
 router = APIRouter(prefix="/api/v1", tags=["company-profile"])
 
@@ -79,22 +80,12 @@ async def _load(db: AsyncSession, tenant_id: str) -> Optional[TenantCompanyProfi
 def seller_block(profile: Optional[TenantCompanyProfile]) -> dict:
     """把企业主体信息转成单证渲染器认识的卖方区块。
 
-    渲染器对卖方区块的字段名是固定的（company/address/phone/email/bank/account/swift），
-    这里做一次显式映射，避免渲染层与数据库列名耦合。
+    真源已上收到共享内核 `kaas_common/trade_doc/payload_shared.py`（2026-10-10）：
+    Worker 的单证装配（`backend/worker/src/doc_payload.py`）必须用**同一份**映射，
+    否则改了字段名只有一端生效（「本地抬头对了、线上还是旧字段」）。
+    这里保留同名函数只是为了让既有 import（trade_docs.py）不动。
     """
-    if profile is None:
-        return {}
-    return {
-        k: v for k, v in {
-            "company": profile.name_en,
-            "address": profile.address_en,
-            "phone": profile.phone,
-            "email": profile.email,
-            "bank": profile.bank_name,
-            "account": profile.bank_account,
-            "swift": profile.swift_code,
-        }.items() if v
-    }
+    return _seller_block_shared(profile)
 
 
 @router.get("/tenant/company-profile")

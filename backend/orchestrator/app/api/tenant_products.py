@@ -9,7 +9,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
@@ -73,9 +73,15 @@ async def list_tenant_products(
     db: AsyncSession = Depends(get_db_session),
     auth: AuthContext = Depends(get_auth_context),
 ) -> list[TenantProductOut]:
-    q = select(TenantProduct).order_by(desc(TenantProduct.created_at))
-    if tenant_id:
-        q = q.where(TenantProduct.tenant_id == tenant_id)
+    """产品列表：本租户的产品 + 系统级产品（所有租户可见）。
+
+    `tenant_id` 显式传入时以它为准（平台侧排查用），否则只回本租户 ——
+    避免跨租户读到别家产品定义。口径与 Worker ws_products.py 一致。
+    """
+    tid = tenant_id or auth.tenant_id or "default"
+    q = select(TenantProduct).where(
+        or_(TenantProduct.tenant_id == tid, TenantProduct.is_system.is_(True))
+    ).order_by(desc(TenantProduct.created_at))
     if is_active is not None:
         q = q.where(TenantProduct.is_active == is_active)
     rows = (await db.execute(q.limit(limit))).scalars().all()
@@ -129,6 +135,9 @@ async def update_tenant_product(
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "PRODUCT_NOT_FOUND"})
     if row.is_system:
         raise HTTPException(status_code=403, detail={"error": "forbidden", "message": "系统级产品仅平台管理员可编辑"})
+    if row.tenant_id != (auth.tenant_id or "default"):
+        # 别家的产品一律 404（不泄露存在性），与 Worker ws_products.py 同口径
+        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "PRODUCT_NOT_FOUND"})
     try:
         spec_from_dict(body.spec)
     except Exception as exc:
@@ -153,6 +162,8 @@ async def delete_tenant_product(
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "PRODUCT_NOT_FOUND"})
     if row.is_system:
         raise HTTPException(status_code=403, detail={"error": "forbidden", "message": "系统级产品不可删除"})
+    if row.tenant_id != (auth.tenant_id or "default"):
+        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "PRODUCT_NOT_FOUND"})
     await db.delete(row)
     await db.commit()
     return None

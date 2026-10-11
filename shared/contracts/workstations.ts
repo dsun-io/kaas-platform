@@ -63,10 +63,13 @@ export type Workstation = z.infer<typeof WorkstationSchema>;
 // ─────────────────────────────────────────────────────────────────────────────
 export const NAV_GROUPS: readonly NavGroup[] = [
   { key: 'overview', label: '', order: 0, internalOnly: false },
-  { key: 'business', label: '业务', order: 10, internalOnly: false },
-  { key: 'intel', label: '情报', order: 20, internalOnly: true },
-  { key: 'data', label: '数据', order: 30, internalOnly: false },
-  { key: 'customer', label: '客户', order: 90, internalOnly: false },
+  { key: 'leadgen', label: '获客', order: 10, internalOnly: false },
+  { key: 'intel', label: '情报', order: 12, internalOnly: true },
+  { key: 'data', label: '数据', order: 70, internalOnly: false },
+  { key: 'account', label: '账号', order: 80, internalOnly: false },
+  { key: 'audit', label: '审计', order: 85, internalOnly: true },
+  { key: 'customer', label: '客户', order: 20, internalOnly: false },
+  { key: 'business', label: '业务', order: 30, internalOnly: false },
   { key: 'admin', label: '管理', order: 99, internalOnly: true },
 ] as const;
 
@@ -116,7 +119,7 @@ export const WORKSTATIONS: readonly Workstation[] = [
     key: 'research',
     name: '市场调研',
     route: '/research',
-    group: 'business',
+    group: 'leadgen',
     order: 10,
     icon: 'PackageSearch',
     adminOnly: true,
@@ -127,7 +130,7 @@ export const WORKSTATIONS: readonly Workstation[] = [
     key: 'leadgen',
     name: '地图源客户信息获取',
     route: '/leadgen',
-    group: 'business',
+    group: 'leadgen',
     order: 20,
     icon: 'Target',
     adminOnly: true,
@@ -139,7 +142,7 @@ export const WORKSTATIONS: readonly Workstation[] = [
     key: 'outreach',
     name: '客户触达',
     route: '/outreach',
-    group: 'business',
+    group: 'leadgen',
     order: 30,
     icon: 'Send',
     adminOnly: false,
@@ -154,7 +157,7 @@ export const WORKSTATIONS: readonly Workstation[] = [
     name: '报价',
     route: '/quotes',
     group: 'business',
-    order: 40,
+    order: 10,
     icon: 'Zap',
     adminOnly: false,
     // 2026-09-28 已解禁：/api/v1/export-quote/*、/api/v1/quotes、
@@ -169,7 +172,7 @@ export const WORKSTATIONS: readonly Workstation[] = [
     name: '报价记录',
     route: '/quotations',
     group: 'business',
-    order: 45,
+    order: 20,
     icon: 'History',
     adminOnly: false,
     status: 'hidden',
@@ -180,7 +183,7 @@ export const WORKSTATIONS: readonly Workstation[] = [
     name: '单证',
     route: '/trade-docs',
     group: 'business',
-    order: 50,
+    order: 40,
     icon: 'FileText',
     adminOnly: false,
     status: 'active', // 已上线：开单 → 校对 → 签发 → 打印/导出（18 类英文单据）
@@ -191,7 +194,7 @@ export const WORKSTATIONS: readonly Workstation[] = [
     name: '订单',
     route: '/orders',
     group: 'business',
-    order: 60,
+    order: 30,
     icon: 'ClipboardList',
     adminOnly: false,
     status: 'active', // 已上线：报价转订单 + 贸易条款维护
@@ -202,7 +205,7 @@ export const WORKSTATIONS: readonly Workstation[] = [
     name: '出货',
     route: '/shipments',
     group: 'business',
-    order: 70,
+    order: 50,
     icon: 'Truck',
     adminOnly: false,
     // ⚠️ 上线门禁（2026-09-28）：/api/v1/shipments（订舱/船期/提单 4 个接口）
@@ -301,6 +304,19 @@ export const WORKSTATIONS: readonly Workstation[] = [
   },
 
   // ── 不上侧边栏（页面保留 / 待定去留 / 已摘除） ──
+  {
+    // 团队与工位：入口在右上角头像菜单。**不属于计费工位 → 永远可达**，
+    // 是"某工位未开通"时的自救入口（若它自己被锁，用户就没法去开通了）。
+    key: 'team',
+    name: '团队与工位',
+    route: '/team',
+    group: 'account',
+    order: 5,
+    icon: 'Users',
+    adminOnly: false,
+    status: 'hidden',
+    subscription: null,
+  },
   {
     key: 'billing',
     name: '升级订阅',

@@ -26,6 +26,7 @@ from app.middleware.auth import AuthContextMiddleware
 from app.middleware.route_version import RouteVersionMiddleware
 from app.middleware.trace import TraceMiddleware
 from app.middleware.sampling import SamplingMiddleware
+from app.middleware.workstation import WorkstationSubscriptionMiddleware
 
 
 app = FastAPI(
@@ -56,6 +57,11 @@ app.add_middleware(AuthContextMiddleware)
 app.add_middleware(SamplingMiddleware)
 app.add_middleware(TraceMiddleware)
 app.add_middleware(RouteVersionMiddleware)
+# 工位订阅拦截（2026-10-11 授权模型：边界是"团队/个人开通了哪些工位"，不是租户）。
+# 放在**最后一个 add** = 最外层：未开通的工位要在任何业务逻辑（含鉴权、租户校验）之前
+# 就返回 404，否则"这个工位存在、只是你没买"会从别的错误码里泄露出去。
+# 它自己会放行无 token 的请求与 is_always_allowed 的路径，因此不会干扰既有中间件语义。
+app.add_middleware(WorkstationSubscriptionMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -117,6 +123,11 @@ from app.api.actual_costs import router as actual_costs_router
 from app.api.external_docs import router as external_docs_router
 from app.api.tenant_products import router as tenant_products_router
 from app.api.workstation_products import router as workstation_products_router
+from app.api.teams import router as teams_router
+# 工位开通/撤销 + 「我的工位」（前端据此隐藏入口 / 显示开通引导页）。
+# 判定真源 = kaas_common/workstation/subscriptions.py，本路由只做 HTTP 适配。
+from app.api.workstations import router as workstations_router
+from app.api.customer_records import router as customer_records_router
 
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -160,4 +171,7 @@ app.include_router(actual_costs_router)
 app.include_router(external_docs_router)
 app.include_router(tenant_products_router)
 app.include_router(workstation_products_router)
+app.include_router(teams_router)
+app.include_router(workstations_router)
+app.include_router(customer_records_router)
 

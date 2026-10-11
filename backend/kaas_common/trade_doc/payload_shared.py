@@ -7,7 +7,7 @@ from typing import Any, Optional
 
 __all__ = [
     "DOC_NO_FIELDS", "TRADE_TERM_FIELDS", "item_from_source",
-    "buyer_block", "trade_terms_of", "build_render_data",
+    "buyer_block", "seller_block", "clean", "trade_terms_of", "build_render_data",
 ]
 
 DOC_NO_FIELDS = {
@@ -106,6 +106,42 @@ def buyer_block(customer, contact=None):
         if cpos:
             out["contact_position"] = cpos
     return out
+
+
+def seller_block(profile):
+    """企业主体信息 → 单证渲染器认识的卖方区块。
+
+    渲染器对卖方区块的字段名是固定的（company/address/phone/email/bank/account/swift），
+    这里做一次**显式映射**，避免渲染层与数据库列名耦合。
+
+    真源原先只在 orchestrator 的 `app/api/company_profile.py`（操作 ORM 对象）；
+    Worker 的单证装配也要同一份映射，故上收到共享内核并兼容 dict 行
+    （Worker 的 db 封装返回 dict）。两处各写一份必然漂移：改了字段名只有一端生效。
+    """
+    if profile is None:
+        return {}
+
+    def get(field):
+        if isinstance(profile, dict):
+            return profile.get(field)
+        return getattr(profile, field, None)
+
+    out = {}
+    for key, field in (
+        ("company", "name_en"), ("address", "address_en"),
+        ("phone", "phone"), ("email", "email"),
+        ("bank", "bank_name"), ("account", "bank_account"),
+        ("swift", "swift_code"),
+    ):
+        value = _clean(get(field))
+        if value is not None:
+            out[key] = value
+    return out
+
+
+def clean(value):
+    """空串/纯空白视为 None（写入快照前统一过滤，避免前端拿到空字符串）。"""
+    return _clean(value)
 
 
 def trade_terms_of(source):

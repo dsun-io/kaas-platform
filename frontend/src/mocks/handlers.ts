@@ -176,6 +176,110 @@ export const handlers = [
     return HttpResponse.json(customer);
   }),
 
+  // ── 客户往来记录（docs/CUSTOMER_DOCUMENTS_VIEW.md §3）─────────────
+  // 后端该接口尚未实现，这里按设计文档的响应形状先给一份 mock，
+  // 让「客户详情 → 往来记录树」在 mock 模式下能被看到与校对。
+  // 真实模式下这条 handler 不生效，请求打到后端；读不到时由
+  // useCustomerRecords 降级成"暂无往来记录 / 加载失败"。
+  // 注意：mock 里客户 id 是字符串（见 MOCK_CUSTOMERS），因此对任意 id 都返回同一棵树。
+  http.get("/api/v1/customers/:id/records", ({ params }) => {
+    const customerId = String(params.id ?? "");
+    const customerName =
+      MOCK_CUSTOMERS.find((c) => c.customer_id === customerId)?.customer_name ??
+      customerId;
+    return HttpResponse.json({
+      customer: { id: customerId, name: customerName, team_id: 1 },
+      counts: { quotes: 2, orders: 2, documents: 6 },
+      quotes: [
+        {
+          id: 4,
+          quote_no: "QUO-202609-0004",
+          status: "accepted",
+          currency: "USD",
+          total_amount: 12300,
+          created_at: "2026-09-27T14:56:42Z",
+          documents: [
+            {
+              id: 12,
+              doc_no: "QUO-202609-0004",
+              doc_type: "quotation",
+              status: "issued",
+            },
+          ],
+          orders: [
+            {
+              id: 1,
+              order_no: "ORD-202609-0001",
+              status: "confirmed",
+              currency: "USD",
+              total_amount: 12300,
+              created_at: "2026-09-28T09:10:00Z",
+              documents: [
+                {
+                  id: 3,
+                  doc_no: "PI-202609-0002",
+                  doc_type: "pi",
+                  status: "draft",
+                },
+                {
+                  id: 2,
+                  doc_no: "CI-202609-0001",
+                  doc_type: "ci",
+                  status: "issued",
+                },
+              ],
+            },
+          ],
+        },
+        {
+          id: 3,
+          quote_no: "QUO-202609-0003",
+          status: "draft",
+          currency: "USD",
+          total_amount: 8000,
+          created_at: "2026-09-26T10:00:00Z",
+          documents: [
+            {
+              id: 11,
+              doc_no: "QUO-202609-0003",
+              doc_type: "quotation",
+              status: "draft",
+            },
+          ],
+          orders: [],
+        },
+      ],
+      direct: {
+        orders: [
+          {
+            id: 9,
+            order_no: "ORD-202609-0009",
+            status: "shipped",
+            currency: "USD",
+            total_amount: 5400,
+            created_at: "2026-09-20T08:00:00Z",
+            documents: [
+              {
+                id: 21,
+                doc_no: "BL-202609-0004",
+                doc_type: "bl",
+                status: "issued",
+              },
+            ],
+          },
+        ],
+        documents: [
+          {
+            id: 22,
+            doc_no: "PL-202609-0003",
+            doc_type: "pl",
+            status: "draft",
+          },
+        ],
+      },
+    });
+  }),
+
   http.get("/api/v1/customer/:id/capabilities", ({ params }) => {
     const customerId = params.id as string;
     if (customerId === "unknown") {

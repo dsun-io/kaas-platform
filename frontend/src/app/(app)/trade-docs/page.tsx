@@ -24,9 +24,12 @@ import {
   Printer,
   RefreshCw,
   ShieldCheck,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { ImportExistingDataDialog } from "@/components/import-existing-data-dialog";
+import { DocTypeLabel, docTypeMeta } from "@/components/doc-chip";
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -39,6 +42,7 @@ import { exportCsv, exportExcel, printMerged } from "@/lib/trade-doc/export";
 import { DocCreateForm } from "./components/doc-create-form";
 import { DocPreview } from "./components/doc-preview";
 import { SamplePreview } from "./components/sample-preview";
+import { DOC_TYPE_GROUPS } from "./lib/doc-type-groups";
 import {
   useRefreshSources,
   useTradeDocRenderData,
@@ -62,6 +66,16 @@ const STATUS_LABEL: Record<string, string> = {
   void: "已作废",
 };
 
+/**
+ * 类型筛选项 —— 顺序取自 `DOC_TYPE_GROUPS`（报价单排在第一位：它是业务链的第一张单据），
+ * 中文名与图标取自 `components/doc-chip.tsx` 的元数据表。
+ * 类型筛选、台账标签、客户往来记录树三处**必须**用同一份元数据，否则又会出现
+ * "树里叫报价单、台账里叫 quotation"这种同一事物两个名字的问题。
+ */
+const DOC_TYPE_FILTER_OPTIONS = DOC_TYPE_GROUPS.flatMap((group) =>
+  group.types.map((type) => ({ value: type, label: docTypeMeta(type).label })),
+);
+
 function money(amount: number | null, currency: string) {
   if (amount === null || amount === undefined) return "—";
   return `${currency} ${amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
@@ -71,10 +85,13 @@ export default function TradeDocsPage() {
   usePageView({ resource_id: "/trade-docs" });
 
   const [statusFilter, setStatusFilter] = useState("");
+  const [docTypeFilter, setDocTypeFilter] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [checked, setChecked] = useState<Set<number>>(new Set());
+  const [showImport, setShowImport] = useState(false);
 
   const list = useTradeDocs({
+    doc_type: docTypeFilter || undefined,
     status: statusFilter || undefined,
     page_size: 100,
   });
@@ -88,7 +105,12 @@ export default function TradeDocsPage() {
   const exportColumns = useMemo(
     () => [
       { header: "单证编号", value: (r: TradeDocRow) => r.doc_no, width: 22 },
-      { header: "单证类型", value: (r: TradeDocRow) => r.doc_type, width: 20 },
+      {
+        header: "单证类型",
+        // 导出用中文名，与页面上看到的一致（报价单 / 形式发票 / …）
+        value: (r: TradeDocRow) => docTypeMeta(r.doc_type).label,
+        width: 20,
+      },
       {
         header: "状态",
         value: (r: TradeDocRow) => STATUS_LABEL[r.status] ?? r.status,
@@ -172,6 +194,19 @@ export default function TradeDocsPage() {
       <PageHeader
         title="单证"
         description="外贸出口全套单据：开单 → 校对 → 签发 → 打印/导出。单据自动继承上游订单的货物与贸易条款。"
+        actions={
+          <Button variant="outline" onClick={() => setShowImport(true)}>
+            <Upload className="mr-1 h-4 w-4" />
+            导入已有数据
+          </Button>
+        }
+      />
+
+      <ImportExistingDataDialog
+        open={showImport}
+        onOpenChange={setShowImport}
+        resourceLabel="单证"
+        columnsHint="单证编号、单证类型（pi/ci/pl/bl…）、客户、币种、金额、签发日期、关联订单号（可留空）"
       />
 
       <SectionCard
@@ -191,6 +226,19 @@ export default function TradeDocsPage() {
         title="单证台账"
         action={
           <div className="flex flex-wrap gap-2">
+            <select
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              value={docTypeFilter}
+              onChange={(e) => setDocTypeFilter(e.target.value)}
+              aria-label="按单证类型筛选"
+            >
+              <option value="">全部类型</option>
+              {DOC_TYPE_FILTER_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
             <select
               className="h-9 rounded-md border border-input bg-background px-2 text-sm"
               value={statusFilter}
@@ -291,7 +339,9 @@ export default function TradeDocsPage() {
                       />
                     </td>
                     <td className="p-2 font-medium">{row.doc_no}</td>
-                    <td className="p-2">{row.doc_type}</td>
+                    <td className="p-2">
+                      <DocTypeLabel docType={row.doc_type} />
+                    </td>
                     <td className="p-2">
                       <StatusBadge tone={STATUS_TONE[row.status] ?? "default"}>
                         {STATUS_LABEL[row.status] ?? row.status}

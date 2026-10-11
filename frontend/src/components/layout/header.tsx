@@ -21,7 +21,9 @@ import {
 import { usePathname } from "next/navigation";
 import { useMemo } from "react";
 import { useAuth } from "@/lib/auth/auth-context";
-import { LogOut, User, CreditCard } from "lucide-react";
+import { useTeam } from "@/lib/team/team-context";
+import { Skeleton } from "@/components/ui/skeleton";
+import { LogOut, User, CreditCard, Users } from "lucide-react";
 import { StatusBadge } from "@/components/shared";
 import {
   NAV_GROUPS,
@@ -71,6 +73,9 @@ export function Header() {
   const pathname = usePathname();
   const crumbs = useBreadcrumbs(pathname);
   const { user, logout } = useAuth();
+  // 团队名 / 团队管理入口：三层组织（管理员 · 团队 · 成员）里"我在哪个团队"是
+  // 用户判断"我能看到哪些数据"的第一线索，必须一眼可见（docs §C）
+  const { teamName, snapshot } = useTeam();
 
   const initials =
     user?.display_name?.slice(0, 2) ??
@@ -133,9 +138,26 @@ export function Header() {
                   {user.display_name || user.email}
                 </p>
                 <p className="text-xs text-muted-foreground">{user.email}</p>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Users className="size-3 shrink-0" />
+                  {snapshot.loading ? (
+                    <Skeleton className="h-3 w-24" />
+                  ) : teamName ? (
+                    <span className="truncate">{teamName}</span>
+                  ) : (
+                    <span>未加入团队</span>
+                  )}
+                </div>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onClick={() => (window.location.href = "/team")}
+            >
+              <Users className="mr-2 size-4" />
+              团队与工位
+            </DropdownMenuItem>
             <div className="px-2 py-1.5">
               <StatusBadge
                 tone={user.account_type === "internal" ? "purple" : "default"}

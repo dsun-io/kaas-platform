@@ -47,6 +47,7 @@ from main import (  # noqa: E402
     _can_see_all,
     _check_write_access,
     _compute_spec_hash,
+    _doc_customer,
     _get_current_user,
     _lock_fx_rate,
     _next_doc_no,
@@ -211,17 +212,22 @@ def _require_internal_admin(user: dict) -> None:
 
 
 def _scope_sql(user: dict, params: list, table_alias: str = "") -> str:
-    """§10.3 可见范围 → SQL 片段（参数追加进 params，返回以 " AND " 开头的片段）。
+    """§10.3 + 三层组织 可见范围 → SQL 片段（参数追加进 params，返回以 " AND " 开头的片段）。
 
     与 main.py 的 `/api/v1/orders` 及 dev 的 `ws_common.scope_filter` 同语义：
-    管理员看全部；其他人只看到「自己名下」+「owner_scope=tenant 的共享数据」。
+    管理员看全部；其他人只看到「自己名下」+「owner_scope=tenant 的共享数据」
+    +「**本团队**的数据」（2026-10-11 新增，规则真源 = kaas_common/workstation/scope.py）。
     """
     if _can_see_all(user):
         return ""
     params.append(str(user["id"]))
     p = f"${len(params)}"
     col = (lambda c: f"{table_alias}.{c}") if table_alias else (lambda c: c)
-    return f" AND ({col('owner_id')} = {p} OR {col('owner_scope')} = 'tenant')"
+    cond = f"({col('owner_id')} = {p} OR {col('owner_scope')} = 'tenant'"
+    if user.get("team_id") is not None:
+        params.append(user["team_id"])
+        cond += f" OR {col('team_id')} = ${len(params)}"
+    return f" AND {cond})"
 
 
 def _identity_match(user: dict, body: Optional[dict], tenant: str, customer: str) -> None:
@@ -1362,7 +1368,10 @@ class _QuoteItemIn(BaseModel):
 
 
 class _QuoteOrderCreate(BaseModel):
-    customer_id: Optional[str] = None
+    # 业务客户外键（BIGINT）：报价是整棵"往来记录"树的根，**必须选已有客户**。
+    # 类型上留 Optional 是为了让缺参走本模块的统一错误体（422 CUSTOMER_REQUIRED），
+    # 而不是 pydantic 的字段级 422 —— 前端要能区分"没选客户"与"值不合法"。
+    customer_id: Optional[int] = None
     customer_name: Optional[str] = None
     inquiry_id: Optional[int] = None  # 询盘来源（一个询盘一张报价单）
     currency: str = "USD"
@@ -1380,6 +1389,9 @@ class _QuoteOrderCreate(BaseModel):
 
 
 class _QuoteOrderPatch(BaseModel):
+    # 改单时也能换客户：历史报价的 customer_id 被清洗成 NULL 后要能人工认领回来
+    # （认领时同样过客户闸门 —— 报价单与它的报价单一起改挂到新客户）
+    customer_id: Optional[int] = None
     customer_name: Optional[str] = None
     currency: Optional[str] = None
     valid_until: Optional[str] = None
@@ -1483,6 +1495,182 @@ async def _items_of(conn, tenant: str, quote_id: int) -> list:
         " ORDER BY sort_order, id",
         tenant, quote_id,
     )
+
+
+# ── 报价单（trade_docs.doc_type='quotation'）：报价的必然产物（1:1）──────────
+# 依据 docs/CUSTOMER_DOCUMENTS_VIEW.md §1.5：「报价一定伴随报价单」，
+# 且它不该由用户"再去单证工位单独建一张"（设计文档 PLAN_CUSTOMER_RECORDS P2-1）。
+
+
+def _json_text(value) -> Optional[str]:
+    """spec_snapshot → JSON 文本（jsonb 参数）。
+
+    为什么不能直接 json.dumps：asyncpg 在 Workers 里把 jsonb 返回成 **str**，
+    库里取出来的行再 dumps 一次就是二次编码（渲染时看到的是一段转义文本）。
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value          # 已是 JSON 文本
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _snapshot_value(value):
+    """jsonb 列 → 对象（库里取出来可能是 JSON 文本；快照里必须是对象）。"""
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except ValueError:
+            return value
+    return value
+
+
+def _date_text(value) -> Optional[str]:
+    """date/datetime → YYYY-MM-DD（单证上印的是日期，不带时间与时区尾巴）。"""
+    text = _iso(value)
+    return text[:10] if text else None
+
+
+async def _insert_doc_items(conn, tenant: str, doc_id: int, items: list,
+                            currency: str) -> None:
+    """把报价行项写成单证行项（报价单的明细）。
+
+    为什么单独抽出来：自动产出报价单时要写、报价行项被整批替换时还要重写 ——
+    两处若各写一份 INSERT，字段口径迟早分叉（`trade_doc_items` 的列与
+    `quote_order_items` 不同名，正是最容易漏的地方）。
+    """
+    for idx, it in enumerate(items or []):
+        await conn.execute(
+            "INSERT INTO trade_doc_items (tenant_id, trade_doc_id, product_name,"
+            " spec_snapshot, qty, qty_unit, unit_price, currency, line_amount,"
+            " sort_order, source)"
+            " VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9,$10,'generated')",
+            tenant, doc_id, it.get("product_name"),
+            _json_text(it.get("spec_snapshot")),
+            it.get("qty") if it.get("qty") is not None else 1,
+            it.get("qty_unit"), it.get("unit_price"),
+            it.get("currency") or currency or "USD",
+            it.get("line_amount"), it.get("sort_order") or idx,
+        )
+
+
+async def _sync_quotation_doc_items(conn, tenant: str, quote_id: int, items: list,
+                                    total, currency: str) -> None:
+    """报价行项 / 合计变化 → 同步到它那张 **draft** 报价单。
+
+    issued 的报价单是法律凭证（确认即冻结），一律不动：要改只能作废重开。
+    """
+    doc = await conn.fetchrow(
+        "SELECT id FROM trade_docs WHERE tenant_id=$1 AND quote_id=$2"
+        " AND doc_type='quotation' AND status='draft' ORDER BY id LIMIT 1",
+        tenant, quote_id,
+    )
+    if doc is None:
+        return
+    await conn.execute(
+        "DELETE FROM trade_doc_items WHERE tenant_id=$1 AND trade_doc_id=$2",
+        tenant, doc["id"])
+    await _insert_doc_items(conn, tenant, doc["id"], items, currency)
+    await conn.execute(
+        "UPDATE trade_docs SET total_amount=$3, updated_at=now()"
+        " WHERE tenant_id=$1 AND id=$2",
+        tenant, doc["id"], total)
+
+
+async def _ensure_quotation_doc(conn, tenant: str, q: dict, items: list,
+                                request: Request) -> None:
+    """保证这张报价有一张对应的报价单（`trade_docs`，`doc_type='quotation'`）。
+
+    为什么必须自动产出：业务事实是"报价一定伴随报价单"，靠人工去单证工位补
+    必然有漏，漏了客户页就会断层（报价下什么都没有，或被误当成"还没报价"）。
+    为什么必须**同一事务**：报价与报价单要么都成功、要么都不存在 ——
+    先提交报价再补单证，中间失败就会留下"查得到报价、查不到它的单"的半截状态。
+    为什么 doc_no 直接用报价号：迁移 010 的历史回填规则就是 `doc_no == quote_no`
+    （同号即同一张单），新数据沿用同一条规则，历史与新数据在客户页长得一样。
+
+    幂等：同一报价只产出一次；顺带**认领**历史回填留下的"同号但未挂报价"的
+    报价单（把 `quote_id` 补上），否则它在客户页里仍会落在 `direct` 分组。
+    `request` 只用于"报价号被别的单证占了号"时另取一个新号（见下）。
+    """
+    if not q.get("id") or not q.get("customer_id"):
+        # 客户是单证的归属依据（约束 ck_docs_has_customer 要求非空）。
+        # 正常路径不可能为空（报价必填客户），这里只是不让异常数据把报价写入炸掉。
+        return
+    existing = await conn.fetchrow(
+        "SELECT id, quote_id FROM trade_docs WHERE tenant_id=$1"
+        " AND doc_type='quotation'"
+        " AND (quote_id=$2 OR (quote_id IS NULL AND doc_no=$3))"
+        " ORDER BY id LIMIT 1",
+        tenant, q["id"], q.get("quote_no"),
+    )
+    if existing is not None:
+        if existing["quote_id"] is None:
+            await conn.execute(
+                "UPDATE trade_docs SET quote_id=$3, updated_at=now()"
+                " WHERE tenant_id=$1 AND id=$2",
+                tenant, existing["id"], q["id"])
+        return
+
+    # 快照字段清单与 doc_payload.quote_snapshot 逐条一致（字段名就是已落库数据的契约）。
+    # 这里用**内存里的行**拼，而不是再查一次库：报价刚在本事务里插入，
+    # 另一条连接读不到未提交的数据（会拿到空快照）。
+    snapshot = {
+        "quote_no": q.get("quote_no"),
+        "customer_id": q.get("customer_id"),
+        "customer_name": q.get("customer_name"),
+        "status": q.get("status"),
+        "currency": q.get("currency"),
+        "total_amount": _f(q.get("total_amount")),
+        "incoterm": q.get("incoterm"),
+        "payment_terms": q.get("payment_terms"),
+        "port_of_loading": q.get("port_of_loading"),
+        "port_of_destination": q.get("port_of_destination"),
+        "shipping_marks": q.get("shipping_marks"),
+        "country_of_origin": q.get("country_of_origin"),
+        "items": [{
+            "product_name": i.get("product_name"), "qty": _f(i.get("qty")),
+            "qty_unit": i.get("qty_unit"), "unit_price": _f(i.get("unit_price")),
+            "line_amount": _f(i.get("line_amount")),
+            "spec_snapshot": _snapshot_value(i.get("spec_snapshot")),
+        } for i in (items or [])],
+    }
+    payload = {
+        "sources": {"quote": snapshot},
+        # 确认报价单前的必填项（共享内核 rules.DOC_REQUIRED['quotation'] 里的
+        # quote_no / quote_date）先存进 custom，用户不必再手填一遍
+        "custom": {"quote_no": q.get("quote_no"),
+                   "quote_date": _date_text(q.get("created_at"))},
+    }
+
+    async def _insert(doc_no):
+        # doc_no 在 trade_docs 上是**全表唯一**（其他单据表是租户内唯一）：
+        # 万一报价号已被别的单证占用，绝不能让"报价建不出来" —— 冲突就返回 None，
+        # 由调用处换个号重试（客户页靠 quote_id 关联，不依赖单号相等）。
+        return await conn.fetchrow(
+            "INSERT INTO trade_docs (tenant_id, doc_no, doc_type, order_id, quote_id,"
+            " customer_id, status, currency, total_amount, raw_payload, team_id)"
+            " VALUES ($1,$2,'quotation',NULL,$3,$4,'draft',$5,$6,$7,$8)"
+            " ON CONFLICT (doc_no) DO NOTHING RETURNING id",
+            tenant, doc_no, q["id"], q.get("customer_id"),
+            q.get("currency") or "USD", q.get("total_amount"),
+            json.dumps(payload, ensure_ascii=False), q.get("team_id"),
+        )
+
+    doc = await _insert(q.get("quote_no"))
+    if doc is None:
+        doc = await _insert(await _next_doc_no(request, "quotation"))
+    if doc is None:
+        # 连新号都撞（理论上不可能）：宁可这张报价暂时没有报价单，
+        # 也不能让整个报价写入失败 —— 用户重试或走单证工位补都能救回来。
+        return
+    # 行项也落一份：单证工作台的"确认"（共享内核 validate_confirm）读的是
+    # `trade_doc_items`，只把行项冻在 raw_payload 里的话"看得见、签不了"，
+    # 报价单会永远停在 draft。
+    await _insert_doc_items(conn, tenant, doc["id"], items,
+                            q.get("currency") or "USD")
+    # 溯源：报价单的 `quote_id` 列在 INSERT 时已落（上面的 `_insert`），
+    # 触发器 `trg_trade_docs_links` 会自动派生 `entity_links` 边 ——
+    # 旧 `trade_doc_quote_refs` 已随迁移 202610110014 改名 `_legacy` 留档，不再写。
 
 
 async def _item_count_map(request: Request, tenant: str, quote_ids: list) -> dict:
@@ -1628,6 +1816,14 @@ async def create_quote_order(request: Request, body: _QuoteOrderCreate,
                              user: dict = Depends(_get_current_user)):
     """新建报价单（可带多行 + 询盘来源；锁汇率快照）。
 
+    **业务客户必填**（报价是客户往来记录树的唯一根入口）：
+    校验存在 / 未软删 / 属本团队 → 否则 404 `CUSTOMER_NOT_FOUND`；
+    没传 → 422 `CUSTOMER_REQUIRED`。同时写 `customer_name` 快照（前端按名字显示）
+    并让报价的 `team_id` 与客户团队一致（管理员替别家团队报价时不会留在自己团队）。
+
+    另外**同一事务**产出一张报价单（`trade_docs.doc_type='quotation'`）：
+    "每个报价都有对应的报价单"是业务事实，不该依赖用户再去单证工位建一张。
+
     空单也允许创建（工作台"先建单、再逐行加产品"的自然用法），
     但合计留空而不是 0 —— 0 会被当成"报过价、价是 0"。
     """
@@ -1641,25 +1837,35 @@ async def create_quote_order(request: Request, body: _QuoteOrderCreate,
 
     async with _db.acquire(request) as conn:
         async with conn.transaction():
+            # 客户闸门（必填）：复用 main 的**同一道**闸门（存在/未软删/可见/属本团队），
+            # 不在这里另写一套校验 —— 另写必然与订单/单证两处漂移。
+            customer = await _doc_customer(conn, body.customer_id, user, required=True)
             row = await conn.fetchrow(
                 """INSERT INTO quote_orders
                        (tenant_id, quote_no, customer_id, customer_name, inquiry_id,
                         status, currency, total_amount, valid_until, notes,
                         fx_rate, fx_rate_date, created_by, owner_id, owner_scope,
                         incoterm, payment_terms, port_of_loading, port_of_destination,
-                        shipping_marks, country_of_origin)
+                        shipping_marks, country_of_origin, team_id)
                    VALUES ($1,$2,$3,$4,$5,'draft',$6,$7,$8,$9,$10,$11,$12,$12,$13,
-                           $14,$15,$16,$17,$18,$19)
+                           $14,$15,$16,$17,$18,$19,$20)
                    RETURNING *""",
-                tenant, quote_no, body.customer_id, body.customer_name, body.inquiry_id,
+                tenant, quote_no, customer["id"],
+                # 客户名快照：显式传入优先，否则按客户档案取（开单当时的名字）
+                body.customer_name or customer.get("name"),
+                body.inquiry_id,
                 currency, total if items else None, _parse_dt(body.valid_until), body.notes,
                 rate, rate_date, str(user["id"]), owner_scope,
                 body.incoterm, body.payment_terms, body.port_of_loading,
                 body.port_of_destination, body.shipping_marks, body.country_of_origin,
+                # 单据与客户同团队（而不是"创建者的团队"）
+                customer.get("team_id"),
             )
             if items:
                 await _insert_quote_items(conn, tenant, row["id"], items)
+            await _ensure_quotation_doc(conn, tenant, dict(row), items, request)
     return _quote_json(dict(row), len(items))
+
 
 
 @app.get("/api/v1/quotes/{quote_id}")
@@ -1697,6 +1903,19 @@ async def update_quote_order(quote_id: int, request: Request, body: _QuoteOrderP
             q = await _quote_or_404(conn, tenant, quote_id, user)
             _check_write_access(user, q)
 
+            # 换客户（含历史报价的"人工认领"）：走与新建同一道客户闸门。
+            # 客户变了，报价单（trade_docs，doc_type='quotation'）也必须跟着改挂 ——
+            # 否则客户页里报价在一个客户下、它的报价单却留在旧客户下（甚至消失）。
+            if body.customer_id is not None:
+                customer = await _doc_customer(conn, body.customer_id, user, required=True)
+                params.append(customer["id"])
+                sets.append(f"customer_id=${len(params)}")
+                params.append(customer.get("team_id"))
+                sets.append(f"team_id=${len(params)}")
+                if body.customer_name is None:
+                    params.append(customer.get("name"))
+                    sets.append(f"customer_name=${len(params)}")
+
             if body.status is not None and body.status != q["status"]:
                 _validate_enum("quote_status", body.status, _QUOTE_STATUS)
                 allowed = _QUOTE_NEXT.get(q["status"], ())
@@ -1725,11 +1944,21 @@ async def update_quote_order(quote_id: int, request: Request, body: _QuoteOrderP
             else:
                 updated = q
 
+            if body.customer_id is not None:
+                await conn.execute(
+                    "UPDATE trade_docs SET customer_id=$3, team_id=$4, updated_at=now()"
+                    " WHERE tenant_id=$1 AND quote_id=$2 AND doc_type='quotation'",
+                    tenant, quote_id, updated["customer_id"], updated.get("team_id"))
             # 签发与入账必须**同一个事务**：先 commit 再入账的话，入账失败会留下
             # "状态已 sent、台账里没有"的不一致 —— 而用户看到的是一次 500，
             # 会以为签发失败又去点一次。
             if body.status == "sent":
                 await _record_quote_issued(conn, updated, user)
+                # 签发即视为报价正式成立：确保报价单存在（本功能上线前建的报价
+                # 没有对应的报价单 —— 这里补齐，而不是让它永远缺一张）
+                await _ensure_quotation_doc(conn, tenant, updated,
+                                            await _items_of(conn, tenant, quote_id),
+                                            request)
     # dev 这里返回 `_row_to_quote(q)`（item_count 用默认值 0，不回填行数）——
     # 逐字照抄，避免"两边形状不同"；界面在成功后会重新拉列表/详情。
     return _quote_json(updated)
@@ -1768,6 +1997,12 @@ async def replace_quote_items(quote_id: int, request: Request, body: _QuoteItems
             await conn.execute(
                 "UPDATE quote_orders SET total_amount=$3 WHERE tenant_id=$1 AND id=$2",
                 tenant, quote_id, total if items else None)
+            # 报价单的行项/合计跟着报价走：工作台的真实流程是"先建空报价 → 再逐行
+            # 加产品"，不同步的话自动产出的报价单会永远停在 0 行 —— 打印是空的，
+            # 确认时也会卡在"至少一行商品明细"（共享内核 validate_items）。
+            # 只同步 draft：issued 的报价单是法律凭证，要改只能作废重开。
+            await _sync_quotation_doc_items(
+                conn, tenant, quote_id, items, total if items else None, q["currency"])
 
             rows = await _items_of(conn, tenant, quote_id)
     return {

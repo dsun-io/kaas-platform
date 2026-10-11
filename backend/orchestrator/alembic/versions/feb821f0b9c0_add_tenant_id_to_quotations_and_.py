@@ -19,6 +19,24 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # ── 空库兜底：本迁移假设 `customer_capabilities` 已存在，但**没有任何迁移创建它**
+    # （旧版本靠 `Base.metadata.create_all()` 建表）。所以在**全新空库**上按顺序跑迁移时，
+    # 下面第一句 `op.add_column('customer_capabilities', ...)` 必然报
+    # `relation "customer_capabilities" does not exist` —— 整条迁移链跑不到 head。
+    #
+    # 这里按 **ORM 模型的当前定义**补建（去掉本迁移马上要加的 tenant_id，避免重复加列），
+    # 类型因此永远与模型一致，不会手写出错。已存在的库不受影响（checkfirst 语义）。
+    bind = op.get_bind()
+    if not sa.inspect(bind).has_table("customer_capabilities"):
+        from app.db.models import CustomerCapability  # 延迟导入：迁移运行期 app 包已可用
+        model_cols = [c for c in CustomerCapability.__table__.columns
+                      if c.name != "tenant_id"]
+        sa.Table(
+            "customer_capabilities", sa.MetaData(),
+            *[sa.Column(c.name, c.type, primary_key=c.primary_key, nullable=c.nullable)
+              for c in model_cols],
+        ).create(bind)
+
     # ── Add tenant_id to customer_capabilities (nullable first for backfill) ──
     op.add_column('customer_capabilities',
         sa.Column('tenant_id', sa.Text(), nullable=True))

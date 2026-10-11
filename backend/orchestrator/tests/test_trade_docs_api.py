@@ -7,15 +7,33 @@
 - 派生仅接受 issued 源（未确认 → 409 SOURCE_NOT_CONFIRMED）
 - apply_scheme：QUO 多方案一键应用到 PI 行项目
 - 翻译：draft 可写回；确认后不写回
+
+2026-10-11 起 `customer_id` 是**外键**（迁移 202610110009）：再不能随口传
+`"c-test"` 这种自由文本（会被 pydantic 拦成 422，或过了类型校验后 404），
+所以用例统一用 `buyer_id` fixture 建一个真实客户来引用。
 """
 import pytest
 
+from app.db.models import Customer
 from app.middleware.auth import AuthContextMiddleware
 from app.core.auth import AuthContext
 from app.main import app
 from tests.conftest import _TEST_AUTH_PUBLIC_PATHS
 
 pytestmark = pytest.mark.db
+
+
+@pytest.fixture
+async def buyer_id(db_session) -> int:
+    """本团队的一个真实业务客户（供 `customer_id` 引用）。
+
+    团队为 NULL 是刻意的：conftest 注入的 AuthContext 也没有团队
+    （team_id=None），校验要求"客户团队 == 访问者团队"，两边同为 NULL 才匹配。
+    """
+    customer = Customer(tenant_id="lianjia", name="QA Buyer", team_id=None)
+    db_session.add(customer)
+    await db_session.flush()
+    return customer.id
 
 
 def _install_internal_mock(tenant_id="qa_smoke", user_id=2):
@@ -50,11 +68,11 @@ ITEM = {
 
 
 class TestManualCreate:
-    async def test_manual_create_with_items(self, client):
+    async def test_manual_create_with_items(self, client, buyer_id):
         """manual 开单免上游：items 直接落库。"""
         resp = await client.post("/api/v1/trade-docs", json={
             "doc_type": "quotation",
-            "customer_id": "c-test",
+            "customer_id": buyer_id,
             "currency": "USD",
             "items": [ITEM],
             "raw_payload": {"quote_no": "Q-1", "quote_date": "2026-09-30"},
@@ -63,6 +81,7 @@ class TestManualCreate:
         data = resp.json()
         assert data["doc_no"].startswith("QUO-2026")
         assert data["status"] == "draft"
+        assert data["customer_id"] == buyer_id
 
         detail = await client.get(f"/api/v1/trade-docs/{data['id']}")
         items = detail.json()["items"]
@@ -70,11 +89,11 @@ class TestManualCreate:
         assert items[0]["product_name"] == ITEM["product_name"]
         assert items[0]["line_amount"] == 5250.0
 
-    async def test_items_amount_mismatch_rejected(self, client):
+    async def test_items_amount_mismatch_rejected(self, client, buyer_id):
         """行金额勾稽不符 → 422。"""
         bad = dict(ITEM, line_amount=99.0)
         resp = await client.post("/api/v1/trade-docs", json={
-            "doc_type": "ci", "customer_id": "c1", "items": [bad],
+            "doc_type": "ci", "customer_id": buyer_id, "items": [bad],
         })
         assert resp.status_code == 422
         assert resp.json()["detail"]["code"] == "ITEMS_INVALID"
@@ -87,17 +106,17 @@ class TestManualCreate:
 
 
 class TestConfirmLock:
-    async def _create(self, client, doc_type="ci", **kw):
+    async def _create(self, client, buyer_id, doc_type="ci", **kw):
         resp = await client.post("/api/v1/trade-docs", json={
-            "doc_type": doc_type, "customer_id": "c-lock", "items": [dict(ITEM)],
+            "doc_type": doc_type, "customer_id": buyer_id, "items": [dict(ITEM)],
             **kw,
         })
         assert resp.status_code == 201, resp.text
         return resp.json()
 
-    async def test_confirm_issues_and_locks(self, client):
+    async def test_confirm_issues_and_locks(self, client, buyer_id):
         """确认 → issued；随后 PATCH 拒绝（确认即锁死）。"""
-        doc = await self._create(client)
+        doc = await self._create(client, buyer_id)
         r = await client.post(f"/api/v1/trade-docs/{doc['id']}/confirm", json={})
         assert r.status_code == 200, r.text
         assert r.json()["status"] == "issued"
@@ -118,19 +137,24 @@ class TestConfirmLock:
         assert r.status_code == 422
         assert r.json()["detail"]["code"] == "CONFIRM_INVALID"
 
-    async def test_confirm_not_draft_rejected(self, client):
-        """已 issued 再确认 → 409 ILLEGAL_TRANSITION。"""
-        doc = await self._create(client)
+    async def test_confirm_not_draft_rejected(self, client, buyer_id):
+        """已 issued 再确认 → 409 NOT_DRAFT。
+
+        实现里 `assert_draft` 先于 `assert_transition`，所以 issued 单据必然报
+        NOT_DRAFT；`ILLEGAL_TRANSITION` 在这条路径上不可达（内核把同态视为合法）。
+        Worker 侧 `ws_docs_ext.confirm` 同口径，两端一致。
+        """
+        doc = await self._create(client, buyer_id)
         await client.post(f"/api/v1/trade-docs/{doc['id']}/confirm", json={})
         r = await client.post(f"/api/v1/trade-docs/{doc['id']}/confirm", json={})
         assert r.status_code == 409
-        assert r.json()["detail"]["code"] == "ILLEGAL_TRANSITION"
+        assert r.json()["detail"]["code"] == "NOT_DRAFT"
 
 
 class TestDeriveChain:
-    async def _issued_quo(self, client, items):
+    async def _issued_quo(self, client, buyer_id, items):
         r = await client.post("/api/v1/trade-docs", json={
-            "doc_type": "quotation", "customer_id": "c-derive",
+            "doc_type": "quotation", "customer_id": buyer_id,
             "items": items,
             "raw_payload": {"quote_no": "Q-D", "quote_date": "2026-09-30"},
         })
@@ -139,10 +163,10 @@ class TestDeriveChain:
         assert c.status_code == 200, c.text
         return doc
 
-    async def test_derive_from_draft_rejected(self, client):
+    async def test_derive_from_draft_rejected(self, client, buyer_id):
         """未确认源 → 409 SOURCE_NOT_CONFIRMED（用户裁决硬闸门）。"""
         r = await client.post("/api/v1/trade-docs", json={
-            "doc_type": "quotation", "customer_id": "c1",
+            "doc_type": "quotation", "customer_id": buyer_id,
             "items": [dict(ITEM)],
             "raw_payload": {"quote_no": "Q-1", "quote_date": "2026-09-30"},
         })
@@ -153,9 +177,9 @@ class TestDeriveChain:
         assert d.status_code == 409
         assert d.json()["detail"]["code"] == "SOURCE_NOT_CONFIRMED"
 
-    async def test_derive_inherits_items(self, client):
+    async def test_derive_inherits_items(self, client, buyer_id):
         """issued 源派生：行项目自动继承不重录。"""
-        src = await self._issued_quo(client, [dict(ITEM)])
+        src = await self._issued_quo(client, buyer_id, [dict(ITEM)])
         d = await client.post("/api/v1/trade-docs", json={
             "doc_type": "pi", "derive_from_doc_id": src["id"],
         })
@@ -166,7 +190,7 @@ class TestDeriveChain:
         assert body["items"][0]["product_name"] == ITEM["product_name"]
         assert body["refs"]["docs"][0]["source_trade_doc_id"] == src["id"]
 
-    async def test_apply_scheme_materializes(self, client):
+    async def test_apply_scheme_materializes(self, client, buyer_id):
         """QUO 多方案 → PI 直接应用选定方案的 qty/单价（报价准确场景）。"""
         scheme_item = dict(
             ITEM, qty=30000, unit_price=1.0, line_amount=30000.0,
@@ -175,7 +199,7 @@ class TestDeriveChain:
                 "o50000": {"qty": 50000, "unit_price": 0.9},
             },
         )
-        src = await self._issued_quo(client, [scheme_item])
+        src = await self._issued_quo(client, buyer_id, [scheme_item])
         d = await client.post("/api/v1/trade-docs", json={
             "doc_type": "pi", "derive_from_doc_id": src["id"],
             "apply_scheme": "o50000",
@@ -190,10 +214,10 @@ class TestDeriveChain:
 
 
 class TestTranslate:
-    async def test_translate_draft_writes_back(self, client):
+    async def test_translate_draft_writes_back(self, client, buyer_id):
         """draft 态翻译写回 custom；无 AI 降级为原文（path=template）。"""
         r = await client.post("/api/v1/trade-docs", json={
-            "doc_type": "pi", "customer_id": "c-t",
+            "doc_type": "pi", "customer_id": buyer_id,
             "items": [dict(ITEM)],
         })
         doc = r.json()
@@ -207,10 +231,10 @@ class TestTranslate:
         custom = detail.json()["raw_payload"]["custom"]
         assert custom.get("buyer") == t.json()["fields"]["buyer"]
 
-    async def test_translate_issued_not_written(self, client):
+    async def test_translate_issued_not_written(self, client, buyer_id):
         """issued 态翻译仍返回结果但不写回（锁死语义）。"""
         r = await client.post("/api/v1/trade-docs", json={
-            "doc_type": "ci", "customer_id": "c-t2", "items": [dict(ITEM)],
+            "doc_type": "ci", "customer_id": buyer_id, "items": [dict(ITEM)],
         })
         doc = r.json()
         await client.post(f"/api/v1/trade-docs/{doc['id']}/confirm", json={})

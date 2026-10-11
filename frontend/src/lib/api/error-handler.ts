@@ -2,6 +2,11 @@ import { AxiosError } from "axios";
 import { toast } from "sonner";
 import { captureException, addBreadcrumb } from "@/lib/error/sentry";
 import { clearAuthSession } from "@/lib/auth/token-store";
+import {
+  notifyWorkstationLocked,
+  WORKSTATION_NOT_SUBSCRIBED,
+} from "@/lib/workstation/lock-events";
+import { normalizeApiError } from "./api-error";
 
 export interface ApiErrorResponse {
   error_code: string;
@@ -54,24 +59,60 @@ function redirectToLogin(): void {
 }
 
 export function handleApiError(error: AxiosError<ApiErrorResponse>): string {
-  const data = error.response?.data;
-  const status = error.response?.status;
+  // 统一解析（扁平 / 嵌套两种错误体都认），后续分支只读解析结果
+  const normalized = normalizeApiError(error);
+  const status = normalized.status;
+  const config = error.config;
 
-  if (data?.error_code) {
-    const msg = ERROR_CODE_MAP[data.error_code] || data.message || "未知错误";
-    toast.error(msg);
-    captureApiError(error, { errorCode: data.error_code });
-    return msg;
+  // ── ① 工位未开通：这是**可预期的业务状态**，不是错误 ────────────────
+  // 后端对未开通工位一律回 404（不暴露工位存在性），前端必须把它翻译成
+  // 「该工位未开通」引导页，而不是通用报错 —— 否则用户以为系统坏了。
+  // 这里只负责"广播"，渲染由 WorkstationGate 完成（避免在工具函数里碰 React）。
+  if (normalized.code === WORKSTATION_NOT_SUBSCRIBED) {
+    notifyWorkstationLocked(normalized.workstation);
+    captureApiError(error, {
+      errorCode: normalized.code,
+      workstation: normalized.workstation,
+    });
+    return normalized.message;
   }
 
+  // ── ② 401：登录态失效必须统一处理（清 session + 跳登录），不能停在白屏 ──
   if (status === 401) {
     // Login endpoint failures: let the login form handle the error
-    const isAuthLogin = error.config?.url === "/auth/login";
+    const isAuthLogin = config?.url === "/auth/login";
     if (!isAuthLogin) {
       toast.error("登录已过期");
     }
     redirectToLogin();
-    return data?.message || "Unauthorized";
+    return normalized.message;
+  }
+
+  // ── ③ 调用方声明自己降级（silent）：接口可能还没上线，只留痕不打扰用户 ──
+  if (config?.silent) {
+    addBreadcrumb({
+      category: "api",
+      message:
+        `[${status ?? "NETWORK"}] silent ${normalized.code ?? ""}`.trim(),
+      level: "warning",
+      data: { url: config.url },
+    });
+    return normalized.message;
+  }
+
+  // ── ④ 已知业务码：用固定中文文案（口径统一，不随后端措辞漂移）──
+  const mapped = normalized.code ? ERROR_CODE_MAP[normalized.code] : undefined;
+  if (mapped) {
+    toast.error(mapped);
+    captureApiError(error, { errorCode: normalized.code });
+    return mapped;
+  }
+
+  // ── ⑤ 未知业务码：显示后端自己的 message/detail，绝不吞掉 ──
+  if (normalized.code) {
+    toast.error(normalized.message);
+    captureApiError(error, { errorCode: normalized.code });
+    return normalized.message;
   }
 
   if (status === 403) {
@@ -82,10 +123,10 @@ export function handleApiError(error: AxiosError<ApiErrorResponse>): string {
     toast.error("后端忙碌，请稍后重试");
     captureApiError(error);
   } else if (status && status >= 400) {
-    toast.error(data?.message || "请求失败");
+    toast.error(normalized.message);
   } else {
-    toast.error(data?.message || "请求失败");
+    toast.error(normalized.message);
   }
 
-  return data?.message || error.message;
+  return normalized.message;
 }

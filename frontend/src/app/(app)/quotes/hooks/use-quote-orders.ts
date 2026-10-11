@@ -14,6 +14,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import apiClient from "@/lib/api/client";
+import { customerRecordsKeys } from "@/lib/customer/use-customer-records";
 import type {
   QuoteOrder,
   QuoteOrderCreate,
@@ -56,6 +57,8 @@ export function useQuoteOrders(params?: {
 
 function invalidate(client: ReturnType<typeof useQueryClient>) {
   void client.invalidateQueries({ queryKey: [KEY] });
+  // 报价是客户往来记录树的根：建单/改单/换行项都会改变那棵树，一并失效
+  void client.invalidateQueries({ queryKey: customerRecordsKeys.all });
 }
 
 /** 新建报价单（可带多行）。空行集合也允许 —— 工作台"先建单、再逐行加产品"。 */
@@ -74,8 +77,17 @@ export function useCreateQuoteOrder() {
 export function useUpdateQuoteOrder() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, patch }: { id: number; patch: QuoteOrderPatch }) => {
-      const { data } = await apiClient.patch<QuoteOrder>(`/quotes/${id}`, patch);
+    mutationFn: async ({
+      id,
+      patch,
+    }: {
+      id: number;
+      patch: QuoteOrderPatch;
+    }) => {
+      const { data } = await apiClient.patch<QuoteOrder>(
+        `/quotes/${id}`,
+        patch,
+      );
       return data;
     },
     onSuccess: () => invalidate(client),
