@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test.describe('Quotations', () => {
   test('quotation list loads with default DESC order', async ({ page }) => {

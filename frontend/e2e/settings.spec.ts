@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test.describe('Settings', () => {
   test('tab switching between tenant config and system operations', async ({ page }) => {

@@ -525,8 +525,8 @@ function CustomerDetailPanel({
 
   const tabs: { key: DetailTab; label: string }[] = [
     { key: "info", label: "信息" },
-    { key: "contacts", label: `联系人 (${detail?.contacts.length ?? 0})` },
-    { key: "inquiries", label: `询盘 (${detail?.inquiries.length ?? 0})` },
+    { key: "contacts", label: `联系人 (${detail?.contacts?.length ?? 0})` },
+    { key: "inquiries", label: `询盘 (${detail?.inquiries?.length ?? 0})` },
     { key: "history", label: "历史" },
   ];
 
@@ -612,7 +612,7 @@ function CustomerDetailPanel({
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">
-                    {detail.contacts.length} 位联系人
+            {detail?.contacts?.length ?? 0} 位联系人
                   </span>
                   <Button size="sm" onClick={() => setShowContactForm(true)}>
                     <Plus className="size-4 mr-1" />
@@ -626,7 +626,7 @@ function CustomerDetailPanel({
                   />
                 )}
                 <div className="space-y-2">
-                  {detail.contacts.length === 0 && (
+          {detail?.contacts?.length === 0 && (
                     <p className="text-sm text-muted-foreground">暂无联系人</p>
                   )}
                   {detail.contacts.map((c) => (
@@ -658,7 +658,7 @@ function CustomerDetailPanel({
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">
-                    {detail.inquiries.length} 条询盘
+            {detail?.inquiries?.length ?? 0} 条询盘
                   </span>
                   <Button size="sm" onClick={() => setShowInquiryForm(true)}>
                     <Plus className="size-4 mr-1" />
@@ -672,7 +672,7 @@ function CustomerDetailPanel({
                   />
                 )}
                 <div className="space-y-2">
-                  {detail.inquiries.length === 0 && (
+          {detail?.inquiries?.length === 0 && (
                     <p className="text-sm text-muted-foreground">暂无询盘</p>
                   )}
                   {detail.inquiries.map((inq) => (
@@ -711,7 +711,7 @@ function CustomerDetailPanel({
 
             {activeTab === "history" && (
               <div className="space-y-2">
-                {detail.stage_log.length === 0 ? (
+            {detail?.stage_log?.length === 0 ? (
                   <p className="text-sm text-muted-foreground">暂无历史记录</p>
                 ) : (
                   detail.stage_log.map((log) => (
@@ -816,7 +816,7 @@ export default function CustomersPage() {
             {isLoading && (
               <p className="text-sm text-muted-foreground">加载中…</p>
             )}
-            {!isLoading && listData?.items.length === 0 && (
+      {!isLoading && listData?.items?.length === 0 && (
               <p className="text-sm text-muted-foreground">暂无客户</p>
             )}
             <div className="space-y-2">

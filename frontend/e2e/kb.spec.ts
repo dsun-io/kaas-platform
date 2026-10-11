@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test.describe('Knowledge Base', () => {
   test('page loads with stat cards and placeholder', async ({ page }) => {

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test.describe('Audit Log', () => {
   test('page loads with filter bar and table', async ({ page }) => {
