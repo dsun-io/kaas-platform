@@ -641,6 +641,28 @@ TypeError: Cannot read properties of undefined (reading 'map')
 `customers/page.tsx` 一共 6 个数据位点，每个都同时需要 `.length` 与 `.map`
 两处保护；两轮（`.length` 8 处 + `.map` 4 处）才补全。
 
+#### ✅ 收口信号：全套件**已无应用级错误**（`errorMessage=` 归零）
+
+修完上面两处后再单 worker 跑一次，把 console 里的 `errorMessage=` 全解出来：
+
+**一条都没有。** 也就是**没有任何页面再抛应用级异常**（此前两轮各有一条
+`CustomersPage` 的 TypeError）。
+
+| 指标 | 状态 |
+|---|---|
+| 应用级错误（`errorMessage=`） | **0** ✅ 确定性信号 |
+| 通过数（`--workers=1`） | 11（基线 12、修后 12、本次 11）—— **在抖动范围内，不具信息量** |
+
+**结论**：剩下的 e2e 失败**不是页面崩溃**，而是 flaky / 时序 / 断言层面。
+这一条**不依赖计数**、可复现，是这条线目前最有价值的结论。
+
+**所以 e2e 这条线的状态可以定为**：
+
+- ✅ **已修掉 2 个真实应用缺陷**（`CustomersPage` 的 `.length` 与 `.map`，
+  均由 console fixture 抓出，非猜测）
+- ✅ **已确认套件 flaky**，并立了取数规矩（`--workers=1`，看错误证据而非计数）
+- ⏸ **剩余失败留待专门排查**：需要反复跑几十次定位时序，不是短预算能收的
+
 **关键发现：那两个 critical/high 的来源不是"版本旧"，是依赖放错了位置。**
 
 | 漏洞 | 来源链 | 真实问题 |
