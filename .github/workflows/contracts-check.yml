@@ -23,6 +23,11 @@ on:
       - 'frontend/src/app/(app)/admin/gray-release/hooks/use-feature-flags.ts'
       - 'frontend/src/app/(app)/admin/gray-release/components/flag-toggle.tsx'
       - 'scripts/contracts-allowlist.txt'
+      # R6 的输入源：orchestrator 源码（路由/模型）+ 生成脚本 + 产物本身。
+      # 不加 `backend/orchestrator/app/**`：新增或改动一个路由不会触发 R6 ⇒ 新鲜度门禁单向失效
+      - 'backend/orchestrator/app/**'
+      - 'backend/orchestrator/scripts/export_openapi.py'
+      - 'backend/orchestrator/docs/openapi.json'
   pull_request:
     paths:
       - 'shared/contracts/**'
@@ -42,6 +47,10 @@ on:
       - 'frontend/src/app/(app)/admin/gray-release/hooks/use-feature-flags.ts'
       - 'frontend/src/app/(app)/admin/gray-release/components/flag-toggle.tsx'
       - 'scripts/contracts-allowlist.txt'
+      # R6 的输入源（同 push）
+      - 'backend/orchestrator/app/**'
+      - 'backend/orchestrator/scripts/export_openapi.py'
+      - 'backend/orchestrator/docs/openapi.json'
 
 jobs:
   check:

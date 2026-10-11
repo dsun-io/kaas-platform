@@ -59,6 +59,14 @@ R5.1 frontend-api    # hooks/use-tenants.ts 的 Tenant 用 name，而渲染侧 c
 #   tenant_id / reason。⇒ requiredKeys{tenant_id, flag_key, enabled} 三方都满足，**无需登记**。
 #   （worker 不读 actor_id 是有意的：它用登录用户 id 替代 —— 门禁只打 INFO 不算偏差。）
 
+# ── R6 openapi.json 新鲜度（基准 = HEAD 快照；task-17 新增）──
+# R6.1 路径集合（跳过 include_in_schema=False；/metrics 为声明式例外）
+# R6.2 每个 path 的 HTTP 方法集合   R6.3 response_model 引用   R6.4 模型字段键集合
+# 当前实测：171(+1) paths / 103 模型 / 29 response_model 引用均一致，**只有 1 条路径漂移**：
+# 每条漂移一个 key（`R6.path-missing:<path>` / `R6.path-extra:<path>` / `R6.methods:<path>` /
+# `R6.response-model:<METHOD path>` / `R6.schema:<Name>`）—— 粗粒度 key 会"登记一条吞掉全部"，故不采用。
+R6.path-missing:/api/v1/trade-docs/{doc_id}/render-fingerprint-check    # artifact 缺 3e86dd4（trade-docs 渲染指纹）新增的路由；待重新生成 backend/orchestrator/docs/openapi.json（python scripts/export_openapi.py）后**删本行**
+
 # ── 未纳入本门禁的相邻项（记录，不产生 R5 偏差）──────────────────────────────
 # · mock 的 POST /admin/tenants/reload 的 active_tenants 缺 is_active ——
 #   由 frontend/src/app/(app)/settings/components/reload-button.tsx:62-65 显式补 true 兜住。
