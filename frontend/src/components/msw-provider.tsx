@@ -1,9 +1,35 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { isMockMode } from "@/lib/api/config";
 
-let globalStarted = false;
+/**
+ * MSW 就绪的**唯一** promise（模块级 = 每个 JS realm 一份）。
+ *
+ * **为什么必须是 promise，而不是"已启动过"的布尔量**：
+ * `frontend/next.config.mjs` 是 `reactStrictMode: true`，React 18 在 dev 下
+ * 会把 effect **跑两遍**（mount → 模拟 unmount → mount）。旧实现用
+ * `started.current` / `globalStarted` 表示"启动过了"，于是**第二次调用直接
+ * `setReady(true)` 放行** —— 而那时 `worker.start()` 还没 resolve。
+ * ⇒ 首屏那一批 `/api/v1/*` **在 MSW 就绪之前发出** ⇒ 绕过 mock
+ * ⇒ 直连 dev server 的 `/api/v1/*` rewrite ⇒ 自代理 ⇒ 失败/挂起
+ * ⇒ `/auth/me` 拿不到身份 ⇒ `RouteGuard adminOnly` 整页渲染
+ * 「没有访问此页面的权限」（2026-10-11 e2e 实测：`kb:4` 0/5，
+ * 纯静态页面的标题都找不到）。
+ *
+ * 用 promise 同时满足两件事：
+ *   1. **只 `worker.start()` 一次** —— 第二次调用只是 await 同一个 promise；
+ *   2. **放行一定发生在真正就绪之后** —— `setReady(true)` 只挂在这条链的末尾
+ *      （`start()` resolve **且** SW 已 `controllerchange`）。
+ */
+let mswReadyPromise: Promise<void> | null = null;
+
+/**
+ * 「已真正就绪」的缓存：**只在链路成功走完后**才置 true。
+ * 它唯一的用途是让**二次挂载**（热更新／再次 mount）不必再闪一次空白；
+ * 它**不能**用来表达"启动过了"（那正是旧实现的 bug）。
+ */
+let mswReady = false;
 
 /**
  * 等 Service Worker **真正接管本页**。
@@ -40,6 +66,60 @@ async function waitForServiceWorkerControl(timeoutMs = 3000): Promise<void> {
 }
 
 /**
+ * 启动 MSW 并等它**真正接管本页**；**同一个 realm 内只会真正启动一次**。
+ *
+ * 失败也必须 resolve（fail-open）：不能因为一个 mock 故障把整个应用卡成白屏，
+ * 但失败**要有声音**（见下面的 `[MSW门] start FAILED`）。
+ */
+function ensureMswReady(): Promise<void> {
+  if (mswReadyPromise) return mswReadyPromise;
+
+  mswReadyPromise = import("@/mocks/browser")
+    // `warn`：放行行为不变，但未匹配的请求会在控制台**被点名**。
+    // 原先用 `bypass` 时 handler 缺失是**静默**的，这正是这个坑拖了很久的原因。
+    .then((m) => m.worker.start({ onUnhandledRequest: "warn" }))
+    .then((reg) => {
+      // 探针：MSW 起来了，但实测**一个请求都没拦住**（缺口 0 条、
+      // 兜底路由却接住 15 条）。要判定的就一件事：
+      // **SW 注册成功了没有、有没有控制本页**。
+      const sw =
+        typeof navigator !== "undefined" && "serviceWorker" in navigator
+          ? navigator.serviceWorker
+          : null;
+      console.log("[MSW门] started; controller =", String(Boolean(sw?.controller)));
+      void sw
+        ?.getRegistrations?.()
+        .then((rs) => {
+          const desc =
+            rs
+              .map((r) => `${r.scope}|${r.active ? "active" : "NO-ACTIVE"}`)
+              .join(", ") || "(none)";
+          console.log("[MSW门] registrations =", desc);
+        })
+        .catch((e) => console.log("[MSW门] getRegistrations failed:", String(e)));
+      return reg;
+    })
+    // 再等 SW **真正接管本页**：`start()` resolve 时 `clients.claim()`
+    // （activate 里的 waitUntil）可能还没生效，那段窗口里的请求会绕过 mock。
+    .then(() => waitForServiceWorkerControl())
+    .then(() => {
+      mswReady = true;
+    })
+    .catch((err) => {
+      // **不再静默**。原注释写"非 mock 构建里失败是预期的，静默忽略"——
+      // 但在 mock 构建里，静默吞掉会让现象**完全误导**：MSW 没起来时页面照常
+      // 发真实请求（e2e 里 → 自代理 → 一堆 500），而日志里**一个字都没有**，
+      // 于是人会去查"请求为什么没被匹配"，而不是"mock 层根本没起来"。
+      //
+      // 这与 `onUnhandledRequest` 由 `bypass` 改 `warn` 是**同一类修正：
+      // 失败必须有声音**。起不来仍要放行（不能把页面卡成白屏），但要说出来。
+      console.log("[MSW门] start FAILED:", String(err));
+    });
+
+  return mswReadyPromise;
+}
+
+/**
  * MSW 启动门 —— **必须等它就绪再渲染 children**。
  *
  * 原先的写法是「立刻渲染 + 在 effect 里异步 `worker.start()`」，看起来无害，
@@ -58,65 +138,36 @@ async function waitForServiceWorkerControl(timeoutMs = 3000): Promise<void> {
  *
  * 所以：mock 模式下先 return null，等 MSW 就绪；起不来也必须放行
  * （否则一个 mock 故障会把整个应用卡成白屏）。
+ *
+ * **2026-10-11 修**：这个门原先在 `reactStrictMode: true` 下**是失效的** ——
+ * 用 `started.current`（"启动过"）当放行条件，而 StrictMode 会把 effect 跑两遍，
+ * 第二遍看到"启动过"就**立刻放行**，于是首屏请求仍然发在 `worker.start()` 之前。
+ * 现在改成 await 模块级 **`ensureMswReady()` 的同一个 promise**（见上）：
+ * 只 start 一次，且**放行只发生在真正就绪之后**。
  */
 export function MswProvider({ children }: { children: React.ReactNode }) {
-  // 非 mock 模式无需等待；已启动过（热更新/二次挂载）同理
-  const [ready, setReady] = useState(() => !isMockMode || globalStarted);
-  const started = useRef(false);
+  // 非 mock 模式无需等待；已**真正就绪**过（热更新／二次挂载）也不必再闪一次空白。
+  const [ready, setReady] = useState(() => !isMockMode || mswReady);
 
   useEffect(() => {
-    if (!isMockMode || started.current) {
+    if (!isMockMode) {
       setReady(true);
       return;
     }
-    started.current = true;
 
-    if (globalStarted) {
-      setReady(true);
-      return;
-    }
-    globalStarted = true;
+    // ⚠️ StrictMode 下这个 effect 会跑两遍（mount → 模拟 unmount → mount）。
+    // 第二次调用**只 await 同一个 promise**：既不会重复 `worker.start()`，
+    // 也不会像旧实现那样"看到启动过就立刻放行"。
+    let cancelled = false;
+    void ensureMswReady().then(() => {
+      if (!cancelled) setReady(true);
+    });
 
-    import("@/mocks/browser")
-      // `warn`：放行行为不变，但未匹配的请求会在控制台**被点名**。
-      // 原先用 `bypass` 时 handler 缺失是**静默**的，这正是这个坑拖了很久的原因。
-      .then((m) => m.worker.start({ onUnhandledRequest: "warn" }))
-      .then((reg) => {
-        // 探针：MSW 起来了，但实测**一个请求都没拦住**（缺口 0 条、
-        // 兜底路由却接住 15 条）。要判定的就一件事：
-        // **SW 注册成功了没有、有没有控制本页**。
-        const sw =
-          typeof navigator !== "undefined" && "serviceWorker" in navigator
-            ? navigator.serviceWorker
-            : null;
-        console.log("[MSW门] started; controller =", String(Boolean(sw?.controller)));
-        void sw
-          ?.getRegistrations?.()
-          .then((rs) => {
-            const desc =
-              rs
-                .map((r) => `${r.scope}|${r.active ? "active" : "NO-ACTIVE"}`)
-                .join(", ") || "(none)";
-            console.log("[MSW门] registrations =", desc);
-          })
-          .catch((e) => console.log("[MSW门] getRegistrations failed:", String(e)));
-        return reg;
-      })
-      // 再等 SW **真正接管本页**：`start()` resolve 时 `clients.claim()`
-      // （activate 里的 waitUntil）可能还没生效，那段窗口里的请求会绕过 mock。
-      .then(() => waitForServiceWorkerControl())
-      .then(() => setReady(true))
-      .catch((err) => {
-        // **不再静默**。原注释写"非 mock 构建里失败是预期的，静默忽略"——
-        // 但在 mock 构建里，静默吞掉会让现象**完全误导**：MSW 没起来时页面照常
-        // 发真实请求（e2e 里 → 自代理 → 一堆 500），而日志里**一个字都没有**，
-        // 于是人会去查"请求为什么没被匹配"，而不是"mock 层根本没起来"。
-        //
-        // 这与 `onUnhandledRequest` 由 `bypass` 改 `warn` 是**同一类修正：
-        // 失败必须有声音**。起不来仍要放行（不能把页面卡成白屏），但要说出来。
-        console.log("[MSW门] start FAILED:", String(err));
-        setReady(true);
-      });
+    // 模拟 unmount 只取消**这一次**的回调；promise 继续跑，
+    // 第二次调用会重新挂 `.then`，并在真正就绪后放行。
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (!ready) return null;
