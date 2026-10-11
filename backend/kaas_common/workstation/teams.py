@@ -32,6 +32,7 @@ __all__ = [
     "INVITE_STATUS", "INVITE_TTL_DAYS", "TEAM_NAME_MAX",
     "TeamRuleError", "validate_team_name", "normalize_invite_token",
     "generate_invite_token", "invite_state", "is_team_admin",
+    "validate_transfer_target",
 ]
 
 INVITE_STATUS = ("pending", "accepted", "revoked")
@@ -122,3 +123,29 @@ def is_team_admin(team_created_by: Any, user_id: Any, role: Optional[str] = None
     if team_created_by is None or user_id is None:
         return False
     return str(team_created_by) == str(user_id)
+
+
+def validate_transfer_target(*, target_user_id: Any, current_owner_id: Any,
+                             member_user_ids) -> None:
+    """转让团队管理员的**策略无关**校验。
+
+    刻意只做与"谁能发起转让"无关的部分 —— 那是**授权决策**
+    （平台管理员？还是现任管理员自己？），留在 API 层。
+    这里挡两种情况，它们在**任何**方案下都不成立：
+
+    1. **转给非本团队成员** —— 等于把团队交给一个外人。
+    2. **转给自己** —— 空操作。若不拒，调用方会以为发生了什么，
+       还可能白写一条审计；**静默成功的空操作**比报错更难查。
+
+    比对统一转字符串：团队成员 id 在两端一个是 int（orchestrator）
+    一个是 str（worker），直接 `==` 会漏判。
+    """
+    if target_user_id is None:
+        raise TeamRuleError("TRANSFER_TARGET_REQUIRED", "缺少转让目标")
+    target = str(target_user_id)
+    if current_owner_id is not None and target == str(current_owner_id):
+        raise TeamRuleError("TRANSFER_TO_SELF", "不能把团队转让给自己")
+    members = {str(m) for m in (member_user_ids or ())}
+    if target not in members:
+        raise TeamRuleError("TRANSFER_TARGET_NOT_MEMBER",
+                            "转让目标必须是本团队成员")
