@@ -88,6 +88,37 @@ class PieceInput:
 
 
 @dataclass(frozen=True)
+class NumericInput:
+    """自由数值规格参数 —— 直接填任意值，不做枚举。
+
+    为什么需要它
+    ------------
+    丝径 / 网高 / 竖丝间距 / 卷长 / 卷径 这类量在业务上是**连续值**：
+    客户给 2.3mm 就是 2.3mm。枚举只能覆盖事先想到的取值，于是
+    「选不到」会逼着人把值写进备注，公式反而算不出来。
+    重量、体积、成本由 `derived` 公式从这些自由值折算，
+    所以取值本身不需要被枚举约束 —— 这也正是「新增产品的自由度」：
+    加一个数值参数只需多一条声明，不必改界面或引擎。
+
+    与 Axis 的分工：**可枚举的**（表面处理、工艺、材质）继续用
+    Axis / VariantGroup，以便报价单与定价数据有稳定 code；
+    **连续的**用 NumericInput。
+    """
+
+    key: str
+    label: str = ""
+    label_en: str = ""
+    unit: str = ""          # 引擎内部单位（公式里用的那个）
+    ui_unit: str = ""       # 界面单位；留空则同 unit
+    ui_scale: float = 1.0   # 界面值 = 引擎值 × ui_scale（m→cm 填 100）
+    default: Any = None     # 未提供时用它；None 表示必填
+    min_value: Any = None   # 可选下界（含）。只做防误填，不做枚举
+    max_value: Any = None
+    decimals: int | None = None
+    note: str = ""
+
+
+@dataclass(frozen=True)
 class OrderSpec:
     """订单量方案。"""
 
@@ -161,6 +192,11 @@ class ProductSpec:
     invariants: list = field(default_factory=list)
     params: list = field(default_factory=list)  # [[参数, 取值, 单位, 说明], ...]
     piece_inputs: list = field(default_factory=list)  # [PieceInput, ...] 数量区可改的规格参数
+    # ── 自由数值规格参数（[NumericInput, ...]）──
+    # 丝径 / 网高 / 间距 / 卷长 / 卷径 这类**连续量**：客户填任意值，
+    # 由 `derived` 公式折算成重量/体积/成本。不参与 combo_count 的笛卡尔积
+    # （它们是连续量，枚举组合数在数学上就不成立）。
+    numeric_inputs: list = field(default_factory=list)
     # ── 定价键：决定「去定价数据里查哪一行」的维度组合 ──
     # 每一项：{"field": 取值字段, "label": 中文名, "unit": 单位(可省), "label_field": 显示用字段(可省)}
     # 例（牛栏网）：成本随「边丝径 × 镀锌量」变，与网高/网孔无关 →

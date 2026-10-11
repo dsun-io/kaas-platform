@@ -235,6 +235,8 @@ def spec_from_partial(
         reserved.add(ax.name)
     for vg in product.variants:
         reserved.add(vg.name)
+    for ni in product.numeric_inputs:
+        reserved.add(ni.key)
 
     known = set(reserved)
     for vg in product.variants:
@@ -260,6 +262,16 @@ def spec_from_partial(
                    ", ".join(str(o) for o in ax.options))
             )
         picked[ax.name] = _match_axis_option(ax, row[ax.name], row_index)
+
+    # 自由数值参数：给了就用，没给用默认值；只做上下界防误填，**不做枚举**
+    for ni in product.numeric_inputs:
+        if ni.key in row:
+            picked[ni.key] = _numeric_value(ni, row[ni.key], row_index)
+        elif ni.default is not None:
+            picked[ni.key] = ni.default
+        else:
+            raise EngineError(
+                "第 %d 行缺少数值参数「%s」" % (row_index, ni.label or ni.key))
 
     # 变体包：给取值名，或给该包内任一属性，或给稳定 code
     for vg in product.variants:
@@ -372,6 +384,30 @@ def _match_axis_option(ax, value, row_index: int):
     )
 
 
+def _numeric_value(ni, raw, row_index: int):
+    """自由数值参数取值：转 Decimal 并做上下界防误填。
+
+    与 `_match_axis_option` 的区别：这里**不枚举**取值 —— 丝径 2.3mm 就是 2.3mm。
+    只挡两类明显填错：超出声明上下界、根本不是数字。
+    """
+    from .numeric import to_decimal
+
+    try:
+        value = to_decimal(raw)
+    except Exception:
+        raise EngineError(
+            "第 %d 行的「%s」不是数值: %r" % (row_index, ni.label or ni.key, raw))
+    if ni.min_value is not None and value < to_decimal(ni.min_value):
+        raise EngineError(
+            "第 %d 行的「%s」=%s 小于下界 %s"
+            % (row_index, ni.label or ni.key, value, ni.min_value))
+    if ni.max_value is not None and value > to_decimal(ni.max_value):
+        raise EngineError(
+            "第 %d 行的「%s」=%s 大于上界 %s"
+            % (row_index, ni.label or ni.key, value, ni.max_value))
+    return value
+
+
 def _build_combos(
     product: ProductSpec, request: "QuoteRequest", diagnostics: list
 ) -> list[dict]:
@@ -461,6 +497,22 @@ def expand_specs(product: ProductSpec) -> list[dict]:
                     new[attr] = value
                 nxt.append(new)
         combos = nxt
+
+    # ── 自由数值参数：不参与笛卡尔积（连续量没有"组合数"）──
+    # 每个组合都带上默认值；要用别的值就走 `spec_rows` 逐行覆盖。
+    for ni in product.numeric_inputs:
+        if not _IDENT.match(ni.key):
+            raise EngineError(f"数值参数名必须是合法标识符（公式里要引用它）: {ni.key}")
+        if ni.key in reserved:
+            raise EngineError(
+                f"数值参数 {ni.key!r} 与常数/规格轴重名，会产生歧义")
+        if ni.default is None:
+            raise EngineError(
+                f"数值参数「{ni.label or ni.key}」没有默认值：展开全量规格时取不到值，"
+                f"请给它默认值，或用 spec_rows 逐行提供")
+        reserved.add(ni.key)
+        for combo in combos:
+            combo[ni.key] = ni.default
 
     dup = set()
     label_keys = {vg.name for vg in product.variants} | {f"{vg.name}_en" for vg in product.variants}
