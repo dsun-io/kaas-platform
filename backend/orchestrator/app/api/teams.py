@@ -92,6 +92,12 @@ class TeamPatchIn(BaseModel):
     name: Optional[str] = None
 
 
+class TeamTransferIn(BaseModel):
+    """转让团队管理权：把团队交给另一个成员。"""
+
+    user_id: int
+
+
 class InviteCreateIn(BaseModel):
     """email 为空 = 通用邀请码（谁拿到谁用）。"""
     email: Optional[str] = None
@@ -389,6 +395,51 @@ async def update_team(
     except IntegrityError:
         await db.rollback()
         raise conflict_error("TEAM_NAME_TAKEN", f"已存在同名团队「{name}」")
+
+    count = await _member_count(db, team_id)
+    return _team_out(team, user_id=auth.user_id, role=auth.role, member_count=count)
+
+
+@router.post("/teams/{team_id}/transfer")
+async def transfer_team(
+    team_id: int,
+    body: TeamTransferIn,
+    auth: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """转让团队管理权：把 `teams.created_by` 改成另一个成员。
+
+    **授权（用户 2026-10-11 裁决）**：团队管理员（现任）**或**平台管理员都能发起
+    —— 与其余团队管理端点**同一把尺子**（`_require_team_admin` → 共享内核
+    `is_team_admin`），**不新增一套判定**。
+
+    策略无关的校验走共享内核 `validate_transfer_target`：目标必须是**本团队成员**、
+    不能转给自己。这两条在任何方案下都不成立，所以放内核里、两端共用。
+
+    注意这里**只改 `created_by`**：团队管理权在本项目里就等于"团队创建者"
+    （见 `kaas_common/workstation/teams.is_team_admin`），改它即完成转让；
+    前任留在团队里继续当普通成员。
+    """
+    from kaas_common.workstation.teams import validate_transfer_target  # noqa: PLC0415
+
+    tenant_id = tenant_id_of(auth)
+    team = await _team_or_404(db, tenant_id, team_id)
+    _require_team_admin(team, auth)
+
+    member_ids = (await db.execute(
+        select(User.id).where(User.team_id == team_id)
+    )).scalars().all()
+    try:
+        validate_transfer_target(
+            target_user_id=body.user_id,
+            current_owner_id=team.created_by,
+            member_user_ids=member_ids,
+        )
+    except TeamRuleError as exc:
+        raise rule_error_422(exc)
+
+    team.created_by = body.user_id
+    await db.commit()
 
     count = await _member_count(db, team_id)
     return _team_out(team, user_id=auth.user_id, role=auth.role, member_count=count)
