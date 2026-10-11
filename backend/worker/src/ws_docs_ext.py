@@ -63,7 +63,8 @@ from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from kaas_common.trade_doc import (
-    RuleError, assert_draft, assert_transition, validate_confirm,
+    RENDER_KEY, RuleError, assert_draft, assert_transition, render_fingerprint,
+    validate_confirm,
 )
 from kaas_common.trade_doc.translate import build_messages, parse_translation
 from kaas_common.workstation.amount_rules import (
@@ -260,14 +261,44 @@ async def confirm_trade_doc(
                 "detail": str(exc),
             })
 
+    payload = await _payload_with_render_fingerprint(request, doc_id, d, user)
     row = await db.fetchrow(
         request,
-        "UPDATE trade_docs SET status='issued', issued_at=$3, issued_by=$4,"
+        "UPDATE trade_docs SET status='issued', issued_at=$3, issued_by=$4, raw_payload=$5,"
         " updated_at=now() WHERE tenant_id=$1 AND id=$2 RETURNING *",
         DEFAULT_TENANT, doc_id, datetime.now(timezone.utc), str(user["id"]),
+        _json.dumps(payload),
         table="trade_docs",
     )
     return _row_to_doc(row)
+
+
+async def _payload_with_render_fingerprint(
+    request: Request, doc_id: int, d: dict, user: dict
+) -> dict:
+    """C 方案：签发时把「渲染输入指纹」写进 `raw_payload["_render"]`（与 orchestrator 同契约）。
+
+    与 orchestrator 逐字同义的装配：直接复用本端 `main.get_trade_doc_render_data`
+    —— **不另写一份装配**（G1）。里面已经包含企业主体/买方/上游快照/行项/产品图 data URI/
+    默认公章/产品基础信息回落，正是"客户看到的那一版"的全部输入。
+
+    装配失败**不阻断签发**：如实记 `input_sha256: null` + `note: input_unavailable`。
+    必须在 UPDATE **之前**装配（装配把单据日期取成 `issued_at or created_at`；该字段已被
+    内核排除，见 `kaas_common.trade_doc.render_fingerprint` 的理由）。
+    """
+    frozen_at = datetime.now(timezone.utc).isoformat()
+    try:
+        assembled = await _main.get_trade_doc_render_data(doc_id, request, user)
+        meta = render_fingerprint(assembled.get("data"), frozen_at=frozen_at)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[trade-docs] 渲染指纹装配失败（签发继续，指纹标注不可用）："
+              f"{type(exc).__name__}: {exc}")
+        meta = render_fingerprint(None, frozen_at=frozen_at)
+
+    payload = dict(_payload_of(d) or {})
+    # 与 `_audit` 同风格：顶层保留键，客户端自带的 `_render` 一律被这里覆盖
+    payload[RENDER_KEY] = meta
+    return payload
 
 
 # ── 中译英（AI 翻译，draft-only）────────────────────────────────────────────

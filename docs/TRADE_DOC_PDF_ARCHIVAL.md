@@ -53,14 +53,73 @@ host 匹配**大小写不敏感、允许端口、条目允许其子域**（`cdn.
 同时钉住"渲染器不得产出脚本/外链"；白名单的"像域名但不是"反例（后缀伪造 / 前缀拼接 /
 协议相对 / 域名藏在路径里 / userinfo 伪装）也逐条钉在测试里。
 
+**C 方案（签发时冻结渲染输入指纹）：已实现（2026-10-12）** —— 用户拍板后落地，口径见下方
+「§〇.2 C 方案落地」。
+
 **仍未做 / 未验证**：① 自动出字节**依赖在真实环境配好 binding（生产）或 token（本地）**，
 未配置时接口如实 503；② 本仓库**没有**用真实单证跑过一次端到端（实测用的是最小 HTML 探针，
 不是 18 类单证的真实 HTML）；③ **版面/分页仍然无法在无头环境验证**（见下文 §四 风险 1、风险 2：
-Chromium 忽略 `break-before/after: avoid`，跨 Chrome 版本分页可能变）；④ C 方案（签发时冻结渲染输入
-快照 + 模板指纹）**仍未做**，本文 §3.2 第 2 步仍是待办；⑤ **真实上传/归档验收暂缓**（用户已决定）：
+Chromium 忽略 `break-before/after: avoid`，跨 Chrome 版本分页可能变）；④ **真实上传/归档验收暂缓**（用户已决定）：
 生产 R2 的 `S3_ACCESS_KEY` 报 `Credential access key has length 13, should be 32` ⇒ 需用户重建 32 位
 密钥后再验；**在此之前不要写成"上传已验证成功"**（服务端落档走 `_store_bytes` 的 binding/inline
-回退，不依赖直传，但"上传到对象存储"这一条实测仍未通过）。
+回退，不依赖直传，但"上传到对象存储"这一条实测仍未通过）；⑤ C 方案的**前端那一行没有自动化测试**
+（见 §〇.2 末尾"未覆盖"）。
+
+## 〇.2 C 方案落地（签发时冻结「渲染输入快照指纹」，2026-10-12）
+
+**冻结时机**：`POST /trade-docs/{id}/confirm` 成功那一刻（两端一致）。指纹在**改状态/写签发时间之前**
+计算 —— 装配层把单据日期取成 `issued_at or created_at`，签发前后天然差一个日期字段（该字段已被排除，
+理由见下）。它写进 `trade_docs.raw_payload` 的**顶层保留键** `_render`（与 `_audit` 同风格；
+客户端自带的 `_render` 一律被覆盖），**`custom` 覆盖不到它**（`custom` 是 `raw_payload` 的**子对象**）。
+重复确认按现有状态机拒绝（409 `NOT_DRAFT`），不会重复写或写乱。
+
+**`_render` 的确切形状**（内核 `kaas_common.trade_doc.render_fingerprint.render_fingerprint`，
+两端一份）：
+
+```jsonc
+{
+  "render_version": 1,             // 渲染器/模板版本（常量 RENDER_VERSION，从 1 开始）
+  "input_sha256": "<64 位十六进制>", // 渲染输入的摘要；装配失败时为 null（不伪造）
+  "frozen_at": "2026-10-12T09:30:00+00:00",  // 冻结时刻（UTC ISO）
+  "note": "input_unavailable"      // 仅装配失败时出现
+}
+```
+
+**摘要纳入什么**：装配好的渲染数据（`GET /trade-docs/{id}/render-data` 返回的 `data`）——
+卖方抬头、买方（客户档案 + 主联系人）、上游快照与行项、币种与总金额、贸易条款、
+`custom` 手工字段、产品图引用解析出的 `data:` URI、默认公章、产品基础信息回落。
+**摘要排除什么（含理由）**：
+
+| 排除 | 为什么 |
+|---|---|
+| 各单据类型的日期字段（`pi_date`/`invoice_date`/… 由 `DOC_NO_FIELDS` 自动收集）、`created_at`/`issued_at`/`issued_by`/`updated_at`/`frozen_at` | 这些由**签发动作本身**写入；装配在签发前后取到的值不同。纳入 ⇒ 冻结的摘要与"拿同一行重新装配"**永不相等**，指纹出生即失效。签发时刻已另记在 `frozen_at` 与单据行 `issued_at` 上 |
+| `_audit`、`_render` | 系统自己的记录键，不是渲染输入；纳入会让"改一次审计"改一次指纹（自指） |
+| `request_id`/`trace_id`/`now` | 请求级易变值，与内容无关 |
+
+**确定性保证**：键排序后序列化（与 dict 插入顺序无关）；数字归一（`int`/`float`/`Decimal` 同值同形 ——
+orchestrator 会给 `float`、Worker 的 asyncpg 会给 `Decimal`，不归一两端指纹必然不同）；
+`data:` URI 与字节一致 ⇒ 同图同摘要。**可复现性**已单测钉住：签发前（日期=created_at）与签发后
+（日期=issued_at）装配出同一摘要。
+
+**bump 纪律（写在内核注释里）**：改 `render.ts` / `assets.json` / `manifest.json` 或渲染器行为
+（分页、字体、字段映射）⇒ **必须**把 `RENDER_VERSION` 加一。`input_sha256` 只能证明"输入没变"，
+证明不了"输出没变"。这条没有代码能自动兜底（渲染器在前端 TS 里），靠 review 守。
+
+**展示**：单证预览区一行 `渲染指纹 v1 · a1b2c3d4`（`title` 里给 `frozen_at` 与完整 sha256）；
+`_render` 只在 confirm 成功时写入 ⇒ "有这个键"等价于"已签发"，草稿/历史单据不渲染该行。
+
+**C 方案的未覆盖**：① `_render` 存的是**指纹**不是快照本体（本任务口径就是指纹：不把 ~1.4MB 的
+图片 data URI 抄进 `raw_payload`）⇒ 能证明"输入是否一致"，但**不能**凭它重出当时那一版；
+若要"按快照重出"，仍需另存装配输入（本文 §3.2 第 2 步原始设计，**未做**）。② 前端那一行
+**没有自动化测试**（`doc-preview.tsx` 加了可选 prop `renderMeta` + 导出 `renderMetaOf`，
+接线在 `page.tsx` 1 行；本任务写范围不含前端测试文件）⇒ 该行的真实渲染**只有 typecheck 保驾**。
+③ 指纹**没有对账消费者**：目前没有"用归档时的指纹复核现在数据是否被改过"的脚本/接口，
+只有库里那个键 + 界面上一行。④ **orchestrator 侧 `confirm` 的落库路径没有单测**
+（worker 侧有：`tests/test_four_domains.py::test_trade_doc_confirm_locks_draft` 从
+`UPDATE ... raw_payload=...` 的**实参**里验了 `_render` 的形状）；orchestrator 只单测了
+`_freeze_render_fingerprint` 这个壳（装配成功 ⇒ 有摘要；装配抛错 ⇒ `input_sha256: null` + note）。
+⑤ 指纹**不覆盖签发之后的文件变化**：签发后仍可归档新的 PDF 版本（`render_pdf` 版本让位），
+新版本并没有自己的 `_render`（版本链与指纹是两件事）。
 
 ## 一句话结论
 
@@ -312,16 +371,22 @@ Chrome 是否逐字节一致未验证**（不同 Chrome 版本与打印参数会
 - 若不改这一步，归档第二版 PDF 后 `GET /trade-docs/{id}/files`（`files.py:488-497`，未过滤 `is_current`）
   会同时返回多份"当前 PDF"。
 
-**第 2 步（必做，C 的底座）**：签发时冻结"渲染输入快照 + 模板/渲染器版本"。
+**第 2 步（必做，C 的底座）—— ✅ 2026-10-12 已实现（**与当时设想的三处不同，见下**）**：
+签发时冻结"渲染输入指纹 + 模板/渲染器版本"。
 
-- 落点：`POST /trade-docs/{id}/confirm`（orchestrator `backend/orchestrator/app/api/trade_docs.py:425-471`；
-  Worker `backend/worker/src/ws_docs_ext.py:204`）。
-- 存什么：`render_snapshot`（`render-data` 的完整输入，含企业主体与已解析图片源）
-  + `template_hash`（模板 + 共享样式 + `manifest.json` 的内容 hash）
-  + `renderer` 标识（例如产生时用的 Chrome/运行时版本）—— **这三样现在都没有落库**
-  （前两个标识符 grep 0 命中；渲染器版本没有任何记录字段）。
-- 存放位置：新增列或新表（迁移）；**不要**塞进 `raw_payload.custom`（那是给用户改的字段，
-  且 `custom` 有 `PROTECTED_CUSTOM_FIELDS` 与审计语义，混用会破坏既有口径）。
+- 落点：`POST /trade-docs/{id}/confirm`（orchestrator `backend/orchestrator/app/api/trade_docs.py`；
+  Worker `backend/worker/src/ws_docs_ext.py`）。
+- 实际存的是**指纹**（不是快照本体）：`raw_payload._render = {render_version, input_sha256, frozen_at}`，
+  形状与冻结时机见 §〇.2。
+- 与本文原设想的三处差异（**以实际实现为准**）：
+  1. **不塞进 `custom`**：放在 `raw_payload` 的**顶层保留键** `_render`（与 `_audit` 同风格）——
+     既不改 `PROTECTED_CUSTOM_FIELDS` 口径，也不会被 `custom` 覆盖；
+  2. **不新增列/表**（迁移成本与并发风险都省了）；
+  3. **不存 `render_snapshot` 本体**：只存摘要（原始设想里的"完整输入"含 data URI 图片，
+     一张 PI 约 1.4MB，抄进 `raw_payload` 会撑爆行）⇒ 能证明"输入是否一致"，不能凭它重出。
+     真要"按快照重出"，仍需另做（**未做**）。
+- `template_hash` 在本实现里由 `render_version`（人工 bump 的常量）承担 —— 主动、便宜，
+  但**靠人守**：改模板/渲染器必须 bump，理由与纪律见 §〇.2 与内核注释。
 
 **第 3 步（出 PDF 字节）**：新增两端一致的端点 `POST /api/v1/trade-docs/{doc_id}/pdf`。
 

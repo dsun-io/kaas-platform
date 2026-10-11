@@ -7,6 +7,7 @@
 - png       PNG 校验与尺寸解析（替代 Pillow，图像处理已挪前端）
 - translate 翻译 prompt / 响应解析
 - product_defaults 产品基础信息 → 单据行项默认值（一次维护、重复使用）
+- render_fingerprint 签发时冻结的渲染输入指纹（C 方案：可复现可追溯）
 """
 from .rules import (  # noqa: F401
     DOC_STATUS,
@@ -50,6 +51,15 @@ from .product_defaults import (  # noqa: F401
     apply_product_defaults,
     product_key_of,
 )
+from .render_fingerprint import (  # noqa: F401
+    RENDER_DIGEST_IGNORED_FIELDS,
+    RENDER_KEY,
+    RENDER_VERSION,
+    canonical_render_input,
+    read_render_fingerprint,
+    render_fingerprint,
+    render_input_digest,
+)
 
 __all__ = [
     "DOC_STATUS", "DOC_NEXT", "DOC_TYPE_PREFIX", "MAX_SEAL_BYTES", "SYSTEM_PROMPT",
@@ -63,4 +73,7 @@ __all__ = [
     "build_messages", "parse_translation",
     "PRODUCT_KEY_FIELD", "PRODUCT_INFO_KEYS", "HS_ITEM_DOC_TYPES",
     "product_key_of", "apply_product_defaults",
+    "RENDER_KEY", "RENDER_VERSION", "RENDER_DIGEST_IGNORED_FIELDS",
+    "canonical_render_input", "render_input_digest", "render_fingerprint",
+    "read_render_fingerprint",
 ]

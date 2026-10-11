@@ -44,6 +44,7 @@ from kaas_common.trade_doc import (
     normalize_items, derive_payload, freeze_snapshot,
     append_audit, protected_custom_fields,
     apply_product_defaults, product_key_of,
+    RENDER_KEY, render_fingerprint,
 )
 from kaas_common.files import apply_default_seal, is_file_ref, to_data_uri
 from kaas_common.workstation.entity_links import (
@@ -464,12 +465,44 @@ async def confirm_trade_doc(
         })
 
     from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    # C 方案：签发时冻结「渲染输入指纹」（见 kaas_common.trade_doc.render_fingerprint）。
+    # 必须在改状态/签发时间**之前**算：装配层把单据日期取成 `issued_at or created_at`，
+    # 签发前后算出的输入天然差一个日期字段 —— 该字段已被内核排除，见那里的理由。
+    render_meta = await _freeze_render_fingerprint(doc_id, auth, db, now)
+
     d.status = "issued"
-    d.issued_at = datetime.now(timezone.utc)
+    d.issued_at = now
     d.issued_by = str(auth.user_id)
+    # 与 `_audit` 同风格：**顶层保留键**，客户端自带的 `_render` 一律被这里覆盖
+    payload = dict(d.raw_payload or {})
+    payload[RENDER_KEY] = render_meta
+    d.raw_payload = payload
     await db.commit()
     await db.refresh(d)
     return _row_to_doc(d)
+
+
+async def _freeze_render_fingerprint(doc_id: int, auth, db, now) -> dict:
+    """装配这张单据的渲染数据并算指纹（签发时冻结，写进 `raw_payload["_render"]`）。
+
+    为什么"装配后再摘要"而不是只摘要 `raw_payload`：客户看到的是**装配结果** ——
+    企业主体抬头、客户档案（买方）、上游快照、行项、产品图 `data:` URI、默认公章、
+    产品基础信息回落，这些大多**不在** payload 里。只摘要 payload 会漏掉它们，
+    事后"拿同一行重新装配"就对不上账，指纹也就失去意义。
+
+    装配失败**不阻断签发**（签发是业务动作，不能被指纹计算拖垮）：如实记
+    `input_sha256: null` + `note: input_unavailable`，绝不伪造一个看起来正常的摘要。
+    """
+    from datetime import timezone
+    frozen_at = now.astimezone(timezone.utc).isoformat()
+    try:
+        assembled = await get_trade_doc_render_data(doc_id, auth, db)
+        return render_fingerprint(assembled.get("data"), frozen_at=frozen_at)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[trade-docs] 渲染指纹装配失败（签发继续，指纹标注不可用）："
+              f"{type(exc).__name__}: {exc}")
+        return render_fingerprint(None, frozen_at=frozen_at)
 
 
 @router.get("/trade-docs/{doc_id}")

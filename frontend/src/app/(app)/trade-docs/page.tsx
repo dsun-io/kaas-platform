@@ -42,7 +42,7 @@ import { exportCsv, exportExcel, printMerged } from "@/lib/trade-doc/export";
 import { DocCreateForm } from "./components/doc-create-form";
 import { DocCustomForm } from "./components/doc-custom-form";
 import { DocStampReturn } from "./components/doc-stamp-return";
-import { DocPreview } from "./components/doc-preview";
+import { DocPreview, renderMetaOf } from "./components/doc-preview";
 import { SamplePreview } from "./components/sample-preview";
 import { DOC_TYPE_GROUPS } from "./lib/doc-type-groups";
 import {
@@ -467,6 +467,7 @@ export default function TradeDocsPage() {
                 docNo={renderData.data.doc.doc_no}
                 data={renderData.data.data}
                 docId={renderData.data.doc.id}
+                renderMeta={renderMetaOf(renderData.data.doc.raw_payload)}
                 companyProfileConfigured={
                   renderData.data.company_profile_configured
                 }
