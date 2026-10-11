@@ -148,3 +148,45 @@ def test_pricing_key_carries_the_free_value_verbatim():
     spec = _priced_spec()
     assert pricing_key_of(spec, {"d": 2.3, "coating_code": "z40"}) == "d=2.3|coating_code=z40"
     assert pricing_key_of(spec, {"d": 2, "coating_code": "z200"}) == "d=2|coating_code=z200"
+
+
+# ── 导表：自由数值列必须能被"导出 → 改 → 再导入"闭环认出来 ──────────────────
+
+def test_template_has_numeric_columns():
+    """模板里必须有自由数值列，否则该尺寸无从填写（它不属于规格轴）。"""
+    from app.services.export_quote.importers import template_headers
+
+    headers = template_headers(_spec())
+    assert "丝径(mm)" in headers
+    assert "网高(m)" in headers
+
+
+def test_import_parses_free_numeric_values_without_enumeration():
+    """2.3 这种"枚举里没有"的值必须能导入 —— 自由数值不做可选值校验。"""
+    from decimal import Decimal as D
+
+    from app.services.export_quote.importers import parse_table
+
+    csv_text = "表面处理,丝径(mm),网高(m)\n热镀锌40,2.3,1.5\n"
+    t = parse_table(csv_text.encode("utf-8"), _spec(), "a.csv")
+    assert t.mapping["丝径(mm)"] == "d"
+    assert len(t.rows) == 1
+    assert D(str(t.rows[0]["d"])) == D("2.3")
+    assert D(str(t.rows[0]["h"])) == D("1.5")
+
+
+def test_numeric_column_with_ui_unit_converts_to_engine_unit():
+    """表头写界面单位（公分）→ 值要除以 ui_scale 变成引擎单位（米）。"""
+    from decimal import Decimal as D
+
+    from app.services.export_quote.importers import parse_table
+
+    spec = ProductSpec(
+        key="unit_demo", name="单位演示",
+        numeric_inputs=[NumericInput(
+            "roll_dia_m", "卷径", label_en="Roll Diameter",
+            unit="m", ui_unit="公分", ui_scale=100, default=0.30)],
+    )
+    t = parse_table("卷径\n30\n".encode("utf-8"), spec, "a.csv")
+    assert t.mapping["卷径"] == "roll_dia_m"
+    assert D(str(t.rows[0]["roll_dia_m"])) == D("0.30")

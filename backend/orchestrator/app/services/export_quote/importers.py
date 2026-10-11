@@ -248,12 +248,33 @@ def _resolve_role(product: ProductSpec, role: str) -> str | None:
     return None
 
 
-def _build_header_map(product: ProductSpec) -> tuple[dict, dict, set]:
-    """构造 表头基名 → 目标字段 的查找表。"""
+def _build_header_map(product: ProductSpec) -> tuple[dict, dict, dict, set]:
+    """构造 表头基名 → 目标字段 的查找表。
+
+    返回 (scalar, variant, numeric, variant_codes)。
+    """
     scalar: dict[str, tuple[str, dict]] = {}
     for alias, target, meta in _ALIASES:
         compact = re.sub(r"[\s_\-·.]", "", alias).lower()
         scalar.setdefault(compact, (target, meta))
+
+    # 自由数值参数：按「标签 / 英文名 / key」认。
+    # 必须**先于**语义别名（_ALIASES）判定 —— 因为 height_m / mesh_mm 现在
+    # 本身就是自由数值参数，而 _ALIASES 里的「网高 / 竖丝间距」会把它们
+    # 解析成语义角色（height / mesh），角色只在 axes 里找得到，
+    # 于是表头认不出来 → 整表导入失败。
+    numeric: dict[str, str] = {}
+    for ni in product.numeric_inputs:
+        for alias in (ni.label, ni.label_en, ni.key):
+            if not alias:
+                continue
+            # 两种写法都要登记：完整标签（「丝径(mm)」）与**去掉单位后的基名**
+            # （「丝径」）—— 表头解析会先把单位拆出来（_norm_header），
+            # 只登记带单位的那种就会认不出模板自己写出去的列名。
+            for form in (str(alias), _norm_header(alias)[0]):
+                compact = re.sub(r"[\s_\-·.]", "", str(form)).lower()
+                if compact:
+                    numeric.setdefault(compact, ni.key)
 
     variant: dict[str, str] = {}
     for group, aliases in _VARIANT_ALIASES.items():
@@ -285,7 +306,7 @@ def _build_header_map(product: ProductSpec) -> tuple[dict, dict, set]:
     for v in product.variants:
         known_variant_codes.add(f"{v.name}_code")
 
-    return scalar, variant, known_variant_codes
+    return scalar, variant, numeric, known_variant_codes
 
 
 def _resolve_column(
@@ -298,10 +319,15 @@ def _resolve_column(
     **解析与模板生成共用这一处**，所以「上传时能认的表头」与
     「模板里写出去的表头」永远是同一套，不会各改各的而对不上。
     """
-    scalar_map, variant_map, _codes = maps or _build_header_map(product)
+    scalar_map, variant_map, numeric_map, _codes = maps or _build_header_map(product)
     base, unit = _norm_header(raw_header)
     if base in variant_map:
         return "variant", variant_map[base], {}, ""
+    if base in numeric_map:
+        # 自由数值：不做枚举校验（取值连续），单位换算交给调用方按 ui_scale 处理。
+        key = numeric_map[base]
+        ni = next(n for n in product.numeric_inputs if n.key == key)
+        return "numeric", key, {}, (unit or ni.ui_unit or ni.unit)
     if base in scalar_map:
         target, meta = scalar_map[base]
         # 语义角色 → 产品真实轴名（height → height_m / mesh → mesh_mm）
@@ -315,6 +341,19 @@ def _unit_factor(meta: Mapping[str, Any], unit: str) -> Decimal:
     factor = (meta or {}).get("factor") or {}
     if unit in factor:
         return Decimal(str(factor[unit]))
+    return Decimal(1)
+
+
+def _numeric_factor(ni, unit: str) -> Decimal:
+    """自由数值列：表头单位 → **引擎内部单位**的换算因子。
+
+    界面值 = 引擎值 × ui_scale（卷径 0.30m 显示成 30 公分），
+    所以表头写界面单位时要**除以** ui_scale；写引擎单位时因子为 1。
+    """
+    ui_unit = ni.ui_unit or ni.unit
+    scale = ni.ui_scale or 1
+    if unit and ui_unit and unit == ui_unit and scale != 1:
+        return Decimal(1) / Decimal(str(scale))
     return Decimal(1)
 
 
@@ -448,8 +487,8 @@ def parse_table(
             "数据行 %d 超过上限 %d 行，请拆分后再传" % (len(grid) - 1, MAX_ROWS)
         )
 
-    scalar_map, variant_map, _codes = _build_header_map(product)
-    maps = (scalar_map, variant_map, _codes)
+    scalar_map, variant_map, numeric_map, _codes = _build_header_map(product)
+    maps = (scalar_map, variant_map, numeric_map, _codes)
 
     # 列映射
     col_target: dict[int, tuple[str, str, dict]] = {}
@@ -463,6 +502,12 @@ def parse_table(
         kind, target, meta, unit = resolved
         if kind == "variant":
             col_target[idx] = ("variant", target, {})
+        elif kind == "numeric":
+            ni = next(n for n in product.numeric_inputs if n.key == target)
+            col_target[idx] = ("numeric", target, {
+                "unit": unit,
+                "factor": {unit: str(_numeric_factor(ni, unit))},
+            })
         else:
             col_target[idx] = ("scalar", target, {"unit": unit,
                                                   "factor": meta["factor"]})
@@ -592,6 +637,13 @@ def template_columns(product: ProductSpec) -> list[TemplateColumn]:
                 [str(o.get("name")) for o in vg.options],
                 Decimal(1), vg.label or vg.name,
             ))
+        elif kind == "numeric":
+            ni = next(n for n in product.numeric_inputs if n.key == target)
+            out.append(TemplateColumn(
+                header, "numeric", target, False, unit,
+                [], _numeric_factor(ni, unit),
+                ni.note or f"自由数值（{ni.unit}）；留空则用默认值",
+            ))
         else:
             factor = _unit_factor(meta, unit)
             is_axis = any(ax.name == target for ax in product.axes)
@@ -650,6 +702,19 @@ def template_columns(product: ProductSpec) -> list[TemplateColumn]:
                 add(candidate, resolved)
                 break
 
+    # 3) 自由数值参数：产品没给它配输出列时，模板里也必须有这一列，
+    #    否则该尺寸无从填写（它不进规格轴，靠第 2 步的轴兜底捞不到）。
+    for ni in product.numeric_inputs:
+        if ni.key in seen:
+            continue
+        for candidate in (ni.label, ni.label_en, ni.key):
+            if not candidate:
+                continue
+            resolved = _resolve_column(product, candidate, maps)
+            if resolved is not None and resolved[1] == ni.key:
+                add(candidate, resolved)
+                break
+
     return out
 
 
@@ -676,7 +741,7 @@ def _example_rows(product: ProductSpec, columns: list[TemplateColumn],
                 row.append("")
                 continue
             value: Any = c.options[i % len(c.options)]
-            if c.kind == "scalar":
+            if c.kind in ("scalar", "numeric"):
                 value = _as_number(value)
             row.append(value)
         rows.append(row)
