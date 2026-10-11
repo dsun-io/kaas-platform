@@ -51,6 +51,14 @@ R5.1 frontend-api    # hooks/use-tenants.ts 的 Tenant 用 name，而渲染侧 c
 # 2026-10-11 S3（task-10）：worker 已改为返回 tenant_id → {flag: bool} 映射
 # （不再要求 flag_name 必填、不再返单值）⇒ 登记已还掉、按棘轮纪律删除。
 
+# ── R5.4 POST /admin/feature_flag 请求体键集合（task-15 新增）──
+# 三方（flag-toggle.tsx 调用点 / orchestrator / worker）当前**一致**：
+#   flag-toggle.tsx:32-38 发 {tenant_id, flag_key, enabled, reason, actor_id}；
+#   orchestrator admin.py:147-185 读 tenant_id / flag_name / flag_key / flag_value / enabled /
+#   actor_id / reason；worker main.py:2279-2310 读 flag_name / flag_key / flag_value / enabled /
+#   tenant_id / reason。⇒ requiredKeys{tenant_id, flag_key, enabled} 三方都满足，**无需登记**。
+#   （worker 不读 actor_id 是有意的：它用登录用户 id 替代 —— 门禁只打 INFO 不算偏差。）
+
 # ── 未纳入本门禁的相邻项（记录，不产生 R5 偏差）──────────────────────────────
 # · mock 的 POST /admin/tenants/reload 的 active_tenants 缺 is_active ——
 #   由 frontend/src/app/(app)/settings/components/reload-button.tsx:62-65 显式补 true 兜住。

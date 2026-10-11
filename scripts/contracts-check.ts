@@ -299,6 +299,26 @@ interface PyHandlerKeys {
   shape: 'literal' | 'dynamic-map' | 'missing';
 }
 
+/** 抽出 python handler 的**函数体**（装饰器之后 → 下一个顶层装饰器之前）。
+ *
+ * 不解析 router 前缀：调用方直接给出**文件内出现的路由字面量**
+ * （orchestrator 的 router 带 prefix、worker 是完整路径），省掉一套 prefix 拼接。 */
+function pyHandlerBody(
+  src: string,
+  method: string,
+  route: string,
+): string | null {
+  const re = new RegExp(
+    `@(?:router|app)\\.${method}\\(\\s*"${escapeRegExp(route)}"`,
+  );
+  const m = re.exec(src);
+  if (!m) return null;
+  const start = m.index + m[0].length;
+  // handler 体：到下一个顶层装饰器（或文件末尾）
+  const nextDeco = /\n@(?:router|app)\./.exec(src.slice(start));
+  return src.slice(start, nextDeco ? start + nextDeco.index : src.length);
+}
+
 /** 从 python handler 的 `return {...}` 字面量取「包封键 + 条目键」。
  *
  * 为什么按**花括号深度**取：`return {"items": [{"tenant_id": ..., "name": ...}]}`
@@ -307,18 +327,8 @@ interface PyHandlerKeys {
  * `t.get("display_name")` 这类调用不是 `"key":` 形式，天然不会误入。 */
 function pyHandlerKeys(src: string, method: string, route: string): PyHandlerKeys {
   const empty: PyHandlerKeys = { envelope: [], item: [], shape: 'missing' };
-  const re = new RegExp(
-    `@(?:router|app)\\.${method}\\(\\s*"${escapeRegExp(route)}"`,
-  );
-  const m = re.exec(src);
-  if (!m) return empty;
-  // handler 体：到下一个顶层装饰器（或文件末尾）
-  const bodyStart = m.index + m[0].length;
-  const nextDeco = /\n@(?:router|app)\./.exec(src.slice(bodyStart));
-  const body = src.slice(
-    bodyStart,
-    nextDeco ? bodyStart + nextDeco.index : src.length,
-  );
+  const body = pyHandlerBody(src, method, route);
+  if (body === null) return empty;
 
   const retAt = body.indexOf('return {');
   if (retAt === -1) return empty;
@@ -352,6 +362,51 @@ function pyHandlerKeys(src: string, method: string, route: string): PyHandlerKey
     return { envelope: [], item: [], shape: 'dynamic-map' };
   }
   return { envelope: uniq(envelope), item: uniq(item), shape: 'literal' };
+}
+
+/** 从 python handler 体里取它**读取的请求体键**（R5 请求体规则用）。
+ *
+ * 只认三种**结构性读取**形态：`body.get("x")` / `body["x"]` / `"x" in body` ——
+ * 命中即"这一行真的从请求体取了这个键"，而不是在注释/文档字符串里出现过该词。 */
+function pyBodyReadKeys(body: string): string[] {
+  const keys: string[] = [];
+  for (const m of body.matchAll(/body\.get\(\s*"([A-Za-z_]\w*)"/g)) {
+    keys.push(m[1]);
+  }
+  for (const m of body.matchAll(/body\[\s*"([A-Za-z_]\w*)"\s*\]/g)) {
+    keys.push(m[1]);
+  }
+  for (const m of body.matchAll(/"([A-Za-z_]\w*)"\s+in\s+body/g)) {
+    keys.push(m[1]);
+  }
+  return uniq(keys);
+}
+
+/** 取 TS 里 `anchor(...)` 之后那个对象字面量的**顶层键**
+ *  （R5 请求体规则用：前端调用点**实际发出**的键）。 */
+function tsObjectLiteralKeys(src: string, anchor: string): string[] {
+  const at = src.indexOf(anchor);
+  if (at === -1) return [];
+  const open = src.indexOf('{', at);
+  if (open === -1) return [];
+  let depth = 0;
+  let close = -1;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        close = i;
+        break;
+      }
+    }
+  }
+  const expr = src.slice(open, close === -1 ? src.length : close + 1);
+  const keys: string[] = [];
+  for (const m of expr.matchAll(/^\s*([A-Za-z_]\w*)\s*:/gm)) {
+    if (braceDepthAt(expr, m.index) === 1) keys.push(m[1]);
+  }
+  return uniq(keys);
 }
 
 /** 取 TS interface 的**顶层**字段名（缩进 2 空格的行），可选字段（`x?:`）也算。 */
@@ -541,6 +596,64 @@ const R5_RULES: R5Rule[] = [
         kind: 'generic',
         file: 'frontend/src/app/(app)/admin/gray-release/hooks/use-feature-flags.ts',
         call: 'apiClient.get',
+      },
+    ],
+  },
+];
+
+// ── R5 · 请求体形状 ───────────────────────────────────────────────────────
+// 为什么单开一组：上面 R5.1–R5.3 比的是**响应**键集合；而 worker
+// `POST /admin/feature_flag` 曾是真缺陷 —— 它只认后端格式 `flag_name`，前端发的是
+// `{tenant_id, flag_key, enabled, reason, actor_id}` ⇒ real 模式下点灰度开关 **422**
+// （0a66e9b 修：加别名兼容）。**这类缺陷 R5 的响应比对完全看不到** ⇒ 需要请求体规则。
+//
+// 语义（三方）：
+//   · 前端调用点**实际发出的键** S（解析 `mutateAsync({...})` 的对象字面量）；
+//   · 每个后端 handler **读取的请求体键** B（解析 `body.get("x")` / `body["x"]` / `"x" in body`）；
+//   · 声明一个「必须被接受」的键集合 K（像 R0 的 KNOWN_EVENTS 一样写在脚本里）。
+//   失败条件：K ⊄ S（前端没发）或 K ⊄ B（后端不认）—— 后者正是那次 422 的形状。
+//   前端多发、后端不读的键（如审计上下文 `actor_id`）**只打印 INFO，不算偏差**：
+//   worker 用登录用户 id 代替 actor_id 是有意为之。
+
+interface R5BodyRule {
+  id: string;
+  label: string;
+  /** 上游契约里「缺一个就会让操作失效」的键 */
+  requiredKeys: string[];
+  frontend: { side: string; file: string; anchor: string };
+  backends: Array<{
+    side: string;
+    file: string;
+    method: 'get' | 'post';
+    route: string;
+  }>;
+}
+
+const R5_BODY_RULES: R5BodyRule[] = [
+  {
+    id: 'R5.4',
+    label: 'POST /api/v1/admin/feature_flag 请求体键集合',
+    // 为什么是这三个：frontend/src/app/(app)/admin/gray-release/components/flag-toggle.tsx:32-38
+    // 发的 5 个键里，tenant_id / flag_key / enabled 是**操作语义**（哪个租户、哪个开关、开还是关）；
+    // reason / actor_id 是审计上下文（worker 用登录用户 id 替代 actor_id，故不列为必需）。
+    requiredKeys: ['tenant_id', 'flag_key', 'enabled'],
+    frontend: {
+      side: 'frontend-release',
+      file: 'frontend/src/app/(app)/admin/gray-release/components/flag-toggle.tsx',
+      anchor: 'mutateAsync(',
+    },
+    backends: [
+      {
+        side: 'orchestrator',
+        file: 'backend/orchestrator/app/api/admin.py',
+        method: 'post',
+        route: '/feature_flag',
+      },
+      {
+        side: 'worker',
+        file: 'backend/worker/src/main.py',
+        method: 'post',
+        route: '/api/v1/admin/feature_flag',
       },
     ],
   },
@@ -885,6 +998,96 @@ for (const rule of R5_RULES) {
   }
 }
 
+// R5 · 请求体形状（三方：前端调用点 / orchestrator / worker）
+for (const rule of R5_BODY_RULES) {
+  const frontendLabel = rule.id + ' ' + rule.frontend.side;
+  let sent: string[] = [];
+  if (!existsSync(resolve(REPO_ROOT, rule.frontend.file))) {
+    r5Checked++;
+    r5Deviations.push({
+      key: frontendLabel,
+      details: ['源文件不存在: ' + rule.frontend.file],
+    });
+  } else {
+    r5Checked++;
+    sent = tsObjectLiteralKeys(read(rule.frontend.file), rule.frontend.anchor);
+    if (sent.length === 0) {
+      r5Deviations.push({
+        key: frontendLabel,
+        details: [
+          '未解析到 ' +
+            rule.frontend.anchor +
+            ' 之后的对象字面量键（' +
+            rule.frontend.file +
+            '）',
+        ],
+      });
+    } else {
+      const missing = rule.requiredKeys.filter((k) => !sent.includes(k));
+      if (missing.length > 0) {
+        r5Deviations.push({
+          key: frontendLabel,
+          details: [
+            '调用点没发必需的键 [' +
+              missing.join(', ') +
+              ']（实际发送 [' +
+              sent.join(', ') +
+              ']）',
+          ],
+        });
+      }
+    }
+  }
+
+  for (const backend of rule.backends) {
+    const label = rule.id + ' ' + backend.side;
+    r5Checked++;
+    if (!existsSync(resolve(REPO_ROOT, backend.file))) {
+      r5Deviations.push({ key: label, details: ['源文件不存在: ' + backend.file] });
+      continue;
+    }
+    const body = pyHandlerBody(read(backend.file), backend.method, backend.route);
+    if (body === null) {
+      r5Deviations.push({
+        key: label,
+        details: [
+          '未解析到 ' +
+            backend.method.toUpperCase() +
+            ' ' +
+            backend.route +
+            ' 的 handler',
+        ],
+      });
+      continue;
+    }
+    const reads = pyBodyReadKeys(body);
+    const missing = rule.requiredKeys.filter((k) => !reads.includes(k));
+    if (missing.length > 0) {
+      // 这正是历史 422 的形状：后端不认前端发来的键
+      r5Deviations.push({
+        key: label,
+        details: [
+          '未读取前端发来的必需键 [' + missing.join(', ') + ']',
+          '实际读取 [' + reads.join(', ') + ']',
+          sent.length ? '前端发送 [' + sent.join(', ') + ']' : '前端调用点未解析到',
+        ],
+      });
+    } else if (sent.length > 0) {
+      const unread = sent.filter((k) => !reads.includes(k));
+      if (unread.length > 0) {
+        // 后端不校验多余键 ⇒ 前端多发不算偏差（如 worker 用登录用户 id 替代 actor_id）。
+        // 只提示，不下结论说"这是审计字段"—— 键的性质只有人知道。
+        console.log(
+          'INFO R5.4: ' +
+            backend.side +
+            ' 未读取前端发来的键（后端不校验多余键，允许）: ' +
+            unread.join(', '),
+        );
+      }
+    }
+  }
+}
+
 const r5Found = new Set(r5Deviations.map((d) => d.key));
 const r5Unregistered = r5Deviations.filter((d) => !r5Registered.has(d.key));
 // 棘轮的另一半：登记了但**偏差已经不存在**（修好却忘删行）同样是失败。
@@ -918,7 +1121,9 @@ if (r5Unregistered.length === 0 && r5Overdue.length === 0) {
   console.log(
     'PASS R5: ' +
       R5_RULES.length +
-      ' admin endpoints，' +
+      ' 响应端点 + ' +
+      R5_BODY_RULES.length +
+      ' 请求体规则，' +
       r5Checked +
       ' 侧比对通过（其中 ' +
       r5Deviations.length +
