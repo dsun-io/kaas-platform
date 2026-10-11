@@ -63,7 +63,8 @@
 
 ### 还没做的（建议顺序）
 
-1. **反向漂移 8 条** —— 逐条处置见下「反向漂移：逐条取证与处置」。
+1. ~~**反向漂移 8 条**~~ ✅ **已结**：6 条修掉（webhook 收敛 4 + 爬取端点 2），
+   余 2 条 `subscriptions` 有既有裁决「有意保留」。详见下「反向漂移：逐条取证与处置」。
 2. **前端认证契约残留**（`session-cache.ts` 的 tenant 结构、`client.ts` 的 `X-Tenant-Id`）。
 3. **接口级测试**（#2b 与均价都只有纯函数单测）、**前端档位管理界面**。
 4. 规格库 11 条接口 / 依赖漏洞 98 个 + next 14→15 / e2e 26 条归真 /
@@ -80,7 +81,7 @@
 | 路由 | 取证 | 性质 |
 |---|---|---|
 | `POST /api/v1/leads/crawl-batch` | **前端在调它**（`leadgen/page.tsx:222` 的批量爬取按钮） | 🔴 **真 bug**：orchestrator 没有 ⇒ **dev 环境下该按钮 404** |
-| `GET /api/v1/subscriptions`<br>`GET /api/v1/subscriptions/bundles` | 前端调的是 **`/teams/{id}/subscriptions`**（带 team id），**不是**这两条 | 可疑残留，需确认还有谁在调 |
+| `GET /api/v1/subscriptions`<br>`GET /api/v1/subscriptions/bundles` | 前端调的是 **`/teams/{id}/subscriptions`**（带 team id），**不是**这两条；全仓（前端/脚本/orchestrator）**零调用**；但有**既有裁决**：`docs/archive/2026-09-30-doc-cleanup/SYSTEM_AUDIT.md:90` 标为「需确认 → **留**」，理由"用量/订阅" | ✅ **有意保留**（平台/订阅目录，非残留） |
 | `POST /api/v1/leads/{lead_id}/crawl` | 前端未直接调用 | 单条爬取，与上面的批量是同一功能的两个入口 |
 | `GET/PUT/PATCH/DELETE /api/v1/outreach/webhook` | worker 是 `@app.api_route(methods=[GET,POST,PUT,PATCH,DELETE])`，函数体**只 raise 501**（`INBOUND_WEBHOOK_RESERVED`） | 预留桩，**任何方法都无副作用**；orchestrator 只有 `POST` |
 
@@ -216,9 +217,12 @@ own redirect policy**」。
 |---|---|
 | `is_safe_crawl_url`（SSRF 防护） | ✅ 逐行照搬（`e578941`） |
 | `http_get_text`（出站抓取） | ✅ 已移植，且**两处刻意不同**：用 httpx 而非 `urllib` 同步回退（后者会阻塞 FastAPI 事件循环，一次爬取 15 秒全站卡住）；逐跳校验重定向 |
-| `extract_product_from_html`（抽产品信息） | ❌ 下一轮 |
-| `_enrich_product`（富集回写） | ❌ 下一轮 |
-| 两条端点 | ❌ 待接 |
+| `extract_product_from_html`（抽产品信息） | ✅ 已入共享内核（`crawl_extract.py`） |
+| `_enrich_product`（富集回写） | ✅ 按端各自实现（两端 `run_ai_task` 签名不同） |
+| 两条端点（`POST /leads/{id}/crawl`、`POST /leads/crawl-batch`） | ✅ **已接**（`2a158cb`）—— dev 的「批量爬取」404 **已修好** |
+
+**全部完成**：`route-parity` 的「worker 独有」由 **8 → 2**，
+剩下 2 条即上表的 `subscriptions`（有既有裁决、有意保留）。
 
 文档里挂着的那条**真缺陷**关掉了。它是一条**静默误读**链路：
 
