@@ -2184,3 +2184,62 @@ c) 前端两处：界面把 Markdown `**` 当文本渲染；历史版本号用 `
 `Get-Content .Count` 1323 / **Python 读原始字节 2070**。复核：文件内 **0 个 `\r\n`、无 NUL、无超长行**，
 而 `read` 工具与 Python 口径**一致**（2070/2134）⇒ **`Get-Content` 那个读数不可靠** ✗。
 **教训：同一事实多个工具口径不一致时，先定"哪个工具跑在预期对象上"，再下结论。**
+
+**（续五 · 2026-10-12）渲染指纹「对账端点」：C 方案从"存了"变成"能查"**
+
+**1. 两端端点（逐字相同，只读）**
+- orchestrator：`GET /api/v1/trade-docs/{doc_id}/render-fingerprint-check`
+  （`backend/orchestrator/app/api/trade_docs.py:910`）；
+- worker：同路径同语义（`backend/worker/src/ws_docs_ext.py:304`）；
+- 判定**全在共享内核** `kaas_common/trade_doc/render_fingerprint.py::render_fingerprint_check`，
+  端点只做"取单据 + 调装配 + 调内核"。
+- **前提：走与 `POST /trade-docs/{id}/confirm` 同一套装配**（`get_trade_doc_render_data`）
+  ＋ **同一个摘要函数** —— 否则比对没有意义（`trade_docs.py:928-929` 的注释即此口径）。
+
+**2. 返回 11 个字段**（内核 `render_fingerprint.py:278-301`，就是两端响应契约）
+`has_fingerprint` / `frozen` / `current_sha256` / `matches` / `render_version_frozen` /
+`render_version_current` / `render_version_drift` / `reason` / `checked_at` /
+`current_note` / `frozen_note`。
+
+三个最该记住的：
+- `matches`：**当且仅当**两边都有摘要且完全相等才 `true`（`:282-287`）；
+- `reason`：`matched` / `version_drift` / `data_changed` / `no_fingerprint` /
+  `frozen_unavailable` / `current_unavailable`（`:227-232`）—— **"模板改过"与"数据被改"分开报**；
+- `render_version_drift`：渲染器/模板版本漂移（`:290`）。
+
+**3. 保守语义（宁可比不了，也不给假结论）**
+- 没有 `_render`（草稿 / C 方案之前的老单据）⇒ `has_fingerprint=false`、`reason=no_fingerprint`，
+  其余字段如实给当前值，**不报错**；
+- **现在装配失败** ⇒ `current_sha256=null` + `current_note`、`matches=false`
+  （`current_unavailable`），**绝不返回"看起来匹配"的假结论**；
+- 冻结时就没摘要 ⇒ `frozen_unavailable`，同样**不报 matched**；
+- 单据不存在 ⇒ **404 `DOC_NOT_FOUND`**（`trade_docs.py:935-936`）。
+
+**4. 五情形证据**（`backend/orchestrator/tests/test_trade_doc_render_fingerprint.py`）
+- 匹配：`test_matched:300`；
+- **不匹配：`test_data_changed_is_detected:324`** —— 这一例是**真的改了被纳入摘要的业务数据**
+  （`total_amount` / `currency` / 买方抬头 / 行项，**4 个参数化用例** `:317-322`），**不是自证式断言**；
+- 无指纹：`test_no_fingerprint_is_not_an_error:337`；
+- 装配失败：`test_current_assembly_failure_never_reports_match:365`、
+  `test_unusable_frozen_never_reports_match:356`；
+- 版本漂移：`test_version_drift_is_reported_separately_from_data_change:378`；
+- 契约字段固定：`test_response_contract_is_stable:398`。
+worker 侧另有 `backend/worker/tests/test_ws_render_fingerprint_check.py`，
+含"路由确已注册进 OpenAPI"的断言（`:206-207`）。
+
+**5. ⏳ 仍未做（如实标注，别当成已完成）**
+1. **前端"已变更"提示未做**：consumer 目前只有 **API 层**（curl / 脚本可查）。
+   做前端提示要动 **3 个文件**（hook + 展示 + 接线），而 task-17 的写范围**不含前端**
+   ⇒ 界面**不会**自动告诉用户"这张单被改过"。
+2. **没有批量/定时对账**：只能**人主动查一张**；"生产上到底哪些单据被改过"仍需自己遍历。
+
+**6. 一条性质说明（不是 bug，但值得留档）**
+对账的前提是"两边同一套装配"。若将来给 `render-data` 加了**新数据源**却忘了同步到**签发冻结**
+那条路径，两边会**一起变**、`matches` 仍报 `true` —— 对账**发现不了**这种"新增字段没被纳入"的偏差。
+
+**7. 口径提醒**：`matches=false` **不等于**"单据被篡改" —— 也可能是 `version_drift`（模板/渲染器改版）
+或 `current_unavailable` / `frozen_unavailable`（现在或当时装配不出来）。**先看 `reason`，再下结论。**
+
+> 来源标注：本节的行号、字段契约与语义均为**文档线读源码/测试**核对；
+> **测试通过数**（orchestrator **946 passed / 1 skipped**、worker **217 passed**）来自
+> **lead 与队友实测** —— 文档线本轮**未跑 pytest**。
