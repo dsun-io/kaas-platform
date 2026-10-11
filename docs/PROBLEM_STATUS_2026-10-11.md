@@ -27,6 +27,14 @@
 > 卖方有章时买方留同高空位、无章则两侧都不留，买方 Date 并入说明行 ——
 > 实测两个 `.sign-box` **同高（113px）同顶边（1327px）**。
 >
+> 又补了「**填得进内容**」这条缺口（用户要求把一次性 PI 脚本并入系统）：
+> 单证详情页新增**填写单据内容**面板 —— 字段来自模板 manifest、控件按类型生成、
+> 图片选文件转 data URI，保存走 `PATCH /trade-docs/{id}` 的 `raw_payload.custom`
+> 且**带上 `sources`**（否则抹掉上游快照）；纯逻辑抽成 `lib/trade-doc/custom-fields.ts`
+> 并有 8 条测试。另新增通用离线渲染 CLI `scripts/render-trade-doc.ts`
+> （读 payload JSON → 复用同一渲染器出 HTML），其产物与本任务最初那份
+> 一次性脚本产物 **SHA256 完全一致**。备注 `remarks`/`notes` 改为**逐点换行**。
+>
 > ⚠️ 本轮实测发现**工作区正被另一条线并发使用**：同一仓库另一条 DSH 会话在跑 e2e，
 > 它已提交 `f286fc4` / `ca43ddc`，并在提交说明里声明不碰本线文件。双方都只 `git add`
 > 自己的文件。凡"通过数"层面的对比都要打折（对方的 Next dev 与我的 `next build`
