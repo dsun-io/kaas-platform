@@ -35,7 +35,7 @@
    以 `product_key` 为主键；**系统级（key 在代码注册表里）存差异、租户自建存整份**；
    差异语义**复用已有的 `team_option_overrides` 模板**，不发明新语义。
 5. **【已核实】合并不宜现在动手**：要改的 4 个文件里 3 个正在被另一条任务改，且**用户还没拍板两件事**
-   （合并后的可见性粒度、存储模式）。前置条件见 §8。
+   （合并后的可见性粒度、存储模式）。前置条件见 §7.2。
 
 ---
 
@@ -187,7 +187,7 @@ Worker 侧逐字段镜像：`ws_products.py:119-131`（In）、`:97-114`（Out�
    Worker 侧同样只 `get_product`（`backend/worker/src/quote_api.py:317, 329, 543, 579`）。
 2. **唯一会读 `tenant_products.spec` 的类没有调用点**：
    `TenantProductLoader` 定义在 `services/export_quote/tenant_products.py:53-103`（`load` 在 `:64-85`，
-   DB 优先在 `:70-76`）。全仓检索 `TenantProductLoader` → **只有定义处**（见 §9 未查到清单）。
+   DB 优先在 `:70-76`）。全仓检索 `TenantProductLoader` → **只有定义处**（见 §8 未查到清单）。
 3. **列表 API 也证实了这个分叉**：
    `/products` 只遍历 `product_keys()`（`files.py:232`），所以**租户在 `/settings/tenant-products` 建的产品
    永远不会出现在 `/products` 页**；反之，代码里的 3 个产品也**不会**出现在 `/tenant-products` 列表里
@@ -205,7 +205,7 @@ Worker 侧逐字段镜像：`ws_products.py:119-131`（In）、`:97-114`（Out�
 - 迁移目录里 `202610100006`（建表）、`202610100007`（矩阵表）**都只建表、不插数据**；
   全仓检索 `INSERT INTO tenant_products` → 只有 `ws_products.py:181` 一处（值恒为 false）。
 - 因此：【已核实】**没有任何代码路径能创建 `is_system=true` 的行**。
-  【未查到】生产库里是否有人工插入的 `is_system=true` 行（见 §9）。
+  【未查到】生产库里是否有人工插入的 `is_system=true` 行（见 §8）。
 
 ### 3.4 所以"两套真相"在哪一侧 —— 明确回答
 
@@ -263,7 +263,7 @@ Worker 侧逐字段镜像：`ws_products.py:119-131`（In）、`:97-114`（Out�
   （`frontend/src/components/layout/sidebar.tsx:137-138`）。
 
 > **【已核实】权限粒度冲突**：`/products` 是**人人可见**，"产品定义管理"是**仅内部**。
-> 合并成一个工位就必须选一个（这是**策略不确定 → 需弹窗**，见 §8 前置条件 3）。
+> 合并成一个工位就必须选一个（这是**策略不确定 → 需弹窗**，见 §7.2 前置条件 3）。
 > 【推测】建议：工位保持"人人可见"，`图片与基础信息` tab 全员可用（单证要引用产品图），
 > `定义` tab 对非内部账号只读。
 
@@ -322,7 +322,7 @@ Worker 侧逐字段镜像：`ws_products.py:119-131`（In）、`:97-114`（Out�
    前端点「编辑」时把 JSON 文本框重置成 `{key, name}`（`page.tsx:264-274`）→
    **保存会把原有 spec 整体覆盖成两字段对象**（校验能过，因为 `spec_from_dict` 只要 `key`，见 §6.2）。
    可视化编辑器上线前必须先把 `spec` 加进出参，否则编辑器是"打开即丢数据"。
-2. **公式合法性校验**：【未查到】是否存在现成的"spec 试算/诊断"纯接口（§9）。
+2. **公式合法性校验**：【未查到】是否存在现成的"spec 试算/诊断"纯接口（§8）。
    `spec_from_dict` **只构造、不校验 `expr`**（`services/export_quote/tenant_products.py:19-44`），
    所以 422 闸门挡不住写错的公式 —— 【推测】需要一个"试算一行"的后端接口，否则编辑器只是把 JSON 打字错误
    换成了表单打字错误。
