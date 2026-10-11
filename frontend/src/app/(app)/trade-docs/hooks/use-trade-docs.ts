@@ -243,3 +243,68 @@ export function useEnum(
     },
   });
 }
+
+// ── 单证挂的文件（产品图引用 / 客户盖章回传件 / 系统出的 PDF）─────────────────
+// 契约真源：orchestrator `app/api/files.py`（Worker 侧镜像一致）。
+
+export interface TradeDocFile {
+  id: number;
+  name: string;
+  storage: string;
+  content_type: string | null;
+  version: number;
+  supersedes_id: number | null;
+  is_current: boolean;
+  created_at: string | null;
+  /** 关联行（trade_doc_files）本身的字段 */
+  link_id: number;
+  role: string;
+  caption: string | null;
+  sort_order: number;
+}
+
+export function useTradeDocFiles(docId: number | null) {
+  return useQuery({
+    queryKey: ["trade-docs", docId, "files"],
+    enabled: docId !== null,
+    queryFn: async () => {
+      const { data } = await apiClient.get<{ items: TradeDocFile[] }>(
+        `/trade-docs/${docId}/files`,
+      );
+      return data.items;
+    },
+  });
+}
+
+/** 上传并挂到单证（客户盖章回传走这条：再次上传 = 新版本上位、旧版留档）。 */
+export function useUploadTradeDocFile(docId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { file: File; role?: string; name?: string; caption?: string }) => {
+      const form = new FormData();
+      form.append("file", input.file);
+      form.append("role", input.role ?? "stamp_scan");
+      form.append("name", input.name ?? "");
+      if (input.caption) form.append("caption", input.caption);
+      const { data } = await apiClient.post(`/trade-docs/${docId}/files/upload`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["trade-docs", docId, "files"] });
+      qc.invalidateQueries({ queryKey: ["trade-docs"] });
+    },
+  });
+}
+
+/** 摘除引用（不删文件本身：文件是留档资料，只解绑） */
+export function useDetachTradeDocFile(docId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (linkId: number) => {
+      await apiClient.delete(`/trade-docs/${docId}/files/${linkId}`);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["trade-docs", docId, "files"] }),
+  });
+}

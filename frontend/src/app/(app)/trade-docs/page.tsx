@@ -41,6 +41,7 @@ import { exportCsv, exportExcel, printMerged } from "@/lib/trade-doc/export";
 
 import { DocCreateForm } from "./components/doc-create-form";
 import { DocCustomForm } from "./components/doc-custom-form";
+import { DocStampReturn } from "./components/doc-stamp-return";
 import { DocPreview } from "./components/doc-preview";
 import { SamplePreview } from "./components/sample-preview";
 import { DOC_TYPE_GROUPS } from "./lib/doc-type-groups";
@@ -459,6 +460,8 @@ export default function TradeDocsPage() {
                 status={renderData.data.doc.status}
                 payload={renderData.data.doc.raw_payload}
               />
+              {/* 盖章回传不受"已签发冻结"限制：客户是签发**之后**才盖章回传的 */}
+              <DocStampReturn docId={renderData.data.doc.id} />
               <DocPreview
                 docType={renderData.data.doc.doc_type}
                 docNo={renderData.data.doc.doc_no}
