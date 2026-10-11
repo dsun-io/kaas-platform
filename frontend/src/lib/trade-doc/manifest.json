@@ -157,6 +157,11 @@
         "type": "image_list",
         "required": false,
         "description": "产品照片列表,元素为 { image: data URI|https, caption: 说明文字 };渲染在金额大写之后"
+      },
+      "buyer_confirmation": {
+        "type": "boolean",
+        "required": false,
+        "description": "是否印出买方回签栏(签名+盖章+日期);true=用买方公司名,也可填自定义抬头。默认不印"
       }
     }
   },
