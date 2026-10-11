@@ -11,7 +11,7 @@
  */
 import { useState } from "react";
 import { toast } from "sonner";
-import { AlertCircle, RefreshCw, UserMinus, Users } from "lucide-react";
+import { AlertCircle, Crown, RefreshCw, UserMinus, Users } from "lucide-react";
 
 import apiClient from "@/lib/api/client";
 import { teamErrorMessage } from "@/lib/team/team-errors";
@@ -79,6 +79,46 @@ export function TeamMembersPanel({
       reload();
     } catch (err: unknown) {
       toast.error(teamErrorMessage(err, "移除成员失败，请稍后重试"));
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  /**
+   * 转让团队管理权。
+   *
+   * 用户 2026-10-11 裁决：**现任团队管理员也能自己转**（不必再找平台管理员）。
+   * 后端两侧都已实现（`POST /teams/{id}/transfer`），授权复用
+   * `is_team_admin`（团队创建者或平台管理员）—— 本面板本就"仅团队管理员可见"，
+   * 所以这里不再重复判权限。
+   *
+   * 转让 = 改 `teams.created_by`；**前任留在团队里当普通成员**。
+   * 这是**不可逆的自我降权**（自己不再是管理员），所以必须显式确认，
+   * 且确认文案要把后果说清楚 —— 不能只问"确定吗"。
+   */
+  async function transferAdmin(member: TeamMember) {
+    const label = memberLabel(member);
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        `把团队管理权转让给「${label}」？\n\n` +
+          "转让后你将成为普通成员，不再能管理团队（成员/工位/邀请码）。\n" +
+          "要收回只能让对方再转回给你。",
+      )
+    ) {
+      return;
+    }
+    setPendingId(member.user_id);
+    try {
+      await apiClient.post(
+        `/teams/${teamId}/transfer`,
+        { user_id: member.user_id },
+        { silent: true },
+      );
+      toast.success(`已把团队管理权转让给「${label}」`);
+      reload();
+    } catch (err: unknown) {
+      toast.error(teamErrorMessage(err, "转让失败，请稍后重试"));
     } finally {
       setPendingId(null);
     }
@@ -172,20 +212,35 @@ export function TeamMembersPanel({
                       </label>
                     </td>
                     <td className="p-2">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={busy || member.is_admin}
-                        title={
-                          member.is_admin
-                            ? "不能移除团队管理员本人（可联系平台管理员转移管理权）"
-                            : undefined
-                        }
-                        onClick={() => void removeMember(member)}
-                      >
-                        <UserMinus className="mr-1 size-3.5" />
-                        移除
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        {/* 转让：只对**非管理员成员**显示 —— 转给现任管理员自己没意义 */}
+                        {!member.is_admin && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={busy}
+                            title={`把团队管理权转让给 ${memberLabel(member)}（转让后你成为普通成员）`}
+                            onClick={() => void transferAdmin(member)}
+                          >
+                            <Crown className="mr-1 size-3.5" />
+                            转让
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy || member.is_admin}
+                          title={
+                            member.is_admin
+                              ? "不能移除团队管理员本人（可先把管理权转让给其他成员）"
+                              : undefined
+                          }
+                          onClick={() => void removeMember(member)}
+                        >
+                          <UserMinus className="mr-1 size-3.5" />
+                          移除
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 );
