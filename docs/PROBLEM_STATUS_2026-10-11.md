@@ -8,7 +8,7 @@
 
 ***
 
-## 交接摘要（滚动更新 · HEAD `043c72d`）
+## 交接摘要（滚动更新 · HEAD `d4b4cdc`）
 
 > **新开对话 / 上下文压缩后，先读这一节**，再往下看细目。
 > 下面「方法」一节的数字是**写本文时**的，已过期；以本节为准。
@@ -27,18 +27,26 @@
 | — | **用智能表格真实数据核算引擎**（公式级不一致 0） | `c7d096e` |
 | #2b | 团队级档位**改显示名 / 软停用**（双侧 + 生产库迁移 `202610110015`） | `f3a8196`…`f61a41d` |
 | — | 原料价**历史参考均价**（未新建历史表，见下） | `043c72d` |
+| — | **反向漂移 8 条**结项（6 修 + 2 有意保留） | `65db192`、`2a158cb` |
+| — | **爬取移植**：补 worker 侧 + orchestrator 侧，dev 的「批量爬取」404 修好 | `e578941`…`2a158cb` |
+| — | 顺带**修掉生产 SSRF 绕过**（重定向 → 云元数据） | `eb3c100` |
+| — | **前端认证契约残留**收口（不再发 `X-Tenant-Id`） | `35a89a8` |
+| — | **规格库 11 条退役**（用户裁决：写死的设计没用了） | `8225bbf` |
+| — | 立 `AGENTS.md` 收录全局规则（更新须带文档 + 推送） | `9250376` |
 
 ### 当前门禁（全绿）
 
 | 门禁 | 结果 |
 |---|---|
-| orchestrator `pytest -m unit` | **511 passed** / 1 skipped |
+| orchestrator `pytest -m unit` | **598 passed** / 1 skipped |
 | worker `pytest` | **142 passed** |
 | 前端 `test` | **280 passed / 0 failed** |
 | 前端 `typecheck` / `lint` | exit 0 |
 | `contracts:check` | R0–R4 PASS |
-| `route-parity.py` | PASS（缺失 22 已登记 / 未登记 0 / **过期 0** / worker 独有 8） |
-| `sync-shared.ps1 -Check` | exit 0（共享内核 21 / 报价引擎 19 / 枚举字典 1） |
+| `route-parity.py` | PASS（缺失 **11** 已登记 / 未登记 0 / **过期 0** / worker 独有 **2**） |
+| `sync-shared.ps1 -Check` | exit 0（共享内核 **23** / 报价引擎 19 / 枚举字典 1） |
+>
+> 以上为 `d4b4cdc` 实测（2026-10-11）。
 | `NEXT_EXPORT=1 pnpm build` | exit 0 |
 | `scripts/verify/verify_against_sheet.py` | exit 0（公式级不一致 0） |
 
