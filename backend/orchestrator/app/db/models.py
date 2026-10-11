@@ -598,6 +598,48 @@ class TenantProduct(Base):
     )
 
 
+class TeamOptionOverride(Base):
+    """团队级的产品档位覆盖（**改显示名 / 软停用**）。
+
+    为什么是**团队级**（2026-10-11 用户裁决）：档位 = 公司能做什么，
+    不该因买家而异；而 `tenant_id` 恒为 "default"、已不是隔离边界，
+    **团队才是**。成本价则相反 —— 那是"不同买家拿到不同价"的商务差异，
+    继续按买家客户存在定价数据里（`customer_cost_items`），不动。
+
+    为什么不复用 `tenant_products`：那张表存的是**完整 ProductSpec 快照**，
+    把几个档位的改名写进去，会让该租户的产品定义**冻成快照** ——
+    以后代码改了产品定义它不跟着变。所以单开一张轻量表，只存覆盖。
+
+    载荷（`overrides`）形如::
+
+        {"coating_code": {"rename": {"zinc_40": "40克锌层"},
+                          "disabled": ["pvc_black"]}}
+
+    两条硬约束：
+      · **只改显示名，不改 code** —— code 是查价键的一半
+        （`pricing_key_of` 拼的就是它），一改历史定价数据与报价单就对不上。
+      · **停用是软停用** —— 从下拉里消失，但引擎仍能解析它，
+        否则已引用该档位的历史报价单重算会取不到档位。
+    """
+
+    __tablename__ = "team_option_overrides"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="CASCADE"),
+                     nullable=False)
+    product_key = Column(Text, nullable=False)
+    overrides = Column(JSONB, nullable=False, default=dict,
+                       server_default="{}")
+    created_at = Column(DateTime(timezone=True), nullable=False,
+                        server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False,
+                        server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("uq_team_option_overrides", "team_id", "product_key", unique=True),
+    )
+
+
 class TenantWorkstationProduct(Base):
     """租户开通报价工位后选择启用产品（多对多）。
 

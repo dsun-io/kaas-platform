@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import Any
 
 from .models import FormulaSpec, ProductSpec, pricing_key_value
+from .models import visible_options
 from .numeric import DECIMAL
 
 
@@ -52,7 +53,10 @@ def _axis_row(ax) -> dict:
 def _variant_row(vg) -> dict:
     """关联属性包：一选全变，把每个选项带出的属性一并列出。"""
     options = []
-    for opt in vg.options:
+    # **软停用**的档位在这里滤掉：这一份是**给界面看的清单**。
+    # 引擎路径（`spec_from_partial`）读的是 `product.variants` 原始 options，
+    # 必须仍能解析停用档位 —— 否则已引用它的历史报价单重算会失败。
+    for opt in visible_options(vg.options):
         attrs = {k: v for k, v in opt.items() if k not in ("name", "name_en")}
         options.append(
             {"value": opt.get("name", ""), "label_en": opt.get("name_en", ""),
@@ -213,12 +217,13 @@ def describe_pricing_key(product: ProductSpec) -> list[dict]:
             kind = "variant"
             for vg in product.variants:
                 if field == vg.name:
-                    options = [{"value": o.get("name"), "label": o.get("name")} for o in vg.options]
+                    options = [{"value": o.get("name"), "label": o.get("name")}
+                               for o in visible_options(vg.options)]
                     break
                 if field == f"{vg.name}_code":
                     options = [
                         {"value": o.get("code"), "label": o.get("name") or o.get("code")}
-                        for o in vg.options
+                        for o in visible_options(vg.options)
                     ]
                     break
         # 「声明了但没有取值」≠「不是一维」。
