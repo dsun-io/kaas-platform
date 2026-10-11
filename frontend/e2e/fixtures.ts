@@ -34,7 +34,63 @@ export const test = base.extend({
       if (text.includes('[MSW门]')) {
         console.log('[应用探针]', text.replace(/\s+/g, ' ').slice(0, 300));
       }
+      if (text.includes('[网络探针]')) {
+        console.log('[网络探针]', text.replace(/\s+/g, ' ').slice(0, 300));
+      }
     });
+
+    // **网络层探针**（一次定性）：包住 `fetch` 与 `XMLHttpRequest.prototype.open`，
+    // 看那几个"绕过 MSW"的 `/api/v1/*` 请求**到底是不是页面自己发的**。
+    //
+    // 背景（2026-10-11）：同一页面上 MSW **拦得住**页面请求（`/customers?_rsc=`），
+    // 却拦不住 `/api/v1/auth/me`、`/api/v1/customers?`、`POST /api/v1/events`
+    // —— 后者直连网络并拿到 500。所以要么"是应用发的但 SW 不拦"，
+    // 要么"根本不是页面里 fetch/XHR 发的"。这条探针直接回答。
+    await page.addInitScript(() => {
+      const log = (label: string, url: unknown) => {
+        const s = typeof url === 'string' ? url : String(url ?? '');
+        if (s.includes('/api/v1')) {
+          // eslint-disable-next-line no-console
+          console.log('[网络探针]', label, s.replace(window.location.origin, ''));
+        }
+      };
+
+      const origFetch = window.fetch;
+      window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
+        try {
+          const u =
+            typeof input === 'string'
+              ? input
+              : input instanceof Request
+                ? input.url
+                : String(input);
+          log('fetch', u);
+        } catch {
+          /* 探针不能影响被测行为 */
+        }
+        return origFetch.call(window, input, init);
+      } as typeof window.fetch;
+
+      const origOpen = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function (
+        this: XMLHttpRequest,
+        method: string,
+        url: string | URL,
+        ...rest: unknown[]
+      ) {
+        try {
+          log(`xhr:${method}`, url);
+        } catch {
+          /* 同上 */
+        }
+        return (origOpen as unknown as (...a: unknown[]) => void).apply(this, [
+          method,
+          url,
+          ...rest,
+        ]);
+      } as typeof XMLHttpRequest.prototype.open;
+    });
+
 
     // **决定性仪器**：`response.fromServiceWorker()` 直接回答
     // 「这个响应是不是 MSW（Service Worker）给的」。
