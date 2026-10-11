@@ -27,6 +27,15 @@ export const test = base.extend({
       }
     });
 
+    // 应用侧探针（见 msw-provider.tsx 的 [MSW门]）：
+    // 「MSW 是否起来了 / SW 是否控制本页 / 有没有注册记录」都靠它带出来。
+    page.on('console', (msg) => {
+      const text = msg.text();
+      if (text.includes('[MSW门]')) {
+        console.log('[应用探针]', text.replace(/\s+/g, ' ').slice(0, 300));
+      }
+    });
+
     // **决定性仪器**：`response.fromServiceWorker()` 直接回答
     // 「这个响应是不是 MSW（Service Worker）给的」。
     //
@@ -58,7 +67,11 @@ export const test = base.extend({
     //   · `/auth/me` → 与 MSW 同一个管理员身份（**直接解掉"无权限"**）
     //   · 其余 → 200 `{}`：形状可能不够，但**比 500 好**（不崩、不挂），
     //     并且下面会把名字打出来，缺口依旧可见
-    await page.route('**/api/v1/**', async (route) => {
+    // 可用 `E2E_FALLBACK=0` 关闭 —— 用来判定
+    // 「Playwright 的 page.route 是否先于 Service Worker 拦截」
+    // （若是，则兜底路由其实**抢走了 MSW 的活**，而不是"只接漏网的"）。
+    const fallbackEnabled = process.env.E2E_FALLBACK !== '0';
+    if (fallbackEnabled) await page.route('**/api/v1/**', async (route) => {
       const reqUrl = route.request().url();
       const path = reqUrl.replace(/^https?:\/\/[^/]+/, '');
       console.log('[兜底路由]', route.request().method(), path);
