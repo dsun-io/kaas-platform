@@ -15,6 +15,8 @@ import {
   makeQuotableSpecs,
   normalizeCategoryCode,
 } from "./data/factory";
+// 工位清单取**唯一真源**，避免 mock 里再抄一份（抄了就迟早漂移）
+import { SUBSCRIBABLE_WORKSTATIONS } from "@/lib/workstation/visibility";
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -84,6 +86,42 @@ const MOCK_ADMIN_USER = {
 };
 
 export const handlers = [
+  // ── 工位订阅快照（原先没有 mock，是**真正的**缺口）─────────────────────
+  // 形状**必须**照 `lib/workstation/visibility.ts` 的 `parseMyWorkstationsPayload()`：
+  //   · `workstations` 必须是数组，否则整份 payload 被当成"没读到"(null) → 放行
+  //   · `has_team` 若不是 boolean → null → **被当成没有团队**
+  //   · `is_admin` 为 true 时 `resolveWorkstationAccess` 直接 ok
+  //
+  // ⚠️ 这里踩过坑（2026-10-11）：先前返回 `{ok:true, workstations:[]}`，
+  // 形状**被认识**了但 `has_team` 缺失 → 判为"没有团队" → `no-team`
+  // → **所有工位路由被锁死**，e2e 从 10 failed/14 passed 掉到 22/2。
+  // 教训：对 fail-open 契约，**"成功的空结果"比"失败"更糟** ——
+  // 空结果把"我不知道"改写成了"我确定没有"，方向恰好相反。
+  //
+  // 正确做法是**如实回答**：mock 登录用户是平台管理员
+  // （见 MOCK_ADMIN_USER，role=system_admin），那就回 is_admin + 有团队 + 全工位。
+  http.get("/api/v1/me/workstations", () =>
+    HttpResponse.json({
+      workstations: [...SUBSCRIBABLE_WORKSTATIONS],
+      codes: ["full_chain"],
+      is_admin: true,
+      has_team: true,
+    }),
+  ),
+
+  // 团队：形状照后端 `_team_out`（id/name/created_by/is_admin/member_count）
+  http.get("/api/v1/teams/me", () =>
+    HttpResponse.json({
+      team: {
+        id: 1,
+        name: "示例团队",
+        created_by: MOCK_ADMIN_USER.user_id,
+        is_admin: true,
+        member_count: 1,
+      },
+    }),
+  ),
+
   http.get("/api/v1/auth/me", () => HttpResponse.json(MOCK_ADMIN_USER)),
   http.post("/api/v1/auth/login", () =>
     HttpResponse.json({

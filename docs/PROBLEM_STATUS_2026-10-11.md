@@ -384,6 +384,38 @@ Error: page.waitForLoadState: Test timeout of 30000ms exceeded.
 正确做法是让 mock 返回 e2e **真正需要的那份数据**（团队 + 已开通的工位），
 而不是"空"或"失败"——留待下一轮。
 
+#### ✅ 按正确形状补上后：**9 failed / 15 passed**（比回退前更好）
+
+找到确切契约 —— `lib/workstation/visibility.ts` 的 `parseMyWorkstationsPayload()`：
+
+```ts
+if (!body || !Array.isArray(body["workstations"])) return null;   // 形状不认识 = 当没读到 → 放行
+isPlatformAdmin: body["is_admin"] === true,
+hasTeam: typeof body["has_team"] === "boolean" ? body["has_team"] : null,
+```
+
+**这解释了我上次的回归**：我返回的 `{ok:true, workstations:[]}` **形状是被认识的**，
+于是走进 parse 分支、而 `has_team` 缺失 → `null` → 被当成**没有团队** →
+`no-team` → **锁死所有工位路由**。
+（讽刺的是：若形状**完全不认识**，反而会返回 null 走放行路径。）
+
+正确响应是**如实回答**（mock 登录用户本就是平台管理员 `role=system_admin`）：
+
+```ts
+{ workstations: [...SUBSCRIBABLE_WORKSTATIONS], codes: ["full_chain"],
+  is_admin: true, has_team: true }
+```
+
+外加 `/teams/me` 返回一个团队（形状照后端 `_team_out`）。
+工位清单**直接 import** 前端唯一真源 `SUBSCRIBABLE_WORKSTATIONS`，不抄第二份。
+
+实测：10 failed / 14 passed → **9 failed / 15 passed**。
+
+**剩余 9 条**：admin-gray-release ×2、audit-log ×1、customers ×1、dashboard ×1、quotations ×4。
+另有 8 个**已有 handler 的路径仍在被绕过**（`/auth/me`、`/events`、`/customers`、
+`/dashboard/summary`、`/admin/*`）—— 说明还有一层时序原因没查（不再是缺 handler），
+但影响已显著减小。
+
 **关键发现：那两个 critical/high 的来源不是"版本旧"，是依赖放错了位置。**
 
 | 漏洞 | 来源链 | 真实问题 |
