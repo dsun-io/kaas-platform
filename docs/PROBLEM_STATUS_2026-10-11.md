@@ -614,6 +614,33 @@ MSW 启动晚，这四条各有独立证据，不依赖通过数。但"从 25 �
 
 **后续取数规矩**：改动前后都用 `--workers=1`，否则无从比较。
 
+#### ✅ 用同一个技术又抓到**第二个同类真实缺陷**（`.map`），已修
+
+把 fixture 的 console 输出按 `errorMessage=` 解出来，又看到一条：
+
+```
+TypeError: Cannot read properties of undefined (reading 'map')
+  src/app/(app)/customers/page.tsx  ::  CustomersPage
+```
+
+**与 `.length` 是同一类、同一个文件**：`detail.contacts.map(...)`、
+`detail.inquiries.map(...)`、`detail.stage_log.map(...)`、
+`listData?.items.map(...)` —— 又是"保护了外层对象、忘了数组本身"。
+
+（这也解释了我修 `.length` 后页面**仍然**崩：空态分支被 `?.length === 0`
+挡住了不渲染，但紧邻的 `.map` 照旧执行并抛错。）
+
+**已修 4 处**（`detail?.contacts?.map(...)` 这种）。验证：
+
+- `typecheck` exit 0
+- 单 worker 复跑后 **`errorMessage=` 归零** —— 应用级 TypeError **清零** ✓
+
+**注意取数方式**：这次通过数是 12，与修前基线 12 **相同**（在抖动范围内）。
+**确定性信号是"错误清零"，不是通过数** —— 单看计数会误判成"没效果"。
+
+`customers/page.tsx` 一共 6 个数据位点，每个都同时需要 `.length` 与 `.map`
+两处保护；两轮（`.length` 8 处 + `.map` 4 处）才补全。
+
 **关键发现：那两个 critical/high 的来源不是"版本旧"，是依赖放错了位置。**
 
 | 漏洞 | 来源链 | 真实问题 |
