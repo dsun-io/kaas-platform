@@ -338,8 +338,8 @@ SELECT count(*), count(*) FILTER (WHERE is_system) FROM tenant_products;
 
 | 步 | 内容 | 文件范围 | 门禁 / 验收信号 | 回滚 | 依赖 | 并行 |
 |---|---|---|---|---|---|---|
-| **P7** | orchestrator 侧：`files.py` §1.4 的 13 处 + `trade_docs.py:740` 加团队谓词；越权一律 **404**；`put_profile` 的 `ON CONFLICT` 键同步改 | `backend/orchestrator/app/api/files.py`、`backend/orchestrator/app/api/trade_docs.py` ⚠️*正在被另一条任务改* | `pytest -m unit`；`route-parity`；**验收信号**：团队 A 的 token 调 `GET /file-objects/{团队B的文件id}/content` → **404 `FILE_NOT_FOUND`**；`PATCH`/`DELETE` 同 → 404 | `git revert` | P5、P6 | ✅ 与 P8 并行开发（文件不相交），但**必须同批验收** |
-| **P8** | worker 侧：`ws_files.py` §1.4 的 ~11 处 + 单证挂件同类落点 | `backend/worker/src/ws_files.py` ⚠️*正在被另一条任务改* | worker `pytest`；`route-parity`；**验收信号**：与 P7 同一组用例在 worker 上同样 404（两端同构） | `git revert` | P5、P6 | ✅ 与 P7 并行 |
+| **P7** | orchestrator 侧：`files.py` §1.4 的 13 处 + `trade_docs.py:740` 加团队谓词；越权一律 **404**。**已交付（§8.7）**：`product_profiles` 的两条读路径（`get_profile`、`list_products`）+ 可见性判定；**仍待**：`file_objects` 的 13 处（含 `list_products` 的 `media_count` 聚合）+ `trade_docs.py`（⚠️*正被另一条任务改*） | `backend/orchestrator/app/api/files.py`、`backend/orchestrator/app/api/trade_docs.py` ⚠️*正在被另一条任务改* | `pytest -m unit`（已绿 **1032**）；`route-parity`（已绿）；**验收信号**：团队 A 的 token 调 `GET /file-objects/{团队B的文件id}/content` → **404 `FILE_NOT_FOUND`**；`PATCH`/`DELETE` 同 → 404；产品基础信息见 §8.7 的四条语义 | `git revert` | P5、P6 | ✅ 与 P8 并行开发（文件不相交），但**必须同批验收** |
+| **P8** | worker 侧：`ws_files.py` §1.4 的 ~11 处 + 单证挂件同类落点。**仍待**（本轮**未做**：`ws_files.py` 不在 task-23 的写入范围）—— worker 侧的同类读路径实测仍有 **3 处无团队谓词**（§8.7 已清点：`ws_files.py:270/294`、`main.py:3691`） | `backend/worker/src/ws_files.py` ⚠️*正在被另一条任务改* | worker `pytest`（已绿 **217**，本轮未改 worker）；**验收信号**：与 P7 同一组用例在 worker 上同样 404（两端同构） | `git revert` | P5、P6 | ✅ 与 P7 并行 |
 | **P9** | 产品定义/矩阵隔离：`tenant_products.py`、`workstation_products.py`、worker `ws_products.py`；唯一键断言更新。**唯一键部分已交付（§8.6）**：唯一键按团队收敛 + **两端 `ON CONFLICT` 与断言同批改**；"跨团队改/删 → 404；系统级 → 403"的**越权面**仍待（属 P7/P8 的读路径过滤） | 上述 3 文件 + `backend/worker/tests/test_ws_products_seals.py` | `pytest -m unit`（已绿 **1017**）+ worker `pytest`（已绿 **217**）；**验收信号**：跨团队改/删 → 404；系统级 → 403；**两团队各建同名 key → 均 201**（唯一键已允许；行为验证见 §8.6 的验收 SQL）；⚠️ **这些测试断言了 SQL 字面量**（`test_ws_products_seals.py`），改 SQL 必须同步改断言（**本轮已同步**） | `git revert` | P5、P6、P7 | — |
 | **P10** | 越权回归测试（跨团队负例矩阵，两端各一份） | `backend/orchestrator/tests/test_file_team_scope.py`（新）、`backend/worker/tests/test_ws_files_team_scope.py`（新） | 两端 `pytest`；**验收信号**：**12 条负例**（§1.4 的 13 个落点里除聚合外每条一个：读/写/删/字节/挂件/选图器）全部 404；正例（本团队）全部 200 | `git revert` | P7、P8、P9 | — |
 
@@ -719,16 +719,78 @@ INSERT INTO product_profiles (tenant_id, team_id, product_key, info) VALUES ('de
 改用 `ast.parse`（它会把隐式拼接**合并成一个 Constant**）后 26 条全绿。
 ⇒ **凡是要从源码里取 SQL/字面量做断言，先过 AST，别扫文本。**
 
+### 8.7 已落地的第 6 个增量：**产品基础信息的读路径团队谓词**（Q6 后半句落地）
+
+**这是什么**：P9 让**写入**带上了 `team_id`，但**读取**还是 `WHERE tenant_id AND product_key`
+⇒ **别家团队的"产品基础信息"读得到** ✗。Q6 裁决原话"**工位人人可见，但用户创建的业务数据
+仅团队内部可见**"⇒ 本次把后半句落到读路径（**已决策项的直接落地**，不是新决策）。
+
+**四条语义各用什么判断、依据哪条裁决**
+
+| 情形 | 判断 | 依据 | 期望 |
+|---|---|---|---|
+| 本团队行 | `product_info_access(role, viewer_team_id, row_team_id)` → `allowed` | Q1=B + Q6 | **200** |
+| 别团队行 | 同上 → `other_team` | Q6；失败语义照 §1.5 | **404** |
+| 历史 `team_id IS NULL` | 同上 → `legacy_unattributed`（非管理员） | **D3/D4** | **404** |
+| 访问者没有团队 | 同上 → `no_team` | §1.5（403 在 404 之前） | **403 `NO_TEAM`** |
+| 系统级**定义** | **不经过**上面的判定（走代码注册表 `product_keys()`/`get_product`） | Q1=B 第一句 | **仍人人可读** |
+
+**复用同一把尺（不造第二套）**：判定直接调 `kaas_common/workstation/product_scope.py` 的
+`product_info_access()`（task-19 交付）—— **没有**复用 `is_team_admin` 当成员尺，**没有**新起
+`can_write`，端点里也**没有**第二份 `if team_id == ...` 的判断。管理员分支同样走它内部的
+`is_admin_role`（与 P11 一致）。
+
+**改了哪两处**
+| 位置 | 改动 |
+|---|---|
+| `files.py` `get_profile` | SELECT 多取 `team_id`；行存在时调 `_require_profile_visible()` ⇒ 不可见抛 403/404 |
+| `files.py` `list_products` | 基础信息查询改走 `_visible_profiles_query()`：管理员不加谓词（含历史 NULL），其余 `AND team_id = :team` |
+
+**⚠️ 两处如实标注（没做/没证）**
+1. **`list_products` 的 `media_count` 仍是全租户计数**（`files.py` 的 `file_objects` 聚合）——
+   它也是"产品相关信息"，属 **P7 的 13 个落点**之一（`file_objects`），**本任务写入范围是
+   `product_profiles`**，故**没动**（避免与另一条任务在同一文件里抢改）。
+   有一条用例**钉住"当前还没有团队谓词"这个事实**，防止被误读成"已经隔离好了"。
+2. **worker 侧同类读路径仍未做**（本任务写入范围不含 worker）：实测仍有 3 处无团队谓词 ——
+   `backend/worker/src/ws_files.py:270`（列表）、`:294`（单条）、`backend/worker/src/main.py:3691`；
+   另有 `app/api/trade_docs.py:829`（⚠️ 正被另一条任务改）⇒ 都列进 **P8/P7** 的剩余清单。
+
+**为什么"别团队 ⇒ 404"**（与 lead 的四条语义一致）：404 与"历史 NULL 非管理员"用**同一个错误码**
+`PROFILE_NOT_FOUND` ⇒ 这两种拒绝原因对外**不可区分**，不额外泄露"别家有没有存过这一行"。
+（仅有的一点信息差是"有行但不可见(404)" vs "根本没有行(200 `{}`)"：`product_key` 本身是公开的
+定义标识，所以这不泄露"产品是否存在"，只泄露"别家是否存过基础信息"。若要求**严格零信息差**，
+可改为"查询直接按团队过滤 ⇒ 两者都 200 `{}`"；此处按裁决选了 404，**记下这个取舍不代决**。）
+
+**测试**（`tests/test_product_profiles_team_scope.py`，**15 条**，`pytestmark=unit`，**不需要 Postgres**）
+覆盖：本团队 200 / **别团队 404 且响应体一个字节不漏** / 别团队与历史 NULL **对外不可区分** /
+**换团队身份能读到自己的行（阳性对照，证明 404 不是"路径写错"）** / 历史 NULL 普通成员 404、管理员 200 /
+管理员可读别团队 / 无团队 403 `NO_TEAM` / **列表 SQL 真的带上谓词（含参数）** / 管理员不加谓词 /
+无团队时谓词为 NULL / **无团队仍能看到产品定义（Q6 两层不许压平）** / media_count 现状。
+
+**测试工程上又踩了两个坑（记下来省下一次）**：
+1. **覆盖 `get_db_session` 必须给 async 生成器函数本身**；给"返回 async 生成器的普通 lambda"
+   会拿到 `async_generator` 对象 ⇒ 端点上 `.execute()` 直接 AttributeError（15 条一起红）。
+2. **不要用 monkeypatch 换 `AuthContextMiddleware.dispatch` 来注入身份** —— 实测同进程里会
+   **错位一拍**（某个用例拿到上一个用例的身份，表现为"单独跑绿、一起跑红"）。
+   改为覆盖 FastAPI 依赖 `get_auth_context`（端点就是 `Depends(get_auth_context)`）⇒ 确定性。
+3. 断言 SQL 时**必须用词边界**：`"team_id" in sql` 会被 **`tenant_id`** 误命中（子串）
+   ⇒ 用 `re.search(r"\bteam_id\b", …)`。
+
+**门禁**：orchestrator `pytest -m unit` ⇒ **1032 passed, 1 skipped, 324 deselected, exit 0**；
+worker `pytest` ⇒ **217 passed**（本轮未改 worker，跑一遍证明无连带）；`route-parity` ⇒ PASS；
+`sync-shared -Check` ⇒ exit 0（本轮未改 `kaas_common`）。
+
 ---
 
 ## 9. 本文件的状态与自证（**滚动更新**）
-
 - task-3 的那一轮：只新增 `docs/PRODUCT_MODULE_IMPL_PLAN.md`，并在 `docs/PRODUCT_MODULE_MERGE_PLAN.md` 追加 §11；当时**未修改任何代码**。
 - **task-16**：折进 8 条裁决（§8/§8.1）+ 交付 §5 的 ① 层 `spec_delta.py`（§8.2）。
 - **task-19**：交付 **P11** 的纯逻辑层 `kaas_common/workstation/product_scope.py`（§8.3），并跑通共享内核同步。
 - **task-20**：交付 **P5/P6（离线部分）** 迁移 `202610110019`（§8.4）。
 - **task-21**：**P16 复核**（结论：不够，不新建接口）+ **P12 ② 层契约**（§8.5）。
 - **task-22**：**P9** —— 唯一键按团队收敛 + 两端 `ON CONFLICT` 同批（§8.6）；**就地修订 019**。
+- **task-23**：**产品基础信息的读路径团队谓词**（§8.7）—— Q6 后半句落地；worker 侧与 `trade_docs.py`
+  的同类读点列进 P8/P7 剩余清单（**未做，已清点**）。
   本文件由**同一个作者滚动维护**；它**不是**"口径文档"（口径看 `docs/PROBLEM_STATUS_2026-10-11.md`）。
 - 各轮都**未碰**另一条任务在飞的 `trade_docs.py` / `worker/src/{main,dbjson,ws_docs_ext}.py` / `frontend/**`，
   也未碰 `shared/**`；task-22 按任务授权改了 `files.py` 与两个 worker 端点（当时实测均为 clean）。
