@@ -791,6 +791,47 @@ Error: locator.click: Test timeout of 30000ms exceeded.
 > （RSC prefetch / SSR）—— 那是浏览器里的 MSW **拦不到**的。
 > 这条未验证，留作下一步：需要区分"浏览器请求"与"服务端请求"。
 
+#### ⏸ 重新基线化：第一次尝试**失败并已回退**，但换来一条统一解释
+
+按用户裁决开工「以现役 UI 重新基线化」。先按 `customers/page.tsx` 的真实结构
+重写 `customers.spec.ts`：
+
+- 断言从 `locator('table tbody tr')` 改成实卡片列表 `.space-y-2 > div`，
+  并容错空态「暂无客户」
+- 详情改成"同页展开"（`onClick` → `setSelectedCustomer`），不再期待 URL 跳转
+- **去掉 `waitForLoadState('networkidle')`**，改用显式 `toBeVisible({timeout})`
+
+结果：**1 failed / 2 skipped** —— 卡片与空态**都没出现**。
+页面快照显示主区域只有一句：
+
+```
+您没有访问此页面的权限
+```
+
+**该断言已回退**（不把红的用例提交上去，守"变差即退"的纪律）。
+
+**但这次失败换来一条统一解释**：
+
+> `route-guard.tsx` 在 `adminOnly && !isAdmin` 时渲染该文案，而
+> `user === null`（会话还没恢复）时它们**同时成立** ——
+> 也就是说：**只要 `/auth/me` 没及时返回，页面立刻显示"无权限"，
+> 而且不会自行恢复。**
+
+这恰好把前面几类现象串成一条：
+
+| 现象 | 解释 |
+|---|---|
+| 早前 `customers` 显示「页面加载异常」 | 请求失败 → 错误边界 |
+| 现在显示「您没有访问此页面的权限」 | `user` 仍为 null → 守卫拦截 |
+| `networkidle` 永不满足 | 同一批请求**挂起** |
+
+**夹具本身是对的**（已核对：`MOCK_ADMIN_USER.account_type = "internal"`；
+`global-setup` 也把 `kaas_token` 种进了 localStorage）。所以问题不在夹具，
+而在**那些请求有时不返回**。
+
+**结论：e2e 重新基线化当前被"早期请求偶发不返回"卡住**，不是选择器问题。
+先把这一层解决，否则改写多少条选择器都仍然会红。
+
 **关键发现：那两个 critical/high 的来源不是"版本旧"，是依赖放错了位置。**
 
 | 漏洞 | 来源链 | 真实问题 |
