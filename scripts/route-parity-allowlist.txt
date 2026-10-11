@@ -29,16 +29,14 @@ GET /health/ready  # 同上
 POST /api/v1/oss/presign  # 依赖阿里云 OSS SDK（C 扩展），Pyodide 装不了；前端有直传兜底
 POST /api/v1/intel/collect/comtrade  # 采集任务由本地定时器调度，不在请求线程里跑
 
-# ── 待补：前端未直接调用（能力差，按需补）──────────────────────────────────
-GET /api/v1/product-specs  # 待补·规格清单（前端当前只在 mocks 里引用）
-GET /api/v1/spec/attributes  # 待补·规格属性库
-GET /api/v1/spec/attributes/search  # 待补·属性搜索
-GET /api/v1/spec/attributes/{attribute_id}  # 待补·属性详情
-POST /api/v1/spec/attributes  # 待补·属性创建
-POST /api/v1/spec/attributes/{attribute_id}/values  # 待补·属性取值
-GET /api/v1/spec/skus  # 待补·SKU 清单
-GET /api/v1/spec/skus/{sku_id}  # 待补·SKU 详情
-PATCH /api/v1/spec/skus/{sku_id}  # 待补·SKU 编辑
-GET /api/v1/spec/templates  # 待补·模板清单
-GET /api/v1/spec/templates/{template_id}  # 待补·模板详情
+# ── 规格库 11 条：已**退役**（不再登记，因为路由本身已删除）──────────────────
+# 2026-10-11 用户裁决「这套写死的设计确实没用了，在确保安全的前提下可以移除」。
+# 它们原是 INT-R3 表驱动规格体系的增删改查（属性/SKU/模板/规格清单），
+# 而文档 CURRENT_IMPLEMENTATION_MAP.md:94 已把「规格体系（权威）」
+# 指向 export_quote/products/*.py（产品定义即代码）。
+# 安全边界（已核）：这 4 个路由文件只被 main.py 注册引用；前端 0 调用；
+# 对应 7 张表生产库全 0 行。**repo 层保留** —— skus_repo 还被 prices.py 用，
+# attributes_repo 被活的 /spec/categories/{id}/bindings 路径用。
+# **注意**：同一片区域里的 /spec/categories 与 /spec/wizard/* 是**活的**
+# （前端 spec-config 页面在用），不要顺手清。
 

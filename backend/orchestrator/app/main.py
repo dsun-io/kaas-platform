@@ -82,16 +82,12 @@ from app.api.admin import router as admin_router
 from app.api.capabilities import router as capabilities_router
 from app.api.dashboard import router as dashboard_router
 from app.api.health import router as health_router
-from app.api.product_specs import router as product_specs_router
 from app.api.auth import router as auth_router
 from app.api.pricing_data import router as pricing_data_router
 from app.api.option_overrides import router as option_overrides_router
 from app.api.categories import router as categories_router
-from app.api.attributes import router as attributes_router
-from app.api.templates import router as templates_router
 from app.api.quote_wizard import router as quote_wizard_router
 from app.api.quotations_api import router as quotations_api_router
-from app.api.skus import router as skus_router
 from app.api.prices import router as prices_router
 from app.api.admin_proposals import router as admin_proposals_router
 from app.api.intel import router as intel_router
@@ -139,13 +135,9 @@ app.include_router(oss_presign_router)
 app.include_router(admin_router)
 app.include_router(capabilities_router)
 app.include_router(dashboard_router)
-app.include_router(product_specs_router)
 app.include_router(categories_router)
-app.include_router(attributes_router)
-app.include_router(templates_router)
 app.include_router(quote_wizard_router)
 app.include_router(quotations_api_router)
-app.include_router(skus_router)
 app.include_router(prices_router)
 app.include_router(admin_proposals_router)
 app.include_router(intel_router)
