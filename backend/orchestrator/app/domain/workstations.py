@@ -114,6 +114,14 @@ WORKSTATIONS = [
         "group": "admin", "order": 20,
         "admin_only": True, "status": "active", "subscription": None,
     },
+    {
+        # 与 shared/contracts/workstations.ts 的 key='tenant-products' 逐字段镜像。
+        # 缺失曾导致 R2 契约检查长期失败（页面有、后端镜像没有 → 面包屑/标题退化）。
+        "key": "tenant-products", "name": "产品定义管理",
+        "route": "/settings/tenant-products",
+        "group": "admin", "order": 21,
+        "admin_only": True, "status": "active", "subscription": None,
+    },
     # 不上侧边栏
     {
         # 团队与工位：入口在右上角头像菜单。**不属于计费工位 → 永远可达**，
