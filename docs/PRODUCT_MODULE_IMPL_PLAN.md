@@ -23,7 +23,7 @@
 | 3 | **回填可行性三张表各不相同**：`file_objects.team_id` **上传时已写入**；`product_profiles` 可借 `updated_by → users.team_id` 回填；`tenant_products` **没有任何创建者列，无法回填** ⇒ 必须人工定归属 | 【已核实】 |
 | 4 | **失败语义不必自创**，仓库已有成套口径：未登录 **401**、无团队 **403 `NO_TEAM`**、不可见/别家 **404**（不泄露存在性）、可见但无权写 **403**，且**顺序是先 404 后 403** | 【已核实】 |
 | 5 | 实施拆成 **17 步**（P1–P17），其中 **3 组可并行**（`{P3,P4,P5}`、`{P7,P8}`、`{P11,P12}`）；工作量 **约 21–32 轮** | 【推测】 |
-| 6 | **8 条需用户确认**（Q1–Q8），其中 Q1（"读人人可"的作用域）有 **3 种自洽解读** | 【需用户确认】 |
+| 6 | **8 条待确认已全部裁决**（Q1–Q8 + 账本 + D3/D4，见 **§8**）；**受影响的步骤已逐条列出**（**§8.1**）。另：**P12 的 ① 层（纯逻辑差异合并 `spec_delta.py`）已交付并通过 `-m unit`**（**§8.2**） | 【已裁决】✅ |
 
 ---
 
@@ -317,7 +317,7 @@ SELECT count(*), count(*) FILTER (WHERE is_system) FROM tenant_products;
 
 | 步 | 内容 | 文件范围 | 门禁 / 验收信号 | 回滚 | 依赖 |
 |---|---|---|---|---|---|
-| **P1** | 生产库取证（**只读** SQL，见 §1.3）+ 确认另一条任务已推送、`git status` 对其文件干净；确认 `202610110017` 仍是 head（新迁移号取 `018`） | 无（只读） | 三条 SQL 的结果贴进 `PRODUCT_MODULE_IMPL_PLAN.md` 的"取证结果"小节；`git ls-remote origin refs/heads/main` == 本地 HEAD | 无 | — |
+| **P1** | 生产库取证（**只读** SQL，见 §1.3）+ 确认另一条任务已推送、`git status` 对其文件干净；复核 `alembic heads`（**已实测**：`202610110018` ⇒ 新迁移取 **`019`**，见 §8.1） | 无（只读） | 三条 SQL 的结果贴进 `PRODUCT_MODULE_IMPL_PLAN.md` 的"取证结果"小节；`git ls-remote origin refs/heads/main` == 本地 HEAD | 无 | — |
 | **P2** | 用户确认 Q1–Q8（**弹窗**，一次问全） | `docs/`（把答案记进本文件） | 用户答复落地；未答复则**后面所有涉及可见性/归属的步骤都不许开工** | 无 | — |
 
 ### 阶段 1：修两个底座缺陷（分析文档 §5.3 的前置）
@@ -331,7 +331,7 @@ SELECT count(*), count(*) FILTER (WHERE is_system) FROM tenant_products;
 
 | 步 | 内容 | 文件范围 | 门禁 / 验收信号 | 回滚 | 依赖 | 并行 |
 |---|---|---|---|---|---|---|
-| **P5** | 新迁移 `202610110018`：4 张表加 `team_id`、重建 `uq_file_primary`、改 3 个唯一键、按 §1.3 回填（`product_profiles` 可回填，其余登记） | `backend/orchestrator/alembic/versions/202610110018_*.py`、`backend/orchestrator/app/db/models.py` | `alembic upgrade head` + `alembic downgrade 202610110017` **都要能跑**（需 Postgres，见 §6 前置 5）；`pytest -m unit` | 迁移自带 `downgrade()`（**只删列/索引，不还原回填**，照 `202610110004…py:69`、`202610110012…py:121` 的先例） | P1、P2、Q3、Q4 | ✅ 与 P3/P4 并行（文件不相交） |
+| **P5** | 新迁移 **`202610110019`**（⚠️ 号已改：实测 `alembic heads` = `202610110018`，见 §8.1）：4 张表加 `team_id`（**新写入强制、历史容忍 NULL**，见 Q1=B/D4）、重建 `uq_file_primary`、改 3 个唯一键（含 `(tenant_id, team_id, product_key)`，见 Q7）、按 §1.3 回填（`product_profiles` 可回填，其余登记） | `backend/orchestrator/alembic/versions/202610110019_*.py`、`backend/orchestrator/app/db/models.py` | `alembic upgrade head` + `alembic downgrade 202610110018` **都要能跑**（需 Postgres，见 §6 前置 5）；`pytest -m unit` | 迁移自带 `downgrade()`（**只删列/索引，不还原回填**，照 `202610110004…py:69`、`202610110012…py:121` 的先例） | P1、P2、Q3、Q4、D4 | ✅ 与 P3/P4 并行（文件不相交） |
 | **P6** | 迁移语义测试：照 `tests/test_customer_records_api.py:193-224`（导入迁移模块、断言 `revision`/`down_revision`、在事务里跑**真正会上线的那段 SQL**） | `backend/orchestrator/tests/test_product_team_scope_migration.py`（新） | `pytest -m unit`；**验收信号**：① 回填后 `product_profiles` 的 `team_id` = `updated_by` 所属团队；② `updated_by` 为空/非法 id 的行 `team_id` 仍为 NULL 且**行数一条不少**；③ 两团队同名 `product_key` 可以并存（唯一键生效） | `git revert` | P5 | — |
 
 ### 阶段 3：R1 两端查询过滤
@@ -422,16 +422,29 @@ python scripts/route-parity.py
 
 ### 5.4 提交纪律（本项目已因此断过一次 HEAD）
 
+> ⚠️ **2026-10-11 用户新增规则后，本节的"pathspec"做法已判定为不足**，以下为**现行**做法。
+
 ```powershell
-# ✅ 必须带 pathspec，绝不用裸 git commit
-git commit --no-verify -m "..." -- docs/PRODUCT_MODULE_MERGE_PLAN.md docs/PRODUCT_MODULE_IMPL_PLAN.md
+# ✅ 现行：私有 GIT_INDEX_FILE（不碰共享 index、不碰他人工作树）
+$env:GIT_INDEX_FILE = "$env:TEMP\gi_<本任务名>"
+git read-tree HEAD                    # 用 HEAD 初始化私有 index
+git add -- <只属于本任务的文件>        # 只装自己的 hunk
+git diff --cached --stat              # 自检①：只应出现自己的文件
+git diff --cached -- <file>           # 自检②：只应含自己的 hunk
+git commit --no-verify -m "..."       # 用私有 index 提交
+git status --short                    # 自检③：别人的改动必须原样还在
+Remove-Item Env:\GIT_INDEX_FILE
 # ❌ 禁用：git add -A / git add . / git commit（裸）
+# ❌ 不足：`git commit -- <pathspec>` —— 它记录的是**工作树内容**，
+#         同一个文件里别人的未提交 hunk 会被一起带走（实测过）
 ```
-理由：另一条任务会把改动**暂存在 index 里**（实测 `frontend/src/app/(app)/products/hooks/use-products.ts`
-长时间处于 staged 删除状态），裸提交会把别人的暂存一起带走。
+
+**为什么 pathspec 不够**：用户规则 4 实测记录 —— `backend/worker/src/main.py` 里两拨人的 hunk
+混在一起，且别人的 hunk 依赖一个**未跟踪**文件 ⇒ 那提交必然 ImportError。
+**部分 hunk 提交要先转 LF**：工作树是 CRLF、index blob 是 LF，直接 `git apply --cached` 会
+`patch does not apply`（实测 130 个 CR）。
 `--no-verify` 的理由：`husky` 钩子在 PATH 找不到 `pnpm`/`npx` 会直接让提交失败
-（`.husky/pre-commit`=`pnpm lint-staged`、`.husky/commit-msg`=`npx --no -- commitlint`）；
-本任务只改 `docs/*.md`，而 `lint-staged` 配置只匹配 `frontend/src/**/*.{ts,tsx}` 与 `*.css`（`package.json:14-22`），**无副作用**。
+（`.husky/pre-commit`=`pnpm lint-staged`、`.husky/commit-msg`=`npx --no -- commitlint`）。
 
 ---
 
@@ -461,27 +474,67 @@ git commit --no-verify -m "..." -- docs/PRODUCT_MODULE_MERGE_PLAN.md docs/PRODUC
 
 ---
 
-## 8. 需用户确认的点（**共 8 条**，一律不代决）
+## 8. 需用户确认的点（**8 条已全部裁决** ✅）
 
-| # | 问题 | 选项 | 影响的步骤 |
-|---|---|---|---|
-| **Q1** | **R2 的解读**：**"读人人可"** 与 **"只读自己团队的"** 如何统一？<br>**备注**：与此一并拍板 —— `tenant_products` 这条"只写不读的平行账本"是**接回算价链路**还是**明确废掉**（分析文档 §3 已核实其 `spec` 当前无任何读取路径） | **(A)** 分工式：系统级人人可读、团队自建仅本团队；**(B)** 全私式：定义人人可读、**产品相关信息一律团队私有**；**(C)** 折中：系统级有实例级共享素材 + 团队可追加 | P5、P7–P11、P14 |
-| **Q2** | 若选 A：**系统级产品的图片/基础信息**是"实例共享一份"还是"也团队私有"？ | 共享 / 团队私有 | P5、P7、P8 |
-| **Q3** | **历史 NULL 行**（`team_id IS NULL`）怎么处置？ | (a) 维持旧可见性（零回归，仓库先例）；(b) 回填到某个团队；(c) 仅管理员可见 | P5、P6 |
-| **Q4** | `tenant_products` 已有行**无法自动回填**（无创建者列），归属怎么定？ | 人工指定团队 / 留 NULL 共享 / 直接清空（需确认真无价值） | P5 |
-| **Q5** | **写权限粒度**：团队级产品谁来写？ | (a) 团队管理员（复用 `is_team_admin`，与 `team_option_overrides` 同尺）；(b) 团队任意成员（同团队可写） | P9、P10、P11 |
-| **Q6** | 合并后**工位可见性**：人人可见还是仅内部？ | 人人可见（`定义` tab 只读）/ 仅内部 | P14、P15 |
-| **Q7** | **团队自建 key 能否与系统级 key 重名**？ | 允许（团队优先）/ 禁止（唯一键跨团队 + 注册表联合约束） | P4、P5、P9 |
-| **Q8** | **是否需要"公式试算"后端接口**（编辑器校验），以及是否保留 `/api/v1/tenant-products` 作为长期对外面 | 建 / 不建；保留 / 收敛为 `/products/{key}/definition` | P16、P17 |
+> **2026-10-11 / 10-12 用户已全部拍板**（原文见 `docs/PRODUCT_MODULE_DECISIONS.md`）。
+> 下表**保留原始问题与候选**（不抹掉"不代决"的记录），另加「状态」与「裁决结论」两列。
+> 另有第 9 条（账本）原挂在 Q1 备注里，已独立列出。
 
-> 按项目规则：**策略不确定 → 弹窗问用户**，不写成"需要你定"来掩盖"我没查"；
-> 而**事实不确定**（行数、SQL 指纹、缺失调用者）已经在 §1.3 / §7 里自己查了，只剩**必须访问生产库**的那一条。
+| # | 原问题 | 原候选 | 状态 | **裁决结论（照抄用户裁决）** |
+|---|---|---|---|---|
+| **Q1** | R2 的可见性解读：**"读人人可"** 与 **"只读自己团队的"** 如何统一？ | (A) 分工式 / **(B) 全私式** / (C) 折中 | ✅ **已裁决：B 全私式** | 产品**定义**人人可读；产品**相关信息（图片/基础信息）一律团队私有**，**系统级也不例外** ⇒ `product_profiles.team_id` **不可空**（**新写入强制**；历史容忍 NULL，见 D3/D4） |
+| **Q2** | 若选 A：系统级产品的图片/基础信息是"实例共享"还是"也团队私有"？ | 共享 / 团队私有 | ✅ **已裁决（被 Q1 吸收）** | Q1 选了 **B** ⇒ 本问失去前提：系统级产品的图/基础信息**同样是团队私有** |
+| **Q3** | 历史 NULL 行（`team_id IS NULL`）怎么处置？ | (a) 维持旧可见性 / (b) 回填到某团队 / (c) 仅管理员可见 | ✅ **已裁决：保留 NULL + 仅管理员可见** | **保留**历史 NULL 行：既不静默共享给所有团队，也不丢弃；**仅平台管理员可见** |
+| **Q4** | `tenant_products` 已有行**无法自动回填**（无创建者列），归属怎么定？ | 人工指定 / 留 NULL 共享 / 清空 | ✅ **已裁决：保留 NULL + 仅管理员可见** | 与 D3/D4 合并为同一条。**不得**归给某个"默认团队" —— 该表接回算价链路后，错归会**直接算错价** |
+| **Q5** | 写权限粒度：团队级产品谁来写？ | (a) 团队管理员（复用 `is_team_admin`）/ **(b) 团队任意成员** | ✅ **已裁决：(b) 团队任意成员** | **不能复用 `is_team_admin`** ⇒ 另立一把尺（建议 `is_same_team`）**与它并存**。**细则——仍须管理员**的：团队档位（`/product-options/overrides`）、团队/成员/订阅类、`is_system` 行（403）、`calculate-internal` / `verify`（`require_tenant_admin`）。其余**产品/图相关**：团队成员即可 |
+| **Q6** | 合并后**工位可见性**：人人可见还是仅内部？ | 人人可见 / 仅内部 | ✅ **已裁决：工位人人可见**（**必须两层**） | ⚠️ **「工位可见性」≠「数据可见性」**：前者**人人可见**（`adminOnly:false`）；**用户创建的业务数据仅团队内部可见**（后者由 §1 的 R1 过滤实现）。**不许压成一层** |
+| **Q7** | 团队自建 key 能否与系统级 key 重名？ | 允许 / 禁止 | ✅ **已裁决：允许** | **团队优先**；上游变更仍按**差异合并**处理（不因重名而冻结） |
+| **Q8** | 是否需要"公式试算"接口；是否收敛 `/api/v1/tenant-products`？ | 建/不建；保留/收敛 | ✅ **已裁决：建；收敛** | **建公式试算接口**；`/api/v1/tenant-products` **收敛为** `/products/{key}/definition` |
+| **账本** | `tenant_products` 只写不读 —— 接回算价链路还是明确废掉？ | 接回 / 废掉 | ✅ **已裁决：接回算价链路** | **不是删代码**：要做覆盖生效 + 差异合并 + 回归测试 |
+| **D3/D4** | 历史无法归因的行 + `team_id` 是否 `NOT NULL`？ | — | ✅ **已裁决** | `tenant_products` 历史无法归因的行：**保留 NULL + 仅管理员可见**；**新写入强制带 team**（历史容忍 NULL） |
+
+### 8.1 受影响的步骤（**哪一步随裁决而变**）
+
+| 裁决 | 改变的步骤 | **具体怎么变** |
+|---|---|---|
+| **Q1 = B 全私式** | **P5** | 迁移不再只是"加可空 `team_id`"：`product_profiles` **新写入强制**带 team（读路径/API 层强制），历史行容忍 NULL ⇒ 唯一键必须能容纳 NULL 历史行（`COALESCE(team_id,0)` 或部分唯一索引），且 `ON CONFLICT` 目标随之改写 |
+| | **P6** | 迁移语义测试**新增两条**：① 新写入无 team ⇒ 拒绝；② 历史 NULL 行**只对管理员可见**（**不是**"所有团队可见" —— 与 §1.3 原先的"零回归"默认**相反**，以裁决为准） |
+| | **P7 / P8** | 读路径对 `team_id IS NULL` 的产品行**只放行管理员**（覆盖 §1.4/§1.5 里"NULL = 维持旧可见性"的默认写法） |
+| | **P11** | 可见性判定升级为**三层**：系统级**定义**人人可读 / 团队**相关信息**仅本团队 / 历史 NULL **仅管理员** |
+| **账本 = 接回** | **P4** | 从"接回**或**明确废掉"改为**确定接回**（删掉"废掉"分支）；实现 `_effective_product` 走"基线 + 差异" |
+| | **P13** | 必做；依赖 **本任务已交付的 `spec_delta.py`（§5 的 ① 层）**，不再从零写合并逻辑 |
+| **Q5 = 团队任意成员**（+ 细则） | **P9** | 写权尺子换成**新的"团队成员尺"**（`is_same_team`）；**`/product-options/overrides`、团队/成员/订阅类、`is_system` 行、`calculate-internal`/`verify` 保持管理员**（逐条见 §4.4） |
+| | **P10** | 负例矩阵**新增**：团队 A 的**普通成员**改团队 B 的行 ⇒ 404；**团队成员**改本团队 ⇒ 200；**非管理员**调 `calculate-internal`/`verify` ⇒ 403 |
+| | **P11** | 新尺子放共享内核并与 `is_team_admin` **并存**；⚠️ **命名不能叫 `can_write`**（该名已被"属主尺"占用，见 §4.2） |
+| **Q6 = 工位人人可见（两层）** | **P14 / P15** | **分两处实现、不许合并**：① **工位可见性** = 契约层 `adminOnly:false`（P15 收口）；② **数据可见性** = API 层团队过滤（P7–P11）。⚠️ **不许**拿工位可见性代替数据隔离（那等于把"团队私有"做成"人人可见"） |
+| **Q7 = 允许重名** | **P5** | `uq_tenant_products_key` 由 `(tenant_id, product_key)` 改为 **`(tenant_id, team_id, product_key)`**（跨团队、与系统级重名都合法） |
+| | **P9** | 两个团队建同名 key ⇒ **都要 201**；解析时**团队优先**（现有 `order_by(is_system.desc())` 只解决"系统级 vs 团队级"，需补"本团队 vs 别团队"的次序并把语义写清） |
+| **Q8 = 建试算 + 收敛** | **P16** | 加"公式试算"小步。**【已核实】先复核再决定是否新建**：`POST /api/v1/export-quote/products/{product_key}/explain`（"按规格取值逐步代入计算逻辑"）**已经存在** —— `backend/orchestrator/app/api/export_quote.py:282`、worker 侧对应路由见 `route-parity`。⇒ P16 应**先确认它是否已满足编辑器需求**，避免重复造接口 |
+| | **P17** | 收敛 `/api/v1/tenant-products` → **`/products/{key}/definition`**：**两端同时改**（orchestrator + worker）+ `route-parity` + allowlist；旧路由保留一个发布周期的 301/兼容层 |
+| **D3/D4** | **P5 / P6** | 同 Q3：历史 NULL **仅管理员可见**；**新写入强制带 team** |
+
+> **一句话**：**Q1=B 与 Q5=b 是"改性质"的两条**（前者把"可空 team_id"变成"新写入强制"，
+> 后者把"团队管理员尺"换成"团队成员尺"），**P5/P6/P9/P10/P11 必须按新口径重读**；
+> Q6 的关键是**两层不许压平**；Q7 放宽了唯一键；Q8 要先查"试算接口是不是已经有了"。
+
+### 8.2 本任务已落地的实施步骤（第 ② 部分）
+
+§5 的 **① 层**（纯逻辑差异合并）已在本任务实现 —— 它是 17 步里**唯一不需要数据库就能验证**的一步：
+
+| 项 | 内容 |
+|---|---|
+| 模块 | `backend/orchestrator/app/services/export_quote/spec_delta.py`（新建） |
+| 纯标准库自证 | AST 解析后**绝对导入只有** `__future__ / copy / dataclasses / hashlib / json / typing`（全部标准库）+ **相对导入 `.models`**；无 `sqlalchemy`、无 `app.*`、无三方 ⇒ Pyodide 可跑 |
+| 与线上同源 | 选项层**直接复用** `models.apply_option_overrides`（与 `export_quote.py:_with_team_overrides` 同一份实现）⇒ 不存在"合并语义与线上分叉" |
+| 测试 | `backend/orchestrator/tests/test_spec_delta.py`（**42 条，`-m unit` 全绿、无 skip**）——覆盖 缺失/null/改名/列表三态/未知 key/哈希闸门/版本闸门/add-remove 冲突/选项层复用，以及"上游改了未覆盖字段⇒跟着变"与"覆盖后上游再改⇒被覆盖字段不变"两条 |
+| ⚠️ 镜像待同步 | `sync-shared.ps1 -Check` 现在报 **exit 1**（报价引擎 源 20 / 镜像 19，缺 `spec_delta.py`）。**修法一条命令** `& ./scripts/sync-shared.ps1`，但它会写入 `backend/worker/src/kaas_common/`（该目录**被 git 忽略**、由部署流程 `deploy.yml:93,97` 自行同步，`backend/worker/.gitignore:13` 注明"勿手工编辑"）。本任务的硬约束是"不碰 `backend/worker/**`" ⇒ **未执行同步**，留给 lead/后续步骤。**当前无害**：worker 尚无任何代码 import 本模块（P13 才会接线） |
 
 ---
 
-## 9. 本次任务的只读自证
+## 9. 本次任务的只读自证（**已被 task-16 更新**）
 
-- 只新增 `docs/PRODUCT_MODULE_IMPL_PLAN.md`，并在 `docs/PRODUCT_MODULE_MERGE_PLAN.md` 追加 §11；
-- **未修改任何代码**（`frontend/**`、`backend/**`、`shared/**` 一行未动）；
-- 提交带 pathspec（§5.4），**未使用** `git add -A` / `git add .` / 裸 `git commit`；
-- 复核：`git diff --name-only HEAD~1..HEAD`（每次提交）只应列出这两个 md。
+- task-3 的那一轮：只新增 `docs/PRODUCT_MODULE_IMPL_PLAN.md`，并在 `docs/PRODUCT_MODULE_MERGE_PLAN.md` 追加 §11；当时**未修改任何代码**。
+- **task-16（本轮）起本文件不再"只读"**：允许写入的是本文件 + 本任务新建的两个代码文件（见 §8.2）。
+  仍**未碰** `frontend/**`、`backend/worker/**`、`shared/**`，也未碰另一条任务在改的 `files` / `trade_docs` / `products` 相关文件。
+- 提交纪律（2026-10-11 起）：**私有 `GIT_INDEX_FILE`** + 提交前后自检 + 提交后确认别人的改动原样还在
+  （`git commit -- <pathspec>` 会把**工作树**里别人的未提交 hunk 一起带走，已由用户规则判定为不足）。
