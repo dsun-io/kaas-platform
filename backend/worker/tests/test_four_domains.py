@@ -530,12 +530,39 @@ def test_rebate_rate_lookup_bad_rate_set_400():
     assert resp.json()["detail"]["error"] == "rate_set_error"
 
 
-def test_explain_requires_all_axes():
+def test_explain_defaults_free_numeric_inputs():
+    """尺寸类是**自由数值**：不填就用产品默认值，不再报「缺少规格轴」。
+
+    （牛栏网改造前这里有 height_m/mesh_mm/de 三个枚举轴，空 spec 会 400。）
+    可枚举的（表面处理/工艺）仍然必须给 —— 它们决定查价与增重。
+    """
+    with _patched(_FakeDb()):
+        resp = client.post("/api/v1/export-quote/products/field_fence/explain",
+                           json={"spec": {"coating": "热镀锌 40g/㎡",
+                                          "wave": "无波款"},
+                                 "total": 30000})
+    assert resp.status_code == 200, resp.text
+    got = {s["code"]: s["value"] for s in resp.json()["steps"]}
+    assert got["weight_per_piece_kg"] == "65.4020"
+    assert got["pieces"] == "300"
+
+
+def test_explain_requires_enumerated_variants():
+    """可枚举的必须给：不给就明确 400，而不是**算出空值还返 200**。"""
     with _patched(_FakeDb()):
         resp = client.post("/api/v1/export-quote/products/field_fence/explain",
                            json={"spec": {}})
     assert resp.status_code == 400
-    assert resp.json()["detail"]["error"] == "missing_axis"
+    assert resp.json()["detail"]["error"] == "missing_variant"
+
+
+def test_explain_rejects_non_numeric_free_value():
+    """自由数值不做枚举，但必须真的是数。"""
+    with _patched(_FakeDb()):
+        resp = client.post("/api/v1/export-quote/products/field_fence/explain",
+                           json={"spec": {"de": "很粗"}})
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["error"] == "invalid_numeric"
 
 
 def test_explain_unknown_product_404():

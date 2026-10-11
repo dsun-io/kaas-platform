@@ -93,7 +93,8 @@ class TestMeta:
         assert {"field_fence"} <= keys
         assert "welded_pipe" not in keys
         fence = next(p for p in data["products"] if p["key"] == "field_fence")
-        assert fence["combo_count"] == 160
+        # 尺寸类已是自由数值（不参与笛卡尔积），只剩 表面处理 5 × 工艺 2
+        assert fence["combo_count"] == 10
         assert fence["hs_codes"]
 
     async def test_rate_sets_are_listed_with_warnings(self, async_client):
@@ -273,7 +274,7 @@ class TestFormulasEndpoints:
         r = await async_client.get(f"{BASE}/products/field_fence/formulas")
         assert r.status_code == 200
         d = r.json()
-        assert d["space"]["combo_count"] == 160
+        assert d["space"]["combo_count"] == 10
         calc = d["calculations"]
         assert calc["derived"] and calc["piece"] and calc["order"]
         # 每条都要有单位与口径说明，否则业务看不懂
@@ -303,7 +304,6 @@ class TestFormulasEndpoints:
         r = await async_client.post(
             f"{BASE}/products/field_fence/explain",
             json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2.0,
-                           "inner_wire": "内丝2.0",
                            "coating": "热镀锌 40g/㎡", "wave": "无波款"},
                   "total": 30000},
         )
@@ -322,7 +322,6 @@ class TestFormulasEndpoints:
         r = await async_client.post(
             f"{BASE}/products/field_fence/explain",
             json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2.0,
-                           "inner_wire": "内丝2.0",
                            "coating": "热镀锌 40g/㎡", "wave": "波弯款"},
                   "total": 30000},
         )
@@ -334,7 +333,8 @@ class TestFormulasEndpoints:
         r = await async_client.post(
             f"{BASE}/products/field_fence/explain",
             json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2.5,
-                           "inner_wire": "内丝2.5",
+                           "dm": 2.5, "dv": 2.5,
+                           "roll_len_m": 50, "roll_dia_m": 0.25,
                            "coating": "热镀锌 40g/㎡", "wave": "波弯款"},
                   "total": 30000},
         )
@@ -347,7 +347,6 @@ class TestFormulasEndpoints:
         r = await async_client.post(
             f"{BASE}/products/field_fence/explain",
             json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2.0,
-                           "inner_wire": "内丝2.0",
                            "coating": "热镀锌 40g/㎡", "wave": "无波款"},
                   "total": 30000,
                   "metrics": ["volume_effective_m3", "wave_add_kg"]},
@@ -362,7 +361,6 @@ class TestFormulasEndpoints:
         r = await async_client.post(
             f"{BASE}/products/field_fence/explain",
             json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2,
-                           "inner_wire": "内丝2.0",
                            "coating": "热镀锌 40g/㎡", "wave": "无波款"}},
         )
         j = r.json()
@@ -372,20 +370,35 @@ class TestFormulasEndpoints:
         assert j["price_metrics_omitted"]
         assert "/calculate" in j["price_hint"]
 
-    async def test_explain_missing_axis_is_400(self, async_client):
+    async def test_explain_rejects_non_numeric_value(self, async_client):
+        """尺寸类是**自由数值**：不枚举，但必须真的是数。"""
         r = await async_client.post(
             f"{BASE}/products/field_fence/explain",
-            json={"spec": {"height_m": 1.2}},
+            json={"spec": {"de": "很粗", "coating": "热镀锌 40g/㎡"}},
         )
         assert r.status_code == 400
-        assert r.json()["detail"]["error"] == "missing_axis"
+        assert r.json()["detail"]["error"] == "invalid_numeric"
+
+    async def test_explain_only_needs_enumerated_ones_and_defaults_the_rest(
+        self, async_client
+    ):
+        """只给可枚举的取值，尺寸类走默认值 —— 这是「自由数值」的落地形态。"""
+        r = await async_client.post(
+            f"{BASE}/products/field_fence/explain",
+            json={"spec": {"coating": "热镀锌 40g/㎡", "wave": "无波款"},
+                  "total": 30000},
+        )
+        assert r.status_code == 200, r.text
+        got = {s["code"]: s["value"] for s in r.json()["steps"]}
+        # 默认：de=dm=dv=2.0、网高 1.2、间距 100、卷长 100、卷径 0.30
+        assert got["weight_per_piece_kg"] == "65.4020"
+        assert got["pieces"] == "300"
 
     async def test_explain_unknown_variant_is_400(self, async_client):
         r = await async_client.post(
             f"{BASE}/products/field_fence/explain",
             json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2,
-                           "inner_wire": "不存在",
-                           "coating": "热镀锌 40g/㎡", "wave": "无波款"}},
+                           "coating": "不存在的表面处理", "wave": "无波款"}},
         )
         assert r.status_code == 400
         assert r.json()["detail"]["error"] == "unknown_variant"
@@ -395,7 +408,6 @@ class TestFormulasEndpoints:
         r = await async_client.post(
             f"{BASE}/products/field_fence/explain",
             json={"spec": {"height_m": 1.2, "mesh_mm": 100, "de": 2,
-                           "inner_wire": "内丝2.0",
                            "coating": "热镀锌 40g/㎡", "wave": "无波款"}},
         )
         assert r.status_code == 200

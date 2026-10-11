@@ -324,10 +324,18 @@ def _resolve_column(
     if base in variant_map:
         return "variant", variant_map[base], {}, ""
     if base in numeric_map:
-        # 自由数值：不做枚举校验（取值连续），单位换算交给调用方按 ui_scale 处理。
         key = numeric_map[base]
         ni = next(n for n in product.numeric_inputs if n.key == key)
-        return "numeric", key, {}, (unit or ni.ui_unit or ni.unit)
+        # 单位换算：沿用**语义别名表**（「竖丝间距(cm)」→ ×10）。
+        # 尺寸类改成自由数值后就不走别名表了，少了这一步
+        # 「10cm」会被当成 10mm —— **差十倍**（实测踩到过）。
+        alias_meta = (scalar_map.get(base) or (None, {}))[1]
+        # 表头不带单位时按**业务惯例单位**算（文档口径：「竖丝间距」无单位即 cm），
+        # 而不是当成"没有单位、因子为 1" —— 后者会把 10cm 读成 10mm。
+        eff_unit = (unit or (alias_meta or {}).get("unit") or ni.ui_unit
+                    or ni.unit)
+        factor = _numeric_factor(ni, eff_unit, alias_meta)
+        return ("numeric", key, {"factor": {eff_unit: str(factor)}}, eff_unit)
     if base in scalar_map:
         target, meta = scalar_map[base]
         # 语义角色 → 产品真实轴名（height → height_m / mesh → mesh_mm）
@@ -344,12 +352,20 @@ def _unit_factor(meta: Mapping[str, Any], unit: str) -> Decimal:
     return Decimal(1)
 
 
-def _numeric_factor(ni, unit: str) -> Decimal:
+def _numeric_factor(ni, unit: str, alias_meta: Mapping[str, Any] | None = None) -> Decimal:
     """自由数值列：表头单位 → **引擎内部单位**的换算因子。
 
-    界面值 = 引擎值 × ui_scale（卷径 0.30m 显示成 30 公分），
-    所以表头写界面单位时要**除以** ui_scale；写引擎单位时因子为 1。
+    三档，按优先级：
+      1. 产品**显式声明**的 `unit_factors`（新产品的正路，最明确）
+      2. **语义别名表**的因子（既有业务惯例：「竖丝间距(cm)」填 10 就是 10cm）
+      3. `ui_scale` 推断（界面值 = 引擎值 × ui_scale，故要除以它）
     """
+    declared = ni.unit_factors or {}
+    if unit and unit in declared:
+        return Decimal(str(declared[unit]))
+    factor = (alias_meta or {}).get("factor") or {}
+    if unit and unit in factor:
+        return Decimal(str(factor[unit]))
     ui_unit = ni.ui_unit or ni.unit
     scale = ni.ui_scale or 1
     if unit and ui_unit and unit == ui_unit and scale != 1:
@@ -503,10 +519,9 @@ def parse_table(
         if kind == "variant":
             col_target[idx] = ("variant", target, {})
         elif kind == "numeric":
-            ni = next(n for n in product.numeric_inputs if n.key == target)
             col_target[idx] = ("numeric", target, {
                 "unit": unit,
-                "factor": {unit: str(_numeric_factor(ni, unit))},
+                "factor": meta["factor"],
             })
         else:
             col_target[idx] = ("scalar", target, {"unit": unit,
@@ -591,6 +606,9 @@ class TemplateColumn:
     options: list[str] = field(default_factory=list)  # 可选值（含单位换算后的显示值）
     factor: Decimal = Decimal(1)  # 表头单位 → 内部单位
     note: str = ""
+    # 自由数值列的**示例值**（已换算成表头单位）。它不是必填，但示例行要写出来，
+    # 否则用户不知道这一列该按什么量级、什么单位填。
+    default: Any = None
 
     def to_dict(self) -> dict:
         return {
@@ -639,10 +657,13 @@ def template_columns(product: ProductSpec) -> list[TemplateColumn]:
             ))
         elif kind == "numeric":
             ni = next(n for n in product.numeric_inputs if n.key == target)
+            factor = _unit_factor(meta, unit)
             out.append(TemplateColumn(
                 header, "numeric", target, False, unit,
-                [], _numeric_factor(ni, unit),
+                [], factor,
                 ni.note or f"自由数值（{ni.unit}）；留空则用默认值",
+                (None if ni.default is None
+                 else _display_value(ni.default, factor)),
             ))
         else:
             factor = _unit_factor(meta, unit)
@@ -738,7 +759,8 @@ def _example_rows(product: ProductSpec, columns: list[TemplateColumn],
         row = []
         for c in columns:
             if not c.required:
-                row.append("")
+                default = getattr(c, "default", None)
+                row.append("" if default is None else _as_number(default))
                 continue
             value: Any = c.options[i % len(c.options)]
             if c.kind in ("scalar", "numeric"):
