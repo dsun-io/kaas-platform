@@ -1,9 +1,16 @@
 # 产品定义配置化（租户级）—— 未完成事项说明
 
-> **更新（2026-10-10）**：已实施 `tenant_products` 表 + `TenantProductLoader` 加载器 +
-> 管理界面（`/settings/tenant-products`）+ 权限矩阵 API（`/api/v1/workstation-products`）。
-> 权限矩阵基础过滤已实现（is_system/is_active），但「租户开通报价工位后选择启用产品」
-> 的完整流程（UI 交互 + 工位订阅校验）**仍未完成**，留口子。
+> **更新（2026-10-10 续做）**：
+> - 权限矩阵 API 已**同时落到 orchestrator 与生产 Worker**
+>   （`backend/worker/src/ws_products.py`）—— 此前只有 orchestrator 有，
+>   前端 `/settings/tenant-products` 一上生产就 404（见
+>   `docs/ROUTE_PARITY_2026-10-10.md`）。
+> - **工位订阅校验已完成**：报价工位按 `full_chain` 校验，未订阅 → 404
+>   `SUBSCRIPTION_REQUIRED` 且不写任何数据（orchestrator `app/api/subs.py`
+>   的 `WORKSTATION_CODES["quote"]` ↔ worker `QUOTE_SUB_CODES` 逐字对齐）。
+> - **租户隔离口径两端统一**：列表 = 本租户 + 系统级产品；跨租户改/删一律 404
+>   （不泄露存在性）；系统级产品改/删一律 403。
+> - **仍未完成**：租户开通报价工位 UI 交互、产品定义可视化编辑器。
 
 ## 现状
 
@@ -67,17 +74,19 @@ CREATE TABLE tenant_products (
 2. products/ 目录的 Python 定义（系统级兜底）
 ```
 
-### 权限设计（**未完成**）
+### 权限设计（部分完成）
 
-> ⚠️ **本节为未完成事项，留口子但尚未实现。**
-
-- **系统级产品**：所有租户可见，仅平台管理员可编辑
-- **租户级产品**：仅本租户可见，租户管理员可编辑
+- **系统级产品**（`is_system=true`）：所有租户可见，仅平台管理员可编辑
+  → **已实现**：列表对全部租户可见；改/删一律 403
+- **租户级产品**（`is_system=false`）：仅本租户可见，租户管理员可编辑
+  → **已实现**：跨租户改/删一律 404（不泄露存在性）
 - **租户开通控制**：租户开通报价工位后，可选择「启用」某些产品（多对多关系）
+  → API **已实现且已同步到生产 Worker**，工位订阅校验**已实现**；缺前端交互界面
 - **权限矩阵**：见 `docs/WORKSTATION_DESIGN.md` §10.3（待补充）
 
-当前实现：`ProductSpec.profit_mode/profit_value/misc_fee_rate` 已支持产品级配置，
-但**加载来源只有 Python 代码**，未接数据库。接线工作待后续完成。
+当前实现：`TenantProductLoader` 已接数据库（租户级优先，回退 Python 定义），
+orchestrator 与 Worker 同源；`ProductSpec.profit_mode/profit_value/misc_fee_rate`
+支持产品级配置。
 
 ## 实施步骤（部分完成）
 
@@ -85,8 +94,9 @@ CREATE TABLE tenant_products (
 2. [x] `TenantProductLoader` 加载逻辑（先查数据库，再回退 Python 定义）
 3. [x] 管理界面：产品列表 + 表单编辑（`/settings/tenant-products`）
 4. [x] 权限矩阵 API：`/api/v1/workstation-products`（启用/停用产品，多对多表 `tenant_workstation_products`）
-5. [ ] 租户开通报价工位 UI 交互（选择启用产品）
-6. [ ] 工位订阅校验（租户开通报价工位后才能启用产品）
+5. [ ] 租户开通报价工位 UI 交互（选择启用产品）—— API 两端已就绪，缺前端交互
+6. [x] 工位订阅校验（2026-10-10 续做完成，见上方更新说明）
+7. [x] 线上 Worker 同步 `ws_products.py`（2026-10-10 续做完成，消除生产 404）
 
 ## 关联决策
 

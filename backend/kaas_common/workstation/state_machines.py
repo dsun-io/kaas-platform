@@ -5,7 +5,7 @@ orchestrator 与 Worker 共用；任何适配层不得另写一份判定。
 from typing import Any
 
 __all__ = [
-    "QUOTE_NEXT", "ORDER_NEXT", "DOC_STATUS", "DOC_NEXT",
+    "QUOTE_NEXT", "ORDER_NEXT", "SHIPMENT_NEXT", "DOC_STATUS", "DOC_NEXT",
     "can_transition", "assert_transition", "assert_draft",
 ]
 
@@ -34,18 +34,36 @@ DOC_NEXT = {
     "void": (),
 }
 
+# 出运状态机（§10.6）：booking→in_transit→arrived→customs→delivered。
+# 原先只写在 orchestrator 的 api/shipments.py 里；补线上出运台账时若照抄一份，
+# 就会出现「本地能流转、线上 409」这类漂移，故上收到共享内核。
+SHIPMENT_NEXT = {
+    "booking": ("in_transit",),
+    "in_transit": ("arrived",),
+    "arrived": ("customs",),
+    "customs": ("delivered",),
+    "delivered": (),
+}
+
+_TABLES = {
+    "quote": QUOTE_NEXT,
+    "order": ORDER_NEXT,
+    "doc": DOC_NEXT,
+    "shipment": SHIPMENT_NEXT,
+}
+
 
 def can_transition(kind: str, current: str, target: str) -> bool:
-    """校验状态流转合法性。kind: quote | order | doc。"""
+    """校验状态流转合法性。kind: quote | order | doc | shipment。"""
     if target == current:
         return True
-    table = {"quote": QUOTE_NEXT, "order": ORDER_NEXT, "doc": DOC_NEXT}.get(kind, {})
+    table = _TABLES.get(kind, {})
     return target in table.get(current, ())
 
 
 def assert_transition(kind: str, current: str, target: str) -> None:
     if not can_transition(kind, current, target):
-        table = {"quote": QUOTE_NEXT, "order": ORDER_NEXT, "doc": DOC_NEXT}.get(kind, {})
+        table = _TABLES.get(kind, {})
         allowed = list(table.get(current, ()))
         raise ValueError(f"不允许 {current} → {target}；合法目标: {allowed}")
 

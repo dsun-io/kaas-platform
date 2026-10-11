@@ -1164,23 +1164,30 @@ async def lead_scan_replied(request: Request, user: dict = Depends(_get_current_
             if already:
                 existing += 1
                 continue
+            # 团队隔离：转化出来的客户归**执行转化的人所在团队**。
+            # owner_scope 由 'tenant'（全租户可见）改为 'private' —— 在"一个平台 + 公司=团队"
+            # 的模型下，"全租户可见"等于所有公司都能看到，隔离就破了。
+            # 若操作者没有团队：team_id 留空 + private，只有他本人和管理员可见（不泄露）。
+            acting_team = user.get("team_id")
             cust = await conn.fetchrow(
-                "SELECT id FROM customers WHERE tenant_id=$1 AND name=$2",
-                DEFAULT_TENANT, lead["company_name"])
+                "SELECT id FROM customers WHERE tenant_id=$1 AND name=$2"
+                " AND team_id IS NOT DISTINCT FROM $3",
+                DEFAULT_TENANT, lead["company_name"], acting_team)
             if cust is None:
                 cust = await conn.fetchrow(
                     """INSERT INTO customers
-                       (tenant_id, name, country, address, stage, owner_id, owner_scope)
-                       VALUES ($1,$2,$3,$4,'inquiry',$5,'tenant') RETURNING id""",
+                       (tenant_id, name, country, address, stage, owner_id, owner_scope, team_id)
+                       VALUES ($1,$2,$3,$4,'inquiry',$5,'private',$6) RETURNING id""",
                     DEFAULT_TENANT, lead["company_name"], lead["country"],
-                    lead["address"], lead["owner_id"] or str(user["id"]))
+                    lead["address"], lead["owner_id"] or str(user["id"]), acting_team)
             await conn.execute(
                 """INSERT INTO cust_inquiries
-                   (tenant_id, customer_id, lead_id, channel, notes, status, owner_id, owner_scope)
-                   VALUES ($1,$2,$3,'email',$4,'open',$5,'tenant')""",
+                   (tenant_id, customer_id, lead_id, channel, notes, status,
+                    owner_id, owner_scope, team_id)
+                   VALUES ($1,$2,$3,'email',$4,'open',$5,'private',$6)""",
                 DEFAULT_TENANT, cust["id"], lead["id"],
                 f"来自线索池触达回复（lead#{lead['id']}）",
-                lead["owner_id"] or str(user["id"]))
+                lead["owner_id"] or str(user["id"]), acting_team)
             await conn.execute(
                 """UPDATE lead_candidates SET inquiry_status='new', updated_at=NOW()
                    WHERE tenant_id=$1 AND id=$2""",

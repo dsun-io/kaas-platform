@@ -60,10 +60,9 @@ function buildUser(data: Record<string, unknown>): UserInfo {
     account_type: (data.account_type as "internal" | "customer") ?? "customer",
     role: (data.role as string) ?? "user",
     plan: (data.plan as string) ?? "free",
-    customer_id: (data.customer_id as number) ?? null,
-    customer_code: (data.customer_code as string) ?? null,
-    customer_name: (data.customer_name as string) ?? null,
-    tenant_id: (data.tenant_id as string) ?? null,
+    team_id: (data.team_id as number) ?? null,
+    team_name: (data.team_name as string) ?? null,
+    console_access: (data.console_access as boolean) ?? false,
   };
 }
 

@@ -9,6 +9,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import apiClient from "@/lib/api/client";
+import { customerRecordsKeys } from "@/lib/customer/use-customer-records";
 
 export interface TradeDocSourceSnapshot {
   order_no?: string;
@@ -121,6 +122,12 @@ export interface CreateTradeDocInput {
   order_id?: number | null;
   quote_order_id?: number | null;
   inquiry_id?: number | null;
+  /**
+   * 业务客户（外键，必填）。单证是"挂到某个客户名下的一张纸"：
+   * 买方识别、客户页的往来记录树都靠它。数字 id 走 number，
+   * 历史/mock 形态的非数字 id 原样传，由后端校验拒绝（不在本地造 NaN）。
+   */
+  customer_id?: number | string | null;
   currency?: string | null;
   raw_payload?: Record<string, unknown> | null;
 }
@@ -132,7 +139,12 @@ export function useCreateTradeDoc() {
       const { data } = await apiClient.post<TradeDocRow>("/trade-docs", input);
       return data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: tradeDocKeys.all }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: tradeDocKeys.all });
+      // 新开一张单证 = 某个客户的「往来记录」多一个节点，跨页面一起失效，
+      // 否则客户页会展示到 30s 内的旧树
+      qc.invalidateQueries({ queryKey: customerRecordsKeys.all });
+    },
   });
 }
 

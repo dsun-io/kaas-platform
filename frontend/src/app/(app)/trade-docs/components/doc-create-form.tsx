@@ -1,10 +1,17 @@
 "use client";
 
 /**
- * 开单表单：选单证类型 + 选上游来源（订单 / 报价单 / 询盘）+ 币种。
+ * 开单表单：选单证类型 + 选业务客户（必选）+ 选父对象（可选）+ 币种。
  *
  * 关键设计
  * --------
+ * - **客户必选**：`trade_docs.customer_id` 是指向业务客户的外键，
+ *   买方识别、客户页的往来记录树都靠它。手输单号既容易错、
+ *   也会绕开继承逻辑，所以这里一律用选择器。
+ * - **父对象可选**：正常业务流是「报价 → 转订单 → 出单证」，但业务也允许
+ *   手动新建与导入历史单据（设计文档 §1.6）—— 这类单据没有报价/订单这一环，
+ *   直接挂客户是**正规路径**。因此父对象三选一（不关联 / 订单 / 报价单 / 询盘），
+ *   天然互斥，不可能同时挂两个。
  * - 单证类型来自模板清单（manifest），所以「能选的类型」一定「渲染得出来」，
  *   不会出现选了某类型却打不开的情况。
  * - 类型**多选**：一票货常常要同时开报价单 + 形式发票 + 合同（按业务顺序），
@@ -17,10 +24,15 @@ import { useMemo, useState } from "react";
 import { FilePlus2 } from "lucide-react";
 import { toast } from "sonner";
 
+import {
+  CustomerPicker,
+  type CustomerPickerValue,
+} from "@/components/customer-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getAvailableTemplates } from "@/lib/trade-doc/render";
 import {
+  toCustomerIdPayload,
   useOrderOptions,
   useQuoteOptions,
 } from "@/lib/workstation/use-upstream";
@@ -28,7 +40,8 @@ import {
 import { useCreateTradeDoc } from "../hooks/use-trade-docs";
 import { DOC_TYPE_GROUPS, THIRD_PARTY_TYPES } from "../lib/doc-type-groups";
 
-type SourceKind = "order" | "quote" | "inquiry" | "none";
+/** 父对象类型：`none` = 直接挂客户（手动新建 / 导入历史单据的正规路径）。 */
+type SourceKind = "none" | "order" | "quote" | "inquiry";
 
 export function DocCreateForm({
   onCreated,
@@ -40,6 +53,8 @@ export function DocCreateForm({
   const [sourceKind, setSourceKind] = useState<SourceKind>("order");
   const [sourceId, setSourceId] = useState("");
   const [currency, setCurrency] = useState("USD");
+  const [customer, setCustomer] = useState<CustomerPickerValue | null>(null);
+  const [customerError, setCustomerError] = useState<string | null>(null);
 
   const orders = useOrderOptions();
   const quotes = useQuoteOptions();
@@ -60,14 +75,25 @@ export function DocCreateForm({
    */
   const submit = async () => {
     if (docTypes.length === 0) return toast.error("请至少选择一种单证类型");
-    if (sourceKind === "none") {
-      return toast.error("单证必须关联一个上游来源（订单 / 报价单 / 询盘）");
+    if (!customer) {
+      setCustomerError(
+        "请选择业务客户 —— 单证必须归属到客户，否则在客户页查不到这张单",
+      );
+      return toast.error("请先选择业务客户");
     }
+    setCustomerError(null);
 
     // 上游字段先收在一起；`doc_type` 在循环里逐个补上
     // （不开个头就加 doc_type 的"半成品",避免类型上以为它已完整）
-    let source: { order_id?: number; quote_order_id?: number; inquiry_id?: number };
-    if (sourceKind === "order") {
+    let source: {
+      order_id?: number;
+      quote_order_id?: number;
+      inquiry_id?: number;
+    };
+    if (sourceKind === "none") {
+      // 直接挂客户：历史单据没走过报价/订单，这是设计允许的正规路径
+      source = {};
+    } else if (sourceKind === "order") {
       if (!sourceId) return toast.error("请选择来源订单");
       source = { order_id: Number(sourceId) };
     } else if (sourceKind === "quote") {
@@ -83,7 +109,13 @@ export function DocCreateForm({
     for (const docType of docTypes) {
       try {
         created.push(
-          await create.mutateAsync({ ...source, currency, doc_type: docType }),
+          await create.mutateAsync({
+            ...source,
+            // 客户必选：order/quote 上游时后端会校验一致性，直接挂客户时它就是唯一归属
+            customer_id: toCustomerIdPayload(customer.id),
+            currency,
+            doc_type: docType,
+          }),
         );
       } catch {
         failed.push(docType);
@@ -146,8 +178,21 @@ export function DocCreateForm({
           </span>
         </div>
 
+        {/* 客户是必选项，也是这张单唯一的"归属依据" —— 放第一格 */}
+        <CustomerPicker
+          value={customer}
+          onChange={(next) => {
+            setCustomer(next);
+            setCustomerError(null);
+          }}
+          required
+          label="业务客户"
+          error={customerError}
+          hint="单证挂到客户名下，才会出现在客户页的「往来记录」里"
+        />
+
         <label className="space-y-1">
-          <span className="text-sm font-medium">上游来源</span>
+          <span className="text-sm font-medium">关联父对象（可选）</span>
           <select
             className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
             value={sourceKind}
@@ -156,17 +201,24 @@ export function DocCreateForm({
               setSourceId("");
             }}
           >
+            <option value="none">不关联（直接挂客户）</option>
             <option value="order">订单</option>
             <option value="quote">报价单</option>
             <option value="inquiry">询盘（手输编号）</option>
           </select>
           <span className="block text-xs text-muted-foreground">
-            单据会继承上游的货物、金额与贸易条款
+            三选一，互斥；选了会让单据继承父对象的货物、金额与贸易条款
           </span>
         </label>
 
         <label className="space-y-1 sm:col-span-2">
-          <span className="text-sm font-medium">选择具体来源</span>
+          <span className="text-sm font-medium">选择具体父对象</span>
+          {sourceKind === "none" && (
+            <span className="block rounded-md border border-dashed bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+              不关联报价/订单：这张单直接归属于所选的业务客户。
+              导入的历史单据、线下手工开的单走这条路（不会成为「脏数据」）。
+            </span>
+          )}
           {sourceKind === "order" && (
             <select
               className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
@@ -206,7 +258,7 @@ export function DocCreateForm({
           )}
           {sourceKind === "order" && orders.data?.length === 0 && (
             <span className="block text-xs text-warning">
-              还没有订单。请先在「订单」工位建单，或改选「报价单」。
+              还没有订单。请先在「订单」工位建单，或改选「报价单」/「不关联」。
             </span>
           )}
         </label>

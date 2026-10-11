@@ -44,6 +44,7 @@ from app.domain.spec_hash import compute_spec_hash
 from app.repositories.quotations_repo import insert_quotation
 from app.api.ws_common import (
     tenant_id_of, scope_filter, check_write_access, next_doc_no, lock_fx_rate,
+    resolve_customer_for_doc,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["quote-orders"])
@@ -83,7 +84,9 @@ class QuoteItemIn(BaseModel):
 
 
 class QuoteOrderCreate(BaseModel):
-    customer_id: Optional[str] = None
+    # 业务客户外键（整数）：必须从**已有业务客户**里选，后端强校验（2026-10-11）。
+    # 以前是自由文本，脏值导致客户详情页聚合不出该客户的报价单。
+    customer_id: Optional[int] = None
     customer_name: Optional[str] = None
     inquiry_id: Optional[int] = None          # 询盘来源（一个询盘一张报价单）
     currency: str = "USD"
@@ -107,6 +110,8 @@ class QuoteOrderCreate(BaseModel):
 
 
 class QuoteOrderPatch(BaseModel):
+    # 改单时也能换客户（历史单据的 customer_id 被清洗成 NULL 后要能人工认领回来）
+    customer_id: Optional[int] = None
     customer_name: Optional[str] = None
     currency: Optional[str] = None
     valid_until: Optional[str] = None
@@ -272,7 +277,11 @@ async def _record_quote_issued(db: AsyncSession, q: QuoteOrder, auth: AuthContex
         return
 
     await insert_quotation(
-        session=db, tenant_id=q.tenant_id, customer_id=q.customer_id,
+        session=db, tenant_id=q.tenant_id,
+        # 报价记录台账（quotations）的 customer_id **仍是 TEXT**（历史设计，本次不动），
+        # 而报价单的 customer_id 已改成 BIGINT（202610110009）—— 不转字符串的话
+        # asyncpg 会因为"整数参数写进 text 列"直接报错，签发报价单就失败了。
+        customer_id=str(q.customer_id),
         product_category="other", product_spec=snapshot, spec_hash=spec_hash,
         unit_price=total, currency=q.currency or "USD", unit="单",
         discount=None, min_quantity=None,
@@ -289,7 +298,7 @@ async def _record_quote_issued(db: AsyncSession, q: QuoteOrder, auth: AuthContex
 @router.get("/quotes")
 async def list_quotes(
     status: Optional[str] = None,
-    customer_id: Optional[str] = None,
+    customer_id: Optional[int] = None,
     inquiry_id: Optional[int] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
@@ -332,6 +341,16 @@ async def create_quote_order(
     currency = validate_enum("currency", body.currency) or "USD"
     owner_scope = validate_enum("owner_scope", body.owner_scope) or "private"
 
+    # 业务客户强校验：不存在 / 已软删 / 别家团队 → 404 CUSTOMER_NOT_FOUND
+    # 且**必填**：报价是业务链条的根（报价 → 订单 → 单证），没有客户就没法在客户页
+    # 按客户聚合。与 worker 端同口径（缺 → 422 CUSTOMER_REQUIRED），两端必须一致。
+    if body.customer_id is None:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "CUSTOMER_REQUIRED",
+            "detail": "创建报价必须选择业务客户",
+        })
+    customer = await resolve_customer_for_doc(db, tenant_id, body.customer_id, auth)
+
     items, total = _build_items(tenant_id, currency, body.items)
     # 空单也允许创建（工作台"先建单、再逐行加产品"的自然用法），
     # 但合计留空而不是 0 —— 0 会被当成"报过价、价是 0"。
@@ -339,13 +358,19 @@ async def create_quote_order(
 
     q = QuoteOrder(
         tenant_id=tenant_id, quote_no=await next_doc_no(db, tenant_id, "quotation"),
-        customer_id=body.customer_id, customer_name=body.customer_name,
+        customer_id=customer.id if customer is not None else None,
+        # 客户名快照：未显式传时按客户档案自动填（单据显示"开单当时的客户名"，
+        # 客户日后改名不会回改历史单据）
+        customer_name=body.customer_name or (customer.name if customer is not None else None),
         inquiry_id=body.inquiry_id,
         status="draft", currency=currency, total_amount=total if items else None,
         valid_until=_parse_dt(body.valid_until), notes=body.notes,
         fx_rate=rate, fx_rate_date=rate_date,
         created_by=str(auth.user_id),
         owner_id=str(auth.user_id), owner_scope=owner_scope,
+        # 单据与客户同团队：选了哪个团队的客户，单据就落哪个团队
+        # （管理员可以替别家团队开单，此时不能把单据留在自己的团队）
+        team_id=customer.team_id if customer is not None else auth.team_id,
         incoterm=body.incoterm, payment_terms=body.payment_terms,
         port_of_loading=body.port_of_loading,
         port_of_destination=body.port_of_destination,
@@ -399,6 +424,14 @@ async def update_quote_order(
 
     if body.currency is not None:
         q.currency = validate_enum("currency", body.currency) or q.currency
+    if body.customer_id is not None:
+        # 换客户：同样走强校验；快照与团队一并跟着客户走
+        customer = await resolve_customer_for_doc(db, tenant_id, body.customer_id, auth)
+        q.customer_id = customer.id
+        q.team_id = customer.team_id
+        if body.customer_name is None:
+            # 未显式给名字时按新客户档案刷新快照 —— 否则单据上还印着上一个客户名
+            q.customer_name = customer.name
     for field in ("customer_name", "notes", "incoterm", "payment_terms",
                   "port_of_loading", "port_of_destination", "shipping_marks",
                   "country_of_origin"):

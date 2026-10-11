@@ -1,4 +1,4 @@
-﻿"""自有出运台账 API（WORKSTATION_DESIGN.md §10.6 / §10.7）
+"""自有出运台账 API（WORKSTATION_DESIGN.md §10.6 / §10.7）
 
 区别于 intel_shipments（海关情报）。shipments 记我们自己的出运，
 关键字段做快照冗余（客户名/收货人/货物），目标是查数据能还原当时具体情况。
@@ -27,15 +27,11 @@ from app.domain.enums import validate_enum, SHIPMENT_STATUS, BL_TYPE, OWNER_SCOP
 from app.api.ws_common import (
     tenant_id_of, scope_filter, check_write_access, next_doc_no,
 )
+# 出运状态机真源：共享内核（Worker 的 ws_shipments.py 用同一份，杜绝「本地能流转、
+# 线上 409」）。本模块原先自持一份 SHIPMENT_NEXT，2026-10-10 上收。
+from kaas_common.workstation.state_machines import SHIPMENT_NEXT, can_transition
 
 router = APIRouter(prefix="/api/v1", tags=["shipments"])
-
-SHIPMENT_NEXT = {
-    "booking": ("in_transit",),
-    "in_transit": ("arrived",),
-    "arrived": ("customs",),
-    "customs": ("delivered",),
-}
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
@@ -211,6 +207,7 @@ async def create_shipment(
         atd=_parse_date(body.atd), ata=_parse_date(body.ata),
         status="booking", freight_remark=body.freight_remark,
         owner_id=str(auth.user_id), owner_scope=owner_scope,
+        team_id=auth.team_id,
     )
     db.add(s)
     await db.flush()
@@ -265,11 +262,11 @@ async def update_shipment(
 
     if body.status is not None:
         target = validate_enum("shipment_status", body.status)
-        allowed = SHIPMENT_NEXT.get(s.status, ())
-        if target != s.status and target not in allowed:
+        if not can_transition("shipment", s.status, target):
             raise HTTPException(status_code=409, detail={
                 "error": "conflict", "code": "ILLEGAL_TRANSITION",
-                "field": "status", "from": s.status, "to": target, "allowed": list(allowed),
+                "field": "status", "from": s.status, "to": target,
+                "allowed": list(SHIPMENT_NEXT.get(s.status, ())),
             })
         s.status = target
 

@@ -287,6 +287,7 @@ async def create_quote(
         notes=body.notes, fx_rate=rate, fx_rate_date=rate_date,
         created_by=str(auth.user_id),
         owner_id=str(auth.user_id), owner_scope=owner_scope,
+        team_id=auth.team_id,
         incoterm=body.incoterm, payment_terms=body.payment_terms,
         port_of_loading=body.port_of_loading,
         port_of_destination=body.port_of_destination,

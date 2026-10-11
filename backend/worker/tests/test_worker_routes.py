@@ -8,34 +8,22 @@
 断言路由表，并用 FastAPI TestClient 打无凭据请求——鉴权依赖先于数据库
 返回 401，即可证明路由与依赖链活着（不需要数据库）。
 
-运行：cd backend/worker && uv run --frozen --with pytest python -m pytest tests -q
+运行：cd backend/worker && uv run --frozen --with pytest --with httpx2 python -m pytest tests -q
+
+`--with httpx2` 是必需的：starlette >= 1.0 的 TestClient 依赖 httpx2，而它不在
+项目依赖里（线上 bundle 用不到，Cloudflare 对启动 CPU 有额度）。
 """
 import sys
-import types
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-# ── stub `workers`（仅 Cloudflare 运行时提供）────────────────────────────────
-_workers = types.ModuleType("workers")
+# 统一起手式：stub `workers` 并**彻底重载** main（含全部同级路由模块）。
+# 别自己 pop("main") —— 那会得到新 app + 旧子模块，路由全丢（见 _bootstrap.py）。
+from _bootstrap import load_main  # noqa: E402
 
+worker_main = load_main()
 
-class _WorkerEntrypoint:  # main.py 只需可子类化
-    pass
-
-
-def _asgi(app):
-    return app
-
-
-_workers.WorkerEntrypoint = _WorkerEntrypoint
-_workers.asgi = _asgi
-sys.modules.setdefault("workers", _workers)
-
-# test_product_extract 可能把 main 顶替成 stub；真加载前清掉
-sys.modules.pop("main", None)
-
-import main as worker_main  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 client = TestClient(worker_main.app, raise_server_exceptions=False)
@@ -124,6 +112,67 @@ NEW_ROUTES: set[tuple[str, str]] = {
     ("/api/v1/trade-docs", "POST"),
     ("/api/v1/trade-docs/{doc_id}", "GET"),
     ("/api/v1/trade-docs/{doc_id}", "PATCH"),
+    # 产品定义配置化（租户级）+ 报价工位权限矩阵：此前只在 orchestrator 有，
+    # 前端 /settings/tenant-products 一上生产就 404。
+    ("/api/v1/tenant-products", "GET"),
+    ("/api/v1/tenant-products", "POST"),
+    ("/api/v1/tenant-products/{product_id}", "PUT"),
+    ("/api/v1/tenant-products/{product_id}", "DELETE"),
+    ("/api/v1/workstation-products", "GET"),
+    ("/api/v1/workstation-products", "POST"),
+    # 公司公章（单证签章区盖章用）：纯 Python PNG 校验，Worker 可直接跑
+    ("/api/v1/tenant/company-seals", "GET"),
+    ("/api/v1/tenant/company-seals", "POST"),
+    ("/api/v1/tenant/company-seals/{seal_id}/image", "GET"),
+    ("/api/v1/tenant/company-seals/{seal_id}/default", "PUT"),
+    ("/api/v1/tenant/company-seals/{seal_id}", "DELETE"),
+    # 四域补口（客户/订单/报价/单证）：前端 /shipments 页直接调用这几条
+    ("/api/v1/shipments", "GET"),
+    ("/api/v1/shipments", "POST"),
+    ("/api/v1/shipments/{shipment_id}", "GET"),
+    ("/api/v1/shipments/{shipment_id}", "PATCH"),
+    # 单证补充端点（前端 use-trade-docs.ts 会调 refresh-sources）
+    ("/api/v1/trade-docs/{doc_id}/confirm", "POST"),
+    ("/api/v1/trade-docs/{doc_id}/translate", "POST"),
+    ("/api/v1/trade-docs/{doc_id}/refresh-sources", "POST"),
+    # 客户 / 询盘补充端点
+    ("/api/v1/customers/{customer_id}", "PATCH"),
+    ("/api/v1/customers/{customer_id}/inquiries", "GET"),
+    ("/api/v1/inquiries", "GET"),
+    ("/api/v1/inquiries/{inquiry_id}", "PATCH"),
+    # 报价补充端点
+    ("/api/v1/export-quote/rebate-rate/lookup", "POST"),
+    ("/api/v1/export-quote/products/{product_key}/explain", "POST"),
+    # 团队（三层组织）：建/加入/邀请/成员管理
+    ("/api/v1/teams", "POST"),
+    ("/api/v1/teams/me", "GET"),
+    ("/api/v1/teams/{team_id}", "PATCH"),
+    ("/api/v1/teams/{team_id}/members", "GET"),
+    ("/api/v1/teams/{team_id}/members/{user_id}", "DELETE"),
+    ("/api/v1/teams/{team_id}/invites", "POST"),
+    ("/api/v1/teams/{team_id}/invites", "GET"),
+    ("/api/v1/teams/{team_id}/invites/{invite_id}", "DELETE"),
+    ("/api/v1/teams/join", "POST"),
+    # 客户自助注册（含团队选择）—— 生产此前没有这条路由，注册直接 404
+    ("/api/v1/auth/register", "POST"),
+    # 工位订阅：我的工位 + 团队/个人开通
+    ("/api/v1/me/workstations", "GET"),
+    ("/api/v1/teams/{team_id}/subscriptions", "GET"),
+    ("/api/v1/teams/{team_id}/subscriptions/{code}", "PUT"),
+    ("/api/v1/teams/{team_id}/subscriptions/{code}", "DELETE"),
+    ("/api/v1/users/{user_id}/subscriptions", "GET"),
+    ("/api/v1/users/{user_id}/subscriptions/{code}", "PUT"),
+    ("/api/v1/users/{user_id}/subscriptions/{code}", "DELETE"),
+    # 官网数据后台权限（团队管理员授予成员）
+    ("/api/v1/teams/{team_id}/members/{user_id}/console-access", "PUT"),
+    # 业务客户往来记录（包含关系树）
+    ("/api/v1/customers/{customer_id}/records", "GET"),
+}
+
+# 公开路由（与 orchestrator 一致：静态常量、非敏感，前端登录前后都要取）
+# 单独列出来是因为它们不应答 401 —— 断言方式与 NEW_ROUTES 不同。
+PUBLIC_ROUTES: set[tuple[str, str]] = {
+    ("/api/v1/enums", "GET"),
 }
 
 
@@ -150,11 +199,30 @@ def test_new_routes_answer_auth_challenge():
             .replace("{order_id}", "1")
             .replace("{schedule_id}", "1")
             .replace("{doc_id}", "1")
+            .replace("{product_id}", "1")
+            .replace("{seal_id}", "1")
+            .replace("{shipment_id}", "1")
+            .replace("{inquiry_id}", "1")
+            .replace("{product_key}", "field_fence")
+            .replace("{team_id}", "1")
+            .replace("{invite_id}", "1")
+            .replace("{user_id}", "1")
+            .replace("{code}", "customers")
         )
         resp = client.request(method, probe)
         assert resp.status_code != 404, f"{method} {path} 未注册"
         assert resp.status_code in (401, 403, 422), (
             f"{method} {path} 无凭据应先被鉴权拦截，实际 {resp.status_code}"
+        )
+
+
+def test_public_routes_registered_and_public():
+    """公开路由（如 /enums）：注册了，且不带凭据也应答 —— 与 orchestrator 同口径。"""
+    for path, method in sorted(PUBLIC_ROUTES):
+        assert (path, method) in _routes(), f"{method} {path} 未注册"
+        resp = client.request(method, path)
+        assert resp.status_code == 200, (
+            f"{method} {path} 期望 200（公开），实际 {resp.status_code}"
         )
 
 

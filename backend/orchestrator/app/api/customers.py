@@ -53,13 +53,28 @@ def _can_see_all(auth: AuthContext) -> bool:
 
 
 def _scope_filter(stmt, model, auth: AuthContext):
-    """§10.3 可见范围：自己账号的数据 + owner 开放给全体的 tenant 基础数据。"""
+    """§10.3 + 三层组织：可见范围（**与其它工位同一套规则**）。
+
+    可见 ⟺ 管理员 / `owner_scope='tenant'`（显式共享）/ `owner_id=我` /
+           **`team_id=我的团队`（本团队）**。
+
+    为什么必须加最后一条：原先这里**没有团队条件**，而单据侧的引用校验
+    （`resolve_customer_for_doc` → 内核 `visible_to`）**有**团队条件 —— 于是
+    "同事在本团队录入的客户"会出现"客户列表里看不见、开单时却选得到"的裂缝。
+    两边都声称是同一套规则，就必须真的同一套。
+
+    注意 `team_id IS NULL` 的行**不因团队规则改变可见性**（仍按前三条判定），
+    所以这是**纯增量**条件：没有人会因此突然看不到数据。
+    """
     if _can_see_all(auth):
         return stmt
-    return stmt.where(or_(
+    conds = [
         model.owner_id == str(auth.user_id),
         model.owner_scope == 'tenant',
-    ))
+    ]
+    if hasattr(model, "team_id") and getattr(auth, "team_id", None) is not None:
+        conds.append(model.team_id == auth.team_id)
+    return stmt.where(or_(*conds))
 
 
 def _check_write_access(row, auth: AuthContext):
@@ -94,6 +109,9 @@ async def _log_stage(db, tenant_id, customer_id, from_stage, to_stage, changed_b
 async def _get_customer_or_404(db, tenant_id, customer_id, auth) -> Customer:
     stmt = select(Customer).where(
         Customer.tenant_id == tenant_id, Customer.id == customer_id,
+        # 软删除的客户一律视为不存在 —— is_deleted 原先只写不读，
+        # 标记了删除却照样能查到（列表/详情/子资源全都还在）
+        Customer.is_deleted.is_(False),
     )
     stmt = _scope_filter(stmt, Customer, auth)
     c = (await db.execute(stmt)).scalar_one_or_none()
@@ -177,7 +195,10 @@ async def list_customers(
     db: AsyncSession = Depends(get_db_session),
 ):
     tenant_id = _tenant_id(auth)
-    stmt = select(Customer).where(Customer.tenant_id == tenant_id)
+    stmt = select(Customer).where(
+        Customer.tenant_id == tenant_id,
+        Customer.is_deleted.is_(False),      # 软删除的客户不再出现在列表里
+    )
     stmt = _scope_filter(stmt, Customer, auth)
     if q:
         stmt = stmt.where(Customer.name.ilike(f"%{q}%"))
@@ -211,6 +232,7 @@ async def create_customer(
         stage=stage, notes=body.notes,
         created_by=str(auth.user_id),
         owner_id=str(auth.user_id), owner_scope=owner_scope,
+        team_id=auth.team_id,
     )
     db.add(c)
     await db.flush()
@@ -280,7 +302,10 @@ async def update_customer(
     if "owner_scope" in data:
         validate_enum("owner_scope", data["owner_scope"])
     for k, v in data.items():
-        setattr(c, k, v)
+        # `company_name` 在库里叫 `name`（CustomerCreate 也是显式映射的）。
+        # 直接 setattr(c, "company_name", v) 只会挂一个**未映射的实例属性**，
+        # 不产生任何 UPDATE 列 —— 表现是「改名返回 200、刷新后还是旧名」。
+        setattr(c, "name" if k == "company_name" else k, v)
     await db.commit()
     await db.refresh(c)  # server-onupdate 列（updated_at）commit 后已 expired
     return _row_to_customer(c)
@@ -476,6 +501,21 @@ async def delete_contact(
     return None
 
 
+# ── 客户名下的单据聚合：已删除（2026-10-11 收口）──────────────────────────────
+#
+# 原 `GET /api/v1/customers/{customer_id}/documents` —— "报价 / 订单 / 单证 三个
+# 平行列表"的旧形状，连同**仅供它使用**的 `_doc_scope_filter` / `_iso` /
+# `_float_or_none` 一起删除了。
+#
+# 为什么删而不是留：业务已确认客户粒度看的是**包含关系树**（报价 → 报价单 /
+# 订单 → 单证），端点 `GET /api/v1/customers/{customer_id}/records` 取代了它，
+# 见 docs/CUSTOMER_DOCUMENTS_VIEW.md；前端也只按 /records 解析
+# （frontend/src/lib/customer/customer-records.ts），旧形状没有任何调用方。
+# 留着两套形状迟早漂移成"两个页面显示同一客户的不同单据集合"。
+#
+# 装配逻辑在共享内核 `kaas_common/workstation/customer_records.py`（两端共用一份）。
+
+
 # ── 询盘 ─────────────────────────────────────────────────────────────────────
 
 @router.get("/customers/{customer_id}/inquiries")
@@ -520,6 +560,7 @@ async def create_inquiry(
         application=body.application, notes=body.notes,
         status='open', created_by=str(auth.user_id),
         owner_id=str(auth.user_id), owner_scope=owner_scope,
+        team_id=auth.team_id,
     )
     db.add(inq)
 

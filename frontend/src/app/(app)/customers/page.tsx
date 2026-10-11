@@ -9,8 +9,14 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { PageHeader, StatusBadge, SectionCard, EmptyState } from "@/components/shared";
+import {
+  PageHeader,
+  StatusBadge,
+  SectionCard,
+  EmptyState,
+} from "@/components/shared";
 import { Plus, Search, UserPlus } from "lucide-react";
+import { CustomerRecordsTree } from "./components/customer-records-tree";
 
 const STAGE_LABELS: Record<string, string> = {
   lead: "线索",
@@ -94,7 +100,10 @@ function useCustomerList(q?: string) {
     queryFn: async () => {
       const params = new URLSearchParams();
       if (q) params.set("q", q);
-      const { data } = await apiClient.get<{ items: Customer[]; total: number }>(`/customers?${params}`);
+      const { data } = await apiClient.get<{
+        items: Customer[];
+        total: number;
+      }>(`/customers?${params}`);
       return data;
     },
   });
@@ -113,7 +122,10 @@ function useCustomerDetail(id: number | null) {
 }
 
 function errMsg(e: unknown): string {
-  const err = e as { response?: { data?: { detail?: string } }; message?: string };
+  const err = e as {
+    response?: { data?: { detail?: string } };
+    message?: string;
+  };
   return err?.response?.data?.detail ?? err?.message ?? "请求失败";
 }
 
@@ -137,14 +149,22 @@ const EMPTY_CUSTOMER: CustomerFormState = {
   notes: "",
 };
 
-function CustomerForm({ onClose, onCreated }: { onClose: () => void; onCreated: (c: Customer) => void }) {
+function CustomerForm({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (c: Customer) => void;
+}) {
   const qc = useQueryClient();
   const [form, setForm] = useState<CustomerFormState>(EMPTY_CUSTOMER);
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
 
-  const set = (k: keyof CustomerFormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-    setForm({ ...form, [k]: e.target.value });
+  const set =
+    (k: keyof CustomerFormState) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+      setForm({ ...form, [k]: e.target.value });
 
   const handleSubmit = async () => {
     setIsPending(true);
@@ -164,13 +184,33 @@ function CustomerForm({ onClose, onCreated }: { onClose: () => void; onCreated: 
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
-        <Input placeholder="公司名称 *" value={form.company_name} onChange={set("company_name")} />
-        <Input placeholder="国家" value={form.country} onChange={set("country")} />
+        <Input
+          placeholder="公司名称 *"
+          value={form.company_name}
+          onChange={set("company_name")}
+        />
+        <Input
+          placeholder="国家"
+          value={form.country}
+          onChange={set("country")}
+        />
       </div>
-      <Input placeholder="地址" value={form.address} onChange={set("address")} />
+      <Input
+        placeholder="地址"
+        value={form.address}
+        onChange={set("address")}
+      />
       <div className="grid grid-cols-2 gap-3">
-        <Input placeholder="默认港口" value={form.default_port} onChange={set("default_port")} />
-        <Input placeholder="信用等级" value={form.credit_level} onChange={set("credit_level")} />
+        <Input
+          placeholder="默认港口"
+          value={form.default_port}
+          onChange={set("default_port")}
+        />
+        <Input
+          placeholder="信用等级"
+          value={form.credit_level}
+          onChange={set("credit_level")}
+        />
       </div>
       <select
         value={form.stage}
@@ -178,16 +218,23 @@ function CustomerForm({ onClose, onCreated }: { onClose: () => void; onCreated: 
         className="w-full border rounded-md px-3 py-2 text-sm bg-background"
       >
         {Object.entries(STAGE_LABELS).map(([k, v]) => (
-          <option key={k} value={k}>{v}</option>
+          <option key={k} value={k}>
+            {v}
+          </option>
         ))}
       </select>
       <Input placeholder="备注" value={form.notes} onChange={set("notes")} />
       {error && <p className="text-sm text-red-500">{error}</p>}
       <div className="flex gap-2">
-        <Button onClick={handleSubmit} disabled={!form.company_name || isPending}>
+        <Button
+          onClick={handleSubmit}
+          disabled={!form.company_name || isPending}
+        >
           {isPending ? "创建中…" : "创建客户"}
         </Button>
-        <Button variant="outline" onClick={onClose}>取消</Button>
+        <Button variant="outline" onClick={onClose}>
+          取消
+        </Button>
       </div>
     </div>
   );
@@ -211,14 +258,21 @@ const EMPTY_INQUIRY: InquiryFormState = {
   notes: "",
 };
 
-function InquiryForm({ customerId, onClose }: { customerId: number; onClose: () => void }) {
+function InquiryForm({
+  customerId,
+  onClose,
+}: {
+  customerId: number;
+  onClose: () => void;
+}) {
   const qc = useQueryClient();
   const [form, setForm] = useState<InquiryFormState>(EMPTY_INQUIRY);
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
 
-  const set = (k: keyof InquiryFormState) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm({ ...form, [k]: e.target.value });
+  const set =
+    (k: keyof InquiryFormState) => (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm({ ...form, [k]: e.target.value });
 
   const handleSubmit = async () => {
     setIsPending(true);
@@ -245,21 +299,44 @@ function InquiryForm({ customerId, onClose }: { customerId: number; onClose: () 
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
-        <Input placeholder="渠道（Alibaba / Expo / Web）" value={form.channel} onChange={set("channel")} />
-        <Input placeholder="产品名称（原始）" value={form.product_name_raw} onChange={set("product_name_raw")} />
+        <Input
+          placeholder="渠道（Alibaba / Expo / Web）"
+          value={form.channel}
+          onChange={set("channel")}
+        />
+        <Input
+          placeholder="产品名称（原始）"
+          value={form.product_name_raw}
+          onChange={set("product_name_raw")}
+        />
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Input placeholder="数量" type="number" value={form.quantity} onChange={set("quantity")} />
-        <Input placeholder="单位（平方米 / 卷 / 吨）" value={form.quantity_unit} onChange={set("quantity_unit")} />
+        <Input
+          placeholder="数量"
+          type="number"
+          value={form.quantity}
+          onChange={set("quantity")}
+        />
+        <Input
+          placeholder="单位（平方米 / 卷 / 吨）"
+          value={form.quantity_unit}
+          onChange={set("quantity_unit")}
+        />
       </div>
-      <Input placeholder="用途" value={form.application} onChange={set("application")} />
+      <Input
+        placeholder="用途"
+        value={form.application}
+        onChange={set("application")}
+      />
       <Input placeholder="备注" value={form.notes} onChange={set("notes")} />
       {error && <p className="text-sm text-red-500">{error}</p>}
       <div className="flex gap-2">
         <Button onClick={handleSubmit} disabled={isPending}>
           {isPending ? "提交中…" : "添加询盘"}
         </Button>
-        <Button variant="outline" onClick={onClose}>取消</Button>
+        <Button variant="outline" onClick={onClose}>
+          取消
+        </Button>
       </div>
     </div>
   );
@@ -283,7 +360,13 @@ const EMPTY_CONTACT: ContactFormState = {
   is_primary: false,
 };
 
-function ContactForm({ customerId, onClose }: { customerId: number; onClose: () => void }) {
+function ContactForm({
+  customerId,
+  onClose,
+}: {
+  customerId: number;
+  onClose: () => void;
+}) {
   const qc = useQueryClient();
   const [form, setForm] = useState<ContactFormState>(EMPTY_CONTACT);
   const [error, setError] = useState<string | null>(null);
@@ -314,14 +397,34 @@ function ContactForm({ customerId, onClose }: { customerId: number; onClose: () 
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
-        <Input placeholder="姓名 *" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        <Input placeholder="职位" value={form.position} onChange={(e) => setForm({ ...form, position: e.target.value })} />
+        <Input
+          placeholder="姓名 *"
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+        />
+        <Input
+          placeholder="职位"
+          value={form.position}
+          onChange={(e) => setForm({ ...form, position: e.target.value })}
+        />
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Input placeholder="电话" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-        <Input placeholder="邮箱" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+        <Input
+          placeholder="电话"
+          value={form.phone}
+          onChange={(e) => setForm({ ...form, phone: e.target.value })}
+        />
+        <Input
+          placeholder="邮箱"
+          value={form.email}
+          onChange={(e) => setForm({ ...form, email: e.target.value })}
+        />
       </div>
-      <Input placeholder="WhatsApp" value={form.whatsapp} onChange={(e) => setForm({ ...form, whatsapp: e.target.value })} />
+      <Input
+        placeholder="WhatsApp"
+        value={form.whatsapp}
+        onChange={(e) => setForm({ ...form, whatsapp: e.target.value })}
+      />
       <label className="flex items-center gap-2 text-sm">
         <input
           type="checkbox"
@@ -336,13 +439,21 @@ function ContactForm({ customerId, onClose }: { customerId: number; onClose: () 
         <Button onClick={handleSubmit} disabled={!form.name || isPending}>
           {isPending ? "提交中…" : "添加联系人"}
         </Button>
-        <Button variant="outline" onClick={onClose}>取消</Button>
+        <Button variant="outline" onClick={onClose}>
+          取消
+        </Button>
       </div>
     </div>
   );
 }
 
-function StageUpdate({ customer, onClose }: { customer: Customer; onClose: () => void }) {
+function StageUpdate({
+  customer,
+  onClose,
+}: {
+  customer: Customer;
+  onClose: () => void;
+}) {
   const qc = useQueryClient();
   const [stage, setStage] = useState(customer.stage);
   const [reason, setReason] = useState("");
@@ -353,7 +464,10 @@ function StageUpdate({ customer, onClose }: { customer: Customer; onClose: () =>
     setIsPending(true);
     setError(null);
     try {
-      await apiClient.patch<Customer>(`/customers/${customer.id}/stage`, { stage, reason: reason || undefined });
+      await apiClient.patch<Customer>(`/customers/${customer.id}/stage`, {
+        stage,
+        reason: reason || undefined,
+      });
       qc.invalidateQueries({ queryKey: ["customers"] });
       onClose();
     } catch (e: unknown) {
@@ -371,16 +485,24 @@ function StageUpdate({ customer, onClose }: { customer: Customer; onClose: () =>
         className="w-full border rounded-md px-3 py-2 text-sm bg-background"
       >
         {Object.entries(STAGE_LABELS).map(([k, v]) => (
-          <option key={k} value={k}>{v}</option>
+          <option key={k} value={k}>
+            {v}
+          </option>
         ))}
       </select>
-      <Input placeholder="原因（可选）" value={reason} onChange={(e) => setReason(e.target.value)} />
+      <Input
+        placeholder="原因（可选）"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+      />
       {error && <p className="text-sm text-red-500">{error}</p>}
       <div className="flex gap-2">
         <Button onClick={handleUpdate} disabled={isPending}>
           {isPending ? "更新中…" : "更新阶段"}
         </Button>
-        <Button variant="outline" onClick={onClose}>取消</Button>
+        <Button variant="outline" onClick={onClose}>
+          取消
+        </Button>
       </div>
     </div>
   );
@@ -388,7 +510,13 @@ function StageUpdate({ customer, onClose }: { customer: Customer; onClose: () =>
 
 type DetailTab = "info" | "contacts" | "inquiries" | "history";
 
-function CustomerDetailPanel({ customer, onClose }: { customer: Customer; onClose: () => void }) {
+function CustomerDetailPanel({
+  customer,
+  onClose,
+}: {
+  customer: Customer;
+  onClose: () => void;
+}) {
   const { data: detail, isLoading } = useCustomerDetail(customer.id);
   const [activeTab, setActiveTab] = useState<DetailTab>("info");
   const [showInquiryForm, setShowInquiryForm] = useState(false);
@@ -407,7 +535,9 @@ function CustomerDetailPanel({ customer, onClose }: { customer: Customer; onClos
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle>{customer.company_name}</CardTitle>
-          <Button variant="ghost" size="sm" onClick={onClose}>关闭</Button>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            关闭
+          </Button>
         </div>
       </CardHeader>
       <CardContent>
@@ -448,7 +578,10 @@ function CustomerDetailPanel({ customer, onClose }: { customer: Customer; onClos
                   </div>
                   <div>
                     <span className="text-muted-foreground">阶段：</span>
-                    <StatusBadge tone={STAGE_TONES[detail.stage] ?? "default"} className="ml-1">
+                    <StatusBadge
+                      tone={STAGE_TONES[detail.stage] ?? "default"}
+                      className="ml-1"
+                    >
                       {STAGE_LABELS[detail.stage] ?? detail.stage}
                     </StatusBadge>
                   </div>
@@ -459,31 +592,55 @@ function CustomerDetailPanel({ customer, onClose }: { customer: Customer; onClos
                     </div>
                   )}
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setShowStageUpdate(true)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowStageUpdate(true)}
+                >
                   更新阶段
                 </Button>
-                {showStageUpdate && <StageUpdate customer={customer} onClose={() => setShowStageUpdate(false)} />}
+                {showStageUpdate && (
+                  <StageUpdate
+                    customer={customer}
+                    onClose={() => setShowStageUpdate(false)}
+                  />
+                )}
               </div>
             )}
 
             {activeTab === "contacts" && (
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">{detail.contacts.length} 位联系人</span>
+                  <span className="text-sm text-muted-foreground">
+                    {detail.contacts.length} 位联系人
+                  </span>
                   <Button size="sm" onClick={() => setShowContactForm(true)}>
-                    <Plus className="size-4 mr-1" />添加联系人
+                    <Plus className="size-4 mr-1" />
+                    添加联系人
                   </Button>
                 </div>
-                {showContactForm && <ContactForm customerId={customer.id} onClose={() => setShowContactForm(false)} />}
+                {showContactForm && (
+                  <ContactForm
+                    customerId={customer.id}
+                    onClose={() => setShowContactForm(false)}
+                  />
+                )}
                 <div className="space-y-2">
                   {detail.contacts.length === 0 && (
                     <p className="text-sm text-muted-foreground">暂无联系人</p>
                   )}
                   {detail.contacts.map((c) => (
-                    <div key={c.id} className="rounded-lg border bg-card p-4 shadow-[var(--shadow-xs)] transition-shadow hover:shadow-[var(--shadow-sm)]">
+                    <div
+                      key={c.id}
+                      className="rounded-lg border bg-card p-4 shadow-[var(--shadow-xs)] transition-shadow hover:shadow-[var(--shadow-sm)]"
+                    >
                       <p className="font-medium text-sm">
                         {c.name}
-                        {c.is_primary && <Badge variant="default" className="ml-2">主要</Badge>}
+                        {c.is_primary && (
+                          <Badge variant="default" className="ml-2">
+                            主要
+                          </Badge>
+                        )}
                       </p>
                       <p className="text-xs text-muted-foreground mt-1">
                         {c.position && `${c.position} · `}
@@ -500,29 +657,49 @@ function CustomerDetailPanel({ customer, onClose }: { customer: Customer; onClos
             {activeTab === "inquiries" && (
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">{detail.inquiries.length} 条询盘</span>
+                  <span className="text-sm text-muted-foreground">
+                    {detail.inquiries.length} 条询盘
+                  </span>
                   <Button size="sm" onClick={() => setShowInquiryForm(true)}>
-                    <Plus className="size-4 mr-1" />添加询盘
+                    <Plus className="size-4 mr-1" />
+                    添加询盘
                   </Button>
                 </div>
-                {showInquiryForm && <InquiryForm customerId={customer.id} onClose={() => setShowInquiryForm(false)} />}
+                {showInquiryForm && (
+                  <InquiryForm
+                    customerId={customer.id}
+                    onClose={() => setShowInquiryForm(false)}
+                  />
+                )}
                 <div className="space-y-2">
                   {detail.inquiries.length === 0 && (
                     <p className="text-sm text-muted-foreground">暂无询盘</p>
                   )}
                   {detail.inquiries.map((inq) => (
-                    <div key={inq.id} className="rounded-lg border bg-card p-4 shadow-[var(--shadow-xs)]">
+                    <div
+                      key={inq.id}
+                      className="rounded-lg border bg-card p-4 shadow-[var(--shadow-xs)]"
+                    >
                       <div className="flex items-center justify-between">
                         <p className="font-medium text-sm">
                           {inq.product_name_raw ?? `询盘 #${inq.id}`}
                         </p>
-                        <StatusBadge tone={inq.status === "won" ? "success" : inq.status === "lost" ? "danger" : "default"}>
+                        <StatusBadge
+                          tone={
+                            inq.status === "won"
+                              ? "success"
+                              : inq.status === "lost"
+                                ? "danger"
+                                : "default"
+                          }
+                        >
                           {INQUIRY_STATUS_LABELS[inq.status] ?? inq.status}
                         </StatusBadge>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         {inq.channel && `${inq.channel} · `}
-                        {inq.quantity != null && `${inq.quantity} ${inq.quantity_unit ?? ""} · `}
+                        {inq.quantity != null &&
+                          `${inq.quantity} ${inq.quantity_unit ?? ""} · `}
                         {inq.application && `${inq.application} · `}
                         {new Date(inq.created_at).toLocaleDateString()}
                       </p>
@@ -538,10 +715,15 @@ function CustomerDetailPanel({ customer, onClose }: { customer: Customer; onClos
                   <p className="text-sm text-muted-foreground">暂无历史记录</p>
                 ) : (
                   detail.stage_log.map((log) => (
-                    <div key={log.id} className="rounded-lg border bg-card p-4 text-sm shadow-[var(--shadow-xs)]">
+                    <div
+                      key={log.id}
+                      className="rounded-lg border bg-card p-4 text-sm shadow-[var(--shadow-xs)]"
+                    >
                       <div className="flex items-center justify-between">
                         <span>
-                          {log.from_stage ? (STAGE_LABELS[log.from_stage] ?? log.from_stage) : "创建"}
+                          {log.from_stage
+                            ? (STAGE_LABELS[log.from_stage] ?? log.from_stage)
+                            : "创建"}
                           {" -> "}
                           {STAGE_LABELS[log.to_stage] ?? log.to_stage}
                         </span>
@@ -549,12 +731,30 @@ function CustomerDetailPanel({ customer, onClose }: { customer: Customer; onClos
                           {new Date(log.created_at).toLocaleString()}
                         </span>
                       </div>
-                      {log.reason && <p className="text-xs text-muted-foreground mt-1">{log.reason}</p>}
+                      {log.reason && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {log.reason}
+                        </p>
+                      )}
                     </div>
                   ))
                 )}
               </div>
             )}
+
+            {/*
+              往来记录：与该客户的「信息 / 联系人 / 询盘 / 历史」并列的一块，
+              刻意**不塞进 tab** —— 它是"这个客户发生过什么"的主视图，
+              藏在 tab 里会让"客户名下有哪些报价/订单/单证"变得不容易发现。
+              自成一块的好处是：接口还没上线时，只有这一块降级，
+              上面的 tab 内容照常可用（设计文档 §1.6 / §4）。
+            */}
+            <div className="mt-6 border-t pt-4">
+              <CustomerRecordsTree
+                customerId={customer.id}
+                customerName={customer.company_name}
+              />
+            </div>
           </div>
         )}
       </CardContent>
@@ -566,7 +766,9 @@ export default function CustomersPage() {
   usePageView({ resource_id: "/customers" });
   const [searchQ, setSearchQ] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
+    null,
+  );
 
   const { data: listData, isLoading } = useCustomerList(searchQ || undefined);
 
@@ -578,7 +780,8 @@ export default function CustomersPage() {
           description="跟进询盘、阶段与联系人"
           actions={
             <Button onClick={() => setShowCreateForm(true)}>
-              <UserPlus className="size-4 mr-1" />新建客户
+              <UserPlus className="size-4 mr-1" />
+              新建客户
             </Button>
           }
         />
@@ -589,7 +792,10 @@ export default function CustomersPage() {
               <CardTitle>新建客户</CardTitle>
             </CardHeader>
             <CardContent>
-              <CustomerForm onClose={() => setShowCreateForm(false)} onCreated={setSelectedCustomer} />
+              <CustomerForm
+                onClose={() => setShowCreateForm(false)}
+                onCreated={setSelectedCustomer}
+              />
             </CardContent>
           </Card>
         )}
@@ -607,7 +813,9 @@ export default function CustomersPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {isLoading && <p className="text-sm text-muted-foreground">加载中…</p>}
+            {isLoading && (
+              <p className="text-sm text-muted-foreground">加载中…</p>
+            )}
             {!isLoading && listData?.items.length === 0 && (
               <p className="text-sm text-muted-foreground">暂无客户</p>
             )}

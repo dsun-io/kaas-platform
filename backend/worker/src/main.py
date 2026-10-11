@@ -7,6 +7,8 @@ import os
 import csv
 import io
 import hmac
+import re
+import secrets
 import contextvars
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
@@ -45,6 +47,11 @@ DEFAULT_TENANT = "default"
 import json as _json
 
 from kaas_common.workstation.customer_serializers import row_to_customer, row_to_inquiry
+from kaas_common.domain.enums import validate_enum
+from kaas_common.workstation.scope import can_view, can_write, is_admin_role
+from kaas_common.workstation.teams import (
+    TeamRuleError, invite_state, normalize_invite_token, validate_team_name,
+)
 
 
 def _row_to_dict(row: asyncpg.Record) -> dict:
@@ -130,7 +137,8 @@ async def _get_current_user(request: Request) -> dict:
     payload = _decode_token(auth[7:], request)
     async with _acquire(request) as conn:
         row = await conn.fetchrow(
-            "SELECT id, email, display_name, account_type, role, status FROM users WHERE id=$1",
+            "SELECT id, email, display_name, account_type, role, status, team_id, console_access"
+            " FROM users WHERE id=$1",
             int(payload["sub"]),
         )
     if not row or row["status"] != "active":
@@ -279,7 +287,8 @@ async def bootstrap_admin(request: Request, body: BootstrapRequest):
 async def login(request: Request, body: LoginRequest):
     async with _acquire(request) as conn:
         row = await conn.fetchrow(
-            "SELECT id, email, password_hash, display_name, account_type, role, status FROM users WHERE email=$1",
+            "SELECT id, email, password_hash, display_name, account_type, role, status,"
+            " team_id, console_access FROM users WHERE email=$1",
             body.email.lower(),
         )
     if not row or row["status"] != "active":
@@ -289,12 +298,220 @@ async def login(request: Request, body: LoginRequest):
 
     token = _create_token(row["id"], request)
     user = {k: v for k, v in dict(row).items() if k != "password_hash"}
+    user["user_id"] = user["id"]
+    user["team_name"] = await _team_name_of(request, user.get("team_id"))
     return {"access_token": token, "token_type": "bearer", "user": user}
 
 
+async def _team_name_of(request: Request, team_id) -> Optional[str]:
+    """团队名（前端 buildUser 读它显示"当前团队"）。未加入团队 → None。"""
+    if team_id is None:
+        return None
+    async with _acquire(request) as conn:
+        row = await conn.fetchrow("SELECT name FROM teams WHERE id=$1", team_id)
+    return row["name"] if row else None
+
+
 @app.get("/api/v1/auth/me")
-async def get_me(user: dict = Depends(_get_current_user)):
-    return user
+async def get_me(request: Request, user: dict = Depends(_get_current_user)):
+    # `user_id` 是前端 buildUser() 读取的字段名（内部主键叫 id）；少了它刷新页面后
+    # 前端的 user_id 会变成 undefined，权限判断随之失效。
+    # 返回**扁平**结构：team_id/team_name（账号归属哪个团队）、console_access（官网数据后台权限）。
+    return {**user, "user_id": user["id"],
+            "team_name": await _team_name_of(request, user.get("team_id"))}
+
+
+# ── 客户自助注册（含团队选择）────────────────────────────────────────────────
+# 与 orchestrator `app/api/auth.py` 的 /register 同语义，差异只有两处（都是适配）：
+#   1) **单租户**：生产 Worker 所有数据都落 DEFAULT_TENANT。dev 会给每个注册账号新建
+#      一个 UUID tenant，但 Worker 的查询一律按 DEFAULT_TENANT —— 复制过来只会让新建的
+#      customer 行在 Worker 自己的查询里查不到。这里账号隔离改由「团队」这一层承担。
+#   2) 团队选择：注册时可选「新建团队」（注册者成为团队管理员）或「凭邀请码加入」。
+#      两者互斥；都不给则与旧行为一致（无团队）。
+_CATEGORIES = frozenset([
+    # 与 dev 同一清单（前端注册页的下拉就是这些值）
+    "fencing",
+    "mesh_panel_roll",
+    "woven_mesh",
+    "welded_mesh",
+    "perforated_mesh",
+    "wire_rope",
+    "filter_mesh",
+    "gabion_protection",
+    "custom_wire_mesh",
+    "other",
+])
+
+_SLUG_RE = re.compile(r"[^a-z0-9_]")
+
+
+def _slugify(name: str) -> str:
+    """公司名 → customer code 前缀（与 dev `_slugify` 同规则）。"""
+    slug = _SLUG_RE.sub("_", (name or "").strip().lower())
+    slug = re.sub(r"_+", "_", slug).strip("_")
+    return slug[:24] if slug else "cust"
+
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    display_name: str
+    company_name: str
+    product_category: str
+    contact: Optional[str] = None
+    invite_token: Optional[str] = None   # 加入现有团队（凭邀请码）
+    team_name: Optional[str] = None      # 新建团队（成为团队管理员）
+    # 新建团队时勾选要开通的工位（当前阶段全部免费）；不传 = 默认全部工位
+    workstations: Optional[List[str]] = None
+
+
+async def _unique_customer_code(conn, company_name: str) -> str:
+    base = _slugify(company_name)
+    for _ in range(5):
+        candidate = f"{base}_{secrets.token_hex(3)}"
+        if await conn.fetchval("SELECT 1 FROM customers WHERE code=$1", candidate) is None:
+            return candidate
+    return f"{base}_{secrets.token_hex(8)}"
+
+
+@app.post("/api/v1/auth/register")
+async def register(request: Request, body: RegisterRequest):
+    """注册新账号（仅 customer 账号）；可选加入或新建团队。
+
+    安全规则（与 dev 一致，反伪造）：忽略 body 里的 account_type/role/plan，
+    强制 account_type='customer'、plan='free'。
+    整个流程在**一个事务**里：用户名占用、邀请码无效、团队重名等任一失败都整体回滚，
+    不会留下"账号建了但没进团队"的半截状态。
+    """
+    email = (body.email or "").strip().lower()
+    password = body.password or ""
+    display_name = (body.display_name or "").strip()
+    company_name = (body.company_name or "").strip()
+    product_category = (body.product_category or "").strip().lower()
+    invite_raw = (body.invite_token or "").strip()
+    team_name_raw = (body.team_name or "").strip()
+
+    if not email or not password or not display_name:
+        raise HTTPException(status_code=422, detail=(
+            "validation_error: email, password, display_name are required"))
+    if not company_name:
+        raise HTTPException(status_code=422, detail="validation_error: company_name is required")
+    if not product_category or product_category not in _CATEGORIES:
+        raise HTTPException(status_code=422, detail=(
+            "validation_error: product_category is required and must be one of: "
+            + ", ".join(sorted(_CATEGORIES))))
+    if len(password) < 8:
+        raise HTTPException(status_code=422, detail=(
+            "validation_error: Password must be at least 8 characters"))
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(status_code=422, detail="validation_error: Invalid email format")
+    if invite_raw and team_name_raw:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "TEAM_ACTION_CONFLICT",
+            "detail": "只能二选一：凭邀请码加入现有团队，或新建一个团队"})
+
+    async with _acquire(request) as conn:
+        async with conn.transaction():
+            if await conn.fetchval("SELECT 1 FROM users WHERE email=$1", email) is not None:
+                raise HTTPException(status_code=409, detail="conflict: Email already registered")
+
+            # ── 团队动作预校验（放在建账号之前，失败即整体回滚）──
+            invite = None
+            if invite_raw:
+                token = normalize_invite_token(invite_raw)
+                invite = await conn.fetchrow(
+                    "SELECT * FROM team_invites WHERE token=$1", token)
+                state = invite_state(dict(invite) if invite is not None else None)
+                if state == "not_found":
+                    raise HTTPException(status_code=404, detail={
+                        "error": "not_found", "code": "INVITE_NOT_FOUND"})
+                if state == "revoked":
+                    raise HTTPException(status_code=410, detail={
+                        "error": "gone", "code": "INVITE_REVOKED"})
+                if state == "used":
+                    raise HTTPException(status_code=409, detail={
+                        "error": "conflict", "code": "INVITE_ALREADY_USED"})
+                if state == "expired":
+                    raise HTTPException(status_code=410, detail={
+                        "error": "gone", "code": "INVITE_EXPIRED"})
+
+            new_team_name = None
+            if team_name_raw:
+                try:
+                    new_team_name = validate_team_name(team_name_raw)
+                except TeamRuleError as exc:
+                    raise HTTPException(status_code=422, detail={
+                        "error": "validation", "code": exc.code, "detail": exc.detail})
+                if await conn.fetchval(
+                    "SELECT 1 FROM teams WHERE tenant_id=$1 AND name=$2",
+                    DEFAULT_TENANT, new_team_name,
+                ) is not None:
+                    raise HTTPException(status_code=409, detail={
+                        "error": "conflict", "code": "TEAM_NAME_TAKEN",
+                        "message": f"已存在同名团队「{new_team_name}」"})
+
+            # 建团队的成为团队管理员（role=owner）；凭码加入的是普通成员（role=user）
+            role = "user" if invite is not None else "owner"
+            user_row = await conn.fetchrow(
+                "INSERT INTO users (email, password_hash, display_name, account_type, role,"
+                " plan, status) VALUES ($1,$2,$3,'customer',$4,'free','active')"
+                " RETURNING id, email, display_name, account_type, role, status",
+                email, _hash_password(password), display_name, role,
+            )
+            uid = user_row["id"]
+
+            # 不再为注册者创建 `customers` 行：公司身份由**团队**承载。
+            # `customers` 从此只放**业务客户**（客户工位里录入的、我们卖货给谁）。
+            # 这也是"团队 / 用户 / 业务客户"三概念分开的关键一步。
+            team_id = None
+            team_name_out = None
+
+            async def _open_workstations(tid):
+                for ws_code in ws_teams._resolve_signup_workstations(body.workstations):
+                    await conn.execute(
+                        "INSERT INTO team_subscriptions (team_id, code, active, source)"
+                        " VALUES ($1,$2,true,'signup')"
+                        " ON CONFLICT (team_id, code) DO UPDATE SET"
+                        "   active = true, source = 'signup', updated_at = now()",
+                        tid, ws_code)
+
+            if invite is not None:
+                team_id = invite["team_id"]
+                await conn.execute(
+                    "UPDATE users SET team_id=$2 WHERE id=$1", uid, team_id)
+                await conn.execute(
+                    "UPDATE team_invites SET status='accepted', accepted_at=now(),"
+                    " accepted_by=$2 WHERE id=$1",
+                    invite["id"], uid)
+                trow = await conn.fetchrow("SELECT name FROM teams WHERE id=$1", team_id)
+                team_name_out = trow["name"] if trow else None
+            else:
+                # 团队名：显式传的 team_name 优先，否则用注册时填的公司名 ——
+                # 「团队由第一个成员创建」，注册者即团队管理员。
+                new_name = new_team_name or company_name
+                if new_name:
+                    team = await conn.fetchrow(
+                        "INSERT INTO teams (tenant_id, name, created_by) VALUES ($1,$2,$3)"
+                        " RETURNING id, name",
+                        DEFAULT_TENANT, new_name, uid)
+                    team_id, team_name_out = team["id"], team["name"]
+                    await conn.execute(
+                        "UPDATE users SET team_id=$2 WHERE id=$1", uid, team_id)
+                    await _open_workstations(team_id)
+
+    # 扁平响应：前端 buildUser() 读 user_id / team_id / team_name / console_access
+    return {
+        "user_id": uid,
+        "email": user_row["email"],
+        "display_name": user_row["display_name"],
+        "account_type": user_row["account_type"],
+        "role": user_row["role"],
+        "team_id": team_id,
+        "team_name": team_name_out,
+        "console_access": False,          # 官网数据后台权限：默认关闭，由团队管理员授予
+        "access_token": _create_token(uid, request),
+        "token_type": "bearer",
+    }
 
 
 # ── Intel Endpoints ──
@@ -481,6 +698,7 @@ class CustomerCreate(BaseModel):
     credit_level: Optional[str] = None
     stage: str = "lead"
     notes: Optional[str] = None
+    owner_scope: Optional[str] = None   # private | tenant（§10.3）
 
 
 class ContactCreate(BaseModel):
@@ -511,6 +729,118 @@ class StageUpdate(BaseModel):
     reason: Optional[str] = None
 
 
+async def _customer_or_404(conn, customer_id: int, user: dict) -> dict:
+    """取客户并做「未删除 + 三层可见性」过滤（与 dev `_get_customer_or_404` 同口径）。
+
+    客户域必须与订单/报价/单证执行**同一套规则**，否则会出现
+    「列表里看得见、点进去 404」这种自相矛盾（见 docs/TEAMS_AND_VISIBILITY.md）。
+    不可见一律 404，不泄露存在性。
+    """
+    row = await conn.fetchrow(
+        "SELECT *, name AS company_name FROM customers"
+        " WHERE id=$1 AND tenant_id=$2 AND is_deleted = false",
+        customer_id, DEFAULT_TENANT,
+    )
+    if row is None or not _owner_visible(user, row):
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "CUSTOMER_NOT_FOUND"})
+    return dict(row)
+
+
+# ── 单据归属闸门：单据必须挂在**已有业务客户**上（手动新建 / 导入也要选）──────
+# 为什么收在这里：报价（quote_api）/ 订单 / 单证三条写入路径必须走**同一道**闸门。
+# dev 侧的同一道闸门是 `app/api/ws_common.py::resolve_customer_for_doc`
+# （语义：存在 + 未软删 + 可见 + 属本团队，跨团队一律 404 CUSTOMER_NOT_FOUND），
+# 本文件是它的 raw SQL 版 —— 两侧判据必须逐条一致，否则同一份数据
+# 「本地能建、线上 404」，或者反过来某条路径绕过了团队隔离。
+# 判定本身不另写：可见性走 `_owner_visible`（→ kaas_common.scope.can_view）、
+# 管理员豁免走 `_can_see_all`（→ kaas_common.scope.is_admin_role）。
+
+
+def _as_bigint(raw, *, field: str, code: str) -> Optional[int]:
+    """请求体里的 BIGINT 外键 → int；空值/空白 → None；非数字 → 422。
+
+    为什么不宽容转换：这些列全是 BIGINT 外键，而前端选择器里可能残留
+    `"cust-1"` 这类历史 mock 形态的字符串（见 use-upstream.toCustomerIdPayload）。
+    静默取 0 会写出一堆指向"客户 0"的脏数据，422 能让调用方当场改对。
+    """
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    if not text.isdigit():
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": code, "field": field,
+            "value": str(raw), "detail": f"{field} 必须是整数 id",
+        })
+    return int(text)
+
+
+def _same_team(a, b) -> bool:
+    """团队一致（都未分组视为一致）—— 与 dev `resolve_customer_for_doc` 同口径。
+
+    宽松比较的原因：`team_id` 在库里是 BIGINT，而 `user.team_id` 来自 token
+    解析（int / str 都可能），直接用 `!=` 会把同一个团队判成不一致。
+    """
+    if a is None or b is None:
+        return a is None and b is None
+    return str(a) == str(b)
+
+
+async def _doc_customer(conn, raw_id, user: dict, *, required: bool) -> Optional[dict]:
+    """单据上的客户引用 → 客户行（客户闸门；报价 / 订单 / 单证共用这一份）。
+
+    - `required=True`：缺 `customer_id` → **422 `CUSTOMER_REQUIRED`**。
+      "没选客户"（表单漏填）与"客户不可见"（404）必须分开说，
+      否则用户对着"客户不存在"根本找不到原因。
+    - 给了就一定过 `_customer_or_404`（存在 / 未软删 / 可见）→ 否则 404。
+    - 再加**团队一致**：客户必须属于调用者的团队；管理员豁免 ——
+      管理员在客户域本来就"全租户可见"，强行要求团队一致会出现
+      「客户列表里看得见、开单时选不了」的死路（dev 也是这么写的）。
+    """
+    customer_id = _as_bigint(raw_id, field="customer_id", code="INVALID_CUSTOMER_ID")
+    if customer_id is None:
+        if required:
+            raise HTTPException(status_code=422, detail={
+                "error": "validation", "code": "CUSTOMER_REQUIRED",
+                "field": "customer_id",
+                "detail": ("单据必须归属业务客户：请从已有业务客户里选择"
+                           "（没有 customer_id，客户页的「往来记录」里就查不到这张单）"),
+            })
+        return None
+    customer = await _customer_or_404(conn, customer_id, user)
+    if not _can_see_all(user) and not _same_team(customer.get("team_id"),
+                                                user.get("team_id")):
+        # 与"客户不存在"同样回 404：不泄露别家客户是否存在
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "CUSTOMER_NOT_FOUND",
+            "detail": "客户不存在或不属于你的团队"})
+    return customer
+
+
+async def _order_source_quote(conn, quote_id: int, user: dict) -> dict:
+    """报价转订单的来源闸门：报价必须可见，且处于可转化状态。
+
+    `orders.quote_id` 是客户页「报价 → 订单」包含关系的**唯一来源**，
+    写错就是把订单挂到别人家的报价下；状态口径与 dev `orders.create_order`
+    一致（rejected / expired / cancelled 不可转化）。
+    """
+    row = await conn.fetchrow(
+        "SELECT * FROM quote_orders WHERE tenant_id=$1 AND id=$2",
+        DEFAULT_TENANT, quote_id,
+    )
+    if row is None or not _owner_visible(user, row):
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "QUOTE_NOT_FOUND"})
+    quote = dict(row)
+    if quote.get("status") in ("rejected", "expired", "cancelled"):
+        raise HTTPException(status_code=409, detail={
+            "error": "conflict", "code": "QUOTE_NOT_CONVERTIBLE",
+            "detail": f"报价单状态 {quote['status']} 不可转化为订单"})
+    return quote
+
+
 @app.get("/api/v1/customers")
 async def list_customers(
     request: Request,
@@ -521,7 +851,8 @@ async def list_customers(
     country: Optional[str] = None,
     q: Optional[str] = None,
 ):
-    where = ["tenant_id = $1"]
+    # 软删除的客户不再出现（is_deleted 原先只写不读 —— 标记了也照样列出来）
+    where = ["tenant_id = $1", "is_deleted = false"]
     params: list = [DEFAULT_TENANT]
     idx = 2
     if stage:
@@ -530,6 +861,16 @@ async def list_customers(
         where.append(f"country ILIKE ${idx}"); params.append(f"%{country}%"); idx += 1
     if q:
         where.append(f"name ILIKE ${idx}"); params.append(f"%{q}%"); idx += 1
+    # 三层组织 + §10.3：谁创建的客户，就在其团队可见；其他团队看不到
+    if not _can_see_all(user):
+        params.append(str(user["id"]))
+        scope_cond = f"(owner_id = ${idx} OR owner_scope = 'tenant'"
+        idx += 1
+        if user.get("team_id") is not None:
+            params.append(user["team_id"])
+            scope_cond += f" OR team_id = ${idx}"
+            idx += 1
+        where.append(scope_cond + ")")
     where_sql = " AND ".join(where)
     async with _acquire(request) as conn:
         total = await conn.fetchval(f"SELECT COUNT(*) FROM customers WHERE {where_sql}", *params)
@@ -542,13 +883,22 @@ async def list_customers(
 
 @app.post("/api/v1/customers", status_code=201)
 async def create_customer(request: Request, body: CustomerCreate, user: dict = Depends(_get_current_user)):
+    # §10.3 归属必须落库：dev 的 create_customer 写 owner_id/owner_scope，线上原先不写。
+    # 不写的后果是自相矛盾 —— 既有 GET /customers 不做归属过滤（列表里有），
+    # 而按归属过滤的接口（PATCH /customers/{id}、GET .../inquiries）会把这条记录
+    # 判为不可见 → 404「列表里看得见、点进去没有」。同时补上枚举校验（与 dev 一致）。
+    stage = validate_enum("customer_stage", body.stage or "lead")
+    owner_scope = validate_enum("owner_scope", body.owner_scope) or "private"
     async with _acquire(request) as conn:
         row = await conn.fetchrow(
             """INSERT INTO customers
-               (tenant_id, name, country, address, default_port, credit_level, stage, notes, created_by)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *, name AS company_name""",
+               (tenant_id, name, country, address, default_port, credit_level, stage, notes,
+                created_by, owner_id, owner_scope, team_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+               RETURNING *, name AS company_name""",
             DEFAULT_TENANT, body.company_name, body.country, body.address,
-            body.default_port, body.credit_level, body.stage, body.notes, str(user["id"]),
+            body.default_port, body.credit_level, stage, body.notes, str(user["id"]),
+            str(user["id"]), owner_scope, user.get("team_id"),
         )
     return row_to_customer(dict(row))
 
@@ -556,11 +906,7 @@ async def create_customer(request: Request, body: CustomerCreate, user: dict = D
 @app.get("/api/v1/customers/{customer_id}")
 async def get_customer(customer_id: int, request: Request, user: dict = Depends(_get_current_user)):
     async with _acquire(request) as conn:
-        row = await conn.fetchrow(
-            "SELECT *, name AS company_name FROM customers WHERE id=$1 AND tenant_id=$2", customer_id, DEFAULT_TENANT,
-        )
-        if not row:
-            raise HTTPException(status_code=404, detail="Customer not found")
+        row = await _customer_or_404(conn, customer_id, user)
         contacts = await conn.fetch(
             "SELECT * FROM cust_contacts WHERE customer_id=$1 ORDER BY is_primary DESC, created_at", customer_id,
         )
@@ -581,9 +927,7 @@ async def get_customer(customer_id: int, request: Request, user: dict = Depends(
 @app.post("/api/v1/customers/{customer_id}/contacts", status_code=201)
 async def add_contact(customer_id: int, request: Request, body: ContactCreate, user: dict = Depends(_get_current_user)):
     async with _acquire(request) as conn:
-        exists = await conn.fetchval("SELECT 1 FROM customers WHERE id=$1 AND tenant_id=$2", customer_id, DEFAULT_TENANT)
-        if not exists:
-            raise HTTPException(status_code=404, detail="Customer not found")
+        await _customer_or_404(conn, customer_id, user)
         row = await conn.fetchrow(
             """INSERT INTO cust_contacts
                (tenant_id, customer_id, name, position, phone, email, whatsapp, wechat, is_primary)
@@ -608,6 +952,7 @@ class ContactUpdate(BaseModel):
 async def update_contact(customer_id: int, contact_id: int, request: Request,
                          body: ContactUpdate, user: dict = Depends(_get_current_user)):
     async with _acquire(request) as conn:
+        await _customer_or_404(conn, customer_id, user)   # 可见性 + 未删除
         ct = await conn.fetchrow(
             "SELECT * FROM cust_contacts WHERE id=$1 AND customer_id=$2 AND tenant_id=$3",
             contact_id, customer_id, DEFAULT_TENANT)
@@ -633,6 +978,7 @@ async def update_contact(customer_id: int, contact_id: int, request: Request,
 async def delete_contact(customer_id: int, contact_id: int, request: Request,
                          user: dict = Depends(_get_current_user)):
     async with _acquire(request) as conn:
+        await _customer_or_404(conn, customer_id, user)   # 可见性 + 未删除
         await conn.execute(
             "DELETE FROM cust_contacts WHERE id=$1 AND customer_id=$2 AND tenant_id=$3",
             contact_id, customer_id, DEFAULT_TENANT)
@@ -643,6 +989,7 @@ async def delete_contact(customer_id: int, contact_id: int, request: Request,
 async def soft_delete_customer(customer_id: int, request: Request,
                                user: dict = Depends(_get_current_user)):
     async with _acquire(request) as conn:
+        await _customer_or_404(conn, customer_id, user)   # 可见性 + 未删除（已删则 404）
         await conn.execute(
             "UPDATE customers SET is_deleted=true, deleted_at=now() WHERE id=$1 AND tenant_id=$2",
             customer_id, DEFAULT_TENANT)
@@ -652,16 +999,16 @@ async def soft_delete_customer(customer_id: int, request: Request,
 @app.post("/api/v1/customers/{customer_id}/inquiries", status_code=201)
 async def add_inquiry(customer_id: int, request: Request, body: InquiryCreate, user: dict = Depends(_get_current_user)):
     async with _acquire(request) as conn:
-        exists = await conn.fetchval("SELECT 1 FROM customers WHERE id=$1 AND tenant_id=$2", customer_id, DEFAULT_TENANT)
-        if not exists:
-            raise HTTPException(status_code=404, detail="Customer not found")
+        await _customer_or_404(conn, customer_id, user)
         row = await conn.fetchrow(
             """INSERT INTO cust_inquiries
                (tenant_id, customer_id, channel, category_id, product_name_raw,
-                quantity, quantity_unit, application, status, notes, created_by)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *""",
+                quantity, quantity_unit, application, status, notes, created_by,
+                owner_id, owner_scope, team_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *""",
             DEFAULT_TENANT, customer_id, body.channel, body.category_id, body.product_name_raw,
-            body.quantity, body.quantity_unit, body.application, body.status, body.notes, str(user["id"]),
+            body.quantity, body.quantity_unit, body.application, body.status, body.notes,
+            str(user["id"]), str(user["id"]), "private", user.get("team_id"),
         )
     return dict(row)
 
@@ -669,9 +1016,7 @@ async def add_inquiry(customer_id: int, request: Request, body: InquiryCreate, u
 @app.patch("/api/v1/customers/{customer_id}/stage")
 async def update_stage(customer_id: int, request: Request, body: StageUpdate, user: dict = Depends(_get_current_user)):
     async with _acquire(request) as conn:
-        cust = await conn.fetchrow("SELECT id, stage FROM customers WHERE id=$1 AND tenant_id=$2", customer_id, DEFAULT_TENANT)
-        if not cust:
-            raise HTTPException(status_code=404, detail="Customer not found")
+        cust = await _customer_or_404(conn, customer_id, user)
         from_stage = cust["stage"]
         await conn.execute(
             "UPDATE customers SET stage=$1, updated_at=NOW() WHERE id=$2", body.stage, customer_id,
@@ -2219,29 +2564,38 @@ async def _record_business_event(
 
 
 def _can_see_all(user: dict) -> bool:
-    """管理员可见全部（与 dev ws_common.can_see_all 对齐）。"""
-    return str(user.get("role") or "") == "system_admin"
+    """管理员可见全部（三层组织的「管理员」层）。
+
+    判定真源 = 共享内核 `kaas_common.workstation.scope`（与 dev 同一份）：
+    角色映射后为 system_admin 即管理员 —— 历史角色 `admin` 一并算作管理员
+    （dev 的 effective_role 就是这么映射的；此前 worker 只认字面 system_admin，
+    导致同一个 legacy admin 在 /customers 与 /orders 上可见范围不同）。
+    """
+    return is_admin_role(user.get("role"))
 
 
 def _owner_visible(user: dict, row) -> bool:
-    """归属范围：非管理员只见自己名下或租户共享数据（与 dev ws_common.scope_filter 对齐）。"""
-    if _can_see_all(user):
-        return True
+    """三层组织可见性：管理员 / 显式共享 / 我的 / **本团队**（判定真源见共享内核）。"""
     d = dict(row)
-    if d.get("owner_id") is not None and str(d["owner_id"]) == str(user["id"]):
-        return True
-    return d.get("owner_scope") == "tenant"
+    return can_view(
+        role=user.get("role"),
+        owner_id=d.get("owner_id"),
+        owner_scope=d.get("owner_scope"),
+        team_id=d.get("team_id"),
+        viewer_id=user.get("id"),
+        viewer_team_id=user.get("team_id"),
+    )
 
 
 def _check_write_access(user: dict, row):
-    """写权限：非管理员只能改自己名下的数据（与 dev ws_common.check_write_access 对齐）。"""
-    if not _can_see_all(user):
-        d = dict(row)
-        if d.get("owner_id") is not None and str(d["owner_id"]) != str(user["id"]):
-            raise HTTPException(status_code=403, detail={
-                "error": "forbidden", "code": "NOT_OWNER",
-                "detail": "只能修改自己账号的数据",
-            })
+    """写权限：非管理员只能改自己名下的数据（同团队可见 ≠ 同团队可改）。"""
+    d = dict(row)
+    if not can_write(role=user.get("role"), owner_id=d.get("owner_id"),
+                     viewer_id=user.get("id")):
+        raise HTTPException(status_code=403, detail={
+            "error": "forbidden", "code": "NOT_OWNER",
+            "detail": "只能修改自己账号的数据",
+        })
 
 
 @app.get("/api/v1/orders")
@@ -2264,7 +2618,12 @@ async def list_orders_api(
         )
     if not _can_see_all(user):
         params.append(str(user["id"]))
-        where.append(f"(owner_id = ${len(params)} OR owner_scope = 'tenant')")
+        scope_cond = f"(owner_id = ${len(params)} OR owner_scope = 'tenant'"
+        # 三层组织：本团队可见（未分组的用户不加这段，行为与之前一致）
+        if user.get("team_id") is not None:
+            params.append(user["team_id"])
+            scope_cond += f" OR team_id = ${len(params)}"
+        where.append(scope_cond + ")")
     cond = " AND ".join(where)
     total = await db.fetchval(
         request, f"SELECT count(*) FROM orders WHERE {cond}", *params
@@ -2286,51 +2645,167 @@ async def list_orders_api(
     }
 
 
+# 订单上的贸易条款（迁移 202609260001 加的正列）：报价谈定的条款要一路传到订单
+# 与后续单证，否则信用证审单会出现"单证与合同不一致"的不符点。
+_ORDER_TERM_FIELDS = (
+    "incoterm", "payment_terms", "port_of_loading", "port_of_destination",
+    "shipping_marks", "country_of_origin",
+)
+
+
+def _customer_name_snapshot(body: dict, quote, customer: dict) -> Optional[str]:
+    """订单上的客户名快照（与 dev `orders.create_order` 同序）。
+
+    显式传入 > 报价上冻结的名字 > 客户档案当前名 —— 报价优先于档案，
+    是因为客户改名之后，**历史订单上的买方名字不该跟着变**（单据要可追溯）。
+    """
+    name = body.get("customer_name")
+    if not name and quote is not None:
+        name = quote.get("customer_name")
+    return name or customer.get("name")
+
+
+
 @app.post("/api/v1/orders", status_code=201)
 async def create_order_api(
     request: Request, body: dict, user: dict = Depends(_get_current_user)
 ):
-    items = body.get("items") or []
-    currency = (body.get("currency") or "USD").upper()
-    order_no = await _next_doc_no(request, "order")
-    total = 0.0
-    computed_lines = []
-    for it in items:
-        line = it.get("line_amount")
-        if line is None and it.get("unit_price") is not None:
-            qty = float(it.get("qty") if it.get("qty") is not None else 1)
-            line = round(qty * float(it["unit_price"]), 2)
-        if line is not None:
-            total += float(line)
-        computed_lines.append(line)
+    """新建订单：**手动新建**（必选业务客户）或**由报价转订单**（落 quote_id）。
 
-    row = await db.fetchrow(
-        request,
-        """INSERT INTO orders
-               (tenant_id, order_no, customer_id, customer_name, status, currency,
-                total_amount, order_date, delivery_date, notes,
-                created_by, owner_id, owner_scope)
-           VALUES ($1,$2,$3,$4,'pending',$5,$6,$7,$8,$9,$10,$10,$11)
-           RETURNING *""",
-        DEFAULT_TENANT, order_no, body.get("customer_id"), body.get("customer_name"),
-        currency, total or None, parse_date(body.get("order_date")),
-        parse_date(body.get("delivery_date")), body.get("notes"),
-        str(user["id"]), body.get("owner_scope") or "private",
-    )
-    order_id = row["id"]
-    for idx, it in enumerate(items):
-        await db.execute(
-            request,
-            """INSERT INTO order_items
-                   (tenant_id, order_id, sku_id, product_name, spec_snapshot, qty, qty_unit,
-                    unit_price, currency, line_amount, sort_order)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)""",
-            DEFAULT_TENANT, order_id, it.get("sku_id"), it.get("product_name"),
-            _json.dumps(it["spec_snapshot"]) if it.get("spec_snapshot") is not None else None,
-            it.get("qty") if it.get("qty") is not None else 1, it.get("qty_unit"),
-            it.get("unit_price"), (it.get("currency") or currency),
-            computed_lines[idx], it.get("sort_order") or idx,
-        )
+    两条路径共用 main 的客户闸门（`_doc_customer`），差别只在父对象：
+
+    | 路径 | 入参 | 落库 |
+    |---|---|---|
+    | 手动新建 / 导入历史订单 | `customer_id` 必填，`quote_order_id` 可选 | 有报价就写 `quote_id`，没有就只归客户（客户页 `direct` 分组） |
+    | 报价转订单 | `quote_order_id`（别名 `quote_id`） | 客户 / 币种 / 金额 / 行项 / 贸易条款从报价继承，写 `orders.quote_id` |
+
+    为什么必须落 `orders.quote_id`：客户页的包含关系树（报价 → 订单 → 单证）
+    读的就是这一列；旧 `order_quote_refs` 已改名留档、不再读 ——
+    「历史订单全都不在报价下」正是当年只写 refs、缺这一列造成的。
+    为什么手动新建也要选客户：约束 `ck_orders_has_customer` 要求新行必须有
+    `customer_id`，且客户页按客户聚合订单，没客户的订单等于无处可查。
+    """
+    items_in = list(body.get("items") or [])
+    currency = (body.get("currency") or "").strip().upper()
+    # 归属范围走共享内核枚举（与 dev 一致）：非法值 422，不静默退化成 private
+    owner_scope = validate_enum("owner_scope", body.get("owner_scope") or "private")
+
+    # 报价来源：dev 用 quote_order_id；任务书/部分调用方写 quote_id —— 同一个对象。
+    quote_ref = body.get("quote_order_id")
+    if quote_ref in (None, ""):
+        quote_ref = body.get("quote_id")
+
+    # 取号在事务外：_next_doc_no 走 platform/db 的自有连接（与既有实现一致），
+    # 放进事务里会变成"事务内再开一条连接"，语义反而含糊。
+    order_no = await _next_doc_no(request, "order")
+
+    async with _acquire(request) as conn:
+        async with conn.transaction():
+            quote = None
+            if quote_ref not in (None, ""):
+                quote = await _order_source_quote(
+                    conn,
+                    _as_bigint(quote_ref, field="quote_order_id",
+                               code="INVALID_QUOTE_ID"),
+                    user,
+                )
+
+            raw_customer = body.get("customer_id")
+            if raw_customer in (None, "") and quote is not None:
+                # 转订单继承报价的客户：客户是报价阶段定下来的，不该让用户再选一次
+                raw_customer = quote.get("customer_id")
+            customer = await _doc_customer(conn, raw_customer, user, required=True)
+
+            if not currency:
+                currency = (quote or {}).get("currency") or "USD"
+            validate_enum("currency", currency)
+
+            def _term(field: str):
+                """贸易条款：本次传入优先，否则从报价继承（报价谈定就不能丢）。"""
+                value = body.get(field)
+                if value is None and quote is not None:
+                    value = quote.get(field)
+                return value
+
+            items = items_in
+            if not items and quote is not None:
+                # 未给行项 → 复制报价行项：否则订单金额与报价对不上，
+                # 后面开单证还得手工重录（容易与合同不一致）
+                rows = await conn.fetch(
+                    "SELECT sku_id, product_name, spec_snapshot, qty, qty_unit,"
+                    " unit_price, currency, line_amount, sort_order"
+                    " FROM quote_order_items WHERE tenant_id=$1 AND quote_order_id=$2"
+                    " ORDER BY sort_order, id",
+                    DEFAULT_TENANT, quote["id"],
+                )
+                # spec_snapshot 是 jsonb：raw conn 取回来可能是字符串，
+                # 必须按表解码后再 json.dumps，否则会被二次编码
+                items = [row_to_dict(r, "quote_order_items") for r in rows]
+
+            total = 0.0
+            computed_lines = []
+            for it in items:
+                line = it.get("line_amount")
+                if line is None and it.get("unit_price") is not None:
+                    qty = float(it.get("qty") if it.get("qty") is not None else 1)
+                    line = round(qty * float(it["unit_price"]), 2)
+                if line is not None:
+                    total += float(line)
+                computed_lines.append(line)
+
+            row = await conn.fetchrow(
+                """INSERT INTO orders
+                       (tenant_id, order_no, customer_id, customer_name, status, currency,
+                        total_amount, order_date, delivery_date, notes, quote_id,
+                        created_by, owner_id, owner_scope, team_id,
+                        incoterm, payment_terms, port_of_loading, port_of_destination,
+                        shipping_marks, country_of_origin)
+                   VALUES ($1,$2,$3,$4,'pending',$5,$6,$7,$8,$9,$10,$11,$11,$12,$13,
+                           $14,$15,$16,$17,$18,$19)
+                   RETURNING *""",
+                DEFAULT_TENANT, order_no, customer["id"],
+                # 客户名快照：显式传入 > 报价上冻结的名字（开单当时）> 客户档案当前名。
+                # 报价快照优先于客户档案，是因为客户改名后订单上的历史名字不该跟着变。
+                _customer_name_snapshot(body, quote, customer),
+                currency, total or None, parse_date(body.get("order_date")),
+                parse_date(body.get("delivery_date")), body.get("notes"),
+                quote["id"] if quote is not None else None,
+                str(user["id"]), owner_scope,
+                # 单据与客户同团队：管理员替别家团队开单时不能把单据留在自己团队
+                customer.get("team_id"),
+                _term("incoterm"), _term("payment_terms"), _term("port_of_loading"),
+                _term("port_of_destination"), _term("shipping_marks"),
+                _term("country_of_origin"),
+            )
+            order_id = row["id"]
+            for idx, it in enumerate(items):
+                await conn.execute(
+                    """INSERT INTO order_items
+                           (tenant_id, order_id, sku_id, product_name, spec_snapshot,
+                            qty, qty_unit, unit_price, currency, line_amount, sort_order)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)""",
+                    DEFAULT_TENANT, order_id, it.get("sku_id"), it.get("product_name"),
+                    _json.dumps(it["spec_snapshot"])
+                    if it.get("spec_snapshot") is not None else None,
+                    it.get("qty") if it.get("qty") is not None else 1, it.get("qty_unit"),
+                    it.get("unit_price"), (it.get("currency") or currency),
+                    computed_lines[idx], it.get("sort_order") or idx,
+                )
+
+            if quote is not None:
+                # 报价来源关系**不再写 `order_quote_refs`**（该表已随迁移 202610110014
+                # 改名 `order_quote_refs_legacy` 留档、只读不写）：`orders.quote_id` 一落，
+                # 触发器 `trg_orders_links` 就自动派生 `entity_links` 边 —— 任何写入路径
+                # 都绕不过，应用层再手写一份只会制造"两套真相"。
+                # 转化即视为接单（dev orders.create_order 同口径）
+                await conn.execute(
+                    "UPDATE quote_orders SET status='accepted', updated_at=now()"
+                    " WHERE tenant_id=$1 AND id=$2",
+                    DEFAULT_TENANT, quote["id"],
+                )
+
+    # 手工报价台账（quotations 表）转单的事件：仅当调用方给了 quotation_id
+    # （那是台账 id，不是 quote_orders.id —— 两者是不同对象，不要混用）
     quotation_id = body.get("quotation_id")
     if quotation_id is not None:
         await _record_business_event(
@@ -2339,7 +2814,7 @@ async def create_order_api(
             {
                 "quotation_id": str(quotation_id),
                 "order_id": str(order_id),
-                "customer_id": body.get("customer_id") or "",
+                "customer_id": str(customer["id"]),
                 "actor_id": str(user["id"]),
             },
             from_ws="quotation",
@@ -2444,11 +2919,11 @@ async def _create_receivable_for_order(request: Request, o: dict):
         request,
         "INSERT INTO receivables (tenant_id, order_id, currency, total_amount,"
         " fx_rate, fx_rate_date, base_currency, base_amount, received_amount,"
-        " status, owner_id, owner_scope) VALUES ($1,$2,$3,$4,$5,$6,'CNY',$7,0,'unpaid',$8,$9)",
+        " status, owner_id, owner_scope, team_id)"
+        " VALUES ($1,$2,$3,$4,$5,$6,'CNY',$7,0,'unpaid',$8,$9,$10)",
         DEFAULT_TENANT, o["id"], o.get("currency") or "USD", total,
         float(rate) if rate is not None else None, o.get("fx_rate_date"), base,
-        o.get("owner_id"), o.get("owner_scope") or "private",
-        table="receivables",
+        o.get("owner_id"), o.get("owner_scope") or "private", o.get("team_id")
     )
 
 
@@ -2481,7 +2956,7 @@ async def change_order_status(order_id: int, request: Request, body: dict,
     await db.execute(
         request,
         "UPDATE orders SET status=$3, updated_at=$4 WHERE tenant_id=$1 AND id=$2",
-        DEFAULT_TENANT, order_id, target, now, table="orders",
+        DEFAULT_TENANT, order_id, target, now
     )
     if target == "confirmed" and o["status"] == "pending":
         rate, rate_date = await _lock_fx_rate(request, o.get("currency") or "USD")
@@ -2489,7 +2964,7 @@ async def change_order_status(order_id: int, request: Request, body: dict,
             request,
             "UPDATE orders SET fx_rate=$3, fx_rate_date=$4 WHERE tenant_id=$1 AND id=$2",
             DEFAULT_TENANT, order_id,
-            float(rate) if rate is not None else None, rate_date, table="orders",
+            float(rate) if rate is not None else None, rate_date
         )
         o["fx_rate"] = rate
         o["fx_rate_date"] = rate_date
@@ -2569,11 +3044,12 @@ async def create_schedule(order_id: int, request: Request, body: dict,
     row2 = await db.fetchrow(
         request,
         "INSERT INTO payment_schedules (tenant_id, order_id, schedule_type, ratio,"
-        " amount, currency, due_date, notes, status, owner_id, owner_scope)"
-        " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',$9,$10) RETURNING *",
+        " amount, currency, due_date, notes, status, owner_id, owner_scope, team_id)"
+        " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',$9,$10,$11) RETURNING *",
         DEFAULT_TENANT, order_id, stype, ratio, amount,
         o.get("currency") or "USD", parse_date(body.get("due_date")),
         body.get("notes") or None, str(user["id"]), o.get("owner_scope") or "private",
+        o.get("team_id"),
         table="payment_schedules",
     )
     return _schedule_dict(row2)
@@ -2630,8 +3106,7 @@ async def update_schedule(schedule_id: int, request: Request, body: dict,
             "UPDATE payment_schedules SET status='paid', actual_date=$3, fx_rate=$4,"
             " exchange_gain_loss=$5, updated_at=$6 WHERE tenant_id=$1 AND id=$2",
             DEFAULT_TENANT, schedule_id, actual_date,
-            float(actual_rate) if actual_rate is not None else None, gl, now,
-            table="payment_schedules",
+            float(actual_rate) if actual_rate is not None else None, gl, now
         )
         await db.execute(
             request,
@@ -2640,7 +3115,7 @@ async def update_schedule(schedule_id: int, request: Request, body: dict,
             " status=CASE WHEN received_amount+$3>=total_amount THEN 'paid'"
             " ELSE 'partial' END, updated_at=$5 WHERE tenant_id=$1 AND order_id=$2",
             DEFAULT_TENANT, s["order_id"], amt,
-            gl if gl is not None else Decimal("0"), now, table="receivables",
+            gl if gl is not None else Decimal("0"), now
         )
     else:
         await db.execute(
@@ -2648,7 +3123,7 @@ async def update_schedule(schedule_id: int, request: Request, body: dict,
             "UPDATE payment_schedules SET due_date=COALESCE($3, due_date),"
             " notes=COALESCE($4, notes), updated_at=$5 WHERE tenant_id=$1 AND id=$2",
             DEFAULT_TENANT, schedule_id, parse_date(body.get("due_date")),
-            body.get("notes"), now, table="payment_schedules",
+            body.get("notes"), now
         )
     s2 = await db.fetchrow(request, "SELECT * FROM payment_schedules WHERE tenant_id=$1 AND id=$2",
                            DEFAULT_TENANT, schedule_id, table="payment_schedules")
@@ -2708,6 +3183,14 @@ from kaas_common.trade_doc.payload_shared import (  # noqa: E402
     buyer_block, trade_terms_of, build_render_data as _build_render_data,
 )
 
+# 单证装配助手（投影 / 上游快照 / 企业主体区块）—— main 与 ws_docs_ext 共用的唯一实现。
+# 历史事故：e5ab56e 删除本文件里的 11KB 镜像实现后调用点没改，运行期 NameError
+# （POST/GET/PATCH/render-data 全 500，静态 import 检查发现不了）。详见 doc_payload.py。
+import doc_payload as _dp  # noqa: E402
+
+# 边表写入语句来自共享内核（与 orchestrator 同一份字符串，避免两端各写一条而漂移）
+from kaas_common.workstation.entity_links import LINK_INSERT_SQL  # noqa: E402
+
 
 @app.get("/api/v1/trade-docs")
 async def list_trade_docs(request: Request, doc_type: str = None, status: str = None,
@@ -2736,68 +3219,213 @@ async def list_trade_docs(request: Request, doc_type: str = None, status: str = 
     }
 
 
+# ── 单证关系（边表 entity_links）─────────────────────────────────────────────
+# 为什么 Worker 也要读/写这张表：`trade_docs` 只有 `order_id` / `quote_id` 两列，
+# **询盘来源**与**单证派生源**没有列可挂 —— 触发器（trg_trade_docs_links）只能派生
+# 列能表达的关系。这两类关系原先落在 `trade_doc_inquiry_refs` / `trade_doc_doc_refs`，
+# 随迁移 202610110014 退场，统一进 `entity_links`（语义与校验见共享内核
+# `kaas_common.workstation.entity_links`）。旧表只读不写，新写入一律走下面这两个函数。
+
+async def _insert_doc_links(conn, tenant: str, doc_id: int, targets) -> None:
+    """把若干 (dst_type, dst_id, rel_type) 关系写进边表（幂等：重复建立=成功）。
+
+    与 orchestrator `_insert_links` 同一口径；`meta` 为 NULL（Worker 只写询盘来源，
+    该关系没有额外属性）—— 若将来要写"派生自哪张单证"，原 `ref_type` 字面量
+    （`derived_from`，内核词表里没有）应放进 `meta.origin_ref_type`，见 orchestrator
+    的 `_link_ref_type`：读取时才还原得回旧字段值。
+    """
+    for dst_type, dst_id, rel_type in targets:
+        if not dst_id:
+            continue          # 空父对象不写边（与旧 refs 表"没有就不写行"一致）
+        await conn.execute(
+            LINK_INSERT_SQL,
+            tenant, "trade_doc", doc_id, dst_type, dst_id, rel_type, None, None,
+        )
+
+
+def _link_ref_type(rel_type, meta) -> str:
+    """边 → 旧 refs 的 `ref_type` 字面量（与 orchestrator `_link_ref_type` 同义）。"""
+    if isinstance(meta, str):          # jsonb 未解码时可能是字符串
+        try:
+            meta = _json.loads(meta)
+        except ValueError:
+            meta = None
+    if isinstance(meta, dict) and meta.get("origin_ref_type"):
+        return meta["origin_ref_type"]
+    return rel_type
+
+
+async def _doc_upstream_links(conn, doc: dict) -> dict:
+    """单证详情用的上游 refs（字段名与旧 refs 表读取**逐字相同**，前端契约不变）。
+
+    优先级：**列**（主归属，权威）> 边表（历史行：迁移 012 刻意跳过了
+    `customer_id IS NULL` 的行，它们的报价归属只在边表里，只读列会让关系消失）。
+    """
+    rows = await conn.fetch(
+        "SELECT dst_type, dst_id, rel_type, meta FROM entity_links"
+        " WHERE tenant_id=$1 AND src_type='trade_doc' AND src_id=$2"
+        "   AND deleted_at IS NULL ORDER BY id",
+        DEFAULT_TENANT, doc["id"],
+    )
+    refs = {"orders": [], "quotes": [], "inquiries": []}
+    for r in rows:
+        ref_type = _link_ref_type(r["rel_type"], r["meta"])
+        if r["dst_type"] == "order":
+            refs["orders"].append({"order_id": r["dst_id"], "ref_type": ref_type})
+        elif r["dst_type"] == "quote":
+            refs["quotes"].append({"quote_order_id": r["dst_id"], "ref_type": ref_type})
+        elif r["dst_type"] == "inquiry":
+            refs["inquiries"].append({"inquiry_id": r["dst_id"], "ref_type": ref_type})
+    # 列有值时以列为准：边表可能还留着被软删以外的历史边，行的归属只有一个
+    for key, col, id_key in (("orders", "order_id", "order_id"),
+                             ("quotes", "quote_id", "quote_order_id")):
+        col_value = doc.get(col)
+        if col_value is None:
+            continue
+        current = next((r for r in refs[key] if r[id_key] == col_value), None)
+        refs[key] = [{id_key: col_value,
+                      "ref_type": current["ref_type"] if current else "generated_from"}]
+    return refs
+
+
+async def _doc_quote_id(conn, doc: dict):
+    """本单证的报价来源：列优先、边表兜底（旧实现读 `trade_doc_quote_refs` LIMIT 1）。"""
+    if doc.get("quote_id") is not None:
+        return doc["quote_id"]
+    row = await conn.fetchrow(
+        "SELECT dst_id FROM entity_links"
+        " WHERE tenant_id=$1 AND src_type='trade_doc' AND src_id=$2"
+        "   AND dst_type='quote' AND deleted_at IS NULL ORDER BY id LIMIT 1",
+        DEFAULT_TENANT, doc["id"],
+    )
+    return row["dst_id"] if row is not None else None
+
+
 @app.post("/api/v1/trade-docs", status_code=201)
 async def create_trade_doc(request: Request, body: dict,
                            user: dict = Depends(_get_current_user)):
-    """生成单证（上游快照入 raw_payload 冻结 + refs 溯源，与 dev trade_docs 对齐）。"""
-    order_id = body.get("order_id")
-    quote_order_id = body.get("quote_order_id")
-    inquiry_id = body.get("inquiry_id")
-    if not any([order_id, quote_order_id, inquiry_id]):
-        raise HTTPException(status_code=422, detail={
-            "error": "validation", "code": "SOURCE_REQUIRED",
-            "detail": "单证需至少一个上游来源：order_id / quote_order_id / inquiry_id",
-        })
+    """生成单证（上游快照入 raw_payload 冻结 + refs 溯源，与 dev trade_docs 对齐）。
+
+    **归属规则**（迁移 011 之后新行必须满足）：
+    - `customer_id` 必填 —— 缺则 422 `CUSTOMER_REQUIRED`；给了就必须存在、
+      未软删、属本团队（否则 404 `CUSTOMER_NOT_FOUND`）。
+    - 父对象**可选**：`order_id` 写 `trade_docs.order_id`（PI/CI/PL/BL 的正常路径）；
+      只给报价时写 `trade_docs.quote_id`（报价工作台"生成单证"就是这个形态，
+      此时报价还没转订单 —— 单证不能因为没订单就从客户页消失）；
+      两者都**不给**就只归客户（手动新建 / 导入历史单据的正规路径，读侧进 `direct`）。
+    - 两者**同时**给 → 422 `PARENT_CONFLICT`：约束 `ck_doc_single_parent` 要求
+      二选一，静默丢掉一个就等于悄悄改了用户的意图。
+    - 客户未显式给时从上游快照继承（继承来的同样过闸门 ——
+      否则一张别家团队的报价单可以顺着继承把单证建到别家客户名下）。
+    """
     doc_type = (body.get("doc_type") or "").strip()
     if doc_type not in DOC_TYPE_SET:
         raise HTTPException(status_code=422, detail={"error": "bad_doc_type"})
-    currency = (body.get("currency") or "USD").strip()
+    currency = (body.get("currency") or "USD").strip().upper() or "USD"
+    validate_enum("currency", currency)
 
-    payload = {"sources": {}, "custom": body.get("raw_payload") or {}}
-    total_amount = None
-    customer_id = body.get("customer_id")
-    if order_id:
-        payload["sources"]["order"] = await _order_snapshot(request, order_id)
-        total_amount = payload["sources"]["order"]["total_amount"]
-        if customer_id is None:
-            customer_id = payload["sources"]["order"]["customer_id"]
-    if quote_order_id:
-        payload["sources"]["quote"] = await _quote_snapshot(request, quote_order_id)
-        if total_amount is None:
-            total_amount = payload["sources"]["quote"]["total_amount"]
-        if customer_id is None:
-            customer_id = payload["sources"]["quote"]["customer_id"]
-    if inquiry_id:
-        payload["sources"]["inquiry"] = await _inquiry_snapshot(request, inquiry_id)
+    order_id = _as_bigint(body.get("order_id"), field="order_id",
+                          code="INVALID_ORDER_ID")
+    # `quote_order_id` 是 dev/前端既有的入参名（报价工作台就用它），
+    # `quote_id` 是迁移 010 的列名/任务书叫法 —— 指向同一个对象，取任意一个。
+    quote_ref = body.get("quote_id")
+    if quote_ref in (None, ""):
+        quote_ref = body.get("quote_order_id")
+    quote_id = _as_bigint(quote_ref, field="quote_id", code="INVALID_QUOTE_ID")
+    inquiry_id = _as_bigint(body.get("inquiry_id"), field="inquiry_id",
+                            code="INVALID_INQUIRY_ID")
+    if order_id is not None and quote_id is not None:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "PARENT_CONFLICT",
+            "detail": ("单证只能挂一个父对象：order_id 与 quote_id 不能同时给"
+                       "（约束 ck_doc_single_parent 要求二选一）"),
+        })
 
     doc_no = await _next_doc_no(request, doc_type)
-    d = await db.fetchrow(
-        request,
-        "INSERT INTO trade_docs (tenant_id, doc_no, doc_type, order_id, customer_id,"
-        " status, currency, total_amount, raw_payload)"
-        " VALUES ($1,$2,$3,$4,$5,'draft',$6,$7,$8) RETURNING *",
-        DEFAULT_TENANT, doc_no, doc_type, order_id, customer_id, currency,
-        total_amount, _json.dumps(payload), table="trade_docs",
-    )
-    for ref_table, ref_col, ref_id in (
-        ("trade_doc_order_refs", "order_id", order_id),
-        ("trade_doc_quote_refs", "quote_order_id", quote_order_id),
-        ("trade_doc_inquiry_refs", "inquiry_id", inquiry_id),
-    ):
-        if ref_id:
-            await db.execute(
-                request,
-                f"INSERT INTO {ref_table} (tenant_id, trade_doc_id, {ref_col}, ref_type)"
-                " VALUES ($1,$2,$3,'generated_from')",
-                DEFAULT_TENANT, d["id"], ref_id, table=ref_table,
+
+    async with _acquire(request) as conn:
+        async with conn.transaction():
+            # 上游快照仍走 platform/db：读的是已提交数据，与本事务的写入无关
+            # （快照助手只认 `db` 的 (request, sql, ...) 形状，见 doc_payload.py）。
+            payload = {"sources": {}, "custom": body.get("raw_payload") or {}}
+            total_amount = None
+            customer_id = body.get("customer_id")
+            parent_customer_id = None
+            if order_id:
+                payload["sources"]["order"] = await _dp.order_snapshot(
+                    db, request, order_id)
+                total_amount = payload["sources"]["order"]["total_amount"]
+                parent_customer_id = payload["sources"]["order"].get("customer_id")
+                if customer_id in (None, ""):
+                    customer_id = parent_customer_id
+            if quote_id:
+                payload["sources"]["quote"] = await _dp.quote_snapshot(
+                    db, request, quote_id)
+                if total_amount is None:
+                    total_amount = payload["sources"]["quote"]["total_amount"]
+                parent_customer_id = (parent_customer_id
+                                      or payload["sources"]["quote"].get("customer_id"))
+                if customer_id in (None, ""):
+                    customer_id = parent_customer_id
+            if inquiry_id:
+                payload["sources"]["inquiry"] = await _dp.inquiry_snapshot(
+                    db, request, inquiry_id)
+
+            # 客户闸门放在**所有继承之后**：手工传的、快照继承来的都要过同一道闸门
+            customer = await _doc_customer(conn, customer_id, user, required=True)
+
+            # 一致性：显式客户与父对象的客户必须同一个 —— 否则这张单会
+            # 「挂在 A 客户名下、却指向 B 客户的订单」，客户页的树就错位了
+            if (parent_customer_id is not None
+                    and str(parent_customer_id) != str(customer["id"])):
+                raise HTTPException(status_code=422, detail={
+                    "error": "validation", "code": "CUSTOMER_MISMATCH",
+                    "detail": ("所选客户与上游单据的客户不一致："
+                               f"上游属于客户 {parent_customer_id}，"
+                               f"请求给的是客户 {customer['id']}"),
+                })
+
+            if doc_type == "quotation" and quote_id is not None:
+                # 报价单与报价是 1:1（生成报价时已自动产出一张）。
+                # 重复"生成"应当拿到同一张，而不是开出第二张 ——
+                # 否则客户页会出现两行报价单，两张都可能被当成正式报价单用。
+                # 位置放在客户闸门**之后**：否则拿别家团队的 quote_id
+                # 就能把对方的报价单读出来（越权读）。
+                existing = await conn.fetchrow(
+                    "SELECT * FROM trade_docs WHERE tenant_id=$1"
+                    " AND doc_type='quotation' AND quote_id=$2 ORDER BY id LIMIT 1",
+                    DEFAULT_TENANT, quote_id,
+                )
+                if existing is not None:
+                    return _dp.doc_dict(existing)
+
+            d = await conn.fetchrow(
+                "INSERT INTO trade_docs (tenant_id, doc_no, doc_type, order_id,"
+                " quote_id, customer_id, status, currency, total_amount,"
+                " raw_payload, team_id)"
+                " VALUES ($1,$2,$3,$4,$5,$6,'draft',$7,$8,$9,$10) RETURNING *",
+                DEFAULT_TENANT, doc_no, doc_type, order_id, quote_id,
+                customer["id"], currency, total_amount, _json.dumps(payload),
+                # 单据与客户同团队（管理员替别家团队开单时不能留在自己团队）
+                customer.get("team_id"),
             )
+            # 订单 / 报价关系只写列（上面 INSERT 已完成）：触发器 `trg_trade_docs_links`
+            # 自动派生 `entity_links` 边。旧 refs 表已随 202610110014 改名 `_legacy` 留档，
+            # 这里不再写 —— 原先那个 for 循环（三张 refs 表）正是"两套真相"的来源。
+            # 列表达不了的关系（询盘、派生源）显式写边表：
+            await _insert_doc_links(conn, DEFAULT_TENANT, d["id"], (
+                ("inquiry", inquiry_id, "generated_from"),
+            ))
+
+    # 事件在事务提交后写（平台 db 是独立连接；放进事务里既不在同一事务，
+    # 又会在回滚后留下"单据不存在、事件还在"的脏流水）
     await _record_business_event(
         request, "shipment.documented",
         {"doc_id": d["id"], "doc_no": doc_no, "doc_type": doc_type,
-         "order_id": order_id, "actor_id": user["id"]},
+         "order_id": order_id, "quote_id": quote_id, "actor_id": user["id"]},
         from_ws="trade_docs", to_ws="trade_docs",
     )
-    return _doc_dict(d)
+    return _dp.doc_dict(d)
 
 
 @app.get("/api/v1/trade-docs/{doc_id}")
@@ -2807,20 +3435,10 @@ async def get_trade_doc(doc_id: int, request: Request,
                           DEFAULT_TENANT, doc_id, table="trade_docs")
     if not d:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "DOC_NOT_FOUND"})
-    refs = {"orders": [], "quotes": [], "inquiries": []}
-    rows = await db.fetch(request,
-                          "SELECT order_id, ref_type FROM trade_doc_order_refs"
-                          " WHERE tenant_id=$1 AND trade_doc_id=$2", DEFAULT_TENANT, doc_id)
-    refs["orders"] = [dict(r) for r in rows]
-    rows = await db.fetch(request,
-                          "SELECT quote_order_id, ref_type FROM trade_doc_quote_refs"
-                          " WHERE tenant_id=$1 AND trade_doc_id=$2", DEFAULT_TENANT, doc_id)
-    refs["quotes"] = [dict(r) for r in rows]
-    rows = await db.fetch(request,
-                          "SELECT inquiry_id, ref_type FROM trade_doc_inquiry_refs"
-                          " WHERE tenant_id=$1 AND trade_doc_id=$2", DEFAULT_TENANT, doc_id)
-    refs["inquiries"] = [dict(r) for r in rows]
-    return {**_doc_dict(d), "refs": refs}
+    # 上游 refs 一律来自**列 + 边表**（旧 `trade_doc_*_refs` 已改名留档、不再读）
+    async with _acquire(request) as conn:
+        refs = await _doc_upstream_links(conn, d)
+    return {**_dp.doc_dict(d), "refs": refs}
 
 
 @app.patch("/api/v1/trade-docs/{doc_id}")
@@ -2830,7 +3448,7 @@ async def update_trade_doc(doc_id: int, request: Request, body: dict,
                           DEFAULT_TENANT, doc_id, table="trade_docs")
     if not d:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "DOC_NOT_FOUND"})
-    d = _doc_dict(d)
+    d = _dp.doc_dict(d)
     new_status = (body.get("status") or d["status"]).strip()
     allowed = DOC_NEXT.get(d["status"], ())
     if new_status != d["status"] and new_status not in allowed:
@@ -2853,8 +3471,7 @@ async def update_trade_doc(doc_id: int, request: Request, body: dict,
             " raw_payload=COALESCE($6, raw_payload), updated_at=$7"
             " WHERE tenant_id=$1 AND id=$2",
             DEFAULT_TENANT, doc_id, new_status, now, user["id"],
-            _json.dumps(raw_payload) if raw_payload is not None else None, now,
-            table="trade_docs",
+            _json.dumps(raw_payload) if raw_payload is not None else None, now
         )
     else:
         await db.execute(
@@ -2862,12 +3479,11 @@ async def update_trade_doc(doc_id: int, request: Request, body: dict,
             "UPDATE trade_docs SET status=$3, raw_payload=COALESCE($4, raw_payload),"
             " updated_at=$5 WHERE tenant_id=$1 AND id=$2",
             DEFAULT_TENANT, doc_id, new_status,
-            _json.dumps(raw_payload) if raw_payload is not None else None, now,
-            table="trade_docs",
+            _json.dumps(raw_payload) if raw_payload is not None else None, now
         )
     d2 = await db.fetchrow(request, "SELECT * FROM trade_docs WHERE tenant_id=$1 AND id=$2",
                            DEFAULT_TENANT, doc_id, table="trade_docs")
-    return _doc_dict(d2)
+    return _dp.doc_dict(d2)
 
 
 # ── 企业主体信息（卖方抬头）────────────────────────────────────────────────
@@ -2889,7 +3505,7 @@ async def get_company_profile(request: Request, user: dict = Depends(_get_curren
     # 未配置时返回空结构而不是 404：前端表单可直接绑定，不会把页面变成错误页
     if not row:
         return {**{f: None for f in _COMPANY_FIELDS}, "configured": False}
-    r = _snap_rows([row])[0]
+    r = row
     return {**{f: r.get(f) for f in _COMPANY_FIELDS}, "configured": bool(r.get("name_en"))}
 
 
@@ -2911,7 +3527,7 @@ async def put_company_profile(request: Request, body: dict,
         request,
         f"INSERT INTO tenant_company_profile (tenant_id, {cols}) VALUES ($1, {placeholders})"
         f" ON CONFLICT (tenant_id) DO UPDATE SET {updates}, updated_at=now()",
-        DEFAULT_TENANT, *values, table="tenant_company_profile",
+        DEFAULT_TENANT, *values
     )
     return await get_company_profile(request, user)
 
@@ -2928,7 +3544,7 @@ async def get_trade_doc_render_data(doc_id: int, request: Request,
                           DEFAULT_TENANT, doc_id, table="trade_docs")
     if not d:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "DOC_NOT_FOUND"})
-    doc = _doc_dict(d)
+    doc = _dp.doc_dict(d)
 
     payload = doc.get("raw_payload") or {}
     if isinstance(payload, str):
@@ -2962,17 +3578,21 @@ async def get_trade_doc_render_data(doc_id: int, request: Request,
                 " WHERE tenant_id=$1 AND customer_id=$2 ORDER BY is_primary DESC, id LIMIT 1",
                 DEFAULT_TENANT, cid_int,
             )
-            buyer = _buyer_block(customer, contact)
+            buyer = _dp.buyer_block_of(customer, contact)
 
     data = _build_render_data(
         doc_type=doc["doc_type"], doc_no=doc["doc_no"],
+        # doc_status 是共享内核的**必填**关键字参数（无默认值）：漏传就是
+        # TypeError → render-data 生产 500。orchestrator 传的是 d.status。
+        doc_status=doc.get("status"),
         currency=doc.get("currency") or "USD",
         total_amount=doc.get("total_amount"),
         created_at=doc.get("created_at"), issued_at=doc.get("issued_at"),
-        seller=_seller_block(profile), buyer=buyer, bank_info=_seller_block(profile),
+        seller=_dp.seller_block(profile), buyer=buyer,
+        bank_info=_dp.seller_block(profile),
         sources=sources,
         trade_terms={f: upstream.get(f) for f in TRADE_TERM_FIELDS
-                     if _clean(upstream.get(f)) is not None},
+                     if _dp.clean(upstream.get(f)) is not None},
         custom=custom,
         defaults={
             "incoterm": profile_dict.get("default_incoterm"),
@@ -2997,4 +3617,30 @@ import quote_api  # noqa: E402,F401
 
 # ── 汇率 / 实际采购成本 / 外部单证上传 ──
 import ws_extras  # noqa: E402,F401
+
+# ── 产品定义配置化 + 报价工位权限矩阵 / 公司公章 ──
+# 与 orchestrator 的 tenant_products.py / workstation_products.py / company_seals.py 对齐。
+# 为什么必须补：这三个接口族此前只在 orchestrator 落地，前端页面一上生产就 404。
+import ws_products  # noqa: E402,F401
+import ws_seals  # noqa: E402,F401
+
+# ── 客户 / 订单 / 报价 / 单证 四域的剩余缺口 ──
+# 依据「前端实际调用 → 生产路由」对照确定（scripts/route-parity.py 是路由面的棘轮）。
+# 单证枚举（单证页下拉）、自有出运台账（/shipments 页）—— 线上会 404 的真实缺口。
+import ws_enums  # noqa: E402,F401
+import ws_shipments  # noqa: E402,F401
+import ws_quote_ext  # noqa: E402,F401
+import ws_crm_ext  # noqa: E402,F401
+import ws_docs_ext  # noqa: E402,F401
+
+# ── 团队（三层组织）管理 ──
+# 团队是生产端"公司级隔离"的那一层（Worker 是单租户部署，账号之间没有 tenant 隔离）。
+import ws_teams  # noqa: E402,F401
+
+# ── 工位订阅：开通/撤销 + 未开通拦截 ──
+# 授权边界是"这个团队/个人开通了哪些工位"，不以租户鉴权（见 docs/TEAMS_AND_VISIBILITY.md）。
+import ws_workstations  # noqa: E402,F401
+
+# ── 业务客户往来记录（报价/订单/单证 包含关系树）──
+import ws_customer_records  # noqa: E402,F401
 

@@ -29,12 +29,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  CustomerPicker,
+  type CustomerPickerValue,
+} from "@/components/customer-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { handleApiError } from "@/lib/api/error-handler";
 import { cn } from "@/lib/utils";
 import { getAvailableTemplates } from "@/lib/trade-doc/render";
-import { useCustomerOptions } from "@/lib/workstation/use-upstream";
+import { useCustomerName } from "@/lib/workstation/use-upstream";
 import type { QuoteProfile } from "@contracts/export-quote";
 
 import {
@@ -96,7 +100,14 @@ export function QuoteWorkbenchView() {
   const [view, setView] = useState<QuoteView>("customer");
 
   // ── 整单共享参数 ─────────────────────────────────────────────────────────
-  const [customerId, setCustomerId] = useState("");
+  // 客户是**必选**的：报价是所有单据的唯一根入口，客户空着的话
+  // 客户页的「往来记录」树就找不到这张报价，台账也统计不到。
+  const [customer, setCustomer] = useState<CustomerPickerValue | null>(null);
+  const [customerError, setCustomerError] = useState<string | null>(null);
+  /** 建单时定下的客户：报价单的客户在创建那一刻确定，事后改客户不生效（见 onSave） */
+  const [createdCustomerId, setCreatedCustomerId] = useState<string | null>(
+    null,
+  );
   const [inquiryId, setInquiryId] = useState("");
   const [rateSetCode, setRateSetCode] = useState("");
   const [inputVatRatePct, setInputVatRatePct] = useState(
@@ -143,22 +154,31 @@ export function QuoteWorkbenchView() {
   const [docPick, setDocPick] = useState<string[]>(DEFAULT_DOC_PICK);
   const [generating, setGenerating] = useState(false);
 
-  const customers = useCustomerOptions();
   const rateSets = useExportRateSets();
   const termsQuery = useExportTermsTemplate();
   const create = useCreateQuoteOrder();
   const update = useUpdateQuoteOrder();
   const replaceItems = useReplaceQuoteItems();
 
-  // 深链：从询盘/客户页跳进来时带上客户与询盘，省掉重复选择
+  // 深链：从询盘/客户页跳进来时带上客户与询盘，省掉重复选择。
+  // 这里只知道 id：名字由 useCustomerName 补出来（保存时要写进 customer_name 快照）。
   useEffect(() => {
     if (typeof window === "undefined") return;
     const p = new URLSearchParams(window.location.search);
     const cid = p.get("customer_id");
     const iid = p.get("inquiry_id");
-    if (cid) setCustomerId(cid);
+    if (cid) setCustomer({ id: cid, name: "" });
     if (iid) setInquiryId(iid);
   }, []);
+
+  // 名字缺失（深链进来）时补一次详情；失败就退化成 #id，不阻断开单
+  const resolvedCustomer = useCustomerName(
+    customer && !customer.name ? customer.id : null,
+  );
+  const customerName = customer
+    ? customer.name || resolvedCustomer.data || ""
+    : "";
+  const customerLabel = customer ? customerName || `#${customer.id}` : "";
 
   useEffect(() => {
     const saved = window.localStorage.getItem(FX_KEY);
@@ -338,8 +358,7 @@ export function QuoteWorkbenchView() {
 
   // ── 保存 / 签发 / 生成单证 ────────────────────────────────────────────────
   const headerPatch = () => ({
-    customer_name:
-      customers.data?.find((c) => String(c.id) === customerId)?.name ?? null,
+    customer_name: customerName || null,
     currency: quoteCurrency,
     valid_until: validUntil(),
     incoterm: termsEnabled ? effectiveQuoteAs : "EXW",
@@ -365,12 +384,27 @@ export function QuoteWorkbenchView() {
       toast.error("请先计算至少一行");
       return;
     }
+    // 客户必选：报价是"客户 → 报价 → 报价单/订单 → 单证"这棵树唯一的根入口。
+    // 不选客户就落库，这张报价在客户页永远查不到，也无法计入台账。
+    if (!customer) {
+      setCustomerError(
+        "请选择业务客户 —— 报价必须挂客户，否则客户页的「往来记录」里查不到这张报价",
+      );
+      toast.error("请先选择业务客户");
+      return;
+    }
+    setCustomerError(null);
     setNotice(null);
+    // 客户在创建那一刻写死（Patch 契约不含 customer_id）：改了要重新建单，
+    // 否则"单据上的客户"与"客户树里的客户"会不一致。
+    const customerChanged =
+      createdCustomerId !== null && createdCustomerId !== customer.id;
     try {
       if (quoteOrderId === null) {
         const created = await create.mutateAsync({
-          customer_id: customerId || null,
-          customer_name: headerPatch().customer_name,
+          // 契约里 customer_id 是字符串（后端 BIGINT），与既有实现一致
+          customer_id: customer.id,
+          customer_name: customerName || null,
           inquiry_id: inquiryId ? Number(inquiryId) : null,
           currency: quoteCurrency,
           valid_until: validUntil(),
@@ -380,6 +414,7 @@ export function QuoteWorkbenchView() {
           items: items(),
         });
         setQuoteOrderId(created.id);
+        setCreatedCustomerId(customer.id);
         setSavedDoc({
           id: created.id,
           quote_no: created.quote_no,
@@ -397,10 +432,17 @@ export function QuoteWorkbenchView() {
           quote_no: savedDoc?.quote_no ?? "",
           status: savedDoc?.status ?? "draft",
         });
-        setNotice({
-          tone: "info",
-          text: `已保存（${res.items.length} 行，合计 ${res.total_amount ?? "—"}）`,
-        });
+        if (customerChanged) {
+          setNotice({
+            tone: "error",
+            text: `已保存（${res.items.length} 行），但**客户未变更**：${customerLabel} 不适用于本单（报价单的客户在建单时确定）。需要换客户请新建一张报价，避免单据与客户归属不一致。`,
+          });
+        } else {
+          setNotice({
+            tone: "info",
+            text: `已保存（${res.items.length} 行，合计 ${res.total_amount ?? "—"}）`,
+          });
+        }
       }
       window.localStorage.setItem(FX_KEY, fxRate);
     } catch (err) {
@@ -513,24 +555,17 @@ export function QuoteWorkbenchView() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs">客户</Label>
-              <select
-                value={customerId}
-                onChange={(e) => setCustomerId(e.target.value)}
-                className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <option value="">（未指定）</option>
-                {(customers.data ?? []).map((c) => (
-                  <option key={String(c.id)} value={String(c.id)}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-              <p className="text-[11px] text-muted-foreground">
-                报价单要挂客户才能计入台账
-              </p>
-            </div>
+            <CustomerPicker
+              value={customer}
+              onChange={(next) => {
+                setCustomer(next);
+                setCustomerError(null);
+              }}
+              required
+              label="客户"
+              error={customerError}
+              hint="报价单要挂客户才能计入台账，也才会出现在客户页的「往来记录」"
+            />
 
             <div className="space-y-1.5">
               <Label className="text-xs">询盘编号</Label>

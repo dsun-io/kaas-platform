@@ -22,12 +22,12 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
 from app.db.workstation_links import (
-    Order, OrderItem, OrderQuoteRef, QuoteOrder, QuoteOrderItem,
+    Order, OrderItem, QuoteOrder, QuoteOrderItem,
 )
 from app.db.workstation_models import PaymentSchedule, Receivable
 from app.core.auth import AuthContext, get_auth_context
@@ -36,6 +36,7 @@ from app.domain.enums import (
 )
 from app.api.ws_common import (
     tenant_id_of, scope_filter, check_write_access, next_doc_no, lock_fx_rate,
+    resolve_customer_for_doc,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["orders"])
@@ -64,7 +65,8 @@ class OrderItemIn(BaseModel):
 
 class OrderCreate(BaseModel):
     quote_order_id: Optional[int] = None     # 由报价转化（converted_from）
-    customer_id: Optional[str] = None
+    # 业务客户外键（整数）：必须从**已有业务客户**里选，后端强校验（2026-10-11）
+    customer_id: Optional[int] = None
     customer_name: Optional[str] = None
     currency: Optional[str] = None           # 未传时：报价转化继承报价币种，否则 USD
     order_date: Optional[str] = None
@@ -83,6 +85,8 @@ class OrderCreate(BaseModel):
 
 
 class OrderPatch(BaseModel):
+    # 改单时也能换客户（历史单据被清洗成 NULL 后要能人工认领回来）
+    customer_id: Optional[int] = None
     customer_name: Optional[str] = None
     delivery_date: Optional[str] = None
     notes: Optional[str] = None
@@ -177,6 +181,7 @@ async def _create_receivable_for_order(db, o: Order):
         tenant_id=o.tenant_id, order_id=o.id, currency=o.currency,
         total_amount=total, fx_rate=rate, fx_rate_date=rate_date,
         base_amount=base_amount, owner_id=o.owner_id, owner_scope=o.owner_scope,
+        team_id=o.team_id,
     )
     db.add(recv)
     await db.flush()
@@ -188,7 +193,7 @@ async def _create_receivable_for_order(db, o: Order):
 @router.get("/orders")
 async def list_orders(
     status: Optional[str] = None,
-    customer_id: Optional[str] = None,
+    customer_id: Optional[int] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
     auth: AuthContext = Depends(get_auth_context),
@@ -256,6 +261,12 @@ async def create_order(
                 line_amount=i.line_amount, sort_order=i.sort_order,
             ) for i in q_items]
 
+    # 业务客户强校验：不存在 / 已软删 / 别家团队 → 404 CUSTOMER_NOT_FOUND。
+    # **放在报价转化之后**：转化会从报价单继承 customer_id，继承来的 id 同样是
+    # "落到本单据上的客户引用"，必须过同一道闸门（否则报价单里一个已软删的客户
+    # 会顺着转化成一张挂着无效客户的订单）。
+    customer = await resolve_customer_for_doc(db, tenant_id, customer_id, auth)
+
     items, total = [], Decimal("0")
     for i in item_ins:
         line = i.line_amount
@@ -281,12 +292,16 @@ async def create_order(
 
     o = Order(
         tenant_id=tenant_id, order_no=await next_doc_no(db, tenant_id, "order"),
-        customer_id=customer_id, customer_name=customer_name,
+        customer_id=customer.id if customer is not None else None,
+        # 客户名快照：未显式传时按客户档案自动填（开单当时的客户名）
+        customer_name=customer_name or (customer.name if customer is not None else None),
         status="pending", currency=currency, total_amount=total or None,
         order_date=_parse_dt(body.order_date),
         delivery_date=_parse_dt(body.delivery_date),
         notes=body.notes, created_by=str(auth.user_id),
         owner_id=str(auth.user_id), owner_scope=owner_scope,
+        # 单据与客户同团队（管理员替别家团队开单时不能把单据留在自己团队）
+        team_id=customer.team_id if customer is not None else auth.team_id,
         incoterm=_term("incoterm"), payment_terms=_term("payment_terms"),
         port_of_loading=_term("port_of_loading"),
         port_of_destination=_term("port_of_destination"),
@@ -300,10 +315,12 @@ async def create_order(
         db.add(it)
 
     if quote is not None:
-        db.add(OrderQuoteRef(
-            tenant_id=tenant_id, order_id=o.id, quote_order_id=quote.id,
-            ref_type="converted_from",
-        ))
+        # 报价来源关系**不再写 `order_quote_refs`**（该表已随 202610110014 改名 `_legacy` 留档）：
+        # 归属列的触发器（`trg_orders_links`）会从 `orders.quote_id` 自动派生 `entity_links` 边，
+        # 任何写入路径都绕不过 —— 这里再手写一份就是"两套真相"。
+        # 守 `ck_orders_has_customer`：customer_id 为空的历史形态下不写列（约束会拒绝该行更新）。
+        if o.customer_id is not None:
+            o.quote_id = quote.id
         quote.status = "accepted"  # 转化即视为接单
 
     await db.commit()
@@ -324,11 +341,20 @@ async def get_order(
             OrderItem.tenant_id == tenant_id, OrderItem.order_id == o.id,
         ).order_by(OrderItem.sort_order, OrderItem.id)
     )).scalars().all()
-    refs = (await db.execute(
-        select(OrderQuoteRef).where(
-            OrderQuoteRef.tenant_id == tenant_id, OrderQuoteRef.order_id == o.id,
-        )
-    )).scalars().all()
+    # 报价来源：读**边表 `entity_links`**（旧 `order_quote_refs` 已改名留档、不再读）。
+    # 边表由 `trg_orders_links` 从 `orders.quote_id` 自动派生，所以这里同时覆盖了
+    # 列的当前值（触发器 INSERT）与"原本由报价 A、后改 B"的变更史（旧边 `deleted_at` 非空）；
+    # 取有效边 => 与旧表 `SELECT ... WHERE order_id=?` 的结果一致（旧表也是每单一行有效关系）。
+    quote_links = (await db.execute(
+        text(
+            "SELECT dst_id AS quote_order_id, rel_type"
+            "  FROM entity_links"
+            " WHERE tenant_id = :tenant_id AND src_type = 'order' AND src_id = :order_id"
+            "   AND dst_type = 'quote' AND deleted_at IS NULL"
+            " ORDER BY id"
+        ),
+        {"tenant_id": tenant_id, "order_id": o.id},
+    )).mappings().all()
     schedules = (await db.execute(
         select(PaymentSchedule).where(
             PaymentSchedule.tenant_id == tenant_id, PaymentSchedule.order_id == o.id,
@@ -342,7 +368,8 @@ async def get_order(
     return {
         **_row_to_order(o),
         "items": [_row_to_item(i) for i in items],
-        "quote_refs": [{"quote_order_id": r.quote_order_id, "ref_type": r.ref_type} for r in refs],
+        "quote_refs": [{"quote_order_id": r["quote_order_id"], "ref_type": r["rel_type"]}
+                       for r in quote_links],
         "payment_schedules": [_row_to_schedule(s) for s in schedules],
         "receivable": _row_to_receivable(recv) if recv else None,
     }
@@ -358,6 +385,13 @@ async def update_order(
     tenant_id = tenant_id_of(auth)
     o = await _get_order_or_404(db, tenant_id, order_id, auth)
     check_write_access(o, auth)
+    if body.customer_id is not None:
+        # 换客户：同样走强校验；快照与团队一并跟着客户走
+        customer = await resolve_customer_for_doc(db, tenant_id, body.customer_id, auth)
+        o.customer_id = customer.id
+        o.team_id = customer.team_id
+        if body.customer_name is None:
+            o.customer_name = customer.name
     if body.customer_name is not None:
         o.customer_name = body.customer_name
     if body.delivery_date is not None:
@@ -445,6 +479,7 @@ async def create_schedule(
         ratio=body.ratio, amount=amount, currency=currency,
         due_date=_parse_date(body.due_date), notes=body.notes,
         owner_id=str(auth.user_id), owner_scope=o.owner_scope,
+        team_id=o.team_id,
     )
     db.add(s)
     await db.commit()

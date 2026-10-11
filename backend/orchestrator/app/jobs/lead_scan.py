@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import async_session_factory
-from app.db.models import Customer
+from app.db.models import Customer, User
 from app.db.workstation_models import (
     CustInquiry, LeadCandidate,
 )
@@ -51,18 +51,28 @@ async def scan_replied_leads(db: AsyncSession, tenant_id: str, limit: int = 100)
             existing += 1
             continue
 
-        # 客户档案：同名客户复用（按租户+公司名匹配），否则新建
+        # 客户档案：同名客户复用（按租户 + 团队 + 公司名匹配），否则新建
+        # 团队隔离：客户归**线索 owner 所在团队**；owner 没有团队则 team_id 留空 +
+        # owner_scope='private'（只有该 owner 和管理员可见，不泄露给别的公司）。
+        owner_team_id = None
+        if lead.owner_id:
+            owner_team_id = (await db.execute(
+                select(User.team_id).where(User.id == int(lead.owner_id))
+            )).scalar_one_or_none()
         customer = (await db.execute(
             select(Customer).where(
                 Customer.tenant_id == tenant_id,
-                Customer.name == lead.company_name)
+                Customer.name == lead.company_name,
+                Customer.team_id.is_(None) if owner_team_id is None
+                else Customer.team_id == owner_team_id)
         )).scalar_one_or_none()
         if customer is None:
             customer = Customer(
                 tenant_id=tenant_id, name=lead.company_name,
                 country=lead.country, address=lead.address,
                 stage="inquiry",  # 直接进 inquiry 阶段（触达已回复）
-                owner_id=lead.owner_id, owner_scope="tenant",
+                owner_id=lead.owner_id, owner_scope="private",
+                team_id=owner_team_id,
             )
             db.add(customer)
             await db.flush()

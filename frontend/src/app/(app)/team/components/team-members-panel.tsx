@@ -1,0 +1,199 @@
+"use client";
+
+/**
+ * 团队成员面板（仅团队管理员可见）。
+ *
+ * 两个易错点：
+ *   ① `is_admin` 是"对这个团队而言的管理权"（= 团队创建者），不是全局角色 ——
+ *      团队管理员**不能被移除自己**（后端 409 CANNOT_REMOVE_SELF），所以这里直接禁用；
+ *   ② `console_access` 是**官网数据后台**权限（按成员授予/收回），不是工位订阅，
+ *      别和下面的工位开通混在一起（一个是"能不能看官网数据"，一个是"能不能用工位"）。
+ */
+import { useState } from "react";
+import { toast } from "sonner";
+import { AlertCircle, RefreshCw, UserMinus, Users } from "lucide-react";
+
+import apiClient from "@/lib/api/client";
+import { teamErrorMessage } from "@/lib/team/team-errors";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { EmptyState } from "@/components/shared/empty-state";
+import { Button } from "@/components/ui/button";
+import { SectionCard } from "@/components/shared/section-card";
+
+import { useTeamMembers, type TeamMember } from "../hooks/use-team-admin";
+
+interface TeamMembersPanelProps {
+  teamId: number;
+  /** 登录用户 id：用来标出"我"，避免管理员误删自己 */
+  currentUserId: number | null;
+}
+
+function memberLabel(member: TeamMember): string {
+  return member.display_name || member.email || `#${member.user_id}`;
+}
+
+export function TeamMembersPanel({
+  teamId,
+  currentUserId,
+}: TeamMembersPanelProps) {
+  const { items, loading, error, reload } = useTeamMembers(teamId, true);
+  const [pendingId, setPendingId] = useState<number | null>(null);
+
+  async function setConsoleAccess(member: TeamMember, allowed: boolean) {
+    setPendingId(member.user_id);
+    try {
+      await apiClient.put(
+        `/teams/${teamId}/members/${member.user_id}/console-access`,
+        { allowed },
+        { silent: true },
+      );
+      toast.success(
+        allowed
+          ? `已授予 ${memberLabel(member)} 官网数据后台权限`
+          : `已收回 ${memberLabel(member)} 的官网数据后台权限`,
+      );
+      reload();
+    } catch (err: unknown) {
+      toast.error(teamErrorMessage(err, "设置失败，请稍后重试"));
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  async function removeMember(member: TeamMember) {
+    const label = memberLabel(member);
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        `确定把「${label}」移出团队？移除后需要重新凭邀请码加入。`,
+      )
+    ) {
+      return;
+    }
+    setPendingId(member.user_id);
+    try {
+      await apiClient.delete(`/teams/${teamId}/members/${member.user_id}`, {
+        silent: true,
+      });
+      toast.success(`已移除「${label}」`);
+      reload();
+    } catch (err: unknown) {
+      toast.error(teamErrorMessage(err, "移除成员失败，请稍后重试"));
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  return (
+    <SectionCard
+      title="团队成员"
+      description="成员录入的客户/报价/单证在本团队内互相可见；官网数据后台权限按成员单独授予。"
+      action={
+        <div className="flex items-center gap-2">
+          <StatusBadge tone="default">{items.length} 人</StatusBadge>
+          <Button size="sm" variant="ghost" onClick={reload}>
+            <RefreshCw className="mr-1 size-3.5" />
+            刷新
+          </Button>
+        </div>
+      }
+    >
+      {loading ? (
+        <p className="py-6 text-center text-sm text-muted-foreground">
+          加载中…
+        </p>
+      ) : error ? (
+        <div className="flex flex-col items-start gap-2 py-4 text-sm">
+          <div className="flex items-center gap-2 text-destructive">
+            <AlertCircle className="size-4" />
+            {error}
+          </div>
+          <Button size="sm" variant="outline" onClick={reload}>
+            重试
+          </Button>
+        </div>
+      ) : items.length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title="还没有其他成员"
+          description="在下面的「邀请成员」里填同事邮箱，或生成一条通用邀请码发给他。"
+        />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-muted-foreground">
+                <th className="p-2">成员</th>
+                <th className="p-2">角色</th>
+                <th className="p-2">官网数据后台</th>
+                <th className="p-2">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((member) => {
+                const isSelf = currentUserId === member.user_id;
+                const busy = pendingId === member.user_id;
+                return (
+                  <tr
+                    key={member.user_id}
+                    className="border-b last:border-0 hover:bg-muted/40"
+                  >
+                    <td className="p-2">
+                      <div className="font-medium">
+                        {memberLabel(member)}
+                        {isSelf && (
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            （我）
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {member.email}
+                      </div>
+                    </td>
+                    <td className="p-2">
+                      {member.is_admin ? (
+                        <StatusBadge tone="purple">团队管理员</StatusBadge>
+                      ) : (
+                        <StatusBadge tone="default">成员</StatusBadge>
+                      )}
+                    </td>
+                    <td className="p-2">
+                      <label className="flex cursor-pointer items-center gap-1.5 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={member.console_access}
+                          disabled={busy}
+                          onChange={(e) =>
+                            void setConsoleAccess(member, e.target.checked)
+                          }
+                        />
+                        {member.console_access ? "已允许" : "未允许"}
+                      </label>
+                    </td>
+                    <td className="p-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={busy || member.is_admin}
+                        title={
+                          member.is_admin
+                            ? "不能移除团队管理员本人（可联系平台管理员转移管理权）"
+                            : undefined
+                        }
+                        onClick={() => void removeMember(member)}
+                      >
+                        <UserMinus className="mr-1 size-3.5" />
+                        移除
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </SectionCard>
+  );
+}

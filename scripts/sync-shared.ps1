@@ -39,7 +39,7 @@ $stages = @(
         Filters = @("*.py")
         # export_quote 是第 2 段的镜像，**嵌套在本目标目录内**：
         # 不计入本段，否则 -Check 会把引擎的 16 个文件算成"内核多了文件"而永远报不一致。
-        Exclude = @("__pycache__", "export_quote")
+        Exclude = @("__pycache__", "export_quote", "domain")
     },
     @{
         Label   = "报价引擎"
@@ -47,6 +47,17 @@ $stages = @(
         Target  = Join-Path $repoRoot "backend/worker/src/kaas_common/export_quote"
         Filters = @("*.py", "*.json")
         Exclude = @("__pycache__", "examples")
+    },
+    @{
+        # 业务枚举字典：真源是 orchestrator 的 app/domain/enums.py（由
+        # scripts/contracts-check.ts 的 R2 规则与 shared/contracts 对齐校验）。
+        # Worker 的 GET /api/v1/enums 必须回**同一份**常量，绝不能手抄第二份 ——
+        # 前端下拉/标签全靠它，抄错就是「线上选项少一个」这种无声故障。
+        Label   = "业务枚举字典"
+        Source  = Join-Path $repoRoot "backend/orchestrator/app/domain"
+        Target  = Join-Path $repoRoot "backend/worker/src/kaas_common/domain"
+        Filters = @("enums.py")
+        Exclude = @("__pycache__")
     }
 )
 

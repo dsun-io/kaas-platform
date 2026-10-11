@@ -379,6 +379,13 @@ class User(Base):
     role = Column(Text, nullable=False, default="user")  # 'system_admin' | 'admin' | 'owner' | 'user'
     plan = Column(Text, nullable=False, default="free")  # 'free' | 'pro' | 'enterprise' | 'internal'
     is_tenant_admin = Column(Boolean, nullable=False, default=False)
+    # 官网数据后台权限（2026-10-11 拆分模型）：**独立于团队角色**的一项授权 ——
+    # 团队管理员按需授予普通成员，默认关闭。判定见 app/api/teams.py 的
+    # `PUT /teams/{team_id}/members/{user_id}/console-access`（唯一写入口）。
+    console_access = Column(Boolean, nullable=False, default=False, server_default="false")
+    # 三层组织：成员归属的团队（NULL = 未分组）。可见性判定见
+    # kaas_common/workstation/scope.py —— 成员创建的数据本团队可见。
+    team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
     status = Column(Text, nullable=False, default="active")  # active | disabled
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
@@ -429,6 +436,97 @@ class UserRole(Base):
     )
 
 
+class Team(Base):
+    """团队（三层组织：管理员 / 团队 / 成员）。
+
+    成员创建的数据**本团队可见、其他团队不可见** —— 判定见
+    `kaas_common/workstation/scope.py`（两端共用同一份规则）。
+    业务行上直接记 `team_id`（写入时取创建者的团队），而不是靠 owner 反查：
+    这样判定无需 JOIN，且成员换团队后数据仍留在原团队。
+    """
+    __tablename__ = "teams"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    name = Column(Text, nullable=False)
+    # 团队管理员 = 团队创建者（业务规则：团队由第一个成员创建，创建者可管理本团队）
+    created_by = Column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("uq_teams_tenant_name", "tenant_id", "name", unique=True),
+    )
+
+
+class TeamSubscription(Base):
+    """团队工位订阅（团队开通 = 全员可用）。
+
+    判定真源 = `kaas_common/workstation/subscriptions.py`。
+    `source`：manual（后台手动开通）/ payment（付费）/ system_migration。
+    """
+    __tablename__ = "team_subscriptions"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    code = Column(Text, nullable=False)                 # 工位 key 或 full_chain
+    active = Column(Boolean, nullable=False, server_default="true")
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    source = Column(Text, nullable=False, server_default="manual")
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("uq_team_subscriptions_code", "team_id", "code", unique=True),
+        Index("idx_team_subscriptions_active", "team_id", "active"),
+    )
+
+
+class UserSubscription(Base):
+    """个人工位订阅（某人额外单独开通的工位）。"""
+    __tablename__ = "user_subscriptions"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    code = Column(Text, nullable=False)
+    active = Column(Boolean, nullable=False, server_default="true")
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    source = Column(Text, nullable=False, server_default="manual")
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("uq_user_subscriptions_code", "user_id", "code", unique=True),
+        Index("idx_user_subscriptions_active", "user_id", "active"),
+    )
+
+
+class TeamInvite(Base):
+    """团队邀请（邮箱点名 or 通用邀请码）。
+
+    加入现有团队**必须凭邀请码** —— 否则 A 公司的人可以自由进入 B 公司团队。
+    规则真源 = `kaas_common/workstation/teams.py`（两端共用）。
+    """
+    __tablename__ = "team_invites"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    email = Column(Text, nullable=True)          # 邮箱点名时才填
+    token = Column(Text, nullable=False, unique=True)
+    invited_by = Column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    status = Column(Text, nullable=False, server_default="pending")  # pending|accepted|revoked
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    accepted_at = Column(DateTime(timezone=True), nullable=True)
+    accepted_by = Column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_team_invites_team", "team_id", "status"),
+        Index("idx_team_invites_email", "email"),
+    )
+
+
 class Customer(Base):
     """客户表"""
     __tablename__ = "customers"
@@ -449,6 +547,8 @@ class Customer(Base):
     created_by = Column(Text, nullable=True)
     owner_id = Column(Text, nullable=True)
     owner_scope = Column(Text, nullable=False, default="private", server_default="private")
+    # 三层组织：本行归属的团队（写入时取创建者的团队；NULL = 未分组，保持原有可见性）
+    team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
     legacy_cust_id = Column(BigInteger, nullable=True)  # 合并映射键（旧 cust_customers.id），仅供 downgrade 还原
     # ── 202610100004 客户软删除（保留历史单据引用，不物理删除）──
     is_deleted = Column(Boolean, nullable=False, default=False, server_default="false")

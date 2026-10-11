@@ -6,6 +6,18 @@ import { API_BASE_URL } from "./config";
 import { handleApiError } from "./error-handler";
 import type { ApiErrorResponse } from "./error-handler";
 
+/**
+ * 给 axios 的请求配置加一个前端专用开关（只影响错误处理，不会作为请求头发出去）。
+ *
+ * `silent: true` = "这个请求失败了由调用方自己降级"：团队 / 工位这些**可能还没上线**的接口，
+ * 失败时不应弹通用 toast（用户会以为系统坏了），而应由页面渲染骨架 / 空态 / 引导。
+ */
+declare module "axios" {
+  export interface AxiosRequestConfig {
+    silent?: boolean;
+  }
+}
+
 const BASE_URL = `${API_BASE_URL}/api/v1`;
 
 export const apiClient = axios.create({
@@ -60,20 +72,19 @@ const RETRY_BASE_DELAY_MS = 400;
 function isRetryableRequest(method: string, url: string | undefined): boolean {
   if (RETRY_METHODS.has(method)) return true;
   return (
-    method === "post" &&
-    !!url &&
-    RETRY_POST_PATHS.some((re) => re.test(url))
+    method === "post" && !!url && RETRY_POST_PATHS.some((re) => re.test(url))
   );
 }
 
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError<ApiErrorResponse>) => {
-    const config = error.config as (typeof error.config & { __retryCount?: number }) | undefined;
+    const config = error.config as
+      | (typeof error.config & { __retryCount?: number })
+      | undefined;
     const status = error.response?.status;
     const method = (config?.method ?? "").toLowerCase();
-    const retriable =
-      status === undefined || (status >= 500 && status < 600);
+    const retriable = status === undefined || (status >= 500 && status < 600);
 
     if (config && retriable && isRetryableRequest(method, config.url)) {
       const attempt = config.__retryCount ?? 0;

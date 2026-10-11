@@ -70,6 +70,8 @@ class CustInquiry(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     owner_id = Column(Text, nullable=True)
     owner_scope = Column(Text, nullable=False, server_default='private')
+    # 三层组织：本行归属的团队（写入时取创建者的团队；NULL = 未分组，保持原有可见性）
+    team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
 
     __table_args__ = (
         Index('idx_cust_inquiries_customer', 'customer_id', 'status'),
@@ -96,8 +98,15 @@ class CustStageLog(Base):
 
 
 # ── 单证上游关联（20260921_trade_doc_upstream_refs）──────────────────────────
+# ⚠️ 2026-10-11 退场：下列 refs 表已在迁移 `202610110014` 改名 `<表名>_legacy`
+# **只留档**（表上带 COMMENT 说明），代码里不得再读写：
+#   - 订单/报价归属 → 主归属列 `trade_docs.order_id` / `trade_docs.quote_id`
+#   - 询盘 / 单证派生 → 边表 `entity_links`（列表达不了这两类关系）
+# 这里的 ORM 类保留只为让历史迁移的 `__table_args__` 有据可查（`__tablename__`
+# 仍是旧名，指向的物理表已改名）—— 新代码请用 `kaas_common.workstation.entity_links`。
 
 class TradeDocQuoteRef(Base):
+    """【已退场·勿用】单证 ← 报价来源（物理表已改名 `trade_doc_quote_refs_legacy`）。"""
     __tablename__ = 'trade_doc_quote_refs'
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     tenant_id = Column(Text, nullable=False)
@@ -111,6 +120,11 @@ class TradeDocQuoteRef(Base):
 
 
 class TradeDocInquiryRef(Base):
+    """【已退场·勿用】单证 ← 询盘来源（物理表已改名 `trade_doc_inquiry_refs_legacy`）。
+
+    询盘在 `trade_docs` 上**没有列**可挂，关系已改为写边表 `entity_links`
+    （`src_type='trade_doc'`、`dst_type='inquiry'`）。
+    """
     __tablename__ = 'trade_doc_inquiry_refs'
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     tenant_id = Column(Text, nullable=False)
@@ -235,6 +249,8 @@ class Shipment(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     owner_id = Column(Text, nullable=True)
     owner_scope = Column(Text, nullable=False, server_default='private')
+    # 三层组织：本行归属的团队（写入时取创建者的团队；NULL = 未分组，保持原有可见性）
+    team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
 
     __table_args__ = (
         Index('idx_shipments_tenant_status', 'tenant_id', 'status'),
@@ -264,6 +280,8 @@ class PaymentSchedule(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     owner_id = Column(Text, nullable=True)
     owner_scope = Column(Text, nullable=False, server_default='private')
+    # 三层组织：本行归属的团队（写入时取创建者的团队；NULL = 未分组，保持原有可见性）
+    team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
 
     __table_args__ = (
         Index('idx_payment_schedules_order', 'tenant_id', 'order_id'),
@@ -290,6 +308,8 @@ class Receivable(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     owner_id = Column(Text, nullable=True)
     owner_scope = Column(Text, nullable=False, server_default='private')
+    # 三层组织：本行归属的团队（写入时取创建者的团队；NULL = 未分组，保持原有可见性）
+    team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
 
     __table_args__ = (
         Index('uq_receivables_order', 'tenant_id', 'order_id', unique=True),
@@ -673,12 +693,14 @@ class TenantCompanySeal(Base):
 
 
 class TradeDocDocRef(Base):
-    """单证→单证派生引用（QUO→PI→CI→PL/CO 出单链溯源）。
+    """【已退场·勿用】单证→单证派生引用（物理表已改名 `trade_doc_doc_refs_legacy`）。
 
-    与 trade_doc_order_refs / trade_doc_quote_refs / trade_doc_inquiry_refs
-    并列，语义一致：开单时冻结源单证快照入 raw_payload，事后源单变更不污染
-    已派生单据。派生前置约束（仅 issued 源可派生）在 API 层校验。
-    对应迁移：202609300001_trade_doc_seal_derive_items.py
+    语义仍是"开单时冻结源单证快照入 raw_payload，事后源单变更不污染已派生单据"，
+    但关系本身已改到边表 `entity_links`（`src_type=dst_type='trade_doc'`、
+    `rel_type='revision_of'` —— 内核 `REL_TYPES` 里没有 `derived_from`，见
+    `kaas_common/workstation/entity_links.py`）。
+    对应迁移：202609300001_trade_doc_seal_derive_items.py（建表）、
+    202610110014_retire_legacy_refs.py（改名留档）。
     """
     __tablename__ = 'trade_doc_doc_refs'
 

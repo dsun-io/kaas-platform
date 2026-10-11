@@ -9,12 +9,13 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
 from app.db.models import TenantProduct, TenantWorkstationProduct
 from app.core.auth import AuthContext, get_auth_context
+from app.api.subs import require_quote
 
 router = APIRouter(prefix="/api/v1", tags=["workstation-products"])
 
@@ -36,8 +37,13 @@ async def list_workstation_products(
     workstation: str = "quote",
     db: AsyncSession = Depends(get_db_session),
     auth: AuthContext = Depends(get_auth_context),
+    _sub: AuthContext = Depends(require_quote),
 ) -> list[WorkstationProductOut]:
-    """列出该租户在指定工位启用的产品（含系统级产品）。"""
+    """列出该租户在指定工位启用的产品（含系统级产品）。
+
+    未订阅报价工位 → 404 SUBSCRIPTION_REQUIRED（工位订阅校验，见
+    docs/PRODUCT_CONFIG_TENANT_UNFINISHED.md §权限设计）。
+    """
     tenant_id = auth.tenant_id or "default"
     # 1. 系统级产品（所有租户可见）
     system_products = (await db.execute(
@@ -77,13 +83,17 @@ async def set_workstation_product(
     workstation: str = "quote",
     db: AsyncSession = Depends(get_db_session),
     auth: AuthContext = Depends(get_auth_context),
+    _sub: AuthContext = Depends(require_quote),
 ) -> WorkstationProductOut:
-    """启用/停用产品（幂等 upsert）。"""
+    """启用/停用产品（幂等 upsert）。未订阅报价工位 → 404，且不写任何数据。"""
     tenant_id = auth.tenant_id or "default"
-    # 验证产品存在
+    # 验证产品存在：本租户的产品或系统级产品（别家的产品不算，防跨租户启用）
     product = (await db.execute(
-        select(TenantProduct).where(TenantProduct.product_key == body.product_key)
-    )).scalar_one_or_none()
+        select(TenantProduct).where(
+            TenantProduct.product_key == body.product_key,
+            or_(TenantProduct.tenant_id == tenant_id, TenantProduct.is_system.is_(True)),
+        ).order_by(TenantProduct.is_system.desc()).limit(1)
+    )).scalars().first()
     if product is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "PRODUCT_NOT_FOUND"})
 

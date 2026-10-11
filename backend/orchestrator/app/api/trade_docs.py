@@ -1,7 +1,10 @@
 """外贸单证工位 API（WORKSTATION_DESIGN.md §6.3 / §10.7）
 
-单证从上游实体生成（询盘 / 报价单 / 订单任一类），通过 refs 关联表溯源：
-- trade_doc_inquiry_refs / trade_doc_quote_refs / trade_doc_order_refs
+单证从上游实体生成（询盘 / 报价单 / 订单任一类）。**溯源口径（2026-10-11 收口）**：
+- 主归属（订单 / 报价）= **列** `trade_docs.order_id` / `trade_docs.quote_id`
+  （由 `trg_trade_docs_links` 自动派生 `entity_links` 边）
+- 列表达不了的关系（单证 ← 询盘、单证 ← 单证派生）= **边表 `entity_links`**
+- 旧 refs 表（`trade_doc_*_refs` / `order_quote_refs`）已改名 `*_legacy` 留档，不再读写
 
 端点：
 - GET   /api/v1/trade-docs            单证列表（分页 + doc_type/status/order 筛选）
@@ -14,22 +17,23 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
 from app.db.models import Customer
 from app.db.workstation_links import (
     Order, OrderItem, QuoteOrder, QuoteOrderItem,
-    TradeDoc, TradeDocItem, TradeDocOrderRef,
+    TradeDoc, TradeDocItem,
 )
 from app.db.workstation_models import (
     CustInquiry, CustContact, TenantCompanyProfile,
-    TradeDocQuoteRef, TradeDocInquiryRef, TradeDocDocRef,
 )
 from app.core.auth import AuthContext, get_auth_context
 from app.domain.enums import validate_enum, DOC_TYPE, CURRENCY, DOC_STATUS
-from app.api.ws_common import tenant_id_of, scope_filter, next_doc_no
+from app.api.ws_common import (
+    tenant_id_of, scope_filter, next_doc_no, resolve_customer_for_doc,
+)
 from app.api.company_profile import seller_block
 from app.services.trade_doc_payload import (
     build_render_data, buyer_block, trade_terms_of,
@@ -37,6 +41,9 @@ from app.services.trade_doc_payload import (
 from kaas_common.trade_doc import (
     RuleError, assert_draft, assert_derivable, assert_transition, validate_confirm,
     normalize_items, derive_payload, freeze_snapshot,
+)
+from kaas_common.workstation.entity_links import (
+    LINK_INSERT_SQL_NAMED, EdgeError, normalize_edge,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["trade-docs"])
@@ -68,7 +75,10 @@ class TradeDocCreate(BaseModel):
     inquiry_id: Optional[int] = None
     derive_from_doc_id: Optional[int] = None   # 派生建单（仅 issued 源）
     apply_scheme: Optional[str] = None         # 派生自 QUO 时：直接应用该方案 qty/单价
-    customer_id: Optional[str] = None
+    # 业务客户外键（整数）：必须从**已有业务客户**里选，后端强校验（2026-10-11）。
+    # 注意：单证表**没有** customer_name 列 —— 买方名字冻结在 raw_payload 快照里，
+    # 所以这里没有 customer_name 参数（不编造不存在的列）。
+    customer_id: Optional[int] = None
     currency: Optional[str] = None
     items: Optional[list[TradeDocItemIn]] = None   # 手动/派生行项目
     raw_payload: Optional[dict] = None       # 手动补充内容（draft 可改）
@@ -77,6 +87,9 @@ class TradeDocCreate(BaseModel):
 class TradeDocPatch(BaseModel):
     status: Optional[str] = None
     raw_payload: Optional[dict] = None
+    # 改单时也能认领客户（历史单据的 customer_id 被清洗成 NULL 后要能补回来）。
+    # 与 raw_payload 同一条闸门：仅 draft 可改 —— 签发后是法律凭证，买方不许再动。
+    customer_id: Optional[int] = None
 
 
 class TradeDocConfirmIn(BaseModel):
@@ -308,11 +321,18 @@ async def create_trade_doc(
         snap = await _inquiry_snapshot(db, tenant_id, body.inquiry_id)
         payload["sources"]["inquiry"] = freeze_snapshot(snap)
 
+    # 业务客户强校验（放在**所有继承之后**）：手动传的、上游快照继承的、派生继承的
+    # customer_id 都要过同一道闸门 —— 否则上游一个已软删的客户会顺着开单传下来。
+    customer = await resolve_customer_for_doc(db, tenant_id, body.customer_id, auth)
+
     d = TradeDoc(
         tenant_id=tenant_id, doc_no=await next_doc_no(db, tenant_id, doc_type),
-        doc_type=doc_type, order_id=order_id, customer_id=body.customer_id,
+        doc_type=doc_type, order_id=order_id,
+        customer_id=customer.id if customer is not None else None,
         status="draft", currency=currency, total_amount=total_amount,
         raw_payload=payload,
+        # 单据与客户同团队（管理员替别家团队开单时不能把单据留在自己团队）
+        team_id=customer.team_id if customer is not None else auth.team_id,
     )
     db.add(d)
     await db.flush()
@@ -352,27 +372,27 @@ async def create_trade_doc(
                 "detail": str(exc),
             })
 
-    # ── refs 溯源（§6.3 单证类型×生成阶段）───────────────────────────
-    if body.order_id:
-        db.add(TradeDocOrderRef(
-            tenant_id=tenant_id, trade_doc_id=d.id, order_id=body.order_id,
-            ref_type="generated_from",
-        ))
-    if body.quote_order_id:
-        db.add(TradeDocQuoteRef(
-            tenant_id=tenant_id, trade_doc_id=d.id, quote_order_id=body.quote_order_id,
-            ref_type="generated_from",
-        ))
-    if body.inquiry_id:
-        db.add(TradeDocInquiryRef(
-            tenant_id=tenant_id, trade_doc_id=d.id, inquiry_id=body.inquiry_id,
-            ref_type="generated_from",
-        ))
-    if derive_doc is not None:
-        db.add(TradeDocDocRef(
-            tenant_id=tenant_id, trade_doc_id=d.id,
-            source_trade_doc_id=derive_doc.id, ref_type="derived_from",
-        ))
+    # ── 主归属列（读侧以列为准）─────────────────────────────────────
+    # 订单 / 报价关系**只写列**：`trg_trade_docs_links` 随后自动派生边表，
+    # 旧 refs 表已退场（202610110014 改名 `_legacy` 留档），这里不再手写。
+    # 守两条约束：`ck_docs_has_customer`（必须有客户）、`ck_doc_single_parent`（报价/订单二选一）。
+    if d.customer_id is not None:
+        if body.order_id:
+            d.order_id = body.order_id
+        elif body.quote_order_id:
+            d.quote_id = body.quote_order_id
+
+    # ── 列表达不了的关系 → 显式写边表（§6.3 单证类型×生成阶段）─────────
+    # 询盘没有列可挂（`trade_docs` 只有 order_id / quote_id），派生源同理 ——
+    # 这两类关系原先落在 `trade_doc_inquiry_refs` / `trade_doc_doc_refs`，
+    # 现在统一进 `entity_links`，与触发器派生出来的订单/报价边同表同源。
+    # 派生关系的 `ref_type` 历史字面量是 `derived_from`（内核词表里没有），
+    # 写入用 `revision_of`、原字面量进 `meta.origin_ref_type` —— 读取时还原，见 `_link_ref_type`。
+    await _insert_links(db, tenant_id, d.id, [
+        ("inquiry", body.inquiry_id, "generated_from", None),
+        ("trade_doc", derive_doc.id if derive_doc is not None else None,
+         "revision_of", {"origin_ref_type": "derived_from"}),
+    ])
 
     await db.commit()
     await db.refresh(d)
@@ -440,28 +460,8 @@ async def get_trade_doc(
     )).scalar_one_or_none()
     if d is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "DOC_NOT_FOUND"})
-    refs = {"orders": [], "quotes": [], "inquiries": [], "docs": []}
-    rows = (await db.execute(
-        select(TradeDocOrderRef).where(
-            TradeDocOrderRef.tenant_id == tenant_id, TradeDocOrderRef.trade_doc_id == d.id)
-    )).scalars().all()
-    refs["orders"] = [{"order_id": r.order_id, "ref_type": r.ref_type} for r in rows]
-    rows = (await db.execute(
-        select(TradeDocQuoteRef).where(
-            TradeDocQuoteRef.tenant_id == tenant_id, TradeDocQuoteRef.trade_doc_id == d.id)
-    )).scalars().all()
-    refs["quotes"] = [{"quote_order_id": r.quote_order_id, "ref_type": r.ref_type} for r in rows]
-    rows = (await db.execute(
-        select(TradeDocInquiryRef).where(
-            TradeDocInquiryRef.tenant_id == tenant_id, TradeDocInquiryRef.trade_doc_id == d.id)
-    )).scalars().all()
-    refs["inquiries"] = [{"inquiry_id": r.inquiry_id, "ref_type": r.ref_type} for r in rows]
-    rows = (await db.execute(
-        select(TradeDocDocRef).where(
-            TradeDocDocRef.tenant_id == tenant_id, TradeDocDocRef.trade_doc_id == d.id)
-    )).scalars().all()
-    refs["docs"] = [{"source_trade_doc_id": r.source_trade_doc_id, "ref_type": r.ref_type}
-                    for r in rows]
+    # 上游 refs 一律来自**列 + 边表**（旧 `trade_doc_*_refs` 已改名留档、不再读）
+    refs = await _doc_upstream_links(db, tenant_id, d)
     # 行项目一并返回（前端就地编辑/派生展示需要）
     item_rows = (await db.execute(
         select(TradeDocItem).where(
@@ -503,6 +503,18 @@ async def update_trade_doc(
             })
         d.raw_payload = body.raw_payload
 
+    if body.customer_id is not None:
+        # 认领/更换买方：同样走强校验；仅 draft 可改（与 raw_payload 同一条闸门）
+        try:
+            assert_draft(d.status)
+        except RuleError as exc:
+            raise HTTPException(status_code=409, detail={
+                "error": "conflict", "code": exc.code, "detail": exc.detail,
+            })
+        customer = await resolve_customer_for_doc(db, tenant_id, body.customer_id, auth)
+        d.customer_id = customer.id
+        d.team_id = customer.team_id
+
     if body.status is not None:
         target = validate_enum("doc_status", body.status)
         try:
@@ -532,7 +544,11 @@ async def _company_profile(db, tenant_id):
 
 
 async def _buyer_of(db, tenant_id, customer_id):
-    """客户档案 + 主联系人 → 买方区块。customer_id 存的是字符串，这里做容错转换。"""
+    """客户档案 + 主联系人 → 买方区块。
+
+    `customer_id` 在迁移 202610110009 之后是 BIGINT（历史遗留脏文本已清洗成 NULL），
+    这里的容错转换只为兜住"清洗前就存在的进程内旧对象"，正常路径上不会再触发。
+    """
     if not customer_id:
         return {}
     try:
@@ -555,6 +571,117 @@ async def _buyer_of(db, tenant_id, customer_id):
 def _payload_parts(d: TradeDoc) -> tuple[dict, dict]:
     payload = d.raw_payload or {}
     return payload.get("sources") or {}, payload.get("custom") or {}
+
+
+# ── 关系（边表）读写 ─────────────────────────────────────────────────────────
+# 为什么需要这一段：旧 refs 表按"一个关系一张表"建，`trade_doc_inquiry_refs`
+# （单证 ← 询盘）与 `trade_doc_doc_refs`（单证 ← 单证派生）记录的是**列表达不了**
+# 的关系 —— `trade_docs` 只有 `order_id` / `quote_id` 两列，询盘与派生源没有列，
+# 触发器也就无从派生。所以这两类关系改为显式写边表 `entity_links`，
+# 与"列自动派生"的订单/报价关系**共用同一张表**，读侧只有一个来源。
+
+_DOC_LINK_SRC = "trade_doc"
+
+
+async def _insert_links(db, tenant_id: str, src_id: int, targets) -> None:
+    """把若干 (dst_type, dst_id, rel_type, meta) 关系写进边表（幂等，重复建立不报错）。
+
+    越界防线 `ENTITY_TYPES` / `rel_type` 校验走共享内核 `normalize_edge`：
+    边表没有外键（多态设计的已知代价），校验是唯一的"防呆"。
+    `meta` 承载关系自身的属性（如派生关系原本的 `ref_type` 字面量）。
+    """
+    for dst_type, dst_id, rel_type, meta in targets:
+        if not dst_id:
+            continue          # 空父对象：不写边（与旧 refs 表"没有就不写行"一致）
+        try:
+            edge = normalize_edge(_DOC_LINK_SRC, src_id, dst_type, dst_id, rel_type,
+                                  meta=meta)
+        except EdgeError as exc:
+            raise HTTPException(status_code=422, detail={
+                "error": "validation", "code": exc.code, "detail": exc.detail})
+        await db.execute(text(LINK_INSERT_SQL_NAMED), {
+            "tenant_id": tenant_id, "src_type": edge["src_type"], "src_id": edge["src_id"],
+            "dst_type": edge["dst_type"], "dst_id": edge["dst_id"],
+            "rel_type": edge["rel_type"], "meta": edge["meta"], "created_by": None,
+        })
+
+
+async def _active_links(db, tenant_id: str, src_id: int, dst_type: str) -> list:
+    """读本单证 → `dst_type` 的有效边（`deleted_at IS NULL`，按 id 稳定排序）。
+
+    旧 refs 表每 (单证, 关系) 一行有效关系，这里同样只取有效边 —— 软删的边属于
+    "关系变更史"（原由 A 生成、后改 B），不该出现在详情里。
+
+    连 `meta` 一起取：它保留**关系自身**的原始语义（如派生关系原来的
+    `ref_type='derived_from'`），读侧据此还原旧字段值（见 `_link_ref_type`）。
+    """
+    rows = (await db.execute(
+        text(
+            "SELECT dst_id, rel_type, meta FROM entity_links"
+            " WHERE tenant_id = :tenant_id AND src_type = 'trade_doc'"
+            "   AND src_id = :src_id AND dst_type = :dst_type AND deleted_at IS NULL"
+            " ORDER BY id"
+        ),
+        {"tenant_id": tenant_id, "src_id": src_id, "dst_type": dst_type},
+    )).mappings().all()
+    return [{"dst_id": r["dst_id"], "rel_type": r["rel_type"], "meta": r["meta"]}
+            for r in rows]
+
+
+def _link_ref_type(link: dict) -> str:
+    """边 → 旧 refs 的 `ref_type` 字面量（字段级等价，前端契约不变）。
+
+    `trade_doc_doc_refs` 的 `ref_type` 历史取值是 `'derived_from'`，而内核
+    `REL_TYPES` 里没有这个取值（词表是刻意收口的，不为了兼容而扩容）——
+    写入时映射成语义等价的 `revision_of`，原始字面量存进 `meta.origin_ref_type`，
+    在这里还原。没有 meta 的边（触发器派生、或旧数据）直接用 `rel_type`。
+    """
+    meta = link.get("meta") or {}
+    return meta.get("origin_ref_type") or link["rel_type"]
+
+
+async def _doc_upstream_links(db, tenant_id: str, d: TradeDoc) -> dict:
+    """详情端点用的上游 refs（字段名与旧 refs 表读取**逐字相同**，前端契约不变）。
+
+    优先级：**列**（主归属，权威）> 边表（历史行/列被清洗的情况）。
+    为什么需要兜底而不是只读列：`trade_docs.quote_id` 的回填在迁移 012 里刻意
+    跳过了 `customer_id IS NULL` 的历史行（`NOT VALID` 约束会在 UPDATE 时重新校验）。
+    那些行的归属只在边表里 —— 只读列会让它们的"报价 → 单证"关系凭空消失。
+    """
+    quotes = await _active_links(db, tenant_id, d.id, "quote")
+    orders = await _active_links(db, tenant_id, d.id, "order")
+    if d.quote_id is not None:
+        quote_row = next((r for r in quotes if r["dst_id"] == d.quote_id), None)
+        quotes = [{"dst_id": d.quote_id, "rel_type": "generated_from",
+                   "meta": quote_row["meta"] if quote_row else None}]
+    if d.order_id is not None:
+        order_row = next((r for r in orders if r["dst_id"] == d.order_id), None)
+        orders = [{"dst_id": d.order_id, "rel_type": "generated_from",
+                   "meta": order_row["meta"] if order_row else None}]
+    inquiries = await _active_links(db, tenant_id, d.id, "inquiry")
+    docs = await _active_links(db, tenant_id, d.id, "trade_doc")
+    return {
+        "orders": [{"order_id": r["dst_id"], "ref_type": _link_ref_type(r)} for r in orders],
+        "quotes": [{"quote_order_id": r["dst_id"], "ref_type": _link_ref_type(r)}
+                   for r in quotes],
+        "inquiries": [{"inquiry_id": r["dst_id"], "ref_type": _link_ref_type(r)}
+                      for r in inquiries],
+        "docs": [{"source_trade_doc_id": r["dst_id"], "ref_type": _link_ref_type(r)}
+                 for r in docs],
+    }
+
+
+async def _resolve_doc_quote_id(db, tenant_id: str, d: TradeDoc):
+    """本单证的报价来源（`refresh-sources` 用）：列优先，边表兜底。
+
+    与旧实现（`SELECT ... FROM trade_doc_quote_refs ... LIMIT 1`）等价：
+    旧表每 (单证, ref_type) 唯一，最多一行；这里取**最早**的有效报价边，
+    列有值时直接信列（触发器已保证列与边一致）。
+    """
+    if d.quote_id is not None:
+        return d.quote_id
+    links = await _active_links(db, tenant_id, d.id, "quote")
+    return links[0]["dst_id"] if links else None
 
 
 @router.get("/trade-docs/{doc_id}/render-data")
@@ -635,23 +762,17 @@ async def refresh_trade_doc_sources(
     if d.order_id:
         new_sources["order"] = await _order_snapshot(db, tenant_id, d.order_id)
     if "quote" in sources:
-        quote_ref = (await db.execute(
-            select(TradeDocQuoteRef).where(
-                TradeDocQuoteRef.tenant_id == tenant_id,
-                TradeDocQuoteRef.trade_doc_id == d.id,
-            )
-        )).scalars().first()
-        if quote_ref is not None:
-            new_sources["quote"] = await _quote_snapshot(db, tenant_id, quote_ref.quote_order_id)
+        # 报价来源：**列优先、边表兜底**（旧实现读 `trade_doc_quote_refs` LIMIT 1）。
+        # 列是主归属；`customer_id IS NULL` 的历史行当年没被回填（见 `_doc_upstream_links`），
+        # 它们的报价只在边表里 —— 少了兜底这些行会立刻 422 NO_UPSTREAM。
+        quote_id = await _resolve_doc_quote_id(db, tenant_id, d)
+        if quote_id is not None:
+            new_sources["quote"] = await _quote_snapshot(db, tenant_id, quote_id)
     if "inquiry" in sources:
-        inquiry_ref = (await db.execute(
-            select(TradeDocInquiryRef).where(
-                TradeDocInquiryRef.tenant_id == tenant_id,
-                TradeDocInquiryRef.trade_doc_id == d.id,
-            )
-        )).scalars().first()
-        if inquiry_ref is not None:
-            new_sources["inquiry"] = await _inquiry_snapshot(db, tenant_id, inquiry_ref.inquiry_id)
+        inquiry_links = await _active_links(db, tenant_id, d.id, "inquiry")
+        if inquiry_links:
+            new_sources["inquiry"] = await _inquiry_snapshot(
+                db, tenant_id, inquiry_links[0]["dst_id"])
 
     if not new_sources:
         raise HTTPException(status_code=422, detail={

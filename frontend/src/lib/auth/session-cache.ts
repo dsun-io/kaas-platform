@@ -62,10 +62,9 @@ export function updateSession(partial: {
       email: partial.user.email,
       role: partial.user.role ?? partial.user.account_type,
     };
-    // 从 auth 响应中同步真实 tenant_id，而非硬编码值
-    if (partial.user.tenant_id) {
-      _session.tenant.tenant_id = partial.user.tenant_id;
-    }
+    // 账号不再有"租户"（业务不以租户鉴权，见 docs/TEAMS_AND_VISIBILITY.md）：
+    // 这里不再从 auth 响应写 X-Tenant-Id —— 后端要么忽略它（Worker 固定 DEFAULT_TENANT），
+    // 要么从登录态自行推导。保留默认空值，避免把"团队 id"塞进租户头造成误解。
   } else if (partial.user === null) {
     _session.user = undefined;
   }
