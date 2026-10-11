@@ -32,7 +32,7 @@ export const apiClient = axios.create({
 apiClient.interceptors.request.use((config) => {
   const session = getCurrentSession();
 
-  // Public auth paths — never inject tenant or auth headers
+  // Public auth paths — never inject auth headers
   const path = config.url || "";
   const isAuthPath =
     /^\/auth\/(login|register|logout|bootstrap-admin|forgot-password)/.test(
@@ -40,12 +40,20 @@ apiClient.interceptors.request.use((config) => {
     );
 
   if (!isAuthPath) {
-    // X-Tenant-Id: only inject if a real tenant_id is available
-    const tenantId = session.tenant.tenant_id;
-    if (tenantId) {
-      config.headers.set("X-Tenant-Id", tenantId);
-    }
-
+    // **不再注入 X-Tenant-Id。**
+    //
+    // 原因：`tenant_id` 已全量统一为 `default`（迁移 202610110005 `unify_tenant`），
+    // **租户不再是隔离边界，团队（team_id）才是**；而账号身上根本没有"租户"
+    // （见 docs/TEAMS_AND_VISIBILITY.md）。
+    //
+    // 而原先这个头是从 **localStorage 里过期的 `kaas_user`** 反推的
+    // （`updateSession` 从来不写它）—— 也就是说发出去的可能是**早已失效的旧值**，
+    // 后端还会拿它做限流分桶与日志上下文，属于"看着有用、实际误导"。
+    //
+    // 后端不需要它：`middleware/auth.py` 在鉴权后自行把
+    // `request.state.tenant_id` 设为 DEFAULT_TENANT。
+    // 限流 key 是 `{tenant_id}:{ip}`，**仍含 IP**，且本部署租户恒为 default，
+    // 所以去掉这个头不改变限流效果。
     // Authorization (Phase 0: skip if no token)
     if (session.accessToken) {
       config.headers.set("Authorization", `Bearer ${session.accessToken}`);
