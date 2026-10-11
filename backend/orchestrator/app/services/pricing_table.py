@@ -17,6 +17,8 @@
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from itertools import product as _cartesian
 from typing import Any, Mapping, Optional
 
@@ -150,6 +152,65 @@ async def load_option_extensions(
     return out
 
 
+def collect_price_history(
+    items, product: ProductSpec
+) -> dict[tuple[str, str], list[Any]]:
+    """把定价行的**全部版本**按 ``(customer_id, 定价键)`` 归拢。
+
+    为什么"历史"不用另建表：`customer_cost_items` 是 **INSERT-only、不删历史**
+    （带 `effective_from` / `effective_to` / `status`），
+    `list_pricing_key_items` 返回的就是全部版本。
+    所以"保存每个产品历史的输入、没报价时求历史平均值做参考"这条需求，
+    只差一个**统计**，不需要新的存储。
+    """
+    out: dict[tuple[str, str], list[Any]] = {}
+    prefix = f"{product.key}{SEPARATOR}"
+    for item in items:
+        if not str(getattr(item, "spec_hash", "")).startswith(prefix):
+            continue
+        if item.amount is None or float(item.amount) <= 0:
+            continue
+        key = item.spec_hash.split(SEPARATOR, 1)[1]
+        out.setdefault((item.customer_id, key), []).append(item)
+    return out
+
+
+def reference_stats(rows: list[Any], window_days: int = 30) -> dict:
+    """一批历次录入的参考统计（全部历史 + 近 N 天）。
+
+    `rows` 需按**最新在前**排（repo 按 id 倒序返回）。
+    """
+    empty = {"count": 0, "avg": None, "min": None, "max": None,
+             "last": None, "last_at": None, "avg_30d": None, "count_30d": 0}
+    amounts = [float(i.amount) for i in rows if i.amount is not None]
+    if not amounts:
+        return empty
+    newest = rows[0]
+    created = getattr(newest, "created_at", None)
+    recent: list[float] = []
+    # 窗口基准必须是**现在**，不能拿"最新一条"当基准 ——
+    # 否则每一条相对自己都是 0 天，窗口形同虚设（所有历史都会被算进"近 30 天"）。
+    now = datetime.now(timezone.utc)
+    for i in rows:
+        at = getattr(i, "created_at", None)
+        if at is None:
+            continue
+        if at.tzinfo is None:          # 库里可能是 naive（无时区）
+            at = at.replace(tzinfo=timezone.utc)
+        if (now - at).days <= window_days:
+            recent.append(float(i.amount))
+    return {
+        "count": len(amounts),
+        "avg": round(sum(amounts) / len(amounts), 6),
+        "min": min(amounts),
+        "max": max(amounts),
+        "last": amounts[0],
+        "last_at": created.isoformat() if created else None,
+        "avg_30d": (round(sum(recent) / len(recent), 6) if recent else None),
+        "count_30d": len(recent),
+    }
+
+
 async def load_matrix(
     session: AsyncSession,
     tenant_id: str,
@@ -177,7 +238,14 @@ async def load_matrix(
         if key not in bucket:  # repo 按 id 倒序 → 首次遇到即最新
             bucket[key] = item
 
-    def _cell(rows_by_key: dict[str, Any], row: dict) -> dict:
+    # 历史参考价：同一键的**历次录入**（见 collect_price_history 的说明 ——
+    # 表本身就是 INSERT-only 的，所以不用另建历史表也不用新查询）
+    history = collect_price_history(items, product)
+
+    def _reference(cid: str, key: str) -> dict:
+        return reference_stats(history.get((cid, key)) or [])
+
+    def _cell(cid: str, rows_by_key: dict[str, Any], row: dict) -> dict:
         item = rows_by_key.get(row["key"])
         return {
             "key": row["key"],
@@ -190,6 +258,8 @@ async def load_matrix(
             "source": (item.source if item else "product_default"),
             "notes": item.notes if item else None,
             "configured": item is not None,
+            # 「还没报价时先看历史均价」—— 全部历史与近 30 天各一份
+            "reference": _reference(cid, row["key"]),
         }
 
     if customer_id is not None:
@@ -200,13 +270,13 @@ async def load_matrix(
             "cost_unit": product.cost_unit,
             "scope": "own",
             "dims": dims,
-            "rows": [_cell(bucket, r) for r in rows],
+            "rows": [_cell(customer_id, bucket, r) for r in rows],
         }
 
     customers = [
         {
             "customer_id": cid,
-            "rows": [_cell(bucket, r) for r in rows],
+            "rows": [_cell(cid, bucket, r) for r in rows],
             "configured_count": sum(1 for r in rows if bucket.get(r["key"])),
         }
         for cid, bucket in sorted(by_customer.items())
@@ -217,6 +287,6 @@ async def load_matrix(
         "cost_unit": product.cost_unit,
         "scope": "all",
         "dims": dims,
-        "rows": [_cell({}, r) for r in rows],  # 兜底模板（全为未配置）
+        "rows": [_cell("", {}, r) for r in rows],  # 兜底模板（全为未配置）
         "customers": customers,
     }
