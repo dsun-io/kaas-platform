@@ -2,6 +2,7 @@
 
 模块：
 - `rules`  文件归属/用途校验、对象存储 key 规划、版本化（盖章回传覆盖旧件）
+- `seal`   公司默认公章的渲染回落判定（单据没显式给章时用租户默认章）
 
 设计见 `docs/PRODUCT_MEDIA_STORAGE_PLAN.md`。
 """
@@ -29,11 +30,18 @@ from .s3 import (  # noqa: F401
     presign_url,
     s3_config,
 )
+from .seal import (  # noqa: F401
+    SEAL_FIELD,
+    apply_default_seal,
+    seal_data_uri,
+    seal_field,
+)
 
 __all__ = [
     "OWNER_TYPES", "FILE_KINDS", "MEDIA_KINDS", "MEDIA_KIND_LABELS",
     "KIND_MIME", "MAX_BYTES", "FileRuleError",
     "validate_upload", "object_key", "file_ext", "next_version", "current_of",
     "is_file_ref", "to_data_uri", "coerce_file_ref_id",
+    "SEAL_FIELD", "seal_field", "seal_data_uri", "apply_default_seal",
     "SigV4Error", "presign_url", "presign_put_url", "presign_get_url", "s3_config",
 ]

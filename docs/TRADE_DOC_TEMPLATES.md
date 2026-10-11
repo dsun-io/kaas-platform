@@ -129,6 +129,13 @@ python scripts/render_all_samples.py
 | GET | `/api/v1/trade-doc-templates/{doc_type}` | 单类字段定义（供前端动态表单 / AI 填充） |
 | GET | `/api/v1/trade-docs/{id}/render-data` | 装配渲染一份单据所需的全部数据（前端据此排版/预览/打印为 PDF） |
 
+> **`render-data` 的 `company_stamp` 会自动带出公司默认公章**（2026-10-11 晚）：
+> 单据 `raw_payload.custom` **显式给过**该键（**含空串**）⇒ 以它为准，不覆盖、不查库；
+> 没给 ⇒ 取租户默认章（`tenant_company_seals.is_default`）转 `data:` URI 填入；
+> **无默认章 / 空字节 / None ⇒ 不注入**（不伪造空图）。判定在共享内核
+> `backend/kaas_common/files/seal.py`（`apply_default_seal`），两端**同一份**（G1）。
+> 上传入口在企业主体信息页 `settings/company-profile`（`CompanySealCard`，前端 Canvas 归一化为 PNG）。
+
 ### 界面入口：填写单据内容（2026-10-11 新增）
 
 单证工位详情页新增「**填写单据内容**」面板（`components/doc-custom-form.tsx`）：

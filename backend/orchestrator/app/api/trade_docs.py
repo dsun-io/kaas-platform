@@ -28,7 +28,7 @@ from app.db.workstation_links import (
     TradeDoc, TradeDocItem,
 )
 from app.db.workstation_models import (
-    CustInquiry, CustContact, TenantCompanyProfile,
+    CustInquiry, CustContact, TenantCompanyProfile, TenantCompanySeal,
 )
 from app.core.auth import AuthContext, get_auth_context
 from app.domain.enums import validate_enum, DOC_TYPE, CURRENCY, DOC_STATUS
@@ -44,7 +44,7 @@ from kaas_common.trade_doc import (
     normalize_items, derive_payload, freeze_snapshot,
     append_audit, protected_custom_fields,
 )
-from kaas_common.files import is_file_ref, to_data_uri
+from kaas_common.files import apply_default_seal, is_file_ref, to_data_uri
 from kaas_common.workstation.entity_links import (
     LINK_INSERT_SQL_NAMED, EdgeError, normalize_edge,
 )
@@ -753,6 +753,32 @@ async def _resolve_product_photos(db, tenant_id: str, data: dict) -> dict:
     return data
 
 
+# ── 默认公章带入（单据没显式给 company_stamp 时的回落）────────────────────────
+# 判定（字段名/覆盖优先级/空值处理）在**共享内核**：G1 只允许一份 ——
+# `kaas_common/files/seal.py`（Pyodide 可加载，与 Worker 同一函数对象）。
+#   1. 单据 `custom` 显式含 `company_stamp`（含空串）⇒ 不覆盖；
+#   2. 否则租户默认章（`is_default`）转 `data:` URI 填入；
+#   3. 都没有 ⇒ 不注入、不伪造空图。
+# 本文件只保留"怎么取到默认章那一行"（本侧走 SQLAlchemy session）。
+
+
+async def _default_seal_row(db, tenant_id: str):
+    """租户默认公章行（默认章唯一，由部分唯一索引兜底）；没有则 None。"""
+    return (await db.execute(
+        select(TenantCompanySeal).where(
+            TenantCompanySeal.tenant_id == tenant_id,
+            TenantCompanySeal.is_default.is_(True),
+        ).order_by(TenantCompanySeal.id).limit(1)
+    )).scalars().first()
+
+
+async def _apply_default_seal(db, tenant_id: str, data: dict, custom) -> dict:
+    """装配层最后一步：只在单据**没**显式给 `company_stamp` 时才查库（省无谓查询）。"""
+    if isinstance(custom, dict) and "company_stamp" in custom:
+        return data
+    return apply_default_seal(data, custom, await _default_seal_row(db, tenant_id))
+
+
 @router.get("/trade-docs/{doc_id}/render-data")
 async def get_trade_doc_render_data(
     doc_id: int,
@@ -797,6 +823,8 @@ async def get_trade_doc_render_data(
     )
     # 单证引用产品图：把 `{file_id}` 解析成图片源（渲染器只认 data:/http(s)，不放开白名单）
     data = await _resolve_product_photos(db, tenant_id, data)
+    # 单据没显式给 company_stamp → 自动带出租户默认公章（同样转 data URI）
+    data = await _apply_default_seal(db, tenant_id, data, custom)
     return {
         "doc": _row_to_doc(d),
         "data": data,

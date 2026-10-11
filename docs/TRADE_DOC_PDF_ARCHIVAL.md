@@ -70,16 +70,19 @@
 **结论**：只要有人（或某个进程）**把 PDF 字节发到这个端点**，今天的系统就能把它存下来、版本化、挂到单证上。
 **缺的不是"存"，是"出"**。
 
-**还缺的具体四项**（都是可核对的代码级缺口）：
+**当时的四项缺口与本轮进展**（都是可核对的代码级事实；第 2 项本轮**已修**）：
 
 1. **没有 PDF 字节的生产者**：前端只 `win.print()`（`export.ts:37`），不产生可上传的字节；
    后端与 Worker 代码里既无 PDF 库也无无头浏览器库
    （`grep -rniE "weasyprint|reportlab|pdfkit|fpdf|pypdf|puppeteer|playwright" backend` **0 命中**；
    前端只有 e2e 用的 `@playwright/test` **开发依赖**，见 `frontend/package.json:41`）。
-2. **链接层的"覆盖"语义不完整**：`attach_doc_file` 里把旧链接改成 `*_superseded` 的分支**只处理 `stamp_scan`**
-   （`backend/orchestrator/app/api/files.py:525-530`；`backend/worker/src/ws_files.py:445-449`）。
-   ⇒ 若用 `role='render_pdf'` 归档新版，`file_objects` 层旧行虽会让位（`is_current=false`），
-   但 `trade_doc_files` 里的**旧链接仍是 `role='render_pdf'`**，单证上会出现多条"当前 PDF"。
+2. **链接层的"覆盖"语义（原缺口，✅ 本轮已修）**：**修前** `attach_doc_file` 里把旧链接改成
+   `*_superseded` 的分支**只处理 `stamp_scan`**（orchestrator `backend/orchestrator/app/api/files.py:525-530`、
+   worker `backend/worker/src/ws_files.py:445-449` 的旧版本）。**后果**：用 `role='render_pdf'` 归档新版时，
+   `file_objects` 层旧行虽会让位（`is_current=false`），但 `trade_doc_files` 里的
+   **旧链接仍是 `role='render_pdf'`**，单证上会出现多条"当前 PDF"。
+   **已修的写法**：条件扩到 `in ("stamp_scan", "render_pdf")`，旧链接挂 `<role>_superseded`、**不物理删**
+   （`backend/orchestrator/app/api/files.py:543-550`；`backend/worker/src/ws_files.py:466-472`）。
 3. **没有"这一版 PDF 是哪个模板/渲染器/输入算出来的"**：全仓搜 `template_hash|render_version`，
    **除本文的设计用词外代码里 0 命中**；`file_objects` 只记 `sha256`
    （列定义 `backend/orchestrator/alembic/versions/202610110016_file_objects_and_product_media.py:60`，
@@ -112,8 +115,9 @@
 | **CI 目前只做构建+部署**（没有"渲染/归档"任务） | `.github/workflows/deploy.yml:30-104`（build-frontend → deploy-worker） |
 | **仓库未使用 Cloudflare Browser Rendering** | 全仓 grep `browser-rendering|browser_rendering` **0 命中** |
 
-**一处文档与代码不一致（施工时别踩）**：`docs/TRADE_DOC_TEMPLATES.md:130` 把接口写成
-`GET /api/v1/trade-docs/{id}/render` —— **该路由不存在**；实际两端只有 `render-data`
+**一处文档与代码不一致（✅ 已核对并修正）**：`docs/TRADE_DOC_TEMPLATES.md:130` **曾**把接口写成
+`GET /api/v1/trade-docs/{id}/render`（该路由不存在）；**该行已被修正为 `render-data`**，
+现存文档与代码一致。实际两端只有 `render-data`
 （orchestrator 路由清单：`backend/orchestrator/app/api/trade_docs.py:219,281,425,474,506,756,808,871`；
 Worker：`backend/worker/src/main.py:3224,3333,3461,3474,3578` + `ws_docs_ext.py:123,204,341` + `ws_files.py:413,431,457,469`）。
 
@@ -334,6 +338,8 @@ Chrome 是否逐字节一致未验证**（不同 Chrome 版本与打印参数会
 
 ## 五、未验证事项（明确列出来，避免被当成结论）
 
+> 共 6 条；其中**第 6 条本轮已核对并修正**（保留作记录）⇒ 现在**仍开放的是第 1–5 条**。
+
 1. **Cloudflare Browser Rendering 在本账户的可用性**：是否为 Workers Paid、是否开通、配额与计费 —— **未验证**。
 2. **端点命名口径**：OpenAPI 为 `/browser-rendering/pdf`，官方文档页面为 `/browser-run/pdf` ——
    以哪个为准**未验证**（施工前用一次真实调用确认）。
@@ -342,8 +348,9 @@ Chrome 是否逐字节一致未验证**（不同 Chrome 版本与打印参数会
 4. **单证 HTML 的实际体积与渲染耗时**（文档只给到请求体 50MB 上限）—— **未实测**。
 5. **生产是否真的存在 `render_pdf` 记录**：本文引用 `docs/PROBLEM_STATUS_2026-10-11.md:1873`
    的"生产 `trade_docs=0`"，**本次未直连生产库复查**。
-6. **`docs/TRADE_DOC_TEMPLATES.md:130` 写的 `GET /api/v1/trade-docs/{id}/render`**：
-   代码里不存在该路由（已核实的路由清单见 §1.5）—— 该文档行应按 `render-data` 更正（本文未改它）。
+6. ~~**`docs/TRADE_DOC_TEMPLATES.md:130` 写的 `GET /api/v1/trade-docs/{id}/render`**~~ **✅ 已核对并修正**：
+   该路由在代码里确实不存在（已核实的路由清单见 §1.5），而**该文档行已被修正为 `render-data`**，
+   现存说法与代码一致 —— 本条**不再是**未验证事项。
 
 ---
 
