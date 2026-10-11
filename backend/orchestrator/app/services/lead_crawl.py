@@ -50,6 +50,7 @@ __all__ = [
     "next_redirect_url",
     "extract_product_from_html",
     "enrich_product",
+    "crawl_one",
     "strip_html",
 ]
 
@@ -126,3 +127,84 @@ async def enrich_product(db, tenant_id: str, lead: dict,
                 lead["product_name_cn"] = cn
         except Exception:      # noqa: BLE001
             pass
+
+
+# 抽取结果 → `lead_candidates` 列的白名单。
+# **显式列举**而不是 `setattr` 一把梭：`extract_product_from_html` 还会回
+# `product_name_source` / `page_title` 这类**没有对应列**的键，
+# 一把梭会在运行时炸 AttributeError（而且只在真正爬取时才炸）。
+_LEAD_COLUMNS = {
+    "product_name": "product_name",
+    "product_image_url": "product_image_url",
+    "spec_raw": "spec_raw",
+    "link_url": "link_url",
+}
+
+
+def _now():
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    return datetime.now(timezone.utc)
+
+
+async def crawl_one(db, tenant_id: str, lead, *,
+                    fetcher=None, ai_runner=None) -> dict:
+    """爬单条线索的官网并回写产品字段（与 worker `_crawl_one` 同语义）。
+
+    `crawl_status` 四态与 worker 一致：`no_website` / `blocked` /
+    `failed` / `success`。**四种都要写** —— 否则「待爬」的行会一直挂着，
+    界面上看不出是失败了还是没人爬。
+
+    `fetcher` / `ai_runner` 可注入，便于不起网络的测试。
+    """
+    if fetcher is None:
+        fetcher = http_get_text
+
+    website = (lead.website or "").strip()
+    if not website:
+        lead.crawl_status = "no_website"
+        lead.crawled_at = _now()
+        return {"lead_id": lead.id, "status": "no_website", "error": None}
+
+    url = website if website.startswith("http") else "https://" + website
+    if not is_safe_crawl_url(url):
+        lead.crawl_status = "blocked"
+        lead.crawled_at = _now()
+        return {"lead_id": lead.id, "status": "blocked",
+                "error": "URL 不在允许抓取的公网 http(s) 范围内"}
+
+    try:
+        status, html = await fetcher(url)
+        if status and int(status) >= 400:
+            raise ValueError(f"HTTP {status}")
+        if not html:
+            raise ValueError("空响应")
+
+        data = extract_product_from_html(html, url)
+        for src, column in _LEAD_COLUMNS.items():
+            value = data.get(src)
+            if value:          # 抽不到就保持原值，不拿 None 覆盖已有数据
+                setattr(lead, column, value)
+
+        # `enrich_product` 是 dict 语义（且有测试按 dict 写的），
+        # 所以在这里做一次显式桥接，而不是把它改成 ORM 版
+        payload = {
+            "product_name": lead.product_name,
+            "product_name_cn": lead.product_name_cn,
+            "spec_raw": lead.spec_raw,
+            "spec_normalized": lead.spec_normalized,
+        }
+        await enrich_product(db, tenant_id, payload, ai_runner=ai_runner)
+        lead.spec_normalized = payload.get("spec_normalized")
+        lead.product_name_cn = payload.get("product_name_cn")
+
+        lead.crawl_status = "success"
+        lead.crawled_at = _now()
+        return {"lead_id": lead.id, "status": "success", "error": None,
+                "product_name": lead.product_name,
+                "has_image": bool(lead.product_image_url),
+                "has_spec": bool(lead.spec_raw)}
+    except Exception as exc:   # noqa: BLE001  —— 单条失败不该中断整批
+        lead.crawl_status = "failed"
+        lead.crawled_at = _now()
+        return {"lead_id": lead.id, "status": "failed", "error": str(exc)[:200]}
