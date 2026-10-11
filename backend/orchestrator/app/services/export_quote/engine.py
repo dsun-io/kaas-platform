@@ -389,14 +389,31 @@ def _numeric_value(ni, raw, row_index: int):
 
     与 `_match_axis_option` 的区别：这里**不枚举**取值 —— 丝径 2.3mm 就是 2.3mm。
     只挡两类明显填错：超出声明上下界、根本不是数字。
+
+    容忍**同单位后缀**（`"1.2m"` / `"100mm"`）—— 与旧的轴选项同一宽容度，
+    导表里带单位是常态。但**不跨单位换算**（`"1.2cm"` 不会被当成 0.012m），
+    那是刻意的安全性质，见 test_engine_does_not_cross_convert_units。
     """
     from .numeric import to_decimal
 
+    def _try(value):
+        return to_decimal(value)
+
+    parsed = None
     try:
-        value = to_decimal(raw)
+        parsed = _try(raw)
     except Exception:
+        if isinstance(raw, str):
+            stripped = raw.strip().rstrip("cm米mM").strip()
+            if stripped:
+                try:
+                    parsed = _try(stripped)
+                except Exception:
+                    parsed = None
+    if parsed is None:
         raise EngineError(
             "第 %d 行的「%s」不是数值: %r" % (row_index, ni.label or ni.key, raw))
+    value = parsed
     if ni.min_value is not None and value < to_decimal(ni.min_value):
         raise EngineError(
             "第 %d 行的「%s」=%s 小于下界 %s"

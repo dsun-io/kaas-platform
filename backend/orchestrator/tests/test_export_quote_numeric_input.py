@@ -98,3 +98,53 @@ def test_numeric_input_must_not_collide_with_constants():
                       numeric_inputs=[NumericInput("d", "丝径", default=1)])
     with pytest.raises(EngineError, match="重名"):
         expand_specs(bad)
+
+
+# ── 对外说明书与定价键：自由数值也必须能被界面读到 ────────────────────────
+
+def test_describe_product_exposes_numeric_inputs():
+    """界面靠这份清单渲染输入框（而不是下拉）—— 没有它就等于"填不进去"。"""
+    from app.services.export_quote.formulas import describe_product
+
+    d = describe_product(_spec())
+    assert [n["key"] for n in d["numeric_inputs"]] == ["d", "h"]
+    assert d["numeric_inputs"][0]["unit"] == "mm"
+    assert d["numeric_inputs"][0]["default"] == "2.0"
+    assert d["numeric_inputs"][0]["min_value"] == "0.5"
+
+
+def _priced_spec() -> ProductSpec:
+    return ProductSpec(
+        key="demo2",
+        name="带定价键的演示",
+        variants=[VariantGroup(
+            "coating",
+            ({"code": "z40", "name": "热镀锌40"}, {"code": "z200", "name": "热镀锌200"}),
+            "表面处理", "Surface")],
+        numeric_inputs=[NumericInput("d", "丝径(mm)", unit="mm", default=2.0)],
+        pricing_key=[{"field": "d", "label": "丝径"},
+                     {"field": "coating_code", "label": "表面处理"}],
+    )
+
+
+def test_pricing_key_numeric_dim_is_declared_not_dropped():
+    """自由数值的定价键维度**不能整维跳过**。
+
+    跳了界面就少一列，而引擎查价键仍带着这一维 ——
+    又变成"存进去了但查不到"（这正是本项目踩过的坑）。
+    """
+    from app.services.export_quote.formulas import describe_product
+
+    dims = {x["field"]: x for x in describe_product(_priced_spec())["pricing_key"]}
+    assert dims["d"]["kind"] == "numeric"
+    assert dims["d"]["options"] == []
+    assert [o["value"] for o in dims["coating_code"]["options"]] == ["z40", "z200"]
+
+
+def test_pricing_key_carries_the_free_value_verbatim():
+    """查价键用**实际填入的值**（不枚举），三处拼键必须一致。"""
+    from app.services.export_quote.models import pricing_key_of
+
+    spec = _priced_spec()
+    assert pricing_key_of(spec, {"d": 2.3, "coating_code": "z40"}) == "d=2.3|coating_code=z40"
+    assert pricing_key_of(spec, {"d": 2, "coating_code": "z200"}) == "d=2|coating_code=z200"

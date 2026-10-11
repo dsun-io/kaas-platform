@@ -169,12 +169,29 @@ def describe_pricing_key(product: ProductSpec) -> list[dict]:
     取值为空的维度会被跳过（界面上就少一列，而不是画出一列空列）。
     """
     axis_map = {ax.name: ax for ax in product.axes}
+    numeric_map = {ni.key: ni for ni in product.numeric_inputs}
     dims: list[dict] = []
     for dim in (product.pricing_key or []):
         field = dim.get("field")
         if not field:
             continue
         options: list[dict] = []
+        if field in numeric_map:
+            # 自由数值维度：取值是**连续量**，无法枚举 —— 不能像轴那样列 options，
+            # 但也不能整维跳过：跳了界面就少一列，查价键却仍带着这个维度，
+            # 于是又变成"存进去了但查不到"。
+            # 这里显式声明成 numeric：界面渲染输入框，查价键用实际填入的值。
+            ni = numeric_map[field]
+            dims.append({
+                "field": field,
+                "label": dim.get("label") or ni.label or field,
+                "unit": dim.get("unit") or ni.unit,
+                "kind": "numeric",
+                "options": [],
+                "ui_unit": ni.ui_unit,
+                "ui_scale": ni.ui_scale,
+            })
+            continue
         if field in axis_map:
             # value 用**规范写法**（2.0 → "2"），label 仍给人看（"2.0"）。
             # 两边必须是同一把钥匙：界面拿 value 回传、引擎拿取值拼键，
@@ -224,6 +241,24 @@ def describe_product(product: ProductSpec, with_columns: bool = False) -> dict:
         },
         "space": describe_space(product),
         "piece_inputs": describe_piece_inputs(product),
+        # 自由数值规格参数：界面据此渲染输入框（不是下拉）。
+        # 尺寸类没有"可选值"，所以既有取值的自由度，也必须有明确的单位口径。
+        "numeric_inputs": [
+            {
+                "key": ni.key,
+                "label": ni.label,
+                "label_en": ni.label_en,
+                "unit": ni.unit,
+                "ui_unit": ni.ui_unit,
+                "ui_scale": ni.ui_scale,
+                "default": None if ni.default is None else str(ni.default),
+                "min_value": None if ni.min_value is None else str(ni.min_value),
+                "max_value": None if ni.max_value is None else str(ni.max_value),
+                "decimals": ni.decimals,
+                "note": ni.note,
+            }
+            for ni in product.numeric_inputs
+        ],
         "pricing_key": describe_pricing_key(product),
         "calculations": describe_calculations(product),
         "space_deduction": describe_deduction(product),
