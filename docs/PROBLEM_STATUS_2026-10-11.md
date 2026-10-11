@@ -350,6 +350,40 @@ Error: page.waitForLoadState: Test timeout of 30000ms exceeded.
 `/admin/audit-log`、`/admin/deployment_audit`、`/admin/feature_flag`、
 `/admin/tenants`、`/me/workstations`、`/teams/me`。
 
+#### ⚠️ 更正：上面那份"缺口清单"**大部分是错的**；并记一次**我自己造成的回归**
+
+逐个核对 handler 清单后发现：`/admin/feature_flag`、`/admin/deployment_audit`、
+`/admin/audit-log`、`/admin/tenants`、`/auth/me`、`/events`、`/customers`、
+`/dashboard/summary` **全都有 handler**。真正缺的只有 **2 个**：
+`/me/workstations`、`/teams/me`。
+
+（它们"出现在 self-proxy 日志里"只说明**被绕过了**，不等于**没有 handler**。
+把日志当成"缺口清单"是我的误读。）
+
+##### 🔴 回归：我给 fail-open 契约返回了"成功的空结果"，把成绩从 10/14 打成 22/2
+
+查文档字符串得知这两个端点的契约是 **fail-open**：
+
+> `/me/workstations` 失败 → `snapshot.ok = false` → 前端**一律放行**
+
+我据此给了"良构的空结果"：`{ ok: true, workstations: [] }` 与 `{ team: null }`。
+**结果实测 10 failed / 14 passed → 22 failed / 2 passed**，几近全灭。
+
+原因是语义被**反转**了：
+
+| 响应 | 前端读到 | 结果 |
+|---|---|---|
+| 请求失败 | **未知** → 放行 | 能用 |
+| `{ok:true, workstations:[]}` | **确定没有工位** → 拒绝 | **全部路由被挡** |
+
+**教训：对 fail-open 契约，"成功的空结果"比"失败"更糟。**
+契约写的是"失败就放行"，就**不能**用一个断言式的空结果去替它回答 ——
+那等于把一个"我不知道"改写成"我确定没有"，而且方向恰好相反。
+
+已**回退**该改动（回到 10 failed / 14 passed 的状态）。
+正确做法是让 mock 返回 e2e **真正需要的那份数据**（团队 + 已开通的工位），
+而不是"空"或"失败"——留待下一轮。
+
 **关键发现：那两个 critical/high 的来源不是"版本旧"，是依赖放错了位置。**
 
 | 漏洞 | 来源链 | 真实问题 |
