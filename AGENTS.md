@@ -52,6 +52,31 @@
   前端 `typecheck` / `lint` / `test`、`contracts:check`、
   `python scripts/route-parity.py`、`sync-shared.ps1 -Check`、
   `NEXT_EXPORT=1 pnpm build`。
+
+### ⚠️ 改 Pydantic 模型 / 路由时：`contracts:check` 的"绿"可能是**假绿**
+
+**实测（2026-10-12，R6 上线当天就被踩到）**：
+
+- **提交前**跑 `contracts:check` ⇒ **PASS**；**提交之后**再跑 ⇒ **FAIL** `R6.schema:<模型> 期望形状过时` ✗
+- 原因：**R6 两侧（源码与产物）都取 HEAD 快照** ⇒ 它比的是"HEAD 源码 ↔ **已提交**的
+  `backend/orchestrator/docs/openapi.json`"，**看不到工作树里未提交的改动** ⇒
+  **产物在你提交的那一刻就旧了**。
+
+**正确顺序（缺一步就会留下 main 上的红）**：
+
+```
+改模型/路由  →  重生成产物  →  提交  →  【再跑一次】contracts:check
+```
+
+重生成命令（**必须带 `PYTHONPATH`**，否则 `ModuleNotFoundError: No module named 'app'`）：
+
+```bash
+cd backend/orchestrator
+PYTHONPATH=. .venv/Scripts/python scripts/export_openapi.py
+```
+
+> 这是**设计使然**（R6 刻意不读工作树，以免把别人未提交的半成品当基准 ✗），
+> 不是门禁失灵；所以**顺序必须反过来**：先提交产物，再让门禁看它。
 - 环境无 `pnpm`/`npm` 可直接调用，用
   `C:\Users\HJ\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe`
   + `...\pnpm\bin\pnpm.mjs`。跑 `.ps1` 前先
