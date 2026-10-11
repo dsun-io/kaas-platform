@@ -23,17 +23,25 @@
  * `docId` 是归档的前提：不传（如「样板预览」没有真实单据）时归档区块完全不渲染。
  */
 import { useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, Download, FileUp, Printer } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Download,
+  FileCheck2,
+  FileUp,
+  Printer,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { normalizeApiError } from "@/lib/api/api-error";
 import { findMissingRequiredFields } from "@/lib/trade-doc/compliance";
 import { downloadHtml, printHtml } from "@/lib/trade-doc/export";
 import { renderTradeDoc } from "@/lib/trade-doc/render";
 
-import { useUploadTradeDocFile } from "../hooks/use-trade-docs";
+import { useArchiveRenderedPdf, useUploadTradeDocFile } from "../hooks/use-trade-docs";
 
 /**
  * 单份归档件的上限，**必须与内核一致**：`MAX_BYTES['render_pdf']`
@@ -116,6 +124,7 @@ export function DocPreview({
   const pdfInputRef = useRef<HTMLInputElement>(null);
   // hook 必须无条件调用（React 规则）；docId 缺失时这个 mutation 永远不会被触发
   const archive = useUploadTradeDocFile(docId ?? 0);
+  const autoPdf = useArchiveRenderedPdf(docId ?? 0);
 
   /** 选文件即校验（当场提示），不合规就不进入"已选"状态 */
   const pickPdf = (file: File | null) => {
@@ -163,6 +172,37 @@ export function DocPreview({
     }
   };
 
+  /**
+   * 自动出 PDF 并归档：把**预览用的同一份 HTML** 交给服务端，
+   * 由 Cloudflare Browser Rendering 出字节后走同一套落档链路（版本让位、旧版留档）。
+   *
+   * 服务端未配置渲染器时后端返回 503 `PDF_RENDERER_NOT_CONFIGURED` ——
+   * 这里**如实把后端的可执行提示给用户**（要开通/配置什么），
+   * 绝不假装成功，也不静默降级；下方「归档本版 PDF」仍是随时可用的兜底。
+   */
+  const archiveAutoPdf = async () => {
+    if (docId === undefined) return;
+    const label = (pdfName.trim() || defaultArchivePdfName(docNo, docType)).trim();
+    try {
+      const res = await autoPdf.mutateAsync({ html, name: label });
+      const kb = Math.max(1, Math.round((res?.bytes ?? 0) / 1024));
+      toast.success(
+        `已自动生成并归档（${kb} KB，渲染器 ${res?.renderer ?? "?"}）；再归档会覆盖当前件，旧版留档`,
+      );
+    } catch (err) {
+      const { code, message } = normalizeApiError(err);
+      if (code === "PDF_RENDERER_NOT_CONFIGURED") {
+        toast.error(
+          message ||
+            "服务端未配置 PDF 渲染器：请先开通 Browser Rendering 并配置 browser binding（见 docs/TRADE_DOC_PDF_ARCHIVAL.md）",
+        );
+        return;
+      }
+      // 其它失败：保留后端原文（便于定位），但**必须**指向人工兜底 —— 否则用户以为没救了
+      toast.error(`${message || "自动出 PDF 失败"}；可以用下方「归档本版 PDF」人工归档兜底`);
+    }
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -177,6 +217,17 @@ export function DocPreview({
           </StatusBadge>
         )}
         <div className="ml-auto flex gap-2">
+          {docId !== undefined && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={autoPdf.isPending}
+              onClick={archiveAutoPdf}
+            >
+              <FileCheck2 className="mr-1 h-4 w-4" />
+              {autoPdf.isPending ? "生成中…" : "自动出 PDF 并归档"}
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={() => printHtml(html)}>
             <Printer className="mr-1 h-4 w-4" />
             打印 / 导出 PDF

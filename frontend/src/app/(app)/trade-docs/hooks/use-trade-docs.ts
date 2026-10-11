@@ -308,3 +308,43 @@ export function useDetachTradeDocFile(docId: number) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["trade-docs", docId, "files"] }),
   });
 }
+
+// ── 自动出 PDF（服务端无头浏览器出字节）→ 同一套落档链路 ─────────────────────
+
+export interface RenderPdfResult {
+  file: TradeDocFile;
+  link: { id: number; role: string; caption: string | null; sort_order: number };
+  /** 实际用的渲染器：`binding`（生产 Worker 的 browser binding）/ `rest`（本地 orchestrator） */
+  renderer: string;
+  /** 本次生成的 PDF 字节数 —— 用于如实提示"存了多少" */
+  bytes: number;
+  /** 字节真实落点（s3 / inline），可审计 */
+  storage: string;
+}
+
+/**
+ * 自动出 PDF 并归档（服务端 Browser Rendering 出字节 → 复用既有落档链路）。
+ *
+ * 为什么入参是**与预览同源的那份 HTML**、而不是只给 docId：归档件必须是用户看到的那一版，
+ * 服务端"再渲染一次"就会变成另一套排版（见 docs/TRADE_DOC_PDF_ARCHIVAL.md §四 风险 1）。
+ *
+ * 服务端未配置渲染器时返回 **503 `PDF_RENDERER_NOT_CONFIGURED`**（前端如实提示，
+ * 不假装成功、不静默降级），此时仍可用「归档本版 PDF」人工兜底。
+ */
+export function useArchiveRenderedPdf(docId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { html: string; name?: string }) => {
+      const { data } = await apiClient.post<RenderPdfResult>(
+        `/trade-docs/${docId}/pdf`,
+        input,
+      );
+      return data;
+    },
+    onSuccess: () => {
+      // 与人工归档同一条失效口径：单据文件区的「系统出的 PDF」分区要立刻刷新
+      qc.invalidateQueries({ queryKey: ["trade-docs", docId, "files"] });
+      qc.invalidateQueries({ queryKey: ["trade-docs"] });
+    },
+  });
+}

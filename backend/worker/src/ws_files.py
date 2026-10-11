@@ -32,13 +32,19 @@ from pydantic import BaseModel
 
 from kaas_common.files import (
     FileRuleError,
+    MAX_RENDER_PDF_BYTES,
     MEDIA_KIND_LABELS,
+    RENDERER_NOT_CONFIGURED_DETAIL,
+    RENDER_PDF_KIND,
     current_of,
+    looks_like_pdf,
     next_version,
     object_key,
     presign_get_url,
     presign_put_url,
+    render_pdf_rest_config,
     s3_config,
+    validate_render_html,
     validate_upload,
 )
 
@@ -508,6 +514,126 @@ async def upload_doc_file(doc_id: int, request: Request,
     link = await attach_doc_file(
         doc_id, DocFileIn(file_id=row["id"], role=role, caption=caption), request, user)
     return {"file": row, "link": link}
+
+
+# ── 自动出 PDF（Cloudflare Browser Rendering）→ 复用上面的落档链路 ──────────────
+#
+# 与 orchestrator `app/api/files.py` 同契约、同路径、同字段（route-parity 卡着）。
+# 生产优先用 **browser binding**（`BROWSER.quickAction("pdf", …)`，**不需要任何 token**）；
+# 没声明 binding 时退到 REST（需配 token）；两者都没有 → **503**（绝不假装成功）。
+# 安全：入参 HTML 会被我们账号里的无头浏览器渲染 ⇒ 必过共享内核
+# `validate_render_html`（拒脚本/事件属性/外链资源，防把渲染器变成出网代理）。
+
+
+def _browser_binding(request: Request):
+    """拿 browser binding（`BROWSER`）。没声明（或不在 Pyodide 里）返回 None。
+
+    绑定是**对象**不是字符串，所以不能用 `_binding(...) or None` 之外的判断；
+    `main._binding` 缺失时返回 `""`，正好可以和绑定对象区分开。
+    """
+    binding = _main._binding("BROWSER", request)
+    return binding if binding else None
+
+
+async def _binding_quick_action_pdf(binding, html: str) -> bytes:
+    """用 binding 调 Quick Action `pdf`，拿回字节。
+
+    照抄仓库既有的 Pyodide 互操作写法（见 `_js_fetch_bytes`）：JS Promise 直接 await，
+    `arrayBuffer()` 之后 `.to_py()` 才是 Python bytes。
+    """
+    from pyodide.ffi import to_js  # type: ignore  (Pyodide / Python Workers)
+
+    res = await binding.quickAction("pdf", to_js({"html": html}))
+    buf = await res.arrayBuffer()
+    return bytes(buf.to_py())
+
+
+async def _rest_quick_action_pdf(cfg: dict, html: str) -> bytes:
+    """REST 兜底（与 orchestrator 的 `_render_pdf_via_rest` 同形状）。"""
+    from js import fetch  # type: ignore  (Pyodide / Python Workers)
+    from pyodide.ffi import to_js  # type: ignore
+
+    opts = {
+        "method": "POST",
+        "headers": to_js({"Authorization": f"Bearer {cfg['token']}",
+                          "Content-Type": "application/json"}),
+        "body": _json.dumps({"html": html}),
+    }
+    res = await fetch(cfg["url"], to_js(opts))
+    status = int(res.status)
+    if status != 200:
+        raise HTTPException(status_code=502, detail={
+            "error": "upstream", "code": "PDF_RENDER_FAILED",
+            "detail": f"Browser Rendering 返回 {status}",
+        })
+    buf = await res.arrayBuffer()
+    return bytes(buf.to_py())
+
+
+async def _render_pdf_bytes(request: Request, html: str) -> tuple[bytes, str]:
+    """返回 `(pdf_bytes, renderer)`；`renderer` 是 `binding` | `rest`（如实记录用哪条路）。"""
+    binding = _browser_binding(request)
+    if binding is not None:
+        try:
+            return await _binding_quick_action_pdf(binding, html), "binding"
+        except Exception as exc:  # noqa: BLE001
+            # binding 已声明却失败 ⇒ 如实 502；不再偷偷换 REST（那会掩盖真实故障）
+            print(f"[files] browser binding 出 PDF 失败：{type(exc).__name__}: {exc}")
+            raise HTTPException(status_code=502, detail={
+                "error": "upstream", "code": "PDF_RENDER_FAILED",
+                "detail": f"Browser Rendering（binding）失败：{type(exc).__name__}",
+            }) from exc
+
+    cfg = render_pdf_rest_config(lambda key: _main._binding(key, request))
+    if cfg is None:
+        raise HTTPException(status_code=503, detail={
+            "error": "unavailable", "code": "PDF_RENDERER_NOT_CONFIGURED",
+            "detail": RENDERER_NOT_CONFIGURED_DETAIL,
+        })
+    return await _rest_quick_action_pdf(cfg, html), "rest"
+
+
+class RenderPdfIn(BaseModel):
+    html: str
+    name: Optional[str] = None
+
+
+@app.post("/api/v1/trade-docs/{doc_id}/pdf", status_code=201)
+async def render_doc_pdf(doc_id: int, body: RenderPdfIn, request: Request,
+                         user: dict = Depends(_get_current_user)):
+    """把预览同源的单证 HTML 交给无头浏览器出 PDF，并**落档**到这张单证上。
+
+    - 复用盖章回传那套链路：`_create_file(kind='render_pdf', supersede=True)`
+      → `attach_doc_file(role='render_pdf')` ⇒ 再归档 = 新版本上位、旧版挂
+      `render_pdf_superseded` 留档（**不物理删**）。
+    - 未配置渲染器 → 503；上游失败/不是 PDF → 502；HTML 含脚本或外链 → 422。
+    """
+    try:
+        validate_render_html(body.html)
+    except FileRuleError as exc:
+        raise _fail(exc)
+
+    data, renderer = await _render_pdf_bytes(request, body.html)
+    if not looks_like_pdf(data):
+        raise HTTPException(status_code=502, detail={
+            "error": "upstream", "code": "PDF_RENDER_FAILED",
+            "detail": "渲染服务没有返回 PDF 字节（已拒绝把非 PDF 存成 render_pdf）",
+        })
+    if len(data) > MAX_RENDER_PDF_BYTES:
+        raise _fail(FileRuleError(
+            "FILE_TOO_LARGE",
+            f"生成的 PDF 超过上限 {MAX_RENDER_PDF_BYTES // (1024 * 1024)}MB"
+            f"（实际 {len(data)} 字节）"))
+
+    name = (body.name or "").strip() or f"单证 {doc_id} 系统 PDF"
+    row = await _create_file(
+        request=request, user=user, owner_type="trade_doc", owner_id=str(doc_id),
+        kind=RENDER_PDF_KIND, media_kind=None, name=name, content=data,
+        content_type="application/pdf", file_name=name, supersede=True)
+    link = await attach_doc_file(
+        doc_id, DocFileIn(file_id=row["id"], role=RENDER_PDF_KIND), request, user)
+    return {"file": row, "link": link, "renderer": renderer,
+            "bytes": len(data), "storage": row["storage"]}
 
 
 async def resolve_photo_refs(request: Request, data: dict) -> dict:
