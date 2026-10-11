@@ -496,6 +496,34 @@ stdout**。要拿到"是哪个请求没匹配"，只有一条路：
 `import { test } from '@playwright/test'` 改成从 fixture 导入（每个文件一行，
 机械且有风险低）。这是下一步的**唯一**选项，不要再试 `error` 模式。
 
+#### fixture 已就位；但**批量改 spec 时我又踩了一个坑（已回退）**
+
+`frontend/e2e/fixtures.ts` 已写好（把 MSW 的「未匹配请求」警告从页面 console
+转发到 stdout，且**只转这一条**，避免日志被淹）。
+
+改 8 个 spec 的 import 时，我图省事用了 PowerShell 批量文本替换：
+
+```powershell
+Set-Content -Path $p -Value $n -NoNewline -Encoding UTF8
+```
+
+**结果把文件写坏了**，`typecheck` 直接报：
+
+```
+e2e/kb.spec.ts(21,1): error TS1005: '}' expected.
+```
+
+（PS 5 的 `-Encoding UTF8` 会写 BOM，配合 `-NoNewline` 与中文内容，
+文件被破坏或截断。）已 `git checkout -- frontend/e2e/` 全量回退，
+复验 `typecheck exit 0` ✓。
+
+> **教训：不要用 PowerShell `Set-Content` 重写源码文件做机械替换。**
+> 这个仓库的源文件是 UTF-8 + LF，PS 的编码/换行处理会破坏它们。
+> 要么逐文件用 `apply_patch`，要么用保留字节的工具。
+
+**下一步**：把这 8 个 spec 的 import 用 `apply_patch` **逐个**改成
+`from './fixtures'`（每个文件一行），然后跑 e2e 拿到"未匹配请求"的清单。
+
 **关键发现：那两个 critical/high 的来源不是"版本旧"，是依赖放错了位置。**
 
 | 漏洞 | 来源链 | 真实问题 |
