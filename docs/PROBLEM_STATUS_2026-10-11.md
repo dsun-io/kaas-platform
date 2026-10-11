@@ -95,8 +95,26 @@
    无谓地放大（虽然目前无副作用）。更合理的方向是**把 worker 收敛到 POST**，
    与 orchestrator 一致、与语义一致（inbound 回写本来就是 POST）。
 
-处置需要用户拍板（见下），因为在两条路里选哪条是**策略问题**不是技术问题：
-是"两边都补到一样"，还是"以 orchestrator 为准、把 worker 多余的收掉"。
+**用户 2026-10-11 裁决**：
+
+- `outreach/webhook` → **worker 收敛到只留 POST** ✅ 已做（`chain.py`，
+  `api_route(methods=[5 种])` → `@app.post`）。反向漂移 **8 → 4**。
+- `leads/crawl-batch` / `leads/{lead_id}/crawl` → **补到 orchestrator**（待做）。
+- 总策略追问「以 orchestrator 为准会影响部署架构吗」→ **不会**。已取证：
+  `.github/workflows/deploy.yml` 只做「构建前端静态导出 + `pywrangler deploy`
+  单个 Worker `kaas`」，**没有任何一步部署 orchestrator**。
+  所以"以 orchestrator 为准"只是把它的路由清单当**规格**，
+  不是让 orchestrator 上生产、也不是合并两套后端。
+
+  **但有一条限制**（这也正是用户选"补到 orchestrator"的原因）：
+  该原则只对 **worker 多余的东西**成立；对 **worker 有的真功能**，
+  不能因为 orchestrator 缺就把它删掉 —— 那是**往 orchestrator 补**。
+
+  | worker 有 / orchestrator 无 | 有人在用？ | 处置 |
+  |---|---|---|
+  | `webhook` 的 GET/PUT/PATCH/DELETE | ❌ 只 raise 501 | **从 worker 收掉** ✅ |
+  | `leads/crawl-batch`、`leads/{id}/crawl` | ✅ 前端在调 | **补到 orchestrator** |
+  | `subscriptions` ×2 | 待确认 | 先查清再定 |
 
 文档里挂着的那条**真缺陷**关掉了。它是一条**静默误读**链路：
 
