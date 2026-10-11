@@ -11,7 +11,9 @@ from kaas_common.trade_doc import (
     format_doc_no, month_of, doc_no_prefix,
     is_png, png_size, validate_seal_image,
     build_messages, parse_translation,
+    PROTECTED_CUSTOM_FIELDS, append_audit, diff_custom, protected_custom_fields,
 )
+from kaas_common.trade_doc.payload_shared import build_render_data
 
 
 # ─── 状态机 ────────────────────────────────────────────────────────────────
@@ -225,3 +227,69 @@ class TestTranslate:
     def test_parse_garbage_falls_back(self):
         out = parse_translation("not json at all", {"buyer": "甲"})
         assert out["buyer"] == "甲"
+
+
+# ─── 手工内容（custom）的边界：受保护字段 + 审计（2026-10-11 用户裁决）─────
+
+class TestCustomBoundary:
+    """`custom` 不得覆盖金额与行项；覆盖动作要留痕。判定在共享内核，两端共用。"""
+
+    def test_protected_fields_are_amount_and_items(self):
+        assert PROTECTED_CUSTOM_FIELDS == ("items", "total_amount")
+
+    def test_protected_custom_fields_reports_only_present_ones(self):
+        assert protected_custom_fields({"total_amount": 1, "remarks": "x"}) == ["total_amount"]
+        assert protected_custom_fields({"remarks": "x"}) == []
+        assert protected_custom_fields(None) == []
+        assert protected_custom_fields("不是字典") == []
+
+    def test_render_data_ignores_protected_custom(self):
+        """核心断言：**即便库里存着**伪造的 custom，渲染出的单据也不受它影响。"""
+        data = build_render_data(
+            doc_type="pi", doc_no="PI-1", doc_status="draft", currency="USD",
+            total_amount=100,
+            custom={"total_amount": 999999, "items": [{"product_name": "假行项"}]},
+        )
+        assert data["total_amount"] == 100
+        assert "items" not in data
+
+    def test_render_data_still_applies_normal_custom(self):
+        data = build_render_data(
+            doc_type="pi", doc_no="PI-1", doc_status="draft", currency="USD",
+            total_amount=100, custom={"remarks": "1) 有效\n2) 换行"},
+        )
+        assert data["remarks"] == "1) 有效\n2) 换行"
+
+    def test_diff_custom_is_field_level_and_digests_long_values(self):
+        img = "data:image/png;base64," + "A" * 500
+        changed = diff_custom(
+            {"remarks": "旧", "company_stamp": img},
+            {"remarks": "新", "company_stamp": img},
+        )
+        assert changed == {"remarks": {"from": "旧", "to": "新"}}
+        changed2 = diff_custom({"company_stamp": img}, {"company_stamp": "data:image/png;base64,BB"})
+        assert changed2["company_stamp"]["from"].startswith("<str ")
+
+    def test_append_audit_ignores_client_supplied_audit_and_caps(self):
+        prev = {"sources": {}, "custom": {"remarks": "旧"},
+                "_audit": [{"at": "t0", "by": "u0", "changed": {"x": {"from": 1, "to": 2}}}]}
+        forged = {"sources": {}, "custom": {"remarks": "新"},
+                  "_audit": [{"at": "假", "by": "假", "changed": {}}]}
+        out = append_audit(forged, previous_payload=prev, actor_id="u1",
+                           before_custom={"remarks": "旧"}, after_custom={"remarks": "新"},
+                           at="t1")
+        assert [e["by"] for e in out["_audit"]] == ["u0", "u1"]  # 客户端那条被丢弃
+        assert out["_audit"][-1]["changed"] == {"remarks": {"from": "旧", "to": "新"}}
+        # 无改动不新增条目
+        same = append_audit({"custom": {"remarks": "新"}}, previous_payload=out,
+                            actor_id="u2", before_custom={"remarks": "新"},
+                            after_custom={"remarks": "新"}, at="t2")
+        assert len(same["_audit"]) == len(out["_audit"])
+
+    def test_append_audit_caps_entries(self):
+        payload = {"custom": {"n": 0}}
+        for i in range(25):
+            payload = append_audit({"custom": {"n": i + 1}}, previous_payload=payload,
+                                   actor_id="u", before_custom={"n": i},
+                                   after_custom={"n": i + 1}, at=f"t{i}")
+        assert len(payload["_audit"]) == 20

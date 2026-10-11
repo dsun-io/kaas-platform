@@ -33,6 +33,13 @@ from .payload import (  # noqa: F401
     scheme_names,
 )
 from .docno import doc_no_prefix, format_doc_no, month_of, DOC_TYPE_PREFIX  # noqa: F401
+from .payload_shared import (  # noqa: F401
+    AUDIT_KEY,
+    PROTECTED_CUSTOM_FIELDS,
+    append_audit,
+    diff_custom,
+    protected_custom_fields,
+)
 from .png import PngError, is_png, png_size, validate_seal_image, MAX_SEAL_BYTES  # noqa: F401
 from .translate import SYSTEM_PROMPT, build_messages, parse_translation  # noqa: F401
 

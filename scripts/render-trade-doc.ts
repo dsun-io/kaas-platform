@@ -99,6 +99,18 @@ if (!getTemplateFields(docType)) {
 
 const assetsDir = args["assets-dir"] ? resolve(args["assets-dir"]) : resolve(".");
 const payload = JSON.parse(readFileSync(resolve(dataPath), "utf-8")) as Record<string, unknown>;
+
+/**
+ * 离线件标识（默认开）：**离线出的单不进台账** —— 不取号、无签发状态、
+ * 无客户归属与团队隔离校验。所以默认在页脚标明它是离线副本，
+ * 避免被当成工位里那张正式单发出去；要出"与工位完全一致"的件用 `--no-watermark`。
+ */
+const DEFAULT_WATERMARK = "OFFLINE COPY — not a ledger record / 离线副本（非台账记录）";
+if (args["no-watermark"] !== "true") {
+  const custom = args.watermark && args.watermark !== "true" ? args.watermark : DEFAULT_WATERMARK;
+  if (!payload.footer_note) payload.footer_note = custom;
+}
+
 const html = renderTradeDoc(docType, inlineImages(payload, assetsDir));
 
 const outPath = args.out ? resolve(args.out) : join(resolve("."), `${docType}.html`);

@@ -4,6 +4,7 @@ import {
   buildCustom,
   buildPayloadPatch,
   controlFor,
+  isProtectedField,
   listCustomFields,
   parseInput,
   toInputText,
@@ -54,6 +55,26 @@ describe("回填与解析", () => {
 });
 
 describe("组包（两个坑各一条测试）", () => {
+  it("受保护字段（金额/行项）在界面就被挡住，前端不把它送上去", () => {
+    expect(isProtectedField("items")).toBe(true);
+    expect(isProtectedField("total_amount")).toBe(true);
+    expect(isProtectedField("remarks")).toBe(false);
+    const custom = buildCustom(
+      { remarks: "旧" },
+      { items: [{ product_name: "假行项" }], total_amount: 999999, remarks: "新" },
+    );
+    expect(custom).toEqual({ remarks: "新" });
+  });
+
+  it("字段清单标出受保护项（供界面渲染成只读）", () => {
+    const byName = Object.fromEntries(
+      listCustomFields("pi").map((f) => [f.name, f.protected]),
+    );
+    expect(byName.items).toBe(true);
+    expect(byName.total_amount).toBe(true);
+    expect(byName.remarks).toBe(false);
+  });
+
   it("空值删除键，而不是写空串/null", () => {
     const custom = buildCustom(
       { pi_no: "P-1", remarks: "旧备注", shipping_marks: "X" },

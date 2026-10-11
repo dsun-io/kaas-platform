@@ -22,7 +22,7 @@
  *   不让用户白填一遍。
  */
 import { useMemo, useState } from "react";
-import { FileJson2, ImageUp, Save, Undo2 } from "lucide-react";
+import { FileJson2, ImageUp, Lock, Save, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -159,6 +159,26 @@ function FieldRow({
   const { name, spec, control } = field;
   const label = spec.description ?? name;
   const wide = control === "json";
+
+  if (field.protected) {
+    // 受保护字段（金额/行项）：不提供编辑控件 —— 它们只能来自上游快照或系统计算。
+    // 服务端的闸门是 422 CUSTOM_FIELD_PROTECTED，这里只是不让人白填一遍。
+    return (
+      <div className="space-y-1 rounded-md border border-dashed bg-muted/30 p-2 sm:col-span-2">
+        <span className="flex items-center gap-1 text-xs font-medium">
+          <Lock className="h-3 w-3" />
+          {label}
+          <code className="rounded bg-muted px-1 text-[10px] text-muted-foreground">
+            {name}
+          </code>
+        </span>
+        <p className="text-[11px] text-muted-foreground">
+          只能来自上游订单/报价或系统计算，<b>不接受手工覆盖</b>
+          （服务端会直接拒绝）。改了上游再「重新带入」即可。
+        </p>
+      </div>
+    );
+  }
 
   return (
     <label className={`space-y-1 ${wide ? "sm:col-span-2" : ""}`}>
