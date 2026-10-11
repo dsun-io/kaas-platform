@@ -35,12 +35,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from kaas_common.files import (
     FileRuleError,
+    MAX_RENDER_PDF_BYTES,
+    RENDERER_NOT_CONFIGURED_DETAIL,
+    RENDER_PDF_KIND,
     current_of,
+    looks_like_pdf,
     next_version,
     object_key,
     presign_get_url,
     presign_put_url,
+    render_pdf_rest_config,
     s3_config,
+    validate_render_html,
     validate_upload,
 )
 from kaas_common.files import MEDIA_KIND_LABELS
@@ -597,6 +603,88 @@ async def upload_doc_file(doc_id: int,
     link = await attach_doc_file(doc_id, DocFileIn(file_id=row["id"], role=role,
                                                    caption=caption), auth, db)
     return {"file": row, "link": link}
+
+
+# ── 自动出 PDF（Cloudflare Browser Rendering）→ 复用上面的落档链路 ──────────────
+#
+# 为什么入参是 HTML 而不是 doc_id：归档件必须与用户看到的那一版**同源**
+# （服务端"再渲染一次"= 另写一套排版，正是设计文档 §四 风险 1 要避免的）。
+# 安全边界：入参 HTML 会被我们账号里的无头浏览器渲染 ⇒ 必须过
+# `kaas_common.files.validate_render_html`（拒脚本/事件属性/外链资源）。
+
+_BROWSER_TIMEOUT = 90.0
+
+
+class RenderPdfIn(BaseModel):
+    html: str
+    name: Optional[str] = None
+
+
+async def _render_pdf_via_rest(cfg: dict, html: str) -> bytes:
+    """调 Browser Rendering `/pdf` 拿回 PDF 字节；非 200 → 502（不静默兜底）。"""
+    async with httpx.AsyncClient(timeout=_BROWSER_TIMEOUT) as client:
+        res = await client.post(
+            cfg["url"],
+            headers={"Authorization": f"Bearer {cfg['token']}",
+                     "Content-Type": "application/json"},
+            json={"html": html},
+        )
+    if res.status_code != 200:
+        raise HTTPException(status_code=502, detail={
+            "error": "upstream", "code": "PDF_RENDER_FAILED",
+            "detail": f"Browser Rendering 返回 {res.status_code}",
+        })
+    return res.content
+
+
+@router.post("/trade-docs/{doc_id}/pdf", status_code=201,
+             summary="自动出 PDF 并归档（Browser Rendering）")
+async def render_doc_pdf(doc_id: int, body: RenderPdfIn,
+                         auth: AuthContext = Depends(get_auth_context),
+                         db: AsyncSession = Depends(get_db_session)):
+    """把预览同源的单证 HTML 交给服务端无头浏览器出 PDF，并**落档**到这张单证上。
+
+    - 出字节后复用盖章回传那套链路：`_create_file(kind='render_pdf', supersede=True)`
+      → `attach_doc_file(role='render_pdf')` ⇒ 再归档 = 新版本上位、旧版挂
+      `render_pdf_superseded` 留档（**不物理删**，版本让位已在 `attach_doc_file` 内实现）。
+    - **未配置渲染器 → 503**（不假装成功）；上游失败 / 返回不是 PDF → 502；
+      入参 HTML 含脚本或外链 → 422（见 `kaas_common.files.validate_render_html`）。
+    """
+    tenant_id = tenant_id_of(auth)
+    try:
+        validate_render_html(body.html)
+    except FileRuleError as exc:
+        raise _fail(exc)
+
+    cfg = render_pdf_rest_config(os.environ.get)
+    if cfg is None:
+        raise HTTPException(status_code=503, detail={
+            "error": "unavailable", "code": "PDF_RENDERER_NOT_CONFIGURED",
+            "detail": RENDERER_NOT_CONFIGURED_DETAIL,
+        })
+
+    data = await _render_pdf_via_rest(cfg, body.html)
+    if not looks_like_pdf(data):
+        raise HTTPException(status_code=502, detail={
+            "error": "upstream", "code": "PDF_RENDER_FAILED",
+            "detail": "渲染服务没有返回 PDF 字节（已拒绝把非 PDF 存成 render_pdf）",
+        })
+    if len(data) > MAX_RENDER_PDF_BYTES:
+        raise _fail(FileRuleError(
+            "FILE_TOO_LARGE",
+            f"生成的 PDF 超过上限 {MAX_RENDER_PDF_BYTES // (1024 * 1024)}MB"
+            f"（实际 {len(data)} 字节）"))
+
+    name = (body.name or "").strip() or f"单证 {doc_id} 系统 PDF"
+    row = await _create_file(
+        db, auth=auth, tenant_id=tenant_id, owner_type="trade_doc", owner_id=str(doc_id),
+        kind=RENDER_PDF_KIND, media_kind=None, name=name, content=data,
+        content_type="application/pdf", file_name=name, supersede=True,
+    )
+    link = await attach_doc_file(
+        doc_id, DocFileIn(file_id=row["id"], role=RENDER_PDF_KIND), auth, db)
+    return {"file": row, "link": link, "renderer": "rest",
+            "bytes": len(data), "storage": row["storage"]}
 
 
 @router.get("/file-objects", summary="文件列表（按归属/用途筛）")

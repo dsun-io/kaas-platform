@@ -3,6 +3,51 @@
 > 回答用户那句「**pdf 要存**，客户盖章回传以后要覆盖没有盖章的旧文件，要留档肯定要存的」。
 > 本文只做**现状核实 + 方案设计**，不含已实现的代码改动；所有代码位置都给了文件与行号。
 > **对未验证的事一律标注「未验证」，不把设想写成已实现。**
+>
+> **本轮后续（2026-10-11 晚，用户：「自动出pdf字节听起来是降低工作量的设计实现它」）**：
+> 本文推荐的 **D 方案（Cloudflare Browser Rendering）已落地并实测**，同时先落了人工归档兜底。
+> 落地现状与实测证据见下方「§〇 本轮落地」。**§一~§四 是当时的现状核实与方案设计，保留原样**。
+
+## 〇、本轮落地（实测，2026-10-11 晚）
+
+**A1 人工归档（零依赖兜底，已可用）**：预览区「归档本版 PDF」把用户打印对话框另存的那份
+PDF 选回来，走 `POST /api/v1/trade-docs/{id}/files/upload`（multipart：`file` + `role="render_pdf"`
++ `name`）落档；前端先校验 `application/pdf` 与 ≤32MB（与内核 `MAX_BYTES['render_pdf']` 一致）。
+证据：`frontend/src/app/(app)/trade-docs/components/__tests__/doc-preview-archive.test.tsx`
+（8 条，含"上传字节与服务端收到的一致"逐字节断言）。
+
+**D 自动出字节（已实现）**：新增 `POST /api/v1/trade-docs/{doc_id}/pdf`（两端同路径同字段，
+`scripts/route-parity.py` 通过），入参是**与预览同源的那份 HTML**；服务端出字节后复用既有落档链路
+（`_store_bytes` → `_create_file(kind='render_pdf', supersede=True)` → `attach_doc_file(role='render_pdf')`）
+⇒ 自动归档 + 版本让位（旧件挂 `render_pdf_superseded`）。前端「自动出 PDF 并归档」，**保留**人工归档兜底。
+
+本账号（`766f8d7eb5a7d20e272673073ec8c3fd`）**实测事实**（推翻了本文 §五 的第 1–3 条未知）：
+
+| 事实 | 实测结果 |
+|---|---|
+| REST 端点 | `POST https://api.cloudflare.com/client/v4/accounts/{id}/browser-rendering/pdf`，body `{"html": "…"}` |
+| 响应形状 | **HTTP 200 直接返回 PDF 二进制**（实测 15497 字节，`%PDF-1.4` 开头、`%%EOF` 结尾，含 `/Type /Page`），**不是 R2 链接** |
+| 命名不一致 | 文档页写 `/browser-run/pdf`、OpenAPI 写 `/browser-rendering/pdf`；**两条都实测返回 200**。代码取有 OpenAPI 依据的 `browser-rendering` |
+| 计费/开通 | **无需开通、无需付费**：账号订阅实测只有 `teams_free`(price 0) 与 `r2_paid`(price 0)；Browser Rendering 自带额度 **Workers Free = 10 分钟/天、3 并发，超出 N/A（不产生费用）**；Workers Paid = 10 小时/月，超出 $0.09/浏览器小时 |
+| 凭证 | REST 需 `Browser Run - Edit` 权限的 token；**Workers binding 不需要任何 token**。生产 Worker 现有 secrets 无 CF token ⇒ 生产走 binding |
+| 生产配置 | `backend/worker/wrangler.jsonc` 已加 `"browser": {"binding": "BROWSER"}`（`compatibility_date` 现为 `2026-09-18` ≥ 要求的 `2026-03-24`）；orchestrator/本地需 `BROWSER_RENDERING_ACCOUNT_ID` + `BROWSER_RENDERING_TOKEN` |
+
+**安全边界（硬要求）**：这个端点等于"用我们账号里的无头浏览器渲染请求体"，因此入参 HTML 必过共享内核
+`backend/kaas_common/files/render_pdf.py::validate_render_html`：`<script>`/`<iframe>`/`<object>`/
+`<embed>`/`<link>`/`<base>`/`<form>`、`on*=` 事件属性、`javascript:`、`<meta refresh>`、
+**任何非 `data:` 的资源地址（含 CSS `url()`/`@import`）** 一律 **422**；HTML ≤2MB。
+未配渲染器 → **503 `PDF_RENDERER_NOT_CONFIGURED`**（不假装成功）；上游失败/返回非 PDF → **502**。
+证据：`backend/orchestrator/tests/test_render_pdf.py`、`backend/worker/tests/test_ws_render_pdf.py`、
+`frontend/src/app/(app)/trade-docs/components/__tests__/doc-preview-auto-pdf.test.tsx`。
+其中 `test_render_pdf.py` 另用 **18 份渲染基线**（`frontend/src/lib/trade-doc/__fixtures__/html/*.html`，
+渲染器真实产物、与归档 Python 版逐字节对账）断言**全部**通过安全校验 —— 证明这道门不会误伤自家单据，
+同时钉住"渲染器不得产出脚本/外链"。
+
+**仍未做 / 未验证**：① 自动出字节**依赖在真实环境配好 binding（生产）或 token（本地）**，
+未配置时接口如实 503；② 本仓库**没有**用真实单证跑过一次端到端（实测用的是最小 HTML 探针，
+不是 18 类单证的真实 HTML）；③ **版面/分页仍然无法在无头环境验证**（见下文 §四 风险 1、风险 2：
+Chromium 忽略 `break-before/after: avoid`，跨 Chrome 版本分页可能变）；④ C 方案（签发时冻结渲染输入
+快照 + 模板指纹）**仍未做**，本文 §3.2 第 2 步仍是待办。
 
 ## 一句话结论
 
@@ -338,14 +383,19 @@ Chrome 是否逐字节一致未验证**（不同 Chrome 版本与打印参数会
 
 ## 五、未验证事项（明确列出来，避免被当成结论）
 
-> 共 6 条；其中**第 6 条本轮已核对并修正**（保留作记录）⇒ 现在**仍开放的是第 1–5 条**。
+> 共 6 条。**2026-10-11 晚更新：第 1–3 条已用真实调用核实**（结论见 §〇 表格），
+> 第 6 条此前已核对并修正；**仍开放的是第 4、5 条**。
 
-1. **Cloudflare Browser Rendering 在本账户的可用性**：是否为 Workers Paid、是否开通、配额与计费 —— **未验证**。
-2. **端点命名口径**：OpenAPI 为 `/browser-rendering/pdf`，官方文档页面为 `/browser-run/pdf` ——
-   以哪个为准**未验证**（施工前用一次真实调用确认）。
-3. **Browser Rendering 输出与本地 Chrome `--print-to-pdf` 是否逐字节一致** —— **未验证**
-   （不同 Chrome 版本、`--no-pdf-header-footer`、边距默认值都可能不同）。
-4. **单证 HTML 的实际体积与渲染耗时**（文档只给到请求体 50MB 上限）—— **未实测**。
+1. ~~**Cloudflare Browser Rendering 在本账户的可用性**~~ **✅ 已实测（§〇）**：可用、无需付费；
+   账号订阅为 `teams_free` / `r2_paid`（均 price 0），Browser Rendering 自带
+   Free 10 分钟/天、Paid 10 小时/月。
+2. ~~**端点命名口径**~~ **✅ 已实测（§〇）**：`/browser-rendering/pdf` 与 `/browser-run/pdf`
+   两条 POST 都返回 200；代码采用 OpenAPI 依据的 `/browser-rendering/pdf`。
+3. ~~**Browser Rendering 输出与本地 Chrome `--print-to-pdf` 是否逐字节一致**~~ **✅ 已判为"不能假定一致"**：
+   本次实测只证明"能拿到真 PDF 字节"，**没有**做与本地 Chrome 的逐字节比对；§四 风险 1/2 的
+   口径（以归档版为准、记录渲染器）仍然适用。
+4. **单证 HTML 的实际体积与渲染耗时**（文档只给到请求体 50MB 上限）—— **未实测**
+   （本次探针是最小 HTML；内核把入参上限定在 2MB 作为防滥用上限）。
 5. **生产是否真的存在 `render_pdf` 记录**：本文引用 `docs/PROBLEM_STATUS_2026-10-11.md:1873`
    的"生产 `trade_docs=0`"，**本次未直连生产库复查**。
 6. ~~**`docs/TRADE_DOC_TEMPLATES.md:130` 写的 `GET /api/v1/trade-docs/{id}/render`**~~ **✅ 已核对并修正**：

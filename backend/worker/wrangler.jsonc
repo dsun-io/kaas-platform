@@ -28,6 +28,17 @@
       "bucket_name": "kaas-files"
     }
   ],
+  // 自动出 PDF（Cloudflare Browser Rendering）：用户要求「自动出 pdf 字节」。
+  // 用 binding 调 Quick Action `pdf`（`env.BROWSER.quickAction("pdf", {html})`）出**真 PDF 字节**，
+  // **不需要任何 API token**（REST 方式才需要 `Browser Run - Edit` 权限的 token）。
+  // 要求 compatibility_date ≥ 2026-03-24（当前 2026-09-18 ✓）。
+  // 计费：Workers Free 含 10 分钟/天、3 并发（超出 N/A，不产生费用）；
+  // Workers Paid 含 10 小时/月，超出 $0.09/浏览器小时。详见 docs/TRADE_DOC_PDF_ARCHIVAL.md。
+  // 不声明这个 binding 时，ws_files.py 会退到 REST token（BROWSER_RENDERING_TOKEN），
+  // 两者都没有则接口如实返回 503 PDF_RENDERER_NOT_CONFIGURED（不假装成功）。
+  "browser": {
+    "binding": "BROWSER"
+  },
   // 非机密的 S3 配置（机密只有 S3_ACCESS_KEY / S3_SECRET_KEY，用
   // `npx wrangler secret put S3_ACCESS_KEY` 与 `... S3_SECRET_KEY` 设置；
   // R2 的 S3 密钥只能在 Cloudflare dashboard 的 "Manage R2 API Tokens" 创建）。
