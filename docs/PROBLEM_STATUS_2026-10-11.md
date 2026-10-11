@@ -832,6 +832,31 @@ Error: locator.click: Test timeout of 30000ms exceeded.
 **结论：e2e 重新基线化当前被"早期请求偶发不返回"卡住**，不是选择器问题。
 先把这一层解决，否则改写多少条选择器都仍然会红。
 
+#### 部分改善：给 MSW 加"Service Worker 控制权门"
+
+**假设**：`worker.start()` resolve **不等于** SW 已接管本页 ——
+MSW 的 `mockServiceWorker.js` 在 `activate` 里 `clients.claim()`，
+而那是 `event.waitUntil`（异步）。这段窗口里发出的请求会**绕过 mock**：
+打到 Next dev server 的 `/api/v1/*` rewrite → rewrite 指向页面源 →
+**自己代理自己**（EADDRINUSE）→ **请求永久挂起**。
+
+而且它**不留痕迹**：MSW 不记录这段窗口的请求（那时还没接管），
+所以缺口日志里看不到 `/api/v1/*` —— 这正是之前那个"看起来自相矛盾"的点。
+Playwright **每个用例新建 context**，于是**每次首屏都踩**这个竞态，
+与"每轮通过数都不一样"吻合。
+
+**做法**：`msw-provider.tsx` 在 `worker.start()` 之后**再等
+`navigator.serviceWorker.controller` 出现**（`controllerchange` 事件，
+3 秒兜底放行——不能因竞态把应用卡成白屏）。
+
+**实测**：`customers.spec` 由 **2 条失败 → 1 passed / 1 failed / 1 skipped** ✓
+
+**但绕过仍在**：日志里依然出现
+`Failed to proxy .../api/v1/customers`、`.../api/v1/auth/me`。
+
+> 所以这道门**减轻了竞态、没有消除它**。假设方向对，但**还有别的路径**
+> 让请求绕过 mock（尚未查清）。**不能因为"数字变好一点"就宣布修好了。**
+
 **关键发现：那两个 critical/high 的来源不是"版本旧"，是依赖放错了位置。**
 
 | 漏洞 | 来源链 | 真实问题 |
