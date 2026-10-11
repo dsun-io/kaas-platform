@@ -10,7 +10,22 @@
 
 ## 交接摘要（滚动更新 · HEAD `1b30060`）
 
-> **最新（R55）**：按用户裁决新增**团队管理员转让**端点
+> **最新（R56）**：**单证工位 PI 支持公章与产品照片**（用户裁决「把能力做进平台」，
+> 提交 `43be2f7`）。渲染器新增两个按字段名识别的能力字段：`company_stamp`
+> （公章，叠印在签章区）与 `product_photos`（产品照片两列网格，排在「金额大写」之后）。
+> 值只接受 `data:image/*;base64` 与 `http(s)` 绝对地址，`<img>` 由渲染器拼装并转义
+> （不给原始 HTML 开新口子）。模板 / `manifest.json` / 渲染器测试 /
+> `TRADE_DOC_TEMPLATES.md` §七 同步更新。**不带图时输出与改动前逐字节一致** ⇒
+> 18 份迁移基线不必重生成（`verify-trade-doc-fixtures.py` 仍 18/18 一致）。
+> 未做：工位页面的「上传公章 / 上传产品图」控件与文件存储 —— 现在要把图片手工转成
+> data URI 放进 `raw_payload.custom`。
+>
+> ⚠️ 本轮实测发现**工作区正被另一条线并发使用**：同一仓库另一条 DSH 会话在跑 e2e，
+> 它已提交 `f286fc4` / `ca43ddc`，并在提交说明里声明不碰本线文件。双方都只 `git add`
+> 自己的文件。凡"通过数"层面的对比都要打折（对方的 Next dev 与我的 `next build`
+> 都会造成对方 e2e 的重编译/中断）。
+
+> **（R55）**：按用户裁决新增**团队管理员转让**端点
 > `POST /teams/{team_id}/transfer` —— **现任团队管理员或平台管理员**都能发起
 > （复用 `_require_team_admin` → 共享内核 `is_team_admin`，**不新增授权规则**），
 > 策略无关校验复用共享内核 `validate_transfer_target`（已测 9 条）。
@@ -43,6 +58,7 @@
 | — | **前端认证契约残留**收口（不再发 `X-Tenant-Id`） | `35a89a8` |
 | — | **规格库 11 条退役**（用户裁决：写死的设计没用了） | `8225bbf` |
 | — | 立 `AGENTS.md` 收录全局规则（更新须带文档 + 推送） | `9250376` |
+| — | 单证工位 PI **公章 + 产品照片**字段（渲染器 / 模板 / manifest / 测试 / 文档） | `43be2f7` |
 
 ### 当前门禁（全绿）
 
@@ -50,11 +66,12 @@
 |---|---|
 | orchestrator `pytest -m unit` | **598 passed** / 1 skipped |
 | worker `pytest` | **142 passed** |
-| 前端 `test` | **280 passed / 0 failed** |
+| 前端 `test` | **285 passed / 0 failed**（R56 前为 280） |
 | 前端 `typecheck` / `lint` | exit 0 |
 | `contracts:check` | R0–R4 PASS |
 | `route-parity.py` | PASS（缺失 **11** 已登记 / 未登记 0 / **过期 0** / worker 独有 **2**） |
 | `sync-shared.ps1 -Check` | exit 0（共享内核 **23** / 报价引擎 19 / 枚举字典 1） |
+| `verify-trade-doc-fixtures.py` | 18/18 逐字节一致（TS == 归档 Python；图片字段改动后仍成立） |
 >
 > 以上为 `d4b4cdc` 实测（2026-10-11）。
 | `NEXT_EXPORT=1 pnpm build` | exit 0 |
