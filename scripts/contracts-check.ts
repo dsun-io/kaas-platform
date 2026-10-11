@@ -237,22 +237,24 @@ function pyDictKeysFrom(content: string, name: string): string[] {
   return [...content.slice(start, close).matchAll(/"([^"]+)"\s*:/g)].map((m) => m[1]);
 }
 
-/** 抽取 `"key": ("a", "b"),` 形式映射的取值（用于逐项比对，而不是只比键） */
-function pyTupleMapValues(content: string, name: string): Record<string, string> {
-  // 允许类型注解形式（NAME: dict[...] = { ... }）
-  const nameAt = content.indexOf(`${name}`);
-  if (nameAt === -1) return {};
-  const start = content.indexOf('{', nameAt);
-  if (start === -1) return {};
-  // 收尾用行首的 } （字典缩进体内不会出现列 0 的 }）
-  const closeAbs = content.indexOf('\n}', start);
-  const body = content.slice(start, closeAbs === -1 ? undefined : closeAbs);
-  const out: Record<string, string> = {};
-  for (const m of body.matchAll(/"([a-z_]+)":\s*\(([^)]*)\)/g)) {
-    const fields = [...m[2].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]);
-    out[m[1]] = fields.join(',');
-  }
-  return out;
+/** 定位**模块级字典的定义体**（`NAME = {` … 行首 `}`）。
+ *
+ * 为什么不用「首次出现 NAME」：名字在 `__all__` / `import` 里也会出现，
+ * 按「名字之后的第一个 `{`」去解析会抓到无关代码块 —— 这正是 2026-10-11
+ * 修掉的那个 bug（DOC_NO_FIELDS 下沉共享内核后，旧实现既误报又漏检）。 */
+function pyDictBody(content: string, name: string): string | null {
+  const m = new RegExp(`^${name}\\s*(?::[^=\\n]+)?=\\s*\\{`, 'm').exec(content);
+  if (!m) return null;
+  const open = content.indexOf('{', m.index);
+  if (open === -1) return null;
+  const close = content.indexOf('\n}', open);
+  return content.slice(open, close === -1 ? undefined : close);
+}
+
+/** 该模块是否**自己定义**了 NAME（而不是从共享内核 import）。
+ *  用于抓「适配层又抄一份回来」——漂移的起点。 */
+function redefines(content: string, name: string): boolean {
+  return new RegExp(`^${name}\\s*(?::[^=\\n]+)?=`, 'm').test(content);
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────
@@ -394,11 +396,24 @@ if (manifestDocTypes.length === 0 || pyDocTypes.length === 0) {
 const workerSrc = read('backend/worker/src/main.py');
 const workerDocTypes = pyTupleFrom(workerSrc, 'DOC_TYPE_SET').sort();
 const workerPrefixes = pyDictKeysFrom(workerSrc, 'DOC_TYPE_PREFIX');
-const workerNoFields = pyTupleMapValues(workerSrc, 'DOC_NO_FIELDS');
-const orchNoFields = pyTupleMapValues(
-  read('backend/orchestrator/app/services/trade_doc_payload.py'),
-  'DOC_NO_FIELDS',
-);
+// 单号字段映射已下沉为**单一来源**（kaas_common/trade_doc/payload_shared.py）。
+// 旧实现分别从 worker/main.py 与 trade_doc_payload.py 解析 —— 下沉后两处只剩 import，
+// 解析器抓到无关代码块：既误报「会把合同号印成发票号」，又完全测不到真正要防的漂移。
+// 现改为三条能真正生效的检查（2026-10-11 重写）：
+//   1. 共享内核的 DOC_NO_FIELDS 必须覆盖全部单证类型（缺 → 单号静默退化）
+//   2. 任一适配层**不得再定义** DOC_NO_FIELDS（只许 import，防抄回一份）
+//   3. 保留 worker 侧 DOC_TYPE_SET / DOC_TYPE_PREFIX 两条（它们仍在 main.py 里定义，有效）
+const SHARED_PAYLOAD = 'backend/kaas_common/trade_doc/payload_shared.py';
+const NO_FIELDS_ADAPTERS = [
+  'backend/worker/src/main.py',
+  'backend/orchestrator/app/services/trade_doc_payload.py',
+];
+const sharedNoFieldsBody = pyDictBody(read(SHARED_PAYLOAD), 'DOC_NO_FIELDS');
+const sharedNoFieldKeys = sharedNoFieldsBody
+  ? [...sharedNoFieldsBody.matchAll(/"([a-z_]+)"\s*:/g)].map((m) => m[1])
+  : [];
+const noFieldsMissing = pyDocTypes.filter((t) => !sharedNoFieldKeys.includes(t));
+const noFieldsShadowed = NO_FIELDS_ADAPTERS.filter((p) => redefines(read(p), 'DOC_NO_FIELDS'));
 
 if (workerDocTypes.length === 0) {
   allOk = false;
@@ -407,9 +422,6 @@ if (workerDocTypes.length === 0) {
   const workerOnly = workerDocTypes.filter((t) => !pyDocTypes.includes(t));
   const localOnly = pyDocTypes.filter((t) => !workerDocTypes.includes(t));
   const workerNoPrefix = workerDocTypes.filter((t) => !workerPrefixes.includes(t));
-  const mapDiffs = Object.keys({ ...workerNoFields, ...orchNoFields }).filter(
-    (t) => workerNoFields[t] !== orchNoFields[t],
-  );
 
   if (workerOnly.length || localOnly.length) {
     allOk = false;
@@ -421,22 +433,37 @@ if (workerDocTypes.length === 0) {
     allOk = false;
     console.error('FAIL R4: 线上编号前缀未覆盖: ' + workerNoPrefix.join(', '));
   }
-  if (mapDiffs.length) {
+  if (sharedNoFieldKeys.length === 0) {
     allOk = false;
-    console.error('FAIL R4: 单号字段映射两侧不一致（会把合同号印成发票号）');
-    mapDiffs.forEach((t) =>
-      console.error(
-        `  ${t}: 本地="${orchNoFields[t] ?? '(缺)'}" 线上="${workerNoFields[t] ?? '(缺)'}"`,
-      ),
+    console.error('FAIL R4: 无法从 ' + SHARED_PAYLOAD + ' 解析 DOC_NO_FIELDS');
+  }
+  if (noFieldsMissing.length) {
+    allOk = false;
+    console.error(
+      'FAIL R4: 单证类型缺单号字段映射（单号会静默退化）: ' + noFieldsMissing.join(', '),
     );
   }
-  if (!workerOnly.length && !localOnly.length && !workerNoPrefix.length && !mapDiffs.length) {
+  if (noFieldsShadowed.length) {
+    allOk = false;
+    console.error(
+      'FAIL R4: 适配层重复定义 DOC_NO_FIELDS（应只 import 共享内核，禁止再抄一份）: ' +
+        noFieldsShadowed.join(', '),
+    );
+  }
+  if (
+    !workerOnly.length &&
+    !localOnly.length &&
+    !workerNoPrefix.length &&
+    sharedNoFieldKeys.length > 0 &&
+    !noFieldsMissing.length &&
+    !noFieldsShadowed.length
+  ) {
     console.log(
       'PASS R4: worker mirror consistent (' +
         workerDocTypes.length +
         ' types, ' +
-        Object.keys(workerNoFields).length +
-        ' no-field mappings)',
+        sharedNoFieldKeys.length +
+        ' no-field mappings from shared kernel, 0 shadow definitions)',
     );
   }
 }
