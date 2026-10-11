@@ -2514,3 +2514,62 @@ orchestrator **946** / worker **217** / `route-parity` **PASS** / `sync-shared -
 
 **尚未完成三项**（各有归属，非"未做"）：依赖漏洞（**已排期**）/
 产品模块后续（**依赖数据库，但 `alembic --sql` 可离线验证 ⇒ 按增量继续**）/ 单证投产联调（**卡在生产 R2 密钥**）。
+
+***
+
+## ⚠️ 迁移线通告（2026-10-12，给正在定位 alembic 空库断点的同事）
+
+> **`alembic heads` 已从 `202610110018` 变为 `202610110019 (head)`** —— 由产品域团队隔离迁移引入
+> （`backend/orchestrator/alembic/versions/202610110019_product_team_scope.py`，见下方 §产品模块）。
+>
+> 1. **`alembic upgrade head --sql` 的终点已变**（原来止于 018，现在到 019）；
+> 2. **你若新建迁移，请写 `down_revision = "202610110019"`**，否则会**双 head** ⇒
+>    所有人的 `alembic upgrade head` 会直接失败（本项目已为"双 head"专门取过一次证：`234a43c` 结论是当时**假警报**，
+>    但这次是真的新增了一个 head）。
+> 3. 该迁移**只做了可安全做的部分**（详见下），**没有碰** `files.py` / `backend/worker/src/**`。
+>
+> 复核方式：`cd backend/orchestrator && .venv/Scripts/python -m alembic heads` ⇒ 现在应输出 **一行** `202610110019 (head)`；
+> `alembic branches` ⇒ 空（线性、无分叉）。
+
+## 产品模块：P11 + P5/P6 已落地（**按增量推进，每条都能离线证明**）
+
+### P11 共享内核「两把尺 + 三层可见性」（`8f3e615`）
+
+- **Q1=B 三层**：定义人人可读 / 产品**相关信息一律团队私有（系统级不是例外）** / 历史 `team_id IS NULL` **仅管理员可见**
+  —— 用**结构断言**钉住（签名里不许出现 `is_system`）
+- **Q5 两把尺并存**：`is_same_team` 与 `is_team_admin` 并存，**名字不叫 `can_write`**（被客户域属主尺占用）；
+  四类**仍须管理员**的端点（团队档位 / 团队·成员·订阅 / `is_system` 行 / `calculate-internal`·`verify`）写在 docstring
+- **Q6 两层不压平**：该模块**只管数据可见性**，**不提供任何工位可见性函数或参数**（结构断言），工位那层属 **P15 契约**
+
+### P5/P6 迁移 `202610110019`（`4ce9992`）—— **离线双证**
+
+- `alembic upgrade 018:019 --sql` **exit 0**：3 张表加 `team_id BIGINT`（**可空**）+ FK→`teams`(`ON DELETE SET NULL`) + 索引；
+  `uq_tenant_products_key` 与 `uq_file_primary` 均改为 **`(tenant_id, COALESCE(team_id, 0), …)`**（部分索引条件原样保留）
+- `alembic downgrade 019:018 --sql` **exit 0**（**回滚不通的迁移等于没有回滚**）；
+  `heads` = 单 `019`、`branches` = 空；**13 条 DB-free 迁移测试**（真跑、带 `pytestmark`）；
+  `pytest -m unit` ⇒ **989 passed / 1 skipped / 324 deselected / exit 0**
+
+**两个设计决定（有意为之，有用例双向钉住）**：
+1. **`team_id` 不做 `NOT NULL`** —— 裁决是"**新写入强制 + 历史容忍 NULL**"，两者同时成立**只能靠写路径**强制
+   （P7/P9 + 403 `NO_TEAM`）；库上 `NOT NULL` 会让历史行违反约束，或**被迫给历史行编一个 team**（D3/D4 不允许）
+2. **唯一键用 `COALESCE(team_id, 0)` 而非裸列** —— Postgres 认为 **NULL 互不相等** ⇒ 裸列进唯一键会让同租户
+   **出现多行无归属**；折叠成 0 才能表达"至多一行无归属" ⇒ 这才是"唯一键要容纳历史 NULL"的正确形态
+
+### 明确留白（**不是"忘做"，是被禁碰文件卡住，附证据**）
+
+改唯一键**必须同批**改调用方的 `ON CONFLICT`，否则那条 INSERT 报
+`no unique or exclusion constraint matching the ON CONFLICT specification`：
+
+| 留白项 | 被谁锁住 |
+|---|---|
+| `product_profiles` 主键 + `put_profile` 的 `ON CONFLICT` | `app/api/files.py:283`（**另一条任务正在改**）+ `backend/worker/src/ws_files.py:319`（禁碰） |
+| `uq_tenant_ws_product` + worker 的 `ON CONFLICT` 与断言 | `backend/worker/src/ws_products.py:347` + `tests/test_ws_products_seals.py:149`（断言该字面量） |
+
+⇒ 这两项**必须与两端代码同批**（P9 必做清单已写进 `PRODUCT_MODULE_IMPL_PLAN.md` §8.4）。
+**如实记录的后果：P9 之前，两个团队仍不能各自持有同一 `product_key` 的基础信息**（Q1=B 还差这一步）。
+（可安全改的两处已改：`uq_tenant_products_key` **无** `ON CONFLICT` 依赖 —— worker 用普通 INSERT + 捕获 `"duplicate key"` ⇒ 409 语义不变；
+`uq_file_primary` 亦无依赖，主图靠 UPDATE 维护。）
+
+**给 P13 的硬提醒**：`TenantProductLoader._fetch_tenant_product` 用 `scalar_one_or_none()` 且**不按团队过滤**
+（`app/services/.../tenant_products.py:87-98`）⇒ 本轮放宽唯一键后，同租户同 key 的多团队行会让它抛 `MultipleResultsFound`
+⇒ **接线前必须先补 team 过滤**（它现在无调用者 ⇒ 此刻无影响）。
