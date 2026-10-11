@@ -19,7 +19,7 @@ import time
 import hashlib
 from datetime import date, datetime, timezone
 from typing import List, Optional
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from fastapi import Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
@@ -91,23 +91,65 @@ CRAWL_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 CRAWL_TIMEOUT = 15
 # 单次爬取只读前 400KB：避免超大页面耗尽 Worker CPU/内存额度
 MAX_CRAWL_BYTES = 400_000
-# SSRF 防护：只允许公网 http(s)，拒绝内网/回环/云元数据地址
-_BLOCKED_HOST_RE = re.compile(
-    r"^(?:localhost|0\.0\.0\.0|127\.|10\.|192\.168\.|169\.254\.|"
-    r"172\.(?:1[6-9]|2\d|3[01])\.|\[?::1\]?$|fc|fd|fe80)",
-    re.IGNORECASE,
+# SSRF 防护与重定向逐跳校验 —— **与 orchestrator 共用同一份**
+# （`backend/kaas_common/net.py`，由 scripts/sync-shared.ps1 镜像到 worker）。
+#
+# 为什么不留在这里自己一份：
+#   1. 安全判定留两份，迟早有一份腐烂，而腐烂的那份没人测；
+#   2. `chain.py` 依赖 Pyodide（模块级 `from main import ...`），
+#      在 CPython 测试环境里**根本 import 不了** ——
+#      守卫留在这里等于"永远测不到"。
+# 放进共享内核后，测试跑在 orchestrator 套件里、测的就是 worker 实际执行的那份。
+# ruff: noqa: E402
+from kaas_common.net import (  # noqa: E402
+    MAX_REDIRECTS,
+    REDIRECT_CODES as _REDIRECT_CODES,
+    is_safe_crawl_url as _shared_is_safe_crawl_url,
+    next_redirect_url as _shared_next_redirect_url,
 )
 
 
 def _is_safe_crawl_url(url: str) -> bool:
-    """只允许抓取公网 http(s) 地址（防御 CSV/线索注入内网地址）。"""
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        return False
-    host = (parsed.hostname or "").lower()
-    if not host or "." not in host:
-        return False
-    return not _BLOCKED_HOST_RE.match(host)
+    """兼容旧调用点；语义 = `kaas_common.net.is_safe_crawl_url`（唯一真源）。"""
+    return _shared_is_safe_crawl_url(url)
+
+
+def _next_redirect_url(current_url: str, location: str) -> Optional[str]:
+    """兼容旧调用点；语义 = `kaas_common.net.next_redirect_url`（唯一真源）。"""
+    return _shared_next_redirect_url(current_url, location)
+
+
+def _urllib_get(url: str, timeout: int):
+    """urllib 回退路径（本地 CPython）—— **同样逐跳校验**。
+
+    不能只在 js.fetch 那条路上修：回退路径若还自动跟随，就留下一条
+    "换个运行环境就有洞"的缝。两条路必须同一口径。
+    """
+    import urllib.error
+    import urllib.request
+
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None  # 不自动跟随，改由 _next_redirect_url 校验
+
+    opener = urllib.request.build_opener(_NoRedirect)
+    current = url
+    for _ in range(MAX_REDIRECTS + 1):
+        req = urllib.request.Request(current, headers={"User-Agent": CRAWL_UA})
+        try:
+            with opener.open(req, timeout=timeout) as resp:
+                raw = resp.read(MAX_CRAWL_BYTES)
+                return resp.status, raw.decode("utf-8", "replace")
+        except urllib.error.HTTPError as exc:
+            if exc.code not in _REDIRECT_CODES:
+                raise
+            nxt = _next_redirect_url(current, exc.headers.get("Location") or "")
+            if nxt is None:
+                raise ValueError(
+                    "重定向指向的地址不在允许抓取的公网 http(s) 范围内")
+            current = nxt
+    raise ValueError("重定向次数过多")
+
 
 _META_TAG_RE = re.compile(r"<meta\b[^>]*>", re.IGNORECASE)
 _ATTR_RE = re.compile(r"([a-zA-Z:_-]+)\s*=\s*[\"']([^\"']*)[\"']")
@@ -196,24 +238,40 @@ def extract_product_from_html(html: str, base_url: str) -> dict:
 
 
 async def _http_get_text(url: str, timeout: int = CRAWL_TIMEOUT):
-    """出站 GET：Workers 用 js.fetch，本地 CPython 回退 urllib。读取上限 400KB。"""
+    """出站 GET：Workers 用 js.fetch，本地 CPython 回退 urllib。读取上限 400KB。
+
+    **逐跳校验重定向**（2026-10-11 修）。原先是 `redirect: "follow"`，
+    而 `_is_safe_crawl_url` 只校验请求前的 URL —— 于是
+    `evil.com --302--> 169.254.169.254` 能把云元数据抓回来。
+    现在关掉自动跟随，每一跳的 Location 都过同一把尺子。
+    """
     try:
         from js import fetch  # type: ignore  (Pyodide / Python Workers)
     except ImportError:
-        import urllib.request
-        req = urllib.request.Request(url, headers={"User-Agent": CRAWL_UA})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read(MAX_CRAWL_BYTES)
-            return resp.status, raw.decode("utf-8", "replace")
-    resp = await fetch(url, {
-        "method": "GET",
-        "headers": {"User-Agent": CRAWL_UA, "Accept": "text/html,*/*"},
-        "redirect": "follow",
-    })
-    text = await resp.text()
-    if len(text) > MAX_CRAWL_BYTES:
-        text = text[:MAX_CRAWL_BYTES]
-    return int(resp.status), text
+        return _urllib_get(url, timeout)
+
+    current = url
+    for _ in range(MAX_REDIRECTS + 1):
+        resp = await fetch(current, {
+            "method": "GET",
+            "headers": {"User-Agent": CRAWL_UA, "Accept": "text/html,*/*"},
+            # **manual 而不是 follow**：follow 会把 302 的目标直接抓回来，
+            # 而我们的防护只看过第一跳。Cloudflare 文档也明确推荐这么做。
+            "redirect": "manual",
+        })
+        status = int(resp.status)
+        if status in _REDIRECT_CODES:
+            nxt = _next_redirect_url(current, resp.headers.get("location") or "")
+            if nxt is None:
+                raise ValueError(
+                    "重定向指向的地址不在允许抓取的公网 http(s) 范围内")
+            current = nxt
+            continue
+        text = await resp.text()
+        if len(text) > MAX_CRAWL_BYTES:
+            text = text[:MAX_CRAWL_BYTES]
+        return status, text
+    raise ValueError("重定向次数过多")
 
 
 # ═══════════════════════════════════════════════════════════════════

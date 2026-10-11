@@ -1,19 +1,18 @@
-"""SSRF 防护测试：`is_safe_crawl_url`。
+"""SSRF 防护测试：`is_safe_crawl_url` 与 `next_redirect_url`。
 
-这是**安全件**，而且是从 worker 逐行搬过来的 —— 所以测试要盯住
-"哪些必须被拒"，而不只是"公网地址能过"。
+被测对象是 **`kaas_common.net`** —— 两端（worker 与 orchestrator）
+共用的同一份。这一点很关键：守卫原先只存在于 worker 的 `chain.py`，
+而那个文件依赖 Pyodide、在 CPython 测试里 import 不了，
+于是安全判定实际上**永远测不到**。放进共享内核后，
+本文件跑的就是 worker 实际执行的那份代码。
 
-判据来自 worker 的 `_BLOCKED_HOST_RE`（回环 / 私有网段 / 链路本地 /
-云元数据 169.254.x / IPv6 私网）。**少一条判断就是一个 SSRF 洞**，
-所以下面把每一类都单独钉一条。
+测试盯住"哪些必须被拒"，而不只是"公网地址能过"。
+**少一条判断就是一个 SSRF 洞**，所以每一类封禁都单独钉一条。
 """
 import pytest
 
-from app.services.lead_crawl import (
-    http_get_text,
-    is_safe_crawl_url,
-    next_redirect_url,
-)
+from app.services.lead_crawl import http_get_text
+from kaas_common.net import is_safe_crawl_url, next_redirect_url
 
 pytestmark = pytest.mark.unit
 
