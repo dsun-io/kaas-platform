@@ -25,6 +25,22 @@ import { isMockMode } from "@/lib/api/config";
 let mswReadyPromise: Promise<void> | null = null;
 
 /**
+ * 门的**总预算**：超过它就放行（fail-open）。
+ *
+ * **为什么必须有**：`worker.start()` 自身**没有超时**。旧实现靠
+ * 「启动过就立刻放行」侥幸避免了白屏（代价正是那个绕过 mock 的 bug）；
+ * 而一旦把放行严格押在"真正就绪"上，`start()` 若卡住就会**永久 `return null`**
+ * —— 整页白屏，且**零请求、连 `[MSW门] started` 日志都没有**。
+ * 2026-10-11 实测（修门短路之后）：18 次用例里有 **4 次**正是这个形态
+ * （`gate=0 / probe=0` 与失败 1:1 对应）。
+ *
+ * 这违背本文件既有的口径 —— 「**超时也要放行**：不能因为一个 SW 竞态把应用
+ * 卡成白屏」。正常路径约 1s 内走完，所以这个预算只在下游真的卡住时才生效；
+ * 生效时**必须有声音**（否则又会退回"看起来像 handler 缺失"的误导）。
+ */
+const MSW_GATE_BUDGET_MS = 5000;
+
+/**
  * 「已真正就绪」的缓存：**只在链路成功走完后**才置 true。
  * 它唯一的用途是让**二次挂载**（热更新／再次 mount）不必再闪一次空白；
  * 它**不能**用来表达"启动过了"（那正是旧实现的 bug）。
@@ -74,7 +90,7 @@ async function waitForServiceWorkerControl(timeoutMs = 3000): Promise<void> {
 function ensureMswReady(): Promise<void> {
   if (mswReadyPromise) return mswReadyPromise;
 
-  mswReadyPromise = import("@/mocks/browser")
+  const ready = import("@/mocks/browser")
     // `warn`：放行行为不变，但未匹配的请求会在控制台**被点名**。
     // 原先用 `bypass` 时 handler 缺失是**静默**的，这正是这个坑拖了很久的原因。
     .then((m) => m.worker.start({ onUnhandledRequest: "warn" }))
@@ -115,6 +131,22 @@ function ensureMswReady(): Promise<void> {
       // 失败必须有声音**。起不来仍要放行（不能把页面卡成白屏），但要说出来。
       console.log("[MSW门] start FAILED:", String(err));
     });
+
+  // 总预算兜底：下游（`worker.start()` / SW 激活）真卡住时也必须放行。
+  // 正常路径约 1s 内走完，所以这条**只在异常时**触发；触发时打日志。
+  mswReadyPromise = Promise.race([
+    ready,
+    new Promise<void>((resolve) =>
+      setTimeout(() => {
+        console.log(
+          "[MSW门] 就绪超过 " +
+            MSW_GATE_BUDGET_MS +
+            "ms，放行（fail-open：未等到 MSW 就绪，宁可放开也不白屏）",
+        );
+        resolve();
+      }, MSW_GATE_BUDGET_MS),
+    ),
+  ]);
 
   return mswReadyPromise;
 }
