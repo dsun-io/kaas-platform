@@ -138,8 +138,35 @@
 | 3 | `engine._numeric_value`（含单位后缀容忍） | ✅ 已做 |
 | 4 | `app/api/export_quote.py` 的 `explain` 自建规格解析 | ✅ 已做 |
 | 5 | `formulas.describe_product` / `describe_pricing_key`（含 `kind="numeric"`） | ✅ 已做 |
-| 6 | **`importers.py` 的表头映射 + 模板列生成** | ❌ **未做** |
-| 7 | 前端 `niulanwang.ts` 枚举轴与 `NIULANWANG_COMBO_COUNT` 退役 | ❌ 未做 |
+| 6 | `importers.py` 的表头映射 + 模板列生成 + `NumericInput.unit_factors` | ✅ 已做（`ccc9d16`） |
+| 7 | 前端渲染自由数值 + 退役 `NIULANWANG_SKU_AXES` / `NIULANWANG_COMBO_COUNT` | ✅ 已做（`fa5ee26`、`8d0249d`） |
+
+**牛栏网改造已完成并全绿**（`397aaca`）：`combo_count` 160 → **10**，
+重量/体积公式一行未改（本就与企微表格逐项等价）。
+验证：orchestrator **469 passed** · worker **142 passed** · 前端 **280 passed / 0 failed**
+（那条「各轴相乘 = 48」的红测试随枚举轴一起退役，换成"这些导出不该存在"的反向守卫）·
+`contracts:check` R0–R4 PASS · `route-parity` PASS · `sync-shared -Check` exit 0 ·
+`NEXT_EXPORT=1 build` exit 0。
+
+改造过程中挖出并修掉 **3 个真 bug**：
+
+| # | 问题 | 后果 | 位置 |
+|---|---|---|---|
+| a | `实际占用 = 长方体总体积 − 2.5` 是**固定扣减** | **< 2314 米（23 卷）的单子体积为负数**，而这个数要给货代/报关 | `field_fence.py` `SpaceDeduction` |
+| b | 尺寸类改自由数值后**绕过了别名表的单位因子** | 「竖丝间距(cm)」的 10 被当成 **10mm**，重量差十倍 | `importers._numeric_factor` |
+| c | 空 spec 时变体没选 → 公式取不到 `raw_price`/`wave_factor` | **算出空值却仍返 200**（比报错更坏）。两端各补 `missing_variant` 400 | orchestrator `export_quote.py` / worker `ws_quote_ext.py` |
+
+**另一个发现**：worker 的 `explain`（`ws_quote_ext.py`）**有自己的规格解析**
+（`app/api/` 不在镜像范围），此前同样没读 `numeric_inputs` —— 生产端会算出空值。已修并对齐。
+
+### 本轮新拍板的 4 项（用户 2026-10-11 决定，待实现）
+
+| # | 决定 | 要做什么 |
+|---|---|---|
+| 1 | **体积扣减改为比例**，并与「装柜系数」合并成同一个数 | 40HQ 可用容积约 **68 m³**、工厂经验"满柜多占 2–3 m³"取中位 2.5 ⇒ **比例 ≈ 3.7%**（用户口径："按整柜容量上限推算"）。同时修掉上面 #a 的负体积 |
+| 2 | **表面处理档位改为客户自建**（"只加名字，价每单填"） | 删掉 `field_fence` 里硬编码的 5 档；档位表只存名字/锌层，不存价 |
+| 3 | **原料价历史 + 均价展示** | 每单填的原料价要留存，并在没有报价时给"参考均价" |
+| 4 | **鹿网/勾花网不预置档位** | 与 #2 一致；公式已从表格提取，可直接实现 |
 
 **第 6 项是回退的原因**：导表（CSV/Excel 导入导出）的表头映射在
 `importers._build_header_map` / `_resolve_column` / `template_columns` 里，
