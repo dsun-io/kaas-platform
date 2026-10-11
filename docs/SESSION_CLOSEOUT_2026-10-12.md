@@ -128,7 +128,17 @@ Q8=**建试算 + 收敛路由** / D3/D4=**保留 NULL + 仅管理员可见 + 新
 > worker 的 `/explain` 对数值入参做 **min/max 越界校验**（越界 ⇒ 400 `invalid_numeric`），
 > **orchestrator 不做** ⇒ 同草稿 + 越界取值，两端状态码可能不同。
 > **用户裁定：给 orchestrator 补上** ✓（保持 worker 现有行为与既有用例不动）
-> —— 该项为**今天最后一件代码改动**，在 `task-27` 执行中。
+> —— 该项为**今天最后一件代码改动**，**已落地**：`69bf2c2`（4 files, +185/−1）。
+>
+> **落地结果**：orchestrator 按 worker 的**原始语义逐条照搬**（错误码 `invalid_numeric`、
+> 中英文措辞、`{value}` 用 Decimal 而 `{min_value}` 用声明原值），
+> 且**只在 `min_value/max_value is not None` 时才判** ⇒ **未声明界的字段完全自由**（对应 A2「自由数值」✓）。
+> **测试**：orchestrator 21 → **27 passed**（`-m unit` 选中 27）；worker 237 → **242 passed**（`--collect-only` 自证被收集）。
+> **两端并排一致**：`bounded=11` ⇒ 两端 400 +「大于上界」／`=0` ⇒ 两端 400 +「小于下界」／`=10` ⇒ 两端 200／
+> 无界 `free_x`（1e9 / −1e6 / 0）⇒ 两端 200／注册表 `de=9.0`（声明 0.3~8）⇒ 两端 400
+> ⇒ **task-26 报的那处既有差异已消失**；仅剩 `errors[0].error` 的**尾部措辞**这一处**刻意**不对齐（§8.10，只断言包含）。
+> **`contracts:check`**：重生成后产物 **diff 为空**（本次只改 handler 行为、未动模型/路由 ⇒ 无需提交产物，
+> 这正是那条"改模型才需重生成"规则的边界）⇒ 提交后 **PASS R5 + PASS R6**, exit 0 ✓
 
 ## 二、当日实际交付（在 task-1…task-26 之上）
 
