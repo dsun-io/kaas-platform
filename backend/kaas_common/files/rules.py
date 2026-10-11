@@ -22,7 +22,7 @@ __all__ = [
     "OWNER_TYPES", "FILE_KINDS", "MEDIA_KINDS", "KIND_MIME", "MAX_BYTES",
     "FileRuleError", "validate_upload", "object_key", "file_ext",
     "next_version", "current_of", "MEDIA_KIND_LABELS",
-    "is_file_ref", "to_data_uri",
+    "is_file_ref", "to_data_uri", "coerce_file_ref_id",
 ]
 
 OWNER_TYPES = ("product", "trade_doc", "customer", "company")
@@ -200,14 +200,41 @@ def next_version(current: Optional[dict]) -> tuple[int, Optional[int]]:
 # （那是防注入的设计，不放开），而 `{file_id}` 不是图片源 —— 解析放在喂给渲染器之前，
 # 渲染器一行都不用改。
 
+def coerce_file_ref_id(entry: Any) -> Optional[int]:
+    """从 `{file_id: ...}` 取出**可信的正整数 id**；取不出来返回 `None`。
+
+    为什么必须容错（实测缺陷）：`product_photos` 是**用户可写的 custom 字段**
+    （`PROTECTED_CUSTOM_FIELDS` 只挡 `items`/`total_amount`）。库里写进一个非数字的
+    `file_id`（如 `"abc"`）时，`int(entry["file_id"])` 会抛 `ValueError`，
+    把 `/trade-docs/{id}/render-data` 直接打成 **500** —— 而设计意图是
+    「取不到字节就跳过该条，不印坏图」，不是让整张单据的预览挂掉。
+
+    布尔值必须挡掉：`True` 是 `int` 的子类，`int(True) == 1` 会被当成"第 1 个文件"。
+    """
+    if not isinstance(entry, dict):
+        return None
+    raw = entry.get("file_id")
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        return raw if raw > 0 else None
+    if isinstance(raw, str):
+        text = raw.strip()
+        if text.isdigit():
+            value = int(text)
+            return value if value > 0 else None
+    return None
+
+
 def is_file_ref(entry: Any) -> bool:
-    """是不是"引用产品图库"的条目（有 `file_id` 且没有直接给图源）。"""
-    return (
-        isinstance(entry, dict)
-        and entry.get("file_id") is not None
-        and not entry.get("image")
-        and not entry.get("src")
-    )
+    """是不是"引用产品图库"的条目（有**可用**的 `file_id` 且没有直接给图源）。
+
+    "可用"由 `coerce_file_ref_id` 定义 —— 同一个判定只此一处，
+    避免「这里认为它是引用、那里 int() 又转不出来」的分叉。
+    """
+    if coerce_file_ref_id(entry) is None:
+        return False
+    return not entry.get("image") and not entry.get("src")
 
 
 def to_data_uri(content_type: Optional[str], data: bytes, file_name: Optional[str] = None) -> str:

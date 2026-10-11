@@ -13,6 +13,7 @@ from .rules import (  # noqa: F401
     MEDIA_KIND_LABELS,
     OWNER_TYPES,
     FileRuleError,
+    coerce_file_ref_id,
     current_of,
     file_ext,
     is_file_ref,
@@ -33,6 +34,6 @@ __all__ = [
     "OWNER_TYPES", "FILE_KINDS", "MEDIA_KINDS", "MEDIA_KIND_LABELS",
     "KIND_MIME", "MAX_BYTES", "FileRuleError",
     "validate_upload", "object_key", "file_ext", "next_version", "current_of",
-    "is_file_ref", "to_data_uri",
+    "is_file_ref", "to_data_uri", "coerce_file_ref_id",
     "SigV4Error", "presign_url", "presign_put_url", "presign_get_url", "s3_config",
 ]

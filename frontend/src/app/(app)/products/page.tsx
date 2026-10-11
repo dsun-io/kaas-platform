@@ -14,10 +14,12 @@
  *   避免"两套真相"（规格定义仍以产品模块为准）。
  * - 图片按**类型**归类（生产/尺寸/重量/成品）+ **用户命名**；同一类型**可以多张**
  *   （不同角度/批次本就该并存），只有"主图"唯一。
+ * - 图片可**上移/下移**排序（主图恒排最前）：顺序是产品图库自己的位次，
+ *   单证引用后自动跟着走 —— 不用每张单证各排一次。
  * - 右边概览里的图片数即单证可引用的库存：单证**引用**这些图，改一次全同步。
  */
 import { useEffect, useMemo, useState } from "react";
-import { ImagePlus, Link2, Package, Save, Star, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ImagePlus, Link2, Package, Save, Star, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/shared/page-header";
@@ -33,6 +35,7 @@ import {
   useProductMedia,
   useProductProfile,
   useProducts,
+  useReorderProductMedia,
   useRetireFile,
   useSaveProductProfile,
   useUploadProductMedia,
@@ -66,6 +69,7 @@ export default function ProductsPage() {
   const profile = useProductProfile(selected);
   const saveProfile = useSaveProductProfile(selected ?? "");
   const upload = useUploadProductMedia(selected ?? "");
+  const reorder = useReorderProductMedia();
 
   const [info, setInfo] = useState<Record<string, string>>({});
   const [kind, setKind] = useState("production");
@@ -82,6 +86,37 @@ export default function ProductsPage() {
     () => items.find((p) => p.product_key === selected) ?? null,
     [items, selected],
   );
+
+  const mediaItems = media.data?.items ?? [];
+  // 主图恒排最前（服务端 ORDER BY is_primary DESC, sort_order, id）：
+  // 把别的图"上移"到主图之前只是个视觉假动作（重新加载后主图又回到第一），
+  // 所以第二张图在主图存在时不允许上移。
+  const firstIsPrimary = Boolean(mediaItems[0]?.is_primary);
+
+  /**
+   * 上/下移：交换展示顺序里相邻的两张，然后把**整个顺序**压成 0..n-1 落库。
+   *
+   * 为什么不只改这两张图的 `sort_order`：新上传的图都是默认 0，
+   * 交换两个 0 等于没动 —— 整体重排一次才能把顺序固化下来。
+   * 只对位次真的变了的图发 PATCH；任何一条失败都提示用户（不静默）。
+   */
+  const moveMedia = (index: number, delta: number) => {
+    const target = index + delta;
+    if (target < 0 || target >= mediaItems.length) return;
+    const next = [...mediaItems];
+    const [moved] = next.splice(index, 1);
+    if (!moved) return;
+    next.splice(target, 0, moved);
+
+    const patches: { id: number; sort_order: number }[] = [];
+    next.forEach((m, i) => {
+      if (m.sort_order !== i) patches.push({ id: m.id, sort_order: i });
+    });
+    reorder.mutate(patches, {
+      onSuccess: () => toast.success("顺序已更新"),
+      onError: () => toast.error("排序失败，请重试"),
+    });
+  };
 
   const doUpload = async () => {
     if (!file) return toast.error("先选一张图片");
@@ -215,7 +250,7 @@ export default function ProductsPage() {
 
             {media.isLoading ? (
               <p className="py-6 text-center text-sm text-muted-foreground">加载中…</p>
-            ) : (media.data?.items ?? []).length === 0 ? (
+            ) : mediaItems.length === 0 ? (
               <EmptyState
                 icon={ImagePlus}
                 title="还没有图片"
@@ -223,11 +258,17 @@ export default function ProductsPage() {
               />
             ) : (
               <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                {(media.data?.items ?? []).map((m) => (
+                {mediaItems.map((m, i) => (
                   <MediaCard
                     key={m.id}
                     media={m}
+                    position={i + 1}
                     kindLabel={mediaKinds[m.media_kind ?? "other"] ?? m.media_kind ?? "其它"}
+                    canMoveUp={i > 0 && !(firstIsPrimary && i === 1)}
+                    canMoveDown={i < mediaItems.length - 1}
+                    moving={reorder.isPending}
+                    onMoveUp={() => moveMedia(i, -1)}
+                    onMoveDown={() => moveMedia(i, 1)}
                   />
                 ))}
               </div>
@@ -239,7 +280,25 @@ export default function ProductsPage() {
   );
 }
 
-function MediaCard({ media, kindLabel }: { media: ProductMedia; kindLabel: string }) {
+function MediaCard({
+  media,
+  kindLabel,
+  position,
+  canMoveUp,
+  canMoveDown,
+  moving,
+  onMoveUp,
+  onMoveDown,
+}: {
+  media: ProductMedia;
+  kindLabel: string;
+  position: number;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  moving: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+}) {
   const url = useFileObjectUrl(media.id);
   const patch = usePatchFile();
   const retire = useRetireFile();
@@ -257,6 +316,9 @@ function MediaCard({ media, kindLabel }: { media: ProductMedia; kindLabel: strin
       </div>
       <div className="flex items-center gap-1 text-xs text-muted-foreground">
         <span className="rounded bg-muted px-1">{kindLabel}</span>
+        <span className="rounded bg-muted px-1" title="当前展示位次">
+          #{position}
+        </span>
         {media.is_primary && (
           <span className="flex items-center gap-0.5 rounded bg-primary/10 px-1 text-primary">
             <Star className="h-3 w-3" /> 主图
@@ -277,7 +339,29 @@ function MediaCard({ media, kindLabel }: { media: ProductMedia; kindLabel: strin
           }
         }}
       />
-      <div className="mt-2 flex gap-1">
+      <div className="mt-2 flex flex-wrap gap-1">
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-label={`上移 ${media.name}`}
+          title={canMoveUp ? "上移" : "主图恒排最前，不能移到它前面"}
+          disabled={!canMoveUp || moving}
+          onClick={onMoveUp}
+        >
+          <ArrowUp className="mr-1 h-3.5 w-3.5" />
+          上移
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-label={`下移 ${media.name}`}
+          title={canMoveDown ? "下移" : "已经是最后一张"}
+          disabled={!canMoveDown || moving}
+          onClick={onMoveDown}
+        >
+          <ArrowDown className="mr-1 h-3.5 w-3.5" />
+          下移
+        </Button>
         <Button
           size="sm"
           variant="ghost"
