@@ -527,3 +527,34 @@ describe("买方回签栏（buyer_confirmation）", () => {
     expect(fields.buyer_confirmation?.required).toBe(false);
   });
 });
+
+// ── 多行字段（备注逐点换行）────────────────────────────────────────────
+
+describe("多行字段（remarks / notes）", () => {
+  it("remarks 的换行保留为 <br>（1) 2) 3) 逐点换行）", () => {
+    const html = renderTradeDoc("pi", {
+      ...MINIMAL_DATA,
+      remarks: "1) first line\n2) second line\r\n3) third line",
+    });
+    expect(html).toContain(
+      "1) first line<br>2) second line<br>3) third line",
+    );
+  });
+
+  it("换行是唯一例外：其余照样转义（不是注入后门）", () => {
+    const html = renderTradeDoc("pi", {
+      ...MINIMAL_DATA,
+      remarks: "<script>alert(1)</script>\nplain",
+    });
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;<br>plain");
+  });
+
+  it("非多行字段的换行仍按 HTML 折叠（不改既有口径）", () => {
+    const html = renderTradeDoc("pi", {
+      ...MINIMAL_DATA,
+      shipping_marks: "LINE1\nLINE2",
+    });
+    expect(html).not.toContain("LINE1<br>LINE2");
+  });
+});
