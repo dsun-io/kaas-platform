@@ -41,3 +41,9 @@ GET /api/v1/spec/skus/{sku_id}  # 待补·SKU 详情
 PATCH /api/v1/spec/skus/{sku_id}  # 待补·SKU 编辑
 GET /api/v1/spec/templates  # 待补·模板清单
 GET /api/v1/spec/templates/{template_id}  # 待补·模板详情
+
+# ── 待补：团队级档位覆盖（orchestrator 已实现，worker 侧未实现）──────────────
+# 粒度：**团队**（2026-10-11 用户裁决）。改显示名 / 软停用。
+# 前端档位管理界面调这两条；worker 侧未实现前，线上调用会 404。
+GET /api/v1/product-options/overrides  # 待补·团队档位清单（含已停用，供管理界面）
+PUT /api/v1/product-options/overrides  # 待补·改显示名 / 软停用 / 恢复
