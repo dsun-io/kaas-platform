@@ -255,6 +255,9 @@ export const MOCK_CUSTOMERS = [
     default_port: "Shanghai",
     credit_level: "A",
     stage: "inquiry",
+    // 两个种子的 updated_at 必须**不同**：列表按 updated_at desc 排序
+    // （后端 customers.py:212），时间戳相同则排序不稳定、用例断言会飘。
+    updated_at: new Date(Date.now() - 3600000).toISOString(),
   }),
   makeCustomer({
     id: 2,
@@ -263,6 +266,7 @@ export const MOCK_CUSTOMERS = [
     default_port: "Los Angeles",
     credit_level: "B",
     stage: "lead",
+    updated_at: new Date(Date.now() - 3 * 86400000).toISOString(),
   }),
 ];
 
