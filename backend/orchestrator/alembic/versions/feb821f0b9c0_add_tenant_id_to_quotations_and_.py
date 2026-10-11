@@ -58,24 +58,38 @@ def upgrade() -> None:
                     'customer_capabilities', ['tenant_id'], unique=False)
 
     # ── Add tenant_id to quotations (nullable first for backfill) ──
-    op.add_column('quotations',
-        sa.Column('tenant_id', sa.Text(), nullable=True))
-    op.execute("""
-        UPDATE quotations q
-        SET tenant_id = c.tenant_id
-        FROM customers c
-        WHERE q.customer_id = c.code AND q.tenant_id IS NULL
-    """)
-    op.execute("""
-        UPDATE quotations
-        SET tenant_id = customer_id
-        WHERE tenant_id IS NULL
-    """)
-    op.alter_column('quotations', 'tenant_id', nullable=False)
-    op.create_index('idx_quotations_tenant', 'quotations',
-                    ['tenant_id', 'customer_id'], unique=False)
-    op.create_index(op.f('ix_quotations_tenant_id'),
-                    'quotations', ['tenant_id'], unique=False)
+    # 空库兜底（与上面 `customer_capabilities` 同一处、同一思路）：`quotations` 同样
+    # **没有任何更早的迁移创建它** —— 真实库靠 `Base.metadata.create_all()` 建好，
+    # 真·空白库走到这里必然报 `relation "quotations" does not exist`（整条链断在这）。
+    # 表不存在 ⇒ **跳过这整段**，把它留给后面真正建表的迁移
+    # `f82ac951b473_intel_workstation_v1.py:661`：那份 `create_table('quotations')`
+    # 本身就带 `tenant_id NOT NULL` 与同名的两个索引
+    # （`idx_quotations_tenant` / `ix_quotations_tenant_id`）⇒ 空库上跳过**不丢语义**，
+    # 也避免在这里先造一张表、再和那次 CREATE TABLE 撞车（already exists）。
+    # 已有库（表在）⇒ 条件为真，下面语句与改动前**完全一致**。
+    #
+    # 注：只兜 `upgrade`。空库上 `downgrade` 仍会在 `drop_column('quotations', …)` 处
+    # 因表不存在而报错，但那条路径现在本来就走不到（链还没修通），属同一个历史问题，
+    # 留作单独决策 —— 本次不扩大改动。
+    if sa.inspect(bind).has_table("quotations"):
+        op.add_column('quotations',
+            sa.Column('tenant_id', sa.Text(), nullable=True))
+        op.execute("""
+            UPDATE quotations q
+            SET tenant_id = c.tenant_id
+            FROM customers c
+            WHERE q.customer_id = c.code AND q.tenant_id IS NULL
+        """)
+        op.execute("""
+            UPDATE quotations
+            SET tenant_id = customer_id
+            WHERE tenant_id IS NULL
+        """)
+        op.alter_column('quotations', 'tenant_id', nullable=False)
+        op.create_index('idx_quotations_tenant', 'quotations',
+                        ['tenant_id', 'customer_id'], unique=False)
+        op.create_index(op.f('ix_quotations_tenant_id'),
+                        'quotations', ['tenant_id'], unique=False)
 
 
 def downgrade() -> None:
