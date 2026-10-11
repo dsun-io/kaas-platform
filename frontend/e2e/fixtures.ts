@@ -44,6 +44,49 @@ export const test = base.extend({
       );
     });
 
+    // ── 兜底路由：接住**绕过 MSW** 的 /api/v1 请求 ──────────────────────
+    //
+    // 为什么这能工作：**被 Service Worker 处理的请求根本到不了 `page.route`**
+    // （Playwright：SW 拦截的请求不经 page.route）。所以这里只会看到
+    // **漏网的那些** —— 正是要处理的。
+    //
+    // 它们原本的遭遇：直连 dev server → `/api/v1/*` rewrite → 自己代理自己
+    // → **500 或永久挂起** → `/auth/me` 失败 → 会话被清 → 守卫渲染
+    // 「您没有访问此页面的权限」；其余 → 错误边界；挂起 → networkidle 超时。
+    //
+    // 这里给两类答复：
+    //   · `/auth/me` → 与 MSW 同一个管理员身份（**直接解掉"无权限"**）
+    //   · 其余 → 200 `{}`：形状可能不够，但**比 500 好**（不崩、不挂），
+    //     并且下面会把名字打出来，缺口依旧可见
+    await page.route('**/api/v1/**', async (route) => {
+      const reqUrl = route.request().url();
+      const path = reqUrl.replace(/^https?:\/\/[^/]+/, '');
+      console.log('[兜底路由]', route.request().method(), path);
+      if (path.startsWith('/api/v1/auth/me')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            user_id: 1,
+            email: 'admin@kaas.local',
+            display_name: '平台管理员',
+            account_type: 'internal',
+            role: 'system_admin',
+            plan: 'enterprise',
+            team_id: null,
+            team_name: null,
+            console_access: true,
+          }),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: '{}',
+      });
+    });
+
     await use(page);
   },
 });
