@@ -179,6 +179,12 @@ def describe_pricing_key(product: ProductSpec) -> list[dict]:
         # 这一维在**产品定义**里是什么：轴 / 变体包 / 自由数值。
         # 界面靠它决定渲染下拉还是输入框；报错了会让界面画出一列空下拉。
         kind = "axis"
+        # 「声明了」与「有取值」是两件事：档位可以由客户自建，产品定义只声明不预置。
+        declared = (
+            field in numeric_map
+            or field in axis_map
+            or any(field in (vg.name, f"{vg.name}_code") for vg in product.variants)
+        )
         if field in numeric_map:
             # 自由数值维度：取值是**连续量**，无法枚举 —— 不能像轴那样列 options，
             # 但也不能整维跳过：跳了界面就少一列，查价键却仍带着这个维度，
@@ -215,7 +221,11 @@ def describe_pricing_key(product: ProductSpec) -> list[dict]:
                         for o in vg.options
                     ]
                     break
-        if not options:
+        # 「声明了但没有取值」≠「不是一维」。
+        # 档位可以由客户自建（产品定义里只声明、不预置），这时必须**把这一列画出来**，
+        # 否则客户在定价页看不到该列、加不进档位，就永远报不了价。
+        # 只有**完全没声明**的维度才跳过（否则会画出一列永远填不上的空列）。
+        if not options and not declared:
             continue
         dims.append({
             "field": field,
