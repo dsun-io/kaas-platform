@@ -76,6 +76,66 @@
 
 ### 依赖漏洞已降 98 → 78（`b5b6f4d`）
 
+### 规格库 11 条：精确范围与两次更正（2026-10-11，**待用户定**）
+
+用户追问「规格库是什么、怎么设计的、为什么弃用、被什么替代」，
+核查过程中我**先说了两次不准确的话，在此一并更正**：
+
+**更正 1**：我曾说「这 11 条正是产品定义可视化编辑器的后端」——
+**没核实就下的判断**，收回。
+
+**更正 2**（更重要）：我接着说「规格库是 INT-R3 死代码、可以退役」——
+**范围下宽了**。核查 `frontend/src/app/(app)/spec-config/` 后发现
+**同一片区域里有活的页面**：
+
+| `spec-config` 实际调用的 | 状态 |
+|---|---|
+| `/spec/categories`、`/spec/categories/{id}/bindings`、`/spec/categories/{id}` | **活的**（`app/api/categories.py`） |
+| `/spec/wizard/propose-attribute`、`/spec/wizard/submit` | **活的**（`app/api/quote_wizard.py`） |
+| `/product-specs`、`/spec/attributes/*`、`/spec/skus/*`、`/spec/templates/*`（**那 11 条**） | **它一条都没调** |
+
+而且 `/spec/categories/{id}/bindings` **直接连到属性表**
+（`category_attribute_bindings`）。所以「退役整个规格库」会**砸掉活的页面**。
+
+#### 已核实的范围（这部分证据是硬的）
+
+- 那 **11 条**接口：前端 **0 调用**；对应 7 张表在生产库 **全 0 行**（实测）
+- 文档 `CURRENT_IMPLEMENTATION_MAP.md:94` 明确：**规格体系（权威）**＝
+  `app/services/export_quote/products/*.py` + `/export-quote/products/{key}/formulas`；
+  「旧扁平模型」列在 **⛔ 遗留 / 不要改** 一侧
+
+#### 它的设计（业务实现）
+
+一条表驱动 PIM 流水线：
+
+```
+类目 ─> 属性库 ─> 规格组合 ─> spec_hash ─> SKU ─> 价格
+        spec_attributes          SHA-256前16   product_skus  product_sku_prices
+        spec_attribute_values
+             ↑ category_attribute_bindings（哪些属性属哪个类目）
+```
+
+`spec_hash` = 规格组合做 **Canonical JSON**（sorted keys + `ensure_ascii=False` +
+固定分隔符）→ SHA-256 前 16 hex，即 **SKU 的身份证**。
+另有属性**沉淀**（`attribute_proposals`）与**相似搜索**（`find_similar_attributes`，
+防重复建）。设计本身不粗糙，只是**每加一个产品/属性/取值都要动数据库行**。
+
+#### 被什么替代
+
+`ProductSpec` —— **产品定义即代码**：
+属性库 → `axes`/`variants`/`numeric_inputs`（**自由数值不枚举**，组合数不爆）；
+SKU 表 → **运行时展开**（`expand_specs`/`spec_from_partial`/`combo_count`）；
+行业模板 → 每个产品一个 Python 模块（`derived(FormulaSpec)` 把公式声明成数据结构）；
+SKU 价格表 → 定价键 + 定价数据（按买家）+ 团队级档位覆盖（#2b）。
+
+#### 因此可选的范围只剩两种（等用户定）
+
+1. **只退役那 11 条接口**（前端 0 调用、7 张表 0 行）——
+   **表与模型保留**，因为 `spec-config` 活页面经由 `bindings` 依赖它们。
+2. **维持现状**（继续挂在 allowlist 的「待补」）。
+
+「退役整个规格库」**不在可选范围**，会砸掉活页面。
+
 **关键发现：那两个 critical/high 的来源不是"版本旧"，是依赖放错了位置。**
 
 | 漏洞 | 来源链 | 真实问题 |
