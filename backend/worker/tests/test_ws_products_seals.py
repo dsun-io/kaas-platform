@@ -146,7 +146,10 @@ def test_workstation_products_upsert_after_subscription():
         "product_key": "field_fence", "product_name": "牛栏网",
         "is_system": False, "is_enabled": True,
     }
-    assert "ON CONFLICT (tenant_id, workstation, product_key)" in conn.sql_calls()
+    # P9：唯一键已按团队收敛（迁移 019）⇒ 冲突目标必须与索引表达式一致。
+    # 表达式**加括号**是 PG16 文法的要求（conflict_target := ( col | ( expr ) [, …] )）。
+    assert ("ON CONFLICT (tenant_id, (COALESCE(team_id, 0)), workstation, product_key)"
+            in conn.sql_calls())
 
 
 def test_workstation_products_unknown_product_404():

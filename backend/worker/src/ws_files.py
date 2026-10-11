@@ -312,13 +312,18 @@ async def get_profile(product_key: str, request: Request, user: dict = Depends(_
 @app.put("/api/v1/products/{product_key}/profile")
 async def put_profile(product_key: str, body: ProfileIn, request: Request,
                       user: dict = Depends(_get_current_user)):
+    # P9：唯一键按团队收敛为 (tenant_id, COALESCE(team_id,0), product_key)
+    # ⇒ 写入必须带 team（否则都落进 team_key=0 桶），且 ON CONFLICT 目标要与
+    #    索引表达式逐字一致、表达式要加括号（PG16 文法）。
     await db.execute(
         request,
-        "INSERT INTO product_profiles (tenant_id, product_key, info, updated_by)"
-        " VALUES ($1,$2,CAST($3 AS jsonb),$4)"
-        " ON CONFLICT (tenant_id, product_key) DO UPDATE SET info=EXCLUDED.info,"
+        "INSERT INTO product_profiles (tenant_id, team_id, product_key, info, updated_by)"
+        " VALUES ($1,$2,$3,CAST($4 AS jsonb),$5)"
+        " ON CONFLICT (tenant_id, (COALESCE(team_id, 0)), product_key) DO UPDATE"
+        " SET info=EXCLUDED.info,"
         " updated_by=EXCLUDED.updated_by, updated_at=now()",
-        DEFAULT_TENANT, product_key, _json.dumps(body.info, ensure_ascii=False),
+        DEFAULT_TENANT, user.get("team_id"), product_key,
+        _json.dumps(body.info, ensure_ascii=False),
         str(user.get("id") or "") or None)
     return await get_profile(product_key, request, user)
 
