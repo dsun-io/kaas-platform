@@ -81,13 +81,40 @@ export function MswProvider({ children }: { children: React.ReactNode }) {
       // `warn`：放行行为不变，但未匹配的请求会在控制台**被点名**。
       // 原先用 `bypass` 时 handler 缺失是**静默**的，这正是这个坑拖了很久的原因。
       .then((m) => m.worker.start({ onUnhandledRequest: "warn" }))
+      .then((reg) => {
+        // 探针：MSW 起来了，但实测**一个请求都没拦住**（缺口 0 条、
+        // 兜底路由却接住 15 条）。要判定的就一件事：
+        // **SW 注册成功了没有、有没有控制本页**。
+        const sw =
+          typeof navigator !== "undefined" && "serviceWorker" in navigator
+            ? navigator.serviceWorker
+            : null;
+        console.log("[MSW门] started; controller =", String(Boolean(sw?.controller)));
+        void sw
+          ?.getRegistrations?.()
+          .then((rs) => {
+            const desc =
+              rs
+                .map((r) => `${r.scope}|${r.active ? "active" : "NO-ACTIVE"}`)
+                .join(", ") || "(none)";
+            console.log("[MSW门] registrations =", desc);
+          })
+          .catch((e) => console.log("[MSW门] getRegistrations failed:", String(e)));
+        return reg;
+      })
       // 再等 SW **真正接管本页**：`start()` resolve 时 `clients.claim()`
       // （activate 里的 waitUntil）可能还没生效，那段窗口里的请求会绕过 mock。
       .then(() => waitForServiceWorkerControl())
       .then(() => setReady(true))
-      .catch(() => {
-        // MSW init failure in non-mock builds is expected — ignore silently.
-        // 但**不能因此把页面卡死**：起不来也要放行。
+      .catch((err) => {
+        // **不再静默**。原注释写"非 mock 构建里失败是预期的，静默忽略"——
+        // 但在 mock 构建里，静默吞掉会让现象**完全误导**：MSW 没起来时页面照常
+        // 发真实请求（e2e 里 → 自代理 → 一堆 500），而日志里**一个字都没有**，
+        // 于是人会去查"请求为什么没被匹配"，而不是"mock 层根本没起来"。
+        //
+        // 这与 `onUnhandledRequest` 由 `bypass` 改 `warn` 是**同一类修正：
+        // 失败必须有声音**。起不来仍要放行（不能把页面卡成白屏），但要说出来。
+        console.log("[MSW门] start FAILED:", String(err));
         setReady(true);
       });
   }, []);
