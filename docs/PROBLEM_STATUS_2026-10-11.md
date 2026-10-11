@@ -41,8 +41,8 @@
 > （不给原始 HTML 开新口子）。模板 / `manifest.json` / 渲染器测试 /
 > `TRADE_DOC_TEMPLATES.md` §七 同步更新。**不带图时输出与改动前逐字节一致** ⇒
 > 18 份迁移基线不必重生成（`verify-trade-doc-fixtures.py` 仍 18/18 一致）。
-> 未做：工位页面的「上传公章 / 上传产品图」控件与文件存储 —— 现在要把图片手工转成
-> data URI 放进 `raw_payload.custom`。
+> ~~未做：工位页面的「上传公章 / 上传产品图」控件~~ ✅ **已补**（见下条「填写单据内容」，
+> `image` 字段就是选文件转 data URI）；仍未做的是**图片走对象存储**与独立素材库。
 >
 > 另按用户追问补了第三个字段 + 一条版面硬约束（提交 `06a0ba7`）：
 > `buyer_confirmation`（**买方回签栏，默认不印** —— PI 是卖方单方出具的要约单据，
@@ -58,6 +58,22 @@
 > 并有 8 条测试。另新增通用离线渲染 CLI `scripts/render-trade-doc.ts`
 > （读 payload JSON → 复用同一渲染器出 HTML），其产物与本任务最初那份
 > 一次性脚本产物 **SHA256 完全一致**。备注 `remarks`/`notes` 改为**逐点换行**。
+>
+> 又把两处「静静出错」改成了可回归的门禁（同一批）：
+> ① **占位符一致性**：新增 `scripts/check-trade-doc-placeholders.ts`
+> （`pnpm -C frontend trade-doc:check`，支持 `--fix [--write] [--dump]`）——
+> 首轮就抓出 **9 类单证 / 18 个字段**「模板用了但 manifest 没声明 ⇒ 界面填不到、
+> 单据静静空白」（PI 的 `remarks` / `shipping_marks` / `country_of_origin` 正在其中），
+> 已全部补齐、复检 0 ERROR。`--fix --write` 带「写前 `JSON.parse` 校验、不过拒绝写盘」
+> 的安全网（开发中它两次拦住我自己写错的结构：多一个空行、多一个尾逗号）。
+> ② **签章区不可被分页切开**：共享样式加
+> `table.sign, table.sign tr, table.sign td, .certify, .foot { break-inside: avoid }`
+> —— 原先只保护内层 `.sign-box`，签章表**左右两格可能被分到两页**。
+> 实测发现 **Chromium 忽略 `break-before/after: avoid`**（给 `table.sign` 加与不加，
+> 产物 SHA256 完全相同），所以"签章绝不孤零零落在新页"**纯 CSS 保证不了**，
+> 已写进 `TRADE_DOC_TEMPLATES.md` §九（真要做得动 18 个模板加包裹层）。
+> 归档镜像 `_shared.css` 同步改（否则「TS == 归档 Python」的逐字节证明会断），
+> 基线重生成后仍 **18/18**。
 >
 > ⚠️ 本轮实测发现**工作区正被另一条线并发使用**：同一仓库另一条 DSH 会话在跑 e2e，
 > 它已提交 `f286fc4` / `ca43ddc`，并在提交说明里声明不碰本线文件。双方都只 `git add`
@@ -111,6 +127,7 @@
 | `route-parity.py` | PASS（缺失 **11** 已登记 / 未登记 0 / **过期 0** / worker 独有 **2**） |
 | `sync-shared.ps1 -Check` | exit 0（共享内核 **23** / 报价引擎 19 / 枚举字典 1） |
 | `verify-trade-doc-fixtures.py` | 18/18 逐字节一致（TS == 归档 Python；图片字段改动后仍成立） |
+| `pnpm -C frontend trade-doc:check` | exit 0（模板占位符 ↔ manifest 一致；首轮抓出 9 类 / 18 字段并已补齐） |
 >
 > 以上为 `d4b4cdc` 实测（2026-10-11）。
 | `NEXT_EXPORT=1 pnpm build` | exit 0 |

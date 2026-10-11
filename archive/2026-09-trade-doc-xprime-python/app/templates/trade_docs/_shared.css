@@ -43,6 +43,18 @@ body {
   .no-print { display: none !important; }
   /* 避免表格行 / 区块被拦腰截断 */
   table.items tr, .party, .sign-box, .words { page-break-inside: avoid; }
+  /*
+    签章区（所有单证的最后一块）：整块不可被分页切开。
+    - `table.sign` 自己也要 avoid：只保护内层 `.sign-box` 时，左右两格**可能被分到两页**
+      （买方回签在上一页、卖方公章在下一页）—— 这是最难看的失败形态。
+    - `.certify` / `.foot` 同理，声明条款与页脚不被切开。
+    实测（2026-10-11，Chromium）：**`break-before/after: avoid` 被忽略** ——
+    给 `table.sign` 加与不加，PDF 逐字节相同（SHA 相同）。所以「签章绝不成为
+    新页上的唯一内容」无法用纯 CSS 保证；能保证的是**不被切开**，
+    以及声明条款随它同块移动。
+  */
+  table.sign, table.sign tr, table.sign td,
+  .certify, .foot { page-break-inside: avoid; break-inside: avoid; }
 }
 
 /* ── 卖方信头 ─────────────────────────────────────────────────────────── */
