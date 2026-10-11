@@ -321,6 +321,17 @@ async def get_me(request: Request, user: dict = Depends(_get_current_user)):
             "team_name": await _team_name_of(request, user.get("team_id"))}
 
 
+@app.post("/api/v1/auth/logout")
+async def logout():
+    """登出（stateless JWT —— 服务端没有会话可销毁，客户端丢弃 token 即可）。
+
+    与 orchestrator `app/api/auth.py` 的 /logout 同语义、同响应体。
+    此前线上**没有**这条路由，而前端 `lib/auth/auth-context.tsx` 会调用它 ——
+    用户点登出拿到的是 404（原登记在 scripts/route-parity-allowlist.txt 的待补项，本次已摘除）。
+    """
+    return {"message": "Logged out (client should discard token)"}
+
+
 # ── 客户自助注册（含团队选择）────────────────────────────────────────────────
 # 与 orchestrator `app/api/auth.py` 的 /register 同语义，差异只有两处（都是适配）：
 #   1) **单租户**：生产 Worker 所有数据都落 DEFAULT_TENANT。dev 会给每个注册账号新建
