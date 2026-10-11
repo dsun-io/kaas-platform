@@ -357,7 +357,7 @@ SELECT count(*), count(*) FILTER (WHERE is_system) FROM tenant_products;
 |---|---|---|---|---|---|---|
 | **P14** | **行为等价重构**：一个工位两个 tab，把现有两页搬进来，JSON 文本框**原样保留** | `frontend/src/app/(app)/products/**`、`frontend/src/lib/products/**` | 前端 `typecheck`/`lint`/`test`；`NEXT_EXPORT=1` 构建；**验收信号**：两个 tab 的读写行为与搬家前逐项一致（不含新功能） | `git revert` | P3、P10、P11 | — |
 | **P15** | 契约收口：删 `tenant-products` 工位条目（ts+py **双镜像**）、`/settings/tenant-products` → redirect、`工作位白名单`同步 | `shared/contracts/workstations.ts`、`backend/orchestrator/app/domain/workstations.py`、`backend/kaas_common/workstation/subscriptions.py`、`frontend/src/app/(app)/settings/**` | `contracts:check`（R2 会强制双镜像一致，`scripts/contracts-check.ts:127-356`）；`route-parity`；前端构建；**验收信号**：侧边栏只剩一个产品入口；旧书签不 404 | `git revert` | P14、Q6 | — |
-| **P16** | 可视化编辑器（**分 2–3 小步**）：① `numeric_inputs`/`variants`/`derived` → ② `columns`/`invariants`/`space_deduction` → ③ `params`/`notes`/`constants` + 公式试算 | `frontend/src/app/(app)/products/**`（新组件）+ 后端"试算"接口（若确认需要） | 前端 `typecheck`/`lint`/`test` + 构建；后端 `pytest -m unit`；**验收信号**：逐字段 round-trip（表单 → API → DB → 回显）与 `ProductSpec` 逐字段相等；⚠️ **不许按 `Axis` 设计**（三产品 `axes=[]`，`products/chain_link.py:76`、`field_fence.py:80`、`deer_net.py:83`） | 每小步 `git revert` | P13、P14、Q8 | 三个小步之间**串行** |
+| **P16** | 可视化编辑器（**分 2–3 小步**）：① `numeric_inputs`/`variants`/`derived` → ② `columns`/`invariants`/`space_deduction` → ③ `params`/`notes`/`constants` + 公式试算。⚠️ **Q8 的"建试算接口"已复核完毕（§8.5）：不新建接口，改为给现有 `/explain` 加"草稿定义"入参 + 汇总键** | `frontend/src/app/(app)/products/**`（新组件）+ **改造** `app/api/export_quote.py` 的 `/explain`（**不是**新接口） | 前端 `typecheck`/`lint`/`test` + 构建；后端 `pytest -m unit`；**验收信号**：逐字段 round-trip（表单 → API → DB → 回显）与 `ProductSpec` 逐字段相等；**且草稿（未保存）能试算**（§8.5 的 6 条缺口逐条关闭）；⚠️ **不许按 `Axis` 设计**（三产品 `axes=[]`，`products/chain_link.py:76`、`field_fence.py:80`、`deer_net.py:83`） | 每小步 `git revert` | P13、P14、Q8（已复核） | 三个小步之间**串行** |
 
 ### 阶段 6：收口
 
@@ -582,6 +582,69 @@ Remove-Item Env:\GIT_INDEX_FILE
 查且用 `scalar_one_or_none()`（`services/export_quote/tenant_products.py:87-98`）。
 本轮放宽唯一键后，同租户同 key 的多团队行会让它抛 `MultipleResultsFound` —— 它现在**没有调用者**（已核实），
 **接线时必须先补 team 过滤**，否则一接就炸。
+
+### 8.5 已落地的第 4 个增量：**P16 复核 + P12 ② 层契约**（两项都零冲突、可离线证明）
+
+#### A. `/explain` 够不够做编辑器的公式试算 ⇒ **不够**（但**不该新建接口**）
+
+**它现在返回什么（实测，权威 JSON 键；不是靠子串）**
+一次**真实只读调用**（直接调 `explain_product`，该端点**不需要 DB**：定义来自代码注册表
+`_get_product_or_404 → get_product`，签名里根本没有 `db` 会话）：
+
+| 层级 | JSON 键 | 说明 |
+|---|---|---|
+| 顶层（固定 7 个） | `product_key` / `product_name` / `spec` / `total` / `space_deduction` / `space_deduction_ratio` / `steps` | `spec` 是**解析后的作用域**（实测 14 键：数值入参被串化 `"2.0"`，并含变体选项字段 `code`/`raw_price`/`zinc_g_m2`/`wave_factor`） |
+| 顶层（条件 2 个） | `price_metrics_omitted`（5 个价格指标名）/ `price_hint` | 只在未显式请求价格指标时出现 |
+| `steps[i]`（固定 8 个） | `code` / `label` / `stage` / `expr` / `unit` / `decimals` / `note` / `value` | `stage` ∈ `derived`\|`piece`\|`order`；实测 field_fence：14 步（derived 10 + order 4），**0 步求值失败** |
+| `steps[i]`（失败时） | **`error`** 取代 `value` | `formulas.py:334-339`：公式挂了就回 `error`，但**整个响应仍 200** |
+
+入参 `ExplainIn`（`app/api/export_quote.py`）：`spec`（**取值**字典）/ `total` / `constants` / `metrics`。
+`steps` 由 `worked_example(spec, scope, only)` 产出（`services/export_quote/formulas.py:313-359`）。
+
+**编辑器需要什么**（按 P16 目标反推）：改一个数值/公式后**即时**看到"取值代入 + 结果" ——
+且要作用于**正在编辑的草稿定义**，还要能看出**公式是否写坏**、**是否违反 `invariants`**。
+
+**差什么（6 条，逐条带证据）**
+
+| # | 缺口 | 证据 |
+|---|---|---|
+| 1 | **入参只有"取值"，没有"定义"** ⇒ **草稿无法试算**（决定性缺口） | `ExplainIn` 无 spec 定义字段；定义来自 `_get_product_or_404(product_key)` |
+| 2 | **只取系统级注册表** ⇒ 团队覆盖/差异**不参与**，对已定制的团队等于**答非所问** | `_get_product_or_404` → `get_product`（代码注册表）；端点**无 db 参数** ⇒ 拿不到 `tenant_products`/团队差异 |
+| 3 | **`invariants` 不求值** | `worked_example` 只走 `derived`+`piece_metrics`+`order_metrics`（`formulas.py:325-329`）；约束校验在 `verify.py:184 verify_invariants`，但它吃 `QuoteResult`（完整价链）且 `/verify` 是**管理员**端点 + 需要 DB |
+| 4 | 缺**静态检查**（引用不存在的量、循环依赖）——只能在求值后以每步 `error` 暴露，且必须先给一组完整取值 | `expr.py:153` `未定义变量: {name}`；无任何 `validate_*`/静态校验入口（已检索） |
+| 5 | **失败不体现在状态码**：200 + per-step `error`；且**没有顶层汇总**（`ok`/`errors`） | `formulas.py:334-339`；顶层只有上面 9 个键 |
+| 6 | 价格类指标**有意**被剔除（`price_metrics_omitted` + `price_hint`）⇒ 编辑器若想试算价格需走 `/calculate`（客户视图）或 `/calculate-internal`（管理员+DB） | `export_quote.py:378-404`；这是**设计**不是缺陷 |
+
+**结论：不够**（作为"编辑器公式试算"的完整通路），但**基础很好 ⇒ 不要新建重复接口**。
+P16 应改为"**改造 + 接线**"：
+
+1. **给现有 `/explain` 加一个可选入参 `spec_override`（草稿定义）**，语义："用这份**未保存**的定义代替注册表里的定义试算，只在本次请求内生效、**不落库**"。
+   - **向后兼容、零风险**：可选字段 ⇒ 既有请求不变；而且**当前前端与 e2e 对 `explain` 零命中**（已用检索工具核实）⇒ **没有既有调用方**。
+   - 解析草稿必须走**严格**路径（照 `spec_delta` 的口径：未知字段/结构不对要**报错**，不许静默取默认）。
+2. **补两个加性键**（不改既有键）：`ok: bool` + `errors: [{code, error, expr}]`；`warnings: [...]` 沿用 `verify.py:89` 的既有契约。
+3. **约束校验**别在 `/explain` 里重写：把 `verify_invariants`（`verify.py:184`）**抽出一个只吃 spec + scope 的纯函数**再复用（后续步骤）。
+4. **不要**新增 `/explain-draft` 之类并行接口 —— 会变成"两套解释器"。
+
+#### B. `remove` 指向不存在条目 ⇒ 上层应当 **200 + `warnings[]`**（建议），**不是**拒绝、**不是**静默
+
+**建议与理由**（契约已用 15 条测试钉住：`tests/test_spec_delta_warning_contract.py`）
+
+1. **目标状态已达成**（该条目本来就没被覆盖）⇒ 属**幂等成功**；用 4xx 拒绝会逼用户去"修"一条其实已满足的差异。
+2. **但绝不能静默**：miss 通常意味着**上游改名/删除** —— 用户以为在覆盖 `X`，而上游可能已改成 `Y` 并**继续生效** ⇒ "我定制过"是**错觉**，必须提示人工复核。
+3. **沿用仓库既有口径**：`verify.py:89` 的 `to_dict()` 就是 `{"ok":…, "warnings":[…]}`；`rates.py:121 RateSet.warnings()`、`importers.py:179`、`pricing.py:414` 都是"警告不阻断" ⇒ 不发明新词汇。
+
+**必须与"真非法"分开**（这是最容易做错的一点）：`remove` miss ⇒ **200 + warning**；
+未知字段 / 未知 `spec_version` / `base_spec_hash` 不匹配 / 结构矛盾 ⇒ **422**。
+把后者也降级成 warning，等于让"公式被静默忽略"重新长回来。
+
+**⚠️ 本轮顺带发现的缺口（待办，未改引擎：写入范围不含引擎包）**：
+`notes` / `hs_codes` 是**标量列表**（元素是字符串），而 `item_identity()` 要求条目是带 `key`/`name` 的对象
+⇒ 对它们做 `remove`/`add` 会**抛 `SpecDeltaError`**（"列表条目必须是对象（dict），实际是 str"），
+而不是像 dict 列表那样给 warning。**不是静默**（它报错了），但报错文案没说清"这两个字段不支持按条增删" ⇒ **体验缺口**。
+两种修法：① 标量列表的身份 = 值本身；② 明确把这两个字段从 `add`/`remove` 排除并在文案里说明。
+**注意缺口范围**：`lists.notes` 的**整体替换**（含 `[]` 清空 / `null` 取消）**完全可用** ✓（已用例覆盖）。
+
+**"上层还没实现"的现状**：`app/api` 里还没有"存差异"的端点 ⇒ 本任务**只钉契约 + 记录结论，不改上层**。
 
 ---
 
