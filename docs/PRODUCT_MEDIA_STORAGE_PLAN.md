@@ -13,12 +13,14 @@
 | 7 | 单证引用产品图：`{file_id}` → data URI（装配层解析） | ✅ 两端 | 渲染器**未改**（白名单不放开） |
 | 8 | 盖章回传版本化（新版本上位、旧版留档） | ✅ 后端完成 | `POST /trade-docs/{id}/files/upload`（两端） |
 | 9 | 单证编辑页「从产品图库选图」的**图形化选择器** | ✅ **已完成** | `trade-docs/components/doc-photo-picker.tsx`：选产品 → 点图 → 写入 `{"file_id": N, "caption": …}`；已添加的图标记「已添加」防重复引用 |
-| 10 | 对象存储 **S3 直传实现 + R2 接线** | ✅ 实现完成并交叉验证 / ⏳ **真实上传实测** | 见下「落点优先级与 S3 直传」：`kaas_common/files/s3.py`（8 条与 minio-py **逐字符一致**）+ `test_files_s3_roundtrip.py`（**15 条真回环**，文件域三件合跑 **41 passed**）；两端端点齐平。**S3 密钥已由用户在 dashboard 设置**（只读核验名称存在）；**真实上传端到端仍未实测** |
+| 10 | 对象存储 **S3 直传实现 + R2 接线** | ✅ 实现完成并交叉验证 / ⏳ **生产直传待修密钥** | 见下「落点优先级与 S3 直传」：`kaas_common/files/s3.py`（8 条与 minio-py **逐字符一致**）+ `test_files_s3_roundtrip.py`（**15 条真回环**，文件域三件合跑 **41 passed**）；两端端点齐平；线上配置齐全（vars + 两 secret + `FILES` binding）。⚠️ **验收发现 `S3_ACCESS_KEY` 只有 13 位（R2 要求 32）⇒ 生产直传当前不可用**，服务端代理兜底可用；⏳ 待用户重建密钥 |
 | 11 | 迁移 `202610110018`：`file_objects.sort_order`（**只新增列**） | ✅ **已在生产执行** | lead 实跑 `alembic upgrade 202610110018`；生产只读复核 = **23 列**、`sort_order` 默认 **0** |
 | 12 | 产品图**排序**（两端同一口径 + PATCH + 前端上/下移） | ✅ | `_FILE_ORDER_BY = "is_primary DESC, sort_order, id"`（orchestrator `files.py:74` ↔ worker `ws_files.py:69`）；`sort_order` **0–9999**，越界 **422 `SORT_ORDER_OUT_OF_RANGE`**；worker 补 `FilePatch.caption` 使两端字段一致 |
 | 13 | 公章**上传界面**（此前前端**无任何入口**） | ✅ | `settings/company-profile` 的 `CompanySealCard`；5 个端点与两端后端一一对应；**Canvas→PNG 是后端契约**（`validate_seal_image` 只认 PNG 魔数） |
 | 14 | **默认公章自动带入**单据渲染（G1 单一真源） | ✅ | 共享内核 `kaas_common/files/seal.py`；两端 `apply_default_seal` 是**同一函数对象**（测试断言）；`sync-shared -Check` 共享内核 **27** 文件 |
 | 15 | 三个缺陷修复（坏 `file_id` 500 / PDF 让位 / 前端两处） | ✅ | 见下「产品图排序与公章」§4：`coerce_file_ref_id`、让位扩到 `("stamp_scan","render_pdf")`、版本链改按后继件 `supersedes_id` |
+| 16 | 生产**真实验收**（带登录 + 真直传尝试） | 🔶 **已执行；卡在密钥长度** | 经用户授权临时改 bcrypt 哈希 → 登录 → **立即改回**（复核：恢复后与备份**逐字一致**、新口令**不再匹配** ⇒ **生产数据最终未变**）；因 `PUT` 被拒**未创建任何测试记录**；生产 `users` 仅 **3 个账号**、**无联佳账号**、口令全为 bcrypt（不可还原） |
+| 17 | 直传失败**自动回退服务端代理**（不静默） | ✅ | 见下 §8：`fellBackToProxy: true` + `fallbackReason`；UI 显示「已上传（直传失败：<原因>；已走服务端兜底）」；**`PUT` 成功但 `register` 失败 ⇒ 抛错不回退**；`configured=false` **不算回退**；`pnpm test` 实测 **28 files / 354 passed**（use-products **13 条**；**lead 实测**：4 条新用例在旧实现下会红）。**未覆盖**：`products/page.tsx` 的 `doUpload` |
 
 > 字节落点的当前行为（按优先级）：① **S3 预签名**（配好 `S3_*` 时，浏览器直传，字节不过服务端）
 > → ② **R2 binding**（`FILES`，生产 Worker 的平台直连）→ ③ **inline**（写 `file_objects.content` 兜底）。
@@ -83,25 +85,46 @@ orchestrator OpenAPI **实测 170 条路径**（此前记录 167）。
 - `backend/worker/wrangler.jsonc` 已加 `r2_buckets`（binding `FILES` → 桶 `kaas-files`）
   与非机密 `vars`：`S3_ENDPOINT` / `S3_BUCKET=kaas-files` / `S3_REGION=auto` / `S3_PRESIGN_EXPIRES=900`。
 
-### 5. 激活步骤：密钥已设置；真实上传实测待做
+### 5. 生产验收：入口已打通、配置齐全，但**卡在密钥长度**（⏳ 待用户重建）
 
-S3 直传（①）的**代码与配置已就位**：
+> 结论先行：**生产 S3 直传（①）当前不可用**，坏点只有一个 —— `S3_ACCESS_KEY` 长度不合规；
+> **服务端代理上传仍可用**，且直传失败会**自动回退**并如实告知用户（见 §8）。
 
-1. R2 的 S3 密钥只能在 Cloudflare dashboard 的 **R2 → Manage R2 API Tokens** 创建。
-   **Cloudflare API 没有「创建 R2 长期 S3 密钥」的端点**（已核对 OpenAPI：只有
-   `/r2/temp-access-credentials` 临时凭证与 R2 SQL catalog 凭证），只能在 dashboard 建。
-2. ✅ **密钥已设置（用户操作，已完成）**：用户在 dashboard 给 Worker `kaas` 设了
-   `S3_ACCESS_KEY` 与 `S3_SECRET_KEY`；由 lead 用 Cloudflare API **只读核验名称存在
-   （`secret_text`），未读取值**。
-3. ⏳ **真实上传（R2 写入 / 读取端到端）仍未实测** —— 需要一次**带登录的实际上传**。
-   在实测通过之前，**不得声称「生产上传已成功」**；① 是否已在生产生效同样尚未核实。
-4. **验收工具已备好**：`scripts/verify-file-storage-e2e.mjs`（lead 自建，Node 无依赖）。
-   它做一次真上传并把每步结果打出来：登录/给 token → `presign`（必须 `configured:true`）
-   → 用预签名 URL **PUT 真字节** → `register`（**`storage` 必须是 `s3`**，是 `inline` 就说明走了回退）
-   → 取短时效直链**把字节取回来与本地文件逐字节比对**（同时证明 R2 接受了我们的签名且内容未损坏）
-   → 产品图库里能看到；`--cleanup` 可验证后下线该图。任一步失败即 `exit 1`。
-   用法见脚本头部注释（`--api/--token` 或 `--email/--password`、`--product`、`--file`、`--name`、`--media-kind`）。
-   脚本自身的失败路径已实测：缺 `--file`、类型不在允许集、文件不存在 ⇒ 均 `exit 2` 并给出原因（**不静默成功**）。
+#### 5.1 线上配置已核实**齐全**
+
+- 非机密 `vars`：`S3_ENDPOINT` / `S3_BUCKET` / `S3_REGION` / `S3_PRESIGN_EXPIRES`（`plain_text`）；
+- 两个 secret：`S3_ACCESS_KEY` / `S3_SECRET_KEY`（`secret_text`）；
+- R2 binding：`FILES`。
+
+⇒ ① 的**代码与配置都在位**，缺的只是"这把密钥能不能用"。
+
+#### 5.2 生产验收**已执行**（2026-10-11 晚）
+
+- **入口打通方式（经用户授权）**：临时替换 `qa_user@qa.kaas.internal` 的 **bcrypt 哈希** →
+  登录拿到 JWT → **立即改回原哈希**。已复核两点：**恢复后与备份逐字一致**、
+  **新口令不再匹配** ⇒ **生产数据最终未变**。
+- 因 `PUT` 被拒，**没有创建任何测试记录**（`register` 未执行）。
+- 核实到的事实：生产 `users` 只有 **3 个账号**（`admin@kaas.dev` / `qa_user@qa.kaas.internal` /
+  `qa_customer@qa.kaas.internal`），**没有联佳账号**；口令全为 **bcrypt（不可还原）**
+  ⇒ 「从库里取登录凭证」这个说法**在事实上不成立**。
+
+#### 5.3 ⏳ 唯一坏点：`S3_ACCESS_KEY` 只有 **13 位**，R2 要求 **32 位**
+
+- 现象：预签名 `PUT` 返回
+  **`400 InvalidArgument: Credential access key has length 13, should be 32`**。
+- ⇒ **生产 S3 直传当前不可用**；**服务端代理上传（multipart）仍可用**。
+- ⏳ **待用户重建 R2 S3 密钥并更新 Worker 的 secret**（操作步骤见文末「附录：FAQ」）。
+- 在密钥修好并跑通验收之前，**不得声称「生产直传已成功」**。
+
+#### 5.4 验收工具（已备好，等密钥修好即可跑）
+
+`scripts/verify-file-storage-e2e.mjs`（lead 自建，Node 无依赖）做一次**真上传**并逐步打印结果：
+登录/给 token → `presign`（必须 `configured:true`）→ 用预签名 URL **PUT 真字节** →
+`register`（**`storage` 必须是 `s3`**，是 `inline` 就说明走了回退）→ 取短时效直链
+**把字节取回来与本地文件逐字节比对**（同时证明 R2 接受了我们的签名且内容未损坏）→
+产品图库里能看到；`--cleanup` 可验证后下线该图。任一步失败即 `exit 1`。
+用法见脚本头部注释（`--api/--token` 或 `--email/--password`、`--product`、`--file`、`--name`、`--media-kind`）。
+脚本自身的失败路径已实测：缺 `--file`、类型不在允许集、文件不存在 ⇒ 均 `exit 2` 并给出原因（**不静默成功**）。
 
 ### 6. S3 真回环验证（`test_files_s3_roundtrip.py`，15 条）
 
@@ -145,6 +168,31 @@ region 漂移 / 方法互换 **4/4 被拒**。
   `frontend/src/mocks/handlers.ts`（**22:54:20** 仍在写）。⇒ 结论不变且要写得更硬：
   **构建门的数字只在工作区静止时作数**；并发写期间"变红"不代表代码坏了。
   注意 `NEXT_DIST_DIR` **只隔离产物目录，不隔离源码并发写**。
+
+### 8. 直传失败**自动回退服务端代理**（**不静默**）
+
+**行为**（`frontend/src/lib/products/use-products.ts`）：
+
+| 情形 | 行为 |
+|---|---|
+| `presign` 请求失败 | 记 `fallbackReason = 预签名失败：<原因>`（`:195`） |
+| `configured=true` 但没给 `upload_url` | 记 `预签名未返回 upload_url`（`:230-232`，判定为"服务端状态不对"，**不当成"没配对象存储"**） |
+| 直传 `PUT` 非 2xx | 记 `直传被拒：HTTP <status>`（`:207`） |
+| 直传 `PUT` 抛异常（网络 / CORS） | 记 `直传异常：<原因>`（`:210`） |
+| 以上任一 ⇒ | **回退 `POST /products/{key}/media`（服务端代传）**，返回体带机器可读标记 **`fellBackToProxy: true` + `fallbackReason`**（`:241`） |
+| **`PUT` 成功但 `register` 失败** | **抛错、不回退重传**（避免重复对象 / 重复流量） |
+| `configured=false` | **不算回退**（设计如此，不给用户惊吓）：`fellBackToProxy: false`（`:239`） |
+
+**界面如实显示**：`products/page.tsx:126-131` 在"回退成功"时提示
+**`已上传（直传失败：<原因>；已走服务端兜底）`**，而不是静默成功。
+
+**证据**：`frontend/src/lib/products/__tests__/use-products.test.ts` **13 tests**；
+文档线实跑 `pnpm test` = **28 files / 354 passed**（**lead 实测**：4 条新用例在旧实现下都会红，
+文档线未复现"旧实现下红"这一步）。
+**未覆盖**：`products/page.tsx` 的 `doUpload` **无自动化测试**（整页渲染成本高，本轮未做）。
+
+**运行事实**：在密钥修好之前，**UI 里的产品图上传会走这条"直传失败 → 服务端兜底"路径**
+（用户看到带原因的提示），**不是静默成功** —— 这正是"不掩盖故障"的设计。
 
 ---
 
@@ -430,3 +478,39 @@ renderTradeDoc("pi", { product_photos: [{ image, caption }] })
 
 > 第 1–3 项均已采纳并落地（见上「实施进度」与「落点优先级与 S3 直传」）；
 > 第 4 项为既有裁决。本表保留作为决策记录，不再代表待办。
+
+---
+
+## 附录：FAQ
+
+### Q1. R2 报 `Credential access key has length 13, should be 32` 怎么办？
+
+这是 **R2 的 S3 Access Key ID 长度不合规**：R2 要求 **32 位**，而当前 Worker secret 里是 **13 位**。
+出现该错误时 **预签名直传（①）不可用**，但 **`POST /products/{key}/media` 的服务端代理上传仍可用**，
+并且前端会**自动回退**、在提示里说明原因（见「落点优先级与 S3 直传」§5.3 / §8）。
+
+修复步骤：
+
+1. Cloudflare dashboard → **R2** → **Manage R2 API Tokens** → 新建 token：
+   权限 **Object Read & Write**，**只授权桶 `kaas-files`**。
+2. 复制它给出的 **Access Key ID（32 位）** 与 **Secret Access Key**。
+3. 更新 Worker `kaas` 的两个 secret：
+   ```bash
+   npx wrangler secret put S3_ACCESS_KEY
+   npx wrangler secret put S3_SECRET_KEY
+   ```
+4. 跑一次验收（会**真上传**，`--cleanup` 会在验证后把该图下线）：
+   ```bash
+   node scripts/verify-file-storage-e2e.mjs --api https://api.kaas.powervoy.com \
+        --email <账号> --password <口令> --file <本地图片> --name <图名> --cleanup
+   ```
+   期望链路：`presign` 返回 `configured:true` → `PUT` 2xx → `register` 的 **`storage == "s3"`**
+   → 短时效直链取回的字节与本地**逐字节一致**。
+
+> ⏳ 截至本文更新时，**上面第 4 步还没有成功跑过一次**（原因就是这把 13 位的密钥）。
+> 在它跑通之前，**不要声称"生产直传已成功"**。
+
+### Q2. "临时改哈希登录"算不算动了生产数据？
+
+不算。见 §5.2：那是**经用户授权**的一次性入口手段，改后**立即改回原哈希**，并复核了
+**恢复后与备份逐字一致**、**新口令不再匹配**；且 `PUT` 被拒 ⇒ **没有创建任何测试记录**。
