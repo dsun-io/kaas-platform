@@ -21,6 +21,25 @@ export default function DashboardPage() {
 
   const summary = data;
 
+  /**
+   * 数据集命中：**形状不认识就别当成 0，也别崩**。
+   *
+   * `useSafeQuery` 对**不合 schema** 的响应是 **fail-open**
+   * （`lib/query/safe-query.ts:16-22` 只 `console.warn` 然后 `return raw`），
+   * 所以 `summary` 完全可能是 `{}` —— **truthy 但字段全缺**。
+   * 此时旧写法 `Object.keys(summary.dataset_hits)` 会抛
+   * `TypeError: Cannot convert undefined to object` ⇒ **整页进错误边界**。
+   *
+   * 2026-10-11 实测（`E2E_FALLBACK=1`：兜底路由对 `/dashboard/summary` 回 `200 {}`）：
+   * 渲染快照 = 「仪表盘加载异常 / 后端繁忙，请稍后重试」，`h1` 为空、
+   * `.grid > *` 找不到 ⇒ `dashboard:4` **0/3**；修后同条件 **3/3**。
+   *
+   * 缺字段时显示 `—`（=「不知道」），**不是 `0 个数据集`**（=「确定没有」）——
+   * 与 `frontend/src/mocks/handlers.ts` 里那条 fail-open 教训同一个方向：
+   * 把"我不知道"改写成"我确定没有"，比直接失败更糟。
+   */
+  const datasetHits = summary?.dataset_hits;
+
   return (
     <div className="space-y-8">
       <PageHeader
@@ -69,11 +88,11 @@ export default function DashboardPage() {
           label="数据集命中率"
           icon={Database}
           value={
-            summary ? `${Object.keys(summary.dataset_hits).length} 个数据集` : "—"
+            datasetHits ? `${Object.keys(datasetHits).length} 个数据集` : "—"
           }
           hint={
-            summary
-              ? Object.entries(summary.dataset_hits)
+            datasetHits
+              ? Object.entries(datasetHits)
                   .map(([k, v]) => `${k}: ${v}`)
                   .join(" · ")
               : undefined
