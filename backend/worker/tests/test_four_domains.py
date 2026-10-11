@@ -357,6 +357,32 @@ def test_trade_doc_confirm_rejects_already_issued():
     assert resp.json()["detail"]["code"] == "NOT_DRAFT"
 
 
+def test_trade_doc_confirm_rejects_amount_mismatch():
+    """合计层金额勾稽：单证合计 ≠ 行项目合计时不得确认（信用证不符点防线）。
+
+    内核 validate_confirm 只校验到行级；合计层此前线上完全没有 ——
+    生产因此能确认一张「合计与明细对不上」的单据。
+    """
+    items = [{"product_name": "牛栏网", "qty": 1, "unit_price": 120, "line_amount": 120}]
+    db = _FakeDb(fetchrow=[_doc_row(total_amount=100)], fetch=[items])
+    with _patched(db):
+        resp = client.post("/api/v1/trade-docs/11/confirm", json={})
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "AMOUNT_MISMATCH"
+
+
+def test_trade_doc_confirm_accepts_matching_total():
+    """合计与行项目一致时照常确认 —— 补的校验不能误伤正常单据。"""
+    items = [{"product_name": "牛栏网", "qty": 1, "unit_price": 120, "line_amount": 120}]
+    db = _FakeDb(fetchrow=[_doc_row(total_amount=120),
+                           _doc_row(status="issued", total_amount=120, issued_by="1")],
+                 fetch=[items])
+    with _patched(db):
+        resp = client.post("/api/v1/trade-docs/11/confirm", json={})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "issued"
+
+
 def test_trade_doc_refresh_sources_requires_draft():
     db = _FakeDb(fetchrow=[_doc_row(status="issued")])
     with _patched(db):

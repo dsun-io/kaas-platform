@@ -18,8 +18,13 @@
 --------------------------------------------------------------
 - **业务判定一律调用共享内核** `kaas_common.trade_doc.rules`
   （`assert_draft` / `assert_transition` / `validate_confirm`），
-  本文件不另写状态机、不另写确认必填、不另写金额勾稽 —— 内核的意义就是
+  本文件不另写状态机、不另写确认必填 —— 内核的意义就是
   「本地能流转、线上也必须能，反之亦然」，另写一份必然漂移（G1）。
+- **金额勾稽分两层**：内核 `validate_confirm` 只覆盖**行级**
+  （行金额 = 数量 × 单价）；**合计层**（单证合计 = 行项目合计）此前只有 dev
+  在创建时校验，线上完全没有 —— 于是生产能确认一张「合计与明细对不上」的单据，
+  而信用证下这是致命不符点。本文件在**确认**环节补上合计层，
+  判定仍调共享内核 `kaas_common.workstation.amount_rules`，不另写一份算法。
 - 错误体与 orchestrator **逐字同构**（404 `DOC_NOT_FOUND` / 409 `NOT_DRAFT` /
   422 `CONFIRM_INVALID` …），前端同一套错误处理两端通用。
 - 快照字段清单与 orchestrator 的 `_order_snapshot` / `_quote_snapshot` /
@@ -61,6 +66,9 @@ from kaas_common.trade_doc import (
     RuleError, assert_draft, assert_transition, validate_confirm,
 )
 from kaas_common.trade_doc.translate import build_messages, parse_translation
+from kaas_common.workstation.amount_rules import (
+    AmountMismatchError, calc_line_amount, check_amount_reconciliation,
+)
 
 import chain as _chain
 import doc_payload as _doc_payload
@@ -234,6 +242,23 @@ async def confirm_trade_doc(
             "error": "validation", "code": "CONFIRM_INVALID",
             "detail": "；".join(result.issues), "issues": result.issues,
         })
+
+    # 金额勾稽（信用证不符点防线）：单证合计 = 行项目合计。
+    # 只在**确认**时拦，草稿态放行 —— 避免影响在编/在途单据。
+    try:
+        items_total = sum(
+            (calc_line_amount(i["qty"], i["unit_price"]) for i in items), 0)
+    except (ValueError, ArithmeticError):
+        # 数量/单价缺失或不可解析：已由 validate_confirm 的行级校验报出，不在此重复
+        items_total = None
+    if items_total is not None:
+        try:
+            check_amount_reconciliation(d["total_amount"], items_total)
+        except AmountMismatchError as exc:
+            raise HTTPException(status_code=422, detail={
+                "error": "validation", "code": "AMOUNT_MISMATCH",
+                "detail": str(exc),
+            })
 
     row = await db.fetchrow(
         request,
