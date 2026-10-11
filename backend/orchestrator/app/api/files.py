@@ -51,6 +51,8 @@ from kaas_common.files import (
     validate_upload,
 )
 from kaas_common.files import MEDIA_KIND_LABELS
+from kaas_common.workstation.product_scope import REASON_NO_TEAM, product_info_access
+from kaas_common.workstation.scope import is_admin_role
 
 from app.core.auth import AuthContext, get_auth_context
 from app.db.session import get_db_session
@@ -224,6 +226,52 @@ async def _create_file(
 
 # ── 产品 ────────────────────────────────────────────────────────────────────
 
+def _require_profile_visible(auth: AuthContext, row) -> None:
+    """产品**基础信息**行的可见性判定 —— 行存在时调用；不可见就抛错。
+
+    依据 **Q1=B（全私式）**：产品**定义**人人可读，但**用户创建的产品相关信息
+    （基础信息 / 图片）一律团队私有，系统级也不例外**；历史 `team_id IS NULL`
+    的行**仅管理员可见**（D3/D4）。
+
+    判定**复用共享内核的同一把尺**（`kaas_common.workstation.product_scope`），
+    不在这里另写一套 —— 两端与其它落点是同一个语义源。
+
+    失败语义（照 §1.5 的顺序）：
+    - 访问者**没有团队** ⇒ **403 `NO_TEAM`**（比 404 更准确：不是"这条不可见"，
+      而是"你没有团队，压根无法拥有团队数据"）；
+    - **别团队** / **历史 NULL（非管理员）** ⇒ **404**，且两种情形**用同一个错误码**
+      （对外不可区分，不额外泄露"别家有没有存过这一行"）。
+    """
+    decision = product_info_access(
+        role=getattr(auth, "role", None),
+        viewer_team_id=getattr(auth, "team_id", None),
+        row_team_id=row.get("team_id"),
+    )
+    if decision.allowed:
+        return
+    if decision.reason == REASON_NO_TEAM:
+        raise HTTPException(status_code=403, detail={"error": "forbidden", "code": "NO_TEAM"})
+    raise HTTPException(status_code=404,
+                        detail={"error": "not_found", "code": "PROFILE_NOT_FOUND"})
+
+
+def _visible_profiles_query(auth: AuthContext) -> tuple[str, dict]:
+    """产品基础信息的可见范围（列表接口用）。
+
+    - **管理员** ⇒ 不加团队谓词（含历史 `team_id IS NULL` 行 —— D3/D4「仅管理员可见」）；
+    - **其余** ⇒ `team_id = :team`。⚠️ 无团队时 `:team` 为 `None`，而 `= NULL` **恒不成立**
+      ⇒ 该访问者看不到任何团队私有行；**但产品定义照旧返回** —— 这正是 Q6 的**两层不许压平**
+      （工位/定义人人可见，用户创建的业务数据仅团队内可见 ⇒ 只挡住后者，不把整个列表 403 掉）。
+    """
+    tenant_id = tenant_id_of(auth)
+    if is_admin_role(getattr(auth, "role", None)):
+        return ("SELECT product_key, info FROM product_profiles WHERE tenant_id=:t",
+                {"t": tenant_id})
+    return ("SELECT product_key, info FROM product_profiles"
+            " WHERE tenant_id=:t AND team_id = :team",
+            {"t": tenant_id, "team": getattr(auth, "team_id", None)})
+
+
 @router.get("/products", summary="产品列表（注册表 + 图片数 + 基础信息）")
 async def list_products(auth: AuthContext = Depends(get_auth_context),
                         db: AsyncSession = Depends(get_db_session)):
@@ -235,11 +283,11 @@ async def list_products(auth: AuthContext = Depends(get_auth_context),
             " AND owner_type='product' AND kind='product_photo' AND is_current"
             " GROUP BY owner_id"), {"t": tenant_id})).mappings().all()
     }
+    # 产品基础信息按团队过滤（写入侧自 P9 起已带 team；读取侧此前漏了 ⇒ 本次补上）
+    sql, params = _visible_profiles_query(auth)
     profiles = {
         r["product_key"]: r["info"]
-        for r in (await db.execute(text(
-            "SELECT product_key, info FROM product_profiles WHERE tenant_id=:t"),
-            {"t": tenant_id})).mappings().all()
+        for r in (await db.execute(text(sql), params)).mappings().all()
     }
     # 产品本体是代码里的 ProductSpec（注册表 keys() 才是"有哪些产品"的唯一来源），
     # 这里只把**租户可编辑**的图片数与基础信息挂上去，不复制规格定义。
@@ -266,8 +314,11 @@ async def get_profile(product_key: str, auth: AuthContext = Depends(get_auth_con
                       db: AsyncSession = Depends(get_db_session)):
     tenant_id = tenant_id_of(auth)
     row = (await db.execute(text(
-        "SELECT product_key, info, updated_at FROM product_profiles"
+        "SELECT product_key, info, updated_at, team_id FROM product_profiles"
         " WHERE tenant_id=:t AND product_key=:k"), {"t": tenant_id, "k": product_key})).mappings().first()
+    # 行存在 ⇒ 按团队判可见性（Q1=B：用户创建的产品基础信息一律团队私有）
+    if row is not None:
+        _require_profile_visible(auth, row)
     return {"product_key": product_key, "info": dict(row["info"]) if row else {},
             "updated_at": row["updated_at"].isoformat() if row else None}
 
