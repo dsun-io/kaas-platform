@@ -305,6 +305,51 @@ Error: page.waitForLoadState: Test timeout of 30000ms exceeded.
 
 **剩余 13 条**：admin-gray-release ×3、events ×4、quotations ×4、customers ×1、dashboard ×1。
 
+#### 关键反转：不是 handler 缺失，是**请求发得太早**
+
+用 dev server 的 self-proxy 报错抓"地面真相"（**被 rewrite 代理 = 没被 MSW 匹配**）：
+
+```
+/api/v1/auth/me          ← 有 handler
+/api/v1/events           ← 有 handler
+/api/v1/customers        ← 有 handler
+/api/v1/dashboard/summary ← 有 handler
+/api/v1/admin/audit-log、/admin/deployment_audit、/admin/feature_flag、
+/admin/tenants、/me/workstations、/teams/me   ← 这些确实没 handler
+```
+
+**前四个明明有 handler 却仍然 bypass** —— 说明主因不是"缺 handler"，而是：
+
+> `MswProvider` 原先「立刻渲染 children + 在 effect 里异步 `worker.start()`」，
+> 而 React Query **在挂载时立刻发 fetch**。等 `worker.start()` resolve，
+> 请求早已发出去了 → **首屏那一批全部绕过 mock**。
+
+**它伪装得很好**：被绕过的偏偏是 `/auth/me`、`/events`、`/customers`、
+`/dashboard/summary` 这些**本来就有 handler** 的端点，于是看起来像
+"handler 缺失"或"权限不足"。
+
+#### 修法：MSW 就绪门（`8a…` 本轮）
+
+`components/msw-provider.tsx` 改成 **mock 模式下先 `return null`，等
+`worker.start()` resolve 再渲染 children**；并且**起不来也要放行**
+（一个 mock 故障不能把整个应用卡成白屏）。
+
+实测：13 failed / 11 passed → **10 failed / 14 passed**（再 +3）。
+
+#### 收敛轨迹
+
+| 轮次 | 失败 / 通过 | 认识 |
+|---|---|---|
+| 起点 | "26 条" | 以为是一批产品缺陷 |
+| R34 | 25 / 6 | 环境缺 `npm` + 缺浏览器 |
+| R36 | 18 / 6 → 14 / 10 | 客户端打 `:8000`，MSW 只匹配 `:3000` |
+| R37 | 13 / 11 | 失败模式变为自代理挂死 → `networkidle` 超时 |
+| R38 | **10 / 14** | **不是 handler 缺失，是 MSW 启动晚于首屏请求** |
+
+**仍未归真**（10 条）。仍需补的 handler（这部分确实是缺口）：
+`/admin/audit-log`、`/admin/deployment_audit`、`/admin/feature_flag`、
+`/admin/tenants`、`/me/workstations`、`/teams/me`。
+
 **关键发现：那两个 critical/high 的来源不是"版本旧"，是依赖放错了位置。**
 
 | 漏洞 | 来源链 | 真实问题 |
