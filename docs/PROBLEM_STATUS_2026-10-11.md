@@ -155,24 +155,26 @@
 | — | 立 `AGENTS.md` 收录全局规则（更新须带文档 + 推送） | `9250376` |
 | — | 单证工位 PI **公章 + 产品照片 + 买方回签栏（两侧等高）**字段（渲染器 / 模板 / manifest / 测试 / 文档） | `43be2f7`、`06a0ba7` |
 
-### 当前门禁（全绿）
+### 当前门禁（**工作区静止**时实测；并发写期间构建会假红）
 
 | 门禁 | 结果 |
 |---|---|
-| orchestrator `pytest -m unit` | **680 passed** / 1 skipped（本轮文档线复跑） |
-| worker `pytest` | **142 passed**（本轮文档线复跑） |
-| 前端 `test` | **304 passed / 22 files / 0 failed**（**lead/队友实测**；数字随本线加测试而增长：280 → 291 → 302 → 304） |
-| 前端 `typecheck` / `lint` | exit 0 |
-| `contracts:check` | R0–R4 PASS |
+| orchestrator `pytest -m unit` | **711 passed** / 1 skipped（**文档线复跑**） |
+| worker `pytest` | **176 passed**（**文档线复跑**） |
+| 前端 `test` | **325 passed / 25 files / 0 failed**（**文档线复跑**；数字随本线加测试而增长：280 → 291 → 302 → 304 → 325） |
+| 前端 `typecheck` / `lint` | exit 0（lint **0 error / 9 warning**，warning 均为既有） |
+| `contracts:check` | R0–R4 PASS（**R2 = 26 工位** ts↔py 一致） |
 | `route-parity.py` | PASS（缺失 **11** 已登记 / 未登记 0 / **过期 0** / worker 独有 **2**） |
-| `sync-shared.ps1 -Check` | exit 0（共享内核 **26** / 报价引擎 19 / 枚举字典 1；本轮文档线复跑） |
+| `sync-shared.ps1 -Check` | exit 0（共享内核 **27** / 报价引擎 19 / 枚举字典 1；**文档线复跑**） |
 | `verify-trade-doc-fixtures.py` | 18/18 逐字节一致（TS == 归档 Python；图片字段改动后仍成立） |
 | `pnpm -C frontend trade-doc:check` | exit 0（模板占位符 ↔ manifest 一致；首轮抓出 9 类 / 18 字段并已补齐） |
 >
-> 本轮（2026-10-11 晚）更新：orchestrator **680** / worker **142** / 共享内核 **26** 由
-> **文档线复跑**；`NEXT_EXPORT` 构建门禁由**文档线复跑**（`NEXT_DIST_DIR=.next-build`，exit 0）；
-> 前端 `test` **304** 为 **lead/队友实测**。其余行仍为 `d4b4cdc` 实测（2026-10-11）。
-| `NEXT_EXPORT=1 pnpm build` | exit 0（**文档线用 `NEXT_DIST_DIR=.next-build` 复跑**）；并发 worktree 下必须隔离产物目录，但该隔离**不覆盖源码并发写**（见「追加」§构建门禁） |
+> 本轮（2026-10-11 晚间最终轮）更新：orchestrator **711** / worker **176** / 共享内核 **27** /
+> 前端 `test` **325 / 25 files** / `contracts:check` R0–R4（26 工位）/ `route-parity` PASS
+> —— 由**文档线复跑**（前端 `typecheck`/`lint` 为 lead 实测）。
+> `NEXT_EXPORT` 构建：**lead 实测 exit 0**，但**文档线本轮在并发写期间复跑失败**（见下行）。
+> 其余行仍为 `d4b4cdc` 实测（2026-10-11）。
+| `NEXT_EXPORT=1 pnpm build` | **lead 实测 exit 0**（`NEXT_DIST_DIR=.next-build`）。⚠️ 但**文档线本轮在并发写期间复跑失败**：`PageNotFoundError`/ENOENT（`load-components`），当时另一条线正在改 `frontend/src/mocks/*`（22:49–22:54）⇒ 该隔离**只隔离产物目录、不覆盖源码并发写**，**取数前必须确认工作区静止**（见「追加」§构建门禁） |
 | `scripts/verify/verify_against_sheet.py` | exit 0（公式级不一致 0） |
 
 ### 关键环境事实（踩过的坑，别再踩）
@@ -1965,3 +1967,65 @@ Neon 令牌过期、Edge 无会话、无 `.env`）：
 **3. 门禁滚动表已按本轮实测更新**（见本文 §「当前门禁」）：orchestrator **680 passed / 1 skipped**、
 worker **142 passed**、共享内核 **26** 个文件、构建门禁 **PASS** —— 这四项由**文档线复跑**；
 前端 `test` **304 / 22 files** 为 **lead/队友实测**。
+
+**（续三 · 2026-10-11 晚间最终轮）产品图排序 + 公章链路 + 三个缺陷修复**
+
+**1. 迁移 018 已上生产**：`file_objects.sort_order INTEGER NOT NULL DEFAULT 0`（**只新增列**，
+存量行自动补 0；`downgrade` 只删列）——`backend/orchestrator/alembic/versions/202610110018_file_sort_order.py:31-41`。
+lead 实跑 `alembic upgrade 202610110018` 成功；生产只读复核 = **23 列**、`sort_order` 默认 0。
+
+**2. 产品图排序**（目标口径要求，此前只有"设主图"）：
+- 两端同一常量 `_FILE_ORDER_BY = "is_primary DESC, sort_order, id"`
+  （orchestrator `files.py:74` ↔ worker `ws_files.py:69`），媒体/列表共用；
+- `PATCH /file-objects/{id}` 接受 `sort_order`，范围 **0–9999**（`_MAX_SORT_ORDER`），
+  越界 **422 `SORT_ORDER_OUT_OF_RANGE`**（`files.py:360-367` / `ws_files.py:370-375`）；
+- worker 的 `FilePatch` 补上此前缺失的 `caption`，两端字段一致（`files.py:324-328` / `ws_files.py:338-342`）；
+- 前端卡片「上移/下移」+ 位次徽标 + **主图恒最前**（第 2 张不能越过主图）；
+  只对位次真变的图发 PATCH、失败提示（`products/page.tsx:91-93,97-113,319,346-363`）。
+
+**3. 公章链路**（此前前端**无任何入口** ⇒ 生产 `tenant_company_seals` **0 行**，PI 永远出不来章）：
+- 上传界面 `CompanySealCard` 挂在 `settings/company-profile`；5 个端点与两端后端一一对应
+  （后端路由 `backend/orchestrator/app/api/company_seals.py:112,201,217,241,263`）；
+- **Canvas 转 PNG 是后端契约要求**（`validate_seal_image` 只认 PNG 魔数，
+  `kaas_common/trade_doc/png.py:42`），**不是降级**；
+- 空态明说「没有公章时签章区不会盖章」。
+- **默认章自动带入渲染**：纯函数在共享内核 `backend/kaas_common/files/seal.py`
+  （`SEAL_FIELD` / `seal_field` / `seal_data_uri` / `apply_default_seal`）；
+  优先级 = `custom` **显式给过**（含空串）⇒ 不覆盖、不查库 → 否则取 `is_default` 转 data URI →
+  无默认章/空字节/None ⇒ **不注入**（**不伪造空图**）。两端只剩取数壳
+  （`trade_docs.py:47,775-779,827` / `main.py:3589,3598-3608,3683`），
+  且 `apply_default_seal` 是**同一个函数对象**（测试断言 `test_trade_doc_seal_default.py:79`）；
+  `sync-shared -Check` 共享内核 **27** 文件一致。
+
+**4. 三个缺陷修复**（队友发现、lead 修）：
+a) 坏 `file_id`（如 `{"file_id":"abc"}`）让 render-data **500** → 共享内核新增 `coerce_file_ref_id`
+   （只认正整数/数字字符串，**`bool` 单独挡掉**——它是 `int` 子类），`is_file_ref` 复用它
+   （`kaas_common/files/rules.py:203,232-235`）；回归测试用 **`db=None`** 证明坏 id 走完装配**不触库**，
+   合法引用在 `db=None` 下必然抛错作为对照。
+b) `attach_doc_file` 让位只处理 `stamp_scan` ⇒ 反复归档 PDF 会出现多条"当前 PDF" →
+   扩到 `("stamp_scan","render_pdf")`，旧链接挂 `<role>_superseded`、**不物理删**
+   （`files.py:543-550` / `ws_files.py:466-472`）。
+c) 前端两处：界面把 Markdown `**` 当文本渲染；历史版本号用 `version+1` **推算** →
+   改为按**后继件的 `supersedes_id`** 找后继（`doc-stamp-return.tsx:118-124`），两条都已被测试钉住。
+
+**5. 验证资产**：`backend/worker/tests/test_ws_files_storage.py`（**34**）、
+`frontend/src/lib/products/__tests__/use-products.test.ts`（**9**）、
+`frontend/src/app/(app)/trade-docs/components/__tests__/doc-stamp-return.test.tsx`（**5**）、
+`backend/orchestrator/tests/test_trade_doc_seal_default.py`（**28**）、
+`docs/TRADE_DOC_PDF_ARCHIVAL.md`（PDF 留档设计，含 6 项"未验证"，其中第 6 条**已于本轮核对并修正** ⇒ 当前仍开放 **5** 项）；
+另修测试配置缺口：仓库此前**没有任何 `.tsx` 测试**，而 `tsconfig` 的 `jsx: preserve` 会被 Vite 8 的
+**oxc** 照搬 ⇒ 任何 import `.tsx` 的测试都跑不起来；`frontend/vitest.config.ts:13` 加
+`oxc: { jsx: { runtime: 'automatic', importSource: 'react' } }` 修好。
+
+**6. ⏳ 仍未做（保持待办，别写成已完成）**：
+① **真实上传端到端**（工具 `scripts/verify-file-storage-e2e.mjs` 已备，需一次**带登录的生产上传**）；
+② **真实 PostgreSQL / db 级用例**（部分唯一索引唯一性、跨租户隔离、`bytea` 往返）；
+③ **盖章在 PI 版式中的位置/尺寸无视觉验证**；
+④ **排序的页面级过滤逻辑**未被测试覆盖（hook 层有契约测试，页面层没有；
+   队友已说明**没有用复刻逻辑假装覆盖**）。
+
+**7. ⚠️ 构建门禁本轮再复现假红（如实记录）**：文档线用
+`$env:NEXT_EXPORT="1"; $env:NEXT_DIST_DIR=".next-build"` 复跑**失败**
+（`PageNotFoundError`/ENOENT，`load-components`）；当时另一条线正在写
+`frontend/src/mocks/handlers.ts` 等（**22:54:20** 仍在写）。⇒ `NEXT_DIST_DIR`
+**只隔离产物目录、不隔离源码并发写**；**构建门的数字只在工作区静止时作数**。

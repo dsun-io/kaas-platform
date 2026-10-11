@@ -3575,6 +3575,39 @@ async def put_company_profile(request: Request, body: dict,
     return await get_company_profile(request, user)
 
 
+# ── 默认公章带入（单据没显式给 company_stamp 时的回落）────────────────────────
+# 判定（字段名/覆盖优先级/空值处理）在**共享内核**：G1 只允许一份 ——
+# `kaas_common/files/seal.py`（与 orchestrator 同一份，sync-shared.ps1 镜像到
+# worker/src/kaas_common）。表/列以 `ws_seals.py` 为准：`tenant_company_seals.png_bytes`
+# + `is_default`。请求期才读库（`db.fetchrow(request, ...)`），import 期不读绑定/环境。
+#
+# 覆盖优先级：
+#   1. 单据 `custom` 显式含 `company_stamp`（含空串）⇒ 不覆盖；
+#   2. 否则租户默认章（`is_default`）转 `data:` URI 填入；
+#   3. 都没有 ⇒ 不注入、不伪造空图。
+# 本文件只保留"怎么取到默认章那一行"（本侧走请求期 db.fetchrow）。
+from kaas_common.files.seal import apply_default_seal  # noqa: E402
+
+
+def _seal_tenant_of(user) -> str:
+    """公章**写入侧**的租户口径（与 `ws_seals._tenant_of` 一致）：账号 tenant_id，缺省 DEFAULT_TENANT。"""
+    tid = (user or {}).get("tenant_id")
+    return tid if isinstance(tid, str) and tid else DEFAULT_TENANT
+
+
+async def _apply_default_seal(request: Request, user: dict, data: dict, custom) -> dict:
+    """装配层最后一步：只在单据**没**显式给 `company_stamp` 时才查库（省无谓查询）。"""
+    if isinstance(custom, dict) and "company_stamp" in custom:
+        return data
+    row = await db.fetchrow(
+        request,
+        "SELECT png_bytes, mime FROM tenant_company_seals"
+        " WHERE tenant_id=$1 AND is_default ORDER BY id LIMIT 1",
+        _seal_tenant_of(user),
+    )
+    return apply_default_seal(data, custom, row)
+
+
 @app.get("/api/v1/trade-docs/{doc_id}/render-data")
 async def get_trade_doc_render_data(doc_id: int, request: Request,
                                     user: dict = Depends(_get_current_user)):
@@ -3646,6 +3679,8 @@ async def get_trade_doc_render_data(doc_id: int, request: Request,
     # 单证引用产品图：把 `{file_id}` 解析成图片源（装配层做，渲染器一行不改）
     import ws_files as _ws_files  # 模块在文件末尾导入，函数内惰性引用
     data = await _ws_files.resolve_photo_refs(request, data)
+    # 单据没显式给 company_stamp → 自动带出租户默认公章（同样转 data URI）
+    data = await _apply_default_seal(request, user, data, custom)
     return {
         "doc": doc,
         "data": data,

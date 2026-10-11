@@ -63,7 +63,7 @@ export function DocStampReturn({ docId }: { docId: number }) {
         <FileCheck2 className="h-4 w-4 text-muted-foreground" />
         <span className="text-sm font-medium">客户盖章回传</span>
         <span className="text-xs text-muted-foreground">
-          再次上传会**覆盖当前件**（新版本上位），旧版本保留在历史里 —— 要留档
+          再次上传会覆盖当前件（新版本上位），旧版本保留在历史里 —— 要留档
         </span>
       </div>
 
@@ -114,11 +114,17 @@ export function DocStampReturn({ docId }: { docId: number }) {
                   历史版本 {historyStamps.length} 件（留档，不再对外展示）
                 </p>
                 <ul className="space-y-1">
-                  {historyStamps.map((f) => (
-                    <li key={f.link_id} className="text-xs text-muted-foreground">
-                      {f.name} · v{f.version} · 已被 v{f.version + 1} 取代
-                    </li>
-                  ))}
+                  {historyStamps.map((f) => {
+                    // 版本链的**真源是后继件的 `supersedes_id`**，不是"版本号 +1"：
+                    // 版本号可能跳号/重传，推算出来的号会指向不存在的版本（曾按 +1 写，被队友指出）。
+                    const successor = all.find((x) => x.supersedes_id === f.id);
+                    return (
+                      <li key={f.link_id} className="text-xs text-muted-foreground">
+                        {f.name} · v{f.version} ·{' '}
+                        {successor ? `已被 v${successor.version} 取代` : "已被新版取代"}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}

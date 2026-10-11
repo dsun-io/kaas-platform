@@ -4,16 +4,21 @@
 
 | # | 项 | 状态 | 证据 |
 |---|---|---|---|
-| 1 | 迁移 `202610110016`（三表）+ `202610110017`（版本化边界收窄 + 主图） | ✅ **已在生产库执行** | 生产实测 file_objects 22 列、索引 11 个 |
-| 2 | 共享内核 `kaas_common/files`（校验 / key / 版本化 / 引用解析） | ✅ | 18 条单测进 `-m unit` 门禁 |
+| 1 | 迁移 `202610110016`（三表）+ `202610110017`（版本化边界收窄 + 主图）+ `202610110018`（`sort_order`，见第 11 项） | ✅ **已在生产库执行** | 生产实测 file_objects **23 列**（016/017 后 22 列，018 加 `sort_order`）、索引 11 个 |
+| 2 | 共享内核 `kaas_common/files`（校验 / key / 版本化 / 引用解析） | ✅ | **21** 条单测进 `-m unit` 门禁（含新增 `coerce_file_ref_id` 3 条） |
 | 3 | orchestrator API（文件域 + 产品媒体；含直传端点） | ✅ | OpenAPI 实测 **170** 条路径（此前 167） |
-| 4 | Worker 镜像 + **R2 binding**（桶 `kaas-files` 已建） | ✅ | `pytest` 142 passed；`wrangler.jsonc` 已加绑定 |
-| 5 | 前端 `/products` 产品管理页（基础信息 + 图片上传/命名/类型/主图/下线） | ✅ | typecheck 0 / test 304 passed |
+| 4 | Worker 镜像 + **R2 binding**（桶 `kaas-files` 已建） | ✅ | worker `pytest` **176 passed**（当前）；`wrangler.jsonc` 已加绑定 |
+| 5 | 前端 `/products` 产品管理页（基础信息 + 图片上传/命名/类型/**排序**/主图/下线） | ✅ | typecheck 0 / test **325 passed / 25 files** |
 | 6 | 侧边栏入口（契约 ts+py 双向一致） | ✅ | `contracts:check` **R2 PASS（26 工位）** |
 | 7 | 单证引用产品图：`{file_id}` → data URI（装配层解析） | ✅ 两端 | 渲染器**未改**（白名单不放开） |
 | 8 | 盖章回传版本化（新版本上位、旧版留档） | ✅ 后端完成 | `POST /trade-docs/{id}/files/upload`（两端） |
 | 9 | 单证编辑页「从产品图库选图」的**图形化选择器** | ✅ **已完成** | `trade-docs/components/doc-photo-picker.tsx`：选产品 → 点图 → 写入 `{"file_id": N, "caption": …}`；已添加的图标记「已添加」防重复引用 |
 | 10 | 对象存储 **S3 直传实现 + R2 接线** | ✅ 实现完成并交叉验证 / ⏳ **真实上传实测** | 见下「落点优先级与 S3 直传」：`kaas_common/files/s3.py`（8 条与 minio-py **逐字符一致**）+ `test_files_s3_roundtrip.py`（**15 条真回环**，文件域三件合跑 **41 passed**）；两端端点齐平。**S3 密钥已由用户在 dashboard 设置**（只读核验名称存在）；**真实上传端到端仍未实测** |
+| 11 | 迁移 `202610110018`：`file_objects.sort_order`（**只新增列**） | ✅ **已在生产执行** | lead 实跑 `alembic upgrade 202610110018`；生产只读复核 = **23 列**、`sort_order` 默认 **0** |
+| 12 | 产品图**排序**（两端同一口径 + PATCH + 前端上/下移） | ✅ | `_FILE_ORDER_BY = "is_primary DESC, sort_order, id"`（orchestrator `files.py:74` ↔ worker `ws_files.py:69`）；`sort_order` **0–9999**，越界 **422 `SORT_ORDER_OUT_OF_RANGE`**；worker 补 `FilePatch.caption` 使两端字段一致 |
+| 13 | 公章**上传界面**（此前前端**无任何入口**） | ✅ | `settings/company-profile` 的 `CompanySealCard`；5 个端点与两端后端一一对应；**Canvas→PNG 是后端契约**（`validate_seal_image` 只认 PNG 魔数） |
+| 14 | **默认公章自动带入**单据渲染（G1 单一真源） | ✅ | 共享内核 `kaas_common/files/seal.py`；两端 `apply_default_seal` 是**同一函数对象**（测试断言）；`sync-shared -Check` 共享内核 **27** 文件 |
+| 15 | 三个缺陷修复（坏 `file_id` 500 / PDF 让位 / 前端两处） | ✅ | 见下「产品图排序与公章」§4：`coerce_file_ref_id`、让位扩到 `("stamp_scan","render_pdf")`、版本链改按后继件 `supersedes_id` |
 
 > 字节落点的当前行为（按优先级）：① **S3 预签名**（配好 `S3_*` 时，浏览器直传，字节不过服务端）
 > → ② **R2 binding**（`FILES`，生产 Worker 的平台直连）→ ③ **inline**（写 `file_objects.content` 兜底）。
@@ -133,8 +138,98 @@ region 漂移 / 方法互换 **4/4 被拒**。
   改写 `frontend/src/app/(app)/trade-docs/*` 的时间重叠）**仍是 exit 1**
   （`Export encountered errors`，含 `JSON.parse` 栈）；等对方写入停止后同命令复跑 exit 0。
   ⇒ 「**取数前确认工作区静止**」这条纪律对构建同样适用。
-- ⇒ 构建门禁**通过**；但**并发 worktree 下必须**用 `NEXT_DIST_DIR` 指定独立产物目录，
-  否则会与 `next dev` 互相破坏 —— 那类失败看起来像代码坏了，其实只是环境。
+- ⇒ 构建门禁在**工作区静止**时**通过**；但**并发 worktree 下必须**用 `NEXT_DIST_DIR` 指定独立产物
+  目录，否则会与 `next dev` 互相破坏 —— 那类失败看起来像代码坏了，其实只是环境。
+- ⚠️ **2026-10-11 晚间最终轮再次复现**：文档线再复跑一次又 **exit 1**
+  （`PageNotFoundError`/ENOENT，`load-components`），当时另一条线正在写
+  `frontend/src/mocks/handlers.ts`（**22:54:20** 仍在写）。⇒ 结论不变且要写得更硬：
+  **构建门的数字只在工作区静止时作数**；并发写期间"变红"不代表代码坏了。
+  注意 `NEXT_DIST_DIR` **只隔离产物目录，不隔离源码并发写**。
+
+---
+
+## 产品图排序与公章（2026-10-11 晚 · 第二批实现）
+
+### 1. 产品图排序（迁移 `202610110018`）
+
+- **迁移**：`file_objects` 新增 `sort_order INTEGER NOT NULL DEFAULT 0`（**只新增列**，存量行自动补 0；
+  `downgrade` 只删列、不碰数据行）——`backend/orchestrator/alembic/versions/202610110018_file_sort_order.py:31-41`。
+  ✅ **已在生产执行**（lead 实跑 `alembic upgrade 202610110018`；生产只读复核 = **23 列**、`sort_order` 默认 0）。
+- **为什么加在 `file_objects` 而不是另建排序表**：产品图位次是**产品图本身**的属性，
+  一份图被多张单证引用（`trade_doc_files.file_id`），它的顺序应当一次维护、处处一致
+  （迁移文件头注释即此理由）。单证自己的顺序另有 `trade_doc_files.sort_order`。
+- **两端同一常量**：`_FILE_ORDER_BY = "is_primary DESC, sort_order, id"`
+  （`backend/orchestrator/app/api/files.py:74`；`backend/worker/src/ws_files.py:69`），媒体/列表共用。
+- **PATCH 支持排序值**：`PATCH /api/v1/file-objects/{id}` 接受 `sort_order`，范围 **0–9999**
+  （`_MAX_SORT_ORDER = 9999`，两端同值），越界返回 **422 `SORT_ORDER_OUT_OF_RANGE`**
+  （orchestrator `files.py:360-367`；worker `ws_files.py:370-375`）。
+- **两端字段对齐**：worker 的 `FilePatch` 补上此前缺失的 `caption`
+  （orchestrator `files.py:324-328` ↔ worker `ws_files.py:338-342`）。
+- **前端**：产品图卡片提供**上移/下移** + **位次徽标**；**主图恒排最前** ——
+  主图存在时第二张不允许上移（`products/page.tsx:91-93,319,346-363`）。
+  上/下移把整个顺序压成 `0..n-1` 后**只对位次真变的图发 PATCH**，任何一条失败都提示用户
+  （`products/page.tsx:97-113`）。
+
+### 2. 公章上传界面（`settings/company-profile`）
+
+此前**前端没有任何公章上传入口**（全仓只引用渲染字段 `company_stamp`），
+生产 `tenant_company_seals` 为 **0 行** ⇒ 用户根本传不了章，PI 的签章区永远空着。
+
+- 新组件 `frontend/src/app/(app)/settings/company-profile/components/company-seal-card.tsx`，
+  挂在企业主体信息页。
+- 5 个端点与两端后端**逐一对应**：`POST /tenant/company-seals`（上传，multipart）、
+  `GET /tenant/company-seals`（列表）、`GET /tenant/company-seals/{id}/image`（取 PNG，需 Bearer）、
+  `PUT /tenant/company-seals/{id}/default`（设默认，全局唯一）、
+  `DELETE /tenant/company-seals/{id}`（删除；默认章还有别的章时后端 409 要求先转移默认）。
+  后端路由见 `backend/orchestrator/app/api/company_seals.py:112,201,217,241,263`（worker 镜像同契约）。
+- **Canvas 转 PNG 是后端契约要求，不是降级**：`validate_seal_image` 只认 **PNG 魔数**
+  （`backend/kaas_common/trade_doc/png.py:42`；两端调用点 `company_seals.py:62`、`ws_seals.py:70`），
+  所以前端必须先把图归一化成 PNG 再传（`company-seal-card.tsx:20,270`）。
+- 空态明说：**「没有公章时，PI / 合同 / 装箱单的签章区不会盖章」**（`company-seal-card.tsx:461,469`）。
+
+### 3. 默认公章自动带入单据渲染（G1 单一真源）
+
+- 纯函数住在共享内核 `backend/kaas_common/files/seal.py`：
+  `SEAL_FIELD` / `seal_field` / `seal_data_uri` / `apply_default_seal`（`seal.py:30,33,36,46,59`）。
+- **覆盖优先级**（两端逐字一致）：
+  ① 单据 `custom` **显式含** `company_stamp`（**含空串**）⇒ 以它为准，不覆盖、**不查库**；
+  ② 没给 ⇒ 取租户 `is_default` 章，`png_bytes` 转 `data:` URI 填入；
+  ③ 无默认章 / 空字节 / None ⇒ **不注入**（**不伪造空图**）。
+- 两端只剩"取数壳"：orchestrator `trade_docs.py:47,775-779,827`；worker `main.py:3589,3598-3608,3683`。
+- **证据**：两端 `apply_default_seal` 是**同一个函数对象**
+  （测试断言 `backend/orchestrator/tests/test_trade_doc_seal_default.py:79`：
+  `td.apply_default_seal is apply_default_seal`），源码里已无本地副本；
+  `sync-shared.ps1 -Check` 实测共享内核 **27** 个文件一致。
+
+### 4. 本轮修掉的三个缺陷
+
+| # | 缺陷 | 处置 | 位置 |
+|---|---|---|---|
+| a | 坏 `file_id`（如 `{"file_id":"abc"}`）让 render-data **500** | 共享内核新增 `coerce_file_ref_id`（只认正整数/数字字符串，**`bool` 单独挡掉**——它是 `int` 子类），`is_file_ref` 复用它 | `backend/kaas_common/files/rules.py:203,232-235`；回归测试 `test_files_kernel.py:177-201`（用 **`db=None`** 证明坏 id 走完装配**不触库**；合法引用在 `db=None` 下必然抛错，作为对照） |
+| b | `attach_doc_file` 让位只处理 `stamp_scan` ⇒ 反复归档 PDF 会出现多条"当前 PDF" | 扩到 `("stamp_scan","render_pdf")`，旧链接挂 `<role>_superseded`（**不物理删**） | orchestrator `files.py:543-550`；worker `ws_files.py:466-472` |
+| c | 前端：界面把 Markdown `**` 当文本渲染；历史版本号用 `version+1` **推算** | 去掉星号；改为按**后继件的 `supersedes_id`** 找后继，找到写真实 `v{后继.version}`，找不到写「已被新版取代」 | `doc-stamp-return.tsx:118-124`（`:66` 已无 `**`） |
+
+### 5. 验证资产（新增测试）
+
+| 文件 | 条数 | 覆盖 |
+|---|---|---|
+| `backend/worker/tests/test_ws_files_storage.py` | **34** | `_s3` 读请求期绑定、三段回退**顺序**、`_load_bytes` 不把错误当内容、`resolve_photo_refs` |
+| `frontend/src/lib/products/__tests__/use-products.test.ts` | **9** | 直传/回退双路径 + sha256 固定期望值 + 排序 hook 请求契约 |
+| `frontend/src/app/(app)/trade-docs/components/__tests__/doc-stamp-return.test.tsx` | **5** | 版本链按真源/跳号/无后继/星号回归 |
+| `backend/orchestrator/tests/test_trade_doc_seal_default.py` | **28** | 覆盖优先级 + 两端同一函数对象 + 装配层接线（假 DB，不连库） |
+
+**顺带修掉一个测试配置缺口**：仓库此前**没有任何 `.tsx` 测试**，而 `tsconfig.json` 的 `jsx: preserve`
+（Next 构建需要）会被 Vite 8 的 **oxc** 转换器照搬 ⇒ 任何 import `.tsx` 的测试都跑不起来。
+`frontend/vitest.config.ts:13` 加 `oxc: { jsx: { runtime: 'automatic', importSource: 'react' } }` 修好
+（注释同时写明：Vite 8 下 `esbuild: { jsx }` 会被忽略并告警）。
+
+### 6. ⏳ 仍未做（保持待办，别写成已完成）
+
+1. **真实上传端到端**：工具已备 `scripts/verify-file-storage-e2e.mjs`，但需要**一次带登录的生产上传**。
+2. **真实 PostgreSQL / db 级用例**：部分唯一索引唯一性、跨租户隔离、`bytea` 往返 —— **未做**。
+3. **盖章在 PI 版式中的位置/尺寸无视觉验证**（没有逐页渲染 QA）。
+4. **排序的页面级过滤逻辑**（`products/page.tsx` 里"只对位次真变的图发请求"）**未被测试覆盖** ——
+   队友已说明**没有用复刻逻辑假装覆盖**；hook 层契约有测试（`use-products.test.ts`），页面层没有。
 
 ---
 
@@ -270,6 +365,9 @@ renderTradeDoc("pi", { product_photos: [{ image, caption }] })
   - **基础信息**：材质、表面处理、用途、HS 编码、包装、产地……（存 `product_profiles.info`）
   - **图片**：上传 → 选类型（生产 / 尺寸 / 重量 / 成品）→ **输入框命名** → 排序 / 设主图 / 删除
 - 单证编辑页：图片位从"选本地文件"升级为"**从产品图库里选**"（本地文件上传保留为兜底）
+- **公章**：`settings/company-profile`（企业主体信息页）新增「公司公章」区块（`CompanySealCard`）——
+  上传（前端 Canvas 归一化成 PNG）/ 列表 / 设默认 / 删除；空态说明"没有公章时签章区不会盖章"。
+  默认章会在 `render-data` 装配时自动补进 `company_stamp`（详见上「产品图排序与公章」§3）。
 
 **接口（两端一致：orchestrator + Worker）**
 
@@ -279,11 +377,17 @@ renderTradeDoc("pi", { product_photos: [{ image, caption }] })
 | GET/PUT | `/api/v1/products/{key}/profile` | 基础信息读写 |
 | GET | `/api/v1/products/{key}/media` | 产品图片列表 |
 | POST | `/api/v1/products/{key}/media` | 上传（multipart：文件 + name + media_kind） |
-| PATCH/DELETE | `/api/v1/file-objects/{id}` | 改名 / 排序 / 删除（软删） |
+| PATCH | `/api/v1/file-objects/{id}` | 改名 / 设主图 / **排序**（`sort_order` 0–9999，越界 422 `SORT_ORDER_OUT_OF_RANGE`）；worker 侧字段与 orchestrator 一致（含 `caption`） |
+| DELETE | `/api/v1/file-objects/{id}` | 下线（**软删**：`is_current=false`，行保留可追溯） |
 | GET | `/api/v1/file-objects/{id}/url` | 取签名 URL（短时效，默认 **900 秒**）；未配 S3 或文件在 inline 时返回 `{"configured": false}` |
 | POST | `/api/v1/file-objects/presign` | **直传预签名**（返回短时效 PUT URL，字节不过服务端）；未配 S3 返回 `{"configured": false}` |
 | POST | `/api/v1/file-objects/register` | **直传后登记元数据**（字节已在对象存储，不碰字节） |
-| POST | `/api/v1/trade-docs/{id}/files` | 单证挂文件（产品图引用 / 盖章回传 / PDF 归档） |
+| POST | `/api/v1/trade-docs/{id}/files` | 单证挂文件（产品图引用 / 盖章回传 / PDF 归档；`render_pdf` 也参与版本让位） |
+| POST | `/api/v1/tenant/company-seals` | **上传公章**（multipart；**只认 PNG 魔数**，前端 Canvas 归一化后再传） |
+| GET | `/api/v1/tenant/company-seals` | 公章列表（元数据 + `preview_url`，不回裸字节） |
+| GET | `/api/v1/tenant/company-seals/{id}/image` | 取公章 PNG（需 Bearer；`<img src>` 带不上，走 blob→objectURL） |
+| PUT | `/api/v1/tenant/company-seals/{id}/default` | 设为默认（全局唯一；后端事务内先清后设） |
+| DELETE | `/api/v1/tenant/company-seals/{id}` | 删除（默认章若还有别的章 → 后端 409 要求先转移默认） |
 
 ## 七、落地顺序（一次做完，按依赖排）
 

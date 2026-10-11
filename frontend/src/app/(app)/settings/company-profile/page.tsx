@@ -27,6 +27,8 @@ import {
   type CompanyProfile,
 } from "../../trade-docs/hooks/use-trade-docs";
 
+import { CompanySealCard } from "./components/company-seal-card";
+
 type FieldKey = keyof CompanyProfile;
 
 const GROUPS: {
@@ -191,6 +193,9 @@ export default function CompanyProfilePage() {
           </div>
         </>
       )}
+
+      {/* 公章是独立资产（tenant_company_seals），不依赖企业信息是否读取成功 */}
+      <CompanySealCard />
     </div>
   );
 }
