@@ -168,7 +168,35 @@ http://evil.com  --302-->  http://169.254.169.254/latest/meta-data/
 指向内网/回环/云元数据/file: 的跳转一律拒绝、空 Location 拒绝、
 "任何网络动作之前先过尺子"）。
 
-**worker（生产）侧同样需要修** —— 见「还没做的」。
+**worker（生产）侧已修**（本轮）：`redirect: "follow"` → `"manual"` +
+逐跳校验，两条路径（`js.fetch` 与 `urllib` 回退）都改，
+免得留下"换个运行环境就有洞"的缝。
+
+Cloudflare 官方文档确认了这个改法可用且是官方推荐：
+「If set to `manual`, the **`3xx` redirect response will be returned to the
+caller as-is**」以及「If the response is a redirect and the redirect mode is
+set to `follow`, then all headers will be forwarded to the redirect
+destination... you should **set redirect mode to `manual` and implement your
+own redirect policy**」。
+
+#### 顺带把一个更大的隐患修掉了：安全件不再有两份
+
+补 orchestrator 时，我一度把守卫在 orchestrator 复制了一份，并给 worker 那份
+配了测试 —— 结果**测试被 skip 了**：`chain.py` 模块级 `from main import ...`，
+而 `main.py` 依赖 Pyodide，**在 CPython 测试环境里根本 import 不了**。
+也就是说：守卫留在 `chain.py` 里 = **永远测不到**。
+
+一条跳过的安全测试比没有更糟 —— 它看起来像有覆盖。
+
+**处置**：抽出 `backend/kaas_common/net.py`（`is_safe_crawl_url` +
+`next_redirect_url` + 常量），两端 import **同一份**：
+
+- worker `chain.py` 的 `_is_safe_crawl_url` / `_next_redirect_url` 变成薄别名
+  （保留旧调用点，语义指向唯一真源）
+- orchestrator 的 `app/services/lead_crawl.py` 只留 httpx 那部分（平台原语不同）
+- 测试跑在 orchestrator 套件里 —— **测的就是 worker 实际执行的那份代码**
+
+`sync-shared.ps1` 已把 `net.py` 镜像过去（共享内核 21 → **22 个文件**）。
 
 #### 移植进度
 
