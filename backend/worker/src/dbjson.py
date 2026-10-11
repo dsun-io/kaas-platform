@@ -34,6 +34,10 @@ JSONB_COLS: dict[str, set[str]] = {
     "order_items": {"spec_snapshot"},
     "business_events": {"payload"},
     "trade_docs": {"raw_payload"},
+    # 产品档案（文件域/产品媒体）：`info` 是租户可编辑的产品基础信息（材质/表面处理/用途/
+    # HS 编码/包装/产地）。**漏登记的表现很隐蔽**：`/products` 页面的基础信息静默变空、
+    # `get_profile` 的 `dict(str)` 直接 500 —— 而"字段在、值却是字符串"正是本文件警告的那类故障。
+    "product_profiles": {"info"},
     "market_ports": {
         "suitable_cargo",
         "suitable_shipping_modes",

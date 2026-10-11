@@ -3669,6 +3669,51 @@ async def _apply_default_seal(request: Request, user: dict, data: dict, custom) 
     return apply_default_seal(data, custom, row)
 
 
+# ── 产品基础信息带入（一次维护、重复使用）────────────────────────────────────
+# 判定（填哪些字段/覆盖优先级/空值处理）在**共享内核**：G1 只允许一份 ——
+# `kaas_common/trade_doc/product_defaults.py`（sync-shared.ps1 镜像同一份）。
+# 本文件只保留"怎么取到产品档案"（本侧走请求期 `db.fetchrow`），并做**注册表校验**：
+# 注册表（代码里的 ProductSpec）才是"有哪些产品"的唯一来源，info 只是它的补充。
+# 租户口径用 DEFAULT_TENANT：产品档案的**写入侧**（ws_files.py 的 profile 端点）就是
+# 这个口径 —— 读侧跟着写入侧走，才不会"写给 default、只查 tenant-x"而读不到。
+from kaas_common.trade_doc.product_defaults import (  # noqa: E402
+    apply_product_defaults, product_key_of,
+)
+
+
+async def _product_info_of(request: Request, product_key: str):
+    """产品档案 `info`；产品不在注册表 / 没维护过 → None。"""
+    from kaas_common.export_quote.products import has as _has_product  # 惰性：不拖累模块加载
+    if not _has_product(product_key):
+        return None
+    row = await db.fetchrow(
+        request,
+        "SELECT info FROM product_profiles WHERE tenant_id=$1 AND product_key=$2",
+        DEFAULT_TENANT, product_key, table="product_profiles",
+    )
+    if row is None:
+        return None
+    info = row["info"]
+    # Workers 环境的 asyncpg 会把 jsonb 返回成 str（`product_profiles` 目前**未**登记进
+    # dbjson.JSONB_COLS，`table=` 解码对它不生效）—— 两种形状都收，避免"字段在、
+    # 值是字符串"导致本功能静默不生效。
+    if isinstance(info, str):
+        try:
+            info = _json.loads(info)
+        except (TypeError, ValueError):
+            return None
+    return dict(info) if isinstance(info, dict) else None
+
+
+async def _apply_product_defaults(request: Request, doc_type: str, data: dict, custom) -> dict:
+    """装配层：单据**显式关联了产品**才查档案（没关联 → 一次查询都不发，回归旧行为）。"""
+    key = product_key_of(custom)
+    if not key:
+        return data
+    info = await _product_info_of(request, key)
+    return apply_product_defaults(data, custom, doc_type, info)
+
+
 @app.get("/api/v1/trade-docs/{doc_id}/render-data")
 async def get_trade_doc_render_data(doc_id: int, request: Request,
                                     user: dict = Depends(_get_current_user)):
@@ -3742,6 +3787,8 @@ async def get_trade_doc_render_data(doc_id: int, request: Request,
     data = await _ws_files.resolve_photo_refs(request, data)
     # 单据没显式给 company_stamp → 自动带出租户默认公章（同样转 data URI）
     data = await _apply_default_seal(request, user, data, custom)
+    # 单据关联了产品 → 把产品档案的基础信息补进仍为空的行项（见共享内核 product_defaults）
+    data = await _apply_product_defaults(request, doc["doc_type"], data, custom)
     return {
         "doc": doc,
         "data": data,

@@ -338,6 +338,21 @@ CREATE TABLE trade_doc_files (
 | 再回传一版 | 新行 version+1，`supersedes_id` 指向旧行，旧行 `is_current=false` | **单证当前展示的是最新盖章件**；历史版本仍在库里留档 |
 | 留档 | 所有版本都保留，按 `supersedes_id` 可串成版本链 | 出争议时能拿出"当时那一版" |
 
+**PDF 留档（`render_pdf`）：已实现的归档路径 + 仍未做「自动出字节」** —— 前端归档入口已实现：
+单证预览区（`frontend/src/app/(app)/trade-docs/components/doc-preview.tsx`）新增「归档本版 PDF」，
+单据工位 `page.tsx` 已接线 `docId`（「样板预览」没有真实单据 ⇒ 不渲染该区块）；用户把
+「打印 / 导出 PDF」在打印对话框里另存下来的那份 PDF 选回来，即走
+`POST /api/v1/trade-docs/{id}/files/upload`（multipart：`file` + `role="render_pdf"` + `name`）
+落进 `file_objects`，再归档 = 新版本上位、旧版挂 `render_pdf_superseded` 留档（**不物理删**）；
+前端在送字节前**当场校验** `application/pdf` 与 ≤32MB（与内核 `MAX_BYTES['render_pdf']` 一致），
+不把 422 丢给用户猜；归档成功即失效 `["trade-docs", id, "files"]`，单据文件区
+（`DocStampReturn` 的「系统出的 PDF」分区）随即刷新。**仍未做：自动出字节** —— 生产是
+Pyodide Worker（无无头浏览器），系统拿不到 `window.print()` 的产物，所以这份归档**依赖人工**
+选文件（保真度最高、零新依赖）；服务端自动出字节（Cloudflare Browser Rendering `/pdf`
+或 CI/本机无头 Chrome）**仍未实现**，路径分析见 `docs/TRADE_DOC_PDF_ARCHIVAL.md`。
+**未验证**：无头环境只验证了"上传的字节与服务端收到的一致"（`doc-preview-archive.test.tsx`
+逐字节比对 + multipart body 取样），**没有也无法验证真实 PDF 的版面/分页**。
+
 ## 五、单证引用产品图的链路（渲染器不用改）
 
 ```

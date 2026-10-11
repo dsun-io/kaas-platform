@@ -6,6 +6,7 @@
 - docno     单号格式 {TYPE}-{YYYYMM}-{SEQ:04d}
 - png       PNG 校验与尺寸解析（替代 Pillow，图像处理已挪前端）
 - translate 翻译 prompt / 响应解析
+- product_defaults 产品基础信息 → 单据行项默认值（一次维护、重复使用）
 """
 from .rules import (  # noqa: F401
     DOC_STATUS,
@@ -42,6 +43,13 @@ from .payload_shared import (  # noqa: F401
 )
 from .png import PngError, is_png, png_size, validate_seal_image, MAX_SEAL_BYTES  # noqa: F401
 from .translate import SYSTEM_PROMPT, build_messages, parse_translation  # noqa: F401
+from .product_defaults import (  # noqa: F401
+    HS_ITEM_DOC_TYPES,
+    PRODUCT_INFO_KEYS,
+    PRODUCT_KEY_FIELD,
+    apply_product_defaults,
+    product_key_of,
+)
 
 __all__ = [
     "DOC_STATUS", "DOC_NEXT", "DOC_TYPE_PREFIX", "MAX_SEAL_BYTES", "SYSTEM_PROMPT",
@@ -53,4 +61,6 @@ __all__ = [
     "doc_no_prefix", "format_doc_no", "month_of",
     "is_png", "png_size", "validate_seal_image",
     "build_messages", "parse_translation",
+    "PRODUCT_KEY_FIELD", "PRODUCT_INFO_KEYS", "HS_ITEM_DOC_TYPES",
+    "product_key_of", "apply_product_defaults",
 ]
