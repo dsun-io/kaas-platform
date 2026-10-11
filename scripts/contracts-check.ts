@@ -1305,7 +1305,13 @@ try {
   for (const p of onlySource) {
     r6Deviations.push({
       key: 'R6.path-missing:' + p,
-      details: ['HEAD 源码有、artifact 未登记 ' + baselineNote],
+      details: [
+        'HEAD 源码有、artifact 未登记 ' + baselineNote,
+        // 这一步最容易让人困惑：本地刚重生成过 openapi.json，这里却仍报缺失。
+        // 原因：R6 两侧（源码与 artifact）都取 **HEAD 快照**，工作树里未提交的产物不算数。
+        // 提示写在这里，避免后来者以为门禁坏了或自己改错了。
+        '若你刚在本地重生成过 openapi.json：R6 两侧都取 HEAD 快照 ⇒ 需先**提交**产物才会变绿',
+      ],
     });
   }
   for (const p of onlyArtifact) {
