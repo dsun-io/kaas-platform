@@ -31,13 +31,6 @@ POST /api/v1/intel/collect/comtrade  # 采集任务由本地定时器调度，�
 
 # ── 规格库 11 条：已**退役**（不再登记，因为路由本身已删除）──────────────────
 
-# ── 待补：团队管理员转让（orchestrator 已实现，worker 侧未实现）──────────────
-# 用户 2026-10-11 裁决：**团队管理员（现任）或平台管理员**都能发起转让。
-# 策略无关校验（目标必须是本团队成员、不能转给自己）已在共享内核
-# `kaas_common/workstation/teams.validate_transfer_target` 并测住 9 条。
-# 只接 orchestrator 会让线上 404 —— 与爬取端点同一类问题，故登记待补。
-POST /api/v1/teams/{team_id}/transfer  # 待补·转让团队管理权（worker 侧未实现）
-
 # 2026-10-11 用户裁决「这套写死的设计确实没用了，在确保安全的前提下可以移除」。
 # 它们原是 INT-R3 表驱动规格体系的增删改查（属性/SKU/模板/规格清单），
 # 而文档 CURRENT_IMPLEMENTATION_MAP.md:94 已把「规格体系（权威）」

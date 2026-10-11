@@ -34,6 +34,7 @@ from kaas_common.workstation.teams import (
     generate_invite_token,
     invite_state,
     is_team_admin,
+    validate_transfer_target,
     normalize_invite_token,
     validate_team_name,
 )
@@ -69,6 +70,12 @@ class InviteCreateIn(BaseModel):
 
 class JoinIn(BaseModel):
     token: str
+
+
+class TeamTransferIn(BaseModel):
+    """转让团队管理权：把团队交给另一个成员。"""
+
+    user_id: int
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -430,6 +437,46 @@ async def join_team(
 
 class ConsoleAccessIn(BaseModel):
     allowed: bool
+
+
+@app.post("/api/v1/teams/{team_id}/transfer")
+async def transfer_team(
+    team_id: int,
+    request: Request,
+    body: TeamTransferIn,
+    user: dict = Depends(_get_current_user),
+):
+    """转让团队管理权：把 `teams.created_by` 改成另一个成员。
+
+    与 orchestrator 的 `POST /teams/{team_id}/transfer` **同语义**。
+
+    授权（用户 2026-10-11 裁决）：**团队管理员（现任）或平台管理员**都能发起
+    —— 复用 `_require_team_admin`（→ 共享内核 `is_team_admin`），
+    **不新增一套判定**。
+
+    策略无关校验走共享内核 `validate_transfer_target`：目标必须是**本团队成员**、
+    不能转给自己。前任留在团队里继续当普通成员（管理权在本项目就等于创建者）。
+    """
+    async with _acquire(request) as conn:
+        team = await _team_or_404(conn, team_id)
+        _require_team_admin(team, user)
+
+        rows = await conn.fetch("SELECT id FROM users WHERE team_id=$1", team_id)
+        try:
+            validate_transfer_target(
+                target_user_id=body.user_id,
+                current_owner_id=team["created_by"],
+                member_user_ids=[r["id"] for r in rows],
+            )
+        except TeamRuleError as exc:
+            raise _rule_422(exc)
+
+        await conn.execute(
+            "UPDATE teams SET created_by=$1 WHERE tenant_id=$2 AND id=$3",
+            body.user_id, DEFAULT_TENANT, team_id)
+        team["created_by"] = body.user_id
+        count = await _member_count(conn, team_id)
+        return _team_out(team, user=user, member_count=count)
 
 
 @app.put("/api/v1/teams/{team_id}/members/{user_id}/console-access")
