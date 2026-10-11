@@ -10,6 +10,20 @@
 
 ## 交接摘要（滚动更新 · HEAD `1b30060`）
 
+> **（R82）alembic「双 head」是假警报（已取证；未加任何 merge 迁移）** —— task-16：
+> `alembic heads` 实测**只有一个** `202610110018`；55 个 revision 是**单链**，
+> `20260922_research_workstation` 是链中**祖先**（`20260921_leadgen_outreach → 20260922_research_workstation
+> → 202609230001 → … → 202610110018`），不是 head。双 head 的说法可由 `artifacts/alembic_head.py`
+> **复现**：该脚本只认 `revision: str = "…"` 写法，漏掉 3 个 `revision = "…"` 的文件
+> （含把情报链接回主链的 `202609230001`），于是把祖先误报成 head（52/55）⇒ **不要加 merge**
+> （临时副本实测：加了会凭空造出 `branchpoint`）。
+> 同时实测到一个**真问题**：**真·空白库跑 `alembic upgrade head` 会失败**
+> （`feb821f0b9c0` 第 61 行 `ALTER TABLE quotations ADD COLUMN tenant_id`，而 `quotations`
+> 要到更晚的 `f82ac951b473` 才 create，真实库靠 `create_all` 先建）。
+> **生产无需任何动作**：`alembic_version` = 单行 `202610110018` = 当前 head，018 已生效
+> （`file_objects.sort_order integer NOT NULL DEFAULT 0` 在库里）。详见文末
+> 「alembic『双 head』取证 —— 假警报 + 一个真问题」一节。
+
 > **（R81）收口决定：e2e 停手，主线交付** —— 用户 2026-10-11 追问
 > 「还有多少任务未完成、怎么做不完了」，逐项核对后的结论：
 >
@@ -2243,3 +2257,182 @@ worker 侧另有 `backend/worker/tests/test_ws_render_fingerprint_check.py`，
 > 来源标注：本节的行号、字段契约与语义均为**文档线读源码/测试**核对；
 > **测试通过数**（orchestrator **946 passed / 1 skipped**、worker **217 passed**）来自
 > **lead 与队友实测** —— 文档线本轮**未跑 pytest**。
+
+***
+
+## 追加（2026-10-12）：alembic「双 head」取证 —— 假警报 + 一个真问题（task-16）
+
+**一句话结论**：`alembic heads` **只有一个**（`202610110018`），**没有双 head、不需要 merge 迁移**；
+所谓"双 head"是 `artifacts/alembic_head.py` 的解析假阳性。但取证顺带实测出一个**真问题**：
+**真·空白库跑 `alembic upgrade head` 会失败**（链在 `feb821f0b9c0` 就断）。
+生产**不动**：版本行已是唯一 head，且 018 的 DDL 已生效（下面有形状级证据）。
+
+> 本线**没有新建任何迁移文件**（`202610110018` 仍是最后一个）；没有改仓库里的迁移链；
+> 没有连生产写任何东西（所有生产查询都在 `SET default_transaction_read_only = on` 会话里跑）。
+
+### ① 权威事实：单 head、55 revision 单链
+
+```
+$ cd backend/orchestrator && python -m alembic heads
+202610110018 (head)
+```
+
+用 AST 解析全部迁移文件（正确处理 `revision: str = …` 与 `revision = …` 两种写法）：
+
+```
+total migration files/revs = 55
+HEADS = ['202610110018']
+multi-parent (merge) revisions = none
+parents not in files = []
+```
+
+链的形态（base → head，节选关键段）：
+
+```
+<base> 202605020001 → … → 20260921_leadgen_outreach → 20260922_research_workstation
+        → 202609230001 → 202609230002 → 202609230004 → … → 202610110015
+        → 202610110016 → 202610110017 → 202610110018 (head)
+```
+
+即：**情报链的 revision 就在主链中间**，不是并行分支。另附离线 SQL 佐证（`--sql`）：
+
+```
+$ alembic upgrade 202610110015:head --sql     # exit 0，3 个 revision
+CREATE TABLE file_objects ( … )
+ALTER TABLE file_objects ADD COLUMN is_primary BOOLEAN DEFAULT false NOT NULL;
+ALTER TABLE file_objects ADD COLUMN sort_order INTEGER DEFAULT 0 NOT NULL;
+UPDATE alembic_version SET version_num='202610110018' WHERE …'202610110017';
+```
+
+### ② "双 head"从哪来：naive 解析脚本的假阳性（可复现）
+
+```
+$ python artifacts/alembic_head.py
+migration 总数 = 52
+head(s) = ['20260922_research_workstation', '202610110018']
+```
+
+根因（三处一起看）：
+
+1. 该脚本的正则是 `^revision:\s*str\s*=\s*["']…`，**只认带类型注解**的写法；
+2. 仓库里有 **3 个**文件写的是普通赋值 `revision = "…"`，被它**整体 `continue` 跳过**：
+   `202609230001_drop_conversation_tables.py`、`202609230002_drop_wechat_tables.py`、
+   `202609230004_merge_customers.py`（52 + 3 = 55 对得上）；
+3. 被跳过的 `202609230001` 正是**把情报链挂回主链**的那一环（`down_revision = "20260922_research_workstation"`）
+   ⇒ 脚本从来没把 `20260922_research_workstation` 记进 `downs`，于是把它当成 head 打了出来。
+
+**教训**：`alembic heads` 要用 **alembic 自己**的输出；自己写正则解析 revision 图时，
+漏一种声明写法就会得出"双 head"这种看起来很像真的结论。
+
+### ③ 处方 merge 会怎样：凭空造出 branchpoint（临时副本实测，未落仓库）
+
+按任务卡原方案（`down_revision = ("20260922_research_workstation", "202610110018")`，upgrade/downgrade 空操作）
+在 `%TEMP%` 的**副本**里试（仓库文件一行未动）：
+
+```
+$ alembic -c <temp>/alembic.ini heads
+202610120001 (head)                     # alembic 接受，不报错
+$ alembic -c <temp>/alembic.ini branches
+20260922_research_workstation (branchpoint)
+                              -> 202610120001 (head) (mergepoint)
+                              -> 202609230001
+```
+
+⇒ 它**不会**让图更干净，反而在一条**本来线性**的链上**虚构一个 branchpoint**
+（`20260922` 真实只有一个子节点 `202609230001`），从此 `alembic history/branches/downgrade` 都要
+解释一个不存在的分支。**结论：不加这个 merge。**
+
+### ④ 真问题：真·空白库 `alembic upgrade head` **失败**（实测）
+
+用一个临时 PostgreSQL 集群（`pgserver`，数据目录在 `%TEMP%`）+ 一个**全新空库**，
+用仓库真实的 `alembic/` 跑 `upgrade(head)`：
+
+```
+[2] 运行 alembic upgrade head（空库）…
+sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedTable) relation "quotations" does not exist
+[SQL: ALTER TABLE quotations ADD COLUMN tenant_id TEXT]
+[3] alembic_version = None
+[3] 空库升级后 public 表数 = 0        # 整条链一个事务，报错即全部回滚
+```
+
+定位：
+
+- 失败点 = `feb821f0b9c0_add_tenant_id_to_quotations_and_.py:61`
+  （`op.add_column('quotations', sa.Column('tenant_id', …))`，**无兜底**）；
+- `quotations` 在整个链上**只在更晚的** `f82ac951b473_intel_workstation_v1.py:661`
+  才 `op.create_table('quotations', …)`（链序：`feb821f0b9c0` → `202605170001` → `202605220001` → `f82ac951b473`）；
+- 真实库能跑，是因为 `quotations` 早由 `Base.metadata.create_all()` 建好了 ——
+  这一点该文件**自己写了注释**（`:22-28`：旧版本靠 create_all 建表，空库必然报 `relation does not exist`，
+  所以补了"按 ORM 模型建表"的兜底）—— **但兜底只给了 `customer_capabilities`，`quotations` 漏了**。
+- 同一个文件也是 `--sql` 离线全链生成的第一道墙（`sa.inspect(MockConnection)` 在离线 mock 上不可用）；
+  后面的数据迁移还会撞 `No literal value renderer … "['lianjia@kaas.local']"`（ARRAY 字面量）。
+  ⇒ **"空库 `--sql` 一把生成"在本仓库现状下本来就做不到**，与 head 数量无关。
+
+**性质**：这是 create_all 时代的设计遗留，**不是**本任务引入的，也**不影响生产**（生产 schema 早已存在）。
+但"新环境/CI/异地重建 → `alembic upgrade head`"这条路**当前是断的**，值得单独排期。
+
+### ⑤ 生产现状（只读取证 · 2026-10-12 · 会话级 read-only）
+
+DSN 用 `neon env pull --file <temp> --project-id falling-salad-31662168` 重取
+（branch **production** `br-raspy-snow-b5bp9zoh`；**全程未打印口令**），
+所有查询在 `SET default_transaction_read_only = on` 下执行。
+
+| 事实 | 实测 |
+|---|---|
+| `alembic_version` 行数 / 值 | **1 行** / `'202610110018'`（len 12；唯一列 `version_num`） |
+| 其它 version/migration 表 | 无（只有 `alembic_version`） |
+| 018 是否生效 | **是**：`file_objects.sort_order` = `integer, NOT NULL, default 0`（正是 018 的 DDL） |
+| 017 指纹 | `file_objects.is_primary` = `boolean, NOT NULL, default false` |
+| `file_objects` | 23 列 / 6 索引（`uq_file_current`、`uq_file_primary` 都在）/ **0 行** |
+| 情报链表 | `research_products` 存在（**0 行**，30 列与 `20260922` 迁移定义**逐列一致**，4 个索引/约束齐全）、`research_runs` 存在（**5 行**）、`lead_candidates.crawl_status/product_image_url/spec_normalized` 都在 |
+| 遗留表（链上"应已删"却还在） | `conversations`、`conversation_messages`（`202609230001` 删）、`wechat_bot_accounts`、`wechat_conversations`、`wechat_message_events`（`202609230002` 删）、`cust_customers`（`202609230004` 删）**都存在** |
+| 链上"应已建"却没有 | `feature_flags`、`feature_flag_audit`（`202609230005`） |
+
+**"单行 version 却有情报链表"的矛盾解释（正面回答）**：
+`20260922_research_workstation` 是 `202610110018` 的**祖先**（① 的单链)，alembic 在**单 head** 下
+`alembic_version` 只维护**一行**。所以"一行 version + 情报链表存在"**完全自洽**：
+走到 018 必然经过情报链那一环。**不存在"历史上走过别的路径建表"这回事。**
+
+**但**⑤ 表格最后两行是**另一件独立事实**（与 head 无关，别混为一谈）：
+生产的 schema 并不是迁移链的忠实产物 —— 该删的没删、`202609230005` 的表没有。
+这与项目自己的注释一致（真实库由 `create_all` 建、alembic 后接入：
+`feb821f0b9c0:22-25`、`202609250001:31`）⇒ **生产 `alembic_version` 是"标签"，不是 schema 证书**。
+这一条只做记录，**本次不动**。
+
+### ⑥ 生产该怎么走（建议；由 lead 执行，本线未碰生产）
+
+1. **不要加、也不要跑 merge 迁移** —— 没有第二个 head（①）；加了只会虚构 branchpoint（③）。
+2. **生产不需要任何迁移动作** —— 版本行 = 唯一 head `202610110018`，018 的列已在（⑤）。
+   想亲眼复核（**只读**）：
+   ```bash
+   cd backend/orchestrator
+   DATABASE_URL=<生产 direct DSN> python -m alembic current     # 期望：202610110018 (head)
+   ```
+   万一将来发现版本行 < head：`DATABASE_URL=<生产 direct DSN> python -m alembic upgrade head`
+   （018 的 DDL 是 `ADD COLUMN … DEFAULT 0`，PG11+ 不重写表；`file_objects` 生产 **0 行**，风险极低）。
+3. **新环境（CI / 新同事 / 异地重建）现在不能直接 `alembic upgrade head`**（④ 实测断在 `feb821f0b9c0`）。
+   在修好之前，事实上的流程仍是"先 `create_all` → `alembic stamp head`"；
+   若要修（**建议单独排期，本线未做**）：把 `feb821f0b9c0` 那处兜底从 `customer_capabilities`
+   扩到 `quotations`（照抄它自己的写法、排除马上要加的 `tenant_id`），并**逐个排查其它 create_all-only 表**
+   （工作量未评估：每修一处就要在真空库上重跑到下一处）。
+4. **schema 漂移（legacy 表 / 缺 `feature_flags`）也单独排期**：
+   用 `alembic check` 或 `pg_dump --schema-only` 与参考库（空库 + create_all）对比后再定动作。
+   **不要**拿 merge 迁移当清理工具。
+
+### ⑦ 复现方式（脚本都在 gitignored 的 `artifacts/`，不提交）
+
+| 脚本 | 作用 |
+|---|---|
+| `artifacts/task16_prod_evidence.py <dsn_file>` | 只读：版本行 / 情报链表列与索引 / 尾部指纹 / relkind |
+| `artifacts/task16_prod_tables.py <dsn_file> <out.txt>` | 只读：`pg_class.relkind` 精确判定 + public 全量关系清单 |
+| `artifacts/task16_graph_analysis.py <relations.txt>` | 纯本地：按**链序**推导"到 head 应有的对象集合"，与生产差集 |
+| `artifacts/task16_prod_head_check.py <dsn_file>` | 只读：head 值精确比对 + `file_objects` 列形状/索引 |
+| `artifacts/task16_fresh_db_check.py` | **真·空白库**跑 `alembic upgrade head`（临时 `pgserver` 集群，数据目录在 `%TEMP%`；需先 `python -m venv %TEMP%\kaas-t16-pg && pip install pgserver`） |
+
+- 空库实测两次结果一致：`relation "quotations" does not exist` / `ALTER TABLE quotations ADD COLUMN tenant_id TEXT`，
+  `alembic_version` 不存在、public 表数 0（整链一个事务回滚）。
+- 取生产 DSN：`neon env pull --file <temp> --project-id falling-salad-31662168`
+  → `artifacts/dsn_unpooled.py <env> <dsn_out>`（只落盘、**不打印口令**）。
+- 一条测量纪律的复现：本线写入前**同一时刻**实测 `Get-Content … | Measure-Object -Line` 得 **1433**、
+  `read` 工具得 **2245**（本文档随后又被本线追加了本节，两个数都会变）
+  —— 与上文 §4「同一份文档四种行数」一致：**行数类证据必须说清是"哪个工具、哪一刻"**。
