@@ -38,11 +38,26 @@ test.describe('Dashboard', () => {
 
   test('sampling tooltip or hint text is visible', async ({ page }) => {
     await page.goto('/dashboard');
-    await page.waitForLoadState('networkidle');
 
-    // Check for sampling-related text
-    const hintText = page.locator('text=/采样|sampled/i');
-    const count = await hintText.count();
-    expect(count).toBeGreaterThan(0);
+    // **2026-10-12 修正：测试侧（"等网络静默" ≠ "等内容"）**
+    // 旧写法是 `await page.waitForLoadState('networkidle')` 之后**一次性** `count()`。
+    // 而 MSW 门（`MswProvider`）尚未放行时页面**一个请求都没发** ⇒ `networkidle`
+    // **立即满足** ⇒ `count()` 得 0 ⇒ 假失败。
+    // 证据（task-12）：18 次用例里 4 次正是这个形态，`gate=0 / probe=0` 与失败 **1:1** 对应。
+    // 本用例修前实测（FALLBACK=0、repeat-each=5、健康守卫 OK）：**0/5**，报错
+    // `expect(received).toBeGreaterThan(expected) Expected: > 0, Received: 0`。
+    //
+    // 真实断言（源码依据）：
+    //   · `dashboard/page.tsx:38-42` ——
+    //     `hint={summary ? \`采样 ${summary.quotations_sampled}/${summary.quotations_total}\` : undefined}`
+    //   · `components/shared/stat-card.tsx:52` —— `<span className="text-muted-foreground">{hint}</span>`
+    //     （是**可见文本**，不是悬停才出现的 tooltip）
+    //   ⇒ 数据到位后 DOM 里必然有 `采样 <n>/<m>`（mock：`采样 10/42` 等）。
+    //
+    // ⚠️ **不能**断言 `text=/采样/i`：第 6 张卡的**静态** label 就叫「采样覆盖率」
+    // （`dashboard/page.tsx:83`），那样断言恒真、等于没测。
+    await expect(page.getByText(/采样 \d+\/\d+/).first()).toBeVisible({
+      timeout: 15000,
+    });
   });
 });
