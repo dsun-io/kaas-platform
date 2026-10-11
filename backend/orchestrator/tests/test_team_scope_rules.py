@@ -32,6 +32,40 @@ def test_role_mapping():
     assert scope.is_admin_role("owner") is False
 
 
+# ── 管理员判定只有一份（客户域曾另写一份，把内部账号也算管理员）───────────
+
+def test_customer_rules_can_see_all_uses_the_same_predicate_as_scope():
+    """客户域的 `can_see_all` 必须与 `scope.is_admin_role` 同一口径。
+
+    它曾自己认 `account_type == 'internal'`，把内部账号当管理员 ——
+    于是同一个账号在「客户详情」（走它）与「开单选客户」（走内核）上
+    可见范围不同。收敛后两份判定同源。
+    """
+    from kaas_common.workstation import customer_rules
+
+    for role in ("system_admin", "admin", "owner", "customer_owner", "user",
+                 "customer_member", None, "nonsense"):
+        auth = {"role": role, "account_type": "internal"}
+        assert customer_rules.can_see_all(auth) is scope.is_admin_role(role), role
+
+
+def test_internal_account_type_alone_is_not_admin():
+    """`internal` 是账号类型，不等于管理员。
+
+    QA 的 `qa_user` 正是 internal + role=user —— 按 docs/QA_TEST_ACCOUNTS.md
+    的越权审计第 5 条，它只能看到自己那套隔离数据（qa_smoke），
+    绝不能因为 account_type 是 internal 就看到全部租户。
+    """
+    from kaas_common.workstation import customer_rules
+
+    assert customer_rules.can_see_all({"role": "user", "account_type": "internal"}) is False
+    assert customer_rules.can_see_all(
+        {"role": "customer_owner", "account_type": "internal"}) is False
+    assert customer_rules.can_see_all(
+        {"role": "system_admin", "account_type": "internal"}) is True
+    assert customer_rules.can_see_all({"role": "admin", "account_type": "internal"}) is True
+
+
 def test_tenant_shared_is_visible_to_everyone():
     assert scope.can_view(role="user", owner_scope="tenant", owner_id="777",
                           viewer_id=9, viewer_team_id=5) is True

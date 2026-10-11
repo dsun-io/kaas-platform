@@ -4,6 +4,8 @@ orchestrator 与 Worker 共用；任何适配层不得另写一份判定。
 """
 from typing import Any, Optional
 
+from .scope import is_admin_role
+
 __all__ = ["validate_stage_transition", "check_write_access", "can_see_all"]
 
 
@@ -37,10 +39,23 @@ def check_write_access(row: Any, auth: Any) -> bool:
 
 
 def can_see_all(auth: Any) -> bool:
-    """是否可看全部（管理员/租户级）。"""
-    role = _get(auth, "role") or ""
-    account_type = _get(auth, "account_type") or ""
-    return role in ("admin", "super_admin") or account_type == "internal"
+    """是否可看全部（管理员）。
+
+    **唯一真源** = `kaas_common.workstation.scope.is_admin_role`。
+
+    本函数此前自成一派：认 `role in ("admin", "super_admin")` **或
+    `account_type == "internal"`**。后者把「内部账号」等同于管理员 ——
+    于是 `internal` + `role=user` 的账号（例如 QA 的 `qa_user`）能看**全部租户**数据。
+    这同时违反两处已写明的期望：
+
+      · `docs/QA_TEST_ACCOUNTS.md` 越权审计第 5 条：qa_user 列表**只见 qa_smoke**；
+      · Worker 侧 `_can_see_all`（= `scope.is_admin_role`）只认 system_admin。
+
+    三方不一致的后果是同一个账号在不同接口上可见范围不同。
+    2026-10-11 收敛到 scope 一份：**管理员 = system_admin（含历史角色 admin），
+    与 `account_type` 无关。**
+    """
+    return is_admin_role(_get(auth, "role"))
 
 
 def _get(obj: Any, key: str):
