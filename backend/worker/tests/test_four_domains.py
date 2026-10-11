@@ -811,3 +811,121 @@ def test_customer_creation_stamps_creator_team():
     inserts = [(s, a) for s, a in conn.calls if "INSERT INTO customers" in s]
     assert inserts, conn.sql()
     assert inserts[0][1][-1] == 1        # 最后一个参数 = 创建者所在团队
+
+
+# ── /explain 的草稿试算（task-26：与 orchestrator **同构**）────────────────────
+#
+# 形状基准 = **orchestrator 的实测输出**（同一份草稿、同一组断言，两边各钉一遍）：
+#   · 顶层键集恰好 = 老 9 ∪ 新 3；`steps[i]` 恰好 8 键
+#   · 草稿：ok=True / errors=[] / warnings = [草稿提示, 被默认字段, 价格提示]（顺序与文案一致）
+#   · 坏公式：ok=False / errors=[{code,error,expr}]
+# 为什么要"两边各钉一遍同样的字面量"：两个运行时（CPython vs Pyodide）无法在同一进程里
+# 同时加载两套 app，所以用**同一份期望**把两端各自钉住 ⇒ 任一端漂移都会红。
+# ⚠️ 唯一**不逐字**比对的是 `errors[0]["error"]` 的**尾部**（由 Python 解析器生成，措辞可能随
+#    运行时/版本变），这里只断言它包含 "表达式语法错误" 与那条 expr，并单独列出说明。
+
+_EXPLAIN_DRAFT = {
+    "name": "草稿产品",
+    "numeric_inputs": [{"key": "height_m", "label": "网高(m)", "default": 1.2}],
+    "derived": [{"name": "height_mm", "expr": "height_m * 1000", "unit": "mm"},
+                {"name": "x2", "expr": "height_mm * 2", "label": "两倍高", "unit": "mm"}],
+}
+#: orchestrator 实测：老请求（带价格提示）的顶层键集
+_EXPLAIN_LEGACY_KEYS = {
+    "product_key", "product_name", "spec", "total", "space_deduction",
+    "space_deduction_ratio", "steps", "price_metrics_omitted", "price_hint",
+}
+_EXPLAIN_NEW_KEYS = {"ok", "errors", "warnings"}
+_EXPLAIN_STEP_KEYS = {"code", "label", "stage", "expr", "unit", "decimals", "note", "value"}
+
+
+def _explain(payload):
+    with _patched(_FakeDb()):
+        return client.post("/api/v1/export-quote/products/field_fence/explain", json=payload)
+
+
+def test_explain_old_request_keys_unchanged():
+    """老请求（不带 spec_override）**逐键不变**：恰好 = 老 9 ∪ 新 3；步骤仍是 8 键。"""
+    resp = _explain({"spec": {"coating": "热镀锌 40g/㎡", "wave": "无波款"}, "total": 30000})
+    assert resp.status_code == 200, resp.text
+    out = resp.json()
+    assert set(out) == _EXPLAIN_LEGACY_KEYS | _EXPLAIN_NEW_KEYS, sorted(out)
+    assert set(out["steps"][0]) == _EXPLAIN_STEP_KEYS, sorted(out["steps"][0])
+    assert out["ok"] is True and out["errors"] == []
+    assert out["warnings"] == ["价格类指标未计算（见 price_hint）：本次只自证数量口径"]
+
+
+def test_explain_draft_is_used_and_warnings_align_with_orchestrator():
+    """草稿生效：公式被算出来；`warnings` 三项与 orchestrator **逐项一致**。"""
+    resp = _explain({"spec": {"height_m": 1.5}, "spec_override": _EXPLAIN_DRAFT})
+    assert resp.status_code == 200, resp.text
+    out = resp.json()
+    assert out["ok"] is True, out["errors"]
+    assert out["warnings"][0] == "本次试算使用请求内的**草稿定义**（spec_override）：不落库、不影响线上产品"
+    assert out["warnings"][1].startswith("草稿未提供这些字段，按**默认值**参与试算：")
+    assert "variants" in out["warnings"][1] and "numeric_inputs" not in out["warnings"][1]
+    assert out["warnings"][2] == "价格类指标未计算（见 price_hint）：本次只自证数量口径"
+    # 草稿的公式步骤：与 orchestrator 实测的那一条**逐字段相同**
+    step = [s for s in out["steps"] if s["code"] == "x2"][0]
+    assert step == {"code": "x2", "label": "两倍高", "stage": "derived",
+                    "expr": "height_mm * 2", "unit": "mm", "decimals": None,
+                    "note": "", "value": "3000.0"}, step
+    assert out["product_name"] == "草稿产品"
+
+
+def test_explain_draft_unknown_field_is_422_not_silent():
+    resp = _explain({"spec": {}, "spec_override": {"derivd": []}})
+    assert resp.status_code == 422, resp.text
+    detail = resp.json()["detail"]
+    assert detail["error"] == "spec_override_unknown_field"
+    assert detail["field"] == "derivd"
+    assert "derivd" in detail["message"] and "derived" in detail["message"]
+
+
+def test_explain_draft_broken_formula_ok_false_with_errors():
+    """坏公式：**200 但 ok=false + errors 非空**（顶层一眼可见）。"""
+    draft = {**_EXPLAIN_DRAFT,
+             "derived": [_EXPLAIN_DRAFT["derived"][0],
+                         {"name": "x2", "expr": "height_mm * * 2", "unit": "mm"}]}
+    resp = _explain({"spec": {"height_m": 1.5}, "spec_override": draft})
+    assert resp.status_code == 200, resp.text
+    out = resp.json()
+    assert out["ok"] is False
+    assert set(out["errors"][0]) == {"code", "error", "expr"}
+    assert out["errors"][0]["code"] == "x2"
+    assert out["errors"][0]["expr"] == "height_mm * * 2"
+    # 只断言"包含"，不比尾部的解析器措辞（见本节顶部说明）
+    assert "表达式语法错误" in out["errors"][0]["error"]
+    assert "height_mm * * 2" in out["errors"][0]["error"]
+
+
+def test_explain_errors_cover_steps_filtered_by_metrics():
+    """`metrics` 只影响返回哪些步骤；`ok`/`errors` 必须覆盖**全部**步骤。"""
+    draft = {**_EXPLAIN_DRAFT,
+             "derived": [_EXPLAIN_DRAFT["derived"][0],
+                         {"name": "x2", "expr": "1 +", "unit": "mm"}]}
+    resp = _explain({"spec": {"height_m": 1.5}, "metrics": ["not_a_real_metric"],
+                     "spec_override": draft})
+    assert resp.status_code == 200, resp.text
+    out = resp.json()
+    assert out["steps"] == []                 # 被 metrics 过滤光了
+    assert out["ok"] is False and out["errors"], "过滤掉的坏步骤仍必须报出来"
+
+
+def test_explain_draft_does_not_require_registry_entry():
+    """草稿合法时连"是否已注册"都不要求；不带草稿则 404（对照组）。"""
+    draft = {"name": "新产品",
+             "numeric_inputs": [{"key": "d", "label": "丝径", "default": 2.0}],
+             "derived": [{"name": "d2", "expr": "d * 2", "unit": "mm"}]}
+    with _patched(_FakeDb()):
+        ok = client.post("/api/v1/export-quote/products/brand_new_key/explain",
+                         json={"spec": {"d": 2.0}, "spec_override": draft})
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["product_key"] == "brand_new_key"
+    assert [s["code"] for s in ok.json()["steps"]] == ["d2"]
+
+    with _patched(_FakeDb()):
+        missing = client.post("/api/v1/export-quote/products/brand_new_key/explain",
+                              json={"spec": {}})
+    assert missing.status_code == 404
+

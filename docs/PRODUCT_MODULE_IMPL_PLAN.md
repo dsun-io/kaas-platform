@@ -897,6 +897,51 @@ worker `pytest` ⇒ **231 passed, exit 0**；`route-parity` ⇒ PASS；`sync-sha
 
 ---
 
+### 8.10 已落地的第 9 个增量：**worker `/explain` 与 orchestrator 同构**（task-26）
+
+**这是什么**：补掉 §8.9 里如实报的"**唯一未同构**" —— worker 也有 `/explain`
+（`ws_quote_ext.py:181`），但此前不接受 `spec_override`、也没有那 3 个汇总键。
+
+**改了什么**（生产文件只 `ws_quote_ext.py` 一处 + 测试）
+
+| 项 | 内容 |
+|---|---|
+| 入参 | `_ExplainIn.spec_override: Optional[dict] = None`（描述文案与 orchestrator 一致） |
+| 解析 | **走引擎包的同一份实现**：把 `parse_spec_override` / `SpecOverrideError` 加进 `_ENGINE` 惰性符号表（该模块刻意**不在顶层 import 引擎** —— 镜像漏同步时不能让整个 Worker 起不来）⇒ **worker 里没有第二份解析器** ✓ |
+| 新键 | `ok` / `errors: [{code,error,expr}]` / `warnings: [str]` —— **形状决定：照搬 orchestrator 的实测输出**（键名、类型、`errors` 元素三键完全一致）。理由：本任务目标就是两端同构；`warnings` 用字符串与仓库既有 `warnings()` 契约（`rates.py:121`、`spec_delta`）同形 |
+| 步骤口径 | 先算**全部**再按 `metrics` 过滤 `steps`（`ok`/`errors` 覆盖全部）—— 与 orchestrator 同一处理 |
+| 兼容性 | 老键与 `steps[i]` 的 8 个键**一字不动** |
+
+**两端一致性怎么证的**（两个运行时无法在同一进程里同时加载两套 app）：
+**用同一份期望字面量把两端各自钉住** —— worker 侧新增 6 条用例，断言的就是
+**orchestrator 实测输出**（顶层键集恰好 = 老 9 ∪ 新 3；`steps[i]` 恰好 8 键；
+草稿的 `warnings` 三项**逐项**（含文案）；`x2` 步骤**逐字段**相等；`errors[0]` 的 `{code,error,expr}` 键集）。
+⇒ 任一端漂移都会红。
+
+**⚠️ 如实列出的两处"对齐不了 / 需注意"**
+1. **`errors[0]["error"]` 的尾部不逐字比对**：它是 Python 解析器的措辞
+   （`表达式语法错误 '…': invalid syntax (<unknown>, line 1)`），**可能随运行时/Python 版本变**
+   （CPython vs Pyodide）⇒ worker 侧只断言**包含** `表达式语法错误` 与该 `expr`；
+   键集与 `code`/`expr` 仍精确比对。这是**刻意的不对齐**，不是遗漏。
+2. **两端本就有一处行为差异（既有，不是本次引入）**：worker 的 explain 对 `numeric_inputs`
+   做**上下界校验**（`min_value`/`max_value` ⇒ 400 `invalid_numeric`），**orchestrator 没有**
+   （只做 `to_decimal`）⇒ 同一份草稿 + 同一组**越界**取值，两端状态码可能不同
+   （worker 400 / orchestrator 200）。**未在本任务改**：属既有语义差异，且 worker 侧边界校验
+   有既有用例钉着；要不要对齐需另开一项并明确取舍（放松 worker 的校验 / 给 orchestrator 加上）。
+
+**测试**：worker 侧 6 条（追加进既有 `tests/test_four_domains.py`，复用其 harness）——
+老请求逐键不变 / 草稿生效且 `warnings` 三项与 `x2` 步骤逐字段等同 orchestrator /
+未知字段 422 非静默 / 坏公式 200 但 `ok=false` + `errors` / `errors` 覆盖被 `metrics` 过滤的步骤 /
+草稿不要求已注册（对照：不带草稿 404）。
+**"新测试真被收集"的自证**：`pytest tests/test_four_domains.py --collect-only -q` 列出
+`test_explain_old_request_keys_unchanged` 等 6 条（该文件共收集 52 条）✓
+
+**门禁**：worker `pytest -q` ⇒ **237 passed, exit 0**（231 + 6）；`sync-shared -Check` ⇒ exit 0
+（本轮未改引擎，只使用它）；未跑 build。**未碰** `main.py` / `ws_docs_ext.py` / `dbjson.py` /
+`app/api/{files,trade_docs}.py` / `frontend/**` ✓
+
+---
+
 ## 9. 本文件的状态与自证（**滚动更新**）
 - task-3 的那一轮：只新增 `docs/PRODUCT_MODULE_IMPL_PLAN.md`，并在 `docs/PRODUCT_MODULE_MERGE_PLAN.md` 追加 §11；当时**未修改任何代码**。
 - **task-16**：折进 8 条裁决（§8/§8.1）+ 交付 §5 的 ① 层 `spec_delta.py`（§8.2）。
@@ -910,6 +955,8 @@ worker `pytest` ⇒ **231 passed, exit 0**；`route-parity` ⇒ PASS；`sync-sha
   各带"静态审计"用例；`main.py`（含装配层 `resolve_photo_refs`）与 `trade_docs.py` 未授权 ⇒ 已清点。
 - **task-25**：**P16 改造第一步**（§8.9）—— `/explain` 加 `spec_override`（草稿定义）+ `ok`/`errors`/`warnings`，
   向后兼容；**团队覆盖那半**（需 db）与 **worker 侧同构**（未授权）明确留待。
+- **task-26**：**worker `/explain` 同构**（§8.10）—— 补掉 §8.9 的"唯一未同构"；解析器复用引擎包同一份，
+  两端用**同一份期望字面量**各自钉住；如实列出两处差异（解析器措辞尾部、worker 的 min/max 校验）。
   本文件由**同一个作者滚动维护**；它**不是**"口径文档"（口径看 `docs/PROBLEM_STATUS_2026-10-11.md`）。
 - 各轮都**未碰**另一条任务在飞的 `trade_docs.py` / `worker/src/{main,dbjson,ws_docs_ext}.py` / `frontend/**`，
   也未碰 `shared/**`；task-22 按任务授权改了 `files.py` 与两个 worker 端点（当时实测均为 clean）。

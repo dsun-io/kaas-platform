@@ -78,6 +78,12 @@ def _ensure_engine() -> dict:
             build_default_provider,
             normalize_hs,
         )
+        # 草稿定义的**严格解析**：与 orchestrator 用**同一份**实现（引擎包里的
+        # `spec_override`），**不在 worker 另写一份** —— 两套解析必然漂移。
+        from kaas_common.export_quote.spec_override import (
+            SpecOverrideError,
+            parse_spec_override,
+        )
     except Exception as exc:  # noqa: BLE001 - 镜像残缺时不该是 500 裸栈
         raise HTTPException(status_code=503, detail={
             "error": "engine_unavailable",
@@ -97,6 +103,8 @@ def _ensure_engine() -> dict:
         "RebateRateNotFound": RebateRateNotFound,
         "build_default_provider": build_default_provider,
         "normalize_hs": normalize_hs,
+        "SpecOverrideError": SpecOverrideError,
+        "parse_spec_override": parse_spec_override,
     })
     return _ENGINE
 
@@ -124,6 +132,13 @@ class _ExplainIn(BaseModel):
     )
     metrics: Optional[List[str]] = Field(
         default=None, description="只算这些指标；不传则全算"
+    )
+    spec_override: Optional[dict] = Field(
+        default=None,
+        description="**草稿定义**（可选）：用这份**未保存**的 ProductSpec 代替产品注册表里的定义来试算。"
+                    "只在本次请求内生效、**不落库**；结构不合法会 422（未知字段/类型不对都报错，"
+                    "不会静默取默认）。缺字段则按默认值参与，并在响应的 `warnings` 里如实列出。"
+                    "**与 orchestrator 的 ExplainIn 逐字段一致**（同一份解析器）。",
     )
 
 
@@ -191,11 +206,27 @@ async def export_quote_explain_product(
 
     与 orchestrator 一致，这里**不并入客户自定义档位**（dev 的该端点也不查库）：
     本接口是"照着产品定义自证口径"，取值以产品定义 + 请求给的为准。
+
+    **草稿试算（与 orchestrator 同构，task-26）**：带 `spec_override` 时，用这份**未保存**的
+    定义代替注册表定义来算；只本次请求内生效、不落库；合法草稿连"是否已注册"都不再要求。
     """
     import quote_api  # noqa: PLC0415
 
     eng = _ensure_engine()
-    spec = quote_api._product_or_404(product_key)
+    warnings: List[str] = []
+    if body.spec_override is not None:
+        try:
+            parsed = eng["parse_spec_override"](body.spec_override, product_key=product_key)
+        except eng["SpecOverrideError"] as exc:
+            raise HTTPException(status_code=422, detail={
+                "error": exc.code, "message": str(exc), "field": exc.field})
+        spec = parsed.spec
+        warnings.append("本次试算使用请求内的**草稿定义**（spec_override）：不落库、不影响线上产品")
+        if parsed.defaulted:
+            warnings.append("草稿未提供这些字段，按**默认值**参与试算："
+                            + "、".join(parsed.defaulted))
+    else:
+        spec = quote_api._product_or_404(product_key)
 
     # 规格轴取值：对齐到轴声明的类型（1.2 这类浮点要能与 Decimal 比）
     picked: dict = {}
@@ -295,9 +326,16 @@ async def export_quote_explain_product(
     price_omitted = bool(requested is None or (requested & PRICE_METRICS))
     only = None if requested is None else sorted(requested - PRICE_METRICS)
 
-    steps = eng["worked_example"](spec, scope, only)
+    # 先算**全部**步骤：`ok`/`errors` 必须覆盖**所有**步骤，不能被 `metrics` 过滤掉的那些漏掉
+    # （"只看通过的"会得出"没问题"的错觉）。与 orchestrator 同一处理。
+    all_steps = eng["worked_example"](spec, scope, None)
     if requested is None:
-        steps = [s for s in steps if s["code"] not in PRICE_METRICS]
+        steps = [s for s in all_steps if s["code"] not in PRICE_METRICS]
+    else:
+        wanted = set(only)
+        steps = [s for s in all_steps if s["code"] in wanted]
+    errors = [{"code": s["code"], "error": s["error"], "expr": s.get("expr")}
+              for s in all_steps if "error" in s]
 
     payload = {
         "product_key": spec.key,
@@ -314,6 +352,11 @@ async def export_quote_explain_product(
             "价格类指标未在此接口计算：它们由完整价链（成本 → 进项税 → 退税让利 → "
             "印花税 → 销项税）与税务档案决定，请调用 /calculate 或 /calculate-internal。"
         )
+        warnings.append("价格类指标未计算（见 price_hint）：本次只自证数量口径")
+    # ── 加性汇总键：**与 orchestrator 逐项同构**（键名/类型/errors 元素形状都照同一份期望）
+    payload["ok"] = not errors
+    payload["errors"] = errors
+    payload["warnings"] = warnings
     return payload
 
 
