@@ -76,6 +76,18 @@ export function buildSpecification({
     parts.push(`${name} ${raw}${unit ? ` ${unit}` : ""}`);
   }
 
+  // 自由数值参数：**尺寸本身要印在单证上**（信用证/报关核的就是这些数）。
+  // 它们不属于任何"分组的候选项"，所以单独拼一段；
+  // 值取引擎单位（与 piece_inputs 同一口径），单位跟着标签印出，不留歧义。
+  for (const ni of formulas.numeric_inputs ?? []) {
+    const raw = spec[ni.key];
+    if (raw === undefined || raw === null || raw === "") continue;
+    const name = ni.label_en || ni.label;
+    if (!name) continue;
+    const unit = ni.unit || "";
+    parts.push(`${name}: ${textOf(raw)}${unit ? ` ${unit}` : ""}`);
+  }
+
   return parts.join(", ");
 }
 

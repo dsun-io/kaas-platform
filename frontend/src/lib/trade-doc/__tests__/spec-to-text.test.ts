@@ -128,4 +128,20 @@ describe("buildSpecification", () => {
     const b = buildSpecification({ formulas: f, spec: { height_m: 1.5 } });
     expect(a).not.toBe(b);
   });
+
+  it("自由数值参数（尺寸本身）必须印进描述 —— 信用证/报关核的就是这些数", () => {
+    const text = buildSpecification({
+      formulas: formulas(),
+      spec: { height_m: 1.5, de: 2.3 },
+    });
+    expect(text).toContain("Edge Wire Dia. (mm): 2.3 mm");
+  });
+
+  it("自由数值参数没填时不出现（不留空壳）", () => {
+    const text = buildSpecification({
+      formulas: formulas(),
+      spec: { height_m: 1.5 },
+    });
+    expect(text).not.toContain("Edge Wire Dia.");
+  });
 });

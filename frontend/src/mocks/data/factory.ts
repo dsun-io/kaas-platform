@@ -1,5 +1,4 @@
 import type { EventType } from "@contracts/events";
-import { NIULANWANG_SKU_AXES } from "@contracts/niulanwang";
 
 export function makeEvent(
   overrides?: Partial<{
@@ -469,16 +468,13 @@ export function normalizeCategoryCode(input: string): string {
 export function makeQuotableSpecs(productCategory: string) {
   if (normalizeCategoryCode(productCategory) !== "niulanwang") return [];
 
-  // 取值全部来自共享契约（@contracts/niulanwang），不手写：
-  // 旧 mock 用的 2.0x1.8 / 1.8x1.8 / 高度 1.8 都不是牛栏网的真实取值。
-  const wires = NIULANWANG_SKU_AXES.wire_option.options.map(
-    (o) => `${o.edgeWireMm}x${o.innerWireMm}`,
-  );
-  const heights = NIULANWANG_SKU_AXES.height.options.map((o) => o.value);
-  const spacings = NIULANWANG_SKU_AXES.vertical_wire_spacing.options.map((o) => o.value);
-  const rollLengths = [
-    ...new Set(NIULANWANG_SKU_AXES.wire_option.options.map((o) => o.rollLengthM)),
-  ];
+  // 尺寸类已改为**自由数值参数**（丝径/网高/间距/卷长随手填），
+  // 不再有"规格轴取值清单"可枚举 —— 所以这里只给一组**代表性样例**，
+  // 用于驱动旧扁平模型的 tuple 匹配与级联，**不代表真实可选空间**。
+  // 真实规格空间见 `GET /export-quote/products/field_fence/formulas`。
+  const wires = ["2.0x2.0", "2.5x2.5", "2.5x2.0"];
+  const heights = [1.2, 1.5];
+  const spacings = [10, 15];
   const result: Array<{
     product_type: string;
     wire_diameter: string;
@@ -488,9 +484,8 @@ export function makeQuotableSpecs(productCategory: string) {
     roll_length: number;
   }> = [];
   for (const w of wires) {
-    // 卷长随丝径方案联动：全丝2.5 → 50m/卷，其余 → 100m/卷
-    const rollLength =
-      w === "2.5x2.5" ? rollLengths.find((l) => l === 50) : rollLengths.find((l) => l === 100);
+    // 卷长是自由数值（默认 100m/卷）；旧扁平模型仍按方案给 50/100 两种样例
+    const rollLength = w === "2.5x2.5" ? 50 : 100;
     for (const h of heights) {
       for (const s of spacings) {
         result.push({
@@ -500,7 +495,7 @@ export function makeQuotableSpecs(productCategory: string) {
           // 旧扁平模型把这个字段当竖丝间距用（cm）
           mesh_width: s,
           mesh_spec: null,
-          roll_length: rollLength ?? 100,
+          roll_length: rollLength,
         });
       }
     }

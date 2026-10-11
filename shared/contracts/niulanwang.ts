@@ -17,86 +17,20 @@
  *   · `POST /api/v1/export-quote/products/field_fence/explain` —— 按规格逐步代入自证
  *   · `spec_attributes` / `category_attribute_bindings` —— 属性与绑定
  *
- * 本文件里的取值是**与后端对齐的静态镜像**，供前端做校验、联动与 mock，
- * 免得各处再手写一遍而写歪。改动规格时必须同步改后端产品定义
- * （`app/services/export_quote/products/field_fence.py`）与 DB 迁移，
- * 并由 `niulanwang.test.ts` 里的算术断言兜住（5 轴 × 取值 = 48 组合）。
+ * **本文件不再声明任何规格轴取值**（2026-10-11 退役）
+ * --------------------------------------------------
+ * 尺寸类（丝径 / 网高 / 竖丝间距 / 卷长 / 卷径 / 横丝根数）已改为
+ * **自由数值参数**：客户填任意值，由公式折算重量与价格。连续量本来就没有
+ * "可选值清单"，更没有"组合数"可言。
+ *
+ * 原先这里是一份**会过期的手抄镜像**（5 轴 / 48 组合 /
+ * `NIULANWANG_COMBO_COUNT = 160`）：前端按它写死了下拉与组合数，
+ * 后端改了规格它不会跟着变 —— 于是出现「120 / 160 / 48 三个数各说各话」。
+ * 界面现在一律从 `/formulas` 读 `space.axes` / `space.variants` / `numeric_inputs`。
+ *
+ * 这里只保留**与规格空间无关**的口径常量与纯数学助手
+ * （体积口径、波弯增重）—— 它们不随取值增减而失效。
  */
-import { z } from 'zod';
-
-/** 会真正决定 SKU 的规格轴（5 个 → 3×2×2×2×2 = 48 个组合）。 */
-export const NIULANWANG_SKU_AXES = {
-  /** 丝径方案：一次选定，边丝/内横丝/竖丝三个直径与卷长、卷径同时确定 */
-  wire_option: {
-    label: '丝径方案',
-    options: [
-      {
-        value: 'all_wire_20',
-        label: '全丝2.0',
-        edgeWireMm: 2.0,
-        innerWireMm: 2.0,
-        verticalWireMm: 2.0,
-        rollLengthM: 100,
-        rollDiameterCm: 30,
-      },
-      {
-        value: 'all_wire_25',
-        label: '全丝2.5',
-        edgeWireMm: 2.5,
-        innerWireMm: 2.5,
-        verticalWireMm: 2.5,
-        rollLengthM: 50,
-        rollDiameterCm: 25,
-      },
-      {
-        value: 'edge25_inner20',
-        label: '边丝2.5+内丝2.0',
-        edgeWireMm: 2.5,
-        innerWireMm: 2.0,
-        verticalWireMm: 2.0,
-        rollLengthM: 100,
-        rollDiameterCm: 30,
-      },
-    ],
-  },
-  /** 网高（米） */
-  height: {
-    label: '网高',
-    options: [
-      { value: 1.2, label: '1.2m' },
-      { value: 1.5, label: '1.5m' },
-    ],
-  },
-  /** 竖丝间距（cm）—— 即网孔竖丝间距；横向间距上疏下密，不参与重量与计价 */
-  vertical_wire_spacing: {
-    label: '竖丝间距',
-    options: [
-      { value: 10, label: '10cm' },
-      { value: 15, label: '15cm' },
-    ],
-  },
-  /** 表面处理 / 镀锌量（选项对齐业务在用报价表） */
-  zinc_coating: {
-    label: '表面处理',
-    options: [
-      { value: 'zinc_40', label: '热镀锌 40g/㎡', zincGm2: 40 },
-      { value: 'zinc_200', label: '热镀锌 200g/㎡', zincGm2: 200 },
-      { value: 'zinc_260', label: '热镀锌 260g/㎡', zincGm2: 260 },
-      { value: 'elec_galv', label: '电镀锌', zincGm2: 0 },
-      { value: 'pvc_black', label: 'PVC涂塑(黑色)', zincGm2: 0 },
-    ],
-  },
-  /** 工艺：波弯款按每 100 米增重 3kg 折算 */
-  wave_type: {
-    label: '工艺',
-    options: [
-      { value: 'no_wave', label: '无波款', waveFactor: 0 },
-      { value: 'wave_bend', label: '波弯款', waveFactor: 1 },
-    ],
-  },
-} as const;
-
-export const NIULANWANG_COMBO_COUNT = 160;
 
 /** 记录在案但不参与 SKU 编码的量（由上面的轴决定，或按品种固定）。 */
 export const NIULANWANG_DESCRIPTIVE = {
@@ -152,37 +86,6 @@ export const NIULANWANG_METRIC_CODES = {
   pricePerMeter: 'price_per_meter',
   pricePerPieceFx: 'price_per_piece_fx',
 } as const;
-
-/** 前端展示用的规格项 —— 与后端 `GET /products/{key}/formulas` 同步。 */
-export const NiulanwangAxisSchema = z.object({
-  code: z.enum([
-    'wire_option',
-    'height',
-    'vertical_wire_spacing',
-    'zinc_coating',
-    'wave_type',
-  ]),
-  label: z.string(),
-  value: z.union([z.string(), z.number()]),
-  label_text: z.string().optional(),
-});
-export type NiulanwangAxis = z.infer<typeof NiulanwangAxisSchema>;
-
-/**
- * 按轴取值算组合数 —— 用作「48」这个数字的自检，
- * 避免有人在某处多加/少加一个取值而没人发现。
- */
-export function niulanwangComboCount(): number {
-  return Object.values(NIULANWANG_SKU_AXES).reduce(
-    (n, axis) => n * axis.options.length,
-    1,
-  );
-}
-
-/** 取某个丝径方案的联动属性（三个丝径 + 卷长 + 卷径一次全定）。 */
-export function wireOptionOf(value: string) {
-  return NIULANWANG_SKU_AXES.wire_option.options.find((o) => o.value === value);
-}
 
 /**
  * 波弯增重（单卷 kg）—— 与后端 `wave_add_kg` 同一口径。
