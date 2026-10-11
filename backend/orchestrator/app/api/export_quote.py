@@ -64,7 +64,7 @@ from app.services.export_quote.importers import (
     template_columns,
     template_headers,
 )
-from app.services.export_quote.numeric import DECIMAL
+from app.services.export_quote.numeric import DECIMAL, to_decimal
 from app.services.export_quote.products import get as get_product
 from app.services.export_quote.rates import build_default_provider, normalize_hs
 from app.services.export_quote.report import quote_meta
@@ -294,6 +294,23 @@ async def explain_product(
     for axis in spec.axes:
         if axis.name in body.spec:
             picked[axis.name] = _coerce(body.spec[axis.name], axis.options)
+    # 自由数值参数：给了就用（只做数值化），没给用声明的默认值。
+    # 不做枚举 —— 丝径 2.3mm 就是 2.3mm（与引擎 spec_from_partial 同一口径）。
+    for ni in spec.numeric_inputs:
+        if ni.key in body.spec:
+            raw = body.spec[ni.key]
+            try:
+                # 用 to_decimal 而不是 DECIMAL.convert：后者是直通，
+                # 传 "很粗" 会原样返回字符串、一路带到公式里才炸（或算出 None）。
+                picked[ni.key] = to_decimal(raw)
+            except (TypeError, ValueError, ArithmeticError):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "invalid_numeric",
+                            "message": f"{ni.label or ni.key} 不是数值: {raw!r}"},
+                )
+        elif ni.default is not None:
+            picked[ni.key] = ni.default
     for vg in spec.variants:
         want = body.spec.get(vg.name)
         if want is None:
