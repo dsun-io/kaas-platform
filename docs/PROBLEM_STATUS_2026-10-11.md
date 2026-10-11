@@ -1830,3 +1830,29 @@ orchestrator 598 passed；worker 142 passed；前端 `typecheck` exit 0、
 **另**：本会话额外产出（不在目标原文里但已落地）——
 原料价历史均价、`AGENTS.md` 全局规则、爬取移植（含**修掉生产 SSRF 绕过**）、
 `docs/E2E_STATUS_2026-10-11.md`。
+
+---
+
+## 追加（2026-10-11 晚）：生产库重新打通 + 文件存储规划
+
+**生产库访问已恢复**（此前所有路径都断：Hyperdrive 口令被 Cloudflare 抹掉、
+Neon 令牌过期、Edge 无会话、无 `.env`）：
+
+- 用 Neon CLI 重新登录（`neon login`，OAuth；**Agent 不自行拉起浏览器**，由用户完成授权），
+  签发**项目级 API key**（`dsh-mcp-2026-10-11`，id `3419989`）→ 写
+  `~/.dsh/neon-api-key.txt` + **用户级环境变量 `NEON_API_KEY`**（供 `mcp-neon` 使用，
+  **DSH 重启后生效**；此前 `mcp-neon` 一直 disconnected 就是缺这个变量）。
+- `neon env pull --file <temp>` 取得生产 DSN（**未打印口令**），只读连通性验证通过：
+  `public` 表 **100** 张；`users=3`、`customers=1`、
+  **`trade_docs=0`、`trade_doc_items=0`、`tenant_company_seals=0`、`external_doc_uploads=0`**
+  ⇒ **生产环境一张单证都没开过、一枚公章都没存过**（单证工位在生产上从未真正使用）。
+
+**文件存储规划**（用户要求：业务数据与文件各存在自己的位置，不要内联混在业务表里）
+→ 新增 `docs/PRODUCT_MEDIA_STORAGE_PLAN.md`：
+
+- 三层分开：**业务行**留在各业务表 / **文件元数据**进 `file_objects`（全平台唯一文件域）/
+  **文件本体**进对象存储（生产 **Cloudflare R2**，本地 MinIO，同为 S3 兼容，代码一份）。
+- 产品图**引用而非复制**：产品图存一份，单证用 `trade_doc_files.file_id` 引用
+  ⇒ 「一次维护、重复使用」。
+- 盖章回传按用户裁决**版本化**：新版本上位 `is_current`、旧版 `supersedes_id` 留档。
+- 待拍板：文件本体是否用 R2（建议采纳）；产品 key 直接用现有 `ProductSpec` key（不建第二套主数据）。
