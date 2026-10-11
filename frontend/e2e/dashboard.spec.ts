@@ -3,8 +3,9 @@ import { test, expect } from './fixtures';
 test.describe('Dashboard', () => {
   test('page loads with 6 stat cards', async ({ page }) => {
     await page.goto('/dashboard');
-    await page.waitForLoadState('networkidle');
 
+    // **2026-10-12：去掉 `networkidle`** —— 下一行断言就是在等具体元素
+    // （`dashboard/page.tsx:32` 的 `.grid` 内 6 张 `<StatCard>`）。
     const cards = page.locator('.grid > *');
     await expect(cards.first()).toBeVisible();
     const count = await cards.count();
@@ -13,7 +14,9 @@ test.describe('Dashboard', () => {
 
   test('RangeSelector switches trigger card refetch', async ({ page }) => {
     await page.goto('/dashboard');
-    await page.waitForLoadState('networkidle');
+
+    // **2026-10-12：去掉 `networkidle`** —— 下面的 `click()` 自身会等具体元素
+    // （`dashboard/components/range-selector.tsx:7` 的「近 7 天」按钮）。
 
     // **2026-10-11 修正：确定性陈旧（有源码依据）**
     // 现役文案是 `近 7 天`（**含空格**）：`dashboard/components/range-selector.tsx:7`

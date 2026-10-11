@@ -3,8 +3,9 @@ import { test, expect } from './fixtures';
 test.describe('Audit Log', () => {
   test('page loads with filter bar and table', async ({ page }) => {
     await page.goto('/audit-log');
-    await page.waitForLoadState('networkidle');
 
+    // **2026-10-12：去掉 `networkidle`** —— 下一行断言就是在等具体元素
+    // （`audit-log/page.tsx:191` 的 h1「操作日志」），不需要额外等待。
     // Heading should be visible
     await expect(page.getByRole('heading', { name: '操作日志' })).toBeVisible({ timeout: 10000 });
 
@@ -19,10 +20,16 @@ test.describe('Audit Log', () => {
 
   test('click row expands detail JSON', async ({ page }) => {
     await page.goto('/audit-log');
-    await page.waitForLoadState('networkidle');
+
+    // **2026-10-12：把 `networkidle` 换成等具体元素**（表格首行）。
+    // 源码：`audit-log/page.tsx:228-247` —— 只有 `items.length > 0` 才渲染 `<Table>`；
+    // mock `/admin/audit-log` 有 5+ 条（`mocks/handlers.ts:588-663`）。
+    // 这样若行确实不存在，失败会是有信息量的 `element(s) not found`，
+    // 而不是 `click` 的 30s 超时。
+    const firstRow = page.locator('table tbody tr').first();
+    await expect(firstRow).toBeVisible({ timeout: 15000 });
 
     // Click first table row
-    const firstRow = page.locator('table tbody tr').first();
     await firstRow.click();
     await page.waitForTimeout(300);
 

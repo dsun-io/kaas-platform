@@ -17,7 +17,14 @@ test.describe('Events', () => {
 
   test('event_type dropdown filters the list', async ({ page }) => {
     await page.goto('/events');
-    await page.waitForLoadState('networkidle');
+
+    // **2026-10-12：把 `networkidle` 换成等具体元素**（下拉框本身）。
+    // 源码：`events/components/event-filters.tsx:45-62` 的 `<SelectTrigger>`（role=combobox）。
+    // 用它当"页面已渲染"的条件，也顺带避免下一句 `filter.isVisible()`（**不重试**）
+    // 在页面还没渲染时把整段交互静默跳过。
+    await expect(page.getByRole('combobox').first()).toBeVisible({
+      timeout: 15000,
+    });
 
     // **2026-10-11 修正：确定性陈旧（字符串层，有源码依据）**
     // 事件类型只有两种 —— `events/components/event-filters.tsx:15-18`
@@ -35,7 +42,12 @@ test.describe('Events', () => {
       const option = page.getByRole('option', { name: /audit\.access/i });
       if (await option.isVisible()) {
         await option.click();
-        await page.waitForLoadState('networkidle');
+        // **2026-10-12：把 `networkidle` 换成等具体元素**（筛选后列表的第一行）。
+        // 源码：`events/components/event-table.tsx:120-141`（`events.length > 0` 才渲染行）；
+        // mock 按 `event_type` 过滤后仍有 6 行（`mocks/handlers.ts:174-186`）。
+        await expect(page.locator('table tbody tr').first()).toBeVisible({
+          timeout: 15000,
+        });
       }
     }
 
