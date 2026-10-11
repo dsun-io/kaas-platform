@@ -157,6 +157,7 @@ SASO / COC 等目的国认证文件、船公司证明（Certificate of Vessel's 
 |---|---|---|---|
 | `company_stamp` | `image` | PI 签章区（`.sign-box` 内、签字线上方） | `data:image/png;base64,...` 或 `https://...` |
 | `product_photos` | `image_list` | PI「金额大写」之后、「收款银行 / 备注」之前 | `[{ "image": …, "caption": … }]` |
+| `buyer_confirmation` | `boolean` | PI 签章区左格（买方回签栏），**默认不印** | `true`（用 `buyer.company`）或自定义抬头字符串 |
 
 ### 渲染规则（为什么这样实现）
 
@@ -168,6 +169,19 @@ SASO / COC 等目的国认证文件、船公司证明（Certificate of Vessel's 
 | 两列网格，单数张补一个空格子；`page-break-inside: avoid` | 版面稳定（审单要求），照片也不会被分页拦腰截断 |
 | 图片样式**内联在图片段落里**，没写进 `_shared.css` | 共享样式一改，18 份基线的 `<style>` 全部变化 ⇒ 全线报差异。为两个类名付这个代价不值得 |
 
+### 签章区：买方回签栏默认不印，但两侧必须等高
+
+- **法律 / 银行口径**：PI 是**卖方单方出具**的要约/预告单据（客户拿它去申请进口许可、
+  开信用证、付定金），信用证审单只看 PI 内容与**卖方**签章 —— 买方不签也成立。
+  因此 `buyer_confirmation` **默认不印**，由数据显式打开。
+- **商业口径**：留一栏回签，PI 就同时充当「订单确认书」，客户事后改规格/价格没有依据。
+  模板签章区本来就是 50%/50% 两格、**左格一直是空的** —— 回签栏是把这个空位给出名目。
+- **等高要求**：两个模块结构必须一一对应 ——「图章位 + 分隔线 + 标题 + 说明行」，
+  且图章位共用高度常量 `STAMP_SLOT_MM`（18mm）。卖方放了公章时，买方侧留出同高的
+  **空图章位**（供客户盖章/签字）；卖方没放章则两侧都不留。这样左右两个签章框的
+  高度与上下沿必然对齐（实测：两个 `.sign-box` 同为 113px、`top` 同为 1327px）。
+  买方日期并入说明行（`Accepted by … · Date: ______`），不让买方模块多出一行。
+
 ### 用法
 
 值放进单证的 `raw_payload.custom`（与其它字段同一入口），渲染 / 预览 / 打印链路都不用改：
@@ -178,7 +192,8 @@ SASO / COC 等目的国认证文件、船公司证明（Certificate of Vessel's 
     "company_stamp": "data:image/png;base64,iVBORw0KGgo...",
     "product_photos": [
       { "image": "data:image/jpeg;base64,/9j/4AAQ...", "caption": "Item 1 — Chain Link Fence" }
-    ]
+    ],
+    "buyer_confirmation": true
   }
 }
 ```
@@ -186,6 +201,9 @@ SASO / COC 等目的国认证文件、船公司证明（Certificate of Vessel's 
 其它单证要带图：渲染器按**字段名**识别（不挑单证类型），在对应模板里加
 `$company_stamp` / `$product_photos` 占位符即可。本期只改了 **PI** 模板 ——
 改动面越小，18 份基线的可比性越好。
+
+> 回签栏同理：模板里已有 `$buyer_confirmation` 的位置（PI 左签章格），
+> 其它单证要加，把占位符放到对应模板的签章区即可。
 
 ### 还未做（本次范围外）
 

@@ -462,3 +462,68 @@ describe("图片字段（company_stamp / product_photos）", () => {
     expect(fields.product_photos?.required).toBe(false);
   });
 });
+
+// ── 买方回签栏（可选，默认不印）────────────────────────────────────────
+
+describe("买方回签栏（buyer_confirmation）", () => {
+  const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==";
+
+  it("true 时用买方公司名生成回签栏", () => {
+    const html = renderTradeDoc("pi", {
+      ...MINIMAL_DATA,
+      buyer_confirmation: true,
+    });
+    expect(html).toContain("Buyer's Confirmation");
+    expect(html).toContain("Accepted by Australian Rural Fencing Pty Ltd");
+  });
+
+  it("两侧签章模块等高：卖方有公章时，买方留出同一高度的空图章位", () => {
+    // 两个模块都必须是「图章位 + 分隔线 + 标题 + 说明行」四件套，且图章位同高，
+    // 否则左右两个签章框一高一低，版面不对称（审单场景很扎眼）。
+    const html = renderTradeDoc("pi", {
+      ...MINIMAL_DATA,
+      company_stamp: PNG,
+      buyer_confirmation: true,
+    });
+    const slots = html.match(/class="stamp-img"/g) ?? [];
+    expect(slots.length).toBe(2); // 卖方公章位 + 买方空格位
+  });
+
+  it("卖方未放公章时，买方侧也不留空位（两侧仍然等高）", () => {
+    const html = renderTradeDoc("pi", {
+      ...MINIMAL_DATA,
+      buyer_confirmation: true,
+    });
+    expect(html).toContain("Buyer's Confirmation");
+    expect(html).not.toContain("stamp-img");
+  });
+
+  it("可填自定义抬头；说明文字被转义", () => {
+    const html = renderTradeDoc("pi", {
+      ...MINIMAL_DATA,
+      buyer_confirmation: "ACME TRADING LLC <script>alert(1)</script>",
+    });
+    expect(html).toContain("Accepted by ACME TRADING LLC");
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  it("不给值 / 给假值时不出该栏（默认口径：PI 是卖方单方文件）", () => {
+    for (const value of [undefined, false, "", 0]) {
+      const html = renderTradeDoc("pi", {
+        ...MINIMAL_DATA,
+        buyer_confirmation: value,
+      });
+      expect(html).not.toContain("Buyer's Confirmation");
+    }
+  });
+
+  it("字段定义已登记且为可选", () => {
+    const fields = getTemplateFields("pi") as Record<
+      string,
+      { type?: string; required?: boolean }
+    >;
+    expect(fields.buyer_confirmation?.type).toBe("boolean");
+    expect(fields.buyer_confirmation?.required).toBe(false);
+  });
+});

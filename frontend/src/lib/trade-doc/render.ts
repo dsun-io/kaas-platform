@@ -47,6 +47,26 @@ const RAW_HTML_FIELDS = new Set(["content"]);
 const IMAGE_FIELDS = new Set(["company_stamp"]);
 const IMAGE_LIST_FIELDS = new Set(["product_photos"]);
 
+/**
+ * 买方回签栏（2026-10-11 新增）：PI 是**卖方单方出具**的要约/预告单据，
+ * 法律与银行口径上不需要买方签章（信用证审单只看 PI 内容与卖方签章）。
+ * 但商业实践中留一栏回签，PI 就同时充当「订单确认书」——
+ * 客户事后改规格/价格就没有依据。因此这一栏**默认不出**，由数据显式打开。
+ */
+const CONFIRMATION_FIELDS = new Set(["buyer_confirmation"]);
+
+/**
+ * 签章区「图章位」的统一高度（mm）。
+ *
+ * 卖方签章模块 = 图章位 + 分隔线 + 标题 + 说明行；买方回签模块**结构完全相同**
+ * （同样的图章位、同样的 4 行），所以两边模块高度天然相等、上下沿对齐 ——
+ * 用同一个常量而不是两处各写一个数字，改了不会漏掉一边。
+ */
+const STAMP_SLOT_MM = 18;
+const STAMP_SLOT_STYLE =
+  `height:${STAMP_SLOT_MM}mm;margin:0 auto 1.6mm;` +
+  `display:flex;align-items:flex-end;justify-content:center;`;
+
 /** 共享样式注入占位符（模板中写 `/*__SHARED_STYLE__*​/`） */
 const STYLE_PLACEHOLDER = "/*__SHARED_STYLE__*/";
 
@@ -372,8 +392,10 @@ function renderStampImage(value: unknown): string {
   const src = safeImageSrc(value);
   if (!src) return "";
   return (
-    `<img class="stamp-img" src="${esc(src)}" alt="Company Stamp"` +
-    ` style="display:block;width:52mm;height:auto;margin:0 auto 1.6mm;">`
+    `<div class="stamp-img" style="${STAMP_SLOT_STYLE}">` +
+    `<img src="${esc(src)}" alt="Company Stamp"` +
+    ` style="max-width:62mm;max-height:${STAMP_SLOT_MM}mm;width:auto;height:auto;">` +
+    `</div>`
   );
 }
 
@@ -430,6 +452,39 @@ function renderPhotoGrid(value: unknown): string {
     `    <table><tbody>${rows.join("")}</tbody></table>`,
     `  </div>`,
   ].join("\n");
+}
+
+/**
+ * 买方回签栏：值可以是 `true`（用 `buyer.company`）或自定义字符串（如客户要求的抬头）。
+ * 复用共享样式里已有的 `.sign-box` / `.rule` / `.cap` / `.stamp-hint`，
+ * 与卖方签章区左右对称 —— 不新增 CSS，因此 18 份基线不受影响。
+ * 值为假 / 空 / 其它类型时返回空串 ⇒ 模板输出与新增本能力之前逐字节一致。
+ */
+function renderBuyerConfirmation(
+  value: unknown,
+  data: Record<string, unknown>,
+): string {
+  const custom = typeof value === "string" ? value.trim() : "";
+  if (value !== true && custom === "") return "";
+  const buyer = (
+    typeof data.buyer === "object" && data.buyer !== null ? data.buyer : {}
+  ) as Record<string, unknown>;
+  const name =
+    custom !== "" ? custom : String(buyer.company ?? buyer.name ?? "the Buyer");
+  const lines = [`<div class="sign-box">`];
+  // 卖方侧放了公章时，买方侧留出**同一个高度**的空图章位（供客户盖章/签字），
+  // 这样两个模块的 4 行结构一一对应，高度必然相等；卖方没放章就不留空位。
+  if (safeImageSrc(data.company_stamp) !== "") {
+    lines.push(`  <div class="stamp-img" style="${STAMP_SLOT_STYLE}"></div>`);
+  }
+  lines.push(
+    `  <div class="rule"></div>`,
+    `  <div class="cap">Buyer's Confirmation &mdash; Signature &amp; Stamp</div>`,
+    // 说明行与卖方侧一样只有一行（Date 并入本行，避免买方模块比卖方高一行）
+    `  <div class="stamp-hint">Accepted by ${esc(name)} &nbsp;&middot;&nbsp; Date: ____________</div>`,
+    `</div>`,
+  );
+  return lines.join("\n");
 }
 
 // ── 商品明细表 ──────────────────────────────────────────────────────────────
@@ -738,6 +793,8 @@ function preprocessData(
       result[key] = renderStampImage(value);
     } else if (IMAGE_LIST_FIELDS.has(key)) {
       result[key] = renderPhotoGrid(value);
+    } else if (CONFIRMATION_FIELDS.has(key)) {
+      result[key] = renderBuyerConfirmation(value, data);
     } else if (Array.isArray(value)) {
       result[key] = value.length
         ? renderItemsTable(value as Record<string, unknown>[], docType, context)
