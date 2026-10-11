@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test.describe('Admin Gray Release', () => {
   test('gray release cards render with toggle visible', async ({ page }) => {

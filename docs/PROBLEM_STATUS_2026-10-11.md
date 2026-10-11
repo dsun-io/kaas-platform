@@ -532,6 +532,60 @@ e2e/kb.spec.ts(21,1): error TS1005: '}' expected.
 **下一步**：把这 8 个 spec 的 import 用 `apply_patch` **逐个**改成
 `from './fixtures'`（每个文件一行），然后跑 e2e 拿到"未匹配请求"的清单。
 
+#### ✅ 做完了，而且 fixture 立刻抓出**一个真实的应用缺陷**
+
+改了 8 个 spec 的 import（用 `[System.IO.File]::WriteAllText` + 无 BOM 编码，
+**行数不变 + `typecheck` exit 0** 双重验证；对比 R44 的 `Set-Content` 事故）。
+fixture 一转出 console，**当场**就看到了真正的原因：
+
+```
+GET /__nextjs_original-stack-frame?...errorMessage=
+    TypeError%3A+Cannot+read+properties+of+undefined+(reading+'length')
+    ...file=...%2Fcustomers%2Fpage.tsx&methodName=CustomersPage
+```
+
+**`CustomersPage` 抛 `TypeError: Cannot read properties of undefined
+(reading 'length')`** —— 页面是**崩进错误边界**（「页面加载异常 /
+后端繁忙，请稍后重试」），不是"没有数据"。**这是整轮 e2e 排查里
+第一个真实的应用缺陷**，前面几轮全是环境/夹具/时序。
+
+**根因**（`app/(app)/customers/page.tsx`，8 处）：
+
+```ts
+detail?.contacts.length ?? 0     // 保护了 detail，**没保护 contacts**
+detail.contacts.length           // 连 detail 都没保护
+listData?.items.length === 0     // 同样：保护了 listData，没保护 items
+```
+
+接口响应里缺 `contacts` / `inquiries` / `stage_log` / `items` 时**直接抛错**。
+（对照：`lib/workstation/visibility.ts` 的注释早就写明"形状不认识就返回 null，
+**别把字段缺失当成 0**"——同一类问题在别处已经防住了，这里漏了。）
+
+**已修**：8 处全部改成 `detail?.contacts?.length ?? 0` 这种正确写法。
+复跑后 `reading 'length'` 的命中数 **0** ✓，`typecheck` exit 0 ✓。
+
+#### ⚠️ 但复跑暴露了更该记的一件事：**这套 e2e 是 flaky 的**
+
+同一份代码（含上面的修复），**连续两次运行**：
+
+| 运行 | 结果 |
+|---|---|
+| 修复前一次 | **16 passed** |
+| 修复后一次 | **9 passed** |
+
+TypeError 已归零，修复本身不可能让结果变差（把可能 undefined 的 `.length`
+加可选链，不会破坏任何用例）。**所以这个 16→9 的落差是抖动**：
+该套件用 `waitForLoadState('networkidle')` + 2 workers + dev 编译，
+对时序非常敏感，**单次运行的通过数波动至少 7 条**。
+
+**这反过来削弱了我前几轮的结论**：`25 → 18 → 14 → 13 → 10 → 9` 这条
+"稳步收敛"的轨迹，**每一步都是单次采样**。其中那些幅度大且机理明确的
+（缺 `npm` / 缺浏览器 / `BASE_URL` 指错 / MSW 启动晚）有**独立证据**支撑，
+可以信；但**"失败数从 13 降到 10 再降到 9"这种小幅变化，可能只是抖动**。
+
+**以后取数**：要么固定 `workers: 1` 跑，要么同一状态跑 2–3 次取中位数，
+否则不要把单次数字当成"修好了/变差了"的依据。
+
 **关键发现：那两个 critical/high 的来源不是"版本旧"，是依赖放错了位置。**
 
 | 漏洞 | 来源链 | 真实问题 |

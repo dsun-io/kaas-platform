@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test.describe('Customers', () => {
   test('customer list loads with at least 1 row', async ({ page }) => {
