@@ -7267,6 +7267,47 @@
         }
       }
     },
+    "/api/v1/trade-docs/{doc_id}/render-fingerprint-check": {
+      "get": {
+        "tags": [
+          "trade-docs"
+        ],
+        "summary": "渲染指纹对账（现在数据是否与签发时一致）",
+        "description": "**只读**对账：用**现在**的数据重新装配渲染输入、重算摘要，与签发时冻结的 `_render` 比。\n\n这是 C 方案（签发时冻结渲染指纹）的消费者 —— 回答\"这张单据现在的数据跟签发时还一致吗\"。\n\n语义保守且可解释（判定全在共享内核 `render_fingerprint_check`，两端同一份）：\n- 没有 `_render`（草稿 / C 方案之前的老单据）⇒ `has_fingerprint=false`，其余字段如实给当前值，**不报错**；\n- 现在装配失败 ⇒ `current_sha256=null` + `current_note`，`matches=false`\n  （**绝不**返回\"看起来匹配\"的假结论）；\n- `render_version` 漂移单独体现在 `render_version_drift` / `reason` ——\n  \"模板改过\"与\"数据被改\"是**两件不同的事**，不能只凭 sha 不等就下结论。\n\n复用与 `confirm` **同一套装配**（`get_trade_doc_render_data`）+ 内核同一个摘要函数，\n否则比对没有意义。",
+        "operationId": "check_trade_doc_render_fingerprint_api_v1_trade_docs__doc_id__render_fingerprint_check_get",
+        "parameters": [
+          {
+            "name": "doc_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Doc Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/trade-docs/{doc_id}/refresh-sources": {
       "post": {
         "tags": [
