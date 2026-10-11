@@ -1708,3 +1708,31 @@ python scripts/route-parity-audit.py
 cd backend/worker && pytest tests -q
 cd backend/orchestrator && pytest -m unit -q
 ```
+
+***
+
+## 追加：团队管理员转让 —— **全链路完成**（`9d42f44` + `99f783c`）
+
+> 补记。用户 2026-10-11 裁决：**现任团队管理员也能自己转**（不必再找平台管理员）。
+
+| 层 | 内容 | 提交 |
+|---|---|---|
+| orchestrator | `POST /api/v1/teams/{team_id}/transfer`（body `{user_id}`）；授权复用 `_require_team_admin` → 共享内核 `is_team_admin`，**未新增授权规则**；校验走共享内核 `validate_transfer_target` | `9d42f44` |
+| worker | 同路由同语义（否则线上 404）；实现后 allowlist 那条「待补」**已删除**（棘轮要求） | `13389b6` |
+| 前端 | 成员面板「操作」列加「转让」按钮（只对非管理员成员显示）；确认文案**写明后果**：不可逆的自我降权、要收回只能让对方转回 | `99f783c` |
+
+**策略无关校验**（目标必须是本团队成员、不能转给自己）在共享内核并测住 **9 条**
+（`tests/test_team_transfer_rules.py`），两端共用。
+
+**动作语义**：改 `teams.created_by`（本项目"管理权"就等于创建者）；前任留在团队里当普通成员。
+
+**验证**：`route-parity` 缺失回到 **11**（两端齐平，线上不再 404）；
+orchestrator 598 passed；worker 142 passed；前端 `typecheck` exit 0、
+`NEXT_EXPORT` 构建 exit 0（34/34 静态页）。
+
+**尚缺**：接口级（带库）测试。纯函数校验已有 9 条单测覆盖。
+
+### e2e 一条线的深度结论另见
+
+`docs/E2E_STATUS_2026-10-11.md` —— 因本文档当时被另一条任务（单证 PI 模板）
+并发编辑，e2e 的结论独立成文，避免写冲突。
