@@ -1,0 +1,57 @@
+# 契约门禁 R5 —— 「admin 端点响应键集合」已知不一致登记（棘轮）
+#
+# 由来：/admin/tenants、/admin/tenants/reload、/admin/feature_flag 长期**三方不一致**：
+#   · orchestrator：条目键 display_name/enabled；reload 只回 message+tenant_count
+#   · worker（生产）：包封键 items、条目键 name；reload 回 reloaded+items；
+#     feature_flag 是「必填 flag_name + 返回单值 {flag_name,flag_value}」
+#   · 前端 hooks/use-tenants.ts：列表用 name（渲染组件 types.ts 却用 display_name）
+# 而 scripts/route-parity.py **只比对路径存在性**、contracts:check 的 R0–R4
+# **不覆盖 admin 端点** ⇒ 一直没有门禁能发现它。
+# 生产是 real 模式（frontend/.env.production:1）⇒ 真实用户受影响（租户名空白 /
+# 状态恒停用 / 点重载 undefined.map 崩 / 灰度开关恒 OFF）。
+# 证据与方案：docs/ADMIN_TENANTS_CONTRACT_REPORT.md（§1 逐字段对照、§4 修复、§6.2 步骤）
+#
+# 期望形状 = 2026-10-11 用户裁决「以前端消费契约为准」：
+#   GET  /api/v1/admin/tenants        → {tenants:[{tenant_id,display_name,is_active}]}
+#   POST /api/v1/admin/tenants/reload → {reloaded_count, active_tenants:[{tenant_id,
+#                                        display_name,locale,region,is_active}]}
+#   GET  /api/v1/admin/feature_flag   → Record<tenant_id, Record<flag, bool>>
+#   （P2 已定统一 display_name；P4 已定 reload 必须返回租户清单）
+#
+# 本文件是**棘轮**（照 scripts/route-parity-allowlist.txt 的纪律）：
+#   · 只有登记在案的偏差才允许存在；
+#   · **修好后必须删行** —— 否则 R5 判「过期登记」失败（双向生效）；
+#   · 新出现的偏差（未登记）直接失败。
+#
+# 格式：R5.<n> <side>   # 原因（必须写清「待哪个修复还掉」）
+#   side ∈ orchestrator | worker | frontend-api | frontend-view
+#   修复步骤 S1/S2/S4 见 docs/ADMIN_TENANTS_CONTRACT_REPORT.md §6.2
+#
+# 更新：人工编辑。改之前先判断「这是真偏差，还是解析器误报」——
+#   scripts/contracts-check.ts 的 R5 是**解析源码结构**取键，不是 grep 关键字。
+
+# ── R5.1 GET /admin/tenants：期望 {tenants:[{tenant_id,display_name,is_active}]} ──
+R5.1 orchestrator    # 条目键是 display_name/enabled，缺 is_active；待 S2（orchestrator 补 is_active，保留旧键作兼容）还掉
+R5.1 worker          # 包封键是 items（非 tenants）、条目键是 name、无 is_active；待 S1（worker = 生产，单独发布即可修好线上）还掉
+R5.1 frontend-api    # hooks/use-tenants.ts 的 Tenant 用 name，而渲染侧 components/types.ts 用 display_name（前端自己两套）；待 S4（前端内部统一到 display_name）还掉
+
+# ── R5.2 POST /admin/tenants/reload：期望 {reloaded_count, active_tenants:[...]} ──
+R5.2 orchestrator    # 只回 message/tenant_count，缺 reloaded_count/active_tenants（前端要靠它渲染重载后的清单）；待 S2 还掉
+R5.2 worker          # 回 reloaded/items，缺 reloaded_count/active_tenants；待 S1 还掉
+
+# ⚠️ 与 S1/S2 的协同纪律（**不是状态快照，是长期规则**）：
+#   worker / orchestrator 修好、且**删掉兼容旧键**之后，必须**同时删掉对应的登记行**，
+#   否则 R5 会判「棘轮登记已过期」而红 —— 这是棘轮的另一半，不是门禁坏了。
+#   若修复选择「保留旧键」（P3 兼容策略），偏差**仍然真实存在**（多出旧键），
+#   那几行就应当保留；只有删旧键时才删行。步骤见 docs/ADMIN_TENANTS_CONTRACT_REPORT.md §6.2。
+
+# ── R5.3 GET /admin/feature_flag：期望 tenant_id → {flag: bool} 映射 ──
+R5.3 worker          # 必填 flag_name 且返回单值 {flag_name,flag_value} ⇒ 灰度页 flags[t.tenant_id] 恒 undefined、开关恒 OFF；待 S1 还掉
+
+# ── 未纳入本门禁的相邻项（记录，不产生 R5 偏差）──────────────────────────────
+# · mock 的 POST /admin/tenants/reload 的 active_tenants 缺 is_active ——
+#   由 frontend/src/app/(app)/settings/components/reload-button.tsx:62-65 显式补 true 兜住。
+#   R5 的**源不含 mock**：mock 是「前端契约现状」本身（task-4 纪律：不能为了让后端好写改 mock），
+#   把它当源会让门禁自我指涉。
+# · orchestrator 的 reload 语义（真重载）与 worker 的（记一条审计的 no-op）不同，
+#   属**部署形态**差异而非契约缺陷（单租户 worker 永远回 1 条）——见报告 §4.3/P6。

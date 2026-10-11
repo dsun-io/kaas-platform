@@ -2,6 +2,7 @@ name: contracts:check
 
 # 触发条件必须覆盖【所有契约源】—— 否则改了契约却没人校验，规则形同虚设。
 # R0 事件 · R1 报价 schema · R2 工位元数据 · R3 单证类型 · R4 线上 Worker 镜像
+# · R5 admin 端点响应键集合（期望 = 前端消费契约；偏差登记在 scripts/contracts-allowlist.txt）
 on:
   push:
     paths:
@@ -15,6 +16,12 @@ on:
       - 'frontend/src/lib/trade-doc/**'
       - 'backend/docs/schema-registry.md'
       - 'scripts/contracts-check.ts'
+      # R5 的输入源：不加进来，改了这些契约源 CI 不会跑 R5 ⇒ 棘轮单向失效
+      - 'backend/orchestrator/app/api/admin.py'
+      - 'frontend/src/app/(app)/settings/hooks/use-tenants.ts'
+      - 'frontend/src/app/(app)/settings/components/types.ts'
+      - 'frontend/src/app/(app)/admin/gray-release/hooks/use-feature-flags.ts'
+      - 'scripts/contracts-allowlist.txt'
   pull_request:
     paths:
       - 'shared/contracts/**'
@@ -27,6 +34,12 @@ on:
       - 'frontend/src/lib/trade-doc/**'
       - 'backend/docs/schema-registry.md'
       - 'scripts/contracts-check.ts'
+      # R5 的输入源（同 push）
+      - 'backend/orchestrator/app/api/admin.py'
+      - 'frontend/src/app/(app)/settings/hooks/use-tenants.ts'
+      - 'frontend/src/app/(app)/settings/components/types.ts'
+      - 'frontend/src/app/(app)/admin/gray-release/hooks/use-feature-flags.ts'
+      - 'scripts/contracts-allowlist.txt'
 
 jobs:
   check:

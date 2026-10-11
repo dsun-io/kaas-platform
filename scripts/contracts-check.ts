@@ -257,6 +257,295 @@ function redefines(content: string, name: string): boolean {
   return new RegExp(`^${name}\\s*(?::[^=\\n]+)?=`, 'm').test(content);
 }
 
+// ── R5: admin 端点响应键集合（前端消费契约 ↔ orchestrator ↔ worker）────────
+//
+// 为什么需要（有实测证据）：/admin/tenants、/admin/tenants/reload、
+// /admin/feature_flag 长期**三方不一致**（orchestrator 用 display_name/enabled、
+// worker 用 items/name、前端 hook 用 name），而 route-parity.py **只比对路径存在性**、
+// R0–R4 **不覆盖 admin 端点** ⇒ 没有任何门禁能发现它；生产是 real 模式
+// （frontend/.env.production:1）⇒ 租户名空白 / 状态恒停用 / 点重载崩 / 灰度开关恒 OFF。
+// 详见 docs/ADMIN_TENANTS_CONTRACT_REPORT.md。
+//
+// 期望形状 = 2026-10-11 用户裁决「以前端消费契约为准」（P2 统一 display_name，
+// P4 reload 必须返回租户清单）。**现行偏差登记在** scripts/contracts-allowlist.txt：
+// 登记在案的不失败；未登记的新偏差失败；**修好后忘删登记也失败**（棘轮，双向生效）。
+//
+// 取键方式与 R1/R2 一致：**解析源码结构**（定位装饰器 → 取 return 字面量 → 按花括号
+// 深度分「包封键 / 条目键」），不用「关键字 grep」当证据。
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function uniq(list: string[]): string[] {
+  return [...new Set(list)];
+}
+
+/** 下标 idx 之前的花括号净深度（`{` +1 / `}` -1）。 */
+function braceDepthAt(s: string, idx: number): number {
+  let depth = 0;
+  for (let i = 0; i < idx; i++) {
+    if (s[i] === '{') depth++;
+    else if (s[i] === '}') depth--;
+  }
+  return depth;
+}
+
+interface PyHandlerKeys {
+  /** 深度 1 的键：包封键（如 tenants / items） */
+  envelope: string[];
+  /** 深度 2 的键：条目键（如 tenant_id / display_name） */
+  item: string[];
+  shape: 'literal' | 'dynamic-map' | 'missing';
+}
+
+/** 从 python handler 的 `return {...}` 字面量取「包封键 + 条目键」。
+ *
+ * 为什么按**花括号深度**取：`return {"items": [{"tenant_id": ..., "name": ...}]}`
+ * 里 `items` 是包封键、后面两个是条目键；只看「出现的所有 `"x":`」会把两层混成一个集合，
+ * 于是「包封键从 tenants 变成 items」这种漂移反而看不出来。
+ * `t.get("display_name")` 这类调用不是 `"key":` 形式，天然不会误入。 */
+function pyHandlerKeys(src: string, method: string, route: string): PyHandlerKeys {
+  const empty: PyHandlerKeys = { envelope: [], item: [], shape: 'missing' };
+  const re = new RegExp(
+    `@(?:router|app)\\.${method}\\(\\s*"${escapeRegExp(route)}"`,
+  );
+  const m = re.exec(src);
+  if (!m) return empty;
+  // handler 体：到下一个顶层装饰器（或文件末尾）
+  const bodyStart = m.index + m[0].length;
+  const nextDeco = /\n@(?:router|app)\./.exec(src.slice(bodyStart));
+  const body = src.slice(
+    bodyStart,
+    nextDeco ? bodyStart + nextDeco.index : src.length,
+  );
+
+  const retAt = body.indexOf('return {');
+  if (retAt === -1) return empty;
+  const open = body.indexOf('{', retAt);
+  let depth = 0;
+  let close = -1;
+  for (let i = open; i < body.length; i++) {
+    if (body[i] === '{') depth++;
+    else if (body[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        close = i;
+        break;
+      }
+    }
+  }
+  const expr = body.slice(open, close === -1 ? body.length : close + 1);
+
+  const envelope: string[] = [];
+  const item: string[] = [];
+  for (const km of expr.matchAll(/"([A-Za-z_]\w*)"\s*:/g)) {
+    const d = braceDepthAt(expr, km.index);
+    if (d === 1) envelope.push(km[1]);
+    else if (d === 2) item.push(km[1]);
+  }
+  // 字典推导 `{tid: t.get("feature_flags", {}) for tid, t in tenants.items()}`
+  // 的键是**动态的**（tenant_id → flags 映射）—— 这正是 R5.3 期望的形状，记为 dynamic-map。
+  // 判据用「深度 1 有没有字面量键」，而不是「有没有 for」：GET /tenants 的列表推导里
+  // 也含 `for ... in ...`，但它有字面量包封键 `tenants`。
+  if (envelope.length === 0 && /\bfor\b[\s\S]*?\bin\b/.test(expr)) {
+    return { envelope: [], item: [], shape: 'dynamic-map' };
+  }
+  return { envelope: uniq(envelope), item: uniq(item), shape: 'literal' };
+}
+
+/** 取 TS interface 的**顶层**字段名（缩进 2 空格的行），可选字段（`x?:`）也算。 */
+function tsInterfaceFields(src: string, iface: string): string[] {
+  const re = new RegExp(
+    `(?:export\\s+)?interface\\s+${escapeRegExp(iface)}\\b[^{]*\\{`,
+  );
+  const m = re.exec(src);
+  if (!m) return [];
+  const open = src.indexOf('{', m.index);
+  let depth = 0;
+  let close = -1;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        close = i;
+        break;
+      }
+    }
+  }
+  const body = src.slice(open + 1, close === -1 ? src.length : close);
+  const fields: string[] = [];
+  for (const line of body.split('\n')) {
+    const fm = /^\s{2}(\w+)\??\s*:/.exec(line);
+    if (fm) fields.push(fm[1]);
+  }
+  return uniq(fields);
+}
+
+/** 取 `call<T>(...)` 的泛型实参文本（配平 `<>`，规范化空白）。 */
+function tsGenericArg(src: string, call: string): string | null {
+  const at = src.indexOf(`${call}<`);
+  if (at === -1) return null;
+  const open = at + call.length;
+  let depth = 0;
+  let close = -1;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '<') depth++;
+    else if (src[i] === '>') {
+      depth--;
+      if (depth === 0) {
+        close = i;
+        break;
+      }
+    }
+  }
+  if (close === -1) return null;
+  return src.slice(open + 1, close).replace(/\s+/g, ' ').trim();
+}
+
+function sameKeySet(a: string[], b: string[]): boolean {
+  return [...a].sort().join(',') === [...b].sort().join(',');
+}
+
+type R5Source =
+  | {
+      side: string;
+      kind: 'handler';
+      file: string;
+      method: 'get' | 'post';
+      route: string;
+    }
+  | {
+      side: string;
+      kind: 'ts-interface';
+      file: string;
+      iface: string;
+      /** 该 interface 描述的是「包封」（如 TenantListResponse/ReloadResult）
+       *  还是「条目」（如 Tenant）——两者期望集合不同，必须显式声明。 */
+      compares: 'envelope' | 'item';
+    }
+  | { side: string; kind: 'generic'; file: string; call: string };
+
+interface R5Rule {
+  id: string;
+  label: string;
+  expectedEnvelope: string[];
+  expectedItem?: string[];
+  expectedGeneric?: string;
+  sources: R5Source[];
+}
+
+const R5_RULES: R5Rule[] = [
+  {
+    id: 'R5.1',
+    label: 'GET /api/v1/admin/tenants',
+    expectedEnvelope: ['tenants'],
+    expectedItem: ['tenant_id', 'display_name', 'is_active'],
+    sources: [
+      {
+        side: 'orchestrator',
+        kind: 'handler',
+        file: 'backend/orchestrator/app/api/admin.py',
+        method: 'get',
+        route: '/tenants',
+      },
+      {
+        side: 'worker',
+        kind: 'handler',
+        file: 'backend/worker/src/main.py',
+        method: 'get',
+        route: '/api/v1/admin/tenants',
+      },
+      {
+        side: 'frontend-api',
+        kind: 'ts-interface',
+        file: 'frontend/src/app/(app)/settings/hooks/use-tenants.ts',
+        iface: 'Tenant',
+        compares: 'item',
+      },
+      {
+        side: 'frontend-list',
+        kind: 'ts-interface',
+        file: 'frontend/src/app/(app)/settings/hooks/use-tenants.ts',
+        iface: 'TenantListResponse',
+        compares: 'envelope',
+      },
+      {
+        side: 'frontend-view',
+        kind: 'ts-interface',
+        file: 'frontend/src/app/(app)/settings/components/types.ts',
+        iface: 'Tenant',
+        compares: 'item',
+      },
+    ],
+  },
+  {
+    id: 'R5.2',
+    label: 'POST /api/v1/admin/tenants/reload',
+    expectedEnvelope: ['reloaded_count', 'active_tenants'],
+    expectedItem: ['tenant_id', 'display_name', 'locale', 'region', 'is_active'],
+    sources: [
+      {
+        side: 'orchestrator',
+        kind: 'handler',
+        file: 'backend/orchestrator/app/api/admin.py',
+        method: 'post',
+        route: '/tenants/reload',
+      },
+      {
+        side: 'worker',
+        kind: 'handler',
+        file: 'backend/worker/src/main.py',
+        method: 'post',
+        route: '/api/v1/admin/tenants/reload',
+      },
+      {
+        side: 'frontend-api',
+        kind: 'ts-interface',
+        file: 'frontend/src/app/(app)/settings/hooks/use-tenants.ts',
+        iface: 'ReloadResult',
+        compares: 'envelope',
+      },
+      {
+        side: 'frontend-view',
+        kind: 'ts-interface',
+        file: 'frontend/src/app/(app)/settings/components/types.ts',
+        iface: 'ReloadResult',
+        compares: 'envelope',
+      },
+    ],
+  },
+  {
+    id: 'R5.3',
+    label: 'GET /api/v1/admin/feature_flag',
+    expectedEnvelope: [],
+    expectedGeneric: 'Record<string, Record<string, boolean>>',
+    sources: [
+      {
+        side: 'orchestrator',
+        kind: 'handler',
+        file: 'backend/orchestrator/app/api/admin.py',
+        method: 'get',
+        route: '/feature_flag',
+      },
+      {
+        side: 'worker',
+        kind: 'handler',
+        file: 'backend/worker/src/main.py',
+        method: 'get',
+        route: '/api/v1/admin/feature_flag',
+      },
+      {
+        side: 'frontend-api',
+        kind: 'generic',
+        file: 'frontend/src/app/(app)/admin/gray-release/hooks/use-feature-flags.ts',
+        call: 'apiClient.get',
+      },
+    ],
+  },
+];
+
 // ── Main ───────────────────────────────────────────────────────────────────
 
 let allOk = true;
@@ -466,6 +755,177 @@ if (workerDocTypes.length === 0) {
         ' no-field mappings from shared kernel, 0 shadow definitions)',
     );
   }
+}
+
+// ── R5: admin 端点响应键集合一致性（棘轮，双向生效）──────────────────────
+// 登记文件缺席 = 所有偏差都算「未登记」⇒ 直接红，避免门禁被静默绕过。
+const R5_ALLOWLIST = 'scripts/contracts-allowlist.txt';
+const r5Registered = new Map<string, string>();
+if (!existsSync(resolve(REPO_ROOT, R5_ALLOWLIST))) {
+  allOk = false;
+  console.error('FAIL R5: 缺棘轮登记文件 ' + R5_ALLOWLIST);
+} else {
+  for (const line of read(R5_ALLOWLIST).split('\n')) {
+    const text = line.trim();
+    if (text === '' || text.startsWith('#')) continue;
+    const hash = text.indexOf('#');
+    const key = (hash === -1 ? text : text.slice(0, hash)).trim().replace(/\s+/g, ' ');
+    if (key === '') continue;
+    r5Registered.set(key, hash === -1 ? '' : text.slice(hash + 1).trim());
+  }
+}
+
+interface R5Deviation {
+  key: string;
+  details: string[];
+}
+
+const r5Deviations: R5Deviation[] = [];
+let r5Checked = 0;
+
+for (const rule of R5_RULES) {
+  for (const source of rule.sources) {
+    const label = rule.id + ' ' + source.side;
+    const details: string[] = [];
+    r5Checked++;
+    if (!existsSync(resolve(REPO_ROOT, source.file))) {
+      details.push('源文件不存在: ' + source.file);
+    } else {
+      const src = read(source.file);
+      if (source.kind === 'handler') {
+        const keys = pyHandlerKeys(src, source.method, source.route);
+        if (keys.shape === 'missing') {
+          details.push(
+            '未解析到 ' +
+              source.method.toUpperCase() +
+              ' ' +
+              source.route +
+              ' 的 return 字面量',
+          );
+        } else if (rule.expectedGeneric) {
+          // 期望「tenant_id → {flag: bool}」映射：字面量对象（flag_name/flag_value）即偏差
+          if (keys.shape !== 'dynamic-map') {
+            details.push(
+              '期望 tenant→flags 映射，实际是字面量对象 [' +
+                keys.envelope.join(', ') +
+                ']',
+            );
+          }
+        } else if (keys.shape === 'dynamic-map') {
+          details.push('解析到动态字典推导，无法确定键集合');
+        } else {
+          if (!sameKeySet(keys.envelope, rule.expectedEnvelope)) {
+            details.push(
+              '包封键 期望[' +
+                rule.expectedEnvelope.join(', ') +
+                '] 实际[' +
+                keys.envelope.join(', ') +
+                ']',
+            );
+          }
+          if (
+            rule.expectedItem &&
+            keys.item.length > 0 &&
+            !sameKeySet(keys.item, rule.expectedItem)
+          ) {
+            details.push(
+              '条目键 期望[' +
+                rule.expectedItem.join(', ') +
+                '] 实际[' +
+                keys.item.join(', ') +
+                ']',
+            );
+          }
+        }
+      } else if (source.kind === 'ts-interface') {
+        const fields = tsInterfaceFields(src, source.iface);
+        if (fields.length === 0) {
+          details.push('未解析到 interface ' + source.iface + ' 的字段');
+        } else if (rule.expectedGeneric) {
+          details.push('该规则期望映射形状，不适用 interface 比对');
+        } else {
+          // 前端消费侧用**子集**语义：只要求「期望键都在」——
+          // 多出的展示字段（如 types.ts 的 locale/region/product_categories）不是响应键偏差；
+          // 少了 / 改名了（name vs display_name）才是。
+          const want =
+            source.compares === 'item'
+              ? (rule.expectedItem ?? [])
+              : rule.expectedEnvelope;
+          const missing = want.filter((k) => !fields.includes(k));
+          if (missing.length > 0) {
+            details.push(
+              '缺少期望' +
+                (source.compares === 'item' ? '条目键' : '包封键') +
+                ' [' +
+                missing.join(', ') +
+                ']（实际 [' +
+                fields.join(', ') +
+                ']）',
+            );
+          }
+        }
+      } else {
+        const arg = tsGenericArg(src, source.call);
+        if (arg === null) {
+          details.push('未解析到 ' + source.call + '<T> 的泛型实参');
+        } else if (arg !== rule.expectedGeneric) {
+          details.push(
+            '泛型实参 期望 "' +
+              String(rule.expectedGeneric) +
+              '" 实际 "' +
+              arg +
+              '"',
+          );
+        }
+      }
+    }
+    if (details.length > 0) {
+      r5Deviations.push({ key: label, details });
+    }
+  }
+}
+
+const r5Found = new Set(r5Deviations.map((d) => d.key));
+const r5Unregistered = r5Deviations.filter((d) => !r5Registered.has(d.key));
+// 棘轮的另一半：登记了但**偏差已经不存在**（修好却忘删行）同样是失败。
+const r5Overdue = [...r5Registered.keys()].filter((k) => !r5Found.has(k));
+
+for (const d of r5Deviations) {
+  if (r5Registered.has(d.key)) {
+    console.warn('KNOWN R5: ' + d.key + ' —— ' + (r5Registered.get(d.key) || '(未写原因)'));
+  }
+}
+
+if (r5Unregistered.length > 0) {
+  allOk = false;
+  console.error('FAIL R5: admin 端点响应键集合出现**未登记**的偏差');
+  for (const d of r5Unregistered) {
+    console.error('  ' + d.key);
+    d.details.forEach((x) => console.error('    - ' + x));
+  }
+  console.error('  => 有意变更契约：改 ' + R5_ALLOWLIST + ' 并写清「待哪个修复还掉」；');
+  console.error('     期望形状过时：改 scripts/contracts-check.ts 的 R5_RULES。');
+}
+
+if (r5Overdue.length > 0) {
+  allOk = false;
+  console.error(
+    'FAIL R5: 棘轮登记已过期（偏差已修好，请删掉这些行）: ' + r5Overdue.join(', '),
+  );
+}
+
+if (r5Unregistered.length === 0 && r5Overdue.length === 0) {
+  console.log(
+    'PASS R5: ' +
+      R5_RULES.length +
+      ' admin endpoints，' +
+      r5Checked +
+      ' 侧比对通过（其中 ' +
+      r5Deviations.length +
+      ' 侧为已登记偏差，见 ' +
+      R5_ALLOWLIST +
+      '）',
+  );
 }
 
 if (allOk) {
