@@ -66,10 +66,25 @@
 | 5 | **`outreach/webhook` 线上攻击面更宽**：worker 允许 GET/POST/PUT/PATCH/DELETE，orchestrator 只有 POST | `worker/src/chain.py:1685` | 中（安全面待复核） |
 | 6 | **待补路由 22 条**：其中 11 条规格库（`/product-specs`、`/spec/attributes*`、`/spec/skus*`、`/spec/templates*`）前端未直接调用，allowlist 标"按需补" | `scripts/route-parity-allowlist.txt` | 低 |
 | 7 | **`_can_see_all` 口径窄**：worker 只认 `role == "system_admin"`，dev 的 `effective_role` 还会把历史 `'admin'` 映射过来；将来出现 legacy admin 账号会被当普通成员，改动需三处同改 | `worker/src/main.py` | 低（潜伏） |
-| 8 | **前端 1 个既有失败用例**：`lib/form/__tests__/niulanwang.test.ts`（"各轴取值数相乘 = 48 组合"） | `pnpm test` | 低 |
+| 8 | **产品组合数三方不一致**：前端按轴相乘得 **120**，常量是 **160**，测试断言 **48**；后端 4 处断言 `combo_count == 160` | `shared/contracts/niulanwang.ts:99,175`；`test_export_quote_api.py:96,276`、`test_export_quote_formulas.py:324`、`test_export_quote_import.py:82,283` | 中（影响"共 N 种规格"展示；且无法判断是前端轴缺项还是后端数过期） |
 | 9 | **前端认证契约残留**（不影响功能，`tsc` exit 0）：`lib/auth/session-cache.ts` 仍有 `tenant` 结构与 `user?.tenant_id` 读取；`lib/api/client.ts:43-46` 仍会注入 `X-Tenant-Id`（值恒为空，实际不发） | 只读扫描 | 低（死代码） |
 | 10 | **依赖债**：next `^14.2.0 → 15.x` 专项未做；升级后终态仍有 82 漏洞（3 严重 / 24 高危 / 42 中 / 13 低） | `CLEANUP_LOG.md:108-110` | 中 |
 | 11 | **e2e 26 条失败未归真**：依赖本机后端 + 数据库，属"页面没数据"，本轮未复跑 | `CLEANUP_LOG.md:32-34`、`E2E_GUIDE.md:38` | 中 |
+
+### 关于 #8 的取证（**未擅自改**，涉及报价规格空间）
+
+| 值 | 来源 | 推导 |
+|---|---|---|
+| **120** | 前端轴相乘 | 3（丝径方案）× 2（网高）× 2（竖丝间距）× **5**（镀锌量）× 2（工艺） |
+| **160** | `NIULANWANG_COMBO_COUNT` + 后端 4 处断言 | `RELEASE_2026-10-10_quote_model.md:61` 记「组合数 64 → 160」；`1efeabc` 同一提交把镀锌量扩到 5 项并写下 160 |
+| **48** | 测试断言（`niulanwang.test.ts:22`） | 3×2×2×**2**×2 —— 镀锌量还是 2 项时的旧值 |
+
+关键：`64 = 4×2×2×2×2` ⇒ 那个口径假定**丝径方案有 4 个取值**，
+而前端 `NIULANWANG_SKU_AXES.wire_option` 只有 **3** 个（`all_wire_20` / `all_wire_25` / `edge25_inner20`）⇒ 才落到 120。
+
+**所以是二者之一，都需要业务判断，本轮没有擅自改**：
+1. 前端 `wire_option` 漏了一个取值（补上则 4×2×2×5×2 = 160，与后端一致）；或
+2. 后端的 160 已过期（则前端 120 与常量都该跟着改）。
 
 ---
 
