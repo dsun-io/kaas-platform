@@ -161,7 +161,7 @@
 |---|---|
 | orchestrator `pytest -m unit` | **711 passed** / 1 skipped（**文档线复跑**） |
 | worker `pytest` | **176 passed**（**文档线复跑**） |
-| 前端 `test` | **325 passed / 25 files / 0 failed**（**文档线复跑**；数字随本线加测试而增长：280 → 291 → 302 → 304 → 325） |
+| 前端 `test` | **354 passed / 28 files / 0 failed**（**文档线复跑**；数字随本线加测试而增长：280 → 291 → 302 → 304 → 325 → 354） |
 | 前端 `typecheck` / `lint` | exit 0（lint **0 error / 9 warning**，warning 均为既有） |
 | `contracts:check` | R0–R4 PASS（**R2 = 26 工位** ts↔py 一致） |
 | `route-parity.py` | PASS（缺失 **11** 已登记 / 未登记 0 / **过期 0** / worker 独有 **2**） |
@@ -170,7 +170,7 @@
 | `pnpm -C frontend trade-doc:check` | exit 0（模板占位符 ↔ manifest 一致；首轮抓出 9 类 / 18 字段并已补齐） |
 >
 > 本轮（2026-10-11 晚间最终轮）更新：orchestrator **711** / worker **176** / 共享内核 **27** /
-> 前端 `test` **325 / 25 files** / `contracts:check` R0–R4（26 工位）/ `route-parity` PASS
+> 前端 `test` **354 / 28 files** / `contracts:check` R0–R4（26 工位）/ `route-parity` PASS
 > —— 由**文档线复跑**（前端 `typecheck`/`lint` 为 lead 实测）。
 > `NEXT_EXPORT` 构建：**lead 实测 exit 0**，但**文档线本轮在并发写期间复跑失败**（见下行）。
 > 其余行仍为 `d4b4cdc` 实测（2026-10-11）。
@@ -1916,6 +1916,8 @@ Neon 令牌过期、Edge 无会话、无 `.env`）：
   ✅ **密钥已设置（用户操作，已完成）**：用户在 dashboard 给 Worker `kaas` 设了
   `S3_ACCESS_KEY` 与 `S3_SECRET_KEY`；由 lead 用 Cloudflare API **只读核验名称存在
   （`secret_text`），未读取值**。
+  ⚠️ **后续生产验收发现该 access key 长度不合规（13 位，R2 要求 32）⇒ 生产直传不可用**，
+  详见「续四」。
   ⏳ **但真实上传（R2 写入/读取）端到端实测仍未做** —— 需要一次带登录的实际上传；
   在实测通过前**不得声称「生产上传已成功」**，① 是否已在生产生效也尚未核实。
 - **进度表更新**（`docs/PRODUCT_MEDIA_STORAGE_PLAN.md`）：第 **9** 项
@@ -2029,3 +2031,40 @@ c) 前端两处：界面把 Markdown `**` 当文本渲染；历史版本号用 `
 （`PageNotFoundError`/ENOENT，`load-components`）；当时另一条线正在写
 `frontend/src/mocks/handlers.ts` 等（**22:54:20** 仍在写）。⇒ `NEXT_DIST_DIR`
 **只隔离产物目录、不隔离源码并发写**；**构建门的数字只在工作区静止时作数**。
+
+**（续四 · 2026-10-11 深夜）生产真实验收：入口打通、配置齐全，但卡在 R2 密钥长度；直传失败改为自动回退**
+
+**1. 生产验收已执行（有硬结论）**
+- **入口打通方式（经用户授权）**：临时替换 `qa_user@qa.kaas.internal` 的 **bcrypt 哈希** →
+  登录拿到 JWT → **立即改回原哈希**。复核两点：**恢复后与备份逐字一致**、
+  **新口令不再匹配** ⇒ **生产数据最终未变**。
+- 因 `PUT` 被拒，**没有创建任何测试记录**（`register` 未执行）。
+- 核实到的事实：生产 `users` 只有 **3 个账号**（`admin@kaas.dev` / `qa_user@qa.kaas.internal` /
+  `qa_customer@qa.kaas.internal`），**没有联佳账号**；口令全为 **bcrypt（不可还原）**
+  ⇒ 「从库里取登录凭证」这个说法**在事实上不成立**。
+- 线上配置已核实**齐全**：`S3_ENDPOINT` / `S3_BUCKET` / `S3_REGION` / `S3_PRESIGN_EXPIRES`（`plain_text`）
+  + 两个 secret + `FILES` binding。
+
+**2. ⏳ 唯一坏点：`S3_ACCESS_KEY` 只有 13 位（R2 要求 32 位）**
+- 现象：预签名 `PUT` 返回
+  **`400 InvalidArgument: Credential access key has length 13, should be 32`**。
+- ⇒ **生产 S3 直传当前不可用**；**服务端代理上传（multipart）仍可用**。
+- ⏳ **待用户重建 R2 S3 密钥并更新 Worker 的 `S3_ACCESS_KEY` / `S3_SECRET_KEY`**
+  （步骤见 `docs/PRODUCT_MEDIA_STORAGE_PLAN.md` 文末 FAQ）。
+- 在密钥修好并跑通 `scripts/verify-file-storage-e2e.mjs` 之前，**不得声称「生产直传已成功」**。
+
+**3. 新增健壮性行为（已实现并推送）：直传失败 ⇒ 自动回退服务端代理，且不静默**
+- `presign` 请求失败 / `PUT` 非 2xx / `PUT` 抛异常 ⇒ **回退 `POST /products/{key}/media`**，
+  返回体带机器可读标记 **`fellBackToProxy: true` + `fallbackReason`**；
+  界面如实显示 **`已上传（直传失败：<原因>；已走服务端兜底）`**（`products/page.tsx:126-131`）。
+- **`PUT` 成功但 `register` 失败 ⇒ 抛错、不回退重传**（避免重复对象 / 重复流量）。
+- **`configured=false` 不算回退**（设计如此，不给用户惊吓）。
+- 证据：`pnpm test` 文档线实跑 = **28 files / 354 passed**（`use-products.test.ts` **13 tests**）；
+  **lead 实测**：4 条新用例在旧实现下都会红（文档线未复现"旧实现下红"这一步）。
+- **未覆盖**：`products/page.tsx` 的 `doUpload` **无自动化测试**（整页渲染成本高，本轮未做）。
+
+**4. 必须写清楚的运行事实**：在密钥修正前，**UI 里产品图上传**会走"直传失败 → 服务端兜底"这条路径
+（用户看到带原因的提示），**不是静默成功** —— 这正是不掩盖故障的设计。
+
+**5. 待办更新**：原「① 真实上传端到端」由 **⏳ 未做** 变为 **⏳ 已尝试、卡在密钥长度**
+（工具 `scripts/verify-file-storage-e2e.mjs` 已备好，密钥修好即可跑）；②③④ 不变。
