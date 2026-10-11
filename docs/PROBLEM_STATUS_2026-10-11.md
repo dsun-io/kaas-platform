@@ -159,20 +159,20 @@
 
 | 门禁 | 结果 |
 |---|---|
-| orchestrator `pytest -m unit` | **711 passed** / 1 skipped（**文档线复跑**） |
-| worker `pytest` | **176 passed**（**文档线复跑**） |
-| 前端 `test` | **354 passed / 28 files / 0 failed**（**文档线复跑**；数字随本线加测试而增长：280 → 291 → 302 → 304 → 325 → 354） |
+| orchestrator `pytest -m unit` | **887 passed** / 1 skipped（**lead 实测**；文档线本轮未复跑，其此前实测为 711） |
+| worker `pytest` | **203 passed**（**lead 实测**；文档线本轮未复跑，其此前实测为 176） |
+| 前端 `test` | **363 passed / 29 files / 0 failed**（**lead 实测**；文档线此前复跑为 354 / 28 files；增长链：280 → 291 → 302 → 304 → 325 → 354 → 363） |
 | 前端 `typecheck` / `lint` | exit 0（lint **0 error / 9 warning**，warning 均为既有） |
 | `contracts:check` | R0–R4 PASS（**R2 = 26 工位** ts↔py 一致） |
 | `route-parity.py` | PASS（缺失 **11** 已登记 / 未登记 0 / **过期 0** / worker 独有 **2**） |
-| `sync-shared.ps1 -Check` | exit 0（共享内核 **27** / 报价引擎 19 / 枚举字典 1；**文档线复跑**） |
+| `sync-shared.ps1 -Check` | exit 0（共享内核 **30** / 报价引擎 19 / 枚举字典 1；**lead 实测**，文档线此前为 27） |
 | `verify-trade-doc-fixtures.py` | 18/18 逐字节一致（TS == 归档 Python；图片字段改动后仍成立） |
 | `pnpm -C frontend trade-doc:check` | exit 0（模板占位符 ↔ manifest 一致；首轮抓出 9 类 / 18 字段并已补齐） |
 >
-> 本轮（2026-10-11 晚间最终轮）更新：orchestrator **711** / worker **176** / 共享内核 **27** /
-> 前端 `test` **354 / 28 files** / `contracts:check` R0–R4（26 工位）/ `route-parity` PASS
-> —— 由**文档线复跑**（前端 `typecheck`/`lint` 为 lead 实测）。
-> `NEXT_EXPORT` 构建：**lead 实测 exit 0**，但**文档线本轮在并发写期间复跑失败**（见下行）。
+> 本轮（2026-10-12 凌晨）更新：orchestrator **887** / worker **203** / 共享内核 **30** /
+> 前端 `test` **363 / 29 files** —— 均为 **lead 实测**（**文档线本轮按规定未跑门禁**；
+> 其此前实测值为 711 / 176 / 27 / 354·28，可与上表对照）。
+> `contracts:check` / `route-parity` 行沿用前次结果；`NEXT_EXPORT` 构建见下行。
 > 其余行仍为 `d4b4cdc` 实测（2026-10-11）。
 | `NEXT_EXPORT=1 pnpm build` | **lead 实测 exit 0**（`NEXT_DIST_DIR=.next-build`）。⚠️ 但**文档线本轮在并发写期间复跑失败**：`PageNotFoundError`/ENOENT（`load-components`），当时另一条线正在改 `frontend/src/mocks/*`（22:49–22:54）⇒ 该隔离**只隔离产物目录、不覆盖源码并发写**，**取数前必须确认工作区静止**（见「追加」§构建门禁） |
 | `scripts/verify/verify_against_sheet.py` | exit 0（公式级不一致 0） |

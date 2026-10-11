@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import apiClient from "@/lib/api/client";
 import { toast } from "sonner";
 
-import { DocPreview } from "../doc-preview";
+import { DocPreview, renderMetaOf, type RenderFingerprintMeta } from "../doc-preview";
 
 vi.mock("@/lib/api/client", () => ({
   default: {
@@ -65,7 +65,10 @@ async function settle() {
   });
 }
 
-async function mount(docId: number | null = DOC_ID) {
+async function mount(
+  docId: number | null = DOC_ID,
+  renderMeta?: RenderFingerprintMeta | null,
+) {
   client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
@@ -82,6 +85,7 @@ async function mount(docId: number | null = DOC_ID) {
         data={{}}
         companyProfileConfigured
         docId={docId ?? undefined}
+        renderMeta={renderMeta}
       />
     </QueryClientProvider>
   );
@@ -207,5 +211,87 @@ describe("DocPreview · 自动出 PDF 并归档", () => {
     // 人工归档的选择框与名称输入仍在
     expect(container!.querySelector('input[type="file"]')).not.toBeNull();
     expect(container!.textContent).toContain("再归档会覆盖当前件，旧版留档");
+  });
+});
+
+/**
+ * 签发时冻结的渲染指纹（C 方案）在预览区的那一行。
+ *
+ * 后端只在 `confirm` 成功时把 `raw_payload._render` 写进去 ⇒ "有这个键"就等价于"已签发"，
+ * 所以前端不需要再判状态。三条断言对应三种坏法：显示不出来（功能白做）、
+ * 草稿单据凭空多一行（样例场景被污染）、坏形状被渲染成 `vundefined`（看起来像真的）。
+ */
+describe("DocPreview · 渲染指纹（签发时冻结）", () => {
+  const SHA = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678abcdef0123456789abcdef01";
+  const FROZEN_AT = "2026-10-12T09:30:00+00:00";
+  const META: RenderFingerprintMeta = {
+    render_version: 1,
+    input_sha256: SHA,
+    frozen_at: FROZEN_AT,
+  };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.mocked(apiClient.post).mockResolvedValue(ok({ file: { id: 1 } }));
+  });
+
+  afterEach(() => {
+    if (root) act(() => root!.unmount());
+    container?.remove();
+    client?.clear();
+    root = null;
+    container = null;
+    client = null;
+    invalidate = null;
+  });
+
+  it("有 renderMeta ⇒ 一行 `v1 · a1b2c3d4`，title 带完整 sha 与 frozen_at", async () => {
+    await mount(DOC_ID, META);
+
+    expect(container!.textContent).toContain("渲染指纹 v1 ·");
+    expect(container!.textContent).toContain("a1b2c3d4");
+    // 只显示前 8 位（完整值走 title，不糊在界面上）
+    expect(container!.textContent).not.toContain(SHA);
+
+    const line = Array.from(container!.querySelectorAll("p")).find((el) =>
+      el.textContent?.includes("渲染指纹"),
+    );
+    expect(line).toBeTruthy();
+    const title = line!.getAttribute("title") ?? "";
+    expect(title).toContain(SHA);
+    expect(title).toContain(FROZEN_AT);
+    expect(title).toContain("v1");
+  });
+
+  it("没传 renderMeta（草稿 / 样板预览）⇒ 整行不出现", async () => {
+    await mount();
+
+    expect(container!.textContent).not.toContain("渲染指纹");
+  });
+
+  it("坏形状不渲染成 vundefined：renderMetaOf 一律返回 null", () => {
+    // 没有 `_render` 键 / 值形状不对 ⇒ 不显示（而不是拼出 `vundefined · undefined`）
+    expect(renderMetaOf(null)).toBeNull();
+    expect(renderMetaOf(undefined)).toBeNull();
+    expect(renderMetaOf({ sources: {}, custom: {} })).toBeNull();
+    expect(renderMetaOf({ _render: "a1b2c3d4" })).toBeNull();
+    expect(renderMetaOf({ _render: null })).toBeNull();
+    expect(renderMetaOf({ _render: [1, 2] })).toBeNull();   // 数组的 typeof 也是 object
+    expect(renderMetaOf({ _render: {} })).toBeNull();        // 没有 render_version ⇒ 不是指纹
+    expect(renderMetaOf("{\"_render\":{}}")).toBeNull();
+    // 正常形状原样取出
+    expect(renderMetaOf({ _render: META })).toEqual(META);
+  });
+
+  it("装配失败时如实显示「未冻结」，不假装有摘要", async () => {
+    await mount(DOC_ID, {
+      render_version: 1,
+      input_sha256: null,
+      frozen_at: FROZEN_AT,
+      note: "input_unavailable",
+    });
+
+    expect(container!.textContent).toContain("渲染指纹 v1 ·");
+    expect(container!.textContent).toContain("未冻结");
   });
 });
