@@ -18,11 +18,14 @@
 > （含把情报链接回主链的 `202609230001`），于是把祖先误报成 head（52/55）⇒ **不要加 merge**
 > （临时副本实测：加了会凭空造出 `branchpoint`）。
 > 同时实测到一个**真问题**：**真·空白库跑 `alembic upgrade head` 会失败**
-> （`feb821f0b9c0` 第 61 行 `ALTER TABLE quotations ADD COLUMN tenant_id`，而 `quotations`
+> （`feb821f0b9c0` 原来无兜底的 `ALTER TABLE quotations ADD COLUMN tenant_id`，而 `quotations`
 > 要到更晚的 `f82ac951b473` 才 create，真实库靠 `create_all` 先建）。
 > **生产无需任何动作**：`alembic_version` = 单行 `202610110018` = 当前 head，018 已生效
 > （`file_objects.sort_order integer NOT NULL DEFAULT 0` 在库里）。详见文末
 > 「alembic『双 head』取证 —— 假警报 + 一个真问题」一节。
+> **（t18 更新）** 上面那个真问题：**第一个断点已修**（该文件补 `has_table` 兜底）⇒ 实测已穿过
+> `feb821f0b9c0`；但**整链仍跑不到 head** —— 下一个 repo 级断点是 `202605170001:279`
+> （同类根因），且链还要求 `pg_trgm` / `btree_gist` 两件 contrib 扩展。见文末 §⑧。
 
 > **（R81）收口决定：e2e 停手，主线交付** —— 用户 2026-10-11 追问
 > 「还有多少任务未完成、怎么做不完了」，逐项核对后的结论：
@@ -2436,3 +2439,48 @@ DSN 用 `neon env pull --file <temp> --project-id falling-salad-31662168` 重取
 - 一条测量纪律的复现：本线写入前**同一时刻**实测 `Get-Content … | Measure-Object -Line` 得 **1433**、
   `read` 工具得 **2245**（本文档随后又被本线追加了本节，两个数都会变）
   —— 与上文 §4「同一份文档四种行数」一致：**行数类证据必须说清是"哪个工具、哪一刻"**。
+
+### ⑧ 处置结果：第一个断点已修，整链仍跑不到 head（task-18，2026-10-12）
+
+**改动（只这一处）**：`feb821f0b9c0_add_tenant_id_to_quotations_and_.py` —— 把 `quotations` 那段
+（`ADD COLUMN tenant_id` → 两条 backfill `UPDATE` → `SET NOT NULL` → 两个索引）包进
+`if sa.inspect(bind).has_table("quotations"):`（补丁后该 guard 在 `:74`，`ADD COLUMN` 在 `:75`）。
+**只兜 `upgrade`**；其余语义、依赖顺序、其它迁移一律未动。
+
+**为什么是"跳过"而不是像 `customer_capabilities` 那样"按 ORM 模型补建"**：链上更晚的
+`f82ac951b473_intel_workstation_v1.py:661-688` 才 `create_table('quotations')`，而那份定义**本身已带
+`tenant_id NOT NULL` 和同名的两个索引**（`idx_quotations_tenant` / `ix_quotations_tenant_id`）。
+在这里先建表 ⇒ 必与那次 `CREATE TABLE` 撞 `already exists`；空库上"跳过"**不丢语义**。
+
+**实测（临时 pgserver 集群 + 全新空库；用完全部清理，0 残留）**
+
+| 阶段 | 结果 |
+|---|---|
+| 补丁前（task-16） | 断在 `feb821f0b9c0`：`relation "quotations" does not exist`（3 次一致） |
+| 补丁后 | **穿过 `feb821f0b9c0`** —— SQL 捕获里出现 `UPDATE alembic_version SET version_num='feb821f0b9c0'`，随后进入 `feb821f0b9c0 -> 202605170001` |
+| 紧接着的**环境级**拦路 | `202605170001:24` 的 `CREATE EXTENSION IF NOT EXISTS pg_trgm` → `extension "pg_trgm" is not available`：本地打包的 pgserver **不含 contrib**（`share/postgresql/extension` 只有 `plpgsql` / `vector`） |
+| 在**探针副本**里中性化这两条扩展后 | 撞上 `btree_gist` 的**真依赖对象**：`ALTER TABLE product_sku_prices ADD CONSTRAINT excl_psp_overlap EXCLUDE USING gist (…)` ⇒ `btree_gist` 是硬前提，不是多余一句 |
+| 再把该约束也中性化后 | **下一个 repo 级断点**：`202605170001_spec_system_v1.py:279` `ALTER TABLE quotations ADD COLUMN sku_id BIGINT` → `relation "quotations" does not exist`（与第一个断点**同类根因**） |
+
+**明确结论**：整链**仍跑不到 head**。第一个断点已按最小改动修掉并实测穿过；下一个是
+`202605170001:279`（同一个 create_all-only 表的同类问题）。修完整条链要牵涉 ≥2 个历史迁移、
+并先理清"哪些表只由 `create_all` 建、链上第一次 ALTER 它出现在哪"——**属单独决策**（本任务明确不要求一次修完）。
+另：空库路径还有**环境前提** —— 链要求 contrib 扩展 `pg_trgm` + `btree_gist`（后者被 `excl_psp_overlap`
+真正用到）；Neon / 常规 Postgres 一般都有，但"裸装无 contrib"的 Postgres 会在 `202605170001` 断。
+
+**"已有库行为不变"的实测论证（A/B，不是推理）**：两个同构 fixture 库（各放最小 `customers` + `quotations`），
+分别用**未打补丁的迁移副本**与**仓库打完补丁的迁移**跑 `stamp 82e2cd95a9dd` → `upgrade feb821f0b9c0`，
+用 SQLAlchemy 事件逐条抓**实际执行的 SQL**：
+
+- 剔除只读 catalog 查询后，**DDL/DML 序列逐条相同**（pre 17 条 / post 18 条，差的 1 条就是 `has_table`
+  的 introspection `SELECT`）；
+- 结果 schema 相同（列 + 索引）；
+- 阳性对照：两次都**确实执行**了 `ALTER TABLE quotations ADD COLUMN tenant_id TEXT` ⇒ 表在时条件为真、走原路径。
+
+源码层面同理：`has_table` 为真 ⇒ 括号内语句与改动前逐字相同。
+
+**生产影响 = 无**：生产 `quotations` 存在（§⑤ 已证 `alembic_version` = 唯一 head、018 已生效）⇒ 条件为真 ⇒
+行为与改动前一致；本改动只在"表不存在"（空库）时才改变行为。
+
+**复现**：`artifacts/task16_fresh_db_check.py`（空库整链；`ALEMBIC_INI` 可指向探针副本）、
+`artifacts/task18_ab_existing_db.py`（A/B 行为对照）。
