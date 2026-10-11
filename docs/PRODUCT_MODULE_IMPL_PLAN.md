@@ -331,8 +331,8 @@ SELECT count(*), count(*) FILTER (WHERE is_system) FROM tenant_products;
 
 | 步 | 内容 | 文件范围 | 门禁 / 验收信号 | 回滚 | 依赖 | 并行 |
 |---|---|---|---|---|---|---|
-| **P5** | 新迁移 **`202610110019`**（⚠️ 号已改：实测 `alembic heads` = `202610110018`，见 §8.1）：4 张表加 `team_id`（**新写入强制、历史容忍 NULL**，见 Q1=B/D4）、重建 `uq_file_primary`、改 3 个唯一键（含 `(tenant_id, team_id, product_key)`，见 Q7）、按 §1.3 回填（`product_profiles` 可回填，其余登记） | `backend/orchestrator/alembic/versions/202610110019_*.py`、`backend/orchestrator/app/db/models.py` | `alembic upgrade head` + `alembic downgrade 202610110018` **都要能跑**（需 Postgres，见 §6 前置 5）；`pytest -m unit` | 迁移自带 `downgrade()`（**只删列/索引，不还原回填**，照 `202610110004…py:69`、`202610110012…py:121` 的先例） | P1、P2、Q3、Q4、D4 | ✅ 与 P3/P4 并行（文件不相交） |
-| **P6** | 迁移语义测试：照 `tests/test_customer_records_api.py:193-224`（导入迁移模块、断言 `revision`/`down_revision`、在事务里跑**真正会上线的那段 SQL**） | `backend/orchestrator/tests/test_product_team_scope_migration.py`（新） | `pytest -m unit`；**验收信号**：① 回填后 `product_profiles` 的 `team_id` = `updated_by` 所属团队；② `updated_by` 为空/非法 id 的行 `team_id` 仍为 NULL 且**行数一条不少**；③ 两团队同名 `product_key` 可以并存（唯一键生效） | `git revert` | P5 | — |
+| **P5** | 新迁移 **`202610110019`**（⚠️ 号已改：实测 `alembic heads` = `202610110018`，见 §8.1）。**已交付（§8.4）**：3 张表加 `team_id`（可空 —— "新写入强制、历史容忍 NULL" 由**写路径**强制，**不能**写 `NOT NULL`）、重建 `uq_file_primary` 含团队、`uq_tenant_products_key` 改按团队并折叠 NULL。**两处唯一键（`product_profiles` 主键、`uq_tenant_ws_product`）故意留给 P9**：它们的调用方用 `ON CONFLICT` 锁定了那几列，只改库不改代码会让 INSERT 直接报错（证据见 §8.4） | `backend/orchestrator/alembic/versions/202610110019_*.py`、`backend/orchestrator/app/db/models.py` | **离线 DDL**（已跑）：`alembic upgrade 202610110018:202610110019 --sql` + `downgrade 202610110019:202610110018 --sql` 逐条核对；`pytest -m unit` | `alembic downgrade 202610110019:202610110018`（离线可渲染；⚠️ 若库里已出现"同租户同 key、不同团队"的行，回滚会因唯一冲突失败 —— 如实记录） | P1、P2、Q3、Q4、D4 | ✅ 与 P3/P4 并行（文件不相交） |
+| **P6** | 迁移语义测试。**已交付（§8.4）**：**DB-free 的离线 DDL 断言**（`tests/test_product_team_scope_migration.py`，**13 条 `-m unit`**）——程序化跑 `alembic upgrade/downgrade --sql`，逐条核对 DDL，并断言**"故意不做的必须仍然没做"**。**仍待**：需要真库的**回填语义**验证（本机无 Postgres，见 §6 前置 5）⇒ 由 CI `db-tests` 或装库后补 | `backend/orchestrator/tests/test_product_team_scope_migration.py` | `pytest -m unit`（已绿）；**DB 版验收信号（待）**：① 回填后 `product_profiles.team_id` = `updated_by` 所属团队；② 无法归因的行仍 NULL 且**行数一条不少**；③ 两团队同名 `product_key` 并存（须 P9 改完唯一键后才成立） | `git revert` | P5 | — |
 
 ### 阶段 3：R1 两端查询过滤
 
@@ -539,6 +539,49 @@ Remove-Item Env:\GIT_INDEX_FILE
 | 测试 | `backend/orchestrator/tests/test_product_scope.py`（**30 条，`pytestmark = pytest.mark.unit`，全绿无 skip**）——覆盖三层可见性、失败语义与状态码映射（401→403 `NO_TEAM`→404）、写=团队任意成员、两把尺并存且语义不同、系统级无后门、Q6 两层不压平 |
 | 门禁 | `pytest -m unit` ⇒ **976 passed, 1 skipped, 324 deselected, exit 0**（那 1 skip 是既有的 `test_knowledge_provider.py:56`，需 PostgreSQL）；`sync-shared.ps1` + `-Check` ⇒ **exit 0**（共享内核 31 / 报价引擎 20 / 枚举 1，全一致） |
 | 尚未做 | **接线**（P7/P8/P9 把判定接到 13+ 个落点）与**工位层**（P15 契约）仍属后续步骤；本步只交付**可离线证明**的纯逻辑层 |
+
+### 8.4 已落地的第 3 个增量：**P5 + P6（离线部分）** —— 迁移 `202610110019`
+
+**交付**：`backend/orchestrator/alembic/versions/202610110019_product_team_scope.py`（新迁移）
++ `backend/orchestrator/tests/test_product_team_scope_migration.py`（**13 条 `-m unit`，DB-free**）。
+
+**离线证明**（本机无 Postgres，走 task-5 验过的 L0 通路）：
+`alembic upgrade 202610110018:202610110019 --sql` 与 `downgrade 202610110019:202610110018 --sql` **都 exit 0**，
+渲染出的 DDL 已逐条核对：
+
+| 承诺 | DDL 实际渲染 | 核对 |
+|---|---|---|
+| 3 张表加 `team_id` 且**可空** | `ALTER TABLE {product_profiles,tenant_products,tenant_workstation_products} ADD COLUMN team_id BIGINT;`（无 `NOT NULL`） | ✅ 裁决"历史容忍 NULL"要求可空 |
+| 外键指向 `teams` | `ADD CONSTRAINT fk_*_team FOREIGN KEY(team_id) REFERENCES teams (id) ON DELETE SET NULL` | ✅ 与迁移 001 同口径 |
+| `uq_tenant_products_key` 改按团队（Q7 允许重名） | `CREATE UNIQUE INDEX uq_tenant_products_key ON tenant_products (tenant_id, COALESCE(team_id, 0), product_key)` | ✅ |
+| `uq_file_primary` 重建含团队（Q1=B：两团队各有主图） | `CREATE UNIQUE INDEX uq_file_primary ON file_objects (tenant_id, COALESCE(team_id, 0), owner_type, owner_id, kind) WHERE is_primary AND is_current` | ✅ |
+| 迁移图 | `alembic heads` = **`202610110019 (head)`**，`alembic branches` 空（线性） | ✅ |
+
+**两个关键设计点（都写进迁移 docstring + 有用例钉住）**：
+
+1. **`team_id` 一律可空，不做 `NOT NULL`**：裁决是"**新写入**强制、**历史容忍 NULL**"，
+   两者同时成立只能靠**写路径**强制（P7/P9 用 `product_scope` 的判定 + 403 `NO_TEAM`）；
+   库上写 `NOT NULL` 会让历史行违反约束（或被迫给历史行编一个 team，而 D3/D4 **不允许**编）。
+2. **用 `COALESCE(team_id, 0)` 表达"至多一行无归属"**：Postgres 认为 `NULL` 互不相等，
+   把**可空列**直接放进唯一键 ⇒ 同一租户能有**多行** NULL ⇒ "一个产品多行基础信息"。
+   折叠成 0 才让这条约束可表达。用例里正/反两面都断言了（含"不许出现裸 `team_id` 的唯一键"）。
+
+**⚠️ 故意留给 P9 的两处（附证据）—— 只改库不改代码会直接崩**：
+
+| 约束 | 依赖它的代码 | 为什么不能现在改 |
+|---|---|---|
+| `product_profiles` 主键 `(tenant_id, product_key)` | `app/api/files.py:283`、`backend/worker/src/ws_files.py:319`（都是 `ON CONFLICT (tenant_id, product_key)`） | 换掉唯一键后这两条 INSERT 报 `there is no unique or exclusion constraint matching the ON CONFLICT specification` ⇒ **两端保存产品基础信息全挂**；且 `files.py` 正被另一条任务改、worker 在本任务禁碰 |
+| `uq_tenant_ws_product` | `backend/worker/src/ws_products.py:347`（`ON CONFLICT (tenant_id, workstation, product_key)`）、`backend/worker/tests/test_ws_products_seals.py:149`（断言该字面量） | 同上（worker 禁碰） |
+
+⇒ **如实记录的后果**：在 P9 完成之前，**两个团队仍不能各自持有同一 `product_key` 的基础信息**
+（Q1=B 的"每团队一份"还差这一步）；本轮只把**列 + 索引 + 两处可安全切换的唯一键**落地。
+**P9 的必做清单**（P9 与两端代码同批）：① 换 `product_profiles` 主键 + 同步 `put_profile` 的冲突目标；
+② 换 `uq_tenant_ws_product` + 同步 worker 的 `ON CONFLICT` 与那条测试断言。
+
+**给 P13 的硬提醒**：`TenantProductLoader._fetch_tenant_product` 按 `(tenant_id, product_key, is_active)`
+查且用 `scalar_one_or_none()`（`services/export_quote/tenant_products.py:87-98`）。
+本轮放宽唯一键后，同租户同 key 的多团队行会让它抛 `MultipleResultsFound` —— 它现在**没有调用者**（已核实），
+**接线时必须先补 team 过滤**，否则一接就炸。
 
 ---
 
