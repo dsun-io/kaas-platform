@@ -27,6 +27,8 @@ export interface CustomFieldDef {
   name: string;
   spec: CustomFieldSpec;
   control: CustomControl;
+  /** 受保护：只能来自上游快照/系统计算，界面不给可编辑控件，服务端也会拒绝 */
+  protected: boolean;
 }
 
 export interface ParseResult {
@@ -39,6 +41,21 @@ export interface TradeDocRawPayload {
   sources?: Record<string, unknown>;
   custom?: Record<string, unknown>;
   [key: string]: unknown;
+}
+
+/**
+ * 受保护字段：与后端**同一口径**
+ * （`kaas_common.trade_doc.payload_shared.PROTECTED_CUSTOM_FIELDS`）。
+ *
+ * 金额与行项只能来自上游订单/报价或系统计算：一份对外单据的金额若可被手填内容改写，
+ * 单证与订单就对不上，而银行/海关正是按这两项审单。
+ * 界面这层只是"不给你编辑入口"，**真正的闸门是服务端的 422**
+ * （`CUSTOM_FIELD_PROTECTED`）+ 渲染层再挡一次。
+ */
+export const PROTECTED_FIELDS = ["items", "total_amount"] as const;
+
+export function isProtectedField(name: string): boolean {
+  return (PROTECTED_FIELDS as readonly string[]).includes(name);
 }
 
 export function controlFor(type?: string): CustomControl {
@@ -69,6 +86,7 @@ export function listCustomFields(docType: string): CustomFieldDef[] {
     name,
     spec,
     control: controlFor(spec?.type),
+    protected: isProtectedField(name),
   }));
 }
 
@@ -115,6 +133,8 @@ export function buildCustom(
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...(existing ?? {}) };
   for (const [key, value] of Object.entries(values)) {
+    // 受保护字段一律不写（服务端也会 422 拒绝；这里先保证界面不会把它送上去）
+    if (isProtectedField(key)) continue;
     if (value === undefined) delete out[key];
     else out[key] = value;
   }

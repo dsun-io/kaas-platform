@@ -14,6 +14,7 @@
 """
 from typing import Optional
 from decimal import Decimal
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -41,6 +42,7 @@ from app.services.trade_doc_payload import (
 from kaas_common.trade_doc import (
     RuleError, assert_draft, assert_derivable, assert_transition, validate_confirm,
     normalize_items, derive_payload, freeze_snapshot,
+    append_audit, protected_custom_fields,
 )
 from kaas_common.workstation.entity_links import (
     LINK_INSERT_SQL_NAMED, EdgeError, normalize_edge,
@@ -98,6 +100,24 @@ class TradeDocConfirmIn(BaseModel):
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _reject_protected_custom(custom) -> None:
+    """手工内容（custom）不得覆盖受保护字段：**金额与行项**只能来自上游快照或系统计算。
+
+    背景：装配顺序是「上游快照 → 企业主体 → 默认条款 → custom 最后覆盖」，
+    所以 custom 能盖掉任何键 —— 包括 `total_amount` / `items`。一份对外单据的金额
+    若可被手填内容改写，单证与订单就对不上，而银行/海关正是按这两项审单。
+    共享内核在渲染层还会再挡一次（历史脏数据也骗不了单据）。
+    """
+    blocked = protected_custom_fields(custom)
+    if blocked:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "CUSTOM_FIELD_PROTECTED",
+            "fields": blocked,
+            "detail": "以下字段只能来自上游快照或系统计算，不接受手工覆盖："
+                      + "、".join(blocked),
+        })
+
 
 def _row_to_doc(d: TradeDoc) -> dict:
     return {
@@ -323,6 +343,8 @@ async def create_trade_doc(
 
     # 业务客户强校验（放在**所有继承之后**）：手动传的、上游快照继承的、派生继承的
     # customer_id 都要过同一道闸门 —— 否则上游一个已软删的客户会顺着开单传下来。
+    # 手工内容边界放在最后：派生路径也会把 manual 并进 payload["custom"]。
+    _reject_protected_custom(payload.get("custom"))
     customer = await resolve_customer_for_doc(db, tenant_id, body.customer_id, auth)
 
     d = TradeDoc(
@@ -501,7 +523,19 @@ async def update_trade_doc(
             raise HTTPException(status_code=409, detail={
                 "error": "conflict", "code": exc.code, "detail": exc.detail,
             })
-        d.raw_payload = body.raw_payload
+        new_payload = dict(body.raw_payload or {})
+        new_custom = new_payload.get("custom") or {}
+        _reject_protected_custom(new_custom)
+        # 审计留痕（谁在什么时候改了什么）：从**库里的旧 payload** 续写；
+        # 客户端自带的 `_audit` 一律丢弃 —— 否则调用方能伪造或清空自己的审计。
+        d.raw_payload = append_audit(
+            new_payload,
+            previous_payload=d.raw_payload or {},
+            actor_id=str(auth.user_id),
+            before_custom=(d.raw_payload or {}).get("custom") or {},
+            after_custom=new_custom,
+            at=datetime.now(timezone.utc).isoformat(),
+        )
 
     if body.customer_id is not None:
         # 认领/更换买方：同样走强校验；仅 draft 可改（与 raw_payload 同一条闸门）

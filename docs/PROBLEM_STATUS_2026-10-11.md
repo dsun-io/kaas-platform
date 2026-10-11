@@ -75,6 +75,22 @@
 > 归档镜像 `_shared.css` 同步改（否则「TS == 归档 Python」的逐字节证明会断），
 > 基线重生成后仍 **18/18**。
 >
+> 用户随后裁决的三条业务边界也已落地（同一批）：
+> ① **custom 不得覆盖金额与行项**：共享内核
+> `PROTECTED_CUSTOM_FIELDS = ("items", "total_amount")`，**两层防护** ——
+> 写路径（orchestrator / worker 的 POST、PATCH）返回 422 `CUSTOM_FIELD_PROTECTED`；
+> `build_render_data` 再跳过一次，**即便库里已有历史脏数据，渲染出的单据也骗不了**；
+> 界面把这两项渲染成只读（并说明「改了上游再重新带入」）。
+> ② **改动留痕**：PATCH `raw_payload` 时把逐字段 diff（长值只留摘要，避免 1.4MB 的
+> 图片 data URI 撑爆审计）追加到 `raw_payload._audit`（最多 20 条）；
+> **客户端自带的 `_audit` 一律丢弃**，否则调用方能伪造/清空自己的审计。
+> ③ **离线件标识**：`scripts/render-trade-doc.ts` 默认在页脚打
+> `OFFLINE COPY — not a ledger record`（`--no-watermark` 可关）—— 离线出的单**不进台账**
+> （不取号、无签发状态、无客户归属与团队隔离校验），标识避免它被当成正式件发出。
+> 门禁同轮复核：orchestrator **598 passed / 1 skipped**、worker **142 passed**、
+> 前端 trade-doc **75 passed**、contracts R0–R4 PASS、route-parity PASS、
+> sync-shared 23 / 19 / 1 一致。
+>
 > ⚠️ 本轮实测发现**工作区正被另一条线并发使用**：同一仓库另一条 DSH 会话在跑 e2e，
 > 它已提交 `f286fc4` / `ca43ddc`，并在提交说明里声明不碰本线文件。双方都只 `git add`
 > 自己的文件。凡"通过数"层面的对比都要打折（对方的 Next dev 与我的 `next build`

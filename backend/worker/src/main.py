@@ -3192,7 +3192,25 @@ DOC_NEXT = {"draft": ("issued", "void"), "issued": ("void",)}
 from kaas_common.trade_doc.payload_shared import (  # noqa: E402
     TRADE_TERM_FIELDS, DOC_NO_FIELDS, item_from_source,
     buyer_block, trade_terms_of, build_render_data as _build_render_data,
+    append_audit, protected_custom_fields,
 )
+
+
+def _reject_protected_custom(custom) -> None:
+    """手工内容（custom）不得覆盖受保护字段：**金额与行项**只能来自上游快照或系统计算。
+
+    与 orchestrator 同一口径（判定取自共享内核）。背景：装配顺序是
+    「上游 → 主体 → 默认条款 → custom 最后覆盖」，custom 能盖掉任何键；
+    对外单据的金额若可被手填内容改写，单证与订单就对不上（银行/海关按此项审单）。
+    """
+    blocked = protected_custom_fields(custom)
+    if blocked:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "CUSTOM_FIELD_PROTECTED",
+            "fields": blocked,
+            "detail": "以下字段只能来自上游快照或系统计算，不接受手工覆盖："
+                      + "、".join(blocked),
+        })
 
 # 单证装配助手（投影 / 上游快照 / 企业主体区块）—— main 与 ws_docs_ext 共用的唯一实现。
 # 历史事故：e5ab56e 删除本文件里的 11KB 镜像实现后调用点没改，运行期 NameError
@@ -3383,6 +3401,7 @@ async def create_trade_doc(request: Request, body: dict,
                     db, request, inquiry_id)
 
             # 客户闸门放在**所有继承之后**：手工传的、快照继承来的都要过同一道闸门
+            _reject_protected_custom(payload.get("custom"))
             customer = await _doc_customer(conn, customer_id, user, required=True)
 
             # 一致性：显式客户与父对象的客户必须同一个 —— 否则这张单会
@@ -3475,6 +3494,19 @@ async def update_trade_doc(doc_id: int, request: Request, body: dict,
             "error": "conflict", "code": "PAYLOAD_LOCKED",
             "detail": "issued 后单证内容锁定，不可修改",
         })
+    if raw_payload is not None:
+        new_custom = (raw_payload or {}).get("custom") or {}
+        _reject_protected_custom(new_custom)
+        # 审计留痕（谁在什么时候改了什么）：从**库里的旧 payload** 续写；
+        # 客户端自带的 `_audit` 一律丢弃 —— 否则调用方能伪造或清空自己的审计。
+        raw_payload = append_audit(
+            raw_payload,
+            previous_payload=d.get("raw_payload") or {},
+            actor_id=str(user["id"]),
+            before_custom=(d.get("raw_payload") or {}).get("custom") or {},
+            after_custom=new_custom,
+            at=now.isoformat(),
+        )
     if new_status == "issued" and d["status"] == "draft":
         await db.execute(
             request,

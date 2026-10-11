@@ -8,6 +8,8 @@ from typing import Any, Optional
 __all__ = [
     "DOC_NO_FIELDS", "TRADE_TERM_FIELDS", "item_from_source",
     "buyer_block", "seller_block", "clean", "trade_terms_of", "build_render_data",
+    "PROTECTED_CUSTOM_FIELDS", "protected_custom_fields", "diff_custom", "append_audit",
+    "AUDIT_KEY",
 ]
 
 DOC_NO_FIELDS = {
@@ -37,6 +39,69 @@ TRADE_TERM_FIELDS = (
 )
 
 _SPEC_FIELDS = ("specification", "hs_code", "package", "gross_weight", "net_weight", "volume")
+
+# ── 手工内容（custom）的边界 ────────────────────────────────────────────────
+#
+# 2026-10-11 用户裁决：`custom` **不得覆盖行项与总金额**。
+# 背景：装配顺序是「上游快照 → 企业主体 → 默认条款 → custom 最后覆盖」，
+# 因此 custom 能盖掉任何键 —— 包括 `items` / `total_amount`。
+# 一份对外单据的**金额若可被手填内容改写**，单证与订单就对不上，
+# 而银行/海关正是按这两项审单。所以它们只能来自上游快照或系统计算。
+#
+# 两层防护（缺一不可）：
+# 1. 写路径显式拒绝（orchestrator / worker 的 POST、PATCH）→ 不让脏数据落库；
+# 2. `build_render_data` 再跳过一遍 → 即便库里已有历史脏数据，**渲染出来的单据也不会被骗**。
+PROTECTED_CUSTOM_FIELDS = ("items", "total_amount")
+
+AUDIT_KEY = "_audit"
+_AUDIT_MAX = 20
+
+
+def protected_custom_fields(custom) -> list:
+    """custom 里试图覆盖受保护字段的键（升序）。非 dict / 空 → 空列表。"""
+    if not isinstance(custom, dict):
+        return []
+    return sorted(k for k in PROTECTED_CUSTOM_FIELDS if k in custom)
+
+
+def _value_digest(value):
+    """审计里**不存原值**：图片是 data URI（一张 PI 约 1.4MB），抄进审计会把它撑爆。
+    长字符串/容器只留摘要，短标量原样保留 —— 审计是给"谁改了什么"用的，不是备份。"""
+    if isinstance(value, str):
+        return value if len(value) <= 64 else f"<str {len(value)} chars>"
+    if isinstance(value, (dict, list)):
+        return f"<{type(value).__name__} {len(value)}>"
+    return value
+
+
+def diff_custom(before, after) -> dict:
+    """逐字段 diff（只比 custom 子集）：`{field: {"from": …, "to": …}}`；无改动 → {}"""
+    before = before if isinstance(before, dict) else {}
+    after = after if isinstance(after, dict) else {}
+    changed = {}
+    for key in sorted(set(before) | set(after)):
+        if before.get(key) != after.get(key):
+            changed[key] = {"from": _value_digest(before.get(key)),
+                            "to": _value_digest(after.get(key))}
+    return changed
+
+
+def append_audit(payload, *, previous_payload, actor_id, before_custom, after_custom, at):
+    """返回**新** payload：把这次 custom 改动追加到 `_audit`（最多 20 条，最新在末尾）。
+
+    - 审计只从 `previous_payload` 续写：**新 payload 里客户端自带的 `_audit` 一律丢弃**
+      （否则调用方可以伪造/清空自己的审计）。
+    - 无实际改动则不新增条目（避免"点一次保存就多一条"的噪音）。
+    """
+    new = dict(payload or {})
+    new.pop(AUDIT_KEY, None)
+    entries = [e for e in ((previous_payload or {}).get(AUDIT_KEY) or [])
+               if isinstance(e, dict)]
+    changed = diff_custom(before_custom, after_custom)
+    if changed:
+        entries.append({"at": at, "by": actor_id, "changed": changed})
+    new[AUDIT_KEY] = entries[-_AUDIT_MAX:]
+    return new
 
 
 def _clean(value):
@@ -205,5 +270,9 @@ def build_render_data(
     if _clean(total_amount) is not None:
         data["total_amount"] = total_amount
     for key, value in (custom or {}).items():
+        if key in PROTECTED_CUSTOM_FIELDS:
+            # 受保护字段不接受 custom 覆盖：金额/行项只能来自上游快照或系统计算。
+            # 写路径已拒绝（422），这里再挡一次 —— 历史脏数据也骗不了渲染。
+            continue
         data[key] = value
     return data
