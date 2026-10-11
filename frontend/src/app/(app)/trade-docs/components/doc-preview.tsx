@@ -29,6 +29,7 @@ import {
   Download,
   FileCheck2,
   FileUp,
+  Fingerprint,
   Printer,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -84,6 +85,38 @@ export function validateArchivePdf(file: File): string | null {
   return null;
 }
 
+/**
+ * 签发时冻结的渲染指纹（= 后端 `raw_payload._render`）。形状由共享内核
+ * `kaas_common.trade_doc.render_fingerprint.render_fingerprint` 决定（两端一致）。
+ *
+ * 只有**已签发**的单据才有这个键：它在 `confirm` 成功那一刻写入。
+ * 所以"有它"就等价于"签发过"，前端不必再单独判状态（少一处可能与真实状态不同步的输入）。
+ */
+export interface RenderFingerprintMeta {
+  /** 渲染器/模板版本：模板或渲染器改动时 +1（bump 纪律见内核注释） */
+  render_version?: number;
+  /** 渲染输入的 sha256；`null` = 签发时装配失败（后端如实标注，不伪造摘要） */
+  input_sha256?: string | null;
+  /** 冻结时刻（UTC ISO） */
+  frozen_at?: string;
+  /** `input_unavailable` = 装配失败时后端留的说明 */
+  note?: string;
+}
+
+/**
+ * 从 `raw_payload` 里安全取出指纹（= 内核 `read_render_fingerprint` 的前端对应物）。
+ *
+ * 为什么需要它：`TradeDocRow.raw_payload` 的类型只声明了 `sources`/`custom`，
+ * 而 `_render` 是**后端在签发时追加的保留键** —— 与其在调用点写一个 `as any`，
+ * 不如在这里收窄一次（形状不对/没有 ⇒ `null`，组件据此不渲染那一行）。
+ */
+export function renderMetaOf(rawPayload: unknown): RenderFingerprintMeta | null {
+  if (typeof rawPayload !== "object" || rawPayload === null) return null;
+  const meta = (rawPayload as Record<string, unknown>)["_render"];
+  if (typeof meta !== "object" || meta === null) return null;
+  return meta as RenderFingerprintMeta;
+}
+
 interface DocPreviewProps {
   docType: string;
   docNo: string;
@@ -95,6 +128,8 @@ interface DocPreviewProps {
    * 「样板预览」这类没有真实单据的调用方不传 ⇒ 归档区块完全不渲染。
    */
   docId?: number;
+  /** 签发时冻结的渲染指纹；不传/为 null ⇒ 这一行不渲染（草稿与历史单据都没有） */
+  renderMeta?: RenderFingerprintMeta | null;
 }
 
 export function DocPreview({
@@ -103,6 +138,7 @@ export function DocPreview({
   data,
   companyProfileConfigured,
   docId,
+  renderMeta,
 }: DocPreviewProps) {
   const html = useMemo(() => {
     try {
@@ -242,6 +278,31 @@ export function DocPreview({
           </Button>
         </div>
       </div>
+
+      {/*
+        签发时冻结的渲染指纹（C 方案）：一行，`v1 · a1b2c3d4`。
+        作用是事后可追溯 —— "这份归档 PDF 是用哪版渲染器、哪份数据出的"。
+        没有这个键 = 还没签发过（草稿/历史单据）⇒ 整行不渲染。
+      */}
+      {renderMeta && (
+        <p
+          className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground"
+          title={
+            "渲染输入指纹（签发时冻结）\n" +
+            `渲染版本：v${renderMeta.render_version ?? "?"}\n` +
+            `输入 sha256：${renderMeta.input_sha256 ?? "未冻结（签发时装配失败）"}\n` +
+            `冻结时刻：${renderMeta.frozen_at ?? "未知"}`
+          }
+        >
+          <Fingerprint className="h-3 w-3" />
+          <span>渲染指纹 v{renderMeta.render_version ?? "?"} ·</span>
+          <span className="font-mono">
+            {renderMeta.input_sha256
+              ? renderMeta.input_sha256.slice(0, 8)
+              : "未冻结"}
+          </span>
+        </p>
+      )}
 
       {missing.length > 0 && (
         <div className="rounded-md border border-warning/40 bg-warning-muted p-3 text-sm text-warning-muted-foreground">

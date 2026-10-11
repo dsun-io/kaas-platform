@@ -6,6 +6,7 @@
 做法同 `test_ws_products_seals.py`：把 `db`（platform/db.py）换成假实现、
 把 `_get_current_user` 换成依赖覆盖，不碰 Hyperdrive 也能把 handler 跑到返回。
 """
+import json
 import re
 import sys
 from contextlib import asynccontextmanager, contextmanager
@@ -27,6 +28,7 @@ import ws_quote_ext  # noqa: E402
 import ws_shipments  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from kaas_common.domain.enums import ENUMS  # noqa: E402
+from kaas_common.trade_doc import RENDER_VERSION  # noqa: E402
 from kaas_common.workstation.state_machines import SHIPMENT_NEXT  # noqa: E402
 
 client = TestClient(worker_main.app, raise_server_exceptions=True)
@@ -329,6 +331,38 @@ def _order_snapshot_row():
     }
 
 
+def _doc_assembly_rows(doc):
+    """`confirm` 里算**渲染指纹**（C 方案）时装配层要读的行，顺序与
+    `main.get_trade_doc_render_data` 逐条一致：
+
+        单证（重新读一次）→ 企业主体 → 客户 → 主联系人 → 默认公章
+
+    注意：装配是"把客户看到的一切都纳入摘要"的关键（卖方抬头、买方、产品图 data URI、
+    默认公章都不在 `raw_payload` 里）。假 db 是按调用顺序吐结果的 FIFO，所以这些行必须
+    补进队列，否则后面的 `UPDATE ... RETURNING *` 会取到 None。
+    """
+    return [
+        doc,
+        {"tenant_id": "default", "name_en": "KAAS TRADING CO., LTD",
+         "address_en": "Hebei, China"},
+        {"id": 3, "name": "ACME", "address": "Hamburg"},
+        {"name": "Mr. Li", "phone": None, "email": None},
+        None,   # 没有默认公章
+    ]
+
+
+def _render_meta_from_update(db) -> dict:
+    """从 `confirm` 的 `UPDATE ... raw_payload=...` **实参**里取出写入的 `_render`。
+
+    为什么不看响应体：假 db 不会真的回显写入结果（`RETURNING *` 由队列里的静态行充当），
+    而"到底写了什么"正是这里要验的 —— 从实参验才不会被替身的实现细节骗过。
+    """
+    updates = [c for c in db.calls if c[0] == "fetchrow" and "raw_payload" in c[1]]
+    assert len(updates) == 1, f"预期恰好一次带 raw_payload 的 UPDATE，实际 {len(updates)} 次"
+    payload = json.loads(updates[0][2][4])
+    return payload["_render"]
+
+
 def test_trade_doc_confirm_requires_items():
     db = _FakeDb(fetchrow=[_doc_row()], fetch=[[]])
     with _patched(db):
@@ -341,12 +375,23 @@ def test_trade_doc_confirm_requires_items():
 
 def test_trade_doc_confirm_locks_draft():
     items = [{"product_name": "牛栏网", "qty": 1, "unit_price": 120, "line_amount": 120}]
-    db = _FakeDb(fetchrow=[_doc_row(), _doc_row(status="issued", issued_by="1")],
+    doc = _doc_row()
+    # fetchrow 顺序：取单证 → **装配（算指纹）**：单证/企业主体/客户/联系人/默认公章
+    # → `UPDATE ... RETURNING *`
+    db = _FakeDb(fetchrow=[doc, *_doc_assembly_rows(doc),
+                           _doc_row(status="issued", issued_by="1")],
                  fetch=[items])
     with _patched(db):
         resp = client.post("/api/v1/trade-docs/11/confirm", json={})
     assert resp.status_code == 200
     assert resp.json()["status"] == "issued"
+
+    # 加强断言（C 方案）：签发那一刻确实把指纹写进了 `raw_payload._render`
+    meta = _render_meta_from_update(db)
+    assert meta["render_version"] == RENDER_VERSION
+    assert re.fullmatch(r"[0-9a-f]{64}", meta["input_sha256"])
+    assert meta["frozen_at"]
+    assert "note" not in meta
 
 
 def test_trade_doc_confirm_rejects_already_issued():
@@ -355,6 +400,9 @@ def test_trade_doc_confirm_rejects_already_issued():
         resp = client.post("/api/v1/trade-docs/11/confirm", json={})
     assert resp.status_code == 409
     assert resp.json()["detail"]["code"] == "NOT_DRAFT"
+    # 加强断言：重复确认**不得**再写一次 `_render`（不能把已冻结的指纹改乱），
+    # 也不该白跑一次装配（它在校验之后才发生）
+    assert [c for c in db.calls if "raw_payload" in c[1]] == []
 
 
 def test_trade_doc_confirm_rejects_amount_mismatch():
@@ -374,13 +422,18 @@ def test_trade_doc_confirm_rejects_amount_mismatch():
 def test_trade_doc_confirm_accepts_matching_total():
     """合计与行项目一致时照常确认 —— 补的校验不能误伤正常单据。"""
     items = [{"product_name": "牛栏网", "qty": 1, "unit_price": 120, "line_amount": 120}]
-    db = _FakeDb(fetchrow=[_doc_row(total_amount=120),
+    doc = _doc_row(total_amount=120)
+    db = _FakeDb(fetchrow=[doc, *_doc_assembly_rows(doc),
                            _doc_row(status="issued", total_amount=120, issued_by="1")],
                  fetch=[items])
     with _patched(db):
         resp = client.post("/api/v1/trade-docs/11/confirm", json={})
     assert resp.status_code == 200
     assert resp.json()["status"] == "issued"
+
+    # 装配取到了真实的企业主体/客户行 ⇒ 指纹必须覆盖它们（不是 `input_unavailable`）
+    meta = _render_meta_from_update(db)
+    assert meta["input_sha256"] and "note" not in meta
 
 
 def test_trade_doc_refresh_sources_requires_draft():
