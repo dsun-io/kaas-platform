@@ -153,16 +153,57 @@ async def load_file_bytes(row) -> Optional[bytes]:
     return await _load_bytes(row)
 
 
+def _team_scope(auth: AuthContext, *, col: str = "team_id") -> tuple[str, dict]:
+    """返回「行级团队谓词」的 `(SQL 片段, 参数)` —— Q6 的**数据可见性**那一层。
+
+    裁决原话：**工位人人可见，但用户创建的业务数据仅团队内部可见**（Q1=B 亦然）。
+    这里只表达**数据行**的可见范围，**不含**任何"工位/定义"判断（两层不许压平）。
+
+    - **平台管理员** ⇒ `("", {})`：不加谓词，因此看得见全部（含历史 `team_id IS NULL` 行
+      —— D3/D4「仅管理员可见」）；
+    - **有团队的成员** ⇒ `AND <col>=:team`：只看本团队；历史 NULL 行**不匹配**⇒ 看不见 ✓；
+    - **无团队的普通账号** ⇒ **403 `NO_TEAM`**（§1.5 的次序：403 在 404 之前；
+      比逐个 404 更准确 —— 不是"这条不可见"，而是"你没有团队"）。
+
+    用法：把片段拼在 `WHERE` 末尾、把参数并进 `params`；`col` 供 JOIN 场景指定别名列
+    （如 `f.team_id`）。判定复用同一个角色尺 `is_admin_role`（与 `product_scope` 内部一致），
+    **没有第二套**判断。
+    """
+    if is_admin_role(getattr(auth, "role", None)):
+        return "", {}
+    team = getattr(auth, "team_id", None)
+    if team is None:
+        raise HTTPException(status_code=403, detail={"error": "forbidden", "code": "NO_TEAM"})
+    return f" AND {col}=:team", {"team": team}
+
+
+def _team_scope_soft(auth: AuthContext, *, col: str = "team_id") -> tuple[str, dict]:
+    """`_team_scope` 的**不抛错**版本 —— **只给"公开层与私有层混在一起"的端点**用。
+
+    `list_products` 一份响应里同时有：
+    - **产品定义**（`name`/`name_en`/`category_code`）⇒ **人人可读**（Q1=B 第一句）；
+    - **用户创建的基础信息 / 图片计数** ⇒ **仅团队内可见**（Q6 后半句）。
+
+    若在这里对"无团队"直接 403，就把**两层压平了** —— 连定义也一起被挡掉 ✗。
+    所以无团队时给出 `= NULL`（恒不成立）的谓词：**私有部分自然为空，定义照旧返回** ✓。
+    """
+    if is_admin_role(getattr(auth, "role", None)):
+        return "", {}
+    return f" AND {col}=:team", {"team": getattr(auth, "team_id", None)}
+
+
 async def _fetch_current(
-    db: AsyncSession, tenant_id: str, owner_type: str, owner_id: Optional[str],
+    db: AsyncSession, auth: AuthContext, tenant_id: str, owner_type: str, owner_id: Optional[str],
     kind: str, media_kind: Optional[str] = None,
 ) -> Optional[dict]:
-    """同一归属 + 用途的"当前件"（版本化用）。"""
+    """同一归属 + 用途的"当前件"（版本化用）—— **只在本团队内**找。"""
+    team_sql, team_params = _team_scope(auth)
     sql = (
         f"SELECT {_META_COLS} FROM file_objects WHERE tenant_id=:t AND owner_type=:ot"
         " AND coalesce(owner_id,'')=coalesce(:oid,'') AND kind=:k"
+        f"{team_sql}"
     )
-    params = {"t": tenant_id, "ot": owner_type, "oid": owner_id, "k": kind}
+    params = {"t": tenant_id, "ot": owner_type, "oid": owner_id, "k": kind, **team_params}
     if media_kind is not None:
         sql += " AND coalesce(media_kind,'')=coalesce(:mk,'')"
         params["mk"] = media_kind
@@ -200,12 +241,14 @@ async def _create_file(
 
     version, supersedes_id = 1, None
     if supersede:
-        cur = await _fetch_current(db, tenant_id, owner_type, owner_id, kind, media_kind)
+        cur = await _fetch_current(db, auth, tenant_id, owner_type, owner_id, kind, media_kind)
         if cur:
             version, supersedes_id = next_version(cur)
+            team_sql, team_params = _team_scope(auth)
             await db.execute(
-                text("UPDATE file_objects SET is_current=false, updated_at=now() WHERE id=:id"),
-                {"id": cur["id"]},
+                text("UPDATE file_objects SET is_current=false, updated_at=now()"
+                     f" WHERE id=:id{team_sql}"),
+                {"id": cur["id"], **team_params},
             )
 
     row = (await db.execute(text(
@@ -276,12 +319,16 @@ def _visible_profiles_query(auth: AuthContext) -> tuple[str, dict]:
 async def list_products(auth: AuthContext = Depends(get_auth_context),
                         db: AsyncSession = Depends(get_db_session)):
     tenant_id = tenant_id_of(auth)
+    # ⚠️ 这里用 **soft** 版：本端点混着"人人可读的定义"与"仅团队可见的信息"，
+    # 无团队时**不能** 403（否则把 Q6 的两层压平）⇒ 私有部分为空、定义照旧返回。
+    team_sql, team_params = _team_scope_soft(auth)   # Q6：图片计数也**只数本团队**
     media = {
         r["owner_id"]: int(r["n"])
         for r in (await db.execute(text(
             "SELECT owner_id, COUNT(*) AS n FROM file_objects WHERE tenant_id=:t"
             " AND owner_type='product' AND kind='product_photo' AND is_current"
-            " GROUP BY owner_id"), {"t": tenant_id})).mappings().all()
+            f"{team_sql}"
+            " GROUP BY owner_id"), {"t": tenant_id, **team_params})).mappings().all()
     }
     # 产品基础信息按团队过滤（写入侧自 P9 起已带 team；读取侧此前漏了 ⇒ 本次补上）
     sql, params = _visible_profiles_query(auth)
@@ -356,10 +403,12 @@ def _json_dumps(obj) -> str:
 async def list_media(product_key: str, auth: AuthContext = Depends(get_auth_context),
                      db: AsyncSession = Depends(get_db_session)):
     tenant_id = tenant_id_of(auth)
+    team_sql, team_params = _team_scope(auth)
     rows = (await db.execute(text(
         f"SELECT {_META_COLS} FROM file_objects WHERE tenant_id=:t AND owner_type='product'"
         " AND owner_id=:k AND kind='product_photo' AND is_current"
-        f" ORDER BY {_FILE_ORDER_BY}"), {"t": tenant_id, "k": product_key}
+        f"{team_sql}"
+        f" ORDER BY {_FILE_ORDER_BY}"), {"t": tenant_id, "k": product_key, **team_params}
     )).mappings().all()
     return {"items": [_row_to_file(r) for r in rows], "media_kinds": MEDIA_KIND_LABELS}
 
@@ -398,9 +447,10 @@ async def patch_file(file_id: int, body: FilePatch,
                      auth: AuthContext = Depends(get_auth_context),
                      db: AsyncSession = Depends(get_db_session)):
     tenant_id = tenant_id_of(auth)
+    team_sql, team_params = _team_scope(auth)
     row = (await db.execute(text(
-        f"SELECT {_META_COLS} FROM file_objects WHERE tenant_id=:t AND id=:id"),
-        {"t": tenant_id, "id": file_id})).mappings().first()
+        f"SELECT {_META_COLS} FROM file_objects WHERE tenant_id=:t AND id=:id{team_sql}"),
+        {"t": tenant_id, "id": file_id, **team_params})).mappings().first()
     if row is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "FILE_NOT_FOUND"})
 
@@ -410,26 +460,34 @@ async def patch_file(file_id: int, body: FilePatch,
             raise _fail(FileRuleError("NAME_REQUIRED", "名称不能为空"))
         if len(label) > 80:
             raise _fail(FileRuleError("NAME_TOO_LONG", "名称最长 80 个字符"))
-        await db.execute(text("UPDATE file_objects SET name=:n, updated_at=now() WHERE id=:id"),
-                         {"n": label, "id": file_id})
+        await db.execute(
+            text("UPDATE file_objects SET name=:n, updated_at=now()"
+                 f" WHERE id=:id{team_sql}"),
+            {"n": label, "id": file_id, **team_params})
     if body.is_primary is not None:
         if body.is_primary:
-            # 同一归属 + 用途只能有一张主图：先把其它行降下来，再设自己
+            # 同一归属 + 用途只能有一张主图：先把其它行降下来，再设自己。
+            # 团队谓词只降**本团队**的其它行（别团队的图不该被我们顶掉）✓
             await db.execute(text(
                 "UPDATE file_objects SET is_primary=false, updated_at=now()"
                 " WHERE tenant_id=:t AND owner_type=:ot AND coalesce(owner_id,'')=coalesce(:oid,'')"
-                " AND kind=:k"), {"t": tenant_id, "ot": row["owner_type"],
-                                  "oid": row["owner_id"], "k": row["kind"]})
-        await db.execute(text("UPDATE file_objects SET is_primary=:p, updated_at=now() WHERE id=:id"),
-                         {"p": body.is_primary, "id": file_id})
+                f" AND kind=:k{team_sql}"), {"t": tenant_id, "ot": row["owner_type"],
+                                             "oid": row["owner_id"], "k": row["kind"],
+                                             **team_params})
+        await db.execute(
+            text("UPDATE file_objects SET is_primary=:p, updated_at=now()"
+                 f" WHERE id=:id{team_sql}"),
+            {"p": body.is_primary, "id": file_id, **team_params})
     if body.sort_order is not None:
         # 排序值是人工维护的展示位次：给个明确上界，防误填天文数字把图排到看不见的地方
         if body.sort_order < 0 or body.sort_order > _MAX_SORT_ORDER:
             raise _fail(FileRuleError(
                 "SORT_ORDER_OUT_OF_RANGE",
                 f"排序值需在 0 ~ {_MAX_SORT_ORDER} 之间"))
-        await db.execute(text("UPDATE file_objects SET sort_order=:s, updated_at=now() WHERE id=:id"),
-                         {"s": body.sort_order, "id": file_id})
+        await db.execute(
+            text("UPDATE file_objects SET sort_order=:s, updated_at=now()"
+                 f" WHERE id=:id{team_sql}"),
+            {"s": body.sort_order, "id": file_id, **team_params})
     return {"ok": True}
 
 
@@ -438,9 +496,10 @@ async def retire_file(file_id: int, auth: AuthContext = Depends(get_auth_context
                       db: AsyncSession = Depends(get_db_session)):
     """**不物理删除**：置 `is_current=false` 即从"当前"里消失，行还在（可审计/可回溯）。"""
     tenant_id = tenant_id_of(auth)
+    team_sql, team_params = _team_scope(auth)
     res = await db.execute(text(
         "UPDATE file_objects SET is_current=false, is_primary=false, updated_at=now()"
-        " WHERE tenant_id=:t AND id=:id"), {"t": tenant_id, "id": file_id})
+        f" WHERE tenant_id=:t AND id=:id{team_sql}"), {"t": tenant_id, "id": file_id, **team_params})
     if not res.rowcount:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "FILE_NOT_FOUND"})
     return Response(status_code=204)
@@ -450,9 +509,11 @@ async def retire_file(file_id: int, auth: AuthContext = Depends(get_auth_context
 async def get_file_content(file_id: int, auth: AuthContext = Depends(get_auth_context),
                            db: AsyncSession = Depends(get_db_session)):
     tenant_id = tenant_id_of(auth)
+    team_sql, team_params = _team_scope(auth)
     row = (await db.execute(text(
         "SELECT content_type, file_name, content, object_key, storage FROM file_objects"
-        " WHERE tenant_id=:t AND id=:id"), {"t": tenant_id, "id": file_id})).mappings().first()
+        f" WHERE tenant_id=:t AND id=:id{team_sql}"),
+        {"t": tenant_id, "id": file_id, **team_params})).mappings().first()
     if row is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "FILE_NOT_FOUND"})
     data = await _load_bytes(dict(row))
@@ -472,9 +533,11 @@ async def get_file_url(file_id: int, auth: AuthContext = Depends(get_auth_contex
     所以只发短时效 URL，且仍需登录才能申请。
     """
     tenant_id = tenant_id_of(auth)
+    team_sql, team_params = _team_scope(auth)
     row = (await db.execute(text(
         "SELECT object_key, content_type, file_name FROM file_objects"
-        " WHERE tenant_id=:t AND id=:id AND is_current"), {"t": tenant_id, "id": file_id})
+        f" WHERE tenant_id=:t AND id=:id AND is_current{team_sql}"),
+        {"t": tenant_id, "id": file_id, **team_params})
     ).mappings().first()
     if row is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "FILE_NOT_FOUND"})
@@ -571,12 +634,14 @@ class DocFileIn(BaseModel):
 async def list_doc_files(doc_id: int, auth: AuthContext = Depends(get_auth_context),
                          db: AsyncSession = Depends(get_db_session)):
     tenant_id = tenant_id_of(auth)
+    # 挂件所属文件也必须在本团队（`f` 是 file_objects 的别名 ⇒ 显式限定列）
+    team_sql, team_params = _team_scope(auth, col="f.team_id")
     rows = (await db.execute(text(
         f"SELECT t.id AS link_id, t.role AS link_role, t.caption AS link_caption,"
         f" t.sort_order AS link_sort_order, {_FILE_COLS_F}"
         " FROM trade_doc_files t JOIN file_objects f ON f.id = t.file_id"
-        " WHERE t.tenant_id=:t AND t.trade_doc_id=:d ORDER BY t.sort_order, t.id"),
-        {"t": tenant_id, "d": doc_id})).mappings().all()
+        f" WHERE t.tenant_id=:t AND t.trade_doc_id=:d{team_sql} ORDER BY t.sort_order, t.id"),
+        {"t": tenant_id, "d": doc_id, **team_params})).mappings().all()
     items = []
     for r in rows:
         item = _row_to_file({k: v for k, v in r.items() if not k.startswith("link_")})
@@ -599,9 +664,10 @@ async def attach_doc_file(doc_id: int, body: DocFileIn,
     tenant_id = tenant_id_of(auth)
     if body.file_id is None:
         raise HTTPException(status_code=422, detail={"error": "validation", "code": "FILE_REQUIRED"})
+    team_sql, team_params = _team_scope(auth)
     file_row = (await db.execute(text(
-        f"SELECT {_META_COLS} FROM file_objects WHERE tenant_id=:t AND id=:id"),
-        {"t": tenant_id, "id": body.file_id})).mappings().first()
+        f"SELECT {_META_COLS} FROM file_objects WHERE tenant_id=:t AND id=:id{team_sql}"),
+        {"t": tenant_id, "id": body.file_id, **team_params})).mappings().first()
     if file_row is None or not file_row["is_current"]:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "FILE_NOT_FOUND"})
 
@@ -757,6 +823,9 @@ async def list_files(owner_type: str = Query(...), owner_id: Optional[str] = Non
     sql = (f"SELECT {_META_COLS} FROM file_objects WHERE tenant_id=:t AND owner_type=:ot"
            " AND coalesce(owner_id,'')=coalesce(:oid,'') AND is_current")
     params = {"t": tenant_id, "ot": owner_type, "oid": owner_id}
+    _frag, _team_params = _team_scope(auth)
+    sql += _frag
+    params.update(_team_params)
     if kind:
         sql += " AND kind=:k"
         params["k"] = kind

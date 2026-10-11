@@ -26,16 +26,25 @@ load_main()
 import ws_files  # noqa: E402
 
 
+TEAM = 11
+
+
 class _FakeDb:
     def __init__(self, row):
         self._row = row
 
     async def fetchrow(self, request, sql, *args, table=None):
-        return self._row
+        row = self._row
+        # 读路径自 task-24 起要判团队（Q6）⇒ 假行也补上 team_id；
+        # 这些用例考的是 `info` 的形状（dict / JSON 字符串 / 坏值），不是权限。
+        if row is not None and "team_id" not in row:
+            row = {**row, "team_id": TEAM}
+        return row
 
 
 def _get_profile(row):
-    return asyncio.run(ws_files.get_profile("field_fence", object(), {"id": 1}))
+    return asyncio.run(ws_files.get_profile(
+        "field_fence", object(), {"id": 1, "role": "user", "team_id": TEAM}))
 
 
 def _with_row(monkeypatch, row):

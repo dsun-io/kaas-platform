@@ -295,13 +295,24 @@ class TestListDoesNotLeakButDefinitionsStayPublic:
         assert items[0]["name"] and "category_code" in items[0]
 
     @pytest.mark.asyncio
-    async def test_列表的media_count尚未加团队谓词_属P7范围(self, env):
-        """⚠️ 如实标注：`media_count` 取自 `file_objects`（同属"产品相关信息"），
-        它的团队谓词是 **P7** 的 13 个落点之一 —— 本任务写入范围是 `product_profiles`。
-        此处**不断言已修**，只钉住"当前 SQL 还没有团队谓词"这个事实，
-        避免被误读成"产品图片计数也已经隔离好了"。"""
+    async def test_列表的media_count也按团队过滤了(self, env):
+        """`media_count` 取自 `file_objects`（同属"用户创建的产品相关信息"）。
+
+        task-23 时它还是全租户计数，当时这条**反向钉住"还没有谓词"**；
+        task-24 已把谓词补上 ⇒ 现在改为**钉住已有谓词**（含参数等于本人团队）。
+        """
         client, use = env
         fake = use(role=MEMBER, team_id=TEAM_A)
         await client.get(LIST_URL)
-        media_sql, _ = fake.call_for("file_objects")
+        media_sql, media_params = fake.call_for("file_objects")
+        assert re.search(r"\bteam_id\s*=\s*:team\b", media_sql), media_sql
+        assert media_params["team"] == TEAM_A
+
+    @pytest.mark.asyncio
+    async def test_管理员看图片计数不加谓词(self, env):
+        client, use = env
+        fake = use(role=ADMIN, team_id=None)
+        await client.get(LIST_URL)
+        media_sql, media_params = fake.call_for("file_objects")
         assert not re.search(r"\bteam_id\b", _where_clause(media_sql)), media_sql
+        assert "team" not in media_params

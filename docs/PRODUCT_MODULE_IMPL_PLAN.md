@@ -338,8 +338,8 @@ SELECT count(*), count(*) FILTER (WHERE is_system) FROM tenant_products;
 
 | 步 | 内容 | 文件范围 | 门禁 / 验收信号 | 回滚 | 依赖 | 并行 |
 |---|---|---|---|---|---|---|
-| **P7** | orchestrator 侧：`files.py` §1.4 的 13 处 + `trade_docs.py:740` 加团队谓词；越权一律 **404**。**已交付（§8.7）**：`product_profiles` 的两条读路径（`get_profile`、`list_products`）+ 可见性判定；**仍待**：`file_objects` 的 13 处（含 `list_products` 的 `media_count` 聚合）+ `trade_docs.py`（⚠️*正被另一条任务改*） | `backend/orchestrator/app/api/files.py`、`backend/orchestrator/app/api/trade_docs.py` ⚠️*正在被另一条任务改* | `pytest -m unit`（已绿 **1032**）；`route-parity`（已绿）；**验收信号**：团队 A 的 token 调 `GET /file-objects/{团队B的文件id}/content` → **404 `FILE_NOT_FOUND`**；`PATCH`/`DELETE` 同 → 404；产品基础信息见 §8.7 的四条语义 | `git revert` | P5、P6 | ✅ 与 P8 并行开发（文件不相交），但**必须同批验收** |
-| **P8** | worker 侧：`ws_files.py` §1.4 的 ~11 处 + 单证挂件同类落点。**仍待**（本轮**未做**：`ws_files.py` 不在 task-23 的写入范围）—— worker 侧的同类读路径实测仍有 **3 处无团队谓词**（§8.7 已清点：`ws_files.py:270/294`、`main.py:3691`） | `backend/worker/src/ws_files.py` ⚠️*正在被另一条任务改* | worker `pytest`（已绿 **217**，本轮未改 worker）；**验收信号**：与 P7 同一组用例在 worker 上同样 404（两端同构） | `git revert` | P5、P6 | ✅ 与 P7 并行 |
+| **P7** | orchestrator 侧：`files.py` 的团队谓词。**已交付（§8.7 + §8.8）**：`product_profiles` 两条读路径 + **`file_objects` 全部落点**（含 `media_count`、`content`/`url`、`PATCH`/`DELETE`、`list_files`、`list_doc_files`、`attach_doc_file`、`_fetch_current`）。**仍待**：`trade_docs.py`（⚠️*正被另一条任务改*） | `backend/orchestrator/app/api/files.py`、`backend/orchestrator/app/api/trade_docs.py` ⚠️*正在被另一条任务改* | `pytest -m unit`（已绿 **1047**）；`route-parity`（已绿）；**验收信号**：团队 A 的 token 调 `GET /file-objects/{团队B的文件id}/content` → **404 `FILE_NOT_FOUND`**（§8.8 已在 HTTP 层证）；`PATCH`/`DELETE` 同 → 404 | `git revert` | P5、P6 | ✅ 与 P8 并行开发，但**必须同批验收** |
+| **P8** | worker 侧：`ws_files.py` 同构。**已交付（§8.8）**：`product_profiles` 两条 + `file_objects` 全部落点。**仍待**：`main.py:3691`（product_profiles）与**装配层 `resolve_photo_refs`**（无 auth 上下文、调用方在 `main.py`，⚠️*未授权*）；`main.py` 干净后补 | `backend/worker/src/ws_files.py`、`backend/worker/src/main.py` ⚠️*正在被另一条任务改* | worker `pytest`（已绿 **231**）；**验收信号**：与 P7 同一组用例在 worker 上同样 404（两端同构 ✓，§8.8 已证） | `git revert` | P5、P6 | ✅ 与 P7 并行 |
 | **P9** | 产品定义/矩阵隔离：`tenant_products.py`、`workstation_products.py`、worker `ws_products.py`；唯一键断言更新。**唯一键部分已交付（§8.6）**：唯一键按团队收敛 + **两端 `ON CONFLICT` 与断言同批改**；"跨团队改/删 → 404；系统级 → 403"的**越权面**仍待（属 P7/P8 的读路径过滤） | 上述 3 文件 + `backend/worker/tests/test_ws_products_seals.py` | `pytest -m unit`（已绿 **1017**）+ worker `pytest`（已绿 **217**）；**验收信号**：跨团队改/删 → 404；系统级 → 403；**两团队各建同名 key → 均 201**（唯一键已允许；行为验证见 §8.6 的验收 SQL）；⚠️ **这些测试断言了 SQL 字面量**（`test_ws_products_seals.py`），改 SQL 必须同步改断言（**本轮已同步**） | `git revert` | P5、P6、P7 | — |
 | **P10** | 越权回归测试（跨团队负例矩阵，两端各一份） | `backend/orchestrator/tests/test_file_team_scope.py`（新）、`backend/worker/tests/test_ws_files_team_scope.py`（新） | 两端 `pytest`；**验收信号**：**12 条负例**（§1.4 的 13 个落点里除聚合外每条一个：读/写/删/字节/挂件/选图器）全部 404；正例（本团队）全部 200 | `git revert` | P7、P8、P9 | — |
 
@@ -780,6 +780,68 @@ INSERT INTO product_profiles (tenant_id, team_id, product_key, info) VALUES ('de
 worker `pytest` ⇒ **217 passed**（本轮未改 worker，跑一遍证明无连带）；`route-parity` ⇒ PASS；
 `sync-shared -Check` ⇒ exit 0（本轮未改 `kaas_common`）。
 
+### 8.8 已落地的第 7 个增量：**file_objects 落点**（P7 剩余 + P8 worker 同构）
+
+**范围**：`files.py` 的 `file_objects` 读写点 + worker `ws_files.py` 同构（`main.py` 未授权 ⇒ 跳过）。
+
+**做法：一个行级谓词，两端各一份同名实现（都走共享内核的角色尺）**
+
+| 端 | 辅助函数 | 说明 |
+|---|---|---|
+| orchestrator | `_team_scope(auth, col=…)` → `(" AND <col>=:team", {"team": …})` | 管理员 ⇒ `("", {})`；有团队 ⇒ 谓词；**无团队 ⇒ 403 `NO_TEAM`** |
+| orchestrator | `_team_scope_soft(auth, col=…)` | **不抛错**版，**只给"公开层+私有层混在一起"的端点**（产品列表） |
+| worker | `_team_scope(user, next_index, col=…)` / `_team_scope_soft(…)` | asyncpg **位置占位符**：约定"片段用 `$next_index`、参数追加到列表末尾"，调用方先算 `next_index = len(params)+1` |
+
+**⚠️ 一个当场发现并修掉的设计错误（值得记）**：`list_products` 一份响应里同时有
+**产品定义**（人人可读）与**基础信息/图片计数**（仅团队内可见）。第一版对"无团队"统一
+**403** ⇒ 连**定义**也被挡掉，**把 Q6 的两层压平了** ✗（两条既有用例立刻变红，正是它们的价值）。
+⇒ 该端点改用 `_team_scope_soft`：无团队时谓词为 `= NULL`（恒不成立）⇒ **私有部分为空、定义照旧返回** ✓。
+
+**改了哪些落点**（两端同构）
+
+| 落点 | 处理 |
+|---|---|
+| `_fetch_current` / `_current_file`（版本化取"当前件"） | 加谓词（**只在本团队内找当前件**，别团队的不会被顶掉） |
+| 产品列表的 `media_count` 聚合 | 加谓词（**soft**：端点混两层） |
+| `GET /products/{key}/media` | 加谓词 |
+| `PATCH /file-objects/{id}`（读 + 改名/设主图/排序 4 条 UPDATE） | 读加谓词 ⇒ 别团队 404；**每条写也加谓词**（别团队改不动、也 404） |
+| `DELETE /file-objects/{id}`（下线） | 加谓词（影响 0 行 ⇒ 404） |
+| `GET /file-objects/{id}/content`、`/url` | 加谓词 |
+| `GET /file-objects`（列表） | 加谓词 |
+| `GET /trade-docs/{id}/files`（JOIN `f`） | 加谓词（`f.team_id` 显式限定列） |
+| `POST /trade-docs/{id}/files`（挂件前的文件读取） | 加谓词 |
+| 产品基础信息两条（worker `:270`/`:294`） | 列表用 soft 谓词；**单条**按 orchestrator 同法"取回后判可见性" ⇒ 别团队/历史 NULL ⇒ **404**、无团队 ⇒ **403** |
+| 上传 INSERT（两端） | 本来就已经写 `team_id` ✓（审计现在会强制这一点） |
+
+**四项语义**（与 §8.7 一致，同一把尺）：本团队 ⇒ 200/204；**别团队 ⇒ 404**；
+历史 `team_id IS NULL` ⇒ **仅管理员**（非管理员 404）；无团队 ⇒ **403 `NO_TEAM`**。
+行级端点用"谓词过滤 ⇒ 查不到 ⇒ 404"，因此**别团队与不存在对外完全同形**（零存在性泄露 ✓）。
+
+**测试**（两端都**真跑**，各含**阳性对照**）
+
+| 端 | 文件 | 条数 | 内容 |
+|---|---|---|---|
+| orchestrator | `tests/test_files_team_scope.py`（新） | **14** | HTTP 层：本团队 200/204、**别团队 404（content/patch/delete）**、**阳性对照**（换本团队身份就可见）、历史 NULL 成员 404 / 管理员可见、无团队 403、列表谓词（含参数）；**静态审计**：`files.py` 每处 `file_objects` 落点必须带谓词、**写入必须带 `team_id`**（带"审计本身有效"的阳性对照） |
+| worker | `tests/test_ws_files_team_scope.py`（新） | **14** | 直调端点：基础信息四条语义 + 阳性对照 + 行不存在仍 200 `{}`；read/retire 谓词与参数、管理员不加谓词、无团队 403；**静态审计**（同规则）+ "已知缺口必须留注释"用例 |
+| 既有用例适配 | `tests/test_ws_files_profile_shape.py` | — | 假 user/假行补 `team_id`（这些用例考的是 `info` 的形状，不是权限）；**意图不变** |
+
+**⚠️ 如实标注的缺口（本轮没做）**
+1. **`resolve_photo_refs`（worker，装配层）没有 auth 上下文** —— 调用方在 `main.get_trade_doc_render_data`
+   （**`main.py` 未授权：正被另一条任务改**）。硬加谓词会 `NameError` ⇒ **已回退并在源码里留注释**，列入待办。
+   *这条是"先写错 → worker 门禁抓到（4 条红）→ 再回退"的，说明测试网有效。*
+2. **`main.py:3691`**（worker 的另一处 `product_profiles` 读）—— 同上，未授权。
+3. **`app/api/trade_docs.py:829`** —— 他人文件在飞，未动。
+
+**门禁（完整摘要）**：orchestrator `pytest -m unit` ⇒ **1047 passed, 1 skipped, 324 deselected, exit 0**；
+worker `pytest` ⇒ **231 passed, exit 0**；`route-parity` ⇒ PASS；`sync-shared -Check` ⇒ exit 0（本轮未改 `kaas_common`）。
+
+**测试工程上又踩两个坑**
+1. **静态审计第一版按"字符串常量"扫** ⇒ 本文件的谓词是**拼在调用处**的
+   （`text("… WHERE x=:v" f"{team_sql}")` / 先 `sql += _frag` 再 `text(sql)`）⇒ 常量里看不到谓词，
+   **全部假阳性**。改成**行窗口扫描**（看落点后 14 行，等价于人肉复核）才对。
+2. **假库要"按谓词过滤"**：让假库按 `params["team"]` 决定那行是否"存在"，404 才是**真的被谓词挡掉**
+   （否则只测到"路径对不对"，测不到隔离）—— 这也是阳性对照能成立的前提。
+
 ---
 
 ## 9. 本文件的状态与自证（**滚动更新**）
@@ -790,7 +852,9 @@ worker `pytest` ⇒ **217 passed**（本轮未改 worker，跑一遍证明无连
 - **task-21**：**P16 复核**（结论：不够，不新建接口）+ **P12 ② 层契约**（§8.5）。
 - **task-22**：**P9** —— 唯一键按团队收敛 + 两端 `ON CONFLICT` 同批（§8.6）；**就地修订 019**。
 - **task-23**：**产品基础信息的读路径团队谓词**（§8.7）—— Q6 后半句落地；worker 侧与 `trade_docs.py`
-  的同类读点列进 P8/P7 剩余清单（**未做，已清点**）。
+  的同类读点列进 P8/P7 剩余清单。
+- **task-24**：**file_objects 落点**（§8.8）—— `files.py` 的 19 处 + worker `ws_files.py` 同构，
+  各带"静态审计"用例；`main.py`（含装配层 `resolve_photo_refs`）与 `trade_docs.py` 未授权 ⇒ 已清点。
   本文件由**同一个作者滚动维护**；它**不是**"口径文档"（口径看 `docs/PROBLEM_STATUS_2026-10-11.md`）。
 - 各轮都**未碰**另一条任务在飞的 `trade_docs.py` / `worker/src/{main,dbjson,ws_docs_ext}.py` / `frontend/**`，
   也未碰 `shared/**`；task-22 按任务授权改了 `files.py` 与两个 worker 端点（当时实测均为 clean）。
