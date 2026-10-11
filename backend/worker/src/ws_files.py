@@ -55,10 +55,64 @@ import main as _main
 # 所以"有哪些产品"两端天然一致，不会出现"本地有、线上没有"的产品清单。
 from kaas_common.export_quote.products import get as get_product, keys as product_keys
 
+from kaas_common.workstation.product_scope import REASON_NO_TEAM, product_info_access
+from kaas_common.workstation.scope import is_admin_role
+
 app = _main.app
 _get_current_user = _main._get_current_user
 DEFAULT_TENANT = _main.DEFAULT_TENANT
 db = _main.db
+
+
+# ── Q6 的行级团队谓词（与 orchestrator 侧同一口径，走同一把尺）────────────────
+
+def _team_scope(user: dict, next_index: int, *, col: str = "team_id") -> tuple[str, list]:
+    """返回 `(SQL 片段, 追加参数)`：**用户创建的业务数据仅团队内部可见**（Q6）。
+
+    asyncpg 用**位置占位符**，所以约定：片段里用 `$next_index`，参数**追加到列表末尾** ——
+    与「片段拼在 WHERE 末尾」严格对应。调用方先算 `next_index = len(params) + 1`。
+
+    - **管理员** ⇒ `("", [])`：不加谓词，看得见全部（含历史 `team_id IS NULL` 行，D3/D4）；
+    - **有团队** ⇒ `AND <col>=$n` + `[team]`；
+    - **无团队** ⇒ **403 `NO_TEAM`**（§1.5 的次序）。
+
+    角色判定用共享内核 `is_admin_role`，与 orchestrator 的 `_team_scope` 是同一把尺。
+    """
+    if is_admin_role(user.get("role")):
+        return "", []
+    team = user.get("team_id")
+    if team is None:
+        raise HTTPException(status_code=403, detail={"error": "forbidden", "code": "NO_TEAM"})
+    return f" AND {col}=${next_index}", [team]
+
+
+def _team_scope_soft(user: dict, next_index: int, *, col: str = "team_id") -> tuple[str, list]:
+    """不抛错版：**只给「公开层 + 私有层混在一起」的端点**用（如产品列表：定义人人可读）。
+
+    无团队 ⇒ 谓词为 `= NULL`（恒不成立）⇒ 私有部分为空，**公开层照旧返回**
+    （Q6 两层不许压平）。与 orchestrator 的 `_team_scope_soft` 同口径。
+    """
+    if is_admin_role(user.get("role")):
+        return "", []
+    return f" AND {col}=${next_index}", [user.get("team_id")]
+
+
+def _require_profile_visible(user: dict, row) -> None:
+    """产品基础信息的可见性判定（与 orchestrator 的 `_require_profile_visible` 同语义）。
+
+    复用共享内核 `product_info_access`（task-19 那把尺）：本团队 / 管理员 ⇒ 放行；
+    别团队、历史 NULL（非管理员）⇒ **404**（同一个错误码，对外不可区分）；
+    访问者无团队 ⇒ **403 `NO_TEAM`**。
+    """
+    decision = product_info_access(
+        role=user.get("role"), viewer_team_id=user.get("team_id"),
+        row_team_id=(row.get("team_id") if row is not None else None))
+    if decision.allowed:
+        return
+    if decision.reason == REASON_NO_TEAM:
+        raise HTTPException(status_code=403, detail={"error": "forbidden", "code": "NO_TEAM"})
+    raise HTTPException(status_code=404,
+                        detail={"error": "not_found", "code": "PROFILE_NOT_FOUND"})
 
 _META_COLS = (
     "id, tenant_id, team_id, owner_type, owner_id, kind, media_kind, name, storage, "
@@ -199,7 +253,7 @@ async def _load_bytes(request: Request, row) -> Optional[bytes]:
         return None
 
 
-async def _current_file(conn, tenant_id: str, owner_type: str, owner_id: Optional[str],
+async def _current_file(conn, user: dict, tenant_id: str, owner_type: str, owner_id: Optional[str],
                         kind: str, media_kind: Optional[str] = None):
     sql = (f"SELECT {_META_COLS} FROM file_objects WHERE tenant_id=$1 AND owner_type=$2"
            " AND coalesce(owner_id,'')=coalesce($3,'') AND kind=$4")
@@ -207,6 +261,9 @@ async def _current_file(conn, tenant_id: str, owner_type: str, owner_id: Optiona
     if media_kind is not None:
         sql += " AND coalesce(media_kind,'')=coalesce($5,'')"
         params.append(media_kind)
+    frag, extra = _team_scope(user, len(params) + 1)     # Q6：只在本团队内找"当前件"
+    sql += frag
+    params.extend(extra)
     sql += " ORDER BY version DESC"
     rows = await conn.fetch(sql, *params)
     return current_of([dict(r) for r in rows])
@@ -237,7 +294,8 @@ async def _create_file(*, request: Request, user: dict, owner_type: str, owner_i
         async with conn.transaction():
             version, supersedes_id = 1, None
             if supersede:
-                cur = await _current_file(conn, DEFAULT_TENANT, owner_type, owner_id, kind, media_kind)
+                cur = await _current_file(conn, user, DEFAULT_TENANT, owner_type, owner_id,
+                                          kind, media_kind)
                 if cur:
                     version, supersedes_id = next_version(cur)
                     await conn.execute(
@@ -260,15 +318,21 @@ async def _create_file(*, request: Request, user: dict, owner_type: str, owner_i
 @app.get("/api/v1/products")
 async def list_products(request: Request, user: dict = Depends(_get_current_user)):
     """产品来自**代码注册表**（ProductSpec keys），这里只挂租户可编辑的图片数与基础信息。"""
+    # ⚠️ 本端点混着"人人可读的定义"与"仅团队可见的信息" ⇒ 用 **soft** 版：
+    # 无团队时**不能** 403（否则把 Q6 两层压平），而是私有部分为空、定义照旧返回。
+    media_frag, media_extra = _team_scope_soft(user, 2)
     rows = await db.fetch(
         request,
         "SELECT owner_id, COUNT(*) AS n FROM file_objects WHERE tenant_id=$1"
-        " AND owner_type='product' AND kind='product_photo' AND is_current GROUP BY owner_id",
-        DEFAULT_TENANT, table=None)
+        " AND owner_type='product' AND kind='product_photo' AND is_current"
+        + media_frag + " GROUP BY owner_id",
+        DEFAULT_TENANT, *media_extra, table=None)
     media = {r["owner_id"]: int(r["n"]) for r in rows}
+    prof_frag, prof_extra = _team_scope_soft(user, 2)
     profs = await db.fetch(
-        request, "SELECT product_key, info FROM product_profiles WHERE tenant_id=$1",
-        DEFAULT_TENANT, table="product_profiles")
+        request, "SELECT product_key, info FROM product_profiles WHERE tenant_id=$1"
+        + prof_frag,
+        DEFAULT_TENANT, *prof_extra, table="product_profiles")
     profiles = {r["product_key"]: r["info"] for r in profs}
     items = []
     for key in product_keys():
@@ -291,9 +355,13 @@ class ProfileIn(BaseModel):
 @app.get("/api/v1/products/{product_key}/profile")
 async def get_profile(product_key: str, request: Request, user: dict = Depends(_get_current_user)):
     row = await db.fetchrow(
-        request, "SELECT product_key, info, updated_at FROM product_profiles"
+        request, "SELECT product_key, info, updated_at, team_id FROM product_profiles"
         " WHERE tenant_id=$1 AND product_key=$2", DEFAULT_TENANT, product_key,
         table="product_profiles")
+    # 行存在 ⇒ 按团队判可见性（Q1=B：用户创建的产品基础信息一律团队私有）；
+    # 与 orchestrator 的 `_require_profile_visible` 同一语义（同一个错误码，对外不可区分）。
+    if row is not None:
+        _require_profile_visible(user, row)
     # `info` 有两种形状：登记过 jsonb 的列会被 dbjson 解码成 dict；漏登记/未来新增的读取点
     # 可能拿到 **JSON 字符串** —— 那时 `dict(str)` 会抛 500（一个只读探针把整页打成错误页，
     # 代价与收益完全不成比例）。**根因已由 dbjson 登记修复**（`product_profiles.info` 进了
@@ -336,8 +404,9 @@ async def list_media(product_key: str, request: Request, user: dict = Depends(_g
         request,
         f"SELECT {_META_COLS} FROM file_objects WHERE tenant_id=$1 AND owner_type='product'"
         " AND owner_id=$2 AND kind='product_photo' AND is_current"
-        f" ORDER BY {_FILE_ORDER_BY}", DEFAULT_TENANT, product_key,
-        table=None)
+        + _team_scope(user, 3)[0]
+        + f" ORDER BY {_FILE_ORDER_BY}", DEFAULT_TENANT, product_key,
+        *_team_scope(user, 3)[1], table=None)
     return {"items": [_row_to_file(r) for r in rows], "media_kinds": MEDIA_KIND_LABELS}
 
 
@@ -368,8 +437,9 @@ class FilePatch(BaseModel):
 async def patch_file(file_id: int, body: FilePatch, request: Request,
                      user: dict = Depends(_get_current_user)):
     row = await db.fetchrow(
-        request, f"SELECT {_META_COLS} FROM file_objects WHERE tenant_id=$1 AND id=$2",
-        DEFAULT_TENANT, file_id, table=None)
+        request, f"SELECT {_META_COLS} FROM file_objects WHERE tenant_id=$1 AND id=$2"
+        f"{_team_scope(user, 3, col='team_id')[0]}",
+        DEFAULT_TENANT, file_id, *_team_scope(user, 3, col='team_id')[1], table=None)
     if row is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "FILE_NOT_FOUND"})
     if body.name is not None:
@@ -378,35 +448,47 @@ async def patch_file(file_id: int, body: FilePatch, request: Request,
             raise _fail(FileRuleError("NAME_REQUIRED", "名称不能为空"))
         if len(label) > 80:
             raise _fail(FileRuleError("NAME_TOO_LONG", "名称最长 80 个字符"))
-        await db.execute(request, "UPDATE file_objects SET name=$1, updated_at=now() WHERE id=$2",
-                         label, file_id)
+        _frag, _extra = _team_scope(user, 3)
+        await db.execute(request,
+                         "UPDATE file_objects SET name=$1, updated_at=now()"
+                         f" WHERE id=$2{_frag}",
+                         label, file_id, *_extra)
     if body.is_primary is not None:
         if body.is_primary:
+            # 只降**本团队**的其它主图（别团队的图不该被我们顶掉）
+            _frag, _extra = _team_scope(user, 5)
             await db.execute(
                 request,
                 "UPDATE file_objects SET is_primary=false, updated_at=now() WHERE tenant_id=$1"
-                " AND owner_type=$2 AND coalesce(owner_id,'')=coalesce($3,'') AND kind=$4",
-                DEFAULT_TENANT, row["owner_type"], row["owner_id"], row["kind"])
-        await db.execute(request, "UPDATE file_objects SET is_primary=$1, updated_at=now() WHERE id=$2",
-                         body.is_primary, file_id)
+                " AND owner_type=$2 AND coalesce(owner_id,'')=coalesce($3,'') AND kind=$4"
+                + _frag,
+                DEFAULT_TENANT, row["owner_type"], row["owner_id"], row["kind"], *_extra)
+        _frag, _extra = _team_scope(user, 3)
+        await db.execute(request,
+                         "UPDATE file_objects SET is_primary=$1, updated_at=now()"
+                         f" WHERE id=$2{_frag}",
+                         body.is_primary, file_id, *_extra)
     if body.sort_order is not None:
         # 排序值是人工维护的展示位次：给个明确上界，防误填天文数字把图排到看不见的地方
         if body.sort_order < 0 or body.sort_order > _MAX_SORT_ORDER:
             raise _fail(FileRuleError(
                 "SORT_ORDER_OUT_OF_RANGE",
                 f"排序值需在 0 ~ {_MAX_SORT_ORDER} 之间"))
+        _frag, _extra = _team_scope(user, 3)
         await db.execute(request,
-                         "UPDATE file_objects SET sort_order=$1, updated_at=now() WHERE id=$2",
-                         body.sort_order, file_id)
+                         "UPDATE file_objects SET sort_order=$1, updated_at=now()"
+                         f" WHERE id=$2{_frag}",
+                         body.sort_order, file_id, *_extra)
     return {"ok": True}
 
 
 @app.delete("/api/v1/file-objects/{file_id}", status_code=204)
 async def retire_file(file_id: int, request: Request, user: dict = Depends(_get_current_user)):
+    _frag, _extra = _team_scope(user, 3)
     res = await db.execute(
         request,
         "UPDATE file_objects SET is_current=false, is_primary=false, updated_at=now()"
-        " WHERE tenant_id=$1 AND id=$2", DEFAULT_TENANT, file_id)
+        " WHERE tenant_id=$1 AND id=$2" + _frag, DEFAULT_TENANT, file_id, *_extra)
     # 注意：db.execute 返回的是 asyncpg 状态串（'UPDATE 0' 也是真值），不能直接 if not res
     if res.split()[-1] == "0":
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "FILE_NOT_FOUND"})
@@ -418,7 +500,8 @@ async def get_file_content(file_id: int, request: Request, user: dict = Depends(
     row = await db.fetchrow(
         request,
         "SELECT content_type, file_name, content, object_key, storage FROM file_objects"
-        " WHERE tenant_id=$1 AND id=$2", DEFAULT_TENANT, file_id, table=None)
+        " WHERE tenant_id=$1 AND id=$2" + _team_scope(user, 3)[0],
+        DEFAULT_TENANT, file_id, *_team_scope(user, 3)[1], table=None)
     if row is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "FILE_NOT_FOUND"})
     data = await _load_bytes(request, dict(row))
@@ -437,6 +520,9 @@ async def list_files(owner_type: str, request: Request, owner_id: Optional[str] 
     if kind:
         sql += " AND kind=$4"
         params.append(kind)
+    _frag, _extra = _team_scope(user, len(params) + 1)
+    sql += _frag
+    params.extend(_extra)
     sql += f" ORDER BY {_FILE_ORDER_BY}"
     rows = await db.fetch(request, sql, *params, table=None)
     return {"items": [_row_to_file(r) for r in rows]}
@@ -458,8 +544,10 @@ async def list_doc_files(doc_id: int, request: Request, user: dict = Depends(_ge
         f"SELECT t.id AS link_id, t.role AS link_role, t.caption AS link_caption,"
         f" t.sort_order AS link_sort_order, {_FILE_COLS_F}"
         " FROM trade_doc_files t JOIN file_objects f ON f.id = t.file_id"
-        " WHERE t.tenant_id=$1 AND t.trade_doc_id=$2 ORDER BY t.sort_order, t.id",
-        DEFAULT_TENANT, doc_id, table=None)
+        " WHERE t.tenant_id=$1 AND t.trade_doc_id=$2"
+        + _team_scope(user, 3, col="f.team_id")[0]
+        + " ORDER BY t.sort_order, t.id",
+        DEFAULT_TENANT, doc_id, *_team_scope(user, 3, col="f.team_id")[1], table=None)
     items = []
     for r in rows:
         item = _row_to_file({k: v for k, v in dict(r).items() if not k.startswith("link_")})
@@ -478,8 +566,9 @@ async def attach_doc_file(doc_id: int, body: DocFileIn, request: Request,
     if body.file_id is None:
         raise HTTPException(status_code=422, detail={"error": "validation", "code": "FILE_REQUIRED"})
     file_row = await db.fetchrow(
-        request, f"SELECT {_META_COLS} FROM file_objects WHERE tenant_id=$1 AND id=$2",
-        DEFAULT_TENANT, body.file_id, table=None)
+        request, f"SELECT {_META_COLS} FROM file_objects WHERE tenant_id=$1 AND id=$2"
+        + _team_scope(user, 3)[0],
+        DEFAULT_TENANT, body.file_id, *_team_scope(user, 3)[1], table=None)
     if file_row is None or not file_row["is_current"]:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "FILE_NOT_FOUND"})
 
@@ -672,6 +761,11 @@ async def resolve_photo_refs(request: Request, data: dict) -> dict:
         if not is_file_ref(entry):
             resolved.append(entry)
             continue
+        # ⚠️ 这里**没法**加团队谓词：`resolve_photo_refs(request, data)` 是**装配层**函数，
+        # 调用方是 `main.get_trade_doc_render_data`（**main.py 正在被另一条任务改** ⇒ 本次不授权）。
+        # 它没有 auth 上下文，硬加 `_team_scope(user, …)` 会 NameError。
+        # ⇒ 留下"单证渲染可能取到别团队图片"这一个已知缺口，列进待办（等 main.py 干净后
+        #    把 `user` 传进来，或改由装配层先按团队过滤）。
         row = await db.fetchrow(
             request,
             "SELECT name, content_type, file_name, content, object_key, storage FROM file_objects"
@@ -759,7 +853,8 @@ async def get_file_url(file_id: int, request: Request, user: dict = Depends(_get
     row = await db.fetchrow(
         request,
         "SELECT object_key, content_type, file_name FROM file_objects"
-        " WHERE tenant_id=$1 AND id=$2 AND is_current", DEFAULT_TENANT, file_id)
+        " WHERE tenant_id=$1 AND id=$2 AND is_current" + _team_scope(user, 3)[0],
+        DEFAULT_TENANT, file_id, *_team_scope(user, 3)[1])
     if row is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "FILE_NOT_FOUND"})
     cfg = _s3(request)
