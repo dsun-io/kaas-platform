@@ -17,6 +17,12 @@ import {
 } from "./data/factory";
 // 工位清单取**唯一真源**，避免 mock 里再抄一份（抄了就迟早漂移）
 import { SUBSCRIBABLE_WORKSTATIONS } from "@/lib/workstation/visibility";
+import {
+  MOCK_EXPORT_FORMULAS,
+  MOCK_EXPORT_PRODUCTS,
+  MOCK_EXPORT_RATE_SETS,
+  MOCK_EXPORT_TERMS_TEMPLATE,
+} from "./export-quote-data";
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -1213,6 +1219,84 @@ export const handlers = [
           region: "cn-south",
         },
       ],
+    });
+  }),
+
+  // ── 出口报价（task-11 · M1 最小集 · P0）─────────────────────────────────
+  //
+  // 为什么必须有这几条：它们是 `/quotes`（默认 tab = 产品报价）**首屏必然发出**的请求。
+  // 没有 handler 时 MSW 按 `onUnhandledRequest:"warn"` 放行到网络
+  // （msw-provider.tsx:83）⇒ 命中 Next dev 的 `/api/v1/*` rewrite
+  // （playwright.config.ts:54 把 BASE_API 指回页面源）⇒ **自己代理自己**
+  // ⇒ 请求永不结束（msw-provider.tsx:14-19/49-53 记录过这条链）。
+  //
+  // ⚠️ `formulas` **不是可选项**：`products` 一旦返回条目，
+  // `quote-line-card.tsx:108-110` 的 `effectiveProduct` 就从 `""` 变成具体 key，
+  // `useProductFormulas` 的 `enabled: !!productKey`（use-export-quote-calc.ts:48）随即成立
+  // ⇒ **立刻发出 formulas 请求**。只补 products 会把挂死从 `products` 挪到 `formulas`。
+  //
+  // 形状与数值全部来自后端真源（见 `./export-quote-data.ts` 头部说明），不是手编。
+  http.get("/api/v1/export-quote/products", () => {
+    return HttpResponse.json({
+      products: MOCK_EXPORT_PRODUCTS,
+      total: MOCK_EXPORT_PRODUCTS.length,
+    });
+  }),
+
+  // 消费方：`quote-line-card.tsx:110` `useProductFormulas(effectiveProduct, true)`
+  //（`with_columns=true` ⇒ 请求会带 `?with_columns=true`，MSW 默认忽略 query）
+  http.get(
+    "/api/v1/export-quote/products/:productKey/formulas",
+    ({ params }) => {
+      const formulas = MOCK_EXPORT_FORMULAS[String(params.productKey)];
+      if (!formulas) {
+        // 与后端 `_get_product_or_404`（export_quote.py:422-429）同语义：
+        // 未注册产品 404 `unknown_product` —— 不是挂死，也不是空对象
+        return HttpResponse.json(
+          {
+            error: "unknown_product",
+            message: `未注册的产品模型 '${String(params.productKey)}'`,
+          },
+          { status: 404 },
+        );
+      }
+      return HttpResponse.json(formulas);
+    },
+  ),
+
+  // 消费方：`quote-workbench-view.tsx:157`；渲染只读 `code` / `name`（`:616-619`）
+  http.get("/api/v1/export-quote/rate-sets", () => {
+    return HttpResponse.json({
+      rate_sets: MOCK_EXPORT_RATE_SETS,
+      total: MOCK_EXPORT_RATE_SETS.length,
+    });
+  }),
+
+  // 消费方：`quote-workbench-view.tsx:158` → `:188-189`（quote_as）、`:195`（items 键）、
+  // `:849-866`（ladder / items 渲染）+ `quotes/lib/terms-amortize.ts:67-83`
+  //（base / quote_as / weight_field / ladder / items）
+  http.get("/api/v1/export-quote/terms/template", () => {
+    return HttpResponse.json(MOCK_EXPORT_TERMS_TEMPLATE);
+  }),
+
+  // ── P1（有余力才做的那一档）：客户税率档案 ────────────────────────────────
+  //
+  // 消费方：`use-quote-profiles.ts:31-44`（`enabled: !!productKey`）→
+  // `quote-workbench-view.tsx:267,270`（`profilesQuery.data?.profiles ?? []`）。
+  // **首屏不触发**（初始 `newLineDraft()` 的 productKey 为空，`quote-line-card.tsx:67`；
+  // 选中产品后 `line.productKey` 才有值）⇒ 它只差"用户选一次产品"就会发出。
+  //
+  // 为什么这里**只回空表**：档案是**用户自己存的**数据，mock 里没有比"这个客户还
+  // 没存过档案"更真实的起点；凭空造几条档案反而会让页面显示不存在的税率组合
+  //（本项目对"编数据"零容忍）。空表在界面上就是"该客户暂无档案"的既有空态。
+  // 形状依据：`shared/contracts/export-quote.ts:321-329`（`QuoteProfileListSchema`）。
+  http.get("/api/v1/export-quote/quote-profiles", ({ request }) => {
+    const productKey =
+      new URL(request.url).searchParams.get("product_key") ?? "";
+    return HttpResponse.json({
+      scope: "own",
+      product_key: productKey,
+      profiles: [],
     });
   }),
 ];
