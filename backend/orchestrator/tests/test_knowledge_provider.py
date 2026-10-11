@@ -53,8 +53,13 @@ class TestKnowledgeService:
         # 清理单例
         await close_knowledge_service()
 
-    async def test_service_search_returns_empty_list(self, monkeypatch):
-        """没有数据时返回空列表。"""
+    async def test_service_search_returns_empty_list(self, monkeypatch, require_test_db):
+        """没有数据时返回空列表。
+
+        `require_test_db`：本条用例把 provider 强制成 postgres，**真的会连库**，
+        所以没有测试库时必须 skip 而不是 fail —— 否则 CI 的 unit 任务
+        （无 postgres service）会整体变红，真正的回归反而没人看。
+        """
         monkeypatch.setenv("KNOWLEDGE_PROVIDER", "postgres")
         svc = get_knowledge_service("test_tenant")
         try:

@@ -65,6 +65,19 @@ def _probe_test_db() -> None:
         )
 
 
+@pytest.fixture
+def require_test_db():
+    """显式声明「这条用例需要真实 PostgreSQL」——连不上就 skip，与 db_engine 同口径。
+
+    为什么需要它：有些用例的**代码**会连库（例如 monkeypatch
+    KNOWLEDGE_PROVIDER=postgres），但文件被整体标成 `unit`，于是 `-m unit`
+    会选中它 —— 而 CI 的 unit-tests 任务**没有 postgres service**，
+    结果是一条环境依赖把整个 unit 任务拖红，真正的回归就没人看了。
+    （2026-10-11：test_knowledge_provider 的 search 用例就是这种情况。）
+    """
+    _probe_test_db()
+
+
 @pytest.fixture(autouse=True)
 def _override_tenant_config(monkeypatch):
     """注入测试用租户配置（§3.7.15 schema 对齐）。"""
