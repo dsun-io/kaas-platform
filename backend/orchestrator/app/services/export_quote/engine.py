@@ -320,6 +320,12 @@ def spec_from_partial(
                         % (row_index, vg.label or vg.name, given)
                     )
             else:
+                if not vg.options:
+                    raise EngineError(
+                        "第 %d 行缺少「%s」；该产品**还没有可选档位** —— "
+                        "请先在「定价数据」里添加档位（本产品不预置档位，由客户自建）"
+                        % (row_index, vg.label or vg.name)
+                    )
                 raise EngineError(
                     "第 %d 行缺少「%s」；可选: %s"
                     % (row_index, vg.label or vg.name,

@@ -48,3 +48,4 @@ def all_specs() -> Iterable[ProductSpec]:
 # 只注册**真实业务产品**；引擎通用性由测试里的内联探针 spec 验证，
 # 不为了验证而往产品表里挂一个假产品（假产品会出现在业务的产品清单里）。
 from . import field_fence  # noqa: E402,F401
+from . import chain_link  # noqa: E402,F401
