@@ -929,3 +929,59 @@ def test_explain_draft_does_not_require_registry_entry():
                               json={"spec": {}})
     assert missing.status_code == 404
 
+
+# ── min/max 越界校验：与 orchestrator **同一份期望字面量**（task-27）────────────
+# orchestrator 侧在 task-27 补上了同一套校验（用户裁定）⇒ 两侧各钉一遍同样的
+# 状态码 + 错误体形状 + 措辞，任一端漂移都会红。
+
+_BOUNDED_DRAFT = {
+    "name": "有界草稿",
+    "numeric_inputs": [{"key": "bounded", "label": "有界量",
+                        "default": 5.0, "min_value": 1, "max_value": 10}],
+    "derived": [{"name": "y", "expr": "bounded * 2", "unit": "mm"}],
+}
+_FREE_DRAFT = {
+    "name": "自由数值草稿",
+    "numeric_inputs": [{"key": "free_x", "label": "自由量", "default": 1.0}],
+    "derived": [{"name": "y", "expr": "free_x * 2", "unit": "mm"}],
+}
+
+
+def test_explain_bounded_draft_out_of_range_400_same_as_orchestrator():
+    """草稿里声明了界 ⇒ 越界 **400 `invalid_numeric`** + "大于上界"（与 orchestrator 同形）。"""
+    resp = _explain({"spec": {"bounded": 11}, "spec_override": _BOUNDED_DRAFT})
+    assert resp.status_code == 400, resp.text
+    detail = resp.json()["detail"]
+    assert detail["error"] == "invalid_numeric"
+    assert "大于上界" in detail["message"]
+    assert "11" in detail["message"]
+
+
+def test_explain_bounded_draft_below_min_400():
+    resp = _explain({"spec": {"bounded": 0}, "spec_override": _BOUNDED_DRAFT})
+    assert resp.status_code == 400, resp.text
+    assert "小于下界" in resp.json()["detail"]["message"]
+
+
+def test_explain_bounded_draft_in_range_200():
+    resp = _explain({"spec": {"bounded": 10}, "spec_override": _BOUNDED_DRAFT})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["ok"] is True
+
+
+def test_explain_unbounded_draft_field_is_completely_free():
+    """**自由数值**（用户 A2 裁决）：没声明界的入参给多大都不许卡。"""
+    for value in (1e9, -1e6, 0):
+        resp = _explain({"spec": {"free_x": value}, "spec_override": _FREE_DRAFT})
+        assert resp.status_code == 200, (value, resp.text)
+        assert resp.json()["ok"] is True, (value, resp.json()["errors"])
+
+
+def test_explain_registry_product_out_of_range_400():
+    """注册表产品（非草稿）同样受界约束：field_fence 的 `de` 是 0.3 ~ 8。"""
+    resp = _explain({"spec": {"coating": "热镀锌 40g/㎡", "wave": "无波款", "de": 9.0},
+                     "total": 1000})
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"]["error"] == "invalid_numeric"
+    assert "大于上界" in resp.json()["detail"]["message"]
+
