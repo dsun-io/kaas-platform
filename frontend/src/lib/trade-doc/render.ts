@@ -56,6 +56,15 @@ const IMAGE_LIST_FIELDS = new Set(["product_photos"]);
 const CONFIRMATION_FIELDS = new Set(["buyer_confirmation"]);
 
 /**
+ * 多行字段（2026-10-11 新增）：值里的换行**保留**为 `<br>`。
+ *
+ * 为什么需要：HTML 会把换行折叠成空格，于是备注里的 1) 2) 3) 4) 全挤成一段 ——
+ * 客户与银行逐条对照时极难读（"备注要逐点换行"就是这么来的）。
+ * 仍然先转义再插 `<br>`：换行是唯一的例外，其余照样按业务值转义，不给注入开口子。
+ */
+const MULTILINE_FIELDS = new Set(["remarks", "notes"]);
+
+/**
  * 签章区「图章位」的统一高度（mm）。
  *
  * 卖方签章模块 = 图章位 + 分隔线 + 标题 + 说明行；买方回签模块**结构完全相同**
@@ -805,6 +814,9 @@ function preprocessData(
       result[key] = formatNumber(key, value);
     } else if (RAW_HTML_FIELDS.has(key)) {
       result[key] = String(value);
+    } else if (typeof value === "string" && MULTILINE_FIELDS.has(key)) {
+      // 先转义、再把换行换成 <br>：顺序不能反，否则 <br> 会被一起转义
+      result[key] = esc(value.replace(/\r\n?/g, "\n")).replace(/\n/g, "<br>");
     } else if (isDateKey(key)) {
       result[key] = formatDate(value);
     } else {

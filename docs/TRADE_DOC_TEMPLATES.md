@@ -105,6 +105,9 @@ raw_payload = {
   - `total_qty` / `total_packages` / `total_gross_weight` / `total_net_weight` / `total_volume`：行项自动汇总
   - `seller_name`：卖方名称（签章区提示语）
   - 日期统一格式化为 `26-Sep-2026`
+  - `remarks` / `notes`：**换行保留**（先按业务值转义、再把 `\n` 换成 `<br>`）——
+    备注本来就该逐点换行（`1) … 2) … 3) …`），HTML 默认会把换行折叠成空格、
+    四条挤成一段，客户与银行逐条对照极难读。其余字段的换行仍按 HTML 折叠。
 - 缺失字段渲染为空串，**不会残留 `$placeholder`**；所有值经 HTML 转义防注入
   （仅 `other` 单证的 `content` 按原始 HTML 透传）。
 
