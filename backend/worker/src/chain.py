@@ -1682,9 +1682,19 @@ async def msg_retry(message_id: int, request: Request,
     return {"id": message_id, **result}
 
 
-@app.api_route("/api/v1/outreach/webhook", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+@app.post("/api/v1/outreach/webhook")
 async def outreach_webhook(request: Request):
-    """Inbound 路由预留（§6.8）：Email Routing → 本端点回写 replied/opened。未实现。"""
+    """Inbound 路由预留（§6.8）：Email Routing → 本端点回写 replied/opened。未实现。
+
+    **只保留 POST**（2026-10-11 用户裁决）。原先用 `api_route` 挂了
+    GET/PUT/PATCH/DELETE 共 5 种方法，但函数体只 raise 501 ——
+    对一个预留桩而言那 4 种方法没有任何语义，只是**无谓放大线上攻击面**
+    （扫描器会以为这里有 5 个可写入口）。
+
+    Inbound 回写本来就是 POST（把 replied/opened 写回来），
+    收紧后与 orchestrator 侧一致，「反向漂移」也随之少 4 条。
+    将来真要用时再按需加方法 —— 那时它会有真实语义。
+    """
     raise HTTPException(status_code=501, detail={
         "error": "not_implemented", "code": "INBOUND_WEBHOOK_RESERVED",
         "detail": "Inbound webhook reserved — manual scan available via POST /api/v1/leads/scan-replied"})
