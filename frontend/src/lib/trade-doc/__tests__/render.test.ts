@@ -393,3 +393,72 @@ describe("结构性约束", () => {
     expect(missing).toEqual([]);
   });
 });
+
+// ── 图片字段（2026-10-11 新增：公章 + 产品照片）────────────────────────
+
+describe("图片字段（company_stamp / product_photos）", () => {
+  /** 最小合法 data URI（只验通道，不验图像内容） */
+  const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==";
+
+  it("公章与产品照片渲染为 <img>，说明文字随图出现", () => {
+    const html = renderTradeDoc("pi", {
+      ...MINIMAL_DATA,
+      company_stamp: PNG,
+      product_photos: [
+        {
+          image: "https://example.com/chain-link.jpg",
+          caption: "Item 1 — Chain Link Fence",
+        },
+        { image: PNG, caption: "Item 2 — Razor Wire" },
+      ],
+    });
+    expect(html).toContain('class="stamp-img"');
+    expect(html).toContain(`src="${PNG}"`);
+    expect(html).toContain('class="photos"');
+    expect(html).toContain("https://example.com/chain-link.jpg");
+    expect(html).toContain("Item 1 — Chain Link Fence");
+    expect(html).toContain("Item 2 — Razor Wire");
+  });
+
+  it("非法图片源被丢弃，且不留下空壳容器", () => {
+    const html = renderTradeDoc("pi", {
+      ...MINIMAL_DATA,
+      company_stamp: "javascript:alert(1)",
+      product_photos: [{ image: "  ", caption: "x" }, { image: "/local.png" }],
+    });
+    expect(html).not.toContain("javascript:alert");
+    expect(html).not.toContain("stamp-img");
+    // 一张有效图片都没有 → 整个图片区块不出现（不会印出一个空框）
+    expect(html).not.toContain('class="photos"');
+  });
+
+  it("照片说明文字被转义（图片字段不是 XSS 后门）", () => {
+    const html = renderTradeDoc("pi", {
+      ...MINIMAL_DATA,
+      company_stamp: PNG,
+      product_photos: [
+        { image: "https://example.com/a.jpg", caption: "<script>alert(1)</script>" },
+      ],
+    });
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  it("不传图片时 PI 版面无任何图片残留（18 份基线继续有效）", () => {
+    const html = renderTradeDoc("pi", { ...payload.base });
+    expect(html).not.toContain('class="photos"');
+    expect(html).not.toContain("stamp-img");
+  });
+
+  it("字段定义已登记（供动态表单 / AI 填充识别）", () => {
+    const fields = getTemplateFields("pi") as Record<
+      string,
+      { type?: string; required?: boolean }
+    >;
+    expect(fields.company_stamp?.type).toBe("image");
+    expect(fields.product_photos?.type).toBe("image_list");
+    // 两个字段都是可选：PI 不带图也是合法单据，不能因此拦住签发
+    expect(fields.company_stamp?.required).toBe(false);
+    expect(fields.product_photos?.required).toBe(false);
+  });
+});

@@ -143,3 +143,52 @@ python scripts/render_all_samples.py
 **待扩展的常见单证**（可按上述步骤添加）：
 SASO / COC 等目的国认证文件、船公司证明（Certificate of Vessel's Ownership）、
 出口许可证、商检证书（CIQ）、受益人声明（Beneficiary's Declaration）等。
+
+---
+
+## 七、图片字段：公章与产品照片（2026-10-11 新增）
+
+> 背景：PI 是给客户拿去**申请进口许可 / 开信用证**的，客户普遍要求
+> 「盖章件 + 货物照片」。模板原先只有一行文字提示
+> `Authorised Signature & Company Stamp`，没有图片位 —— 业务只能另做一份
+> Word 贴图，单据与实际货物对不上号的风险就出在这里。
+
+| 字段 | 类型 | 渲染位置 | 取值 |
+|---|---|---|---|
+| `company_stamp` | `image` | PI 签章区（`.sign-box` 内、签字线上方） | `data:image/png;base64,...` 或 `https://...` |
+| `product_photos` | `image_list` | PI「金额大写」之后、「收款银行 / 备注」之前 | `[{ "image": …, "caption": … }]` |
+
+### 渲染规则（为什么这样实现）
+
+| 规则 | 理由 |
+|---|---|
+| 值由**渲染器**生成 `<img>`，不是让调用方传原始 HTML | `RAW_HTML_FIELDS` 只有 `other` 的 `content`。单据要发给境外客户与银行，「业务值一律转义」这条口径不能为图片破例 —— 破例就是 XSS 后门。`src` / `alt` / 说明文字都由渲染器转义后拼装 |
+| 图片源**白名单**：`data:image/*;base64,<base64>` 或 `http(s)` 绝对地址 | 其余（`javascript:`、相对路径、空值、非字符串）一律丢弃，绝不写进 `<img src>` |
+| 没有有效图片 ⇒ **整段不输出**（不是空容器） | 「不带图」的 PI 输出与新增本能力之前**逐字节一致** ⇒ 18 份迁移基线不用重生成，`scripts/verify-trade-doc-fixtures.py` 的「TS == 归档 Python」证明继续成立 |
+| 两列网格，单数张补一个空格子；`page-break-inside: avoid` | 版面稳定（审单要求），照片也不会被分页拦腰截断 |
+| 图片样式**内联在图片段落里**，没写进 `_shared.css` | 共享样式一改，18 份基线的 `<style>` 全部变化 ⇒ 全线报差异。为两个类名付这个代价不值得 |
+
+### 用法
+
+值放进单证的 `raw_payload.custom`（与其它字段同一入口），渲染 / 预览 / 打印链路都不用改：
+
+```json
+{
+  "custom": {
+    "company_stamp": "data:image/png;base64,iVBORw0KGgo...",
+    "product_photos": [
+      { "image": "data:image/jpeg;base64,/9j/4AAQ...", "caption": "Item 1 — Chain Link Fence" }
+    ]
+  }
+}
+```
+
+其它单证要带图：渲染器按**字段名**识别（不挑单证类型），在对应模板里加
+`$company_stamp` / `$product_photos` 占位符即可。本期只改了 **PI** 模板 ——
+改动面越小，18 份基线的可比性越好。
+
+### 还未做（本次范围外）
+
+- **上传入口**：工位页面还没有「上传公章 / 上传产品图」的控件与文件存储，
+  目前要手工把图片转成 data URI 放进 `custom`。
+- 两个字段都**不是必填**（不带图也是合法单据，`compliance.ts` 不会因此拦住签发）。
