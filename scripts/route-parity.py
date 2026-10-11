@@ -36,6 +36,14 @@ import re
 import sys
 from pathlib import Path
 
+# Windows 的默认 stdout 编码是 GBK，而本脚本会打印 ℹ️ / ✅ / ❌ ——
+# 判定其实已经算完，却会在收尾打印时 `UnicodeEncodeError: 'gbk' codec can't
+# encode character '\u2139'` 崩掉，看不到结论（本仓库在 Windows 上开发）。
+# CI（ubuntu，UTF-8）不受影响；这里统一成 UTF-8，让两边行为一致。
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ORCH_API_DIR = REPO_ROOT / "backend" / "orchestrator" / "app" / "api"
 ORCH_MAIN = REPO_ROOT / "backend" / "orchestrator" / "app" / "main.py"
