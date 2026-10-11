@@ -272,6 +272,39 @@ bypass 后落到 rewrite，自己代理自己 → 报错。
 
 ⚠️ 本轮**未**声称"e2e 已归真"——14 条失败仍在，只是根因比"26 条产品缺陷"清楚得多。
 
+#### 再进一步：把"静默放行"改成"打印缺口"，失败模式随之**换了一种**
+
+`components/msw-provider.tsx` 把 `onUnhandledRequest` 由 `bypass` 改成 `warn`：
+**放行行为不变**，但未匹配的请求会在浏览器控制台**被点名**。
+（原先 `bypass` 是**静默**的，这正是这个坑拖了很久的原因。）
+
+实测：14 failed / 10 passed → **13 failed / 11 passed**。
+
+**更关键的是失败模式变了**——events 页面的快照现在渲染出真实内容：
+「事件审计」标题 + 过滤条 + 租户 ID 输入框，**"您没有访问此页面的权限"彻底消失** ✓
+
+新的失败原因（看 events 的快照）：
+
+```
+Test timeout of 30000ms exceeded.
+Error: page.waitForLoadState: Test timeout of 30000ms exceeded.
+```
+
+即 `await page.waitForLoadState('networkidle')` **永远不满足**。结合前面的
+`EADDRINUSE` 就有完整解释：
+
+> **未被 mock 的端点** → `bypass` → 命中 Next 的 `/api/v1/*` rewrite →
+> **代理到自己**（`EADDRINUSE`）→ **请求永远不结束** →
+> `networkidle`（要求 500ms 无网络活动）**永远不触发** → 所有用它的用例超时。
+
+**所以修法是明确的**：把 mock 缺的 handler 补齐，让**没有任何请求 bypass**，
+自代理自然消失。缺口清单（从 `EADDRINUSE` 日志与调用点推断，待逐个确认）：
+
+`/api/v1/teams/me`、`/api/v1/me/workstations`、`/api/v1/admin/deployment_audit`、
+`/api/v1/admin/feature_flag`、`/api/v1/admin/tenants`、`/api/v1/admin/audit-log`
+
+**剩余 13 条**：admin-gray-release ×3、events ×4、quotations ×4、customers ×1、dashboard ×1。
+
 **关键发现：那两个 critical/high 的来源不是"版本旧"，是依赖放错了位置。**
 
 | 漏洞 | 来源链 | 真实问题 |
