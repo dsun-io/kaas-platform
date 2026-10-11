@@ -26,6 +26,24 @@ export const test = base.extend({
         console.log('[MSW缺口]', text.replace(/\s+/g, ' ').slice(0, 400));
       }
     });
+
+    // **决定性仪器**：`response.fromServiceWorker()` 直接回答
+    // 「这个响应是不是 MSW（Service Worker）给的」。
+    //
+    // 之前只能从 dev server 的反向报错（rewrite 的 EADDRINUSE）去猜，
+    // 既看不到是**哪个**请求，也分不清"没被匹配"与"没被接管"。
+    // 有了这一条，绕过 mock 的 `/api/v1/*` 请求会**逐个点名**。
+    page.on('response', (res) => {
+      const url = res.url();
+      if (!url.includes('/api/v1/')) return;
+      if (res.fromServiceWorker()) return;   // 走了 MSW = 正常
+      console.log(
+        '[绕过MSW]',
+        `${res.request().method()} ${url.replace('http://localhost:3000', '')}`,
+        `-> ${res.status()}`,
+      );
+    });
+
     await use(page);
   },
 });
