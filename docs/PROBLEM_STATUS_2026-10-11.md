@@ -2132,3 +2132,55 @@ c) 前端两处：界面把 Markdown `**` 当文本渲染；历史版本号用 `
    声明成输出必填、后端不产出（**类型撒谎、运行时 undefined**）
 4. 前端真缺陷：`PATCH /customers/:id/stage` 的 409 二次确认门前端未实现 + **对象型 detail 崩 JSX**；`inquiries` 的 `channel` 枚举与前端自由文本不符
 5. 另一条任务的**生产验收卡在 R2 密钥长度 13≠32**；`sampling_rate: 0.1` 非 bool
+
+***
+
+## 追加：**最终门禁全绿**（Lead 在工作区静止时跑）+ e2e/契约两条线收口
+
+### 1. 全套门禁（HEAD `996453c`）
+
+| 门禁 | 结果 |
+|---|---|
+| orchestrator `pytest -m unit` | **887 passed** / 1 skipped |
+| worker `pytest` | **203 passed** |
+| `python scripts/route-parity.py` | **PASS**（缺失已登记 / 未登记 0 / 过期 0） |
+| `sync-shared.ps1 -Check` | **exit 0**（共享内核 30 / 报价引擎 19 / 枚举字典 1） |
+| 前端 `typecheck` / `lint` | **exit 0** / 无 error |
+| 前端 `test` | **29 files / 359 passed** |
+| `contracts:check` | **PASS R5**（3 响应端点 + 1 请求体规则，15 侧，1 侧已登记） |
+| **`NEXT_EXPORT=1 pnpm build`** | **exit 0（35/35 静态页）** |
+
+> ⚠️ 第一次跑时 **worker 出现 2 failed** —— 当时另一条线正在改 `backend/worker/src/{main,dbjson}.py`
+> 与 `tests/test_four_domains.py`（**改动时间距检查仅 20 秒**）。**按纪律先复查再认领**：
+> 复跑 ⇒ **203 passed**，**2 条红确认为并发中间态** ✓
+> （教训：并发会让门禁瞬态红 —— **先复查**，但**也不能拿它当借口**，必须复跑确认才能下结论。）
+
+### 2. e2e 线：**没有待办了**
+
+- 套件 **19 passed / 6 skipped / 0 failed = 25**（与 `--list` 一致 ✓）
+- **13 处** `waitForLoadState('networkidle')` **全部**改为"等具体元素"（每条都有页面源码 file:line 依据）
+  ⇒ `networkidle` 调用数 **13 → 0**；改动前后 `30 skip / 95 passed / 0 failed = 125 = 25×5` **完全相同**
+  （⇒ 没有增删用例）；耗时 4.6m → 2.5m（**按观测陈述，不当因果证明**）
+  - 复核更正：此处先前写"11 处"是**笔误**，逐项相加为 **13 处**（由执行者纠正）
+  - **保留 5 处 `waitForTimeout`** 并逐条说明：它们是"点完 tab/行之后让 UI 落定"的**短固定等待**，
+    不是"等数据"，也不属于 `networkidle` 这一件事；按"只改等待方式、不扩大范围"未动（若要收口建议单独一轮）
+- 6 条 skip **各有出处**：3 条 quotations 既有、2 条 customers 判定陈旧、1 条 events 的 `error=500`
+  **触发路径根本不存在**（`events/page.tsx` 不读 `?error=`，`useEvents()` 只把 filters 拼进 query）
+
+### 3. 契约线：`openapi.json` 刷新 + R5.4
+
+- `openapi.json` 从 **`git archive HEAD` 快照全量重生成**（**不含任何未提交内容** ✓，对 `app/**` 只读 ✓）
+  ⇒ **79 → 171 paths、48 → 115 schemas** —— 旧产物**远不止 admin 段过期**（9 条已删路由还挂着、101 条缺失）
+  ⇒ 说明"当时工作区不静止（`files.py` 刚被改）"，故**不走局部手改**也不走"把别人半成品固化进 schema"
+- admin 段**按 JSON 键**（非子串）验证：`TenantItem=[tenant_id,display_name,is_active]`、
+  `TenantReloadResponse=[reloaded_count,active_tenants]`、新增 `TenantReloadItem`，**无 `enabled`/`tenant_count`/`message`**
+- **R5.4「请求体键集合」**门禁上线（三方比对：前端实发键 / 两端读取键 / 必需键；`K⊄S` 或 `K⊄B` ⇒ FAIL
+  —— **历史 422 的形状**）；自证只用自己 `$TEMP` 副本（含棘轮另一半"过期登记判失败"）
+- 遗留：本文件描述 **HEAD 的** API，`files/trade_docs` 合并后**需再 dump 一次**；**无 CI 新鲜度校验**
+
+### 4. 一条工具口径的澄清（避免后来者被误导）
+
+同一份文档曾被数出**四种行数**：`read` 工具 2031 / `git show | Measure-Object -Line` 1592 /
+`Get-Content .Count` 1323 / **Python 读原始字节 2070**。复核：文件内 **0 个 `\r\n`、无 NUL、无超长行**，
+而 `read` 工具与 Python 口径**一致**（2070/2134）⇒ **`Get-Content` 那个读数不可靠** ✗。
+**教训：同一事实多个工具口径不一致时，先定"哪个工具跑在预期对象上"，再下结论。**
