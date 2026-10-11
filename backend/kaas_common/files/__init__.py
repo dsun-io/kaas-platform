@@ -21,10 +21,18 @@ from .rules import (  # noqa: F401
     to_data_uri,
     validate_upload,
 )
+from .s3 import (  # noqa: F401
+    SigV4Error,
+    presign_get_url,
+    presign_put_url,
+    presign_url,
+    s3_config,
+)
 
 __all__ = [
     "OWNER_TYPES", "FILE_KINDS", "MEDIA_KINDS", "MEDIA_KIND_LABELS",
     "KIND_MIME", "MAX_BYTES", "FileRuleError",
     "validate_upload", "object_key", "file_ext", "next_version", "current_of",
     "is_file_ref", "to_data_uri",
+    "SigV4Error", "presign_url", "presign_put_url", "presign_get_url", "s3_config",
 ]

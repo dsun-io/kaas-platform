@@ -24,8 +24,10 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from typing import Optional
 
+import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -36,6 +38,9 @@ from kaas_common.files import (
     current_of,
     next_version,
     object_key,
+    presign_get_url,
+    presign_put_url,
+    s3_config,
     validate_upload,
 )
 from kaas_common.files import MEDIA_KIND_LABELS
@@ -47,8 +52,9 @@ from app.services.export_quote.products import get as get_product, keys as produ
 
 router = APIRouter(prefix="/api/v1", tags=["files"])
 
-# 本侧（本地/开发）字节直接入库；生产 Worker 用 R2 binding（storage='s3'）
-LOCAL_STORAGE = "inline"
+# 存储后端：**S3（生产 R2 / 本地 MinIO）优先**；没配好就 inline（本机零依赖开发）。
+# 两端判定同一条规则（`kaas_common.files.s3_config`），不各写一份。
+_S3_TIMEOUT = 30.0
 
 _META_COLS = (
     "id, tenant_id, team_id, owner_type, owner_id, kind, media_kind, name, storage, "
@@ -79,6 +85,57 @@ def _fail(exc: FileRuleError) -> HTTPException:
         "error": "validation", "code": exc.code, "detail": exc.detail})
 
 
+def _s3() -> Optional[dict]:
+    """S3 配置；没配好返回 None ⇒ 用 inline（本机零依赖开发）。"""
+    return s3_config(os.environ.get)
+
+
+async def _store_bytes(key: str, data: bytes, content_type: str) -> tuple[str, Optional[str], Optional[bytes]]:
+    """写入存储后端，返回 `(storage, object_key, inline_content)` —— 如实反映字节落点。
+
+    配好 S3 时走**预签名 PUT**（同一段代码服务生产 R2 与本地 MinIO）；
+    否则字节留在库里（`storage='inline'`）。
+    """
+    cfg = _s3()
+    if cfg:
+        url = presign_put_url(
+            cfg["endpoint"], cfg["bucket"], key,
+            access_key=cfg["access_key"], secret_key=cfg["secret_key"],
+            region=cfg["region"], expires=cfg["expires"])
+        async with httpx.AsyncClient(timeout=_S3_TIMEOUT) as client:
+            res = await client.put(
+                url, content=data,
+                headers={"Content-Type": content_type or "application/octet-stream"})
+            res.raise_for_status()
+        return "s3", key, None
+    return "inline", key, data
+
+
+async def _load_bytes(row) -> Optional[bytes]:
+    """取字节：inline 直接读列；s3 用预签名 GET 回源（短时效，不入库链接）。"""
+    if row.get("content") is not None:
+        return bytes(row["content"])
+    cfg = _s3()
+    if not (cfg and row.get("object_key")):
+        return None
+    url = presign_get_url(
+        cfg["endpoint"], cfg["bucket"], row["object_key"],
+        access_key=cfg["access_key"], secret_key=cfg["secret_key"],
+        region=cfg["region"], expires=cfg["expires"])
+    async with httpx.AsyncClient(timeout=_S3_TIMEOUT) as client:
+        res = await client.get(url)
+    return res.content if res.status_code == 200 else None
+
+
+async def load_file_bytes(row) -> Optional[bytes]:
+    """给其它模块用（单证 render-data 装配层要按 storage 取字节）。
+
+    单独暴露一个名字而不是让调用方 import `_load_bytes`：下划线函数是模块私有的，
+    跨模块直接引用会让"改内部实现"变成破坏别人的契约。
+    """
+    return await _load_bytes(row)
+
+
 async def _fetch_current(
     db: AsyncSession, tenant_id: str, owner_type: str, owner_id: Optional[str],
     kind: str, media_kind: Optional[str] = None,
@@ -101,6 +158,7 @@ async def _create_file(
     db: AsyncSession, *, auth: AuthContext, tenant_id: str, owner_type: str, owner_id: Optional[str],
     kind: str, media_kind: Optional[str], name: str, content: bytes,
     content_type: str, file_name: Optional[str], supersede: bool,
+    pre_uploaded: Optional[tuple[str, str]] = None,
 ) -> dict:
     """落一条文件元数据（+ 字节）。
 
@@ -117,6 +175,11 @@ async def _create_file(
     key = object_key(tenant_id=tenant_id, owner_type=owner_type, owner_id=owner_id,
                      kind=kind, media_kind=media_kind, sha256=sha,
                      content_type=content_type, file_name=file_name)
+    if pre_uploaded is not None:
+        # 浏览器已直传到对象存储（预签名 PUT）→ 这里只登记元数据，字节不再经服务端
+        storage, stored_key, inline = pre_uploaded[0], pre_uploaded[1], None
+    else:
+        storage, stored_key, inline = await _store_bytes(key, content, content_type)
 
     version, supersedes_id = 1, None
     if supersede:
@@ -136,8 +199,8 @@ async def _create_file(
         ":sha,:ver,:supers,true,:by) RETURNING " + _META_COLS
     ), {
         "t": tenant_id, "team": getattr(auth, "team_id", None), "ot": owner_type, "oid": owner_id,
-        "k": kind, "mk": media_kind, "name": name.strip(), "storage": LOCAL_STORAGE,
-        "okey": key, "content": content, "fname": file_name, "ctype": content_type,
+        "k": kind, "mk": media_kind, "name": name.strip(), "storage": storage,
+        "okey": stored_key, "content": inline, "fname": file_name, "ctype": content_type,
         "size": len(content), "sha": sha, "ver": version, "supers": supersedes_id,
         "by": str(getattr(auth, "user_id", "") or "") or None,
     })).mappings().first()
@@ -306,14 +369,111 @@ async def get_file_content(file_id: int, auth: AuthContext = Depends(get_auth_co
                            db: AsyncSession = Depends(get_db_session)):
     tenant_id = tenant_id_of(auth)
     row = (await db.execute(text(
-        "SELECT content_type, file_name, content FROM file_objects"
+        "SELECT content_type, file_name, content, object_key, storage FROM file_objects"
         " WHERE tenant_id=:t AND id=:id"), {"t": tenant_id, "id": file_id})).mappings().first()
-    if row is None or row["content"] is None:
-        # storage='s3' 的字节在对象存储里，由 Worker 侧从 R2 binding 取
-        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "FILE_BODY_NOT_LOCAL"})
-    return Response(content=bytes(row["content"]),
+    if row is None:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "FILE_NOT_FOUND"})
+    data = await _load_bytes(dict(row))
+    if data is None:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "FILE_BODY_NOT_FOUND"})
+    return Response(content=data,
                     media_type=row["content_type"] or "application/octet-stream",
                     headers={"Cache-Control": "private, max-age=3600"})
+
+
+@router.get("/file-objects/{file_id}/url", summary="短时效直链（预签名 GET）")
+async def get_file_url(file_id: int, auth: AuthContext = Depends(get_auth_context),
+                       db: AsyncSession = Depends(get_db_session)):
+    """给外部（货代/客户）或大文件用的**短时效直链**；没配 S3 就明确说不可用。
+
+    为什么不是永久公开链接：文件是业务资料，链接泄露即数据泄露 ——
+    所以只发短时效 URL，且仍需登录才能申请。
+    """
+    tenant_id = tenant_id_of(auth)
+    row = (await db.execute(text(
+        "SELECT object_key, content_type, file_name FROM file_objects"
+        " WHERE tenant_id=:t AND id=:id AND is_current"), {"t": tenant_id, "id": file_id})
+    ).mappings().first()
+    if row is None:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "FILE_NOT_FOUND"})
+    cfg = _s3()
+    if not (cfg and row["object_key"]):
+        return {"configured": False, "reason": "该文件不在对象存储里（inline 或未上传）"}
+    url = presign_get_url(
+        cfg["endpoint"], cfg["bucket"], row["object_key"],
+        access_key=cfg["access_key"], secret_key=cfg["secret_key"],
+        region=cfg["region"], expires=cfg["expires"])
+    return {"configured": True, "url": url, "expires_in": cfg["expires"]}
+
+
+class PresignIn(BaseModel):
+    owner_type: str
+    owner_id: Optional[str] = None
+    kind: str
+    media_kind: Optional[str] = None
+    name: str
+    content_type: str
+    size: int
+    sha256: str
+    file_name: Optional[str] = None
+
+
+def _validate_direct(body: "PresignIn") -> str:
+    try:
+        validate_upload(owner_type=body.owner_type, kind=body.kind, media_kind=body.media_kind,
+                        name=body.name, content_type=body.content_type, size=body.size)
+    except FileRuleError as exc:
+        raise _fail(exc)
+    sha = (body.sha256 or "").strip().lower()
+    if len(sha) != 64 or any(c not in "0123456789abcdef" for c in sha):
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "SHA256_REQUIRED",
+            "detail": "直传必须先算好文件的 sha256（64 位十六进制）"})
+    return sha
+
+
+@router.post("/file-objects/presign", summary="直传预签名（字节不过服务端）")
+async def presign_upload(body: PresignIn, auth: AuthContext = Depends(get_auth_context)):
+    """返回短时效**预签名 PUT URL**：浏览器直连对象存储上传，字节不经过我们。
+
+    没配 S3 时返回 `{"configured": false}` ⇒ 前端回退到 multipart 代理上传
+    （功能不缺，只是字节经服务端中转）。
+    """
+    sha = _validate_direct(body)
+    cfg = _s3()
+    if not cfg:
+        return {"configured": False}
+    key = object_key(
+        tenant_id=tenant_id_of(auth), owner_type=body.owner_type, owner_id=body.owner_id,
+        kind=body.kind, media_kind=body.media_kind, sha256=sha,
+        content_type=body.content_type, file_name=body.file_name)
+    url = presign_put_url(
+        cfg["endpoint"], cfg["bucket"], key,
+        access_key=cfg["access_key"], secret_key=cfg["secret_key"],
+        region=cfg["region"], expires=cfg["expires"])
+    return {"configured": True, "upload_url": url, "object_key": key,
+            "method": "PUT", "expires_in": cfg["expires"]}
+
+
+class RegisterIn(PresignIn):
+    supersede: bool = False
+
+
+@router.post("/file-objects/register", status_code=201, summary="登记已直传的文件")
+async def register_upload(body: RegisterIn, auth: AuthContext = Depends(get_auth_context),
+                          db: AsyncSession = Depends(get_db_session)):
+    """直传完成后登记元数据（字节已在对象存储，这里不碰字节）。"""
+    sha = _validate_direct(body)
+    key = object_key(
+        tenant_id=tenant_id_of(auth), owner_type=body.owner_type, owner_id=body.owner_id,
+        kind=body.kind, media_kind=body.media_kind, sha256=sha,
+        content_type=body.content_type, file_name=body.file_name)
+    return await _create_file(
+        db, auth=auth, tenant_id=tenant_id_of(auth), owner_type=body.owner_type,
+        owner_id=body.owner_id, kind=body.kind, media_kind=body.media_kind, name=body.name,
+        content=b"", content_type=body.content_type, file_name=body.file_name,
+        supersede=body.supersede, pre_uploaded=("s3", key),
+    )
 
 
 # ── 单证挂文件 ──────────────────────────────────────────────────────────────

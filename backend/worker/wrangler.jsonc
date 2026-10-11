@@ -15,16 +15,29 @@
       "id": "f53fed49705043008737032e4bfa2b8e"
     }
   ],
-  // 文件本体（产品图 / 客户盖章回传件 / 系统出的 PDF）走 R2：
-  // 业务行在 Postgres（file_objects 元数据），字节在对象存储，库里只存 object_key。
-  // 用 binding 而不是 S3 密钥：Worker 直连，不需要任何密钥流转；取不到时
-  // ws_files.py 会回退到 inline（写 file_objects.content）并如实标注 storage。
+  // 文件本体（产品图 / 客户盖章回传件 / 系统出的 PDF）走**对象存储**：
+  // 业务行在 Postgres（file_objects 元数据），字节在存储里，库里只存 object_key。
+  // 落点优先级（ws_files.py）：
+  //   ① **S3 预签名**（配好 S3_* 时）—— 与 orchestrator 同一段 SigV4 代码，
+  //      浏览器可直传（字节不过 Worker），也能发短时效直链；
+  //   ② R2 binding（`FILES`）—— 没配 S3 密钥时的平台直连，同样进 R2；
+  //   ③ inline（写库）—— 都没配时的兜底，如实标注 storage。
   "r2_buckets": [
     {
       "binding": "FILES",
       "bucket_name": "kaas-files"
     }
   ],
+  // 非机密的 S3 配置（机密只有 S3_ACCESS_KEY / S3_SECRET_KEY，用
+  // `npx wrangler secret put S3_ACCESS_KEY` 与 `... S3_SECRET_KEY` 设置；
+  // R2 的 S3 密钥只能在 Cloudflare dashboard 的 "Manage R2 API Tokens" 创建）。
+  // 两个 secret 未设置时，上面的 ②③ 会自动接管 —— 功能不缺，只是不走直传。
+  "vars": {
+    "S3_ENDPOINT": "https://766f8d7eb5a7d20e272673073ec8c3fd.r2.cloudflarestorage.com",
+    "S3_BUCKET": "kaas-files",
+    "S3_REGION": "auto",
+    "S3_PRESIGN_EXPIRES": "900"
+  },
   "routes": [
     {
       "pattern": "kaas.powervoy.com",
