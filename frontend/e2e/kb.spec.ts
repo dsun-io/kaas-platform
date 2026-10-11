@@ -3,8 +3,9 @@ import { test, expect } from './fixtures';
 test.describe('Knowledge Base', () => {
   test('page loads with stat cards and placeholder', async ({ page }) => {
     await page.goto('/kb');
-    await page.waitForLoadState('networkidle');
 
+    // **2026-10-12：去掉 `networkidle`** —— 下一行断言就是在等具体元素
+    // （`kb/page.tsx:22` 的 h1「知识库管理」，纯静态页）。
     // Heading should be visible
     await expect(page.getByRole('heading', { name: '知识库管理' })).toBeVisible();
 

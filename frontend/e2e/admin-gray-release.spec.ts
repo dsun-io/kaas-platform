@@ -27,8 +27,9 @@ test.describe('Admin Gray Release', () => {
 
   test('click toggle opens confirm dialog, entering reason enables confirm', async ({ page }) => {
     await page.goto('/admin/gray-release');
-    await page.waitForLoadState('networkidle');
 
+    // **2026-10-12：去掉 `networkidle`** —— 下面的 `click()` 自身会等具体元素
+    // （`components/flag-toggle.tsx:77-85` 的「切换」按钮）。
     const toggleBtn = page.getByRole('button', { name: /切换/i }).first();
     await toggleBtn.click();
     await page.waitForTimeout(300);
@@ -48,8 +49,9 @@ test.describe('Admin Gray Release', () => {
 
   test('deployment audit timeline renders', async ({ page }) => {
     await page.goto('/admin/gray-release');
-    await page.waitForLoadState('networkidle');
 
+    // **2026-10-12：去掉 `networkidle`** —— 下一行断言就是在等具体元素
+    // （`gray-release/page.tsx:55` 的 CardTitle「变更历史（近 7 天）」）。
     // Timeline should exist
     const timeline = page.locator('text=/变更历史|近.*天/i');
     await expect(timeline.first()).toBeVisible();

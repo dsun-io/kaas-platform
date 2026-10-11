@@ -3,7 +3,9 @@ import { test, expect } from './fixtures';
 test.describe('Customers', () => {
   test('customer list loads with at least 1 row', async ({ page }) => {
     await page.goto('/customers');
-    await page.waitForLoadState('networkidle');
+
+    // **2026-10-12：去掉 `networkidle`** —— 下面 `expect(cards.first()).toBeVisible(...)`
+    // 就是在等具体元素（`customers/page.tsx:822-842` 的客户卡片），不需要额外等待。
 
     // **2026-10-11 修正：确定性陈旧（有源码依据）**
     // 现役 `/customers` 是**卡片列表，没有 `<table>`**：
