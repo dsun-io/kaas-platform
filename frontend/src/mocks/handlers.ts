@@ -22,70 +22,6 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * 客户详情响应体 —— `row_to_customer()` + 三个子资源。
- *
- * 后端形状：backend/orchestrator/app/api/customers.py:274-287
- *   `{...row_to_customer(c), contacts, inquiries, stage_log}`
- *   · contacts 字段名见 customers.py:276-280（id/name/position/phone/email/whatsapp/is_primary）
- *   · inquiries 见 customer_serializers.row_to_inquiry()（id/customer_id/lead_id/channel/
- *     category_id/product_name_raw/quantity/quantity_unit/application/status/created_at）
- *   · stage_log 见 customers.py:282-286（id/from_stage/to_stage/reason/created_at）
- *
- * 消费方：frontend/src/app/(app)/customers/page.tsx:520 `useCustomerDetail(customer.id)`，
- * 面板在 page.tsx:565-591 读 country/credit_level/address/default_port/stage/notes，
- * 在 page.tsx:528-529 / 629-740 读 contacts / inquiries / stage_log 的 length 与内容。
- * 子资源一律挂**数字客户号**（后端是 BIGINT），与列表项 `id` 同源。
- */
-function makeCustomerDetail(customer: (typeof MOCK_CUSTOMERS)[number]) {
-  const now = Date.now();
-  return {
-    ...customer,
-    contacts: [
-      {
-        id: 1,
-        name: "王经理",
-        position: "采购经理",
-        phone: "+86-138-0000-0001",
-        email: "wang@example.com",
-        whatsapp: null,
-        is_primary: true,
-      },
-    ],
-    inquiries: [
-      {
-        id: 1,
-        customer_id: customer.id,
-        lead_id: null,
-        channel: "alibaba",
-        category_id: null,
-        product_name_raw: "牛栏网 2.5mm × 1.5m",
-        quantity: 1000,
-        quantity_unit: "m",
-        application: "牧场围栏",
-        status: "quoted",
-        created_at: new Date(now - 5 * 86400000).toISOString(),
-      },
-    ],
-    stage_log: [
-      {
-        id: 1,
-        from_stage: null,
-        to_stage: "lead",
-        reason: "新建客户",
-        created_at: new Date(now - 30 * 86400000).toISOString(),
-      },
-      {
-        id: 2,
-        from_stage: "lead",
-        to_stage: customer.stage,
-        reason: "收到询盘",
-        created_at: new Date(now - 5 * 86400000).toISOString(),
-      },
-    ],
-  };
-}
-
 const EVENTS_LIST = Array.from({ length: 12 }, (_, i) =>
   makeEvent({
     event_type: (["audit.access", "capability.update"] as const)[i % 2],
@@ -158,6 +94,203 @@ const MOCK_ADMIN_USER = {
   console_access: true,
 };
 
+// ── 可变数据 store（写操作必须**真的**改数据）──────────────────────────────
+// 为什么要有这一层：MSW 的 handler 是模块级单例，写操作如果只回一个 201 而不落库，
+// "新建客户成功"之后列表/详情还是旧的 —— 断言仍然测不出东西（task-6 要求 3）。
+// 种子一律取自 factory 的 MOCK_CUSTOMERS，不在 mock 里再抄一份客户数据。
+type MockCustomer = (typeof MOCK_CUSTOMERS)[number];
+
+/** 联系人 —— 字段名照后端 customers.py:426-428（**不含** wechat：后端不收也不回） */
+type MockContact = {
+  id: number;
+  name: string;
+  position: string | null;
+  phone: string | null;
+  email: string | null;
+  whatsapp: string | null;
+  is_primary: boolean;
+};
+
+/** 询盘 —— 字段名照后端 `row_to_inquiry()`
+ * （kaas_common/workstation/customer_serializers.py:30-49）。
+ * 刻意**不含** `notes`：后端存了但序列化不返回（:37-49），前端也不读（page.tsx:71-81）。 */
+type MockInquiry = {
+  id: number;
+  customer_id: number;
+  lead_id: number | null;
+  channel: string | null;
+  category_id: number | null;
+  product_name_raw: string | null;
+  quantity: number | null;
+  quantity_unit: string | null;
+  application: string | null;
+  status: string;
+  created_at: string;
+};
+
+/** 阶段流水 —— 字段名照后端 customers.py:282-286 */
+type MockStageLog = {
+  id: number;
+  from_stage: string | null;
+  to_stage: string;
+  reason: string | null;
+  created_at: string;
+};
+
+/** 客户阶段合法值 —— 与后端 enums.py:13 `CUSTOMER_STAGE`、页面
+ * `STAGE_LABELS`（page.tsx:21-29）**同值**（7 个，逐字一致），因此这里可以照后端校验。 */
+const CUSTOMER_STAGES: readonly string[] = [
+  "lead",
+  "inquiry",
+  "quoted",
+  "negotiating",
+  "won",
+  "lost",
+  "inactive",
+];
+
+let customersStore: MockCustomer[] = [];
+let contactsStore = new Map<number, MockContact[]>();
+let inquiriesStore = new Map<number, MockInquiry[]>();
+let stageLogStore = new Map<number, MockStageLog[]>();
+let registeredEmails = new Set<string>();
+let nextCustomerId = 1;
+let nextChildId = 1;
+let nextUserId = 100;
+
+const nowIso = () => new Date().toISOString();
+const optStr = (v: unknown): string | null => (typeof v === "string" ? v : null);
+/** 深拷贝种子，避免写操作改到 factory 里那份原始数据 */
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+
+function seedContacts(): MockContact[] {
+  return [
+    {
+      id: 1,
+      name: "王经理",
+      position: "采购经理",
+      phone: "+86-138-0000-0001",
+      email: "wang@example.com",
+      whatsapp: null,
+      is_primary: true,
+    },
+  ].map((c) => ({ ...c, id: nextChildId++ }));
+}
+
+function seedInquiries(customerId: number): MockInquiry[] {
+  const now = Date.now();
+  return [
+    {
+      id: nextChildId++,
+      customer_id: customerId,
+      lead_id: null,
+      channel: "alibaba",
+      category_id: null,
+      product_name_raw: "牛栏网 2.5mm × 1.5m",
+      quantity: 1000,
+      quantity_unit: "m",
+      application: "牧场围栏",
+      // 已报价的询盘（不是 open）—— 详见 PATCH /stage 处关于 409 二次确认的说明
+      status: "quoted",
+      created_at: new Date(now - 5 * 86400000).toISOString(),
+    },
+  ];
+}
+
+function seedStageLog(customer: MockCustomer): MockStageLog[] {
+  const now = Date.now();
+  return [
+    {
+      id: nextChildId++,
+      from_stage: null,
+      to_stage: "lead",
+      reason: "新建客户",
+      created_at: new Date(now - 30 * 86400000).toISOString(),
+    },
+    {
+      id: nextChildId++,
+      from_stage: "lead",
+      to_stage: customer.stage,
+      reason: "收到询盘",
+      created_at: new Date(now - 5 * 86400000).toISOString(),
+    },
+  ];
+}
+
+const contactsOf = (id: number): MockContact[] => {
+  let list = contactsStore.get(id);
+  if (!list) {
+    list = [];
+    contactsStore.set(id, list);
+  }
+  return list;
+};
+
+const inquiriesOf = (id: number): MockInquiry[] => {
+  let list = inquiriesStore.get(id);
+  if (!list) {
+    list = [];
+    inquiriesStore.set(id, list);
+  }
+  return list;
+};
+
+const stageLogsOf = (id: number): MockStageLog[] => {
+  let list = stageLogStore.get(id);
+  if (!list) {
+    list = [];
+    stageLogStore.set(id, list);
+  }
+  return list;
+};
+
+/** 客户详情响应体 —— `row_to_customer()` + 三个子资源
+ * （后端形状 backend/orchestrator/app/api/customers.py:274-287；
+ *  消费方 page.tsx:520 `useCustomerDetail(customer.id)`，面板读 page.tsx:565-591 / 629-740）。 */
+function customerDetail(customer: MockCustomer) {
+  return {
+    ...customer,
+    contacts: contactsOf(customer.id),
+    inquiries: inquiriesOf(customer.id),
+    stage_log: stageLogsOf(customer.id),
+  };
+}
+
+function customerNotFound(id: unknown) {
+  return HttpResponse.json(
+    {
+      error_code: "TENANT_NOT_FOUND",
+      message: "租户配置未找到，请检查设置",
+      detail: { customer_id: String(id) },
+    },
+    { status: 404 },
+  );
+}
+
+/**
+ * 把可变 store 恢复到种子状态。
+ *
+ * **导出只给测试用**：module-scoped 状态在同一个测试文件内跨用例共享，
+ * 不重置会让"前一个用例建的客户"污染后一个用例的计数断言。
+ * 浏览器里每次页面加载都会重新求值本模块（worker 重注册），所以生产路径不需要它。
+ */
+export function resetMockData(): void {
+  nextChildId = 1;
+  customersStore = clone(MOCK_CUSTOMERS);
+  contactsStore = new Map();
+  inquiriesStore = new Map();
+  stageLogStore = new Map();
+  for (const c of customersStore) {
+    contactsStore.set(c.id, seedContacts());
+    inquiriesStore.set(c.id, seedInquiries(c.id));
+    stageLogStore.set(c.id, seedStageLog(c));
+  }
+  registeredEmails = new Set([MOCK_ADMIN_USER.email.toLowerCase()]);
+  nextCustomerId = customersStore.reduce((max, c) => Math.max(max, c.id), 0) + 1;
+  nextUserId = 100;
+}
+resetMockData();
+
 export const handlers = [
   // ── 工位订阅快照（原先没有 mock，是**真正的**缺口）─────────────────────
   // 形状**必须**照 `lib/workstation/visibility.ts` 的 `parseMyWorkstationsPayload()`：
@@ -205,6 +338,85 @@ export const handlers = [
     }),
   ),
   http.post("/api/v1/auth/logout", () => HttpResponse.json({ ok: true })),
+
+  // ── Auth · 注册（task-6：原先缺失 ⇒ 放行到网络 ⇒ 自代理永久挂起）─────────
+  // 消费方 lib/auth/auth-context.tsx:127-139 `register()`：
+  //   · `res.data.access_token` 必须存在（:130 直接写进会话）
+  //   · `buildUser(res.data)`（:55-67）要 user_id/email/display_name/account_type/
+  //     role/plan/team_id/team_name/console_access 共 8 项
+  // 后端 orchestrator/app/api/auth.py:162-281（无 status_code ⇒ 200）：
+  //   `_auth_response`（:145-159）= 上面 8 项 + access_token/token_type；
+  //   强制 `account_type="customer"`、`plan="free"`（:250-252）；
+  //   角色 `"user"`(凭邀请码) / `"owner"`（:245）。
+  // 校验口径照后端：email/password/display_name/company_name/product_category 必填
+  // （:200-207）、密码 ≥8（:209-210）、邮箱重复 409（:238-240）。
+  // 刻意**不**复刻的两项（都只有后端持有真源、且消费方前端已自校验）：
+  //   · `product_category` 的 10 值白名单（auth.py:65-76）——前端 CATEGORIES
+  //     （register/page.tsx:39-50）与之逐字一致且只能从中选；
+  //   · 邀请码/团队名/工位的语义校验（要 DB）——mock 里按"给了就算"处理。
+  http.post("/api/v1/auth/register", async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    const email = String(body.email ?? "").trim().toLowerCase();
+    const password = String(body.password ?? "");
+    const displayName = String(body.display_name ?? "").trim();
+    const companyName = String(body.company_name ?? "").trim();
+    const productCategory = String(body.product_category ?? "").trim();
+    if (!email || !password || !displayName || !companyName || !productCategory) {
+      return HttpResponse.json(
+        {
+          error_code: "VALIDATION_ERROR",
+          message: "邮箱、密码、姓名、公司名称、主营类型均为必填",
+          detail:
+            "validation_error: email, password, display_name, company_name, product_category are required",
+        },
+        { status: 422 },
+      );
+    }
+    if (password.length < 8) {
+      return HttpResponse.json(
+        {
+          error_code: "VALIDATION_ERROR",
+          message: "密码至少 8 位",
+          detail: "validation_error: Password must be at least 8 characters",
+        },
+        { status: 422 },
+      );
+    }
+    if (registeredEmails.has(email)) {
+      // 后端 auth.py:238-240 同口径（409 conflict）
+      return HttpResponse.json(
+        {
+          error_code: "EMAIL_ALREADY_REGISTERED",
+          message: "该邮箱已注册",
+          detail: "conflict: Email already registered",
+        },
+        { status: 409 },
+      );
+    }
+    registeredEmails.add(email);
+
+    const inviteToken = String(body.invite_token ?? "").trim();
+    const teamName = String(body.team_name ?? "").trim();
+    const userId = nextUserId++;
+    const teamId = teamName ? 2 : inviteToken ? 1 : null;
+    return HttpResponse.json({
+      user_id: userId,
+      email,
+      display_name: displayName,
+      account_type: "customer",
+      role: inviteToken ? "user" : "owner",
+      plan: "free",
+      team_id: teamId,
+      team_name: teamName || (inviteToken ? "示例团队" : null),
+      console_access: false,
+      access_token: `mock-access-token-${userId}`,
+      token_type: "bearer",
+    });
+  }),
+
+  // ⚠️ 同类缺口（**本任务范围外，已在回报里登记**）：`POST /auth/bootstrap-admin`
+  // 同样没有 mock，消费方 lib/auth/auth-context.tsx:141-170 + app/setup-admin/page.tsx:49。
+  // 不在这里顺手补：task-6 明确只列了 5 个端点，其余缺口应由 lead 统一派活（避免范围蔓延）。
 
   // ── Test-only MSW override endpoint ──────────────────────────────
   // Exists ONLY in frontend MSW handlers for Playwright / dev contract tests.
@@ -319,9 +531,17 @@ export const handlers = [
   http.get("/api/v1/customers", ({ request }) => {
     const url = new URL(request.url);
     const q = url.searchParams.get("q")?.trim();
-    const filtered = q
-      ? MOCK_CUSTOMERS.filter((c) => c.company_name.includes(q))
-      : MOCK_CUSTOMERS;
+    const stage = url.searchParams.get("stage");
+    let filtered = [...customersStore];
+    if (q) filtered = filtered.filter((c) => c.company_name.includes(q));
+    // stage 过滤照后端 customers.py:205-207（页面暂未传，留作契约完整）
+    if (stage) filtered = filtered.filter((c) => c.stage === stage);
+    // 排序照后端 `order_by(Customer.updated_at.desc())`（customers.py:212）——
+    // 刚建/刚改的客户排在最前，"写进去的东西看得见"才成立
+    filtered.sort(
+      (a, b) =>
+        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+    );
     // 分页参数与后端 Query(1, ge=1) / Query(20, ge=1, le=200) 同口径
     const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
     const pageSize = Math.min(
@@ -338,21 +558,214 @@ export const handlers = [
     });
   }),
 
-  // 详情 = row_to_customer + contacts/inquiries/stage_log（见 makeCustomerDetail）。
+  // 详情 = row_to_customer + contacts/inquiries/stage_log（见 customerDetail）。
   // 客户号按数字匹配 —— 列表项 `id` 是 number（factory.ts 的 makeCustomer）。
   http.get("/api/v1/customers/:id", ({ params }) => {
-    const customer = MOCK_CUSTOMERS.find((c) => c.id === Number(params.id));
-    if (!customer) {
+    const customer = customersStore.find((c) => c.id === Number(params.id));
+    if (!customer) return customerNotFound(params.id);
+    return HttpResponse.json(customerDetail(customer));
+  }),
+
+  // ── Customers · 写操作 ────────────────────────────────────────────
+  // task-6：这 4 个 handler 原先**完全缺失** ⇒ MSW 放行到网络 ⇒ e2e 下命中 Next 的
+  // `/api/v1/*` rewrite，而 rewrite 目标被 playwright.config.ts:54 指回页面源
+  // ⇒ **自己代理自己** ⇒ 请求永久挂起（msw-provider.tsx:49-53 记录的那个坑）。
+  // 依据 = 消费方源码 + 后端 handler，逐个列在下面每个 handler 上方。
+
+  // POST /customers ← 消费方 page.tsx:169-182（CustomerForm.handleSubmit）
+  //   请求体 = 表单 7 字段（company_name/country/address/default_port/credit_level/stage/notes）
+  //   后端 customers.py:219-241：201 + `row_to_customer(c)`；stage 默认 "lead" 且必须过枚举
+  http.post("/api/v1/customers", async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    const companyName = String(body.company_name ?? "").trim();
+    if (!companyName) {
+      // 后端由 Pydantic `CustomerCreate.company_name: str` 拦下（customers.py:126）
       return HttpResponse.json(
         {
-          error_code: "TENANT_NOT_FOUND",
-          message: "租户配置未找到，请检查设置",
-          detail: { customer_id: params.id },
+          error_code: "VALIDATION_ERROR",
+          message: "公司名称必填",
+          detail: "validation_error: company_name is required",
         },
-        { status: 404 },
+        { status: 422 },
       );
     }
-    return HttpResponse.json(makeCustomerDetail(customer));
+    const stage = String(body.stage ?? "lead") || "lead";
+    if (!CUSTOMER_STAGES.includes(stage)) {
+      // ⚠️ 这里**没有**照抄后端 INVALID_ENUM 的对象型 detail（enums.py:93-100 是
+      // `{error,code,field,value,allowed}`）：消费方 `errMsg`（page.tsx:124-130）
+      // 只认字符串 detail，拿到对象会原样塞进 JSX 直接崩。同一根因详见下面
+      // PATCH /stage 处关于 409 的说明。
+      return HttpResponse.json(
+        {
+          error_code: "INVALID_ENUM",
+          message: "客户阶段取值非法",
+          detail: `invalid_enum_value: customer_stage=${stage}`,
+        },
+        { status: 422 },
+      );
+    }
+    const at = nowIso();
+    const created: MockCustomer = {
+      id: nextCustomerId++,
+      company_name: companyName,
+      country: optStr(body.country),
+      address: optStr(body.address),
+      default_port: optStr(body.default_port),
+      credit_level: optStr(body.credit_level),
+      stage,
+      notes: optStr(body.notes),
+      created_at: at,
+      updated_at: at,
+    };
+    customersStore.push(created);
+    contactsStore.set(created.id, []);
+    inquiriesStore.set(created.id, []);
+    // 后端建客户时写一条 stage_log（customers.py:239 `_log_stage(..., None, stage, "新建客户")`）
+    stageLogsOf(created.id).push({
+      id: nextChildId++,
+      from_stage: null,
+      to_stage: stage,
+      reason: "新建客户",
+      created_at: at,
+    });
+    return HttpResponse.json(created, { status: 201 });
+  }),
+
+  // PATCH /customers/:id/stage ← 消费方 page.tsx:463-478（StageUpdate，只等成功）
+  //   请求体 = `{stage, reason?}`（page.tsx:467-470）
+  //   后端 customers.py:333-394：200 + `{...row_to_customer, closed_inquiries:[id]}`
+  //
+  //   ⚠️ 已登记的前端/后端不一致（task-6 要求 2）：
+  //   后端在 target ∈ {won,lost} 且名下有 `status='open'` 询盘时**首次请求回 409**
+  //   （`{detail:{code:"OPEN_INQUIRIES_EXIST", open_inquiries:[...]}}`，customers.py:367-373），
+  //   要求前端二次确认后带 `close_all_open` / `close_inquiry_ids` 重试；而消费方
+  //   StageUpdate **从不发这两个字段**，也没有二次确认弹窗，且 `errMsg`（page.tsx:124-130）
+  //   会把对象型 `detail` 渲染成 "[object Object]"。
+  //   按 task-6「以消费方前端为准」⇒ mock 不回 409，直接 200，但**保留后端的数据语义**
+  //   （won/lost 时把 open 询盘一并置为终态，并在响应里回 `closed_inquiries`）。
+  http.patch("/api/v1/customers/:id/stage", async ({ params, request }) => {
+    const customer = customersStore.find((c) => c.id === Number(params.id));
+    if (!customer) return customerNotFound(params.id);
+    const body = (await request.json()) as Record<string, unknown>;
+    const target = String(body.stage ?? "");
+    if (!CUSTOMER_STAGES.includes(target)) {
+      // 同 POST /customers：detail 用字符串（消费方 errMsg 只认字符串，见 page.tsx:124-130）
+      return HttpResponse.json(
+        {
+          error_code: "INVALID_ENUM",
+          message: "客户阶段取值非法",
+          detail: `invalid_enum_value: customer_stage=${target}`,
+        },
+        { status: 422 },
+      );
+    }
+    const fromStage = customer.stage;
+    const at = nowIso();
+    const closed: number[] = [];
+    if (target === "won" || target === "lost") {
+      for (const inq of inquiriesOf(customer.id)) {
+        if (inq.status === "open") {
+          inq.status = target;
+          closed.push(inq.id);
+        }
+      }
+    }
+    customer.stage = target;
+    customer.updated_at = at;
+    stageLogsOf(customer.id).push({
+      id: nextChildId++,
+      from_stage: fromStage,
+      to_stage: target,
+      reason: optStr(body.reason),
+      created_at: at,
+    });
+    return HttpResponse.json({ ...customer, closed_inquiries: closed });
+  }),
+
+  // POST /customers/:id/contacts ← 消费方 page.tsx:375-395（ContactForm.handleSubmit）
+  //   请求体含 `customer_id`（前端冗余传；后端从 path 取，Pydantic 忽略多余字段）
+  //   后端 customers.py:399-428：201 + `{id,name,position,phone,email,whatsapp,is_primary}`；
+  //   `is_primary=true` 时把该客户其它主联系人降级（customers.py:414-424）
+  http.post("/api/v1/customers/:id/contacts", async ({ params, request }) => {
+    const customer = customersStore.find((c) => c.id === Number(params.id));
+    if (!customer) return customerNotFound(params.id);
+    const body = (await request.json()) as Record<string, unknown>;
+    const name = String(body.name ?? "").trim();
+    if (!name) {
+      // 后端 `ContactCreate.name: str` 必填（customers.py:154）
+      return HttpResponse.json(
+        {
+          error_code: "VALIDATION_ERROR",
+          message: "联系人姓名必填",
+          detail: "validation_error: name is required",
+        },
+        { status: 422 },
+      );
+    }
+    const list = contactsOf(customer.id);
+    const contact: MockContact = {
+      id: nextChildId++,
+      name,
+      position: optStr(body.position),
+      phone: optStr(body.phone),
+      email: optStr(body.email),
+      whatsapp: optStr(body.whatsapp),
+      is_primary: body.is_primary === true,
+    };
+    if (contact.is_primary) {
+      for (const other of list) other.is_primary = false;
+    }
+    list.push(contact);
+    return HttpResponse.json(contact, { status: 201 });
+  }),
+
+  // POST /customers/:id/inquiries ← 消费方 page.tsx:277-297（InquiryForm.handleSubmit）
+  //   后端 customers.py:542-574：201 + `row_to_inquiry(inq)`；新询盘 status='open'（:561）；
+  //   客户若还在 lead → 联动进 inquiry 阶段并写 stage_log（:567-571）
+  //
+  //   ⚠️ 已登记的前端/后端不一致（task-6 要求 2）：
+  //   后端 `validate_enum("inquiry_channel", ...)`（customers.py:553）要求渠道 ∈
+  //   `("email","whatsapp","alibaba","expo","website","other")` 且**大小写敏感**
+  //   （enums.py:25 + enums.py:90），而消费方 InquiryForm 是**自由文本输入**、
+  //   placeholder 还写着「渠道（Alibaba / Expo / Web）」（page.tsx:302-306）——
+  //   用户照着提示填 "Alibaba" 在 real 模式会被 422 INVALID_ENUM。
+  //   按 task-6「以消费方前端为准」⇒ mock **不做渠道枚举校验**，原样收下并回显。
+  http.post("/api/v1/customers/:id/inquiries", async ({ params, request }) => {
+    const customer = customersStore.find((c) => c.id === Number(params.id));
+    if (!customer) return customerNotFound(params.id);
+    const body = (await request.json()) as Record<string, unknown>;
+    const at = nowIso();
+    const rawQty = body.quantity;
+    const inquiry: MockInquiry = {
+      id: nextChildId++,
+      customer_id: customer.id,
+      lead_id: null,
+      channel: optStr(body.channel),
+      category_id: null,
+      product_name_raw: optStr(body.product_name_raw),
+      quantity:
+        rawQty === undefined || rawQty === null || rawQty === ""
+          ? null
+          : Number(rawQty),
+      quantity_unit: optStr(body.quantity_unit),
+      application: optStr(body.application),
+      status: "open",
+      created_at: at,
+    };
+    inquiriesOf(customer.id).push(inquiry);
+    // 询盘驱动客户（后端 customers.py:567-571）
+    if (customer.stage === "lead") {
+      stageLogsOf(customer.id).push({
+        id: nextChildId++,
+        from_stage: "lead",
+        to_stage: "inquiry",
+        reason: "新建询盘 inquiry 联动",
+        created_at: at,
+      });
+      customer.stage = "inquiry";
+      customer.updated_at = at;
+    }
+    return HttpResponse.json(inquiry, { status: 201 });
   }),
 
   // ── 客户往来记录（docs/CUSTOMER_DOCUMENTS_VIEW.md §3）─────────────
@@ -364,8 +777,9 @@ export const handlers = [
   // 只把 `customer` 节点按真实客户回填（查不到就退化成请求里的 id 文本）。
   // 为什么要回填数字 id：normalizeCustomerRecords 用 asInteger 读 `customer.id`
   // （frontend/src/lib/customer/customer-records.ts:243），字符串 id 会被判成 null。
+  // 读的是可变 store：刚新建的客户也能查到（否则详情页"往来记录"会对新客户退化成 #id）。
   http.get("/api/v1/customers/:id/records", ({ params }) => {
-    const customer = MOCK_CUSTOMERS.find((c) => c.id === Number(params.id));
+    const customer = customersStore.find((c) => c.id === Number(params.id));
     const customerName = customer?.company_name ?? String(params.id ?? "");
     return HttpResponse.json({
       customer: { id: customer?.id ?? null, name: customerName, team_id: 1 },
