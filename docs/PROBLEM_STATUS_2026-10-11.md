@@ -63,13 +63,40 @@
 
 ### 还没做的（建议顺序）
 
-1. **反向漂移 8 条**（worker 独有：`outreach/webhook`×4、`subscriptions`×2、`leads/crawl`×2）。
+1. **反向漂移 8 条** —— 逐条处置见下「反向漂移：逐条取证与处置」。
 2. **前端认证契约残留**（`session-cache.ts` 的 tenant 结构、`client.ts` 的 `X-Tenant-Id`）。
 3. **接口级测试**（#2b 与均价都只有纯函数单测）、**前端档位管理界面**。
 4. 规格库 11 条接口 / 依赖漏洞 98 个 + next 14→15 / e2e 26 条归真 /
    产品定义可视化编辑器 / 团队管理员转让 / 单证投产联调。
 
 ### 旧表 `customer_pricing_profiles` 活读取路径已收口（`51e26f9` 之后）
+
+### 反向漂移：逐条取证与处置（2026-10-11）
+
+`route-parity.py` 报「worker 独有 8 条」，它**不算 FAIL**，只提示
+「建议在 orchestrator 侧补齐」。但逐条查过之后发现**性质完全不同**，
+不能一概"补齐"，也不该一概放过。取证结果：
+
+| 路由 | 取证 | 性质 |
+|---|---|---|
+| `POST /api/v1/leads/crawl-batch` | **前端在调它**（`leadgen/page.tsx:222` 的批量爬取按钮） | 🔴 **真 bug**：orchestrator 没有 ⇒ **dev 环境下该按钮 404** |
+| `GET /api/v1/subscriptions`<br>`GET /api/v1/subscriptions/bundles` | 前端调的是 **`/teams/{id}/subscriptions`**（带 team id），**不是**这两条 | 可疑残留，需确认还有谁在调 |
+| `POST /api/v1/leads/{lead_id}/crawl` | 前端未直接调用 | 单条爬取，与上面的批量是同一功能的两个入口 |
+| `GET/PUT/PATCH/DELETE /api/v1/outreach/webhook` | worker 是 `@app.api_route(methods=[GET,POST,PUT,PATCH,DELETE])`，函数体**只 raise 501**（`INBOUND_WEBHOOK_RESERVED`） | 预留桩，**任何方法都无副作用**；orchestrator 只有 `POST` |
+
+两点结论：
+
+1. **`crawl-batch` 不是"漂移"而是"dev 缺功能"** —— 前端按 worker 的接口写的，
+   而 orchestrator 从未实现。worker 侧的实现是**自成体系**的
+   （内联 SQL + `_crawl_one` + `_require_sub`），移植到 orchestrator
+   （SQLAlchemy / 本地 asyncpg）不是小活，**不能顺手补**。
+2. **`outreach/webhook` 那 4 条不该"补到 orchestrator"** ——
+   把一个"只 raise 501 的预留桩"按 5 种方法暴露出去，是把线上攻击面
+   无谓地放大（虽然目前无副作用）。更合理的方向是**把 worker 收敛到 POST**，
+   与 orchestrator 一致、与语义一致（inbound 回写本来就是 POST）。
+
+处置需要用户拍板（见下），因为在两条路里选哪条是**策略问题**不是技术问题：
+是"两边都补到一样"，还是"以 orchestrator 为准、把 worker 多余的收掉"。
 
 文档里挂着的那条**真缺陷**关掉了。它是一条**静默误读**链路：
 
