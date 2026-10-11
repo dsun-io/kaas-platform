@@ -28,10 +28,14 @@ import pytest
 from fastapi import HTTPException
 
 from kaas_common.files import (
+    ALLOWED_HOSTS_ENV_KEY,
     BROWSER_RENDERING_QUICK_ACTION_PATH,
+    DEFAULT_ALLOWED_HOSTS,
     MAX_RENDER_HTML_BYTES,
     MAX_RENDER_PDF_BYTES,
     FileRuleError,
+    allowed_html_hosts,
+    host_allowed,
     looks_like_pdf,
     render_pdf_rest_config,
     render_pdf_rest_url,
@@ -62,6 +66,7 @@ PDF_BYTES = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n%%EOF\n"
 _ENV_KEYS = (
     "BROWSER_RENDERING_ACCOUNT_ID", "CLOUDFLARE_ACCOUNT_ID",
     "BROWSER_RENDERING_TOKEN", "CLOUDFLARE_API_TOKEN",
+    ALLOWED_HOSTS_ENV_KEY,
 )
 
 
@@ -139,6 +144,107 @@ class TestValidateRenderHtml:
             "Remarks: onload=1 src=http://example.com 见 https://example.com 说明"
             "</p></body></html>"
         )
+
+
+def _html_with(body: str) -> str:
+    return f"<!DOCTYPE html><html><body>{body}</body></html>"
+
+
+class TestExternalHostWhitelist:
+    """外链白名单（用户裁决：从"严格拒绝任何非 data:"改为"白名单自家域名"）。
+
+    白名单最容易写错的是**"像域名但不是"**：`a.com.evil.com`、`evila.com`、
+    协议相对的 `//a.com/x`、以及把域名放在**路径**里。这些全部必须继续拒。
+    """
+
+    @pytest.mark.parametrize("url", [
+        "https://kaas.powervoy.com/x.png",
+        "http://kaas.powervoy.com/x.png",
+        "https://cdn.kaas.powervoy.com/x.png",          # 子域命中
+        "https://KAAS.POWERVOY.COM/x.png",              # 大小写不敏感
+        "https://kaas.powervoy.com:8443/x.png",         # 允许端口
+        "https://api.kaas.powervoy.com/x.png",          # 默认白名单第二项
+        "https://kaas.powervoy.com./x.png",             # FQDN 结尾的点
+    ])
+    def test_whitelisted_hosts_allowed_in_img_src(self, url):
+        validate_render_html(_html_with(f'<img src="{url}" alt="photo">'))
+
+    def test_whitelisted_host_allowed_in_css_url(self):
+        validate_render_html(
+            _html_with("<style>body{background:url(https://kaas.powervoy.com/bg.png)}</style>")
+        )
+
+    @pytest.mark.parametrize("url", [
+        "https://kaas.powervoy.com.evil.com/x.png",     # 后缀伪造
+        "https://evilkaas.powervoy.com/x.png",          # 前缀拼接（不在子域边界上）
+        "https://notkaas.powervoy.com/x.png",
+        "//kaas.powervoy.com/x.png",                    # 协议相对 ⇒ 拒
+        "https://evil.com/kaas.powervoy.com",           # 域名出现在路径里 ⇒ 不是 host
+        "https://kaas.powervoy.com@evil.com/x.png",     # userinfo 伪装 ⇒ host 是 evil.com
+        "https://evil.com/x.png",
+        "blob:https://kaas.powervoy.com/abc",
+        "file:///etc/passwd",
+        "ftp://kaas.powervoy.com/x.png",
+    ])
+    def test_lookalike_or_offprotocol_hosts_rejected(self, url):
+        with pytest.raises(FileRuleError) as ei:
+            validate_render_html(_html_with(f'<img src="{url}" alt="photo">'))
+        assert ei.value.code == "HTML_EXTERNAL_RESOURCE"
+        # 报错要能定位到"哪个地址被拒"、并说明白名单是什么，否则用户没法自查
+        assert "白名单域名" in ei.value.detail
+
+    def test_protocol_relative_css_url_rejected(self):
+        with pytest.raises(FileRuleError) as ei:
+            validate_render_html(
+                _html_with("<style>body{background:url(//kaas.powervoy.com/bg.png)}</style>")
+            )
+        assert ei.value.code == "HTML_EXTERNAL_RESOURCE"
+
+    def test_plain_text_domain_still_not_mistaken(self):
+        """正文里写着自家域名 / 外域 URL，都不该被当成资源引用。"""
+        validate_render_html(_html_with(
+            "<p>见 https://kaas.powervoy.com/x.png 与 https://evil.com/y.png 说明</p>"))
+
+    def test_configured_hosts_replace_defaults(self):
+        # 只配自家 CDN：默认域名反而不在白名单里了（配置是**替换**，不是追加）
+        hosts = allowed_html_hosts({"PDF_HTML_ALLOWED_HOSTS": "files.example.com"}.get)
+        assert hosts == ("files.example.com",)
+        validate_render_html(_html_with('<img src="https://files.example.com/a.png">'), hosts)
+        with pytest.raises(FileRuleError) as ei:
+            validate_render_html(_html_with('<img src="https://kaas.powervoy.com/a.png">'), hosts)
+        assert ei.value.code == "HTML_EXTERNAL_RESOURCE"
+
+    def test_script_and_event_gates_unchanged_by_whitelist(self):
+        """白名单只放宽"外链资源"；脚本类拒斥与白名单无关（自家域名也不行）。"""
+        for injection in (
+            '<script src="https://kaas.powervoy.com/a.js"></script>',
+            '<img src="https://kaas.powervoy.com/a.png" onerror="alert(1)">',
+        ):
+            with pytest.raises(FileRuleError) as ei:
+                validate_render_html(_html_with(injection))
+            assert ei.value.code == "HTML_UNSAFE_MARKUP"
+
+
+class TestAllowedHostsConfig:
+    def test_defaults_when_unset_or_blank(self):
+        for env in ({}, {"PDF_HTML_ALLOWED_HOSTS": ""}, {"PDF_HTML_ALLOWED_HOSTS": "   "}):
+            assert allowed_html_hosts(env.get) == DEFAULT_ALLOWED_HOSTS
+        assert DEFAULT_ALLOWED_HOSTS == ("kaas.powervoy.com", "api.kaas.powervoy.com")
+
+    def test_parses_trims_dedupes_and_lowercases(self):
+        env = {"PDF_HTML_ALLOWED_HOSTS": " A.com , .b.com. ,a.com, ,"}
+        assert allowed_html_hosts(env.get) == ("a.com", "b.com")
+
+    def test_host_allowed_subdomain_and_port(self):
+        hosts = ("a.com",)
+        assert host_allowed("https://a.com/x", hosts) is True
+        assert host_allowed("https://x.y.a.com:443/x", hosts) is True
+        assert host_allowed("https://A.COM/x", hosts) is True
+        assert host_allowed("https://a.com.evil.com/x", hosts) is False
+        assert host_allowed("https://xa.com/x", hosts) is False
+        assert host_allowed("//a.com/x", hosts) is False
+        assert host_allowed("javascript:alert(1)", hosts) is False
+        assert host_allowed("https://a.com/x", ()) is False
 
 
 GOLDEN_HTML_DIR = (
@@ -309,6 +415,38 @@ class TestRenderDocPdfEndpoint:
         assert ei.value.detail["detail"] == RENDERER_NOT_CONFIGURED_DETAIL
         assert "wrangler.jsonc" in ei.value.detail["detail"]
         assert archived.creates == []
+
+    async def test_configured_whitelist_is_read_from_env(self, archived, monkeypatch):
+        """端点必须把**配置的**白名单交给校验（而不是硬编码默认值）：
+
+        配了自家 CDN 后，该域名的图片应放行 ⇒ 只差渲染器 ⇒ 503（**不是** 422）；
+        而默认域名此时不在白名单里 ⇒ 422。这条同时证明"配置是替换而非追加"。
+        """
+        monkeypatch.setenv(ALLOWED_HOSTS_ENV_KEY, "files.example.com")
+
+        with pytest.raises(HTTPException) as ei:
+            await files_api.render_doc_pdf(
+                5, _body(html=_html_with('<img src="https://files.example.com/a.png">')),
+                _auth(), object())
+        assert ei.value.status_code == 503
+        assert ei.value.detail["code"] == "PDF_RENDERER_NOT_CONFIGURED"
+
+        with pytest.raises(HTTPException) as ei2:
+            await files_api.render_doc_pdf(
+                5, _body(html=_html_with('<img src="https://kaas.powervoy.com/a.png">')),
+                _auth(), object())
+        assert ei2.value.status_code == 422
+        assert ei2.value.detail["code"] == "HTML_EXTERNAL_RESOURCE"
+        assert archived.creates == []
+
+    async def test_default_whitelist_allows_own_domain(self, archived):
+        """默认白名单（自家域名）放行 ⇒ 走到 503（渲染器未配），而不是被 422 挡住。"""
+        with pytest.raises(HTTPException) as ei:
+            await files_api.render_doc_pdf(
+                5, _body(html=_html_with('<img src="https://kaas.powervoy.com/a.png">')),
+                _auth(), object())
+        assert ei.value.status_code == 503
+        assert ei.value.detail["code"] == "PDF_RENDERER_NOT_CONFIGURED"
 
     async def test_non_pdf_response_is_502(self, archived, monkeypatch):
         monkeypatch.setenv("BROWSER_RENDERING_ACCOUNT_ID", ACCOUNT_ID)

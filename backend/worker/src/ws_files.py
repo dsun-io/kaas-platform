@@ -36,6 +36,7 @@ from kaas_common.files import (
     MEDIA_KIND_LABELS,
     RENDERER_NOT_CONFIGURED_DETAIL,
     RENDER_PDF_KIND,
+    allowed_html_hosts,
     current_of,
     looks_like_pdf,
     next_version,
@@ -609,7 +610,10 @@ async def render_doc_pdf(doc_id: int, body: RenderPdfIn, request: Request,
     - 未配置渲染器 → 503；上游失败/不是 PDF → 502；HTML 含脚本或外链 → 422。
     """
     try:
-        validate_render_html(body.html)
+        # 外链白名单请求期读（`PDF_HTML_ALLOWED_HOSTS`，默认自家域名）。
+        # Python Worker 在 import 期读不到 vars/绑定 ⇒ 必须走 `main._binding`。
+        validate_render_html(
+            body.html, allowed_html_hosts(lambda key: _main._binding(key, request)))
     except FileRuleError as exc:
         raise _fail(exc)
 

@@ -38,13 +38,17 @@ from .seal import (  # noqa: F401
     seal_field,
 )
 from .render_pdf import (  # noqa: F401
+    ALLOWED_HOSTS_ENV_KEY,
     BROWSER_RENDERING_QUICK_ACTION_PATH,
     CLOUDFLARE_API_ORIGIN,
+    DEFAULT_ALLOWED_HOSTS,
     MAX_RENDER_HTML_BYTES,
     MAX_RENDER_PDF_BYTES,
     PDF_MAGIC,
     RENDERER_NOT_CONFIGURED_DETAIL,
     RENDER_PDF_KIND,
+    allowed_html_hosts,
+    host_allowed,
     looks_like_pdf,
     render_pdf_rest_config,
     render_pdf_rest_url,
@@ -61,6 +65,8 @@ __all__ = [
     "RENDER_PDF_KIND", "MAX_RENDER_PDF_BYTES", "MAX_RENDER_HTML_BYTES", "PDF_MAGIC",
     "CLOUDFLARE_API_ORIGIN", "BROWSER_RENDERING_QUICK_ACTION_PATH",
     "RENDERER_NOT_CONFIGURED_DETAIL",
+    "ALLOWED_HOSTS_ENV_KEY", "DEFAULT_ALLOWED_HOSTS",
+    "allowed_html_hosts", "host_allowed",
     "validate_render_html", "looks_like_pdf",
     "render_pdf_rest_config", "render_pdf_rest_url",
 ]

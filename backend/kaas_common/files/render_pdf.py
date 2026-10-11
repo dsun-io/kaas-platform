@@ -23,17 +23,22 @@ from __future__ import annotations
 
 import re
 from typing import Callable, Optional
+from urllib.parse import urlsplit
 
 from .rules import MAX_BYTES, FileRuleError
 
 __all__ = [
+    "ALLOWED_HOSTS_ENV_KEY",
     "BROWSER_RENDERING_QUICK_ACTION_PATH",
     "CLOUDFLARE_API_ORIGIN",
+    "DEFAULT_ALLOWED_HOSTS",
     "MAX_RENDER_HTML_BYTES",
     "MAX_RENDER_PDF_BYTES",
     "PDF_MAGIC",
     "RENDERER_NOT_CONFIGURED_DETAIL",
     "RENDER_PDF_KIND",
+    "allowed_html_hosts",
+    "host_allowed",
     "looks_like_pdf",
     "render_pdf_rest_config",
     "render_pdf_rest_url",
@@ -72,6 +77,17 @@ RENDERER_NOT_CONFIGURED_DETAIL = (
 # 所以调用方必须传"取值函数"而不是在本模块顶层读环境）。
 ACCOUNT_ID_ENV_KEYS = ("BROWSER_RENDERING_ACCOUNT_ID", "CLOUDFLARE_ACCOUNT_ID")
 TOKEN_ENV_KEYS = ("BROWSER_RENDERING_TOKEN", "CLOUDFLARE_API_TOKEN")
+
+# ── 外链白名单（用户裁决：「外链策略从严格拒绝改为白名单自家域名」）─────────────
+#
+# 为什么还需要白名单：单证里的图片通常已经是 `data:` URI（产品图库引用在装配层内联），
+# 但历史/legacy 数据可能直接写着自家域名下的图片地址。全部拒会把这类单据挡在自动出 PDF
+# 之外；全放又会把"我们账号的浏览器"变成任意出网代理（SSRF）⇒ 只放行**自家域名**。
+#
+# `PDF_HTML_ALLOWED_HOSTS`：逗号分隔，大小写不敏感，条目允许其子域（`cdn.a.com` 命中 `a.com`）。
+# 未设/空 ⇒ 用默认值；要完全禁外链就把它设成一个不可能命中的值（例如 `-`）。
+ALLOWED_HOSTS_ENV_KEY = "PDF_HTML_ALLOWED_HOSTS"
+DEFAULT_ALLOWED_HOSTS = ("kaas.powervoy.com", "api.kaas.powervoy.com")
 
 # ── 安全校验：拒脚本类内容与外链资源 ─────────────────────────────────────────
 #
@@ -114,30 +130,96 @@ def _reject(code: str, detail: str) -> None:
     raise FileRuleError(code, detail)
 
 
-def _is_safe_resource_url(value: str) -> bool:
-    """资源地址只允许 `data:`（渲染器把图片内联成 data URI）或页内锚点。"""
+def allowed_html_hosts(get_env: Callable[[str], Optional[str]]) -> tuple[str, ...]:
+    """读外链白名单（`PDF_HTML_ALLOWED_HOSTS`，逗号分隔）—— 请求期读，两端同一份判定。
+
+    未设 / 空 ⇒ `DEFAULT_ALLOWED_HOSTS`（**不是**"全部放行"，也不是"全部拒绝"）。
+    返回值已小写、去空白、去前导点，并去重保序 —— 校验函数拿到的就是可直接比对的形状。
+    """
+    raw = get_env(ALLOWED_HOSTS_ENV_KEY) or ""
+    text = str(raw).strip()
+    if not text:
+        return DEFAULT_ALLOWED_HOSTS
+    hosts: list[str] = []
+    for part in text.split(","):
+        host = part.strip().lower().strip(".")  # 去掉两侧的点：`.a.com` 与 `a.com` 等价
+        if host and host not in hosts:
+            hosts.append(host)
+    return tuple(hosts) or DEFAULT_ALLOWED_HOSTS
+
+
+def host_allowed(url: str, allowed_hosts) -> bool:
+    """`url` 的 host 是否命中白名单：**大小写不敏感、允许端口、条目允许子域**。
+
+    刻意**不**放行的情况（白名单最容易写错的地方）：
+    - 协议相对地址 `//host/x.png`（`urlsplit` 出来 scheme 为空 ⇒ 不是 http(s)）⇒ 否；
+    - `a.com.evil.com` / `evilkaas.a.com` ⇒ 后缀匹配必须是 `.<条目>` 才成立；
+    - `https://a.com@evil.com/x` ⇒ hostname 取的是 `evil.com`；
+    - `blob:` / `file:` / `javascript:` 等任何非 http(s) 协议 ⇒ 否。
+    """
+    entries = tuple(
+        str(h).strip().lower().strip(".")
+        for h in (allowed_hosts or ())
+        if str(h).strip()
+    )
+    if not entries:
+        return False
+    try:
+        parts = urlsplit(str(url).strip())
+    except ValueError:  # 非法 IPv6 等
+        return False
+    if parts.scheme.lower() not in ("http", "https"):
+        return False
+    # `hostname` 已小写、已去掉端口与用户信息；结尾的点（FQDN 写法的 `a.com.`）也去掉
+    host = (parts.hostname or "").strip().lower().rstrip(".")
+    if not host:
+        return False
+    return any(host == entry or host.endswith("." + entry) for entry in entries)
+
+
+def _resource_url_allowed(value: str, allowed_hosts) -> bool:
+    """资源地址：`data:` URI / 页内锚点 / 白名单域名（http(s)）放行，其余拒。"""
     head = value.strip().lower()
-    return head.startswith(_SAFE_URL_PREFIXES)
+    if head.startswith(_SAFE_URL_PREFIXES):
+        return True
+    return host_allowed(value, allowed_hosts)
 
 
-def validate_render_html(html: object) -> None:
+def _external_resource_detail(value: str, allowed_hosts, prefix: str = "HTML") -> str:
+    hosts = "、".join(allowed_hosts) if allowed_hosts else "（无）"
+    return (
+        f"{prefix} 引用了外部资源：{_snippet(value)}"
+        f"（只允许 data: URI 或白名单域名：{hosts}；可用 {ALLOWED_HOSTS_ENV_KEY} 配置）"
+    )
+
+
+def validate_render_html(
+    html: object, allowed_hosts: Optional[tuple[str, ...]] = None
+) -> None:
     """校验"交给无头浏览器渲染的那份 HTML"。任何一条不满足都抛 `FileRuleError`。
 
     为什么服务端还要再校验一次（前端明明也能拦）：前端能伪造请求体，
     而这个端点的后果是"我们账号的浏览器去渲染它" —— 服务端是**唯一的守门人**。
 
+    `allowed_hosts` 是外链白名单（由调用方用 `allowed_html_hosts(取环境)` 读好传进来）；
+    不传 ⇒ 用 `DEFAULT_ALLOWED_HOSTS`（**不是**"全部放行"）。
+
     拒绝面（全部映射到 422，`code` 区分原因）：
     - 非字符串 / 空 / 只含空白 → `HTML_REQUIRED`
     - 超过 2MB（按 UTF-8 字节）→ `HTML_TOO_LARGE`
-    - `<script>`/`<iframe>`/`<object>`/`<embed>`/`<link>`/`<form>`/`<base>`、
-      `on*=` 事件属性、`javascript:`、`<meta refresh>` → `HTML_UNSAFE_MARKUP`
-    - 非 `data:` 的资源地址（`src`/`href`/`srcset`/`poster`/CSS `url()`/`@import`）
-      → `HTML_EXTERNAL_RESOURCE`
+    - `<script>`/`<iframe>`/`<object>`/`<embed>`/`<link>`/`<base>`/`<form>`、
+      `on*=` 事件属性、`javascript:`/`vbscript:`、`data:text/html`、
+      `<meta refresh/set-cookie>`、`@import` → `HTML_UNSAFE_MARKUP`
+    - 资源地址（`src`/`href`/`srcset`/`poster`/`background`/`data`/`formaction`/
+      `action`/`xlink:href` + CSS `url()`）既不是 `data:` URI、也不是白名单域名的
+      http(s) 地址 → `HTML_EXTERNAL_RESOURCE`（含协议相对的 `//host/x`）
     """
     if not isinstance(html, str):
         _reject("HTML_REQUIRED", "html 必须是字符串（与预览同源的那份单证 HTML）")
     if html.strip() == "":
         _reject("HTML_REQUIRED", "html 不能为空：请把预览用的单证 HTML 一起发过来")
+
+    hosts = tuple(allowed_hosts) if allowed_hosts is not None else DEFAULT_ALLOWED_HOSTS
 
     size = len(html.encode("utf-8"))
     if size > MAX_RENDER_HTML_BYTES:
@@ -171,20 +253,16 @@ def validate_render_html(html: object) -> None:
                 f"HTML 含内联事件属性：{_snippet(hit.group(0))}（只渲染自包含静态单据）",
             )
         for _quote, value in _RESOURCE_ATTR_RE.findall(tag):
-            if not _is_safe_resource_url(value):
-                _reject(
-                    "HTML_EXTERNAL_RESOURCE",
-                    f"HTML 引用了外部资源：{_snippet(value)}"
-                    "（自动出 PDF 只接受自包含 HTML：图片请走产品图库引用，会内联成 data: URI）",
-                )
+            if not _resource_url_allowed(value, hosts):
+                _reject("HTML_EXTERNAL_RESOURCE", _external_resource_detail(value, hosts))
 
     # CSS 里的外链（`url(...)`）：样式只会出现在 `<style>` 或 `style=` 属性里，
     # 这两处都是渲染器自己产出的；正文里出现 "url(" 的概率极低，判错也只是拒（fail-safe）。
     for _quote, value in _CSS_URL_RE.findall(html):
-        if not _is_safe_resource_url(value):
+        if not _resource_url_allowed(value, hosts):
             _reject(
                 "HTML_EXTERNAL_RESOURCE",
-                f"CSS 引用了外部资源：{_snippet(value)}（样式必须内联、图片用 data: URI）",
+                _external_resource_detail(value, hosts, prefix="CSS"),
             )
 
 

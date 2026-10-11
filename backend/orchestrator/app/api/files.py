@@ -38,6 +38,7 @@ from kaas_common.files import (
     MAX_RENDER_PDF_BYTES,
     RENDERER_NOT_CONFIGURED_DETAIL,
     RENDER_PDF_KIND,
+    allowed_html_hosts,
     current_of,
     looks_like_pdf,
     next_version,
@@ -652,7 +653,9 @@ async def render_doc_pdf(doc_id: int, body: RenderPdfIn,
     """
     tenant_id = tenant_id_of(auth)
     try:
-        validate_render_html(body.html)
+        # 外链白名单请求期读（`PDF_HTML_ALLOWED_HOSTS`，默认自家域名）——
+        # 与渲染器配置同一套"请求期取值"口径，不引 import 期常量。
+        validate_render_html(body.html, allowed_html_hosts(os.environ.get))
     except FileRuleError as exc:
         raise _fail(exc)
 
