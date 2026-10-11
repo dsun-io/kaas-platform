@@ -129,6 +129,39 @@ python scripts/render_all_samples.py
 | GET | `/api/v1/trade-doc-templates/{doc_type}` | 单类字段定义（供前端动态表单 / AI 填充） |
 | GET | `/api/v1/trade-docs/{id}/render` | 按业务数据渲染 HTML（可浏览器打印为 PDF） |
 
+### 界面入口：填写单据内容（2026-10-11 新增）
+
+单证工位详情页新增「**填写单据内容**」面板（`components/doc-custom-form.tsx`）：
+
+- 字段清单来自模板 manifest（`getTemplateFields`），**不在界面里硬编码第二份** ——
+  以后给某类单证加字段，面板自动出现。
+- 控件按字段类型生成：标量→输入框、`date`→日期、`boolean`→是/否、
+  `object/array/image_list`→JSON 文本域、`image`→**选文件转 data URI**。
+  类型未知时退回文本，不静默丢字段。
+- 保存走 `PATCH /api/v1/trade-docs/{id}` 的 `raw_payload.custom`。
+  **只填要覆盖或补充的项**：后端装配顺序是"上游快照 → 企业主体 → 默认条款 → custom"，
+  custom 最后覆盖，留空即用上游数据。
+- ⚠️ `raw_payload` 是**整块替换**，提交时必须带上 `sources`（`buildPayloadPatch`），
+  否则会把上游订单/报价快照抹掉、单据再也回不到上游。
+- 仅 `draft` 可改；签发后服务端返回 `PAYLOAD_LOCKED`，界面也会先说明。
+
+### 离线渲染（命令行，2026-10-11 新增）
+
+生产是「前端渲染」架构（Worker 不带模板引擎），所以离线/批量出单原本没有入口。
+现在有通用 CLI（复用**同一个**渲染器，与界面输出一致）：
+
+```powershell
+# 仓库根目录；payload 与 render-data 的 data 同形
+node <node> frontend/node_modules/tsx/dist/cli.mjs scripts/render-trade-doc.ts `
+     --type pi --data artifacts/pi-payload.json --out artifacts/pi.html --assets-dir artifacts
+```
+
+- `company_stamp` / `product_photos[].image` 可写**本地文件路径**，CLI 按扩展名转
+  `data:` URI 内联（渲染器只收 `data:` 与 `http(s)`，那是防注入白名单，不放开）。
+- 输出自包含 HTML，可直接用浏览器打印为 A4 PDF。
+  ⚠️ **别用 ego 浏览器打印**（会把光标/浮标一起印进去，且每页重复），
+  用系统 Chrome：`chrome --headless=new --no-pdf-header-footer --print-to-pdf=<out> <file:///…html>`。
+
 ---
 
 ## 六、扩展新单证

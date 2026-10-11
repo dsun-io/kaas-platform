@@ -40,6 +40,7 @@ import { renderTradeDoc } from "@/lib/trade-doc/render";
 import { exportCsv, exportExcel, printMerged } from "@/lib/trade-doc/export";
 
 import { DocCreateForm } from "./components/doc-create-form";
+import { DocCustomForm } from "./components/doc-custom-form";
 import { DocPreview } from "./components/doc-preview";
 import { SamplePreview } from "./components/sample-preview";
 import { DOC_TYPE_GROUPS } from "./lib/doc-type-groups";
@@ -452,6 +453,12 @@ export default function TradeDocsPage() {
                   该单据已签发并冻结，上游订单再变动也不会改变这张单据的内容。
                 </p>
               )}
+              <DocCustomForm
+                docId={renderData.data.doc.id}
+                docType={renderData.data.doc.doc_type}
+                status={renderData.data.doc.status}
+                payload={renderData.data.doc.raw_payload}
+              />
               <DocPreview
                 docType={renderData.data.doc.doc_type}
                 docNo={renderData.data.doc.doc_no}
