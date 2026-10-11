@@ -31,7 +31,22 @@ export default async function globalSetup() {
         sameSite: 'Lax',
       },
     ],
-    origins: [],
+    // ⚠️ 光有 `has_token` cookie **不够**：那个只让 middleware 放行路由，
+    // 而 `AuthProvider` 恢复会话走的是 **token store**，不是 cookie：
+    //   `auth-context.tsx` → restore() 里 `const token = getToken()`
+    //   拿不到就直接 return（**根本不会去调 `/auth/me`**）→ user 始终为 null
+    //   → `account_type` 缺失 → `?? "customer"` 当成非管理员
+    //   → 所有 `<RouteGuard adminOnly>` 页面渲染「您没有访问此页面的权限」。
+    //
+    // 这就是那 18 条 e2e 失败的真实机制（失败清单正好等于用 adminOnly 的 7 个页面）。
+    // `TOKEN_KEY = "kaas_token"`（见 lib/auth/token-store.ts），且优先读 localStorage，
+    // 所以必须在 origins.localStorage 里种一个。
+    origins: [
+      {
+        origin: 'http://localhost:3000',
+        localStorage: [{ name: 'kaas_token', value: 'mock-access-token' }],
+      },
+    ],
   };
 
   fs.writeFileSync(

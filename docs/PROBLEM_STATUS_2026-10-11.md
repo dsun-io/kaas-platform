@@ -217,6 +217,61 @@ allowlist 里已写注释提醒后来者：**这片区域不是整片死的，�
 补完应大幅减少失败数；剩下若仍有失败，才是真正需要查的应用问题
 （`/quotations` 那几条不在这 7 个 adminOnly 页面里，可能另有原因）。
 
+#### 🎯🎯 更底层的真因（**解释力最强**）：客户端打的是 `:8000`，MSW 只匹配 `:3000`
+
+上一步的假设**不完整**（补了 mock handler + 种了 token 后**仍是 18 failed**）。
+继续查才找到真正的原因链：
+
+| 来源 | 值 |
+|---|---|
+| `frontend/.env.development` | `NEXT_PUBLIC_API_MODE=real`、**`NEXT_PUBLIC_API_BASE_URL=http://localhost:8000`** |
+| playwright `webServer.env` | 只覆盖了 `API_MODE=mock`，**没有覆盖 BASE_URL** |
+
+于是：
+
+1. `lib/api/config.ts` 的 `API_BASE_URL` 取到 **`http://localhost:8000`**
+   （`.env.development` 在 dev 模式下会被 Next 加载）
+2. 客户端请求变成 **`http://localhost:8000/api/v1/...`**
+3. 而 MSW 的 handler 写的是**相对路径**（`http.get("/api/v1/events")`），
+   浏览器里只匹配**页面源** = `http://localhost:3000` → **跨源不匹配**
+4. `components/msw-provider.tsx` 用的是 `onUnhandledRequest: "bypass"`
+   → 未匹配的请求**放行到真实网络** → `:8000` 无人在听 → **全部失败**
+5. 连 `/auth/me` 也失败 → `AuthProvider` 的 catch 清掉会话 →
+   页面只剩外壳 +「您没有访问此页面的权限」
+
+**这也解释了为什么失败清单"正好等于 adminOnly 的页面"** ——
+不是权限逻辑的问题，而是**所有数据请求都失败**，而 adminOnly 页面
+额外把"没有用户"直接渲染成"无权限"，于是看起来像权限缺陷。
+
+#### 已验证的进展与**新暴露的问题**（`BASE_URL` 指向页面源）
+
+在 `playwright.config.ts` 的 webServer env 里补
+`NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3000'` 后实测：
+
+| | 之前 | 之后 |
+|---|---|---|
+| 通过 | 6 | **10** |
+| 失败 | 18 | **14** |
+
+**但同时暴露**：Next 有 rewrite 把 `/api/v1/*` 代理到 `API_BASE_URL`，
+于是**未被 MSW 匹配的路径会"自我代理"**：
+
+```
+[WebServer] Failed to proxy http://localhost:3000/api/v1/teams/me
+            AggregateError [EADDRINUSE]
+```
+
+`/api/v1/teams/me`、`/api/v1/me/workstations` 这些**mock 里没有 handler**，
+bypass 后落到 rewrite，自己代理自己 → 报错。
+
+**所以还剩 14 条不是单一原因**，至少两件事：
+
+1. **mock 覆盖不全**：补 `/teams/me`、`/me/workstations` 等缺失 handler
+2. **rewrite 与 mock 的相互作用**：需要让未匹配请求**明确失败**（便于发现缺口），
+   而不是自我代理绕一圈
+
+⚠️ 本轮**未**声称"e2e 已归真"——14 条失败仍在，只是根因比"26 条产品缺陷"清楚得多。
+
 **关键发现：那两个 critical/high 的来源不是"版本旧"，是依赖放错了位置。**
 
 | 漏洞 | 来源链 | 真实问题 |
