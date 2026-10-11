@@ -4,8 +4,10 @@
 
 产品特征：
 - 拧编型，横丝间距上疏下密；横丝间距不参与重量与计价
-- 丝径有三种方案，方案一选定则边丝径/内横丝径/竖丝径/卷长/卷径**同时确定**，
-  因此用「变体包」而不是独立规格轴
+- **丝径是自由数值，不是"方案"**（2026-10-11 用户裁决）：边丝径 / 内横丝径 /
+  竖丝径 / 卷长 / 卷径 / 网高 / 竖丝间距 / 横丝根数 一律由客户直接填**任意值**，
+  由下方工艺公式折算成重量。引擎只做上下界**防误填**，不做枚举（`NumericInput`）。
+  只有**可枚举**的（表面处理、工艺）才用变体包 —— 它们要挂定价数据。
 - 每卷重量由工艺公式算出，不是查表
 
 核心公式（客户给定口径）：
@@ -20,12 +22,11 @@
 from __future__ import annotations
 
 from ..models import (
-    Axis,
     Column,
     FormulaSpec,
     Invariant,
+    NumericInput,
     OrderSpec,
-    PieceInput,
     ProductSpec,
     SpaceDeduction,
     VariantGroup,
@@ -64,7 +65,6 @@ def build_spec() -> ProductSpec:
         ],
 
         constants={
-            "n": HORIZONTAL_WIRE_COUNT,
             "product_name": "牛栏网",
             "product_name_en": "Field Fence",
             "surface_treatment": "热镀锌",
@@ -76,37 +76,45 @@ def build_spec() -> ProductSpec:
             "pi": "3.14159265358979323846",
         },
 
-        # 独立规格轴
-        axes=[
-            Axis("height_m", (1.2, 1.5), "网高(m)", "Net Height (m)"),
-            Axis("mesh_mm", (100, 150), "竖丝间距(mm)", "Vertical Wire Spacing (mm)"),
-            # 边丝径：与「内丝径」分开选择。
-            # 变量名沿用 de —— 重量与边丝重公式里用的就是 de，改名会牽动全部公式。
+        # 没有可枚举的独立规格轴：尺寸类全是自由数值（见下）
+        axes=[],
 
-            Axis("de", (2.0, 2.5), "边丝径(mm)", "Edge Wire Dia. (mm)"),
+        # ── 自由数值参数 ──────────────────────────────────────────────────
+        # 客户直接填任意值（2.3mm 就填 2.3），重量/体积由 derived 公式折算。
+        # 只设上下界防误填 —— 不枚举，否则"选不到"会逼着人把值写进备注。
+        # 变量名沿用公式里的符号（de/dm/dv/n），改名会牵动全部公式。
+        numeric_inputs=[
+            NumericInput("de", "边丝径(mm)", "Edge Wire Dia. (mm)",
+                         unit="mm", default=2.0, min_value=0.3, max_value=8,
+                         decimals=2, note="两侧边丝直径，重量公式里的 d边。"),
+            NumericInput("dm", "内横丝径(mm)", "Inner Horizontal Wire Dia. (mm)",
+                         unit="mm", default=2.0, min_value=0.3, max_value=8,
+                         decimals=2, note="内横丝（径丝）直径，重量公式里的 d横。"),
+            NumericInput("dv", "竖丝径(mm)", "Vertical Wire Dia. (mm)",
+                         unit="mm", default=2.0, min_value=0.3, max_value=8,
+                         decimals=2, note="竖丝直径，重量公式里的 d竖。"),
+            NumericInput("height_m", "网高(m)", "Net Height (m)",
+                         unit="m", default=1.2, min_value=0.3, max_value=3,
+                         decimals=2, note="网高；体积口径按它算。"),
+            NumericInput("mesh_mm", "竖丝间距(mm)", "Vertical Wire Spacing (mm)",
+                         unit="mm", default=100, min_value=10, max_value=1000,
+                         note="对外按厘米表述（10cm/15cm），内部按毫米参与公式。"),
+            NumericInput("n", "横丝根数", "No. of Horizontal Wires",
+                         unit="根", default=HORIZONTAL_WIRE_COUNT,
+                         min_value=2, max_value=100,
+                         note="重量公式里的 n。默认 10 根。"),
+            NumericInput("roll_len_m", "卷长(m)", "Roll Length (m)",
+                         unit="m", default=ROLL_LEN_LONG, min_value=1,
+                         max_value=1000,
+                         note="每卷多少米，直接进重量公式。"),
+            NumericInput("roll_dia_m", "卷径", "Roll Diameter",
+                         unit="m", ui_unit="公分", ui_scale=100,
+                         default=ROLL_DIA_LONG, min_value=0.05, max_value=2,
+                         note="决定体积（π/4 × 卷径² × 网高），是对外报运价/报关的口径。"),
         ],
 
         # 关联属性：一选全变
         variants=[
-            VariantGroup(
-                "inner_wire",
-                (
-                    # 内丝径一次选定即确定：内横丝径 dm、竖丝径 dv、卷长、卷径。
-                    # 口径依据（与原有 3 套丝径方案等价）：
-                    #   · 内横丝与竖丝总是同值 → 合成一个「内丝」
-                    #   · 卷长/卷径**跟随内丝**：内丝 2.0 → 100m 卷 / 30cm 卷径；
-                    #     内丝 2.5 → 50m 卷 / 25cm 卷径
-                    # code 与 DB 迁移里的 value_code 一致（spec_attribute_values.value_code），
-                    # 这样「产品定义 ↔ 数据库 ↔ 表格导入」共用同一套标识，不会各写各的
-                    {"code": "inner_20", "name": "内丝2.0", "dm": 2.0, "dv": 2.0,
-                     "roll_len_m": ROLL_LEN_LONG, "roll_dia_m": ROLL_DIA_LONG,
-                     "name_en": "Inner 2.0"},
-                    {"code": "inner_25", "name": "内丝2.5", "dm": 2.5, "dv": 2.5,
-                     "roll_len_m": ROLL_LEN_SHORT, "roll_dia_m": ROLL_DIA_SHORT,
-                     "name_en": "Inner 2.5"},
-                ),
-                "内丝径", "Inner Wire Diameter",
-            ),
             VariantGroup(
                 "coating",
                 (
@@ -300,7 +308,6 @@ def build_spec() -> ProductSpec:
             # 丝径类列统一 1 位小数：写成 2.0 而不是 2 —— 工厂口径就是一位小数，
             # 位数写在产品定义里，界面不自己判断“哪个是丝径”。
             Column("spec.de", "边丝径(mm)", "Edge Wire Dia. (mm)", 1, width=12),
-            Column("spec.inner_wire", "内丝径", "Inner Wire Dia.", width=13),
             Column("spec.dm", "内横丝径(mm)", "Inner Horizontal Wire Dia. (mm)", 1, width=15),
             Column("spec.dv", "竖丝径(mm)", "Vertical Wire Dia. (mm)", 1, width=12),
             Column("spec.wave", "工艺", "Wave Bend", width=10),
@@ -355,36 +362,22 @@ def build_spec() -> ProductSpec:
             ["加工利润", 0.1, "元/kg", "100 元/t，全表仅计一次"],
             ["进项票税点", 0.10, "比例", "丝厂开票 10 个点；含税采购价 = 税前成本 ÷ 0.9"],
             ["印花税率", 0.05, "比例", "按加工利润计征（该值来自税务档案，可覆盖）"],
-            ["横丝（径丝）根数", HORIZONTAL_WIRE_COUNT, "根", "重量公式中的 n"],
+            ["横丝（径丝）根数", f"默认 {HORIZONTAL_WIRE_COUNT}（可改）", "根",
+             "重量公式中的 n。现在是**自由数值参数**，客户可填任意值"],
             ["波弯款增重", WAVE_ADD_PER_100M, "kg/100m", "100 米卷 +3kg、50 米卷 +1.5kg"],
             ["占用空间扣减", 2.5, "m³",
              "每卷按**长方体**累计后扣减 2~3 m³，取中位数 2.5；每单只扣一次"],
-            ["卷径", "30（100米卷）/ 25（50米卷）", "cm",
-             "随丝径方案联动的默认值；可用 variant_overrides 覆盖"],
+            ["卷径 / 卷长", "默认 30cm / 100m（可改）", "cm / m",
+             "**自由数值参数**，客户按实际装箱填；不再与丝径方案联动"],
         ],
 
         # 可按件改写的规格参数 —— 界面「数量区」据此渲染输入框，改完回写成
-        # variant_overrides；属性名与默认值始终留在本文件，界面不写死产品知识。
+        # 原先这里用 piece_inputs 声明「可覆盖的变体属性」（卷长/卷径）。
+        # 现在卷长与卷径是**一等自由数值参数**（见上 numeric_inputs），
+        # 客户在界面上直接填即可，不再需要"覆盖某个变体属性"这层间接，故整块删除。
+        #
         # 卷长与卷径**必须成对维护**：卷径决定体积（π/4 × 卷径² × 网高），
         # 而体积是对外报运价/报关的口径，只改卷长不改卷径会把体积算错。
-        piece_inputs=[
-            PieceInput(
-                key="roll_len_m", variant="inner_wire",
-                label="单件米数", label_en="Length per Roll", unit="m",
-                unit_quantity=True,
-                note="每卷多少米（即「卷长」）。默认随内丝径联动"
-                     "（内丝2.0 → 100m、内丝2.5 → 50m），可改。"
-                     "它直接进重量公式，所以改了会连带改变重量、体积与单价。",
-            ),
-            PieceInput(
-                key="roll_dia_m", variant="inner_wire",
-                label="卷径", label_en="Roll Diameter",
-                unit="m", ui_unit="公分", ui_scale=100,
-                note="决定单卷占用体积（π/4 × 卷径² × 网高），是对外报运价/报关的口径。"
-                     "默认随内丝径联动（100米卷 30 公分、50米卷 25 公分），可改。"
-                     "与「单件米数」是同一件物理规格的两个面，改一个务必检查另一个。",
-            ),
-        ],
 
         notes=[
             "1. 整卷净重(kg) = 0.00617 × L × [2·d边² + (n−2)·d横² + d竖² × "
@@ -396,8 +389,8 @@ def build_spec() -> ProductSpec:
             "**单卷长方体体积**按外接方柱计 = 卷径² × 网高。"
             "总实际占用体积 = 长方体体积 × 卷数 − 2.5m³（每单只扣一次），"
             "这是对外报运价/报关用的口径。",
-            "5. 卷径随丝径方案联动（100 米卷 30cm、50 米卷 25cm），"
-            "如需按实际装箱重设，用 variant_overrides 覆盖，不必改产品定义。",
+            "5. 卷径与卷长是**自由数值**（默认 30cm / 100m），客户按实际装箱填，"
+            "不再与丝径方案联动 —— 丝径同样是自由值，不是「方案」。",
             "5. 销项增值税为价外税：税额 = 不含税售价 × 销项税率"
             "（基数是售价，不是成本）。出口零税率时税额为 0。",
             "6. 退税退的是进项增值税额；可退进项增值税税额 = 进项税额 × "

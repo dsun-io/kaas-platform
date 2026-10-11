@@ -91,7 +91,8 @@ class TestHeaderNormalisation:
         resolved = _resolve_column(p, "卷长(m/卷)", _build_header_map(p))
         assert resolved is not None
         kind, target, _meta, unit = resolved
-        assert (kind, target, unit) == ("scalar", "roll_len_m", "m")
+        # 卷长已是**自由数值**参数（不再是可覆盖的变体属性）
+        assert (kind, target, unit) == ("numeric", "roll_len_m", "m")
 
     def test_computed_columns_are_not_treated_as_inputs(self):
         p = spec()
@@ -135,24 +136,34 @@ class TestTemplateColumns:
                   if c.label and _resolve_column(p, c.label, maps) is not None}
         should -= excluded
         assert should <= set(template_headers(p))
-        assert len(should) >= 10  # 2 轴 + 3 变体包(内丝/表面处理/工艺) + 3 丝径覆盖 + 卷长 + 卷径
+        # 尺寸类改为自由数值后，可填列 = 表面处理 + 工艺 + 7 个尺寸类
+        # （网高/竖丝间距/边丝径/内横丝径/竖丝径/卷长/卷径）
+        assert len(should) >= 9
 
     def test_required_flags(self):
         cols = {c.header: c for c in template_columns(spec())}
-        assert cols["网高(m)"].required and cols["竖丝间距(cm)"].required
-        assert cols["边丝径(mm)"].required and cols["内丝径"].required
+        # 可枚举的必须给：它们决定查价与规格
         assert cols["表面处理"].required
         assert cols["工艺"].required
-        # 边丝径已是独立规格轴（必填），不再是「可留空的覆盖项」
-        for optional in ("内横丝径(mm)", "竖丝径(mm)",
+        # 尺寸类是**自由数值**：产品给了默认值，留空即用默认，所以不是必填。
+        # 但模板示例行会写出默认值，用户看得到该按什么量级填。
+        for optional in ("网高(m)", "竖丝间距(cm)", "边丝径(mm)",
+                         "内横丝径(mm)", "竖丝径(mm)",
                          "卷长(m/卷)", "卷径(cm)"):
             assert not cols[optional].required, optional
+            assert cols[optional].default is not None, optional
 
     def test_examples_use_the_header_unit(self):
-        """内部 100mm 的竖丝间距，在 cm 表头下示例值必须是 10。"""
+        """内部 100mm 的竖丝间距，在 cm 表头下示例值必须是 10。
+
+        自由数值列没有候选值清单（连续量枚举不出来），
+        所以"该填什么"靠 `default` 表达，且必须已换算成**表头单位**。
+        """
         cols = {c.header: c for c in template_columns(spec())}
-        assert cols["竖丝间距(cm)"].options == ["10", "15"]
-        assert cols["网高(m)"].options == ["1.2", "1.5"]
+        assert cols["竖丝间距(cm)"].options == []
+        assert cols["竖丝间距(cm)"].default == 10     # 100mm ÷ 10
+        assert cols["网高(m)"].default == 1.2
+        assert cols["卷径(cm)"].default == 30        # 0.30m ÷ 0.01
 
     def test_internal_columns_stay_out(self):
         """内部核算列（成本/利润/税额）绝不进模板 —— 那是给客户看的文件。"""
@@ -206,11 +217,14 @@ class TestXlsxTemplate:
         assert headers == template_headers(spec())
         row = {h: ws.cell(row=2, column=i + 1).value
                for i, h in enumerate(headers)}
-        assert row["网高(m)"] == 1.2      # 数字保持数字，不是字符串
+        # 数字保持数字，不是字符串
+        assert row["网高(m)"] == 1.2
         assert row["竖丝间距(cm)"] == 10
-        assert row["内丝径"] == "内丝2.0"
-        # 边丝径现在是独立规格轴（不是可留空的覆盖项）→ 示例行给出候选值
+        # 自由数值列按表头单位给出示例值
         assert float(row["边丝径(mm)"]) == 2.0
+        assert row["卷径(cm)"] == 30
+        # 可枚举的给出候选值
+        assert row["表面处理"] and row["工艺"]
 
     def test_spec_sheet_has_no_data_rows_by_default(self):
         """规格表只有表头 —— 示例放在「示例」表，不会被连带算进去。"""
@@ -381,16 +395,26 @@ class TestTemplateClosedLoop:
     async def test_filled_template_matches_row_by_row(self, async_client):
         """下载的模板填 3 行 → 上传 → 与逐行 spec_rows 计算逐列一致。"""
         headers = template_headers(spec())
-        cols = {c.header: c for c in template_columns(spec())}
-        # 按模板列顺序填：网高 / 竖丝间距(cm) / 边丝径(mm) / 内丝径 /
-        # 内横丝径 / 竖丝径 / 工艺 / 表面处理 / 卷长(m/卷) / 卷径(cm)
+
+        def row_of(**kw):
+            """按表头名填，避免把列顺序写死在测试里（加一列就全错位）。"""
+            vals = {
+                "网高(m)": kw.get("height"), "竖丝间距(cm)": kw.get("mesh"),
+                "边丝径(mm)": kw.get("de"), "内横丝径(mm)": kw.get("dm"),
+                "竖丝径(mm)": kw.get("dv"), "工艺": kw.get("wave"),
+                "表面处理": kw.get("coating"),
+                "卷长(m/卷)": kw.get("roll_len"),
+                "卷径(cm)": kw.get("roll_dia"), "横丝根数": kw.get("n"),
+            }
+            return ["" if vals.get(h) is None else vals[h] for h in headers]
+
         rows = [
-            [1.2, cols["竖丝间距(cm)"].options[0], 2.0, "内丝2.0", "", "",
-             "波弯款", "热镀锌 40g/㎡", "", ""],
-            [1.5, cols["竖丝间距(cm)"].options[1], 2.5, "内丝2.5", "", "",
-             "无波款", "热镀锌 200g/㎡", "", ""],
-            [1.2, cols["竖丝间距(cm)"].options[1], 2.5, "内丝2.0", "", "",
-             "波弯款", "热镀锌 200g/㎡", "", ""],
+            row_of(height=1.2, mesh=10, de=2.0, dm=2.0, dv=2.0,
+                   wave="波弯款", coating="热镀锌 40g/㎡"),
+            row_of(height=1.5, mesh=15, de=2.5, dm=2.5, dv=2.5,
+                   wave="无波款", coating="热镀锌 200g/㎡"),
+            row_of(height=1.2, mesh=15, de=2.5, dm=2.0, dv=2.0,
+                   wave="波弯款", coating="热镀锌 200g/㎡"),
         ]
         assert len(rows[0]) == len(headers)
 
@@ -448,4 +472,4 @@ class TestTemplateClosedLoop:
         j = r.json()
         # 导出的规格列，模板里都有（模板是导出表的一个子集且列名一致）
         assert set(j["mapping"]) <= set(template_headers(spec()))
-        assert j["usable_rows"] == 160
+        assert j["usable_rows"] == 10

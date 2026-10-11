@@ -115,6 +115,10 @@ class NumericInput:
     min_value: Any = None   # 可选下界（含）。只做防误填，不做枚举
     max_value: Any = None
     decimals: int | None = None
+    # 表头单位 → **引擎单位** 的换算表，如 {"cm": "10"}（表头写 cm、值 10 → 10cm → 100mm）。
+    # 导出列用的就是这些单位，导入时必须按同一张表换回去，否则「导出→改→再导入」
+    # 会把单位认错（例如 10cm 被当成 10mm，差十倍）。留空则按 unit / ui_scale 推断。
+    unit_factors: Any = None
     note: str = ""
 
 

@@ -63,9 +63,12 @@ def req(**kw):
     return QuoteRequest(**base)
 
 
-ROW_A = {"de": 2.0, "inner_wire": "内丝2.0", "height_m": 1.2, "mesh_mm": 100,
+# 尺寸类是**自由数值**（2026-10-11 裁决：没有"丝径方案"），逐行给出实际值。
+ROW_A = {"de": 2.0, "dm": 2.0, "dv": 2.0, "roll_len_m": 100, "roll_dia_m": 0.30,
+         "height_m": 1.2, "mesh_mm": 100,
          "coating": "热镀锌 40g/㎡", "wave": "无波款"}
-ROW_B = {"de": 2.5, "inner_wire": "内丝2.5", "height_m": 1.5, "mesh_mm": 150,
+ROW_B = {"de": 2.5, "dm": 2.5, "dv": 2.5, "roll_len_m": 50, "roll_dia_m": 0.25,
+         "height_m": 1.5, "mesh_mm": 150,
          "coating": "热镀锌 200g/㎡", "wave": "波弯款"}
 
 
@@ -79,43 +82,48 @@ class TestSpecRowsMode:
         assert res.request.skipped_spec_rows == 0
 
     def test_default_still_expands_all_combos(self):
-        assert build(req()).combo_count == 160
+        # 尺寸类不进笛卡尔积，只剩 表面处理 5 × 工艺 2
+        assert build(req()).combo_count == 10
 
-    def test_variant_group_pulls_its_attributes(self):
-        """给内丝径就该带出内横丝径、竖丝径与卷长卷径（一选全变）；边丝径来自自己的轴。"""
+    def test_numerics_are_used_as_given(self):
+        """尺寸类是**自由数值**：给什么就用什么，引擎不查表、不联动。"""
         spec_ = spec_from_partial(spec(), ROW_B, 1)
-        assert spec_["de"] == 2.5, "边丝径来自独立的轴"
-        assert spec_["dm"] == 2.5 and spec_["dv"] == 2.5
-        assert spec_["roll_len_m"] == 50
-        assert spec_["roll_dia_m"] == 0.25
-        assert spec_["inner_wire"] == "内丝2.5"
+        assert D(str(spec_["de"])) == D("2.5")
+        assert D(str(spec_["dm"])) == D("2.5") and D(str(spec_["dv"])) == D("2.5")
+        assert D(str(spec_["roll_len_m"])) == D("50")
+        assert D(str(spec_["roll_dia_m"])) == D("0.25")
+
+    def test_variant_group_still_pulls_its_attributes(self):
+        """可枚举的（表面处理）仍然"一选全变"：带出 raw_price 与锌层克重。"""
+        spec_ = spec_from_partial(spec(), ROW_A, 1)
+        assert spec_["coating"] == "热镀锌 40g/㎡"
+        assert spec_["coating_code"] == "zinc_40"
+        assert D(str(spec_["raw_price"])) == D("4.4")
+        assert spec_["zinc_g_m2"] == 40
 
     def test_option_code_also_accepted(self):
         """稳定 code 与 DB 的 value_code 一致，导表里写 code 也要认。"""
         spec_ = spec_from_partial(
-            spec(), {"inner_wire_code": "inner_25", "de": 2.0, "height_m": 1.2,
+            spec(), {"de": 2.0, "height_m": 1.2,
                      "mesh_mm": 100, "coating": "zinc_40", "wave": "no_wave"}, 1)
-        assert spec_["inner_wire"] == "内丝2.5"
         assert spec_["coating"] == "热镀锌 40g/㎡"
 
     def test_bad_row_is_skipped_not_fatal(self):
-        res = build(req(spec_rows=[ROW_A, {"de": 2.0, "inner_wire": "不存在",
+        res = build(req(spec_rows=[ROW_A, {"de": 2.0,
                                            "height_m": 1.2, "mesh_mm": 100,
-                                           "coating": "热镀锌 40g/㎡",
+                                           "coating": "不存在的表面处理",
                                            "wave": "无波款"}, ROW_B]))
         assert res.combo_count == 2
         assert res.request.skipped_spec_rows == 1
         joined = " ".join(res.diagnostics)
         assert "第 2 行" in joined
-        assert "内丝2.0" in joined, "错误信息要列出可选值"
+        assert "热镀锌 40g/㎡" in joined, "错误信息要列出可选值"
 
-    def test_missing_axis_reports_which_one(self):
-        res = build(req(spec_rows=[ROW_A]))
-        bad = dict(ROW_A)
-        bad.pop("height_m")
-        res = build(req(spec_rows=[ROW_A, bad]))
+    def test_out_of_range_numeric_reports_which_field(self):
+        """自由数值也要挡住明显填错的（上下界），并说清是哪一项。"""
+        res = build(req(spec_rows=[ROW_A, dict(ROW_A, height_m=99)]))
         assert res.request.skipped_spec_rows == 1
-        assert any("缺少规格轴" in d for d in res.diagnostics)
+        assert any("网高" in d and "上界" in d for d in res.diagnostics)
 
     def test_unknown_field_reports_available_fields(self):
         bad = dict(ROW_A, 不存在的字段=123)
@@ -131,8 +139,7 @@ class TestSpecRowsMode:
 
     def test_all_rows_bad_raises_clearly(self):
         with pytest.raises(EngineError, match="全部无法解析"):
-            build(req(spec_rows=[{"de": 2.0, "inner_wire": "x", "height_m": 9,
-                                  "mesh_mm": 1, "coating": "y", "wave": "z"}]))
+            build(req(spec_rows=[{"de": "很粗", "coating": "y", "wave": "z"}]))
 
     def test_numeric_axis_tolerates_matching_unit_suffix(self):
         """同单位的后缀可以容忍：1.2m ↔ 1.2（轴本身就是米）。"""
@@ -147,9 +154,15 @@ class TestSpecRowsMode:
         轴 `mesh_mm` 的单位是毫米；写 "10cm" 若被当成 10 就差了十倍。
         换算是导入器的职责（它按表头单位换算，已单独测过），
         引擎只认声明单位下的取值，避免两处都换算导致双重折算。
+
+        只容忍**与声明单位一致**的后缀（"1.2m" 之于 unit="m"），
+        不是无脑 strip 掉尾部字母 —— 那样 "10cm" 会被当成 10mm。
         """
-        with pytest.raises(EngineError, match="不在可选范围"):
+        with pytest.raises(EngineError, match="单位与声明"):
             spec_from_partial(spec(), dict(ROW_A, mesh_mm="10cm"), 1)
+        # 与声明单位一致的后缀仍然容忍
+        assert D(str(spec_from_partial(
+            spec(), dict(ROW_A, mesh_mm="100mm"), 1)["mesh_mm"])) == D("100")
 
     def test_batch_matches_single_row_computation(self):
         """批量第 1 行必须与单独传这一行算出的结果一模一样。"""
@@ -181,58 +194,61 @@ class TestSpecRowsMode:
 class TestImporter:
     def test_template_headers_use_export_labels(self):
         labels = template_headers(spec())
-        assert "边丝径(mm)" in labels and "内丝径" in labels
+        assert "边丝径(mm)" in labels and "内横丝径(mm)" in labels
         assert "表面处理" in labels and "工艺" in labels
         assert build_template_csv(spec()).splitlines()[0].count(",") == len(labels) - 1
 
     def test_parses_our_own_export_headers_with_unit_conversion(self):
-        csv_text = ("网高(m),竖丝间距(cm),边丝径(mm),内丝径,表面处理,工艺\n"
-                    "1.2,10,2.0,内丝2.0,热镀锌 40g/㎡,无波款\n")
+        csv_text = ("网高(m),竖丝间距(cm),边丝径(mm),内横丝径(mm),表面处理,工艺\n"
+                    "1.2,10,2.0,2.5,热镀锌 40g/㎡,无波款\n")
         t = parse_table(csv_text.encode("utf-8"), spec(), "a.csv")
         assert t.mapping["竖丝间距(cm)"] == "mesh_mm"
         # 10cm 必须换算成 100mm —— 单位认错会整批算错
         assert t.rows[0]["mesh_mm"] == D("100")
         assert t.rows[0]["height_m"] == D("1.2")
+        # 自由数值不做枚举校验：2.5 直接进来
+        assert t.rows[0]["dm"] == D("2.5")
 
     def test_mm_header_is_not_converted(self):
-        csv_text = ("height_m,mesh_mm,de,inner_wire,coating,wave\n"
-                    "1.2,100,2.0,内丝2.0,热镀锌 40g/㎡,无波款\n")
+        csv_text = ("height_m,mesh_mm,de,dm,coating,wave\n"
+                    "1.2,100,2.0,2.3,热镀锌 40g/㎡,无波款\n")
         t = parse_table(csv_text.encode("utf-8"), spec(), "a.csv")
         assert t.rows[0]["mesh_mm"] == D("100")
+        assert t.rows[0]["dm"] == D("2.3")
 
     def test_accepts_english_and_codes(self):
         csv_text = ("Net Height (m),Vertical Wire Spacing (cm),Edge Wire Dia. (mm),"
-                    "Inner Wire Diameter,Zinc Coating,Wave Bend\n"
-                    "1.2,10,2.0,inner_20,zinc_40,no_wave\n")
+                    "Inner Horizontal Wire Dia. (mm),Zinc Coating,Wave Bend\n"
+                    "1.2,10,2.0,2.0,zinc_40,no_wave\n")
         t = parse_table(csv_text.encode("utf-8"), spec(), "a.csv")
-        assert t.rows[0]["inner_wire"] == "内丝2.0"
+        assert t.rows[0]["dm"] == D("2.0")
         assert t.rows[0]["coating"] == "热镀锌 40g/㎡"
         assert t.rows[0]["wave"] == "无波款"
 
     def test_bad_value_reported_with_row_column_and_options(self):
-        csv_text = ("网高(m),竖丝间距(cm),边丝径(mm),内丝径,表面处理,工艺\n"
-                    "1.2,10,2.0,内丝2.0,热镀锌 40g/㎡,无波款\n"
-                    "1.2,10,2.0,乱写的方案,热镀锌 40g/㎡,无波款\n")
+        csv_text = ("网高(m),竖丝间距(cm),边丝径(mm),表面处理,工艺\n"
+                    "1.2,10,2.0,热镀锌 40g/㎡,无波款\n"
+                    "1.2,10,2.0,乱写的表面处理,无波款\n")
         t = parse_table(csv_text.encode("utf-8"), spec(), "a.csv")
         assert len(t.rows) == 1
         assert len(t.errors) == 1
         err = t.errors[0]
         assert err.row == 2
-        assert err.column == "内丝径"
-        assert "内丝2.0" in err.message
+        assert err.column == "表面处理"
+        assert "热镀锌 40g/㎡" in err.message
 
     def test_ignored_columns_are_listed_not_fatal(self):
-        csv_text = ("网高(m),竖丝间距(cm),边丝径(mm),内丝径,表面处理,工艺,备注\n"
-                    "1.2,10,2.0,内丝2.0,热镀锌 40g/㎡,无波款,客户A\n")
+        csv_text = ("网高(m),竖丝间距(cm),边丝径(mm),表面处理,工艺,备注\n"
+                    "1.2,10,2.0,热镀锌 40g/㎡,无波款,客户A\n")
         t = parse_table(csv_text.encode("utf-8"), spec(), "a.csv")
         assert t.ignored_columns == ["备注"]
         assert len(t.rows) == 1
 
     def test_blank_rows_skipped(self):
-        csv_text = ("网高(m),竖丝间距(cm),边丝径(mm),内丝径,表面处理,工艺\n"
-                    "1.2,10,2.0,内丝2.0,热镀锌 40g/㎡,无波款\n"
-                    ",,,,,\n"
-                    "1.5,15,2.5,内丝2.5,热镀锌 200g/㎡,波弯款\n")
+        csv_text = ("网高(m),竖丝间距(cm),边丝径(mm),表面处理,工艺\n"
+                    "1.2,10,2.0,热镀锌 40g/㎡,无波款\n"
+                    ",,,,\n"
+                    "1.5,15,2.5,热镀锌 200g/㎡,波弯款\n")
         t = parse_table(csv_text.encode("utf-8"), spec(), "a.csv")
         assert t.total_data_rows == 2
         assert len(t.rows) == 2
@@ -268,7 +284,7 @@ class TestImporter:
         assert res.rows[0].derived["weight_per_piece_kg"] == D("65.4020")
 
     def test_roundtrip_export_then_import(self, tmp_path):
-        """导出 160 行 → 读回 → 重算，逐行一致（这是本功能的核心价值）。"""
+        """导出全部枚举组合 → 读回 → 重算，逐行一致（这是本功能的核心价值）。"""
         from app.services.export_quote.report import write_xlsx
 
         original = build(req(orders=field_fence.order_specs((30000,))))
@@ -277,10 +293,10 @@ class TestImporter:
         blob = path.read_bytes()
 
         back = parse_table(blob, spec(), "exported.xlsx", sheet="internal")
-        assert len(back.rows) == 160
+        assert len(back.rows) == 10
         recomputed = build(req(spec_rows=back.rows,
                                orders=field_fence.order_specs((30000,))))
-        assert recomputed.combo_count == 160
+        assert recomputed.combo_count == 10
         for a, b in zip(original.rows, recomputed.rows):
             assert (a.piece["price_per_piece"] == b.piece["price_per_piece"])
             assert (a.derived["weight_per_piece_kg"]
@@ -293,7 +309,7 @@ class TestImporter:
         path = tmp_path / "exported.csv"
         write_csv(original, str(path), view="internal")
         back = parse_table(path.read_bytes(), spec(), "exported.csv")
-        assert len(back.rows) == 160
+        assert len(back.rows) == 10
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -318,13 +334,14 @@ def _payload(**kw):
     return json.dumps(body)
 
 
-CSV_OK = ("网高(m),竖丝间距(cm),边丝径(mm),内丝径,表面处理,工艺\n"
-          "1.2,10,2.0,内丝2.0,热镀锌 40g/㎡,无波款\n"
-          "1.5,15,2.5,内丝2.5,热镀锌 200g/㎡,波弯款\n")
+# 尺寸类是自由数值列（不是「丝径方案」下拉）
+CSV_OK = ("网高(m),竖丝间距(cm),边丝径(mm),内横丝径(mm),竖丝径(mm),表面处理,工艺\n"
+          "1.2,10,2.0,2.0,2.0,热镀锌 40g/㎡,无波款\n"
+          "1.5,15,2.5,2.5,2.5,热镀锌 200g/㎡,波弯款\n")
 
-CSV_MIXED = ("网高(m),竖丝间距(cm),边丝径(mm),内丝径,表面处理,工艺\n"
-             "1.2,10,2.0,内丝2.0,热镀锌 40g/㎡,无波款\n"
-             "1.2,10,2.0,乱写,热镀锌 40g/㎡,无波款\n")
+CSV_MIXED = ("网高(m),竖丝间距(cm),边丝径(mm),表面处理,工艺\n"
+             "1.2,10,2.0,热镀锌 40g/㎡,无波款\n"
+             "1.2,10,2.0,乱写,无波款\n")
 
 
 class TestImportApi:
@@ -347,7 +364,7 @@ class TestImportApi:
         assert j["total_data_rows"] == 2
         assert j["usable_rows"] == 1
         assert j["mapping"]["边丝径(mm)"] == "de"
-        assert j["mapping"]["内丝径"] == "inner_wire"
+        assert j["mapping"]["竖丝间距(cm)"] == "mesh_mm"
         assert j["issues"][0]["row"] == 2
         assert j["expected_columns"]
 
@@ -389,7 +406,7 @@ class TestImportApi:
         j = r.json()
         assert j["import"]["usable_rows"] == 1
         assert j["import"]["skipped_rows"] == 1
-        assert j["import"]["issues"][0]["column"] == "内丝径"
+        assert j["import"]["issues"][0]["column"] == "表面处理"
 
     async def test_internal_view_needs_admin(self, async_client):
         files = {"file": ("a.csv", CSV_OK.encode("utf-8"), "text/csv")}
@@ -439,8 +456,8 @@ class TestImportApi:
         assert r.json()["detail"]["error"] == "bad_view"
 
     async def test_no_usable_rows_returns_issues(self, async_client):
-        csv_bad = ("网高(m),竖丝间距(cm),边丝径(mm),内丝径,表面处理,工艺\n"
-                   "1.2,10,乱写,乱写,热镀锌 40g/㎡,无波款\n")
+        csv_bad = ("网高(m),竖丝间距(cm),边丝径(mm),表面处理,工艺\n"
+                   "1.2,10,乱写,乱写,无波款\n")
         r = await async_client.post(
             f"{BASE}/import/calculate",
             files={"file": ("a.csv", csv_bad.encode("utf-8"), "text/csv")},
@@ -476,11 +493,11 @@ class TestImportApi:
         )
         assert r.status_code == 200, r.text
         j = r.json()
-        assert j["import"]["usable_rows"] == 160
+        assert j["import"]["usable_rows"] == 10
         ih = j["internal"]["header"]
         idx = {h: k for k, h in enumerate(ih)}
         got = [x[idx["单卷售价(元/卷)"]] for x in j["internal"]["rows"]]
         want = [x.piece["price_per_piece"] for x in res.rows]
         # Decimal → float 比较
-        assert len(got) == len(want) == 160
+        assert len(got) == len(want) == 10
         assert all(abs(float(g) - float(w)) < 1e-9 for g, w in zip(got, want))

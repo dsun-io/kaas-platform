@@ -336,6 +336,17 @@ async def explain_product(
             detail={"error": "missing_axis",
                     "message": "缺少规格取值: " + ", ".join(missing)},
         )
+    # 可枚举的变体（表面处理/工艺）必须给：它们决定查价与增重，**不能默认**。
+    # 少了它们，公式会取不到 raw_price / wave_factor，逐步代入算出空值却仍返 200 ——
+    # 那比报错更坏（业务会以为这就是答案）。
+    missing_variants = [vg.label or vg.name for vg in spec.variants
+                        if vg.name not in picked]
+    if missing_variants:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "missing_variant",
+                    "message": "缺少规格选择: " + ", ".join(missing_variants)},
+        )
 
     scope: dict = {}
     scope.update(spec.constants)

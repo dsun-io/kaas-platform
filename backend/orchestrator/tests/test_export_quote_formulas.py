@@ -35,13 +35,49 @@ def spec():
     return field_fence.build_spec()
 
 
-# 丝径拆分前的「方案名」→ 拆分后的 (边丝径, 内丝径)。
-# 保留旧名是为了让下面按规格定位的用例读起来仍然直观（对应关系是确定的）。
-WIRE_SPLIT = {
-    "全丝2.0": {"de": 2.0, "inner_wire": "内丝2.0"},
-    "全丝2.5": {"de": 2.5, "inner_wire": "内丝2.5"},
-    "边丝2.5+内丝2.0": {"de": 2.5, "inner_wire": "内丝2.0"},
+# 尺寸类现在是**自由数值**（2026-10-11 裁决：没有"丝径方案"这回事）。
+# 下面把旧的枚举空间显式写成 spec_rows，让按规格定位的用例读起来仍然直观，
+# 同时正好演示新模型的用法：**空间由调用方按行给**，不由产品定义展开。
+_INNER = {
+    "内丝2.0": {"dm": 2.0, "dv": 2.0, "roll_len_m": 100, "roll_dia_m": 0.30},
+    "内丝2.5": {"dm": 2.5, "dv": 2.5, "roll_len_m": 50, "roll_dia_m": 0.25},
 }
+WIRE_SPLIT = {
+    "全丝2.0": {"de": 2.0, **_INNER["内丝2.0"]},
+    "全丝2.5": {"de": 2.5, **_INNER["内丝2.5"]},
+    "边丝2.5+内丝2.0": {"de": 2.5, **_INNER["内丝2.0"]},
+}
+
+_COATINGS = ("热镀锌 40g/㎡", "热镀锌 200g/㎡", "热镀锌 260g/㎡",
+             "电镀锌", "PVC涂塑(黑色)")
+_WAVES = ("无波款", "波弯款")
+
+
+def legacy_space() -> list:
+    """旧的枚举空间：2 边丝径 × 2 内丝径 × 2 网高 × 2 间距 × 5 表面处理 × 2 工艺。"""
+    return [
+        {"de": de, "height_m": h, "mesh_mm": mesh, "coating": c, "wave": w,
+         **inner}
+        for de in (2.0, 2.5)
+        for inner in _INNER.values()
+        for h in (1.2, 1.5)
+        for mesh in (100, 150)
+        for c in _COATINGS
+        for w in _WAVES
+    ]
+
+
+def _num(v):
+    """float → Decimal 归一，便于与 spec 里的数值比较。
+
+    尺寸类是自由数值，`spec` 里存的是 Decimal；而 0.3 / 1.2 这类小数
+    在二进制里不精确，`Decimal('0.3') == 0.3` 会得到 False。
+    """
+    if isinstance(v, bool) or v is None:
+        return v
+    if isinstance(v, (int, float)):
+        return D(str(v))
+    return v
 
 
 def find(res, wire=None, **want):
@@ -49,7 +85,7 @@ def find(res, wire=None, **want):
     if wire is not None:
         want.update(WIRE_SPLIT[wire])
     for r in res.rows:
-        if all(r.spec.get(k) == v for k, v in want.items()):
+        if all(_num(r.spec.get(k)) == _num(v) for k, v in want.items()):
             return r
     raise LookupError(want)
 
@@ -62,6 +98,7 @@ def build_res():
         orders=field_fence.order_specs((30000, 50000)),
         rate_set=RateSetRegistry.from_dir().get("CN-2026-09"),
         quote_date=date(2026, 9, 24),
+        spec_rows=legacy_space(),
     ))
 
 
@@ -234,7 +271,9 @@ class TestEffectiveVolume:
             orders=field_fence.order_specs((30000,)),
             rate_set=RateSetRegistry.from_dir().get("CN-2026-09"),
             quote_date=date(2026, 9, 24),
-            variant_overrides={"inner_wire": {"内丝2.0": {"roll_dia_m": D("0.32")}}},
+            spec_rows=[{"coating": "热镀锌 40g/㎡", "wave": "无波款",
+                        "dm": 2.0, "dv": 2.0, "roll_len_m": 100,
+                        "roll_dia_m": D("0.32")}],
         ))
         r2 = over.rows[0]
         assert D(str(r2.derived["roll_dia_cm"])) == D("32.00")
@@ -320,8 +359,8 @@ class TestCalculationIsExplainable:
 
     def test_space_description_matches_product_combos(self):
         space = describe_space(spec())
-        # 2×2×2 轴 × 2×5×2 变体包 = 160 组合（表面处理扩到 5 档后）
-        assert space["combo_count"] == 160
+        # 尺寸类改成自由数值后，产品定义的**枚举**空间只剩 表面处理 5 × 工艺 2
+        assert space["combo_count"] == 10
         assert "48" not in space["formula"]  # formula 只描述轴，不含结论数字
         assert space["summary"]
 
@@ -456,27 +495,25 @@ class TestPricingKey:
         这一条正是把「存了却查不到」钉死的地方。
         """
         p = field_fence.build_spec()
-        for dim in describe_product(p)["pricing_key"]:
-            assert all(isinstance(o["value"], str) for o in dim["options"]), \
-                f"{dim['field']} 的取值必须已规范化成字符串，否则过一遍 JSON 就会变样"
+        dims = {d["field"]: d for d in describe_product(p)["pricing_key"]}
 
+        # 边丝径是**自由数值**：没有可选值清单，但维度**不能消失** ——
+        # 消失了界面就少一列，而查价键仍带着它，又变成"存了却查不到"。
+        assert dims["de"]["kind"] == "numeric"
+        assert dims["de"]["options"] == []
+        # 可枚举的那一维照旧：取值必须已规范成字符串，否则过一遍 JSON 就会变样
+        assert all(isinstance(o["value"], str)
+                   for o in dims["coating_code"]["options"])
+
+        # 同一个表面处理，不同的边丝径拼出**不同**的键（用实际填入的值，不枚举）
         rows = [
-            pricing_key_of(p, {"de": o["value"], "coating_code": c["value"]})
-            for o in next(d for d in describe_product(p)["pricing_key"] if d["field"] == "de")["options"]
-            for c in next(d for d in describe_product(p)["pricing_key"] if d["field"] == "coating_code")["options"]
+            pricing_key_of(p, {"de": de, "coating_code": c["value"]})
+            for de in (2, 2.3, 2.5)
+            for c in dims["coating_code"]["options"]
         ]
-        assert rows == [
-            "de=2|coating_code=zinc_40",
-            "de=2|coating_code=zinc_200",
-            "de=2|coating_code=zinc_260",
-            "de=2|coating_code=elec_galv",
-            "de=2|coating_code=pvc_black",
-            "de=2.5|coating_code=zinc_40",
-            "de=2.5|coating_code=zinc_200",
-            "de=2.5|coating_code=zinc_260",
-            "de=2.5|coating_code=elec_galv",
-            "de=2.5|coating_code=pvc_black",
-        ]
+        assert rows[0] == "de=2|coating_code=zinc_40"
+        assert "de=2.3|coating_code=zinc_40" in rows, "自由数值必须进键"
+        assert "de=2.5|coating_code=pvc_black" in rows
         assert len(set(rows)) == len(rows), "组合必须互不相同，否则会互相覆盖"
 
     def test_missing_dimension_yields_no_key(self):

@@ -396,23 +396,24 @@ def _numeric_value(ni, raw, row_index: int):
     """
     from .numeric import to_decimal
 
-    def _try(value):
-        return to_decimal(value)
-
     parsed = None
     try:
-        parsed = _try(raw)
+        parsed = to_decimal(raw)
     except Exception:
-        if isinstance(raw, str):
-            stripped = raw.strip().rstrip("cm米mM").strip()
-            if stripped:
+        # 只容忍**与声明单位一致**的后缀（"1.2m" 之于 unit="m"）。
+        # 不能盲 strip：那会把 "10cm" 当成 10mm 用，差十倍 ——
+        # 单位换算是**导入器**的职责（它按表头单位换算），引擎不跨单位换算。
+        if isinstance(raw, str) and ni.unit:
+            s = raw.strip()
+            if len(s) > len(ni.unit) and s.endswith(ni.unit):
                 try:
-                    parsed = _try(stripped)
+                    parsed = to_decimal(s[: -len(ni.unit)].strip())
                 except Exception:
                     parsed = None
     if parsed is None:
         raise EngineError(
-            "第 %d 行的「%s」不是数值: %r" % (row_index, ni.label or ni.key, raw))
+            "第 %d 行的「%s」不是数值，或单位与声明的「%s」不符: %r"
+            % (row_index, ni.label or ni.key, ni.unit or "原值", raw))
     value = parsed
     if ni.min_value is not None and value < to_decimal(ni.min_value):
         raise EngineError(

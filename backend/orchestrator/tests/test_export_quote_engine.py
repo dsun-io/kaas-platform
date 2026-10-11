@@ -1,7 +1,8 @@
 """出口报价引擎测试：规格展开、价链落地、订单指标、术语阶梯、三遍核验。
 
 锁定的事实：
-  · 牛栏网 2 边丝径 × 2 内丝径 × 5 表面处理 × 2 工艺 × 2 网高 × 2 竖丝间距 = 160 个组合
+  · 牛栏网 5 表面处理 × 2 工艺 = 10 个**枚举**组合；尺寸类（丝径/网高/间距/卷长/卷径）
+    是**自由数值**（2026-10-11 用户裁决），每个组合带一份，不参与笛卡尔积
   · 单卷售价 × 卷数 = 总价，且 每米价 × 总米数 = 总价，两者必须同时成立
   · 实际占用体积 = 长方体体积 − 2.5 m³（2~3 取中位数）
   · 报价有效期 7 天
@@ -78,22 +79,24 @@ def result():
 # ─────────────────────────────────────────────────────────────────────────────
 class TestSpecExpansion:
     def test_field_fence_combos_match_surface_options(self):
-        # 2 网高 × 2 竖丝间距 × 2 边丝径 × 2 内丝径 × 5 表面处理 × 2 工艺 = 160
-        assert len(expand_specs(field_fence.build_spec())) == 2 * 2 * 2 * 2 * 5 * 2
+        # 5 表面处理 × 2 工艺 = 10；尺寸类是自由数值，不进笛卡尔积
+        assert len(expand_specs(field_fence.build_spec())) == 5 * 2
 
-    def test_every_axis_is_covered_exactly_once(self, result):
+    def test_every_enumerated_option_is_covered_exactly_once(self, result):
+        """可枚举的（表面处理 × 工艺）必须充分排列且不重复。
+
+        尺寸类不在这里断言"覆盖" —— 它们是连续量，本身没有"枚举取值"可覆盖。
+        """
         combos = [
-            (
-                r.spec["height_m"],
-                r.spec["mesh_mm"],
-                r.spec["de"],
-                r.spec["inner_wire"],
-                r.spec["coating"],
-                r.spec["wave"],
-            )
+            (r.spec["coating"], r.spec["wave"])
             for r in result.rows
         ]
-        assert len(set(combos)) == 160, "组合必须充分排列且不重复"
+        assert len(set(combos)) == 5 * 2, "组合必须充分排列且不重复"
+        # 每个组合都要带齐尺寸类（默认值或调用方给的行）
+        for r in result.rows:
+            for key in ("de", "dm", "dv", "height_m", "mesh_mm", "roll_len_m",
+                        "roll_dia_m", "n"):
+                assert r.spec[key] is not None, f"组合缺少数值参数 {key}"
 
     def test_engine_is_product_agnostic(self):
         """引擎只认 ProductSpec、不认识任何具体产品：换一份 spec 就能展开，引擎代码一行不改。
@@ -179,7 +182,7 @@ class TestPieceAndOrderMetrics:
             )
 
     def test_wave_adds_3kg_per_100m(self):
-        r = build(request(variant_overrides={"wave": {"波弯款": {}}}) )
+        r = build(request())
         plain = [x for x in r.rows if x.spec["wave"] == "无波款"][0]
         waved = [x for x in r.rows if x.spec["wave"] == "波弯款"][0]
         # 同规格对比：波弯款比无波款每 100 米多 3kg
@@ -187,10 +190,7 @@ class TestPieceAndOrderMetrics:
             (a, b)
             for a in r.rows if a.spec["wave"] == "无波款"
             for b in r.rows if b.spec["wave"] == "波弯款"
-            if (a.spec["height_m"], a.spec["mesh_mm"], a.spec["de"],
-                a.spec["inner_wire"], a.spec["coating"])
-            == (b.spec["height_m"], b.spec["mesh_mm"], b.spec["de"],
-                b.spec["inner_wire"], b.spec["coating"])
+            if a.spec["coating"] == b.spec["coating"]
         ]
         assert same, "找不到同规格的波弯/无波配对"
         for a, b in same:
@@ -201,10 +201,18 @@ class TestPieceAndOrderMetrics:
             ) == delta
         assert plain and waved
 
-    def test_roll_length_by_wire_option(self, result):
-        for r in result.rows:
-            want = 50 if r.spec["inner_wire"] == "内丝2.5" else 100
-            assert r.spec["roll_len_m"] == want
+    def test_roll_length_is_a_free_value_defaulting_to_100m(self, result):
+        """卷长是**自由数值**参数（默认 100m），不再由"丝径方案"联动决定。"""
+        assert all(r.spec["roll_len_m"] == 100 for r in result.rows)
+
+    def test_roll_length_accepts_any_value(self):
+        """50 米卷不是"另一个方案"，就是把 roll_len_m 填成 50。"""
+        r = build(request(spec_rows=[{
+            "coating": "热镀锌 40g/㎡", "wave": "无波款",
+            "roll_len_m": 50, "roll_dia_m": 0.25,
+        }], orders=field_fence.order_specs((30000,))))
+        assert r.rows[0].spec["roll_len_m"] == 50
+        assert r.rows[0].spec["roll_dia_m"] == D("0.25")
 
     def test_volume_is_box_minus_median_deduction(self, result):
         for r in result.rows:
@@ -305,7 +313,7 @@ class TestVerification:
         rep = verify_invariants(result)
         assert rep.ok, rep.summary()
         # 牛栏网声明了 18 条关系式 × 行数 × 订单数
-        assert rep.checks >= 160 * 18
+        assert rep.checks >= 10 * 18
 
     def test_rate_set_audit_warns_on_unconfirmed_rebate(self, result):
         rep = verify_rate_set(result)
@@ -450,7 +458,7 @@ class TestViews:
     def test_customer_view_row_and_column_shape(self, result):
         view = build_customer_view(result)
         header = view["header"]
-        assert len(view["rows"]) == 160
+        assert len(view["rows"]) == 10
         assert all(len(row) == len(header) for row in view["rows"])
 
     def test_customer_view_has_bilingual_headers(self, result):

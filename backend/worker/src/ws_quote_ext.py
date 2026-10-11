@@ -69,7 +69,7 @@ def _ensure_engine() -> dict:
         from kaas_common.export_quote import RateSetError
         from kaas_common.export_quote.engine import resolve_space_deduction
         from kaas_common.export_quote.formulas import PRICE_METRICS, worked_example
-        from kaas_common.export_quote.numeric import DECIMAL
+        from kaas_common.export_quote.numeric import DECIMAL, to_decimal
         from kaas_common.export_quote.rates import (
             RebateRateNotFound,
             build_default_provider,
@@ -89,6 +89,7 @@ def _ensure_engine() -> dict:
         "PRICE_METRICS": PRICE_METRICS,
         "worked_example": worked_example,
         "DECIMAL": DECIMAL,
+        "to_decimal": to_decimal,
         "RebateRateNotFound": RebateRateNotFound,
         "build_default_provider": build_default_provider,
         "normalize_hs": normalize_hs,
@@ -197,6 +198,33 @@ async def export_quote_explain_product(
     for axis in spec.axes:
         if axis.name in body.spec:
             picked[axis.name] = _coerce(body.spec[axis.name], axis.options)
+    # 自由数值参数（丝径/网高/间距/卷长/卷径…）：给了就用，没给用声明的默认值。
+    # **不做枚举** —— 丝径 2.3mm 就是 2.3mm；只挡明显填错的（越界/非数值）。
+    # 与 orchestrator 同一口径。少了这一步，尺寸类改自由数值后公式取不到这些值，
+    # 逐步代入会全是空（orchestrator 端就踩过，错返 200）。
+    for ni in spec.numeric_inputs:
+        if ni.key in body.spec:
+            raw = body.spec[ni.key]
+            try:
+                value = eng["to_decimal"](raw)
+            except Exception:
+                raise HTTPException(status_code=400, detail={
+                    "error": "invalid_numeric",
+                    "message": f"{ni.label or ni.key} 不是数值: {raw!r}",
+                })
+            if ni.min_value is not None and value < eng["to_decimal"](ni.min_value):
+                raise HTTPException(status_code=400, detail={
+                    "error": "invalid_numeric",
+                    "message": f"{ni.label or ni.key}={value} 小于下界 {ni.min_value}",
+                })
+            if ni.max_value is not None and value > eng["to_decimal"](ni.max_value):
+                raise HTTPException(status_code=400, detail={
+                    "error": "invalid_numeric",
+                    "message": f"{ni.label or ni.key}={value} 大于上界 {ni.max_value}",
+                })
+            picked[ni.key] = value
+        elif ni.default is not None:
+            picked[ni.key] = ni.default
     for vg in spec.variants:
         want = body.spec.get(vg.name)
         if want is None:
@@ -219,6 +247,16 @@ async def export_quote_explain_product(
         raise HTTPException(status_code=400, detail={
             "error": "missing_axis",
             "message": "缺少规格取值: " + ", ".join(missing),
+        })
+    # 可枚举的变体（表面处理/工艺）必须给：它们决定查价与增重，**不能默认**。
+    # 少了它们公式取不到 raw_price / wave_factor，逐步代入算出空值却仍返 200 ——
+    # 那比报错更坏（业务会以为这就是答案）。与 orchestrator 同一口径。
+    missing_variants = [vg.label or vg.name for vg in spec.variants
+                        if vg.name not in picked]
+    if missing_variants:
+        raise HTTPException(status_code=400, detail={
+            "error": "missing_variant",
+            "message": "缺少规格选择: " + ", ".join(missing_variants),
         })
 
     DECIMAL = eng["DECIMAL"]
