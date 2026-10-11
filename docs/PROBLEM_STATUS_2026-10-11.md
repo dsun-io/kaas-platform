@@ -689,6 +689,38 @@ TypeError: Cannot read properties of undefined (reading 'map')
 > 这条发现改变了 e2e 的失败构成：**13 条里至少 4 条是"测试陈旧"，
 > 与"应用质量"和"套件 flaky"都无关。**
 
+#### 🎯🎯 更普遍的问题：**测试断言的选择器与现在的 UI 不匹配**
+
+顺着同一思路（对照"测试断言什么" vs "页面渲染什么"）继续查，
+统计各失败页面的 `<table>` 标签数：
+
+| 页面 | `<table>` 标签数 | e2e 断言 |
+|---|---|---|
+| `customers/page.tsx` | **0** | `locator('table tbody tr')` ✗ |
+| `events/page.tsx` | **0** | `locator('table')`、`table tbody tr` ✗ |
+| `dashboard/page.tsx` | **0** | （其他断言） |
+| `admin/gray-release/page.tsx` | **0** | （其他断言） |
+| `audit-log/page.tsx` | **22** | `table tbody tr` ✓ |
+
+**`customers` 与 `events` 的测试断言页面里有 `<table>`，而那两个页面
+根本没渲染表格** —— 与 `quotations` 是同一类问题：**测试陈旧**。
+
+**所以 13 条失败的构成大致是**：
+
+| 类别 | 条数 | 性质 |
+|---|---|---|
+| 路由已不存在（`/quotations`） | 4 | 测试陈旧 |
+| 选择器与 UI 不匹配（`table`，`customers`/`events`） | 4 | 测试陈旧 |
+| 应用级崩溃 | **0** | ✅ 已修清 |
+| 其余（dashboard / gray-release / audit-log） | ~5 | 待逐条对照 |
+
+**结论：这套 e2e 大面积落后于现在的 UI** —— 不是应用质量下降，
+也不是单纯 flaky，而是**测试没跟着界面改**。
+
+**这意味着"归真"的正确做法可能是"以现役 UI 重新基线化这套 e2e"
+（改写或退役其中过时的部分），而这是一个需要用户拍板的项目决策**，
+不宜由我擅自删测试。
+
 **关键发现：那两个 critical/high 的来源不是"版本旧"，是依赖放错了位置。**
 
 | 漏洞 | 来源链 | 真实问题 |
