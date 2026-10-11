@@ -159,18 +159,20 @@
 
 | 门禁 | 结果 |
 |---|---|
-| orchestrator `pytest -m unit` | **598 passed** / 1 skipped |
-| worker `pytest` | **142 passed** |
-| 前端 `test` | **302 passed / 22 files / 0 failed**（实测于 `e70df33`；数字随本线加测试而增长：280 → 291 → 302） |
+| orchestrator `pytest -m unit` | **680 passed** / 1 skipped（本轮文档线复跑） |
+| worker `pytest` | **142 passed**（本轮文档线复跑） |
+| 前端 `test` | **304 passed / 22 files / 0 failed**（**lead/队友实测**；数字随本线加测试而增长：280 → 291 → 302 → 304） |
 | 前端 `typecheck` / `lint` | exit 0 |
 | `contracts:check` | R0–R4 PASS |
 | `route-parity.py` | PASS（缺失 **11** 已登记 / 未登记 0 / **过期 0** / worker 独有 **2**） |
-| `sync-shared.ps1 -Check` | exit 0（共享内核 **23** / 报价引擎 19 / 枚举字典 1） |
+| `sync-shared.ps1 -Check` | exit 0（共享内核 **26** / 报价引擎 19 / 枚举字典 1；本轮文档线复跑） |
 | `verify-trade-doc-fixtures.py` | 18/18 逐字节一致（TS == 归档 Python；图片字段改动后仍成立） |
 | `pnpm -C frontend trade-doc:check` | exit 0（模板占位符 ↔ manifest 一致；首轮抓出 9 类 / 18 字段并已补齐） |
 >
-> 以上为 `d4b4cdc` 实测（2026-10-11）。
-| `NEXT_EXPORT=1 pnpm build` | exit 0 |
+> 本轮（2026-10-11 晚）更新：orchestrator **680** / worker **142** / 共享内核 **26** 由
+> **文档线复跑**；`NEXT_EXPORT` 构建门禁由**文档线复跑**（`NEXT_DIST_DIR=.next-build`，exit 0）；
+> 前端 `test` **304** 为 **lead/队友实测**。其余行仍为 `d4b4cdc` 实测（2026-10-11）。
+| `NEXT_EXPORT=1 pnpm build` | exit 0（**文档线用 `NEXT_DIST_DIR=.next-build` 复跑**）；并发 worktree 下必须隔离产物目录，但该隔离**不覆盖源码并发写**（见「追加」§构建门禁） |
 | `scripts/verify/verify_against_sheet.py` | exit 0（公式级不一致 0） |
 
 ### 关键环境事实（踩过的坑，别再踩）
@@ -1880,3 +1882,86 @@ Neon 令牌过期、Edge 无会话、无 `.env`）：
   ⇒ 「一次维护、重复使用」。
 - 盖章回传按用户裁决**版本化**：新版本上位 `is_current`、旧版 `supersedes_id` 留档。
 - 待拍板：文件本体是否用 R2（建议采纳）；产品 key 直接用现有 `ProductSpec` key（不建第二套主数据）。
+
+**（续 · 2026-10-11 晚）字节落点与 S3 直传：实现完成并交叉验证；S3 密钥已设置，真实上传实测待做**
+
+- **落点优先级**（Worker 与本地 orchestrator **共用同一段 SigV4 代码**与「什么算配好」的规则）：
+  ① **S3 预签名**（配好 `S3_*` 时；浏览器直传，**字节不过服务端**）→
+  ② **R2 binding**（`FILES`，桶 `kaas-files`；生产 Worker 的平台直连）→
+  ③ **inline**（写 `file_objects.content` 兜底）。
+  本地 orchestrator 无 binding，是 ① → ③。**无论走哪条，真实落点都写入
+  `file_objects.storage`**（`s3` / `inline`），不隐瞒数据在哪。
+- **新增共享内核** `backend/kaas_common/files/s3.py`：AWS **SigV4 预签名**，**纯标准库**
+  （Pyodide 装不了 boto3），含 `s3_config(get)` —— 统一「配好 = endpoint + access_key + secret_key」，
+  不完整返回 `None`（调用方据此回退），避免两端各自判断漂移。
+  **正确性证据**：`backend/orchestrator/tests/test_files_s3.py` **8 条通过**，其中与本地
+  `minio-py` 的 `presign_v4` **逐字符比对签名**（GET / PUT、不同有效期）完全一致 ——
+  自己写的密码学必须拿独立实现对照，否则「看起来能跑」说明不了任何问题。
+  `sync-shared.ps1 -Check` 实测：共享内核 **26** 个文件一致（此前记录 23）/ 报价引擎 19 / 枚举字典 1。
+- **直传相关端点（两端一致）**，orchestrator OpenAPI **实测 170 条路径**（此前 167）：
+  - `POST /api/v1/file-objects/presign`（**新增**；未配 S3 返回 `{"configured": false}`）
+  - `POST /api/v1/file-objects/register`（**新增**；直传后登记元数据，不碰字节）
+  - `GET /api/v1/file-objects/{id}/url`（短时效直链，**默认 900 秒**）
+  - 前端 `/products` 已走**直传优先、失败回退 multipart 代理**。
+- **基础设施实测**：R2 桶 `kaas-files` 已建；**桶 CORS 已设**（Cloudflare API 读取实测：来源
+  `https://kaas.powervoy.com` / `http://localhost:3000` / `http://127.0.0.1:3000`，
+  方法 `GET`/`PUT`/`HEAD`，允许头 `Content-Type`，暴露 `ETag`，maxAge 3600）；
+  `backend/worker/wrangler.jsonc` 已加 `r2_buckets`（binding `FILES`）与非机密
+  `vars`（`S3_ENDPOINT`/`S3_BUCKET`/`S3_REGION`/`S3_PRESIGN_EXPIRES`）。
+- **激活步骤**：R2 的 S3 密钥只能在 Cloudflare dashboard 的 **Manage R2 API Tokens** 创建 ——
+  **Cloudflare API 没有创建长期 R2 S3 密钥的端点**（已核对 OpenAPI：只有
+  `/r2/temp-access-credentials` 临时凭证与 R2 SQL catalog 凭证）。
+  ✅ **密钥已设置（用户操作，已完成）**：用户在 dashboard 给 Worker `kaas` 设了
+  `S3_ACCESS_KEY` 与 `S3_SECRET_KEY`；由 lead 用 Cloudflare API **只读核验名称存在
+  （`secret_text`），未读取值**。
+  ⏳ **但真实上传（R2 写入/读取）端到端实测仍未做** —— 需要一次带登录的实际上传；
+  在实测通过前**不得声称「生产上传已成功」**，① 是否已在生产生效也尚未核实。
+- **进度表更新**（`docs/PRODUCT_MEDIA_STORAGE_PLAN.md`）：第 **9** 项
+  「单证编辑页从产品图库选图」**已完成**（`trade-docs/components/doc-photo-picker.tsx`：
+  选产品 → 点图 → 写入 `{"file_id": N, "caption": …}`，已添加的图标记「已添加」防重复）；
+  第 **10** 项改为「S3 实现已完成且交叉验证（含 15 条真回环）；**S3 密钥已由用户在 dashboard
+  设置**；**真实上传端到端实测待做**」。
+- **前端门禁实测**：`typecheck` 0 error；`lint` 0 error / 9 warning（均为既有）；
+  `test` **304 passed / 22 files**（**lead/队友实测**；已同步更新本文 §「当前门禁」表）。
+
+**（续二 · 2026-10-11 晚）构建门禁在并发 worktree 下曾假红（已修）；并补一组 S3 真回环验证**
+
+**1. 构建门禁（`NEXT_EXPORT=1 pnpm build`）：现在 PASS，且加了并发隔离**
+
+- **曾两次失败**（原地跑）：`Cannot find module 'frontend/.next/server/middleware-manifest.json'`；
+  换独立目录后又出现 `PageNotFoundError: Cannot find module for page: /admin/gray-release`。
+- **定性：并发环境问题，不是代码缺陷**。同一 worktree 里**另一条线正在跑 `next dev` +
+  Playwright e2e**，双方都写 `frontend/.next`。取证：frontend 源码整体复制成隔离副本
+  （**284 个文件**，`node_modules` 用同深度 junction）后 `next build` **exit 0**，全路由表正常输出。
+- **修复**：`frontend/next.config.mjs` 加 `distDir: process.env.NEXT_DIST_DIR || ".next"`；
+  `.gitignore` 加 `.next-build/`。
+- **复测（本 worktree，并发 `next dev` + e2e 仍在跑）**：
+  ```powershell
+  $env:NEXT_EXPORT="1"; $env:NEXT_DIST_DIR=".next-build"
+  node node_modules/next/dist/bin/next build    # exit 0
+  ```
+  文档线复跑得到 **exit 0**，全路由表正常输出（37 条路由 + middleware）。
+- ⚠️ **但 `NEXT_DIST_DIR` 只隔离产物目录，不隔离源码的并发写**：文档线首次尝试（与另一条线
+  改写 `frontend/src/app/(app)/trade-docs/*` 的时间重叠）**仍是 exit 1**
+  （`Export encountered errors`，含 `JSON.parse` 栈）；等对方写入停止后同命令复跑 exit 0。
+  ⇒ 「**取数前确认工作区静止**」这条纪律对构建同样适用。
+- ⇒ **口径**：构建门禁**通过**；但**并发 worktree 下必须**用 `NEXT_DIST_DIR` 指定独立产物
+  目录，否则会与 `next dev` 互相破坏 —— 这类失败看起来像代码坏了，实际是环境。
+
+**2. 新增 S3 真回环验证**：`backend/orchestrator/tests/test_files_s3_roundtrip.py`（15 条，`unit`）
+
+- 在 `127.0.0.1` **随机端口**起纯 `http.server` stub S3，**真发 PUT/GET 字节**，
+  断言 stub 实收的路径 / 内容 / `Content-Type` 正确；
+- 对 stub **实际收到**的请求，用 `minio.signer.presign_v4`（独立实现）按 `X-Amz-Date` /
+  `X-Amz-Credential` 里的 scope **重算并逐字符比对**签名与整个查询串；
+- 覆盖 inline 回退的 5 种半配形态（全没配 / 只有 endpoint / 只有密钥 / 少 secret / 空白 endpoint）。
+- **实测**：该文件 **15 passed**；文件域三件合跑 **41 passed**（`test_files_kernel.py` 18 +
+  `test_files_s3.py` 8 + 本文件 15）。
+- **变异自证**（队友实测）：篡改签名 / 错 secret / region 漂移 / 方法互换 **4/4 被拒**。
+- ⚠️ **这条验证的边界（必须如实标注）**：stub **不做服务端验签**，所以
+  **「生产 R2 会接受这个预签名 URL」仍未证实**。它证明的是两件事 ——
+  「生成的 URL 是正确的 SigV4 预签名」+「代码路径真能 PUT/GET 字节」。
+
+**3. 门禁滚动表已按本轮实测更新**（见本文 §「当前门禁」）：orchestrator **680 passed / 1 skipped**、
+worker **142 passed**、共享内核 **26** 个文件、构建门禁 **PASS** —— 这四项由**文档线复跑**；
+前端 `test` **304 / 22 files** 为 **lead/队友实测**。
