@@ -2068,3 +2068,67 @@ c) 前端两处：界面把 Markdown `**` 当文本渲染；历史版本号用 `
 
 **5. 待办更新**：原「① 真实上传端到端」由 **⏳ 未做** 变为 **⏳ 已尝试、卡在密钥长度**
 （工具 `scripts/verify-file-storage-e2e.mjs` 已备好，密钥修好即可跑）；②③④ 不变。
+
+***
+
+## 追加：智能体团队收口 + **e2e 转绿**（2026-10-12 00:1x）
+
+> 用户指示「执行任务时创建智能体团队提高效率」后，本条线以 **4 名队友 / 13 个共享任务**推进，
+> 写入范围互不相交，每项都要求 file:line 证据 + 门禁 + 范围自证。
+
+### 🎉 e2e 归真：**19 passed / 6 skipped / 0 failed**（= 25，算术核对 ✓）
+
+**根因（不是 MSW、不是 Service Worker、不是 axios adapter、也不是并发 build）**：
+
+> **`MswProvider` 用"启动过"当放行条件** —— 旧实现的真值是 `started.current` / `globalStarted`
+> （语义 = "**启动过**"），而 `next.config.mjs:10` 开了 **`reactStrictMode: true`**，
+> React 18 dev 会 mount → 模拟 unmount → mount ⇒ effect **第二遍立刻走"启动过 ⇒ 放行"分支** ✗
+> ⇒ 首屏 `/api/v1/*`（`auth/me` / `events` …）在 `worker.start()` 之前发出 ⇒ **绕过 MSW**
+> ⇒ 命中 Next dev 的 `/api/v1/*` rewrite ⇒ **自己代理自己** ⇒ 500/挂起
+> ⇒ `/auth/me` 失败 ⇒ 清会话 ⇒ `RouteGuard adminOnly` **整页不渲染**（「您没有访问此页面的权限」）
+
+**修法**（`4dd125b` + `8d8f600`）：改成**模块级就绪 promise**，语义从"启动过"改为"**真就绪**" ——
+只 `worker.start()` 一次、`setReady(true)` 只挂在 promise 的 `.then` 上（两遍都只能在真正就绪后放行），
+并加 **总预算 fail-open**（`Promise.race([ready, 5s])`，防 `worker.start()` 卡住导致永久白屏）。
+
+**机制级证据（比通过数硬）**：
+
+| 判据 | 修前 → 修后 |
+|---|---|
+| `e2e/kb.spec.ts:4`（页面**纯静态** ⇒ 失败**只能**由数据层解释；判据文件**全程未改**） | **0/5 → 5/5** ✓（90s → 15.1s） |
+| 探针顺序 | 修前：`auth/me`×2 + `events` 在 `[MSW门] started` **之前** ✗ → 修后：`started; controller = true` 在**所有 `/api/v1/*` 之前** ✓ |
+| `[绕过MSW]` | **归零** ✓（18 次用例里 `[MSW门]` 日志 **14/14** = `controller=true`，`start FAILED` = **0**） |
+| fa-open | 触发 **0 次**；`ok=18 / x=5 = 23 = 5+9+9` ✓ |
+
+**顺带修好三处**：`dashboard` 的 `summary={}` **崩**（**0/3 → 3/3** ✓，按既有口径渲染 `—` 而非 `0 个数据集`）；
+删除死文件 `e2e/setup.ts`（**删前删后 `--list` 都是 25/8** ⇒ 零覆盖损失 ✓）；
+残余"测试侧"写法（`networkidle` 后**一次性 `count()`** ⇒ 门未开时"没有请求"⇒ `networkidle` 立即满足 ⇒ `count()=0`）
+改为**可重试断言** ⇒ `57ab4b7` **套件转绿** ✓
+
+### 同期完成的收口（12 项）
+
+| 主题 | 产出 | 关键提交 |
+|---|---|---|
+| 契约一致性 | `/admin/tenants` 系列 **四方不一致**修好（租户名空白/状态恒停用/点重载崩/灰度页恒 OFF） | `0a66e9b` |
+| 契约门禁 | **R5**（3 端点 × 12 侧，**双向棘轮**：未登记 ⇒ FAIL；**修好忘删登记** ⇒ FAIL） | `15aaf7f` |
+| mock 契约 | 12 处修复（含客户列表**恒 0 行**、灰度开关 key 错致**恒 OFF**）+ 5 个写 handler + **M1 最小集 4 条**（切断挂死） | `495d72a`…`e3c1701` |
+| 产品模块 | 合并方案 + **17 步可执行计划** + P1 政策（本地无 Postgres 的实测结论、迁移号、回填政策、写权尺子、账本接回最小范围） | `e6ebc00`…`0d5d98b` |
+| 工程陷阱 | `.gitignore:53` 裸 `data/` **静默吞掉** `frontend/src/mocks/data/` 新文件（实测探针证实）⇒ 加最小例外 | `9e9838b` |
+
+### 两条已写进 `AGENTS.md` 的协作/测量纪律（本轮血泪）
+
+1. **`git commit -- <pathspec>` 不足以保证"不提交别人的东西"**（它记录**工作树内容**，同文件别人的 hunk 会被带走；
+   实测 `main.py` 两拨人 hunk 混在一起且依赖未跟踪文件 ⇒ 提交必炸）⇒ 改用**私有 `GIT_INDEX_FILE`**，
+   并做提交前/后自检（**提交后必须确认别人的改动原样还在**）。
+   ⚠️ 补充实测：**部分 hunk 提交要先转 LF**（工作树 CRLF vs index blob LF，130 个 CR ⇒ `patch does not apply`）。
+2. **宣布任何通过/失败/归零前，必须打印完整不过滤摘要 + 算术核对**（曾用过滤视图得出**假的 "0 failed"**）；
+   **"没匹配上" ≠ "没有"**（探针在 abort 时**不打日志**）；**不要用关键字 grep 当"某文案不存在"的证据**（曾错判 `events`/`kb`）。
+
+### 待排期（均为发现，无 CI 会红）
+
+1. `orchestrator/docs/openapi.json:6673-6734` 仍是旧形状 ⇒ 需重生成（**无新鲜度校验**）
+2. **worker `POST /admin/feature_flag` 是请求体形状 ⇒ R5 只比响应键集，此缺陷无门禁覆盖**
+3. 契约错位：`ExportProduct.params` 契约写**对象**、后端回**二维数组**；`pricing_key[].ui_unit/ui_scale` 用 zod `.default()`
+   声明成输出必填、后端不产出（**类型撒谎、运行时 undefined**）
+4. 前端真缺陷：`PATCH /customers/:id/stage` 的 409 二次确认门前端未实现 + **对象型 detail 崩 JSX**；`inquiries` 的 `channel` 枚举与前端自由文本不符
+5. 另一条任务的**生产验收卡在 R2 密钥长度 13≠32**；`sampling_rate: 0.1` 非 bool
