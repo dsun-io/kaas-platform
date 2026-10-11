@@ -15,6 +15,16 @@
       "id": "f53fed49705043008737032e4bfa2b8e"
     }
   ],
+  // 文件本体（产品图 / 客户盖章回传件 / 系统出的 PDF）走 R2：
+  // 业务行在 Postgres（file_objects 元数据），字节在对象存储，库里只存 object_key。
+  // 用 binding 而不是 S3 密钥：Worker 直连，不需要任何密钥流转；取不到时
+  // ws_files.py 会回退到 inline（写 file_objects.content）并如实标注 storage。
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "kaas-files"
+    }
+  ],
   "routes": [
     {
       "pattern": "kaas.powervoy.com",

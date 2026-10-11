@@ -3688,3 +3688,10 @@ import ws_workstations  # noqa: E402,F401
 # ── 业务客户往来记录（报价/订单/单证 包含关系树）──
 import ws_customer_records  # noqa: E402,F401
 
+# ── 文件域 + 产品媒体（产品图/盖章回传/PDF 归档）──
+# 契约真源：orchestrator `app/api/files.py`；本文件是生产镜像（本地新加路由必须同步，
+# 否则线上 404 —— 见 docs/ROUTE_PARITY_2026-10-10.md）。
+# 字节落点：R2 binding（`FILES`，见 wrangler.jsonc）优先，异常自动回退 inline 并如实记录
+# `file_objects.storage`，不让用户的上传因为存储配置问题直接失败。
+import ws_files  # noqa: E402,F401
+

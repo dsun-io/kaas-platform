@@ -390,6 +390,35 @@ async def detach_doc_file(doc_id: int, link_id: int,
     return Response(status_code=204)
 
 
+@router.post("/trade-docs/{doc_id}/files/upload", status_code=201,
+             summary="上传并挂到单证（盖章回传 / 扫描件）")
+async def upload_doc_file(doc_id: int,
+                          file: UploadFile = File(...),
+                          role: str = Form("stamp_scan"),
+                          name: str = Form(""),
+                          caption: Optional[str] = Form(None),
+                          auth: AuthContext = Depends(get_auth_context),
+                          db: AsyncSession = Depends(get_db_session)):
+    """上传文件**并**挂到单证（客户盖章回传走这条）。
+
+    - `role='stamp_scan'`（默认）⇒ **版本化**：新版本上位，旧版本 `is_current=false`
+      但**保留**（用户要求"覆盖旧件"同时"留档"）。
+    - `name` 留空时回落到文件名（用户要求"上传后给它命名"，先给个可用默认值）。
+    """
+    tenant_id = tenant_id_of(auth)
+    data = await file.read()
+    label = (name or "").strip() or (file.filename or "回传件")
+    row = await _create_file(
+        db, auth=auth, tenant_id=tenant_id, owner_type="trade_doc", owner_id=str(doc_id),
+        kind=role, media_kind=None, name=label, content=data,
+        content_type=file.content_type or "", file_name=file.filename,
+        supersede=role in ("stamp_scan", "render_pdf"),
+    )
+    link = await attach_doc_file(doc_id, DocFileIn(file_id=row["id"], role=role,
+                                                   caption=caption), auth, db)
+    return {"file": row, "link": link}
+
+
 @router.get("/file-objects", summary="文件列表（按归属/用途筛）")
 async def list_files(owner_type: str = Query(...), owner_id: Optional[str] = None,
                      kind: Optional[str] = None,
