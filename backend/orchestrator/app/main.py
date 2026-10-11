@@ -85,6 +85,7 @@ from app.api.health import router as health_router
 from app.api.product_specs import router as product_specs_router
 from app.api.auth import router as auth_router
 from app.api.pricing_data import router as pricing_data_router
+from app.api.option_overrides import router as option_overrides_router
 from app.api.categories import router as categories_router
 from app.api.attributes import router as attributes_router
 from app.api.templates import router as templates_router
@@ -132,6 +133,7 @@ from app.api.customer_records import router as customer_records_router
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(pricing_data_router)
+app.include_router(option_overrides_router)
 app.include_router(events_router)
 app.include_router(oss_presign_router)
 app.include_router(admin_router)
