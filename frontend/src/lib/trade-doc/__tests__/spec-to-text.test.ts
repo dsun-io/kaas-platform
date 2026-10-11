@@ -61,6 +61,22 @@ function formulas(): ProductFormulasResponse {
         unit_quantity: true,
       },
     ],
+    // 自由数值参数：规格文本里也要带上这些尺寸
+    numeric_inputs: [
+      {
+        key: "de",
+        label: "边丝径(mm)",
+        label_en: "Edge Wire Dia. (mm)",
+        unit: "mm",
+        ui_unit: "mm",
+        ui_scale: 1,
+        default: "2.0",
+        min_value: "0.3",
+        max_value: "8",
+        decimals: 2,
+        note: "",
+      },
+    ],
     pricing_key: [],
     calculations: { derived: [], piece: [], order: [] },
     space_deduction: { mode: "fixed_per_order", value: 2.5, range: null, expr: "", note: "" },

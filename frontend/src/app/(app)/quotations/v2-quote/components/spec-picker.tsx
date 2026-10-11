@@ -14,7 +14,10 @@
  */
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import type { ProductFormulasResponse } from "@contracts/export-quote";
+import type {
+  NumericInput,
+  ProductFormulasResponse,
+} from "@contracts/export-quote";
 
 /** 一行规格行：键是规格名（如 height_m / wire），值是候选取值。 */
 export type SpecRow = Record<string, unknown>;
@@ -61,8 +64,33 @@ interface Props {
   disabled?: boolean;
 }
 
+/**
+ * 自由数值参数的界面值 ↔ 引擎值换算。
+ *
+ * 引擎公式用的是**内部单位**（卷径 0.30m），而业务按界面单位填（30 公分）。
+ * `ui_scale` 是两者之间的唯一桥梁：界面只负责乘除，不拥有业务单位知识。
+ */
+function numericToUi(ni: NumericInput, engineValue: unknown): string {
+  if (engineValue === undefined || engineValue === null || engineValue === "") {
+    return "";
+  }
+  const n = Number(engineValue);
+  if (!Number.isFinite(n)) return String(engineValue);
+  const scaled = n * (ni.ui_scale || 1);
+  return String(Number(scaled.toFixed(6)));
+}
+
+function numericFromUi(ni: NumericInput, text: string): unknown {
+  if (text.trim() === "") return undefined;
+  const n = Number(text);
+  if (!Number.isFinite(n)) return text;
+  const scale = ni.ui_scale || 1;
+  return scale === 1 ? n : n / scale;
+}
+
 export function SpecPicker({ formulas, value, onChange, disabled }: Props) {
   const { axes, variants, formula } = formulas.space;
+  const numericInputs = formulas.numeric_inputs ?? [];
 
   const set = (name: string, options: readonly Option[], text: string) => {
     const next: SpecRow = { ...value, [name]: matchValue(options, text) };
@@ -115,6 +143,58 @@ export function SpecPicker({ formulas, value, onChange, disabled }: Props) {
             </div>
           );
         })}
+
+        {/*
+          自由数值参数：**输入框而不是下拉**。
+          丝径/网高/间距这类量在业务上是连续值（客户给 2.3mm 就是 2.3mm），
+          枚举只能覆盖事先想到的取值，选不到就逼着人把值写进备注、公式反而算不出来。
+          这里只按 min/max 提示范围，不拦合法取值。
+        */}
+        {numericInputs.map((ni) => {
+          const uiUnit = ni.ui_unit || ni.unit;
+          const hint = [
+            uiUnit ? `单位 ${uiUnit}` : "",
+            ni.min_value !== null && ni.max_value !== null
+              ? `${ni.min_value} ~ ${ni.max_value}`
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" · ");
+          return (
+            <div key={ni.key} className="space-y-1.5">
+              <div className="flex items-center gap-1.5">
+                <Label className="text-xs">{ni.label}</Label>
+                <span className="rounded bg-muted px-1 text-[10px] text-muted-foreground">
+                  自由值
+                </span>
+              </div>
+              <input
+                type="number"
+                inputMode="decimal"
+                step="any"
+                value={numericToUi(ni, value[ni.key] ?? ni.default ?? "")}
+                disabled={disabled}
+                min={ni.min_value ?? undefined}
+                max={ni.max_value ?? undefined}
+                onChange={(e) =>
+                  onChange({
+                    ...value,
+                    [ni.key]: numericFromUi(ni, e.target.value),
+                  })
+                }
+                className={cn(
+                  "h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs",
+                  "ring-offset-background focus-visible:outline-none focus-visible:ring-2",
+                  "focus-visible:ring-ring focus-visible:ring-offset-2",
+                  disabled && "cursor-not-allowed opacity-60",
+                )}
+              />
+              {hint && (
+                <p className="text-[10px] text-muted-foreground">{hint}</p>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -126,7 +206,12 @@ export function isSpecComplete(
   value: SpecRow,
 ): boolean {
   const groups = [...formulas.space.axes, ...formulas.space.variants];
-  return groups.every((g) => current(value, g.name) !== "");
+  if (!groups.every((g) => current(value, g.name) !== "")) return false;
+  // 自由数值参数**通常不是必填**（产品给了默认值，留空即用默认）；
+  // 只有没给默认值的才必须填 —— 否则引擎取不到值、算出来是空。
+  return (formulas.numeric_inputs ?? []).every(
+    (ni) => ni.default !== null || current(value, ni.key) !== "",
+  );
 }
 
 /** 默认选中每个规格组的第一项 —— 让页面打开即可算价，不用逐项点。 */
@@ -135,6 +220,10 @@ export function defaultSpecRow(formulas: ProductFormulasResponse): SpecRow {
   for (const g of [...formulas.space.axes, ...formulas.space.variants]) {
     const first = g.options[0];
     if (first) row[g.name] = first.value;
+  }
+  // 自由数值参数带默认值 → 页面打开即可算价，不用逐项点
+  for (const ni of formulas.numeric_inputs ?? []) {
+    if (ni.default !== null) row[ni.key] = ni.default;
   }
   return row;
 }
