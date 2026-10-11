@@ -942,6 +942,42 @@ worker `pytest` ⇒ **231 passed, exit 0**；`route-parity` ⇒ PASS；`sync-sha
 
 ---
 
+### 8.11 已落地的第 10 个增量：**`/explain` 的 min/max 越界校验两端对齐**（task-27 · 今天最后一件代码改动）
+
+**依据**：task-26 ④ 里如实报的**既有差异** —— worker 的 `/explain` 对 `numeric_inputs` 做上下界校验
+（越界 ⇒ 400 `invalid_numeric`），orchestrator **没有**。**用户裁定：给 orchestrator 补上**（worker 行为与既有用例不动）。
+
+**做法**：照 worker 的语义**逐字**补进 orchestrator 的 `explain_product` 入参校验
+（`app/api/export_quote.py`），错误码与消息同形：
+
+| 情形 | 两端一致的行为 | worker 原文位置 |
+|---|---|---|
+| 低于下界 | `400` + `{"error":"invalid_numeric","message":"<label>=<值> 小于下界 <min>"}` | `ws_quote_ext.py` 的 `invalid_numeric` 分支 |
+| 高于上界 | `400` + `{"error":"invalid_numeric","message":"<label>=<值> 大于上界 <max>"}` | 同上 |
+| **未声明界** | **完全不卡**（"自由数值"，用户 A2 裁决） | 同上（`is not None` 才判） |
+
+**⚠️ 实测发现（留痕）**：**今天注册表里三个产品的数值入参全都声明了 min/max**
+（chain_link 5/5、deer_net 9/9、field_fence 8/8）⇒ **"未声明界 ⇒ 完全自由"这一条无法用注册表产品验**，
+只能用**草稿（`spec_override`）**验（正好也覆盖"与草稿组合"）。
+为此加了一条**证据用例**：某天有人加了无界入参（那正是"自由数值"的设计），它会**变红**并提示补注册表侧用例。
+
+**测试**（orchestrator 侧 6 条 + worker 侧 5 条，均真跑）
+- orchestrator（`tests/test_explain_spec_override.py`，`pytestmark=unit`）：越界 ⇒ 400（上界/下界各一）／界内 200／
+  **恰好等于上下界算界内**／**未声明界的字段完全自由（1e9 / -1e6 / 0 都不卡）**／**草稿里声明了界时越界同样生效**／
+  注册表无界入参留痕用例。
+- worker（`tests/test_four_domains.py`，worker 侧不注册 `unit` marker）：越界 400（上/下界）／界内 200／
+  **未声明界完全自由**／**注册表产品越界 400** —— 与 orchestrator **同一份期望字面量**两端各钉一遍。
+- **"新测试真被收集"自证**：`--collect-only -q` 列出那 5 条（worker）／`-m unit` 选中 27 条（orchestrator）。
+
+**`openapi.json`**：按 `AGENTS.md` 的顺序做了 **改 → 重生成 →（提交）→ 再跑 `contracts:check`**。
+本次只改 **handler 行为**、未动模型/路由 ⇒ 重生成后产物**无 diff**（`git status` 空）；
+因此没有需要提交的产物 —— 这也正是那条门禁规则的边界：**改模型/路由才需要提交产物**。
+
+**门禁**：orchestrator `pytest -m unit` ⇒ **1074 passed, 1 skipped, 324 deselected, exit 0**；
+worker `pytest -q` ⇒ **242 passed, exit 0**（237 + 5）；`contracts:check`（提交后）⇒ **PASS R5 + PASS R6**；未跑 build。
+
+---
+
 ## 9. 本文件的状态与自证（**滚动更新**）
 - task-3 的那一轮：只新增 `docs/PRODUCT_MODULE_IMPL_PLAN.md`，并在 `docs/PRODUCT_MODULE_MERGE_PLAN.md` 追加 §11；当时**未修改任何代码**。
 - **task-16**：折进 8 条裁决（§8/§8.1）+ 交付 §5 的 ① 层 `spec_delta.py`（§8.2）。
@@ -957,6 +993,8 @@ worker `pytest` ⇒ **231 passed, exit 0**；`route-parity` ⇒ PASS；`sync-sha
   向后兼容；**团队覆盖那半**（需 db）与 **worker 侧同构**（未授权）明确留待。
 - **task-26**：**worker `/explain` 同构**（§8.10）—— 补掉 §8.9 的"唯一未同构"；解析器复用引擎包同一份，
   两端用**同一份期望字面量**各自钉住；如实列出两处差异（解析器措辞尾部、worker 的 min/max 校验）。
+- **task-27**：**越界校验两端对齐**（§8.11）—— 用户裁定"给 orchestrator 补上"worker 的 min/max；
+  两条差异中的第 2 条就此消失（第 1 条是刻意不对齐，见 §8.10）。**今天最后一件代码改动。**
   本文件由**同一个作者滚动维护**；它**不是**"口径文档"（口径看 `docs/PROBLEM_STATUS_2026-10-11.md`）。
 - 各轮都**未碰**另一条任务在飞的 `trade_docs.py` / `worker/src/{main,dbjson,ws_docs_ext}.py` / `frontend/**`，
   也未碰 `shared/**`；task-22 按任务授权改了 `files.py` 与两个 worker 端点（当时实测均为 clean）。

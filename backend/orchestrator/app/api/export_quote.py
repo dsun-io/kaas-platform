@@ -333,13 +333,30 @@ async def explain_product(
             try:
                 # 用 to_decimal 而不是 DECIMAL.convert：后者是直通，
                 # 传 "很粗" 会原样返回字符串、一路带到公式里才炸（或算出 None）。
-                picked[ni.key] = to_decimal(raw)
+                value = to_decimal(raw)
             except (TypeError, ValueError, ArithmeticError):
                 raise HTTPException(
                     status_code=400,
                     detail={"error": "invalid_numeric",
                             "message": f"{ni.label or ni.key} 不是数值: {raw!r}"},
                 )
+            # 上下界：**只在规格声明了界时**才卡（用户 A2 裁决是"自由数值" ⇒
+            # 没声明界的字段完全自由，不许顺手卡住）。
+            # 措辞与错误码 **逐字照 worker 的 /explain**（`ws_quote_ext.py` 的
+            # `invalid_numeric` + "小于下界/大于上界"）—— 两端同构是本项裁定的目的。
+            if ni.min_value is not None and value < to_decimal(ni.min_value):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "invalid_numeric",
+                            "message": f"{ni.label or ni.key}={value} 小于下界 {ni.min_value}"},
+                )
+            if ni.max_value is not None and value > to_decimal(ni.max_value):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "invalid_numeric",
+                            "message": f"{ni.label or ni.key}={value} 大于上界 {ni.max_value}"},
+                )
+            picked[ni.key] = value
         elif ni.default is not None:
             picked[ni.key] = ni.default
     for vg in spec.variants:

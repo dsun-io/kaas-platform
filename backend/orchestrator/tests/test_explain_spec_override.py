@@ -245,3 +245,76 @@ def test_团队覆盖那一半尚未做_端点上仍没有db依赖():
     sig = inspect.signature(explain_product)
     assert "db" not in sig.parameters, "团队覆盖接进来后，请同步更新本节与 §8.9"
     assert "spec_override" in ExplainIn.model_fields      # 新增的是**入参字段**，不是端点参数
+
+
+# ── 7. min/max 越界校验（task-27：与 worker 的 /explain 对齐，用户裁定）────────
+
+class TestNumericBounds:
+    """边界校验**只在规格声明了界时**生效；错误码/措辞照 worker 逐字同形。
+
+    ⚠️ 实测发现（已写进 §8.11）：**今天三个产品的数值入参全都声明了 min/max**
+    （chain_link 5/5、deer_net 9/9、field_fence 8/8）⇒「未声明界 ⇒ 完全自由」这一条
+    **只能用草稿（`spec_override`）来验**，这也正好覆盖"与草稿组合"。
+    """
+
+    def test_越界报400_invalid_numeric_措辞与worker同形(self):
+        # field_fence 的 `de` 声明为 0.3 ~ 8
+        for value, tail in ((9.0, "大于上界"), (0.1, "小于下界")):
+            spec = _values()
+            spec["de"] = value
+            with pytest.raises(HTTPException) as ei:
+                _call(ExplainIn(spec=spec))
+            assert ei.value.status_code == 400, ei.value.detail
+            assert ei.value.detail["error"] == "invalid_numeric"
+            msg = ei.value.detail["message"]
+            assert tail in msg, msg
+            assert str(value) in msg, msg
+
+    def test_界内仍200(self):
+        spec = _values()
+        spec["de"] = 2.0
+        out = _call(ExplainIn(spec=spec))
+        assert out["ok"] is True, out["errors"]
+        # ⚠️ 直调端点时 `spec` 里是 `Decimal`（HTTP 序列化后才是数字/字符串）⇒ 比字符串形态
+        assert str(out["spec"]["de"]) == "2.0"
+
+    def test_恰好等于上下界也算界内(self):
+        for value in (0.3, 8):
+            spec = _values()
+            spec["de"] = value
+            assert _call(ExplainIn(spec=spec))["ok"] is True
+
+    def test_未声明界的字段完全自由(self):
+        """**自由数值**（用户 A2 裁决）：草稿里没写 min/max 的入参，给多大都不许卡。"""
+        draft = {"name": "自由数值草稿",
+                 "numeric_inputs": [{"key": "free_x", "label": "自由量", "default": 1.0}],
+                 "derived": [{"name": "y", "expr": "free_x * 2", "unit": "mm"}]}
+        for value in (1e9, -1e6, 0):
+            out = _call(ExplainIn(spec={"free_x": value}, spec_override=draft))
+            assert out["ok"] is True, (value, out["errors"])
+
+    def test_草稿里声明了界时越界同样生效(self):
+        draft = {"name": "有界草稿",
+                 "numeric_inputs": [{"key": "bounded", "label": "有界量",
+                                     "default": 5.0, "min_value": 1, "max_value": 10}],
+                 "derived": [{"name": "y", "expr": "bounded * 2", "unit": "mm"}]}
+        with pytest.raises(HTTPException) as ei:
+            _call(ExplainIn(spec={"bounded": 11}, spec_override=draft))
+        assert ei.value.status_code == 400, ei.value.detail
+        assert ei.value.detail["error"] == "invalid_numeric"
+        assert "大于上界" in ei.value.detail["message"]
+        # 界内正常
+        assert _call(ExplainIn(spec={"bounded": 10}, spec_override=draft))["ok"] is True
+
+    def test_注册表里所有产品的数值入参都声明了界_留痕(self):
+        """**证据用例**：钉住"今天没有无界入参"这个事实。
+
+        某天有人加了一个**无界**的数值入参（那正是我们的"自由数值"设计），本用例会红 ⇒
+        提醒补一条"无界也不卡"的**注册表侧**用例（现在只能用草稿验）。
+        """
+        from app.services.export_quote.products import get as _get, keys as _keys
+
+        unbounded = [f"{key}.{ni.key}"
+                     for key in _keys() for ni in _get(key).numeric_inputs
+                     if ni.min_value is None and ni.max_value is None]
+        assert unbounded == [], f"出现了无界数值入参（请补注册表侧的自由数值用例）：{unbounded}"
