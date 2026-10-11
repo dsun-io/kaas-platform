@@ -604,7 +604,7 @@ def resolve_space_deduction(product: ProductSpec, scope: dict, mode=DECIMAL):
 
 
 def resolve_space_deduction_ratio(product: ProductSpec) -> Any:
-    """体积扣减里**按比例**的那一部分（0.037 = 扣掉 3.7%）；非比例模式为 0。
+    """体积扣减里**按比例**的那一部分（0.04 = 扣掉 4%）；非比例模式为 0。
 
     为什么不并进 `resolve_space_deduction`：扣减在**派生公式之前**就要落进作用域，
     而订单体积（`volume_box_m3`）要到订单指标阶段才知道。

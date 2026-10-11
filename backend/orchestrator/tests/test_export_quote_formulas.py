@@ -175,7 +175,7 @@ class TestWaveBend:
 # 实际占用体积
 # ─────────────────────────────────────────────────────────────────────────────
 class TestEffectiveVolume:
-    """实际占用体积 = 长方体累计总体积 × 装柜系数（= 1 − 扣减比例 3.7%）。"""
+    """实际占用体积 = 长方体累计总体积 × 装柜系数（= 1 − 扣减比例 4%）。"""
 
     def test_deduction_is_ratio_not_fixed_amount(self):
         """**按比例**扣减（2026-10-11 用户裁决）。
@@ -184,7 +184,7 @@ class TestEffectiveVolume:
         """
         sd = spec().space_deduction
         assert sd.mode == "ratio"
-        assert D(str(sd.value)) == D("0.037")
+        assert D(str(sd.value)) == D("0.04")
         assert sd.ratio == sd.value
         assert sd.note, "扣减口径必须写明，业务要看懂为什么扣"
 
@@ -205,7 +205,7 @@ class TestEffectiveVolume:
                 m = r.orders[oname]
                 box = D(str(m["volume_box_m3"]))
                 eff = D(str(m["volume_effective_m3"]))
-                assert eff == (box * (D("1") - D("0.037"))).quantize(q)
+                assert eff == (box * (D("1") - D("0.04"))).quantize(q)
 
     def test_deduction_scales_with_quantity(self):
         """扣减**随数量缩放**（用户口径：「发的数量越少，需要扣减的值越小」）。"""
@@ -278,10 +278,10 @@ class TestEffectiveVolume:
                  coating="热镀锌 40g/㎡", wave="无波款")
         assert D(str(r.derived["volume_box_per_piece_m3"])) == D("0.1080")
         assert D(str(r.orders["o30000"]["volume_box_m3"])) == D("32.4000")
-        # 32.4 × (1 − 0.037) = 31.2012（按比例扣，不再是 −2.5）
-        assert D(str(r.orders["o30000"]["volume_effective_m3"])) == D("31.2012")
-        # 54.0 × (1 − 0.037) = 52.0020
-        assert D(str(r.orders["o50000"]["volume_effective_m3"])) == D("52.0020")
+        # 32.4 × (1 − 0.04) = 31.1040（按比例扣，不再是 −2.5）
+        assert D(str(r.orders["o30000"]["volume_effective_m3"])) == D("31.1040")
+        # 54.0 × (1 − 0.04) = 51.8400
+        assert D(str(r.orders["o50000"]["volume_effective_m3"])) == D("51.8400")
 
     def test_roll_diameter_default_and_override(self):
         """卷径有默认值（随丝径方案联动）且可覆盖。"""
@@ -398,7 +398,7 @@ class TestCalculationIsExplainable:
         d = describe_product(spec())
         assert d["space_deduction"]["note"]
         assert d["space_deduction"]["mode"] == "ratio"
-        assert D(str(d["space_deduction"]["value"])) == D("0.037")
+        assert D(str(d["space_deduction"]["value"])) == D("0.04")
         assert len(d["invariants"]) >= 18
         assert d["params"]
 
@@ -417,7 +417,7 @@ class TestCalculationIsExplainable:
         scope.update(r.piece)
         scope["total"] = 30000
         scope["space_deduction"] = D("0")
-        scope["space_deduction_ratio"] = D("0.037")
+        scope["space_deduction_ratio"] = D("0.04")
         scope["terms_enabled"] = 0
         scope["main_price_incl"] = r.piece["price_per_piece"]
         scope["unit_price"] = r.price["quote_final"]
@@ -429,7 +429,7 @@ class TestCalculationIsExplainable:
         assert D(got["volume_per_piece_m3"]) == D("0.0848")
         assert D(got["volume_box_per_piece_m3"]) == D("0.1080")
         assert D(got["volume_box_m3"]) == D("32.4000")
-        assert D(got["volume_effective_m3"]) == D("31.2012")
+        assert D(got["volume_effective_m3"]) == D("31.1040")
         assert D(got["pieces"]) == D("300")
         # 波弯款单卷 314.84 元 → 300 卷 94452.00 元（基准表第 2 行）
         assert D(got["price_per_piece"]) == D("314.84")
@@ -450,7 +450,7 @@ class TestCalculationIsExplainable:
         scope.update(r.piece)
         scope["total"] = 30000
         scope["space_deduction"] = D("0")
-        scope["space_deduction_ratio"] = D("0.037")
+        scope["space_deduction_ratio"] = D("0.04")
         scope["terms_enabled"] = 0
         scope["main_price_incl"] = r.piece["price_per_piece"]
         scope["unit_price"] = r.price["quote_final"]
@@ -473,14 +473,14 @@ class TestCalculationIsExplainable:
         scope.update(r.derived)
         scope["total"] = 30000
         scope["space_deduction"] = D("0")
-        scope["space_deduction_ratio"] = D("0.037")
+        scope["space_deduction_ratio"] = D("0.04")
         scope["pieces"] = D("300")
         only = ["wave_add_kg", "volume_box_m3", "volume_effective_m3"]
         steps = worked_example(spec(), scope, only)
         assert [s["code"] for s in steps] == only
         vals = {s["code"]: s["value"] for s in steps}
         assert vals["volume_box_m3"] is not None, "依赖项被跳过导致空结果"
-        assert D(vals["volume_effective_m3"]) == D("31.2012")
+        assert D(vals["volume_effective_m3"]) == D("31.1040")
 
     def test_price_metrics_are_flagged_separately(self):
         """价格类量要能与数量口径区分开，便于调用方决定是否计算。"""

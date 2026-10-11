@@ -4,7 +4,7 @@
   · 牛栏网 5 表面处理 × 2 工艺 = 10 个**枚举**组合；尺寸类（丝径/网高/间距/卷长/卷径）
     是**自由数值**（2026-10-11 用户裁决），每个组合带一份，不参与笛卡尔积
   · 单卷售价 × 卷数 = 总价，且 每米价 × 总米数 = 总价，两者必须同时成立
-  · 实际占用体积 = 长方体体积 × 装柜系数 0.963（= 1 − 扣减比例 3.7%，**按比例**而非固定额）
+  · 实际占用体积 = 长方体体积 × 装柜系数 0.96（= 1 − 扣减比例 4%，**按比例**而非固定额）
   · 报价有效期 7 天
   · 核验必须**抓得住**被篡改的数值 —— 发现不了错误的核验等于没有核验
   · 换产品只换产品类，引擎一行不改（用内联探针 spec 反证通用性）
@@ -215,7 +215,7 @@ class TestPieceAndOrderMetrics:
         assert r.rows[0].spec["roll_dia_m"] == D("0.25")
 
     def test_volume_is_box_times_stowage_factor(self, result):
-        """按比例扣：实际占用 = 长方体总体积 × (1 − 0.037)。
+        """按比例扣：实际占用 = 长方体总体积 × (1 − 0.04)。
 
         固定额（原 2.5 m³/单）在 < 2314 米的单子上会算出**负体积**。
         """
@@ -224,7 +224,7 @@ class TestPieceAndOrderMetrics:
             for order in ("o30000", "o50000"):
                 box = D(str(r.orders[order]["volume_box_m3"]))
                 eff = D(str(r.orders[order]["volume_effective_m3"]))
-                assert eff == (box * (D("1") - D("0.037"))).quantize(q)
+                assert eff == (box * (D("1") - D("0.04"))).quantize(q)
                 assert eff > 0, "实际占用体积永远不该是负数"
 
     def test_total_price_equals_unit_times_quantity(self, result):

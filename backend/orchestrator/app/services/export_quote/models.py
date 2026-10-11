@@ -186,7 +186,7 @@ class SpaceDeduction:
 
     @property
     def ratio(self):
-        """按比例扣减时的**扣减比例**（0.037 = 扣掉 3.7%）；其他模式为 0。"""
+        """按比例扣减时的**扣减比例**（0.04 = 扣掉 4%）；其他模式为 0。"""
         if self.mode != "ratio":
             return 0
         return self.value or 0
