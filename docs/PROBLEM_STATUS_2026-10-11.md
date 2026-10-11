@@ -1771,7 +1771,11 @@ cd backend/orchestrator && pytest -m unit -q
 orchestrator 598 passed；worker 142 passed；前端 `typecheck` exit 0、
 `NEXT_EXPORT` 构建 exit 0（34/34 静态页）。
 
-**尚缺**：接口级（带库）测试。纯函数校验已有 9 条单测覆盖。
+**已补**：接口级（带库）测试 —— `tests/test_teams_transfer_api.py`（`5ac9c60`，7 条：
+转给成员 / 前任留作普通成员 / 转给自己 422 / 非成员 422 / 普通成员 403 /
+平台管理员可发起 / 未知团队 404）。纯函数校验另有 9 条单测。
+（该文件需 PostgreSQL：本机无库时**整体 skip**，不假绿；CI 会跑到 ——
+本仓库带库测试的既有约定。）
 
 ### e2e 一条线的深度结论另见
 
