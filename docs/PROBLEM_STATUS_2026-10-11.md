@@ -14,7 +14,8 @@
 > `POST /teams/{team_id}/transfer` —— **现任团队管理员或平台管理员**都能发起
 > （复用 `_require_team_admin` → 共享内核 `is_team_admin`，**不新增授权规则**），
 > 策略无关校验复用共享内核 `validate_transfer_target`（已测 9 条）。
-> ⚠️ **worker 侧未实现**，已按惯例登记 allowlist「待补」——**线上目前仍 404**。
+> ✅ **worker 侧已补齐**，allowlist 登记已删除 —— 两端齐平（`route-parity`
+> 缺失回到 **11**），**线上不再 404**。
 >
 > 用户另已裁决：**e2e 以现役 UI 重新基线化**（尚未开工）；
 > 可视化编辑器要干什么、单证投产联调仍需环境/输入。
