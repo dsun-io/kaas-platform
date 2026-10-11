@@ -6,6 +6,73 @@
 > `FRONTEND_PRODUCTION_READINESS`）记的是**当时**的判断，其中相当一部分**已经修复**。
 > 想知道"现在还剩什么问题"，看这一份；想了解当时的判断过程，去看原文。
 
+***
+
+## 交接摘要（滚动更新 · HEAD `043c72d`）
+
+> **新开对话 / 上下文压缩后，先读这一节**，再往下看细目。
+> 下面「方法」一节的数字是**写本文时**的，已过期；以本节为准。
+
+### 已完成（全部已推送 `origin/main`）
+
+| # | 事项 | 提交 / 动作 |
+|---|---|---|
+| A1 | worker 补「单证合计 = 行项合计」金额勾稽 | `c2ee256` |
+| C1 | 删除 `kaas_common/db` 共享 Repository 死代码 | `e6b54e5` |
+| C2 | worker 客户可见性判定与共享内核 `customer_rules` 对齐 | `7688b77` |
+| B1 | 生产库 schema 对齐（当时落后 **14 个迁移**）+ 租户统一 | `2a46e63` + 生产库迁移 |
+| B2 | 新团队试用工位 —— 用户裁决**维持现状**，无需改动 | — |
+| A2 | 规格体系改自由数值 + 三产品（牛栏网/勾花网/鹿网）+ 前端退役枚举轴 | `f6b4b62`…`6d27b39` |
+| — | 体积扣减由固定 m³ 改**比例**（修掉小单负体积） | `b337251`、`8eead90` |
+| — | **用智能表格真实数据核算引擎**（公式级不一致 0） | `c7d096e` |
+| #2b | 团队级档位**改显示名 / 软停用**（双侧 + 生产库迁移 `202610110015`） | `f3a8196`…`f61a41d` |
+| — | 原料价**历史参考均价**（未新建历史表，见下） | `043c72d` |
+
+### 当前门禁（全绿）
+
+| 门禁 | 结果 |
+|---|---|
+| orchestrator `pytest -m unit` | **511 passed** / 1 skipped |
+| worker `pytest` | **142 passed** |
+| 前端 `test` | **280 passed / 0 failed** |
+| 前端 `typecheck` / `lint` | exit 0 |
+| `contracts:check` | R0–R4 PASS |
+| `route-parity.py` | PASS（缺失 22 已登记 / 未登记 0 / **过期 0** / worker 独有 8） |
+| `sync-shared.ps1 -Check` | exit 0（共享内核 21 / 报价引擎 19 / 枚举字典 1） |
+| `NEXT_EXPORT=1 pnpm build` | exit 0 |
+| `scripts/verify/verify_against_sheet.py` | exit 0（公式级不一致 0） |
+
+### 关键环境事实（踩过的坑，别再踩）
+
+- **租户 ≠ 团队**：`tenant_id` 恒为 `"default"`（**已不是隔离边界**）；
+  **`team_id` 才是**。定价/成本那条路**完全不按 team 过滤**，
+  但通过 `customers.team_id` 事实上已隔离。
+- 无 `pnpm`/`npm`/`npx`：用
+  `C:\Users\HJ\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe`
+  + `...\pnpm\bin\pnpm.mjs`。
+- 跑 `.ps1` 前必须 `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force`。
+- `wecom-cli` 在 `C:\Users\HJ\wecom-cli-tool\node_modules\.bin`；
+  前置检查 `--version` ≥ 1.2.1 + `auth show --status`。
+- 生产库 = Neon `KaaS` / `production` 分支。DSN 取
+  `neon connection-string production --database-name neondb`，
+  **要 `-replace '^postgresql://','postgresql+asyncpg://'`** 才能喂 alembic。
+- 智能表格：「客户询盘跟进表 → 明细表」21 行 / 55 字段。
+  **没有鹿网的数据行**（所以鹿网只能用公式逐点比对，不能拿数据核）。
+- 报价引擎与共享内核**都要镜像到 worker**：改完跑 `pwsh scripts/sync-shared.ps1`，
+  否则 worker 端是旧的（本人踩过，差点漏）。
+
+### 还没做的（建议顺序）
+
+1. **旧表 `customer_pricing_profiles` 活读取路径收口** —— 文档里挂着的**真缺陷**：
+   插新模型的行进去会被按加价倍率**静默误读**，不报错不告警。
+2. **反向漂移 8 条**（worker 独有：`outreach/webhook`×4、`subscriptions`×2、`leads/crawl`×2）。
+3. **前端认证契约残留**（`session-cache.ts` 的 tenant 结构、`client.ts` 的 `X-Tenant-Id`）。
+4. **接口级测试**（#2b 与均价都只有纯函数单测）、**前端档位管理界面**。
+5. 规格库 11 条接口 / 依赖漏洞 98 个 + next 14→15 / e2e 26 条归真 /
+   产品定义可视化编辑器 / 团队管理员转让 / 单证投产联调。
+
+***
+
 ## 方法
 
 不转述文档，而是**实跑门禁与代码取证**（2026-10-11，HEAD 见下方提交）：
