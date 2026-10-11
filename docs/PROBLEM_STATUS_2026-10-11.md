@@ -25,6 +25,14 @@
 > **很可能被本线的 `next build` / dev 重编译污染**（见上面 R56 那条提示）。
 > **所以 e2e 的数字必须在工作区静止时重测才可信** —— 这也许能解释
 > 为何几个环境类修复后现象仍在。**在双方都收工前，不要再据 e2e 数字下结论。**
+>
+> **（R72）取证核对**：上面「已完成」表里的 **24 个提交哈希逐个核验** ——
+> `git cat-file -e` 全部存在，且 `git merge-base --is-ancestor … origin/main`
+> 全部在远程上 ✓ 即"**全部已推送**"这一栏**经得起取证、没有虚报**。
+> 同时把门禁表里的前端测试数**按实测更新为 302 passed / 22 files**
+> （原写 291；随本线加测试而增长：280 → 291 → 302）。
+> 其余门禁行同轮复核：orchestrator 598 / worker 142 /
+> route-parity 缺失 11 / contracts R0–R4 / 前端 typecheck 0 / lint 无 error。
 
 > **最新（R56）**：**单证工位 PI 支持公章与产品照片**（用户裁决「把能力做进平台」，
 > 提交 `43be2f7`）。渲染器新增两个按字段名识别的能力字段：`company_stamp`
@@ -97,7 +105,7 @@
 |---|---|
 | orchestrator `pytest -m unit` | **598 passed** / 1 skipped |
 | worker `pytest` | **142 passed** |
-| 前端 `test` | **291 passed / 0 failed**（R56 前为 280） |
+| 前端 `test` | **302 passed / 22 files / 0 failed**（实测于 `e70df33`；数字随本线加测试而增长：280 → 291 → 302） |
 | 前端 `typecheck` / `lint` | exit 0 |
 | `contracts:check` | R0–R4 PASS |
 | `route-parity.py` | PASS（缺失 **11** 已登记 / 未登记 0 / **过期 0** / worker 独有 **2**） |
