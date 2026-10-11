@@ -45,41 +45,65 @@ test.describe('Events', () => {
 
   test('click a row opens detail sheet with payload', async ({ page }) => {
     await page.goto('/events');
-    await page.waitForLoadState('networkidle');
 
-    // Click first eye icon button
-    const detailBtn = page.getByRole('button').filter({ has: page.locator('svg') }).first();
-    if (await detailBtn.isVisible()) {
-      await detailBtn.click();
-      await page.waitForTimeout(500);
+    // **2026-10-12 修正：这条原来是"空转通过"**
+    // 旧写法两个问题：
+    //   ① 用 `networkidle` 当"等数据"（会因请求挂起而超时，也会因"一个请求都没发"而立即满足）；
+    //   ② `getByRole('button').filter({has: svg}).first()` 命中的是**过滤栏的「搜索」按钮**
+    //      （`events/components/event-filters.tsx:87-90`，它比表格更早出现在 DOM 里），
+    //      点它**不会**打开详情 ⇒ 结尾那句 `expect(table)).toBeVisible()` 恒真
+    //      ⇒ "通过"但**什么都没验证**（修前实测 5/5 通过，全是空转）。
+    //
+    // 真实断言（源码依据）：
+    //   · `event-table.tsx:85-89` —— 每行**唯一**的按钮是 `Eye`（`onClick={() => onSelect(event)}`）
+    //     ⇒ 取首个 `table tbody tr` **行内**的按钮就是它；
+    //   · `event-detail.tsx:34-40, 52-75` —— 点开后打开 Sheet
+    //     （`components/ui/sheet.tsx:4` 用 `@base-ui/react/dialog` 的 `Popup` ⇒ `role="dialog"`），
+    //     内含静态标签「租户 / 操作人 / 会话 / Trace / 时间」。
+    const table = page.locator('table');
+    await expect(table).toBeVisible({ timeout: 15000 });
 
-      // Detail sheet should have payload content
-      const sheet = page.locator('[role="dialog"], .sheet, aside').first();
-      // Detail sheet may or may not be visible depending on click target
-      const payloadText = page.locator('text=/payload|schema|事件详情/i');
-      // At minimum the table should still be visible
-      await expect(page.locator('table')).toBeVisible();
-    }
+    const firstRow = page.locator('table tbody tr').first();
+    await expect(firstRow).toBeVisible({ timeout: 15000 });
+
+    // 行内唯一的按钮 = Eye（打开详情）
+    await firstRow.getByRole('button').first().click();
+
+    const sheet = page.getByRole('dialog');
+    await expect(sheet).toBeVisible({ timeout: 15000 });
+    // 详情里的静态标签（与具体 mock 数据无关）
+    await expect(sheet.getByText('操作人')).toBeVisible({ timeout: 15000 });
   });
 
   test('sampled badge is visible on some rows', async ({ page }) => {
     await page.goto('/events');
-    await page.waitForLoadState('networkidle');
 
-    const sampledBadges = page.locator('text=sampled');
-    const count = await sampledBadges.count();
-    expect(count).toBeGreaterThanOrEqual(1);
+    // **2026-10-12 修正：测试侧（"等网络静默" ≠ "等内容"）**
+    // 旧写法：`networkidle` 之后**一次性** `count()`；门未放行时"没有请求"
+    // ⇒ `networkidle` 立即满足 ⇒ `count()` 得 0 ⇒ 假失败。
+    // 本用例修前实测（FALLBACK=0、repeat-each=5、健康守卫 OK）：**0/5**，
+    // 报错 `toBeGreaterThanOrEqual Expected: >= 1, Received: 0`。
+    //
+    // 真实断言（源码依据）：
+    //   · `events/components/event-table.tsx:65-71` —— `event.sampled` 为真时渲染
+    //     `<Badge variant="secondary">sampled</Badge>`
+    //   · `mocks/handlers.ts:25-31` —— 12 条事件里 `sampled: i % 5 === 0` ⇒ 3 条带徽章
+    await expect(page.getByText('sampled').first()).toBeVisible({ timeout: 15000 });
   });
 
-  test('error=500 simulation shows error toast', async ({ page }) => {
-    await page.goto('/events?error=500');
-    await page.waitForLoadState('networkidle');
-
-    // The page should still load (not white-screen), but an error toast should appear
-    // The error interceptor shows a toast with the Chinese error message
-    const errorToast = page.getByText(/服务器内部错误|后端忙碌/i);
-    // Error toast may or may not be visible depending on timing
-    // At minimum the page should not crash
-    await expect(page.locator('body')).toBeVisible();
+  // **2026-10-12 判定：这条一直"假绿"，且它的触发条件根本不存在 ⇒ 显式 skip（不静默丢覆盖）**
+  // · 它原来的断言只有 `await expect(page.locator('body')).toBeVisible()` —— **恒真**，
+  //   修前它 5/5 "通过"，但**没有任何信号**；
+  // · 名字声称测「error=500 时出现错误 toast」，可**这个路径不存在**：
+  //   页面 `events/page.tsx` **不读** `?error=`（只有 `useState<EventFiltersType>({})`），
+  //   `useEvents()` 只把 filters 拼进 query ⇒ 请求 URL **从来不带 `error=500`**；
+  //   而 mock 里那段 500 逻辑（`mocks/handlers.ts:155-167`）读的是 **API 请求**的 `error` 参数。
+  // ⇒ 要真覆盖它，先得有"在 e2e 里强制 `/api/v1/events` 返回 500"的手段
+  //   （同类先例：`handlers.ts:143-152` 的 `__test/override-quote-status`），
+  //   或让页面支持 `?error=`（属应用改动，不在本任务范围）。
+  // **该覆盖应是**：强制 `/api/v1/events` → 500 ⇒ 断言出现 toast 文案
+  //   （`服务器内部错误 | 后端忙碌`，由 `lib/api/error-handler.ts` 触发）。
+  test.skip('error=500 simulation shows error toast', async () => {
+    // 待重写：见上方说明（需要先有强制 500 的手段）。
   });
 });
