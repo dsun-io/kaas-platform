@@ -21,6 +21,7 @@ on:
       - 'frontend/src/app/(app)/settings/hooks/use-tenants.ts'
       - 'frontend/src/app/(app)/settings/components/types.ts'
       - 'frontend/src/app/(app)/admin/gray-release/hooks/use-feature-flags.ts'
+      - 'frontend/src/app/(app)/admin/gray-release/components/flag-toggle.tsx'
       - 'scripts/contracts-allowlist.txt'
   pull_request:
     paths:
@@ -39,6 +40,7 @@ on:
       - 'frontend/src/app/(app)/settings/hooks/use-tenants.ts'
       - 'frontend/src/app/(app)/settings/components/types.ts'
       - 'frontend/src/app/(app)/admin/gray-release/hooks/use-feature-flags.ts'
+      - 'frontend/src/app/(app)/admin/gray-release/components/flag-toggle.tsx'
       - 'scripts/contracts-allowlist.txt'
 
 jobs:
