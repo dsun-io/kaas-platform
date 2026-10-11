@@ -125,18 +125,15 @@ async def resolve_customer_for_doc(db, tenant_id: str, customer_id, auth) -> Opt
         # 软删除的客户视为不存在（与客户域一致：is_deleted 不是"只写不读"的标记）
         Customer.is_deleted.is_(False),
     )
-    # 可见性 = 引用权：与客户域（列表/详情）**同一套规则**。
+    # 可见性 = 引用权：与客户域（列表/详情）**同一套规则** —— 内核 `visible_to`
+    # （管理员 / owner_scope=tenant / owner_id=我 / team_id=我的团队）。
     #
-    # 两个方向都要对齐，否则两边会互相打架：
-    #   1) 行规则 → 内核 `visible_to`（管理员 / owner_scope=tenant / owner_id=我 / team_id=我的团队）
-    #      原先这里只比"团队相等"，于是"自己名下但 team_id 为空"的客户看得见却选不了。
-    #   2) 管理员概念 → 客户域的 `customer_rules.can_see_all`
-    #      它包含 `account_type='internal'`（内部账号），而内核 `can_view` 只认 role 管理员。
-    #      只用内核判会导致"internal + role=user：客户详情看得见、开单却 404"。
-    from kaas_common.workstation.customer_rules import can_see_all as customer_can_see_all
-
+    # 原先这里还额外 OR 了一次客户域的 `customer_rules.can_see_all`，因为那一份
+    # 把 `account_type='internal'` 也算管理员，与内核只认 role 管理员不一致 ——
+    # 不 OR 就会出现"客户详情看得见、开单却 404"。2026-10-11 把 `can_see_all`
+    # 收敛为委托 `scope.is_admin_role` 后两份判定同源，这层兜底不再需要。
     customer = (await db.execute(stmt)).scalar_one_or_none()
-    if customer is None or not (customer_can_see_all(auth) or visible_to(customer, auth)):
+    if customer is None or not visible_to(customer, auth):
         raise HTTPException(status_code=404, detail={
             "error": "not_found", "code": "CUSTOMER_NOT_FOUND",
             "detail": "客户不存在或对你的账号不可见",
