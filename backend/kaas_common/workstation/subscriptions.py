@@ -65,6 +65,10 @@ ALWAYS_ALLOWED_PREFIXES: tuple[str, ...] = (
     "/api/v1/capabilities",
     "/api/v1/enums",
     "/api/v1/tenant-products",   # 产品定义属"我的"配置，不按工位收费
+    # 产品素材（产品图 + 基础信息）与文件域：单证/报价都要引用它们，
+    # 锁掉等于让付费工位失去素材来源 ⇒ 同 tenant-products，不按工位收费。
+    "/api/v1/products",
+    "/api/v1/file-objects",
     "/health",
 )
 

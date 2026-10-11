@@ -190,6 +190,20 @@ export const WORKSTATIONS: readonly Workstation[] = [
     subscription: null,
   },
   {
+    // 产品素材（图片 + 基础信息）：单证/报价都要**引用**它，
+    // 所以属"我的"配置、不按工位收费（subscription: null ⇒ 永不被订阅拦）——
+    // 锁掉它等于让付费工位失去素材来源。
+    key: 'products',
+    name: '产品',
+    route: '/products',
+    group: 'business',
+    order: 5,
+    icon: 'Package',
+    adminOnly: false,
+    status: 'active',
+    subscription: null,
+  },
+  {
     key: 'orders',
     name: '订单',
     route: '/orders',
