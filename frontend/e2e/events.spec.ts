@@ -3,10 +3,14 @@ import { test, expect } from './fixtures';
 test.describe('Events', () => {
   test('events list loads with at least 5 rows', async ({ page }) => {
     await page.goto('/events');
-    await page.waitForLoadState('networkidle');
 
     const rows = page.locator('table tbody tr');
-    await expect(rows.first()).toBeVisible({ timeout: 10000 });
+    // **不要用 `waitForLoadState('networkidle')` 当"等数据"的手段。**
+    // 实测（2026-10-11，同一条用例重复 5 次）：它让本用例 60% 通过，
+    // 失败全是 `page.waitForLoadState: Test timeout of 30000ms exceeded`
+    // —— 因为本项目的 `/api/v1/*` 请求可能长期挂起，`networkidle` 永不满足。
+    // 等**真实元素**既是更准的断言，也不依赖"网络静下来"。
+    await expect(rows.first()).toBeVisible({ timeout: 15000 });
     const count = await rows.count();
     expect(count).toBeGreaterThanOrEqual(5);
   });
