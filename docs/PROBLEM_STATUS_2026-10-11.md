@@ -755,6 +755,32 @@ TypeError: Cannot read properties of undefined (reading 'map')
 **所以"e2e 归真"的实质是"这套测试大面积过期"**，不是应用质量、也不只是 flaky。
 正确做法需要用户拍板：**以现役 UI 重新基线化**（改写或退役过时用例）。
 
+#### 那 ~3 条"非陈旧"的：报错是 `networkidle` / 点击**超时**
+
+查 `dashboard` 两条失败的实际报错：
+
+```
+Test timeout of 30000ms exceeded.
+Error: page.waitForLoadState: Test timeout of 30000ms exceeded.
+Error: locator.click: Test timeout of 30000ms exceeded.
+```
+
+**即 `networkidle` 永不满足 / 点击等不到** —— 这属于我早先定位的
+「**未匹配请求 → 自代理挂死 → `networkidle` 永不触发**」那一类，
+与"陈旧选择器"是**两回事**。
+
+（且它们的期望文案 `.grid`、`采样` 实测**都在**页面上，所以确实不是陈旧。）
+
+**仍开放的问题**：早先我用 console fixture 点名缺口时，
+`[MSW缺口]` 只报出 **Next 自己的请求**（`/__nextjs_original-stack-frame`、
+`?_rsc=` prefetch），**没有** `/api/v1/*` —— 也就是说那些 `/api/v1/*`
+**是被 MSW 匹配到的**。但 dev server 日志里又确实出现
+`Failed to proxy .../api/v1/auth/me`。
+
+> 两者看起来矛盾（匹配了就不该到服务器）。可能的解释是**服务端侧发起的请求**
+> （RSC prefetch / SSR）—— 那是浏览器里的 MSW **拦不到**的。
+> 这条未验证，留作下一步：需要区分"浏览器请求"与"服务端请求"。
+
 **关键发现：那两个 critical/high 的来源不是"版本旧"，是依赖放错了位置。**
 
 | 漏洞 | 来源链 | 真实问题 |
