@@ -1,13 +1,32 @@
 """租户级产品定义 —— 运行时从数据库加载 ProductSpec（租户级优先，系统级兜底）。
 
 加载优先级：
-1. tenant_products 表（租户级，按 tenant_id + is_active 过滤）
+1. tenant_products 表（租户级，按 tenant_id + team_id + is_active 过滤）
 2. products/ 目录的 Python 定义（系统级兜底）
 
-权限矩阵（**未完成**）：
-- is_system=true：系统级产品，所有租户可见，仅平台管理员可编辑
-- is_system=false：租户级产品，仅本租户可见，租户管理员可编辑
-详见 docs/PRODUCT_CONFIG_TENANT_UNFINISHED.md
+团队谓词（2026-10-12，task-4 / 迁移 `202610110019`）
+===================================================
+
+`tenant_products` 自迁移 `202610110019` 起有可空 `team_id` 列，唯一键收敛为
+`(tenant_id, COALESCE(team_id, 0), product_key)` ⇒ 同一租户同一 key **可有多行**
+（不同团队各一行 + 至多一行历史 NULL）。原查询用 `scalar_one_or_none()` 且**不**
+按 team 过滤 ⇒ 多行时直接抛 `MultipleResultsFound`。
+
+加载口径（与 `kaas_common/workstation/product_scope.py` 的 `is_same_team` 同源）：
+
+| 情形 | 期望 | 依据 |
+|---|---|---|
+| 本团队行（`team_id == viewer_team_id`） | 优先返回 | Q1=B / Q6 |
+| 别团队行 | **不返回**（回退到历史 NULL 行或 Python 定义） | Q6 + §1.5（不泄露存在性） |
+| 历史 `team_id IS NULL` | **仅管理员可见**（非管理员跳过） | D3/D4 |
+
+判定**复用** `kaas_common.workstation.product_scope.is_same_team` —— 本文件是
+**数据加载器**（不是 HTTP 端点），所以不走 `product_info_access` 的 HTTP 语义
+（403/404），而是走它的团队成员判定 `is_same_team`；两者共享同一份
+`is_admin_role` 角色映射与 `_same_non_null` 松弛相等。**不另写一套判断**。
+
+⚠️ 权限矩阵（`is_system` / 工位开通多对多关系）仍**未完成**（与本改动无关），
+详见 docs/PRODUCT_CONFIG_TENANT_UNFINISHED.md。
 """
 from __future__ import annotations
 
@@ -53,30 +72,43 @@ def spec_to_dict(spec: ProductSpec) -> dict:
 class TenantProductLoader:
     """租户级产品加载器：先查数据库，再回退 Python 定义。
 
-    注意：**权限矩阵未完成**（is_system/is_active 只做基础过滤，
-    未实现租户开通报价工位后的「选择启用产品」多对多关系）。
+    团队谓词（2026-10-12，task-4）：`load()` 现在接收 `team_id`（可为 None），
+    由 `_fetch_tenant_product` 按团队收敛候选行（本团队优先，历史 NULL 仅管理员）。
+    注意：**权限矩阵（is_system / 工位开通）仍未完成**（is_system/is_active
+    只做基础过滤），详见 docs/PRODUCT_CONFIG_TENANT_UNFINISHED.md。
     """
 
     def __init__(self, db_session_factory=None):
         self._db = db_session_factory
         self._cache: dict[str, ProductSpec] = {}
 
-    async def load(self, tenant_id: str, product_key: str) -> Optional[ProductSpec]:
-        """加载产品定义：租户级优先，回退系统级 Python 定义。"""
-        cache_key = f"{tenant_id}:{product_key}"
+    async def load(self, tenant_id: str, product_key: str,
+                   team_id: Any = None, *, role: Optional[str] = None) -> Optional[ProductSpec]:
+        """加载产品定义：租户级（按团队收敛）优先，回退系统级 Python 定义。
+
+        参数：
+        - `team_id`：调用者归属的团队（`None`/空 = 未归属团队）。
+        - `role`：调用者角色，**仅**用于判定「历史 `team_id IS NULL` 行是否可见」
+          （仅平台管理员可见，D3/D4）；不传时按非管理员处理（历史 NULL 行跳过）。
+
+        这两个参数此前**没有调用方**（202610110019 迁移备注核实过），因此新增
+        参数不影响现役行为；将来接线时（P13 `_effective_product`）必须把
+        `auth.team_id` / `auth.role` 传进来。
+        """
+        cache_key = f"{tenant_id}:{team_id}:{role}:{product_key}"
         if cache_key in self._cache:
             return self._cache[cache_key]
 
-        # 1. 查 tenant_products 表
+        # 1. 查 tenant_products 表（团队收敛后的那一行）
         if self._db is not None:
-            row = await self._fetch_tenant_product(tenant_id, product_key)
+            row = await self._fetch_tenant_product(tenant_id, product_key, team_id, role=role)
             if row is not None:
                 spec = spec_from_dict(row["spec"])
                 self._cache[cache_key] = spec
                 return spec
 
         # 2. 回退 Python 定义（系统级兜底）
-        from ..products import get as get_product, has as has_product
+        from .products import get as get_product, has as has_product
         if has_product(product_key):
             spec = get_product(product_key)
             self._cache[cache_key] = spec
@@ -84,9 +116,20 @@ class TenantProductLoader:
 
         return None
 
-    async def _fetch_tenant_product(self, tenant_id: str, product_key: str):
+    async def _fetch_tenant_product(self, tenant_id: str, product_key: str,
+                                    team_id: Any = None, *, role: Optional[str] = None):
+        """按团队谓词取 tenant_products 的一行（本团队优先，历史 NULL 仅管理员）。
+
+        返回 `None` = 没有可见的行（调用方回退 Python 定义）。
+        **不再**用 `scalar_one_or_none()` —— 同租户同 key 的多团队行是**合法**的
+        （迁移 202610110019 放宽了唯一键），`scalar_one_or_none` 会抛
+        `MultipleResultsFound`。这里按可见性排序后取第一行：
+        本团队行（`team_id == viewer`）> 历史 NULL 行（仅管理员）。
+        """
         from sqlalchemy import select
         from app.db.models import TenantProduct  # noqa: F401 - 延迟导入避免循环
+        from kaas_common.workstation.product_scope import is_same_team
+
         async with self._db() as session:
             result = await session.execute(
                 select(TenantProduct).where(
@@ -95,7 +138,23 @@ class TenantProductLoader:
                     TenantProduct.is_active == True,  # noqa: E712
                 )
             )
-            return result.scalar_one_or_none()
+            rows = result.scalars().all()
+        # 优先级：本团队行（`team_id == viewer`）> 历史 NULL 行（仅管理员）。
+        # 多行时按这个优先级取**第一行**，而不是"按返回顺序随便取一条"。
+        from kaas_common.workstation.scope import is_admin_role
+
+        for row in rows:
+            row_team = getattr(row, "team_id", None)
+            if row_team is not None and is_same_team(
+                role=role, viewer_team_id=team_id, row_team_id=row_team
+            ):
+                return {"spec": row.spec, "team_id": row_team}
+        # 没有本团队行 ⇒ 只剩历史 NULL 行兜底（仅管理员可见，D3/D4）
+        if is_admin_role(role):
+            for row in rows:
+                if getattr(row, "team_id", None) is None:
+                    return {"spec": row.spec, "team_id": None}
+        return None
 
     def list_keys(self, tenant_id: str) -> list[str]:
         """列出该租户可用的产品 key（含系统级兜底）。"""
