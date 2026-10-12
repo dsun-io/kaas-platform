@@ -26,6 +26,11 @@
 > **（t18 更新）** 上面那个真问题：**第一个断点已修**（该文件补 `has_table` 兜底）⇒ 实测已穿过
 > `feb821f0b9c0`；但**整链仍跑不到 head** —— 下一个 repo 级断点是 `202605170001:279`
 > （同类根因），且链还要求 `pg_trgm` / `btree_gist` 两件 contrib 扩展。见文末 §⑧。
+> **（t21 更新）** 第二个同类断点（`202605170001:279`）**也已修并实测穿过**；链现在的**边界**是
+> `f82ac951b473_intel_workstation_v1`（无条件 `create_table` 36 张、其中 30 张链上早建过 ⇒
+> `DuplicateTable`）—— 属**结构性冲突**，按规则**停止硬修**。另：本线期间仓库多了
+> `202610110019`（另一条线）⇒ `alembic heads` 现在是单 head **`202610110019`**（本线未改任何
+> revision/依赖；生产版本行以 §⑤ 实测 `202610110018` 为准，本线未复测）。见文末 §⑨。
 
 > **（R81）收口决定：e2e 停手，主线交付** —— 用户 2026-10-11 追问
 > 「还有多少任务未完成、怎么做不完了」，逐项核对后的结论：
@@ -2463,7 +2468,8 @@ DSN 用 `neon env pull --file <temp> --project-id falling-salad-31662168` 重取
 | 再把该约束也中性化后 | **下一个 repo 级断点**：`202605170001_spec_system_v1.py:279` `ALTER TABLE quotations ADD COLUMN sku_id BIGINT` → `relation "quotations" does not exist`（与第一个断点**同类根因**） |
 
 **明确结论**：整链**仍跑不到 head**。第一个断点已按最小改动修掉并实测穿过；下一个是
-`202605170001:279`（同一个 create_all-only 表的同类问题）。修完整条链要牵涉 ≥2 个历史迁移、
+`202605170001:279`（同一个 create_all-only 表的同类问题）——**该处已在 task-21 修掉，见 §⑨**。
+修完整条链要牵涉 ≥2 个历史迁移、
 并先理清"哪些表只由 `create_all` 建、链上第一次 ALTER 它出现在哪"——**属单独决策**（本任务明确不要求一次修完）。
 另：空库路径还有**环境前提** —— 链要求 contrib 扩展 `pg_trgm` + `btree_gist`（后者被 `excl_psp_overlap`
 真正用到）；Neon / 常规 Postgres 一般都有，但"裸装无 contrib"的 Postgres 会在 `202605170001` 断。
@@ -2484,6 +2490,69 @@ DSN 用 `neon env pull --file <temp> --project-id falling-salad-31662168` 重取
 
 **复现**：`artifacts/task16_fresh_db_check.py`（空库整链；`ALEMBIC_INI` 可指向探针副本）、
 `artifacts/task18_ab_existing_db.py`（A/B 行为对照）。
+
+### ⑨ 继续修同类断点：第二个断点已修；边界 = `f82ac951b473` 的整库 dump（task-21，2026-10-12）
+
+**改动 2（`202605170001_spec_system_v1.py`，`# ── 13. quotations ALTER ──` 那段）**：把 `quotations` 的
+三条 `op.add_column`（`sku_id` / `price_id` / `schema_version_v2`）+ `op.create_index('idx_q_sku', …)`
+包进 `if sa.inspect(op.get_bind()).has_table("quotations"):`。理由：更晚的
+`f82ac951b473_intel_workstation_v1.py:661` 才 `create_table('quotations')`，而那份定义**已含这三列**
+⇒ 空库上跳过不丢列语义。
+**已知缺口（如实记）**：`idx_q_sku` **不在**那份 CREATE TABLE 的索引里 ⇒ **空库上这个索引会缺** ——
+这是"链跑到 head ≠ 得到完整 schema"的第一个具体实例，也是后面主张"别再用跳过守卫堆下去"的依据。
+
+**空库实测（临时 pgserver；环境依赖只在探针副本里中性化）**
+
+| 阶段 | 结果 |
+|---|---|
+| task-18 之后 | 穿过 `feb821f0b9c0`，断在 `202605170001:279` |
+| **改动 2 之后** | **穿过 `202605170001`** —— SQL 捕获见 `UPDATE alembic_version SET version_num='202605220001'`（该 revision 正常收尾），随后穿过 `202605220001` |
+| 新断点 | `f82ac951b473_intel_workstation_v1.py:23` `op.create_table('customer_capabilities', …)` → **`psycopg.errors.DuplicateTable: relation "customer_capabilities" already exists`**（同一轮 SQL 捕获：#89 是 `feb821f0b9c0` 空库兜底建的表，#171 这里**又建一次**） |
+
+**为什么这一处要停下（性质 = 结构性冲突，不是"同类守卫"）**
+
+- 静态量化（`artifacts/task21_conflict_scan.py`，纯本地）：`f82ac951b473` **无条件 `create_table` 36 张**，
+  其中 **30 张在链上更早的 revision 里已经建过**（`customers`、`users`、`conversations`、
+  `wechat_bot_accounts`、`wechat_conversations`、`wechat_message_events`、`conversation_messages`、
+  `channel_links`、`usage_events`、`user_customers`、`user_roles`、`product_categories`、
+  `spec_attributes`、`spec_attribute_values`、`category_attribute_bindings`、`attribute_proposals`、
+  `product_skus`、`product_sku_prices`、`product_sku_revisions`、`units`、`unit_groups`、`price_units`、
+  `industry_templates`、`product_specs`、`text_knowledge`、`customer_*` …）。
+- ⇒ 它在**任何**真实链路上**必然** `DuplicateTable`；这同时**反证**"这条链从未通过 alembic 跑到过 head"，
+  与 §⑤「生产是 `create_all` + 版本标签」的结论**互相印证**。
+- 要让它过，只能把这一次 revision 的**全部 36 处 `create_table` 改成"缺则建"**，并决定那 30 张表的
+  **定义以谁为准**（更早的迁移 vs 这份 dump）—— 那是"改历史迁移语义 + 定 schema 真源"的**设计决策**，
+  超出"最小守卫"的范畴 ⇒ 按本轮规则**停止硬修**。
+- 顺带澄清一个**假阳性**（免得后来者误判）：`202605030002` 看着也"重复建 `events`/`events_archive_log`"，
+  但它先 `DROP TABLE IF EXISTS events CASCADE`、另一张是 `CREATE TABLE IF NOT EXISTS` ⇒ 不是冲突
+  （空库实测也确实穿过了它）。
+
+**改动 2 的 A/B（"已有库"= `quotations` 表在）**：两个同构 fixture 库各**只预建** `quotations`
+（**不**预建 `customers` —— 链自己在 `202605050001` 会建它，预建会先撞 `DuplicateTable`）；
+`pre` 用还原成未打补丁的副本、`post` 用仓库当前版本，各跑**整链**到同一个断点：
+
+- 语句 183 vs 184 条（差的 1 条 = `has_table` 的 introspection `SELECT`）；
+  **剔除只读 catalog 查询后的 DDL/DML 序列逐条相同（174 = 174）**；
+- **阳性对照**：两边都执行了 `sku_id` / `price_id` / `schema_version_v2` 三条 `ADD COLUMN`
+  + `CREATE INDEX idx_q_sku`（= 守卫为真、走原路径）；
+- 两次都在同一处（`f82ac951b473`）以**同一个错误**结束 ⇒ 差异与本次守卫无关。
+（`feb821f0b9c0` 那处的真实 fixture A/B 见 §⑧。）
+
+**环境依赖（不变）**：链要求 contrib `pg_trgm` + `btree_gist`（后者被 `excl_psp_overlap` 排他约束真正用到）；
+本地打包的 pgserver 无 contrib ⇒ 只在**探针副本**里中性化 5 处语句，仓库迁移文件不为环境改语义。
+
+**最终结论**：**仍跑不到 head**，边界 = `f82ac951b473`（**结构性**，非"表不存在 ⇒ 跳过"这类守卫可解）。
+已修 2 处同类守卫（`feb821f0b9c0`、`202605170001`），两处都实测穿过、且 A/B 证明存量库行为不变。
+
+**建议（单独排期，本线不做）**：若目标真是"空库 → 可用 schema"，正确做法是
+**新增一个 bootstrap 迁移**（按 ORM 元数据把 create_all-only 的表补齐）+ 把 `f82ac951b473` 的
+`create_table` 全部改成"缺则建"，并明确那 30 张表的定义真源；**不要再往历史迁移里逐个加跳过守卫**
+（会把 schema 缺口越堆越多，例如 `idx_q_sku`）。
+
+**复现**：`artifacts/task21_probe_build.py`（探针副本 + 环境中性化）、
+`artifacts/task16_fresh_db_check.py`（空库整链，`ALEMBIC_INI` 指向探针）、
+`artifacts/task21_ab_quotations.py`（改动 2 的 A/B）、
+`artifacts/task21_conflict_scan.py`（重复建表量化）。
 
 ***
 
