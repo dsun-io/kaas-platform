@@ -105,6 +105,12 @@ backend/orchestrator/.coverage*
 .agents/
 skills-lock.json
 
+# 多智能体协作状态（AgentTeams：团队/任务/信箱，属本机会话产物，不入库）
+.agent-teams/
+
+# 一次性临时脚本（约定：用完即删；绝不入库）
+.tmp_*
+
 # 临时脚本/构建产物（本地工具，不入库）
 .tools/
 

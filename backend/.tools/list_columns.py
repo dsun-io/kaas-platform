@@ -1,9 +1,11 @@
 """临时：查看关键表列名。"""
 import asyncio
+import os
 
 import asyncpg
 
-DSN = "***REMOVED***"
+# 生产 DSN 一律从环境变量读取：**不入仓库**（原硬编码的生产口令已按安全要求清除）。
+DSN = os.environ["KAAS_DSN"]
 
 TABLES = [
     "cust_customers",

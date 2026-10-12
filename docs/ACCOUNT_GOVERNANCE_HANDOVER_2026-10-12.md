@@ -28,7 +28,7 @@
 | 字段 | 值 |
 |---|---|
 | email | `david@powervoy.com` |
-| 密码 | `admin123`（用户指定；**bcrypt 落库，明文不入库**） |
+| 密码 | **不在仓库记录**（由用户当面指定；库里只存 bcrypt 哈希）。⚠️ 处置建议见 §⑥ |
 | account_type / role | `internal` / `system_admin` |
 | is_tenant_admin | `true` |
 | status | `active` |
@@ -211,14 +211,23 @@ src/app/(app)/onboarding/page.tsx(80,17): error TS2322:
 
 ## ⑥ 环境与凭据提示
 
-- **生产 DSN 不在仓库**：`backend/orchestrator/.env` 里的 `DATABASE_URL` 指向 Neon
-  生产库（`ep-small-brook-b54t5318`）。**注意池化端点直连会握手失败**，脚本里需把
-  `-pooler.` 去掉等价于改用直连端点（本轮实测：带池化 → `ConnectionRefusedError`；
+- **生产 DSN**：`backend/orchestrator/.env` 里的 `DATABASE_URL` 指向 Neon 生产库
+  （`ep-small-brook-b54t5318`）；`.env` **未被跟踪** ✓。**注意池化端点直连会握手失败**，
+  脚本里需把 `-pooler.` 去掉改用直连端点（本轮实测：带池化 → `ConnectionRefusedError`；
   去池化 + `ssl=require` → 通）。
+- **⚠️ 安全检查发现（本轮顺带修的）**：`backend/.tools/{list_columns,list_tables,seed_ports,seed_port_coords}.py`
+  这 4 个文件**曾把生产库口令硬编码在源码里**（`DSN = "postgresql://neondb_owner:npg_…@…"`）。
+  本轮已把它们**改为从环境变量 `KAAS_DSN` 读取**，仓库**当前快照**不再含该口令 ✓。
+  **但 git 历史里仍有**（这四个文件早已在仓库中）⇒ **强烈建议立刻在 Neon 控制台轮换该口令**，
+  否则"仓库里的旧口令"仍可直连生产。历史重写属破坏性操作（会影响其他并行线），**未做**，需用户拍板。
+  另：`.gitignore` 本就把 `.tools/` 声明为"临时脚本/本地工具，不入库" ⇒
+  这 4 个文件属**历史遗留违规**，建议后续删除或按本文档保持"只读 env 变量"形态。
 - **不要 `os.environ["DATABASE_URL"]` 事后覆盖**：`app.db.session` 在 import 时已建 engine，
   必须在 import **之前**设好环境变量，或直接自建 `create_async_engine`（本轮做法）。
-- **口令**：`david@powervoy.com` 的初始口令由用户指定；**不得**写入文档正文以外的位置、
-  **不得**提交任何含明文口令的脚本。
+- **口令**：`david@powervoy.com` 的初始口令由用户当面指定，**本文档不记录明文**
+  （库里只存 bcrypt 哈希）。⚠️ 本轮**早期版本的提交里曾出现该明文**（`ff9aa73` 的 §①，
+  已在 `b75a055` 之后的提交中改为"不在仓库记录"）⇒ **建议连同 §⑥ 的 Neon 口令一起轮换**，
+  或由用户拍板做一次历史重写。
 - **本机工具（2026-10-12 实测）**：
   - `node.exe`：`C:\Program Files\nodejs\node.exe`（在 PATH）；
   - **`pnpm` 不在 PATH**，自带一份在
