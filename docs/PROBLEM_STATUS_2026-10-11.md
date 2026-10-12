@@ -1,4 +1,4 @@
-﻿# 现存问题对账（2026-10-11）
+# 现存问题对账（2026-10-11）
 
 > **本文是「问题状态」的当前口径。**
 > 此前多份文档（`CURRENT_IMPLEMENTATION_MAP` / `MULTI_PRODUCT_QUOTE_PLAN` /
@@ -2918,3 +2918,17 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
 > **方法如实记录**：本机无 Postgres ⇒ 离线 `alembic upgrade --sql` 在 `feb821f0b9c0` 处因 `sa.inspect(MockConnection)`
 > 不可用而失败（R82 已记录的已知限制）；改用逐迁移 DDL 文本 + models.py 元数据静态核对（等价证据，只是不验证全链跑通——
 > 那需要真库，挂 CI `db-tests`）。
+
+## （主线）P13 差异读路径纯逻辑层（2026-10-12，effective_spec.py）
+
+> **定位**：P13 是 IMPL_PLAN 的"差异读路径接线"——把 P4 的"租户行整体遮蔽"改为**基线+差异**（不冻住）。
+> 本步骤先交付**纯逻辑层**（`backend/orchestrator/app/services/export_quote/effective_spec.py`），
+> 含 `resolve_effective_product(base_dict, delta_dict)` 与 `assert_base_hash_match`。
+> 该文件**零三方依赖**（只用 `spec_delta` + `tenant_products.spec_from_dict`），
+> sync-shared.ps1 已同步进 worker 镜像（22/22），两端同源。
+>
+> **当前状态**：纯逻辑层 + 10 条测试已验证通过（1183 passed / 0 failed）。
+> **待做**：`_effective_product`（export_quote.py）的接线点——等 `tenant_products` 表加上 `override` 列（S5 迁移）
+> 后，只需从行里读出 delta dict 传给 `resolve_effective_product`，这里直接生效。
+> **当前 tenant_products 无 delta 列** ⇒ 基线原样返回（"未设差异的团队跟着变"），
+> 已用测试钉住"上游改了跟着变"语义。
