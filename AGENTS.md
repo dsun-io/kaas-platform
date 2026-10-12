@@ -78,9 +78,16 @@ PYTHONPATH=. .venv/Scripts/python scripts/export_openapi.py
 > 这是**设计使然**（R6 刻意不读工作树，以免把别人未提交的半成品当基准 ✗），
 > 不是门禁失灵；所以**顺序必须反过来**：先提交产物，再让门禁看它。
 - 环境无 `pnpm`/`npm` 可直接调用，用
-  `C:\Users\HJ\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe`
+  `C:\Users\河北慷逊公司\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe`
   + `...\pnpm\bin\pnpm.mjs`。跑 `.ps1` 前先
   `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force`。
+  - ⚠️ **2026-10-12 更正**：本文档原写 `C:\Users\HJ\…`，**该路径在本机不存在**
+    （实际用户名是 `河北慷逊公司`）⇒ 按旧路径调用会 `CommandNotFoundException`。
+  - ⚠️ **本机没有 PowerShell 7**（`pwsh` 不在 PATH，只有 5.1）⇒ 上面所有
+    `pwsh scripts/…` 都要改用 `powershell -ExecutionPolicy Bypass -File scripts/…`。
+  - ⚠️ **提交时要把 pnpm/node 的 bin 放进 PATH**：`.husky/pre-commit` 调 `pnpm lint-staged`
+    ⇒ 否则报 `pnpm: command not found`（code 127）而提交失败。
+  - ⚠️ **commitlint 的 `subject-case` 规则**禁止句首/帕斯卡大小写 ⇒ subject 用中文或**全小写**才过。
 
 ## 4. 这个工作区可能**同时有多个任务在写** —— 提交纪律
 
@@ -116,6 +123,21 @@ git reset -q HEAD -- <你这次提交涉及的路径…>      # 或等价地 git
 之后：你自己的路径恢复干净，**别人的 staged/worktree 改动逐条原样保留** ✓（用前/后 `git status --short` 对比自证）。
 
 > 同一轮里另有两位队友独立踩到这条并各自发现，故写入配方。
+
+⚠️ **补丁（2026-10-12 下午场实测，又踩一次）**：上面这条 `git reset -q HEAD -- <路径>` **在
+`GIT_INDEX_FILE` 环境变量还指向私有临时索引时是无效的** —— 它归位的是**私有索引**，共享
+`.git/index` **照旧停在旧 HEAD**，症状完全一样（`D ` + `??`）。
+**提交脚本里必须先把私有索引用完再清掉变量，两个动作分开**：
+
+```bash
+# ① 私有索引提交（GIT_INDEX_FILE 指向 %TEMP%）
+git read-tree HEAD && git add -- <自家路径…> && git commit -m "…"
+# ② 清掉变量后再归位共享索引（关键：不能和 ① 写在同一条 shell 里紧接着跑）
+Remove-Item Env:GIT_INDEX_FILE          # PowerShell；bash 用 unset GIT_INDEX_FILE
+git add -- <自家路径…>                   # 用 add 最稳：让共享 index 与工作树/HEAD 一致
+git status --short                       # 自证：自家路径干净，别人的改动原样在
+```
+判据：`git diff HEAD -- <自家路径>` **为空** 且 `git status --short -- <自家路径>` **无输出**，才算真归位。
 
 ### `frontend/.next` 是硬冲突资源
 

@@ -10,6 +10,33 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（交接 · 2026-10-12 傍晚 · 产品模块合并线 + 忘记密码）→ 详细交接见
+> [`SESSION_HANDOFF_2026-10-12_PM.md`](./SESSION_HANDOFF_2026-10-12_PM.md)**
+>
+> **本场次交付 10 个提交（全部已推送 `main`）**，按线分组：
+> - **后端主线（P13 账本接回 + P7/P8 残余清零）**：`c217bc5` Loader 团队谓词 →
+>   `c11d426` `_effective_product` 走 Loader（**账本进算价**）→ `988247a` 三处同构团队谓词
+>   （`trade_docs._product_info_of` + worker `main` + `resolve_photo_refs`）→ `74c0b58` 文档。
+> - **前端主线（P14 工位合并）**：`9acc79b` 两页搬进一个工位两 tab（行为等价，JSON 文本框原样保留）
+>   → `c1bf07c` 回归网（tab 状态 / 旧路由 redirect / 读写契约，9 条新测试）。
+> - **后端辅线**：`198ea89` §8.5 标量列表缺口（`notes`/`hs_codes` 仅支持整体替换）；
+>   `f3ee3c5` 产品合并前置取证（三表 `team_id` 回填可行性离线核对）。
+> - **🆕 忘记密码（用户新需求）**：`5092d50` 全链路 —— 迁移 `202610120001` + `PasswordResetToken`
+>   模型 + orchestrator/worker **同契约两路由**（`forgot-password` / `reset-password`）+
+>   前端 `forgot-password` 改造与 `reset-password` 新页 + **18 条测试**；
+>   token 只存 **SHA-256 哈希**、30 分钟过期、用后即废、不泄露邮箱存在性；Resend 真实发信已验证 **200**。
+> - **产品合并**：`2a16e9d` **P13 纯逻辑层** `effective_spec.py`（基线 + 差异，**不冻住**）+ 10 条测试。
+>
+> **门禁实测（2026-10-12 17:1x，工作区静止）**：orchestrator **1183 passed / 1 skipped**；
+> worker **261 passed**；前端 **390 passed（33 files）**；`lint` exit 0；
+> `contracts:check` **PASS R0–R6（175 paths）**；`route-parity` **PASS**；
+> `sync-shared -Check` **exit 0**（31 / **22** / 1）。
+> ⚠️ **`NEXT_EXPORT=1 build` 本场次未跑**（避 `.next` 硬冲突）；前端 `typecheck` 仍有
+> **2 个 `onboarding/page.tsx` 历史遗留 error**（非本场次引入，如实标注未修）。
+>
+> **⏳ 下一步**：P15（契约收口）→ P16（可视化编辑器）→ P17（全门禁含 build）；
+> **P13 还差最后一跳**（等 `tenant_products` 加 `override` 列）；忘记密码需部署时跑迁移 + 确认 `RESEND_API_KEY`。
+
 > **（交接 · 2026-10-12 上午 · 文件域 / 产品媒体特性全量收口，跨设备续作）**
 >
 > **✅ 已完成（本会话；全部已推送 `main == origin/main`）**
