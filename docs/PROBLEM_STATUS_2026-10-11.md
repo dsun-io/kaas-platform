@@ -2905,3 +2905,16 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
   若要"改密即踢下线"，需要引入 token 版本/黑名单，属另一件事。
 - **`RESEND_API_KEY` 是 send-only 受限密钥**（`/domains` 返回 401，`/emails` 正常）——这正是期望的最小权限，非缺陷。
 - **本机无 Postgres**：迁移用离线 `alembic upgrade --sql` 验证 DDL，真实回填/建表语义待 CI `db-tests` 或生产执行后确认。
+
+
+## （后端辅线）步2：产品合并前置取证（2026-10-12，task-10）
+
+> 详见 `artifacts/product_merge_backfill_evidence.md`（离线静态核对，不连库）。要点：
+> - `file_objects`：可回填（`uploaded_by→users.team_id`，上传时本就写 team_id）；
+> - `product_profiles`：可回填（`updated_by→users.team_id`），无法归因行保留 NULL 仅管理员可见；
+> - `tenant_products`：**无法自动回填**（无创建者列）⇒ 建议按 `is_system` 分流：true 不归团队、false 历史行保留 NULL。
+> - 三张表唯一键均已按团队收敛（`uq_product_profiles_scope` / `uq_tenant_products_key` / `uq_file_primary`，见 `202610110019`）。
+>
+> **方法如实记录**：本机无 Postgres ⇒ 离线 `alembic upgrade --sql` 在 `feb821f0b9c0` 处因 `sa.inspect(MockConnection)`
+> 不可用而失败（R82 已记录的已知限制）；改用逐迁移 DDL 文本 + models.py 元数据静态核对（等价证据，只是不验证全链跑通——
+> 那需要真库，挂 CI `db-tests`）。
