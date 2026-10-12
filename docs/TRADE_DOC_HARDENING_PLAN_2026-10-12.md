@@ -272,7 +272,7 @@ Receipt:         schedule_id, received_amount, received_at, bank_ref,
 
 ## 11. 原型脚本归档（源码随附）
 
-本次实操的 16 个脚本原本只在本机 `D:\projects\报价制作\.tools\`，而该目录被 `.gitignore` 排除、不在任何版本库中，
+本次实操的 17 个脚本原本只在本机 `D:\projects\报价制作\.tools\`，而该目录被 `.gitignore` 排除、不在任何版本库中，
 **换设备即丢**。现已随本方案一并归档：
 
 👉 [`docs/archive/2026-10-12-tim-doc-prototypes/`](./archive/2026-10-12-tim-doc-prototypes/)
