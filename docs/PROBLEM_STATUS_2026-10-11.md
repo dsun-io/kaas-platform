@@ -1,4 +1,4 @@
-# 现存问题对账（2026-10-11）
+﻿# 现存问题对账（2026-10-11）
 
 > **本文是「问题状态」的当前口径。**
 > 此前多份文档（`CURRENT_IMPLEMENTATION_MAP` / `MULTI_PRODUCT_QUOTE_PLAN` /
@@ -2791,3 +2791,66 @@ orchestrator **946** / worker **217** / `route-parity` **PASS** / `sync-shared -
 | `test`（`vitest run`） | **31 files / 382 tests passed**（exit 0；比步1 的 29/373 多 2 files / 9 tests，即本步新增的 9 条） |
 
 （构建验证由 Lead 统一跑，本步未触碰 `frontend/.next`。）
+
+---
+
+## （后端主线）P13 账本接回 + P7/P8 团队谓词收尾（2026-10-12）
+
+> **三步全部完成并推送 `main == origin/main`**。每步一个提交、跑完门禁后收口。
+
+### 步1（task-4）`c217bc5` —— TenantProductLoader 团队谓词
+
+**问题**：`_fetch_tenant_product`（`tenant_products.py:87`）用 `scalar_one_or_none()` 且不按团队过滤
+⇒ 同租户多团队行会抛 `MultipleResultsFound`（迁移 `202610110019` 放宽唯一键后已可能）。
+
+**修法**：按 `202610110019` 迁移口径补 team 过滤 —— 本团队行优先，无则回退历史 `team_id IS NULL` 行
+（仅管理员可见）。判定**复用** `kaas_common/workstation/product_scope.py` 的 `is_same_team`，
+不自创。`Loader.load` 新增 `team_id` / `role` 参数（当前零调用方，安全）；缓存 key 含 team_id。
+
+**测试**：新建 `tests/test_tenant_product_loader.py`（8 用例：同租户两团队同 key + 历史 NULL 行 +
+管理员兜底 + 缓存隔离 + `spec_from_dict` 形状回归）。
+
+**数字**：orchestrator `pytest -m unit` **1158 passed / 3 failed**（3 条为队友 `spec_delta.py` 并发改动引入，
+非本提交）；新测试 **8/8 passed**；route-parity **PASS**。
+
+### 步2（task-5）`c11d426` —— `_effective_product` 走 TenantProductLoader
+
+**问题**：`_effective_product`（`export_quote.py:802`）只查代码注册表，tenant_products 平行账本
+进不了规格空间与算价。
+
+**修法**：改为走 `TenantProductLoader`（租户级优先，回退 Python 定义），把 `auth.team_id` / `auth.role` /
+`db` 传进去。顺序固定「产品定义 → 并入买家自加档位 → 套团队覆盖」不打乱。产品不存在仍返回 None。
+
+**测试**：新建 `tests/test_team_scope_read.py`（8 用例：tenant_products 行优先 / 无行回退注册表 /
+团队 B 不污染 A / 产品不存在 None / 历史 NULL 仅管理员）。
+
+**数字**：orchestrator `pytest -m unit` **1169 passed / 0 failed / 1 skipped**；新测试 **8/8 passed**；
+route-parity **PASS**。
+
+### 步3（task-6）`988247a` —— 三处同构团队谓词补齐
+
+**三处落点**：
+1. `trade_docs.py:831` `_product_info_of`：SQL 只按 `tenant_id` 过滤 → 补团队谓词（复用 `product_info_access`）
+2. `worker/src/main.py` `_product_info_of`（≈`:3684`）：同构补谓词
+3. `worker/src/ws_files.py:747` `resolve_photo_refs`：补跨团队取图谓词 —— 把 `user` 传进来，
+   按 `file_objects.team_id` 过滤（本团队取，别团队跳过不印坏图）；`user=None` 兼容旧调用方
+
+⚠️ 避开 `main.py:3277` 注释记载的历史事故（镜像实现删除后调用点没改导致 NameError）——
+本次同步更新所有调用点（`_apply_product_defaults` / `resolve_photo_refs` 调用处）。
+
+**测试**：`tests/test_team_scope_read.py`（orchestrator `_product_info_of` 跨团队负例 6 用例）+
+`worker/tests/test_ws_files_team_scope.py`（已知缺口测试改为「缺口已关闭」断言）。
+
+**数字**：orchestrator `pytest -m unit` **1167 passed / 0 failed / 1 skipped**；
+worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
+
+### 汇总
+
+| 步骤 | 提交 | orchestrator unit | worker | route-parity |
+|---|---|---|---|---|
+| task-4 | `c217bc5` | 1158 / 3 failed（队友） | — | PASS |
+| task-5 | `c11d426` | 1169 / 0 | — | PASS |
+| task-6 | `988247a` | 1167 / 0 | 257 / 0 | PASS |
+
+**写入范围**：`tenant_products.py` / `export_quote.py` / `trade_docs.py` / `worker/src/main.py` /
+`worker/src/ws_files.py` / 两个新测试文件 / `worker/tests/test_ws_files_team_scope.py` / 本文档。
