@@ -44,11 +44,23 @@ __all__ = [
     "RENDER_KEY",
     "RENDER_VERSION",
     "RENDER_DIGEST_IGNORED_FIELDS",
+    "RENDER_CHECK_MAX_DOCS",
+    "RENDER_CHECK_CARD_FIELDS",
+    "RENDER_CHECK_CARD_UNAVAILABLE",
+    "RENDER_CHECK_DECIDED_BUCKETS",
+    "RENDER_CHECK_DOC_IDS_INVALID",
+    "RENDER_CHECK_DOC_IDS_LIMIT",
+    "RENDER_CHECK_DOC_IDS_REQUIRED",
+    "RENDER_CHECK_SUMMARY_FIELDS",
+    "RenderCheckBatchError",
     "canonical_render_input",
+    "parse_render_check_doc_ids",
     "read_render_fingerprint",
+    "render_check_card",
     "render_fingerprint",
     "render_fingerprint_check",
     "render_input_digest",
+    "summarize_render_checks",
 ]
 
 # `raw_payload` 里的保留键。下划线前缀与 `_audit` 同风格：**系统写的**，不是用户字段。
@@ -300,3 +312,158 @@ def render_fingerprint_check(
         # 冻结那次就失败过的话，把当时的说明原样带出来（别让读取侧以为有基线）
         "frozen_note": (frozen or {}).get("note"),
     }
+
+
+# ── 批量对账（一次查出"哪些单据被改了"）───────────────────────────────────────
+#
+# 为什么这些也在内核，而不是各端壳层各写一份
+# ------------------------------------------
+# 批量 = 对 N 张各跑一次上面的判定，再把结论**计数**。计数口径本身就是语义：
+# 哪几个 reason 算"有明确结论"、`frozen_unavailable` / `current_unavailable` /
+# 取不到单据该落进哪一桶 —— 两端各写一份必然漂移（同一批数据两端给出不同的"结论分布"，
+# 而用户正是拿这个分布决定"要不要重出"）。所以入参校验、卡片形状、汇总口径都在这里，
+# 两端端点只剩"取数 → 逐张调用 → 组装"（G1）。
+
+# 一次最多对账多少张：**成本闸门**，不是性能调优。
+# 每张都要跑一次完整装配（企业主体 + 买方 + 上游快照 + 行项 + 产品图 data URI +
+# 默认公章 + 产品基础信息回落）—— 50 张就是最多 50 次装配。上限是"误用防线"：
+# 有人把它接到列表轮询/自动刷新上会直接压垮连接池。要更多就分批，节奏由调用方控制。
+RENDER_CHECK_MAX_DOCS = 50
+
+# 入参错误码（两端壳层原样回给客户端，前端一套错误处理两端通用）
+RENDER_CHECK_DOC_IDS_REQUIRED = "DOC_IDS_REQUIRED"
+RENDER_CHECK_DOC_IDS_INVALID = "DOC_IDS_INVALID"
+RENDER_CHECK_DOC_IDS_LIMIT = "DOC_IDS_LIMIT"
+
+# 卡片级"没得出任何结论"的 reason（**不属于** RENDER_CHECK_VERDICTS）
+RENDER_CHECK_CARD_UNAVAILABLE = "unavailable"
+
+# 卡片字段即契约（顺序也是契约：两端 JSON 逐字同构）
+RENDER_CHECK_CARD_FIELDS = (
+    "doc_id", "doc_no", "reason", "matches", "render_version_drift", "error",
+)
+
+# 汇总字段即契约
+RENDER_CHECK_SUMMARY_FIELDS = (
+    "total", "matched", "data_changed", "version_drift", "no_fingerprint", "unavailable",
+)
+
+# 四个"有明确结论"的 reason → 汇总桶。其余（frozen_unavailable / current_unavailable /
+# 卡片级 unavailable）一律计入 `unavailable`：它们都只是"比不了"，
+# 混进结论桶会让"这批里多少张被改了"这个数字不可信。
+RENDER_CHECK_DECIDED_BUCKETS = {
+    "matched": "matched",
+    "data_changed": "data_changed",
+    "version_drift": "version_drift",
+    "no_fingerprint": "no_fingerprint",
+}
+
+
+class RenderCheckBatchError(ValueError):
+    """批量对账入参不合法。
+
+    纯内核异常：**不带 HTTP**（内核在脚本/其它调用方里也能用），
+    `code` / `detail` 由两端壳层原样映射成 400 的错误体（与其它内核异常的用法一致）。
+    """
+
+    def __init__(self, code: str, detail: str):
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
+
+
+def parse_render_check_doc_ids(raw: Any) -> list:
+    """`doc_ids` → 去重保序的整数列表；不合法 ⇒ `RenderCheckBatchError`。
+
+    - 支持 `"1,2,3"`（查询串）与已拆好的序列（脚本/测试直接传 list）；
+    - 空 token 跳过（`"1,,2"`、末尾逗号都很常见），但**整体为空** ⇒ `DOC_IDS_REQUIRED`：
+      "什么都不查"必然是调用方 bug，静默回一份空报告只会把它藏起来；
+    - 非整数 token ⇒ `DOC_IDS_INVALID`：不猜、也不静默跳过 —— 跳过会让"少对了几张"无声发生；
+    - 重复 id 去重**保序**：同一张只装配一次（省一半成本），卡片顺序可预期；
+    - 去重后超过 `RENDER_CHECK_MAX_DOCS` ⇒ `DOC_IDS_LIMIT`。
+    """
+    if raw is None:
+        tokens: list = []
+    elif isinstance(raw, str):
+        tokens = raw.split(",")
+    elif isinstance(raw, (list, tuple)):
+        tokens = list(raw)
+    else:
+        raise RenderCheckBatchError(
+            RENDER_CHECK_DOC_IDS_INVALID,
+            f"doc_ids 只能是逗号分隔的整数（收到 {type(raw).__name__}）",
+        )
+
+    ids: list = []
+    for token in tokens:
+        text = str(token).strip()
+        if not text:
+            continue
+        try:
+            value = int(text)
+        except (TypeError, ValueError):
+            raise RenderCheckBatchError(
+                RENDER_CHECK_DOC_IDS_INVALID,
+                f"doc_ids 只能是逗号分隔的整数（收到 {text!r}）",
+            )
+        if value not in ids:
+            ids.append(value)
+
+    if not ids:
+        raise RenderCheckBatchError(
+            RENDER_CHECK_DOC_IDS_REQUIRED, "doc_ids 不能为空（形如 doc_ids=1,2,3）"
+        )
+    if len(ids) > RENDER_CHECK_MAX_DOCS:
+        raise RenderCheckBatchError(
+            RENDER_CHECK_DOC_IDS_LIMIT,
+            f"一次最多对账 {RENDER_CHECK_MAX_DOCS} 张（去重后 {len(ids)} 张）；"
+            f"这是重操作（每张一次完整装配），请分批调用",
+        )
+    return ids
+
+
+def render_check_card(doc_id: Any, doc_no: Any = None, check: Any = None,
+                      error: Optional[str] = None) -> dict:
+    """批量响应里的一张卡（形状即契约，见 `RENDER_CHECK_CARD_FIELDS`）。
+
+    `check` 是 `render_fingerprint_check` 的结果；传 `None` 表示这张**没得出任何结论**
+    （单据不存在 / 无权看，或者该张自己抛了异常）⇒ `reason=unavailable` + `error` 写明原因，
+    `matches=False`（**绝不**假报"一致"）。
+    """
+    if not isinstance(check, dict):
+        return {
+            "doc_id": doc_id,
+            "doc_no": doc_no,
+            "reason": RENDER_CHECK_CARD_UNAVAILABLE,
+            "matches": False,
+            "render_version_drift": False,
+            "error": error or RENDER_CHECK_CARD_UNAVAILABLE,
+        }
+    return {
+        "doc_id": doc_id,
+        "doc_no": doc_no,
+        "reason": check.get("reason"),
+        "matches": bool(check.get("matches")),
+        "render_version_drift": bool(check.get("render_version_drift")),
+        "error": error,
+    }
+
+
+def summarize_render_checks(items: Any) -> dict:
+    """批量对账的顶层计数（口径见 `RENDER_CHECK_DECIDED_BUCKETS`）。
+
+    不变式：`matched + data_changed + version_drift + no_fingerprint + unavailable == total`
+    —— 六个桶必须覆盖每一张卡；漏掉一张会被读成"这张没问题"，而这正是最危险的错法。
+    """
+    cards = [c for c in items if isinstance(c, dict)] if isinstance(items, (list, tuple)) else []
+    counts = {field: 0 for field in RENDER_CHECK_SUMMARY_FIELDS}
+    counts["total"] = len(cards)
+    for card in cards:
+        bucket = RENDER_CHECK_DECIDED_BUCKETS.get(card.get("reason"))
+        if bucket:
+            counts[bucket] += 1
+    counts["unavailable"] = counts["total"] - (
+        counts["matched"] + counts["data_changed"]
+        + counts["version_drift"] + counts["no_fingerprint"]
+    )
+    return counts
