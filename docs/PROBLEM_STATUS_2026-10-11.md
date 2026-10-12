@@ -2684,3 +2684,18 @@ orchestrator **946** / worker **217** / `route-parity` **PASS** / `sync-shared -
 **给 P13 的硬提醒**：`TenantProductLoader._fetch_tenant_product` 用 `scalar_one_or_none()` 且**不按团队过滤**
 （`app/services/.../tenant_products.py:87-98`）⇒ 本轮放宽唯一键后，同租户同 key 的多团队行会让它抛 `MultipleResultsFound`
 ⇒ **接线前必须先补 team 过滤**（它现在无调用者 ⇒ 此刻无影响）。
+
+***
+
+## ⭐ 跨设备交接指引（2026-10-12 10:38）
+
+> **在别的设备继续前，先读 [`docs/SESSION_CLOSEOUT_2026-10-12.md`](SESSION_CLOSEOUT_2026-10-12.md) 的
+> 「跨设备交接记录」一节** —— 里面有：
+>
+> 1. **⚠️ 6 个文件的未提交改动不会转移到别的设备**（`main.py` / `dbjson.py` / `products/page.tsx` /
+>    `trade-docs/page.tsx` / `use-products.ts` / `use-products.test.ts`）——先解决它们的归属再续作；
+> 2. 阻塞清单的最新状态（`ws_docs_ext.py` / `trade_docs.py` **已释放**；`main.py` / `dbjson.py` /
+>    `products/page.tsx` 仍被在飞工作占用）；
+> 3. 下一件该做的事（先补跑全套门禁 ⇒ `trade_docs.py:829` 谓词 ⇒ §8.5 / 编辑器接线）。
+>
+> 交接时 HEAD = `ff733f2`，**已核实与远程同步（领先/落后 = 0/0）** ✓
