@@ -284,7 +284,7 @@ Receipt:         schedule_id, received_amount, received_at, bank_ref,
 | `verify_tim_post_pi.py` | **F** 导出后自检（文本 ⊆ PDF、图片计数） |
 | `check_pi_sc_ci.py` | **B** 一致性引擎（四列事实矩阵原型） |
 | `check_ct_vs_pi.py` | **A/B** 基线承继核对（43 条） |
-| `tighten_stamp.py` / `prep_stamp.py` | **F** 公章上传规范化（去白底残渣 + 紧裁） |
+| `stamp_red_only.py` / `tighten_stamp.py` / `prep_stamp.py` | **F** 公章上传规范化（裁→缩放→**最后过滤**，只留红像素、去白底残渣、紧裁） |
 | `xlsx2pdf.ps1` | **F** 导出通道（Excel COM `ExportAsFixedFormat`） |
 | `diag_ct_pages.py` / `measure_pdf_pages.py` / `check_ct_overflow.py` / `check_tim_rows.py` | **F** 分页/溢出诊断工具 |
 | `render_tim_docs.py` / `list_tim_signareas.py` | **F** 目检流程 / 签章位核对 |
