@@ -11,6 +11,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/lib/api/client";
 import { customerRecordsKeys } from "@/lib/customer/use-customer-records";
 
+// 只引**类型**（编译期擦除，不产生 hook ↔ 组件的运行时依赖环）：
+// 指纹形状的定义真源在 `doc-preview.tsx` 的 `RenderFingerprintMeta`。
+import type { RenderFingerprintMeta } from "../components/doc-preview";
+
 export interface TradeDocSourceSnapshot {
   order_no?: string;
   quote_no?: string;
@@ -345,6 +349,56 @@ export function useArchiveRenderedPdf(docId: number) {
       // 与人工归档同一条失效口径：单据文件区的「系统出的 PDF」分区要立刻刷新
       qc.invalidateQueries({ queryKey: ["trade-docs", docId, "files"] });
       qc.invalidateQueries({ queryKey: ["trade-docs"] });
+    },
+  });
+}
+
+// ── 渲染指纹对账（C 方案的消费者）────────────────────────────────────────────
+
+/** 对账结论码 —— 与服务端共享内核 `render_fingerprint_check` 的 `reason` 逐字对应。
+ *
+ * 前端**只认 reason**，绝不自己比对 sha：判断"模板改过"还是"数据被改"需要版本信息，
+ * 在前端重推一遍逻辑必然与服务端漂移（G1 的同一理由）。
+ */
+export type RenderFingerprintReason =
+  | "matched"
+  | "version_drift"
+  | "data_changed"
+  | "no_fingerprint"
+  | "frozen_unavailable"
+  | "current_unavailable";
+
+/** `GET /trade-docs/{id}/render-fingerprint-check` 的响应（11 字段，两端同契约）。 */
+export interface RenderFingerprintCheck {
+  has_fingerprint: boolean;
+  frozen: RenderFingerprintMeta | null;
+  current_sha256: string | null;
+  matches: boolean;
+  render_version_frozen: number | null;
+  render_version_current: number;
+  render_version_drift: boolean;
+  reason: RenderFingerprintReason;
+  checked_at: string;
+  /** 现在这次装配失败的原因（如 `RuntimeError`）；成功为 null */
+  current_note: string | null;
+  /** 签发时就冻结失败过的话，当时的说明（`input_unavailable`） */
+  frozen_note: string | null;
+}
+
+/**
+ * 指纹对账：**用户点了才查**（`useMutation`，不做自动查询）。
+ *
+ * 为什么不做成 preview 时自动拉：对账要**重新装配一遍渲染输入**
+ * （含企业主体、买方、产品图 data URI、默认公章），有实打实的成本；
+ * 而它回答的是"现在跟签发时还一致吗"这种**按需**问题 —— 用户点一下再查。
+ */
+export function useCheckTradeDocRenderFingerprint(docId: number) {
+  return useMutation({
+    mutationFn: async () => {
+      const { data } = await apiClient.get<RenderFingerprintCheck>(
+        `/trade-docs/${docId}/render-fingerprint-check`,
+      );
+      return data;
     },
   });
 }

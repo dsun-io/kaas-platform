@@ -6,7 +6,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import apiClient from "@/lib/api/client";
 import { toast } from "sonner";
 
-import { DocPreview, renderMetaOf, type RenderFingerprintMeta } from "../doc-preview";
+import { DocPreview, fingerprintVerdict, renderMetaOf, type RenderFingerprintMeta } from "../doc-preview";
+import type {
+  RenderFingerprintCheck,
+  RenderFingerprintReason,
+} from "../../hooks/use-trade-docs";
 
 vi.mock("@/lib/api/client", () => ({
   default: {
@@ -293,5 +297,198 @@ describe("DocPreview · 渲染指纹（签发时冻结）", () => {
 
     expect(container!.textContent).toContain("渲染指纹 v1 ·");
     expect(container!.textContent).toContain("未冻结");
+  });
+});
+
+/**
+ * 指纹对账（C 方案的消费者）：**点了才查**，按服务端 `reason` 显示一行结论。
+ *
+ * 三条不能坏的东西：
+ * 1. **不能自动查**：对账要重新装配一遍渲染输入（含 data URI 图片/公章），成本不低 ——
+ *    预览时就发请求等于每次打开单据都白花一次；
+ * 2. **区分必须用 `reason`**，前端不自己比 sha（模板升级 ≠ 数据被改，只有服务端能区分）；
+ * 3. **查不成 ≠ 有结论**：404/500 只能显示"核对失败"，绝不能显示成"已变更"或"一致"。
+ */
+describe("DocPreview · 指纹对账（点击才查）", () => {
+  const SHA = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678abcdef0123456789abcdef01";
+  const FROZEN_AT = "2026-10-12T09:30:00+00:00";
+  const META: RenderFingerprintMeta = {
+    render_version: 1,
+    input_sha256: SHA,
+    frozen_at: FROZEN_AT,
+  };
+
+  function checkResponse(
+    reason: RenderFingerprintReason,
+    over: Partial<RenderFingerprintCheck> = {},
+  ): RenderFingerprintCheck {
+    return {
+      has_fingerprint: true,
+      frozen: META,
+      current_sha256: SHA,
+      matches: reason === "matched",
+      render_version_frozen: 1,
+      render_version_current: 1,
+      render_version_drift: reason === "version_drift",
+      reason,
+      checked_at: FROZEN_AT,
+      current_note: null,
+      frozen_note: null,
+      ...over,
+    };
+  }
+
+  const okGet = (data: unknown) =>
+    ({ data }) as unknown as Awaited<ReturnType<typeof apiClient.get>>;
+
+  /** 挂载（已签发）→ 设好端点返回 → 点「核对指纹」 */
+  async function mountAndCheck(response: RenderFingerprintCheck) {
+    await mount(DOC_ID, META);
+    vi.mocked(apiClient.get).mockResolvedValue(okGet(response));
+    await click("核对指纹");
+  }
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  afterEach(() => {
+    if (root) act(() => root!.unmount());
+    container?.remove();
+    client?.clear();
+    root = null;
+    container = null;
+    client = null;
+    invalidate = null;
+  });
+
+  it("预览时不自动调对账端点（入口在，但一次请求都不发）", async () => {
+    await mount(DOC_ID, META);
+
+    expect(buttonByText("核对指纹")).toBeTruthy();
+    expect(vi.mocked(apiClient.get)).not.toHaveBeenCalled();
+    expect(container!.textContent).not.toContain("与签发时一致");
+  });
+
+  it("没有 renderMeta（草稿/样板预览）⇒ 连入口都不渲染", async () => {
+    await mount();
+
+    expect(container!.textContent).not.toContain("核对指纹");
+    expect(vi.mocked(apiClient.get)).not.toHaveBeenCalled();
+  });
+
+  it("reason=matched ⇒「与签发时一致」", async () => {
+    await mountAndCheck(checkResponse("matched"));
+
+    expect(vi.mocked(apiClient.get)).toHaveBeenCalledTimes(1);
+    expect(String(vi.mocked(apiClient.get).mock.calls[0]![0])).toBe(
+      `/trade-docs/${DOC_ID}/render-fingerprint-check`,
+    );
+    expect(container!.textContent).toContain("与签发时一致");
+    expect(container!.textContent).not.toContain("已被修改");
+  });
+
+  it("reason=data_changed ⇒ 红色「签发后数据已被修改」（最重要的信号）", async () => {
+    await mountAndCheck(
+      checkResponse("data_changed", { matches: false, current_sha256: "ff".repeat(32) }),
+    );
+
+    expect(container!.textContent).toContain("签发后数据已被修改");
+    const line = Array.from(container!.querySelectorAll("span")).find((el) =>
+      el.textContent?.includes("签发后数据已被修改"),
+    );
+    expect(line?.className).toContain("text-destructive");
+    expect(container!.textContent).not.toContain("与签发时一致");
+  });
+
+  it("reason=version_drift ⇒ 黄色「渲染模板已升级（数据未变）」", async () => {
+    await mountAndCheck(
+      checkResponse("version_drift", {
+        render_version_frozen: 1,
+        render_version_current: 2,
+      }),
+    );
+
+    expect(container!.textContent).toContain("渲染模板已升级（数据未变）");
+    const line = Array.from(container!.querySelectorAll("span")).find((el) =>
+      el.textContent?.includes("渲染模板已升级"),
+    );
+    expect(line?.className).toContain("text-warning");
+    // 模板升级 ≠ 数据被改：不能显示成"已被修改"
+    expect(container!.textContent).not.toContain("签发后数据已被修改");
+  });
+
+  it("reason=current_unavailable ⇒ 灰色「无法判定（<note>）」，不说成一致/被改", async () => {
+    await mountAndCheck(
+      checkResponse("current_unavailable", {
+        current_sha256: null,
+        matches: false,
+        current_note: "RuntimeError",
+      }),
+    );
+
+    expect(container!.textContent).toContain("无法判定（RuntimeError）");
+    expect(container!.textContent).not.toContain("与签发时一致");
+    expect(container!.textContent).not.toContain("签发后数据已被修改");
+  });
+
+  it("reason=frozen_unavailable ⇒ 灰色「无法判定（签发时未冻结成功：…）」", async () => {
+    await mountAndCheck(
+      checkResponse("frozen_unavailable", {
+        matches: false,
+        frozen_note: "input_unavailable",
+      }),
+    );
+
+    expect(container!.textContent).toContain("无法判定（签发时未冻结成功：input_unavailable）");
+  });
+
+  it("端点失败（500）⇒ 只说「核对失败，请重试」，且可以再点一次重试", async () => {
+    await mount(DOC_ID, META);
+    vi.mocked(apiClient.get).mockRejectedValueOnce(apiError(500, { detail: "boom" }));
+
+    await click("核对指纹");
+
+    expect(container!.textContent).toContain("核对失败，请重试");
+    // 失败绝不能被说成结论
+    expect(container!.textContent).not.toContain("签发后数据已被修改");
+    expect(container!.textContent).not.toContain("与签发时一致");
+
+    // 重试：再点一次会再发一次请求（失败不粘住入口）
+    vi.mocked(apiClient.get).mockResolvedValue(okGet(checkResponse("matched")));
+    await click("核对指纹");
+    expect(vi.mocked(apiClient.get)).toHaveBeenCalledTimes(2);
+    expect(container!.textContent).toContain("与签发时一致");
+    expect(container!.textContent).not.toContain("核对失败");
+  });
+
+  it("先成功后失败：不把上一次的「一致」当现状挂着", async () => {
+    await mount(DOC_ID, META);
+    vi.mocked(apiClient.get).mockResolvedValue(okGet(checkResponse("matched")));
+    await click("核对指纹");
+    expect(container!.textContent).toContain("与签发时一致");
+
+    vi.mocked(apiClient.get).mockRejectedValueOnce(apiError(500, { detail: "boom" }));
+    await click("核对指纹");
+
+    expect(container!.textContent).toContain("核对失败，请重试");
+    // 过期结论必须消失（否则等于拿上一次的结论当这一次的现状）
+    expect(container!.textContent).not.toContain("与签发时一致");
+  });
+
+  it("结论映射是纯函数：覆盖全部 reason + 未知码兜底为「无法判定」", () => {
+    expect(fingerprintVerdict(checkResponse("matched"))).toEqual({
+      tone: "matched", text: "与签发时一致",
+    });
+    expect(fingerprintVerdict(checkResponse("data_changed")).tone).toBe("changed");
+    expect(fingerprintVerdict(checkResponse("version_drift")).tone).toBe("drift");
+    expect(fingerprintVerdict(checkResponse("no_fingerprint")).text).toContain("无法比对");
+    expect(fingerprintVerdict(checkResponse("frozen_unavailable")).tone).toBe("unknown");
+    expect(fingerprintVerdict(checkResponse("current_unavailable")).tone).toBe("unknown");
+    // 服务端将来新增 reason：宁可"无法判定"，也不能猜一个结论
+    const unknown = fingerprintVerdict({
+      ...checkResponse("matched"), reason: "brand_new_reason" as RenderFingerprintReason,
+    });
+    expect(unknown).toEqual({ tone: "unknown", text: "无法判定（未知结论）" });
   });
 });

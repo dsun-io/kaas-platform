@@ -31,6 +31,7 @@ import {
   FileUp,
   Fingerprint,
   Printer,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -42,7 +43,12 @@ import { findMissingRequiredFields } from "@/lib/trade-doc/compliance";
 import { downloadHtml, printHtml } from "@/lib/trade-doc/export";
 import { renderTradeDoc } from "@/lib/trade-doc/render";
 
-import { useArchiveRenderedPdf, useUploadTradeDocFile } from "../hooks/use-trade-docs";
+import {
+  useArchiveRenderedPdf,
+  useCheckTradeDocRenderFingerprint,
+  useUploadTradeDocFile,
+  type RenderFingerprintCheck,
+} from "../hooks/use-trade-docs";
 
 /**
  * 单份归档件的上限，**必须与内核一致**：`MAX_BYTES['render_pdf']`
@@ -123,6 +129,55 @@ export function renderMetaOf(rawPayload: unknown): RenderFingerprintMeta | null 
   return meta as RenderFingerprintMeta;
 }
 
+/** 对账结论的语气：决定颜色（绿=一致／红=被改／黄=模板升级／灰=说不出结论）。 */
+export type FingerprintVerdictTone = "matched" | "changed" | "drift" | "unknown";
+
+/**
+ * 对账结论 → 一行展示文案（**只按服务端返回的 `reason` 判断**）。
+ *
+ * 为什么不在前端自己比对 `current_sha256` 与冻结值：那会漏掉"版本"这一维 ——
+ * 模板升级与数据被改是**两件不同的事**，只有服务端（同一内核）才知道怎么区分。
+ * 前端重推一遍必然与服务端漂移（G1 的同一理由）。
+ *
+ * 未知 `reason` 一律落到"无法判定"：将来服务端加结论码时，界面宁可说不出话，
+ * 也不能凭空显示"一致"或"已变更"。
+ */
+export function fingerprintVerdict(result: RenderFingerprintCheck): {
+  tone: FingerprintVerdictTone;
+  text: string;
+} {
+  switch (result.reason) {
+    case "matched":
+      return { tone: "matched", text: "与签发时一致" };
+    case "data_changed":
+      return { tone: "changed", text: "签发后数据已被修改" };
+    case "version_drift":
+      return { tone: "drift", text: "渲染模板已升级（数据未变）" };
+    case "no_fingerprint":
+      // 有 renderMeta 才有入口，理论上到不了这里；兜底也**不能**说成"一致"
+      return { tone: "unknown", text: "没有签发时的指纹（无法比对）" };
+    case "frozen_unavailable":
+      return {
+        tone: "unknown",
+        text: `无法判定（签发时未冻结成功：${result.frozen_note ?? "原因未记录"}）`,
+      };
+    case "current_unavailable":
+      return {
+        tone: "unknown",
+        text: `无法判定（${result.current_note ?? "装配失败"}）`,
+      };
+    default:
+      return { tone: "unknown", text: "无法判定（未知结论）" };
+  }
+}
+
+const VERDICT_TONE_CLASS: Record<FingerprintVerdictTone, string> = {
+  matched: "text-success",
+  changed: "text-destructive font-medium",
+  drift: "text-warning",
+  unknown: "text-muted-foreground",
+};
+
 interface DocPreviewProps {
   docType: string;
   docNo: string;
@@ -167,6 +222,8 @@ export function DocPreview({
   // hook 必须无条件调用（React 规则）；docId 缺失时这个 mutation 永远不会被触发
   const archive = useUploadTradeDocFile(docId ?? 0);
   const autoPdf = useArchiveRenderedPdf(docId ?? 0);
+  // 对账用 mutation（**不会**在预览时自动请求，见 hook 注释）
+  const fingerprintCheck = useCheckTradeDocRenderFingerprint(docId ?? 0);
 
   /** 选文件即校验（当场提示），不合规就不进入"已选"状态 */
   const pickPdf = (file: File | null) => {
@@ -291,23 +348,57 @@ export function DocPreview({
         没有这个键 = 还没签发过（草稿/历史单据）⇒ 整行不渲染。
       */}
       {renderMeta && (
-        <p
-          className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground"
-          title={
-            "渲染输入指纹（签发时冻结）\n" +
-            `渲染版本：v${renderMeta.render_version ?? "?"}\n` +
-            `输入 sha256：${renderMeta.input_sha256 ?? "未冻结（签发时装配失败）"}\n` +
-            `冻结时刻：${renderMeta.frozen_at ?? "未知"}`
-          }
-        >
-          <Fingerprint className="h-3 w-3" />
-          <span>渲染指纹 v{renderMeta.render_version ?? "?"} ·</span>
-          <span className="font-mono">
-            {renderMeta.input_sha256
-              ? renderMeta.input_sha256.slice(0, 8)
-              : "未冻结"}
-          </span>
-        </p>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <p
+            className="flex flex-wrap items-center gap-1"
+            title={
+              "渲染输入指纹（签发时冻结）\n" +
+              `渲染版本：v${renderMeta.render_version ?? "?"}\n` +
+              `输入 sha256：${renderMeta.input_sha256 ?? "未冻结（签发时装配失败）"}\n` +
+              `冻结时刻：${renderMeta.frozen_at ?? "未知"}`
+            }
+          >
+            <Fingerprint className="h-3 w-3" />
+            <span>渲染指纹 v{renderMeta.render_version ?? "?"} ·</span>
+            <span className="font-mono">
+              {renderMeta.input_sha256
+                ? renderMeta.input_sha256.slice(0, 8)
+                : "未冻结"}
+            </span>
+          </p>
+
+          {/*
+            对账入口：**用户点了才查**（`useMutation`，预览时不自动拉）——
+            对账要重新装配一遍渲染输入，有成本；而且它回答的是按需问题。
+          */}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-xs"
+            disabled={fingerprintCheck.isPending}
+            onClick={() => fingerprintCheck.mutate()}
+          >
+            <RefreshCw className="mr-1 h-3 w-3" />
+            {fingerprintCheck.isPending ? "核对中…" : "核对指纹"}
+          </Button>
+
+          {/*
+            只在"这一次核对成功"时显示结论：**失败或正在重查时都不显示**旧结论 ——
+            否则第二次核对失败后，界面会同时挂着上一次的"一致"，等于把过期结论当现状。
+          */}
+          {fingerprintCheck.data && !fingerprintCheck.isPending && !fingerprintCheck.isError && (
+            <span className={VERDICT_TONE_CLASS[fingerprintVerdict(fingerprintCheck.data).tone]}>
+              {fingerprintVerdict(fingerprintCheck.data).text}
+            </span>
+          )}
+          {/*
+            失败（404/500/网络）**不能**显示成"已变更"或"一致" —— 那是把"没查成"
+            说成了结论。只说失败，并让按钮可以再点一次（mutation 重新触发即可重试）。
+          */}
+          {fingerprintCheck.isError && (
+            <span className="text-warning">核对失败，请重试</span>
+          )}
+        </div>
       )}
 
       {missing.length > 0 && (
