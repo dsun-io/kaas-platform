@@ -201,7 +201,7 @@ class TestIdempotentRepeat:
         assert [c["key"] for c in merged["columns"]] == ["price_per_piece"]
 
 
-# ── 5. 写本文件时发现的缺口（钉住现状 + 给出待办，不在这里改引擎）─────────────
+# ── 5. 写本文件时发现的缺口（**已修**，见 task-9 / test_spec_delta_lists.py）──
 
 class TestKnownGapScalarLists:
     def test_标量列表的remove目前会报错而不是warning_这是待修缺口(self):
@@ -215,14 +215,19 @@ class TestKnownGapScalarLists:
         "这两个字段的 remove 不支持" ⇒ 属**体验缺口**。两种合理修法：
         ① 标量列表的身份 = 值本身（`remove: {notes: ["上游说明"]}` 可删）；
         ② 明确把 `notes`/`hs_codes` 从 `add`/`remove` 的可用字段里排除，并在报错里说清。
-        **本任务写入范围不含引擎包** ⇒ 只钉现状 + 记录，不改。
+        **已修**（task-9 扩范围到引擎包，修法②：报错文案明确"仅支持整体替换"，
+        语义边界不变 —— 仍是报错而非 warning）。
 
         对照：同一个 `apply_delta` 对 dict 列表（`columns`）的同类操作**是 warning** ✓
         """
         with pytest.raises(SpecDeltaError) as ei:
             apply_delta(_upstream(), {"remove": {"notes": ["上游说明"]}})
-        # `item_identity()` 的第一道校验：条目根本不是对象
-        assert "必须是对象" in str(ei.value), str(ei.value)
+        # **缺口已修**（task-9，修法②）：仍在 `add`/`remove` 阶段报错（不静默、
+        # 不按值增删），但报错文案现在明确说明"仅支持整体替换"，不再是底层
+        # `item_identity()` 的"列表条目必须是对象"。行为契约（报错 vs warning）
+        # 不变，故本文件的 remove-miss 契约不受影响。
+        assert "不支持按条目增删" in str(ei.value), str(ei.value)
+        assert "仅支持整体替换" in str(ei.value), str(ei.value)
 
         # 第二道校验（对象但没有 key/name）同样报错 —— 两条都属同一缺口
         shapeless = _upstream()
