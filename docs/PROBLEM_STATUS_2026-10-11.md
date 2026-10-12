@@ -2701,3 +2701,54 @@ orchestrator **946** / worker **217** / `route-parity` **PASS** / `sync-shared -
 > 3. 下一件该做的事（先补跑全套门禁 ⇒ `trade_docs.py:829` 谓词 ⇒ §8.5 / 编辑器接线）。
 >
 > 交接时 HEAD = `ff733f2`，**已核实与远程同步（领先/落后 = 0/0）** ✓
+
+***
+
+## （前端主线）P14 产品工位合并 · task-7 步1（2026-10-12）
+
+> 由 fe-main 执行，按「每步一个小任务、一个提交」纪律推进。本节只记录**步1 已完成**，
+> 步2（测试网补全）另起一节追加。
+
+### 步1 做了什么
+
+把 `/products`（产品素材：图片 + 基础信息）与 `/settings/tenant-products`（产品定义管理：
+规格 JSONB）两页的内容搬进**一个工位两个 tab**，**不加任何新功能**：
+
+- 新 `frontend/src/app/(app)/products/page.tsx` = tab 容器（`图片与基础信息` / `定义`），
+  参照 `quotes/page.tsx` 的 `?tab=` 深链约定（默认 tab 不带参数）。
+- 新 `frontend/src/app/(app)/products/tabs/products-media-tab.tsx` = 原 `/products` 页面主体
+  逐字搬入（列表、选中、基础信息表单、上传/命名/分类/排序/主图/下线/直链）。
+- 新 `frontend/src/app/(app)/products/tabs/products-definitions-tab.tsx` = 原
+  `/settings/tenant-products/page.tsx` 主体逐字搬入（列表 + 表单编辑 + 新增/编辑/删除）。
+- `frontend/src/app/(app)/settings/tenant-products/page.tsx` 改为**客户端 redirect**，
+  送到 `/products?tab=definitions`（不删路由、不改契约）。
+
+### 三条硬约束的落实
+
+1. **不按 Axis 设计产品编辑器** ✓ —— JSON 文本框原样保留（`specJson` state +
+   `JSON.parse(specJson || "{}")` 写入路径 + `<textarea value={specJson} rows={10}>` 全部
+   逐字未动），新建时初始 JSON `{"key":"","name":"","axes":[],"variants":[]}` 也原样保留
+   （含空 axes —— 搬家前的真实行为，P14 不做修正，留给 P16）。
+2. **可见性两层不压平** ✓ —— 前端不加任何 `RouteGuard` / `adminOnly` 分支；工位可见性
+   `adminOnly` 属 **P15 契约层**（`shared/contracts/workstations.ts` 里 `products` 与
+   `tenant-products` 两条工位登记本步不动），数据可见性属后端团队过滤。
+3. **旧路由书签不许 404** ✓ —— `/products`（本页）与 `/settings/tenant-products`
+   （客户端 redirect）都保留可访问。redirect 用 `useRouter().replace` 而非
+   `next.config.mjs` 的 `redirects()`，因为部署形态是**静态导出**
+   （`NEXT_EXPORT=1` 时 `output: "export"`），Next 的 `redirects()` 在静态导出下不生效。
+
+### tab 切换保留状态（顺带的行为说明）
+
+两个 tab 内容都**始终挂载**（`hidden` 切换而非条件渲染）⇒ 切走再切回来，选中产品 /
+编辑中的表单 / JSON 文本框内容都还在。搬家前两个独立页面各自保留本地 state（走浏览器
+导航切换时 state 会丢），现在改成 tab 后**保留状态是改善**，不算违反"行为等价"。
+
+### 门禁数字（2026-10-12 11:42，工作区静止时实测）
+
+| 门禁 | 结果 |
+|---|---|
+| `typecheck`（`tsc --noEmit`） | **2 errors**，均在 `onboarding/page.tsx`（`:55` / `:80`），**已知历史遗留**（typedRoutes 把 `"/quotes?tab=…"` 字符串当非法 Route），按指令**如实报但不修**；本步新增/改动文件 **0 errors** |
+| `lint`（`next lint`） | **exit 0**，8 warnings（其中 1 条在本步新建的 `products-media-tab.tsx:89` `react-hooks/exhaustive-deps`，系原 `/products` 页面同款写法逐字搬入，非本步引入的新问题） |
+| `test`（`vitest run`） | **29 files / 373 tests passed**（exit 0） |
+
+（构建验证由 Lead 统一跑，本步未触碰 `frontend/.next`。）
