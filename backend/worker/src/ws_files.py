@@ -744,12 +744,15 @@ async def render_doc_pdf(doc_id: int, body: RenderPdfIn, request: Request,
             "bytes": len(data), "storage": row["storage"]}
 
 
-async def resolve_photo_refs(request: Request, data: dict) -> dict:
+async def resolve_photo_refs(request: Request, data: dict, user: dict = None) -> dict:
     """把单证 `product_photos` 里的 `{file_id}` 引用解析成 data URI。
 
     由 `main.get_trade_doc_render_data` 在**装配层**调用：渲染器的图片白名单只认
     `data:` 与 `http(s)`（防注入设计，不放开），而 `{file_id}` 不是图片源 ——
     在这里解析，渲染器一行都不用改。取不到字节（未上线/R2 读失败）就跳过该条，不印坏图。
+
+    团队谓词（2026-10-12，task-6）：把 `user` 传进来，按 `file_objects.team_id` 过滤
+    —— 本团队取图，别团队跳过不印坏图。`user=None` 时跳过团队判定（兼容旧调用方）。
     """
     from kaas_common.files import is_file_ref, to_data_uri
 
@@ -761,16 +764,14 @@ async def resolve_photo_refs(request: Request, data: dict) -> dict:
         if not is_file_ref(entry):
             resolved.append(entry)
             continue
-        # ⚠️ 这里**没法**加团队谓词：`resolve_photo_refs(request, data)` 是**装配层**函数，
-        # 调用方是 `main.get_trade_doc_render_data`（**main.py 正在被另一条任务改** ⇒ 本次不授权）。
-        # 它没有 auth 上下文，硬加 `_team_scope(user, …)` 会 NameError。
-        # ⇒ 留下"单证渲染可能取到别团队图片"这一个已知缺口，列进待办（等 main.py 干净后
-        #    把 `user` 传进来，或改由装配层先按团队过滤）。
+        # 团队谓词：user=None 时跳过判定（兼容旧调用方）
+        team_frag, team_extra = _team_scope(user, 3) if user is not None else ("", [])
         row = await db.fetchrow(
             request,
             "SELECT name, content_type, file_name, content, object_key, storage FROM file_objects"
-            " WHERE tenant_id=$1 AND id=$2 AND is_current",
-            DEFAULT_TENANT, int(entry["file_id"]))
+            " WHERE tenant_id=$1 AND id=$2 AND is_current" + team_frag,
+            DEFAULT_TENANT, int(entry["file_id"]), *team_extra,
+            table=None)
         if not row:
             continue
         blob = await _load_bytes(request, row)

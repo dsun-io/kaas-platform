@@ -822,16 +822,32 @@ async def _apply_default_seal(db, tenant_id: str, data: dict, custom) -> dict:
 # 注册表（代码里的 ProductSpec）才是"有哪些产品"的唯一来源，info 只是它的补充。
 
 
-async def _product_info_of(db, tenant_id: str, product_key: str):
-    """产品档案 `info`；产品不在注册表 / 没维护过 → None。"""
+async def _product_info_of(db, tenant_id: str, product_key: str, auth: AuthContext = None):
+    """产品档案 `info`；产品不在注册表 / 没维护过 / 无权看 → None。
+
+    团队谓词（2026-10-12，task-6）：按 `product_info_access`（共享内核
+    `kaas_common/workstation/product_scope.py`）判定可见性 ——
+    本团队行可读 / 别团队行 404 / 历史 `team_id IS NULL` 仅管理员。
+    与 `files.py` 的同款谓词同源，不另写一套。
+    """
     from app.services.export_quote.products import has as has_product  # 惰性：不拖累模块加载
     if not has_product(product_key):
         return None
     row = (await db.execute(text(
-        "SELECT info FROM product_profiles WHERE tenant_id=:t AND product_key=:k"
+        "SELECT info, team_id FROM product_profiles WHERE tenant_id=:t AND product_key=:k"
     ), {"t": tenant_id, "k": product_key})).mappings().first()
     if row is None:
         return None
+    # 团队可见性判定（复用共享内核，与 files.py 同源）
+    if auth is not None:
+        from kaas_common.workstation.product_scope import product_info_access
+        decision = product_info_access(
+            role=getattr(auth, "role", None),
+            viewer_team_id=getattr(auth, "team_id", None),
+            row_team_id=row.get("team_id"),
+        )
+        if not decision.allowed:
+            return None
     info = row["info"]
     # 形状容错：正常路径上 JSONB 列回来就是 dict，但历史/直连驱动可能给 JSON 文本。
     # 与 Worker 侧同一口径（两端都收两种形状），避免"字段在、值是字符串"而静默不生效。
@@ -844,12 +860,13 @@ async def _product_info_of(db, tenant_id: str, product_key: str):
     return dict(info) if isinstance(info, dict) else None
 
 
-async def _apply_product_defaults(db, tenant_id: str, doc_type: str, data: dict, custom) -> dict:
+async def _apply_product_defaults(db, tenant_id: str, doc_type: str, data: dict, custom,
+                                 auth: AuthContext = None) -> dict:
     """装配层：单据**显式关联了产品**才查档案（没关联 → 一次查询都不发，回归旧行为）。"""
     key = product_key_of(custom)
     if not key:
         return data
-    info = await _product_info_of(db, tenant_id, key)
+    info = await _product_info_of(db, tenant_id, key, auth=auth)
     return apply_product_defaults(data, custom, doc_type, info)
 
 
@@ -900,7 +917,7 @@ async def get_trade_doc_render_data(
     # 单据没显式给 company_stamp → 自动带出租户默认公章（同样转 data URI）
     data = await _apply_default_seal(db, tenant_id, data, custom)
     # 单据关联了产品 → 把产品档案的基础信息补进仍为空的行项（见共享内核 product_defaults）
-    data = await _apply_product_defaults(db, tenant_id, d.doc_type, data, custom)
+    data = await _apply_product_defaults(db, tenant_id, d.doc_type, data, custom, auth=auth)
     return {
         "doc": _row_to_doc(d),
         "data": data,

@@ -219,12 +219,16 @@ class TestStaticAudit:
         _lineno, window = _sql_sites(fake_src)[0]
         assert not re.search(r"team_scope|_frag", window)
 
-    def test_已知缺口被显式标注_单证渲染装配层(self):
-        """`resolve_photo_refs` 没有 auth 上下文（调用方在 `main.py`，本轮不授权）
-        ⇒ 它**故意**没有谓词，但必须在源码里**写明原因**，避免被当成"漏了"。"""
+    def test_已知缺口已关闭_单证渲染装配层(self):
+        """`resolve_photo_refs` 现在有团队谓词（task-6 已关闭该缺口）。
+
+        原注释："没法**加团队谓词：`resolve_photo_refs(request, data)` 是**装配层**函数，
+        调用方是 `main.get_trade_doc_render_data`（main.py 正在被另一条任务改 ⇒ 本次不授权）"
+        —— 2026-10-12 task-6 已把 `user` 传进来，按 `file_objects.team_id` 过滤。
+        """
         src = WS_FILES_PY.read_text(encoding="utf-8")
         idx = src.find("async def resolve_photo_refs")
         assert idx > 0
         body = src[idx:idx + 2000]
-        assert "main.py 正在被另一条任务改" in body or "没法**加团队谓词" in body, \
-            "缺口必须留注释说明"
+        assert "team_scope" in body or "_team_scope" in body, \
+            "resolve_photo_refs 现在必须带团队谓词（缺口已关闭）"
