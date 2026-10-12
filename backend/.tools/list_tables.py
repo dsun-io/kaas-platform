@@ -1,9 +1,11 @@
 """临时：列出 public schema 下的表及行数估算。"""
 import asyncio
+import os
 
 import asyncpg
 
-DSN = "postgresql://neondb_owner:npg_FU7X4gicMjkn@ep-small-brook-b54t5318-pooler.c-7.us-east-2.aws.neon.tech/neondb"
+# 生产 DSN 一律从环境变量读取：**不入仓库**（原硬编码的生产口令已按安全要求清除）。
+DSN = os.environ["KAAS_DSN"]
 
 
 async def main() -> None:

@@ -730,7 +730,10 @@ PORTS = [
      "medium", "low", ["CMA CGM", "Hapag-Lloyd", "MSC"], "4-6", "medium"),
 ]
 
-DSN = "postgresql://neondb_owner:npg_FU7X4gicMjkn@ep-small-brook-b54t5318-pooler.c-7.us-east-2.aws.neon.tech/neondb"
+import os  # noqa: E402 —— 就地导入（本文件其余部分不依赖 os）
+
+# 生产 DSN 一律从环境变量读取：**不入仓库**（原硬编码的生产口令已按安全要求清除）。
+DSN = os.environ["KAAS_DSN"]
 
 
 async def main():
