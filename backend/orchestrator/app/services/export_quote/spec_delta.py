@@ -42,6 +42,8 @@
 - `remove` 指向**已不存在**的条目：幂等 no-op，但会进 `DeltaReport.missing_removals`
   （**warning，不静默** —— 通常意味着上游改过名，需要人工复核）。
 - `add` 的条目身份**已存在**：**报错**（否则是歧义重复，静默追加会让下游取到哪一条不确定）。
+- **标量列表**（`notes` / `hs_codes`）**不支持** `add`/`remove`：它们的元素是字符串，没有
+  `key`/`name` 可定位的身份 ⇒ 一律**报错并说明"仅支持整体替换"**（不静默、不按值增删）。
 
 闸门（两条，都不许"尽力而为"）
 ==============================
@@ -74,6 +76,7 @@ __all__ = [
     "SCALAR_FIELDS",
     "STRUCT_FIELDS",
     "LIST_FIELDS",
+    "SCALAR_LIST_FIELDS",
     "FORBIDDEN_FIELDS",
     "SpecDeltaError",
     "DeltaReport",
@@ -106,6 +109,11 @@ LIST_FIELDS = frozenset({
     "params", "piece_inputs", "numeric_inputs", "pricing_key",
     "notes", "hs_codes",
 })
+
+#: **标量列表**字段（元素是字符串，不是带 `key`/`name` 的对象）——
+#: 只支持 `lists.<字段>` **整体替换**（含 `[]` 显式清空 / `null` 取消覆盖），
+#: **不支持** `add` / `remove` 按条目增删（标量没有可定位的身份字段）。
+SCALAR_LIST_FIELDS = frozenset({"notes", "hs_codes"})
 
 #: **禁止**被覆盖的字段：身份。`key` 是查表键，被改了整条链都指向别处。
 FORBIDDEN_FIELDS = frozenset({"key"})
@@ -315,13 +323,21 @@ def normalize_delta(
         elif isinstance(v, (list, tuple)):
             lists[name] = list(v)
         else:
+            hint = (f"它只支持整体替换（含 `[]` 清空 / `null` 取消）"
+                    if name in SCALAR_LIST_FIELDS else
+                    f"想按条目增删请用 `add` / `remove`")
             raise SpecDeltaError(
-                f"`lists.{name}` 必须是数组或 null；"
-                f"想按条目增删请用 `add` / `remove`（实际是 {type(v).__name__}）")
+                f"`lists.{name}` 必须是数组或 null；{hint}（实际是 {type(v).__name__}）")
 
     add: dict[str, list] = {}
     for k, v in add_raw.items():
         name = _resolve_field(k, field_aliases, used)
+        if name in SCALAR_LIST_FIELDS:
+            raise SpecDeltaError(
+                f"`add.{name}` 不支持按条目增删 —— `{name}` 是标量列表"
+                f"（元素是字符串，没有 key/name 可定位的身份）。"
+                f"它仅支持整体替换：用 `lists.{name}` 给出完整新列表"
+                f"（含 `[]` 显式清空、`null` 取消覆盖并回落上游）")
         if name not in LIST_FIELDS:
             raise SpecDeltaError(f"`add.{name}` 只能对列表字段使用")
         if not isinstance(v, (list, tuple)) or not v:
@@ -331,6 +347,12 @@ def normalize_delta(
     remove: dict[str, list] = {}
     for k, v in remove_raw.items():
         name = _resolve_field(k, field_aliases, used)
+        if name in SCALAR_LIST_FIELDS:
+            raise SpecDeltaError(
+                f"`remove.{name}` 不支持按条目增删 —— `{name}` 是标量列表"
+                f"（元素是字符串，没有 key/name 可定位的身份）。"
+                f"它仅支持整体替换：用 `lists.{name}` 给出完整新列表"
+                f"（含 `[]` 显式清空、`null` 取消覆盖并回落上游）")
         if name not in LIST_FIELDS:
             raise SpecDeltaError(f"`remove.{name}` 只能对列表字段使用")
         if not isinstance(v, (list, tuple)) or not v:

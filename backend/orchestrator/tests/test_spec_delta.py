@@ -195,7 +195,11 @@ class TestListThreeStates:
     def test_列表非数组非null_报错(self):
         with pytest.raises(SpecDeltaError) as ei:
             apply_delta(_upstream(), {"lists": {"notes": "上游说明"}})
-        assert "add" in str(ei.value) and "remove" in str(ei.value)
+        # 修复后（task-9，修法②）：标量列表的报错文案不再误导"想按条目增删请用
+        # add/remove"，而是说明"仅支持整体替换（含 [] 清空 / null 取消）"。
+        msg = str(ei.value)
+        assert "只支持整体替换" in msg, msg
+        assert "add" not in msg and "remove" not in msg, msg
 
 
 # ── 5. 未知 key 不许静默忽略 ────────────────────────────────────────────────
@@ -333,9 +337,11 @@ class TestAddRemoveAndOptions:
         assert "已存在" in str(ei.value)
 
     def test_同一字段既整体替换又增删_报错(self):
+        """dict 列表上验证"整体替换 + 按条增删"互斥仍在（标量列表上该冲突已被
+        更早的"不支持按条目增删"闸门拦下，见 test_spec_delta_lists.py）。"""
         with pytest.raises(SpecDeltaError) as ei:
             apply_delta(_upstream(), {
-                "lists": {"notes": ["a"]}, "add": {"notes": ["b"]}})
+                "lists": {"columns": []}, "add": {"columns": [{"key": "extra", "label": "x"}]}})
         assert "同一字段" in str(ei.value)
 
     def test_条目没有key也没有name_报错(self):
