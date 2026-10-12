@@ -10,6 +10,27 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（交接 · 2026-10-12 17:3x · 平台账号治理）→ 详细交接见
+> [`ACCOUNT_GOVERNANCE_HANDOVER_2026-10-12.md`](./ACCOUNT_GOVERNANCE_HANDOVER_2026-10-12.md)**
+>
+> - **生产数据（已完成 · 用户弹窗确认）**：清空**全部团队（1 个）+ 账号（3 个）**，
+>   只留一个系统管理员 `david@powervoy.com`（`internal` / `system_admin` / `active`，
+>   口令 bcrypt 落库）；落库后复核 `remaining_users=1 / remaining_teams=0`。
+> - **新增能力（提交 `ff9aa73`，已推送 `main`）**：`GET /api/v1/admin/accounts` +
+>   `PATCH /api/v1/admin/accounts/{user_id}`（**停用 / 恢复**）**两端同契约**；
+>   鉴权 = `internal` + `effective_role='system_admin'`（含历史 `admin` 映射）；
+>   保护 **409 `SELF_PROTECT`**（禁停自己）/ **409 `LAST_ADMIN`**（禁停最后一名 active 管理员）；
+>   响应白名单**不含** `password_hash` / token。
+>   **不提供任何物理删除账号 / 团队的 API**（用户已确认口径：删除不可逆且关联面广，改停用）。
+> - **门禁实测（2026-10-12 17:1x–17:2x）**：orchestrator `pytest -m unit`
+>   **1196 passed / 1 skipped / 324 deselected**（= 上一条交接的 **1183** + 本次新增 **13** 条，数字对得上）；
+>   worker **272 passed**；`route-parity` **PASS**；`contracts:check` **EXIT 0 · PASS R0–R6**（177 paths）；
+>   `sync-shared -Check` **EXIT 0**；前端 `lint` **0**、`test` **390 passed / 33 files**；
+>   ⚠️ **前端 `typecheck` 现在是红的**（2 条**既有**错误：`onboarding/page.tsx` 的 typed-route 链接
+>   `"/quotes?tab=pricing"` / `"/quotes?tab=product"`，**非本条线引入**，待前端线修）。
+> - **待办**：前端「平台账号管理」UI（设计稿见交接文档 §④；AgentTeams t2 已派发）、
+>   端到端验收（t3：三类账号权限 + 自停/最后管理员保护 + 停用后登录被拒）。
+
 > **（交接 · 2026-10-12 傍晚 · 产品模块合并线 + 忘记密码）→ 详细交接见
 > [`SESSION_HANDOFF_2026-10-12_PM.md`](./SESSION_HANDOFF_2026-10-12_PM.md)**
 >
