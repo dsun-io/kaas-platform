@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
+import { apiClient } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,22 +14,28 @@ import {
   CardContent,
   CardFooter,
 } from "@/components/ui/card";
-import { Loader2 } from "lucide-react";
+import { Loader2, MailCheck } from "lucide-react";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!email.trim()) return;
-    // Always show the same safe message — no email existence leak
+    setError("");
     setSubmitting(true);
-    // Simulate a brief delay so the UI doesn't flash
-    await new Promise((r) => setTimeout(r, 800));
-    setSubmitting(false);
-    setSent(true);
+    try {
+      // 后端无论邮箱是否存在都返回统一 {ok:true} —— 前端据此统一提示，不泄露存在性
+      await apiClient.post("/auth/forgot-password", { email: email.trim() });
+      setSent(true);
+    } catch {
+      setError("发送失败，请稍后重试");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -36,12 +43,15 @@ export default function ForgotPasswordPage() {
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">忘记密码</CardTitle>
-          <CardDescription>重置密码</CardDescription>
+          <CardDescription>通过注册邮箱重置密码</CardDescription>
         </CardHeader>
         {sent ? (
           <CardContent className="space-y-4 text-center">
+            <MailCheck className="mx-auto size-10 text-primary" />
             <p className="text-sm text-muted-foreground">
-              当前暂未启用自动邮件重置，请联系管理员重置密码。
+              如果该邮箱已注册，重置链接已发送。
+              <br />
+              请检查收件箱（含垃圾邮件），链接 30 分钟内有效。
             </p>
             <Link
               href="/login"
@@ -65,6 +75,7 @@ export default function ForgotPasswordPage() {
                   disabled={submitting}
                 />
               </div>
+              {error && <p className="text-sm text-destructive">{error}</p>}
             </CardContent>
             <CardFooter className="flex flex-col gap-3">
               <Button

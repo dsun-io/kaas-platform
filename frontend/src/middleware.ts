@@ -7,6 +7,7 @@ const PUBLIC_PATHS = [
   "/register",
   "/setup-admin",
   "/forgot-password",
+  "/reset-password",
 ];
 
 // Path prefixes that are always allowed

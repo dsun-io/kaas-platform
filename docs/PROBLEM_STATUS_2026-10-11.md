@@ -2854,3 +2854,54 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
 
 **写入范围**：`tenant_products.py` / `export_quote.py` / `trade_docs.py` / `worker/src/main.py` /
 `worker/src/ws_files.py` / 两个新测试文件 / `worker/tests/test_ws_files_team_scope.py` / 本文档。
+
+## （忘记密码）邮箱绑定改密 —— 全链路落地（2026-10-12）
+
+> **需求**：登录页「忘记密码」→ 通过绑定邮箱（`users.email` 已 unique）收重置链接 → 设置新密码。
+> **发信渠道**：Resend（`send.powervoy.com` 已验证域名，`RESEND_API_KEY` 已配置到本地 `.env`，
+> 真实发信已验证 200 返回 message id）。
+
+### 设计口径（安全实践，用户已确认）
+
+| 项 | 取值 |
+|---|---|
+| token | `secrets.token_urlsafe(32)`；库里只存 **SHA-256 hex**（`token_hash`，unique）——库泄露不足以重置 |
+| 有效期 | **30 分钟**（`expires_at`） |
+| 用后即废 | 改密成功置 `used_at`；同用户其它未用令牌一并作废（防旧链接重放） |
+| 邮箱存在性 | `POST /auth/forgot-password` 无论邮箱是否存在都返回统一 `{ok:true, message:"如果该邮箱已注册，重置链接已发送"}` |
+| 统一错误 | 令牌不存在/过期/已用/账号非激活 ⇒ 一律 400 `invalid_token`（不细分，防令牌探测） |
+| 限速 | 复用全局 slowapi（IP 维度）；一次只保留一条有效链接（新建即作废旧的） |
+
+### 落地清单
+
+| 层 | 文件 | 内容 |
+|---|---|---|
+| 数据层 | `alembic/versions/202610120001_password_reset_tokens.py` + `db/models.py` | `password_reset_tokens` 表（`down_revision=202610110019`，当前 head） |
+| orchestrator | `services/password_reset.py`（新） | 令牌生成/哈希/消费/作废 + Resend 发信 helper |
+| orchestrator | `api/auth.py` | `POST /api/v1/auth/forgot-password` + `POST /api/v1/auth/reset-password` |
+| worker | `src/main.py` | 同构两路由 + `_http_post_json`（js.fetch/urllib）+ `_hash_reset_token` |
+| 前端 | `forgot-password/page.tsx` | 假延迟桩 → 真调 API，统一提示 |
+| 前端 | `reset-password/page.tsx`（新） | 读 `?token=` → 新密码 + 确认 → 提交 → 成功跳登录 |
+| 前端 | `middleware.ts` / `lib/api/client.ts` | 公开路径 + 免鉴权路径补 `reset-password` |
+| 配置 | `app/config/settings.py` | `RESEND_API_KEY` / `RESET_FROM_EMAIL` / `FRONTEND_BASE_URL`（默认值安全） |
+
+### 门禁（2026-10-12 实测，工作区静止）
+
+| 门禁 | 结果 |
+|---|---|
+| orchestrator `pytest -m unit` | **1173 passed / 1 skipped**（324 deselected） |
+| worker `pytest` | **261 passed** |
+| 前端 `vitest` | **390 passed（33 files）**（含新增 8 条：forgot 3 + reset 5） |
+| 前端 `lint` | exit 0（8 warnings 均历史遗留） |
+| 前端 `typecheck` | 2 errors 均 `onboarding/page.tsx` 历史遗留 TS2322（如实报，不修） |
+| `contracts:check` | **PASS R0–R6**（173 paths / 103 模型键集 / 29 response_model 一致） |
+| `route-parity` | **PASS**（缺失 11 全登记 / 过期 0） |
+| `sync-shared -Check` | **exit 0**（共享内核 31 / 报价引擎 21 / 枚举字典 1） |
+| Resend 真实发信 | **200**，message id `01a12ea7-7e60-7894-b53f-8ad200996011` |
+
+### 已知边界（如实记录）
+
+- **改密不强制登出**：JWT 无状态（与 `/logout` 口径一致），已改密用户的旧 token 在其过期前仍有效。
+  若要"改密即踢下线"，需要引入 token 版本/黑名单，属另一件事。
+- **`RESEND_API_KEY` 是 send-only 受限密钥**（`/domains` 返回 401，`/emails` 正常）——这正是期望的最小权限，非缺陷。
+- **本机无 Postgres**：迁移用离线 `alembic upgrade --sql` 验证 DDL，真实回填/建表语义待 CI `db-tests` 或生产执行后确认。

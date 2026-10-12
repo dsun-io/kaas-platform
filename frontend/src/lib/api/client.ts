@@ -35,7 +35,7 @@ apiClient.interceptors.request.use((config) => {
   // Public auth paths — never inject auth headers
   const path = config.url || "";
   const isAuthPath =
-    /^\/auth\/(login|register|logout|bootstrap-admin|forgot-password)/.test(
+    /^\/auth\/(login|register|logout|bootstrap-admin|forgot-password|reset-password)/.test(
       path,
     );
 

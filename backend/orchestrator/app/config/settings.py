@@ -87,6 +87,18 @@ class Settings(BaseSettings):
     clawbot_base_url: str = Field(default="", alias="CLAWBOT_BASE_URL")
     clawbot_api_key: str = Field(default="", alias="CLAWBOT_API_KEY")
 
+    # ─── 忘记密码：Resend 发信（send.powervoy.com 已验证域名）──────────
+    # RESEND_API_KEY 为空时，forgot-password 仍返回统一 {ok:true}（不泄露邮箱存在性），
+    # 但不发信 —— 日志里如实记录 "email_not_configured"。
+    resend_api_key: str = Field(default="", alias="RESEND_API_KEY")
+    reset_from_email: str = Field(
+        default="noreply@send.powervoy.com", alias="RESET_FROM_EMAIL"
+    )
+    # 重置链接指向的前端地址（/reset-password?token=...）
+    frontend_base_url: str = Field(
+        default="https://kaas.powervoy.com", alias="FRONTEND_BASE_URL"
+    )
+
     @property
     def cors_origins_list(self) -> List[str]:
         """Parse CORS origins from JSON string."""
