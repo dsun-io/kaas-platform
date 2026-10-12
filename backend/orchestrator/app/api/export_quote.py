@@ -809,13 +809,30 @@ async def _effective_product(
     「产品不存在」在算价入口交给引擎按它自己的口径报（400 product_error），
     在规格空间入口由调用方报 404 —— 同一个错误在不同入口的状态码本来就不同，
     所以这里不替调用方决定，只负责「拿不到就明说拿不到」。
+
+    加载顺序（2026-10-12，task-5 / P13）：**产品定义 → 并入买家自加档位 → 套团队覆盖**
+    —— 与 `_with_customer_options` 内部的顺序一致，不打乱。
+
+    产品定义来源（优先级）：
+    1. **租户级 `tenant_products` 表**（按 `team_id` 收敛，本团队优先 / 历史 NULL 仅管理员）
+    2. **Python 注册表定义**（系统级兜底）
     """
     if not product_key:
         return None
-    try:
-        product = get_product(product_key)
-    except Exception:
+
+    # 1. 先走 TenantProductLoader（租户级优先，回退 Python 定义）
+    from app.services.export_quote.tenant_products import TenantProductLoader
+
+    loader = TenantProductLoader()
+    tenant_id = auth_tenant(auth)
+    team_id = getattr(auth, "team_id", None)
+    role = getattr(auth, "role", None)
+    product = await loader.load(
+        tenant_id, product_key, team_id=team_id, role=role, db_session=db)
+    if product is None:
         return None
+
+    # 2. 并入买家自加档位 + 3. 套团队覆盖（顺序不变）
     return await _with_customer_options(db, auth, product)
 
 
