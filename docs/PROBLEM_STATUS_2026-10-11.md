@@ -2692,10 +2692,12 @@ orchestrator **946** / worker **217** / `route-parity` **PASS** / `sync-shared -
 > **在别的设备继续前，先读 [`docs/SESSION_CLOSEOUT_2026-10-12.md`](SESSION_CLOSEOUT_2026-10-12.md) 的
 > 「跨设备交接记录」一节** —— 里面有：
 >
-> 1. **⚠️ 6 个文件的未提交改动不会转移到别的设备**（`main.py` / `dbjson.py` / `products/page.tsx` /
->    `trade-docs/page.tsx` / `use-products.ts` / `use-products.test.ts`）——先解决它们的归属再续作；
-> 2. 阻塞清单的最新状态（`ws_docs_ext.py` / `trade_docs.py` **已释放**；`main.py` / `dbjson.py` /
->    `products/page.tsx` 仍被在飞工作占用）；
+> 1. ~~⚠️ 6 个文件的未提交改动不会转移~~ → 【10:44 更正：经 `git diff HEAD` 逐文件核实，
+>    6 个工作树均 == HEAD，是**共享 index 滞留幻影**（规则 4 现象），归位后工作区已干净，
+>    **跨设备无任何丢失**】；
+> 2. 阻塞清单全部解除（`ws_docs_ext.py` / `trade_docs.py` 已释放；`main.py` / `dbjson.py` /
+>    `products/page.tsx` 的"占用"经核实同为幻影）—— **`resolve_photo_refs` / `:3691` / `:829` /
+>    可视化编辑器前端均已解封**；
 > 3. 下一件该做的事（先补跑全套门禁 ⇒ `trade_docs.py:829` 谓词 ⇒ §8.5 / 编辑器接线）。
 >
 > 交接时 HEAD = `ff733f2`，**已核实与远程同步（领先/落后 = 0/0）** ✓
