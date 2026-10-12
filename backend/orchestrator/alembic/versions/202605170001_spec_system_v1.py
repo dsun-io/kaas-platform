@@ -276,10 +276,18 @@ def upgrade() -> None:
     op.execute("CREATE INDEX idx_ap_name_trgm ON attribute_proposals USING gin (proposed_name gin_trgm_ops)")
 
     # ── 13. quotations ALTER ──
-    op.add_column('quotations', sa.Column('sku_id', sa.BigInteger, sa.ForeignKey('product_skus.id'), nullable=True))
-    op.add_column('quotations', sa.Column('price_id', sa.BigInteger, sa.ForeignKey('product_sku_prices.id'), nullable=True))
-    op.add_column('quotations', sa.Column('schema_version_v2', sa.Integer, nullable=True))
-    op.create_index('idx_q_sku', 'quotations', ['sku_id'])
+    # 空库兜底（与 `feb821f0b9c0` 同一策略）：`quotations` 要到链上**更晚**的
+    # `f82ac951b473_intel_workstation_v1.py:661` 才 `create_table`，而那份定义里
+    # **已经包含** `sku_id` / `price_id` / `schema_version_v2` 三列 ⇒ 空库上这三列
+    # 与 `idx_q_sku` 应当留给那次 CREATE TABLE，这里跳过不丢列语义。
+    # 已有库（表在）⇒ 条件为真，下面语句与改动前**完全一致**。
+    # 注：`idx_q_sku` 在那份 CREATE TABLE 里**没有**（它只建 lookup/tenant 两个索引）
+    # ⇒ 空库上这个索引会缺，属"链只跑到 head ≠ 得到完整 schema"的既有缺口，另行记录。
+    if sa.inspect(op.get_bind()).has_table("quotations"):
+        op.add_column('quotations', sa.Column('sku_id', sa.BigInteger, sa.ForeignKey('product_skus.id'), nullable=True))
+        op.add_column('quotations', sa.Column('price_id', sa.BigInteger, sa.ForeignKey('product_sku_prices.id'), nullable=True))
+        op.add_column('quotations', sa.Column('schema_version_v2', sa.Integer, nullable=True))
+        op.create_index('idx_q_sku', 'quotations', ['sku_id'])
 
     # ── users 角色字段盘点 ──
     # users 表已有 role 字段 (system_admin/admin/owner/user) + plan 字段
