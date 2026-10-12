@@ -114,9 +114,11 @@ orchestrator 会给 `float`、Worker 的 asyncpg 会给 `Decimal`，不归一两
 （`frontend/src/app/(app)/trade-docs/components/__tests__/doc-preview-auto-pdf.test.tsx` 新增 **4 条**：
 显示 / 不显示 / 坏形状 / 装配失败）；但**页面级接线**（`page.tsx` 传 `renderMetaOf(raw_payload)`）
 仍只有 `typecheck` 保驾 —— **没有组件之上的页面测试**。
-③ **已有对账消费者**：`GET /api/v1/trade-docs/{id}/render-fingerprint-check`（两端同契约，见 §〇.3）
-能回答"现在的数据是否还与签发时一致"，并把**"数据被改"（`reason=data_changed`）**与
-**"模板改过"（`render_version_drift`）**分开报；**仍未做**的是"批量/定时对账"与前端"已变更"提示。
+③ **已有对账消费者**：`GET /api/v1/trade-docs/{id}/render-fingerprint-check`（task-17，两端同契约）
+＋ 前端「核对指纹」按钮（task-19：**仅已签发单据显示**、**点了才查**、按 `reason` 显示一行结论，
+`data_changed` 红字「签发后数据已被修改」）；**task-20 已补批量对账**
+（`GET /api/v1/trade-docs/render-fingerprint-checks/batch`，实际契约见 §〇.3）。
+**仍未做**：定时调度、列表页一眼标出"哪些被改过"。
 ④ **orchestrator 侧 `confirm` 的落库路径没有单测**
 （worker 侧有：`tests/test_four_domains.py::test_trade_doc_confirm_locks_draft` 从
 `UPDATE ... raw_payload=...` 的**实参**里验了 `_render` 的形状）；orchestrator 只单测了
@@ -173,10 +175,30 @@ worker `backend/worker/src/ws_docs_ext.py:304`），判定全在共享内核
 另有契约字段固定（`test_response_contract_is_stable:398`）。
 worker 侧 `backend/worker/tests/test_ws_render_fingerprint_check.py` 含"路由确已注册进 OpenAPI"的断言（`:206-207`）。
 
+**前端入口（task-19，已做）**：单证预览区的「**核对指纹**」按钮 —— **仅已签发单据显示**（有 `_render`
+才有入口）、**点了才查**（`useMutation`，预览时**不自动**拉：对账要重新装配一遍、有成本，且它回答的是按需问题）、
+按内核的 `reason` 显示**一行结论**：
+`matched` 绿「与签发时一致」、`data_changed` **红字**「**签发后数据已被修改**」、
+`version_drift` 黄「渲染模板已升级（数据未变）」、其余落"无法判定"，**未知 `reason` 也不猜**
+（`frontend/src/app/(app)/trade-docs/components/doc-preview.tsx:145-179,370-393`）。
+
+**批量对账（task-20，已做）**：`GET /api/v1/trade-docs/render-fingerprint-checks/batch`（两端同契约；
+orchestrator `backend/orchestrator/app/api/trade_docs.py:979`、worker `backend/worker/src/ws_docs_ext.py:360`）
+
+- 入参 `doc_ids`（逗号分隔，**去重后上限 50**，超限 ⇒ 400）；对每张跑**同一套**单张判定再汇总；
+- 返回 `{total, matched, data_changed, version_drift, no_fingerprint, unavailable, items}`，
+  每张卡 `{doc_id, doc_no, reason, matches, render_version_drift, error}`（契约常量在内核
+  `render_fingerprint.py:331-354`）；
+- **一张炸了不拖垮整批**：取不到 / 无权看 / 该张抛异常 ⇒ 该卡 `reason=unavailable` + `error`，其余照常交付；
+- **不变式**：`matched + data_changed + version_drift + no_fingerprint + unavailable == total`
+  —— **不允许漏桶**（漏一张会被读成"这张没问题"，那正是最危险的错法）；
+- 路径为什么取 `…/render-fingerprint-checks/batch`（代码注释里写明）：`/trade-docs/{doc_id}` 是**不带 int
+  转换器**的动态段，会把 `…/trade-docs/render-fingerprint-checks` 先吃掉 ⇒ 必须多一段静态后缀。
+
 **仍未做（如实标注，别当成已完成）**：
-1. **前端"已变更"提示未做**：对账目前只有 **API 层**（curl / 脚本可查）。要做前端提示需动 **3 个文件**
-   （hook + 展示 + 接线），而 **task-17 的写范围不含前端** ⇒ 界面**不会**自动告诉用户"这张单被改过"。
-2. **没有批量/定时对账**：只能**人主动查一张**；"生产上到底哪些单据被改过"仍需自己遍历。
+1. **定时调度未做**：批量是**按需调用**（一次最多 50 张），**没有** cron / 定时任务；
+2. **列表页未标出"哪些被改过"**：结论要**逐张点开**或**调批量接口**才看得到，
+   单证列表里**没有**"这单被改过"的一眼标识。
 
 **性质说明（不是 bug，但值得留档）**：对账的前提是"两边同一套装配"。若将来给 `render-data`
 加了**新数据源**却忘了同步到**签发冻结**那条路径，两边会**一起变**、`matches` 仍报 `true` ——

@@ -52,15 +52,27 @@ from .product_defaults import (  # noqa: F401
     product_key_of,
 )
 from .render_fingerprint import (  # noqa: F401
+    RENDER_CHECK_CARD_FIELDS,
+    RENDER_CHECK_CARD_UNAVAILABLE,
+    RENDER_CHECK_DECIDED_BUCKETS,
+    RENDER_CHECK_DOC_IDS_INVALID,
+    RENDER_CHECK_DOC_IDS_LIMIT,
+    RENDER_CHECK_DOC_IDS_REQUIRED,
+    RENDER_CHECK_MAX_DOCS,
+    RENDER_CHECK_SUMMARY_FIELDS,
     RENDER_CHECK_VERDICTS,
     RENDER_DIGEST_IGNORED_FIELDS,
     RENDER_KEY,
     RENDER_VERSION,
+    RenderCheckBatchError,
     canonical_render_input,
+    parse_render_check_doc_ids,
     read_render_fingerprint,
+    render_check_card,
     render_fingerprint,
     render_fingerprint_check,
     render_input_digest,
+    summarize_render_checks,
 )
 
 __all__ = [
@@ -78,4 +90,9 @@ __all__ = [
     "RENDER_KEY", "RENDER_VERSION", "RENDER_DIGEST_IGNORED_FIELDS", "RENDER_CHECK_VERDICTS",
     "canonical_render_input", "render_input_digest", "render_fingerprint",
     "render_fingerprint_check", "read_render_fingerprint",
+    "RENDER_CHECK_MAX_DOCS", "RENDER_CHECK_CARD_FIELDS", "RENDER_CHECK_CARD_UNAVAILABLE",
+    "RENDER_CHECK_DECIDED_BUCKETS", "RENDER_CHECK_DOC_IDS_INVALID",
+    "RENDER_CHECK_DOC_IDS_LIMIT", "RENDER_CHECK_DOC_IDS_REQUIRED",
+    "RENDER_CHECK_SUMMARY_FIELDS", "RenderCheckBatchError",
+    "parse_render_check_doc_ids", "render_check_card", "summarize_render_checks",
 ]

@@ -2249,11 +2249,20 @@ c) 前端两处：界面把 Markdown `**` 当文本渲染；历史版本号用 `
 worker 侧另有 `backend/worker/tests/test_ws_render_fingerprint_check.py`，
 含"路由确已注册进 OpenAPI"的断言（`:206-207`）。
 
-**5. ⏳ 仍未做（如实标注，别当成已完成）**
-1. **前端"已变更"提示未做**：consumer 目前只有 **API 层**（curl / 脚本可查）。
-   做前端提示要动 **3 个文件**（hook + 展示 + 接线），而 task-17 的写范围**不含前端**
-   ⇒ 界面**不会**自动告诉用户"这张单被改过"。
-2. **没有批量/定时对账**：只能**人主动查一张**；"生产上到底哪些单据被改过"仍需自己遍历。
+**5. 消费者：前端入口与批量（2026-10-12 更新）**
+- ✅ **前端入口（task-19）**：单证预览区「**核对指纹**」按钮 —— **仅已签发单据显示**、**点了才查**
+  （`useMutation`，预览时**不自动**拉）、按 `reason` 显示**一行结论**；`data_changed` **红字**
+  「**签发后数据已被修改**」、`version_drift` 黄字、未知 `reason` 落"无法判定"（**不猜**）
+  （`frontend/src/app/(app)/trade-docs/components/doc-preview.tsx:145-179,370-393`）。
+- ✅ **批量对账（task-20）**：`GET /api/v1/trade-docs/render-fingerprint-checks/batch`（两端同契约；
+  orchestrator `backend/orchestrator/app/api/trade_docs.py:979`、worker `backend/worker/src/ws_docs_ext.py:360`）
+  —— 入参 `doc_ids`（逗号分隔，**去重后上限 50**，超限 ⇒ 400）；返回
+  `{total, matched, data_changed, version_drift, no_fingerprint, unavailable, items}`，
+  卡片 `{doc_id, doc_no, reason, matches, render_version_drift, error}`；
+  **一张失败不拖垮整批**（该卡 `reason=unavailable` + `error`，其余照常）；
+  **五桶之和恒等于 `total`**（不允许漏桶）。
+- ⏳ **仍未做**：① **定时调度**（批量是**按需调用**，没有 cron）；② **列表页一眼标出"哪些被改过"**
+  （结论要逐张点开或调批量接口才看得到）。
 
 **6. 一条性质说明（不是 bug，但值得留档）**
 对账的前提是"两边同一套装配"。若将来给 `render-data` 加了**新数据源**却忘了同步到**签发冻结**

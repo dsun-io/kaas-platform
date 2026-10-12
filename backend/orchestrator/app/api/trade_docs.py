@@ -45,6 +45,8 @@ from kaas_common.trade_doc import (
     append_audit, protected_custom_fields,
     apply_product_defaults, product_key_of,
     RENDER_KEY, read_render_fingerprint, render_fingerprint, render_fingerprint_check,
+    RenderCheckBatchError, parse_render_check_doc_ids, render_check_card,
+    summarize_render_checks,
 )
 from kaas_common.files import apply_default_seal, is_file_ref, to_data_uri
 from kaas_common.workstation.entity_links import (
@@ -935,6 +937,19 @@ async def check_trade_doc_render_fingerprint(
     if d is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "DOC_NOT_FOUND"})
 
+    return await _check_one_doc_render_fingerprint(d, doc_id, auth, db)
+
+
+async def _check_one_doc_render_fingerprint(d: TradeDoc, doc_id: int, auth: AuthContext,
+                                            db: AsyncSession) -> dict:
+    """**单张**对账的唯一实现（单张端点与批量端点共用；判定全在共享内核）。
+
+    装配失败**不抛**：交给内核标 `current_unavailable` + `current_note`（`matches=false`），
+    绝不返回"看起来匹配"的假结论。批量端点在外层还有一层 try/except 兜**意外**异常。
+
+    `doc_id` 显式传入（不读 `d.id`）：单张端点用的是路径参数，批量端点传行里的 id；
+    两者必须**同源**，装配才能取到同一张单据。
+    """
     frozen = read_render_fingerprint(d.raw_payload)
     checked_at = datetime.now(timezone.utc).isoformat()
     try:
@@ -945,6 +960,75 @@ async def check_trade_doc_render_fingerprint(
               f"{type(exc).__name__}: {exc}")
         return render_fingerprint_check(
             frozen, None, checked_at=checked_at, current_error=type(exc).__name__)
+
+
+# ── 批量对账（一次知道"哪些单据被改了"）──────────────────────────────────────
+#
+# ⚠️ **这是重操作，不要挂到高频路径**：每张单据都要跑一次完整装配
+# （企业主体 + 买方 + 上游快照 + 行项 + 产品图 data URI + 默认公章 + 产品基础信息回落，
+# 见 `get_trade_doc_render_data`）—— 50 张就是最多 50 次装配。
+# 只应由**用户显式动作**（如"批量对账"按钮）或低频运维巡检调用；
+# **禁止**接到列表轮询 / 自动刷新 / "每次打开单据列表都对一遍"上。
+#
+# 路径为什么是 `…/render-fingerprint-checks/batch` 而不是任务备选的
+# `…/trade-docs/render-fingerprint-checks`：**动态路由会吃掉它**。FastAPI 的
+# `/trade-docs/{doc_id}` 编译成 `[^/]+`（不带 int 转换器），`render-fingerprint-checks`
+# 会先被它匹配，然后在参数校验处 422 —— 实测（本文件路由 + worker 的 app 都验过）。
+# 多一段静态后缀就不可能与 `/trade-docs/{doc_id}`（2 段）或 `/trade-docs/{doc_id}/xxx`
+# （第 3 段是字面量）冲突，且两端 import 顺序无关。
+@router.get("/trade-docs/render-fingerprint-checks/batch",
+            summary="批量对账：一次查出哪些单据被改过（上限 50 张）")
+async def batch_check_trade_doc_render_fingerprints(
+    doc_ids: Optional[str] = Query(None, description="逗号分隔的单据 id，最多 50 个，如 1,2,3"),
+    auth: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """**只读**批量对账：对每张单据各跑一次单张端点的那套判定，再汇总。
+
+    返回 `{total, matched, data_changed, version_drift, no_fingerprint, unavailable, items}`；
+    每张卡片 `{doc_id, doc_no, reason, matches, render_version_drift, error}` —— 契约、
+    入参校验与计数口径都在共享内核 `kaas_common.trade_doc.render_fingerprint`
+    （两端同一份，不另写判定）。
+
+    语义保守（与单张端点完全一致）：
+    - 卡片 `reason` 就是内核的六值；`matches=true` 只可能来自内核的 `matched` 或
+      `version_drift`（两者都表示**内容摘要确实一致**），装配失败/无基线一律 false；
+    - 取不到单据 / 无权看 / 该张意外抛异常 ⇒ 该卡 `reason=unavailable` + `error`，
+      **其余张照常交付**（一张炸了不拖垮整批）；
+    - 汇总里的 `unavailable` 涵盖所有"比不了"的情形（含 `frozen_unavailable` /
+      `current_unavailable`），绝不混进四个结论桶。
+    """
+    try:
+        ids = parse_render_check_doc_ids(doc_ids)
+    except RenderCheckBatchError as exc:
+        raise HTTPException(status_code=400, detail={
+            "error": "validation", "code": exc.code, "detail": exc.detail,
+        })
+
+    tenant_id = tenant_id_of(auth)
+    # 一次把本批单据取出来（省 N-1 次查询；装配本身仍是逐张的，那才是主要成本）
+    rows = (await db.execute(
+        select(TradeDoc).where(
+            TradeDoc.tenant_id == tenant_id, TradeDoc.id.in_(ids),
+        )
+    )).scalars().all()
+    by_id = {d.id: d for d in rows}
+
+    items = []
+    for doc_id in ids:
+        d = by_id.get(doc_id)
+        if d is None:
+            # 不存在 / 不属于本租户：一张卡说明，不把整批 404 掉
+            items.append(render_check_card(doc_id, error="DOC_NOT_FOUND"))
+            continue
+        try:
+            check = await _check_one_doc_render_fingerprint(d, doc_id, auth, db)
+            items.append(render_check_card(doc_id, d.doc_no, check))
+        except Exception as exc:  # noqa: BLE001 —— 一张炸了不能拖垮整批
+            print(f"[trade-docs] 批量对账：单据 {doc_id} 意外失败（其余照常交付）："
+                  f"{type(exc).__name__}: {exc}")
+            items.append(render_check_card(doc_id, d.doc_no, error=type(exc).__name__))
+    return {**summarize_render_checks(items), "items": items}
 
 
 @router.post("/trade-docs/{doc_id}/refresh-sources")
