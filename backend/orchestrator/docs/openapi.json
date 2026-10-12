@@ -946,6 +946,77 @@
         }
       }
     },
+    "/api/v1/admin/accounts": {
+      "get": {
+        "tags": [
+          "admin-accounts"
+        ],
+        "summary": "List Accounts",
+        "description": "列出全部账号（system_admin 专属）。响应不含 password_hash/token。",
+        "operationId": "list_accounts_api_v1_admin_accounts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/accounts/{user_id}": {
+      "patch": {
+        "tags": [
+          "admin-accounts"
+        ],
+        "summary": "Update Account Status",
+        "description": "停用 / 恢复账号（system_admin 专属）。",
+        "operationId": "update_account_status_api_v1_admin_accounts__user_id__patch",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountStatusIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/capability-customers": {
       "get": {
         "tags": [
@@ -10202,6 +10273,21 @@
   },
   "components": {
     "schemas": {
+      "AccountStatusIn": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "active | disabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "AccountStatusIn",
+        "description": "PATCH 请求体。"
+      },
       "ActualCostIn": {
         "properties": {
           "product_key": {
