@@ -3681,18 +3681,34 @@ from kaas_common.trade_doc.product_defaults import (  # noqa: E402
 )
 
 
-async def _product_info_of(request: Request, product_key: str):
-    """产品档案 `info`；产品不在注册表 / 没维护过 → None。"""
+async def _product_info_of(request: Request, product_key: str, user: dict = None):
+    """产品档案 `info`；产品不在注册表 / 没维护过 / 无权看 → None。
+
+    团队谓词（2026-10-12，task-6）：按 `product_info_access`（共享内核
+    `kaas_common/workstation/product_scope.py`）判定可见性 ——
+    本团队行可读 / 别团队行 404 / 历史 `team_id IS NULL` 仅管理员。
+    与 orchestrator 的 `trade_docs.py` 同款谓词同源，不另写一套。
+    """
     from kaas_common.export_quote.products import has as _has_product  # 惰性：不拖累模块加载
     if not _has_product(product_key):
         return None
     row = await db.fetchrow(
         request,
-        "SELECT info FROM product_profiles WHERE tenant_id=$1 AND product_key=$2",
+        "SELECT info, team_id FROM product_profiles WHERE tenant_id=$1 AND product_key=$2",
         DEFAULT_TENANT, product_key, table="product_profiles",
     )
     if row is None:
         return None
+    # 团队可见性判定（复用共享内核，与 orchestrator/files.py 同源）
+    if user is not None:
+        from kaas_common.workstation.product_scope import product_info_access
+        decision = product_info_access(
+            role=user.get("role"),
+            viewer_team_id=user.get("team_id"),
+            row_team_id=row.get("team_id"),
+        )
+        if not decision.allowed:
+            return None
     info = row["info"]
     # Workers 环境的 asyncpg 会把 jsonb 返回成 str（`product_profiles` 目前**未**登记进
     # dbjson.JSONB_COLS，`table=` 解码对它不生效）—— 两种形状都收，避免"字段在、
@@ -3705,12 +3721,13 @@ async def _product_info_of(request: Request, product_key: str):
     return dict(info) if isinstance(info, dict) else None
 
 
-async def _apply_product_defaults(request: Request, doc_type: str, data: dict, custom) -> dict:
+async def _apply_product_defaults(request: Request, doc_type: str, data: dict, custom,
+                                  user: dict = None) -> dict:
     """装配层：单据**显式关联了产品**才查档案（没关联 → 一次查询都不发，回归旧行为）。"""
     key = product_key_of(custom)
     if not key:
         return data
-    info = await _product_info_of(request, key)
+    info = await _product_info_of(request, key, user=user)
     return apply_product_defaults(data, custom, doc_type, info)
 
 
@@ -3784,11 +3801,11 @@ async def get_trade_doc_render_data(doc_id: int, request: Request,
     )
     # 单证引用产品图：把 `{file_id}` 解析成图片源（装配层做，渲染器一行不改）
     import ws_files as _ws_files  # 模块在文件末尾导入，函数内惰性引用
-    data = await _ws_files.resolve_photo_refs(request, data)
+    data = await _ws_files.resolve_photo_refs(request, data, user=user)
     # 单据没显式给 company_stamp → 自动带出租户默认公章（同样转 data URI）
     data = await _apply_default_seal(request, user, data, custom)
     # 单据关联了产品 → 把产品档案的基础信息补进仍为空的行项（见共享内核 product_defaults）
-    data = await _apply_product_defaults(request, doc["doc_type"], data, custom)
+    data = await _apply_product_defaults(request, doc["doc_type"], data, custom, user=user)
     return {
         "doc": doc,
         "data": data,
