@@ -235,43 +235,33 @@ HEAD          ff733f2  chore(openapi): 重生成产物 —— 跟随批量对账
 | `d641ba0` | **批量对账端点**（两端同契约）+ 文档同步 |
 | `ff733f2` | 跟随重生成 openapi 产物 |
 
-## 二、⚠️⚠️ 跨设备续作必读：工作区有 6 个文件的未提交改动【不会转移到别的设备】
+## 二、~~⚠️ 6 个文件的未提交改动不会转移~~ → 【10:44 更正：全是 index 滞留幻影，无任何会丢的工作】
 
-以下文件有**另一条线的在飞工作**（`git status` = `MM`，已暂存但未提交）：
+> **更正（2026-10-12 10:44，提交 `bf48279` 之后核实）**：交接时工作区曾显示 6 个文件 `MM`
+> （`main.py` / `dbjson.py` / `products/page.tsx` / `trade-docs/page.tsx` / `use-products.ts` /
+> `use-products.test.ts`），一度判断为"另一条线的在飞工作、不会转移到别的设备"。
+> **经 `git diff HEAD` 逐文件核实：6 个工作树内容与 HEAD 完全一致**，是 `AGENTS.md` 规则 4 记载的
+> **共享 index 滞留幻影**（另一条线用私有 index 提交后共享 index 停在旧版本），**不是真实改动**。
+> 已对 6 文件执行归位（`git add`）⇒ **工作区完全干净，远程即全部，跨设备无任何丢失** ✓
+>
+> 教训（已符合规则 4，此处再强调）：看到 `MM` **先 `git diff HEAD` 判定真伪**，再决定是否真有在飞工作。
 
-```
-MM backend/worker/src/main.py
-MM backend/worker/src/dbjson.py
-MM frontend/src/app/(app)/products/page.tsx
-MM frontend/src/app/(app)/trade-docs/page.tsx
-MM frontend/src/lib/products/use-products.ts
-MM frontend/src/lib/products/__tests__/use-products.test.ts
-```
-
-**这些改动的内容只存在于本机工作区，推送不包含它们**（提交才能上远程）。
-⇒ 在别的设备上 `git clone/pull` 后，这 6 个文件是 **HEAD 版本，没有这些在飞改动**。
-
-**处置建议（两选一）**：
-1. **让那条线自己提交**（最干净）——回到它所在的会话让它收工提交；
-2. 如果你确认那些改动可以整体入库（它们与 HEAD 的差异是完整的、自洽的），
-   可以让任何一方用 **`git stash` 或单独提交**的方式带走 —— **但不要在本机之外丢失**。
-
-同时注意：本机 `artifacts/` 目录下有未跟踪的取证脚本（`alembic_head.py`、`task16_fresh_db_check.py` 等），
-也不上远程（未跟踪 ⇒ 别的设备 `pull` 拿不到；若需要，自行复制）。
+另：本机 `artifacts/` 目录有未跟踪取证脚本（`alembic_head.py`、`task16_fresh_db_check.py` 等），
+不上远程（别的设备需要时自行复制）。
 
 ## 三、占位/阻塞清单的最新状态（相比本文件 §四-A 已变化）
 
-| 文件 | 10-12 02:09 时 | 10-12 10:38 现在 |
+| 文件 | 10-12 02:09 时 | 10-12 10:44 核实后 |
 |---|---|---|
-| `backend/worker/src/ws_docs_ext.py` | 占用 ✗ | ✅ **已释放**（09:42） |
-| `backend/orchestrator/app/api/trade_docs.py` | 占用 ✗ | ✅ **已释放**（09:42）——`:829` 读点谓词**现在可做** |
-| `backend/worker/src/main.py` | 占用 ✗ | **仍占用**（`resolve_photo_refs` 装配层 / `:3691` 仍卡住） |
-| `backend/worker/src/dbjson.py` | 占用 ✗ | **仍占用** |
-| `frontend/src/app/(app)/products/page.tsx` | 占用 ✗ | **仍占用** —— 可视化编辑器前端仍被卡 |
+| `backend/worker/src/ws_docs_ext.py` | 占用 ✗ | ✅ 已释放（09:42） |
+| `backend/orchestrator/app/api/trade_docs.py` | 占用 ✗ | ✅ 已释放（09:42）——`:829` 读点谓词**可做** |
+| `backend/worker/src/main.py` | 占用 ✗ | ✅ **幻影**——工作树 == HEAD，**从未有真占用**，`resolve_photo_refs` / `:3691` **已解封** |
+| `backend/worker/src/dbjson.py` | 占用 ✗ | ✅ **幻影**，已解封 |
+| `frontend/src/app/(app)/products/page.tsx` | 占用 ✗ | ✅ **幻影**，已解封 —— **可视化编辑器前端无任何阻塞** |
 
 ## 四、下一件该做的事（以本文件 §二/§四 的完整清单为准）
 
-1. **先解决那 6 个未提交文件的归属**（§二）——否则跨设备续作会丢工作或撞车；
+1. ~~先解决 6 个未提交文件的归属~~（§二已更正：幻影，无此问题）；
 2. 在工作区静止时**补跑全套门禁**（含 `NEXT_EXPORT=1 build`）——最后一次全套验证在 `6e8a04a`，
    其后十几项提交只各自跑了相关门禁；
 3. `trade_docs.py` 已释放 ⇒ 可补 `:829` 的产品基础信息读点团队谓词（P7 最后一块）；
