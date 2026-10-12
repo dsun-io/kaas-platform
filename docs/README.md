@@ -21,5 +21,6 @@
 | [UNCERTAIN.md](./UNCERTAIN.md) | 存疑清单（等 David 确认） |
 | [E2E_GUIDE.md](./E2E_GUIDE.md) | 端到端测试一键可跑说明书 |
 | [MULTI_PRODUCT_QUOTE_PLAN.md](./MULTI_PRODUCT_QUOTE_PLAN.md) | 多产品报价 + 整单单证 实施方案（待决策） |
+| [TRADE_DOC_HARDENING_PLAN_2026-10-12.md](./TRADE_DOC_HARDENING_PLAN_2026-10-12.md) | **单证工位加固方案**（源起 2026-10-12 真实单证实操复盘：事实层/一致性引擎/引用完整性/收款项/导出自检；设计，不含实现） |
 | [../DEPLOY.md](../DEPLOY.md) | 部署说明（线上域名 kaas.powervoy.com） |
 | [archive/](./archive/) | 归档资料（不反映当前架构） |
