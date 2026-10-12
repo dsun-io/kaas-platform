@@ -7308,6 +7308,56 @@
         }
       }
     },
+    "/api/v1/trade-docs/render-fingerprint-checks/batch": {
+      "get": {
+        "tags": [
+          "trade-docs"
+        ],
+        "summary": "批量对账：一次查出哪些单据被改过（上限 50 张）",
+        "description": "**只读**批量对账：对每张单据各跑一次单张端点的那套判定，再汇总。\n\n返回 `{total, matched, data_changed, version_drift, no_fingerprint, unavailable, items}`；\n每张卡片 `{doc_id, doc_no, reason, matches, render_version_drift, error}` —— 契约、\n入参校验与计数口径都在共享内核 `kaas_common.trade_doc.render_fingerprint`\n（两端同一份，不另写判定）。\n\n语义保守（与单张端点完全一致）：\n- 卡片 `reason` 就是内核的六值；`matches=true` 只可能来自内核的 `matched` 或\n  `version_drift`（两者都表示**内容摘要确实一致**），装配失败/无基线一律 false；\n- 取不到单据 / 无权看 / 该张意外抛异常 ⇒ 该卡 `reason=unavailable` + `error`，\n  **其余张照常交付**（一张炸了不拖垮整批）；\n- 汇总里的 `unavailable` 涵盖所有\"比不了\"的情形（含 `frozen_unavailable` /\n  `current_unavailable`），绝不混进四个结论桶。",
+        "operationId": "batch_check_trade_doc_render_fingerprints_api_v1_trade_docs_render_fingerprint_checks_batch_get",
+        "parameters": [
+          {
+            "name": "doc_ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "逗号分隔的单据 id，最多 50 个，如 1,2,3",
+              "title": "Doc Ids"
+            },
+            "description": "逗号分隔的单据 id，最多 50 个，如 1,2,3"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/trade-docs/{doc_id}/refresh-sources": {
       "post": {
         "tags": [
