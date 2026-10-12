@@ -2752,3 +2752,42 @@ orchestrator **946** / worker **217** / `route-parity` **PASS** / `sync-shared -
 | `test`（`vitest run`） | **29 files / 373 tests passed**（exit 0） |
 
 （构建验证由 Lead 统一跑，本步未触碰 `frontend/.next`。）
+
+***
+
+## （前端主线）P14 产品工位合并 · task-8 步2（2026-10-12）
+
+> 紧接 task-7 步1。本步补前端测试网（`MERGE_PLAN §8` 列出的「products 无测试网」缺口），
+> 不改任何产品代码（步1 已收口，本步纯加测试）。
+
+### 步2 做了什么
+
+在 `frontend/src/app/(app)/products/__tests__/` 下新建两份测试（**只新建自己的测试**，
+不动既有 `lib/products/__tests__/use-products.test.ts`）：
+
+| 文件 | 覆盖 | tests |
+|---|---|---|
+| `products-tabs-state.test.tsx` | ① tab 切换保留状态（两个 tab 都始终挂载、`hidden` 切换 ⇒ 切走再切回输入框内容还在）<br>② `?tab=definitions` 深链落到「定义」tab<br>③ `?tab=media` / 不带 `?tab=` 落到「图片与基础信息」tab（默认） | 3 |
+| `products-redirect-and-definitions.test.tsx` | ④ 旧路由 `/settings/tenant-products` redirect 目标 = `/products?tab=definitions`（不是默认 media）<br>⑤ 定义 tab 读 `GET /tenant-products`（不读 `/products`）<br>⑥ 定义表单保存 → `PUT /tenant-products/{id}`，body 带 `spec`（`JSON.parse` 后，不是字符串）<br>⑦ 新增产品 → `POST /tenant-products`（不带 id），body 带 `spec`，初始 JSON 含 `"axes": []`（搬家前原样）<br>⑧ 删除 → `DELETE /tenant-products/{id}`（非 `is_system` 行）<br>⑨ `is_system` 行不渲染「编辑/删除」按钮（与搬家前一致） | 6 |
+
+**范围说明**：产品列表/基础信息那侧的读写契约（`/products`、`PUT /products/{key}/profile`、
+上传/排序/主图/下线）已由 `frontend/src/lib/products/__tests__/use-products.test.ts`
+（13 tests）钉住；搬家**未改 `lib/products/use-products.ts` 一行** ⇒ 该文件的断言继续成立，
+本步不重复。
+
+**测试设计的两个坑（写进测试文件注释）**：
+1. `vi.mock` 是 hoisted 全局的，做不到"同一模块某些用例用真身、某些用桩"
+   ⇒ 拆成两份文件（tab 桩观察 state 保留 + 真组件观察读写契约）。
+2. `lib/products/use-products.ts` 用 default 导入、`products-definitions-tab.tsx`
+   用 named `apiClient` 导入 ⇒ mock 必须同时灌 default 与 named 两份，断言也要两边都查，
+   否则会漏掉一半请求（实测漏掉 named 侧 ⇒ `expected [] to include '/tenant-products'`）。
+
+### 门禁数字（2026-10-12 11:55，工作区静止时实测）
+
+| 门禁 | 结果 |
+|---|---|
+| `typecheck`（`tsc --noEmit`） | **2 errors**，均在 `onboarding/page.tsx`（`:55` / `:80`），**已知历史遗留**（typedRoutes 把 `"/quotes?tab=…"` 字符串当非法 Route），按指令**如实报但不修**；本步新增测试文件 **0 errors** |
+| `lint`（`next lint`） | **exit 0**，8 warnings（与步1 相同，均为历史遗留的 `react-hooks/exhaustive-deps` / `no-img-element`，本步新增测试文件 0 warnings） |
+| `test`（`vitest run`） | **31 files / 382 tests passed**（exit 0；比步1 的 29/373 多 2 files / 9 tests，即本步新增的 9 条） |
+
+（构建验证由 Lead 统一跑，本步未触碰 `frontend/.next`。）
