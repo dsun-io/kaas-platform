@@ -24,7 +24,7 @@
 从 PI 之后连续产出：**CI 商业发票 / Shipping Advice 装运通知 / ChAFTA COO 申报数据表 / Sales Contract 销售合同**
 （原还出过 Packing List 装箱单、Packing Declaration 木包装声明，**按事实判定后停用删除**）。
 
-配套脚本（可视为工位能力的**离线原型**，建议吸收）：
+配套脚本（可视为工位能力的**离线原型**，建议吸收；**源码已随本方案归档**，见 §11）：
 
 | 脚本 | 能力 | 对应工位缺口 |
 |---|---|---|
@@ -267,3 +267,31 @@ Receipt:         schedule_id, received_amount, received_at, bank_ref,
 3. 收款容差阈值（建议 0.05 USD 或 0.1%，取大者）是否按币种区分。
 4. `not_by_us` 单证是否需要"由对方提供后回执登记"流程（影响清单状态机）。
 5. 导出后自检失败时：**阻断**还是**强提示可越过**（建议默认阻断，tenant 可配）。
+
+---
+
+## 11. 原型脚本归档（源码随附）
+
+本次实操的 16 个脚本原本只在本机 `D:\projects\报价制作\.tools\`，而该目录被 `.gitignore` 排除、不在任何版本库中，
+**换设备即丢**。现已随本方案一并归档：
+
+👉 [`docs/archive/2026-10-12-tim-doc-prototypes/`](./archive/2026-10-12-tim-doc-prototypes/)
+（含逐脚本说明、关键算法要点、运行依赖、敏感信息提示）
+
+| 脚本 | 吸收到哪个模块 |
+|---|---|
+| `make_tim_post_pi_docs.py` | **F** 分页预算器 / 原子区块 / 签章位 / 行高估算 |
+| `verify_tim_post_pi.py` | **F** 导出后自检（文本 ⊆ PDF、图片计数） |
+| `check_pi_sc_ci.py` | **B** 一致性引擎（四列事实矩阵原型） |
+| `check_ct_vs_pi.py` | **A/B** 基线承继核对（43 条） |
+| `tighten_stamp.py` / `prep_stamp.py` | **F** 公章上传规范化（去白底残渣 + 紧裁） |
+| `xlsx2pdf.ps1` | **F** 导出通道（Excel COM `ExportAsFixedFormat`） |
+| `diag_ct_pages.py` / `measure_pdf_pages.py` / `check_ct_overflow.py` / `check_tim_rows.py` | **F** 分页/溢出诊断工具 |
+| `render_tim_docs.py` / `list_tim_signareas.py` | **F** 目检流程 / 签章位核对 |
+| `dump_tim_sources.py` / `archive_tim_sources.py` | 数据溯源 |
+
+> ⚠️ 脚本内硬编码了真实业务常量（卖方抬头/税号/收款账号/SWIFT、客户邮箱、真实价格）——
+> 仓库若转公开需先脱敏；**公章图片刻意未归档**（印章图像属高风险资料）。
+
+**实现对照**：工位落地时以 §4 的模块设计为准，脚本只作**算法与坑位参考**，
+不直接搬运（工位是前端 exceljs + 浏览器打印、后端零图像库，与脚本的 openpyxl + Excel COM 路线不同）。
