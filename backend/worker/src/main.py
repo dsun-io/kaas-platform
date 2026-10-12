@@ -9,6 +9,7 @@ import io
 import hmac
 import re
 import secrets
+import hashlib
 import contextvars
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
@@ -330,6 +331,161 @@ async def logout():
     用户点登出拿到的是 404（原登记在 scripts/route-parity-allowlist.txt 的待补项，本次已摘除）。
     """
     return {"message": "Logged out (client should discard token)"}
+
+
+# ── 忘记密码 / 重置密码（token 只存哈希，30 分钟过期，用后即废）──────────
+# 与 orchestrator `app/api/auth.py` 同契约、同错误码（route-parity.py 会校验）。
+# 发信走 Resend REST + `_binding("RESEND_API_KEY")`（请求期读绑定，见 AGENTS.md 绑定铁律）。
+
+_RESEND_API_URL = "https://api.resend.com/emails"
+_RESET_TTL_MINUTES = 30
+
+
+def _hash_reset_token(raw: str) -> str:
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+async def _http_post_json(url: str, headers: dict, payload: dict, timeout: int = 30):
+    """出站 HTTP（Workers: js.fetch；本地 CPython: urllib）—— 与 chain.py 同法。
+
+    不从 chain.py 导入：chain.py 反过来 import main（循环）。此处就地定义一份，
+    仅 forgot-password 发信用（低频，成本可忽略）。
+    """
+    body = _json.dumps(payload)
+    try:
+        from js import fetch  # type: ignore  (Pyodide / Python Workers)
+    except ImportError:
+        import urllib.request
+        req = urllib.request.Request(
+            url, data=body.encode("utf-8"), method="POST",
+            headers={**headers, "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, resp.read().decode("utf-8", "replace")
+    opts = {"method": "POST", "headers": {**headers, "Content-Type": "application/json"}, "body": body}
+    resp = await fetch(url, opts)
+    return int(resp.status), await resp.text()
+
+
+def _reset_email_html(reset_link: str) -> str:
+    return (
+        "<div style=\"font-family:sans-serif;max-width:520px;margin:0 auto;"
+        "padding:24px;line-height:1.6\">"
+        "<h2 style=\"margin:0 0 12px\">重置你的登录密码</h2>"
+        "<p>我们收到了重置密码的请求。点击下面的按钮设置新密码：</p>"
+        f"<p><a href=\"{reset_link}\" style=\"display:inline-block;background:#2563eb;"
+        "color:#fff;text-decoration:none;padding:10px 20px;border-radius:6px\">"
+        "设置新密码</a></p>"
+        f"<p style=\"word-break:break-all;font-size:13px;color:#555\">"
+        f"如果按钮无法点击，请复制以下链接到浏览器打开：<br>{reset_link}</p>"
+        f"<p style=\"font-size:13px;color:#888\">该链接 {_RESET_TTL_MINUTES} 分钟内有效，"
+        "且只能使用一次。若不是你本人操作，可忽略此邮件。</p>"
+        "</div>"
+    )
+
+
+async def _send_reset_email(request: Request, to_email: str, reset_link: str) -> bool:
+    """经 Resend 发重置邮件；失败只记日志、不抛（与 orchestrator 同口径）。"""
+    api_key = _binding("RESEND_API_KEY", request)
+    if not api_key:
+        return False
+    from_email = _binding("RESET_FROM_EMAIL", request) or "noreply@send.powervoy.com"
+    try:
+        status, text = await _http_post_json(
+            _RESEND_API_URL,
+            {"Authorization": f"Bearer {api_key}"},
+            {
+                "from": from_email,
+                "to": [to_email],
+                "subject": "重置你的登录密码",
+                "html": _reset_email_html(reset_link),
+                "text": f"点击以下链接设置新密码（{_RESET_TTL_MINUTES} 分钟内有效，仅可使用一次）：\n{reset_link}",
+            },
+        )
+        return status in (200, 201)
+    except Exception:
+        return False
+
+
+class _ForgotIn(BaseModel):
+    email: str = ""
+
+
+class _ResetIn(BaseModel):
+    token: str = ""
+    new_password: str = ""
+
+
+@app.post("/api/v1/auth/forgot-password")
+async def forgot_password(request: Request, body: _ForgotIn):
+    """发送重置密码邮件（**不泄露邮箱存在性**：响应恒为 `{"ok": true, ...}`）。"""
+    email = (body.email or "").strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=422, detail="validation_error: email is required")
+
+    async with _acquire(request) as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                "SELECT id, email, status FROM users WHERE email=$1", email
+            )
+            if row and row["status"] == "active":
+                raw_token = secrets.token_urlsafe(32)
+                await conn.execute(
+                    """UPDATE password_reset_tokens SET used_at=NOW()
+                       WHERE user_id=$1 AND used_at IS NULL""",
+                    row["id"],
+                )
+                await conn.execute(
+                    """INSERT INTO password_reset_tokens
+                       (user_id, token_hash, expires_at, requested_ip, created_at)
+                       VALUES ($1,$2, NOW() + make_interval(mins => $3), $4, NOW())""",
+                    row["id"], _hash_reset_token(raw_token), _RESET_TTL_MINUTES,
+                    request.client.host if request.client else None,
+                )
+                reset_link = (
+                    (_binding("FRONTEND_BASE_URL", request) or "https://kaas.powervoy.com").rstrip("/")
+                    + f"/reset-password?token={raw_token}"
+                )
+                await _send_reset_email(request, row["email"], reset_link)
+    return {"ok": True, "message": "如果该邮箱已注册，重置链接已发送"}
+
+
+@app.post("/api/v1/auth/reset-password")
+async def reset_password(request: Request, body: _ResetIn):
+    """用重置令牌设置新密码（无效/过期/已用统一 400 `invalid_token`）。"""
+    token = (body.token or "").strip()
+    new_password = body.new_password or ""
+    if not token:
+        raise HTTPException(status_code=422, detail="validation_error: token is required")
+    if len(new_password) < 8:
+        raise HTTPException(
+            status_code=422,
+            detail="validation_error: Password must be at least 8 characters",
+        )
+
+    async with _acquire(request) as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """SELECT t.id AS token_id, t.user_id, u.status
+                   FROM password_reset_tokens t JOIN users u ON u.id = t.user_id
+                   WHERE t.token_hash=$1 AND t.used_at IS NULL
+                     AND t.expires_at > NOW() AND u.status='active'""",
+                _hash_reset_token(token),
+            )
+            if not row:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "invalid_token", "message": "重置链接无效或已过期，请重新申请"},
+                )
+            await conn.execute(
+                "UPDATE users SET password_hash=$1, updated_at=NOW() WHERE id=$2",
+                _hash_password(new_password), row["user_id"],
+            )
+            await conn.execute(
+                "UPDATE password_reset_tokens SET used_at=NOW() WHERE user_id=$1 AND used_at IS NULL",
+                row["user_id"],
+            )
+    return {"ok": True, "message": "密码已重置，请用新密码登录"}
 
 
 # ── 客户自助注册（含团队选择）────────────────────────────────────────────────

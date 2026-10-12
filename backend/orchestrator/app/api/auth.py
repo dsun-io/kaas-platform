@@ -412,3 +412,83 @@ async def bootstrap_admin(
     logger.info("system_admin_bootstrapped", user_id=user.id, email=email)
 
     return await _auth_response(db, user, token)
+
+
+# ─── 忘记密码 / 重置密码（token 只存哈希，30 分钟过期，用后即废）──────────
+from app.services.password_reset import (  # noqa: E402
+    build_reset_link,
+    consume_reset_token,
+    create_reset_token,
+    invalidate_user_reset_tokens,
+    send_reset_email,
+)
+
+
+class _ForgotIn:
+    """轻量入参校验（不引 BaseModel，保持本文件风格；body 用 request.json()）。"""
+
+    def __init__(self, raw: dict):
+        self.email = (raw.get("email") or "").strip().lower()
+
+
+class _ResetIn:
+    def __init__(self, raw: dict):
+        self.token = (raw.get("token") or "").strip()
+        self.new_password = raw.get("new_password") or ""
+
+
+@router.post("/forgot-password")
+async def forgot_password(request: Request, db: AsyncSession = Depends(get_db_session)):
+    """发送重置密码邮件。
+
+    **不泄露邮箱存在性**：无论邮箱是否注册，响应都是统一的 `{"ok": true, ...}`；
+    只有确实存在且配了 RESEND_API_KEY 时才发信。未配凭据时不发信，但响应不变
+    （日志里如实记录），避免把"系统没配邮件"这一事实泄露成"该邮箱不存在"。
+    """
+    body = _ForgotIn(await request.json())
+    if not body.email or "@" not in body.email:
+        raise HTTPException(status_code=422, detail="validation_error: email is required")
+
+    user = await _find_user_by_email(db, body.email)
+    if user is not None and user.status == "active":
+        raw_token = await create_reset_token(db, user.id, requested_ip=request.client.host if request.client else None)
+        await db.commit()
+        reset_link = build_reset_link(raw_token, settings.frontend_base_url)
+        await send_reset_email(
+            api_key=settings.resend_api_key,
+            from_email=settings.reset_from_email,
+            to_email=user.email,
+            reset_link=reset_link,
+        )
+    return {"ok": True, "message": "如果该邮箱已注册，重置链接已发送"}
+
+
+@router.post("/reset-password")
+async def reset_password(request: Request, db: AsyncSession = Depends(get_db_session)):
+    """用重置令牌设置新密码。
+
+    令牌不存在 / 已过期 / 已用 / 账号非激活，统一返回 400 `invalid_token`
+    （不细分，避免令牌探测）。成功后同用户其它未用令牌一并作废。
+    """
+    body = _ResetIn(await request.json())
+    if not body.token:
+        raise HTTPException(status_code=422, detail="validation_error: token is required")
+    if len(body.new_password) < 8:
+        raise HTTPException(
+            status_code=422,
+            detail="validation_error: Password must be at least 8 characters",
+        )
+
+    user = await consume_reset_token(db, body.token)
+    if user is None:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "invalid_token", "message": "重置链接无效或已过期，请重新申请"},
+        )
+
+    user.password_hash = hash_password(body.new_password)
+    await invalidate_user_reset_tokens(db, user.id)
+    await db.commit()
+
+    logger.info("password_reset_success", user_id=user.id)
+    return {"ok": True, "message": "密码已重置，请用新密码登录"}

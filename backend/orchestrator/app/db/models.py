@@ -445,6 +445,29 @@ class UserRole(Base):
     )
 
 
+class PasswordResetToken(Base):
+    """忘记密码重置令牌（**token 只存 SHA-256 哈希**，库泄露也不足以重置）。
+
+    与 `team_invites.token`（明文存人工邀请码）刻意不同：重置链接是机器生成的
+    高熵凭证，库里只留哈希；查找时把请求明文哈希后比对。30 分钟过期、用后即废
+    （`used_at`），改密成功时同用户其它未用 token 一并失效（API 层做）。
+    """
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token_hash = Column(Text, nullable=False, unique=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    requested_ip = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("uq_password_reset_token_hash", "token_hash", unique=True),
+        Index("idx_password_reset_user", "user_id", "used_at"),
+    )
+
+
 class Team(Base):
     """团队（三层组织：管理员 / 团队 / 成员）。
 
