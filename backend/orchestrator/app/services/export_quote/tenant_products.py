@@ -83,25 +83,32 @@ class TenantProductLoader:
         self._cache: dict[str, ProductSpec] = {}
 
     async def load(self, tenant_id: str, product_key: str,
-                   team_id: Any = None, *, role: Optional[str] = None) -> Optional[ProductSpec]:
+                   team_id: Any = None, *, role: Optional[str] = None,
+                   db_session: Optional[Any] = None) -> Optional[ProductSpec]:
         """加载产品定义：租户级（按团队收敛）优先，回退系统级 Python 定义。
 
         参数：
+        - `tenant_id`：租户（目前恒为 `"default"`，隔离边界是 team）。
+        - `product_key`：产品 key。
         - `team_id`：调用者归属的团队（`None`/空 = 未归属团队）。
         - `role`：调用者角色，**仅**用于判定「历史 `team_id IS NULL` 行是否可见」
           （仅平台管理员可见，D3/D4）；不传时按非管理员处理（历史 NULL 行跳过）。
+        - `db_session`：**已注入的 SQLAlchemy `AsyncSession`**（可选）。
+          与 `db_session_factory` 二选一 —— 有 `db_session` 时直接用它（不开新连接），
+          否则回退到 `db_session_factory()`。`_effective_product`（P13 接线）用的是
+          FastAPI 注入的 session，不再另起会话。
 
-        这两个参数此前**没有调用方**（202610110019 迁移备注核实过），因此新增
-        参数不影响现役行为；将来接线时（P13 `_effective_product`）必须把
-        `auth.team_id` / `auth.role` 传进来。
+        P13 接线（`_effective_product`）已把 `auth.team_id` / `auth.role` / `db`
+        传进来。
         """
         cache_key = f"{tenant_id}:{team_id}:{role}:{product_key}"
         if cache_key in self._cache:
             return self._cache[cache_key]
 
         # 1. 查 tenant_products 表（团队收敛后的那一行）
-        if self._db is not None:
-            row = await self._fetch_tenant_product(tenant_id, product_key, team_id, role=role)
+        if db_session is not None or self._db is not None:
+            row = await self._fetch_tenant_product(
+                tenant_id, product_key, team_id, role=role, db_session=db_session)
             if row is not None:
                 spec = spec_from_dict(row["spec"])
                 self._cache[cache_key] = spec
@@ -117,7 +124,8 @@ class TenantProductLoader:
         return None
 
     async def _fetch_tenant_product(self, tenant_id: str, product_key: str,
-                                    team_id: Any = None, *, role: Optional[str] = None):
+                                    team_id: Any = None, *, role: Optional[str] = None,
+                                    db_session: Optional[Any] = None):
         """按团队谓词取 tenant_products 的一行（本团队优先，历史 NULL 仅管理员）。
 
         返回 `None` = 没有可见的行（调用方回退 Python 定义）。
@@ -125,13 +133,16 @@ class TenantProductLoader:
         （迁移 202610110019 放宽了唯一键），`scalar_one_or_none` 会抛
         `MultipleResultsFound`。这里按可见性排序后取第一行：
         本团队行（`team_id == viewer`）> 历史 NULL 行（仅管理员）。
+
+        `db_session`：已注入的 `AsyncSession`（不新开连接）；为 None 时回退
+        `self._db()` 会话工厂。
         """
         from sqlalchemy import select
         from app.db.models import TenantProduct  # noqa: F401 - 延迟导入避免循环
         from kaas_common.workstation.product_scope import is_same_team
 
-        async with self._db() as session:
-            result = await session.execute(
+        if db_session is not None:
+            result = await db_session.execute(
                 select(TenantProduct).where(
                     TenantProduct.tenant_id == tenant_id,
                     TenantProduct.product_key == product_key,
@@ -139,6 +150,16 @@ class TenantProductLoader:
                 )
             )
             rows = result.scalars().all()
+        else:
+            async with self._db() as session:
+                result = await session.execute(
+                    select(TenantProduct).where(
+                        TenantProduct.tenant_id == tenant_id,
+                        TenantProduct.product_key == product_key,
+                        TenantProduct.is_active == True,  # noqa: E712
+                    )
+                )
+                rows = result.scalars().all()
         # 优先级：本团队行（`team_id == viewer`）> 历史 NULL 行（仅管理员）。
         # 多行时按这个优先级取**第一行**，而不是"按返回顺序随便取一条"。
         from kaas_common.workstation.scope import is_admin_role
