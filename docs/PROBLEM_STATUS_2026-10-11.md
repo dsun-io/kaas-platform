@@ -8,7 +8,40 @@
 
 ***
 
-## 交接摘要（滚动更新 · HEAD `1b30060`）
+## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
+
+> **（交接 · 2026-10-12 上午 · 文件域 / 产品媒体特性全量收口，跨设备续作）**
+>
+> **✅ 已完成（本会话；全部已推送 `main == origin/main`）**
+> - **数据层**：迁移 016 / 017 / 018 **已在生产执行**（`file_objects` **23 列**；版本化 / 主图 / 排序；生产库逐项复核）。
+> - **存储三段**：S3 预签名（SigV4 与 minio-py **逐字符一致**）→ R2 binding → inline；
+>   **直传失败自动回退代理且如实告知**；R2 桶 + CORS + 密钥位已就绪。
+> - **API（两端齐平）**：文件域 **11+3** 条、`POST /trade-docs/{id}/pdf` 自动出 PDF
+>   （Browser Rendering；**未配如实 503**）、单张 + **批量**指纹对账
+>   （`/render-fingerprint-checks/batch`，**上限 50**）。
+> - **前端**：`/products` 全功能（上传 / 命名 / 分类 / 排序 / 主图 / 下线 / 直链 / 直传）；
+>   单证页（图库选图、盖章回传版本化、**人工 + 自动** PDF 归档、**核对指纹**按钮）。
+> - **公章**：上传界面（此前**零入口**）+ **默认章自动带入渲染**（内核单一真源）。
+> - **C 方案**：签发时冻结渲染指纹 + 对账消费者（**数据被改 / 模板改过分报**）。
+> - **迁移链**：空库 **2 处断点已修**（均实测穿过 + 真库 A/B 证明**存量库不变**）。
+> - **最终门禁**：orchestrator **1115** / worker **257** / 前端 **373（29 files）** /
+>   typecheck 0 / lint 0 / route-parity PASS / contracts **R0–R6 PASS（173 paths）** / sync **31 文件**
+>   （均为 lead 与队友实测；文档线未复跑）。
+>
+> **⏳ 下一台设备续作**
+> 1. **用户操作**：重建 R2 S3 密钥（**Access Key ID 必须 32 位**，当前 13 位 ⇒ 生产直传 `400`）
+>    → 更新 Worker 两个 secret；确认一次 `wrangler deploy`（`browser` binding 才生效）。
+> 2. **验收**：`node scripts/verify-file-storage-e2e.mjs --api https://kaas.powervoy.com --token <jwt>
+>    --product chain_link --file <图> --name 验收 --media-kind size`
+>    （期望 `storage=s3` + 直链取回字节一致；**验收入口怎么拿见 §5.2 临时换哈希法**）；
+>    生产 binding 真实调用；**视觉核对**（盖章版式 / HS 列）。
+> 3. **决策**：空库整链边界 `f82ac951b473` 的 **bootstrap 方案**（见本文 §⑨）；
+>    要不要**定时调度**（CF Cron Trigger 打批量端点）。
+> 4. **测试补充**：db 级用例、页面级测试（其余"未覆盖"见各节 ⏳）。
+>
+> **🔑 环境提示（换设备必读）**：生产 DSN **不在仓库**；`NEON_API_KEY` 在
+> `~/.dsh/neon-api-key.txt`（+ 用户级环境变量），用 `pnpm dlx neon env pull --file <tmp>` 重取；
+> **本机临时凭据 / DSN 已清零**。规则 6（克服困难不绕道）已入 `AGENTS.md`。
 
 > **（R82）alembic「双 head」是假警报（已取证；未加任何 merge 迁移）** —— task-16：
 > `alembic heads` 实测**只有一个** `202610110018`；55 个 revision 是**单链**，
