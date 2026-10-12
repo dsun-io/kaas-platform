@@ -127,21 +127,38 @@ $env:PYTHONPATH="."
 
 ## ③ 门禁实测记录（本轮 · 只有跑过的才算数）
 
+**提交**：`ff9aa73`（10 文件 / +1038 行），已推送 `origin/main`（`8888f2e..ff9aa73`，
+复核 `git rev-list --count origin/main..HEAD` = **0**）。
+
 | 门禁 | 命令 | 结果 |
 |---|---|---|
-| orchestrator 新单测 | `.venv/Scripts/python.exe -m pytest tests/test_admin_accounts.py -q` | ✅ **13 passed** |
-| worker 新单测 | `backend/orchestrator/.venv/Scripts/python.exe -m pytest tests/test_admin_accounts.py tests/test_worker_routes.py -q` | ✅ **16 passed**（11 + 5） |
+| orchestrator 全量单测 | `cd backend/orchestrator && PYTHONPATH=. .venv/Scripts/python -m pytest -m unit -q` | ✅ **1196 passed, 1 skipped, 324 deselected**（40.21s） |
+| worker 全量单测 | `cd backend/worker && <orchestrator>/\.venv/Scripts/python -m pytest tests -q` | ✅ **272 passed**（4.76s） |
+| orchestrator 新单测 | `pytest tests/test_admin_accounts.py -q` | ✅ **13 passed** |
+| worker 新单测 | `pytest tests/test_admin_accounts.py tests/test_worker_routes.py -q` | ✅ **16 passed**（11 + 5） |
 | 路由对等 | `python scripts/route-parity.py` | ✅ **PASS**（orchestrator 228 / worker 219 / 缺失 11 全部已登记 / 过期 0） |
-| OpenAPI 重生成 | `cd backend/orchestrator && PYTHONPATH=. .venv/Scripts/python scripts/export_openapi.py` | ✅ **177 paths** 导出成功 |
-| orchestrator 全量 `pytest -m unit` | — | ⏳ **未跑**（本轮只跑了新单测） |
-| worker 全量 `pytest` | — | ⏳ **未跑** |
-| `contracts:check` | — | ⏳ **未跑**（本机无 `pnpm`；需提交产物后再跑，见 AGENTS.md 的 R6 顺序） |
-| `sync-shared.ps1 -Check` | — | ⏳ **未跑**（本轮**未改** `backend/kaas_common/**`，预期无漂移） |
-| 前端 `typecheck` / `lint` / `test` | — | ⏳ **未跑**（本机 `node.exe` 在 PATH，但 `pnpm` 不在；见 §⑥） |
+| 共享内核一致 | `powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1 -Check` | ✅ **EXIT 0**（共享内核 31 / 报价引擎 22 / 枚举字典 1，全一致） |
+| 契约 | `<node> <pnpm.mjs> -C frontend contracts:check` | ✅ **EXIT 0 · PASS R0–R6**（R6：177 paths / 104 模型键集合 / 29 response_model，基准 = HEAD 快照） |
+| OpenAPI 重生成 | `cd backend/orchestrator && PYTHONPATH=. .venv/Scripts/python scripts/export_openapi.py` | ✅ **177 paths**（产物 diff = +86 行，**只有**这 2 个新路径） |
+| 前端 lint | `<node> <pnpm.mjs> -C frontend lint` | ✅ **EXIT 0**（仅 `no-img-element` 类 warning） |
+| 前端单测 | `<node> <pnpm.mjs> -C frontend test` | ✅ **390 passed / 33 files**（7.10s） |
+| 前端 typecheck | `<node> <pnpm.mjs> -C frontend typecheck` | ❌ **EXIT 1 —— 2 个既有错误（非本线引入，见下）** |
 | `NEXT_EXPORT=1 pnpm build` | — | ⏳ **未跑** |
 
-> ⚠️ **诚实边界**：本轮**没有**跑过一次全套门禁。上面打 ✅ 的是**实际执行过**的；
-> 打 ⏳ 的一律**不得**当成"通过"。续作者请按 §⑤ 补跑。
+### ⚠️ 遗留红：前端 `typecheck` 当前是红的（**不是本线引入**）
+
+```
+src/app/(app)/onboarding/page.tsx(55,17): error TS2322:
+  Type '"/quotes?tab=pricing"' is not assignable to type 'UrlObject | RouteImpl<"/quotes?tab=pricing">'
+src/app/(app)/onboarding/page.tsx(80,17): error TS2322:
+  Type '"/quotes?tab=product"' is not assignable to type 'UrlObject | RouteImpl<"/quotes?tab=product">'
+```
+
+**取证**：`next.config.mjs` 开了 `typedRoutes: true`；出错的
+`onboarding/page.tsx` **最后一次提交是 2026-09-27**（`269fc48`），且当前工作树**对该文件无改动**；
+**本线 10 个文件里没有一个是前端文件** ⇒ 这是**别线**（改动了路由面 / 类型化路由清单）留的既有红。
+**待办**：由前端线修（把这两处链接改成正确的类型化路由，或给该跳转换写法）；
+本线**未**顺手改它（跨范围改动需先问 —— AGENTS.md 规则 4）。
 
 ***
 
@@ -169,25 +186,26 @@ $env:PYTHONPATH="."
 
 ## ⑤ 下一台设备续作清单（按优先级）
 
-1. **补跑门禁**（工作区静止时）：
-   ```powershell
-   # orchestrator
-   cd backend/orchestrator; $env:PYTHONPATH="."; .venv/Scripts/python.exe -m pytest -m unit
-   # worker（worker venv 无 pytest ⇒ 用 uv 或 orchestrator venv）
-   cd backend/worker; uv run --frozen --with pytest --with httpx2 python -m pytest tests -q
-   # 路由 + 契约
-   python scripts/route-parity.py
-   # 前端（需 pnpm）
-   pnpm -C frontend typecheck; pnpm -C frontend lint; pnpm -C frontend test
-   pnpm -C frontend contracts:check      # ⚠️ 必须在"提交 openapi.json 之后"跑
-   ```
-2. **实现前端账号管理 UI**（§④ 设计稿）。
+1. **修掉 §③ 那个既有前端 typecheck 红**（2 条 typed-route 链接）——它现在是 main 上的门禁红。
+2. **实现前端账号管理 UI**（§④ 设计稿），完成后补跑 `typecheck / lint / test` 与
+   `NEXT_EXPORT=1 pnpm build`。
 3. **端到端验收**：三类账号各验一次 ——
    ① `system_admin` 可列可停用可恢复；② `internal` 普通账号 403 且 UI 无入口；
    ③ `customer` 账号 403；④ 自停 → 409 `SELF_PROTECT`；⑤ 停最后一名管理员 → 409 `LAST_ADMIN`；
    ⑥ 停用后该账号**登录被拒**（`users.status` 闸门）、恢复后可登录。
 4. **确认 `david@powervoy.com` 能登录生产**（首次登录即改密口径由用户定；当前**未**实现强制改密）。
 5. 若要做团队清理的**常规化**能力：只做「停用」，不做删除（与账号同口径）。
+6. 复跑全套门禁的命令（本轮已实测可用）：
+   ```powershell
+   # orchestrator
+   cd backend/orchestrator; $env:PYTHONPATH="."; .venv/Scripts/python.exe -m pytest -m unit -q
+   # worker（worker venv 无 pytest ⇒ 用 orchestrator venv 或 uv）
+   cd backend/worker; & <orchestrator>\.venv\Scripts\python.exe -m pytest tests -q
+   # 路由 + 共享内核 + 契约（pnpm 走自带那份，见 §⑥）
+   python scripts/route-parity.py
+   powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1 -Check
+   & <node.exe> <pnpm.mjs> -C frontend contracts:check     # 必须在"提交 openapi.json 之后"跑
+   ```
 
 ***
 
@@ -219,29 +237,27 @@ $env:PYTHONPATH="."
 
 ## ⑦ 并发与提交纪律（本轮实测快照）
 
-**这个工作区同时有多条线在写**（AGENTS.md 规则 4）。本轮收尾时的 `git status --short` 快照：
+**这个工作区同时有多条线在写**（AGENTS.md 规则 4）。本轮收尾时先看到这些**别线**改动：
 
 ```
- M backend/orchestrator/app/main.py                                   # 本线（+2 行）
- M backend/worker/src/main.py                                         # 本线（+4 行）
- M backend/orchestrator/docs/openapi.json                             # 本线（重生成）
-?? backend/orchestrator/app/api/admin_accounts.py                     # 本线（新增）
-?? backend/worker/src/ws_admin_accounts.py                            # 本线（新增）
-?? .agent-teams/                                                      # 团队状态目录
-D  backend/orchestrator/app/services/export_quote/effective_spec.py   # ⚠️ 别线（staged 删除幻影）
-D  backend/orchestrator/tests/test_effective_spec.py                  # ⚠️ 别线（同上）
+D  backend/orchestrator/app/services/export_quote/effective_spec.py   # ⚠️ staged 删除幻影
+D  backend/orchestrator/tests/test_effective_spec.py                  # ⚠️ 同上
 MM docs/PROBLEM_STATUS_2026-10-11.md                                  # ⚠️ 别线（staged + unstaged）
-?? .tmp_prod_inventory.py                                             # ⚠️ 别线（临时脚本）
+ M backend/orchestrator/app/api/export_quote.py                       # ⚠️ 别线
 ```
+
+**它们随后被别线自己提交**（`8888f2e docs: 2026-10-12 下午场交接（10 提交）+ AGENTS.md 环境更正与私有 index 补丁`），
+⇒ 本线推送后工作区**只剩**：`?? .agent-teams/` 与 `?? .tmp_prod_inventory.py`（别线的临时脚本）。
+本线的临时清理脚本（含明文口令）**已删除、未入库**。
 
 **两条必须知道的坑（本轮亲眼见到）**：
 
 1. **`D ` + `??` 同现 = 私有索引提交后没归位共享 index 的幻影**（AGENTS.md 已记录）。
-   `effective_spec.py` / `test_effective_spec.py` 就是这种状态：文件在**工作树里还在**，
-   只是共享 index 停在旧 HEAD。**不要**把它们当成"要删的文件"，更不要裸提交。
-2. **`MM docs/PROBLEM_STATUS_2026-10-11.md`**：staged 与 unstaged 各有一份改动，
-   属**别线**在写 ⇒ 本线**没有**碰它（含新增条目的落盘），
-   所以本线的状态**只**记录在本文档 + 提交信息里。续作者合并时注意。
+   这次就是这样：文件在**工作树里还在**，只是共享 index 停在旧 HEAD。
+   **不要**把它们当成"要删的文件"，更不要裸提交 —— 让**产生它的那条线自己归位**。
+2. **`MM docs/PROBLEM_STATUS_2026-10-11.md`**：属**别线**在写 ⇒ 本线**没有**碰它
+   （含新增条目的落盘），所以本线的状态**只**记录在本文档 + 提交信息里。
+   ⇒ **PROBLEM_STATUS_2026-10-11.md 里目前没有"账号治理"这条**，续作者合并时补一行即可。
 
 **本线提交走的私有索引配方**（AGENTS.md 规则 4，含 2026-10-12 的补丁：
 归位必须在**清掉 `GIT_INDEX_FILE` 之后**单独执行）：
