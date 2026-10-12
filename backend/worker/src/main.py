@@ -4004,6 +4004,10 @@ import ws_teams  # noqa: E402,F401
 # 授权边界是"这个团队/个人开通了哪些工位"，不以租户鉴权（见 docs/TEAMS_AND_VISIBILITY.md）。
 import ws_workstations  # noqa: E402,F401
 
+# ── 平台账号治理（列表/停用/恢复，无物理删除）──
+# 与 orchestrator `app/api/admin_accounts.py` 同路径同契约（route-parity 强制）。
+import ws_admin_accounts  # noqa: E402,F401
+
 # ── 业务客户往来记录（报价/订单/单证 包含关系树）──
 import ws_customer_records  # noqa: E402,F401
 

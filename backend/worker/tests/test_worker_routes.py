@@ -167,6 +167,9 @@ NEW_ROUTES: set[tuple[str, str]] = {
     ("/api/v1/teams/{team_id}/members/{user_id}/console-access", "PUT"),
     # 业务客户往来记录（包含关系树）
     ("/api/v1/customers/{customer_id}/records", "GET"),
+    # 平台账号治理（列表/停用/恢复；**无物理删除**）
+    ("/api/v1/admin/accounts", "GET"),
+    ("/api/v1/admin/accounts/{user_id}", "PATCH"),
 }
 
 # 公开路由（与 orchestrator 一致：静态常量、非敏感，前端登录前后都要取）

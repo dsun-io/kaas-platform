@@ -34,6 +34,7 @@ _SIBLING_MODULES = (
     "ws_crm_ext",
     "ws_teams",
     "ws_workstations",
+    "ws_admin_accounts",
     "ws_customer_records",
 )
 

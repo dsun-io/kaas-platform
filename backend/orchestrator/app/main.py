@@ -79,6 +79,7 @@ setup_metrics(app)
 from app.api.events import router as events_router
 from app.api.oss_presign import router as oss_presign_router
 from app.api.admin import router as admin_router
+from app.api.admin_accounts import router as admin_accounts_router
 from app.api.capabilities import router as capabilities_router
 from app.api.dashboard import router as dashboard_router
 from app.api.health import router as health_router
@@ -134,6 +135,7 @@ app.include_router(option_overrides_router)
 app.include_router(events_router)
 app.include_router(oss_presign_router)
 app.include_router(admin_router)
+app.include_router(admin_accounts_router)
 app.include_router(capabilities_router)
 app.include_router(dashboard_router)
 app.include_router(categories_router)
