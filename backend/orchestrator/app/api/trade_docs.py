@@ -12,6 +12,7 @@
 - GET   /api/v1/trade-docs/{id}       单证详情（含全部上游 refs）
 - PATCH /api/v1/trade-docs/{id}       更新（draft 可改 payload）/ 状态流转（draft→issued→void）
 """
+import json
 from typing import Optional
 from decimal import Decimal
 from datetime import datetime, timezone
@@ -689,7 +690,12 @@ async def _insert_links(db, tenant_id: str, src_id: int, targets) -> None:
         await db.execute(text(LINK_INSERT_SQL_NAMED), {
             "tenant_id": tenant_id, "src_type": edge["src_type"], "src_id": edge["src_id"],
             "dst_type": edge["dst_type"], "dst_id": edge["dst_id"],
-            "rel_type": edge["rel_type"], "meta": edge["meta"], "created_by": None,
+            "rel_type": edge["rel_type"],
+            # `entity_links.meta` 是 JSONB，而这里是 `text()` 裸 SQL：asyncpg 不会
+            # 自动把 dict 编码成 jsonb（报 `'dict' object has no attribute 'encode'`），
+            # 所以必须显式序列化成字符串。（生产同样走 asyncpg，此前派生建单必 500。）
+            "meta": json.dumps(edge["meta"], ensure_ascii=False) if edge["meta"] is not None else None,
+            "created_by": None,
         })
 
 
