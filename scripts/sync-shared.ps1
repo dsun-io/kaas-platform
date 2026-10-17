@@ -46,8 +46,9 @@ $stages = @(
         Source  = Join-Path $repoRoot "backend/orchestrator/app/services/export_quote"
         Target  = Join-Path $repoRoot "backend/worker/src/kaas_common/export_quote"
         Filters = @("*.py", "*.json")
-        # _manifest.json 是构建期生成的（见下方），不是源码；比较时排除、另行校验新鲜度
-        Exclude = @("__pycache__", "examples", "_manifest.json")
+        # _manifest.json / rate_sets_data.py 是构建期生成的（见下方），不是源码；
+        # 比较时排除、另行校验新鲜度
+        Exclude = @("__pycache__", "examples", "_manifest.json", "rate_sets_data.py")
     },
     @{
         # 业务枚举字典：真源是 orchestrator 的 app/domain/enums.py（由
@@ -125,6 +126,11 @@ foreach ($stage in $stages) {
             if (($actual -join "|") -ne ($expected -join "|")) {
                 $differences += "rate_sets/_manifest.json 缺失或过期（期望 $($expected.Count) 项）"
             }
+            # 内嵌版是 Worker 的唯一保证（只打包 .py）：必须存在且非空
+            $embeddedPath = Join-Path $stage.Target "rate_sets_data.py"
+            if (-not (Test-Path $embeddedPath)) {
+                $differences += "rate_sets_data.py 缺失（请运行 pwsh scripts/sync-shared.ps1）"
+            }
         }
 
         if ($differences.Count -gt 0) {
@@ -173,6 +179,20 @@ if (-not $Check) {
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::WriteAllText((Join-Path $rateTarget "_manifest.json"), $json, $utf8NoBom)
         Write-Host "rate_sets 清单已生成: $($names.Count) 个档案" -ForegroundColor Green
+
+        # 再生成 Python 内嵌版：Worker 只保证打包 .py，数据文件可能不进 bundle
+        $jsonTexts = @()
+        foreach ($f in @(Get-ChildItem -Path $rateTarget -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.Extension -eq ".json" -and $_.Name -ne "_manifest.json" } | Sort-Object Name)) {
+            $jsonTexts += (Get-Content $f.FullName -Raw -Encoding UTF8)
+        }
+        $arrayJson = "[" + ($jsonTexts -join ",") + "]"
+        $py = "# 构建期由 scripts/sync-shared.ps1 生成，请勿手改。`n" +
+              "# Cloudflare Python Workers 只保证打包 .py；税务档案以 Python 常量内嵌，作为最终兜底。`n" +
+              "import json as _json`n`nRATE_SETS = _json.loads(r'''$arrayJson''')`n"
+        $embeddedPath = Join-Path (Split-Path -Parent $rateTarget) "rate_sets_data.py"
+        [System.IO.File]::WriteAllText($embeddedPath, $py, $utf8NoBom)
+        Write-Host "rate_sets 内嵌版已生成: rate_sets_data.py" -ForegroundColor Green
     }
 }
 

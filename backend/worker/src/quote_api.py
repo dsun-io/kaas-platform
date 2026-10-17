@@ -414,7 +414,13 @@ async def export_quote_product_formulas(
 @app.get("/api/v1/export-quote/rate-sets")
 async def export_quote_rate_sets(user: dict = Depends(_get_current_user)):
     """可用税务档案（法定税率，纯引擎读取 —— 不查库、无租户维度）。"""
-    reg = _registry()
+    try:
+        reg = _registry()
+    except Exception as exc:  # noqa: BLE001 - 线上自检：别用裸 500 把原因吞掉
+        raise HTTPException(
+            status_code=503,
+            detail=f"rate_sets_unavailable: {type(exc).__name__}: {exc}",
+        ) from exc
     out = []
     for rs in reg.all():
         out.append({

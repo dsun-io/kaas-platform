@@ -469,3 +469,15 @@ class TestRateSetFileDiscovery:
     def test_from_dir_reports_clear_error_when_nothing_found(self, tmp_path):
         with pytest.raises(RateSetError):
             RateSetRegistry.from_dir(tmp_path)
+
+    def test_from_dir_uses_embedded_when_no_files(self, tmp_path, monkeypatch):
+        """数据文件没进 bundle 时，退回构建期内嵌的 Python 常量。"""
+        import app.services.export_quote.rates as rates_module
+
+        monkeypatch.setattr(
+            rates_module,
+            "_embedded_rate_sets",
+            lambda: [{"code": "CN-E", "vat": {}}],
+        )
+        reg = RateSetRegistry.from_dir(tmp_path)
+        assert reg.codes == ["CN-E"]
