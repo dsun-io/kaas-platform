@@ -350,6 +350,92 @@ describe("ProductSpecEditor S6.3 · 参数 / 说明 / 常量", () => {
   });
 });
 
+describe("ProductSpecEditor P16 验收：逐字段 round-trip", () => {
+  it("表单 → specJson → parse 后，未改动字段逐字段保持一致", async () => {
+    // 完整 spec（覆盖 P16 三小步的全部字段）—— 这就是 IMPL_PLAN P16 的
+    // 验收信号：表单 → API → DB → 回显 逐字段相等。
+    const full = {
+      key: "roundtrip",
+      name: "回环产品",
+      numeric_inputs: [
+        {
+          key: "d",
+          label: "丝径",
+          label_en: "Wire",
+          unit: "mm",
+          default: 2.5,
+          min_value: 0.3,
+          max_value: 8,
+          decimals: 2,
+          note: "重量公式里的 d",
+        },
+      ],
+      variants: [
+        {
+          name: "coating",
+          label: "表面处理",
+          label_en: "Coating",
+          options: [{ name: "普锌40g/㎡" }],
+        },
+      ],
+      derived: [
+        {
+          name: "weight_kg",
+          expr: "d**2 * 1.28",
+          decimals: 4,
+          integer: false,
+          label: "单件重量",
+          label_en: "Weight",
+          unit: "kg",
+          note: "口径说明",
+        },
+      ],
+      columns: [
+        {
+          key: "weight_kg",
+          label: "单件重量",
+          label_en: "Weight",
+          decimals: 4,
+          internal: true,
+          width: 14,
+        },
+      ],
+      invariants: [{ name: "qty_pos", expr: "qty > 0", severity: "error" }],
+      space_deduction: { mode: "ratio", value: 0.04, note: "装柜系数 0.96" },
+      params: [["原料进货成本", "客户每单填写", "元/㎡", "每天变动"]],
+      notes: ["重量公式逐字照搬智能表格"],
+      constants: { wire_factor: "1.28" },
+    };
+    beforeEachMount(full);
+
+    // 只改一个字段（数值参数的默认值）—— 其它应逐字段不变
+    typeInLabel("默认值", "3.0");
+    await settle();
+    const result = JSON.parse(currentJson);
+    expect(result.key).toBe("roundtrip");
+    expect(result.name).toBe("回环产品");
+    expect(result.numeric_inputs[0]).toMatchObject({
+      key: "d",
+      label: "丝径",
+      label_en: "Wire",
+      unit: "mm",
+      min_value: 0.3,
+      max_value: 8,
+      decimals: 2,
+      note: "重量公式里的 d",
+    });
+    expect(result.numeric_inputs[0].default).toBe(3.0); // 唯一改动的字段
+    expect(result.variants).toEqual(full.variants);
+    expect(result.derived).toEqual(full.derived);
+    expect(result.columns).toEqual(full.columns);
+    expect(result.invariants).toEqual(full.invariants);
+    expect(result.space_deduction).toEqual(full.space_deduction);
+    expect(result.params).toEqual(full.params);
+    expect(result.notes).toEqual(full.notes);
+    expect(result.constants).toEqual(full.constants);
+  });
+});
+
 describe("ProductSpecEditor S6.1 · JSON 双向同步", () => {
   it("JSON 手改（实时写）后，specJson 立即更新", async () => {
     tabButton("高级 JSON");

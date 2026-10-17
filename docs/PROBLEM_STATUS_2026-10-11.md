@@ -47,7 +47,13 @@
 >   ✅ S6.2 落地（columns/invariants/space_deduction）；S6.3 落地（params/notes/constants
 >   + 公式试算：product-spec-tryout.tsx 调 /explain 的 spec_override，草稿定义逐步代入
 >   自证，公式写错当场暴露，不新建接口）。**P16 三小步收官**。
->   ⏳ 待接：P17 全门禁 + 文档收口（含 NEXT_EXPORT build）。
+>   ✅ **P17 收官**：全门禁实测（2026-10-17）—— orchestrator **1205 passed** /
+>   worker **275 passed**（顺修 _product_out 的 spec.get 容忍最小 fixture）/ 前端
+>   **426 passed**（含 P16 逐字段 round-trip 验收测试）/ typecheck 0 / lint 0 /
+>   contracts **R0–R6 PASS（178 paths）** / route-parity PASS / sync-shared 一致 /
+>   **NEXT_EXPORT build 成功**（P17 必含项）。
+>   📌 P13–P17 全部收官；「产品定义可视化编辑器」从 PRODUCT_CONFIG_TENANT_UNFINISHED
+>   的未完成清单移除。
 >   阶段 3 页面层重构。
 > - **客户管理权限口径**：~~internal 员工全员~~ → **全部登录用户**（UNCERTAIN #21 修正：
 >  internal=平台员工、customer=用户按团队隔离，用户录自己的业务客户；后端
