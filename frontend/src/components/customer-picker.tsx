@@ -14,15 +14,22 @@
  *   ui/select 只做枚举选择。这里用 Input + 绝对定位面板实现，
  *   不引入任何新依赖。
  *
+ * 内联新建（UNCERTAIN #21 口径）：搜不到客户时**就地新建**——
+ * 只需公司名（POST /customers 最小契约），建完即选中并回写开单快照，
+ * 不再要求用户跳去「客户管理」页打断开单流程。
+ *
  * 失败降级：客户列表读不到时，面板里给出"加载失败 + 重试"，
  * 组件本身不抛错、不阻断表单的其它字段。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Search, X } from "lucide-react";
+import { Check, ChevronDown, Plus, Search, X } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { apiClient } from "@/lib/api/client";
 import {
   customerOptionName,
   useCustomerName,
@@ -63,7 +70,38 @@ export function CustomerPicker({
   const [open, setOpen] = useState(false);
   const [keyword, setKeyword] = useState("");
   const [debouncedKeyword, setDebouncedKeyword] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newCountry, setNewCountry] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
+
+  // 内联新建：POST /customers 最小契约只要 company_name；
+  // 建完即选中并刷新搜索缓存，下拉开单流程不中断
+  const createCustomer = useMutation({
+    mutationFn: async (body: { company_name: string; country?: string }) => {
+      const { data } = await apiClient.post<{
+        id: number | string;
+        company_name?: string | null;
+        name?: string | null;
+      }>("/customers", body);
+      return data;
+    },
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: ["upstream", "customers"] });
+      const name = created.company_name || created.name || newName.trim();
+      onChange({ id: String(created.id), name });
+      toast.success(`已新建客户「${name}」`);
+      setCreating(false);
+      setNewName("");
+      setNewCountry("");
+      setOpen(false);
+      setKeyword("");
+    },
+    onError: () => {
+      toast.error("新建客户失败，请稍后重试");
+    },
+  });
 
   // 防抖：客户列表是服务端搜索，每敲一个字就发一次请求会把接口打满
   useEffect(() => {
@@ -168,77 +206,141 @@ export function CustomerPicker({
 
       {open && (
         <div className="absolute z-40 mt-1 w-full rounded-lg border bg-popover shadow-md">
-          <div className="flex items-center gap-1.5 border-b px-2 py-1.5">
-            <Search className="size-3 shrink-0 text-muted-foreground" />
-            <Input
-              autoFocus
-              value={keyword}
-              onChange={(event) => setKeyword(event.target.value)}
-              placeholder="输入客户名称搜索…"
-              className="h-6 border-0 bg-transparent px-0 text-xs focus-visible:ring-0"
-            />
-          </div>
-
-          <div className="max-h-56 overflow-y-auto py-1" role="listbox">
-            {list.isLoading && (
-              <p className="px-3 py-2 text-xs text-muted-foreground">加载中…</p>
-            )}
-
-            {list.isError && (
-              <div className="space-y-1 px-3 py-2 text-xs">
-                <p className="text-destructive">客户列表加载失败。</p>
+          {creating ? (
+            <div className="space-y-2 px-3 py-2.5">
+              <p className="text-xs font-medium">新建业务客户</p>
+              <Input
+                autoFocus
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="公司名称（必填）"
+                className="h-7 text-xs"
+                aria-invalid={createCustomer.isError}
+              />
+              <Input
+                value={newCountry}
+                onChange={(e) => setNewCountry(e.target.value)}
+                placeholder="国家 / 地区（可选）"
+                className="h-7 text-xs"
+              />
+              <div className="flex justify-end gap-1.5">
                 <button
                   type="button"
-                  className="text-muted-foreground underline"
-                  onClick={() => void list.refetch()}
+                  className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setCreating(false);
+                    setNewName("");
+                    setNewCountry("");
+                  }}
                 >
-                  重试
+                  取消
+                </button>
+                <button
+                  type="button"
+                  disabled={!newName.trim() || createCustomer.isPending}
+                  className="rounded-md bg-primary px-2.5 py-1 text-xs text-primary-foreground disabled:opacity-50"
+                  onClick={() =>
+                    createCustomer.mutate({
+                      company_name: newName.trim(),
+                      country: newCountry.trim() || undefined,
+                    })
+                  }
+                >
+                  {createCustomer.isPending ? "新建中…" : "保存并选用"}
                 </button>
               </div>
-            )}
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-1.5 border-b px-2 py-1.5">
+                <Search className="size-3 shrink-0 text-muted-foreground" />
+                <Input
+                  autoFocus
+                  value={keyword}
+                  onChange={(event) => setKeyword(event.target.value)}
+                  placeholder="输入客户名称搜索…"
+                  className="h-6 border-0 bg-transparent px-0 text-xs focus-visible:ring-0"
+                />
+              </div>
 
-            {!list.isLoading && !list.isError && options.length === 0 && (
-              <p className="px-3 py-2 text-xs text-muted-foreground">
-                没有匹配的客户。请先到「客户管理」建好客户再来开单。
-              </p>
-            )}
+              <div className="max-h-56 overflow-y-auto py-1" role="listbox">
+                {list.isLoading && (
+                  <p className="px-3 py-2 text-xs text-muted-foreground">
+                    加载中…
+                  </p>
+                )}
 
-            {options.map((option) => {
-              const id = String(option.id);
-              const name = customerOptionName(option);
-              const active = value?.id === id;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  role="option"
-                  aria-selected={active}
-                  onClick={() => select(id, name)}
-                  className={cn(
-                    "flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-muted",
-                    active && "bg-muted/60 font-medium",
-                  )}
-                >
-                  <span className="truncate">
-                    {name}
-                    {option.country && (
-                      <span className="ml-1 text-[11px] text-muted-foreground">
-                        {option.country}
+                {list.isError && (
+                  <div className="space-y-1 px-3 py-2 text-xs">
+                    <p className="text-destructive">客户列表加载失败。</p>
+                    <button
+                      type="button"
+                      className="text-muted-foreground underline"
+                      onClick={() => void list.refetch()}
+                    >
+                      重试
+                    </button>
+                  </div>
+                )}
+
+                {!list.isLoading && !list.isError && options.length === 0 && (
+                  <p className="px-3 py-2 text-xs text-muted-foreground">
+                    没有匹配的客户——可以就地新建，或换个关键词。
+                  </p>
+                )}
+
+                {options.map((option) => {
+                  const id = String(option.id);
+                  const name = customerOptionName(option);
+                  const active = value?.id === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      role="option"
+                      aria-selected={active}
+                      onClick={() => select(id, name)}
+                      className={cn(
+                        "flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-muted",
+                        active && "bg-muted/60 font-medium",
+                      )}
+                    >
+                      <span className="truncate">
+                        {name}
+                        {option.country && (
+                          <span className="ml-1 text-[11px] text-muted-foreground">
+                            {option.country}
+                          </span>
+                        )}
                       </span>
-                    )}
-                  </span>
-                  {active && <Check className="size-3 shrink-0" />}
-                </button>
-              );
-            })}
-          </div>
+                      {active && <Check className="size-3 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
 
-          <div className="border-t px-3 py-1.5 text-[11px] text-muted-foreground">
-            共 {list.data?.total ?? 0} 个客户
-            {options.length < (list.data?.total ?? 0)
-              ? "（可输入名称缩小范围）"
-              : ""}
-          </div>
+              <div className="flex items-center justify-between border-t px-3 py-1.5 text-[11px] text-muted-foreground">
+                <span>
+                  共 {list.data?.total ?? 0} 个客户
+                  {options.length < (list.data?.total ?? 0)
+                    ? "（可输入名称缩小范围）"
+                    : ""}
+                </span>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-0.5 text-foreground hover:underline"
+                  onClick={() => {
+                    // 带着搜索词进新建表单：用户打的公司名往往就是要建的名字
+                    setNewName(keyword.trim());
+                    setCreating(true);
+                  }}
+                >
+                  <Plus className="size-3" />
+                  新建客户
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

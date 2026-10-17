@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { usePageView } from "@/lib/events/use-page-view";
-import { RouteGuard } from "@/components/route-guard";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -612,7 +612,7 @@ function CustomerDetailPanel({
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">
-            {detail?.contacts?.length ?? 0} 位联系人
+                    {detail?.contacts?.length ?? 0} 位联系人
                   </span>
                   <Button size="sm" onClick={() => setShowContactForm(true)}>
                     <Plus className="size-4 mr-1" />
@@ -626,10 +626,10 @@ function CustomerDetailPanel({
                   />
                 )}
                 <div className="space-y-2">
-          {detail?.contacts?.length === 0 && (
+                  {detail?.contacts?.length === 0 && (
                     <p className="text-sm text-muted-foreground">暂无联系人</p>
                   )}
-            {detail?.contacts?.map((c) => (
+                  {detail?.contacts?.map((c) => (
                     <div
                       key={c.id}
                       className="rounded-lg border bg-card p-4 shadow-[var(--shadow-xs)] transition-shadow hover:shadow-[var(--shadow-sm)]"
@@ -658,7 +658,7 @@ function CustomerDetailPanel({
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">
-            {detail?.inquiries?.length ?? 0} 条询盘
+                    {detail?.inquiries?.length ?? 0} 条询盘
                   </span>
                   <Button size="sm" onClick={() => setShowInquiryForm(true)}>
                     <Plus className="size-4 mr-1" />
@@ -672,10 +672,10 @@ function CustomerDetailPanel({
                   />
                 )}
                 <div className="space-y-2">
-          {detail?.inquiries?.length === 0 && (
+                  {detail?.inquiries?.length === 0 && (
                     <p className="text-sm text-muted-foreground">暂无询盘</p>
                   )}
-            {detail?.inquiries?.map((inq) => (
+                  {detail?.inquiries?.map((inq) => (
                     <div
                       key={inq.id}
                       className="rounded-lg border bg-card p-4 shadow-[var(--shadow-xs)]"
@@ -684,17 +684,25 @@ function CustomerDetailPanel({
                         <p className="font-medium text-sm">
                           {inq.product_name_raw ?? `询盘 #${inq.id}`}
                         </p>
-                        <StatusBadge
-                          tone={
-                            inq.status === "won"
-                              ? "success"
-                              : inq.status === "lost"
-                                ? "danger"
-                                : "default"
-                          }
-                        >
-                          {INQUIRY_STATUS_LABELS[inq.status] ?? inq.status}
-                        </StatusBadge>
+                        <div className="flex items-center gap-2">
+                          <Link
+                            href={`/quotes?tab=product&customer_id=${customer.id}&inquiry_id=${inq.id}`}
+                            className="text-xs text-primary hover:underline"
+                          >
+                            为此询盘报价 →
+                          </Link>
+                          <StatusBadge
+                            tone={
+                              inq.status === "won"
+                                ? "success"
+                                : inq.status === "lost"
+                                  ? "danger"
+                                  : "default"
+                            }
+                          >
+                            {INQUIRY_STATUS_LABELS[inq.status] ?? inq.status}
+                          </StatusBadge>
+                        </div>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         {inq.channel && `${inq.channel} · `}
@@ -711,10 +719,10 @@ function CustomerDetailPanel({
 
             {activeTab === "history" && (
               <div className="space-y-2">
-            {detail?.stage_log?.length === 0 ? (
+                {detail?.stage_log?.length === 0 ? (
                   <p className="text-sm text-muted-foreground">暂无历史记录</p>
                 ) : (
-            detail?.stage_log?.map((log) => (
+                  detail?.stage_log?.map((log) => (
                     <div
                       key={log.id}
                       className="rounded-lg border bg-card p-4 text-sm shadow-[var(--shadow-xs)]"
@@ -772,84 +780,84 @@ export default function CustomersPage() {
 
   const { data: listData, isLoading } = useCustomerList(searchQ || undefined);
 
+  // 权限口径（UNCERTAIN #21）：所有登录用户可用业务客户管理，
+  // 团队隔离由后端 _scope_filter 保证；登录态由布局层 AuthGate 统一管。
   return (
-    <RouteGuard adminOnly>
-      <div className="space-y-6">
-        <PageHeader
-          title="客户管理"
-          description="跟进询盘、阶段与联系人"
-          actions={
-            <Button onClick={() => setShowCreateForm(true)}>
-              <UserPlus className="size-4 mr-1" />
-              新建客户
-            </Button>
-          }
-        />
+    <div className="space-y-6">
+      <PageHeader
+        title="客户管理"
+        description="跟进询盘、阶段与联系人"
+        actions={
+          <Button onClick={() => setShowCreateForm(true)}>
+            <UserPlus className="size-4 mr-1" />
+            新建客户
+          </Button>
+        }
+      />
 
-        {showCreateForm && (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle>新建客户</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <CustomerForm
-                onClose={() => setShowCreateForm(false)}
-                onCreated={setSelectedCustomer}
-              />
-            </CardContent>
-          </Card>
-        )}
-
+      {showCreateForm && (
         <Card>
           <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <Search className="size-4 text-muted-foreground" />
-              <Input
-                placeholder="搜索客户…"
-                value={searchQ}
-                onChange={(e) => setSearchQ(e.target.value)}
-                className="max-w-sm"
-              />
-            </div>
+            <CardTitle>新建客户</CardTitle>
           </CardHeader>
           <CardContent>
-            {isLoading && (
-              <p className="text-sm text-muted-foreground">加载中…</p>
-            )}
-      {!isLoading && listData?.items?.length === 0 && (
-              <p className="text-sm text-muted-foreground">暂无客户</p>
-            )}
-            <div className="space-y-2">
-            {listData?.items?.map((c) => (
-                <div
-                  key={c.id}
-                  className="rounded-lg border bg-card p-4 cursor-pointer transition-all hover:shadow-[var(--shadow-md)] hover:border-primary/20"
-                  onClick={() => setSelectedCustomer(c)}
-                >
-                  <div className="flex items-center justify-between">
-                    <p className="font-medium text-sm">{c.company_name}</p>
-                    <StatusBadge tone={STAGE_TONES[c.stage] ?? "default"}>
-                      {STAGE_LABELS[c.stage] ?? c.stage}
-                    </StatusBadge>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {c.country && `${c.country} · `}
-                    {c.default_port && `${c.default_port} · `}
-                    更新于 {new Date(c.updated_at).toLocaleDateString()}
-                  </p>
-                </div>
-              ))}
-            </div>
+            <CustomerForm
+              onClose={() => setShowCreateForm(false)}
+              onCreated={setSelectedCustomer}
+            />
           </CardContent>
         </Card>
+      )}
 
-        {selectedCustomer && (
-          <CustomerDetailPanel
-            customer={selectedCustomer}
-            onClose={() => setSelectedCustomer(null)}
-          />
-        )}
-      </div>
-    </RouteGuard>
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Search className="size-4 text-muted-foreground" />
+            <Input
+              placeholder="搜索客户…"
+              value={searchQ}
+              onChange={(e) => setSearchQ(e.target.value)}
+              className="max-w-sm"
+            />
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoading && (
+            <p className="text-sm text-muted-foreground">加载中…</p>
+          )}
+          {!isLoading && listData?.items?.length === 0 && (
+            <p className="text-sm text-muted-foreground">暂无客户</p>
+          )}
+          <div className="space-y-2">
+            {listData?.items?.map((c) => (
+              <div
+                key={c.id}
+                className="rounded-lg border bg-card p-4 cursor-pointer transition-all hover:shadow-[var(--shadow-md)] hover:border-primary/20"
+                onClick={() => setSelectedCustomer(c)}
+              >
+                <div className="flex items-center justify-between">
+                  <p className="font-medium text-sm">{c.company_name}</p>
+                  <StatusBadge tone={STAGE_TONES[c.stage] ?? "default"}>
+                    {STAGE_LABELS[c.stage] ?? c.stage}
+                  </StatusBadge>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {c.country && `${c.country} · `}
+                  {c.default_port && `${c.default_port} · `}
+                  更新于 {new Date(c.updated_at).toLocaleDateString()}
+                </p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {selectedCustomer && (
+        <CustomerDetailPanel
+          customer={selectedCustomer}
+          onClose={() => setSelectedCustomer(null)}
+        />
+      )}
+    </div>
   );
 }
