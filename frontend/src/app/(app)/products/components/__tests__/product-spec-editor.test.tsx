@@ -268,6 +268,88 @@ describe("ProductSpecEditor S6.2 · 列 / 校验 / 扣减", () => {
   });
 });
 
+describe("ProductSpecEditor S6.3 · 参数 / 说明 / 常量", () => {
+  it("参考参数：加行 + 填四个字段 → specJson 同步为 4 元组", async () => {
+    tabButton("参数 / 说明 / 常量");
+    await settle();
+    clickButton("加参数");
+    await settle();
+    typeInLabel("参数", "原料进货成本");
+    typeInLabel("取值", "客户每单填写");
+    typeInLabel("单位", "元/㎡");
+    typeInLabel("说明", "每天变动，由客户在报价时填");
+    await settle();
+    const spec = JSON.parse(currentJson) as {
+      params: Array<[string, string, string, string]>;
+    };
+    expect(spec.params).toHaveLength(1);
+    expect(spec.params[0]).toEqual([
+      "原料进货成本",
+      "客户每单填写",
+      "元/㎡",
+      "每天变动，由客户在报价时填",
+    ]);
+  });
+
+  it("说明 notes：加行 + 填文本 → specJson 同步", async () => {
+    tabButton("参数 / 说明 / 常量");
+    await settle();
+    clickButton("加一行");
+    await settle();
+    const input = container!.querySelector(
+      'input[placeholder="一行说明"]',
+    ) as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )!.set!;
+    act(() => {
+      setter.call(input, "重量公式逐字照搬智能表格");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await settle();
+    const spec = JSON.parse(currentJson) as { notes: string[] };
+    expect(spec.notes).toEqual(["重量公式逐字照搬智能表格"]);
+  });
+
+  it("常量 constants：加常量 + 改值 → specJson 同步", async () => {
+    tabButton("参数 / 说明 / 常量");
+    await settle();
+    // AddConstantRow 的 input 没有 label（用 placeholder 定位）
+    const nameInput = container!.querySelector(
+      'input[placeholder="新常量名（如 wire_factor）"]',
+    ) as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )!.set!;
+    act(() => {
+      setter.call(nameInput, "wire_factor");
+      nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    clickButton("加常量");
+    await settle();
+    const spec = JSON.parse(currentJson) as {
+      constants: Record<string, number | string>;
+    };
+    expect(spec.constants["wire_factor"]).toBe(0);
+
+    // 改值
+    const valueInput = Array.from(
+      container!.querySelectorAll("input:not([readonly])"),
+    ).find((i) => (i as HTMLInputElement).value === "0") as HTMLInputElement;
+    act(() => {
+      setter.call(valueInput, "1.28");
+      valueInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await settle();
+    const spec2 = JSON.parse(currentJson) as {
+      constants: Record<string, number | string>;
+    };
+    expect(spec2.constants["wire_factor"]).toBe("1.28");
+  });
+});
+
 describe("ProductSpecEditor S6.1 · JSON 双向同步", () => {
   it("JSON 手改（实时写）后，specJson 立即更新", async () => {
     tabButton("高级 JSON");
