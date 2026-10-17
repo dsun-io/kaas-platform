@@ -127,6 +127,8 @@ export const QuoteOrderSchema = TradeTermsSchema.extend({
   fx_rate: z.number().nullable().default(null),
   fx_rate_date: z.string().nullable().default(null),
   created_at: z.string().nullable().default(null),
+  /** 报价人（用户 id 字符串）：历史报价「谁给的报价」维度 */
+  created_by: z.string().nullable().default(null),
   owner_id: z.string().nullable().default(null),
   owner_scope: z.string().default('private'),
   /** 行数（列表页展示"含 N 个产品"，避免为了看行数再拉详情） */

@@ -22,6 +22,8 @@ def row_to_quote(q: Any, item_count: int = 0) -> dict:
         "fx_rate": _float(g("fx_rate")),
         "fx_rate_date": _iso(g("fx_rate_date")),
         "created_at": _iso(g("created_at")),
+        # 报价人（用户 id 字符串）：历史报价「谁给的报价」维度（UNCERTAIN #19）
+        "created_by": g("created_by"),
         "owner_id": g("owner_id"), "owner_scope": g("owner_scope"),
         "item_count": item_count,
         "incoterm": g("incoterm"), "payment_terms": g("payment_terms"),
