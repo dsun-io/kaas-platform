@@ -871,28 +871,40 @@ async def register_upload(body: RegisterIn, request: Request, user: dict = Depen
 
 
 @app.get("/api/v1/file-objects/_r2_debug")
-async def r2_debug(request: Request, user: dict = Depends(_get_current_user)):
-    """线上自检：R2 binding 是否可见 + 一次测试 put 的真实错误（排查完可删）。"""
+async def r2_debug(request: Request, key: str = "_debug/r2-test.txt",
+                   user: dict = Depends(_get_current_user)):
+    """线上自检：R2 binding 可见性 + put/get 的真实错误（排查完可删）。"""
     import sys as _sys
-    out = {"platform": _sys.platform, "binding": False, "put_ok": False}
+    out = {"platform": _sys.platform, "binding": False, "put_ok": False, "get_ok": False}
+    bucket = _r2_bucket(request)
+    out["binding"] = bucket is not None
+    if bucket is None:
+        return out
     try:
-        from js import FILES  # type: ignore
-        out["binding"] = True
-        out["bucket_type"] = str(type(FILES))
-        try:
-            if _sys.platform == "emscripten":
-                from pyodide.ffi import to_js  # type: ignore
-                body = to_js(b"kaas-debug")
-                opts = to_js({"httpMetadata": {"contentType": "text/plain"}})
-            else:
-                body = b"kaas-debug"
-                opts = {}
-            await FILES.put("_debug/r2-test.txt", body, opts)
-            out["put_ok"] = True
-        except Exception as exc:  # noqa: BLE001
-            out["put_error"] = f"{type(exc).__name__}: {exc}"
+        if _sys.platform == "emscripten":
+            from pyodide.ffi import to_js  # type: ignore
+            body = to_js(b"kaas-debug")
+            opts = to_js({"httpMetadata": {"contentType": "text/plain"}})
+        else:
+            body = b"kaas-debug"
+            opts = {}
+        await bucket.put(key, body, opts)
+        out["put_ok"] = True
     except Exception as exc:  # noqa: BLE001
-        out["import_error"] = f"{type(exc).__name__}: {exc}"
+        out["put_error"] = f"{type(exc).__name__}: {exc}"
+    try:
+        obj = await bucket.get(key)
+        out["get_obj_none"] = obj is None
+        if obj is not None:
+            buf = await obj.arrayBuffer()
+            out["arraybuffer_type"] = str(type(buf))
+            try:
+                out["bytes_len"] = len(bytes(buf.to_py()))
+                out["get_ok"] = True
+            except Exception as exc:  # noqa: BLE001
+                out["to_py_error"] = f"{type(exc).__name__}: {exc}"
+    except Exception as exc:  # noqa: BLE001
+        out["get_error"] = f"{type(exc).__name__}: {exc}"
     return out
 
 
