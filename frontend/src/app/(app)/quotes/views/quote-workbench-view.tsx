@@ -36,6 +36,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { handleApiError } from "@/lib/api/error-handler";
+import { useLatestFxRate } from "@/lib/fx/use-latest-fx";
 import { cn } from "@/lib/utils";
 import { getAvailableTemplates } from "@/lib/trade-doc/render";
 import { useCustomerName } from "@/lib/workstation/use-upstream";
@@ -157,6 +158,8 @@ export function QuoteWorkbenchView() {
 
   const rateSets = useExportRateSets();
   const termsQuery = useExportTermsTemplate();
+  // 汇率：后端按需刷新（>6h 拉公开源；失败降级缓存）。前端只在本地没存过时自动带入。
+  const latestFx = useLatestFxRate();
   const create = useCreateQuoteOrder();
   const update = useUpdateQuoteOrder();
   const replaceItems = useReplaceQuoteItems();
@@ -185,6 +188,14 @@ export function QuoteWorkbenchView() {
     const saved = window.localStorage.getItem(FX_KEY);
     if (saved) setFxRate(saved);
   }, []);
+
+  // 本地没保存过汇率 ⇒ 用后端最新汇率自动带入（仍可手改；外部源不可用时保持空，不阻塞报价）。
+  // 后端 `/fx-rates/latest` 超过 6 小时会自行刷新并入库，见 worker `ws_extras._ensure_fresh_fx`。
+  useEffect(() => {
+    if (fxRate) return;
+    const rate = latestFx.data?.rate;
+    if (rate && rate > 0) setFxRate(String(rate));
+  }, [fxRate, latestFx.data]);
 
   const termsTemplate = termsQuery.data;
   const effectiveQuoteAs = quoteAs || termsTemplate?.quote_as || "CIF";

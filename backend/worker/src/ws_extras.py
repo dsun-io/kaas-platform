@@ -20,6 +20,123 @@ _get_current_user = _main._get_current_user
 _acquire = _main._acquire
 
 
+# ── 汇率：实时拉取 + 缓存（2026-10-17）─────────────────────────────────────
+# 背景：fx_rates 一直没数据（仓库里没有 fetch 脚本），/fx-rates/latest 恒 404。
+# 现在改为「读时按需刷新」：数据超过 6 小时就向免费公开源拉一次并入库，
+# 外部源失败则降级到缓存（is_stale=true），完全没数据才 503。
+FX_PROVIDER_URL = "https://open.er-api.com/v6/latest/{base}"
+FX_MAX_AGE_HOURS = 6
+FX_SOURCE = "open.er-api.com"
+
+
+async def _http_get_json(url: str, timeout: int = 20):
+    """出站 GET JSON：Workers 用 js.fetch，本地 CPython 回退 urllib。"""
+    try:
+        from js import fetch  # type: ignore  (Pyodide / Python Workers)
+    except ImportError:
+        import json as _json
+        import urllib.request
+
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "kaas-fx/1.0", "Accept": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return _json.loads(resp.read().decode("utf-8"))
+
+    resp = await fetch(url, {
+        "method": "GET",
+        "headers": {"User-Agent": "kaas-fx/1.0", "Accept": "application/json"},
+    })
+    status = int(resp.status)
+    if status != 200:
+        raise RuntimeError(f"fx provider HTTP {status}")
+    text = await resp.text()
+    import json as _json
+
+    return _json.loads(str(text))
+
+
+def parse_fx_payload(payload: dict, quote_currency: str):
+    """从 open.er-api.com 响应里取 (rate, rate_date)。纯函数，便于单测。"""
+    rates = payload.get("rates") or {}
+    value = rates.get(quote_currency.upper())
+    if value is None:
+        raise ValueError(f"fx provider 未返回 {quote_currency}")
+    ts = payload.get("time_last_update_unix")
+    if ts:
+        rate_date = datetime.fromtimestamp(int(ts), tz=timezone.utc).date()
+    else:
+        rate_date = date.today()
+    return Decimal(str(value)), rate_date
+
+
+def fx_is_fresh(fetched_at, now, max_age_hours: float = FX_MAX_AGE_HOURS) -> bool:
+    if fetched_at is None:
+        return False
+    return (now - fetched_at).total_seconds() < float(max_age_hours) * 3600
+
+
+def _fx_out(row, stale: bool = False) -> dict:
+    return {
+        "base_currency": row["base_currency"],
+        "quote_currency": row["quote_currency"],
+        "rate": float(row["rate"]),
+        "rate_date": row["rate_date"].isoformat(),
+        "source": row["source"],
+        "is_stale": bool(row["is_stale"]) or stale,
+    }
+
+
+async def _ensure_fresh_fx(conn, base_currency: str, quote_currency: str) -> dict:
+    base = (base_currency or "USD").upper()
+    quote = (quote_currency or "CNY").upper()
+    if base == quote:
+        return {
+            "base_currency": base,
+            "quote_currency": quote,
+            "rate": 1.0,
+            "rate_date": date.today().isoformat(),
+            "source": "same-currency",
+            "is_stale": False,
+        }
+
+    sql = (
+        "SELECT * FROM fx_rates WHERE base_currency=$1 AND quote_currency=$2"
+        " ORDER BY rate_date DESC, fetched_at DESC NULLS LAST LIMIT 1"
+    )
+    row = await conn.fetchrow(sql, base, quote)
+    now = datetime.now(timezone.utc)
+    if row is not None and fx_is_fresh(row["fetched_at"], now):
+        return _fx_out(row)
+
+    try:
+        payload = await _http_get_json(FX_PROVIDER_URL.format(base=base))
+        rate, rate_date = parse_fx_payload(payload, quote)
+    except Exception as exc:  # noqa: BLE001 - 外部源失败时降级到缓存，而不是把报价打挂
+        if row is not None:
+            return _fx_out(row, stale=True)
+        raise HTTPException(status_code=503, detail={
+            "error": "fx_unavailable",
+            "code": "FX_RATE_UNAVAILABLE",
+            "detail": f"{type(exc).__name__}: {exc}",
+        }) from exc
+
+    await conn.execute(
+        "INSERT INTO fx_rates"
+        " (base_currency, quote_currency, rate, rate_date, source, is_stale, fetched_at)"
+        " VALUES ($1,$2,$3,$4,$5,false,NOW())"
+        " ON CONFLICT (base_currency, quote_currency, rate_date)"
+        " DO UPDATE SET rate=EXCLUDED.rate, source=EXCLUDED.source,"
+        "   is_stale=false, fetched_at=NOW()",
+        base, quote, rate, rate_date, FX_SOURCE,
+    )
+    row = await conn.fetchrow(sql, base, quote)
+    return _fx_out(row if row is not None else {
+        "base_currency": base, "quote_currency": quote, "rate": rate,
+        "rate_date": rate_date, "source": FX_SOURCE, "is_stale": False,
+    })
+
+
 # ── 汇率 ───────────────────────────────────────────────────────────────────
 
 class FxRateIn(BaseModel):
@@ -59,17 +176,9 @@ async def list_fx_rates(request: Request, base_currency: str = "USD", quote_curr
 @app.get("/api/v1/fx-rates/latest")
 async def latest_fx_rate(request: Request, base_currency: str = "USD", quote_currency: str = "CNY",
                          user: dict = Depends(_get_current_user)):
+    """最新汇率：超过 6 小时自动向公开源刷新并入库；外部源不可用时降级到缓存。"""
     async with _acquire(request) as conn:
-        r = await conn.fetchrow(
-            "SELECT * FROM fx_rates WHERE base_currency=$1 AND quote_currency=$2"
-            " ORDER BY rate_date DESC LIMIT 1",
-            base_currency, quote_currency,
-        )
-    if r is None:
-        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "FX_RATE_NOT_FOUND"})
-    return {"base_currency": r["base_currency"], "quote_currency": r["quote_currency"],
-            "rate": float(r["rate"]), "rate_date": r["rate_date"].isoformat(),
-            "source": r["source"], "is_stale": bool(r["is_stale"])}
+        return await _ensure_fresh_fx(conn, base_currency, quote_currency)
 
 
 @app.post("/api/v1/fx-rates", status_code=201)
