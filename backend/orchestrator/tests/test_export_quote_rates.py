@@ -8,6 +8,8 @@
   · Provider 链：HTTP → 本地档案库；缓存命中带 cached 标记，负缓存避免反复打失败接口
 """
 from datetime import date, timedelta
+import json
+import pathlib
 
 import pytest
 
@@ -431,3 +433,39 @@ class TestRepoArchives:
         reg = RateSetRegistry.from_dir()
         values = [rs.lookup_rebate("7314410000") for rs in reg.all()]
         assert all(v is None for v in values) or all(v is not None for v in values)
+
+
+class TestRateSetFileDiscovery:
+    """线上（Pyodide）没有目录列举能力时的兜底（2026-10-17 线上 500 事故）。"""
+
+    def _write(self, tmp_path, code="CN-X"):
+        (tmp_path / f"{code}.json").write_text(
+            json.dumps({"code": code, "vat": {}}), encoding="utf-8"
+        )
+        (tmp_path / "_manifest.json").write_text(
+            json.dumps([f"{code}.json"]), encoding="utf-8"
+        )
+
+    def test_from_dir_ignores_manifest_json(self, tmp_path):
+        self._write(tmp_path)
+        # 目录列举可用时，_manifest.json 不能被当成税务档案（否则 500）
+        reg = RateSetRegistry.from_dir(tmp_path)
+        assert reg.codes == ["CN-X"]
+
+    def test_from_dir_falls_back_to_manifest(self, tmp_path, monkeypatch):
+        self._write(tmp_path)
+        original = pathlib.Path.iterdir
+
+        def _no_listing(self, *args, **kwargs):
+            raise NotImplementedError("no dir listing in pyodide")
+
+        monkeypatch.setattr(pathlib.Path, "iterdir", _no_listing)
+        try:
+            reg = RateSetRegistry.from_dir(tmp_path)
+        finally:
+            monkeypatch.setattr(pathlib.Path, "iterdir", original)
+        assert reg.codes == ["CN-X"]
+
+    def test_from_dir_reports_clear_error_when_nothing_found(self, tmp_path):
+        with pytest.raises(RateSetError):
+            RateSetRegistry.from_dir(tmp_path)

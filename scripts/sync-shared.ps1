@@ -1,4 +1,4 @@
-# 同步共享内核 / 报价引擎到 Worker
+﻿# 同步共享内核 / 报价引擎到 Worker
 #
 # 为什么需要这一步
 # ----------------
@@ -46,7 +46,8 @@ $stages = @(
         Source  = Join-Path $repoRoot "backend/orchestrator/app/services/export_quote"
         Target  = Join-Path $repoRoot "backend/worker/src/kaas_common/export_quote"
         Filters = @("*.py", "*.json")
-        Exclude = @("__pycache__", "examples")
+        # _manifest.json 是构建期生成的（见下方），不是源码；比较时排除、另行校验新鲜度
+        Exclude = @("__pycache__", "examples", "_manifest.json")
     },
     @{
         # 业务枚举字典：真源是 orchestrator 的 app/domain/enums.py（由
@@ -107,6 +108,25 @@ foreach ($stage in $stages) {
             $differences += "文件数不一致: 源 $($sourceFiles.Count) / 镜像 $mirrorCount"
         }
 
+        # 报价引擎：校验构建期 rate_sets 清单是否与源目录一致
+        # （Pyodide 无目录列举能力时，rates.py 靠它找到税务档案）
+        if ($stage.Label -eq "报价引擎") {
+            $rateSource = Join-Path $stage.Source "rate_sets"
+            $expected = @(Get-ChildItem -Path $rateSource -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.Extension -in @(".json", ".yaml", ".yml") -and $_.Name -ne "_manifest.json" } |
+                Select-Object -ExpandProperty Name | Sort-Object)
+            $manifestPath = Join-Path $stage.Target "rate_sets/_manifest.json"
+            $actual = @()
+            if (Test-Path $manifestPath) {
+                $parsed = Get-Content $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                foreach ($n in $parsed) { $actual += [string]$n }
+                $actual = @($actual | Sort-Object)
+            }
+            if (($actual -join "|") -ne ($expected -join "|")) {
+                $differences += "rate_sets/_manifest.json 缺失或过期（期望 $($expected.Count) 项）"
+            }
+        }
+
         if ($differences.Count -gt 0) {
             Write-Host "$($stage.Label) 未同步（请运行 pwsh scripts/sync-shared.ps1）:" -ForegroundColor Red
             $differences | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
@@ -138,6 +158,22 @@ foreach ($stage in $stages) {
 
     $displayTarget = $stage.Target.Replace($repoRoot + '\', '')
     Write-Host "$($stage.Label) 已同步: $($sourceFiles.Count) 个文件 -> $displayTarget" -ForegroundColor Green
+}
+
+# ── 构建期生成 rate_sets 清单（Worker/Pyodide 可能不支持目录列举）──
+# 只有文件名，无业务数据；-Check 模式不写盘（由上面的一致性校验负责）。
+if (-not $Check) {
+    $rateTarget = Join-Path $repoRoot "backend/worker/src/kaas_common/export_quote/rate_sets"
+    if (Test-Path $rateTarget) {
+        $names = @(Get-ChildItem -Path $rateTarget -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -in @(".json", ".yaml", ".yml") -and $_.Name -ne "_manifest.json" } |
+            Select-Object -ExpandProperty Name | Sort-Object)
+        $json = if ($names.Count -eq 0) { "[]" } else { ConvertTo-Json -InputObject $names -Compress }
+        # 必须 UTF-8 无 BOM：Pyodide 里 json.loads 遇到 BOM 会直接抛错
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText((Join-Path $rateTarget "_manifest.json"), $json, $utf8NoBom)
+        Write-Host "rate_sets 清单已生成: $($names.Count) 个档案" -ForegroundColor Green
+    }
 }
 
 exit $exitCode

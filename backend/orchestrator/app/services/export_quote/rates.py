@@ -45,6 +45,44 @@ from .numeric import dec
 logger = logging.getLogger(__name__)
 
 RATE_SETS_DIR = Path(__file__).parent / "rate_sets"
+# 构建期由 scripts/sync-shared.ps1 生成：目录列举可用时不需要它，
+# 但 Cloudflare Python Workers（Pyodide）不保证支持 `Path.iterdir()`。
+RATE_SET_MANIFEST = "_manifest.json"
+_RATE_SET_SUFFIXES = (".json", ".yaml", ".yml")
+
+
+def _rate_set_files(base: Path) -> list[Path]:
+    """列出租金档案文件（目录列举 + 构建期 manifest 双通道）。
+
+    2026-10-17 线上事故：`/api/v1/export-quote/rate-sets` 在 Worker 里 500
+    （同一个包里的产品接口却正常）。原因是没有目录列举能力时 `from_dir`
+    直接走到「未找到任何税务档案」。manifest 由 sync-shared.ps1 在构建镜像时
+    生成，内容只含文件名，不含任何业务数据。
+    """
+    try:
+        if base.is_dir():
+            files = sorted(
+                p
+                for p in base.iterdir()
+                if p.suffix.lower() in _RATE_SET_SUFFIXES
+                and p.name != RATE_SET_MANIFEST
+            )
+            if files:
+                return files
+    except (OSError, NotImplementedError):
+        pass
+
+    manifest = base / RATE_SET_MANIFEST
+    try:
+        names = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return []
+    return [
+        base / str(name)
+        for name in names
+        if str(name).lower().endswith(_RATE_SET_SUFFIXES)
+        and str(name) != RATE_SET_MANIFEST
+    ]
 
 
 class RateSetError(ValueError):
@@ -187,27 +225,25 @@ class RateSetRegistry:
     def from_dir(cls, directory: Path | str | None = None) -> "RateSetRegistry":
         base = Path(directory) if directory else RATE_SETS_DIR
         sets: list[RateSet] = []
-        if base.is_dir():
-            # 同时支持 .json 与 .yaml：
-            #   · 开发后端（CPython）用 yaml，历史文件不动；
-            #   · 线上 Worker（Pyodide）**装不了/不该装 yaml**，镜像里只放 .json。
-            # 因此 yaml 的 import 必须**惰性**（写在分支里）—— 顶层 import yaml
-            # 会让整个引擎在 Worker 里根本导不进来，这是本次移植的第一个硬障碍。
-            for path in sorted(base.iterdir()):
-                suffix = path.suffix.lower()
-                if suffix not in (".json", ".yaml", ".yml"):
-                    continue
-                with path.open("r", encoding="utf-8") as fh:
-                    if suffix == ".json":
-                        raw = json.load(fh) or {}
-                    else:
-                        import yaml  # noqa: PLC0415 - 惰性：仅在读到 yaml 时才需要
+        # 同时支持 .json 与 .yaml：
+        #   · 开发后端（CPython）用 yaml，历史文件不动；
+        #   · 线上 Worker（Pyodide）**装不了/不该装 yaml**，镜像里只放 .json。
+        # 因此 yaml 的 import 必须**惰性**（写在分支里）—— 顶层 import yaml
+        # 会让整个引擎在 Worker 里根本导不进来，这是本次移植的第一个硬障碍。
+        # 文件来源：目录列举可用时直接列举；否则用 sync-shared.ps1 生成的 manifest。
+        for path in _rate_set_files(base):
+            suffix = path.suffix.lower()
+            with path.open("r", encoding="utf-8") as fh:
+                if suffix == ".json":
+                    raw = json.load(fh) or {}
+                else:
+                    import yaml  # noqa: PLC0415 - 惰性：仅在读到 yaml 时才需要
 
-                        raw = yaml.safe_load(fh) or {}
-                rs = rate_set_from_dict(raw)
-                if not rs.code:
-                    rs = RateSet(**{**rs.__dict__, "code": path.stem})
-                sets.append(rs)
+                    raw = yaml.safe_load(fh) or {}
+            rs = rate_set_from_dict(raw)
+            if not rs.code:
+                rs = RateSet(**{**rs.__dict__, "code": path.stem})
+            sets.append(rs)
         if not sets:
             raise RateSetError(f"未找到任何税务档案: {base}")
         return cls(sets)
