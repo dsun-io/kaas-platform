@@ -832,6 +832,7 @@ export default function CustomersPage() {
             {listData?.items?.map((c) => (
               <div
                 key={c.id}
+                data-testid="customer-card"
                 className="rounded-lg border bg-card p-4 cursor-pointer transition-all hover:shadow-[var(--shadow-md)] hover:border-primary/20"
                 onClick={() => setSelectedCustomer(c)}
               >

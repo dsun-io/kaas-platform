@@ -25,7 +25,7 @@ test.describe('Customers', () => {
     //   `listData.items` 恒为 `undefined` ⇒ 永远渲染 0 行卡片。
     //   修 mock（`frontend/src/mocks/**`，不在本任务写入范围）之前不可能变绿。
     //   实测（E2E_FALLBACK=0、`--repeat-each=3`、preflight/post 健康守卫均 OK）：3/3 红。
-    const cards = page.locator('div.rounded-lg.border.cursor-pointer');
+    const cards = page.getByTestId('customer-card');
     await expect(cards.first()).toBeVisible({ timeout: 15000 });
     const count = await cards.count();
     expect(count).toBeGreaterThanOrEqual(1);

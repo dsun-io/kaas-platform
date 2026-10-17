@@ -6,7 +6,7 @@ test.describe('Dashboard', () => {
 
     // **2026-10-12：去掉 `networkidle`** —— 下一行断言就是在等具体元素
     // （`dashboard/page.tsx:32` 的 `.grid` 内 6 张 `<StatCard>`）。
-    const cards = page.locator('.grid > *');
+    const cards = page.getByTestId('stat-card');
     await expect(cards.first()).toBeVisible();
     const count = await cards.count();
     expect(count).toBeGreaterThanOrEqual(6);
@@ -35,7 +35,7 @@ test.describe('Dashboard', () => {
     // 本项目首屏请求可能被绕过而永久挂起，`networkidle` 会以 30s 超时失败。
     // ⚠️ **这一处不计为修复**（已实测：仅换掉 networkidle 不提高通过率），
     // 它只是让"上方文案修复是否生效"可观测。
-    const cards = page.locator('.grid > *');
+    const cards = page.getByTestId('stat-card');
     await expect(cards.first()).toBeVisible({ timeout: 15000 });
   });
 

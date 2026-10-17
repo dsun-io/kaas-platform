@@ -10,7 +10,7 @@ test.describe('Knowledge Base', () => {
     await expect(page.getByRole('heading', { name: '知识库管理' })).toBeVisible();
 
     // At least one stat card should be visible
-    const cards = page.locator('.grid > *');
+    const cards = page.getByTestId('stat-card');
     await expect(cards.first()).toBeVisible({ timeout: 10000 });
 
     // Placeholder area should mention 即将上线 or 建设中
