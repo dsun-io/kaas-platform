@@ -177,8 +177,17 @@ async def list_fx_rates(request: Request, base_currency: str = "USD", quote_curr
 async def latest_fx_rate(request: Request, base_currency: str = "USD", quote_currency: str = "CNY",
                          user: dict = Depends(_get_current_user)):
     """最新汇率：超过 6 小时自动向公开源刷新并入库；外部源不可用时降级到缓存。"""
-    async with _acquire(request) as conn:
-        return await _ensure_fresh_fx(conn, base_currency, quote_currency)
+    try:
+        async with _acquire(request) as conn:
+            return await _ensure_fresh_fx(conn, base_currency, quote_currency)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 - 线上自检：别用裸 500 吞掉原因
+        raise HTTPException(status_code=503, detail={
+            "error": "fx_refresh_failed",
+            "code": "FX_REFRESH_FAILED",
+            "detail": f"{type(exc).__name__}: {exc}",
+        }) from exc
 
 
 @app.post("/api/v1/fx-rates", status_code=201)
