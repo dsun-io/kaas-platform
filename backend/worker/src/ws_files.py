@@ -180,7 +180,7 @@ async def _js_fetch_bytes(url: str, method: str,
         raise RuntimeError(f"S3 {method} {res.status}")
     if method.upper() == "GET":
         buf = await res.arrayBuffer()
-        return bytes(buf.to_py())
+        return _to_bytes(buf)
     return None
 
 
@@ -246,6 +246,18 @@ async def _store_bytes(request: Request, key: str, data: bytes,
             print(f"[files] R2 put 失败，回退 inline：{type(exc).__name__}: {exc}")
     return "inline", key, data
 
+def _to_bytes(buf) -> bytes:
+    """JS `arrayBuffer()` 结果 → bytes。
+
+    2026-10-17 实测：Pyodide 直接把 ArrayBuffer 给成 **memoryview**（没有 `.to_py`），
+    旧代码 `bytes(buf.to_py())` 抛 AttributeError 被吞 → R2/渲染 PDF 读回 404/空。
+    """
+    try:
+        return bytes(buf)
+    except Exception:  # noqa: BLE001 - 旧 runtime 返回 JsProxy
+        return bytes(buf.to_py())
+
+
 async def _load_bytes(request: Request, row) -> Optional[bytes]:
     if row.get("content") is not None:
         return bytes(row["content"])
@@ -269,7 +281,12 @@ async def _load_bytes(request: Request, row) -> Optional[bytes]:
         if obj is None:
             return None
         buf = await obj.arrayBuffer()
-        return bytes(buf.to_py())
+        # 2026-10-17 实测：Pyodide 的 `arrayBuffer()` 直接返回 memoryview（没有 .to_py），
+        # 之前 `bytes(buf.to_py())` 抛 AttributeError 被吞成 None → 线上 R2 文件读回 404。
+        try:
+            return bytes(buf)
+        except Exception:  # noqa: BLE001 - 极老 runtime 返回 JsProxy
+            return _to_bytes(buf)
     except Exception as exc:  # noqa: BLE001
         print(f"[files] R2 get 失败：{type(exc).__name__}: {exc}")
         return None
@@ -672,7 +689,7 @@ async def _binding_quick_action_pdf(binding, html: str) -> bytes:
 
     res = await binding.quickAction("pdf", to_js({"html": html}))
     buf = await res.arrayBuffer()
-    return bytes(buf.to_py())
+    return _to_bytes(buf)
 
 
 async def _rest_quick_action_pdf(cfg: dict, html: str) -> bytes:
@@ -694,7 +711,7 @@ async def _rest_quick_action_pdf(cfg: dict, html: str) -> bytes:
             "detail": f"Browser Rendering 返回 {status}",
         })
     buf = await res.arrayBuffer()
-    return bytes(buf.to_py())
+    return _to_bytes(buf)
 
 
 async def _render_pdf_bytes(request: Request, html: str) -> tuple[bytes, str]:
@@ -899,7 +916,7 @@ async def r2_debug(request: Request, key: str = "_debug/r2-test.txt",
             buf = await obj.arrayBuffer()
             out["arraybuffer_type"] = str(type(buf))
             try:
-                out["bytes_len"] = len(bytes(buf.to_py()))
+                out["bytes_len"] = len(_to_bytes(buf))
                 out["get_ok"] = True
             except Exception as exc:  # noqa: BLE001
                 out["to_py_error"] = f"{type(exc).__name__}: {exc}"
