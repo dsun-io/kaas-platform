@@ -7,12 +7,12 @@
  * 逐项一致：产品列表（key / 名称 / 利润模式 / 利润率 / 税费系数 / 状态 / 操作）+
  * 表单编辑（key/名称/利润配置/成本口径/规格 JSONB）+ 新增/编辑/删除。
  *
- * **JSON 文本框原样保留**（P14 硬约束①）：
- *   · `specJson` 状态、`JSON.parse(specJson || "{}")` 的写入路径、
- *     `<textarea value={specJson} rows={10}>` 的 UI 全部逐字未动；
- *   · 不按 `Axis` 设计任何字段（三产品 `axes` 全为空列表）；
- *   · 新建时的初始 JSON `{"key":"","name":"","axes":[],"variants":[]}` 保留原样
- *     （含空 axes 列表 —— 这是搬家前的真实行为，P14 不做修正，留给 P16）。
+ * **JSON 文本框保留为「高级 JSON」**（P14 硬约束① + P16 编辑器叠加）：
+ *   · `specJson` 状态仍是**唯一真源**（可视化编辑器与 JSON 两侧同源）、
+ *     `JSON.parse(specJson || "{}")` 的写入路径、
+ *     `<textarea value={...} rows={...}>` 的 UI（现居于编辑器「高级 JSON」tab）全部保留；
+ *   · **不按 `Axis` 设计任何字段**（三产品 `axes` 全为空列表）；
+ *   · 新建时的初始 JSON 保留 `axes: []`（搬家前的真实行为，见 S6.1 提交说明）。
  *
  * **可见性**：本 tab 不引入任何 `RouteGuard` / `adminOnly` 分支（P14 硬约束②：
  * 工位可见性属 P15 契约层，前端不发明权限门）。搬家前这一页所在工位是
@@ -22,6 +22,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
+import { ProductSpecEditor } from "../components/product-spec-editor";
 
 interface TenantProduct {
   id: number;
@@ -35,6 +36,8 @@ interface TenantProduct {
   profit_mode: string;
   profit_value: number;
   misc_fee_rate: number;
+  /** 完整 ProductSpec 快照（P16 编辑器的数据源 —— 后端 S6.1-a 起出参带出） */
+  spec?: Record<string, unknown>;
   is_system: boolean;
   is_active: boolean;
   created_at?: string;
@@ -66,7 +69,12 @@ export function ProductsDefinitionsTab() {
 
   const saveMutation = useMutation({
     mutationFn: async (product: Partial<TenantProduct>) => {
+      // specJson 是唯一真源（P14 约束：JSON.parse(specJson || "{}") 的写入路径保留）
       const spec = JSON.parse(specJson || "{}");
+      // spec.key 必须与 product_key 对齐 —— 它是引擎的产品标识（Loader 的 cache key）；
+      // 不对齐的后果是"下拉里看不到本产品"（规格空间接口按 key 查不到）。
+      if (product.product_key) spec.key = product.product_key;
+      if (product.product_name && !spec.name) spec.name = product.product_name;
       const payload = { ...product, spec };
       if (product.id) {
         const { data } = await apiClient.put(
@@ -106,9 +114,17 @@ export function ProductsDefinitionsTab() {
         <button
           onClick={() => {
             setEditing({ ...EMPTY_PRODUCT });
+            // 保留 P14 的 axes: []（搬家前真实行为）+ S6.1 三段表单的空初始值
             setSpecJson(
               JSON.stringify(
-                { key: "", name: "", axes: [], variants: [] },
+                {
+                  key: "",
+                  name: "",
+                  axes: [],
+                  numeric_inputs: [],
+                  variants: [],
+                  derived: [],
+                },
                 null,
                 2,
               ),
@@ -206,12 +222,11 @@ export function ProductsDefinitionsTab() {
             </div>
           </div>
           <div>
-            <label className="text-xs">规格定义 (JSONB)</label>
-            <textarea
-              value={specJson}
-              onChange={(e) => setSpecJson(e.target.value)}
-              rows={10}
-              className="w-full rounded border px-2 py-1 font-mono text-xs"
+            <label className="text-xs">规格定义</label>
+            <ProductSpecEditor
+              specJson={specJson}
+              onChange={setSpecJson}
+              productKey={editing.product_key || ""}
             />
           </div>
           <div className="flex gap-2">
@@ -275,9 +290,13 @@ export function ProductsDefinitionsTab() {
                         <button
                           onClick={() => {
                             setEditing(p);
+                            // P16：用**真实** spec 初始化（此前只塞 key/name，编辑=丢数据）
                             setSpecJson(
                               JSON.stringify(
-                                { key: p.product_key, name: p.product_name },
+                                p.spec ?? {
+                                  key: p.product_key,
+                                  name: p.product_name,
+                                },
                                 null,
                                 2,
                               ),

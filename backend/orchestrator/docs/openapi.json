@@ -17787,6 +17787,11 @@
             "type": "number",
             "title": "Misc Fee Rate"
           },
+          "spec": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Spec"
+          },
           "is_system": {
             "type": "boolean",
             "title": "Is System"
@@ -17820,6 +17825,7 @@
           "profit_mode",
           "profit_value",
           "misc_fee_rate",
+          "spec",
           "is_system",
           "is_active",
           "created_at"

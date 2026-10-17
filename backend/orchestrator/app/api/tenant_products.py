@@ -49,6 +49,9 @@ class TenantProductOut(BaseModel):
     profit_mode: str
     profit_value: float
     misc_fee_rate: float
+    # 完整 ProductSpec 快照（**可视化编辑器的数据源**，PRODUCT_MODULE_MERGE_PLAN §5
+    # 的前置：不返回它则编辑器「打开即丢数据」）。
+    spec: dict
     is_system: bool
     is_active: bool
     created_at: Optional[str]
@@ -62,6 +65,7 @@ def _row_to_out(r: TenantProduct) -> TenantProductOut:
         profit_mode=r.profit_mode,
         profit_value=float(r.profit_value) if r.profit_value is not None else 0.06,
         misc_fee_rate=float(r.misc_fee_rate) if r.misc_fee_rate is not None else 0.03,
+        spec=r.spec if r.spec is not None else {},
         is_system=bool(r.is_system), is_active=bool(r.is_active),
         created_at=r.created_at.isoformat() if r.created_at else None,
     )
