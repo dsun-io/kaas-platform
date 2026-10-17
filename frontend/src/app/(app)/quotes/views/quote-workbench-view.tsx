@@ -951,6 +951,7 @@ export function QuoteWorkbenchView() {
           view={view}
           terms={termsByLine?.terms[index] ?? null}
           lineCount={lines.length}
+          customerId={customer?.id ?? null}
           onChange={(patch) =>
             setLines((prev) =>
               prev.map((l) => (l.id === line.id ? { ...l, ...patch } : l)),

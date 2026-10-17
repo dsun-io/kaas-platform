@@ -46,6 +46,7 @@ import {
   makeColumnIndexer,
   type BuiltLineItem,
 } from "../lib/line-to-item";
+import { useReferencePrice } from "../hooks/use-reference-price";
 /** 工作台里的一行（新增/删除/编辑都作用在它身上）。 */
 export interface LineDraft {
   id: string;
@@ -90,6 +91,8 @@ interface Props {
   terms?: BuiltTerms | null;
   /** 整单行数（用于把"整批费用已分摊"提示写清楚） */
   lineCount: number;
+  /** 整单客户（工作台 CustomerPicker 的 id）：用于历史参考价查询 */
+  customerId?: string | null;
   onChange: (patch: Partial<LineDraft>) => void;
   onRemove: () => void;
 }
@@ -101,6 +104,7 @@ export function QuoteLineCard({
   view,
   terms,
   lineCount,
+  customerId = null,
   onChange,
   onRemove,
 }: Props) {
@@ -109,6 +113,16 @@ export function QuoteLineCard({
     line.productKey || products.data?.products[0]?.key || "";
   const formulas = useProductFormulas(effectiveProduct || null, true);
   const calc = useCalcQuote();
+  // 历史参考价（实时报价的回落参考）：同客户+同产品近 N 天已落库报价区间。
+  // product_name 用「英文名优先」——与保存进行项的口径（buildLineItem）一致，
+  // 否则参考价聚合键与落库键对不上，永远查不到。
+  const refProductName = formulas.data
+    ? formulas.data.name_en || formulas.data.name
+    : null;
+  const reference = useReferencePrice(
+    customerId,
+    effectiveProduct && refProductName ? refProductName : null,
+  );
   const [expanded, setExpanded] = useState(false);
 
   // 换产品 → 规格空间变了 → 回到"未选择"。
@@ -284,6 +298,17 @@ export function QuoteLineCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {reference.data && reference.data.count > 0 ? (
+          <p className="text-xs text-muted-foreground">
+            历史参考（近 {reference.data.days} 天 · 同客户同产品{" "}
+            {reference.data.count} 次）：{reference.data.min?.toFixed(2)} ~{" "}
+            {reference.data.max?.toFixed(2)}，中位{" "}
+            {reference.data.median?.toFixed(2)}
+            {reference.data.last_at
+              ? ` · 最近 ${new Date(reference.data.last_at).toLocaleDateString("zh-CN")}`
+              : ""}
+          </p>
+        ) : null}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <div className="space-y-1.5">
             <Label className="text-xs">产品</Label>
