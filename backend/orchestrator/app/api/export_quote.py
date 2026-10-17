@@ -203,11 +203,26 @@ class ExplainIn(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 # 元数据
 # ─────────────────────────────────────────────────────────────────────────────
-@router.get("/products", summary="已注册的产品模型")
-async def list_products(auth: AuthContext = Depends(get_auth_context)):
+@router.get("/products", summary="已注册的产品模型（含租户级新增）")
+async def list_products(auth: AuthContext = Depends(get_auth_context),
+                        db: AsyncSession = Depends(get_db_session)):
+    """产品下拉的唯一来源 = Python 注册表 ∪ 租户级 tenant_products（按团队可见性）。
+
+    发现层合并（2026-10-17）：运行时新增（tenant_products 落库）的产品此前
+    算价能加载、下拉却看不见；这里与 `_effective_product` 走同一个
+    TenantProductLoader，同 key 时 本团队 tenant 行 > 历史 NULL 行(仅管理员) > Python。
+    """
+    from app.services.export_quote.tenant_products import TenantProductLoader
+
+    loader = TenantProductLoader()
+    specs = await loader.list_available(
+        auth_tenant(auth),
+        team_id=getattr(auth, "team_id", None),
+        role=getattr(auth, "role", None),
+        db_session=db,
+    )
     out = []
-    for key in product_keys():
-        spec = get_product(key)
+    for spec in specs:
         out.append(
             {
                 "key": spec.key,

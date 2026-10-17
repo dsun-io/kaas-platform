@@ -178,6 +178,88 @@ class TenantProductLoader:
         return None
 
     def list_keys(self, tenant_id: str) -> list[str]:
-        """列出该租户可用的产品 key（含系统级兜底）。"""
-        from ..products import keys as product_keys
+        """列出该租户可用的产品 key（含系统级兜底）。
+
+        ⚠️ 无调用方的遗留方法（2026-10-17 核实）；发现层合并请用
+        `list_available`（含团队可见性谓词）。此方法只返回 Python 注册表、
+        看不到 tenant 新增的产品，且历史上相对导入就写错过 —— 留存仅兼容，
+        新代码勿用。
+        """
+        from .products import keys as product_keys
         return product_keys()
+
+    async def list_available(
+        self, tenant_id: str, team_id: Any = None, *,
+        role: Optional[str] = None, db_session: Optional[Any] = None,
+    ) -> list[ProductSpec]:
+        """列出调用者**可见**的全部产品定义（tenant 级优先，Python 兜底，按 key 去重）。
+
+        发现层合并（2026-10-17，缺口 1）：`tenant_products` 里运行时新增的产品
+        此前只存在于数据库 —— 算价接口按 key 能加载（`_effective_product`），
+        但产品下拉/媒体列表只迭代 Python 注册表，新建的产品**看不见、不可选**。
+        本方法把「租户可见的 tenant 行」与「Python 注册表」并成一个按 key 去重的
+        列表：同 key 时 本团队 tenant 行 > 历史 NULL 行（仅管理员）> Python 定义。
+
+        可见性谓词与 `load()`/`_fetch_tenant_product` 完全同口径（复用
+        `is_same_team` / `is_admin_role`，不另写一套）。
+        """
+        from .products import keys as product_keys, get as get_product
+
+        specs: dict[str, ProductSpec] = {}
+        # Python 注册表先全量放入（tenant 行随后按 key 覆盖）
+        for key in product_keys():
+            specs[key] = get_product(key)
+
+        rows = await self._fetch_visible_tenant_rows(
+            tenant_id, team_id, role=role, db_session=db_session)
+        for row in rows:
+            spec = spec_from_dict(row["spec"])
+            specs[spec.key] = spec
+        return list(specs.values())
+
+    async def _fetch_visible_tenant_rows(self, tenant_id: str, team_id: Any = None, *,
+                                         role: Optional[str] = None,
+                                         db_session: Optional[Any] = None) -> list:
+        """tenant_products 中调用者可见的行（每个 key 取优先级最高的一行）。
+
+        每 key 优先级：本团队行 > 历史 NULL 行（仅管理员）。谓词与
+        `_fetch_tenant_product` 相同，只是从「取单个 key」扩成「取全部 key」。
+        """
+        from sqlalchemy import select
+        from app.db.models import TenantProduct  # noqa: F401 - 延迟导入避免循环
+        from kaas_common.workstation.product_scope import is_same_team
+        from kaas_common.workstation.scope import is_admin_role
+
+        if db_session is None and self._db is None:
+            return []
+        if db_session is not None:
+            result = await db_session.execute(
+                select(TenantProduct).where(
+                    TenantProduct.tenant_id == tenant_id,
+                    TenantProduct.is_active == True,  # noqa: E712
+                )
+            )
+            rows = result.scalars().all()
+        else:
+            async with self._db() as session:
+                result = await session.execute(
+                    select(TenantProduct).where(
+                        TenantProduct.tenant_id == tenant_id,
+                        TenantProduct.is_active == True,  # noqa: E712
+                    )
+                )
+                rows = result.scalars().all()
+
+        best: dict[str, dict] = {}
+        for row in rows:
+            key = row.product_key
+            row_team = getattr(row, "team_id", None)
+            if row_team is not None and is_same_team(
+                role=role, viewer_team_id=team_id, row_team_id=row_team
+            ):
+                # 本团队行：最高优先级，直接覆盖
+                best[key] = {"spec": row.spec, "team_id": row_team}
+            elif row_team is None and is_admin_role(role):
+                # 历史 NULL 行：仅管理员，且已有本团队行时不覆盖
+                best.setdefault(key, {"spec": row.spec, "team_id": None})
+        return list(best.values())

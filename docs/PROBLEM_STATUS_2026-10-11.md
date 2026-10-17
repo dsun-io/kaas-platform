@@ -30,7 +30,12 @@
 > - **已确认的实施顺序**：阶段 0（✓ 本次）→ **组件层打底**（ui/tabs、form 套件、detail-drawer、
 >   data-table，统一 4 套手写 tab）→ 阶段 1 业务主链路（/customers 权限改 internal 全员、CustomerPicker
 >   内联新建客户、询盘→报价发链、报价台账成本分解+双视图+参考价、MSW 补 quotes/orders/trade-docs）→
->   阶段 2 产品体系（发现层合并、P16 编辑器、P13 override 迁移）→ 阶段 3 页面层重构。
+>   **阶段 2 进行中（2026-10-17）**：✅ 产品发现层合并 —— `TenantProductLoader.list_available`
+>   （Python 注册表 ∪ tenant_products 按团队可见性，同 key 本团队行 > 历史 NULL(仅管理员) > Python），
+>   `/export-quote/products` 与 `/products`（媒体）两端同改；worker `dbjson` 补登记
+>   `tenant_products.spec`。**运行时新增/自定义产品从此在报价下拉可见可选可算价**。
+>   ⏳ 待接：P16 结构化产品编辑器（JSON 文本框 → 分步表单 + 公式试算）、P13 override 迁移。
+>   阶段 3 页面层重构。
 > - **客户管理权限口径**：~~internal 员工全员~~ → **全部登录用户**（UNCERTAIN #21 修正：
 >  internal=平台员工、customer=用户按团队隔离，用户录自己的业务客户；后端
 >  `_scope_filter` 本就支持，前端撤掉 RouteGuard 即通）。

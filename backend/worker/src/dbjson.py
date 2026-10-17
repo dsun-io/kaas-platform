@@ -38,6 +38,10 @@ JSONB_COLS: dict[str, set[str]] = {
     # HS 编码/包装/产地）。**漏登记的表现很隐蔽**：`/products` 页面的基础信息静默变空、
     # `get_profile` 的 `dict(str)` 直接 500 —— 而"字段在、值却是字符串"正是本文件警告的那类故障。
     "product_profiles": {"info"},
+    # 租户级产品定义：spec 是完整 ProductSpec 快照（发现层合并后
+    # /export-quote/products 按它把 tenant 新增产品并入下拉；漏登记则
+    # spec_from_dict 拿到字符串直接抛，整列表 500）。
+    "tenant_products": {"spec"},
     "market_ports": {
         "suitable_cargo",
         "suitable_shipping_modes",
