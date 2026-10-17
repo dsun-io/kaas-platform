@@ -94,13 +94,22 @@
 >   全部**无 Network Error、无 4xx/5xx 请求、无 console error**（修复前 `/quotes`、`/settings`
 >   会因 rate-sets 500 无 CORS 而报跨域/Network Error）。
 >
-> **仍漂移 / 未实现（生产返回 404/501，已知，别当新故障）**：
-> - orchestrator 有、Worker 未实现：`GET /admin/metrics/summary`、`/admin/deployment_audit`、
->   `/fx-rates/latest`、`/admin/spec/attribute-proposals(+ /recommended)`（route-parity allowlist 已登记）。
-> - `GET /export-quote/import/template` 在 Worker 返回 **501**（未实现）。
-> - **订阅门禁两套口径（产品欠账，未改）**：`app/api/subs.py` 的路由级订阅仍查旧**租户级**
->   `tenant_subscriptions`，与新的团队/个人订阅（`team_subscriptions` + 中间件）是两套 ⇒
->   `full_chain` 团队**不会**解锁这些路由；需单独立项收敛。
+> **生产 404/501 的真实性质（2026-10-17 复核；别误判成"缺功能"）**：
+> - `/api/v1/fx-rates/latest` 的 404 = **`fx_rates` 表 0 行（没录汇率）**，Worker **有实现**
+>   （`ws_extras.py:59`）；同组 `/api/v1/fx-rates` 返回 200 + 空列表。修复是补数据，不是补代码。
+> - `/api/v1/admin/metrics/summary`、`/api/v1/admin/deployment_audit`、
+>   `/api/v1/admin/spec/attribute-proposals(+ /recommended)` = **有意不在生产暴露**
+>   （route-parity allowlist 原注：本地 Prometheus / 运维部署专用 / 开发期治理），生产 404 属设计。
+>   影响面仅内部运维页：`/admin/gray-release` 的部署审计列表、`/admin/spec-proposals` 页面。
+> - `/api/v1/export-quote/import/template` **按设计只支持 CSV**：`format=xlsx` 返回 501
+>   （openpyxl 是 C 扩展，进不了 Python Worker）。前端已把「下载 CSV 模板」设为主按钮、
+>   Excel 降为次按钮（`bulk-import-panel.tsx:239-264`）⇒ 导入链路可用，只是 Excel 模板不可用。
+> - **订阅门禁两套口径（产品欠账，未改）**：worker `_require_sub` 固定查
+>   `tenant_subscriptions WHERE tenant_id='default'`；生产该表只有 1 行 `full_chain` ⇒
+>   **所有团队/用户都被放行**（订阅治理实际失效、按团队售卖不生效）；一旦删/停用该行，
+>   全部团队会立刻 404。orchestrator 侧用 `auth.tenant_id` 查，与 worker 行为不一致。
+>   门禁覆盖：leadgen（地图源获客/线索）、outreach（客户触达）、research（市场调研）、
+>   quote（报价产品）。建议单独立项：门禁统一读 `team_subscriptions` / `user_subscriptions`。
 >
 > **剩余队列**：P1 收款/回执 API 层（表与容差已就绪）→ P0 导出自检①②（需 PDF 解析层）
 > → P0 公章规范化 → P1 事实层+一致性引擎 → P15 契约收口 → 文档继续清理。
