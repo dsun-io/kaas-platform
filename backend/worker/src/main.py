@@ -1100,21 +1100,20 @@ async def create_customer(request: Request, body: CustomerCreate, user: dict = D
     return row_to_customer(dict(row))
 
 
-# ── 客户阶段：事件驱动推进 + 兜底刷新（2026-10-17 用户口径）──────────────────
-#   线索=建客户；询盘=建询盘；报价=有报价单（买家确认/付定金前）；
-#   成交=买家确认接单（建订单）或收到定金/收款；流失=手动标记（可传拒单件）或 30 天无更新；
-#   沉寂=90 天无活动；【洽谈中】已删除。
-# 客户阶段是**汇总视图**，与每张订单自己的状态（pending/confirmed/…）是两套数据，
-# 自动推进只改客户阶段，绝不覆盖订单状态。
-_STAGE_ORDER = {"lead": 0, "inquiry": 1, "quoted": 2, "won": 3}
+# ── 客户阶段：由订单/报价/询盘状态**推导**（2026-10-17 用户口径修正）──────────
+#   原则：影响阶段的操作大多针对**某张订单**，那些操作只改**订单状态**；
+#   客户阶段是「该客户所有订单/报价/询盘」的汇总视图，由它们推导，不被单个操作直接改写。
+#   推导规则（无手动终态时）：
+#     · 有未取消订单且任一处于 confirmed/producing/shipped/completed ⇒ won（成交）
+#     · 有未取消订单但都还是 pending ⇒ quoted（已报价，待买家确认/定金）
+#     · 无有效订单：有报价单 ⇒ quoted；有询盘 ⇒ inquiry；否则 lead
+#     · 手动 lost / 自动 inactive 为终态，自动推导不覆盖（手动 PATCH 仍可改，作为兜底）
+#   30/90 天兜底：30 天无更新 → lost（won 除外）；90 天无活动 → inactive。
+_WON_ORDER_STATUSES = ("confirmed", "producing", "shipped", "completed")
 
 
-async def _advance_customer_stage(conn, customer_id: int, target: str, actor: str,
-                                  reason: str) -> None:
-    """只升不降的自动推进；won/lost/inactive 不自动覆盖（手动兜底仍走 PATCH /stage）。
-
-    辅助逻辑：任何异常都只跳过（不阻断报价/订单等主业务），阶段可由人工兜底。
-    """
+async def _recompute_customer_stage(conn, customer_id: int) -> None:
+    """按订单/报价/询盘重新推导客户阶段（辅助逻辑，失败不影响主业务）。"""
     try:
         row = await conn.fetchrow(
             "SELECT id, stage FROM customers WHERE tenant_id=$1 AND id=$2",
@@ -1122,9 +1121,28 @@ async def _advance_customer_stage(conn, customer_id: int, target: str, actor: st
         if row is None:
             return
         current = row["stage"]
-        if current in ("won", "lost", "inactive"):
-            return
-        if _STAGE_ORDER.get(target, -1) <= _STAGE_ORDER.get(current, -1):
+        if current in ("lost", "inactive"):
+            return  # 手动/时间终态，保留兜底
+        orders = await conn.fetch(
+            "SELECT status FROM orders WHERE tenant_id=$1 AND customer_id=$2",
+            DEFAULT_TENANT, customer_id)
+        active = [o["status"] for o in orders if o["status"] != "cancelled"]
+        if any(s in _WON_ORDER_STATUSES for s in active):
+            target = "won"
+        elif active:
+            target = "quoted"
+        else:
+            has_quote = await conn.fetchval(
+                "SELECT 1 FROM quote_orders WHERE tenant_id=$1 AND customer_id=$2 LIMIT 1",
+                DEFAULT_TENANT, customer_id)
+            if has_quote:
+                target = "quoted"
+            else:
+                has_inquiry = await conn.fetchval(
+                    "SELECT 1 FROM cust_inquiries WHERE tenant_id=$1 AND customer_id=$2 LIMIT 1",
+                    DEFAULT_TENANT, customer_id)
+                target = "inquiry" if has_inquiry else "lead"
+        if target == current:
             return
         await conn.execute(
             "UPDATE customers SET stage=$1, updated_at=now() WHERE tenant_id=$2 AND id=$3",
@@ -1132,18 +1150,25 @@ async def _advance_customer_stage(conn, customer_id: int, target: str, actor: st
         await conn.execute(
             """INSERT INTO cust_stage_log
                    (tenant_id, customer_id, from_stage, to_stage, changed_by, reason)
-               VALUES ($1,$2,$3,$4,$5,$6)""",
-            DEFAULT_TENANT, customer_id, current, target, actor, reason)
-    except Exception:  # noqa: BLE001 - 阶段推进是辅助，不阻断主业务
+               VALUES ($1,$2,$3,$4,'system',$5)""",
+            DEFAULT_TENANT, customer_id, current, target,
+            f"按订单/报价/询盘推导：{current} → {target}")
+    except Exception:  # noqa: BLE001 - 阶段推导是辅助，不阻断主业务
         return
 
 
 async def _refresh_stale_customer_stages(conn) -> None:
-    """读客户列表时兜底：30 天无更新 → lost；90 天无活动 → inactive（won 不自动流失）。
+    """读客户列表时兜底：先按订单/报价/询盘推导，再套 30/90 天规则。
 
     同样是辅助逻辑：任何异常只跳过，不影响列表返回。
     """
     try:
+        customers = await conn.fetch(
+            "SELECT id FROM customers WHERE tenant_id=$1 AND is_deleted=false",
+            DEFAULT_TENANT)
+        for c in customers:
+            await _recompute_customer_stage(conn, c["id"])
+
         rows = await conn.fetch(
             """
             SELECT c.id, c.stage,
@@ -1288,9 +1313,8 @@ async def add_inquiry(customer_id: int, request: Request, body: InquiryCreate, u
             body.quantity, body.quantity_unit, body.application, body.status, body.notes,
             str(user["id"]), str(user["id"]), "private", user.get("team_id"),
         )
-        # 事件驱动：创建询盘 ⇒ 客户阶段推进到 inquiry（报价前）
-        await _advance_customer_stage(
-            conn, customer_id, "inquiry", str(user["id"]), f"inquiry#{row['id']} 创建")
+        # 汇总视图：询盘变化后按订单/报价/询盘重新推导客户阶段
+        await _recompute_customer_stage(conn, customer_id)
     return dict(row)
 
 
@@ -3120,9 +3144,8 @@ async def create_order_api(
                 _term("country_of_origin"),
             )
             order_id = row["id"]
-            # 事件驱动：买家确认接单（建订单）⇒ 客户阶段推进到 won（报价后阶段）
-            await _advance_customer_stage(
-                conn, customer["id"], "won", str(user["id"]), f"order#{order_id} 接单")
+            # 汇总视图：新订单默认 pending ⇒ 推导仍是 quoted；确认/发货等状态变化时再推导
+            await _recompute_customer_stage(conn, customer["id"])
             for idx, it in enumerate(items):
                 await conn.execute(
                     """INSERT INTO order_items
@@ -3303,6 +3326,10 @@ async def change_order_status(order_id: int, request: Request, body: dict,
         "UPDATE orders SET status=$3, updated_at=$4 WHERE tenant_id=$1 AND id=$2",
         DEFAULT_TENANT, order_id, target, now
     )
+    # 客户阶段是汇总视图：订单状态变化后按订单/报价/询盘重新推导（不直接写客户阶段）
+    if o.get("customer_id"):
+        async with _acquire(request) as conn:
+            await _recompute_customer_stage(conn, o["customer_id"])
     if target == "confirmed" and o["status"] == "pending":
         rate, rate_date = await _lock_fx_rate(request, o.get("currency") or "USD")
         await db.execute(
@@ -3462,34 +3489,7 @@ async def update_schedule(schedule_id: int, request: Request, body: dict,
             DEFAULT_TENANT, s["order_id"], amt,
             gl if gl is not None else Decimal("0"), now
         )
-        # 事件驱动：收到定金/收款 ⇒ 客户阶段推进到 won（进入订单阶段）；辅助逻辑失败不影响收款
-        try:
-            o_cust = await db.fetchrow(
-                request, "SELECT customer_id FROM orders WHERE tenant_id=$1 AND id=$2",
-                DEFAULT_TENANT, s["order_id"], table="orders",
-            )
-            cid = o_cust["customer_id"] if o_cust else None
-            if cid:
-                cur = await db.fetchrow(
-                    request, "SELECT stage FROM customers WHERE tenant_id=$1 AND id=$2",
-                    DEFAULT_TENANT, cid, table="customers",
-                )
-                if cur is not None and cur["stage"] not in ("won", "lost", "inactive"):
-                    await db.execute(
-                        request,
-                        "UPDATE customers SET stage='won', updated_at=now()"
-                        " WHERE tenant_id=$1 AND id=$2",
-                        DEFAULT_TENANT, cid,
-                    )
-                    await db.execute(
-                        request,
-                        "INSERT INTO cust_stage_log"
-                        " (tenant_id, customer_id, from_stage, to_stage, changed_by, reason)"
-                        " VALUES ($1,$2,$3,'won',$4,$5)",
-                        DEFAULT_TENANT, cid, cur["stage"], str(user["id"]), "定金/收款到账",
-                    )
-        except Exception:  # noqa: BLE001 - 阶段辅助，不影响收款主流程
-            pass
+        # 客户阶段由**订单状态**推导：收款不改客户阶段；确认订单（status=confirmed）时才推导为 won
     else:
         await db.execute(
             request,
