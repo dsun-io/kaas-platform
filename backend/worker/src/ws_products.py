@@ -134,8 +134,12 @@ def _product_out(r) -> dict:
         "profit_value": float(r["profit_value"]) if r["profit_value"] is not None else 0.06,
         "misc_fee_rate": float(r["misc_fee_rate"]) if r["misc_fee_rate"] is not None else 0.03,
         # 完整 spec 快照（编辑器数据源）—— Workers 里 jsonb 返回成 str，需解码；
-        # 漏掉会让编辑器「打开即丢数据」。
-        "spec": json.loads(r["spec"]) if isinstance(r["spec"], str) else (r["spec"] or {}),
+        # 漏掉会让编辑器「打开即丢数据」。用 .get 容忍最小 row（测试 fixture）。
+        "spec": (
+            json.loads(r["spec"])
+            if isinstance(r.get("spec"), str)
+            else (r.get("spec") or {})
+        ),
         "is_system": bool(r["is_system"]),
         "is_active": bool(r["is_active"]),
         "created_at": r["created_at"].isoformat() if r["created_at"] else None,
