@@ -10,7 +10,7 @@ from fastapi import HTTPException
 INQUIRY_STATUS = ("open", "quoted", "won", "lost")
 
 # ── 客户阶段（被询盘驱动）───────────────────────────────────────────────────
-CUSTOMER_STAGE = ("lead", "inquiry", "quoted", "negotiating", "won", "lost", "inactive")
+CUSTOMER_STAGE = ("lead", "inquiry", "quoted", "won", "lost", "inactive")
 
 # ── 报价单状态 ───────────────────────────────────────────────────────────────
 QUOTE_STATUS = ("draft", "sent", "accepted", "rejected", "expired")

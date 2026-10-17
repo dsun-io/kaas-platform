@@ -30,7 +30,10 @@ FX_SOURCE = "open.er-api.com"
 
 
 async def _http_get_json(url: str, timeout: int = 20):
-    """出站 GET JSON：Workers 用 js.fetch，本地 CPython 回退 urllib。"""
+    """出站 GET JSON：Workers 用 js.fetch，本地 CPython 回退 urllib。
+
+    Pyodide 下把 JS 异常统一转成 Python RuntimeError（否则可能表现为裸 500）。
+    """
     try:
         from js import fetch  # type: ignore  (Pyodide / Python Workers)
     except ImportError:
@@ -43,16 +46,16 @@ async def _http_get_json(url: str, timeout: int = 20):
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return _json.loads(resp.read().decode("utf-8"))
 
-    resp = await fetch(url, {
-        "method": "GET",
-        "headers": {"User-Agent": "kaas-fx/1.0", "Accept": "application/json"},
-    })
-    status = int(resp.status)
-    if status != 200:
-        raise RuntimeError(f"fx provider HTTP {status}")
-    text = await resp.text()
     import json as _json
 
+    try:
+        resp = await fetch(url)  # 最小参数：部分 runtime 对 options 里的 headers 处理不一致
+        status = int(resp.status)
+        text = await resp.text()
+    except Exception as exc:  # noqa: BLE001 - Pyodide JsException → 可读 RuntimeError
+        raise RuntimeError(f"fetch failed: {type(exc).__name__}: {exc}") from exc
+    if status != 200:
+        raise RuntimeError(f"fx provider HTTP {status}: {str(text)[:200]}")
     return _json.loads(str(text))
 
 
@@ -182,12 +185,25 @@ async def latest_fx_rate(request: Request, base_currency: str = "USD", quote_cur
             return await _ensure_fresh_fx(conn, base_currency, quote_currency)
     except HTTPException:
         raise
-    except Exception as exc:  # noqa: BLE001 - 线上自检：别用裸 500 吞掉原因
+    except BaseException as exc:  # noqa: BLE001 - 连 JS/JsException 一起转成可读 503
         raise HTTPException(status_code=503, detail={
             "error": "fx_refresh_failed",
             "code": "FX_REFRESH_FAILED",
             "detail": f"{type(exc).__name__}: {exc}",
         }) from exc
+
+
+@app.get("/api/v1/fx-rates/_debug")
+async def fx_provider_debug(base_currency: str = "USD", quote_currency: str = "CNY",
+                            user: dict = Depends(_get_current_user)):
+    """线上自检：直接打一次汇率源，返回状态/片段/异常（不写库）。排查完可删。"""
+    url = FX_PROVIDER_URL.format(base=(base_currency or "USD").upper())
+    try:
+        payload = await _http_get_json(url)
+        rate, rate_date = parse_fx_payload(payload, quote_currency)
+        return {"ok": True, "url": url, "rate": float(rate), "rate_date": rate_date.isoformat()}
+    except BaseException as exc:  # noqa: BLE001
+        return {"ok": False, "url": url, "error": f"{type(exc).__name__}: {exc}"}
 
 
 @app.post("/api/v1/fx-rates", status_code=201)

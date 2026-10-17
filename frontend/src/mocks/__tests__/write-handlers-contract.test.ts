@@ -77,7 +77,9 @@ describe("POST /api/v1/customers ← page.tsx:169-182（CustomerForm）", () => 
     expect(Number.isNaN(new Date(created.updated_at).getTime())).toBe(false);
 
     // 列表：总量 +1，且新客户因 updated_at desc 排在最前
-    const list = (await (await fetch(`${BASE}/customers`)).json()) as CustomerList;
+    const list = (await (
+      await fetch(`${BASE}/customers`)
+    ).json()) as CustomerList;
     expect(list.total).toBe(3);
     expect(list.items[0]!.company_name).toBe("新客户 C");
 
@@ -257,7 +259,7 @@ describe("5 个端点一次性验证：全部被 handler 接住（无一个放�
   it("依次拿到 201/200，而不是未匹配请求的失败", async () => {
     const results = await Promise.all([
       post("/customers", { company_name: "X", stage: "lead" }),
-      patch("/customers/1/stage", { stage: "negotiating" }),
+      patch("/customers/1/stage", { stage: "quoted" }),
       post("/customers/1/contacts", { name: "X" }),
       post("/customers/1/inquiries", { channel: "email" }),
       post("/auth/register", {

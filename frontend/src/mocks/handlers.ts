@@ -144,12 +144,12 @@ type MockStageLog = {
 };
 
 /** 客户阶段合法值 —— 与后端 enums.py:13 `CUSTOMER_STAGE`、页面
- * `STAGE_LABELS`（page.tsx:21-29）**同值**（7 个，逐字一致），因此这里可以照后端校验。 */
+ * `STAGE_LABELS`（page.tsx:21-29）**同值**（6 个，逐字一致），因此这里可以照后端校验。
+ * 2026-10-17 用户口径：删除【洽谈中】。 */
 const CUSTOMER_STAGES: readonly string[] = [
   "lead",
   "inquiry",
   "quoted",
-  "negotiating",
   "won",
   "lost",
   "inactive",
@@ -187,15 +187,7 @@ let docsStore: Array<Record<string, unknown> & { id: number }> = [];
 /** 枚举真源 = backend/orchestrator/app/domain/enums.py（值逐字照搬）。 */
 const ENUMS_MOCK: Record<string, string[]> = {
   inquiry_status: ["open", "quoted", "won", "lost"],
-  customer_stage: [
-    "lead",
-    "inquiry",
-    "quoted",
-    "negotiating",
-    "won",
-    "lost",
-    "inactive",
-  ],
+  customer_stage: ["lead", "inquiry", "quoted", "won", "lost", "inactive"],
   quote_status: ["draft", "sent", "accepted", "rejected", "expired"],
   order_status: [
     "pending",

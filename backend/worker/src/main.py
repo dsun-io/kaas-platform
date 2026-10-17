@@ -1044,6 +1044,8 @@ async def list_customers(
         where.append(scope_cond + ")")
     where_sql = " AND ".join(where)
     async with _acquire(request) as conn:
+        # 30/90 天无活动兜底（读列表时刷新一次，数据量小）
+        await _refresh_stale_customer_stages(conn)
         total = await conn.fetchval(f"SELECT COUNT(*) FROM customers WHERE {where_sql}", *params)
         rows = await conn.fetch(
             f"SELECT *, name AS company_name FROM customers WHERE {where_sql} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx+1}",
@@ -1096,6 +1098,87 @@ async def create_customer(request: Request, body: CustomerCreate, user: dict = D
                     (body.contact_email or "").strip() or None,
                 )
     return row_to_customer(dict(row))
+
+
+# ── 客户阶段：事件驱动推进 + 兜底刷新（2026-10-17 用户口径）──────────────────
+#   线索=建客户；询盘=建询盘；报价=有报价单（买家确认/付定金前）；
+#   成交=买家确认接单（建订单）或收到定金/收款；流失=手动标记（可传拒单件）或 30 天无更新；
+#   沉寂=90 天无活动；【洽谈中】已删除。
+# 客户阶段是**汇总视图**，与每张订单自己的状态（pending/confirmed/…）是两套数据，
+# 自动推进只改客户阶段，绝不覆盖订单状态。
+_STAGE_ORDER = {"lead": 0, "inquiry": 1, "quoted": 2, "won": 3}
+
+
+async def _advance_customer_stage(conn, customer_id: int, target: str, actor: str,
+                                  reason: str) -> None:
+    """只升不降的自动推进；won/lost/inactive 不自动覆盖（手动兜底仍走 PATCH /stage）。
+
+    辅助逻辑：任何异常都只跳过（不阻断报价/订单等主业务），阶段可由人工兜底。
+    """
+    try:
+        row = await conn.fetchrow(
+            "SELECT id, stage FROM customers WHERE tenant_id=$1 AND id=$2",
+            DEFAULT_TENANT, customer_id)
+        if row is None:
+            return
+        current = row["stage"]
+        if current in ("won", "lost", "inactive"):
+            return
+        if _STAGE_ORDER.get(target, -1) <= _STAGE_ORDER.get(current, -1):
+            return
+        await conn.execute(
+            "UPDATE customers SET stage=$1, updated_at=now() WHERE tenant_id=$2 AND id=$3",
+            target, DEFAULT_TENANT, customer_id)
+        await conn.execute(
+            """INSERT INTO cust_stage_log
+                   (tenant_id, customer_id, from_stage, to_stage, changed_by, reason)
+               VALUES ($1,$2,$3,$4,$5,$6)""",
+            DEFAULT_TENANT, customer_id, current, target, actor, reason)
+    except Exception:  # noqa: BLE001 - 阶段推进是辅助，不阻断主业务
+        return
+
+
+async def _refresh_stale_customer_stages(conn) -> None:
+    """读客户列表时兜底：30 天无更新 → lost；90 天无活动 → inactive（won 不自动流失）。
+
+    同样是辅助逻辑：任何异常只跳过，不影响列表返回。
+    """
+    try:
+        rows = await conn.fetch(
+            """
+            SELECT c.id, c.stage,
+                   GREATEST(
+                     c.updated_at,
+                     COALESCE((SELECT max(created_at) FROM cust_inquiries WHERE customer_id=c.id), c.updated_at),
+                     COALESCE((SELECT max(created_at) FROM quote_orders WHERE customer_id=c.id), c.updated_at),
+                     COALESCE((SELECT max(created_at) FROM orders WHERE customer_id=c.id), c.updated_at)
+                   ) AS last_activity
+            FROM customers c
+            WHERE c.tenant_id=$1 AND c.is_deleted=false AND c.stage NOT IN ('lost','inactive')
+            """, DEFAULT_TENANT)
+        now = datetime.now(timezone.utc)
+        for r in rows:
+            last = r["last_activity"] if "last_activity" in r else None
+            if last is None:
+                continue
+            days = (now - last).days
+            target = None
+            if days >= 90:
+                target = "inactive"
+            elif days >= 30 and r["stage"] != "won":
+                target = "lost"
+            if target is None or target == r["stage"]:
+                continue
+            await conn.execute(
+                "UPDATE customers SET stage=$1, updated_at=now() WHERE id=$2", target, r["id"])
+            await conn.execute(
+                """INSERT INTO cust_stage_log
+                       (tenant_id, customer_id, from_stage, to_stage, changed_by, reason)
+                   VALUES ($1,$2,$3,$4,'system',$5)""",
+                DEFAULT_TENANT, r["id"], r["stage"], target,
+                f"{days} 天无活动自动转 {target}")
+    except Exception:  # noqa: BLE001 - 兜底刷新失败不阻断列表
+        return
 
 
 @app.get("/api/v1/customers/{customer_id}")
@@ -1205,6 +1288,9 @@ async def add_inquiry(customer_id: int, request: Request, body: InquiryCreate, u
             body.quantity, body.quantity_unit, body.application, body.status, body.notes,
             str(user["id"]), str(user["id"]), "private", user.get("team_id"),
         )
+        # 事件驱动：创建询盘 ⇒ 客户阶段推进到 inquiry（报价前）
+        await _advance_customer_stage(
+            conn, customer_id, "inquiry", str(user["id"]), f"inquiry#{row['id']} 创建")
     return dict(row)
 
 
@@ -3034,6 +3120,9 @@ async def create_order_api(
                 _term("country_of_origin"),
             )
             order_id = row["id"]
+            # 事件驱动：买家确认接单（建订单）⇒ 客户阶段推进到 won（报价后阶段）
+            await _advance_customer_stage(
+                conn, customer["id"], "won", str(user["id"]), f"order#{order_id} 接单")
             for idx, it in enumerate(items):
                 await conn.execute(
                     """INSERT INTO order_items
@@ -3373,6 +3462,34 @@ async def update_schedule(schedule_id: int, request: Request, body: dict,
             DEFAULT_TENANT, s["order_id"], amt,
             gl if gl is not None else Decimal("0"), now
         )
+        # 事件驱动：收到定金/收款 ⇒ 客户阶段推进到 won（进入订单阶段）；辅助逻辑失败不影响收款
+        try:
+            o_cust = await db.fetchrow(
+                request, "SELECT customer_id FROM orders WHERE tenant_id=$1 AND id=$2",
+                DEFAULT_TENANT, s["order_id"], table="orders",
+            )
+            cid = o_cust["customer_id"] if o_cust else None
+            if cid:
+                cur = await db.fetchrow(
+                    request, "SELECT stage FROM customers WHERE tenant_id=$1 AND id=$2",
+                    DEFAULT_TENANT, cid, table="customers",
+                )
+                if cur is not None and cur["stage"] not in ("won", "lost", "inactive"):
+                    await db.execute(
+                        request,
+                        "UPDATE customers SET stage='won', updated_at=now()"
+                        " WHERE tenant_id=$1 AND id=$2",
+                        DEFAULT_TENANT, cid,
+                    )
+                    await db.execute(
+                        request,
+                        "INSERT INTO cust_stage_log"
+                        " (tenant_id, customer_id, from_stage, to_stage, changed_by, reason)"
+                        " VALUES ($1,$2,$3,'won',$4,$5)",
+                        DEFAULT_TENANT, cid, cur["stage"], str(user["id"]), "定金/收款到账",
+                    )
+        except Exception:  # noqa: BLE001 - 阶段辅助，不影响收款主流程
+            pass
     else:
         await db.execute(
             request,
