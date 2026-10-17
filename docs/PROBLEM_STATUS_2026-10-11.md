@@ -26,7 +26,9 @@
 > - **门禁实测（2026-10-17）**：orchestrator `pytest -m unit` **1197 passed / 1 skipped**
 >   （较上次 +1）；worker **275 passed**（较上次 +3）；route-parity **PASS**；
 >   sync-shared 同步后 **Check 一致（31/22/1）**；`contracts:check` 按 R6 顺序
->   （重生成产物 → 提交 → 复跑）**待提交后复跑确认**；前端未改动（其既有 typecheck 红与本线无关）。
+>   （重生成产物 → 提交 `64d3472` → 复跑）**PASS R0–R6（177 paths）**；
+>   前端未改动（lint 0 / test 390；其 `typecheck` 2 条既有红 `onboarding/page.tsx`
+>   与本线无关，待前端线修）。
 
 > **（交接 · 2026-10-12 17:3x · 平台账号治理）→ 详细交接见
 > [`ACCOUNT_GOVERNANCE_HANDOVER_2026-10-12.md`](./ACCOUNT_GOVERNANCE_HANDOVER_2026-10-12.md)**
