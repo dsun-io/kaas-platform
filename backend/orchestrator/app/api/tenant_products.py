@@ -32,6 +32,8 @@ class TenantProductIn(BaseModel):
     profit_value: float = 0.06
     misc_fee_rate: float = 0.03
     spec: dict
+    # P13（202610170002）：团队差异（spec_delta 形态）；null = 直接用基线
+    override: Optional[dict] = None
     is_active: bool = True
 
 
@@ -63,6 +65,29 @@ def _row_to_out(r: TenantProduct) -> TenantProductOut:
         is_system=bool(r.is_system), is_active=bool(r.is_active),
         created_at=r.created_at.isoformat() if r.created_at else None,
     )
+
+
+def _spec_fingerprint(spec: dict) -> str:
+    from app.services.export_quote.spec_delta import spec_fingerprint
+    return spec_fingerprint(spec)
+
+
+def _validate_override(body: TenantProductIn) -> None:
+    """差异形状闸门：能合并（基线 + 差异 → ProductSpec）才允许落库。
+
+    SpecDeltaError（未知版本/字段/结构矛盾）→ 422；hash 不匹配在此**不**校验
+    （写入的是当前基线的差异，hash 以写入时基线计算并留档）。
+    """
+    if not body.override:
+        return
+    from app.services.export_quote.effective_spec import resolve_effective_product
+    from app.services.export_quote.spec_delta import SpecDeltaError
+    try:
+        resolve_effective_product(body.spec, body.override)
+    except SpecDeltaError as exc:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_override", "message": str(exc),
+        })
 
 
 @router.get("/tenant-products", response_model=list[TenantProductOut])
@@ -99,6 +124,7 @@ async def create_tenant_product(
         spec_from_dict(body.spec)
     except Exception as exc:
         raise HTTPException(status_code=422, detail={"error": "invalid_spec", "message": str(exc)})
+    _validate_override(body)
     row = TenantProduct(
         tenant_id=auth.tenant_id or "default",
         product_key=body.product_key,
@@ -112,6 +138,9 @@ async def create_tenant_product(
         profit_value=body.profit_value,
         misc_fee_rate=body.misc_fee_rate,
         spec=body.spec,
+        override=body.override,
+        # 差异落库时留档基线指纹（审计/快速比对；读路径以 override 内 hash 为准）
+        base_spec_hash=_spec_fingerprint(body.spec) if body.override else None,
         is_system=False,
         is_active=body.is_active,
     )
@@ -142,8 +171,13 @@ async def update_tenant_product(
         spec_from_dict(body.spec)
     except Exception as exc:
         raise HTTPException(status_code=422, detail={"error": "invalid_spec", "message": str(exc)})
+    _validate_override(body)
     for k, v in body.model_dump(exclude_unset=True).items():
+        if k == "base_spec_hash":
+            continue  # 只读留档字段，不允许请求体直写
         setattr(row, k, v)
+    # 基线或差异变化时刷新留档指纹
+    row.base_spec_hash = _spec_fingerprint(body.spec) if body.override else None
     await db.commit()
     await db.refresh(row)
     return _row_to_out(row)

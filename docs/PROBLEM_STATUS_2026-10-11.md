@@ -34,7 +34,11 @@
 >   （Python 注册表 ∪ tenant_products 按团队可见性，同 key 本团队行 > 历史 NULL(仅管理员) > Python），
 >   `/export-quote/products` 与 `/products`（媒体）两端同改；worker `dbjson` 补登记
 >   `tenant_products.spec`。**运行时新增/自定义产品从此在报价下拉可见可选可算价**。
->   ⏳ 待接：P16 结构化产品编辑器（JSON 文本框 → 分步表单 + 公式试算）、P13 override 迁移。
+>   ✅ P13 最后一跳落盘：迁移 `202610170002`（tenant_products 加 override +
+>   base_spec_hash 两列），读路径两端接 `resolve_effective_product`（差异 hash 与基线
+>   不符抛 SPEC_UPSTREAM_CHANGED 409/不静默套用；worker _effective_product 同时从
+>   「只认注册表」对齐为同口径）；写路径 PUT/POST 接受 override 并留档基线指纹。
+>   ⏳ 待接：P16 结构化产品编辑器（JSON 文本框 → 分步表单 + 公式试算）。
 >   阶段 3 页面层重构。
 > - **客户管理权限口径**：~~internal 员工全员~~ → **全部登录用户**（UNCERTAIN #21 修正：
 >  internal=平台员工、customer=用户按团队隔离，用户录自己的业务客户；后端

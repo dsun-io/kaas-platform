@@ -608,10 +608,52 @@ async def _effective_product(request: Request, user: dict, product_key: str):
 
     「产品不存在」在算价入口交给引擎按它自己的口径报（400 engine_error），
     在规格空间入口由调用方报 404 —— 同一个错误在不同入口状态码本来就不同。
+
+    与 dev `export_quote._effective_product` 同口径（2026-10-17 对齐）：
+    1. tenant_products 按团队谓词取行（本团队 > 历史 NULL 仅管理员），
+       基线 + override 差异走 resolve_effective_product（hash 不符抛
+       SpecUpstreamChanged，绝不静默套用）；2. 回退 Python 注册表。
     """
     _require_engine()
     if not product_key:
         return None
+    from kaas_common.workstation.product_scope import is_same_team
+    from kaas_common.workstation.scope import is_admin_role
+    from kaas_common.export_quote.effective_spec import (
+        SpecUpstreamChanged,
+        resolve_effective_product,
+    )
+
+    tenant = _tenant_of(user)
+    rows = await _db.fetch(  # noqa: SLF001 - 同模块既有用法
+        request,
+        "SELECT spec, override, team_id FROM tenant_products"
+        " WHERE tenant_id=$1 AND product_key=$2 AND is_active",
+        tenant, product_key,
+        table="tenant_products",
+    )
+    # 与 dev _fetch_tenant_product 同优先级：本团队行 > 历史 NULL 行（仅管理员）
+    picked = None
+    for r in rows:
+        if r["team_id"] is not None and is_same_team(
+            role=user.get("role"), viewer_team_id=user.get("team_id"),
+            row_team_id=r["team_id"],
+        ):
+            picked = r
+            break
+    if picked is None and is_admin_role(user.get("role")):
+        for r in rows:
+            if r["team_id"] is None:
+                picked = r
+                break
+    if picked is not None:
+        try:
+            spec, _warnings = resolve_effective_product(
+                picked["spec"], picked["override"])
+        except SpecUpstreamChanged:
+            return None  # 上游已变更：按"产品不可用"处理（dev 侧报 409）
+        if spec is not None:
+            return await _with_customer_options(request, user, spec)
     try:
         product = get_product(product_key)
     except Exception:
