@@ -60,6 +60,14 @@
 >   📌 **E1 空库快径**落地（app/db/migration_bootstrap.py + env.py 接线 + 3 测）。
 >   📌 **P1 单证加固 P0 引用完整性**（DOC_REF_BROKEN）：作废前必扫引用方，
 >   有 issued 下游引用 → 409 带清单（两端同口径，orchestrator + worker）。
+>   📌 **真数据验证 + 真库 CRUD（2026-10-17）**：企微智能表格 45 行明细回代引擎 ——
+>   装柜 0.96 精确（3 行恒 0.960000）、重量公式 0% 误差（9 行）、售价公式
+>   `成本/(1−利润率−0.03)` 0% 误差（23 行）⇒ **报价引擎数据准确，装柜维持 0.96**（fit_report.md）；
+>   Neon 验证分支真库 CRUD 9/9（客户/询盘/报价+cost_breakdown/订单/收款/单证清单增删改查）。
+>   🔧 **抓到并修复 2 个真 bug**：① schema 漂移 —— cust_inquiries/cust_contacts/cust_stage_log
+>   三表外键指向遗留表 cust_customers（真库写询盘必炸，mock 测试从未暴露）⇒ 迁移
+>   `202610170004` 改指主表 customers；② E1 空库快径的 inspect 开事务导致
+>   **迁移静默回滚**（exit 0 但没落库）⇒ env.py 事务收尾（commit/rollback）修复。
 >   阶段 3 页面层重构。
 > - **客户管理权限口径**：~~internal 员工全员~~ → **全部登录用户**（UNCERTAIN #21 修正：
 >  internal=平台员工、customer=用户按团队隔离，用户录自己的业务客户；后端
