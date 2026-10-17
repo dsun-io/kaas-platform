@@ -1394,6 +1394,48 @@ export const handlers = [
     });
   }),
 
+  // 历史参考价：从报价单 store 真实聚合（同客户 + 同产品行项的单价统计）
+  http.get("/api/v1/quotes/reference-price", ({ request }) => {
+    const url = new URL(request.url);
+    const customerId = Number(url.searchParams.get("customer_id"));
+    const productName = url.searchParams.get("product_name") ?? "";
+    const days = Math.min(
+      Math.max(Number(url.searchParams.get("days")) || 180, 1),
+      730,
+    );
+    const prices: number[] = [];
+    let lastAt: string | null = null;
+    for (const q of quotesStore) {
+      if (q.customer_id !== customerId) continue;
+      for (const it of q.items) {
+        if (it.product_name !== productName || it.unit_price == null) continue;
+        prices.push(it.unit_price);
+        if (!lastAt || q.created_at > lastAt) lastAt = q.created_at;
+      }
+    }
+    prices.sort((a, b) => a - b);
+    const n = prices.length;
+    const avg = n ? prices.reduce((a, b) => a + b, 0) / n : null;
+    const median =
+      n % 2 === 1
+        ? (prices[(n - 1) / 2] ?? null)
+        : n
+          ? ((prices[n / 2 - 1] ?? 0) + (prices[n / 2] ?? 0)) / 2
+          : null;
+    return HttpResponse.json({
+      customer_id: customerId,
+      product_name: productName,
+      days,
+      spec_matched: false,
+      count: n,
+      avg,
+      min: n ? prices[0] : null,
+      max: n ? prices[n - 1] : null,
+      median,
+      last_at: lastAt,
+    });
+  }),
+
   http.get("/api/v1/quotes/:id", ({ params }) => {
     const quote = quotesStore.find((q) => q.id === Number(params.id));
     if (!quote) {
