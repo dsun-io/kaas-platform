@@ -73,6 +73,27 @@ async def _build_required_spec_values(db: AsyncSession, category_id: int) -> dic
     return spec_values
 
 
+async def _ensure_qa_category(db: AsyncSession, code: str = "qa_test_leaf"):
+    """确保有一个合法品类行（`ProductSku.category_id` 是外键，不能凭空写 1）。
+
+    空库快径（E1：`create_all` + stamp head）**不含**迁移里的品类种子数据，
+    所以 `category_id=1` 在这些用例里并不存在；按 code 幂等建一个叶子品类。
+    """
+    cat = (await db.execute(
+        select(ProductCategory).where(ProductCategory.code == code)
+    )).scalars().first()
+    if cat is not None:
+        return cat
+    cat = ProductCategory(
+        code=code, name="QA 测试品类", parent_id=None,
+        path="/QA 测试品类", level=1, industry_code="fence",
+        is_leaf=True, is_active=True,
+    )
+    db.add(cat)
+    await db.flush()
+    return cat
+
+
 def _admin_headers(tenant_id: str = "lianjia"):
     """Headers for internal admin user."""
     return {"X-Account-Type": "internal", "X-Tenant-Id": tenant_id, "X-Test-Role": "admin"}
@@ -178,7 +199,7 @@ class TestPriceEngine:
         from app.services.price_engine import upsert_price
 
         sku = ProductSku(
-            tenant_id="test_tenant", category_id=1,
+            tenant_id="test_tenant", category_id=(await _ensure_qa_category(db_session)).id,
             spec_values='{}', spec_hash='test_hash_001',
         )
         db_session.add(sku)
@@ -212,7 +233,7 @@ class TestPriceEngine:
         from app.services.price_engine import upsert_price
 
         sku = ProductSku(
-            tenant_id="test_tenant", category_id=1,
+            tenant_id="test_tenant", category_id=(await _ensure_qa_category(db_session)).id,
             spec_values='{}', spec_hash='test_hash_002',
         )
         db_session.add(sku)
@@ -352,10 +373,14 @@ class TestRBAC:
 
     @pytest.mark.asyncio
     async def test_viewer_cannot_post_attributes(self, client):
-        """viewer (customer account) 调 POST /attributes 返 403。"""
-        resp = await client.post(
-            "/api/v1/spec/attributes",
-            json={"code": "test", "name": "Test", "group_code": "spec", "data_type": "text"},
+        """viewer (customer account) 调管理员属性写接口返 403。
+
+        `POST /api/v1/spec/attributes` 已随规格 API 收敛移除（两端都没有该路由），
+        RBAC 写保护现在落在 admin 属性提案接口上，这里测同一语义。
+        """
+        resp = await client.patch(
+            "/api/v1/admin/spec/attribute-proposals/1",
+            json={"action": "reject"},
             headers={"X-Account-Type": "customer"},
         )
         assert resp.status_code == 403
@@ -390,7 +415,7 @@ class TestChangeReason:
     async def test_post_price_without_change_reason_422(self, client, db_session):
         """POST /skus/{id}/prices 不传 change_reason 返 422。"""
         sku = ProductSku(
-            tenant_id="lianjia", category_id=1,
+            tenant_id="lianjia", category_id=(await _ensure_qa_category(db_session)).id,
             spec_values='{}', spec_hash='test_cr_001',
         )
         db_session.add(sku)
@@ -411,7 +436,7 @@ class TestChangeReason:
     async def test_patch_sku_without_change_reason_422(self, client, db_session):
         """PATCH /skus/{id} 不传 change_reason 返 422。"""
         sku = ProductSku(
-            tenant_id="lianjia", category_id=1,
+            tenant_id="lianjia", category_id=(await _ensure_qa_category(db_session)).id,
             spec_values='{}', spec_hash='test_cr_002',
         )
         db_session.add(sku)
@@ -526,7 +551,7 @@ class TestExcludeConstraint:
     async def test_overlapping_active_prices_fail(self, db_session: AsyncSession):
         """手工 INSERT 两条重叠 active price 触发 DB 报错。"""
         sku = ProductSku(
-            tenant_id="test_exclude", category_id=1,
+            tenant_id="test_exclude", category_id=(await _ensure_qa_category(db_session)).id,
             spec_values='{}', spec_hash='test_exclude_001',
         )
         db_session.add(sku)

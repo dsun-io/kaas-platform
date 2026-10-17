@@ -363,8 +363,54 @@ def _install_auth_mock(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _auto_mock_auth(monkeypatch):
-    """自动为所有测试 mock AuthContextMiddleware（注入测试 AuthContext）。"""
+    """自动为所有测试 mock AuthContextMiddleware（注入测试 AuthContext）。
+
+    每个用例前后都清空 `app.middleware_stack`：Starlette 的 BaseHTTPMiddleware
+    在**构建中间件栈时**捕获 `self.dispatch`（0.52 实测），一旦某用例临时替换了
+    `AuthContextMiddleware.dispatch` 并重建栈，栈会一直持有那一个闭包 ——
+    后续用例即使 monkeypatch 再换，拿到仍是上一个用例的身份（"错位一拍"，
+    同坑已记录在 `tests/test_product_profiles_team_scope.py` 文件头）。
+    conftest 统一逐用例重建，消除跨用例残留。
+    """
     _install_auth_mock(monkeypatch)
+    from app.main import app as _app
+    _app.middleware_stack = None
+    yield
+    _app.middleware_stack = None
+
+
+@pytest.fixture
+def real_auth(monkeypatch):
+    """临时恢复**真实** AuthContextMiddleware（用于「无 token → 401」这类用例）。
+
+    autouse 的 `_auto_mock_auth` 会绕过鉴权，导致"缺 token"的用例测不到真实
+    401 语义。需要真实中间件的用例显式声明本 fixture 即可。
+    """
+    from app.middleware.auth import AuthContextMiddleware
+    from app.main import app as _app
+    from tests import _REAL_AUTH_DISPATCH
+
+    monkeypatch.setattr(AuthContextMiddleware, "dispatch", _REAL_AUTH_DISPATCH)
+    _app.middleware_stack = None
+    yield
+    _app.middleware_stack = None
+
+
+def error_code(response) -> str:
+    """从错误响应里取**错误码**（测试只关心哪个码，不复制整段文案）。
+
+    Kaas 现在两种既有错误体形状（都是产品真实形状）：
+    - FastAPI HTTPException：`{"detail": "event_type_unknown: ..."}` 或
+      `{"detail": {"error": ..., "code": "CUSTOMER_NOT_FOUND"}}`；
+    - 中间件自造的 JSONResponse：`{"error": "tenant_unauthorized", ...}`。
+    """
+    body = response.json()
+    detail = body.get("detail")
+    if isinstance(detail, dict):
+        return detail.get("code") or detail.get("error") or ""
+    if isinstance(detail, str):
+        return detail.split(":", 1)[0].strip()
+    return body.get("code") or body.get("error") or ""
 
 
 @pytest.fixture

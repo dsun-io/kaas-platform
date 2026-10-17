@@ -211,6 +211,17 @@ class TestPermissions:
         assert r.status_code == 422
 
     async def test_identity_in_body_is_rejected(self, client):
-        """身份一律从 AuthContext 取，body 里夹带要拦。"""
-        r = await client.post(BASE, json=body(tenant_id="other-tenant"))
+        """身份一律从 AuthContext 取，body 里夹带要拦。
+
+        用 customer 身份发请求：internal 账号按设计可跨租户（`require_tenant_match`
+        对 internal 放行），只有 customer/free 的 body 身份不匹配才是 403。
+        """
+        r = await client.post(
+            BASE,
+            json=body(tenant_id="other-tenant"),
+            headers={
+                "X-Account-Type": "customer",
+                "X-Auth-Tenant-Id": "fe4a98df-bc3f-4f50-97b1-86470867454d",
+            },
+        )
         assert r.status_code == 403

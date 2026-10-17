@@ -523,7 +523,8 @@ class TestRegisterTeamActions:
             select(Team).where(Team.id == user.team_id))).scalar_one()
         assert team.name == "新人 团队"          # 内核规范化
         assert team.created_by == user.id        # 创建者即团队管理员
-        assert team.tenant_id == TENANT
+        # 2026-10-11 裁决：注册不再新建租户，tenant 恒为 default（隔离靠团队）
+        assert team.tenant_id == "default"
         assert user.role == "owner"
 
         # 拆分模型：响应体不再有 customer_*，公司身份由 team 承载

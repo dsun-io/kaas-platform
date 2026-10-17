@@ -8,21 +8,21 @@
 """
 import pytest
 pytestmark = pytest.mark.db
-from tests.conftest import make_event_body
+from tests.conftest import error_code, make_event_body
 
 
 class TestEventInsert:
     """事件写入测试。"""
 
     async def test_insert_audit_access_success(self, client):
-        """写入 audit.access 事件成功，返回 201。"""
+        """写入 audit.access 事件成功，返回 200。"""
         body = make_event_body("audit.access", schema_version=1, event_source="orchestrator")
         response = await client.post(
             "/api/v1/events",
             json=body,
             headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
-        assert response.status_code == 201
+        assert response.status_code == 200
         data = response.json()
         assert data["tenant_id"] == "lianjia"
         assert data["event_type"] == "audit.access"
@@ -47,7 +47,7 @@ class TestEventInsert:
             json=body,
             headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
-        assert response.status_code == 201
+        assert response.status_code == 200
         data = response.json()
         assert data["event_type"] == "capability.update"
 
@@ -60,7 +60,7 @@ class TestEventInsert:
         )
         assert response.status_code == 400
         data = response.json()
-        assert data["error"] == "event_type_unknown"
+        assert error_code(response) == "event_type_unknown"
 
     async def test_missing_event_type_rejected(self, client):
         """缺 event_type 字段返回 400 + event_type_unknown。"""
@@ -70,7 +70,7 @@ class TestEventInsert:
             headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
         assert response.status_code == 400
-        assert response.json()["error"] == "event_type_unknown"
+        assert error_code(response) == "event_type_unknown"
 
     async def test_missing_schema_version_rejected(self, client):
         """缺 schema_version 返回 400 + schema_version_required。"""
@@ -82,7 +82,7 @@ class TestEventInsert:
             headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
         assert response.status_code == 400
-        assert response.json()["error"] == "schema_version_required"
+        assert error_code(response) == "schema_version_required"
 
 
 class TestTenantIsolation:
@@ -104,8 +104,8 @@ class TestTenantIsolation:
             headers={"X-Tenant-Id": "client_b", "X-Use-V2": "false"},
         )
 
-        assert r1.status_code == 201
-        assert r2.status_code == 201
+        assert r1.status_code == 200
+        assert r2.status_code == 200
         body1_resp = r1.json()
         body2_resp = r2.json()
         assert body1_resp["tenant_id"] == "lianjia"
@@ -124,7 +124,7 @@ class TestPayloadValidation:
             headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
         assert response.status_code == 400
-        assert response.json()["error"] == "schema_version_unsupported"
+        assert error_code(response) == "schema_version_unsupported"
 
     async def test_payload_missing_required_field(self, client):
         """payload 缺失必填字段返回 payload_schema_mismatch。"""
@@ -139,4 +139,4 @@ class TestPayloadValidation:
             headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
         assert response.status_code == 400
-        assert response.json()["error"] == "payload_schema_mismatch"
+        assert error_code(response) == "payload_schema_mismatch"

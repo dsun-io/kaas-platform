@@ -40,7 +40,8 @@ TENANT = "qa_split"
 def as_user(monkeypatch):
     """切换"当前登录用户"（端点只读 request.state.auth，注入即可）。"""
 
-    def _install(user_id: int, role: str = "user", tenant_id: str = TENANT):
+    def _install(user_id: int, role: str = "user", tenant_id: str = TENANT,
+                 team_id: int | None = None):
         async def _dispatch(self, request, call_next):
             path = request.url.path
             if any(path.startswith(p) for p in _TEST_AUTH_PUBLIC_PATHS):
@@ -49,7 +50,8 @@ def as_user(monkeypatch):
             # "customer 账号 + 无 X-Tenant-Id" 直接 401（与 conftest 同做法）
             request.state.tenant_id = tenant_id
             request.state.auth = AuthContext(
-                user_id=user_id, account_type="customer", role=role, tenant_id=tenant_id)
+                user_id=user_id, account_type="customer", role=role,
+                tenant_id=tenant_id, team_id=team_id)
             return await call_next(request)
 
         monkeypatch.setattr(AuthContextMiddleware, "dispatch", _dispatch)
@@ -327,7 +329,9 @@ class TestBusinessCustomer:
     async def test_created_row_is_business_customer(self, client, db_session, as_user):
         """`POST /customers` 的行带 team_id/owner_id，且**不产生**任何账号绑定。"""
         admin, team_id = await _mk_team(client, as_user, db_session)
-        as_user(admin.id, role="owner")
+        # AuthContext 的 team_id 在真实中间件里来自 users.team_id；注入型 as_user
+        # 不会自动读库，所以要显式带上，否则 POST /customers 落库的 team_id 是 NULL。
+        as_user(admin.id, role="owner", team_id=team_id)
 
         name = f"业务客户-{uuid.uuid4().hex[:8]}"
         resp = await client.post("/api/v1/customers", json={"company_name": name})
