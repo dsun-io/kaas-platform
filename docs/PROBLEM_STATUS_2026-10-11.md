@@ -12,24 +12,34 @@
 
 > **（交接 · 2026-10-17 晚 · 会话收尾 → 下一位继续）**
 >
-> **⚠️ 最重要：生产部署未完成 —— 线上仍是旧版！**
-> - 代码已全部推送 `main`（HEAD=`422dadc`，含登录跳转修复、真库验证 2 个 bug 修复、
->   P16 编辑器、阶段 3 重构等本会话全部工作）；
-> - **但 Cloudflare Worker（kaas.powervoy.com）需要手动 `pywrangler deploy` 才更新**，
->   push 不触发部署。本会话两次部署尝试**均失败**：
->   ① `uv run pywrangler deploy` → pywrangler 用 GBK 读 UTF-8 的 `wrangler.jsonc`
->      （含中文注释）报 `illegal multibyte sequence`；
->   ② 加 `PYTHONUTF8=1` 重试 → uv 自身 `ModuleNotFoundError: No module named 'python'`（缓存/临时目录问题）。
-> - **下一位请做**：a) 修部署链路（`PYTHONUTF8=1` + 清 uv 缓存 `uv cache clean`，
->   或跳过 pywrangler 直接 `npx wrangler deploy`（assets 由 wrangler.jsonc 声明）；
->   b) 部署后用无痕窗口验证「无凭据进站直接到登录页」（用户报的 bug 修复在
->   `422dadc`，**未上线**）；c) 用户还要求**设置自动部署**（push main → 自动发）——
->   Cloudflare Workers 的 CI 自动部署（GitHub Actions + Wrangler）尚未搭建。
+> **✅ 生产已更新到最新（2026-10-17 14:33 北京时间）**
+> - 线上 Worker 版本 `b6c2d701`（`2026-10-17T06:33:07Z`），部署提交 `2a355c4`（= `origin/main`）。
+>   部署走的是**既有 CI**：`.github/workflows/deploy.yml`（构建前端 → `sync-shared.ps1` →
+>   `pywrangler deploy` → 生产冒烟），本次以 `workflow_dispatch` 触发，run `39010179425` 两个 job 全绿。
+> - **更正上一条交接的两个错误结论**：
+>   ① 「push 不触发部署」**不成立** —— `deploy.yml` 自 2026-09-28 起就监听 `main`；
+>   ② 「自动部署尚未搭建」**不成立** —— 早已存在，只是 10-12 起被 **GitHub Actions 私有仓库
+>   分钟额度/账单**挡在任务启动前（annotation 原文：
+>   `The job was not started because recent account payments have failed or your spending limit needs to be increased`）。
+>   2026-10-17 把仓库改为 **public** ⇒ Actions 免费，部署恢复。**以后改完 push `main` 即自动发**；
+>   纯文档/`docs/**`/`.tools/**` 提交不触发（`paths-ignore`），要强制发就 `workflow_dispatch`。
+> - 部署后实测：`/health` 返回 JSON 且 `shared.loaded=true`；`/api/v1/leads`、`/quotes`、
+>   `/export-quote/products`、`/research/categories`、`/admin/accounts` 匿名均 **401**；
+>   `/research`、`/customers`、`/quotes`、`/login`、`/forgot-password`、`/leadgen`、`/intel`、
+>   `/outreach`、`/products`、`/settings/ai-providers` 均 **200**；错误口令登录 **401**；
+>   `forgot-password` 对未知邮箱仍返回统一 **200**。
+> - **登录跳转修复（422dadc）已上线**：线上 `(app)/layout` chunk 已是三态判定
+>   （`useState(null)` + 「正在验证登录状态…」空壳 + 无 cookie 直接 replace `/login`）。
+> - 手动部署的坑（`PYTHONUTF8=1` / `uv` 报 `No module named 'python'` / pywrangler 读 GBK）
+>   **仅作排障参考**，正常路径是 CI；应急可用 `npx wrangler deploy`（本机实测 wrangler 4.151.1
+>   已登录、有 workers 写权限）。
 >
-> **用户原话要求（2026-10-17 晚，中断前）**：
-> 1.「为什么是手动部署, 设置好自动部署」→ 自动部署未做；
-> 2.「将生产项目部署为最新」→ 部署失败，生产仍旧版；
-> 3. Cloudflare agent 接入（`https://developers.cloudflare.com/agent-setup/prompt.md`）——未执行。
+> **用户原话要求（2026-10-17）**：
+> 1.「为什么是手动部署, 设置好自动部署」→ **自动部署本来就有**（见上），此前是账单问题；现已验证可用。
+> 2.「将生产项目部署为最新」→ **已完成**（2026-10-17 14:33，`2a355c4`）。
+> 3. Cloudflare agent 接入（`https://developers.cloudflare.com/agent-setup/prompt.md`）——**未执行**（仍待做）。
+> 4.「确保没有信息泄露的安全隐患」→ 已完成首轮审计：删除了唯一的"当前可读"泄露入口（远端分支
+>   `feat/trade-doc-templates`），其余见文末「公开仓库安全审计」；**Neon 口令轮换待执行**。
 >
 > **本会话已完成并入库**（全部推送 main，基线：orchestrator 1218 / worker 275 /
 > 前端 437 / typecheck 0 / lint 0 / contracts R0–R6 178 paths / route-parity PASS）：
@@ -44,9 +54,13 @@
 >   （docs/archive/fit_report.md）；**真库 CRUD 9/9**（Neon 验证分支）
 > - **抓到并修复 2 个真 bug**：① cust_inquiries/contacts/stage_log 外键指遗留表
 >   cust_customers（真库写询盘必炸）⇒ 迁移 202610170004；② E1 inspect 开事务导致
->   迁移静默回滚 ⇒ env.py 事务收尾。**四个迁移（202610170001-0004）尚未在生产执行**
->   ——部署前请先 `alembic upgrade head`（DATABASE_URL 指生产；注意用直连 endpoint
->   非 pooler，pooler 会吞 DDL 事务）。
+>   迁移静默回滚 ⇒ env.py 事务收尾。
+> - **生产库迁移已执行（2026-10-17 14:30）**：`202610110018 → 202610110019 →
+>   202610120001 → 202610170001 → 202610170002 → 202610170003 → 202610170004`，
+>   现 `alembic_version = 202610170004`；`password_reset_tokens` 等新表已建，
+>   三张改外键的表生产库均 **0 行**（无数据风险）。本次用 `.env` 的 pooler DSN 执行成功（实测），
+>   但官方口径仍建议迁移用**直连端点**。**CI 不做迁移**：以后新增迁移仍需人工
+>   `alembic upgrade head`。
 >
 > **剩余队列**：P1 收款/回执 API 层（表与容差已就绪）→ P0 导出自检①②（需 PDF 解析层）
 > → P0 公章规范化 → P1 事实层+一致性引擎 → P15 契约收口 → 文档继续清理。
@@ -236,7 +250,8 @@
 > 同时实测到一个**真问题**：**真·空白库跑 `alembic upgrade head` 会失败**
 > （`feb821f0b9c0` 原来无兜底的 `ALTER TABLE quotations ADD COLUMN tenant_id`，而 `quotations`
 > 要到更晚的 `f82ac951b473` 才 create，真实库靠 `create_all` 先建）。
-> **生产无需任何动作**：`alembic_version` = 单行 `202610110018` = 当前 head，018 已生效
+> **生产无需任何动作**（时点 2026-10-12；**2026-10-17 生产已升到 `202610170004`**，见顶部交接）：
+> `alembic_version` = 单行 `202610110018` = 当时 head，018 已生效
 > （`file_objects.sort_order integer NOT NULL DEFAULT 0` 在库里）。详见文末
 > 「alembic『双 head』取证 —— 假警报 + 一个真问题」一节。
 > **（t18 更新）** 上面那个真问题：**第一个断点已修**（该文件补 `has_table` 兜底）⇒ 实测已穿过
@@ -245,8 +260,9 @@
 > **（t21 更新）** 第二个同类断点（`202605170001:279`）**也已修并实测穿过**；链现在的**边界**是
 > `f82ac951b473_intel_workstation_v1`（无条件 `create_table` 36 张、其中 30 张链上早建过 ⇒
 > `DuplicateTable`）—— 属**结构性冲突**，按规则**停止硬修**。另：本线期间仓库多了
-> `202610110019`（另一条线）⇒ `alembic heads` 现在是单 head **`202610110019`**（本线未改任何
+> `202610110019`（另一条线）⇒ 当时 `alembic heads` 是单 head **`202610110019`**（本线未改任何
 > revision/依赖；生产版本行以 §⑤ 实测 `202610110018` 为准，本线未复测）。见文末 §⑨。
+> **（2026-10-17 更新）** 现在 head 是 **`202610170004`**，生产 `alembic_version` 也已是 `202610170004`。
 
 > **（R81）收口决定：e2e 停手，主线交付** —— 用户 2026-10-11 追问
 > 「还有多少任务未完成、怎么做不完了」，逐项核对后的结论：
@@ -420,8 +436,10 @@
 - **租户 ≠ 团队**：`tenant_id` 恒为 `"default"`（**已不是隔离边界**）；
   **`team_id` 才是**。定价/成本那条路**完全不按 team 过滤**，
   但通过 `customers.team_id` 事实上已隔离。
-- 无 `pnpm`/`npm`/`npx`：用
-  `C:\Users\HJ\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe`
+- **node/npm 实际可用**（2026-10-17 实测：`node` v24.20.0 在 PATH、`npm.cmd` 可用；
+  `npm.ps1` / `npx.ps1` 只是被执行策略拦，用 `npm.cmd` 或先
+  `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force`）；**只有 `pnpm` 不在 PATH**，用
+  `C:\Users\河北慷逊公司\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe`
   + `...\pnpm\bin\pnpm.mjs`。
 - 跑 `.ps1` 前必须 `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force`。
 - **本地产物不进仓库**：PI 导出、QA 快照、一次性生成脚本一律放 `artifacts/`
@@ -431,8 +449,8 @@
   拿"字节里搜不到 DeepSeek"当证据是**伪证**。正确做法：系统 Chrome 无头打印
   （`--headless=new --no-pdf-header-footer --print-to-pdf`），再用
   `libreoffice-kit render`（pdfium 后端）渲图**逐页肉眼看**复核。
-- `wecom-cli` 在 `C:\Users\HJ\wecom-cli-tool\node_modules\.bin`；
-  前置检查 `--version` ≥ 1.2.1 + `auth show --status`。
+- `wecom-cli`：旧记录的 `C:\Users\HJ\wecom-cli-tool\node_modules\.bin` 在本机**不存在**；
+  用 `where wecom-cli` 定位。前置检查 `--version` ≥ 1.2.1 + `auth show --status`。
 - 生产库 = Neon `KaaS` / `production` 分支。DSN 取
   `neon connection-string production --database-name neondb`，
   **要 `-replace '^postgresql://','postgresql+asyncpg://'`** 才能喂 alembic。
@@ -2635,11 +2653,12 @@ DSN 用 `neon env pull --file <temp> --project-id falling-salad-31662168` 重取
 ### ⑥ 生产该怎么走（建议；由 lead 执行，本线未碰生产）
 
 1. **不要加、也不要跑 merge 迁移** —— 没有第二个 head（①）；加了只会虚构 branchpoint（③）。
-2. **生产不需要任何迁移动作** —— 版本行 = 唯一 head `202610110018`，018 的列已在（⑤）。
+2. **生产不需要任何迁移动作**（时点 2026-10-12；**2026-10-17 已升到 `202610170004`**，见顶部交接）——
+   当时版本行 = 唯一 head `202610110018`，018 的列已在（⑤）。
    想亲眼复核（**只读**）：
    ```bash
    cd backend/orchestrator
-   DATABASE_URL=<生产 direct DSN> python -m alembic current     # 期望：202610110018 (head)
+   DATABASE_URL=<生产 direct DSN> python -m alembic current     # 期望：202610170004 (head)
    ```
    万一将来发现版本行 < head：`DATABASE_URL=<生产 direct DSN> python -m alembic upgrade head`
    （018 的 DDL 是 `ADD COLUMN … DEFAULT 0`，PG11+ 不重写表；`file_objects` 生产 **0 行**，风险极低）。
@@ -2813,17 +2832,20 @@ orchestrator **946** / worker **217** / `route-parity` **PASS** / `sync-shared -
 
 ## ⚠️ 迁移线通告（2026-10-12，给正在定位 alembic 空库断点的同事）
 
-> **`alembic heads` 已从 `202610110018` 变为 `202610110019 (head)`** —— 由产品域团队隔离迁移引入
-> （`backend/orchestrator/alembic/versions/202610110019_product_team_scope.py`，见下方 §产品模块）。
+> **（2026-10-17 更新：当前 head 是 `202610170004`）**
+> 本节写于 2026-10-12，当时 head 从 `202610110018` 变为 `202610110019`（产品域团队隔离迁移）。
+> 之后又新增 `202610120001`（password_reset_tokens）与 `202610170001`–`202610170004`，**单链**；
+> 生产已于 2026-10-17 执行到 `202610170004`（见顶部交接）。
 >
-> 1. **`alembic upgrade head --sql` 的终点已变**（原来止于 018，现在到 019）；
-> 2. **你若新建迁移，请写 `down_revision = "202610110019"`**，否则会**双 head** ⇒
->    所有人的 `alembic upgrade head` 会直接失败（本项目已为"双 head"专门取过一次证：`234a43c` 结论是当时**假警报**，
->    但这次是真的新增了一个 head）。
+> 1. `alembic upgrade head --sql` 的终点**以 `alembic heads` 为准**（现为 `202610170004`）；
+> 2. **不要硬编码 `down_revision`**：新建迁移前先跑
+>    `cd backend/orchestrator && .venv/Scripts/python -m alembic heads`，把输出的**当前唯一 head**
+>    写进 `down_revision`；写旧值会直接造出**双 head**，所有人的 `alembic upgrade head` 都会失败
+>    （本项目为"双 head"取过一次证：`234a43c` 是假警报）。
 > 3. 该迁移**只做了可安全做的部分**（详见下），**没有碰** `files.py` / `backend/worker/src/**`。
 >
-> 复核方式：`cd backend/orchestrator && .venv/Scripts/python -m alembic heads` ⇒ 现在应输出 **一行** `202610110019 (head)`；
-> `alembic branches` ⇒ 空（线性、无分叉）。
+> 复核方式：`cd backend/orchestrator && .venv/Scripts/python -m alembic heads` ⇒ 现在应输出
+> **一行** `202610170004 (head)`；`alembic branches` ⇒ 空（线性、无分叉）。
 
 ## 产品模块：P11 + P5/P6 已落地（**按增量推进，每条都能离线证明**）
 
@@ -3059,7 +3081,7 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
 
 | 层 | 文件 | 内容 |
 |---|---|---|
-| 数据层 | `alembic/versions/202610120001_password_reset_tokens.py` + `db/models.py` | `password_reset_tokens` 表（`down_revision=202610110019`，当前 head） |
+| 数据层 | `alembic/versions/202610120001_password_reset_tokens.py` + `db/models.py` | `password_reset_tokens` 表（`down_revision=202610110019`；当前 head 已到 `202610170004`） |
 | orchestrator | `services/password_reset.py`（新） | 令牌生成/哈希/消费/作废 + Resend 发信 helper |
 | orchestrator | `api/auth.py` | `POST /api/v1/auth/forgot-password` + `POST /api/v1/auth/reset-password` |
 | worker | `src/main.py` | 同构两路由 + `_http_post_json`（js.fetch/urllib）+ `_hash_reset_token` |
@@ -3115,3 +3137,49 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
 > 后，只需从行里读出 delta dict 传给 `resolve_effective_product`，这里直接生效。
 > **当前 tenant_products 无 delta 列** ⇒ 基线原样返回（"未设差异的团队跟着变"），
 > 已用测试钉住"上游改了跟着变"语义。
+
+***
+
+## 公开仓库安全审计（2026-10-17）
+
+> **背景**：仓库 2026-10-17 由 private 改为 **public**（原为解除 GitHub Actions 私有仓库计费；
+> 见顶部交接）。以下为公开后的泄露审计结论与处置。审计范围：`main` 全历史、当前树、
+> 远端全部分支、已跟踪文件；**未**对生产做任何越权探测（不拿泄露凭据去连库/登录）。
+
+### 一、已确认的泄露
+
+| 级别 | 内容 | 位置 | 现状 | 处置 |
+|---|---|---|---|---|
+| **P0** | Neon 生产库口令（用户 `neondb_owner`，16 位） | `main` 历史：`backend/.tools/*.py` 等 13 个文件，2026-09-18 起；`fbced67`（10-12）已从**当前树**清除 | **历史仍可读，且与现用口令相同**（SHA256 已比对，未打印明文） | **待轮换**；轮换后历史值即失效 |
+| **P0** | 同一 DSN 出现在**远端分支** `feat/trade-doc-templates` tip（`4fc5a6e`）的 `backend/.tools/*` | 该分支树（不需要翻历史就能看到） | **已处置**：2026-10-17 删除该远端分支；它落后 `main` 279 提交且**是 main 的祖先**（无独有提交），删除无内容损失 | 仍需轮换口令（历史仍含） |
+| **P1** | 管理员 `david@powervoy.com` 的初始口令（8 位弱口令，字典级） | `main` 历史 4 个提交的交接文档（`ff9aa73`…`bb5276e`），`fbced67` 已从当前树删除 | 历史仍可读；**未**尝试登录验证 | 建议改密（走登录页「忘记密码」邮件重置即可） |
+| **P1** | 业务数据：`docs/archive/stowage_raw.json` 含真实姓名、企业微信 userid、产品级成本/售价/利润率；`archive/2026-09-trade-doc-xprime-python/sample_docs/*` 含公司名/联系人/电话/邮箱/报价 | 已跟踪文件，公开可见 | 公开 | 待业务方确认是否属商业秘密；若是，需从当前树移除（历史仍在） |
+| **P2** | orchestrator `app/config/settings.py` 的 `jwt_secret` **默认值仍是公开串** | 源码 | 仅当部署时漏配 `JWT_SECRET` 才可被利用；worker 侧已是「缺失即 503」 | 建议删除默认值；如担心历史泄露可顺带轮换 `JWT_SECRET`（会让所有在线用户重新登录） |
+| **P3** | 根 `.gitignore` 未覆盖 `.dev.vars`（仅 `backend/worker/.gitignore` 覆盖本目录） | `.gitignore` | 未发生（未被跟踪） | 根目录补 `.dev.vars` / `*.dev.vars` |
+| **P3** | `frontend-ci.yml` 在 `pull_request` 上注入 `SENTRY_AUTH_TOKEN` | workflow | 同仓分支可拿 secrets，fork 拿不到 | 加 `permissions: contents: read`，token 仅 push 时注入 |
+
+### 二、未发现（全历史 0 命中）
+
+- Resend `re_…`、Sentry `sntrys_…`/DSN、GitHub `ghp_`/`github_pat_`、OpenAI `sk-…`、AWS `AKIA…`
+  （唯一命中是测试文件里的假 MinIO 值）、私钥块、Slack/Bearer/JWT 形态串。
+- `.env` / `.dev.vars` **从未被跟踪**；`frontend/.env.production` 虽被跟踪，但 Sentry 两项在**所有版本**都是空值。
+- `deploy.yml` 仅 `push:main` + `workflow_dispatch`，secret 只经 `env:` 传给 wrangler，无回显；
+  其余 workflow 无 `secrets.` 引用、无 `pull_request_target`。
+- 本地 `refs/dsh-time-machine/*`、`refs/agents/*`（118 个仅本地提交）**未推送**；`git ls-remote` 仅 `main`。
+
+### 三、处置清单
+
+- [x] 删除远端分支 `feat/trade-doc-templates`（2026-10-17，关闭"当前可读"入口）
+- [ ] **轮换 Neon 口令**（Neon Console → 项目 `falling-salad-31662168` → `production` → Roles →
+      `neondb_owner` → Reset password；`dev` 分支角色需单独重置），随后：
+      更新 Cloudflare Hyperdrive `f53fed49705043008737032e4bfa2b8e` 的连接串
+      （`npx wrangler hyperdrive update … --connection-string …`，更新后需重新部署 Worker 生效）
+      + 本地 `backend/orchestrator/.env` 的 `DATABASE_URL` + `KAAS_DSN`。
+- [ ] 管理员 `david@powervoy.com` 改密（忘记密码邮件重置）
+- [ ] 评估 `docs/archive` 中的业务数据是否可公开
+- [ ] 根 `.gitignore` 补 `.dev.vars`；`frontend-ci.yml` 最小权限
+- [ ] （可选）历史重写 `git filter-repo`：420 commits / 8.8MB / 0 fork，代价是所有 clone 失效、
+      PR 断链，且**不能替代轮换**（GitHub 缓存/直链/第三方镜像可能仍在）
+
+> **口径**：**先轮换（治本）+ 删分支（止血）**；历史重写可排后。
+> 若"公开"并非本意，改回 private 能立刻停止继续索引，但**已被抓取的内容不可撤回**，不能因此跳过轮换。
