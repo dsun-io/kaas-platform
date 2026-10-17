@@ -525,6 +525,12 @@
 5. ~~依赖漏洞 98 个~~ 🔶 **部分**：已降到 **78**，critical 3 → 2；
    余下 2 个 critical **全是 `next`**，只能在 Next ≥ 15.5.24 修
    （即 14→15 跳大版本，而 Next 15 又要求 React 19）——用户已定**单独排期**。
+6. **技术栈升级盘点（2026-10-17）**：Next 14.2.35 / Node 20（CI）/ ESLint 8 / TypeScript 5.9
+   已落后当前稳定线两代；audit 复扫 **80 条**（2 critical / 19 high / 48 moderate / 11 low，
+   npmjs registry 口径）——2 个 critical 仍是 Next image optimizer 的 RCE，生产走静态导出 +
+   `images.unoptimized`，实际暴露面有限，但 14.x 已不再有新补丁公布。
+   完整依赖矩阵与 A/B/C/D 批次路线见 `docs/TECH_STACK_UPGRADE_2026-10-17.md`；
+   **2026-10-17 用户裁决：暂不执行升级，只落评估文档**。
 
 ### 依赖漏洞已降 98 → 78（`b5b6f4d`）
 
