@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { ProductSpecTryout } from "./product-spec-tryout";
 
 // ── ProductSpec 的子形状（与 backend services/export_quote/models.py 对齐）──
 interface NumericInputItem {
@@ -637,14 +638,20 @@ export function ProductSpecEditor({
                 <Label className="text-xs">
                   派生公式（重量/体积/成本… 由数值参数折算）
                 </Label>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={addDerived}
-                >
-                  <Plus className="size-3" /> 加公式
-                </Button>
+                <div className="flex items-center gap-2">
+                  <ProductSpecTryout
+                    productKey={productKey ?? ""}
+                    spec={spec}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={addDerived}
+                  >
+                    <Plus className="size-3" /> 加公式
+                  </Button>
+                </div>
               </div>
               {derived.length === 0 && (
                 <p className="text-xs text-muted-foreground">
