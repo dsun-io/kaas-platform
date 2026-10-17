@@ -44,7 +44,10 @@
 >   （不引入未应用草稿 —— 草稿会让用户改完忘点应用、保存丢改动）；JSON 语法错时
 >   表单锁定并提示（防表单编辑覆盖坏 JSON）。⚠️ P14 等价测试的 textarea 路径
 >   已随 S6.1 UI 调整（JSON 进编辑器的「高级 JSON」tab），P14 原文「留给 P16」的授权范围。
->   ⏳ 待接 S6.2：columns/invariants/space_deduction；S6.3：params/notes/constants + 公式试算。
+>   ✅ S6.2 落地（columns/invariants/space_deduction）；S6.3 落地（params/notes/constants
+>   + 公式试算：product-spec-tryout.tsx 调 /explain 的 spec_override，草稿定义逐步代入
+>   自证，公式写错当场暴露，不新建接口）。**P16 三小步收官**。
+>   ⏳ 待接：P17 全门禁 + 文档收口（含 NEXT_EXPORT build）。
 >   阶段 3 页面层重构。
 > - **客户管理权限口径**：~~internal 员工全员~~ → **全部登录用户**（UNCERTAIN #21 修正：
 >  internal=平台员工、customer=用户按团队隔离，用户录自己的业务客户；后端
