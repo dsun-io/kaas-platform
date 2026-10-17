@@ -214,15 +214,26 @@ async def _store_bytes(request: Request, key: str, data: bytes,
     bucket = _r2_bucket()
     if bucket is not None:
         try:
-            from js import Uint8Array  # type: ignore
+            # Pyodide（真实 Workers 是 sys.platform == "emscripten"）：bytes → Uint8Array
+            # 用 to_js 最稳；本地 CPython 即使装了 pyodide 包也不能走这条（to_js 返回 bytes），
+            # 所以按平台判定，测试环境仍走 Uint8Array.new。
+            import sys as _sys
+            if _sys.platform == "emscripten":
+                from pyodide.ffi import to_js  # type: ignore
 
-            await bucket.put(key, Uint8Array.new(data), {"httpMetadata": {"contentType": content_type}})
+                body = to_js(data)
+                opts = to_js({"httpMetadata": {"contentType": content_type}})
+            else:
+                from js import Uint8Array  # type: ignore
+
+                body = Uint8Array.new(data)
+                opts = {"httpMetadata": {"contentType": content_type}}
+            await bucket.put(key, body, opts)
             return "s3", key, None
         except Exception as exc:  # noqa: BLE001
             # 回退：不把用户的上传动作变成一个 500；落库并如实标注 storage='inline'
             print(f"[files] R2 put 失败，回退 inline：{type(exc).__name__}: {exc}")
     return "inline", key, data
-
 
 async def _load_bytes(request: Request, row) -> Optional[bytes]:
     if row.get("content") is not None:
