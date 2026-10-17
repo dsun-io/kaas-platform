@@ -59,6 +59,7 @@ import {
 import { EngineQuoteResult } from "../../quotations/v2-quote/components/engine-quote-result";
 import { ProductTaxSection } from "./product-tax-section";
 import { CostProfitSection } from "./cost-profit-section";
+import { TaxGivebackSection } from "./tax-giveback-section";
 import { PieceInputField, SectionTitle } from "./product-quote-view-section";
 import { FreightPanel } from "../../quotations/v2-quote/components/freight-panel";
 import {
@@ -809,126 +810,22 @@ export function ProductQuoteView() {
             onProfitPctChange={editProfitPct}
           />
 
-          {/* ④ 税与让利 —— 严格按价链顺序：进项税 → 退税让利 → 印花税 → 销项税 */}
-          <SectionTitle
-            index={4}
-            title="税与让利"
-            hint="留空的项自动取税务档案里的法定值；填了则本单覆盖"
+          {/* 税与让利（2026-10-17 巨石拆分第三刀：JSX 搬到
+              tax-giveback-section.tsx，6 对输入 state 留在本文件） */}
+          <TaxGivebackSection
+            inputVatRatePct={inputVatRatePct}
+            onInputVatRatePctChange={setInputVatRatePct}
+            rebateRatePct={rebateRatePct}
+            onRebateRatePctChange={setRebateRatePct}
+            giveRatioPct={giveRatioPct}
+            onGiveRatioPctChange={setGiveRatioPct}
+            stampRatePct={stampRatePct}
+            onStampRatePctChange={setStampRatePct}
+            stampBase={stampBase}
+            onStampBaseChange={setStampBase}
+            outputVatRatePct={outputVatRatePct}
+            onOutputVatRatePctChange={setOutputVatRatePct}
           />
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label
-                className="text-xs"
-                title="供应商开票的税点（如 10%）。决定含税采购价 = 税前成本 ÷ (1 − 票税点)，以及可退进项税额 = 进项税额 × 退税率 ÷ 票税点"
-              >
-                进项票税点（%）
-              </Label>
-              <Input
-                type="number"
-                step="0.1"
-                placeholder="供应商开票收的点，如 10"
-                value={inputVatRatePct}
-                onChange={(e) => setInputVatRatePct(e.target.value)}
-                className="h-8 text-xs"
-              />
-              <p className="text-[11px] text-muted-foreground">
-                决定含税采购价与可退税额
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label
-                className="text-xs"
-                title="按 HS 编码确定的出口退税率。可退进项增值税税额 = 进项税额 × (退税率 ÷ 票税点)，上限为已缴进项税额"
-              >
-                出口退税率（%）
-              </Label>
-              <Input
-                type="number"
-                step="0.1"
-                placeholder="按 HS 编码核实，如 13"
-                value={rebateRatePct}
-                onChange={(e) => setRebateRatePct(e.target.value)}
-                className="h-8 text-xs"
-              />
-              <p className="text-[11px] text-muted-foreground">
-                {rebateRatePct === ""
-                  ? "⚠ 未填：按进项税额全额可退估算，报价可能偏低"
-                  : `可退比例 = ${rebateRatePct}% ÷ 进项票税点`}
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label
-                className="text-xs"
-                title="让出可退进项增值税额的比例（100% = 全部让利换竞争力，0% = 自留对冲风险）。让利额 = 可退进项税额 × 让利比例"
-              >
-                让利比例（%）
-              </Label>
-              <Input
-                type="number"
-                step="1"
-                placeholder="退回的税让给客户多少，如 80"
-                value={giveRatioPct}
-                onChange={(e) => setGiveRatioPct(e.target.value)}
-                className="h-8 text-xs"
-              />
-              <p className="text-[11px] text-muted-foreground">
-                让出可退税额的比例，自留部分作风险对冲
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs">印花税率（%）</Label>
-              <Input
-                type="number"
-                step="0.01"
-                placeholder="留空用档案法定值（现为 5）"
-                value={stampRatePct}
-                onChange={(e) => setStampRatePct(e.target.value)}
-                className="h-8 text-xs"
-              />
-              <p className="text-[11px] text-muted-foreground">
-                留空即取税务档案的法定值
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs">印花税计税基数</Label>
-              <select
-                value={stampBase}
-                onChange={(e) =>
-                  setStampBase(
-                    e.target.value as "" | "profit" | "cost" | "base_quote",
-                  )
-                }
-                className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <option value="">跟随档案（现为加工利润）</option>
-                <option value="profit">加工利润</option>
-                <option value="cost">税前成本</option>
-                <option value="base_quote">基础报价</option>
-              </select>
-              <p className="text-[11px] text-muted-foreground">
-                印花税 = 计税基数 × 印花税率
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs">销项税率（%）</Label>
-              <Input
-                type="number"
-                step="0.1"
-                placeholder="出口填 0、内销填 13"
-                value={outputVatRatePct}
-                onChange={(e) => setOutputVatRatePct(e.target.value)}
-                className="h-8 text-xs"
-              />
-              <p className="text-[11px] text-muted-foreground">
-                按业务实际填，不按出口/内销自动推导
-              </p>
-            </div>
-          </div>
 
           {/* ⑤ 汇率与报价条件 —— 折算外币价与报价有效期，是价链的最后一步 */}
           <SectionTitle
