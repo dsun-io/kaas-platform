@@ -40,8 +40,10 @@
 >  internal 视图带来，**接口层按账号类型剥除：customer 绝不透出**）+
 >  `GET /quotes/reference-price` 历史参考价（同客户同产品近 N 天单价聚合，
 >  可选规格精确匹配，可见范围同报价单列表；两端同契约，178 paths）。
->  ⏳ 待接：报价记录页对内/对外双视图（internal 加成本/利润列）、报价行参考价展示、
->  MSW 补 quotes 写/orders/trade-docs mock。
+>  ✅ 已接：报价记录页对内/对外双视图（`b7a377a`）+ 报价行历史参考价展示
+>  （`0568415`）+ MSW 补洞 orders/trade-docs/enums（`本次`）——阶段 1 收官。
+>  ⏳ 阶段 1 遗留：单证 mock 只覆盖列表/新建/详情（render-data/pdf/指纹对账等
+>  深功能未 mock）；e2e 主链用例待写。
 
 > **（交接 · 2026-10-17 · 账号治理 API 代码审查 6 项发现全部修复）**
 >
