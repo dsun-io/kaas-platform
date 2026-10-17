@@ -57,8 +57,11 @@ async def test_insert_links_writes_entity_links_with_kernel_sql():
                      "rel_type": "generated_from", "meta": None, "created_by": None}
     _, second = db.calls[1]
     assert second["dst_type"] == "trade_doc" and second["rel_type"] == "revision_of"
-    # 原字面量必须留下：否则详情里的 refs["docs"][].ref_type 就从 derived_from 变了
-    assert second["meta"] == {"origin_ref_type": "derived_from"}
+    # 原字面量必须留下：否则详情里的 refs["docs"][].ref_type 就从 derived_from 变了。
+    # 注意 meta 是 **JSON 文本**：这里走 `text()` 裸 SQL，asyncpg 不会把 dict 编码进
+    # jsonb 参数（报 'dict' object has no attribute 'encode'），写入前必须 json.dumps。
+    import json
+    assert json.loads(second["meta"]) == {"origin_ref_type": "derived_from"}
 
 
 async def test_insert_links_skips_empty_targets_and_rejects_unknown_rel():
