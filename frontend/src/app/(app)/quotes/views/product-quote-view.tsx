@@ -57,6 +57,7 @@ import {
   type SpecRow,
 } from "../../quotations/v2-quote/components/spec-picker";
 import { EngineQuoteResult } from "../../quotations/v2-quote/components/engine-quote-result";
+import { ProductTaxSection } from "./product-tax-section";
 import { FreightPanel } from "../../quotations/v2-quote/components/freight-panel";
 import {
   useDeleteQuoteProfile,
@@ -729,163 +730,55 @@ export function ProductQuoteView() {
           </div>
         </CardHeader>
         <CardContent className="space-y-5">
-          {/* 产品 + 税务档案 */}
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">产品</Label>
-              <select
-                value={effectiveProduct}
-                onChange={(e) => {
-                  setProductKey(e.target.value);
-                  setResult(null);
-                  setError(null);
-                }}
-                disabled={products.isLoading}
-                className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {(products.data?.products ?? []).length === 0 && (
-                  <option value="">
-                    {products.isLoading ? "加载中…" : "暂无可报价产品"}
-                  </option>
-                )}
-                {(products.data?.products ?? []).map((p) => (
-                  <option key={p.key} value={p.key}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {(rateSets.data?.rate_sets ?? []).length > 0 && (
-              <div className="space-y-1.5">
-                <Label className="text-xs">税务档案</Label>
-                {/* 一个下拉装两层：上面的「客户税率档案」是给这个客户存的那套税率，
-                    下面的「法定税务档案」是国家政策。选中客户档案时法定档案会跟着切过去
-                    —— 两层是配套使用的，分开选会拼出没人确认过的组合。 */}
-                <select
-                  value={taxPick}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setTaxPick(v);
-                    setProfileNotice(null);
-                    if (v.startsWith("profile:")) {
-                      const p = profiles.find((x) => `profile:${x.id}` === v);
-                      if (p) applyProfile(p);
-                      return;
-                    }
-                    // 切回法定档案 = 不再套用客户档案 → 税率项回到默认。
-                    // 不这么做的话，用户以为「取消套用了」，实际还在用档案里的数字。
-                    setRateSetCode(
-                      v.startsWith("rate:") ? v.slice("rate:".length) : "",
-                    );
-                    clearProfileTax();
-                  }}
-                  className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <option value="">（未指定，按报价当期生效的一份）</option>
-                  {profiles.length > 0 && (
-                    <optgroup label="客户税率档案">
-                      {profiles.map((p) => (
-                        <option
-                          key={`profile:${p.id}`}
-                          value={`profile:${p.id}`}
-                        >
-                          {p.profile_name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  <optgroup label="法定税务档案">
-                    {(rateSets.data?.rate_sets ?? []).map((r) => (
-                      <option key={`rate:${r.code}`} value={`rate:${r.code}`}>
-                        {r.name || r.code}
-                      </option>
-                    ))}
-                  </optgroup>
-                </select>
-
-                {/* 存为档案 / 移除档案。只保存**税率类**参数（利润与让利比例不存）——
-                    利润是每单的商业决策，被档案悄悄带回来会报出没确认过的价。 */}
-                {savingOpen ? (
-                  <div className="space-y-1.5 rounded-lg border bg-muted/30 p-2">
-                    <Input
-                      value={profileName}
-                      onChange={(e) => setProfileName(e.target.value)}
-                      placeholder="给这份档案起个名字"
-                      className="h-8 text-xs"
-                      maxLength={60}
-                    />
-                    <div className="flex items-center gap-1.5">
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="h-7 text-xs"
-                        disabled={
-                          !profileName.trim() ||
-                          saveProfile.isPending ||
-                          !effectiveRateSet
-                        }
-                        onClick={onSaveProfile}
-                      >
-                        {saveProfile.isPending && (
-                          <Loader2 className="mr-1 size-3 animate-spin" />
-                        )}
-                        保存
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 text-xs"
-                        onClick={() => {
-                          setSavingOpen(false);
-                          setProfileName("");
-                        }}
-                      >
-                        取消
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1.5">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-7 gap-1 text-xs"
-                      onClick={() => {
-                        setSavingOpen(true);
-                        setProfileName(pickedProfile?.profile_name ?? "");
-                        setProfileNotice(null);
-                      }}
-                    >
-                      <Save className="size-3" />
-                      存为档案
-                    </Button>
-                    {pickedProfile && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 gap-1 text-xs text-muted-foreground"
-                        disabled={deleteProfile.isPending}
-                        onClick={() => onDeleteProfile(pickedProfile)}
-                      >
-                        <Trash2 className="size-3" />
-                        移除
-                      </Button>
-                    )}
-                  </div>
-                )}
-
-                {profileNotice && (
-                  <p className="text-[11px] text-muted-foreground">
-                    {profileNotice}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
+          {/* 产品 + 税务档案（2026-10-17 巨石拆分第一刀：JSX 搬到
+              product-tax-section.tsx，state 与业务逻辑留在本文件） */}
+          <ProductTaxSection
+            products={products.data?.products}
+            productsLoading={products.isLoading}
+            effectiveProduct={effectiveProduct}
+            onProductChange={(key) => {
+              setProductKey(key);
+              setResult(null);
+              setError(null);
+            }}
+            rateSets={rateSets.data?.rate_sets}
+            profiles={profiles}
+            taxPick={taxPick}
+            onTaxPickChange={(v) => {
+              setTaxPick(v);
+              setProfileNotice(null);
+              if (v.startsWith("profile:")) {
+                const p = profiles.find((x) => `profile:${x.id}` === v);
+                if (p) applyProfile(p);
+                return;
+              }
+              // 切回法定档案 = 不再套用客户档案 → 税率项回到默认。
+              // 不这么做的话，用户以为「取消套用了」，实际还在用档案里的数字。
+              setRateSetCode(
+                v.startsWith("rate:") ? v.slice("rate:".length) : "",
+              );
+              clearProfileTax();
+            }}
+            profileNotice={profileNotice}
+            pickedProfile={pickedProfile}
+            savingOpen={savingOpen}
+            onSavingOpenChange={(open) => {
+              setSavingOpen(open);
+              if (open) {
+                setProfileName(pickedProfile?.profile_name ?? "");
+                setProfileNotice(null);
+              } else {
+                setProfileName("");
+              }
+            }}
+            profileName={profileName}
+            onProfileNameChange={setProfileName}
+            onSaveProfile={onSaveProfile}
+            onDeleteProfile={onDeleteProfile}
+            savePending={saveProfile.isPending}
+            deletePending={deleteProfile.isPending}
+            effectiveRateSet={effectiveRateSet}
+          />
 
           {/* 规格属性 —— 由引擎的规格空间驱动，横向铺开 */}
           <SectionTitle
