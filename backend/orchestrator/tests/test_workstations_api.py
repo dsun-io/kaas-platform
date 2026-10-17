@@ -129,7 +129,11 @@ async def _mk_team(client, as_user, db, *, name: str | None = None, tag: str = "
     admin = await _mk_user(db, tag, role="owner")
     as_user(admin.id, role="owner")
     resp = await client.post(
-        "/api/v1/teams", json={"name": name or f"工位团队-{uuid.uuid4().hex[:6]}"})
+        "/api/v1/teams",
+        # 不传 workstations = 开通**全部**（当前阶段全部免费，见 app/api/teams.py）。
+        # 本文件的用例要精确控制"开通了哪些"，所以显式传空数组。
+        json={"name": name or f"工位团队-{uuid.uuid4().hex[:6]}", "workstations": []},
+    )
     assert resp.status_code == 201, resp.text
     return admin, resp.json()["id"]
 
@@ -501,7 +505,7 @@ class TestSubscriptionGuard:
         user = await _mk_user(db_session, "mate", team_id=team.id)
 
         for path in ("/api/v1/customers", "/api/v1/orders", "/api/v1/quotations",
-                     "/api/v1/shipments", "/api/v1/research/overview"):
+                     "/api/v1/shipments", "/api/v1/research/products"):
             resp = await client.get(path, headers=_bearer(user.id))
             assert resp.status_code != 404, path
 
@@ -558,15 +562,16 @@ class TestSubscriptionGuard:
     async def test_internal_failure_fails_open(self, client, db_session, monkeypatch):
         """中间件内部异常 → **放行**（订阅校验故障不能让整个服务不可用）。
 
-        直接让缓存读取抛异常（模拟"订阅链路本身坏了"），断言请求没被判 404。
+        让「读缓存」这一步直接抛异常（模拟订阅链路本身坏了）。注意必须替换
+        `cached_subscription` 本身：`_SUBSCRIPTION_CACHE` 只被 `.get()` 访问，
+        换 dict 子类的 `__getitem__` 根本不会触发。
         """
         from app.api import workstations as ws_api
 
-        class _BoomDict(dict):
-            def __getitem__(self, key):
-                raise RuntimeError("cache exploded")
+        def _boom(_user_id):
+            raise RuntimeError("cache exploded")
 
-        monkeypatch.setattr(ws_api, "_SUBSCRIPTION_CACHE", _BoomDict())
+        monkeypatch.setattr(ws_api, "cached_subscription", _boom)
         user = await _mk_user(db_session, "solo")
         resp = await client.get("/api/v1/customers", headers=_bearer(user.id))
         assert resp.status_code != 404

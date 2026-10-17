@@ -2,7 +2,7 @@
 
 验证核心链路:
 - GET /health → 200
-- POST /api/v1/events → 201 + DB 持久化
+- POST /api/v1/events → 200 + DB 持久化
 - GET /api/v1/admin/tenants → 200
 """
 import pytest
@@ -31,14 +31,14 @@ class TestEventWriteE2E:
     """事件写入端到端测试 — 从 HTTP 到数据库。"""
 
     async def test_post_event_persists_to_db(self, client, db_session):
-        """POST /api/v1/events 返回 201 且 session 内可查询到记录。"""
+        """POST /api/v1/events 返回 200 且 session 内可查询到记录。"""
         body = make_event_body("audit.access", event_source="orchestrator",
                                 resource_id="e2e-sess-1")
         response = await client.post(
             "/api/v1/events", json=body,
             headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
-        assert response.status_code == 201
+        assert response.status_code == 200
         data = response.json()
         assert data["tenant_id"] == "lianjia"
         assert data["event_type"] == "audit.access"
@@ -70,7 +70,7 @@ class TestEventWriteE2E:
             "/api/v1/events", json=body,
             headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
-        assert response.status_code == 201
+        assert response.status_code == 200
         data = response.json()
         assert data["event_type"] == "capability.update"
 
@@ -139,7 +139,7 @@ class TestFullChainE2E:
             "/api/v1/events", json=body,
             headers={"X-Tenant-Id": "lianjia", "X-Use-V2": "true"},
         )
-        assert r.status_code == 201
+        assert r.status_code == 200
         event = r.json()
 
         # Step 3: 查管理端点

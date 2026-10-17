@@ -30,7 +30,11 @@ async def buyer_id(db_session) -> int:
     团队为 NULL 是刻意的：conftest 注入的 AuthContext 也没有团队
     （team_id=None），校验要求"客户团队 == 访问者团队"，两边同为 NULL 才匹配。
     """
-    customer = Customer(tenant_id="lianjia", name="QA Buyer", team_id=None)
+    # owner_scope="tenant" = 显式共享的基础数据（共享内核可见性规则 2）。
+    # 内核的 team_id 规则要求「行 team_id 非空且等于访问者团队」，两边都是 NULL
+    # 不构成可见（`_same(None, None) is False`），所以不能靠 team_id=None 匹配。
+    customer = Customer(tenant_id="lianjia", name="QA Buyer", team_id=None,
+                        owner_scope="tenant")
     db_session.add(customer)
     await db_session.flush()
     return customer.id

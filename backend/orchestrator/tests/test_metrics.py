@@ -54,8 +54,12 @@ class TestBusinessMetrics:
 class TestAdminCacheClear:
     """管理员缓存清理测试。"""
 
-    async def test_cache_clear_no_auth_returns_401(self, client):
-        """无 token → 401。"""
+    async def test_cache_clear_no_auth_returns_401(self, client, real_auth):
+        """无 token → 401。
+
+        默认 autouse 的鉴权 mock 会绕过鉴权，这条用例必须显式恢复**真实**
+        AuthContextMiddleware（`real_auth`）才测得到 401。
+        """
         response = await client.post(
             "/api/v1/admin/cache/clear",
             headers={"X-Tenant-Id": "lianjia"},

@@ -118,7 +118,7 @@ class TestCapabilitiesAPI:
             headers={"X-Tenant-Id": "lianjia"},
         )
         assert response.status_code == 400
-        assert response.json()["error"] == "missing_fields"
+        assert error_code(response) == "missing_fields"
 
 
 class TestCapabilitiesTenantIsolation:

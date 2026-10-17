@@ -101,10 +101,11 @@ class TestScopedTenantId:
         auth = AuthContext(user_id=2, account_type="customer", tenant_id="lianjia")
         assert get_scoped_tenant_id(auth) == "lianjia"
 
-    def test_customer_no_tenant_returns_none(self):
+    def test_customer_no_tenant_defaults_to_default(self):
+        """AuthContext 把 tenant_id=None 收敛为 DEFAULT_TENANT（tenant 恒 default）。"""
         from app.core.auth_utils import get_scoped_tenant_id
         auth = AuthContext(user_id=2, account_type="customer", tenant_id=None)
-        assert get_scoped_tenant_id(auth) is None
+        assert get_scoped_tenant_id(auth) == "default"
 
 
 class TestAuthMiddlewareTenantCheck:
@@ -166,26 +167,51 @@ _CUSTOMER_HEADERS = {
 }
 
 
+@pytest.fixture
+async def customer_user(db_session):
+    """mock 的 customer 身份固定 user_id=17；`/auth/me` 会查库，这里补一行。"""
+    from app.db.models import User
+
+    user = User(
+        id=17,
+        email="mock-customer-17@qa.test",
+        password_hash="x",
+        display_name="Mock Customer",
+        account_type="customer",
+        role="owner",
+        plan="free",
+        status="active",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    return user
+
+
 class TestTenantIsolationEndToEnd:
-    """端到端测试：customer token + forged X-Tenant-Id 必须 403
+    """端到端测试：customer 身份 + forged X-Tenant-Id 必须 403。
 
     通过 X-Account-Type: customer header 触发 conftest mock 的 customer 模式，
     验证 AuthContextMiddleware 中的 tenant mismatch 检测生效。
+
+    ⚠️ 用 `client`（带 get_db_session 覆盖）而不是 `async_client`：
+    直连 app 自己的 engine 会跨 pytest 事件循环复用连接池，
+    出现 "Future attached to a different loop"；覆盖依赖后所有查询走本用例事务。
     """
 
     @pytest.mark.asyncio
-    async def test_customer_no_x_tenant_id_works(self, async_client):
-        """customer 不带 X-Tenant-Id → 200，tenant 来自 auth"""
-        resp = await async_client.get(
+    async def test_customer_no_x_tenant_id_works(self, client, customer_user):
+        """customer 不带 X-Tenant-Id → 200，tenant 来自 auth。"""
+        resp = await client.get(
             "/api/v1/auth/me",
-            headers={**{"Authorization": "Bearer fake-token"}, **_CUSTOMER_HEADERS},
+            headers={"Authorization": "Bearer fake-token", **_CUSTOMER_HEADERS},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["tenant_id"] == "default"
 
     @pytest.mark.asyncio
-    async def test_customer_correct_x_tenant_id_works(self, async_client):
-        """customer 带正确的 X-Tenant-Id → 200"""
-        resp = await async_client.get(
+    async def test_customer_correct_x_tenant_id_works(self, client):
+        """customer 带正确的 X-Tenant-Id → 200。"""
+        resp = await client.get(
             "/health",
             headers={
                 "Authorization": "Bearer fake-token",
@@ -196,9 +222,9 @@ class TestTenantIsolationEndToEnd:
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_customer_forged_x_tenant_id_returns_403(self, async_client):
-        """customer token + forged X-Tenant-Id: lianjia → 403"""
-        resp = await async_client.get(
+    async def test_customer_forged_x_tenant_id_returns_403(self, client):
+        """customer token + forged X-Tenant-Id: lianjia → 403。"""
+        resp = await client.get(
             "/api/v1/auth/me",
             headers={
                 "Authorization": "Bearer fake-token",
@@ -211,9 +237,9 @@ class TestTenantIsolationEndToEnd:
         assert "forbidden" in data.get("error", "")
 
     @pytest.mark.asyncio
-    async def test_customer_forged_tenant_rejected_on_pricing_data(self, async_client):
-        """pricing-data: forged X-Tenant-Id → 403"""
-        resp = await async_client.get(
+    async def test_customer_forged_tenant_rejected_on_pricing_data(self, client):
+        """pricing-data: forged X-Tenant-Id → 403。"""
+        resp = await client.get(
             "/api/v1/pricing-data",
             headers={
                 "Authorization": "Bearer fake-token",
@@ -224,9 +250,9 @@ class TestTenantIsolationEndToEnd:
         assert resp.status_code == 403
 
     @pytest.mark.asyncio
-    async def test_customer_forged_tenant_rejected_on_product_specs(self, async_client):
-        """product-specs: forged X-Tenant-Id → 403"""
-        resp = await async_client.get(
+    async def test_customer_forged_tenant_rejected_on_product_specs(self, client):
+        """product-specs: forged X-Tenant-Id → 403。"""
+        resp = await client.get(
             "/api/v1/product-specs?product_category=niulanwang",
             headers={
                 "Authorization": "Bearer fake-token",
@@ -237,9 +263,9 @@ class TestTenantIsolationEndToEnd:
         assert resp.status_code == 403
 
     @pytest.mark.asyncio
-    async def test_customer_forged_tenant_rejected_on_events(self, async_client):
-        """events: forged X-Tenant-Id → 403"""
-        resp = await async_client.post(
+    async def test_customer_forged_tenant_rejected_on_events(self, client):
+        """events: forged X-Tenant-Id → 403。"""
+        resp = await client.post(
             "/api/v1/events",
             json={
                 "event_type": "audit.access",
@@ -255,9 +281,9 @@ class TestTenantIsolationEndToEnd:
         assert resp.status_code == 403
 
     @pytest.mark.asyncio
-    async def test_customer_forged_tenant_rejected_on_capabilities(self, async_client):
-        """capabilities: forged X-Tenant-Id → 403"""
-        resp = await async_client.get(
+    async def test_customer_forged_tenant_rejected_on_capabilities(self, client):
+        """capabilities: forged X-Tenant-Id → 403。"""
+        resp = await client.get(
             "/api/v1/capabilities",
             headers={
                 "Authorization": "Bearer fake-token",
@@ -269,10 +295,10 @@ class TestTenantIsolationEndToEnd:
 
     @pytest.mark.asyncio
     async def test_customer_forged_tenant_rejected_on_oss_presign(
-        self, async_client, minio_mock
+        self, client, minio_mock
     ):
-        """oss/presign: forged X-Tenant-Id → 403"""
-        resp = await async_client.post(
+        """oss/presign: forged X-Tenant-Id → 403。"""
+        resp = await client.post(
             "/api/v1/oss/presign",
             json={"purpose": "event_payload"},
             headers={
@@ -285,33 +311,23 @@ class TestTenantIsolationEndToEnd:
 
     @pytest.mark.asyncio
     async def test_customer_forged_body_customer_id_returns_403(
-        self, async_client, db_session
+        self, client, db_session
     ):
-        """customer + body customer_id 不匹配 → 403"""
-        from app.main import app
-        from app.db.session import get_db_session
-
-        async def override_db():
-            yield db_session
-        app.dependency_overrides[get_db_session] = override_db
-
-        try:
-            resp = await async_client.post(
-                "/api/v1/pricing-data",
-                json={
-                    "product_category": "niulanwang",
-                    "cost_amount": 100,
-                    "cost_unit": "元/kg",
-                    "wire_diameter": "2.0",
-                    "height": 1.5,
-                    "customer_id": "lianjia",
-                },
-                headers={
-                    "Authorization": "Bearer fake-token",
-                    **_CUSTOMER_HEADERS,
-                    "X-Tenant-Id": _CUSTOMER_TENANT,
-                },
-            )
-            assert resp.status_code == 403
-        finally:
-            app.dependency_overrides.clear()
+        """customer + body customer_id 不匹配 → 403。"""
+        resp = await client.post(
+            "/api/v1/pricing-data",
+            json={
+                "product_category": "niulanwang",
+                "cost_amount": 100,
+                "cost_unit": "元/kg",
+                "wire_diameter": "2.0",
+                "height": 1.5,
+                "customer_id": "lianjia",
+            },
+            headers={
+                "Authorization": "Bearer fake-token",
+                **_CUSTOMER_HEADERS,
+                "X-Tenant-Id": _CUSTOMER_TENANT,
+            },
+        )
+        assert resp.status_code == 403

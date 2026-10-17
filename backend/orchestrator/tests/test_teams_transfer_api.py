@@ -25,6 +25,7 @@ from tests.test_teams_api import (  # noqa: F401  复用既有辅助，避免复
     _code,
     _mk_team,
     _mk_user,
+    as_user,
 )
 
 pytestmark = pytest.mark.db
