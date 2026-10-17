@@ -228,6 +228,86 @@ function currentAdminActor(): { id: number } {
   return { id: MOCK_ADMIN_USER.user_id };
 }
 
+// ── 报价单 store（quote_orders + 行项 · 报价记录视图用）──────────────────────
+// 行项照后端 _row_to_item 白名单；cost_breakdown 是 internal 分解快照
+// （mock 的登录身份固定是 internal 管理员，直接返回；customer 剥除由后端负责）。
+type MockQuoteItem = {
+  id: number;
+  quote_order_id: number;
+  sku_id: number | null;
+  product_name: string;
+  spec_snapshot: Record<string, unknown> | null;
+  qty: number;
+  qty_unit: string;
+  unit_price: number | null;
+  currency: string;
+  line_amount: number | null;
+  sort_order: number;
+  cost_breakdown: Record<string, unknown> | null;
+  created_at: string;
+};
+
+type MockQuote = {
+  id: number;
+  quote_no: string;
+  customer_id: number | null;
+  customer_name: string | null;
+  inquiry_id: number | null;
+  status: string;
+  currency: string;
+  total_amount: number | null;
+  created_by: string;
+  created_at: string;
+  items: MockQuoteItem[];
+};
+
+let quotesStore: MockQuote[] = [
+  {
+    id: 1,
+    quote_no: "QUO-20261017-001",
+    customer_id: 1,
+    customer_name: "联佳丝网",
+    inquiry_id: 1,
+    status: "sent",
+    currency: "USD",
+    total_amount: 3612.36,
+    created_by: "1",
+    created_at: "2026-10-17T02:30:00.000Z",
+    items: [
+      {
+        id: 11,
+        quote_order_id: 1,
+        sku_id: null,
+        product_name: "Field Fence",
+        spec_snapshot: {
+          specification: "1.5m × 50m × 2.5mm",
+          hs_code: "73144100",
+          package: 12,
+          product_key: "field_fence",
+          product_name_zh: "牛栏网",
+        },
+        qty: 12,
+        qty_unit: "ROLLS",
+        unit_price: 301.03,
+        currency: "USD",
+        line_amount: 3612.36,
+        sort_order: 0,
+        cost_breakdown: {
+          view: "internal",
+          currency_cny_per_m2: {
+            cost_pretax: 8.75,
+            profit_amount: 1.2,
+            quote_excl_vat: 10.1,
+          },
+          per_piece: { price_cny: 2100, price_fx: 301.03 },
+          pieces: 12,
+        },
+        created_at: "2026-10-17T02:30:00.000Z",
+      },
+    ],
+  },
+];
+
 const nowIso = () => new Date().toISOString();
 const optStr = (v: unknown): string | null =>
   typeof v === "string" ? v : null;
@@ -1296,8 +1376,37 @@ export const handlers = [
     });
   }),
 
-  // ── 平台账号治理（admin/accounts · 契约见 docs/ACCOUNT_GOVERNANCE_HANDOVER §②）──
-  // 写操作必须**真的**改 store：停用/恢复后列表与详情要跟着变，否则 e2e 断言失效。
+  // ── 报价单（quote_orders · 报价记录视图）──────────────────────────────────
+  // 列表不返回行项（防 N+1，与后端一致）；详情才带 items。
+  http.get("/api/v1/quotes", ({ request }) => {
+    const url = new URL(request.url);
+    const status = url.searchParams.get("status");
+    let items = quotesStore.slice().sort((a, b) => b.id - a.id);
+    if (status) items = items.filter((q) => q.status === status);
+    return HttpResponse.json({
+      items: items.map(({ items: _rows, ...q }) => ({
+        ...q,
+        item_count: _rows.length,
+      })),
+      total: items.length,
+      page: 1,
+      page_size: Number(url.searchParams.get("page_size")) || 50,
+    });
+  }),
+
+  http.get("/api/v1/quotes/:id", ({ params }) => {
+    const quote = quotesStore.find((q) => q.id === Number(params.id));
+    if (!quote) {
+      return HttpResponse.json(
+        { detail: { error: "not_found" } },
+        { status: 404 },
+      );
+    }
+    const { items, ...q } = quote;
+    return HttpResponse.json({ ...q, item_count: items.length, items });
+  }),
+
+  // ── 平台账号治理（admin/accounts · 契约见 docs/ACCOUNT_GOVERNANCE_HANDOVER §②）──  // 写操作必须**真的**改 store：停用/恢复后列表与详情要跟着变，否则 e2e 断言失效。
   // 白名单字段照后端 _account_out：绝不含 password_hash / token。
   http.get("/api/v1/admin/accounts", ({ request }) => {
     const url = new URL(request.url);

@@ -20,6 +20,7 @@ import { QuotationTable } from "../../quotations/components/quotation-table";
 import { QuotationFilters as FiltersBar } from "../../quotations/components/quotation-filters";
 import { QuotationDetailSheet } from "../../quotations/components/quotation-detail";
 import { NewQuotationForm } from "../../quotations/components/new-quotation-form";
+import { QuoteOrderRecords } from "../components/quote-order-records";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 
 export function QuotationRecordsView() {
@@ -35,6 +36,11 @@ export function QuotationRecordsView() {
 
   return (
     <div className="space-y-5">
+      {/* 报价单记录（quote_orders 全信息视图：客户/时间/报价人/产品/规格/
+          数量/价格，internal 另有成本/利润列）——历史报价的主视图 */}
+      <QuoteOrderRecords />
+
+      {/* 旧台账（quotations 报价事实表）：手工补录 + 历史数据，保留共存 */}
       <NewQuotationForm onSuccess={() => {}} />
 
       <Card>
