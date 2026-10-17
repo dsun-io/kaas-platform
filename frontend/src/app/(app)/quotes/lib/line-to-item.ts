@@ -23,7 +23,10 @@ import type {
 } from "@contracts/export-quote";
 import type { QuoteOrderItemIn } from "@contracts/quote-order";
 import { QTY_UNIT_ROLLS } from "@contracts/quote-order";
-import { buildSpecification, type SpecValues } from "@/lib/trade-doc/spec-to-text";
+import {
+  buildSpecification,
+  type SpecValues,
+} from "@/lib/trade-doc/spec-to-text";
 
 export type QuoteView = "customer" | "internal";
 
@@ -71,11 +74,10 @@ export function makeColumnIndexer(
   return (key: string) => keys.indexOf(key);
 }
 
-function pickTable(
-  result: ExportQuoteResponse,
-  view: QuoteView,
-): QuoteTable {
-  return view === "internal" && result.internal ? result.internal : result.customer;
+function pickTable(result: ExportQuoteResponse, view: QuoteView): QuoteTable {
+  return view === "internal" && result.internal
+    ? result.internal
+    : result.customer;
 }
 
 /** 取一行（默认第 0 行）里某列的值；列不存在或非数值 → null。 */
@@ -92,6 +94,49 @@ function readCell(
   if (!row) return null;
   const value = row[index];
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * 内部分解（成本/利润）快照 —— 读 internal 视图的价链列。
+ * 列键由产品定义声明（产品没声明的列读不到即省略），引擎单位：
+ * `price.*` 是每平方米人民币价链，`piece.*` 是单件价。
+ */
+const INTERNAL_COST_KEYS = {
+  cost_pretax: "price.cost_pretax",
+  cost_incl: "price.cost_incl",
+  profit_amount: "price.profit_amount",
+  quote_excl_vat: "price.quote_excl_vat",
+  output_vat: "price.output_vat",
+  quote_incl_vat: "price.quote_incl_vat",
+} as const;
+
+function buildCostBreakdown(
+  result: ExportQuoteResponse,
+  formulas: ProductFormulasResponse,
+  pieces: number,
+  unitPriceFx: number,
+): Record<string, unknown> {
+  const indexOf = makeColumnIndexer(formulas, "internal");
+  const perM2: Record<string, number> = {};
+  for (const [label, key] of Object.entries(INTERNAL_COST_KEYS)) {
+    const value = readCell(result, "internal", indexOf, key);
+    if (value !== null) perM2[label] = value;
+  }
+  const pricePerPiece = readCell(
+    result,
+    "internal",
+    indexOf,
+    "piece.price_per_piece",
+  );
+  return {
+    view: "internal",
+    currency_cny_per_m2: perM2,
+    per_piece: {
+      price_cny: pricePerPiece,
+      price_fx: unitPriceFx,
+    },
+    pieces,
+  };
 }
 
 export interface BuildLineItemInput {
@@ -121,7 +166,10 @@ export interface LineDeclaredFields {
 
 export interface BuiltLineItem {
   /** 直接可提交给 `PUT /quotes/{id}/items` 的行项 */
-  item: QuoteOrderItemIn & { line_amount: number; spec_snapshot: Record<string, unknown> };
+  item: QuoteOrderItemIn & {
+    line_amount: number;
+    spec_snapshot: Record<string, unknown>;
+  };
   /** 汇总用指标（不进数据库行项，落在 spec_snapshot 与界面汇总里） */
   metrics: {
     meters: number;
@@ -148,8 +196,7 @@ export function buildLineItem(input: BuildLineItemInput): BuiltLineItem {
   const { product, formulas, spec, pieceBase, result, view, pieces } = input;
   const indexOf = makeColumnIndexer(formulas, view);
 
-  const unitPriceFx =
-    readCell(result, view, indexOf, COL.unitPriceFx) ?? 0;
+  const unitPriceFx = readCell(result, view, indexOf, COL.unitPriceFx) ?? 0;
   const netWeightPerPiece =
     readCell(result, view, indexOf, COL.netWeightPerPiece) ?? 0;
   const boxVolumePerPiece =
@@ -192,6 +239,14 @@ export function buildLineItem(input: BuildLineItemInput): BuiltLineItem {
     unit_price_fx: unitPriceFx,
   };
 
+  // 内部分解快照（UNCERTAIN #19）：internal 视图把算价引擎的成本/利润列一并
+  // 带进 cost_breakdown 落库——历史报价对内视图与参考价的核算依据。
+  // customer 视图不带（后端也不会存出内部列）。
+  const costBreakdown =
+    view === "internal"
+      ? buildCostBreakdown(result, formulas, pieces, unitPriceFx)
+      : undefined;
+
   return {
     item: {
       product_name: product.name_en || product.name,
@@ -202,6 +257,7 @@ export function buildLineItem(input: BuildLineItemInput): BuiltLineItem {
       line_amount: lineAmount,
       spec_snapshot: specSnapshot,
       sort_order: 0, // 由调用方按行序覆盖
+      ...(costBreakdown ? { cost_breakdown: costBreakdown } : {}),
     },
     metrics: {
       meters,

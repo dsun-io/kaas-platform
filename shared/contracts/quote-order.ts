@@ -49,6 +49,12 @@ export const QuoteOrderItemInSchema = z.object({
   line_amount: z.number().nullable().optional(),
   /** 决定单证上的行序 */
   sort_order: z.number().int().default(0),
+  /**
+   * 内部分解快照（成本/利润，签发时从算价引擎 internal 视图带来）。
+   * 仅 platform 员工（account_type=internal）可读——后端接口层对
+   * customer 账号剥除本字段，前端不得把它渲染进任何对外/客户可见界面。
+   */
+  cost_breakdown: z.record(z.unknown()).nullable().optional(),
 });
 export type QuoteOrderItemIn = z.infer<typeof QuoteOrderItemInSchema>;
 
