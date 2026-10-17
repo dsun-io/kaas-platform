@@ -6,7 +6,7 @@ import pytest
 from app.middleware.auth import AuthContextMiddleware
 from app.core.auth import AuthContext
 from app.main import app
-from tests.conftest import _TEST_AUTH_PUBLIC_PATHS
+from tests.conftest import _TEST_AUTH_PUBLIC_PATHS, error_code
 
 pytestmark = pytest.mark.db
 

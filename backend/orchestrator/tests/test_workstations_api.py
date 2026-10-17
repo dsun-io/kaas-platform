@@ -505,7 +505,7 @@ class TestSubscriptionGuard:
         user = await _mk_user(db_session, "mate", team_id=team.id)
 
         for path in ("/api/v1/customers", "/api/v1/orders", "/api/v1/quotations",
-                     "/api/v1/shipments", "/api/v1/research/products"):
+                     "/api/v1/shipments", "/api/v1/trade-docs"):
             resp = await client.get(path, headers=_bearer(user.id))
             assert resp.status_code != 404, path
 
