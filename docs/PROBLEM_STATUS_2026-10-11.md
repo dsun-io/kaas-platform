@@ -10,6 +10,24 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（交接 · 2026-10-17 · 账号治理 API 代码审查 6 项发现全部修复）**
+>
+> 对 `ff9aa73`（账号治理）/`fbced67`（DSN 清理）的审查发现，按弹窗确认的方案全部修完：
+> - **LAST_ADMIN 并发竞态（两端）**：计数改自 `SELECT ... FOR UPDATE` 行锁查询（锁定全部
+>   active 管理员行），并发禁用最后两名管理员时在锁上串行化、后到事务重读行集必然已减 →
+>   正确 409，不再出现「双双通过、平台零管理员」窗口。
+> - **角色映射彻底单源**：全仓库唯一一份映射收敛在 `kaas_common.workstation.scope`
+>   （`ADMIN_ROLES` / `effective_role`）；orchestrator `User.effective_role` /
+>   `AuthContext.effective_role` 改为委托；`admin_accounts.py` 的第三份 `_ROLE_MAP` 删除。
+> - **列表分页（两端同契约）**：`GET /accounts` 加 `?limit=`（默认 500，上限 1000）+
+>   `?offset=`，响应新增 `total`（全量计数）——**契约形状有变化，openapi.json 已重生成**。
+> - **杂项**：worker `_account_out` 函数内 import 上提模块顶；`.tools` 四个脚本
+>   `KAAS_DSN` 缺失时给可读报错（原裸 `KeyError`）。
+> - **门禁实测（2026-10-17）**：orchestrator `pytest -m unit` **1197 passed / 1 skipped**
+>   （较上次 +1）；worker **275 passed**（较上次 +3）；route-parity **PASS**；
+>   sync-shared 同步后 **Check 一致（31/22/1）**；`contracts:check` 按 R6 顺序
+>   （重生成产物 → 提交 → 复跑）**待提交后复跑确认**；前端未改动（其既有 typecheck 红与本线无关）。
+
 > **（交接 · 2026-10-12 17:3x · 平台账号治理）→ 详细交接见
 > [`ACCOUNT_GOVERNANCE_HANDOVER_2026-10-12.md`](./ACCOUNT_GOVERNANCE_HANDOVER_2026-10-12.md)**
 >
