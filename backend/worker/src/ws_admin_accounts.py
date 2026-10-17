@@ -13,7 +13,7 @@ from __future__ import annotations
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from kaas_common.workstation.scope import is_admin_role
+from kaas_common.workstation.scope import effective_role, is_admin_role
 
 import main as _main
 
@@ -35,8 +35,6 @@ def _require_system_admin(user: dict) -> None:
 
 def _account_out(row) -> dict:
     """白名单序列化 —— 显式列举允许字段。"""
-    from kaas_common.workstation.scope import effective_role
-
     return {
         "id": row["id"],
         "email": row["email"],
@@ -53,16 +51,30 @@ def _account_out(row) -> dict:
 
 
 @app.get("/api/v1/admin/accounts")
-async def list_accounts(request: Request, user: dict = Depends(_get_current_user)):
-    """账号列表（system_admin 专属）。"""
+async def list_accounts(
+    request: Request,
+    limit: int = 500,
+    offset: int = 0,
+    user: dict = Depends(_get_current_user),
+):
+    """账号列表（system_admin 专属）。
+
+    分页：``?limit=``（默认 500，上限 1000）+ ``?offset=``，响应附 ``total``（全量计数）。
+    """
     _require_system_admin(user)
+    limit = max(1, min(int(limit or 500), 1000))
+    offset = max(0, int(offset or 0))
     async with _acquire(request) as conn:
+        total = await conn.fetchval("SELECT count(*) FROM users")
         rows = await conn.fetch(
             "SELECT u.id, u.email, u.display_name, u.account_type, u.role, u.status,"
             " u.team_id, u.console_access, u.created_at, u.updated_at, t.name AS team_name"
-            " FROM users u LEFT JOIN teams t ON t.id = u.team_id ORDER BY u.id"
+            " FROM users u LEFT JOIN teams t ON t.id = u.team_id"
+            " ORDER BY u.id LIMIT $1 OFFSET $2",
+            limit,
+            offset,
         )
-    return {"accounts": [_account_out(r) for r in rows]}
+    return {"accounts": [_account_out(r) for r in rows], "total": total}
 
 
 @app.patch("/api/v1/admin/accounts/{user_id}")
@@ -99,11 +111,13 @@ async def update_account_status(
                         detail={"error": "conflict", "code": "SELF_PROTECT"},
                     )
                 if row["status"] == "active" and is_admin_role(row["role"]):
-                    remaining = await conn.fetchval(
-                        "SELECT count(*) FROM users WHERE status='active'"
-                        " AND role IN ('system_admin','admin')"
+                    # 竞态修复：锁「全部 active 管理员行」再计数 —— 并发禁用
+                    # 在 FOR UPDATE 上串行化，后到事务重读行集必然已减 → 正确 409。
+                    locked = await conn.fetch(
+                        "SELECT id FROM users WHERE status='active'"
+                        " AND role IN ('system_admin','admin') FOR UPDATE"
                     )
-                    if remaining <= 1:
+                    if len(locked) <= 1:
                         raise HTTPException(
                             status_code=409,
                             detail={"error": "conflict", "code": "LAST_ADMIN"},

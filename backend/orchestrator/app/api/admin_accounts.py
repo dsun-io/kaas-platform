@@ -10,10 +10,12 @@
 - 保护：禁停自己（409 SELF_PROTECT）、禁停最后一名 active system_admin（409 LAST_ADMIN）；
 - **不提供任何删除账号/团队的端点**。
 """
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from kaas_common.workstation.scope import ADMIN_ROLES
 
 from app.core.auth import AuthContext
 from app.core.auth_utils import require_internal
@@ -22,15 +24,6 @@ from app.db.session import get_db_session
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin-accounts"])
 
-# 角色 → effective_role 映射（与 AuthContext.effective_role / kaas_common scope 同源）
-_ROLE_MAP = {
-    "system_admin": "system_admin",
-    "admin": "system_admin",
-    "owner": "customer_owner",
-    "customer_owner": "customer_owner",
-    "user": "customer_member",
-    "customer_member": "customer_member",
-}
 _ACCOUNT_STATUSES = frozenset({"active", "disabled"})
 
 
@@ -47,7 +40,7 @@ def _account_out(user: User, team_name: str | None) -> dict:
         "email": user.email,
         "display_name": user.display_name,
         "account_type": user.account_type,
-        "role": _ROLE_MAP.get(user.role, "customer_member"),
+        "role": user.effective_role,
         "status": user.status,
         "team_id": user.team_id,
         "team_name": team_name,
@@ -60,18 +53,24 @@ def _account_out(user: User, team_name: str | None) -> dict:
 @router.get("/accounts")
 async def list_accounts(
     request: Request,
+    limit: int = Query(500, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db_session),
 ):
-    """列出全部账号（system_admin 专属）。响应不含 password_hash/token。"""
+    """列出账号（system_admin 专属）。响应不含 password_hash/token。
+
+    分页：``?limit=``（默认 500，上限 1000）+ ``?offset=``，响应附 ``total``（全量计数）。
+    """
     auth: AuthContext | None = getattr(request.state, "auth", None)
     if auth is None:
         raise HTTPException(status_code=401, detail={"error": "unauthorized"})
     require_internal(auth)
 
+    total = (await db.execute(select(func.count()).select_from(User))).scalar_one()
     rows = (
         (
             await db.execute(
-                select(User).order_by(User.id)
+                select(User).order_by(User.id).limit(limit).offset(offset)
             )
         )
         .scalars()
@@ -84,7 +83,10 @@ async def list_accounts(
             await db.execute(select(Team.id, Team.name).where(Team.id.in_(team_ids)))
         ).all():
             team_names[tid] = name
-    return {"accounts": [_account_out(u, team_names.get(u.team_id)) for u in rows]}
+    return {
+        "accounts": [_account_out(u, team_names.get(u.team_id)) for u in rows],
+        "total": total,
+    }
 
 
 @router.patch("/accounts/{user_id}")
@@ -120,19 +122,26 @@ async def update_account_status(
                 status_code=409,
                 detail={"error": "conflict", "code": "SELF_PROTECT"},
             )
-        # 保护 2：禁止停用最后一名 active system_admin（历史 admin 同义）
-        if _ROLE_MAP.get(user.role, "customer_member") == "system_admin" and user.status == "active":
-            remaining = (
-                await db.execute(
-                    select(func.count())
-                    .select_from(User)
-                    .where(
-                        User.status == "active",
-                        User.role.in_(("system_admin", "admin")),
+        # 保护 2：禁止停用最后一名 active system_admin（历史 admin 同义）。
+        # 竞态修复：对「全部 active 管理员行」加 FOR UPDATE —— 两个并发禁用
+        # 会在行锁上串行化，后到事务拿到锁时重读行集，计数必然已减 → 正确 409，
+        # 不会出现「两名管理员同时被停用、平台零管理员」的窗口。
+        if user.effective_role == "system_admin" and user.status == "active":
+            locked = (
+                (
+                    await db.execute(
+                        select(User.id)
+                        .where(
+                            User.status == "active",
+                            User.role.in_(ADMIN_ROLES),
+                        )
+                        .with_for_update()
                     )
                 )
-            ).scalar_one()
-            if remaining <= 1:
+                .scalars()
+                .all()
+            )
+            if len(locked) <= 1:
                 raise HTTPException(
                     status_code=409,
                     detail={"error": "conflict", "code": "LAST_ADMIN"},

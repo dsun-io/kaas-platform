@@ -111,9 +111,12 @@ COORDS = {
 }
 
 import os  # noqa: E402 —— 就地导入（本文件其余部分不依赖 os）
+import sys  # noqa: E402
 
 # 生产 DSN 一律从环境变量读取：**不入仓库**（原硬编码的生产口令已按安全要求清除）。
-DSN = os.environ["KAAS_DSN"]
+DSN = os.environ.get("KAAS_DSN")
+if not DSN:
+    sys.exit("缺少环境变量 KAAS_DSN —— 先执行: $env:KAAS_DSN='postgresql://<user>:<pass>@<host>/<db>'")
 
 
 async def main():

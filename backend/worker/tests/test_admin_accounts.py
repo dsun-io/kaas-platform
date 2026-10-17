@@ -4,7 +4,9 @@
 - 响应白名单（无 password_hash/token）；
 - 角色映射（历史 admin → system_admin）；
 - 鉴权：仅 internal + is_admin_role 放行，internal 普通账号与 customer 一律 403；
-- 无凭据请求先被鉴权拦截（路由已注册，不是 404）。
+- 无凭据请求先被鉴权拦截（路由已注册，不是 404）；
+- 分页：limit（上限 1000 截断）/offset 落到 SQL（LIMIT/OFFSET），响应附 total；
+- 竞态修复：LAST_ADMIN 判定取自 FOR UPDATE 行锁查询（锁到的行数 ≤1 才 409）。
 
 不连库：HTTP 断言只覆盖「鉴权先于取连接」的分支。
 """
@@ -138,3 +140,98 @@ def test_patch_account_forbidden_for_customer():
     _as(CUSTOMER)
     resp = client.patch("/api/v1/admin/accounts/9", json={"status": "disabled"})
     assert resp.status_code == 403
+
+
+# ── 分页 / FOR UPDATE 竞态修复（桩连接，不触真库）────────────────────────────
+
+class _StubTx:
+    def __init__(self, conn):
+        self._conn = conn
+
+    async def __aenter__(self):
+        return self._conn
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+class _StubAcquire:
+    """伪装 `_acquire(request)`，把桩连接交给端点并记录全部 SQL。"""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    async def __aenter__(self):
+        return self._conn
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+class _StubConn:
+    def __init__(self, *results):
+        self._results = list(results)
+        self.queries: list[tuple[str, tuple]] = []
+
+    def _next(self, q, args):
+        self.queries.append((q, args))
+        assert self._results, "端点执行了多于预期的查询（桩结果已用尽）"
+        return self._results.pop(0)
+
+    def transaction(self):
+        return _StubTx(self)
+
+    async def fetch(self, q, *args):
+        return self._next(q, args)
+
+    async def fetchval(self, q, *args):
+        return self._next(q, args)
+
+    async def fetchrow(self, q, *args):
+        return self._next(q, args)
+
+
+def _patched_acquire(monkeypatch, conn):
+    monkeypatch.setattr(
+        ws_admin_accounts, "_acquire", lambda _req: _StubAcquire(conn)
+    )
+
+
+def test_list_accounts_pagination_total_and_limit_offset(monkeypatch):
+    conn = _StubConn(10, [_row(id=1), _row(id=2)])  # total, 本页两行
+    _patched_acquire(monkeypatch, conn)
+    _as(SYSTEM_ADMIN)
+    resp = client.get("/api/v1/admin/accounts?limit=2&offset=1")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["total"] == 10                 # total 不受分页影响
+    assert [a["id"] for a in body["accounts"]] == [1, 2]
+    list_sql, bind_args = conn.queries[1]
+    assert "LIMIT $1 OFFSET $2" in list_sql
+    assert bind_args == (2, 1)
+
+
+def test_list_accounts_limit_is_clamped(monkeypatch):
+    conn = _StubConn(0, [])
+    _patched_acquire(monkeypatch, conn)
+    _as(SYSTEM_ADMIN)
+    resp = client.get("/api/v1/admin/accounts?limit=99999&offset=-5")
+    assert resp.status_code == 200, resp.text
+    _, bind_args = conn.queries[1]
+    assert bind_args == (1000, 0)              # 上限 1000、offset 不低于 0
+
+
+def test_patch_disable_last_admin_uses_for_update_lock(monkeypatch):
+    """竞态修复：LAST_ADMIN 判定改自 FOR UPDATE 行锁查询，而非裸 count。"""
+    target = _row(id=9, role="system_admin")
+    conn = _StubConn(
+        target,    # SELECT 目标行
+        [9],       # FOR UPDATE 锁到的 active 管理员行（只剩目标一个）
+    )
+    _patched_acquire(monkeypatch, conn)
+    _as(SYSTEM_ADMIN)
+    resp = client.patch("/api/v1/admin/accounts/9", json={"status": "disabled"})
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"]["code"] == "LAST_ADMIN"
+    lock_sql, _ = conn.queries[1]
+    assert "FOR UPDATE" in lock_sql and "count" not in lock_sql.lower()

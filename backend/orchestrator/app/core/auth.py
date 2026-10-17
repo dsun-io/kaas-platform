@@ -104,16 +104,10 @@ class AuthContext:
 
     @property
     def effective_role(self) -> str:
-        """应用层角色映射：旧角色 → 新三层角色体系。"""
-        ROLE_MAP = {
-            "system_admin": "system_admin",
-            "admin": "system_admin",
-            "owner": "customer_owner",
-            "customer_owner": "customer_owner",
-            "user": "customer_member",
-            "customer_member": "customer_member",
-        }
-        return ROLE_MAP.get(self.role, "customer_member")
+        """旧角色 → 三层角色。单源映射见 kaas_common.workstation.scope（本 property 仅委托）。"""
+        from kaas_common.workstation.scope import effective_role
+
+        return effective_role(self.role)
 
     @property
     def customer_id_str(self) -> str:

@@ -1,11 +1,14 @@
 """临时：查看关键表列名。"""
 import asyncio
 import os
+import sys
 
 import asyncpg
 
 # 生产 DSN 一律从环境变量读取：**不入仓库**（原硬编码的生产口令已按安全要求清除）。
-DSN = os.environ["KAAS_DSN"]
+DSN = os.environ.get("KAAS_DSN")
+if not DSN:
+    sys.exit("缺少环境变量 KAAS_DSN —— 先执行: $env:KAAS_DSN='postgresql://<user>:<pass>@<host>/<db>'")
 
 TABLES = [
     "cust_customers",

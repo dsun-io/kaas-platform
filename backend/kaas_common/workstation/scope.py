@@ -35,7 +35,9 @@ from typing import Any, Optional
 
 __all__ = ["ADMIN_ROLES", "effective_role", "is_admin_role", "can_view"]
 
-# 角色映射：旧角色 → 三层角色体系（与 orchestrator `AuthContext.effective_role` 一致）
+# 角色映射：旧角色 → 三层角色体系 —— **全仓库唯一一份**。
+# orchestrator 侧 User.effective_role / AuthContext.effective_role 均委托本模块；
+# 改角色口径只改这里（改完跑 scripts/sync-shared.ps1 同步 worker 端）。
 _ROLE_MAP = {
     "system_admin": "system_admin",
     "admin": "system_admin",          # 历史遗留角色，等价于系统管理员
