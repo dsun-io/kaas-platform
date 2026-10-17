@@ -34,13 +34,17 @@
 >   **仅作排障参考**，正常路径是 CI；应急可用 `npx wrangler deploy`（本机实测 wrangler 4.151.1
 >   已登录、有 workers 写权限）。
 >
-> **CI 现状（2026-10-17 15:0x 实测）**：
-> - `deploy` **绿**（run `39010179425`）。
-> - `backend:test`（run `39011847561`）**红**：`unit-tests` 仅 1 条 ——
->   `test_worker_mirror_is_byte_identical` 因 runner 没跑 `sync-shared.ps1`（工作流已补该步骤）；
->   `db-tests` **87 failed / 212 passed / 7 errors**，多为测试间数据泄漏/顺序依赖
->   （`uq_team_subscriptions_code` 冲突、`MultipleResultsFound`），根因与修复方案另见排障记录。
+> **CI 现状（2026-10-17 15:2x 实测）**：
+> - `deploy` **绿**（run `39010179425`）；生产代码 = `2a355c4`（此后 `2b9e814`/`fe50964` 只改文档与
+>   `backend-test.yml`，不影响运行时）。
+> - `backend:test`（run `39011847561`）**红**，且是**长期既有问题**：最近约 400 个 run 里
+>   **没有任何一次 `backend:test` 成功**（不是本次部署引入的回归）。本轮明细：
+>   `unit-tests` 仅 1 条 —— `test_worker_mirror_is_byte_identical`（runner 没跑 `sync-shared.ps1`，
+>   已在 workflow 补该步骤）；`db-tests` **87 failed / 212 passed / 7 errors**（`pytest -m db`），
+>   集中在事件写入（400）、工作流订阅（唯一键冲突/`MultipleResultsFound`）、单证/租户隔离，
+>   属测试基建/预期与现行口径不一致的独立问题，需专项处理（日志已留在 `artifacts/`，gitignored）。
 > - `Frontend CI` 最近一次（`422dadc`）是**被账单挡在启动前**，不是代码红；恢复 public 后尚未重跑。
+> - **结论**：本次「生产与代码一致」已达成；`backend:test` 的红是既有欠账，不应被当成部署失败的证据。
 >
 > **用户原话要求（2026-10-17）**：
 > 1.「为什么是手动部署, 设置好自动部署」→ **自动部署本来就有**（见上），此前是账单问题；现已验证可用。
