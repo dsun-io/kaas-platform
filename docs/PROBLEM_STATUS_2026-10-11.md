@@ -10,6 +10,48 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（交接 · 2026-10-17 晚 · 会话收尾 → 下一位继续）**
+>
+> **⚠️ 最重要：生产部署未完成 —— 线上仍是旧版！**
+> - 代码已全部推送 `main`（HEAD=`422dadc`，含登录跳转修复、真库验证 2 个 bug 修复、
+>   P16 编辑器、阶段 3 重构等本会话全部工作）；
+> - **但 Cloudflare Worker（kaas.powervoy.com）需要手动 `pywrangler deploy` 才更新**，
+>   push 不触发部署。本会话两次部署尝试**均失败**：
+>   ① `uv run pywrangler deploy` → pywrangler 用 GBK 读 UTF-8 的 `wrangler.jsonc`
+>      （含中文注释）报 `illegal multibyte sequence`；
+>   ② 加 `PYTHONUTF8=1` 重试 → uv 自身 `ModuleNotFoundError: No module named 'python'`（缓存/临时目录问题）。
+> - **下一位请做**：a) 修部署链路（`PYTHONUTF8=1` + 清 uv 缓存 `uv cache clean`，
+>   或跳过 pywrangler 直接 `npx wrangler deploy`（assets 由 wrangler.jsonc 声明）；
+>   b) 部署后用无痕窗口验证「无凭据进站直接到登录页」（用户报的 bug 修复在
+>   `422dadc`，**未上线**）；c) 用户还要求**设置自动部署**（push main → 自动发）——
+>   Cloudflare Workers 的 CI 自动部署（GitHub Actions + Wrangler）尚未搭建。
+>
+> **用户原话要求（2026-10-17 晚，中断前）**：
+> 1.「为什么是手动部署, 设置好自动部署」→ 自动部署未做；
+> 2.「将生产项目部署为最新」→ 部署失败，生产仍旧版；
+> 3. Cloudflare agent 接入（`https://developers.cloudflare.com/agent-setup/prompt.md`）——未执行。
+>
+> **本会话已完成并入库**（全部推送 main，基线：orchestrator 1218 / worker 275 /
+> 前端 437 / typecheck 0 / lint 0 / contracts R0–R6 178 paths / route-parity PASS）：
+> - 账号治理 6 项审查修复 + 账号管理 UI + 登录落点角色化 + **登录跳转 bug 修复**（422dadc）
+> - P16 可视化产品编辑器三小步（数值参数/变体/公式 → 列/校验/扣减 → 参数/说明/常量+试算）
+> - P17 收官（全门禁含 NEXT_EXPORT build + 逐字段 round-trip 验收）
+> - 阶段 3 UI：4 套 tab 收编 ui/tabs、11 处响应式 grid 修复、巨石拆 5 刀
+>   （product-quote-view 1327→1008、quote-workbench-view 998→661）、e2e 选择器治理
+> - E1 空库快径（app/db/migration_bootstrap.py + env.py）+ P0 引用完整性 DOC_REF_BROKEN
+>   + P1 收款容差/单证清单（两表迁移 + receipt_rules 判定）
+> - **真数据验证**（企微表格 45 行）：装柜 0.96 精确维持、重量/售价公式 0% 误差
+>   （docs/archive/fit_report.md）；**真库 CRUD 9/9**（Neon 验证分支）
+> - **抓到并修复 2 个真 bug**：① cust_inquiries/contacts/stage_log 外键指遗留表
+>   cust_customers（真库写询盘必炸）⇒ 迁移 202610170004；② E1 inspect 开事务导致
+>   迁移静默回滚 ⇒ env.py 事务收尾。**四个迁移（202610170001-0004）尚未在生产执行**
+>   ——部署前请先 `alembic upgrade head`（DATABASE_URL 指生产；注意用直连 endpoint
+>   非 pooler，pooler 会吞 DDL 事务）。
+>
+> **剩余队列**：P1 收款/回执 API 层（表与容差已就绪）→ P0 导出自检①②（需 PDF 解析层）
+> → P0 公章规范化 → P1 事实层+一致性引擎 → P15 契约收口 → 文档继续清理。
+> **待用户**：装柜混合模型 β 项数据（跨柜数对比，如后续有）；单证加固 P1 各项按需排期。
+
 > **（交接 · 2026-10-17 · 大盘点 + 阶段 0 快赢 + 六项决策落盘）**
 >
 > **背景**：用户要求全系统遗留盘点 + 业务链生产化（录询盘归客户→报价→订单→单证）+
