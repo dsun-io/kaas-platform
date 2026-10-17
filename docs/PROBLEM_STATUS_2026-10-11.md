@@ -3347,14 +3347,22 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
   「按订单/报价/询盘推导：quoted → won」。测试客户已软删除。
 - **已知现象**：写后立刻 GET 可能读到旧阶段约 60 秒（Hyperdrive 查询缓存），刷新/稍后再读即正确。
   若要强一致，需在 Hyperdrive 配置关闭/缩短查询缓存（`caching` 设置）。
-- **流失的拒绝文件（2026-10-17 已实现）**：
+- **流失的拒绝文件（2026-10-17 已实现并生产验证）**：
   - 新增 `POST /api/v1/file-objects/upload`（multipart 通用上传）——字节落点
-    **S3 预签名 → R2 binding（`FILES`）→ inline 回退**，行内如实记录 `storage`；
-    R2 无需 S3 密钥，符合「R2 能实现优先用 R2」。
-  - `PATCH /customers/{id}/stage` 当 `target=lost` 时**强制** `rejection_file_id`
-    （无 → 422 `REJECTION_FILE_REQUIRED`；不存在 → 422 `INVALID_REJECTION_FILE`），
-    文件 id 写进 `cust_stage_log.reason`。
+    **S3 预签名 → R2 binding（`FILES`）→ inline 回退**，行内如实记录 `storage`。
+    **生产实测 `storage:"s3"`（R2），且 `GET /file-objects/{id}/content` 200、字节数一致**。
+  - `PATCH /customers/{id}/stage` 当 `target=lost` 时**强制** `rejection_file_id`：
+    无文件 → 422 `REJECTION_FILE_REQUIRED`；文件不属于该客户 → 422 `INVALID_REJECTION_FILE`
+    （校验 `owner_type='customer' AND owner_id=<customer_id>`）；文件 id 写进 `cust_stage_log.reason`。
   - 前端「更新阶段」弹窗选「流失」时显示**必填**文件选择（PDF/图片），先上传再改阶段。
+  - **R2 踩坑与修复（重要，后续文件功能都会遇到）**：
+    ① Python Workers 的绑定**不在 `js` 全局**（`from js import FILES` → ImportError），
+       要从 `request.scope["env"].FILES` 取；
+    ② `obj.arrayBuffer()` 在 Pyodide 里返回的是 **memoryview**（没有 `.to_py()`），
+       旧代码 `bytes(buf.to_py())` 抛 AttributeError 被吞 → 文件读回 404；
+       已抽 `_to_bytes()` 兼容 memoryview / 旧 JsProxy。
+  - 诊断端点（管理员）：`GET /api/v1/file-objects/_r2_debug?key=...`（binding/put/get 真实错误）、
+    `GET /api/v1/fx-rates/_debug`（汇率源）；排查完可删。
 - **待办**：① **定时任务（Cron Trigger / 外部调度）触发 30/90 天兜底** ——
   用户 2026-10-17 明确「定时任务可以加待办放说明文档，先不做」；目前仍是**读客户列表时触发**。
   ② 若要求写后立即一致，需在 Hyperdrive 配置关闭/缩短查询缓存（当前约 60 秒旧读）。
