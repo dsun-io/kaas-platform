@@ -3295,3 +3295,55 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
 
 > **口径**：这三处不是"待修 bug"，是**当前不需要的能力**。后续排期时不要把它们列为阻塞项；
 > 若产品确实要启用，先补「用途定义 + 数据来源 + 权限边界」三件事再动手。
+
+***
+
+## 2026-10-17 客户/报价/汇率：修复与阶段自动化
+
+### 1. 新建客户 500（已修，生产已验证）
+
+- **根因**：`customers.plan` / `status` 是 `NOT NULL`，但只有 ORM 层默认值、**没有 server_default**；
+  Worker 用裸 SQL 插入且没写这两列 ⇒ 约束失败 → 500（浏览器侧还表现为无 CORS 头）。
+- **修复**：显式写 `plan='free'` / `status='active'`；同时按用户口径支持
+  **「公司名称与联系人至少填一个」**（都为空 → 422 `CUSTOMER_IDENTITY_REQUIRED`）；
+  只填联系人时用联系人名做展示名，并落一条主联系人（`cust_contacts.is_primary=true`）。
+- **验证**：公司 only → 201；联系人 only → 201；两者皆无 → 422 带可读错误；测试数据已软删除。
+
+### 2. 报价汇率：实时拉取（已上线）
+
+- **原状**：`fx_rates` 长期 0 行、`/fx-rates/latest` 恒 404；注释提到的 `scripts/fetch_fx_rates.py` 实际不存在。
+- **方案**：Worker **读时刷新** —— 数据超过 6 小时就调 `https://open.er-api.com/v6/latest/{base}`
+  并 upsert 到 `fx_rates`；外部源失败降级到缓存（`is_stale=true`），完全无数据才 503。
+  前端 `useLatestFxRate()` 在报价工作台**自动带入**（本地已存手填值则优先手填）。
+- **验证**：`/api/v1/fx-rates/latest` 返回 `{"rate":6.698464,"source":"open.er-api.com","is_stale":false}`。
+  另留管理员调试端点 `/api/v1/fx-rates/_debug`（直接打一次源，返回结果或异常）。
+- **口径**：免费源**每日更新**，属"当日最新"而非盘中级实时；要分钟级需接商业/银行 API。
+  排查记录：Pyodide 下 `js.fetch` 传 options（自定义 headers）会崩成裸 500，改成最小 `fetch(url)` 后正常。
+
+### 3. Excel 导入模板：前端生成（已上线）
+
+- Worker 装不了 openpyxl（C 扩展），`/import/template?format=xlsx` 按设计 501；
+  现改为**前端 exceljs 懒加载生成带样式 xlsx**（数据表 + 填写说明：表头原样、必填底色/批注、
+  冻结首行、列宽、下拉候选），CSV 保留备用。
+- **边界**：线上**上传**仍只接受 CSV（`_reject_spreadsheet`）；要「下载 xlsx → 上传」闭环需 Worker 放开上传。
+
+### 4. 客户阶段：事件驱动 + 手动兜底（2026-10-17 用户口径）
+
+- **阶段**：`lead 线索 → inquiry 询盘 → quoted 报价 → won 成交 → lost 流失 / inactive 沉寂`；
+  **删除【洽谈中】**（`CUSTOMER_STAGE`、共享规则、前端标签、mocks 同步）。
+- **自动推进**（只升不降；辅助逻辑失败不影响主业务）：
+  - 建询盘 → `inquiry`；建报价单 → `quoted`；
+  - 建订单（买家确认接单）→ `won`；登记收款/定金 → `won`。
+- **手动维护保留为兜底**：`PATCH /customers/{id}/stage` 与页面阶段选择仍在（用户明确要求保留）。
+- **时间兜底**：读取客户列表时，30 天无更新 → `lost`（`won` 除外）；90 天无活动 → `inactive`。
+- **客户阶段 ≠ 订单状态**：同一客户可有多张订单，各订单状态独立（`pending/confirmed/…`）；
+  客户阶段只是**汇总视图**，自动规则只改客户阶段，绝不覆盖订单状态。
+- **待办**：① 流失的「必须上传客户拒绝文件」尚未强制（当前手动标记只需理由）；
+  ② 30/90 天兜底目前只在读列表时触发，尚无定时任务。
+
+### 5. 已知的其它 CI 红（非本轮引入）
+
+- `Frontend CI` 的 `pnpm test` / `e2e` 在 `use-products` 用例上失败：
+  `TypeError: Failed to execute 'digest' on 'SubtleCrypto'` —— 与 Node/jsdom 的
+  `crypto.subtle.digest` 入参类型有关，属**既有问题**，需单独修（与本轮客户/汇率/模板改动无关）。
+- `backend:test`、`deploy`、`contracts:check` 在 `c025c67` 上均**绿**。
