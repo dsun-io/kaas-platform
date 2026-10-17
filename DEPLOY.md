@@ -254,6 +254,9 @@ TypeScript 构建前端 → **同步共享内核并校验** → `pywrangler depl
 > 无凭据深链直接 `/login` 且全程不出现系统 UI）。
 > 同日 16:1x 又部署一次（提交 `272a683`，含 rate-sets 内嵌兜底、派生建单/方案物化两处产品修复），
 > deploy 与冒烟均绿；`backend:test` 首次全绿（run `39016277997`）。
+> 同日 17:0x–19:0x 连续多次 push 自动部署，最后一次代码部署为提交 **`b7f97a0`**（deploy 冒烟绿）；
+> 之后 `f04c716` 仅文档。本轮上线内容：新建客户 500 修复、汇率实时拉取、Excel 模板前端生成、
+> 客户阶段改由订单状态推导、流失强制上传拒绝文件（R2）。详见 `docs/HANDOVER_2026-10-17.md`。
 
 其他工作流：`backend-test.yml`（orchestrator 单测 + DB 测试 + Worker 纯函数单测，
 已带 `paths: backend/**`）、`frontend-ci.yml`、`contracts-check.yml`。
