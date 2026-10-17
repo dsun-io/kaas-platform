@@ -85,6 +85,20 @@ def _rate_set_files(base: Path) -> list[Path]:
     ]
 
 
+def _embedded_rate_sets() -> list[dict]:
+    """构建期由 sync-shared.ps1 生成的 Python 内嵌档案（最终兜底）。
+
+    Cloudflare Python Workers 只保证打包 `.py` 模块；`rate_sets/*.json`
+    这类数据文件未必进 bundle（2026-10-17 线上 rate-sets 500 的第二层原因）。
+    因此镜像里额外生成 `rate_sets_data.py`（纯 .py），保证一定可导入。
+    """
+    try:
+        from . import rate_sets_data  # type: ignore[attr-defined]
+    except ImportError:
+        return []
+    return [dict(item) for item in getattr(rate_sets_data, "RATE_SETS", []) or []]
+
+
 class RateSetError(ValueError):
     """税务档案不合法。"""
 
@@ -230,7 +244,8 @@ class RateSetRegistry:
         #   · 线上 Worker（Pyodide）**装不了/不该装 yaml**，镜像里只放 .json。
         # 因此 yaml 的 import 必须**惰性**（写在分支里）—— 顶层 import yaml
         # 会让整个引擎在 Worker 里根本导不进来，这是本次移植的第一个硬障碍。
-        # 文件来源：目录列举可用时直接列举；否则用 sync-shared.ps1 生成的 manifest。
+        # 文件来源：目录列举可用时直接列举；否则用 sync-shared.ps1 生成的 manifest；
+        # 数据文件完全没进 bundle 时，退回构建期生成的 Python 内嵌档案。
         for path in _rate_set_files(base):
             suffix = path.suffix.lower()
             with path.open("r", encoding="utf-8") as fh:
@@ -244,6 +259,11 @@ class RateSetRegistry:
             if not rs.code:
                 rs = RateSet(**{**rs.__dict__, "code": path.stem})
             sets.append(rs)
+        if not sets:
+            for raw in _embedded_rate_sets():
+                rs = rate_set_from_dict(raw)
+                if rs.code:
+                    sets.append(rs)
         if not sets:
             raise RateSetError(f"未找到任何税务档案: {base}")
         return cls(sets)
