@@ -39,7 +39,10 @@ export function WorkstationPicker({
       <Label htmlFor={`${idPrefix}-stations`}>
         要开通的工位 *（当前全部免费）
       </Label>
-      <div id={`${idPrefix}-stations`} className="grid grid-cols-2 gap-1.5">
+      <div
+        id={`${idPrefix}-stations`}
+        className="grid grid-cols-1 sm:grid-cols-2 gap-1.5"
+      >
         {STATION_OPTIONS.map((station) => (
           <label
             key={station.key}
