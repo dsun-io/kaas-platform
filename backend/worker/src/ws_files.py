@@ -859,6 +859,32 @@ async def register_upload(body: RegisterIn, request: Request, user: dict = Depen
         pre_uploaded=("s3", key))
 
 
+@app.get("/api/v1/file-objects/_r2_debug")
+async def r2_debug(request: Request, user: dict = Depends(_get_current_user)):
+    """线上自检：R2 binding 是否可见 + 一次测试 put 的真实错误（排查完可删）。"""
+    import sys as _sys
+    out = {"platform": _sys.platform, "binding": False, "put_ok": False}
+    try:
+        from js import FILES  # type: ignore
+        out["binding"] = True
+        out["bucket_type"] = str(type(FILES))
+        try:
+            if _sys.platform == "emscripten":
+                from pyodide.ffi import to_js  # type: ignore
+                body = to_js(b"kaas-debug")
+                opts = to_js({"httpMetadata": {"contentType": "text/plain"}})
+            else:
+                body = b"kaas-debug"
+                opts = {}
+            await FILES.put("_debug/r2-test.txt", body, opts)
+            out["put_ok"] = True
+        except Exception as exc:  # noqa: BLE001
+            out["put_error"] = f"{type(exc).__name__}: {exc}"
+    except Exception as exc:  # noqa: BLE001
+        out["import_error"] = f"{type(exc).__name__}: {exc}"
+    return out
+
+
 @app.post("/api/v1/file-objects/upload", status_code=201)
 async def upload_file_object(
     request: Request,
