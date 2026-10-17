@@ -41,17 +41,53 @@ function formulas(): ProductFormulasResponse {
     piece_inputs: [],
     pricing_key: [],
     calculations: { derived: [], piece: [], order: [] },
-    space_deduction: { mode: "fixed_per_order", value: 2.5, range: null, expr: "", note: "" },
+    space_deduction: {
+      mode: "fixed_per_order",
+      value: 2.5,
+      range: null,
+      expr: "",
+      note: "",
+    },
     invariants: [],
     params: [],
     notes: [],
     constants: {},
     columns: [
-      { key: "spec.product_name", label: "产品", label_en: "Product", decimals: null, internal: false },
-      { key: "derived.weight_per_piece_kg", label: "单卷净重(kg)", label_en: "Net Weight per Roll (kg)", decimals: 4, internal: false },
-      { key: "derived.volume_box_per_piece_m3", label: "单卷长方体体积(m³)", label_en: "Box Volume per Roll (m³)", decimals: 4, internal: false },
-      { key: "piece.price_per_piece_fx", label: "单卷美元售价(USD/卷)", label_en: "Price per Roll (USD/roll)", decimals: 4, internal: false },
-      { key: "price.cost_pretax", label: "税前成本(元/kg)", label_en: "", decimals: 4, internal: true },
+      {
+        key: "spec.product_name",
+        label: "产品",
+        label_en: "Product",
+        decimals: null,
+        internal: false,
+      },
+      {
+        key: "derived.weight_per_piece_kg",
+        label: "单卷净重(kg)",
+        label_en: "Net Weight per Roll (kg)",
+        decimals: 4,
+        internal: false,
+      },
+      {
+        key: "derived.volume_box_per_piece_m3",
+        label: "单卷长方体体积(m³)",
+        label_en: "Box Volume per Roll (m³)",
+        decimals: 4,
+        internal: false,
+      },
+      {
+        key: "piece.price_per_piece_fx",
+        label: "单卷美元售价(USD/卷)",
+        label_en: "Price per Roll (USD/roll)",
+        decimals: 4,
+        internal: false,
+      },
+      {
+        key: "price.cost_pretax",
+        label: "税前成本(元/kg)",
+        label_en: "",
+        decimals: 4,
+        internal: true,
+      },
     ],
   } as unknown as ProductFormulasResponse;
 }
@@ -60,7 +96,12 @@ function formulas(): ProductFormulasResponse {
 function customerTable(): QuoteTable {
   return {
     view: "customer",
-    header: ["产品", "单卷净重(kg)", "单卷长方体体积(m³)", "单卷美元售价(USD/卷)"],
+    header: [
+      "产品",
+      "单卷净重(kg)",
+      "单卷长方体体积(m³)",
+      "单卷美元售价(USD/卷)",
+    ],
     rows: [["Field Fence", 30.5, 0.09, 301.03]],
     decimals: [null, 4, 4, 4],
     horizontal_header: [],
@@ -71,7 +112,11 @@ function customerTable(): QuoteTable {
 
 function result(): ExportQuoteResponse {
   return {
-    meta: { product_key: "field_fence", product_name: "牛栏网", combo_count: 1 },
+    meta: {
+      product_key: "field_fence",
+      product_name: "牛栏网",
+      combo_count: 1,
+    },
     view: "customer",
     customer: customerTable(),
     customer_en: customerTable(),
@@ -104,11 +149,15 @@ describe("列定位（不按表头文字猜）", () => {
   });
 
   it("内部视图保留全部列（下标与内部表对齐）", () => {
-    expect(makeColumnIndexer(formulas(), "internal")("price.cost_pretax")).toBe(4);
+    expect(makeColumnIndexer(formulas(), "internal")("price.cost_pretax")).toBe(
+      4,
+    );
   });
 
   it("产品没声明的列返回 -1（据此判定缺失，而不是取到错列）", () => {
-    expect(makeColumnIndexer(formulas(), "customer")("order.volume_m3")).toBe(-1);
+    expect(makeColumnIndexer(formulas(), "customer")("order.volume_m3")).toBe(
+      -1,
+    );
   });
 });
 
@@ -162,7 +211,9 @@ describe("buildLineItem（数量口径：卷数 × 单卷外币价）", () => {
   it("规格描述为空时报告缺失（单证 Specification 列不能空白）", () => {
     const { missing, item } = buildLineItem({ ...base, spec: {}, pieces: 1 });
     expect(missing).toContain("specification");
-    expect((item.spec_snapshot as Record<string, unknown>).specification).toBe("");
+    expect((item.spec_snapshot as Record<string, unknown>).specification).toBe(
+      "",
+    );
   });
 });
 
@@ -211,6 +262,71 @@ describe("体积扣减（口径由产品定义声明，不写死）", () => {
   });
 
   it("扣减不会把体积算成负数", () => {
-    expect(applySpaceDeduction(1, { mode: "fixed_per_order", value: 2.5 })).toBe(0);
+    expect(
+      applySpaceDeduction(1, { mode: "fixed_per_order", value: 2.5 }),
+    ).toBe(0);
+  });
+});
+
+describe("cost_breakdown 内部分解快照（UNCERTAIN #19）", () => {
+  const internalResult = {
+    meta: {
+      product_key: "field_fence",
+      product_name: "牛栏网",
+      combo_count: 1,
+    },
+    view: "internal",
+    customer: customerTable(),
+    customer_en: customerTable(),
+    // 内部视图：列顺序 == 产品定义全列顺序（含 internal 列，cost_pretax 在下标 4）
+    internal: {
+      view: "internal",
+      header: [
+        "产品",
+        "单卷净重(kg)",
+        "单卷长方体体积(m³)",
+        "单卷美元售价(USD/卷)",
+        "税前成本(元/kg)",
+      ],
+      rows: [["Field Fence", 30.5, 0.09, 301.03, 8.75]],
+      decimals: [null, 4, 4, 4, 4],
+      horizontal_header: [],
+      vertical_header: [],
+      vertical_data: [],
+    },
+  } as unknown as ExportQuoteResponse;
+
+  const baseInternal = {
+    product: product(),
+    formulas: formulas(),
+    spec: { height_m: 1.5 },
+    pieceBase: { roll_len_m: 100 },
+    result: internalResult,
+    view: "internal" as const,
+    rollLengthM: 100,
+  };
+
+  it("internal 视图：行项带 cost_breakdown（成本列读自引擎内部表）", () => {
+    const { item } = buildLineItem({ ...baseInternal, pieces: 10 });
+    const bd = item.cost_breakdown as {
+      view: string;
+      currency_cny_per_m2: Record<string, number>;
+      per_piece: { price_fx: number };
+      pieces: number;
+    };
+    expect(bd.view).toBe("internal");
+    expect(bd.currency_cny_per_m2.cost_pretax).toBe(8.75);
+    expect(bd.per_piece.price_fx).toBe(301.03);
+    expect(bd.pieces).toBe(10);
+  });
+
+  it("customer 视图：行项**不带** cost_breakdown（后端同样不会存出内部列）", () => {
+    const { item } = buildLineItem({
+      ...baseInternal,
+      result: result(), // 客户视图结果
+      view: "customer",
+      pieces: 10,
+    });
+    expect(item.cost_breakdown).toBeUndefined();
   });
 });
