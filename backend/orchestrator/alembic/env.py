@@ -114,14 +114,24 @@ def run_migrations_offline() -> None:
 
 def _bootstrap_if_empty(connection) -> bool:
     """空库快径（E1 · UNCERTAIN #20）—— 判定与建表逻辑在 app/db/migration_bootstrap.py
-    （纯函数、可单测；env.py 是脚本、import 即执行迁移，没法直接测）。"""
+    （纯函数、可单测；env.py 是脚本、import 即执行迁移，没法直接测）。
+
+    ⚠️ 事务收尾（2026-10-17 真库验证抓到的 bug）：inspect/DDL 都在连接事务里跑，
+    若不显式 commit/rollback，alembic 的 `begin_transaction()` 会把它当**嵌套事务**、
+    退出时不提交 ⇒ 迁移**静默回滚**（日志显示 Running upgrade、exit 0，但库里什么都没变）。
+    """
     from alembic.script import ScriptDirectory
 
     from app.db.migration_bootstrap import bootstrap_if_empty
 
     script = ScriptDirectory.from_config(config)
     head = script.get_current_head()
-    return bootstrap_if_empty(connection, target_metadata, head)
+    result = bootstrap_if_empty(connection, target_metadata, head)
+    if result:
+        connection.commit()   # create_all + stamp 落库
+    else:
+        connection.rollback()  # 只读探测（get_table_names），清掉它开的事务
+    return result
 
 
 def run_migrations_online() -> None:
