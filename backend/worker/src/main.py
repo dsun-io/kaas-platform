@@ -858,7 +858,11 @@ async def list_channels(request: Request, user: dict = Depends(_get_current_user
 
 # ── Customers Endpoints ──
 class CustomerCreate(BaseModel):
-    company_name: str
+    # 公司名与联系人**至少填一个**（2026-10-17 用户口径）：只有个人联系人的客户也要能建。
+    company_name: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_phone: Optional[str] = None
+    contact_email: Optional[str] = None
     country: Optional[str] = None
     address: Optional[str] = None
     default_port: Optional[str] = None
@@ -1054,19 +1058,43 @@ async def create_customer(request: Request, body: CustomerCreate, user: dict = D
     # 不写的后果是自相矛盾 —— 既有 GET /customers 不做归属过滤（列表里有），
     # 而按归属过滤的接口（PATCH /customers/{id}、GET .../inquiries）会把这条记录
     # 判为不可见 → 404「列表里看得见、点进去没有」。同时补上枚举校验（与 dev 一致）。
+    #
+    # 2026-10-17 两个线上问题：
+    #   ① 500：customers.plan / status 是 NOT NULL 且只有 ORM 默认值（没有 server_default），
+    #      裸 SQL 不写它们 ⇒ 约束失败。这里显式写 'free' / 'active'。
+    #   ② 需求：公司名与联系人至少填一个；只填联系人时用联系人名做展示名，并落一条主联系人。
+    company_name = (body.company_name or "").strip()
+    contact_name = (body.contact_name or "").strip()
+    if not company_name and not contact_name:
+        raise HTTPException(status_code=422, detail={
+            "error": "missing_identity",
+            "code": "CUSTOMER_IDENTITY_REQUIRED",
+            "detail": "公司名称和联系人至少填写一个",
+        })
     stage = validate_enum("customer_stage", body.stage or "lead")
     owner_scope = validate_enum("owner_scope", body.owner_scope) or "private"
     async with _acquire(request) as conn:
-        row = await conn.fetchrow(
-            """INSERT INTO customers
-               (tenant_id, name, country, address, default_port, credit_level, stage, notes,
-                created_by, owner_id, owner_scope, team_id)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-               RETURNING *, name AS company_name""",
-            DEFAULT_TENANT, body.company_name, body.country, body.address,
-            body.default_port, body.credit_level, stage, body.notes, str(user["id"]),
-            str(user["id"]), owner_scope, user.get("team_id"),
-        )
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """INSERT INTO customers
+                   (tenant_id, name, plan, status, country, address, default_port,
+                    credit_level, stage, notes, created_by, owner_id, owner_scope, team_id)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+                   RETURNING *, name AS company_name""",
+                DEFAULT_TENANT, company_name or contact_name, "free", "active",
+                body.country, body.address, body.default_port, body.credit_level,
+                stage, body.notes, str(user["id"]), str(user["id"]), owner_scope,
+                user.get("team_id"),
+            )
+            if contact_name:
+                await conn.execute(
+                    """INSERT INTO cust_contacts
+                           (tenant_id, customer_id, name, phone, email, is_primary)
+                       VALUES ($1,$2,$3,$4,$5,true)""",
+                    DEFAULT_TENANT, row["id"], contact_name,
+                    (body.contact_phone or "").strip() or None,
+                    (body.contact_email or "").strip() or None,
+                )
     return row_to_customer(dict(row))
 
 

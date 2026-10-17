@@ -131,6 +131,9 @@ function errMsg(e: unknown): string {
 
 type CustomerFormState = {
   company_name: string;
+  contact_name: string;
+  contact_phone: string;
+  contact_email: string;
   country: string;
   address: string;
   default_port: string;
@@ -141,6 +144,9 @@ type CustomerFormState = {
 
 const EMPTY_CUSTOMER: CustomerFormState = {
   company_name: "",
+  contact_name: "",
+  contact_phone: "",
+  contact_email: "",
   country: "",
   address: "",
   default_port: "",
@@ -161,12 +167,20 @@ function CustomerForm({
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
 
+  // 公司名与联系人**至少填一个**（2026-10-17 用户口径）：只有个人联系人的客户也要能建。
+  const identityOk =
+    form.company_name.trim().length > 0 || form.contact_name.trim().length > 0;
+
   const set =
     (k: keyof CustomerFormState) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
       setForm({ ...form, [k]: e.target.value });
 
   const handleSubmit = async () => {
+    if (!identityOk) {
+      setError("公司名称和联系人至少填写一个");
+      return;
+    }
     setIsPending(true);
     setError(null);
     try {
@@ -185,26 +199,45 @@ function CustomerForm({
     <div className="space-y-3">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input
-          placeholder="公司名称 *"
+          placeholder="公司名称（与联系人至少填一个）"
           value={form.company_name}
           onChange={set("company_name")}
         />
+        <Input
+          placeholder="联系人（与公司名称至少填一个）"
+          value={form.contact_name}
+          onChange={set("contact_name")}
+        />
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Input
+          placeholder="联系人电话"
+          value={form.contact_phone}
+          onChange={set("contact_phone")}
+        />
+        <Input
+          placeholder="联系人邮箱"
+          value={form.contact_email}
+          onChange={set("contact_email")}
+        />
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input
           placeholder="国家"
           value={form.country}
           onChange={set("country")}
         />
-      </div>
-      <Input
-        placeholder="地址"
-        value={form.address}
-        onChange={set("address")}
-      />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input
           placeholder="默认港口"
           value={form.default_port}
           onChange={set("default_port")}
+        />
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Input
+          placeholder="地址"
+          value={form.address}
+          onChange={set("address")}
         />
         <Input
           placeholder="信用等级"
@@ -212,24 +245,10 @@ function CustomerForm({
           onChange={set("credit_level")}
         />
       </div>
-      <select
-        value={form.stage}
-        onChange={set("stage")}
-        className="w-full border rounded-md px-3 py-2 text-sm bg-background"
-      >
-        {Object.entries(STAGE_LABELS).map(([k, v]) => (
-          <option key={k} value={k}>
-            {v}
-          </option>
-        ))}
-      </select>
       <Input placeholder="备注" value={form.notes} onChange={set("notes")} />
       {error && <p className="text-sm text-red-500">{error}</p>}
       <div className="flex gap-2">
-        <Button
-          onClick={handleSubmit}
-          disabled={!form.company_name || isPending}
-        >
+        <Button onClick={handleSubmit} disabled={!identityOk || isPending}>
           {isPending ? "创建中…" : "创建客户"}
         </Button>
         <Button variant="outline" onClick={onClose}>
