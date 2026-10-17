@@ -110,9 +110,14 @@ class TenantProductLoader:
             row = await self._fetch_tenant_product(
                 tenant_id, product_key, team_id, role=role, db_session=db_session)
             if row is not None:
-                spec = spec_from_dict(row["spec"])
-                self._cache[cache_key] = spec
-                return spec
+                # P13：基线 + 差异 → 有效 ProductSpec（差异带 base_spec_hash 且
+                # 与基线不一致时抛 SpecUpstreamChanged，绝不静默套用）
+                from .effective_spec import resolve_effective_product
+                spec, _warnings = resolve_effective_product(
+                    row["spec"], row.get("override"))
+                if spec is not None:
+                    self._cache[cache_key] = spec
+                    return spec
 
         # 2. 回退 Python 定义（系统级兜底）
         from .products import get as get_product, has as has_product
@@ -169,12 +174,14 @@ class TenantProductLoader:
             if row_team is not None and is_same_team(
                 role=role, viewer_team_id=team_id, row_team_id=row_team
             ):
-                return {"spec": row.spec, "team_id": row_team}
+                return {"spec": row.spec, "team_id": row_team,
+                        "override": getattr(row, "override", None)}
         # 没有本团队行 ⇒ 只剩历史 NULL 行兜底（仅管理员可见，D3/D4）
         if is_admin_role(role):
             for row in rows:
                 if getattr(row, "team_id", None) is None:
-                    return {"spec": row.spec, "team_id": None}
+                    return {"spec": row.spec, "team_id": None,
+                            "override": getattr(row, "override", None)}
         return None
 
     def list_keys(self, tenant_id: str) -> list[str]:
@@ -212,9 +219,12 @@ class TenantProductLoader:
 
         rows = await self._fetch_visible_tenant_rows(
             tenant_id, team_id, role=role, db_session=db_session)
+        from .effective_spec import resolve_effective_product
         for row in rows:
-            spec = spec_from_dict(row["spec"])
-            specs[spec.key] = spec
+            spec, _warnings = resolve_effective_product(
+                row["spec"], row.get("override"))
+            if spec is not None:
+                specs[spec.key] = spec
         return list(specs.values())
 
     async def _fetch_visible_tenant_rows(self, tenant_id: str, team_id: Any = None, *,
@@ -258,8 +268,10 @@ class TenantProductLoader:
                 role=role, viewer_team_id=team_id, row_team_id=row_team
             ):
                 # 本团队行：最高优先级，直接覆盖
-                best[key] = {"spec": row.spec, "team_id": row_team}
+                best[key] = {"spec": row.spec, "team_id": row_team,
+                             "override": getattr(row, "override", None)}
             elif row_team is None and is_admin_role(role):
                 # 历史 NULL 行：仅管理员，且已有本团队行时不覆盖
-                best.setdefault(key, {"spec": row.spec, "team_id": None})
+                best.setdefault(key, {"spec": row.spec, "team_id": None,
+                                      "override": getattr(row, "override", None)})
         return list(best.values())

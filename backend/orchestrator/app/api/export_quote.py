@@ -837,13 +837,28 @@ async def _effective_product(
 
     # 1. 先走 TenantProductLoader（租户级优先，回退 Python 定义）
     from app.services.export_quote.tenant_products import TenantProductLoader
+    from app.services.export_quote.spec_delta import SpecDeltaError
+    from app.services.export_quote.effective_spec import SpecUpstreamChanged
 
     loader = TenantProductLoader()
     tenant_id = auth_tenant(auth)
     team_id = getattr(auth, "team_id", None)
     role = getattr(auth, "role", None)
-    product = await loader.load(
-        tenant_id, product_key, team_id=team_id, role=role, db_session=db)
+    try:
+        product = await loader.load(
+            tenant_id, product_key, team_id=team_id, role=role, db_session=db)
+    except SpecUpstreamChanged as exc:
+        # P13：差异的 base_spec_hash 与当前基线不一致（上游已变更）——
+        # 绝不静默套用；409 让前端提示「人工复核这条差异后再合并」。
+        raise HTTPException(status_code=409, detail={
+            "error": "spec_upstream_changed", "code": "SPEC_UPSTREAM_CHANGED",
+            "detail": str(exc),
+        })
+    except SpecDeltaError as exc:
+        raise HTTPException(status_code=422, detail={
+            "error": "spec_delta_invalid", "code": "SPEC_DELTA_INVALID",
+            "detail": str(exc),
+        })
     if product is None:
         return None
 

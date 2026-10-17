@@ -602,8 +602,13 @@ class TenantProduct(Base):
     profit_mode = Column(Text, nullable=True, default="margin_on_price")
     profit_value = Column(Numeric(10, 6), nullable=True, default=0.06)
     misc_fee_rate = Column(Numeric(10, 6), nullable=True, default=0.03)
-    # 完整 ProductSpec（JSONB，含 axes/variants/derived/columns/invariants）
+    # 完整 ProductSpec（JSONB，含 axes/variants/derived/columns/invariants）——基线
     spec = Column(JSONB, nullable=False)
+    # ── P13（202610170002）：基线 + 差异 ──
+    # override：spec_delta 形态的团队差异（PATCH 语义）；NULL = 未设差异直接用基线
+    override = Column(JSONB, nullable=True)
+    # 写入时基线指纹留档（审计/快速比对；读路径以 override 内携带的 hash 为准）
+    base_spec_hash = Column(Text, nullable=True)
     is_system = Column(Boolean, nullable=False, default=False, server_default="false")
     is_active = Column(Boolean, nullable=False, default=True, server_default="true")
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())

@@ -45,7 +45,7 @@ _UPDATABLE_COLUMNS = (
     "product_key", "product_name", "product_name_en", "category_code",
     "cost_field", "cost_basis", "cost_unit",
     "profit_mode", "profit_value", "misc_fee_rate",
-    "spec", "is_active",
+    "spec", "override", "is_active",
 )
 
 
@@ -76,6 +76,31 @@ def _validate_spec(spec: dict) -> None:
     except Exception as exc:  # 引擎的校验异常类型不止一种，一律转 422 带出原文
         raise HTTPException(status_code=422, detail={
             "error": "invalid_spec", "message": str(exc),
+        })
+
+
+def _spec_fingerprint(spec: dict):
+    from kaas_common.export_quote.spec_delta import spec_fingerprint  # noqa: PLC0415
+    return spec_fingerprint(spec)
+
+
+def _validate_override(spec: dict, override: Optional[dict]) -> None:
+    """差异形状闸门（与 dev tenant_products._validate_override 同口径）：
+    基线 + 差异能合并出 ProductSpec 才允许落库，否则 422。"""
+    if not override:
+        return
+    try:
+        from kaas_common.export_quote.effective_spec import (  # noqa: PLC0415
+            resolve_effective_product,
+        )
+        from kaas_common.export_quote.spec_delta import SpecDeltaError  # noqa: PLC0415
+    except ImportError:
+        return
+    try:
+        resolve_effective_product(spec, override)
+    except SpecDeltaError as exc:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_override", "message": str(exc),
         })
 
 
@@ -128,6 +153,8 @@ class TenantProductIn(BaseModel):
     profit_value: float = 0.06
     misc_fee_rate: float = 0.03
     spec: dict
+    # P13（202610170002）：团队差异（spec_delta 形态）；null = 直接用基线
+    override: Optional[dict] = None
     is_active: bool = True
 
 
@@ -174,6 +201,7 @@ async def create_tenant_product(
     user: dict = Depends(_get_current_user),
 ):
     _validate_spec(body.spec)
+    _validate_override(body.spec, body.override)
     tid = _tenant_of(user)
     async with _acquire(request) as conn:
         try:
@@ -181,13 +209,16 @@ async def create_tenant_product(
                 "INSERT INTO tenant_products"
                 " (tenant_id, product_key, product_name, product_name_en, category_code,"
                 "  cost_field, cost_basis, cost_unit, profit_mode, profit_value,"
-                "  misc_fee_rate, spec, is_system, is_active)"
-                " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,false,$13)"
+                "  misc_fee_rate, spec, override, base_spec_hash, is_system, is_active)"
+                " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14,false,$15)"
                 " RETURNING *",
                 tid, body.product_key, body.product_name, body.product_name_en,
                 body.category_code, body.cost_field, body.cost_basis, body.cost_unit,
                 body.profit_mode, body.profit_value, body.misc_fee_rate,
-                json.dumps(body.spec), body.is_active,
+                json.dumps(body.spec),
+                json.dumps(body.override) if body.override is not None else None,
+                _spec_fingerprint(body.spec) if body.override else None,
+                body.is_active,
             )
         except Exception as exc:  # uq_tenant_products_key 唯一约束
             if "uq_tenant_products_key" in str(exc) or "duplicate key" in str(exc):
@@ -230,16 +261,27 @@ async def update_tenant_product(
         }
         if "spec" in fields:
             _validate_spec(fields["spec"])
+        if fields.get("override"):
+            _validate_override(fields["spec"], fields["override"])
 
         if not fields:
             return _product_out(row)
 
         params: list = []
         sets: list[str] = []
+        jsonb_cols = {"spec", "override"}
         for col, val in fields.items():
-            params.append(json.dumps(val) if col == "spec" else val)
-            sets.append(f"{col} = ${len(params)}::jsonb" if col == "spec"
-                        else f"{col} = ${len(params)}")
+            if col in jsonb_cols:
+                params.append(json.dumps(val) if val is not None else None)
+                sets.append(f"{col} = ${len(params)}::jsonb")
+            else:
+                params.append(val)
+                sets.append(f"{col} = ${len(params)}")
+        # 基线或差异变化时刷新留档指纹（只读字段，不接受请求体直写）
+        new_spec = fields.get("spec", json.loads(row["spec"]) if isinstance(row["spec"], str) else row["spec"])
+        new_override = fields.get("override", row["override"])
+        params.append(_spec_fingerprint(new_spec) if new_override else None)
+        sets.append(f"base_spec_hash = ${len(params)}")
         params.append(product_id)
         updated = await conn.fetchrow(
             f"UPDATE tenant_products SET {', '.join(sets)}, updated_at = now()"

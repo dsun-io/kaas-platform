@@ -17694,6 +17694,18 @@
             "type": "object",
             "title": "Spec"
           },
+          "override": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override"
+          },
           "is_active": {
             "type": "boolean",
             "title": "Is Active",
