@@ -3347,10 +3347,17 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
   「按订单/报价/询盘推导：quoted → won」。测试客户已软删除。
 - **已知现象**：写后立刻 GET 可能读到旧阶段约 60 秒（Hyperdrive 查询缓存），刷新/稍后再读即正确。
   若要强一致，需在 Hyperdrive 配置关闭/缩短查询缓存（`caching` 设置）。
-- **待办**：① 流失的「必须上传客户拒绝文件」尚未强制；**R2 已具备能力**
-  （`file_objects` 的字节优先写 R2 binding，失败回退 inline），下一步补
-  「通用上传端点 + 流失弹窗上传 + 后端校验 file_id」；
-  ② 30/90 天兜底目前只在读列表时触发，尚无定时任务。
+- **流失的拒绝文件（2026-10-17 已实现）**：
+  - 新增 `POST /api/v1/file-objects/upload`（multipart 通用上传）——字节落点
+    **S3 预签名 → R2 binding（`FILES`）→ inline 回退**，行内如实记录 `storage`；
+    R2 无需 S3 密钥，符合「R2 能实现优先用 R2」。
+  - `PATCH /customers/{id}/stage` 当 `target=lost` 时**强制** `rejection_file_id`
+    （无 → 422 `REJECTION_FILE_REQUIRED`；不存在 → 422 `INVALID_REJECTION_FILE`），
+    文件 id 写进 `cust_stage_log.reason`。
+  - 前端「更新阶段」弹窗选「流失」时显示**必填**文件选择（PDF/图片），先上传再改阶段。
+- **待办**：① **定时任务（Cron Trigger / 外部调度）触发 30/90 天兜底** ——
+  用户 2026-10-17 明确「定时任务可以加待办放说明文档，先不做」；目前仍是**读客户列表时触发**。
+  ② 若要求写后立即一致，需在 Hyperdrive 配置关闭/缩短查询缓存（当前约 60 秒旧读）。
 
 ### 5. 已知的其它 CI 红（非本轮引入）
 

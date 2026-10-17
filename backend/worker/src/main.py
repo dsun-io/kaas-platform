@@ -898,6 +898,8 @@ class InquiryCreate(BaseModel):
 class StageUpdate(BaseModel):
     stage: str
     reason: Optional[str] = None
+    # 手动标记流失（lost）时必须带：客户拒绝文件（先 POST /file-objects/upload，字节优先进 R2）
+    rejection_file_id: Optional[int] = None
 
 
 async def _customer_or_404(conn, customer_id: int, user: dict) -> dict:
@@ -1320,16 +1322,41 @@ async def add_inquiry(customer_id: int, request: Request, body: InquiryCreate, u
 
 @app.patch("/api/v1/customers/{customer_id}/stage")
 async def update_stage(customer_id: int, request: Request, body: StageUpdate, user: dict = Depends(_get_current_user)):
+    """手动改客户阶段（兜底入口）。
+
+    2026-10-17：标记流失（lost）**必须**上传客户拒绝文件 —— `rejection_file_id`
+    来自 `POST /file-objects/upload`（字节优先进 R2 binding）。无文件一律 422。
+    """
+    target = validate_enum("customer_stage", body.stage)
     async with _acquire(request) as conn:
         cust = await _customer_or_404(conn, customer_id, user)
         from_stage = cust["stage"]
+        reason = (body.reason or "").strip() or None
+        if target == "lost":
+            fid = body.rejection_file_id
+            if fid is None:
+                raise HTTPException(status_code=422, detail={
+                    "error": "rejection_file_required",
+                    "code": "REJECTION_FILE_REQUIRED",
+                    "detail": "标记流失必须上传客户拒绝文件",
+                })
+            ok = await conn.fetchval(
+                "SELECT 1 FROM file_objects WHERE tenant_id=$1 AND id=$2",
+                DEFAULT_TENANT, fid)
+            if not ok:
+                raise HTTPException(status_code=422, detail={
+                    "error": "invalid_rejection_file",
+                    "code": "INVALID_REJECTION_FILE",
+                    "detail": "拒绝文件不存在或不可用",
+                })
+            reason = f"拒绝文件#{fid}" + (f" · {reason}" if reason else "")
         await conn.execute(
-            "UPDATE customers SET stage=$1, updated_at=NOW() WHERE id=$2", body.stage, customer_id,
+            "UPDATE customers SET stage=$1, updated_at=NOW() WHERE id=$2", target, customer_id,
         )
         await conn.execute(
             """INSERT INTO cust_stage_log (tenant_id, customer_id, from_stage, to_stage, changed_by, reason)
                VALUES ($1,$2,$3,$4,$5,$6)""",
-            DEFAULT_TENANT, customer_id, from_stage, body.stage, str(user["id"]), body.reason,
+            DEFAULT_TENANT, customer_id, from_stage, target, str(user["id"]), reason,
         )
         row = await conn.fetchrow("SELECT *, name AS company_name FROM customers WHERE id=$1", customer_id)
     return dict(row)
