@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -9,6 +9,7 @@ import {
   Loader2,
   Upload,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { useLatestFxRate } from "@/lib/fx/use-latest-fx";
 import {
   canCalculate,
   describeIssue,
@@ -31,6 +33,7 @@ import {
   triggerBlobDownload,
   validateFile,
 } from "@/lib/export-quote/import-file";
+import { IMPORT_TEMPLATE_NOTES_SHEET } from "@/lib/export-quote/import-template-xlsx";
 import { handleApiError } from "@/lib/api/error-handler";
 import type {
   ImportPreviewResponse,
@@ -70,7 +73,9 @@ export function BulkImportPanel() {
   const [productKey, setProductKey] = useState<string>("");
   const [rateSetCode, setRateSetCode] = useState<string>("");
   const [orderTotal, setOrderTotal] = useState("30000");
-  const [fxRate, setFxRate] = useState("6.7019");
+  // 汇率不写死：默认留空，由 useLatestFxRate 自动带入最新汇率，用户手填可覆盖
+  const [fxRate, setFxRate] = useState("");
+  const [fxTouched, setFxTouched] = useState(false);
   // 政策参数一律按【百分比】填写（10 = 10%），提交前除以 100 —— 与「产品报价」页同一口径
   const [giveRatioPct, setGiveRatioPct] = useState("80");
   const [inputVatRatePct, setInputVatRatePct] = useState("10");
@@ -85,6 +90,16 @@ export function BulkImportPanel() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // 最新汇率：用户没手填时自动带入（手填优先，不覆盖）
+  const latestFx = useLatestFxRate();
+  useEffect(() => {
+    if (fxTouched) return;
+    const rate = latestFx.data?.rate;
+    if (typeof rate === "number" && Number.isFinite(rate) && rate > 0) {
+      setFxRate(String(rate));
+    }
+  }, [fxTouched, latestFx.data?.rate]);
 
   // 产品/档案列表回来之前保持空选择，避免用错档案算出错价
   const effectiveProduct = productKey || products.data?.products[0]?.key || "";
@@ -236,15 +251,23 @@ export function BulkImportPanel() {
               </Select>
             </div>
 
-            {/* 为什么 CSV 是主按钮、Excel 降为次按钮：
-                线上运行时是 Cloudflare Worker（Pyodide），**装不了 openpyxl**（C 扩展），
-                因此生产环境无法生成/解析 xlsx —— 按「下载 Excel 模板」只会得到 501。
-                CSV 则是线上与本地都跑得通的那条路，所以把它放在首位。 */}
+            {/* CSV 仍是主按钮：它是脚本/命令行批量生成最直接的目标格式（仅表头、无样式）。
+                Excel 按钮给出前端用 exceljs 现生成的 .xlsx —— 带表头样式、必填标注、
+                下拉与填写说明页，列定义仍来自后端模板信息接口，前端不写死产品列。
+                两种格式都能被导入链路接受；主按钮语义不变。 */}
             <Button
               type="button"
               disabled={!effectiveProduct || loadingTemplate}
               onClick={() =>
-                download.mutate({ productKey: effectiveProduct, format: "csv" })
+                download.mutate(
+                  { productKey: effectiveProduct, format: "csv" },
+                  {
+                    onError: (e) =>
+                      toast.error(errText(e), {
+                        description: "CSV 模板下载失败，请稍后重试",
+                      }),
+                  },
+                )
               }
             >
               {loadingTemplate ? (
@@ -259,14 +282,20 @@ export function BulkImportPanel() {
               variant="outline"
               disabled={!effectiveProduct || loadingTemplate}
               onClick={() =>
-                download.mutate({
-                  productKey: effectiveProduct,
-                  format: "xlsx",
-                })
+                download.mutate(
+                  { productKey: effectiveProduct, format: "xlsx" },
+                  {
+                    onError: (e) =>
+                      toast.error(errText(e), {
+                        description:
+                          "Excel 模板生成失败，请稍后重试或改用 CSV 模板",
+                      }),
+                  },
+                )
               }
             >
               <Download className="mr-2 size-4" />
-              Excel 模板（仅本地开发）
+              下载 Excel 模板（带说明）
             </Button>
 
             {download.isSuccess && (
@@ -279,8 +308,9 @@ export function BulkImportPanel() {
           {template.data && (
             <div className="space-y-2 rounded-md border bg-muted/30 p-3">
               <div className="text-xs text-muted-foreground">
-                Excel 模板含「{template.data.sheets.join("」「")}」； 解析只读「
-                {template.data.data_sheet}」表，示例行不会被误算。 单表上限{" "}
+                Excel 模板含「{template.data.data_sheet}」「
+                {IMPORT_TEMPLATE_NOTES_SHEET}」两张表：解析只读「
+                {template.data.data_sheet}」，说明页不参与计算。 单表上限{" "}
                 {template.data.max_rows} 行、 文件上限 {template.data.max_mb}{" "}
                 MB。
               </div>
@@ -337,9 +367,24 @@ export function BulkImportPanel() {
               <Input
                 id="bi-fx"
                 value={fxRate}
-                onChange={(e) => setFxRate(e.target.value)}
+                onChange={(e) => {
+                  setFxTouched(true);
+                  setFxRate(e.target.value);
+                }}
+                placeholder={
+                  latestFx.isPending
+                    ? "自动获取中…"
+                    : latestFx.data
+                      ? `自动带入 ${latestFx.data.rate}`
+                      : "手动填写"
+                }
                 inputMode="decimal"
               />
+              {latestFx.data?.is_stale && (
+                <p className="text-xs text-muted-foreground">
+                  汇率来自缓存（{latestFx.data.rate_date}），可手动改
+                </p>
+              )}
             </div>
             <div className="space-y-1">
               <Label className="text-xs">税务档案</Label>
@@ -406,10 +451,12 @@ export function BulkImportPanel() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {/* 前端生成的 Excel 模板是 .xlsx，选择器必须放行，否则「下完传不上」；
+                validateFile 也支持 .xlsx/.xlsm，老式 .xls 仍会给出另存为提示。 */}
             <input
               ref={inputRef}
               type="file"
-                accept=".csv,.txt"
+              accept=".csv,.txt,.xlsx,.xlsm"
               className="hidden"
               onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
             />

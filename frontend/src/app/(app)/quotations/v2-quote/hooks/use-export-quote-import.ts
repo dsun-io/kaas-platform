@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import type {
   ExportProduct,
@@ -20,6 +20,7 @@ import {
   templateUrl,
   triggerBlobDownload,
 } from "@/lib/export-quote/import-file";
+import { buildImportTemplateXlsx } from "@/lib/export-quote/import-template-xlsx";
 
 /** 已注册的产品模型（牛栏网…）。 */
 export function useExportProducts() {
@@ -69,6 +70,24 @@ export function useExportTermsTemplate() {
     staleTime: 30 * 60 * 1000,
   });
 }
+/** 模板信息接口：列定义、必填清单、上限、说明 —— 前端不写死产品列。 */
+function fetchImportTemplateInfo(
+  productKey: string,
+): Promise<ImportTemplateInfo> {
+  return apiClient
+    .get<ImportTemplateInfo>(
+      `${EXPORT_QUOTE_BASE}/products/${productKey}/import-template`,
+    )
+    .then(({ data }) => data);
+}
+
+/** 模板信息的 query key：`useImportTemplateInfo` 与模板下载共用同一份缓存。 */
+export function importTemplateQueryKey(productKey: string | null) {
+  return ["export-quote", "import-template", productKey] as const;
+}
+
+const IMPORT_TEMPLATE_STALE_MS = 10 * 60 * 1000;
+
 /**
  * 模板说明：有哪些列、哪些必填、单位、可选值。
  *
@@ -77,20 +96,23 @@ export function useExportTermsTemplate() {
  */
 export function useImportTemplateInfo(productKey: string | null) {
   return useQuery({
-    queryKey: ["export-quote", "import-template", productKey],
-    queryFn: async () => {
-      const { data } = await apiClient.get<ImportTemplateInfo>(
-        `${EXPORT_QUOTE_BASE}/products/${productKey}/import-template`,
-      );
-      return data;
-    },
+    queryKey: importTemplateQueryKey(productKey),
+    queryFn: () => fetchImportTemplateInfo(productKey as string),
     enabled: !!productKey,
-    staleTime: 10 * 60 * 1000,
+    staleTime: IMPORT_TEMPLATE_STALE_MS,
   });
 }
 
-/** 下载模板：直接从系统拿文件，不需要先手工造一份。 */
+/**
+ * 下载模板。
+ *
+ * · `csv`：走后端下载（仅表头，给脚本化批量生成用），行为保持不变；
+ * · `xlsx`：后端在线上 Worker 里生成不了（openpyxl 是 C 扩展，按设计返回 501），
+ *   所以改为**前端用 exceljs 现生成**带样式与填写说明的 .xlsx —— 列定义仍从
+ *   后端模板信息接口取，前端不写死任何产品列。
+ */
 export function useDownloadTemplate() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
       productKey,
@@ -101,6 +123,26 @@ export function useDownloadTemplate() {
       format: ImportTemplateFormat;
       examples?: number;
     }) => {
+      if (format === "xlsx") {
+        // 复用页面上 useImportTemplateInfo 已取的缓存；没取过才发一次请求
+        const info = await queryClient.ensureQueryData({
+          queryKey: importTemplateQueryKey(productKey),
+          queryFn: () => fetchImportTemplateInfo(productKey),
+          staleTime: IMPORT_TEMPLATE_STALE_MS,
+        });
+        let blob: Blob;
+        try {
+          blob = await buildImportTemplateXlsx(info);
+        } catch (err) {
+          throw new Error(
+            `生成 Excel 模板失败：${err instanceof Error ? err.message : "未知错误"}`,
+          );
+        }
+        const name = templateFilename(productKey, "xlsx");
+        triggerBlobDownload(blob, name);
+        return name;
+      }
+
       const { data, headers } = await apiClient.get<Blob>(
         templateUrl(
           productKey,
