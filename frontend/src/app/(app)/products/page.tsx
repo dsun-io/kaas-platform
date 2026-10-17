@@ -28,8 +28,8 @@
  * **保留状态是改善**，不算违反"行为等价"）。
  */
 import { useEffect, useState } from "react";
-import { cn } from "@/lib/utils";
 
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProductsMediaTab } from "./tabs/products-media-tab";
 import { ProductsDefinitionsTab } from "./tabs/products-definitions-tab";
 
@@ -88,32 +88,30 @@ export default function ProductsWorkstationPage() {
         </p>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto border-b">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            title={t.hint}
-            onClick={() => switchTab(t.key)}
-            className={cn(
-              "-mb-px whitespace-nowrap border-b-2 px-4 pb-2 text-sm transition-colors",
-              tab === t.key
-                ? "border-primary font-medium text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {/* 2026-10-17 tab 收编到 ui/tabs：keepMounted 默认 true = P14 语义
+          （两个 tab 都始终挂载只是隐藏，切走再切回状态还在），
+          文案/深链 ?tab= 全部不变。 */}
+      <Tabs value={tab} onValueChange={(v) => switchTab(v as ProductsTab)}>
+        <TabsList variant="line">
+          {TABS.map((t) => (
+            <TabsTrigger
+              key={t.key}
+              variant="line"
+              value={t.key}
+              title={t.hint}
+            >
+              {t.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
 
-      {/* 两个 tab 都始终挂载（hidden 切换），切走再切回状态还在（见文件头注释） */}
-      <div className={tab === "media" ? "" : "hidden"}>
-        <ProductsMediaTab />
-      </div>
-      <div className={tab === "definitions" ? "" : "hidden"}>
-        <ProductsDefinitionsTab />
-      </div>
+        <TabsContent value="media">
+          <ProductsMediaTab />
+        </TabsContent>
+        <TabsContent value="definitions">
+          <ProductsDefinitionsTab />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
