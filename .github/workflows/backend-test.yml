@@ -30,6 +30,13 @@ jobs:
         working-directory: ./backend/orchestrator
         run: uv sync
 
+      # `test_trade_doc_render_fingerprint` 会断言 worker 镜像与共享内核逐字节一致；
+      # `backend/worker/src/kaas_common/` 被 .gitignore 忽略 ⇒ runner 上必须先生成
+      # （与 deploy.yml、worker-tests 同一步）。此前漏了这一步，unit-tests 恒红 1 条。
+      - name: Sync shared kernel + quote engine into worker
+        shell: pwsh
+        run: ./scripts/sync-shared.ps1
+
       - name: Run unit tests
         working-directory: ./backend/orchestrator
         run: uv run pytest -m unit --tb=short -q

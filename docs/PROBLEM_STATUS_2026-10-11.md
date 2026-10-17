@@ -34,12 +34,21 @@
 >   **仅作排障参考**，正常路径是 CI；应急可用 `npx wrangler deploy`（本机实测 wrangler 4.151.1
 >   已登录、有 workers 写权限）。
 >
+> **CI 现状（2026-10-17 15:0x 实测）**：
+> - `deploy` **绿**（run `39010179425`）。
+> - `backend:test`（run `39011847561`）**红**：`unit-tests` 仅 1 条 ——
+>   `test_worker_mirror_is_byte_identical` 因 runner 没跑 `sync-shared.ps1`（工作流已补该步骤）；
+>   `db-tests` **87 failed / 212 passed / 7 errors**，多为测试间数据泄漏/顺序依赖
+>   （`uq_team_subscriptions_code` 冲突、`MultipleResultsFound`），根因与修复方案另见排障记录。
+> - `Frontend CI` 最近一次（`422dadc`）是**被账单挡在启动前**，不是代码红；恢复 public 后尚未重跑。
+>
 > **用户原话要求（2026-10-17）**：
 > 1.「为什么是手动部署, 设置好自动部署」→ **自动部署本来就有**（见上），此前是账单问题；现已验证可用。
 > 2.「将生产项目部署为最新」→ **已完成**（2026-10-17 14:33，`2a355c4`）。
 > 3. Cloudflare agent 接入（`https://developers.cloudflare.com/agent-setup/prompt.md`）——**未执行**（仍待做）。
 > 4.「确保没有信息泄露的安全隐患」→ 已完成首轮审计：删除了唯一的"当前可读"泄露入口（远端分支
->   `feat/trade-doc-templates`），其余见文末「公开仓库安全审计」；**Neon 口令轮换待执行**。
+>   `feat/trade-doc-templates`），其余见文末「公开仓库安全审计」；**用户裁决：Neon 口令暂不轮换，
+>   部署完成后把仓库改回 private**（注意：改回 private 后私有仓库 Actions 额度问题会回归）。
 >
 > **本会话已完成并入库**（全部推送 main，基线：orchestrator 1218 / worker 275 /
 > 前端 437 / typecheck 0 / lint 0 / contracts R0–R6 178 paths / route-parity PASS）：
@@ -3180,6 +3189,12 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
 - [ ] 根 `.gitignore` 补 `.dev.vars`；`frontend-ci.yml` 最小权限
 - [ ] （可选）历史重写 `git filter-repo`：420 commits / 8.8MB / 0 fork，代价是所有 clone 失效、
       PR 断链，且**不能替代轮换**（GitHub 缓存/直链/第三方镜像可能仍在）
+
+> **用户裁决（2026-10-17）**：Neon 口令**暂不轮换**、管理员口令**暂不改**；
+> 用户将在本次部署完成后把仓库**改回 private**（作为止血手段）。
+> ⚠️ 注意两点：① 公开窗口期内可能已被抓取，"改回 private"不能收回已泄露内容；
+> ② 改回 private 后**私有仓库 Actions 分钟额度问题会回归**——push 可能再次被挡在任务启动前，
+> 届时需要支付额度、保持 public，或改用 self-hosted runner。
 
 > **口径**：**先轮换（治本）+ 删分支（止血）**；历史重写可排后。
 > 若"公开"并非本意，改回 private 能立刻停止继续索引，但**已被抓取的内容不可撤回**，不能因此跳过轮换。
