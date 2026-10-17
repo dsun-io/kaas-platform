@@ -5,6 +5,7 @@
 # 当前阶段仅建表（Phase 2），业务逻辑在后续工位开发时填充。
 # ─────────────────────────────────────────────────────────────────────────────
 from sqlalchemy import (
+    Boolean,
     Column, BigInteger, Integer, Text, Numeric, DateTime, Date, Index, func,
     ForeignKey, text,
 )
@@ -332,4 +333,62 @@ class TradeDocOrderRef(Base):
             "tenant_id", "trade_doc_id", "ref_type", "order_id",
             unique=True,
         ),
+    )
+
+
+class TradeDocReceipt(Base):
+    """收款登记（P1 · HARDENING_PLAN §E，迁移 202610170003）。
+
+    每笔收款 vs 账期金额的差额与归因（UNCERTAIN #17 ③ 容差：
+    max(5 美分等值, 0.1%)——差额 ≤ 容差自动核销 fx_rounding，否则 short_paid）。
+    """
+    __tablename__ = "trade_doc_receipts"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    trade_doc_id = Column(BigInteger, nullable=False)
+    schedule_type = Column(Text, nullable=True)
+    schedule_amount = Column(Numeric(20, 6), nullable=True)
+    received_amount = Column(Numeric(20, 6), nullable=False)
+    currency = Column(Text, nullable=False, default="USD")
+    received_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    bank_ref = Column(Text, nullable=True)
+    diff = Column(Numeric(20, 6), nullable=True)
+    diff_reason = Column(Text, nullable=True)
+    fx_rate_used = Column(Numeric(20, 8), nullable=True)
+    status = Column(Text, nullable=False, default="manual")
+    notes = Column(Text, nullable=True)
+    created_by = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_trade_doc_receipts_doc", "tenant_id", "trade_doc_id"),
+    )
+
+
+class TradeDocDocSetItem(Base):
+    """单证清单项（P1 · HARDENING_PLAN §C + UNCERTAIN #17 ④，迁移 202610170003）。
+
+    「这一次交易该出哪些单证」显式清单：`not_by_us`（对方出单）走回执登记
+    （pending → received / waived），清单外的单证不允许被引用（P0 引用完整性）。
+    """
+    __tablename__ = "trade_doc_doc_set_items"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    trade_doc_id = Column(BigInteger, nullable=False)
+    doc_type = Column(Text, nullable=False)
+    role = Column(Text, nullable=False, default="required")
+    issuer = Column(Text, nullable=False, default="ours")
+    trigger_expr = Column(Text, nullable=True)
+    evidence_required = Column(Boolean, nullable=False, default=False)
+    status = Column(Text, nullable=False, default="pending")
+    waived_reason = Column(Text, nullable=True)
+    received_doc_id = Column(BigInteger, nullable=True)
+    received_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("uq_trade_doc_doc_set_item", "tenant_id", "trade_doc_id", "doc_type", unique=True),
     )
