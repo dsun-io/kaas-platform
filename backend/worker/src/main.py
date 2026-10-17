@@ -1341,13 +1341,14 @@ async def update_stage(customer_id: int, request: Request, body: StageUpdate, us
                     "detail": "标记流失必须上传客户拒绝文件",
                 })
             ok = await conn.fetchval(
-                "SELECT 1 FROM file_objects WHERE tenant_id=$1 AND id=$2",
-                DEFAULT_TENANT, fid)
+                "SELECT 1 FROM file_objects WHERE tenant_id=$1 AND id=$2"
+                " AND owner_type='customer' AND coalesce(owner_id,'')=$3",
+                DEFAULT_TENANT, fid, str(customer_id))
             if not ok:
                 raise HTTPException(status_code=422, detail={
                     "error": "invalid_rejection_file",
                     "code": "INVALID_REJECTION_FILE",
-                    "detail": "拒绝文件不存在或不可用",
+                    "detail": "拒绝文件不存在或不属于该客户",
                 })
             reason = f"拒绝文件#{fid}" + (f" · {reason}" if reason else "")
         await conn.execute(
