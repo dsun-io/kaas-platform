@@ -225,7 +225,10 @@ describe("读写行为与搬家前逐项一致（定义 tab 的读写契约）",
     clickButton("编辑");
     await settle();
 
-    // 改 JSON
+    // 改 JSON（P16-S6.1：textarea 移到「高级 JSON」tab —— P14 原文"留给 P16"，
+    // 换 tab 不变写入路径：specJson 仍是唯一真源）
+    clickButton("高级 JSON");
+    await settle();
     const textarea = container!.querySelector(
       "textarea",
     ) as HTMLTextAreaElement;
@@ -275,7 +278,10 @@ describe("读写行为与搬家前逐项一致（定义 tab 的读写契约）",
     clickButton("新增产品");
     await settle();
 
-    // JSON 初始值即搬家前的 {"key":"","name":"","axes":[],"variants":[]}
+    // JSON 初始值：axes: [] 保留（P14 搬家前真实行为），
+    // numeric_inputs/variants/derived 三段空初始值是 S6.1 编辑器的要求。
+    clickButton("高级 JSON");
+    await settle();
     const textarea = container!.querySelector(
       "textarea",
     ) as HTMLTextAreaElement;
@@ -295,7 +301,9 @@ describe("读写行为与搬家前逐项一致（定义 tab 的读写契约）",
       key: "",
       name: "",
       axes: [],
+      numeric_inputs: [],
       variants: [],
+      derived: [],
     });
   });
 
