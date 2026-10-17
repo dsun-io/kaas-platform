@@ -85,6 +85,10 @@ interface SpaceDeductionItem {
   note?: string;
 }
 
+// ── S6.3：params / notes / constants ───────────────────────────────────────
+/** params 是 4 元组列表：[参数, 取值, 单位, 说明]（与 ProductSpec.params 一致） */
+type ParamRow = [string, string, string, string];
+
 type SpecShape = {
   key?: string;
   name?: string;
@@ -94,10 +98,13 @@ type SpecShape = {
   columns?: ColumnItem[];
   invariants?: InvariantItem[];
   space_deduction?: SpaceDeductionItem;
+  params?: ParamRow[];
+  notes?: string[];
+  constants?: Record<string, number | string>;
   [k: string]: unknown;
 };
 
-type EditorTab = "specs" | "derived" | "report" | "json";
+type EditorTab = "specs" | "derived" | "report" | "meta" | "json";
 
 interface ProductSpecEditorProps {
   /** P14 保留的真源 JSON 文本（stringify 出来的；parse 失败时显示错误并禁用表单） */
@@ -337,6 +344,44 @@ export function ProductSpecEditor({
     });
   };
 
+  // ── S6.3：params（4 元组）/ notes（行文本）/ constants（KV）──────────────
+  const params = spec?.params ?? [];
+  const patchParam = (index: number, col: 0 | 1 | 2 | 3, value: string) => {
+    const next = params.map((row, i) => {
+      if (i !== index) return row;
+      const copy = [...row] as ParamRow;
+      copy[col] = value;
+      return copy;
+    });
+    commit({ ...(spec ?? {}), params: next });
+  };
+  const addParam = () =>
+    commit({ ...(spec ?? {}), params: [...params, ["", "", "", ""]] });
+  const removeParam = (index: number) =>
+    commit({ ...(spec ?? {}), params: params.filter((_, i) => i !== index) });
+
+  const notes = spec?.notes ?? [];
+  const patchNote = (index: number, text: string) => {
+    commit({
+      ...(spec ?? {}),
+      notes: notes.map((n, i) => (i === index ? text : n)),
+    });
+  };
+  const addNote = () => commit({ ...(spec ?? {}), notes: [...notes, ""] });
+  const removeNote = (index: number) =>
+    commit({ ...(spec ?? {}), notes: notes.filter((_, i) => i !== index) });
+
+  const constants = spec?.constants ?? {};
+  const constantEntries = Object.entries(constants);
+  const patchConstant = (key: string, value: string) => {
+    commit({ ...(spec ?? {}), constants: { ...constants, [key]: value } });
+  };
+  const removeConstant = (key: string) => {
+    const next = { ...constants };
+    delete next[key];
+    commit({ ...(spec ?? {}), constants: next });
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-1 rounded-lg border p-0.5">
@@ -345,6 +390,7 @@ export function ProductSpecEditor({
             { key: "specs", label: "数值参数 / 变体档位" },
             { key: "derived", label: "派生公式" },
             { key: "report", label: "列 / 校验 / 扣减" },
+            { key: "meta", label: "参数 / 说明 / 常量" },
             { key: "json", label: "高级 JSON" },
           ] as const
         ).map((t) => (
@@ -892,6 +938,143 @@ export function ProductSpecEditor({
         </div>
       )}
 
+      {/* S6.3: params / notes / constants */}
+      {tab === "meta" && parseOk && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">
+              参考参数（说明性参数表，不参与计算）
+            </Label>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={addParam}
+            >
+              <Plus className="size-3" /> 加参数
+            </Button>
+          </div>
+          {params.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              还没有参考参数 —— 「原料进货成本 / 客户每单填写 / 元/㎡」这类
+              说明性的参数表放这里（只做展示与备忘）。
+            </p>
+          )}
+          {params.map((row, index) => (
+            <div
+              key={index}
+              className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5"
+            >
+              <TextField
+                label="参数"
+                value={row[0]}
+                onChange={(v) => patchParam(index, 0, v)}
+              />
+              <TextField
+                label="取值"
+                value={row[1]}
+                onChange={(v) => patchParam(index, 1, v)}
+              />
+              <TextField
+                label="单位"
+                value={row[2]}
+                onChange={(v) => patchParam(index, 2, v)}
+              />
+              <TextField
+                label="说明"
+                value={row[3]}
+                onChange={(v) => patchParam(index, 3, v)}
+              />
+              <div className="flex items-end">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 text-xs text-muted-foreground"
+                  onClick={() => removeParam(index)}
+                >
+                  <Trash2 className="size-3" /> 删除
+                </Button>
+              </div>
+            </div>
+          ))}
+
+          <div className="flex items-center justify-between pt-2">
+            <Label className="text-xs">说明（notes：产品口径/计算说明）</Label>
+            <Button type="button" size="sm" variant="outline" onClick={addNote}>
+              <Plus className="size-3" /> 加一行
+            </Button>
+          </div>
+          {notes.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              还没有说明 ——
+              重量公式口径、装柜体积来源这类要给业务看的说明放这里。
+            </p>
+          )}
+          {notes.map((n, index) => (
+            <div key={index} className="flex items-center gap-1.5">
+              <Input
+                value={n}
+                onChange={(e) => patchNote(index, e.target.value)}
+                placeholder="一行说明"
+                className="h-7 text-xs"
+              />
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-7 shrink-0 text-muted-foreground"
+                onClick={() => removeNote(index)}
+              >
+                <Trash2 className="size-3" />
+              </Button>
+            </div>
+          ))}
+
+          <div className="flex items-center justify-between pt-2">
+            <Label className="text-xs">常量（公式里用到的常数）</Label>
+          </div>
+          {constantEntries.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              还没有常量 —— 公式里的 1.28（重量经验系数）这类常数放这里，
+              改值时公式自动跟着变。
+            </p>
+          )}
+          {constantEntries.map(([k, v]) => (
+            <div key={k} className="flex items-center gap-1.5">
+              <Input
+                value={k}
+                readOnly
+                className="h-7 w-40 font-mono text-xs"
+                title="常量名（改名请在高级 JSON 里改）"
+              />
+              <Input
+                value={String(v)}
+                onChange={(e) => patchConstant(k, e.target.value)}
+                className="h-7 text-xs"
+              />
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-7 shrink-0 text-muted-foreground"
+                onClick={() => removeConstant(k)}
+              >
+                <Trash2 className="size-3" />
+              </Button>
+            </div>
+          ))}
+          <AddConstantRow
+            onAdd={(key) => {
+              commit({
+                ...(spec ?? {}),
+                constants: { ...constants, [key]: 0 },
+              });
+            }}
+          />
+        </div>
+      )}
+
       {/* ── 高级 JSON（P14 保留的原 textarea，实时写 specJson）── */}
       {tab === "json" && (
         <div className="space-y-2">
@@ -913,6 +1096,37 @@ export function ProductSpecEditor({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * 新增常量行：常量名输入 + 加号。改名只允许在新增时定（避免 key 冲突静默覆盖）。
+ */
+function AddConstantRow({ onAdd }: { onAdd: (key: string) => void }) {
+  const [draft, setDraft] = useState("");
+  return (
+    <div className="flex items-center gap-1.5 pt-1">
+      <Input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder="新常量名（如 wire_factor）"
+        className="h-7 w-40 font-mono text-xs"
+      />
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className="h-7"
+        onClick={() => {
+          const key = draft.trim();
+          if (!key) return;
+          onAdd(key);
+          setDraft("");
+        }}
+      >
+        <Plus className="size-3" /> 加常量
+      </Button>
     </div>
   );
 }
