@@ -141,7 +141,7 @@ export function ProductsDefinitionsTab() {
           <h3 className="font-semibold">
             {editing.id ? "编辑产品" : "新增产品"}
           </h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="text-xs">产品 Key</label>
               <input

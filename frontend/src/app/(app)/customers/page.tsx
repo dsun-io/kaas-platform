@@ -183,7 +183,7 @@ function CustomerForm({
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input
           placeholder="公司名称 *"
           value={form.company_name}
@@ -200,7 +200,7 @@ function CustomerForm({
         value={form.address}
         onChange={set("address")}
       />
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input
           placeholder="默认港口"
           value={form.default_port}
@@ -298,7 +298,7 @@ function InquiryForm({
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input
           placeholder="渠道（Alibaba / Expo / Web）"
           value={form.channel}
@@ -310,7 +310,7 @@ function InquiryForm({
           onChange={set("product_name_raw")}
         />
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input
           placeholder="数量"
           type="number"
@@ -396,7 +396,7 @@ function ContactForm({
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input
           placeholder="姓名 *"
           value={form.name}
@@ -408,7 +408,7 @@ function ContactForm({
           onChange={(e) => setForm({ ...form, position: e.target.value })}
         />
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input
           placeholder="电话"
           value={form.phone}
@@ -559,7 +559,7 @@ function CustomerDetailPanel({
 
             {activeTab === "info" && (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                   <div>
                     <span className="text-muted-foreground">国家：</span>
                     <span className="ml-1">{detail.country ?? "-"}</span>
