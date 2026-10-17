@@ -1365,6 +1365,9 @@ class _QuoteItemIn(BaseModel):
     currency: Optional[str] = None
     line_amount: Optional[Decimal] = None
     sort_order: int = 0
+    # 内部分解快照（成本/利润）——签发时从算价引擎 internal 视图带来；
+    # 仅 internal 账号可读（出口剔除），customer 视角本字段不存在（UNCERTAIN #19）
+    cost_breakdown: Optional[dict] = None
 
 
 class _QuoteOrderCreate(BaseModel):
@@ -1436,11 +1439,18 @@ def _quote_json(row: dict, item_count: int = 0) -> dict:
     return row_to_quote(dict(row), item_count)
 
 
-def _quote_item_json(row) -> dict:
-    """行项 → 出参。spec_snapshot 必须经 dbjson 解码（jsonb 在 Workers 里是 str）。"""
+def _quote_item_json(row, user: dict | None = None) -> dict:
+    """行项 → 出参。spec_snapshot 必须经 dbjson 解码（jsonb 在 Workers 里是 str）。
+
+    内外视图红线（UNCERTAIN #19）：成本分解只对平台员工（internal）透出，
+    customer 账号在**接口层**就剥掉，不靠前端隐藏。
+    """
     from kaas_common.workstation.quote_serializers import row_to_item
     d = _row_to_dict(row, "quote_order_items")
-    return row_to_item(d)
+    out = row_to_item(d)
+    if user is None or user.get("account_type") != "internal":
+        out.pop("cost_breakdown", None)
+    return out
 
 
 def _build_items(currency: str, rows: List[_QuoteItemIn]):
@@ -1469,6 +1479,7 @@ def _build_items(currency: str, rows: List[_QuoteItemIn]):
                          if row.currency else currency),
             "line_amount": line,
             "sort_order": row.sort_order,
+            "cost_breakdown": row.cost_breakdown,
         })
         if line is not None:
             total += line
@@ -1480,12 +1491,14 @@ async def _insert_quote_items(conn, tenant: str, quote_order_id: int, items: lis
         await conn.execute(
             """INSERT INTO quote_order_items
                    (tenant_id, quote_order_id, sku_id, product_name, spec_snapshot,
-                    qty, qty_unit, unit_price, currency, line_amount, sort_order)
-               VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11)""",
+                    qty, qty_unit, unit_price, currency, line_amount, sort_order,
+                    cost_breakdown)
+               VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12::jsonb)""",
             tenant, quote_order_id, it["sku_id"], it["product_name"],
             json.dumps(it["spec_snapshot"]) if it["spec_snapshot"] is not None else None,
             it["qty"], it["qty_unit"], it["unit_price"], it["currency"],
             it["line_amount"], it["sort_order"],
+            json.dumps(it["cost_breakdown"]) if it.get("cost_breakdown") is not None else None,
         )
 
 
@@ -1868,6 +1881,56 @@ async def create_quote_order(request: Request, body: _QuoteOrderCreate,
 
 
 
+@app.get("/api/v1/quotes/reference-price")
+async def quote_reference_price(request: Request, customer_id: int,
+                                product_name: str, spec: Optional[str] = None,
+                                days: int = 180,
+                                user: dict = Depends(_get_current_user)):
+    """历史参考价（UNCERTAIN #19 · 实时报价的回落参考）——与 dev 同口径。
+
+    聚合同客户+同产品近 N 天已落库报价行项的单价；spec 给 JSON 字符串时按
+    spec_snapshot 语义相等精确匹配。可见范围与报价单列表同口径（_scope_sql）。
+    """
+    days = max(1, min(int(days or 180), 730))
+    params: list = [_tenant_of(user), customer_id, product_name, days]
+    spec_clause = ""
+    if spec:
+        try:
+            json.loads(spec)  # 先验形状，非法给 422 而不是默默不匹配
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=422, detail={
+                "error": "validation_error", "message": "spec must be a JSON object"})
+        params.append(spec)
+        spec_clause = f" AND i.spec_snapshot = ${len(params)}::jsonb"
+    tenant = params[0]
+    row = await _db.fetchrow(
+        request,
+        "SELECT count(*) AS n,"
+        " avg(i.unit_price) AS avg, min(i.unit_price) AS min, max(i.unit_price) AS max,"
+        " percentile_cont(0.5) WITHIN GROUP (ORDER BY i.unit_price) AS median,"
+        " max(q.created_at) AS last_at"
+        " FROM quote_order_items i JOIN quote_orders q"
+        "   ON q.tenant_id = i.tenant_id AND q.id = i.quote_order_id"
+        " WHERE i.tenant_id=$1 AND q.customer_id=$2 AND i.product_name=$3"
+        " AND i.unit_price IS NOT NULL"
+        f" AND q.created_at >= now() - ($4 || ' days')::interval{spec_clause}"
+        + _scope_sql(user, params, "q"),
+        *params,
+    )
+    return {
+        "customer_id": customer_id,
+        "product_name": product_name,
+        "days": days,
+        "spec_matched": spec is not None,
+        "count": row["n"] if row else 0,
+        "avg": float(row["avg"]) if row and row["avg"] is not None else None,
+        "min": float(row["min"]) if row and row["min"] is not None else None,
+        "max": float(row["max"]) if row and row["max"] is not None else None,
+        "median": float(row["median"]) if row and row["median"] is not None else None,
+        "last_at": row["last_at"].isoformat() if row and row["last_at"] else None,
+    }
+
+
 @app.get("/api/v1/quotes/{quote_id}")
 async def get_quote_order(quote_id: int, request: Request,
                           user: dict = Depends(_get_current_user)):
@@ -1877,7 +1940,7 @@ async def get_quote_order(quote_id: int, request: Request,
         q = await _quote_or_404(conn, tenant, quote_id, user)
         items = await _items_of(conn, tenant, q["id"])
     payload = _quote_json(q, len(items))
-    payload["items"] = [_quote_item_json(i) for i in items]
+    payload["items"] = [_quote_item_json(i, user) for i in items]
     return payload
 
 
@@ -2008,5 +2071,5 @@ async def replace_quote_items(quote_id: int, request: Request, body: _QuoteItems
     return {
         "id": quote_id,
         "total_amount": float(total) if items else None,
-        "items": [_quote_item_json(i) for i in rows],
+        "items": [_quote_item_json(i, user) for i in rows],
     }

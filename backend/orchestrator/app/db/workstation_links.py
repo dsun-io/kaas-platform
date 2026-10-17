@@ -96,6 +96,9 @@ class QuoteOrderItem(Base):
     weight_override = Column(Numeric(20, 6), nullable=True)
     volume_override = Column(Numeric(20, 6), nullable=True)
     image_url = Column(Text, nullable=True)
+    # ── 202610170001：内部分解快照（成本/利润，签发时从算价引擎 internal 视图带来）──
+    # 仅 internal 账号可见（API 出口按账号类型剔除）；NULL = 老数据无分解
+    cost_breakdown = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     __table_args__ = (
