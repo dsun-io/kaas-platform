@@ -5,16 +5,20 @@ import { useTenants } from "./hooks/use-tenants";
 import { TenantList } from "./components/tenant-list";
 import { ReloadButton } from "./components/reload-button";
 import { ProductCategories } from "./components/product-categories";
+import { AccountManagement } from "./components/account-management";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { usePageView } from "@/lib/events/use-page-view";
 import { RouteGuard } from "@/components/route-guard";
+import { useRole } from "@/hooks/use-role";
 
-type Tab = "tenants" | "system";
+type Tab = "tenants" | "accounts" | "system";
 
 export default function SettingsPage() {
   usePageView({ resource_id: "/settings" });
   const [tab, setTab] = useState<Tab>("tenants");
   const { data: tenants, isLoading } = useTenants();
+  // 账号治理口径：仅 system_admin 可见（RouteGuard adminOnly 只判 internal，不够）
+  const { isSystemAdmin } = useRole();
 
   return (
     <RouteGuard adminOnly>
@@ -24,6 +28,9 @@ export default function SettingsPage() {
         <div className="flex gap-1 rounded-lg border p-0.5 w-full sm:w-fit">
           {[
             { key: "tenants" as Tab, label: "租户配置" },
+            ...(isSystemAdmin
+              ? [{ key: "accounts" as Tab, label: "平台账号管理" }]
+              : []),
             { key: "system" as Tab, label: "系统操作" },
           ].map((t) => (
             <button
@@ -39,6 +46,17 @@ export default function SettingsPage() {
             </button>
           ))}
         </div>
+
+        {tab === "accounts" && isSystemAdmin ? (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle>平台账号管理</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AccountManagement />
+            </CardContent>
+          </Card>
+        ) : null}
 
         {tab === "tenants" && (
           <div className="space-y-6">

@@ -48,7 +48,8 @@ function safeRedirect(raw: string | null): string {
   ) {
     return raw;
   }
-  return "/dashboard";
+  // 默认落到 "/"（角色感知路由页）：internal → /customers，customer → /products
+  return "/";
 }
 
 // Build UserInfo from a login/register/me response payload
