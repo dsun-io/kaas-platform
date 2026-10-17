@@ -20,6 +20,9 @@ env/
 !backend/.env.example
 !frontend/.env.example
 backend/.env
+# Wrangler 本地密钥（worker 目录的 .gitignore 也覆盖了，这里兜底根目录/其他目录）
+.dev.vars
+*.dev.vars
 
 # IDE
 .vscode/

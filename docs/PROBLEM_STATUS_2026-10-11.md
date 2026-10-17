@@ -3190,7 +3190,9 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
       + 本地 `backend/orchestrator/.env` 的 `DATABASE_URL` + `KAAS_DSN`。
 - [ ] 管理员 `david@powervoy.com` 改密（忘记密码邮件重置）
 - [ ] 评估 `docs/archive` 中的业务数据是否可公开
-- [ ] 根 `.gitignore` 补 `.dev.vars`；`frontend-ci.yml` 最小权限
+- [x] 根 `.gitignore` 补 `.dev.vars` / `*.dev.vars`（2026-10-17，`git check-ignore` 已验证）
+- [x] `frontend-ci.yml`：加 `permissions: contents: read`；`SENTRY_AUTH_TOKEN` 只在 `push` 事件注入
+      （`github.event_name == 'push'`），PR/含 fork 时为空（2026-10-17）
 - [ ] （可选）历史重写 `git filter-repo`：420 commits / 8.8MB / 0 fork，代价是所有 clone 失效、
       PR 断链，且**不能替代轮换**（GitHub 缓存/直链/第三方镜像可能仍在）
 
@@ -3202,3 +3204,17 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
 
 > **口径**：**先轮换（治本）+ 删分支（止血）**；历史重写可排后。
 > 若"公开"并非本意，改回 private 能立刻停止继续索引，但**已被抓取的内容不可撤回**，不能因此跳过轮换。
+
+### 四、QA 测试账号（生产，2026-10-17）
+
+为验收生产功能，在生产库创建了 **QA 测试账号**（此前生产只有 1 个管理员、0 个团队，无法演练带登录链路）：
+
+| 项 | 值 |
+|---|---|
+| 邮箱 | `qa.test@powervoy.com`（`users.id=5`） |
+| 类型/角色 | `internal` / `system_admin` |
+| 团队 | 「QA 测试团队」（`teams.id=2`，`created_by=5`），已开通 `full_chain` |
+| 口令 | **不写入仓库**（仅会话交付；bcrypt 落库，已验证可登录） |
+
+> 用途：生产功能验收（登录、页面、带鉴权 API）。**用完可按需停用**（`PATCH /api/v1/admin/accounts/5`
+> 或直接改库 `status='disabled'`），不要把它当成长期管理员。
