@@ -252,6 +252,8 @@ TypeScript 构建前端 → **同步共享内核并校验** → `pywrangler depl
 > 线上 Worker `b6c2d701`（`2026-10-17T06:33:07Z`），对应提交 `2a355c4`；生产库迁移执行到
 > `202610170004`；冒烟与浏览器验证通过（`/health` JSON、匿名 API 401、页面 200、
 > 无凭据深链直接 `/login` 且全程不出现系统 UI）。
+> 同日 16:1x 又部署一次（提交 `272a683`，含 rate-sets 内嵌兜底、派生建单/方案物化两处产品修复），
+> deploy 与冒烟均绿；`backend:test` 首次全绿（run `39016277997`）。
 
 其他工作流：`backend-test.yml`（orchestrator 单测 + DB 测试 + Worker 纯函数单测，
 已带 `paths: backend/**`）、`frontend-ci.yml`、`contracts-check.yml`。

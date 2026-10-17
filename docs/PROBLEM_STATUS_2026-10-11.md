@@ -34,17 +34,20 @@
 >   **仅作排障参考**，正常路径是 CI；应急可用 `npx wrangler deploy`（本机实测 wrangler 4.151.1
 >   已登录、有 workers 写权限）。
 >
-> **CI 现状（2026-10-17 15:2x 实测）**：
-> - `deploy` **绿**（run `39010179425`）；生产代码 = `2a355c4`（此后 `2b9e814`/`fe50964` 只改文档与
->   `backend-test.yml`，不影响运行时）。
-> - `backend:test`（run `39011847561`）**红**，且是**长期既有问题**：最近约 400 个 run 里
->   **没有任何一次 `backend:test` 成功**（不是本次部署引入的回归）。本轮明细：
->   `unit-tests` 仅 1 条 —— `test_worker_mirror_is_byte_identical`（runner 没跑 `sync-shared.ps1`，
->   已在 workflow 补该步骤）；`db-tests` **87 failed / 212 passed / 7 errors**（`pytest -m db`），
->   集中在事件写入（400）、工作流订阅（唯一键冲突/`MultipleResultsFound`）、单证/租户隔离，
->   属测试基建/预期与现行口径不一致的独立问题，需专项处理（日志已留在 `artifacts/`，gitignored）。
-> - `Frontend CI` 最近一次（`422dadc`）是**被账单挡在启动前**，不是代码红；恢复 public 后尚未重跑。
-> - **结论**：本次「生产与代码一致」已达成；`backend:test` 的红是既有欠账，不应被当成部署失败的证据。
+> **CI 现状（2026-10-17 16:1x 实测）**：
+> - `deploy` **绿**；生产代码已随本轮修复重新部署（`272a683`，见下「本轮追加修复」）。
+> - **`backend:test` 首次全绿**（run `39016277997`，`sha 272a683`，`workflow_dispatch`）：
+>   `unit-tests` **1222 passed / 1 skipped**（选中 1223；总收集 1548）；
+>   `db-tests` **307 passed / 7 skipped**（选中 314 = `-m db --collect-only`；1234 deselected）；
+>   `worker-tests` **275 passed**。此前「约 400 个 run 无一次成功」的长期红已收口。
+> - **7 条 skip 的边界（如实标注）**：空库快径（E1 `create_all+stamp`）**不含**迁移里的
+>   品类树/属性绑定种子 ⇒ 依赖 seed 的 quote-wizard/规格用例显式 skip（缺数据才 skip，非假绿）。
+>   要真跑需把迁移 `202605170001` 的品类/属性绑定种子补进 `_seed_reference_data`。
+> - **本次主要修复**：conftest 注入 `state.tenant_id`（events 400 / Missing tenant context 总根因）/
+>   db-tests 补 `DATABASE_URL` / 逐用例重建 `middleware_stack` / 空库快径补 btree_gist+EXCLUDE、
+>   price_units、entity_links+triggers / 测试预期对齐当前口径（events 200、`{"detail":"code: ..."}`、
+>   tenant 恒 default）/ **两处产品缺陷**（见下）。
+> - `Frontend CI` 尚未重跑（最近一次仍是被账单挡住的 `422dadc`）。
 >
 > **用户原话要求（2026-10-17）**：
 > 1.「为什么是手动部署, 设置好自动部署」→ **自动部署本来就有**（见上），此前是账单问题；现已验证可用。
@@ -74,6 +77,30 @@
 >   三张改外键的表生产库均 **0 行**（无数据风险）。本次用 `.env` 的 pooler DSN 执行成功（实测），
 >   但官方口径仍建议迁移用**直连端点**。**CI 不做迁移**：以后新增迁移仍需人工
 >   `alembic upgrade head`。
+>
+> **本轮追加修复（2026-10-17 16:1x，QA 账号验收发现）**：
+> - **`/api/v1/export-quote/rate-sets` 500 → 200**：根因是 Worker 只保证打包 `.py`，
+>   `rate_sets/*.json` 数据文件未进 bundle（Pyodide 也无目录列举）⇒ `sync-shared.ps1` 现在
+>   额外生成 **`rate_sets_data.py`（Python 内嵌常量）** + `_manifest.json` 兜底；
+>   `rates.py` 三级回退（目录 → manifest → 内嵌），补 4 条单测（`TestRateSetFileDiscovery`）。
+> - **`/api/v1/admin/feature_flag` 500 → 200**：生产库**运行时缺** `feature_flags` /
+>   `feature_flag_audit` 两表（迁移 `202609230005` 在存量库被历史 stamp 跳过，属 schema 漂移）
+>   ⇒ 已按迁移同款 DDL 在生产补建两表。
+> - **两处产品缺陷随 CI 全绿上线**：① `trade_docs._insert_links` 的 JSONB `meta` 先
+>   `json.dumps`（派生建单原生产 500）；② `trade_doc/payload.apply_scheme` 物化前 `pop` 旧
+>   `line_amount`（多方案一键应用原生产 422）。
+> - **部署后浏览器实测（QA 账号，2026-10-17 16:2x）**：真实登录落到 `/customers`；
+>   `/customers`、`/quotes`、`/orders`、`/products`、`/research`、`/settings`、`/trade-docs`
+>   全部**无 Network Error、无 4xx/5xx 请求、无 console error**（修复前 `/quotes`、`/settings`
+>   会因 rate-sets 500 无 CORS 而报跨域/Network Error）。
+>
+> **仍漂移 / 未实现（生产返回 404/501，已知，别当新故障）**：
+> - orchestrator 有、Worker 未实现：`GET /admin/metrics/summary`、`/admin/deployment_audit`、
+>   `/fx-rates/latest`、`/admin/spec/attribute-proposals(+ /recommended)`（route-parity allowlist 已登记）。
+> - `GET /export-quote/import/template` 在 Worker 返回 **501**（未实现）。
+> - **订阅门禁两套口径（产品欠账，未改）**：`app/api/subs.py` 的路由级订阅仍查旧**租户级**
+>   `tenant_subscriptions`，与新的团队/个人订阅（`team_subscriptions` + 中间件）是两套 ⇒
+>   `full_chain` 团队**不会**解锁这些路由；需单独立项收敛。
 >
 > **剩余队列**：P1 收款/回执 API 层（表与容差已就绪）→ P0 导出自检①②（需 PDF 解析层）
 > → P0 公章规范化 → P1 事实层+一致性引擎 → P15 契约收口 → 文档继续清理。
