@@ -336,11 +336,19 @@ async def list_products(auth: AuthContext = Depends(get_auth_context),
         r["product_key"]: r["info"]
         for r in (await db.execute(text(sql), params)).mappings().all()
     }
-    # 产品本体是代码里的 ProductSpec（注册表 keys() 才是"有哪些产品"的唯一来源），
-    # 这里只把**租户可编辑**的图片数与基础信息挂上去，不复制规格定义。
+    # 产品本体：Python 注册表 ∪ 租户级 tenant_products（与 /export-quote/products
+    # 同一个 Loader 口径，2026-10-17 发现层合并）——tenant 新增的产品也能挂图/维护
+    from app.services.export_quote.tenant_products import TenantProductLoader
+    loader = TenantProductLoader()
+    available = await loader.list_available(
+        tenant_id,
+        team_id=getattr(auth, "team_id", None),
+        role=getattr(auth, "role", None),
+        db_session=db,
+    )
     out = []
-    for key in product_keys():
-        spec = get_product(key)
+    for spec in available:
+        key = spec.key
         out.append({
             "product_key": key,
             "name": spec.name or key,

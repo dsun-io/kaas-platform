@@ -4758,7 +4758,8 @@
         "tags": [
           "export-quote"
         ],
-        "summary": "已注册的产品模型",
+        "summary": "已注册的产品模型（含租户级新增）",
+        "description": "产品下拉的唯一来源 = Python 注册表 ∪ 租户级 tenant_products（按团队可见性）。\n\n发现层合并（2026-10-17）：运行时新增（tenant_products 落库）的产品此前\n算价能加载、下拉却看不见；这里与 `_effective_product` 走同一个\nTenantProductLoader，同 key 时 本团队 tenant 行 > 历史 NULL 行(仅管理员) > Python。",
         "operationId": "list_products_api_v1_export_quote_products_get",
         "responses": {
           "200": {

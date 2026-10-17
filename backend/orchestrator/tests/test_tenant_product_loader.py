@@ -37,10 +37,11 @@ PRODUCT_KEY = "field_fence"   # 注册表里真实存在的产品（fallback 断
 class _FakeRow:
     """最小 TenantProduct 行替身（只有 `_fetch_tenant_product` 会读的字段）。"""
 
-    def __init__(self, team_id, spec):
+    def __init__(self, team_id, spec, product_key=PRODUCT_KEY):
         self.team_id = team_id
         self.spec = spec
         self.is_active = True
+        self.product_key = product_key
 
 
 class _FakeResult:
@@ -180,3 +181,52 @@ async def test_spec_from_dict_形状兼容():
     spec = spec_from_dict(_spec_dict())
     assert spec.key == PRODUCT_KEY
     assert spec.name == "牛栏网"
+
+
+# ── 发现层合并：`list_available`（2026-10-17，缺口 1）────────────────────────
+#
+# 钉住「产品下拉 = Python 注册表 ∪ tenant 可见行」的口径：
+# tenant 新增的产品必须出现在列表里（此前只迭代注册表，新增产品看不见）；
+# 同 key 时 本团队 tenant 行 > 历史 NULL 行(仅管理员) > Python 定义。
+
+@pytest.mark.asyncio
+async def test_list_available_tenant新增产品并入列表():
+    """tenant_products 里有一个注册表之外的全新产品 ⇒ 列表里能见到它。"""
+    rows = [_FakeRow(TEAM_A, _spec_dict(key="custom_mesh", name="定制网"), product_key="custom_mesh")]
+    loader = TenantProductLoader(db_session_factory=_FakeSessionFactory(rows))
+    specs = await loader.list_available(TENANT, team_id=TEAM_A, role="user")
+    keys = {s.key for s in specs}
+    assert "custom_mesh" in keys          # tenant 新增可见
+    assert PRODUCT_KEY in keys            # Python 注册表照常
+    custom = next(s for s in specs if s.key == "custom_mesh")
+    assert custom.name == "定制网"
+
+
+@pytest.mark.asyncio
+async def test_list_available_本团队行覆盖同key注册表定义():
+    """同 key 的 tenant 行覆盖 Python 定义（加载优先级在列表层一致）。"""
+    rows = [_FakeRow(TEAM_A, _spec_dict(name="团队定制版"))]
+    loader = TenantProductLoader(db_session_factory=_FakeSessionFactory(rows))
+    specs = await loader.list_available(TENANT, team_id=TEAM_A, role="user")
+    spec = next(s for s in specs if s.key == PRODUCT_KEY)
+    assert spec.name == "团队定制版"
+
+
+@pytest.mark.asyncio
+async def test_list_available_别团队行不出现():
+    """别团队的 tenant 行不泄露存在性（Q6）——列表里回落到 Python 定义。"""
+    rows = [_FakeRow(TEAM_B, _spec_dict(key="custom_mesh", name="B 家私货"), product_key="custom_mesh")]
+    loader = TenantProductLoader(db_session_factory=_FakeSessionFactory(rows))
+    specs = await loader.list_available(TENANT, team_id=TEAM_A, role="user")
+    assert "custom_mesh" not in {s.key for s in specs}
+
+
+@pytest.mark.asyncio
+async def test_list_available_历史NULL行仅管理员并入():
+    """历史 team_id IS NULL 行：非管理员的列表里没有；管理员的列表里有。"""
+    rows = [_FakeRow(None, _spec_dict(key="legacy_prod", name="历史产品"), product_key="legacy_prod")]
+    loader = TenantProductLoader(db_session_factory=_FakeSessionFactory(rows))
+    user_specs = await loader.list_available(TENANT, team_id=TEAM_A, role="user")
+    admin_specs = await loader.list_available(TENANT, team_id=TEAM_A, role="system_admin")
+    assert "legacy_prod" not in {s.key for s in user_specs}
+    assert "legacy_prod" in {s.key for s in admin_specs}

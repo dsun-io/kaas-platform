@@ -321,12 +321,49 @@ def _product_or_404(product_key: str):
 
 
 @app.get("/api/v1/export-quote/products")
-async def export_quote_products(user: dict = Depends(_get_current_user)):
-    """已注册的产品模型（前端产品下拉的唯一来源）。"""
+async def export_quote_products(request: Request, user: dict = Depends(_get_current_user)):
+    """已注册的产品模型（前端产品下拉的唯一来源）。
+
+    发现层合并（2026-10-17，与 dev 同口径）：Python 注册表 ∪ tenant_products
+    中调用者可见的行（本团队行优先；历史 NULL 行仅管理员），同 key tenant 行覆盖
+    Python 定义 —— 运行时新增的产品在下拉里可见、可选、可算价。
+    """
     _require_engine()
-    out = []
+    from kaas_common.workstation.product_scope import is_same_team
+    from kaas_common.workstation.scope import is_admin_role
+    from kaas_common.export_quote.tenant_products import spec_from_dict
+
+    specs: dict = {}
     for key in product_keys():
-        spec = get_product(key)
+        specs[key] = get_product(key)
+
+    tenant = _tenant_of(user)
+    rows = await _db.fetch(  # noqa: SLF001 - 同模块既有用法
+        request,
+        "SELECT product_key, spec, team_id FROM tenant_products"
+        " WHERE tenant_id=$1 AND is_active",
+        tenant,
+        table="tenant_products",
+    )
+    best: dict = {}
+    for r in rows:
+        key = r["product_key"]
+        row_team = r["team_id"]
+        if row_team is not None and is_same_team(
+            role=user.get("role"), viewer_team_id=user.get("team_id"),
+            row_team_id=row_team,
+        ):
+            best[key] = r["spec"]
+        elif row_team is None and is_admin_role(user.get("role")):
+            best.setdefault(key, r["spec"])
+    for key, spec_dict in best.items():
+        try:
+            specs[key] = spec_from_dict(spec_dict)
+        except Exception:  # noqa: BLE001 - 单条坏定义不拖垮整个列表
+            continue
+
+    out = []
+    for spec in specs.values():
         out.append({
             "key": spec.key,
             "name": spec.name,

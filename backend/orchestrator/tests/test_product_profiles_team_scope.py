@@ -61,6 +61,11 @@ class _Result:
     def mappings(self):
         return self
 
+    def scalars(self):
+        # 发现层合并（2026-10-17）后端点对 tenant_products 走 ORM select，
+        # 这些用例不给 tenant 行 ⇒ scalars().all() 为空即可（回落注册表）。
+        return self
+
     def all(self):
         return self._rows
 
