@@ -339,6 +339,13 @@ def _install_auth_mock(monkeypatch):
             )
         else:
             tenant_id = header_tenant or "lianjia"
+            # 真实 AuthContextMiddleware 会在同一次请求里**同时**注入
+            # `request.state.auth` 与 `request.state.tenant_id`（见 app/middleware/auth.py）。
+            # 旧 fixture 只注入了 auth，导致所有「internal 用户读 request.state.tenant_id」
+            # 的路由（events / pricing-data / quote-profiles / option-overrides …）
+            # 在测试里拿到空值，报 400 tenant_id_missing 或 401 Missing tenant context
+            # —— 这是夹具与生产中间件的漂移，不是产品 bug。
+            request.state.tenant_id = tenant_id
             role = request.headers.get("X-Test-Role", "user")
             request.state.auth = AuthContext(
                 user_id=1,

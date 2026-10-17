@@ -112,6 +112,11 @@ jobs:
 
     env:
       TEST_DATABASE_URL: postgresql+asyncpg://kaas:kaas_dev_pw@localhost:5432/kaas_v2_test
+      # 应用自身的 engine 也指向测试库：部分 e2e 用例走 async_client（不覆盖
+      # get_db_session），会直接命中 app.db.session 的 engine。此前只用
+      # TEST_DATABASE_URL 设置，导致 app 用默认 kaas:kaas_dev@localhost:5432/kaas_dev
+      # 连库 ⇒ `password authentication failed for user "kaas"`。
+      DATABASE_URL: postgresql+asyncpg://kaas:kaas_dev_pw@localhost:5432/kaas_v2_test
       UV_LINK_MODE: copy
 
     steps:
