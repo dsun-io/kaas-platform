@@ -133,7 +133,11 @@ def apply_scheme(
                 row["qty"] = scheme_price["qty"]
             if scheme_price.get("unit_price") is not None:
                 row["unit_price"] = scheme_price["unit_price"]
-            # 行金额按物化后的 qty×price 重算并勾稽
+            # 行金额按物化后的 qty×price 重算并勾稽。
+            # 必须先丢掉**源行**的旧 line_amount：`check_line_amount` 会拿已有金额
+            # 与 qty×price 比对，旧金额是上一个方案/手填值，和新 qty×price 天然不等
+            # ⇒ 不丢就会抛 ITEMS_INVALID，方案物化永远失败。
+            row.pop("line_amount", None)
             row["line_amount"] = check_line_amount(row)
             row["source"] = "generated"
         out.append(row)
