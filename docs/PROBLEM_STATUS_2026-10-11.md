@@ -31,7 +31,16 @@
 >   data-table，统一 4 套手写 tab）→ 阶段 1 业务主链路（/customers 权限改 internal 全员、CustomerPicker
 >   内联新建客户、询盘→报价发链、报价台账成本分解+双视图+参考价、MSW 补 quotes/orders/trade-docs）→
 >   阶段 2 产品体系（发现层合并、P16 编辑器、P13 override 迁移）→ 阶段 3 页面层重构。
-> - **客户管理权限口径**：**internal 员工全员**可用（改前先核对后端 /customers 实际鉴权）。
+> - **客户管理权限口径**：~~internal 员工全员~~ → **全部登录用户**（UNCERTAIN #21 修正：
+>  internal=平台员工、customer=用户按团队隔离，用户录自己的业务客户；后端
+>  `_scope_filter` 本就支持，前端撤掉 RouteGuard 即通）。
+> - **阶段 1 进行中（2026-10-17）**：✅ 权限倒挂修复 + CustomerPicker 内联新建 +
+>  询盘报价发链（`24015db`）；✅ 报价台账增强后端切片——`quote_order_items` 加
+>  `cost_breakdown`（迁移 `202610170001`，成本/利润内部分解快照，签发时从算价引擎
+>  internal 视图带来，**接口层按账号类型剥除：customer 绝不透出**）+
+>  `GET /quotes/reference-price` 历史参考价（同客户同产品近 N 天单价聚合，
+>  可选规格精确匹配，可见范围同报价单列表；两端同契约，178 paths）。
+>  ⏳ 待接：前端工作台保存时带 breakdown、报价记录页对内/对外双视图、参考价展示。
 
 > **（交接 · 2026-10-17 · 账号治理 API 代码审查 6 项发现全部修复）**
 >

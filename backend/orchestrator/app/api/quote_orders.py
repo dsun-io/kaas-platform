@@ -27,8 +27,9 @@
 - `PUT    /api/v1/quotes/{id}/items`   行项**整批替换**（工作台保存语义）
 """
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -81,6 +82,9 @@ class QuoteItemIn(BaseModel):
     weight_override: Optional[Decimal] = None
     volume_override: Optional[Decimal] = None
     image_url: Optional[str] = None
+    # 内部分解快照（成本/利润）——签发/保存时从算价引擎 internal 视图带来；
+    # 仅 internal 账号可读（出口剔除），customer 视角本字段不存在
+    cost_breakdown: Optional[dict] = None
 
 
 class QuoteOrderCreate(BaseModel):
@@ -141,9 +145,15 @@ def _row_to_quote(q: QuoteOrder, item_count: int = 0) -> dict:
     return row_to_quote(q, item_count)
 
 
-def _row_to_item(it: QuoteOrderItem) -> dict:
+def _row_to_item(it: QuoteOrderItem, auth: AuthContext | None = None) -> dict:
     from kaas_common.workstation.quote_serializers import row_to_item
-    return row_to_item(it)
+
+    d = row_to_item(it)
+    # 内外视图红线（UNCERTAIN #19）：成本分解只对平台员工透出，
+    # customer 账号在**接口层**就剥掉，不靠前端隐藏。
+    if auth is None or auth.account_type != "internal":
+        d.pop("cost_breakdown", None)
+    return d
 
 
 def _build_items(tenant_id: str, currency: str, rows: List[QuoteItemIn]) -> tuple[list, Decimal]:
@@ -175,6 +185,7 @@ def _build_items(tenant_id: str, currency: str, rows: List[QuoteItemIn]) -> tupl
             weight_override=row.weight_override,
             volume_override=row.volume_override,
             image_url=row.image_url,
+            cost_breakdown=row.cost_breakdown,
         ))
         if line is not None:
             total += line
@@ -387,6 +398,71 @@ async def create_quote_order(
     return _row_to_quote(q, len(items))
 
 
+@router.get("/quotes/reference-price")
+async def quote_reference_price(
+    customer_id: int,
+    product_name: str,
+    spec: Optional[str] = None,
+    days: int = Query(180, ge=1, le=730),
+    auth: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """历史参考价（UNCERTAIN #19 · 实时报价的回落参考）。
+
+    聚合**同客户 + 同产品**近 N 天已落库报价行项的单价（可选再按
+    `spec_snapshot` JSONB 语义相等做规格精确匹配）——无今日行情时给报价员的
+    参考区间。可见范围与报价单列表同口径（`scope_filter`：自己 + 同团队，
+    管理员全量）。
+    """
+    tenant_id = tenant_id_of(auth)
+    stmt = (
+        select(
+            func.count().label("count"),
+            func.avg(QuoteOrderItem.unit_price).label("avg"),
+            func.min(QuoteOrderItem.unit_price).label("min"),
+            func.max(QuoteOrderItem.unit_price).label("max"),
+            func.percentile_cont(0.5)
+            .within_group(QuoteOrderItem.unit_price)
+            .label("median"),
+            func.max(QuoteOrder.created_at).label("last_at"),
+        )
+        .select_from(QuoteOrderItem)
+        .join(QuoteOrder, QuoteOrderItem.quote_order_id == QuoteOrder.id)
+        .where(
+            QuoteOrderItem.tenant_id == tenant_id,
+            QuoteOrder.customer_id == customer_id,
+            QuoteOrderItem.product_name == product_name,
+            QuoteOrderItem.unit_price.isnot(None),
+            QuoteOrder.created_at
+            >= datetime.now(timezone.utc) - timedelta(days=days),
+        )
+    )
+    if spec:
+        try:
+            spec_json = json.loads(spec)
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=422,
+                detail={"error": "validation_error", "message": "spec must be a JSON object"},
+            )
+        stmt = stmt.where(QuoteOrderItem.spec_snapshot == spec_json)
+    stmt = scope_filter(stmt, QuoteOrder, auth)
+
+    row = (await db.execute(stmt)).one()
+    return {
+        "customer_id": customer_id,
+        "product_name": product_name,
+        "days": days,
+        "spec_matched": spec is not None,
+        "count": row.count,
+        "avg": float(row.avg) if row.avg is not None else None,
+        "min": float(row.min) if row.min is not None else None,
+        "max": float(row.max) if row.max is not None else None,
+        "median": float(row.median) if row.median is not None else None,
+        "last_at": row.last_at.isoformat() if row.last_at else None,
+    }
+
+
 @router.get("/quotes/{quote_id}")
 async def get_quote_order(
     quote_id: int,
@@ -397,7 +473,7 @@ async def get_quote_order(
     q = await _get_quote_or_404(db, tenant_id, quote_id, auth)
     items = await _items_of(db, tenant_id, q.id)
     payload = _row_to_quote(q, len(items))
-    payload["items"] = [_row_to_item(i) for i in items]
+    payload["items"] = [_row_to_item(i, auth) for i in items]
     return payload
 
 
@@ -493,4 +569,4 @@ async def replace_quote_items(
 
     rows = await _items_of(db, tenant_id, q.id)
     return {"id": q.id, "total_amount": float(q.total_amount) if q.total_amount is not None else None,
-            "items": [_row_to_item(i) for i in rows]}
+            "items": [_row_to_item(i, auth) for i in rows]}

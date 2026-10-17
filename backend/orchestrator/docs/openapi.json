@@ -6275,6 +6275,84 @@
         }
       }
     },
+    "/api/v1/quotes/reference-price": {
+      "get": {
+        "tags": [
+          "quote-orders"
+        ],
+        "summary": "Quote Reference Price",
+        "description": "历史参考价（UNCERTAIN #19 · 实时报价的回落参考）。\n\n聚合**同客户 + 同产品**近 N 天已落库报价行项的单价（可选再按\n`spec_snapshot` JSONB 语义相等做规格精确匹配）——无今日行情时给报价员的\n参考区间。可见范围与报价单列表同口径（`scope_filter`：自己 + 同团队，\n管理员全量）。",
+        "operationId": "quote_reference_price_api_v1_quotes_reference_price_get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Customer Id"
+            }
+          },
+          {
+            "name": "product_name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Product Name"
+            }
+          },
+          {
+            "name": "spec",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Spec"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 730,
+              "minimum": 1,
+              "default": 180,
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/quotes/{quote_id}": {
       "get": {
         "tags": [
@@ -15580,6 +15658,18 @@
               }
             ],
             "title": "Image Url"
+          },
+          "cost_breakdown": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Breakdown"
           }
         },
         "type": "object",

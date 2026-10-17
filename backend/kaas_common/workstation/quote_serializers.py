@@ -56,6 +56,9 @@ def row_to_item(it: Any) -> dict:
         "weight_override": _float(g("weight_override")),
         "volume_override": _float(g("volume_override")),
         "image_url": g("image_url"),
+        # 内部分解快照（成本/利润）。**仅 internal 可见**：序列化原样输出，
+        # 出口由两端 API 层按账号类型剔除（customer 账号绝不透出）。
+        "cost_breakdown": g("cost_breakdown"),
         "created_at": _iso(g("created_at")),
     }
 
