@@ -4,7 +4,7 @@ import { useState } from "react";
 import { IntelSection } from "./components/intel-section";
 import { MarketView } from "../market/components/market-view";
 import { usePageView } from "@/lib/events/use-page-view";
-import { cn } from "@/lib/utils";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 /**
  * 情报工位（一个工位 = 一个侧边栏入口）
@@ -41,26 +41,23 @@ export default function IntelWorkstationPage() {
         <p className="mt-1 text-sm text-muted-foreground">{current.desc}</p>
       </div>
 
-      <div className="flex gap-2 border-b">
-        {SECTIONS.map((s) => (
-          <button
-            key={s.key}
-            type="button"
-            onClick={() => setSection(s.key)}
-            className={cn(
-              "-mb-px border-b-2 px-4 pb-2 text-sm transition-colors",
-              section === s.key
-                ? "border-primary font-medium text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
-
-      {section === "intel" && <IntelSection />}
-      {section === "market" && <MarketView showHeader={false} />}
+      {/* 2026-10-17 tab 收编到 ui/tabs：条件渲染（keepMounted={false}）
+          行为与收编前一致；文案不变。 */}
+      <Tabs value={section} onValueChange={(v) => setSection(v as SectionKey)}>
+        <TabsList variant="line">
+          {SECTIONS.map((s) => (
+            <TabsTrigger key={s.key} variant="line" value={s.key}>
+              {s.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <TabsContent value="intel" keepMounted={false}>
+          <IntelSection />
+        </TabsContent>
+        <TabsContent value="market" keepMounted={false}>
+          <MarketView showHeader={false} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
