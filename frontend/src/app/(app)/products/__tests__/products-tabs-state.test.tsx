@@ -200,8 +200,10 @@ describe("产品工位 tab 容器 · tab 切换保留状态", () => {
     expect(mediaStub).toBeTruthy();
     const defsWrap = defsStub!.parentElement!;
     const mediaWrap = mediaStub!.parentElement!;
-    expect(defsWrap.classList.contains("hidden")).toBe(false);
-    expect(mediaWrap.classList.contains("hidden")).toBe(true);
+    // tab 收编（2026-10-17）后隐藏方式是 HTML hidden 属性（ui/tabs keepMounted），
+    // 语义不变：面板挂载但隐藏（而非卸载）。
+    expect(defsWrap.hasAttribute("hidden")).toBe(false);
+    expect(mediaWrap.hasAttribute("hidden")).toBe(true);
   });
 
   it("?tab=media 或不带 ?tab= 落到「图片与基础信息」tab（默认）", async () => {
@@ -215,7 +217,7 @@ describe("产品工位 tab 容器 · tab 切换保留状态", () => {
     const mediaStub = container!.querySelector('[data-testid="stub-media"]');
     const defsWrap = defsStub!.parentElement!;
     const mediaWrap = mediaStub!.parentElement!;
-    expect(mediaWrap.classList.contains("hidden")).toBe(false);
-    expect(defsWrap.classList.contains("hidden")).toBe(true);
+    expect(mediaWrap.hasAttribute("hidden")).toBe(false);
+    expect(defsWrap.hasAttribute("hidden")).toBe(true);
   });
 });
