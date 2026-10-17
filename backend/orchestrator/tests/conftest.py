@@ -213,6 +213,167 @@ async def _seed_int_r3_data(engine):
         await session.commit()
 
 
+async def _apply_migration_only_schema(conn):
+    """补齐「空库快径」缺失的**迁移侧 schema**（ORM metadata 表达不了的部分）。
+
+    背景：空库时 `alembic upgrade head` 走 E1 快径（`create_all` + stamp head），
+    跳过整条历史链 ⇒ 迁移里用裸 SQL 建的东西不会存在。测试真正依赖的两处：
+      · `btree_gist` 扩展 + `product_sku_prices` 的 EXCLUDE 重叠约束
+        （价格时段重叠用例"本该报错"，缺了约束就会静默成功）；
+      · `product_sku_prices` 的 status / 时间范围 CHECK。
+    这里按迁移原文补齐，让测试库与生产库同构。
+    """
+    from sqlalchemy import text
+
+    await conn.execute(text("CREATE EXTENSION IF NOT EXISTS btree_gist"))
+
+    existing = {
+        row[0] for row in (await conn.execute(text(
+            "SELECT conname FROM pg_constraint "
+            "WHERE conrelid = 'product_sku_prices'::regclass"
+        ))).all()
+    }
+    if "excl_psp_overlap" not in existing:
+        await conn.execute(text("""
+            ALTER TABLE product_sku_prices ADD CONSTRAINT excl_psp_overlap
+            EXCLUDE USING gist (
+                sku_id WITH =,
+                tstzrange(effective_from, COALESCE(effective_to, 'infinity'::timestamptz), '[)') WITH &&
+            ) WHERE (status = 'active')
+        """))
+    if "chk_psp_status" not in existing:
+        await conn.execute(text(
+            "ALTER TABLE product_sku_prices ADD CONSTRAINT chk_psp_status "
+            "CHECK (status IN ('draft','active','expired','superseded'))"
+        ))
+    if "chk_psp_range" not in existing:
+        await conn.execute(text(
+            "ALTER TABLE product_sku_prices ADD CONSTRAINT chk_psp_range "
+            "CHECK (effective_to IS NULL OR effective_to > effective_from)"
+        ))
+
+    # ── entity_links（迁移 202610110012/013：表 + 触发器）──
+    # 这张表在 ORM metadata 里**没有**（`app/db/workstation_links.py` 明说只为历史迁移留证），
+    # 空库快径 create_all 不会建它 ⇒ 单证/订单读关系（entity_links）直接 UndefinedTable。
+    await conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS entity_links (
+            id BIGSERIAL PRIMARY KEY,
+            tenant_id TEXT NOT NULL,
+            src_type TEXT NOT NULL,
+            src_id BIGINT NOT NULL,
+            dst_type TEXT NOT NULL,
+            dst_id BIGINT NOT NULL,
+            rel_type TEXT NOT NULL,
+            meta JSONB,
+            created_by BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            deleted_at TIMESTAMPTZ,
+            CONSTRAINT uq_entity_links UNIQUE
+                (tenant_id, src_type, src_id, dst_type, dst_id, rel_type)
+        )
+    """))
+    await conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_entity_links_src ON entity_links"
+        " (tenant_id, src_type, src_id, rel_type) WHERE deleted_at IS NULL"
+    ))
+    await conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_entity_links_dst ON entity_links"
+        " (tenant_id, dst_type, dst_id, rel_type) WHERE deleted_at IS NULL"
+    ))
+    await conn.execute(text("""
+        CREATE OR REPLACE FUNCTION sync_order_links() RETURNS trigger AS $$
+        BEGIN
+          IF TG_OP = 'UPDATE' AND OLD.quote_id IS DISTINCT FROM NEW.quote_id
+             AND OLD.quote_id IS NOT NULL THEN
+            UPDATE entity_links SET deleted_at = now()
+             WHERE src_type = 'order' AND src_id = NEW.id AND dst_type = 'quote'
+               AND dst_id = OLD.quote_id AND deleted_at IS NULL;
+          END IF;
+          IF NEW.quote_id IS NOT NULL THEN
+            INSERT INTO entity_links (tenant_id, src_type, src_id, dst_type, dst_id, rel_type)
+            VALUES (NEW.tenant_id, 'order', NEW.id, 'quote', NEW.quote_id, 'converted_from')
+            ON CONFLICT DO NOTHING;
+          END IF;
+          RETURN NULL;
+        END $$ LANGUAGE plpgsql
+    """))
+    await conn.execute(text("""
+        CREATE OR REPLACE FUNCTION sync_trade_doc_links() RETURNS trigger AS $$
+        BEGIN
+          IF TG_OP = 'UPDATE' THEN
+            IF OLD.quote_id IS DISTINCT FROM NEW.quote_id AND OLD.quote_id IS NOT NULL THEN
+              UPDATE entity_links SET deleted_at = now()
+               WHERE src_type = 'trade_doc' AND src_id = NEW.id AND dst_type = 'quote'
+                 AND dst_id = OLD.quote_id AND deleted_at IS NULL;
+            END IF;
+            IF OLD.order_id IS DISTINCT FROM NEW.order_id AND OLD.order_id IS NOT NULL THEN
+              UPDATE entity_links SET deleted_at = now()
+               WHERE src_type = 'trade_doc' AND src_id = NEW.id AND dst_type = 'order'
+                 AND dst_id = OLD.order_id AND deleted_at IS NULL;
+            END IF;
+          END IF;
+          IF NEW.quote_id IS NOT NULL THEN
+            INSERT INTO entity_links (tenant_id, src_type, src_id, dst_type, dst_id, rel_type)
+            VALUES (NEW.tenant_id, 'trade_doc', NEW.id, 'quote', NEW.quote_id, 'generated_from')
+            ON CONFLICT DO NOTHING;
+          END IF;
+          IF NEW.order_id IS NOT NULL THEN
+            INSERT INTO entity_links (tenant_id, src_type, src_id, dst_type, dst_id, rel_type)
+            VALUES (NEW.tenant_id, 'trade_doc', NEW.id, 'order', NEW.order_id, 'generated_from')
+            ON CONFLICT DO NOTHING;
+          END IF;
+          RETURN NULL;
+        END $$ LANGUAGE plpgsql
+    """))
+    triggers = {
+        row[0] for row in (await conn.execute(text(
+            "SELECT tgname FROM pg_trigger WHERE NOT tgisinternal"
+        ))).all()
+    }
+    if "trg_orders_links" not in triggers:
+        await conn.execute(text(
+            "CREATE TRIGGER trg_orders_links AFTER INSERT OR UPDATE OF quote_id ON orders"
+            " FOR EACH ROW EXECUTE FUNCTION sync_order_links()"
+        ))
+    if "trg_trade_docs_links" not in triggers:
+        await conn.execute(text(
+            "CREATE TRIGGER trg_trade_docs_links"
+            " AFTER INSERT OR UPDATE OF quote_id, order_id ON trade_docs"
+            " FOR EACH ROW EXECUTE FUNCTION sync_trade_doc_links()"
+        ))
+
+
+async def _seed_reference_data(engine):
+    """补齐空库快径缺失的**引用数据**（迁移 202605170001 的种子）。
+
+    测试真正依赖的是价格单位字典 —— `product_sku_prices.price_unit` 是外键，
+    空表会让每一条价格插入都 FK 失败。品类/属性绑定种子没有复制：
+    依赖它们的用例在没有种子时会显式 `pytest.skip`（不会假绿）。
+    """
+    from sqlalchemy import text
+
+    rows = [
+        ("cny_per_pcs", "元/根", "CNY", "pcs", "count", 1),
+        ("cny_per_m", "元/米", "CNY", "m", "length", 2),
+        ("cny_per_m2", "元/平方米", "CNY", "m2", "area", 3),
+        ("cny_per_kg", "元/千克", "CNY", "kg", "weight", 4),
+        ("cny_per_t", "元/吨", "CNY", "t", "weight", 5),
+        ("cny_per_roll", "元/卷", "CNY", "pcs", "count", 6),
+    ]
+    async with engine.begin() as conn:
+        for code, label, currency, unit, unit_group, sort_order in rows:
+            await conn.execute(
+                text(
+                    "INSERT INTO price_units "
+                    "(code, label, currency, unit, unit_group, sort_order) "
+                    "VALUES (:c, :l, :cur, :u, :g, :s) "
+                    "ON CONFLICT (code) DO NOTHING"
+                ),
+                {"c": code, "l": label, "cur": currency, "u": unit,
+                 "g": unit_group, "s": sort_order},
+            )
+
+
 @pytest.fixture
 async def db_engine():
     """Per-test 测试数据库引擎，首次运行时自动 Alembic migration + create_all + INT-R3 种子数据。"""
@@ -247,7 +408,9 @@ async def db_engine():
 
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all, checkfirst=True)
+            await _apply_migration_only_schema(conn)
 
+        await _seed_reference_data(engine)
         await _seed_int_r3_data(engine)
         _DB_INITIALIZED = True
 

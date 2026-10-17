@@ -432,25 +432,18 @@ class TestChangeReason:
         )
         assert resp.status_code == 422
 
-    @pytest.mark.asyncio
-    async def test_patch_sku_without_change_reason_422(self, client, db_session):
-        """PATCH /skus/{id} 不传 change_reason 返 422。"""
-        sku = ProductSku(
-            tenant_id="lianjia", category_id=(await _ensure_qa_category(db_session)).id,
-            spec_values='{}', spec_hash='test_cr_002',
-        )
-        db_session.add(sku)
-        await db_session.flush()
+    def test_patch_sku_without_change_reason_422(self):
+        """PATCH SKU 请求体缺 change_reason → 校验失败（等价 422）。
 
-        resp = await client.patch(
-            f"/api/v1/spec/skus/{sku.id}",
-            json={
-                "spec_values": {"test": "value"},
-                # missing change_reason
-            },
-            headers=_admin_headers(),
-        )
-        assert resp.status_code == 422
+        `PATCH /api/v1/spec/skus/{id}` 已随规格 v1 收敛移除（两端都没有该路由），
+        但 `SkuPatchRequest.change_reason` 仍是必填契约；在 schema 层直接钉住。
+        """
+        from pydantic import ValidationError
+
+        from app.schemas.spec_system import SkuPatchRequest
+
+        with pytest.raises(ValidationError):
+            SkuPatchRequest(spec_values={"test": "value"})
 
 
 # ═══════════════════════════════════════════════════════════════════
