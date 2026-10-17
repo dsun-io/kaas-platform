@@ -12,10 +12,10 @@ __all__ = ["validate_stage_transition", "check_write_access", "can_see_all"]
 def validate_stage_transition(current: str, target: str) -> tuple[bool, str]:
     """校验客户阶段流转合法性。返回 (合法, 错误信息)。"""
     ALLOWED = {
-        "lead": ("inquiry", "lost", "inactive"),
-        "inquiry": ("quoted", "lost", "inactive"),
-        "quoted": ("negotiating", "won", "lost", "inactive"),
-        "negotiating": ("won", "lost", "inactive"),
+        "lead": ("inquiry", "quoted", "lost", "inactive"),
+        "inquiry": ("quoted", "won", "lost", "inactive"),
+        # 2026-10-17 用户口径：删除【洽谈中】，报价后直接到成交/流失/沉寂
+        "quoted": ("won", "lost", "inactive"),
         "won": ("inactive",),
         "lost": ("lead", "inactive"),  # lost 可重新激活
         "inactive": ("lead",),

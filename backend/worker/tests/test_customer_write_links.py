@@ -297,6 +297,7 @@ def test_order_create_rejects_non_numeric_customer_id():
 
 def test_quote_create_writes_customer_snapshot_and_quotation_doc():
     conn = _FakeConn(fetchrow=[_customer(), _quote_row(),      # 客户 → INSERT 报价
+                               {"id": 3, "stage": "inquiry"},  # 阶段推进：读当前客户阶段
                                None,                            # 尚无报价单
                                {"id": 12}])                     # INSERT 报价单
     with _patched(_FakeDb(conn=conn), conn):
