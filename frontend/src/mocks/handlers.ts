@@ -181,6 +181,56 @@ type MockAccount = {
   updated_at: string;
 };
 
+let ordersStore: Array<Record<string, unknown> & { id: number }> = [];
+let docsStore: Array<Record<string, unknown> & { id: number }> = [];
+
+/** 枚举真源 = backend/orchestrator/app/domain/enums.py（值逐字照搬）。 */
+const ENUMS_MOCK: Record<string, string[]> = {
+  inquiry_status: ["open", "quoted", "won", "lost"],
+  customer_stage: [
+    "lead",
+    "inquiry",
+    "quoted",
+    "negotiating",
+    "won",
+    "lost",
+    "inactive",
+  ],
+  quote_status: ["draft", "sent", "accepted", "rejected", "expired"],
+  order_status: [
+    "pending",
+    "confirmed",
+    "producing",
+    "shipped",
+    "completed",
+    "cancelled",
+  ],
+  doc_type: [
+    "quotation",
+    "pi",
+    "contract",
+    "ci",
+    "pl",
+    "shipping_advice",
+    "draft",
+    "beneficiary_cert",
+    "non_wood_packing",
+    "weight_list",
+    "quality_cert",
+    "manufacturer_cert",
+    "bl",
+    "co",
+    "insurance",
+    "customs_declaration",
+    "fumigation_cert",
+    "other",
+  ],
+  doc_status: ["draft", "issued", "void"],
+  currency: ["USD", "CNY", "EUR", "GBP", "JPY", "AUD", "CAD", "HKD"],
+  owner_scope: ["private", "tenant"],
+  inquiry_channel: ["email", "whatsapp", "alibaba", "expo", "website", "other"],
+};
+
 let accountsStore: MockAccount[] = [
   {
     id: 1,
@@ -1446,6 +1496,115 @@ export const handlers = [
     }
     const { items, ...q } = quote;
     return HttpResponse.json({ ...q, item_count: items.length, items });
+  }),
+
+  // ── 订单（orders）────────────────────────────────────────────────────────
+  // 补洞主链（quote → order）：orders 页与报价转单在 mock 模式下此前全部无 handler。
+  // 写操作真改 store：转单后订单列表/详情跟着变，e2e 才能断言。
+  http.get("/api/v1/orders", () => {
+    return HttpResponse.json({
+      items: ordersStore.slice().sort((a, b) => b.id - a.id),
+      total: ordersStore.length,
+      page: 1,
+      page_size: 100,
+    });
+  }),
+
+  http.post("/api/v1/orders", async ({ request }) => {
+    const body = (await request.json()) as {
+      quote_order_id?: number;
+      customer_id?: number;
+    };
+    // 报价转单：客户/金额/贸易条款从报价单继承（与后端口径一致）
+    const quote = body.quote_order_id
+      ? quotesStore.find((q) => q.id === body.quote_order_id)
+      : null;
+    const customer = customersStore.find(
+      (c) => c.id === (quote?.customer_id ?? body.customer_id),
+    );
+    const nextId = Math.max(0, ...ordersStore.map((o) => o.id)) + 1;
+    const order = {
+      id: nextId,
+      order_no: `ORD-2026${String(nextId).padStart(4, "0")}`,
+      quote_order_id: quote?.id ?? null,
+      customer_id: quote?.customer_id ?? body.customer_id ?? null,
+      customer_name:
+        quote?.customer_name ??
+        (customer as { company_name?: string })?.company_name ??
+        null,
+      status: "pending",
+      currency: quote?.currency ?? "USD",
+      total_amount: quote?.total_amount ?? null,
+      order_date: nowIso(),
+      delivery_date: null,
+      incoterm: null,
+      payment_terms: null,
+      port_of_loading: null,
+      port_of_destination: null,
+      shipping_marks: null,
+      country_of_origin: null,
+    };
+    ordersStore.push(order);
+    return HttpResponse.json(order, { status: 201 });
+  }),
+
+  http.patch("/api/v1/orders/:id", async ({ params, request }) => {
+    const order = ordersStore.find((o) => o.id === Number(params.id));
+    if (!order) {
+      return HttpResponse.json(
+        { detail: { error: "not_found" } },
+        { status: 404 },
+      );
+    }
+    Object.assign(order, await request.json());
+    return HttpResponse.json(order);
+  }),
+
+  // ── 单证（trade-docs）──────────────────────────────────────────────────────
+  http.get("/api/v1/trade-docs", () => {
+    return HttpResponse.json({
+      items: docsStore.slice().sort((a, b) => b.id - a.id),
+      total: docsStore.length,
+      page: 1,
+      page_size: 50,
+    });
+  }),
+
+  http.post("/api/v1/trade-docs", async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    const nextId = Math.max(0, ...docsStore.map((d) => d.id)) + 1;
+    const doc = {
+      id: nextId,
+      doc_no: `${String(body.doc_type ?? "doc").toUpperCase()}-2026${String(nextId).padStart(4, "0")}`,
+      doc_type: String(body.doc_type ?? "pi"),
+      order_id: (body.order_id as number) ?? null,
+      customer_id: (body.customer_id as string) ?? null,
+      status: "draft",
+      currency: String(body.currency ?? "USD"),
+      total_amount: (body.total_amount as number) ?? null,
+      issued_at: null,
+      issued_by: null,
+      raw_payload: null,
+      created_at: nowIso(),
+    };
+    docsStore.push(doc);
+    return HttpResponse.json(doc, { status: 201 });
+  }),
+
+  http.get("/api/v1/trade-docs/:id", ({ params }) => {
+    const doc = docsStore.find((d) => d.id === Number(params.id));
+    if (!doc) {
+      return HttpResponse.json(
+        { detail: { error: "not_found" } },
+        { status: 404 },
+      );
+    }
+    return HttpResponse.json(doc);
+  }),
+
+  // ── 枚举（/enums · 与后端 app/domain/enums.py 同键同值）──────────────────
+  http.get("/api/v1/enums", () => {
+    return HttpResponse.json(ENUMS_MOCK);
   }),
 
   // ── 平台账号治理（admin/accounts · 契约见 docs/ACCOUNT_GOVERNANCE_HANDOVER §②）──  // 写操作必须**真的**改 store：停用/恢复后列表与详情要跟着变，否则 e2e 断言失效。
