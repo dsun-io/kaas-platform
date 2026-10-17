@@ -848,6 +848,32 @@ async def register_upload(body: RegisterIn, request: Request, user: dict = Depen
         pre_uploaded=("s3", key))
 
 
+@app.post("/api/v1/file-objects/upload", status_code=201)
+async def upload_file_object(
+    request: Request,
+    file: UploadFile = File(...),
+    name: str = Form(...),
+    owner_type: str = Form("customer"),
+    owner_id: Optional[str] = Form(None),
+    kind: str = Form("other"),
+    media_kind: Optional[str] = Form(None),
+    user: dict = Depends(_get_current_user),
+):
+    """通用 multipart 上传（2026-10-17 新增，供客户流失拒绝文件等使用）。
+
+    字节落点与产品图/印章同一套：**S3 预签名 → R2 binding（`FILES`）→ inline 回退**，
+    行里如实记录 `storage`。R2 无需 S3 密钥即可工作（用户口径：R2 能实现就优先 R2）。
+    """
+    content = await file.read()
+    return await _create_file(
+        request=request, user=user, owner_type=owner_type,
+        owner_id=(owner_id or None), kind=kind, media_kind=media_kind or None,
+        name=name, content=content,
+        content_type=file.content_type or "application/octet-stream",
+        file_name=file.filename, supersede=False,
+    )
+
+
 @app.get("/api/v1/file-objects/{file_id}/url")
 async def get_file_url(file_id: int, request: Request, user: dict = Depends(_get_current_user)):
     """短时效直链（预签名 GET）；没配 S3 就明确说不可用。"""

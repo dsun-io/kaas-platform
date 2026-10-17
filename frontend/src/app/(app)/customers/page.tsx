@@ -474,16 +474,39 @@ function StageUpdate({
   const qc = useQueryClient();
   const [stage, setStage] = useState(customer.stage);
   const [reason, setReason] = useState("");
+  const [rejectionFile, setRejectionFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
 
+  // 标记流失（lost）必须有客户拒绝文件：先上传（字节优先进 R2），再带 file id 改阶段。
+  const needsRejection = stage === "lost";
+
   const handleUpdate = async () => {
+    if (needsRejection && !rejectionFile) {
+      setError("标记流失必须上传客户拒绝文件");
+      return;
+    }
     setIsPending(true);
     setError(null);
     try {
+      let rejection_file_id: number | undefined;
+      if (needsRejection && rejectionFile) {
+        const fd = new FormData();
+        fd.append("file", rejectionFile);
+        fd.append("name", `客户拒绝文件-${customer.company_name}`);
+        fd.append("owner_type", "customer");
+        fd.append("owner_id", String(customer.id));
+        fd.append("kind", "other");
+        const up = await apiClient.post<{ id: number }>(
+          "/file-objects/upload",
+          fd,
+        );
+        rejection_file_id = up.data.id;
+      }
       await apiClient.patch<Customer>(`/customers/${customer.id}/stage`, {
         stage,
         reason: reason || undefined,
+        rejection_file_id,
       });
       qc.invalidateQueries({ queryKey: ["customers"] });
       onClose();
@@ -507,6 +530,19 @@ function StageUpdate({
           </option>
         ))}
       </select>
+      {needsRejection && (
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">
+            客户拒绝文件（必填，PDF/图片）
+          </label>
+          <input
+            type="file"
+            accept=".pdf,image/*"
+            onChange={(e) => setRejectionFile(e.target.files?.[0] ?? null)}
+            className="block w-full text-sm"
+          />
+        </div>
+      )}
       <Input
         placeholder="原因（可选）"
         value={reason}
