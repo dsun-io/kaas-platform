@@ -204,6 +204,70 @@ describe("ProductSpecEditor S6.1 · 变体与公式", () => {
   });
 });
 
+describe("ProductSpecEditor S6.2 · 列 / 校验 / 扣减", () => {
+  it("输出列：加列 + internal 勾选 → specJson 同步", async () => {
+    tabButton("列 / 校验 / 扣减");
+    await settle();
+    clickButton("加列");
+    await settle();
+    typeInLabel("列 key（= 公式名）", "price.cost_pretax");
+    typeInLabel("中文名", "税前成本");
+    // internal checkbox
+    const checkbox = container!.querySelector(
+      'input[type="checkbox"]',
+    ) as HTMLInputElement;
+    act(() => {
+      checkbox.click();
+    });
+    await settle();
+    const spec = JSON.parse(currentJson) as {
+      columns: Array<{ key: string; label: string; internal: boolean }>;
+    };
+    expect(spec.columns).toHaveLength(1);
+    expect(spec.columns[0]?.key).toBe("price.cost_pretax");
+    expect(spec.columns[0]?.label).toBe("税前成本");
+    expect(spec.columns[0]?.internal).toBe(true);
+  });
+
+  it("校验规则：加规则 + severity 切换 → specJson 同步", async () => {
+    tabButton("列 / 校验 / 扣减");
+    await settle();
+    clickButton("加规则");
+    await settle();
+    typeInLabel("规则名", "qty_positive");
+    typeInLabel("表达式 expr", "qty > 0");
+    const select = container!.querySelector("select") as HTMLSelectElement;
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLSelectElement.prototype,
+      "value",
+    )!.set!;
+    act(() => {
+      setter.call(select, "warning");
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await settle();
+    const spec = JSON.parse(currentJson) as {
+      invariants: Array<{ name: string; expr: string; severity: string }>;
+    };
+    expect(spec.invariants).toHaveLength(1);
+    expect(spec.invariants[0]?.name).toBe("qty_positive");
+    expect(spec.invariants[0]?.expr).toBe("qty > 0");
+    expect(spec.invariants[0]?.severity).toBe("warning");
+  });
+
+  it("空间扣减：改模式/比例 → specJson 同步", async () => {
+    tabButton("列 / 校验 / 扣减");
+    await settle();
+    typeInLabel("扣减比例（0.04 = 4%）", "0.04");
+    await settle();
+    const spec = JSON.parse(currentJson) as {
+      space_deduction: { mode: string; value: number };
+    };
+    expect(spec.space_deduction.mode).toBe("ratio");
+    expect(spec.space_deduction.value).toBe(0.04);
+  });
+});
+
 describe("ProductSpecEditor S6.1 · JSON 双向同步", () => {
   it("JSON 手改（实时写）后，specJson 立即更新", async () => {
     tabButton("高级 JSON");
