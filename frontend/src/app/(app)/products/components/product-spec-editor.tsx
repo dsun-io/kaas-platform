@@ -60,16 +60,44 @@ interface DerivedItem {
   note?: string;
 }
 
+// ── S6.2：报表列 / 校验规则 / 空间扣减 ──────────────────────────────────────
+interface ColumnItem {
+  key: string;
+  label?: string;
+  label_en?: string;
+  decimals?: number | null;
+  /** internal=True 的列只进内部核算视图（对外展示不得暴露成本利润率的落地点） */
+  internal?: boolean;
+  width?: number | null;
+}
+
+interface InvariantItem {
+  name: string;
+  expr: string;
+  severity?: "error" | "warning";
+}
+
+interface SpaceDeductionItem {
+  mode?: string;
+  value?: number | string | null;
+  range?: [number, number] | null;
+  expr?: string;
+  note?: string;
+}
+
 type SpecShape = {
   key?: string;
   name?: string;
   numeric_inputs?: NumericInputItem[];
   variants?: VariantGroupItem[];
   derived?: DerivedItem[];
+  columns?: ColumnItem[];
+  invariants?: InvariantItem[];
+  space_deduction?: SpaceDeductionItem;
   [k: string]: unknown;
 };
 
-type EditorTab = "specs" | "derived" | "json";
+type EditorTab = "specs" | "derived" | "report" | "json";
 
 interface ProductSpecEditorProps {
   /** P14 保留的真源 JSON 文本（stringify 出来的；parse 失败时显示错误并禁用表单） */
@@ -106,6 +134,28 @@ const EMPTY_DERIVED: DerivedItem = {
   label: "",
   label_en: "",
   unit: "",
+  note: "",
+};
+
+const EMPTY_COLUMN: ColumnItem = {
+  key: "",
+  label: "",
+  label_en: "",
+  decimals: 4,
+  internal: false,
+  width: null,
+};
+
+const EMPTY_INVARIANT: InvariantItem = {
+  name: "",
+  expr: "",
+  severity: "error",
+};
+
+/** 空间扣减默认口径：按比例（ratio），推荐——固定值在小单上会扣出负体积。 */
+const EMPTY_SPACE_DEDUCTION: SpaceDeductionItem = {
+  mode: "ratio",
+  value: 0,
   note: "",
 };
 
@@ -244,6 +294,49 @@ export function ProductSpecEditor({
   const removeDerived = (index: number) =>
     commit({ ...(spec ?? {}), derived: derived.filter((_, i) => i !== index) });
 
+  // ── S6.2：报表列 / 校验规则 / 空间扣减 ───────────────────────────────────
+  const columns = spec?.columns ?? [];
+  const patchColumn = (index: number, patch: Partial<ColumnItem>) => {
+    const next = columns.map((c, i) => (i === index ? { ...c, ...patch } : c));
+    commit({ ...(spec ?? {}), columns: next });
+  };
+  const addColumn = () =>
+    commit({ ...(spec ?? {}), columns: [...columns, { ...EMPTY_COLUMN }] });
+  const removeColumn = (index: number) =>
+    commit({
+      ...(spec ?? {}),
+      columns: columns.filter((_, i) => i !== index),
+    });
+
+  const invariants = spec?.invariants ?? [];
+  const patchInvariant = (index: number, patch: Partial<InvariantItem>) => {
+    const next = invariants.map((v, i) =>
+      i === index ? { ...v, ...patch } : v,
+    );
+    commit({ ...(spec ?? {}), invariants: next });
+  };
+  const addInvariant = () =>
+    commit({
+      ...(spec ?? {}),
+      invariants: [...invariants, { ...EMPTY_INVARIANT }],
+    });
+  const removeInvariant = (index: number) =>
+    commit({
+      ...(spec ?? {}),
+      invariants: invariants.filter((_, i) => i !== index),
+    });
+
+  const spaceDeduction = spec?.space_deduction;
+  const patchSpaceDeduction = (patch: Partial<SpaceDeductionItem>) => {
+    commit({
+      ...(spec ?? {}),
+      space_deduction: {
+        ...(spaceDeduction ?? EMPTY_SPACE_DEDUCTION),
+        ...patch,
+      },
+    });
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-1 rounded-lg border p-0.5">
@@ -251,6 +344,7 @@ export function ProductSpecEditor({
           [
             { key: "specs", label: "数值参数 / 变体档位" },
             { key: "derived", label: "派生公式" },
+            { key: "report", label: "列 / 校验 / 扣减" },
             { key: "json", label: "高级 JSON" },
           ] as const
         ).map((t) => (
@@ -259,7 +353,6 @@ export function ProductSpecEditor({
             type="button"
             onClick={() => {
               setTab(t.key);
-              if (t.key === "json") setJsonDraft(specJson);
             }}
             className={cn(
               "rounded-md px-2.5 py-1 text-xs transition-colors",
@@ -588,6 +681,215 @@ export function ProductSpecEditor({
             </div>
           )}
         </>
+      )}
+
+      {/* S6.2: columns / invariants / space_deduction */}
+      {tab === "report" && parseOk && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">
+              输出列（报表列：internal=True
+              只进内部核算视图，对外展示不暴露成本利润）
+            </Label>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={addColumn}
+            >
+              <Plus className="size-3" /> 加列
+            </Button>
+          </div>
+          {columns.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              还没有输出列 —— 每条公式（derived）产出的指标若要出现在报表上，
+              这里给它一列（key 用公式名）。
+            </p>
+          )}
+          {columns.map((c, index) => (
+            <div key={index} className="rounded-md border p-2.5 space-y-2">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                <TextField
+                  label="列 key（= 公式名）"
+                  value={c.key}
+                  mono
+                  onChange={(v) => patchColumn(index, { key: v })}
+                  placeholder="如 price.cost_pretax"
+                />
+                <TextField
+                  label="中文名"
+                  value={c.label}
+                  onChange={(v) => patchColumn(index, { label: v })}
+                />
+                <TextField
+                  label="英文名"
+                  value={c.label_en}
+                  onChange={(v) => patchColumn(index, { label_en: v })}
+                />
+                <TextField
+                  label="表头宽度（可选）"
+                  value={c.width == null ? "" : String(c.width)}
+                  onChange={(v) =>
+                    patchColumn(index, { width: v === "" ? null : Number(v) })
+                  }
+                />
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <NumberField
+                  label="小数位"
+                  value={c.decimals}
+                  step="1"
+                  onChange={(v) => patchColumn(index, { decimals: v })}
+                />
+                <label className="flex items-center gap-1.5 pt-5 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={!!c.internal}
+                    onChange={(e) =>
+                      patchColumn(index, { internal: e.target.checked })
+                    }
+                    className="size-3"
+                  />
+                  仅内部可见（成本/利润列）
+                </label>
+                <div className="flex items-end justify-end">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 text-xs text-muted-foreground"
+                    onClick={() => removeColumn(index)}
+                  >
+                    <Trash2 className="size-3" /> 删除
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          <div className="flex items-center justify-between pt-2">
+            <Label className="text-xs">
+              校验规则（不变量：表达式必须成立）
+            </Label>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={addInvariant}
+            >
+              <Plus className="size-3" /> 加规则
+            </Button>
+          </div>
+          {invariants.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              还没有校验规则 —— 想让「数量 × 单价 =
+              行金额」这类恒等式出错时被拦住， 加到这里（表达式为 false
+              时报警/阻断）。
+            </p>
+          )}
+          {invariants.map((v, index) => (
+            <div key={index} className="rounded-md border p-2.5 space-y-2">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <TextField
+                  label="规则名"
+                  value={v.name}
+                  mono
+                  onChange={(patch) => patchInvariant(index, { name: patch })}
+                  placeholder="如 qty_positive"
+                />
+                <TextField
+                  label="表达式 expr"
+                  value={v.expr}
+                  mono
+                  onChange={(patch) => patchInvariant(index, { expr: patch })}
+                  placeholder="如 qty > 0"
+                />
+                <div>
+                  <Label className="text-[11px] text-muted-foreground">
+                    严重级
+                  </Label>
+                  <select
+                    value={v.severity ?? "error"}
+                    onChange={(e) =>
+                      patchInvariant(index, {
+                        severity: e.target.value as "error" | "warning",
+                      })
+                    }
+                    className="h-7 w-full rounded border border-input bg-background px-2 text-xs"
+                  >
+                    <option value="error">error（阻断）</option>
+                    <option value="warning">warning（仅提示）</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 text-xs text-muted-foreground"
+                  onClick={() => removeInvariant(index)}
+                >
+                  <Trash2 className="size-3" /> 删除
+                </Button>
+              </div>
+            </div>
+          ))}
+
+          <div className="flex items-center justify-between pt-2">
+            <Label className="text-xs">空间扣减（装柜体积口径）</Label>
+          </div>
+          <div className="rounded-md border p-2.5 space-y-2">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <div>
+                <Label className="text-[11px] text-muted-foreground">
+                  模式
+                </Label>
+                <select
+                  value={spaceDeduction?.mode ?? "ratio"}
+                  onChange={(e) =>
+                    patchSpaceDeduction({ mode: e.target.value })
+                  }
+                  className="h-7 w-full rounded border border-input bg-background px-2 text-xs"
+                >
+                  <option value="ratio">
+                    比例（推荐：随数量缩放，不会负体积）
+                  </option>
+                  <option value="fixed">
+                    固定值（小单会扣出负体积，慎用）
+                  </option>
+                  <option value="median">中位数</option>
+                  <option value="mean">平均值</option>
+                  <option value="formula">公式</option>
+                </select>
+              </div>
+              <NumberField
+                label={
+                  (spaceDeduction?.mode ?? "ratio") === "ratio"
+                    ? "扣减比例（0.04 = 4%）"
+                    : "扣减值（m³）"
+                }
+                value={
+                  typeof spaceDeduction?.value === "number"
+                    ? spaceDeduction.value
+                    : null
+                }
+                step="any"
+                onChange={(v) => patchSpaceDeduction({ value: v })}
+              />
+              <TextField
+                label="备注（口径说明）"
+                value={spaceDeduction?.note}
+                onChange={(v) => patchSpaceDeduction({ note: v })}
+              />
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              口径：实际占用体积 = 长方体累计 × (1 − 比例) −
+              固定值。推荐只用比例 （如 0.04 = 装柜系数 0.96，来自智能表格 21
+              行实测）。
+            </p>
+          </div>
+        </div>
       )}
 
       {/* ── 高级 JSON（P14 保留的原 textarea，实时写 specJson）── */}
