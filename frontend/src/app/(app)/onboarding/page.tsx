@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { Route } from "next";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -52,7 +53,7 @@ export default function OnboardingPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <Link href="/quotes?tab=pricing">
+          <Link href={"/quotes?tab=pricing" as Route}>
             <Button className="gap-2">
               <Database className="size-4" />
               去录入报价数据
@@ -77,7 +78,7 @@ export default function OnboardingPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <Link href="/quotes?tab=product">
+          <Link href={"/quotes?tab=product" as Route}>
             <Button variant="outline" className="gap-2">
               <Calculator className="size-4" />
               智能报价

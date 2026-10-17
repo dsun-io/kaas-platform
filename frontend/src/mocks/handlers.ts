@@ -164,8 +164,73 @@ let nextCustomerId = 1;
 let nextChildId = 1;
 let nextUserId = 100;
 
+// ── 平台账号治理 store（admin/accounts · 白名单字段照后端 _account_out）──────
+// id=1 与 MOCK_ADMIN_USER 同 id —— e2e 才能测到「停用自己 → 409 SELF_PROTECT」。
+// 角色字段是**映射后**的 effective_role（后端 _account_out 的口径）。
+type MockAccount = {
+  id: number;
+  email: string;
+  display_name: string | null;
+  account_type: string;
+  role: string;
+  status: string;
+  team_id: number | null;
+  team_name: string | null;
+  console_access: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+let accountsStore: MockAccount[] = [
+  {
+    id: 1,
+    email: "admin@kaas.local",
+    display_name: "平台管理员",
+    account_type: "internal",
+    role: "system_admin",
+    status: "active",
+    team_id: null,
+    team_name: null,
+    console_access: true,
+    created_at: "2026-10-01T08:00:00.000Z",
+    updated_at: "2026-10-01T08:00:00.000Z",
+  },
+  {
+    id: 2,
+    email: "ops@kaas.local",
+    display_name: "运营小李",
+    account_type: "internal",
+    role: "customer_member",
+    status: "active",
+    team_id: 1,
+    team_name: "默认团队",
+    console_access: false,
+    created_at: "2026-10-02T08:00:00.000Z",
+    updated_at: "2026-10-02T08:00:00.000Z",
+  },
+  {
+    id: 3,
+    email: "buyer@client-b.com",
+    display_name: "买家王经理",
+    account_type: "customer",
+    role: "customer_owner",
+    status: "active",
+    team_id: 2,
+    team_name: "客户B团队",
+    console_access: true,
+    created_at: "2026-10-03T08:00:00.000Z",
+    updated_at: "2026-10-03T08:00:00.000Z",
+  },
+];
+
+/** 当前登录管理员（mock 下固定 = MOCK_ADMIN_USER），SELF_PROTECT 判定用。 */
+function currentAdminActor(): { id: number } {
+  return { id: MOCK_ADMIN_USER.user_id };
+}
+
 const nowIso = () => new Date().toISOString();
-const optStr = (v: unknown): string | null => (typeof v === "string" ? v : null);
+const optStr = (v: unknown): string | null =>
+  typeof v === "string" ? v : null;
 /** 深拷贝种子，避免写操作改到 factory 里那份原始数据 */
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
@@ -292,7 +357,8 @@ export function resetMockData(): void {
     stageLogStore.set(c.id, seedStageLog(c));
   }
   registeredEmails = new Set([MOCK_ADMIN_USER.email.toLowerCase()]);
-  nextCustomerId = customersStore.reduce((max, c) => Math.max(max, c.id), 0) + 1;
+  nextCustomerId =
+    customersStore.reduce((max, c) => Math.max(max, c.id), 0) + 1;
   nextUserId = 100;
 }
 resetMockData();
@@ -362,12 +428,20 @@ export const handlers = [
   //   · 邀请码/团队名/工位的语义校验（要 DB）——mock 里按"给了就算"处理。
   http.post("/api/v1/auth/register", async ({ request }) => {
     const body = (await request.json()) as Record<string, unknown>;
-    const email = String(body.email ?? "").trim().toLowerCase();
+    const email = String(body.email ?? "")
+      .trim()
+      .toLowerCase();
     const password = String(body.password ?? "");
     const displayName = String(body.display_name ?? "").trim();
     const companyName = String(body.company_name ?? "").trim();
     const productCategory = String(body.product_category ?? "").trim();
-    if (!email || !password || !displayName || !companyName || !productCategory) {
+    if (
+      !email ||
+      !password ||
+      !displayName ||
+      !companyName ||
+      !productCategory
+    ) {
       return HttpResponse.json(
         {
           error_code: "VALIDATION_ERROR",
@@ -1220,6 +1294,79 @@ export const handlers = [
         },
       ],
     });
+  }),
+
+  // ── 平台账号治理（admin/accounts · 契约见 docs/ACCOUNT_GOVERNANCE_HANDOVER §②）──
+  // 写操作必须**真的**改 store：停用/恢复后列表与详情要跟着变，否则 e2e 断言失效。
+  // 白名单字段照后端 _account_out：绝不含 password_hash / token。
+  http.get("/api/v1/admin/accounts", ({ request }) => {
+    const url = new URL(request.url);
+    const limit = Math.min(
+      Math.max(Number(url.searchParams.get("limit")) || 500, 1),
+      1000,
+    );
+    const offset = Math.max(Number(url.searchParams.get("offset")) || 0, 0);
+    return HttpResponse.json({
+      accounts: accountsStore
+        .slice()
+        .sort((a, b) => a.id - b.id)
+        .slice(offset, offset + limit),
+      total: accountsStore.length,
+    });
+  }),
+
+  http.patch("/api/v1/admin/accounts/:id", async ({ params, request }) => {
+    const account = accountsStore.find((a) => a.id === Number(params.id));
+    if (!account) {
+      return HttpResponse.json(
+        { detail: { error: "not_found" } },
+        { status: 404 },
+      );
+    }
+    const body = (await request.json()) as { status?: string };
+    const target = String(body.status ?? "")
+      .trim()
+      .toLowerCase();
+    if (target !== "active" && target !== "disabled") {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation_error",
+            message: "status must be active|disabled",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    // mock 口径与后端一致：SELF_PROTECT / LAST_ADMIN 均 409（e2e 才能测到这两个分支）
+    const actor = currentAdminActor();
+    if (target === "disabled") {
+      if (account.id === actor.id) {
+        return HttpResponse.json(
+          { detail: { error: "conflict", code: "SELF_PROTECT" } },
+          { status: 409 },
+        );
+      }
+      if (
+        account.status === "active" &&
+        (account.role === "system_admin" || account.role === "admin")
+      ) {
+        const remaining = accountsStore.filter(
+          (a) =>
+            a.status === "active" &&
+            (a.role === "system_admin" || a.role === "admin"),
+        ).length;
+        if (remaining <= 1) {
+          return HttpResponse.json(
+            { detail: { error: "conflict", code: "LAST_ADMIN" } },
+            { status: 409 },
+          );
+        }
+      }
+    }
+    account.status = target;
+    account.updated_at = nowIso();
+    return HttpResponse.json({ account });
   }),
 
   // ── 出口报价（task-11 · M1 最小集 · P0）─────────────────────────────────
