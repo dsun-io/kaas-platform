@@ -173,11 +173,12 @@ class _FakeBucket:
 
 
 def _patch_bucket(monkeypatch, bucket):
-    monkeypatch.setattr(wsf, "_r2_bucket", lambda: bucket)
+    # 2026-10-17：_r2_bucket 现在优先从 request.scope["env"].FILES 取，签名带 request
+    monkeypatch.setattr(wsf, "_r2_bucket", lambda *a, **k: bucket)
 
 
 def _bucket_must_not_be_used(monkeypatch):
-    def _boom():
+    def _boom(*a, **k):
         raise AssertionError("不该走到 R2 binding 分支")
 
     monkeypatch.setattr(wsf, "_r2_bucket", _boom)

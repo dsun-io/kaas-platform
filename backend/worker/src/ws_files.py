@@ -184,13 +184,24 @@ async def _js_fetch_bytes(url: str, method: str,
     return None
 
 
-def _r2_bucket():
-    """拿 R2 binding（`FILES`）。不在 Pyodide / 没配 binding 时返回 None。
+def _r2_bucket(request=None):
+    """拿 R2 binding（`FILES`）。
+
+    2026-10-17 实测：Python Workers 的绑定**不在 `js` 全局**（`from js import FILES` 报
+    ImportError），而是挂在 ASGI scope 的 `env` 上（`request.scope["env"].FILES`）。
+    因此优先从请求里取；取不到再退回旧的 `js` 全局（兼容旧 runtime）。
 
     不在模块顶层 import：本地 pytest 是 CPython，没有 `js` 模块，顶层导入会直接炸掉整个 Worker。
     """
     try:
-        from js import FILES  # type: ignore  (Pyodide / Python Workers)
+        env = request.scope.get("env") if request is not None else None
+        bucket = getattr(env, "FILES", None) if env is not None else None
+        if bucket is not None:
+            return bucket
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from js import FILES  # type: ignore  (旧 runtime 的全局绑定)
         return FILES
     except Exception:  # noqa: BLE001
         return None
@@ -211,7 +222,7 @@ async def _store_bytes(request: Request, key: str, data: bytes,
         except Exception as exc:  # noqa: BLE001
             print(f"[files] S3 put 失败，回退 binding：{type(exc).__name__}: {exc}")
 
-    bucket = _r2_bucket()
+    bucket = _r2_bucket(request)
     if bucket is not None:
         try:
             # Pyodide（真实 Workers 是 sys.platform == "emscripten"）：bytes → Uint8Array
@@ -250,7 +261,7 @@ async def _load_bytes(request: Request, row) -> Optional[bytes]:
             return await _js_fetch_bytes(url, "GET")
         except Exception as exc:  # noqa: BLE001
             print(f"[files] S3 get 失败，回退 binding：{type(exc).__name__}: {exc}")
-    bucket = _r2_bucket()
+    bucket = _r2_bucket(request)
     if bucket is None:
         return None
     try:
