@@ -3704,6 +3704,26 @@ async def update_trade_doc(doc_id: int, request: Request, body: dict,
             "field": "status", "from": d["status"], "to": new_status,
             "allowed": list(allowed),
         })
+    # P0 引用完整性（HARDENING_PLAN §D，与 dev trade_docs.update_trade_doc 同口径）：
+    # 作废前必扫引用方 —— 下游 issued 单证还引用着本单证时不允许静默作废
+    # （导出会引用已废单据，信用证审单是不符点）。清单随 409 返回。
+    if new_status == "void" and d["status"] != "void":
+        broken = await db.fetch(
+            request,
+            "SELECT d.id, d.doc_no, d.doc_type, d.status, l.rel_type"
+            " FROM entity_links l"
+            " JOIN trade_docs d ON d.tenant_id = l.tenant_id AND d.id = l.src_id"
+            " WHERE l.tenant_id=$1 AND l.dst_type='trade_doc' AND l.dst_id=$2"
+            " AND l.src_type='trade_doc' AND l.deleted_at IS NULL"
+            " AND d.status='issued' ORDER BY d.id",
+            DEFAULT_TENANT, doc_id,
+        )
+        if broken:
+            raise HTTPException(status_code=409, detail={
+                "error": "conflict", "code": "DOC_REF_BROKEN",
+                "detail": "以下已签发单证仍引用本单证，请先作废/改版它们",
+                "broken_refs": broken,
+            })
     now = datetime.now(timezone.utc)
     raw_payload = body.get("raw_payload")
     if raw_payload is not None and d["status"] != "draft":

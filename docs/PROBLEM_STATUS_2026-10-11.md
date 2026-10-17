@@ -54,6 +54,12 @@
 >   **NEXT_EXPORT build 成功**（P17 必含项）。
 >   📌 P13–P17 全部收官；「产品定义可视化编辑器」从 PRODUCT_CONFIG_TENANT_UNFINISHED
 >   的未完成清单移除。
+>   📌 **阶段 3 UI 页面层**：4 套 tab 全收编 ui/tabs（含 P14 状态保留语义）/
+>   11 处非响应式 grid 修复 / 巨石拆分 4 刀（product-quote-view 1327→1008、
+>   quote-workbench-view 998→661）/ e2e 选择器治理（类名 → data-testid 契约）。
+>   📌 **E1 空库快径**落地（app/db/migration_bootstrap.py + env.py 接线 + 3 测）。
+>   📌 **P1 单证加固 P0 引用完整性**（DOC_REF_BROKEN）：作废前必扫引用方，
+>   有 issued 下游引用 → 409 带清单（两端同口径，orchestrator + worker）。
 >   阶段 3 页面层重构。
 > - **客户管理权限口径**：~~internal 员工全员~~ → **全部登录用户**（UNCERTAIN #21 修正：
 >  internal=平台员工、customer=用户按团队隔离，用户录自己的业务客户；后端

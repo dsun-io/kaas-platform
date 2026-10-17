@@ -595,6 +595,22 @@ async def update_trade_doc(
                 "error": "conflict", "code": exc.code,
                 "field": "status", "from": d.status, "to": target, "detail": exc.detail,
             })
+        # P0 引用完整性（HARDENING_PLAN §D）：作废前必扫引用方 ——
+        # 下游 issued 单证还引用着本单证时不允许静默作废（导出会引用已废单据，
+        # 信用证审单是不符点）。清单随 409 返回，先处理下游再来作废。
+        if target == "void":
+            from app.services.doc_ref_integrity import (
+                DOC_REF_BROKEN,
+                scan_inbound_broken_refs,
+            )
+
+            broken = await scan_inbound_broken_refs(db, tenant_id, d.id)
+            if broken:
+                raise HTTPException(status_code=409, detail={
+                    "error": "conflict", "code": DOC_REF_BROKEN,
+                    "detail": "以下已签发单证仍引用本单证，请先作废/改版它们",
+                    "broken_refs": broken,
+                })
         d.status = target
         if target == "issued":
             from datetime import datetime, timezone
