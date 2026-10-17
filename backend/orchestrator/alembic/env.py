@@ -112,6 +112,18 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def _bootstrap_if_empty(connection) -> bool:
+    """空库快径（E1 · UNCERTAIN #20）—— 判定与建表逻辑在 app/db/migration_bootstrap.py
+    （纯函数、可单测；env.py 是脚本、import 即执行迁移，没法直接测）。"""
+    from alembic.script import ScriptDirectory
+
+    from app.db.migration_bootstrap import bootstrap_if_empty
+
+    script = ScriptDirectory.from_config(config)
+    head = script.get_current_head()
+    return bootstrap_if_empty(connection, target_metadata, head)
+
+
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode (直接执行)."""
     configuration = config.get_section(config.config_ini_section)
@@ -124,6 +136,10 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        # 空库快径（E1）：跳过历史链，直接 create_all + stamp head
+        if _bootstrap_if_empty(connection):
+            return
+
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
