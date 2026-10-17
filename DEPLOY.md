@@ -150,7 +150,8 @@ cd backend/orchestrator
 alembic upgrade head
 ```
 
-当前迁移头：`202610100005_external_doc_uploads` —— 报价行项手动干预/多产品逐行 + 实际采购成本档案 + 订单/询价字段（收货地/船公司/海运费有效期/询价历史）+ 客户软删除 + 外部单证上传。
+当前迁移头**以 `alembic heads` 为准**（2026-10-17 实测为 `202610170004`）——含 password_reset_tokens、报价行项成本分解、tenant_products override、单证收款/清单、客户外键修正等。
+**CI 不执行迁移**：部署新代码前先对生产库 `alembic upgrade head`，否则新表/新列缺失会让报价、产品、忘记密码等页面 500。
 
 初始化管理员（一次性，对线上 Worker 执行；当前线上已初始化，会返回 403）：
 
@@ -222,7 +223,7 @@ TypeScript 构建前端 → **同步共享内核并校验** → `pywrangler depl
 | 分支 | 角色 |
 |---|---|
 | **`main`** | **生产分支** —— 只有它触发部署 |
-| `feat/trade-doc-templates` | **唯一的开发分支** —— 未完成的功能留在这里，完成并验证后再合入 `main` |
+| ~~`feat/trade-doc-templates`~~ | **已于 2026-10-17 删除**：该分支 tip（`4fc5a6e`）的树里仍带着历史硬编码的生产 DSN（`backend/.tools/*.py`），且它已落后 `main` 279 个提交、**没有独有提交**（是 `main` 的祖先）⇒ 删除无内容损失，只关掉一个"当前可读"的泄露入口 |
 | ~~`feature/intel-workstation-v1`~~ | 已归档（旧部署分支，内容已全部包含在开发分支里） |
 
 > 切换前的历史：部署曾挂在 `feature/intel-workstation-v1` 上，它是开发分支的祖先，
@@ -238,6 +239,19 @@ TypeScript 构建前端 → **同步共享内核并校验** → `pywrangler depl
 不适当地触发部署等于凭空制造一次生产风险窗口。
 
 需要强制部署（例如只改了文档但要同步 Worker）时：Actions 页面手动 `Run workflow`。
+
+### 4.1 部署没跑起来怎么排查（2026-10-17 实战）
+
+| 现象 | 判据 / 处理 |
+|---|---|
+| Actions 里**没有新 run** | 提交是否只改了 `**.md` / `docs/**` / `.tools/**`（`paths-ignore` 故意跳过，避免冷启动窗口）？需要强制发布 ⇒ Actions 页面 `Run workflow`（`workflow_dispatch`）。 |
+| 有 run，但 job **2 秒内失败、steps 为空、runner_id=0** | **GitHub Actions 额度/账单**。annotation 原文：`The job was not started because recent account payments have failed or your spending limit needs to be increased`。私有仓库 Free 每月约 2,000 分钟，用尽后**所有** workflow 都会被挡在启动前。解法：Settings → Billing 处理支付/额度，或把仓库改为 **public**（公开仓库标准 runner 免费）。 |
+| run 正常但线上没变 | 看 `deploy-worker` 的 `Sync shared kernel` / `pywrangler deploy` / `Smoke test` 哪步红；再用 `npx wrangler deployments list --name kaas` 核对线上版本时间。 |
+
+> **2026-10-17 部署记录**：仓库改 public 后以 `workflow_dispatch` 触发 run `39010179425`，两个 job 全绿；
+> 线上 Worker `b6c2d701`（`2026-10-17T06:33:07Z`），对应提交 `2a355c4`；生产库迁移执行到
+> `202610170004`；冒烟与浏览器验证通过（`/health` JSON、匿名 API 401、页面 200、
+> 无凭据深链直接 `/login` 且全程不出现系统 UI）。
 
 其他工作流：`backend-test.yml`（orchestrator 单测 + DB 测试 + Worker 纯函数单测，
 已带 `paths: backend/**`）、`frontend-ci.yml`、`contracts-check.yml`。

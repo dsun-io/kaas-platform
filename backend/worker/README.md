@@ -52,9 +52,13 @@ ADMIN_SETUP_TOKEN=<一次性初始化令牌>
 
 ## 部署
 
+**正常路径：push 到 `main` 自动部署。** `.github/workflows/deploy.yml` 会构建前端、
+`sync-shared.ps1` 同步共享内核、`pywrangler deploy`、跑生产冒烟；**不需要手动 deploy**。
+纯文档提交（`**.md` / `docs/**` / `.tools/**`）被 `paths-ignore` 跳过，要强制发布用 `workflow_dispatch`。
+
+手动部署（仅在 CI 不可用时排障；2026-10-17 实测 `npx wrangler deploy` 也可用）：
+
 ```powershell
-uv run pywrangler secret put JWT_SECRET        # 生产随机密钥
-uv run pywrangler secret put ADMIN_SETUP_TOKEN
 uv run pywrangler deploy                       # 含 api.kaas.powervoy.com 自定义域名
 ```
 

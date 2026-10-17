@@ -1,7 +1,9 @@
 # 多产品报价 + 整单单证 · 实施方案（待决策）
 
 > ⚠️ **本文件的现状描述已部分过期**：`:86`（线上无 `/api/v1/quotes`）、
-> `:380`（线上批量导入面板是坏的）、`:482`（出货工位挂着）三项均已不成立。
+> `:380`（线上批量导入面板是坏的）、`:482`（出货工位挂着）三项均已不成立；
+> 另 `:344` 的「只在 push 到 `feature/intel-workstation-v1` 时触发」也已过期
+> （2026-09-28 起部署分支 = `main`）。
 > 当前问题状态以 [PROBLEM_STATUS_2026-10-11.md](./PROBLEM_STATUS_2026-10-11.md) 为准。
 
 > **需求（用户原话）**：一个客户一个询盘需要多种产品 → 报价要支持**同时报多个产品**，
@@ -341,9 +343,11 @@ git rev-list --count HEAD..feature/intel-workstation-v1 → 0     ← 无分叉�
 
 部署机制（`.github/workflows/deploy.yml`）：
 
-- **只在 push 到 `feature/intel-workstation-v1` 时触发**；`**.md` / `docs/**` / `.tools/**` 被
-  `paths-ignore` **刻意忽略**（每次部署都会让全部 isolate 失效、经历数分钟冷启动窗口，不能因为改文档就重发生产）。
-- 所以"改了明明很多、线上没动静"是**预期行为**，不是 CI 坏了。
+- **只在 push 到 `main` 时触发**（2026-09-28 起；此前是 `feature/intel-workstation-v1`，该分支已归档）。
+  纯 `.md` / `docs/**` / `.tools/**` 被 `paths-ignore` **刻意忽略**（每次部署都会让全部 isolate 失效、
+  经历数分钟冷启动窗口，不能因为改文档就重发生产）；需要强制发布用 `workflow_dispatch`。
+- 所以"改了明明很多、线上没动静"若发生在 `main` 上，先查 **GitHub Actions 是否被账单/额度挡在启动前**
+  （判据与处置见 `DEPLOY.md` §4.1），而不是先怀疑 CI 配置。
 
 这 14 个提交在线上的**可见差异**（`git ls-tree -r --name-only 05718bd -- "frontend/src/app/(app)"`）：
 
