@@ -58,6 +58,8 @@ import {
 } from "../../quotations/v2-quote/components/spec-picker";
 import { EngineQuoteResult } from "../../quotations/v2-quote/components/engine-quote-result";
 import { ProductTaxSection } from "./product-tax-section";
+import { CostProfitSection } from "./cost-profit-section";
+import { PieceInputField, SectionTitle } from "./product-quote-view-section";
 import { FreightPanel } from "../../quotations/v2-quote/components/freight-panel";
 import {
   useDeleteQuoteProfile,
@@ -102,65 +104,6 @@ const POLICY_DEFAULTS = {
  * 两者互为换算（金额 ÷ 税前成本 = 利润率），界面上同时展示、改哪个都行。
  */
 type ProfitAnchor = "fixed" | "ratio";
-
-/** 参数变多之后，靠「按计算顺序分组 + 分组标题」才读得下去。 */
-function SectionTitle({
-  index,
-  title,
-  hint,
-}: {
-  index: number;
-  title: string;
-  hint?: string;
-}) {
-  return (
-    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t pt-4">
-      <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground">
-        {index}
-      </span>
-      <h3 className="text-xs font-medium">{title}</h3>
-      {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
-    </div>
-  );
-}
-
-/**
- * 一个「可按件改写」的参数输入框。
- *
- * 单件米数、卷径等全部共用这一个组件 —— 样式与提示语一致，
- * 不会因为各写一份而走样。单位换算与默认值都由调用方算好传进来。
- */
-function PieceInputField({
-  pi,
-  value,
-  defaultHint,
-  onChange,
-}: {
-  pi: PieceInput;
-  value: string;
-  defaultHint: string;
-  onChange: (v: string) => void;
-}) {
-  const unit = pi.ui_unit || pi.unit;
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-xs">
-        {pi.label}
-        {unit ? `（${unit}）` : ""}
-      </Label>
-      <Input
-        type="number"
-        step="any"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-8 text-xs"
-      />
-      <p className="text-[11px] text-muted-foreground">
-        默认跟随规格（{defaultHint || "—"}）
-      </p>
-    </div>
-  );
-}
 
 export function ProductQuoteView() {
   const products = useExportProducts();
@@ -855,68 +798,16 @@ export function ProductQuoteView() {
             </div>
           </div>
 
-          {/* ③ 成本与利润 —— 价链的第一段；成本来自定价数据，随规格变 */}
-          <SectionTitle
-            index={3}
-            title="成本与利润"
-            hint={`税前成本取自定价数据${costFieldKey ? `（${costFieldKey}）` : ""}，随规格自动带入`}
+          {/* 成本与利润（2026-10-17 巨石拆分第二刀：JSX 搬到
+              cost-profit-section.tsx，换算逻辑留在本文件） */}
+          <CostProfitSection
+            costFieldKey={costFieldKey}
+            costPretax={costPretax}
+            profitFixed={profitFixed}
+            onProfitFixedChange={editProfitFixed}
+            profitPct={profitPct}
+            onProfitPctChange={editProfitPct}
           />
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">税前成本（元/kg）</Label>
-              {/* 只读：要改成本请去「定价数据」按定价键改，而不是在这里写死 */}
-              <Input
-                type="number"
-                value={costPretax || ""}
-                readOnly
-                className="h-8 text-xs bg-muted"
-              />
-              <p className="text-[11px] text-muted-foreground">
-                随规格自动带入
-              </p>
-            </div>
-
-            {/* 金额与利润率是一对，互为换算，必须相邻同排 */}
-            <div className="space-y-1.5">
-              <Label
-                className="text-xs"
-                title="每公斤的加工所得，全单只计一次。利润率模式下 = 税前成本 × 利润率"
-              >
-                加工利润（元/kg）
-              </Label>
-              <Input
-                type="number"
-                step="0.01"
-                placeholder="如 0.1"
-                value={profitFixed}
-                onChange={(e) => editProfitFixed(e.target.value)}
-                className="h-8 text-xs"
-              />
-              <p className="text-[11px] text-muted-foreground">
-                每公斤的加工所得，全单只计一次
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label
-                className="text-xs"
-                title="按税前成本计：利润率 = 加工利润 ÷ 税前成本。margin_on_price 模式下售价 = 成本 ÷ (1 − 利润率 − 综合税费系数)"
-              >
-                利润率（%）
-              </Label>
-              <Input
-                type="number"
-                step="0.1"
-                placeholder="如 2.2727"
-                value={profitPct}
-                onChange={(e) => editProfitPct(e.target.value)}
-                className="h-8 text-xs"
-              />
-              <p className="text-[11px] text-muted-foreground">
-                按税前成本计：利润率 = 加工利润 ÷ 税前成本
-              </p>
-            </div>
-          </div>
 
           {/* ④ 税与让利 —— 严格按价链顺序：进项税 → 退税让利 → 印花税 → 销项税 */}
           <SectionTitle
