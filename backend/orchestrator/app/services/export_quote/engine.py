@@ -344,6 +344,10 @@ def spec_from_partial(
 
     # 变体包：给取值名，或给该包内任一属性，或给稳定 code
     for vg in product.variants:
+        # 空档位包 = 该产品不预置选项（如勾花网/鹿网的表面处理由定价数据补）。
+        # 报价时视为“可不填”，不阻塞整行；有可选档位时才要求选。
+        if not vg.options:
+            continue
         want = row.get(vg.name)
         code_want = row.get(f"{vg.name}_code")
         chosen = None
@@ -562,6 +566,9 @@ def expand_specs(product: ProductSpec) -> list[dict]:
         combos = [dict(c, **{ax.name: v}) for c in combos for v in ax.options]
 
     for vg in product.variants:
+        if not vg.options:
+            # 空档位包不参与组合/校验（报价可正常进行，列留空）
+            continue
         if not _IDENT.match(vg.name):
             raise EngineError(f"变体包名必须是合法标识符: {vg.name}")
         nxt = []

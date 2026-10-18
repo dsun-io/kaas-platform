@@ -51,6 +51,8 @@ export function buildLineRequest(args: {
   productKey: string;
   spec: Record<string, unknown>;
   variantOverrides?: Record<string, Record<string, Record<string, number>>>;
+  /** 没有可选变体档位时，把成本字段作为常量覆盖传给引擎 */
+  constantsOverrides?: Record<string, unknown>;
   total: number;
   unit: string;
   /** 逐行覆盖的利润率（%）；留空继承整单 */
@@ -73,6 +75,7 @@ export function buildLineRequest(args: {
     orders: [{ total: args.total, unit: args.unit }],
     spec_rows: [args.spec],
     variant_overrides: args.variantOverrides ?? null,
+    constants_override: args.constantsOverrides ?? null,
     with_verification: false,
     currency: "CNY",
     quote_currency: shared.quoteCurrency,

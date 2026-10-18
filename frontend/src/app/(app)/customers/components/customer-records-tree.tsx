@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 /**
  * 客户「往来记录」树 —— 报价 → 报价单 chip + 订单 → 单证 chips（设计文档 §4）。
@@ -45,6 +45,7 @@ const QUOTE_STATUS_LABEL: Record<string, string> = {
   accepted: "已接受",
   rejected: "已拒绝",
   expired: "已过期",
+  closed: "已关闭",
 };
 
 const QUOTE_STATUS_TONE: Record<string, StatusTone> = {
@@ -53,6 +54,7 @@ const QUOTE_STATUS_TONE: Record<string, StatusTone> = {
   accepted: "success",
   rejected: "danger",
   expired: "warning",
+  closed: "default",
 };
 
 const ORDER_STATUS_LABEL: Record<string, string> = {

@@ -33,6 +33,7 @@ const STATUS_LABELS: Record<string, string> = {
   accepted: "已接受",
   rejected: "已拒绝",
   expired: "已过期",
+  closed: "已关闭",
 };
 
 /** cost_breakdown.currency_cny_per_m2 的形状（落库方在 line-to-item.ts）。 */

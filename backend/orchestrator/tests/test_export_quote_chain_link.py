@@ -92,11 +92,13 @@ class TestCustomerBuiltOptions:
         # 丝径是自由数值维度，同样要出现
         assert dims["d"]["kind"] == "numeric"
 
-    def test_no_option_yet_gives_actionable_error(self):
-        with pytest.raises(EngineError, match="还没有可选档位"):
-            spec_from_partial(get("chain_link"),
-                              {"d": 2.5, "mesh_cm": 5, "width_m": 1.8,
-                               "len_m": 10, "roll_dia_m": Decimal("0.30")}, 1)
+    def test_no_option_yet_is_tolerated(self):
+        """空档位包 = 由客户自建：报价不阻塞（coating 留空），不再报 400。"""
+        picked = spec_from_partial(get("chain_link"),
+                                   {"d": 2.5, "mesh_cm": 5, "width_m": 1.8,
+                                    "len_m": 10, "roll_dia_m": Decimal("0.30")}, 1)
+        assert "coating" not in picked
+        assert picked["d"] == Decimal("2.5") or picked["d"] == 2.5
 
     def test_product_ships_with_zero_options(self):
         product = get("chain_link")
