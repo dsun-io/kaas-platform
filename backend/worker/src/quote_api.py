@@ -1989,12 +1989,6 @@ async def create_quote_order(request: Request, body: _QuoteOrderCreate,
             )
             if items:
                 await _insert_quote_items(conn, tenant, row["id"], items)
-                # 成本历史：本单手动改过的成本落一条（需求 11）
-                from ws_product_costs import record_cost_history
-                await record_cost_history(
-                    conn, tenant, customer.get("team_id"), items, row["id"],
-                    str(user["id"]),
-                )
             # 2026-10-18：客户阶段读时由「开启中的订单」推导，报价变化不再回写客户阶段。
             await _ensure_quotation_doc(conn, tenant, dict(row), items, request)
     return _quote_json(dict(row), len(items))
@@ -2049,6 +2043,87 @@ async def quote_reference_price(request: Request, customer_id: int,
         "median": float(row["median"]) if row and row["median"] is not None else None,
         "last_at": row["last_at"].isoformat() if row and row["last_at"] else None,
     }
+
+
+@app.get("/api/v1/quotes/cost-reference")
+async def quote_cost_reference(
+    request: Request,
+    product_key: str,
+    spec: str,
+    user: dict = Depends(_get_current_user),
+):
+    """成本参考价 —— 直接从历史报价行项提取（与 orchestrator 同路径/同口径）。
+
+    历史报价就是成本历史：`quote_order_items.cost_override + spec_snapshot`
+    （含完整产品参数）。同产品+同规格取最近一次，否则近 30 天中位数。
+    """
+    try:
+        specs = json.loads(spec)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "INVALID_SPEC",
+            "detail": "spec 必须是 JSON 对象",
+        })
+    if not isinstance(specs, dict):
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "INVALID_SPEC",
+            "detail": "spec 必须是 JSON 对象",
+        })
+
+    params: list = [_tenant_of(user), product_key, json.dumps(specs)]
+    same = await _db.fetchrow(
+        request,
+        "SELECT i.cost_override, i.spec_snapshot, q.quote_no, q.created_at"
+        " FROM quote_order_items i JOIN quote_orders q"
+        "   ON q.tenant_id = i.tenant_id AND q.id = i.quote_order_id"
+        " WHERE i.tenant_id=$1 AND i.spec_snapshot->>'product_key'=$2"
+        "   AND i.cost_override IS NOT NULL"
+        "   AND i.spec_snapshot->'specs' = $3::jsonb"
+        + _scope_sql(user, params, "q")
+        + " ORDER BY q.created_at DESC, i.id DESC LIMIT 1",
+        *params,
+    )
+    if same:
+        snapshot = same["spec_snapshot"] if isinstance(same["spec_snapshot"], dict) else {}
+        return {"reference": {
+            "cost": float(same["cost_override"]),
+            "cost_unit": snapshot.get("cost_unit") or "",
+            "source": "latest",
+            "sample_count": 1,
+            "as_of": same["created_at"].isoformat() if same["created_at"] else None,
+            "quote_no": same["quote_no"],
+            "spec_snapshot": snapshot,
+        }}
+
+    params = [_tenant_of(user), product_key]
+    rows = await _db.fetch(
+        request,
+        "SELECT i.cost_override, i.spec_snapshot, q.quote_no, q.created_at"
+        " FROM quote_order_items i JOIN quote_orders q"
+        "   ON q.tenant_id = i.tenant_id AND q.id = i.quote_order_id"
+        " WHERE i.tenant_id=$1 AND i.spec_snapshot->>'product_key'=$2"
+        "   AND i.cost_override IS NOT NULL"
+        "   AND q.created_at >= now() - interval '30 days'"
+        + _scope_sql(user, params, "q")
+        + " ORDER BY q.created_at DESC, i.id DESC",
+        *params,
+    )
+    if not rows:
+        return {"reference": None}
+    costs = sorted(float(r["cost_override"]) for r in rows)
+    n = len(costs)
+    median = costs[n // 2] if n % 2 else (costs[n // 2 - 1] + costs[n // 2]) / 2
+    latest = rows[0]
+    snapshot = latest["spec_snapshot"] if isinstance(latest["spec_snapshot"], dict) else {}
+    return {"reference": {
+        "cost": median,
+        "cost_unit": snapshot.get("cost_unit") or "",
+        "source": "median_30d",
+        "sample_count": n,
+        "as_of": latest["created_at"].isoformat() if latest["created_at"] else None,
+        "quote_no": latest["quote_no"],
+        "spec_snapshot": snapshot,
+    }}
 
 
 @app.get("/api/v1/quotes/{quote_id}")
@@ -2182,12 +2257,6 @@ async def replace_quote_items(quote_id: int, request: Request, body: _QuoteItems
             items, total = _build_items(q["currency"], body.items)
             if items:
                 await _insert_quote_items(conn, tenant, quote_id, items)
-                # 成本历史：行项整批替换后，把本单手动改过的成本落一条（需求 11）
-                from ws_product_costs import record_cost_history
-                await record_cost_history(
-                    conn, tenant, q.get("team_id"), items, quote_id,
-                    str(user["id"]),
-                )
             # 空行集合 → 合计留空（不是 0）
             await conn.execute(
                 "UPDATE quote_orders SET total_amount=$3 WHERE tenant_id=$1 AND id=$2",

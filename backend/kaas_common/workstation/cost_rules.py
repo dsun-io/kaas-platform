@@ -17,9 +17,37 @@ import statistics
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping, Optional
 
-__all__ = ["cost_spec_hash", "reference_cost"]
+__all__ = ["cost_spec_hash", "reference_cost", "cost_specs_of", "cost_snapshot_of"]
 
 RECENT_DAYS = 30
+
+
+def cost_specs_of(snapshot: Any) -> dict:
+    """从成本历史快照里取**产品参数**（规格）。
+
+    兼容两种形态：
+      · 新形态：`{"product_key": ..., "specs": {...}, "cost_unit": "元/㎡"}`
+      · 旧数据/直接传规格：`{"de": 2.0, "coating_code": "zinc_40"}`
+    """
+    if not isinstance(snapshot, Mapping):
+        return {}
+    nested = snapshot.get("specs")
+    if isinstance(nested, Mapping):
+        return dict(nested)
+    return dict(snapshot)
+
+
+def cost_snapshot_of(product_key: str, specs: Any, cost_unit: str = "") -> dict:
+    """统一成本历史快照：**产品 + 完整产品参数 + 成本单位**。
+
+    用户口径（2026-10-18）：成本历史不能只存产品，必须把该次报价的产品参数
+    一起存下来（如勾花网的丝径/网孔/宽度/长度；勾花网成本按平米计）。
+    """
+    return {
+        "product_key": product_key,
+        "specs": dict(specs or {}),
+        "cost_unit": cost_unit or "",
+    }
 
 
 def _canonical_json(value: Any) -> str:

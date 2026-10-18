@@ -30,8 +30,9 @@
      页面又被放在 `adminOnly` 的系统设置里，团队管理员看不到；且没有报价页入口。
 - 产品包装目前**没有数据模型**：只有 `product_profiles.info.packing` 文本，无法按规格/高度
   自动算包装费（需求 20）。
-- 需要新增 **4 处 schema**：`customers.abbr`、`cust_inquiries.inquiry_no`（唯一）、
-  `product_cost_history` 表、`team_product_status` 表。
+- 需要新增 **2 处 schema**：`customers.abbr`、`cust_inquiries.inquiry_no`（唯一）。
+  早期计划的 `product_cost_history` 已被用户裁决取消（历史报价即成本历史）；
+  系统产品停用复用既有 `tenant_workstation_products`，不另建表。
 - 按 P0~P5 分 6 批实施（§6），每批都跑门禁 + 真数据验收。
 
 ### 0.1 用户改动点总表（22 项 · 防遗漏）
@@ -50,7 +51,7 @@
 | 8 | 国内费用不要拆内陆/港杂/报关，统一叫国内费用或本地费 | §3.8 | ✅ 模板合并 `domestic_charges`，FOB 档只引用它 |
 | 9 | 利润只留百分比输入框，金额在右侧小字只读回显 | §3.9 | ✅ 百分比单输入；金额取算价结果内部分解回显（内部账号可见） |
 | 10 | 印花税率改名杂税，定义为杂七杂八税的总额；计税基数同步修改 | §3.10 | ✅ UI 只剩「杂税（%）」，下发 `misc_fee_rate`；旧 stamp 字段仅后端兼容 |
-| 11 | 产品部分没有写产品成本的地方，怎么算价 | §3.11 | ✅ 行内成本输入 + `product_cost_history`；无规格成本时自动带历史参考（同规格最近/30天中位数） |
+| 11 | 产品部分没有写产品成本的地方，怎么算价 | §3.11 | ✅ 行内成本输入（勾花网元/㎡、牛栏网元/kg）；参考价直接从**历史报价行项**提取（不另建成本历史表） |
 | 12 | 产品下拉多余：添加产品时先选；行标题产品名做成可改下拉 | §3.12 | ✅ 行标题即产品下拉；「添加产品」弹窗先选产品 |
 | 13 | 逐行计算保留，但要加「整单报价」按钮 | §3.13 | ✅ |
 | 14 | （补充）结果视图应在导出时选择，决定导出数据范围 | §3.14（按用户最终口径：**删除视图选择**，单证永远对外、系统内直接看对内） | ✅ 视图开关已删；内部账号看内部列、客户账号看客户列，单证始终对外 |
@@ -76,12 +77,13 @@
 
 **已落地（本地提交 `91e23e4` + `4650ca5`，未推送）**
 
-- 数据层：迁移 `202610180002` —— `customers.abbr`、`cust_inquiries.inquiry_no`（部分唯一索引）、
-  `product_cost_history` 表。本地 DB 已升级到 `202610180002`。
+- 数据层：迁移 `202610180002` —— `customers.abbr`、`cust_inquiries.inquiry_no`（部分唯一索引）。
+  本地 DB 已升级到 `202610180004`（004 删除了已被裁决取消的 `product_cost_history`）。
 - 询盘编号：`kaas_common/workstation/inquiry_rules.py`；orchestrator `customers.create_inquiry`、
   `lead_scan`、worker `add_inquiry`、`chain` 四条创建路径全部生成唯一编号。
-- 成本历史：`kaas_common/workstation/cost_rules.py` + `GET/POST /api/v1/product-costs`（两端）；
-  报价保存时把 `cost_override` 自动落历史（1 小时同规格去重）。
+- 成本参考：`GET /quotes/cost-reference`（两端）直接从历史报价行项
+  （`cost_override` + 含完整参数的 `spec_snapshot`）取最近一次/30 天中位数；
+  **不写单独成本历史表**。
 - 条款模板：三项国内费用合并为 `domestic_charges`、默认 `quote_as=EXW`；FOB 档只引用合并项。
   **2026-10-18 追加口径**：国内费用 CNY，海运费/保险费/目的港费用/进口税费一律 USD；
   引擎小计以 CNY 累加，USD 费用按订单汇率折算（`terms.py` 的 `FeeItem.currency`）。
@@ -97,8 +99,10 @@
    18 份逐字节基准重生成，`verify-trade-doc-fixtures.py` 全绿。
 2. 产品包装编辑器：多套包装、默认包装、规格区间（字段/最小/最大/金额）、HS 编码多值编辑；
    系统产品可点「自定义」拉原始 spec 复制为租户定义后编辑。
-3. 成本历史参考值：报价行在规格无成本时自动取历史参考（同规格最近一次 / 近 30 天中位数），
-   并随请求下发 `variant_overrides` 覆盖；UI 显示来源。
+3. 成本参考：报价行在规格无成本时自动取**历史报价行项**（`cost_override` +
+   含完整产品参数的 `spec_snapshot`）的同规格最近一次 / 近 30 天中位数，
+   并随请求下发 `variant_overrides` 覆盖；UI 显示来源与成本单位。
+   **不单独建成本历史表**（早期表已由迁移 004 删除）。
 4. 利润率金额回显：取算价结果内部分解 `profit_amount`（元/kg）。
 5. 企业抬头：报价页入口；SWIFT 8/11 位校验（两端共享 `company_rules.py`）；页面权限提示。
 6. 系统产品停用：新 `GET/POST /tenant-product-status`（两端，不受工位订阅闸门影响），
@@ -124,7 +128,7 @@
 | 1 | 询盘编号 | 国家 ISO2 + **客户缩写字段** + 时间戳，如 `US-ABC-20261018170900` |
 | 2 | 利润口径 | **售价毛利**：售价 = 成本 ÷ (1 − 利润率 − 杂税)；用户例：挣 5% 即 `成本/(1−0.05−0.03)` |
 | 3 | 杂税 | 就是**综合税费系数**（现在产品定义里的 3%），不是印花税拆分；界面只留一个「杂税（%）」 |
-| 4 | 产品成本 | **手动输入**；每次输入存该产品的**成本历史**；以后按历史算参考成本 |
+| 4 | 产品成本 | **手动输入**；历史成本**直接从历史报价行项提取**（含产品参数），不另建成本历史表 |
 | 5 | 视图 | **删除客户/内部视图选择**：系统内直接看对内视图；单证/导出默认对外、不可改 |
 | 6 | 国内费用 | 合并为「国内费用（本地费用）」一项 |
 | 7 | 海运费有效期 | 报价单级整单一份；起止日期用**同一个组件**（一个日期范围控件） |
@@ -148,7 +152,7 @@
 | 产品报价 | `QuoteWorkbenchView` + `WorkbenchParamsCard` + `QuoteLineCard` + `QuoteSummaryCard` | **本方案主战场**：整单参数 + N 个产品行 → 逐行算价 → 汇总 → 存报价单 → 生成单证 |
 | 批量报价 | `BulkImportPanel` | 表格导入 → 一次算完（与本方案共享币种/汇率/条款） |
 | 报价记录 | `QuotationRecordsView` | 台账（含成本/利润列，仅 internal） |
-| 定价数据 | `PricingDataManager` | **当前语义 = 成本价表**（产品属性 `raw_price` 等）；用户认为价格每日波动，此表不适用 → 改为成本历史 |
+| 定价数据 | `PricingDataManager` | **当前语义 = 成本价表**（产品属性 `raw_price` 等）；保留为兜底，历史成本从历史报价提取 |
 
 关键数据流：
 
@@ -381,47 +385,36 @@ QuoteSummaryCard（汇总 + 保存 + 生成单证）
 
 ---
 
-### 3.11 产品成本：手动输入 + 成本历史 + 参考价（需求 11）
+### 3.11 产品成本：手动输入 + 参考价（需求 11）
 
-**现状**：成本只能来自「定价数据」的产品属性（`raw_price`），多产品行里**看不到也改不了**；
-`QuoteItemIn` 已有 `cost_override` 字段（存值）但前端从未使用。
+**最终口径（2026-10-18 用户裁决，取代早期「成本历史表」设计）**
+
+> 历史报价本身就是成本历史 → **不再单独建 `product_cost_history` 表**。
+> 成本信息直接从 `quote_order_items` 提取：`cost_override`（手动成本）+
+> `spec_snapshot`（含完整产品参数与 `cost_unit`）。早期设计已删除
+> （迁移 `202610180004` drop 表）。
 
 **方案**
 
-1. **界面**：每个产品行增加「税前成本（元/kg）」输入：
-   - 默认值解析顺序：同产品+同规格的**成本历史最近一次** → 近 30 天中位数 →
-     产品定义/规格属性兜底 → 0（标黄提示"缺少成本"）；
-   - 可手改；手改**只影响本单**（请求里通过 `variant_overrides` 覆盖 cost_field，
+1. **界面**：每个产品行增加「税前成本」输入，单位取产品定义 `cost.unit`：
+   - 勾花网：**元/㎡**（成本 = 面积 × 单价）；
+   - 牛栏网：元/kg（成本 = 重量 × 单价）；
+   - 默认值解析顺序：同产品+同规格的**历史报价行项最近一次** →
+     近 30 天同产品中位数 → 产品定义/规格属性兜底 → 0（标黄提示“缺少成本”）。
+   - 可手改；手改**只影响本单**（`variant_overrides` 覆盖 cost_field，
      保存时写行项 `cost_override`，不回写产品定义）。
-2. **成本历史表** `product_cost_history`（新迁移）：
-
-   | 列 | 说明 |
-   |---|---|
-   | id / tenant_id / team_id | 归属 |
-   | product_key | 产品 |
-   | spec_snapshot JSONB | 规格（用于"同规格"匹配） |
-   | cost_pretax NUMERIC | 税前成本（元/kg 或产品成本单位） |
-   | source | quote / manual / import |
-   | quote_order_id | 来自哪张报价（可空） |
-   | created_by / created_at / note | 审计 |
-
-   - 写入时机：报价单保存成功时（同一 product+spec+cost 1 小时内去重，避免刷历史）；
-     手工新增也可写（`source=manual`）。
+2. **历史成本来源**：历史报价行项，不另存。
+   - `spec_snapshot` 必须含 `product_key`、`specs`（完整产品参数）、`cost_unit`；
+     「同规格」按 `specs` JSONB 相等匹配。
 3. **API**（两端）：
-   - `GET /product-costs?product_key=&spec_key=&limit=` → 最近 N 条 + 参考成本
-     （`latest` / `median_30d` / `used`）；
-   - `POST /product-costs`（手工补录）；
-   - 权限：团队隔离同其它工位。
-4. **定价数据页面改造**（用户决策：直接调整成产品历史成本价）：
-   - 原 `PricingDataManager`（固定成本表）下线/替换为「成本历史」：
-     按产品/规格筛选、列表、手工新增、显示参考成本；
-   - 报价工作台的「定价数据」tab 改名「成本历史」；
-   - `/pricing-data` 路由保留并重定向/渲染新页面（避免旧链接 404）。
-5. **回答用户疑问**：「定价数据」当前是**成本价表**（把 `raw_price` 等成本写死在产品属性里），
-   供算价引擎读成本；价格每天波动 ⇒ 固定表不适用，改为历史成本库。
+   - `GET /quotes/cost-reference?product_key=&spec=<JSON>` →
+     同产品+同规格最近一次成本（`latest`），否则近 30 天中位数（`median_30d`）；
+   - 无参考返回 `reference=null`，前端回退产品定义成本。
+4. **定价数据页面**：保留原定价矩阵（成本兜底），不再改名/改造成“成本历史”；
+   历史成本统一从历史报价取。
 
-**验收**：行内可输成本；保存后历史多一条；下次同产品同规格自动带出；
-30 天外/无历史时用中位数；不污染产品定义。
+**验收**：行内可输成本；保存报价后，下次同产品同规格自动带出最近成本；
+30 天内无同规格时用中位数；不污染产品定义；显式区分元/㎡ 与元/kg。
 
 ---
 
@@ -725,25 +718,27 @@ HS Code 列（`render.ts::ITEM_COLUMNS` + `manifest.json` items 说明 +
 
 | 迁移 | 内容 |
 |---|---|
-| `202610180002_inquiry_no_and_customer_abbr` | `customers.abbr`、`cust_inquiries.inquiry_no`（唯一索引） |
-| `202610180003_product_cost_history` | 成本历史表 + 索引 `(tenant_id, team_id, product_key, created_at desc)` |
-| `202610180004_team_product_status` | 系统产品租户停用表 + 唯一键 |
+| `202610180002_inquiry_no_cost_history_product_status` | `customers.abbr`、`cust_inquiries.inquiry_no`（唯一索引）；早期还建过 `product_cost_history` |
+| `202610180004_drop_product_cost_history` | 按用户裁决删除冗余的 `product_cost_history`（历史报价即成本历史） |
+
+> 系统产品租户停用复用既有 `tenant_workstation_products`，未新建 `team_product_status` 表。
 
 ### 5.2 共享契约 / 内核
 
 - `shared/contracts/quote-order.ts`：`freight_valid_from/to`、行项 `cost_override`（已存在）确认；
 - `shared/contracts/export-quote.ts`：报价档案增加 `misc_fee_rate`（schema 已有 passthrough，补显式字段）；
 - `kaas_common/workstation/customer_rules.py` 或新 `inquiry_rules.py`：`build_inquiry_no`；
-- `kaas_common` 产品/成本规则：成本参考解析（最近/中位数）；
+- `kaas_common` 成本规则：从历史报价行项取参考成本（最近/中位数），不建表；
 - `scripts/sync-shared.ps1` 后跑 `-Check`。
 
 ### 5.3 路由/接口新增
 
 | 方法 | 路径 | 用途 | 两端 |
 |---|---|---|---|
-| GET | `/product-costs` | 成本历史 + 参考成本 | orchestrator + worker |
-| POST | `/product-costs` | 手工补录成本 | 同上 |
-| PATCH | `/products/{key}/status` | 本团队停用/启用系统产品 | 同上 |
+| GET | `/quotes/cost-reference` | 从历史报价行项取成本参考（同规格最近/30天中位数） | orchestrator + worker |
+| GET | `/tenant-product-status` | 本团队系统产品启用状态 | 同上 |
+| POST | `/tenant-product-status` | 本团队启用/停用系统产品 | 同上 |
+| GET | `/export-quote/products/{key}/spec` | 产品原始定义（供复制为租户定义） | 同上 |
 | DELETE | `/tenant-products/{id}` | 已存在；补关联清理 | 同上 |
 | PATCH | `/quotes/{id}` | 增加 `freight_valid_from/to` | worker 补齐 |
 

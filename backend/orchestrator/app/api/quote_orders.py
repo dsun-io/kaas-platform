@@ -400,11 +400,6 @@ async def create_quote_order(
     for it in items:
         it.quote_order_id = q.id
         db.add(it)
-    # 成本历史：本单手动改过的成本落一条（需求 11）
-    from app.api.product_costs import record_cost_history
-    await record_cost_history(
-        db, tenant_id, q.team_id, items, q.id, str(auth.user_id),
-    )
     await db.commit()
     await db.refresh(q)
     return _row_to_quote(q, len(items))
@@ -472,6 +467,93 @@ async def quote_reference_price(
         "max": float(row.max) if row.max is not None else None,
         "median": float(row.median) if row.median is not None else None,
         "last_at": row.last_at.isoformat() if row.last_at else None,
+    }
+
+
+@router.get("/quotes/cost-reference")
+async def quote_cost_reference(
+    product_key: str,
+    spec: str,
+    auth: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """成本参考价 —— **直接从历史报价行项提取**，不再单独存成本历史表。
+
+    用户 2026-10-18 裁决：历史报价本身就是成本历史；成本信息从
+    `quote_order_items.cost_override + spec_snapshot`（含完整产品参数）提取即可。
+
+    规则：
+      1. 同产品 + **同规格参数**（`spec_snapshot.specs` JSONB 相等）→ 最近一次成本；
+      2. 否则 → 近 30 天同产品所有手动成本的中位数；
+      3. 都没有 → `reference=null`（回退产品定义里的成本）。
+    """
+    try:
+        specs = json.loads(spec)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "INVALID_SPEC",
+            "detail": "spec 必须是 JSON 对象",
+        })
+    if not isinstance(specs, dict):
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "INVALID_SPEC",
+            "detail": "spec 必须是 JSON 对象",
+        })
+
+    tenant_id = tenant_id_of(auth)
+    base = (
+        select(QuoteOrderItem, QuoteOrder)
+        .join(QuoteOrder, QuoteOrderItem.quote_order_id == QuoteOrder.id)
+        .where(
+            QuoteOrderItem.tenant_id == tenant_id,
+            QuoteOrderItem.spec_snapshot["product_key"].astext == product_key,
+            QuoteOrderItem.cost_override.isnot(None),
+        )
+    )
+    base = scope_filter(base, QuoteOrder, auth)
+
+    same = (await db.execute(
+        base.where(QuoteOrderItem.spec_snapshot["specs"] == specs)
+        .order_by(QuoteOrder.created_at.desc(), QuoteOrderItem.id.desc())
+        .limit(1)
+    )).first()
+    if same is not None:
+        item, quote = same
+        snapshot = item.spec_snapshot or {}
+        return {
+            "reference": {
+                "cost": float(item.cost_override),
+                "cost_unit": snapshot.get("cost_unit") or "",
+                "source": "latest",
+                "sample_count": 1,
+                "as_of": quote.created_at.isoformat() if quote.created_at else None,
+                "quote_no": quote.quote_no,
+                "spec_snapshot": snapshot,
+            }
+        }
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    rows = (await db.execute(
+        base.where(QuoteOrder.created_at >= cutoff)
+        .order_by(QuoteOrder.created_at.desc(), QuoteOrderItem.id.desc())
+    )).all()
+    if not rows:
+        return {"reference": None}
+    costs = sorted(float(item.cost_override) for item, _ in rows)
+    n = len(costs)
+    median = costs[n // 2] if n % 2 else (costs[n // 2 - 1] + costs[n // 2]) / 2
+    latest_item, latest_quote = rows[0]
+    snapshot = latest_item.spec_snapshot or {}
+    return {
+        "reference": {
+            "cost": median,
+            "cost_unit": snapshot.get("cost_unit") or "",
+            "source": "median_30d",
+            "sample_count": n,
+            "as_of": latest_quote.created_at.isoformat() if latest_quote.created_at else None,
+            "quote_no": latest_quote.quote_no,
+            "spec_snapshot": snapshot,
+        }
     }
 
 
@@ -580,11 +662,6 @@ async def replace_quote_items(
         it.quote_order_id = q.id
         db.add(it)
     await db.flush()
-    # 成本历史：行项整批替换后，把本单手动改过的成本落一条（需求 11）
-    from app.api.product_costs import record_cost_history
-    await record_cost_history(
-        db, tenant_id, q.team_id, items, q.id, str(auth.user_id),
-    )
     # 空行集合 → 合计留空（不是 0）
     q.total_amount = total if items else None
     await db.commit()

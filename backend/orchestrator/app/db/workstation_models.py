@@ -694,37 +694,6 @@ class TenantCompanySeal(Base):
     )
 
 
-class ProductCostHistory(Base):
-    """产品成本手输历史（需求 11）：报价保存/手工补录时追加。
-
-    参考成本规则（用户确认）：同产品 + 同规格（spec_hash）优先取最近一次；
-    超过 30 天或没有同规格记录时取近 30 天中位数；仍没有则退回产品定义成本。
-    """
-    __tablename__ = 'product_cost_history'
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    tenant_id = Column(Text, nullable=False)
-    team_id = Column(BigInteger, nullable=True)
-    product_key = Column(Text, nullable=False)
-    spec_snapshot = Column(JSONB, nullable=True)
-    spec_hash = Column(Text, nullable=True)
-    cost_pretax = Column(Numeric(18, 6), nullable=False)
-    cost_incl = Column(Numeric(18, 6), nullable=True)
-    currency = Column(Text, nullable=False, server_default='CNY')
-    source = Column(Text, nullable=False, server_default='quote')
-    quote_order_id = Column(BigInteger, nullable=True)
-    note = Column(Text, nullable=True)
-    created_by = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-
-    __table_args__ = (
-        Index('idx_product_cost_history_lookup',
-              'tenant_id', 'product_key', 'created_at'),
-        Index('idx_product_cost_history_spec',
-              'tenant_id', 'product_key', 'spec_hash', 'created_at'),
-    )
-
-
 class TradeDocDocRef(Base):
     """【已退场·勿用】单证→单证派生引用（物理表已改名 `trade_doc_doc_refs_legacy`）。
 
