@@ -159,6 +159,9 @@ export function BatchQuoteView() {
       if (!f || !product) throw new Error("请先选择产品并等待规格加载");
       if (selectedRows.length === 0) throw new Error("请先勾选询盘");
       if (selectedRows.length > 200) throw new Error("单批最多 200 行");
+      if (cost.trim() === "") {
+        throw new Error("请填写成本（成本必须手输，可用历史报价参考）");
+      }
 
       const spec = buildSpec();
       const groups = [];
@@ -380,7 +383,7 @@ export function BatchQuoteView() {
             <Input
               value={cost}
               onChange={(e) => setCost(e.target.value)}
-              placeholder="留空 = 产品定义成本"
+              placeholder="必填；参考历史报价后手填"
             />
           </label>
         </div>
