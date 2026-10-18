@@ -2298,6 +2298,7 @@ export const MOCK_EXPORT_TERMS_TEMPLATE: ExportTermsTemplate = {
       "name": "国内费用（本地费用）",
       "name_en": "Domestic charges",
       "mode": "per_shipment",
+      "currency": "CNY",
       "unit_hint": "元 / 整批",
       "note": "含内陆运费、港杂费、报关费等所有国内环节费用；按货代实际报价整批填写。",
       "value": null
@@ -2306,23 +2307,26 @@ export const MOCK_EXPORT_TERMS_TEMPLATE: ExportTermsTemplate = {
       "name": "海运费",
       "name_en": "Ocean freight",
       "mode": "per_weight_ton",
-      "unit_hint": "元 / 吨",
-      "note": "按计费吨填。若船公司按整箱报，把箱费折成吨单价即可。",
+      "currency": "USD",
+      "unit_hint": "美元 / 吨",
+      "note": "按计费吨填美元单价；若船公司按整箱报，把箱费折成吨单价即可。",
       "value": null
     },
     "insurance": {
-      "name": "保险费",
-      "name_en": "Insurance",
-      "mode": "insurance_of_cif",
-      "unit_hint": "费率（0.003 = 3‰）",
-      "note": "按 CIF 加成投保：保险费 = CIF × 投保加成(110%) × 费率。",
+      "name": "海运保险费",
+      "name_en": "Marine insurance",
+      "mode": "per_shipment",
+      "currency": "USD",
+      "unit_hint": "美元 / 整批",
+      "note": "按整批保险费填美元金额；CIF = CFR + 本项（按订单汇率折人民币后计入）。",
       "value": null
     },
     "destination_charges": {
       "name": "目的港费用及送货到门",
       "name_en": "Destination charges & delivery to door",
       "mode": "per_shipment",
-      "unit_hint": "元 / 整批",
+      "currency": "USD",
+      "unit_hint": "美元 / 整批",
       "note": "含目的港操作费、清关服务费与送货到门运费；不含进口关税与增值税（DAP 口径）。",
       "value": null
     },
@@ -2330,8 +2334,9 @@ export const MOCK_EXPORT_TERMS_TEMPLATE: ExportTermsTemplate = {
       "name": "进口关税及税费",
       "name_en": "Import duties & taxes",
       "mode": "per_shipment",
-      "unit_hint": "元 / 整批",
-      "note": "DDP 口径：按目的国实际关税 / 增值税填写（可让货代或清关行按 HS 编码与申报价值试算）。",
+      "currency": "USD",
+      "unit_hint": "美元 / 整批",
+      "note": "DDP 口径：按目的国实际关税 / 增值税填美元金额（可让货代或清关行按 HS 编码与申报价值试算）。",
       "value": null
     }
   },

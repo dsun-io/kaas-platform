@@ -859,6 +859,7 @@ def build(request: QuoteRequest, mode=DECIMAL) -> QuoteResult:
                         vat_mode=policy.output_vat_mode,
                         mode=mode,
                         price_inputs=request.price_inputs,
+                        fx_rate=fx,
                     )
                     for code, data in ladder.items():
                         entry = dict(data)

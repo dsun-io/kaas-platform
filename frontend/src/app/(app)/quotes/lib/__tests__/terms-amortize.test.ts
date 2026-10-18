@@ -9,13 +9,13 @@ function template(): ExportTermsTemplate {
     quote_as: "CIF",
     weight_field: "weight_per_piece_kg",
     items: {
-      inland_freight: { name: "内陆运费", name_en: "Inland Freight", mode: "per_shipment", unit_hint: "", note: "", value: null },
-      ocean_freight: { name: "海运费", name_en: "Ocean Freight", mode: "per_weight_ton", unit_hint: "", note: "", value: null },
-      insurance: { name: "保险", name_en: "Insurance", mode: "insurance_of_cif", unit_hint: "", note: "", value: null },
+      inland_freight: { name: "内陆运费", name_en: "Inland Freight", mode: "per_shipment", currency: "CNY", unit_hint: "", note: "", value: null },
+      ocean_freight: { name: "海运费", name_en: "Ocean Freight", mode: "per_weight_ton", currency: "CNY", unit_hint: "", note: "", value: null },
+      insurance: { name: "保险", name_en: "Insurance", mode: "insurance_of_cif", currency: "CNY", unit_hint: "", note: "", value: null },
       // DAP / DDP 两档新增的费用项：都是 per_shipment（整批一次），
       // 所以它们与内陆运费同属需要按件数分摊的一类。
-      destination_charges: { name: "目的港费用及送货到门", name_en: "Destination charges & delivery to door", mode: "per_shipment", unit_hint: "元 / 整批", note: "", value: null },
-      import_taxes: { name: "进口关税及税费", name_en: "Import duties & taxes", mode: "per_shipment", unit_hint: "元 / 整批", note: "", value: null },
+      destination_charges: { name: "目的港费用及送货到门", name_en: "Destination charges & delivery to door", mode: "per_shipment", currency: "CNY", unit_hint: "元 / 整批", note: "", value: null },
+      import_taxes: { name: "进口关税及税费", name_en: "Import duties & taxes", mode: "per_shipment", currency: "CNY", unit_hint: "元 / 整批", note: "", value: null },
     },
     ladder: [
       { code: "EXW", label: "出厂价", label_en: "Ex Works", items: [] },

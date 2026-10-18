@@ -22,11 +22,14 @@
 口径（与本项目既有的工厂内部报价表一致）
 ----------------------------------------
     EXW  出厂价，不含任何出口附加费
-    FOB  = EXW + 国内费用（本地费用）
-    CFR  = FOB + 海运费
-    CIF  = CFR + 保险费（按 CIF 加成投保）
-    DAP  = CIF + 目的港费用及送货到门（不含进口关税与增值税）
-    DDP  = DAP + 进口关税及税费（完税到门）
+    FOB  = EXW + 国内费用（本地费用，人民币）
+    CFR  = FOB + 海运费（美元/吨）
+    CIF  = CFR + 海运保险费（美元/整批）
+    DAP  = CIF + 目的港费用及送货到门（美元/整批，不含进口关税与增值税）
+    DDP  = DAP + 进口关税及税费（美元/整批，完税到门）
+
+币种（2026-10-18 用户口径）：除「国内费用」用人民币外，**国外费用一律美元**；
+引擎内部小计以人民币累加，美元费用按**本报价设置的汇率**（1 美元 = ? 人民币）折算后计入。
 
 DAP / DDP 是「目的地交货」的两档：DAP 只把货运到客户门口，进口环节的
 关税与增值税仍由买方承担；DDP 由卖方完税，所以比 DAP 多一项进口税费。
@@ -56,10 +59,12 @@ DEFAULT_EXPORT_TERMS: dict = {
         # 2026-10-18：国内三项（内陆运费/港杂费/报关费）合并为一项。
         # 原因（用户）：各货代名称不统一，且除这三项还有别的国内环节费用；
         # 拆成固定三项反而逼业务"对号入座"，合并成"国内费用（本地费用）"更贴合实际。
+        # **国内费用是唯一人民币口径**；下面所有国外费用一律美元。
         "domestic_charges": {
             "name": "国内费用（本地费用）",
             "name_en": "Domestic charges",
             "mode": "per_shipment",
+            "currency": "CNY",
             "unit_hint": "元 / 整批",
             "note": "含内陆运费、港杂费、报关费等所有国内环节费用；按货代实际报价整批填写。",
             "value": None,
@@ -68,23 +73,26 @@ DEFAULT_EXPORT_TERMS: dict = {
             "name": "海运费",
             "name_en": "Ocean freight",
             "mode": "per_weight_ton",
-            "unit_hint": "元 / 吨",
-            "note": "按计费吨填。若船公司按整箱报，把箱费折成吨单价即可。",
+            "currency": "USD",
+            "unit_hint": "美元 / 吨",
+            "note": "按计费吨填美元单价；若船公司按整箱报，把箱费折成吨单价即可。",
             "value": None,
         },
         "insurance": {
-            "name": "保险费",
-            "name_en": "Insurance",
-            "mode": "insurance_of_cif",
-            "unit_hint": "费率（0.003 = 3‰）",
-            "note": "按 CIF 加成投保：保险费 = CIF × 投保加成(110%) × 费率。",
+            "name": "海运保险费",
+            "name_en": "Marine insurance",
+            "mode": "per_shipment",
+            "currency": "USD",
+            "unit_hint": "美元 / 整批",
+            "note": "按整批保险费填美元金额；CIF = CFR + 本项（按订单汇率折人民币后计入）。",
             "value": None,
         },
         "destination_charges": {
             "name": "目的港费用及送货到门",
             "name_en": "Destination charges & delivery to door",
             "mode": "per_shipment",
-            "unit_hint": "元 / 整批",
+            "currency": "USD",
+            "unit_hint": "美元 / 整批",
             "note": (
                 "含目的港操作费、清关服务费与送货到门运费；"
                 "不含进口关税与增值税（DAP 口径）。"
@@ -95,9 +103,10 @@ DEFAULT_EXPORT_TERMS: dict = {
             "name": "进口关税及税费",
             "name_en": "Import duties & taxes",
             "mode": "per_shipment",
-            "unit_hint": "元 / 整批",
+            "currency": "USD",
+            "unit_hint": "美元 / 整批",
             "note": (
-                "DDP 口径：按目的国实际关税 / 增值税填写"
+                "DDP 口径：按目的国实际关税 / 增值税填**美元**金额"
                 "（可让货代或清关行按 HS 编码与申报价值试算）。"
             ),
             "value": None,
