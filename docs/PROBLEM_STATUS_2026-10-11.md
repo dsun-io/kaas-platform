@@ -41,6 +41,10 @@
 > 共享内核 `kaas_common` 进镜像/挂载，venv 放 `/opt/venv`）；`docker compose up -d` 即起
 > Postgres/Redis/MinIO/backend，前端 `pnpm dev` 直连 `localhost:8000`。
 > 术语：对外报价新增 **DAP（到门）** 与 **DDP（完税到门）**，选项显示 `代码 · 中文（English）`。
+> **侧边栏入口摘除（2026-10-18 用户要求）**：「产品定义管理」不再占侧边栏
+> （内容已在「产品」工位「定义」区块），契约 `workstations.ts` 与后端镜像
+> `domain/workstations.py` 同步改为 `status: 'hidden'`；条目保留以支撑旧路由
+> `/settings/tenant-products` 的深链跳转与面包屑。`contracts:check` R2 通过（26 工位）。
 
 > **（交接 · 2026-10-17 晚 · 会话收尾 → 下一位继续）**
 >
