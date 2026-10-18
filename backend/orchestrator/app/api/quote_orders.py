@@ -110,6 +110,11 @@ class QuoteOrderCreate(BaseModel):
     port_of_destination: Optional[str] = None
     shipping_marks: Optional[str] = None
     country_of_origin: Optional[str] = None
+    # 税务档案来源 + 当时实际税率（TAX-05）；档案不参与算价，仅记录/复现
+    tax_archive_id: Optional[int] = None
+    tax_archive_code: Optional[str] = None
+    tax_archive_name: Optional[str] = None
+    tax_snapshot: Optional[dict] = None
     items: List[QuoteItemIn] = []
     # ── 202610100003 订单/运输补字段 ──
     destination_country: Optional[str] = None
@@ -140,6 +145,11 @@ class QuoteOrderPatch(BaseModel):
     carrier: Optional[str] = None
     freight_valid_from: Optional[str] = None
     freight_valid_to: Optional[str] = None
+    # 税务档案来源 + 当时实际税率（可空；档案只记录来源，不覆盖实际税率）
+    tax_archive_id: Optional[int] = None
+    tax_archive_code: Optional[str] = None
+    tax_archive_name: Optional[str] = None
+    tax_snapshot: Optional[dict] = None
 
 
 class QuoteItemsReplace(BaseModel):
@@ -530,6 +540,10 @@ async def create_quote_order(
         country_of_origin=body.country_of_origin,
         freight_valid_from=_date_or_none(body.freight_valid_from),
         freight_valid_to=_date_or_none(body.freight_valid_to),
+        tax_archive_id=body.tax_archive_id,
+        tax_archive_code=body.tax_archive_code,
+        tax_archive_name=body.tax_archive_name,
+        tax_snapshot=body.tax_snapshot,
     )
     db.add(q)
     await db.flush()  # 取 q.id 挂行项
@@ -768,10 +782,14 @@ async def update_quote_order(
             q.customer_name = customer.name
     for field in ("customer_name", "notes", "incoterm", "payment_terms",
                   "port_of_loading", "port_of_destination", "shipping_marks",
-                  "country_of_origin"):
+                  "country_of_origin", "tax_archive_code", "tax_archive_name"):
         value = getattr(body, field)
         if value is not None:
             setattr(q, field, value)
+    if body.tax_archive_id is not None:
+        q.tax_archive_id = body.tax_archive_id
+    if body.tax_snapshot is not None:
+        q.tax_snapshot = body.tax_snapshot
     if body.valid_until is not None:
         q.valid_until = _parse_dt(body.valid_until)
     if body.freight_valid_from is not None:

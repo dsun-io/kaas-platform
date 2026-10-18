@@ -1499,6 +1499,11 @@ class _QuoteOrderCreate(BaseModel):
     # 海运费有效期（需求 7；报价单级）
     freight_valid_from: Optional[str] = None
     freight_valid_to: Optional[str] = None
+    # 税务档案来源 + 当时实际税率（TAX-05）
+    tax_archive_id: Optional[int] = None
+    tax_archive_code: Optional[str] = None
+    tax_archive_name: Optional[str] = None
+    tax_snapshot: Optional[dict] = None
     items: List[_QuoteItemIn] = []
 
 
@@ -1521,6 +1526,11 @@ class _QuoteOrderPatch(BaseModel):
     country_of_origin: Optional[str] = None
     freight_valid_from: Optional[str] = None
     freight_valid_to: Optional[str] = None
+    # 税务档案来源 + 当时实际税率（TAX-05）
+    tax_archive_id: Optional[int] = None
+    tax_archive_code: Optional[str] = None
+    tax_archive_name: Optional[str] = None
+    tax_snapshot: Optional[dict] = None
 
 
 class _QuoteItemsReplace(BaseModel):
@@ -1530,6 +1540,7 @@ class _QuoteItemsReplace(BaseModel):
 _QUOTE_TRADE_TERM_FIELDS = (
     "customer_name", "notes", "incoterm", "payment_terms",
     "port_of_loading", "port_of_destination", "shipping_marks", "country_of_origin",
+    "tax_archive_code", "tax_archive_name",
 )
 
 
@@ -1551,7 +1562,13 @@ def _parse_dt(value: Optional[str]):
 def _quote_json(row: dict, item_count: int = 0) -> dict:
     """报价单头 → 出参（与 dev `_row_to_quote` 共用共享内核序列化）。"""
     from kaas_common.workstation.quote_serializers import row_to_quote
-    return row_to_quote(dict(row), item_count)
+    d = dict(row)
+    if isinstance(d.get("tax_snapshot"), str):
+        try:
+            d["tax_snapshot"] = json.loads(d["tax_snapshot"])
+        except Exception:
+            d["tax_snapshot"] = None
+    return row_to_quote(d, item_count)
 
 
 def _quote_item_json(row, user: dict | None = None) -> dict:
@@ -2057,9 +2074,10 @@ async def create_quote_order(request: Request, body: _QuoteOrderCreate,
                         fx_rate, fx_rate_date, created_by, owner_id, owner_scope,
                         incoterm, payment_terms, port_of_loading, port_of_destination,
                         shipping_marks, country_of_origin, freight_valid_from, freight_valid_to,
+                        tax_archive_id, tax_archive_code, tax_archive_name, tax_snapshot,
                         team_id)
                    VALUES ($1,$2,$3,$4,$5,'draft',$6,$7,$8,$9,$10,$11,$12,$12,$13,
-                           $14,$15,$16,$17,$18,$19,$20,$21,$22)
+                           $14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25::jsonb,$26)
                    RETURNING *""",
                 tenant, quote_no, customer["id"],
                 # 客户名快照：显式传入优先，否则按客户档案取（开单当时的名字）
@@ -2071,6 +2089,8 @@ async def create_quote_order(request: Request, body: _QuoteOrderCreate,
                 body.port_of_destination, body.shipping_marks, body.country_of_origin,
                 _parse_dt(body.freight_valid_from).date() if body.freight_valid_from else None,
                 _parse_dt(body.freight_valid_to).date() if body.freight_valid_to else None,
+                body.tax_archive_id, body.tax_archive_code, body.tax_archive_name,
+                json.dumps(body.tax_snapshot) if body.tax_snapshot is not None else None,
                 # 单据与客户同团队（而不是"创建者的团队"）
                 customer.get("team_id"),
             )
@@ -2255,6 +2275,13 @@ async def update_quote_order(quote_id: int, request: Request, body: _QuoteOrderP
         if value is not None:
             params.append(value)
             sets.append(f"{field}=${len(params)}")
+
+    if body.tax_archive_id is not None:
+        params.append(body.tax_archive_id)
+        sets.append(f"tax_archive_id=${len(params)}")
+    if body.tax_snapshot is not None:
+        params.append(json.dumps(body.tax_snapshot))
+        sets.append(f"tax_snapshot=${len(params)}::jsonb")
 
     async with _db.acquire(request) as conn:
         async with conn.transaction():

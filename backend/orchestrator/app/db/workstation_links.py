@@ -40,6 +40,12 @@ class QuoteOrder(Base):
     # 报价生成时锁定汇率，用于本币折算与后续订单继承。
     fx_rate = Column(Numeric(20, 8), nullable=True)
     fx_rate_date = Column(Date, nullable=True)
+    # 税务档案快照（TAX-05）：选用档案 + 当时实际税率。
+    # 档案只负责“填表”，本单实际算价仍用请求里的显式税率；tax_snapshot 用于历史复现。
+    tax_archive_id = Column(BigInteger, nullable=True)
+    tax_archive_code = Column(Text, nullable=True)
+    tax_archive_name = Column(Text, nullable=True)
+    tax_snapshot = Column(JSONB, nullable=True)
     # 贸易条款（202609260001 加正列）：报价谈定的条款必须能被单证继承，
     # 否则信用证审单时单证与合同不一致 →「不符点」
     incoterm = Column(Text, nullable=True)

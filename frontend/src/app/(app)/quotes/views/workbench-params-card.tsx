@@ -30,13 +30,8 @@ import { termOptionLabel } from "../../quotations/v2-quote/components/freight-pa
 import { requiredFeeKeysFor } from "../lib/terms-amortize";
 import type {
   ExportTermsTemplate,
-  QuoteProfile,
+  TaxArchive,
 } from "@contracts/export-quote";
-
-interface RateSetOption {
-  code: string;
-  name?: string | null;
-}
 
 const CURRENCIES = ["USD", "EUR", "GBP", "AUD", "CAD", "JPY", "CNY"] as const;
 
@@ -57,19 +52,12 @@ export interface WorkbenchParamsCardProps {
   /** 报价页直接新建询盘（不存在时自动给该客户创建） */
   onCreateInquiry?: () => void;
   creatingInquiry?: boolean;
-  taxPick: string;
-  setTaxPick: (v: string) => void;
-  profiles: QuoteProfile[];
-  rateSets: { data?: { rate_sets?: RateSetOption[] } };
-  profileName: string;
-  setProfileName: (v: string) => void;
-  onSaveProfile: () => void;
-  onDeleteProfile: (p: QuoteProfile) => void;
-  saveProfile: { isPending: boolean };
-  firstProductKey: string;
-  applyProfile: (p: QuoteProfile) => void;
-  clearProfileTax: () => void;
-  setRateSetCode: (v: string) => void;
+  /** 团队税务档案（TAX-00 新口径：单下拉，选中后自动填税率） */
+  taxArchives?: TaxArchive[];
+  taxArchiveId: string;
+  setTaxArchiveId: (v: string) => void;
+  applyTaxArchive: (a: TaxArchive) => void;
+  clearTaxArchive: () => void;
   inputVatRatePct: string;
   setInputVatRatePct: (v: string) => void;
   giveRatioPct: string;
@@ -117,19 +105,11 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
     inquiries = [],
     onCreateInquiry,
     creatingInquiry = false,
-    taxPick,
-    setTaxPick,
-    profiles,
-    rateSets,
-    profileName,
-    setProfileName,
-    onSaveProfile,
-    onDeleteProfile,
-    saveProfile,
-    firstProductKey,
-    applyProfile,
-    clearProfileTax,
-    setRateSetCode,
+    taxArchives = [],
+    taxArchiveId,
+    setTaxArchiveId,
+    applyTaxArchive,
+    clearTaxArchive,
     inputVatRatePct,
     setInputVatRatePct,
     giveRatioPct,
@@ -167,6 +147,21 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
     ? requiredFeeKeysFor(termsTemplate, quoteAs)
     : [];
   const showFreightValidity = feeKeys.includes("ocean_freight");
+
+  const selectedArchive = taxArchives.find(
+    (a) => String(a.id) === taxArchiveId,
+  );
+  const samePct = (input: string, rate: number | undefined) =>
+    rate == null ? input.trim() === "" : Number(input) === Number(rate * 100);
+  const archiveModified = Boolean(
+    selectedArchive &&
+      !(
+        samePct(inputVatRatePct, selectedArchive.tax_values.input_vat_rate) &&
+        samePct(outputVatRatePct, selectedArchive.tax_values.output_vat_rate) &&
+        samePct(rebateRatePct, selectedArchive.tax_values.rebate_rate) &&
+        samePct(miscTaxPct, selectedArchive.tax_values.misc_fee_rate)
+      ),
+  );
 
   return (
     <Card>
@@ -236,70 +231,49 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
           <div className="space-y-1.5">
             <Label className="text-xs">税务档案</Label>
             <select
-              value={taxPick}
+              value={taxArchiveId}
               onChange={(e) => {
                 const v = e.target.value;
-                setTaxPick(v);
-                if (v.startsWith("profile:")) {
-                  const p = profiles.find((x) => `profile:${x.id}` === v);
-                  if (p) applyProfile(p);
-                  return;
-                }
-                setRateSetCode(
-                  v.startsWith("rate:") ? v.slice("rate:".length) : "",
-                );
-                clearProfileTax();
+                setTaxArchiveId(v);
+                const archive = taxArchives.find((a) => String(a.id) === v);
+                if (archive) applyTaxArchive(archive);
+                else clearTaxArchive();
               }}
               className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <option value="">（未指定，按报价当期生效的一份）</option>
-              {profiles.length > 0 && (
-                <optgroup label="客户税率档案">
-                  {profiles.map((p) => (
-                    <option key={`profile:${p.id}`} value={`profile:${p.id}`}>
-                      {p.profile_name}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              <optgroup label="法定税务档案">
-                {(rateSets.data?.rate_sets ?? []).map((r) => (
-                  <option key={`rate:${r.code}`} value={`rate:${r.code}`}>
-                    {r.name || r.code}
-                  </option>
-                ))}
-              </optgroup>
+              <option value="">自定义（不套用档案）</option>
+              {taxArchives.map((a) => (
+                <option key={a.id} value={String(a.id)}>
+                  {a.name}
+                  {a.code ? `（${a.code}）` : ""}
+                </option>
+              ))}
             </select>
-            <div className="flex items-center gap-1.5">
-              <Input
-                value={profileName}
-                onChange={(e) => setProfileName(e.target.value)}
-                placeholder="档案名（存为常用税率）"
-                className="h-7 text-[11px]"
-                maxLength={60}
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-7 shrink-0 text-xs"
-                disabled={saveProfile.isPending || !firstProductKey}
-                onClick={onSaveProfile}
-              >
-                存为档案
-              </Button>
-              {taxPick.startsWith("profile:") && (
+            <div className="flex items-center gap-2 text-[11px]">
+              {selectedArchive ? (
+                <span
+                  className={
+                    archiveModified
+                      ? "text-amber-700"
+                      : "text-muted-foreground"
+                  }
+                >
+                  {archiveModified
+                    ? "本单已修改（档案本身未变）"
+                    : `已套用：${selectedArchive.name}`}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">
+                  未选择档案，税率按当前填写的值
+                </span>
+              )}
+              {archiveModified && selectedArchive && (
                 <button
                   type="button"
-                  className="shrink-0 text-[11px] text-muted-foreground underline"
-                  onClick={() => {
-                    const p = profiles.find(
-                      (x) => `profile:${x.id}` === taxPick,
-                    );
-                    if (p) onDeleteProfile(p);
-                  }}
+                  className="underline"
+                  onClick={() => applyTaxArchive(selectedArchive)}
                 >
-                  移除
+                  恢复档案值
                 </button>
               )}
             </div>

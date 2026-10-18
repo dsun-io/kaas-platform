@@ -90,6 +90,11 @@ export const QuoteOrderCreateSchema = TradeTermsSchema.extend({
   valid_until: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
   owner_scope: z.enum(['private', 'tenant']).default('private'),
+  // 税务档案来源 + 当时实际税率（TAX-05）；档案只记录来源，不覆盖实际税率
+  tax_archive_id: z.number().int().nullable().optional(),
+  tax_archive_code: z.string().nullable().optional(),
+  tax_archive_name: z.string().nullable().optional(),
+  tax_snapshot: z.record(z.string(), z.unknown()).nullable().optional(),
   items: z.array(QuoteOrderItemInSchema).default([]),
 });
 export type QuoteOrderCreate = z.infer<typeof QuoteOrderCreateSchema>;
@@ -98,6 +103,11 @@ export type QuoteOrderCreate = z.infer<typeof QuoteOrderCreateSchema>;
 export const QuoteOrderPatchSchema = TradeTermsSchema.extend({
   /** 报价单号：仅在下游单证/订单生成前可改（后端 409 锁定） */
   quote_no: z.string().optional(),
+  // 税务档案来源 + 当时实际税率（TAX-05）
+  tax_archive_id: z.number().int().nullable().optional(),
+  tax_archive_code: z.string().nullable().optional(),
+  tax_archive_name: z.string().nullable().optional(),
+  tax_snapshot: z.record(z.string(), z.unknown()).nullable().optional(),
   // 允许改客户：报价单挂错客户要能纠正。
   // 后端契约：客户必须存在、未删除、且属于本团队（否则 404 CUSTOMER_NOT_FOUND）；
   // 改客户时应同时回填 customer_name 快照（单据显示的是开单当时的客户名）。
@@ -135,6 +145,11 @@ export const QuoteOrderSchema = TradeTermsSchema.extend({
   notes: z.string().nullable().default(null),
   fx_rate: z.number().nullable().default(null),
   fx_rate_date: z.string().nullable().default(null),
+  // 税务档案来源 + 当时实际税率快照（TAX-05）
+  tax_archive_id: z.number().int().nullable().default(null),
+  tax_archive_code: z.string().nullable().default(null),
+  tax_archive_name: z.string().nullable().default(null),
+  tax_snapshot: z.record(z.string(), z.unknown()).nullable().default(null),
   created_at: z.string().nullable().default(null),
   /** 报价人（用户 id 字符串）：历史报价「谁给的报价」维度 */
   created_by: z.string().nullable().default(null),

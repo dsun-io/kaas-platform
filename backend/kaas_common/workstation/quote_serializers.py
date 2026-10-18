@@ -21,6 +21,11 @@ def row_to_quote(q: Any, item_count: int = 0) -> dict:
         "notes": g("notes"),
         "fx_rate": _float(g("fx_rate")),
         "fx_rate_date": _iso(g("fx_rate_date")),
+        # 税务档案来源 + 当时实际税率快照（TAX-05）
+        "tax_archive_id": g("tax_archive_id"),
+        "tax_archive_code": g("tax_archive_code"),
+        "tax_archive_name": g("tax_archive_name"),
+        "tax_snapshot": g("tax_snapshot"),
         "created_at": _iso(g("created_at")),
         # 报价人（用户 id 字符串）：历史报价「谁给的报价」维度（UNCERTAIN #19）
         "created_by": g("created_by"),

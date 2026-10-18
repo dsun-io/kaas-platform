@@ -273,6 +273,60 @@ export const ExportRateSetListSchema = z.object({
 });
 
 /**
+ * 税务档案（TAX-00 新口径）—— 团队级税率档案。
+ *
+ * 与旧 `QuoteProfileTax`/`ExportRateSet` 的区别：
+ *   · 团队级（tenant + team），不再是“客户 + 产品”粒度；
+ *   · 只存四税率：进项票税点 / 销项税率 / 出口退税率 / 杂税；
+ *     印花税已含在杂税（综合税费系数）里，不再单列；
+ *   · 档案只负责在报价页“填表”，不参与后端算价；
+ *   · 版本/生效日期只展示排序，不做报价日期门禁。
+ */
+export const TaxArchiveTaxSchema = z.object({
+  input_vat_rate: z.number().optional(),
+  output_vat_rate: z.number().optional(),
+  rebate_rate: z.number().optional(),
+  /** 综合税费系数（含印花税） */
+  misc_fee_rate: z.number().optional(),
+});
+export type TaxArchiveTax = z.infer<typeof TaxArchiveTaxSchema>;
+
+export const TaxArchiveSchema = z.object({
+  id: z.number().int(),
+  code: z.string().nullable().default(null),
+  name: z.string(),
+  effective_from: z.string().nullable().default(null),
+  effective_to: z.string().nullable().default(null),
+  tax_values: TaxArchiveTaxSchema.default({}),
+  source: z.string().nullable().default(null),
+  status: z.enum(['active', 'inactive']).default('active'),
+  created_at: z.string().nullable().default(null),
+  updated_at: z.string().nullable().default(null),
+});
+export type TaxArchive = z.infer<typeof TaxArchiveSchema>;
+
+export const TaxArchiveListSchema = z.object({
+  items: z.array(TaxArchiveSchema).default([]),
+  total: z.number().int().default(0),
+});
+export type TaxArchiveList = z.infer<typeof TaxArchiveListSchema>;
+
+export const TaxArchiveCreateSchema = z.object({
+  name: z.string().min(1, '请填写档案名称').max(60),
+  code: z.string().max(40).optional().nullable(),
+  effective_from: z.string().optional().nullable(),
+  effective_to: z.string().optional().nullable(),
+  tax_values: TaxArchiveTaxSchema,
+  source: z.string().optional().nullable(),
+});
+export type TaxArchiveCreate = z.infer<typeof TaxArchiveCreateSchema>;
+
+export const TaxArchivePatchSchema = TaxArchiveCreateSchema.partial().extend({
+  status: z.enum(['active', 'inactive']).optional(),
+});
+export type TaxArchivePatch = z.infer<typeof TaxArchivePatchSchema>;
+
+/**
  * 客户税率档案 —— 「这个客户填过的那套税率，下次一键套用」。
  *
  * 与 `ExportRateSet` 的区别（两者在界面上是同一个下拉里的两层）：

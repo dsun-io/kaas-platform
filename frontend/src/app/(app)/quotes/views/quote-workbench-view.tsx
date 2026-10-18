@@ -42,19 +42,13 @@ import { useLatestFxRate } from "@/lib/fx/use-latest-fx";
 import { cn } from "@/lib/utils";
 import { getAvailableTemplates } from "@/lib/trade-doc/render";
 import { useCustomerName } from "@/lib/workstation/use-upstream";
-import type { QuoteProfile } from "@contracts/export-quote";
+import type { TaxArchive } from "@contracts/export-quote";
 
 import {
   useExportProducts,
-  useExportRateSets,
   useExportTermsTemplate,
 } from "../../quotations/v2-quote/hooks/use-export-quote-import";
 import type { QuoteView } from "../../quotations/v2-quote/hooks/use-export-quote-calc";
-import {
-  useDeleteQuoteProfile,
-  useQuoteProfiles,
-  useSaveQuoteProfile,
-} from "../../quotations/v2-quote/hooks/use-quote-profiles";
 import { WorkbenchParamsCard } from "./workbench-params-card";
 import {
   QuoteLineCard,
@@ -156,7 +150,8 @@ export function QuoteWorkbenchView() {
       });
     },
   });
-  const [rateSetCode, setRateSetCode] = useState("");
+  // 旧“法定税务档案”字段保留在算价请求里（历史兼容），新 UI 只选团队税务档案
+  const rateSetCode = "";
   const [inputVatRatePct, setInputVatRatePct] = useState(
     POLICY_DEFAULTS.inputVatRatePct,
   );
@@ -202,7 +197,6 @@ export function QuoteWorkbenchView() {
   const [docPick, setDocPick] = useState<string[]>(DEFAULT_DOC_PICK);
   const [generating, setGenerating] = useState(false);
 
-  const rateSets = useExportRateSets();
   const termsQuery = useExportTermsTemplate();
   // 汇率：后端按需刷新（>6h 拉公开源；失败降级缓存）。
   // 方向 = 1 报价币 = ? CNY；切币种后必须重新取对应币种的汇率。
@@ -329,101 +323,64 @@ export function QuoteWorkbenchView() {
     [lines],
   );
 
-  // ── 客户税率档案（按「客户 + 产品」存，因此以第 1 行产品为准）──────────────
-  const firstProductKey =
-    lines[0]?.productKey || lines[0]?.result?.meta.product_key || "";
-  const profilesQuery = useQuoteProfiles(firstProductKey || null);
-  const saveProfile = useSaveQuoteProfile(firstProductKey);
-  const deleteProfile = useDeleteQuoteProfile(firstProductKey);
-  const profiles = profilesQuery.data?.profiles ?? [];
-  const [taxPick, setTaxPick] = useState("");
-  const [profileName, setProfileName] = useState("");
+  // ── 团队税务档案（TAX-00：单下拉，选中自动填四税率）─────────────────────
+  const taxArchivesQuery = useQuery({
+    queryKey: ["tax-archives"],
+    queryFn: async () => {
+      const { data } = await apiClient.get<{ items: TaxArchive[] }>(
+        "/tax-archives",
+      );
+      return data.items;
+    },
+  });
+  const taxArchives = taxArchivesQuery.data ?? [];
+  const [taxArchiveId, setTaxArchiveId] = useState("");
+  const [taxArchiveTouched, setTaxArchiveTouched] = useState(false);
 
   const pctToRate = (text: string): number | undefined =>
     text === "" ? undefined : (Number(text) || 0) / 100;
   const rateToPct = (rate: number | undefined, fallback: string): string =>
     rate === undefined ? fallback : String(Math.round(rate * 100 * 1e6) / 1e6);
 
-  const applyProfile = (p: QuoteProfile) => {
-    const t = p.tax_overrides ?? {};
-    setRateSetCode(p.rate_set_code);
+  const applyTaxArchive = (a: TaxArchive) => {
+    setTaxArchiveTouched(true);
+    setTaxArchiveId(String(a.id));
     setInputVatRatePct(
-      rateToPct(t.input_vat_rate, POLICY_DEFAULTS.inputVatRatePct),
+      rateToPct(a.tax_values.input_vat_rate, POLICY_DEFAULTS.inputVatRatePct),
     );
     setOutputVatRatePct(
-      rateToPct(t.output_vat_rate, POLICY_DEFAULTS.outputVatRatePct),
+      rateToPct(a.tax_values.output_vat_rate, POLICY_DEFAULTS.outputVatRatePct),
     );
-    setRebateRatePct(rateToPct(t.rebate_rate, POLICY_DEFAULTS.rebateRatePct));
+    setRebateRatePct(
+      rateToPct(a.tax_values.rebate_rate, POLICY_DEFAULTS.rebateRatePct),
+    );
     setMiscTaxPct(
-      rateToPct(t.misc_fee_rate, POLICY_DEFAULTS.miscTaxPct),
+      rateToPct(a.tax_values.misc_fee_rate, POLICY_DEFAULTS.miscTaxPct),
     );
   };
 
-  const clearProfileTax = () => {
+  const clearTaxArchive = () => {
+    setTaxArchiveTouched(true);
+    setTaxArchiveId("");
     setInputVatRatePct(POLICY_DEFAULTS.inputVatRatePct);
     setOutputVatRatePct(POLICY_DEFAULTS.outputVatRatePct);
     setRebateRatePct(POLICY_DEFAULTS.rebateRatePct);
     setMiscTaxPct(POLICY_DEFAULTS.miscTaxPct);
   };
 
-  const onSaveProfile = async () => {
-    if (!profileName.trim() || !rateSetCode) {
-      setNotice({ tone: "error", text: "请先填写档案名称并选定法定税务档案" });
-      return;
-    }
-    try {
-      const t = {
-        ...(pctToRate(inputVatRatePct) !== undefined
-          ? { input_vat_rate: pctToRate(inputVatRatePct) }
-          : {}),
-        ...(pctToRate(outputVatRatePct) !== undefined
-          ? { output_vat_rate: pctToRate(outputVatRatePct) }
-          : {}),
-        ...(pctToRate(rebateRatePct) !== undefined
-          ? { rebate_rate: pctToRate(rebateRatePct) }
-          : {}),
-        ...(pctToRate(miscTaxPct) !== undefined
-          ? { misc_fee_rate: pctToRate(miscTaxPct) }
-          : {}),
-      };
-      const created = await saveProfile.mutateAsync({
-        product_key: firstProductKey,
-        profile_name: profileName.trim(),
-        rate_set_code: rateSetCode,
-        tax_overrides: t,
-      });
-      setProfileName("");
-      setTaxPick(`profile:${created.id}`);
-      setNotice({
-        tone: "info",
-        text: `已保存档案「${created.profile_name}」（按客户 + 第 1 行产品存）`,
-      });
-    } catch (err) {
-      setNotice({
-        tone: "error",
-        text: handleApiError(err as Parameters<typeof handleApiError>[0]),
-      });
-    }
-  };
-
-  const onDeleteProfile = async (p: QuoteProfile) => {
-    try {
-      await deleteProfile.mutateAsync(p.id);
-      setTaxPick("");
-      clearProfileTax();
-      setNotice({
-        tone: "info",
-        text: `已移除档案「${p.profile_name}」（历史报价不受影响）`,
-      });
-    } catch (err) {
-      setNotice({
-        tone: "error",
-        text: handleApiError(err as Parameters<typeof handleApiError>[0]),
-      });
-    }
-  };
+  // 有档案时默认选最新一份并自动填税率；用户手动选“自定义”后不再强行套用
+  useEffect(() => {
+    if (taxArchiveTouched || taxArchiveId || taxArchives.length === 0) return;
+    const first = taxArchives[0];
+    if (!first) return;
+    applyTaxArchive(first);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taxArchives, taxArchiveTouched, taxArchiveId]);
 
   // ── 保存 / 签发 / 生成单证 ────────────────────────────────────────────────
+  const selectedTaxArchive = taxArchives.find(
+    (a) => String(a.id) === taxArchiveId,
+  );
   const headerPatch = () => ({
     customer_name: customerName || null,
     currency: quoteCurrency,
@@ -432,6 +389,16 @@ export function QuoteWorkbenchView() {
     incoterm: effectiveQuoteAs,
     freight_valid_from: freightFrom || null,
     freight_valid_to: freightTo || null,
+    // 税务档案只记录来源；实际税率仍是下面快照里的显式值
+    tax_archive_id: selectedTaxArchive?.id ?? null,
+    tax_archive_code: selectedTaxArchive?.code ?? null,
+    tax_archive_name: selectedTaxArchive?.name ?? null,
+    tax_snapshot: {
+      input_vat_rate: pctToRate(inputVatRatePct),
+      output_vat_rate: pctToRate(outputVatRatePct),
+      rebate_rate: pctToRate(rebateRatePct),
+      misc_fee_rate: pctToRate(miscTaxPct),
+    },
   });
 
   function validUntil(): string | null {
@@ -647,19 +614,11 @@ export function QuoteWorkbenchView() {
         inquiries={inquiries}
         onCreateInquiry={() => createInquiry.mutate()}
         creatingInquiry={createInquiry.isPending}
-        taxPick={taxPick}
-        setTaxPick={setTaxPick}
-        profiles={profiles}
-        rateSets={rateSets}
-        profileName={profileName}
-        setProfileName={setProfileName}
-        onSaveProfile={onSaveProfile}
-        onDeleteProfile={onDeleteProfile}
-        saveProfile={saveProfile}
-        firstProductKey={firstProductKey}
-        applyProfile={applyProfile}
-        clearProfileTax={clearProfileTax}
-        setRateSetCode={setRateSetCode}
+        taxArchives={taxArchives}
+        taxArchiveId={taxArchiveId}
+        setTaxArchiveId={setTaxArchiveId}
+        applyTaxArchive={applyTaxArchive}
+        clearTaxArchive={clearTaxArchive}
         inputVatRatePct={inputVatRatePct}
         setInputVatRatePct={setInputVatRatePct}
         giveRatioPct={giveRatioPct}

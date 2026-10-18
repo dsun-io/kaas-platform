@@ -1,0 +1,305 @@
+"""税务档案 CRUD（Worker 对等 TAX-03）。
+
+与 orchestrator `app/api/tax_archives.py` 同路径、同字段、同状态码：
+  GET    /api/v1/tax-archives
+  POST   /api/v1/tax-archives
+  PATCH  /api/v1/tax-archives/{id}
+  DELETE /api/v1/tax-archives/{id}   （软删 = status inactive）
+
+只做档案维护；档案不参与算价。
+"""
+from __future__ import annotations
+
+import json
+from datetime import date, datetime
+from typing import Optional
+
+from fastapi import Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field
+
+from main import (  # noqa: E402
+    DEFAULT_TENANT,
+    _get_current_user,
+    _require_team_admin,
+    app,
+    db,
+)
+
+TAX_KEYS = ("input_vat_rate", "output_vat_rate", "rebate_rate", "misc_fee_rate")
+
+
+class TaxValuesIn(BaseModel):
+    input_vat_rate: Optional[float] = None
+    output_vat_rate: Optional[float] = None
+    rebate_rate: Optional[float] = None
+    misc_fee_rate: Optional[float] = None
+
+
+class TaxArchiveCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    code: Optional[str] = Field(default=None, max_length=40)
+    effective_from: Optional[str] = None
+    effective_to: Optional[str] = None
+    tax_values: TaxValuesIn
+    source: Optional[str] = None
+
+
+class TaxArchivePatch(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=60)
+    code: Optional[str] = Field(default=None, max_length=40)
+    effective_from: Optional[str] = None
+    effective_to: Optional[str] = None
+    tax_values: Optional[TaxValuesIn] = None
+    source: Optional[str] = None
+    status: Optional[str] = None
+
+
+def _parse_date(value: Optional[str]) -> Optional[date]:
+    if value in (None, ""):
+        return None
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "INVALID_DATE",
+            "detail": f"日期格式不合法：{value}（应为 YYYY-MM-DD）",
+        })
+
+
+def _clean_tax_values(raw: Optional[TaxValuesIn]) -> dict:
+    if raw is None:
+        return {}
+    values: dict = {}
+    for key in TAX_KEYS:
+        value = getattr(raw, key)
+        if value is None:
+            continue
+        number = float(value)
+        if not (0 <= number <= 1):
+            raise HTTPException(status_code=422, detail={
+                "error": "validation", "code": "INVALID_TAX_RATE",
+                "detail": f"{key} 必须在 0~1 之间（10% 请填 0.1）",
+            })
+        values[key] = number
+    if not values:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "TAX_VALUES_REQUIRED",
+            "detail": "至少填写一个税率项",
+        })
+    return values
+
+
+def _row_out(row) -> dict:
+    d = dict(row)
+    if isinstance(d.get("tax_values"), str):
+        try:
+            d["tax_values"] = json.loads(d["tax_values"])
+        except Exception:
+            d["tax_values"] = {}
+    for key in ("effective_from", "effective_to", "created_at", "updated_at"):
+        if d.get(key) is not None and hasattr(d[key], "isoformat"):
+            d[key] = d[key].isoformat()
+    return {
+        "id": d["id"], "code": d.get("code"), "name": d["name"],
+        "effective_from": d.get("effective_from"),
+        "effective_to": d.get("effective_to"),
+        "tax_values": d.get("tax_values") or {},
+        "source": d.get("source"), "status": d.get("status"),
+        "created_at": d.get("created_at"), "updated_at": d.get("updated_at"),
+    }
+
+
+async def _team_id(request: Request, user: dict, write: bool) -> Optional[int]:
+    ticket_team = user.get("team_id")
+    if write:
+        if ticket_team is None:
+            raise HTTPException(status_code=403, detail={
+                "error": "forbidden", "code": "TEAM_REQUIRED",
+                "detail": "税务档案是团队级资源，当前账号没有团队",
+            })
+        await _require_team_admin(request, user)
+        return ticket_team
+    return ticket_team
+
+
+def _where(user: dict, include_inactive: bool) -> tuple[str, list]:
+    where = ["tenant_id = $1"]
+    params: list = [DEFAULT_TENANT]
+    team_id = user.get("team_id")
+    if team_id is not None:
+        params.append(team_id)
+        where.append(f"team_id = ${len(params)}")
+    from kaas_common.workstation.scope import is_admin_role
+    if not include_inactive or not is_admin_role(user.get("role")):
+        where.append("status = 'active'")
+    return " AND ".join(where), params
+
+
+async def _archive_or_404(request: Request, user: dict, archive_id: int):
+    team_id = user.get("team_id")
+    sql = "SELECT * FROM tax_archives WHERE tenant_id=$1 AND id=$2"
+    params: list = [DEFAULT_TENANT, archive_id]
+    if team_id is not None:
+        params.append(team_id)
+        sql += f" AND team_id = ${len(params)}"
+    row = await db.fetchrow(request, sql, *params, table="tax_archives")
+    if row is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "TAX_ARCHIVE_NOT_FOUND",
+        })
+    return row
+
+
+async def _check_unique(request: Request, team_id: int, name: Optional[str],
+                        code: Optional[str], exclude_id: Optional[int] = None):
+    for column, value, label, error_code in (
+        ("name", name, "名称", "NAME_TAKEN"),
+        ("code", code, "编码", "CODE_TAKEN"),
+    ):
+        if value in (None, ""):
+            continue
+        params: list = [DEFAULT_TENANT, team_id, value]
+        sql = ("SELECT 1 FROM tax_archives WHERE tenant_id=$1"
+               f" AND team_id=$2 AND {column}=$3")
+        if exclude_id is not None:
+            params.append(exclude_id)
+            sql += f" AND id<>${len(params)}"
+        exists = await db.fetchval(request, sql + " LIMIT 1", *params)
+        if exists:
+            raise HTTPException(status_code=409, detail={
+                "error": "conflict", "code": error_code,
+                "detail": f"税务档案{label}「{value}」在本团队已存在",
+            })
+
+
+async def _next_code(request: Request, team_id: int) -> str:
+    base = f"TAX-{datetime.now().strftime('%Y%m%d')}"
+    for i in range(1, 100):
+        candidate = f"{base}-{i}"
+        exists = await db.fetchval(
+            request,
+            "SELECT 1 FROM tax_archives WHERE tenant_id=$1 AND team_id=$2"
+            " AND code=$3 LIMIT 1",
+            DEFAULT_TENANT, team_id, candidate,
+        )
+        if not exists:
+            return candidate
+    raise HTTPException(status_code=409, detail={
+        "error": "conflict", "code": "CODE_GENERATION_FAILED",
+        "detail": "自动生成档案编码失败，请手动填写编码",
+    })
+
+
+@app.get("/api/v1/tax-archives")
+async def list_tax_archives(
+    request: Request,
+    include_inactive: bool = Query(False),
+    user: dict = Depends(_get_current_user),
+):
+    where, params = _where(user, include_inactive)
+    rows = await db.fetch(
+        request,
+        f"SELECT * FROM tax_archives WHERE {where}"
+        " ORDER BY effective_from DESC NULLS LAST, updated_at DESC",
+        *params, table="tax_archives",
+    )
+    return {"items": [_row_out(r) for r in rows], "total": len(rows)}
+
+
+@app.post("/api/v1/tax-archives", status_code=201)
+async def create_tax_archive(
+    request: Request,
+    body: TaxArchiveCreate,
+    user: dict = Depends(_get_current_user),
+):
+    team_id = await _team_id(request, user, write=True)
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "NAME_REQUIRED", "detail": "档案名称不能为空",
+        })
+    values = _clean_tax_values(body.tax_values)
+    code = (body.code or "").strip() or await _next_code(request, team_id)
+    await _check_unique(request, team_id, name, code)
+    row = await db.fetchrow(
+        request,
+        """INSERT INTO tax_archives
+               (tenant_id, team_id, code, name, effective_from, effective_to,
+                tax_values, source, status, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,'active',$9)
+           RETURNING *""",
+        DEFAULT_TENANT, team_id, code, name,
+        _parse_date(body.effective_from), _parse_date(body.effective_to),
+        json.dumps(values), body.source, str(user["id"]),
+        table="tax_archives",
+    )
+    return _row_out(row)
+
+
+@app.patch("/api/v1/tax-archives/{archive_id}")
+async def update_tax_archive(
+    archive_id: int,
+    request: Request,
+    body: TaxArchivePatch,
+    user: dict = Depends(_get_current_user),
+):
+    team_id = await _team_id(request, user, write=True)
+    row = await _archive_or_404(request, user, archive_id)
+    if row.get("team_id") != team_id:
+        raise HTTPException(status_code=403, detail={
+            "error": "forbidden", "code": "TEAM_ADMIN_REQUIRED",
+            "detail": "不能修改其他团队的税务档案",
+        })
+    name = body.name.strip() if body.name is not None else row["name"]
+    if not name:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "NAME_REQUIRED", "detail": "档案名称不能为空",
+        })
+    code = (body.code.strip() or None) if body.code is not None else row.get("code")
+    values = (_clean_tax_values(body.tax_values) if body.tax_values is not None
+              else (row.get("tax_values") or {}))
+    effective_from = (_parse_date(body.effective_from)
+                      if body.effective_from is not None else row.get("effective_from"))
+    effective_to = (_parse_date(body.effective_to)
+                    if body.effective_to is not None else row.get("effective_to"))
+    source = body.source if body.source is not None else row.get("source")
+    status = body.status if body.status is not None else row.get("status")
+    if status not in ("active", "inactive"):
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "INVALID_STATUS",
+            "detail": "status 只能是 active / inactive",
+        })
+    await _check_unique(request, team_id, name, code, exclude_id=archive_id)
+    row = await db.fetchrow(
+        request,
+        """UPDATE tax_archives SET name=$3, code=$4, effective_from=$5,
+               effective_to=$6, tax_values=$7::jsonb, source=$8, status=$9,
+               updated_at=now()
+           WHERE tenant_id=$1 AND id=$2 RETURNING *""",
+        DEFAULT_TENANT, archive_id, name, code, effective_from,
+        effective_to, json.dumps(values), source, status,
+        table="tax_archives",
+    )
+    return _row_out(row)
+
+
+@app.delete("/api/v1/tax-archives/{archive_id}")
+async def delete_tax_archive(
+    archive_id: int,
+    request: Request,
+    user: dict = Depends(_get_current_user),
+):
+    team_id = await _team_id(request, user, write=True)
+    row = await _archive_or_404(request, user, archive_id)
+    if row.get("team_id") != team_id:
+        raise HTTPException(status_code=403, detail={
+            "error": "forbidden", "code": "TEAM_ADMIN_REQUIRED",
+            "detail": "不能停用其他团队的税务档案",
+        })
+    await db.execute(
+        request,
+        "UPDATE tax_archives SET status='inactive', updated_at=now()"
+        " WHERE tenant_id=$1 AND id=$2",
+        DEFAULT_TENANT, archive_id,
+    )
+    return {"id": archive_id, "status": "inactive"}
