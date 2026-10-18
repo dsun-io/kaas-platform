@@ -308,6 +308,10 @@ export const WORKSTATIONS: readonly Workstation[] = [
     subscription: null,
   },
   {
+    // 2026-10-18 用户要求：侧边栏移除「产品定义管理」入口（没用）。
+    // 内容早已搬进「产品」工位的「定义」区块（/products?tab=definitions），这里只是重复入口；
+    // 页面保留（旧路由 /settings/tenant-products 仅做深链跳转），
+    // 因此 status 用 hidden 而不是删条目 —— workstationByRoute 仍能按路由解析到它。
     key: 'tenant-products',
     name: '产品定义管理',
     route: '/settings/tenant-products',
@@ -315,7 +319,7 @@ export const WORKSTATIONS: readonly Workstation[] = [
     order: 21,
     icon: 'Package',
     adminOnly: true,
-    status: 'active', // 租户级产品配置化（权限矩阵未完成，见 docs/PRODUCT_CONFIG_TENANT_UNFINISHED.md）
+    status: 'hidden',
     subscription: null,
   },
 

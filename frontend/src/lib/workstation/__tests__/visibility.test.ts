@@ -60,6 +60,20 @@ describe("工位清单（契约派生）", () => {
     expect(isSubscribableWorkstation("quotes")).toBe(true);
   });
 
+  it("产品定义管理不再占侧边栏，但页面仍在（旧深链可解析）", () => {
+    // 2026-10-18 用户要求移除侧边栏入口：内容已在「产品」工位「定义」区块，
+    // 这里只摘入口，不删条目 —— 否则 /settings/tenant-products 的 redirect 页
+    // 会失去面包屑/标题，旧深链也就没人认领了。
+    const keys = visibleNavGroups()
+      .flatMap((g) => g.items)
+      .map((w) => w.key);
+    expect(keys).not.toContain("tenant-products");
+
+    const ws = workstationByRoute("/settings/tenant-products");
+    expect(ws?.key).toBe("tenant-products");
+    expect(ws?.status).toBe("hidden");
+  });
+
   it("workstationName 与契约一致，未知 key 原样返回", () => {
     expect(workstationName("quotes")).toBe("报价");
     expect(workstationName("nope")).toBe("nope");

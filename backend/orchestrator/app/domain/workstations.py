@@ -125,10 +125,12 @@ WORKSTATIONS = [
     {
         # 与 shared/contracts/workstations.ts 的 key='tenant-products' 逐字段镜像。
         # 缺失曾导致 R2 契约检查长期失败（页面有、后端镜像没有 → 面包屑/标题退化）。
+        # 2026-10-18 用户要求：侧边栏移除该入口（内容已在「产品」工位定义区块），
+        # 页面保留（旧路由仅做深链跳转）⇒ status=hidden，条目本身不能删。
         "key": "tenant-products", "name": "产品定义管理",
         "route": "/settings/tenant-products",
         "group": "admin", "order": 21,
-        "admin_only": True, "status": "active", "subscription": None,
+        "admin_only": True, "status": "hidden", "subscription": None,
     },
     # 不上侧边栏
     {
