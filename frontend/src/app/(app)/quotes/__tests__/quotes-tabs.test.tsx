@@ -19,8 +19,8 @@ vi.mock("../views/quote-workbench-view", () => ({
 vi.mock("../views/quotation-records-view", () => ({
   QuotationRecordsView: () => <div data-testid="records">台账</div>,
 }));
-vi.mock("../../quotations/v2-quote/components/bulk-import-panel", () => ({
-  BulkImportPanel: () => <div data-testid="bulk">批量</div>,
+vi.mock("../views/batch-quote-view", () => ({
+  BatchQuoteView: () => <div data-testid="bulk">批量</div>,
 }));
 vi.mock("../../pricing-data/pricing-data-manager", () => ({
   PricingDataManager: () => <div data-testid="pricing">成本</div>,

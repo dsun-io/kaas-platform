@@ -98,7 +98,7 @@ from app.api.outreach import router as outreach_router
 from app.api.research import router as research_router
 from app.api.market import router as market_router
 from app.api.export_quote import router as export_quote_router
-from app.api.quote_profiles import router as quote_profiles_router
+
 # 注：单证渲染已改为前端实现（X′ 方案）——模板与渲染逻辑属前端静态资产，
 # 预览/打印本就在浏览器发生，后端的 render 路由已归档（archive/2026-09-trade-doc-xprime-python）。
 # ── 工位业务模块（P3 接线）──
@@ -153,8 +153,6 @@ app.include_router(research_router)
 # 产品市场对照（同上，5 个接口原先只有线上有）
 app.include_router(market_router)
 app.include_router(export_quote_router)
-# 客户税率档案：「税务档案」下拉里的客户那一层（法定档案仍由 export_quote 提供）
-app.include_router(quote_profiles_router)
 # ── 工位业务模块（P3 接线）──
 app.include_router(enums_router)
 app.include_router(customers_router)
