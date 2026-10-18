@@ -39,5 +39,8 @@
 
 ## 6. 自动化测试
 
-- 批量报价“选客户 → 选询盘 → 填成本 → 生成报价单”应固化为仓库内可重复执行的测试；
-- 等报价/保险/税字段稳定后补，避免每轮改 UI 都改测试。
+- 批量报价“选客户 → 选询盘 → 填成本 → 生成报价单”已固化为前端测试：
+  `frontend/src/app/(app)/quotes/views/__tests__/batch-quote-flow.test.tsx`；
+- 整单保险后端行为已锁定：
+  `backend/orchestrator/tests/test_export_quote_insurance.py`（term_totals、比例分支、15 美元兜底、美元折算）；
+- 保险分摊纯函数：`allocateInsurance()`，边界测试在 `terms-amortize.test.ts`。
