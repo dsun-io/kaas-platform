@@ -129,7 +129,13 @@ def build_spec() -> ProductSpec:
                     {"code": "elec_galv", "name": "电镀锌", "raw_price": 4.8,
                      "zinc_g_m2": 0, "name_en": "Electro-galvanized"},
                     {"code": "pvc_black", "name": "PVC涂塑(黑色)", "raw_price": 6.4,
-                     "zinc_g_m2": 0, "name_en": "PVC coated (black)"},
+                     "zinc_g_m2": 0, "color": "black",
+                     "name_en": "PVC coated (black)"},
+                    # 智能表格里客户用的是「PVC涂塑 (绿色)」；与黑色同档起步成本，
+                    # 实际绿色涂塑成本可在报价行手工覆盖。
+                    {"code": "pvc_green", "name": "PVC涂塑(绿色)", "raw_price": 6.4,
+                     "zinc_g_m2": 0, "color": "green",
+                     "name_en": "PVC coated (green)"},
                 ),
                 "表面处理", "Surface Treatment",
             ),

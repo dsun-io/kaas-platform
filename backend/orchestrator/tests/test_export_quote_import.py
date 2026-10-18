@@ -80,7 +80,7 @@ class TestSpecRowsMode:
 
     def test_default_still_expands_all_combos(self):
         # 尺寸类不进笛卡尔积，只剩 表面处理 5 × 工艺 2
-        assert build(req()).combo_count == 10
+        assert build(req()).combo_count == 12
 
     def test_numerics_are_used_as_given(self):
         """尺寸类是**自由数值**：给什么就用什么，引擎不查表、不联动。"""
@@ -290,10 +290,10 @@ class TestImporter:
         blob = path.read_bytes()
 
         back = parse_table(blob, spec(), "exported.xlsx", sheet="internal")
-        assert len(back.rows) == 10
+        assert len(back.rows) == 12
         recomputed = build(req(spec_rows=back.rows,
                                orders=field_fence.order_specs((30000,))))
-        assert recomputed.combo_count == 10
+        assert recomputed.combo_count == 12
         for a, b in zip(original.rows, recomputed.rows):
             assert (a.piece["price_per_piece"] == b.piece["price_per_piece"])
             assert (a.derived["weight_per_piece_kg"]
@@ -306,7 +306,7 @@ class TestImporter:
         path = tmp_path / "exported.csv"
         write_csv(original, str(path), view="internal")
         back = parse_table(path.read_bytes(), spec(), "exported.csv")
-        assert len(back.rows) == 10
+        assert len(back.rows) == 12
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -489,12 +489,12 @@ class TestImportApi:
         )
         assert r.status_code == 200, r.text
         j = r.json()
-        assert j["import"]["usable_rows"] == 10
+        assert j["import"]["usable_rows"] == 12
         ih = j["internal"]["header"]
         idx = {h: k for k, h in enumerate(ih)}
         got = [x[idx["单卷售价(元/卷)"]] for x in j["internal"]["rows"]]
         want = [x.piece["price_per_piece"] for x in res.rows]
         # Decimal → float 比较
-        assert len(got) == len(want) == 10
+        assert len(got) == len(want) == 12
         assert all(abs(float(g) - float(w)) < 1e-9 for g, w in zip(got, want))
 

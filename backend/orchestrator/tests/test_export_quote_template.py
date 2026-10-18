@@ -469,5 +469,5 @@ class TestTemplateClosedLoop:
         j = r.json()
         # 导出的规格列，模板里都有（模板是导出表的一个子集且列名一致）
         assert set(j["mapping"]) <= set(template_headers(spec()))
-        assert j["usable_rows"] == 10
+        assert j["usable_rows"] == 12
 

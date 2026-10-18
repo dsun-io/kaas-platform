@@ -1,4 +1,4 @@
-﻿"""牛栏网计算逻辑测试：波弯款、实际占用体积、净重、边丝重等。
+"""牛栏网计算逻辑测试：波弯款、实际占用体积、净重、边丝重等。
 
 这些用例的作用是**把口径钉死在测试里**：任何一次改动若把
 「波弯款按每 100 米 +3kg」「实际占用体积要扣 2.5 m³」这类口径改坏，
@@ -385,8 +385,8 @@ class TestCalculationIsExplainable:
 
     def test_space_description_matches_product_combos(self):
         space = describe_space(spec())
-        # 尺寸类改成自由数值后，产品定义的**枚举**空间只剩 表面处理 5 × 工艺 2
-        assert space["combo_count"] == 10
+        # 尺寸类改成自由数值后，产品定义的**枚举**空间只剩 表面处理 6 × 工艺 2
+        assert space["combo_count"] == 12
         assert "48" not in space["formula"]  # formula 只描述轴，不含结论数字
         assert space["summary"]
 

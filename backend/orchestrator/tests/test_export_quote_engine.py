@@ -1,7 +1,7 @@
 """出口报价引擎测试：规格展开、价链落地、订单指标、术语阶梯、三遍核验。
 
 锁定的事实：
-  · 牛栏网 5 表面处理 × 2 工艺 = 10 个**枚举**组合；尺寸类（丝径/网高/间距/卷长/卷径）
+  · 牛栏网 6 表面处理 × 2 工艺 = 12 个**枚举**组合；尺寸类（丝径/网高/间距/卷长/卷径）
     是**自由数值**（2026-10-11 用户裁决），每个组合带一份，不参与笛卡尔积
   · 单卷售价 × 卷数 = 总价，且 每米价 × 总米数 = 总价，两者必须同时成立
   · 实际占用体积 = 长方体体积 × 装柜系数 0.96（= 1 − 扣减比例 4%，**按比例**而非固定额）
@@ -75,7 +75,7 @@ def result():
 class TestSpecExpansion:
     def test_field_fence_combos_match_surface_options(self):
         # 5 表面处理 × 2 工艺 = 10；尺寸类是自由数值，不进笛卡尔积
-        assert len(expand_specs(field_fence.build_spec())) == 5 * 2
+        assert len(expand_specs(field_fence.build_spec())) == 6 * 2
 
     def test_every_enumerated_option_is_covered_exactly_once(self, result):
         """可枚举的（表面处理 × 工艺）必须充分排列且不重复。
@@ -86,7 +86,7 @@ class TestSpecExpansion:
             (r.spec["coating"], r.spec["wave"])
             for r in result.rows
         ]
-        assert len(set(combos)) == 5 * 2, "组合必须充分排列且不重复"
+        assert len(set(combos)) == 6 * 2, "组合必须充分排列且不重复"
         # 每个组合都要带齐尺寸类（默认值或调用方给的行）
         for r in result.rows:
             for key in ("de", "dm", "dv", "height_m", "mesh_mm", "roll_len_m",
@@ -441,7 +441,7 @@ class TestViews:
     def test_customer_view_row_and_column_shape(self, result):
         view = build_customer_view(result)
         header = view["header"]
-        assert len(view["rows"]) == 10
+        assert len(view["rows"]) == 12
         assert all(len(row) == len(header) for row in view["rows"])
 
     def test_customer_view_has_bilingual_headers(self, result):
