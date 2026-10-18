@@ -4331,4 +4331,5 @@ import ws_customer_records  # noqa: E402,F401
 # 字节落点：R2 binding（`FILES`，见 wrangler.jsonc）优先，异常自动回退 inline 并如实记录
 # `file_objects.storage`，不让用户的上传因为存储配置问题直接失败。
 import ws_files  # noqa: E402,F401
+import tax_archives  # noqa: E402,F401
 

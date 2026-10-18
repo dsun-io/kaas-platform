@@ -82,6 +82,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
  */
 export const SUB_ROUTE_LABELS: Record<string, string> = {
   'company-profile': '企业信息',
+  'tax-archives': '税务管理',
   'ai-providers': 'AI Providers',
   'tenant-products': '产品定义管理',
   'spec-proposals': '属性提案审核',
@@ -305,6 +306,19 @@ export const WORKSTATIONS: readonly Workstation[] = [
     icon: 'Sparkles',
     adminOnly: true,
     status: 'active', // 已并入系统设置内部（侧边栏项保留，位置紧随设置）
+    subscription: null,
+  },
+  {
+    // 税务档案（TAX-00 新口径）：团队级档案，团队管理员写、成员只读。
+    // 因此 adminOnly=false，成员也能进入查看/用于报价，只是保存按钮按权限禁用。
+    key: 'tax-archives',
+    name: '税务管理',
+    route: '/settings/tax-archives',
+    group: 'admin',
+    order: 22,
+    icon: 'ReceiptText',
+    adminOnly: false,
+    status: 'active',
     subscription: null,
   },
   {

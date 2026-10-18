@@ -17,6 +17,7 @@ from alembic import context
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.db.base import Base
+from app.db.tax_models import TaxArchive  # noqa: F401
 from app.db.models import (  # noqa: F401
     Event,
     Quotation,
