@@ -85,8 +85,8 @@ MAX_ROWS = 2000
 # 用显式白名单而不是 `**引擎包.__dict__`：后者会把 `engine`/`models`/`report` 等
 # 子模块名也灌进来，可能与本模块的局部名（甚至变量名）相撞，而且撞了不报错。
 _ENGINE_SYMBOLS = (
-    "EngineError", "ImportError_", "PricingError", "RateSetError",
-    "RateSetRegistry", "TermsError", "build", "build_customer_view",
+    "EngineError", "ImportError_", "PricingError",
+    "TermsError", "build", "build_customer_view",
     "build_internal_view", "build_template_csv", "describe_product",
     "describe_pricing_key", "get_product", "ladder_from_dict",
     "make_request_from_config", "parse_table", "product_keys",
@@ -107,8 +107,6 @@ def _ensure_engine_loaded() -> bool:
             EngineError,
             ImportError_,
             PricingError,
-            RateSetError,
-            RateSetRegistry,
             TermsError,
             build,
             build_customer_view,
@@ -147,7 +145,7 @@ def _ensure_engine_loaded() -> bool:
     except Exception as _exc:  # noqa: BLE001 - 任何导入失败都不该让 Worker 起不来
         _ENGINE_IMPORT_ERROR = "%s: %s" % (type(_exc).__name__, _exc)
         globals().update({name: None for name in _ENGINE_SYMBOLS})
-        for _name in ("EngineError", "PricingError", "RateSetError", "TermsError", "ImportError_"):
+        for _name in ("EngineError", "PricingError", "TermsError", "ImportError_"):
             globals()[_name] = Exception
         return False
     return True
@@ -301,19 +299,8 @@ def _f(value: Any) -> Optional[float]:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 出口报价 · 元数据（产品 / 税务档案 / 条款模板）
+# 出口报价 · 元数据（产品 / 条款模板）
 # ═════════════════════════════════════════════════════════════════════════════
-# 税务档案注册表按进程缓存（档案是只读的文件；变更需重新部署或调 reload）。
-_EQ_REGISTRY: Optional[RateSetRegistry] = None
-
-
-def _registry(force: bool = False) -> RateSetRegistry:
-    _require_engine()
-    global _EQ_REGISTRY
-    if _EQ_REGISTRY is None or force:
-        # 不传目录 → 引擎用包内的 rate_sets/（镜像里只有 .json，因为线上没有 PyYAML）
-        _EQ_REGISTRY = RateSetRegistry.from_dir()
-    return _EQ_REGISTRY
 
 
 def _product_or_404(product_key: str):
@@ -429,38 +416,6 @@ async def export_quote_product_formulas(
     return describe_product(spec, with_columns=with_columns)
 
 
-@app.get("/api/v1/export-quote/rate-sets")
-async def export_quote_rate_sets(user: dict = Depends(_get_current_user)):
-    """可用税务档案（法定税率，纯引擎读取 —— 不查库、无租户维度）。"""
-    try:
-        reg = _registry()
-    except Exception as exc:  # noqa: BLE001 - 线上自检：别用裸 500 把原因吞掉
-        raise HTTPException(
-            status_code=503,
-            detail=f"rate_sets_unavailable: {type(exc).__name__}: {exc}",
-        ) from exc
-    out = []
-    for rs in reg.all():
-        out.append({
-            "code": rs.code,
-            "name": rs.name,
-            "country": rs.country,
-            "effective_from": _iso(rs.effective_from),
-            "effective_to": _iso(rs.effective_to),
-            "output_rate_default": rs.output_rate_default,
-            "output_rate_export": rs.output_rate_export,
-            "stamp_duty": {"rate": rs.stamp_duty.rate, "base": rs.stamp_duty.base},
-            "summary": rs.stamp_duty.summary,
-            "rebate_hs_count": len(rs.rebate_by_hs),
-            "rebate_default": rs.rebate_default,
-            "rebate_source": rs.rebate_source,
-            "warnings": rs.warnings(),
-            "source": rs.source,
-            "notes": list(rs.notes),
-        })
-    return {"rate_sets": out, "total": len(out)}
-
-
 @app.get("/api/v1/export-quote/terms/template")
 async def export_quote_terms_template(user: dict = Depends(_get_current_user)):
     """平台默认的出口费用结构（贸易术语阶梯 + 费用项）。
@@ -470,20 +425,6 @@ async def export_quote_terms_template(user: dict = Depends(_get_current_user)):
     """
     _require_engine()
     return default_terms_template()
-
-
-@app.post("/api/v1/export-quote/rate-sets/reload")
-async def export_quote_rate_sets_reload(user: dict = Depends(_get_current_user)):
-    """重新加载税务档案（管理员）。
-
-    线上是只读文件系统 + 每 isolate 一份模块状态，本接口实际只清缓存；
-    保留它是为了与 dev 的路由集合一致（前端与巡检脚本会打它）。
-    """
-    if not _is_internal_admin(user):
-        raise HTTPException(status_code=403, detail={
-            "error": "forbidden", "message": "内部核算视图需要租户管理员权限"})
-    reg = _registry(force=True)
-    return {"reloaded": True, "codes": reg.codes}
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -749,25 +690,20 @@ def _assemble_request(body: _CalculateIn, user: dict, cost_table: Optional[dict]
     是**税务档案的法定值**（进项 10%、销项取档案、利润 0.1、让利 0.8、印花取档案）。
     少这一层，税率会静默变成 0，整张报价单系统性偏低而金额看着正常。
     """
-    try:
-        rs = _registry().resolve(body.rate_set_code, body.quote_date)
-    except RateSetError as exc:
-        raise HTTPException(status_code=400, detail={"error": "rate_set_error", "message": str(exc)})
-
-    # 政策：档案给法定默认，请求显式给的覆盖
+    # 政策：请求显式给的值优先；未给时用平台默认（税务档案已不参与算价）
     base_cfg: dict = {
         "input_vat_rate": 0.10,
-        "output_vat": {"rate": rs.output_rate_export, "mode": "additive"},
+        "output_vat": {"rate": 0, "mode": "additive"},
         "profit": {"mode": "fixed", "value": 0.1},
         "misc_fee_rate": 0.03,
         "refund": {"refund_ratio": "auto", "give_ratio": 1},
-        "stamp": {"rate": rs.stamp_duty.rate, "base": rs.stamp_duty.base},
+        "stamp": {"rate": 0, "base": "profit"},
     }
     if body.policy is not None:
         p = body.policy.model_dump(exclude_none=True)
         if "output_vat_rate" in p or "output_vat_mode" in p:
             base_cfg["output_vat"] = {
-                "rate": p.pop("output_vat_rate", rs.output_rate_export),
+                "rate": p.pop("output_vat_rate", 0),
                 "mode": p.pop("output_vat_mode", "additive"),
             }
         for k in ("profit_mode", "profit_value"):
@@ -822,7 +758,7 @@ def _assemble_request(body: _CalculateIn, user: dict, cost_table: Optional[dict]
         "tenant_id": _tenant_of(user),
     }
     try:
-        req = make_request_from_config(cfg, rate_set=rs)
+        req = make_request_from_config(cfg)
     except EngineError as exc:
         raise HTTPException(status_code=400, detail={"error": "engine_error", "message": str(exc)})
     except PricingError as exc:

@@ -42,7 +42,6 @@ import type {
 import {
   useDownloadTemplate,
   useExportProducts,
-  useExportRateSets,
   useImportCalculate,
   useImportPreview,
   useImportTemplateInfo,
@@ -65,13 +64,11 @@ function errText(err: unknown): string {
  */
 export function BulkImportPanel() {
   const products = useExportProducts();
-  const rateSets = useExportRateSets();
   const download = useDownloadTemplate();
   const preview = useImportPreview();
   const calculate = useImportCalculate();
 
   const [productKey, setProductKey] = useState<string>("");
-  const [rateSetCode, setRateSetCode] = useState<string>("");
   const [orderTotal, setOrderTotal] = useState("30000");
   // 汇率不写死：默认留空，由 useLatestFxRate 自动带入最新汇率，用户手填可覆盖
   const [fxRate, setFxRate] = useState("");
@@ -103,15 +100,12 @@ export function BulkImportPanel() {
 
   // 产品/档案列表回来之前保持空选择，避免用错档案算出错价
   const effectiveProduct = productKey || products.data?.products[0]?.key || "";
-  const effectiveRateSet =
-    rateSetCode || rateSets.data?.rate_sets[0]?.code || "";
   const template = useImportTemplateInfo(effectiveProduct || null);
 
   /** 上传时带的计算参数；税率默认值来自所选税务档案，不在前端写死。 */
   const payload = useMemo(
     () => ({
       product_key: effectiveProduct,
-      rate_set_code: effectiveRateSet || undefined,
       fx_rate: Number(fxRate) || 0,
       quote_date: quoteDate,
       orders: [{ total: Number(orderTotal) || 0, unit: "m" }],
@@ -124,7 +118,6 @@ export function BulkImportPanel() {
     }),
     [
       effectiveProduct,
-      effectiveRateSet,
       fxRate,
       quoteDate,
       orderTotal,
@@ -385,24 +378,6 @@ export function BulkImportPanel() {
                   汇率来自缓存（{latestFx.data.rate_date}），可手动改
                 </p>
               )}
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">税务档案</Label>
-              <Select
-                value={effectiveRateSet}
-                onValueChange={(v) => v && setRateSetCode(v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="按报价日自动匹配" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(rateSets.data?.rate_sets ?? []).map((rs) => (
-                    <SelectItem key={rs.code} value={rs.code}>
-                      {rs.name || rs.code}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
             <div className="space-y-1">
               <Label className="text-xs" htmlFor="bi-vat">

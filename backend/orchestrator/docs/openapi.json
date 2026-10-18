@@ -4957,25 +4957,6 @@
         }
       }
     },
-    "/api/v1/export-quote/rate-sets": {
-      "get": {
-        "tags": [
-          "export-quote"
-        ],
-        "summary": "可用税务档案",
-        "operationId": "list_rate_sets_api_v1_export_quote_rate_sets_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/export-quote/terms/template": {
       "get": {
         "tags": [
@@ -4990,64 +4971,6 @@
             "content": {
               "application/json": {
                 "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/export-quote/rate-sets/reload": {
-      "post": {
-        "tags": [
-          "export-quote"
-        ],
-        "summary": "重新加载税务档案（管理员）",
-        "operationId": "reload_rate_sets_api_v1_export_quote_rate_sets_reload_post",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/export-quote/rebate-rate/lookup": {
-      "post": {
-        "tags": [
-          "export-quote"
-        ],
-        "summary": "按 HS 编码查询出口退税率",
-        "operationId": "lookup_rebate_rate_api_v1_export_quote_rebate_rate_lookup_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RebateLookupIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
               }
             }
           }
@@ -16639,31 +16562,6 @@
           "checks"
         ],
         "title": "ReadinessResponse"
-      },
-      "RebateLookupIn": {
-        "properties": {
-          "hs_code": {
-            "type": "string",
-            "title": "Hs Code",
-            "description": "HS 编码，如 7314410000"
-          },
-          "rate_set_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rate Set Code"
-          }
-        },
-        "type": "object",
-        "required": [
-          "hs_code"
-        ],
-        "title": "RebateLookupIn"
       },
       "RegisterIn": {
         "properties": {

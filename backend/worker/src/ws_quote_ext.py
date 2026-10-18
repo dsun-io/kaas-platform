@@ -2,29 +2,24 @@
 
 为什么需要这个文件
 -----------------
-orchestrator 的 `app/api/export_quote.py` 有两条报价辅助路由，线上 Worker 的
-`quote_api.py` 只搬了算价 / 规格空间 / 税务档案 / 批量导入，这两条一直没搬：
+orchestrator 的 `app/api/export_quote.py` 有一条报价辅助路由，线上 Worker 的
+`quote_api.py` 只搬了算价 / 规格空间 / 批量导入，这条一直没搬：
 
-    1. `POST /api/v1/export-quote/rebate-rate/lookup`     —— 按 HS 编码查出口退税率
-    2. `POST /api/v1/export-quote/products/{key}/explain` —— 逐条摊开计算过程
+    1. `POST /api/v1/export-quote/products/{key}/explain` —— 逐条摊开计算过程
 
-它们已登记在 `scripts/route-parity-allowlist.txt`（「待补」= 承认的缺口）：
-前端或巡检脚本一调用，线上就是 404。本文件把缺口补齐，语义逐条对齐
-orchestrator（真源 = `backend/orchestrator/app/api/export_quote.py` L279-372 / L449-482）。
+**TAX-06 起 HS 退税率查询已下线**：原 `rebate-rate/lookup` 路由与文件版税务档案
+（`rates.py`）一并删除；退税率由业务人工核实后显式填 `policy`。
 
 对齐口径
 -------
-- **不重写任何计算**：税务档案与公式渲染都取自 `kaas_common.export_quote.*`
+- **不重写任何计算**：公式渲染取自 `kaas_common.export_quote.*`
   （`scripts/sync-shared.ps1` 镜像的同一份引擎），本文件只做「组装请求 + 投影出参」。
 - **引擎惰性导入 + 503 降级**：与 `quote_api.py` 走同一条路径（直接复用它的
   `_require_engine()`）。引擎是构建产物，漏同步时**不能**让模块级导入把整个
   Worker 拖死（连 /health 一起挂）—— 故一律在函数内导入，失败统一 503
   `engine_unavailable`，并说清楚怎么修。
-- **错误体逐字同构**：`{"error": "rate_set_error" | "unknown_product" |
-  "unknown_variant" | "missing_axis", ...}` 与 orchestrator 完全一致。
-- **退税率只查本地档案库**：线上（Pyodide）没有 httpx，HTTP provider 必然不可用；
-  查不到就明确回报 `found: false` + hint，**绝不猜** —— 猜错会让整张报价单
-  系统性偏低，这是这条链上最贵的错误（见引擎 rates.py 顶部说明）。
+- **错误体逐字同构**：`{"error": "unknown_product" | "unknown_variant" | "missing_axis", ...}`
+  与 orchestrator 完全一致。
 """
 from __future__ import annotations
 
@@ -37,9 +32,8 @@ import main as _main
 
 app = _main.app
 _get_current_user = _main._get_current_user
-# 本模块两条路由都**不查库**（与 dev 同：explain 只摊开公式、不读客户定价；
-# rebate-rate 只读税务档案文件），所以不在这里绑定 main.db / DEFAULT_TENANT —— 
-# 绑了也不用，只会让人以为这两条接口会碰数据库。
+# 本模块的路由**不查库**（explain 只摊开公式、不读客户定价），
+# 所以不在这里绑定 main.db / DEFAULT_TENANT —— 绑了也不用。
 
 # ── 引擎符号：**惰性**取用 ────────────────────────────────────────────────────
 # 为什么不在模块顶部 from kaas_common.export_quote import ...：
@@ -66,18 +60,12 @@ def _ensure_engine() -> dict:
 
     quote_api._require_engine()
     try:  # 引擎残缺时给可执行的修复指引，而不是把 ImportError 原样抛成 500
-        from kaas_common.export_quote import RateSetError
         from kaas_common.export_quote.engine import (
             resolve_space_deduction,
             resolve_space_deduction_ratio,
         )
         from kaas_common.export_quote.formulas import PRICE_METRICS, worked_example
         from kaas_common.export_quote.numeric import DECIMAL, to_decimal
-        from kaas_common.export_quote.rates import (
-            RebateRateNotFound,
-            build_default_provider,
-            normalize_hs,
-        )
         # 草稿定义的**严格解析**：与 orchestrator 用**同一份**实现（引擎包里的
         # `spec_override`），**不在 worker 另写一份** —— 两套解析必然漂移。
         from kaas_common.export_quote.spec_override import (
@@ -93,28 +81,19 @@ def _ensure_engine() -> dict:
                         % (type(exc).__name__, exc)),
         })
     _ENGINE.update({
-        "RateSetError": RateSetError,
         "resolve_space_deduction": resolve_space_deduction,
         "resolve_space_deduction_ratio": resolve_space_deduction_ratio,
         "PRICE_METRICS": PRICE_METRICS,
         "worked_example": worked_example,
         "DECIMAL": DECIMAL,
         "to_decimal": to_decimal,
-        "RebateRateNotFound": RebateRateNotFound,
-        "build_default_provider": build_default_provider,
-        "normalize_hs": normalize_hs,
         "SpecOverrideError": SpecOverrideError,
         "parse_spec_override": parse_spec_override,
     })
     return _ENGINE
 
 
-# ── Schemas（与 orchestrator 的 RebateLookupIn / ExplainIn 逐字段一致）────────
-
-class _RebateLookupIn(BaseModel):
-    hs_code: str = Field(description="HS 编码，如 7314410000")
-    rate_set_code: Optional[str] = None
-
+# ── Schemas ───────────────────────────────────────────────────────────────────
 
 class _ExplainIn(BaseModel):
     """逐步代入计算逻辑的输入：给一组规格取值。"""
@@ -140,55 +119,6 @@ class _ExplainIn(BaseModel):
                     "不会静默取默认）。缺字段则按默认值参与，并在响应的 `warnings` 里如实列出。"
                     "**与 orchestrator 的 ExplainIn 逐字段一致**（同一份解析器）。",
     )
-
-
-# ── 退税率查询 ───────────────────────────────────────────────────────────────
-
-@app.post("/api/v1/export-quote/rebate-rate/lookup")
-async def export_quote_rebate_rate_lookup(
-    body: _RebateLookupIn,
-    user: dict = Depends(_get_current_user),
-):
-    """按 HS 编码查出口退税率（对齐 orchestrator `lookup_rebate_rate`）。
-
-    两种结果都是**正常响应**（不抛 4xx）：查到 `found: true` + `source`/`cached`，
-    查不到 `found: false` + `hint`。业务要的是「知道有没有」，不是「接口报错」。
-    """
-    import quote_api  # noqa: PLC0415
-
-    eng = _ensure_engine()
-    # 档案注册表按 isolate 缓存：复用 quote_api 的那一份，避免同一进程两套缓存
-    # （两边解析出的档案若不同步，会出现「算价用 A 档、查退税率用 B 档」）。
-    try:
-        rs = quote_api._registry().resolve(body.rate_set_code)
-    except eng["RateSetError"] as exc:
-        raise HTTPException(status_code=400, detail={
-            "error": "rate_set_error", "message": str(exc)})
-
-    # 线上只挂本地档案库这一路：orchestrator 传的是 settings.rebate_rate_api_url
-    # / api_key / cache_ttl，而线上既没有 app.config.settings，也没有 httpx
-    # （Pyodide 装不了），HttpRebateProvider 必然直接报「未启用」再回落到本地库。
-    # 因此这里不传 api_url —— 结果与「配了但用不了」完全一致，只是少一次无意义的
-    # import 尝试。provider 默认 TTL 24h，与 dev 的 REBATE_RATE_CACHE_TTL 默认值相同。
-    provider = eng["build_default_provider"](rs)
-    try:
-        result = await provider.lookup(body.hs_code)
-    except eng["RebateRateNotFound"] as exc:
-        return {
-            "found": False,
-            "hs_code": eng["normalize_hs"](body.hs_code),
-            "rate_set_code": rs.code,
-            "message": str(exc),
-            "hint": "请按 HS 编码在税务总局退税率文库核实后填入，或在税务档案中补充该编码",
-        }
-    return {
-        "found": True,
-        "hs_code": result.hs_code,
-        "rebate_rate": result.rebate_rate,
-        "source": result.source,
-        "cached": result.cached,
-        "rate_set_code": rs.code,
-    }
 
 
 # ── 逐步代入（计算说明书）────────────────────────────────────────────────────

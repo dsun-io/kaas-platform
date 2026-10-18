@@ -9,13 +9,13 @@
 2. **报价单不落库时也能算**：`/calculate` 是纯函数式接口，给参数就出结果，
    便于前端实时试算；落库由调用方决定（可复用 QuoteOrder 表）。
 
-3. **法定税率来自税务档案**：请求里只需给 `rate_set_code`，
-   征税率/销项税率/印花税率自动从档案取；显式传 `policy` 字段则本单覆盖。
+3. **税率只认请求里的显式值**：税务档案（DB `tax_archives`）只负责在报价页
+   自动填表；算价引擎不读档案、不做二次覆盖，避免两个事实源。
 
 4. **有效期默认 7 天**：返回 `valid_until`，前端可直接展示"报价有效期至"。
 
-5. **退税率查询**：`/rebate-rate/lookup` 走可插拔 Provider（HTTP → 本地档案库），
-   查不到明确报错，不猜 —— 猜错会让整张报价单系统性偏低。
+5. **HS 退税率查询已下线（TAX-06）**：退税率由业务按 HS 编码人工核实后填入 `policy`；
+   引擎不再维护文件版税务档案或 HS 退税率库。
 """
 from __future__ import annotations
 
@@ -38,9 +38,6 @@ from app.services.export_quote import (
     EngineError,
     PricingError,
     QuoteRequest,
-    RateSetError,
-    RateSetRegistry,
-    RebateRateNotFound,
     TermsError,
     build,
     build_customer_view,
@@ -69,7 +66,6 @@ from app.services.export_quote.importers import (
 )
 from app.services.export_quote.numeric import DECIMAL, to_decimal
 from app.services.export_quote.products import get as get_product
-from app.services.export_quote.rates import build_default_provider, normalize_hs
 from app.services.export_quote.report import quote_meta
 from app.services.export_quote.spec_override import (
     SpecOverrideError,
@@ -77,21 +73,10 @@ from app.services.export_quote.spec_override import (
 )
 from app.services.export_quote.terms import ladder_from_dict
 from app.services.export_quote.verify import verify_all
-from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/export-quote", tags=["export-quote"])
-
-# 税务档案注册表按进程缓存（文件只读，变更需重启或调 /rate-sets/reload）
-_registry: Optional[RateSetRegistry] = None
-
-
-def _get_registry(force: bool = False) -> RateSetRegistry:
-    global _registry
-    if _registry is None or force:
-        _registry = RateSetRegistry.from_dir(settings.export_quote_rate_sets_dir or None)
-    return _registry
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -159,11 +144,6 @@ class CalculateIn(BaseModel):
     with_verification: bool = Field(default=False, description="是否附带三遍核验结果")
     currency: str = "CNY"
     quote_currency: str = "USD"
-
-
-class RebateLookupIn(BaseModel):
-    hs_code: str = Field(description="HS 编码，如 7314410000")
-    rate_set_code: Optional[str] = None
 
 
 class SpecRowsIn(BaseModel):
@@ -554,33 +534,6 @@ def _get_product_or_404(product_key: str):
         )
 
 
-@router.get("/rate-sets", summary="可用税务档案")
-async def list_rate_sets(auth: AuthContext = Depends(get_auth_context)):
-    reg = _get_registry()
-    out = []
-    for rs in reg.all():
-        out.append(
-            {
-                "code": rs.code,
-                "name": rs.name,
-                "country": rs.country,
-                "effective_from": rs.effective_from.isoformat() if rs.effective_from else None,
-                "effective_to": rs.effective_to.isoformat() if rs.effective_to else None,
-                "output_rate_default": rs.output_rate_default,
-                "output_rate_export": rs.output_rate_export,
-                "stamp_duty": {"rate": rs.stamp_duty.rate, "base": rs.stamp_duty.base},
-                "summary": rs.stamp_duty.summary,
-                "rebate_hs_count": len(rs.rebate_by_hs),
-                "rebate_default": rs.rebate_default,
-                "rebate_source": rs.rebate_source,
-                "warnings": rs.warnings(),
-                "source": rs.source,
-                "notes": list(rs.notes),
-            }
-        )
-    return {"rate_sets": out, "total": len(out)}
-
-
 @router.get("/terms/template")
 async def terms_template(auth: AuthContext = Depends(get_auth_context)):
     """平台默认的出口费用结构（贸易术语阶梯 + 费用项）。
@@ -595,49 +548,9 @@ async def terms_template(auth: AuthContext = Depends(get_auth_context)):
     return default_terms_template()
 
 
-@router.post("/rate-sets/reload", summary="重新加载税务档案（管理员）")
-async def reload_rate_sets(auth: AuthContext = Depends(require_tenant_admin)):
-    reg = _get_registry(force=True)
-    return {"reloaded": True, "codes": reg.codes}
-
-
 # ─────────────────────────────────────────────────────────────────────────────
-# 退税率查询
+# 退税率查询已下线（TAX-06）：HS 编码改为人工查询，档案只保留“出口退税率”字段。
 # ─────────────────────────────────────────────────────────────────────────────
-@router.post("/rebate-rate/lookup", summary="按 HS 编码查询出口退税率")
-async def lookup_rebate_rate(
-    body: RebateLookupIn, auth: AuthContext = Depends(get_auth_context)
-):
-    reg = _get_registry()
-    try:
-        rs = reg.resolve(body.rate_set_code)
-    except RateSetError as exc:
-        raise HTTPException(status_code=400, detail={"error": "rate_set_error", "message": str(exc)})
-
-    provider = build_default_provider(
-        rs,
-        api_url=settings.rebate_rate_api_url,
-        api_key=settings.rebate_rate_api_key,
-        ttl_seconds=settings.rebate_rate_cache_ttl,
-    )
-    try:
-        result = await provider.lookup(body.hs_code)
-    except RebateRateNotFound as exc:
-        return {
-            "found": False,
-            "hs_code": normalize_hs(body.hs_code),
-            "rate_set_code": rs.code,
-            "message": str(exc),
-            "hint": "请按 HS 编码在税务总局退税率文库核实后填入，或在税务档案中补充该编码",
-        }
-    return {
-        "found": True,
-        "hs_code": result.hs_code,
-        "rebate_rate": result.rebate_rate,
-        "source": result.source,
-        "cached": result.cached,
-        "rate_set_code": rs.code,
-    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -949,26 +862,20 @@ def _assemble_request(
     cost_table: dict | None = None,
     product: ProductSpec | None = None,
 ) -> QuoteRequest:
-    reg = _get_registry()
-    try:
-        rs = reg.resolve(body.rate_set_code, body.quote_date)
-    except RateSetError as exc:
-        raise HTTPException(status_code=400, detail={"error": "rate_set_error", "message": str(exc)})
-
-    # 政策：档案给法定默认，请求显式给的覆盖
+    # 政策：请求显式给的值优先；未给时用平台默认（税务档案已不参与算价）
     base_cfg: dict = {
         "input_vat_rate": 0.10,
-        "output_vat": {"rate": rs.output_rate_export, "mode": "additive"},
+        "output_vat": {"rate": 0, "mode": "additive"},
         "profit": {"mode": "fixed", "value": 0.1},
         "misc_fee_rate": 0.03,
         "refund": {"refund_ratio": "auto", "give_ratio": 1},
-        "stamp": {"rate": rs.stamp_duty.rate, "base": rs.stamp_duty.base},
+        "stamp": {"rate": 0, "base": "profit"},
     }
     if body.policy is not None:
         p = body.policy.model_dump(exclude_none=True)
         if "output_vat_rate" in p or "output_vat_mode" in p:
             base_cfg["output_vat"] = {
-                "rate": p.pop("output_vat_rate", rs.output_rate_export),
+                "rate": p.pop("output_vat_rate", 0),
                 "mode": p.pop("output_vat_mode", "additive"),
             }
         for k in ("profit_mode", "profit_value"):
@@ -1027,7 +934,6 @@ def _assemble_request(
         terms=terms,
         price_inputs=body.price_inputs or {},
         spec_rows=[dict(r) for r in body.spec_rows] if body.spec_rows else None,
-        rate_set=rs,
         validity_days=body.validity_days,
         quote_date=body.quote_date,
         constants_override=body.constants_override or {},

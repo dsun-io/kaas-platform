@@ -567,23 +567,6 @@ def test_inquiry_illegal_transition_409():
 
 # ── 报价补充端点（ws_quote_ext）────────────────────────────────────────────
 
-def test_rebate_rate_lookup_always_answers_200():
-    """查不到也是正常响应（202 + found:false），不抛 4xx —— 业务要的是「知道有没有」。"""
-    with _patched(_FakeDb()):
-        resp = client.post("/api/v1/export-quote/rebate-rate/lookup",
-                           json={"hs_code": "7314410000"})
-    assert resp.status_code == 200
-    assert "found" in resp.json()
-
-
-def test_rebate_rate_lookup_bad_rate_set_400():
-    with _patched(_FakeDb()):
-        resp = client.post("/api/v1/export-quote/rebate-rate/lookup",
-                           json={"hs_code": "7314410000", "rate_set_code": "nope"})
-    assert resp.status_code == 400
-    assert resp.json()["detail"]["error"] == "rate_set_error"
-
-
 def test_explain_defaults_free_numeric_inputs():
     """尺寸类是**自由数值**：不填就用产品默认值，不再报「缺少规格轴」。
 
