@@ -471,7 +471,7 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
         {termsTemplate && feeKeys.length > 0 && (
           <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
             <p className="text-xs font-medium">
-              {quoteAs} 费用项（整批金额，按件数分摊到每行）
+              {quoteAs} 费用项（国内费用人民币；国外费用美元，按订单汇率折算）
             </p>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {feeKeys.map((key) => {

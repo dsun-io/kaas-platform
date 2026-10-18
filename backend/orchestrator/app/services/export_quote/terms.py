@@ -89,6 +89,9 @@ class FeeItem:
     source: str = ""
     decimals: int | None = None
     cif_factor: Any = DEFAULT_CIF_FACTOR
+    # 费用币种（用户 2026-10-18 口径）：国内费用人民币，国外费用美元。
+    # 引擎内部小计以人民币累加，美元费用在此按**本报价设置的汇率**折算成人民币。
+    currency: str = "CNY"
 
     def resolved_value(self, price_inputs: Mapping[str, Any] | None = None):
         """先看 source（当期行情），取不到再回落到 value（配置内联）。"""
@@ -205,6 +208,7 @@ class TermLadder:
         vat_mode="additive",
         mode=DECIMAL,
         price_inputs: Mapping[str, Any] | None = None,
+        fx_rate=1,
     ) -> dict:
         """从 EXW **单件**不含税金额出发，逐档累加。
 
@@ -215,11 +219,17 @@ class TermLadder:
 
         销项税在最终成交价上计算 —— 增值税对最终成交价课征，
         运费等价内费用也应进入税基。
+
+        币种（2026-10-18 用户口径）：**国内费用人民币，国外费用美元**。
+        小计始终以人民币累加；美元费用按**本报价设置的汇率** `fx_rate`
+        （1 美元 = ? 人民币）折算后再加进去。因此界面上海运费/保险费/目的港费用/进口税费
+        都填美元金额。
         """
         base = _num(exw_per_piece, mode)
         weight = _num(weight_kg, mode)
         cnt = _num(pieces, mode) if pieces is not None else None
         rate = _num(vat_rate, mode)
+        fx = _num(fx_rate, mode)
 
         out: dict[str, dict] = {}
         subtotal = base
@@ -230,6 +240,18 @@ class TermLadder:
                 if item is None:
                     raise TermsError(f"术语 {rung.code} 引用了未定义的费用项: {key}")
                 amt = item.amount_per_piece(subtotal, weight, cnt, mode, price_inputs)
+                if item.currency.upper() == "USD":
+                    if item.mode in ("ratio_of_subtotal", "insurance_of_cif"):
+                        raise TermsError(
+                            f"费用 {key} 是比例类/保险费率类，不能用美元金额；"
+                            "请改用 per_shipment/per_weight_ton 等金额口径"
+                        )
+                    if fx is None or fx <= 0:
+                        raise TermsError(
+                            f"费用 {key} 以美元计价，但订单汇率为空/非正，无法折算成人民币"
+                        )
+                    # 美元金额 → 人民币（子计以人民币累加）
+                    amt = amt * fx
                 amt = mode.quantize(amt, item.decimals if item.decimals is not None else 4)
                 fees[key] = amt
                 subtotal = subtotal + amt
@@ -306,6 +328,7 @@ def ladder_from_dict(cfg: Mapping[str, Any] | None) -> TermLadder | None:
             source=str(item.get("source", "")),
             decimals=item.get("decimals"),
             cif_factor=item.get("cif_factor", DEFAULT_CIF_FACTOR),
+            currency=str(item.get("currency", "CNY")).upper(),
         )
 
     rungs: list[TermRung] = []

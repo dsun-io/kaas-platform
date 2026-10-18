@@ -118,6 +118,11 @@ export const ExportTermsFeeSchema = z.object({
   unit_hint: z.string().default(''),
   note: z.string().default(''),
   value: z.number().nullable().default(null),
+  /**
+   * 费用币种（2026-10-18 用户口径）：国内费用 CNY，国外费用 USD。
+   * 引擎内部以人民币累加，USD 费用按**订单汇率**折算；缺省 CNY（兼容旧配置）。
+   */
+  currency: z.enum(['CNY', 'USD']).default('CNY'),
 });
 export type ExportTermsFee = z.infer<typeof ExportTermsFeeSchema>;
 

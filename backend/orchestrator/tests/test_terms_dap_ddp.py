@@ -11,9 +11,11 @@
   · 阶梯是 EXW → FOB → CFR → CIF → DAP → DDP，逐档累加，每档只列本档新增
   · 新费用项 `destination_charges` / `import_taxes` 都是 `per_shipment`
     —— 不需要新的 mode：mode 只决定「怎么摊」，不决定「谁承担」
+  · 币种（2026-10-18 用户口径）：国内费用人民币，国外费用美元；
+    引擎小计以人民币累加，美元费用按订单汇率折算（本文件分 fx=1 与 fx=6.7019 两段验证）
   · `quote_as=DAP` 时只多算目的港费用；`quote_as=DDP` 时再多算进口税费，
-    且两者之差恰好等于 import_taxes 摊到单件的金额
-  · 默认 `quote_as` 仍是 `CIF`（新增档位不能悄悄改变默认对外报价口径）
+    且两者之差恰好等于 import_taxes 按汇率折人民币后摊到单件的金额
+  · 默认 `quote_as` 是 `EXW`（用户 2026-10-18 口径）
 """
 from decimal import Decimal as D
 
@@ -43,23 +45,23 @@ def filled_template() -> dict:
     """把模板原样回传、只把 value 填成数字 —— 与界面的行为一致。"""
     tpl = default_terms_template()
     for key, amount in (
-        ("domestic_charges", D("2800")),  # 原内陆/港杂/报关三项合并
-        ("ocean_freight", D("120")),   # 元 / 吨
-        ("insurance", D("0.003")),     # 费率（CIF 加成投保）
-        ("destination_charges", DESTINATION_CHARGES),
-        ("import_taxes", IMPORT_TAXES),
+        ("domestic_charges", D("2800")),  # CNY / 整批
+        ("ocean_freight", D("120")),      # USD / 吨
+        ("insurance", D("500")),          # USD / 整批
+        ("destination_charges", DESTINATION_CHARGES),  # USD / 整批
+        ("import_taxes", IMPORT_TAXES),                # USD / 整批
     ):
         tpl["items"][key]["value"] = str(amount)
     return tpl
 
 
-def compute(quote_as: str):
+def compute(quote_as: str, fx_rate=D("1")):
     """按指定 `quote_as` 构造模板 → 过 `ladder_from_dict` → 逐档累加。"""
     tpl = filled_template()
     tpl["quote_as"] = quote_as
     ladder = ladder_from_dict(tpl)
     assert ladder is not None
-    return ladder, ladder.compute(EXW, WEIGHT, PIECES)
+    return ladder, ladder.compute(EXW, WEIGHT, PIECES, fx_rate=fx_rate)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -88,10 +90,11 @@ class TestTemplateShape:
     def test_new_items_are_per_shipment_and_have_no_preset_amount(self):
         for key in ("destination_charges", "import_taxes"):
             item = DEFAULT_EXPORT_TERMS["items"][key]
-            # 不需要新 mode：两者都是整批一次的费用
+            # 不需要新 mode：两者都是整批一次的费用；币种为美元
             assert item["mode"] == "per_shipment", key
+            assert item["currency"] == "USD", key
             assert item["value"] is None, key
-            assert item["unit_hint"] == "元 / 整批", key
+            assert item["unit_hint"] == "美元 / 整批", key
             assert item["name"] and item["name_en"], key
 
     def test_new_items_notes_state_what_is_included(self):
@@ -115,6 +118,19 @@ class TestTemplateShape:
         assert "国内" in item["name"]
         rungs = {r["code"]: r for r in DEFAULT_EXPORT_TERMS["ladder"]}
         assert rungs["FOB"]["items"] == ["domestic_charges"]
+
+    def test_foreign_fee_currencies_are_usd_domestic_is_cny(self):
+        """用户 2026-10-18：除国内费用外，国外费用一律美元。"""
+        items = DEFAULT_EXPORT_TERMS["items"]
+        assert items["domestic_charges"]["currency"] == "CNY"
+        for key in ("ocean_freight", "insurance", "destination_charges", "import_taxes"):
+            assert items[key]["currency"] == "USD", key
+
+    def test_insurance_is_usd_lump_sum_not_rate(self):
+        item = DEFAULT_EXPORT_TERMS["items"]["insurance"]
+        assert item["mode"] == "per_shipment"
+        assert item["currency"] == "USD"
+        assert item["unit_hint"] == "美元 / 整批"
 
     def test_new_rungs_do_not_trip_the_incoterms_audit(self):
         ladder = ladder_from_dict(filled_template())
@@ -154,6 +170,17 @@ class TestDapDdpCompute:
             assert ladder.quote_as == code
             # 请求的档位必须真的出现在阶梯输出里
             assert out[code]["subtotal_excl"] > 0
+
+    def test_usd_fees_converted_by_order_fx_domestic_kept_cny(self):
+        """美元费用按订单汇率折人民币；国内费用人民币不折算。"""
+        _, out = compute("DDP", fx_rate=D("6.7019"))
+        assert out["FOB"]["fees"]["domestic_charges"] == D("2800") / PIECES  # CNY
+        # 120 USD/吨 × 0.1 吨 × 6.7019
+        assert out["CFR"]["fees"]["ocean_freight"] == D("80.4228")
+        # 500 USD/批 ÷ 10 件 × 6.7019
+        assert out["CIF"]["fees"]["insurance"] == D("335.0950")
+        assert out["DAP"]["fees"]["destination_charges"] == D("1005.2850")
+        assert out["DDP"]["fees"]["import_taxes"] == D("536.1520")
 
     def test_ladder_stays_strictly_increasing(self):
         """EXW < FOB < CFR < CIF < DAP < DDP —— 逐档累加不能出现倒挂。"""
@@ -213,7 +240,8 @@ class TestEngineLevel:
                 dap = row.terms["DAP"][order]
                 ddp = row.terms["DDP"][order]
                 pieces = D(str(row.orders[order]["pieces"]))
-                expected = (IMPORT_TAXES / pieces).quantize(D("0.0001"))
+                # 进口税费是美元金额，阶梯内部先按订单汇率 6.7019 折人民币
+                expected = (IMPORT_TAXES * D("6.7019") / pieces).quantize(D("0.0001"))
                 assert ddp["subtotal_excl"] - dap["subtotal_excl"] == expected
         rep = verify_terms(result)
         assert rep.ok, rep.summary()
