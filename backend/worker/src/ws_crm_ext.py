@@ -61,6 +61,7 @@ row_to_inquiry = _main.row_to_inquiry
 # body 字段 → 表列：`company_name` 在库里叫 `name`，与 dev 的 CustomerUpdate 映射一致。
 _CUSTOMER_COLUMNS = (
     ("company_name", "name"),
+    ("abbr", "abbr"),
     ("country", "country"),
     ("address", "address"),
     ("default_port", "default_port"),
@@ -99,6 +100,7 @@ _LEAD_INQUIRY_STATUS = {
 
 class _CustomerUpdate(BaseModel):
     company_name: Optional[str] = None
+    abbr: Optional[str] = None
     country: Optional[str] = None
     address: Optional[str] = None
     default_port: Optional[str] = None
@@ -177,6 +179,8 @@ async def update_customer(
     data = body.model_dump(exclude_unset=True)
     if "owner_scope" in data:
         validate_enum("owner_scope", data["owner_scope"])
+    if "abbr" in data:
+        data["abbr"] = _main._norm_abbr(data["abbr"])
 
     sets: list = []
     params: list = []

@@ -43,9 +43,7 @@ def filled_template() -> dict:
     """把模板原样回传、只把 value 填成数字 —— 与界面的行为一致。"""
     tpl = default_terms_template()
     for key, amount in (
-        ("inland_freight", D("2000")),
-        ("port_charges", D("500")),
-        ("customs_fee", D("300")),
+        ("domestic_charges", D("2800")),  # 原内陆/港杂/报关三项合并
         ("ocean_freight", D("120")),   # 元 / 吨
         ("insurance", D("0.003")),     # 费率（CIF 加成投保）
         ("destination_charges", DESTINATION_CHARGES),
@@ -103,9 +101,20 @@ class TestTemplateShape:
         tax_note = DEFAULT_EXPORT_TERMS["items"]["import_taxes"]["note"]
         assert "DDP" in tax_note
 
-    def test_quote_as_default_stays_cif(self):
-        assert DEFAULT_EXPORT_TERMS["quote_as"] == "CIF"
-        assert default_terms_template()["quote_as"] == "CIF"
+    def test_quote_as_default_is_exw(self):
+        # 用户 2026-10-18：默认按 EXW 报价，条款由用户直选
+        assert DEFAULT_EXPORT_TERMS["quote_as"] == "EXW"
+        assert default_terms_template()["quote_as"] == "EXW"
+
+    def test_domestic_charges_merged(self):
+        """原内陆/港杂/报关三项合并为「国内费用（本地费用）」。"""
+        for old in ("inland_freight", "port_charges", "customs_fee"):
+            assert old not in DEFAULT_EXPORT_TERMS["items"]
+        item = DEFAULT_EXPORT_TERMS["items"]["domestic_charges"]
+        assert item["mode"] == "per_shipment"
+        assert "国内" in item["name"]
+        rungs = {r["code"]: r for r in DEFAULT_EXPORT_TERMS["ladder"]}
+        assert rungs["FOB"]["items"] == ["domestic_charges"]
 
     def test_new_rungs_do_not_trip_the_incoterms_audit(self):
         ladder = ladder_from_dict(filled_template())

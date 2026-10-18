@@ -319,6 +319,18 @@ async def delete_tenant_product(
             raise HTTPException(status_code=404, detail={
                 "error": "not_found", "code": "PRODUCT_NOT_FOUND",
             })
+        # 需求 16（用户决策）：删除产品时一并清理基础信息、图片与工位绑定。
+        # 历史报价/单证存的是 spec_snapshot 快照，不受影响。
+        await conn.execute(
+            "UPDATE file_objects SET is_current=false, is_primary=false, updated_at=now()"
+            " WHERE tenant_id=$1 AND owner_type='product' AND owner_id=$2",
+            tid, row["product_key"])
+        await conn.execute(
+            "DELETE FROM product_profiles WHERE tenant_id=$1 AND product_key=$2",
+            tid, row["product_key"])
+        await conn.execute(
+            "DELETE FROM tenant_workstation_products WHERE tenant_id=$1 AND product_key=$2",
+            tid, row["product_key"])
         await conn.execute("DELETE FROM tenant_products WHERE id=$1", product_id)
     return None
 

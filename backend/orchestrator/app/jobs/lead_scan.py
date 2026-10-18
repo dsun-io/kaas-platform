@@ -22,11 +22,34 @@ from app.db.models import Customer, User
 from app.db.workstation_models import (
     CustInquiry, LeadCandidate,
 )
+from kaas_common.workstation.inquiry_rules import build_inquiry_no
 
 logger = structlog.get_logger(__name__)
 
 # cust_inquiries.status → lead_candidates.inquiry_status（§7.2）
 INQUIRY_SYNC_MAP = {"open": "new", "quoted": "following", "won": "won", "lost": "lost"}
+
+
+async def _next_inquiry_no(db: AsyncSession, tenant_id: str, customer: Customer) -> str:
+    """生成唯一询盘编号（与 customers API 同规则；同秒冲突加后缀）。"""
+    for suffix in range(1, 21):
+        candidate = build_inquiry_no(
+            customer.country, customer.abbr,
+            customer_name=customer.name, customer_id=customer.id,
+            suffix=suffix,
+        )
+        exists = (await db.execute(
+            select(CustInquiry.id).where(
+                CustInquiry.tenant_id == tenant_id,
+                CustInquiry.inquiry_no == candidate,
+            ).limit(1)
+        )).scalar_one_or_none()
+        if exists is None:
+            return candidate
+    return build_inquiry_no(
+        customer.country, customer.abbr,
+        customer_name=customer.name, customer_id=customer.id,
+    ) + "-X"
 
 
 async def scan_replied_leads(db: AsyncSession, tenant_id: str, limit: int = 100) -> dict:
@@ -81,6 +104,7 @@ async def scan_replied_leads(db: AsyncSession, tenant_id: str, limit: int = 100)
 
         inq = CustInquiry(
             tenant_id=tenant_id, customer_id=customer.id, lead_id=lead.id,
+            inquiry_no=await _next_inquiry_no(db, tenant_id, customer),
             channel="email", notes=f"来自线索池触达回复（lead#{lead.id}）",
             status="open",
             owner_id=lead.owner_id, owner_scope="tenant",

@@ -49,6 +49,7 @@ import json as _json
 
 from kaas_common.workstation.customer_serializers import row_to_customer, row_to_inquiry
 from kaas_common.workstation.customer_rules import validate_manual_stage
+from kaas_common.workstation.inquiry_rules import build_inquiry_no, normalize_abbr
 from kaas_common.domain.enums import validate_enum
 from kaas_common.workstation.scope import can_view, can_write, is_admin_role
 from kaas_common.workstation.teams import (
@@ -864,6 +865,8 @@ class CustomerCreate(BaseModel):
     contact_name: Optional[str] = None
     contact_phone: Optional[str] = None
     contact_email: Optional[str] = None
+    # 客户缩写（询盘编号用）：2-6 位字母/数字；可空
+    abbr: Optional[str] = None
     country: Optional[str] = None
     address: Optional[str] = None
     default_port: Optional[str] = None
@@ -893,7 +896,8 @@ class InquiryCreate(BaseModel):
     quantity: Optional[float] = None
     quantity_unit: Optional[str] = None
     application: Optional[str] = None
-    status: str = "inquiry"
+    # 询盘状态：新建必须是 open（旧默认 "inquiry" 是非法值，2026-10-18 修正）
+    status: str = "open"
     notes: Optional[str] = None
 
 
@@ -922,6 +926,39 @@ def _customer_api(row) -> dict:
     """客户行 → API 响应（stage=推导展示值，manual_stage=手动值）。"""
     d = dict(row)
     return row_to_customer(d, display_stage=d.get("stage_display"))
+
+
+async def _next_inquiry_no(conn, customer: dict) -> str:
+    """生成唯一询盘编号（与 orchestrator 同规则；同秒冲突加后缀）。"""
+    for suffix in range(1, 21):
+        candidate = build_inquiry_no(
+            customer.get("country"), customer.get("abbr"),
+            customer_name=customer.get("name"), customer_id=customer.get("id"),
+            suffix=suffix,
+        )
+        exists = await conn.fetchval(
+            "SELECT 1 FROM cust_inquiries WHERE tenant_id=$1 AND inquiry_no=$2 LIMIT 1",
+            DEFAULT_TENANT, candidate,
+        )
+        if not exists:
+            return candidate
+    return build_inquiry_no(
+        customer.get("country"), customer.get("abbr"),
+        customer_name=customer.get("name"), customer_id=customer.get("id"),
+    ) + "-X"
+
+
+def _norm_abbr(raw) -> Optional[str]:
+    """客户缩写：空 → None；非空但不合法 → 422。"""
+    if raw is None or str(raw).strip() == "":
+        return None
+    value = normalize_abbr(raw)
+    if value is None:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "INVALID_CUSTOMER_ABBR",
+            "detail": "客户缩写需为 2-6 位字母/数字（用于询盘编号）",
+        })
+    return value
 
 
 async def _customer_or_404(conn, customer_id: int, user: dict) -> dict:
@@ -1125,11 +1162,12 @@ async def create_customer(request: Request, body: CustomerCreate, user: dict = D
         async with conn.transaction():
             row = await conn.fetchrow(
                 """INSERT INTO customers
-                   (tenant_id, name, plan, status, country, address, default_port,
+                   (tenant_id, name, abbr, plan, status, country, address, default_port,
                     credit_level, stage, notes, created_by, owner_id, owner_scope, team_id)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
                    RETURNING *, name AS company_name""",
-                DEFAULT_TENANT, company_name or contact_name, "free", "active",
+                DEFAULT_TENANT, company_name or contact_name, _norm_abbr(body.abbr),
+                "free", "active",
                 body.country, body.address, body.default_port, body.credit_level,
                 stage, body.notes, str(user["id"]), str(user["id"]), owner_scope,
                 user.get("team_id"),
@@ -1271,14 +1309,16 @@ async def soft_delete_customer(customer_id: int, request: Request,
 @app.post("/api/v1/customers/{customer_id}/inquiries", status_code=201)
 async def add_inquiry(customer_id: int, request: Request, body: InquiryCreate, user: dict = Depends(_get_current_user)):
     async with _acquire(request) as conn:
-        await _customer_or_404(conn, customer_id, user)
+        customer = await _customer_or_404(conn, customer_id, user)
+        inquiry_no = await _next_inquiry_no(conn, customer)
         row = await conn.fetchrow(
             """INSERT INTO cust_inquiries
-               (tenant_id, customer_id, channel, category_id, product_name_raw,
+               (tenant_id, customer_id, inquiry_no, channel, category_id, product_name_raw,
                 quantity, quantity_unit, application, status, notes, created_by,
                 owner_id, owner_scope, team_id)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *""",
-            DEFAULT_TENANT, customer_id, body.channel, body.category_id, body.product_name_raw,
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *""",
+            DEFAULT_TENANT, customer_id, inquiry_no, body.channel, body.category_id,
+            body.product_name_raw,
             body.quantity, body.quantity_unit, body.application, body.status, body.notes,
             str(user["id"]), str(user["id"]), "private", user.get("team_id"),
         )
@@ -3900,6 +3940,31 @@ _COMPANY_FIELDS = ("name_en", "name_zh", "address_en", "address_zh", "phone", "e
                    "default_incoterm", "default_payment_terms", "default_country_of_origin")
 
 
+async def _require_team_admin(request: Request, user: dict) -> None:
+    """企业抬头/公章写入权限：团队管理员或平台管理员（用户 2026-10-18 口径）。"""
+    from kaas_common.workstation.scope import is_admin_role
+    from kaas_common.workstation.teams import is_team_admin
+    if is_admin_role(user.get("role")):
+        return
+    team_id = user.get("team_id")
+    if team_id is None:
+        raise HTTPException(status_code=403, detail={
+            "error": "forbidden", "code": "TEAM_ADMIN_REQUIRED",
+            "detail": "仅团队管理员可修改企业抬头/收款信息/公章",
+        })
+    row = await db.fetchrow(
+        request, "SELECT created_by FROM teams WHERE id=$1", team_id, table="teams",
+    )
+    if row is None or not is_team_admin(
+        row.get("created_by"), user.get("id"), user.get("role"),
+    ):
+        raise HTTPException(status_code=403, detail={
+            "error": "forbidden", "code": "TEAM_ADMIN_REQUIRED",
+            "detail": "仅团队管理员可修改企业抬头/收款信息/公章",
+        })
+
+
+
 @app.get("/api/v1/tenant/company-profile")
 async def get_company_profile(request: Request, user: dict = Depends(_get_current_user)):
     row = await db.fetchrow(
@@ -3922,6 +3987,8 @@ async def put_company_profile(request: Request, body: dict,
             "error": "validation", "code": "NAME_EN_REQUIRED",
             "detail": "英文公司名必填（对外单据的卖方主体名）",
         })
+    # 权限：团队管理员（或平台管理员）才能改企业抬头
+    await _require_team_admin(request, user)
     # 逐字段覆盖（含 NULL）：允许把填错的字段清空，而不是"擦不掉"
     values = [body.get(f) if f != "name_en" else name_en for f in _COMPANY_FIELDS]
     cols = ", ".join(_COMPANY_FIELDS)
@@ -4161,4 +4228,7 @@ import ws_customer_records  # noqa: E402,F401
 # 字节落点：R2 binding（`FILES`，见 wrangler.jsonc）优先，异常自动回退 inline 并如实记录
 # `file_objects.storage`，不让用户的上传因为存储配置问题直接失败。
 import ws_files  # noqa: E402,F401
+
+# ── 产品成本历史（需求 11；报价保存时写入，参考成本查询）──
+import ws_product_costs  # noqa: E402,F401
 

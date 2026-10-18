@@ -154,6 +154,8 @@ export const ExportQuoteRequestSchema = z.object({
   terms: z.record(z.unknown()).nullable().optional(),
   /** 当期价格输入（运费、保险费率等），供 terms 里的 source 取值 */
   price_inputs: z.record(z.unknown()).nullable().optional(),
+  /** 本单选用的包装（产品 packaging[].id）；缺省 = 默认包装/最早创建的包装 */
+  packaging_id: z.string().nullable().optional(),
   variant_overrides: z.record(z.unknown()).nullable().optional(),
   constants_override: z.record(z.unknown()).nullable().optional(),
   /**
@@ -536,12 +538,43 @@ export const SavePricingCellSchema = z.object({
 });
 export type SavePricingCell = z.infer<typeof SavePricingCellSchema>;
 
+export const PackagingRangeSchema = z.object({
+  /** 按哪个规格字段分档（如 height_m） */
+  field: z.string(),
+  min: z.number().nullable().optional(),
+  max: z.number().nullable().optional(),
+  /** 元 / 卷 */
+  amount: z.number(),
+});
+export type PackagingRange = z.infer<typeof PackagingRangeSchema>;
+
+/** 产品包装方案（需求 20）：每个产品可用一种；默认包装自动应用。 */
+export const PackagingOptionSchema = z.object({
+  id: z.string(),
+  name: z.string().default(''),
+  method: z.string().default(''),
+  is_default: z.boolean().default(false),
+  /** 未设默认时按最早创建取默认（ISO 时间串） */
+  created_at: z.string().nullable().optional(),
+  mode: z.literal('per_piece').default('per_piece'),
+  /** 元 / 卷（无区间命中时兜底） */
+  amount: z.number().default(0),
+  ranges: z.array(PackagingRangeSchema).default([]),
+});
+export type PackagingOption = z.infer<typeof PackagingOptionSchema>;
+
 export const ProductFormulasResponseSchema = z.object({
   product_key: z.string(),
   name: z.string(),
   name_en: z.string().default(''),
   category_code: z.string().default(''),
   hs_codes: z.array(z.string()).default([]),
+  /** 产品级默认利润/杂税（报价页首次打开时带入；本单可覆盖） */
+  profit_mode: z.string().default('margin_on_price'),
+  profit_value: z.number().default(0.06),
+  misc_fee_rate: z.number().default(0.03),
+  /** 包装方案：界面据此渲染包装选择/默认标识，并随报价下发 packaging_id */
+  packaging: z.array(PackagingOptionSchema).default([]),
   cost: z.object({
     field: z.string(),
     basis: z.enum(['pretax', 'incl_tax']),

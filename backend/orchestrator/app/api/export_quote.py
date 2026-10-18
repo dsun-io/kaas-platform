@@ -145,6 +145,8 @@ class CalculateIn(BaseModel):
     variant_overrides: Optional[dict] = Field(
         default=None, description="变体数值覆盖，如 {'coating': {'普锌40g/㎡': {'raw_price': 4.6}}}"
     )
+    # 本单选用的包装（产品 packaging[].id）；缺省 = 默认包装/最早创建的包装
+    packaging_id: Optional[str] = None
     # 显式规格行：只算给的那些，不再展开全量组合
     spec_rows: Optional[List[dict]] = Field(
         default=None,
@@ -211,18 +213,38 @@ async def list_products(auth: AuthContext = Depends(get_auth_context),
     发现层合并（2026-10-17）：运行时新增（tenant_products 落库）的产品此前
     算价能加载、下拉却看不见；这里与 `_effective_product` 走同一个
     TenantProductLoader，同 key 时 本团队 tenant 行 > 历史 NULL 行(仅管理员) > Python。
+
+    2026-10-18（需求 16）：被本团队在「报价」工位停用的产品**不出现在下拉**。
+    停用状态复用既有 `tenant_workstation_products.is_enabled`（团队维度）。
     """
     from app.services.export_quote.tenant_products import TenantProductLoader
+    from sqlalchemy import text
+
+    tenant_id = auth_tenant(auth)
+    team_id = getattr(auth, "team_id", None)
+    team_sql = "team_id IS NULL" if team_id is None else "(team_id IS NULL OR team_id=:team)"
+    params = {"t": tenant_id}
+    if team_id is not None:
+        params["team"] = team_id
+    disabled = {
+        r for r in (await db.execute(text(
+            "SELECT product_key FROM tenant_workstation_products"
+            " WHERE tenant_id=:t AND workstation='quote' AND is_enabled=false"
+            f" AND {team_sql}"
+        ), params)).scalars().all()
+    }
 
     loader = TenantProductLoader()
     specs = await loader.list_available(
-        auth_tenant(auth),
-        team_id=getattr(auth, "team_id", None),
+        tenant_id,
+        team_id=team_id,
         role=getattr(auth, "role", None),
         db_session=db,
     )
     out = []
     for spec in specs:
+        if spec.key in disabled:
+            continue
         out.append(
             {
                 "key": spec.key,
@@ -984,6 +1006,7 @@ def _assemble_request(
         constants_override=body.constants_override or {},
         variant_overrides=body.variant_overrides or {},
         cost_table=cost_table or {},
+        packaging_id=body.packaging_id or "",
         currency=body.currency,
         quote_currency=body.quote_currency,
         tenant_id=auth_tenant(auth),
