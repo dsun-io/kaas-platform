@@ -19,6 +19,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -117,6 +118,23 @@ export function QuoteWorkbenchView() {
     null,
   );
   const [inquiryId, setInquiryId] = useState("");
+  // 当前客户的询盘列表：报价页直接显示「询盘编号」并自动带出，不再让人手填数字 ID。
+  const inquiriesQuery = useQuery({
+    queryKey: ["customer-inquiries", customer?.id],
+    enabled: !!customer?.id,
+    queryFn: async () => {
+      const { data } = await apiClient.get<{
+        items: {
+          id: number;
+          inquiry_no?: string | null;
+          product_name_raw?: string | null;
+          status?: string | null;
+        }[];
+      }>(`/customers/${customer?.id}/inquiries`);
+      return data.items;
+    },
+  });
+  const inquiries = inquiriesQuery.data ?? [];
   const [rateSetCode, setRateSetCode] = useState("");
   const [inputVatRatePct, setInputVatRatePct] = useState(
     POLICY_DEFAULTS.inputVatRatePct,
@@ -598,6 +616,7 @@ export function QuoteWorkbenchView() {
         setCustomerError={setCustomerError}
         inquiryId={inquiryId}
         setInquiryId={setInquiryId}
+        inquiries={inquiries}
         taxPick={taxPick}
         setTaxPick={setTaxPick}
         profiles={profiles}
