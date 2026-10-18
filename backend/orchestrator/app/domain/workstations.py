@@ -132,6 +132,14 @@ WORKSTATIONS = [
         "group": "admin", "order": 21,
         "admin_only": True, "status": "hidden", "subscription": None,
     },
+    {
+        # 与 shared/contracts/workstations.ts 的 key='tax-archives' 逐字段镜像。
+        # 团队级配置；团队管理员写、成员读 ⇒ admin_only=False。
+        "key": "tax-archives", "name": "税务管理",
+        "route": "/settings/tax-archives",
+        "group": "admin", "order": 22,
+        "admin_only": False, "status": "active", "subscription": None,
+    },
     # 不上侧边栏
     {
         # 团队与工位：入口在右上角头像菜单。**不属于计费工位 → 永远可达**，
