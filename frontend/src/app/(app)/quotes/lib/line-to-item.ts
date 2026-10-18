@@ -140,7 +140,10 @@ function buildCostBreakdown(
 }
 
 export interface BuildLineItemInput {
-  product: Pick<ExportProduct, "key" | "name" | "name_en" | "hs_codes">;
+  product: Pick<ExportProduct, "key" | "name" | "name_en" | "hs_codes"> & {
+    /** 产品基础信息里的 HS 编码（定义里没写 hs_codes 时的兜底） */
+    profile?: Record<string, unknown> | null;
+  };
   formulas: ProductFormulasResponse;
   spec: SpecValues;
   /** 按件改写的参数（**引擎单位**），如 `{ roll_len_m: 50, roll_dia_m: 0.3 }` */
@@ -151,6 +154,14 @@ export interface BuildLineItemInput {
   pieces: number;
   /** 单件米数（引擎单位 m）；缺省则由规格变体的默认值决定，调用方负责传入 */
   rollLengthM?: number | null;
+  /** 本单手工成本覆盖（元/kg）；有值时落 quote_order_items.cost_override */
+  costOverride?: number | null;
+  /** 本单选用的包装（名称/id 写进 spec_snapshot，便于历史单追溯） */
+  packaging?: {
+    id?: string | null;
+    name?: string | null;
+    fee_per_piece?: number | null;
+  } | null;
 }
 
 /** 单证/台账要的申报要素（与后端 `_SPEC_FIELDS` 的键名保持一致）。 */
@@ -194,6 +205,8 @@ export interface BuiltLineItem {
  */
 export function buildLineItem(input: BuildLineItemInput): BuiltLineItem {
   const { product, formulas, spec, pieceBase, result, view, pieces } = input;
+  const costOverride = input.costOverride ?? null;
+  const packaging = input.packaging ?? null;
   const indexOf = makeColumnIndexer(formulas, view);
 
   const unitPriceFx = readCell(result, view, indexOf, COL.unitPriceFx) ?? 0;
@@ -215,7 +228,11 @@ export function buildLineItem(input: BuildLineItemInput): BuiltLineItem {
 
   const declared: LineDeclaredFields = {
     specification,
-    hs_code: product.hs_codes?.[0],
+    hs_code:
+      product.hs_codes?.[0] ||
+      (typeof product.profile?.hs_code === "string"
+        ? product.profile.hs_code
+        : undefined),
     package: pieces,
     gross_weight: netWeight,
     net_weight: netWeight,
@@ -237,6 +254,13 @@ export function buildLineItem(input: BuildLineItemInput): BuiltLineItem {
     ...(pieceBase ? { piece_overrides: pieceBase } : {}),
     ...(rollLengthM !== null ? { roll_len_m: rollLengthM } : {}),
     unit_price_fx: unitPriceFx,
+    ...(packaging
+      ? {
+          packaging_id: packaging.id ?? null,
+          packaging_name: packaging.name ?? null,
+          packaging_fee_per_piece: packaging.fee_per_piece ?? null,
+        }
+      : {}),
   };
 
   // 内部分解快照（UNCERTAIN #19）：internal 视图把算价引擎的成本/利润列一并
@@ -257,6 +281,7 @@ export function buildLineItem(input: BuildLineItemInput): BuiltLineItem {
       line_amount: lineAmount,
       spec_snapshot: specSnapshot,
       sort_order: 0, // 由调用方按行序覆盖
+      ...(costOverride !== null ? { cost_override: costOverride } : {}),
       ...(costBreakdown ? { cost_breakdown: costBreakdown } : {}),
     },
     metrics: {

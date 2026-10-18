@@ -1,14 +1,16 @@
 "use client";
 
 /**
- * 报价工作台 · 整单参数卡（从 quote-workbench-view 拆出）。
+ * 报价工作台 · 整单参数卡（2026-10-18 优化版）
  *
- * 与 product-quote-view 的巨石拆分同口径：**只搬 JSX**，state 与业务逻辑
- * （档案套用/利润换算/结果视图清结果）全留在父组件。props 用原 state/setter
- * 同名（setCustomer/setInputVatRatePct…）—— JSX 搬移零改名，typecheck 兜漏。
- *
- * 业务口径（逐字保留）：客户必选（报价是所有单据的唯一根入口）、税务档案
- * 两层配套、利润金额/利润率双输入互为覆盖、整批费用按件数比例分摊。
+ * 口径（用户确认）：
+ *  - 税务档案只保留一个下拉 + 紧凑「存为档案」；
+ *  - 利润只留利润率（%），金额由父组件算好后以小字只读回显；
+ *  - 印花税 → 杂税（单一百分比 = 综合税费系数）；
+ *  - 条款直选（默认 EXW），按所选条款只显示对应费用项；
+ *  - 币种并入汇率控件：`1 [USD] = [7.1000] CNY`；
+ *  - 报价日期默认今天、有效期默认 30 天；
+ *  - 海运费有效期：一个日期范围控件（整单级）。
  */
 import { Button } from "@/components/ui/button";
 import {
@@ -20,28 +22,23 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
 import {
   CustomerPicker,
   type CustomerPickerValue,
 } from "@/components/customer-picker";
-// 术语选项的显示格式与运费面板共用一处实现（`代码 · 中文（English）`）——
-// 两个下拉如果各写一份拼接逻辑，迟早会出现同一档位两种写法。
 import { termOptionLabel } from "../../quotations/v2-quote/components/freight-panel";
+import { requiredFeeKeysFor } from "../lib/terms-amortize";
 import type {
   ExportTermsTemplate,
   QuoteProfile,
 } from "@contracts/export-quote";
-import type { QuoteView } from "../../quotations/v2-quote/hooks/use-export-quote-calc";
-import type { LineDraft } from "../components/quote-line-card";
-
-type StampBaseValue = "" | "profit" | "cost" | "base_quote";
-type ProfitMode = "fixed" | "ratio";
 
 interface RateSetOption {
   code: string;
   name?: string | null;
 }
+
+const CURRENCIES = ["USD", "EUR", "GBP", "AUD", "CAD", "JPY", "CNY"] as const;
 
 export interface WorkbenchParamsCardProps {
   customer: CustomerPickerValue | null;
@@ -52,7 +49,6 @@ export interface WorkbenchParamsCardProps {
   setInquiryId: (v: string) => void;
   taxPick: string;
   setTaxPick: (v: string) => void;
-  setNotice: (n: { tone: "info" | "error"; text: string } | null) => void;
   profiles: QuoteProfile[];
   rateSets: { data?: { rate_sets?: RateSetOption[] } };
   profileName: string;
@@ -72,14 +68,12 @@ export interface WorkbenchParamsCardProps {
   setOutputVatRatePct: (v: string) => void;
   rebateRatePct: string;
   setRebateRatePct: (v: string) => void;
-  stampRatePct: string;
-  setStampRatePct: (v: string) => void;
-  stampBase: StampBaseValue;
-  setStampBase: (v: StampBaseValue) => void;
-  profitValue: string;
-  setProfitValue: (v: string) => void;
-  profitMode: ProfitMode;
-  setProfitMode: (v: ProfitMode) => void;
+  miscTaxPct: string;
+  setMiscTaxPct: (v: string) => void;
+  profitPct: string;
+  setProfitPct: (v: string) => void;
+  /** 利润率对应金额（元/kg，只读小字；空 = 计算后显示） */
+  profitAmountHint?: string;
   quoteCurrency: string;
   setQuoteCurrency: (v: string) => void;
   fxRate: string;
@@ -88,19 +82,18 @@ export interface WorkbenchParamsCardProps {
   setQuoteDate: (v: string) => void;
   validityDays: string;
   setValidityDays: (v: string) => void;
-  termsEnabled: boolean;
-  setTermsEnabled: (v: boolean) => void;
   termsTemplate: ExportTermsTemplate | null | undefined;
   termsQuery: { isError: boolean };
-  effectiveQuoteAs: string;
+  quoteAs: string;
   setQuoteAs: (v: string) => void;
   feeInputs: Record<string, string>;
   setFeeInputs: (
     fn: (prev: Record<string, string>) => Record<string, string>,
   ) => void;
-  view: QuoteView;
-  setView: (v: QuoteView) => void;
-  setLines: (fn: (prev: LineDraft[]) => LineDraft[]) => void;
+  freightFrom: string;
+  setFreightFrom: (v: string) => void;
+  freightTo: string;
+  setFreightTo: (v: string) => void;
 }
 
 export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
@@ -113,7 +106,6 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
     setInquiryId,
     taxPick,
     setTaxPick,
-    setNotice,
     profiles,
     rateSets,
     profileName,
@@ -133,14 +125,11 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
     setOutputVatRatePct,
     rebateRatePct,
     setRebateRatePct,
-    stampRatePct,
-    setStampRatePct,
-    stampBase,
-    setStampBase,
-    profitValue,
-    setProfitValue,
-    profitMode,
-    setProfitMode,
+    miscTaxPct,
+    setMiscTaxPct,
+    profitPct,
+    setProfitPct,
+    profitAmountHint,
     quoteCurrency,
     setQuoteCurrency,
     fxRate,
@@ -149,28 +138,33 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
     setQuoteDate,
     validityDays,
     setValidityDays,
-    termsEnabled,
-    setTermsEnabled,
     termsTemplate,
     termsQuery,
-    effectiveQuoteAs,
+    quoteAs,
     setQuoteAs,
     feeInputs,
     setFeeInputs,
-    view,
-    setView,
-    setLines,
+    freightFrom,
+    setFreightFrom,
+    freightTo,
+    setFreightTo,
   } = props;
+
+  const feeKeys = termsTemplate
+    ? requiredFeeKeysFor(termsTemplate, quoteAs)
+    : [];
+  const showFreightValidity = feeKeys.includes("ocean_freight");
+
   return (
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-base">整单参数</CardTitle>
         <CardDescription>
-          这些参数整单只有一份（所有产品行共用）——
-          币种、汇率、税率、报价日期与整批费用。
+          客户、税务档案、利润/杂税、对外报价条款与汇率；这些参数整单只有一份。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* 客户 / 询盘 / 税务档案 */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <CustomerPicker
             value={customer}
@@ -193,7 +187,7 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
               className="h-8 text-xs"
             />
             <p className="text-[11px] text-muted-foreground">
-              一个询盘一张报价单；改价重报可再存一张
+              从询盘跳转时自动带入编号；一般无需手填
             </p>
           </div>
 
@@ -204,14 +198,11 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
               onChange={(e) => {
                 const v = e.target.value;
                 setTaxPick(v);
-                setNotice(null);
                 if (v.startsWith("profile:")) {
                   const p = profiles.find((x) => `profile:${x.id}` === v);
                   if (p) applyProfile(p);
                   return;
                 }
-                // 切回法定档案 = 不再套用客户档案 → 税率项回到默认。
-                // 不这么做的话，用户以为"取消套用了"，实际还在用档案里的数字。
                 setRateSetCode(
                   v.startsWith("rate:") ? v.slice("rate:".length) : "",
                 );
@@ -221,7 +212,7 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
             >
               <option value="">（未指定，按报价当期生效的一份）</option>
               {profiles.length > 0 && (
-                <optgroup label="客户税率档案（按客户 + 第 1 行产品）">
+                <optgroup label="客户税率档案">
                   {profiles.map((p) => (
                     <option key={`profile:${p.id}`} value={`profile:${p.id}`}>
                       {p.profile_name}
@@ -237,49 +228,48 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
                 ))}
               </optgroup>
             </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs">客户税率档案名称</Label>
-            <div className="flex gap-1.5">
+            <div className="flex items-center gap-1.5">
               <Input
                 value={profileName}
                 onChange={(e) => setProfileName(e.target.value)}
-                placeholder="按客户+产品存的常用税率组合名"
-                className="h-8 text-xs"
+                placeholder="档案名（存为常用税率）"
+                className="h-7 text-[11px]"
                 maxLength={60}
               />
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
-                className="h-8 shrink-0 text-xs"
+                className="h-7 shrink-0 text-xs"
                 disabled={saveProfile.isPending || !firstProductKey}
                 onClick={onSaveProfile}
               >
                 存为档案
               </Button>
+              {taxPick.startsWith("profile:") && (
+                <button
+                  type="button"
+                  className="shrink-0 text-[11px] text-muted-foreground underline"
+                  onClick={() => {
+                    const p = profiles.find(
+                      (x) => `profile:${x.id}` === taxPick,
+                    );
+                    if (p) onDeleteProfile(p);
+                  }}
+                >
+                  移除
+                </button>
+              )}
             </div>
-            {taxPick.startsWith("profile:") && (
-              <button
-                type="button"
-                className="text-[11px] text-muted-foreground underline"
-                onClick={() => {
-                  const p = profiles.find((x) => `profile:${x.id}` === taxPick);
-                  if (p) void onDeleteProfile(p);
-                }}
-              >
-                移除该档案
-              </button>
-            )}
           </div>
         </div>
 
+        {/* 税率 / 利润 / 杂税 */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <div className="space-y-1.5">
             <Label
               className="text-xs"
-              title="供应商开票的税点（如 10%）。用于换算含税采购价、进项税额，以及「可退进项税额 = 进项税额 × 退税率 ÷ 票税点」"
+              title="供应商开票的税点（如 10%），用于换算含税采购价与进项税额"
             >
               进项票税点（%）
             </Label>
@@ -294,7 +284,7 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
           <div className="space-y-1.5">
             <Label
               className="text-xs"
-              title="按产品 HS 编码确定的出口退税率。可退进项增值税税额 = 进项税额 × (退税率 ÷ 票税点)，未填时按全额可退估算（报价会偏高）"
+              title="按 HS 编码确定的出口退税率；未填按全额可退估算"
             >
               出口退税率（%）
             </Label>
@@ -305,16 +295,11 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
               onChange={(e) => setRebateRatePct(e.target.value)}
               className="h-8 text-xs"
             />
-            <p className="text-[11px] text-muted-foreground">
-              {rebateRatePct === ""
-                ? "⚠ 未填：按进项税额全额可退估算，报价可能偏低"
-                : "按 HS 核实"}
-            </p>
           </div>
           <div className="space-y-1.5">
             <Label
               className="text-xs"
-              title="让出可退进项增值税额的比例（100% = 全部让利给客户换竞争力，0% = 自留对冲风险）。让利额 = 可退进项税额 × 让利比例"
+              title="让出可退进项增值税额的比例（100% = 全部让利）"
             >
               让利比例（%）
             </Label>
@@ -329,7 +314,7 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
           <div className="space-y-1.5">
             <Label
               className="text-xs"
-              title="销项增值税税率（出口零税率填 0）。计税基数是售价不是成本：销项税额 = 不含税售价 × 销项税率"
+              title="销项增值税税率（出口零税率填 0）"
             >
               销项税率（%）
             </Label>
@@ -344,90 +329,93 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
           <div className="space-y-1.5">
             <Label
               className="text-xs"
-              title="印花税率。margin_on_price 售价加成模式下已并入「综合税费系数」（0.03），此处不再单独计征"
+              title="杂税 = 除销项增值税外的杂七杂八税费总和（综合税费系数）；售价 = 成本 ÷ (1 − 利润率 − 杂税)"
             >
-              印花税率（%）
+              杂税（%）
             </Label>
             <Input
               type="number"
-              step="0.01"
-              placeholder="留空 = 用档案法定值"
-              value={stampRatePct}
-              onChange={(e) => setStampRatePct(e.target.value)}
+              step="0.1"
+              value={miscTaxPct}
+              onChange={(e) => setMiscTaxPct(e.target.value)}
+              placeholder="默认 3"
               className="h-8 text-xs"
             />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">印花税计税基数</Label>
-            <select
-              value={stampBase}
-              onChange={(e) => setStampBase(e.target.value as StampBaseValue)}
-              className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <option value="">跟随档案（现为加工利润）</option>
-              <option value="profit">加工利润</option>
-              <option value="cost">税前成本</option>
-              <option value="base_quote">基础报价</option>
-            </select>
+            <p className="text-[11px] text-muted-foreground">
+              综合税费系数，按售价计征
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label
               className="text-xs"
-              title="整单默认加工利润。多产品报价时各行可单独覆盖；留空则所有行用此值。固定额模式 = 元/kg，利润率模式 = 税前成本 × 利润率"
+              title="整单默认利润率（%）。售价 = 成本 ÷ (1 − 利润率 − 杂税)"
             >
-              整单默认加工利润
+              利润率（%）
             </Label>
-            <div className="flex gap-1.5">
-              <Input
-                type="number"
-                step="0.01"
-                value={profitValue}
-                onChange={(e) => {
-                  setProfitValue(e.target.value);
-                  setProfitMode("fixed");
-                }}
-                className="h-8 text-xs"
-              />
+            <div className="flex items-center gap-2">
               <Input
                 type="number"
                 step="0.1"
-                placeholder="利润率%"
-                value={profitMode === "ratio" ? profitValue : ""}
-                onChange={(e) => {
-                  setProfitValue(e.target.value);
-                  setProfitMode("ratio");
-                }}
+                value={profitPct}
+                onChange={(e) => setProfitPct(e.target.value)}
                 className="h-8 text-xs"
               />
+              <span className="whitespace-nowrap text-[11px] text-muted-foreground">
+                {profitAmountHint || "≈ 计算后显示"}
+              </span>
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              左侧填金额、右侧填利润率，改哪个用哪个；逐行可覆盖
-            </p>
           </div>
+        </div>
+
+        {/* 条款 / 币种汇率 / 日期 */}
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <div className="space-y-1.5">
-            <Label className="text-xs">报价币种</Label>
+            <Label className="text-xs">对外报价条款</Label>
             <select
-              value={quoteCurrency}
-              onChange={(e) => setQuoteCurrency(e.target.value)}
+              value={quoteAs}
+              onChange={(e) => setQuoteAs(e.target.value)}
               className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {["USD", "EUR", "GBP", "AUD", "CAD", "JPY", "CNY"].map((c) => (
-                <option key={c} value={c}>
-                  {c}
+              {termsTemplate?.ladder.map((r) => (
+                <option key={r.code} value={r.code}>
+                  {termOptionLabel(r)}
                 </option>
               ))}
             </select>
           </div>
+
           <div className="space-y-1.5">
-            <Label className="text-xs">汇率（1 CNY = ? {quoteCurrency}）</Label>
-            <Input
-              type="number"
-              step="0.0001"
-              value={fxRate}
-              onChange={(e) => setFxRate(e.target.value)}
-              className="h-8 text-xs"
-            />
+            <Label className="text-xs">汇率（1 外币 = ? CNY）</Label>
+            <div className="flex items-stretch gap-0 overflow-hidden rounded-lg border border-input">
+              <span className="flex items-center bg-muted px-2 text-xs">1</span>
+              <select
+                value={quoteCurrency}
+                onChange={(e) => setQuoteCurrency(e.target.value)}
+                className="h-8 border-x border-input bg-background px-2 text-xs focus-visible:outline-none"
+              >
+                {CURRENCIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <span className="flex items-center px-2 text-xs">=</span>
+              <Input
+                type="number"
+                step="any"
+                value={quoteCurrency === "CNY" ? "1" : fxRate}
+                onChange={(e) => setFxRate(e.target.value)}
+                disabled={quoteCurrency === "CNY"}
+                placeholder="按报价当日汇率"
+                className="h-8 rounded-none border-0 text-xs focus-visible:ring-0"
+              />
+              <span className="flex items-center bg-muted px-2 text-xs">CNY</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              切币种会自动带入最新汇率；手改后以手填为准
+            </p>
           </div>
+
           <div className="space-y-1.5">
             <Label className="text-xs">报价日期</Label>
             <Input
@@ -450,33 +438,46 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
           </div>
         </div>
 
-        <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
-          <label className="flex items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              checked={termsEnabled}
-              onChange={(e) => setTermsEnabled(e.target.checked)}
-            />
-            启用出口费用（FOB / CFR / CIF / DAP / DDP）—— 不启用则按**出厂价 EXW**报价
-          </label>
-          {termsEnabled && termsTemplate && (
-            <>
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">对外报价条款</Label>
-                  <select
-                    value={effectiveQuoteAs}
-                    onChange={(e) => setQuoteAs(e.target.value)}
-                    className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    {termsTemplate.ladder.map((r) => (
-                      <option key={r.code} value={r.code}>
-                        {termOptionLabel(r)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {Object.entries(termsTemplate.items ?? {}).map(([key, fee]) => (
+        {/* 海运费有效期：一个范围控件（整单级） */}
+        {showFreightValidity && (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">海运费有效期</Label>
+              <div className="flex items-center gap-1 rounded-lg border border-input px-2">
+                <Input
+                  type="date"
+                  value={freightFrom}
+                  onChange={(e) => setFreightFrom(e.target.value)}
+                  className="h-8 border-0 px-1 text-xs focus-visible:ring-0"
+                />
+                <span className="text-xs text-muted-foreground">~</span>
+                <Input
+                  type="date"
+                  value={freightTo}
+                  onChange={(e) => setFreightTo(e.target.value)}
+                  className="h-8 border-0 px-1 text-xs focus-visible:ring-0"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 条款费用项：只显示所选条款累计需要的项 */}
+        {termsQuery.isError && (
+          <p className="text-xs text-destructive">
+            出口费用模板加载失败，刷新重试
+          </p>
+        )}
+        {termsTemplate && feeKeys.length > 0 && (
+          <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+            <p className="text-xs font-medium">
+              {quoteAs} 费用项（整批金额，按件数分摊到每行）
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {feeKeys.map((key) => {
+                const fee = termsTemplate.items[key];
+                if (!fee) return null;
+                return (
                   <div key={key} className="space-y-1.5">
                     <Label className="text-xs">
                       {fee.name}
@@ -500,56 +501,11 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
                       </p>
                     )}
                   </div>
-                ))}
-              </div>
-              <p className="text-[11px] text-muted-foreground">
-                整批费用按**件数比例**分摊到每个产品行；摊到单卷后各行一致，逐行累加等于整批金额。
-              </p>
-            </>
-          )}
-          {termsEnabled && termsQuery.isError && (
-            <p className="text-xs text-destructive">
-              费用结构加载失败，请刷新重试
-            </p>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-          <div className="space-y-1.5">
-            <Label className="text-xs">结果视图</Label>
-            <div className="flex gap-2">
-              {(
-                [
-                  ["customer", "客户视图"],
-                  ["internal", "内部核算"],
-                ] as [QuoteView, string][]
-              ).map(([k, label]) => (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => {
-                    setView(k);
-                    setLines((prev) =>
-                      prev.map((l) => ({ ...l, result: null, built: null })),
-                    );
-                  }}
-                  className={cn(
-                    "rounded-lg border px-3 py-1.5 text-xs transition-colors",
-                    view === k
-                      ? "border-primary bg-primary/10 font-medium text-foreground"
-                      : "border-input text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
+                );
+              })}
             </div>
           </div>
-          <p className="text-[11px] text-muted-foreground">
-            客户视图不含成本、利润与税额；内部核算需要管理员权限。
-            切换视图后行结果需重新计算。
-          </p>
-        </div>
+        )}
       </CardContent>
     </Card>
   );

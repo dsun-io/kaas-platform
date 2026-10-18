@@ -43,6 +43,7 @@ import { useCustomerName } from "@/lib/workstation/use-upstream";
 import type { QuoteProfile } from "@contracts/export-quote";
 
 import {
+  useExportProducts,
   useExportRateSets,
   useExportTermsTemplate,
 } from "../../quotations/v2-quote/hooks/use-export-quote-import";
@@ -70,18 +71,12 @@ import {
   type BuiltLineItem,
 } from "../lib/line-to-item";
 import { buildTermsPerLine } from "../lib/terms-amortize";
-import type {
-  ProfitMode,
-  SharedQuoteParams,
-  StampBase,
-} from "../lib/build-request";
+import type { SharedQuoteParams } from "../lib/build-request";
 import apiClient from "@/lib/api/client";
+import { useAuth } from "@/lib/auth/auth-context";
 
 /** 上次用过的汇率，避免每次报价重复输入（仅作预填，仍需业务确认）。 */
 const FX_KEY = "kaas:last-fx-rate";
-
-/** 印花税计税基数。`""` = 用法定档案里的值。 */
-type StampBaseValue = StampBase;
 
 /** 报价政策的默认值 —— 与后端默认政策等价，因此本身不改变任何金额。 */
 const POLICY_DEFAULTS = {
@@ -89,17 +84,27 @@ const POLICY_DEFAULTS = {
   giveRatioPct: "80",
   outputVatRatePct: "0",
   rebateRatePct: "",
-  stampRatePct: "",
-  stampBase: "" as StampBaseValue,
+  miscTaxPct: "3",
 };
 
 /** 默认生成哪几种单证：按业务顺序的前两张（报价单 + 形式发票）。 */
 const DEFAULT_DOC_PICK = ["quotation", "pi"];
 
+/** 本地今天（YYYY-MM-DD）—— 报价日期默认值。 */
+function todayISO(): string {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
 export function QuoteWorkbenchView() {
   // ── 行 ───────────────────────────────────────────────────────────────────
   const [lines, setLines] = useState<LineDraft[]>(() => [newLineDraft()]);
-  const [view, setView] = useState<QuoteView>("customer");
+  // 结果视图不再由用户选择：内部账号看内部视图，其余账号看客户视图
+  const { user: authUser } = useAuth();
+  const view: QuoteView =
+    authUser?.account_type === "internal" ? "internal" : "customer";
 
   // ── 整单共享参数 ─────────────────────────────────────────────────────────
   // 客户是**必选**的：报价是所有单据的唯一根入口，客户空着的话
@@ -124,23 +129,24 @@ export function QuoteWorkbenchView() {
   const [rebateRatePct, setRebateRatePct] = useState(
     POLICY_DEFAULTS.rebateRatePct,
   );
-  const [stampRatePct, setStampRatePct] = useState(
-    POLICY_DEFAULTS.stampRatePct,
-  );
-  const [stampBase, setStampBase] = useState<StampBaseValue>(
-    POLICY_DEFAULTS.stampBase,
-  );
-  const [profitMode, setProfitMode] = useState<ProfitMode>("fixed");
-  const [profitValue, setProfitValue] = useState("0.1");
+  const [miscTaxPct, setMiscTaxPct] = useState(POLICY_DEFAULTS.miscTaxPct);
+  const [profitPct, setProfitPct] = useState("5");
   const [quoteCurrency, setQuoteCurrency] = useState("USD");
   const [fxRate, setFxRate] = useState("");
-  const [quoteDate, setQuoteDate] = useState("");
-  const [validityDays, setValidityDays] = useState("7");
+  const [fxTouched, setFxTouched] = useState(false);
+  const [quoteDate, setQuoteDate] = useState(todayISO);
+  const [validityDays, setValidityDays] = useState("30");
 
   // ── 贸易术语（整批费用：整单填一次，按件数比例分摊给每行）──────────────────
-  const [termsEnabled, setTermsEnabled] = useState(false);
-  const [quoteAs, setQuoteAs] = useState("");
+  const [quoteAs, setQuoteAs] = useState("EXW");
   const [feeInputs, setFeeInputs] = useState<Record<string, string>>({});
+  const [freightFrom, setFreightFrom] = useState("");
+  const [freightTo, setFreightTo] = useState("");
+  /** 整单报价信号：递增触发所有行重算 */
+  const [calcSignal, setCalcSignal] = useState(0);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addPick, setAddPick] = useState("");
+  const productOptions = useExportProducts();
 
   // ── 报价单与单证 ─────────────────────────────────────────────────────────
   const [quoteOrderId, setQuoteOrderId] = useState<number | null>(null);
@@ -158,8 +164,9 @@ export function QuoteWorkbenchView() {
 
   const rateSets = useExportRateSets();
   const termsQuery = useExportTermsTemplate();
-  // 汇率：后端按需刷新（>6h 拉公开源；失败降级缓存）。前端只在本地没存过时自动带入。
-  const latestFx = useLatestFxRate();
+  // 汇率：后端按需刷新（>6h 拉公开源；失败降级缓存）。
+  // 方向 = 1 报价币 = ? CNY；切币种后必须重新取对应币种的汇率。
+  const latestFx = useLatestFxRate(quoteCurrency, "CNY");
   const create = useCreateQuoteOrder();
   const update = useUpdateQuoteOrder();
   const replaceItems = useReplaceQuoteItems();
@@ -184,25 +191,24 @@ export function QuoteWorkbenchView() {
     : "";
   const customerLabel = customer ? customerName || `#${customer.id}` : "";
 
+  // 汇率自动带入：手改后不再自动覆盖；切币种视为重新开始（取新币种汇率）。
   useEffect(() => {
-    const saved = window.localStorage.getItem(FX_KEY);
-    if (saved) setFxRate(saved);
-  }, []);
+    setFxTouched(false);
+  }, [quoteCurrency]);
 
-  // 本地没保存过汇率 ⇒ 用后端最新汇率自动带入（仍可手改；外部源不可用时保持空，不阻塞报价）。
-  // 后端 `/fx-rates/latest` 超过 6 小时会自行刷新并入库，见 worker `ws_extras._ensure_fresh_fx`。
   useEffect(() => {
-    if (fxRate) return;
+    if (fxTouched) return;
     const rate = latestFx.data?.rate;
     if (rate && rate > 0) setFxRate(String(rate));
-  }, [fxRate, latestFx.data]);
+  }, [fxTouched, latestFx.data]);
 
   const termsTemplate = termsQuery.data;
-  const effectiveQuoteAs = quoteAs || termsTemplate?.quote_as || "CIF";
+  const effectiveQuoteAs = quoteAs || termsTemplate?.quote_as || "EXW";
 
-  // 整批费用：整单填一次，按**件数比例**摊到每行（分摊数学见 lib/terms-amortize.ts）
+  // 整批费用：整单填一次，按**件数比例**摊到每行；
+  // 只下发所选条款累计需要的费用项（阶梯截断到 quoteAs）。
   const termsByLine = useMemo(() => {
-    if (!termsEnabled || !termsTemplate) return null;
+    if (!termsTemplate) return null;
     const amounts: Record<string, number> = {};
     for (const key of Object.keys(termsTemplate.items ?? {})) {
       amounts[key] = Number(feeInputs[key]) || 0;
@@ -211,9 +217,10 @@ export function QuoteWorkbenchView() {
       termsTemplate,
       amounts,
       lines.map((l) => Number(l.pieces) || 0),
+      effectiveQuoteAs,
     );
     return { terms, amortized };
-  }, [termsEnabled, termsTemplate, feeInputs, lines]);
+  }, [termsTemplate, feeInputs, lines, effectiveQuoteAs]);
 
   const shared: SharedQuoteParams = useMemo(
     () => ({
@@ -226,10 +233,8 @@ export function QuoteWorkbenchView() {
       giveRatioPct,
       outputVatRatePct,
       rebateRatePct,
-      stampRatePct,
-      stampBase,
-      profitMode,
-      profitValue,
+      miscTaxPct,
+      profitPct,
     }),
     [
       rateSetCode,
@@ -241,10 +246,8 @@ export function QuoteWorkbenchView() {
       giveRatioPct,
       outputVatRatePct,
       rebateRatePct,
-      stampRatePct,
-      stampBase,
-      profitMode,
-      profitValue,
+      miscTaxPct,
+      profitPct,
     ],
   );
 
@@ -298,16 +301,16 @@ export function QuoteWorkbenchView() {
       rateToPct(t.output_vat_rate, POLICY_DEFAULTS.outputVatRatePct),
     );
     setRebateRatePct(rateToPct(t.rebate_rate, POLICY_DEFAULTS.rebateRatePct));
-    setStampRatePct(rateToPct(t.stamp_rate, POLICY_DEFAULTS.stampRatePct));
-    setStampBase((t.stamp_base as StampBaseValue) ?? POLICY_DEFAULTS.stampBase);
+    setMiscTaxPct(
+      rateToPct(t.misc_fee_rate, POLICY_DEFAULTS.miscTaxPct),
+    );
   };
 
   const clearProfileTax = () => {
     setInputVatRatePct(POLICY_DEFAULTS.inputVatRatePct);
     setOutputVatRatePct(POLICY_DEFAULTS.outputVatRatePct);
     setRebateRatePct(POLICY_DEFAULTS.rebateRatePct);
-    setStampRatePct(POLICY_DEFAULTS.stampRatePct);
-    setStampBase(POLICY_DEFAULTS.stampBase);
+    setMiscTaxPct(POLICY_DEFAULTS.miscTaxPct);
   };
 
   const onSaveProfile = async () => {
@@ -326,10 +329,9 @@ export function QuoteWorkbenchView() {
         ...(pctToRate(rebateRatePct) !== undefined
           ? { rebate_rate: pctToRate(rebateRatePct) }
           : {}),
-        ...(pctToRate(stampRatePct) !== undefined
-          ? { stamp_rate: pctToRate(stampRatePct) }
+        ...(pctToRate(miscTaxPct) !== undefined
+          ? { misc_fee_rate: pctToRate(miscTaxPct) }
           : {}),
-        ...(stampBase ? { stamp_base: stampBase } : {}),
       };
       const created = await saveProfile.mutateAsync({
         product_key: firstProductKey,
@@ -373,7 +375,10 @@ export function QuoteWorkbenchView() {
     customer_name: customerName || null,
     currency: quoteCurrency,
     valid_until: validUntil(),
-    incoterm: termsEnabled ? effectiveQuoteAs : "EXW",
+    // 用户直选的对外条款（默认 EXW），阶梯已按该档截断
+    incoterm: effectiveQuoteAs,
+    freight_valid_from: freightFrom || null,
+    freight_valid_to: freightTo || null,
   });
 
   function validUntil(): string | null {
@@ -566,7 +571,6 @@ export function QuoteWorkbenchView() {
         setInquiryId={setInquiryId}
         taxPick={taxPick}
         setTaxPick={setTaxPick}
-        setNotice={setNotice}
         profiles={profiles}
         rateSets={rateSets}
         profileName={profileName}
@@ -586,33 +590,31 @@ export function QuoteWorkbenchView() {
         setOutputVatRatePct={setOutputVatRatePct}
         rebateRatePct={rebateRatePct}
         setRebateRatePct={setRebateRatePct}
-        stampRatePct={stampRatePct}
-        setStampRatePct={setStampRatePct}
-        stampBase={stampBase}
-        setStampBase={setStampBase}
-        profitValue={profitValue}
-        setProfitValue={setProfitValue}
-        profitMode={profitMode}
-        setProfitMode={setProfitMode}
+        miscTaxPct={miscTaxPct}
+        setMiscTaxPct={setMiscTaxPct}
+        profitPct={profitPct}
+        setProfitPct={setProfitPct}
         quoteCurrency={quoteCurrency}
         setQuoteCurrency={setQuoteCurrency}
         fxRate={fxRate}
-        setFxRate={setFxRate}
+        setFxRate={(v) => {
+          setFxTouched(true);
+          setFxRate(v);
+        }}
         quoteDate={quoteDate}
         setQuoteDate={setQuoteDate}
         validityDays={validityDays}
         setValidityDays={setValidityDays}
-        termsEnabled={termsEnabled}
-        setTermsEnabled={setTermsEnabled}
         termsTemplate={termsTemplate}
         termsQuery={termsQuery}
-        effectiveQuoteAs={effectiveQuoteAs}
+        quoteAs={effectiveQuoteAs}
         setQuoteAs={setQuoteAs}
         feeInputs={feeInputs}
         setFeeInputs={setFeeInputs}
-        view={view}
-        setView={setView}
-        setLines={(fn) => setLines(fn)}
+        freightFrom={freightFrom}
+        setFreightFrom={setFreightFrom}
+        freightTo={freightTo}
+        setFreightTo={setFreightTo}
       />
 
       {lines.map((line, index) => (
@@ -625,6 +627,7 @@ export function QuoteWorkbenchView() {
           terms={termsByLine?.terms[index] ?? null}
           lineCount={lines.length}
           customerId={customer?.id ?? null}
+          calcSignal={calcSignal}
           onChange={(patch) =>
             setLines((prev) =>
               prev.map((l) => (l.id === line.id ? { ...l, ...patch } : l)),
@@ -636,17 +639,70 @@ export function QuoteWorkbenchView() {
         />
       ))}
 
-      <Button
-        type="button"
-        variant="outline"
-        className="w-full"
-        onClick={() =>
-          setLines((prev) => [...prev, newLineDraft(prev[0]?.productKey ?? "")])
-        }
-      >
-        <Plus className="mr-1.5 size-4" />
-        再添加一个产品
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          onClick={() => setCalcSignal((v) => v + 1)}
+          className="flex-1 sm:flex-none"
+        >
+          整单报价（计算全部行）
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            const first = productOptions.data?.products?.[0]?.key ?? "";
+            setAddPick(first);
+            setAddOpen(true);
+          }}
+        >
+          <Plus className="mr-1.5 size-4" />
+          添加产品
+        </Button>
+      </div>
+
+      {addOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl border bg-background p-4 shadow-xl">
+            <h3 className="text-sm font-semibold">添加产品</h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              先选产品，确定后再在行内选择规格（规格决定成本/重量/体积）。
+            </p>
+            <select
+              value={addPick}
+              onChange={(e) => setAddPick(e.target.value)}
+              className="mt-3 h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
+            >
+              {(productOptions.data?.products ?? []).map((p) => (
+                <option key={p.key} value={p.key}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setAddOpen(false)}
+              >
+                取消
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={!addPick}
+                onClick={() => {
+                  setLines((prev) => [...prev, newLineDraft(addPick)]);
+                  setAddOpen(false);
+                }}
+              >
+                添加
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <QuoteSummaryCard
         summary={summary}
