@@ -116,6 +116,8 @@ export const ExportTermsFeeSchema = z.object({
   mode: z.string(),
   /** 界面提示：这一项该填什么单位 */
   unit_hint: z.string().default(''),
+  /** 自动公式键（如 insurance_of_exw）；非空时界面不要求手填 */
+  formula: z.string().optional(),
   note: z.string().default(''),
   value: z.number().nullable().default(null),
   /**
@@ -197,6 +199,8 @@ export const QuoteMetaSchema = z.object({
   combo_count: z.number().int(),
   orders: z.array(OrderMetaSchema).default([]),
   main_term_summary: z.record(MainTermSummarySchema).default({}),
+  /** 每个术语在整单上的金额（保险等整单费用分摊用） */
+  term_totals: z.record(z.record(z.record(z.number()))).default({}),
   /** 引擎提示（如退税率未核实），前端应展示给业务确认 */
   diagnostics: z.array(z.string()).default([]),
 });

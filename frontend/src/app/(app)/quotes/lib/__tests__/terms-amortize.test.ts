@@ -33,6 +33,31 @@ function fee(row: BuiltTerms, key: string): number {
   return items[key]!.value;
 }
 
+describe("整单保险按货值分摊", () => {
+  it("formula=insurance_of_exw 时用前端算好的每行美元金额；没给就先按 0", () => {
+    const t = template();
+    t.items.insurance = {
+      ...t.items.insurance!,
+      mode: "per_shipment",
+      formula: "insurance_of_exw",
+      currency: "USD",
+    };
+    const first = buildTermsPerLine(t, {}, [10, 30], "CIF");
+    expect(fee(first.terms[0]!, "insurance")).toBe(0);
+    expect(fee(first.terms[1]!, "insurance")).toBe(0);
+
+    const second = buildTermsPerLine(
+      t,
+      {},
+      [10, 30],
+      "CIF",
+      { insurance_of_exw: [15, 0] },
+    );
+    expect(fee(second.terms[0]!, "insurance")).toBe(15);
+    expect(fee(second.terms[1]!, "insurance")).toBe(0);
+  });
+});
+
 describe("整批费用按件数比例分摊", () => {
   it("per_shipment 按件数比例分摊；线性口径的项原样下发", () => {
     // 两行：10 卷 + 30 卷 → 分摊比例 1:3

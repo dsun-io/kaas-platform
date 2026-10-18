@@ -179,6 +179,8 @@ export function QuoteWorkbenchView() {
   const [freightTo, setFreightTo] = useState("");
   // 船公司（CFR/CIF/DAP/DDP 报价时必选；值格式「中文名-英文缩写」）
   const [carrier, setCarrier] = useState("");
+  // 整单保险：先按 0 保险算一轮拿各行 EXW 货值，再按货值比例分摊第二轮
+  const [insuranceByLine, setInsuranceByLine] = useState<number[] | null>(null);
   /** 整单报价信号：递增触发所有行重算 */
   const [calcSignal, setCalcSignal] = useState(0);
   const [addOpen, setAddOpen] = useState(false);
@@ -254,9 +256,12 @@ export function QuoteWorkbenchView() {
       amounts,
       lines.map((l) => Number(l.pieces) || 0),
       effectiveQuoteAs,
+      insuranceByLine
+        ? { insurance_of_exw: insuranceByLine }
+        : undefined,
     );
     return { terms, amortized };
-  }, [termsTemplate, feeInputs, lines, effectiveQuoteAs]);
+  }, [termsTemplate, feeInputs, lines, effectiveQuoteAs, insuranceByLine]);
 
   const shared: SharedQuoteParams = useMemo(
     () => ({
@@ -293,6 +298,43 @@ export function QuoteWorkbenchView() {
     [lines],
   );
   const summary = useMemo(() => summarizeLines(computed), [computed]);
+
+  // 行参数变了就重新走一轮保险分摊（结果对象变化不触发）
+  const lineInputKey = useMemo(
+    () =>
+      lines
+        .map(
+          (l) =>
+            `${l.productKey}|${JSON.stringify(l.spec)}|${l.pieces}|${l.costOverride}|${l.profitPctOverride}`,
+        )
+        .join("||"),
+    [lines],
+  );
+  useEffect(() => {
+    setInsuranceByLine(null);
+  }, [lineInputKey, effectiveQuoteAs]);
+
+  // 整单保险：第一轮各行按 0 保险算完 → 汇总 EXW 货值 → 第二轮按货值比例分摊。
+  // 保险费 = 整单 EXW × 1.1 ÷ 1000，最低 15 美元；只对含保险的条款生效。
+  useEffect(() => {
+    if (insuranceByLine) return;
+    if (!["CIF", "DAP", "DDP"].includes(effectiveQuoteAs)) return;
+    if (lines.length === 0) return;
+    if (!lines.every((l) => l.result && l.built)) return;
+    const exwTotals = lines.map((l) => {
+      const meta = l.result?.meta;
+      const orderName = meta?.orders?.[0]?.name;
+      const totals = meta?.term_totals?.EXW;
+      const entry = orderName ? totals?.[orderName] : undefined;
+      return Number(entry?.total_excl_fx) || 0;
+    });
+    const totalExw = exwTotals.reduce((a, b) => a + b, 0);
+    if (totalExw <= 0) return;
+    const premiumUsd = Math.max(15, (totalExw * 1.1) / 1000);
+    const allocated = exwTotals.map((x) => (premiumUsd * x) / totalExw);
+    setInsuranceByLine(allocated);
+    setCalcSignal((v) => v + 1);
+  }, [lines, insuranceByLine, effectiveQuoteAs]);
 
   /** 利润率右侧的只读金额回显：取第一行内部分解里的「利润金额（元/kg）」。 */
   const profitAmountHint = (() => {

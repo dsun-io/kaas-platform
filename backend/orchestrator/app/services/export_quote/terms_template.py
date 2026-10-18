@@ -81,10 +81,16 @@ DEFAULT_EXPORT_TERMS: dict = {
         "insurance": {
             "name": "海运保险费",
             "name_en": "Marine insurance",
+            # 金额由前端按「整单 EXW 货值 × 1.1 ÷ 1000，最低 15 美元」算好后，
+            # 作为 per_shipment 美元金额下发；整单只算一次，再按货值分摊到行。
             "mode": "per_shipment",
+            "formula": "insurance_of_exw",
             "currency": "USD",
-            "unit_hint": "美元 / 整批",
-            "note": "按整批保险费填美元金额；CIF = CFR + 本项（按订单汇率折人民币后计入）。",
+            "unit_hint": "美元 / 整批（自动）",
+            "note": (
+                "自动计算：整单 EXW 货值 × 1.1 ÷ 1000，最低 15 美元；"
+                "整单只算一次，按各货值比例分摊到行。"
+            ),
             "value": None,
         },
         "destination_charges": {
