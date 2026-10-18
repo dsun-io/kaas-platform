@@ -2291,31 +2291,15 @@ export const MOCK_EXPORT_RATE_SETS: ExportRateSet[] = [
  */
 export const MOCK_EXPORT_TERMS_TEMPLATE: ExportTermsTemplate = {
   "base": "EXW",
-  "quote_as": "CIF",
+  "quote_as": "EXW",
   "weight_field": "weight_per_piece_kg",
   "items": {
-    "inland_freight": {
-      "name": "内陆运费（厂 → 港）",
-      "name_en": "Inland freight (factory → port)",
+    "domestic_charges": {
+      "name": "国内费用（本地费用）",
+      "name_en": "Domestic charges",
       "mode": "per_shipment",
       "unit_hint": "元 / 整批",
-      "note": "整批一次，引擎会按订单件数摊到单卷。",
-      "value": null
-    },
-    "port_charges": {
-      "name": "港杂费",
-      "name_en": "Port charges",
-      "mode": "per_shipment",
-      "unit_hint": "元 / 整批",
-      "note": "码头操作、装箱、堆存、单证等。",
-      "value": null
-    },
-    "customs_fee": {
-      "name": "报关费",
-      "name_en": "Customs clearance fee",
-      "mode": "per_shipment",
-      "unit_hint": "元 / 整批",
-      "note": "报关行、查验、单证费等。",
+      "note": "含内陆运费、港杂费、报关费等所有国内环节费用；按货代实际报价整批填写。",
       "value": null
     },
     "ocean_freight": {
@@ -2363,9 +2347,7 @@ export const MOCK_EXPORT_TERMS_TEMPLATE: ExportTermsTemplate = {
       "label": "离岸价（装运港船上交货）",
       "label_en": "Free On Board",
       "items": [
-        "inland_freight",
-        "port_charges",
-        "customs_fee"
+        "domestic_charges"
       ]
     },
     {

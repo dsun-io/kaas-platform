@@ -186,11 +186,15 @@ export function ProductsMediaTab() {
               >
                 <div className="font-medium">{p.name}</div>
                 <div className="text-xs text-muted-foreground">
-                  {p.product_key}
+                  {p.name_en || "（未填英文名）"}
                   {p.category_code ? ` · ${p.category_code}` : ""}
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
                   图片 {p.media_count} 张
+                  {typeof p.profile?.hs_code === "string" &&
+                  p.profile.hs_code
+                    ? ` · HS ${p.profile.hs_code}`
+                    : ""}
                   {Object.keys(p.profile ?? {}).length > 0
                     ? " · 已填基础信息"
                     : ""}

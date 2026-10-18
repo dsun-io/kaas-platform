@@ -56,8 +56,12 @@ export interface LineDraft {
   pieceOverrides: Record<string, string>;
   /** 件数（卷数）。刻意不给默认值 —— 默认值会让人不填就提交 */
   pieces: string;
-  /** 逐行覆盖的加工利润（元/kg）；留空 = 继承整单 */
-  profitOverride: string;
+  /** 逐行覆盖的利润率（%）；留空 = 继承整单 */
+  profitPctOverride: string;
+  /** 本行手工成本覆盖（元/kg）；留空 = 用产品定义/成本历史参考 */
+  costOverride: string;
+  /** 本行包装（产品 packaging[].id）；留空 = 默认包装 */
+  packagingId: string;
   result: ExportQuoteResponse | null;
   built: BuiltLineItem | null;
   error: string | null;
@@ -72,7 +76,9 @@ export function newLineDraft(productKey = ""): LineDraft {
     spec: {},
     pieceOverrides: {},
     pieces: "",
-    profitOverride: "",
+    profitPctOverride: "",
+    costOverride: "",
+    packagingId: "",
     result: null,
     built: null,
     error: null,
@@ -95,6 +101,8 @@ interface Props {
   customerId?: string | null;
   onChange: (patch: Partial<LineDraft>) => void;
   onRemove: () => void;
+  /** 整单报价信号：递增即触发本行计算（0/undefined = 不触发） */
+  calcSignal?: number;
 }
 
 export function QuoteLineCard({
@@ -107,6 +115,7 @@ export function QuoteLineCard({
   customerId = null,
   onChange,
   onRemove,
+  calcSignal = 0,
 }: Props) {
   const products = useExportProducts();
   const effectiveProduct =
@@ -144,6 +153,46 @@ export function QuoteLineCard({
     ...(formulas.data?.space.variants ?? []),
   ];
   const pieceInputs = formulas.data?.piece_inputs ?? [];
+
+  // ── 成本（需求 11）：默认取规格里的成本字段；可本单手改 ──────────────────
+  const costField = formulas.data?.cost.field ?? "";
+  const specCost = (() => {
+    if (!costField) return 0;
+    for (const group of groups) {
+      const option = group.options.find(
+        (o) => String(o.value) === String(line.spec[group.name]),
+      );
+      const raw = option?.attributes?.[costField];
+      if (raw !== undefined && raw !== null && String(raw) !== "") {
+        return Number(raw) || 0;
+      }
+    }
+    return 0;
+  })();
+  const typedCost = line.costOverride.trim();
+  const effectiveCost = typedCost === "" ? specCost : Number(typedCost) || 0;
+
+  // ── 包装（需求 20）：默认包装优先；区间按当前规格取值 ────────────────────
+  const packagingOptions = formulas.data?.packaging ?? [];
+  const defaultPackaging =
+    packagingOptions.find((p) => p.is_default) ??
+    [...packagingOptions].sort((a, b) =>
+      String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")),
+    )[0] ??
+    null;
+  const effectivePackaging =
+    packagingOptions.find((p) => p.id === line.packagingId) ?? defaultPackaging;
+  const packagingFee = (() => {
+    if (!effectivePackaging) return 0;
+    for (const rng of effectivePackaging.ranges) {
+      const fieldValue = Number(line.spec[rng.field]);
+      if (!Number.isFinite(fieldValue)) continue;
+      if (rng.min != null && fieldValue < rng.min) continue;
+      if (rng.max != null && fieldValue >= rng.max) continue;
+      return rng.amount;
+    }
+    return effectivePackaging.amount;
+  })();
 
   const baseOf = (variant: string, key: string): string =>
     pieceDefault(groups, line.spec, variant, key);
@@ -218,13 +267,34 @@ export function QuoteLineCard({
     if (!formulas.data) return;
     onChange({ error: null });
     try {
+      // 成本手改：以变体覆盖的方式传给引擎（只影响本行，不回写定价数据）
+      const overrides = {
+        ...variantOverrides,
+      } as Record<string, Record<string, Record<string, number>>>;
+      if (typedCost !== "" && costField) {
+        for (const group of groups) {
+          const optionName = String(line.spec[group.name] ?? "");
+          if (!optionName) continue;
+          const option = group.options.find(
+            (o) => String(o.value) === optionName,
+          );
+          if (option?.attributes?.[costField] === undefined) continue;
+          const bucket = overrides[group.name] ?? (overrides[group.name] = {});
+          bucket[optionName] = {
+            ...(bucket[optionName] ?? {}),
+            [costField]: Number(typedCost) || 0,
+          };
+          break;
+        }
+      }
       const payload = buildLineRequest({
         productKey: effectiveProduct,
         spec: line.spec,
-        variantOverrides,
+        variantOverrides: overrides,
         total,
         unit: unitQtyInput?.unit || "m",
-        profitOverride: line.profitOverride,
+        profitPctOverride: line.profitPctOverride,
+        packagingId: effectivePackaging?.id ?? "",
         terms: terms ?? null,
         shared,
       });
@@ -250,6 +320,14 @@ export function QuoteLineCard({
         view,
         pieces: Number(line.pieces) || 0,
         rollLengthM: unitQty || null,
+        costOverride: typedCost === "" ? null : effectiveCost,
+        packaging: effectivePackaging
+          ? {
+              id: effectivePackaging.id,
+              name: effectivePackaging.name,
+              fee_per_piece: packagingFee,
+            }
+          : null,
       });
       onChange({
         result,
@@ -268,6 +346,12 @@ export function QuoteLineCard({
     }
   };
 
+  // 整单报价：父组件递增 calcSignal → 本行重算（保留逐行计算作为验证入口）
+  useEffect(() => {
+    if (calcSignal > 0) void compute();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calcSignal]);
+
   const unitPriceFx = readNum("piece.price_per_piece_fx");
   const pricePerMeter = readNum("piece.price_per_meter");
   const lineAmount = line.built?.item.line_amount ?? null;
@@ -277,8 +361,34 @@ export function QuoteLineCard({
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <CardTitle className="text-sm">
-            产品行 {index + 1}
-            {formulas.data?.name ? `：${formulas.data.name}` : ""}
+            产品行 {index + 1}：
+            <select
+              value={effectiveProduct}
+              onChange={(e) =>
+                onChange({
+                  productKey: e.target.value,
+                  spec: {},
+                  result: null,
+                  built: null,
+                  error: null,
+                  packagingId: "",
+                  costOverride: "",
+                })
+              }
+              disabled={products.isLoading}
+              className="ml-1 h-7 rounded-md border border-input bg-background px-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {(products.data?.products ?? []).length === 0 && (
+                <option value="">
+                  {products.isLoading ? "加载中…" : "暂无可报价产品"}
+                </option>
+              )}
+              {(products.data?.products ?? []).map((p) => (
+                <option key={p.key} value={p.key}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
             {line.pieces && Number(line.pieces) > 0 && (
               <span className="ml-2 text-xs font-normal text-muted-foreground">
                 {line.pieces} 卷
@@ -310,35 +420,6 @@ export function QuoteLineCard({
           </p>
         ) : null}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="space-y-1.5">
-            <Label className="text-xs">产品</Label>
-            <select
-              value={effectiveProduct}
-              onChange={(e) =>
-                onChange({
-                  productKey: e.target.value,
-                  spec: {},
-                  result: null,
-                  built: null,
-                  error: null,
-                })
-              }
-              disabled={products.isLoading}
-              className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {(products.data?.products ?? []).length === 0 && (
-                <option value="">
-                  {products.isLoading ? "加载中…" : "暂无可报价产品"}
-                </option>
-              )}
-              {(products.data?.products ?? []).map((p) => (
-                <option key={p.key} value={p.key}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
           {pieceInputs.map((pi) => {
             const { value, hint } = displayOf(pi as never);
             const unit = pi.ui_unit || pi.unit;
@@ -397,22 +478,64 @@ export function QuoteLineCard({
           </div>
 
           <div className="space-y-1.5">
+            <Label className="text-xs">税前成本（元/kg）</Label>
+            <Input
+              type="number"
+              step="any"
+              value={line.costOverride}
+              onChange={(e) => onChange({ costOverride: e.target.value })}
+              placeholder={specCost > 0 ? String(specCost) : "请填写成本"}
+              className="h-8 text-xs"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              默认取定价数据/规格；手改只影响本单
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">包装方式</Label>
+            <select
+              value={effectivePackaging?.id ?? ""}
+              onChange={(e) => onChange({ packagingId: e.target.value })}
+              disabled={packagingOptions.length === 0}
+              className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {packagingOptions.length === 0 && (
+                <option value="">（该产品未配置包装）</option>
+              )}
+              {packagingOptions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                  {p.is_default ? "（默认）" : ""}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-muted-foreground">
+              {effectivePackaging
+                ? `按规格自动读取：¥${packagingFee.toFixed(2)}/卷`
+                : "在产品管理里配置包装与收费区间"}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
             <Label
               className="text-xs"
-              title="逐行覆盖加工利润（元/kg）。不同产品的供货厂与竞争情况不同，利润常常不一样；留空 = 继承整单默认值，填了 = 只对本行生效"
+              title="逐行覆盖利润率（%）。不同产品毛利不同；留空 = 继承整单默认"
             >
-              加工利润覆盖（元/kg）
+              本行利润率（%）
             </Label>
             <Input
               type="number"
               step="0.01"
-              value={line.profitOverride}
-              onChange={(e) => onChange({ profitOverride: e.target.value })}
+              value={line.profitPctOverride}
+              onChange={(e) =>
+                onChange({ profitPctOverride: e.target.value })
+              }
               placeholder="留空 = 用整单默认"
               className="h-8 text-xs"
             />
             <p className="text-[11px] text-muted-foreground">
-              不同产品毛利不同，可单独覆盖
+              售价 = 成本 ÷ (1 − 利润率 − 杂税)
             </p>
           </div>
         </div>

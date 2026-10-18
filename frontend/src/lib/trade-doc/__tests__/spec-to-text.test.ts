@@ -14,6 +14,10 @@ function formulas(): ProductFormulasResponse {
     name_en: "Field Fence",
     category_code: "fence",
     hs_codes: ["73144100"],
+    profit_mode: "margin_on_price",
+    profit_value: 0.06,
+    misc_fee_rate: 0.03,
+    packaging: [],
     cost: { field: "raw_price", basis: "pretax", unit: "元/kg", note: "" },
     space: {
       axes: [

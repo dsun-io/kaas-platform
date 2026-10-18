@@ -48,7 +48,19 @@ export function buildTermsPerLine(
   template: ExportTermsTemplate,
   amounts: Record<string, number>,
   shares: number[],
+  quoteAs?: string,
 ): { terms: BuiltTerms[]; amortized: string[] } {
+  // 2026-10-18：显式给了条款时，阶梯截断到所选条款 —— 只算用户要报的那一档，
+  // 避免"没填海运费却算出 CIF 价"这种误导；quote_as 必须等于所选条款。
+  // 未显式给（旧调用/测试）时保持旧行为：模板原样、quote_as 用模板默认值。
+  const explicit = (quoteAs ?? "").trim().toUpperCase();
+  const idx = explicit
+    ? template.ladder.findIndex((r) => r.code === explicit)
+    : -1;
+  const ladder = idx >= 0 ? template.ladder.slice(0, idx + 1) : template.ladder;
+  const code = idx >= 0 ? explicit : template.quote_as;
+  const visible = new Set(ladder.flatMap((r) => r.items ?? []));
+
   const n = Math.max(1, Math.floor(shares.length || 1));
   const cleaned = Array.from({ length: n }, (_, i) => {
     const v = Number(shares[i]);
@@ -65,6 +77,7 @@ export function buildTermsPerLine(
   for (let i = 0; i < n; i += 1) {
     const items: Record<string, unknown> = {};
     for (const [key, fee] of Object.entries(template.items ?? {})) {
+      if (!visible.has(key)) continue; // 高于所选条款的费用项不下发
       const amount = Number(amounts[key]) || 0;
       if (isPerShipment(fee)) {
         if (n > 1 && !amortized.includes(key)) amortized.push(key);
@@ -77,12 +90,29 @@ export function buildTermsPerLine(
     }
     terms.push({
       base: template.base,
-      quote_as: template.quote_as,
+      quote_as: code,
       weight_field: template.weight_field,
       items,
-      ladder: template.ladder,
+      ladder,
     });
   }
 
   return { terms, amortized };
+}
+
+/** 所选条款下需要填写的费用项（从 EXW 到该档累计、去重保序）。 */
+export function requiredFeeKeysFor(
+  template: ExportTermsTemplate,
+  quoteAs: string,
+): string[] {
+  const wanted = (quoteAs || "EXW").toUpperCase();
+  const idx = template.ladder.findIndex((r) => r.code === wanted);
+  const ladder = idx >= 0 ? template.ladder.slice(0, idx + 1) : template.ladder;
+  const keys: string[] = [];
+  for (const rung of ladder) {
+    for (const key of rung.items ?? []) {
+      if (!keys.includes(key)) keys.push(key);
+    }
+  }
+  return keys;
 }
