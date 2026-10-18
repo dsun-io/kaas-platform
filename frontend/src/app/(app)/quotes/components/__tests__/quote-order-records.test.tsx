@@ -75,6 +75,10 @@ vi.mock("../../hooks/use-quote-orders", () => ({
     data: id === 1 ? mocks.DETAIL : null,
     isLoading: false,
   }),
+  useUpdateQuoteOrder: () => ({
+    mutateAsync: async () => ({}),
+    isPending: false,
+  }),
 }));
 
 vi.mock("@/hooks/use-role", () => ({

@@ -43,6 +43,7 @@ from pydantic import BaseModel
 
 import main as _main
 from kaas_common.domain.enums import validate_enum
+from kaas_common.workstation.number_rules import NumberError, normalize_number
 
 app = _main.app
 _get_current_user = _main._get_current_user
@@ -111,6 +112,8 @@ class _CustomerUpdate(BaseModel):
 
 class _InquiryUpdate(BaseModel):
     status: Optional[str] = None
+    # 编号可改，但仅限「还没生成报价」时
+    inquiry_no: Optional[str] = None
     channel: Optional[str] = None
     product_name_raw: Optional[str] = None
     quantity: Optional[float] = None
@@ -234,7 +237,17 @@ async def list_customer_inquiries(
         sql += f" AND status = ${len(params)}"
     sql += " ORDER BY created_at DESC"
     rows = await db.fetch(request, sql, *params, table="cust_inquiries")
-    return {"items": [row_to_inquiry(r) for r in rows], "total": len(rows)}
+    items = []
+    for r in rows:
+        item = row_to_inquiry(r)
+        has_quote = await db.fetchval(
+            request,
+            "SELECT 1 FROM quote_orders WHERE tenant_id=$1 AND inquiry_id=$2 LIMIT 1",
+            DEFAULT_TENANT, r["id"],
+        )
+        item["inquiry_no_editable"] = not bool(has_quote)
+        items.append(item)
+    return {"items": items, "total": len(rows)}
 
 
 @app.get("/api/v1/inquiries")
@@ -304,8 +317,40 @@ async def update_inquiry(
 
         data = body.model_dump(exclude_unset=True)
         new_status = data.pop("status", None)
+        new_no = data.pop("inquiry_no", None)
         sets: list = []
         params: list = []
+
+        if new_no is not None and new_no != inq.get("inquiry_no"):
+            try:
+                new_no = normalize_number(new_no)
+            except NumberError as exc:
+                raise HTTPException(status_code=422, detail={
+                    "error": "validation", "code": "INVALID_INQUIRY_NO",
+                    "detail": str(exc),
+                })
+            has_quote = await conn.fetchval(
+                "SELECT 1 FROM quote_orders WHERE tenant_id=$1 AND inquiry_id=$2 LIMIT 1",
+                DEFAULT_TENANT, inquiry_id,
+            )
+            if has_quote:
+                raise HTTPException(status_code=409, detail={
+                    "error": "conflict", "code": "INQUIRY_NO_LOCKED",
+                    "detail": "该询盘已生成报价单，编号已锁定；如需改号请先处理关联报价",
+                })
+            taken = await conn.fetchval(
+                "SELECT 1 FROM cust_inquiries WHERE tenant_id=$1"
+                " AND inquiry_no=$2 AND id<>$3 LIMIT 1",
+                DEFAULT_TENANT, new_no, inquiry_id,
+            )
+            if taken:
+                raise HTTPException(status_code=409, detail={
+                    "error": "conflict", "code": "INQUIRY_NO_TAKEN",
+                    "detail": f"询盘编号「{new_no}」已被占用，请换一个",
+                })
+            inq = {**inq, "inquiry_no": new_no}
+            params.append(new_no)
+            sets.append(f"inquiry_no = ${len(params)}")
 
         if new_status is not None:
             validate_enum("inquiry_status", new_status)

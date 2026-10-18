@@ -45,6 +45,8 @@ export interface TradeDocRow {
     sources?: Record<string, TradeDocSourceSnapshot>;
     custom?: Record<string, unknown>;
   } | null;
+  /** 单证号当前是否可改（同一链条上没有更晚单证） */
+  doc_no_editable?: boolean;
   created_at: string | null;
 }
 
@@ -162,6 +164,7 @@ export function useUpdateTradeDoc() {
     }: {
       id: number;
       status?: string;
+      doc_no?: string;
       raw_payload?: Record<string, unknown>;
     }) => {
       const { data } = await apiClient.patch<TradeDocRow>(

@@ -19,9 +19,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { DetailDrawer } from "@/components/shared/detail-drawer";
+import { NumberEditDialog } from "@/components/shared/number-edit-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useQuoteOrder, useQuoteOrders } from "../hooks/use-quote-orders";
+import { useQuoteOrder, useQuoteOrders, useUpdateQuoteOrder } from "../hooks/use-quote-orders";
 import { useRole } from "@/hooks/use-role";
 import type { QuoteOrder, QuoteOrderItem } from "@contracts/quote-order";
 
@@ -113,6 +115,23 @@ export function QuoteOrderRecords() {
   const detail = useQuoteOrder(selectedId);
   const selected = detail.data ?? null;
   const selectedItems: QuoteOrderItem[] = selected?.items ?? [];
+  const update = useUpdateQuoteOrder();
+  const [quoteNoEdit, setQuoteNoEdit] = useState<QuoteOrder | null>(null);
+  const [quoteNoError, setQuoteNoError] = useState<string | null>(null);
+
+  const saveQuoteNo = async (value: string) => {
+    if (!quoteNoEdit) return;
+    setQuoteNoError(null);
+    try {
+      await update.mutateAsync({ id: quoteNoEdit.id, patch: { quote_no: value } });
+      setQuoteNoEdit(null);
+    } catch (e) {
+      const msg =
+        (e as { response?: { data?: { detail?: { detail?: string } } } })
+          ?.response?.data?.detail?.detail ?? "修改失败，请重试";
+      setQuoteNoError(msg);
+    }
+  };
 
   return (
     <Card>
@@ -155,7 +174,23 @@ export function QuoteOrderRecords() {
                   onClick={() => setSelectedId(q.id)}
                 >
                   <TableCell className="font-mono text-xs">
-                    {q.quote_no}
+                    <div className="flex items-center gap-1">
+                      <span>{q.quote_no}</span>
+                      {q.quote_no_editable !== false && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-1 text-[11px]"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setQuoteNoError(null);
+                            setQuoteNoEdit(q);
+                          }}
+                        >
+                          改编号
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     {q.customer_name ?? `#${q.customer_id ?? "—"}`}
@@ -235,6 +270,21 @@ export function QuoteOrderRecords() {
           )
         ) : null}
       </DetailDrawer>
+
+      <NumberEditDialog
+        open={quoteNoEdit !== null}
+        onOpenChange={(open) => {
+          if (!open) setQuoteNoEdit(null);
+        }}
+        title="修改报价单号"
+        label="报价单号"
+        currentValue={quoteNoEdit?.quote_no ?? ""}
+        description="报价单号默认自动生成；生成 PI/合同等后续单证之前可以修改。"
+        warning="确认后单号会立即生效。一旦生成 PI/合同等后续单证（或转为订单），该编号将自动锁定。"
+        pending={update.isPending}
+        error={quoteNoError}
+        onConfirm={saveQuoteNo}
+      />
     </Card>
   );
 }
