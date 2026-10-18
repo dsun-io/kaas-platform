@@ -66,14 +66,14 @@ describe("POST /api/v1/customers ← page.tsx:169-182（CustomerForm）", () => 
       address: "",
       default_port: "Hamburg",
       credit_level: "C",
-      stage: "lead",
+      stage: "active",
       notes: "",
     });
     expect(res.status).toBe(201);
     const created = (await res.json()) as CustomerRow;
     expect(typeof created.id).toBe("number");
     expect(created.company_name).toBe("新客户 C");
-    expect(created.stage).toBe("lead");
+    expect(created.stage).toBe("active");
     expect(Number.isNaN(new Date(created.updated_at).getTime())).toBe(false);
 
     // 列表：总量 +1，且新客户因 updated_at desc 排在最前
@@ -90,7 +90,7 @@ describe("POST /api/v1/customers ← page.tsx:169-182（CustomerForm）", () => 
     expect(detail.contacts).toEqual([]);
     expect(detail.inquiries).toEqual([]);
     expect(detail.stage_log.length).toBe(1);
-    expect(detail.stage_log[0]!.to_stage).toBe("lead");
+    expect(detail.stage_log[0]!.to_stage).toBe("active");
   });
 
   it("company_name 为空 → 422（对齐后端 CustomerCreate 必填）", async () => {
@@ -102,22 +102,22 @@ describe("POST /api/v1/customers ← page.tsx:169-182（CustomerForm）", () => 
 describe("PATCH /api/v1/customers/:id/stage ← page.tsx:463-478（StageUpdate）", () => {
   it("200 改阶段 + 写流水 + 回 closed_inquiries", async () => {
     const res = await patch("/customers/2/stage", {
-      stage: "quoted",
+      stage: "inactive",
       reason: "已报价",
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as CustomerRow & {
       closed_inquiries: number[];
     };
-    expect(body.stage).toBe("quoted");
+    expect(body.stage).toBe("inactive");
     expect(body.closed_inquiries).toEqual([]);
 
     const detail = (await (
       await fetch(`${BASE}/customers/2`)
     ).json()) as CustomerRow;
-    expect(detail.stage).toBe("quoted");
+    expect(detail.stage).toBe("inactive");
     expect(detail.stage_log[detail.stage_log.length - 1]!.to_stage).toBe(
-      "quoted",
+      "inactive",
     );
   });
 
@@ -165,8 +165,10 @@ describe("POST /api/v1/customers/:id/contacts ← page.tsx:375-395（ContactForm
 });
 
 describe("POST /api/v1/customers/:id/inquiries ← page.tsx:277-297（InquiryForm）", () => {
-  it("201 + row_to_inquiry 形状，status=open，且 lead 客户联动进 inquiry", async () => {
-    // 客户 2 的种子阶段是 lead
+  it("201 + row_to_inquiry 形状，status=open，且不联动客户阶段（两层分离）", async () => {
+    const before = (await (
+      await fetch(`${BASE}/customers/2`)
+    ).json()) as CustomerRow;
     const res = await post("/customers/2/inquiries", {
       customer_id: 2,
       // 渠道是**自由文本**：mock 刻意不做枚举校验（见 handlers.ts 该 handler 上方说明）
@@ -193,7 +195,9 @@ describe("POST /api/v1/customers/:id/inquiries ← page.tsx:277-297（InquiryFor
       await fetch(`${BASE}/customers/2`)
     ).json()) as CustomerRow;
     expect(detail.inquiries.length).toBe(2);
-    expect(detail.stage).toBe("inquiry"); // 后端 :567-571 的联动
+    // 2026-10-18：询盘属于单据阶段，不再联动客户阶段
+    expect(detail.stage).toBe(before.stage);
+    expect(detail.stage_log.length).toBe(before.stage_log.length);
   });
 });
 
@@ -258,8 +262,8 @@ describe("POST /api/v1/auth/register ← auth-context.tsx:127-139", () => {
 describe("5 个端点一次性验证：全部被 handler 接住（无一个放行到网络）", () => {
   it("依次拿到 201/200，而不是未匹配请求的失败", async () => {
     const results = await Promise.all([
-      post("/customers", { company_name: "X", stage: "lead" }),
-      patch("/customers/1/stage", { stage: "quoted" }),
+      post("/customers", { company_name: "X", stage: "active" }),
+      patch("/customers/1/stage", { stage: "inactive" }),
       post("/customers/1/contacts", { name: "X" }),
       post("/customers/1/inquiries", { channel: "email" }),
       post("/auth/register", {
@@ -273,3 +277,4 @@ describe("5 个端点一次性验证：全部被 handler 接住（无一个放�
     expect(results.map((r) => r.status)).toEqual([201, 200, 201, 201, 200]);
   });
 });
+

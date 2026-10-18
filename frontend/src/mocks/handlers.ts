@@ -143,17 +143,11 @@ type MockStageLog = {
   created_at: string;
 };
 
-/** 客户阶段合法值 —— 与后端 enums.py:13 `CUSTOMER_STAGE`、页面
- * `STAGE_LABELS`（page.tsx:21-29）**同值**（6 个，逐字一致），因此这里可以照后端校验。
- * 2026-10-17 用户口径：删除【洽谈中】。 */
-const CUSTOMER_STAGES: readonly string[] = [
-  "lead",
-  "inquiry",
-  "quoted",
-  "won",
-  "lost",
-  "inactive",
-];
+/** 客户阶段（2026-10-18 用户口径）：只有三种。
+ *  - active / inactive 是**手动**状态；
+ *  - ordered（已下单）由开启中的订单推导，**不允许手写**。
+ * 询盘/报价/订单的 lead→inquiry→quoted→won→lost 属于**单据阶段**，不是客户阶段。 */
+const CUSTOMER_STAGES: readonly string[] = ["active", "inactive"];
 
 let customersStore: MockCustomer[] = [];
 let contactsStore = new Map<number, MockContact[]>();
@@ -187,7 +181,7 @@ let docsStore: Array<Record<string, unknown> & { id: number }> = [];
 /** 枚举真源 = backend/orchestrator/app/domain/enums.py（值逐字照搬）。 */
 const ENUMS_MOCK: Record<string, string[]> = {
   inquiry_status: ["open", "quoted", "won", "lost"],
-  customer_stage: ["lead", "inquiry", "quoted", "won", "lost", "inactive"],
+  customer_stage: ["active", "inactive", "ordered"],
   quote_status: ["draft", "sent", "accepted", "rejected", "expired"],
   order_status: [
     "pending",
@@ -396,15 +390,15 @@ function seedStageLog(customer: MockCustomer): MockStageLog[] {
     {
       id: nextChildId++,
       from_stage: null,
-      to_stage: "lead",
+      to_stage: "active",
       reason: "新建客户",
       created_at: new Date(now - 30 * 86400000).toISOString(),
     },
     {
       id: nextChildId++,
-      from_stage: "lead",
-      to_stage: customer.stage,
-      reason: "收到询盘",
+      from_stage: "active",
+      to_stage: customer.manual_stage ?? customer.stage,
+      reason: customer.manual_stage === "inactive" ? "手动切换为沉寂" : "收到询盘",
       created_at: new Date(now - 5 * 86400000).toISOString(),
     },
   ];
@@ -780,23 +774,21 @@ export const handlers = [
   http.post("/api/v1/customers", async ({ request }) => {
     const body = (await request.json()) as Record<string, unknown>;
     const companyName = String(body.company_name ?? "").trim();
-    if (!companyName) {
-      // 后端由 Pydantic `CustomerCreate.company_name: str` 拦下（customers.py:126）
+    const contactName = String(body.contact_name ?? "").trim();
+    // 与后端一致（2026-10-17 口径）：公司名与联系人至少填一个。
+    if (!companyName && !contactName) {
       return HttpResponse.json(
         {
-          error_code: "VALIDATION_ERROR",
-          message: "公司名称必填",
-          detail: "validation_error: company_name is required",
+          error_code: "CUSTOMER_IDENTITY_REQUIRED",
+          message: "公司名称和联系人至少填写一个",
+          detail: "公司名称和联系人至少填写一个",
         },
         { status: 422 },
       );
     }
-    const stage = String(body.stage ?? "lead") || "lead";
+    const stage = String(body.stage ?? "active") || "active";
     if (!CUSTOMER_STAGES.includes(stage)) {
-      // ⚠️ 这里**没有**照抄后端 INVALID_ENUM 的对象型 detail（enums.py:93-100 是
-      // `{error,code,field,value,allowed}`）：消费方 `errMsg`（page.tsx:124-130）
-      // 只认字符串 detail，拿到对象会原样塞进 JSX 直接崩。同一根因详见下面
-      // PATCH /stage 处关于 409 的说明。
+      // 后端错误 detail 是对象型；页面 errMsg 已兼容对象（page.tsx errMsg）。
       return HttpResponse.json(
         {
           error_code: "INVALID_ENUM",
@@ -809,12 +801,13 @@ export const handlers = [
     const at = nowIso();
     const created: MockCustomer = {
       id: nextCustomerId++,
-      company_name: companyName,
+      company_name: companyName || contactName,
       country: optStr(body.country),
       address: optStr(body.address),
       default_port: optStr(body.default_port),
       credit_level: optStr(body.credit_level),
       stage,
+      manual_stage: stage,
       notes: optStr(body.notes),
       created_at: at,
       updated_at: at,
@@ -822,7 +815,18 @@ export const handlers = [
     customersStore.push(created);
     contactsStore.set(created.id, []);
     inquiriesStore.set(created.id, []);
-    // 后端建客户时写一条 stage_log（customers.py:239 `_log_stage(..., None, stage, "新建客户")`）
+    if (contactName) {
+      contactsOf(created.id).push({
+        id: nextChildId++,
+        name: contactName,
+        position: null,
+        phone: optStr(body.contact_phone),
+        email: optStr(body.contact_email),
+        whatsapp: null,
+        is_primary: true,
+      });
+    }
+    // 后端建客户时写一条 stage_log
     stageLogsOf(created.id).push({
       id: nextChildId++,
       from_stage: null,
@@ -833,46 +837,79 @@ export const handlers = [
     return HttpResponse.json(created, { status: 201 });
   }),
 
-  // PATCH /customers/:id/stage ← 消费方 page.tsx:463-478（StageUpdate，只等成功）
-  //   请求体 = `{stage, reason?}`（page.tsx:467-470）
-  //   后端 customers.py:333-394：200 + `{...row_to_customer, closed_inquiries:[id]}`
-  //
-  //   ⚠️ 已登记的前端/后端不一致（task-6 要求 2）：
-  //   后端在 target ∈ {won,lost} 且名下有 `status='open'` 询盘时**首次请求回 409**
-  //   （`{detail:{code:"OPEN_INQUIRIES_EXIST", open_inquiries:[...]}}`，customers.py:367-373），
-  //   要求前端二次确认后带 `close_all_open` / `close_inquiry_ids` 重试；而消费方
-  //   StageUpdate **从不发这两个字段**，也没有二次确认弹窗，且 `errMsg`（page.tsx:124-130）
-  //   会把对象型 `detail` 渲染成 "[object Object]"。
-  //   按 task-6「以消费方前端为准」⇒ mock 不回 409，直接 200，但**保留后端的数据语义**
-  //   （won/lost 时把 open 询盘一并置为终态，并在响应里回 `closed_inquiries`）。
+  // PATCH /customers/:id ← 消费方 page.tsx CustomerForm（编辑档案，2026-10-18 新增）
+  //   请求体 = 档案字段；**不含 stage**（阶段走 /stage）。语义照后端：
+  //   exclude_unset —— 只改显式出现的字段，传 null = 清空。
+  http.patch("/api/v1/customers/:id", async ({ params, request }) => {
+    const customer = customersStore.find((c) => c.id === Number(params.id));
+    if (!customer) return customerNotFound(params.id);
+    const body = (await request.json()) as Record<string, unknown>;
+    const companyName = String(body.company_name ?? "").trim();
+    if ("company_name" in body && !companyName) {
+      return HttpResponse.json(
+        {
+          error_code: "INVALID_ARGUMENT",
+          message: "公司名称不能为空",
+          detail: "公司名称不能为空",
+        },
+        { status: 422 },
+      );
+    }
+    if ("company_name" in body) customer.company_name = companyName;
+    for (const key of [
+      "country",
+      "address",
+      "default_port",
+      "credit_level",
+      "notes",
+    ] as const) {
+      if (key in body) {
+        (customer as Record<string, unknown>)[key] = optStr(body[key]);
+      }
+    }
+    customer.updated_at = nowIso();
+    return HttpResponse.json(customer);
+  }),
+
+  // DELETE /customers/:id ← 消费方 page.tsx DeleteCustomer（2026-10-18 新增）
+  //   后端：软删除，列表隐藏；有开启中的订单 409 OPEN_ORDERS_EXIST。
+  //   mock 没有客户维度的订单夹具，故这里只做软删除（从 store 移除）。
+  http.delete("/api/v1/customers/:id", ({ params }) => {
+    const id = Number(params.id);
+    const idx = customersStore.findIndex((c) => c.id === id);
+    if (idx < 0) return customerNotFound(params.id);
+    customersStore.splice(idx, 1);
+    contactsStore.delete(id);
+    inquiriesStore.delete(id);
+    stageLogStore.delete(id);
+    return new HttpResponse(null, { status: 204 });
+  }),
+
+  // PATCH /customers/:id/stage ← 消费方 page.tsx（StageUpdate）
+  //   2026-10-18：只有 active / inactive 可手写；ordered 由开启中的订单推导，
+  //   传 ordered 回 422（与后端 validate_manual_stage 同口径）。
   http.patch("/api/v1/customers/:id/stage", async ({ params, request }) => {
     const customer = customersStore.find((c) => c.id === Number(params.id));
     if (!customer) return customerNotFound(params.id);
     const body = (await request.json()) as Record<string, unknown>;
     const target = String(body.stage ?? "");
     if (!CUSTOMER_STAGES.includes(target)) {
-      // 同 POST /customers：detail 用字符串（消费方 errMsg 只认字符串，见 page.tsx:124-130）
       return HttpResponse.json(
         {
           error_code: "INVALID_ENUM",
           message: "客户阶段取值非法",
-          detail: `invalid_enum_value: customer_stage=${target}`,
+          detail:
+            target === "ordered"
+              ? "「已下单」由开启中的订单自动推导，不能手动设置"
+              : `invalid_enum_value: customer_stage=${target}`,
         },
         { status: 422 },
       );
     }
-    const fromStage = customer.stage;
+    const fromStage = customer.manual_stage ?? customer.stage;
     const at = nowIso();
-    const closed: number[] = [];
-    if (target === "won" || target === "lost") {
-      for (const inq of inquiriesOf(customer.id)) {
-        if (inq.status === "open") {
-          inq.status = target;
-          closed.push(inq.id);
-        }
-      }
-    }
     customer.stage = target;
+    customer.manual_stage = target;
     customer.updated_at = at;
     stageLogsOf(customer.id).push({
       id: nextChildId++,
@@ -881,7 +918,11 @@ export const handlers = [
       reason: optStr(body.reason),
       created_at: at,
     });
-    return HttpResponse.json({ ...customer, closed_inquiries: closed });
+    return HttpResponse.json({
+      ...customer,
+      manual_stage: target,
+      closed_inquiries: [],
+    });
   }),
 
   // POST /customers/:id/contacts ← 消费方 page.tsx:375-395（ContactForm.handleSubmit）
@@ -955,18 +996,7 @@ export const handlers = [
       created_at: at,
     };
     inquiriesOf(customer.id).push(inquiry);
-    // 询盘驱动客户（后端 customers.py:567-571）
-    if (customer.stage === "lead") {
-      stageLogsOf(customer.id).push({
-        id: nextChildId++,
-        from_stage: "lead",
-        to_stage: "inquiry",
-        reason: "新建询盘 inquiry 联动",
-        created_at: at,
-      });
-      customer.stage = "inquiry";
-      customer.updated_at = at;
-    }
+    // 2026-10-18：询盘属于单据阶段，不再联动客户阶段。
     return HttpResponse.json(inquiry, { status: 201 });
   }),
 

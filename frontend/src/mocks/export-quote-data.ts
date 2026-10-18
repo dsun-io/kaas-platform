@@ -18,7 +18,7 @@
  * | `MOCK_EXPORT_PRODUCTS` | `backend/orchestrator/app/services/export_quote/products/` 注册表，字段照 `app/api/export_quote.py:196-218` 的响应构造 |
  * | `MOCK_EXPORT_FORMULAS` | 上面每个产品经 `services/export_quote/formulas.py:245 describe_product(spec, with_columns=True)` 的真实输出 |
  * | `MOCK_EXPORT_RATE_SETS` | `rate_sets/CN-2026-09.json` + `app/api/export_quote.py:437-455` 的字段映射 |
- * | `MOCK_EXPORT_TERMS_TEMPLATE` | `services/export_quote/terms_template.py:42-112`（逐字，含 5 个费用项与 EXW→FOB→CFR→CIF 阶梯） |
+ * | `MOCK_EXPORT_TERMS_TEMPLATE` | `services/export_quote/terms_template.py:50-156`（逐字，含 7 个费用项与 EXW→FOB→CFR→CIF→DAP→DDP 阶梯） |
  *
  * 生成方式：2026-10-11 用只读脚本调后端自己的注册表/描述函数导出（脚本在仓库外），
  * 因此**字段名与数值都来自后端真源**，不是照着文档猜的。
@@ -2285,7 +2285,7 @@ export const MOCK_EXPORT_RATE_SETS: ExportRateSet[] = [
 /**
  * 平台默认出口费用结构（`GET /export-quote/terms/template`）。
  *
- * **逐字镜像** `backend/orchestrator/app/services/export_quote/terms_template.py:42-112`
+ * **逐字镜像** `backend/orchestrator/app/services/export_quote/terms_template.py:50-156`
  *（含 `terms-amortize.ts:79-83` 要读的 `base` / `quote_as` / `weight_field` / `ladder`）。
  * 金额一律 `null` —— 结构与金额分离是后端刻意的设计（同文件 docstring）。
  */
@@ -2333,19 +2333,35 @@ export const MOCK_EXPORT_TERMS_TEMPLATE: ExportTermsTemplate = {
       "unit_hint": "费率（0.003 = 3‰）",
       "note": "按 CIF 加成投保：保险费 = CIF × 投保加成(110%) × 费率。",
       "value": null
+    },
+    "destination_charges": {
+      "name": "目的港费用及送货到门",
+      "name_en": "Destination charges & delivery to door",
+      "mode": "per_shipment",
+      "unit_hint": "元 / 整批",
+      "note": "含目的港操作费、清关服务费与送货到门运费；不含进口关税与增值税（DAP 口径）。",
+      "value": null
+    },
+    "import_taxes": {
+      "name": "进口关税及税费",
+      "name_en": "Import duties & taxes",
+      "mode": "per_shipment",
+      "unit_hint": "元 / 整批",
+      "note": "DDP 口径：按目的国实际关税 / 增值税填写（可让货代或清关行按 HS 编码与申报价值试算）。",
+      "value": null
     }
   },
   "ladder": [
     {
       "code": "EXW",
       "label": "出厂价",
-      "label_en": "EXW",
+      "label_en": "Ex Works",
       "items": []
     },
     {
       "code": "FOB",
       "label": "离岸价（装运港船上交货）",
-      "label_en": "FOB",
+      "label_en": "Free On Board",
       "items": [
         "inland_freight",
         "port_charges",
@@ -2355,7 +2371,7 @@ export const MOCK_EXPORT_TERMS_TEMPLATE: ExportTermsTemplate = {
     {
       "code": "CFR",
       "label": "成本加运费",
-      "label_en": "CFR",
+      "label_en": "Cost and Freight",
       "items": [
         "ocean_freight"
       ]
@@ -2363,9 +2379,25 @@ export const MOCK_EXPORT_TERMS_TEMPLATE: ExportTermsTemplate = {
     {
       "code": "CIF",
       "label": "到岸价（含运费与保险）",
-      "label_en": "CIF",
+      "label_en": "Cost, Insurance and Freight",
       "items": [
         "insurance"
+      ]
+    },
+    {
+      "code": "DAP",
+      "label": "到门价（目的地交货）",
+      "label_en": "Delivered at Place",
+      "items": [
+        "destination_charges"
+      ]
+    },
+    {
+      "code": "DDP",
+      "label": "完税到门价（含进口税费）",
+      "label_en": "Delivered Duty Paid",
+      "items": [
+        "import_taxes"
       ]
     }
   ]

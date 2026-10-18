@@ -115,6 +115,48 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 
 ## 1. 部署（单 Worker，前后端一体）
 
+### 1.1 本地 Docker 开发环境（2026-10-18 修复）
+
+本地开发**不需要**碰生产 Worker：`docker compose up -d` 起
+Postgres / Redis / MinIO / orchestrator（backend），前端在宿主用 `next dev` 直连。
+
+```powershell
+cd D:\MyProject\kaas-platform
+docker compose up -d          # backend 启动时自动 alembic upgrade head
+# 健康检查：http://localhost:8000/health -> {"status":"ok"}
+
+cd frontend
+pnpm dev                      # http://localhost:3000（.env.development=real → localhost:8000）
+```
+
+修复记录（旧环境**起不来**的根因）：
+
+- backend 构建上下文原为 `backend/orchestrator`，共享内核 `backend/kaas_common`
+  没进镜像 ⇒ `ModuleNotFoundError: No module named 'kaas_common'`；
+  现改为 `context: ./backend`，`COPY kaas_common /kaas_common` + `PYTHONPATH=/app:/kaas_common`。
+- 依赖装进 `/opt/venv`（宿主 bind mount 会遮蔽 `/app/.venv`，旧的匿名卷还会残留旧依赖）。
+- volumes：`./backend/orchestrator:/app` + `./backend/kaas_common:/kaas_common`（热重载）。
+- 新增 `backend/.dockerignore`，构建上下文不再吞入 worker/.venv/测试缓存。
+
+改了依赖或 Dockerfile 后：`docker compose build backend && docker compose up -d backend`。
+
+### 1.2 Hyperdrive 查询缓存（写后读一致性，**必须知道**）
+
+Cloudflare Hyperdrive **默认缓存只读查询 60 秒**（`stale_while_revalidate=15s`），
+且**写后不失效**。表现：新建/修改客户后立即 GET 可能读到旧值（「新建的客户刷新后消失」）。
+
+- 需要「写后立即见」的场景，关闭该 Hyperdrive 配置的查询缓存：
+
+  ```powershell
+  npx wrangler hyperdrive update f53fed49705043008737032e4bfa2b8e --caching-disabled
+  ```
+
+- 或按官方建议建第二个 `--caching-disabled` 配置，只给「写后立即读」的接口用
+  （`wrangler.jsonc` 可同时绑两个 Hyperdrive binding）。
+- **注意**：本地 Docker/Postgres 没有这层缓存；该问题只在生产 Worker 出现。
+
+### 1.3 部署命令
+
 前置：uv 已安装；wrangler 已登录（`npx wrangler whoami` 验证）。
 
 ```bash
@@ -150,7 +192,8 @@ cd backend/orchestrator
 alembic upgrade head
 ```
 
-当前迁移头**以 `alembic heads` 为准**（2026-10-17 实测为 `202610170004`）——含 password_reset_tokens、报价行项成本分解、tenant_products override、单证收款/清单、客户外键修正等。
+当前迁移头**以 `alembic heads` 为准**（2026-10-18 本地为 `202610180001`：客户阶段六值→活跃/沉寂；
+2026-10-17 生产为 `202610170004`）——含 password_reset_tokens、报价行项成本分解、tenant_products override、单证收款/清单、客户外键修正等。
 **CI 不执行迁移**：部署新代码前先对生产库 `alembic upgrade head`，否则新表/新列缺失会让报价、产品、忘记密码等页面 500。
 
 初始化管理员（一次性，对线上 Worker 执行；当前线上已初始化，会返回 403）：

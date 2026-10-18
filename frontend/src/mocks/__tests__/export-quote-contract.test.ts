@@ -125,7 +125,12 @@ describe("GET /export-quote/terms/template ← quote-workbench-view.tsx:158,188-
       quote_as: string;
       weight_field: string;
       items: Record<string, { name: string; mode: string; value: null }>;
-      ladder: Array<{ code: string; label: string; items: string[] }>;
+      ladder: Array<{
+        code: string;
+        label: string;
+        label_en: string;
+        items: string[];
+      }>;
     }>("/export-quote/terms/template");
 
     expect(status).toBe(200);
@@ -156,6 +161,28 @@ describe("GET /export-quote/terms/template ← quote-workbench-view.tsx:158,188-
         expect(feeKeys).toContain(ref);
       }
     }
+
+    // 档位与顺序必须与后端 DEFAULT_EXPORT_TERMS 逐字一致
+    // （terms_template.py: DAP / DDP 接在 CIF 之后；选项显示 `代码 · 中文（English）`）
+    expect(body.ladder.map((r) => r.code)).toEqual([
+      "EXW",
+      "FOB",
+      "CFR",
+      "CIF",
+      "DAP",
+      "DDP",
+    ]);
+    // label_en 用英文全称，界面据此显示 `DAP · 到门价（Delivered at Place）`
+    expect(
+      body.ladder.map((r) => [r.code, r.label_en]),
+    ).toEqual([
+      ["EXW", "Ex Works"],
+      ["FOB", "Free On Board"],
+      ["CFR", "Cost and Freight"],
+      ["CIF", "Cost, Insurance and Freight"],
+      ["DAP", "Delivered at Place"],
+      ["DDP", "Delivered Duty Paid"],
+    ]);
   });
 });
 

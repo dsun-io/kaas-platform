@@ -559,7 +559,9 @@ class Customer(Base):
     address = Column(Text, nullable=True)
     default_port = Column(Text, nullable=True)
     credit_level = Column(Text, nullable=True)
-    stage = Column(Text, nullable=False, default="lead", server_default="lead")
+    # 客户阶段（2026-10-18）：只存**手动状态** active / inactive；
+    # 「已下单」(ordered) 是读时由开启中的订单推导，不落库。
+    stage = Column(Text, nullable=False, default="active", server_default="active")
     notes = Column(Text, nullable=True)
     created_by = Column(Text, nullable=True)
     owner_id = Column(Text, nullable=True)

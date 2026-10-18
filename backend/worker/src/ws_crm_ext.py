@@ -127,53 +127,16 @@ async def _customer_or_404(request: Request, customer_id: int, user: dict) -> di
     """
     row = await db.fetchrow(
         request,
-        "SELECT * FROM customers WHERE id = $1 AND tenant_id = $2",
+        "SELECT c.*, c.name AS company_name,"
+        f" {_main._customer_stage_sql('c')} AS stage_display"
+        " FROM customers c WHERE c.id = $1 AND c.tenant_id = $2"
+        " AND c.is_deleted = false",
         customer_id, DEFAULT_TENANT, table="customers",
     )
     if row is None or not _owner_visible(user, row):
         raise HTTPException(status_code=404, detail={
             "error": "not_found", "code": "CUSTOMER_NOT_FOUND"})
     return row
-
-
-async def _log_stage(conn, customer_id: int, from_stage: Optional[str],
-                     to_stage: str, changed_by: str, reason: Optional[str]) -> None:
-    """写 `cust_stage_log`（列与 dev `customers._log_stage` 一致）。"""
-    await conn.execute(
-        """INSERT INTO cust_stage_log
-               (tenant_id, customer_id, from_stage, to_stage, changed_by, reason)
-           VALUES ($1, $2, $3, $4, $5, $6)""",
-        DEFAULT_TENANT, customer_id, from_stage, to_stage, changed_by, reason,
-    )
-
-
-async def _link_customer_stage(conn, inq, new_status: str, actor: str) -> None:
-    """询盘状态流转驱动客户 stage（§10.1，对齐 dev `customers.py` L596-616）。
-
-    open→won：客户置 won；open→quoted：客户在 lead/inquiry 时才推进到 quoted
-    （不把 won/lost 往回拉）；→lost：客户 stage 不变。
-    客户取用**不过**可见范围过滤 —— 与 dev 一致（联动是数据一致性动作，
-    不是"读别人的数据"，越权风险由询盘自身的可写校验先把住）。
-    """
-    c = await conn.fetchrow(
-        "SELECT id, stage FROM customers WHERE tenant_id = $1 AND id = $2",
-        DEFAULT_TENANT, inq["customer_id"],
-    )
-    if c is None:
-        return
-    target: Optional[str] = None
-    if new_status == "won" and c["stage"] != "won":
-        target = "won"
-    elif new_status == "quoted" and c["stage"] in ("lead", "inquiry"):
-        target = "quoted"
-    if target is None:
-        return
-    await conn.execute(
-        "UPDATE customers SET stage = $1, updated_at = now() WHERE id = $2",
-        target, c["id"],
-    )
-    await _log_stage(conn, c["id"], c["stage"], target, actor,
-                     f"inquiry#{inq['id']} {target} 联动")
 
 
 async def _sync_lead_status(conn, inq, new_status: str) -> None:
@@ -223,7 +186,7 @@ async def update_customer(
             sets.append(f"{column} = ${len(params)}")
     if not sets:
         # dev：没有任何字段变更时不发 UPDATE，原样回显（updated_at 不动）
-        return row_to_customer(row)
+        return _main._customer_api(row)
 
     sets.append("updated_at = now()")  # dev 靠 ORM 的 onupdate=func.now()
     params.append(customer_id)
@@ -234,7 +197,12 @@ async def update_customer(
         f" RETURNING *",
         *params, DEFAULT_TENANT, table="customers",
     )
-    return row_to_customer(updated)
+    # 2026-10-18：响应必须带推导后的展示阶段（有开启中订单 ⇒ stage=ordered）。
+    # 档案编辑不改 stage，故沿用编辑前那一行的 stage_display，避免多打一次库。
+    return _main._customer_api({
+        **dict(updated),
+        "stage_display": row.get("stage_display"),
+    })
 
 
 # ── 询盘 ─────────────────────────────────────────────────────────────────────
@@ -314,11 +282,11 @@ async def update_inquiry(
     body: _InquiryUpdate,
     user: dict = Depends(_get_current_user),
 ):
-    """询盘部分更新 + 状态流转，并驱动客户 stage（§10.1）。
+    """询盘部分更新 + 状态流转（单据阶段）。
 
-    状态流转三件事必须**一起提交**（故走单连接事务）：询盘自身状态、客户 stage
-    （含 `cust_stage_log`）、线索池 `lead_candidates.inquiry_status`。分开提交的话，
-    中途失败会留下「询盘已 won、客户还在 inquiry」这类对不上的数据。
+    2026-10-18 口径：询盘状态**不再驱动客户阶段**（客户阶段与订单阶段是两层：
+    客户阶段只有活跃/沉寂/已下单，已下单只由开启中的订单推导）。
+    状态流转仍需与线索池 `lead_candidates.inquiry_status` 同事务提交。
     """
     async with _acquire(request) as conn:
         inq = await conn.fetchrow(
@@ -347,7 +315,6 @@ async def update_inquiry(
             if new_status != inq["status"]:
                 params.append(new_status)
                 sets.append(f"status = ${len(params)}")
-                await _link_customer_stage(conn, inq, new_status, str(user["id"]))
                 await _sync_lead_status(conn, inq, new_status)
 
         if "channel" in data:

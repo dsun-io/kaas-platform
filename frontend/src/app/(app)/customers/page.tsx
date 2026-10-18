@@ -18,14 +18,27 @@ import {
 import { Plus, Search, UserPlus } from "lucide-react";
 import { CustomerRecordsTree } from "./components/customer-records-tree";
 
+// 客户阶段（2026-10-18 用户口径）：只有三种。
+// active / inactive 是手动状态；ordered 由「开启中的订单」自动推导，不可手选。
 const STAGE_LABELS: Record<string, string> = {
+  active: "活跃",
+  inactive: "沉寂",
+  ordered: "已下单",
+};
+
+// 历史阶段日志里可能还有旧值（lead/inquiry/quoted/won/lost）——只用于「历史」页签展示。
+const LEGACY_STAGE_LABELS: Record<string, string> = {
   lead: "线索",
   inquiry: "询盘",
   quoted: "已报价",
   won: "成交",
   lost: "流失",
-  inactive: "沉寂",
 };
+
+function stageLabel(stage: string | null | undefined): string {
+  if (!stage) return "-";
+  return STAGE_LABELS[stage] ?? LEGACY_STAGE_LABELS[stage] ?? stage;
+}
 
 const INQUIRY_STATUS_LABELS: Record<string, string> = {
   open: "进行中",
@@ -35,12 +48,9 @@ const INQUIRY_STATUS_LABELS: Record<string, string> = {
 };
 
 const STAGE_TONES: Record<string, import("@/components/shared").StatusTone> = {
-  lead: "default",
-  inquiry: "info",
-  quoted: "purple",
-  won: "success",
-  lost: "danger",
+  active: "info",
   inactive: "default",
+  ordered: "success",
 };
 
 interface Customer {
@@ -50,7 +60,10 @@ interface Customer {
   address: string | null;
   default_port: string | null;
   credit_level: string | null;
+  /** 展示阶段：active / inactive / ordered（ordered 由开启中的订单推导） */
   stage: string;
+  /** 手动状态：active / inactive（「更新阶段」用它回填） */
+  manual_stage?: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -121,10 +134,36 @@ function useCustomerDetail(id: number | null) {
 
 function errMsg(e: unknown): string {
   const err = e as {
-    response?: { data?: { detail?: string } };
+    response?: { data?: { detail?: unknown; message?: string; code?: string } };
     message?: string;
   };
-  return err?.response?.data?.detail ?? err?.message ?? "请求失败";
+  const detail = err?.response?.data?.detail;
+  if (typeof detail === "string" && detail) return detail;
+  if (detail && typeof detail === "object") {
+    // 后端部分错误把可读说明放在对象型 detail 里（如 {code, detail, open_orders}）
+    const obj = detail as { detail?: string; message?: string; code?: string };
+    return obj.detail || obj.message || obj.code || "请求失败";
+  }
+  return err?.response?.data?.message ?? err?.message ?? "请求失败";
+}
+
+/** 删除客户 409（有开启中的订单）时，把订单清单也带出来给用户看。 */
+function deleteConflictMessage(e: unknown): string | null {
+  const detail = (
+    e as { response?: { data?: { detail?: unknown } } }
+  )?.response?.data?.detail;
+  if (!detail || typeof detail !== "object") return null;
+  const obj = detail as {
+    code?: string;
+    detail?: string;
+    open_orders?: { order_no?: string; status?: string }[];
+  };
+  if (obj.code !== "OPEN_ORDERS_EXIST") return null;
+  const orders = (obj.open_orders ?? [])
+    .map((o) => `${o.order_no ?? ""}(${o.status ?? ""})`)
+    .filter(Boolean)
+    .join("、");
+  return `${obj.detail ?? "客户名下有开启中的订单，不能删除"}${orders ? `：${orders}` : ""}`;
 }
 
 type CustomerFormState = {
@@ -149,25 +188,52 @@ const EMPTY_CUSTOMER: CustomerFormState = {
   address: "",
   default_port: "",
   credit_level: "",
-  stage: "lead",
+  stage: "active",
   notes: "",
 };
 
+/**
+ * 客户档案表单 —— 新建 / 编辑共用。
+ *
+ * 编辑模式（传 `initial`）只改**档案字段**：联系人走「联系人」页签单独维护，
+ * 阶段走「更新阶段」。这样不会出现「编辑档案顺手把阶段/联系人写坏」。
+ */
 function CustomerForm({
   onClose,
   onCreated,
+  initial,
 }: {
   onClose: () => void;
   onCreated: (c: Customer) => void;
+  initial?: Customer;
 }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState<CustomerFormState>(EMPTY_CUSTOMER);
+  const isEdit = !!initial;
+  const [form, setForm] = useState<CustomerFormState>(() =>
+    initial
+      ? {
+          company_name: initial.company_name ?? "",
+          contact_name: "",
+          contact_phone: "",
+          contact_email: "",
+          country: initial.country ?? "",
+          address: initial.address ?? "",
+          default_port: initial.default_port ?? "",
+          credit_level: initial.credit_level ?? "",
+          stage: initial.manual_stage ?? "active",
+          notes: initial.notes ?? "",
+        }
+      : EMPTY_CUSTOMER,
+  );
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
 
   // 公司名与联系人**至少填一个**（2026-10-17 用户口径）：只有个人联系人的客户也要能建。
-  const identityOk =
-    form.company_name.trim().length > 0 || form.contact_name.trim().length > 0;
+  // 编辑模式不改联系人，因此以公司名或已有联系人为准，这里只校验公司名非空。
+  const identityOk = isEdit
+    ? form.company_name.trim().length > 0
+    : form.company_name.trim().length > 0 ||
+      form.contact_name.trim().length > 0;
 
   const set =
     (k: keyof CustomerFormState) =>
@@ -176,15 +242,34 @@ function CustomerForm({
 
   const handleSubmit = async () => {
     if (!identityOk) {
-      setError("公司名称和联系人至少填写一个");
+      setError(
+        isEdit ? "公司名称不能为空" : "公司名称和联系人至少填写一个",
+      );
       return;
     }
     setIsPending(true);
     setError(null);
     try {
-      const { data } = await apiClient.post<Customer>("/customers", form);
+      let saved: Customer;
+      if (isEdit && initial) {
+        const { data } = await apiClient.patch<Customer>(
+          `/customers/${initial.id}`,
+          {
+            company_name: form.company_name.trim(),
+            country: form.country.trim() || null,
+            address: form.address.trim() || null,
+            default_port: form.default_port.trim() || null,
+            credit_level: form.credit_level.trim() || null,
+            notes: form.notes.trim() || null,
+          },
+        );
+        saved = data;
+      } else {
+        const { data } = await apiClient.post<Customer>("/customers", form);
+        saved = data;
+      }
       qc.invalidateQueries({ queryKey: ["customers"] });
-      onCreated(data);
+      onCreated(saved);
       onClose();
     } catch (e: unknown) {
       setError(errMsg(e));
@@ -197,28 +282,34 @@ function CustomerForm({
     <div className="space-y-3">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input
-          placeholder="公司名称（与联系人至少填一个）"
+          placeholder={
+            isEdit ? "公司名称 *" : "公司名称（与联系人至少填一个）"
+          }
           value={form.company_name}
           onChange={set("company_name")}
         />
-        <Input
-          placeholder="联系人（与公司名称至少填一个）"
-          value={form.contact_name}
-          onChange={set("contact_name")}
-        />
+        {!isEdit && (
+          <Input
+            placeholder="联系人（与公司名称至少填一个）"
+            value={form.contact_name}
+            onChange={set("contact_name")}
+          />
+        )}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Input
-          placeholder="联系人电话"
-          value={form.contact_phone}
-          onChange={set("contact_phone")}
-        />
-        <Input
-          placeholder="联系人邮箱"
-          value={form.contact_email}
-          onChange={set("contact_email")}
-        />
-      </div>
+      {!isEdit && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Input
+            placeholder="联系人电话"
+            value={form.contact_phone}
+            onChange={set("contact_phone")}
+          />
+          <Input
+            placeholder="联系人邮箱"
+            value={form.contact_email}
+            onChange={set("contact_email")}
+          />
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input
           placeholder="国家"
@@ -247,7 +338,13 @@ function CustomerForm({
       {error && <p className="text-sm text-red-500">{error}</p>}
       <div className="flex gap-2">
         <Button onClick={handleSubmit} disabled={!identityOk || isPending}>
-          {isPending ? "创建中…" : "创建客户"}
+          {isPending
+            ? isEdit
+              ? "保存中…"
+              : "创建中…"
+            : isEdit
+              ? "保存档案"
+              : "创建客户"}
         </Button>
         <Button variant="outline" onClick={onClose}>
           取消
@@ -380,12 +477,26 @@ const EMPTY_CONTACT: ContactFormState = {
 function ContactForm({
   customerId,
   onClose,
+  initial,
 }: {
   customerId: number;
   onClose: () => void;
+  initial?: Contact;
 }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState<ContactFormState>(EMPTY_CONTACT);
+  const isEdit = !!initial;
+  const [form, setForm] = useState<ContactFormState>(() =>
+    initial
+      ? {
+          name: initial.name ?? "",
+          position: initial.position ?? "",
+          phone: initial.phone ?? "",
+          email: initial.email ?? "",
+          whatsapp: initial.whatsapp ?? "",
+          is_primary: initial.is_primary,
+        }
+      : EMPTY_CONTACT,
+  );
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
 
@@ -393,15 +504,29 @@ function ContactForm({
     setIsPending(true);
     setError(null);
     try {
-      await apiClient.post<Contact>(`/customers/${customerId}/contacts`, {
-        customer_id: customerId,
-        name: form.name,
-        position: form.position || undefined,
-        phone: form.phone || undefined,
-        email: form.email || undefined,
-        whatsapp: form.whatsapp || undefined,
-        is_primary: form.is_primary,
-      });
+      if (isEdit && initial) {
+        await apiClient.patch<Contact>(
+          `/customers/${customerId}/contacts/${initial.id}`,
+          {
+            name: form.name,
+            position: form.position || null,
+            phone: form.phone || null,
+            email: form.email || null,
+            whatsapp: form.whatsapp || null,
+            is_primary: form.is_primary,
+          },
+        );
+      } else {
+        await apiClient.post<Contact>(`/customers/${customerId}/contacts`, {
+          customer_id: customerId,
+          name: form.name,
+          position: form.position || undefined,
+          phone: form.phone || undefined,
+          email: form.email || undefined,
+          whatsapp: form.whatsapp || undefined,
+          is_primary: form.is_primary,
+        });
+      }
       qc.invalidateQueries({ queryKey: ["customers", "detail", customerId] });
       onClose();
     } catch (e: unknown) {
@@ -454,7 +579,7 @@ function ContactForm({
       {error && <p className="text-sm text-red-500">{error}</p>}
       <div className="flex gap-2">
         <Button onClick={handleSubmit} disabled={!form.name || isPending}>
-          {isPending ? "提交中…" : "添加联系人"}
+          {isPending ? "提交中…" : isEdit ? "保存联系人" : "添加联系人"}
         </Button>
         <Button variant="outline" onClick={onClose}>
           取消
@@ -464,6 +589,12 @@ function ContactForm({
   );
 }
 
+/**
+ * 手动切换客户阶段：只有「活跃 / 沉寂」。
+ *
+ * 「已下单」由开启中的订单自动推导，不在这里出现 —— 客户阶段与订单阶段是两层
+ * （2026-10-18 用户口径）；「流失」属于订单阶段，客户阶段已删除该值。
+ */
 function StageUpdate({
   customer,
   onClose,
@@ -472,41 +603,18 @@ function StageUpdate({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
-  const [stage, setStage] = useState(customer.stage);
+  const [stage, setStage] = useState(customer.manual_stage ?? "active");
   const [reason, setReason] = useState("");
-  const [rejectionFile, setRejectionFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
 
-  // 标记流失（lost）必须有客户拒绝文件：先上传（字节优先进 R2），再带 file id 改阶段。
-  const needsRejection = stage === "lost";
-
   const handleUpdate = async () => {
-    if (needsRejection && !rejectionFile) {
-      setError("标记流失必须上传客户拒绝文件");
-      return;
-    }
     setIsPending(true);
     setError(null);
     try {
-      let rejection_file_id: number | undefined;
-      if (needsRejection && rejectionFile) {
-        const fd = new FormData();
-        fd.append("file", rejectionFile);
-        fd.append("name", `客户拒绝文件-${customer.company_name}`);
-        fd.append("owner_type", "customer");
-        fd.append("owner_id", String(customer.id));
-        fd.append("kind", "other");
-        const up = await apiClient.post<{ id: number }>(
-          "/file-objects/upload",
-          fd,
-        );
-        rejection_file_id = up.data.id;
-      }
       await apiClient.patch<Customer>(`/customers/${customer.id}/stage`, {
         stage,
         reason: reason || undefined,
-        rejection_file_id,
       });
       qc.invalidateQueries({ queryKey: ["customers"] });
       onClose();
@@ -524,25 +632,13 @@ function StageUpdate({
         onChange={(e) => setStage(e.target.value)}
         className="w-full border rounded-md px-3 py-2 text-sm bg-background"
       >
-        {Object.entries(STAGE_LABELS).map(([k, v]) => (
-          <option key={k} value={k}>
-            {v}
-          </option>
-        ))}
+        <option value="active">活跃</option>
+        <option value="inactive">沉寂</option>
       </select>
-      {needsRejection && (
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">
-            客户拒绝文件（必填，PDF/图片）
-          </label>
-          <input
-            type="file"
-            accept=".pdf,image/*"
-            onChange={(e) => setRejectionFile(e.target.files?.[0] ?? null)}
-            className="block w-full text-sm"
-          />
-        </div>
-      )}
+      <p className="text-xs text-muted-foreground">
+        「已下单」由开启中的订单自动推导，无需手动设置；「流失」属于订单阶段，
+        不在客户阶段里。
+      </p>
       <Input
         placeholder="原因（可选）"
         value={reason}
@@ -551,7 +647,61 @@ function StageUpdate({
       {error && <p className="text-sm text-red-500">{error}</p>}
       <div className="flex gap-2">
         <Button onClick={handleUpdate} disabled={isPending}>
-          {isPending ? "更新中…" : "更新阶段"}
+          {isPending ? "更新中…" : "保存阶段"}
+        </Button>
+        <Button variant="outline" onClick={onClose}>
+          取消
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** 删除客户：二次确认 + 展示后端 409（有开启中的订单）原因。 */
+function DeleteCustomer({
+  customer,
+  onClose,
+  onDeleted,
+}: {
+  customer: Customer;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const qc = useQueryClient();
+  const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleDelete = async () => {
+    setIsPending(true);
+    setError(null);
+    try {
+      await apiClient.delete(`/customers/${customer.id}`);
+      // 先摘掉详情缓存再刷新列表：否则 invalidate 会重取已被删除客户的详情 → 404 toast
+      qc.removeQueries({ queryKey: ["customers", "detail", customer.id] });
+      qc.invalidateQueries({ queryKey: ["customers"] });
+      onDeleted();
+      onClose();
+    } catch (e: unknown) {
+      setError(deleteConflictMessage(e) ?? errMsg(e));
+    } finally {
+      setIsPending(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+      <p className="text-sm">
+        确认删除客户「{customer.company_name}」？列表里将不再显示，历史报价/订单/单证
+        仍保留引用。
+      </p>
+      {error && <p className="text-sm text-red-500">{error}</p>}
+      <div className="flex gap-2">
+        <Button
+          variant="destructive"
+          onClick={handleDelete}
+          disabled={isPending}
+        >
+          {isPending ? "删除中…" : "确认删除"}
         </Button>
         <Button variant="outline" onClick={onClose}>
           取消
@@ -566,15 +716,38 @@ type DetailTab = "info" | "contacts" | "inquiries" | "history";
 function CustomerDetailPanel({
   customer,
   onClose,
+  onUpdated,
 }: {
   customer: Customer;
   onClose: () => void;
+  onUpdated: (c: Customer) => void;
 }) {
   const { data: detail, isLoading } = useCustomerDetail(customer.id);
   const [activeTab, setActiveTab] = useState<DetailTab>("info");
   const [showInquiryForm, setShowInquiryForm] = useState(false);
   const [showContactForm, setShowContactForm] = useState(false);
+  const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  const [confirmDeleteContactId, setConfirmDeleteContactId] = useState<
+    number | null
+  >(null);
   const [showStageUpdate, setShowStageUpdate] = useState(false);
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+  const qc = useQueryClient();
+
+  const handleDeleteContact = async (contactId: number) => {
+    try {
+      await apiClient.delete(
+        `/customers/${customer.id}/contacts/${contactId}`,
+      );
+      setConfirmDeleteContactId(null);
+      qc.invalidateQueries({
+        queryKey: ["customers", "detail", customer.id],
+      });
+    } catch {
+      setConfirmDeleteContactId(null);
+    }
+  };
 
   const tabs: { key: DetailTab; label: string }[] = [
     { key: "info", label: "信息" },
@@ -635,8 +808,13 @@ function CustomerDetailPanel({
                       tone={STAGE_TONES[detail.stage] ?? "default"}
                       className="ml-1"
                     >
-                      {STAGE_LABELS[detail.stage] ?? detail.stage}
+                      {stageLabel(detail.stage)}
                     </StatusBadge>
+                    {detail.stage === "ordered" && (
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        由开启中的订单自动推导
+                      </span>
+                    )}
                   </div>
                   {detail.notes && (
                     <div className="col-span-2">
@@ -645,17 +823,51 @@ function CustomerDetailPanel({
                     </div>
                   )}
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowStageUpdate(true)}
-                >
-                  更新阶段
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowEditForm(true)}
+                  >
+                    编辑档案
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowStageUpdate(true)}
+                  >
+                    更新阶段
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => setShowDelete(true)}
+                  >
+                    删除客户
+                  </Button>
+                </div>
+                {showEditForm && (
+                  <CustomerForm
+                    initial={customer}
+                    onCreated={(raw) => {
+                      setShowEditForm(false);
+                      onUpdated(raw);
+                    }}
+                    onClose={() => setShowEditForm(false)}
+                  />
+                )}
                 {showStageUpdate && (
                   <StageUpdate
                     customer={customer}
                     onClose={() => setShowStageUpdate(false)}
+                  />
+                )}
+                {showDelete && (
+                  <DeleteCustomer
+                    customer={customer}
+                    onClose={() => setShowDelete(false)}
+                    onDeleted={onClose}
                   />
                 )}
               </div>
@@ -678,6 +890,13 @@ function CustomerDetailPanel({
                     onClose={() => setShowContactForm(false)}
                   />
                 )}
+                {editingContact && (
+                  <ContactForm
+                    customerId={customer.id}
+                    initial={editingContact}
+                    onClose={() => setEditingContact(null)}
+                  />
+                )}
                 <div className="space-y-2">
                   {detail?.contacts?.length === 0 && (
                     <p className="text-sm text-muted-foreground">暂无联系人</p>
@@ -687,20 +906,60 @@ function CustomerDetailPanel({
                       key={c.id}
                       className="rounded-lg border bg-card p-4 shadow-[var(--shadow-xs)] transition-shadow hover:shadow-[var(--shadow-sm)]"
                     >
-                      <p className="font-medium text-sm">
-                        {c.name}
-                        {c.is_primary && (
-                          <Badge variant="default" className="ml-2">
-                            主要
-                          </Badge>
-                        )}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {c.position && `${c.position} · `}
-                        {c.phone && `${c.phone} · `}
-                        {c.email && `${c.email} · `}
-                        {c.whatsapp && `WA: ${c.whatsapp}`}
-                      </p>
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-medium text-sm">
+                            {c.name}
+                            {c.is_primary && (
+                              <Badge variant="default" className="ml-2">
+                                主要
+                              </Badge>
+                            )}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {c.position && `${c.position} · `}
+                            {c.phone && `${c.phone} · `}
+                            {c.email && `${c.email} · `}
+                            {c.whatsapp && `WA: ${c.whatsapp}`}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingContact(c)}
+                          >
+                            编辑
+                          </Button>
+                          {confirmDeleteContactId === c.id ? (
+                            <>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => handleDeleteContact(c.id)}
+                              >
+                                确认删除
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setConfirmDeleteContactId(null)}
+                              >
+                                取消
+                              </Button>
+                            </>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => setConfirmDeleteContactId(c.id)}
+                            >
+                              删除
+                            </Button>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -782,11 +1041,9 @@ function CustomerDetailPanel({
                     >
                       <div className="flex items-center justify-between">
                         <span>
-                          {log.from_stage
-                            ? (STAGE_LABELS[log.from_stage] ?? log.from_stage)
-                            : "创建"}
+                          {log.from_stage ? stageLabel(log.from_stage) : "创建"}
                           {" -> "}
-                          {STAGE_LABELS[log.to_stage] ?? log.to_stage}
+                          {stageLabel(log.to_stage)}
                         </span>
                         <span className="text-xs text-muted-foreground">
                           {new Date(log.created_at).toLocaleString()}
@@ -892,7 +1149,7 @@ export default function CustomersPage() {
                 <div className="flex items-center justify-between">
                   <p className="font-medium text-sm">{c.company_name}</p>
                   <StatusBadge tone={STAGE_TONES[c.stage] ?? "default"}>
-                    {STAGE_LABELS[c.stage] ?? c.stage}
+                    {stageLabel(c.stage)}
                   </StatusBadge>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
@@ -910,6 +1167,7 @@ export default function CustomersPage() {
         <CustomerDetailPanel
           customer={selectedCustomer}
           onClose={() => setSelectedCustomer(null)}
+          onUpdated={setSelectedCustomer}
         />
       )}
     </div>

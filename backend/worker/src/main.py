@@ -48,6 +48,7 @@ DEFAULT_TENANT = "default"
 import json as _json
 
 from kaas_common.workstation.customer_serializers import row_to_customer, row_to_inquiry
+from kaas_common.workstation.customer_rules import validate_manual_stage
 from kaas_common.domain.enums import validate_enum
 from kaas_common.workstation.scope import can_view, can_write, is_admin_role
 from kaas_common.workstation.teams import (
@@ -867,7 +868,8 @@ class CustomerCreate(BaseModel):
     address: Optional[str] = None
     default_port: Optional[str] = None
     credit_level: Optional[str] = None
-    stage: str = "lead"
+    # 手动客户阶段（活跃 / 沉寂）；「已下单」由开启中的订单推导，不许手写。
+    stage: str = "active"
     notes: Optional[str] = None
     owner_scope: Optional[str] = None   # private | tenant（§10.3）
 
@@ -898,8 +900,28 @@ class InquiryCreate(BaseModel):
 class StageUpdate(BaseModel):
     stage: str
     reason: Optional[str] = None
-    # 手动标记流失（lost）时必须带：客户拒绝文件（先 POST /file-objects/upload，字节优先进 R2）
-    rejection_file_id: Optional[int] = None
+
+
+# 客户阶段的**唯一**推导 SQL（与 kaas_common.workstation.customer_rules 同口径）：
+# 名下有开启中的订单 ⇒ ordered；否则按库里手动值归一（inactive/lost → 沉寂，其余活跃）。
+# 为什么不落库：订单状态才是源头，落库就会出现「订单改了、客户阶段没跟上」的旧数据。
+_OPEN_ORDER_STATUS_SQL = "('pending','confirmed','producing','shipped')"
+
+
+def _customer_stage_sql(alias: str = "c") -> str:
+    return (
+        "CASE WHEN EXISTS (SELECT 1 FROM orders o"
+        f" WHERE o.tenant_id = {alias}.tenant_id AND o.customer_id = {alias}.id"
+        f" AND o.status IN {_OPEN_ORDER_STATUS_SQL}) THEN 'ordered'"
+        f" WHEN {alias}.stage IN ('inactive','lost') THEN 'inactive'"
+        " ELSE 'active' END"
+    )
+
+
+def _customer_api(row) -> dict:
+    """客户行 → API 响应（stage=推导展示值，manual_stage=手动值）。"""
+    d = dict(row)
+    return row_to_customer(d, display_stage=d.get("stage_display"))
 
 
 async def _customer_or_404(conn, customer_id: int, user: dict) -> dict:
@@ -910,8 +932,9 @@ async def _customer_or_404(conn, customer_id: int, user: dict) -> dict:
     不可见一律 404，不泄露存在性。
     """
     row = await conn.fetchrow(
-        "SELECT *, name AS company_name FROM customers"
-        " WHERE id=$1 AND tenant_id=$2 AND is_deleted = false",
+        f"SELECT c.*, c.name AS company_name, {_customer_stage_sql('c')} AS stage_display"
+        " FROM customers c"
+        " WHERE c.id=$1 AND c.tenant_id=$2 AND c.is_deleted = false",
         customer_id, DEFAULT_TENANT,
     )
     if row is None or not _owner_visible(user, row):
@@ -1025,35 +1048,49 @@ async def list_customers(
     q: Optional[str] = None,
 ):
     # 软删除的客户不再出现（is_deleted 原先只写不读 —— 标记了也照样列出来）
-    where = ["tenant_id = $1", "is_deleted = false"]
+    where = ["c.tenant_id = $1", "c.is_deleted = false"]
     params: list = [DEFAULT_TENANT]
     idx = 2
     if stage:
-        where.append(f"stage = ${idx}"); params.append(stage); idx += 1
+        # stage 是**展示值**：ordered 由订单推导，active/inactive 是手动列。
+        validate_enum("customer_stage", stage)
+        has_open = ("EXISTS (SELECT 1 FROM orders o"
+                    " WHERE o.tenant_id = c.tenant_id AND o.customer_id = c.id"
+                    f" AND o.status IN {_OPEN_ORDER_STATUS_SQL})")
+        if stage == "ordered":
+            where.append(has_open)
+        elif stage == "inactive":
+            where.append(f"NOT {has_open} AND c.stage IN ('inactive','lost')")
+        else:  # active
+            where.append(f"NOT {has_open} AND c.stage NOT IN ('inactive','lost')")
     if country:
-        where.append(f"country ILIKE ${idx}"); params.append(f"%{country}%"); idx += 1
+        where.append(f"c.country ILIKE ${idx}"); params.append(f"%{country}%"); idx += 1
     if q:
-        where.append(f"name ILIKE ${idx}"); params.append(f"%{q}%"); idx += 1
+        where.append(f"c.name ILIKE ${idx}"); params.append(f"%{q}%"); idx += 1
     # 三层组织 + §10.3：谁创建的客户，就在其团队可见；其他团队看不到
     if not _can_see_all(user):
         params.append(str(user["id"]))
-        scope_cond = f"(owner_id = ${idx} OR owner_scope = 'tenant'"
+        scope_cond = f"(c.owner_id = ${idx} OR c.owner_scope = 'tenant'"
         idx += 1
         if user.get("team_id") is not None:
             params.append(user["team_id"])
-            scope_cond += f" OR team_id = ${idx}"
+            scope_cond += f" OR c.team_id = ${idx}"
             idx += 1
         where.append(scope_cond + ")")
     where_sql = " AND ".join(where)
     async with _acquire(request) as conn:
-        # 30/90 天无活动兜底（读列表时刷新一次，数据量小）
-        await _refresh_stale_customer_stages(conn)
-        total = await conn.fetchval(f"SELECT COUNT(*) FROM customers WHERE {where_sql}", *params)
+        # 2026-10-18：不再在这里跑 30/90 天兜底、也不再重算客户阶段 ——
+        # 客户阶段只有 active/inactive 手动值 + ordered 推导值，读时算，不落库。
+        total = await conn.fetchval(
+            f"SELECT COUNT(*) FROM customers c WHERE {where_sql}", *params)
         rows = await conn.fetch(
-            f"SELECT *, name AS company_name FROM customers WHERE {where_sql} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx+1}",
+            f"SELECT c.*, c.name AS company_name, {_customer_stage_sql('c')} AS stage_display"
+            f" FROM customers c WHERE {where_sql}"
+            f" ORDER BY c.created_at DESC LIMIT ${idx} OFFSET ${idx+1}",
             *params, page_size, (page - 1) * page_size,
         )
-    return {"items": [_row_to_dict(r) for r in rows], "total": total, "page": page, "page_size": page_size}
+    return {"items": [_customer_api(r) for r in rows], "total": total,
+            "page": page, "page_size": page_size}
 
 
 @app.post("/api/v1/customers", status_code=201)
@@ -1075,7 +1112,14 @@ async def create_customer(request: Request, body: CustomerCreate, user: dict = D
             "code": "CUSTOMER_IDENTITY_REQUIRED",
             "detail": "公司名称和联系人至少填写一个",
         })
-    stage = validate_enum("customer_stage", body.stage or "lead")
+    # 客户阶段只有活跃/沉寂可手写；已下单由开启中的订单推导（用户 2026-10-18 口径）。
+    stage = body.stage or "active"
+    ok, msg = validate_manual_stage(stage)
+    if not ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_enum", "code": "INVALID_CUSTOMER_STAGE",
+            "detail": msg,
+        })
     owner_scope = validate_enum("owner_scope", body.owner_scope) or "private"
     async with _acquire(request) as conn:
         async with conn.transaction():
@@ -1099,113 +1143,17 @@ async def create_customer(request: Request, body: CustomerCreate, user: dict = D
                     (body.contact_phone or "").strip() or None,
                     (body.contact_email or "").strip() or None,
                 )
-    return row_to_customer(dict(row))
+    return _customer_api(row)
 
 
-# ── 客户阶段：由订单/报价/询盘状态**推导**（2026-10-17 用户口径修正）──────────
-#   原则：影响阶段的操作大多针对**某张订单**，那些操作只改**订单状态**；
-#   客户阶段是「该客户所有订单/报价/询盘」的汇总视图，由它们推导，不被单个操作直接改写。
-#   推导规则（无手动终态时）：
-#     · 有未取消订单且任一处于 confirmed/producing/shipped/completed ⇒ won（成交）
-#     · 有未取消订单但都还是 pending ⇒ quoted（已报价，待买家确认/定金）
-#     · 无有效订单：有报价单 ⇒ quoted；有询盘 ⇒ inquiry；否则 lead
-#     · 手动 lost / 自动 inactive 为终态，自动推导不覆盖（手动 PATCH 仍可改，作为兜底）
-#   30/90 天兜底：30 天无更新 → lost（won 除外）；90 天无活动 → inactive。
-_WON_ORDER_STATUSES = ("confirmed", "producing", "shipped", "completed")
-
-
-async def _recompute_customer_stage(conn, customer_id: int) -> None:
-    """按订单/报价/询盘重新推导客户阶段（辅助逻辑，失败不影响主业务）。"""
-    try:
-        row = await conn.fetchrow(
-            "SELECT id, stage FROM customers WHERE tenant_id=$1 AND id=$2",
-            DEFAULT_TENANT, customer_id)
-        if row is None:
-            return
-        current = row["stage"]
-        if current in ("lost", "inactive"):
-            return  # 手动/时间终态，保留兜底
-        orders = await conn.fetch(
-            "SELECT status FROM orders WHERE tenant_id=$1 AND customer_id=$2",
-            DEFAULT_TENANT, customer_id)
-        active = [o["status"] for o in orders if o["status"] != "cancelled"]
-        if any(s in _WON_ORDER_STATUSES for s in active):
-            target = "won"
-        elif active:
-            target = "quoted"
-        else:
-            has_quote = await conn.fetchval(
-                "SELECT 1 FROM quote_orders WHERE tenant_id=$1 AND customer_id=$2 LIMIT 1",
-                DEFAULT_TENANT, customer_id)
-            if has_quote:
-                target = "quoted"
-            else:
-                has_inquiry = await conn.fetchval(
-                    "SELECT 1 FROM cust_inquiries WHERE tenant_id=$1 AND customer_id=$2 LIMIT 1",
-                    DEFAULT_TENANT, customer_id)
-                target = "inquiry" if has_inquiry else "lead"
-        if target == current:
-            return
-        await conn.execute(
-            "UPDATE customers SET stage=$1, updated_at=now() WHERE tenant_id=$2 AND id=$3",
-            target, DEFAULT_TENANT, customer_id)
-        await conn.execute(
-            """INSERT INTO cust_stage_log
-                   (tenant_id, customer_id, from_stage, to_stage, changed_by, reason)
-               VALUES ($1,$2,$3,$4,'system',$5)""",
-            DEFAULT_TENANT, customer_id, current, target,
-            f"按订单/报价/询盘推导：{current} → {target}")
-    except Exception:  # noqa: BLE001 - 阶段推导是辅助，不阻断主业务
-        return
-
-
-async def _refresh_stale_customer_stages(conn) -> None:
-    """读客户列表时兜底：先按订单/报价/询盘推导，再套 30/90 天规则。
-
-    同样是辅助逻辑：任何异常只跳过，不影响列表返回。
-    """
-    try:
-        customers = await conn.fetch(
-            "SELECT id FROM customers WHERE tenant_id=$1 AND is_deleted=false",
-            DEFAULT_TENANT)
-        for c in customers:
-            await _recompute_customer_stage(conn, c["id"])
-
-        rows = await conn.fetch(
-            """
-            SELECT c.id, c.stage,
-                   GREATEST(
-                     c.updated_at,
-                     COALESCE((SELECT max(created_at) FROM cust_inquiries WHERE customer_id=c.id), c.updated_at),
-                     COALESCE((SELECT max(created_at) FROM quote_orders WHERE customer_id=c.id), c.updated_at),
-                     COALESCE((SELECT max(created_at) FROM orders WHERE customer_id=c.id), c.updated_at)
-                   ) AS last_activity
-            FROM customers c
-            WHERE c.tenant_id=$1 AND c.is_deleted=false AND c.stage NOT IN ('lost','inactive')
-            """, DEFAULT_TENANT)
-        now = datetime.now(timezone.utc)
-        for r in rows:
-            last = r["last_activity"] if "last_activity" in r else None
-            if last is None:
-                continue
-            days = (now - last).days
-            target = None
-            if days >= 90:
-                target = "inactive"
-            elif days >= 30 and r["stage"] != "won":
-                target = "lost"
-            if target is None or target == r["stage"]:
-                continue
-            await conn.execute(
-                "UPDATE customers SET stage=$1, updated_at=now() WHERE id=$2", target, r["id"])
-            await conn.execute(
-                """INSERT INTO cust_stage_log
-                       (tenant_id, customer_id, from_stage, to_stage, changed_by, reason)
-                   VALUES ($1,$2,$3,$4,'system',$5)""",
-                DEFAULT_TENANT, r["id"], r["stage"], target,
-                f"{days} 天无活动自动转 {target}")
-    except Exception:  # noqa: BLE001 - 兜底刷新失败不阻断列表
-        return
+# ── 客户阶段（2026-10-18 用户口径）────────────────────────────────────────────
+#   客户阶段与订单阶段是**两层，不能混**：
+#     · 客户阶段 = active（活跃）/ inactive（沉寂，手动关闭）/ ordered（已下单，推导）；
+#     · 「已下单」只由**开启中的订单**推导（pending/confirmed/producing/shipped）；
+#     · 不再按询盘/报价状态改写客户阶段，也不再跑 30/90 天自动流失/沉寂。
+#   本文件原先的 `_recompute_customer_stage` / `_refresh_stale_customer_stages`
+#   已删除：那套逻辑正是「手动改阶段被系统覆盖」的根因。
+#   推导的唯一 SQL 入口 = `_customer_stage_sql()`（读时算，不落库）。
 
 
 @app.get("/api/v1/customers/{customer_id}")
@@ -1222,7 +1170,7 @@ async def get_customer(customer_id: int, request: Request, user: dict = Depends(
             "SELECT * FROM cust_stage_log WHERE customer_id=$1 ORDER BY created_at DESC LIMIT 20", customer_id,
         )
     return {
-        **row_to_customer(dict(row)),
+        **_customer_api(row),
         "contacts": [dict(c) for c in contacts],
         "inquiries": [row_to_inquiry(dict(i)) for i in inquiries],
         "stage_log": [dict(s) for s in stage_log],
@@ -1293,8 +1241,27 @@ async def delete_contact(customer_id: int, contact_id: int, request: Request,
 @app.delete("/api/v1/customers/{customer_id}", status_code=204)
 async def soft_delete_customer(customer_id: int, request: Request,
                                user: dict = Depends(_get_current_user)):
+    """客户软删除（列表隐藏、历史单据保留引用）。
+
+    有**开启中的订单**时 409 `OPEN_ORDERS_EXIST`：订单还在跑却把客户删掉，
+    后续发货/对账会找不到客户（用户 2026-10-18 确认）。
+    """
     async with _acquire(request) as conn:
         await _customer_or_404(conn, customer_id, user)   # 可见性 + 未删除（已删则 404）
+        open_orders = await conn.fetch(
+            "SELECT id, order_no, status FROM orders"
+            " WHERE tenant_id=$1 AND customer_id=$2"
+            f" AND status IN {_OPEN_ORDER_STATUS_SQL} ORDER BY id",
+            DEFAULT_TENANT, customer_id)
+        if open_orders:
+            raise HTTPException(status_code=409, detail={
+                "error": "conflict", "code": "OPEN_ORDERS_EXIST",
+                "detail": f"客户名下有 {len(open_orders)} 张开启中的订单，请先关闭订单再删除",
+                "open_orders": [
+                    {"id": o["id"], "order_no": o["order_no"], "status": o["status"]}
+                    for o in open_orders
+                ],
+            })
         await conn.execute(
             "UPDATE customers SET is_deleted=true, deleted_at=now() WHERE id=$1 AND tenant_id=$2",
             customer_id, DEFAULT_TENANT)
@@ -1315,42 +1282,30 @@ async def add_inquiry(customer_id: int, request: Request, body: InquiryCreate, u
             body.quantity, body.quantity_unit, body.application, body.status, body.notes,
             str(user["id"]), str(user["id"]), "private", user.get("team_id"),
         )
-        # 汇总视图：询盘变化后按订单/报价/询盘重新推导客户阶段
-        await _recompute_customer_stage(conn, customer_id)
+        # 2026-10-18：询盘是**单据阶段**，不再联动改客户阶段（客户阶段只有
+        # 活跃/沉寂/已下单，已下单只由开启中的订单推导）。
     return dict(row)
 
 
 @app.patch("/api/v1/customers/{customer_id}/stage")
 async def update_stage(customer_id: int, request: Request, body: StageUpdate, user: dict = Depends(_get_current_user)):
-    """手动改客户阶段（兜底入口）。
+    """手动切换客户阶段（活跃 / 沉寂）。
 
-    2026-10-17：标记流失（lost）**必须**上传客户拒绝文件 —— `rejection_file_id`
-    来自 `POST /file-objects/upload`（字节优先进 R2 binding）。无文件一律 422。
+    2026-10-18 用户口径：
+      · 客户阶段只有三种，其中「已下单」由开启中的订单推导，**不允许手写**；
+      · 「流失」属于订单阶段，客户阶段不再有 lost，也不再要求拒绝文件。
     """
-    target = validate_enum("customer_stage", body.stage)
+    target = body.stage
+    ok, msg = validate_manual_stage(target)
+    if not ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_enum", "code": "INVALID_CUSTOMER_STAGE",
+            "detail": msg,
+        })
     async with _acquire(request) as conn:
         cust = await _customer_or_404(conn, customer_id, user)
         from_stage = cust["stage"]
         reason = (body.reason or "").strip() or None
-        if target == "lost":
-            fid = body.rejection_file_id
-            if fid is None:
-                raise HTTPException(status_code=422, detail={
-                    "error": "rejection_file_required",
-                    "code": "REJECTION_FILE_REQUIRED",
-                    "detail": "标记流失必须上传客户拒绝文件",
-                })
-            ok = await conn.fetchval(
-                "SELECT 1 FROM file_objects WHERE tenant_id=$1 AND id=$2"
-                " AND owner_type='customer' AND coalesce(owner_id,'')=$3",
-                DEFAULT_TENANT, fid, str(customer_id))
-            if not ok:
-                raise HTTPException(status_code=422, detail={
-                    "error": "invalid_rejection_file",
-                    "code": "INVALID_REJECTION_FILE",
-                    "detail": "拒绝文件不存在或不属于该客户",
-                })
-            reason = f"拒绝文件#{fid}" + (f" · {reason}" if reason else "")
         await conn.execute(
             "UPDATE customers SET stage=$1, updated_at=NOW() WHERE id=$2", target, customer_id,
         )
@@ -1359,8 +1314,8 @@ async def update_stage(customer_id: int, request: Request, body: StageUpdate, us
                VALUES ($1,$2,$3,$4,$5,$6)""",
             DEFAULT_TENANT, customer_id, from_stage, target, str(user["id"]), reason,
         )
-        row = await conn.fetchrow("SELECT *, name AS company_name FROM customers WHERE id=$1", customer_id)
-    return dict(row)
+        row = await _customer_or_404(conn, customer_id, user)
+    return {**_customer_api(row), "closed_inquiries": []}
 
 
 # ── Market Endpoints ──
@@ -3172,8 +3127,7 @@ async def create_order_api(
                 _term("country_of_origin"),
             )
             order_id = row["id"]
-            # 汇总视图：新订单默认 pending ⇒ 推导仍是 quoted；确认/发货等状态变化时再推导
-            await _recompute_customer_stage(conn, customer["id"])
+            # 2026-10-18：客户阶段读时由「开启中的订单」推导，不再在这里回写客户阶段。
             for idx, it in enumerate(items):
                 await conn.execute(
                     """INSERT INTO order_items
@@ -3354,10 +3308,7 @@ async def change_order_status(order_id: int, request: Request, body: dict,
         "UPDATE orders SET status=$3, updated_at=$4 WHERE tenant_id=$1 AND id=$2",
         DEFAULT_TENANT, order_id, target, now
     )
-    # 客户阶段是汇总视图：订单状态变化后按订单/报价/询盘重新推导（不直接写客户阶段）
-    if o.get("customer_id"):
-        async with _acquire(request) as conn:
-            await _recompute_customer_stage(conn, o["customer_id"])
+    # 2026-10-18：客户阶段 = 读时按「开启中的订单」推导，订单状态变化后无需回写。
     if target == "confirmed" and o["status"] == "pending":
         rate, rate_date = await _lock_fx_rate(request, o.get("currency") or "USD")
         await db.execute(
