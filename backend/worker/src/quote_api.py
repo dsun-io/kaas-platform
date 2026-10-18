@@ -2205,3 +2205,19 @@ async def replace_quote_items(quote_id: int, request: Request, body: _QuoteItems
         "total_amount": float(total) if items else None,
         "items": [_quote_item_json(i, user) for i in rows],
     }
+
+
+@app.get("/api/v1/export-quote/products/{product_key}/spec")
+async def export_quote_product_spec(
+    request: Request,
+    product_key: str,
+    user: dict = Depends(_get_current_user),
+):
+    """产品的原始定义（与 orchestrator 同路径；产品工位「自定义」用它做底稿）。"""
+    from kaas_common.export_quote.tenant_products import spec_to_dict
+
+    spec = await _effective_product(request, user, product_key)
+    if spec is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "unknown_product", "message": f"未知产品 {product_key}"})
+    return {"product_key": product_key, "spec": spec_to_dict(spec)}

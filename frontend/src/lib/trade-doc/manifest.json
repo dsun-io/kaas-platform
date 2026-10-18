@@ -38,7 +38,7 @@
       "items": {
         "type": "array",
         "required": true,
-        "description": "商品明细(品名、规格、数量、单价、金额)"
+        "description": "商品明细(品名、规格、HS编码、数量、单价、金额)"
       },
       "total_amount": {
         "type": "number",
@@ -116,7 +116,7 @@
       "items": {
         "type": "array",
         "required": true,
-        "description": "商品明细"
+        "description": "商品明细(品名、规格、HS编码、数量、单位、单价、金额)"
       },
       "total_amount": {
         "type": "number",
@@ -219,7 +219,7 @@
       "items": {
         "type": "array",
         "required": true,
-        "description": "商品明细"
+        "description": "商品明细(品名、规格、HS编码、数量、单位、单价、金额)"
       },
       "total_amount": {
         "type": "number",
@@ -410,7 +410,7 @@
       "items": {
         "type": "array",
         "required": true,
-        "description": "商品明细(品名、规格、数量、毛重、净重、体积)"
+        "description": "商品明细(品名、规格、HS编码、数量、毛重、净重、体积)"
       },
       "total_qty": {
         "type": "number",
@@ -787,7 +787,7 @@
       "items": {
         "type": "array",
         "required": true,
-        "description": "货物摘要(品名/规格/数量/件数/毛重)"
+        "description": "货物摘要(品名/规格/HS编码/数量/件数/毛重)"
       }
     }
   },
@@ -1019,7 +1019,7 @@
       "items": {
         "type": "array",
         "required": true,
-        "description": "商品明细(品名/规格/数量/单位/毛重/净重)"
+        "description": "商品明细(品名、规格、HS编码、数量、单位、毛重、净重)"
       },
       "vessel": {
         "type": "string",

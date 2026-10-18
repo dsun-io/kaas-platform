@@ -4824,6 +4824,47 @@
         }
       }
     },
+    "/api/v1/export-quote/products/{product_key}/spec": {
+      "get": {
+        "tags": [
+          "export-quote"
+        ],
+        "summary": "产品的原始定义（JSONB 形状）",
+        "description": "返回可直接编辑/另存的 ProductSpec 字典（产品定义的「真源」）。\n\n用途（2026-10-18 需求 15）：产品工位要能**查看/复制系统产品定义**为租户自定义；\n公式说明书（formulas）是给人看的，不是可回写的定义形状。",
+        "operationId": "get_product_spec_api_v1_export_quote_products__product_key__spec_get",
+        "parameters": [
+          {
+            "name": "product_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Product Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/export-quote/products/{product_key}/import-template": {
       "get": {
         "tags": [
@@ -7954,6 +7995,22 @@
             }
           },
           {
+            "name": "spec",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Spec"
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -9531,6 +9588,98 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tenant-product-status": {
+      "get": {
+        "tags": [
+          "tenant-products"
+        ],
+        "summary": "List Tenant Product Status",
+        "description": "本团队在该工位的产品启用状态（缺行 = 启用）。",
+        "operationId": "list_tenant_product_status_api_v1_tenant_product_status_get",
+        "parameters": [
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "quote",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "tenant-products"
+        ],
+        "summary": "Set Tenant Product Status",
+        "description": "启用/停用产品（幂等 upsert；缺行等价启用）。",
+        "operationId": "set_tenant_product_status_api_v1_tenant_product_status_post",
+        "parameters": [
+          {
+            "name": "workstation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "quote",
+              "title": "Workstation"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantProductStatusIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -18057,6 +18206,24 @@
           "created_at"
         ],
         "title": "TenantProductOut"
+      },
+      "TenantProductStatusIn": {
+        "properties": {
+          "product_key": {
+            "type": "string",
+            "title": "Product Key"
+          },
+          "is_enabled": {
+            "type": "boolean",
+            "title": "Is Enabled",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_key"
+        ],
+        "title": "TenantProductStatusIn"
       },
       "TenantReloadItem": {
         "properties": {

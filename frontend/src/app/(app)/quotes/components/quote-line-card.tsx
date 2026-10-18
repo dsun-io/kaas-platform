@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import type { ExportQuoteResponse } from "@contracts/export-quote";
 
 import { useExportProducts } from "../../quotations/v2-quote/hooks/use-export-quote-import";
+import { useProductCostReference } from "../hooks/use-product-costs";
 import {
   useCalcQuote,
   useProductFormulas,
@@ -170,7 +171,22 @@ export function QuoteLineCard({
     return 0;
   })();
   const typedCost = line.costOverride.trim();
-  const effectiveCost = typedCost === "" ? specCost : Number(typedCost) || 0;
+  // 成本来源优先级：本单手填 > 规格里的成本字段 > 历史参考成本（同规格最近一次/30天中位数）
+  const costRef = useProductCostReference(effectiveProduct, line.spec);
+  const referenceCost = costRef.data?.cost ?? null;
+  const effectiveCost =
+    typedCost !== ""
+      ? Number(typedCost) || 0
+      : specCost > 0
+        ? specCost
+        : (referenceCost ?? 0);
+  /** 需要传给引擎覆盖的成本（规格本身带成本时不覆盖；手填或历史参考才覆盖） */
+  const costOverrideToSend =
+    typedCost !== ""
+      ? Number(typedCost) || 0
+      : specCost > 0
+        ? null
+        : referenceCost;
 
   // ── 包装（需求 20）：默认包装优先；区间按当前规格取值 ────────────────────
   const packagingOptions = formulas.data?.packaging ?? [];
@@ -283,6 +299,22 @@ export function QuoteLineCard({
           bucket[optionName] = {
             ...(bucket[optionName] ?? {}),
             [costField]: Number(typedCost) || 0,
+          };
+          break;
+        }
+      } else if (costOverrideToSend !== null && costField) {
+        // 规格没有成本字段 / 未填成本 → 用历史参考成本覆盖
+        for (const group of groups) {
+          const optionName = String(line.spec[group.name] ?? "");
+          if (!optionName) continue;
+          const option = group.options.find(
+            (o) => String(o.value) === optionName,
+          );
+          if (option?.attributes?.[costField] === undefined) continue;
+          const bucket = overrides[group.name] ?? (overrides[group.name] = {});
+          bucket[optionName] = {
+            ...(bucket[optionName] ?? {}),
+            [costField]: costOverrideToSend,
           };
           break;
         }
@@ -484,11 +516,27 @@ export function QuoteLineCard({
               step="any"
               value={line.costOverride}
               onChange={(e) => onChange({ costOverride: e.target.value })}
-              placeholder={specCost > 0 ? String(specCost) : "请填写成本"}
+              placeholder={
+                specCost > 0
+                  ? String(specCost)
+                  : referenceCost !== null
+                    ? String(referenceCost)
+                    : "请填写成本"
+              }
               className="h-8 text-xs"
             />
             <p className="text-[11px] text-muted-foreground">
-              默认取定价数据/规格；手改只影响本单
+              {typedCost !== ""
+                ? "本单手填，只影响本单"
+                : specCost > 0
+                  ? "默认取规格/定价数据里的成本"
+                  : referenceCost !== null
+                    ? `参考历史成本 ¥${referenceCost}（${
+                        costRef.data?.source === "latest"
+                          ? "同规格最近一次"
+                          : "近 30 天中位数"
+                      }）`
+                    : "规格没有成本字段，请手填"}
             </p>
           </div>
 

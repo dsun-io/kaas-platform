@@ -3989,8 +3989,21 @@ async def put_company_profile(request: Request, body: dict,
         })
     # 权限：团队管理员（或平台管理员）才能改企业抬头
     await _require_team_admin(request, user)
+    # SWIFT 编码：8/11 位字母数字（用户 2026-10-18 要求）
+    from kaas_common.workstation.company_rules import SwiftError, normalize_swift
+    try:
+        swift_code = normalize_swift(body.get("swift_code"))
+    except SwiftError as exc:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "INVALID_SWIFT",
+            "detail": str(exc),
+        })
     # 逐字段覆盖（含 NULL）：允许把填错的字段清空，而不是"擦不掉"
-    values = [body.get(f) if f != "name_en" else name_en for f in _COMPANY_FIELDS]
+    values = [
+        swift_code if f == "swift_code"
+        else (body.get(f) if f != "name_en" else name_en)
+        for f in _COMPANY_FIELDS
+    ]
     cols = ", ".join(_COMPANY_FIELDS)
     placeholders = ", ".join(f"${i + 2}" for i in range(len(_COMPANY_FIELDS)))
     updates = ", ".join(f"{f}=EXCLUDED.{f}" for f in _COMPANY_FIELDS)

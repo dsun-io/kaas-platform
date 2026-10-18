@@ -188,6 +188,13 @@ async def list_tenant_products(
     tid = tenant_id or _tenant_of(user)
     conds = ["(tenant_id = $1 OR is_system = true)"]
     params: list = [tid]
+    if not _main._can_see_all(user):
+        team = user.get("team_id")
+        if team is None:
+            conds.append("(is_system = true OR team_id IS NULL)")
+        else:
+            params.append(team)
+            conds.append(f"(is_system = true OR team_id = ${len(params)})")
     if is_active is not None:
         params.append(is_active)
         conds.append(f"is_active = ${len(params)}")
@@ -214,12 +221,13 @@ async def create_tenant_product(
         try:
             r = await conn.fetchrow(
                 "INSERT INTO tenant_products"
-                " (tenant_id, product_key, product_name, product_name_en, category_code,"
+                " (tenant_id, team_id, product_key, product_name, product_name_en, category_code,"
                 "  cost_field, cost_basis, cost_unit, profit_mode, profit_value,"
                 "  misc_fee_rate, spec, override, base_spec_hash, is_system, is_active)"
-                " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14,false,$15)"
+                " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb,$15,false,$16)"
                 " RETURNING *",
-                tid, body.product_key, body.product_name, body.product_name_en,
+                tid, user.get("team_id"), body.product_key, body.product_name,
+                body.product_name_en,
                 body.category_code, body.cost_field, body.cost_basis, body.cost_unit,
                 body.profit_mode, body.profit_value, body.misc_fee_rate,
                 json.dumps(body.spec),
@@ -416,3 +424,65 @@ async def set_workstation_product(
         "is_system": bool(product["is_system"]),
         "is_enabled": bool(r["is_enabled"]),
     }
+
+
+# ── 系统级产品的租户停用（需求 16，与 orchestrator `/tenant-product-status` 同路径）──
+class _TenantProductStatusIn(BaseModel):
+    product_key: str
+    is_enabled: bool = True
+
+
+@app.get("/api/v1/tenant-product-status")
+async def list_tenant_product_status(
+    request: Request,
+    workstation: str = "quote",
+    user: dict = Depends(_get_current_user),
+):
+    tid = _tenant_of(user)
+    team = user.get("team_id")
+    team_sql = "team_id IS NULL" if team is None else "(team_id IS NULL OR team_id=$3)"
+    args = [tid, workstation]
+    if team is not None:
+        args.append(team)
+    async with _acquire(request) as conn:
+        rows = await conn.fetch(
+            "SELECT product_key, is_enabled FROM tenant_workstation_products"
+            " WHERE tenant_id=$1 AND workstation=$2"
+            f" AND {team_sql}",
+            *args,
+        )
+    return {"items": [{"product_key": r["product_key"],
+                        "is_enabled": bool(r["is_enabled"])} for r in rows]}
+
+
+@app.post("/api/v1/tenant-product-status")
+async def set_tenant_product_status(
+    request: Request,
+    body: _TenantProductStatusIn,
+    workstation: str = "quote",
+    user: dict = Depends(_get_current_user),
+):
+    tid = _tenant_of(user)
+    async with _acquire(request) as conn:
+        product = await conn.fetchrow(
+            "SELECT product_key, product_name, is_system FROM tenant_products"
+            " WHERE product_key=$1 AND (tenant_id=$2 OR is_system = true)"
+            " ORDER BY is_system DESC LIMIT 1",
+            body.product_key, tid,
+        )
+        if product is None:
+            raise HTTPException(status_code=404, detail={
+                "error": "not_found", "code": "PRODUCT_NOT_FOUND",
+            })
+        r = await conn.fetchrow(
+            "INSERT INTO tenant_workstation_products"
+            " (tenant_id, team_id, workstation, product_key, is_enabled)"
+            " VALUES ($1,$2,$3,$4,$5)"
+            " ON CONFLICT (tenant_id, (COALESCE(team_id, 0)), workstation, product_key)"
+            " DO UPDATE SET is_enabled = EXCLUDED.is_enabled, updated_at = now()"
+            " RETURNING product_key, is_enabled",
+            tid, user.get("team_id"), workstation, body.product_key, body.is_enabled,
+        )
+    return {"product_key": r["product_key"],
+            "is_system": bool(product["is_system"]),
+            "is_enabled": bool(r["is_enabled"])}

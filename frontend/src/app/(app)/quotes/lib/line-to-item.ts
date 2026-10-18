@@ -189,11 +189,12 @@ export interface BuiltLineItem {
     boxVolume: number;
     unitPriceFx: number;
   };
-  /**
-   * 缺失的申报要素键名（界面据此标黄）。
+  /** 缺失的申报要素键名（界面据此标黄）。
    * **不静默补 0** —— 报关表上印一个 0 重量比空白更危险。
    */
   missing: string[];
+  /** 内部分解快照（仅内部账号有）；报价页用它回显「利润金额（元/kg）」 */
+  costBreakdown?: Record<string, unknown>;
 }
 
 /**
@@ -292,6 +293,7 @@ export function buildLineItem(input: BuildLineItemInput): BuiltLineItem {
       unitPriceFx,
     },
     missing,
+    ...(costBreakdown ? { costBreakdown } : {}),
   };
 }
 

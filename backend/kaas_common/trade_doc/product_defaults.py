@@ -48,7 +48,12 @@ PRODUCT_INFO_KEYS = ("material", "surface", "usage", "hs_code", "packing", "orig
 
 # 行项表里有 HS Code 列的单据类型 —— 以 manifest 的 items 说明 + 渲染器 ITEM_COLUMNS 为准。
 # 这份清单由单测拿 manifest.json 复核（改一端不改另一端会红）。
-HS_ITEM_DOC_TYPES = ("ci", "co", "quality_cert", "customs_declaration")
+# 2026-10-18 用户口径：报价单 / 形式发票 / 合同 / 装箱单 / 重量单 / 装运通知也展示 HS 编码。
+HS_ITEM_DOC_TYPES = (
+    "quotation", "pi", "contract",
+    "ci", "pl", "shipping_advice",
+    "weight_list", "quality_cert", "co", "customs_declaration",
+)
 
 _HS_FIELD = "hs_code"
 

@@ -283,10 +283,37 @@ async def get_product_formulas(
     规格空间按**当前客户的有效档位**给出：客户在定价数据里加过的丝径/镀锌量，
     这里就会多出对应选项 —— 不这样做，客户就只能录一个选不到的档位。
     """
-    spec = _get_product_or_404(product_key)
+    spec = await _effective_product(db, auth, product_key)
+    if spec is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "unknown_product", "message": f"未知产品 {product_key}"},
+        )
     return describe_product(
         await _with_customer_options(db, auth, spec), with_columns=with_columns
     )
+
+
+@router.get("/products/{product_key}/spec", summary="产品的原始定义（JSONB 形状）")
+async def get_product_spec(
+    product_key: str,
+    auth: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """返回可直接编辑/另存的 ProductSpec 字典（产品定义的「真源」）。
+
+    用途（2026-10-18 需求 15）：产品工位要能**查看/复制系统产品定义**为租户自定义；
+    公式说明书（formulas）是给人看的，不是可回写的定义形状。
+    """
+    from app.services.export_quote.tenant_products import spec_to_dict
+
+    spec = await _effective_product(db, auth, product_key)
+    if spec is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "unknown_product", "message": f"未知产品 {product_key}"},
+        )
+    return {"product_key": product_key, "spec": spec_to_dict(spec)}
 
 
 @router.get("/products/{product_key}/import-template",

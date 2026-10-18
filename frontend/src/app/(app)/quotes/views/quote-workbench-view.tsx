@@ -18,6 +18,7 @@
  *     （后端 draft→sent 时入账）。
  */
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -257,6 +258,19 @@ export function QuoteWorkbenchView() {
     [lines],
   );
   const summary = useMemo(() => summarizeLines(computed), [computed]);
+
+  /** 利润率右侧的只读金额回显：取第一行内部分解里的「利润金额（元/kg）」。 */
+  const profitAmountHint = (() => {
+    const first = lines.find((l) => l.built?.costBreakdown)?.built;
+    if (!first?.costBreakdown) return "";
+    const perM2 = (
+      first.costBreakdown as { currency_cny_per_m2?: Record<string, unknown> }
+    ).currency_cny_per_m2;
+    const amount = perM2?.profit_amount;
+    return typeof amount === "number" && Number.isFinite(amount)
+      ? `≈ ¥${amount.toFixed(4)}/kg`
+      : "";
+  })();
 
   /**
    * 实际占用体积：按**产品定义声明的口径**扣减（牛栏网为每单扣 2.5 m³）。
@@ -562,6 +576,21 @@ export function QuoteWorkbenchView() {
 
   return (
     <div className="space-y-5">
+      {/* 企业抬头/公章入口：单证的卖方信头、银行与公章都在这里维护（仅团队管理员可保存） */}
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-semibold">产品报价</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            多产品逐行报价；单证的卖方抬头、银行与公章取自「企业抬头」设置。
+          </p>
+        </div>
+        <Link
+          href="/settings/company-profile"
+          className="rounded-lg border px-3 py-1.5 text-xs hover:bg-muted"
+        >
+          企业抬头 / 收款信息 / 公章 →
+        </Link>
+      </div>
       <WorkbenchParamsCard
         customer={customer}
         setCustomer={setCustomer}
@@ -594,6 +623,7 @@ export function QuoteWorkbenchView() {
         setMiscTaxPct={setMiscTaxPct}
         profitPct={profitPct}
         setProfitPct={setProfitPct}
+        profitAmountHint={profitAmountHint}
         quoteCurrency={quoteCurrency}
         setQuoteCurrency={setQuoteCurrency}
         fxRate={fxRate}

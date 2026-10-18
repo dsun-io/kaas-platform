@@ -9,13 +9,14 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, desc, or_
+from sqlalchemy import select, desc, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
 from app.db.models import TenantProduct
 from app.core.auth import AuthContext, get_auth_context
 from app.services.export_quote.tenant_products import spec_from_dict, spec_to_dict
+from kaas_common.workstation.scope import is_admin_role
 
 router = APIRouter(prefix="/api/v1", tags=["tenant-products"])
 
@@ -108,8 +109,14 @@ async def list_tenant_products(
     避免跨租户读到别家产品定义。口径与 Worker ws_products.py 一致。
     """
     tid = tenant_id or auth.tenant_id or "default"
+    team_cond = or_(
+        TenantProduct.team_id.is_(None) if is_admin_role(auth.role)
+        else TenantProduct.team_id == getattr(auth, "team_id", None),
+        TenantProduct.is_system.is_(True),
+    )
     q = select(TenantProduct).where(
-        or_(TenantProduct.tenant_id == tid, TenantProduct.is_system.is_(True))
+        or_(TenantProduct.tenant_id == tid, TenantProduct.is_system.is_(True)),
+        team_cond,
     ).order_by(desc(TenantProduct.created_at))
     if is_active is not None:
         q = q.where(TenantProduct.is_active == is_active)
@@ -131,6 +138,7 @@ async def create_tenant_product(
     _validate_override(body)
     row = TenantProduct(
         tenant_id=auth.tenant_id or "default",
+        team_id=getattr(auth, "team_id", None),
         product_key=body.product_key,
         product_name=body.product_name,
         product_name_en=body.product_name_en,
@@ -171,6 +179,8 @@ async def update_tenant_product(
     if row.tenant_id != (auth.tenant_id or "default"):
         # 别家的产品一律 404（不泄露存在性），与 Worker ws_products.py 同口径
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "PRODUCT_NOT_FOUND"})
+    if not is_admin_role(auth.role) and row.team_id is not None and row.team_id != getattr(auth, "team_id", None):
+        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "PRODUCT_NOT_FOUND"})
     try:
         spec_from_dict(body.spec)
     except Exception as exc:
@@ -202,6 +212,8 @@ async def delete_tenant_product(
         raise HTTPException(status_code=403, detail={"error": "forbidden", "message": "系统级产品不可删除"})
     if row.tenant_id != (auth.tenant_id or "default"):
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "PRODUCT_NOT_FOUND"})
+    if not is_admin_role(auth.role) and row.team_id is not None and row.team_id != getattr(auth, "team_id", None):
+        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "PRODUCT_NOT_FOUND"})
     # 需求 16（用户决策）：删除产品时**一并清理**基础信息、图片与工位绑定。
     # 历史报价/单证存的是 spec_snapshot 快照，不受影响。
     from sqlalchemy import text
@@ -219,3 +231,68 @@ async def delete_tenant_product(
     await db.delete(row)
     await db.commit()
     return None
+
+
+# ── 系统级产品的租户停用（需求 16）──────────────────────────────────────────
+# 为什么不复用 `POST /workstation-products`：那个端点带「必须已订阅报价工位」闸门，
+# 而「产品管理」本身不应以工位订阅为前提（未订阅也要能先整理产品）。
+# 这里只做**产品可选范围**的开关，不影响已保存报价/单证快照。
+
+class TenantProductStatusIn(BaseModel):
+    product_key: str
+    is_enabled: bool = True
+
+
+@router.get("/tenant-product-status")
+async def list_tenant_product_status(
+    workstation: str = "quote",
+    auth: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """本团队在该工位的产品启用状态（缺行 = 启用）。"""
+    tenant_id = auth.tenant_id or "default"
+    team_id = getattr(auth, "team_id", None)
+    team_sql = "team_id IS NULL" if team_id is None else "(team_id IS NULL OR team_id=:team)"
+    params = {"t": tenant_id, "w": workstation}
+    if team_id is not None:
+        params["team"] = team_id
+    rows = (await db.execute(text(
+        "SELECT product_key, is_enabled FROM tenant_workstation_products"
+        " WHERE tenant_id=:t AND workstation=:w"
+        f" AND {team_sql}"
+    ), params)).mappings().all()
+    return {"items": [dict(r) for r in rows]}
+
+
+@router.post("/tenant-product-status")
+async def set_tenant_product_status(
+    body: TenantProductStatusIn,
+    workstation: str = "quote",
+    auth: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """启用/停用产品（幂等 upsert；缺行等价启用）。"""
+    tenant_id = auth.tenant_id or "default"
+    product = (await db.execute(
+        select(TenantProduct).where(
+            TenantProduct.product_key == body.product_key,
+            or_(TenantProduct.tenant_id == tenant_id, TenantProduct.is_system.is_(True)),
+        ).order_by(TenantProduct.is_system.desc()).limit(1)
+    )).scalars().first()
+    if product is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "PRODUCT_NOT_FOUND"})
+    await db.execute(text(
+        "INSERT INTO tenant_workstation_products"
+        " (tenant_id, team_id, workstation, product_key, is_enabled)"
+        " VALUES (:t, :team, :w, :k, :enabled)"
+        " ON CONFLICT (tenant_id, (COALESCE(team_id, 0)), workstation, product_key)"
+        " DO UPDATE SET is_enabled=EXCLUDED.is_enabled, updated_at=now()"
+    ), {
+        "t": tenant_id, "team": getattr(auth, "team_id", None),
+        "w": workstation, "k": body.product_key, "enabled": body.is_enabled,
+    })
+    await db.commit()
+    return {"product_key": body.product_key,
+            "is_system": bool(product.is_system),
+            "is_enabled": body.is_enabled}

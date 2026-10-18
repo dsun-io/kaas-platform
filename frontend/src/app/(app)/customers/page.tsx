@@ -56,6 +56,8 @@ const STAGE_TONES: Record<string, import("@/components/shared").StatusTone> = {
 interface Customer {
   id: number;
   company_name: string;
+  /** 客户缩写（2-6 位字母/数字，用于询盘编号自动生成） */
+  abbr?: string | null;
   country: string | null;
   address: string | null;
   default_port: string | null;
@@ -82,6 +84,8 @@ interface Contact {
 interface Inquiry {
   id: number;
   customer_id: number;
+  /** 自动生成的询盘编号（国家-客户缩写-时间戳）；历史询盘可能为空 */
+  inquiry_no?: string | null;
   channel: string | null;
   product_name_raw: string | null;
   quantity: number | null;
@@ -168,6 +172,7 @@ function deleteConflictMessage(e: unknown): string | null {
 
 type CustomerFormState = {
   company_name: string;
+  abbr: string;
   contact_name: string;
   contact_phone: string;
   contact_email: string;
@@ -181,6 +186,7 @@ type CustomerFormState = {
 
 const EMPTY_CUSTOMER: CustomerFormState = {
   company_name: "",
+  abbr: "",
   contact_name: "",
   contact_phone: "",
   contact_email: "",
@@ -213,6 +219,7 @@ function CustomerForm({
     initial
       ? {
           company_name: initial.company_name ?? "",
+          abbr: initial.abbr ?? "",
           contact_name: "",
           contact_phone: "",
           contact_email: "",
@@ -256,6 +263,7 @@ function CustomerForm({
           `/customers/${initial.id}`,
           {
             company_name: form.company_name.trim(),
+            abbr: form.abbr.trim() || null,
             country: form.country.trim() || null,
             address: form.address.trim() || null,
             default_port: form.default_port.trim() || null,
@@ -316,6 +324,16 @@ function CustomerForm({
           value={form.country}
           onChange={set("country")}
         />
+        <Input
+          placeholder="客户缩写（2-6 位字母/数字，用于询盘编号）"
+          value={form.abbr}
+          maxLength={6}
+          onChange={(e) =>
+            setForm({ ...form, abbr: e.target.value.toUpperCase() })
+          }
+        />
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input
           placeholder="默认港口"
           value={form.default_port}
@@ -994,6 +1012,11 @@ function CustomerDetailPanel({
                     >
                       <div className="flex items-center justify-between">
                         <p className="font-medium text-sm">
+                          {inq.inquiry_no && (
+                            <span className="mr-2 font-mono text-xs text-muted-foreground">
+                              {inq.inquiry_no}
+                            </span>
+                          )}
                           {inq.product_name_raw ?? `询盘 #${inq.id}`}
                         </p>
                         <div className="flex items-center gap-2">
