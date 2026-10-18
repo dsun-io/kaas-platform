@@ -1,5 +1,16 @@
 # KaaS 平台部署方案（2026-10-18 本轮）
 
+> ## 本次实际执行结果（2026-10-18 22:00 左右）
+>
+> - 代码：`main` 已推送；部署提交 `9f82163`（README/冒烟修复为其后文档与 CI 修正）
+> - 数据库：Neon production `202610170004` → **`202610180009`**（发布前）→ **`202610180010`**（清理）
+> - 发布前备份分支：`pre-deploy-20261018-2150`（Neon，copy-on-write）
+> - Worker：Cloudflare 部署版本 `839c6661-616b-4974-b2a3-4fb95e65ecd4`，部署时间 `2026-10-18T14:00:43Z`
+> - GitHub Actions：`build-frontend` 成功；`deploy-worker` 成功（修复了旧冒烟路由断言后）
+> - 生产冒烟：`/health` = ok 且 `shared.loaded=true`；`/api/v1/tax-archives`、`/api/v1/product-tax-rates`、`/api/v1/quotes` 均 401；`/login`、`/settings/tax-archives`、`/quotes` 均 200
+> - 生产 `customer_quote_profiles` 已删除；`product_tax_rates` 已建；企业税档 `tax_values` 只剩 `output_vat_rate/misc_fee_rate`
+> - **待业务配置**：生产 `product_tax_rates` 当前为 0 条，需要团队管理员按实际进项税/退税率配置后，批量报价才会放行
+
 > 适用版本：`main` 分支截至本次推送（Worker 代码含税务档案、产品税率、整单保险、批量报价固定测试）。
 > **本文只设计部署，不执行生产发布。** 生产发布必须由人确认后按下述顺序执行。
 
