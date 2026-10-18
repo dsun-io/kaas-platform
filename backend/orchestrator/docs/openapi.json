@@ -6241,6 +6241,46 @@
         }
       }
     },
+    "/api/v1/quotes/batch": {
+      "post": {
+        "tags": [
+          "quote-orders"
+        ],
+        "summary": "Create Quote Batch",
+        "description": "批量报价：多客户 × 多询盘，一个询盘一张报价单。\n\n用户口径（2026-10-18）：\n  · 单批最多 200 行；\n  · 同一询盘可有多张报价（不覆盖已有报价）；\n  · 每组独立提交，单组失败不回滚其他组。\n\n实现：逐组复用单笔 `create_quote_order`（含取号/自动建询盘/状态推进/税快照），\n失败组回滚并进 `failed`，成功组返回报价单号。",
+        "operationId": "create_quote_batch_api_v1_quotes_batch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchQuoteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/quotes/reference-price": {
       "get": {
         "tags": [
@@ -11213,6 +11253,258 @@
           "count"
         ],
         "title": "AuditLogResponse"
+      },
+      "BatchQuoteGroup": {
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "title": "Customer Id"
+          },
+          "customer_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Name"
+          },
+          "inquiry_id": {
+            "type": "integer",
+            "title": "Inquiry Id"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency",
+            "default": "USD"
+          },
+          "valid_until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid Until"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "owner_scope": {
+            "type": "string",
+            "title": "Owner Scope",
+            "default": "private"
+          },
+          "incoterm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incoterm"
+          },
+          "payment_terms": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Terms"
+          },
+          "port_of_loading": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port Of Loading"
+          },
+          "port_of_destination": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port Of Destination"
+          },
+          "shipping_marks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipping Marks"
+          },
+          "country_of_origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Of Origin"
+          },
+          "tax_archive_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Archive Id"
+          },
+          "tax_archive_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Archive Code"
+          },
+          "tax_archive_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Archive Name"
+          },
+          "tax_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Snapshot"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/QuoteItemIn"
+            },
+            "type": "array",
+            "title": "Items",
+            "default": []
+          },
+          "destination_country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Country"
+          },
+          "destination_region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Region"
+          },
+          "carrier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carrier"
+          },
+          "freight_valid_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freight Valid From"
+          },
+          "freight_valid_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freight Valid To"
+          }
+        },
+        "type": "object",
+        "required": [
+          "customer_id",
+          "inquiry_id"
+        ],
+        "title": "BatchQuoteGroup",
+        "description": "批量报价的一组：一个询盘一张报价单（不跨客户/询盘合并）。"
+      },
+      "BatchQuoteIn": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/BatchQuoteGroup"
+            },
+            "type": "array",
+            "title": "Groups"
+          }
+        },
+        "type": "object",
+        "required": [
+          "groups"
+        ],
+        "title": "BatchQuoteIn"
       },
       "BindingUpsert": {
         "properties": {

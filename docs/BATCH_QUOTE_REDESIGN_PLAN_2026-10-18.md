@@ -87,6 +87,14 @@
 - 每组校验客户↔询盘归属；生成报价单后自动推进询盘状态。
 - 解析/算价失败按组返回，不抛整批 500。
 
+### 3.1 实现进度（2026-10-18 晚）
+
+- ✅ B1 后端批量 API：`POST /api/v1/quotes/batch`（orchestrator + Worker 对等），
+  最多 200 组；逐组复用单笔建单，返回 `created` / `failed` / `total`；
+- ✅ 合同/契约：`BatchQuoteRequest` / `BatchQuoteResponse`；
+- ✅ 报价生效联动：生成后续单证后同询盘其他报价自动 `closed`；
+- ⏳ B3/B4 前端批量选择页与结果页；B5 e2e；B6 旧 CSV 面板下线（需确认）。
+
 ## 4. 前端拆解
 
 - `BatchQuoteView`：三栏（客户/询盘选择 → 参数与行项 → 结果）。

@@ -99,6 +99,43 @@ export const QuoteOrderCreateSchema = TradeTermsSchema.extend({
 });
 export type QuoteOrderCreate = z.infer<typeof QuoteOrderCreateSchema>;
 
+/** 批量报价：一个询盘一组，最多 200 组；不覆盖已有报价。 */
+export const BatchQuoteGroupSchema = QuoteOrderCreateSchema.extend({
+  customer_id: z.string().min(1),
+  inquiry_id: z.number().int(),
+});
+export type BatchQuoteGroup = z.infer<typeof BatchQuoteGroupSchema>;
+
+export const BatchQuoteRequestSchema = z.object({
+  groups: z.array(BatchQuoteGroupSchema).min(1).max(200),
+});
+export type BatchQuoteRequest = z.infer<typeof BatchQuoteRequestSchema>;
+
+export const BatchQuoteResponseSchema = z.object({
+  created: z
+    .array(
+      z.object({
+        inquiry_id: z.number().int(),
+        customer_id: z.string(),
+        quote_id: z.number().int(),
+        quote_no: z.string(),
+      }),
+    )
+    .default([]),
+  failed: z
+    .array(
+      z.object({
+        inquiry_id: z.number().int(),
+        customer_id: z.string(),
+        code: z.string(),
+        detail: z.string(),
+      }),
+    )
+    .default([]),
+  total: z.number().int(),
+});
+export type BatchQuoteResponse = z.infer<typeof BatchQuoteResponseSchema>;
+
 /** 单头可改字段 + 状态流转（draft → sent → accepted/rejected/expired）。 */
 export const QuoteOrderPatchSchema = TradeTermsSchema.extend({
   /** 报价单号：仅在下游单证/订单生成前可改（后端 409 锁定） */

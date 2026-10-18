@@ -1469,6 +1469,16 @@ class _QuoteOrderPatch(BaseModel):
     tax_snapshot: Optional[dict] = None
 
 
+class _BatchQuoteGroup(_QuoteOrderCreate):
+    """批量报价的一组：一个询盘一张报价单。"""
+    customer_id: int
+    inquiry_id: int
+
+
+class _BatchQuoteIn(BaseModel):
+    groups: List[_BatchQuoteGroup]
+
+
 class _QuoteItemsReplace(BaseModel):
     items: List[_QuoteItemIn]
 
@@ -2036,6 +2046,46 @@ async def create_quote_order(request: Request, body: _QuoteOrderCreate,
             await _ensure_quotation_doc(conn, tenant, dict(row), items, request)
     return _quote_json(dict(row), len(items))
 
+
+@app.post("/api/v1/quotes/batch", status_code=201)
+async def create_quote_batch(request: Request, body: _BatchQuoteIn,
+                             user: dict = Depends(_get_current_user)):
+    """批量报价：逐组复用单笔建单，单组失败不拖垮整批（最多 200 组）。"""
+    if not body.groups:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "EMPTY_BATCH", "detail": "批量报价至少需要一组"})
+    if len(body.groups) > 200:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "BATCH_TOO_LARGE",
+            "detail": f"单批最多 200 行，当前 {len(body.groups)} 行"})
+    created: list[dict] = []
+    failed: list[dict] = []
+    for group in body.groups:
+        try:
+            q = await create_quote_order(request, group, user)
+            created.append({
+                "inquiry_id": group.inquiry_id,
+                "customer_id": str(group.customer_id),
+                "quote_id": q.get("id"),
+                "quote_no": q.get("quote_no"),
+            })
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {}
+            failed.append({
+                "inquiry_id": group.inquiry_id,
+                "customer_id": str(group.customer_id),
+                "code": detail.get("code") or f"HTTP_{exc.status_code}",
+                "detail": detail.get("detail") or str(exc.detail),
+            })
+        except Exception as exc:  # noqa: BLE001
+            failed.append({
+                "inquiry_id": group.inquiry_id,
+                "customer_id": str(group.customer_id),
+                "code": "BATCH_GROUP_FAILED",
+                "detail": f"{type(exc).__name__}: {exc}",
+            })
+    return {"created": created, "failed": failed,
+            "total": len(created) + len(failed)}
 
 
 @app.get("/api/v1/quotes/reference-price")
