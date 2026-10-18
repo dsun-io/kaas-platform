@@ -1082,7 +1082,7 @@ function CustomerDetailPanel({
                             className="h-7 px-2 text-xs"
                             onClick={() => toggleInquiryClosed(inq)}
                           >
-                            {inq.status === "closed" ? "重新打开" : "关闭"}
+                            {inq.status === "closed" ? "重新打开询盘" : "关闭询盘"}
                           </Button>
                           <StatusBadge
                             tone={
