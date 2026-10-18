@@ -132,12 +132,15 @@ jobs:
           fi
 
           echo "── 2) API 路由与鉴权（未带 token 必须 401）──"
-          # 报价工位相关的 4 条：若共享内核/引擎漏打包，这里会变成 503（而不是 401），
+          # 报价工位 + 税务相关路由：若共享内核/引擎漏打包，这里会变成 503（而不是 401），
           # 从而在最前面就把「镜像没进包」这个事故拦住。
+          # 2026-10-18：旧 `/export-quote/rate-sets`、`/quote-profiles` 已随 TAX-06 下线，
+          # 不能再断言 401（会 404）；改测新的税务/产品税率路由。
           for p in /api/v1/research/categories /api/v1/research/stats \
                    /api/v1/leads /api/v1/ai/tasks \
-                   /api/v1/export-quote/products /api/v1/export-quote/rate-sets \
-                   /api/v1/export-quote/quote-profiles /api/v1/quotes; do
+                   /api/v1/export-quote/products \
+                   /api/v1/tax-archives /api/v1/product-tax-rates \
+                   /api/v1/quotes; do
             code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API$p")
             echo "$p -> $code"
             if [ "$code" != "401" ]; then
