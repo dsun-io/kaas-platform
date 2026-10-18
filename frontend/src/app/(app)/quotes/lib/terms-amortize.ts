@@ -111,6 +111,19 @@ export function buildTermsPerLine(
   return { terms, amortized };
 }
 
+/** 整单保险：EXW 货值（报价币种）→ 各行应分摊的美元保险。
+ *
+ * 公式：保险费 = max(15, 整单 EXW × 1.1 ÷ 1000)，整单只算一次；
+ * 再按各行 EXW 货值比例分摊。返回每行美元金额。
+ */
+export function allocateInsurance(exwTotals: number[]): number[] {
+  const totals = exwTotals.map((v) => (Number.isFinite(v) && v > 0 ? v : 0));
+  const sum = totals.reduce((a, b) => a + b, 0);
+  if (sum <= 0) return totals.map(() => 0);
+  const premium = Math.max(15, (sum * 1.1) / 1000);
+  return totals.map((v) => (premium * v) / sum);
+}
+
 /** 所选条款下需要填写的费用项（从 EXW 到该档累计、去重保序）。 */
 export function requiredFeeKeysFor(
   template: ExportTermsTemplate,
