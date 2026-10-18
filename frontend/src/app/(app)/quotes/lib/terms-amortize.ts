@@ -49,6 +49,7 @@ export function buildTermsPerLine(
   amounts: Record<string, number>,
   shares: number[],
   quoteAs?: string,
+  formulaOverrides?: Record<string, number[]>,
 ): { terms: BuiltTerms[]; amortized: string[] } {
   // 2026-10-18：显式给了条款时，阶梯截断到所选条款 —— 只算用户要报的那一档，
   // 避免"没填海运费却算出 CIF 价"这种误导；quote_as 必须等于所选条款。
@@ -82,7 +83,17 @@ export function buildTermsPerLine(
       if (isPerShipment(fee)) {
         if (n > 1 && !amortized.includes(key)) amortized.push(key);
         const share = weights[i] ?? 0;
-        items[key] = { ...fee, value: (amount * share) / weightSum };
+        const formulaKey = (fee as ExportTermsFee & { formula?: string }).formula;
+        const formulaValue = formulaKey
+          ? formulaOverrides?.[formulaKey]?.[i]
+          : undefined;
+        const lineAmount =
+          formulaValue !== undefined
+            ? formulaValue
+            : formulaKey
+              ? 0
+              : (amount * share) / weightSum;
+        items[key] = { ...fee, value: lineAmount };
       } else {
         // 线性口径的费用（按重量 / 按卷 / 按比例）本来就是整单口径，逐行累加即等价
         items[key] = { ...fee, value: amount };

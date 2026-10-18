@@ -13,7 +13,7 @@ import csv
 import io
 import os
 from decimal import Decimal
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from .engine import QuoteResult
 from .numeric import to_decimal
@@ -91,6 +91,33 @@ def build_customer_view(result: QuoteResult, english: bool = False) -> dict:
     }
 
 
+def quote_term_totals(result: QuoteResult) -> dict:
+    """每个术语在整单上的金额（供前端做保险/整单费用分摊）。
+
+    只取第一行规格（一行报价 = 一个产品/规格），按订单名给 `total_excl/total_fx`。
+    """
+    if not result.rows:
+        return {}
+    row = result.rows[0]
+    fx = float(result.request.fx_rate or 1)
+    out: dict[str, dict] = {}
+    for code, per_order in (row.terms or {}).items():
+        orders: dict[str, dict] = {}
+        for order_name, entry in (per_order or {}).items():
+            if not isinstance(entry, Mapping):
+                continue
+            total_excl = float(entry.get("total_excl") or 0)
+            orders[order_name] = {
+                "total_excl": total_excl,
+                "total_excl_fx": total_excl / fx if fx else 0,
+                "total_incl": float(entry.get("total_incl") or 0),
+                "total_fx": float(entry.get("total_fx") or 0),
+                "price_incl": float(entry.get("price_incl") or 0),
+            }
+        out[code] = orders
+    return out
+
+
 def quote_meta(result: QuoteResult) -> dict:
     """报价单元信息（有效期、汇率、术语、档案）。"""
     req = result.request
@@ -120,6 +147,7 @@ def quote_meta(result: QuoteResult) -> dict:
             for o in req.orders
         ],
         "main_term_summary": result.main_term_summary(),
+        "term_totals": quote_term_totals(result),
         "diagnostics": list(result.diagnostics),
     }
 

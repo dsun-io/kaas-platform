@@ -506,18 +506,26 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
                       {fee.name}
                       {fee.unit_hint ? `（${fee.unit_hint}）` : ""}
                     </Label>
-                    <Input
-                      type="number"
-                      step="any"
-                      value={feeInputs[key] ?? ""}
-                      onChange={(e) =>
-                        setFeeInputs((p) => ({
-                          ...p,
-                          [key]: e.target.value,
-                        }))
-                      }
-                      className="h-8 text-xs"
-                    />
+                    {fee.formula ? (
+                      <Input
+                        readOnly
+                        value="自动计算"
+                        className="h-8 bg-muted text-xs"
+                      />
+                    ) : (
+                      <Input
+                        type="number"
+                        step="any"
+                        value={feeInputs[key] ?? ""}
+                        onChange={(e) =>
+                          setFeeInputs((p) => ({
+                            ...p,
+                            [key]: e.target.value,
+                          }))
+                        }
+                        className="h-8 text-xs"
+                      />
+                    )}
                     {fee.note && (
                       <p className="text-[11px] text-muted-foreground">
                         {fee.note}

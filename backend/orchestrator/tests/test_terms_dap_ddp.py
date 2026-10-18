@@ -128,9 +128,12 @@ class TestTemplateShape:
 
     def test_insurance_is_usd_lump_sum_not_rate(self):
         item = DEFAULT_EXPORT_TERMS["items"]["insurance"]
+        # 2026-10-18 用户口径：保险费自动算（EXW×1.1÷1000，最低 15 美元），
+        # 前端按整单算好后仍以 per_shipment 美元金额下发。
         assert item["mode"] == "per_shipment"
         assert item["currency"] == "USD"
-        assert item["unit_hint"] == "美元 / 整批"
+        assert item["formula"] == "insurance_of_exw"
+        assert "自动" in item["unit_hint"]
 
     def test_new_rungs_do_not_trip_the_incoterms_audit(self):
         ladder = ladder_from_dict(filled_template())

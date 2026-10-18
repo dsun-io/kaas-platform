@@ -225,6 +225,11 @@ class TestCalculate:
         meta = r.json()["meta"]
         assert meta["quote_as"] == "FOB"
         assert meta["term_codes"] == ["EXW", "FOB"]
+        # 整单各术语金额回传（保险费等整单费用按 EXW 货值分摊要用）
+        totals = meta["term_totals"]
+        assert set(totals) == {"EXW", "FOB"}
+        order = next(iter(totals["EXW"]))
+        assert totals["FOB"][order]["total_excl"] > totals["EXW"][order]["total_excl"]
 
     async def test_terms_missing_value_is_400_not_silent_zero(self, async_client):
         """费用既没 value 也取不到 source 时必须报错，不能静默按 0 报价。"""
