@@ -1,4 +1,4 @@
-"""牛栏网计算逻辑测试：波弯款、实际占用体积、净重、边丝重等。
+﻿"""牛栏网计算逻辑测试：波弯款、实际占用体积、净重、边丝重等。
 
 这些用例的作用是**把口径钉死在测试里**：任何一次改动若把
 「波弯款按每 100 米 +3kg」「实际占用体积要扣 2.5 m³」这类口径改坏，
@@ -14,7 +14,6 @@ import pytest
 
 from app.services.export_quote import (
     QuoteRequest,
-    RateSetRegistry,
     build,
     describe_calculations,
     describe_product,
@@ -96,7 +95,6 @@ def build_res():
         policy=_policy(),
         fx_rate=D("6.7019"),
         orders=field_fence.order_specs((30000, 50000)),
-        rate_set=RateSetRegistry.from_dir().get("CN-2026-09"),
         quote_date=date(2026, 9, 24),
         spec_rows=legacy_space(),
     ))
@@ -230,8 +228,7 @@ class TestEffectiveVolume:
             policy=_policy(),
             fx_rate=D("6.7019"),
             orders=field_fence.order_specs((100,)),
-            rate_set=RateSetRegistry.from_dir().get("CN-2026-09"),
-            quote_date=date(2026, 9, 24),
+                quote_date=date(2026, 9, 24),
             spec_rows=[{"coating": "热镀锌 40g/㎡", "wave": "无波款"}],
         ))
         m = tiny.rows[0].orders["o100"]
@@ -299,8 +296,7 @@ class TestEffectiveVolume:
             policy=_policy(),
             fx_rate=D("6.7019"),
             orders=field_fence.order_specs((30000,)),
-            rate_set=RateSetRegistry.from_dir().get("CN-2026-09"),
-            quote_date=date(2026, 9, 24),
+                quote_date=date(2026, 9, 24),
             spec_rows=[{"coating": "热镀锌 40g/㎡", "wave": "无波款",
                         "dm": 2.0, "dv": 2.0, "roll_len_m": 100,
                         "roll_dia_m": D("0.32")}],
@@ -555,3 +551,4 @@ class TestPricingKey:
         p = field_fence.build_spec()
         assert pricing_key_of(p, {"de": 2.0}) == ""
         assert pricing_key_of(p, {}) == ""
+

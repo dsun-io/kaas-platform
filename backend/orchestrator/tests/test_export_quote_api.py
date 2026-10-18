@@ -63,7 +63,6 @@ def _no_customer_pricing_data():
 def payload(**kw) -> dict:
     body = {
         "product_key": "field_fence",
-        "rate_set_code": "CN-2026-09",
         "fx_rate": 6.7019,
         "orders": [{"total": 30000, "unit": "m"}],
         "quote_date": "2026-09-24",
@@ -96,26 +95,6 @@ class TestMeta:
         # 尺寸类已是自由数值（不参与笛卡尔积），只剩 表面处理 5 × 工艺 2
         assert fence["combo_count"] == 10
         assert fence["hs_codes"]
-
-    async def test_rate_sets_are_listed_with_warnings(self, async_client):
-        r = await async_client.get(f"{BASE}/rate-sets")
-        assert r.status_code == 200
-        data = r.json()
-        codes = {rs["code"] for rs in data["rate_sets"]}
-        assert "CN-2026-09" in codes
-        # 示例档案不得出现在生产档案列表里
-        assert "CN-2027-01" not in codes
-        rs = next(x for x in data["rate_sets"] if x["code"] == "CN-2026-09")
-        # 征税率已从设计上删除（它曾错误地被当成退税比例的分母），接口不得再返回
-        assert "levy_rate" not in rs
-        assert rs["output_rate_export"] == 0.0
-        assert rs["stamp_duty"] == {"rate": 0.05, "base": "profit"}
-
-    async def test_reload_requires_admin(self, async_client):
-        assert (await async_client.post(f"{BASE}/rate-sets/reload")).status_code == 403
-        r = await async_client.post(f"{BASE}/rate-sets/reload", headers=ADMIN)
-        assert r.status_code == 200
-        assert "CN-2026-09" in r.json()["codes"]
 
 
 class TestCalculate:
@@ -160,13 +139,6 @@ class TestCalculate:
         for bad in (0, -1, 400):
             r = await async_client.post(f"{BASE}/calculate", json=payload(validity_days=bad))
             assert r.status_code == 422, bad
-
-    async def test_unknown_rate_set_is_400(self, async_client):
-        r = await async_client.post(
-            f"{BASE}/calculate", json=payload(rate_set_code="NOPE")
-        )
-        assert r.status_code == 400
-        assert r.json()["detail"]["error"] == "rate_set_error"
 
     async def test_unknown_product_is_400(self, async_client):
         r = await async_client.post(f"{BASE}/calculate", json=payload(product_key="nope"))
@@ -419,38 +391,6 @@ class TestFormulasEndpoints:
             assert word not in blob, f"explain 接口泄露了 {word}"
 
 
-class TestRebateLookup:
-    async def test_unconfirmed_hs_reports_not_found_with_hint(self, async_client):
-        """牛栏网 HS 的退税率尚未核实 → 明确返回未找到 + 人工确认提示。"""
-        r = await async_client.post(
-            f"{BASE}/rebate-rate/lookup",
-            json={"hs_code": "7314410000", "rate_set_code": "CN-2026-09"},
-        )
-        assert r.status_code == 200
-        data = r.json()
-        assert data["found"] is False
-        assert data["hs_code"] == "7314410000"
-        assert "核实" in data["hint"]
-        assert "message" in data
-
-    async def test_hs_code_is_normalized(self, async_client):
-        r = await async_client.post(
-            f"{BASE}/rebate-rate/lookup", json={"hs_code": "7314.41.00.00"}
-        )
-        assert r.json()["hs_code"] == "7314410000"
-
-    async def test_bad_rate_set_is_400(self, async_client):
-        r = await async_client.post(
-            f"{BASE}/rebate-rate/lookup",
-            json={"hs_code": "7314410000", "rate_set_code": "NOPE"},
-        )
-        assert r.status_code == 400
-
-    async def test_missing_hs_code_is_422(self, async_client):
-        r = await async_client.post(f"{BASE}/rebate-rate/lookup", json={})
-        assert r.status_code == 422
-
-
 class TestVerifyEndpoint:
     async def test_verify_requires_admin(self, async_client):
         assert (await async_client.post(f"{BASE}/verify", json=payload())).status_code == 403
@@ -472,7 +412,6 @@ class TestAuthAndTenancy:
             await async_client.post(f"{BASE}/calculate-internal", json=payload())
         ).status_code == 403
         assert (await async_client.post(f"{BASE}/verify", json=payload())).status_code == 403
-        assert (await async_client.post(f"{BASE}/rate-sets/reload")).status_code == 403
 
     async def test_tenant_header_is_accepted(self, async_client):
         r = await async_client.post(
@@ -481,19 +420,3 @@ class TestAuthAndTenancy:
             headers={"X-Tenant-Id": "acme"},
         )
         assert r.status_code == 200
-
-
-class TestRateSetVersusRepo:
-    async def test_quote_date_drives_archive_selection(self, async_client):
-        """不指定档案时按报价日解析；2026-09-24 落在 CN-2026-09 生效期内。"""
-        body = payload(rate_set_code=None, quote_date="2026-09-24")
-        r = await async_client.post(f"{BASE}/calculate", json=body)
-        assert r.status_code == 200
-        assert r.json()["meta"]["rate_set_code"] == "CN-2026-09"
-
-    async def test_date_before_any_archive_is_400(self, async_client):
-        r = await async_client.post(
-            f"{BASE}/calculate", json=payload(rate_set_code=None, quote_date="2019-01-01")
-        )
-        assert r.status_code == 400
-        assert r.json()["detail"]["error"] == "rate_set_error"

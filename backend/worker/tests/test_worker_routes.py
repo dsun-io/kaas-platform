@@ -141,7 +141,6 @@ NEW_ROUTES: set[tuple[str, str]] = {
     ("/api/v1/inquiries", "GET"),
     ("/api/v1/inquiries/{inquiry_id}", "PATCH"),
     # 报价补充端点
-    ("/api/v1/export-quote/rebate-rate/lookup", "POST"),
     ("/api/v1/export-quote/products/{product_key}/explain", "POST"),
     # 团队（三层组织）：建/加入/邀请/成员管理
     ("/api/v1/teams", "POST"),

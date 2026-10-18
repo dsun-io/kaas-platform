@@ -200,7 +200,6 @@ def engine_build(quote_as: str):
 
     from app.services.export_quote import (
         QuoteRequest,
-        RateSetRegistry,
         build,
         verify_terms,
     )
@@ -220,7 +219,6 @@ def engine_build(quote_as: str):
         }),
         fx_rate=D("6.7019"),
         orders=field_fence.order_specs((30000,)),
-        rate_set=RateSetRegistry.from_dir().get("CN-2026-09"),
         quote_date=date(2026, 9, 24),
         terms=ladder_from_dict(tpl),
     )

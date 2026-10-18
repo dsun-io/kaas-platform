@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import type {
   ExportProduct,
-  ExportRateSet,
   ExportTermsTemplate,
   ImportCalculateResponse,
   ImportPreviewResponse,
@@ -37,20 +36,6 @@ export function useExportProducts() {
   });
 }
 
-/** 可用税务档案 —— 法定税率不写死在前端，从档案取。 */
-export function useExportRateSets() {
-  return useQuery({
-    queryKey: ["export-quote", "rate-sets"],
-    queryFn: async () => {
-      const { data } = await apiClient.get<{
-        rate_sets: ExportRateSet[];
-        total: number;
-      }>(`${EXPORT_QUOTE_BASE}/rate-sets`);
-      return data;
-    },
-    staleTime: 10 * 60 * 1000,
-  });
-}
 /**
  * 平台默认的出口费用结构（贸易术语阶梯 + 费用项）。
  *

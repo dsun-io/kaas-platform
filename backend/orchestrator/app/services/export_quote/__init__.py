@@ -8,26 +8,20 @@
 
     products/     产品知识：规格轴、变体、公式、列、说明
     pricing.py    报价政策：价链、销项税、退税让利、印花税
-    rates.py      税务档案：法定税率（版本化）+ HS 退税率查询
     terms.py      贸易术语：EXW→CIF 阶梯、各档费用计价方式
     engine.py     组装：规格展开 → 派生 → 价链 → 术语 → 指标 → 列投影
-    verify.py     三遍核验 + 关系式 + 阶梯 + 档案自检
+    verify.py     三遍核验 + 关系式 + 阶梯
     report.py     输出：xlsx / csv / dict（内部与客户双投影）
 
 用法::
 
-    from app.services.export_quote import (
-        QuoteRequest, RateSetRegistry, build, verify_all, product_keys,
-    )
+    from app.services.export_quote import QuoteRequest, build, verify_all, product_keys
 
-    registry = RateSetRegistry.from_dir()
-    rate_set = registry.get("CN-2026-09")
     req = QuoteRequest(
         product_key="field_fence",
         policy=policy,
         fx_rate="6.7019",
         orders=field_fence.order_specs((30000, 50000)),
-        rate_set=rate_set,
     )
     result = build(req)
     report = verify_all(result)
@@ -86,19 +80,6 @@ from .pricing import (
 from .products import get as get_product
 from .products import has as has_product
 from .products import keys as product_keys
-from .rates import (
-    CachedProvider,
-    ChainProvider,
-    HttpRebateProvider,
-    LocalLibraryProvider,
-    RateSet,
-    RateSetError,
-    RateSetRegistry,
-    RebateRateNotFound,
-    RebateResult,
-    build_default_provider,
-    normalize_hs,
-)
 from .report import (
     build_customer_view,
     build_internal_view,
@@ -119,7 +100,6 @@ from .verify import (
     verify_all,
     verify_invariants,
     verify_precision,
-    verify_rate_set,
     verify_roundtrip,
     verify_terms,
 )
@@ -147,15 +127,11 @@ __all__ = [
     "policy_from_dict", "DEFAULT_DECIMALS",
     # 产品
     "product_keys", "get_product", "has_product",
-    # 税务档案与退税率
-    "RateSet", "RateSetRegistry", "RateSetError", "RebateRateNotFound",
-    "RebateResult", "LocalLibraryProvider", "HttpRebateProvider",
-    "CachedProvider", "ChainProvider", "build_default_provider", "normalize_hs",
     # 贸易术语
     "TermLadder", "TermRung", "FeeItem", "TermsError", "FEE_MODES", "ladder_from_dict",
     # 核验
     "verify_all", "verify_precision", "verify_invariants", "verify_terms",
-    "verify_rate_set", "verify_roundtrip", "VerificationReport", "Issue",
+    "verify_roundtrip", "VerificationReport", "Issue",
     # 输出
     "write_xlsx", "write_csv", "build_internal_view", "build_customer_view",
 ]

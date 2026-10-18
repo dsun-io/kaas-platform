@@ -18,7 +18,6 @@ from app.services.export_quote import (
     DEFAULT_VALIDITY_DAYS,
     EngineError,
     QuoteRequest,
-    RateSetRegistry,
     build,
     expand_specs,
     order_scopes,
@@ -26,19 +25,16 @@ from app.services.export_quote import (
     verify_all,
     verify_invariants,
     verify_precision,
-    verify_rate_set,
     verify_roundtrip,
     verify_terms,
 )
 from app.services.export_quote.models import Axis, ProductSpec, VariantGroup
 from app.services.export_quote.products import field_fence
-from app.services.export_quote.rates import normalize_hs
 from app.services.export_quote.report import build_customer_view, build_internal_view, write_csv, write_xlsx
 
 pytestmark = pytest.mark.unit
 
 D = Decimal
-RATE_SET_CODE = "CN-2026-09"
 
 
 def policy(**kw):
@@ -62,7 +58,6 @@ def request(**kw) -> QuoteRequest:
         policy=policy_from_dict(cfg),
         fx_rate=D("6.7019"),
         orders=field_fence.order_specs((30000, 50000)),
-        rate_set=RateSetRegistry.from_dir().get(RATE_SET_CODE),
         quote_date=date(2026, 9, 24),
     )
     base.update(kw)
@@ -297,10 +292,6 @@ class TestValidityAndErrors:
         r = build(request(fx_rate=None))
         assert r.rows[0].piece["price_per_piece_fx"] == r.rows[0].piece["price_per_piece"]
 
-    def test_bad_rate_set_code_raises(self):
-        with pytest.raises(Exception):
-            RateSetRegistry.from_dir().get("NOPE")
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 三遍核验
@@ -320,10 +311,6 @@ class TestVerification:
         assert rep.ok, rep.summary()
         # 牛栏网声明了 18 条关系式 × 行数 × 订单数
         assert rep.checks >= 10 * 18
-
-    def test_rate_set_audit_warns_on_unconfirmed_rebate(self, result):
-        rep = verify_rate_set(result)
-        assert any("退税率" in i.field for i in rep.warnings()), rep.summary()
 
     # ---------- 故障注入：核验必须抓得住错 ----------
     def test_precision_check_catches_tampered_price(self, result):
@@ -356,16 +343,6 @@ class TestVerification:
             assert not verify_invariants(result).ok
         finally:
             row.orders["o50000"]["volume_effective_m3"] = original
-
-    def test_rate_set_audit_catches_expired_archive(self, result):
-        """报价日挪到档案生效期之外必须报错，避免误用旧税率。"""
-        original = result.quote_date
-        result.quote_date = date(2019, 1, 1)
-        try:
-            rep = verify_rate_set(result)
-            assert not rep.ok, "档案不覆盖报价日必须报错"
-        finally:
-            result.quote_date = original
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -525,9 +502,3 @@ def _all_strings(payload) -> list:
         for v in payload:
             out.extend(_all_strings(v))
     return out
-
-
-class TestHSNormalization:
-    def test_field_fence_hs_is_normalizable(self):
-        for hs in field_fence.HS_CODES:
-            assert normalize_hs(hs) == hs

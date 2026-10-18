@@ -25,7 +25,6 @@ from . import expr as expr_mod
 from .models import Column, FormulaSpec, OrderSpec, ProductSpec, pricing_key_of
 from .numeric import DECIMAL, FRACTION, PRECISION, is_integral
 from .pricing import PricingError, PricingPolicy
-from .rates import RateSet
 from .terms import TermLadder, TermsError, ladder_from_dict
 
 _IDENT = re.compile(r"^[A-Za-z_\u4e00-\u9fff][A-Za-z0-9_\u4e00-\u9fff]*$")
@@ -124,7 +123,6 @@ class QuoteRequest:
     spec_rows: list[dict] | None = None
     terms: TermLadder | None = None
     price_inputs: Mapping[str, Any] = field(default_factory=dict)
-    rate_set: RateSet | None = None
     validity_days: int = DEFAULT_VALIDITY_DAYS
     quote_date: date | None = None
     constants_override: Mapping[str, Any] = field(default_factory=dict)
@@ -206,6 +204,7 @@ class QuoteResult:
     diagnostics: list = field(default_factory=list)
     term_codes: list = field(default_factory=list)
     quote_as: str = ""
+    # 旧字段保留为空串：报告/兼容层仍引用；税务档案已改 DB，不再参与算价
     rate_set_code: str = ""
 
     @property
@@ -751,8 +750,6 @@ def build(request: QuoteRequest, mode=DECIMAL) -> QuoteResult:
         if refund_warn:
             diagnostics.append(refund_warn)
         diagnostics.extend(policy.consistency_warnings(mode))
-        if request.rate_set:
-            diagnostics.extend(request.rate_set.warnings())
 
     combos = _build_combos(product, request, diagnostics)
     # 汇率缺失才回落到 1；显式传 0/负数必须报错 ——
@@ -928,14 +925,11 @@ def build(request: QuoteRequest, mode=DECIMAL) -> QuoteResult:
         diagnostics=diagnostics,
         term_codes=list(request.terms.codes) if request.terms else [],
         quote_as=request.terms.quote_as if request.terms else "",
-        rate_set_code=request.rate_set.code if request.rate_set else "",
     )
 
 
 def order_scopes(result: QuoteResult):
     """产出 (row, order, scope) —— 供关系式校验与敏感性复用。"""
-    from .rates import RateSet  # noqa: F401 - 保持类型可读性
-
     req = result.request
     policy = req.policy
     for row in result.rows:
@@ -976,7 +970,7 @@ def ladder_from_config(terms_cfg: Mapping[str, Any] | None) -> TermLadder | None
         raise EngineError(f"术语阶梯配置有误: {exc}") from exc
 
 
-def make_request_from_config(cfg: dict, rate_set: RateSet | None = None) -> QuoteRequest:
+def make_request_from_config(cfg: dict) -> QuoteRequest:
     """从「报价单配置」构造 QuoteRequest。
 
     配置结构（都可通过 API 覆盖）：
@@ -1017,7 +1011,6 @@ def make_request_from_config(cfg: dict, rate_set: RateSet | None = None) -> Quot
         orders=orders,
         terms=ladder_from_config(cfg.get("terms")),
         price_inputs=cfg.get("price_inputs") or {},
-        rate_set=rate_set,
         validity_days=int(cfg.get("validity_days", DEFAULT_VALIDITY_DAYS)),
         constants_override=product_cfg.get("constants") or {},
         variant_overrides=product_cfg.get("variant_overrides") or {},

@@ -28,7 +28,6 @@ from .engine import EngineError, QuoteResult, order_scopes
 from .expr import ExpressionError, evaluate
 from .numeric import DECIMAL, FRACTION, PRECISION, quantize, to_decimal
 from .pricing import DEFAULT_DECIMALS as PRICE_DECIMALS
-from .rates import RateSet
 
 
 @dataclass
@@ -279,41 +278,6 @@ def verify_terms(result: QuoteResult) -> VerificationReport:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 税务档案自检
-# ─────────────────────────────────────────────────────────────────────────────
-def verify_rate_set(result: QuoteResult) -> VerificationReport:
-    rep = VerificationReport()
-    rs: Optional[RateSet] = result.request.rate_set
-    if rs is None:
-        return rep
-    rep.passes.append(f"税务档案自检 {rs.code}")
-    when: date = result.quote_date or date.today()
-    rep.checks += 1
-    if not rs.covers(when):
-        rep.issues.append(
-            Issue(0, 0, "档案生效期",
-                  f"档案 {rs.code} ({rs.effective_from} ~ {rs.effective_to}) 不覆盖报价日 {when}")
-        )
-    for w in rs.warnings():
-        rep.issues.append(Issue(0, 0, "税务档案", w, "warning"))
-
-    policy = result.request.policy
-    rep.checks += 1
-    if policy.refund_ratio == "auto" and policy.rebate_rate is None:
-        rep.issues.append(
-            Issue(
-                0,
-                0,
-                "出口退税率",
-                "可退税比例使用 auto 但出口退税率未确定：当前按「进项税额全额可回收」计算，"
-                "报价会系统性偏低。请通过 HS 编码查询退税率或人工确认后填入。",
-                "warning",
-            )
-        )
-    return rep
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # 第 3 遍：成品读回
 # ─────────────────────────────────────────────────────────────────────────────
 def _read_xlsx_sheets(path: str) -> dict:
@@ -431,7 +395,6 @@ def verify_all(result: QuoteResult, artifact: str | None = None) -> Verification
     for part in (
         verify_precision(result),
         verify_invariants(result),
-        verify_rate_set(result),
         verify_terms(result),
         verify_roundtrip(result, artifact) if artifact else VerificationReport(),
     ):

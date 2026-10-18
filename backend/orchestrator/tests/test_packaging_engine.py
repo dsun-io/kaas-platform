@@ -8,11 +8,8 @@ import pytest
 from app.services.export_quote.engine import EngineError, QuoteRequest, build, _packaging_fee, _pick_packaging
 from app.services.export_quote.pricing import policy_from_dict
 from app.services.export_quote.products import field_fence
-from app.services.export_quote.rates import RateSetRegistry
 
 pytestmark = pytest.mark.unit
-
-RATE_SET_CODE = "CN-2026-09"
 
 
 def _policy():
@@ -32,7 +29,6 @@ def _request(product=None, packaging_id=""):
         policy=_policy(),
         fx_rate=D("6.7019"),
         orders=field_fence.order_specs((30000,)),
-        rate_set=RateSetRegistry.from_dir().get(RATE_SET_CODE),
         quote_date=date(2026, 9, 24),
         packaging_id=packaging_id,
     )

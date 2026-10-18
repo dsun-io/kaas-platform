@@ -17,7 +17,6 @@ import pytest
 from app.services.export_quote import (
     EngineError,
     QuoteRequest,
-    RateSetRegistry,
     build,
     spec_from_partial,
 )
@@ -33,7 +32,6 @@ from app.services.export_quote.products import field_fence
 pytestmark = pytest.mark.unit
 
 BASE = "/api/v1/export-quote"
-RATE_SET = "CN-2026-09"
 
 
 def spec():
@@ -56,7 +54,6 @@ def req(**kw):
         policy=policy(),
         fx_rate=D("6.7019"),
         orders=field_fence.order_specs((30000, 50000)),
-        rate_set=RateSetRegistry.from_dir().get(RATE_SET),
         quote_date=date(2026, 9, 24),
     )
     base.update(kw)
@@ -321,7 +318,6 @@ def _payload(**kw):
     body = {
         "fx_rate": 6.7019,
         "orders": [{"total": 30000, "unit": "m"}],
-        "rate_set_code": RATE_SET,
         "quote_date": "2026-09-24",
         "policy": {
             "input_vat_rate": 0.10, "output_vat_rate": 0.0,
@@ -501,3 +497,4 @@ class TestImportApi:
         # Decimal → float 比较
         assert len(got) == len(want) == 10
         assert all(abs(float(g) - float(w)) < 1e-9 for g, w in zip(got, want))
+
