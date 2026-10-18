@@ -27,6 +27,7 @@ from app.db.workstation_models import TenantCompanyProfile
 from app.core.auth import AuthContext, get_auth_context
 from app.api.ws_common import tenant_id_of
 from kaas_common.trade_doc.payload_shared import seller_block as _seller_block_shared
+from kaas_common.workstation.company_rules import SwiftError, normalize_swift
 from kaas_common.workstation.scope import is_admin_role
 from kaas_common.workstation.teams import is_team_admin
 
@@ -135,6 +136,16 @@ async def put_company_profile(
         })
     # 权限：团队管理员（或平台管理员）才能改企业抬头
     await require_team_admin(db, auth)
+    # SWIFT 编码：8/11 位字母数字（用户 2026-10-18 要求）
+    try:
+        swift_code = normalize_swift(body.swift_code)
+    except SwiftError as exc:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "INVALID_SWIFT",
+            "detail": str(exc),
+        })
+    data = body.model_dump()
+    data["swift_code"] = swift_code
 
     tenant_id = tenant_id_of(auth)
     row = await _load(db, tenant_id)
@@ -144,9 +155,9 @@ async def put_company_profile(
 
     # 逐字段覆盖：允许把某个字段清空（用空串传），避免"填错了擦不掉"
     for field in _FIELDS:
-        value = getattr(body, field, None)
+        value = data.get(field)
         if field == "name_en":
-            setattr(row, field, value.strip())
+            setattr(row, field, (value or "").strip())
         elif value is not None:
             setattr(row, field, value)
 

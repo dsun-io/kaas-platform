@@ -32,7 +32,10 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from .models import ProductSpec, Axis, VariantGroup, FormulaSpec, Column, Invariant, SpaceDeduction
+from .models import (
+    ProductSpec, Axis, VariantGroup, FormulaSpec, Column, Invariant,
+    SpaceDeduction, NumericInput, PieceInput,
+)
 
 
 def spec_from_dict(data: dict) -> ProductSpec:
@@ -54,6 +57,12 @@ def spec_from_dict(data: dict) -> ProductSpec:
         order_metrics=[FormulaSpec(**f) for f in data.get("order_metrics") or []],
         columns=[Column(**c) for c in data.get("columns") or []],
         invariants=[Invariant(**i) for i in data.get("invariants") or []],
+        # 2026-10-18：此前漏掉这三类 —— 租户产品（尤其"复制系统定义"来的）
+        # 会丢掉自由数值参数（网高/丝径…）、按件改写参数与展示参数，
+        # 表现为「派生公式求值失败：未定义变量 height_m」。
+        numeric_inputs=[NumericInput(**n) for n in data.get("numeric_inputs") or []],
+        piece_inputs=[PieceInput(**p) for p in data.get("piece_inputs") or []],
+        params=data.get("params") or [],
         pricing_key=data.get("pricing_key") or [],
         notes=data.get("notes") or [],
         hs_codes=data.get("hs_codes") or [],

@@ -77,6 +77,7 @@ async def list_product_costs(
     request: Request,
     product_key: Optional[str] = None,
     spec_hash: Optional[str] = None,
+    spec: Optional[str] = None,
     limit: int = Query(50, ge=1, le=200),
     user: dict = Depends(_get_current_user),
 ):
@@ -91,8 +92,20 @@ async def list_product_costs(
         *params, table="product_cost_history",
     )
     items = [_row_out(r) for r in rows]
-    ref = reference_cost(items, spec_hash=spec_hash)
-    return {"items": items[:limit], "total": len(items), "reference": ref}
+    wanted_hash = spec_hash
+    if wanted_hash is None and spec:
+        import json
+
+        try:
+            wanted_hash = cost_spec_hash(json.loads(spec))
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=422, detail={
+                "error": "validation", "code": "INVALID_SPEC",
+                "detail": f"规格不是合法 JSON: {exc}",
+            })
+    ref = reference_cost(items, spec_hash=wanted_hash)
+    return {"items": items[:limit], "total": len(items), "reference": ref,
+            "spec_hash": wanted_hash}
 
 
 @app.post("/api/v1/product-costs", status_code=201)

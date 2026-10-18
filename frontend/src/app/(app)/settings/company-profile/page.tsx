@@ -117,8 +117,17 @@ export default function CompanyProfilePage() {
       toast.error("公司英文名必填 —— 它是单据上的卖方主体名");
       return;
     }
+    const swift = (draft.swift_code ?? "").trim().toUpperCase();
+    if (swift && !/^[A-Z0-9]{8}([A-Z0-9]{3})?$/.test(swift)) {
+      toast.error("SWIFT Code 必须是 8 位或 11 位字母/数字（如 BKCHCNBJ220）");
+      return;
+    }
     save.mutate(
-      { ...(draft as Partial<CompanyProfile>), name_en: nameEn },
+      {
+        ...(draft as Partial<CompanyProfile>),
+        name_en: nameEn,
+        swift_code: swift || null,
+      },
       {
         onSuccess: () =>
           toast.success("已保存。新开与预览的单据都会带上这个抬头。"),
@@ -138,6 +147,11 @@ export default function CompanyProfilePage() {
           </Button>
         }
       />
+
+      <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        本页<strong>仅团队管理员可保存</strong>（成员可查看）。企业抬头、收款银行与公章都会直接印在
+        对外单证上，修改前请与营业执照/银行账户核对。
+      </div>
 
       {profile.isLoading ? (
         <p className="py-8 text-center text-sm text-muted-foreground">

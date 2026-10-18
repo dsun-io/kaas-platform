@@ -126,7 +126,9 @@ class TestPriority:
 # ─── 声明门禁：字段未声明 ⇒ 不填 ────────────────────────────────────────────
 
 class TestDeclaredFieldsOnly:
-    @pytest.mark.parametrize("doc_type", ["pi", "quotation", "pl", "contract", "bl", "other"])
+    # 2026-10-18：报价单/PI/合同/装箱单/重量单/装运通知已加 HS 列，
+    # 这里只保留**确实没有** HS 列的类型。
+    @pytest.mark.parametrize("doc_type", ["bl", "insurance", "other"])
     def test_doc_type_without_hs_column_is_untouched(self, doc_type):
         data = _data({"product_name": "勾花网"})
         before = copy.deepcopy(data)

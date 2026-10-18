@@ -72,6 +72,7 @@ def _team_filter(stmt, model, auth: AuthContext):
 async def list_product_costs(
     product_key: Optional[str] = None,
     spec_hash: Optional[str] = None,
+    spec: Optional[str] = None,
     limit: int = Query(50, ge=1, le=200),
     auth: AuthContext = Depends(get_auth_context),
     db: AsyncSession = Depends(get_db_session),
@@ -83,11 +84,23 @@ async def list_product_costs(
     rows = (await db.execute(
         stmt.order_by(ProductCostHistory.created_at.desc()).limit(200)
     )).scalars().all()
+    # 前端传原始规格（JSON 串）时由后端算指纹，避免前端手抄一份哈希算法
+    wanted_hash = spec_hash
+    if wanted_hash is None and spec:
+        try:
+            import json
+            wanted_hash = cost_spec_hash(json.loads(spec))
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=422, detail={
+                "error": "validation", "code": "INVALID_SPEC",
+                "detail": f"规格不是合法 JSON: {exc}",
+            })
     ref = reference_cost(
-        [_row_out(r) for r in rows], spec_hash=spec_hash,
+        [_row_out(r) for r in rows], spec_hash=wanted_hash,
     )
     items = [_row_out(r) for r in rows[:limit]]
-    return {"items": items, "total": len(rows), "reference": ref}
+    return {"items": items, "total": len(rows), "reference": ref,
+            "spec_hash": wanted_hash}
 
 
 @router.post("/product-costs", status_code=201)

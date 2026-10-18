@@ -595,6 +595,8 @@ class TenantProduct(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     tenant_id = Column(Text, nullable=False)
+    # 团队隔离边界（202610110019 起）：本团队定义优先；NULL = 历史行（仅管理员可见）
+    team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
     product_key = Column(Text, nullable=False)
     product_name = Column(Text, nullable=False)
     product_name_en = Column(Text, nullable=True)

@@ -505,10 +505,12 @@ type Column = [key: string, label: string, align: "l" | "r" | "c"];
  * 版面稳定是审单要求：同一类单据的表头、列序不随数据波动。
  */
 const ITEM_COLUMNS: Record<string, Column[]> = {
+  // 2026-10-18 用户口径：报价单/形式发票/合同也要展示 HS 编码
   quotation: [
     ["no", "No.", "c"],
     ["product_name", "Description of Goods", "l"],
     ["specification", "Specification", "l"],
+    ["hs_code", "HS Code", "c"],
     ["qty", "Quantity", "r"],
     ["qty_unit", "Unit", "c"],
     ["unit_price", "Unit Price", "r"],
@@ -518,6 +520,7 @@ const ITEM_COLUMNS: Record<string, Column[]> = {
     ["no", "No.", "c"],
     ["product_name", "Description of Goods", "l"],
     ["specification", "Specification", "l"],
+    ["hs_code", "HS Code", "c"],
     ["qty", "Quantity", "r"],
     ["qty_unit", "Unit", "c"],
     ["unit_price", "Unit Price", "r"],
@@ -527,6 +530,7 @@ const ITEM_COLUMNS: Record<string, Column[]> = {
     ["no", "No.", "c"],
     ["product_name", "Description of Goods", "l"],
     ["specification", "Specification", "l"],
+    ["hs_code", "HS Code", "c"],
     ["qty", "Quantity", "r"],
     ["qty_unit", "Unit", "c"],
     ["unit_price", "Unit Price", "r"],
@@ -543,11 +547,12 @@ const ITEM_COLUMNS: Record<string, Column[]> = {
     ["line_amount", "Amount", "r"],
     ["hs_code", "HS Code", "c"],
   ],
-  // 装箱单：以包装与重量体积为核心
+  // 装箱单：以包装与重量体积为核心（2026-10-18 起带 HS Code）
   pl: [
     ["no", "No.", "c"],
     ["product_name", "Description of Goods", "l"],
     ["specification", "Specification", "l"],
+    ["hs_code", "HS Code", "c"],
     ["package", "Packages", "c"],
     ["qty", "Quantity", "r"],
     ["qty_unit", "Unit", "c"],
@@ -566,21 +571,23 @@ const ITEM_COLUMNS: Record<string, Column[]> = {
     ["net_weight", "N.W. (KGS)", "r"],
     ["hs_code", "HS Code", "c"],
   ],
-  // 重量单：只关心数量与重量，不含包装细节
+  // 重量单：只关心数量与重量，不含包装细节（2026-10-18 起带 HS Code）
   weight_list: [
     ["no", "No.", "c"],
     ["product_name", "Description of Goods", "l"],
     ["specification", "Specification", "l"],
+    ["hs_code", "HS Code", "c"],
     ["qty", "Quantity", "r"],
     ["qty_unit", "Unit", "c"],
     ["gross_weight", "G.W. (KGS)", "r"],
     ["net_weight", "N.W. (KGS)", "r"],
   ],
-  // 装运通知：货物摘要 + 包装与毛重
+  // 装运通知：货物摘要 + 包装与毛重（2026-10-18 起带 HS Code）
   shipping_advice: [
     ["no", "No.", "c"],
     ["product_name", "Description of Goods", "l"],
     ["specification", "Specification", "l"],
+    ["hs_code", "HS Code", "c"],
     ["qty", "Quantity", "r"],
     ["qty_unit", "Unit", "c"],
     ["package", "Packages", "c"],
