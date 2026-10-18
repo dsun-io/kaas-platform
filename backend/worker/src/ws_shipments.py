@@ -252,8 +252,20 @@ async def create_shipment(
                 if cargo_qty_unit is None and items:
                     cargo_qty_unit = items[0].get("qty_unit")
 
-    # 取号走 main._next_doc_no（与 orchestrator 的 {TYPE}-{YYYYMM}-{SEQ:04d} 同格式）
-    shipment_no = await _main._next_doc_no(request, "shipment")
+    customer = None
+    customer_id = body.customer_id
+    if order is not None and order.get("customer_id") is not None:
+        customer_id = customer_id or order.get("customer_id")
+    if customer_id is not None:
+        customer = await db.fetchrow(
+            request, "SELECT * FROM customers WHERE tenant_id=$1 AND id=$2",
+            DEFAULT_TENANT, customer_id, table="customers",
+        )
+
+    # 统一编号：类型-国家-客户-时间戳（与 orchestrator 同规则）
+    async with _main._acquire(request) as conn:
+        shipment_no = await _main._next_customer_doc_no(
+            conn, "shipment", "shipments", customer or {}, "shipment_no")
 
     values = (
         DEFAULT_TENANT, shipment_no, body.order_id, body.customer_id, customer_name,

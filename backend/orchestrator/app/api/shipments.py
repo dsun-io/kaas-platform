@@ -20,12 +20,14 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
+from app.db.models import Customer
 from app.db.workstation_links import Order, OrderItem, OrderShipmentRef
 from app.db.workstation_models import Shipment
 from app.core.auth import AuthContext, get_auth_context
 from app.domain.enums import validate_enum, SHIPMENT_STATUS, BL_TYPE, OWNER_SCOPE
 from app.api.ws_common import (
     tenant_id_of, scope_filter, check_write_access, next_doc_no,
+    next_number_for_customer,
 )
 # 出运状态机真源：共享内核（Worker 的 ws_shipments.py 用同一份，杜绝「本地能流转、
 # 线上 409」）。本模块原先自持一份 SHIPMENT_NEXT，2026-10-10 上收。
@@ -165,6 +167,7 @@ async def create_shipment(
 
     customer_name = None
     order = None
+    customer = None
     cargo_desc, cargo_qty, cargo_qty_unit = body.cargo_desc, body.cargo_qty, body.cargo_qty_unit
 
     if body.order_id is not None:
@@ -177,6 +180,13 @@ async def create_shipment(
             raise HTTPException(status_code=404, detail={"error": "not_found", "code": "ORDER_NOT_FOUND"})
         check_write_access(order, auth)
         customer_name = order.customer_name
+        if order.customer_id is not None:
+            customer = (await db.execute(
+                select(Customer).where(
+                    Customer.tenant_id == tenant_id,
+                    Customer.id == order.customer_id,
+                )
+            )).scalar_one_or_none()
         if cargo_desc is None or cargo_qty is None:
             # 货物快照：从订单行项汇总（未手动覆盖时）
             items = (await db.execute(
@@ -193,8 +203,18 @@ async def create_shipment(
                 if cargo_qty_unit is None and items:
                     cargo_qty_unit = items[0].qty_unit
 
+    if customer is None and body.customer_id is not None:
+        customer = (await db.execute(
+            select(Customer).where(
+                Customer.tenant_id == tenant_id,
+                Customer.id == body.customer_id,
+            )
+        )).scalar_one_or_none()
+
     s = Shipment(
-        tenant_id=tenant_id, shipment_no=await next_doc_no(db, tenant_id, "shipment"),
+        tenant_id=tenant_id,
+        shipment_no=await next_number_for_customer(
+            db, tenant_id, "shipment", Shipment, Shipment.shipment_no, customer),
         order_id=body.order_id, customer_id=body.customer_id,
         customer_name=customer_name,
         consignee=body.consignee, notify_party=body.notify_party,

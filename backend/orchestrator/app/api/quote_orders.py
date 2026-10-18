@@ -39,11 +39,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db_session
 from app.db.models import Quotation
 from app.db.workstation_links import QuoteOrder, QuoteOrderItem
+from app.db.workstation_models import CustInquiry
 from app.core.auth import AuthContext, get_auth_context
 from app.domain.enums import validate_enum, CURRENCY, OWNER_SCOPE
 from app.domain.spec_hash import compute_spec_hash
 from app.repositories.quotations_repo import insert_quotation
-from kaas_common.workstation.number_rules import NumberError, normalize_number
+from kaas_common.workstation.number_rules import (
+    NumberError,
+    build_number,
+    normalize_number,
+)
 from app.api.ws_common import (
     tenant_id_of, scope_filter, check_write_access, next_doc_no, lock_fx_rate,
     resolve_customer_for_doc,
@@ -406,6 +411,76 @@ async def list_quotes(
     }
 
 
+async def _next_quote_no(db, tenant_id: str, customer) -> str:
+    """报价单号：`QUO-国家-客户-时间戳`（同秒冲突加后缀）。"""
+    for suffix in range(1, 21):
+        candidate = build_number("quotation", customer, suffix=suffix)
+        exists = (await db.execute(
+            select(QuoteOrder.id).where(
+                QuoteOrder.tenant_id == tenant_id,
+                QuoteOrder.quote_no == candidate,
+            ).limit(1)
+        )).scalar_one_or_none()
+        if exists is None:
+            return candidate
+    return build_number("quotation", customer) + "-X"
+
+
+async def _next_inquiry_no(db, tenant_id: str, customer) -> str:
+    """询盘号：`INQ-国家-客户-时间戳`（报价页自动建询盘时使用）。"""
+    for suffix in range(1, 21):
+        candidate = build_number("inquiry", customer, suffix=suffix)
+        exists = (await db.execute(
+            select(CustInquiry.id).where(
+                CustInquiry.tenant_id == tenant_id,
+                CustInquiry.inquiry_no == candidate,
+            ).limit(1)
+        )).scalar_one_or_none()
+        if exists is None:
+            return candidate
+    return build_number("inquiry", customer) + "-X"
+
+
+async def _resolve_or_create_inquiry(
+    db, tenant_id: str, customer, auth: AuthContext,
+    inquiry_id: Optional[int], items, owner_scope: str,
+) -> int:
+    """报价单的询盘来源：
+
+    · 选了询盘 → 校验归属并把「未报价」自动推进为「已报价」（已关闭不自动改）；
+    · 没选询盘 → **自动给这个客户建一条询盘**（用户口径：直接使用报价页生成
+      报价时，不存在询盘就自动创建），状态直接落「已报价」。
+    """
+    if inquiry_id is not None:
+        inq = (await db.execute(
+            select(CustInquiry).where(
+                CustInquiry.tenant_id == tenant_id,
+                CustInquiry.id == inquiry_id,
+                CustInquiry.customer_id == customer.id,
+            )
+        )).scalar_one_or_none()
+        if inq is None:
+            raise HTTPException(status_code=404, detail={
+                "error": "not_found", "code": "INQUIRY_NOT_FOUND",
+                "detail": "所选询盘不存在或不属于该客户",
+            })
+    else:
+        inq = CustInquiry(
+            tenant_id=tenant_id, customer_id=customer.id,
+            inquiry_no=await _next_inquiry_no(db, tenant_id, customer),
+            channel="quote", status="unquoted",
+            product_name_raw=(items[0].product_name if items else None),
+            created_by=str(auth.user_id), owner_id=str(auth.user_id),
+            owner_scope=owner_scope, team_id=customer.team_id or auth.team_id,
+        )
+        db.add(inq)
+        await db.flush()
+    # 报价事件联动：未报价 → 已报价；已关闭保持关闭（关闭只能手动重开）
+    if inq.status == "unquoted":
+        inq.status = "quoted"
+    return inq.id
+
+
 @router.post("/quotes", status_code=201)
 async def create_quote_order(
     body: QuoteOrderCreate,
@@ -429,14 +504,17 @@ async def create_quote_order(
     items, total = _build_items(tenant_id, currency, body.items)
     # 空单也允许创建（工作台"先建单、再逐行加产品"的自然用法），
     # 但合计留空而不是 0 —— 0 会被当成"报过价、价是 0"。
+    inquiry_id = await _resolve_or_create_inquiry(
+        db, tenant_id, customer, auth, body.inquiry_id, items, owner_scope,
+    )
     rate, rate_date = await lock_fx_rate(db, currency)
     q = QuoteOrder(
-        tenant_id=tenant_id, quote_no=await next_doc_no(db, tenant_id, "quotation"),
+        tenant_id=tenant_id, quote_no=await _next_quote_no(db, tenant_id, customer),
         customer_id=customer.id if customer is not None else None,
         # 客户名快照：未显式传时按客户档案自动填（单据显示"开单当时的客户名"，
         # 客户日后改名不会回改历史单据）
         customer_name=body.customer_name or (customer.name if customer is not None else None),
-        inquiry_id=body.inquiry_id,
+        inquiry_id=inquiry_id,
         status="draft", currency=currency, total_amount=total if items else None,
         valid_until=_parse_dt(body.valid_until), notes=body.notes,
         fx_rate=rate, fx_rate_date=rate_date,

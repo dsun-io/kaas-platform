@@ -51,7 +51,7 @@ from kaas_common.workstation.customer_serializers import row_to_customer, row_to
 from kaas_common.workstation.customer_rules import validate_manual_stage
 from kaas_common.workstation.inquiry_rules import build_inquiry_no, normalize_abbr
 from kaas_common.domain.enums import validate_enum
-from kaas_common.workstation.number_rules import NumberError, normalize_number
+from kaas_common.workstation.number_rules import build_number, NumberError, normalize_number
 from kaas_common.workstation.scope import can_view, can_write, is_admin_role
 from kaas_common.workstation.teams import (
     TeamRuleError, invite_state, normalize_invite_token, validate_team_name,
@@ -897,8 +897,8 @@ class InquiryCreate(BaseModel):
     quantity: Optional[float] = None
     quantity_unit: Optional[str] = None
     application: Optional[str] = None
-    # 询盘状态：新建必须是 open（旧默认 "inquiry" 是非法值，2026-10-18 修正）
-    status: str = "open"
+    # 询盘三态：新建默认「未报价」；生成报价后自动「已报价」；「已关闭」仅手动
+    status: str = "unquoted"
     notes: Optional[str] = None
 
 
@@ -930,23 +930,16 @@ def _customer_api(row) -> dict:
 
 
 async def _next_inquiry_no(conn, customer: dict) -> str:
-    """生成唯一询盘编号（与 orchestrator 同规则；同秒冲突加后缀）。"""
+    """生成唯一询盘编号：`INQ-国家-客户-时间戳`（同秒冲突加后缀）。"""
     for suffix in range(1, 21):
-        candidate = build_inquiry_no(
-            customer.get("country"), customer.get("abbr"),
-            customer_name=customer.get("name"), customer_id=customer.get("id"),
-            suffix=suffix,
-        )
+        candidate = build_number("inquiry", customer, suffix=suffix)
         exists = await conn.fetchval(
             "SELECT 1 FROM cust_inquiries WHERE tenant_id=$1 AND inquiry_no=$2 LIMIT 1",
             DEFAULT_TENANT, candidate,
         )
         if not exists:
             return candidate
-    return build_inquiry_no(
-        customer.get("country"), customer.get("abbr"),
-        customer_name=customer.get("name"), customer_id=customer.get("id"),
-    ) + "-X"
+    return build_number("inquiry", customer) + "-X"
 
 
 def _norm_abbr(raw) -> Optional[str]:
@@ -1321,6 +1314,7 @@ async def add_inquiry(customer_id: int, request: Request, body: InquiryCreate, u
     async with _acquire(request) as conn:
         customer = await _customer_or_404(conn, customer_id, user)
         inquiry_no = await _next_inquiry_no(conn, customer)
+        inquiry_status = "unquoted" if body.status in (None, "", "open") else body.status
         row = await conn.fetchrow(
             """INSERT INTO cust_inquiries
                (tenant_id, customer_id, inquiry_no, channel, category_id, product_name_raw,
@@ -1329,7 +1323,7 @@ async def add_inquiry(customer_id: int, request: Request, body: InquiryCreate, u
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *""",
             DEFAULT_TENANT, customer_id, inquiry_no, body.channel, body.category_id,
             body.product_name_raw,
-            body.quantity, body.quantity_unit, body.application, body.status, body.notes,
+            body.quantity, body.quantity_unit, body.application, inquiry_status, body.notes,
             str(user["id"]), str(user["id"]), "private", user.get("team_id"),
         )
         # 2026-10-18：询盘是**单据阶段**，不再联动改客户阶段（客户阶段只有
@@ -2935,6 +2929,20 @@ async def _next_doc_no(request, doc_type: str) -> str:
     return f"{prefix}-{period}-{seq:04d}"
 
 
+async def _next_customer_doc_no(conn, doc_type: str, table: str,
+                                customer: dict, col: str = "doc_no") -> str:
+    """统一编号：`类型-国家-客户-时间戳`（同秒冲突加后缀）。"""
+    for suffix in range(1, 21):
+        candidate = build_number(doc_type, customer, suffix=suffix)
+        exists = await conn.fetchval(
+            f"SELECT 1 FROM {table} WHERE tenant_id=$1 AND {col}=$2 LIMIT 1",
+            DEFAULT_TENANT, candidate,
+        )
+        if not exists:
+            return candidate
+    return build_number(doc_type, customer) + "-X"
+
+
 ORDER_NEXT = {
     "pending": ("confirmed", "cancelled"),
     "confirmed": ("producing", "cancelled"),
@@ -3094,10 +3102,7 @@ async def create_order_api(
     if quote_ref in (None, ""):
         quote_ref = body.get("quote_id")
 
-    # 取号在事务外：_next_doc_no 走 platform/db 的自有连接（与既有实现一致），
-    # 放进事务里会变成"事务内再开一条连接"，语义反而含糊。
-    order_no = await _next_doc_no(request, "order")
-
+    # 取号在事务内、拿到客户之后：统一编号需要国家 + 客户段
     async with _acquire(request) as conn:
         async with conn.transaction():
             quote = None
@@ -3114,6 +3119,8 @@ async def create_order_api(
                 # 转订单继承报价的客户：客户是报价阶段定下来的，不该让用户再选一次
                 raw_customer = quote.get("customer_id")
             customer = await _doc_customer(conn, raw_customer, user, required=True)
+            order_no = await _next_customer_doc_no(
+                conn, "order", "orders", customer, "order_no")
 
             if not currency:
                 currency = (quote or {}).get("currency") or "USD"
@@ -3776,8 +3783,6 @@ async def create_trade_doc(request: Request, body: dict,
                        "（约束 ck_doc_single_parent 要求二选一）"),
         })
 
-    doc_no = await _next_doc_no(request, doc_type)
-
     async with _acquire(request) as conn:
         async with conn.transaction():
             # 上游快照仍走 platform/db：读的是已提交数据，与本事务的写入无关
@@ -3834,6 +3839,9 @@ async def create_trade_doc(request: Request, body: dict,
                 )
                 if existing is not None:
                     return _dp.doc_dict(existing)
+
+            doc_no = await _next_customer_doc_no(
+                conn, doc_type, "trade_docs", customer)
 
             d = await conn.fetchrow(
                 "INSERT INTO trade_docs (tenant_id, doc_no, doc_type, order_id,"

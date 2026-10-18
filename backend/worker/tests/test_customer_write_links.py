@@ -296,9 +296,10 @@ def test_order_create_rejects_non_numeric_customer_id():
 # ── 2. 生成报价 → 同一事务产出报价单 ────────────────────────────────────────
 
 def test_quote_create_writes_customer_snapshot_and_quotation_doc():
-    conn = _FakeConn(fetchrow=[_customer(), _quote_row(),      # 客户 → INSERT 报价
-                               None,                            # 尚无报价单
-                               {"id": 12}])                     # INSERT 报价单
+    conn = _FakeConn(fetchrow=[_customer(), {"id": 9},       # 客户 → 自动建询盘
+                               _quote_row(),                  # INSERT 报价
+                               None,                          # 尚无报价单
+                               {"id": 12}])                   # INSERT 报价单
     with _patched(_FakeDb(conn=conn), conn):
         resp = client.post("/api/v1/quotes", json={
             "customer_id": 3, "currency": "USD", "incoterm": "FOB",

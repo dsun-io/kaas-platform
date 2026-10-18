@@ -82,10 +82,9 @@ _INQUIRY_COLUMNS = (
 # 四张表，没有询盘表；故这里逐字保留该转移表。枚举**取值清单**仍由共享枚举校验，
 # 不手抄第二份值（避免"同一个状态在两处定义"的漂移）。
 _INQUIRY_NEXT = {
-    "open": ("quoted", "won", "lost"),
-    "quoted": ("won", "lost"),
-    "won": (),
-    "lost": (),
+    "unquoted": ("closed",),
+    "quoted": ("closed",),
+    "closed": ("unquoted", "quoted"),
 }
 
 # 询盘状态 → 线索池 lead_candidates.inquiry_status（§7.2）。
@@ -93,7 +92,7 @@ _INQUIRY_NEXT = {
 # 定时任务模块（无调度器），故把这份映射内联，在 PATCH 询盘时同步回写 —— 不同步的话
 # 线索池页面的「跟进中/已赢单」永远停在 new，业务会以为询盘没流转。
 _LEAD_INQUIRY_STATUS = {
-    "open": "new", "quoted": "following", "won": "won", "lost": "lost",
+    "unquoted": "new", "quoted": "following", "closed": "lost",
 }
 
 
@@ -354,17 +353,25 @@ async def update_inquiry(
 
         if new_status is not None:
             validate_enum("inquiry_status", new_status)
-            # 合法流转校验：won/lost 是终态，open 不能直接跳回 quoted 之外的状态
-            if (new_status != inq["status"]
-                    and new_status not in _INQUIRY_NEXT.get(inq["status"], ())):
+            # 三态流转：只有「关闭」是手动动作；关闭后重开若已有报价则回到已报价
+            target = new_status
+            if new_status == "unquoted":
+                has_quote = await conn.fetchval(
+                    "SELECT 1 FROM quote_orders WHERE tenant_id=$1 AND inquiry_id=$2 LIMIT 1",
+                    DEFAULT_TENANT, inquiry_id,
+                )
+                if has_quote:
+                    target = "quoted"
+            if (target != inq["status"]
+                    and target not in _INQUIRY_NEXT.get(inq["status"], ())):
                 raise HTTPException(status_code=409, detail={
                     "error": "conflict", "code": "ILLEGAL_TRANSITION",
-                    "detail": f"询盘状态不允许从 {inq['status']} 流转到 {new_status}",
+                    "detail": f"询盘状态不允许从 {inq['status']} 流转到 {target}",
                 })
-            if new_status != inq["status"]:
-                params.append(new_status)
+            if target != inq["status"]:
+                params.append(target)
                 sets.append(f"status = ${len(params)}")
-                await _sync_lead_status(conn, inq, new_status)
+                await _sync_lead_status(conn, inq, target)
 
         if "channel" in data:
             validate_enum("inquiry_channel", data["channel"])

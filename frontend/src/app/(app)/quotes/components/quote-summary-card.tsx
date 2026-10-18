@@ -90,7 +90,8 @@ export function QuoteSummaryCard({
           </div>
           {saved && (
             <div className="text-right text-xs">
-              <div className="font-medium">{saved.quote_no}</div>
+              <div className="text-muted-foreground">报价编号</div>
+              <div className="font-mono font-medium">{saved.quote_no}</div>
               <div className="text-muted-foreground">
                 {saved.status === "draft" ? "草稿（可继续改）" : saved.status}
               </div>

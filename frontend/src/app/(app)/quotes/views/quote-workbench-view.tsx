@@ -19,7 +19,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -135,6 +135,27 @@ export function QuoteWorkbenchView() {
     },
   });
   const inquiries = inquiriesQuery.data ?? [];
+  const queryClient = useQueryClient();
+  // 报价页直接新增询盘：不存在的询盘由这里补建，建完自动选中（不再手填编号）。
+  const createInquiry = useMutation({
+    mutationFn: async () => {
+      if (!customer?.id) throw new Error("请先选择客户");
+      const { data } = await apiClient.post<{
+        id: number;
+        inquiry_no?: string | null;
+      }>(`/customers/${customer.id}/inquiries`, {
+        channel: "quote",
+        product_name_raw: lines.find((l) => l.productKey)?.productKey ?? null,
+      });
+      return data;
+    },
+    onSuccess: (data) => {
+      setInquiryId(String(data.id));
+      void queryClient.invalidateQueries({
+        queryKey: ["customer-inquiries", customer?.id],
+      });
+    },
+  });
   const [rateSetCode, setRateSetCode] = useState("");
   const [inputVatRatePct, setInputVatRatePct] = useState(
     POLICY_DEFAULTS.inputVatRatePct,
@@ -464,6 +485,13 @@ export function QuoteWorkbenchView() {
         });
         setQuoteOrderId(created.id);
         setCreatedCustomerId(customer.id);
+        // 没选询盘时后端已自动给客户建一条，并把报价挂上去；这里同步到界面
+        if (created.inquiry_id != null) {
+          setInquiryId(String(created.inquiry_id));
+          void queryClient.invalidateQueries({
+            queryKey: ["customer-inquiries", customer.id],
+          });
+        }
         setSavedDoc({
           id: created.id,
           quote_no: created.quote_no,
@@ -617,6 +645,8 @@ export function QuoteWorkbenchView() {
         inquiryId={inquiryId}
         setInquiryId={setInquiryId}
         inquiries={inquiries}
+        onCreateInquiry={() => createInquiry.mutate()}
+        creatingInquiry={createInquiry.isPending}
         taxPick={taxPick}
         setTaxPick={setTaxPick}
         profiles={profiles}

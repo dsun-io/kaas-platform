@@ -41,11 +41,12 @@ from kaas_common.workstation.customer_rules import (
     derive_customer_stage,
     validate_manual_stage,
 )
-from kaas_common.workstation.inquiry_rules import (
-    build_inquiry_no,
-    normalize_abbr,
+from kaas_common.workstation.inquiry_rules import normalize_abbr
+from kaas_common.workstation.number_rules import (
+    NumberError,
+    build_number,
+    normalize_number,
 )
-from kaas_common.workstation.number_rules import NumberError, normalize_number
 
 router = APIRouter(prefix="/api/v1", tags=["customers"])
 
@@ -160,13 +161,9 @@ def _parse_abbr(raw: Optional[str]) -> Optional[str]:
 
 
 async def _next_inquiry_no(db, tenant_id: str, customer: Customer) -> str:
-    """生成唯一询盘编号 `国家ISO2-客户缩写-yyyyMMddHHmmss`（同秒冲突加后缀）。"""
+    """生成唯一询盘编号：`INQ-国家-客户-时间戳`（同秒冲突加后缀）。"""
     for suffix in range(1, 21):
-        candidate = build_inquiry_no(
-            customer.country, customer.abbr,
-            customer_name=customer.name, customer_id=customer.id,
-            suffix=suffix,
-        )
+        candidate = build_number("inquiry", customer, suffix=suffix)
         exists = (await db.execute(
             select(CustInquiry.id).where(
                 CustInquiry.tenant_id == tenant_id,
@@ -176,10 +173,7 @@ async def _next_inquiry_no(db, tenant_id: str, customer: Customer) -> str:
         if exists is None:
             return candidate
     # 极端情况下 20 次同秒冲突：用微秒兜底，仍由唯一索引兜底
-    return build_inquiry_no(
-        customer.country, customer.abbr,
-        customer_name=customer.name, customer_id=customer.id,
-    ) + f"-{datetime.now(timezone.utc).strftime('%f')}"
+    return build_number("inquiry", customer) + f"-{datetime.now(timezone.utc).strftime('%f')}"
 
 
 async def _log_stage(db, tenant_id, customer_id, from_stage, to_stage, changed_by, reason):
@@ -696,7 +690,7 @@ async def create_inquiry(
         category_id=body.category_id, product_name_raw=body.product_name_raw,
         quantity=body.quantity, quantity_unit=body.quantity_unit,
         application=body.application, notes=body.notes,
-        status='open', created_by=str(auth.user_id),
+        status='unquoted', created_by=str(auth.user_id),
         owner_id=str(auth.user_id), owner_scope=owner_scope,
         team_id=auth.team_id,
     )
@@ -787,19 +781,25 @@ async def update_inquiry(
         inq.inquiry_no = new_no
     if new_status is not None:
         validate_enum("inquiry_status", new_status)
-        # 合法流转校验
+        # 合法流转（用户口径）：只有「关闭」是手动动作；
+        #   unquoted/quoted → closed（手动关闭）
+        #   closed → unquoted（手动重新打开；若已有报价，实际回到 quoted）
+        # 「未报价 → 已报价」由报价事件自动推进，不走这个 PATCH。
         allowed_flows = {
-            'open': ('quoted', 'won', 'lost'),
-            'quoted': ('won', 'lost'),
-            'won': (), 'lost': (),
+            'unquoted': ('closed',),
+            'quoted': ('closed',),
+            'closed': ('unquoted', 'quoted'),
         }
-        if new_status != inq.status and new_status not in allowed_flows.get(inq.status, ()):
+        target = new_status
+        if new_status == 'unquoted' and await _inquiry_has_quote(db, tenant_id, inq.id):
+            target = 'quoted'
+        if target != inq.status and target not in allowed_flows.get(inq.status, ()):
             raise HTTPException(status_code=409, detail={
                 "error": "conflict", "code": "ILLEGAL_TRANSITION",
-                "detail": f"询盘状态不允许从 {inq.status} 流转到 {new_status}",
+                "detail": f"询盘状态不允许从 {inq.status} 流转到 {target}",
             })
         old_status = inq.status
-        inq.status = new_status
+        inq.status = target
 
         if old_status != new_status and inq.lead_id is not None:
             # P5 状态同步：回写线索池 lead_candidates.inquiry_status（§7.2）
