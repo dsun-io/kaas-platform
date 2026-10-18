@@ -21,8 +21,9 @@
 - ✅ TAX-06：旧文件版税务档案链路已下线：
   `/rate-sets`、`/rate-sets/reload`、`/rebate-rate/lookup` 路由删除；
   `rates.py`、`rate_sets/`、`rate_sets_data.py` 删除；`sync-shared.ps1` 不再生成
-  rate_sets 清单；前端批量页去掉档案下拉，旧单产品报价视图（死代码）删除。
-  `customer_quote_profiles` **表数据保留、旧 API 暂留一个周期**（前端已无调用）。
+  rate_sets 清单；前端批量页去掉档案下拉，旧单产品报价视图（死代码）删除；
+  `customer_quote_profiles` 旧 API/模型/表已删除（迁移 `202610180008`，
+  用户确认未投入真实业务使用）。
 - ✅ TAX-07：本轮已完成：orchestrator unit、worker pytest、frontend
   typecheck/lint/test、`contracts:check`、`route-parity`、`sync-shared -Check`、
   `NEXT_EXPORT=1 NEXT_DIST_DIR=.next-verify pnpm build` 全部通过；
@@ -62,7 +63,8 @@
   先从 `HEAD` 建独立 worktree（见 §2.2），只在自己的 worktree 里动。
 - 不要在 P4 之前删除 `rate_set_code`、`/rate-sets`、`rates.py`、`rate_sets/`；
   旧前端/旧单证仍可能调用。
-- 不要 drop `customer_quote_profiles`（P4 只停写，不删表）。
+- `customer_quote_profiles` 已按用户确认删除（表 + API + 模型，迁移 008）；
+  不再有旧客户税率档案链路。
 - 不要改生产库、不要触发部署。
 
 ### 1.4 先读什么
@@ -220,6 +222,7 @@ TAX-00 (task-1)
 
 - 前置：TAX-05 验收 + 用户单独确认。
 - 先 grep 确认无调用，再删 `/rate-sets`、`/rate-sets/reload`、`/rebate-rate/lookup`。
+- 删除 `customer_quote_profiles` API/模型/表（迁移 `202610180008`）。
 - 删 `rates.py`、`rate_sets/`、`rate_sets_data.py`、`_manifest.json`；
   `sync-shared.ps1` 去掉 rate_sets 清单/内嵌生成与 `-Check` 特殊分支。
 - `rate_set_code` 保留一个发布周期（deprecated），不立即删字段；旧报价单快照可读。

@@ -1,4 +1,4 @@
-import { http, HttpResponse } from "msw";
+﻿import { http, HttpResponse } from "msw";
 import {
   makeEvent,
   makeTenant,
@@ -1760,22 +1760,4 @@ export const handlers = [
 
   // ── P1（有余力才做的那一档）：客户税率档案 ────────────────────────────────
   //
-  // 消费方：`use-quote-profiles.ts:31-44`（`enabled: !!productKey`）→
-  // `quote-workbench-view.tsx:267,270`（`profilesQuery.data?.profiles ?? []`）。
-  // **首屏不触发**（初始 `newLineDraft()` 的 productKey 为空，`quote-line-card.tsx:67`；
-  // 选中产品后 `line.productKey` 才有值）⇒ 它只差"用户选一次产品"就会发出。
-  //
-  // 为什么这里**只回空表**：档案是**用户自己存的**数据，mock 里没有比"这个客户还
-  // 没存过档案"更真实的起点；凭空造几条档案反而会让页面显示不存在的税率组合
-  //（本项目对"编数据"零容忍）。空表在界面上就是"该客户暂无档案"的既有空态。
-  // 形状依据：`shared/contracts/export-quote.ts:321-329`（`QuoteProfileListSchema`）。
-  http.get("/api/v1/export-quote/quote-profiles", ({ request }) => {
-    const productKey =
-      new URL(request.url).searchParams.get("product_key") ?? "";
-    return HttpResponse.json({
-      scope: "own",
-      product_key: productKey,
-      profiles: [],
-    });
-  }),
 ];

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * task-11 回归测试：**M1 最小集（P0）**的 4 个出口报价端点必须被 MSW 接住，不再放行到网络。
  *
  * ## 为什么"被接住"本身就是核心断言
@@ -195,24 +195,5 @@ describe("P0 四件套一次性验证：全部被 handler 接住（无一个放�
       fetch(`${BASE}/export-quote/terms/template`),
     ]);
     expect(results.map((r) => r.status)).toEqual([200, 200, 200, 200]);
-  });
-});
-
-describe("P1：GET /export-quote/quote-profiles ← use-quote-profiles.ts:31-44, workbench:267-270", () => {
-  it("200 + `profiles` 是空数组 + 回显 `product_key`（不做数据编造）", async () => {
-    // 页面带 query 请求（use-quote-profiles.ts:38 `params: { product_key }`）
-    const { status, body } = await getJson<{
-      scope: string;
-      product_key: string;
-      profiles: unknown[];
-    }>("/export-quote/quote-profiles?product_key=chain_link");
-
-    expect(status).toBe(200);
-    // workbench:270 `profilesQuery.data?.profiles ?? []` —— 必须是数组，不能是 undefined
-    expect(Array.isArray(body.profiles)).toBe(true);
-    // 档案是用户自存数据：mock 的起点是"还没存过"，不编造档案
-    expect(body.profiles).toEqual([]);
-    expect(body.product_key).toBe("chain_link");
-    expect(typeof body.scope).toBe("string");
   });
 });
