@@ -667,9 +667,31 @@ QuoteRequest(spec_rows=[
 - `customer_inquiries` — **询盘记录**（从询盘入口直接录入，自动关联客户）
   - 询盘渠道（email/whatsapp/阿里/展会/其他）
   - 意向产品（品类 + 品名原文 + 数量 + 用途）
-  - 询盘状态：`询盘中 / 已报价 / 已成交 / 已流失`
-  - 成交后自动生成 `orders` 记录，客户阶段同步变更
-- `customer_stage_log` — 阶段变更历史（何时从询盘→成交）
+  - 询盘状态：`询盘中 / 已报价 / 已成交 / 已流失`（**单据阶段**，与客户阶段是两层）
+  - 成交后自动生成 `orders` 记录（订单状态是订单自己的阶段）
+- `customer_stage_log` — **客户阶段**变更历史（只记手动切换活跃/沉寂）
+
+**客户阶段（2026-10-18 用户口径，已实现）**
+
+客户阶段只有三种：`active 活跃` / `inactive 沉寂` / `ordered 已下单`。
+
+- `active` / `inactive` 是**手动状态**（存在 `customers.stage`），由用户在客户页手动切换；
+  「沉寂」= 客户关系关闭。
+- `ordered` 是**读时推导值**，不落库：名下存在**开启中的订单**
+  （`pending / confirmed / producing / shipped`，即未完成且未取消）时显示「已下单」；
+  订单一完成/取消，自动回到活跃或沉寂。
+- **不再把询盘/报价/订单的状态映射成客户阶段**：`lead→inquiry→quoted→won→lost`
+  属于单据阶段，`orders.status` 才是每张订单的源头；「流失」属于订单阶段，
+  客户阶段里没有 `lost`。
+- 不再按 30/90 天无活动自动改客户阶段（「沉寂先手动切换」）。
+
+**客户 CRUD（2026-10-18 补齐）**
+
+- 编辑：`PATCH /customers/{id}` 改档案（公司名/国家/地址/港口/信用等级/备注），
+  联系人走各自的 `PATCH/DELETE /customers/{id}/contacts/{contact_id}`。
+- 删除：`DELETE /customers/{id}` **软删除**（列表隐藏、历史单据保留引用）；
+  名下有开启中的订单时返回 **409 `OPEN_ORDERS_EXIST`**（附订单清单），需先关闭订单。
+- 新建/列表/详情/编辑的响应都带 `stage`（展示值）与 `manual_stage`（手动值）。
 
 **询盘入口流程**：
 ```

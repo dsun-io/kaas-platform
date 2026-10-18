@@ -55,8 +55,9 @@ services:
   # ─── Backend (Kaas v2 Orchestrator) ───
   backend:
     build:
-      context: ./backend/orchestrator
-      dockerfile: Dockerfile
+      # 上下文必须是 backend/：orchestrator 运行期 import 共享内核 backend/kaas_common
+      context: ./backend
+      dockerfile: orchestrator/Dockerfile
     container_name: kaas-backend
     ports:
       - "8000:8000"
@@ -72,6 +73,8 @@ services:
       - APP_ENV=development
       - LOG_LEVEL=DEBUG
       - UV_LINK_MODE=copy  # 解决开发环境中代码热重载导致的链接问题
+      # 共享内核在容器内的位置（/app = orchestrator 代码，/kaas_common = kaas_common）
+      - PYTHONPATH=/app:/kaas_common
 
     depends_on:
       postgres:
@@ -86,8 +89,10 @@ services:
       start_period: 15s
       retries: 3
     volumes:
-      - ./backend/orchestrator:/app  # 开发模式热重载
-      - /app/.venv  # 持久化虚拟环境（可选）
+      # 开发模式：源码 bind mount，容器内 --reload 生效
+      - ./backend/orchestrator:/app
+      # 共享内核（orchestrator 与 worker 共用一份）：挂到 /kaas_common，避免被 /app 覆盖
+      - ./backend/kaas_common:/kaas_common
 
 volumes:
   kaas_pgdata:

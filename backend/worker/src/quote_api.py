@@ -44,7 +44,6 @@ from pydantic import BaseModel, Field
 # 这些**都已经在 main.py 里**且与 dev 的 ws_common 对齐，重写一遍就会有两份口径。
 from main import (  # noqa: E402
     DEFAULT_TENANT,
-    _recompute_customer_stage,
     _can_see_all,
     _check_write_access,
     _compute_spec_hash,
@@ -1962,8 +1961,7 @@ async def create_quote_order(request: Request, body: _QuoteOrderCreate,
             )
             if items:
                 await _insert_quote_items(conn, tenant, row["id"], items)
-            # 汇总视图：报价单变化后按订单/报价/询盘重新推导客户阶段
-            await _recompute_customer_stage(conn, customer["id"])
+            # 2026-10-18：客户阶段读时由「开启中的订单」推导，报价变化不再回写客户阶段。
             await _ensure_quotation_doc(conn, tenant, dict(row), items, request)
     return _quote_json(dict(row), len(items))
 

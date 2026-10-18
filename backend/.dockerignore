@@ -1,0 +1,14 @@
+# Docker 构建上下文 = backend/（供 orchestrator 镜像使用）。
+# 只需要 orchestrator/ 与 kaas_common/ 两个目录；其余一律排除，
+# 否则会把 worker 的 .venv、测试缓存、历史归档整个塞进构建上下文。
+worker/
+.tools/
+docs/
+**/.venv/
+**/.uv/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.mypy_cache/
+**/node_modules/
+**/.git/

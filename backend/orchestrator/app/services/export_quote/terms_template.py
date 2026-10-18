@@ -5,6 +5,7 @@
 出口环节会发生的费用项是**固定的**：
 
     厂→港的内陆运费 → 港杂费 → 报关费 → 海运费 → 保险费
+    → 目的港费用及送货到门 → 进口关税及税费
 
 会变的只有**每单的金额**（海运费一周一变、报关费按票）。
 
@@ -24,6 +25,13 @@
     FOB  = EXW + 内陆运费 + 港杂费 + 报关费
     CFR  = FOB + 海运费
     CIF  = CFR + 保险费（按 CIF 加成投保）
+    DAP  = CIF + 目的港费用及送货到门（不含进口关税与增值税）
+    DDP  = DAP + 进口关税及税费（完税到门）
+
+DAP / DDP 是「目的地交货」的两档：DAP 只把货运到客户门口，进口环节的
+关税与增值税仍由买方承担；DDP 由卖方完税，所以比 DAP 多一项进口税费。
+两者都用 `per_shipment`（整批金额，引擎按件数摊到单卷），
+不需要新的计价方式 —— 计价方式只区分「怎么摊」，不区分「谁承担」。
 
 阶梯是**逐档累加**的：每一档只列自己新增的费用项，引擎从 EXW 往上加。
 所以既不能把内陆运费写进 CFR 档（会重复计一次），也不能把海运费写进 CIF 档
@@ -84,29 +92,65 @@ DEFAULT_EXPORT_TERMS: dict = {
             "note": "按 CIF 加成投保：保险费 = CIF × 投保加成(110%) × 费率。",
             "value": None,
         },
+        "destination_charges": {
+            "name": "目的港费用及送货到门",
+            "name_en": "Destination charges & delivery to door",
+            "mode": "per_shipment",
+            "unit_hint": "元 / 整批",
+            "note": (
+                "含目的港操作费、清关服务费与送货到门运费；"
+                "不含进口关税与增值税（DAP 口径）。"
+            ),
+            "value": None,
+        },
+        "import_taxes": {
+            "name": "进口关税及税费",
+            "name_en": "Import duties & taxes",
+            "mode": "per_shipment",
+            "unit_hint": "元 / 整批",
+            "note": (
+                "DDP 口径：按目的国实际关税 / 增值税填写"
+                "（可让货代或清关行按 HS 编码与申报价值试算）。"
+            ),
+            "value": None,
+        },
     },
     "ladder": [
-        {"code": "EXW", "label": "出厂价", "label_en": "EXW", "items": []},
+        {"code": "EXW", "label": "出厂价", "label_en": "Ex Works", "items": []},
         {
             "code": "FOB",
             "label": "离岸价（装运港船上交货）",
-            "label_en": "FOB",
+            "label_en": "Free On Board",
             # 只列本档新增：厂到港 + 出口报关环节
             "items": ["inland_freight", "port_charges", "customs_fee"],
         },
         {
             "code": "CFR",
             "label": "成本加运费",
-            "label_en": "CFR",
+            "label_en": "Cost and Freight",
             # 只列本档新增：主运费
             "items": ["ocean_freight"],
         },
         {
             "code": "CIF",
             "label": "到岸价（含运费与保险）",
-            "label_en": "CIF",
+            "label_en": "Cost, Insurance and Freight",
             # 只列本档新增：保险（按 CIF 加成，故必须在 CFR 之后）
             "items": ["insurance"],
+        },
+        {
+            "code": "DAP",
+            "label": "到门价（目的地交货）",
+            "label_en": "Delivered at Place",
+            # 只列本档新增：目的港费用及送货到门（进口税费仍由买方承担）
+            "items": ["destination_charges"],
+        },
+        {
+            "code": "DDP",
+            "label": "完税到门价（含进口税费）",
+            "label_en": "Delivered Duty Paid",
+            # 只列本档新增：进口关税及税费（故必须接在 DAP 之后）
+            "items": ["import_taxes"],
         },
     ],
 }

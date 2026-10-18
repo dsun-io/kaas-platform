@@ -113,7 +113,10 @@ export function makeCustomer(
     address: string | null;
     default_port: string | null;
     credit_level: string | null;
+    /** 展示阶段：active / inactive / ordered（ordered 由开启中的订单推导） */
     stage: string;
+    /** 手动状态：active / inactive（客户页「更新阶段」回填） */
+    manual_stage?: string;
     notes: string | null;
     created_at: string;
     updated_at: string;
@@ -126,8 +129,9 @@ export function makeCustomer(
     address: null,
     default_port: "Shanghai",
     credit_level: "A",
-    // 必须是 page.tsx:21-29 STAGE_LABELS 里的 key，否则状态徽章显示原始英文
-    stage: "inquiry",
+    // 客户阶段（2026-10-18）：只有 active / inactive / ordered 三个 key。
+    stage: "active",
+    manual_stage: "active",
     notes: null,
     created_at: new Date(Date.now() - 30 * 86400000).toISOString(),
     updated_at: new Date(Date.now() - 2 * 3600000).toISOString(),
@@ -254,7 +258,8 @@ export const MOCK_CUSTOMERS = [
     country: "CN",
     default_port: "Shanghai",
     credit_level: "A",
-    stage: "inquiry",
+    stage: "active",
+    manual_stage: "active",
     // 两个种子的 updated_at 必须**不同**：列表按 updated_at desc 排序
     // （后端 customers.py:212），时间戳相同则排序不稳定、用例断言会飘。
     updated_at: new Date(Date.now() - 3600000).toISOString(),
@@ -265,7 +270,9 @@ export const MOCK_CUSTOMERS = [
     country: "US",
     default_port: "Los Angeles",
     credit_level: "B",
-    stage: "lead",
+    // 第二个种子用「沉寂」覆盖手动状态分支
+    stage: "inactive",
+    manual_stage: "inactive",
     updated_at: new Date(Date.now() - 3 * 86400000).toISOString(),
   }),
 ];

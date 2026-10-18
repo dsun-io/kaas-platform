@@ -6,14 +6,14 @@
  * 为什么放在结果之后，而不是和报价参数并列的一个页签
  * --------------------------------------------------
  * 运费是**在 EXW 出厂价之上叠加**的，不是另一类输入。真实业务流程也是：
- * 先定出厂价 → 向货代询价 → 拿到运费再对外报 FOB / CFR / CIF。
+ * 先定出厂价 → 向货代询价 → 拿到运费再对外报 FOB / CFR / CIF / DAP / DDP。
  * 所以顺序必须是：**先出 EXW，再出现这一块**。
  *
  * 这一块同时承担两件事：
  *   ① 把「向货代询价所需的参数」整理成结构化文本，一键复制
  *      （货量、件数、重量、体积、起运港/目的港 —— 货代报价要的就是这几项，
  *       人工拼这些数字既慢又容易抄错）；
- *   ② 收到货代报价后，把各费用项填进来，算出 FOB / CFR / CIF。
+ *   ② 收到货代报价后，把各费用项填进来，算出 FOB / CFR / CIF / DAP / DDP。
  *
  * 费用项与门槛口径由平台声明（后端模板），本组件只负责填金额与回传，
  * 不把「FOB 包含哪些费」这类业务知识写死在前端。
@@ -42,7 +42,7 @@ interface Props {
   feeInputs: Record<string, string>;
   onFeeChange: (key: string, v: string) => void;
   requiredFeeKeys: string[];
-  /** 填全后重新算一次，得到 FOB / CFR / CIF */
+  /** 填全后重新算一次，得到 FOB / CFR / CIF / DAP / DDP */
   onRecalc: () => void;
   busy: boolean;
   /** 询价参数（来自产品定义与当前规格） */
@@ -106,6 +106,32 @@ function CopyButton({
       {done ? "已复制" : label}
     </Button>
   );
+}
+
+/** 下拉 / 档位标题的统一显示格式：**`代码 · 中文（English）`**。
+ *
+ * 例：`DAP · 到门价（Delivered at Place）`。
+ * 为什么要带英文全称：DAP / DDP 与 FOB / CIF 的中文叫法在业内并不统一
+ * （「到门价」「完税到门价」各家说法不同），对外报价与跟货代沟通时
+ * 英文全称才是无歧义的那一半。代码仍是提交给后端的值，不参与显示逻辑。
+ *
+ * `label_en` 缺失（或与代码相同）时只显示中文，避免出现 `FOB · 离岸价（FOB）` 这类冗余。
+ *
+ * 中文 label 自带的**尾部括号说明**（如「到门价（目的地交货）」里的「目的地交货」）
+ * 在选项里会被裁掉：用户要求的是 `代码 · 中文（English）` 这一种括号，
+ * 两层括号会读成 `到门价（目的地交货）（Delivered at Place）`，可读性差。
+ * 说明信息仍在档位卡下面的费用项里（每档只列本档新增费用的名称与口径）。
+ */
+export function termOptionLabel(r: {
+  code: string;
+  label?: string;
+  label_en?: string;
+}): string {
+  const zh = r.label || r.code;
+  // 只裁「整段以全角括号结尾」的说明，不动正文里的括号（如「CIF 加成(110%)」）。
+  const zhShort = zh.replace(/（[^（）]*）\s*$/, "").trim() || zh;
+  const en = r.label_en && r.label_en !== r.code ? r.label_en : "";
+  return en ? `${r.code} · ${zhShort}（${en}）` : `${r.code} · ${zhShort}`;
 }
 
 export function FreightPanel({
@@ -177,7 +203,7 @@ export function FreightPanel({
         <CardTitle className="text-base">
           运费与贸易术语
           <span className="ml-2 text-xs font-normal text-muted-foreground">
-            出厂价（EXW）已算出 ｜ 加上运费即得 FOB / CFR / CIF
+            出厂价（EXW）已算出 ｜ 加上运费即得 FOB / CFR / CIF / DAP / DDP
           </span>
         </CardTitle>
       </CardHeader>
@@ -242,7 +268,7 @@ export function FreightPanel({
                 >
                   {termsTemplate.ladder.map((r) => (
                     <option key={r.code} value={r.code}>
-                      {r.code}　{r.label}
+                      {termOptionLabel(r)}
                     </option>
                   ))}
                 </select>
@@ -272,7 +298,7 @@ export function FreightPanel({
                     >
                       <div className="flex flex-wrap items-baseline gap-2">
                         <h4 className="text-xs font-medium">
-                          {rung.code}　{rung.label}
+                          {termOptionLabel(rung)}
                         </h4>
                         <p className="text-[11px] text-muted-foreground">
                           上一档基础上新增

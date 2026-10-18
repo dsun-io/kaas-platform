@@ -12,11 +12,17 @@ function template(): ExportTermsTemplate {
       inland_freight: { name: "内陆运费", name_en: "Inland Freight", mode: "per_shipment", unit_hint: "", note: "", value: null },
       ocean_freight: { name: "海运费", name_en: "Ocean Freight", mode: "per_weight_ton", unit_hint: "", note: "", value: null },
       insurance: { name: "保险", name_en: "Insurance", mode: "insurance_of_cif", unit_hint: "", note: "", value: null },
+      // DAP / DDP 两档新增的费用项：都是 per_shipment（整批一次），
+      // 所以它们与内陆运费同属需要按件数分摊的一类。
+      destination_charges: { name: "目的港费用及送货到门", name_en: "Destination charges & delivery to door", mode: "per_shipment", unit_hint: "元 / 整批", note: "", value: null },
+      import_taxes: { name: "进口关税及税费", name_en: "Import duties & taxes", mode: "per_shipment", unit_hint: "元 / 整批", note: "", value: null },
     },
     ladder: [
-      { code: "EXW", label: "出厂价", label_en: "EXW", items: [] },
-      { code: "FOB", label: "FOB", label_en: "FOB", items: ["inland_freight"] },
-      { code: "CIF", label: "CIF", label_en: "CIF", items: ["ocean_freight", "insurance"] },
+      { code: "EXW", label: "出厂价", label_en: "Ex Works", items: [] },
+      { code: "FOB", label: "FOB", label_en: "Free On Board", items: ["inland_freight"] },
+      { code: "CIF", label: "CIF", label_en: "Cost, Insurance and Freight", items: ["ocean_freight", "insurance"] },
+      { code: "DAP", label: "到门价（目的地交货）", label_en: "Delivered at Place", items: ["destination_charges"] },
+      { code: "DDP", label: "完税到门价（含进口税费）", label_en: "Delivered Duty Paid", items: ["import_taxes"] },
     ],
   };
 }
@@ -40,7 +46,13 @@ describe("整批费用按件数比例分摊", () => {
     // 随重量 / 按比例的项是"整单口径"，逐行累加本来就等价，**不动**
     expect(fee(terms[0]!, "ocean_freight")).toBe(200);
     expect(fee(terms[1]!, "insurance")).toBe(0.003);
-    expect(amortized).toEqual(["inland_freight"]);
+    // 所有 per_shipment 项都会被记入（含没填金额的项），
+    // 因为分摊是按 mode 判定的，不看这一项这次有没有填数字。
+    expect(amortized).toEqual([
+      "inland_freight",
+      "destination_charges",
+      "import_taxes",
+    ]);
   });
 
   it("摊到单卷后每一行的每卷分摊完全相同（这是选比例法而非平均分的理由）", () => {
@@ -86,5 +98,55 @@ describe("整批费用按件数比例分摊", () => {
   it("分摊判定只看 mode（不按费用项名字猜）", () => {
     expect(isPerShipment({ mode: "per_shipment" })).toBe(true);
     expect(isPerShipment({ mode: "per_weight_ton" })).toBe(false);
+  });
+});
+
+describe("DAP / DDP：新增两档的费用项同样按件数分摊", () => {
+  it("目的港费用与进口税费都是 per_shipment → 按件数比例分摊", () => {
+    // 两行：10 卷 + 30 卷 → 分摊比例 1:3
+    const { terms, amortized } = buildTermsPerLine(
+      template(),
+      { destination_charges: 1500, import_taxes: 800 },
+      [10, 30],
+    );
+    expect(fee(terms[0]!, "destination_charges")).toBeCloseTo(375, 10);
+    expect(fee(terms[1]!, "destination_charges")).toBeCloseTo(1125, 10);
+    expect(fee(terms[0]!, "import_taxes")).toBeCloseTo(200, 10);
+    expect(fee(terms[1]!, "import_taxes")).toBeCloseTo(600, 10);
+    // 所有 per_shipment 项都会被记入（含金额为 0 的内陆运费），
+    // 界面据此提示"整批费用已按件数分摊"。
+    expect(amortized).toEqual([
+      "inland_freight",
+      "destination_charges",
+      "import_taxes",
+    ]);
+  });
+
+  it("DAP 只引用目的港费用、DDP 只引用进口税费（逐档累加）", () => {
+    const t = template();
+    const rungs = new Map(t.ladder.map((r) => [r.code, r.items]));
+    expect(rungs.get("DAP")).toEqual(["destination_charges"]);
+    expect(rungs.get("DDP")).toEqual(["import_taxes"]);
+    // 下发时把完整阶梯原样带给引擎（引擎要按它逐档累加）
+    const { terms } = buildTermsPerLine(t, { import_taxes: 800 }, [5, 5]);
+    expect(terms[0]!.ladder.map((r) => r.code)).toEqual([
+      "EXW",
+      "FOB",
+      "CIF",
+      "DAP",
+      "DDP",
+    ]);
+  });
+
+  it("整批金额摊分之和不变（DDP 比 DAP 多出的正是进口税费）", () => {
+    const { terms } = buildTermsPerLine(
+      template(),
+      { destination_charges: 1500, import_taxes: 800 },
+      [7, 3],
+    );
+    const sum = (key: string) =>
+      terms.reduce((acc, t) => acc + fee(t, key), 0);
+    expect(sum("destination_charges")).toBeCloseTo(1500, 10);
+    expect(sum("import_taxes")).toBeCloseTo(800, 10);
   });
 });

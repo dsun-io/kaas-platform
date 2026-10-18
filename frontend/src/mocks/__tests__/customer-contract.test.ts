@@ -133,6 +133,66 @@ describe("mock GET /api/v1/customers/:id/records（normalizeCustomerRecords）",
   });
 });
 
+describe("mock 客户写操作（2026-10-18：新建 / 编辑 / 阶段 / 删除）", () => {
+  it("新建 → 编辑 → 手改阶段 → 删除 全链路形状对齐后端", async () => {
+    const created = await (
+      await fetch(`${BASE}/customers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ company_name: "契约测试客户", stage: "active" }),
+      })
+    ).json();
+    expect(created.stage).toBe("active");
+    expect(created.manual_stage).toBe("active");
+    const id = created.id as number;
+
+    // 编辑档案（PATCH /customers/:id）—— 不含 stage
+    const edited = await (
+      await fetch(`${BASE}/customers/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ company_name: "契约测试客户（改名）", country: "DE" }),
+      })
+    ).json();
+    expect(edited.company_name).toBe("契约测试客户（改名）");
+    expect(edited.country).toBe("DE");
+    // 档案编辑不改阶段
+    expect(edited.manual_stage).toBe("active");
+
+    // 手动阶段：只有活跃 / 沉寂
+    const staged = await (
+      await fetch(`${BASE}/customers/${id}/stage`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stage: "inactive" }),
+      })
+    ).json();
+    expect(staged.stage).toBe("inactive");
+    expect(staged.manual_stage).toBe("inactive");
+
+    // 已下单是推导值，不允许手写
+    const bad = await fetch(`${BASE}/customers/${id}/stage`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage: "ordered" }),
+    });
+    expect(bad.status).toBe(422);
+
+    // 删除：列表里消失
+    const del = await fetch(`${BASE}/customers/${id}`, { method: "DELETE" });
+    expect(del.status).toBe(204);
+    const list = (await (await fetch(`${BASE}/customers`)).json()) as CustomerList;
+    expect(list.items.some((c) => c.id === id)).toBe(false);
+  });
+
+  it("客户阶段下拉的 key 只能是 active / inactive（页面 STAGE_LABELS 同值）", async () => {
+    const flags = (await (
+      await fetch(`${BASE}/enums`)
+    ).json()) as Record<string, string[]>;
+    expect(flags.customer_stage).toEqual(["active", "inactive", "ordered"]);
+  });
+});
+
 describe("mock 灰度开关按**租户号**做 key（gray-release/page.tsx:39-46）", () => {
   it("每个租户都能在 feature_flag map 里查到自己的开关", async () => {
     const tenants = (await (await fetch(`${BASE}/admin/tenants`)).json()) as {

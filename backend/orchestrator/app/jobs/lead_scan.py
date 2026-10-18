@@ -70,7 +70,9 @@ async def scan_replied_leads(db: AsyncSession, tenant_id: str, limit: int = 100)
             customer = Customer(
                 tenant_id=tenant_id, name=lead.company_name,
                 country=lead.country, address=lead.address,
-                stage="inquiry",  # 直接进 inquiry 阶段（触达已回复）
+                # 客户阶段（2026-10-18）：线索转客户 = 活跃客户。
+                # 询盘自己带 status，属于单据阶段，不再映射到客户阶段。
+                stage="active",
                 owner_id=lead.owner_id, owner_scope="private",
                 team_id=owner_team_id,
             )

@@ -25,6 +25,9 @@ import {
   CustomerPicker,
   type CustomerPickerValue,
 } from "@/components/customer-picker";
+// 术语选项的显示格式与运费面板共用一处实现（`代码 · 中文（English）`）——
+// 两个下拉如果各写一份拼接逻辑，迟早会出现同一档位两种写法。
+import { termOptionLabel } from "../../quotations/v2-quote/components/freight-panel";
 import type {
   ExportTermsTemplate,
   QuoteProfile,
@@ -454,7 +457,7 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
               checked={termsEnabled}
               onChange={(e) => setTermsEnabled(e.target.checked)}
             />
-            启用出口费用（FOB / CFR / CIF）—— 不启用则按**出厂价 EXW**报价
+            启用出口费用（FOB / CFR / CIF / DAP / DDP）—— 不启用则按**出厂价 EXW**报价
           </label>
           {termsEnabled && termsTemplate && (
             <>
@@ -468,7 +471,7 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
                   >
                     {termsTemplate.ladder.map((r) => (
                       <option key={r.code} value={r.code}>
-                        {r.label || r.code}
+                        {termOptionLabel(r)}
                       </option>
                     ))}
                   </select>

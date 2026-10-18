@@ -18,21 +18,27 @@
 - 客户手动改 won/lost：若名下有 open 询盘，返回 409 + 询盘清单，
   前端二次确认后带 close_inquiry_ids / close_all_open 重试
 """
-from typing import Optional, List
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func, or_, update
+from sqlalchemy import select, func, or_, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
 from app.db.models import Customer
+from app.db.workstation_links import Order
 from app.db.workstation_models import (
     CustContact, CustInquiry, CustStageLog,
 )
 from app.core.auth import AuthContext, get_auth_context
 from app.domain.enums import (
-    validate_enum, CUSTOMER_STAGE, INQUIRY_STATUS, INQUIRY_CHANNEL,
+    validate_enum, INQUIRY_CHANNEL,
+)
+from kaas_common.workstation.customer_rules import (
+    OPEN_ORDER_STATUSES,
+    derive_customer_stage,
+    validate_manual_stage,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["customers"])
@@ -88,9 +94,34 @@ def _check_write_access(row, auth: AuthContext):
         })
 
 
-def _row_to_customer(c: Customer) -> dict:
+def _row_to_customer(c: Customer, has_open_order: bool = False) -> dict:
     from kaas_common.workstation.customer_serializers import row_to_customer
-    return row_to_customer(c)
+    return row_to_customer(
+        c, display_stage=derive_customer_stage(c.stage, has_open_order),
+    )
+
+
+async def _open_order_customer_ids(db, tenant_id: str, customer_ids) -> set:
+    """批量取「名下有开启中订单」的客户 id（列表/详情的唯一判定入口）。
+
+    口径见 `kaas_common.workstation.customer_rules.OPEN_ORDER_STATUSES`：
+    pending / confirmed / producing / shipped 算开启中；completed / cancelled 关闭。
+    """
+    ids = [cid for cid in customer_ids if cid is not None]
+    if not ids:
+        return set()
+    rows = (await db.execute(
+        select(Order.customer_id).where(
+            Order.tenant_id == tenant_id,
+            Order.customer_id.in_(ids),
+            Order.status.in_(OPEN_ORDER_STATUSES),
+        ).distinct()
+    )).scalars().all()
+    return {int(x) for x in rows if x is not None}
+
+
+async def _has_open_order(db, tenant_id: str, customer_id: int) -> bool:
+    return bool(await _open_order_customer_ids(db, tenant_id, [customer_id]))
 
 
 def _row_to_inquiry(i: CustInquiry) -> dict:
@@ -123,12 +154,18 @@ async def _get_customer_or_404(db, tenant_id, customer_id, auth) -> Customer:
 # ── Schemas ──────────────────────────────────────────────────────────────────
 
 class CustomerCreate(BaseModel):
-    company_name: str
+    # 公司名与联系人**至少填一个**（2026-10-17 用户口径，与 Worker 对齐）：
+    # 只有个人联系人的客户也要能建。
+    company_name: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_phone: Optional[str] = None
+    contact_email: Optional[str] = None
     country: Optional[str] = None
     address: Optional[str] = None
     default_port: Optional[str] = None
     credit_level: Optional[str] = None
-    stage: Optional[str] = "lead"
+    # 手动客户阶段（活跃 / 沉寂）；缺省活跃。「已下单」由开启中的订单推导，不可手写。
+    stage: Optional[str] = "active"
     notes: Optional[str] = None
     owner_scope: Optional[str] = None  # private | tenant（§10.3）
 
@@ -146,8 +183,6 @@ class CustomerUpdate(BaseModel):
 class StageChange(BaseModel):
     stage: str
     reason: Optional[str] = None
-    close_inquiry_ids: Optional[List[int]] = None  # 二次确认：勾选关闭的询盘
-    close_all_open: bool = False                    # 二次确认：全部一并关闭
 
 
 class ContactCreate(BaseModel):
@@ -204,7 +239,23 @@ async def list_customers(
         stmt = stmt.where(Customer.name.ilike(f"%{q}%"))
     if stage:
         validate_enum("customer_stage", stage)
-        stmt = stmt.where(Customer.stage == stage)
+        # 「已下单」是推导值：库里没有这一列，用 EXISTS(开启中的订单) 过滤；
+        # active / inactive 是手动列，且必须**没有**开启中的订单（否则展示为已下单）。
+        open_cond = exists().where(
+            Order.tenant_id == tenant_id,
+            Order.customer_id == Customer.id,
+            Order.status.in_(OPEN_ORDER_STATUSES),
+        )
+        if stage == "ordered":
+            stmt = stmt.where(open_cond)
+        elif stage == "inactive":
+            stmt = stmt.where(
+                Customer.stage.in_(("inactive", "lost")), ~open_cond,
+            )
+        else:  # active
+            stmt = stmt.where(
+                Customer.stage.notin_(("inactive", "lost")), ~open_cond,
+            )
 
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total = (await db.execute(count_stmt)).scalar() or 0
@@ -212,8 +263,9 @@ async def list_customers(
     stmt = stmt.order_by(Customer.updated_at.desc())
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
     rows = (await db.execute(stmt)).scalars().all()
-    return {"items": [_row_to_customer(c) for c in rows], "total": total,
-            "page": page, "page_size": page_size}
+    open_ids = await _open_order_customer_ids(db, tenant_id, [c.id for c in rows])
+    return {"items": [_row_to_customer(c, c.id in open_ids) for c in rows],
+            "total": total, "page": page, "page_size": page_size}
 
 
 @router.post("/customers", status_code=201)
@@ -223,10 +275,25 @@ async def create_customer(
     db: AsyncSession = Depends(get_db_session),
 ):
     tenant_id = _tenant_id(auth)
-    stage = validate_enum("customer_stage", body.stage or "lead")
+    company_name = (body.company_name or "").strip()
+    contact_name = (body.contact_name or "").strip()
+    if not company_name and not contact_name:
+        raise HTTPException(status_code=422, detail={
+            "error": "missing_identity",
+            "code": "CUSTOMER_IDENTITY_REQUIRED",
+            "detail": "公司名称和联系人至少填写一个",
+        })
+    # 客户阶段只有活跃/沉寂可手写；已下单由订单推导。
+    stage = body.stage or "active"
+    ok, msg = validate_manual_stage(stage)
+    if not ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_enum", "code": "INVALID_CUSTOMER_STAGE",
+            "detail": msg,
+        })
     owner_scope = validate_enum("owner_scope", body.owner_scope) or "private"
     c = Customer(
-        tenant_id=tenant_id, name=body.company_name,
+        tenant_id=tenant_id, name=company_name or contact_name,
         country=body.country, address=body.address,
         default_port=body.default_port, credit_level=body.credit_level,
         stage=stage, notes=body.notes,
@@ -236,8 +303,17 @@ async def create_customer(
     )
     db.add(c)
     await db.flush()
+    if contact_name:
+        # 只有联系人时用联系人名做展示名，并落一条主联系人（与 Worker 同口径）
+        db.add(CustContact(
+            tenant_id=tenant_id, customer_id=c.id, name=contact_name,
+            phone=(body.contact_phone or "").strip() or None,
+            email=(body.contact_email or "").strip() or None,
+            is_primary=True,
+        ))
     await _log_stage(db, tenant_id, c.id, None, stage, str(auth.user_id), "新建客户")
     await db.commit()
+    await db.refresh(c)
     return _row_to_customer(c)
 
 
@@ -271,8 +347,9 @@ async def get_customer(
         ).order_by(CustStageLog.created_at.desc()).limit(50)
     )).scalars().all()
 
+    has_open = await _has_open_order(db, tenant_id, customer_id)
     return {
-        **_row_to_customer(c),
+        **_row_to_customer(c, has_open),
         "contacts": [{
             "id": ct.id, "name": ct.name, "position": ct.position,
             "phone": ct.phone, "email": ct.email, "whatsapp": ct.whatsapp,
@@ -308,10 +385,10 @@ async def update_customer(
         setattr(c, "name" if k == "company_name" else k, v)
     await db.commit()
     await db.refresh(c)  # server-onupdate 列（updated_at）commit 后已 expired
-    return _row_to_customer(c)
+    return _row_to_customer(c, await _has_open_order(db, tenant_id, customer_id))
 
 
-# ── 阶段变更（§10.1 二次确认）───────────────────────────────────────────────
+# ── 阶段变更（客户手动状态：活跃 / 沉寂）────────────────────────────────────
 
 @router.delete("/customers/{customer_id}", status_code=204)
 async def soft_delete_customer(
@@ -319,10 +396,30 @@ async def soft_delete_customer(
     auth: AuthContext = Depends(get_auth_context),
     db: AsyncSession = Depends(get_db_session),
 ):
-    """客户软删除：标记 is_deleted，保留历史单据引用不物理删除。"""
+    """客户软删除：标记 is_deleted，保留历史单据引用不物理删除。
+
+    有**开启中的订单**时拒绝删除（409）：否则订单还在跑、客户却从列表消失，
+    后续对账/发货会找不到客户。用户 2026-10-18 确认此口径。
+    """
     tenant_id = _tenant_id(auth)
     c = await _get_customer_or_404(db, tenant_id, customer_id, auth)
     _check_write_access(c, auth)
+    open_orders = (await db.execute(
+        select(Order.id, Order.order_no, Order.status).where(
+            Order.tenant_id == tenant_id,
+            Order.customer_id == customer_id,
+            Order.status.in_(OPEN_ORDER_STATUSES),
+        ).order_by(Order.id)
+    )).all()
+    if open_orders:
+        raise HTTPException(status_code=409, detail={
+            "error": "conflict", "code": "OPEN_ORDERS_EXIST",
+            "detail": f"客户名下有 {len(open_orders)} 张开启中的订单，请先关闭订单再删除",
+            "open_orders": [
+                {"id": row.id, "order_no": row.order_no, "status": row.status}
+                for row in open_orders
+            ],
+        })
     from datetime import datetime, timezone
     c.is_deleted = True
     c.deleted_at = datetime.now(timezone.utc)
@@ -337,61 +434,35 @@ async def change_stage(
     auth: AuthContext = Depends(get_auth_context),
     db: AsyncSession = Depends(get_db_session),
 ):
+    """手动切换客户阶段（活跃 / 沉寂）。
+
+    客户阶段与订单/询盘阶段是两层：这里**不再**联动关闭询盘，也不再接受
+    lead/inquiry/quoted/won/lost；「已下单」由开启中的订单推导，不许手写。
+    """
     tenant_id = _tenant_id(auth)
-    target = validate_enum("customer_stage", body.stage)
+    target = body.stage
+    ok, msg = validate_manual_stage(target)
+    if not ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_enum", "code": "INVALID_CUSTOMER_STAGE",
+            "detail": msg,
+        })
     c = await _get_customer_or_404(db, tenant_id, customer_id, auth)
     _check_write_access(c, auth)
-
-    # 查名下 open 询盘
-    open_inquiries = (await db.execute(
-        select(CustInquiry).where(
-            CustInquiry.tenant_id == tenant_id,
-            CustInquiry.customer_id == customer_id,
-            CustInquiry.status == 'open',
-        )
-    )).scalars().all()
-
-    closing: List[CustInquiry] = []
-    if target in ("won", "lost") and open_inquiries:
-        if body.close_all_open:
-            closing = list(open_inquiries)
-        elif body.close_inquiry_ids:
-            wanted = set(body.close_inquiry_ids)
-            closing = [i for i in open_inquiries if i.id in wanted]
-            if len(closing) != len(body.close_inquiry_ids):
-                raise HTTPException(status_code=409, detail={
-                    "error": "conflict", "code": "OPEN_INQUIRIES_EXIST",
-                    "detail": "存在不属于该客户的询盘",
-                    "open_inquiries": [_row_to_inquiry(i) for i in open_inquiries],
-                })
-        else:
-            # 首次请求：返回 409 + 询盘清单，前端弹窗二次确认后重试
-            raise HTTPException(status_code=409, detail={
-                "error": "conflict", "code": "OPEN_INQUIRIES_EXIST",
-                "detail": f"客户名下有 {len(open_inquiries)} 条开启中的询盘，请确认是否一并关闭",
-                "open_inquiries": [_row_to_inquiry(i) for i in open_inquiries],
-            })
 
     from_stage = c.stage
     c.stage = target
     await _log_stage(db, tenant_id, customer_id, from_stage, target,
                      str(auth.user_id), body.reason)
 
-    # 批量关闭询盘（与客户 stage 同步变更）
-    for inq in closing:
-        inq.status = target  # won | lost
-        if inq.lead_id is not None:
-            from app.jobs.lead_scan import sync_inquiry_status
-            await sync_inquiry_status(db, tenant_id, inq)
-        await _log_stage(db, tenant_id, customer_id, from_stage, target,
-                         str(auth.user_id),
-                         f"客户阶段变更联动关闭 inquiry#{inq.id}" + (f"：{body.reason}" if body.reason else ""))
-
     # 先提交再显式 refresh 后构造响应：UPDATE 后 updated_at 等 server-onupdate
     # 列会被标记 expired，commit 后直接读会在异步会话内惰性加载抛 MissingGreenlet
     await db.commit()
     await db.refresh(c)
-    return {**_row_to_customer(c), "closed_inquiries": [i.id for i in closing]}
+    return {
+        **_row_to_customer(c, await _has_open_order(db, tenant_id, customer_id)),
+        "closed_inquiries": [],
+    }
 
 
 # ── 联系人 ───────────────────────────────────────────────────────────────────
@@ -564,11 +635,8 @@ async def create_inquiry(
     )
     db.add(inq)
 
-    # 询盘驱动客户（§10.1）：lead 客户进 inquiry 阶段
-    if c.stage == 'lead':
-        await _log_stage(db, tenant_id, customer_id, 'lead', 'inquiry',
-                         str(auth.user_id), f"新建询盘 inquiry 联动")
-        c.stage = 'inquiry'
+    # 2026-10-18 口径：询盘/报价/订单是**单据阶段**，不再联动改写客户阶段
+    # （客户阶段只有活跃 / 沉寂 / 已下单，且已下单只由「开启中的订单」推导）。
 
     await db.commit()
     return _row_to_inquiry(inq)
@@ -605,7 +673,11 @@ async def update_inquiry(
     auth: AuthContext = Depends(get_auth_context),
     db: AsyncSession = Depends(get_db_session),
 ):
-    """询盘状态流转，驱动客户 stage（§10.1）。"""
+    """询盘状态流转（单据阶段）。
+
+    2026-10-18 口径：询盘状态**只影响询盘自身**（以及线索池回写），
+    不再联动改写客户阶段 —— 客户阶段与订单阶段是两层。
+    """
     tenant_id = _tenant_id(auth)
     stmt = select(CustInquiry).where(
         CustInquiry.tenant_id == tenant_id, CustInquiry.id == inquiry_id,
@@ -634,32 +706,10 @@ async def update_inquiry(
         old_status = inq.status
         inq.status = new_status
 
-        # 联动客户 stage（§10.1）
-        if old_status != new_status:
-            c_stmt = select(Customer).where(
-                Customer.tenant_id == tenant_id,
-                Customer.id == inq.customer_id,
-            )
-            c = (await db.execute(c_stmt)).scalar_one_or_none()
-            if c is not None:
-                if new_status == 'won':
-                    # open→won：客户 stage 自动置 won
-                    if c.stage != 'won':
-                        await _log_stage(db, tenant_id, c.id, c.stage, 'won',
-                                         str(auth.user_id), f"inquiry#{inq.id} won 联动")
-                        c.stage = 'won'
-                elif new_status == 'quoted':
-                    # open→quoted：客户 stage 至少到 quoted（不降级 won/lost）
-                    if c.stage in ('lead', 'inquiry'):
-                        await _log_stage(db, tenant_id, c.id, c.stage, 'quoted',
-                                         str(auth.user_id), f"inquiry#{inq.id} quoted 联动")
-                        c.stage = 'quoted'
-                # new_status == 'lost'：客户 stage 不变（§10.1）
-
+        if old_status != new_status and inq.lead_id is not None:
             # P5 状态同步：回写线索池 lead_candidates.inquiry_status（§7.2）
-            if inq.lead_id is not None:
-                from app.jobs.lead_scan import sync_inquiry_status
-                await sync_inquiry_status(db, tenant_id, inq)
+            from app.jobs.lead_scan import sync_inquiry_status
+            await sync_inquiry_status(db, tenant_id, inq)
 
     if "channel" in data:
         validate_enum("inquiry_channel", data["channel"])

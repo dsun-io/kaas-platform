@@ -496,7 +496,7 @@ def test_trade_doc_translate_degrades_to_template_and_logs_usage():
 def _customer_row(**over):
     row = {"id": 3, "tenant_id": "default", "name": "ACME", "country": "US",
            "address": None, "default_port": None, "credit_level": None,
-           "stage": "inquiry", "notes": None, "owner_id": "1", "owner_scope": "private",
+           "stage": "active", "notes": None, "owner_id": "1", "owner_scope": "private",
            "is_deleted": False, "created_at": None, "updated_at": None}
     row.update(over)
     return row
@@ -521,7 +521,8 @@ def test_customer_patch_maps_company_name_to_name_column():
     assert resp.status_code == 200
     sql = db.sql_calls()
     assert "SET name = $1" in sql
-    assert "company_name" not in sql
+    # 列名不能被当成 company_name 直接写进 SET（旧的「未映射实例属性」根因）
+    assert "SET company_name" not in sql
 
 
 def test_customer_patch_rejects_bad_owner_scope():
@@ -543,17 +544,17 @@ def test_inquiries_list_joins_company_name():
     assert "JOIN customers" in db.sql_calls()
 
 
-def test_inquiry_won_links_customer_stage_and_lead():
+def test_inquiry_won_syncs_lead_but_does_not_touch_customer_stage():
+    """2026-10-18：询盘是单据阶段，won 不再联动客户阶段（客户阶段只有活跃/沉寂/已下单）。"""
     inq = _inquiry_row(status="open", lead_id=77)
-    conn = _FakeConn(fetchrow=[inq, {"id": 3, "stage": "inquiry"},
-                               _inquiry_row(status="won", lead_id=77)])
+    conn = _FakeConn(fetchrow=[inq, _inquiry_row(status="won", lead_id=77)])
     with _patched(_FakeDb(), conn=conn):
         resp = client.patch("/api/v1/inquiries/1", json={"status": "won"})
     assert resp.status_code == 200
     executed = " ".join(sql for sql, _ in conn.executed)
-    assert "cust_stage_log" in executed
-    assert "UPDATE customers SET stage" in executed
     assert "lead_candidates" in executed
+    assert "cust_stage_log" not in executed
+    assert "UPDATE customers SET stage" not in executed
 
 
 def test_inquiry_illegal_transition_409():
@@ -723,7 +724,7 @@ TEAM_MEMBER = {"id": 9, "email": "newbie@kaas.local", "account_type": "customer"
 def _cust_row(**over):
     row = {"id": 1, "tenant_id": "default", "name": "联佳丝网", "code": "lianjia",
            "country": None, "address": None, "default_port": None, "credit_level": None,
-           "stage": "lead", "notes": None, "created_by": None, "owner_id": None,
+           "stage": "active", "notes": None, "created_by": None, "owner_id": None,
            "owner_scope": "private", "team_id": 1, "is_deleted": False,
            "created_at": None, "updated_at": None}
     row.update(over)
@@ -738,8 +739,9 @@ def test_customers_list_excludes_deleted_and_applies_team_scope():
     assert resp.json()["total"] == 1
     sql = conn.sql()
     assert "is_deleted = false" in sql
-    # 本团队可见：owner 我 / 租户共享 / team_id = 我的团队
-    assert "(owner_id = $2 OR owner_scope = 'tenant' OR team_id = $3)" in sql
+    # 本团队可见：owner 我 / 租户共享 / team_id = 我的团队（2026-10-18 起列表 SQL
+    # 统一用别名 `c`，以便 join/CASE 表达式不歧义）
+    assert "(c.owner_id = $2 OR c.owner_scope = 'tenant' OR c.team_id = $3)" in sql
 
 
 def test_customers_list_admin_still_excludes_deleted():
@@ -788,9 +790,10 @@ def test_customer_detail_deleted_is_404():
 
 
 def test_customer_stage_change_respects_visibility():
+    """客户阶段改成手动值 inactive 后仍受可见范围约束（别家团队 → 404）。"""
     conn = _FakeConn(fetchrow=[_cust_row(team_id=2)])
     with _patched(_FakeDb(), user=TEAM_MEMBER, conn=conn):
-        resp = client.patch("/api/v1/customers/1/stage", json={"stage": "won"})
+        resp = client.patch("/api/v1/customers/1/stage", json={"stage": "inactive"})
     assert resp.status_code == 404
 
 
@@ -801,6 +804,94 @@ def test_customer_inquiry_creation_respects_visibility():
                            json={"customer_id": 1, "channel": "email",
                                  "product_name_raw": "牛栏网"})
     assert resp.status_code == 404
+
+# ── 客户阶段 / 删除 / 编辑（2026-10-18 用户口径）────────────────────────────
+
+
+def test_customer_stage_rejects_ordered_and_legacy_values():
+    """已下单必须由订单推导，不接受手写；lead/won 等单据阶段也一律 422。"""
+    for bad in ("ordered", "won", "lead", "lost"):
+        with _patched(_FakeDb(), conn=_FakeConn()):
+            resp = client.patch("/api/v1/customers/1/stage",
+                                json={"stage": bad})
+        assert resp.status_code == 422, (bad, resp.text)
+        assert resp.json()["detail"]["code"] == "INVALID_CUSTOMER_STAGE"
+
+
+def test_customer_create_rejects_legacy_stage():
+    with _patched(_FakeDb(), conn=_FakeConn()):
+        resp = client.post("/api/v1/customers",
+                           json={"company_name": "ACME", "stage": "lead"})
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "INVALID_CUSTOMER_STAGE"
+
+
+def test_customer_stage_change_returns_manual_and_display():
+    """手动改沉寂 → 响应 stage=inactive、manual_stage=inactive、无开启订单。"""
+    conn = _FakeConn(fetchrow=[
+        _cust_row(stage="active", stage_display="active"),      # 改前取客户
+        _cust_row(stage="inactive", stage_display="inactive"),  # 改后回显
+    ])
+    with _patched(_FakeDb(), conn=conn):
+        resp = client.patch("/api/v1/customers/1/stage",
+                            json={"stage": "inactive", "reason": "客户关停"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["stage"] == "inactive"
+    assert body["manual_stage"] == "inactive"
+    executed = conn.sql()
+    assert "INSERT INTO cust_stage_log" in executed
+
+
+def test_customer_list_derives_ordered_from_open_orders():
+    """列表的 stage 是推导值：库里的手动值是 active，但有开启中订单 ⇒ ordered。"""
+    conn = _FakeConn(fetchval=[1], fetch=[[_cust_row(
+        stage="active", stage_display="ordered")]])
+    with _patched(_FakeDb(), conn=conn):
+        resp = client.get("/api/v1/customers")
+    assert resp.status_code == 200
+    item = resp.json()["items"][0]
+    assert item["stage"] == "ordered"
+    assert item["manual_stage"] == "active"
+    # 推导 SQL 必须真的查 orders（不是拿 customers.stage 冒充）
+    assert "FROM orders o" in conn.sql()
+
+
+def test_customer_delete_blocked_when_open_orders_exist():
+    """有开启中的订单时禁止删除（409 OPEN_ORDERS_EXIST），并回订单清单。"""
+    conn = _FakeConn(
+        fetchrow=[_cust_row()],
+        fetch=[[{"id": 9, "order_no": "SO-1", "status": "confirmed"}]],
+    )
+    with _patched(_FakeDb(), conn=conn):
+        resp = client.delete("/api/v1/customers/1")
+    assert resp.status_code == 409
+    detail = resp.json()["detail"]
+    assert detail["code"] == "OPEN_ORDERS_EXIST"
+    assert detail["open_orders"][0]["order_no"] == "SO-1"
+
+
+def test_customer_delete_without_open_orders_soft_deletes():
+    conn = _FakeConn(fetchrow=[_cust_row()], fetch=[[]])
+    with _patched(_FakeDb(), conn=conn):
+        resp = client.delete("/api/v1/customers/1")
+    assert resp.status_code == 204
+    assert "UPDATE customers SET is_deleted=true" in conn.sql()
+
+
+def test_customer_patch_profile_returns_derived_stage():
+    """编辑档案后回显仍带推导阶段（有开启中订单 ⇒ stage=ordered）。"""
+    db = _FakeDb(fetchrow=[
+        _customer_row(stage="inactive", stage_display="ordered"),
+        _customer_row(name="ACME 2", stage="inactive", stage_display="ordered"),
+    ])
+    with _patched(db):
+        resp = client.patch("/api/v1/customers/3",
+                            json={"company_name": "ACME 2", "country": "DE"})
+    assert resp.status_code == 200
+    assert resp.json()["stage"] == "ordered"
+    assert resp.json()["manual_stage"] == "inactive"
+    assert "SET name = $1" in db.sql_calls()
 
 def test_customer_creation_stamps_creator_team():
     """用户添加的客户按**团队**鉴权：创建时把创建者的 team_id 写进客户行。"""

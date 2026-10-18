@@ -9,8 +9,12 @@ from fastapi import HTTPException
 # ── 询盘状态（§10.1 状态机）─────────────────────────────────────────────────
 INQUIRY_STATUS = ("open", "quoted", "won", "lost")
 
-# ── 客户阶段（被询盘驱动）───────────────────────────────────────────────────
-CUSTOMER_STAGE = ("lead", "inquiry", "quoted", "won", "lost", "inactive")
+# ── 客户阶段（2026-10-18 用户口径）───────────────────────────────────────────
+# 只有三种：活跃 / 沉寂 / 已下单。
+#   · active / inactive：手动状态，存在 customers.stage；
+#   · ordered：推导值（名下存在开启中的订单时），不落库、不允许手动写。
+# 询盘/报价/订单的 lead→inquiry→quoted→won→lost 属于**单据阶段**，不是客户阶段。
+CUSTOMER_STAGE = ("active", "inactive", "ordered")
 
 # ── 报价单状态 ───────────────────────────────────────────────────────────────
 QUOTE_STATUS = ("draft", "sent", "accepted", "rejected", "expired")
