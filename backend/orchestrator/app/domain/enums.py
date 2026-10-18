@@ -20,7 +20,7 @@ INQUIRY_STATUS = ("unquoted", "quoted", "closed")
 CUSTOMER_STAGE = ("active", "inactive", "ordered")
 
 # ── 报价单状态 ───────────────────────────────────────────────────────────────
-QUOTE_STATUS = ("draft", "sent", "accepted", "rejected", "expired")
+QUOTE_STATUS = ("draft", "sent", "accepted", "rejected", "expired", "closed")
 
 # ── 订单状态 ─────────────────────────────────────────────────────────────────
 ORDER_STATUS = ("pending", "confirmed", "producing", "shipped", "completed", "cancelled")

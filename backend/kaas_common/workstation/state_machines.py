@@ -16,6 +16,8 @@ QUOTE_NEXT = {
     "accepted": (),
     "rejected": (),
     "expired": (),
+    # 同一询盘已有另一张报价生成后续单证 → 这张自动关闭（历史保留）
+    "closed": (),
 }
 
 ORDER_NEXT = {

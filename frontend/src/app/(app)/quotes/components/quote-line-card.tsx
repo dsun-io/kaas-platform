@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 /**
  * 多产品报价 · 单个产品行。
@@ -289,6 +289,7 @@ export function QuoteLineCard({
       const overrides = {
         ...variantOverrides,
       } as Record<string, Record<string, Record<string, number>>>;
+      let costApplied = false;
       if (typedCost !== "" && costField) {
         for (const group of groups) {
           const optionName = String(line.spec[group.name] ?? "");
@@ -302,6 +303,7 @@ export function QuoteLineCard({
             ...(bucket[optionName] ?? {}),
             [costField]: Number(typedCost) || 0,
           };
+          costApplied = true;
           break;
         }
       } else if (costOverrideToSend !== null && costField) {
@@ -318,13 +320,26 @@ export function QuoteLineCard({
             ...(bucket[optionName] ?? {}),
             [costField]: costOverrideToSend,
           };
+          costApplied = true;
           break;
         }
       }
+      // 勾花网/鹿网这类“表面处理档位为空”的产品：没有可挂的变体选项，
+      // 成本字段直接作为常量覆盖（否则 raw_price 不在引擎变量里，报价报错）。
+      const constantsOverrides =
+        !costApplied && costField
+          ? {
+              [costField]:
+                typedCost !== ""
+                  ? Number(typedCost) || 0
+                  : costOverrideToSend,
+            }
+          : undefined;
       const payload = buildLineRequest({
         productKey: effectiveProduct,
         spec: line.spec,
         variantOverrides: overrides,
+        constantsOverrides,
         total,
         unit: unitQtyInput?.unit || "m",
         profitPctOverride: line.profitPctOverride,
@@ -494,6 +509,11 @@ export function QuoteLineCard({
               placeholder="请填写卷数"
               className="h-8 text-xs"
             />
+            {unitQty ? (
+              <p className="text-[11px] text-muted-foreground">
+                1 卷 = {unitQty} 米；表格需求量若为「米」，请先 ÷ {unitQty} 换算成卷数
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-1.5">

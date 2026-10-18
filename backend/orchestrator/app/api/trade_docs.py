@@ -471,6 +471,29 @@ async def create_trade_doc(
          "revision_of", {"origin_ref_type": "derived_from"}),
     ])
 
+    # ── 同一询盘的报价只留一张生效 ────────────────────────────────────
+    # 用户口径（2026-10-18 批量报价）：一个询盘可有多张报价，默认看最新一张；
+    # 某张报价一旦生成后续单证（PI/合同…），它就是生效报价，其余报价转 closed，
+    # 历史保留、不再参与选择。
+    if d.quote_id is not None and doc_type != "quotation":
+        effective = (await db.execute(
+            select(QuoteOrder).where(
+                QuoteOrder.tenant_id == tenant_id,
+                QuoteOrder.id == d.quote_id,
+            )
+        )).scalar_one_or_none()
+        if effective is not None and effective.inquiry_id is not None:
+            siblings = (await db.execute(
+                select(QuoteOrder).where(
+                    QuoteOrder.tenant_id == tenant_id,
+                    QuoteOrder.inquiry_id == effective.inquiry_id,
+                    QuoteOrder.id != effective.id,
+                    QuoteOrder.status != "closed",
+                )
+            )).scalars().all()
+            for s in siblings:
+                s.status = "closed"
+
     await db.commit()
     await db.refresh(d)
     return _row_to_doc(d)

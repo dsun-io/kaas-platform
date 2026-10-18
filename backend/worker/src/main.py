@@ -3861,6 +3861,17 @@ async def create_trade_doc(request: Request, body: dict,
                 ("inquiry", inquiry_id, "generated_from"),
             ))
 
+            # 同一询盘只留一张生效报价：本报价生成后续单证 → 其余报价转 closed
+            if quote_id is not None and doc_type != "quotation":
+                await conn.execute(
+                    "UPDATE quote_orders q SET status='closed', updated_at=now()"
+                    " WHERE q.tenant_id=$1 AND q.id<>$2 AND q.status<>'closed'"
+                    " AND q.inquiry_id = ("
+                    "   SELECT inquiry_id FROM quote_orders"
+                    "   WHERE tenant_id=$1 AND id=$2)",
+                    DEFAULT_TENANT, quote_id,
+                )
+
     # 事件在事务提交后写（平台 db 是独立连接；放进事务里既不在同一事务，
     # 又会在回滚后留下"单据不存在、事件还在"的脏流水）
     await _record_business_event(

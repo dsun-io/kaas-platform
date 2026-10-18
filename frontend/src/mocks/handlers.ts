@@ -182,7 +182,7 @@ let docsStore: Array<Record<string, unknown> & { id: number }> = [];
 const ENUMS_MOCK: Record<string, string[]> = {
   inquiry_status: ["unquoted", "quoted", "closed"],
   customer_stage: ["active", "inactive", "ordered"],
-  quote_status: ["draft", "sent", "accepted", "rejected", "expired"],
+  quote_status: ["draft", "sent", "accepted", "rejected", "expired", "closed"],
   order_status: [
     "pending",
     "confirmed",
