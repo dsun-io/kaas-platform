@@ -227,6 +227,14 @@ export function QuoteLineCard({
     ? (baseOverrideOf(unitQtyInput) ?? unitQtyDefault)
     : 0;
   const total = unitQty * (Number(line.pieces) || 0);
+  // 客户常按“米”报需求；报价数量按“卷”。1 卷多少米优先取数量区卷长，
+  // 勾花网这类没有 piece_inputs 的产品取规格里的 len_m/roll_len_m。
+  const rollLengthForMeters = (() => {
+    if (unitQty > 0) return unitQty;
+    const raw = Number(line.spec.roll_len_m ?? line.spec.len_m);
+    return Number.isFinite(raw) && raw > 0 ? raw : null;
+  })();
+  const [metersDemand, setMetersDemand] = useState("");
 
   const variantOverrides = (() => {
     const out: Record<string, Record<string, Record<string, number>>> = {};
@@ -500,12 +508,38 @@ export function QuoteLineCard({
               placeholder="请填写卷数"
               className="h-8 text-xs"
             />
-            {unitQty ? (
+            {rollLengthForMeters ? (
               <p className="text-[11px] text-muted-foreground">
-                1 卷 = {unitQty} 米；表格需求量若为「米」，请先 ÷ {unitQty} 换算成卷数
+                1 卷 = {rollLengthForMeters} 米；也可直接填客户需求米数，系统自动进一换卷
               </p>
             ) : null}
           </div>
+
+          {rollLengthForMeters ? (
+            <div className="space-y-1.5">
+              <Label className="text-xs">客户需求（米，可选）</Label>
+              <Input
+                type="number"
+                min={0}
+                value={metersDemand}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setMetersDemand(v);
+                  const meters = Number(v);
+                  if (Number.isFinite(meters) && meters > 0) {
+                    onChange({
+                      pieces: String(Math.ceil(meters / rollLengthForMeters)),
+                    });
+                  }
+                }}
+                placeholder={`按 ${rollLengthForMeters} 米/卷自动换算`}
+                className="h-8 text-xs"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                卷数 = 总米数 ÷ {rollLengthForMeters}，小数进一
+              </p>
+            </div>
+          ) : null}
 
           <div className="space-y-1.5">
             <Label className="text-xs">

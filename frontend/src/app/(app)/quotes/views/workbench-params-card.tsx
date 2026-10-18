@@ -35,6 +35,26 @@ import type {
 
 const CURRENCIES = ["USD", "EUR", "GBP", "AUD", "CAD", "JPY", "CNY"] as const;
 
+// 全球主流船公司（用户口径：直接写死，中文名-英文缩写）
+const CARRIERS = [
+  "马士基-MSK",
+  "地中海航运-MSC",
+  "达飞轮船-CMA CGM",
+  "中远海运-COSCO",
+  "赫伯罗特-HPL",
+  "长荣海运-EMC",
+  "阳明海运-YML",
+  "现代商船-HMM",
+  "海洋网联-ONE",
+  "东方海外-OOCL",
+  "以星航运-ZIM",
+  "万海航运-WHL",
+  "太平船务-PIL",
+  "宏海箱运-RCL",
+  "高丽海运-KMTC",
+  "兴亚海运-HEUNG-A",
+];
+
 export interface WorkbenchParamsCardProps {
   customer: CustomerPickerValue | null;
   setCustomer: (next: CustomerPickerValue | null) => void;
@@ -84,6 +104,9 @@ export interface WorkbenchParamsCardProps {
   termsQuery: { isError: boolean };
   quoteAs: string;
   setQuoteAs: (v: string) => void;
+  /** 船公司（CFR/CIF/DAP/DDP 时使用；值「中文名-英文缩写」） */
+  carrier: string;
+  setCarrier: (v: string) => void;
   feeInputs: Record<string, string>;
   setFeeInputs: (
     fn: (prev: Record<string, string>) => Record<string, string>,
@@ -135,6 +158,8 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
     termsQuery,
     quoteAs,
     setQuoteAs,
+    carrier,
+    setCarrier,
     feeInputs,
     setFeeInputs,
     freightFrom,
@@ -399,6 +424,24 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
               ))}
             </select>
           </div>
+
+          {["CFR", "CIF", "DAP", "DDP"].includes(quoteAs) && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">船公司</Label>
+              <select
+                value={carrier}
+                onChange={(e) => setCarrier(e.target.value)}
+                className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="">请选择船公司</option>
+                {CARRIERS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label className="text-xs">汇率（1 外币 = ? CNY）</Label>

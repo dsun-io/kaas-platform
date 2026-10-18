@@ -75,6 +75,8 @@ export const TradeTermsSchema = z.object({
   port_of_destination: z.string().nullable().optional(),
   shipping_marks: z.string().nullable().optional(),
   country_of_origin: z.string().nullable().optional(),
+  /** 船公司：CFR/CIF/DAP/DDP 报价使用；格式「中文名-英文缩写」 */
+  carrier: z.string().nullable().optional(),
   /** 海运费有效期（报价单级，整单一份；需求 7） */
   freight_valid_from: z.string().nullable().optional(),
   freight_valid_to: z.string().nullable().optional(),
