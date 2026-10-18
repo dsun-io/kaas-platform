@@ -5687,7 +5687,7 @@
           "customers"
         ],
         "summary": "Soft Delete Customer",
-        "description": "客户软删除：标记 is_deleted，保留历史单据引用不物理删除。",
+        "description": "客户软删除：标记 is_deleted，保留历史单据引用不物理删除。\n\n有**开启中的订单**时拒绝删除（409）：否则订单还在跑、客户却从列表消失，\n后续对账/发货会找不到客户。用户 2026-10-18 确认此口径。",
         "operationId": "soft_delete_customer_api_v1_customers__customer_id__delete",
         "parameters": [
           {
@@ -5723,6 +5723,7 @@
           "customers"
         ],
         "summary": "Change Stage",
+        "description": "手动切换客户阶段（活跃 / 沉寂）。\n\n客户阶段与订单/询盘阶段是两层：这里**不再**联动关闭询盘，也不再接受\nlead/inquiry/quoted/won/lost；「已下单」由开启中的订单推导，不许手写。",
         "operationId": "change_stage_api_v1_customers__customer_id__stage_patch",
         "parameters": [
           {
@@ -6092,7 +6093,7 @@
           "customers"
         ],
         "summary": "Update Inquiry",
-        "description": "询盘状态流转，驱动客户 stage（§10.1）。",
+        "description": "询盘状态流转（单据阶段）。\n\n2026-10-18 口径：询盘状态**只影响询盘自身**（以及线索池回写），\n不再联动改写客户阶段 —— 客户阶段与订单阶段是两层。",
         "operationId": "update_inquiry_api_v1_inquiries__inquiry_id__patch",
         "parameters": [
           {
@@ -11956,8 +11957,48 @@
       "CustomerCreate": {
         "properties": {
           "company_name": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Company Name"
+          },
+          "contact_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Name"
+          },
+          "contact_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Phone"
+          },
+          "contact_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Email"
           },
           "country": {
             "anyOf": [
@@ -12013,7 +12054,7 @@
               }
             ],
             "title": "Stage",
-            "default": "lead"
+            "default": "active"
           },
           "notes": {
             "anyOf": [
@@ -12039,9 +12080,6 @@
           }
         },
         "type": "object",
-        "required": [
-          "company_name"
-        ],
         "title": "CustomerCreate"
       },
       "CustomerUpdate": {
@@ -17418,25 +17456,6 @@
               }
             ],
             "title": "Reason"
-          },
-          "close_inquiry_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "integer"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Close Inquiry Ids"
-          },
-          "close_all_open": {
-            "type": "boolean",
-            "title": "Close All Open",
-            "default": false
           }
         },
         "type": "object",

@@ -72,8 +72,9 @@ WORKSTATIONS = [
     {
         # 产品素材（图片 + 基础信息）：单证/报价都要**引用**它 ⇒ 属"我的"配置、
         # 不按工位收费（subscription=None ⇒ 永不被订阅拦）。
+        # 2026-10-18 用户要求：侧边栏里「产品」放在「客户管理」上方。
         "key": "products", "name": "产品", "route": "/products",
-        "group": "business", "order": 5,
+        "group": "customer", "order": 5,
         "admin_only": False, "status": "active", "subscription": None,
     },
     {

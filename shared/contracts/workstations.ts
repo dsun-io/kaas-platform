@@ -193,10 +193,12 @@ export const WORKSTATIONS: readonly Workstation[] = [
     // 产品素材（图片 + 基础信息）：单证/报价都要**引用**它，
     // 所以属"我的"配置、不按工位收费（subscription: null ⇒ 永不被订阅拦）——
     // 锁掉它等于让付费工位失去素材来源。
+    // 2026-10-18 用户要求：侧边栏里「产品」放在「客户管理」上方 ——
+    // 产品是报价/单证的素材来源，先配产品再谈客户更符合操作顺序。
     key: 'products',
     name: '产品',
     route: '/products',
-    group: 'business',
+    group: 'customer',
     order: 5,
     icon: 'Package',
     adminOnly: false,
