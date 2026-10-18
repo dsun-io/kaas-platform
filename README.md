@@ -159,7 +159,25 @@ pnpm dev
 
 前端运行在 `http://localhost:3000`。
 
-> 当前 `.env.development` 配置了 `NEXT_PUBLIC_API_MODE=mock`，前端以 MSW 模拟模式运行，**不依赖后端即可独立开发**。若需联调真实后端，改为 `real-backend` 并配置对应 API 地址。
+### 本地开发登录凭证（仅本地环境）
+
+> ⚠️ 以下账号只存在于**本地开发库**，由 `backend/orchestrator/scripts/seed_dev.py`
+> （`SEED_DEV_ACCOUNTS=true`）创建；**生产环境没有这些账号**。
+> 密码来自 `backend/orchestrator/.env` 的 `DEV_*_PASSWORD`；
+> 若你改过 `.env`，以实际值为准。
+
+| 角色 | 邮箱 | 密码 | 说明 |
+|---|---|---|---|
+| 系统管理员 | `admin@kaas.local` | `DevAdmin2026!` | internal / `system_admin`，可看全部工位与内部核算 |
+| 联佳业务员 | `lianjia@kaas.local` | `Lianjia2026!` | customer / `owner`，团队 1，用于业务视角联调 |
+| 客户 B 业务员 | `clientb@kaas.local` | `Clientb2026!` | customer / `owner`，用于多团队隔离验证 |
+| 本地验收账号 | `e2e.local@kaas.local` | `LocalDev123!` | 当前本地库用于 Playwright/接口验收；非 `seed_dev` 固定账号，重建库后可能不存在 |
+
+登录地址：`http://localhost:3000/login`（前端），API 文档：`http://localhost:8000/docs`。
+
+> 当前 `.env.development` 使用真实本地后端：
+> `NEXT_PUBLIC_API_MODE=real`、`NEXT_PUBLIC_API_BASE_URL=http://localhost:8000`。
+> 若只想用 MSW mock（无需后端），把 `NEXT_PUBLIC_API_MODE` 改为 `mock` 即可。
 
 ### 常用命令
 
