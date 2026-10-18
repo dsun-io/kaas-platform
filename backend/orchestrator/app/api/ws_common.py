@@ -17,6 +17,7 @@ from sqlalchemy import select, update, or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from kaas_common.workstation.scope import can_view, is_admin_role
+from kaas_common.workstation.number_rules import build_number
 from app.db.models import Customer
 from app.db.workstation_models import DocSequence, FxRate
 
@@ -161,6 +162,25 @@ async def next_doc_no(db, tenant_id: str, doc_type: str) -> str:
         .returning(DocSequence.last_seq)
     )).scalar_one()
     return f"{prefix}-{period}-{seq:04d}"
+
+
+async def next_number_for_customer(db, tenant_id: str, doc_type: str,
+                                   model, column, customer) -> str:
+    """统一编号：`类型-国家-客户-时间戳`（同秒冲突加后缀）。
+
+    用于订单/出运等有明确客户上下文的单据；单证/报价也走同一套共享 builder。
+    """
+    for suffix in range(1, 21):
+        candidate = build_number(doc_type, customer, suffix=suffix)
+        exists = (await db.execute(
+            select(model.id).where(
+                model.tenant_id == tenant_id,
+                column == candidate,
+            ).limit(1)
+        )).scalar_one_or_none()
+        if exists is None:
+            return candidate
+    return build_number(doc_type, customer) + "-X"
 
 
 async def lock_fx_rate(db, currency: str, base: str = "CNY") -> Tuple[Optional[Decimal], Optional[date]]:

@@ -54,6 +54,9 @@ export interface WorkbenchParamsCardProps {
     product_name_raw?: string | null;
     status?: string | null;
   }[];
+  /** 报价页直接新建询盘（不存在时自动给该客户创建） */
+  onCreateInquiry?: () => void;
+  creatingInquiry?: boolean;
   taxPick: string;
   setTaxPick: (v: string) => void;
   profiles: QuoteProfile[];
@@ -112,6 +115,8 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
     inquiryId,
     setInquiryId,
     inquiries = [],
+    onCreateInquiry,
+    creatingInquiry = false,
     taxPick,
     setTaxPick,
     profiles,
@@ -187,7 +192,21 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
           />
 
           <div className="space-y-1.5">
-            <Label className="text-xs">询盘编号</Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">询盘编号</Label>
+              {customer && onCreateInquiry && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-1.5 text-[11px]"
+                  disabled={creatingInquiry}
+                  onClick={onCreateInquiry}
+                >
+                  {creatingInquiry ? "创建中…" : "+ 新建询盘"}
+                </Button>
+              )}
+            </div>
             <select
               value={inquiryId}
               onChange={(e) => setInquiryId(e.target.value)}

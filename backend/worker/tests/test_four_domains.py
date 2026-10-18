@@ -505,7 +505,7 @@ def _customer_row(**over):
 def _inquiry_row(**over):
     row = {"id": 1, "tenant_id": "default", "customer_id": 3, "channel": "email",
            "category_id": None, "product_name_raw": "牛栏网", "quantity": 10,
-           "quantity_unit": "roll", "application": None, "status": "open", "notes": None,
+           "quantity_unit": "roll", "application": None, "status": "unquoted", "notes": None,
            "created_by": "1", "created_at": None, "updated_at": None, "owner_id": "1",
            "owner_scope": "private", "lead_id": None, "inquiry_seq": None,
            "spec_snapshot": None}
@@ -544,12 +544,12 @@ def test_inquiries_list_joins_company_name():
     assert "JOIN customers" in db.sql_calls()
 
 
-def test_inquiry_won_syncs_lead_but_does_not_touch_customer_stage():
-    """2026-10-18：询盘是单据阶段，won 不再联动客户阶段（客户阶段只有活跃/沉寂/已下单）。"""
-    inq = _inquiry_row(status="open", lead_id=77)
-    conn = _FakeConn(fetchrow=[inq, _inquiry_row(status="won", lead_id=77)])
+def test_inquiry_close_syncs_lead_but_does_not_touch_customer_stage():
+    """2026-10-18：询盘是单据阶段，关闭不再联动客户阶段（客户阶段只有活跃/沉寂/已下单）。"""
+    inq = _inquiry_row(status="unquoted", lead_id=77)
+    conn = _FakeConn(fetchrow=[inq, _inquiry_row(status="closed", lead_id=77)])
     with _patched(_FakeDb(), conn=conn):
-        resp = client.patch("/api/v1/inquiries/1", json={"status": "won"})
+        resp = client.patch("/api/v1/inquiries/1", json={"status": "closed"})
     assert resp.status_code == 200
     executed = " ".join(sql for sql, _ in conn.executed)
     assert "lead_candidates" in executed
@@ -558,9 +558,9 @@ def test_inquiry_won_syncs_lead_but_does_not_touch_customer_stage():
 
 
 def test_inquiry_illegal_transition_409():
-    conn = _FakeConn(fetchrow=[_inquiry_row(status="won")])
+    conn = _FakeConn(fetchrow=[_inquiry_row(status="quoted")])
     with _patched(_FakeDb(), conn=conn):
-        resp = client.patch("/api/v1/inquiries/1", json={"status": "open"})
+        resp = client.patch("/api/v1/inquiries/1", json={"status": "unquoted"})
     assert resp.status_code == 409
     assert resp.json()["detail"]["code"] == "ILLEGAL_TRANSITION"
 
@@ -1075,4 +1075,5 @@ def test_explain_registry_product_out_of_range_400():
     assert resp.status_code == 400, resp.text
     assert resp.json()["detail"]["error"] == "invalid_numeric"
     assert "大于上界" in resp.json()["detail"]["message"]
+
 

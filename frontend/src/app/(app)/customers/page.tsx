@@ -42,10 +42,9 @@ function stageLabel(stage: string | null | undefined): string {
 }
 
 const INQUIRY_STATUS_LABELS: Record<string, string> = {
-  open: "进行中",
+  unquoted: "未报价",
   quoted: "已报价",
-  won: "成交",
-  lost: "流失",
+  closed: "已关闭",
 };
 
 const STAGE_TONES: Record<string, import("@/components/shared").StatusTone> = {
@@ -778,6 +777,19 @@ function CustomerDetailPanel({
     }
   };
 
+  /** 询盘「已关闭」只能手动切换；重新打开时若已有报价会自动回到已报价。 */
+  const toggleInquiryClosed = async (inq: Inquiry) => {
+    const next = inq.status === "closed" ? "unquoted" : "closed";
+    try {
+      await apiClient.patch(`/inquiries/${inq.id}`, { status: next });
+      await qc.invalidateQueries({
+        queryKey: ["customers", "detail", customer.id],
+      });
+    } catch (e) {
+      window.alert(errMsg(e));
+    }
+  };
+
   const handleDeleteContact = async (contactId: number) => {
     try {
       await apiClient.delete(
@@ -1064,11 +1076,19 @@ function CustomerDetailPanel({
                           >
                             为此询盘报价 →
                           </Link>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => toggleInquiryClosed(inq)}
+                          >
+                            {inq.status === "closed" ? "重新打开" : "关闭"}
+                          </Button>
                           <StatusBadge
                             tone={
-                              inq.status === "won"
+                              inq.status === "quoted"
                                 ? "success"
-                                : inq.status === "lost"
+                                : inq.status === "closed"
                                   ? "danger"
                                   : "default"
                             }

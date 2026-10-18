@@ -37,7 +37,11 @@ from app.api.ws_common import (
     tenant_id_of, scope_filter, next_doc_no, resolve_customer_for_doc,
 )
 from app.api.company_profile import seller_block
-from kaas_common.workstation.number_rules import NumberError, normalize_number
+from kaas_common.workstation.number_rules import (
+    NumberError,
+    build_number,
+    normalize_number,
+)
 from app.services.trade_doc_payload import (
     build_render_data, buyer_block, trade_terms_of,
 )
@@ -126,6 +130,21 @@ def _reject_protected_custom(custom) -> None:
             "detail": "以下字段只能来自上游快照或系统计算，不接受手工覆盖："
                       + "、".join(blocked),
         })
+
+
+async def _next_doc_no_for_customer(db, tenant_id: str, doc_type: str, customer) -> str:
+    """单证号：`类型-国家-客户-时间戳`（同秒冲突加后缀）。"""
+    for suffix in range(1, 21):
+        candidate = build_number(doc_type, customer, suffix=suffix)
+        exists = (await db.execute(
+            select(TradeDoc.id).where(
+                TradeDoc.tenant_id == tenant_id,
+                TradeDoc.doc_no == candidate,
+            ).limit(1)
+        )).scalar_one_or_none()
+        if exists is None:
+            return candidate
+    return build_number(doc_type, customer) + "-X"
 
 
 async def _doc_no_editable(db, tenant_id: str, d: TradeDoc) -> bool:
@@ -383,7 +402,8 @@ async def create_trade_doc(
     customer = await resolve_customer_for_doc(db, tenant_id, body.customer_id, auth)
 
     d = TradeDoc(
-        tenant_id=tenant_id, doc_no=await next_doc_no(db, tenant_id, doc_type),
+        tenant_id=tenant_id,
+        doc_no=await _next_doc_no_for_customer(db, tenant_id, doc_type, customer),
         doc_type=doc_type, order_id=order_id,
         customer_id=customer.id if customer is not None else None,
         status="draft", currency=currency, total_amount=total_amount,

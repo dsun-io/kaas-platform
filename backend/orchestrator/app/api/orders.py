@@ -35,8 +35,8 @@ from app.domain.enums import (
     validate_enum, ORDER_STATUS, SCHEDULE_TYPE, SCHEDULE_STATUS, CURRENCY, OWNER_SCOPE,
 )
 from app.api.ws_common import (
-    tenant_id_of, scope_filter, check_write_access, next_doc_no, lock_fx_rate,
-    resolve_customer_for_doc,
+    tenant_id_of, scope_filter, check_write_access, next_doc_no,
+    next_number_for_customer, lock_fx_rate, resolve_customer_for_doc,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["orders"])
@@ -291,7 +291,9 @@ async def create_order(
         return value
 
     o = Order(
-        tenant_id=tenant_id, order_no=await next_doc_no(db, tenant_id, "order"),
+        tenant_id=tenant_id,
+        order_no=await next_number_for_customer(
+            db, tenant_id, "order", Order, Order.order_no, customer),
         customer_id=customer.id if customer is not None else None,
         # 客户名快照：未显式传时按客户档案自动填（开单当时的客户名）
         customer_name=customer_name or (customer.name if customer is not None else None),

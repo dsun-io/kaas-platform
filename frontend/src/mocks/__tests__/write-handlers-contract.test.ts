@@ -189,7 +189,7 @@ describe("POST /api/v1/customers/:id/inquiries ← page.tsx:277-297（InquiryFor
     expect(inq.customer_id).toBe(2);
     expect(inq.channel).toBe("Alibaba");
     expect(inq.quantity).toBe(500);
-    expect(inq.status).toBe("open"); // 后端 customers.py:561
+    expect(inq.status).toBe("unquoted"); // 询盘三态：新建默认未报价
 
     const detail = (await (
       await fetch(`${BASE}/customers/2`)

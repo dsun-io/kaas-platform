@@ -1173,7 +1173,7 @@ async def lead_scan_replied(request: Request, user: dict = Depends(_get_current_
                 """INSERT INTO cust_inquiries
                    (tenant_id, customer_id, inquiry_no, lead_id, channel, notes, status,
                     owner_id, owner_scope, team_id)
-                   VALUES ($1,$2,$3,$4,'email',$5,'open',$6,'private',$7)""",
+                   VALUES ($1,$2,$3,$4,'email',$5,'unquoted',$6,'private',$7)""",
                 DEFAULT_TENANT, cust["id"], inquiry_no, lead["id"],
                 f"来自线索池触达回复（lead#{lead['id']}）",
                 lead["owner_id"] or str(user["id"]), acting_team)

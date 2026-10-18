@@ -6,8 +6,11 @@
 """
 from fastapi import HTTPException
 
-# ── 询盘状态（§10.1 状态机）─────────────────────────────────────────────────
-INQUIRY_STATUS = ("open", "quoted", "won", "lost")
+# ── 询盘状态（2026-10-18 用户口径：未报价 / 已报价 / 已关闭）──────────────
+#   unquoted：新建默认；
+#   quoted：生成报价单时自动推进；
+#   closed：仅手动切换（关闭后不再被报价事件自动改回）。
+INQUIRY_STATUS = ("unquoted", "quoted", "closed")
 
 # ── 客户阶段（2026-10-18 用户口径）───────────────────────────────────────────
 # 只有三种：活跃 / 沉寂 / 已下单。
@@ -26,7 +29,7 @@ ORDER_STATUS = ("pending", "confirmed", "producing", "shipped", "completed", "ca
 SHIPMENT_STATUS = ("booking", "in_transit", "arrived", "customs", "delivered")
 
 # ── 询盘渠道 ─────────────────────────────────────────────────────────────────
-INQUIRY_CHANNEL = ("email", "whatsapp", "alibaba", "expo", "website", "other")
+INQUIRY_CHANNEL = ("email", "whatsapp", "alibaba", "expo", "website", "quote", "other")
 
 # ── 单证类型（§6.3 单证类型×生成阶段）────────────────────────────────────────
 # 必须与前端模板清单（frontend/src/lib/trade-doc/manifest.json）逐项一致：

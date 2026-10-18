@@ -55,7 +55,11 @@ from main import (  # noqa: E402
     db as _db,
 )
 from dbjson import row_to_dict as _row_to_dict
-from kaas_common.workstation.number_rules import NumberError, normalize_number  # noqa: E402
+from kaas_common.workstation.number_rules import (  # noqa: E402
+    NumberError,
+    build_number,
+    normalize_number,
+)
 
 # ── 报价引擎：**惰性**导入（启动 CPU 是这台 Worker 的硬约束）──────────────────
 # 为什么不写成模块级 import：
@@ -1703,6 +1707,61 @@ async def _sync_quotation_doc_items(conn, tenant: str, quote_id: int, items: lis
         tenant, doc["id"], total)
 
 
+async def _next_customer_no(conn, doc_type: str, table: str,
+                            customer: dict) -> str:
+    """编号：`类型-国家-客户-时间戳`（同秒冲突加后缀）。"""
+    col = {"quote_orders": "quote_no", "trade_docs": "doc_no",
+           "cust_inquiries": "inquiry_no"}.get(table, "doc_no")
+    for suffix in range(1, 21):
+        candidate = build_number(doc_type, customer, suffix=suffix)
+        exists = await conn.fetchval(
+            f"SELECT 1 FROM {table} WHERE tenant_id=$1 AND {col}=$2 LIMIT 1",
+            DEFAULT_TENANT, candidate,
+        )
+        if not exists:
+            return candidate
+    return build_number(doc_type, customer) + "-X"
+
+
+async def _resolve_or_create_inquiry(
+    conn, tenant: str, customer: dict, user: dict,
+    inquiry_id: Optional[int], items: list, owner_scope: str,
+) -> int:
+    """报价来源询盘：选了就校验并自动「未报价→已报价」；没选就自动建一条。"""
+    if inquiry_id is not None:
+        inq = await conn.fetchrow(
+            "SELECT id, status, customer_id FROM cust_inquiries"
+            " WHERE tenant_id=$1 AND id=$2",
+            tenant, inquiry_id,
+        )
+        if inq is None or str(inq["customer_id"]) != str(customer["id"]):
+            raise HTTPException(status_code=404, detail={
+                "error": "not_found", "code": "INQUIRY_NOT_FOUND",
+                "detail": "所选询盘不存在或不属于该客户",
+            })
+        if inq["status"] == "unquoted":
+            await conn.execute(
+                "UPDATE cust_inquiries SET status='quoted', updated_at=now()"
+                " WHERE tenant_id=$1 AND id=$2",
+                tenant, inquiry_id,
+            )
+        return int(inquiry_id)
+
+    inquiry_no = await _next_customer_no(conn, "inquiry",
+                                         "cust_inquiries", customer)
+    product_name = (items[0].get("product_name") if items else None)
+    row = await conn.fetchrow(
+        """INSERT INTO cust_inquiries
+               (tenant_id, customer_id, inquiry_no, channel, product_name_raw,
+                status, created_by, owner_id, owner_scope, team_id)
+           VALUES ($1,$2,$3,'quote',$4,'quoted',$5,$5,$6,$7)
+           RETURNING id""",
+        tenant, customer["id"], inquiry_no, product_name,
+        str(user["id"]), owner_scope, customer.get("team_id"),
+    )
+    return int(row["id"])
+
+
 async def _ensure_quotation_doc(conn, tenant: str, q: dict, items: list,
                                 request: Request) -> None:
     """保证这张报价有一张对应的报价单（`trade_docs`，`doc_type='quotation'`）。
@@ -1980,7 +2039,6 @@ async def create_quote_order(request: Request, body: _QuoteOrderCreate,
     owner_scope = _validate_enum("owner_scope", body.owner_scope, _OWNER_SCOPE) or "private"
 
     items, total = _build_items(currency, body.items)
-    quote_no = await _next_doc_no(request, "quotation")
     rate, rate_date = await _lock_fx_rate(request, currency)
 
     async with _db.acquire(request) as conn:
@@ -1988,6 +2046,10 @@ async def create_quote_order(request: Request, body: _QuoteOrderCreate,
             # 客户闸门（必填）：复用 main 的**同一道**闸门（存在/未软删/可见/属本团队），
             # 不在这里另写一套校验 —— 另写必然与订单/单证两处漂移。
             customer = await _doc_customer(conn, body.customer_id, user, required=True)
+            quote_no = await _next_customer_no(conn, "quotation", "quote_orders", customer)
+            inquiry_id = await _resolve_or_create_inquiry(
+                conn, tenant, customer, user, body.inquiry_id, items, owner_scope,
+            )
             row = await conn.fetchrow(
                 """INSERT INTO quote_orders
                        (tenant_id, quote_no, customer_id, customer_name, inquiry_id,
@@ -2002,7 +2064,7 @@ async def create_quote_order(request: Request, body: _QuoteOrderCreate,
                 tenant, quote_no, customer["id"],
                 # 客户名快照：显式传入优先，否则按客户档案取（开单当时的名字）
                 body.customer_name or customer.get("name"),
-                body.inquiry_id,
+                inquiry_id,
                 currency, total if items else None, _parse_dt(body.valid_until), body.notes,
                 rate, rate_date, str(user["id"]), owner_scope,
                 body.incoterm, body.payment_terms, body.port_of_loading,

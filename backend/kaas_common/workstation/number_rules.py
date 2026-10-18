@@ -11,13 +11,78 @@
 from __future__ import annotations
 
 import re
-from typing import Optional
+from datetime import datetime
+from typing import Any, Mapping, Optional
 
-__all__ = ["normalize_number", "NumberError"]
+from .inquiry_rules import derive_customer_abbr, normalize_abbr, sanitize_country
 
-# 编号允许：字母/数字/中文 + 常见分隔符；不允许空白与控制字符
-_NUMBER_RE = re.compile(r"^[\w\u4e00-\u9fff][\w\u4e00-\u9fff._/#-]*$", re.UNICODE)
-MAX_LEN = 64
+__all__ = [
+    "normalize_number",
+    "NumberError",
+    "DOC_TYPE_PREFIX",
+    "build_number",
+    "customer_token",
+]
+
+# 类型代码 —— 与前端/单证前缀一致（PI / QUO / CI / PL ...）
+DOC_TYPE_PREFIX = {
+    "quotation": "QUO", "pi": "PI", "contract": "CON", "ci": "CI", "pl": "PL",
+    "shipping_advice": "SA", "draft": "DR", "beneficiary_cert": "BEN",
+    "non_wood_packing": "NWP", "weight_list": "WL", "quality_cert": "QC",
+    "manufacturer_cert": "MC", "bl": "BL", "co": "CO", "insurance": "INS",
+    "customs_declaration": "CD", "fumigation_cert": "FUM",
+    "other": "DOC", "order": "ORD", "shipment": "SHP",
+    "inquiry": "INQ",
+}
+
+_TOKEN_RE = re.compile(r"[^A-Z0-9]")
+MAX_CUSTOMER_TOKEN = 8
+
+
+def customer_token(customer: Any) -> str:
+    """从客户档案生成编号里的客户段：显式缩写 > 拉丁词首 > C{id}。"""
+    if customer is None:
+        return "C"
+    if isinstance(customer, Mapping):
+        get = customer.get
+    else:
+        def get(key, default=None):
+            return getattr(customer, key, default)
+    abbr = normalize_abbr(get("abbr"))
+    if abbr:
+        return abbr
+    token = derive_customer_abbr(
+        get("name") or get("company_name"), get("id") or get("customer_id"),
+    )
+    token = _TOKEN_RE.sub("", str(token).upper())
+    return (token or "C")[:MAX_CUSTOMER_TOKEN]
+
+
+def build_number(
+    doc_type: str,
+    customer: Any = None,
+    created_at: Optional[datetime] = None,
+    *,
+    suffix: int = 0,
+) -> str:
+    """统一编号：`类型-国家-客户-时间戳`。
+
+    例：`PI-US-TIM-20261018193045`
+      · 类型：`DOC_TYPE_PREFIX`（PI/QUO/CI/INQ/ORD/SHP…）
+      · 国家：客户档案 country 的 ISO2（空/不合法 → `XX`）
+      · 客户：客户缩写 > 拉丁词首（最多 8 位）> `C{id}`
+      · 时间戳：本地时间 yyyyMMddHHmmss；同秒冲突由调用方用 `-2/-3` 重试
+    """
+    prefix = DOC_TYPE_PREFIX.get(doc_type, doc_type.upper()[:3])
+    country = "XX"
+    if customer is not None:
+        country = sanitize_country(
+            customer.get("country") if isinstance(customer, Mapping)
+            else getattr(customer, "country", None)
+        )
+    ts = (created_at or datetime.now()).strftime("%Y%m%d%H%M%S")
+    base = f"{prefix}-{country}-{customer_token(customer)}-{ts}"
+    return base if suffix <= 1 else f"{base}-{suffix}"
 
 
 class NumberError(ValueError):

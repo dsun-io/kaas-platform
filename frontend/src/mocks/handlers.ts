@@ -180,7 +180,7 @@ let docsStore: Array<Record<string, unknown> & { id: number }> = [];
 
 /** 枚举真源 = backend/orchestrator/app/domain/enums.py（值逐字照搬）。 */
 const ENUMS_MOCK: Record<string, string[]> = {
-  inquiry_status: ["open", "quoted", "won", "lost"],
+  inquiry_status: ["unquoted", "quoted", "closed"],
   customer_stage: ["active", "inactive", "ordered"],
   quote_status: ["draft", "sent", "accepted", "rejected", "expired"],
   order_status: [
@@ -214,7 +214,7 @@ const ENUMS_MOCK: Record<string, string[]> = {
   doc_status: ["draft", "issued", "void"],
   currency: ["USD", "CNY", "EUR", "GBP", "JPY", "AUD", "CAD", "HKD"],
   owner_scope: ["private", "tenant"],
-  inquiry_channel: ["email", "whatsapp", "alibaba", "expo", "website", "other"],
+  inquiry_channel: ["email", "whatsapp", "alibaba", "expo", "website", "quote", "other"],
 };
 
 let accountsStore: MockAccount[] = [
@@ -968,7 +968,7 @@ export const handlers = [
   //
   //   ⚠️ 已登记的前端/后端不一致（task-6 要求 2）：
   //   后端 `validate_enum("inquiry_channel", ...)`（customers.py:553）要求渠道 ∈
-  //   `("email","whatsapp","alibaba","expo","website","other")` 且**大小写敏感**
+  //   `("email","whatsapp","alibaba","expo","website","quote","other")` 且**大小写敏感**
   //   （enums.py:25 + enums.py:90），而消费方 InquiryForm 是**自由文本输入**、
   //   placeholder 还写着「渠道（Alibaba / Expo / Web）」（page.tsx:302-306）——
   //   用户照着提示填 "Alibaba" 在 real 模式会被 422 INVALID_ENUM。
@@ -992,7 +992,7 @@ export const handlers = [
           : Number(rawQty),
       quantity_unit: optStr(body.quantity_unit),
       application: optStr(body.application),
-      status: "open",
+      status: "unquoted",
       created_at: at,
     };
     inquiriesOf(customer.id).push(inquiry);
