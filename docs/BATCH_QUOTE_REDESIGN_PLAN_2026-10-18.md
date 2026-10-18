@@ -95,9 +95,12 @@
 - ✅ 报价生效联动：生成后续单证后同询盘其他报价自动 `closed`；
 - ✅ B3/B4 前端批量页：多客户勾选 → 询盘勾选 → 统一产品/规格/成本/件数 →
   逐询盘算价并生成报价单；结果展示成功/失败与报价单号；
-- ✅ 真实 UI e2e：BatchUITest 两个询盘 → 成功 2 张
+- ✅ 真实 UI e2e（手动 Playwright）：BatchUITest 两个询盘 → 成功 2 张
   `QUO-US-BUT-...` / `QUO-US-BUT-...-2`；
-- ⏳ B5 独立 e2e 用例归档；B6 旧 CSV 面板下线（需确认）——当前 `bulk` tab
+- ✅ 询盘关闭/重开 UI 回归：客户详情 → 询盘页签，「关闭询盘」→ 已关闭 →
+  「重新打开询盘」→ 未报价，真实 UI 通过；
+- ⏳ B5 固化成仓库内 Playwright spec（当前为真实 UI 手动 e2e，mock e2e 需补
+  批量页所需 fixtures）；B6 旧 CSV 面板下线（需确认）——当前 `bulk` tab
   已切换为批量页，旧 `BulkImportPanel` 文件保留未挂载。
 
 ## 4. 前端拆解
