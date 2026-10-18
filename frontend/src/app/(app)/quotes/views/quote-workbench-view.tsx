@@ -177,6 +177,8 @@ export function QuoteWorkbenchView() {
   const [feeInputs, setFeeInputs] = useState<Record<string, string>>({});
   const [freightFrom, setFreightFrom] = useState("");
   const [freightTo, setFreightTo] = useState("");
+  // 船公司（CFR/CIF/DAP/DDP 报价时必选；值格式「中文名-英文缩写」）
+  const [carrier, setCarrier] = useState("");
   /** 整单报价信号：递增触发所有行重算 */
   const [calcSignal, setCalcSignal] = useState(0);
   const [addOpen, setAddOpen] = useState(false);
@@ -389,6 +391,7 @@ export function QuoteWorkbenchView() {
     incoterm: effectiveQuoteAs,
     freight_valid_from: freightFrom || null,
     freight_valid_to: freightTo || null,
+    carrier: carrier || null,
     // 税务档案只记录来源；实际税率仍是下面快照里的显式值
     tax_archive_id: selectedTaxArchive?.id ?? null,
     tax_archive_code: selectedTaxArchive?.code ?? null,
@@ -647,6 +650,8 @@ export function QuoteWorkbenchView() {
         termsQuery={termsQuery}
         quoteAs={effectiveQuoteAs}
         setQuoteAs={setQuoteAs}
+        carrier={carrier}
+        setCarrier={setCarrier}
         feeInputs={feeInputs}
         setFeeInputs={setFeeInputs}
         freightFrom={freightFrom}
