@@ -24,7 +24,7 @@ from urllib.parse import urljoin, urlparse
 from fastapi import Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
 
-from main import app, _acquire, _get_current_user, DEFAULT_TENANT
+from main import app, _acquire, _get_current_user, DEFAULT_TENANT, _next_inquiry_no
 
 # jsonb 列解析的唯一真源在 dbjson.py（历史上本文件与 main.py 各存一份，
 # 且签名不一致，新增表时容易漏改）。调用处均传入表名，故此处直接别名。
@@ -1157,22 +1157,24 @@ async def lead_scan_replied(request: Request, user: dict = Depends(_get_current_
             # 若操作者没有团队：team_id 留空 + private，只有他本人和管理员可见（不泄露）。
             acting_team = user.get("team_id")
             cust = await conn.fetchrow(
-                "SELECT id FROM customers WHERE tenant_id=$1 AND name=$2"
+                "SELECT id, name, country, abbr FROM customers WHERE tenant_id=$1 AND name=$2"
                 " AND team_id IS NOT DISTINCT FROM $3",
                 DEFAULT_TENANT, lead["company_name"], acting_team)
             if cust is None:
                 cust = await conn.fetchrow(
                     """INSERT INTO customers
                        (tenant_id, name, country, address, stage, owner_id, owner_scope, team_id)
-                       VALUES ($1,$2,$3,$4,'inquiry',$5,'private',$6) RETURNING id""",
+                       VALUES ($1,$2,$3,$4,'active',$5,'private',$6)
+                       RETURNING id, name, country, abbr""",
                     DEFAULT_TENANT, lead["company_name"], lead["country"],
                     lead["address"], lead["owner_id"] or str(user["id"]), acting_team)
+            inquiry_no = await _next_inquiry_no(conn, dict(cust))
             await conn.execute(
                 """INSERT INTO cust_inquiries
-                   (tenant_id, customer_id, lead_id, channel, notes, status,
+                   (tenant_id, customer_id, inquiry_no, lead_id, channel, notes, status,
                     owner_id, owner_scope, team_id)
-                   VALUES ($1,$2,$3,'email',$4,'open',$5,'private',$6)""",
-                DEFAULT_TENANT, cust["id"], lead["id"],
+                   VALUES ($1,$2,$3,$4,'email',$5,'open',$6,'private',$7)""",
+                DEFAULT_TENANT, cust["id"], inquiry_no, lead["id"],
                 f"来自线索池触达回复（lead#{lead['id']}）",
                 lead["owner_id"] or str(user["id"]), acting_team)
             await conn.execute(

@@ -107,7 +107,7 @@ LIST_FIELDS = frozenset({
     "axes", "variants", "derived",
     "piece_metrics", "order_metrics", "columns", "invariants",
     "params", "piece_inputs", "numeric_inputs", "pricing_key",
-    "notes", "hs_codes",
+    "notes", "hs_codes", "packaging",
 })
 
 #: **标量列表**字段（元素是字符串，不是带 `key`/`name` 的对象）——

@@ -34,6 +34,7 @@ from app.db.workstation_models import TenantCompanySeal
 from app.core.auth import AuthContext, get_auth_context
 from app.api.ws_common import tenant_id_of
 from kaas_common.trade_doc import PngError, validate_seal_image
+from app.api.company_profile import require_team_admin
 
 router = APIRouter(prefix="/api/v1", tags=["company-seals"])
 
@@ -118,7 +119,8 @@ async def upload_seal(
     db: AsyncSession = Depends(get_db_session),
 ):
     """上传公章：任意常见格式 → 统一转 PNG（白底透明 + 裁白边）落库。"""
-    _require_internal(auth)
+    # 用户 2026-10-18：公章归企业抬头设置区，只有团队管理员可改。
+    await require_team_admin(db, auth)
     tenant_id = tenant_id_of(auth)
 
     name = (name or "").strip()
@@ -204,7 +206,6 @@ async def list_seals(
     db: AsyncSession = Depends(get_db_session),
 ):
     """列表只回元数据 + 预览 URL，不回裸字节（取图走专用端点，便于缓存与鉴权）。"""
-    _require_internal(auth)
     tenant_id = tenant_id_of(auth)
     rows = (await db.execute(
         select(TenantCompanySeal)
@@ -221,7 +222,6 @@ async def get_seal_image(
     db: AsyncSession = Depends(get_db_session),
 ):
     """回 PNG 字节。tenant 校验在 _get_or_404 内 —— 越权看图=404。"""
-    _require_internal(auth)
     tenant_id = tenant_id_of(auth)
     row = await _get_or_404(db, tenant_id, seal_id)
     return Response(
@@ -245,7 +245,7 @@ async def set_default_seal(
     db: AsyncSession = Depends(get_db_session),
 ):
     """设为默认章（单证渲染时自动盖默认章）。事务内先清后设，保证唯一。"""
-    _require_internal(auth)
+    await require_team_admin(db, auth)
     tenant_id = tenant_id_of(auth)
     row = await _get_or_404(db, tenant_id, seal_id)
 
@@ -267,7 +267,7 @@ async def delete_seal(
     db: AsyncSession = Depends(get_db_session),
 ):
     """删除公章。默认章不允许直接删（先转移默认，避免单证突然没章可盖）。"""
-    _require_internal(auth)
+    await require_team_admin(db, auth)
     tenant_id = tenant_id_of(auth)
     row = await _get_or_404(db, tenant_id, seal_id)
 

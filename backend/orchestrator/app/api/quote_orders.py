@@ -234,6 +234,12 @@ def _parse_dt(value: Optional[str]):
     return datetime.fromisoformat(value) if value else None
 
 
+def _date_or_none(value: Optional[str]):
+    """ISO 字符串 → date（DATE 列用；空 → None）。"""
+    dt = _parse_dt(value)
+    return dt.date() if dt is not None else None
+
+
 async def _record_quote_issued(db: AsyncSession, q: QuoteOrder, auth: AuthContext) -> None:
     """报价单签发 → 向「报价记录」台账入账（**一张单一条**）。
 
@@ -366,7 +372,6 @@ async def create_quote_order(
     # 空单也允许创建（工作台"先建单、再逐行加产品"的自然用法），
     # 但合计留空而不是 0 —— 0 会被当成"报过价、价是 0"。
     rate, rate_date = await lock_fx_rate(db, currency)
-
     q = QuoteOrder(
         tenant_id=tenant_id, quote_no=await next_doc_no(db, tenant_id, "quotation"),
         customer_id=customer.id if customer is not None else None,
@@ -387,12 +392,19 @@ async def create_quote_order(
         port_of_destination=body.port_of_destination,
         shipping_marks=body.shipping_marks,
         country_of_origin=body.country_of_origin,
+        freight_valid_from=_date_or_none(body.freight_valid_from),
+        freight_valid_to=_date_or_none(body.freight_valid_to),
     )
     db.add(q)
     await db.flush()  # 取 q.id 挂行项
     for it in items:
         it.quote_order_id = q.id
         db.add(it)
+    # 成本历史：本单手动改过的成本落一条（需求 11）
+    from app.api.product_costs import record_cost_history
+    await record_cost_history(
+        db, tenant_id, q.team_id, items, q.id, str(auth.user_id),
+    )
     await db.commit()
     await db.refresh(q)
     return _row_to_quote(q, len(items))
@@ -516,6 +528,10 @@ async def update_quote_order(
             setattr(q, field, value)
     if body.valid_until is not None:
         q.valid_until = _parse_dt(body.valid_until)
+    if body.freight_valid_from is not None:
+        q.freight_valid_from = _date_or_none(body.freight_valid_from)
+    if body.freight_valid_to is not None:
+        q.freight_valid_to = _date_or_none(body.freight_valid_to)
 
     # 签发与入账必须**同一个事务**：
     # 先 commit 再入账的话，入账失败会留下"状态已 sent、台账里没有"的不一致 ——
@@ -563,6 +579,12 @@ async def replace_quote_items(
     for it in items:
         it.quote_order_id = q.id
         db.add(it)
+    await db.flush()
+    # 成本历史：行项整批替换后，把本单手动改过的成本落一条（需求 11）
+    from app.api.product_costs import record_cost_history
+    await record_cost_history(
+        db, tenant_id, q.team_id, items, q.id, str(auth.user_id),
+    )
     # 空行集合 → 合计留空（不是 0）
     q.total_amount = total if items else None
     await db.commit()

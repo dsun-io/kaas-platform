@@ -202,6 +202,20 @@ async def delete_tenant_product(
         raise HTTPException(status_code=403, detail={"error": "forbidden", "message": "系统级产品不可删除"})
     if row.tenant_id != (auth.tenant_id or "default"):
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "PRODUCT_NOT_FOUND"})
+    # 需求 16（用户决策）：删除产品时**一并清理**基础信息、图片与工位绑定。
+    # 历史报价/单证存的是 spec_snapshot 快照，不受影响。
+    from sqlalchemy import text
+    tenant_id = auth.tenant_id or "default"
+    await db.execute(text(
+        "UPDATE file_objects SET is_current=false, is_primary=false, updated_at=now()"
+        " WHERE tenant_id=:t AND owner_type='product' AND owner_id=:k"
+    ), {"t": tenant_id, "k": row.product_key})
+    await db.execute(text(
+        "DELETE FROM product_profiles WHERE tenant_id=:t AND product_key=:k"
+    ), {"t": tenant_id, "k": row.product_key})
+    await db.execute(text(
+        "DELETE FROM tenant_workstation_products WHERE tenant_id=:t AND product_key=:k"
+    ), {"t": tenant_id, "k": row.product_key})
     await db.delete(row)
     await db.commit()
     return None

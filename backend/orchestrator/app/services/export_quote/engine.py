@@ -33,6 +33,74 @@ _IDENT = re.compile(r"^[A-Za-z_\u4e00-\u9fff][A-Za-z0-9_\u4e00-\u9fff]*$")
 DEFAULT_VALIDITY_DAYS = 7
 
 
+def _pick_packaging(product: ProductSpec, packaging_id: str) -> dict | None:
+    """选本单包装：显式 id > is_default > 最早创建 > 第一条。
+
+    产品没有配置包装 → None（包装费 0，行为与改造前一致）。
+    """
+    items = [p for p in (product.packaging or []) if isinstance(p, Mapping)]
+    if not items:
+        return None
+    wanted = str(packaging_id or "").strip()
+    if wanted:
+        for item in items:
+            if str(item.get("id") or "") == wanted:
+                return dict(item)
+        raise EngineError(
+            f"packaging_id={wanted!r} 不属于产品 {product.key}；"
+            f"可选: {', '.join(str(p.get('id')) for p in items)}"
+        )
+    for item in items:
+        if item.get("is_default"):
+            return dict(item)
+    with_created = [p for p in items if p.get("created_at")]
+    if with_created:
+        return dict(min(with_created, key=lambda p: str(p.get("created_at"))))
+    return dict(items[0])
+
+
+def _packaging_fee(product: ProductSpec, packaging_id: str, scope: Mapping[str, Any],
+                   mode=DECIMAL) -> tuple[Any, dict | None, dict | None]:
+    """按当前规格解析包装费（元/卷）。返回 (fee, packaging, matched_range)。
+
+    区间规则：`ranges: [{field, min, max, amount}]`，左闭右开；
+    未命中任何区间时用 `amount` 兜底；同时命中多条 → EngineError（配置冲突）。
+    """
+    pkg = _pick_packaging(product, packaging_id)
+    if pkg is None:
+        return mode.convert(0), None, None
+    matched = None
+    for rng in (pkg.get("ranges") or []):
+        if not isinstance(rng, Mapping):
+            continue
+        field = rng.get("field")
+        if not field or field not in scope:
+            continue
+        try:
+            value = float(scope[field])
+        except (TypeError, ValueError):
+            continue
+        low, high = rng.get("min"), rng.get("max")
+        if low is not None and value < float(low):
+            continue
+        if high is not None and value >= float(high):
+            continue
+        if matched is not None:
+            raise EngineError(
+                f"包装「{pkg.get('name') or pkg.get('id')}」的收费区间重叠："
+                f"字段 {field}={value} 同时命中多条规则，请修改产品包装配置"
+            )
+        matched = rng
+    raw_amount = matched.get("amount") if matched else pkg.get("amount", 0)
+    try:
+        fee = mode.convert(raw_amount or 0)
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise EngineError(f"包装费金额不合法: {raw_amount!r}") from exc
+    if fee < 0:
+        raise EngineError(f"包装费不能为负: {raw_amount!r}")
+    return fee, pkg, matched
+
+
 class EngineError(ValueError):
     """引擎无法完成计算。"""
 
@@ -66,6 +134,8 @@ class QuoteRequest:
     # 由 API 层按「当前客户 + 产品定价键」查库后注入，引擎本身不碰数据库。
     # 命中则用表里的成本；未命中回退产品定义的内联成本值（老报价行为不变）。
     cost_table: Mapping[str, Any] = field(default_factory=dict)
+    # 本单选用的包装（产品 packaging[].id）；缺省 = 默认包装/最早创建的包装
+    packaging_id: str = ""
     currency: str = "CNY"
     quote_currency: str = "USD"
     customer_id: str = ""
@@ -729,6 +799,13 @@ def build(request: QuoteRequest, mode=DECIMAL) -> QuoteResult:
                 cost_pretax = raw_cost
             else:
                 raise EngineError(f"cost_basis 只能是 pretax 或 incl_tax（当前 {product.cost_basis}）")
+
+            # 包装费：按当前规格解析（元/卷），计入税前成本后再算利润/税。
+            pkg_fee, _pkg, _pkg_range = _packaging_fee(
+                product, request.packaging_id, {**scope, **derived}, mode,
+            )
+            if pkg_fee:
+                cost_pretax = cost_pretax + pkg_fee
 
             price = policy.breakdown(cost_pretax, unit_count=1, mode=mode)
 

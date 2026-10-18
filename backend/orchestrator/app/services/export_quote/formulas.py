@@ -250,6 +250,10 @@ def describe_product(product: ProductSpec, with_columns: bool = False) -> dict:
         "name_en": product.name_en,
         "category_code": product.category_code,
         "hs_codes": list(product.hs_codes),
+        # 产品级默认利润/杂税（报价页首次打开时带入；本单可覆盖）
+        "profit_mode": product.profit_mode,
+        "profit_value": product.profit_value,
+        "misc_fee_rate": product.misc_fee_rate,
         "cost": {
             "field": product.cost_field,
             "basis": product.cost_basis,
@@ -261,6 +265,9 @@ def describe_product(product: ProductSpec, with_columns: bool = False) -> dict:
         },
         "space": describe_space(product),
         "piece_inputs": describe_piece_inputs(product),
+        # 包装方案（需求 20）：[{id,name,method,is_default,created_at,mode,amount,ranges}]
+        # 界面据此渲染包装选择/默认标识，并把 packaging_id 随报价请求下发。
+        "packaging": list(product.packaging or []),
         # 自由数值规格参数：界面据此渲染输入框（不是下拉）。
         # 尺寸类没有"可选值"，所以既有取值的自由度，也必须有明确的单位口径。
         "numeric_inputs": [

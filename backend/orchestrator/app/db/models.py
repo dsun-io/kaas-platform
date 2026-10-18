@@ -552,6 +552,8 @@ class Customer(Base):
     tenant_id = Column(Text, nullable=False)
     code = Column(Text, nullable=True, unique=True)  # 兼容现有 Text customer_id (如 "lianjia")
     name = Column(Text, nullable=False)
+    # 客户缩写（2-6 位大写字母，询盘编号用；可空，空时按客户名/客户 id 兜底）
+    abbr = Column(Text, nullable=True)
     plan = Column(Text, nullable=False, default="free")  # 'free' | 'pro' | 'enterprise' | 'internal'
     status = Column(Text, nullable=False, default="active")
     # ── 阶段2 客户表合并：吸收 cust_customers 的档案列（2026-09-22）──

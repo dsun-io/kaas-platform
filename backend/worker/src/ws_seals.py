@@ -115,7 +115,8 @@ async def upload_seal(
     user: dict = Depends(_get_current_user),
 ):
     """上传公章：前端 Canvas 已归一化为 PNG，后端纯校验 + 落库。"""
-    _require_internal(user)
+    # 用户 2026-10-18：公章归企业抬头，只有团队管理员可改。
+    await _main._require_team_admin(request, user)
     tenant_id = _tenant_of(user)
 
     name = (name or "").strip()
@@ -187,7 +188,6 @@ async def list_seals(
     user: dict = Depends(_get_current_user),
 ):
     """列表只回元数据 + 预览 URL，不回裸字节（取图走专用端点，便于缓存与鉴权）。"""
-    _require_internal(user)
     tenant_id = _tenant_of(user)
     async with _acquire(request) as conn:
         rows = await conn.fetch(
@@ -205,7 +205,6 @@ async def get_seal_image(
     user: dict = Depends(_get_current_user),
 ):
     """回 PNG 字节。tenant 校验在 _get_or_404 内 —— 越权看图 = 404。"""
-    _require_internal(user)
     tenant_id = _tenant_of(user)
     async with _acquire(request) as conn:
         row = await _get_or_404(conn, tenant_id, seal_id)
@@ -226,7 +225,7 @@ async def set_default_seal(
     user: dict = Depends(_get_current_user),
 ):
     """设为默认章（单证渲染时自动盖默认章）。事务内先清后设，保证唯一。"""
-    _require_internal(user)
+    await _main._require_team_admin(request, user)
     tenant_id = _tenant_of(user)
     async with _acquire(request) as conn:
         async with conn.transaction():
@@ -248,7 +247,7 @@ async def delete_seal(
     user: dict = Depends(_get_current_user),
 ):
     """删除公章。默认章不允许直接删（先转移默认，避免单证突然没章可盖）。"""
-    _require_internal(user)
+    await _main._require_team_admin(request, user)
     tenant_id = _tenant_of(user)
     async with _acquire(request) as conn:
         row = await _get_or_404(conn, tenant_id, seal_id)

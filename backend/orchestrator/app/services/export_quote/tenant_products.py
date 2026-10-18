@@ -60,6 +60,7 @@ def spec_from_dict(data: dict) -> ProductSpec:
         profit_mode=data.get("profit_mode", "margin_on_price"),
         profit_value=data.get("profit_value", 0.06),
         misc_fee_rate=data.get("misc_fee_rate", 0.03),
+        packaging=data.get("packaging") or [],
     )
 
 

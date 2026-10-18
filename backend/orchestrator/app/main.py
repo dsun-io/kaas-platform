@@ -127,6 +127,7 @@ from app.api.teams import router as teams_router
 # 判定真源 = kaas_common/workstation/subscriptions.py，本路由只做 HTTP 适配。
 from app.api.workstations import router as workstations_router
 from app.api.customer_records import router as customer_records_router
+from app.api.product_costs import router as product_costs_router
 
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -163,6 +164,7 @@ app.include_router(shipments_router)
 app.include_router(trade_docs_router)
 app.include_router(company_profile_router)
 app.include_router(company_seals_router)
+app.include_router(product_costs_router)
 app.include_router(fx_rates_router)
 app.include_router(actual_costs_router)
 app.include_router(external_docs_router)

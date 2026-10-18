@@ -217,9 +217,12 @@ def test_tenant_products_create_rejects_invalid_spec():
 
 # ── 公章：权限 / 校验 / 首章默认 ────────────────────────────────────────────
 
-def test_seal_management_is_internal_only():
+def test_seal_management_is_team_admin_only():
+    """2026-10-18 用户口径：公章归企业抬头，只有团队管理员可**改**。
+
+    读取（列表/看图）允许团队成员；写操作（上传/设默认/删除）拒绝非团队管理员。
+    """
     for method, path, kwargs in (
-        ("get", "/api/v1/tenant/company-seals", {}),
         ("post", "/api/v1/tenant/company-seals", {"files": {"file": ("s.png", PNG_120x80, "image/png")}, "data": {"name": "公章"}}),
         ("put", "/api/v1/tenant/company-seals/1/default", {}),
         ("delete", "/api/v1/tenant/company-seals/1", {}),
@@ -228,8 +231,15 @@ def test_seal_management_is_internal_only():
         with _patched(conn, user=CUSTOMER):
             resp = getattr(client, method)(path, **kwargs)
         assert resp.status_code == 403, f"{method.upper()} {path}"
-        assert resp.json()["detail"]["code"] == "INTERNAL_ONLY"
+        assert resp.json()["detail"]["code"] == "TEAM_ADMIN_REQUIRED"
         assert conn.calls == []          # 拒绝在建连与查库之前
+
+    # 列表：成员可读（本项目客户账号看不到系统设置入口，但接口层允许只读）
+    conn = _FakeConn(fetch=[[]])
+    with _patched(conn, user=CUSTOMER):
+        resp = client.get("/api/v1/tenant/company-seals")
+    assert resp.status_code == 200
+    assert resp.json()["items"] == []
 
 
 def test_seal_upload_first_seal_becomes_default():

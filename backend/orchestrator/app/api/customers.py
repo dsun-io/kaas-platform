@@ -19,6 +19,7 @@
   前端二次确认后带 close_inquiry_ids / close_all_open 重试
 """
 from typing import Optional
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -39,6 +40,10 @@ from kaas_common.workstation.customer_rules import (
     OPEN_ORDER_STATUSES,
     derive_customer_stage,
     validate_manual_stage,
+)
+from kaas_common.workstation.inquiry_rules import (
+    build_inquiry_no,
+    normalize_abbr,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["customers"])
@@ -129,6 +134,42 @@ def _row_to_inquiry(i: CustInquiry) -> dict:
     return row_to_inquiry(i)
 
 
+def _parse_abbr(raw: Optional[str]) -> Optional[str]:
+    """客户缩写：空 → None；非空但不合法（2-6 位字母数字）→ 422。"""
+    if raw is None or str(raw).strip() == "":
+        return None
+    value = normalize_abbr(raw)
+    if value is None:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "INVALID_CUSTOMER_ABBR",
+            "detail": "客户缩写需为 2-6 位字母/数字（用于询盘编号）",
+        })
+    return value
+
+
+async def _next_inquiry_no(db, tenant_id: str, customer: Customer) -> str:
+    """生成唯一询盘编号 `国家ISO2-客户缩写-yyyyMMddHHmmss`（同秒冲突加后缀）。"""
+    for suffix in range(1, 21):
+        candidate = build_inquiry_no(
+            customer.country, customer.abbr,
+            customer_name=customer.name, customer_id=customer.id,
+            suffix=suffix,
+        )
+        exists = (await db.execute(
+            select(CustInquiry.id).where(
+                CustInquiry.tenant_id == tenant_id,
+                CustInquiry.inquiry_no == candidate,
+            ).limit(1)
+        )).scalar_one_or_none()
+        if exists is None:
+            return candidate
+    # 极端情况下 20 次同秒冲突：用微秒兜底，仍由唯一索引兜底
+    return build_inquiry_no(
+        customer.country, customer.abbr,
+        customer_name=customer.name, customer_id=customer.id,
+    ) + f"-{datetime.now(timezone.utc).strftime('%f')}"
+
+
 async def _log_stage(db, tenant_id, customer_id, from_stage, to_stage, changed_by, reason):
     db.add(CustStageLog(
         tenant_id=tenant_id, customer_id=customer_id,
@@ -160,6 +201,8 @@ class CustomerCreate(BaseModel):
     contact_name: Optional[str] = None
     contact_phone: Optional[str] = None
     contact_email: Optional[str] = None
+    # 客户缩写（询盘编号用）：2-6 位字母/数字；可空
+    abbr: Optional[str] = None
     country: Optional[str] = None
     address: Optional[str] = None
     default_port: Optional[str] = None
@@ -172,6 +215,7 @@ class CustomerCreate(BaseModel):
 
 class CustomerUpdate(BaseModel):
     company_name: Optional[str] = None
+    abbr: Optional[str] = None
     country: Optional[str] = None
     address: Optional[str] = None
     default_port: Optional[str] = None
@@ -294,6 +338,7 @@ async def create_customer(
     owner_scope = validate_enum("owner_scope", body.owner_scope) or "private"
     c = Customer(
         tenant_id=tenant_id, name=company_name or contact_name,
+        abbr=_parse_abbr(body.abbr),
         country=body.country, address=body.address,
         default_port=body.default_port, credit_level=body.credit_level,
         stage=stage, notes=body.notes,
@@ -378,6 +423,8 @@ async def update_customer(
     data = body.model_dump(exclude_unset=True)
     if "owner_scope" in data:
         validate_enum("owner_scope", data["owner_scope"])
+    if "abbr" in data:
+        data["abbr"] = _parse_abbr(data["abbr"])
     for k, v in data.items():
         # `company_name` 在库里叫 `name`（CustomerCreate 也是显式映射的）。
         # 直接 setattr(c, "company_name", v) 只会挂一个**未映射的实例属性**，
@@ -623,8 +670,10 @@ async def create_inquiry(
 
     channel = validate_enum("inquiry_channel", body.channel)
     owner_scope = validate_enum("owner_scope", body.owner_scope) or "private"
+    inquiry_no = await _next_inquiry_no(db, tenant_id, c)
     inq = CustInquiry(
         tenant_id=tenant_id, customer_id=customer_id, channel=channel,
+        inquiry_no=inquiry_no,
         lead_id=body.lead_id,
         category_id=body.category_id, product_name_raw=body.product_name_raw,
         quantity=body.quantity, quantity_unit=body.quantity_unit,

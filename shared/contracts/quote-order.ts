@@ -47,6 +47,8 @@ export const QuoteOrderItemInSchema = z.object({
   /** 行项币种；留空则继承单头币种 */
   currency: z.string().nullable().optional(),
   line_amount: z.number().nullable().optional(),
+  /** 手工成本覆盖（元/kg）；有值时保存并写入成本历史（需求 11） */
+  cost_override: z.number().nullable().optional(),
   /** 决定单证上的行序 */
   sort_order: z.number().int().default(0),
   /**
@@ -73,6 +75,9 @@ export const TradeTermsSchema = z.object({
   port_of_destination: z.string().nullable().optional(),
   shipping_marks: z.string().nullable().optional(),
   country_of_origin: z.string().nullable().optional(),
+  /** 海运费有效期（报价单级，整单一份；需求 7） */
+  freight_valid_from: z.string().nullable().optional(),
+  freight_valid_to: z.string().nullable().optional(),
 });
 export type TradeTerms = z.infer<typeof TradeTermsSchema>;
 

@@ -35,6 +35,8 @@ def row_to_customer(c: Any, display_stage: Optional[str] = None) -> dict:
     return {
         "id": g("id"),
         "company_name": g("name"),
+        # 客户缩写（询盘编号用；可空）
+        "abbr": g("abbr"),
         "country": g("country"),
         "address": g("address"),
         "default_port": g("default_port"),
@@ -59,6 +61,7 @@ def row_to_inquiry(i: Any) -> dict:
     return {
         "id": g("id"),
         "customer_id": g("customer_id"),
+        "inquiry_no": g("inquiry_no"),
         "lead_id": g("lead_id"),
         "channel": g("channel"),
         "category_id": g("category_id"),

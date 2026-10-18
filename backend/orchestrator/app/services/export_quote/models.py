@@ -236,6 +236,12 @@ class ProductSpec:
     profit_mode: str = "margin_on_price"
     profit_value: Any = 0.06
     misc_fee_rate: Any = 0.03
+    # ── 包装（2026-10-18 需求 20）──
+    # 每项：{id, name, method, is_default, created_at, mode: "per_piece",
+    #        amount, ranges: [{field, min, max, amount}]}
+    # 报价时每个产品只用一种包装；未指定 packaging_id 时用默认，
+    # 未设默认时用最早创建的。包装费按卷计入税前成本。
+    packaging: list = field(default_factory=list)
 
     # ---------- 便捷 ----------
     @property

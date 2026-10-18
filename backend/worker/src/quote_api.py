@@ -362,8 +362,21 @@ async def export_quote_products(request: Request, user: dict = Depends(_get_curr
         except Exception:  # noqa: BLE001 - 单条坏定义不拖垮整个列表
             continue
 
+    # 需求 16：被本团队停用的产品不出现在报价下拉（复用 tenant_workstation_products）
+    disabled_rows = await _db.fetch(
+        request,
+        "SELECT product_key FROM tenant_workstation_products"
+        " WHERE tenant_id=$1 AND workstation='quote' AND is_enabled=false"
+        " AND (team_id IS NULL OR team_id=$2)",
+        tenant, user.get("team_id"),
+        table="tenant_workstation_products",
+    )
+    disabled = {r["product_key"] for r in disabled_rows}
+
     out = []
     for spec in specs.values():
+        if spec.key in disabled:
+            continue
         out.append({
             "key": spec.key,
             "name": spec.name,
@@ -709,6 +722,8 @@ class _CalculateIn(BaseModel):
     terms: Optional[dict] = Field(default=None, description="贸易术语阶梯配置")
     price_inputs: Optional[dict] = Field(default=None, description="当期价格输入（运费等）")
     variant_overrides: Optional[dict] = Field(default=None, description="变体数值覆盖")
+    # 本单选用的包装（产品 packaging[].id）；缺省 = 默认包装/最早创建的包装
+    packaging_id: Optional[str] = None
     spec_rows: Optional[List[dict]] = Field(
         default=None, description="只算这些规格行；不传则展开产品的全部组合")
     constants_override: Optional[dict] = None
@@ -811,6 +826,7 @@ def _assemble_request(body: _CalculateIn, user: dict, cost_table: Optional[dict]
     # 这四项 `make_request_from_config` 不认（它面向报价单配置，不是引擎入参全集）
     req.product = product
     req.cost_table = cost_table or {}
+    req.packaging_id = body.packaging_id or ""
     req.spec_rows = [dict(r) for r in body.spec_rows] if body.spec_rows else None
     req.quote_date = body.quote_date
     return req
@@ -1449,6 +1465,8 @@ class _QuoteItemIn(BaseModel):
     unit_price: Optional[Decimal] = None
     currency: Optional[str] = None
     line_amount: Optional[Decimal] = None
+    # 手工成本覆盖（元/kg）；有值时保存并写入成本历史（需求 11）
+    cost_override: Optional[Decimal] = None
     sort_order: int = 0
     # 内部分解快照（成本/利润）——签发时从算价引擎 internal 视图带来；
     # 仅 internal 账号可读（出口剔除），customer 视角本字段不存在（UNCERTAIN #19）
@@ -1473,6 +1491,9 @@ class _QuoteOrderCreate(BaseModel):
     port_of_destination: Optional[str] = None
     shipping_marks: Optional[str] = None
     country_of_origin: Optional[str] = None
+    # 海运费有效期（需求 7；报价单级）
+    freight_valid_from: Optional[str] = None
+    freight_valid_to: Optional[str] = None
     items: List[_QuoteItemIn] = []
 
 
@@ -1491,6 +1512,8 @@ class _QuoteOrderPatch(BaseModel):
     port_of_destination: Optional[str] = None
     shipping_marks: Optional[str] = None
     country_of_origin: Optional[str] = None
+    freight_valid_from: Optional[str] = None
+    freight_valid_to: Optional[str] = None
 
 
 class _QuoteItemsReplace(BaseModel):
@@ -1563,6 +1586,7 @@ def _build_items(currency: str, rows: List[_QuoteItemIn]):
             "currency": (_validate_enum("currency", row.currency, _CURRENCY)
                          if row.currency else currency),
             "line_amount": line,
+            "cost_override": row.cost_override,
             "sort_order": row.sort_order,
             "cost_breakdown": row.cost_breakdown,
         })
@@ -1576,13 +1600,14 @@ async def _insert_quote_items(conn, tenant: str, quote_order_id: int, items: lis
         await conn.execute(
             """INSERT INTO quote_order_items
                    (tenant_id, quote_order_id, sku_id, product_name, spec_snapshot,
-                    qty, qty_unit, unit_price, currency, line_amount, sort_order,
-                    cost_breakdown)
-               VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12::jsonb)""",
+                    qty, qty_unit, unit_price, currency, line_amount, cost_override,
+                    sort_order, cost_breakdown)
+               VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)""",
             tenant, quote_order_id, it["sku_id"], it["product_name"],
             json.dumps(it["spec_snapshot"]) if it["spec_snapshot"] is not None else None,
             it["qty"], it["qty_unit"], it["unit_price"], it["currency"],
-            it["line_amount"], it["sort_order"],
+            it["line_amount"], it.get("cost_override"),
+            it["sort_order"],
             json.dumps(it["cost_breakdown"]) if it.get("cost_breakdown") is not None else None,
         )
 
@@ -1944,9 +1969,10 @@ async def create_quote_order(request: Request, body: _QuoteOrderCreate,
                         status, currency, total_amount, valid_until, notes,
                         fx_rate, fx_rate_date, created_by, owner_id, owner_scope,
                         incoterm, payment_terms, port_of_loading, port_of_destination,
-                        shipping_marks, country_of_origin, team_id)
+                        shipping_marks, country_of_origin, freight_valid_from, freight_valid_to,
+                        team_id)
                    VALUES ($1,$2,$3,$4,$5,'draft',$6,$7,$8,$9,$10,$11,$12,$12,$13,
-                           $14,$15,$16,$17,$18,$19,$20)
+                           $14,$15,$16,$17,$18,$19,$20,$21,$22)
                    RETURNING *""",
                 tenant, quote_no, customer["id"],
                 # 客户名快照：显式传入优先，否则按客户档案取（开单当时的名字）
@@ -1956,11 +1982,19 @@ async def create_quote_order(request: Request, body: _QuoteOrderCreate,
                 rate, rate_date, str(user["id"]), owner_scope,
                 body.incoterm, body.payment_terms, body.port_of_loading,
                 body.port_of_destination, body.shipping_marks, body.country_of_origin,
+                _parse_dt(body.freight_valid_from).date() if body.freight_valid_from else None,
+                _parse_dt(body.freight_valid_to).date() if body.freight_valid_to else None,
                 # 单据与客户同团队（而不是"创建者的团队"）
                 customer.get("team_id"),
             )
             if items:
                 await _insert_quote_items(conn, tenant, row["id"], items)
+                # 成本历史：本单手动改过的成本落一条（需求 11）
+                from ws_product_costs import record_cost_history
+                await record_cost_history(
+                    conn, tenant, customer.get("team_id"), items, row["id"],
+                    str(user["id"]),
+                )
             # 2026-10-18：客户阶段读时由「开启中的订单」推导，报价变化不再回写客户阶段。
             await _ensure_quotation_doc(conn, tenant, dict(row), items, request)
     return _quote_json(dict(row), len(items))
@@ -2080,6 +2114,12 @@ async def update_quote_order(quote_id: int, request: Request, body: _QuoteOrderP
             if body.currency is not None:
                 params.append(_validate_enum("currency", body.currency, _CURRENCY) or "USD")
                 sets.append(f"currency=${len(params)}")
+            if body.freight_valid_from is not None:
+                params.append(_parse_dt(body.freight_valid_from).date() if body.freight_valid_from else None)
+                sets.append(f"freight_valid_from=${len(params)}")
+            if body.freight_valid_to is not None:
+                params.append(_parse_dt(body.freight_valid_to).date() if body.freight_valid_to else None)
+                sets.append(f"freight_valid_to=${len(params)}")
             if body.valid_until is not None:
                 params.append(_parse_dt(body.valid_until))
                 sets.append(f"valid_until=${len(params)}")
@@ -2142,6 +2182,12 @@ async def replace_quote_items(quote_id: int, request: Request, body: _QuoteItems
             items, total = _build_items(q["currency"], body.items)
             if items:
                 await _insert_quote_items(conn, tenant, quote_id, items)
+                # 成本历史：行项整批替换后，把本单手动改过的成本落一条（需求 11）
+                from ws_product_costs import record_cost_history
+                await record_cost_history(
+                    conn, tenant, q.get("team_id"), items, quote_id,
+                    str(user["id"]),
+                )
             # 空行集合 → 合计留空（不是 0）
             await conn.execute(
                 "UPDATE quote_orders SET total_amount=$3 WHERE tenant_id=$1 AND id=$2",

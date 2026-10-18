@@ -22,7 +22,7 @@
 口径（与本项目既有的工厂内部报价表一致）
 ----------------------------------------
     EXW  出厂价，不含任何出口附加费
-    FOB  = EXW + 内陆运费 + 港杂费 + 报关费
+    FOB  = EXW + 国内费用（本地费用）
     CFR  = FOB + 海运费
     CIF  = CFR + 保险费（按 CIF 加成投保）
     DAP  = CIF + 目的港费用及送货到门（不含进口关税与增值税）
@@ -49,31 +49,19 @@ from __future__ import annotations
 # 因此模板的形状就是请求里 `terms` 的形状，界面不需要做任何结构转换。
 DEFAULT_EXPORT_TERMS: dict = {
     "base": "EXW",
-    "quote_as": "CIF",
+    # 用户 2026-10-18 口径：默认按 EXW 报价；选其它条款时界面再展开对应费用项。
+    "quote_as": "EXW",
     "weight_field": "weight_per_piece_kg",
     "items": {
-        "inland_freight": {
-            "name": "内陆运费（厂 → 港）",
-            "name_en": "Inland freight (factory → port)",
+        # 2026-10-18：国内三项（内陆运费/港杂费/报关费）合并为一项。
+        # 原因（用户）：各货代名称不统一，且除这三项还有别的国内环节费用；
+        # 拆成固定三项反而逼业务"对号入座"，合并成"国内费用（本地费用）"更贴合实际。
+        "domestic_charges": {
+            "name": "国内费用（本地费用）",
+            "name_en": "Domestic charges",
             "mode": "per_shipment",
             "unit_hint": "元 / 整批",
-            "note": "整批一次，引擎会按订单件数摊到单卷。",
-            "value": None,
-        },
-        "port_charges": {
-            "name": "港杂费",
-            "name_en": "Port charges",
-            "mode": "per_shipment",
-            "unit_hint": "元 / 整批",
-            "note": "码头操作、装箱、堆存、单证等。",
-            "value": None,
-        },
-        "customs_fee": {
-            "name": "报关费",
-            "name_en": "Customs clearance fee",
-            "mode": "per_shipment",
-            "unit_hint": "元 / 整批",
-            "note": "报关行、查验、单证费等。",
+            "note": "含内陆运费、港杂费、报关费等所有国内环节费用；按货代实际报价整批填写。",
             "value": None,
         },
         "ocean_freight": {
@@ -121,8 +109,8 @@ DEFAULT_EXPORT_TERMS: dict = {
             "code": "FOB",
             "label": "离岸价（装运港船上交货）",
             "label_en": "Free On Board",
-            # 只列本档新增：厂到港 + 出口报关环节
-            "items": ["inland_freight", "port_charges", "customs_fee"],
+            # 只列本档新增：国内费用（合并了原内陆运费/港杂费/报关费）
+            "items": ["domestic_charges"],
         },
         {
             "code": "CFR",
