@@ -47,6 +47,13 @@ export interface WorkbenchParamsCardProps {
   setCustomerError: (v: string | null) => void;
   inquiryId: string;
   setInquiryId: (v: string) => void;
+  /** 当前客户名下的询盘（下拉自动带出询盘编号，而不是让人手填数字 ID） */
+  inquiries?: {
+    id: number;
+    inquiry_no?: string | null;
+    product_name_raw?: string | null;
+    status?: string | null;
+  }[];
   taxPick: string;
   setTaxPick: (v: string) => void;
   profiles: QuoteProfile[];
@@ -104,6 +111,7 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
     setCustomerError,
     inquiryId,
     setInquiryId,
+    inquiries = [],
     taxPick,
     setTaxPick,
     profiles,
@@ -180,14 +188,29 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
 
           <div className="space-y-1.5">
             <Label className="text-xs">询盘编号</Label>
-            <Input
+            <select
               value={inquiryId}
               onChange={(e) => setInquiryId(e.target.value)}
-              placeholder="留空 = 不属于某个询盘"
-              className="h-8 text-xs"
-            />
+              disabled={!customer}
+              className="h-8 w-full rounded-lg border border-input bg-background px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+            >
+              <option value="">
+                {customer ? "（不关联询盘）" : "请先选客户"}
+              </option>
+              {inquiries.map((inq) => (
+                <option key={inq.id} value={String(inq.id)}>
+                  {inq.inquiry_no ?? `询盘 #${inq.id}`}
+                  {inq.product_name_raw ? ` · ${inq.product_name_raw}` : ""}
+                </option>
+              ))}
+              {inquiryId &&
+                !inquiries.some((inq) => String(inq.id) === inquiryId) && (
+                  <option value={inquiryId}>询盘 #{inquiryId}</option>
+                )}
+            </select>
             <p className="text-[11px] text-muted-foreground">
-              从询盘跳转时自动带入编号；一般无需手填
+              编号由系统自动生成；从客户询盘页「为此询盘报价」进入时自动带入，
+              也可在这里选择该客户名下的询盘。
             </p>
           </div>
 
