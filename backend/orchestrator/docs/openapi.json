@@ -6396,6 +6396,56 @@
         }
       }
     },
+    "/api/v1/quotes/cost-reference": {
+      "get": {
+        "tags": [
+          "quote-orders"
+        ],
+        "summary": "Quote Cost Reference",
+        "description": "成本参考价 —— **直接从历史报价行项提取**，不再单独存成本历史表。\n\n用户 2026-10-18 裁决：历史报价本身就是成本历史；成本信息从\n`quote_order_items.cost_override + spec_snapshot`（含完整产品参数）提取即可。\n\n规则：\n  1. 同产品 + **同规格参数**（`spec_snapshot.specs` JSONB 相等）→ 最近一次成本；\n  2. 否则 → 近 30 天同产品所有手动成本的中位数；\n  3. 都没有 → `reference=null`（回退产品定义里的成本）。",
+        "operationId": "quote_cost_reference_api_v1_quotes_cost_reference_get",
+        "parameters": [
+          {
+            "name": "product_key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Product Key"
+            }
+          },
+          {
+            "name": "spec",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Spec"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/quotes/{quote_id}": {
       "get": {
         "tags": [
@@ -7934,134 +7984,6 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/product-costs": {
-      "get": {
-        "tags": [
-          "product-costs"
-        ],
-        "summary": "List Product Costs",
-        "operationId": "list_product_costs_api_v1_product_costs_get",
-        "parameters": [
-          {
-            "name": "product_key",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Product Key"
-            }
-          },
-          {
-            "name": "spec_hash",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Spec Hash"
-            }
-          },
-          {
-            "name": "spec",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Spec"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 200,
-              "minimum": 1,
-              "default": 50,
-              "title": "Limit"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "product-costs"
-        ],
-        "summary": "Create Product Cost",
-        "operationId": "create_product_cost_api_v1_product_costs_post",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProductCostIn"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
             "description": "Successful Response",
             "content": {
               "application/json": {
@@ -15573,68 +15495,6 @@
           "change_reason"
         ],
         "title": "PricingPayload"
-      },
-      "ProductCostIn": {
-        "properties": {
-          "product_key": {
-            "type": "string",
-            "title": "Product Key"
-          },
-          "spec_snapshot": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Spec Snapshot"
-          },
-          "cost_pretax": {
-            "type": "number",
-            "title": "Cost Pretax"
-          },
-          "cost_incl": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cost Incl"
-          },
-          "currency": {
-            "type": "string",
-            "title": "Currency",
-            "default": "CNY"
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Note"
-          },
-          "source": {
-            "type": "string",
-            "title": "Source",
-            "default": "manual"
-          }
-        },
-        "type": "object",
-        "required": [
-          "product_key",
-          "cost_pretax"
-        ],
-        "title": "ProductCostIn"
       },
       "ProfileIn": {
         "properties": {

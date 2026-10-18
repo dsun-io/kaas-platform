@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 /**
  * 多产品报价 · 单个产品行。
@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 import type { ExportQuoteResponse } from "@contracts/export-quote";
 
 import { useExportProducts } from "../../quotations/v2-quote/hooks/use-export-quote-import";
-import { useProductCostReference } from "../hooks/use-product-costs";
+import { useProductCostReference } from "../hooks/use-cost-reference";
 import {
   useCalcQuote,
   useProductFormulas,
@@ -59,7 +59,7 @@ export interface LineDraft {
   pieces: string;
   /** 逐行覆盖的利润率（%）；留空 = 继承整单 */
   profitPctOverride: string;
-  /** 本行手工成本覆盖（元/kg）；留空 = 用产品定义/成本历史参考 */
+  /** 本行手工成本覆盖（单位由产品定义给出：勾花网元/㎡，牛栏网元/kg）；留空 = 用产品定义/历史报价参考 */
   costOverride: string;
   /** 本行包装（产品 packaging[].id）；留空 = 默认包装 */
   packagingId: string;
@@ -156,7 +156,9 @@ export function QuoteLineCard({
   const pieceInputs = formulas.data?.piece_inputs ?? [];
 
   // ── 成本（需求 11）：默认取规格里的成本字段；可本单手改 ──────────────────
+  // 单位由产品定义给出：勾花网 `CNY/㎡`（按平米算），牛栏网 `CNY/kg`。
   const costField = formulas.data?.cost.field ?? "";
+  const costUnitLabel = (formulas.data?.cost.unit ?? "").replace("CNY", "元");
   const specCost = (() => {
     if (!costField) return 0;
     for (const group of groups) {
@@ -510,7 +512,9 @@ export function QuoteLineCard({
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">税前成本（元/kg）</Label>
+            <Label className="text-xs">
+              税前成本{costUnitLabel ? `（${costUnitLabel}）` : ""}
+            </Label>
             <Input
               type="number"
               step="any"
@@ -531,7 +535,7 @@ export function QuoteLineCard({
                 : specCost > 0
                   ? "默认取规格/定价数据里的成本"
                   : referenceCost !== null
-                    ? `参考历史成本 ¥${referenceCost}（${
+                    ? `参考历史成本 ¥${referenceCost}${costUnitLabel ? `/${costUnitLabel.replace("元/", "")}` : ""}（${
                         costRef.data?.source === "latest"
                           ? "同规格最近一次"
                           : "近 30 天中位数"
@@ -698,3 +702,4 @@ export function QuoteLineCard({
     </Card>
   );
 }
+

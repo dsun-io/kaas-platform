@@ -12,9 +12,12 @@ import apiClient from "@/lib/api/client";
 
 export interface CostReference {
   cost: number;
+  cost_unit?: string;
   source: "latest" | "median_30d";
   sample_count: number;
   as_of: string | null;
+  quote_no?: string;
+  spec_snapshot?: Record<string, unknown>;
 }
 
 export function useProductCostReference(
@@ -24,17 +27,16 @@ export function useProductCostReference(
 ) {
   const specReady = enabled && !!productKey && Object.keys(spec).length > 0;
   return useQuery({
-    queryKey: ["product-cost-reference", productKey, spec],
+    queryKey: ["quote-cost-reference", productKey, spec],
     enabled: specReady,
     staleTime: 60_000,
     queryFn: async () => {
       const { data } = await apiClient.get<{
         reference: CostReference | null;
-      }>("/product-costs", {
+      }>("/quotes/cost-reference", {
         params: {
           product_key: productKey,
           spec: JSON.stringify(spec),
-          limit: 1,
         },
       });
       return data.reference;

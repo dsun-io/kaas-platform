@@ -250,8 +250,10 @@ export function buildLineItem(input: BuildLineItemInput): BuiltLineItem {
     product_key: product.key,
     /** 中文名留档：台账/内部沟通要看中文，单证只印英文（英文单据硬约定） */
     product_name_zh: product.name,
-    /** 引擎原始规格（审计与重算的唯一依据） */
+    /** 引擎原始规格（审计、重算与「历史成本参考」的唯一依据） */
     specs: spec,
+    /** 成本单位：勾花网是元/㎡、牛栏网是元/kg（历史成本必须带单位，不能只存产品） */
+    cost_unit: formulas.cost.unit,
     ...(pieceBase ? { piece_overrides: pieceBase } : {}),
     ...(rollLengthM !== null ? { roll_len_m: rollLengthM } : {}),
     unit_price_fx: unitPriceFx,

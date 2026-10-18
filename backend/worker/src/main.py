@@ -4242,6 +4242,3 @@ import ws_customer_records  # noqa: E402,F401
 # `file_objects.storage`，不让用户的上传因为存储配置问题直接失败。
 import ws_files  # noqa: E402,F401
 
-# ── 产品成本历史（需求 11；报价保存时写入，参考成本查询）──
-import ws_product_costs  # noqa: E402,F401
-
