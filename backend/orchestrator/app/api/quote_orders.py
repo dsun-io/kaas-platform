@@ -43,6 +43,7 @@ from app.core.auth import AuthContext, get_auth_context
 from app.domain.enums import validate_enum, CURRENCY, OWNER_SCOPE
 from app.domain.spec_hash import compute_spec_hash
 from app.repositories.quotations_repo import insert_quotation
+from kaas_common.workstation.number_rules import NumberError, normalize_number
 from app.api.ws_common import (
     tenant_id_of, scope_filter, check_write_access, next_doc_no, lock_fx_rate,
     resolve_customer_for_doc,
@@ -114,6 +115,8 @@ class QuoteOrderCreate(BaseModel):
 
 
 class QuoteOrderPatch(BaseModel):
+    # 报价单号：仅在还没有生成 PI/合同等后续单证时可改（前端二次确认）
+    quote_no: Optional[str] = None
     # 改单时也能换客户（历史单据的 customer_id 被清洗成 NULL 后要能人工认领回来）
     customer_id: Optional[int] = None
     customer_name: Optional[str] = None
@@ -139,6 +142,56 @@ class QuoteItemsReplace(BaseModel):
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
+async def _quote_no_editable(db, tenant_id: str, quote_id: int) -> bool:
+    """报价单号是否可改：还没生成后续单证（PI/合同等）或订单时才可以。
+
+    报价单自身自动生成的 `quotation` 单证不算下游（用户口径：生成报价单后仍可改，
+    生成 PI 之后才锁定）。
+    """
+    from app.db.workstation_links import Order, TradeDoc
+    downstream_doc = (await db.execute(
+        select(TradeDoc.id).where(
+            TradeDoc.tenant_id == tenant_id,
+            TradeDoc.quote_id == quote_id,
+            TradeDoc.doc_type != "quotation",
+        ).limit(1)
+    )).scalar_one_or_none()
+    if downstream_doc is not None:
+        return False
+    downstream_order = (await db.execute(
+        select(Order.id).where(
+            Order.tenant_id == tenant_id,
+            Order.quote_id == quote_id,
+        ).limit(1)
+    )).scalar_one_or_none()
+    return downstream_order is None
+
+
+async def _quote_no_editable_map(db, tenant_id: str, quote_ids: list[int]) -> set[int]:
+    """批量版：返回可改号的报价单 id 集合。"""
+    ids = [i for i in quote_ids if i is not None]
+    if not ids:
+        return set()
+    from app.db.workstation_links import Order, TradeDoc
+    locked: set[int] = set()
+    rows = (await db.execute(
+        select(TradeDoc.quote_id).where(
+            TradeDoc.tenant_id == tenant_id,
+            TradeDoc.quote_id.in_(ids),
+            TradeDoc.doc_type != "quotation",
+        ).distinct()
+    )).scalars().all()
+    locked.update(int(x) for x in rows if x is not None)
+    rows = (await db.execute(
+        select(Order.quote_id).where(
+            Order.tenant_id == tenant_id,
+            Order.quote_id.in_(ids),
+        ).distinct()
+    )).scalars().all()
+    locked.update(int(x) for x in rows if x is not None)
+    return set(ids) - locked
+
 
 def _row_to_quote(q: QuoteOrder, item_count: int = 0) -> dict:
     from kaas_common.workstation.quote_serializers import row_to_quote
@@ -342,8 +395,13 @@ async def list_quotes(
     )).scalars().all()
 
     counts = await _item_count_map(db, tenant_id, [q.id for q in rows])
+    editable_ids = await _quote_no_editable_map(db, tenant_id, [q.id for q in rows])
     return {
-        "items": [_row_to_quote(q, counts.get(q.id, 0)) for q in rows],
+        "items": [
+            {**_row_to_quote(q, counts.get(q.id, 0)),
+             "quote_no_editable": q.id in editable_ids}
+            for q in rows
+        ],
         "total": total, "page": page, "page_size": page_size,
     }
 
@@ -567,6 +625,7 @@ async def get_quote_order(
     q = await _get_quote_or_404(db, tenant_id, quote_id, auth)
     items = await _items_of(db, tenant_id, q.id)
     payload = _row_to_quote(q, len(items))
+    payload["quote_no_editable"] = await _quote_no_editable(db, tenant_id, q.id)
     payload["items"] = [_row_to_item(i, auth) for i in items]
     return payload
 
@@ -581,6 +640,33 @@ async def update_quote_order(
     tenant_id = tenant_id_of(auth)
     q = await _get_quote_or_404(db, tenant_id, quote_id, auth)
     check_write_access(q, auth)
+
+    if body.quote_no is not None and body.quote_no != q.quote_no:
+        try:
+            new_no = normalize_number(body.quote_no)
+        except NumberError as exc:
+            raise HTTPException(status_code=422, detail={
+                "error": "validation", "code": "INVALID_QUOTE_NO",
+                "detail": str(exc),
+            })
+        if not await _quote_no_editable(db, tenant_id, q.id):
+            raise HTTPException(status_code=409, detail={
+                "error": "conflict", "code": "QUOTE_NO_LOCKED",
+                "detail": "该报价已生成 PI/合同等后续单证（或已转订单），报价单号已锁定",
+            })
+        taken = (await db.execute(
+            select(QuoteOrder.id).where(
+                QuoteOrder.tenant_id == tenant_id,
+                QuoteOrder.quote_no == new_no,
+                QuoteOrder.id != q.id,
+            ).limit(1)
+        )).scalar_one_or_none()
+        if taken is not None:
+            raise HTTPException(status_code=409, detail={
+                "error": "conflict", "code": "QUOTE_NO_TAKEN",
+                "detail": f"报价单号「{new_no}」已被占用，请换一个",
+            })
+        q.quote_no = new_no
 
     if body.status is not None and body.status != q.status:
         validate_enum("quote_status", body.status)

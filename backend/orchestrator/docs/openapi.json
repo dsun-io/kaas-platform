@@ -13032,6 +13032,17 @@
             ],
             "title": "Status"
           },
+          "inquiry_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inquiry No"
+          },
           "channel": {
             "anyOf": [
               {
@@ -16152,6 +16163,17 @@
       },
       "QuoteOrderPatch": {
         "properties": {
+          "quote_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote No"
+          },
           "customer_id": {
             "anyOf": [
               {
@@ -18409,6 +18431,17 @@
               }
             ],
             "title": "Raw Payload"
+          },
+          "doc_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc No"
           },
           "customer_id": {
             "anyOf": [

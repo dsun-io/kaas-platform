@@ -34,6 +34,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { EmptyState } from "@/components/shared/empty-state";
+import { NumberEditDialog } from "@/components/shared/number-edit-dialog";
 import { Button } from "@/components/ui/button";
 import { usePageView } from "@/lib/events/use-page-view";
 import { renderTradeDoc } from "@/lib/trade-doc/render";
@@ -91,6 +92,8 @@ export default function TradeDocsPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [showImport, setShowImport] = useState(false);
+  const [docNoEdit, setDocNoEdit] = useState<TradeDocRow | null>(null);
+  const [docNoError, setDocNoError] = useState<string | null>(null);
 
   const list = useTradeDocs({
     doc_type: docTypeFilter || undefined,
@@ -102,6 +105,20 @@ export default function TradeDocsPage() {
   const refresh = useRefreshSources();
 
   const rows = list.data?.items ?? [];
+
+  const saveDocNo = async (value: string) => {
+    if (!docNoEdit) return;
+    setDocNoError(null);
+    try {
+      await update.mutateAsync({ id: docNoEdit.id, doc_no: value });
+      setDocNoEdit(null);
+    } catch (e) {
+      const msg =
+        (e as { response?: { data?: { detail?: { detail?: string } } } })
+          ?.response?.data?.detail?.detail ?? "修改失败，请重试";
+      setDocNoError(msg);
+    }
+  };
 
   /** 台账导出列（与页面展示保持一致，避免"看到的"和"导出的"不一致） */
   const exportColumns = useMemo(
@@ -359,6 +376,18 @@ export default function TradeDocsPage() {
                     </td>
                     <td className="p-2">
                       <div className="flex flex-wrap gap-1">
+                        {row.doc_no_editable !== false && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setDocNoError(null);
+                              setDocNoEdit(row);
+                            }}
+                          >
+                            改编号
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="ghost"
@@ -476,6 +505,21 @@ export default function TradeDocsPage() {
           ) : null}
         </SectionCard>
       )}
+
+      <NumberEditDialog
+        open={docNoEdit !== null}
+        onOpenChange={(open) => {
+          if (!open) setDocNoEdit(null);
+        }}
+        title="修改单证编号"
+        label="单证编号"
+        currentValue={docNoEdit?.doc_no ?? ""}
+        description="单证编号默认自动生成；同一链条上尚未生成更晚单证时可以修改。"
+        warning="确认后编号会立即生效。一旦生成后续单证，该编号将自动锁定，不能再改。"
+        pending={update.isPending}
+        error={docNoError}
+        onConfirm={saveDocNo}
+      />
     </div>
   );
 }

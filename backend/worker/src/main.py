@@ -51,6 +51,7 @@ from kaas_common.workstation.customer_serializers import row_to_customer, row_to
 from kaas_common.workstation.customer_rules import validate_manual_stage
 from kaas_common.workstation.inquiry_rules import build_inquiry_no, normalize_abbr
 from kaas_common.domain.enums import validate_enum
+from kaas_common.workstation.number_rules import NumberError, normalize_number
 from kaas_common.workstation.scope import can_view, can_write, is_admin_role
 from kaas_common.workstation.teams import (
     TeamRuleError, invite_state, normalize_invite_token, validate_team_name,
@@ -1207,10 +1208,19 @@ async def get_customer(customer_id: int, request: Request, user: dict = Depends(
         stage_log = await conn.fetch(
             "SELECT * FROM cust_stage_log WHERE customer_id=$1 ORDER BY created_at DESC LIMIT 20", customer_id,
         )
+        inquiry_items = []
+        for i in inquiries:
+            item = row_to_inquiry(dict(i))
+            has_quote = await conn.fetchval(
+                "SELECT 1 FROM quote_orders WHERE tenant_id=$1 AND inquiry_id=$2 LIMIT 1",
+                DEFAULT_TENANT, i["id"],
+            )
+            item["inquiry_no_editable"] = not bool(has_quote)
+            inquiry_items.append(item)
     return {
         **_customer_api(row),
         "contacts": [dict(c) for c in contacts],
-        "inquiries": [row_to_inquiry(dict(i)) for i in inquiries],
+        "inquiries": inquiry_items,
         "stage_log": [dict(s) for s in stage_log],
     }
 
@@ -3623,8 +3633,23 @@ async def list_trade_docs(request: Request, doc_type: str = None, status: str = 
             f"SELECT * FROM trade_docs WHERE {where_sql} ORDER BY created_at DESC, id DESC LIMIT ${idx} OFFSET ${idx+1}",
             *params, page_size, (max(1, page) - 1) * page_size,
         )
+        items = []
+        for r in rows:
+            item = _row_to_dict(r, "trade_docs")
+            if r["quote_id"] is not None:
+                later = await conn.fetchval(
+                    "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND quote_id=$2"
+                    " AND id>$3 LIMIT 1", DEFAULT_TENANT, r["quote_id"], r["id"])
+            elif r["order_id"] is not None:
+                later = await conn.fetchval(
+                    "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND order_id=$2"
+                    " AND id>$3 LIMIT 1", DEFAULT_TENANT, r["order_id"], r["id"])
+            else:
+                later = None
+            item["doc_no_editable"] = not bool(later)
+            items.append(item)
     return {
-        "items": [_row_to_dict(r, "trade_docs") for r in rows],
+        "items": items,
         "total": total, "page": page, "page_size": page_size,
     }
 
@@ -3849,7 +3874,18 @@ async def get_trade_doc(doc_id: int, request: Request,
     # 上游 refs 一律来自**列 + 边表**（旧 `trade_doc_*_refs` 已改名留档、不再读）
     async with _acquire(request) as conn:
         refs = await _doc_upstream_links(conn, d)
-    return {**_dp.doc_dict(d), "refs": refs}
+        if d["quote_id"] is not None:
+            later = await conn.fetchval(
+                "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND quote_id=$2"
+                " AND id>$3 LIMIT 1", DEFAULT_TENANT, d["quote_id"], doc_id)
+        elif d["order_id"] is not None:
+            later = await conn.fetchval(
+                "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND order_id=$2"
+                " AND id>$3 LIMIT 1", DEFAULT_TENANT, d["order_id"], doc_id)
+        else:
+            later = None
+    return {**_dp.doc_dict(d), "refs": refs,
+            "doc_no_editable": not bool(later)}
 
 
 @app.patch("/api/v1/trade-docs/{doc_id}")
@@ -3860,6 +3896,48 @@ async def update_trade_doc(doc_id: int, request: Request, body: dict,
     if not d:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "DOC_NOT_FOUND"})
     d = _dp.doc_dict(d)
+    new_doc_no = None
+    requested_no = body.get("doc_no")
+    if requested_no is not None and requested_no != d["doc_no"]:
+        try:
+            new_doc_no = normalize_number(requested_no)
+        except NumberError as exc:
+            raise HTTPException(status_code=422, detail={
+                "error": "validation", "code": "INVALID_DOC_NO",
+                "detail": str(exc),
+            })
+        if d.get("quote_id") is not None:
+            later = await db.fetchval(
+                request,
+                "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND quote_id=$2"
+                " AND id>$3 LIMIT 1",
+                DEFAULT_TENANT, d["quote_id"], doc_id,
+            )
+        elif d.get("order_id") is not None:
+            later = await db.fetchval(
+                request,
+                "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND order_id=$2"
+                " AND id>$3 LIMIT 1",
+                DEFAULT_TENANT, d["order_id"], doc_id,
+            )
+        else:
+            later = None
+        if later:
+            raise HTTPException(status_code=409, detail={
+                "error": "conflict", "code": "DOC_NO_LOCKED",
+                "detail": "同一链条上已生成更晚的单证，本单编号已锁定",
+            })
+        taken = await db.fetchval(
+            request,
+            "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND doc_no=$2"
+            " AND id<>$3 LIMIT 1",
+            DEFAULT_TENANT, new_doc_no, doc_id,
+        )
+        if taken:
+            raise HTTPException(status_code=409, detail={
+                "error": "conflict", "code": "DOC_NO_TAKEN",
+                "detail": f"单证编号「{new_doc_no}」已被占用，请换一个",
+            })
     new_status = (body.get("status") or d["status"]).strip()
     allowed = DOC_NEXT.get(d["status"], ())
     if new_status != d["status"] and new_status not in allowed:
@@ -3912,18 +3990,22 @@ async def update_trade_doc(doc_id: int, request: Request, body: dict,
         await db.execute(
             request,
             "UPDATE trade_docs SET status=$3, issued_at=$4, issued_by=$5,"
-            " raw_payload=COALESCE($6, raw_payload), updated_at=$7"
+            " raw_payload=COALESCE($6, raw_payload), updated_at=$7,"
+            " doc_no=COALESCE($8, doc_no)"
             " WHERE tenant_id=$1 AND id=$2",
             DEFAULT_TENANT, doc_id, new_status, now, user["id"],
-            _json.dumps(raw_payload) if raw_payload is not None else None, now
+            _json.dumps(raw_payload) if raw_payload is not None else None, now,
+            new_doc_no,
         )
     else:
         await db.execute(
             request,
             "UPDATE trade_docs SET status=$3, raw_payload=COALESCE($4, raw_payload),"
-            " updated_at=$5 WHERE tenant_id=$1 AND id=$2",
+            " updated_at=$5, doc_no=COALESCE($6, doc_no)"
+            " WHERE tenant_id=$1 AND id=$2",
             DEFAULT_TENANT, doc_id, new_status,
-            _json.dumps(raw_payload) if raw_payload is not None else None, now
+            _json.dumps(raw_payload) if raw_payload is not None else None, now,
+            new_doc_no,
         )
     d2 = await db.fetchrow(request, "SELECT * FROM trade_docs WHERE tenant_id=$1 AND id=$2",
                            DEFAULT_TENANT, doc_id, table="trade_docs")

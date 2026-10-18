@@ -17,6 +17,7 @@ import {
 } from "@/components/shared";
 import { Plus, Search, UserPlus } from "lucide-react";
 import { CustomerRecordsTree } from "./components/customer-records-tree";
+import { NumberEditDialog } from "@/components/shared/number-edit-dialog";
 
 // 客户阶段（2026-10-18 用户口径）：只有三种。
 // active / inactive 是手动状态；ordered 由「开启中的订单」自动推导，不可手选。
@@ -86,6 +87,8 @@ interface Inquiry {
   customer_id: number;
   /** 自动生成的询盘编号（国家-客户缩写-时间戳）；历史询盘可能为空 */
   inquiry_no?: string | null;
+  /** 编号是否可改：生成报价单之后锁定 */
+  inquiry_no_editable?: boolean;
   channel: string | null;
   product_name_raw: string | null;
   quantity: number | null;
@@ -751,7 +754,29 @@ function CustomerDetailPanel({
   const [showStageUpdate, setShowStageUpdate] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  const [inquiryNoEdit, setInquiryNoEdit] = useState<Inquiry | null>(null);
+  const [inquiryNoPending, setInquiryNoPending] = useState(false);
+  const [inquiryNoError, setInquiryNoError] = useState<string | null>(null);
   const qc = useQueryClient();
+
+  const handleInquiryNoSave = async (value: string) => {
+    if (!inquiryNoEdit) return;
+    setInquiryNoPending(true);
+    setInquiryNoError(null);
+    try {
+      await apiClient.patch(`/inquiries/${inquiryNoEdit.id}`, {
+        inquiry_no: value,
+      });
+      await qc.invalidateQueries({
+        queryKey: ["customers", "detail", customer.id],
+      });
+      setInquiryNoEdit(null);
+    } catch (e) {
+      setInquiryNoError(errMsg(e));
+    } finally {
+      setInquiryNoPending(false);
+    }
+  };
 
   const handleDeleteContact = async (contactId: number) => {
     try {
@@ -1020,6 +1045,19 @@ function CustomerDetailPanel({
                           {inq.product_name_raw ?? `询盘 #${inq.id}`}
                         </p>
                         <div className="flex items-center gap-2">
+                          {inq.inquiry_no_editable && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => {
+                                setInquiryNoError(null);
+                                setInquiryNoEdit(inq);
+                              }}
+                            >
+                              改编号
+                            </Button>
+                          )}
                           <Link
                             href={`/quotes?tab=product&customer_id=${customer.id}&inquiry_id=${inq.id}`}
                             className="text-xs text-primary hover:underline"
@@ -1048,6 +1086,20 @@ function CustomerDetailPanel({
                       </p>
                     </div>
                   ))}
+                  <NumberEditDialog
+                    open={inquiryNoEdit !== null}
+                    onOpenChange={(open) => {
+                      if (!open) setInquiryNoEdit(null);
+                    }}
+                    title="修改询盘编号"
+                    label="询盘编号"
+                    currentValue={inquiryNoEdit?.inquiry_no ?? ""}
+                    description="询盘编号默认自动生成；生成报价单之前可以修改。"
+                    warning="确认后编号会立即生效。一旦用该询盘生成报价单，编号将自动锁定，不能再改。"
+                    pending={inquiryNoPending}
+                    error={inquiryNoError}
+                    onConfirm={handleInquiryNoSave}
+                  />
                 </div>
               </div>
             )}

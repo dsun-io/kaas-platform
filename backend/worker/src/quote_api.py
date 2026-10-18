@@ -55,6 +55,7 @@ from main import (  # noqa: E402
     db as _db,
 )
 from dbjson import row_to_dict as _row_to_dict
+from kaas_common.workstation.number_rules import NumberError, normalize_number  # noqa: E402
 
 # ── 报价引擎：**惰性**导入（启动 CPU 是这台 Worker 的硬约束）──────────────────
 # 为什么不写成模块级 import：
@@ -1498,6 +1499,8 @@ class _QuoteOrderCreate(BaseModel):
 
 
 class _QuoteOrderPatch(BaseModel):
+    # 报价单号：仅在还没有生成 PI/合同等后续单证时可改（前端二次确认）
+    quote_no: Optional[str] = None
     # 改单时也能换客户：历史报价的 customer_id 被清洗成 NULL 后要能人工认领回来
     # （认领时同样过客户闸门 —— 报价单与它的报价单一起改挂到新客户）
     customer_id: Optional[int] = None
@@ -1928,8 +1931,30 @@ async def list_quote_orders(
         *params, page_size, (max(1, page) - 1) * page_size,
     )
     counts = await _item_count_map(request, tenant, [r["id"] for r in rows])
+    ids = [r["id"] for r in rows]
+    locked: set = set()
+    if ids:
+        locked_docs = await _db.fetch(
+            request,
+            "SELECT DISTINCT quote_id FROM trade_docs"
+            " WHERE tenant_id=$1 AND quote_id = ANY($2::bigint[])"
+            " AND doc_type <> 'quotation'",
+            tenant, ids,
+        )
+        locked.update(r["quote_id"] for r in locked_docs)
+        locked_orders = await _db.fetch(
+            request,
+            "SELECT DISTINCT quote_id FROM orders"
+            " WHERE tenant_id=$1 AND quote_id = ANY($2::bigint[])",
+            tenant, ids,
+        )
+        locked.update(r["quote_id"] for r in locked_orders)
     return {
-        "items": [_quote_json(r, counts.get(r["id"], 0)) for r in rows],
+        "items": [
+            {**_quote_json(r, counts.get(r["id"], 0)),
+             "quote_no_editable": r["id"] not in locked}
+            for r in rows
+        ],
         "total": total, "page": page, "page_size": page_size,
     }
 
@@ -2135,6 +2160,19 @@ async def get_quote_order(quote_id: int, request: Request,
         q = await _quote_or_404(conn, tenant, quote_id, user)
         items = await _items_of(conn, tenant, q["id"])
     payload = _quote_json(q, len(items))
+    locked = await _db.fetchval(
+        request,
+        "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND quote_id=$2"
+        " AND doc_type <> 'quotation' LIMIT 1",
+        tenant, quote_id,
+    )
+    if not locked:
+        locked = await _db.fetchval(
+            request,
+            "SELECT 1 FROM orders WHERE tenant_id=$1 AND quote_id=$2 LIMIT 1",
+            tenant, quote_id,
+        )
+    payload["quote_no_editable"] = not bool(locked)
     payload["items"] = [_quote_item_json(i, user) for i in items]
     return payload
 
@@ -2160,6 +2198,43 @@ async def update_quote_order(quote_id: int, request: Request, body: _QuoteOrderP
         async with conn.transaction():
             q = await _quote_or_404(conn, tenant, quote_id, user)
             _check_write_access(user, q)
+
+            if body.quote_no is not None and body.quote_no != q["quote_no"]:
+                try:
+                    new_no = normalize_number(body.quote_no)
+                except NumberError as exc:
+                    raise HTTPException(status_code=422, detail={
+                        "error": "validation", "code": "INVALID_QUOTE_NO",
+                        "detail": str(exc),
+                    })
+                downstream = await conn.fetchval(
+                    "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND quote_id=$2"
+                    " AND doc_type <> 'quotation' LIMIT 1",
+                    tenant, quote_id,
+                )
+                if not downstream:
+                    downstream = await conn.fetchval(
+                        "SELECT 1 FROM orders WHERE tenant_id=$1 AND quote_id=$2 LIMIT 1",
+                        tenant, quote_id,
+                    )
+                if downstream:
+                    raise HTTPException(status_code=409, detail={
+                        "error": "conflict", "code": "QUOTE_NO_LOCKED",
+                        "detail": "该报价已生成 PI/合同等后续单证（或已转订单），报价单号已锁定",
+                    })
+                taken = await conn.fetchval(
+                    "SELECT 1 FROM quote_orders WHERE tenant_id=$1 AND quote_no=$2"
+                    " AND id<>$3 LIMIT 1",
+                    tenant, new_no, quote_id,
+                )
+                if taken:
+                    raise HTTPException(status_code=409, detail={
+                        "error": "conflict", "code": "QUOTE_NO_TAKEN",
+                        "detail": f"报价单号「{new_no}」已被占用，请换一个",
+                    })
+                q = {**q, "quote_no": new_no}
+                params.append(new_no)
+                sets.append(f"quote_no=${len(params)}")
 
             # 换客户（含历史报价的"人工认领"）：走与新建同一道客户闸门。
             # 客户变了，报价单（trade_docs，doc_type='quotation'）也必须跟着改挂 ——

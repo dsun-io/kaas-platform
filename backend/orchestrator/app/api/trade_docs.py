@@ -37,6 +37,7 @@ from app.api.ws_common import (
     tenant_id_of, scope_filter, next_doc_no, resolve_customer_for_doc,
 )
 from app.api.company_profile import seller_block
+from kaas_common.workstation.number_rules import NumberError, normalize_number
 from app.services.trade_doc_payload import (
     build_render_data, buyer_block, trade_terms_of,
 )
@@ -95,6 +96,8 @@ class TradeDocCreate(BaseModel):
 class TradeDocPatch(BaseModel):
     status: Optional[str] = None
     raw_payload: Optional[dict] = None
+    # 单证编号：同一链条上还没有更晚的单证时可改（前端二次确认）
+    doc_no: Optional[str] = None
     # 改单时也能认领客户（历史单据的 customer_id 被清洗成 NULL 后要能补回来）。
     # 与 raw_payload 同一条闸门：仅 draft 可改 —— 签发后是法律凭证，买方不许再动。
     customer_id: Optional[int] = None
@@ -123,6 +126,28 @@ def _reject_protected_custom(custom) -> None:
             "detail": "以下字段只能来自上游快照或系统计算，不接受手工覆盖："
                       + "、".join(blocked),
         })
+
+
+async def _doc_no_editable(db, tenant_id: str, d: TradeDoc) -> bool:
+    """单证编号是否可改：同一链条上还没有更晚的单证。
+
+    链条 = 同一报价（quote_id）或同一订单（order_id）。下游单证生成后，
+    上游编号锁定（用户口径：生成后续单证以后就不能修改）。
+    """
+    if d.quote_id is not None:
+        cond = TradeDoc.quote_id == d.quote_id
+    elif d.order_id is not None:
+        cond = TradeDoc.order_id == d.order_id
+    else:
+        return True
+    later = (await db.execute(
+        select(TradeDoc.id).where(
+            TradeDoc.tenant_id == tenant_id,
+            cond,
+            TradeDoc.id > d.id,
+        ).limit(1)
+    )).scalar_one_or_none()
+    return later is None
 
 
 def _row_to_doc(d: TradeDoc) -> dict:
@@ -245,8 +270,12 @@ async def list_trade_docs(
     stmt = stmt.order_by(TradeDoc.created_at.desc())
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
     rows = (await db.execute(stmt)).scalars().all()
-    return {"items": [_row_to_doc(d) for d in rows],
-            "total": total, "page": page, "page_size": page_size}
+    items = []
+    for d in rows:
+        item = _row_to_doc(d)
+        item["doc_no_editable"] = await _doc_no_editable(db, tenant_id, d)
+        items.append(item)
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 async def _persist_items(db, tenant_id, doc_id, items, currency, doc_type, apply_scheme_key=None):
@@ -537,7 +566,8 @@ async def get_trade_doc(
         "group_no": r.group_no, "scheme_prices": r.scheme_prices, "source": r.source,
         "sort_order": r.sort_order,
     } for r in item_rows]
-    return {**_row_to_doc(d), "refs": refs, "items": items}
+    return {**_row_to_doc(d), "refs": refs, "items": items,
+            "doc_no_editable": await _doc_no_editable(db, tenant_id, d)}
 
 
 @router.patch("/trade-docs/{doc_id}")
@@ -553,6 +583,33 @@ async def update_trade_doc(
     )).scalar_one_or_none()
     if d is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "DOC_NOT_FOUND"})
+
+    if body.doc_no is not None and body.doc_no != d.doc_no:
+        try:
+            new_no = normalize_number(body.doc_no)
+        except NumberError as exc:
+            raise HTTPException(status_code=422, detail={
+                "error": "validation", "code": "INVALID_DOC_NO",
+                "detail": str(exc),
+            })
+        if not await _doc_no_editable(db, tenant_id, d):
+            raise HTTPException(status_code=409, detail={
+                "error": "conflict", "code": "DOC_NO_LOCKED",
+                "detail": "同一链条上已生成更晚的单证，本单编号已锁定",
+            })
+        taken = (await db.execute(
+            select(TradeDoc.id).where(
+                TradeDoc.tenant_id == tenant_id,
+                TradeDoc.doc_no == new_no,
+                TradeDoc.id != d.id,
+            ).limit(1)
+        )).scalar_one_or_none()
+        if taken is not None:
+            raise HTTPException(status_code=409, detail={
+                "error": "conflict", "code": "DOC_NO_TAKEN",
+                "detail": f"单证编号「{new_no}」已被占用，请换一个",
+            })
+        d.doc_no = new_no
 
     if body.raw_payload is not None:
         try:

@@ -45,6 +45,7 @@ from kaas_common.workstation.inquiry_rules import (
     build_inquiry_no,
     normalize_abbr,
 )
+from kaas_common.workstation.number_rules import NumberError, normalize_number
 
 router = APIRouter(prefix="/api/v1", tags=["customers"])
 
@@ -132,6 +133,17 @@ async def _has_open_order(db, tenant_id: str, customer_id: int) -> bool:
 def _row_to_inquiry(i: CustInquiry) -> dict:
     from kaas_common.workstation.customer_serializers import row_to_inquiry
     return row_to_inquiry(i)
+
+
+async def _inquiry_has_quote(db, tenant_id: str, inquiry_id: int) -> bool:
+    """询盘是否已被某张报价单引用（有 ⇒ 编号锁定，不能再改）。"""
+    from app.db.workstation_links import QuoteOrder
+    return (await db.execute(
+        select(QuoteOrder.id).where(
+            QuoteOrder.tenant_id == tenant_id,
+            QuoteOrder.inquiry_id == inquiry_id,
+        ).limit(1)
+    )).scalar_one_or_none() is not None
 
 
 def _parse_abbr(raw: Optional[str]) -> Optional[str]:
@@ -253,6 +265,8 @@ class InquiryCreate(BaseModel):
 
 class InquiryUpdate(BaseModel):
     status: Optional[str] = None
+    # 编号可改，但仅限「还没生成报价」时；改编号要走二次确认（前端弹窗）
+    inquiry_no: Optional[str] = None
     channel: Optional[str] = None
     product_name_raw: Optional[str] = None
     quantity: Optional[float] = None
@@ -400,7 +414,11 @@ async def get_customer(
             "phone": ct.phone, "email": ct.email, "whatsapp": ct.whatsapp,
             "is_primary": ct.is_primary,
         } for ct in contacts],
-        "inquiries": [_row_to_inquiry(i) for i in inquiries],
+        "inquiries": [
+            {**_row_to_inquiry(i),
+             "inquiry_no_editable": not await _inquiry_has_quote(db, tenant_id, i.id)}
+            for i in inquiries
+        ],
         "stage_log": [{
             "id": s.id, "from_stage": s.from_stage, "to_stage": s.to_stage,
             "reason": s.reason,
@@ -739,6 +757,34 @@ async def update_inquiry(
 
     data = body.model_dump(exclude_unset=True)
     new_status = data.pop("status", None)
+    new_no = data.pop("inquiry_no", None)
+    if new_no is not None and new_no != inq.inquiry_no:
+        try:
+            new_no = normalize_number(new_no)
+        except NumberError as exc:
+            raise HTTPException(status_code=422, detail={
+                "error": "validation", "code": "INVALID_INQUIRY_NO",
+                "detail": str(exc),
+            })
+        # 生成报价之后锁定（用户口径：生成报价单后询盘编号不能改）
+        if await _inquiry_has_quote(db, tenant_id, inq.id):
+            raise HTTPException(status_code=409, detail={
+                "error": "conflict", "code": "INQUIRY_NO_LOCKED",
+                "detail": "该询盘已生成报价单，编号已锁定；如需改号请先处理关联报价",
+            })
+        taken = (await db.execute(
+            select(CustInquiry.id).where(
+                CustInquiry.tenant_id == tenant_id,
+                CustInquiry.inquiry_no == new_no,
+                CustInquiry.id != inq.id,
+            ).limit(1)
+        )).scalar_one_or_none()
+        if taken is not None:
+            raise HTTPException(status_code=409, detail={
+                "error": "conflict", "code": "INQUIRY_NO_TAKEN",
+                "detail": f"询盘编号「{new_no}」已被占用，请换一个",
+            })
+        inq.inquiry_no = new_no
     if new_status is not None:
         validate_enum("inquiry_status", new_status)
         # 合法流转校验

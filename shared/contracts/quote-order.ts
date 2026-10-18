@@ -96,6 +96,8 @@ export type QuoteOrderCreate = z.infer<typeof QuoteOrderCreateSchema>;
 
 /** 单头可改字段 + 状态流转（draft → sent → accepted/rejected/expired）。 */
 export const QuoteOrderPatchSchema = TradeTermsSchema.extend({
+  /** 报价单号：仅在下游单证/订单生成前可改（后端 409 锁定） */
+  quote_no: z.string().optional(),
   // 允许改客户：报价单挂错客户要能纠正。
   // 后端契约：客户必须存在、未删除、且属于本团队（否则 404 CUSTOMER_NOT_FOUND）；
   // 改客户时应同时回填 customer_name 快照（单据显示的是开单当时的客户名）。
@@ -121,6 +123,8 @@ export type QuoteOrderItemsReplace = z.infer<
 export const QuoteOrderSchema = TradeTermsSchema.extend({
   id: z.number().int(),
   quote_no: z.string(),
+  /** 报价单号当前是否可改（后端按下游单证/订单计算） */
+  quote_no_editable: z.boolean().optional(),
   customer_id: z.string().nullable().default(null),
   customer_name: z.string().nullable().default(null),
   inquiry_id: z.number().int().nullable().default(null),
