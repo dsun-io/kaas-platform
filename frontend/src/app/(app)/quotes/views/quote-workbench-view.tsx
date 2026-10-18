@@ -66,7 +66,7 @@ import {
   summarizeLines,
   type BuiltLineItem,
 } from "../lib/line-to-item";
-import { buildTermsPerLine } from "../lib/terms-amortize";
+import { allocateInsurance, buildTermsPerLine } from "../lib/terms-amortize";
 import type { SharedQuoteParams } from "../lib/build-request";
 import apiClient from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -330,8 +330,7 @@ export function QuoteWorkbenchView() {
     });
     const totalExw = exwTotals.reduce((a, b) => a + b, 0);
     if (totalExw <= 0) return;
-    const premiumUsd = Math.max(15, (totalExw * 1.1) / 1000);
-    const allocated = exwTotals.map((x) => (premiumUsd * x) / totalExw);
+    const allocated = allocateInsurance(exwTotals);
     setInsuranceByLine(allocated);
     setCalcSignal((v) => v + 1);
   }, [lines, insuranceByLine, effectiveQuoteAs]);

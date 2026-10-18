@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ExportTermsTemplate } from "@contracts/export-quote";
-import { buildTermsPerLine, isPerShipment, type BuiltTerms } from "../terms-amortize";
+import { allocateInsurance, buildTermsPerLine, isPerShipment, type BuiltTerms } from "../terms-amortize";
 
 function template(): ExportTermsTemplate {
   return {
@@ -55,6 +55,23 @@ describe("整单保险按货值分摊", () => {
     );
     expect(fee(second.terms[0]!, "insurance")).toBe(15);
     expect(fee(second.terms[1]!, "insurance")).toBe(0);
+  });
+});
+
+describe("整单保险金额", () => {
+  it("按货值比例分摊，整单只算一次", () => {
+    // 总额 30,000 USD → 保费 30,000×1.1/1000 = 33 USD
+    const rows = allocateInsurance([10000, 20000]);
+    expect(rows[0]).toBeCloseTo(11, 10);
+    expect(rows[1]).toBeCloseTo(22, 10);
+    expect(rows[0]! + rows[1]!).toBeCloseTo(33, 10);
+  });
+
+  it("最低 15 美元；无货值不产保费", () => {
+    expect(allocateInsurance([100, 200])).toEqual([5, 10]);
+    expect(allocateInsurance([1000, 2000])[0]).toBeCloseTo(5, 10);
+    expect(allocateInsurance([])).toEqual([]);
+    expect(allocateInsurance([0, 0])).toEqual([0, 0]);
   });
 });
 
