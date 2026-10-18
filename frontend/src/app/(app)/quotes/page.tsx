@@ -5,11 +5,9 @@ import { usePageView } from "@/lib/events/use-page-view";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { QuoteWorkbenchView } from "./views/quote-workbench-view";
 import { QuotationRecordsView } from "./views/quotation-records-view";
-// 复用既有组件，不复制业务逻辑：
-//   · 批量导入面板已正确接线算价引擎（下载模板 → 上传 → 预览 → 一次算完）
-//   · 定价数据管理器是「成本价表」的维护界面（算价的输入数据）
-import { BulkImportPanel } from "../quotations/v2-quote/components/bulk-import-panel";
-import { PricingDataManager } from "../pricing-data/pricing-data-manager";
+import { BatchQuoteView } from "./views/batch-quote-view";
+// 定价数据管理器是「成本价表」的维护界面（算价的输入数据）
+import { PricingDataManager } from "./../pricing-data/pricing-data-manager";
 
 /**
  * 报价工位（一个工位 = 一个侧边栏入口）
@@ -38,7 +36,7 @@ const TABS: { key: QuoteTab; label: string; hint: string }[] = [
     label: "产品报价",
     hint: "一个询盘多个产品：逐行算价 → 汇总 → 存成报价单 → 生成整套单证",
   },
-  { key: "bulk", label: "批量报价", hint: "表格导入 → 一次算完" },
+  { key: "bulk", label: "批量报价", hint: "多客户多询盘 → 一次生成多张报价单" },
   { key: "records", label: "报价记录", hint: "历史台账" },
   { key: "pricing", label: "定价数据", hint: "成本价表（算价的输入数据）" },
 ];
@@ -96,7 +94,7 @@ export default function QuotesWorkstationPage() {
           <QuoteWorkbenchView />
         </TabsContent>
         <TabsContent value="bulk" keepMounted={false}>
-          <BulkImportPanel />
+          <BatchQuoteView />
         </TabsContent>
         <TabsContent value="records" keepMounted={false}>
           <QuotationRecordsView />

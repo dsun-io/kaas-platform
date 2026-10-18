@@ -93,7 +93,12 @@
   最多 200 组；逐组复用单笔建单，返回 `created` / `failed` / `total`；
 - ✅ 合同/契约：`BatchQuoteRequest` / `BatchQuoteResponse`；
 - ✅ 报价生效联动：生成后续单证后同询盘其他报价自动 `closed`；
-- ⏳ B3/B4 前端批量选择页与结果页；B5 e2e；B6 旧 CSV 面板下线（需确认）。
+- ✅ B3/B4 前端批量页：多客户勾选 → 询盘勾选 → 统一产品/规格/成本/件数 →
+  逐询盘算价并生成报价单；结果展示成功/失败与报价单号；
+- ✅ 真实 UI e2e：BatchUITest 两个询盘 → 成功 2 张
+  `QUO-US-BUT-...` / `QUO-US-BUT-...-2`；
+- ⏳ B5 独立 e2e 用例归档；B6 旧 CSV 面板下线（需确认）——当前 `bulk` tab
+  已切换为批量页，旧 `BulkImportPanel` 文件保留未挂载。
 
 ## 4. 前端拆解
 
