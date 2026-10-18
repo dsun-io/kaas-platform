@@ -25,13 +25,11 @@ from main import (  # noqa: E402
     db,
 )
 
-TAX_KEYS = ("input_vat_rate", "output_vat_rate", "rebate_rate", "misc_fee_rate")
+TAX_KEYS = ("output_vat_rate", "misc_fee_rate")
 
 
 class TaxValuesIn(BaseModel):
-    input_vat_rate: Optional[float] = None
     output_vat_rate: Optional[float] = None
-    rebate_rate: Optional[float] = None
     misc_fee_rate: Optional[float] = None
 
 
@@ -52,6 +50,17 @@ class TaxArchivePatch(BaseModel):
     tax_values: Optional[TaxValuesIn] = None
     source: Optional[str] = None
     status: Optional[str] = None
+
+
+class ProductTaxRateIn(BaseModel):
+    product_key: str = Field(min_length=1, max_length=80)
+    input_vat_rate: Optional[float] = None
+    rebate_rate: Optional[float] = None
+
+
+class ProductTaxRatePatch(BaseModel):
+    input_vat_rate: Optional[float] = None
+    rebate_rate: Optional[float] = None
 
 
 def _parse_date(value: Optional[str]) -> Optional[date]:
@@ -303,3 +312,161 @@ async def delete_tax_archive(
         DEFAULT_TENANT, archive_id,
     )
     return {"id": archive_id, "status": "inactive"}
+
+
+# ── 产品税率（进项税 / 出口退税率，按产品维护）────────────────────────────
+
+def _rate_or_422(value: Optional[float], label: str) -> Optional[float]:
+    if value is None:
+        return None
+    number = float(value)
+    if not (0 <= number <= 1):
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "INVALID_TAX_RATE",
+            "detail": f"{label} 必须在 0~1 之间（10% 请填 0.1）",
+        })
+    return number
+
+
+def _product_tax_out(row) -> dict:
+    d = dict(row)
+    for key in ("created_at", "updated_at"):
+        if d.get(key) is not None and hasattr(d[key], "isoformat"):
+            d[key] = d[key].isoformat()
+    return {
+        "id": d["id"],
+        "product_key": d["product_key"],
+        "input_vat_rate": float(d["input_vat_rate"]) if d.get("input_vat_rate") is not None else None,
+        "rebate_rate": float(d["rebate_rate"]) if d.get("rebate_rate") is not None else None,
+        "status": d["status"],
+        "created_at": d.get("created_at"),
+        "updated_at": d.get("updated_at"),
+    }
+
+
+def _product_tax_where(user: dict) -> tuple[str, list]:
+    where = ["tenant_id = $1", "status = 'active'"]
+    params: list = [DEFAULT_TENANT]
+    team_id = user.get("team_id")
+    if team_id is not None:
+        params.append(team_id)
+        where.append(f"team_id = ${len(params)}")
+    return " AND ".join(where), params
+
+
+async def _product_tax_or_404(request: Request, user: dict, rate_id: int):
+    where, params = _product_tax_where(user)
+    params.append(rate_id)
+    row = await db.fetchrow(
+        request,
+        f"SELECT * FROM product_tax_rates WHERE {where} AND id = ${len(params)}",
+        *params, table="product_tax_rates",
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "PRODUCT_TAX_NOT_FOUND",
+        })
+    return row
+
+
+@app.get("/api/v1/product-tax-rates")
+async def list_product_tax_rates(
+    request: Request,
+    user: dict = Depends(_get_current_user),
+):
+    where, params = _product_tax_where(user)
+    rows = await db.fetch(
+        request,
+        f"SELECT * FROM product_tax_rates WHERE {where} ORDER BY product_key ASC",
+        *params, table="product_tax_rates",
+    )
+    return {"items": [_product_tax_out(r) for r in rows], "total": len(rows)}
+
+
+@app.post("/api/v1/product-tax-rates", status_code=201)
+async def create_product_tax_rate(
+    request: Request,
+    body: ProductTaxRateIn,
+    user: dict = Depends(_get_current_user),
+):
+    team_id = await _team_id(request, user, write=True)
+    product_key = body.product_key.strip()
+    from kaas_common.export_quote.products import has as has_product
+    if not has_product(product_key):
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "UNKNOWN_PRODUCT",
+            "detail": f"产品 {product_key} 不存在",
+        })
+    input_rate = _rate_or_422(body.input_vat_rate, "进项增值税率")
+    rebate_rate = _rate_or_422(body.rebate_rate, "出口退税率")
+    if input_rate is None and rebate_rate is None:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "TAX_VALUES_REQUIRED",
+            "detail": "进项增值税率、出口退税率至少填一个",
+        })
+    exists = await db.fetchval(
+        request,
+        "SELECT 1 FROM product_tax_rates WHERE tenant_id=$1 AND team_id=$2"
+        " AND product_key=$3 AND status='active' LIMIT 1",
+        DEFAULT_TENANT, team_id, product_key,
+    )
+    if exists:
+        raise HTTPException(status_code=409, detail={
+            "error": "conflict", "code": "PRODUCT_TAX_EXISTS",
+            "detail": f"产品 {product_key} 已配置税率，请直接修改",
+        })
+    row = await db.fetchrow(
+        request,
+        """INSERT INTO product_tax_rates
+               (tenant_id, team_id, product_key, input_vat_rate, rebate_rate,
+                status, created_by)
+           VALUES ($1,$2,$3,$4,$5,'active',$6) RETURNING *""",
+        DEFAULT_TENANT, team_id, product_key, input_rate, rebate_rate,
+        str(user["id"]), table="product_tax_rates",
+    )
+    return _product_tax_out(row)
+
+
+@app.patch("/api/v1/product-tax-rates/{rate_id}")
+async def update_product_tax_rate(
+    rate_id: int,
+    request: Request,
+    body: ProductTaxRatePatch,
+    user: dict = Depends(_get_current_user),
+):
+    await _team_id(request, user, write=True)
+    row = await _product_tax_or_404(request, user, rate_id)
+    input_rate = (float(row["input_vat_rate"]) if row.get("input_vat_rate") is not None
+                  else None)
+    rebate_rate = (float(row["rebate_rate"]) if row.get("rebate_rate") is not None
+                   else None)
+    if body.input_vat_rate is not None:
+        input_rate = _rate_or_422(body.input_vat_rate, "进项增值税率")
+    if body.rebate_rate is not None:
+        rebate_rate = _rate_or_422(body.rebate_rate, "出口退税率")
+    row = await db.fetchrow(
+        request,
+        """UPDATE product_tax_rates SET input_vat_rate=$3, rebate_rate=$4,
+               updated_at=now()
+           WHERE tenant_id=$1 AND id=$2 RETURNING *""",
+        DEFAULT_TENANT, rate_id, input_rate, rebate_rate,
+        table="product_tax_rates",
+    )
+    return _product_tax_out(row)
+
+
+@app.delete("/api/v1/product-tax-rates/{rate_id}")
+async def delete_product_tax_rate(
+    rate_id: int,
+    request: Request,
+    user: dict = Depends(_get_current_user),
+):
+    await _team_id(request, user, write=True)
+    await _product_tax_or_404(request, user, rate_id)
+    await db.execute(
+        request,
+        "UPDATE product_tax_rates SET status='inactive', updated_at=now()"
+        " WHERE tenant_id=$1 AND id=$2",
+        DEFAULT_TENANT, rate_id,
+    )
+    return {"id": rate_id, "status": "inactive"}

@@ -100,6 +100,11 @@ interface Props {
   lineCount: number;
   /** 整单客户（工作台 CustomerPicker 的 id）：用于历史参考价查询 */
   customerId?: string | null;
+  /** 产品税率（进项/退税按产品走），key = 产品 key */
+  productTaxMap?: Record<
+    string,
+    { input_vat_rate?: number | null; rebate_rate?: number | null }
+  >;
   onChange: (patch: Partial<LineDraft>) => void;
   onRemove: () => void;
   /** 整单报价信号：递增即触发本行计算（0/undefined = 不触发） */
@@ -114,6 +119,7 @@ export function QuoteLineCard({
   terms,
   lineCount,
   customerId = null,
+  productTaxMap,
   onChange,
   onRemove,
   calcSignal = 0,
@@ -344,6 +350,7 @@ export function QuoteLineCard({
         profitPctOverride: line.profitPctOverride,
         packagingId: effectivePackaging?.id ?? "",
         terms: terms ?? null,
+        productTax: productTaxMap?.[effectiveProduct] ?? null,
         shared,
       });
       const result = await calc.mutateAsync({ payload, view });

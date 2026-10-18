@@ -133,14 +133,10 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
     setTaxArchiveId,
     applyTaxArchive,
     clearTaxArchive,
-    inputVatRatePct,
-    setInputVatRatePct,
     giveRatioPct,
     setGiveRatioPct,
     outputVatRatePct,
     setOutputVatRatePct,
-    rebateRatePct,
-    setRebateRatePct,
     miscTaxPct,
     setMiscTaxPct,
     profitPct,
@@ -181,9 +177,7 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
   const archiveModified = Boolean(
     selectedArchive &&
       !(
-        samePct(inputVatRatePct, selectedArchive.tax_values.input_vat_rate) &&
         samePct(outputVatRatePct, selectedArchive.tax_values.output_vat_rate) &&
-        samePct(rebateRatePct, selectedArchive.tax_values.rebate_rate) &&
         samePct(miscTaxPct, selectedArchive.tax_values.misc_fee_rate)
       ),
   );
@@ -305,38 +299,8 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
           </div>
         </div>
 
-        {/* 税率 / 利润 / 杂税 */}
+        {/* 利润 / 杂税 / 让利（进项税、退税率按产品在税务管理里维护） */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="space-y-1.5">
-            <Label
-              className="text-xs"
-              title="供应商开票的税点（如 10%），用于换算含税采购价与进项税额"
-            >
-              进项票税点（%）
-            </Label>
-            <Input
-              type="number"
-              step="0.1"
-              value={inputVatRatePct}
-              onChange={(e) => setInputVatRatePct(e.target.value)}
-              className="h-8 text-xs"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label
-              className="text-xs"
-              title="按 HS 编码确定的出口退税率；未填按全额可退估算"
-            >
-              出口退税率（%）
-            </Label>
-            <Input
-              type="number"
-              step="0.1"
-              value={rebateRatePct}
-              onChange={(e) => setRebateRatePct(e.target.value)}
-              className="h-8 text-xs"
-            />
-          </div>
           <div className="space-y-1.5">
             <Label
               className="text-xs"

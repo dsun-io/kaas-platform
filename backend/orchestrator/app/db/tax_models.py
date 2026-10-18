@@ -17,6 +17,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Index,
+    Numeric,
     Text,
     UniqueConstraint,
     func,
@@ -26,14 +27,45 @@ from sqlalchemy.dialects.postgresql import JSONB
 from app.db.base import Base
 
 
+class ProductTaxRate(Base):
+    """产品税率档案：一个团队 + 一个产品一条，维护进项税与出口退税率。"""
+    __tablename__ = "product_tax_rates"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False, default="default")
+    team_id = Column(BigInteger, nullable=False)
+    product_key = Column(Text, nullable=False)
+    input_vat_rate = Column(Numeric(8, 6), nullable=True)
+    rebate_rate = Column(Numeric(8, 6), nullable=True)
+    status = Column(Text, nullable=False, default="active")
+    created_by = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "team_id", "product_key",
+            name="uq_product_tax_rates_team_product",
+        ),
+        Index(
+            "idx_product_tax_rates_team",
+            "tenant_id", "team_id", "status",
+        ),
+    )
+
+
 class TaxArchive(Base):
+    """企业级税务档案：只保留销项税率与杂税（进项/退税按产品走）。"""
     __tablename__ = "tax_archives"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     tenant_id = Column(Text, nullable=False, default="default")
-    # 团队隔离边界；NULL 预留全租户共享档案（当前不使用）
     team_id = Column(BigInteger, nullable=True)
-    # 团队内唯一；不填由 API 自动生成（TAX-<日期>-<序号>）
     code = Column(Text, nullable=True)
     name = Column(Text, nullable=False)
     effective_from = Column(Date, nullable=True)
@@ -59,3 +91,4 @@ class TaxArchive(Base):
             "effective_from", "updated_at",
         ),
     )
+

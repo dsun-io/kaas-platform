@@ -1,16 +1,10 @@
 """税务档案 CRUD（TAX-02）
 
-用户口径（2026-10-18 TAX-00）：
-  · 团队级档案；团队管理员写、成员读；
-  · 字段：进项票税点 / 销项税率 / 出口退税率 / 杂税（印花税含在杂税里）；
-  · 档案只负责“填表”，不参与后端算价；
+用户口径（2026-10-18 修正）：
+  · 税务档案是**企业级**的，只放销项税率、杂税（印花税含在杂税里）；
+  · 进项增值税、出口退税率跟着**产品/HS**走，单独在「产品税率」里维护；
+  · 团队级；团队管理员写、成员读；
   · 停用 = 软删，历史报价单靠 `tax_snapshot` 复现。
-
-设计要点：
-  · `tax_values` 是 JSONB，写入按白名单校验，未知键 422（不静默丢）；
-  · 税率用 0–1，前端百分比在提交前 /100；
-  · `name` / `code` 团队内唯一，`code` 不填自动生成；
-  · 生效日期只展示/排序，不做报价日期门禁。
 """
 from datetime import date, datetime
 from typing import Optional
@@ -23,18 +17,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import AuthContext, get_auth_context
 from app.db.session import get_db_session
 from app.db.models import Team
-from app.db.tax_models import TaxArchive
+from app.db.tax_models import ProductTaxRate, TaxArchive
 
 router = APIRouter(prefix="/api/v1", tags=["tax-archives"])
 
-# 新档案只认这四项；印花税已含在 misc_fee_rate，不单列
-TAX_KEYS = ("input_vat_rate", "output_vat_rate", "rebate_rate", "misc_fee_rate")
+# 企业级税档只认这两项；进项/退税按产品走，不再放这里
+TAX_KEYS = ("output_vat_rate", "misc_fee_rate")
 
 
 class TaxValuesIn(BaseModel):
-    input_vat_rate: Optional[float] = None
     output_vat_rate: Optional[float] = None
-    rebate_rate: Optional[float] = None
     misc_fee_rate: Optional[float] = None
 
 
@@ -55,6 +47,17 @@ class TaxArchivePatch(BaseModel):
     tax_values: Optional[TaxValuesIn] = None
     source: Optional[str] = None
     status: Optional[str] = None
+
+
+class ProductTaxRateIn(BaseModel):
+    product_key: str = Field(min_length=1, max_length=80)
+    input_vat_rate: Optional[float] = None
+    rebate_rate: Optional[float] = None
+
+
+class ProductTaxRatePatch(BaseModel):
+    input_vat_rate: Optional[float] = None
+    rebate_rate: Optional[float] = None
 
 
 def _parse_date(value: Optional[str]) -> Optional[date]:
@@ -105,6 +108,37 @@ def _row_out(a: TaxArchive) -> dict:
         "created_at": a.created_at.isoformat() if a.created_at else None,
         "updated_at": a.updated_at.isoformat() if a.updated_at else None,
     }
+
+
+def _rate_or_422(value: Optional[float], label: str) -> Optional[float]:
+    if value is None:
+        return None
+    number = float(value)
+    if not (0 <= number <= 1):
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "INVALID_TAX_RATE",
+            "detail": f"{label} 必须在 0~1 之间（10% 请填 0.1）",
+        })
+    return number
+
+
+def _product_tax_out(row: ProductTaxRate) -> dict:
+    return {
+        "id": row.id,
+        "product_key": row.product_key,
+        "input_vat_rate": float(row.input_vat_rate) if row.input_vat_rate is not None else None,
+        "rebate_rate": float(row.rebate_rate) if row.rebate_rate is not None else None,
+        "status": row.status,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _product_tax_scope(stmt, auth: AuthContext):
+    stmt = stmt.where(ProductTaxRate.tenant_id == (auth.tenant_id or "default"))
+    if auth.team_id is not None:
+        stmt = stmt.where(ProductTaxRate.team_id == auth.team_id)
+    return stmt
 
 
 async def _require_team_admin(db: AsyncSession, auth: AuthContext) -> int:
@@ -299,3 +333,114 @@ async def delete_tax_archive(
     archive.status = "inactive"
     await db.commit()
     return {"id": archive.id, "status": archive.status}
+
+
+# ── 产品税率（进项税 / 出口退税率，按产品维护）────────────────────────────
+
+@router.get("/product-tax-rates")
+async def list_product_tax_rates(
+    auth: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db_session),
+):
+    stmt = _product_tax_scope(select(ProductTaxRate), auth)
+    stmt = stmt.where(ProductTaxRate.status == "active").order_by(
+        ProductTaxRate.product_key.asc()
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    return {"items": [_product_tax_out(r) for r in rows], "total": len(rows)}
+
+
+@router.post("/product-tax-rates", status_code=201)
+async def create_product_tax_rate(
+    body: ProductTaxRateIn,
+    auth: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db_session),
+):
+    team_id = await _require_team_admin(db, auth)
+    product_key = body.product_key.strip()
+    try:
+        from app.services.export_quote.products import get as get_product
+        get_product(product_key)
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "UNKNOWN_PRODUCT",
+            "detail": f"产品 {product_key} 不存在",
+        })
+    input_rate = _rate_or_422(body.input_vat_rate, "进项增值税率")
+    rebate_rate = _rate_or_422(body.rebate_rate, "出口退税率")
+    if input_rate is None and rebate_rate is None:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "TAX_VALUES_REQUIRED",
+            "detail": "进项增值税率、出口退税率至少填一个",
+        })
+    exists = (await db.execute(
+        _product_tax_scope(
+            select(ProductTaxRate.id).where(
+                ProductTaxRate.product_key == product_key,
+                ProductTaxRate.status == "active",
+            ),
+            auth,
+        ).limit(1)
+    )).scalar_one_or_none()
+    if exists is not None:
+        raise HTTPException(status_code=409, detail={
+            "error": "conflict", "code": "PRODUCT_TAX_EXISTS",
+            "detail": f"产品 {product_key} 已配置税率，请直接修改",
+        })
+    row = ProductTaxRate(
+        tenant_id=auth.tenant_id or "default", team_id=team_id,
+        product_key=product_key,
+        input_vat_rate=input_rate, rebate_rate=rebate_rate,
+        status="active", created_by=str(auth.user_id),
+    )
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return _product_tax_out(row)
+
+
+@router.patch("/product-tax-rates/{rate_id}")
+async def update_product_tax_rate(
+    rate_id: int,
+    body: ProductTaxRatePatch,
+    auth: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db_session),
+):
+    await _require_team_admin(db, auth)
+    row = (await db.execute(
+        _product_tax_scope(
+            select(ProductTaxRate).where(ProductTaxRate.id == rate_id), auth
+        )
+    )).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "PRODUCT_TAX_NOT_FOUND",
+        })
+    if body.input_vat_rate is not None:
+        row.input_vat_rate = _rate_or_422(body.input_vat_rate, "进项增值税率")
+    if body.rebate_rate is not None:
+        row.rebate_rate = _rate_or_422(body.rebate_rate, "出口退税率")
+    await db.commit()
+    await db.refresh(row)
+    return _product_tax_out(row)
+
+
+@router.delete("/product-tax-rates/{rate_id}")
+async def delete_product_tax_rate(
+    rate_id: int,
+    auth: AuthContext = Depends(get_auth_context),
+    db: AsyncSession = Depends(get_db_session),
+):
+    await _require_team_admin(db, auth)
+    row = (await db.execute(
+        _product_tax_scope(
+            select(ProductTaxRate).where(ProductTaxRate.id == rate_id), auth
+        )
+    )).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "PRODUCT_TAX_NOT_FOUND",
+        })
+    row.status = "inactive"
+    await db.commit()
+    return {"id": row.id, "status": row.status}

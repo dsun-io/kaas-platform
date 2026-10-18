@@ -241,6 +241,7 @@ export const ExportProductListSchema = z.object({
   products: z.array(ExportProductSchema),
   total: z.number().int(),
 });
+export type ExportProductList = z.infer<typeof ExportProductListSchema>;
 
 export const StampDutySchema = z.object({
   rate: z.number().nullable(),
@@ -283,9 +284,8 @@ export const ExportRateSetListSchema = z.object({
  *   · 版本/生效日期只展示排序，不做报价日期门禁。
  */
 export const TaxArchiveTaxSchema = z.object({
-  input_vat_rate: z.number().optional(),
+  /** 企业级税档只保留销项/杂税；进项/退税按产品走 */
   output_vat_rate: z.number().optional(),
-  rebate_rate: z.number().optional(),
   /** 综合税费系数（含印花税） */
   misc_fee_rate: z.number().optional(),
 });
@@ -310,6 +310,24 @@ export const TaxArchiveListSchema = z.object({
   total: z.number().int().default(0),
 });
 export type TaxArchiveList = z.infer<typeof TaxArchiveListSchema>;
+
+/** 产品税率：进项增值税 / 出口退税率按产品维护，团队级。 */
+export const ProductTaxRateSchema = z.object({
+  id: z.number().int(),
+  product_key: z.string(),
+  input_vat_rate: z.number().nullable().default(null),
+  rebate_rate: z.number().nullable().default(null),
+  status: z.enum(['active', 'inactive']).default('active'),
+  created_at: z.string().nullable().default(null),
+  updated_at: z.string().nullable().default(null),
+});
+export type ProductTaxRate = z.infer<typeof ProductTaxRateSchema>;
+
+export const ProductTaxRateListSchema = z.object({
+  items: z.array(ProductTaxRateSchema).default([]),
+  total: z.number().int().default(0),
+});
+export type ProductTaxRateList = z.infer<typeof ProductTaxRateListSchema>;
 
 export const TaxArchiveCreateSchema = z.object({
   name: z.string().min(1, '请填写档案名称').max(60),

@@ -1,18 +1,17 @@
 "use client";
 
 /**
- * 税务管理（TAX-04）—— 团队级税务档案。
+ * 税务管理（TAX-04）—— 企业税档 + 产品税率。
  *
- * 用户口径（TAX-00）：
- *  · 档案只负责在报价页“填表”，不参与后端算价；
- *  · 字段：进项票税点 / 销项税率 / 出口退税率 / 杂税（印花税已含在杂税里）；
- *  · 不含利润率/让利；
- *  · 版本/生效日期只展示排序，不做报价日期门禁；
- *  · 团队管理员写，成员只读。
+ * 用户口径（2026-10-18 修正）：
+ *  · 销项增值税、杂税是**企业级**，按团队维护档案；
+ *  · 进项增值税、出口退税率跟着**产品/HS**走，在本页「产品税率」逐条维护；
+ *  · 同一产品只能有一条产品税率（已选过的产品不能再选）；
+ *  · 税费变化后在一个页面统一管理，不用去每个产品页改。
  */
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Save, Power } from "lucide-react";
+import { Pencil, Plus, Power, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import apiClient from "@/lib/api/client";
@@ -23,28 +22,43 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usePageView } from "@/lib/events/use-page-view";
 import type {
+  ExportProductList,
+  ProductTaxRate,
+  ProductTaxRateList,
   TaxArchive,
   TaxArchiveCreate,
   TaxArchiveList,
 } from "@contracts/export-quote";
 
 const KEY = ["tax-archives"];
+const PT_KEY = ["product-tax-rates"];
 
 type FormState = {
   id: number | null;
   name: string;
   code: string;
   effective_from: string;
-  input_vat: string;
   output_vat: string;
-  rebate: string;
   misc: string;
 };
 
 const EMPTY: FormState = {
-  id: null, name: "", code: "", effective_from: "",
-  input_vat: "10", output_vat: "0", rebate: "", misc: "3",
+  id: null,
+  name: "",
+  code: "",
+  effective_from: "",
+  output_vat: "0",
+  misc: "3",
 };
+
+type PTForm = {
+  id: number | null;
+  product_key: string;
+  input_vat: string;
+  rebate: string;
+};
+
+const EMPTY_PT: PTForm = { id: null, product_key: "", input_vat: "", rebate: "" };
 
 function pctToRate(value: string): number | undefined {
   const text = value.trim();
@@ -54,7 +68,7 @@ function pctToRate(value: string): number | undefined {
   return n / 100;
 }
 
-function rateToPct(value: number | undefined): string {
+function rateToPct(value: number | null | undefined): string {
   return value == null ? "" : String(Number((value * 100).toFixed(4)));
 }
 
@@ -64,11 +78,19 @@ function toForm(a: TaxArchive): FormState {
     name: a.name,
     code: a.code ?? "",
     effective_from: a.effective_from ?? "",
-    input_vat: rateToPct(a.tax_values.input_vat_rate),
     output_vat: rateToPct(a.tax_values.output_vat_rate),
-    rebate: rateToPct(a.tax_values.rebate_rate),
     misc: rateToPct(a.tax_values.misc_fee_rate),
   };
+}
+
+function errText(e: unknown): string {
+  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response
+    ?.data?.detail;
+  if (typeof detail === "string") return detail;
+  return (
+    (detail as { detail?: string } | undefined)?.detail ||
+    (e instanceof Error ? e.message : "操作失败")
+  );
 }
 
 export default function TaxArchivesPage() {
@@ -76,6 +98,8 @@ export default function TaxArchivesPage() {
   const qc = useQueryClient();
   const [form, setForm] = useState<FormState>(EMPTY);
   const [showForm, setShowForm] = useState(false);
+  const [ptForm, setPtForm] = useState<PTForm>(EMPTY_PT);
+  const [showPtForm, setShowPtForm] = useState(false);
 
   const list = useQuery({
     queryKey: KEY,
@@ -85,16 +109,36 @@ export default function TaxArchivesPage() {
     },
   });
 
-  useEffect(() => {
-    if (list.error) toast.error("读取税务档案失败，请确认数据库迁移已执行");
-  }, [list.error]);
+  const productTaxes = useQuery({
+    queryKey: PT_KEY,
+    queryFn: async () => {
+      const { data } = await apiClient.get<ProductTaxRateList>(
+        "/product-tax-rates",
+      );
+      return data;
+    },
+  });
+
+  const products = useQuery({
+    queryKey: ["export-products"],
+    queryFn: async () => {
+      const { data } = await apiClient.get<ExportProductList>(
+        "/export-quote/products",
+      );
+      return data;
+    },
+  });
+
+  const productName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of products.data?.products ?? []) map.set(p.key, p.name);
+    return map;
+  }, [products.data]);
 
   const save = useMutation({
     mutationFn: async (state: FormState) => {
       const tax_values = {
-        input_vat_rate: pctToRate(state.input_vat),
         output_vat_rate: pctToRate(state.output_vat),
-        rebate_rate: pctToRate(state.rebate),
         misc_fee_rate: pctToRate(state.misc),
       };
       const body: TaxArchiveCreate = {
@@ -119,16 +163,7 @@ export default function TaxArchivesPage() {
       setShowForm(false);
       void qc.invalidateQueries({ queryKey: KEY });
     },
-    onError: (e: unknown) => {
-      const detail =
-        (e as { response?: { data?: { detail?: unknown } } })?.response?.data
-          ?.detail;
-      const text =
-        typeof detail === "string"
-          ? detail
-          : (detail as { detail?: string } | undefined)?.detail;
-      toast.error(text || "保存失败");
-    },
+    onError: (e) => toast.error(errText(e)),
   });
 
   const toggle = useMutation({
@@ -143,6 +178,45 @@ export default function TaxArchivesPage() {
     onError: () => toast.error("操作失败：仅团队管理员可修改税务档案"),
   });
 
+  const saveProductTax = useMutation({
+    mutationFn: async (state: PTForm) => {
+      const body = {
+        input_vat_rate: pctToRate(state.input_vat),
+        rebate_rate: pctToRate(state.rebate),
+      };
+      if (state.id == null) {
+        const { data } = await apiClient.post<ProductTaxRate>(
+          "/product-tax-rates",
+          { product_key: state.product_key, ...body },
+        );
+        return data;
+      }
+      const { data } = await apiClient.patch<ProductTaxRate>(
+        `/product-tax-rates/${state.id}`,
+        body,
+      );
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("产品税率已保存");
+      setPtForm(EMPTY_PT);
+      setShowPtForm(false);
+      void qc.invalidateQueries({ queryKey: PT_KEY });
+    },
+    onError: (e) => toast.error(errText(e)),
+  });
+
+  const deleteProductTax = useMutation({
+    mutationFn: async (row: ProductTaxRate) => {
+      await apiClient.delete(`/product-tax-rates/${row.id}`);
+    },
+    onSuccess: () => {
+      toast.success("产品税率已停用");
+      void qc.invalidateQueries({ queryKey: PT_KEY });
+    },
+    onError: (e) => toast.error(errText(e)),
+  });
+
   const submit = () => {
     if (!form.name.trim()) {
       toast.error("请填写档案名称");
@@ -151,11 +225,32 @@ export default function TaxArchivesPage() {
     try {
       save.mutate(form);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "税率不合法");
+      toast.error(errText(e));
+    }
+  };
+
+  const submitProductTax = () => {
+    if (ptForm.id == null && !ptForm.product_key) {
+      toast.error("请选择产品");
+      return;
+    }
+    if (!ptForm.input_vat.trim() && !ptForm.rebate.trim()) {
+      toast.error("进项税、退税率至少填一个");
+      return;
+    }
+    try {
+      saveProductTax.mutate(ptForm);
+    } catch (e) {
+      toast.error(errText(e));
     }
   };
 
   const items = list.data?.items ?? [];
+  const ptItems = productTaxes.data?.items ?? [];
+  const configured = new Set(ptItems.map((x) => x.product_key));
+  const availableProducts = (products.data?.products ?? []).filter(
+    (p) => !configured.has(p.key),
+  );
   const set = (patch: Partial<FormState>) =>
     setForm((prev) => ({ ...prev, ...patch }));
 
@@ -163,7 +258,7 @@ export default function TaxArchivesPage() {
     <div className="space-y-5">
       <PageHeader
         title="税务管理"
-        description="团队级税务档案。报价时选择档案会自动填入税率；档案本身不参与算价。"
+        description="企业税档管销项税和杂税；进项税、出口退税率按产品在下方单独维护。"
         actions={
           <Button
             onClick={() => {
@@ -171,19 +266,19 @@ export default function TaxArchivesPage() {
               setShowForm(true);
             }}
           >
-            <Plus className="mr-1 h-4 w-4" /> 新建档案
+            <Plus className="mr-1 h-4 w-4" /> 新建企业税档
           </Button>
         }
       />
 
       <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-        本页<strong>仅团队管理员可保存</strong>，成员可查看并用于报价。档案只负责填表；
-        报价单会保存当时实际使用的税率快照。
+        本页<strong>仅团队管理员可保存</strong>，成员可查看。销项税/杂税按企业税档走；
+        进项税/出口退税率按产品走，报价时自动带出对应产品税率。
       </div>
 
       {showForm && (
         <SectionCard
-          title={form.id == null ? "新建税务档案" : `编辑：${form.name}`}
+          title={form.id == null ? "新建企业税档" : `编辑：${form.name}`}
         >
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="space-y-1">
@@ -191,7 +286,7 @@ export default function TaxArchivesPage() {
               <Input
                 value={form.name}
                 onChange={(e) => set({ name: e.target.value })}
-                placeholder="如：默认税率档案（2026-09）"
+                placeholder="如：默认企业税档（2026-09）"
               />
             </label>
             <label className="space-y-1">
@@ -210,24 +305,24 @@ export default function TaxArchivesPage() {
                 onChange={(e) => set({ effective_from: e.target.value })}
               />
             </label>
-            {(
-              [
-                ["input_vat", "进项票税点（%）"],
-                ["output_vat", "销项税率（%）"],
-                ["rebate", "出口退税率（%）"],
-                ["misc", "杂税（%，含印花税）"],
-              ] as const
-            ).map(([key, label]) => (
-              <label key={key} className="space-y-1">
-                <span className="text-sm font-medium">{label}</span>
-                <Input
-                  inputMode="decimal"
-                  value={form[key]}
-                  onChange={(e) => set({ [key]: e.target.value })}
-                  placeholder="留空 = 不设置"
-                />
-              </label>
-            ))}
+            <label className="space-y-1">
+              <span className="text-sm font-medium">销项税率（%）</span>
+              <Input
+                inputMode="decimal"
+                value={form.output_vat}
+                onChange={(e) => set({ output_vat: e.target.value })}
+                placeholder="留空 = 不设置"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-sm font-medium">杂税（%，含印花税）</span>
+              <Input
+                inputMode="decimal"
+                value={form.misc}
+                onChange={(e) => set({ misc: e.target.value })}
+                placeholder="留空 = 不设置"
+              />
+            </label>
           </div>
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="outline" onClick={() => setShowForm(false)}>
@@ -241,14 +336,14 @@ export default function TaxArchivesPage() {
         </SectionCard>
       )}
 
-      <SectionCard title="档案列表">
+      <SectionCard title="企业税档（销项税 / 杂税）">
         {list.isLoading ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
             加载中…
           </p>
         ) : items.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            暂无档案。可新建一份，报价页会自动选中最新一份。
+            暂无企业税档。可新建一份，报价页会自动选中最新一份。
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -258,9 +353,7 @@ export default function TaxArchivesPage() {
                   <th className="p-2">名称</th>
                   <th className="p-2">编码</th>
                   <th className="p-2">生效日期</th>
-                  <th className="p-2">进项</th>
                   <th className="p-2">销项</th>
-                  <th className="p-2">出口退税</th>
                   <th className="p-2">杂税</th>
                   <th className="p-2">状态</th>
                   <th className="p-2">操作</th>
@@ -272,10 +365,12 @@ export default function TaxArchivesPage() {
                     <td className="p-2 font-medium">{a.name}</td>
                     <td className="p-2 font-mono text-xs">{a.code ?? "—"}</td>
                     <td className="p-2 text-xs">{a.effective_from ?? "—"}</td>
-                    <td className="p-2">{rateToPct(a.tax_values.input_vat_rate) || "—"}%</td>
-                    <td className="p-2">{rateToPct(a.tax_values.output_vat_rate) || "—"}%</td>
-                    <td className="p-2">{rateToPct(a.tax_values.rebate_rate) || "—"}</td>
-                    <td className="p-2">{rateToPct(a.tax_values.misc_fee_rate) || "—"}%</td>
+                    <td className="p-2">
+                      {rateToPct(a.tax_values.output_vat_rate) || "—"}%
+                    </td>
+                    <td className="p-2">
+                      {rateToPct(a.tax_values.misc_fee_rate) || "—"}%
+                    </td>
                     <td className="p-2">
                       <StatusBadge
                         tone={a.status === "active" ? "success" : "default"}
@@ -303,6 +398,154 @@ export default function TaxArchivesPage() {
                         >
                           <Power className="mr-1 h-3 w-3" />
                           {a.status === "active" ? "停用" : "启用"}
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard
+        title="产品税率（进项税 / 出口退税率）"
+        description="每个产品一条；已配置的产品不能再选。报价时按产品自动带出。"
+      >
+        <div className="mb-3 flex justify-end">
+          <Button
+            size="sm"
+            onClick={() => {
+              setPtForm(EMPTY_PT);
+              setShowPtForm(true);
+            }}
+          >
+            <Plus className="mr-1 h-4 w-4" /> 新增产品税率
+          </Button>
+        </div>
+
+        {showPtForm && (
+          <div className="mb-4 grid gap-3 rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-4">
+            <label className="space-y-1">
+              <span className="text-sm font-medium">产品 *</span>
+              <select
+                value={ptForm.product_key}
+                disabled={ptForm.id != null}
+                onChange={(e) =>
+                  setPtForm((prev) => ({
+                    ...prev,
+                    product_key: e.target.value,
+                  }))
+                }
+                className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm"
+              >
+                <option value="">请选择产品</option>
+                {(ptForm.id != null
+                  ? products.data?.products ?? []
+                  : availableProducts
+                ).map((p) => (
+                  <option key={p.key} value={p.key}>
+                    {p.name}（{p.key}）
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-sm font-medium">进项增值税率（%）</span>
+              <Input
+                inputMode="decimal"
+                value={ptForm.input_vat}
+                onChange={(e) =>
+                  setPtForm((prev) => ({
+                    ...prev,
+                    input_vat: e.target.value,
+                  }))
+                }
+                placeholder="如 10"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-sm font-medium">出口退税率（%）</span>
+              <Input
+                inputMode="decimal"
+                value={ptForm.rebate}
+                onChange={(e) =>
+                  setPtForm((prev) => ({ ...prev, rebate: e.target.value }))
+                }
+                placeholder="如 13"
+              />
+            </label>
+            <div className="flex items-end gap-2">
+              <Button
+                onClick={submitProductTax}
+                disabled={saveProductTax.isPending}
+              >
+                <Save className="mr-1 h-4 w-4" /> 保存
+              </Button>
+              <Button variant="outline" onClick={() => setShowPtForm(false)}>
+                取消
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {productTaxes.isLoading ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            加载中…
+          </p>
+        ) : ptItems.length === 0 ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            暂无产品税率。新增后报价页按产品自动带出。
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs text-muted-foreground">
+                  <th className="p-2">产品</th>
+                  <th className="p-2">进项增值税率</th>
+                  <th className="p-2">出口退税率</th>
+                  <th className="p-2">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ptItems.map((row) => (
+                  <tr key={row.id} className="border-b last:border-0">
+                    <td className="p-2">
+                      {productName.get(row.product_key) ?? row.product_key}
+                      <span className="ml-1 font-mono text-xs text-muted-foreground">
+                        {row.product_key}
+                      </span>
+                    </td>
+                    <td className="p-2">
+                      {rateToPct(row.input_vat_rate) || "—"}%
+                    </td>
+                    <td className="p-2">{rateToPct(row.rebate_rate) || "—"}%</td>
+                    <td className="p-2">
+                      <div className="flex gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setPtForm({
+                              id: row.id,
+                              product_key: row.product_key,
+                              input_vat: rateToPct(row.input_vat_rate),
+                              rebate: rateToPct(row.rebate_rate),
+                            });
+                            setShowPtForm(true);
+                          }}
+                        >
+                          <Pencil className="mr-1 h-3 w-3" /> 编辑
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={deleteProductTax.isPending}
+                          onClick={() => deleteProductTax.mutate(row)}
+                        >
+                          <Trash2 className="mr-1 h-3 w-3" /> 停用
                         </Button>
                       </div>
                     </td>

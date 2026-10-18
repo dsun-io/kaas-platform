@@ -7800,6 +7800,150 @@
         }
       }
     },
+    "/api/v1/product-tax-rates": {
+      "get": {
+        "tags": [
+          "tax-archives"
+        ],
+        "summary": "List Product Tax Rates",
+        "operationId": "list_product_tax_rates_api_v1_product_tax_rates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "tax-archives"
+        ],
+        "summary": "Create Product Tax Rate",
+        "operationId": "create_product_tax_rate_api_v1_product_tax_rates_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductTaxRateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/product-tax-rates/{rate_id}": {
+      "patch": {
+        "tags": [
+          "tax-archives"
+        ],
+        "summary": "Update Product Tax Rate",
+        "operationId": "update_product_tax_rate_api_v1_product_tax_rates__rate_id__patch",
+        "parameters": [
+          {
+            "name": "rate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Rate Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductTaxRatePatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "tax-archives"
+        ],
+        "summary": "Delete Product Tax Rate",
+        "operationId": "delete_product_tax_rate_api_v1_product_tax_rates__rate_id__delete",
+        "parameters": [
+          {
+            "name": "rate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Rate Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/tenant/company-seals": {
       "get": {
         "tags": [
@@ -15736,6 +15880,71 @@
         ],
         "title": "PricingPayload"
       },
+      "ProductTaxRateIn": {
+        "properties": {
+          "product_key": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Product Key"
+          },
+          "input_vat_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Vat Rate"
+          },
+          "rebate_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rebate Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_key"
+        ],
+        "title": "ProductTaxRateIn"
+      },
+      "ProductTaxRatePatch": {
+        "properties": {
+          "input_vat_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Vat Rate"
+          },
+          "rebate_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rebate Rate"
+          }
+        },
+        "type": "object",
+        "title": "ProductTaxRatePatch"
+      },
       "ProfileIn": {
         "properties": {
           "info": {
@@ -18195,17 +18404,6 @@
       },
       "TaxValuesIn": {
         "properties": {
-          "input_vat_rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Input Vat Rate"
-          },
           "output_vat_rate": {
             "anyOf": [
               {
@@ -18216,17 +18414,6 @@
               }
             ],
             "title": "Output Vat Rate"
-          },
-          "rebate_rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rebate Rate"
           },
           "misc_fee_rate": {
             "anyOf": [
