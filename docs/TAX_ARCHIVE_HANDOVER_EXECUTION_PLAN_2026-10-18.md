@@ -23,7 +23,11 @@
   `rates.py`、`rate_sets/`、`rate_sets_data.py` 删除；`sync-shared.ps1` 不再生成
   rate_sets 清单；前端批量页去掉档案下拉，旧单产品报价视图（死代码）删除。
   `customer_quote_profiles` **表数据保留、旧 API 暂留一个周期**（前端已无调用）。
-- ⏳ TAX-07：全量门禁、真实 UI 验收、文档收口（本轮继续）。
+- ✅ TAX-07：本轮已完成：orchestrator unit、worker pytest、frontend
+  typecheck/lint/test、`contracts:check`、`route-parity`、`sync-shared -Check`、
+  `NEXT_EXPORT=1 NEXT_DIST_DIR=.next-verify pnpm build` 全部通过；
+  真实 UI 已验证税务管理页与报价页档案自动带出。剩余：批量报价 plan 评审
+  （见 `docs/BATCH_QUOTE_REDESIGN_PLAN_2026-10-18.md` 的 3 个待确认项）。
 
 > 本地 DB 已升级到 `202610180007`。
 
