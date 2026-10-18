@@ -155,40 +155,19 @@ export function QuoteLineCard({
   ];
   const pieceInputs = formulas.data?.piece_inputs ?? [];
 
-  // ── 成本（需求 11）：默认取规格里的成本字段；可本单手改 ──────────────────
+  // ── 成本（需求 11）：必须由报价人手动填写；历史报价只给参考、需点“应用” ──
   // 单位由产品定义给出：勾花网 `CNY/㎡`（按平米算），牛栏网 `CNY/kg`。
   const costField = formulas.data?.cost.field ?? "";
   const costUnitLabel = (formulas.data?.cost.unit ?? "").replace("CNY", "元");
-  const specCost = (() => {
-    if (!costField) return 0;
-    for (const group of groups) {
-      const option = group.options.find(
-        (o) => String(o.value) === String(line.spec[group.name]),
-      );
-      const raw = option?.attributes?.[costField];
-      if (raw !== undefined && raw !== null && String(raw) !== "") {
-        return Number(raw) || 0;
-      }
-    }
-    return 0;
-  })();
   const typedCost = line.costOverride.trim();
-  // 成本来源优先级：本单手填 > 规格里的成本字段 > 历史参考成本（同规格最近一次/30天中位数）
+  // 成本必须由报价人手动填写（或点「应用参考成本」带入历史报价参考值）；
+  // 产品定义里的 raw_price 只是引擎变量，不再作为自动兜底。
   const costRef = useProductCostReference(effectiveProduct, line.spec);
   const referenceCost = costRef.data?.cost ?? null;
-  const effectiveCost =
-    typedCost !== ""
-      ? Number(typedCost) || 0
-      : specCost > 0
-        ? specCost
-        : (referenceCost ?? 0);
-  /** 需要传给引擎覆盖的成本（规格本身带成本时不覆盖；手填或历史参考才覆盖） */
+  const effectiveCost = typedCost !== "" ? Number(typedCost) || 0 : 0;
+  /** 只有手填/点应用参考后才传成本覆盖 */
   const costOverrideToSend =
-    typedCost !== ""
-      ? Number(typedCost) || 0
-      : specCost > 0
-        ? null
-        : referenceCost;
+    typedCost !== "" ? Number(typedCost) || 0 : null;
 
   // ── 包装（需求 20）：默认包装优先；区间按当前规格取值 ────────────────────
   const packagingOptions = formulas.data?.packaging ?? [];
@@ -266,7 +245,11 @@ export function QuoteLineCard({
     ? isSpecComplete(formulas.data, line.spec)
     : false;
   const canSubmit =
-    !!effectiveProduct && specReady && Number(shared.fxRate) > 0 && total > 0;
+    !!effectiveProduct &&
+    specReady &&
+    typedCost !== "" &&
+    Number(shared.fxRate) > 0 &&
+    total > 0;
 
   /** 结果表取值（列键由产品定义给出，不按表头文字猜）。 */
   const readNum = (key: string): number | null => {
@@ -283,6 +266,14 @@ export function QuoteLineCard({
 
   const compute = async () => {
     if (!formulas.data) return;
+    if (!line.costOverride.trim()) {
+      onChange({
+        error: "请先填写成本，或先点「应用参考成本」",
+        result: null,
+        built: null,
+      });
+      return;
+    }
     onChange({ error: null });
     try {
       // 成本手改：以变体覆盖的方式传给引擎（只影响本行，不回写定价数据）
@@ -540,28 +531,39 @@ export function QuoteLineCard({
               step="any"
               value={line.costOverride}
               onChange={(e) => onChange({ costOverride: e.target.value })}
-              placeholder={
-                specCost > 0
-                  ? String(specCost)
-                  : referenceCost !== null
-                    ? String(referenceCost)
-                    : "请填写成本"
-              }
+              placeholder="请填写成本"
               className="h-8 text-xs"
             />
-            <p className="text-[11px] text-muted-foreground">
-              {typedCost !== ""
-                ? "本单手填，只影响本单"
-                : specCost > 0
-                  ? "默认取规格/定价数据里的成本"
-                  : referenceCost !== null
-                    ? `参考历史成本 ¥${referenceCost}${costUnitLabel ? `/${costUnitLabel.replace("元/", "")}` : ""}（${
-                        costRef.data?.source === "latest"
-                          ? "同规格最近一次"
-                          : "近 30 天中位数"
-                      }）`
-                    : "规格没有成本字段，请手填"}
-            </p>
+            <div className="text-[11px] text-muted-foreground">
+              {typedCost !== "" ? (
+                "本单手填，只影响本单"
+              ) : referenceCost !== null ? (
+                <div className="flex flex-wrap items-center gap-1">
+                  <span>
+                    参考历史成本 ¥{referenceCost}
+                    {costUnitLabel
+                      ? `/${costUnitLabel.replace("元/", "")}`
+                      : ""}
+                    （
+                    {costRef.data?.source === "latest"
+                      ? "同规格最近一次"
+                      : "近 30 天中位数"}
+                    ）
+                  </span>
+                  <button
+                    type="button"
+                    className="underline"
+                    onClick={() =>
+                      onChange({ costOverride: String(referenceCost) })
+                    }
+                  >
+                    应用参考成本
+                  </button>
+                </div>
+              ) : (
+                "请手动填写成本（不会自动使用产品定义里的成本）"
+              )}
+            </div>
           </div>
 
           <div className="space-y-1.5">
