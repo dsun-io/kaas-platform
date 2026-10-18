@@ -404,17 +404,27 @@ async def create_product_tax_rate(
             "error": "validation", "code": "TAX_VALUES_REQUIRED",
             "detail": "进项增值税率、出口退税率至少填一个",
         })
-    exists = await db.fetchval(
+    existing = await db.fetchrow(
         request,
-        "SELECT 1 FROM product_tax_rates WHERE tenant_id=$1 AND team_id=$2"
-        " AND product_key=$3 AND status='active' LIMIT 1",
-        DEFAULT_TENANT, team_id, product_key,
+        "SELECT * FROM product_tax_rates WHERE tenant_id=$1 AND team_id=$2"
+        " AND product_key=$3 LIMIT 1",
+        DEFAULT_TENANT, team_id, product_key, table="product_tax_rates",
     )
-    if exists:
+    if existing is not None and existing.get("status") == "active":
         raise HTTPException(status_code=409, detail={
             "error": "conflict", "code": "PRODUCT_TAX_EXISTS",
             "detail": f"产品 {product_key} 已配置税率，请直接修改",
         })
+    if existing is not None:
+        row = await db.fetchrow(
+            request,
+            """UPDATE product_tax_rates SET input_vat_rate=$3, rebate_rate=$4,
+                   status='active', updated_at=now()
+               WHERE tenant_id=$1 AND id=$2 RETURNING *""",
+            DEFAULT_TENANT, existing["id"], input_rate, rebate_rate,
+            table="product_tax_rates",
+        )
+        return _product_tax_out(row)
     row = await db.fetchrow(
         request,
         """INSERT INTO product_tax_rates

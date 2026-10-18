@@ -375,18 +375,25 @@ async def create_product_tax_rate(
         })
     exists = (await db.execute(
         _product_tax_scope(
-            select(ProductTaxRate.id).where(
+            select(ProductTaxRate).where(
                 ProductTaxRate.product_key == product_key,
-                ProductTaxRate.status == "active",
             ),
             auth,
         ).limit(1)
     )).scalar_one_or_none()
-    if exists is not None:
+    if exists is not None and exists.status == "active":
         raise HTTPException(status_code=409, detail={
             "error": "conflict", "code": "PRODUCT_TAX_EXISTS",
             "detail": f"产品 {product_key} 已配置税率，请直接修改",
         })
+    if exists is not None:
+        # 停用过的产品重新启用：直接更新原行，避免唯一约束冲突
+        exists.input_vat_rate = input_rate
+        exists.rebate_rate = rebate_rate
+        exists.status = "active"
+        await db.commit()
+        await db.refresh(exists)
+        return _product_tax_out(exists)
     row = ProductTaxRate(
         tenant_id=auth.tenant_id or "default", team_id=team_id,
         product_key=product_key,
