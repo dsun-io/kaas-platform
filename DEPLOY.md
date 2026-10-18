@@ -192,9 +192,11 @@ cd backend/orchestrator
 alembic upgrade head
 ```
 
-当前迁移头**以 `alembic heads` 为准**（2026-10-18 本地为 `202610180001`：客户阶段六值→活跃/沉寂；
-2026-10-17 生产为 `202610170004`）——含 password_reset_tokens、报价行项成本分解、tenant_products override、单证收款/清单、客户外键修正等。
-**CI 不执行迁移**：部署新代码前先对生产库 `alembic upgrade head`，否则新表/新列缺失会让报价、产品、忘记密码等页面 500。
+当前迁移头**以 `alembic heads` 为准**（2026-10-18 为 `202610180010`；本轮发布按
+`docs/DEPLOYMENT_PLAN_2026-10-18.md` 分两段：先升到 009 再切 Worker，验收后升 010 清理）——
+含 password_reset_tokens、报价行项成本分解、tenant_products override、单证收款/清单、客户外键修正、
+税务档案、产品税率、报价税务快照等。
+**CI 不执行迁移**：部署新代码前先对生产库执行对应迁移，否则新表/新列缺失会让报价、产品、忘记密码等页面 500。
 
 初始化管理员（一次性，对线上 Worker 执行；当前线上已初始化，会返回 403）：
 

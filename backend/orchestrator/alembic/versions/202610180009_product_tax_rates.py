@@ -10,8 +10,8 @@ Create Date: 2026-10-18
   · 同一团队同一产品只能有一条税率档案（已选过的产品不能重复选）；
   · 税费变化后可在一个页面统一管理，不用逐产品页改。
 
-同时把历史 `tax_archives.tax_values` 里的 `input_vat_rate` / `rebate_rate`
-清掉（新口径不再从企业税档取这两项；无生产数据）。
+本迁移只做**加法**（建产品税率表），不删除/清洗旧数据；破坏性清理放到
+发布后迁移 010，避免新 Worker 切换前旧版本读到被清掉的数据。
 """
 from typing import Sequence, Union
 
@@ -46,10 +46,6 @@ def upgrade() -> None:
         "idx_product_tax_rates_team",
         "product_tax_rates",
         ["tenant_id", "team_id", "status"],
-    )
-    op.execute(
-        "UPDATE tax_archives SET tax_values = tax_values"
-        " - 'input_vat_rate' - 'rebate_rate'"
     )
 
 
