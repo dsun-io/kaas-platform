@@ -1,479 +1,317 @@
-# KaaS Platform v2
+# KaaS Platform
 
-> **Knowledge as a Service** — 为传统制造业提供 AI 岗位能力托管。
->
-> 平台以「工作站 (Workstation)」为最小交付单元，各工位可独立运行、也可上下游数据连通。
-> 多个工位已上线：情报体系三工位（进出口情报 · 市场调研 · 地图源客户信息获取）、客户/询盘、报价、订单、出运、外贸票据，以及 AI 层 + 线索池 + 客户触达增长链。
+> **Knowledge as a Service** —— 面向传统制造业的外贸业务平台。
+> 以「工位（Workstation）」为交付单元，把客户/询盘、报价、订单、出运、单证、税务、情报与 AI 能力串成一条可追溯的业务链。
 
----
-
-## 最新发布
-
-- **2026-10-10**：报价模型改造（margin_on_price 售价加成 + 综合税费系数可配）+ 多产品手动干预 + 实际采购成本 + 外部单证上传 + 询价历史留存 —— 详见 [docs/RELEASE_2026-10-10_quote_model.md](docs/RELEASE_2026-10-10_quote_model.md)
+- 生产站点：`https://kaas.powervoy.com`
+- 生产 API：`https://api.kaas.powervoy.com`
+- 本地前端：`http://localhost:3000`
+- 本地后端：`http://localhost:8000`（`/health`、`/docs`）
 
 ---
 
-## 项目定位
+## 1. 当前架构
 
-KaaS 不只是通用的 AI 聊天工具，而是深入制造业垂直场景，将非标报价逻辑、行业术语、产业带生态转化为可托管的 AI 能力。
+```
+浏览器
+  │
+  ▼
+Cloudflare Worker "kaas"（单 Worker）
+  ├─ kaas.powervoy.com      前端静态页面 + /api/v1/*
+  ├─ api.kaas.powervoy.com  仅 API
+  │
+  │  /api/*、/health → Python FastAPI（Workers Python runtime）
+  │  其余            → Next.js 静态导出资产
+  │
+  ▼ Hyperdrive
+Neon PostgreSQL（production / dev 分支）
 
-**护城河**：理解复杂的非标报价计算、行业专业知识，以及产业带生态，并将这些能力以 SaaS 形式托管给制造业商家。
+本地开发：
+Docker Compose（Postgres + Redis + MinIO + orchestrator）
+  + frontend `next dev` → http://localhost:3000
+```
 
-**工作站体系**：见 `docs/WORKSTATION_DESIGN.md`（总体设计 + 数据连通契约 + 演进路线）。
+- **生产**：`backend/worker`（Python FastAPI + 原生 asyncpg + 静态资产，单 Worker）。
+- **本地/迁移**：`backend/orchestrator`（SQLAlchemy + Alembic，负责开发环境与数据库迁移）。
+- **共享内核**：`backend/kaas_common` 是唯一源，`scripts/sync-shared.ps1` 同步到 Worker 的 `src/kaas_common/`（不进版本控制）。
+- **共享契约**：`shared/contracts/*.ts`（zod），前后端与契约检查共用。
 
 ---
 
-## 项目架构
-
-```
-kaas-platform/
-├── docs/
-│   └── WORKSTATION_DESIGN.md          # ★ 工作站总体设计（先读这个）
-├── frontend/                          # Next.js 14 管理后台
-│   ├── src/app/                       # 页面路由
-│   │   ├── admin/gray-release/        # 灰度发布管理 (flag-toggle, audit-timeline)
-│   │   ├── audit-log/                 # 审计日志查看
-│   │   ├── customers/                 # 客户管理 + 能力编辑器
-│   │   ├── dashboard/                 # 仪表盘 (6 统计卡片 + 区间选择)
-│   │   ├── events/                    # 事件列表 + 详情 + 采样标记
-│   │   ├── intel/                     # ★ 进出口情报工位 (货运/统计/渠道/任务)
-│   │   ├── research/                  # ★ 市场调研工位 (挑选/深化/导出/运行记录)
-│   │   ├── kb/                        # 知识库概览
-│   │   ├── quotations/                # 报价管理列表
-│   │   │   └── v2-quote/              # V2 丝网报价引擎 (form + result)
-│   │   └── settings/                  # 系统设置 (租户管理, 重载)
-│   ├── src/components/
-│   │   ├── layout/                    # 通用布局 (sidebar, header, app-layout)
-│   │   └── ui/                        # shadcn/ui + 自定义组件
-│   ├── src/lib/                       # 工具库
-│   │   ├── api/                       # API 客户端 + TanStack Query hooks
-│   │   ├── auth/                      # 会话缓存
-│   │   ├── events/                    # 前端事件采集 (队列/worker/flush)
-│   │   ├── form/                      # 表单工具 + zod 契约校验
-│   │   ├── query/                     # TanStack Query 配置
-│   │   └── schemas/                   # 响应校验 (zod)
-│   ├── src/mocks/                     # MSW mock 数据工厂 + 请求处理器
-│   ├── e2e/                           # Playwright E2E 测试 (9 套件)
-│   ├── vitest.config.ts
-│   └── playwright.config.ts
-├── backend/
-│   ├── worker/                        # ★ 生产: 单 Cloudflare Worker "kaas" (Python + FastAPI + 静态资产)
-│   │   ├── wrangler.jsonc             #   前后端一体: /api/*+/health→FastAPI(显式 run_worker_first), 其余→静态资产
-│   │   ├── src/main.py                #   进出口情报/客户/询盘等核心 API · 经 Hyperdrive 连 Neon PG
-│   │   ├── src/chain.py               #   工位链 (AI层/线索池/触达/市场调研+爬取) raw asyncpg 移植版
-│   │   ├── src/dbjson.py              #   ★ 唯一 JSONB 列映射 + row_to_dict(row, table)
-│   │   └── python_modules/            #   vendored 依赖 (asyncpg, fastapi, ...)
-│   └── orchestrator/                  # FastAPI 核心编排服务 (本地开发/数据迁移)
-│       ├── app/
-│       │   ├── api/                   # REST 路由 (events, quote_wizard, product_specs, admin, ...)
-│       │   ├── middleware/            # 中间件链 (tenant, trace, sampling, route_version, rate_limit, body_limit)
-│       │   ├── domain/               # 领域逻辑 (schema_registry, tenant_config, spec_hash)
-│       │   ├── repositories/         # 数据访问层 (events, admin, quotations, pricing, specs, ...)
-│       │   ├── schemas/              # Pydantic 请求/响应模型
-│       │   ├── services/             # 业务服务 (quote_engine, pricing, llm_client, ...)
-│       │   ├── db/                   # 数据库模型与会话管理
-│       │   ├── jobs/                 # 定时任务 (archive)
-│       │   └── config/               # 应用配置
-│       ├── tests/                    # Pytest 测试套件 (30+ 测试文件)
-│       ├── alembic/                  # 数据库迁移
-│       ├── scripts/                  # seed_dev, export_openapi
-│       └── Dockerfile
-├── shared/
-│   └── contracts/                    # 前后端共享契约 (zod 类型 + 校验)
-│       ├── quote.ts                  # 报价契约 (V2 报价完整字段集)
-│       ├── events.ts                 # 事件契约 (event_type 字面量)
-│       ├── admin.ts, capabilities.ts # 管理员/能力契约
-│       └── ...                       # categories, dataset, errors, feature_flags, ...
-├── scripts/
-│   └── contracts-check.ts            # 三方比对校验 (events/quote 契约一致性)
-├── .ai/                              # AI 辅助开发规则
-│   ├── KAAS_RULES.md                 # 核心规则与设计不变量
-│   ├── KAAS_SKILL.md                 # 任务流水线技能
-│   └── GIT_BRANCH_STRATEGY.md        # 分支策略
-└── .github/workflows/                # CI 配置 (backend-test, frontend-ci, contracts-check, deploy)
-```
-
-### 生产 Worker 关键约束（2026-09-22 校准）
-
-1. **绑定值只能在请求期读**：import 期 `os.environ.get("JWT_SECRET")` 一定是空值
-   （生产实证）。一律用 `request.scope["env"]` / `main.py:_binding()`；
-   **secret 不得保留公开默认值**（缺失则 503）。详见 `DEPLOY.md §0.5`。
-2. **路由显式声明**：`/api/*` 与 `/health` 在 `wrangler.jsonc` 的
-   `assets.run_worker_first` 里声明；静态页面由边缘直接返回、**不执行 Python 代码**。
-3. **鉴权默认闭合**：仅 `login` / `health` 公开（`bootstrap-admin` 用一次性 token），
-   其余 `/api/*` 必须 Bearer；actor/tenant 一律取自 token。
-4. **发布后数分钟内会有冷启动 5xx 窗口**（自愈）：不要因间歇报错反复回滚，
-   判定规则见 `DEPLOY.md §0.2`。
-
-## 技术栈
-
-| 层 | 技术 |
-|---|---|
-| **业务架构** | 工位能力网 + 情报体系 + 业务事件流 |
-| **AI 引擎** | BYOK LLM 客户端（llm_client：DeepSeek / 智谱等 Provider + fallback 链） |
-| **后端** | Python 3.12, FastAPI；生产 Worker 用原生 asyncpg，开发编排器用 SQLAlchemy 2.0 + Alembic, structlog |
-| **前端** | Next.js 14 (App Router), TypeScript, Tailwind CSS, shadcn/ui |
-| **测试** | Pytest (后端), Playwright E2E + Vitest (前端), MSW |
-| **数据库** | PostgreSQL (业务数据), Redis (缓存/状态), MinIO (OSS 归档) |
-| **基础设施** | Docker, uv (Python), pnpm (Node) |
-
-## 快速开始
-
-### 1. 基础设施 (Docker)
-
-项目依赖 PostgreSQL、Redis、MinIO，通过 Docker Compose 一键启动：
-
-```bash
-docker compose up -d
-```
-
-### 2. 后端 (FastAPI)
-
-```bash
-cd backend/orchestrator
-
-# 安装依赖（首次）
-uv venv && uv sync
-
-# 数据库迁移 + 种子数据
-uv run alembic upgrade head
-uv run python scripts/seed_dev.py
-
-# 启动开发服务器
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-后端运行在 `http://localhost:8000`，API 文档在 `http://localhost:8000/docs`。
-
-### 3. 前端 (Next.js)
-
-```bash
-cd frontend
-
-# 安装依赖（首次）
-pnpm install
-
-# 启动开发服务器
-pnpm dev
-```
-
-前端运行在 `http://localhost:3000`。
-
-### 本地开发登录凭证（仅本地环境）
-
-> ⚠️ 以下账号只存在于**本地开发库**，由 `backend/orchestrator/scripts/seed_dev.py`
-> （`SEED_DEV_ACCOUNTS=true`）创建；**生产环境没有这些账号**。
-> 密码来自 `backend/orchestrator/.env` 的 `DEV_*_PASSWORD`；
-> 若你改过 `.env`，以实际值为准。
-
-| 角色 | 邮箱 | 密码 | 说明 |
-|---|---|---|---|
-| 系统管理员 | `admin@kaas.local` | `DevAdmin2026!` | internal / `system_admin`，可看全部工位与内部核算 |
-| 联佳业务员 | `lianjia@kaas.local` | `Lianjia2026!` | customer / `owner`，团队 1，用于业务视角联调 |
-| 客户 B 业务员 | `clientb@kaas.local` | `Clientb2026!` | customer / `owner`，用于多团队隔离验证 |
-| 本地验收账号 | `e2e.local@kaas.local` | `LocalDev123!` | 当前本地库用于 Playwright/接口验收；非 `seed_dev` 固定账号，重建库后可能不存在 |
-
-登录地址：`http://localhost:3000/login`（前端），API 文档：`http://localhost:8000/docs`。
-
-> 当前 `.env.development` 使用真实本地后端：
-> `NEXT_PUBLIC_API_MODE=real`、`NEXT_PUBLIC_API_BASE_URL=http://localhost:8000`。
-> 若只想用 MSW mock（无需后端），把 `NEXT_PUBLIC_API_MODE` 改为 `mock` 即可。
-
-### 常用命令
-
-| 操作 | 命令 |
-|------|------|
-| 启动基础设施 | `docker compose up -d` |
-| 停止基础设施 | `docker compose down` |
-| 启动后端 | `uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000` |
-| 运行后端测试 | `uv run pytest` |
-| 启动前端 | `cd frontend && pnpm dev` |
-| 运行前端单元测试 | `cd frontend && pnpm test` |
-| 运行前端 E2E 测试 | `cd frontend && pnpm e2e` |
-| 运行契约校验 | `cd frontend && pnpm contracts:check` |
-
-### E2E 测试模式
-
-| 模式 | 命令 | 说明 |
-|------|------|------|
-| **MSW Contract E2E** | `pnpm e2e` | 默认模式。Playwright 通过 MSW (Mock Service Worker) 拦截网络请求，使用 mock 数据进行端到端测试。**无需后端运行**，适合快速验证 UI 逻辑和契约一致性。 |
-| **Real Backend E2E** | `NEXT_PUBLIC_API_MODE=real-backend pnpm e2e` | 连接真实后端。需要先启动 Docker 基础设施 + 后端服务 + 种子数据。适合验证真实 API 联调、数据库状态变更、OSS 归档等场景。 |
-
-> 当 `NEXT_PUBLIC_API_MODE=mock`（默认）时，前端使用 MSW 拦截所有 API 请求并返回 mock 数据。
-> 当 `NEXT_PUBLIC_API_MODE=real-backend` 时，前端直接请求 `http://localhost:8000` 的真实后端 API。
-
-### 本地生成物与 .gitignore
-
-以下目录/文件为本地运行产物，已被 `.gitignore` 忽略，**请勿提交**：
-
-| 产物 | 来源 | 清理方式 |
-|------|------|---------|
-| `frontend/test-results/` | Playwright 测试结果 | `rm -rf frontend/test-results/` |
-| `frontend/playwright-report/` | Playwright HTML 报告 | `rm -rf frontend/playwright-report/` |
-| `frontend/blob-report/` | Playwright blob 报告 | `rm -rf frontend/blob-report/` |
-| `frontend/.next/` | Next.js 构建输出 | `rm -rf frontend/.next/` |
-| `frontend/out/` | Next.js 静态导出 | `rm -rf frontend/out/` |
-| `frontend/coverage/` | Vitest 覆盖率报告 | `rm -rf frontend/coverage/` |
-| `frontend/.turbo/` | Turbopack 缓存 | `rm -rf frontend/.turbo/` |
-| `backend/orchestrator/.pytest_cache/` | Pytest 缓存 | `rm -rf backend/orchestrator/.pytest_cache/` |
-| `backend/orchestrator/htmlcov/` | Pytest 覆盖率 | `rm -rf backend/orchestrator/htmlcov/` |
-| `backend/orchestrator/__pycache__/` | Python 编译缓存 | `find . -name __pycache__ -exec rm -rf {} +` |
-| `data/` | 本地种子/快照数据 | 标记待确认 |
-| `*.log` | 日志文件 | `rm -f *.log` |
-| `.env` / `.env.*` | 环境变量（除 `.env.example`） | 不要删除 `.env.example` |
-
----
-
-## 核心概念
-
-### 工位能力网（Workstation Graph）
-各工位是能力节点（情报三工位、客户/询盘、报价、订单、出运、外贸票据、AI 层、线索池、触达），跨工位通过线索池和业务事件流协作，**不是线性流水线**。报价向导（quote_wizard / quote_engine）内部的步骤化流程只是该能力节点的引导步骤，不是强制全局流程。
-
-### 设计不变量 (R3)
-- 幂等由 DB 兜底：`usage_events.request_id` UNIQUE
-- 并发由原子 SQL 兜底：预扣用单条 `UPDATE ... WHERE ...`
-- 可对账：每次请求对应一条 `usage_event`
-- 失败不亏钱：下游失败默认全额退款
-- 透支有上限：credit line 超额强拦截
-
-## 开发进度 (v2)
-
-| 阶段 | 状态 | 说明 |
-|---|---|---|
-| **W0 — Scaffold** | ✅ 完成 | 前后端脚手架、数据库模型、契约层、Docker 构建 |
-| **W1 — Core** | ✅ 完成 | 中间件链、API 路由、Archive 定时任务、pytest 套件 |
-| **Int R1 — 前后端联调** | ✅ 完成 | CORS/Auth/Error 对齐, 77 个 API 端点, 30+ pytest, Playwright E2E, CI 配置 |
-| **Int R2 — 深度联调** | ✅ 完成 | Seed data, CRUD E2E, OSS fix, integration tests (10 文件, +356/-76) |
-| **Int R3 — 报价领域** | ✅ 完成 | Quote Engine v2, 产品规格/报价/定价/运费/配件服务, 4 条数据库迁移, 45 文件 (+5209) |
-| **Int R4 — 契约校验** | ✅ 完成 | contracts-check.ts 三方比对, quote 契约字段一致性验证, real-backend E2E |
-| **Int R5** | 📋 规划中 | |
-
-## 工作站进度 (Workstation)
-
-> 工作站体系设计见 `docs/WORKSTATION_DESIGN.md`。
+## 2. 当前业务模块
 
 | 工位 | 状态 | 说明 |
 |---|---|---|
-| **进出口情报 (Intel)** | ✅ 已上线 | Cloudflare Workers 部署。情报体系 · 宏观层（原「商情雷达」改名，URL/表名不变）。见 `DEPLOY.md` |
-| **市场调研 (Research)** | ✅ 已上线 | 情报体系 · 微观层。从地图源挑选数据并深化（品类/价格/观察/能否提供），导出 CSV |
-| **地图源客户信息获取 (Leadgen)** | ✅ 已上线 | 情报体系 · 源头层（双重身份：也是业务链起点）。Google Places 拓店铺 + 爬官网提产品 + CSV 导入 |
-| **线索池 (Lead Pool)** | ✅ 已上线 | `lead_candidates` 共享池，三工位唯一通信接口（跨工位状态只读） |
-| **客户/询盘 (Customers/Inquiries)** | ✅ 已上线 | 客户 stage 状态机 + 询盘全生命周期，批量关闭循环 |
-| **报价工位 (Quotation)** | ✅ 已上线 | 报价单 CRUD + 状态机 + 汇率锁定快照 |
-| **订单工位 (Orders)** | ✅ 已上线 | 报价转化 + 订单状态机 + 应收/付款计划 + 汇兑损益 |
-| **外贸票据工位 (Trade Docs)** | ✅ 已上线 | 从订单/报价/询盘生成单证，raw_payload 冻结快照 + refs 溯源 |
-| **出运台账 (Shipments)** | ✅ 已上线 | 自有出运记录，producing→shipped 联动 + order 关联 |
-| **AI 层 (BYOK)** | ✅ 已上线 | 7 任务模板/Provider 绑定/用量审计，每次调用落 usage |
-| **客户触达工位 (Outreach)** | ✅ 已上线 | 邮箱/campaign/发送（原子抢占）/重发，inbound webhook 501 预留 |
-
-### 情报体系（三工位）
-
-```
-宏观 ── 进出口情报          海关/贸易数据、货运记录、竞争格局
-微观 ── 市场调研            从地图源挑选 → 深化（品类/价格/能否提供）
-源头 ── 地图源客户信息获取  Google Places 拓店铺 → 爬官网提产品 → 线索池
-```
-
-**分工原则：脚本为主，AI 为辅**
-
-| 数据 | 手段 |
-|------|------|
-| 店铺信息（名称/地址/电话/评分/类型） | Google Places API |
-| 产品信息（图片/当地叫法/规格） | 爬官网 + 正则提取（Google Places 看不到产品） |
-| 规格结构化（尺寸/材质） | 脚本正则（确定性、零成本） |
-| 中文对照 | AI 翻译（AI 未启用则留空待人工填写） |
-| 能否提供 | 用户手动判定（三态：是/否/未填），**禁止 AI 推断** |
-
-迁移：`20260919_workstation_links` 建三工位表；`20260921_business_foundation`（汇率/单号/出运/付款/应收）、`20260921_ai_layer` + `20260921_leadgen_outreach`（AI 层 + 线索池 + 触达）、`20260922_research_workstation`（产品字段 + 市场调研两表）已应用生产库。
-
-> **生产部署口径**：以上工位 API 全部经由单 Worker `kaas`（`backend/worker`，Python FastAPI + 原生 asyncpg）部署在 Cloudflare Workers，前端静态导出由同一 Worker 资产服务。编排器（`backend/orchestrator`，SQLAlchemy）为本地开发/参考实现，生产以 Worker 版为准（`backend/worker/src/chain.py` 为工位链移植实现）。
-
-## 协作规范
-
-1. **三方协作**：Nano Auto (Notion AI Agent，拆任务/验收) → Runner (AI 编程工具，编码) → David (决策者)〔历史流程，现已停用〕
-2. **真相源分层**：技术真相源是代码库（含 shared/contracts 共享契约）；Notion 只做任务管理，不是技术真相源（详见 docs/README.md）
-3. **设计不变量优先**：进入 AI 引擎前必须完成订阅校验、配额校验、限频
-4. **交付三要素**：自检清单 + 详细日志 + git push
-
-## 分支策略
-
-- **`main`** — 生产分支：经过验证的交付版本；**push 到它会触发自动部署**
-- **`feat/trade-doc-templates`** — 唯一的开发分支：未完成的功能留在这里，完成并验证后再合入 `main`
-- **`archive/`** — 历史 v1 备份
-
-> 2026-09-28 起，生产分支由 `feature/intel-workstation-v1` 切到 `main`（前者已归档）。
-> 上线门禁（前端已就绪但后端未上线的功能）见 `docs/CURRENT_IMPLEMENTATION_MAP.md`。
-
-## PR 规范
-
-每个 PR 需附带 §10 自检清单，涵盖：
-- 调用链铁律 (不直连 PG/LLM)
-- 类型契约校验 (zod parse, 无手写后端类型)
-- 数据获取 (TanStack Query, 无 useEffect+fetch)
-- 错误处理 (toast + 错误边界)
-- 鉴权多租户 (tenant 从 session 读)
-- 关键路径 E2E 覆盖
-
-详情见 `.github/PULL_REQUEST_TEMPLATE.md`。
+| 进出口情报 | 已上线 | 海关/贸易数据、货运记录、竞争格局 |
+| 市场调研 | 已上线 | 从地图源挑选并深化（品类/价格/观察/能否提供） |
+| 地图源客户信息获取 | 已上线 | Google Places 拓店铺 + 爬官网提产品 + CSV 导入 |
+| 线索池 | 已上线 | `lead_candidates` 共享池，工位间唯一通信接口 |
+| 客户/询盘 | 已上线 | 客户阶段、询盘三态（未报价/已报价/已关闭）、询盘编号 |
+| 报价 | 已上线 | 多产品算价、成本手填、产品税率、整单保险、批量报价 |
+| 订单 | 已上线 | 报价转化、状态机、应收/付款计划、汇兑损益 |
+| 外贸单证 | 已上线 | 报价/订单/询盘生成 PI、CI、PL 等，快照留档 |
+| 出运台账 | 已上线 | 出运记录、单号、订单关联 |
+| 税务管理 | 已上线 | 企业税档（销项/杂税）+ 产品税率（进项/退税） |
+| AI 层 | 已上线 | BYOK Provider、任务模板、用量审计 |
+| 客户触达 | 已上线 | 邮箱/campaign/发送/重发 |
 
 ---
 
-**最后更新**: 2026-09-22
-**维护者**: David Sun
+## 3. 本轮（2026-10-18）上线内容
+
+### 3.1 税务档案
+
+税务管理分两块：
+
+1. **企业税档**：销项增值税、杂税（印花税已含在杂税里）；
+2. **产品税率**：进项增值税、出口退税率，按产品逐条维护；
+   - 同一团队同一产品只能一条；
+   - 已配置的产品不会在下拉里重复出现；
+   - 税变化时在一个页面统一改。
+
+报价时：
+
+- 企业税档带销项税、杂税；
+- 每行按产品带进项税、出口退税率；
+- 报价单保存 `tax_snapshot`，其中 `product_taxes` 保留当时各产品税率。
+
+### 3.2 成本
+
+- **所有报价行成本必须手填**；
+- 历史报价只作为参考显示，必须点「应用参考成本」才带入；
+- 不会自动套用产品定义里的默认成本；
+- 未填成本不能算价、不能保存；后端保存报价时也会校验。
+
+### 3.3 整单保险
+
+- 仅对 **CIF / DAP / DDP** 生效；
+- 公式：`保险费 = 整单 EXW 货值 × 1.1 ÷ 1000`，**最低 15 美元**；
+- 整单只算一次，按各报价行 EXW 货值比例分摊；
+- 报价页保险项显示“自动计算”，不要求手填；
+- 后端 `/export-quote/calculate` 回传 `meta.term_totals` 供前端两轮计算。
+
+### 3.4 批量报价
+
+- 报价工位 → 批量报价页；
+- 选客户 → 选询盘 → 统一产品/规格/成本/件数 → 生成报价单；
+- 单批最多 200 行；
+- 同一询盘允许多张报价，默认最新一张；某张生成后续单证后，同询盘其他报价转 `closed`；
+- 未配置产品税率的产品会被拦截，提示先到税务管理配置。
+
+### 3.5 其他口径
+
+- 船公司固定选项，格式「中文名-英文缩写」（如 `马士基-MSK`、`地中海航运-MSC`、`中远海运-COSCO`）；
+- 客户按米报需求时，报价行可填米数，系统按“每卷米数”自动换算卷数，**小数进一**；
+- 编号格式：`类型-国家-客户-时间戳`，例如 `INQ-US-TIM-20261018111149`、`QUO-US-TIM-...`、`PI-...`、`SHP-...`；
+- 国外费用美元、国内费用人民币，按报价汇率折算。
 
 ---
 
-## 今日进度归档 (2026-05-03)
+## 4. 本地开发
 
-> ⚠️ 历史存档 · 反映 2026-05-03 时点状态，不反映当前架构（当前状态见上方「工作站进度」）
+### 4.1 启动
 
-### 已完成
+```powershell
+# 根目录
+docker compose up -d          # Postgres / Redis / MinIO / orchestrator
+# backend 启动时自动 alembic upgrade head
 
-- **Contracts Check 重写**: 将 contracts-check 脚本从混合实现重写为纯 TypeScript，新增 R1 报价字段一致性校验（quote.ts ↔ backend schemas ↔ frontend schemas 三方比对）。
-- **E2E 拆分 (INT-R4.5)**: 分离 real-backend E2E 与 MSW contract E2E，明确测试边界。
-- **根目录 devDependencies 补齐**: 添加 eslint + prettier 到根目录，配置 lint-staged。
-- **项目收尾归档**: 完善 .gitignore（覆盖 test-results/、playwright-report/、coverage/、.pytest_cache/ 等运行产物），补充 README 说明（E2E 模式区分、本地生成物清单、.gitignore 覆盖范围），清理 `.last-run.json` 等跟踪中的运行产物。
+# 健康检查
+curl http://localhost:8000/health
 
-### 当前状态
+# 前端（另一个终端）
+cd frontend
+pnpm install
+pnpm dev                      # http://localhost:3000
+```
 
-- 分支 `feature/v2-refactor` 领先 `main` 17 个 commits。
-- 所有里程碑 W0/W1/INT-R1/INT-R2/INT-R3/INT-R4.5 已完成。
-- 前端 mock 模式可独立运行，real-backend 模式需 Docker + 后端服务。
-- 待确认：`data/` 目录（含 legacy FastGPT v1 报价样例）是否应纳入版本管理。
+前端 `.env.development` 默认：
 
-### 明天继续前需确认
+```env
+NEXT_PUBLIC_API_MODE=real
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+```
 
-1. **`data/` 目录归属**: 当前已被 `.gitignore` 忽略。如确属参考数据，需移出 `.gitignore` 并纳入 git 追踪。
-2. **`scripts/tsconfig.json`**: 新建文件，是 contracts-check 所需的 TypeScript 编译配置，需在下次提交时一并追踪。
-3. **`backend/.gitkeep` / `frontend/.gitkeep`**: 两个占位文件已被删除，确认目录已有实际内容、不再需要占位。
-4. **后端真实 E2E 条件**: 若明天需运行 real-backend E2E，需提前启动 Docker（PostgreSQL + Redis + MinIO）并执行种子数据脚本。
+只想用 mock（无需后端）：把 `NEXT_PUBLIC_API_MODE` 改为 `mock`。
+
+### 4.2 后端单独启动
+
+```powershell
+cd backend/orchestrator
+uv venv
+uv sync
+uv run alembic upgrade head
+uv run python scripts/seed_dev.py
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 4.3 本地登录账号
+
+> 仅本地开发库，由 `scripts/seed_dev.py` 创建；**生产没有这些账号**。
+
+| 角色 | 邮箱 | 密码 |
+|---|---|---|
+| 系统管理员 | `admin@kaas.local` | `DevAdmin2026!` |
+| 联佳业务员（团队 1） | `lianjia@kaas.local` | `Lianjia2026!` |
+| 客户 B 业务员（团队 2） | `clientb@kaas.local` | `Clientb2026!` |
+| 本地验收账号 | `e2e.local@kaas.local` | `LocalDev123!` |
+
+登录：`http://localhost:3000/login`。API 文档：`http://localhost:8000/docs`。
+
+> 注意：`http://localhost:8000/` 根路径返回 401 是正常的；健康检查用 `/health`。
 
 ---
 
-## Spec System v1 实施报告 (2026-05-17)
+## 5. 测试与门禁
 
-> ⚠️ 历史存档 · 反映 2026-05-17 时点状态，不反映当前架构（当前状态见上方「工作站进度」）
+```powershell
+# 后端单测
+cd backend/orchestrator
+$env:PYTHONPATH=".;.."
+.venv\Scripts\python.exe -m pytest tests -q -m unit
 
-### 概述
+# Worker 单测
+cd backend/worker
+uv run --frozen --with pytest --with httpx2 python -m pytest tests -q
 
-实施报价规格体系重构，从硬编码字段模型升级为电商「类目-属性-SKU-价格」范式。参考 Notion 方案文档 §9.4 严格实施。
+# 前端
+cd frontend
+pnpm typecheck
+pnpm lint
+pnpm test
 
-**分支**: `feature/spec-system-v1`
-**Migration**: `202605170001_spec_system_v1.py` (down_revision: `feb821f0b9c0`)
+# 共享内核同步与检查
+powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1
+powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1 -Check
 
-### Phase 交付清单
+# 契约 / 路由对等
+pnpm contracts:check
+python scripts/route-parity.py
 
-| Phase | 内容 | 状态 |
-|-------|------|------|
-| **Phase 1** | 数据库基建: 13 张表 + 1 视图 + seed 数据 + RBAC 字段 | ✅ |
-| **Phase 2** | 后端服务层: spec_hash / units / price_engine / quote_wizard / attribute_similarity / promotion_recommender | ✅ |
-| **Phase 3** | 后端 API: 6 个业务 router + 1 个 admin router + 6 个 repository | ✅ |
-| **Phase 4** | Shared Contracts: TypeScript zod schemas + 类型定义 | ✅ |
-| **Phase 5** | 前端 Wizard: 5 步向导 + 动态属性表单 + 属性提案弹窗 | ✅ |
-| **Phase 6** | 报价数据页重构: 685 行单文件 → hooks + components 化 | ✅ |
-| **Phase 7** | Admin 审核页: 晋升推荐引擎 + 审核 API + 前端页面 | ✅ |
-| **Phase 8** | 老数据迁移 + quote 流程对接 + 向后兼容 | ✅ |
-
-### 数据库验证 (Block 1)
-
-```
-alembic upgrade head        ✅ 全绿
-alembic downgrade -1        ✅ 回滚成功
-alembic upgrade head        ✅ 重新升级成功
-
-product_categories          ≥ 4 行 ✅
-spec_attributes (public)    ≥ 11 行 ✅
-category_attribute_bindings ≥ 15 行 ✅ (实际 16)
-unit_groups                 = 5 行 ✅
-units                       = 7 行 ✅
-price_units                 = 6 行 ✅
-v_quote_records             可查询 ✅
-product_sku_revisions       表存在 ✅
-users.is_tenant_admin       字段存在 ✅
+# 静态导出
+$env:NEXT_EXPORT="1"
+$env:NEXT_DIST_DIR=".next-verify"
+pnpm build
 ```
 
-### pytest 验证 (Block 2)
+当前基线（2026-10-18）：
 
-```
-23 passed in 1.47s
+- orchestrator：**1202 passed**
+- worker：**287 passed**
+- frontend：**452 passed**
+- typecheck / lint / build / contracts / route-parity / shared-check 全绿
 
-覆盖模块:
-- quote_wizard.py:         87%
-- promotion_recommender.py: 96%
-- rbac.py:                 83%
-- price_engine.py:         71%
-- units.py:                71%
-- spec_hash.py:            68%
-- models.py:               100%
-- schemas/*:               100%
-```
+E2E：
 
-### 测试用例明细
+| 模式 | 命令 | 说明 |
+|---|---|---|
+| MSW contract E2E | `cd frontend && pnpm e2e` | 默认，无需后端 |
+| Real Backend E2E | `NEXT_PUBLIC_API_MODE=real-backend pnpm e2e` | 需 Docker + 后端 |
 
-| # | 测试类 | 测试名 | 验证点 |
-|---|--------|--------|--------|
-| 1 | TestSpecHash | test_same_input_same_hash | 同输入同 hash + 长度 32 |
-| 2 | TestSpecHash | test_key_order_invariant | key 顺序不影响 hash |
-| 3 | TestSpecHash | test_unit_normalization_cm_m | 150cm = 1.5m 归一化 |
-| 4 | TestSpecHash | test_nfc_normalize | NFC/NFD unicode 统一 |
-| 5 | TestSpecHash | test_decimal_trailing_zeros | Decimal 末位 0 不影响 |
-| 6 | TestSpecHash | test_different_values_different_hash | 不同值不同 hash |
-| 7 | TestUnits | test_unknown_unit_raises_sync | 未知单位抛 ValueError |
-| 8 | TestUnits | test_unknown_unit_raises_async | 异步版本同上 |
-| 9 | TestPriceEngine | test_superseded_on_full_overlap | 完全覆盖 → 老价 superseded |
-| 10 | TestPriceEngine | test_truncate_on_partial_overlap | 部分重叠 → effective_to 截断 |
-| 11 | TestQuoteWizard | test_non_leaf_category_rejects | 非叶子类目报错 |
-| 12 | TestQuoteWizard | test_missing_required_attr_rejects | 缺必填属性报错 |
-| 13 | TestQuoteWizard | test_same_hash_reuses_sku | 同 hash 复用 SKU |
-| 14 | TestQuoteWizard | test_different_hash_creates_new_sku | 不同 hash 新建 SKU |
-| 15 | TestRBAC | test_viewer_cannot_post_attributes | viewer → 403 |
-| 16 | TestRBAC | test_tenant_admin_cannot_access_admin_api | 非 admin → 403 |
-| 17 | TestRBAC | test_platform_ops_can_access_admin_api | platform_ops → 200 |
-| 18 | TestChangeReason | test_post_price_without_change_reason_422 | 缺 change_reason → 422 |
-| 19 | TestChangeReason | test_patch_sku_without_change_reason_422 | 缺 change_reason → 422 |
-| 20 | TestSkuEdit | test_patch_sku_creates_revision | PATCH → revision+1 + 快照行 |
-| 21 | TestSkuEdit | test_patch_sku_hash_conflict_409 | hash 冲突 → conflict |
-| 22 | TestExcludeConstraint | test_overlapping_active_prices_fail | EXCLUDE 约束生效 |
-| 23 | TestPromotionRecommender | test_three_tenants_same_proposal_gets_recommended | 3 租户 → 推荐晋升 |
+---
 
-### 3x 全量回归
+## 6. 数据库迁移
 
-```
-Run 1/3: 23/23 passed ✅ (1.29s)
-Run 2/3: 23/23 passed ✅ (1.30s)
-Run 3/3: 23/23 passed ✅ (1.30s)
+当前 head：**`202610180010`**。
+
+本轮相关迁移：
+
+| 版本 | 内容 |
+|---|---|
+| `202610180006` | 企业税务档案表 + 种子 + 旧客户税率档案迁移 |
+| `202610180007` | 报价单税务快照 |
+| `202610180008` | 安全占位（原删表动作延后） |
+| `202610180009` | 产品税率表 |
+| `202610180010` | 发布后清理：删旧客户税率档案表、清旧进项/退税键 |
+
+生产发布必须分段执行：**先 009 → 部署 Worker → 冒烟 → 再 010**。
+完整步骤见 [docs/DEPLOYMENT_PLAN_2026-10-18.md](docs/DEPLOYMENT_PLAN_2026-10-18.md)。
+
+```powershell
+cd backend/orchestrator
+alembic heads
+alembic current
+alembic upgrade 202610180009   # 发布前
+# 部署 + 冒烟
+alembic upgrade 202610180010   # 发布后清理
 ```
 
-### 新增/修改文件清单
+> 生产库连接串只放在本机环境变量 / `.env.local`，不要提交。
 
-**新建 (30+ 文件)**:
-- `alembic/versions/202605170001_spec_system_v1.py` — 13 表 + 视图 + seed
-- `app/deps/rbac.py` — 三级 RBAC
-- `app/domain/spec_hash.py` — SKU hash 算法
-- `app/domain/units.py` — 单位换算
-- `app/services/quote_wizard.py` — Wizard 事务入口
-- `app/services/price_engine.py` — 价格引擎
-- `app/services/attribute_similarity.py` — 属性相似度
-- `app/services/promotion_recommender.py` — 晋升推荐
-- `app/schemas/quote_wizard.py` + `spec_system.py` — Pydantic schemas
-- `app/repositories/` — 6 个 repo 文件
-- `app/api/` — 7 个 router 文件
-- `shared/contracts/spec-system.ts` — TypeScript 契约
-- `frontend/src/app/(app)/spec-config/` — Wizard 页面 + hooks + 组件
-- `frontend/src/app/(app)/admin/spec-proposals/` — 审核页面
-- `scripts/migrate_legacy_specs.py` — 老数据迁移
+---
 
-**修改**:
-- `app/db/models.py` — 12 个新 ORM 类 + Quotation 3 列
-- `app/main.py` — 7 个新 router 注册
-- `app/services/quote_engine.py` — SKU 优先查询路径
-- `frontend/src/app/(app)/pricing-data/page.tsx` — 拆分重构
-- `shared/contracts/validation.ts` — 标记废弃 + 新增 binding 验证
+## 7. 部署
 
-### 明天跟进事项
+- 生产分支：`main`，push 会触发 `.github/workflows/deploy.yml`；
+- 流程：前端静态导出 → 同步共享内核 → `pywrangler deploy` → 生产冒烟；
+- 纯文档提交（`**.md` / `docs/**`）不触发部署；
+- 冷启动窗口、回滚、Neon/Hyperdrive 说明见 [DEPLOY.md](DEPLOY.md)；
+- 本轮发布顺序、风险、验收清单见 [docs/DEPLOYMENT_PLAN_2026-10-18.md](docs/DEPLOYMENT_PLAN_2026-10-18.md)。
 
-1. **运行 real-backend E2E**: 启动 Docker + 后端，测试 Wizard 5 步完整流程
-2. **前端 tsc 检查**: `cd frontend && pnpm exec tsc --noEmit` 确认 TypeScript 无报错
-3. **合并到 feature/v2-refactor**: `git merge feature/spec-system-v1`
-4. **部署验证**: staging 环境部署后验证 migration + seed + API
-5. **老数据迁移**: 运行 `python scripts/migrate_legacy_specs.py` 迁移 product_specs → product_skus
+常用运维：
+
+```powershell
+cd backend/worker
+npx wrangler deployments list --name kaas
+npx wrangler versions deploy <version-id>@100% --name kaas --yes
+```
+
+---
+
+## 8. 关键业务规则
+
+### 8.1 询盘 / 报价状态
+
+- 询盘：`unquoted`（未报价）→ `quoted`（已报价）；`closed`（已关闭）为手动；
+- 报价：`draft / sent / accepted / rejected / expired / closed`；
+- 询盘生成报价后自动变已报价；
+- 报价生成后续单证（PI/合同等）后，同询盘其他报价自动 `closed`；
+- 询盘编号在生成报价前可改，生成报价后锁定并二次确认。
+
+### 8.2 单号
+
+统一 `类型-国家-客户-时间戳`：
+
+- `INQ-...` 询盘
+- `QUO-...` 报价
+- `PI-...` / `CI-...` / `PL-...` 单证
+- `ORD-...` 订单
+- `SHP-...` 出运
+
+### 8.3 成本 / 税 / 保险
+
+详见 [docs/QUOTE_COST_INSURANCE_2026-10-18.md](docs/QUOTE_COST_INSURANCE_2026-10-18.md)。
+
+---
+
+## 9. 仓库结构
+
+```
+backend/
+  kaas_common/            共享内核（唯一源）
+  orchestrator/           本地 FastAPI + SQLAlchemy + Alembic
+  worker/                 生产 Cloudflare Worker（Python FastAPI + assets）
+frontend/                 Next.js 14 静态导出
+shared/contracts/         前后端 zod 契约
+scripts/                  sync-shared / contracts / seed / verify
+docs/                     设计与交接文档
+.github/workflows/        backend-test / frontend-ci / contracts-check / deploy
+docker-compose.yml        本地基础设施
+```
+
+---
+
+## 10. 文档索引
+
+- [DEPLOY.md](DEPLOY.md) — 生产部署与运维速查
+- [docs/DEPLOYMENT_PLAN_2026-10-18.md](docs/DEPLOYMENT_PLAN_2026-10-18.md) — 本轮发布方案
+- [docs/TAX_ARCHIVE_HANDOVER_EXECUTION_PLAN_2026-10-18.md](docs/TAX_ARCHIVE_HANDOVER_EXECUTION_PLAN_2026-10-18.md) — 税务改造
+- [docs/BATCH_QUOTE_REDESIGN_PLAN_2026-10-18.md](docs/BATCH_QUOTE_REDESIGN_PLAN_2026-10-18.md) — 批量报价
+- [docs/QUOTE_COST_INSURANCE_2026-10-18.md](docs/QUOTE_COST_INSURANCE_2026-10-18.md) — 成本/保险/计量口径
+- [docs/SHEET_CALC_VERIFICATION_2026-10-18.md](docs/SHEET_CALC_VERIFICATION_2026-10-18.md) — 智能表格算价核验
+- [docs/WORKSTATION_DESIGN.md](docs/WORKSTATION_DESIGN.md) — 工位总体设计
+- [docs/CURRENT_IMPLEMENTATION_MAP.md](docs/CURRENT_IMPLEMENTATION_MAP.md) — 当前实现地图
+
+---
+
+**最后更新**：2026-10-18
