@@ -92,8 +92,8 @@ class TestMeta:
         assert {"field_fence"} <= keys
         assert "welded_pipe" not in keys
         fence = next(p for p in data["products"] if p["key"] == "field_fence")
-        # 尺寸类已是自由数值（不参与笛卡尔积），只剩 表面处理 5 × 工艺 2
-        assert fence["combo_count"] == 10
+        # 尺寸类已是自由数值（不参与笛卡尔积），只剩 表面处理 6 × 工艺 2
+        assert fence["combo_count"] == 12
         assert fence["hs_codes"]
 
 
@@ -246,7 +246,7 @@ class TestFormulasEndpoints:
         r = await async_client.get(f"{BASE}/products/field_fence/formulas")
         assert r.status_code == 200
         d = r.json()
-        assert d["space"]["combo_count"] == 10
+        assert d["space"]["combo_count"] == 12
         calc = d["calculations"]
         assert calc["derived"] and calc["piece"] and calc["order"]
         # 每条都要有单位与口径说明，否则业务看不懂
