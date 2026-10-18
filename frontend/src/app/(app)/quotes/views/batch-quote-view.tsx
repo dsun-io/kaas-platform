@@ -24,6 +24,10 @@ import { SectionCard } from "@/components/shared/section-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import type { ExportProduct, ExportQuoteResponse } from "@contracts/export-quote";
 import type { BatchQuoteResponse, QuoteOrderItemIn } from "@contracts/quote-order";
+import type {
+  ProductTaxRate,
+  TaxArchive,
+} from "@contracts/export-quote";
 import { useExportProducts } from "../../quotations/v2-quote/hooks/use-export-quote-import";
 import { useProductFormulas } from "../../quotations/v2-quote/hooks/use-export-quote-calc";
 import { buildLineItem } from "../lib/line-to-item";
@@ -98,6 +102,25 @@ export function BatchQuoteView() {
   const products = useExportProducts();
   const formulas = useProductFormulas(productKey || null, true);
   const latestFx = useLatestFxRate("USD", "CNY");
+  // 企业税档（销项/杂税）+ 产品税率（进项/退税）
+  const taxArchives = useQuery({
+    queryKey: ["batch", "tax-archives"],
+    queryFn: async () => {
+      const { data } = await apiClient.get<{ items: TaxArchive[] }>(
+        "/tax-archives",
+      );
+      return data.items;
+    },
+  });
+  const productTaxes = useQuery({
+    queryKey: ["batch", "product-tax-rates"],
+    queryFn: async () => {
+      const { data } = await apiClient.get<{ items: ProductTaxRate[] }>(
+        "/product-tax-rates",
+      );
+      return data.items;
+    },
+  });
 
   useEffect(() => {
     if (!productKey && products.data?.products[0]?.key) {
@@ -163,6 +186,26 @@ export function BatchQuoteView() {
         throw new Error("请填写成本（成本必须手输，可用历史报价参考）");
       }
 
+      const productTax = (productTaxes.data ?? []).find(
+        (x) => x.product_key === productKey,
+      );
+      if (!productTax) {
+        throw new Error(
+          "该产品还没有配置进项税/出口退税率，请先到「税务管理 → 产品税率」配置",
+        );
+      }
+      const enterpriseTax = (taxArchives.data ?? [])[0];
+      const policy = {
+        input_vat_rate: productTax.input_vat_rate ?? undefined,
+        ...(productTax.rebate_rate != null
+          ? { rebate_rate: productTax.rebate_rate }
+          : {}),
+        output_vat_rate: enterpriseTax?.tax_values.output_vat_rate ?? 0,
+        misc_fee_rate: enterpriseTax?.tax_values.misc_fee_rate ?? 0.03,
+        profit_mode: "margin_on_price",
+        profit_value: 0.06,
+      };
+
       const spec = buildSpec();
       const groups = [];
       for (const row of selectedRows) {
@@ -208,6 +251,7 @@ export function BatchQuoteView() {
             quote_currency: "USD",
             validity_days: 30,
             with_verification: false,
+            policy,
           },
           { timeout: 60_000 },
         );
