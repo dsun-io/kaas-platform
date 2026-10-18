@@ -42,7 +42,7 @@ import { useLatestFxRate } from "@/lib/fx/use-latest-fx";
 import { cn } from "@/lib/utils";
 import { getAvailableTemplates } from "@/lib/trade-doc/render";
 import { useCustomerName } from "@/lib/workstation/use-upstream";
-import type { TaxArchive } from "@contracts/export-quote";
+import type { ProductTaxRate, TaxArchive } from "@contracts/export-quote";
 
 import {
   useExportProducts,
@@ -336,6 +336,29 @@ export function QuoteWorkbenchView() {
     },
   });
   const taxArchives = taxArchivesQuery.data ?? [];
+  // 产品税率：进项税/出口退税率按产品带出，不再从企业税档取
+  const productTaxQuery = useQuery({
+    queryKey: ["product-tax-rates"],
+    queryFn: async () => {
+      const { data } = await apiClient.get<{ items: ProductTaxRate[] }>(
+        "/product-tax-rates",
+      );
+      return data.items;
+    },
+  });
+  const productTaxMap = useMemo(() => {
+    const map: Record<
+      string,
+      { input_vat_rate?: number | null; rebate_rate?: number | null }
+    > = {};
+    for (const row of productTaxQuery.data ?? []) {
+      map[row.product_key] = {
+        input_vat_rate: row.input_vat_rate,
+        rebate_rate: row.rebate_rate,
+      };
+    }
+    return map;
+  }, [productTaxQuery.data]);
   const [taxArchiveId, setTaxArchiveId] = useState("");
   const [taxArchiveTouched, setTaxArchiveTouched] = useState(false);
 
@@ -347,14 +370,9 @@ export function QuoteWorkbenchView() {
   const applyTaxArchive = (a: TaxArchive) => {
     setTaxArchiveTouched(true);
     setTaxArchiveId(String(a.id));
-    setInputVatRatePct(
-      rateToPct(a.tax_values.input_vat_rate, POLICY_DEFAULTS.inputVatRatePct),
-    );
+    // 企业税档只带销项税、杂税；进项税/退税率按产品从「产品税率」取
     setOutputVatRatePct(
       rateToPct(a.tax_values.output_vat_rate, POLICY_DEFAULTS.outputVatRatePct),
-    );
-    setRebateRatePct(
-      rateToPct(a.tax_values.rebate_rate, POLICY_DEFAULTS.rebateRatePct),
     );
     setMiscTaxPct(
       rateToPct(a.tax_values.misc_fee_rate, POLICY_DEFAULTS.miscTaxPct),
@@ -364,9 +382,7 @@ export function QuoteWorkbenchView() {
   const clearTaxArchive = () => {
     setTaxArchiveTouched(true);
     setTaxArchiveId("");
-    setInputVatRatePct(POLICY_DEFAULTS.inputVatRatePct);
     setOutputVatRatePct(POLICY_DEFAULTS.outputVatRatePct);
-    setRebateRatePct(POLICY_DEFAULTS.rebateRatePct);
     setMiscTaxPct(POLICY_DEFAULTS.miscTaxPct);
   };
 
@@ -397,10 +413,10 @@ export function QuoteWorkbenchView() {
     tax_archive_code: selectedTaxArchive?.code ?? null,
     tax_archive_name: selectedTaxArchive?.name ?? null,
     tax_snapshot: {
-      input_vat_rate: pctToRate(inputVatRatePct),
       output_vat_rate: pctToRate(outputVatRatePct),
-      rebate_rate: pctToRate(rebateRatePct),
       misc_fee_rate: pctToRate(miscTaxPct),
+      // 进项税/退税率按产品不同，快照保留当时每个产品的取值
+      product_taxes: productTaxMap,
     },
   });
 
@@ -670,6 +686,7 @@ export function QuoteWorkbenchView() {
           terms={termsByLine?.terms[index] ?? null}
           lineCount={lines.length}
           customerId={customer?.id ?? null}
+          productTaxMap={productTaxMap}
           calcSignal={calcSignal}
           onChange={(patch) =>
             setLines((prev) =>

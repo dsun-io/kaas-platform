@@ -60,12 +60,24 @@ export function buildLineRequest(args: {
   terms?: BuiltTerms | null;
   /** 本行包装（产品 packaging[].id）；空 = 默认包装 */
   packagingId?: string;
+  /** 产品税率（进项/退税按产品走）；缺省才回落到整单共享值 */
+  productTax?: { input_vat_rate?: number | null; rebate_rate?: number | null } | null;
   shared: SharedQuoteParams;
 }): ExportQuoteRequest {
   const { shared } = args;
   const override = (args.profitPctOverride ?? "").trim();
   const useOverride = override !== "";
   const profitPct = useOverride ? Number(override) : Number(shared.profitPct) || 0;
+  const inputVat =
+    args.productTax?.input_vat_rate != null
+      ? args.productTax.input_vat_rate
+      : pct(shared.inputVatRatePct);
+  const rebate =
+    args.productTax?.rebate_rate != null
+      ? args.productTax.rebate_rate
+      : shared.rebateRatePct !== ""
+        ? pct(shared.rebateRatePct)
+        : undefined;
 
   return {
     product_key: args.productKey,
@@ -84,12 +96,10 @@ export function buildLineRequest(args: {
     terms: (args.terms ?? null) as Record<string, unknown> | null,
     packaging_id: args.packagingId || null,
     policy: {
-      input_vat_rate: pct(shared.inputVatRatePct),
+      input_vat_rate: inputVat,
       give_ratio: pct(shared.giveRatioPct),
       output_vat_rate: pct(shared.outputVatRatePct),
-      ...(shared.rebateRatePct !== ""
-        ? { rebate_rate: pct(shared.rebateRatePct) }
-        : {}),
+      ...(rebate !== undefined ? { rebate_rate: rebate } : {}),
       // 杂税 = 综合税费系数（用户口径：3% 就是这项要填的值）
       misc_fee_rate: pct(shared.miscTaxPct),
       profit_mode: "margin_on_price",
