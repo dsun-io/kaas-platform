@@ -1230,6 +1230,11 @@ def _build_items(currency: str, rows: List[_QuoteItemIn]):
     items: list = []
     total = Decimal("0")
     for row in rows:
+        if row.spec_snapshot and row.cost_override is None:
+            raise HTTPException(status_code=422, detail={
+                "error": "validation", "code": "COST_REQUIRED",
+                "detail": "报价行必须手动填写成本（可参考历史报价后点应用）",
+            })
         line = row.line_amount
         if line is None and row.unit_price is not None:
             line = row.qty * row.unit_price
