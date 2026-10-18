@@ -4,7 +4,8 @@
 > 销项增值税、杂税是**企业级**，继续放在 `tax_archives`；
 > 进项增值税、出口退税率跟着**产品/HS**走，新增 `product_tax_rates` 表，
 > 在税务管理页按产品逐条维护（同一团队同一产品一条，已配置的产品不能重复选）。
-> 迁移 `202610180009` 已把旧税档里的进项/退税字段清掉，并建产品税率表。
+> 迁移 `202610180009` 建产品税率表；旧税档里的进项/退税字段与旧表删除
+> 延后到发布后迁移 `202610180010`（见 `docs/DEPLOYMENT_PLAN_2026-10-18.md`）。
 > 报价时企业税档只带销项/杂税，进项/退税从产品税率带出，快照写入
 > `tax_snapshot.product_taxes`。
 
@@ -30,8 +31,8 @@
   `/rate-sets`、`/rate-sets/reload`、`/rebate-rate/lookup` 路由删除；
   `rates.py`、`rate_sets/`、`rate_sets_data.py` 删除；`sync-shared.ps1` 不再生成
   rate_sets 清单；前端批量页去掉档案下拉，旧单产品报价视图（死代码）删除；
-  `customer_quote_profiles` 旧 API/模型/表已删除（迁移 `202610180008`，
-  用户确认未投入真实业务使用）。
+  `customer_quote_profiles` 旧 API/模型已删除；表删除延后到发布后迁移
+  `202610180010`（用户确认未投入真实业务使用）。
 - ✅ TAX-07：本轮已完成：orchestrator unit、worker pytest、frontend
   typecheck/lint/test、`contracts:check`、`route-parity`、`sync-shared -Check`、
   `NEXT_EXPORT=1 NEXT_DIST_DIR=.next-verify pnpm build` 全部通过；
@@ -230,7 +231,7 @@ TAX-00 (task-1)
 
 - 前置：TAX-05 验收 + 用户单独确认。
 - 先 grep 确认无调用，再删 `/rate-sets`、`/rate-sets/reload`、`/rebate-rate/lookup`。
-- 删除 `customer_quote_profiles` API/模型/表（迁移 `202610180008`）。
+- 删除 `customer_quote_profiles` API/模型；表删除放到发布后迁移 `202610180010`。
 - 删 `rates.py`、`rate_sets/`、`rate_sets_data.py`、`_manifest.json`；
   `sync-shared.ps1` 去掉 rate_sets 清单/内嵌生成与 `-Check` 特殊分支。
 - `rate_set_code` 保留一个发布周期（deprecated），不立即删字段；旧报价单快照可读。
