@@ -14,6 +14,22 @@
 > 本地 Docker 开发环境、DAP/DDP 术语、部署待办）。**先读它。**
 > 上一份：`docs/HANDOVER_2026-10-17.md`（生产拓扑、R2 踩坑、账号）。
 
+> **（2026-10-19 · POC 清理 + 迁库推进状态 / 卡点）**
+>
+> 1. **POC Worker 已清理**：`kaas-poc-sqlalchemy` / `kaas-poc-baseline` 已 `wrangler delete`；
+>    生产 `kaas` 未受影响。
+> 2. **迁库前置测量完成**（读生产库只读查询）：Neon 实测 **PG 18.6**、库 **16.23 MB**、
+>    **109 表**、`alembic_version=202610180010`（详见 `PROD_DB_OPTIMIZATION_PLAN` §2.0）。
+>    原计划"PG17 三对齐"假设已修正为"以 PPG 实际大版本为准 + 用 PG18 客户端"。
+> 3. **迁库代码准备**：`session.py` SSL 判定去 `neon.tech` 硬编码、改通用判定（显式 ssl/sslmode
+>    参数或非本地/docker host ⇒ SSL）；orchestrator 1200 测试全绿。改动在独立分支
+>    **`feat/convergence-aprime`**（worktree 隔离，避免与并发会话抢分支）。
+> 4. **卡点（用户侧）**：PPG 库需用户 Prisma 账号创建；Console GitHub 安装曾因仓库残留
+>    `prisma-cloud/setup` 分支失败（**已删除该分支**），待用户重试安装并把 direct connection
+>    串写入 `.env.local` 的 `DATABASE_URL_PPG`。
+> 5. **并行推进（不依赖云账号）**：已启动 **C 子集——worker 真 PG 写入路径测试**（task-8，
+>    pgserver 本地 PG + alembic 建 schema + register/bootstrap-admin 等写入路径真库验证）。
+>
 > **（2026-10-19 · 收敛 P0 POC 结论：路线 A 不可行 → 转 A′）**
 >
 > POC 文档：`docs/POC_WORKER_SQLALCHEMY_2026-10-19.md`（POC 源码
