@@ -77,21 +77,21 @@ PYTHONPATH=. .venv/Scripts/python scripts/export_openapi.py
 
 > 这是**设计使然**（R6 刻意不读工作树，以免把别人未提交的半成品当基准 ✗），
 > 不是门禁失灵；所以**顺序必须反过来**：先提交产物，再让门禁看它。
-- 环境无 `pnpm`/`npm` 可直接调用，用
-  `C:\Users\河北慷逊公司\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe`
-  + `...\dependencies\pnpm\bin\pnpm.cjs`。跑 `.ps1` 前先
-  `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force`。
-  - ⚠️ **2026-10-19 更正**：本文档原写 `...\node\pnpm\bin\pnpm.mjs`，**该路径不存在**
-    （pnpm 实际在 `dependencies\pnpm\bin\pnpm.cjs`，与 `node` 平级）⇒ 按旧路径调用会
-    `MODULE_NOT_FOUND`。git hook（bash 环境）下还需一个 shim：内容为
-    `exec "<node.exe>" "<pnpm.cjs>" "$@"` 的无 BOM 文本 `pnpm` 文件放进 PATH 即可。
-    hook 不认 `C:\` 风格 PATH，Windows 路径写进 shim 内部最稳。
-  - ⚠️ **2026-10-12 更正**：本文档原写 `C:\Users\HJ\…`，**该路径在本机不存在**
-    （实际用户名是 `河北慷逊公司`）⇒ 按旧路径调用会 `CommandNotFoundException`。
-  - ⚠️ **本机没有 PowerShell 7**（`pwsh` 不在 PATH，只有 5.1）⇒ 上面所有
-    `pwsh scripts/…` 都要改用 `powershell -ExecutionPolicy Bypass -File scripts/…`。
-  - ⚠️ **提交时要把 pnpm/node 的 bin 放进 PATH**：`.husky/pre-commit` 调 `pnpm lint-staged`
-    ⇒ 否则报 `pnpm: command not found`（code 127）而提交失败。
+- **本机工具链（2026-10-19 实机核对；换设备需重核）**：
+  - DSH runtime：`C:\Users\76516\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe`
+    + `...\dependencies\pnpm\bin\pnpm.cjs`（注意是 `dependencies\pnpm\bin\pnpm.cjs`，不是 `node\pnpm\…`）。
+  - 本机 PATH 上已有 `D:\Node.js\node.exe` 与 pnpm（`C:\Users\76516\AppData\Roaming\npm\pnpm.ps1`），
+    一般可直接用 `pnpm` / `node`。
+  - ⚠️ **本机没有 PowerShell 7**（`pwsh` 不在 PATH，只有 5.1）⇒ 所有 `pwsh scripts/…` 改用
+    `powershell -ExecutionPolicy Bypass -File scripts/…`。
+  - ⚠️ **PATH 上的 `python` 是 WindowsApps 占位符**（执行无输出、退出 1）⇒ 需要 Python 的命令
+    （`scripts/route-parity.py`、`export_openapi.py` 等）一律用
+    `backend/orchestrator/.venv/Scripts/python.exe`；worker 测试用 `uv run …`。
+  - ⚠️ 用户名会变：本机是 `76516`；历史文档写过 `HJ` / `河北慷逊公司`，按旧路径调用会
+    `CommandNotFoundException`。以 `$env:USERPROFILE` 为准。
+  - git hook：`.husky/pre-commit` 调 `pnpm lint-staged`（实测本机可直接解析）。若换设备报
+    `pnpm: command not found`，加一个无 BOM 文本 shim（内容 `exec "<node.exe>" "<pnpm.cjs>" "$@"`）
+    放进 PATH，Windows 路径写进 shim 内部最稳。
   - ⚠️ **commitlint 的 `subject-case` 规则**禁止句首/帕斯卡大小写 ⇒ subject 用中文或**全小写**才过。
 
 ## 4. 这个工作区可能**同时有多个任务在写** —— 提交纪律

@@ -11,6 +11,18 @@
 | 3 | **Notion** | 只做任务管理 | 任务拆分与验收记录；**不是技术真相源** |
 | 留档 | [`docs/archive/`](./archive/) 下的历史报告 | 历史参考 | 只读留档，不代表当前架构 |
 
+## 2026-10-19 交接与决策（现行口径）
+
+| 文档 | 内容 |
+|---|---|
+| [../README.md](../README.md) | **主交接文档（唯一权威）**：架构 / 三环境矩阵（目标态）/ 方案 B 决策 / 冷启动线 / 测试策略 |
+| [MASTER_EXEC_PLAN_2026-10-19.md](./MASTER_EXEC_PLAN_2026-10-19.md) | 总执行清单（批次 0 已完成；当前主链 = 方案 B 阶段二/三） |
+| [PLAN_B_EVALUATION_2026-10-19.md](./PLAN_B_EVALUATION_2026-10-19.md) | 方案 B 阶段一评估（B-可行 + 三项已确认修正） |
+| [HANDOVER_2026-10-19_CI_AND_PROD_FIXES.md](./HANDOVER_2026-10-19_CI_AND_PROD_FIXES.md) | 生产注册 500 / 定价页白屏 / CI db-tests 修复（✅ 已完成，勿重做） |
+| [POC_WORKER_SQLALCHEMY_2026-10-19.md](./POC_WORKER_SQLALCHEMY_2026-10-19.md) | 路线 A 否决证据（greenlet 无 wasm + 冷启动超线） |
+| [DUAL_BACKEND_CONVERGENCE_2026-10-19.md](./DUAL_BACKEND_CONVERGENCE_2026-10-19.md) / [EXEC_PLAN](./DUAL_BACKEND_CONVERGENCE_EXEC_PLAN_2026-10-19.md) | ⚠️ 被方案 B 取代（A′ 记录与 POC 结论仍有效） |
+| [HANDOVER_2026-10-19_P1_PPG_MIGRATION.md](./HANDOVER_2026-10-19_P1_PPG_MIGRATION.md) / [PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md](./PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md) | ❌ 已废弃（决策 1：放弃 PPG 回 Neon） |
+
 ## 口径与决策账本（先读这些）
 
 | 文档 | 内容 |
@@ -18,7 +30,7 @@
 | [PROBLEM_STATUS_2026-10-11.md](./PROBLEM_STATUS_2026-10-11.md) | **现存问题当前口径**（实跑门禁取证；交接摘要滚动更新在顶部） |
 | [UNCERTAIN.md](./UNCERTAIN.md) | 决策账本：每条存疑/裁决的落盘记录（#17–#21 为 2026-10-17 最新裁决） |
 | [CLEANUP_LOG.md](./CLEANUP_LOG.md) | 清理与优化执行日志 |
-| [CONTRACT_AND_MOCK_DECISIONS.md](./CONTRACT_AND_MOCK_DECISIONS.md) | 契约与 mock 的既定决策（含已登记待排期缺陷） |
+| [CONTRACT_AND_MOCK_DECISIONS.md](./archive/2026-10-19-master-exec/CONTRACT_AND_MOCK_DECISIONS.md) | 契约与 mock 的既定决策（已归档；当前口径以 README + PROBLEM_STATUS 为准） |
 | [WORKER_ORCHESTRATOR_DRIFT.md](./WORKER_ORCHESTRATOR_DRIFT.md) | 双端漂移清单（历史判断，大部分已修，剩余以 PROBLEM_STATUS 为准） |
 | [CURRENT_IMPLEMENTATION_MAP.md](./CURRENT_IMPLEMENTATION_MAP.md) | 实现地图（历史判断，同上） |
 | [QA_TEST_ACCOUNTS.md](./QA_TEST_ACCOUNTS.md) | 测试账号与验收口径 |

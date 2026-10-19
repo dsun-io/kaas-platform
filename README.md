@@ -59,7 +59,12 @@
 - Neon 免费层提供 **1 GB 存储、100 CU-hours、10 分支**，闲置仅缩容不清数据；
 - **生产 Hyperdrive 必须指向 Neon 生产分支。**
 
-### 2.2 三环境资源隔离矩阵（已确认 · 原样）
+### 2.2 三环境资源隔离矩阵（**目标态 · 尚未实施**）
+
+> ⚠️ **实施状态（2026-10-19 核对）**：下表是**目标态**，不是当前实配。当前生产仍为单环境：
+> `backend/worker/wrangler.jsonc` 只有 1 个 Hyperdrive（`f53fed49…` → Neon 生产分支）、
+> R2 桶名 `kaas-files`、无 KV 绑定、无 preview workflow。**不要按本矩阵直接改配置**；
+> 落地随方案 B 阶段二 S5（preview + deploy）与阶段三执行。
 
 核心原则：**环境之间物理隔离，不靠代码前缀或运行时判断区分生产与预览；预览之间共享预览专用资源，用 PR 前缀区分；开发默认本地，不触云。**
 
@@ -70,7 +75,7 @@
 | **R2** | `kaas-prod-storage` | `kaas-preview-storage`（所有预览共享，对象键用 `pr-<slug>/` 前缀区分 PR） | **本地 MinIO，桶名 `kaas-dev`** | `kaas-dev-storage` |
 | **KV** | 生产 namespace ID `id` | 预览 namespace ID `preview_id`（所有预览共享，键用 `pr-<slug>:` 前缀区分 PR） | **本地持久化，不触云** | 开发专用 namespace |
 
-### 2.3 硬规则（已确认 · 原样，runner 不得违反）
+### 2.3 硬规则（**目标态**约束 · 实施时不得违反）
 
 1. **开发默认数据库是本地 Docker PG**。日常开发、单测、Alembic 迁移一律使用本地 Docker PG。Neon 开发分支仅用于 `wrangler dev --remote` 的部署前冒烟，低频使用，CI 不得依赖。不得将开发默认数据库改为 Neon 开发分支。
 2. **开发默认存储是本地 MinIO**（docker-compose 已有，桶名 `kaas-dev`）。日常开发、单测、本地热重载一律使用本地 MinIO 或 wrangler dev 的本地 R2 模拟，不触远程 R2。远程 R2 开发桶 `kaas-dev-storage` 仅用于 `wrangler dev --remote` 冒烟，CI 不得依赖。
@@ -176,7 +181,7 @@
 
 | # | 问题 | 处置归属 |
 |---|---|---|
-| 1 | **空库快径缺 worker 表**：空库只 `metadata.create_all`，worker 需要的 `fx_rates`、`subscriptions`、`shipments` 等表缺失，新环境必 500 | **B 实施中顺带解决**：加 schema 完备性门禁（worker 全部查询涉及的表 vs alembic 产物对账） |
+| 1 | **空库快径缺 worker 表**：空库只 `metadata.create_all`，worker 需要的 `fx_rates`、`subscriptions`、`shipments` 等表缺失，新环境必 500 | **部分已修**：`alembic/env.py` 补 5 个模型模块 import（`88132af`，空库模型表 61→93）；仍缺 worker 独有/无模型表，随 B 加 schema 完备性门禁 |
 | 2 | **attribute-proposals 3 条路由生产 404**：有前端活页面在调（`admin/spec-proposals/page.tsx:53,64,83`） | **B 实施中顺带解决**：随 S3 补进 worker |
 | 3 | **DEPLOY.md 漂移**（曾与 P1 分支 PPG 配置比对得出"仍写 Neon"的漂移结论） | **本（文档）更新已修正**：决策 1 回 Neon 后，DEPLOY.md 的 Neon 口径与 main 生产实配重新一致；已补主文档指针 |
 | 4 | **门禁登记理由可能过期**：allowlist:30 的 comtrade"定时器调度"说法与代码不符 | 独立于 B：登记为已知问题，建议定期审计 allowlist |
@@ -359,7 +364,8 @@ powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1 -Check
 
 # 契约 / 路由对等
 pnpm contracts:check
-python scripts/route-parity.py
+# 本机 `python` 是 WindowsApps 占位符（无输出、退出 1），必须用 venv 解释器：
+backend/orchestrator/.venv/Scripts/python.exe scripts/route-parity.py
 
 # 静态导出
 $env:NEXT_EXPORT="1"
@@ -370,7 +376,8 @@ pnpm build
 测试资产（2026-10-19 评估口径，见 [PLAN_B_EVALUATION §1](docs/PLAN_B_EVALUATION_2026-10-19.md)）：
 
 - orchestrator：94 文件 / 静态 1,301 个 `def test_`（`-m unit` 收集 1,200）；`-m db` 静态 288；
-- worker：23 文件 / 287 条（另有 5 条真 PG integration 测试在 P1 分支，随收敛合并）；
+- worker：23 文件 / 287 个静态 `def test_`；另新增 `tests/integration/` 5 条**真 PG 写入路径**用例
+  （`@pytest.mark.integration`；本地无 PG 自动 skip，CI 由 `worker-db-tests` job 用 postgres service 跑）；
 - 前端：455 passed（2026-10-19 批次 0 后基线）；
 - route-parity 实测：orchestrator 231 / worker 225 / 允许清单 11（全登记、过期 0）⇒ PASS。
 
@@ -495,4 +502,4 @@ docker-compose.yml        本地基础设施
 
 ---
 
-**最后更新**：2026-10-19（主交接文档：记录决策 1–4 与三项已确认修正）
+**最后更新**：2026-10-19 晚场（记录决策 1–4 与三项已确认修正；分支收编 `88132af` 与文档收口同步）
