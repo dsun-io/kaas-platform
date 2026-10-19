@@ -14,6 +14,23 @@
 > 本地 Docker 开发环境、DAP/DDP 术语、部署待办）。**先读它。**
 > 上一份：`docs/HANDOVER_2026-10-17.md`（生产拓扑、R2 踩坑、账号）。
 
+> **（2026-10-19 · 批次 0 前端小修 B0-1~B0-4 完成）**
+>
+> 1. **B0-1**（原 P2-⑪）：`use-products.ts` `crypto.subtle.digest` 裸调加特性检测兜底 ——
+>    非安全上下文 / jsdom 没有 `crypto.subtle` 时不再炸（Frontend CI 红），跳过直传、
+>    直接走服务端代传（multipart 由服务端自算哈希），返回体如实标记 `fellBackToProxy` +
+>    回退原因；补单测钉死"不发 presign、不发 PUT、只发一次 multipart"。
+> 2. **B0-2**（原 P2-⑫）：`freight-panel.tsx` 货代询价文案补 DAP/DDP 口径（DAP=到门价、
+>    DDP=完税到门）：原五项费用保留，另请货代报目的港费用（拆箱、港杂及送货到门）与
+>    进口关税及税费（DDP 完税到门口径）。
+> 3. **B0-3**（用户裁决 #10）：`/quotes`「定价数据」tab 改名「成本历史」，页面副标题同步；
+>    `?tab=pricing` 深链键不变；quotes-tabs 单测 + quotations e2e 文案同步更新。
+> 4. **B0-4**：报价产品下拉唯一数据源 `useExportProducts` 加前端兜底过滤 ——
+>    `is_active=false` / `disabled=true` 的行不进下拉（后端需求 16 已过滤，此为旧后端 /
+>    MSW 种子的第二道防线，覆盖报价 / 批量报价 / 产品行三个下拉）；补单测。
+> 5. **门禁**：前端 typecheck / lint / test 全绿（46 文件 455 用例）；未动 Pydantic 模型与路由，
+>    无需 contracts:check。
+>
 > **（2026-10-19 晚场 · 方向已拍板：合并 + 三层模型 —— 当前口径以此为准）**
 >
 > 用户裁决：① **双后端按路线 A 合并**（CF 免费托管不可放弃 ⇒ 排除换 VPS；先 POC 再全量）；
@@ -62,8 +79,9 @@
 >   ⑥ Neon→PPG 生产迁移（方案已定稿；**生产为空黄金窗口，越晚代价越大**）
 > - **P2**：⑦「流失」拒绝文件链路迁订单阶段（等订单阶段新增 lost）⑧ Excel xlsx 上传闭环
 >   （上传侧现只收 CSV）⑨ 生产测试数据 / 流失拒绝文件历史数据清理（数据删除，**需用户确认**）
->   ⑩ 诊断端点收敛（`_r2_debug` / `fx-rates/_debug`）⑪ Frontend CI `crypto.subtle.digest`
->   类型红（待复测确认）⑫ 货代询价文案补 DAP/DDP 费用项
+>   ⑩ 诊断端点收敛（`_r2_debug` / `fx-rates/_debug`）⑪ ~~Frontend CI `crypto.subtle.digest`
+>   类型红~~ ✅ 10-19 已修（B0-1，见上一条）⑫ ~~货代询价文案补 DAP/DDP 费用项~~
+>   ✅ 10-19 已补（B0-2，见上一条）
 > - **P3 暂缓**：技术栈升级（触发条件制，见 TECH_STACK_UPGRADE §0）、30/90 天自动沉寂、
 >   本地 mock 刷新丢数据（MSW 限制）、e2e 数据层不稳根治、租户级产品定义配置化
 >   （PRODUCT_CONFIG_TENANT_UNFINISHED）
