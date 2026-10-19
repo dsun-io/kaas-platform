@@ -43,7 +43,10 @@ def worker_table_refs() -> dict[str, set[str]]:
     refs: dict[str, set[str]] = {}
     for path in sorted(WORKER_SRC.glob("*.py")):
         text = path.read_text(encoding="utf-8")
-        for match in SQL_TABLE_RE.finditer(text):
+        # 2026-10-19 误报修复：注释里的 SQL 片段（如 "原先这里只 UPDATE due_date/notes"）
+        # 会被下面的正则当成表名。先去掉行注释再提取，避免把说明文字当 schema 依赖。
+        code = "\n".join(line.split("#", 1)[0] for line in text.splitlines())
+        for match in SQL_TABLE_RE.finditer(code):
             table = match.group(1)
             if not table.islower() or table in NON_TABLE:
                 continue
