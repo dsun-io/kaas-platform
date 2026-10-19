@@ -1741,363 +1741,355 @@ async def create_quotation_manual(
 
 
 # ── 阶段 3 · 定价数据（/api/v1/pricing-data，前端「定价数据」页）──
-from pricing_rules import (  # noqa: E402
-    UNIT_TO_COST_TYPE,
-    build_spec_dict,
-    expand_category_search,
-    normalize_category,
-    parse_date,
-    to_float,
-)
+# 2026-10-19 重写：旧实现是「按 product_specs 的自由规格成本」（老算价流程），
+# 返回 {items,total,page,pages} 分页列表 —— 前端定价页要的是产品定价键的**完整矩阵**
+# （orchestrator app/api/pricing_data.py 语义），读到旧形状 matrix.rows 是
+# undefined → TypeError（生产实证，页面白屏）。本块与 orchestrator 同语义同形状；
+# 矩阵/档位逻辑直接复用 quote_api 的移植（与算价接口共用同一身份与规则，
+# 保证「这里配的价 = 算价用的价」）。
+from pricing_rules import parse_date, to_float  # noqa: E402
 
-_COST_STATUSES = ("active", "inactive", "deprecated")
-_SPEC_DETAIL_COLS = (
-    "product_type", "wire_diameter", "height",
-    "mesh_width", "mesh_spec", "roll_length",
-)
-
-
-def _spec_json_of(spec: dict) -> dict:
-    """规格快照（写入成本条目的 product_spec_json，形状同 orchestrator）。"""
-    return {
-        "spec_id": spec["id"],
-        "product_category": spec["product_category"],
-        "product_type": spec["product_type"],
-        "wire_diameter": spec["wire_diameter"],
-        "height": spec["height"],
-        "mesh_width": spec["mesh_width"],
-        "mesh_spec": spec["mesh_spec"],
-        "roll_length": spec["roll_length"],
-        "weight_kg": spec["weight_kg"],
-    }
+# 成本单位 → cost_type（与 orchestrator app/api/pricing_data.py:55-63 逐字一致）
+_PRICING_UNIT_TO_COST_TYPE = {
+    "元/kg": "cost_per_kg",
+    "kg": "cost_per_kg",
+    "元/卷": "cost_per_roll",
+    "元/捆": "cost_per_bundle",
+    "元/平方米": "cost_per_sqm",
+    "元/个": "fixed",
+    "元/根": "fixed",
+}
 
 
-def _spec_detail_of(spec: Optional[dict]) -> Optional[dict]:
-    if spec is None:
-        return None
-    return {
-        "id": spec["id"],
-        "product_category": spec["product_category"],
-        "product_type": spec["product_type"],
-        "wire_diameter": spec["wire_diameter"],
-        "height": spec["height"],
-        "mesh_width": spec["mesh_width"],
-        "mesh_spec": spec["mesh_spec"],
-        "roll_length": spec["roll_length"],
-        "weight_kg": spec["weight_kg"],
-    }
+def _pricing_history(items: list, product_key: str) -> dict:
+    """把定价行的全部版本按 (customer_id, 定价键) 归拢（orchestrator collect_price_history）。"""
+    prefix = f"{product_key}:"
+    out: dict = {}
+    for item in items:
+        spec_hash = item.get("spec_hash") or ""
+        if not spec_hash.startswith(prefix):
+            continue
+        amount = item.get("amount")
+        if amount is None or float(amount) <= 0:
+            continue
+        key = spec_hash.split(":", 1)[1]
+        out.setdefault((item.get("customer_id"), key), []).append(item)
+    return out
 
 
-async def _find_or_create_spec(request: Request, spec_dict: dict, body: dict) -> dict:
-    """按 spec_hash 查找平台通用规格，不存在则创建（规则同 orchestrator）。
+def _pricing_reference(rows: list) -> dict:
+    """一批历次录入的参考统计（全部历史 + 近 30 天；orchestrator reference_stats）。
 
-    规格是平台通用资产（不带 tenant）；spec_hash 用 body 原始值计算以保持跨运行时一致，
-    数值列入库前才转 float（asyncpg 严格类型要求）。
+    `rows` 需按**最新在前**排（查询按 id 倒序）。
     """
-    spec_hash = _compute_spec_hash(spec_dict)
-    row = await db.fetchrow(
-        request,
-        """SELECT id, product_category, product_type, wire_diameter, height,
-                  mesh_width, mesh_spec, roll_length, weight_kg
-           FROM product_specs WHERE spec_hash = $1""",
-        spec_hash,
-    )
-    if row is not None:
-        return dict(row)
-    created = await db.fetchrow(
-        request,
-        """INSERT INTO product_specs
-           (product_category, product_type, wire_diameter, height, mesh_width,
-            mesh_spec, roll_length, weight_kg, spec_hash)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-           RETURNING id, product_category, product_type, wire_diameter, height,
-                     mesh_width, mesh_spec, roll_length, weight_kg""",
-        normalize_category(
-            str(spec_dict.get("product_category") or body.get("product_category") or "")
-        ),
-        spec_dict.get("product_type"),
-        spec_dict.get("wire_diameter"),
-        to_float(spec_dict.get("height")),
-        to_float(spec_dict.get("mesh_width")),
-        spec_dict.get("mesh_spec"),
-        to_float(spec_dict.get("roll_length")),
-        to_float(body.get("weight_kg")),
-        spec_hash,
-    )
-    return dict(created)
+    empty = {"count": 0, "avg": None, "min": None, "max": None,
+             "last": None, "last_at": None, "avg_30d": None, "count_30d": 0}
+    amounts = [float(i["amount"]) for i in rows if i.get("amount") is not None]
+    if not amounts:
+        return empty
+    newest = rows[0]
+    created = newest.get("created_at")
+    recent: list = []
+    # 窗口基准必须是**现在**，不能拿"最新一条"当基准（orchestrator 同注释）
+    now = datetime.now(timezone.utc)
+    for i in rows:
+        at = i.get("created_at")
+        if at is None:
+            continue
+        if at.tzinfo is None:          # 库里可能是 naive（无时区）
+            at = at.replace(tzinfo=timezone.utc)
+        if (now - at).days <= 30:
+            recent.append(float(i["amount"]))
+    return {
+        "count": len(amounts),
+        "avg": round(sum(amounts) / len(amounts), 6),
+        "min": min(amounts),
+        "max": max(amounts),
+        "last": amounts[0],
+        "last_at": created.isoformat() if created else None,
+        "avg_30d": (round(sum(recent) / len(recent), 6) if recent else None),
+        "count_30d": len(recent),
+    }
 
 
 @app.get("/api/v1/pricing-data")
 async def list_pricing_data(
     request: Request,
-    product_category: Optional[str] = None,
-    page: int = 1,
-    page_size: int = 20,
     user: dict = Depends(_get_current_user),
 ):
-    """查询当前用户的定价数据列表（tenant/customer 不信任请求体）。"""
-    customer_id = str(user["id"])
-    where = ["tenant_id = $1", "customer_id = $2"]
-    params: list = [DEFAULT_TENANT, customer_id]
-    idx = 3
-    if product_category:
-        normalized = normalize_category(product_category)
-        where.append(f"product_category = ANY(${idx})")
-        params.append(expand_category_search(normalized))
-        idx += 1
-    w = " AND ".join(where)
-    pg = max(1, page)
-    ps = min(100, max(1, page_size))
-    total = await db.fetchval(
-        request, f"SELECT COUNT(*) FROM customer_cost_items WHERE {w}", *params
-    )
-    rows = await db.fetch(
-        request,
-        f"""SELECT id, product_category, spec_hash, product_spec_id, cost_type,
-                   amount, currency, unit, effective_from, effective_to,
-                   status, source, notes, created_at
-            FROM customer_cost_items WHERE {w}
-            ORDER BY id DESC LIMIT {ps} OFFSET {(pg - 1) * ps}""",
-        *params,
-        table="customer_cost_items",
-    )
-    spec_ids = [r["product_spec_id"] for r in rows if r["product_spec_id"]]
-    spec_map: dict = {}
-    if spec_ids:
-        specs = await db.fetch(
-            request,
-            """SELECT id, product_category, product_type, wire_diameter, height,
-                      mesh_width, mesh_spec, roll_length, weight_kg
-               FROM product_specs WHERE id = ANY($1)""",
-            spec_ids,
+    """某产品定价键的**完整矩阵**（与 orchestrator app/api/pricing_data.py 同语义）。
+
+    - `scope=own`（默认）：当前客户自己的配置。身份与算价接口**同一口径**
+      （quote_api._customer_of —— 保证「这里配的价 = 算价用的价」）。
+    - `scope=all`（仅内部管理员）：本租户所有客户的配置，按客户分组。
+    - 客户自己在定价数据里加过的档位会并入规格空间（与算价看到的选项一致）。
+    """
+    quote_api._require_engine()
+    product_key = (request.query_params.get("product_key") or "").strip()
+    if not product_key:
+        raise HTTPException(status_code=422, detail="product_key is required")
+    try:
+        product = quote_api.get_product(product_key)
+    except Exception:
+        raise HTTPException(status_code=404, detail=f"未知产品: {product_key}")
+
+    scope = (request.query_params.get("scope") or "own").strip()
+    if scope not in ("own", "all"):
+        raise HTTPException(status_code=422, detail="scope must be own or all")
+
+    tenant = quote_api._tenant_of(user)
+    if scope == "all":
+        # 跨客户查看属内部视图，必须内部管理员（orchestrator: require_tenant_admin）
+        if not quote_api._is_internal_admin(user):
+            raise HTTPException(status_code=403, detail="跨客户查看仅管理员可用")
+        extended = quote_api.extend_product(
+            product,
+            await quote_api._load_option_extensions(request, tenant, None, product),
         )
-        spec_map = {s["id"]: dict(s) for s in specs}
-    items = []
-    for r in rows:
-        items.append({
-            "id": r["id"],
-            "product_category": r["product_category"],
-            "spec_hash": r["spec_hash"],
-            "spec_id": r["product_spec_id"],
-            "cost_type": r["cost_type"],
-            "amount": r["amount"],
-            "currency": r["currency"],
-            "unit": r["unit"],
-            "effective_from": r["effective_from"],
-            "effective_to": r["effective_to"],
-            "status": r["status"],
-            "source": r["source"],
-            "notes": r["notes"],
-            "created_at": r["created_at"],
-            "product_spec": _spec_detail_of(
-                spec_map.get(r["product_spec_id"]) if r["product_spec_id"] else None
-            ),
-        })
+        customer_id = None
+    else:
+        customer_id = quote_api._customer_of(user)
+        extended = quote_api.extend_product(
+            product,
+            await quote_api._load_option_extensions(request, tenant, customer_id, product),
+        )
+
+    dims = quote_api.describe_pricing_key(extended)
+    rows = quote_api._matrix_rows(extended)
+    items = await quote_api._pricing_key_items(request, tenant, customer_id, product.key)
+
+    prefix = f"{product.key}:"
+    by_customer: dict = {}
+    for item in items:
+        spec_hash = item.get("spec_hash") or ""
+        if not spec_hash.startswith(prefix):
+            continue
+        key = spec_hash.split(":", 1)[1]
+        bucket = by_customer.setdefault(item.get("customer_id"), {})
+        if key not in bucket:      # 查询按 id 倒序 → 首次遇到即最新
+            bucket[key] = item
+    history = _pricing_history(items, product.key)
+
+    def _cell(cid, bucket, row):
+        item = bucket.get(row["key"])
+        eff = item.get("effective_from") if item else None
+        return {
+            "key": row["key"],
+            "values": row["values"],
+            "labels": row["labels"],
+            "amount": float(item["amount"]) if item else None,
+            "unit": (item.get("unit") if item else
+                     (product.cost_unit.split("/")[-1] if product.cost_unit else "")),
+            "item_id": item.get("id") if item else None,
+            "effective_from": eff.isoformat() if eff else None,
+            "source": item.get("source") if item else "product_default",
+            "notes": item.get("notes") if item else None,
+            "configured": item is not None,
+            "reference": _pricing_reference(history.get((cid, row["key"])) or []),
+        }
+
+    if customer_id is not None:
+        bucket = by_customer.get(customer_id, {})
+        return {
+            "product_key": product.key,
+            "product_name": product.name,
+            "cost_unit": product.cost_unit,
+            "scope": "own",
+            "dims": dims,
+            "rows": [_cell(customer_id, bucket, r) for r in rows],
+        }
+    customers = [
+        {
+            "customer_id": cid,
+            "rows": [_cell(cid, bucket, r) for r in rows],
+            "configured_count": sum(1 for r in rows if bucket.get(r["key"])),
+        }
+        for cid, bucket in sorted(by_customer.items())
+    ]
     return {
-        "items": items,
-        "total": total,
-        "page": pg,
-        "page_size": ps,
-        "pages": (total + ps - 1) // ps if total > 0 else 0,
+        "product_key": product.key,
+        "product_name": product.name,
+        "cost_unit": product.cost_unit,
+        "scope": "all",
+        "dims": dims,
+        "rows": [_cell("", {}, r) for r in rows],   # 兜底模板（全为未配置）
+        "customers": customers,
     }
 
 
 @app.post("/api/v1/pricing-data", status_code=201)
 async def create_pricing_data(
-    body: dict,
     request: Request,
     user: dict = Depends(_get_current_user),
 ):
-    """录入客户规格 + 成本价数据：同一事务写 product_specs + customer_cost_items。
+    """保存一个定价键组合的成本（INSERT 新版本 + 同键旧版本置 inactive）。
 
-    tenant/customer 归属以登录用户为准，不信任请求体（规则同 orchestrator）。
+    与 orchestrator app/api/pricing_data.py:create_pricing_data 同语义。
+    INSERT-only 而非 UPDATE：成本价会变，但已经发出去的报价必须能复现当时的成本。
+    单语句数据修改 CTE 保证「停用旧版本 + 插入新版本」原子性（db 助手每语句独立连接）。
     """
-    customer_id = str(user["id"])
-    raw_category = (body.get("product_category") or "").strip()
-    product_category = normalize_category(raw_category)
-    if not product_category:
-        raise HTTPException(status_code=422, detail="product_category is required")
-    cost_amount = body.get("cost_amount")
-    if cost_amount is None or not isinstance(cost_amount, (int, float)) or cost_amount <= 0:
-        raise HTTPException(status_code=422, detail="cost_amount must be > 0")
-    cost_unit = (body.get("cost_unit") or "").strip()
-    cost_type = UNIT_TO_COST_TYPE.get(cost_unit)
+    quote_api._require_engine()
+    body = await request.json()
+    # 身份一律取登录态，不信任请求体（与 orchestrator require_tenant/customer_match 同效果）
+    tenant = quote_api._tenant_of(user)
+    customer_id = quote_api._customer_of(user)
+
+    product_key = str(body.get("product_key") or "").strip()
+    if not product_key:
+        raise HTTPException(status_code=422, detail="product_key is required")
+    try:
+        product = quote_api.get_product(product_key)
+    except Exception:
+        raise HTTPException(status_code=404, detail=f"未知产品: {product_key}")
+    if not product.pricing_key:
+        raise HTTPException(
+            status_code=422,
+            detail=f"产品 {product_key} 未声明定价键，无法保存定价数据",
+        )
+
+    values = body.get("values")
+    if not isinstance(values, dict) or not values:
+        raise HTTPException(status_code=422, detail="values is required")
+    key = quote_api.pricing_key_of(product, values)
+    if not key:
+        raise HTTPException(
+            status_code=422,
+            detail=f"values 缺少定价键维度；需要: {[d['field'] for d in product.pricing_key]}",
+        )
+
+    amount = body.get("amount")
+    if amount is None or not isinstance(amount, (int, float)) or amount <= 0:
+        raise HTTPException(status_code=422, detail="amount must be > 0")
+    unit = str(body.get("unit") or "").strip() or (
+        product.cost_unit.split("/")[-1] if product.cost_unit else "kg"
+    )
+    cost_type = _PRICING_UNIT_TO_COST_TYPE.get(unit)
     if cost_type is None:
         raise HTTPException(
             status_code=422,
-            detail=f"cost_unit must be one of: {list(UNIT_TO_COST_TYPE.keys())}",
+            detail=f"unit 必须是以下之一: {sorted(set(_PRICING_UNIT_TO_COST_TYPE.keys()))}",
         )
-    status = (body.get("status") or "active").strip()
-    if status not in _COST_STATUSES:
-        raise HTTPException(
-            status_code=422, detail="status must be active, inactive, or deprecated"
-        )
-    spec_dict = build_spec_dict(body)
-    if not spec_dict:
-        raise HTTPException(
-            status_code=422,
-            detail="At least one spec field is required beyond product_category",
-        )
-    spec = await _find_or_create_spec(request, spec_dict, body)
-    spec_hash = _compute_spec_hash(spec_dict)
+
+    spec_hash = f"{product.key}:{key}"
+    effective_from = parse_date(body.get("effective_from"))
+    # 客户自加档位的显示名由界面给（如「镀锌60g/㎡」），不写进产品定义
+    raw_labels = body.get("labels")
+    labels = (
+        {str(k): str(v) for k, v in raw_labels.items()}
+        if isinstance(raw_labels, dict) else {}
+    )
+    payload_json = _json.dumps({
+        "kind": "pricing_key",
+        "product_key": product.key,
+        "pricing_key": key,
+        "values": values,
+        "labels": labels,
+    })
+
     row = await db.fetchrow(
         request,
-        """INSERT INTO customer_cost_items
-           (tenant_id, customer_id, product_category, product_spec_id,
-            product_spec_json, spec_hash, cost_type, amount, currency, unit,
-            effective_from, effective_to, status, source, notes, created_by)
-           VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-           RETURNING id, amount, currency, unit, status, effective_from,
-                     effective_to""",
-        DEFAULT_TENANT,
+        """WITH deactivated AS (
+               UPDATE customer_cost_items SET status='inactive'
+               WHERE tenant_id=$1 AND customer_id=$2 AND spec_hash=$3 AND status='active'
+           )
+           INSERT INTO customer_cost_items
+               (tenant_id, customer_id, product_category, product_spec_id,
+                product_spec_json, spec_hash, cost_type, amount, currency, unit,
+                effective_from, source, notes, created_by)
+           VALUES ($1,$2,$4,NULL,$5::jsonb,$3,$6,$7,$8,$9,$10,'manual',$11,$12)
+           RETURNING id, amount, unit, effective_from, status""",
+        tenant,
         customer_id,
-        product_category,
-        spec["id"],
-        _json.dumps(_spec_json_of(spec)),
         spec_hash,
+        product.name,                    # product_category（同 orchestrator）
+        payload_json,
         cost_type,
-        float(cost_amount),
-        (body.get("cost_currency") or "CNY").strip(),
-        cost_unit,
-        # effective_from 列 NOT NULL：不传 = 立即生效（同 server_default 语义）
-        parse_date(body.get("effective_from")) or datetime.now(timezone.utc),
-        parse_date(body.get("effective_to")),
-        status,
-        "manual",
+        float(amount),
+        str(body.get("currency") or "CNY").strip(),
+        unit,
+        effective_from or datetime.now(timezone.utc),   # 列 NOT NULL：不传 = 立即生效
         body.get("notes"),
         str(user["id"]),
+        table="customer_cost_items",
     )
+    eff = row["effective_from"]
     return {
         "id": row["id"],
-        "product_category": product_category,
-        "spec_hash": spec_hash,
-        "spec_id": spec["id"],
-        "cost_type": cost_type,
-        "amount": row["amount"],
-        "currency": row["currency"],
+        "product_key": product.key,
+        "key": key,
+        "values": values,
+        "amount": float(row["amount"]),
         "unit": row["unit"],
-        "effective_from": row["effective_from"],
-        "effective_to": row["effective_to"],
+        "effective_from": eff.isoformat() if eff else None,
         "status": row["status"],
-        "product_spec": _spec_detail_of(spec),
     }
 
 
 @app.patch("/api/v1/pricing-data/{item_id}")
 async def update_pricing_data(
     item_id: int,
-    body: dict,
     request: Request,
     user: dict = Depends(_get_current_user),
 ):
-    """编辑客户规格 + 成本价数据（仅本人数据；规格变更时重建 spec_hash）。"""
-    customer_id = str(user["id"])
-    current = await db.fetchrow(
-        request,
-        """SELECT id, product_category, spec_hash, product_spec_id, product_spec_json
-           FROM customer_cost_items
-           WHERE id = $1 AND tenant_id = $2 AND customer_id = $3""",
-        item_id,
-        DEFAULT_TENANT,
-        customer_id,
-        table="customer_cost_items",
-    )
-    if current is None:
-        raise HTTPException(status_code=404, detail="Pricing data not found")
+    """改金额/单位/生效日期/备注（与 orchestrator update_pricing_data 同语义）。
+
+    改「规格组合」请用 POST 建新版本；身份取登录态（tenant/customer 不信任请求体）。
+    """
+    body = await request.json()
+    tenant = quote_api._tenant_of(user)
+    customer_id = quote_api._customer_of(user)
 
     updates: dict = {}
-    new_amount = body.get("cost_amount")
-    if new_amount is not None:
-        if not isinstance(new_amount, (int, float)) or new_amount <= 0:
-            raise HTTPException(status_code=422, detail="cost_amount must be > 0")
-        updates["amount"] = float(new_amount)
-    new_unit = body.get("cost_unit")
-    if new_unit is not None:
-        new_cost_type = UNIT_TO_COST_TYPE.get(str(new_unit).strip())
-        if new_cost_type is None:
-            raise HTTPException(
-                status_code=422,
-                detail=f"cost_unit must be one of: {list(UNIT_TO_COST_TYPE.keys())}",
-            )
-        updates["cost_type"] = new_cost_type
-        updates["unit"] = str(new_unit).strip()
-    new_category = body.get("product_category")
-    if new_category is not None:
-        updates["product_category"] = normalize_category(str(new_category).strip())
-
-    spec_changed = any(f in body for f in _SPEC_DETAIL_COLS)
-    if spec_changed:
-        old_snap = current["product_spec_json"] or {}
-        full_spec = {
-            "product_category": updates.get(
-                "product_category", current["product_category"]
-            ),
-        }
-        for f in _SPEC_DETAIL_COLS:
-            full_spec[f] = body[f] if f in body else old_snap.get(f)
-        non_null = {k: v for k, v in full_spec.items() if v is not None}
-        spec = await _find_or_create_spec(request, non_null, body)
-        updates["spec_hash"] = _compute_spec_hash(non_null)
-        updates["product_spec_id"] = spec["id"]
-        updates["product_spec_json"] = _spec_json_of(spec)
+    if "amount" in body:
+        amount = body.get("amount")
+        if not isinstance(amount, (int, float)) or amount <= 0:
+            raise HTTPException(status_code=422, detail="amount must be > 0")
+        updates["amount"] = float(amount)
+    if "unit" in body:
+        unit = str(body.get("unit") or "").strip()
+        cost_type = _PRICING_UNIT_TO_COST_TYPE.get(unit)
+        if cost_type is None:
+            raise HTTPException(status_code=422, detail="unit 取值不合法")
+        updates["cost_type"] = cost_type
+        updates["unit"] = unit
     if "effective_from" in body:
-        # 列 NOT NULL：空值 = 保持原样，不更新
-        _ef = parse_date(body["effective_from"])
-        if _ef is not None:
-            updates["effective_from"] = _ef
+        updates["effective_from"] = parse_date(body["effective_from"])
     if "effective_to" in body:
         updates["effective_to"] = parse_date(body["effective_to"])
-    if "status" in body:
-        new_status = str(body["status"]).strip()
-        if new_status not in _COST_STATUSES:
-            raise HTTPException(
-                status_code=422,
-                detail="status must be active, inactive, or deprecated",
-            )
-        updates["status"] = new_status
     if "notes" in body:
         updates["notes"] = body["notes"]
+    if "status" in body:
+        status = str(body["status"]).strip()
+        if status not in ("active", "inactive", "deprecated"):
+            raise HTTPException(status_code=422, detail="status 取值不合法")
+        updates["status"] = status
     if not updates:
         raise HTTPException(status_code=422, detail="No fields to update")
 
     set_parts = []
     params: list = []
     for i, (col, val) in enumerate(updates.items(), start=1):
-        if col == "product_spec_json":
-            set_parts.append(f"{col} = ${i}::jsonb")
-            params.append(_json.dumps(val))
-        else:
-            set_parts.append(f"{col} = ${i}")
-            params.append(val)
-    params += [item_id, DEFAULT_TENANT, customer_id]
+        set_parts.append(f"{col} = ${i}")
+        params.append(val)
+    params += [item_id, tenant, customer_id]
     n = len(updates)
     row = await db.fetchrow(
         request,
         f"""UPDATE customer_cost_items SET {', '.join(set_parts)}
             WHERE id = ${n + 1} AND tenant_id = ${n + 2} AND customer_id = ${n + 3}
-            RETURNING id, product_category, spec_hash, product_spec_id,
-                      cost_type, amount, currency, unit, effective_from,
-                      effective_to, status, product_spec_json""",
+            RETURNING id, amount, unit, effective_from, status""",
         *params,
         table="customer_cost_items",
     )
     if row is None:
-        raise HTTPException(status_code=500, detail="Failed to update cost item")
-    snap = row["product_spec_json"] or {}
-    spec = {"id": snap.get("spec_id"), **snap} if snap.get("spec_id") else None
+        raise HTTPException(status_code=404, detail="Pricing data not found")
+    eff = row["effective_from"]
     return {
         "id": row["id"],
-        "product_category": row["product_category"],
-        "spec_hash": row["spec_hash"],
-        "spec_id": row["product_spec_id"],
-        "cost_type": row["cost_type"],
-        "amount": row["amount"],
-        "currency": row["currency"],
+        "amount": float(row["amount"]),
         "unit": row["unit"],
-        "effective_from": row["effective_from"],
-        "effective_to": row["effective_to"],
+        "effective_from": eff.isoformat() if eff else None,
         "status": row["status"],
-        "product_spec": _spec_detail_of(spec),
     }
 
 
@@ -2107,21 +2099,21 @@ async def delete_pricing_data(
     request: Request,
     user: dict = Depends(_get_current_user),
 ):
-    """软删除定价数据（设为 inactive，仅本人数据）。"""
+    """停用一条定价数据（软删除，与 orchestrator 同语义：停用即回退产品兜底值）。"""
     row = await db.fetchrow(
         request,
         """UPDATE customer_cost_items SET status = 'inactive'
            WHERE id = $1 AND tenant_id = $2 AND customer_id = $3
            RETURNING id""",
         item_id,
-        DEFAULT_TENANT,
-        str(user["id"]),
+        quote_api._tenant_of(user),
+        quote_api._customer_of(user),
     )
     if row is None:
         raise HTTPException(
             status_code=404, detail="Pricing data not found or access denied"
         )
-    return {"id": item_id, "status": "inactive", "message": "Pricing data deactivated"}
+    return {"id": item_id, "status": "inactive"}
 
 
 # ── 阶段 3 · SKU 价格（/api/v1/spec/skus/{id}/prices + /api/v1/spec/prices/{id}）──
