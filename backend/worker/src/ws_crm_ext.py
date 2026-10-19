@@ -225,6 +225,13 @@ async def list_customer_inquiries(
     与 dev 一致：只校验客户本身是否可见，其下询盘**不再逐条过滤** ——
     "能看见这个客户"就应当看得见他的询盘（否则列表会出现"客户有 3 条询盘、
     点进去 0 条"这种自相矛盾的界面）。
+
+    ⚠️ PARITY-CRM-23（**有意差异，2026-10-19 裁决保留**）：每项比 orchestrator
+    多一个 `inquiry_no_editable`。前端客户页的询盘清单用它决定「编号」是否
+    可编辑（`frontend/src/app/(app)/customers/page.tsx` 的 `Inquiry.inquiry_no_editable`
+    + 编号编辑按钮，消费处 page.tsx:1060）。删掉这个键会让已报价询盘也能改号，
+    破坏报价链路 —— 故保留，并在 `tests/test_parity_crm.py` 里以普通用例
+    写明"有意差异"，不留在 xfail 棘轮里。
     """
     await _customer_or_404(request, customer_id, user)
 

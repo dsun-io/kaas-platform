@@ -389,7 +389,7 @@ pnpm build
 测试资产（2026-10-19 评估口径，见 [PLAN_B_EVALUATION §1](docs/PLAN_B_EVALUATION_2026-10-19.md)）：
 
 - orchestrator：94 文件 / 静态 1,301 个 `def test_`（`-m unit` 收集 1,220）；`-m db` 静态 288；
-- worker：26 文件 / 580 passed + 5 skipped + 11 xfailed（CRM 差棘轮）；真 PG 集成 5 条
+- worker：26 文件 / **590 passed + 5 skipped**（三域 parity 棘轮已清零）；真 PG 集成 5 条
   （`@pytest.mark.integration`；本地无 PG 自动 skip，CI 由 `worker-db-tests` job 用 postgres service 跑）；
 - 前端：455 passed（2026-10-19 批次 0 后基线）；
 - route-parity 实测：允许清单 **8**（全登记、过期 0）⇒ PASS；列级漂移 0 / 表级缺失 0。

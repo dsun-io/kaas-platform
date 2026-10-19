@@ -160,9 +160,14 @@
       状态 422（Q13）、付款计划 type/ratio/amount/status（Q14–Q17）、共享序列化投影（Q18–Q20）、
       算价鉴权依赖（Q22）、`is_tenant_admin`（Q23）、SpecUpstreamChanged 409（Q24）；
       报价域 xfail **26 → 0**
-- [~] **S3-k 收尾** CRM 剩余 11 条（page_size/排序/country 参数/stage null/stage_log/响应投影/
-  `inquiry_no_editable`）—— 已委派 teammate crm-diffs（task-7）；其中「worker 多出来的可用行为」
-  以**前端消费方证据**决定保留或对齐，不盲从 parity
+- [x] **S3-k** CRM 差异清零（2026-10-19，teammate crm-diffs）—— 11/11 处理完，worker 全量
+      **590 passed + 5 skipped + 0 xfailed**（三域 parity 棘轮全部归零）：
+      page_size 200、`updated_at` 排序、`stage:null`→active、新建客户写「新建客户」阶段日志、
+      联系人/阶段日志/询盘响应投影、`?country=` 删除（前端无消费方）；
+      **CRM-23 `inquiry_no_editable` 保留为「有意差异」**（前端 `customers/page.tsx:90,1060` 有消费方，
+      不为 parity 删前端依赖）；额外同族收口 PATCH 联系人响应投影。
+      遗留（不阻塞）：`row_to_contact`/`row_to_stage_log` 尚未进共享内核（现为 worker 本地投影，
+      键集注释指向 orchestrator 行号），后续可另开任务收敛进 `kaas_common`
 - [ ] **S3-g** 测试重写 350–380 条 + marker 错位 87 条归位（共用 `queries/` 造数，与 S3 同批）
 
 **S4 删壳 + CI（1 人日）**
