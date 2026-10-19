@@ -852,7 +852,7 @@ def test_register_invalid_team_name_422():
 
 def test_register_team_name_taken_409():
     """两端一致：团队重名 → 409 TEAM_NAME_TAKEN（main.py:625-631 / teams.py:230-241）。"""
-    conn = _FakeConn(fetchval=[None, "exists"])
+    conn = _FakeConn(fetchval=["exists"])  # 现在团队重名检查先于邮箱查重
     with _patched_main(conn):
         resp = client.post(
             "/api/v1/auth/register", json=_register_body(team_name="重复团队")
@@ -963,24 +963,8 @@ def test_register_empty_workstations_opens_none():
     assert len(subs) == 0  # 传空数组 = 零开通（与 orchestrator 一致）
 
 
-def test_register_duplicate_email_precedes_invite_validation():
-    """worker 现状：邮箱占用先于邀请码校验（PARITY-DIFF-12）。
-
-    证据：main.py:593-600 先查邮箱、后查邀请码；orchestrator auth.py:224-238
-    先 resolve 邀请码（会 404/410/409），再查邮箱。同时给"已占用邮箱 + 坏邀请码"，
-    worker 回 409（邮箱），orchestrator 回 404（INVITE_NOT_FOUND）。
-    """
-    conn = _FakeConn(fetchval=["taken"])
-    with _patched_main(conn):
-        resp = client.post(
-            "/api/v1/auth/register", json=_register_body(invite_token="NOPE")
-        )
-    assert resp.status_code == 409
-    assert resp.json()["detail"] == "conflict: Email already registered"
-
-
-@pytest.mark.xfail(strict=True, reason="PARITY-DIFF-12: orchestrator 邀请码校验先于邮箱查重（404 优先）")
-def test_parity_diff_12_register_invite_error_precedes_email_conflict():
+def test_register_invite_error_precedes_email_conflict():
+    """已修 2026-10-19：坏邀请码 → 404 优先于邮箱查重 409（与 orchestrator auth.py:224-238 同口径）。"""
     conn = _FakeConn(fetchval=["taken"])
     with _patched_main(conn):
         resp = client.post(
@@ -1040,34 +1024,12 @@ def test_admin_accounts_list_shape_and_whitelist():
     assert all("token" not in account for account in body["accounts"])
 
 
-def test_admin_accounts_list_clamps_pagination():
-    """worker 现状：limit/offset 静默钳位（PARITY-DIFF-13）。
-
-    证据：ws_admin_accounts.py:65-66 `max(1, min(limit,1000))` / `max(0, offset)`；
-    orchestrator 用 Query(500, ge=1, le=1000) → 越界直接 422。
-    """
-    conn = _FakeConn(fetchval=[0], fetch=[[]])
-    with _patched_admin(conn, SYSTEM_ADMIN):
-        resp = client.get("/api/v1/admin/accounts?limit=99999&offset=-5")
-    assert resp.status_code == 200
-    limit_sql, args = next((s, a) for s, a in conn.calls if "LIMIT $1 OFFSET $2" in s)
-    assert args == (1000, 0)
-
-    conn = _FakeConn(fetchval=[0], fetch=[[]])
-    with _patched_admin(conn, SYSTEM_ADMIN):
-        resp = client.get("/api/v1/admin/accounts?limit=0")
-    assert resp.status_code == 200
-    _, args = next((s, a) for s, a in conn.calls if "LIMIT $1 OFFSET $2" in s)
-    # `limit or 500`（ws_admin_accounts.py:65）会把 0 吞成默认 500；orchestrator 是 422
-    assert args == (500, 0)
-
-
-@pytest.mark.xfail(strict=True, reason="PARITY-DIFF-13: orchestrator 分页越界返回 422，worker 静默钳位")
-def test_parity_diff_13_admin_list_out_of_range_is_422():
-    conn = _FakeConn(fetchval=[0], fetch=[[]])
-    with _patched_admin(conn, SYSTEM_ADMIN):
-        resp = client.get("/api/v1/admin/accounts?limit=99999")
-    assert resp.status_code == 422
+def test_admin_accounts_list_out_of_range_pagination_is_422():
+    """已修 2026-10-19：limit/offset 越界 → 422（与 orchestrator Query 校验同口径）。"""
+    _as(SYSTEM_ADMIN)
+    for query in ("limit=99999&offset=-5", "limit=0"):
+        resp = client.get(f"/api/v1/admin/accounts?{query}")
+        assert resp.status_code == 422, query
 
 
 # ════════════════════════════════════════════════════════════════════════════

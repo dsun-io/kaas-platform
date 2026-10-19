@@ -637,9 +637,6 @@ async def register(request: Request, body: RegisterRequest):
 
     async with _acquire(request) as conn:
         async with conn.transaction():
-            if await conn.fetchval("SELECT 1 FROM users WHERE email=$1", email) is not None:
-                raise HTTPException(status_code=409, detail="conflict: Email already registered")
-
             # ── 团队动作预校验（放在建账号之前，失败即整体回滚）──
             invite = None
             if invite_raw:
@@ -674,6 +671,11 @@ async def register(request: Request, body: RegisterRequest):
                     raise HTTPException(status_code=409, detail={
                         "error": "conflict", "code": "TEAM_NAME_TAKEN",
                         "message": f"已存在同名团队「{new_team_name}」"})
+
+            # 邮箱查重放在团队动作预校验**之后**（与 orchestrator auth.py:224-238 同口径：
+            # 坏邀请码优先 404/410；此前是邮箱优先 409，PARITY-DIFF-12）。
+            if await conn.fetchval("SELECT 1 FROM users WHERE email=$1", email) is not None:
+                raise HTTPException(status_code=409, detail="conflict: Email already registered")
 
             # 建团队的成为团队管理员（role=owner）；凭码加入的是普通成员（role=user）
             role = "user" if invite is not None else "owner"
