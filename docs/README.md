@@ -22,6 +22,9 @@
 | [POC_WORKER_SQLALCHEMY_2026-10-19.md](./POC_WORKER_SQLALCHEMY_2026-10-19.md) | 路线 A 否决证据（greenlet 无 wasm + 冷启动超线） |
 | [DUAL_BACKEND_CONVERGENCE_2026-10-19.md](./DUAL_BACKEND_CONVERGENCE_2026-10-19.md) / [EXEC_PLAN](./DUAL_BACKEND_CONVERGENCE_EXEC_PLAN_2026-10-19.md) | ⚠️ 被方案 B 取代（A′ 记录与 POC 结论仍有效） |
 | [HANDOVER_2026-10-19_P1_PPG_MIGRATION.md](./HANDOVER_2026-10-19_P1_PPG_MIGRATION.md) / [PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md](./PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md) | ❌ 已废弃（决策 1：放弃 PPG 回 Neon） |
+| [SECURITY_AUDIT_2026-10-19.md](./SECURITY_AUDIT_2026-10-19.md) | 安全审查报告（危/高/中/低 21 条 + 三环境配置核对 + 需用户操作清单） |
+| [MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md](./MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md) | 迁移链 downgrade 审计（`drop_table` 精确 3 个，旧口径「35」已更正） |
+| [S4_SINGLE_APP_PLAN_2026-10-19.md](./S4_SINGLE_APP_PLAN_2026-10-19.md) | S4 单应用收口设计（保留 worker 为唯一运行时；测试处置与回退） |
 
 ## 口径与决策账本（先读这些）
 

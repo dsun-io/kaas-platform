@@ -500,6 +500,9 @@ docker-compose.yml        本地基础设施
 - [docs/PLAN_B_EVALUATION_2026-10-19.md](docs/PLAN_B_EVALUATION_2026-10-19.md) — 方案 B 阶段一评估报告（四问取证，结论 B-可行）
 - [docs/MASTER_EXEC_PLAN_2026-10-19.md](docs/MASTER_EXEC_PLAN_2026-10-19.md) — 总执行清单（P1 迁库批次已随决策 1 废弃）
 - [docs/PROBLEM_STATUS_2026-10-11.md](docs/PROBLEM_STATUS_2026-10-11.md) — 问题状态滚动口径
+- [docs/SECURITY_AUDIT_2026-10-19.md](docs/SECURITY_AUDIT_2026-10-19.md) — 安全审查报告（危/高/中/低 + 三环境核对 + 需用户操作清单）
+- [docs/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md](docs/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md) — 迁移链 downgrade 审计（drop_table 精确 3 个）
+- [docs/S4_SINGLE_APP_PLAN_2026-10-19.md](docs/S4_SINGLE_APP_PLAN_2026-10-19.md) — S4 单应用收口设计（worker 为唯一运行时）
 - [docs/POC_WORKER_SQLALCHEMY_2026-10-19.md](docs/POC_WORKER_SQLALCHEMY_2026-10-19.md) — 路线 A 否决证据
 - ~~[docs/PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md](docs/PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md)~~ — **已废弃**（决策 1：放弃 PPg 回 Neon）
 - ~~[docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md](docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md)~~ — **已废弃**（决策 1：P1 迁库终止，历史保留）

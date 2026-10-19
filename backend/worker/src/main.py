@@ -150,6 +150,23 @@ async def _get_current_user(request: Request) -> dict:
     return dict(row)
 
 
+def _require_platform_ops(user: dict) -> None:
+    """平台运营 = internal 账号 + 管理员角色。
+
+    与 `ws_admin_accounts`（system_admin）、`ws_admin_proposals`（internal+admin）同口径。
+    前端只按 `account_type === 'internal'` 隐藏入口 —— **前端隐藏不是权限边界**：
+    本文件 6 个 `/api/v1/admin/*` 端点此前只校验"已登录"，任意 customer 账号可直接
+    写 feature flag / 读审计日志（2026-10-19 安全审查 高-1）。
+    """
+    from kaas_common.workstation.scope import is_admin_role
+
+    if user.get("account_type") != "internal" or not is_admin_role(user.get("role")):
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "forbidden", "message": "Platform operator required"},
+        )
+
+
 # ── Schemas ──
 class BootstrapRequest(BaseModel):
     email: str
@@ -2573,6 +2590,7 @@ async def get_feature_flag(
     worker 是单租户部署：只可能返回 DEFAULT_TENANT 那一项；显式要别的租户 = 不存在 ⇒ 404
     （不泄露存在性，与 orchestrator 同口径）。`flag_name` 参数过渡期保留但不再改变形状。
     """
+    _require_platform_ops(user)
     tid = (tenant_id or DEFAULT_TENANT).strip() or DEFAULT_TENANT
     if tid != DEFAULT_TENANT:
         raise HTTPException(
@@ -2600,6 +2618,7 @@ async def set_feature_flag(body: dict, request: Request, user: dict = Depends(_g
     - 前端格式: { tenant_id, flag_key, enabled, reason, actor_id }
       （gray-release 的 useToggleFeatureFlag 发的是后者，旧版只认 flag_name ⇒ 线上 422）
     """
+    _require_platform_ops(user)
     flag_name = str(body.get("flag_name") or body.get("flag_key") or "").strip()
     if not flag_name:
         raise HTTPException(status_code=422, detail="flag_name is required")
@@ -2644,6 +2663,7 @@ async def set_feature_flag(body: dict, request: Request, user: dict = Depends(_g
 
 @app.get("/api/v1/admin/tenants")
 async def list_tenants(user: dict = Depends(_get_current_user)):
+    _require_platform_ops(user)
     # Worker 单租户形态：tenants.yaml 不可移植，固定返回默认租户（UNCERTAIN #13）。
     # 形状按前端消费契约（tenant-list.tsx:41-49 读 display_name/is_active，不读 name）。
     # ⚠️ 内容**永远 1 条**：这是部署形态决定的，不为"看起来一致"伪造多条（报告 §4.3）。
@@ -2666,6 +2686,7 @@ async def reload_tenants(request: Request, user: dict = Depends(_get_current_use
     `active_tenants.map(...)`）；单租户部署永远 1 条，同样不伪造多条。
     locale/region 用 worker 侧既有口径（见 list_capability_customers 的 zh-CN/CN）。
     """
+    _require_platform_ops(user)
     await db.execute(
         request,
         """INSERT INTO feature_flag_audit (action, actor_id, tenant_id, resource_type, reason)
@@ -2694,6 +2715,7 @@ async def get_audit_log(
     user: dict = Depends(_get_current_user),
 ):
     """审计日志（源=feature_flag_audit 表；orchestrator 源=deployment_audit.jsonl）。"""
+    _require_platform_ops(user)
     page = max(page, 1)
     page_size = min(max(page_size, 1), 100)
     total = await db.fetchval(request, "SELECT count(*) FROM feature_flag_audit")
@@ -2726,6 +2748,7 @@ async def get_audit_log(
 
 @app.get("/api/v1/admin/archive-logs")
 async def get_archive_logs(user: dict = Depends(_get_current_user)):
+    _require_platform_ops(user)
     # Worker 无文件系统，归档日志占位空列表（语义差见 docs/CLEANUP_LOG.md）
     return {"items": [], "total": 0}
 
