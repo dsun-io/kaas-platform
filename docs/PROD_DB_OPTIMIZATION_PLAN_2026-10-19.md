@@ -21,15 +21,17 @@
 ## 1. 目标架构（最终态）
 
 ```
-开发：  本地 Docker Postgres 17（日常开发主环境，不变）
-生产：  Worker "kaas"（不变）→ Hyperdrive（双 config，见 §3）→ Prisma Postgres（免费档，PG17）
-预览：  CF 预览部署（workers preview deployment / version URL，免费档可用性待实测）
+开发：  本地 Docker Postgres（日常开发主环境；版本待 PG17 vs PG18 定：见纪律 1）
+生产：  Worker "kaas"（不变）→ Hyperdrive（双 config，见 §3）→ Prisma Postgres（免费档）
+预览：  CF 预览部署（workers preview deployment / version URL，免费档可用性已确认 2026-10-19）
        → Neon dev 分支（预览库；同时保留本地开发辅助角色）
 备份：  pg_dump -Fc → R2（发布前必做 + 可选每日 cron）
 ```
 
 三条纪律：
-1. **版本三对齐**：本地 Docker = Neon dev = PPG 生产 = **PG17**。Docker 镜像 `postgres:16-alpine` → `postgres:17-alpine`。
+1. **版本对齐**（2026-10-19 实测修正）：Neon 生产实测为 **18.6**，原"三对齐 PG17"假设失效。
+   新口径：**以 PPG 实际大版本为准**，Docker 与 Neon dev 对齐到同一大版本；
+   PG18 客户端工具是迁移硬前提（见 §2 Step 3）。Docker 镜像 `postgres:16-alpine` 的升级目标届时按此定。
 2. **Neon 不再承载生产**；生产备份不依赖任何"分支快照"能力（那是 Neon 专有）。
 3. 迁移后 `DEPLOYMENT_PLAN` 的"发布前 Neon 分支快照"环节永久退役，替换为 §2 Step 7 的 pg_dump 流程。
 
@@ -37,17 +39,24 @@
 
 ### 2.0 执行前测量（先取证，缺一项不动手）
 
-- [ ] 生产库当前大小（Neon Console → Storage；预期远小于 2GB 免费档上限）
-- [ ] Neon 项目的 Postgres 大版本（决定 dev/Docker 对齐目标）
+- [x] **生产库当前大小**：**16.23 MB**（`pg_database_size`，2026-10-19 实测；远小于 2GB 免费档上限）
+- [x] **Neon 项目 Postgres 大版本**：**18.6**（2026-10-19 实测 `show server_version` = `18.6`）
+      ⚠️ 与本文原假设"PG17"不符 ⇒ 迁移需 **PG18 的 pg_dump 客户端**（客户端版本必须 ≥ 服务端）；
+      PPG 免费档若为 PG17 则涉及 18→17 降级导入，Step 3 前先验证兼容性。
+      "版本三对齐 PG17"纪律改为：**以 PPG 实际大版本为准**，Docker/Neon dev 对齐到同一大版本。
+- [x] **表与迁移版本**：109 张 public 表；`alembic_version = 202610180010`（与部署记录一致）
+- [x] **数据量**：`events` 246 / `market_ports` 103 / `ai_usage` 17 / `customers` 10（非空但极小，
+      停写窗口需求低）
 - [ ] PPG 免费档"20 万 ops/月"的计量口径（官方文档/console 实测，登记到本文）
+- [ ] **PPG 实例创建**（需用户 Prisma 账号在 Console 创建；本机无 Prisma 凭证，2026-10-19 实测）
 
 ### 2.1 步骤
 
 | Step | 动作 | 要点 |
 |---|---|---|
 | 1 | PPG Console 建生产库（免费档），生成凭证 | 记录 direct connection（`db.prisma.io` 主机）与 pooled 两种串；**免费档无自动备份**（风险 R1） |
-| 2 | 代码小改：[session.py:22](../backend/orchestrator/app/db/session.py) SSL 判定 | 从 `"neon.tech" in url.host` 改为通用（按 `ssl` query 参数/驱动默认）；[alembic/env.py](../backend/orchestrator/alembic/env.py) 的 Neon 专用 DSN 处理同步复核 |
-| 3 | 全量迁移 | `pg_dump -Fc`（**PG17 客户端工具**）→ `pg_restore --no-owner --no-privileges` 走 direct connection |
+| 2 | 代码小改：session.py SSL 判定 | ✅ **已改（2026-10-19，分支 feat/convergence-aprime）**：从硬编码 `"neon.tech"` 改为通用判定（显式 ssl/sslmode 参数，或 host 非本地/docker 服务名 ⇒ SSL）；`alembic/env.py` 复核通过（已是通用 ssl→sslmode 归一） |
+| 3 | 全量迁移 | `pg_dump -Fc`（**PG18 客户端**，因 Neon 实测 18.6；客户端版本必须 ≥ 服务端）→ `pg_restore --no-owner --no-privileges` 走 direct connection；本机无 PG 客户端工具（2026-10-19 实测），需先装 PG18 client |
 | 4 | 一致性校验 | 关键表行数对比 + `alembic_version` 一致 + 建一个测试客户往返写读 |
 | 5 | 停写检查 | 生产未投入使用，理论无写流量；执行时仍先确认（`SELECT count(*) FROM customers` 前后对比兜底） |
 | 6 | Hyperdrive 新建 config 指向 PPG（direct connection，剥掉 query 参数）→ `wrangler.jsonc` 换 id → 部署 Worker | Hyperdrive 本地模拟连接串**继续指 Neon dev 分支**（开发路径不变） |
