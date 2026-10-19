@@ -32,6 +32,18 @@
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
 > 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
 >
+> **（2026-10-19 夜场 · S3 行为对等三域清零：auth / CRM / 报价订单）**
+> 1. teammate crm-diffs 收尾 11 条 CRM 差异：page_size≤200、列表按 `updated_at` 排序、
+>    `stage:null`→active、新建客户写「新建客户」阶段日志、联系人 7 键 / 阶段日志 5 键（LIMIT 50）/
+>    询盘 11 键投影、`?country=` 参数删除（前端无消费方）、PATCH 联系人响应同族投影。
+> 2. **CRM-23 `inquiry_no_editable` 保留**为「有意差异」：前端 `customers/page.tsx:90,1060`
+>    用它控制编号可编辑/锁号，不能为 parity 删前端依赖；测试改为普通「有意差异」用例。
+> 3. **三域 parity 棘轮全部归零**：worker 全量 **590 passed + 5 skipped + 0 failed + 0 xfailed**
+>    （collect 595 = 590+5 自洽）；真 PG 集成 5 passed；orchestrator 1220 passed；前端 typecheck/lint 绿、
+>    **455 passed**（首轮 1 条 OSS 上传网络用例 flaky，复跑全绿）。
+> 4. 遗留（不阻塞）：`row_to_contact`/`row_to_stage_log` 尚未收敛进 `kaas_common`（现为 worker 本地投影，
+>    键集注释指向 orchestrator 行号）。
+>
 > **（2026-10-19 夜场 · S6-e 列级漂移门禁：又抓出 3 处真实缺列）**
 > 1. 新增 `scripts/check-schema-drift.py`：拿**生产列快照**（`scripts/prod-schema-columns.json`，
 >    由 `dump-prod-schema-columns.py` 只读导出，109 张表）比对 ORM metadata，缺列/缺表即 FAIL；

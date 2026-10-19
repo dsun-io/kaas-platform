@@ -19,7 +19,8 @@
 不连库：HTTP 断言只覆盖「鉴权 / 校验先于取连接」的分支，以及用桩连接把 handler
 跑到返回（成功/失败分支）。桩形状照抄真实表列（见 `app/db/workstation_models.py`）。
 
-差异清单（编号与下文用例一一对应；行号取 HEAD ba86e9a 快照，main.py 与 0dd2c98 相同）
+差异清单（**历史快照** —— 编号与下文用例一一对应；下列 worker 列为当时的现状，
+现状见下方「2026-10-19 S3-k 收尾」。行号取 HEAD ba86e9a 快照）
 -------------------------------------------------------------
 | #     | 端点                              | orchestrator                                                        | worker                                                              |
 |-------|-----------------------------------|---------------------------------------------------------------------|---------------------------------------------------------------------|
@@ -46,6 +47,28 @@
 | CRM-21| POST /customers/{id}/inquiries    | 建询盘前校验写权限（customers.py:681）                                | **无写权限校验**（main.py:1368-1387）                                 |
 | CRM-22| POST /customers/{id}/inquiries    | 响应 11 键 serializer（customers.py:703）                             | 原样整行（main.py:1387）                                             |
 | CRM-23| GET /customers/{id}/inquiries     | items = row_to_inquiry 11 键（customers.py:669）                      | 多 inquiry_no_editable（ws_crm_ext.py:246-248）                      |
+
+2026-10-19 S3-k 收尾（本文件最终状态）
+-------------------------------------
+上表登记的差异**全部清零**，本文件已无 `xfail(strict=True)`：
+- 已对齐（改 worker 跟随 orchestrator）：
+  · CRM-1 page_size 上限 200；
+  · CRM-2 列表 `ORDER BY c.updated_at DESC`；
+  · CRM-3 删除 worker 独有的 `?country=` 过滤 —— 前端**无消费方**（`frontend/src`
+    对 `/customers` 的调用只传 q/stage/page_size），orchestrator 也没有该参数；
+  · CRM-4 `CustomerCreate.stage` 可空，显式 null → active；
+  · CRM-5 新建客户写第一条 `cust_stage_log`（reason「新建客户」）；
+  · CRM-6/7 详情里 contacts 投影 7 键、stage_log 投影 5 键且 LIMIT 50；
+  · CRM-11 新建联系人响应 7 键投影（PATCH 联系人响应同族遗漏一并收口）；
+  · CRM-14 显式 null 清空字段（代码在 1bfa3a5 已修，本次只是把测试桩改成
+    「第二次 UPDATE 返回已清空的行」）；
+  · CRM-22 新建询盘响应走共享 `row_to_inquiry`。
+- **有意保留（唯一一条）**：CRM-23 客户询盘列表项多 `inquiry_no_editable`。
+  前端客户页用它控制「编号」是否可编辑（`frontend/src/app/(app)/customers/page.tsx`
+  的 `Inquiry.inquiry_no_editable`，消费处 page.tsx:1060 —— 生成报价后锁号）。
+  删掉这个键会让已报价询盘也能改号、破坏报价链路，故保留 worker 行为；用例改成
+  普通「有意差异」断言（`test_customer_inquiries_item_has_extra_editable_flag`），
+  不再用 xfail 棘轮。
 
 对齐（无差异，作为回归被钉住）
 ------------------------------
@@ -143,24 +166,12 @@ _INQUIRY_KEYS = {
     "product_name_raw", "quantity", "quantity_unit", "application", "status",
     "created_at",
 }
-# orchestrator 对子资源行的**投影**（customers.py:406-410 / 416-420）
+# 子资源行的**投影**键集：orchestrator customers.py:406-410 / 416-420 / 556-558
+# 与 worker 的 `_contact_api` / `_stage_log_api` 用的是同一组键（PARITY-CRM-6/7/11）。
 _ORCH_CONTACT_KEYS = {
     "id", "name", "position", "phone", "email", "whatsapp", "is_primary",
 }
 _ORCH_STAGE_LOG_KEYS = {"id", "from_stage", "to_stage", "reason", "created_at"}
-# worker 原样返回的真实表列（app/db/workstation_models.py:26-95）
-_CONTACT_COLUMNS = {
-    "id", "tenant_id", "customer_id", "name", "position", "phone", "email",
-    "whatsapp", "wechat", "is_primary", "created_at",
-}
-_STAGE_LOG_COLUMNS = {
-    "id", "tenant_id", "customer_id", "from_stage", "to_stage", "changed_by",
-    "reason", "created_at",
-}
-_INQUIRY_COLUMNS = _INQUIRY_KEYS | {
-    "tenant_id", "notes", "inquiry_seq", "spec_snapshot", "created_by",
-    "updated_at", "owner_id", "owner_scope", "team_id",
-}
 
 # 账号：ADMIN 看全部；MEMBER 属于团队 1（不是数据属主）；TEAMMATE 同团队 1（也不是属主）
 ADMIN = {
@@ -385,8 +396,7 @@ def test_all_crm_routes_require_credentials_first():
 def test_customers_list_shape_and_team_scope():
     """`{items,total,page,page_size}` + 共享 serializer 12 键 + 三层可见范围。
 
-    PARITY-CRM-2：worker 按 `created_at DESC` 排（main.py:1176），orchestrator 是
-    `updated_at DESC`（customers.py:315）—— 见下面的 xfail 用例。
+    PARITY-CRM-2 已对齐：列表按 `updated_at DESC`（见下面只钉排序的用例）。
     """
     conn = _StubConn(fetchval=[1], fetch=[[_customer_row()]])
     with _patched(conn=conn, user=MEMBER):
@@ -436,50 +446,51 @@ def test_customers_list_pagination_lower_bounds_are_422():
         assert resp.status_code == 422, (query, resp.text)
 
 
-def test_customers_list_filters_country_worker_extra_param():
-    """PARITY-CRM-3：worker 多了 `country` 过滤（main.py:1134,1153-1154）。
+def test_customers_list_ignores_unknown_country_param():
+    """PARITY-CRM-3 已对齐（2026-10-19）：worker 不再有 `country` 过滤。
 
-    orchestrator 的查询参数只有 q/stage/page/page_size（customers.py:276-283）
-    ⇒ 传 country 会被静默忽略、返回全部；worker 会真的过滤。下面 xfail 登记。
+    orchestrator 的查询参数只有 q/stage/page/page_size（customers.py:276-283）；
+    worker 原多一个 `country ILIKE` 过滤，同一 URL 会在两侧返回不同集合。
+    前端**无消费方**（`frontend/src` 里对 `/customers` 的调用只传 q / stage /
+    page_size，见 customers/page.tsx:114-127 与 use-upstream.ts:110-150），
+    故按 orchestrator 对齐：传 country 被静默忽略、返回全部。
     """
     conn = _StubConn(fetchval=[1], fetch=[[_customer_row()]])
     with _patched(conn=conn, user=ADMIN):
         resp = client.get("/api/v1/customers?country=US")
-    assert resp.status_code == 200
-    assert "c.country ILIKE $2" in conn.sql()
+    assert resp.status_code == 200, resp.text
+    assert "c.country ILIKE" not in conn.sql()
+    assert resp.json()["total"] == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-1: orchestrator page_size 上限 200（customers.py:280），worker 是 100（main.py:1132）",
-)
-def test_parity_crm_1_page_size_200_is_accepted():
+def test_customers_list_accepts_page_size_200():
+    """PARITY-CRM-1 已对齐：page_size 上限 200（customers.py:280 / main.py）。
+
+    上限必须与 orchestrator / MSW mock 同口径（mock 钳位也写 200，见
+    `frontend/src/mocks/handlers.ts:746-749`）；`use-upstream.ts` 导出的
+    `useCustomerOptions()` 就按 page_size=200 拉全量（当前页面走的是
+    `useCustomerSearch`，默认 20）。上限 100 时 >100 的客户拉不全。
+    """
     conn = _StubConn(fetchval=[0], fetch=[[]])
     with _patched(conn=conn, user=ADMIN):
         resp = client.get("/api/v1/customers?page_size=200")
-    assert resp.status_code == 200
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["page_size"] == 200
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-2: orchestrator 列表按 updated_at DESC 排序（customers.py:315），worker 按 created_at DESC（main.py:1176）",
-)
-def test_parity_crm_2_list_orders_by_updated_at():
+def test_customers_list_orders_by_updated_at():
+    """PARITY-CRM-2 已对齐：列表 ORDER BY updated_at DESC（customers.py:315 / main.py）。
+
+    前端列表副标题展示「更新于 <updated_at>」（customers/page.tsx:1253），
+    MSW mock 也按 updated_at 倒序（mocks/handlers.ts:738-743）——
+    两侧排序必须一致，否则同一批客户在 mock 与线上顺序不同。
+    """
     conn = _StubConn(fetchval=[0], fetch=[[]])
     with _patched(conn=conn, user=ADMIN):
         client.get("/api/v1/customers")
-    assert "ORDER BY c.updated_at DESC" in conn.sql()
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-3: orchestrator 无 country 查询参数（customers.py:276-283），worker 会按 country 过滤（main.py:1153-1154）",
-)
-def test_parity_crm_3_country_param_is_ignored():
-    conn = _StubConn(fetchval=[0], fetch=[[]])
-    with _patched(conn=conn, user=ADMIN):
-        client.get("/api/v1/customers?country=US")
-    assert "c.country ILIKE" not in conn.sql()
+    sql = conn.sql()
+    assert "ORDER BY c.updated_at DESC" in sql
+    assert "ORDER BY c.created_at" not in sql
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -585,27 +596,40 @@ def test_create_customer_rejects_legacy_manual_stage():
         assert resp.json()["detail"]["code"] == "INVALID_CUSTOMER_STAGE"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-4: orchestrator CustomerCreate.stage 可空、None→active（customers.py:217,339），worker stage: str 显式 null 即 422（main.py:932）",
-)
-def test_parity_crm_4_create_customer_stage_null_is_active():
+def test_create_customer_stage_null_falls_back_to_active():
+    """PARITY-CRM-4 已对齐：显式 `stage: null` 视为缺省 → active。
+
+    orchestrator `CustomerCreate.stage: Optional[str] = "active"`，`body.stage or
+    "active"`（customers.py:217,339）。worker 原来 `stage: str` ⇒ 显式 null 直接
+    422，同一份前端请求在两侧一个成功一个报错。
+    """
     conn = _StubConn(fetchrow=[_customer_row()])
     with _patched(conn=conn, user=MEMBER):
-        resp = client.post("/api/v1/customers", json={"company_name": "ACME", "stage": None})
-    assert resp.status_code == 201
+        resp = client.post(
+            "/api/v1/customers", json={"company_name": "ACME", "stage": None}
+        )
+    assert resp.status_code == 201, resp.text
     assert resp.json()["manual_stage"] == "active"
+    insert_sql, args = next(
+        (s, a) for s, a in conn.calls if "INSERT INTO customers" in s
+    )
+    assert args[9] == "active"          # 落库的手动阶段
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-5: orchestrator 新建客户写 cust_stage_log「新建客户」（customers.py:367），worker 不写",
-)
-def test_parity_crm_5_create_customer_writes_stage_log():
+def test_create_customer_writes_first_stage_log():
+    """PARITY-CRM-5 已对齐：新建客户写一条 `cust_stage_log`（customers.py:367）。
+
+    客户详情「阶段历史」的第一条就是它（from=None → to=active，reason「新建客户」）；
+    不写的话新客户的历史页签是空的，用户会以为系统没记录。
+    """
     conn = _StubConn(fetchrow=[_customer_row()])
     with _patched(conn=conn, user=MEMBER):
         client.post("/api/v1/customers", json={"company_name": "ACME"})
-    assert "INSERT INTO cust_stage_log" in conn.sql()
+    log_sql, log_args = next(
+        (s, a) for s, a in conn.executed if "INSERT INTO cust_stage_log" in s
+    )
+    assert "from_stage, to_stage" in log_sql
+    assert log_args == ("default", 3, None, "active", "2", "新建客户")
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -615,8 +639,9 @@ def test_parity_crm_5_create_customer_writes_stage_log():
 def test_customer_detail_assembles_contacts_inquiries_stage_log():
     """顶层 = 客户 12 键 + contacts/inquiries/stage_log；询盘带 inquiry_no_editable。
 
-    PARITY-CRM-6/7：contacts 与 stage_log 的行是**原样整行**（worker），
-    orchestrator 是投影后的小键集 —— 见下面两个 xfail。
+    PARITY-CRM-6/7 已对齐：contacts 投影 7 键、stage_log 投影 5 键 + LIMIT 50
+    （customers.py:396-420）；`inquiry_no_editable` 是 CRM-23 的**有意保留**扩展，
+    前端客户页用它锁号（见文件头「收尾」说明）。
     """
     conn = _StubConn(
         fetchrow=[_customer_row()],
@@ -632,20 +657,25 @@ def test_customer_detail_assembles_contacts_inquiries_stage_log():
     assert body["company_name"] == "ACME"
 
     contact = body["contacts"][0]
-    assert set(contact) == _CONTACT_COLUMNS            # worker 现状（PARITY-CRM-6）
+    assert set(contact) == _ORCH_CONTACT_KEYS          # PARITY-CRM-6（7 键投影）
     assert contact["name"] == "John"
+    # 投影掉的库内列一律不出现在响应里（曾把 tenant_id / customer_id 整行吐出去）
+    assert "tenant_id" not in contact and "customer_id" not in contact
+    assert "wechat" not in contact
 
     inquiry = body["inquiries"][0]
     assert set(inquiry) == _INQUIRY_KEYS | {"inquiry_no_editable"}
     assert inquiry["inquiry_no_editable"] is False
 
     log = body["stage_log"][0]
-    assert set(log) == _STAGE_LOG_COLUMNS              # worker 现状（PARITY-CRM-7）
+    assert set(log) == _ORCH_STAGE_LOG_KEYS            # PARITY-CRM-7（5 键投影）
     assert log["to_stage"] == "inactive"
+    assert log["created_at"] == _NOW.isoformat()       # 与 orchestrator 同：isoformat 字符串
+    assert "changed_by" not in log
 
     sql = conn.sql()
     assert "c.is_deleted = false" in sql
-    assert "LIMIT 20" in sql                           # worker 现状（PARITY-CRM-7）
+    assert "LIMIT 50" in sql                           # PARITY-CRM-7（与 orchestrator 同 50）
     # PARITY-CRM-7：worker 的子查询**没带 tenant_id**（orchestrator 带，customers.py:382-401）
     assert "FROM cust_contacts WHERE customer_id=$1" in sql
 
@@ -664,31 +694,30 @@ def test_customer_detail_invisible_or_deleted_is_404():
         assert len(conn.calls) == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-6: orchestrator 把 contacts 投影成 7 键（customers.py:406-410），worker 原样返回 10 列（main.py:1251-1253,1271）",
-)
-def test_parity_crm_6_detail_contacts_are_projected():
+def test_customer_detail_projects_contacts_to_seven_keys():
+    """PARITY-CRM-6 已对齐：联系人投影 7 键（customers.py:406-410）。
+
+    投影键集 = 前端 `Contact` 接口（customers/page.tsx:74-82）。
+    """
     conn = _StubConn(
         fetchrow=[_customer_row()],
         fetch=[[_contact_row()], [], []],
     )
     with _patched(conn=conn, user=MEMBER):
         resp = client.get("/api/v1/customers/3")
+    assert resp.status_code == 200, resp.text
     assert set(resp.json()["contacts"][0]) == _ORCH_CONTACT_KEYS
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-7: orchestrator stage_log 投影 5 键且 LIMIT 50（customers.py:396-401,416-420），worker 原样 8 列 + LIMIT 20（main.py:1257-1259）",
-)
-def test_parity_crm_7_detail_stage_log_is_projected_and_limit_50():
+def test_customer_detail_projects_stage_log_and_limit_50():
+    """PARITY-CRM-7 已对齐：stage_log 投影 5 键 + LIMIT 50（customers.py:396-420）。"""
     conn = _StubConn(
         fetchrow=[_customer_row()],
         fetch=[[], [], [_stage_log_row()]],
     )
     with _patched(conn=conn, user=MEMBER):
         resp = client.get("/api/v1/customers/3")
+    assert resp.status_code == 200, resp.text
     assert set(resp.json()["stage_log"][0]) == _ORCH_STAGE_LOG_KEYS
     assert "LIMIT 50" in conn.sql()
 
@@ -878,8 +907,8 @@ def test_parity_crm_9_stage_change_non_owner_is_403():
 # 7. 联系人（POST / PATCH / DELETE）
 # ════════════════════════════════════════════════════════════════════════════
 
-def test_add_contact_returns_raw_row_worker_shape():
-    """worker 现状：POST 201 直接返回整行（main.py:1288）；orchestrator 是 7 键投影。
+def test_add_contact_returns_projected_row():
+    """PARITY-CRM-11 已对齐：POST 201 返回 7 键投影（customers.py:556-558）。
 
     已修 2026-10-19：写权限与客户一致（非属主 403）；本测试用属主 MEMBER 验证响应形状。
     """
@@ -888,7 +917,7 @@ def test_add_contact_returns_raw_row_worker_shape():
         resp = client.post("/api/v1/customers/3/contacts", json={"customer_id": 3, "name": "Mary"})
 
     assert resp.status_code == 201, resp.text
-    assert set(resp.json()) == _CONTACT_COLUMNS
+    assert set(resp.json()) == _ORCH_CONTACT_KEYS
     assert resp.json()["name"] == "Mary"
     assert "INSERT INTO cust_contacts" in conn.sql()
 
@@ -902,6 +931,23 @@ def test_update_contact_404_body_is_contact_not_found():
     assert resp.json()["detail"] == {"error": "not_found", "code": "CONTACT_NOT_FOUND"}
 
 
+def test_update_contact_returns_projected_row():
+    """PATCH 联系人响应也是 7 键投影（CRM-11 的同族遗漏，2026-10-19 一并收口）。
+
+    orchestrator 的 `update_contact` 与 `create_contact` 返回同一份 7 键投影
+    （customers.py:606-608 / 556-558）；worker 原先只有 POST 是整行、PATCH 也整行，
+    现在两处都走 `_contact_api`。
+    """
+    conn = _StubConn(
+        fetchrow=[_customer_row(), _contact_row(), _contact_row(name="X")],
+    )
+    with _patched(conn=conn, user=MEMBER):
+        resp = client.patch("/api/v1/customers/3/contacts/5", json={"name": "X"})
+    assert resp.status_code == 200, resp.text
+    assert set(resp.json()) == _ORCH_CONTACT_KEYS
+    assert resp.json()["name"] == "X"
+
+
 def test_delete_missing_contact_is_404():
     """已修 2026-10-19：联系人不存在 → 404 CONTACT_NOT_FOUND（PARITY-CRM-15）。"""
     conn = _StubConn(fetchrow=[_customer_row()])
@@ -913,23 +959,11 @@ def test_delete_missing_contact_is_404():
 
 
 def test_parity_crm_10_add_contact_without_customer_id():
+    """已修 2026-10-19：body 不再要求 customer_id（PARITY-CRM-10）。"""
     conn = _StubConn(fetchrow=[_customer_row(), _contact_row()])
     with _patched(conn=conn, user=MEMBER):
         resp = client.post("/api/v1/customers/3/contacts", json={"name": "Mary"})
     assert resp.status_code == 201
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-11: orchestrator 联系人响应 7 键投影（customers.py:556-558），worker 原样 10 列（main.py:1288）",
-)
-def test_parity_crm_11_add_contact_projected_response():
-    conn = _StubConn(fetchrow=[_customer_row(), _contact_row()])
-    with _patched(conn=conn, user=MEMBER):
-        resp = client.post(
-            "/api/v1/customers/3/contacts", json={"customer_id": 3, "name": "Mary"}
-        )
-    assert set(resp.json()) == _ORCH_CONTACT_KEYS
 
 
 def test_parity_crm_12_add_primary_contact_unsets_others():
@@ -949,21 +983,29 @@ def test_parity_crm_13_update_missing_contact_404_body():
     assert resp.json()["detail"] == {"error": "not_found", "code": "CONTACT_NOT_FOUND"}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-14: orchestrator exclude_unset ⇒ 显式 null 清空字段（customers.py:590-604），worker COALESCE ⇒ null 视为不改（main.py:1315-1323）",
-)
-def test_parity_crm_14_update_contact_explicit_null_clears_phone():
+def test_update_contact_explicit_null_clears_phone():
+    """PARITY-CRM-14 已对齐：显式 null 清空字段（customers.py:590-604）。
+
+    代码在 1bfa3a5 已从 COALESCE 改成「按 exclude_unset 的列直接 SET」；本用例此前
+    仍 xfail，只因测试桩**第三次 fetchrow 返回的还是旧行**（模拟 COALESCE 的返回值）。
+    现在桩改成「UPDATE ... RETURNING * 返回已清空的行」，棘轮按 strict 规则摘除。
+    """
     conn = _StubConn(
         fetchrow=[
-            _customer_row(),
-            _contact_row(phone="+1 555"),
-            _contact_row(phone="+1 555"),   # COALESCE 保留旧值（worker 现状）
+            _customer_row(),                # 1. 取客户（可见性/写权限）
+            _contact_row(phone="+1 555"),   # 2. 取联系人
+            _contact_row(phone=None),       # 3. UPDATE ... RETURNING *（已清空）
         ],
     )
     with _patched(conn=conn, user=MEMBER):
         resp = client.patch("/api/v1/customers/3/contacts/5", json={"phone": None})
+    assert resp.status_code == 200, resp.text
     assert resp.json()["phone"] is None
+    update_sql, update_args = next(
+        (s, a) for s, a in conn.calls if s.startswith("UPDATE cust_contacts SET")
+    )
+    assert "phone=$2" in update_sql and "COALESCE" not in update_sql
+    assert update_args == (5, None)
 
 
 def test_parity_crm_15_delete_missing_contact_is_404():
@@ -978,7 +1020,10 @@ def test_parity_crm_15_delete_missing_contact_is_404():
 # ════════════════════════════════════════════════════════════════════════════
 
 def test_add_inquiry_ignores_forged_status():
-    """已修 2026-10-19：body.status 被忽略，恒写 unquoted（PARITY-CRM-20）。"""
+    """已修 2026-10-19：body.status 被忽略，恒写 unquoted（PARITY-CRM-20）。
+
+    PARITY-CRM-22 已对齐：响应走共享 `row_to_inquiry` 投影（见下方断言键集）。
+    """
     conn = _StubConn(
         fetchrow=[_customer_row(), _inquiry_row(status="unquoted")],
         fetchval=[None],                      # 询盘编号同秒冲突探测：无冲突
@@ -991,9 +1036,8 @@ def test_add_inquiry_ignores_forged_status():
 
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    assert set(body) == _INQUIRY_COLUMNS
+    assert set(body) == _INQUIRY_KEYS
     assert body["status"] == "unquoted"       # 伪造的 lost 被忽略
-    assert body["owner_scope"] == "private"
 
     insert_sql, args = next(
         (s, a) for s, a in conn.calls if "INSERT INTO cust_inquiries" in s
@@ -1001,6 +1045,7 @@ def test_add_inquiry_ignores_forged_status():
     assert "'unquoted'" in insert_sql
     assert args[0] == "default" and args[1] == 3
     assert args[3] == "email"                 # channel
+    assert args[13] == "private"              # owner_scope 缺省 private（响应已投影掉该列）
 
 
 def test_add_inquiry_body_does_not_require_customer_id():
@@ -1014,7 +1059,10 @@ def test_add_inquiry_body_does_not_require_customer_id():
 def test_customer_inquiries_list_has_editable_flag_and_status_filter():
     """`{items,total}`；每项 = row_to_inquiry + inquiry_no_editable（ws_crm_ext.py:216-249）。
 
-    PARITY-CRM-23：orchestrator 同端点**没有** inquiry_no_editable 键（customers.py:669）。
+    PARITY-CRM-23（**有意保留**）：orchestrator 同端点没有 inquiry_no_editable
+    （customers.py:669），worker 多这个键 —— 前端客户页用它控制「编号」是否可编辑
+    （customers/page.tsx 的 `Inquiry.inquiry_no_editable`，消费处 page.tsx:1060）。
+    删键会让已报价询盘也能改号、破坏报价链路，故保留（见文件头「收尾」说明）。
     """
     db = _StubDb(fetchrow=[_customer_row()], fetch=[[_inquiry_row()]], fetchval=[1])
     with _patched(db=db, user=MEMBER):
@@ -1156,7 +1204,7 @@ def test_patch_inquiry_visibility_and_write_access():
 
 
 def test_patch_inquiry_empty_body_returns_serialized_row():
-    """空 body：两端都不发 UPDATE，原样回显且是 11 键 serializer 形状（无差异）。"""
+    """空 body：两端都不发 UPDATE，原样回显且是共享 serializer 形状（无差异）。"""
     conn = _StubConn(fetchrow=[_inquiry_row()])
     with _patched(conn=conn, user=MEMBER):
         resp = client.patch("/api/v1/inquiries/7", json={})
@@ -1197,6 +1245,10 @@ def test_parity_crm_18_add_inquiry_persists_lead_id():
 
 
 def test_parity_crm_19_add_inquiry_honors_owner_scope():
+    """PARITY-CRM-19：body.owner_scope 落库（响应是 row_to_inquiry 投影，不含该列）。
+
+    投影后响应里没有 owner_scope（与 orchestrator 一致），故断言 INSERT 实参。
+    """
     conn = _StubConn(
         fetchrow=[_customer_row(), _inquiry_row(owner_scope="tenant")],
         fetchval=[None],
@@ -1206,7 +1258,12 @@ def test_parity_crm_19_add_inquiry_honors_owner_scope():
             "/api/v1/customers/3/inquiries",
             json={"customer_id": 3, "channel": "email", "owner_scope": "tenant"},
         )
-    assert resp.json()["owner_scope"] == "tenant"
+    assert resp.status_code == 201, resp.text
+    assert "owner_scope" not in resp.json()
+    _, args = next(
+        (s, a) for s, a in conn.calls if "INSERT INTO cust_inquiries" in s
+    )
+    assert args[13] == "tenant"
 
 
 def test_parity_crm_20_add_inquiry_status_is_always_unquoted():
@@ -1234,28 +1291,39 @@ def test_parity_crm_21_add_inquiry_non_owner_is_403():
     assert resp.status_code == 403
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-22: orchestrator 建询盘响应 11 键 serializer（customers.py:703），worker 原样整行（main.py:1387）",
-)
-def test_parity_crm_22_add_inquiry_projected_response():
+def test_add_inquiry_returns_serializer_shape():
+    """PARITY-CRM-22 已对齐：建询盘响应 = 共享 `row_to_inquiry` 投影（customers.py:703）。
+
+    投影掉 `tenant_id` / `owner_id` / `owner_scope` / `updated_at` 等库内列。
+    """
     conn = _StubConn(fetchrow=[_customer_row(), _inquiry_row()], fetchval=[None])
     with _patched(conn=conn, user=MEMBER):
         resp = client.post(
             "/api/v1/customers/3/inquiries", json={"customer_id": 3, "channel": "email"}
         )
+    assert resp.status_code == 201, resp.text
     assert set(resp.json()) == _INQUIRY_KEYS
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-23: orchestrator 的客户询盘列表项没有 inquiry_no_editable（customers.py:669），worker 多这个键（ws_crm_ext.py:246-248）",
-)
-def test_parity_crm_23_customer_inquiries_item_keys():
+def test_customer_inquiries_item_has_extra_editable_flag():
+    """PARITY-CRM-23（**有意差异 · 保留 worker 行为**）：多 `inquiry_no_editable`。
+
+    证据（前端有消费方）：`frontend/src/app/(app)/customers/page.tsx` 的
+    `Inquiry.inquiry_no_editable`（第 90 行定义）在 1060 行控制「编号」编辑入口；
+    该值来自「是否已生成报价」（已报价 ⇒ 锁号）。orchestrator customers.py:669
+    不返回这个键 —— 删掉它前端就只能默认编号可改，已报价询盘也能改号。
+    故本用例断言 worker 现行为（row_to_inquiry 的键 + inquiry_no_editable），
+    而不是 orchestrator 口径；**不是** xfail，是明确登记的有意差异。
+    """
     db = _StubDb(fetchrow=[_customer_row()], fetch=[[_inquiry_row()]], fetchval=[None])
     with _patched(db=db, user=MEMBER):
         resp = client.get("/api/v1/customers/3/inquiries")
-    assert set(resp.json()["items"][0]) == _INQUIRY_KEYS
+    assert resp.status_code == 200, resp.text
+    item = resp.json()["items"][0]
+    assert set(item) == _INQUIRY_KEYS | {"inquiry_no_editable"}
+    # 反向自证：确实比 orchestrator 多一个键
+    assert set(item) - _INQUIRY_KEYS == {"inquiry_no_editable"}
+    assert item["inquiry_no_editable"] is True     # 无报价引用 ⇒ 编号可改
 
 
 # ════════════════════════════════════════════════════════════════════════════

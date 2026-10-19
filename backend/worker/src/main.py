@@ -961,7 +961,9 @@ class CustomerCreate(BaseModel):
     default_port: Optional[str] = None
     credit_level: Optional[str] = None
     # 手动客户阶段（活跃 / 沉寂）；「已下单」由开启中的订单推导，不许手写。
-    stage: str = "active"
+    # Optional：显式 `stage: null` 视为"用默认值"（PARITY-CRM-4，orchestrator
+    # `CustomerCreate.stage: Optional[str] = "active"`；见 customers.py:217,339）。
+    stage: Optional[str] = "active"
     notes: Optional[str] = None
     owner_scope: Optional[str] = None   # private | tenant（§10.3）
 
@@ -1020,6 +1022,39 @@ def _customer_api(row) -> dict:
     """客户行 → API 响应（stage=推导展示值，manual_stage=手动值）。"""
     d = dict(row)
     return row_to_customer(d, display_stage=d.get("stage_display"))
+
+
+# ── 子资源投影（PARITY-CRM-6/7/11）──────────────────────────────────────────
+# orchestrator 对联系人 / 阶段日志**不原样返回 ORM 行**，而是投影成前端实际
+# 消费的键（customers.py:406-410 / 416-420 / 556-558）：
+#   · 联系人 7 键（不含 wechat / tenant_id / customer_id / created_at）；
+#   · 阶段日志 5 键（不含 changed_by / tenant_id / customer_id）。
+# 前端 `frontend/src/app/(app)/customers/page.tsx` 的 `Contact` / `StageLog`
+# 接口就是这两组键 —— 多回列不会让页面变好，只会把库内列（tenant_id 等）
+# 泄露给客户端，并在删壳后与 orchestrator 产生响应漂移。
+def _contact_api(row) -> dict:
+    d = dict(row)
+    return {
+        "id": d.get("id"),
+        "name": d.get("name"),
+        "position": d.get("position"),
+        "phone": d.get("phone"),
+        "email": d.get("email"),
+        "whatsapp": d.get("whatsapp"),
+        "is_primary": d.get("is_primary"),
+    }
+
+
+def _stage_log_api(row) -> dict:
+    d = dict(row)
+    created_at = d.get("created_at")
+    return {
+        "id": d.get("id"),
+        "from_stage": d.get("from_stage"),
+        "to_stage": d.get("to_stage"),
+        "reason": d.get("reason"),
+        "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
+    }
 
 
 async def _next_inquiry_no(conn, customer: dict) -> str:
@@ -1166,9 +1201,10 @@ async def list_customers(
     request: Request,
     user: dict = Depends(_get_current_user),
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    # 上限 200 与 orchestrator 同口径（customers.py:280 Query(20, ge=1, le=200)）：
+    # 客户选择器 / 导出会按 page_size=200 拉全量，100 会让尾部客户查不到。
+    page_size: int = Query(20, ge=1, le=200),
     stage: Optional[str] = None,
-    country: Optional[str] = None,
     q: Optional[str] = None,
 ):
     # 软删除的客户不再出现（is_deleted 原先只写不读 —— 标记了也照样列出来）
@@ -1187,8 +1223,9 @@ async def list_customers(
             where.append(f"NOT {has_open} AND c.stage IN ('inactive','lost')")
         else:  # active
             where.append(f"NOT {has_open} AND c.stage NOT IN ('inactive','lost')")
-    if country:
-        where.append(f"c.country ILIKE ${idx}"); params.append(f"%{country}%"); idx += 1
+    # PARITY-CRM-3 已对齐：不再提供 `country` 过滤 —— orchestrator 的查询参数只有
+    # q/stage/page/page_size（customers.py:276-283），前端也没有任何消费方（只传
+    # q/stage/page_size）。多一个参数会让同一 URL 在两侧返回不同集合。
     if q:
         where.append(f"c.name ILIKE ${idx}"); params.append(f"%{q}%"); idx += 1
     # 三层组织 + §10.3：谁创建的客户，就在其团队可见；其他团队看不到
@@ -1210,7 +1247,10 @@ async def list_customers(
         rows = await conn.fetch(
             f"SELECT c.*, c.name AS company_name, {_customer_stage_sql('c')} AS stage_display"
             f" FROM customers c WHERE {where_sql}"
-            f" ORDER BY c.created_at DESC LIMIT ${idx} OFFSET ${idx+1}",
+            # PARITY-CRM-2 已对齐：按 updated_at 倒序（customers.py:315）。刚改过的
+            # 客户要排在最前，而客户页列表副标题展示的正是「更新于 <updated_at>」；
+            # 原按 created_at 排会造成「页面写着更新于今天，却排在列表最后」。
+            f" ORDER BY c.updated_at DESC LIMIT ${idx} OFFSET ${idx+1}",
             *params, page_size, (page - 1) * page_size,
         )
     return {"items": [_customer_api(r) for r in rows], "total": total,
@@ -1268,6 +1308,15 @@ async def create_customer(request: Request, body: CustomerCreate, user: dict = D
                     (body.contact_phone or "").strip() or None,
                     (body.contact_email or "").strip() or None,
                 )
+            # PARITY-CRM-5 已对齐：新建客户也落一条阶段日志（customers.py:367）。
+            # 客户详情的「阶段历史」页签靠它记录"这个客户从哪来"，缺了第一条
+            # 就只剩中途切换过的记录，看起来像凭空出现的客户。
+            await conn.execute(
+                """INSERT INTO cust_stage_log
+                       (tenant_id, customer_id, from_stage, to_stage, changed_by, reason)
+                   VALUES ($1,$2,$3,$4,$5,$6)""",
+                DEFAULT_TENANT, row["id"], None, stage, str(user["id"]), "新建客户",
+            )
     return _customer_api(row)
 
 
@@ -1292,7 +1341,8 @@ async def get_customer(customer_id: int, request: Request, user: dict = Depends(
             "SELECT * FROM cust_inquiries WHERE customer_id=$1 ORDER BY created_at DESC", customer_id,
         )
         stage_log = await conn.fetch(
-            "SELECT * FROM cust_stage_log WHERE customer_id=$1 ORDER BY created_at DESC LIMIT 20", customer_id,
+            # PARITY-CRM-7 已对齐：与 orchestrator 同为 LIMIT 50（customers.py:400）。
+            "SELECT * FROM cust_stage_log WHERE customer_id=$1 ORDER BY created_at DESC LIMIT 50", customer_id,
         )
         inquiry_items = []
         for i in inquiries:
@@ -1305,9 +1355,9 @@ async def get_customer(customer_id: int, request: Request, user: dict = Depends(
             inquiry_items.append(item)
     return {
         **_customer_api(row),
-        "contacts": [dict(c) for c in contacts],
+        "contacts": [_contact_api(c) for c in contacts],
         "inquiries": inquiry_items,
-        "stage_log": [dict(s) for s in stage_log],
+        "stage_log": [_stage_log_api(s) for s in stage_log],
     }
 
 
@@ -1329,7 +1379,8 @@ async def add_contact(customer_id: int, request: Request, body: ContactCreate, u
             DEFAULT_TENANT, customer_id, body.name, body.position, body.phone,
             body.email, body.whatsapp, body.wechat, body.is_primary,
         )
-    return dict(row)
+    # PARITY-CRM-11 已对齐：响应是 7 键投影（customers.py:556-558），不是整行。
+    return _contact_api(row)
 
 
 class ContactUpdate(BaseModel):
@@ -1369,7 +1420,9 @@ async def update_contact(customer_id: int, contact_id: int, request: Request,
                 contact_id, *[data[col] for col in cols])
         else:
             row = ct
-    return dict(row)
+    # 与 POST 联系人同口径：响应投影 7 键（customers.py:606-608 update_contact 也是
+    # 同一份投影；这是 CRM-11 的同族遗漏 —— PATCH 也返回整行 10 列）。
+    return _contact_api(row)
 
 
 @app.delete("/api/v1/customers/{customer_id}/contacts/{contact_id}", status_code=204)
@@ -1445,7 +1498,9 @@ async def add_inquiry(customer_id: int, request: Request, body: InquiryCreate, u
         )
         # 2026-10-18：询盘是**单据阶段**，不再联动改客户阶段（客户阶段只有
         # 活跃/沉寂/已下单，已下单只由开启中的订单推导）。
-    return dict(row)
+    # PARITY-CRM-22 已对齐：响应走共享 `row_to_inquiry` 投影（customers.py:703），
+    # 不再把 tenant_id / owner_scope / updated_at 等库内列整行吐给客户端。
+    return row_to_inquiry(dict(row))
 
 
 @app.patch("/api/v1/customers/{customer_id}/stage")
