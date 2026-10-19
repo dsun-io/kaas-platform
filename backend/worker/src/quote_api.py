@@ -450,7 +450,7 @@ async def _pricing_key_items(request: Request, tenant: str, customer_id: Optiona
     """
     sql = (
         "SELECT id, customer_id, product_spec_json, spec_hash, amount, unit,"
-        " effective_from, source, notes"
+        " effective_from, source, notes, created_at"
         " FROM customer_cost_items"
         " WHERE tenant_id=$1 AND left(spec_hash, length($2))=$2 AND status='active'"
     )

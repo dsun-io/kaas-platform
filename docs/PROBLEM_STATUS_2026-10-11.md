@@ -73,6 +73,16 @@
 >    mock 同步。顺带修掉 worker 独有的「company_name 兜底建团队」口径漂移
 >    （与 orchestrator 及 docstring 对齐：只有显式 `team_name` 才建团队）。
 > 3. **部署**：push `main` 即自动部署（CI deploy.yml）。生产库**无需迁移**（无表结构变更）。
+> 4. **注册后报价页白屏（`/quotes?tab=pricing` 控制台 TypeError `matrix.rows.length`）→
+>    根因**：worker 的 `/api/v1/pricing-data` 还是**老算价流程**的遗留实现（返回
+>    `{items,total,page,pages}` 分页列表），而 orchestrator 现行语义是**产品定价键完整矩阵**
+>    （`{dims,rows,...}`）——前端按矩阵渲染 → 读到 `rows` undefined 即崩。该页此前从未有
+>    真实客户账号用到，注册打通后第一个用户就踩中。**修复**：worker 四个端点
+>    （GET/POST/PATCH/DELETE）按 orchestrator `app/api/pricing_data.py` 重写，
+>    矩阵/档位逻辑复用 quote_api 既有移植（与算价同一身份口径 `quote_api._customer_of`，
+>    保证「配的价 = 算价用的价」；POST 用单语句 CTE 保证「停用旧版本 + 插新版本」原子性）。
+>    旧遗留实现按 `product_specs` 自由规格成本，前端早已不用，随之移除。
+>    新增 `tests/test_pricing_data_api.py` 6 条行为测试锁死矩阵形状回归。
 
 > **（2026-10-18 · 客户管理 5 项修复 + 阶段模型重构 + 本地 Docker）**
 >
