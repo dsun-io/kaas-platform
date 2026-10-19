@@ -137,6 +137,9 @@
 - [ ] **S3-g** 测试重写 350–380 条 + marker 错位 87 条归位（共用 `queries/` 造数，与 S3 同批）
 
 **S4 删壳 + CI（1 人日）**
+> 设计定稿（2026-10-19）：[S4_SINGLE_APP_PLAN_2026-10-19.md](./S4_SINGLE_APP_PLAN_2026-10-19.md)
+> —— 保留 **worker 为唯一运行时**（生产已验证），orchestrator 只留 models + Alembic；
+> 含本地入口 `local_run.py`、按域退役顺序、测试处置（与 PLAN_B「1085 条保留」的偏差）与回退。
 - [ ] **S4-a** orchestrator 业务实现退场（仅保留 uvicorn 入口 + 迁移工具）
 - [ ] **S4-b** 主依赖拆分落地（`[project.optional-dependencies].migrations`）
 - [ ] **S4-c** CI 改造：db 门禁迁到真 PG 集成；`route-parity` 退役评估（已无第二后端）
