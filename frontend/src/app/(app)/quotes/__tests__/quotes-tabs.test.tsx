@@ -2,7 +2,7 @@
  * 报价工位 tab 收编（ui/tabs）—— 行为等价回归网。
  *
  * 钉死（收编前的行为，见 quotations.spec.ts 的 tab 按钮文案）：
- * 1. 四个 tab 文案不变：产品报价 / 批量报价 / 报价记录 / 定价数据；
+ * 1. 四个 tab 文案不变：产品报价 / 批量报价 / 报价记录 / 成本历史；
  * 2. ?tab= 深链进入时选中对应 tab；
  * 3. 切换 tab 时 URL 的 ?tab= 同步（product 时清掉）。
  */
@@ -87,7 +87,7 @@ describe("报价工位 tab（收编后行为等价）", () => {
     mount(<QuotesWorkstationPage />);
     await settle();
     const text = container!.textContent ?? "";
-    for (const label of ["产品报价", "批量报价", "报价记录", "定价数据"]) {
+    for (const label of ["产品报价", "批量报价", "报价记录", "成本历史"]) {
       expect(text).toContain(label);
     }
     expect(
@@ -108,7 +108,7 @@ describe("报价工位 tab（收编后行为等价）", () => {
   it("切回「产品报价」→ URL 清掉 ?tab=（与收编前一致）", async () => {
     mount(<QuotesWorkstationPage />);
     await settle();
-    clickTab("定价数据");
+    clickTab("成本历史");
     await settle();
     expect(window.location.search).toContain("tab=pricing");
     clickTab("产品报价");

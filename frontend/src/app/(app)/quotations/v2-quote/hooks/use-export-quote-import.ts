@@ -30,7 +30,14 @@ export function useExportProducts() {
         products: ExportProduct[];
         total: number;
       }>(`${EXPORT_QUOTE_BASE}/products`);
-      return data;
+      // 后端（需求 16）已剔除本团队在报价工位停用的产品；这里是前端兜底 ——
+      // 旧后端 / MSW 种子若带了 is_active=false 或 disabled=true 的行，也不进下拉。
+      const products = data.products.filter(
+        (p) =>
+          (p as { is_active?: boolean }).is_active !== false &&
+          (p as { disabled?: boolean }).disabled !== true,
+      );
+      return { products, total: products.length };
     },
     staleTime: 10 * 60 * 1000,
   });
