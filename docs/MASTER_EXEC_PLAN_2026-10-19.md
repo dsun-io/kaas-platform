@@ -25,18 +25,18 @@
 ## 0. 执行顺序总览
 
 ```
-批次 0  即时小修（代码 5 项 + 文档收口 4 项）      ← 现在开工，2 个 teammate 并行
+批次 0  即时小修（代码 5 项 + 文档收口 4 项）      ✅ 已完成（`846d4ab` / `1350c87` / `dbf2b54`）
 批次 U  用户操作包（dashboard/GitHub/业务配置 4 项） ← 不阻塞开发，随时可做
-批次 1  收敛 P0：POC（0.5–1 天）                    ← 批次 0 收尾后启动
+批次 1  收敛 P0：POC（0.5–1 天）                    ✅ 已完成（路线 A 否决，证据 POC 文档）
 批次 2  ~~收敛 P1：生产库迁 Neon→PPG（半天）~~ ❌ 决策 1 废弃（回 Neon；Hyperdrive 缓存关闭仍为独立待办）
-批次 3  收敛 P2：预览环境（1 天）                    ← 免费档已确认可用
-批次 4  收敛 P3：双后端全量收敛（3–5 天）            ← 按业务域 5 步迁移
-批次 5  收敛 P4：观察期（1 周）
+批次 3  收敛 P2：预览环境（1 天）                    ← 随方案 B 阶段二 S5 落地（README §2 四列矩阵）
+批次 4  收敛 P3 → **方案 B 阶段二 S1–S6（9–13 人日）** ← 当前主链
+批次 5  收敛 P4 → **方案 B 阶段三（5–8 人日）+ 观察期（1 周）**
 批次 6  技术栈安全债（Next 15+/16、Node 22、ESLint 10、TS 6）← 硬性串行排在收敛之后
 批次 7  独立排期项（见 §5，按依赖与拍板情况插入）
 ```
 
-硬性规则：批次 1–5 严格按序（见收敛执行计划的风险 R5：大变更不可叠加归因）；
+硬性规则：方案 B **阶段二 → 阶段三严格按序**（见收敛执行计划的风险 R5：大变更不可叠加归因）；
 批次 0 与 U 与之并行不悖；批次 6 不与收敛交叉。
 
 ---
@@ -75,27 +75,29 @@
 | U-3 | 仓库改回 private + 确认 Actions billing | GitHub 设置 |
 | U-4 | 智能表格 21 行缺失输入补全（业务动作） | `SHEET_CALC_VERIFICATION §4-5` |
 
-## 3. 批次 1–5 · 双后端收敛 + 迁库（主链）
+## 3. 批次 1–5 · 双后端收敛（主链 · 现行 = 方案 B）
 
-> ⚠️ **2026-10-19 POC 结论：路线 A（worker 跑统一 SQLAlchemy async app）不可行 as-is**
-> （greenlet 无 wasm wheel ⇒ `sqlalchemy.ext.asyncio` ImportError；冷启动 +1854ms 超线）。
-> 见 [POC_WORKER_SQLALCHEMY_2026-10-19.md](./POC_WORKER_SQLALCHEMY_2026-10-19.md)。
-> **执行方向改为：P3 从"全量收敛"降级为"路线 A′（数据访问层同源）+ C 子集（worker 真 PG
-> 测试）"**；P0–P2、P4 不变。原"单后端合并"目标改为"行为面漂移收敛到可测试、可审计"。
+> ✅ **批次 1（P0 POC）已完成**：路线 A 否决（greenlet 无 wasm wheel ⇒ `sqlalchemy.ext.asyncio`
+> ImportError；冷启动 +1854ms 超线）。证据见 [POC_WORKER_SQLALCHEMY_2026-10-19.md](./POC_WORKER_SQLALCHEMY_2026-10-19.md)。
+> 🔄 **2026-10-19 晚场决定**：双后端优化采用**方案 B**（一份 app 代码双入口、运行时 asyncpg-only），
+> 取代原 A′ 路线；评估与三项已确认修正见 [PLAN_B_EVALUATION_2026-10-19.md](./PLAN_B_EVALUATION_2026-10-19.md)，
+> 权威口径见 [README](../README.md) §3 / §10。
 
-严格按 [DUAL_BACKEND_CONVERGENCE_EXEC_PLAN_2026-10-19.md](./DUAL_BACKEND_CONVERGENCE_EXEC_PLAN_2026-10-19.md) 执行：
-**P0 POC（✅ 已完成：路线 A 否决，转 A′）→ P1 迁库（半天，含 Hyperdrive `--caching-disabled` +
-生产测试数据清理 U 确认）→ P2 预览环境（1 天，workers.dev 自动 URL，免费档可用性已确认）→
-P3（A′ + C 子集：SQL/DDL 内核同源 + worker 写入路径真 PG 测试）→ P4 观察期（1 周）**。
+- **批次 2（P1 迁库）❌ 已废弃**（决策 1：放弃 PPG 回 Neon）。原并入的「生产测试数据/拒绝文件历史清理」
+  须用户确认后另行执行；「Hyperdrive 查询缓存关闭」保留为独立待办。
+- **批次 3（P2 预览环境）**：按 README §2 四列矩阵重新定义（每 PR 独立 Neon 子分支 + 独立 Hyperdrive），
+  随方案 B 阶段二 **S5（preview + deploy）** 落地。
+- **批次 4（方案 B 阶段二 S1–S6，≈9–13 人日）**：依赖拆分 / 迁移归位 / 路由合并（5–8 人日，最大块）/
+  删壳 + CI / preview + deploy / 静态门禁。
+- **批次 5（方案 B 阶段三，≈5–8 人日）**：10 项收口（`kaas_common/db.py` 事务包裹执行、schema 完备性门禁、
+  依赖断言、包体积断言、downgrade 审计等）；冷启动验收线 **≤2,950 ms**（基线 2,680ms +10%）。
+- **批次 5 之后（观察期，1 周）**：冷启动 / 5xx / 延迟与基线对比。
 
-批次 2（迁库）额外并入：`Hyperdrive 查询缓存关闭`（审计 #1，与迁库同窗口）、
-`生产测试数据/拒绝文件历史清理`（审计 #14，数据删除须用户确认后执行）。
-
-批次 4 顺带评估项（A′ 改造 worker 模块时一并处理，不单独立项）：
-- `订阅门禁两套口径`（`chain.py _require_sub` 仍查 `tenant_subscriptions` → A′ 时统一）
-- `Excel xlsx 上传闭环`（`_reject_spreadsheet`）——POC 证实 **in-Worker 运行纯 Python 包
-  无硬阻塞**（sqlalchemy 同步 Core 可 import；Pyodide 索引有 openpyxl 依赖链需复核），
-  在批次 4 重估：能跑则实现 xlsx 闭环，否则维持 CSV 收口并文档固化裁决。
+**顺带项（不单独立项）**：
+- `attribute-proposals` 3 条路由随阶段二合并补进 worker（修既存生产 404，前端有活页面）。
+- 2 个 APScheduler 定时任务（15 分钟 replied→询盘扫描、每日 events 归档）用 CF Cron 重建（低-中成本）。
+- 订阅门禁两套口径（`chain.py _require_sub` 仍查 `tenant_subscriptions`）、Excel xlsx 上传闭环
+  （`_reject_spreadsheet`，POC 证实 in-Worker 跑纯 Python 包无硬阻塞）——在阶段二逐路由合并时一并核对。
 
 ## 4. 批次 6 · 技术栈安全债（收敛完成后串行）
 

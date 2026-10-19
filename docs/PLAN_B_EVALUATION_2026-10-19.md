@@ -94,7 +94,7 @@
 | 5 路线 A 已否决 | ✅ 确认（POC 文档 + 生产实测） |
 | 6 冷启动线修正 | ✅ 确认并完成实测（§4：基线 2,680ms 中位；原线不可达） |
 
-附注（评估中新发现的既存问题，独立于 B）：① 空库快径缺 worker 表（新环境必 500）；② attribute-proposals 3 条生产 404；③ DEPLOY.md 仍写 Neon/旧 Hyperdrive id，与生产实配（PPG/`1733fcd8…`）漂移；④ 本机 uv 的 pyodide 解释器探针损坏（`uv python list` 警告，pywrangler sync 路径暂不可用，裸 wrangler 路径正常）。
+附注（评估中新发现的既存问题，独立于 B）：① 空库快径缺 worker 表（新环境必 500；`alembic/env.py` 模型 import 已随 `88132af` 补上，worker 独有/无模型表仍待 B 的 schema 完备性门禁）；② attribute-proposals 3 条生产 404；③ ~~DEPLOY.md 仍写 Neon/旧 Hyperdrive id，与生产实配（PPG/`1733fcd8…`）漂移~~ ——**随决策 1（回 Neon）失效**：DEPLOY.md 的 Neon 口径与 main 生产实配已一致，PPG 线整体废弃；④ 本机 uv 的 pyodide 解释器探针损坏（`uv python list` 警告，pywrangler sync 路径暂不可用，裸 wrangler 路径正常）。
 
 ## 9. 预估（供排期参考）
 

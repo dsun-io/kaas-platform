@@ -26,12 +26,23 @@
 >    本地 Docker PG + 本地 MinIO，不触云）。早场"恢复三层环境模型"条目（见本摘要下方 10-19 晚场前
 >    条目）由本矩阵**细化取代**：预览改为每 PR 独立 Neon 子分支，另有"开发远程冒烟"第四列。
 >
-> **最新交接文档：`docs/HANDOVER_2026-10-18.md`**（2026-10-18：客户 5 项修复、阶段三值模型、
-> 本地 Docker 开发环境、DAP/DDP 术语、部署待办）。**先读它。**
-> 上一份：`docs/HANDOVER_2026-10-17.md`（生产拓扑、R2 踩坑、账号）。
-> **2026-10-19 平行线交接（CI/生产修复）**：`docs/HANDOVER_2026-10-19_CI_AND_PROD_FIXES.md`
-> —— 注册 500 / 报价页白屏已修并部署；CI `backend:test` db-tests 长期红已修绿（`6c08900`）；
-> 含「本机无 Postgres ⇒ 本地 db 测试全 skip」等环境坑与「不要重做」清单。
+> **最新交接文档：`README.md`（主交接，唯一权威）**；执行入口 `docs/MASTER_EXEC_PLAN_2026-10-19.md`。
+> 2026-10-19 当日交接：`docs/HANDOVER_2026-10-19_CI_AND_PROD_FIXES.md`（✅ 已完成：注册 500 / 定价页白屏已修并部署；
+> CI `backend:test` db-tests 已修绿 `6c08900`；含「本机无 Postgres ⇒ 本地 db 测试全 skip」等环境坑与「不要重做」清单）；
+> `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
+> 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
+>
+> **（2026-10-19 晚场 · 分支收编 + 文档收尾，已完成）**
+> 1. 从废弃的 `feat/convergence-aprime` 收编 **3 项与 PPG 无关**的改动（提交 `88132af`）：
+>    `alembic/env.py` 补 5 个模型模块 import（空库快径避免缺表）、`session.py` SSL 判定去 neon 硬编码、
+>    worker 真 PG 写入路径测试 5 条 + CI job `worker-db-tests`。PPG 相关的 `wrangler.jsonc` 切换与
+>    `scripts/migrate-ppg/` **未收编**（决策 1）。
+> 2. 文档收口：README §2.2/§2.3 标注为**目标态**、本文指向改回 README、MASTER_EXEC_PLAN §3 正文改为方案 B、
+>    PLAN_B §8 附注去 PPG、docs/README 修断链+补 10-19 索引、AGENTS.md 本机工具链路径更新。
+> 3. 清理 4 个无价值远程分支（`feat/plan-b-single-worker` / `docs/plan-b-handoff` /
+>    `feat/trade-doc-templates` / `prisma-cloud/setup`），保留 `feat/convergence-aprime` 备查。
+> 4. 门禁复跑：orchestrator `-m unit` **1200 passed / 1 skipped**；worker **303 passed + 5 skipped**（本地无 PG）；
+>    `route-parity` PASS；`sync-shared -Check` PASS（先跑了一次同步修复本地镜像漂移）。
 
 > **（2026-10-19 峰值时段检查点 · P1 迁库暂停在 70% —— 交接见
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`）**
