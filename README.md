@@ -106,7 +106,7 @@
 - **wrangler dev 降级为部署前冒烟门禁**，不作为日常开发形态。实测冷启动 38s、热重载 33–72s，对比 uvicorn 2.72s / 21ms，不可接受。
 - **迁移执行位置改为 CI 或独立 CLI**，不再常驻。当前 deploy.yml 无 alembic 步骤，属新建。
 - **kaas_common 是唯一"脑"**：参数化 SQL、Pydantic schemas、SQLAlchemy models、Alembic migrations、默认值/约束口径全部集中在此。
-- **kaas_common/db.py 必须暴露事务包裹执行**：裸 asyncpg 语句级 autocommit 无法复刻 savepoint 回滚语义，这是测试重写的前提。
+- **kaas_common/db.py 已提供事务包裹执行**（S1）：裸 asyncpg 语句级 autocommit 无法复刻 savepoint 回滚语义，这是测试重写的前提；实现见 `backend/kaas_common/db.py`（`Session.transaction()`，嵌套自动 SAVEPOINT）。
 
 ### 3.2 三项已确认修正（原样）
 
@@ -159,7 +159,7 @@
 - **marker 错位归位**：`-m unit` 中 87 条实际碰 DB 的用例先归位，避免 unit 门禁口径失真。
 - **保留范围**：其余约 1,085 条原样保留——前提：其 import 的 app.services/app.domain 在 B 后以新形态存活。
 - **真 PG fixture 复用**：直接复用 worker 侧 pgserver/PG_BIN 方案（`backend/worker/tests/integration/conftest.py`：临时 PG16、随机端口、临时数据目录；CI 用 postgres service），供给链零新建。
-- **设计要求**：`kaas_common/db.py` 必须暴露**事务包裹执行**——裸 asyncpg 语句级 autocommit 无法复刻 orchestrator 的 savepoint 回滚隔离语义，这是测试重写的前提；种子 SQL 化须照抄 DDL 默认值（ORM `default=` 是客户端行为，历史 500 事故根因）。
+- **设计要求**：`kaas_common/db.py` 已提供**事务包裹执行**（S1，`Session.transaction()`，嵌套自动 SAVEPOINT）——裸 asyncpg 语句级 autocommit 无法复刻 orchestrator 的 savepoint 回滚隔离语义，这是测试重写的前提；种子 SQL 化须照抄 DDL 默认值（ORM `default=` 是客户端行为，历史 500 事故根因）。
 - 现状门禁命令与基线见 [§14 测试与门禁](#14-测试与门禁)。
 
 ---
@@ -361,6 +361,9 @@ pnpm test
 # 共享内核同步与检查
 powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1
 powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1 -Check
+
+# 运行时依赖断言（方案 B S1，CI 双闸也跑）
+backend/orchestrator/.venv/Scripts/python.exe scripts/check-runtime-deps.py
 
 # 契约 / 路由对等
 pnpm contracts:check

@@ -99,6 +99,10 @@ jobs:
         shell: pwsh
         run: ./scripts/sync-shared.ps1 -Check
 
+      # 方案 B 阶段二 S1：部署前断言运行时依赖干净（生产 Worker 不得含 ORM/迁移依赖）。
+      - name: Runtime dependency gate
+        run: uv run --no-project python scripts/check-runtime-deps.py
+
       - name: Deploy to Cloudflare Workers
         working-directory: backend/worker
         env:
