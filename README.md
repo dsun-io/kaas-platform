@@ -46,6 +46,11 @@
   231 路由；worker src/（跟踪，不含镜像）25 文件 / 14,717 行 / 225 路由。S4 后 orchestrator 业务
   代码为 0，测试从 1,220 条 → 222 条（迁移/模型/kernel，处置见
   [docs/S4_TEST_MIGRATION_2026-10-19.md](docs/S4_TEST_MIGRATION_2026-10-19.md)）。
+- **技术栈基线（2026-10-20 升级后）**：Next **16.4.2** / React **19.3** / ESLint **10.13（flat config）** /
+  TypeScript **6.0.3**；CI Node **22**（本地 Node 24）；`pnpm audit` **0 critical**
+  （3 high 均为 dev-only：wrangler→sharp、shadcn→MCP SDK、micromatch→braces）。
+  升级账本见 [docs/TECH_STACK_UPGRADE_2026-10-17.md](docs/TECH_STACK_UPGRADE_2026-10-17.md)；
+  本轮交接见 [docs/HANDOVER_2026-10-20.md](docs/HANDOVER_2026-10-20.md)。
 
 ---
 
@@ -370,7 +375,7 @@ cd backend/orchestrator
 uv sync --extra migrations
 uv run --extra migrations pytest tests -q
 
-# Worker 单测（唯一运行时：590 passed + 5 skipped）
+# Worker 单测（唯一运行时：954 passed + 5 skipped）
 cd backend/worker
 uv run --frozen --with pytest --with httpx2 python -m pytest tests -q
 
@@ -406,20 +411,22 @@ backend/orchestrator/.venv/Scripts/python.exe scripts/check-worker-bundle.py
 cd frontend
 pnpm contracts:check
 
-# 静态导出
+# 静态导出（Next 16：out/ 为产物；**不要设 NEXT_DIST_DIR**，否则产物会落到该目录）
 $env:NEXT_EXPORT="1"
-$env:NEXT_DIST_DIR=".next-verify"
-pnpm build
+cd frontend
+pnpm build                 # → frontend/out（267 文件；与 deploy.yml 产物路径一致）
 ```
 
 测试资产（2026-10-19 评估口径，见 [PLAN_B_EVALUATION §1](docs/PLAN_B_EVALUATION_2026-10-19.md)）：
 
 - orchestrator（S4 删壳后）：only `app/db` + `alembic`；测试 **222 passed**（共享内核纯函数 + ORM 模型/
   schema/迁移对齐）；逐文件处置见 [S4_TEST_MIGRATION](docs/S4_TEST_MIGRATION_2026-10-19.md)；
-- worker：26 文件 / **590 passed + 5 skipped**（三域 parity 棘轮已清零）；真 PG 集成 5 条
+- worker：**954 passed + 5 skipped**（含迁入的 15 个报价引擎测试文件；三域 parity 棘轮已清零）；真 PG 集成 5 条
   （`@pytest.mark.integration`；本地无 PG 自动 skip，CI 由 `worker-db-tests` job 用 postgres service 跑）；
-- 前端：455 passed（2026-10-19 批次 0 后基线）；
-- 列级漂移 0 / 表级缺失 0；contracts:check 全 PASS（R6 已退役，`scripts/archive/route-parity.py` 为历史门禁）。
+- 前端（Next 16 / React 19）：typecheck ✅ / lint **0 errors（91 warnings）** / **455 passed** /
+  e2e **23 passed + 4 skipped** / `NEXT_EXPORT` 构建 ✅（`frontend/out` 267 文件）；
+- 列级漂移 0 / 表级缺失 0；contracts:check 全 PASS（R6 已退役，`scripts/archive/route-parity.py` 为历史门禁）；
+- 依赖安全：`pnpm audit` **0 critical**（3 high 均 dev-only，见 HANDOVER §2.3）。
 
 E2E：
 
@@ -512,15 +519,15 @@ npx wrangler versions deploy <version-id>@100% --name kaas --yes
 
 ```
 backend/
-  kaas_common/            共享内核（唯一源）
-  orchestrator/           本地 FastAPI + SQLAlchemy + Alembic（方案 B 实施后业务实现并入统一 app）
-  worker/                 生产 Cloudflare Worker（Python FastAPI + assets）
-frontend/                 Next.js 14 静态导出
+  kaas_common/            共享内核（唯一源：SQL/纯函数/报价引擎/枚举）
+  orchestrator/           迁移与模型工具（S4 后仅 app/db + alembic；不可运行后端）
+  worker/                 唯一运行时：Cloudflare Worker（Python FastAPI + assets）+ local_run.py 本地入口
+frontend/                 Next.js 16 静态导出（out/）
 shared/contracts/         前后端 zod 契约
-scripts/                  sync-shared / contracts / seed / verify
+scripts/                  sync-shared / contracts / schema 门禁 / 包体积 / 迁移审计；archive/ 为已退役脚本
 docs/                     设计与交接文档
 .github/workflows/        backend-test / frontend-ci / contracts-check / deploy
-docker-compose.yml        本地基础设施
+docker-compose.yml        本地基础设施 + 本地后端（worker local_run）
 ```
 
 ---
@@ -530,6 +537,9 @@ docker-compose.yml        本地基础设施
 **主交接文档：本文（架构 / 三环境隔离 / 方案 B 决策 / 冷启动 / 测试策略）**
 
 - [DEPLOY.md](DEPLOY.md) — 生产部署与运维速查
+- [docs/HANDOVER_2026-10-20.md](docs/HANDOVER_2026-10-20.md) — **2026-10-20 交接总入口**（本轮改动/回归证据/待你操作事项/发布检查单）
+- [docs/USER_ACTIONS_2026-10-19.md](docs/USER_ACTIONS_2026-10-19.md) — 需用户执行的操作（安全/业务/环境决策，含步骤与验证）
+- [docs/ENV_VERIFICATION_2026-10-19.md](docs/ENV_VERIFICATION_2026-10-19.md) — 三环境核对与发布检查单
 - [docs/PLAN_B_EVALUATION_2026-10-19.md](docs/PLAN_B_EVALUATION_2026-10-19.md) — 方案 B 阶段一评估报告（四问取证，结论 B-可行）
 - [docs/MASTER_EXEC_PLAN_2026-10-19.md](docs/MASTER_EXEC_PLAN_2026-10-19.md) — 总执行清单（P1 迁库批次已随决策 1 废弃）
 - [docs/PROBLEM_STATUS_2026-10-11.md](docs/PROBLEM_STATUS_2026-10-11.md) — 问题状态滚动口径

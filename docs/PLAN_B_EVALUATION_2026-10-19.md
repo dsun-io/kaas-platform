@@ -56,20 +56,24 @@
   对 A′：同样可达。二者无差别。
 - 透明披露：测量在生产 Worker 产生 5 个**未部署**版本记录（不接流量，随版本策略过期）。
 
-## 5. 阶段三 10 项 · 现状对照（摘要）
+## 5. 阶段三 10 项 · 现状对照（**2026-10-20 更新**）
 
-| # | 项 | 现状 |
+> 本节原为 2026-10-19 评估时点；**下表「现状」列已按 2026-10-20 最新口径重写**。
+> 结论：**10 项中 8 项已完成，2 项待用户外部动作**（冷启动测量需一次批准的上传；PR 预览需
+> Neon/CF 凭据与资源，已裁决全量做）。执行账本见 [MASTER_EXEC_PLAN §S1–S6](./MASTER_EXEC_PLAN_2026-10-19.md)。
+
+| # | 项 | 2026-10-20 现状 |
 |---|---|---|
-| 1 | 空库 upgrade head | 现在就有（E1 快径，空 PPG 实测 93 表）⚠️ 产物缺约束 852/索引 50，且缺 worker 无模型表（Q3） |
-| 2 | downgrade | 部分有（70 versions 中 35 个含 drop_table；历史链有结构性断点，需逐版本审计 0.5–1d） |
-| 3 | 全部现有测试通过 | 现状 ✅（orchestrator 1200）；改造后 350–380 条随壳重写，需重定义验收 |
-| 4 | queries/ 真 PG 测试 | 改造后才有 |
-| 5 | 写路径 E2E | 底座已有（3ada691 5 条），扩面即可 |
-| 6 | 冷启动 | 按 §4 相对线 |
-| 7 | 包体积 | 现在就有（11.59 MiB ≪ 64 MiB）；断言待建 |
-| 8 | 静态门禁 | 改造后才有 |
-| 9 | 依赖断言 | worker 现状已干净（6 依赖，无 sqlalchemy/alembic/greenlet）；断言待建 |
-| 10 | PR 预览 | 改造后才有（现无 preview workflow；deploy.yml 亦无 alembic 步骤——迁移全手动） |
+| 1 | 空库 upgrade head | ✅ 已完成：空库 `alembic upgrade head` → **102 表**（`kaas_local` 实测，head `202610190020`）；`alembic check` 零漂移；表级+**列级** schema 门禁在 CI |
+| 2 | downgrade | ✅ 审计+实测完成：`drop_table` 精确 3 个；修复 2 个真 bug（004 重建/002 IF EXISTS）；CI 加「最新迁移可逆」；**全链 base 不支持**（历史断点）→ 回滚用 Neon PITR/分支 |
+| 3 | 全部现有测试通过 | ✅ worker **954+5**、orchestrator **222**（原 1,220 → 处置见 S4_TEST_MIGRATION）、前端 **455** + e2e **23+4skip** |
+| 4 | queries/ 真 PG 测试 | ✅ worker `tests/integration` 5 条（注册/建客户/报价写路径），CI `worker-db-tests` 跑真 PG |
+| 5 | 写路径 E2E | ✅ 真 PG 写入路径 5 条 + 前端 real-backend e2e 模式可跑（生产只读冒烟 200） |
+| 6 | 冷启动 | ⬜ **门禁已建**（`check-worker-bundle.py` 校验 `coldstart-baseline.json` ≤2,950ms）；基线待一次**经用户批准**的 upload 后测量（U-E4） |
+| 7 | 包体积 | ✅ 门禁已建（`pywrangler deploy --dry-run` 统计，64MiB 硬限/15MiB 目标；CI 跑）；本地因 uv pyodide 探针损坏 SKIP，CI 真实执行 |
+| 8 | 静态门禁 | ✅ 依赖断言 / 表级 schema / 列级漂移 / 包体积 / contracts(R0–R5) / sync-shared 全部接入 CI；route-parity 与 R6 已退役留档 |
+| 9 | 依赖断言 | ✅ `check-runtime-deps.py`（146 文件 + worker pyproject，禁 sqlalchemy/alembic/greenlet/psycopg2） |
+| 10 | PR 预览 | ⬜ 已裁决**全量做**；等用户提供 Neon API key / Cloudflare API token 与预览 R2/KV 资源（USER_ACTIONS §C S5 前置清单） |
 
 ## 6. 结论
 

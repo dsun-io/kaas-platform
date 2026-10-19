@@ -32,7 +32,7 @@
 批次 3  收敛 P2：预览环境（1 天）                    ← 随方案 B 阶段二 S5 落地（README §2 四列矩阵）
 批次 4  收敛 P3 → **方案 B 阶段二 S1–S6（9–13 人日）** ← 当前主链
 批次 5  收敛 P4 → **方案 B 阶段三（5–8 人日）+ 观察期（1 周）**
-批次 6  技术栈安全债（Next 15+/16、Node 22、ESLint 10、TS 6）← 硬性串行排在收敛之后
+批次 6  技术栈安全债（Next 16/React 19/ESLint 10/TS 6/Node 22）  ✅ 已完成（2026-10-20，`9e13ef5`）
 批次 7  独立排期项（见 §5，按依赖与拍板情况插入）
 ```
 
@@ -232,9 +232,14 @@ Next 14.2→15.5+/16（2 critical RCE，修复只发 ≥15.5.24）、CI Node 20�
 
 - [x] **CI Node 22**（2026-10-19）：`frontend-ci.yml` / `deploy.yml` / `contracts-check.yml` 的
       `actions/setup-node` 由 20 → 22（本地已用 Node 24 验证前端 typecheck/test/contracts/build 全绿）
-- [ ] **Next 15.5+/16 + ESLint 10 + TS 6** —— 2026-10-20 用户裁决 **A：下一轮全量升级**，
-      配 typecheck/lint/test/e2e/build 全量回归；独立一轮、不与其它改动叠加（收敛风险 R5）
-理由：同为前端大改，与收敛交叉会无法归因（收敛动打包链，升级动构建链）。
+- [x] **Next 16 + React 19 + ESLint 10 + TS 6** —— ✅ **已完成（2026-10-20，提交 `9e13ef5`）**：
+      Next 14.2→**16.4.2**、React 18.3→**19.3.1**、ESLint 8→**10.13（flat config）**、
+      eslint-config-next→**16.4.2**、TS 5.9→**6.0.3**、@typescript-eslint→8.71、@types/react→19；
+      `next lint` 移除 → `eslint src` + `frontend/eslint.config.mjs`；`middleware.ts`→`proxy.ts`；
+      `typedRoutes` 顶层化；Sentry `onRouterTransitionStart` 补齐；`pnpm audit` 80→**39（0 critical）**。
+      回归：typecheck/lint(0 error)/455 tests/**e2e 23 passed+4 skipped**/`NEXT_EXPORT` 构建 out 267 文件。
+      账本见 [TECH_STACK_UPGRADE §B 完成记录](./TECH_STACK_UPGRADE_2026-10-17.md)。
+      理由（原定独立一轮）：同为前端大改，与收敛交叉会无法归因；本轮在独立 worktree 完成后 ff 合并。
 
 ## 5. 批次 7 · 独立排期项（等待拍板或触发条件）
 

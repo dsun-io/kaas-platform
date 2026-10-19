@@ -2,15 +2,17 @@
 
 > 目标态矩阵见 [README §2](../README.md)。本文记录**当前实测状态**：哪些已验证、哪些缺什么、
 > 缺的东西由谁补（`U-*` 对应 [USER_ACTIONS_2026-10-19.md](./USER_ACTIONS_2026-10-19.md)）。
-> 结论：**开发环境已全通；生产读写面可用（只读已验证，写/密钥面待用户只读核对）；预览环境未落地（S5 待决策）。**
+> 结论（2026-10-20 更新）：**开发环境全通；生产只读验证通过（密钥/迁移待用户）；
+> 预览环境已裁决全量做（S5），等用户提供 Neon/CF 凭据与资源后实施。**
+> 技术栈基线：Next 16.4.2 / React 19.3 / ESLint 10.13 / TS 6.0.3 / CI Node 22（2026-10-20 升级）。
 
 ## 0. 汇总
 
 | 环境 | 数据库 | 对象存储 | 运行时 | 迁移 head | 状态 |
 |---|---|---|---|---|---|
 | 开发 | 本地 Docker PG `kaas-postgres`（`kaas_local`，102 表） | 本地 MinIO（compose，未启动时相关测试 skip） | `local_run.py`（uvicorn，生产同一份 app） | `202610190020` | ✅ 已验证 |
-| 预览 | 每 PR Neon 分支（**未建**） | `kaas-preview-storage`（**未建**） | preview workflow（**未建**） | — | ❌ 未落地（S5 待 U-E1 决策） |
-| 生产 | Neon production（只读连接已验证；PG 18.6） | R2 `kaas-files`（binding `FILES`） | Worker `kaas`（api + assets） | `202610180010`（**待应用 020**） | ⚠️ 只读已验证；密钥/迁移待用户 |
+| 预览 | 每 PR Neon 分支（**未建**） | `kaas-preview-storage`（**未建**） | preview workflow（**未建**） | — | ⬜ 已裁决 A 全量；**待用户凭据/资源**（见 USER_ACTIONS §C S5 前置清单） |
+| 生产 | Neon production（只读连接已验证；PG 18.6） | R2 `kaas-files`（binding `FILES`） | Worker `kaas`（api + assets） | `202610180010`（**待应用 020**） | ⚠️ 只读已验证（health/site 200）；密钥/迁移待用户 |
 
 ## 1. 开发环境（已验证）
 

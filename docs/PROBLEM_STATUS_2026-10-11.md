@@ -32,6 +32,24 @@
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
 > 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
 >
+> **（2026-10-20 · 前端技术栈升级完成 + 全量回归 + 交接文档）**
+> 1. **技术栈全量升级完成**（`9e13ef5`，独立 worktree 后 ff 合并）：Next **16.4.2** / React **19.3** /
+>    ESLint **10.13（flat config，`next lint` 已删）** / TS **6.0.3** / eslint-config-next 16.4 /
+>    @typescript-eslint 8.71 / @types/react 19 / @types/node 22；根 lint-staged 同步 ESLint 10。
+>    迁移：`middleware.ts`→`proxy.ts`、`typedRoutes` 顶层化、Sentry `onRouterTransitionStart`、
+>    `typecheck` 内置 `next typegen`（干净 checkout 必需；旧 tsbuildinfo 会误报 `Viewport`）。
+> 2. **安全复扫**：`pnpm audit`（官方 registry）80 → **39 条，critical 2→0**；3 high 全为 dev-only
+>    （wrangler→sharp / shadcn→MCP SDK / micromatch→braces 无补丁），已更新 workspace overrides。
+> 3. **全量回归（2026-10-20 main 实测）**：worker **954 passed+5 skipped**（真 PG 集成 **5**）；
+>    orchestrator **222**；前端 typecheck ✅ / lint **0 error（91 warning）** / **455 passed** /
+>    e2e **23 passed+4 skipped** / `NEXT_EXPORT` 构建 **out 267 文件**；contracts:check PASS；
+>    sync-shared/schema 双门禁/依赖断言 全 PASS；生产只读冒烟 **200**。
+> 4. **交接文档**：新增 `docs/HANDOVER_2026-10-20.md`（本轮改动/证据/待用户事项/发布检查单/已知限制）；
+>    `USER_ACTIONS_2026-10-19.md` 增加 S5 前置凭据清单与冷启动测量项（U-E4）；
+>    `TECH_STACK_UPGRADE_2026-10-17.md` 追加批次 B 执行记录；README/AGENTS 同步新版本与新命令。
+> 5. **待用户**：S5 凭据/资源、冷启动测量、R2 密钥、税率数据、仓库 billing、智能表格、
+>    发布窗口（详见交接文档 §6）。代码侧可自主项已全部完成。
+>
 > **（2026-10-20 · 用户裁决四项 · 下一轮范围确定）**
 > 1. **S5 预览 = 全量做（A）**：每 PR Neon 子分支 + 独立 Hyperdrive + `kaas-preview-storage` +
 >    KV 前缀 + CI 防污染断言。前置：用户提供 Neon API key / Cloudflare API token（或代建资源）。
