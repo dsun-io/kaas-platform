@@ -43,6 +43,8 @@ node_modules/
 .next/
 # 并发安全构建目录（NEXT_DIST_DIR）：与 `next dev` 的 .next 并存，不互相破坏
 .next-build/
+# 静态导出复验目录（README §14 的 NEXT_DIST_DIR=".next-verify"）
+.next-verify/
 .nuxt/
 dist/
 
