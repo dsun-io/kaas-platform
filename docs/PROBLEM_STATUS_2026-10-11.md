@@ -32,6 +32,19 @@
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
 > 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
 >
+> **（2026-10-19 夜场 · S4 本地入口落地 + 冒烟抓出列级 schema 漂移）**
+> 1. 新增 `backend/worker/src/local_run.py`：uvicorn 起**生产同一份** `main.py`（workers stub +
+>    `request.scope["env"]`/HYPERDRIVE 指向本地 Docker PG）；踩掉的坑：脚本目录会自动进 `sys.path[0]`，
+>    而 `src/platform/` 是 worker 连接封装、会遮蔽标准库 `platform` ⇒ asyncpg 导入即 AttributeError，
+>    已在入口里先移出再导入标准库。
+> 2. 全新空库 `kaas_local`（`alembic upgrade head`，102 张表）冒烟全绿：health / bootstrap-admin /
+>    login / 建客户 201 / 报价·订单·应收列表 / `export-quote/products` 200。
+> 3. **抓出真实列级漂移**：`tenant_workstation_products` 生产有 `team_id`（迁移 202610110019，带 FK + 索引 +
+>    `COALESCE(team_id,0)` 函数唯一键），但 ORM 模型没写 ⇒ 空库快径缺列 ⇒ `export-quote/products` 500。
+>    已补模型（列/FK/索引 + 函数唯一键），新增 `tests/test_team_scope_schema_parity.py` 3 条回归；
+>    重放空库后 `alembic check` = no new operations，`ON CONFLICT (tenant_id,(COALESCE(team_id,0)),…)` 实测可用。
+> 4. 门禁：orchestrator **1220 passed**。教训：S6-a 的表级门禁查不出**列/索引**漂移，S6 待补列级断言。
+>
 > **（2026-10-19 夜场 · S3 高危修复：CRM 写权限/联系人清空 + 报价 2 个 P0）**
 > 1. **CRM 写权限（高）**：`DELETE /customers/{id}`、`PATCH .../stage`、`POST .../inquiries`、联系人增删改
 >    统一走 `_check_write_access`（共享内核 `scope.can_write`）⇒ 同团队非属主 **403 NOT_OWNER**。
