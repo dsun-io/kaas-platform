@@ -143,8 +143,15 @@
       /me 补 plan·effective_role·tenant_id、workstations=[] 零开通、无 team_name 也校验工位 422）；
       剩余 **2 处**待评估（login/bootstrap 响应扁平化 D4/D6，需同步前端/集成断言）；邀请码与邮箱查重顺序（D12）、
       分页越界 422（D13）已在本轮一并修复
-- [ ] **S3-i** CRM 域行为对等（teammate crm-parity 进行中）
-- [ ] **S3-j** 报价/订单域行为对等（teammate quote-parity 进行中）
+- [x] **S3-i** CRM 域行为对等（2026-10-19，teammate crm-parity）—— `test_parity_crm.py` 61 例
+      （38 passed + 23 xfail）；**高危差异待修**：写权限缺口（DELETE 客户 / PATCH stage / POST inquiries 缺
+      `_check_write_access`，同团队非属主可操作）、`PATCH contacts` COALESCE 导致显式 null 清空无效、
+      询盘缺 channel 校验/任意 status 入库/丢 lead_id（线索池→询盘断链）
+- [x] **S3-j** 报价/订单域行为对等（2026-10-19，teammate quote-parity）—— `test_parity_quote.py` 120 例
+      （92 passed + 28 xfail）；差异集中在 401 体形状、`closed` 状态枚举、`customer_id` 类型、
+      错误码优先级、行项覆盖字段缺失、`days` 越界钳位
+- [ ] **S3-k** 修复 CRM 高危差异（写权限 3 处 + 联系人 null 清空 + 询盘校验/lead_id），摘对应 xfail
+- [ ] **S3-l** 修复报价/订单域差异（按严重度分档），摘对应 xfail
 - [ ] **S3-g** 测试重写 350–380 条 + marker 错位 87 条归位（共用 `queries/` 造数，与 S3 同批）
 
 **S4 删壳 + CI（1 人日）**
