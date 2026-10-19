@@ -79,8 +79,13 @@ PYTHONPATH=. .venv/Scripts/python scripts/export_openapi.py
 > 不是门禁失灵；所以**顺序必须反过来**：先提交产物，再让门禁看它。
 - 环境无 `pnpm`/`npm` 可直接调用，用
   `C:\Users\河北慷逊公司\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe`
-  + `...\pnpm\bin\pnpm.mjs`。跑 `.ps1` 前先
+  + `...\dependencies\pnpm\bin\pnpm.cjs`。跑 `.ps1` 前先
   `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force`。
+  - ⚠️ **2026-10-19 更正**：本文档原写 `...\node\pnpm\bin\pnpm.mjs`，**该路径不存在**
+    （pnpm 实际在 `dependencies\pnpm\bin\pnpm.cjs`，与 `node` 平级）⇒ 按旧路径调用会
+    `MODULE_NOT_FOUND`。git hook（bash 环境）下还需一个 shim：内容为
+    `exec "<node.exe>" "<pnpm.cjs>" "$@"` 的无 BOM 文本 `pnpm` 文件放进 PATH 即可。
+    hook 不认 `C:\` 风格 PATH，Windows 路径写进 shim 内部最稳。
   - ⚠️ **2026-10-12 更正**：本文档原写 `C:\Users\HJ\…`，**该路径在本机不存在**
     （实际用户名是 `河北慷逊公司`）⇒ 按旧路径调用会 `CommandNotFoundException`。
   - ⚠️ **本机没有 PowerShell 7**（`pwsh` 不在 PATH，只有 5.1）⇒ 上面所有
