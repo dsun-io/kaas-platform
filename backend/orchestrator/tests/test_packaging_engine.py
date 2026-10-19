@@ -18,7 +18,8 @@ def _policy():
         "output_vat": {"rate": 0.0, "mode": "additive"},
         "profit": {"mode": "fixed", "value": 0.1},
         "refund": {"refund_ratio": "auto", "give_ratio": 0.8},
-        "stamp": {"rate": 0.05, "base": "profit"},
+        # 印花税已并入杂税（misc_fee_rate，对齐平台默认 0.03）
+        "misc_fee_rate": 0.03,
     })
 
 

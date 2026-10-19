@@ -196,7 +196,15 @@ async def latest_fx_rate(request: Request, base_currency: str = "USD", quote_cur
 @app.get("/api/v1/fx-rates/_debug")
 async def fx_provider_debug(base_currency: str = "USD", quote_currency: str = "CNY",
                             user: dict = Depends(_get_current_user)):
-    """线上自检：直接打一次汇率源，返回状态/片段/异常（不写库）。排查完可删。"""
+    """线上自检：直接打一次汇率源，返回状态/片段/异常（不写库）。排查完可删。
+
+    B0-6 收敛：诊断端点仅平台管理员可用（普通登录用户 403），不对外开放。
+    """
+    from kaas_common.workstation.scope import is_admin_role
+    if not is_admin_role(user.get("role")):
+        raise HTTPException(status_code=403, detail={
+            "error": "forbidden", "code": "ADMIN_ONLY",
+            "message": "诊断端点仅平台管理员可用"})
     url = FX_PROVIDER_URL.format(base=(base_currency or "USD").upper())
     try:
         payload = await _http_get_json(url)

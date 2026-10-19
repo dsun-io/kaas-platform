@@ -14,6 +14,22 @@
 > 本地 Docker 开发环境、DAP/DDP 术语、部署待办）。**先读它。**
 > 上一份：`docs/HANDOVER_2026-10-17.md`（生产拓扑、R2 踩坑、账号）。
 
+> **（2026-10-19 · 批次 0 后端小修 B0-5/B0-6 完成 —— 含印花税口径变更）**
+>
+> 1. **B0-5 印花税定义删除，并入杂税**（用户裁决："印花税这个定义就不存在了，直接归类到
+>    这个杂税 3% 中"）：`pricing.py` 删除 stamp 计税分支与基数校验（`stamp_rate`/`stamp_base`
+>    仅保留只读兼容字段，传入即忽略并给迁移提示）；fixed/ratio 改为按基础报价 × `misc_fee_rate`
+>    附加综合税费（此前 misc 在 fixed/ratio 下是**静默空旋钮**，从未生效）；margin 模式不变
+>    （系数在售价公式分母内）。`field_fence` 验证公式改为杂税口径。
+>    **⚠️ 算价行为变更**：fixed/ratio 旧链路报价约 +3%（前端新工作台/批量报价走 margin
+>    `margin_on_price`，不受影响）。手工核对基准值随之更新：engine `4.6028→4.7475` /
+>    `5.8294→6.0141`；formulas `314.84→324.74`、`301.03→310.50`；import `301.03→310.5`。
+> 2. **B0-6 诊断端点收敛**：`_r2_debug` / `fx-rates/_debug` 选择**加保护而非删除**
+>    （HANDOVER 排障 runbook 仍引用它们），仅平台管理员可访问，普通用户 / 团队负责人 /
+>    未登录一律 403 `ADMIN_ONLY`；新增 `tests/test_debug_endpoints_admin_guard.py` 锁定三种角色。
+> 3. **门禁**：orchestrator `pytest -m unit` 1200 passed / 1 skipped；worker `pytest`
+>    303 passed；`route-parity.py` PASS（缺失 11 全登记、过期 0）。
+>
 > **（2026-10-19 · 批次 0 前端小修 B0-1~B0-4 完成）**
 >
 > 1. **B0-1**（原 P2-⑪）：`use-products.ts` `crypto.subtle.digest` 裸调加特性检测兜底 ——

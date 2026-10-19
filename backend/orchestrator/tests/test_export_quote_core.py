@@ -3,9 +3,10 @@
 锁定的事实：
   · 销项税的计税基数是**售价**，不是成本
   · 退税退的是**进项增值税额**，可退进项增值税税额 = 进项税额 × (退税率 ÷ 征税率)
-  · 印花税按**加工利润**计征（基数可切换，逻辑必须对）
+  · 印花税定义已删除（2026-10-19 用户裁决）：并入杂税，政策只有 misc_fee_rate
+    一个综合税费旋钮；旧请求里的 stamp_rate/stamp_base 传入即忽略
   · 售价不随税制漂移（退还与抵扣价值相同）
-  · 价链等价式：不含税售价 = 成本 + 利润 + 不可退进项税额 + 自留可退税额 + 印花税
+  · 价链等价式：不含税售价 = 成本 + 利润 + 不可退进项税额 + 自留可退税额 + 综合税费附加额
 """
 from decimal import Decimal
 
@@ -31,8 +32,6 @@ def policy(**kw):
         profit_value=D("0.1"),
         give_ratio=D("0.8"),
         refund_ratio=D("1"),
-        stamp_rate=D("0.05"),
-        stamp_base="profit",
     )
     base.update(kw)
     return PricingPolicy(**base)
@@ -51,14 +50,14 @@ class TestPriceChain:
         assert bd["non_refundable_input_vat"] == D("0.0000")
         assert bd["give_amount"] == D("0.3911")
         assert bd["retained_refundable"] == D("0.0978")
-        assert bd["stamp_duty"] == D("0.0050")
-        assert bd["quote_excl_vat"] == D("4.6028")
+        assert bd["stamp_duty"] == D("0")
+        assert bd["quote_excl_vat"] == D("4.5978")
         assert bd["output_vat"] == D("0.0000")
-        assert bd["quote_incl_vat"] == D("4.6028")
+        assert bd["quote_incl_vat"] == D("4.5978")
 
     def test_high_zinc_tier(self):
         bd = policy().breakdown(D("5.6"))
-        assert bd["quote_excl_vat"] == D("5.8294")
+        assert bd["quote_excl_vat"] == D("5.8244")
         assert bd["input_vat"] == D("0.6222")
         assert bd["give_amount"] == D("0.4978")
 
@@ -76,7 +75,7 @@ class TestPriceChain:
         assert bd["refundable_input_vat"] == D("0.4400")
         assert bd["non_refundable_input_vat"] == D("0.0489")
         # 回收不到的部分抬高售价
-        assert bd["quote_excl_vat"] == D("4.6419")
+        assert bd["quote_excl_vat"] == D("4.6369")
 
     def test_partial_refund_is_more_expensive_than_full(self):
         """退税率低于进项票税点 → 退不满 → 不可退部分抬高售价。"""
@@ -138,10 +137,10 @@ class TestRefundRatioCappedAtInputVat:
 
     def test_capping_does_not_change_the_baseline_quote(self):
         """封顶不改变基准报价：基准本来就是「全额可回收」。"""
-        assert policy().breakdown(D("4.4"))["quote_excl_vat"] == D("4.6028")
+        assert policy().breakdown(D("4.4"))["quote_excl_vat"] == D("4.5978")
         assert policy(
             refund_ratio="auto", rebate_rate=D("0.13")
-        ).breakdown(D("4.4"))["quote_excl_vat"] == D("4.6028")
+        ).breakdown(D("4.4"))["quote_excl_vat"] == D("4.5978")
 
     def test_rebate_below_invoice_point_still_discounts(self):
         """退税率 9% < 进项票税点 10%，差额成为不可退成本。"""
@@ -176,15 +175,15 @@ class TestOutputVat:
 
     def test_output_vat_is_computed_on_selling_price_not_cost(self):
         bd = policy(output_vat_rate=D("0.13")).breakdown(D("4.4"))
-        assert bd["quote_excl_vat"] == D("4.6028")
-        assert bd["output_vat"] == Q(D("4.6028") * D("0.13"))
+        assert bd["quote_excl_vat"] == D("4.5978")
+        assert bd["output_vat"] == Q(D("4.5978") * D("0.13"))
         # 明确排除两种错误基数
         assert bd["output_vat"] != Q(D("4.4") * D("0.13")), "不能按税前成本算"
         assert bd["output_vat"] != Q(D("4.8889") * D("0.13")), "不能按含税采购价算"
 
     def test_output_vat_added_on_top(self):
         bd = policy(output_vat_rate=D("0.13")).breakdown(D("4.4"))
-        assert bd["quote_incl_vat"] == D("5.2012")
+        assert bd["quote_incl_vat"] == D("5.1955")
         assert bd["quote_incl_vat"] == bd["quote_excl_vat"] + bd["output_vat"]
 
     def test_output_vat_zero_for_export(self):
@@ -196,16 +195,16 @@ class TestOutputVat:
         """进项税「退还」与「抵扣」价值相同 ⇒ 售价不受销项税率影响。"""
         export = policy(output_vat_rate=D("0")).breakdown(D("4.4"))
         domestic = policy(output_vat_rate=D("0.13")).breakdown(D("4.4"))
-        assert export["quote_excl_vat"] == domestic["quote_excl_vat"] == D("4.6028")
+        assert export["quote_excl_vat"] == domestic["quote_excl_vat"] == D("4.5978")
         assert export["give_amount"] == domestic["give_amount"] == D("0.3911")
         assert export["retained_refundable"] == domestic["retained_refundable"] == D("0.0978")
         assert domestic["output_vat"] > export["output_vat"]
 
     def test_inclusive_mode_extracts_instead_of_adding(self):
         bd = policy(output_vat_rate=D("0.13"), output_vat_mode="inclusive").breakdown(D("4.4"))
-        assert bd["quote_incl_vat"] == D("4.6028")
-        assert bd["output_vat"] == D("0.5295")
-        assert bd["quote_excl_vat"] == D("4.0733")
+        assert bd["quote_incl_vat"] == D("4.5978")
+        assert bd["output_vat"] == D("0.5290")
+        assert bd["quote_excl_vat"] == D("4.0688")
         assert bd["quote_excl_vat"] + bd["output_vat"] == bd["quote_incl_vat"]
 
     def test_unknown_vat_mode_rejected(self):
@@ -214,30 +213,76 @@ class TestOutputVat:
 
 
 class TestStampDuty:
-    """印花税：默认按加工利润计征，税率与基数可调。"""
+    """印花税定义已删除（2026-10-19 用户裁决：并入杂税）。
 
-    @pytest.mark.parametrize("profit", ["0.1", "0.2", "0.35", "1.0"])
-    def test_stamp_is_profit_times_rate(self, profit):
-        bd = policy(profit_value=D(profit), stamp_rate=D("0.05")).breakdown(D("4.4"))
-        assert bd["stamp_duty"] == Q(D(profit) * D("0.05"))
+    旧请求里的 stamp_rate/stamp_base 是**无效输入**：引擎忽略、不报错、
+    不影响任何价链数值（consistency_warnings 会提示迁移到 misc_fee_rate）。
+    """
 
-    @pytest.mark.parametrize("rate,expect", [("0.05", "0.0050"), ("0.06", "0.0060")])
-    def test_stamp_rate_is_adjustable(self, rate, expect):
-        """5% 调 6% 只改一个数。"""
-        bd = policy(stamp_rate=D(rate)).breakdown(D("4.4"))
-        assert bd["stamp_duty"] == D(expect)
+    def test_stamp_rate_is_ignored(self):
+        plain = policy().breakdown(D("4.4"))
+        legacy = policy(stamp_rate=D("0.05"), stamp_base="profit").breakdown(D("4.4"))
+        assert legacy["stamp_duty"] == plain["stamp_duty"] == D("0")
+        assert legacy["quote_excl_vat"] == plain["quote_excl_vat"] == D("4.5978")
 
-    def test_stamp_base_variants(self):
-        on_profit = policy(stamp_base="profit").breakdown(D("4.4"))["stamp_duty"]
-        on_cost = policy(stamp_base="cost").breakdown(D("4.4"))["stamp_duty"]
-        on_base = policy(stamp_base="base_quote").breakdown(D("4.4"))["stamp_duty"]
-        assert on_profit == D("0.0050")
-        assert on_cost == Q(D("4.4") * D("0.05"))
-        assert on_base == Q(D("4.9889") * D("0.05"))
+    def test_stamp_base_no_longer_validated(self):
+        """基数曾是可选 profix/cost/base_quote —— 定义删除后任意值都被忽略。"""
+        bd = policy(stamp_rate=D("0.05"), stamp_base="nonsense").breakdown(D("4.4"))
+        assert bd["stamp_duty"] == D("0")
 
-    def test_unknown_stamp_base_rejected(self):
-        with pytest.raises(PricingError, match="印花税基数"):
-            policy(stamp_base="nonsense").breakdown(D("4.4"))
+    def test_legacy_stamp_fields_warn(self):
+        warns = policy(stamp_rate=D("0.05"), stamp_base="profit").consistency_warnings()
+        assert any("已删除" in w and "misc_fee_rate" in w for w in warns)
+        # 干净配置（不带 legacy 字段）无告警
+        assert policy().consistency_warnings() == []
+
+
+class TestMiscFeeSurcharge:
+    """综合税费（杂税，含已并入的印花税）归并后的统一口径。
+
+    归并目标（2026-10-19 用户裁决）：印花税定义删除，政策/档案只有
+    misc_fee_rate 一个综合税费旋钮，口径不在 fixed/ratio 与
+    margin_on_price 两个利润模式间分叉。
+    """
+
+    def test_misc_fee_rate_effective_in_fixed_mode(self):
+        """旧实现里 misc_fee_rate 在 fixed/ratio 下是静默空旋钮 —— 现在必须生效。"""
+        bd = policy(misc_fee_rate=D("0.03")).breakdown(D("4.4"))
+        # 综合税费附加额 = 基础报价 × 综合税费系数
+        assert bd["stamp_duty"] == Q(D("4.9889") * D("0.03"))
+        # 附加额进入不含税售价（价链闭合由 breakdown 自检保证）
+        assert bd["quote_excl_vat"] == Q(D("4.9889") - D("0.3911") + bd["stamp_duty"])
+
+    def test_misc_fee_rate_effective_in_ratio_mode(self):
+        bd = policy(profit_mode="ratio", profit_value=D("0.06"),
+                    misc_fee_rate=D("0.03")).breakdown(D("4.0"))
+        assert bd["stamp_duty"] == Q(bd["base_quote"] * D("0.03"))
+        assert bd["quote_excl_vat"] == Q(bd["base_quote"] - bd["give_amount"] + bd["stamp_duty"])
+
+    def test_misc_fee_rate_additive_to_chain_not_mode_fork(self):
+        """同一个杂税率在 fixed 与 margin 两种模式下都体现为「综合税费进售价」。"""
+        fixed_bd = policy(misc_fee_rate=D("0.03")).breakdown(D("4.4"))
+        margin_bd = policy(profit_mode="margin_on_price", profit_value=D("0.1"),
+                           misc_fee_rate=D("0.03")).breakdown(D("4.4"))
+        # fixed/ratio：附加额显式出现在价链里；margin：含在售价公式分母里（附加额为 0）
+        assert fixed_bd["stamp_duty"] > 0
+        assert margin_bd["stamp_duty"] == 0
+        # 两种模式下含杂税的售价都必须高于无杂税口径
+        fixed_plain = policy().breakdown(D("4.4"))
+        margin_plain = policy(profit_mode="margin_on_price", profit_value=D("0.1")).breakdown(D("4.4"))
+        assert fixed_bd["quote_excl_vat"] > fixed_plain["quote_excl_vat"]
+        assert margin_bd["quote_excl_vat"] > margin_plain["quote_excl_vat"]
+
+    def test_from_dict_misc_fee_rate_flows_into_fixed_mode(self):
+        """税务档案下发的 misc_fee_rate 经 policy_from_dict 在 fixed/ratio 下生效。"""
+        p = policy_from_dict({
+            "input_vat_rate": 0.10,
+            "profit": {"mode": "fixed", "value": 0.1},
+            "refund": {"refund_ratio": 1, "give_ratio": 0.8},
+            "misc_fee_rate": 0.03,
+        })
+        bd = p.breakdown(D("4.4"))
+        assert bd["stamp_duty"] == Q(D("4.9889") * D("0.03"))
 
 
 class TestSettlement:
@@ -245,7 +290,7 @@ class TestSettlement:
 
     def test_vat_payable_nets_output_against_input(self):
         bd = policy(output_vat_rate=D("0.13")).breakdown(D("4.4"))
-        assert bd["vat_payable"] == Q(D("0.5984") - D("0.4889"))
+        assert bd["vat_payable"] == Q(D("0.5977") - D("0.4889"))
         assert bd["vat_carryforward"] == D("0.0000")
 
     def test_carryforward_for_export(self):
@@ -370,7 +415,8 @@ class TestPolicyConfig:
                 "stamp": {"rate": "0.05", "base": "profit"},
             }
         )
-        assert p.breakdown(D("4.4"))["quote_excl_vat"] == D("4.6028")
+        # stamp 字段已删除（并入杂税）：带引号的旧键值能解析但不再影响价链
+        assert p.breakdown(D("4.4"))["quote_excl_vat"] == D("4.5978")
 
     def test_auto_without_rebate_warns_and_assumes_full(self):
         p = policy(refund_ratio="auto", rebate_rate=None)
@@ -383,6 +429,7 @@ class TestPolicyConfig:
         assert warns and "抵扣" in warns[0]
 
     def test_no_warning_for_clean_export(self):
+        # 不带 legacy 字段的干净配置不应有任何告警
         assert policy(output_vat_rate=D("0")).consistency_warnings() == []
 
     @pytest.mark.parametrize("kw,msg", [

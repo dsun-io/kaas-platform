@@ -49,7 +49,8 @@ def policy():
         "output_vat": {"rate": D("0"), "mode": "additive"},
         "profit": {"mode": "fixed", "value": D("0.1")},
         "refund": {"refund_ratio": D("1"), "give_ratio": D("0.8")},
-        "stamp": {"rate": D("0.05"), "base": "profit"},
+        # 印花税已并入杂税（misc_fee_rate，对齐平台默认 0.03）
+        "misc_fee_rate": D("0.03"),
     })
 
 
@@ -381,7 +382,7 @@ def _payload(**kw):
             "input_vat_rate": 0.10, "output_vat_rate": 0.0,
             "profit_mode": "fixed", "profit_value": 0.1,
             "refund_ratio": 1.0, "give_ratio": 0.8,
-            "stamp_rate": 0.05, "stamp_base": "profit",
+            # 印花税已并入杂税：不传 stamp_*（传了也会被忽略），用平台默认 misc 0.03
         },
     }
     body.update(kw)

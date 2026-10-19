@@ -218,7 +218,8 @@ def engine_build(quote_as: str):
             "output_vat": {"rate": D("0"), "mode": "additive"},
             "profit": {"mode": "fixed", "value": D("0.1")},
             "refund": {"refund_ratio": "auto", "give_ratio": D("0.8")},
-            "stamp": {"rate": D("0.05"), "base": "profit"},
+            # 印花税已并入杂税（misc_fee_rate，对齐平台默认 0.03）
+            "misc_fee_rate": D("0.03"),
         }),
         fx_rate=D("6.7019"),
         orders=field_fence.order_specs((30000,)),

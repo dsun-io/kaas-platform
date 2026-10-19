@@ -15,12 +15,13 @@
        让利额                  = 可退进项增值税税额 × 让利比例
        自留可退税额            = 可退进项增值税税额 − 让利额
 
-    ③ 税负
-       印花税                  = 计税基数 × 印花税率      （基数默认「加工利润」）
+    ③ 税负（综合税费：杂税 + 已并入的印花税）
+       综合税费附加额      = 基础报价 × 综合税费系数（旧印花税已并入杂税，单一旋钮）
+       margin_on_price 模式：综合税费系数在售价公式的分母里，不再单独附加
 
     ④ 不含税售价
-       不含税售价              = 含税采购价 + 加工利润 − 让利额 + 印花税
-       等价式                  ≡ 税前成本 + 加工利润 + 不可退进项税额 + 自留可退税额 + 印花税
+       不含税售价              = 含税采购价 + 加工利润 − 让利额 + 综合税费附加额
+       等价式                  ≡ 税前成本 + 加工利润 + 不可退进项税额 + 自留可退税额 + 综合税费附加额
 
     ⑤ 销项增值税（价外税，计税基数是售价）
        销项税额                = 不含税售价 × 销项税率
@@ -86,7 +87,7 @@ DEFAULT_DECIMALS: dict[str, int] = {
     "quote_final": 4,
 }
 
-STAMP_BASES = ("profit", "cost", "base_quote")
+STAMP_BASES = ("profit", "cost", "base_quote")  # 已废弃：仅文档留存，引擎不再校验
 OUTPUT_VAT_MODES = ("additive", "inclusive")
 
 
@@ -160,9 +161,12 @@ class PricingPolicy:
     give_ratio: Any = 0  # 让出可退进项增值税税额的比例
     refund_ratio: Any = 1  # 可退税比例；'auto' = 出口退税率 ÷ 进项票税点
     rebate_rate: Any = None  # 出口退税率（auto 模式使用）
-    # 印花税（仅 fixed/ratio 模式生效；margin_on_price 模式已并入综合税费系数）
-    stamp_rate: Any = 0
-    stamp_base: str = "profit"
+    # ── 已删除的「印花税」定义（2026-10-19 用户裁决：并入杂税）──────────────
+    # 这两个字段仅为**只读兼容**而保留：旧请求/旧快照里可能还带它们，
+    # 引擎一律忽略（不参与计算）。新代码不要再读；
+    # 综合税费请用 misc_fee_rate（税务档案也只有这一个旋钮）。
+    stamp_rate: Any = 0  # 已废弃：传入即忽略
+    stamp_base: str = "profit"  # 已废弃：传入即忽略（不再校验取值）
     extras: tuple = ()
     decimals: dict = field(default_factory=dict)
     sensitivity: Sensitivity | None = None
@@ -291,22 +295,15 @@ class PricingPolicy:
         give = mode.quantize(refundable * _num(self.give_ratio, mode), nd["give_amount"])
         retained = mode.quantize(refundable - give, nd["retained_refundable"])
 
-        # ③ 印花税（默认按加工利润计征）
-        if self.stamp_base == "profit":
-            stamp_base_val = profit
-        elif self.stamp_base == "cost":
-            stamp_base_val = cost
-        elif self.stamp_base == "base_quote":
-            stamp_base_val = base_quote
-        else:
-            raise PricingError(
-                f"未知的印花税基数: {self.stamp_base}（可选 {' | '.join(STAMP_BASES)}）"
-            )
+        # ③ 综合税费（2026-10-19 用户裁决：印花税定义删除，整体并入杂税 ——
+        #   政策/档案只有 misc_fee_rate 一个旋钮，口径不在利润模式间分叉）
         if margin_mode:
-            # 综合税费系数已并入售价加成模型，不再单独计印花税（印花税是其组成部分之一）
+            # 售价加成模型：综合税费系数已并入售价（在分母里），不再单独附加
             stamp = mode.convert(0)
         else:
-            stamp = mode.quantize(stamp_base_val * _num(self.stamp_rate, mode), nd["stamp_duty"])
+            # fixed/ratio：杂税（综合税费系数，含已并入的印花税）按基础报价的比例附加。
+            # 旧实现里 misc_fee_rate 在 fixed/ratio 下是静默空旋钮 —— 现在真正生效。
+            stamp = mode.quantize(base_quote * misc_rate, nd["stamp_duty"])
 
         # ④ 不含税售价（价链输出，与税制无关）
         if margin_mode:
@@ -360,12 +357,12 @@ class PricingPolicy:
                     f"成本 ÷ (1 − 利润率 − 综合税费系数) = {want_price}"
                 )
         else:
-            # 等价式自检：不含税售价 = 成本 + 利润 + 不可退进项税额 + 自留可退税额 + 印花税
+            # 等价式自检：不含税售价 = 成本 + 利润 + 不可退进项税额 + 自留可退税额 + 综合税费附加额
             check = pretax_quote + non_refundable + retained + stamp
             if mode.quantize(check, nd["quote_excl_vat"]) != chain_amount:
                 raise PricingError(
                     "价链不闭合: 不含税售价 = "
-                    f"{chain_amount}, 成本+利润+不可退进项税额+自留可退税额+印花税 = "
+                    f"{chain_amount}, 成本+利润+不可退进项税额+自留可退税额+综合税费附加额 = "
                     f"{mode.quantize(check, nd['quote_excl_vat'])}"
                 )
 
@@ -421,6 +418,13 @@ class PricingPolicy:
                 "而非现金退还。售价公式不受影响（两种方式价值相同），"
                 "但纳税结算应按「应缴增值税 = 销项税额 − 可退进项增值税税额」理解。"
             )
+        legacy_stamp = _num(self.stamp_rate, mode) or mode.convert(0)
+        if legacy_stamp > 0 or self.stamp_base != "profit":
+            out.append(
+                "stamp_rate/stamp_base 是已删除的「印花税」定义（2026-10-19 起印花税并入杂税）："
+                "本次计算已忽略这两个字段，综合税费只按 misc_fee_rate 计。"
+                "请改用 misc_fee_rate（税务档案也只有这一个旋钮）。"
+            )
         return out
 
     def with_(self, **kwargs) -> "PricingPolicy":
@@ -432,6 +436,7 @@ def policy_from_dict(cfg: dict | None) -> PricingPolicy:
     cfg = cfg or {}
     profit = cfg.get("profit") or {}
     refund = cfg.get("refund") or {}
+    # 已删除的「印花税」定义只读兼容：旧请求里可能还带这两个键，读进来但引擎忽略
     stamp = cfg.get("stamp") or cfg.get("stamp_duty") or {}
     sens = cfg.get("sensitivity") or {}
     out_vat = cfg.get("output_vat")
