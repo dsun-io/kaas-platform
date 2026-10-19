@@ -32,6 +32,15 @@
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
 > 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
 >
+> **（2026-10-19 夜场 · P0 回归修复：手动改编号必 500）**
+> 1. 根因：`7b21e1d` 重写共享内核 `kaas_common/workstation/number_rules.py` 时丢了
+>    `_NUMBER_RE` / `MAX_LEN` 两个常量，而 `normalize_number()` 仍在引用 ⇒ 任何「手动改编号」
+>    请求（询盘 orchestrator:customers.py:757 / worker:ws_crm_ext.py:325；报价 quote_orders.py:814 /
+>    quote_api.py:1973；单证 trade_docs.py:632 / main.py:3985）在**两端同时 NameError → 500**。
+> 2. 由 CRM parity 审计实测发现（不是推断）；已补回常量 + 新增 `tests/test_number_rules.py` 8 条回归用例；
+>    `sync-shared.ps1` 已同步到 worker 镜像（37/20/1 一致）。
+> 3. 直接验证：`normalize_number('INQ-1')` / `normalize_number('报价-张工')` 正常返回。
+>
 > **（2026-10-19 夜场 · 认证/账号域行为对等：8 处 worker 差异已修）**
 > 1. 新增 `backend/worker/tests/test_parity_auth.py`（66 条，55 通过 + 差异棘轮）；本轮修复 **8 处**：
 >    · bootstrap-admin：缺 Bearer → **401**（原并档 403）；密码 <8 → **422**；邮箱重复 → **409**（预检，原来撞唯一约束 500）

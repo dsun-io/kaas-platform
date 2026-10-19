@@ -38,6 +38,13 @@ DOC_TYPE_PREFIX = {
 _TOKEN_RE = re.compile(r"[^A-Z0-9]")
 MAX_CUSTOMER_TOKEN = 8
 
+# 编号允许：字母/数字/中文 + 常见分隔符；不允许空白与控制字符。
+# ⚠️ 2026-10-19 回归修复：7b21e1d 重写本文件时丢了这两个常量，但 normalize_number()
+# 仍在用它们 ⇒ 任何「手改编号」请求在 orchestrator / worker 两侧都会 NameError→500。
+# 由 CRM parity 审计实测发现（normalize_number('INQ-1') 直接抛 NameError）。
+_NUMBER_RE = re.compile(r"^[\w\u4e00-\u9fff][\w\u4e00-\u9fff._/#-]*$", re.UNICODE)
+MAX_LEN = 64
+
 
 def customer_token(customer: Any) -> str:
     """从客户档案生成编号里的客户段：显式缩写 > 拉丁词首 > C{id}。"""
