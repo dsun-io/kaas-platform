@@ -17,6 +17,9 @@ export default defineConfig({
     include: ['src/**/*.test.{ts,tsx}'],
     exclude: ['e2e/**', 'node_modules/**'],
     setupFiles: [],
+    // 2026-10-20 升级 Next 16 / Vitest 4 后：xlsx 模板用例整包并发跑时偶发超过默认
+    // 5s（单跑 <0.5s，属环境抖动）。放宽到 15s，避免 CI 假红。
+    testTimeout: 15000,
   },
   resolve: {
     alias: {

@@ -12,15 +12,19 @@ overrides:
   'brace-expansion@2.x': 2.1.7
   'brace-expansion@5.x': 5.0.12
   'browserslist@4.x': 4.28.7
-  'fast-uri@3.x': 3.1.6
+  'fast-uri@3.x': 3.1.7
   'form-data@4.x': 4.0.6
   'glob@10.x': 10.5.0
   'hono@4.x': 4.12.25
+  'ip-address@10.x': 10.3.1
   'js-yaml@4.x': 4.3.2
   'nanoid@3.x': 3.3.19
+  # 2026-10-20 升级后复扫：source-map-js <1.2.2（@vitest/coverage-v8→magicast）
+  'source-map-js@1.x': 1.2.2
   # critical：proxy-addr < 2.0.8 有漏洞。它由 shadcn(CLI) → MCP SDK → express 拖进来。
   # 放在 pnpm-workspace.yaml 而不是 package.json 的 pnpm 字段 ——
   # pnpm v11 **不再读** package.json 里的 pnpm.overrides（会静默忽略），
   # 写在那里等于"看着有、其实不生效"。
   'proxy-addr@2.x': 2.0.8
-  'undici@7.x': 7.29.0
+  # 2026-10-20 升级后复扫：undici <7.29.1（jsdom 测试环境）
+  'undici@7.x': 7.29.1

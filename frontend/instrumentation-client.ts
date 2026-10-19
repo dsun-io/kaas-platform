@@ -16,3 +16,16 @@ if (dsn) {
     });
   });
 }
+
+// Next 16 / Sentry 10 的客户端导航埋点要求导出 `onRouterTransitionStart`。
+// 保持「无 DSN 不加载 SDK」的既有优化：只有配了 DSN 才动态 import 并上报，
+// 因此这里导出的是轻量 wrapper，而不是直接 `Sentry.captureRouterTransitionStart`。
+export function onRouterTransitionStart(
+  href: string,
+  navigationType: "push" | "replace" | "traverse",
+): void {
+  if (!dsn) return;
+  void import("@sentry/nextjs").then((Sentry) => {
+    Sentry.captureRouterTransitionStart(href, navigationType);
+  });
+}

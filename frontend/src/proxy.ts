@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-// Paths that middleware should NOT protect
+// Next 16：middleware 文件约定改名为 proxy（行为不变；仍只做前端登录态重定向）。
+// Paths that proxy should NOT protect
 const PUBLIC_PATHS = [
   "/login",
   "/register",
@@ -17,7 +18,7 @@ const EXCLUDED_PREFIXES = ["/_next", "/api", "/favicon.ico", "/favicon.svg"];
 const STATIC_EXTENSIONS =
   /\.(svg|png|jpg|jpeg|gif|ico|css|js|woff2?|ttf|eot|map)$/i;
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Skip excluded prefixes (Next internals, API routes, favicon)

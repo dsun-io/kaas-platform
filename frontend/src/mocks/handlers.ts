@@ -64,7 +64,7 @@ const defaultFlags: Record<string, Record<string, boolean>> = {
   lianjia: { use_v2: true, sampling_enabled: true },
   "client-b": { use_v2: false, sampling_enabled: true },
 };
-let featureFlagsStore: Record<string, Record<string, boolean>> = JSON.parse(
+const featureFlagsStore: Record<string, Record<string, boolean>> = JSON.parse(
   JSON.stringify(defaultFlags),
 );
 
@@ -175,8 +175,8 @@ type MockAccount = {
   updated_at: string;
 };
 
-let ordersStore: Array<Record<string, unknown> & { id: number }> = [];
-let docsStore: Array<Record<string, unknown> & { id: number }> = [];
+const ordersStore: Array<Record<string, unknown> & { id: number }> = [];
+const docsStore: Array<Record<string, unknown> & { id: number }> = [];
 
 /** 枚举真源 = backend/orchestrator/app/domain/enums.py（值逐字照搬）。 */
 const ENUMS_MOCK: Record<string, string[]> = {
@@ -225,7 +225,7 @@ const ENUMS_MOCK: Record<string, string[]> = {
   ],
 };
 
-let accountsStore: MockAccount[] = [
+const accountsStore: MockAccount[] = [
   {
     id: 1,
     email: "admin@kaas.local",
@@ -305,7 +305,7 @@ type MockQuote = {
   items: MockQuoteItem[];
 };
 
-let quotesStore: MockQuote[] = [
+const quotesStore: MockQuote[] = [
   {
     id: 1,
     quote_no: "QUO-20261017-001",
