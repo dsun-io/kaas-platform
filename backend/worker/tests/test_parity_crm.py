@@ -367,14 +367,15 @@ def test_crm_route_surface_is_exactly_orchestrators():
 def test_all_crm_routes_require_credentials_first():
     """鉴权先于取连接/取 body：无凭据一律 401，不是 404/422/405。
 
-    （错误体形状差异 PARITY-DIFF-16 是**全仓库**既有差异：worker 返回字符串
-    detail，orchestrator 返回 {"error","message"}；本域不重复登记。）
+    （错误体形状：PARITY-DIFF-16 已于 2026-10-19 修复 —— worker 现在与 orchestrator
+    同口径返回 {"error","message"}；本域只断言鉴权前的状态码与 envelope 形状。）
     """
     for path, method in sorted(ORCH_CRM_ROUTES):
         probe = path.replace("{customer_id}", "1").replace("{inquiry_id}", "1")
         resp = client.request(method, probe)
         assert resp.status_code == 401, (method, path, resp.status_code, resp.text)
-        assert resp.json()["detail"] == "Missing bearer token", (method, path)
+        detail = resp.json()["detail"]
+        assert detail["error"] == "unauthorized" and detail["message"], (method, path)
 
 
 # ════════════════════════════════════════════════════════════════════════════

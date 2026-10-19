@@ -40,9 +40,11 @@
 | D13 | GET  admin/accounts      | limit/offset 越界 → 422（admin_accounts.py:56-57 Query ge/le）       | 静默钳位（ws_admin_accounts.py:65-66）                              |
 | D14 | GET/PATCH admin/accounts | 403 体 `{"error","message"}`（auth_utils.py:18-21）                 | 403 体仅 `{"error"}`（ws_admin_accounts.py:31-33）                  |
 | D15 | 多个 POST                | 422 体是**字符串** detail（手写校验）                               | 422 体是 Pydantic **列表** detail（状态码一致）                     |
-| D16 | 受保护端点               | 401 体 `{"error","message"}`（core/auth.py:201-221）                | 401 体是字符串（main.py:137-150）                                   |
+| D16 | 受保护端点               | 401 体 `{"error","message"}`（core/auth.py:201-221）                | **已修（2026-10-19）**：同口径 `{"error","message"}`（main.py:137-160）             |
 
-D1–D4、D6–D7、D9–D13 用 xfail 钉；D5、D8、D14–D16 用普通用例 + 注释点名。
+D1–D4、D6–D7、D9–D13 用 xfail 钉；D5、D8、D14–D15 用普通用例 + 注释点名。
+**D16 已于 2026-10-19 修复**（原「普通用例 + 注释点名」的认可现状已撤销，
+401 体改为 orchestrator 口径；quote 域的 PARITY-QUOTE-1 一并清零）。
 """
 from __future__ import annotations
 
@@ -548,10 +550,11 @@ def test_parity_login_disabled_account_is_403():
 # ════════════════════════════════════════════════════════════════════════════
 
 def test_me_requires_credentials_401():
-    """受保护端点：无凭据 401（不是 404）。错误体是字符串（PARITY-DIFF-16）。"""
+    """已修 2026-10-19（PARITY-DIFF-16）：错误体改为 {error,message}（orchestrator 口径）。"""
     resp = client.get("/api/v1/auth/me")
     assert resp.status_code == 401
-    assert resp.json()["detail"] == "Missing bearer token"
+    detail = resp.json()["detail"]
+    assert detail["error"] == "unauthorized" and detail["message"]
 
 
 def test_me_response_has_parity_fields():
@@ -589,20 +592,24 @@ def test_me_fetches_team_name_from_teams_table():
 
 
 def test_me_rejects_inactive_user():
-    """两端一致（状态码）：token 有效但账号非 active → 401（main.py:148-150 / core/auth.py:197-202）。"""
+    """两端一致：token 有效但账号非 active → 401 + {error,message}（PARITY-DIFF-16 已修）。"""
     token = worker_main._create_token(3)
     conn = _FakeConn(fetchrow=[_login_row(status="disabled")])
     with _patched_main(conn):
         resp = client.get("/api/v1/auth/me", headers=_bearer(token))
     assert resp.status_code == 401
-    assert resp.json()["detail"] == "User not found or inactive"
+    detail = resp.json()["detail"]
+    assert detail["error"] == "unauthorized"
+    assert detail["message"] == "User not found or disabled"   # core/auth.py:201-202 同文案
 
 
 def test_me_rejects_invalid_token():
-    """两端一致（状态码）：坏 token → 401（main.py:128-134 / core/auth.py:218-219）。"""
+    """两端一致：坏 token → 401（main.py:128-134 / core/auth.py:218-219）。"""
     resp = client.get("/api/v1/auth/me", headers=_bearer("not-a-jwt"))
     assert resp.status_code == 401
-    assert resp.json()["detail"] == "Invalid token"
+    detail = resp.json()["detail"]
+    assert detail["error"] == "unauthorized"
+    assert detail["message"] == "Invalid or expired token"
 
 
 def test_me_has_plan_effective_role_tenant_id():
@@ -940,10 +947,11 @@ def test_register_invite_error_precedes_email_conflict():
 # ════════════════════════════════════════════════════════════════════════════
 
 def test_admin_accounts_requires_credentials_401():
-    """鉴权先于取连接（不是 404）。错误体是字符串（PARITY-DIFF-16）。"""
+    """鉴权先于取连接（不是 404）。已修 2026-10-19（PARITY-DIFF-16）：{error,message}。"""
     resp = client.get("/api/v1/admin/accounts")
     assert resp.status_code == 401
-    assert resp.json()["detail"] == "Missing bearer token"
+    detail = resp.json()["detail"]
+    assert detail["error"] == "unauthorized" and detail["message"]
 
 
 def test_admin_accounts_forbidden_for_non_admin_body():

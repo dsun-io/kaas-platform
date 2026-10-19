@@ -196,12 +196,17 @@ def _customer_of(user: dict) -> str:
 
 
 def _is_internal_admin(user: dict) -> bool:
-    """内部核算视图的权限（对齐 dev `export_quote._require_admin`：internal + system_admin）。
+    """内部核算视图的权限（对齐 dev `require_tenant_admin`：deps/rbac.py:24-37）。
 
+    判定 = 租户管理员（`users.is_tenant_admin=TRUE`）**或**平台内部管理员
+    （internal + system_admin/admin）。历史只认 internal+role，导致
+    orchestrator 放行的"租户管理员"在 worker 上恒 403（PARITY-QUOTE-23）。
     account_type 在真实 `_get_current_user` 里一定有（它已经 select 了这一列）；
     只有本地测试台的身份桩没有该字段 —— 那时退回「只看 role」，否则本地无法验证。
     （`role` 为 `admin` 时 dev 的 effective_role 也映射成 system_admin，故一并放行。）
     """
+    if user.get("is_tenant_admin"):
+        return True
     if str(user.get("role") or "") not in ("system_admin", "admin"):
         return False
     account_type = user.get("account_type")
@@ -212,6 +217,18 @@ def _require_internal_admin(user: dict) -> None:
     if not _is_internal_admin(user):
         raise HTTPException(status_code=403, detail={
             "error": "forbidden", "message": "内部核算视图需要租户管理员权限"})
+
+
+async def _require_internal_admin_dep(user: dict = Depends(_get_current_user)) -> dict:
+    """算价的鉴权**依赖**（PARITY-QUOTE-22）。
+
+    为什么必须是依赖而不是 handler 内的第一行：orchestrator 的
+    `Depends(require_tenant_admin)`（export_quote.py:1009/1025）在 body 解析之前执行
+    ⇒ 非管理员发坏 body 得到 403 而不是 422。handler 内校验会让 body 先 422，
+    前端会把"没权限"误报成"参数不对"。
+    """
+    _require_internal_admin(user)
+    return user
 
 
 def _scope_sql(user: dict, params: list, table_alias: str = "") -> str:
@@ -257,7 +274,10 @@ def _identity_match(user: dict, body: Optional[dict], tenant: str, customer: str
 # 真源是 backend/orchestrator/app/domain/enums.py。线上只带本工位用到的三张表
 # （整份复制过去只会多一处需要同步的副本）；值必须逐字一致，否则同一状态在
 # dev 能存、线上 422。
-_QUOTE_STATUS = ("draft", "sent", "accepted", "rejected", "expired")
+# 2026-10-19（PARITY-QUOTE-2）：补 closed —— orchestrator 的 QUOTE_STATUS 含 closed
+# （domain/enums.py:23）。同一询盘生成后续单证时，其余报价会被自动置 closed（见
+# main.py 的 create_trade_doc）；列表/改单若不认这个值，历史报价就查不出来也改不了。
+_QUOTE_STATUS = ("draft", "sent", "accepted", "rejected", "expired", "closed")
 _CURRENCY = ("USD", "CNY", "EUR", "GBP", "JPY", "AUD", "CAD", "HKD")
 _OWNER_SCOPE = ("private", "tenant")
 
@@ -615,8 +635,14 @@ async def _effective_product(request: Request, user: dict, product_key: str):
         try:
             spec, _warnings = resolve_effective_product(
                 picked["spec"], picked["override"])
-        except SpecUpstreamChanged:
-            return None  # 上游已变更：按"产品不可用"处理（dev 侧报 409）
+        except SpecUpstreamChanged as exc:
+            # PARITY-QUOTE-24：上游产品定义已变更（override 的 base_spec_hash 对不上）——
+            # 绝不静默回退注册表（那会用旧定义算出"看着正常"的旧价）。orchestrator
+            # export_quote.py:812-818 报 409 让前端提示「人工复核这条差异后再合并」。
+            raise HTTPException(status_code=409, detail={
+                "error": "spec_upstream_changed", "code": "SPEC_UPSTREAM_CHANGED",
+                "detail": str(exc),
+            })
         if spec is not None:
             return await _with_customer_options(request, user, spec)
     try:
@@ -820,9 +846,8 @@ async def export_quote_calculate(request: Request, body: _CalculateIn,
 
 @app.post("/api/v1/export-quote/calculate-internal")
 async def export_quote_calculate_internal(request: Request, body: _CalculateIn,
-                                         user: dict = Depends(_get_current_user)):
+                                         user: dict = Depends(_require_internal_admin_dep)):
     """内部核算视图（含成本、利润、税额、退税推导）—— 需要租户管理员。"""
-    _require_internal_admin(user)
     product = await _effective_product(request, user, body.product_key)
     return _run_calculation(
         body, user, "internal",
@@ -831,9 +856,8 @@ async def export_quote_calculate_internal(request: Request, body: _CalculateIn,
 
 @app.post("/api/v1/export-quote/verify")
 async def export_quote_verify(request: Request, body: _CalculateIn,
-                              user: dict = Depends(_get_current_user)):
+                              user: dict = Depends(_require_internal_admin_dep)):
     """对一次报价跑三遍核验（管理员）。"""
-    _require_internal_admin(user)
     body.with_verification = True
     product = await _effective_product(request, user, body.product_key)
     req = _assemble_request(
@@ -1095,9 +1119,19 @@ class _QuoteItemIn(BaseModel):
     unit_price: Optional[Decimal] = None
     currency: Optional[str] = None
     line_amount: Optional[Decimal] = None
+    sort_order: int = 0
+    # ── 多产品逐行计算上下文 + 手动干预（PARITY-QUOTE-6，逐字段对齐
+    #    orchestrator quote_orders.py:71-93 QuoteItemIn 17 项）──
+    # 行级报价政策覆盖（利润率/综合税费系数等），空则继承报价单共享政策
+    policy_override: Optional[dict] = None
+    # auto（公式自动）| manual（非标产品手动给价）| overridden（覆盖公式结果）
+    price_source: str = "auto"
     # 手工成本覆盖（元/kg）；有值时保存并写入成本历史（需求 11）
     cost_override: Optional[Decimal] = None
-    sort_order: int = 0
+    price_override: Optional[Decimal] = None
+    weight_override: Optional[Decimal] = None
+    volume_override: Optional[Decimal] = None
+    image_url: Optional[str] = None
     # 内部分解快照（成本/利润）——签发时从算价引擎 internal 视图带来；
     # 仅 internal 账号可读（出口剔除），customer 视角本字段不存在（UNCERTAIN #19）
     cost_breakdown: Optional[dict] = None
@@ -1214,6 +1248,16 @@ def _quote_item_json(row, user: dict | None = None) -> dict:
     """
     from kaas_common.workstation.quote_serializers import row_to_item
     d = _row_to_dict(row, "quote_order_items")
+    # PARITY-QUOTE-6：policy_override / cost_breakdown 同为 JSONB。dbjson 的
+    # quote_order_items 映射当前只登记了 spec_snapshot（该文件不在本任务写范围），
+    # 这里就地解码这两个已知 jsonb 键 —— 否则前端拿到的是字符串、zod 直接报类型错。
+    for _k in ("policy_override", "cost_breakdown"):
+        _v = d.get(_k)
+        if isinstance(_v, str) and _v:
+            try:
+                d[_k] = json.loads(_v)
+            except ValueError:
+                pass
     out = row_to_item(d)
     if user is None or user.get("account_type") != "internal":
         out.pop("cost_breakdown", None)
@@ -1250,7 +1294,16 @@ def _build_items(currency: str, rows: List[_QuoteItemIn]):
             "currency": (_validate_enum("currency", row.currency, _CURRENCY)
                          if row.currency else currency),
             "line_amount": line,
+            # 逐行计算上下文/手动干预（PARITY-QUOTE-6）：orchestrator `_build_items`
+            # 会把这 6 个覆盖字段一并落库，worker 之前整组丢弃 ⇒ 前端"覆盖价"
+            # 在报价单上消失、打印/转单拿到的还是公式原价。
+            "policy_override": row.policy_override,
+            "price_source": row.price_source or "auto",
             "cost_override": row.cost_override,
+            "price_override": row.price_override,
+            "weight_override": row.weight_override,
+            "volume_override": row.volume_override,
+            "image_url": row.image_url,
             "sort_order": row.sort_order,
             "cost_breakdown": row.cost_breakdown,
         })
@@ -1264,13 +1317,21 @@ async def _insert_quote_items(conn, tenant: str, quote_order_id: int, items: lis
         await conn.execute(
             """INSERT INTO quote_order_items
                    (tenant_id, quote_order_id, sku_id, product_name, spec_snapshot,
-                    qty, qty_unit, unit_price, currency, line_amount, cost_override,
+                    qty, qty_unit, unit_price, currency, line_amount,
+                    policy_override, price_source, cost_override, price_override,
+                    weight_override, volume_override, image_url,
                     sort_order, cost_breakdown)
-               VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)""",
+               VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,
+                       $11::jsonb,$12,$13,$14,$15,$16,$17,$18,$19::jsonb)""",
             tenant, quote_order_id, it["sku_id"], it["product_name"],
             json.dumps(it["spec_snapshot"]) if it["spec_snapshot"] is not None else None,
             it["qty"], it["qty_unit"], it["unit_price"], it["currency"],
-            it["line_amount"], it.get("cost_override"),
+            it["line_amount"],
+            json.dumps(it["policy_override"]) if it.get("policy_override") is not None else None,
+            it.get("price_source") or "auto",
+            it.get("cost_override"), it.get("price_override"),
+            it.get("weight_override"), it.get("volume_override"),
+            it.get("image_url"),
             it["sort_order"],
             json.dumps(it["cost_breakdown"]) if it.get("cost_breakdown") is not None else None,
         )
@@ -1614,7 +1675,7 @@ async def _quote_or_404(conn, tenant: str, quote_id: int, user: dict) -> dict:
 async def list_quote_orders(
     request: Request,
     status: Optional[str] = None,
-    customer_id: Optional[str] = None,
+    customer_id: Optional[int] = None,
     inquiry_id: Optional[int] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
@@ -1694,6 +1755,18 @@ async def create_quote_order(request: Request, body: _QuoteOrderCreate,
     tenant = _tenant_of(user)
     currency = _validate_enum("currency", body.currency, _CURRENCY) or "USD"
     owner_scope = _validate_enum("owner_scope", body.owner_scope, _OWNER_SCOPE) or "private"
+
+    # PARITY-QUOTE-5：错误优先级对齐 orchestrator（quote_orders.py:524-531 ——
+    # 客户闸门在 `_build_items` **之前**）。否则「没选客户 + 某行缺成本」会先报
+    # COST_REQUIRED，前端把"漏选客户"提示成"填成本"，用户改错地方。
+    # 只需在这里判存在性：真闸门（存在/未软删/可见/团队）仍在事务内 `_doc_customer`。
+    if body.customer_id is None:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "CUSTOMER_REQUIRED",
+            "field": "customer_id",
+            "detail": ("单据必须归属业务客户：请从已有业务客户里选择"
+                       "（没有 customer_id，客户页的「往来记录」里就查不到这张单）"),
+        })
 
     items, total = _build_items(currency, body.items)
     rate, rate_date = await _lock_fx_rate(request, currency)
@@ -1785,14 +1858,16 @@ async def create_quote_batch(request: Request, body: _BatchQuoteIn,
 @app.get("/api/v1/quotes/reference-price")
 async def quote_reference_price(request: Request, customer_id: int,
                                 product_name: str, spec: Optional[str] = None,
-                                days: int = 180,
+                                # PARITY-QUOTE-3：orchestrator 是 Query(180, ge=1, le=730)
+                                # （quote_orders.py:639）⇒ 越界 422；静默钳位会让
+                                # "取 0 天"这类坏参数看起来像成功。
+                                days: int = Query(180, ge=1, le=730),
                                 user: dict = Depends(_get_current_user)):
     """历史参考价（UNCERTAIN #19 · 实时报价的回落参考）——与 dev 同口径。
 
     聚合同客户+同产品近 N 天已落库报价行项的单价；spec 给 JSON 字符串时按
     spec_snapshot 语义相等精确匹配。可见范围与报价单列表同口径（_scope_sql）。
     """
-    days = max(1, min(int(days or 180), 730))
     params: list = [_tenant_of(user), customer_id, product_name, days]
     spec_clause = ""
     if spec:

@@ -50,7 +50,7 @@ import json as _json
 from kaas_common.workstation.customer_serializers import row_to_customer, row_to_inquiry
 from kaas_common.workstation.customer_rules import validate_manual_stage
 from kaas_common.workstation.inquiry_rules import build_inquiry_no, normalize_abbr
-from kaas_common.domain.enums import validate_enum
+from kaas_common.domain.enums import SCHEDULE_TYPE, validate_enum
 from kaas_common.workstation.number_rules import build_number, NumberError, normalize_number
 from kaas_common.workstation.scope import can_view, can_write, is_admin_role
 from kaas_common.workstation.teams import (
@@ -129,24 +129,31 @@ def _decode_token(token: str, request: Optional[Request] = None) -> dict:
     try:
         return jwt.decode(token, _jwt_secret(request), algorithms=[JWT_ALGORITHM])
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
+        # PARITY-QUOTE-1：错误体与 orchestrator core/auth.py:218-219 同口径
+        # （`{"error","message"}`，不是裸字符串）—— 前端统一按 envelope 取 message。
+        raise HTTPException(status_code=401, detail={
+            "error": "unauthorized", "message": "Invalid or expired token"})
     except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail={
+            "error": "unauthorized", "message": "Invalid or expired token"})
 
 
 async def _get_current_user(request: Request) -> dict:
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing bearer token")
+        raise HTTPException(status_code=401, detail={
+            "error": "unauthorized", "message": "Authentication required"})
     payload = _decode_token(auth[7:], request)
     async with _acquire(request) as conn:
         row = await conn.fetchrow(
-            "SELECT id, email, display_name, account_type, role, status, team_id, console_access, plan"
+            "SELECT id, email, display_name, account_type, role, status, team_id,"
+            " console_access, plan, is_tenant_admin"
             " FROM users WHERE id=$1",
             int(payload["sub"]),
         )
     if not row or row["status"] != "active":
-        raise HTTPException(status_code=401, detail="User not found or inactive")
+        raise HTTPException(status_code=401, detail={
+            "error": "unauthorized", "message": "User not found or disabled"})
     return dict(row)
 
 
@@ -3074,6 +3081,22 @@ def _order_dict(row) -> dict:
     return row_to_order(dict(row))
 
 
+def _order_item_dict(row) -> dict:
+    """订单行项 → 共享序列化的 11 键（PARITY-QUOTE-19）。
+
+    与 orchestrator `orders.py:139-141` 同一份 `row_to_order_item`：
+    金额一律 float、不返回 tenant_id/owner_id 等内部列。
+    """
+    from kaas_common.workstation.order_serializers import row_to_order_item
+    return row_to_order_item(dict(row))
+
+
+def _receivable_dict(row) -> dict:
+    """应收台账 → 共享序列化的 12 键（PARITY-QUOTE-18）。"""
+    from kaas_common.workstation.order_serializers import row_to_receivable
+    return row_to_receivable(dict(row))
+
+
 async def _record_business_event(
     request, event_type: str, payload: dict, from_ws: str = None, to_ws: str = None
 ):
@@ -3126,16 +3149,26 @@ def _check_write_access(user: dict, row):
 @app.get("/api/v1/orders")
 async def list_orders_api(
     request: Request,
-    page: int = 1,
-    page_size: int = 20,
+    # PARITY-QUOTE-3：分页边界必须由 FastAPI 校验（orchestrator orders.py:197-198 是
+    # Query(ge/le)）⇒ page=0 / page_size=999 应当 422，而不是静默钳位成 1/200 后 200。
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
     status: str = "",
+    # PARITY-QUOTE-8：orchestrator 支持 ?customer_id= 过滤（orders.py:207-208）。
+    customer_id: Optional[int] = None,
     q: str = "",
     user: dict = Depends(_get_current_user),
 ):
     where, params = ["tenant_id = $1"], [DEFAULT_TENANT]
     if status:
+        # PARITY-QUOTE-7：非法状态必须先 422 INVALID_ENUM（orders.py:204-205），
+        # 否则它会被当成"没有订单"直接进 SQL，前端看到空列表而不是参数错误。
+        validate_enum("order_status", status)
         params.append(status)
         where.append(f"status = ${len(params)}")
+    if customer_id:
+        params.append(customer_id)
+        where.append(f"customer_id = ${len(params)}")
     if q:
         params.append(f"%{q}%")
         where.append(
@@ -3158,8 +3191,8 @@ async def list_orders_api(
         f"SELECT * FROM orders WHERE {cond} ORDER BY created_at DESC, id DESC LIMIT $%d OFFSET $%d"
         % (len(params) + 1, len(params) + 2),
         *params,
-        max(1, min(page_size, 200)),
-        (max(1, page) - 1) * max(1, min(page_size, 200)),
+        page_size,
+        (page - 1) * page_size,
         table="orders",
     )
     return {
@@ -3269,12 +3302,25 @@ async def create_order_api(
             total = 0.0
             computed_lines = []
             for it in items:
-                line = it.get("line_amount")
-                if line is None and it.get("unit_price") is not None:
-                    qty = float(it.get("qty") if it.get("qty") is not None else 1)
-                    line = round(qty * float(it["unit_price"]), 2)
+                # PARITY-QUOTE-10：行项数值先做类型校验。orchestrator 用 Pydantic
+                # Decimal（orders.py:58）⇒ 非法值 422；worker 原先裸 float() 会抛
+                # ValueError → 500，前端只能看到"服务器内部错误"。
+                try:
+                    line = it.get("line_amount")
+                    line = float(line) if line is not None else None
+                    unit_price = it.get("unit_price")
+                    unit_price = float(unit_price) if unit_price is not None else None
+                    if line is None and unit_price is not None:
+                        qty = float(it.get("qty") if it.get("qty") is not None else 1)
+                        line = round(qty * unit_price, 2)
+                except (TypeError, ValueError):
+                    raise HTTPException(status_code=422, detail={
+                        "error": "validation", "code": "INVALID_ITEM_NUMBER",
+                        "field": "items",
+                        "detail": "订单行项的 qty / unit_price / line_amount 必须是数字",
+                    })
                 if line is not None:
-                    total += float(line)
+                    total += line
                 computed_lines.append(line)
 
             row = await conn.fetchrow(
@@ -3367,9 +3413,37 @@ async def get_order_api(
            ORDER BY sort_order, id""",
         DEFAULT_TENANT, order_id, table="order_items",
     )
+    # PARITY-QUOTE-9：详情补齐三个关联块（orchestrator orders.py:370-377）——
+    # 前端订单详情页/客户页直接渲染它们，缺了就只能再发 3 个请求或显示空白。
+    quote_links = await db.fetch(
+        request,
+        "SELECT dst_id AS quote_order_id, rel_type FROM entity_links"
+        " WHERE tenant_id = $1 AND src_type = 'order' AND src_id = $2"
+        "   AND dst_type = 'quote' AND deleted_at IS NULL ORDER BY id",
+        DEFAULT_TENANT, order_id,
+    )
+    schedules = await db.fetch(
+        request,
+        "SELECT * FROM payment_schedules WHERE tenant_id = $1 AND order_id = $2"
+        " ORDER BY due_date NULLS LAST, id",
+        DEFAULT_TENANT, order_id, table="payment_schedules",
+    )
+    recv_rows = await db.fetch(
+        request,
+        "SELECT * FROM receivables WHERE tenant_id = $1 AND order_id = $2 LIMIT 1",
+        DEFAULT_TENANT, order_id, table="receivables",
+    )
     return {
         **_order_dict(row),
-        "items": [row_to_dict(r, "order_items") for r in items],
+        # PARITY-QUOTE-19：行项走共享序列化 11 键（原先把 DB 全列原样吐出，
+        # 多出 tenant_id/owner_id 等内部列，金额类型也与单头不一致）。
+        "items": [_order_item_dict(r) for r in items],
+        "quote_refs": [
+            {"quote_order_id": r["quote_order_id"], "ref_type": r["rel_type"]}
+            for r in quote_links
+        ],
+        "payment_schedules": [_schedule_dict(s) for s in schedules],
+        "receivable": _receivable_dict(recv_rows[0]) if recv_rows else None,
     }
 
 
@@ -3387,15 +3461,49 @@ async def update_order_api(
     if not _owner_visible(user, row):
         raise HTTPException(status_code=404, detail="ORDER_NOT_FOUND")
     _check_write_access(user, row)
+
+    # PARITY-QUOTE-11/12：可改字段对齐 orchestrator `OrderPatch`（orders.py:87-98）
+    # —— 6 个贸易条款 + 换客户。旧实现只改 customer_name/delivery_date/notes，
+    # 谈定的条款（条款改不了 = 只能作废重开）与历史单据认领都做不到。
+    params: list = [DEFAULT_TENANT, order_id]
+    sets: list[str] = []
+
+    if body.get("customer_id") is not None:
+        # 换客户走与新建订单**同一道**客户闸门（存在/未软删/可见/属本团队）；
+        # 快照与团队一并跟着客户走（管理员替别家团队认领时不能留在自己团队）。
+        async with _acquire(request) as conn:
+            customer = await _doc_customer(
+                conn, body.get("customer_id"), user, required=True)
+        params.append(customer["id"])
+        sets.append(f"customer_id = ${len(params)}")
+        params.append(customer.get("team_id"))
+        sets.append(f"team_id = ${len(params)}")
+        if body.get("customer_name") is None:
+            params.append(customer.get("name"))
+            sets.append(f"customer_name = ${len(params)}")
+
+    if body.get("customer_name") is not None:
+        params.append(body.get("customer_name"))
+        sets.append(f"customer_name = ${len(params)}")
+    if body.get("delivery_date") is not None:
+        params.append(parse_date(body.get("delivery_date")))
+        sets.append(f"delivery_date = ${len(params)}")
+    if body.get("notes") is not None:
+        params.append(body.get("notes"))
+        sets.append(f"notes = ${len(params)}")
+    for field in _ORDER_TERM_FIELDS:
+        value = body.get(field)
+        if value is not None:
+            params.append(value)
+            sets.append(f"{field} = ${len(params)}")
+
+    if not sets:
+        return _order_dict(row)
     updated = await db.fetchrow(
         request,
-        """UPDATE orders SET
-               customer_name = COALESCE($3, customer_name),
-               delivery_date = COALESCE($4, delivery_date),
-               notes = COALESCE($5, notes)
-           WHERE tenant_id = $1 AND id = $2 RETURNING *""",
-        DEFAULT_TENANT, order_id, body.get("customer_name"),
-        parse_date(body.get("delivery_date")), body.get("notes"),
+        "UPDATE orders SET %s WHERE tenant_id = $1 AND id = $2 RETURNING *"
+        % ", ".join(sets),
+        *params,
         table="orders",
     )
     return _order_dict(updated)
@@ -3468,7 +3576,18 @@ async def change_order_status(order_id: int, request: Request, body: dict,
         raise HTTPException(status_code=404, detail={"error": "order_not_found"})
     _check_write_access(user, row)
     o = _order_dict(row)
-    target = (body.get("status") or "").strip()
+    raw_target = body.get("status")
+    if raw_target is None or not str(raw_target).strip():
+        # PARITY-QUOTE-13：orchestrator 的 StatusChange.status 是必填 str
+        # （orders.py:101-102，Pydantic ⇒ 422）。worker 原先把缺失当""直接进状态机，
+        # 报成 409 ILLEGAL_TRANSITION —— 状态码语义完全不同。
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "STATUS_REQUIRED",
+            "field": "status", "detail": "缺少目标状态 status",
+        })
+    # 未知状态值同样先 422 INVALID_ENUM（orchestrator orders.py:423 validate_enum），
+    # 而不是掉进"非法流转"的 409。
+    target = validate_enum("order_status", str(raw_target).strip())
     allowed = ORDER_NEXT.get(o["status"], ())
     if target != o["status"] and target not in allowed:
         raise HTTPException(status_code=409, detail={
@@ -3515,15 +3634,13 @@ async def change_order_status(order_id: int, request: Request, body: dict,
 # ── 阶段 6 任务2：付款计划 + 标记收款（汇兑损益）+ 应收台账 ─────────────
 
 def _schedule_dict(row) -> dict:
-    from decimal import Decimal as _D
-    d = dict(row)
-    for k in ("due_date", "actual_date", "created_at", "updated_at"):
-        v = d.get(k)
-        d[k] = v.isoformat() if v is not None and hasattr(v, "isoformat") else v
-    for k in ("ratio", "amount", "fx_rate", "exchange_gain_loss"):
-        if isinstance(d.get(k), _D):
-            d[k] = float(d[k])
-    return d
+    """付款计划 → 共享序列化的 14 键（PARITY-QUOTE-20）。
+
+    原先自己拼 DB 全列（多出 tenant_id/owner_id/team_id/updated_at）并与
+    orchestrator `orders.py:144-146` 的 `row_to_schedule` 漂移。
+    """
+    from kaas_common.workstation.order_serializers import row_to_schedule
+    return row_to_schedule(dict(row))
 
 
 @app.get("/api/v1/orders/{order_id}/payment-schedules")
@@ -3556,16 +3673,26 @@ async def create_schedule(order_id: int, request: Request, body: dict,
         raise HTTPException(status_code=404, detail={"error": "order_not_found"})
     _check_write_access(user, row)
     o = _order_dict(row)
-    stype = (body.get("schedule_type") or "full").strip()
-    if stype not in ("deposit", "balance", "full"):
+    # PARITY-QUOTE-14：schedule_type 必填（orchestrator ScheduleCreate.schedule_type
+    # 是必填 str，orders.py:106，缺 → Pydantic 422）。worker 原先默认 "full"
+    # 会凭空建出一张"全额"付款计划 —— 金额和客户约定的分期对不上。
+    raw_stype = body.get("schedule_type")
+    if raw_stype is None or not str(raw_stype).strip():
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "SCHEDULE_TYPE_REQUIRED",
+            "field": "schedule_type", "detail": "付款计划必须指定 schedule_type",
+        })
+    stype = str(raw_stype).strip()
+    if stype not in SCHEDULE_TYPE:
         raise HTTPException(status_code=422, detail={"error": "bad_schedule_type"})
+    # PARITY-QUOTE-15：**不**强制 ratio/amount 二选一（orchestrator
+    # orders.py:475-477 二者都可空、也可同给）；amount 显式给时优先，
+    # 否则才按 ratio × 订单合计补算。原先的 xor 规则会把合法的
+    # "只给 ratio" / "只给 amount" 之外的组合（同给、都不给）整成 422。
     ratio = body.get("ratio")
     amount = body.get("amount")
-    if (ratio is None) == (amount is None):
-        raise HTTPException(status_code=422,
-                            detail={"error": "ratio_xor_amount_required"})
-    if ratio is not None:
-        amount = (Decimal(str(o["total_amount"] or 0)) * Decimal(str(ratio))) \
+    if amount is None and ratio is not None and o["total_amount"] is not None:
+        amount = (Decimal(str(o["total_amount"])) * Decimal(str(ratio))) \
             .quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     row2 = await db.fetchrow(
         request,
@@ -3598,6 +3725,16 @@ async def update_schedule(schedule_id: int, request: Request, body: dict,
     if o_row is not None:
         _check_write_access(user, dict(o_row))
     s = _schedule_dict(s)
+    if body.get("status") is not None:
+        # PARITY-QUOTE-17：非法 status 必须 422（orchestrator orders.py:518
+        # validate_enum(schedule_status)）；原先既不报错也不落库，返回 200 + 旧值，
+        # 前端会以为"标记成功"。
+        validate_enum("schedule_status", str(body.get("status")))
+    # PARITY-QUOTE-16：orchestrator 在**状态分支之前**无条件 `s.amount = body.amount`
+    # （orders.py:510-511），所以标记收款时给的金额也要参与汇兑损益计算。
+    new_amount = body.get("amount")
+    if new_amount is not None:
+        s["amount"] = new_amount
     new_status = (body.get("status") or s["status"]).strip()
     if s["status"] == "paid" and new_status != "paid":
         raise HTTPException(status_code=409, detail={
@@ -3630,9 +3767,12 @@ async def update_schedule(schedule_id: int, request: Request, body: dict,
         await db.execute(
             request,
             "UPDATE payment_schedules SET status='paid', actual_date=$3, fx_rate=$4,"
-            " exchange_gain_loss=$5, updated_at=$6 WHERE tenant_id=$1 AND id=$2",
+            " exchange_gain_loss=$5, updated_at=$6, amount=COALESCE($7, amount)"
+            " WHERE tenant_id=$1 AND id=$2",
             DEFAULT_TENANT, schedule_id, actual_date,
-            float(actual_rate) if actual_rate is not None else None, gl, now
+            float(actual_rate) if actual_rate is not None else None, gl, now,
+            # 本次显式改金额时一并落库（与 orchestrator 同序：先改金额再算损益）
+            float(new_amount) if new_amount is not None else None
         )
         await db.execute(
             request,
@@ -3645,11 +3785,16 @@ async def update_schedule(schedule_id: int, request: Request, body: dict,
         )
         # 客户阶段由**订单状态**推导：收款不改客户阶段；确认订单（status=confirmed）时才推导为 won
     else:
+        # PARITY-QUOTE-16：非 paid 分支也要能改金额（orchestrator orders.py:510-511
+        # 无条件 `s.amount = body.amount`）。原先这里只 UPDATE due_date/notes，
+        # 金额被静默丢弃 —— 谈定的分期金额改不了，只能删了重建。
         await db.execute(
             request,
-            "UPDATE payment_schedules SET due_date=COALESCE($3, due_date),"
-            " notes=COALESCE($4, notes), updated_at=$5 WHERE tenant_id=$1 AND id=$2",
-            DEFAULT_TENANT, schedule_id, parse_date(body.get("due_date")),
+            "UPDATE payment_schedules SET amount=COALESCE($3, amount),"
+            " due_date=COALESCE($4, due_date),"
+            " notes=COALESCE($5, notes), updated_at=$6 WHERE tenant_id=$1 AND id=$2",
+            DEFAULT_TENANT, schedule_id, body.get("amount"),
+            parse_date(body.get("due_date")),
             body.get("notes"), now
         )
     s2 = await db.fetchrow(request, "SELECT * FROM payment_schedules WHERE tenant_id=$1 AND id=$2",
@@ -3658,8 +3803,12 @@ async def update_schedule(schedule_id: int, request: Request, body: dict,
 
 
 @app.get("/api/v1/receivables")
-async def list_receivables(request: Request, status: str = None, page: int = 1,
-                           page_size: int = 20, user: dict = Depends(_get_current_user)):
+async def list_receivables(request: Request, status: str = None,
+                           # PARITY-QUOTE-3：分页边界由 FastAPI 校验（orchestrator
+                           # orders.py:565-566 Query(ge=1/ge=1,le=200)）⇒ 越界 422。
+                           page: int = Query(1, ge=1),
+                           page_size: int = Query(20, ge=1, le=200),
+                           user: dict = Depends(_get_current_user)):
     cond = ""
     params = [DEFAULT_TENANT]
     if status:
@@ -3693,8 +3842,13 @@ async def list_receivables(request: Request, status: str = None, page: int = 1,
     )
     items = []
     for r in rows:
-        d = _schedule_dict(r)
-        items.append(d)
+        # PARITY-QUOTE-18：应收列表项走共享 `row_to_receivable` 12 键 +
+        # order_no/customer_name 两个 join 字段（orchestrator orders.py:582-585）。
+        # 原先按付款计划的序列化器输出 DB 全列，内部列（owner_id/team_id…）全透出。
+        rec = dict(r)
+        items.append({**_receivable_dict(rec),
+                      "order_no": rec.get("order_no"),
+                      "customer_name": rec.get("customer_name")})
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
