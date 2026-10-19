@@ -151,7 +151,9 @@
 - [ ] **S6-a** schema 完备性门禁（= S2-d）
 - [x] **S6-b** 依赖断言（= S1-b，已落地）
 - [ ] **S6-c** 包体积 + 冷启动断言（≤2,950 ms；`wrangler versions upload` 口径）
-- [ ] **S6-d** 迁移链 downgrade 审计（70 versions 中 35 个含 drop_table）
+- [x] **S6-d** 迁移链 downgrade 审计 —— 已完成（2026-10-19）：`scripts/audit-migrations.py` 静态分析 70 个版本，
+      精确结论 **drop_table 仅 3 个**（旧估「35 个」口径失真，已更正）；报告见
+      `docs/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md`；3 张被删表默认不可逆，发布前需冷备
 
 ## 4. 批次 6 · 技术栈安全债（收敛完成后串行）
 
