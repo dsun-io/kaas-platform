@@ -32,6 +32,15 @@
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
 > 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
 >
+> **（2026-10-20 · 用户裁决四项 · 下一轮范围确定）**
+> 1. **S5 预览 = 全量做（A）**：每 PR Neon 子分支 + 独立 Hyperdrive + `kaas-preview-storage` +
+>    KV 前缀 + CI 防污染断言。前置：用户提供 Neon API key / Cloudflare API token（或代建资源）。
+> 2. **技术栈 = 下一轮全量升级（A）**：Next 15.5+/16（2 critical RCE）+ ESLint 10 + TS 6，
+>    配 typecheck/lint/test/e2e/build 全量回归；CI Node 22 已完成。
+> 3. **发布 = 先不发布（A）**：等 S5 + 升级完成后再定窗口；部署保持冻结。
+> 4. **`internal` 权限 = 维持平台运营专属（A）**：6 个 `/admin/*` 端点鉴权 + `test_admin_authz.py` 为最终口径。
+> 留痕：`docs/USER_ACTIONS_2026-10-19.md` 顶部裁决表。
+>
 > **（2026-10-19 夜场 · S6-c 门禁 + 降级链实测 + 生产只读冒烟 + 三环境/用户动作成文）**
 > 1. **S6-c 包体积/冷启动门禁落地**：`scripts/check-worker-bundle.py`（pywrangler dry-run 统计
 >    bundle，64 MiB 硬限 / 15 MiB 目标；冷启动读 `coldstart-baseline.json` 校验 ≤2,950ms，缺失

@@ -198,6 +198,9 @@
       contracts 契约源重定向到 `backend/kaas_common` / `backend/contracts_frozen`
 
 **S5 preview + deploy（1–2 人日，按 README §2 目标态矩阵）**
+> 2026-10-20 用户裁决：**全量做（A）** —— 每 PR Neon 子分支 + 独立 Hyperdrive +
+> `kaas-preview-storage` + KV 前缀 + CI 防污染断言；前置为用户提供 Neon/CF 凭据或代建资源。
+> 发布窗口同批裁决：**先不发布**，等 S5 + 技术栈升级后再定。
 - [ ] **S5-a** preview workflow：非 main 分支 push → 预览 URL
 - [ ] **S5-b** 每 PR 独立 Neon 子分支 + 独立 Hyperdrive config（PR 关闭回收）
 - [ ] **S5-c** `kaas-preview-storage` + 预览 KV namespace + `PR_SLUG` 前缀注入
@@ -229,8 +232,8 @@ Next 14.2→15.5+/16（2 critical RCE，修复只发 ≥15.5.24）、CI Node 20�
 
 - [x] **CI Node 22**（2026-10-19）：`frontend-ci.yml` / `deploy.yml` / `contracts-check.yml` 的
       `actions/setup-node` 由 20 → 22（本地已用 Node 24 验证前端 typecheck/test/contracts/build 全绿）
-- [ ] **Next 15.5+/16 + ESLint 10 + TS 6** —— 跨大版本升级，需用户排期（U-E2）；建议单独一轮
-      做「Next 升级 + 全量前端回归 + e2e」，不与其它改动叠加（见收敛风险 R5）
+- [ ] **Next 15.5+/16 + ESLint 10 + TS 6** —— 2026-10-20 用户裁决 **A：下一轮全量升级**，
+      配 typecheck/lint/test/e2e/build 全量回归；独立一轮、不与其它改动叠加（收敛风险 R5）
 理由：同为前端大改，与收敛交叉会无法归因（收敛动打包链，升级动构建链）。
 
 ## 5. 批次 7 · 独立排期项（等待拍板或触发条件）
