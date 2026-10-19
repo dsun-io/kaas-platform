@@ -688,6 +688,10 @@ const R5_BODY_RULES: R5BodyRule[] = [
 const R6_BASELINE_REV = 'HEAD';
 const R6_ARTIFACT = { rev: 'HEAD', path: 'backend/orchestrator/docs/openapi.json' };
 const R6_APP_DIR = 'backend/orchestrator/app';
+/** 路由源码目录：S4 删壳后 `app/db`（迁移模型）仍在，但 `app/api` 已删。
+ *  R6 退役判据必须看 **api 目录**，不能看整个 app/（否则 db 模型会让 guard 失效，
+ *  实测表现为「artifact 有 181 条、源码解析 0 条 ⇒ 180 条未登记偏差」）。 */
+const R6_ROUTE_DIR = 'backend/orchestrator/app/api';
 /** 非装饰器注入的路径（源码里没有对应 `@router/@app` 装饰器）：
  *  `/metrics` 由 app/main.py 的 `setup_metrics(app)`（app/core/metrics.py）注入。 */
 const R6_NON_DECORATOR_PATHS = ['/metrics'];
@@ -1242,9 +1246,9 @@ try {
   // S4（2026-10-19）：orchestrator 业务壳已删除、worker 是唯一后端 ⇒ R6 的「源码基准」
   // （backend/orchestrator/app/**）不存在。artifact 保留给前端契约（R1/R5 仍读它），
   // 这里只跳过「新旧一致性」比对并显式打印退役原因，不删产物、不误报。
-  if (gitLsTreeAt(R6_BASELINE_REV, R6_APP_DIR).length === 0) {
+  if (gitLsTreeAt(R6_BASELINE_REV, R6_ROUTE_DIR).length === 0) {
     console.log(
-      'INFO R6: orchestrator app 已删除（S4 单应用）⇒ openapi.json 新鲜度检查退役；' +
+      'INFO R6: orchestrator app/api 已删除（S4 单应用）⇒ openapi.json 新鲜度检查退役；' +
         'artifact 冻结作为历史契约基准',
     );
   } else {
