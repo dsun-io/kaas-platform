@@ -177,7 +177,8 @@ async def register(
 
     **不再创建 `customers` 行**（2026-10-11 拆分模型）：公司身份由 `teams` 承载，
     `customers` 只放客户工位录入的**业务客户**。`company_name` / `product_category`
-    仍然接收（前端注册页仍在传），但它们只是注册信息，不再落成一条客户行。
+    仍然接收（兼容旧前端），但 company_name 自 2026-10-19 起**可选**——注册页只留
+    团队名称一个输入框（公司名=团队名，重复设计已去除），它只是注册信息，不落库。
 
     可选 `workstations`：新建团队时要在 `team_subscriptions` 里开通哪些工位
     （`source='signup'`）；**不传 = 开通全部**（当前阶段全部免费）。未知工位 → 422。
@@ -199,9 +200,6 @@ async def register(
     # ── 校验 ──
     if not email or not password or not display_name:
         raise HTTPException(status_code=422, detail="validation_error: email, password, display_name are required")
-
-    if not company_name:
-        raise HTTPException(status_code=422, detail="validation_error: company_name is required")
 
     if not product_category or product_category not in _CATEGORIES:
         raise HTTPException(status_code=422, detail="validation_error: product_category is required and must be one of: " + ", ".join(sorted(_CATEGORIES)))

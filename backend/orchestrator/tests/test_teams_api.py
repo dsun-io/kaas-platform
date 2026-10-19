@@ -610,3 +610,17 @@ class TestRegisterTeamActions:
         assert user.team_id is None
         assert (await db_session.execute(
             select(Team).where(Team.created_by == user.id))).first() is None
+
+    async def test_register_without_company_name_ok(self, client, db_session):
+        """2026-10-19：注册页删掉公司名称输入框（与团队名称重复），company_name 改为可选。
+
+        不传照常注册；company_name 本就只进日志不落库。
+        """
+        body = _register_body()
+        body.pop("company_name")
+        resp = await client.post("/api/v1/auth/register", json=body)
+        assert resp.status_code == 200, resp.text
+
+        user = (await db_session.execute(
+            select(User).where(User.email == body["email"]))).scalar_one()
+        assert user.team_id is None   # 没给团队动作 = 真·无团队（没有 company_name 兜底建团）

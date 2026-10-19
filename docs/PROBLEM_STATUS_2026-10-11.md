@@ -14,6 +14,23 @@
 > 本地 Docker 开发环境、DAP/DDP 术语、部署待办）。**先读它。**
 > 上一份：`docs/HANDOVER_2026-10-17.md`（生产拓扑、R2 踩坑、账号）。
 
+> **（2026-10-19 · 生产注册 500 修复 + 注册页去重）**
+>
+> 1. **生产无法注册（用户报告）→ 根因锁定**：生产 `users.is_tenant_admin` 为
+>    NOT NULL **且无库默认值**（`f82ac951b473` 建表即如此），而 worker 注册/初始化管理员的
+>    `INSERT INTO users` 都漏了该列 ⇒ `null value in column` → **500**。orchestrator 不炸是因为
+>    SQLAlchemy 模型带客户端 `default=False` 会在 INSERT 时补上；worker 测试全用假 DB 从未发现。
+>    浏览器侧 500 又被外层 ServerErrorMiddleware 剥掉 CORS 头，控制台只能看到
+>    "CORS 拦截 + ERR_FAILED"，极具迷惑性。**修复**：worker 两处 INSERT 显式补
+>    `is_tenant_admin=false`（`main.py` register + bootstrap-admin）；CORS 中间件加
+>    未捕获异常兜底（带 CORS 头的 500，前端可读错误）；两端补回归测试锁死。
+> 2. **注册页去重（用户要求）**：删掉「公司名称」输入框，只留「团队名称」（两者本就重复；
+>    后端 company_name 只进日志不落库）。**后端 `company_name` 改可选**（orchestrator
+>    `auth.py` + `schemas/auth.py`、worker `RegisterRequest`），openapi 产物已重生成；
+>    mock 同步。顺带修掉 worker 独有的「company_name 兜底建团队」口径漂移
+>    （与 orchestrator 及 docstring 对齐：只有显式 `team_name` 才建团队）。
+> 3. **部署**：push `main` 即自动部署（CI deploy.yml）。生产库**无需迁移**（无表结构变更）。
+
 > **（2026-10-18 · 客户管理 5 项修复 + 阶段模型重构 + 本地 Docker）**
 >
 > 用户报告的 5 项缺陷与结论（全部已在本地验证，**尚未部署**——按用户指示

@@ -9,7 +9,7 @@ class RegisterRequest(BaseModel):
     email: str
     password: str
     display_name: str
-    company_name: str
+    company_name: Optional[str] = None   # 2026-10-19 起可选：注册页只留团队名称，公司名不再单独收集
     product_category: str
     contact: Optional[str] = None
     # NOTE: account_type/role/plan are NOT accepted — server forces customer/owner/free
