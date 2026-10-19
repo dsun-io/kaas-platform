@@ -4336,6 +4336,10 @@ import ws_workstations  # noqa: E402,F401
 # 与 orchestrator `app/api/admin_accounts.py` 同路径同契约（route-parity 强制）。
 import ws_admin_accounts  # noqa: E402,F401
 
+# ── 属性沉淀提案（平台运营审核：列表/推荐/approve·reject·merge）──
+# 前端 admin/spec-proposals 页面在调，过去生产 404（route-parity 缺口清单遗留项）。
+import ws_admin_proposals  # noqa: E402,F401
+
 # ── 业务客户往来记录（报价/订单/单证 包含关系树）──
 import ws_customer_records  # noqa: E402,F401
 

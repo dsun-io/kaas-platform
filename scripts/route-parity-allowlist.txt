@@ -17,9 +17,8 @@ GET /api/v1/admin/deployment_audit  # 平台运维端点（内部部署专用）
 GET /api/v1/admin/metrics/summary  # Prometheus 指标在本地运行时采集，线上不暴露
 POST /api/v1/admin/cache/clear  # 本地运行时缓存运维端点
 GET /api/v1/admin/tenants/{tenant_id}  # 平台运维端点，线上不暴露
-GET /api/v1/admin/spec/attribute-proposals  # 属性沉淀提案：开发期治理功能
-GET /api/v1/admin/spec/attribute-proposals/recommended  # 同上
-PATCH /api/v1/admin/spec/attribute-proposals/{proposal_id}  # 同上
+# 2026-10-19：attribute-proposals ×3 已补进 Worker（前端 admin/spec-proposals 活页面在调），
+# 故从本清单移除；对应实现见 backend/worker/src/ws_admin_proposals.py。
 
 # ── 本地运行时探针 ──────────────────────────────────────────────────────────
 GET /health/deep  # 深探针依赖本地进程/依赖检查，线上只需要 /health

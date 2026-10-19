@@ -35,7 +35,11 @@ _SIBLING_MODULES = (
     "ws_teams",
     "ws_workstations",
     "ws_admin_accounts",
+    "ws_admin_proposals",
     "ws_customer_records",
+    "ws_option_overrides",
+    "ws_files",
+    "tax_archives",
 )
 
 
