@@ -131,7 +131,9 @@
 - [ ] **S3-c** 算价域（报价 / 订单；金额逻辑最重，放中段）
 - [ ] **S3-d** 文档域（单证 / 出运 / 税务）
 - [ ] **S3-e** 集成域（情报 / 市场调研 / AI / 触达）
-- [ ] **S3-f** `attribute-proposals` 3 条路由补进 worker（修既存生产 404）
+- [ ] **S3-f** `attribute-proposals` 3 条路由补进 worker（修既存生产 404）—— ✅ **已完成（2026-10-19）**：
+      `backend/worker/src/ws_admin_proposals.py`（列表/推荐/审核 approve·reject·merge，平台运营鉴权），
+      12 条 worker 单测；route-parity 缺失从 11 → **8**，allowlist 同步删 3 行
 - [ ] **S3-g** 测试重写 350–380 条 + marker 错位 87 条归位（共用 `queries/` 造数，与 S3 同批）
 
 **S4 删壳 + CI（1 人日）**

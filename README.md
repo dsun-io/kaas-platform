@@ -184,7 +184,7 @@
 | # | 问题 | 处置归属 |
 |---|---|---|
 | 1 | **空库快径缺 worker 表**：空库只 `metadata.create_all`，worker 需要的 `fx_rates`、`subscriptions`、`shipments` 等表缺失，新环境必 500 | **已修（S2）**：`env.py` 补齐模型 import（`88132af`）+ 新增 `app/db/legacy_models.py` 补 8 张 worker 独有表（按生产 DDL）；空库快径 101 表，门禁 `check-schema-coverage.py` 绿。生产另有 12 张历史表未被 worker/当前代码引用（遗留）、5 张模型旧命名与生产 `_legacy` 不一致 → **S4 清理** |
-| 2 | **attribute-proposals 3 条路由生产 404**：有前端活页面在调（`admin/spec-proposals/page.tsx:53,64,83`） | **B 实施中顺带解决**：随 S3 补进 worker |
+| 2 | **attribute-proposals 3 条路由生产 404**：有前端活页面在调（`admin/spec-proposals/page.tsx:53,64,83`） | **已修（S3）**：移植到 worker `ws_admin_proposals.py`（列表/推荐/审核，平台运营鉴权，12 条单测）；route-parity 缺失 11→8 |
 | 3 | **DEPLOY.md 漂移**（曾与 P1 分支 PPG 配置比对得出"仍写 Neon"的漂移结论） | **本（文档）更新已修正**：决策 1 回 Neon 后，DEPLOY.md 的 Neon 口径与 main 生产实配重新一致；已补主文档指针 |
 | 4 | **门禁登记理由可能过期**：allowlist:30 的 comtrade"定时器调度"说法与代码不符 | 独立于 B：登记为已知问题，建议定期审计 allowlist |
 | 5 | **两个 APScheduler 定时任务生产从未执行**：15 分钟 replied→询盘自动扫描（生产已手动对等）、每日 events 归档（生产 246 行无人归档） | **B 实施后重建**：用 CF Cron，成本低-中，可排期 |

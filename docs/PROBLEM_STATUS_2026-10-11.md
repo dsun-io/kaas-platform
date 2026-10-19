@@ -32,6 +32,19 @@
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
 > 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
 >
+> **（2026-10-19 夜场 · 方案 B 阶段二 S3 首项：attribute-proposals 补进 worker）**
+> 1. 新增 `backend/worker/src/ws_admin_proposals.py`：与 orchestrator `app/api/admin_proposals.py`
+>    同路径 / 同方法 / 同响应键 —— `GET 列表`（可选 `?status=`）、`GET /recommended`、
+>    `PATCH /{proposal_id}`（approve 晋升公库属性 / reject / merge）；写操作单事务。
+> 2. 鉴权与 orchestrator `require_platform_ops` 对齐：**internal + 管理员角色**，其余 403。
+> 3. 12 条 worker 无库单测（鉴权 / 列表过滤与形状 / 推荐 / approve 插属性+回写 / reject /
+>    merge / invalid_action / not_found / 事务）；并登记到 `tests/_bootstrap._SIBLING_MODULES`
+>    （否则多文件收集时路由注册到旧 app —— 该类问题已在 bootstrap 注释里记录）。
+> 4. `route-parity`：缺失 **11 → 8**（allowlist 删 3 行；过期登记 0，仍 PASS）。
+> 5. 生产库只读核对：`attribute_proposals`（23 列）/ `spec_attributes`（20 列）所需列全部存在，
+>    两表当前 0 行。
+> 6. 门禁：worker **315 passed + 5 skipped**；依赖断言 / schema 完备性 / sync-shared 全 PASS。
+>
 > **（2026-10-19 夜场 · 方案 B 阶段二 S2 完成 —— 迁移归位与 schema 完备性）**
 > 1. **部署链迁移**：`deploy.yml` 新增 `migrate` job（`alembic upgrade head` 成功后才部署 Worker）；
 >    连接串走 secret `PROD_DATABASE_URL`，未配置时该 job 告警跳过（保持手动迁移现状，配好即自动接管）。
