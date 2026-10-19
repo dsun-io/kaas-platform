@@ -95,7 +95,7 @@
           "auth"
         ],
         "summary": "Register",
-        "description": "注册新用户（仅限 customer 账号）。\n\n安全规则（反伪造）:\n- 忽略 body 中的 account_type / role / plan\n- 强制: account_type='customer', role='owner'（凭邀请码入队的成员为 'user'）, plan='free'\n\n团队（三层组织，规则真源 `kaas_common/workstation/teams.py`，可选二选一）:\n- `invite_token`：注册成功后凭码入队（码无效/过期/已用 → 整个注册不落库）\n- `team_name`：注册成功后新建团队，注册者即**团队管理员**（`teams.created_by`）\n- 两个都给 → 422 TEAM_ACTION_CONFLICT；都不给 → 独立账号（无团队），账号照常可用\n\n**不再创建 `customers` 行**（2026-10-11 拆分模型）：公司身份由 `teams` 承载，\n`customers` 只放客户工位录入的**业务客户**。`company_name` / `product_category`\n仍然接收（前端注册页仍在传），但它们只是注册信息，不再落成一条客户行。\n\n可选 `workstations`：新建团队时要在 `team_subscriptions` 里开通哪些工位\n（`source='signup'`）；**不传 = 开通全部**（当前阶段全部免费）。未知工位 → 422。",
+        "description": "注册新用户（仅限 customer 账号）。\n\n安全规则（反伪造）:\n- 忽略 body 中的 account_type / role / plan\n- 强制: account_type='customer', role='owner'（凭邀请码入队的成员为 'user'）, plan='free'\n\n团队（三层组织，规则真源 `kaas_common/workstation/teams.py`，可选二选一）:\n- `invite_token`：注册成功后凭码入队（码无效/过期/已用 → 整个注册不落库）\n- `team_name`：注册成功后新建团队，注册者即**团队管理员**（`teams.created_by`）\n- 两个都给 → 422 TEAM_ACTION_CONFLICT；都不给 → 独立账号（无团队），账号照常可用\n\n**不再创建 `customers` 行**（2026-10-11 拆分模型）：公司身份由 `teams` 承载，\n`customers` 只放客户工位录入的**业务客户**。`company_name` / `product_category`\n仍然接收（兼容旧前端），但 company_name 自 2026-10-19 起**可选**——注册页只留\n团队名称一个输入框（公司名=团队名，重复设计已去除），它只是注册信息，不落库。\n\n可选 `workstations`：新建团队时要在 `team_subscriptions` 里开通哪些工位\n（`source='signup'`）；**不传 = 开通全部**（当前阶段全部免费）。未知工位 → 422。",
         "operationId": "register_api_v1_auth_register_post",
         "responses": {
           "200": {

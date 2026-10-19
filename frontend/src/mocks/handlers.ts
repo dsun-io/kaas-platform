@@ -1,4 +1,4 @@
-﻿import { http, HttpResponse } from "msw";
+import { http, HttpResponse } from "msw";
 import {
   makeEvent,
   makeTenant,
@@ -214,7 +214,15 @@ const ENUMS_MOCK: Record<string, string[]> = {
   doc_status: ["draft", "issued", "void"],
   currency: ["USD", "CNY", "EUR", "GBP", "JPY", "AUD", "CAD", "HKD"],
   owner_scope: ["private", "tenant"],
-  inquiry_channel: ["email", "whatsapp", "alibaba", "expo", "website", "quote", "other"],
+  inquiry_channel: [
+    "email",
+    "whatsapp",
+    "alibaba",
+    "expo",
+    "website",
+    "quote",
+    "other",
+  ],
 };
 
 let accountsStore: MockAccount[] = [
@@ -398,7 +406,8 @@ function seedStageLog(customer: MockCustomer): MockStageLog[] {
       id: nextChildId++,
       from_stage: "active",
       to_stage: customer.manual_stage ?? customer.stage,
-      reason: customer.manual_stage === "inactive" ? "手动切换为沉寂" : "收到询盘",
+      reason:
+        customer.manual_stage === "inactive" ? "手动切换为沉寂" : "收到询盘",
       created_at: new Date(now - 5 * 86400000).toISOString(),
     },
   ];
@@ -536,8 +545,9 @@ export const handlers = [
   //   `_auth_response`（:145-159）= 上面 8 项 + access_token/token_type；
   //   强制 `account_type="customer"`、`plan="free"`（:250-252）；
   //   角色 `"user"`(凭邀请码) / `"owner"`（:245）。
-  // 校验口径照后端：email/password/display_name/company_name/product_category 必填
-  // （:200-207）、密码 ≥8（:209-210）、邮箱重复 409（:238-240）。
+  // 校验口径照后端：email/password/display_name/product_category 必填
+  // （:200-207；company_name 自 2026-10-19 起可选——注册页只留团队名称）、
+  // 密码 ≥8（:209-210）、邮箱重复 409（:238-240）。
   // 刻意**不**复刻的两项（都只有后端持有真源、且消费方前端已自校验）：
   //   · `product_category` 的 10 值白名单（auth.py:65-76）——前端 CATEGORIES
   //     （register/page.tsx:39-50）与之逐字一致且只能从中选；
@@ -549,21 +559,14 @@ export const handlers = [
       .toLowerCase();
     const password = String(body.password ?? "");
     const displayName = String(body.display_name ?? "").trim();
-    const companyName = String(body.company_name ?? "").trim();
     const productCategory = String(body.product_category ?? "").trim();
-    if (
-      !email ||
-      !password ||
-      !displayName ||
-      !companyName ||
-      !productCategory
-    ) {
+    if (!email || !password || !displayName || !productCategory) {
       return HttpResponse.json(
         {
           error_code: "VALIDATION_ERROR",
-          message: "邮箱、密码、姓名、公司名称、主营类型均为必填",
+          message: "邮箱、密码、姓名、主营类型均为必填",
           detail:
-            "validation_error: email, password, display_name, company_name, product_category are required",
+            "validation_error: email, password, display_name, product_category are required",
         },
         { status: 422 },
       );

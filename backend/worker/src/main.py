@@ -222,7 +222,19 @@ async def cors_middleware(request: Request, call_next):
                 "Access-Control-Max-Age": "86400",
             },
         )
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception:
+        # 未捕获异常由外层的 ServerErrorMiddleware 接走时会绕过本中间件，
+        # 浏览器只能看到"无 CORS 头"，把真实 500 伪装成跨域问题（2026-10-19 生产实证）。
+        # 这里自己兜一层：带上 CORS 头的 500，前端至少能读到错误。
+        import traceback
+        traceback.print_exc()
+        from fastapi.responses import JSONResponse
+        response = JSONResponse(
+            status_code=500,
+            content={"detail": "internal_error: unexpected server error"},
+        )
     response.headers["Access-Control-Allow-Origin"] = allowed
     response.headers["Vary"] = "Origin"
     return response
@@ -278,8 +290,8 @@ async def bootstrap_admin(request: Request, body: BootstrapRequest):
             raise HTTPException(status_code=403, detail="System already initialized")
         row = await conn.fetchrow(
             """INSERT INTO users (email, password_hash, display_name,
-               account_type, role, plan, status, created_at, updated_at)
-               VALUES ($1,$2,$3,'internal','system_admin','internal','active',NOW(),NOW())
+               account_type, role, plan, status, is_tenant_admin, created_at, updated_at)
+               VALUES ($1,$2,$3,'internal','system_admin','internal','active',false,NOW(),NOW())
                RETURNING id, email, display_name, account_type, role""",
             body.email.lower(), _hash_password(body.password), body.display_name,
         )
@@ -526,7 +538,7 @@ class RegisterRequest(BaseModel):
     email: str
     password: str
     display_name: str
-    company_name: str
+    company_name: Optional[str] = None   # 可选（2026-10-19 去重）：与 team_name 重复，只进日志不落库
     product_category: str
     contact: Optional[str] = None
     invite_token: Optional[str] = None   # 加入现有团队（凭邀请码）
@@ -564,8 +576,6 @@ async def register(request: Request, body: RegisterRequest):
     if not email or not password or not display_name:
         raise HTTPException(status_code=422, detail=(
             "validation_error: email, password, display_name are required"))
-    if not company_name:
-        raise HTTPException(status_code=422, detail="validation_error: company_name is required")
     if not product_category or product_category not in _CATEGORIES:
         raise HTTPException(status_code=422, detail=(
             "validation_error: product_category is required and must be one of: "
@@ -624,7 +634,7 @@ async def register(request: Request, body: RegisterRequest):
             role = "user" if invite is not None else "owner"
             user_row = await conn.fetchrow(
                 "INSERT INTO users (email, password_hash, display_name, account_type, role,"
-                " plan, status) VALUES ($1,$2,$3,'customer',$4,'free','active')"
+                " plan, status, is_tenant_admin) VALUES ($1,$2,$3,'customer',$4,'free','active',false)"
                 " RETURNING id, email, display_name, account_type, role, status",
                 email, _hash_password(password), display_name, role,
             )
@@ -656,14 +666,15 @@ async def register(request: Request, body: RegisterRequest):
                 trow = await conn.fetchrow("SELECT name FROM teams WHERE id=$1", team_id)
                 team_name_out = trow["name"] if trow else None
             else:
-                # 团队名：显式传的 team_name 优先，否则用注册时填的公司名 ——
-                # 「团队由第一个成员创建」，注册者即团队管理员。
-                new_name = new_team_name or company_name
-                if new_name:
+                # 与 orchestrator 同口径：只有显式传 team_name 才建团队。
+                # 2026-10-19 去掉 company_name 兜底 —— 注册页公司名称输入框已删除，
+                # company_name 即将不再上传；留着兜底会让"稍后再说"的旧客户端
+                # 凭空多建一个团队（且与 docstring"都不给=无团队"自相矛盾）。
+                if new_team_name:
                     team = await conn.fetchrow(
                         "INSERT INTO teams (tenant_id, name, created_by) VALUES ($1,$2,$3)"
                         " RETURNING id, name",
-                        DEFAULT_TENANT, new_name, uid)
+                        DEFAULT_TENANT, new_team_name, uid)
                     team_id, team_name_out = team["id"], team["name"]
                     await conn.execute(
                         "UPDATE users SET team_id=$2 WHERE id=$1", uid, team_id)

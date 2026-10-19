@@ -6,6 +6,7 @@
 做法同 `test_four_domains.py`：把 `_acquire` 换成假连接、`_get_current_user`
 换成依赖覆盖，不碰 Hyperdrive 也能把 handler 跑到返回。
 """
+import os
 import sys
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta, timezone
@@ -338,6 +339,70 @@ def test_register_validates_payload_without_touching_db():
     assert resp.status_code == 422
     resp = client.post("/api/v1/auth/register", json=_register_body(email="not-an-email"))
     assert resp.status_code == 422
+
+
+def _user_row(**over):
+    row = {"id": 42, "email": "tim@buyer.com", "display_name": "Tim",
+           "account_type": "customer", "role": "owner", "status": "active"}
+    row.update(over)
+    return row
+
+
+@contextmanager
+def _jwt_env():
+    """register 成功路径会签 token：测试进程内给 JWT_SECRET 兜底（os.environ 优先级）。"""
+    old = os.environ.get("JWT_SECRET")
+    os.environ["JWT_SECRET"] = "test-jwt-secret"
+    try:
+        yield
+    finally:
+        if old is None:
+            os.environ.pop("JWT_SECRET", None)
+        else:
+            os.environ["JWT_SECRET"] = old
+
+
+@contextmanager
+def _patched_main_acquire(conn):
+    """register 定义在 main 模块，用的是 main 自己的 `_acquire`（与 ws_teams 那份不同名）。"""
+    @asynccontextmanager
+    async def fake_acquire(request):
+        yield conn
+
+    old = worker_main._acquire
+    worker_main._acquire = fake_acquire
+    try:
+        yield conn
+    finally:
+        worker_main._acquire = old
+
+
+def test_register_success_sql_includes_is_tenant_admin():
+    """回归（2026-10-19 生产 500）：生产 users.is_tenant_admin 是 NOT NULL **且无库默认值**，
+    INSERT 缺列 → `null value in column "is_tenant_admin"` → 500（浏览器侧被 CORS 掩盖）。
+    锁死：注册/初始化的 users INSERT 必须显式给该列。"""
+    conn = _FakeConn(fetchval=[None, None],
+                     fetchrow=[_user_row(), {"id": 7, "name": "Tim 团队"}])
+    with _patched_main_acquire(conn), _jwt_env():
+        resp = client.post("/api/v1/auth/register",
+                           json=_register_body(team_name="Tim 团队"))
+    assert resp.status_code == 200, resp.text
+    insert_users = [s for s, _ in conn.calls if s.lstrip().startswith("INSERT INTO users")]
+    assert insert_users, "注册没有执行 users INSERT？"
+    assert all("is_tenant_admin" in s for s in insert_users)
+
+
+def test_register_without_company_name_and_team_is_fine():
+    """company_name 自 2026-10-19 起可选（注册页删了公司名输入框）；
+    不传任何团队动作 = 真·无团队 —— 回归旧代码用 company_name 兜底建团队的口径漂移。"""
+    body = _register_body()
+    body.pop("company_name")
+    conn = _FakeConn(fetchval=[None], fetchrow=[_user_row()])
+    with _patched_main_acquire(conn), _jwt_env():
+        resp = client.post("/api/v1/auth/register", json=body)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["team_id"] is None
+    assert "INSERT INTO teams" not in conn.sql()
 
 # ── 建团队时勾选工位（当前阶段全部免费）────────────────────────────────────
 

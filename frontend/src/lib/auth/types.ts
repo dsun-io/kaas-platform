@@ -9,7 +9,8 @@ export interface RegisterRequest {
   email: string;
   password: string;
   display_name: string;
-  company_name: string;
+  /** 2026-10-19 起可选：注册页只留团队名称（公司名=团队名），后端不再强制 */
+  company_name?: string;
   product_category: string;
   contact?: string;
   /**

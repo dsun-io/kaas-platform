@@ -61,7 +61,6 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [companyName, setCompanyName] = useState("");
   const [productCategory, setProductCategory] = useState("");
   const [contact, setContact] = useState("");
   const [error, setError] = useState("");
@@ -87,12 +86,7 @@ export default function RegisterPage() {
     e.preventDefault();
     setError("");
 
-    if (
-      !email.trim() ||
-      !password ||
-      !displayName.trim() ||
-      !companyName.trim()
-    ) {
+    if (!email.trim() || !password || !displayName.trim()) {
       setError("请填写所有必填字段");
       return;
     }
@@ -132,7 +126,6 @@ export default function RegisterPage() {
       email: email.trim(),
       password,
       display_name: displayName.trim(),
-      company_name: companyName.trim(),
       product_category: productCategory,
       contact: contact.trim() || undefined,
     };
@@ -209,16 +202,6 @@ export default function RegisterPage() {
                 placeholder="您的称呼"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                disabled={submitting}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="companyName">公司名称 *</Label>
-              <Input
-                id="companyName"
-                placeholder="公司或工厂名称"
-                value={companyName}
-                onChange={(e) => setCompanyName(e.target.value)}
                 disabled={submitting}
               />
             </div>
