@@ -95,7 +95,10 @@
 
 **顺带项（不单独立项）**：
 - `attribute-proposals` 3 条路由随阶段二合并补进 worker（修既存生产 404，前端有活页面）。
-- 2 个 APScheduler 定时任务（15 分钟 replied→询盘扫描、每日 events 归档）用 CF Cron 重建（低-中成本）。
+- ✅ **CF Cron 重建 2 个定时任务已完成（2026-10-19）**：`backend/worker/src/ws_cron.py`
+  （15 分钟 replied→询盘扫描 + 每日 events 归档，纯 asyncpg，scheduled 钩子按 `controller.cron` 分派），
+  `wrangler.jsonc` 加 `triggers.crons`（UTC：`*/15 * * * *` / `30 16 * * *` = 上海 00:30），
+  30 条单测；`INQUIRY_SYNC_MAP` 在 worker 侧有 2 份（ws_cron + ws_crm_ext），后续挪进 `kaas_common`。
 - 订阅门禁两套口径（`chain.py _require_sub` 仍查 `tenant_subscriptions`）、Excel xlsx 上传闭环
   （`_reject_spreadsheet`，POC 证实 in-Worker 跑纯 Python 包无硬阻塞）——在阶段二逐路由合并时一并核对。
 

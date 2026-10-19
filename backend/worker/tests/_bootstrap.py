@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-# main 直接或间接 import 的全部同级路由模块（新增模块请登记到这里）
+# main 直接或间接 import 的全部同级模块（路由 + cron 等；新增模块请登记到这里）
 _SIBLING_MODULES = (
     "main",
     "chain",
@@ -40,6 +40,8 @@ _SIBLING_MODULES = (
     "ws_option_overrides",
     "ws_files",
     "tax_archives",
+    # Cloudflare Cron 任务（main 末尾 import；scheduled 钩子调它）
+    "ws_cron",
 )
 
 

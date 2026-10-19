@@ -32,6 +32,19 @@
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
 > 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
 >
+> **（2026-10-19 夜场 · CF Cron 重建 2 个定时任务完成）**
+> 1. 新增 `backend/worker/src/ws_cron.py`：纯 asyncpg 重建 orchestrator 两个 APScheduler 任务
+>    （① 每 15 分钟 replied→询盘扫描；② 每日 events 归档 → R2 `events-archive/YYYY/MM/DD/v{N}.jsonl.gz`，
+>    写 `events_archive_log`）；scheduled 无 request 上下文，按 `env.HYPERDRIVE` 同参直连；
+>    异常 catch 不抛穿（归档重试 3 次）。
+> 2. `main.py` 只加 `Default.scheduled(self, controller, env, ctx)` 钩子 + 末尾 import；`wrangler.jsonc`
+>    只加 `triggers.crons`（UTC：`*/15 * * * *`、`30 16 * * *` = 上海 00:30），与代码常量双向锁死。
+> 3. 可见性口径决策：转化出的询盘 `owner_scope='private'` + team（与 worker 手动入口
+>    `chain.lead_scan_replied` 一致），**不**照抄 orchestrator job 的 `'tenant'`
+>    （后者会让同租户其它公司看到别家线索询盘）；已在该文件注释留痕。
+> 4. 30 条单测；全量 worker **400 passed + 5 skipped + 11 xfailed**（11 xfail 来自 auth parity 测试，
+>    见下条）；schema/依赖门禁 PASS。**crons 要下次部署后才生效**（当前部署冻结）。
+>
 > **（2026-10-19 夜场 · 独立项：迁移链 downgrade 审计 + allowlist 审计完成）**
 > 1. 新增 `scripts/audit-migrations.py`（AST 静态分析）：70 个迁移版本 / head `202610180010`；
 >    `upgrade()` 内含破坏性操作的 10 个，其中 `drop_table` **仅 3 个**
