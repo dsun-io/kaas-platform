@@ -779,25 +779,17 @@ def test_delete_customer_without_open_orders_soft_deletes():
     assert "DELETE FROM customers" not in conn.sql()
 
 
-def test_delete_customer_teammate_can_delete_worker_hole():
-    """worker 现状：**同团队非属主也能删客户**（PIN，证明缺口存在）。
-
-    orchestrator 在删除前调 `_check_write_access`（customers.py:465）→ 403；
-    worker 的 soft_delete_customer 只有「可见性」判定（main.py:1338-1365），
-    没有写权限判定 ⇒ 同团队任何成员都能删掉同事的客户（不可逆的软删除）。
-    """
+def test_delete_customer_teammate_is_forbidden():
+    """已修 2026-10-19：同团队非属主删除客户 → 403 NOT_OWNER（PARITY-CRM-8）。"""
     conn = _StubConn(fetchrow=[_customer_row(owner_id="99", team_id=1)], fetch=[[]])
     with _patched(conn=conn, user=TEAMMATE):
         resp = client.delete("/api/v1/customers/3")
 
-    assert resp.status_code == 204
-    assert "UPDATE customers SET is_deleted=true" in conn.sql()
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["code"] == "NOT_OWNER"
+    assert "UPDATE customers SET is_deleted=true" not in conn.sql()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-8: orchestrator 删除前校验写权限 → 非属主 403（customers.py:465），worker 无此校验直接软删（main.py:1338-1365）",
-)
 def test_parity_crm_8_delete_customer_non_owner_is_403():
     conn = _StubConn(fetchrow=[_customer_row(owner_id="99", team_id=1)], fetch=[[]])
     with _patched(conn=conn, user=TEAMMATE):
@@ -855,12 +847,8 @@ def test_stage_change_returns_manual_and_display_and_logs_reason():
     assert "UPDATE cust_inquiries" not in conn.executed_sql()
 
 
-def test_stage_change_visible_via_team_but_not_owner_is_allowed_worker_hole():
-    """worker 现状：**同团队非属主也能改阶段**（PIN，证明缺口存在）。
-
-    orchestrator 在改阶段前调 `_check_write_access`（customers.py:510）→ 403；
-    worker 的 update_stage 只有可见性判定（main.py:1390-1418）。
-    """
+def test_stage_change_non_owner_is_forbidden():
+    """已修 2026-10-19：同团队非属主改阶段 → 403 NOT_OWNER（PARITY-CRM-9）。"""
     conn = _StubConn(
         fetchrow=[
             _customer_row(owner_id="99", team_id=1, stage="active", stage_display="active"),
@@ -869,13 +857,10 @@ def test_stage_change_visible_via_team_but_not_owner_is_allowed_worker_hole():
     )
     with _patched(conn=conn, user=TEAMMATE):
         resp = client.patch("/api/v1/customers/3/stage", json={"stage": "inactive"})
-    assert resp.status_code == 200
+    assert resp.status_code == 403
+    assert "UPDATE customers SET stage" not in conn.executed_sql()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-9: orchestrator 改阶段前校验写权限 → 非属主 403（customers.py:510），worker 无此校验（main.py:1390-1418）",
-)
 def test_parity_crm_9_stage_change_non_owner_is_403():
     conn = _StubConn(
         fetchrow=[
@@ -895,10 +880,10 @@ def test_parity_crm_9_stage_change_non_owner_is_403():
 def test_add_contact_returns_raw_row_worker_shape():
     """worker 现状：POST 201 直接返回整行（main.py:1288）；orchestrator 是 7 键投影。
 
-    两端都不做写权限校验（customers.py:529-558 只判可见性）⇒ 同团队可加联系人，这是对齐的。
+    已修 2026-10-19：写权限与客户一致（非属主 403）；本测试用属主 MEMBER 验证响应形状。
     """
     conn = _StubConn(fetchrow=[_customer_row(), _contact_row(name="Mary")])
-    with _patched(conn=conn, user=TEAMMATE):
+    with _patched(conn=conn, user=MEMBER):
         resp = client.post("/api/v1/customers/3/contacts", json={"customer_id": 3, "name": "Mary"})
 
     assert resp.status_code == 201, resp.text
@@ -907,33 +892,25 @@ def test_add_contact_returns_raw_row_worker_shape():
     assert "INSERT INTO cust_contacts" in conn.sql()
 
 
-def test_update_contact_404_body_is_string_in_worker():
-    """worker 现状：联系人不存在 → 404 `detail="Contact not found"`（main.py:1309-1310）；
-    orchestrator 是 `{"error":"not_found","code":"CONTACT_NOT_FOUND"}`（customers.py:589）。
-    """
+def test_update_contact_404_body_is_contact_not_found():
+    """已修 2026-10-19：404 body 与 orchestrator 对齐（PARITY-CRM-13）。"""
     conn = _StubConn(fetchrow=[_customer_row(), None])
     with _patched(conn=conn, user=MEMBER):
         resp = client.patch("/api/v1/customers/3/contacts/5", json={"name": "X"})
     assert resp.status_code == 404
-    assert resp.json()["detail"] == "Contact not found"
+    assert resp.json()["detail"] == {"error": "not_found", "code": "CONTACT_NOT_FOUND"}
 
 
-def test_delete_contact_is_204_even_when_missing_worker_shape():
-    """worker 现状：DELETE 恒 204（main.py:1327-1335，不检查受影响行数）。
-
-    orchestrator 先查联系人、不存在 → 404 CONTACT_NOT_FOUND（customers.py:627-628）。
-    """
+def test_delete_missing_contact_is_404():
+    """已修 2026-10-19：联系人不存在 → 404 CONTACT_NOT_FOUND（PARITY-CRM-15）。"""
     conn = _StubConn(fetchrow=[_customer_row()])
     with _patched(conn=conn, user=MEMBER):
         resp = client.delete("/api/v1/customers/3/contacts/5")
-    assert resp.status_code == 204
-    assert "DELETE FROM cust_contacts" in conn.sql()
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["code"] == "CONTACT_NOT_FOUND"
+    assert "DELETE FROM cust_contacts" not in conn.sql()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-10: orchestrator 建联系人请求体没有 customer_id（customers.py:238-245），worker 必填（main.py:937-945）⇒ 按 openapi 调会 422",
-)
 def test_parity_crm_10_add_contact_without_customer_id():
     conn = _StubConn(fetchrow=[_customer_row(), _contact_row()])
     with _patched(conn=conn, user=MEMBER):
@@ -954,10 +931,6 @@ def test_parity_crm_11_add_contact_projected_response():
     assert set(resp.json()) == _ORCH_CONTACT_KEYS
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-12: orchestrator is_primary=true 时清掉其它主联系人（customers.py:544-554），worker 不清（main.py:1277-1288）",
-)
 def test_parity_crm_12_add_primary_contact_unsets_others():
     conn = _StubConn(fetchrow=[_customer_row(), _contact_row(is_primary=True)])
     with _patched(conn=conn, user=MEMBER):
@@ -968,10 +941,6 @@ def test_parity_crm_12_add_primary_contact_unsets_others():
     assert "UPDATE cust_contacts SET is_primary=false" in conn.sql()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-13: orchestrator 404 body 是 {error,code:CONTACT_NOT_FOUND}（customers.py:589），worker 是字符串（main.py:1310）",
-)
 def test_parity_crm_13_update_missing_contact_404_body():
     conn = _StubConn(fetchrow=[_customer_row(), None])
     with _patched(conn=conn, user=MEMBER):
@@ -996,10 +965,6 @@ def test_parity_crm_14_update_contact_explicit_null_clears_phone():
     assert resp.json()["phone"] is None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-15: orchestrator 联系人不存在 → 404 CONTACT_NOT_FOUND（customers.py:627-628），worker 恒 204（main.py:1327-1335）",
-)
 def test_parity_crm_15_delete_missing_contact_is_404():
     conn = _StubConn(fetchrow=[_customer_row()])
     with _patched(conn=conn, user=MEMBER):
@@ -1011,13 +976,10 @@ def test_parity_crm_15_delete_missing_contact_is_404():
 # 8. 询盘（POST / GET per-customer / GET all / PATCH）
 # ════════════════════════════════════════════════════════════════════════════
 
-def test_add_inquiry_worker_shape_and_forged_status():
-    """worker 现状：201 直接返回整行（main.py:1387），且 body.status 任意值直接落库。
-
-    （orchestrator 恒写 unquoted（customers.py:693）且忽略 body.status —— 见 PARITY-CRM-20。）
-    """
+def test_add_inquiry_ignores_forged_status():
+    """已修 2026-10-19：body.status 被忽略，恒写 unquoted（PARITY-CRM-20）。"""
     conn = _StubConn(
-        fetchrow=[_customer_row(), _inquiry_row(status="lost")],
+        fetchrow=[_customer_row(), _inquiry_row(status="unquoted")],
         fetchval=[None],                      # 询盘编号同秒冲突探测：无冲突
     )
     with _patched(conn=conn, user=MEMBER):
@@ -1029,27 +991,23 @@ def test_add_inquiry_worker_shape_and_forged_status():
     assert resp.status_code == 201, resp.text
     body = resp.json()
     assert set(body) == _INQUIRY_COLUMNS
-    assert body["status"] == "lost"           # 客户端传入的非法状态直接被接受
+    assert body["status"] == "unquoted"       # 伪造的 lost 被忽略
     assert body["owner_scope"] == "private"
 
     insert_sql, args = next(
         (s, a) for s, a in conn.calls if "INSERT INTO cust_inquiries" in s
     )
+    assert "'unquoted'" in insert_sql
     assert args[0] == "default" and args[1] == 3
-    assert args[9] == "lost"                  # status 位置
+    assert args[3] == "email"                 # channel
 
 
-def test_add_inquiry_requires_customer_id_in_body_worker_contract():
-    """worker 现状（PIN）：请求体缺 customer_id → 422（Pydantic 必填）。
-
-    orchestrator 的 InquiryCreate 没有 customer_id（customers.py:248-257），按 openapi
-    调会 201 —— 下面 xfail 登记（PARITY-CRM-16）。
-    """
-    with _patched(conn=_StubConn(), user=MEMBER):
+def test_add_inquiry_body_does_not_require_customer_id():
+    """已修 2026-10-19：body 不再要求 customer_id（orchestrator 契约，PARITY-CRM-16）。"""
+    conn = _StubConn(fetchrow=[_customer_row(), _inquiry_row()], fetchval=[None])
+    with _patched(conn=conn, user=MEMBER):
         resp = client.post("/api/v1/customers/3/inquiries", json={"channel": "email"})
-    assert resp.status_code == 422
-    detail = resp.json()["detail"]
-    assert detail[0]["loc"] == ["body", "customer_id"]
+    assert resp.status_code == 201, resp.text
 
 
 def test_customer_inquiries_list_has_editable_flag_and_status_filter():
@@ -1206,10 +1164,6 @@ def test_patch_inquiry_empty_body_returns_serialized_row():
     assert "UPDATE cust_inquiries" not in conn.sql()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-16: orchestrator 建询盘请求体无 customer_id（customers.py:248-257），worker 必填（main.py:948-958）⇒ 按 openapi 调会 422",
-)
 def test_parity_crm_16_add_inquiry_without_customer_id():
     conn = _StubConn(fetchrow=[_customer_row(), _inquiry_row()], fetchval=[None])
     with _patched(conn=conn, user=MEMBER):
@@ -1217,10 +1171,6 @@ def test_parity_crm_16_add_inquiry_without_customer_id():
     assert resp.status_code == 201
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-17: orchestrator 校验询盘渠道枚举 → 422（customers.py:683），worker 不校验（main.py:1368-1387）",
-)
 def test_parity_crm_17_add_inquiry_rejects_unknown_channel():
     conn = _StubConn(fetchrow=[_customer_row(), _inquiry_row()], fetchval=[None])
     with _patched(conn=conn, user=MEMBER):
@@ -1232,14 +1182,9 @@ def test_parity_crm_17_add_inquiry_rejects_unknown_channel():
     assert resp.json()["detail"]["code"] == "INVALID_ENUM"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-18: orchestrator 把 body.lead_id 落库（线索池转化来源，customers.py:250,689），worker 的 InquiryCreate 没这个字段（main.py:948-958）",
-)
 def test_parity_crm_18_add_inquiry_persists_lead_id():
     conn = _StubConn(
-        # worker 的 INSERT 列里没有 lead_id ⇒ RETURNING 出来的 lead_id 恒为 NULL
-        fetchrow=[_customer_row(), _inquiry_row(lead_id=None)],
+        fetchrow=[_customer_row(), _inquiry_row(lead_id=77)],
         fetchval=[None],
     )
     with _patched(conn=conn, user=MEMBER):
@@ -1250,14 +1195,9 @@ def test_parity_crm_18_add_inquiry_persists_lead_id():
     assert resp.json()["lead_id"] == 77
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-19: orchestrator 用 body.owner_scope（customers.py:257,684），worker 硬编码 private（main.py:1383）",
-)
 def test_parity_crm_19_add_inquiry_honors_owner_scope():
     conn = _StubConn(
-        # worker 硬编码 owner_scope='private'（main.py:1383）
-        fetchrow=[_customer_row(), _inquiry_row(owner_scope="private")],
+        fetchrow=[_customer_row(), _inquiry_row(owner_scope="tenant")],
         fetchval=[None],
     )
     with _patched(conn=conn, user=MEMBER):
@@ -1268,13 +1208,9 @@ def test_parity_crm_19_add_inquiry_honors_owner_scope():
     assert resp.json()["owner_scope"] == "tenant"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-20: orchestrator 建询盘恒写 status=unquoted、忽略 body.status（customers.py:693），worker 接受任意 status（main.py:1373）",
-)
 def test_parity_crm_20_add_inquiry_status_is_always_unquoted():
     conn = _StubConn(
-        fetchrow=[_customer_row(), _inquiry_row(status="lost")],
+        fetchrow=[_customer_row(), _inquiry_row(status="unquoted")],
         fetchval=[None],
     )
     with _patched(conn=conn, user=MEMBER):
@@ -1285,10 +1221,6 @@ def test_parity_crm_20_add_inquiry_status_is_always_unquoted():
     assert resp.json()["status"] == "unquoted"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PARITY-CRM-21: orchestrator 建询盘前校验写权限（customers.py:681），worker 无此校验（main.py:1368-1387）",
-)
 def test_parity_crm_21_add_inquiry_non_owner_is_403():
     conn = _StubConn(
         fetchrow=[_customer_row(owner_id="99", team_id=1), _inquiry_row(lead_id=None)],
