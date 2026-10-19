@@ -32,6 +32,15 @@
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
 > 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
 >
+> **（2026-10-19 夜场 · 独立项：迁移链 downgrade 审计 + allowlist 审计完成）**
+> 1. 新增 `scripts/audit-migrations.py`（AST 静态分析）：70 个迁移版本 / head `202610180010`；
+>    `upgrade()` 内含破坏性操作的 10 个，其中 `drop_table` **仅 3 个**
+>    （drop_conversation_tables / drop_wechat_tables / merge_customers），且 downgrade 均未重建表
+>    ⇒ 灾难回滚会丢数据，发布前需冷备。旧口径「70 个里 35 个含 drop_table」失真，已更正。
+>    报告：`docs/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md`。
+> 2. route-parity allowlist 8 条逐条复核：补实现位置、更正 comtrade 原因（实为长任务采集器、
+>    前端 0 调用，非"本地定时器"）、pointer 改到归档原文；route-parity 仍 PASS（缺失 8 全登记、过期 0）。
+>
 > **（2026-10-19 夜场 · 部署冻结 · 用户指令）**
 > 1. **中途不部署**：`deploy.yml` 已改为仅 `workflow_dispatch`（不再监听 push）；
 >    必须等用户明确下达部署指令后才发布。README §16 / DEPLOY.md 顶部已留痕。

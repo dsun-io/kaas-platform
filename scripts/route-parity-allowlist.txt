@@ -9,24 +9,25 @@
 #     把这些债单独打印出来，避免烂在文件里；补完后请删行。
 #   · 原因不含「待补」= 线上**故意不做**（平台运维/本地运行时/依赖 Pyodide 跑不了的东西）。
 #
-# 证据与分类详见 docs/ROUTE_PARITY_2026-10-10.md
+# 证据与分类详见 `docs/archive/2026-10-17-doc-cleanup/ROUTE_PARITY_2026-10-10.md`；
+# 2026-10-19 逐条复核并更新了下列原因（每条附实现位置，避免「理由过期」）。
 # 更新：python scripts/route-parity.py --update  （更新后必须人工复核原因）
 
 # ── 平台运维 / 开发期治理：线上 Worker 不暴露 ───────────────────────────────
-GET /api/v1/admin/deployment_audit  # 平台运维端点（内部部署专用），线上不暴露
-GET /api/v1/admin/metrics/summary  # Prometheus 指标在本地运行时采集，线上不暴露
-POST /api/v1/admin/cache/clear  # 本地运行时缓存运维端点
-GET /api/v1/admin/tenants/{tenant_id}  # 平台运维端点，线上不暴露
+GET /api/v1/admin/deployment_audit  # 平台运维端点（orchestrator app/api/admin.py:235），线上不暴露
+GET /api/v1/admin/metrics/summary  # Prometheus 指标在本地运行时采集（admin.py:351），线上不暴露
+POST /api/v1/admin/cache/clear  # 本地运行时缓存运维端点（admin.py:365）
+GET /api/v1/admin/tenants/{tenant_id}  # 租户配置来自本地 config/tenants.yaml（admin.py:91）；Worker 是单租户部署，无此概念
 # 2026-10-19：attribute-proposals ×3 已补进 Worker（前端 admin/spec-proposals 活页面在调），
 # 故从本清单移除；对应实现见 backend/worker/src/ws_admin_proposals.py。
 
 # ── 本地运行时探针 ──────────────────────────────────────────────────────────
-GET /health/deep  # 深探针依赖本地进程/依赖检查，线上只需要 /health
+GET /health/deep  # 深探针依赖本地进程/依赖检查（app/api/health.py），线上只需要 /health
 GET /health/ready  # 同上
 
 # ── 依赖 Pyodide 跑不了的东西 ───────────────────────────────────────────────
-POST /api/v1/oss/presign  # 依赖阿里云 OSS SDK（C 扩展），Pyodide 装不了；前端有直传兜底
-POST /api/v1/intel/collect/comtrade  # 采集任务由本地定时器调度，不在请求线程里跑
+POST /api/v1/oss/presign  # 依赖阿里云 OSS SDK（C 扩展，app/api/oss_presign.py），Pyodide 装不了；前端 2 处调用均走 R2/直传兜底
+POST /api/v1/intel/collect/comtrade  # UN Comtrade 采集依赖长任务采集器（services/intel/comtrade_collector.py），不在请求线程跑；前端 0 调用 ⇒ 线上暂不做（2026-10-19 复核：旧理由「本地定时器调度」与代码不符，已更正）
 
 # ── 规格库 11 条：已**退役**（不再登记，因为路由本身已删除）──────────────────
 
