@@ -5,6 +5,12 @@
 > 每个批次完成必须：勾选本文 + 更新 [PROBLEM_STATUS_2026-10-11.md](./PROBLEM_STATUS_2026-10-11.md)
 > 交接摘要 + 推送 `main`（项目规则 1）。
 > 专项细节仍在各自文档，本文只管"做什么、什么顺序、谁做、依赖谁"。
+>
+> 📌 **2026-10-19 平行线交接（必读，避免重复劳动）**：
+> [HANDOVER_2026-10-19_CI_AND_PROD_FIXES.md](./HANDOVER_2026-10-19_CI_AND_PROD_FIXES.md)
+> —— 生产注册 500 / 报价页白屏已修并部署；CI `backend:test` 的 **db-tests 长期红已修绿**
+> （main `backend:test` = success，`6c08900`）；含**本机无 Postgres ⇒ 本地 db 测试全 skip**
+> 等环境坑与「不要重做」清单（§5）与留给主线的事项（§6）。
 
 ---
 
