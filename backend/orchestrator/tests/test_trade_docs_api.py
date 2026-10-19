@@ -83,7 +83,8 @@ class TestManualCreate:
         })
         assert resp.status_code == 201, resp.text
         data = resp.json()
-        assert data["doc_no"].startswith("QUO-2026")
+        # 2026-10-18 起编号统一为「类型-国家-客户-时间戳」（kaas_common.number_rules.build_number）
+        assert data["doc_no"].startswith("QUO-"), data["doc_no"]
         assert data["status"] == "draft"
         assert data["customer_id"] == buyer_id
 
