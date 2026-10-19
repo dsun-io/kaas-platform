@@ -14,6 +14,36 @@
 > 本地 Docker 开发环境、DAP/DDP 术语、部署待办）。**先读它。**
 > 上一份：`docs/HANDOVER_2026-10-17.md`（生产拓扑、R2 踩坑、账号）。
 
+> **（2026-10-19 峰值时段检查点 · P1 迁库暂停在 70% —— 交接见
+> `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`）**
+>
+> **生产仍跑 Neon，未切换、未部署。** PPG 库已建（`kaas-prod`，PG17.2/us-east-1）、
+> schema 已建 114 表、**数据已全量复制且行数 0 不一致**、Hyperdrive 新配置
+> `1733fcd…` 已建、分支 `feat/convergence-aprime` 的 `wrangler.jsonc` 已切 id；
+> **阻塞项 = schema 漂移未清零**：约束 190/1015（缺 852）、索引 281/313（缺 50）、
+> 列属性差 33 处（create_all 快径产物少于生产历史 DDL 累积）。
+> 下一步顺序、逐条验收标准、**PPG/Prisma/Cloudflare/Neon 权限获取方式（换设备必看）**、
+> 回滚预案全部写在交接文档 §3–§7；迁移脚本在 `scripts/migrate-ppg/`。
+> 峰值时段结束、晚间恢复时：从交接文档 §3 第 1 步继续。
+>
+> **（2026-10-19 · P0 已执行：PPG 库创建 + 空库 schema 根因修复 + 数据迁移）**
+>
+> 1. **PPG 已创建**（Prisma CLI 非交互：`prisma project create kaas-platform` +
+>    `prisma postgres create kaas-prod`）：id `db_xe7ypplcbxq3ysghz93k3n8u`，
+>    **PG 17.2 / us-east-1 / ready**。DSN 存于 `.env.local` 的 `DATABASE_URL_PPG`。
+>    ⚠️ **Accelerate 停用提示**：`pooled.db.prisma.io`（Accelerate）即将停用 ⇒
+>    迁移与运行时一律用**直连 `db.prisma.io`**；Hyperdrive 负责池化。
+> 2. **空库建表根因已修**：`alembic/env.py` 只 import `models`+`tax_models`，漏
+>    `workstation_models/market_models/actual_cost/external_docs/workstation_links`
+>    ⇒ 空库快径只建 61 表（生产 109），**预览环境会缺 `cust_contacts` 等表导致创建客户 500**。
+>    已补 import（metadata 93 表）；**历史迁移链无法从 base 重放**（`f82ac951b473` 与
+>    `202605030002` 重复建表，实测炸 `customer_capabilities`）⇒ 新环境一律走快径 + 补建表。
+> 3. **PPG schema 构建**：快径建 93 模型表 + 从生产目录补建 20 张 worker 独有/legacy 表
+>    （conversations/wechat_*/feature_flags/file_objects/subscriptions/entity_links 等），
+>    数据用二进制 `COPY` 逐表迁移（109 表），完成后校验行数与结构。
+> 4. **Hyperdrive**：新建 `kaas-ppg` config `1733fcd80736482e8ec6e7648ed52286`（直连 db.prisma.io），
+>    `wrangler.jsonc` 已切换；待数据校验通过后部署 Worker + 生产冒烟。
+>
 > **（2026-10-19 · POC 清理 + 迁库推进状态 / 卡点）**
 >
 > 1. **POC Worker 已清理**：`kaas-poc-sqlalchemy` / `kaas-poc-baseline` 已 `wrangler delete`；
