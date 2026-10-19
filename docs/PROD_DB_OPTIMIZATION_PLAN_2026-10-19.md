@@ -12,8 +12,8 @@
 |---|---|---|
 | 2026-10-19 | 开发库迁 "Ghost" | ❌ **否决**——Ghost 是发布平台（Node.js+MySQL），不是数据库，无法承接业务表 |
 | 2026-10-19 | 生产库迁 Prisma Postgres | ✅ **成立**，且最佳时机**就是现在**：生产尚未投入使用（数据量小、无停写窗口、迁移分钟级）；投入使用后再迁才有真实代价 |
-| 2026-10-19 | 三层模型（本地 Docker=开发 / Neon=预览 / PPG=生产） | ⚠️ **降级为两层**：个人阶段不做正式 preview 环境，发布沿用"备份+两段迁移+冒烟"轻流程 |
-| 2026-10-19 | 是否为 Neon 付费 | ❌ **不付费**——生产因此不能长期压 Neon 免费档（190 CU-hours/月硬顶，用完停摆） |
+| 2026-10-19（晚场，最终） | 三层模型（本地 Docker=开发 / Neon=预览 / PPG=生产） | ✅ **恢复三层模型**（推翻本日早些时候的"降级为两层"裁决）：本地 Docker=开发 / **CF 预览部署 + Neon dev 分支=预览** / Worker + PPG=生产。理由：双后端收敛为单后端后，push 即上生产、无第二实现兜底，预览环境成为唯一安全网（见 `DUAL_BACKEND_CONVERGENCE_EXEC_PLAN_2026-10-19.md`）。预览部署免费档可用性与 Neon 免费档用量（190 CU-hours/月硬顶）**执行前先实测**；Neon 归位为"预览库 + 本地开发辅助"双重角色 |
+| 2026-10-19 | 是否为 Neon 付费 | ❌ **不付费**——生产因此不能长期压 Neon 免费档（190 CU-hours/月硬顶，用完停摆）；预览环境压 Neon 的用量需按 §1 实测评估 |
 | 2026-10-19 | 本地 Docker 角色 | **不变**——日常开发主环境；升 PG17 做三环境版本对齐 |
 | 2026-10-19 | 性能优化诉求（更快+承载更多用户） | 接受，但与"迁库"解耦：迁库≠性能升级，性能瓶颈另有清单（§3–§5） |
 | 2026-10-19 | 本轮范围 | **只写本文档，暂不动手** |
@@ -22,8 +22,9 @@
 
 ```
 开发：  本地 Docker Postgres 17（日常开发主环境，不变）
-       Neon dev 分支（云端开发辅助：Hyperdrive 本地模拟 / .tools 脚本；分支能力归位）
 生产：  Worker "kaas"（不变）→ Hyperdrive（双 config，见 §3）→ Prisma Postgres（免费档，PG17）
+预览：  CF 预览部署（workers preview deployment / version URL，免费档可用性待实测）
+       → Neon dev 分支（预览库；同时保留本地开发辅助角色）
 备份：  pg_dump -Fc → R2（发布前必做 + 可选每日 cron）
 ```
 
@@ -52,7 +53,7 @@
 | 6 | Hyperdrive 新建 config 指向 PPG（direct connection，剥掉 query 参数）→ `wrangler.jsonc` 换 id → 部署 Worker | Hyperdrive 本地模拟连接串**继续指 Neon dev 分支**（开发路径不变） |
 | 7 | 生产冒烟 | `/health` JSON、`/api/v1/*` 401、`/login` 200 + 关键业务页往返；冒烟脚本带重试（DEPLOY.md §0.2 冷启动窗口） |
 | 8 | 备份链落地（见 §2.2） | 迁移完成不等于结束，备份链是常驻机制 |
-| 9 | Neon 降级 dev-only | 旧 production 分支改名 `kaas-prod-neon-legacy` **保留 30 天**作冷备份，到期删除；dev 分支保留 |
+| 9 | Neon 归位 | 旧 production 分支改名 `kaas-prod-neon-legacy` **保留 30 天**作冷备份，到期删除；dev 分支保留并**归位为预览库**（三层模型，见 §0 晚场裁决） |
 | 10 | 文档同步 | 本文 §8 清单 + PROBLEM_STATUS 交接摘要 |
 
 ### 2.2 备份链（替代 Neon 分支快照，常驻机制）
