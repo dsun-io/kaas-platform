@@ -14,6 +14,24 @@
 > 本地 Docker 开发环境、DAP/DDP 术语、部署待办）。**先读它。**
 > 上一份：`docs/HANDOVER_2026-10-17.md`（生产拓扑、R2 踩坑、账号）。
 
+> **（2026-10-19 · 收敛 P0 POC 结论：路线 A 不可行 → 转 A′）**
+>
+> POC 文档：`docs/POC_WORKER_SQLALCHEMY_2026-10-19.md`（POC 源码
+> `backend/worker/poc-sqlalchemy/` + 对照组 `poc-baseline/`；**生产 Worker `kaas` 全程未动**，
+> 仅建了两个独立 POC Worker 做边缘验证）。
+> 1. **兼容性硬阻塞**：`greenlet` 在 Workers Python runtime **无可安装 wheel**（Pyodide 314.0.7
+>    索引 404；PyPI greenlet 3.5.6 的 79 个发行文件 0 个 wasm/emscripten）⇒
+>    `sqlalchemy.ext.asyncio` 直接 ImportError ⇒ **异步查询 100% 不可用**。
+>    （裸 asyncpg 对照正常 ✅；SQLAlchemy **同步 Core 仅编译 SQL** 可用 ✅）
+> 2. **冷启动超门槛**：Worker Startup Time 中位 `2059ms → 3913ms（+1854ms）`，超出 "<1s" 验收线；
+>    包体积 10.8→19.3 MiB（免费档 64 MiB 上限内，不阻塞）。
+> 3. **结论**：路线 A（worker 跑统一 SQLAlchemy async app）**不可行 as-is**。转 **路线 A′**：
+>    数据访问层同源——SQL/DDL 语句从 `kaas_common` 统一生成/存放，worker 继续裸 asyncpg 执行，
+>    orchestrator 保留 SQLAlchemy ORM 作迁移工具；**同时做路线 C 子集**（worker 写入路径接真 PG
+>    测试，消灭注册类 500 的土壤）。`greenlet` 自建 wasm 构建属独立立项（远超 0.5–1 天）。
+> 4. **待拍板**：A′ 的具体范围（是否采用"SQLAlchemy 同步 Core 编译 SQL + asyncpg 执行"作为
+>    共享 SQL 生成器——实测可用但 +8.2 MiB/+1.8s 冷启动）；两个 POC Worker 是否删除清理。
+>
 > **（2026-10-19 · 批次 0 后端小修 B0-5/B0-6 完成 —— 含印花税口径变更）**
 >
 > 1. **B0-5 印花税定义删除，并入杂税**（用户裁决："印花税这个定义就不存在了，直接归类到

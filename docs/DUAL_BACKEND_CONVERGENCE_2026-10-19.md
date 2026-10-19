@@ -61,12 +61,22 @@ git diff --stat origin/main...HEAD -- backend/orchestrator backend/worker
 | "SQLAlchemy 天然无法复用" | 仍**未验证**，但理由变了：SQLAlchemy 本体是纯 Python，真正要验证的是 `greenlet`（asyncio 必需，C 扩展）与冷启动开销，而不是"能不能 import"。 |
 | 冷启动 CPU 限额（DEPLOY.md §0.2 冷启动 ~2.8s） | **仍然成立**，这是收敛的最大硬约束：依赖越重越危险。 |
 
-> 结论：旧版"只能分层 + 薄适配"的悲观前提不成立了，"Worker 直接跑统一代码"从
-> **不可能** 降级为 **未验证的工程风险**。这打开了路线 A。
+> ⚠️ **2026-10-19 POC 结论（已验证，取代本节推断）**：`greenlet` 在 Workers runtime
+> **无可安装 wheel**（Pyodide 索引无此包；PyPI 79 个发行文件 0 个 wasm）⇒
+> `sqlalchemy.ext.asyncio` ImportError，路线 A **不可行 as-is**；冷启动 +1854ms 也超线。
+> 详见 [POC_WORKER_SQLALCHEMY_2026-10-19.md](./POC_WORKER_SQLALCHEMY_2026-10-19.md)。
+> 当前执行方向：**路线 A′ + C 子集**（见 §3.2 末）。
 
 ### 3.2 三条路线
 
-**路线 A：收敛为单一应用源码，Worker 装载统一 app（推荐评估）**
+**路线 A：收敛为单一应用源码，Worker 装载统一 app —— ❌ 2026-10-19 POC 判定不可行 as-is**
+
+> POC 已验证：`greenlet` 在 Workers runtime 无可安装 wheel ⇒ `sqlalchemy.ext.asyncio`
+> ImportError（异步查询 100% 不可用）；且冷启动 +1854ms 超线。见
+> [POC 文档](./POC_WORKER_SQLALCHEMY_2026-10-19.md)。唯一复活路径是自建 greenlet 的
+> wasm 构建（独立立项，远超 0.5–1 天），不阻塞当前排期。
+
+以下为原评估内容，保留备查：
 
 把业务 API 收敛成一份 FastAPI 应用（以 orchestrator 的 SQLAlchemy 实现为准），
 Worker 变成"打包这份应用 + Workers 运行时适配层"；orchestrator 退化为
@@ -85,12 +95,19 @@ Worker 变成"打包这份应用 + Workers 运行时适配层"；orchestrator �
   需要按" Workers 可用 / 仅本地 "切分依赖组；③ 打包与部署链改造（pywrangler 配置）。
 - 工作量估计：POC 0.5–1 天；全量收敛 3–5 天（含回归）。
 
-**路线 A′：只收敛数据访问层（中间态，可与 A 渐进过渡）**
+**路线 A′：只收敛数据访问层（2026-10-19 POC 后的执行方向）**
 
-SQL 语句不再手写散落于 worker 各处，而是从内核**统一生成/统一存放**（SQL 常量 +
-参数构造器都在 `kaas_common`，两侧 import 同一份）；orchestrator 保留 ORM，
-worker 保留裸 asyncpg 但**语句与内核同源**。行为面差异（默认值、列清单）大幅收窄，
-改动量小、不碰运行时风险。代价：ORM 与 SQL 生成器两套抽象并存，长期看是过渡形态。
+SQL/DDL 语句不再手写散落于 worker 各处，而是从内核**统一生成/统一存放**（SQL 常量 +
+参数构造器都在 `kaas_common`，两侧 import 同一份；orchestrator 的 SQLAlchemy 模型与
+worker 的 DDL/默认值口径对齐）；orchestrator 保留 ORM 作迁移工具，worker 保留裸 asyncpg
+但**语句与内核同源**。行为面差异（默认值、列清单、约束）大幅收窄，改动量小、不碰运行时风险。
+
+可选强化（POC 已实测可行，需权衡）：worker 引入 **SQLAlchemy 同步 Core 仅编译 SQL** +
+asyncpg 执行——共享同一份查询构造代码，但 +8.2 MiB 包体 / +1.8s 冷启动。
+**建议不做**（冷启动是免费档硬约束），仅当内核同源方案维护成本过高时再评估。
+
+配套路线 C 子集（同批执行）：worker 写入路径测试接**真 Postgres**（本地 Docker），
+消灭注册类 500 的土壤。
 
 **路线 C：维持双后端，加固防线**
 
@@ -163,3 +180,4 @@ worker 测试接真 Postgres（本地 Docker，已有环境）；把注册类"�
 | 2026-10-19 | CF 免费托管不可放弃 ⇒ 排除"弃用 worker 换 VPS"路线 | ✅ 已裁决 |
 | 2026-10-19 | 本轮只补评估文档，不动代码 | ✅ 已裁决 |
 | 2026-10-19（晚场） | **方向：合并（路线 A）+ 恢复三层环境模型**（推翻 DB 方案"降级两层"裁决）。理由链：双后端时代 orchestrator 充当准预览；单后端时代 push 即上生产，预览环境成为唯一安全网 ⇒ 两者是同一决策。计划与执行顺序（P0 POC → P1 迁库 → P2 预览环境 → P3 全量收敛 → P4 观察期）见 [DUAL_BACKEND_CONVERGENCE_EXEC_PLAN_2026-10-19.md](./DUAL_BACKEND_CONVERGENCE_EXEC_PLAN_2026-10-19.md) | ✅ **已裁决，待集中推进** |
+| 2026-10-19 | **P0 POC 结论：路线 A 不可行 as-is**（greenlet 无 wasm wheel ⇒ sqlalchemy.ext.asyncio 不可用；冷启动 +1854ms 超线）⇒ 执行方向改为 **路线 A′（数据访问层同源）+ C 子集（worker 真 PG 测试）**；原"单后端合并"目标降级为"行为面漂移收敛到可测试、可审计" | ✅ 已验证，待用户确认 A′ 范围 |

@@ -63,19 +63,25 @@
 
 ## 3. 批次 1–5 · 双后端收敛 + 迁库（主链）
 
+> ⚠️ **2026-10-19 POC 结论：路线 A（worker 跑统一 SQLAlchemy async app）不可行 as-is**
+> （greenlet 无 wasm wheel ⇒ `sqlalchemy.ext.asyncio` ImportError；冷启动 +1854ms 超线）。
+> 见 [POC_WORKER_SQLALCHEMY_2026-10-19.md](./POC_WORKER_SQLALCHEMY_2026-10-19.md)。
+> **执行方向改为：P3 从"全量收敛"降级为"路线 A′（数据访问层同源）+ C 子集（worker 真 PG
+> 测试）"**；P0–P2、P4 不变。原"单后端合并"目标改为"行为面漂移收敛到可测试、可审计"。
+
 严格按 [DUAL_BACKEND_CONVERGENCE_EXEC_PLAN_2026-10-19.md](./DUAL_BACKEND_CONVERGENCE_EXEC_PLAN_2026-10-19.md) 执行：
-**P0 POC（0.5–1 天）→ P1 迁库（半天，含 Hyperdrive `--caching-disabled` + 生产测试数据清理 U 确认）→
-P2 预览环境（1 天，workers.dev 自动 URL，免费档可用性已确认）→ P3 全量收敛（3–5 天，5 业务域按序）→
-P4 观察期（1 周）**。
+**P0 POC（✅ 已完成：路线 A 否决，转 A′）→ P1 迁库（半天，含 Hyperdrive `--caching-disabled` +
+生产测试数据清理 U 确认）→ P2 预览环境（1 天，workers.dev 自动 URL，免费档可用性已确认）→
+P3（A′ + C 子集：SQL/DDL 内核同源 + worker 写入路径真 PG 测试）→ P4 观察期（1 周）**。
 
 批次 2（迁库）额外并入：`Hyperdrive 查询缓存关闭`（审计 #1，与迁库同窗口）、
 `生产测试数据/拒绝文件历史清理`（审计 #14，数据删除须用户确认后执行）。
 
-批次 4 顺带评估项（收敛重写 worker 模块时一并处理，不单独立项）：
-- `订阅门禁两套口径`（`chain.py _require_sub` 仍查 `tenant_subscriptions` → 收敛时统一）
-- `Excel xlsx 上传闭环`（`_reject_spreadsheet`）——**POC 结果直接决定此项**：若 Workers runtime
-  能跑 SQLAlchemy/greenlet（纯 Python 依赖同理），openpyxl 进 Worker 的障碍可能同步解除，
-  在批次 4 重估；否则维持 CSV 收口并文档固化裁决。
+批次 4 顺带评估项（A′ 改造 worker 模块时一并处理，不单独立项）：
+- `订阅门禁两套口径`（`chain.py _require_sub` 仍查 `tenant_subscriptions` → A′ 时统一）
+- `Excel xlsx 上传闭环`（`_reject_spreadsheet`）——POC 证实 **in-Worker 运行纯 Python 包
+  无硬阻塞**（sqlalchemy 同步 Core 可 import；Pyodide 索引有 openpyxl 依赖链需复核），
+  在批次 4 重估：能跑则实现 xlsx 闭环，否则维持 CSV 收口并文档固化裁决。
 
 ## 4. 批次 6 · 技术栈安全债（收敛完成后串行）
 
