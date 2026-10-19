@@ -211,7 +211,12 @@
       遗留表登记 `scripts/schema-drift-allowlist.txt`；已接入 `backend-test.yml`。
       落地即抓出 3 处真实缺列（`tenant_workstation_products.team_id`、`trade_docs.owner_id/owner_scope`、
       `market_ports.created_at/updated_at`）并补幂等迁移 `202610190020_backfill_prod_columns`（生产已有列，勿重加）
-- [ ] **S6-c** 包体积 + 冷启动断言（≤2,950 ms；`wrangler versions upload` 口径）
+- [~] **S6-c** 包体积 + 冷启动断言 —— **门禁已落地（2026-10-19）**：
+      `scripts/check-worker-bundle.py`（`pywrangler deploy --dry-run --outdir` 统计 bundle，
+      上限 64 MiB / 目标 15 MiB；冷启动读 `backend/worker/coldstart-baseline.json` 校验 ≤2,950ms，
+      缺失时打印 PENDING）。已接入 `backend-test.yml` worker job。
+      **待完成**：本机 uv 0.11 的 pyodide 解释器探针损坏 ⇒ 本地 SKIP（CI 用最新 uv 可真实执行）；
+      冷启动基线需一次**经用户批准**的 upload/deploy 后在 Dashboard/Metrics 读取并入库
 - [x] **S6-d** 迁移链 downgrade 审计 —— 已完成（2026-10-19）：`scripts/audit-migrations.py` 静态分析 70 个版本，
       精确结论 **drop_table 仅 3 个**（旧估「35 个」口径失真，已更正）；报告见
       `docs/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md`；3 张被删表默认不可逆，发布前需冷备
@@ -221,6 +226,11 @@
 按 [TECH_STACK_UPGRADE_2026-10-17.md](./TECH_STACK_UPGRADE_2026-10-17.md) 批次 B：
 Next 14.2→15.5+/16（2 critical RCE，修复只发 ≥15.5.24）、CI Node 20→22+、ESLint 8→10、TS→6。
 前置：执行前重跑该文档 §1 复现命令（版本继续前进，数字会过期）。
+
+- [x] **CI Node 22**（2026-10-19）：`frontend-ci.yml` / `deploy.yml` / `contracts-check.yml` 的
+      `actions/setup-node` 由 20 → 22（本地已用 Node 24 验证前端 typecheck/test/contracts/build 全绿）
+- [ ] **Next 15.5+/16 + ESLint 10 + TS 6** —— 跨大版本升级，需用户排期（U-E2）；建议单独一轮
+      做「Next 升级 + 全量前端回归 + e2e」，不与其它改动叠加（见收敛风险 R5）
 理由：同为前端大改，与收敛交叉会无法归因（收敛动打包链，升级动构建链）。
 
 ## 5. 批次 7 · 独立排期项（等待拍板或触发条件）

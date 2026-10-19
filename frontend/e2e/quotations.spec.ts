@@ -26,13 +26,13 @@ test.describe('报价工位 /quotes', () => {
     await page.goto('/quotes');
 
     // `quotes/page.tsx` L69
-    await expect(page.getByRole('heading', { name: '报价' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: '报价', exact: true })).toBeVisible({
       timeout: 15000,
     });
 
     // `quotes/page.tsx` L31-40 的 TABS
     for (const label of ['产品报价', '批量报价', '报价记录', '成本历史']) {
-      await expect(page.getByRole('button', { name: label })).toBeVisible();
+      await expect(page.getByRole('tab', { name: label })).toBeVisible();
     }
   });
 
@@ -40,11 +40,11 @@ test.describe('报价工位 /quotes', () => {
     // `quotes/page.tsx` L53 读 `?tab=`，L96 按 tab 渲染 QuotationRecordsView
     await page.goto('/quotes?tab=records');
 
-    await expect(page.getByRole('heading', { name: '报价' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: '报价', exact: true })).toBeVisible({
       timeout: 15000,
     });
     // 深链不应把页面打崩：外壳与入口仍然在
-    await expect(page.getByRole('button', { name: '报价记录' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: '报价记录' })).toBeVisible();
   });
 
   test.skip('估算行显示警告徽章', async () => {

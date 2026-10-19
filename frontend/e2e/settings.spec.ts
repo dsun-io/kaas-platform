@@ -9,11 +9,11 @@ test.describe('Settings', () => {
     // 下面这行断言**本身**就是在等具体元素（`settings/page.tsx:25-40` 的 tab 按钮），
     // 所以这里不需要任何额外等待。
     // Tenant config tab should be active by default
-    const tenantTab = page.getByRole('button', { name: /租户配置/i });
+    const tenantTab = page.getByRole('tab', { name: /租户配置/i });
     await expect(tenantTab).toBeVisible();
 
     // Click system operations tab
-    const systemTab = page.getByRole('button', { name: /系统操作/i });
+    const systemTab = page.getByRole('tab', { name: /系统操作/i });
     await systemTab.click();
     await page.waitForTimeout(300);
 
@@ -28,7 +28,7 @@ test.describe('Settings', () => {
     // **2026-10-12：去掉 `networkidle`** —— 下一步 `systemTab.click()`
     // 自身就会等具体元素（`settings/page.tsx:25-40` 的「系统操作」按钮）出现。
     // Switch to system tab
-    const systemTab = page.getByRole('button', { name: /系统操作/i });
+    const systemTab = page.getByRole('tab', { name: /系统操作/i });
     await systemTab.click();
     await page.waitForTimeout(300);
 

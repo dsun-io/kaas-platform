@@ -399,6 +399,9 @@ backend/orchestrator/.venv/Scripts/python.exe scripts/check-schema-coverage.py
 #   backend/orchestrator/.venv/Scripts/python.exe scripts/dump-prod-schema-columns.py
 backend/orchestrator/.venv/Scripts/python.exe scripts/check-schema-drift.py
 
+# Worker 包体积/冷启动门禁（S6-c；pywrangler dry-run 不上传不部署；本机工具链不可用时 SKIP）
+backend/orchestrator/.venv/Scripts/python.exe scripts/check-worker-bundle.py
+
 # 契约检查（前端 zod ↔ 共享内核 / 冻结契约快照；R6 openapi 新鲜度已随单应用退役）
 cd frontend
 pnpm contracts:check

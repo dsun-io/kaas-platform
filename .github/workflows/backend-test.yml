@@ -98,6 +98,12 @@ jobs:
         working-directory: ./backend/worker
         run: uv run --frozen --with pytest --with httpx2 python -m pytest tests -q
 
+      # S6-c：包体积门禁（pywrangler deploy --dry-run，不上传、不部署、不需要凭据）。
+      # 冷启动基线文件 backend/worker/coldstart-baseline.json 缺失时打印 PENDING（不失败）。
+      - name: Worker bundle size gate (S6-c)
+        working-directory: ./backend/worker
+        run: uv run python ../scripts/check-worker-bundle.py
+
   # 真 Postgres 写入路径测试（task-8 / 路线 C 子集）。
   # worker 用裸 asyncpg 手写 SQL，假 DB 测不出「NOT NULL 且无默认值 / 漏列」这类
   # 500（注册、创建客户、手动报价都在线上踩过）。这里起真 PG，用 orchestrator 的
@@ -166,6 +172,17 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://kaas:kaas_dev_pw@localhost:5432/kaas_migtest
         run: uv run --extra migrations alembic check
+
+      # 最新迁移必须可回退：downgrade -1 → upgrade head 一轮。历史链整体降级
+      # 有已知结构性断点（见 docs/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md 实测节），
+      # 因此 CI 只保证「新增迁移可逆」，生产回滚仍以 Neon PITR / 分支快照为准。
+      - name: Alembic downgrade/upgrade roundtrip (latest migration)
+        working-directory: ./backend/orchestrator
+        env:
+          DATABASE_URL: postgresql+asyncpg://kaas:kaas_dev_pw@localhost:5432/kaas_migtest
+        run: |
+          uv run --extra migrations alembic downgrade -1
+          uv run --extra migrations alembic upgrade head
 
       - name: Run worker real-PG tests
         working-directory: ./backend/worker

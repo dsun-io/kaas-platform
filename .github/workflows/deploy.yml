@@ -1,4 +1,4 @@
-name: deploy
+﻿name: deploy
 
 # 2026-10-18：生产发布（税务档案 / 产品税率 / 成本手填 / 整单保险 / 批量报价）
 # 仓库转公开后 GitHub Actions 额度限制解除；本文件既监听 main push，也支持手动触发。
@@ -36,7 +36,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
