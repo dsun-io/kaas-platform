@@ -14,6 +14,29 @@ PPG（Prisma Postgres）库已创建、schema 已建（**114 表**）、**数据
 **但 schema 的约束/索引/列属性仍有明显漂移（见 §3），所以不能切生产流量。**
 生产 Worker 仍连 Neon（Hyperdrive `f53fed…`），一切照旧。
 
+## 0.5 ⚠️ 必读：平行线交接（另一任务的产物，已合并进本分支——勿重做）
+
+主线同时有一条平行线，其交接文档 **`docs/HANDOVER_2026-10-19_CI_AND_PROD_FIXES.md`**
+（入口指针挂在 `MASTER_EXEC_PLAN_2026-10-19.md` 顶部、`PROBLEM_STATUS` 交接摘要、
+共享任务板 task-1）。**其全部内容已随 `git merge origin/main`（本分支 `5411f3d`）并入本分支**，
+接手时务必先读，避免重复劳动：
+
+| 他们已做完（勿重做） | 关键事实 |
+|---|---|
+| **生产注册 500**（`users.is_tenant_admin` 缺列） | 修复 `a8557c9`，已部署；worker 两处 INSERT 补默认值 |
+| **500 被误报成 CORS** | `main.py` CORS 中间件兜底，已部署 |
+| **注册页公司名称去重**（用户裁决） | 前端删框 + `company_name` 两端改可选 + mock/openapi 同步 |
+| **定价页白屏**（worker `/pricing-data` 老实现 vs 前端矩阵） | 四端点按 orchestrator 重写（`4b152b4`）+ 6 条形状测试 |
+| **CI `backend:test` db-tests 恒红修复** | `6c08900`（conftest `to_regclass` TRUNCATE / 公章口径 / 编号断言）；main 已 success |
+| 环境坑清单（本机无 PG ⇒ db 测试全 skip 是假绿、pnpm 路径、匿名读 check-runs 配方、共享工作区用 worktree） | 见他们文档 §4 |
+
+**他们留给我们的事项（已并入本方待办 §6）**：H-1 Frontend CI 红 → 已由批次 0 B0-1 完成 ✅；
+H-2 用户复验注册/定价页 → 用户侧；**H-3 本分支 `3ada691` 等上的 CI 失败需本分支修绿再合** ⬅ 未完成；
+H-4 db 测试本地可跑（可选，initdb 中文 Windows 问题）。
+
+**合并后门禁实测（2026-10-19 14:1x）**：orchestrator `pytest -m unit` = **1200 passed**；
+worker = **303 passed**（`not integration`）；`route-parity.py` = **PASS**。
+
 ## 1. 已完成（按时间顺序，均可从 commit 复现）
 
 | # | 事项 | 证据 |
@@ -122,14 +145,42 @@ PPG（Prisma Postgres）库已创建、schema 已建（**114 表**）、**数据
 > 表清单 = `information_schema` 中 Neon 有而 `Base.metadata` 无的表（20 张，见 §3 提及），
 > 用 `pg_get_constraintdef` / `pg_indexes.indexdef` 从生产目录复制。
 
-## 6. 全局待办（按优先级，详见 MASTER_EXEC_PLAN）
+## 6. 全局待办总账（2026-10-19 检查点 · 共 19 项，已全量核对入档）
 
-1. **P1 收尾**（本文档 §3 的 6 步）——最高优先级，卡在 schema 对齐；
-2. **P2 预览环境**：CF 预览部署（免费档已确认可用）+ Neon dev 分支做预览库；
-   注意：预览环境从空库建必须走已修复的 `env.py`（否则缺表 500）；
-3. **P3**：A′（SQL/DDL 内核同源）+ C 子集（真 PG 测试已交付，CI job 待验证）；
-4. **批次 6**：技术栈安全债（Next 15.5+/16 等），排在收敛后；
-5. 批次 U（用户操作：R2 key 重建、生产 product_tax_rates 配置、仓库 private、智能表格补全）。
+> 口径来源：双审计线（`MASTER_EXEC_PLAN`）+ 平行线交接 §6 + 本线新发现。
+> 主链 4 + 批次 6 为 1 项 + 用户操作 4 项 + 平行线遗留 3 项 + 独立排期 7 项 = **19**。
+
+**A. 主链（goal 内，按序执行）**
+1. ⬅ **P1 收尾**：schema 对齐 → verify 清零 → worker 冒烟 → 合 main 部署 → 生产冒烟 → 观察 30 分钟（本文 §3 六步；**当前唯一阻塞**）
+2. **P2 预览环境**：CF 预览部署（免费档已确认可用）+ Neon dev 预览库；空库建库必须走已修复的 `env.py`（否则缺表 500）
+3. **P3**：A′（SQL/DDL 内核同源 + 两薄适配）+ C 子集 CI job 验证（真 PG 测试已交付 `3ada691`，CI job 未在真实 Actions 跑过）
+4. **P4 观察期**：冷启动/5xx/延迟对比基线
+
+**B. 批次 6（硬性排在 P3 之后）**
+5. 技术栈安全债：Next 14.2→15.5+（2 critical RCE）/ CI Node 20→22 / ESLint 8→10 / TS→6（执行前重跑 `TECH_STACK_UPGRADE §1`）
+
+**C. 批次 U（需用户动手，不阻塞开发）**
+6. U-1 R2 `S3_ACCESS_KEY` 重建 32 位（dashboard）
+7. U-2 生产 `product_tax_rates` 配置数据
+8. U-3 仓库改回 private + Actions billing 确认
+9. U-4 智能表格 21 行缺失输入补全
+
+**D. 平行线遗留（来自 `HANDOVER_2026-10-19_CI_AND_PROD_FIXES.md` §6）**
+10. ⚠️ **H-3：本分支上的 CI 失败要修绿再合**——`backend:test` / `Frontend CI` / `prisma-deploy` 在 `3ada691`/`15997bd` 上有失败（功能分支状态，非 main）
+11. H-2：用户复验定价页刷新与注册（修复已上线，等用户确认）
+12. H-4：db 测试本地可跑（可选；绕过 initdb 中文 Windows UTF8 问题，或维持 CI 为唯一 db 门禁）
+
+**E. 独立排期/暂缓（等拍板，见 `MASTER_EXEC_PLAN §5`）**
+13. I-1 「流失」迁订单阶段（业务设计先行）
+14. I-2 单证加固 P1/P2（5 项口径待用户拍板，`UNCERTAIN.md`）
+15. I-3 文件存储收尾 3 项（真实 DB 用例/公章视觉 QA/排序过滤测试）
+16. I-4 PDF 归档尾巴（端到端一次/定时调度/已变更标识）
+17. I-5 Cloudflare agent 接入
+18. I-6 单证指纹批量对账定时调度（暂缓）
+19. I-7 P3 暂缓五项（触发条件制，维持暂缓）
+
+**已完结不再跟进**：批次 0 全部（B0-1~6、D0-1~4）、P0 POC、C 子集本体、
+QUOTE/TAX/BATCH_QUOTE/PDF_ARCHIVAL/SHEET_CALC 等历史方案（`MASTER_EXEC_PLAN §7`）。
 
 ## 7. 风险登记
 
