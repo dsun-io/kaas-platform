@@ -123,3 +123,5 @@ frontend/e2e/.auth/
 # 本地产物（非系统代码：PI 导出、QA 快照、一次性生成脚本、临时脚本等）
 # 约定：这类东西一律放 artifacts/，不进 git；需要归档的成果走数据库或正式文档
 /artifacts/
+.prisma-composer/
+.alchemy/
