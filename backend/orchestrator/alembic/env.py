@@ -61,6 +61,7 @@ from app.db import (  # noqa: F401,E402
     actual_cost,
     external_docs,
     workstation_links,
+    legacy_models,
 )
 
 # Alembic Config 对象
