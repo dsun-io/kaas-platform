@@ -32,6 +32,18 @@
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
 > 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
 >
+> **（2026-10-19 夜场 · S3 高危修复：CRM 写权限/联系人清空 + 报价 2 个 P0）**
+> 1. **CRM 写权限（高）**：`DELETE /customers/{id}`、`PATCH .../stage`、`POST .../inquiries`、联系人增删改
+>    统一走 `_check_write_access`（共享内核 `scope.can_write`）⇒ 同团队非属主 **403 NOT_OWNER**。
+> 2. **联系人**：PATCH 改为「仅更新显式给出的字段」⇒ **显式 null 可清空**（旧 COALESCE 静默失败）；
+>    新增/更新 `is_primary` 时先清其它主联系人；联系人不存在 → **404 CONTACT_NOT_FOUND**（不再恒 204/字符串 body）。
+> 3. **询盘**：channel / owner_scope 走共享枚举校验；status **恒写 unquoted**（忽略伪造值）；
+>    落 `lead_id`（线索池→询盘转化链恢复）；body **不再要求 customer_id**（orchestrator 同契约）。
+> 4. **报价 2 个 P0**：应收列表补归属过滤（越权读全部应收已堵）；签发入账 `customer_id` 显式 `str`
+>    （TEXT 列，修 draft→sent 的 DataError 隐患）。
+> 5. parity 棘轮：CRM **23 → 11**、报价 **28 → 26**（其余按档排期）；worker 全量
+>    **554 passed + 5 skipped + 37 xfailed**；真 PG 集成 5 passed；依赖/schema/route-parity/sync-shared 全 PASS。
+>
 > **（2026-10-19 夜场 · S3 域级 parity 扩展：CRM / 报价订单）**
 > 1. 新增 `test_parity_crm.py`（61 例：38 passed + 23 xfail）与 `test_parity_quote.py`（120 例：92 passed + 28 xfail）；
 >    worker 全量 **545 passed + 51 xfailed + 0 failed**（本机含真 PG 集成 5 条）。

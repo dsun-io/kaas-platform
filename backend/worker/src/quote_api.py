@@ -1586,7 +1586,7 @@ async def _record_quote_issued(conn, q: dict, user: dict) -> None:
                 spec_hash, unit_price, currency, unit, discount, min_quantity, source,
                 notes, created_by)
            VALUES (1,$1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9,$10,$11,$12,$13)""",
-        q["tenant_id"], q["customer_id"], "other", json.dumps(snapshot), spec_hash,
+        q["tenant_id"], str(q["customer_id"]), "other", json.dumps(snapshot), spec_hash,
         total, q.get("currency") or "USD", "单", None, None,
         _LEDGER_SOURCE_QUOTE_ISSUED,
         "由报价单 %s 签发自动入账（整单一条）" % q.get("quote_no"),

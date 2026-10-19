@@ -960,7 +960,8 @@ class CustomerCreate(BaseModel):
 
 
 class ContactCreate(BaseModel):
-    customer_id: int
+    # customer_id 由路径参数决定；保留可选字段仅为兼容旧客户端（orchestrator 契约里没有它）
+    customer_id: Optional[int] = None
     name: str
     position: Optional[str] = None
     phone: Optional[str] = None
@@ -971,8 +972,12 @@ class ContactCreate(BaseModel):
 
 
 class InquiryCreate(BaseModel):
-    customer_id: int
+    # customer_id 由路径参数决定；保留可选字段仅为兼容旧客户端（orchestrator 契约里没有它）
+    customer_id: Optional[int] = None
     channel: Optional[str] = None
+    # 线索池转化来源（orchestrator InquiryCreate.lead_id，CRM-18：此前 worker 丢失该链路）
+    lead_id: Optional[int] = None
+    owner_scope: Optional[str] = None
     category_id: Optional[int] = None
     product_name_raw: Optional[str] = None
     quantity: Optional[float] = None
@@ -1302,7 +1307,14 @@ async def get_customer(customer_id: int, request: Request, user: dict = Depends(
 @app.post("/api/v1/customers/{customer_id}/contacts", status_code=201)
 async def add_contact(customer_id: int, request: Request, body: ContactCreate, user: dict = Depends(_get_current_user)):
     async with _acquire(request) as conn:
-        await _customer_or_404(conn, customer_id, user)
+        customer = await _customer_or_404(conn, customer_id, user)
+        _check_write_access(user, customer)
+        if body.is_primary:
+            # CRM-12：设为默认联系人时先清掉其它（否则一个客户多个 primary）
+            await conn.execute(
+                "UPDATE cust_contacts SET is_primary=false"
+                " WHERE customer_id=$1 AND tenant_id=$2",
+                customer_id, DEFAULT_TENANT)
         row = await conn.fetchrow(
             """INSERT INTO cust_contacts
                (tenant_id, customer_id, name, position, phone, email, whatsapp, wechat, is_primary)
@@ -1327,25 +1339,29 @@ class ContactUpdate(BaseModel):
 async def update_contact(customer_id: int, contact_id: int, request: Request,
                          body: ContactUpdate, user: dict = Depends(_get_current_user)):
     async with _acquire(request) as conn:
-        await _customer_or_404(conn, customer_id, user)   # 可见性 + 未删除
+        customer = await _customer_or_404(conn, customer_id, user)   # 可见性 + 未删除
+        _check_write_access(user, customer)
         ct = await conn.fetchrow(
             "SELECT * FROM cust_contacts WHERE id=$1 AND customer_id=$2 AND tenant_id=$3",
             contact_id, customer_id, DEFAULT_TENANT)
         if not ct:
-            raise HTTPException(status_code=404, detail="Contact not found")
-        if body.is_primary:
-            await conn.execute(
-                "UPDATE cust_contacts SET is_primary=false WHERE customer_id=$1 AND tenant_id=$2 AND id != $3",
-                customer_id, DEFAULT_TENANT, contact_id)
-        row = await conn.fetchrow(
-            """UPDATE cust_contacts SET
-               name=COALESCE($2,name), position=COALESCE($3,position),
-               phone=COALESCE($4,phone), email=COALESCE($5,email),
-               whatsapp=COALESCE($6,whatsapp), wechat=COALESCE($7,wechat),
-               is_primary=COALESCE($8,is_primary)
-               WHERE id=$1 RETURNING *""",
-            contact_id, body.name, body.position, body.phone, body.email,
-            body.whatsapp, body.wechat, body.is_primary)
+            raise HTTPException(status_code=404, detail={
+                "error": "not_found", "code": "CONTACT_NOT_FOUND"})
+        data = body.model_dump(exclude_unset=True)
+        if data:
+            if data.get("is_primary"):
+                await conn.execute(
+                    "UPDATE cust_contacts SET is_primary=false WHERE customer_id=$1 AND tenant_id=$2 AND id != $3",
+                    customer_id, DEFAULT_TENANT, contact_id)
+            # CRM-14：显式 null 必须能清空字段（旧实现用 COALESCE ⇒ 清空无效）。
+            # 列名只来自 Pydantic 字段白名单，不拼用户输入。
+            cols = list(data)
+            set_sql = ", ".join(f"{col}=${idx + 2}" for idx, col in enumerate(cols))
+            row = await conn.fetchrow(
+                f"UPDATE cust_contacts SET {set_sql} WHERE id=$1 RETURNING *",
+                contact_id, *[data[col] for col in cols])
+        else:
+            row = ct
     return dict(row)
 
 
@@ -1353,7 +1369,14 @@ async def update_contact(customer_id: int, contact_id: int, request: Request,
 async def delete_contact(customer_id: int, contact_id: int, request: Request,
                          user: dict = Depends(_get_current_user)):
     async with _acquire(request) as conn:
-        await _customer_or_404(conn, customer_id, user)   # 可见性 + 未删除
+        customer = await _customer_or_404(conn, customer_id, user)   # 可见性 + 未删除
+        _check_write_access(user, customer)
+        exists = await conn.fetchval(
+            "SELECT 1 FROM cust_contacts WHERE id=$1 AND customer_id=$2 AND tenant_id=$3",
+            contact_id, customer_id, DEFAULT_TENANT)
+        if not exists:
+            raise HTTPException(status_code=404, detail={
+                "error": "not_found", "code": "CONTACT_NOT_FOUND"})
         await conn.execute(
             "DELETE FROM cust_contacts WHERE id=$1 AND customer_id=$2 AND tenant_id=$3",
             contact_id, customer_id, DEFAULT_TENANT)
@@ -1369,7 +1392,8 @@ async def soft_delete_customer(customer_id: int, request: Request,
     后续发货/对账会找不到客户（用户 2026-10-18 确认）。
     """
     async with _acquire(request) as conn:
-        await _customer_or_404(conn, customer_id, user)   # 可见性 + 未删除（已删则 404）
+        customer = await _customer_or_404(conn, customer_id, user)   # 可见性 + 未删除（已删则 404）
+        _check_write_access(user, customer)
         open_orders = await conn.fetch(
             "SELECT id, order_no, status FROM orders"
             " WHERE tenant_id=$1 AND customer_id=$2"
@@ -1394,18 +1418,23 @@ async def soft_delete_customer(customer_id: int, request: Request,
 async def add_inquiry(customer_id: int, request: Request, body: InquiryCreate, user: dict = Depends(_get_current_user)):
     async with _acquire(request) as conn:
         customer = await _customer_or_404(conn, customer_id, user)
+        _check_write_access(user, customer)
+        # 与 orchestrator 同口径：channel / owner_scope 走共享枚举校验；
+        # 新建询盘状态恒为 unquoted（body.status 不再被接受，CRM-20）。
+        channel = validate_enum("inquiry_channel", body.channel)
+        owner_scope = validate_enum("owner_scope", body.owner_scope) or "private"
         inquiry_no = await _next_inquiry_no(conn, customer)
-        inquiry_status = "unquoted" if body.status in (None, "", "open") else body.status
         row = await conn.fetchrow(
             """INSERT INTO cust_inquiries
-               (tenant_id, customer_id, inquiry_no, channel, category_id, product_name_raw,
-                quantity, quantity_unit, application, status, notes, created_by,
-                owner_id, owner_scope, team_id)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *""",
-            DEFAULT_TENANT, customer_id, inquiry_no, body.channel, body.category_id,
+               (tenant_id, customer_id, inquiry_no, channel, lead_id, category_id,
+                product_name_raw, quantity, quantity_unit, application, status, notes,
+                created_by, owner_id, owner_scope, team_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'unquoted',$11,$12,$13,$14,$15)
+               RETURNING *""",
+            DEFAULT_TENANT, customer_id, inquiry_no, channel, body.lead_id, body.category_id,
             body.product_name_raw,
-            body.quantity, body.quantity_unit, body.application, inquiry_status, body.notes,
-            str(user["id"]), str(user["id"]), "private", user.get("team_id"),
+            body.quantity, body.quantity_unit, body.application, body.notes,
+            str(user["id"]), str(user["id"]), owner_scope, user.get("team_id"),
         )
         # 2026-10-18：询盘是**单据阶段**，不再联动改客户阶段（客户阶段只有
         # 活跃/沉寂/已下单，已下单只由开启中的订单推导）。
@@ -1429,6 +1458,7 @@ async def update_stage(customer_id: int, request: Request, body: StageUpdate, us
         })
     async with _acquire(request) as conn:
         cust = await _customer_or_404(conn, customer_id, user)
+        _check_write_access(user, cust)
         from_stage = cust["stage"]
         reason = (body.reason or "").strip() or None
         await conn.execute(
@@ -3638,6 +3668,16 @@ async def list_receivables(request: Request, status: str = None, page: int = 1,
             raise HTTPException(status_code=422, detail={"error": "bad_receivable_status"})
         cond = " AND r.status=$2"
         params.append(status)
+    # Q21（安全）：非管理员必须按归属过滤 —— 旧实现完全没有过滤，
+    # 任意登录用户能读全部应收。规则与 orchestrator scope_filter 同源。
+    if not _can_see_all(user):
+        parts = []
+        params.append(str(user["id"]))
+        parts.append(f"r.owner_id = ${len(params)}")
+        if user.get("team_id") is not None:
+            params.append(user["team_id"])
+            parts.append(f"r.team_id = ${len(params)}")
+        cond += " AND (r.owner_scope = 'tenant' OR " + " OR ".join(parts) + ")"
     rows = await db.fetch(
         request,
         "SELECT r.*, o.order_no, o.customer_name FROM receivables r"

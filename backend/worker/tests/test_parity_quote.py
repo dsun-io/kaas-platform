@@ -859,17 +859,14 @@ def test_patch_quote_sent_records_ledger_in_same_txn():
     assert ledger_args[2] == "other"      # 整单一条 → other 类目
     assert ledger_args[10] == "quote_issued"
     assert ledger_args[-1] == "5"         # created_by：int user_id → VARCHAR（显式 str）
-    # worker 现状（PARITY-QUOTE-25）：customer_id 直接绑定 **int**，
-    # 而 quotations.customer_id 是 TEXT 列 ⇒ 线上 asyncpg 会 DataError（500）。
-    # orchestrator 同处显式 `str(q.customer_id)`（quote_orders.py:383-386）。
-    assert ledger_args[1] == 3
+    # 已修 2026-10-19（PARITY-QUOTE-25）：customer_id 显式转 str 再绑 TEXT 列，
+    # 否则线上 asyncpg 会 DataError（500）。
+    assert ledger_args[1] == "3"
     assert "schema_version" in ledger_sql  # NOT NULL 且无 DB 默认值，必须显式写 1
     # 「报价单」本身也补齐（老报价没有对应报价单时签发即补一张）
     assert "INSERT INTO trade_docs" in conn.sql()
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-25: orchestrator 把 customer_id 转 str 再写 TEXT 列，worker 直接绑 int")
 def test_parity_quote_25_ledger_customer_id_is_text():
     updated = _quote_row(status="sent")
     conn = _FakeConn(
@@ -1733,9 +1730,8 @@ def test_parity_quote_3_list_receivables_page_bounds():
         assert client.get("/api/v1/receivables?page_size=999").status_code == 422
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-21: orchestrator 应收列表 scope_filter，worker 不做归属过滤（越权可见）")
 def test_parity_quote_21_receivables_scope_filter():
+    """已修 2026-10-19：应收列表按归属过滤（PARITY-QUOTE-21，越权读全部已堵）。"""
     conn = _FakeConn(fetch=[[]], fetchval=[0])
     with _patched(conn, CUSTOMER):
         client.get("/api/v1/receivables")

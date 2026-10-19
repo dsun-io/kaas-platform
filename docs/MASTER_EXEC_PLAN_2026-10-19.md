@@ -150,8 +150,11 @@
 - [x] **S3-j** 报价/订单域行为对等（2026-10-19，teammate quote-parity）—— `test_parity_quote.py` 120 例
       （92 passed + 28 xfail）；差异集中在 401 体形状、`closed` 状态枚举、`customer_id` 类型、
       错误码优先级、行项覆盖字段缺失、`days` 越界钳位
-- [ ] **S3-k** 修复 CRM 高危差异（写权限 3 处 + 联系人 null 清空 + 询盘校验/lead_id），摘对应 xfail
-- [ ] **S3-l** 修复报价/订单域差异（按严重度分档），摘对应 xfail
+- [x] **S3-k** CRM 高危差异已修（2026-10-19）：写权限 5 处（客户删除 / 阶段 / 建询盘 / 联系人增删改）、
+      联系人显式 null 清空、`is_primary` 唯一、询盘 channel/status/lead_id/owner_scope、body 不再要求 customer_id；
+      CRM xfail **23 → 11**（其余为响应键集/分页/排序/404 体等中低危，按档排期）
+- [~] **S3-l** 报价/订单差异：**P0 已修**（Q21 应收列表越权、Q25 签发入账 `customer_id` 类型错→线上 500）；
+      其余 26 条 xfail（枚举/错误码/投影/分页等）待按档处理
 - [ ] **S3-g** 测试重写 350–380 条 + marker 错位 87 条归位（共用 `queries/` 造数，与 S3 同批）
 
 **S4 删壳 + CI（1 人日）**
