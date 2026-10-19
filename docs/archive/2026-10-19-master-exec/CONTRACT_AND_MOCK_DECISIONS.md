@@ -1,5 +1,10 @@
 # 契约与 mock 覆盖：用户裁决（2026-10-11 第三批）
 
+> 📦 **已归档（2026-10-19）**：本文降级为**决策记录**。其中 S1–S3 的具体执行步骤已被
+> `docs/DUAL_BACKEND_CONVERGENCE_2026-10-19.md` + `docs/DUAL_BACKEND_CONVERGENCE_EXEC_PLAN_2026-10-19.md`
+> 取代；R5 门禁已落地（contracts-check.ts）；§三 3 个真实缺陷随收敛排期处理。
+> 当前执行入口以 `docs/MASTER_EXEC_PLAN_2026-10-19.md` 为准。
+
 > **性质**：用户裁决的原始记录 + 由裁决决定的下一步。
 > 与另两份文档的关系：
 > `docs/ADMIN_TENANTS_CONTRACT_REPORT.md`（只读分析，310 行）是**输入**；
