@@ -11,8 +11,11 @@
   "workers_dev": false,
   "hyperdrive": [
     {
+      // 2026-10-19：生产库 Neon → Prisma Postgres（PG 17.2，us-east-1）。
+      // 连接串用**直连** db.prisma.io（Accelerate 的 pooled.db.prisma.io 已进入停用倒计时）；
+      // Hyperdrive 自身负责池化，运行时不再依赖 Accelerate。
       "binding": "HYPERDRIVE",
-      "id": "f53fed49705043008737032e4bfa2b8e"
+      "id": "1733fcd80736482e8ec6e7648ed52286"
     }
   ],
   // 文件本体（产品图 / 客户盖章回传件 / 系统出的 PDF）走**对象存储**：
