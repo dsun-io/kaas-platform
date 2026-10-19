@@ -65,7 +65,7 @@ export default function SettingsPage() {
                     tenants={
                       tenants?.map((t) => ({
                         tenant_id: t.tenant_id,
-                        display_name: t.name,
+                        display_name: t.display_name,
                         locale: "zh-CN",
                         region: "cn-north",
                         is_active: t.is_active,

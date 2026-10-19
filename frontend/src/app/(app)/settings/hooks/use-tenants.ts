@@ -5,7 +5,9 @@ import { apiClient } from "@/lib/api/client";
 
 interface Tenant {
   tenant_id: string;
-  name: string;
+  // 2026-10-19 S4：与渲染侧 components/types.ts 统一为 display_name
+  // （此前这里叫 name，contracts R5.1 曾作为已登记偏差挂着）
+  display_name: string;
   is_active: boolean;
 }
 

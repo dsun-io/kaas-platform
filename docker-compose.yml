@@ -52,19 +52,22 @@ services:
       timeout: 10s
       retries: 3
 
-  # ─── Backend (Kaas v2 Orchestrator) ───
+  # ─── Backend（方案 B S4：单应用 = worker/src/local_run.py）───
+  # 本地唯一后端就是生产同一份 worker app（uvicorn 起 main:app，DB 走 asyncpg）。
+  # orchestrator 目录只剩 ORM 模型 + Alembic（建表用），不再是可运行服务。
   backend:
     build:
-      # 上下文必须是 backend/：orchestrator 运行期 import 共享内核 backend/kaas_common
       context: ./backend
-      dockerfile: orchestrator/Dockerfile
+      dockerfile: worker/Dockerfile.local
     container_name: kaas-backend
     ports:
       - "8000:8000"
-    env_file: ./backend/orchestrator/.env
     environment:
-      - DATABASE_URL=postgresql+asyncpg://kaas:kaas_dev@postgres:5432/kaas_dev
-      - REDIS_URL=redis://redis:6379/0
+      # local_run 把 LOCAL_DATABASE_URL 注入 request.scope["env"].HYPERDRIVE
+      - LOCAL_DATABASE_URL=postgresql://kaas:kaas_dev@postgres:5432/kaas_dev
+      - JWT_SECRET=${JWT_SECRET:-local-dev-jwt-secret-at-least-32-chars!!}
+      - ADMIN_SETUP_TOKEN=${ADMIN_SETUP_TOKEN:-local-setup-token}
+      - LOCAL_RELOAD=${LOCAL_RELOAD:-1}
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
@@ -72,27 +75,19 @@ services:
       - MINIO_SECURE=false
       - APP_ENV=development
       - LOG_LEVEL=DEBUG
-      - UV_LINK_MODE=copy  # 解决开发环境中代码热重载导致的链接问题
-      # 共享内核在容器内的位置（/app = orchestrator 代码，/kaas_common = kaas_common）
-      - PYTHONPATH=/app:/kaas_common
-
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 5s
-      start_period: 15s
+      start_period: 20s
       retries: 3
     volumes:
-      # 开发模式：源码 bind mount，容器内 --reload 生效
-      - ./backend/orchestrator:/app
-      # 共享内核（orchestrator 与 worker 共用一份）：挂到 /kaas_common，避免被 /app 覆盖
-      - ./backend/kaas_common:/kaas_common
+      # 开发热重载：只挂 worker/src（含 sync-shared 生成的 kaas_common 镜像）
+      - ./backend/worker/src:/app/src
 
 volumes:
   kaas_pgdata:

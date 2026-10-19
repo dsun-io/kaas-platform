@@ -268,13 +268,14 @@ class TestRouteAndContract:
                 break
         assert first == BATCH_PATH, f"批量路由被其它路由吃掉了：{first!r}"
 
-    def test_worker_literal_matches_orchestrator_literal(self):
-        """两端路径字面量逐字相同（route-parity 也会查，这里在测试里再钉一次）。"""
-        root = Path(__file__).resolve().parents[3]
-        orch = (root / "backend" / "orchestrator" / "app" / "api" / "trade_docs.py").read_text(
-            encoding="utf-8")
-        matches = re.findall(r'@router\.get\("(/[^"]*render-fingerprint-checks[^"]*)"', orch)
-        assert matches == [BATCH_PATH[len("/api/v1"):]]
+    def test_batch_path_literal_is_stable(self):
+        """S4（2026-10-19）后无第二后端：路径字面量冻结在此。
+
+        删壳前这里逐字比对 `backend/orchestrator/app/api/trade_docs.py`（route-parity
+        也会查双端一致）；单应用后双端一致性不再成立，改为钉死字面量本身 ——
+        路径被改写会让前端 404，仍要在测试里兜住。
+        """
+        assert BATCH_PATH == "/api/v1/trade-docs/render-fingerprint-checks/batch"
 
     def test_card_and_summary_contract_come_from_kernel(self):
         """卡片/汇总字段集取自内核常量（两端同一份，不各写一套键）。"""

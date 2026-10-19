@@ -6,16 +6,17 @@
 # 无法引用仓库里的任意路径。与其"手写第二份"（历史做法，已造成 80 个接口漂移），
 # 不如把唯一源**自动复制**进去 —— 复制是幂等的、无人工判断的。
 #
-# 两段镜像
-# --------
-# 1) backend/kaas_common/
+# 三段镜像（2026-10-19 S4 起真源全部在 backend/kaas_common）
+# ------------------------------------------------------------
+# 1) backend/kaas_common/（不含 export_quote/domain）
 #                      -> backend/worker/src/kaas_common/
-# 2) backend/orchestrator/app/services/export_quote/**（报价引擎 · 纯标准库）
+# 2) backend/kaas_common/export_quote/**（报价引擎 · 纯标准库）
 #                      -> backend/worker/src/kaas_common/export_quote/
+# 3) backend/kaas_common/domain/enums.py（业务枚举字典）
+#                      -> backend/worker/src/kaas_common/domain/enums.py
 #
-# 关于第 2 段：引擎包内**全部是相对导入**（from .x / from ..x），
-# 所以复制过去即可，无需改写 import。前提是引擎的模块级依赖必须是纯标准库
-# （Pyodide 装不了 C 扩展）。
+# S4 之前引擎在 backend/orchestrator/app/services/export_quote、枚举在
+# app/domain/enums.py；删壳后二者已迁入共享内核，**orchestrator 不再是任何真源**。
 #
 # 2026-10-18 TAX-06：旧文件版税务档案（rates.py / rate_sets/*.json）已下线；
 # 税务档案改由 DB 表 `tax_archives` 承载，本脚本不再生成 rate_sets 清单。
@@ -44,7 +45,7 @@ $stages = @(
     },
     @{
         Label   = "报价引擎"
-        Source  = Join-Path $repoRoot "backend/orchestrator/app/services/export_quote"
+        Source  = Join-Path $repoRoot "backend/kaas_common/export_quote"
         Target  = Join-Path $repoRoot "backend/worker/src/kaas_common/export_quote"
         Filters = @("*.py", "*.json")
         Exclude = @("__pycache__", "examples")
@@ -55,7 +56,7 @@ $stages = @(
         # Worker 的 GET /api/v1/enums 必须回**同一份**常量，绝不能手抄第二份 ——
         # 前端下拉/标签全靠它，抄错就是「线上选项少一个」这种无声故障。
         Label   = "业务枚举字典"
-        Source  = Join-Path $repoRoot "backend/orchestrator/app/domain"
+        Source  = Join-Path $repoRoot "backend/kaas_common/domain"
         Target  = Join-Path $repoRoot "backend/worker/src/kaas_common/domain"
         Filters = @("enums.py")
         Exclude = @("__pycache__")

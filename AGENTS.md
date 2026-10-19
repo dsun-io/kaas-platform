@@ -46,37 +46,29 @@
 ## 其它需要知道的口径
 
 - **租户 ≠ 团队**：`tenant_id` 恒为 `"default"`，**团队（`team_id`）才是隔离边界**。
-- **共享内核**：两端共用的逻辑放 `backend/kaas_common/`，
-  改完必须跑 `pwsh scripts/sync-shared.ps1`，否则 worker 端是旧的。
-- **门禁**（改完都要跑）：orchestrator `pytest -m unit`、worker `pytest`、
-  前端 `typecheck` / `lint` / `test`、`contracts:check`、
-  `python scripts/route-parity.py`、`sync-shared.ps1 -Check`、
-  `NEXT_EXPORT=1 pnpm build`。
+- **共享内核**：共享逻辑全部放 `backend/kaas_common/`（**S4 起含报价引擎 `export_quote/` 与
+  `domain/enums.py`；orchestrator 不再是任何真源**）。改完必须跑
+  `powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1`，否则 worker 端是旧的。
+- **门禁**（改完都要跑；2026-10-19 S4 后口径）：
+  - orchestrator（仅迁移/模型/内核测试，222 条）：
+    `cd backend/orchestrator; uv run --extra migrations pytest tests -q`
+  - worker（唯一运行时，954+ 条）：`cd backend/worker; uv run --frozen --with pytest --with httpx2 python -m pytest tests -q`
+  - 前端：`cd frontend; pnpm typecheck; pnpm lint; pnpm test; pnpm contracts:check`
+  - 静态断言：`scripts/check-runtime-deps.py`、`scripts/check-schema-coverage.py`、
+    `scripts/check-schema-drift.py`、`scripts/sync-shared.ps1 -Check`
+  - 构建：`NEXT_EXPORT=1 NEXT_DIST_DIR=.next-verify pnpm build`
+  - **已退役**（不要再跑/不要新增引用）：`route-parity.py`、`export_openapi.py`、contracts `R6`
+    —— 归档在 `scripts/archive/`，说明见 `scripts/archive/README.md`。
 
-### ⚠️ 改 Pydantic 模型 / 路由时：`contracts:check` 的"绿"可能是**假绿**
+### ⚠️ 契约检查口径（S4 后变了）
 
-**实测（2026-10-12，R6 上线当天就被踩到）**：
-
-- **提交前**跑 `contracts:check` ⇒ **PASS**；**提交之后**再跑 ⇒ **FAIL** `R6.schema:<模型> 期望形状过时` ✗
-- 原因：**R6 两侧（源码与产物）都取 HEAD 快照** ⇒ 它比的是"HEAD 源码 ↔ **已提交**的
-  `backend/orchestrator/docs/openapi.json`"，**看不到工作树里未提交的改动** ⇒
-  **产物在你提交的那一刻就旧了**。
-
-**正确顺序（缺一步就会留下 main 上的红）**：
-
-```
-改模型/路由  →  重生成产物  →  提交  →  【再跑一次】contracts:check
-```
-
-重生成命令（**必须带 `PYTHONPATH`**，否则 `ModuleNotFoundError: No module named 'app'`）：
-
-```bash
-cd backend/orchestrator
-PYTHONPATH=. .venv/Scripts/python scripts/export_openapi.py
-```
-
-> 这是**设计使然**（R6 刻意不读工作树，以免把别人未提交的半成品当基准 ✗），
-> 不是门禁失灵；所以**顺序必须反过来**：先提交产物，再让门禁看它。
+- `contracts:check` 保留（R0–R5），但**契约源已迁移**：
+  R0 → `backend/kaas_common/domain/schema_registry.py`；R1/R5 → `backend/contracts_frozen/*.py`（冻结快照）；
+  R2 → `backend/kaas_common/domain/workstations.py`；R3 → `backend/kaas_common/domain/enums.py` +
+  `backend/kaas_common/workstation/number_rules.py`；R4 → `backend/worker/src/**`。
+- `R6 openapi.json 新鲜度已退役`：单应用后没有第二后端源码可做基准；artifact
+  `backend/orchestrator/docs/openapi.json` **冻结**，不再需要“重生成产物 → 提交 → 再跑”。
+  改 worker 路由不会再让 contracts:check 变红；前端契约靠 R1–R5 + `pnpm test` 兜。
 - **本机工具链（2026-10-19 实机核对；换设备需重核）**：
   - DSH runtime：`C:\Users\76516\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe`
     + `...\dependencies\pnpm\bin\pnpm.cjs`（注意是 `dependencies\pnpm\bin\pnpm.cjs`，不是 `node\pnpm\…`）。
@@ -85,8 +77,8 @@ PYTHONPATH=. .venv/Scripts/python scripts/export_openapi.py
   - ⚠️ **本机没有 PowerShell 7**（`pwsh` 不在 PATH，只有 5.1）⇒ 所有 `pwsh scripts/…` 改用
     `powershell -ExecutionPolicy Bypass -File scripts/…`。
   - ⚠️ **PATH 上的 `python` 是 WindowsApps 占位符**（执行无输出、退出 1）⇒ 需要 Python 的命令
-    （`scripts/route-parity.py`、`export_openapi.py` 等）一律用
-    `backend/orchestrator/.venv/Scripts/python.exe`；worker 测试用 `uv run …`。
+    （`scripts/check-*.py` 等）一律用 `backend/orchestrator/.venv/Scripts/python.exe`；
+    orchestrator 测试用 `uv run --extra migrations …`，worker 测试用 `uv run …`。
   - ⚠️ 用户名会变：本机是 `76516`；历史文档写过 `HJ` / `河北慷逊公司`，按旧路径调用会
     `CommandNotFoundException`。以 `$env:USERPROFILE` 为准。
   - git hook：`.husky/pre-commit` 调 `pnpm lint-staged`（实测本机可直接解析）。若换设备报

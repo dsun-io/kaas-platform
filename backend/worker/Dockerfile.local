@@ -1,0 +1,37 @@
+# 本地开发镜像（方案 B S4）：跑**生产同一份** worker app（uvicorn + local_run.py）。
+#
+# 为什么不是生产镜像：生产走 `pywrangler deploy`（Pyodide 运行时）；这个 Dockerfile
+# 只用于 `docker compose` 的本地开发/联调，因此可以装 uvicorn（不进 Worker bundle）。
+#
+# 构建上下文 = ./backend（与旧 orchestrator 镜像一致，便于 compose 复用）。
+FROM python:3.13-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    UV_LINK_MODE=copy
+
+# curl 供 compose healthcheck 使用
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir uv
+
+WORKDIR /app
+
+# 先装依赖（缓存层）：worker 的运行时依赖（fastapi/pyjwt/asyncpg/…）
+COPY worker/pyproject.toml worker/uv.lock /app/
+RUN uv sync --frozen --no-dev
+
+# 本地入口只需要 uvicorn；显式装进 worker venv（不进 pyproject，避免增大 Worker bundle）
+RUN uv pip install --python /app/.venv/bin/python uvicorn
+
+# app 源码（含 sync-shared 生成的 kaas_common 镜像）
+COPY worker/src /app/src
+
+WORKDIR /app/src
+ENV PYTHONPATH=/app/src \
+    PORT=8000 \
+    HOST=0.0.0.0
+
+EXPOSE 8000
+CMD ["/app/.venv/bin/python", "local_run.py"]

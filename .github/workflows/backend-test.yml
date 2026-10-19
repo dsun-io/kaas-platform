@@ -8,16 +8,15 @@ on:
   push:
     paths:
       - 'backend/**'
-      - 'scripts/route-parity.py'
-      - 'scripts/route-parity-allowlist.txt'
+      - 'scripts/**'
   pull_request:
     paths:
       - 'backend/**'
-      - 'scripts/route-parity.py'
-      - 'scripts/route-parity-allowlist.txt'
+      - 'scripts/**'
 
 jobs:
   unit-tests:
+    name: "迁移/模型测试 + 静态门禁（S4 删壳后）"
     runs-on: ubuntu-latest
 
     env:
@@ -30,9 +29,10 @@ jobs:
         with:
           python-version: '3.12'
 
+      # S4 删壳后本包只剩 ORM 模型 + Alembic：迁移依赖在 optional-dependencies.migrations。
       - name: Install dependencies
         working-directory: ./backend/orchestrator
-        run: uv sync
+        run: uv sync --extra migrations
 
       # `test_trade_doc_render_fingerprint` 会断言 worker 镜像与共享内核逐字节一致；
       # `backend/worker/src/kaas_common/` 被 .gitignore 忽略 ⇒ runner 上必须先生成
@@ -48,35 +48,23 @@ jobs:
 
       - name: Run unit tests
         working-directory: ./backend/orchestrator
-        run: uv run pytest -m unit --tb=short -q
-        env:
-          LLM_PROVIDER: stub
-          KB_PROVIDER: stub
-
-      # Worker 侧纯函数测试（产品提取 / 规格正则 / SSRF 防护 / 三态过滤）。
-      # 只需 fastapi，故复用 orchestrator 的 venv；不依赖 Cloudflare runtime 与数据库。
-      - name: Worker chain unit tests
-        working-directory: ./backend/orchestrator
-        run: uv run python ../worker/tests/test_product_extract.py
-
-      # 路由对等：orchestrator 有、worker 没有的路由必须登记在
-      # scripts/route-parity-allowlist.txt，否则线上会 404（历史多次踩坑）。
-      # 只做静态解析，不需要装 Worker 依赖，秒级完成。
-      - name: Route parity (orchestrator vs worker)
-        run: uv run --no-project python scripts/route-parity.py
+        run: uv run --extra migrations pytest -m unit --tb=short -q
 
       # 方案 B 阶段二 S2：schema 完备性 —— worker SQL 引用的表必须能被
       # 空库快径（metadata.create_all + stamp）创建，否则新环境必 500。
       - name: Schema coverage gate
         working-directory: ./backend/orchestrator
-        run: uv run python ../scripts/check-schema-coverage.py
+        run: uv run --extra migrations python ../scripts/check-schema-coverage.py
 
       # 2026-10-19：表级门禁查不出**列/索引**漂移（本地冒烟实测：生产有 team_id、
       # 模型漏建 ⇒ 全新空库 export-quote/products 500）。用生产列快照做列级对比；
       # 生产独有表（历史遗留）登记在 scripts/schema-drift-allowlist.txt。
       - name: Schema column drift gate (vs production snapshot)
         working-directory: ./backend/orchestrator
-        run: uv run python ../scripts/check-schema-drift.py
+        run: uv run --extra migrations python ../scripts/check-schema-drift.py
+
+      # 说明：route-parity 已于 S4 退役（worker 是唯一后端，没有第二实现可比），
+      # 脚本移入 scripts/archive/ 留档；S3 的 parity 测试是退役判据。
 
   worker-tests:
     name: "worker:tests（路由面 + 无 DB 行为测试）"
@@ -109,51 +97,6 @@ jobs:
       - name: Run worker tests
         working-directory: ./backend/worker
         run: uv run --frozen --with pytest --with httpx2 python -m pytest tests -q
-
-  db-tests:
-    runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: kaas
-          POSTGRES_PASSWORD: kaas_dev_pw
-          POSTGRES_DB: kaas_v2_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U kaas -d kaas_v2_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
-    env:
-      TEST_DATABASE_URL: postgresql+asyncpg://kaas:kaas_dev_pw@localhost:5432/kaas_v2_test
-      # 应用自身的 engine 也指向测试库：部分 e2e 用例走 async_client（不覆盖
-      # get_db_session），会直接命中 app.db.session 的 engine。此前只用
-      # TEST_DATABASE_URL 设置，导致 app 用默认 kaas:kaas_dev@localhost:5432/kaas_dev
-      # 连库 ⇒ `password authentication failed for user "kaas"`。
-      DATABASE_URL: postgresql+asyncpg://kaas:kaas_dev_pw@localhost:5432/kaas_v2_test
-      UV_LINK_MODE: copy
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install dependencies
-        working-directory: ./backend/orchestrator
-        run: uv sync
-
-      - name: Run DB tests
-        working-directory: ./backend/orchestrator
-        run: uv run pytest -m db --tb=short -q
-        env:
-          LLM_PROVIDER: stub
-          KB_PROVIDER: stub
 
   # 真 Postgres 写入路径测试（task-8 / 路线 C 子集）。
   # worker 用裸 asyncpg 手写 SQL，假 DB 测不出「NOT NULL 且无默认值 / 漏列」这类
@@ -205,7 +148,7 @@ jobs:
       # backend/orchestrator/.venv），故这里把 orchestrator 依赖也装上。
       - name: Install orchestrator deps（提供 alembic 迁移解释器）
         working-directory: ./backend/orchestrator
-        run: uv sync
+        run: uv sync --extra migrations
 
       # 方案 B S2：空库快径（metadata.create_all + stamp）必须与 models 零漂移。
       # 用独立库 kaas_migtest，不干扰集成用例的 kaas_v2_test。
@@ -216,13 +159,13 @@ jobs:
         working-directory: ./backend/orchestrator
         env:
           DATABASE_URL: postgresql+asyncpg://kaas:kaas_dev_pw@localhost:5432/kaas_migtest
-        run: uv run alembic upgrade head
+        run: uv run --extra migrations alembic upgrade head
 
       - name: Alembic drift check (metadata vs fast-path schema)
         working-directory: ./backend/orchestrator
         env:
           DATABASE_URL: postgresql+asyncpg://kaas:kaas_dev_pw@localhost:5432/kaas_migtest
-        run: uv run alembic check
+        run: uv run --extra migrations alembic check
 
       - name: Run worker real-PG tests
         working-directory: ./backend/worker
