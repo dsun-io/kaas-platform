@@ -14,6 +14,11 @@ import pytest
 
 from app.middleware.auth import AuthContextMiddleware
 from app.core.auth import AuthContext
+
+# 用户 2026-10-18 裁决：公章/企业抬头**写入** = 团队管理员或平台管理员
+# （app/api/company_profile.require_team_admin）。本文件写操作用平台管理员身份跑；
+# 客户账号 / 无团队账号一律 403 TEAM_ADMIN_REQUIRED（用例里按需覆盖请求头）。
+ADMIN = {"X-Test-Role": "admin"}
 from app.main import app
 from tests.conftest import _TEST_AUTH_PUBLIC_PATHS
 
@@ -79,7 +84,7 @@ class TestSealUpload:
             "/api/v1/tenant/company-seals",
             files={"file": ("seal.png", _png_bytes(), "image/png")},
             data={"name": "公章"},
-        )
+            headers=ADMIN)
         assert resp.status_code == 201
         data = resp.json()
         assert data["name"] == "公章"
@@ -93,7 +98,7 @@ class TestSealUpload:
             "/api/v1/tenant/company-seals",
             files={"file": ("seal.jpg", _fake_jpeg(), "image/jpeg")},
             data={"name": "财务章"},
-        )
+            headers=ADMIN)
         assert resp.status_code == 422
         assert resp.json()["detail"]["code"] == "BAD_IMAGE"
 
@@ -104,7 +109,7 @@ class TestSealUpload:
             "/api/v1/tenant/company-seals",
             files={"file": ("seal.png", src, "image/png")},
             data={"name": "透明测试章"},
-        )
+            headers=ADMIN)
         assert resp.status_code == 201
         img = await client.get(resp.json()["preview_url"])
         assert img.status_code == 200
@@ -116,12 +121,12 @@ class TestSealUpload:
             "/api/v1/tenant/company-seals",
             files={"file": ("a.png", _png_bytes(), "image/png")},
             data={"name": "公章"},
-        )
+            headers=ADMIN)
         resp = await client.post(
             "/api/v1/tenant/company-seals",
             files={"file": ("b.png", _png_bytes(), "image/png")},
             data={"name": "公章"},
-        )
+            headers=ADMIN)
         assert resp.status_code == 409
         assert resp.json()["detail"]["code"] == "SEAL_NAME_TAKEN"
 
@@ -131,7 +136,7 @@ class TestSealUpload:
             "/api/v1/tenant/company-seals",
             files={"file": ("bad.png", b"not-an-image", "image/png")},
             data={"name": "坏图"},
-        )
+            headers=ADMIN)
         assert resp.status_code == 422
         assert resp.json()["detail"]["code"] == "BAD_IMAGE"
 
@@ -142,7 +147,7 @@ class TestSealUpload:
             "/api/v1/tenant/company-seals",
             files={"file": ("big.png", big, "image/png")},
             data={"name": "超大章"},
-        )
+            headers=ADMIN)
         assert resp.status_code == 413
 
 
@@ -155,15 +160,15 @@ class TestSealDefault:
             "/api/v1/tenant/company-seals",
             files={"file": ("a.png", _png_bytes(), "image/png")},
             data={"name": "章一"},
-        )
+            headers=ADMIN)
         r2 = await client.post(
             "/api/v1/tenant/company-seals",
             files={"file": ("b.png", _png_bytes(), "image/png")},
             data={"name": "章二"},
-        )
+            headers=ADMIN)
         id1, id2 = r1.json()["id"], r2.json()["id"]
 
-        resp = await client.put(f"/api/v1/tenant/company-seals/{id2}/default")
+        resp = await client.put(f"/api/v1/tenant/company-seals/{id2}/default", headers=ADMIN)
         assert resp.status_code == 200
 
         items = (await client.get("/api/v1/tenant/company-seals")).json()["items"]
@@ -177,13 +182,13 @@ class TestSealDefault:
             "/api/v1/tenant/company-seals",
             files={"file": ("a.png", _png_bytes(), "image/png")},
             data={"name": "默认章"},
-        )
+            headers=ADMIN)
         await client.post(
             "/api/v1/tenant/company-seals",
             files={"file": ("b.png", _png_bytes(), "image/png")},
             data={"name": "备用章"},
-        )
-        resp = await client.delete(f"/api/v1/tenant/company-seals/{r1.json()['id']}")
+            headers=ADMIN)
+        resp = await client.delete(f"/api/v1/tenant/company-seals/{r1.json()['id']}", headers=ADMIN)
         assert resp.status_code == 409
         assert resp.json()["detail"]["code"] == "DEFAULT_SEAL"
 
@@ -193,13 +198,13 @@ class TestSealDefault:
             "/api/v1/tenant/company-seals",
             files={"file": ("a.png", _png_bytes(), "image/png")},
             data={"name": "默认章"},
-        )
+            headers=ADMIN)
         r2 = await client.post(
             "/api/v1/tenant/company-seals",
             files={"file": ("b.png", _png_bytes(), "image/png")},
             data={"name": "备用章"},
-        )
-        resp = await client.delete(f"/api/v1/tenant/company-seals/{r2.json()['id']}")
+            headers=ADMIN)
+        resp = await client.delete(f"/api/v1/tenant/company-seals/{r2.json()['id']}", headers=ADMIN)
         assert resp.status_code == 200
         assert resp.json()["deleted"] is True
 
@@ -213,7 +218,7 @@ class TestSealIsolation:
             "/api/v1/tenant/company-seals",
             files={"file": ("a.png", _png_bytes(), "image/png")},
             data={"name": "甲的章"},
-        )
+            headers=ADMIN)
         assert r.status_code == 201, r.text
         seal_id = r.json()["id"]
 
@@ -225,7 +230,7 @@ class TestSealIsolation:
         assert resp.json()["detail"]["code"] == "SEAL_NOT_FOUND"
 
     async def test_customer_account_forbidden(self, client):
-        """customer 账号管理公章 → 403（conftest X-Account-Type 注入）。"""
+        """customer 账号（无团队）管理公章 → 403（用户 2026-10-18 裁决：写=团队管理员/平台管理员）。"""
         resp = await client.post(
             "/api/v1/tenant/company-seals",
             files={"file": ("a.png", _png_bytes(), "image/png")},
@@ -233,7 +238,8 @@ class TestSealIsolation:
             headers={"X-Account-Type": "customer"},
         )
         assert resp.status_code == 403
-        assert resp.json()["detail"]["code"] == "INTERNAL_ONLY"
+        # 口径变更（2026-10-18）：从 INTERNAL_ONLY 收紧为「仅团队管理员可改」
+        assert resp.json()["detail"]["code"] == "TEAM_ADMIN_REQUIRED"
 
     async def test_list_returns_meta_not_bytes(self, client):
         """列表只回元数据 + preview_url，不回裸字节。"""
@@ -241,7 +247,7 @@ class TestSealIsolation:
             "/api/v1/tenant/company-seals",
             files={"file": ("a.png", _png_bytes(), "image/png")},
             data={"name": "公章"},
-        )
+            headers=ADMIN)
         resp = await client.get("/api/v1/tenant/company-seals")
         assert resp.status_code == 200
         items = resp.json()["items"]

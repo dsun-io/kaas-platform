@@ -13,6 +13,9 @@
 > **最新交接文档：`docs/HANDOVER_2026-10-18.md`**（2026-10-18：客户 5 项修复、阶段三值模型、
 > 本地 Docker 开发环境、DAP/DDP 术语、部署待办）。**先读它。**
 > 上一份：`docs/HANDOVER_2026-10-17.md`（生产拓扑、R2 踩坑、账号）。
+> **2026-10-19 平行线交接（CI/生产修复）**：`docs/HANDOVER_2026-10-19_CI_AND_PROD_FIXES.md`
+> —— 注册 500 / 报价页白屏已修并部署；CI `backend:test` db-tests 长期红已修绿（`6c08900`）；
+> 含「本机无 Postgres ⇒ 本地 db 测试全 skip」等环境坑与「不要重做」清单。
 
 > **（2026-10-19 峰值时段检查点 · P1 迁库暂停在 70% —— 交接见
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`）**
@@ -197,6 +200,20 @@
 >    保证「配的价 = 算价用的价」；POST 用单语句 CTE 保证「停用旧版本 + 插新版本」原子性）。
 >    旧遗留实现按 `product_specs` 自由规格成本，前端早已不用，随之移除。
 >    新增 `tests/test_pricing_data_api.py` 6 条行为测试锁死矩阵形状回归。
+> 5. **CI `backend:test` · db-tests 恒红（自 2026-10-18 起）→ 根因三处旧口径**（提交 `6c08900`）：
+>    - `tests/conftest.py` 的 TRUNCATE 种子清单还含 `customer_quote_profiles`，该表已被迁移
+>      `202610180009/010` 删除 ⇒ 初始化 fixture 抛 `UndefinedTableError`，10 条 admin 用例 ERROR；
+>      改为 `to_regclass` 判存在后再 TRUNCATE（以后删表不必再改清单）。
+>    - `tests/test_company_seals.py` 仍是旧「仅 internal 可管公章」口径；按用户 2026-10-18 裁决
+>      （公章/企业抬头写入 = **团队管理员或平台管理员**）更新：写操作用平台管理员身份，
+>      客户账号断言 `TEAM_ADMIN_REQUIRED`（原 `INTERNAL_ONLY`）。
+>    - `tests/test_trade_docs_api.py` 单证号断言 `QUO-2026…` 过期：编号自 2026-10-18 起统一为
+>      「类型-国家-客户-时间戳」（`kaas_common.number_rules.build_number`）⇒ 断言改 `QUO-` 前缀。
+>    **为什么长期没人发现**：本机没有 PostgreSQL，db 测试在本地全部 **skip**（不是跑过），
+>    CI 只显示 job 红、日志需登录才能看。本次用**临时调试分支**（backend:test 监听所有分支的
+>    backend 路径 push，deploy 只听 main）把失败明细写进 check-run annotations 才拿到真因；
+>    修复后该分支 `backend:test` 三个 job（unit / worker / **db**）全绿，再以 `6c08900` 落 main。
+>    调试分支已删除，未触发多余生产部署。
 
 > **（2026-10-18 · 客户管理 5 项修复 + 阶段模型重构 + 本地 Docker）**
 >
