@@ -9,6 +9,7 @@
 > | U-E3 发布窗口 | **A. 先不发布**，等 S5 + 升级完成后再定 | 部署保持冻结；发布前跑 `ENV_VERIFICATION` §4 检查单 |
 > | U-S8 internal 权限 | **A. 维持平台运营专属**（internal 不可访问 `/admin/*`） | 已实现的 6 端点鉴权 + `test_admin_authz.py` 即最终口径，无需改动 |
 > | U-S1 Notion 令牌（危-1） | **不清理**（不吊销、不重写 git 历史；`.codex/config.toml` 已不在索引） | 危-1 按「用户接受风险」关闭；**无需你再操作**，详见 SECURITY_AUDIT 危-1 裁决注记 |
+> | U-B3 智能表格数据 | **不用补**（21 行缺失输入不再要求补全） | U-B3 关闭；表格核验文档缺口保留为历史记录，不阻塞上线 |
 >
 
 > 这些事项**只能由你（账号持有人）在外部控制台/业务系统完成**，我在仓库侧已给出步骤、
@@ -35,7 +36,7 @@
 |---|---|---|---|---|
 | U-B1 | **R2 `S3_ACCESS_KEY` 重建 32 位**（U-1） | CF Dashboard → R2 → Manage R2 API Tokens → 创建 Access Key/Secret（Object Read & Write，限 `kaas-files`）→ `npx wrangler secret put S3_ACCESS_KEY --name kaas` / 同 S3_SECRET_KEY | `curl` 上传→预签名下载回环成功；`/api/v1/files/_r2_debug`（管理员）返回 ok | ⬜ 待执行 |
 | U-B2 | **生产 `product_tax_rates` 配置数据**（U-2） | 按 `docs/DEPLOYMENT_PLAN_2026-10-18.md` 顶部清单，在 Neon production 写入税率行（0 条则批量报价不放行） | `select count(*) from product_tax_rates;` > 0；批量报价接口不再返回「税率未配置」 | ⬜ 待执行 |
-| U-B3 | **智能表格 21 行缺失输入补全**（U-4） | 按 `docs/SHEET_CALC_VERIFICATION_*.md §4-5` 清单补齐业务输入 | 报价复算与表格逐行一致（脚本 `scripts/verify_quote_against_sheet` 类工具） | ⬜ 待业务执行 |
+| U-B3 | **智能表格 21 行缺失输入补全**（U-4） | **无需操作**：2026-10-20 用户裁决**不用补**（表格数据缺口保留为历史核验记录，不影响上线） | 无需验证；风险接受留痕于任务清单/交接文档 | ✅ 已裁决「不用补」（2026-10-20） |
 | U-B4 | **仓库 billing / Actions 配额**（U-3） | GitHub → Billing：确认 Actions 配额/付款方式；当前限额已耗尽（CI 仅 workflow_dispatch） | `gh run list` 可正常触发（或账单页显示额度） | ⬜ 待执行 |
 
 ## C. 环境/发布决策类
