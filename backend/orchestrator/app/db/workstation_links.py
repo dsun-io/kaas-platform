@@ -278,6 +278,10 @@ class TradeDoc(Base):
     issued_at = Column(DateTime(timezone=True), nullable=True)
     issued_by = Column(Text, nullable=True)
     raw_payload = Column(JSONB, nullable=True)
+    # 数据可见范围（§10.3）：生产有 owner_id/owner_scope（迁移 202609260002），
+    # 模型此前漏建 ⇒ 空库快径缺列；worker 的单证查询按此过滤（2026-10-19 列级门禁发现）。
+    owner_id = Column(Text, nullable=True)
+    owner_scope = Column(Text, nullable=False, default="private", server_default="private")
     # 三层组织：本行归属的团队（写入时取创建者的团队；NULL = 未分组，保持原有可见性）
     team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())

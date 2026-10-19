@@ -32,6 +32,21 @@
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
 > 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
 >
+> **（2026-10-19 夜场 · S6-e 列级漂移门禁：又抓出 3 处真实缺列）**
+> 1. 新增 `scripts/check-schema-drift.py`：拿**生产列快照**（`scripts/prod-schema-columns.json`，
+>    由 `dump-prod-schema-columns.py` 只读导出，109 张表）比对 ORM metadata，缺列/缺表即 FAIL；
+>    生产独有历史表登记在 `scripts/schema-drift-allowlist.txt`（13 张，逐条写原因）；已接入 `backend-test.yml`。
+> 2. 门禁落地即抓出 **3 处真实缺列**（此前表级门禁查不出）：
+>    · `tenant_workstation_products.team_id`（已在 dd21eba 修）
+>    · `trade_docs.owner_id` / `owner_scope`、`market_ports.created_at` / `updated_at`
+>      ⇒ 全新库的 worker 单证/港口查询必 500。
+> 3. 补幂等迁移 `202610190020_backfill_prod_columns`（`DO $$ IF NOT EXISTS` 加列）：
+>    生产**已有**这些列（`alembic_version=202610180010` 未变，已验证未被误升级），
+>    迁移在 deploy 的 migrate 作业里会安全跳过；本地 `kaas_local` 升级后 `alembic check` 绿。
+> 4. 对比结论：生产 109 表 / 模型 101 表；生产独有 13 张已全部登记；列漂移 **0**；
+>    模型多出 5 张 `order_quote_refs`/`trade_doc_*_refs`（生产已改名 `_legacy` 留档，代码不读写）
+>    —— 只警告，S4 清理时一并删模型。
+>
 > **（2026-10-19 夜场 · 报价订单域 26 项对等清零 + 门禁误报修复）**
 > 1. teammate quote-diffs 把报价/订单域 **26 条差异全部清零**（`test_parity_quote.py` 120 passed / 0 xfail）：
 >    401 结构化体、`closed` 枚举、分页/天数 `Query` 边界、建报价错误优先级、行项 6 个覆盖字段、

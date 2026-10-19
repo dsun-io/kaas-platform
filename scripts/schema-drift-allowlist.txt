@@ -1,0 +1,15 @@
+# 生产 schema 列级快照的「允许差异」登记表（check-schema-drift.py 读取）
+# 格式：表名 # 原因（原因必须写清，与 route-parity / schema-coverage 同一纪律）
+alembic_version                              # Alembic 版本表，不属于业务模型
+cust_customers                               # 历史客户表（customers 的前身），代码已不再读写
+order_quote_refs_legacy                      # 迁移 202610110014 把旧关系表改名 *_legacy 留档，代码不读写
+trade_doc_doc_refs_legacy                    # 同上
+trade_doc_inquiry_refs_legacy                # 同上
+trade_doc_order_refs_legacy                  # 同上
+trade_doc_quote_refs_legacy                  # 同上
+conversations                                # 微信会话域：模型已于「微信表清理」阶段删除，生产保留历史数据
+conversation_messages                        # 同上
+wechat_bot_accounts                          # 同上
+wechat_conversations                         # 同上
+wechat_message_events                        # 同上
+market_product_usage_mappings                # 历史配置映射表，orchestrator 已无模型引用（死数据）

@@ -188,8 +188,13 @@
 - [ ] **S5-d** CI 防污染断言（生产/预览绑定的 bucket / KV / Hyperdrive 互异）
 
 **S6 静态门禁（0.5–1 人日）**
-- [ ] **S6-a** schema 完备性门禁（= S2-d）
+- [x] **S6-a** schema 完备性门禁（= S2-d，已落地）
 - [x] **S6-b** 依赖断言（= S1-b，已落地）
+- [x] **S6-e**（2026-10-19 新增）**列级漂移门禁**：`scripts/check-schema-drift.py` +
+      生产列快照 `scripts/prod-schema-columns.json`（`dump-prod-schema-columns.py` 生成）+
+      遗留表登记 `scripts/schema-drift-allowlist.txt`；已接入 `backend-test.yml`。
+      落地即抓出 3 处真实缺列（`tenant_workstation_products.team_id`、`trade_docs.owner_id/owner_scope`、
+      `market_ports.created_at/updated_at`）并补幂等迁移 `202610190020_backfill_prod_columns`（生产已有列，勿重加）
 - [ ] **S6-c** 包体积 + 冷启动断言（≤2,950 ms；`wrangler versions upload` 口径）
 - [x] **S6-d** 迁移链 downgrade 审计 —— 已完成（2026-10-19）：`scripts/audit-migrations.py` 静态分析 70 个版本，
       精确结论 **drop_table 仅 3 个**（旧估「35 个」口径失真，已更正）；报告见

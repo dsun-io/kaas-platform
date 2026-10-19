@@ -71,6 +71,13 @@ jobs:
         working-directory: ./backend/orchestrator
         run: uv run python ../scripts/check-schema-coverage.py
 
+      # 2026-10-19：表级门禁查不出**列/索引**漂移（本地冒烟实测：生产有 team_id、
+      # 模型漏建 ⇒ 全新空库 export-quote/products 500）。用生产列快照做列级对比；
+      # 生产独有表（历史遗留）登记在 scripts/schema-drift-allowlist.txt。
+      - name: Schema column drift gate (vs production snapshot)
+        working-directory: ./backend/orchestrator
+        run: uv run python ../scripts/check-schema-drift.py
+
   worker-tests:
     name: "worker:tests（路由面 + 无 DB 行为测试）"
     runs-on: ubuntu-latest

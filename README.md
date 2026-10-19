@@ -183,7 +183,7 @@
 
 | # | 问题 | 处置归属 |
 |---|---|---|
-| 1 | **空库快径缺 worker 表**：空库只 `metadata.create_all`，worker 需要的 `fx_rates`、`subscriptions`、`shipments` 等表缺失，新环境必 500 | **已修（S2）**：`env.py` 补齐模型 import（`88132af`）+ 新增 `app/db/legacy_models.py` 补 8 张 worker 独有表（按生产 DDL）；空库快径 101 表，门禁 `check-schema-coverage.py` 绿。生产另有 12 张历史表未被 worker/当前代码引用（遗留）、5 张模型旧命名与生产 `_legacy` 不一致 → **S4 清理** |
+| 1 | **空库快径缺 worker 表/列**：空库只 `metadata.create_all`，worker 需要的表/列缺失，新环境必 500 | **已修（S2 + S6-e）**：`env.py` 补齐模型 import（`88132af`）+ `legacy_models.py` 补 8 张 worker 独有表；**新增列级门禁** `check-schema-drift.py`（对生产列快照）再抓出 3 处缺列（`tenant_workstation_products.team_id`、`trade_docs.owner_id/owner_scope`、`market_ports.created_at/updated_at`）并补幂等迁移 `202610190020`。生产独有 13 张历史表已登记 allowlist；模型多出 5 张旧命名 refs 表（生产已改名 `_legacy`）→ **S4 清理** |
 | 2 | **attribute-proposals 3 条路由生产 404**：有前端活页面在调（`admin/spec-proposals/page.tsx:53,64,83`） | **已修（S3）**：移植到 worker `ws_admin_proposals.py`（列表/推荐/审核，平台运营鉴权，12 条单测）；route-parity 缺失 11→8 |
 | 3 | **DEPLOY.md 漂移**（曾与 P1 分支 PPG 配置比对得出"仍写 Neon"的漂移结论） | **本（文档）更新已修正**：决策 1 回 Neon 后，DEPLOY.md 的 Neon 口径与 main 生产实配重新一致；已补主文档指针 |
 | 4 | **门禁登记理由可能过期**：allowlist 的 comtrade"定时器调度"说法与代码不符 | **已修（2026-10-19 复核）**：8 条登记逐条核对实现位置并更正理由（comtrade 实为长任务采集器、前端 0 调用）；指针改到归档原文 |
@@ -370,6 +370,11 @@ backend/orchestrator/.venv/Scripts/python.exe scripts/check-runtime-deps.py
 # schema 完备性断言（方案 B S2：worker SQL 引用的表 ⊆ 空库快径 metadata）
 backend/orchestrator/.venv/Scripts/python.exe scripts/check-schema-coverage.py
 
+# 列级漂移断言（2026-10-19 S6-e：模型必须覆盖生产列快照的全部列/表）
+# 快照过期时重生成（只读生产）：
+#   backend/orchestrator/.venv/Scripts/python.exe scripts/dump-prod-schema-columns.py
+backend/orchestrator/.venv/Scripts/python.exe scripts/check-schema-drift.py
+
 # 契约 / 路由对等
 pnpm contracts:check
 # 本机 `python` 是 WindowsApps 占位符（无输出、退出 1），必须用 venv 解释器：
@@ -383,11 +388,11 @@ pnpm build
 
 测试资产（2026-10-19 评估口径，见 [PLAN_B_EVALUATION §1](docs/PLAN_B_EVALUATION_2026-10-19.md)）：
 
-- orchestrator：94 文件 / 静态 1,301 个 `def test_`（`-m unit` 收集 1,200）；`-m db` 静态 288；
-- worker：23 文件 / 287 个静态 `def test_`；另新增 `tests/integration/` 5 条**真 PG 写入路径**用例
+- orchestrator：94 文件 / 静态 1,301 个 `def test_`（`-m unit` 收集 1,220）；`-m db` 静态 288；
+- worker：26 文件 / 580 passed + 5 skipped + 11 xfailed（CRM 差棘轮）；真 PG 集成 5 条
   （`@pytest.mark.integration`；本地无 PG 自动 skip，CI 由 `worker-db-tests` job 用 postgres service 跑）；
 - 前端：455 passed（2026-10-19 批次 0 后基线）；
-- route-parity 实测：orchestrator 231 / worker 225 / 允许清单 11（全登记、过期 0）⇒ PASS。
+- route-parity 实测：允许清单 **8**（全登记、过期 0）⇒ PASS；列级漂移 0 / 表级缺失 0。
 
 E2E：
 
