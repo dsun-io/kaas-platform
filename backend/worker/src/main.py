@@ -2889,6 +2889,15 @@ class Default(WorkerEntrypoint):
             return await asgi.fetch(app, request, self.env)
         return await self.env.ASSETS.fetch(request)
 
+    async def scheduled(self, controller, env, ctx):
+        """Cron Triggers 入口（orchestrator APScheduler 迁移，逻辑全在 ws_cron.py）。
+
+        与 fetch 不同：scheduled 事件没有 request（只有 controller/env/ctx），
+        故那条链路按 env 直连 Hyperdrive —— 连接参数与 `_acquire` 逐项一致。
+        分派看 `controller.cron`，表达式与 wrangler.jsonc 的 triggers.crons 锁死。
+        """
+        return await ws_cron.run_scheduled(env, controller)
+
 
 # ── P1-P7 工位链（AI 层/线索池/触达）：chain.py 注册到 app ──
 # ── 阶段 6 · 订单工位（线上 /api/v1/orders*，对齐 orchestrator orders.py §10）──
@@ -4351,3 +4360,12 @@ import ws_customer_records  # noqa: E402,F401
 import ws_files  # noqa: E402,F401
 import tax_archives  # noqa: E402,F401
 
+# ── Cloudflare Cron 定时任务（APScheduler 迁移 · README §8 已知问题 #5）──
+# orchestrator 里那两个 APScheduler 任务（每 15 分钟 replied→询盘扫描、每日 events 归档）
+# 在生产从未执行过（orchestrator 不常驻）。这里用 CF Cron 重建：
+#   · 表达式在 wrangler.jsonc 的 triggers.crons（UTC）；
+#   · 逻辑全在 ws_cron.py（纯 asyncpg，连接口径同本文件 _acquire）；
+#   · 由上面的 `Default.scheduled` 按 controller.cron 分派。
+# 注意：ws_cron 在「文件末尾」import，是 sibling 路由模块的同一挂载约定；scheduled
+# 方法体内是调用期引用，不受 import 顺序影响。
+import ws_cron  # noqa: E402,F401

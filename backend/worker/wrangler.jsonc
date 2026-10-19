@@ -8,6 +8,18 @@
   "main": "src/main.py",
   "compatibility_date": "2026-09-18",
   "compatibility_flags": ["python_workers"],
+  // ── Cron Triggers（orchestrator APScheduler 迁移；逻辑在 src/ws_cron.py）──
+  // ⚠️ Cloudflare cron 一律按 **UTC** 解释，orchestrator 原调度是 Asia/Shanghai（UTC+8）：
+  //   · "*/15 * * * *" —— replied→询盘自动扫描（原 CronTrigger(minute="*/15")，
+  //     纯间隔触发，与时区无关）；生产过去靠手动 POST /api/v1/leads/scan-replied 对等。
+  //   · "30 16 * * *"  —— events 每日归档（原 00:30 Asia/Shanghai = **16:30 UTC 前一日**，
+  //     UTC+8 的换算：00:30 - 8h = 前一日 16:30）。归档目标日仍按 orchestrator 口径取
+  //     「UTC 昨日」，不改成上海自然日（改口径要同时改 archive_target_date，见 ws_cron.py）。
+  // 这两个字符串必须与 ws_cron.CRON_SCAN_REPLIED / CRON_ARCHIVE_EVENTS 逐字符一致
+  // （scheduled 用 controller.cron 精确匹配分派），由 tests/test_ws_cron.py 锁死。
+  "triggers": {
+    "crons": ["*/15 * * * *", "30 16 * * *"]
+  },
   "workers_dev": false,
   "hyperdrive": [
     {
