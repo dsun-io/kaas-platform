@@ -74,8 +74,7 @@ def payload(**kw) -> dict:
             "give_ratio": 0.8,
             # 退税率未核实，故显式给可退税比例（不让引擎猜）
             "refund_ratio": 1.0,
-            "stamp_rate": 0.05,
-            "stamp_base": "profit",
+            # 印花税已并入杂税：不传 stamp_*（传了也会被忽略），用平台默认 misc 0.03
         },
     }
     body.update(kw)
@@ -121,7 +120,7 @@ class TestCalculate:
         data = r.json()
         assert data["view"] == "internal"
         header = data["internal"]["header"]
-        for label in ("税前成本", "加工利润", "进项税额", "自留可退税额", "印花税"):
+        for label in ("税前成本", "加工利润", "进项税额", "自留可退税额", "综合税费"):
             assert any(label in h for h in header), f"内部视图缺少「{label}」"
 
     async def test_validity_defaults_to_7_days(self, async_client):

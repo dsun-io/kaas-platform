@@ -38,13 +38,13 @@ D = Decimal
 
 
 def policy(**kw):
-    """牛栏网基线政策：进项 10 个点、利润 0.1 元/kg、让利 80%、印花税 5% 按利润。"""
+    """牛栏网基线政策：进项 10 个点、利润 0.1 元/kg、让利 80%、综合税费系数 0.03（含已并入的印花税）。"""
     return {
         "input_vat_rate": 0.10,
         "output_vat": {"rate": 0.0, "mode": "additive"},
         "profit": {"mode": "fixed", "value": 0.1},
         "refund": {"refund_ratio": "auto", "give_ratio": 0.8},
-        "stamp": {"rate": 0.05, "base": "profit"},
+        "misc_fee_rate": 0.03,
     }
 
 
@@ -132,11 +132,13 @@ class TestPriceChainOnRows:
         assert by_coating["热镀锌 200g/㎡"] == D("5.6")
 
     def test_quote_matches_hand_verified_values(self, result):
+        # 2026-10-19 口径变更：印花税定义删除、并入杂税（misc 0.03 对 fixed/ratio 生效），
+        # 旧人工核对值 4.6028 / 5.8294 → 新值如下（差异 = 基础报价 × 3% 杂税）。
         seen = {}
         for r in result.rows:
             seen.setdefault(r.spec["coating"], r.price["quote_excl_vat"])
-        assert seen["热镀锌 40g/㎡"] == D("4.6028")
-        assert seen["热镀锌 200g/㎡"] == D("5.8294")
+        assert seen["热镀锌 40g/㎡"] == D("4.7475")
+        assert seen["热镀锌 200g/㎡"] == D("6.0141")
 
     def test_export_zero_rated_means_no_output_vat(self, result):
         for r in result.rows:

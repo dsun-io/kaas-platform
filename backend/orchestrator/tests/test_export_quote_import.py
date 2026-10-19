@@ -44,7 +44,8 @@ def policy():
         "output_vat": {"rate": D("0"), "mode": "additive"},
         "profit": {"mode": "fixed", "value": D("0.1")},
         "refund": {"refund_ratio": D("1"), "give_ratio": D("0.8")},
-        "stamp": {"rate": D("0.05"), "base": "profit"},
+        # 印花税已并入杂税（misc_fee_rate，对齐平台默认 0.03）
+        "misc_fee_rate": D("0.03"),
     })
 
 
@@ -323,7 +324,7 @@ def _payload(**kw):
             "input_vat_rate": 0.10, "output_vat_rate": 0.0,
             "profit_mode": "fixed", "profit_value": 0.1,
             "refund_ratio": 1.0, "give_ratio": 0.8,
-            "stamp_rate": 0.05, "stamp_base": "profit",
+            # 印花税已并入杂税：不传 stamp_*（传了也会被忽略），用平台默认 misc 0.03
         },
     }
     body.update(kw)
@@ -379,8 +380,8 @@ class TestImportApi:
         header = j["customer"]["header"]
         idx = {h: k for k, h in enumerate(header)}
         assert len(j["customer"]["rows"]) == 2
-        # 与手工核对值一致
-        assert j["customer"]["rows"][0][idx["单卷售价(元/卷)"]] == 301.03
+        # 与手工核对值一致（2026-10-19 口径变更：印花税并入杂税 3%，旧值 301.03）
+        assert j["customer"]["rows"][0][idx["单卷售价(元/卷)"]] == 310.5
 
     async def test_batch_hides_cost_columns(self, async_client):
         r = await async_client.post(

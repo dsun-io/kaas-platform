@@ -107,7 +107,8 @@ def _policy():
         "output_vat": {"rate": D("0"), "mode": "additive"},
         "profit": {"mode": "fixed", "value": D("0.1")},
         "refund": {"refund_ratio": D("1"), "give_ratio": D("0.8")},
-        "stamp": {"rate": D("0.05"), "base": "profit"},
+        # 印花税已并入杂税（misc_fee_rate，对齐平台默认 0.03）
+        "misc_fee_rate": D("0.03"),
     })
 
 
@@ -427,12 +428,14 @@ class TestCalculationIsExplainable:
         assert D(got["volume_box_m3"]) == D("32.4000")
         assert D(got["volume_effective_m3"]) == D("31.1040")
         assert D(got["pieces"]) == D("300")
-        # 波弯款单卷 314.84 元 → 300 卷 94452.00 元（基准表第 2 行）
-        assert D(got["price_per_piece"]) == D("314.84")
-        assert D(got["total_price"]) == D("94452.00")
+        # 波弯款单卷 324.74 元 → 300 卷 97422.00 元（基准表第 2 行；
+        # 2026-10-19 口径变更：印花税并入杂税 3%，旧值 314.84 / 94452.00）
+        assert D(got["price_per_piece"]) == D("324.74")
+        assert D(got["total_price"]) == D("97422.00")
 
     def test_worked_example_reproduces_plain_row_total(self):
-        """无波款单卷 301.03 元 → 300 卷 90309.00 元（基准表第 1 行）。"""
+        """无波款单卷 310.50 元 → 300 卷 93150.00 元（基准表第 1 行；
+        2026-10-19 口径变更：印花税并入杂税 3%，旧值 301.03 / 90309.00）。"""
         res = build_res()
         r = find(res, wire="全丝2.0", height_m=1.2, mesh_mm=100,
                  coating="热镀锌 40g/㎡", wave="无波款")
@@ -455,8 +458,8 @@ class TestCalculationIsExplainable:
         assert D(got["weight_per_piece_kg"]) == D("65.4020")
         assert D(got["volume_per_piece_m3"]) == D("0.0848")
         assert D(got["volume_box_per_piece_m3"]) == D("0.1080")
-        assert D(got["price_per_piece"]) == D("301.03")
-        assert D(got["total_price"]) == D("90309.00")
+        assert D(got["price_per_piece"]) == D("310.50")
+        assert D(got["total_price"]) == D("93150.00")
 
     def test_filtered_example_still_resolves_dependencies(self):
         """只返回关心的量，但依赖项仍要被求值 —— 否则下游算出空结果。"""

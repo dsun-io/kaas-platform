@@ -94,8 +94,7 @@ def payload(**kw) -> dict:
             "give_ratio": 0.8,
             # 退税率未核实，故显式给可退税比例（不让引擎猜）
             "refund_ratio": 1.0,
-            "stamp_rate": 0.05,
-            "stamp_base": "profit",
+            # 印花税已并入杂税：不传 stamp_*（传了也会被忽略），用平台默认 misc 0.03
         },
     }
     body.update(kw)

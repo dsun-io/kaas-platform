@@ -890,7 +890,14 @@ async def register_upload(body: RegisterIn, request: Request, user: dict = Depen
 @app.get("/api/v1/file-objects/_r2_debug")
 async def r2_debug(request: Request, key: str = "_debug/r2-test.txt",
                    user: dict = Depends(_get_current_user)):
-    """线上自检：R2 binding 可见性 + put/get 的真实错误（排查完可删）。"""
+    """线上自检：R2 binding 可见性 + put/get 的真实错误（排查完可删）。
+
+    B0-6 收敛：诊断端点仅平台管理员可用（普通登录用户 403），不对外开放。
+    """
+    if not is_admin_role(user.get("role")):
+        raise HTTPException(status_code=403, detail={
+            "error": "forbidden", "code": "ADMIN_ONLY",
+            "message": "诊断端点仅平台管理员可用"})
     import sys as _sys
     out = {"platform": _sys.platform, "binding": False, "put_ok": False, "get_ok": False}
     bucket = _r2_bucket(request)
