@@ -119,3 +119,8 @@ class MarketPort(Base):
     port_charges_level = Column(Text, nullable=True)
     last_verified_at = Column(DateTime(timezone=True), nullable=True)
     source = Column(Text, nullable=False, server_default="manual")
+    # 生产有这两列（迁移建表时带 server_default），模型漏建会令空库快径缺列
+    # （2026-10-19 生产列级快照对比发现）。
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(),
+                        onupdate=func.now())
