@@ -40,7 +40,7 @@ export default function GrayReleasePage() {
                   <FlagToggle
                     key={t.tenant_id}
                     tenantId={t.tenant_id}
-                    tenantName={t.name}
+                    tenantName={t.display_name}
                     flagKey="use_v2"
                     enabled={flags?.[t.tenant_id]?.["use_v2"] ?? false}
                   />

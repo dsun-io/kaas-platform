@@ -84,14 +84,14 @@ jobs:
       - name: Install migration deps
         if: env.MIGRATION_DATABASE_URL != ''
         working-directory: ./backend/orchestrator
-        run: uv sync
+        run: uv sync --extra migrations
 
       - name: Alembic upgrade head
         if: env.MIGRATION_DATABASE_URL != ''
         working-directory: ./backend/orchestrator
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-        run: uv run alembic upgrade head
+        run: uv run --extra migrations alembic upgrade head
 
   deploy-worker:
     name: Deploy Worker kaas (api + assets)

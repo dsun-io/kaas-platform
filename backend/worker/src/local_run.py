@@ -117,4 +117,11 @@ if __name__ == "__main__":
     import uvicorn  # 延迟导入：生产打包不会包含本地入口
 
     port = int(os.environ.get("PORT", "8100"))
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
+    # 默认只监听回环（本机开发）；Docker 里需 0.0.0.0 才能从宿主机访问
+    host = os.environ.get("HOST", "127.0.0.1")
+    if os.environ.get("LOCAL_RELOAD") == "1":
+        # reload 必须用 import string（uvicorn 会起子进程重新 import 模块）
+        uvicorn.run("local_run:app", host=host, port=port,
+                    log_level="info", reload=True, reload_dirs=[str(SRC)])
+    else:
+        uvicorn.run(app, host=host, port=port, log_level="info")

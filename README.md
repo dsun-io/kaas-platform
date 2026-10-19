@@ -17,34 +17,35 @@
 ## 1. 当前架构总览（已确认）
 
 ```
-                     一份 FastAPI app 代码（方案 B 目标形态 · 已确认，见 §3）
-                    /                                                      \
-   本地开发入口：uvicorn --reload                          生产入口：Cloudflare Worker "kaas"
+                   一份 FastAPI app 代码（= backend/worker/src，方案 B S4 已落地）
+                  /                                                      \
+   本地开发入口：uvicorn local_run.py --reload            生产入口：Cloudflare Worker "kaas"
    （日常开发唯一形态；wrangler dev 只作部署前冒烟门禁）     ├─ kaas.powervoy.com      前端页面 + /api/v1/*
-                    │                                    ├─ api.kaas.powervoy.com  仅 API
-                    │                                    │  运行时只用 asyncpg（不依赖 sqlalchemy/alembic/greenlet）
-                    │                                    ▼ Hyperdrive（生产 config → Neon 生产分支）
-                    └────────── kaas_common（唯一"脑"）──────► R2 / KV（三环境物理隔离，见 §2）
-                       参数化 SQL · Pydantic schemas · SQLAlchemy models ·
-                       Alembic migrations · 默认值/约束口径（models 仅 Alembic 时加载）
+                  │                                    ├─ api.kaas.powervoy.com  仅 API
+                  │                                    │  运行时只用 asyncpg（不依赖 sqlalchemy/alembic/greenlet）
+                  │                                    ▼ Hyperdrive（生产 config → Neon 生产分支）
+                  └────────── kaas_common（唯一"脑"）──────► R2 / KV（三环境物理隔离，见 §2）
+                     参数化 SQL · 纯函数规则 · 报价引擎 · 业务枚举 ·
+                     SQLAlchemy models + Alembic（仅迁移期加载，不在运行时）
 
-三道门禁：contracts:check（shared/contracts zod 契约）
-         route-parity.py（双侧路由对等，允许清单登记）
-         sync-shared.ps1 -Check（kaas_common 镜像一致）
+门禁：contracts:check（前端 zod ↔ 共享内核/契约快照）
+      sync-shared.ps1 -Check（kaas_common 镜像一致）
+      check-schema-coverage.py / check-schema-drift.py（空库可建 + 生产列级一致）
+      check-runtime-deps.py（运行时不得出现 ORM/greenlet）
 ```
 
 - **生产唯一 Worker**（事实）：`backend/worker/wrangler.jsonc` 是全仓唯一生产 wrangler 配置；
   `backend/orchestrator` **从未部署到 Cloudflare**（无任何 orchestrator 侧 wrangler 配置、无部署 job）。
-- **一份 app 代码双入口**（已确认目标态，方案 B 实施后）：本地 uvicorn 热重载 / 生产 Worker，
-  同一份 FastAPI app 代码。**实施前过渡态**：orchestrator 壳（本地业务实现 + Alembic + 单测宿主）与
-  worker 壳并存——这正是 §3 要收敛掉的"双后端"。
-- **kaas_common 唯一脑**（已确认）：参数化 SQL、Pydantic schemas、SQLAlchemy models、Alembic
-  migrations、默认值/约束口径全部集中于此；现状为共享内核 + 镜像同步（`scripts/sync-shared.ps1`），
-  现状规模 36 个 git 跟踪文件。
-- **双侧规模（评估口径，2026-10-19）**：orchestrator app/ 167 文件 / 33,764 行（非空 29,060）/
-  231 路由；worker src/（跟踪，不含镜像）25 文件 / 14,717 行（非空 12,906）/ 225 路由；
-  **可比净差 16,154 行（orchestrator ≈ 2.25× worker）** —— 旧文档"6000 行差"是口径错觉
-  （worker 侧混入约 10,124 非空行 kaas_common 镜像），以本数字为准。
+- **单应用已落地（S4，2026-10-19）**：orchestrator 业务壳（api/services/repositories/domain/schemas/
+  jobs/middleware/core/main）已删除，目录只留 `app/db`（ORM 模型）+ `alembic/`（迁移链）；
+  本地与生产跑**同一份** `backend/worker/src/main.py`（本地入口 `backend/worker/src/local_run.py`）。
+- **kaas_common 唯一脑**：参数化 SQL、纯函数规则、报价引擎（`export_quote`）、业务枚举全部在
+  `backend/kaas_common/`（S4 把原 `orchestrator/app/services/export_quote` 与 `app/domain/enums.py`
+  迁入）；worker 侧为逐字节镜像（`scripts/sync-shared.ps1`）。
+- **删壳前规模（评估口径，2026-10-19，仅存档）**：orchestrator app/ 167 文件 / 33,764 行 /
+  231 路由；worker src/（跟踪，不含镜像）25 文件 / 14,717 行 / 225 路由。S4 后 orchestrator 业务
+  代码为 0，测试从 1,220 条 → 222 条（迁移/模型/kernel，处置见
+  [docs/S4_TEST_MIGRATION_2026-10-19.md](docs/S4_TEST_MIGRATION_2026-10-19.md)）。
 
 ---
 
@@ -101,18 +102,21 @@
 
 ### 3.1 方案 B 的最终形态（评估后修正版，不是任务书原版）
 
-- **一份 app 代码，双入口**：同一份 FastAPI app 代码，本地用 uvicorn 热重载入口开发，生产用 Worker 入口部署。不再有独立的 orchestrator 业务实现。
+- **一份 app 代码，双入口**：同一份 FastAPI app 代码，本地用 uvicorn 热重载入口开发，生产用 Worker 入口部署。不再有独立的 orchestrator 业务实现（**S4 已落地 2026-10-19**）。
 - **生产 Worker 运行时只用 asyncpg**。SQLAlchemy 模型仅存在于迁移目录，只在 Alembic 时加载。生产运行时依赖不得包含 sqlalchemy / alembic / greenlet。
 - **wrangler dev 降级为部署前冒烟门禁**，不作为日常开发形态。实测冷启动 38s、热重载 33–72s，对比 uvicorn 2.72s / 21ms，不可接受。
-- **迁移执行位置改为 CI 或独立 CLI**，不再常驻。当前 deploy.yml 无 alembic 步骤，属新建。
-- **kaas_common 是唯一"脑"**：参数化 SQL、Pydantic schemas、SQLAlchemy models、Alembic migrations、默认值/约束口径全部集中在此。
+- **迁移执行位置改为 CI 或独立 CLI**，不再常驻。`deploy.yml` 的 `migrate` job 已加（S2），S4 把依赖拆到 `[project.optional-dependencies].migrations`。
+- **kaas_common 是唯一"脑"**：参数化 SQL、纯函数规则、报价引擎、业务枚举、SQLAlchemy models、Alembic migrations、默认值/约束口径全部集中在此。
 - **kaas_common/db.py 已提供事务包裹执行**（S1）：裸 asyncpg 语句级 autocommit 无法复刻 savepoint 回滚语义，这是测试重写的前提；实现见 `backend/kaas_common/db.py`（`Session.transaction()`，嵌套自动 SAVEPOINT）。
 
 ### 3.2 三项已确认修正（原样）
 
 1. **相对冷启动验收线**：基线实测中位 **2,680ms**，原"<1 秒"对任何方案不可达。验收线确定为 **≤2,950ms（基线 +10%）**。对 B 和 A′ 无差别。
 2. **本地开发形态**：uvicorn 本地热重载 + wrangler dev 作部署前冒烟门禁。同一份 app 代码，双入口。wrangler dev 不作为日常开发形态。
-3. **测试处置**：350–380 条（27%）随壳重写 + 87 条 marker 错位归位，其余约 1,085 条原样保留（前提：其 import 的 app.services/domain 在 B 后以新形态存活）。测试重写与阶段二 S3 同批做，共用 queries/ 造数。
+3. **测试处置（S4 已按实际落地修正）**：原计划"约 1,085 条原样保留"的前提是 app.services/domain
+   在新形态下存活；S4 选择**不搬迁业务壳**，因此这 1,220 条中只有 222 条（共享内核纯函数 + ORM 模型/
+   迁移/schema 对齐）保留，其余按域由 worker 侧 parity 测试（auth/CRM/quote 三域已清零差异）与真 PG
+   集成替代 —— 逐文件处置见 [docs/S4_TEST_MIGRATION_2026-10-19.md](docs/S4_TEST_MIGRATION_2026-10-19.md)。
 
 ### 3.3 路线 A 已否决，不得复活（已确认）
 
@@ -137,7 +141,8 @@
 
 - **开发默认数据库：本地 Docker PG**（docker-compose 内置）。日常开发、单测、Alembic 迁移一律用它，不触云。
 - **开发默认存储：本地 MinIO**（docker-compose 内置，桶名 `kaas-dev`）。日常开发、单测、本地热重载一律用它或 wrangler dev 的本地 R2 模拟，不触远程 R2。
-- **日常开发唯一入口：`uvicorn --reload`**（热重载实测：冷启动 2.72s、改动后 21ms 恢复）。
+- **日常开发唯一入口：`uvicorn local_run.py --reload`**（或 `docker compose up -d` 起 backend 服务，
+  两者跑的都是 `backend/worker/src/main.py` 这一份 app；热重载实测：冷启动 2.72s、改动后 21ms 恢复）。
 - **`wrangler dev` 仅作部署前冒烟门禁**，不作为日常开发形态（实测：冷启动 37.98s / 37.70s，热重载后首请求 32.9s / 72s 恢复，对比 uvicorn 14×/30× 劣化）。
 - **Neon 开发分支 `dev` 与远程 R2 开发桶 `kaas-dev-storage` 仅用于 `wrangler dev --remote` 冒烟**，低频使用，不作为日常开发资源，CI 不得依赖（见 §2.3 规则 1、2）。
 - 具体启动命令见 [§13 本地开发命令](#13-本地开发命令)。
@@ -150,8 +155,9 @@
 - **`deploy.yml` 已新增 `migrate` job**（S2）：生产部署前 `alembic upgrade head`，再部署 Worker。
   连接串放 secret **`PROD_DATABASE_URL`**；未配置时该 job 告警跳过（保持手动迁移现状）。
   迁移依赖隔离（主依赖去 ORM、`[project.optional-dependencies].migrations`）随 **S4** 落地。
-- 迁移依赖隔离：主依赖不含 sqlalchemy/alembic/greenlet；`[project.optional-dependencies].migrations` 才装（任务书目标形态）。
-- 现状命令与 head（`202610180010`）见 [§15 数据库迁移](#15-数据库迁移)；**开发迁移目标永远是本地 Docker PG**（§2.3 规则 1）。
+- **迁移依赖隔离已落地（S4）**：orchestrator 主依赖为空，`[project.optional-dependencies].migrations`
+  才装 sqlalchemy/alembic/psycopg2；CI 与 deploy 的迁移步骤统一 `uv sync --extra migrations` / `uv run --extra migrations alembic …`。
+- 现状命令与 head（`202610190020`）见 [§15 数据库迁移](#15-数据库迁移)；**开发迁移目标永远是本地 Docker PG**（§2.3 规则 1）。
 
 ---
 
@@ -292,9 +298,14 @@
 ### 13.1 启动
 
 ```powershell
-# 根目录
-docker compose up -d          # Postgres / Redis / MinIO / orchestrator
-# backend 启动时自动 alembic upgrade head
+# 根目录：起 Postgres / Redis / MinIO / backend（backend = worker local_run，单应用）
+docker compose up -d
+
+# 首次建表（空库快径；与生产同一套 Alembic）
+cd backend/orchestrator
+uv sync --extra migrations
+$env:DATABASE_URL="postgresql+asyncpg://kaas:kaas_dev@localhost:5432/kaas_dev"
+uv run --extra migrations alembic upgrade head
 
 # 健康检查
 curl http://localhost:8000/health
@@ -314,27 +325,36 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 
 只想用 mock（无需后端）：把 `NEXT_PUBLIC_API_MODE` 改为 `mock`。
 
-### 13.2 后端单独启动
+### 13.2 后端单独启动（不经 Docker）
 
 ```powershell
+# 1) 起本地 PG（compose 里已有）
+docker compose up -d postgres
+# 2) 首次建表
 cd backend/orchestrator
-uv venv
-uv sync
-uv run alembic upgrade head
-uv run python scripts/seed_dev.py
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uv sync --extra migrations
+$env:DATABASE_URL="postgresql+asyncpg://kaas:kaas_dev@localhost:5432/kaas_dev"
+uv run --extra migrations alembic upgrade head
+# 3) 起 app：**生产同一份** worker app（uvicorn 只是本地入口）
+cd ../worker/src
+$env:JWT_SECRET="local-dev-jwt-secret-at-least-32-chars!!"
+$env:ADMIN_SETUP_TOKEN="local-setup-token"
+$env:LOCAL_DATABASE_URL="postgresql://kaas:kaas_dev@localhost:5432/kaas_dev"
+$env:LOCAL_RELOAD="1"
+uv run --with uvicorn --with fastapi --with asyncpg --with pydantic --with pyjwt --with bcrypt --with python-multipart python local_run.py
 ```
 
 ### 13.3 本地登录账号
 
-> 仅本地开发库，由 `scripts/seed_dev.py` 创建；**生产没有这些账号**。
+> **S4 起不再有预置账号**（旧 `seed_dev.py` 已随 orchestrator 业务壳删除）。
+> 首次启动后用 `ADMIN_SETUP_TOKEN` 引导一个系统管理员，其余账号走注册/邀请流程。
 
-| 角色 | 邮箱 | 密码 |
-|---|---|---|
-| 系统管理员 | `admin@kaas.local` | `DevAdmin2026!` |
-| 联佳业务员（团队 1） | `lianjia@kaas.local` | `Lianjia2026!` |
-| 客户 B 业务员（团队 2） | `clientb@kaas.local` | `Clientb2026!` |
-| 本地验收账号 | `e2e.local@kaas.local` | `LocalDev123!` |
+```powershell
+# 引导系统管理员（bootstrap 只允许第一次；已初始化后再调返回 403）
+curl.exe -X POST http://localhost:8000/api/v1/auth/bootstrap-admin `
+  -H "Content-Type: application/json" -H "Authorization: Bearer local-setup-token" `
+  -d '{\"email\":\"admin@kaas.local\",\"password\":\"DevAdmin2026!\",\"display_name\":\"本地管理员\"}'
+```
 
 登录：`http://localhost:3000/login`。API 文档：`http://localhost:8000/docs`。
 
@@ -345,14 +365,18 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ## 14. 测试与门禁
 
 ```powershell
-# 后端单测
+# 迁移/模型测试（S4 删壳后：222 条 = 共享内核纯函数 + ORM 模型/schema/迁移对齐）
 cd backend/orchestrator
-$env:PYTHONPATH=".;.."
-.venv\Scripts\python.exe -m pytest tests -q -m unit
+uv sync --extra migrations
+uv run --extra migrations pytest tests -q
 
-# Worker 单测
+# Worker 单测（唯一运行时：590 passed + 5 skipped）
 cd backend/worker
 uv run --frozen --with pytest --with httpx2 python -m pytest tests -q
+
+# Worker 真 PG 集成（本地 Docker PG）
+$env:TEST_DATABASE_URL="postgresql+asyncpg://kaas:kaas_dev@localhost:5432/kaas_worker_test"
+uv run --frozen --with pytest --with httpx2 python -m pytest tests -m integration -q
 
 # 前端
 cd frontend
@@ -375,10 +399,9 @@ backend/orchestrator/.venv/Scripts/python.exe scripts/check-schema-coverage.py
 #   backend/orchestrator/.venv/Scripts/python.exe scripts/dump-prod-schema-columns.py
 backend/orchestrator/.venv/Scripts/python.exe scripts/check-schema-drift.py
 
-# 契约 / 路由对等
+# 契约检查（前端 zod ↔ 共享内核 / 冻结契约快照；R6 openapi 新鲜度已随单应用退役）
+cd frontend
 pnpm contracts:check
-# 本机 `python` 是 WindowsApps 占位符（无输出、退出 1），必须用 venv 解释器：
-backend/orchestrator/.venv/Scripts/python.exe scripts/route-parity.py
 
 # 静态导出
 $env:NEXT_EXPORT="1"
@@ -388,11 +411,12 @@ pnpm build
 
 测试资产（2026-10-19 评估口径，见 [PLAN_B_EVALUATION §1](docs/PLAN_B_EVALUATION_2026-10-19.md)）：
 
-- orchestrator：94 文件 / 静态 1,301 个 `def test_`（`-m unit` 收集 1,220）；`-m db` 静态 288；
+- orchestrator（S4 删壳后）：only `app/db` + `alembic`；测试 **222 passed**（共享内核纯函数 + ORM 模型/
+  schema/迁移对齐）；逐文件处置见 [S4_TEST_MIGRATION](docs/S4_TEST_MIGRATION_2026-10-19.md)；
 - worker：26 文件 / **590 passed + 5 skipped**（三域 parity 棘轮已清零）；真 PG 集成 5 条
   （`@pytest.mark.integration`；本地无 PG 自动 skip，CI 由 `worker-db-tests` job 用 postgres service 跑）；
 - 前端：455 passed（2026-10-19 批次 0 后基线）；
-- route-parity 实测：允许清单 **8**（全登记、过期 0）⇒ PASS；列级漂移 0 / 表级缺失 0。
+- 列级漂移 0 / 表级缺失 0；contracts:check 全 PASS（R6 已退役，`scripts/archive/route-parity.py` 为历史门禁）。
 
 E2E：
 
@@ -405,12 +429,13 @@ E2E：
 
 ## 15. 数据库迁移
 
-当前 head：**`202610180010`**。
+当前 head：**`202610190020`**。
 
 本轮相关迁移：
 
 | 版本 | 内容 |
 |---|---|
+| `202610190020` | 补齐生产已有、迁移链缺失的列（`trade_docs.owner_id/owner_scope`、`market_ports.created_at/updated_at`；幂等 DO 块） |
 | `202610180006` | 企业税务档案表 + 种子 + 旧客户税率档案迁移 |
 | `202610180007` | 报价单税务快照 |
 | `202610180008` | 安全占位（原删表动作延后） |

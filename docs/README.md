@@ -25,6 +25,7 @@
 | [SECURITY_AUDIT_2026-10-19.md](./SECURITY_AUDIT_2026-10-19.md) | 安全审查报告（危/高/中/低 21 条 + 三环境配置核对 + 需用户操作清单） |
 | [MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md](./MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md) | 迁移链 downgrade 审计（`drop_table` 精确 3 个，旧口径「35」已更正） |
 | [S4_SINGLE_APP_PLAN_2026-10-19.md](./S4_SINGLE_APP_PLAN_2026-10-19.md) | S4 单应用收口设计（保留 worker 为唯一运行时；测试处置与回退） |
+| [S4_TEST_MIGRATION_2026-10-19.md](./S4_TEST_MIGRATION_2026-10-19.md) | S4 测试处置记录（1,220 → 222 保留；15 个引擎测试迁 worker；逐类删除/替代依据） |
 
 ## 口径与决策账本（先读这些）
 

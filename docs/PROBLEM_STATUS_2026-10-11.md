@@ -32,6 +32,30 @@
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
 > 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
 >
+> **（2026-10-19 夜场 · S4 单应用收口完成：删壳 + 真源归位 + CI 改造）**
+> 1. **删除 orchestrator 业务壳**：`app/{api,core,deps,domain,jobs,middleware,repositories,schemas,services}`
+>    + `main.py` + `config` + `db/session.py` + `scripts/` + `Dockerfile`；目录只剩 `app/db`（模型）+
+>    `alembic/`（迁移链）+ 222 条测试。本地/生产都跑 `backend/worker/src/main.py`
+>    （本地入口 `local_run.py`，已真实冒烟）。
+> 2. **真源迁入共享内核**：报价引擎 → `backend/kaas_common/export_quote/`；
+>    `enums/workstations/schema_registry` → `backend/kaas_common/domain/`；
+>    `sync-shared.ps1` 改为 kaas_common 三段镜像（37+20+1），worker 镜像重建一致。
+> 3. **契约/门禁改造**：冻结快照 `backend/contracts_frozen/`（R1/R5 继续校验）；
+>    contracts **R6 openapi 新鲜度退役**（HEAD 无 app 即 INFO 跳过，artifact 冻结）；
+>    route-parity 与 export_openapi 移入 `scripts/archive/`（含退役说明）；前端 Tenant 统一
+>    `display_name`，R5 已知偏差 0 侧。
+> 4. **测试处置**（[docs/S4_TEST_MIGRATION_2026-10-19.md](./S4_TEST_MIGRATION_2026-10-19.md)）：
+>    1,220 → **222 保留**；**15 个报价引擎测试文件迁 worker**（+364 条，断言零改动）；
+>    worker 全量 **954 passed + 5 skipped**；真 PG 集成 5 passed；orchestrator 222 passed。
+> 5. **CI/deploy**：orchestrator 主依赖清空 + `[project.optional-dependencies].migrations`；
+>    `backend:test` 重整（迁移测试 + schema 双门禁 + 依赖断言，删 route-parity/DB 旧 job）；
+>    `deploy.yml` migrate 用 `uv run --extra migrations alembic …`；本地 Docker 改用
+>    `backend/worker/Dockerfile.local`（compose backend 跑 `local_run.py`，端口 8000 不变）。
+> 6. 验证：runtime 依赖 / 表级 + 列级 schema / sync-shared / contracts 全 PASS；前端
+>    typecheck + **455 passed**；`docker build` 本地镜像构建成功（smoke 见构建记录）。
+> 7. **未做（下一轮）**：S5 preview 环境（需用户决策 Neon 分支/Hyperdrive 预览）、S6-c
+>    包体积/冷启动断言、批次 6 技术栈债、最终全量回归（e2e/prod 冒烟/三环境核对）。
+>
 > **（2026-10-19 夜场 · S3 行为对等三域清零：auth / CRM / 报价订单）**
 > 1. teammate crm-diffs 收尾 11 条 CRM 差异：page_size≤200、列表按 `updated_at` 排序、
 >    `stage:null`→active、新建客户写「新建客户」阶段日志、联系人 7 键 / 阶段日志 5 键（LIMIT 50）/

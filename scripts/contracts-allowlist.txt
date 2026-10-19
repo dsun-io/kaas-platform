@@ -32,9 +32,8 @@
 
 # ── R5.1 GET /admin/tenants：期望 {tenants:[{tenant_id,display_name,is_active}]} ──
 # 2026-10-11 S3（task-10）：orchestrator 与 worker 都已返回目标键集合并**删掉旧键**
-# ⇒ 上面两条登记已还掉、按棘轮纪律删除（代码见 backend/orchestrator/app/api/admin.py:70-88、
-# backend/worker/src/main.py:2321-2334；证明：pnpm contracts:check 不再点名它们）。
-R5.1 frontend-api    # hooks/use-tenants.ts 的 Tenant 用 name，而渲染侧 components/types.ts 用 display_name（前端自己两套）；待 S4（前端内部统一到 display_name）还掉
+# 2026-10-19 S4：前端两套 Tenant 定义已统一为 display_name（use-tenants.ts 的 name 已改），
+# 原登记 `R5.1 frontend-api` 按棘轮纪律删除（证明：pnpm contracts:check 不再点名它）。
 
 # ── R5.2 POST /admin/tenants/reload：期望 {reloaded_count, active_tenants:[...]} ──
 # 2026-10-11 S3（task-10）：orchestrator 与 worker 都改为返回重载后的启用租户清单

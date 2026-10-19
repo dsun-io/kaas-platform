@@ -21,6 +21,8 @@ dependencies = [
 dev = [
     "workers-py",
     "workers-runtime-sdk",
+    # 仅测试用：报价引擎的 xlsx 报告/模板用例需要 openpyxl（Worker 运行时不用它）
+    "openpyxl>=3.1.2",
 ]
 
 [tool.uv]

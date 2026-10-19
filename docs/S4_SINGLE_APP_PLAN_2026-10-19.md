@@ -85,15 +85,19 @@ PLAN_B §1 的前提是「约 1,085 条 orchestrator 测试原样保留（其 im
 | 本地 Docker 镜像/CI 脚本引用旧路径 | 步骤 5 全量 grep `orchestrator/app` 引用并清零 |
 | 回退 | 删壳是一个独立提交，`git revert` 即恢复；迁移职责全程未动 |
 
-## 6. 验收清单
+## 6. 验收清单（2026-10-19 全部完成）
 
-- [ ] `local_run.py` 起本地 app，登录 / 报价 / 客户 3 条往返通过（对本地 Docker PG）
-- [ ] orchestrator 业务目录删除后，`grep -r "orchestrator/app/api"` 0 命中
-- [ ] worker 测试全绿（含真 PG 集成 5 条）；迁移测试（alembic upgrade head + check）全绿
-- [ ] `contracts:check` / 依赖断言 / schema 门禁 / sync-shared -Check 全绿
-- [ ] 前端 typecheck/lint/test 不受影响
-- [ ] README/DEPLOY/docs 架构描述同步；route-parity 归档说明落盘
-- [ ] 生产部署**等用户指令**后再执行（当前部署冻结）
+- [x] `local_run.py` 起本地 app，登录 / 报价 / 客户 3 条往返通过（对本地 Docker PG；实测 health /
+      bootstrap / login / 建客户 / 报价·订单·应收列表 / export-quote-products 全 2xx）
+- [x] orchestrator 业务目录删除后，`grep -r "orchestrator/app/api"` 0 命中（源码 0；仅历史 docs/archive 保留）
+- [x] worker 测试全绿（**954 passed + 5 skipped**，含真 PG 集成 5 条）；迁移测试
+      （`alembic upgrade head` + `alembic check`：head `202610190020`，no new operations）全绿；
+      orchestrator 保留测试 **222 passed**
+- [x] `contracts:check` / 依赖断言 / schema 双门禁 / sync-shared -Check 全绿
+- [x] 前端 typecheck / lint / **455 passed** 不受影响（Tenant 定义统一 `display_name`，还掉 R5.1）
+- [x] README/AGENTS/docs 架构描述同步；route-parity 归档说明落盘（`scripts/archive/README.md`）；
+      测试处置 `docs/S4_TEST_MIGRATION_2026-10-19.md`
+- [x] 生产部署**等用户指令**后再执行（当前部署冻结；`deploy.yml` 仍是 `workflow_dispatch` 手动）
 
 ---
 

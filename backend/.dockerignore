@@ -1,9 +1,9 @@
-# Docker 构建上下文 = backend/（供 orchestrator 镜像使用）。
-# 只需要 orchestrator/ 与 kaas_common/ 两个目录；其余一律排除，
-# 否则会把 worker 的 .venv、测试缓存、历史归档整个塞进构建上下文。
-worker/
-.tools/
-docs/
+# Docker 构建上下文 = backend/（2026-10-19 S4 起用于 worker/Dockerfile.local）。
+# 只需要 worker/ 的 pyproject、uv.lock 与 src/（src 内含 sync-shared 生成的 kaas_common 镜像）；
+# orchestrator 只剩 ORM 模型 + Alembic，迁移命令在 CI 里直接跑源码，不进镜像 ⇒ 排除。
+orchestrator/
+worker/tests/
+worker/docs/
 **/.venv/
 **/.uv/
 **/__pycache__/

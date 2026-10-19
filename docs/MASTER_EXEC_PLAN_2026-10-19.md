@@ -110,14 +110,13 @@
 - [x] **S1-b** 运行时依赖静态断言 `scripts/check-runtime-deps.py`（禁止 sqlalchemy/alembic/greenlet/psycopg2），
       接入 `backend:test` 与 `deploy` 两道 CI
 - [x] **S1-c** 边界固化：`kaas_common` 铁律补充 `db.py` 例外；worker 运行时依赖保持 6 个
-- [ ] **S1-d** 依赖清单正式拆分（orchestrator 主依赖移除 sqlalchemy/alembic/psycopg2）——**并入 S4**：
-      路由合并完成前 ORM 仍在用，提前拆会让本地装不上
+- [x] **S1-d** 依赖清单正式拆分 —— ✅ 随 **S4-b** 落地：orchestrator 主依赖清空，
+      `[project.optional-dependencies].migrations` 才装 sqlalchemy/alembic/psycopg2
 
 **S2 迁移归位（1 人日）**
-> S2-a/b 并入 **S4**：路由合并完成前运行时仍 import ORM，提前搬模型只会制造 import 风险、
-> 没有任何运行时收益；删壳时一次性归位（S4-a）。
-- [ ] **S2-a**（→ S4）SQLAlchemy models + Alembic 归位到迁移期（运行时 import 不触发）
-- [ ] **S2-b**（→ S4）Alembic 入口改造（`env.py` 不再被 runtime 路径 import）
+> S2-a/b 随 **S4-a** 落地（删壳时一次性归位）。
+- [x] **S2-a** SQLAlchemy models 归位迁移期：orchestrator 仅剩 `app/db`；运行时（worker/local_run）零 ORM import
+- [x] **S2-b** Alembic 入口改造：`alembic/env.py` 不再被 runtime 路径 import（`uv run --extra migrations alembic …`）
 - [x] **S2-c** `deploy.yml` 新增 `migrate` job：`alembic upgrade head` 后再部署 Worker
       （secret `PROD_DATABASE_URL`；未配置时告警跳过，保持手动迁移现状）
 - [x] **S2-d** schema 完备性门禁 `scripts/check-schema-coverage.py`：worker SQL 引用的表 ⊆ metadata；
@@ -129,11 +128,12 @@
       worker 真 PG 集成测试 **5 passed**
 
 **S3 路由按域合并（5–8 人日，最大块）**
-- [ ] **S3-a** 基础设施域（health / auth / accounts）——先验证整条链
-- [ ] **S3-b** CRM 域（客户 / 询盘 / 线索池）
-- [ ] **S3-c** 算价域（报价 / 订单；金额逻辑最重，放中段）
-- [ ] **S3-d** 文档域（单证 / 出运 / 税务）
-- [ ] **S3-e** 集成域（情报 / 市场调研 / AI / 触达）
+- [x] **S3-a** 基础设施域（health / auth / accounts）—— auth 域 parity 清零 + admin 鉴权测试落地
+- [x] **S3-b** CRM 域（客户 / 询盘 / 线索池）—— 61 条 parity 测试 + 11 条差异清零
+- [x] **S3-c** 算价域（报价 / 订单）—— 120 条 parity 测试 + 26 条差异清零
+- [x] **S3-d** 文档域（单证 / 出运 / 税务）—— worker 既有测试覆盖（trade_docs/单证/税务 loader），
+      删壳前未单列 parity 测试；S4 后无法再对比，行为由 worker 全量测试兜底
+- [x] **S3-e** 集成域（情报 / 市场调研 / AI / 触达）—— 同上（worker ws_* 测试 + 共享内核 crawl/net 测试）
 - [x] **S3-f** `attribute-proposals` 3 条路由补进 worker（修既存生产 404）—— ✅ **已完成（2026-10-19）**：
       `backend/worker/src/ws_admin_proposals.py`（列表/推荐/审核 approve·reject·merge，平台运营鉴权），
       12 条 worker 单测；route-parity 缺失从 11 → **8**，allowlist 同步删 3 行
@@ -168,23 +168,34 @@
       不为 parity 删前端依赖）；额外同族收口 PATCH 联系人响应投影。
       遗留（不阻塞）：`row_to_contact`/`row_to_stage_log` 尚未进共享内核（现为 worker 本地投影，
       键集注释指向 orchestrator 行号），后续可另开任务收敛进 `kaas_common`
-- [ ] **S3-g** 测试重写 350–380 条 + marker 错位 87 条归位（共用 `queries/` 造数，与 S3 同批）
+- [x] **S3-g** 测试处置（与 S3 同批，2026-10-19 落地）—— 原「重写 350–380 + marker 归位 87」方案被
+      S4 单应用方案取代：1,220 → **222 条保留**（内核纯函数 + ORM/迁移/schema），
+      **15 个报价引擎测试文件迁入 worker**（+364 条），其余按域由 parity/集成测试替代；
+      逐文件处置见 `docs/S4_TEST_MIGRATION_2026-10-19.md`
 
 **S4 删壳 + CI（1 人日）**
 > 设计定稿（2026-10-19）：[S4_SINGLE_APP_PLAN_2026-10-19.md](./S4_SINGLE_APP_PLAN_2026-10-19.md)
 > —— 保留 **worker 为唯一运行时**（生产已验证），orchestrator 只留 models + Alembic；
 > 含本地入口 `local_run.py`、按域退役顺序、测试处置（与 PLAN_B「1085 条保留」的偏差）与回退。
-- [~] **S4-a** orchestrator 业务实现退场（仅保留 uvicorn 入口 + 迁移工具）——
-      **本地入口已落地（2026-10-19）**：`backend/worker/src/local_run.py` 用 uvicorn 起**生产同一份 app**
-      （注入 `workers` stub + `request.scope["env"]`/HYPERDRIVE→本地 Docker PG，绕开 `src/platform`
-      对标准库的遮蔽）；真实冒烟全绿：health / bootstrap-admin / login / 建客户 / 报价·订单·应收列表 /
-      `export-quote/products` 全部 2xx。剩余：删除 orchestrator 业务实现 + 测试处置。
-      > ⚠️ 冒烟同时抓出 **列级 schema 漂移**：`tenant_workstation_products` 生产有 `team_id`（迁移
-      > 202610110019）+ FK + `COALESCE(team_id,0)` 函数唯一索引，但 ORM 模型漏写 ⇒ 空库快径缺列
-      > ⇒ `export-quote/products` 500。已补模型并新增 `tests/test_team_scope_schema_parity.py`
-      > （12 张 team 作用面表 + 4 个函数唯一索引）；教训：S6-a 的表级门禁查不出列/索引漂移，S6 需补列级断言。
-- [ ] **S4-b** 主依赖拆分落地（`[project.optional-dependencies].migrations`）
-- [ ] **S4-c** CI 改造：db 门禁迁到真 PG 集成；`route-parity` 退役评估（已无第二后端）
+- [x] **S4-a** orchestrator 业务实现退场 —— ✅ **已完成（2026-10-19）**：
+      · 本地入口 `backend/worker/src/local_run.py`（uvicorn 起生产同一份 app；注入 workers stub +
+      `request.scope["env"]`/HYPERDRIVE→本地 Docker PG，绕开 `src/platform` 对标准库的遮蔽）；
+      真实冒烟 health/bootstrap/login/建客户/报价·订单·应收/export-quote/products 全 2xx；
+      · 删除业务壳：`app/{api,core,deps,domain,jobs,middleware,repositories,schemas,services,main.py,config}`
+      + `app/db/session.py`（orchestrator 仅剩 `app/db` 模型 + `alembic/` + 222 条测试）；
+      · 真源归位：报价引擎 `app/services/export_quote` → `backend/kaas_common/export_quote`、
+      `app/domain/enums.py`/`workstations.py`/`schema_registry.py` → `backend/kaas_common/domain/`；
+      `sync-shared.ps1` 只剩 kaas_common 三段镜像；
+      · 前端 Tenant 定义统一 `display_name`（还掉 contracts R5.1 已知偏差）；
+      · 测试处置见 `docs/S4_TEST_MIGRATION_2026-10-19.md`（worker 954 passed / orchestrator 222 passed）
+      > ⚠️ 冒烟同时抓出 **列级 schema 漂移**（`tenant_workstation_products.team_id` 等 3 处）→ 已修（S6-e）。
+- [x] **S4-b** 主依赖拆分落地 —— ✅ orchestrator `dependencies = []` +
+      `[project.optional-dependencies].migrations = [sqlalchemy, alembic, psycopg2-binary]`；
+      CI/deploy 迁移步骤统一 `--extra migrations`；本地入口依赖在 `backend/worker`（uvicorn 仅本地装）
+- [x] **S4-c** CI 改造 —— ✅ `backend:test` 重整：迁移/模型测试 + schema 双门禁 + 依赖断言；
+      删掉 route-parity 步骤并把脚本/允许清单移入 `scripts/archive/`（含退役说明）；
+      R6 openapi 新鲜度退役（`git ls-tree` 检测 app 不存在即 INFO 跳过，artifact 冻结）；
+      contracts 契约源重定向到 `backend/kaas_common` / `backend/contracts_frozen`
 
 **S5 preview + deploy（1–2 人日，按 README §2 目标态矩阵）**
 - [ ] **S5-a** preview workflow：非 main 分支 push → 预览 URL

@@ -36,7 +36,7 @@ function extractFromMd(): string[] {
 }
 
 function extractFromPy(): string[] {
-  const bePath = resolve(REPO_ROOT, 'backend/orchestrator/app/domain/schema_registry.py');
+  const bePath = resolve(REPO_ROOT, 'backend/kaas_common/domain/schema_registry.py');
   if (!existsSync(bePath)) {
     return [];
   }
@@ -49,7 +49,7 @@ function extractFromPy(): string[] {
 
 /** Extract Pydantic class fields from quote_v2.py */
 function extractQuotePyFields(): Map<string, string[]> {
-  const content = read('backend/orchestrator/app/schemas/quote_v2.py');
+  const content = read('backend/contracts_frozen/quote_v2.py');
   const result = new Map<string, string[]>();
   const classRe = /^class (\w+)\(BaseModel\):/gm;
   let match: RegExpExecArray | null;
@@ -155,7 +155,7 @@ function extractWorkstationsTs(): Map<string, WsEntry> {
 
 /** 从 workstations.py 的 WORKSTATIONS 列表提取同名映射 */
 function extractWorkstationsPy(): Map<string, WsEntry> {
-  const content = read('backend/orchestrator/app/domain/workstations.py');
+  const content = read('backend/kaas_common/domain/workstations.py');
   const start = content.indexOf('WORKSTATIONS = [');
   if (start === -1) return new Map();
   const body = content.slice(start);
@@ -190,7 +190,7 @@ function extractManifestDocTypes(): string[] {
 
 /** 抓取 Python 具名元组里的字符串元素：NAME = ( "a", "b", ) */
 function extractPyTuple(name: string): string[] {
-  const content = read('backend/orchestrator/app/domain/enums.py');
+  const content = read('backend/kaas_common/domain/enums.py');
   const start = content.indexOf(`${name} = (`);
   if (start === -1) return [];
   const close = content.indexOf(')', start);
@@ -203,7 +203,7 @@ function extractPyTuple(name: string): string[] {
 
 /** 抓取 DOC_TYPE_PREFIX = { "type": "PFX", ... } 的键 */
 function extractDocTypePrefixKeys(): string[] {
-  const content = read('backend/orchestrator/app/api/ws_common.py');
+  const content = read('backend/kaas_common/workstation/number_rules.py');
   const start = content.indexOf('DOC_TYPE_PREFIX');
   if (start === -1) return [];
   const close = content.indexOf('}', start);
@@ -502,7 +502,7 @@ const R5_RULES: R5Rule[] = [
       {
         side: 'orchestrator',
         kind: 'handler',
-        file: 'backend/orchestrator/app/api/admin.py',
+        file: 'backend/contracts_frozen/admin.py',
         method: 'get',
         route: '/tenants',
       },
@@ -545,7 +545,7 @@ const R5_RULES: R5Rule[] = [
       {
         side: 'orchestrator',
         kind: 'handler',
-        file: 'backend/orchestrator/app/api/admin.py',
+        file: 'backend/contracts_frozen/admin.py',
         method: 'post',
         route: '/tenants/reload',
       },
@@ -581,7 +581,7 @@ const R5_RULES: R5Rule[] = [
       {
         side: 'orchestrator',
         kind: 'handler',
-        file: 'backend/orchestrator/app/api/admin.py',
+        file: 'backend/contracts_frozen/admin.py',
         method: 'get',
         route: '/feature_flag',
       },
@@ -646,7 +646,7 @@ const R5_BODY_RULES: R5BodyRule[] = [
     backends: [
       {
         side: 'orchestrator',
-        file: 'backend/orchestrator/app/api/admin.py',
+        file: 'backend/contracts_frozen/admin.py',
         method: 'post',
         route: '/feature_flag',
       },
@@ -817,7 +817,7 @@ const tsJson = JSON.stringify(ts);
 const mdJson = JSON.stringify(md);
 const pyJson = JSON.stringify(py);
 
-if (!existsSync(resolve(REPO_ROOT, 'backend/orchestrator/app/domain/schema_registry.py'))) {
+if (!existsSync(resolve(REPO_ROOT, 'backend/kaas_common/domain/schema_registry.py'))) {
   console.warn('WARN: schema_registry.py not found, skip R0');
 } else if (tsJson !== mdJson || mdJson !== pyJson) {
   allOk = false;
@@ -954,7 +954,7 @@ const workerPrefixes = pyDictKeysFrom(workerSrc, 'DOC_TYPE_PREFIX');
 const SHARED_PAYLOAD = 'backend/kaas_common/trade_doc/payload_shared.py';
 const NO_FIELDS_ADAPTERS = [
   'backend/worker/src/main.py',
-  'backend/orchestrator/app/services/trade_doc_payload.py',
+  'backend/contracts_frozen/trade_doc_payload.py',
 ];
 const sharedNoFieldsBody = pyDictBody(read(SHARED_PAYLOAD), 'DOC_NO_FIELDS');
 const sharedNoFieldKeys = sharedNoFieldsBody
@@ -1239,6 +1239,15 @@ const r6Deviations: R5Deviation[] = [];
 let r6Stats = { paths: 0, models: 0, responseModels: 0, outOfSchema: 0 };
 
 try {
+  // S4（2026-10-19）：orchestrator 业务壳已删除、worker 是唯一后端 ⇒ R6 的「源码基准」
+  // （backend/orchestrator/app/**）不存在。artifact 保留给前端契约（R1/R5 仍读它），
+  // 这里只跳过「新旧一致性」比对并显式打印退役原因，不删产物、不误报。
+  if (gitLsTreeAt(R6_BASELINE_REV, R6_APP_DIR).length === 0) {
+    console.log(
+      'INFO R6: orchestrator app 已删除（S4 单应用）⇒ openapi.json 新鲜度检查退役；' +
+        'artifact 冻结作为历史契约基准',
+    );
+  } else {
   const r6HeadShort = execFileSync(
     'git',
     ['-C', REPO_ROOT, 'rev-parse', '--short', 'HEAD'],
@@ -1425,6 +1434,7 @@ try {
     responseModels: responseModels.length,
     outOfSchema,
   };
+  }
 } catch (e) {
   r6Deviations.push({
     key: 'R6 baseline',
