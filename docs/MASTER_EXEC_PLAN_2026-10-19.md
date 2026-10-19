@@ -73,7 +73,7 @@
 | U-1 | R2 `S3_ACCESS_KEY` 重建 32 位（dashboard 操作） | `PRODUCT_MEDIA_STORAGE_PLAN §5.3` |
 | U-2 | 生产 `product_tax_rates` 配置数据（0 条则批量报价不放行） | DEPLOY_PLAN 顶部 |
 | U-3 | 仓库改回 private + 确认 Actions billing | GitHub 设置 |
-| U-4 | 智能表格 21 行缺失输入补全（业务动作） | `SHEET_CALC_VERIFICATION §4-5` |
+| U-4 | ~~智能表格 21 行缺失输入补全（业务动作）~~ → **2026-10-20 用户裁决：不用补** | `SHEET_CALC_VERIFICATION §4-5`（缺口仅作历史核验记录） |
 
 ## 3. 批次 1–5 · 双后端收敛（主链 · 现行 = 方案 B）
 
