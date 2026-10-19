@@ -32,6 +32,18 @@
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
 > 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
 >
+> **（2026-10-19 夜场 · S3 域级 parity 扩展：CRM / 报价订单）**
+> 1. 新增 `test_parity_crm.py`（61 例：38 passed + 23 xfail）与 `test_parity_quote.py`（120 例：92 passed + 28 xfail）；
+>    worker 全量 **545 passed + 51 xfailed + 0 failed**（本机含真 PG 集成 5 条）。
+> 2. **CRM 高危待修**（下一轮首要）：
+>    · 写权限缺口：`DELETE /customers/{id}`、`PATCH /customers/{id}/stage`、`POST /customers/{id}/inquiries`
+>      在 worker 侧缺 `_check_write_access` ⇒ **同团队非属主可删/改同事客户、替同事客户建询盘**（orchestrator 有校验）
+>    · `PATCH contacts` 用 COALESCE ⇒ 显式 `null` 清空字段无效（前端 ContactModal 正是这样清空联系方式，静默失败）
+>    · 询盘：不校验 channel 枚举、接受任意 `status` 入库、丢 `lead_id`（线索池→询盘转化链路断）、硬编码 owner_scope
+> 3. **报价/订单差异（28 条 xfail）**：401 体形状、`closed` 状态枚举、`customer_id` 类型、错误码优先级、
+>    行项覆盖字段缺失、`days` 越界钳位等；按严重度分档修复并摘棘轮。
+> 4. **auth 域 parity 已清零**：D1–D3/D7–D13 全修（含扁平响应 D4/D6），集成测试已适配扁平契约。
+>
 > **（2026-10-19 夜场 · P0 回归修复：手动改编号必 500）**
 > 1. 根因：`7b21e1d` 重写共享内核 `kaas_common/workstation/number_rules.py` 时丢了
 >    `_NUMBER_RE` / `MAX_LEN` 两个常量，而 `normalize_number()` 仍在引用 ⇒ 任何「手动改编号」
