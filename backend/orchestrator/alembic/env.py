@@ -51,6 +51,18 @@ from app.db.models import (  # noqa: F401
     IntelMatch,
 )
 
+# 2026-10-19 修复：空库快径依赖 Base.metadata，但此前只 import 了 models + tax_models
+# ⇒ create_all 漏建 workstation_models / market_models / actual_cost / external_docs /
+# workstation_links 里的表（实测空库只建出 61 张，生产是 109 张；漏 cust_contacts 会让
+# worker 创建客户在全新库必 500）。这里显式 import 所有模型模块，确保 metadata 完整。
+from app.db import (  # noqa: F401,E402
+    workstation_models,
+    market_models,
+    actual_cost,
+    external_docs,
+    workstation_links,
+)
+
 # Alembic Config 对象
 config = context.config
 

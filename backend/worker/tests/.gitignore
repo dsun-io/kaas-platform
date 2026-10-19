@@ -1,0 +1,5 @@
+# 真 PG 集成测试的临时数据目录（initdb 集群，随机名）
+.pytest-pg/
+
+# 本机本地覆盖配置（PG 二进制路径等；见 integration/README.md）
+integration/.pgtest.local
