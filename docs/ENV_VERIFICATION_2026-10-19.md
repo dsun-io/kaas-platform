@@ -27,7 +27,11 @@
 `JWT_SECRET`/`ADMIN_SETUP_TOKEN`）；本地 `uv` 的 pyodide 解释器探针损坏 ⇒
 `pywrangler deploy --dry-run` 在本机不可用（CI 可跑，见 S6-c）。
 
-## 2. 预览环境（未落地）
+## 2. 预览环境（未落地 —— 2026-10-20 用户裁决：**A. 全量做**）
+
+> 范围已定：每 PR Neon 子分支 + 独立 Hyperdrive + `kaas-preview-storage` + KV 前缀 + CI 防污染断言（S5）。
+> 实施前置（需用户提供/创建）：Neon API key（或项目 id + key）、Cloudflare API token（Workers/Hyperdrive/R2 权限）、
+> 预览 R2 桶与 KV namespace（可代码创建，需上述 token）。
 
 | 需要 | 当前 | 缺什么 / 谁补 |
 |---|---|---|
