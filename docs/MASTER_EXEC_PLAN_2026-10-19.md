@@ -141,8 +141,8 @@
       `test_parity_auth.py` 66 条对等测试；修复 worker 8 处差异
       （bootstrap 缺 Bearer 401 / 密码≥8 422 / 邮箱查重 409、login strip+lower、禁用账号 403、
       /me 补 plan·effective_role·tenant_id、workstations=[] 零开通、无 team_name 也校验工位 422）；
-      剩余 4 处**明确接受/待评估**（login·bootstrap 响应扁平化 D4/D6、邀请码与邮箱查重顺序 D12、
-      分页越界 422 D13），用 `xfail(strict=True)` 棘轮钉住
+      剩余 **2 处**待评估（login/bootstrap 响应扁平化 D4/D6，需同步前端/集成断言）；邀请码与邮箱查重顺序（D12）、
+      分页越界 422（D13）已在本轮一并修复
 - [ ] **S3-i** CRM 域行为对等（teammate crm-parity 进行中）
 - [ ] **S3-j** 报价/订单域行为对等（teammate quote-parity 进行中）
 - [ ] **S3-g** 测试重写 350–380 条 + marker 错位 87 条归位（共用 `queries/` 造数，与 S3 同批）

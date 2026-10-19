@@ -10,7 +10,7 @@
 """
 from __future__ import annotations
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from kaas_common.workstation.scope import effective_role, is_admin_role
@@ -53,17 +53,17 @@ def _account_out(row) -> dict:
 @app.get("/api/v1/admin/accounts")
 async def list_accounts(
     request: Request,
-    limit: int = 500,
-    offset: int = 0,
+    limit: int = Query(500, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
     user: dict = Depends(_get_current_user),
 ):
     """账号列表（system_admin 专属）。
 
-    分页：``?limit=``（默认 500，上限 1000）+ ``?offset=``，响应附 ``total``（全量计数）。
+    分页：``?limit=``（默认 500，1–1000）+ ``?offset=``（≥0）；越界 → 422
+    （与 orchestrator `Query(ge=1, le=1000)` 同口径；此前是静默钳位，PARITY-DIFF-13）。
+    响应附 ``total``（全量计数）。
     """
     _require_system_admin(user)
-    limit = max(1, min(int(limit or 500), 1000))
-    offset = max(0, int(offset or 0))
     async with _acquire(request) as conn:
         total = await conn.fetchval("SELECT count(*) FROM users")
         rows = await conn.fetch(

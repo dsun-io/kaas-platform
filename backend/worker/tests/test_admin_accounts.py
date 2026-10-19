@@ -211,14 +211,12 @@ def test_list_accounts_pagination_total_and_limit_offset(monkeypatch):
     assert bind_args == (2, 1)
 
 
-def test_list_accounts_limit_is_clamped(monkeypatch):
-    conn = _StubConn(0, [])
-    _patched_acquire(monkeypatch, conn)
+def test_list_accounts_out_of_range_pagination_is_422(monkeypatch):
+    """已修 2026-10-19：limit/offset 越界 → 422（与 orchestrator Query 校验同口径，PARITY-DIFF-13）。"""
     _as(SYSTEM_ADMIN)
-    resp = client.get("/api/v1/admin/accounts?limit=99999&offset=-5")
-    assert resp.status_code == 200, resp.text
-    _, bind_args = conn.queries[1]
-    assert bind_args == (1000, 0)              # 上限 1000、offset 不低于 0
+    for query in ("limit=99999&offset=-5", "limit=0", "offset=-1"):
+        resp = client.get(f"/api/v1/admin/accounts?{query}")
+        assert resp.status_code == 422, query
 
 
 def test_patch_disable_last_admin_uses_for_update_lock(monkeypatch):
