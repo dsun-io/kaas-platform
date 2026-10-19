@@ -32,6 +32,17 @@
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
 > 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
 >
+> **（2026-10-19 夜场 · 报价订单域 26 项对等清零 + 门禁误报修复）**
+> 1. teammate quote-diffs 把报价/订单域 **26 条差异全部清零**（`test_parity_quote.py` 120 passed / 0 xfail）：
+>    401 结构化体、`closed` 枚举、分页/天数 `Query` 边界、建报价错误优先级、行项 6 个覆盖字段、
+>    订单 PATCH 6 条款/换客户、付款计划 type/ratio/amount/status、订单详情三关联块、
+>    共享序列化投影（订单行项/付款计划/应收）、算价鉴权依赖、`is_tenant_admin`、`SpecUpstreamChanged` 409。
+> 2. worker 全量 **580 passed + 5 skipped + 11 xfailed**（剩余 11 条全在 CRM，task-7 crm-diffs 收尾中）；
+>    真 PG 集成 5 passed；orchestrator **1220 passed**。
+> 3. `scripts/check-schema-coverage.py` 修掉「注释里的 SQL 片段被当表名」误报（`UPDATE due_date/notes` 文案）。
+> 4. 明确 defer：`dbjson.py` 补 `quote_order_items` 的 `policy_override`/`cost_breakdown` jsonb 映射；
+>    订单 PATCH「同时标记 paid」时 due_date/notes 与 orchestrator 的细微差异（不在 26 条清单内）。
+>
 > **（2026-10-19 夜场 · S4 本地入口落地 + 冒烟抓出列级 schema 漂移）**
 > 1. 新增 `backend/worker/src/local_run.py`：uvicorn 起**生产同一份** `main.py`（workers stub +
 >    `request.scope["env"]`/HYPERDRIVE 指向本地 Docker PG）；踩掉的坑：脚本目录会自动进 `sys.path[0]`，

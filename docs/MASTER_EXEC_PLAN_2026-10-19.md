@@ -153,8 +153,16 @@
 - [x] **S3-k** CRM 高危差异已修（2026-10-19）：写权限 5 处（客户删除 / 阶段 / 建询盘 / 联系人增删改）、
       联系人显式 null 清空、`is_primary` 唯一、询盘 channel/status/lead_id/owner_scope、body 不再要求 customer_id；
       CRM xfail **23 → 11**（其余为响应键集/分页/排序/404 体等中低危，按档排期）
-- [~] **S3-l** 报价/订单差异：**P0 已修**（Q21 应收列表越权、Q25 签发入账 `customer_id` 类型错→线上 500）；
-      其余 26 条 xfail（枚举/错误码/投影/分页等）待按档处理
+- [x] **S3-l** 报价/订单差异（2026-10-19 完成，teammate quote-diffs）—— **26/26 清零**：
+      401 体结构化（Q1）、`closed` 枚举（Q2）、分页/天数 Query 边界（Q3）、customer_id int（Q4）、
+      建报价错误优先级（Q5）、行项 6 覆盖字段（Q6）、订单列表 status/customer_id（Q7/Q8）、
+      订单详情三关联块（Q9）、items.qty 422（Q10）、PATCH 订单 6 条款（Q11）、换客户（Q12）、
+      状态 422（Q13）、付款计划 type/ratio/amount/status（Q14–Q17）、共享序列化投影（Q18–Q20）、
+      算价鉴权依赖（Q22）、`is_tenant_admin`（Q23）、SpecUpstreamChanged 409（Q24）；
+      报价域 xfail **26 → 0**
+- [~] **S3-k 收尾** CRM 剩余 11 条（page_size/排序/country 参数/stage null/stage_log/响应投影/
+  `inquiry_no_editable`）—— 已委派 teammate crm-diffs（task-7）；其中「worker 多出来的可用行为」
+  以**前端消费方证据**决定保留或对齐，不盲从 parity
 - [ ] **S3-g** 测试重写 350–380 条 + marker 错位 87 条归位（共用 `queries/` 造数，与 S3 同批）
 
 **S4 删壳 + CI（1 人日）**
