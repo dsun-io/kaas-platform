@@ -14,6 +14,36 @@
 > 本地 Docker 开发环境、DAP/DDP 术语、部署待办）。**先读它。**
 > 上一份：`docs/HANDOVER_2026-10-17.md`（生产拓扑、R2 踩坑、账号）。
 
+> **（2026-10-19 · 优化方案盘点与待办总账清理 —— 当前口径以此为准）**
+>
+> 新方案文档：`docs/PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md`（Neon→PPG 迁移 + Hyperdrive 双 binding
+> 缓存 + Worker 启动第二刀；已定稿**待执行**，用户裁决本轮只写文档不动手）。
+> 另已更正三处过时口径：10-18 部署**已完成**（10-18 22:00，生产迁移至 `202610180010`；
+> 注册修复 10-19 已随 push 自动上线）——HANDOVER-10-18 §7、QUOTE 优化计划 §0.2 已同步。
+>
+> **✅ 已完成/过时（不再跟进）**：双后端收敛主体（共享内核 + 双门禁在跑）；entity_links
+> 关系建模（迁移 012–014）；DB 层优化方案 1/2（已退役）/3/4（无必要）；PLATFORM_UPGRADE
+> P0–P4 主体（细节散见各专项）；10-18 各专项（报价 22 项 / 税务档案 / 批量报价 / 客户 5 项）；
+> PLAN_CUSTOMER_RECORDS 主体（worker `/records` 已上线）；30/90 天自动推导（整套已删，
+> 用户裁决"先手动"）；Ghost 方案（从未存在于本项目，已否决）。
+>
+> **⏳ 当前有效待办（按优先级）**
+> - **P0 欠账**：① Hyperdrive 缓存关闭（`--caching-disabled` 大概率未执行；验证=生产新建客户
+>   立即刷新可见）② R2 `S3_ACCESS_KEY` 重建 32 位（待用户 dashboard 操作，见
+>   PRODUCT_MEDIA_STORAGE_PLAN §5.3）③ 生产 `product_tax_rates` 配置数据（0 条则批量报价不放行）
+> - **P1**：④ 仓库改回 private + 确认 Actions billing ⑤ Cloudflare agent 接入（未执行）
+>   ⑥ Neon→PPG 生产迁移（方案已定稿；**生产为空黄金窗口，越晚代价越大**）
+> - **P2**：⑦「流失」拒绝文件链路迁订单阶段（等订单阶段新增 lost）⑧ Excel xlsx 上传闭环
+>   （上传侧现只收 CSV）⑨ 生产测试数据 / 流失拒绝文件历史数据清理（数据删除，**需用户确认**）
+>   ⑩ 诊断端点收敛（`_r2_debug` / `fx-rates/_debug`）⑪ Frontend CI `crypto.subtle.digest`
+>   类型红（待复测确认）⑫ 货代询价文案补 DAP/DDP 费用项
+> - **P3 暂缓**：技术栈升级（触发条件制，见 TECH_STACK_UPGRADE §0）、30/90 天自动沉寂、
+>   本地 mock 刷新丢数据（MSW 限制）、e2e 数据层不稳根治、租户级产品定义配置化
+>   （PRODUCT_CONFIG_TENANT_UNFINISHED）
+>
+> **未来评估项（存档，非待办）**：换运行时/单运行时收敛（触发=Worker 吞吐成真实瓶颈）、
+> preview/staging 环境（触发=多团队真实使用）、Neon 读副本（触发=生产撞免费档限制）。
+
 > **（2026-10-19 · 生产注册 500 修复 + 注册页去重）**
 >
 > 1. **生产无法注册（用户报告）→ 根因锁定**：生产 `users.is_tenant_admin` 为
