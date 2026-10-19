@@ -85,6 +85,11 @@
    - 预览部署前：绑定的 R2 bucket name 等于 `kaas-preview-storage`、KV namespace ID 等于预览 `preview_id`、Hyperdrive config ID 指向该 PR 的 Neon 分支，且 `PR_SLUG` 已注入。
 10. **清理**：PR 关闭时删除该 PR 的 Neon 分支（或设 TTL）、回收该 PR 的 Hyperdrive config、删除 `kaas-preview-storage` 中 `pr-<slug>/` 前缀下的对象、清理预览 KV 中 `pr-<slug>:` 前缀的键。开发远程资源由开发者手动清理，不进入 CI 自动清理。
 
+### 2.4 CI 防污染断言（已确认 · 即 §2.3 规则 9 的独立落点，内容一致，任一失败即中止部署）
+
+- **生产部署前**：绑定的 R2 bucket name 等于 `kaas-prod-storage`、KV namespace ID 等于生产值、Hyperdrive config ID 等于生产值，且均不等于任何预览/开发值。
+- **预览部署前**：绑定的 R2 bucket name 等于 `kaas-preview-storage`、KV namespace ID 等于预览 `preview_id`、Hyperdrive config ID 指向该 PR 的 Neon 分支，且 `PR_SLUG` 已注入。
+
 ---
 
 ## 3. 双后端优化的最终决策（已确认）
