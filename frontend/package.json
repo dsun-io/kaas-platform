@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint src",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "contracts:check": "tsx ../scripts/contracts-check.ts",
     "trade-doc:check": "tsx ../scripts/check-trade-doc-placeholders.ts",
     "test": "vitest run",

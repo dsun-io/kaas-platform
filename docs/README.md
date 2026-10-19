@@ -16,7 +16,9 @@
 | 文档 | 内容 |
 |---|---|
 | [../README.md](../README.md) | **主交接文档（唯一权威）**：架构 / 三环境矩阵（目标态）/ 方案 B 决策 / 冷启动线 / 测试策略 |
-| [MASTER_EXEC_PLAN_2026-10-19.md](./MASTER_EXEC_PLAN_2026-10-19.md) | 总执行清单（批次 0 已完成；当前主链 = 方案 B 阶段二/三） |
+| [HANDOVER_2026-10-20.md](./HANDOVER_2026-10-20.md) | **2026-10-20 交接总入口**：本轮改动、回归证据、待用户操作、发布检查单、已知限制 |
+| [USER_ACTIONS_2026-10-19.md](./USER_ACTIONS_2026-10-19.md) | **需用户执行的操作**（安全 8 / 业务 4 / 环境决策 + S5 前置凭据清单，含步骤与验证） |
+| [MASTER_EXEC_PLAN_2026-10-19.md](./MASTER_EXEC_PLAN_2026-10-19.md) | 总执行清单（S1–S6 进度、批次 6 已完成、批次 7 待拍板） |
 | [PLAN_B_EVALUATION_2026-10-19.md](./PLAN_B_EVALUATION_2026-10-19.md) | 方案 B 阶段一评估（B-可行 + 三项已确认修正） |
 | [HANDOVER_2026-10-19_CI_AND_PROD_FIXES.md](./HANDOVER_2026-10-19_CI_AND_PROD_FIXES.md) | 生产注册 500 / 定价页白屏 / CI db-tests 修复（✅ 已完成，勿重做） |
 | [POC_WORKER_SQLALCHEMY_2026-10-19.md](./POC_WORKER_SQLALCHEMY_2026-10-19.md) | 路线 A 否决证据（greenlet 无 wasm + 冷启动超线） |
@@ -26,7 +28,7 @@
 | [MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md](./MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md) | 迁移链 downgrade 审计（`drop_table` 精确 3 个，旧口径「35」已更正） |
 | [S4_SINGLE_APP_PLAN_2026-10-19.md](./S4_SINGLE_APP_PLAN_2026-10-19.md) | S4 单应用收口设计（保留 worker 为唯一运行时；测试处置与回退） |
 | [S4_TEST_MIGRATION_2026-10-19.md](./S4_TEST_MIGRATION_2026-10-19.md) | S4 测试处置记录（1,220 → 222 保留；15 个引擎测试迁 worker；逐类删除/替代依据） |
-| [ENV_VERIFICATION_2026-10-19.md](./ENV_VERIFICATION_2026-10-19.md) | 三环境配置与连接核对（开发 ✅ / 预览 ❌ 待 S5 / 生产 ⚠️ 只读通过）+ 发布前检查单与回滚预案 |
+| [ENV_VERIFICATION_2026-10-19.md](./ENV_VERIFICATION_2026-10-19.md) | 三环境配置与连接核对（开发 ✅ / 预览待凭据 / 生产 ⚠️ 只读通过）+ 发布前检查单与回滚预案 |
 | [USER_ACTIONS_2026-10-19.md](./USER_ACTIONS_2026-10-19.md) | 用户动作清单（安全 8 项 / 业务 4 项 / 环境决策 3 项；含步骤、验证与状态） |
 
 ## 口径与决策账本（先读这些）

@@ -485,3 +485,19 @@
 **审查时间**：2026-10-19 22:25–23:xx（Asia/Shanghai）
 **基线**：`main@6104f22`；审查读取的是**当时工作树**（期间并行任务在 `backend/worker/src/main.py`、`wrangler.jsonc` 等文件写入未提交改动，见 §9 行号基准说明）。本次未触碰任何非本报告文件。
 **写入范围**：仅本文件；**未 commit / 未 push / 未部署 / 未触发 CI**。
+
+---
+
+## 2026-10-20 复核（技术栈升级后）
+
+- **高-3（Next 14 的 2 个 critical RCE）已消除**：Next 14.2.35 → **16.4.2**、React 19.3、
+  ESLint 10.13、TS 6.0.3、CI Node 22（提交 `9e13ef5`）。
+- `pnpm audit --registry=https://registry.npmjs.org`：**80 → 39 条，critical 2 → 0**；
+  剩余 3 high 均为 **dev-only**（`wrangler→miniflare→sharp`、`shadcn→@modelcontextprotocol/sdk`、
+  `eslint-config-next→micromatch→braces`（上游无补丁）），不进生产包。
+- 越权/权限边界：`internal` 权限已按用户裁决**维持平台运营专属**（6 个 `/admin/*` + `test_admin_authz.py`）。
+- 密钥：`.codex/config.toml` 已从索引删除（`100e767`），令牌仍待用户吊销（U-S1）。
+- 用户动作清单更新：`docs/USER_ACTIONS_2026-10-19.md`（新增 S5 前置凭据清单、冷启动测量 U-E4；
+  U-E2 已关闭）。
+- 本轮代码侧新增面：`scripts/check-worker-bundle.py`（只读 dry-run，不上传）、`backend/contracts_frozen/`
+  （冻结快照，非运行时）、`frontend/eslint.config.mjs`（构建期工具）。未新增网络暴露面。

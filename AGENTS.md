@@ -49,14 +49,18 @@
 - **共享内核**：共享逻辑全部放 `backend/kaas_common/`（**S4 起含报价引擎 `export_quote/` 与
   `domain/enums.py`；orchestrator 不再是任何真源**）。改完必须跑
   `powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1`，否则 worker 端是旧的。
-- **门禁**（改完都要跑；2026-10-19 S4 后口径）：
+- **技术栈基线（2026-10-20 升级后，勿回退）**：Next **16.4.2** / React **19.3** /
+  ESLint **10.13（flat config：`frontend/eslint.config.mjs`，`next lint` 已删除）** /
+  TypeScript **6.0.3**；CI Node **22**。`pnpm audit` 目标：0 critical。
+- **门禁**（改完都要跑；2026-10-20 口径）：
   - orchestrator（仅迁移/模型/内核测试，222 条）：
     `cd backend/orchestrator; uv run --extra migrations pytest tests -q`
   - worker（唯一运行时，954+ 条）：`cd backend/worker; uv run --frozen --with pytest --with httpx2 python -m pytest tests -q`
-  - 前端：`cd frontend; pnpm typecheck; pnpm lint; pnpm test; pnpm contracts:check`
+  - 前端：`cd frontend; pnpm typecheck`（内含 `next typegen && tsc --noEmit`）`; pnpm lint; pnpm test; pnpm contracts:check; pnpm e2e`
   - 静态断言：`scripts/check-runtime-deps.py`、`scripts/check-schema-coverage.py`、
-    `scripts/check-schema-drift.py`、`scripts/sync-shared.ps1 -Check`
-  - 构建：`NEXT_EXPORT=1 NEXT_DIST_DIR=.next-verify pnpm build`
+    `scripts/check-schema-drift.py`、`scripts/check-worker-bundle.py`、`scripts/sync-shared.ps1 -Check`
+  - 构建：`cd frontend; $env:NEXT_EXPORT="1"; pnpm build` → **`frontend/out`**
+    （Next 16 下**不要**设 `NEXT_DIST_DIR`：静态导出会落到该目录，导致 `out/` 缺产物）
   - **已退役**（不要再跑/不要新增引用）：`route-parity.py`、`export_openapi.py`、contracts `R6`
     —— 归档在 `scripts/archive/`，说明见 `scripts/archive/README.md`。
 

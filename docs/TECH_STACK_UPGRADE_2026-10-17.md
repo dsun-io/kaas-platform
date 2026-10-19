@@ -1,6 +1,9 @@
 # 技术栈升级评估（2026-10-17）
 
-> **状态：仅评估，未执行任何升级。**
+> **状态（2026-10-20 更新）：批次 B 已执行完成** —— Next 16.4.2 / React 19.3 / ESLint 10.13 /
+> TypeScript 6.0.3 / CI Node 22，提交 `9e13ef5`；完成记录见文末「批次 B 执行记录（2026-10-20）」。
+> 批次 C（Tailwind 4 / zod 4 / Vitest 5 / MSW 3 / pnpm 12 等）仍未排期。
+>
 > 2026-10-17 用户裁决：**暂不动依赖，只落一份升级评估文档**（见 §8 裁决记录）。
 >
 > 本文「当前版本」均为本机实测（2026-10-17），「最新版本」为当天 npm / PyPI 查询结果；
@@ -318,3 +321,62 @@ orchestrator `pytest -m unit`、worker `pytest`、前端 `typecheck` / `lint` / 
   <https://devblogs.microsoft.com/typescript/announcing-typescript-7-0-rc/>
 - Cloudflare Python Workers Python 3.14（Pyodide 314.0.6，兼容日期 ≥ 2026-09-08）：
   <https://developers.cloudflare.com/changelog/post/2026-09-08-python-workers-314/>
+
+---
+
+## 批次 B 执行记录（2026-10-20）· 已完成
+
+**提交**：`9e13ef5 chore: 前端技术栈升级 Next 16 / React 19 / ESLint 10 / TS 6`（独立 worktree `tech-stack-next16` 完成后 ff 合并 main）。
+
+### 版本变化（实测）
+
+| 包 | 旧 | 新 |
+|---|---|---|
+| next | 14.2.35 | **16.4.2** |
+| react / react-dom | 18.3.1 | **19.3.1** |
+| eslint / eslint-config-next | 8.57 / 14.2 | **10.13 / 16.4.2（flat config）** |
+| typescript | 5.9 | **6.0.3** |
+| @typescript-eslint/* | 7.18 | **8.71.2** |
+| @types/react(-dom) / @types/node | 18 / 20 | **19 / 22** |
+| 根 eslint（lint-staged） | 8.57 | **10.13**（`eslint --config frontend/eslint.config.mjs`） |
+
+### 迁移改动
+
+1. `next lint` 已删除 → `"lint": "eslint src"` + `frontend/eslint.config.mjs`
+   （保留原 `no-restricted-syntax: TSAnyKeyword`；`react-hooks/set-state-in-effect`、
+   `react-hooks/purity` 降为 warning——22 处既有数据加载/时间快照模式待专门重构，lint 结果 **0 error / 91 warning**）。
+2. `middleware.ts` → **`proxy.ts`**（函数 `middleware`→`proxy`，Next 16 文件约定）。
+3. `experimental.typedRoutes` → 顶层 `typedRoutes: true`。
+4. `instrumentation-client.ts` 补 `onRouterTransitionStart`（保持「无 DSN 不加载 Sentry」）。
+5. **`next typegen` 纳入 `typecheck`**：`"typecheck": "next typegen && tsc --noEmit"`
+   （Next 16 的 `next-env.d.ts` 引用生成的 `.next/types`；干净 checkout 必须先 typegen，
+   否则 typecheck 失败；本机曾因旧 `tsconfig.tsbuildinfo` 误报 `Viewport` 导出错误，删除缓存即可）。
+6. 修复升级暴露的代码问题：`payload-renderer` JSX-in-try 重构；e2e 选择器 `role=button`→`role=tab`、
+   标题 exact 匹配（4 条 stale 断言）。
+7. workspace overrides 复扫更新：`fast-uri 3.1.7`、`undici 7.29.1`、`ip-address 10.3.1`、`source-map-js 1.2.2`。
+
+### 安全复扫（`pnpm audit --registry=https://registry.npmjs.org`）
+
+| | 升级前 | 升级后 |
+|---|---|---|
+| 总计 | 80 | **39** |
+| critical | 2（Next image optimizer RCE） | **0** |
+| high | 19 | **3**（全部 dev-only：wrangler→miniflare→sharp、shadcn→@modelcontextprotocol/sdk、eslint-config-next→micromatch→braces[无补丁]） |
+| moderate | 48 | 30 |
+| low | 11 | 6 |
+
+> 注意：本机 pnpm 默认 registry 是 npmmirror，**audit 端点不存在**；必须加
+> `--registry=https://registry.npmjs.org` 才能扫。CI/后续复扫同一命令。
+
+### 回归证据（2026-10-20 main 实测）
+
+- `pnpm typecheck`（含 typegen）✅；`pnpm lint` 0 error / 91 warning；
+- `pnpm test` **455 passed**；`pnpm contracts:check` 全 PASS（R6 已退役）；
+- `pnpm e2e` **23 passed + 4 skipped**（Next 16 dev server；4 skipped 为原样保留的功能级待补用例）；
+- `NEXT_EXPORT=1 pnpm build` ✅ → `frontend/out` 267 文件（deploy 产物路径不变）。
+
+### 遗留（不阻塞）
+
+- 3 个 dev-only high（见上）：升级 wrangler/shadcn 或等上游修复后复扫；`braces` 无补丁版本。
+- 91 个 lint warnings（22 处 react-hooks 新规则 + unused 等）：后续单独一轮按 React 19 推荐模式重构。
+- 批次 C（Tailwind 4 / zod 4 / Vitest 5 / MSW 3 / pnpm 12 / orchestrator Python 3.14）仍未排期。

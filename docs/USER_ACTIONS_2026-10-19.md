@@ -41,9 +41,24 @@
 
 | ID | 事项 | 选项与影响 | 状态 |
 |---|---|---|---|
-| U-E1 | **S5 预览环境** | A. 做全量（每 PR Neon 子分支 + 独立 Hyperdrive + `kaas-preview-storage` + KV 前缀 + CI 防污染断言）；B. 只做「预览 Worker + 共享预览 DB」（成本低、隔离弱）；C. 明确不做（README §2.2 标未排期） | ⬜ 待你选 |
-| U-E2 | **技术栈升级排期**（高-3） | Next 14.2 → 15.5+/16（2 critical RCE，需回归）、ESLint 10、TS 6；CI Node 已升 22。建议单独一轮做 Next + 回归 | ⬜ 待排期 |
-| U-E3 | **生产发布窗口** | 当前部署冻结（`deploy.yml` 仅手动）。发布方式建议：本机 `cd backend/worker && npx pywrangler deploy`（Actions 限额）；迁移先用 `PROD_DATABASE_URL` 手动 `alembic upgrade head`（head `202610190020`） | ⬜ 待指令 |
+| U-E1 | **S5 预览环境** | **已裁决：A. 全量做**（每 PR Neon 子分支 + 独立 Hyperdrive + `kaas-preview-storage` + KV 前缀 + CI 防污染断言）。实施需你提供凭据/资源，见下方「S5 前置清单」 | ⬜ **待你提供凭据/资源**（代码侧已就绪待实施） |
+| U-E2 | **技术栈升级**（高-3） | ✅ **已完成（2026-10-20，`9e13ef5`）**：Next **16.4.2** / React **19.3** / ESLint **10.13** / TS **6.0.3** / CI Node 22；回归 typecheck/lint(0 error)/455 tests/e2e 23+4skip/构建全绿；`pnpm audit` 80→39（**0 critical**） | ✅ 已完成，无需你操作 |
+| U-E3 | **生产发布窗口** | 当前部署冻结（`deploy.yml` 仅手动）；**已裁决：先不发布，等 S5 + 升级完成后再定**。发布方式建议：本机 `cd backend/worker && npx pywrangler deploy`（Actions 限额）；迁移先用 `PROD_DATABASE_URL` 手动 `alembic upgrade head`（head `202610190020`） | ⬜ 待你指定时间/方式 |
+| U-E4 | **冷启动基线测量**（S6-c 收尾） | 需一次**经你批准**的 `pywrangler deploy`（或 versions upload）后，在 CF Dashboard → Workers → kaas → Metrics 读 p50 冷启动；把结果写入 `backend/worker/coldstart-baseline.json`（格式：`{"measured_at":"YYYY-MM-DD","p50_ms":<number>,"method":"dashboard metrics","commit":"<sha>"}`）。验收线 **≤2,950ms**，写入后 `scripts/check-worker-bundle.py` 自动校验 | ⬜ 待你批准上传/发布后测量 |
+
+### S5 前置清单（你提供后我下一轮实施；也可你创建资源、把 id 给我）
+
+| 需要 | 用途 | 权限/说明 |
+|---|---|---|
+| `NEON_API_KEY`（+ `NEON_PROJECT_ID`） | 每 PR 创建/删除预览 Neon 分支 | Neon Console → Account → API keys；分支建议命名 `preview-pr-<num>`，关闭即删 |
+| `CLOUDFLARE_API_TOKEN`（+ `CLOUDFLARE_ACCOUNT_ID`） | 创建/删除预览 Hyperdrive config、上传预览 Worker、管理 R2/KV | Token 权限：Workers Scripts:Edit、Workers Hyperdrive:Edit、R2:Edit、Workers KV Storage:Edit |
+| 预览 R2 桶 `kaas-preview-storage` | 预览对象存储（键前缀 `pr-<slug>/`） | 可由上述 token 由脚本创建；也可你手动建后把名字给我 |
+| 预览 KV namespace | 预览隔离（若目标态需要） | 同上 |
+| `PREVIEW_DATABASE_URL`（可选） | 若你想先固定一个预览库而不是每 PR 分支 | 二选一：给 Neon 分支方案凭据，或给固定预览 DSN |
+| repo secrets 写入 | GitHub → Settings → Secrets → Actions | `NEON_API_KEY`、`NEON_PROJECT_ID`、`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`（预览 workflow 使用） |
+
+> 说明：预览环境会**真实创建云资源**（可能产生少量费用）。你裁决 A（全量）即已同意该成本；
+> 若改主意，随时在本文改回 B/C。
 
 ## 我这边可代做的验证（你完成后告诉我即可）
 
