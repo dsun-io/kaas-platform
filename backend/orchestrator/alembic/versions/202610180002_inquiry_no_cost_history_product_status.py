@@ -76,10 +76,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("idx_product_cost_history_spec", table_name="product_cost_history")
-    op.drop_index("idx_product_cost_history_lookup", table_name="product_cost_history")
-    op.drop_table("product_cost_history")
-    op.drop_index("uq_cust_inquiries_inquiry_no", table_name="cust_inquiries")
-    op.drop_column("cust_inquiries", "inquiry_no")
-    op.drop_column("customers", "abbr")
+    # 2026-10-19：改成 IF EXISTS 形式 —— 生产库存在历史手工漂移（列/索引可能已被旁路改动），
+    # 严格 `op.drop_*` 会让整条 downgrade 链在一个缺失对象上中断（实测报
+    # `index "idx_product_cost_history_spec" does not exist`）。降级语义不变。
+    op.execute("DROP INDEX IF EXISTS idx_product_cost_history_spec")
+    op.execute("DROP INDEX IF EXISTS idx_product_cost_history_lookup")
+    op.execute("DROP TABLE IF EXISTS product_cost_history")
+    op.execute("DROP INDEX IF EXISTS uq_cust_inquiries_inquiry_no")
+    op.execute("ALTER TABLE cust_inquiries DROP COLUMN IF EXISTS inquiry_no")
+    op.execute("ALTER TABLE customers DROP COLUMN IF EXISTS abbr")
 

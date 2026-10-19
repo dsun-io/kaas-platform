@@ -32,6 +32,27 @@
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
 > 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
 >
+> **（2026-10-19 夜场 · S6-c 门禁 + 降级链实测 + 生产只读冒烟 + 三环境/用户动作成文）**
+> 1. **S6-c 包体积/冷启动门禁落地**：`scripts/check-worker-bundle.py`（pywrangler dry-run 统计
+>    bundle，64 MiB 硬限 / 15 MiB 目标；冷启动读 `coldstart-baseline.json` 校验 ≤2,950ms，缺失
+>    PENDING），已接入 CI worker job。本机 uv 0.11 的 pyodide 探针损坏 ⇒ 本地 SKIP；CI 最新 uv 可跑。
+> 2. **降级链实测（审计之外）**：一次性空库上跑 downgrade，抓到并修复 **2 个真 bug**：
+>    ① `202610180004.downgrade` 原为 `pass` ⇒ 降到 002 时 `idx_product_cost_history_spec` 不存在；
+>    已改为按 002 形态重建表+索引；② `202610180002.downgrade` 改 IF EXISTS（容忍历史手工漂移）。
+>    实测 `downgrade 002` → 索引齐全 → `upgrade head` 成功；`downgrade -1` 往返成功。
+>    全链 `downgrade base` 仍在 `202610170004`（cust_customers 历史断点）失败 → **定稿策略：
+>    回滚用 Neon PITR/分支，不用 downgrade base**；CI 加「最新迁移可逆」门禁。证据已补进
+>    `docs/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md` 实测节。
+> 3. **生产只读冒烟**：`GET https://api.kaas.powervoy.com/health` → 200（core loaded=true）；
+>    `https://kaas.powervoy.com/` → 200。生产 Neon 只读连接此前已验证；迁移 head 仍 `202610180010`
+>    （020 幂等待应用）。
+> 4. **三环境核对成文**：新增 `docs/ENV_VERIFICATION_2026-10-19.md`（开发 ✅ / 预览 ❌ S5 待决策 /
+>    生产 ⚠️ 只读通过、密钥与迁移待用户）+ 发布前检查单与回滚预案。
+> 5. **用户动作清单成文**：新增 `docs/USER_ACTIONS_2026-10-19.md`（安全 8 项 + 业务 4 项 + 环境决策
+>    3 项，逐项含步骤/验证/状态），覆盖 SECURITY_AUDIT §6.4 全部事项与批次 U 的 U-1..U-4。
+> 6. **CI Node 22** 已落地（frontend-ci / deploy / contracts-check 的 setup-node 20→22）。
+> 7. 待用户决策：**S5 预览范围（U-E1）**、**Next/ESLint/TS 升级排期（U-E2）**、**发布窗口（U-E3）**。
+>
 > **（2026-10-19 夜场 · S4 单应用收口完成：删壳 + 真源归位 + CI 改造）**
 > 1. **删除 orchestrator 业务壳**：`app/{api,core,deps,domain,jobs,middleware,repositories,schemas,services}`
 >    + `main.py` + `config` + `db/session.py` + `scripts/` + `Dockerfile`；目录只剩 `app/db`（模型）+
