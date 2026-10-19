@@ -141,7 +141,7 @@ async def _get_current_user(request: Request) -> dict:
     payload = _decode_token(auth[7:], request)
     async with _acquire(request) as conn:
         row = await conn.fetchrow(
-            "SELECT id, email, display_name, account_type, role, status, team_id, console_access"
+            "SELECT id, email, display_name, account_type, role, status, team_id, console_access, plan"
             " FROM users WHERE id=$1",
             int(payload["sub"]),
         )
@@ -296,8 +296,18 @@ async def bootstrap_admin(request: Request, body: BootstrapRequest):
     if not setup_token:
         raise HTTPException(status_code=503, detail="ADMIN_SETUP_TOKEN not configured")
     auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer ") or not hmac.compare_digest(auth[7:], setup_token):
+    if not auth.startswith("Bearer "):
+        # 与 orchestrator 同口径：缺凭据 = 401（原来并档成 403，PARITY-DIFF-1）
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if not hmac.compare_digest(auth[7:], setup_token):
         raise HTTPException(status_code=403, detail="Invalid setup token")
+
+    # 与 orchestrator 同口径：密码 ≥8（原来漏校验，PARITY-DIFF-2）
+    if len(body.password or "") < 8:
+        raise HTTPException(
+            status_code=422,
+            detail="validation_error: Password must be at least 8 characters",
+        )
 
     async with _acquire(request) as conn:
         existing = await conn.fetchrow(
@@ -305,6 +315,9 @@ async def bootstrap_admin(request: Request, body: BootstrapRequest):
         )
         if existing:
             raise HTTPException(status_code=403, detail="System already initialized")
+        # 邮箱查重预检（原来直接 INSERT，撞唯一约束 → 500，PARITY-DIFF-3）
+        if await conn.fetchrow("SELECT 1 FROM users WHERE email=$1", body.email.lower()):
+            raise HTTPException(status_code=409, detail="conflict: Email already registered")
         row = await conn.fetchrow(
             """INSERT INTO users (email, password_hash, display_name,
                account_type, role, plan, status, is_tenant_admin, created_at, updated_at)
@@ -322,12 +335,13 @@ async def login(request: Request, body: LoginRequest):
         row = await conn.fetchrow(
             "SELECT id, email, password_hash, display_name, account_type, role, status,"
             " team_id, console_access FROM users WHERE email=$1",
-            body.email.lower(),
+            (body.email or "").strip().lower(),
         )
-    if not row or row["status"] != "active":
+    if not row or not _verify_password(body.password, row["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    if not _verify_password(body.password, row["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if row["status"] != "active":
+        # 与 orchestrator 同口径：密码正确但账号被禁用 → 403（PARITY-DIFF-7）
+        raise HTTPException(status_code=403, detail="forbidden: Account is disabled")
 
     token = _create_token(row["id"], request)
     user = {k: v for k, v in dict(row).items() if k != "password_hash"}
@@ -350,8 +364,18 @@ async def get_me(request: Request, user: dict = Depends(_get_current_user)):
     # `user_id` 是前端 buildUser() 读取的字段名（内部主键叫 id）；少了它刷新页面后
     # 前端的 user_id 会变成 undefined，权限判断随之失效。
     # 返回**扁平**结构：team_id/team_name（账号归属哪个团队）、console_access（官网数据后台权限）。
-    return {**user, "user_id": user["id"],
-            "team_name": await _team_name_of(request, user.get("team_id"))}
+    # `effective_role` / `plan` / `tenant_id` 与 orchestrator GET /me 对齐（PARITY-DIFF-9）：
+    # 前端 `hooks/use-role.ts` 直接读 effective_role（历史 admin → system_admin 的映射）。
+    from kaas_common.workstation.scope import effective_role
+
+    return {
+        **user,
+        "user_id": user["id"],
+        "team_name": await _team_name_of(request, user.get("team_id")),
+        "plan": user.get("plan") or "free",
+        "effective_role": effective_role(user.get("role")),
+        "tenant_id": DEFAULT_TENANT,
+    }
 
 
 @app.post("/api/v1/auth/logout")
@@ -607,6 +631,10 @@ async def register(request: Request, body: RegisterRequest):
             "error": "validation", "code": "TEAM_ACTION_CONFLICT",
             "detail": "只能二选一：凭邀请码加入现有团队，或新建一个团队"})
 
+    # 工位编码在**解析期**就校验（orchestrator 同口径）：即使不建团队也要 422，
+    # 不能静默忽略客户端写错的工位 key（PARITY-DIFF-10）。
+    chosen_workstations = ws_teams._resolve_signup_workstations(body.workstations)
+
     async with _acquire(request) as conn:
         async with conn.transaction():
             if await conn.fetchval("SELECT 1 FROM users WHERE email=$1", email) is not None:
@@ -664,7 +692,7 @@ async def register(request: Request, body: RegisterRequest):
             team_name_out = None
 
             async def _open_workstations(tid):
-                for ws_code in ws_teams._resolve_signup_workstations(body.workstations):
+                for ws_code in chosen_workstations:
                     await conn.execute(
                         "INSERT INTO team_subscriptions (team_id, code, active, source)"
                         " VALUES ($1,$2,true,'signup')"

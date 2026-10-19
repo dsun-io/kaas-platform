@@ -331,15 +331,11 @@ def test_bootstrap_admin_503_when_setup_token_not_configured():
 
 
 def test_bootstrap_admin_requires_bearer_token(monkeypatch):
-    """worker 现状：缺 Bearer 头 → 403（PARITY-DIFF-1；orchestrator 是 401）。
-
-    证据：main.py:281-283 把「头缺失」和「码错误」并成同一个 403；
-    orchestrator auth.py:369-371 先判断头前缀 → 401，再比对码 → 403。
-    """
+    """已修 2026-10-19：缺 Bearer 头 → 401（与 orchestrator auth.py:369-371 同口径）。"""
     monkeypatch.setenv("ADMIN_SETUP_TOKEN", _SETUP_TOKEN)
     resp = client.post("/api/v1/auth/bootstrap-admin", json=_bootstrap_body())
-    assert resp.status_code == 403
-    assert resp.json()["detail"] == "Invalid setup token"
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "Not authenticated"
 
 
 def test_bootstrap_admin_rejects_wrong_token(monkeypatch):
@@ -392,7 +388,7 @@ def test_bootstrap_admin_creates_admin_with_nested_envelope(monkeypatch):
         "id": 1, "email": "root@qa.test", "display_name": "系统管理员",
         "account_type": "internal", "role": "system_admin",
     }
-    conn = _FakeConn(fetchrow=[None, admin_row])
+    conn = _FakeConn(fetchrow=[None, None, admin_row])  # 已初始化检查 / 邮箱查重 / INSERT
     with _patched_main(conn):
         resp = client.post(
             "/api/v1/auth/bootstrap-admin",
@@ -417,15 +413,15 @@ def test_bootstrap_admin_creates_admin_with_nested_envelope(monkeypatch):
 
 # ── xfail：orchestrator 口径（修好后 XPASS ⇒ strict 让套件变红，提示摘标记）──
 
-@pytest.mark.xfail(strict=True, reason="PARITY-DIFF-1: orchestrator 缺 Bearer 头返回 401，worker 是 403")
-def test_parity_diff_1_bootstrap_admin_missing_bearer_is_401(monkeypatch):
+def test_bootstrap_admin_missing_bearer_is_401(monkeypatch):
+    """已修 2026-10-19：缺 Bearer 头 → 401（与 orchestrator auth.py:370-371 同口径）。"""
     monkeypatch.setenv("ADMIN_SETUP_TOKEN", _SETUP_TOKEN)
     resp = client.post("/api/v1/auth/bootstrap-admin", json=_bootstrap_body())
     assert resp.status_code == 401
 
 
-@pytest.mark.xfail(strict=True, reason="PARITY-DIFF-2: orchestrator 校验密码≥8 → 422，worker 不校验")
-def test_parity_diff_2_bootstrap_admin_short_password_is_422(monkeypatch):
+def test_bootstrap_admin_short_password_is_422(monkeypatch):
+    """已修 2026-10-19：密码 <8 → 422（与 orchestrator auth.py:387-388 同口径）。"""
     monkeypatch.setenv("ADMIN_SETUP_TOKEN", _SETUP_TOKEN)
     conn = _FakeConn(fetchrow=[None, {"id": 1, "email": "root@qa.test"}])
     with _patched_main(conn):
@@ -437,10 +433,11 @@ def test_parity_diff_2_bootstrap_admin_short_password_is_422(monkeypatch):
     assert resp.status_code == 422
 
 
-@pytest.mark.xfail(strict=True, reason="PARITY-DIFF-3: orchestrator 邮箱重复 → 409，worker 无预检撞库 500")
-def test_parity_diff_3_bootstrap_admin_duplicate_email_is_409(monkeypatch):
+def test_bootstrap_admin_duplicate_email_is_409(monkeypatch):
+    """已修 2026-10-19：邮箱重复 → 409（预检，不再撞唯一约束变 500；orchestrator auth.py:390-393）。"""
     monkeypatch.setenv("ADMIN_SETUP_TOKEN", _SETUP_TOKEN)
-    conn = _DuplicateKeyConn(fetchrow=[None])
+    # 第一次 fetchrow = 已有 system_admin 检查（None）；第二次 = 邮箱查重（命中）
+    conn = _FakeConn(fetchrow=[None, {"id": 2}])
     with _patched_main(conn):
         resp = client.post(
             "/api/v1/auth/bootstrap-admin",
@@ -519,27 +516,19 @@ def test_login_bad_password_and_unknown_user_are_401(monkeypatch):
     assert resp.status_code == 401
 
 
-def test_login_disabled_account_is_401_in_worker(monkeypatch):
-    """worker 现状：禁用账号 → 401（PARITY-DIFF-7；orchestrator 是 403）。
-
-    证据：main.py:310-311 先判 `status != "active"` 再验密码，统一 401；
-    orchestrator auth.py:300-301 密码通过后才判 status → 403 "Account is disabled"。
-    """
+def test_login_disabled_account_is_403_in_worker(monkeypatch):
+    """已修 2026-10-19：密码正确 + 账号禁用 → 403（与 orchestrator auth.py:300-301 同口径）。"""
     conn = _FakeConn(fetchrow=[_login_row(status="disabled")])
     with _patched_main(conn):
         resp = client.post(
             "/api/v1/auth/login", json={"email": "buyer@qa.test", "password": _PASSWORD}
         )
-    assert resp.status_code == 401
-    assert resp.json()["detail"] == "Invalid credentials"
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "forbidden: Account is disabled"
 
 
-def test_login_does_not_strip_email_before_lookup():
-    """worker 现状：只 `.lower()` 不 `.strip()`（PARITY-DIFF-8）。
-
-    证据：main.py:308 直接把 `body.email.lower()` 绑进 SQL；orchestrator auth.py:289
-    是 `(body.get("email") or "").strip().lower()`。带空白的邮箱在 worker 查不到人。
-    """
+def test_login_strips_and_lowercases_email():
+    """已修 2026-10-19：邮箱 strip + lower（与 orchestrator auth.py:289 同口径）。"""
     conn = _FakeConn(fetchrow=[_login_row()])
     with _patched_main(conn):
         resp = client.post(
@@ -549,7 +538,7 @@ def test_login_does_not_strip_email_before_lookup():
     assert resp.status_code == 200
     lookup_sql, lookup_args = conn.calls[0]
     assert "FROM users WHERE email=$1" in lookup_sql
-    assert lookup_args[0] == "  buyer@qa.test  "  # 只小写，空白原样进 SQL
+    assert lookup_args[0] == "buyer@qa.test"
 
 
 def test_login_lowercases_email():
@@ -570,8 +559,8 @@ def test_login_missing_fields_is_422():
     assert isinstance(resp.json()["detail"], list)
 
 
-@pytest.mark.xfail(strict=True, reason="PARITY-DIFF-7: orchestrator 禁用账号返回 403，worker 是 401")
-def test_parity_diff_7_login_disabled_account_is_403():
+def test_parity_login_disabled_account_is_403():
+    """已修 2026-10-19：密码正确但账号禁用 → 403（与 orchestrator auth.py:300-301 同口径）。"""
     conn = _FakeConn(fetchrow=[_login_row(status="disabled")])
     with _patched_main(conn):
         resp = client.post(
@@ -604,24 +593,27 @@ def test_me_requires_credentials_401():
     assert resp.json()["detail"] == "Missing bearer token"
 
 
-def test_me_response_keys_worker_flat():
-    """worker 现状：扁平 10 键（PARITY-DIFF-9）。
+def test_me_response_has_parity_fields():
+    """已修 2026-10-19：/me 补齐 plan / effective_role / tenant_id（PARITY-DIFF-9）。
 
     orchestrator GET /me（auth.py:334-338）= 账号 9 键 + effective_role + tenant_id，
-    其中 `plan` / `effective_role` 是前端 `hooks/use-role.ts:33-38` 直接消费的字段。
-    worker 没有 effective_role ⇒ `effectiveRole` 退化成原始 role（历史 admin 不会被
-    映射成 system_admin），也缺 plan / tenant_id；多出 id / status。
+    其中 `plan` / `effective_role` 是前端 `hooks/use-role.ts:33-38` 直接消费的字段；
+    worker 现在同口径（历史 admin → system_admin 的映射由共享内核 effective_role 提供）。
     """
     _as(CUSTOMER)
     resp = client.get("/api/v1/auth/me")
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert set(body) == {
+    assert {
         "id", "email", "display_name", "account_type", "role", "status",
         "team_id", "console_access", "user_id", "team_name",
-    }
+        "plan", "effective_role", "tenant_id",
+    } <= set(body)
     assert body["user_id"] == body["id"] == 3
     assert body["account_type"] == "customer"
+    assert body["plan"] == "free"
+    assert body["tenant_id"] == "default"
+    assert body["effective_role"]
 
 
 def test_me_fetches_team_name_from_teams_table():
@@ -652,8 +644,8 @@ def test_me_rejects_invalid_token():
     assert resp.json()["detail"] == "Invalid token"
 
 
-@pytest.mark.xfail(strict=True, reason="PARITY-DIFF-9: orchestrator /me 含 plan/effective_role/tenant_id")
-def test_parity_diff_9_me_has_plan_effective_role_tenant_id():
+def test_me_has_plan_effective_role_tenant_id():
+    """已修 2026-10-19（原 PARITY-DIFF-9 xfail）。"""
     _as(CUSTOMER)
     resp = client.get("/api/v1/auth/me")
     body = resp.json()
@@ -932,43 +924,30 @@ def test_register_with_invite_joins_as_regular_member():
 
 # ── 差异登记（xfail / 现状钉死）─────────────────────────────────────────────
 
-def test_register_unknown_workstation_without_team_is_silently_ignored():
-    """worker 现状：**没有 team_name 时**未知工位被静默忽略（PARITY-DIFF-10）。
-
-    根因：worker 只有在建团队分支里才调 `_resolve_signup_workstations`
-    （main.py:649-681），而 orchestrator 在**解析请求体时**就校验（auth.py:198）。
-    影响：带未知工位的注册请求，orchestrator 422，worker 200 —— 客户端拿到成功
-    响应却不知道自己写错了工位 key。
-    """
+def test_register_unknown_workstation_without_team_is_422():
+    """已修 2026-10-19：没有 team_name 时也校验工位编码 → 422（PARITY-DIFF-10）。"""
     conn = _FakeConn(fetchval=[None], fetchrow=[_user_row()])
     with _patched_main(conn):
         resp = client.post(
             "/api/v1/auth/register",
             json=_register_body(workstations=["not_a_workstation"]),
         )
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["team_id"] is None
-    assert "team_subscriptions" not in conn.sql()
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "UNKNOWN_WORKSTATION"
 
 
-def test_resolve_signup_workstations_treats_empty_list_as_all():
-    """worker 现状的根因（PARITY-DIFF-11）：`if not chosen` 把 `[]` 当"没传"。
+def test_resolve_signup_workstations_distinguishes_none_from_empty():
+    """已修 2026-10-19（PARITY-DIFF-11）：None=全部、[]=零开通。
 
-    证据：ws_teams.py:198-215。orchestrator `_validate_workstations([])` 返回空
-    frozenset，`_grant_signup_workstations` 见空集直接 return（auth.py:98-104）——
-    即「传空数组 = 一个工位都不开」。
+    与 orchestrator `_validate_workstations([])` 同口径（auth.py:98-104）；
+    前端 `lib/auth/types.ts` 也按"不传 ≠ 空数组"写。
     """
     assert ws_teams._resolve_signup_workstations(None) == list(all_workstations())
-    assert ws_teams._resolve_signup_workstations([]) == list(all_workstations())
+    assert ws_teams._resolve_signup_workstations([]) == []
 
 
-def test_register_empty_workstations_opens_every_workstation():
-    """worker 现状：`workstations: []` + 建团队 → 开通**全部 9 个**（PARITY-DIFF-11）。
-
-    orchestrator 同请求只开通 0 个。前端 `lib/auth/types.ts:19` 明确写着
-    「不传 ≠ 空数组：不传后端开通全部，传空数组会得到一个什么都用不了的团队」
-    —— 即前端按 orchestrator 语义理解。
-    """
+def test_register_empty_workstations_opens_none():
+    """已修 2026-10-19：`workstations: []` + 建团队 → 开通 0 个（PARITY-DIFF-11）。"""
     conn = _FakeConn(
         fetchval=[None, None],
         fetchrow=[_user_row(), {"id": 3, "name": "空白工位团队"}],
@@ -981,7 +960,7 @@ def test_register_empty_workstations_opens_every_workstation():
 
     assert resp.status_code == 200, resp.text
     subs = [args for sql, args in conn.calls if "INSERT INTO team_subscriptions" in sql]
-    assert len(subs) == len(all_workstations())  # worker：9 条；orchestrator：0 条
+    assert len(subs) == 0  # 传空数组 = 零开通（与 orchestrator 一致）
 
 
 def test_register_duplicate_email_precedes_invite_validation():
@@ -998,32 +977,6 @@ def test_register_duplicate_email_precedes_invite_validation():
         )
     assert resp.status_code == 409
     assert resp.json()["detail"] == "conflict: Email already registered"
-
-
-@pytest.mark.xfail(strict=True, reason="PARITY-DIFF-10: orchestrator 无 team_name 时也校验未知工位 → 422")
-def test_parity_diff_10_register_unknown_workstation_is_422():
-    conn = _FakeConn(fetchval=[None], fetchrow=[_user_row()])
-    with _patched_main(conn):
-        resp = client.post(
-            "/api/v1/auth/register",
-            json=_register_body(workstations=["not_a_workstation"]),
-        )
-    assert resp.status_code == 422
-
-
-@pytest.mark.xfail(strict=True, reason="PARITY-DIFF-11: orchestrator 把 workstations=[] 当“零开通”")
-def test_parity_diff_11_register_empty_workstations_grants_none():
-    conn = _FakeConn(
-        fetchval=[None, None],
-        fetchrow=[_user_row(), {"id": 3, "name": "空白工位团队"}],
-    )
-    with _patched_main(conn):
-        resp = client.post(
-            "/api/v1/auth/register",
-            json=_register_body(team_name="空白工位团队", workstations=[]),
-        )
-    assert resp.status_code == 200
-    assert "INSERT INTO team_subscriptions" not in conn.sql()
 
 
 @pytest.mark.xfail(strict=True, reason="PARITY-DIFF-12: orchestrator 邀请码校验先于邮箱查重（404 优先）")
