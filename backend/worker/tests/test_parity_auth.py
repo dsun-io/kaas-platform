@@ -251,7 +251,7 @@ def _login_row(**over):
     row = {
         "id": 5, "email": "buyer@qa.test", "password_hash": _PASSWORD_HASH,
         "display_name": "买家", "account_type": "customer", "role": "owner",
-        "status": "active", "team_id": None, "console_access": False,
+        "status": "active", "team_id": None, "console_access": False, "plan": "free",
     }
     row.update(over)
     return row
@@ -377,16 +377,13 @@ def test_bootstrap_admin_already_initialized_is_403(monkeypatch):
     assert "already initialized" in resp.json()["detail"]
 
 
-def test_bootstrap_admin_creates_admin_with_nested_envelope(monkeypatch):
-    """worker 现状：响应是 `{access_token, token_type, user{5 键}}`（PARITY-DIFF-4）。
-
-    orchestrator 返回**扁平** 11 键（user_id/email/display_name/account_type/role/
-    plan/team_id/team_name/console_access/access_token/token_type）。
-    """
+def test_bootstrap_admin_creates_admin_with_flat_envelope(monkeypatch):
+    """已修 2026-10-19：响应为扁平 11 键（与 orchestrator `_auth_response` 同键集，PARITY-DIFF-4）。"""
     monkeypatch.setenv("ADMIN_SETUP_TOKEN", _SETUP_TOKEN)
     admin_row = {
         "id": 1, "email": "root@qa.test", "display_name": "系统管理员",
         "account_type": "internal", "role": "system_admin",
+        "plan": "internal", "team_id": None, "console_access": False,
     }
     conn = _FakeConn(fetchrow=[None, None, admin_row])  # 已初始化检查 / 邮箱查重 / INSERT
     with _patched_main(conn):
@@ -398,11 +395,13 @@ def test_bootstrap_admin_creates_admin_with_nested_envelope(monkeypatch):
 
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert set(body) == {"access_token", "token_type", "user"}
-    assert body["token_type"] == "bearer"
-    assert set(body["user"]) == {
-        "id", "email", "display_name", "account_type", "role",
+    assert set(body) == {
+        "user_id", "email", "display_name", "account_type", "role", "plan",
+        "team_id", "team_name", "console_access", "access_token", "token_type",
     }
+    assert body["plan"] == "internal"
+    assert body["token_type"] == "bearer"
+    assert "password_hash" not in body
 
     insert_sql = next(
         sql for sql, _ in conn.calls if sql.lstrip().startswith("INSERT INTO users")
@@ -447,37 +446,14 @@ def test_bootstrap_admin_duplicate_email_is_409(monkeypatch):
     assert resp.status_code == 409
 
 
-@pytest.mark.xfail(strict=True, reason="PARITY-DIFF-4: orchestrator 响应扁平（含 plan/team_*），worker 嵌套 user")
-def test_parity_diff_4_bootstrap_admin_flat_response(monkeypatch):
-    monkeypatch.setenv("ADMIN_SETUP_TOKEN", _SETUP_TOKEN)
-    admin_row = {
-        "id": 1, "email": "root@qa.test", "display_name": "系统管理员",
-        "account_type": "internal", "role": "system_admin",
-    }
-    conn = _FakeConn(fetchrow=[None, admin_row])
-    with _patched_main(conn):
-        resp = client.post(
-            "/api/v1/auth/bootstrap-admin",
-            json=_bootstrap_body(),
-            headers=_bearer(_SETUP_TOKEN),
-        )
-    assert set(resp.json()) == {
-        "user_id", "email", "display_name", "account_type", "role", "plan",
-        "team_id", "team_name", "console_access", "access_token", "token_type",
-    }
 
 
 # ════════════════════════════════════════════════════════════════════════════
 # 2. POST /api/v1/auth/login
 # ════════════════════════════════════════════════════════════════════════════
 
-def test_login_success_envelope_is_nested_user(monkeypatch):
-    """worker 现状：`{access_token, token_type, user{...}}`（PARITY-DIFF-6）。
-
-    orchestrator 是**扁平** 11 键且含 `plan`（auth.py:139-159, 307）。
-    前端 `lib/auth/auth-context.tsx:56-68` 的 buildUser 读的是扁平字段 ——
-    目前被「登录后 window.location 跳转 + /auth/me 重新 buildUser」掩盖。
-    """
+def test_login_success_envelope_is_flat_with_plan(monkeypatch):
+    """已修 2026-10-19：登录响应扁平 11 键且含 plan（与 orchestrator auth.py:139-159, 307 同键集）。"""
     conn = _FakeConn(fetchrow=[_login_row()])
     with _patched_main(conn):
         resp = client.post(
@@ -486,16 +462,14 @@ def test_login_success_envelope_is_nested_user(monkeypatch):
 
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert set(body) == {"access_token", "token_type", "user"}
-    assert body["token_type"] == "bearer"
-    user = body["user"]
-    assert set(user) == {
-        "id", "email", "display_name", "account_type", "role", "status",
-        "team_id", "console_access", "user_id", "team_name",
+    assert set(body) == {
+        "user_id", "email", "display_name", "account_type", "role", "plan",
+        "team_id", "team_name", "console_access", "access_token", "token_type",
     }
-    assert user["user_id"] == user["id"]
-    assert "password_hash" not in user
-    assert "plan" not in user  # PARITY-DIFF-6：orchestrator 一定有 plan
+    assert body["token_type"] == "bearer"
+    assert body["user_id"] == 5
+    assert body["plan"] == "free"
+    assert "password_hash" not in body
 
 
 def test_login_bad_password_and_unknown_user_are_401(monkeypatch):
@@ -567,19 +541,6 @@ def test_parity_login_disabled_account_is_403():
             "/api/v1/auth/login", json={"email": "buyer@qa.test", "password": _PASSWORD}
         )
     assert resp.status_code == 403
-
-
-@pytest.mark.xfail(strict=True, reason="PARITY-DIFF-6: orchestrator login 响应扁平且含 plan")
-def test_parity_diff_6_login_flat_response_with_plan():
-    conn = _FakeConn(fetchrow=[_login_row()])
-    with _patched_main(conn):
-        resp = client.post(
-            "/api/v1/auth/login", json={"email": "buyer@qa.test", "password": _PASSWORD}
-        )
-    assert set(resp.json()) == {
-        "user_id", "email", "display_name", "account_type", "role", "plan",
-        "team_id", "team_name", "console_access", "access_token", "token_type",
-    }
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -791,10 +752,10 @@ def test_register_duplicate_email_409():
 
 
 def test_register_plain_success_shape_and_anti_forgery():
-    """worker 现状：扁平 10 键、无 plan（PARITY-DIFF-6 家族）；反伪造与 orchestrator 同。
+    """已修 2026-10-19：注册响应扁平 11 键（含 plan="free"），反伪造与 orchestrator 同。
 
     body 里的 account_type/role/plan 一律忽略，服务端硬编码 customer + free
-    （main.py:636-640 / auth.py:243-252）。
+    （main.py / auth.py:243-252）。
     """
     conn = _FakeConn(fetchval=[None], fetchrow=[_user_row()])
     with _patched_main(conn):
@@ -811,13 +772,13 @@ def test_register_plain_success_shape_and_anti_forgery():
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert set(body) == {
-        "user_id", "email", "display_name", "account_type", "role",
+        "user_id", "email", "display_name", "account_type", "role", "plan",
         "team_id", "team_name", "console_access", "access_token", "token_type",
     }
     assert body["account_type"] == "customer"
     assert body["role"] == "owner"
+    assert body["plan"] == "free"
     assert body["team_id"] is None and body["team_name"] is None
-    assert "plan" not in body  # PARITY-DIFF-6 家族：orchestrator 一定回 plan="free"
 
     insert_sql, insert_args = next(
         (sql, args) for sql, args in conn.calls

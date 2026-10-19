@@ -25,7 +25,7 @@ _ADMIN_EMAIL = "root@integration.test"
 
 
 def _bootstrap_admin(client, setup_token: str) -> dict:
-    """初始化系统管理员，返回响应体（含 access_token / user）。"""
+    """初始化系统管理员，返回响应体（扁平：access_token / user_id，与 orchestrator 同键集）。"""
     resp = client.post(
         "/api/v1/auth/bootstrap-admin",
         json={
@@ -60,7 +60,7 @@ def _register(client, **overrides):
 
 def test_bootstrap_admin_writes_internal_system_admin(client, db, admin_setup_token):
     body = _bootstrap_admin(client, admin_setup_token)
-    user_id = body["user"]["id"]
+    user_id = body["user_id"]
 
     row = db.fetchrow(
         "SELECT id, email, password_hash, account_type, role, plan, status,"
@@ -155,7 +155,7 @@ def test_register_duplicate_email_rolls_back_without_orphan_team(client, db):
     assert db.fetchval(
         "SELECT count(*) FROM users WHERE email=$1", "buyer@integration.test"
     ) == 1
-    # 账号占用预检在建团队之前；若事务/校验顺序被改坏，会留下孤儿团队。
+    # 邮箱查重发生在预检阶段（团队真正创建之前）；顺序被改坏会留下孤儿团队。
     assert db.fetchval("SELECT count(*) FROM teams") == 1
     assert db.fetchval(
         "SELECT count(*) FROM teams WHERE name=$1", "不该被创建的团队"
@@ -196,7 +196,7 @@ def test_create_customer_writes_not_null_columns_then_soft_deletes(
     assert row["status"] == "active"
     assert row["stage"] == "active"
     assert row["owner_scope"] == "private"
-    assert row["owner_id"] == str(admin["user"]["id"])
+    assert row["owner_id"] == str(admin["user_id"])
     assert row["is_deleted"] is False
     assert row["deleted_at"] is None
 
@@ -259,4 +259,4 @@ def test_create_quotation_writes_schema_version_not_null(client, db, admin_setup
     assert row["product_category"] == "fencing"
     assert row["spec_hash"] == body["spec_hash"]
     assert float(row["unit_price"]) == 12.5
-    assert row["created_by"] == str(admin["user"]["id"])
+    assert row["created_by"] == str(admin["user_id"])

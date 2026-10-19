@@ -322,11 +322,11 @@ async def bootstrap_admin(request: Request, body: BootstrapRequest):
             """INSERT INTO users (email, password_hash, display_name,
                account_type, role, plan, status, is_tenant_admin, created_at, updated_at)
                VALUES ($1,$2,$3,'internal','system_admin','internal','active',false,NOW(),NOW())
-               RETURNING id, email, display_name, account_type, role""",
+               RETURNING id, email, display_name, account_type, role, plan, team_id, console_access""",
             body.email.lower(), _hash_password(body.password), body.display_name,
         )
     token = _create_token(row["id"], request)
-    return {"access_token": token, "token_type": "bearer", "user": dict(row)}
+    return _auth_payload(dict(row), token)
 
 
 @app.post("/api/v1/auth/login")
@@ -334,7 +334,7 @@ async def login(request: Request, body: LoginRequest):
     async with _acquire(request) as conn:
         row = await conn.fetchrow(
             "SELECT id, email, password_hash, display_name, account_type, role, status,"
-            " team_id, console_access FROM users WHERE email=$1",
+            " team_id, console_access, plan FROM users WHERE email=$1",
             (body.email or "").strip().lower(),
         )
     if not row or not _verify_password(body.password, row["password_hash"]):
@@ -345,9 +345,7 @@ async def login(request: Request, body: LoginRequest):
 
     token = _create_token(row["id"], request)
     user = {k: v for k, v in dict(row).items() if k != "password_hash"}
-    user["user_id"] = user["id"]
-    user["team_name"] = await _team_name_of(request, user.get("team_id"))
-    return {"access_token": token, "token_type": "bearer", "user": user}
+    return _auth_payload(user, token, team_name=await _team_name_of(request, user.get("team_id")))
 
 
 async def _team_name_of(request: Request, team_id) -> Optional[str]:
@@ -357,6 +355,30 @@ async def _team_name_of(request: Request, team_id) -> Optional[str]:
     async with _acquire(request) as conn:
         row = await conn.fetchrow("SELECT name FROM teams WHERE id=$1", team_id)
     return row["name"] if row else None
+
+
+def _auth_payload(row: dict, token: str, *, team_name: Optional[str] = None) -> dict:
+    """注册/登录/bootstrap-admin 共用的**扁平**账号响应。
+
+    与 orchestrator `_auth_response`（app/api/auth.py:139-159）**同键集**：
+    user_id / email / display_name / account_type / role / plan / team_id /
+    team_name / console_access / access_token / token_type。
+    前端 `lib/auth/auth-context.tsx` 的 buildUser 直接读这些扁平字段
+    （旧版 worker 登录返回嵌套 `user{}` 且缺 plan，PARITY-DIFF-4/6）。
+    """
+    return {
+        "user_id": row["id"],
+        "email": row["email"],
+        "display_name": row["display_name"],
+        "account_type": row["account_type"],
+        "role": row["role"],
+        "plan": row.get("plan") or "free",
+        "team_id": row.get("team_id"),
+        "team_name": team_name,
+        "console_access": bool(row.get("console_access") or False),
+        "access_token": token,
+        "token_type": "bearer",
+    }
 
 
 @app.get("/api/v1/auth/me")
@@ -734,6 +756,7 @@ async def register(request: Request, body: RegisterRequest):
         "display_name": user_row["display_name"],
         "account_type": user_row["account_type"],
         "role": user_row["role"],
+        "plan": "free",
         "team_id": team_id,
         "team_name": team_name_out,
         "console_access": False,          # 官网数据后台权限：默认关闭，由团队管理员授予
