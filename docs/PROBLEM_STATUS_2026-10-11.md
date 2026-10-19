@@ -17,6 +17,52 @@
 > —— 注册 500 / 报价页白屏已修并部署；CI `backend:test` db-tests 长期红已修绿（`6c08900`）；
 > 含「本机无 Postgres ⇒ 本地 db 测试全 skip」等环境坑与「不要重做」清单。
 
+> **（2026-10-19 峰值时段检查点 · P1 迁库暂停在 70% —— 交接见
+> `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`）**
+>
+> **生产仍跑 Neon，未切换、未部署。** PPG 库已建（`kaas-prod`，PG17.2/us-east-1）、
+> schema 已建 114 表、**数据已全量复制且行数 0 不一致**、Hyperdrive 新配置
+> `1733fcd…` 已建、分支 `feat/convergence-aprime` 的 `wrangler.jsonc` 已切 id；
+> **阻塞项 = schema 漂移未清零**：约束 190/1015（缺 852）、索引 281/313（缺 50）、
+> 列属性差 33 处（create_all 快径产物少于生产历史 DDL 累积）。
+> 下一步顺序、逐条验收标准、**PPG/Prisma/Cloudflare/Neon 权限获取方式（换设备必看）**、
+> 回滚预案全部写在交接文档 §3–§7；迁移脚本在 `scripts/migrate-ppg/`。
+> 峰值时段结束、晚间恢复时：从交接文档 §3 第 1 步继续。
+>
+> **（2026-10-19 · P0 已执行：PPG 库创建 + 空库 schema 根因修复 + 数据迁移）**
+>
+> 1. **PPG 已创建**（Prisma CLI 非交互：`prisma project create kaas-platform` +
+>    `prisma postgres create kaas-prod`）：id `db_xe7ypplcbxq3ysghz93k3n8u`，
+>    **PG 17.2 / us-east-1 / ready**。DSN 存于 `.env.local` 的 `DATABASE_URL_PPG`。
+>    ⚠️ **Accelerate 停用提示**：`pooled.db.prisma.io`（Accelerate）即将停用 ⇒
+>    迁移与运行时一律用**直连 `db.prisma.io`**；Hyperdrive 负责池化。
+> 2. **空库建表根因已修**：`alembic/env.py` 只 import `models`+`tax_models`，漏
+>    `workstation_models/market_models/actual_cost/external_docs/workstation_links`
+>    ⇒ 空库快径只建 61 表（生产 109），**预览环境会缺 `cust_contacts` 等表导致创建客户 500**。
+>    已补 import（metadata 93 表）；**历史迁移链无法从 base 重放**（`f82ac951b473` 与
+>    `202605030002` 重复建表，实测炸 `customer_capabilities`）⇒ 新环境一律走快径 + 补建表。
+> 3. **PPG schema 构建**：快径建 93 模型表 + 从生产目录补建 20 张 worker 独有/legacy 表
+>    （conversations/wechat_*/feature_flags/file_objects/subscriptions/entity_links 等），
+>    数据用二进制 `COPY` 逐表迁移（109 表），完成后校验行数与结构。
+> 4. **Hyperdrive**：新建 `kaas-ppg` config `1733fcd80736482e8ec6e7648ed52286`（直连 db.prisma.io），
+>    `wrangler.jsonc` 已切换；待数据校验通过后部署 Worker + 生产冒烟。
+>
+> **（2026-10-19 · POC 清理 + 迁库推进状态 / 卡点）**
+>
+> 1. **POC Worker 已清理**：`kaas-poc-sqlalchemy` / `kaas-poc-baseline` 已 `wrangler delete`；
+>    生产 `kaas` 未受影响。
+> 2. **迁库前置测量完成**（读生产库只读查询）：Neon 实测 **PG 18.6**、库 **16.23 MB**、
+>    **109 表**、`alembic_version=202610180010`（详见 `PROD_DB_OPTIMIZATION_PLAN` §2.0）。
+>    原计划"PG17 三对齐"假设已修正为"以 PPG 实际大版本为准 + 用 PG18 客户端"。
+> 3. **迁库代码准备**：`session.py` SSL 判定去 `neon.tech` 硬编码、改通用判定（显式 ssl/sslmode
+>    参数或非本地/docker host ⇒ SSL）；orchestrator 1200 测试全绿。改动在独立分支
+>    **`feat/convergence-aprime`**（worktree 隔离，避免与并发会话抢分支）。
+> 4. **卡点（用户侧）**：PPG 库需用户 Prisma 账号创建；Console GitHub 安装曾因仓库残留
+>    `prisma-cloud/setup` 分支失败（**已删除该分支**），待用户重试安装并把 direct connection
+>    串写入 `.env.local` 的 `DATABASE_URL_PPG`。
+> 5. **并行推进（不依赖云账号）**：已启动 **C 子集——worker 真 PG 写入路径测试**（task-8，
+>    pgserver 本地 PG + alembic 建 schema + register/bootstrap-admin 等写入路径真库验证）。
+>
 > **（2026-10-19 · 收敛 P0 POC 结论：路线 A 不可行 → 转 A′）**
 >
 > POC 文档：`docs/POC_WORKER_SQLALCHEMY_2026-10-19.md`（POC 源码
