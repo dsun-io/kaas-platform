@@ -1,0 +1,17 @@
+{
+  // POC 专用 Worker（独立名字，绝不与生产 `kaas` 同名/同路由）。
+  // 用途：在真实 Workers Python runtime 里验证 SQLAlchemy + greenlet + asyncpg。
+  "name": "kaas-poc-sqlalchemy",
+  "main": "src/main.py",
+  "compatibility_date": "2026-09-18",
+  "compatibility_flags": ["python_workers"],
+  "workers_dev": true,
+  // 复用生产 Hyperdrive config（P0 只读探针，不写库）；本地 dev 用
+  // CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE 指向本地 PG。
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "f53fed49705043008737032e4bfa2b8e"
+    }
+  ]
+}
