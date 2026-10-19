@@ -14,12 +14,26 @@ def _build_engine():
     """创建异步引擎。
 
     asyncpg 不接受 sslmode/ssl 查询参数（SQLAlchemy 会原样透传或转成 bool 导致报错），
-    因此对 Neon 等需要 SSL 的云端数据库改为通过 connect_args 显式传入 SSLContext，
+    因此对需要 SSL 的云端数据库改为通过 connect_args 显式传入 SSLContext，
     并剥离 URL 中的查询参数。
+
+    判定口径（2026-10-19 起，不再硬编码 neon.tech）：
+    - URL 显式带 ssl / sslmode 参数 ⇒ 开 SSL；
+    - host 非本地/非 docker 服务名（localhost/127.0.0.1/::1/db/postgres/
+      host.docker.internal）⇒ 视为云端库，默认开 SSL。
+
+    判定不依赖具体厂商：覆盖 Neon 与未来任何托管 PG（PPG 已随决策 1 放弃，不保留专用分支）。
     """
     url = make_url(settings.database_url)
     connect_args: dict = {}
-    if url.host and ("neon.tech" in url.host or url.query.get("ssl")):
+    host = (url.host or "").lower()
+    local_hosts = {"", "localhost", "127.0.0.1", "::1", "db", "postgres", "host.docker.internal"}
+    explicit_ssl = bool(url.query.get("ssl")) or url.query.get("sslmode") in (
+        "require",
+        "verify-ca",
+        "verify-full",
+    )
+    if explicit_ssl or host not in local_hosts:
         import ssl as _ssl
 
         connect_args["ssl"] = _ssl.create_default_context()

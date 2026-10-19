@@ -136,3 +136,59 @@ jobs:
         env:
           LLM_PROVIDER: stub
           KB_PROVIDER: stub
+
+  # 真 Postgres 写入路径测试（task-8 / 路线 C 子集）。
+  # worker 用裸 asyncpg 手写 SQL，假 DB 测不出「NOT NULL 且无默认值 / 漏列」这类
+  # 500（注册、创建客户、手动报价都在线上踩过）。这里起真 PG，用 orchestrator 的
+  # alembic 建 schema，再跑 backend/worker/tests/integration 的写库用例。
+  worker-db-tests:
+    name: "worker:integration（真 PG 写入路径）"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kaas
+          POSTGRES_PASSWORD: kaas_dev_pw
+          POSTGRES_DB: kaas_v2_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kaas -d kaas_v2_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://kaas:kaas_dev_pw@localhost:5432/kaas_v2_test
+      UV_LINK_MODE: copy
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python + uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.14'
+
+      # worker 测试要 import main，main 依赖被 .gitignore 忽略的 src/kaas_common 镜像。
+      - name: Sync shared kernel + quote engine into worker
+        shell: pwsh
+        run: ./scripts/sync-shared.ps1
+
+      - name: Install worker deps
+        working-directory: ./backend/worker
+        run: uv sync
+
+      # 集成用例的 schema 由 orchestrator 的 alembic 建；conftest 需要能
+      # `import alembic, sqlalchemy, psycopg2` 的解释器（会自动发现
+      # backend/orchestrator/.venv），故这里把 orchestrator 依赖也装上。
+      - name: Install orchestrator deps（提供 alembic 迁移解释器）
+        working-directory: ./backend/orchestrator
+        run: uv sync
+
+      - name: Run worker real-PG tests
+        working-directory: ./backend/worker
+        run: uv run --frozen --with pytest --with httpx2 python -m pytest tests -m integration -q
