@@ -29,6 +29,11 @@
 
 ## 1. 批次 0 · 即时小修（现在开工）
 
+> ✅ **已完成（2026-10-19）**：B0-1~B0-4（提交 `846d4ab`，门禁 typecheck/lint/test 全绿）；
+> B0-5/B0-6（提交 `1350c87`，orchestrator 1200 passed / worker 303 passed / route-parity PASS）。
+> 印花税口径变更（定义删除并入杂税 3%，fixed/ratio 生效）已按用户裁决落地，详见 PROBLEM_STATUS
+> 交接摘要。D0-1~4 文档收口已推送（`dbf2b54`）。
+
 | ID | 事项 | 证据 | 负责 | 写范围 |
 |---|---|---|---|---|
 | B0-1 | 前端 `crypto.subtle.digest` 加 jsdom/CI 兜底（Frontend CI 红） | `frontend/src/hooks/use-products.ts:110` 裸调 | teammate A | `frontend/src/hooks/use-products.ts` + 测试 |
