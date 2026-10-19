@@ -305,6 +305,7 @@ docker-compose.yml        本地基础设施
 
 - [DEPLOY.md](DEPLOY.md) — 生产部署与运维速查
 - [docs/DEPLOYMENT_PLAN_2026-10-18.md](docs/DEPLOYMENT_PLAN_2026-10-18.md) — 本轮发布方案
+- [docs/PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md](docs/PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md) — 生产优化方案（Neon→PPG 迁移 + 性能链路，定稿待执行）
 - [docs/TAX_ARCHIVE_HANDOVER_EXECUTION_PLAN_2026-10-18.md](docs/TAX_ARCHIVE_HANDOVER_EXECUTION_PLAN_2026-10-18.md) — 税务改造
 - [docs/BATCH_QUOTE_REDESIGN_PLAN_2026-10-18.md](docs/BATCH_QUOTE_REDESIGN_PLAN_2026-10-18.md) — 批量报价
 - [docs/QUOTE_COST_INSURANCE_2026-10-18.md](docs/QUOTE_COST_INSURANCE_2026-10-18.md) — 成本/保险/计量口径
@@ -314,4 +315,4 @@ docker-compose.yml        本地基础设施
 
 ---
 
-**最后更新**：2026-10-18
+**最后更新**：2026-10-19

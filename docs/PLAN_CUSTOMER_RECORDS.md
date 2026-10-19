@@ -115,6 +115,10 @@
 - [~] **P4 前端**：选择器 / 往来记录树 / 导入骨架 / 单证 chip 已交付；A（工位可见性）·B（团队）·D（quotation）执行中
 - [~] **P5 验证与文档**：对等 PASS、`tsc` exit 0、`lint` 0 error；文档随进度更新中
 
+> ⚠️ **状态快照更正（2026-10-19）**：本文档 checklist 停在 2026-10-11 执行中口径；worker 读侧
+> `/api/v1/customers/{id}/records` 已上线（`ws_customer_records.py`，装配在共享内核
+> `kaas_common/workstation/customer_records.py`）⇒ 主体已收口，剩余细节以代码为准。
+
 ---
 
 ## 执行记录（实测，2026-10-11）
