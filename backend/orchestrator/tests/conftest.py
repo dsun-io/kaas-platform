@@ -158,13 +158,18 @@ async def _seed_int_r3_data(engine):
     async with AsyncSession(engine) as session:
         # Truncate 确保种子数据始终与当前代码一致
         #
-        # 注意 customer_quote_profiles（客户税率档案）**只 truncate、不 seed**：
-        # 它是纯运行时数据（用户自己保存的档案），没有任何需要预置的种子。
-        # 但它必须在这张清单里 —— 否则测试保存的档案会漏到下一条用例里，
-        # 表现为「单跑通过、全跑失败」。
+        # ⚠️ 2026-10-19：`customer_quote_profiles` 已被迁移 `202610180009/010` **删除**
+        # （客户税率档案并入 tax_archives）。本清单里再写它 ⇒ TRUNCATE 抛
+        # `UndefinedTableError` ⇒ 用到本 fixture 的用例全部 **ERROR**（CI db-tests 红，
+        # 表现为 10 条 test_admin_api 全挂）。故 TRUNCATE 只对**库里仍存在**的表执行，
+        # 以后删表不必再改这里（本清单只服务于"清掉上一条用例残留"）。
         for tbl in ("product_specs", "customer_cost_items", "customer_sale_price_items",
                      "customer_pricing_profiles", "customer_freight_rates",
                      "customer_quote_profiles"):
+            exists = await session.scalar(
+                text("SELECT to_regclass(:tbl)"), {"tbl": tbl})
+            if exists is None:
+                continue
             await session.execute(text(f"TRUNCATE TABLE {tbl} CASCADE"))
         await session.commit()
 
