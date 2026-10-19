@@ -17,6 +17,7 @@ from sqlalchemy import (
     String,
     Float,
     ForeignKey,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID, ARRAY
 from app.db.base import Base
@@ -550,8 +551,12 @@ class TenantProduct(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (
-        Index("uq_tenant_products_key", "tenant_id", "product_key", unique=True),
+        # 与生产 DDL 对齐（迁移 202610110019）：uq_tenant_products_key ON
+        # (tenant_id, COALESCE(team_id,0), product_key)
+        Index("uq_tenant_products_key", "tenant_id", text("COALESCE(team_id, 0)"),
+              "product_key", unique=True),
         Index("idx_tenant_products_tenant", "tenant_id", "is_active"),
+        Index("idx_tenant_products_team", "team_id"),
     )
 
 
@@ -612,12 +617,18 @@ class TenantWorkstationProduct(Base):
     workstation = Column(Text, nullable=False)  # e.g. "quote"
     product_key = Column(Text, nullable=False)
     is_enabled = Column(Boolean, nullable=False, default=True, server_default="true")
+    # 团队隔离（迁移 202610110019）：NULL = 历史"租户级"行；唯一键用 COALESCE(team_id,0)
+    # 把"至多一行无归属"表达出来（裸 NULL 在唯一索引里互不相等，挡不住重复）。
+    team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (
-        Index("uq_tenant_ws_product", "tenant_id", "workstation", "product_key", unique=True),
+        # 与生产 DDL 逐字对齐：uq_tenant_ws_product ON (tenant_id, COALESCE(team_id,0), workstation, product_key)
+        Index("uq_tenant_ws_product", "tenant_id", text("COALESCE(team_id, 0)"),
+              "workstation", "product_key", unique=True),
         Index("idx_tenant_ws_product_tenant", "tenant_id", "workstation", "is_enabled"),
+        Index("idx_tenant_workstation_products_team", "team_id"),
     )
 
 

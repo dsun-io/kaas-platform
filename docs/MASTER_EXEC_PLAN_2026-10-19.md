@@ -161,7 +161,15 @@
 > 设计定稿（2026-10-19）：[S4_SINGLE_APP_PLAN_2026-10-19.md](./S4_SINGLE_APP_PLAN_2026-10-19.md)
 > —— 保留 **worker 为唯一运行时**（生产已验证），orchestrator 只留 models + Alembic；
 > 含本地入口 `local_run.py`、按域退役顺序、测试处置（与 PLAN_B「1085 条保留」的偏差）与回退。
-- [ ] **S4-a** orchestrator 业务实现退场（仅保留 uvicorn 入口 + 迁移工具）
+- [~] **S4-a** orchestrator 业务实现退场（仅保留 uvicorn 入口 + 迁移工具）——
+      **本地入口已落地（2026-10-19）**：`backend/worker/src/local_run.py` 用 uvicorn 起**生产同一份 app**
+      （注入 `workers` stub + `request.scope["env"]`/HYPERDRIVE→本地 Docker PG，绕开 `src/platform`
+      对标准库的遮蔽）；真实冒烟全绿：health / bootstrap-admin / login / 建客户 / 报价·订单·应收列表 /
+      `export-quote/products` 全部 2xx。剩余：删除 orchestrator 业务实现 + 测试处置。
+      > ⚠️ 冒烟同时抓出 **列级 schema 漂移**：`tenant_workstation_products` 生产有 `team_id`（迁移
+      > 202610110019）+ FK + `COALESCE(team_id,0)` 函数唯一索引，但 ORM 模型漏写 ⇒ 空库快径缺列
+      > ⇒ `export-quote/products` 500。已补模型并新增 `tests/test_team_scope_schema_parity.py`
+      > （12 张 team 作用面表 + 4 个函数唯一索引）；教训：S6-a 的表级门禁查不出列/索引漂移，S6 需补列级断言。
 - [ ] **S4-b** 主依赖拆分落地（`[project.optional-dependencies].migrations`）
 - [ ] **S4-c** CI 改造：db 门禁迁到真 PG 集成；`route-parity` 退役评估（已无第二后端）
 
