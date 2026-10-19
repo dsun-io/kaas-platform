@@ -134,9 +134,17 @@
 - [ ] **S3-c** 算价域（报价 / 订单；金额逻辑最重，放中段）
 - [ ] **S3-d** 文档域（单证 / 出运 / 税务）
 - [ ] **S3-e** 集成域（情报 / 市场调研 / AI / 触达）
-- [ ] **S3-f** `attribute-proposals` 3 条路由补进 worker（修既存生产 404）—— ✅ **已完成（2026-10-19）**：
+- [x] **S3-f** `attribute-proposals` 3 条路由补进 worker（修既存生产 404）—— ✅ **已完成（2026-10-19）**：
       `backend/worker/src/ws_admin_proposals.py`（列表/推荐/审核 approve·reject·merge，平台运营鉴权），
       12 条 worker 单测；route-parity 缺失从 11 → **8**，allowlist 同步删 3 行
+- [x] **S3-h** **认证/账号域行为对等** —— ✅ **已完成（2026-10-19）**：
+      `test_parity_auth.py` 66 条对等测试；修复 worker 8 处差异
+      （bootstrap 缺 Bearer 401 / 密码≥8 422 / 邮箱查重 409、login strip+lower、禁用账号 403、
+      /me 补 plan·effective_role·tenant_id、workstations=[] 零开通、无 team_name 也校验工位 422）；
+      剩余 4 处**明确接受/待评估**（login·bootstrap 响应扁平化 D4/D6、邀请码与邮箱查重顺序 D12、
+      分页越界 422 D13），用 `xfail(strict=True)` 棘轮钉住
+- [ ] **S3-i** CRM 域行为对等（teammate crm-parity 进行中）
+- [ ] **S3-j** 报价/订单域行为对等（teammate quote-parity 进行中）
 - [ ] **S3-g** 测试重写 350–380 条 + marker 错位 87 条归位（共用 `queries/` 造数，与 S3 同批）
 
 **S4 删壳 + CI（1 人日）**

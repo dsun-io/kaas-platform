@@ -32,6 +32,17 @@
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
 > 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
 >
+> **（2026-10-19 夜场 · 认证/账号域行为对等：8 处 worker 差异已修）**
+> 1. 新增 `backend/worker/tests/test_parity_auth.py`（66 条，55 通过 + 差异棘轮）；本轮修复 **8 处**：
+>    · bootstrap-admin：缺 Bearer → **401**（原并档 403）；密码 <8 → **422**；邮箱重复 → **409**（预检，原来撞唯一约束 500）
+>    · login：邮箱 **strip+lower**；账号禁用改为**密码正确后 403**（原来统一 401）
+>    · GET /me：补 **plan / effective_role / tenant_id**（前端 use-role 直接消费；历史 admin→system_admin 映射恢复）
+>    · register：`workstations: []` = **零开通**（原当"没传"开全部 9 个）；无 team_name 也校验未知工位 → 422
+> 2. 剩余 4 处用 `xfail(strict=True)` 棘轮钉住：D4/D6 登录与 bootstrap 响应扁平化（需同步前端/集成断言）、
+>    D12 邀请码与邮箱查重顺序、D13 分页越界 422；修好后 XPASS 会强制摘标记。
+> 3. 门禁：worker **410 passed + 5 skipped + 4 xfailed**；真 PG 集成 **5 passed**；
+>    依赖断言 / schema 完备性 / route-parity / sync-shared 全 PASS。
+>
 > **（2026-10-19 夜场 · 安全审查完成 + 两个真实安全缺陷修复）**
 > 1. 安全审查报告：`docs/SECURITY_AUDIT_2026-10-19.md`（危 2 / 高 4 / 中 7 / 低 8，共 21 条）。
 >    结论摘要：**SQL 注入 0 真注入点**（35 个 SQL 插值表达式逐条判定，均为占位符序号/白名单常量）；

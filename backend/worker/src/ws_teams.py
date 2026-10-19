@@ -198,9 +198,11 @@ async def create_team(
 def _resolve_signup_workstations(chosen: Optional[List[str]]) -> list[str]:
     """建团队/注册时勾选的工位 → 要开通的编码清单。
 
-    不传 = 默认**全部工位**（当前阶段全部免费，免得新团队"什么都用不了"）。
+    不传（None）= 默认**全部工位**（当前阶段全部免费，免得新团队"什么都用不了"）；
+    传空数组 = **零开通**（与 orchestrator `_validate_workstations([])` 同口径；
+    前端 `lib/auth/types.ts` 也按"不传 ≠ 空数组"写，PARITY-DIFF-11）。
     """
-    if not chosen:
+    if chosen is None:
         return list(all_workstations())
     known = set(all_workstations())
     out: list[str] = []
