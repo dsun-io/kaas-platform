@@ -1,8 +1,14 @@
 # 交接文档 · 2026-10-19 检查点：P1 生产库迁 PPG（峰值时段暂停）
 
-> **状态：迁移进行到 70%，停在"schema 漂移未清零"这个检查点；生产仍跑 Neon，未切换、未部署。**
+> ❌ **已废弃（2026-10-19 · 决策 1，已确认）**：**P1 迁库终止——放弃 Prisma Postgres，生产回
+> Neon。** 生产 Hyperdrive 保持指向 Neon 生产分支（main 实配 `f53fed49…`，从未切换）；
+> 本文描述的 PPG 建库/schema/数据迁移/Hyperdrive `1733fcd8…` 切换**全部作废，不得执行、不得合并
+> （`feat/convergence-aprime` 分支中的 wrangler.jsonc PPG 切换与 `scripts/migrate-ppg/` 属该废弃线）**。
+> PPg 放弃依据与当前权威口径见 [README.md](../README.md)（主交接文档）§2.1 / §9。以下保留为历史记录。
+
+> ~~**状态：迁移进行到 70%，停在"schema 漂移未清零"这个检查点；生产仍跑 Neon，未切换、未部署。**~~
 > 本文写给**另一台设备上的 DSH 会话**接手用：状态、证据、下一步顺序、权限获取方式、
-> 已知风险全在这里。先读本文，再读 `docs/MASTER_EXEC_PLAN_2026-10-19.md` 了解全局。
+> 已知风险全在这里。~~先读本文，再读 `docs/MASTER_EXEC_PLAN_2026-10-19.md` 了解全局。~~
 > 分支：`feat/convergence-aprime`（worktree：`.agents/worktrees/feat/convergence-aprime`）。
 
 ---

@@ -8,37 +8,202 @@
 - 本地前端：`http://localhost:3000`
 - 本地后端：`http://localhost:8000`（`/health`、`/docs`）
 
----
-
-## 1. 当前架构
-
-```
-浏览器
-  │
-  ▼
-Cloudflare Worker "kaas"（单 Worker）
-  ├─ kaas.powervoy.com      前端静态页面 + /api/v1/*
-  ├─ api.kaas.powervoy.com  仅 API
-  │
-  │  /api/*、/health → Python FastAPI（Workers Python runtime）
-  │  其余            → Next.js 静态导出资产
-  │
-  ▼ Hyperdrive
-Neon PostgreSQL（production / dev 分支）
-
-本地开发：
-Docker Compose（Postgres + Redis + MinIO + orchestrator）
-  + frontend `next dev` → http://localhost:3000
-```
-
-- **生产**：`backend/worker`（Python FastAPI + 原生 asyncpg + 静态资产，单 Worker）。
-- **本地/迁移**：`backend/orchestrator`（SQLAlchemy + Alembic，负责开发环境与数据库迁移）。
-- **共享内核**：`backend/kaas_common` 是唯一源，`scripts/sync-shared.ps1` 同步到 Worker 的 `src/kaas_common/`（不进版本控制）。
-- **共享契约**：`shared/contracts/*.ts`（zod），前后端与契约检查共用。
+> 📌 **本文是主交接文档**（架构 / 环境隔离 / 双后端优化决策 / 开发与测试口径的唯一权威来源）。
+> 决策依据与取证出处见 [docs/PLAN_B_EVALUATION_2026-10-19.md](docs/PLAN_B_EVALUATION_2026-10-19.md)；
+> 执行入口见 [docs/MASTER_EXEC_PLAN_2026-10-19.md](docs/MASTER_EXEC_PLAN_2026-10-19.md)。
 
 ---
 
-## 2. 当前业务模块
+## 1. 当前架构总览（已确认）
+
+```
+                     一份 FastAPI app 代码（方案 B 目标形态 · 已确认，见 §3）
+                    /                                                      \
+   本地开发入口：uvicorn --reload                          生产入口：Cloudflare Worker "kaas"
+   （日常开发唯一形态；wrangler dev 只作部署前冒烟门禁）     ├─ kaas.powervoy.com      前端页面 + /api/v1/*
+                    │                                    ├─ api.kaas.powervoy.com  仅 API
+                    │                                    │  运行时只用 asyncpg（不依赖 sqlalchemy/alembic/greenlet）
+                    │                                    ▼ Hyperdrive（生产 config → Neon 生产分支）
+                    └────────── kaas_common（唯一"脑"）──────► R2 / KV（三环境物理隔离，见 §2）
+                       参数化 SQL · Pydantic schemas · SQLAlchemy models ·
+                       Alembic migrations · 默认值/约束口径（models 仅 Alembic 时加载）
+
+三道门禁：contracts:check（shared/contracts zod 契约）
+         route-parity.py（双侧路由对等，允许清单登记）
+         sync-shared.ps1 -Check（kaas_common 镜像一致）
+```
+
+- **生产唯一 Worker**（事实）：`backend/worker/wrangler.jsonc` 是全仓唯一生产 wrangler 配置；
+  `backend/orchestrator` **从未部署到 Cloudflare**（无任何 orchestrator 侧 wrangler 配置、无部署 job）。
+- **一份 app 代码双入口**（已确认目标态，方案 B 实施后）：本地 uvicorn 热重载 / 生产 Worker，
+  同一份 FastAPI app 代码。**实施前过渡态**：orchestrator 壳（本地业务实现 + Alembic + 单测宿主）与
+  worker 壳并存——这正是 §3 要收敛掉的"双后端"。
+- **kaas_common 唯一脑**（已确认）：参数化 SQL、Pydantic schemas、SQLAlchemy models、Alembic
+  migrations、默认值/约束口径全部集中于此；现状为共享内核 + 镜像同步（`scripts/sync-shared.ps1`），
+  现状规模 36 个 git 跟踪文件。
+- **双侧规模（评估口径，2026-10-19）**：orchestrator app/ 167 文件 / 33,764 行（非空 29,060）/
+  231 路由；worker src/（跟踪，不含镜像）25 文件 / 14,717 行（非空 12,906）/ 225 路由；
+  **可比净差 16,154 行（orchestrator ≈ 2.25× worker）** —— 旧文档"6000 行差"是口径错觉
+  （worker 侧混入约 10,124 非空行 kaas_common 镜像），以本数字为准。
+
+---
+
+## 2. 数据库与存储（三环境资源隔离）
+
+### 2.1 生产数据库 = Neon；Prisma Postgres 已放弃（已确认）
+
+**PPg 已放弃，不得回迁、不得保留 PPg 连接配置、不得保留"可切回 PPg"的双路径。**
+决策依据（防止后续重新提出）：
+
+- PPg **固定 10 连接上限**、**不支持 Postgres 扩展**，在 Cloudflare Workers + Hyperdrive 架构下是**结构性阻塞**；
+- Neon 免费层提供 **1 GB 存储、100 CU-hours、10 分支**，闲置仅缩容不清数据；
+- **生产 Hyperdrive 必须指向 Neon 生产分支。**
+
+### 2.2 三环境资源隔离矩阵（已确认 · 原样）
+
+核心原则：**环境之间物理隔离，不靠代码前缀或运行时判断区分生产与预览；预览之间共享预览专用资源，用 PR 前缀区分；开发默认本地，不触云。**
+
+| 资源 | 生产 | 预览（所有 PR 共享预览专用资源） | 开发（默认） | 开发（远程冒烟，仅 wrangler dev --remote） |
+| :--- | :--- | :--- | :--- | :--- |
+| **Neon 分支** | 受保护 Root 分支 `main` | 每个 PR 从生产派生的独立子分支 `preview-<pr-slug>`，写时复制，独立凭证 | **本地 Docker PG** | Neon 开发分支 `dev` |
+| **Hyperdrive config** | `kaas-prod-hyperdrive` → 生产分支 | 每个 PR 独立 config `kaas-preview-<pr-slug>` → 该 PR 的 Neon 分支，PR 关闭时回收 | **不适用（本地直连 Docker PG）** | `kaas-dev-hyperdrive` → 开发分支 |
+| **R2** | `kaas-prod-storage` | `kaas-preview-storage`（所有预览共享，对象键用 `pr-<slug>/` 前缀区分 PR） | **本地 MinIO，桶名 `kaas-dev`** | `kaas-dev-storage` |
+| **KV** | 生产 namespace ID `id` | 预览 namespace ID `preview_id`（所有预览共享，键用 `pr-<slug>:` 前缀区分 PR） | **本地持久化，不触云** | 开发专用 namespace |
+
+### 2.3 硬规则（已确认 · 原样，runner 不得违反）
+
+1. **开发默认数据库是本地 Docker PG**。日常开发、单测、Alembic 迁移一律使用本地 Docker PG。Neon 开发分支仅用于 `wrangler dev --remote` 的部署前冒烟，低频使用，CI 不得依赖。不得将开发默认数据库改为 Neon 开发分支。
+2. **开发默认存储是本地 MinIO**（docker-compose 已有，桶名 `kaas-dev`）。日常开发、单测、本地热重载一律使用本地 MinIO 或 wrangler dev 的本地 R2 模拟，不触远程 R2。远程 R2 开发桶 `kaas-dev-storage` 仅用于 `wrangler dev --remote` 冒烟，CI 不得依赖。
+3. **生产、预览、开发远程的 R2 桶必须物理独立**：`kaas-prod-storage`、`kaas-preview-storage`、`kaas-dev-storage`。不得共用桶名，不得在同一桶内靠前缀区分生产与预览。
+4. **生产、预览、开发的 KV namespace 必须物理独立**：生产用 `id`，预览用 `preview_id`，开发远程用独立 namespace。不得共用 namespace ID。
+5. **预览桶内对象键必须带 `pr-<slug>/` 前缀**，预览 KV 键必须带 `pr-<slug>:` 前缀。前缀由 CI 在部署时注入 `PR_SLUG` 环境变量，代码从环境变量取前缀，不得硬编码。
+6. **代码不得硬编码任何 bucket name、namespace ID、连接字符串**。所有绑定通过 `wrangler.toml` 和 CI 注入。
+7. **Neon 生产分支必须设为 Protected**。预览分支从生产派生，自动获得独立凭证。三个环境的连接字符串不得相同。
+8. **Hyperdrive 按环境独立**：生产、预览、开发远程各自独立 config。预览 config 与 Neon 预览分支一一对应，PR 关闭时回收。不得让预览 Worker 绑定生产 Hyperdrive config，不得让生产 Worker 绑定任何非生产 config。
+9. **CI 防污染断言**（任一失败即中止部署）：
+   - 生产部署前：绑定的 R2 bucket name 等于 `kaas-prod-storage`、KV namespace ID 等于生产值、Hyperdrive config ID 等于生产值，且均不等于任何预览/开发值。
+   - 预览部署前：绑定的 R2 bucket name 等于 `kaas-preview-storage`、KV namespace ID 等于预览 `preview_id`、Hyperdrive config ID 指向该 PR 的 Neon 分支，且 `PR_SLUG` 已注入。
+10. **清理**：PR 关闭时删除该 PR 的 Neon 分支（或设 TTL）、回收该 PR 的 Hyperdrive config、删除 `kaas-preview-storage` 中 `pr-<slug>/` 前缀下的对象、清理预览 KV 中 `pr-<slug>:` 前缀的键。开发远程资源由开发者手动清理，不进入 CI 自动清理。
+
+---
+
+## 3. 双后端优化的最终决策（已确认）
+
+### 3.1 方案 B 的最终形态（评估后修正版，不是任务书原版）
+
+- **一份 app 代码，双入口**：同一份 FastAPI app 代码，本地用 uvicorn 热重载入口开发，生产用 Worker 入口部署。不再有独立的 orchestrator 业务实现。
+- **生产 Worker 运行时只用 asyncpg**。SQLAlchemy 模型仅存在于迁移目录，只在 Alembic 时加载。生产运行时依赖不得包含 sqlalchemy / alembic / greenlet。
+- **wrangler dev 降级为部署前冒烟门禁**，不作为日常开发形态。实测冷启动 38s、热重载 33–72s，对比 uvicorn 2.72s / 21ms，不可接受。
+- **迁移执行位置改为 CI 或独立 CLI**，不再常驻。当前 deploy.yml 无 alembic 步骤，属新建。
+- **kaas_common 是唯一"脑"**：参数化 SQL、Pydantic schemas、SQLAlchemy models、Alembic migrations、默认值/约束口径全部集中在此。
+- **kaas_common/db.py 必须暴露事务包裹执行**：裸 asyncpg 语句级 autocommit 无法复刻 savepoint 回滚语义，这是测试重写的前提。
+
+### 3.2 三项已确认修正（原样）
+
+1. **相对冷启动验收线**：基线实测中位 **2,680ms**，原"<1 秒"对任何方案不可达。验收线确定为 **≤2,950ms（基线 +10%）**。对 B 和 A′ 无差别。
+2. **本地开发形态**：uvicorn 本地热重载 + wrangler dev 作部署前冒烟门禁。同一份 app 代码，双入口。wrangler dev 不作为日常开发形态。
+3. **测试处置**：350–380 条（27%）随壳重写 + 87 条 marker 错位归位，其余约 1,085 条原样保留（前提：其 import 的 app.services/domain 在 B 后以新形态存活）。测试重写与阶段二 S3 同批做，共用 queries/ 造数。
+
+### 3.3 路线 A 已否决，不得复活（已确认）
+
+- 否决依据一：SQLAlchemy async 依赖 greenlet，**Pyodide/wasm 无 greenlet 轮子**导致
+  `import sqlalchemy.ext.asyncio` 直接 ImportError（PyPI greenlet 3.5.6 共 79 个发行文件、0 个 wasm/emscripten 轮子）。
+- 否决依据二：加 SQLAlchemy 后 Worker 冷启动中位 **2059ms → 3913ms（+1854ms）**，超验收线。
+- 完整证据：[docs/POC_WORKER_SQLALCHEMY_2026-10-19.md](docs/POC_WORKER_SQLALCHEMY_2026-10-19.md)。
+- 复活条件（仅记录，不排期）：上游/自建 greenlet wasm 构建，或放弃免费托管——两条当前均不成立。
+
+### 3.4 为什么是 B 而不是 A′（对比）
+
+| | A′（两壳 + 一脑，曾用方向） | **B（已确认）** |
+|---|---|---|
+| 运行时 | orchestrator 壳保留 SQLAlchemy Session + worker 裸 asyncpg 双适配 | 单一 asyncpg 运行时，无第二连接对象 |
+| 行为漂移 | 靠测试覆盖压制（结构性风险残留） | 结构性消除（一份运行时实现） |
+| 代价 | 小改 | 350–380 条测试重写 + 本地形态与迁移位置调整（§3.2） |
+| 评估结论 | 对比项 | **B-可行**（[PLAN_B_EVALUATION](docs/PLAN_B_EVALUATION_2026-10-19.md) §6） |
+
+---
+
+## 4. 本地开发形态（已确认）
+
+- **开发默认数据库：本地 Docker PG**（docker-compose 内置）。日常开发、单测、Alembic 迁移一律用它，不触云。
+- **开发默认存储：本地 MinIO**（docker-compose 内置，桶名 `kaas-dev`）。日常开发、单测、本地热重载一律用它或 wrangler dev 的本地 R2 模拟，不触远程 R2。
+- **日常开发唯一入口：`uvicorn --reload`**（热重载实测：冷启动 2.72s、改动后 21ms 恢复）。
+- **`wrangler dev` 仅作部署前冒烟门禁**，不作为日常开发形态（实测：冷启动 37.98s / 37.70s，热重载后首请求 32.9s / 72s 恢复，对比 uvicorn 14×/30× 劣化）。
+- **Neon 开发分支 `dev` 与远程 R2 开发桶 `kaas-dev-storage` 仅用于 `wrangler dev --remote` 冒烟**，低频使用，不作为日常开发资源，CI 不得依赖（见 §2.3 规则 1、2）。
+- 具体启动命令见 [§13 本地开发命令](#13-本地开发命令)。
+
+---
+
+## 5. 迁移执行方式（已确认）
+
+- **Alembic 是唯一 Schema 变更来源**；执行位置 = **CI 步骤或独立 CLI**，不常驻、不在 Worker 请求路径中执行 DDL。
+- **`deploy.yml` 当前无 alembic 步骤（实测：全 `.github` grep 仅 backend-test 装依赖），按方案 B 新增**：生产部署前 `pip install .[migrations]` → `alembic upgrade head` → 再部署 Worker。
+- 迁移依赖隔离：主依赖不含 sqlalchemy/alembic/greenlet；`[project.optional-dependencies].migrations` 才装（任务书目标形态）。
+- 现状命令与 head（`202610180010`）见 [§15 数据库迁移](#15-数据库迁移)；**开发迁移目标永远是本地 Docker PG**（§2.3 规则 1）。
+
+---
+
+## 6. 测试策略（已确认）
+
+- **重写范围**：350–380 条（约 27%，db-marked 288 + unit 中碰 DB 87，含少量双计）——因 ORM 造数/断言随壳迁移为 queries/ 裸 SQL；与阶段二 S3 同批做，共用 queries/ 造数。
+- **marker 错位归位**：`-m unit` 中 87 条实际碰 DB 的用例先归位，避免 unit 门禁口径失真。
+- **保留范围**：其余约 1,085 条原样保留——前提：其 import 的 app.services/app.domain 在 B 后以新形态存活。
+- **真 PG fixture 复用**：直接复用 worker 侧 pgserver/PG_BIN 方案（`backend/worker/tests/integration/conftest.py`：临时 PG16、随机端口、临时数据目录；CI 用 postgres service），供给链零新建。
+- **设计要求**：`kaas_common/db.py` 必须暴露**事务包裹执行**——裸 asyncpg 语句级 autocommit 无法复刻 orchestrator 的 savepoint 回滚隔离语义，这是测试重写的前提；种子 SQL 化须照抄 DDL 默认值（ORM `default=` 是客户端行为，历史 500 事故根因）。
+- 现状门禁命令与基线见 [§14 测试与门禁](#14-测试与门禁)。
+
+---
+
+## 7. 冷启动验收线（已确认）
+
+| 项 | 值 |
+|---|---|
+| **基线实测** | 生产 Worker `kaas` 中位 **2,680 ms**（样本 2663 / 2658 / 2856 / 2989 / 2680，n=5，全有效） |
+| 测量方法 | `wrangler versions upload` 返回的 `Worker Startup Time`（Cloudflare 上传时实测；不接管流量） |
+| 包体佐证 | Total Upload 11,588.84 KiB / gzip 2,934.96 KiB，与文档基线一致；免费层限值 64 MiB |
+| 原验收线 | "<1 秒" —— 比基线低约 4 倍，对任何方案**物理不可达，已废弃** |
+| **修正验收线** | **≤2,950 ms（基线 +10%）**，对 B 和 A′ 无差别 |
+| 交叉对照 | DEPLOY.md 历史观测 ~2.8s ✓；POC 探针 2059ms（探针包体 10.8 MiB 较小，合理偏低） |
+
+---
+
+## 8. 已知问题清单（2026-10-19 评估发现）
+
+| # | 问题 | 处置归属 |
+|---|---|---|
+| 1 | **空库快径缺 worker 表**：空库只 `metadata.create_all`，worker 需要的 `fx_rates`、`subscriptions`、`shipments` 等表缺失，新环境必 500 | **B 实施中顺带解决**：加 schema 完备性门禁（worker 全部查询涉及的表 vs alembic 产物对账） |
+| 2 | **attribute-proposals 3 条路由生产 404**：有前端活页面在调（`admin/spec-proposals/page.tsx:53,64,83`） | **B 实施中顺带解决**：随 S3 补进 worker |
+| 3 | **DEPLOY.md 漂移**（曾与 P1 分支 PPG 配置比对得出"仍写 Neon"的漂移结论） | **本（文档）更新已修正**：决策 1 回 Neon 后，DEPLOY.md 的 Neon 口径与 main 生产实配重新一致；已补主文档指针 |
+| 4 | **门禁登记理由可能过期**：allowlist:30 的 comtrade"定时器调度"说法与代码不符 | 独立于 B：登记为已知问题，建议定期审计 allowlist |
+| 5 | **两个 APScheduler 定时任务生产从未执行**：15 分钟 replied→询盘自动扫描（生产已手动对等）、每日 events 归档（生产 246 行无人归档） | **B 实施后重建**：用 CF Cron，成本低-中，可排期 |
+| 6 | **历史迁移链有结构性断点**：70 versions 中 35 个含 drop_table，downgrade 需逐版本审计 0.5–1 天 | 独立于 B：B 实施前完成审计 |
+| 7 | **orchestrator vs worker 行数差口径**：旧文档"6000 行差"是错觉（worker 侧混入约 10,124 非空行 kaas_common 镜像） | **本（文档）更新已修正**：可比净差 **16,154 行**，见 §1 |
+
+---
+
+## 9. 决策记录（全部已确认 · 附依据）
+
+| # | 决策 | 依据（防回退） |
+|---|---|---|
+| 1 | **生产数据库放弃 PPg，回 Neon**；生产 Hyperdrive 必须指向 Neon 生产分支；不保留 PPg 连接配置、不保留双路径 | PPg 固定 10 连接上限、不支持 Postgres 扩展，在 Workers + Hyperdrive 架构下是结构性阻塞；Neon 免费层 1 GB / 100 CU-hours / 10 分支，闲置仅缩容不清数据（§2.1） |
+| 2 | **路线 A 已否决，不得复活** | greenlet 无 wasm 轮子 → `sqlalchemy.ext.asyncio` ImportError；+SQLAlchemy 冷启动 2059→3913ms（+1854ms）超线（§3.3，POC 文档） |
+| 3 | **双后端优化采用方案 B**（评估结论 B-可行，含三项已确认修正） | [PLAN_B_EVALUATION](docs/PLAN_B_EVALUATION_2026-10-19.md)：Q1 成本中（350–380 条/3–5 人日）、Q2 无不可替代运行时逻辑、Q3 wrangler dev 冒烟可行但日常不可接受、Q4 基线实测；A′ 对比见 §3.4 |
+| 4 | **三环境资源隔离矩阵 + 10 条硬规则** | 环境物理隔离、预览共享专用资源按 PR 前缀区分、开发默认本地不触云（§2.2–2.3，原样） |
+| 修正-1 | 冷启动验收线 ≤2,950ms（基线 +10%） | 基线 2,680ms 实测；原 <1s 不可达（§7） |
+| 修正-2 | 本地形态 = uvicorn 日常 + wrangler dev 冒烟门禁；同一份 app 双入口 | 实测 14×/30× 劣化（§4） |
+| 修正-3 | 测试处置 = 27% 重写 + 87 归位 + ~1,085 保留 | fixture 级取证（§6） |
+
+---
+
+## 10. 实施排期参考
+
+- 阶段二 S1–S6 ≈ **9–13 人日**（依赖拆分 0.5 / 迁移归位 1 / 路由合并 5–8 / 删壳+CI 1 / preview+deploy 1–2 / 静态门禁 0.5–1）；
+- 阶段三 ≈ **5–8 人日**；**全案 ≈ 14–21 人日**（不含观察期）。
+- **最大不确定点**：① 测试重写处置的执行返工；② 行为漂移真实面积（除缺失 11 条路由外，S3 逐路由核对时才能量化）。
+
+---
+
+## 11. 当前业务模块
 
 | 工位 | 状态 | 说明 |
 |---|---|---|
@@ -57,9 +222,9 @@ Docker Compose（Postgres + Redis + MinIO + orchestrator）
 
 ---
 
-## 3. 本轮（2026-10-18）上线内容
+## 12. 本轮（2026-10-18）上线内容
 
-### 3.1 税务档案
+### 12.1 税务档案
 
 税务管理分两块：
 
@@ -75,14 +240,14 @@ Docker Compose（Postgres + Redis + MinIO + orchestrator）
 - 每行按产品带进项税、出口退税率；
 - 报价单保存 `tax_snapshot`，其中 `product_taxes` 保留当时各产品税率。
 
-### 3.2 成本
+### 12.2 成本
 
 - **所有报价行成本必须手填**；
 - 历史报价只作为参考显示，必须点「应用参考成本」才带入；
 - 不会自动套用产品定义里的默认成本；
 - 未填成本不能算价、不能保存；后端保存报价时也会校验。
 
-### 3.3 整单保险
+### 12.3 整单保险
 
 - 仅对 **CIF / DAP / DDP** 生效；
 - 公式：`保险费 = 整单 EXW 货值 × 1.1 ÷ 1000`，**最低 15 美元**；
@@ -90,7 +255,7 @@ Docker Compose（Postgres + Redis + MinIO + orchestrator）
 - 报价页保险项显示“自动计算”，不要求手填；
 - 后端 `/export-quote/calculate` 回传 `meta.term_totals` 供前端两轮计算。
 
-### 3.4 批量报价
+### 12.4 批量报价
 
 - 报价工位 → 批量报价页；
 - 选客户 → 选询盘 → 统一产品/规格/成本/件数 → 生成报价单；
@@ -98,7 +263,7 @@ Docker Compose（Postgres + Redis + MinIO + orchestrator）
 - 同一询盘允许多张报价，默认最新一张；某张生成后续单证后，同询盘其他报价转 `closed`；
 - 未配置产品税率的产品会被拦截，提示先到税务管理配置。
 
-### 3.5 其他口径
+### 12.5 其他口径
 
 - 船公司固定选项，格式「中文名-英文缩写」（如 `马士基-MSK`、`地中海航运-MSC`、`中远海运-COSCO`）；
 - 客户按米报需求时，报价行可填米数，系统按“每卷米数”自动换算卷数，**小数进一**；
@@ -107,9 +272,12 @@ Docker Compose（Postgres + Redis + MinIO + orchestrator）
 
 ---
 
-## 4. 本地开发
+## 13. 本地开发命令
 
-### 4.1 启动
+> 形态口径见 [§4 本地开发形态](#4-本地开发形态已确认)（默认本地 Docker PG + 本地 MinIO、uvicorn 日常、wrangler dev 仅冒烟）。
+> 以下为**当前（实施前）**命令；方案 B 实施后 uvicorn 入口不变，orchestrator 业务实现并入同一份 app。
+
+### 13.1 启动
 
 ```powershell
 # 根目录
@@ -134,7 +302,7 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 
 只想用 mock（无需后端）：把 `NEXT_PUBLIC_API_MODE` 改为 `mock`。
 
-### 4.2 后端单独启动
+### 13.2 后端单独启动
 
 ```powershell
 cd backend/orchestrator
@@ -145,7 +313,7 @@ uv run python scripts/seed_dev.py
 uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 4.3 本地登录账号
+### 13.3 本地登录账号
 
 > 仅本地开发库，由 `scripts/seed_dev.py` 创建；**生产没有这些账号**。
 
@@ -162,7 +330,7 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ---
 
-## 5. 测试与门禁
+## 14. 测试与门禁
 
 ```powershell
 # 后端单测
@@ -194,12 +362,12 @@ $env:NEXT_DIST_DIR=".next-verify"
 pnpm build
 ```
 
-当前基线（2026-10-18）：
+测试资产（2026-10-19 评估口径，见 [PLAN_B_EVALUATION §1](docs/PLAN_B_EVALUATION_2026-10-19.md)）：
 
-- orchestrator：**1202 passed**
-- worker：**287 passed**
-- frontend：**452 passed**
-- typecheck / lint / build / contracts / route-parity / shared-check 全绿
+- orchestrator：94 文件 / 静态 1,301 个 `def test_`（`-m unit` 收集 1,200）；`-m db` 静态 288；
+- worker：23 文件 / 287 条（另有 5 条真 PG integration 测试在 P1 分支，随收敛合并）；
+- 前端：455 passed（2026-10-19 批次 0 后基线）；
+- route-parity 实测：orchestrator 231 / worker 225 / 允许清单 11（全登记、过期 0）⇒ PASS。
 
 E2E：
 
@@ -210,7 +378,7 @@ E2E：
 
 ---
 
-## 6. 数据库迁移
+## 15. 数据库迁移
 
 当前 head：**`202610180010`**。
 
@@ -237,10 +405,11 @@ alembic upgrade 202610180010   # 发布后清理
 ```
 
 > 生产库连接串只放在本机环境变量 / `.env.local`，不要提交。
+> 方案 B 实施后迁移执行位置改为 CI 或独立 CLI（§5），开发迁移目标永远是本地 Docker PG（§2.3 规则 1）。
 
 ---
 
-## 7. 部署
+## 16. 部署
 
 - 生产分支：`main`，push 会触发 `.github/workflows/deploy.yml`；
 - 流程：前端静态导出 → 同步共享内核 → `pywrangler deploy` → 生产冒烟；
@@ -258,9 +427,9 @@ npx wrangler versions deploy <version-id>@100% --name kaas --yes
 
 ---
 
-## 8. 关键业务规则
+## 17. 关键业务规则
 
-### 8.1 询盘 / 报价状态
+### 17.1 询盘 / 报价状态
 
 - 询盘：`unquoted`（未报价）→ `quoted`（已报价）；`closed`（已关闭）为手动；
 - 报价：`draft / sent / accepted / rejected / expired / closed`；
@@ -268,7 +437,7 @@ npx wrangler versions deploy <version-id>@100% --name kaas --yes
 - 报价生成后续单证（PI/合同等）后，同询盘其他报价自动 `closed`；
 - 询盘编号在生成报价前可改，生成报价后锁定并二次确认。
 
-### 8.2 单号
+### 17.2 单号
 
 统一 `类型-国家-客户-时间戳`：
 
@@ -278,18 +447,18 @@ npx wrangler versions deploy <version-id>@100% --name kaas --yes
 - `ORD-...` 订单
 - `SHP-...` 出运
 
-### 8.3 成本 / 税 / 保险
+### 17.3 成本 / 税 / 保险
 
 详见 [docs/QUOTE_COST_INSURANCE_2026-10-18.md](docs/QUOTE_COST_INSURANCE_2026-10-18.md)。
 
 ---
 
-## 9. 仓库结构
+## 18. 仓库结构
 
 ```
 backend/
   kaas_common/            共享内核（唯一源）
-  orchestrator/           本地 FastAPI + SQLAlchemy + Alembic
+  orchestrator/           本地 FastAPI + SQLAlchemy + Alembic（方案 B 实施后业务实现并入统一 app）
   worker/                 生产 Cloudflare Worker（Python FastAPI + assets）
 frontend/                 Next.js 14 静态导出
 shared/contracts/         前后端 zod 契约
@@ -301,11 +470,17 @@ docker-compose.yml        本地基础设施
 
 ---
 
-## 10. 文档索引
+## 19. 文档索引
+
+**主交接文档：本文（架构 / 三环境隔离 / 方案 B 决策 / 冷启动 / 测试策略）**
 
 - [DEPLOY.md](DEPLOY.md) — 生产部署与运维速查
-- [docs/DEPLOYMENT_PLAN_2026-10-18.md](docs/DEPLOYMENT_PLAN_2026-10-18.md) — 本轮发布方案
-- [docs/PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md](docs/PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md) — 生产优化方案（Neon→PPG 迁移 + 性能链路，定稿待执行）
+- [docs/PLAN_B_EVALUATION_2026-10-19.md](docs/PLAN_B_EVALUATION_2026-10-19.md) — 方案 B 阶段一评估报告（四问取证，结论 B-可行）
+- [docs/MASTER_EXEC_PLAN_2026-10-19.md](docs/MASTER_EXEC_PLAN_2026-10-19.md) — 总执行清单（P1 迁库批次已随决策 1 废弃）
+- [docs/PROBLEM_STATUS_2026-10-11.md](docs/PROBLEM_STATUS_2026-10-11.md) — 问题状态滚动口径
+- [docs/POC_WORKER_SQLALCHEMY_2026-10-19.md](docs/POC_WORKER_SQLALCHEMY_2026-10-19.md) — 路线 A 否决证据
+- ~~[docs/PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md](docs/PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md)~~ — **已废弃**（决策 1：放弃 PPg 回 Neon）
+- ~~[docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md](docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md)~~ — **已废弃**（决策 1：P1 迁库终止，历史保留）
 - [docs/TAX_ARCHIVE_HANDOVER_EXECUTION_PLAN_2026-10-18.md](docs/TAX_ARCHIVE_HANDOVER_EXECUTION_PLAN_2026-10-18.md) — 税务改造
 - [docs/BATCH_QUOTE_REDESIGN_PLAN_2026-10-18.md](docs/BATCH_QUOTE_REDESIGN_PLAN_2026-10-18.md) — 批量报价
 - [docs/QUOTE_COST_INSURANCE_2026-10-18.md](docs/QUOTE_COST_INSURANCE_2026-10-18.md) — 成本/保险/计量口径
@@ -315,4 +490,4 @@ docker-compose.yml        本地基础设施
 
 ---
 
-**最后更新**：2026-10-19
+**最后更新**：2026-10-19（主交接文档：记录决策 1–4 与三项已确认修正）
