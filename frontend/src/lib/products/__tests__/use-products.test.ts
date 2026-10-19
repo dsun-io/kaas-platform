@@ -408,6 +408,47 @@ describe("产品图上传 · 未配对象存储时回退 multipart", () => {
     expect(posted(1).form.get("media_kind")).toBe("production");
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("crypto.subtle 不可用（jsdom/非安全上下文）：不崩，跳过直传直接代传并标记回退", async () => {
+    // 模拟非安全上下文：crypto 存在但没有 subtle（HTTP 明文页面实测形态）。
+    // beforeAll 已把 webcrypto polyfill 进来，这里临时剥掉 subtle。
+    const originalCrypto = globalThis.crypto;
+    Object.defineProperty(globalThis, "crypto", {
+      value: {},
+      configurable: true,
+      writable: true,
+    });
+    try {
+      const file = helloFile();
+      const post = vi.mocked(apiClient.post);
+      post.mockResolvedValueOnce(ok({ id: 7, name: "主图" }));
+
+      const fetchMock = vi.fn(() => {
+        throw new Error("没有 sha256 时不该发直传 PUT");
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      view = renderUploadHook();
+      const v = view;
+      const result = await v.run(() => v.hook().mutateAsync({ file, ...INPUT }));
+
+      expect(result).toMatchObject({ id: 7, name: "主图" });
+      // 功能不缺失：服务端代传照样成功，但回退真相必须带出来
+      expect(result.fellBackToProxy).toBe(true);
+      expect(String(result.fallbackReason)).toContain("crypto.subtle");
+
+      // 只发了 multipart 这一次 POST：没有 presign（sha256 算不出）、没有 register、没有 PUT
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(String(post.mock.calls[0]![0])).toBe("/products/field_fence/media");
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(globalThis, "crypto", {
+        value: originalCrypto,
+        configurable: true,
+        writable: true,
+      });
+    }
+  });
 });
 
 /**

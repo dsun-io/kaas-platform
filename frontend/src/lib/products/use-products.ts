@@ -105,9 +105,17 @@ export function useProductMedia(productKey: string | null) {
   });
 }
 
-/** 文件 sha256（十六进制）—— 直传必须先算好，服务端据此定 object_key 并去重 */
-async function sha256Hex(file: File): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+/**
+ * 文件 sha256（十六进制）—— 直传必须先算好，服务端据此定 object_key 并去重。
+ *
+ * 返回 null = 当前环境算不了哈希：**非安全上下文**（HTTP 明文页面）与 jsdom 里
+ * `crypto.subtle` 为 undefined（Frontend CI 实测红过）⇒ 调用方必须跳过直传，
+ * 走服务端代传（multipart 由服务端自己算哈希，files.py 里 hashlib.sha256）。
+ */
+async function sha256Hex(file: File): Promise<string | null> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) return null;
+  const digest = await subtle.digest("SHA-256", await file.arrayBuffer());
   return Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
@@ -179,6 +187,18 @@ export function useUploadProductMedia(productKey: string) {
         file_name: file.name,
       };
       const sha256 = await sha256Hex(file);
+
+      // 非安全上下文（jsdom / HTTP 明文页面）没有 crypto.subtle：sha256 算不出来，
+      // 而 register 缺它会 422（object_key 定键/去重都依赖它）⇒ 直传整条跳过，
+      // 直接走服务端代传（服务端自己算哈希）——功能不缺失，只标记回退真相。
+      if (sha256 === null) {
+        const data = await uploadViaProxy(productKey, file, name, mediaKind);
+        return {
+          ...data,
+          fellBackToProxy: true,
+          fallbackReason: "当前环境不支持 crypto.subtle，无法预计算 sha256，跳过直传",
+        };
+      }
 
       // ① 直传优先：服务端只发短时效预签名 URL，**字节不经过服务端**
       //    （生产 R2 / 本地 MinIO 都是这条；没配对象存储时 configured=false）

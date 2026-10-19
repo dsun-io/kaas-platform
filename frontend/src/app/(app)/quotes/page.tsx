@@ -12,7 +12,7 @@ import { PricingDataManager } from "./../pricing-data/pricing-data-manager";
 /**
  * 报价工位（一个工位 = 一个侧边栏入口）
  * ─────────────────────────────────────────
- * 一条业务线：**定价数据（成本输入）→ 报价（算价）→ 报价记录（台账）**
+ * 一条业务线：**成本历史（成本输入）→ 报价（算价）→ 报价记录（台账）**
  *
  * 历史重设计修复的三个问题：
  *  1. 旧版把「产品报价」直接嵌成**另一个完整页面**，于是出现「页面套页面、
@@ -38,7 +38,7 @@ const TABS: { key: QuoteTab; label: string; hint: string }[] = [
   },
   { key: "bulk", label: "批量报价", hint: "多客户多询盘 → 一次生成多张报价单" },
   { key: "records", label: "报价记录", hint: "历史台账" },
-  { key: "pricing", label: "定价数据", hint: "成本价表（算价的输入数据）" },
+  { key: "pricing", label: "成本历史", hint: "成本价表（算价的输入数据）" },
 ];
 
 const isTab = (v: string | null): v is QuoteTab =>
@@ -70,7 +70,7 @@ export default function QuotesWorkstationPage() {
       <div>
         <h1 className="text-2xl font-semibold">报价</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          定价数据 → 算价 → 报价记录，一条线走完
+          成本历史 → 算价 → 报价记录，一条线走完
         </p>
       </div>
 

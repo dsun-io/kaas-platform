@@ -11,7 +11,7 @@ import { test, expect } from './fixtures';
  * 所以那些用例访问的是 **404 页**，4 条全红（且红得没有信息量）。
  *
  * 现役页面在 **`/quotes`**（`app/(app)/quotes/page.tsx`）：一个工位外壳 +
- * 4 个**平级视图**（产品报价 / 批量报价 / 报价记录 / 定价数据），支持 `?tab=` 深链。
+ * 4 个**平级视图**（产品报价 / 批量报价 / 报价记录 / 成本历史），支持 `?tab=` 深链。
  *
  * ## 这次保留了什么、暂缓了什么
  *
@@ -31,7 +31,7 @@ test.describe('报价工位 /quotes', () => {
     });
 
     // `quotes/page.tsx` L31-40 的 TABS
-    for (const label of ['产品报价', '批量报价', '报价记录', '定价数据']) {
+    for (const label of ['产品报价', '批量报价', '报价记录', '成本历史']) {
       await expect(page.getByRole('button', { name: label })).toBeVisible();
     }
   });
