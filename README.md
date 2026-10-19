@@ -147,7 +147,9 @@
 ## 5. 迁移执行方式（已确认）
 
 - **Alembic 是唯一 Schema 变更来源**；执行位置 = **CI 步骤或独立 CLI**，不常驻、不在 Worker 请求路径中执行 DDL。
-- **`deploy.yml` 当前无 alembic 步骤（实测：全 `.github` grep 仅 backend-test 装依赖），按方案 B 新增**：生产部署前 `pip install .[migrations]` → `alembic upgrade head` → 再部署 Worker。
+- **`deploy.yml` 已新增 `migrate` job**（S2）：生产部署前 `alembic upgrade head`，再部署 Worker。
+  连接串放 secret **`PROD_DATABASE_URL`**；未配置时该 job 告警跳过（保持手动迁移现状）。
+  迁移依赖隔离（主依赖去 ORM、`[project.optional-dependencies].migrations`）随 **S4** 落地。
 - 迁移依赖隔离：主依赖不含 sqlalchemy/alembic/greenlet；`[project.optional-dependencies].migrations` 才装（任务书目标形态）。
 - 现状命令与 head（`202610180010`）见 [§15 数据库迁移](#15-数据库迁移)；**开发迁移目标永远是本地 Docker PG**（§2.3 规则 1）。
 
@@ -181,7 +183,7 @@
 
 | # | 问题 | 处置归属 |
 |---|---|---|
-| 1 | **空库快径缺 worker 表**：空库只 `metadata.create_all`，worker 需要的 `fx_rates`、`subscriptions`、`shipments` 等表缺失，新环境必 500 | **部分已修**：`alembic/env.py` 补 5 个模型模块 import（`88132af`，空库模型表 61→93）；仍缺 worker 独有/无模型表，随 B 加 schema 完备性门禁 |
+| 1 | **空库快径缺 worker 表**：空库只 `metadata.create_all`，worker 需要的 `fx_rates`、`subscriptions`、`shipments` 等表缺失，新环境必 500 | **已修（S2）**：`env.py` 补齐模型 import（`88132af`）+ 新增 `app/db/legacy_models.py` 补 8 张 worker 独有表（按生产 DDL）；空库快径 101 表，门禁 `check-schema-coverage.py` 绿。生产另有 12 张历史表未被 worker/当前代码引用（遗留）、5 张模型旧命名与生产 `_legacy` 不一致 → **S4 清理** |
 | 2 | **attribute-proposals 3 条路由生产 404**：有前端活页面在调（`admin/spec-proposals/page.tsx:53,64,83`） | **B 实施中顺带解决**：随 S3 补进 worker |
 | 3 | **DEPLOY.md 漂移**（曾与 P1 分支 PPG 配置比对得出"仍写 Neon"的漂移结论） | **本（文档）更新已修正**：决策 1 回 Neon 后，DEPLOY.md 的 Neon 口径与 main 生产实配重新一致；已补主文档指针 |
 | 4 | **门禁登记理由可能过期**：allowlist:30 的 comtrade"定时器调度"说法与代码不符 | 独立于 B：登记为已知问题，建议定期审计 allowlist |
@@ -364,6 +366,9 @@ powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1 -Check
 
 # 运行时依赖断言（方案 B S1，CI 双闸也跑）
 backend/orchestrator/.venv/Scripts/python.exe scripts/check-runtime-deps.py
+
+# schema 完备性断言（方案 B S2：worker SQL 引用的表 ⊆ 空库快径 metadata）
+backend/orchestrator/.venv/Scripts/python.exe scripts/check-schema-coverage.py
 
 # 契约 / 路由对等
 pnpm contracts:check

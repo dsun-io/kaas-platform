@@ -111,10 +111,19 @@
       路由合并完成前 ORM 仍在用，提前拆会让本地装不上
 
 **S2 迁移归位（1 人日）**
-- [ ] **S2-a** SQLAlchemy models + Alembic 归位到**迁移期**（仅 `alembic`/CI 加载，运行时 import 不触发）
-- [ ] **S2-b** Alembic 入口改造（`env.py` 不再被 runtime 路径 import）
-- [ ] **S2-c** `deploy.yml` 增加 `alembic upgrade head`（迁移执行位置 = CI/独立 CLI，不在 Worker 请求路径）
-- [ ] **S2-d** schema 完备性门禁（worker 查询涉及的表 vs Alembic 产物对账）
+> S2-a/b 并入 **S4**：路由合并完成前运行时仍 import ORM，提前搬模型只会制造 import 风险、
+> 没有任何运行时收益；删壳时一次性归位（S4-a）。
+- [ ] **S2-a**（→ S4）SQLAlchemy models + Alembic 归位到迁移期（运行时 import 不触发）
+- [ ] **S2-b**（→ S4）Alembic 入口改造（`env.py` 不再被 runtime 路径 import）
+- [x] **S2-c** `deploy.yml` 新增 `migrate` job：`alembic upgrade head` 后再部署 Worker
+      （secret `PROD_DATABASE_URL`；未配置时告警跳过，保持手动迁移现状）
+- [x] **S2-d** schema 完备性门禁 `scripts/check-schema-coverage.py`：worker SQL 引用的表 ⊆ metadata；
+      接入 `backend:test`
+- [x] **S2-e** 补齐 8 张 worker 独有/遗留表模型（`app/db/legacy_models.py`，按生产 DDL：
+      82 列 / 65 约束 / 23 索引，2026-10-19 只读 dump）
+- [x] **S2-f** 真库验收（本地 Docker PG16）：空库 `alembic upgrade head` → **102 表** / head
+      `202610180010` / 8 表 DDL 与生产**逐列一致** / `alembic check` **零漂移**；
+      worker 真 PG 集成测试 **5 passed**
 
 **S3 路由按域合并（5–8 人日，最大块）**
 - [ ] **S3-a** 基础设施域（health / auth / accounts）——先验证整条链

@@ -65,6 +65,12 @@ jobs:
       - name: Route parity (orchestrator vs worker)
         run: uv run --no-project python scripts/route-parity.py
 
+      # 方案 B 阶段二 S2：schema 完备性 —— worker SQL 引用的表必须能被
+      # 空库快径（metadata.create_all + stamp）创建，否则新环境必 500。
+      - name: Schema coverage gate
+        working-directory: ./backend/orchestrator
+        run: uv run python ../scripts/check-schema-coverage.py
+
   worker-tests:
     name: "worker:tests（路由面 + 无 DB 行为测试）"
     runs-on: ubuntu-latest
@@ -193,6 +199,23 @@ jobs:
       - name: Install orchestrator deps（提供 alembic 迁移解释器）
         working-directory: ./backend/orchestrator
         run: uv sync
+
+      # 方案 B S2：空库快径（metadata.create_all + stamp）必须与 models 零漂移。
+      # 用独立库 kaas_migtest，不干扰集成用例的 kaas_v2_test。
+      - name: Create fresh DB for migration check
+        run: PGPASSWORD=kaas_dev_pw psql -h localhost -U kaas -d postgres -vc "CREATE DATABASE kaas_migtest"
+
+      - name: Alembic upgrade head on empty DB (fast path)
+        working-directory: ./backend/orchestrator
+        env:
+          DATABASE_URL: postgresql+asyncpg://kaas:kaas_dev_pw@localhost:5432/kaas_migtest
+        run: uv run alembic upgrade head
+
+      - name: Alembic drift check (metadata vs fast-path schema)
+        working-directory: ./backend/orchestrator
+        env:
+          DATABASE_URL: postgresql+asyncpg://kaas:kaas_dev_pw@localhost:5432/kaas_migtest
+        run: uv run alembic check
 
       - name: Run worker real-PG tests
         working-directory: ./backend/worker

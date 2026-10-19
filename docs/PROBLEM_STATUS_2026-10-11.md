@@ -32,6 +32,25 @@
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
 > 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
 >
+> **（2026-10-19 夜场 · 方案 B 阶段二 S2 完成 —— 迁移归位与 schema 完备性）**
+> 1. **部署链迁移**：`deploy.yml` 新增 `migrate` job（`alembic upgrade head` 成功后才部署 Worker）；
+>    连接串走 secret `PROD_DATABASE_URL`，未配置时该 job 告警跳过（保持手动迁移现状，配好即自动接管）。
+> 2. **schema 完备性门禁**：`scripts/check-schema-coverage.py`（worker SQL 引用的表 ⊆ 空库快径 metadata），
+>    已接入 `backend:test`；当前 72 张引用表 / 101 张 metadata / 缺失 0。
+> 3. **补齐 8 张 worker 独有/遗留表模型**：`app/db/legacy_models.py`，按生产库真实 DDL 建模
+>    （2026-10-19 只读 dump：82 列 / 65 约束 / 23 索引；entity_links 3 行、file_objects 5 行，其余 0）。
+>    其中 `product_profiles` 生产库**无主键** → 用 Core Table 表达，DDL 与生产一致。
+> 4. **真库验证（本地 Docker PG16 + 生产只读对照）**：
+>    · 空库 `alembic upgrade head` → **102 表**（101 metadata + alembic_version）、head `202610180010`；
+>    · 8 张遗留表与生产库**逐列/逐索引一致**（类型 / nullable / 默认值全一致）；
+>    · `alembic check` = **No new upgrade operations detected**（零漂移）；
+>    · worker 真 PG 集成测试 **5 passed**（注册 / bootstrap-admin / 建客户 / 报价写库路径）。
+> 5. 已知偏差（留 S4 清理）：生产有 12 张历史表未被 worker / 当前代码引用（conversations、wechat_*、
+>    cust_customers、market_product_usage_mappings、`*_refs_legacy` 等）；metadata 有 5 张旧命名表
+>    （`order_quote_refs` 等）生产已改名 `_legacy`。
+> 6. 门禁：orchestrator **1208 passed / 1 skipped**；worker **303 passed + 5 skipped**（无 PG 时）；
+>    依赖断言 PASS；schema 完备性 PASS。
+>
 > **（2026-10-19 夜场 · 方案 B 阶段二 S1 完成 —— 依赖拆分）**
 > 1. **`kaas_common/db.py`**：运行时 asyncpg 事务适配层 —— `Session` + `transaction()`（嵌套自动降级
 >    SAVEPOINT，复刻 orchestrator 测试 `create_savepoint` 的回滚隔离语义）+ `execute/fetch/fetchrow/fetchval`

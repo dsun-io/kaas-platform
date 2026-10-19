@@ -65,9 +65,44 @@ jobs:
           path: frontend/out
           retention-days: 7
 
+  # 方案 B · 迁移执行位置 = CI（README §5）：Alembic 是唯一 Schema 变更来源，
+  # 部署 Worker 前先 upgrade head，避免「代码已上线、库还没迁」。
+  # 生产库连接串放 secret `PROD_DATABASE_URL`（Neon production，psycopg2 可用形式）；
+  # 未配置时**跳过并告警**（保持现状：手动迁移），配好后自动接管。
+  migrate:
+    name: "DB migration (alembic upgrade head)"
+    runs-on: ubuntu-latest
+    env:
+      MIGRATION_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+
+      - name: Notice · PROD_DATABASE_URL 未配置（跳过迁移）
+        if: env.MIGRATION_DATABASE_URL == ''
+        run: |
+          echo "::warning::secret PROD_DATABASE_URL 未配置 ⇒ 跳过自动迁移（当前仍为手动迁移）。"
+          echo "配置后本 job 会自动 alembic upgrade head；见 README §5。"
+          exit 0
+
+      - name: Install migration deps
+        if: env.MIGRATION_DATABASE_URL != ''
+        working-directory: ./backend/orchestrator
+        run: uv sync
+
+      - name: Alembic upgrade head
+        if: env.MIGRATION_DATABASE_URL != ''
+        working-directory: ./backend/orchestrator
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: uv run alembic upgrade head
+
   deploy-worker:
     name: Deploy Worker kaas (api + assets)
-    needs: build-frontend
+    needs: [build-frontend, migrate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
