@@ -63,6 +63,10 @@ orchestrator 侧可以对照。所以这两个域必须今天就把两侧行为�
 | Q24  | 产品定义上游变更           | 409 SPEC_UPSTREAM_CHANGED（export_quote.py:812-818）    | 视为产品不存在、静默回退注册表 ⇒ 200（quote_api.py:618-619）     |
 | Q25  | 签发入账 `customer_id`     | `str(q.customer_id)` 写 TEXT 列（quote_orders.py:383-386） | 直接绑 int ⇒ 线上 asyncpg DataError 500（quote_api.py:1589）      |
 
+> **2026-10-19（task-6 已清零）**：上表 Q1–Q25 已全部在 worker 侧修好，
+> 下文所有 `test_parity_quote_*` 都是**普通用例**（断言修复后行为），不再有 xfail 棘轮；
+> 表格保留为差异来源的历史对照（「worker」列 = 修复前状态）。
+
 另有 **两端共同**的共享内核缺陷（不是 parity 差异）：``number_rules.py`` 曾丢
 ``_NUMBER_RE`` / ``MAX_LEN``，导致"手改单号"在两端都 500 —— 已由 **SHARED-BUG-1**
 修复（补回常量 + sync-shared 同步到 worker）。本文件保留的
@@ -407,8 +411,10 @@ def test_all_quote_endpoints_require_credentials():
         resp = getattr(client, method)(path, json=body) if body is not None \
             else getattr(client, method)(path)
         assert resp.status_code == 401, (method, path, resp.text)
-        # PARITY-QUOTE-1：orchestrator 401 体是 {"error","message"}，worker 是字符串
-        assert resp.json()["detail"] == "Missing bearer token"
+        # 已修 2026-10-19（PARITY-QUOTE-1）：401 体与 orchestrator 同口径
+        # （core/auth.py:207-221 的 `{error,message}`，不再是裸字符串）。
+        detail = resp.json()["detail"]
+        assert detail["error"] == "unauthorized" and detail["message"]
 
 
 def test_all_order_endpoints_require_credentials():
@@ -444,14 +450,18 @@ def test_auth_precedes_body_validation():
     assert resp.status_code == 401
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-1: orchestrator 401 体是 {error,message}，worker 是字符串")
 def test_parity_quote_1_unauthorized_envelope_is_structured():
-    _as(CUSTOMER)
+    """已修 2026-10-19（PARITY-QUOTE-1）：401 体 = {error,message}。
+
+    orchestrator core/auth.py:207-221：无凭据 → `Authentication required`；
+    坏/过期 token → `Invalid or expired token`。worker 原先 detail 是裸字符串。
+    """
     resp = client.get("/api/v1/quotes")
+    assert resp.status_code == 401
     detail = resp.json()["detail"]
     assert isinstance(detail, dict)
     assert {"error", "message"} <= set(detail)
+    assert detail["error"] == "unauthorized"
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -512,8 +522,6 @@ def test_list_quotes_invalid_status_422():
     assert resp.json()["detail"]["code"] == "INVALID_ENUM"
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-2: orchestrator QUOTE_STATUS 含 closed，worker 枚举无 closed ⇒ 422")
 def test_parity_quote_2_list_quotes_accepts_closed_status():
     """`closed` 是 orchestrator 合法报价状态（同一询盘已生成后续单证时自动关闭）。"""
     conn = _FakeConn(fetchval=[0], fetch=[[], [], []])
@@ -529,20 +537,19 @@ def test_list_quotes_pagination_bounds_match_orchestrator():
     assert client.get("/api/v1/quotes?page_size=999").status_code == 422
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-4: orchestrator customer_id 是 int（非数字 422），worker 是 str")
 def test_parity_quote_4_list_quotes_customer_id_is_int():
     conn = _FakeConn(fetchval=[0], fetch=[[], [], []])
     with _patched(conn, CUSTOMER):
         assert client.get("/api/v1/quotes?customer_id=abc").status_code == 422
 
 
-def test_list_quotes_customer_id_binds_string_to_bigint_column():
-    """worker 现状（PARITY-QUOTE-4 的根因）：`?customer_id=3` 以**字符串**绑定。
+def test_list_quotes_customer_id_binds_int_to_bigint_column():
+    """已修 2026-10-19（PARITY-QUOTE-4）：`?customer_id=` 声明为 int。
 
-    quote_api.py:1617 声明 `Optional[str]`；SQL 里 `customer_id = $2` 推断为
-    BIGINT ⇒ 线上 asyncpg 会以 "expected int8, got str" 报错（这里是桩连接，
-    只钉住绑定值类型，避免以后又被"看起来能跑"掩盖）。
+    orchestrator 是 `Optional[int]`（quote_orders.py:403）；worker 原先声明
+    `Optional[str]` 并把字符串原样绑到 BIGINT 列 ⇒ 线上 asyncpg 会报
+    "expected int8, got str"（500）。现在非数字由 FastAPI 直接 422，
+    合法值以 int 绑定。
     """
     conn = _FakeConn(fetchval=[0], fetch=[[], [], []])
     with _patched(conn, CUSTOMER):
@@ -550,7 +557,7 @@ def test_list_quotes_customer_id_binds_string_to_bigint_column():
     assert resp.status_code == 200
     list_sql, list_args = conn.first("FROM quote_orders WHERE")
     assert "customer_id = $" in list_sql
-    assert any(isinstance(a, str) and a == "3" for a in list_args)
+    assert 3 in [a for a in list_args if isinstance(a, int)]   # 绑定的是 int（不是 "3"）
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -628,8 +635,6 @@ def test_create_quote_cost_required_when_spec_snapshot_given():
     assert resp.json()["detail"]["code"] == "COST_REQUIRED"
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-5: orchestrator 先校验客户再建行项，worker 先建行项 ⇒ 错误码不同")
 def test_parity_quote_5_quote_create_error_precedence():
     """缺客户 + 缺成本：orchestrator 报 CUSTOMER_REQUIRED（quote_orders.py:524-529 在 _build_items 之前）。"""
     _as(CUSTOMER)
@@ -697,12 +702,12 @@ def test_create_quote_item_currency_validated():
     assert resp.json()["detail"]["field"] == "currency"
 
 
-def test_create_quote_item_insert_ignores_orchestrator_override_fields():
-    """worker 现状（PARITY-QUOTE-6）：行项 INSERT 只写 6 个字段，覆盖字段全丢。
+def test_create_quote_item_insert_persists_override_fields():
+    """已修 2026-10-19（PARITY-QUOTE-6）：行项的 6 个覆盖字段真正落库。
 
     orchestrator `_build_items`（quote_orders.py:259-274）会落
     policy_override / price_source / price_override / weight_override /
-    volume_override / image_url；worker（quote_api.py:1243-1256 / 1265-1276）不认。
+    volume_override / image_url；worker 原先 INSERT 只写 6 个字段，覆盖字段全丢。
     """
     conn = _create_quote_conn()
     with _patched(conn, CUSTOMER):
@@ -717,14 +722,15 @@ def test_create_quote_item_insert_ignores_orchestrator_override_fields():
             }]},
         )
     assert resp.status_code == 201, resp.text
-    insert_sql = next(s for s in conn.statements() if "INSERT INTO quote_order_items" in s)
+    insert_sql, insert_args = next(
+        (s, a) for s, a in conn.calls if "INSERT INTO quote_order_items" in s)
     for field in ("policy_override", "price_source", "price_override",
                   "weight_override", "volume_override", "image_url"):
-        assert field not in insert_sql
+        assert field in insert_sql
+    assert "overridden" in insert_args       # price_source
+    assert Decimal("9.5") in insert_args or 9.5 in insert_args
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-6: worker 报价行项模型缺 6 个覆盖字段（orchestrator 有）")
 def test_parity_quote_6_quote_item_model_covers_override_fields():
     expected = {
         "sku_id", "product_name", "spec_snapshot", "qty", "qty_unit",
@@ -814,20 +820,19 @@ def test_patch_quote_illegal_transition_400():
     assert detail["error"] == "invalid_transition"
 
 
-def test_patch_quote_worker_status_enum_lacks_closed():
-    """worker 现状（PARITY-QUOTE-2 同根）：`closed` 在 PATCH 上直接 422（orchestrator 是 400）。
+def test_patch_quote_closed_is_transition_error():
+    """已修 2026-10-19（PARITY-QUOTE-2）：`closed` 是合法状态，但不是 draft 的可达目标。
 
-    见下方 xfail —— 这里钉住"现在是 422 INVALID_ENUM"，防止差异被悄悄扩大/缩小。
+    修好枚举后 PATCH draft→closed 走状态机 ⇒ 400 INVALID_STATUS_TRANSITION
+    （与 orchestrator 同一语义：值合法，流转非法）。
     """
     conn = _FakeConn(fetchrow=[_quote_row()])
     with _patched(conn, CUSTOMER):
         resp = client.patch("/api/v1/quotes/11", json={"status": "closed"})
-    assert resp.status_code == 422
-    assert resp.json()["detail"]["code"] == "INVALID_ENUM"
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["code"] == "INVALID_STATUS_TRANSITION"
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-2: orchestrator 认识 closed（400 非法流转），worker 422 INVALID_ENUM")
 def test_parity_quote_2_patch_quote_closed_is_transition_error():
     conn = _FakeConn(fetchrow=[_quote_row()])
     with _patched(conn, CUSTOMER):
@@ -1105,8 +1110,6 @@ def test_reference_price_bad_spec_json_422():
         "error": "validation_error", "message": "spec must be a JSON object"}
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-3: orchestrator days Query(ge=1,le=730) → 422，worker 静默钳位")
 def test_parity_quote_7_reference_price_days_bounds():
     conn = _FakeConn(fetchrow=[{"n": 0, "avg": None, "min": None,
                                 "max": None, "median": None, "last_at": None}])
@@ -1166,8 +1169,6 @@ def test_list_orders_worker_q_search_extension():
     assert "%ACME%" in list_args
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-7: orchestrator validate_enum(order_status) → 422，worker 不校验")
 def test_parity_quote_8_list_orders_invalid_status_422():
     conn = _FakeConn(fetchval=[0], fetch=[])
     with _patched(conn, CUSTOMER):
@@ -1176,8 +1177,6 @@ def test_parity_quote_8_list_orders_invalid_status_422():
     assert resp.json()["detail"]["code"] == "INVALID_ENUM"
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-8: orchestrator 支持 ?customer_id= 过滤，worker 忽略该参数")
 def test_parity_quote_9_list_orders_customer_filter():
     conn = _FakeConn(fetchval=[0], fetch=[])
     with _patched(conn, CUSTOMER):
@@ -1186,8 +1185,6 @@ def test_parity_quote_9_list_orders_customer_filter():
     assert "customer_id" in conn.first("FROM orders WHERE")[0]
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-3: orchestrator 分页 Query(ge/le) → 422，worker 静默钳位")
 def test_parity_quote_3_list_orders_rejects_out_of_range_pagination():
     conn = _FakeConn(fetchval=[0], fetch=[])
     with _patched(conn, CUSTOMER):
@@ -1213,31 +1210,29 @@ def test_get_order_404_string_detail():
 
 
 def test_get_order_detail_shape():
-    """详情 = 共享内核订单键集 + items。
+    """已修 2026-10-19（PARITY-QUOTE-9/19）：详情 = 共享内核订单键集 + 四个关联块。
 
-    注意 items 是 worker 的**另一处差异**（PARITY-QUOTE-19：原样返回 DB 全列，
-    不是共享 `row_to_order_item` 的 11 键）；这里钉住现状。
+    - items 走共享 `row_to_order_item` 的 11 键（金额一律 float、无内部列）；
+    - 补齐 quote_refs / payment_schedules / receivable（orchestrator orders.py:370-377）。
     """
     conn = _FakeConn(
         fetchrow=[_order_row()],
-        fetch=[[_item_row()]],
+        fetch=[[_item_row()], [], [], []],
     )
     with _patched(conn, CUSTOMER):
         resp = client.get("/api/v1/orders/21")
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert set(body) == _ORDER_KEYS | {"items"}
+    assert set(body) == _ORDER_KEYS | {
+        "items", "quote_refs", "payment_schedules", "receivable"}
     item = body["items"][0]
-    assert _ORDER_ITEM_KEYS <= set(item)          # 内核键集都在
-    # 金额口径：行项走的是"DB 原始列 + FastAPI 默认 Decimal 编码"，
-    # 整数值的 NUMERIC 会变成 int（共享序列化器则一律 float）—— 见 PARITY-QUOTE-19。
-    assert item["qty"] == 10 and isinstance(item["qty"], int)
-    assert isinstance(item["line_amount"], float)
-    assert "quote_order_id" in item               # 多出 DB 原始列（orchestrator 不返回）
+    assert set(item) == _ORDER_ITEM_KEYS         # 精确 11 键（与 orchestrator 同）
+    assert item["qty"] == 10.0 and isinstance(item["qty"], float)
+    assert body["quote_refs"] == []
+    assert body["payment_schedules"] == []
+    assert body["receivable"] is None
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-9: orchestrator 详情含 quote_refs/payment_schedules/receivable")
 def test_parity_quote_9_order_detail_includes_links_and_schedules():
     conn = _FakeConn(fetchrow=[_order_row()], fetch=[[_item_row()], [], [], []])
     with _patched(conn, CUSTOMER):
@@ -1245,8 +1240,6 @@ def test_parity_quote_9_order_detail_includes_links_and_schedules():
     assert {"quote_refs", "payment_schedules", "receivable"} <= set(resp.json())
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-19: orchestrator 行项走共享序列化 11 键，worker 返回 DB 全列")
 def test_parity_quote_19_order_items_projection():
     conn = _FakeConn(fetchrow=[_order_row()], fetch=[[_item_row()]])
     with _patched(conn, CUSTOMER):
@@ -1328,8 +1321,6 @@ def test_create_order_from_quote_inherits_and_accepts():
     assert "INSERT INTO order_items" in conn.sql()
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-10: orchestrator Pydantic Decimal → 422；worker raw dict float() → 500")
 def test_parity_quote_10_create_order_bad_item_qty_is_422():
     conn = _FakeConn(fetchrow=[_customer_row()], fetchval=[None])
     with _patched(conn, CUSTOMER):
@@ -1354,7 +1345,9 @@ def test_patch_order_updates_notes_and_delivery():
     assert resp.status_code == 200, resp.text
     assert resp.json()["notes"] == "催货"
     set_sql, set_args = conn.first("UPDATE orders SET")
-    assert "notes = COALESCE" in set_sql and "delivery_date = COALESCE" in set_sql
+    # 2026-10-19（PARITY-QUOTE-11/12）：改为按「实际传入字段」动态拼 SET
+    # （COALESCE 会把 null 当"不改"，无法表达显式改客户/条款）。
+    assert "notes = $" in set_sql and "delivery_date = $" in set_sql
 
 
 def test_patch_order_404_string_detail():
@@ -1374,19 +1367,15 @@ def test_patch_order_write_forbidden_403():
     assert resp.json()["detail"]["code"] == "NOT_OWNER"
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-11: orchestrator 改订单可写 6 个贸易条款，worker 只改 3 个字段")
 def test_parity_quote_11_patch_order_trade_terms():
     updated = _order_row(incoterm="FOB")
     conn = _FakeConn(fetchrow=[_order_row(), updated])
     with _patched(conn, CUSTOMER):
         resp = client.patch("/api/v1/orders/21", json={"incoterm": "FOB"})
     assert resp.status_code == 200
-    assert "incoterm = COALESCE" in conn.first("UPDATE orders SET")[0]
+    assert "incoterm = $" in conn.first("UPDATE orders SET")[0]
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-12: orchestrator 改订单可换客户，worker 忽略 customer_id")
 def test_parity_quote_12_patch_order_change_customer():
     updated = _order_row(customer_id=9, customer_name="新客户")
     conn = _FakeConn(fetchrow=[_order_row(), _customer_row(id=9, name="新客户"), updated])
@@ -1430,27 +1419,41 @@ def test_order_status_illegal_transition_409():
     assert detail["allowed"] == ["confirmed", "cancelled"]
 
 
-def test_order_status_unknown_value_is_409_in_worker():
-    """worker 现状（PARITY-QUOTE-13）：未知状态不进白名单校验，直接当"非法流转" 409。
+def test_order_status_unknown_value_is_422_invalid_enum():
+    """已修 2026-10-19（PARITY-QUOTE-13）：未知/缺失状态先 422。
 
-    orchestrator orders.py:423 先 validate_enum(order_status) → 422 INVALID_ENUM。
+    orchestrator orders.py:423 先 validate_enum(order_status)（且 Pydantic
+    StatusChange.status 必填）⇒ 422 INVALID_ENUM；worker 原先把它们当
+    "非法流转"报 409，状态码语义完全不同。
     """
     conn = _FakeConn(fetchrow=[_order_row(status="pending")])
     with _patched(conn, CUSTOMER):
         resp = client.post("/api/v1/orders/21/status", json={"status": "bogus"})
-    assert resp.status_code == 409
-    assert resp.json()["detail"]["code"] == "ILLEGAL_TRANSITION"
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "INVALID_ENUM"
 
-
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-13: orchestrator validate_enum/Pydantic → 422，worker 409 ILLEGAL_TRANSITION")
-def test_parity_quote_13_order_status_values_validated():
     conn = _FakeConn(fetchrow=[_order_row(status="pending")])
     with _patched(conn, CUSTOMER):
-        assert client.post(
-            "/api/v1/orders/21/status", json={"status": "bogus"}).status_code == 422
-        assert client.post(
-            "/api/v1/orders/21/status", json={}).status_code == 422
+        resp = client.post("/api/v1/orders/21/status", json={})
+    assert resp.status_code == 422
+
+
+def test_parity_quote_13_order_status_values_validated():
+    """已修 2026-10-19（PARITY-QUOTE-13）：未知值/缺 status 都是 422。
+
+    orchestrator：`StatusChange.status` 必填（Pydantic ⇒ 缺省 422）且
+    `validate_enum("order_status", ...)`（orders.py:423 ⇒ 未知值 422 INVALID_ENUM）。
+    """
+    conn = _FakeConn(fetchrow=[_order_row(status="pending")])
+    with _patched(conn, CUSTOMER):
+        resp = client.post("/api/v1/orders/21/status", json={"status": "bogus"})
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "INVALID_ENUM"
+
+    conn = _FakeConn(fetchrow=[_order_row(status="pending")])
+    with _patched(conn, CUSTOMER):
+        resp = client.post("/api/v1/orders/21/status", json={})
+    assert resp.status_code == 422
 
 
 def test_order_status_same_status_is_noop_200():
@@ -1505,11 +1508,7 @@ def test_order_status_404():
 # ════════════════════════════════════════════════════════════════════════════
 
 def test_list_schedules_shape_and_404_body():
-    """列表 {items,total}；404 体是 {error:order_not_found}（orchestrator 用 code 形式）。
-
-    注意 item 是 worker 的**另一处差异**（PARITY-QUOTE-20：DB 全列而非共享
-    `row_to_schedule` 14 键）；这里钉住现状并在下面用 xfail 登记。
-    """
+    """列表 {items,total}；item 精确等于共享 `row_to_schedule` 14 键（Q20 已修）；404 体同口径。"""
     conn = _FakeConn(
         fetchrow=[_order_row()],
         fetch=[[_schedule_row()]],
@@ -1520,8 +1519,7 @@ def test_list_schedules_shape_and_404_body():
     body = resp.json()
     assert body["total"] == 1
     item = body["items"][0]
-    assert _SCHEDULE_KEYS <= set(item)          # 内核键集都在
-    assert {"tenant_id", "owner_id", "team_id", "updated_at"} <= set(item)
+    assert set(item) == _SCHEDULE_KEYS            # 精确 14 键（不再透出内部列）
     assert isinstance(item["amount"], float)
     assert isinstance(item["ratio"], float)
 
@@ -1532,8 +1530,6 @@ def test_list_schedules_shape_and_404_body():
     assert resp.json()["detail"] == {"error": "order_not_found"}
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-20: orchestrator 付款计划走共享序列化 14 键，worker 返回 DB 全列")
 def test_parity_quote_20_schedule_item_projection():
     conn = _FakeConn(fetchrow=[_order_row()], fetch=[[_schedule_row()]])
     with _patched(conn, CUSTOMER):
@@ -1574,8 +1570,6 @@ def test_create_schedule_invalid_type_422():
     assert resp.json()["detail"] == {"error": "bad_schedule_type"}
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-14: orchestrator schedule_type 必填（422），worker 默认 full（201）")
 def test_parity_quote_14_create_schedule_requires_type():
     conn = _FakeConn(fetchrow=[_order_row(), _schedule_row()])
     with _patched(conn, CUSTOMER):
@@ -1584,54 +1578,74 @@ def test_parity_quote_14_create_schedule_requires_type():
     assert resp.status_code == 422
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-15: orchestrator 不强制 ratio/amount 二选一（201），worker 422")
 def test_parity_quote_15_create_schedule_ratio_amount_rules():
-    conn = _FakeConn(fetchrow=[_order_row(), _schedule_row()])
-    with _patched(conn, CUSTOMER):
+    """已修 2026-10-19（PARITY-QUOTE-15）：ratio/amount 都可空、也可同给。
+
+    orchestrator orders.py:475-477：amount 显式给时优先，没给且给了 ratio 才按
+    订单合计补算；两者都不给也允许建（金额后补）。
+    """
+    conn_both = _FakeConn(
+        fetchrow=[_order_row(), _schedule_row(amount=Decimal("10"))])
+    with _patched(conn_both, CUSTOMER):
         both = client.post("/api/v1/orders/21/payment-schedules",
                            json={"schedule_type": "deposit", "ratio": 0.3, "amount": 10})
-        assert both.status_code == 201, both.text
+    assert both.status_code == 201, both.text
+    assert both.json()["amount"] == 10.0             # 显式 amount 优先于 ratio 计算
+    _, args_both = conn_both.first("INSERT INTO payment_schedules")
+    assert Decimal(str(args_both[4])) == Decimal("10")
+    assert Decimal(str(args_both[3])) == Decimal("0.3")   # ratio 仍原样落库
+
+    conn_neither = _FakeConn(
+        fetchrow=[_order_row(), _schedule_row(amount=None)])
+    with _patched(conn_neither, CUSTOMER):
         neither = client.post("/api/v1/orders/21/payment-schedules",
                               json={"schedule_type": "deposit"})
-        assert neither.status_code == 201, neither.text
+    assert neither.status_code == 201, neither.text
+    assert neither.json()["amount"] is None
+    _, args_neither = conn_neither.first("INSERT INTO payment_schedules")
+    assert args_neither[4] is None
 
 
-def test_patch_schedule_ignores_amount_in_worker():
-    """worker 现状（PARITY-QUOTE-16）：非 paid 分支只 UPDATE due_date/notes，**改不了金额**。"""
-    conn = _FakeConn(fetchrow=[_schedule_row(), {"owner_id": "5", "owner_scope": "private"},
-                               _schedule_row()])
+def test_patch_schedule_amount_update_persists():
+    """已修 2026-10-19（PARITY-QUOTE-16）：非 paid 分支也能改金额。
+
+    断言点：UPDATE 语句里带 `amount=COALESCE`，且响应返回新金额。
+    """
+    conn = _FakeConn(fetchrow=[_schedule_row(),
+                               {"owner_id": "5", "owner_scope": "private"},
+                               _schedule_row(amount=Decimal("500"))])
     with _patched(conn, CUSTOMER):
         resp = client.patch("/api/v1/payment-schedules/31", json={"amount": 500})
     assert resp.status_code == 200
     update_sql = conn.first("UPDATE payment_schedules SET")[0]
-    assert "amount" not in update_sql
-    assert resp.json()["amount"] == 250.0    # 旧值，没被改
+    assert "amount=COALESCE" in update_sql
+    assert resp.json()["amount"] == 500.0    # 新值已生效
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-16: orchestrator 可改付款计划金额，worker 静默丢弃")
 def test_parity_quote_16_patch_schedule_amount():
+    """已修 2026-10-19（PARITY-QUOTE-16）：非 paid 状态可改金额（orchestrator orders.py:510-511）。"""
     conn = _FakeConn(fetchrow=[_schedule_row(), {"owner_id": "5", "owner_scope": "private"},
-                               _schedule_row()])
+                               _schedule_row(amount=Decimal("500"))])
     with _patched(conn, CUSTOMER):
         resp = client.patch("/api/v1/payment-schedules/31", json={"amount": 500})
     assert resp.status_code == 200
     assert resp.json()["amount"] == 500.0
 
 
-def test_patch_schedule_unknown_status_ignored_in_worker():
-    """worker 现状（PARITY-QUOTE-17）：非法 status 不报错、也不落库（只更新 due/notes）。"""
-    conn = _FakeConn(fetchrow=[_schedule_row(), {"owner_id": "5", "owner_scope": "private"},
-                               _schedule_row()])
+def test_patch_schedule_unknown_status_422():
+    """已修 2026-10-19（PARITY-QUOTE-17）：非法 status → 422 INVALID_ENUM。
+
+    orchestrator orders.py:518 先 validate_enum(schedule_status) 再谈状态机；
+    worker 原先既不报错也不落库，返回 200 + 旧值（前端误以为标记成功）。
+    """
+    conn = _FakeConn(fetchrow=[_schedule_row(),
+                               {"owner_id": "5", "owner_scope": "private"}])
     with _patched(conn, CUSTOMER):
         resp = client.patch("/api/v1/payment-schedules/31", json={"status": "bogus"})
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "pending"
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "INVALID_ENUM"
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-17: orchestrator validate_enum(schedule_status) → 422，worker 静默 200")
 def test_parity_quote_17_patch_schedule_status_validated():
     conn = _FakeConn(fetchrow=[_schedule_row(), {"owner_id": "5", "owner_scope": "private"},
                                _schedule_row()])
@@ -1683,8 +1697,12 @@ def test_patch_schedule_404():
 # 15. GET /api/v1/receivables —— 应收台账
 # ════════════════════════════════════════════════════════════════════════════
 
-def test_list_receivables_shape_worker_returns_raw_columns():
-    """worker 现状（PARITY-QUOTE-19）：item 是 DB 全列（`r.*`），不是共享应收序列化键集。"""
+def test_list_receivables_shape_matches_shared_projection():
+    """已修 2026-10-19（PARITY-QUOTE-18）：item = 共享应收序列化 12 键 + join 两字段。
+
+    orchestrator orders.py:582-585 用 `row_to_receivable` 后拼
+    order_no/customer_name；worker 原先原样返回 DB 全列（内部列全透出）。
+    """
     conn = _FakeConn(
         fetch=[[_receivable_row(order_no="ORD-1", customer_name="ACME")]],
         fetchval=[1],
@@ -1695,11 +1713,9 @@ def test_list_receivables_shape_worker_returns_raw_columns():
     body = resp.json()
     assert set(body) == {"items", "total", "page", "page_size"}
     item = body["items"][0]
-    # 共享内核键集一定在（含 order_no/customer_name 两个 join 字段）
-    assert _RECEIVABLE_KEYS <= set(item)
-    # 但还带出内部列（orchestrator 不会返回这些）
-    assert {"tenant_id", "owner_id", "owner_scope", "team_id", "updated_at"} <= set(item)
-    assert isinstance(item["base_amount"], (int, float))
+    assert set(item) == _RECEIVABLE_KEYS | {"order_no", "customer_name"}
+    assert item["order_no"] == "ORD-1" and item["customer_name"] == "ACME"
+    assert isinstance(item["base_amount"], float)   # 金额一律 float
 
 
 def test_list_receivables_invalid_status_422():
@@ -1710,8 +1726,6 @@ def test_list_receivables_invalid_status_422():
     assert resp.json()["detail"] == {"error": "bad_receivable_status"}
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-18: orchestrator 用共享 row_to_receivable 精确键集，worker 返回 DB 全列")
 def test_parity_quote_18_receivable_item_projection():
     conn = _FakeConn(
         fetch=[[_receivable_row(order_no="ORD-1", customer_name="ACME")]],
@@ -1722,8 +1736,6 @@ def test_parity_quote_18_receivable_item_projection():
     assert set(resp.json()["items"][0]) == _RECEIVABLE_KEYS | {"order_no", "customer_name"}
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-3: orchestrator 分页 Query(ge/le) → 422，worker 无校验")
 def test_parity_quote_3_list_receivables_page_bounds():
     conn = _FakeConn(fetch=[[]], fetchval=[0])
     with _patched(conn, CUSTOMER):
@@ -1812,16 +1824,12 @@ def test_calculate_internal_ok_for_internal_admin():
     assert len(body["internal"]["rows"]) == len(body["customer"]["rows"])
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-22: orchestrator 鉴权是依赖（403 先于 body），worker body 先 422")
 def test_parity_quote_22_calculate_internal_authz_precedes_body():
     _as(CUSTOMER)
     resp = client.post("/api/v1/export-quote/calculate-internal", json={})
     assert resp.status_code == 403
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-23: orchestrator require_tenant_admin 认 is_tenant_admin，worker 只认 internal")
 def test_parity_quote_23_tenant_admin_can_use_internal_view():
     with _patched_db_fetch([]):
         _as(TENANT_ADMIN)
@@ -1942,8 +1950,6 @@ def test_export_quote_product_spec_unknown_404():
     assert resp.json()["detail"]["error"] == "unknown_product"
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="PARITY-QUOTE-24: orchestrator 上游定义变更 → 409；worker 静默回退注册表 → 200")
 def test_parity_quote_24_spec_upstream_changed_409():
     """tenant_products 行的 override 基线哈希与当前产品定义不符 → orchestrator 409 人工复核。
 
