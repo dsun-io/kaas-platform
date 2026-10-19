@@ -32,6 +32,21 @@
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
 > 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
 >
+> **（2026-10-19 夜场 · 安全审查完成 + 两个真实安全缺陷修复）**
+> 1. 安全审查报告：`docs/SECURITY_AUDIT_2026-10-19.md`（危 2 / 高 4 / 中 7 / 低 8，共 21 条）。
+>    结论摘要：**SQL 注入 0 真注入点**（35 个 SQL 插值表达式逐条判定，均为占位符序号/白名单常量）；
+>    tenant/team 隔离抽样未发现跨团队读写；Worker 运行时 6 依赖为最小集 ✓。
+> 2. **修复 高-1（越权）**：`main.py` 6 个 `/api/v1/admin/*`（feature_flag 读写、tenants 读/reload、
+>    audit-log、archive-logs）此前只校验"已登录" ⇒ 任意 customer 可写 feature flag / 读审计日志；
+>    现统一 `_require_platform_ops`（internal + 管理员角色）返回 403；新增 `test_admin_authz.py` 5 条用例。
+> 3. **处理 危-1（令牌）**：`.codex/config.toml`（含明文 Notion 集成令牌）**已从 git 跟踪移除**
+>    （`.gitignore` 本有 `.codex/`，但"先跟踪后忽略"无效）。⚠️ **历史提交仍可读到令牌，
+>    必须由用户吊销/轮换**；是否重写 git 历史需用户拍板。
+> 4. **需用户操作/未修**（详见报告 §6.4）：生产零限流（建议 Cloudflare Rate Limiting Rules）、
+>    仓库可见性确认、生产 Worker secrets 核对、Neon 生产分支 Protected、预览环境与 R2 桶命名决策、
+>    Next 升级排期、`internal` 普通业务员的 admin 权限口径。
+> 5. 门禁：worker **405 passed + 5 skipped + 11 xfailed**；依赖/schema/route-parity 仍 PASS。
+>
 > **（2026-10-19 夜场 · CF Cron 重建 2 个定时任务完成）**
 > 1. 新增 `backend/worker/src/ws_cron.py`：纯 asyncpg 重建 orchestrator 两个 APScheduler 任务
 >    （① 每 15 分钟 replied→询盘扫描；② 每日 events 归档 → R2 `events-archive/YYYY/MM/DD/v{N}.jsonl.gz`，
