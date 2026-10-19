@@ -41,6 +41,11 @@ jobs:
         shell: pwsh
         run: ./scripts/sync-shared.ps1
 
+      # 方案 B 阶段二 S1 运行时依赖断言：共享内核 / Worker 运行时不得出现
+      # sqlalchemy / alembic / greenlet / psycopg2（否则打不进 Worker 或冷启动超线）。
+      - name: Runtime dependency gate
+        run: uv run --no-project python scripts/check-runtime-deps.py
+
       - name: Run unit tests
         working-directory: ./backend/orchestrator
         run: uv run pytest -m unit --tb=short -q

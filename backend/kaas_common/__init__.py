@@ -16,6 +16,11 @@
    需要这些能力的函数不属于内核，留在各自的 `api/` 层。
 3. **纯函数优先**：输入 dict / dataclass，输出 dict，便于两侧共用同一份单测。
 
+唯一例外：`kaas_common/db.py` 是**运行时数据访问适配层**（方案 B 阶段二 S1）。它不建连接、
+不读环境变量、不做业务判断，只把入口层传入的 asyncpg 连接包成 Session/事务语义
+（嵌套事务 = SAVEPOINT，用于测试的 savepoint 回滚隔离）。它同样不 import 任何
+第三方驱动，因此不破坏上面两条铁律。
+
 同步方式
 --------
 `scripts/sync-shared.ps1` 把本目录自动复制到 `backend/worker/src/kaas_common/`，

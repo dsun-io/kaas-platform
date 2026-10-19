@@ -99,6 +99,49 @@
 - 订阅门禁两套口径（`chain.py _require_sub` 仍查 `tenant_subscriptions`）、Excel xlsx 上传闭环
   （`_reject_spreadsheet`，POC 证实 in-Worker 跑纯 Python 包无硬阻塞）——在阶段二逐路由合并时一并核对。
 
+### 阶段二 S1–S6 执行清单（唯一进度账 · 2026-10-19 起）
+
+**S1 依赖拆分（0.5 人日）**
+- [x] **S1-a** `kaas_common/db.py` 运行时数据访问层：`Session` + `transaction()`（嵌套 = SAVEPOINT，
+      复刻测试 savepoint 回滚语义）+ `execute/fetch/fetchrow/fetchval` + Record→dict；单测 5 条
+- [x] **S1-b** 运行时依赖静态断言 `scripts/check-runtime-deps.py`（禁止 sqlalchemy/alembic/greenlet/psycopg2），
+      接入 `backend:test` 与 `deploy` 两道 CI
+- [x] **S1-c** 边界固化：`kaas_common` 铁律补充 `db.py` 例外；worker 运行时依赖保持 6 个
+- [ ] **S1-d** 依赖清单正式拆分（orchestrator 主依赖移除 sqlalchemy/alembic/psycopg2）——**并入 S4**：
+      路由合并完成前 ORM 仍在用，提前拆会让本地装不上
+
+**S2 迁移归位（1 人日）**
+- [ ] **S2-a** SQLAlchemy models + Alembic 归位到**迁移期**（仅 `alembic`/CI 加载，运行时 import 不触发）
+- [ ] **S2-b** Alembic 入口改造（`env.py` 不再被 runtime 路径 import）
+- [ ] **S2-c** `deploy.yml` 增加 `alembic upgrade head`（迁移执行位置 = CI/独立 CLI，不在 Worker 请求路径）
+- [ ] **S2-d** schema 完备性门禁（worker 查询涉及的表 vs Alembic 产物对账）
+
+**S3 路由按域合并（5–8 人日，最大块）**
+- [ ] **S3-a** 基础设施域（health / auth / accounts）——先验证整条链
+- [ ] **S3-b** CRM 域（客户 / 询盘 / 线索池）
+- [ ] **S3-c** 算价域（报价 / 订单；金额逻辑最重，放中段）
+- [ ] **S3-d** 文档域（单证 / 出运 / 税务）
+- [ ] **S3-e** 集成域（情报 / 市场调研 / AI / 触达）
+- [ ] **S3-f** `attribute-proposals` 3 条路由补进 worker（修既存生产 404）
+- [ ] **S3-g** 测试重写 350–380 条 + marker 错位 87 条归位（共用 `queries/` 造数，与 S3 同批）
+
+**S4 删壳 + CI（1 人日）**
+- [ ] **S4-a** orchestrator 业务实现退场（仅保留 uvicorn 入口 + 迁移工具）
+- [ ] **S4-b** 主依赖拆分落地（`[project.optional-dependencies].migrations`）
+- [ ] **S4-c** CI 改造：db 门禁迁到真 PG 集成；`route-parity` 退役评估（已无第二后端）
+
+**S5 preview + deploy（1–2 人日，按 README §2 目标态矩阵）**
+- [ ] **S5-a** preview workflow：非 main 分支 push → 预览 URL
+- [ ] **S5-b** 每 PR 独立 Neon 子分支 + 独立 Hyperdrive config（PR 关闭回收）
+- [ ] **S5-c** `kaas-preview-storage` + 预览 KV namespace + `PR_SLUG` 前缀注入
+- [ ] **S5-d** CI 防污染断言（生产/预览绑定的 bucket / KV / Hyperdrive 互异）
+
+**S6 静态门禁（0.5–1 人日）**
+- [ ] **S6-a** schema 完备性门禁（= S2-d）
+- [x] **S6-b** 依赖断言（= S1-b，已落地）
+- [ ] **S6-c** 包体积 + 冷启动断言（≤2,950 ms；`wrangler versions upload` 口径）
+- [ ] **S6-d** 迁移链 downgrade 审计（70 versions 中 35 个含 drop_table）
+
 ## 4. 批次 6 · 技术栈安全债（收敛完成后串行）
 
 按 [TECH_STACK_UPGRADE_2026-10-17.md](./TECH_STACK_UPGRADE_2026-10-17.md) 批次 B：

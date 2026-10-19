@@ -32,6 +32,19 @@
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
 > 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
 >
+> **（2026-10-19 夜场 · 方案 B 阶段二 S1 完成 —— 依赖拆分）**
+> 1. **`kaas_common/db.py`**：运行时 asyncpg 事务适配层 —— `Session` + `transaction()`（嵌套自动降级
+>    SAVEPOINT，复刻 orchestrator 测试 `create_savepoint` 的回滚隔离语义）+ `execute/fetch/fetchrow/fetchval`
+>    + Record→dict；用 Protocol 描述连接、**不 import asyncpg**，共享内核仍只依赖标准库 + pydantic。
+>    单测 `tests/test_kaas_common_db.py` 5 条（成功提交 / 异常回滚 / 嵌套 savepoint / 参数委托 / dict 转换）。
+> 2. **`scripts/check-runtime-deps.py`**：静态断言运行时不得出现 sqlalchemy / alembic / greenlet / psycopg2
+>    （扫描 `kaas_common` + `worker/src` + worker `pyproject.toml`）；已接入 `backend:test` 与 `deploy` 两道 CI。
+> 3. 边界固化：`kaas_common/__init__.py` 铁律补充 `db.py` 为例外说明；worker 运行时依赖仍为 6 个。
+> 4. 门禁：orchestrator **1205 passed / 1 skipped**；worker **303 passed + 5 skipped**；依赖断言 **PASS**；
+>    `sync-shared -Check` **一致（37 文件）**。
+> 5. 未完成项（并入后续 S）：S1-d 依赖清单正式拆分（ORM 移除）→ S4；S2 迁移归位 → 下一步。清单见
+>    `MASTER_EXEC_PLAN §3「阶段二 S1–S6 执行清单」`。
+>
 > **（2026-10-19 晚场 · 分支收编 + 文档收尾，已完成）**
 > 1. 从废弃的 `feat/convergence-aprime` 收编 **3 项与 PPG 无关**的改动（提交 `88132af`）：
 >    `alembic/env.py` 补 5 个模型模块 import（空库快径避免缺表）、`session.py` SSL 判定去 neon 硬编码、
