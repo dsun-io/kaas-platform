@@ -1,4 +1,4 @@
-﻿# KaaS 平台 · 安全审查报告（静态 · 2026-10-19）
+# KaaS 平台 · 安全审查报告（静态 · 2026-10-19）
 
 > **性质**：**只读静态审查** + 三环境配置核对。未连库、未部署、未 push、未触发 CI、未执行任何 Cloudflare / Neon API 调用。
 > **范围**：仓库当前树（`main` @ `6104f22`）、近期提交历史、`git log` 全历史（680 commits）、
@@ -45,7 +45,9 @@
   1. **立即在 Notion 侧吊销该集成令牌**（Integration → 撤销/重置 secret），并确认其在 Notion 侧可见范围；
   2. `git rm --cached .codex/config.toml` 并从工作树删除（或改为 `--api-key=${NOTION_API_KEY}` 的模板，值走环境变量）；
   3. 视需要 `git filter-repo` 清历史（破坏性、影响所有 clone，**必须用户拍板**）。
-- **需用户操作**：✅ **是**（吊销令牌 + 是否做历史重写由用户决定）。代码/索引层面的删除可随后由我或 Lead 执行。
+- **需用户操作**：❌ **否 —— 2026-10-20 用户裁决「不清理」**（不吊销、不重写 git 历史；
+  `.codex/config.toml` 已从索引删除（`100e767`），历史中的令牌按**用户接受风险**保留）。
+  ⇒ 危-1 状态：**按风险接受关闭**，不再作为待办。
 
 ### 危-2（Critical，已裁决）生产 Neon 口令 / 管理员口令仍在 git 历史中可读
 
@@ -350,7 +352,7 @@
 
 ### 6.4 「只能由用户操作」汇总（本次审查的最重要产出之一）
 
-1. **吊销/轮换 `.codex` 里的 Notion 令牌**（危-1，最高优先）。
+1. ~~**吊销/轮换 `.codex` 里的 Notion 令牌**（危-1，最高优先）。~~ → **2026-10-20 已裁决「不清理」**（不吊销、不重写历史；按风险接受关闭）。
 2. **确认仓库当前可见性**（public/private）；若仍 public ⇒ 改 private + 决定是否轮换 Neon/管理员口令（危-2，推翻 10-17 裁决需用户点头）。
 3. **核对生产 Worker 的 secrets 是否都在**（`npx wrangler secret list --name kaas`，只读）——尤其 `S3_ACCESS_KEY`/`S3_SECRET_KEY`/`RESEND_API_KEY`。
 4. **Cloudflare Rate Limiting Rules**（若采纳高-4 的推荐做法）。
@@ -358,7 +360,7 @@
 6. **预览环境所需的一切云资源 + repo secrets**（§6.2；不打算做就明确"不做"，避免半个环境）。
 7. **R2 桶命名决策**（`kaas-files` vs 目标 `kaas-prod-storage`）。
 8. **`PROD_DATABASE_URL` 是否配置**（决定自动迁移是否生效）。
-9. **Next 升级排期**（高-3）与**是否做历史重写**（危-1/危-2 的善后）。
+9. ~~**Next 升级排期**（高-3）与**是否做历史重写**（危-1/危-2 的善后）。~~ → Next 升级已完成（`9e13ef5`）；历史重写已裁决**不做**（危-1 不清理）。
 10. **策略确认**：`internal` 普通业务员是否可以看审计日志/切 feature flag（高-1/高-2 的修复口径依赖它）。
 
 ---
@@ -469,7 +471,7 @@
 
 | 顺序 | 动作 | 对应项 | 归属 |
 | :--- | :--- | :--- | :--- |
-| 1 | 吊销 `.codex` 里的 Notion 令牌 + 从树中删除 | 危-1 | **用户**（吊销）+ 代码（删除） |
+| 1 | ~~吊销 `.codex` 里的 Notion 令牌 + 从树中删除~~ → **已裁决不清理**（2026-10-20） | 危-1 | ✅ 按风险接受关闭（索引删除 `100e767` 保留） |
 | 2 | 确认仓库可见性；若 public ⇒ 改 private | 危-2 | **用户** |
 | 3 | 6 个 Worker admin 端点统一加 `_require_platform_ops` + 补 403 测试 | 高-1 | 代码（小） |
 | 4 | orchestrator `admin.py` router 依赖换 `require_platform_ops` | 高-2 | 代码（小） |
@@ -496,7 +498,8 @@
   剩余 3 high 均为 **dev-only**（`wrangler→miniflare→sharp`、`shadcn→@modelcontextprotocol/sdk`、
   `eslint-config-next→micromatch→braces`（上游无补丁）），不进生产包。
 - 越权/权限边界：`internal` 权限已按用户裁决**维持平台运营专属**（6 个 `/admin/*` + `test_admin_authz.py`）。
-- 密钥：`.codex/config.toml` 已从索引删除（`100e767`），令牌仍待用户吊销（U-S1）。
+- 密钥：`.codex/config.toml` 已从索引删除（`100e767`）；**2026-10-20 用户裁决「令牌不清理」**
+  （不吊销、不重写历史）⇒ 危-1 按风险接受关闭，`USER_ACTIONS` U-S1 已关闭。
 - 用户动作清单更新：`docs/USER_ACTIONS_2026-10-19.md`（新增 S5 前置凭据清单、冷启动测量 U-E4；
   U-E2 已关闭）。
 - 本轮代码侧新增面：`scripts/check-worker-bundle.py`（只读 dry-run，不上传）、`backend/contracts_frozen/`

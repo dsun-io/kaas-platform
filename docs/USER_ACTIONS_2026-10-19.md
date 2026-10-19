@@ -8,6 +8,7 @@
 > | U-E2 技术栈升级 | **A. 下一轮全量升级**（Next 15.5+/16 + ESLint 10 + TS 6，配全量回归） | 独立一轮执行，不与其它改动叠加 |
 > | U-E3 发布窗口 | **A. 先不发布**，等 S5 + 升级完成后再定 | 部署保持冻结；发布前跑 `ENV_VERIFICATION` §4 检查单 |
 > | U-S8 internal 权限 | **A. 维持平台运营专属**（internal 不可访问 `/admin/*`） | 已实现的 6 端点鉴权 + `test_admin_authz.py` 即最终口径，无需改动 |
+> | U-S1 Notion 令牌（危-1） | **不清理**（不吊销、不重写 git 历史；`.codex/config.toml` 已不在索引） | 危-1 按「用户接受风险」关闭；**无需你再操作**，详见 SECURITY_AUDIT 危-1 裁决注记 |
 >
 
 > 这些事项**只能由你（账号持有人）在外部控制台/业务系统完成**，我在仓库侧已给出步骤、
@@ -19,7 +20,7 @@
 
 | ID | 事项 | 步骤 | 验证 | 状态 |
 |---|---|---|---|---|
-| U-S1 | **吊销 `.codex/config.toml` 里的 Notion 令牌**（危-1） | ① Notion → Settings → Connections/Integrations，找到该 token 对应 integration → 删除/轮换；② 决定是否做 git 历史重写（可选，需 backup） | token 已失效（旧 token 调 API 返回 401）；仓库已 `git rm --cached .codex/config.toml`（`100e767`） | ⬜ 待你操作 |
+| U-S1 | **`.codex/config.toml` 里的 Notion 令牌**（危-1） | **无需操作**：2026-10-20 用户裁决**不清理**（不吊销、不重写 git 历史）。代码层面 `.codex/config.toml` 已从索引删除（`100e767`），并已在 `.gitignore`；历史中保留令牌属**用户接受的风险** | 无需验证；风险接受留痕见 `SECURITY_AUDIT_2026-10-19.md` 危-1 裁决注记 | ✅ 已裁决「不清理」（2026-10-20） |
 | U-S2 | **确认仓库可见性**（危-2） | GitHub → Settings → General → 确认 Private；若仍 public ⇒ 改 private（推翻 10-17「不轮换」裁决需你点头，可顺带轮换 Neon 口令） | `curl -s -o NUL -w "%{http_code}" https://api.github.com/repos/dsun-io/kaas-platform` → 404（private 匿名不可见） | ⬜ 待确认（2026-10-19 匿名探测为 404，倾向已是 private） |
 | U-S3 | **核对生产 Worker secrets**（只读） | `cd backend/worker; npx wrangler secret list --name kaas` | 必含 `JWT_SECRET`、`ADMIN_SETUP_TOKEN`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`RESEND_API_KEY`；缺 `JWT_SECRET` ⇒ 全站 503 | ⬜ 待你执行（我无凭据） |
 | U-S4 | **Cloudflare Rate Limiting Rules**（高-4 推荐） | CF Dashboard → Security → WAF/Rate limiting：对 `/api/v1/auth/login`、`/api/v1/auth/register` 配 5 req/min/IP | 超限返回 429；日志里出现 rate limit 命中 | ⬜ 待决策 |
