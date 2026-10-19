@@ -10,6 +10,15 @@
 > 🚫 **部署冻结（2026-10-19 重构期 · 用户指令）**：**中途不部署**，只有用户明确下达部署指令后才发布。
 > `deploy.yml` 已改为仅 `workflow_dispatch`（不再随 push 自动部署）；且 GitHub Actions 额度已达限额，
 > CI 可能无法启动 ⇒ 最终发布优先走**本机 `pywrangler deploy`**（见本文 §0.2 流程与回滚预案）。
+>
+> ✅ **2026-10-20 口径更新（方案 B S4 + 技术栈升级后）**：
+> - **单应用**：运行时唯一实现 = `backend/worker/src/main.py`；orchestrator 只剩 `app/db` + `alembic`（不可运行后端）。
+>   `docker compose` 的 `backend` 服务跑 `worker/local_run.py`，**不再自动执行迁移**（需手动 `alembic upgrade head`）。
+> - **迁移 head = `202610190020`**（`trade_docs.owner_id/owner_scope`、`market_ports` 时间戳；幂等补列，生产已有列）。
+>   migrate job 依赖 secret `PROD_DATABASE_URL`；当前未配置则告警跳过（手动迁移）。
+> - **前端 = Next 16.4.2**：`NEXT_EXPORT=1 pnpm build` → `frontend/out`；**不要再设 `NEXT_DIST_DIR`**（会改导出落点）。
+> - 完整交接与发布前检查单见 [docs/HANDOVER_2026-10-20.md](docs/HANDOVER_2026-10-20.md)；
+>   三环境核对见 [docs/ENV_VERIFICATION_2026-10-19.md](docs/ENV_VERIFICATION_2026-10-19.md)。
 
 ## 架构
 
@@ -84,9 +93,9 @@ Python Worker（Pyodide）冷启动开销较大（`pywrangler deploy` 会报告
 `lead_candidates`（线索池）**没有 DELETE 端点**（`DELETE /api/v1/leads/{id}` → 405），
 异常中断的 E2E 测试线索只能直接改库清理。可复用脚本：
 
-```bash
+```powershell
 cd backend/orchestrator
-uv run python ..\..\.tools\cleanup_orphan_lead.py   # 删 E2E_PROD_CHECK% / E2ELOCAL% / E2EZZ%
+uv run --extra migrations python ..\..\.tools\cleanup_orphan_lead.py   # 删 E2E_PROD_CHECK% / E2ELOCAL% / E2EZZ%
 ```
 
 - Neon DSN 与 psycopg2 连法见 `backend/.tools/*.py`（`?sslmode=require`，缺它会报
@@ -126,30 +135,31 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 
 ## 1. 部署（单 Worker，前后端一体）
 
-### 1.1 本地 Docker 开发环境（2026-10-18 修复）
+### 1.1 本地 Docker 开发环境（2026-10-20 更新：单应用入口）
 
 本地开发**不需要**碰生产 Worker：`docker compose up -d` 起
-Postgres / Redis / MinIO / orchestrator（backend），前端在宿主用 `next dev` 直连。
+Postgres / Redis / MinIO / backend（= `worker/local_run.py`，与生产同一份 app），前端在宿主用 `next dev` 直连。
 
 ```powershell
 cd D:\MyProject\kaas-platform
-docker compose up -d          # backend 启动时自动 alembic upgrade head
+docker compose up -d
+# 首次建表（不再自动迁移；与生产同一套 Alembic）
+cd backend/orchestrator
+uv sync --extra migrations
+$env:DATABASE_URL="postgresql+asyncpg://kaas:kaas_dev@localhost:5432/kaas_dev"
+uv run --extra migrations alembic upgrade head
 # 健康检查：http://localhost:8000/health -> {"status":"ok"}
 
-cd frontend
+cd ..\..\frontend
 pnpm dev                      # http://localhost:3000（.env.development=real → localhost:8000）
 ```
 
-修复记录（旧环境**起不来**的根因）：
-
-- backend 构建上下文原为 `backend/orchestrator`，共享内核 `backend/kaas_common`
-  没进镜像 ⇒ `ModuleNotFoundError: No module named 'kaas_common'`；
-  现改为 `context: ./backend`，`COPY kaas_common /kaas_common` + `PYTHONPATH=/app:/kaas_common`。
-- 依赖装进 `/opt/venv`（宿主 bind mount 会遮蔽 `/app/.venv`，旧的匿名卷还会残留旧依赖）。
-- volumes：`./backend/orchestrator:/app` + `./backend/kaas_common:/kaas_common`（热重载）。
-- 新增 `backend/.dockerignore`，构建上下文不再吞入 worker/.venv/测试缓存。
-
-改了依赖或 Dockerfile 后：`docker compose build backend && docker compose up -d backend`。
+说明（替代旧 orchestrator 镜像）：
+- 镜像 = `backend/worker/Dockerfile.local`（python:3.13 + worker 依赖 + uvicorn；**不进生产 bundle**）。
+- 构建上下文 = `./backend`（`backend/.dockerignore` 排除 orchestrator 与测试）。
+- 热重载：`LOCAL_RELOAD=1`（默认）+ 挂载 `./backend/worker/src:/app/src`。
+- 首次管理员：`POST /api/v1/auth/bootstrap-admin`（`Authorization: Bearer $ADMIN_SETUP_TOKEN`）。
+- 改了依赖或 Dockerfile 后：`docker compose build backend && docker compose up -d backend`。
 
 ### 1.2 Hyperdrive 查询缓存（写后读一致性，**必须知道**）
 
@@ -196,18 +206,20 @@ Worker 运行时：`compatibility_flags = ["python_workers"]`（open beta），
 导致冒烟测试形同虚设）。其余路径由边缘直接返回静态资产、**不执行 Python 代码**——
 这也是“静态页面 200 但 Worker 路由 5xx”现象的成因。
 
-数据库迁移（Neon schema 变更，本地 venv 执行，需 DATABASE_URL 指向 Neon）：
+数据库迁移（Neon schema 变更，仓库本地执行，需 DATABASE_URL 指向 Neon）：
 
-```bash
+```powershell
 cd backend/orchestrator
-alembic upgrade head
+uv sync --extra migrations
+$env:DATABASE_URL="<生产 Neon psycopg2 形式 DSN>"
+uv run --extra migrations alembic upgrade head
+uv run --extra migrations alembic check        # 可选：metadata ↔ schema 零漂移
 ```
 
-当前迁移头**以 `alembic heads` 为准**（2026-10-18 为 `202610180010`；本轮发布按
-`docs/DEPLOYMENT_PLAN_2026-10-18.md` 分两段：先升到 009 再切 Worker，验收后升 010 清理）——
-含 password_reset_tokens、报价行项成本分解、tenant_products override、单证收款/清单、客户外键修正、
-税务档案、产品税率、报价税务快照等。
-**CI 不执行迁移**：部署新代码前先对生产库执行对应迁移，否则新表/新列缺失会让报价、产品、忘记密码等页面 500。
+当前迁移头**以 `alembic heads` 为准**（2026-10-20 = **`202610190020`**，幂等补列；
+此前 2026-10-18 发布分段执行到 `202610180010`）。发布前确认库已到 head，否则新列缺失会让单证/港口等页面 500。
+**deploy.yml 的 migrate job**：配置 secret `PROD_DATABASE_URL` 时自动 `alembic upgrade head`；
+未配置时告警跳过（保持手动迁移）。
 
 初始化管理员（一次性，对线上 Worker 执行；当前线上已初始化，会返回 403）：
 
@@ -220,20 +232,22 @@ curl -X POST https://api.kaas.powervoy.com/api/v1/auth/bootstrap-admin \
 
 ## 2. 前端构建（静态导出，随 Worker 一起部署）
 
-前端已改为 **Next.js 静态导出**（`NEXT_EXPORT=1 next build` → `out/`），
-由 `kaas` Worker 的 `[assets]` 直接服务，**不再需要单独部署 Pages/前端 Worker**。
+前端是 **Next.js 16.4.2 静态导出**（`NEXT_EXPORT=1 pnpm build` → `frontend/out`），
+由 `kaas` Worker 的 `assets` 直接服务，**不再需要单独部署 Pages/前端 Worker**。
 
-```bash
-cd frontend
-
+```powershell
 # 生产环境变量（写入 .env.production）
-NEXT_PUBLIC_API_MODE=real
-# 生产实际走独立 API 域名（跨域，Worker 已放行 https://kaas.powervoy.com 来源）。
-# 主域名 kaas.powervoy.com 的同源 /api/* 仅为历史兼容，前端并不依赖。
-NEXT_PUBLIC_API_BASE_URL=https://api.kaas.powervoy.com
+#   NEXT_PUBLIC_API_MODE=real
+#   NEXT_PUBLIC_API_BASE_URL=https://api.kaas.powervoy.com
 
-pnpm install --frozen-lockfile   # monorepo 单锁装齐 shared + frontend（pnpm 12 口径）
-cd frontend && npm run build     # 输出到 out/
+# monorepo 根目录安装（pnpm workspace：frontend + shared 单锁）
+cd D:\MyProject\kaas-platform
+pnpm install --frozen-lockfile
+
+# 静态导出（Next 16：out/ 为产物；**不要设 NEXT_DIST_DIR**，否则产物会落到该目录）
+cd frontend
+$env:NEXT_EXPORT="1"
+pnpm build
 ```
 
 `backend/worker/wrangler.jsonc` 的 `assets.directory` 指向 `../../frontend/out`，
@@ -257,16 +271,18 @@ cd frontend && npm run build     # 输出到 out/
 
 ## 4. CI 自动部署
 
-`.github/workflows/deploy.yml`：push 到 **`main`（生产分支）** →
-TypeScript 构建前端 → **同步共享内核并校验** → `pywrangler deploy` → 生产冒烟测试
+> **2026-10-19 起已冻结**：`deploy.yml` 仅 `workflow_dispatch`（不再随 push 自动部署）；
+> 用户下达发布指令后，优先本机 `pywrangler deploy`（Actions 额度限额见 §4.1）。
+
+`.github/workflows/deploy.yml`：手动 dispatch →
+TypeScript 构建前端 → **同步共享内核并校验** → （若配了 `PROD_DATABASE_URL`）migrate job `alembic upgrade head` → `pywrangler deploy` → 生产冒烟测试
 （`concurrency: deploy-production` 串行）。
 
 > ### ⚠️ 「同步共享内核」这一步不能删（2026-09-28 补上，此前完全缺失）
 >
 > `backend/worker/.gitignore` 忽略了 `src/kaas_common/` —— 那是
-> `scripts/sync-shared.ps1` 从 `backend/kaas_common/` 与
-> `backend/orchestrator/app/services/export_quote/` **复制**出来的镜像（2 + 16 个文件），
-> **不进版本控制**，runner 上必须现生成。
+> `scripts/sync-shared.ps1` 从 `backend/kaas_common/`（含 `export_quote/`、`domain/enums.py`）
+> **复制**出来的镜像（37 + 20 + 1 个文件），**不进版本控制**，runner 上必须现生成。
 >
 > 该工作流此前只有 `pywrangler deploy`，于是线上 bundle 里根本没有这个目录：
 > `/health` 的 `shared.loaded` 长期是 `false`，报价引擎整包缺失。
@@ -314,5 +330,6 @@ TypeScript 构建前端 → **同步共享内核并校验** → `pywrangler depl
 > 之后 `f04c716` 仅文档。本轮上线内容：新建客户 500 修复、汇率实时拉取、Excel 模板前端生成、
 > 客户阶段改由订单状态推导、流失强制上传拒绝文件（R2）。详见 `docs/HANDOVER_2026-10-17.md`。
 
-其他工作流：`backend-test.yml`（orchestrator 单测 + DB 测试 + Worker 纯函数单测，
-已带 `paths: backend/**`）、`frontend-ci.yml`、`contracts-check.yml`。
+其他工作流：`backend-test.yml`（S4 后 = 迁移/模型测试 + schema 双门禁 + 依赖断言 + worker 全量 + 真 PG 集成；
+`paths: backend/**`、`scripts/**`）、`frontend-ci.yml`（typecheck/lint/test/build + e2e）、
+`contracts-check.yml`（R0–R5；R6 已退役）。route-parity 与 export_openapi 已归档 `scripts/archive/`。
