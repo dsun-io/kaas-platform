@@ -10,19 +10,12 @@ name: deploy
 # 分支策略（2026-09-28 切换）：
 #   · main = 生产分支（本文件只监听它）；已归档旧的 feature/intel-workstation-v1
 #   · feat/trade-doc-templates = 唯一的开发分支（未完成的功能留在这里，完成后合入 main）
+# 2026-10-19（用户指令）：**重构期冻结自动部署** —— push 到 main 不再自动部署；
+# 只在用户明确下达部署指令后，由人工 `workflow_dispatch` 触发（或临时恢复 push 触发）。
+# 每个提交都部署会让全部 isolate 失效、经历数分钟冷启动窗口，且重构期需要先全量回归。
 on:
-  push:
-    branches:
-      - main
-    # 纯文档 / 临时脚本提交不触发生产重部署。
-    # 每次部署都会让全部 isolate 失效并经历数分钟冷启动窗口（见 DEPLOY.md §0.2），
-    # 不能因为改一个 .md 就重发一次生产版本。
-    # 需要强制重发时走 workflow_dispatch。
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.tools/**'
-      - '**/.tools/**'
+  # 自动部署已冻结：不再监听 push（2026-10-19 重构期，用户指令）。
+  # 交付验收通过后，由用户确认并手动触发本工作流。
   workflow_dispatch:
 
 # 串行部署，避免并发 push 把旧版本覆盖到新版本之后

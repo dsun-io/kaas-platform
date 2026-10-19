@@ -431,9 +431,11 @@ alembic upgrade 202610180010   # 发布后清理
 
 ## 16. 部署
 
-- 生产分支：`main`，push 会触发 `.github/workflows/deploy.yml`；
+- ⚠️ **自动部署已冻结（2026-10-19 重构期 · 用户指令）**：`deploy.yml` 不再监听 push，只保留
+  `workflow_dispatch`。**必须等用户明确下达部署指令后才部署**，中途提交一律不发布。
+- ⚠️ **GitHub Actions 额度已达限额（2026-10-19 用户确认）**：CI/部署工作流可能无法启动；
+  最终发布改走**本机 `pywrangler deploy`**（或额度恢复后手动 `workflow_dispatch`）。
 - 流程：前端静态导出 → 同步共享内核 → `pywrangler deploy` → 生产冒烟；
-- 纯文档提交（`**.md` / `docs/**`）不触发部署；
 - 冷启动窗口、回滚、Neon/Hyperdrive 说明见 [DEPLOY.md](DEPLOY.md)；
 - 本轮发布顺序、风险、验收清单见 [docs/DEPLOYMENT_PLAN_2026-10-18.md](docs/DEPLOYMENT_PLAN_2026-10-18.md)。
 

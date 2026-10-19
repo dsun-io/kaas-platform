@@ -32,6 +32,14 @@
 > `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
 > 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
 >
+> **（2026-10-19 夜场 · 部署冻结 · 用户指令）**
+> 1. **中途不部署**：`deploy.yml` 已改为仅 `workflow_dispatch`（不再监听 push）；
+>    必须等用户明确下达部署指令后才发布。README §16 / DEPLOY.md 顶部已留痕。
+> 2. **GitHub Actions 额度已达限额**（用户确认）⇒ CI/部署工作流可能无法启动；
+>    最终发布改走**本机 `pywrangler deploy`**（或额度恢复后手动 dispatch）。
+> 3. 因此后续 S3/S4 的提交只做「代码 + 文档 + 推送」，**不产生生产部署**；
+>    收尾时先做全量回归与安全审查，再由用户确认后发布。
+>
 > **（2026-10-19 夜场 · 方案 B 阶段二 S3 首项：attribute-proposals 补进 worker）**
 > 1. 新增 `backend/worker/src/ws_admin_proposals.py`：与 orchestrator `app/api/admin_proposals.py`
 >    同路径 / 同方法 / 同响应键 —— `GET 列表`（可选 `?status=`）、`GET /recommended`、
