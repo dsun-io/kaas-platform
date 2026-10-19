@@ -23,6 +23,13 @@ _stub.app = FastAPI()
 _stub._acquire = lambda request: None
 _stub._get_current_user = lambda: {"id": 1}
 _stub.DEFAULT_TENANT = "default"
+
+
+async def _stub_next_inquiry_no(conn, customer):
+    raise NotImplementedError("stub：纯函数测试不触库")
+
+
+_stub._next_inquiry_no = _stub_next_inquiry_no
 sys.modules["main"] = _stub
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
