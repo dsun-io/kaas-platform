@@ -25,3 +25,10 @@ dev = [
 
 [tool.uv]
 package = false
+
+[tool.pytest.ini_options]
+# 真 PG 写入路径用例用这个 marker 隔离：无 PG 的机器上仍可
+# `python -m pytest tests -m "not integration"` 快速跑。
+markers = [
+    "integration: 需要真实 PostgreSQL + orchestrator alembic 迁移的写入路径测试",
+]
