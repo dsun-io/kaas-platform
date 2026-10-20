@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
+import { LoadingBlock } from "@/components/shared/loading-block";
 
 interface AuditEntry {
   id: string;
@@ -20,11 +21,7 @@ interface Props {
 
 export function AuditTimeline({ entries, loading }: Props) {
   if (loading) {
-    return (
-      <div className="py-4 text-center text-sm text-muted-foreground">
-        加载中...
-      </div>
-    );
+    return <LoadingBlock rows={3} className="py-4" />;
   }
 
   return (

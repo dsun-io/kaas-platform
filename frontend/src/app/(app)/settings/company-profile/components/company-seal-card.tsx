@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingBlock } from "@/components/shared/loading-block";
+
 /**
  * 公司公章（设置 → 企业信息）
  *
@@ -194,7 +196,10 @@ async function decodeImage(file: File): Promise<DecodedImage> {
 export async function normalizeSealToPng(file: File): Promise<Blob> {
   const decoded = await decodeImage(file);
   try {
-    const scale = Math.min(1, MAX_EDGE / Math.max(decoded.width, decoded.height));
+    const scale = Math.min(
+      1,
+      MAX_EDGE / Math.max(decoded.width, decoded.height),
+    );
     const width = Math.max(1, Math.round(decoded.width * scale));
     const height = Math.max(1, Math.round(decoded.height * scale));
 
@@ -447,9 +452,7 @@ export function CompanySealCard() {
 
           {/* 列表 */}
           {seals.isLoading ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              加载中…
-            </p>
+            <LoadingBlock rows={3} className="py-6" />
           ) : seals.isError ? (
             <p className="text-sm text-destructive">
               公章列表读取失败。若数据库尚未执行本次新增的表结构迁移，请先在开发库执行迁移。
@@ -459,7 +462,8 @@ export function CompanySealCard() {
               <p className="font-medium">还没有公章</p>
               <p className="mt-1 text-muted-foreground">
                 没有公章时，PI / 合同 / 装箱单的签章区<b>不会盖章</b>
-                —— 客户收到的单据上没有公章。在上方上传第一枚即可（它会自动成为默认章）。
+                ——
+                客户收到的单据上没有公章。在上方上传第一枚即可（它会自动成为默认章）。
               </p>
             </div>
           ) : (

@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingBlock } from "@/components/shared/loading-block";
+
 /**
  * 税务管理（TAX-04）—— 企业税档 + 产品税率。
  *
@@ -346,9 +348,7 @@ export default function TaxArchivesPage() {
 
       <SectionCard title="企业税档（销项税 / 杂税）">
         {list.isLoading ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            加载中…
-          </p>
+          <LoadingBlock rows={3} className="py-6" />
         ) : items.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
             暂无企业税档。可新建一份，报价页会自动选中最新一份。
@@ -499,9 +499,7 @@ export default function TaxArchivesPage() {
         )}
 
         {productTaxes.isLoading ? (
-          <p className="py-4 text-center text-sm text-muted-foreground">
-            加载中…
-          </p>
+          <LoadingBlock rows={3} className="py-4" />
         ) : ptItems.length === 0 ? (
           <p className="py-4 text-center text-sm text-muted-foreground">
             暂无产品税率。新增后报价页按产品自动带出。
