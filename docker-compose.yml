@@ -34,8 +34,11 @@ services:
       retries: 5
 
   # ─── MinIO (L0 events OSS 归档 · §3.7.4 约束3) ───
+  # 2026-10-20 口径变更：官方 minio/minio 已从 Docker Hub 下架（拉取报 repository does not exist），
+  # 改用第三方打包官方二进制的 elestio/minio（2026-10-20 实测：minio RELEASE.2025-09-07 + mc 均可用，
+  # 健康检查 `mc ready local` 通过）。替代源：cleanstart/minio。恢复官方源：Docker Hub 上架时改回 minio/minio。
   minio:
-    image: minio/minio:latest
+    image: elestio/minio:latest
     container_name: kaas-minio
     command: server /data --console-address ":9001"
     environment:

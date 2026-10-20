@@ -31,6 +31,22 @@
 >    （`C:\Users\河北慷逊公司\AppData\Roaming\npm`）；gh CLI **v2.102.0** 已装并入 PATH
 >    （`D:\tools\gh-cli\bin`，**未登录** ⇒ GitHub secrets/billing/可见性仍需你 `gh auth login` 或网页操作）。
 >    ⚠️ 本会话 shell 的 PATH 是会话启动时的快照 ⇒ 本会话内一律用绝对路径调用上述工具。
+> 5. **GitHub 侧已对账（2026-10-20，gh 已登录 dsun-io）**：仓库可见性 = **private** ✅（U-S2 关闭）；
+>    Actions 开关 enabled 但**最近 3 次 push 触发的 CI 全部失败 = billing 限额**（job 未启动，
+>    "recent account payments have failed"）⇒ U-B4 仍待你处理账单；repo secrets **只有 2 个**
+>    （`CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_API_TOKEN`，2026-09-22）⇒ **无 `PROD_DATABASE_URL`**
+>    （U-S7 确认未配，deploy 自动迁移仍会跳过）、**无 S5 预览所需的 `NEON_API_KEY`/`NEON_PROJECT_ID`**。
+> 6. **本地环境验收门禁（2026-10-20，Docker PG 真跑）**：orchestrator **222 passed** ✅；
+>    worker **959 passed / 0 failed** ✅（含真 PG 集成 5 条，用 `kaas_worker_test` 库）；静态断言
+>    check-runtime-deps / check-schema-coverage **PASS**，check-schema-drift **PASS**（列漂移 0；
+>    ⚠️ 该脚本在 GBK 控制台会因 ⚠️ 字符 UnicodeEncodeError 崩溃 ⇒ **必须 `PYTHONIOENCODING=utf-8` 跑**）、
+>    sync-shared **PASS**。中途抓到一个真问题：**worker 的 kaas_common 镜像（gitignored 产物）过期**
+>    ⇒ 16 条内核/parity 测试红，跑 `scripts/sync-shared.ps1` 后转绿 —— 教训：镜像产物不随仓库走，
+>    **换设备/新检出后跑测试前必须先 sync-shared**（已在本文件留痕）。
+> 7. **本地 MinIO 镜像源变更（2026-10-20）**：官方 `minio/minio` **已从 Docker Hub 下架**
+>    （pull 报 repository does not exist，非网络问题）⇒ `docker-compose.yml` 改用第三方打包官方二进制的
+>    `elestio/minio:latest`（实测 minio RELEASE.2025-09-07 + mc 均可用；备选 `cleanstart/minio`）。
+>    开发默认存储口径不变（仍是本地 MinIO，桶 `kaas-dev`），仅镜像来源变。恢复官方源：Hub 上架后改回。
 >
 > **（2026-10-19 晚场 · 四项决策全部已确认 —— 以下为当前口径，压过本摘要内所有旧条目）**
 >
