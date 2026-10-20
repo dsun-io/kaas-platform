@@ -217,12 +217,12 @@ export default function TradeDocsPage() {
             toast.success("已作废");
             return;
           }
-          // 签发即归档：不再要求客户先打印另存、再手动导入一次。
-          // 手动入口仍保留（files/upload + 手动归档区）应对渲染器不可用/第三方单据等。
-          toast.success("已签发，正在自动归档 PDF…");
+          // 签发即上传单证：不再要求客户先打印另存、再手动导入一次。
+          // 手动入口仍保留（files/upload + 手动上传区）应对渲染器不可用/第三方单据等。
+          toast.success("已签发，正在自动上传单证…");
           void autoArchiveIssuedDoc(row.id).then((result) => {
             if (result.ok) toast.success(result.message);
-            else toast.error(`${result.message}（手动归档入口仍可用）`);
+            else toast.error(`${result.message}（手动上传入口仍可用）`);
           });
         },
       },

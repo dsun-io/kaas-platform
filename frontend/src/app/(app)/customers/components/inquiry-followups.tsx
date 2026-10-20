@@ -294,7 +294,7 @@ function ArchivedVersions({ docId }: { docId: number }) {
       window.open(url, "_blank", "noopener");
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch {
-      toast.error("打开归档文件失败，请稍后重试");
+      toast.error("打开上传文件失败，请稍后重试");
     }
   };
 
@@ -309,7 +309,7 @@ function ArchivedVersions({ docId }: { docId: number }) {
     <div className="mx-auto mt-4 max-w-[900px] overflow-hidden rounded-xl border border-border/70 bg-white/80">
       <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
         <span className="text-[11px] font-medium text-muted-foreground">
-          归档版本 {archived.length} 个
+          上传记录 {archived.length} 个
         </span>
         <span className="text-[11px] text-muted-foreground">
           当前版本在前 · 历史版本留档
