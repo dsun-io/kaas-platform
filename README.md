@@ -8,9 +8,11 @@
 - 本地前端：`http://localhost:3000`
 - 本地后端：`http://localhost:8000`（`/health`、`/docs`）
 
-> 📌 **本文是主交接文档**（架构 / 环境隔离 / 双后端优化决策 / 开发与测试口径的唯一权威来源）。
-> 决策依据与取证出处见 [docs/PLAN_B_EVALUATION_2026-10-19.md](docs/PLAN_B_EVALUATION_2026-10-19.md)；
-> 执行入口见 [docs/MASTER_EXEC_PLAN_2026-10-19.md](docs/archive/2026-10-20-closeout/MASTER_EXEC_PLAN_2026-10-19.md)。
+> 📌 **本文是主交接文档**（架构 / 环境隔离 / 单应用运行时决策 / 开发与测试口径的唯一权威来源）。
+> **交接检索入口**：[docs/README.md](docs/README.md)（当前权威 / 运行手册 / 归档分层）。
+> **当前状态（2026-10-20 下午）**：前端 UI 优化 P0/P1/P2 已全部收口；后端 5 项依赖并行任务进行中。
+> 决策依据与取证出处见 [PLAN_B_EVALUATION_2026-10-19.md](docs/archive/2026-10-20-p2-closeout/PLAN_B_EVALUATION_2026-10-19.md)（已归档）；
+> 执行入口见 [MASTER_EXEC_PLAN_2026-10-19.md](docs/archive/2026-10-20-closeout/MASTER_EXEC_PLAN_2026-10-19.md)（已归档）。
 
 ---
 
@@ -45,11 +47,11 @@
 - **删壳前规模（评估口径，2026-10-19，仅存档）**：orchestrator app/ 167 文件 / 33,764 行 /
   231 路由；worker src/（跟踪，不含镜像）25 文件 / 14,717 行 / 225 路由。S4 后 orchestrator 业务
   代码为 0，测试从 1,220 条 → 222 条（迁移/模型/kernel，处置见
-  [docs/S4_TEST_MIGRATION_2026-10-19.md](docs/S4_TEST_MIGRATION_2026-10-19.md)）。
+  [docs/archive/2026-10-20-p2-closeout/S4_TEST_MIGRATION_2026-10-19.md](docs/archive/2026-10-20-p2-closeout/S4_TEST_MIGRATION_2026-10-19.md)）。
 - **技术栈基线（2026-10-20 升级后）**：Next **16.4.2** / React **19.3** / ESLint **10.13（flat config）** /
   TypeScript **6.0.3**；CI Node **22**（本地 Node 24）；`pnpm audit` **0 critical**
   （3 high 均为 dev-only：wrangler→sharp、shadcn→MCP SDK、micromatch→braces）。
-  升级账本见 [docs/TECH_STACK_UPGRADE_2026-10-17.md](docs/TECH_STACK_UPGRADE_2026-10-17.md)；
+  升级账本见 [docs/archive/2026-10-20-p2-closeout/TECH_STACK_UPGRADE_2026-10-17.md](docs/archive/2026-10-20-p2-closeout/TECH_STACK_UPGRADE_2026-10-17.md)；
   **最新交接总入口**：[docs/HANDOVER_2026-10-20_FINAL.md](docs/HANDOVER_2026-10-20_FINAL.md)
   （S5 预览交付/三环境现状/云资源清单/踩坑/发布检查单）。worker 依赖已由
   `backend/worker/pylock.toml` 锁定（9/22 可稳组合，防"每次部署漂到当天最新依赖"）。
@@ -131,14 +133,14 @@
 3. **测试处置（S4 已按实际落地修正）**：原计划"约 1,085 条原样保留"的前提是 app.services/domain
    在新形态下存活；S4 选择**不搬迁业务壳**，因此这 1,220 条中只有 222 条（共享内核纯函数 + ORM 模型/
    迁移/schema 对齐）保留，其余按域由 worker 侧 parity 测试（auth/CRM/quote 三域已清零差异）与真 PG
-   集成替代 —— 逐文件处置见 [docs/S4_TEST_MIGRATION_2026-10-19.md](docs/S4_TEST_MIGRATION_2026-10-19.md)。
+   集成替代 —— 逐文件处置见 [docs/archive/2026-10-20-p2-closeout/S4_TEST_MIGRATION_2026-10-19.md](docs/archive/2026-10-20-p2-closeout/S4_TEST_MIGRATION_2026-10-19.md)。
 
 ### 3.3 路线 A 已否决，不得复活（已确认）
 
 - 否决依据一：SQLAlchemy async 依赖 greenlet，**Pyodide/wasm 无 greenlet 轮子**导致
   `import sqlalchemy.ext.asyncio` 直接 ImportError（PyPI greenlet 3.5.6 共 79 个发行文件、0 个 wasm/emscripten 轮子）。
 - 否决依据二：加 SQLAlchemy 后 Worker 冷启动中位 **2059ms → 3913ms（+1854ms）**，超验收线。
-- 完整证据：[docs/POC_WORKER_SQLALCHEMY_2026-10-19.md](docs/POC_WORKER_SQLALCHEMY_2026-10-19.md)。
+- 完整证据：[docs/archive/2026-10-20-p2-closeout/POC_WORKER_SQLALCHEMY_2026-10-19.md](docs/archive/2026-10-20-p2-closeout/POC_WORKER_SQLALCHEMY_2026-10-19.md)。
 - 复活条件（仅记录，不排期）：上游/自建 greenlet wasm 构建，或放弃免费托管——两条当前均不成立。
 
 ### 3.4 为什么是 B 而不是 A′（对比）
@@ -148,7 +150,7 @@
 | 运行时 | orchestrator 壳保留 SQLAlchemy Session + worker 裸 asyncpg 双适配 | 单一 asyncpg 运行时，无第二连接对象 |
 | 行为漂移 | 靠测试覆盖压制（结构性风险残留） | 结构性消除（一份运行时实现） |
 | 代价 | 小改 | 350–380 条测试重写 + 本地形态与迁移位置调整（§3.2） |
-| 评估结论 | 对比项 | **B-可行**（[PLAN_B_EVALUATION](docs/PLAN_B_EVALUATION_2026-10-19.md) §6） |
+| 评估结论 | 对比项 | **B-可行**（[PLAN_B_EVALUATION](docs/archive/2026-10-20-p2-closeout/PLAN_B_EVALUATION_2026-10-19.md) §6） |
 
 ---
 
@@ -220,7 +222,7 @@
 |---|---|---|
 | 1 | **生产数据库放弃 PPg，回 Neon**；生产 Hyperdrive 必须指向 Neon 生产分支；不保留 PPg 连接配置、不保留双路径 | PPg 固定 10 连接上限、不支持 Postgres 扩展，在 Workers + Hyperdrive 架构下是结构性阻塞；Neon 免费层 1 GB / 100 CU-hours / 10 分支，闲置仅缩容不清数据（§2.1） |
 | 2 | **路线 A 已否决，不得复活** | greenlet 无 wasm 轮子 → `sqlalchemy.ext.asyncio` ImportError；+SQLAlchemy 冷启动 2059→3913ms（+1854ms）超线（§3.3，POC 文档） |
-| 3 | **双后端优化采用方案 B**（评估结论 B-可行，含三项已确认修正） | [PLAN_B_EVALUATION](docs/PLAN_B_EVALUATION_2026-10-19.md)：Q1 成本中（350–380 条/3–5 人日）、Q2 无不可替代运行时逻辑、Q3 wrangler dev 冒烟可行但日常不可接受、Q4 基线实测；A′ 对比见 §3.4 |
+| 3 | **双后端优化采用方案 B**（评估结论 B-可行，含三项已确认修正） | [PLAN_B_EVALUATION](docs/archive/2026-10-20-p2-closeout/PLAN_B_EVALUATION_2026-10-19.md)：Q1 成本中（350–380 条/3–5 人日）、Q2 无不可替代运行时逻辑、Q3 wrangler dev 冒烟可行但日常不可接受、Q4 基线实测；A′ 对比见 §3.4 |
 | 4 | **三环境资源隔离矩阵 + 10 条硬规则** | 环境物理隔离、预览共享专用资源按 PR 前缀区分、开发默认本地不触云（§2.2–2.3，原样） |
 | 修正-1 | 冷启动验收线 ≤2,950ms（基线 +10%） | 基线 2,680ms 实测；原 <1s 不可达（§7） |
 | 修正-2 | 本地形态 = uvicorn 日常 + wrangler dev 冒烟门禁；同一份 app 双入口 | 实测 14×/30× 劣化（§4） |
@@ -427,10 +429,10 @@ cd frontend
 pnpm build                 # → frontend/out（267 文件；与 deploy.yml 产物路径一致）
 ```
 
-测试资产（2026-10-19 评估口径，见 [PLAN_B_EVALUATION §1](docs/PLAN_B_EVALUATION_2026-10-19.md)）：
+测试资产（2026-10-19 评估口径，见 [PLAN_B_EVALUATION §1](docs/archive/2026-10-20-p2-closeout/PLAN_B_EVALUATION_2026-10-19.md)）：
 
 - orchestrator（S4 删壳后）：only `app/db` + `alembic`；测试 **222 passed**（共享内核纯函数 + ORM 模型/
-  schema/迁移对齐）；逐文件处置见 [S4_TEST_MIGRATION](docs/S4_TEST_MIGRATION_2026-10-19.md)；
+  schema/迁移对齐）；逐文件处置见 [S4_TEST_MIGRATION](docs/archive/2026-10-20-p2-closeout/S4_TEST_MIGRATION_2026-10-19.md)；
 - worker：**954 passed + 5 skipped**（含迁入的 15 个报价引擎测试文件；三域 parity 棘轮已清零）；真 PG 集成 5 条
   （`@pytest.mark.integration`；本地无 PG 自动 skip，CI 由 `worker-db-tests` job 用 postgres service 跑）；
 - 前端（Next 16 / React 19）：typecheck ✅ / lint **0 errors（91 warnings）** / **455 passed** /
@@ -521,7 +523,7 @@ npx wrangler versions deploy <version-id>@100% --name kaas --yes
 
 ### 17.3 成本 / 税 / 保险
 
-详见 [docs/QUOTE_COST_INSURANCE_2026-10-18.md](docs/QUOTE_COST_INSURANCE_2026-10-18.md)。
+详见 [docs/archive/2026-10-20-p2-closeout/QUOTE_COST_INSURANCE_2026-10-18.md](docs/archive/2026-10-20-p2-closeout/QUOTE_COST_INSURANCE_2026-10-18.md)。
 
 ---
 
@@ -549,21 +551,21 @@ docker-compose.yml        本地基础设施 + 本地后端（worker local_run�
 - [DEPLOY.md](DEPLOY.md) — 生产部署与运维速查
 - [docs/HANDOVER_2026-10-20_FINAL.md](docs/HANDOVER_2026-10-20_FINAL.md) — **2026-10-20 最终交接（当前总入口）**：S5 预览交付/三环境现状/云资源清单/踩坑/发布检查单/待办
 - [docs/ENV_VERIFICATION_2026-10-19.md](docs/ENV_VERIFICATION_2026-10-19.md) — 三环境核对与发布检查单
-- [docs/PLAN_B_EVALUATION_2026-10-19.md](docs/PLAN_B_EVALUATION_2026-10-19.md) — 方案 B 阶段一评估报告（四问取证，结论 B-可行）
+- [docs/archive/2026-10-20-p2-closeout/PLAN_B_EVALUATION_2026-10-19.md](docs/archive/2026-10-20-p2-closeout/PLAN_B_EVALUATION_2026-10-19.md) — 方案 B 阶段一评估报告（四问取证，结论 B-可行）
 - [docs/PROBLEM_STATUS_2026-10-11.md](docs/PROBLEM_STATUS_2026-10-11.md) — 问题状态滚动口径
-- [docs/SECURITY_AUDIT_2026-10-19.md](docs/SECURITY_AUDIT_2026-10-19.md) — 安全审查报告（危/高/中/低 + 三环境核对 + 需用户操作清单）
-- [docs/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md](docs/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md) — 迁移链 downgrade 审计（drop_table 精确 3 个）
-- [docs/S4_SINGLE_APP_PLAN_2026-10-19.md](docs/S4_SINGLE_APP_PLAN_2026-10-19.md) — S4 单应用收口设计（worker 为唯一运行时）
-- [docs/POC_WORKER_SQLALCHEMY_2026-10-19.md](docs/POC_WORKER_SQLALCHEMY_2026-10-19.md) — 路线 A 否决证据
+- [docs/archive/2026-10-20-p2-closeout/SECURITY_AUDIT_2026-10-19.md](docs/archive/2026-10-20-p2-closeout/SECURITY_AUDIT_2026-10-19.md) — 安全审查报告（危/高/中/低 + 三环境核对 + 需用户操作清单）
+- [docs/archive/2026-10-20-p2-closeout/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md](docs/archive/2026-10-20-p2-closeout/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md) — 迁移链 downgrade 审计（drop_table 精确 3 个）
+- [docs/archive/2026-10-20-p2-closeout/S4_SINGLE_APP_PLAN_2026-10-19.md](docs/archive/2026-10-20-p2-closeout/S4_SINGLE_APP_PLAN_2026-10-19.md) — S4 单应用收口设计（worker 为唯一运行时）
+- [docs/archive/2026-10-20-p2-closeout/POC_WORKER_SQLALCHEMY_2026-10-19.md](docs/archive/2026-10-20-p2-closeout/POC_WORKER_SQLALCHEMY_2026-10-19.md) — 路线 A 否决证据
 - [docs/UI_UX_OPTIMIZATION_2026-10-20.md](docs/UI_UX_OPTIMIZATION_2026-10-20.md) — 全系统 UI/UX 优化方案（并行线，落地中）
 - ~~[docs/PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md](docs/archive/2026-10-20-closeout/PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md)~~ — **已废弃**（决策 1：放弃 PPg 回 Neon；2026-10-20 已归档）
 - ~~[docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md](docs/archive/2026-10-20-closeout/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md)~~ — **已废弃**（决策 1：P1 迁库终止，历史保留；2026-10-20 已归档）
-- [docs/TAX_ARCHIVE_HANDOVER_EXECUTION_PLAN_2026-10-18.md](docs/TAX_ARCHIVE_HANDOVER_EXECUTION_PLAN_2026-10-18.md) — 税务改造
-- [docs/BATCH_QUOTE_REDESIGN_PLAN_2026-10-18.md](docs/BATCH_QUOTE_REDESIGN_PLAN_2026-10-18.md) — 批量报价
-- [docs/QUOTE_COST_INSURANCE_2026-10-18.md](docs/QUOTE_COST_INSURANCE_2026-10-18.md) — 成本/保险/计量口径
-- [docs/SHEET_CALC_VERIFICATION_2026-10-18.md](docs/SHEET_CALC_VERIFICATION_2026-10-18.md) — 智能表格算价核验
+- [docs/archive/2026-10-20-p2-closeout/TAX_ARCHIVE_HANDOVER_EXECUTION_PLAN_2026-10-18.md](docs/archive/2026-10-20-p2-closeout/TAX_ARCHIVE_HANDOVER_EXECUTION_PLAN_2026-10-18.md) — 税务改造
+- [docs/archive/2026-10-20-p2-closeout/BATCH_QUOTE_REDESIGN_PLAN_2026-10-18.md](docs/archive/2026-10-20-p2-closeout/BATCH_QUOTE_REDESIGN_PLAN_2026-10-18.md) — 批量报价
+- [docs/archive/2026-10-20-p2-closeout/QUOTE_COST_INSURANCE_2026-10-18.md](docs/archive/2026-10-20-p2-closeout/QUOTE_COST_INSURANCE_2026-10-18.md) — 成本/保险/计量口径
+- [docs/archive/2026-10-20-p2-closeout/SHEET_CALC_VERIFICATION_2026-10-18.md](docs/archive/2026-10-20-p2-closeout/SHEET_CALC_VERIFICATION_2026-10-18.md) — 智能表格算价核验
 - [docs/WORKSTATION_DESIGN.md](docs/WORKSTATION_DESIGN.md) — 工位总体设计
-- [docs/CURRENT_IMPLEMENTATION_MAP.md](docs/CURRENT_IMPLEMENTATION_MAP.md) — 当前实现地图
+- [docs/archive/2026-10-20-p2-closeout/CURRENT_IMPLEMENTATION_MAP.md](docs/archive/2026-10-20-p2-closeout/CURRENT_IMPLEMENTATION_MAP.md) — 当前实现地图
 
 ---
 

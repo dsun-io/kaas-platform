@@ -15,6 +15,12 @@
 > [`HANDOVER_2026-10-20_FINAL.md`](./HANDOVER_2026-10-20_FINAL.md)**（状态/资源清单/踩坑/发布检查单/待办）。
 > 本文件继续只做"问题状态"滚动口径。
 >
+> **（2026-10-20 · 文档归档与交接索引）**
+>
+> 过时文档已移入 `docs/archive/2026-10-20-p2-closeout/`（方案 B/S4/技术栈/安全/税务/批量报价/旧 e2e/
+> 旧实现地图等 15 份，清单见批次 README）。**交接检索入口统一为 [`docs/README.md`](./README.md)**：
+> 先读根 `README.md` → `HANDOVER_2026-10-20_FINAL.md` → 本文件 → `TODO.md` → UI 两份文档。
+>
 > **（2026-10-20 · 口径修订：「待办清零/触发条件制」废止 → 活跃待办账本）**
 >
 > 用户裁决（2026-10-20 晚）：真实工作项不应以触发条件制隐藏，**下方「终局裁决：全部待办清零」中
@@ -375,7 +381,7 @@
 >    实测 `downgrade 002` → 索引齐全 → `upgrade head` 成功；`downgrade -1` 往返成功。
 >    全链 `downgrade base` 仍在 `202610170004`（cust_customers 历史断点）失败 → **定稿策略：
 >    回滚用 Neon PITR/分支，不用 downgrade base**；CI 加「最新迁移可逆」门禁。证据已补进
->    `docs/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md` 实测节。
+>    `docs/archive/2026-10-20-p2-closeout/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md` 实测节。
 > 3. **生产只读冒烟**：`GET https://api.kaas.powervoy.com/health` → 200（core loaded=true）；
 >    `https://kaas.powervoy.com/` → 200。生产 Neon 只读连接此前已验证；迁移 head 仍 `202610180010`
 >    （020 幂等待应用）。
@@ -398,7 +404,7 @@
 >    contracts **R6 openapi 新鲜度退役**（HEAD 无 app 即 INFO 跳过，artifact 冻结）；
 >    route-parity 与 export_openapi 移入 `scripts/archive/`（含退役说明）；前端 Tenant 统一
 >    `display_name`，R5 已知偏差 0 侧。
-> 4. **测试处置**（[docs/S4_TEST_MIGRATION_2026-10-19.md](./S4_TEST_MIGRATION_2026-10-19.md)）：
+> 4. **测试处置**（[docs/archive/2026-10-20-p2-closeout/S4_TEST_MIGRATION_2026-10-19.md](./archive/2026-10-20-p2-closeout/S4_TEST_MIGRATION_2026-10-19.md)）：
 >    1,220 → **222 保留**；**15 个报价引擎测试文件迁 worker**（+364 条，断言零改动）；
 >    worker 全量 **954 passed + 5 skipped**；真 PG 集成 5 passed；orchestrator 222 passed。
 > 5. **CI/deploy**：orchestrator 主依赖清空 + `[project.optional-dependencies].migrations`；
@@ -507,7 +513,7 @@
 >    依赖断言 / schema 完备性 / route-parity / sync-shared 全 PASS。
 >
 > **（2026-10-19 夜场 · 安全审查完成 + 两个真实安全缺陷修复）**
-> 1. 安全审查报告：`docs/SECURITY_AUDIT_2026-10-19.md`（危 2 / 高 4 / 中 7 / 低 8，共 21 条）。
+> 1. 安全审查报告：`docs/archive/2026-10-20-p2-closeout/SECURITY_AUDIT_2026-10-19.md`（危 2 / 高 4 / 中 7 / 低 8，共 21 条）。
 >    结论摘要：**SQL 注入 0 真注入点**（35 个 SQL 插值表达式逐条判定，均为占位符序号/白名单常量）；
 >    tenant/team 隔离抽样未发现跨团队读写；Worker 运行时 6 依赖为最小集 ✓。
 > 2. **修复 高-1（越权）**：`main.py` 6 个 `/api/v1/admin/*`（feature_flag 读写、tenants 读/reload、
@@ -540,7 +546,7 @@
 >    `upgrade()` 内含破坏性操作的 10 个，其中 `drop_table` **仅 3 个**
 >    （drop_conversation_tables / drop_wechat_tables / merge_customers），且 downgrade 均未重建表
 >    ⇒ 灾难回滚会丢数据，发布前需冷备。旧口径「70 个里 35 个含 drop_table」失真，已更正。
->    报告：`docs/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md`。
+>    报告：`docs/archive/2026-10-20-p2-closeout/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md`。
 > 2. route-parity allowlist 8 条逐条复核：补实现位置、更正 comtrade 原因（实为长任务采集器、
 >    前端 0 调用，非"本地定时器"）、pointer 改到归档原文；route-parity 仍 PASS（缺失 8 全登记、过期 0）。
 >
@@ -657,7 +663,7 @@
 >
 > **（2026-10-19 · 收敛 P0 POC 结论：路线 A 不可行 → 转 A′）**
 >
-> POC 文档：`docs/POC_WORKER_SQLALCHEMY_2026-10-19.md`（POC 源码
+> POC 文档：`docs/archive/2026-10-20-p2-closeout/POC_WORKER_SQLALCHEMY_2026-10-19.md`（POC 源码
 > `backend/worker/poc-sqlalchemy/` + 对照组 `poc-baseline/`；**生产 Worker `kaas` 全程未动**，
 > 仅建了两个独立 POC Worker 做边缘验证）。
 > 1. **兼容性硬阻塞**：`greenlet` 在 Workers Python runtime **无可安装 wheel**（Pyodide 314.0.7
@@ -1163,7 +1169,7 @@
 > 单条用例 `--repeat-each=5` 自身只有 **60%** 通过率；
 > ③ 失败根因是「`/api/v1/*` 请求偶发绕过 MSW → 自代理 → 500/挂起」，
 > **已排除 7 个假设**，未收口。
-> 详细证据与**已排除的假设清单**见 `docs/E2E_STATUS_2026-10-11.md`。
+> 详细证据与**已排除的假设清单**见 `docs/archive/2026-10-20-p2-closeout/E2E_STATUS_2026-10-11.md`。
 >
 > **为什么花了这么久（如实记录）**：我在 e2e 上投了约 35 轮，而它**不阻塞业务**；
 > 其中相当一部分是在纠正**我自己的测量错误** —— 一次用**过滤后的输出**得出
@@ -1176,7 +1182,7 @@
 > contracts R0–R4 / 前端 typecheck 0）。
 >
 > **e2e 这条线已暂缓**（不阻塞业务），结论独立成文：
-> `docs/E2E_STATUS_2026-10-11.md`。要点：**修掉 2 个真实应用缺陷**
+> `docs/archive/2026-10-20-p2-closeout/E2E_STATUS_2026-10-11.md`。要点：**修掉 2 个真实应用缺陷**
 > （`customers/page.tsx` 的 `.length` 8 处 + `.map` 4 处，都是"保护了外层对象、
 > 忘了数组本身"），**排除 7 个假设**，根因收窄为"`/api/v1/*` 请求不被 MSW 拦截
 > 而页面请求被拦"，但**未收口**。
@@ -1358,7 +1364,7 @@
    已落后当前稳定线两代；audit 复扫 **80 条**（2 critical / 19 high / 48 moderate / 11 low，
    npmjs registry 口径）——2 个 critical 仍是 Next image optimizer 的 RCE，生产走静态导出 +
    `images.unoptimized`，实际暴露面有限，但 14.x 已不再有新补丁公布。
-   完整依赖矩阵与 A/B/C/D 批次路线见 `docs/TECH_STACK_UPGRADE_2026-10-17.md`；
+   完整依赖矩阵与 A/B/C/D 批次路线见 `docs/archive/2026-10-20-p2-closeout/TECH_STACK_UPGRADE_2026-10-17.md`；
    **2026-10-17 用户裁决：暂不执行升级，只落评估文档**。
 
 ### 依赖漏洞已降 98 → 78（`b5b6f4d`）
@@ -2967,7 +2973,7 @@ orchestrator 598 passed；worker 142 passed；前端 `typecheck` exit 0、
 
 ### e2e 一条线的深度结论另见
 
-`docs/E2E_STATUS_2026-10-11.md` —— 因本文档当时被另一条任务（单证 PI 模板）
+`docs/archive/2026-10-20-p2-closeout/E2E_STATUS_2026-10-11.md` —— 因本文档当时被另一条任务（单证 PI 模板）
 并发编辑，e2e 的结论独立成文，避免写冲突。
 
 ***
@@ -2988,7 +2994,7 @@ orchestrator 598 passed；worker 142 passed；前端 `typecheck` exit 0、
 | E 生产部署先保持 | ✅ | 无需动作 |
 | 规格库 11 条接口 | ✅ | 用户裁决**退役**：`8225bbf`（路由已删、allowlist 已撤） |
 | 依赖漏洞 | 🔶 | 98 → **78**；余 **2 critical 全是 `next`**，只能在 Next ≥ 15.5.24 修（14→15 跨大版本 + React 19）——用户已定**单独排期** |
-| e2e 归真 | 🔶 | 已修 **2 个真实应用缺陷**（`customers/page.tsx` 的 `.length`/`.map`）；**排除 7 个假设**；根因收窄为"`/api/v1/*` 不被 MSW 拦截"；**数字受并发构建污染，须静止重测**。详见 `docs/E2E_STATUS_2026-10-11.md` |
+| e2e 归真 | 🔶 | 已修 **2 个真实应用缺陷**（`customers/page.tsx` 的 `.length`/`.map`）；**排除 7 个假设**；根因收窄为"`/api/v1/*` 不被 MSW 拦截"；**数字受并发构建污染，须静止重测**。详见 `docs/archive/2026-10-20-p2-closeout/E2E_STATUS_2026-10-11.md` |
 | 产品定义可视化编辑器 | ⏸ | **待用户输入**：要编辑哪些字段？存 `tenant_products` 快照还是增量覆盖？（后者有"租户一改就被冻住"的已知风险） |
 | 团队管理员转让 | ✅ | 后端两端 `9d42f44` / `13389b6` + 前端入口 `99f783c`；策略无关校验 9 条单测 |
 | 单证投产联调 | ⏸ | **需生产环境**（字段打通 / PDF·打印 / 盖章 / 双语 + 样张对照）；另一条任务正在做 PI 模板，**可考虑合并联调** |
@@ -3001,7 +3007,7 @@ orchestrator 598 passed；worker 142 passed；前端 `typecheck` exit 0、
 
 **另**：本会话额外产出（不在目标原文里但已落地）——
 原料价历史均价、`AGENTS.md` 全局规则、爬取移植（含**修掉生产 SSRF 绕过**）、
-`docs/E2E_STATUS_2026-10-11.md`。
+`docs/archive/2026-10-20-p2-closeout/E2E_STATUS_2026-10-11.md`。
 
 ---
 
