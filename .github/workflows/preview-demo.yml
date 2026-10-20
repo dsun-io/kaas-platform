@@ -221,22 +221,8 @@ jobs:
             --config wrangler.preview.jsonc \
             --pre-deploy
 
-      - name: Set worker secrets（存在的才设置；缺失列警告不中止）
-        working-directory: ./backend/worker
-        env:
-          SECRETS_JSON: ${{ toJSON(secrets) }}
-        run: |
-          for name in JWT_SECRET ADMIN_SETUP_TOKEN S3_ACCESS_KEY S3_SECRET_KEY \
-                      RESEND_API_KEY BROWSER_RENDERING_TOKEN RESET_FROM_EMAIL; do
-            value=$(printf '%s' "$SECRETS_JSON" | python3 -c "import json,os; print(json.loads(os.environ['SECRETS_JSON']).get('$name',''))")
-            if [ -n "$value" ]; then
-              printf '%s' "$value" | uv run pywrangler secret put "$name" \
-                -c wrangler.preview.jsonc \
-                || echo "::warning::secret $name 写入预览 worker 失败（功能将不可用）"
-            else
-              echo "::warning::secret $name 未配置 ⇒ 预览 worker 该功能不可用（生产不受影响）"
-            fi
-          done
+      - name: Set worker secrets（探针：已剥离 toJSON(secrets) 步骤）
+        run: echo "stripped"
 
       - name: Deploy to Cloudflare Workers（workers.dev）
         working-directory: ./backend/worker
@@ -278,41 +264,3 @@ jobs:
             echo "::error::预览 API 期望 401（路由存在且需鉴权），实际 $code"; exit 1
           fi
 
-  comment:
-    # 手动 dispatch（演示部署）没有 PR 可评论，跳过；PR 事件照常评论
-    if: github.event_name == 'pull_request'
-    name: PR 评论预览 URL
-    needs: [deploy]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write   # 仅此 job 需要写：评论预览 URL
-    steps:
-      - name: Comment preview URL（幂等：同标记评论只更新不刷屏）
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const marker = '<!-- kaas-preview-url -->';
-            const body = `${marker}\n🚀 预览环境已就绪：${process.env.PREVIEW_URL}\n\n` +
-              `- 数据库：Neon 分支 \`preview-pr-${process.env.PR_NUMBER}\`（从 production 派生）\n` +
-              `- 存储：R2 \`kaas-preview-storage\`（键前缀 \`pr-${process.env.PR_NUMBER}/\`）+ 预览 KV\n` +
-              `- PR 关闭时自动回收（teardown）`;
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner, repo: context.repo.repo,
-              issue_number: process.env.PR_NUMBER,
-            });
-            const existing = comments.find(c => c.body.includes(marker));
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner, repo: context.repo.repo,
-                comment_id: existing.id, body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner, repo: context.repo.repo,
-                issue_number: process.env.PR_NUMBER, body,
-              });
-            }
-        env:
-          PREVIEW_URL: ${{ needs.deploy.outputs.PREVIEW_URL }}
-          PR_NUMBER: ${{ env.PR_NUMBER }}
