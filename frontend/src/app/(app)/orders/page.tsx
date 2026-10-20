@@ -22,6 +22,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import apiClient from "@/lib/api/client";
 import { usePageView } from "@/lib/events/use-page-view";
+import { usePersistentState } from "@/lib/hooks/use-persistent-state";
+import { cn } from "@/lib/utils";
 import {
   useOrderOptions,
   useQuoteOptions,
@@ -62,6 +64,10 @@ export default function OrdersPage() {
   const [quoteId, setQuoteId] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showImport, setShowImport] = useState(false);
+  const [density, setDensity] = usePersistentState<"cozy" | "compact">(
+    "ui:orders:density",
+    "cozy",
+  );
 
   const selected = list.data?.find((o) => o.id === selectedId) ?? null;
 
@@ -152,7 +158,33 @@ export default function OrdersPage() {
         <OrderCreateForm onCreated={(order) => setSelectedId(order.id)} />
       </SectionCard>
 
-      <SectionCard title="订单列表">
+      <SectionCard
+        title="订单列表"
+        action={
+          <div
+            className="flex items-center gap-1"
+            role="group"
+            aria-label="表格密度"
+          >
+            <Button
+              size="sm"
+              variant={density === "cozy" ? "secondary" : "ghost"}
+              onClick={() => setDensity("cozy")}
+              aria-pressed={density === "cozy"}
+            >
+              舒适
+            </Button>
+            <Button
+              size="sm"
+              variant={density === "compact" ? "secondary" : "ghost"}
+              onClick={() => setDensity("compact")}
+              aria-pressed={density === "compact"}
+            >
+              紧凑
+            </Button>
+          </div>
+        }
+      >
         {list.isLoading ? (
           <div
             className="space-y-2"
@@ -175,7 +207,12 @@ export default function OrdersPage() {
             description="从上面的报价单转一张订单试试。"
           />
         ) : (
-          <div className="overflow-x-auto">
+          <div
+            className={cn(
+              "overflow-x-auto",
+              density === "compact" && "[&_td]:py-1 [&_th]:h-8 [&_tr]:text-xs",
+            )}
+          >
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
