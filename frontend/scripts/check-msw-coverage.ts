@@ -177,6 +177,16 @@ interface CallSite {
 const frontendRoot = resolveFrontendRoot();
 const srcRoot = join(frontendRoot, "src");
 
+// ── 门槛：C18 起把未覆盖数**收紧到 ≤20**（默认失败，不再只是警告）────────────
+// 背景：对齐 B 批把 121 → 72；C18 补齐长尾域后应接近 0。留 20 的余量是给
+// "新页面先上、mock 后补"的正常节奏，但任何**存量回涨**都会让 `pnpm mocks:check` 变红。
+const MAX_MISSING = 20;
+const maxMissingArg = process.argv.find((arg) => arg.startsWith("--max-missing="));
+const maxMissing = maxMissingArg
+  ? Number(maxMissingArg.split("=")[1])
+  : MAX_MISSING;
+const strict = process.argv.includes("--strict");
+
 const feCalls = new Map<string, CallSite[]>();
 for (const file of walk(srcRoot)) {
   const rel = relative(frontendRoot, file).split(sep).join("/");
@@ -198,13 +208,22 @@ for (const file of walk(srcRoot)) {
   }
 }
 
-const handlersPath = join(srcRoot, "mocks", "handlers.ts");
-const handlersText = readFileSync(handlersPath, "utf8");
-const mswKeys = new Map<string, number>();
-for (const match of handlersText.matchAll(MSW_RE)) {
-  const normalized = normalizePath(match[3] ?? "");
-  if (!normalized) continue;
-  mswKeys.set(`${(match[1] ?? "get").toUpperCase()} ${normalized}`, lineOf(handlersText, match.index ?? 0));
+// MSW handler 现在分布在 `src/mocks/**`（handlers.ts + P1 组 + C18 长尾模块），
+// 因此扫描整个 mocks 目录（排除测试文件）——只扫 handlers.ts 会把长尾覆盖漏掉。
+const mocksRoot = join(srcRoot, "mocks");
+const mswKeys = new Map<string, { file: string; line: number }>();
+for (const file of walk(mocksRoot)) {
+  const rel = relative(frontendRoot, file).split(sep).join("/");
+  if (EXCLUDED_RE.test(rel)) continue;
+  const text = readFileSync(file, "utf8");
+  for (const match of text.matchAll(MSW_RE)) {
+    const normalized = normalizePath(match[3] ?? "");
+    if (!normalized) continue;
+    mswKeys.set(`${(match[1] ?? "get").toUpperCase()} ${normalized}`, {
+      file: rel,
+      line: lineOf(text, match.index ?? 0),
+    });
+  }
 }
 
 const feKeys = [...feCalls.keys()].sort();
@@ -215,13 +234,14 @@ const unusedMsw = mswKeyList.filter(
 );
 const p1Missing = P1_REQUIRED.filter((key) => !mswKeys.has(key));
 
-const strict = process.argv.includes("--strict");
 const line = (text = "") => process.stdout.write(`${text}\n`);
 
-line("── MSW 覆盖率（frontend/src/** ↔ mocks/handlers.ts）──");
+line("── MSW 覆盖率（frontend/src/** ↔ src/mocks/**）──");
 line(`前端调用（归一化唯一路径）：${feKeys.length}`);
 line(`MSW handler：${mswKeyList.length}`);
-line(`未覆盖：${notMocked.length}     mock 有但前端未调用：${unusedMsw.length}`);
+line(
+  `未覆盖：${notMocked.length}（门槛 ≤${maxMissing}）    mock 有但前端未调用：${unusedMsw.length}`,
+);
 line(`P1 组：${P1_REQUIRED.length - p1Missing.length}/${P1_REQUIRED.length} 覆盖`);
 line();
 
@@ -238,24 +258,39 @@ if (notMocked.length > 0) {
 if (unusedMsw.length > 0) {
   line(`ℹ mock 有但前端未调用（${unusedMsw.length}，信息项）：`);
   for (const key of unusedMsw) {
-    line(`  - ${key}   (handlers.ts:${mswKeys.get(key) ?? "?"})`);
+    const where = mswKeys.get(key);
+    line(`  - ${key}   (${where ? `${where.file}:${where.line}` : "?"})`);
   }
   line();
 }
 
+let failed = false;
+
 if (p1Missing.length > 0) {
   line(`✗ P1 组缺失（${p1Missing.length}）—— 这些端点在审计里已点名补过，不能再丢：`);
   for (const key of p1Missing) line(`  - ${key}`);
-  process.exit(1);
+  failed = true;
+}
+
+const overBudget = Number.isFinite(maxMissing)
+  ? notMocked.length > maxMissing
+  : false;
+if (overBudget) {
+  line(
+    `✗ 未覆盖 ${notMocked.length} 条 > 门槛 ${maxMissing}（C18 收紧的门禁）：` +
+      "新页面请同时补 mock；确属后端缺接口的，先在报告里登记，不要加 handler 假装有。",
+  );
+  failed = true;
 }
 
 if (strict && notMocked.length > 0) {
   line("✗ --strict：存在未覆盖的前端调用");
-  process.exit(1);
+  failed = true;
 }
 
-if (!strict && notMocked.length > 0) {
-  line(`（默认只警告；CI 用 \`pnpm mocks:check -- --strict\` 收紧）`);
-}
+if (failed) process.exit(1);
 
-line("✓ MSW 覆盖门禁通过（P1 组无缺失）");
+line(
+  `✓ MSW 覆盖门禁通过（P1 组无缺失；未覆盖 ${notMocked.length} ≤ ${maxMissing}）`,
+);
+

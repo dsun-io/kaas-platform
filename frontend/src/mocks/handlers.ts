@@ -27,6 +27,22 @@ import {
   MOCK_EXPORT_RATE_SETS,
   MOCK_EXPORT_TERMS_TEMPLATE,
 } from "./export-quote-data";
+// C5：持久化（版本化 localStorage）+ C18 长尾 handler（见各文件头注释）
+import {
+  clearMockPersistence,
+  consumeMockFreshFlag,
+  consumeMockResetQuery,
+  hydrateMockState,
+  isMockStorageAvailable,
+  registerMockCollection,
+  registeredMockCollections,
+} from "./persistence";
+import {
+  longtailHandlers,
+  mockCostReference,
+  registerLongtailMockCollections,
+  seedLongtailMockData,
+} from "./longtail-handlers";
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -344,6 +360,7 @@ function currentAdminActor(): { id: number } {
 // ── 报价单 store（quote_orders + 行项 · 报价记录视图用）──────────────────────
 // 行项照后端 _row_to_item 白名单；cost_breakdown 是 internal 分解快照
 // （mock 的登录身份固定是 internal 管理员，直接返回；customer 剥除由后端负责）。
+// 字段集合对齐契约 `shared/contracts/quote-order.ts`（QuoteOrderSchema）。
 type MockQuoteItem = {
   id: number;
   quote_order_id: number;
@@ -356,6 +373,8 @@ type MockQuoteItem = {
   currency: string;
   line_amount: number | null;
   sort_order: number;
+  /** 手工成本覆盖（元/kg）；有值时写成本历史（需求 11） */
+  cost_override?: number | null;
   cost_breakdown: Record<string, unknown> | null;
   created_at: string;
 };
@@ -369,12 +388,31 @@ type MockQuote = {
   status: string;
   currency: string;
   total_amount: number | null;
-  created_by: string;
+  valid_until: string | null;
+  notes: string | null;
+  fx_rate: number | null;
+  fx_rate_date: string | null;
+  tax_archive_id: number | null;
+  tax_archive_code: string | null;
+  tax_archive_name: string | null;
+  tax_snapshot: Record<string, unknown> | null;
+  owner_scope: string;
+  owner_id: string | null;
+  created_by: string | null;
+  incoterm: string | null;
+  payment_terms: string | null;
+  port_of_loading: string | null;
+  port_of_destination: string | null;
+  shipping_marks: string | null;
+  country_of_origin: string | null;
+  carrier: string | null;
+  freight_valid_from: string | null;
+  freight_valid_to: string | null;
   created_at: string;
   items: MockQuoteItem[];
 };
 
-const quotesStore: MockQuote[] = [
+const QUOTE_SEEDS: MockQuote[] = [
   {
     id: 1,
     quote_no: "QUO-20261017-001",
@@ -384,7 +422,26 @@ const quotesStore: MockQuote[] = [
     status: "sent",
     currency: "USD",
     total_amount: 3612.36,
+    valid_until: "2026-11-16",
+    notes: null,
+    fx_rate: 7.18,
+    fx_rate_date: "2026-10-17",
+    tax_archive_id: null,
+    tax_archive_code: null,
+    tax_archive_name: null,
+    tax_snapshot: null,
+    owner_scope: "private",
+    owner_id: "1",
     created_by: "1",
+    incoterm: "FOB",
+    payment_terms: "30% T/T",
+    port_of_loading: "Tianjin",
+    port_of_destination: "Hamburg",
+    shipping_marks: null,
+    country_of_origin: "China",
+    carrier: null,
+    freight_valid_from: null,
+    freight_valid_to: null,
     created_at: "2026-10-17T02:30:00.000Z",
     items: [
       {
@@ -405,6 +462,7 @@ const quotesStore: MockQuote[] = [
         currency: "USD",
         line_amount: 3612.36,
         sort_order: 0,
+        cost_override: 8.75,
         cost_breakdown: {
           view: "internal",
           currency_cny_per_m2: {
@@ -421,11 +479,175 @@ const quotesStore: MockQuote[] = [
   },
 ];
 
+/** 可变：写操作（新建/改单/换行项）与持久化 hydrate 都会改它
+ *  （用 JSON 深拷贝而不是 `clone`：后者定义在文件更下方）。 */
+let quotesStore: MockQuote[] = JSON.parse(
+  JSON.stringify(QUOTE_SEEDS),
+) as MockQuote[];
+
+/** 报价单号是否可改：下游已生成单证/订单 ⇒ 锁定（后端按下游单据计算，同契约注释）。 */
+function quoteNoEditable(quoteId: number): boolean {
+  const hasDoc = docsStore.some((d) => d.quote_id === quoteId);
+  const hasOrder = ordersStore.some((o) => o.quote_id === quoteId);
+  return !hasDoc && !hasOrder;
+}
+
+/** 列表项/详情项的公共投影（对齐 `shared/contracts/quote-order.ts` QuoteOrderSchema）。 */
+function quoteOut(quote: MockQuote, includeItems: boolean) {
+  const { items, ...rest } = quote;
+  return {
+    ...rest,
+    quote_no_editable: quoteNoEditable(quote.id),
+    item_count: items.length,
+    ...(includeItems ? { items: items.map((it) => ({ ...it })) } : {}),
+  };
+}
+
+/** 请求体 items → 行项（line_amount 缺省按 qty × unit_price 精确相乘）。 */
+function quoteItemsFromBody(
+  rawItems: unknown,
+  quoteId: number,
+): MockQuoteItem[] {
+  const list = Array.isArray(rawItems) ? rawItems : [];
+  return list.map((raw, index) => {
+    const row =
+      typeof raw === "object" && raw !== null
+        ? (raw as Record<string, unknown>)
+        : {};
+    const qty = Number(row.qty ?? 0);
+    const unitPrice =
+      typeof row.unit_price === "number" ? row.unit_price : null;
+    const lineAmount =
+      typeof row.line_amount === "number"
+        ? row.line_amount
+        : unitPrice === null
+          ? null
+          : Number((qty * unitPrice).toFixed(4));
+    return {
+      id: nextChildId++,
+      quote_order_id: quoteId,
+      sku_id: typeof row.sku_id === "number" ? row.sku_id : null,
+      product_name: String(row.product_name ?? ""),
+      spec_snapshot:
+        typeof row.spec_snapshot === "object" && row.spec_snapshot !== null
+          ? (row.spec_snapshot as Record<string, unknown>)
+          : null,
+      qty,
+      qty_unit: String(row.qty_unit ?? "ROLLS"),
+      unit_price: unitPrice,
+      currency: typeof row.currency === "string" ? row.currency : "USD",
+      line_amount: lineAmount,
+      sort_order:
+        typeof row.sort_order === "number" ? row.sort_order : index,
+      cost_override:
+        typeof row.cost_override === "number" ? row.cost_override : null,
+      cost_breakdown:
+        typeof row.cost_breakdown === "object" && row.cost_breakdown !== null
+          ? (row.cost_breakdown as Record<string, unknown>)
+          : null,
+      created_at: nowIso(),
+    };
+  });
+}
+
+function quoteTotal(items: MockQuoteItem[]): number | null {
+  if (items.length === 0) return null;
+  return Number(
+    items
+      .reduce((sum, item) => sum + (item.line_amount ?? 0), 0)
+      .toFixed(2),
+  );
+}
+
+function nextQuoteNo(): string {
+  const maxId = quotesStore.reduce((max, q) => Math.max(max, q.id), 0) + 1;
+  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  return `QUO-${stamp}-${String(maxId).padStart(3, "0")}`;
+}
+
+/** 新建报价单（POST /quotes 与 POST /quotes/batch 共用）。 */
+function createQuoteFromBody(body: Record<string, unknown>): MockQuote {
+  const customerIdRaw = body.customer_id;
+  const customerId =
+    typeof customerIdRaw === "number"
+      ? customerIdRaw
+      : customerIdRaw != null && String(customerIdRaw).trim() !== ""
+        ? Number(customerIdRaw)
+        : null;
+  const customer =
+    customerId !== null
+      ? customersStore.find((c) => c.id === customerId)
+      : undefined;
+  const id = quotesStore.reduce((max, q) => Math.max(max, q.id), 0) + 1;
+  const items = quoteItemsFromBody(body.items, id);
+  const quote: MockQuote = {
+    id,
+    quote_no: nextQuoteNo(),
+    customer_id: customerId,
+    customer_name:
+      optStr(body.customer_name) ?? customer?.company_name ?? null,
+    inquiry_id:
+      typeof body.inquiry_id === "number" ? body.inquiry_id : null,
+    status: "draft",
+    currency: String(body.currency ?? "USD"),
+    total_amount: quoteTotal(items),
+    valid_until: optStr(body.valid_until),
+    notes: optStr(body.notes),
+    fx_rate: null,
+    fx_rate_date: null,
+    tax_archive_id:
+      typeof body.tax_archive_id === "number" ? body.tax_archive_id : null,
+    tax_archive_code: optStr(body.tax_archive_code),
+    tax_archive_name: optStr(body.tax_archive_name),
+    tax_snapshot:
+      typeof body.tax_snapshot === "object" && body.tax_snapshot !== null
+        ? (body.tax_snapshot as Record<string, unknown>)
+        : null,
+    owner_scope: optStr(body.owner_scope) ?? "private",
+    owner_id: String(MOCK_ADMIN_USER.user_id),
+    created_by: String(MOCK_ADMIN_USER.user_id),
+    incoterm: optStr(body.incoterm),
+    payment_terms: optStr(body.payment_terms),
+    port_of_loading: optStr(body.port_of_loading),
+    port_of_destination: optStr(body.port_of_destination),
+    shipping_marks: optStr(body.shipping_marks),
+    country_of_origin: optStr(body.country_of_origin),
+    carrier: optStr(body.carrier),
+    freight_valid_from: optStr(body.freight_valid_from),
+    freight_valid_to: optStr(body.freight_valid_to),
+    created_at: nowIso(),
+    items,
+  };
+  quotesStore.push(quote);
+  return quote;
+}
+
+const QUOTE_TERM_FIELDS = [
+  "incoterm",
+  "payment_terms",
+  "port_of_loading",
+  "port_of_destination",
+  "shipping_marks",
+  "country_of_origin",
+  "carrier",
+  "freight_valid_from",
+  "freight_valid_to",
+] as const;
+
+
+
 const nowIso = () => new Date().toISOString();
 const optStr = (v: unknown): string | null =>
   typeof v === "string" ? v : null;
 /** 深拷贝种子，避免写操作改到 factory 里那份原始数据 */
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+
+// 种子快照：下面这几份容器会被写 handler **原地**修改（push/unshift/splice），
+// `seedMockData()` 需要"模块加载时"的副本才能恢复（引用同一数组是恢复不了的）。
+const SEED_MOCK_QUOTATIONS = clone(MOCK_QUOTATIONS);
+const SEED_DEPLOYMENT_AUDITS = clone(MOCK_DEPLOYMENT_AUDITS);
+const SEED_CAPABILITIES = clone(MOCK_CAPABILITIES);
+const SEED_ACCOUNTS = clone(accountsStore);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // P1 组 mock 数据（对齐修复 B · 2026-10-20）
@@ -1496,13 +1718,12 @@ function customerNotFound(id: unknown) {
 }
 
 /**
- * 把可变 store 恢复到种子状态。
+ * 把**核心域** store 恢复到种子状态（C5 起拆成 `seedMockData()` + `resetMockData()`）。
  *
- * **导出只给测试用**：module-scoped 状态在同一个测试文件内跨用例共享，
- * 不重置会让"前一个用例建的客户"污染后一个用例的计数断言。
- * 浏览器里每次页面加载都会重新求值本模块（worker 重注册），所以生产路径不需要它。
+ * `bootstrapMockData()` 先 seed 再 hydrate：种子是默认值，localStorage 里持久化的集合
+ * 会**覆盖**同名的种子（只有被写操作碰过的集合才会出现在 localStorage 里）。
  */
-export function resetMockData(): void {
+function seedMockData(): void {
   nextChildId = 1;
   customersStore = clone(MOCK_CUSTOMERS);
   contactsStore = new Map();
@@ -1517,10 +1738,400 @@ export function resetMockData(): void {
   nextCustomerId =
     customersStore.reduce((max, c) => Math.max(max, c.id), 0) + 1;
   nextUserId = 100;
+  MOCK_ADMIN_USER.display_name = "平台管理员";
+
+  // 报价单（quote_orders）：写操作真改 store ⇒ 重置要回到种子
+  quotesStore = clone(QUOTE_SEEDS);
+  // 报价台账（/quotations 只读账本）与部署审计：都是在原数组上 push/unshift，
+  // 故重置必须**原地**替换内容（数组对象被 handler 闭包捕获）。
+  MOCK_QUOTATIONS.splice(
+    0,
+    MOCK_QUOTATIONS.length,
+    ...clone(SEED_MOCK_QUOTATIONS),
+  );
+  MOCK_DEPLOYMENT_AUDITS.splice(
+    0,
+    MOCK_DEPLOYMENT_AUDITS.length,
+    ...clone(SEED_DEPLOYMENT_AUDITS),
+  );
+  capabilitiesStore.clear();
+  for (const [id, caps] of Object.entries(SEED_CAPABILITIES)) {
+    capabilitiesStore.set(id, clone(caps));
+  }
+  for (const tenant of Object.keys(featureFlagsStore)) {
+    delete featureFlagsStore[tenant];
+  }
+  Object.assign(featureFlagsStore, clone(defaultFlags));
+  accountsStore.splice(0, accountsStore.length, ...clone(SEED_ACCOUNTS));
+
   // P1 组 store（单证/产品/团队/税档/企业信息/公章/文件）一并回到种子
   seedP1Stores();
+  // C18 长尾域 store
+  seedLongtailMockData();
 }
-resetMockData();
+
+/** 注册核心域可持久化集合（C5）。restore 必须**原地**改被 handler 闭包捕获的容器。 */
+function registerCoreMockCollections(): void {
+  registerMockCollection(
+    "customers",
+    () => clone(customersStore),
+    (value) => {
+      if (Array.isArray(value)) customersStore = clone(value as MockCustomer[]);
+    },
+  );
+  registerMockCollection(
+    "contacts",
+    () => [...contactsStore.entries()],
+    (value) => {
+      if (!Array.isArray(value)) return;
+      contactsStore = new Map(value as [number, MockContact[]][]);
+    },
+  );
+  registerMockCollection(
+    "inquiries",
+    () => [...inquiriesStore.entries()],
+    (value) => {
+      if (!Array.isArray(value)) return;
+      inquiriesStore = new Map(value as [number, MockInquiry[]][]);
+    },
+  );
+  registerMockCollection(
+    "stageLog",
+    () => [...stageLogStore.entries()],
+    (value) => {
+      if (!Array.isArray(value)) return;
+      stageLogStore = new Map(value as [number, MockStageLog[]][]);
+    },
+  );
+  registerMockCollection(
+    "inquiryStageLog",
+    () => [...inquiryStageLogStore.entries()],
+    (value) => {
+      if (!Array.isArray(value)) return;
+      inquiryStageLogStore = new Map(
+        value as [number, MockInquiryStageLog[]][],
+      );
+    },
+  );
+  registerMockCollection(
+    "quotes",
+    () => clone(quotesStore),
+    (value) => {
+      if (Array.isArray(value)) quotesStore = clone(value as MockQuote[]);
+    },
+  );
+  registerMockCollection(
+    "quotations",
+    () => clone(MOCK_QUOTATIONS),
+    (value) => {
+      if (!Array.isArray(value)) return;
+      MOCK_QUOTATIONS.splice(
+        0,
+        MOCK_QUOTATIONS.length,
+        ...clone(value as typeof MOCK_QUOTATIONS),
+      );
+    },
+  );
+  registerMockCollection(
+    "orders",
+    () => clone(ordersStore),
+    (value) => {
+      if (!Array.isArray(value)) return;
+      ordersStore.splice(
+        0,
+        ordersStore.length,
+        ...clone(value as typeof ordersStore),
+      );
+    },
+  );
+  registerMockCollection(
+    "docs",
+    () => clone(docsStore),
+    (value) => {
+      if (!Array.isArray(value)) return;
+      docsStore.splice(0, docsStore.length, ...clone(value as typeof docsStore));
+    },
+  );
+  registerMockCollection(
+    "docFileLinks",
+    () => [...docFileLinksStore.entries()],
+    (value) => {
+      if (!Array.isArray(value)) return;
+      docFileLinksStore = new Map(value as [number, MockDocFileLink[]][]);
+    },
+  );
+  registerMockCollection(
+    "contentVersions",
+    () => [...contentVersionsStore.entries()],
+    (value) => {
+      if (!Array.isArray(value)) return;
+      // const Map：必须原地清空再填（不能重新赋值）
+      contentVersionsStore.clear();
+      for (const entry of value) {
+        if (Array.isArray(entry) && entry.length === 2) {
+          contentVersionsStore.set(
+            Number(entry[0]),
+            entry[1] as MockContentVersion[],
+          );
+        }
+      }
+    },
+  );
+  registerMockCollection(
+    "fileObjects",
+    () => clone(fileObjectsStore),
+    (value) => {
+      if (Array.isArray(value)) fileObjectsStore = clone(value as MockFileObject[]);
+    },
+  );
+  registerMockCollection(
+    "productProfiles",
+    () => [...productProfilesStore.entries()],
+    (value) => {
+      if (!Array.isArray(value)) return;
+      productProfilesStore.clear();
+      for (const entry of value) {
+        if (Array.isArray(entry) && entry.length === 2) {
+          productProfilesStore.set(
+            String(entry[0]),
+            entry[1] as Record<string, unknown>,
+          );
+        }
+      }
+    },
+  );
+  registerMockCollection(
+    "tenantProducts",
+    () => clone(tenantProductsStore),
+    (value) => {
+      if (Array.isArray(value)) {
+        tenantProductsStore = clone(value as MockTenantProduct[]);
+      }
+    },
+  );
+  registerMockCollection(
+    "tenantProductStatus",
+    () => [...tenantProductStatusStore.entries()],
+    (value) => {
+      if (!Array.isArray(value)) return;
+      tenantProductStatusStore.clear();
+      for (const entry of value) {
+        if (Array.isArray(entry) && entry.length === 2) {
+          tenantProductStatusStore.set(String(entry[0]), entry[1] === true);
+        }
+      }
+    },
+  );
+  registerMockCollection(
+    "team",
+    () => clone(teamStore),
+    (value) => {
+      const parsed = value as MockTeam | null;
+      if (parsed && typeof parsed.id === "number") teamStore = clone(parsed);
+    },
+  );
+  registerMockCollection(
+    "teamMembers",
+    () => clone(teamMembersStore),
+    (value) => {
+      if (Array.isArray(value)) teamMembersStore = clone(value as MockTeamMember[]);
+    },
+  );
+  registerMockCollection(
+    "teamInvites",
+    () => clone(teamInvitesStore),
+    (value) => {
+      if (Array.isArray(value)) teamInvitesStore = clone(value as MockTeamInvite[]);
+    },
+  );
+  registerMockCollection(
+    "teamSubscriptions",
+    () => clone(teamSubscriptionStore),
+    (value) => {
+      if (Array.isArray(value)) {
+        teamSubscriptionStore = clone(value as MockTeamSubscription[]);
+      }
+    },
+  );
+  registerMockCollection(
+    "companyProfile",
+    () => clone(companyProfileStore),
+    (value) => {
+      companyProfileStore = (value as Record<string, string | null> | null) ?? null;
+    },
+  );
+  registerMockCollection(
+    "companySeals",
+    () => clone(companySealsStore),
+    (value) => {
+      if (Array.isArray(value)) companySealsStore = clone(value as MockCompanySeal[]);
+    },
+  );
+  registerMockCollection(
+    "taxArchives",
+    () => clone(taxArchivesStore),
+    (value) => {
+      if (Array.isArray(value)) taxArchivesStore = clone(value as MockTaxArchive[]);
+    },
+  );
+  registerMockCollection(
+    "productTaxRates",
+    () => clone(productTaxRatesStore),
+    (value) => {
+      if (Array.isArray(value)) {
+        productTaxRatesStore = clone(value as MockProductTaxRate[]);
+      }
+    },
+  );
+  registerMockCollection(
+    "capabilities",
+    () => [...capabilitiesStore.entries()],
+    (value) => {
+      if (!Array.isArray(value)) return;
+      capabilitiesStore.clear();
+      for (const entry of value) {
+        if (Array.isArray(entry) && entry.length === 2) {
+          capabilitiesStore.set(
+            String(entry[0]),
+            entry[1] as ReturnType<typeof makeCapability>[],
+          );
+        }
+      }
+    },
+  );
+  registerMockCollection(
+    "featureFlags",
+    () => clone(featureFlagsStore),
+    (value) => {
+      const parsed = value as Record<string, Record<string, boolean>> | null;
+      if (!parsed || typeof parsed !== "object") return;
+      for (const tenant of Object.keys(featureFlagsStore)) {
+        delete featureFlagsStore[tenant];
+      }
+      Object.assign(featureFlagsStore, clone(parsed));
+    },
+  );
+  registerMockCollection(
+    "accounts",
+    () => clone(accountsStore),
+    (value) => {
+      if (!Array.isArray(value)) return;
+      accountsStore.splice(0, accountsStore.length, ...clone(value as MockAccount[]));
+    },
+  );
+  registerMockCollection(
+    "registeredEmails",
+    () => [...registeredEmails],
+    (value) => {
+      if (Array.isArray(value)) {
+        registeredEmails = new Set(value.map((v) => String(v)));
+      }
+    },
+  );
+  registerMockCollection(
+    "adminUser",
+    () => ({ display_name: MOCK_ADMIN_USER.display_name }),
+    (value) => {
+      const name = (value as { display_name?: unknown } | null)?.display_name;
+      if (typeof name === "string" && name.trim()) {
+        MOCK_ADMIN_USER.display_name = name;
+      }
+    },
+  );
+  registerMockCollection(
+    "deploymentAudits",
+    () => clone(MOCK_DEPLOYMENT_AUDITS),
+    (value) => {
+      if (!Array.isArray(value)) return;
+      MOCK_DEPLOYMENT_AUDITS.splice(
+        0,
+        MOCK_DEPLOYMENT_AUDITS.length,
+        ...clone(value as typeof MOCK_DEPLOYMENT_AUDITS),
+      );
+    },
+  );
+  registerMockCollection(
+    "counters",
+    () => ({
+      nextChildId,
+      nextCustomerId,
+      nextUserId,
+      fileObjectSeq,
+      docFileLinkSeq,
+      tenantProductSeq,
+      teamInviteSeq,
+      companySealSeq,
+      taxArchiveSeq,
+      productTaxRateSeq,
+    }),
+    (value) => {
+      const parsed = value as Record<string, unknown> | null;
+      if (!parsed) return;
+      const num = (key: string, fallback: number): number => {
+        const n = parsed[key];
+        return typeof n === "number" && Number.isFinite(n) ? n : fallback;
+      };
+      nextChildId = num("nextChildId", nextChildId);
+      nextCustomerId = num("nextCustomerId", nextCustomerId);
+      nextUserId = num("nextUserId", nextUserId);
+      fileObjectSeq = num("fileObjectSeq", fileObjectSeq);
+      docFileLinkSeq = num("docFileLinkSeq", docFileLinkSeq);
+      tenantProductSeq = num("tenantProductSeq", tenantProductSeq);
+      teamInviteSeq = num("teamInviteSeq", teamInviteSeq);
+      companySealSeq = num("companySealSeq", companySealSeq);
+      taxArchiveSeq = num("taxArchiveSeq", taxArchiveSeq);
+      productTaxRateSeq = num("productTaxRateSeq", productTaxRateSeq);
+    },
+  );
+}
+
+/**
+ * 启动：种子 → 注册集合 → （浏览器）恢复 localStorage 持久化数据。
+ *
+ * 重置入口（二选一，本实现选 query 参数）：
+ *  · 地址栏 `?mock_reset=1` ⇒ 清空 `kaas-mock-v1:*`、回种子、并移除该参数；
+ *  · `localStorage["kaas-mock-fresh"]="1"`（e2e/CI 显式声明）⇒ 同上。
+ * 默认（没有持久化键）走种子 —— Playwright 每个用例新建 context，localStorage 为空，
+ * 因此 e2e 永远是确定性的种子数据。
+ */
+function bootstrapMockData(): void {
+  seedMockData();
+  registerCoreMockCollections();
+  registerLongtailMockCollections();
+  if (!isMockStorageAvailable()) return;
+  if (consumeMockFreshFlag() || consumeMockResetQuery()) {
+    clearMockPersistence();
+    seedMockData();
+    return;
+  }
+  const hydrated = hydrateMockState();
+  if (hydrated.length > 0) {
+    console.info(
+      `[MSW mock] 已从 localStorage 恢复 ${hydrated.length} 个集合（C5）：${hydrated.join(", ")}`,
+    );
+  }
+}
+
+/**
+ * 把可变 store 恢复到种子状态，并**清空持久化数据**。
+ *
+ * **导出给测试用**：module-scoped 状态在同一个测试文件内跨用例共享，
+ * 不重置会让"前一个用例建的客户"污染后一个用例的计数断言。
+ *
+ * ⚠️ 与 `bootstrapMockData()` 的区别：这里会主动清 localStorage（"回种子"的强语义），
+ * 而启动流程里 hydrate 前**不能**清（否则持久化就白存了）。
+ */
+export function resetMockData(): void {
+  seedMockData();
+  clearMockPersistence();
+}
+
+bootstrapMockData();
+
+// 供测试断言"当前注册了哪些可持久化集合"（也避免 import 被 lint 判未使用）
+export function mockPersistedCollections(): string[] {
+  return registeredMockCollections();
+}
 
 export const handlers = [
   // ── 工位订阅快照（原先没有 mock，是**真正的**缺口）─────────────────────
@@ -2553,20 +3164,31 @@ export const handlers = [
   }),
 
   // ── 报价单（quote_orders · 报价记录视图）──────────────────────────────────
+  // 契约：`shared/contracts/quote-order.ts`；写操作真改 store（C5 会落 localStorage）。
   // 列表不返回行项（防 N+1，与后端一致）；详情才带 items。
   http.get("/api/v1/quotes", ({ request }) => {
     const url = new URL(request.url);
     const status = url.searchParams.get("status");
+    const customerId = url.searchParams.get("customer_id");
+    const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+    const pageSize = Math.min(
+      200,
+      Math.max(1, Number(url.searchParams.get("page_size")) || 50),
+    );
     let items = quotesStore.slice().sort((a, b) => b.id - a.id);
     if (status) items = items.filter((q) => q.status === status);
+    if (customerId) {
+      items = items.filter((q) => String(q.customer_id) === customerId);
+    }
+    const total = items.length;
+    const start = (page - 1) * pageSize;
     return HttpResponse.json({
-      items: items.map(({ items: _rows, ...q }) => ({
-        ...q,
-        item_count: _rows.length,
-      })),
-      total: items.length,
-      page: 1,
-      page_size: Number(url.searchParams.get("page_size")) || 50,
+      items: items
+        .slice(start, start + pageSize)
+        .map((q) => quoteOut(q, false)),
+      total,
+      page,
+      page_size: pageSize,
     });
   }),
 
@@ -2612,16 +3234,223 @@ export const handlers = [
     });
   }),
 
+  // POST /quotes ← use-quote-orders.ts:69（工作台建单，可带多行；空行也允许）
+  http.post("/api/v1/quotes", async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    const quote = createQuoteFromBody(body);
+    return HttpResponse.json(quoteOut(quote, true), { status: 201 });
+  }),
+
+  // POST /quotes/batch ← batch-quote-view.tsx:281
+  // 形状 = contracts/quote-order.ts BatchQuoteResponseSchema `{created,failed,total}`
+  http.post("/api/v1/quotes/batch", async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as {
+      groups?: Array<Record<string, unknown>>;
+    };
+    const groups = Array.isArray(body.groups) ? body.groups : [];
+    if (groups.length === 0) {
+      return HttpResponse.json(
+        { detail: "groups is required" },
+        { status: 422 },
+      );
+    }
+    const created: Array<Record<string, unknown>> = [];
+    const failed: Array<Record<string, unknown>> = [];
+    for (const group of groups) {
+      const inquiryId = group.inquiry_id;
+      const customerId = group.customer_id;
+      if (typeof inquiryId !== "number" || customerId == null) {
+        failed.push({
+          inquiry_id: inquiryId ?? 0,
+          customer_id: String(customerId ?? ""),
+          code: "INVALID_GROUP",
+          detail: "inquiry_id 与 customer_id 必填",
+        });
+        continue;
+      }
+      // 不覆盖已有报价（同询盘已有报价 ⇒ 记失败，与后端批量语义一致）
+      if (quotesStore.some((q) => q.inquiry_id === inquiryId)) {
+        failed.push({
+          inquiry_id: inquiryId,
+          customer_id: String(customerId),
+          code: "QUOTE_EXISTS",
+          detail: "该询盘已有报价单，批量报价不覆盖",
+        });
+        continue;
+      }
+      const quote = createQuoteFromBody(group);
+      created.push({
+        inquiry_id: inquiryId,
+        customer_id: String(customerId),
+        quote_id: quote.id,
+        quote_no: quote.quote_no,
+      });
+    }
+    return HttpResponse.json(
+      { created, failed, total: created.length + failed.length },
+      { status: 201 },
+    );
+  }),
+
+  // GET /quotes/cost-reference ← use-cost-reference.ts:34
+  // ⚠️ 必须注册在 `/quotes/:id` **之前**：MSW 按注册顺序命中即止，否则
+  // `cost-reference` 会被 `:id` 通配吃掉（表现为 404 QUOTE_NOT_FOUND）。
+  // 形状：`{reference: {...}|null}`（main.py:1931-2010）。
+  http.get("/api/v1/quotes/cost-reference", ({ request }) => {
+    const url = new URL(request.url);
+    const productKey = url.searchParams.get("product_key") ?? "";
+    const specRaw = url.searchParams.get("spec") ?? "{}";
+    let spec: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(specRaw);
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        throw new Error("spec must be object");
+      }
+      spec = parsed as Record<string, unknown>;
+    } catch {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "INVALID_SPEC",
+            detail: "spec 必须是 JSON 对象",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    return HttpResponse.json({
+      reference: mockCostReference(productKey, spec),
+    });
+  }),
+
   http.get("/api/v1/quotes/:id", ({ params }) => {
     const quote = quotesStore.find((q) => q.id === Number(params.id));
     if (!quote) {
       return HttpResponse.json(
-        { detail: { error: "not_found" } },
+        { detail: { error: "not_found", code: "QUOTE_NOT_FOUND" } },
         { status: 404 },
       );
     }
-    const { items, ...q } = quote;
-    return HttpResponse.json({ ...q, item_count: items.length, items });
+    return HttpResponse.json(quoteOut(quote, true));
+  }),
+
+  // PATCH /quotes/:id ← use-quote-orders.ts:87（改单头 / 状态流转）
+  http.patch("/api/v1/quotes/:id", async ({ params, request }) => {
+    const quote = quotesStore.find((q) => q.id === Number(params.id));
+    if (!quote) {
+      return HttpResponse.json(
+        { detail: { error: "not_found", code: "QUOTE_NOT_FOUND" } },
+        { status: 404 },
+      );
+    }
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    if ("quote_no" in body && typeof body.quote_no === "string") {
+      if (!quoteNoEditable(quote.id)) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "conflict",
+              code: "QUOTE_NO_LOCKED",
+              detail: "已生成下游单证/订单，报价单号已锁定",
+            },
+          },
+          { status: 409 },
+        );
+      }
+      quote.quote_no = body.quote_no.trim() || quote.quote_no;
+    }
+    if ("status" in body) {
+      const status = String(body.status ?? "");
+      if (!["draft", "sent", "accepted", "rejected", "expired", "closed"].includes(status)) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "validation",
+              code: "INVALID_STATUS",
+              detail: "status 取值非法",
+            },
+          },
+          { status: 422 },
+        );
+      }
+      quote.status = status;
+    }
+    if ("customer_id" in body) {
+      const raw = body.customer_id;
+      const customerId =
+        typeof raw === "number"
+          ? raw
+          : raw != null && String(raw).trim() !== ""
+            ? Number(raw)
+            : null;
+      quote.customer_id = customerId;
+      const customer =
+        customerId !== null
+          ? customersStore.find((c) => c.id === customerId)
+          : undefined;
+      if ("customer_name" in body) {
+        quote.customer_name = optStr(body.customer_name);
+      } else if (customer) {
+        quote.customer_name = customer.company_name;
+      }
+    }
+    if ("currency" in body) quote.currency = String(body.currency ?? quote.currency);
+    for (const key of ["valid_until", "notes"] as const) {
+      if (key in body) quote[key] = optStr(body[key]);
+    }
+    for (const key of QUOTE_TERM_FIELDS) {
+      if (key in body) quote[key] = optStr(body[key]);
+    }
+    for (const key of [
+      "tax_archive_id",
+      "tax_archive_code",
+      "tax_archive_name",
+      "tax_snapshot",
+    ] as const) {
+      if (!(key in body)) continue;
+      const value = body[key];
+      if (key === "tax_archive_id") {
+        quote.tax_archive_id = typeof value === "number" ? value : null;
+      } else if (key === "tax_snapshot") {
+        quote.tax_snapshot =
+          typeof value === "object" && value !== null
+            ? (value as Record<string, unknown>)
+            : null;
+      } else {
+        quote[key] = optStr(value);
+      }
+    }
+    return HttpResponse.json(quoteOut(quote, true));
+  }),
+
+  // PUT /quotes/:id/items ← use-quote-orders.ts:108（行项整批替换）
+  // 形状 = 后端 `{id,total_amount,items}`；行金额 = qty × unit_price。
+  http.put("/api/v1/quotes/:id/items", async ({ params, request }) => {
+    const quote = quotesStore.find((q) => q.id === Number(params.id));
+    if (!quote) {
+      return HttpResponse.json(
+        { detail: { error: "not_found", code: "QUOTE_NOT_FOUND" } },
+        { status: 404 },
+      );
+    }
+    const body = (await request.json().catch(() => ({}))) as {
+      items?: unknown;
+    };
+    const items = quoteItemsFromBody(body.items, quote.id);
+    quote.items = items;
+    quote.total_amount = quoteTotal(items);
+    return HttpResponse.json({
+      id: quote.id,
+      total_amount: quote.total_amount,
+      items: items.map((it) => ({ ...it })),
+    });
   }),
 
   // ── 订单（orders）────────────────────────────────────────────────────────
@@ -3264,44 +4093,9 @@ export const handlers = [
     });
   }),
 
-  // 成本历史（报价工位「成本历史」tab）：mock 给一张完整矩阵，
-  // 否则该 tab 会一直停在“加载中…”。形状对齐 contracts/export-quote PricingMatrix。
-  http.get("/api/v1/pricing-data", ({ request }) => {
-    const url = new URL(request.url);
-    const productKey = url.searchParams.get("product_key") ?? "";
-    const product = MOCK_EXPORT_PRODUCTS.find((p) => p.key === productKey);
-    const values = [2.5, 3.0, 3.5];
-    const amounts = [2.3, 2.5, 2.7];
-    return HttpResponse.json({
-      product_key: productKey,
-      product_name: product?.name ?? productKey,
-      cost_unit: "元/㎡",
-      scope: url.searchParams.get("scope") === "all" ? "all" : "own",
-      dims: [
-        {
-          field: "wire_diameter",
-          label: "丝径/线径",
-          unit: "mm",
-          kind: "axis",
-          ui_unit: "mm",
-          ui_scale: 1,
-          options: values.map((v) => ({ value: v, label: `${v}mm` })),
-        },
-      ],
-      rows: values.map((value, i) => ({
-        key: `wire_diameter=${value}`,
-        values: { wire_diameter: value },
-        labels: [`${value}mm`],
-        amount: amounts[i],
-        unit: "元/㎡",
-        item_id: i === 0 ? 301 : null,
-        effective_from: "2026-10-01",
-        source: i === 0 ? "manual" : "product_default",
-        notes: null,
-        configured: i === 0,
-      })),
-    });
-  }),
+  // 成本历史（报价工位「成本历史」tab）—— handler 已移到 `longtail-handlers.ts`：
+  // 它与「保存/停用某一格」共享同一份 `pricingCellsStore`，放同一文件才能保证
+  // "写进去的配置值立刻出现在矩阵里"（C18 的写操作真改 store 要求）。
 
   // 消费方：`quote-line-card.tsx:110` `useProductFormulas(effectiveProduct, true)`
   //（`with_columns=true` ⇒ 请求会带 `?with_columns=true`，MSW 默认忽略 query）
@@ -4891,4 +5685,10 @@ export const handlers = [
       },
     });
   }),
+
+  // ── C18 长尾域（intel / market / spec-config / ai-providers / auth 长尾 /
+  //    shipments / research / leadgen / outreach / pricing-data / fx / 算价导入）──
+  // 单独成模块：与 P1 组互不依赖，放一处便于按域维护（见文件头注释）。
+  ...longtailHandlers,
 ];
+
