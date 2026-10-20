@@ -80,31 +80,84 @@ def require_env(names: list[str]) -> dict[str, str]:
 
 
 # ── HTTP（urllib 裸实现） ───────────────────────────────────────────────────
+# TODO D7（2026-10-20 实测）：Neon 分支刚创建时立刻建 endpoint/取连接串，会拿到
+# `HTTP 423 project already has running conflicting operations`（PR #5 曾靠 rerun
+# 到 attempt 3 才绿）。这里对 **423/429 做有限重试**（这两类表示"请求被拒/未执行"，
+# 重试安全；5xx 不重试 —— 请求可能已生效，盲目重试有重复创建风险）。
+RETRYABLE_HTTP_STATUS = frozenset({423, 429})
+
+
+def retry_plan() -> tuple[int, float]:
+    """重试策略：返回 (重试次数, 基础退避秒数)。
+
+    环境变量（CI/本机均可调）：
+    - `PREVIEW_HTTP_RETRIES`：最多重试次数，默认 4（含首次共 5 次尝试）；
+    - `PREVIEW_HTTP_BACKOFF`：基础退避秒数，默认 2（指数退避 2/4/8/16，上限 20s）。
+    """
+    try:
+        retries = int(os.environ.get("PREVIEW_HTTP_RETRIES", "4"))
+    except ValueError:
+        retries = 4
+    try:
+        base = float(os.environ.get("PREVIEW_HTTP_BACKOFF", "2"))
+    except ValueError:
+        base = 2.0
+    return max(0, min(retries, 10)), max(0.0, min(base, 30.0))
+
+
+def retry_delay(attempt: int, base: float, exc: urllib.error.HTTPError | None = None) -> float:
+    """第 `attempt` 次重试前等待多久（Retry-After 优先，其次指数退避，上限 20s）。"""
+    if exc is not None:
+        header = None
+        try:
+            header = exc.headers.get("Retry-After") if exc.headers else None
+        except Exception:  # noqa: BLE001 - headers 形状不可控，退回指数退避
+            header = None
+        if header:
+            try:
+                return max(0.0, min(float(header), 20.0))
+            except ValueError:
+                pass
+    return min(base * (2 ** attempt), 20.0)
+
+
 def http_json(method: str, url: str, *, headers: dict[str, str] | None = None,
               payload: dict | None = None, timeout: int = 60,
               ok: tuple[int, ...] = (200, 201, 202)) -> tuple[int, dict | list | None]:
-    """发请求并解析 JSON。返回 (status, body)；非 2xx 抛 PreviewError（带响应体）。"""
+    """发请求并解析 JSON。返回 (status, body)；非 2xx 抛 PreviewError（带响应体）。
+
+    对 423/429 做有限重试（见 `RETRYABLE_HTTP_STATUS`），其余错误立即失败。
+    """
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
-    req = urllib.request.Request(url, data=data, method=method)
-    req.add_header("Accept", "application/json")
-    if data is not None:
-        req.add_header("Content-Type", "application/json")
-    for key, value in (headers or {}).items():
-        req.add_header(key, value)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read().decode("utf-8", "replace")
-            return resp.status, (json.loads(body) if body.strip() else None)
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", "replace")
-        if exc.code in ok:
-            try:
-                return exc.code, (json.loads(body) if body.strip() else None)
-            except json.JSONDecodeError:
-                return exc.code, None
-        raise PreviewError(f"{method} {url} → HTTP {exc.code}: {body[:800]}") from exc
-    except urllib.error.URLError as exc:
-        raise PreviewError(f"{method} {url} → 网络错误: {exc}") from exc
+    attempts, base = retry_plan()
+    attempt = 0
+    while True:
+        req = urllib.request.Request(url, data=data, method=method)
+        req.add_header("Accept", "application/json")
+        if data is not None:
+            req.add_header("Content-Type", "application/json")
+        for key, value in (headers or {}).items():
+            req.add_header(key, value)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                body = resp.read().decode("utf-8", "replace")
+                return resp.status, (json.loads(body) if body.strip() else None)
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", "replace")
+            if exc.code in ok:
+                try:
+                    return exc.code, (json.loads(body) if body.strip() else None)
+                except json.JSONDecodeError:
+                    return exc.code, None
+            if exc.code in RETRYABLE_HTTP_STATUS and attempt < attempts:
+                delay = retry_delay(attempt, base, exc)
+                attempt += 1
+                log(f"HTTP {exc.code}（可重试），{delay:.1f}s 后第 {attempt}/{attempts} 次重试: {method} {url}")
+                time.sleep(delay)
+                continue
+            raise PreviewError(f"{method} {url} → HTTP {exc.code}: {body[:800]}") from exc
+        except urllib.error.URLError as exc:
+            raise PreviewError(f"{method} {url} → 网络错误: {exc}") from exc
 
 
 def http_download(method: str, url: str, *, timeout: int = 60) -> tuple[int, bytes]:

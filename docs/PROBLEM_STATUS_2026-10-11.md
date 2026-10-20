@@ -15,6 +15,19 @@
 > [`HANDOVER_2026-10-20_FINAL.md`](./HANDOVER_2026-10-20_FINAL.md)**（状态/资源清单/踩坑/发布检查单/待办）。
 > 本文件继续只做"问题状态"滚动口径。
 >
+> **（2026-10-21 · 执行批 1：D7 落地、A7 事实层结构、前后端对齐修复进行中）**
+>
+> - **D7（preview ensure 对 Neon 423 重试）✅**：`scripts/preview/preview_lib.py` 对 **423/429**
+>   有限重试（指数退避 2/4/8/16s、上限 20s、`Retry-After` 优先、`PREVIEW_HTTP_RETRIES`/
+>   `PREVIEW_HTTP_BACKOFF` 可调；5xx 不重试，避免"请求已生效却重复创建"），
+>   5 条单测 `backend/worker/tests/test_preview_http_retry.py`（首次+重试+放弃+不重试分支）。
+> - **A7 事实层结构 ✅（迁移 `202610200004`）**：新增 `trade_doc_facts` 表 + `TradeDocFact` ORM
+>   （trust/source/immutable/双语/证据引用；`tenant+doc+fact_key` 唯一），本地 `alembic check`
+>   = `No new upgrade operations detected`、orchestrator **247 passed**。内核纯函数与 API/UI 进行中。
+> - **文档收尾批已推送**：`45cf6cc2`（TODO.md 重写为唯一账本 + 三份交接口径收敛 + 4 份设计稿归档
+>   + 根 README 补 `sync-shared`）；**新设备/新 clone 必须先跑 `scripts/sync-shared.ps1`**
+>   （worker 镜像 gitignored，否则 `ModuleNotFoundError: kaas_common.preview`）。
+>
 > **（2026-10-20 晚 · 口径收敛与审计补录：`docs/TODO.md` = 唯一账本）**
 >
 > 本轮只读审计把三份核心交接文档与代码/实测对齐，要点：

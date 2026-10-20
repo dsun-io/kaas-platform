@@ -93,7 +93,7 @@
 | D4 | 生产测试数据清理 | 含流失拒绝文件历史；**执行当次需用户确认** | 🧭 |
 | D5 | 仓库可见性 | 现 **public**；用户曾裁"收尾后转 private"，private 期间 Actions 不可用（门禁改本地）。与安全项同批（§F-6） | ⏳ 最后做 |
 | D6 | 生产发布检查单 | `HANDOVER §5` 全流程：迁移 `202610200001/2/3` → secrets → 构建 → `pywrangler deploy` → 冒烟 → 冷启动基线（≤2,950ms）→ 留痕 → P4 观察期 | ⏳ 等用户下令 |
-| D7 | preview ensure 对 Neon 423 重试 | `scripts/preview/ensure.py` 无重试/退避；PR #5 曾靠 rerun 到 attempt 3 | ⏳ |
+| D7 | preview ensure 对 Neon 423 重试 | ✅ 2026-10-21：`scripts/preview/preview_lib.py` 对 **423/429** 有限重试（指数退避 2/4/8/16s，上限 20s，`Retry-After` 优先，`PREVIEW_HTTP_RETRIES`/`PREVIEW_HTTP_BACKOFF` 可调；5xx 不重试避免重复创建）+ 5 条单测 `backend/worker/tests/test_preview_http_retry.py` | ✅ |
 
 ---
 
