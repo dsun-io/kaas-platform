@@ -29,10 +29,11 @@
 > ③ **顺手修线上 bug**：列表端点 `item = _row_to_dict(r, "trade_docs")` 参数不匹配（main 里该函数
 > 只收 1 参）⇒ **`GET /api/v1/trade-docs` 运行期必 500**；改为 `row_to_dict(r, "trade_docs")`，
 > 并由新测试 `test_trade_doc_render_check_list.py` 锁死（此前无测试覆盖真实后端列表）。
-> ④ **密钥分层（用户裁决，三只 key 到位）**：生产 key（`kaas-生产`）→ 本机 gitignored
-> `.env.local` 的 `RESEND_API_KEY_PROD`（不落仓库，发布窗口注入）；预览 key（`kaas-预览`）→
-> `.env.local` 的 `RESEND_API_KEY_PREVIEW`，已设为 GitHub repo secret 并由 `preview.yml` 注入
-> 预览 worker（预览跑 PR 分支代码，**不复用生产 key**）；本地开发继续用 `RESEND_API_KEY`。
+> ④ **密钥分层（用户裁决，三只 key 到位且换设备不失）**：生产 key（`kaas-生产`）→ GitHub repo
+> secret `RESEND_API_KEY_PROD`；预览 key（`kaas-预览`）→ GitHub repo secret `RESEND_API_KEY_PREVIEW`
+> （已由 `preview.yml` 注入预览 worker；预览跑 PR 分支代码，**不复用生产 key**）；本地开发用
+> `RESEND_API_KEY`。本机 `.env.local` 只是副本；**最终持久位置 = GitHub repo secrets（已配）+
+> Cloudflare Worker secret（发布窗口浇入）**，换设备不需重配。
 > 证据：worker **982 passed + 5 skipped** / orchestrator **247** / frontend typecheck 0 · vitest **474** ·
 > lint 0 error · contracts R0–R6 PASS · schema-coverage/drift/runtime-deps PASS · alembic 单 head
 > `202610200002`。
