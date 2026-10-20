@@ -25,7 +25,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
@@ -152,11 +151,6 @@ export function ProductsMediaTab() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="产品管理"
-        description="维护产品的基础信息与图片（生产/尺寸/重量/成品）。单证直接引用这里的图片 —— 一次维护，重复使用。"
-      />
-
       <SectionCard
         title="产品"
         description="产品来自产品模块的注册表（勾花网 / 牛栏网 / 鹿网），这里维护图片与基础信息。"

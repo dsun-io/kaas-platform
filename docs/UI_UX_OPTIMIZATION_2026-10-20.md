@@ -787,6 +787,38 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 
 ---
 
+## 11. 终验结果（2026-10-20 · 浏览器实测）
+
+**DOM 审核**（1366×768，mock 模式，dashboard/customers/quotes/orders/trade-docs/products/events/settings/intel/shipments）：
+
+| 指标 | 结果 |
+|---|---|
+| 每页 `<h1>` 数量 | 全部 = 1（含 products；已去掉图片 tab 内重复 PageHeader） |
+| `<th>` 无 `scope` | 0（products 里手写 `<th>` 也已补；其余走 `TableHead` 默认） |
+| icon-only 按钮无可访问名 | 0 |
+| 横向溢出（`scrollWidth > innerWidth`） | 0 |
+| 手写 `<h1>`（`app/(app)` 源码） | 0 |
+| 硬编码红/绿/黄 | 0 |
+| 手写 `border-b-2` tab（业务页） | 0 |
+
+**§8.4 验收清单结论**
+
+- ✅ 唯一页头/Tab/状态标签/按钮体系；状态色已语义化
+- ✅ 状态不只靠颜色（StatusBadge 带文案；语义色有文本）
+- ✅ 加载态：主数据区改骨架；剩余纯文本仅为图片/按钮内联反馈
+- ✅ 空态：主列表/日志/事件/团队/报价记录均有 EmptyState
+- ✅ 危险操作确认：保留原有 ConfirmDialog；删除/作废按钮危险色
+- ✅ focus 环 / `aria-current` / reduced-motion / 键盘打开客户详情
+- ✅ `maximumScale` 已移除；1366 无横向错位
+- ✅ 表格 `scope` 覆盖率 100%；icon-only 按钮均有可访问名
+- ✅ e2e（客户/报价/设置/仪表盘等）全过
+- ⏳ 部分：对比度未做自动化全站扫描（当前仅令牌/抽查）；列配置只落在订单列表
+- ⏳ 可选 P2：窄屏卡片化、暗色令牌校准
+
+**门禁**：typecheck 0 / lint 0 err 87 warn / vitest 458 / e2e 23+4 / build out/277。
+
+---
+
 ## 附录 A 证据
 
 ### A.1 代码检索统计（2026-10-20，`frontend/src`）

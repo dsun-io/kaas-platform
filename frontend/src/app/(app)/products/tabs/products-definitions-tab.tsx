@@ -651,15 +651,33 @@ export function ProductsDefinitionsTab() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/50">
-              <th className="px-4 py-2 text-left">Key</th>
-              <th className="px-4 py-2 text-left">名称</th>
-              <th className="px-4 py-2 text-left">利润模式</th>
-              <th className="px-4 py-2 text-left">利润率</th>
-              <th className="px-4 py-2 text-left">税费系数</th>
-              <th className="px-4 py-2 text-left">HS 编码</th>
-              <th className="px-4 py-2 text-left">包装</th>
-              <th className="px-4 py-2 text-left">状态</th>
-              <th className="px-4 py-2 text-left">操作</th>
+              <th scope="col" className="px-4 py-2 text-left">
+                Key
+              </th>
+              <th scope="col" className="px-4 py-2 text-left">
+                名称
+              </th>
+              <th scope="col" className="px-4 py-2 text-left">
+                利润模式
+              </th>
+              <th scope="col" className="px-4 py-2 text-left">
+                利润率
+              </th>
+              <th scope="col" className="px-4 py-2 text-left">
+                税费系数
+              </th>
+              <th scope="col" className="px-4 py-2 text-left">
+                HS 编码
+              </th>
+              <th scope="col" className="px-4 py-2 text-left">
+                包装
+              </th>
+              <th scope="col" className="px-4 py-2 text-left">
+                状态
+              </th>
+              <th scope="col" className="px-4 py-2 text-left">
+                操作
+              </th>
             </tr>
           </thead>
           <tbody>
