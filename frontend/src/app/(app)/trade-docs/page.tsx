@@ -48,6 +48,12 @@ import { DocCreateForm } from "./components/doc-create-form";
 import { DocConfirmGate } from "./components/doc-confirm-gate";
 import { DocContentVersions } from "./components/doc-content-versions";
 import { DocCustomForm } from "./components/doc-custom-form";
+import { DocItemsBatchEditor } from "./components/doc-items-batch-editor";
+import {
+  buildItemsOverridePayload,
+  readItemsOverride,
+  type ItemsOverrideEntry,
+} from "@/lib/trade-doc/item-batch";
 import {
   DocHardeningSection,
   type HardeningTab,
@@ -706,6 +712,25 @@ export default function TradeDocsPage() {
                 payload={renderData.data.doc.raw_payload}
                 // A5-W3：金额摘要条读装配后的数据（items/currency），编辑中的 custom 由表单自己叠
                 data={renderData.data.data}
+              />
+              {/* A5-W2：行项批量编辑（一次 PATCH 写 `custom.items_override`；撤销=再 PATCH 回旧值） */}
+              <DocItemsBatchEditor
+                docType={renderData.data.doc.doc_type}
+                status={renderData.data.doc.status}
+                data={renderData.data.data}
+                initialOverride={readItemsOverride(
+                  renderData.data.doc.raw_payload as Record<string, unknown> | null,
+                )}
+                onSave={async (override: ItemsOverrideEntry[]) => {
+                  const payload = buildItemsOverridePayload(
+                    renderData.data.doc.raw_payload as Record<string, unknown> | null,
+                    override,
+                  );
+                  await update.mutateAsync({
+                    id: renderData.data.doc.id,
+                    raw_payload: payload,
+                  });
+                }}
               />
               {/* 内容版本（A1）：草稿期每次保存/带入/翻译都留一版，可回看与恢复 */}
               <DocContentVersions

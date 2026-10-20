@@ -2810,6 +2810,74 @@ const PRICING_UNIT_VALUES = new Set([
   "元/根",
 ]);
 
+// ── A5-W2：`custom.items_override` mock 契约（与 task-47 后端契约一致）────────
+// 只允许 draft；禁金额键；index 必须是自然数。命中行按 override 覆盖，
+// 行金额一律由 数量×单价 重算（4 位）——与前端 `lib/trade-doc/item-batch.ts` 同语义。
+const ITEMS_OVERRIDE_AMOUNT_KEYS = ["line_amount", "amount", "total_amount", "line_total"] as const;
+
+function guardItemsOverride(
+  docStatus: unknown,
+  override: readonly Record<string, unknown>[],
+): { error: string; code: string; detail: string } | null {
+  if (String(docStatus ?? "") !== "draft") {
+    return {
+      error: "validation",
+      code: "ITEMS_OVERRIDE_DRAFT_ONLY",
+      detail: "行项覆盖仅允许 draft 单提交（已签发/作废单内容冻结）",
+    };
+  }
+  for (const entry of override) {
+    for (const key of ITEMS_OVERRIDE_AMOUNT_KEYS) {
+      if (key in entry) {
+        return {
+          error: "validation",
+          code: "ITEMS_OVERRIDE_AMOUNT_FORBIDDEN",
+          detail: `行项覆盖不接受金额字段（${key}）：金额只能由 数量×单价 推导`,
+        };
+      }
+    }
+    const index = entry.index;
+    if (typeof index !== "number" || !Number.isInteger(index) || index < 0) {
+      return {
+        error: "validation",
+        code: "ITEMS_OVERRIDE_INDEX",
+        detail: `行项下标非法：${String(index)}`,
+      };
+    }
+  }
+  return null;
+}
+
+function itemsOverrideOf(payload: unknown): Record<string, unknown>[] {
+  const custom = (payload as { custom?: unknown } | null | undefined)?.custom;
+  if (!custom || typeof custom !== "object") return [];
+  const raw = (custom as { items_override?: unknown }).items_override;
+  return Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
+}
+
+function applyItemsOverrideToRows(
+  rows: unknown,
+  override: readonly Record<string, unknown>[],
+): unknown {
+  if (!Array.isArray(rows) || override.length === 0) return rows;
+  const byIndex = new Map(override.map((entry) => [Number(entry.index), entry]));
+  return rows.map((row, index) => {
+    const entry = byIndex.get(index);
+    if (!entry || typeof row !== "object" || row === null) return row;
+    const next: Record<string, unknown> = { ...(row as Record<string, unknown>) };
+    if (typeof entry.qty === "number") next.qty = entry.qty;
+    if (typeof entry.unit_price === "number") next.unit_price = entry.unit_price;
+    if (typeof entry.unit === "string") next.qty_unit = entry.unit;
+    if (typeof entry.spec === "string") next.specification = entry.spec;
+    if (typeof entry.origin === "string") next.country_of_origin = entry.origin;
+    const qty = Number(next.qty);
+    const price = Number(next.unit_price);
+    if (Number.isFinite(qty) && Number.isFinite(price)) {
+      next.line_amount = Math.round((qty * price + Number.EPSILON) * 10000) / 10000;
+    }
+    return next;
+  });
+}
 export const handlers = [  // ── 工位订阅快照（原先没有 mock，是**真正的**缺口）─────────────────────
   // 形状**必须**照 `lib/workstation/visibility.ts` 的 `parseMyWorkstationsPayload()`：
   //   · `workstations` 必须是数组，否则整份 payload 被当成"没读到"(null) → 放行
@@ -4381,6 +4449,15 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
       string,
       unknown
     >;
+    // A5-W2 契约（task-47）：`raw_payload.custom.items_override`
+    // draft 限定 / 禁金额键 / index 自然数 —— 与真实后端同错误码。
+    const incomingOverride = itemsOverrideOf(body.raw_payload);
+    if (incomingOverride.length > 0) {
+      const guard = guardItemsOverride(doc.status, incomingOverride);
+      if (guard) {
+        return HttpResponse.json({ detail: guard }, { status: 422 });
+      }
+    }
     // A7 签发闸门（真源 `ws_docs_ext.confirm_trade_doc` 的 422）：
     // 有未确认事实/越权出单 ⇒ 422 + `detail.blocking`。界面据此展开阻断清单，
     // **不是**只弹一句"签发失败"（否则用户不知道该去哪确认）。
@@ -4480,6 +4557,20 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
       base: Record<string, unknown>;
       other_extra?: Record<string, unknown>;
     };
+    // A5-W2：真实环境 render-data 会返回 `doc.raw_payload`（表单靠它做初始值）并把
+    // `custom.items_override` 应用到行项副本。mock 也要同语义，否则"保存后行项变了"
+    // 在 mock 下永远看不到（假成功）。
+    const storePayload = (fromStore?.raw_payload ?? null) as Record<string, unknown> | null;
+    const override = itemsOverrideOf(storePayload);
+    const baseData: Record<string, unknown> = {
+      ...sample.base,
+      ...(meta.doc_type === "other" ? (sample.other_extra ?? {}) : {}),
+    };
+    // 行项来源与后端 `build_render_data` 同序：`sources.order|quote.items` 优先，
+    // 没有快照才用样板数据（否则"保存了行项却看不到"= 假成功）。
+    const sources = (storePayload?.sources ?? {}) as Record<string, unknown>;
+    const upstream = (sources.order ?? sources.quote ?? {}) as Record<string, unknown>;
+    const baseItems = Array.isArray(upstream.items) ? upstream.items : baseData.items;
     return HttpResponse.json({
       doc: {
         id,
@@ -4488,12 +4579,12 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
         status: "status" in meta ? meta.status : "draft",
         currency: "USD",
         total_amount: "total_amount" in meta ? meta.total_amount : null,
-        raw_payload: null,
+        raw_payload: storePayload,
         created_at: "2026-09-29T09:00:00Z",
       },
       data: {
-        ...sample.base,
-        ...(meta.doc_type === "other" ? (sample.other_extra ?? {}) : {}),
+        ...baseData,
+        items: applyItemsOverrideToRows(baseItems, override),
       },
       company_profile_configured: false,
     });
