@@ -181,7 +181,8 @@ Neon 项目权限 · Resend 账号（`send.powervoy.com` 域名）· 生产域�
 | **回滚** | `cd backend/worker; npx wrangler versions deploy 77901aa1-5794-4013-bfad-3b0a80b8a57b@100% --name kaas --yes`（库回滚走 Neon PITR/快照，**不要** alembic downgrade base） |
 | ⚠️ 冷启动 | `pywrangler` 报 **Worker Startup Time 3386ms** > 验收线 **2,950ms**（该数字≠Dashboard p50）；`backend/worker/coldstart-baseline.json` 仍 **PENDING**，需发布后在 Dashboard → Workers → kaas → Metrics 读 p50 判定，并决定是否裁剪包体（本次上传 11.9 MiB） |
 | 待用户动作 | **D1 ✅ 2026-10-21 已完成**（`RESEND_API_KEY` 已 `wrangler secret put`，secret list 5 项；key 权限=仅发送，`/domains` 401 属预期）⇒ 忘记密码邮件恢复；**D2** R2 新 32 位密钥仍待创建（现 `S3_ACCESS_KEY` 13 位，直传走兜底）；**D4** 生产测试数据清理执行当次确认 |
-| 未做 | D5 仓库转 private（安全批，用户裁"发布后做"）；P4 观察期从现在开始（1 周） |
+| 未做 | D5 转 private（用户 2026-10-21 决定保持 public）；P4 观察期进行中 |
+| 密钥托管（2026-10-21） | 用户授权密钥存于 `~/.dsh/secrets/`（**不入仓、不打印**）并写入用户级环境变量：`CLOUDFLARE_API_TOKEN` / `NEON_API_KEY` / `RESEND_API_KEY`（全权限，仅供运维）/ `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`。生产 worker 只绑定**仅发送** Resend key（最小权限）。**操作纪律**：仅本会话使用；破坏性操作（删数据/删桶/吊销 token/轮换密钥）执行前必须先向用户确认 |
 
 ## 0.1 本轮后端交付（2026-10-20 晚 · 分支 `feat/trade-doc-content-a` · PR #5）
 
