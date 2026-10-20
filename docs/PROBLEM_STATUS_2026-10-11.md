@@ -57,6 +57,13 @@
 >    test **455 passed** ✅、contracts:check R0–R5 全 PASS ✅、e2e **23 passed + 4 skipped** ✅
 >    （前置探针已按 Turbopack 口径更正进 AGENTS.md）、NEXT_EXPORT 构建 **out/ 267 文件**（与基线一致）✅。
 >    **本地环境全量验收结论：后端 + 前端门禁全部与 2026-10-20 基线对齐，本地开发环境可用。**
+> 10. **用户出手事项大收口（2026-10-20 第二轮，详见 USER_ACTIONS 第二轮裁决表）**：
+>    repo secrets 已配 3 个（`PROD_DATABASE_URL`/`NEON_API_KEY`/`NEON_PROJECT_ID`，gh 代写）；R2 新密钥
+>    实测有效但 `secret put` 被版本管理拦截 ⇒ **与 RESEND_API_KEY 同批挂到发布窗口**；仓库已**临时转
+>    public**（解决 Actions billing，U-B4 ✅）⇒ git 历史 Notion 令牌随之公开（U-S1 维持不轮换，
+>    **用完尽快转回 private**）；Neon production 已设 Protected（U-S5 ✅）；Rate Limiting 用户自配中（U-S4）；
+>    **U-B2 税率数据暂缓**（生产实测 0 条产品，随上架配置）；S5 预览凭据基本就绪（CF token 权限验证
+>    排到 S5 首个 workflow）。
 >
 > **（2026-10-19 晚场 · 四项决策全部已确认 —— 以下为当前口径，压过本摘要内所有旧条目）**
 >
