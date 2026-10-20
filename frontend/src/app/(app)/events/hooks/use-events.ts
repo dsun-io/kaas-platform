@@ -7,6 +7,9 @@ import { EventsResponseSchema } from "@/lib/schemas/responses";
 import type { EventsResponse } from "@/lib/schemas/responses";
 
 export interface EventFilters {
+  /** C25：分页参数（由页面单独持有；**不进**持久化的筛选对象，否则刷新会停在第 N 页） */
+  page?: number;
+  page_size?: number;
   tenant_id?: string;
   event_type?: string;
   schema_version?: number;

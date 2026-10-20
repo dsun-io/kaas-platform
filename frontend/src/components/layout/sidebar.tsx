@@ -394,6 +394,20 @@ function SidebarUser({ collapsed = false }: { collapsed?: boolean }) {
             <dd>{user.plan || "—"}</dd>
           </dl>
           <div className="flex flex-wrap items-center justify-end gap-2">
+            {/* 入口口径（C32）：`shared/contracts/workstations.ts` 里 billing 是
+                `adminOnly:false / subscription:null / status:'hidden'`（注释「移入头像菜单」），
+                页面自身无 admin 守卫 ⇒ 所有登录用户可见，这里**不加宽权限**。
+                页面目前是占位（免费版 + 「订阅升级即将开放，请联系管理员」）⇒ 菜单如实标注。 */}
+            <Button
+              variant="outline"
+              onClick={() => {
+                setOpen(false);
+                router.push("/billing");
+              }}
+            >
+              <CreditCard className="mr-1.5 size-4" />
+              升级订阅（即将上线）
+            </Button>
             <Button
               variant="outline"
               onClick={() => {

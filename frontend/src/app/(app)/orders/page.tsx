@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { CopyButton } from "@/components/shared/copy-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
+import { PaginationBar } from "@/components/shared/pagination-bar";
 import { SectionCard } from "@/components/shared/section-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
@@ -25,10 +26,11 @@ import { usePageView } from "@/lib/events/use-page-view";
 import { usePersistentState } from "@/lib/hooks/use-persistent-state";
 import { cn } from "@/lib/utils";
 import {
-  useOrderOptions,
   useQuoteOptions,
   type OrderOption,
 } from "@/lib/workstation/use-upstream";
+
+import { useOrdersList, ORDERS_PAGE_SIZE } from "./hooks/use-orders-list";
 
 import { OrderCreateForm } from "./components/order-create-form";
 
@@ -70,7 +72,10 @@ type OrderColumnKey = (typeof ORDER_COLUMNS)[number]["key"];
 export default function OrdersPage() {
   usePageView({ resource_id: "/orders" });
   const qc = useQueryClient();
-  const list = useOrderOptions();
+  // C25：列表走**分页**查询（下拉选择器仍用 useOrderOptions —— 那个只回 items）
+  const [page, setPage] = useState(1);
+  const list = useOrdersList({ page });
+  const orders = list.data?.items ?? [];
   const quotes = useQuoteOptions();
   const [quoteId, setQuoteId] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -83,7 +88,7 @@ export default function OrdersPage() {
     ORDER_COLUMNS.map((c) => c.key),
   );
 
-  const selected = list.data?.find((o) => o.id === selectedId) ?? null;
+  const selected = orders.find((o) => o.id === selectedId) ?? null;
 
   const createFromQuote = useMutation({
     mutationFn: async () => {
@@ -229,7 +234,7 @@ export default function OrdersPage() {
             <AlertCircle className="h-4 w-4" />
             读取订单失败。请确认后端服务已启动。
           </div>
-        ) : (list.data?.length ?? 0) === 0 ? (
+        ) : orders.length === 0 ? (
           <EmptyState
             icon={Bell}
             title="还没有订单"
@@ -258,7 +263,7 @@ export default function OrdersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {list.data!.map((o) => (
+                  {orders.map((o) => (
                     <tr
                       key={o.id}
                       className="border-b last:border-0 hover:bg-muted/40"
@@ -332,7 +337,7 @@ export default function OrdersPage() {
 
             {/* 窄屏卡片：DOM 在表格之后，避免隐藏节点干扰文本定位 */}
             <div className="divide-y divide-border/60 md:hidden">
-              {list.data!.map((o) => (
+              {orders.map((o) => (
                 <button
                   key={o.id}
                   type="button"
@@ -371,6 +376,15 @@ export default function OrdersPage() {
                 </button>
               ))}
             </div>
+            <PaginationBar
+              page={page}
+              pageSize={ORDERS_PAGE_SIZE}
+              total={list.data?.total ?? 0}
+              currentCount={orders.length}
+              loading={list.isFetching}
+              onPageChange={setPage}
+              ariaLabel="订单列表分页"
+            />
           </>
         )}
       </SectionCard>

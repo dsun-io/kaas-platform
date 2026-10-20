@@ -184,6 +184,20 @@ type MockStageLog = {
  *  - ordered（已下单）由开启中的订单推导，**不允许手写**。
  * 询盘/报价/订单的 lead→inquiry→quoted→won→lost 属于**单据阶段**，不是客户阶段。 */
 const CUSTOMER_STAGES: readonly string[] = ["active", "inactive"];
+// 列表筛选值域 = 后端 `CUSTOMER_STAGE`（active/inactive/ordered，enums.py:20）。
+// ordered 是**推导展示值**（名下存在开启中订单），不在写路径的可选值里（C35）。
+const CUSTOMER_STAGE_FILTERS: readonly string[] = [
+  "active",
+  "inactive",
+  "ordered",
+];
+// 与后端 `_OPEN_ORDER_STATUS_SQL`（worker main.py）同口径：这些状态算"开启中的订单"
+const OPEN_ORDER_STATUS = new Set([
+  "pending",
+  "confirmed",
+  "producing",
+  "shipped",
+]);
 
 let customersStore: MockCustomer[] = [];
 let contactsStore = new Map<number, MockContact[]>();
@@ -2891,11 +2905,18 @@ export const handlers = [
     if (eventType)
       filtered = filtered.filter((e) => e.event_type === eventType);
     if (tenantId) filtered = filtered.filter((e) => e.tenant_id === tenantId);
+    // C25：真分页（形状 = worker `list_events_api`；后端钳位 page>=1、page_size∈[1,100]）
+    const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+    const pageSize = Math.min(
+      Math.max(1, Number(url.searchParams.get("page_size")) || 20),
+      100,
+    );
+    const total = filtered.length;
     return HttpResponse.json({
-      items: filtered,
-      total: filtered.length,
-      page: 1,
-      page_size: 20,
+      items: filtered.slice((page - 1) * pageSize, page * pageSize),
+      total,
+      page,
+      page_size: pageSize,
     });
   }),
 
@@ -2962,8 +2983,38 @@ export const handlers = [
     const stage = url.searchParams.get("stage");
     let filtered = [...customersStore];
     if (q) filtered = filtered.filter((c) => c.company_name.includes(q));
-    // stage 过滤照后端 customers.py:205-207（页面暂未传，留作契约完整）
-    if (stage) filtered = filtered.filter((c) => c.stage === stage);
+    // stage 过滤照后端**展示值语义**（worker main.py:1290-1310 / customers.py:205-207）：
+    //   ordered  = 名下存在开启中的订单（mock 里现查 ordersStore，不依赖列表行 stage 快照）；
+    //   inactive = 非开启中 且 手动列 stage ∈ (inactive, lost)；
+    //   active   = 非开启中 且 其余。
+    // 非法枚举回 422（与 kaas_common.domain.enums.validate_enum 同形状）。
+    if (stage) {
+      if (!CUSTOMER_STAGE_FILTERS.includes(stage)) {
+        return HttpResponse.json(
+          {
+            error: "invalid_enum_value",
+            code: "INVALID_ENUM",
+            field: "customer_stage",
+            value: stage,
+            allowed: [...CUSTOMER_STAGE_FILTERS],
+          },
+          { status: 422 },
+        );
+      }
+      const hasOpenOrder = (customerId: number) =>
+        ordersStore.some(
+          (o) =>
+            Number(o.customer_id) === customerId &&
+            OPEN_ORDER_STATUS.has(String(o.status)),
+        );
+      filtered = filtered.filter((c) => {
+        const open = hasOpenOrder(c.id);
+        if (stage === "ordered") return open;
+        const manual = String(c.manual_stage ?? c.stage);
+        const inactive = ["inactive", "lost"].includes(manual);
+        return stage === "inactive" ? !open && inactive : !open && !inactive;
+      });
+    }
     // 排序照后端 `order_by(Customer.updated_at.desc())`（customers.py:212）——
     // 刚建/刚改的客户排在最前，"写进去的东西看得见"才成立
     filtered.sort(
@@ -3654,7 +3705,19 @@ export const handlers = [
       (a, b) =>
         new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
     );
-    return HttpResponse.json({ items, total: items.length });
+    // C25：真分页（形状 = worker `get_audit_log` 的 `{items,total,page,page_size}`）
+    const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+    const pageSize = Math.min(
+      Math.max(1, Number(url.searchParams.get("page_size")) || 20),
+      100,
+    );
+    const total = items.length;
+    return HttpResponse.json({
+      items: items.slice((page - 1) * pageSize, page * pageSize),
+      total,
+      page,
+      page_size: pageSize,
+    });
   }),
 
   // ── Tenants / Reload ─────────────────────────────────────────────
@@ -3984,13 +4047,29 @@ export const handlers = [
   // ── 订单（orders）────────────────────────────────────────────────────────
   // 补洞主链（quote → order）：orders 页与报价转单在 mock 模式下此前全部无 handler。
   // 写操作真改 store：转单后订单列表/详情跟着变，e2e 才能断言。
-  http.get("/api/v1/orders", () => {
-    return HttpResponse.json({
-      items: ordersStore.slice().sort((a, b) => b.id - a.id),
-      total: ordersStore.length,
-      page: 1,
-      page_size: 100,
-    });
+  // C25：真分页（形状 = worker `list_orders_api` 的 `{items,total,page,page_size}`；
+  // 后端用 Query(ge/le) 校验边界，mock 侧按同一边界钳位，避免 mock 比后端宽松）。
+  http.get("/api/v1/orders", ({ request }) => {
+    const url = new URL(request.url);
+    const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+    const pageSize = Math.min(
+      Math.max(1, Number(url.searchParams.get("page_size")) || 20),
+      200,
+    );
+    const status = url.searchParams.get("status") ?? "";
+    const q = url.searchParams.get("q")?.trim().toLowerCase() ?? "";
+    let filtered = ordersStore.slice().sort((a, b) => b.id - a.id);
+    if (status) filtered = filtered.filter((o) => o.status === status);
+    if (q) {
+      filtered = filtered.filter((o) =>
+        `${o.order_no ?? ""} ${o.customer_name ?? ""}`
+          .toLowerCase()
+          .includes(q),
+      );
+    }
+    const total = filtered.length;
+    const items = filtered.slice((page - 1) * pageSize, page * pageSize);
+    return HttpResponse.json({ items, total, page, page_size: pageSize });
   }),
 
   http.post("/api/v1/orders", async ({ request }) => {
@@ -4543,11 +4622,11 @@ export const handlers = [
     },
   ),
 
-  // ── A7 单证加固（事实 / 一致性 / lint / 收款 / 单证清单）──────────────────
+  // ── A7 单证加固（事实 / 一致性 / lint / 收款 / 单证清单 / 导出自检）────────
   // 形状真源：`backend/worker/src/ws_docs_hardening.py`。错误体统一
   // `{detail: {error, code, detail}}`（与后端 `_error()` 同形）。
-  // 注：`POST .../verify-export` **故意不在这里注册** —— 前端不接该 UI
-  // （需 PDF 文本/图片抽取能力，任务口径"暂不接"），mock 一个假成功比缺失更糟。
+  // 导出自检（C21）：前端用 pdf.js 抽 PDF 文本/图片数后调 verify-export，
+  // 这里按后端同样口径裁决（文本去空白后 ⊆ PDF、图片计数相等），**不伪造通过**。
 
   http.get("/api/v1/trade-docs/:id/facts", ({ params }) => {
     const id = Number(params.id);
@@ -4716,6 +4795,74 @@ export const handlers = [
         warnings: warnings.length,
         facts: factsSummary(factsOf(id)),
       },
+    });
+  }),
+
+  // 导出后自检（C21）：与后端 `verify_trade_doc_export` 同口径 ——
+  // 文本按"去掉全部空白"比对是否 ⊆ PDF 文本；图片计数逐 key 比对。
+  // 未通过且 `allow_override!==true` ⇒ 422 `EXPORT_SELF_CHECK_FAILED`（默认阻断）。
+  http.post("/api/v1/trade-docs/:id/verify-export", async ({ params, request }) => {
+    const id = Number(params.id);
+    const doc = docsStore.find((d) => Number(d.id) === id);
+    if (!doc) {
+      return HttpResponse.json({ detail: { error: "not_found" } }, { status: 404 });
+    }
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    const squash = (value: unknown) => String(value ?? "").replace(/\s+/g, "");
+    const pdfText = squash(body.pdf_text);
+    const texts = Array.isArray(body.texts) ? body.texts.map(String) : [];
+    const missingTexts = texts.filter(
+      (text) => text.trim() !== "" && !pdfText.includes(squash(text)),
+    );
+    const expected: Record<string, number> = {
+      stamp: 1,
+      ...((body.expected_image_counts as Record<string, number> | undefined) ??
+        {}),
+    };
+    const counts = (body.image_counts as Record<string, unknown> | undefined) ?? {};
+    const imageMismatches = Object.entries(expected)
+      .map(([key, want]) => ({
+        key,
+        expected: Number(want),
+        actual: Number(counts[key] ?? 0),
+      }))
+      .filter((item) => item.actual !== item.expected);
+    const checked = {
+      texts: texts.filter((text) => text.trim() !== "").length,
+      missing_texts: missingTexts,
+      image_mismatches: imageMismatches,
+    };
+    const ok = missingTexts.length === 0 && imageMismatches.length === 0;
+    if (ok) {
+      return HttpResponse.json({
+        doc_id: id,
+        ok: true,
+        overridden: false,
+        ...checked,
+      });
+    }
+    if (body.allow_override !== true) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "EXPORT_SELF_CHECK_FAILED",
+            detail:
+              "导出后自检未通过：文本缺失或图片计数不符，请先修正版式（默认阻断导出）",
+            ...checked,
+          },
+        },
+        { status: 422 },
+      );
+    }
+    return HttpResponse.json({
+      doc_id: id,
+      ok: true,
+      overridden: true,
+      ...checked,
     });
   }),
 

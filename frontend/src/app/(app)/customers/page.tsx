@@ -64,6 +64,10 @@ const STAGE_LABELS: Record<string, string> = {
   ordered: "已下单",
 };
 
+// 列表筛选可选值 = 后端 `CUSTOMER_STAGE` 全量（backend/kaas_common/domain/enums.py:20）：
+// ordered 是推导展示值，后端列表端点按「名下是否有开启中订单」过滤（worker main.py:1300-1310）。
+const CUSTOMER_STAGE_FILTER_OPTIONS = ["active", "inactive", "ordered"] as const;
+
 // 历史阶段日志里可能还有旧值（lead/inquiry/quoted/won/lost）——只用于「历史」页签展示。
 const LEGACY_STAGE_LABELS: Record<string, string> = {
   lead: "线索",
@@ -151,12 +155,15 @@ interface CustomerDetail extends Customer {
   stage_log: StageLog[];
 }
 
-function useCustomerList(q?: string) {
+function useCustomerList(q?: string, stage?: string) {
   return useQuery({
-    queryKey: ["customers", "list", q],
+    queryKey: ["customers", "list", q, stage],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (q) params.set("q", q);
+      // 后端 `GET /customers` 已支持 stage（worker main.py:1290-1310；展示值语义：
+      // ordered 由开启中订单推导，active/inactive 走手动列），这里只透传，不本地过滤。
+      if (stage) params.set("stage", stage);
       const { data } = await apiClient.get<{
         items: Customer[];
         total: number;
@@ -1510,6 +1517,9 @@ function CustomerDetailPanel({
 export default function CustomersPage() {
   usePageView({ resource_id: "/customers" });
   const [searchQ, setSearchQ] = useState("");
+  // 客户阶段筛选（C35）：值域 = 后端 `stage` 查询参数（active/inactive/ordered）；
+  // "all" 只是前端哨兵（base-ui Select 不接受空串 value），不发给后端。
+  const [stageFilter, setStageFilter] = useState<string>("all");
   const searchRef = useRef<HTMLInputElement>(null);
   // 快捷键：/ 聚焦搜索，Esc 退出搜索（输入框内不劫持）
   useEffect(() => {
@@ -1537,7 +1547,10 @@ export default function CustomersPage() {
     null,
   );
 
-  const { data: listData, isLoading } = useCustomerList(searchQ || undefined);
+  const { data: listData, isLoading } = useCustomerList(
+    searchQ || undefined,
+    stageFilter === "all" ? undefined : stageFilter,
+  );
 
   // 权限口径（UNCERTAIN #21）：所有登录用户可用业务客户管理，
   // 团队隔离由后端 _scope_filter 保证；登录态由布局层 AuthGate 统一管。
@@ -1581,6 +1594,25 @@ export default function CustomersPage() {
               className="h-9 rounded-full border-white/70 bg-white/80 pl-9"
             />
           </div>
+          <Select
+            value={stageFilter}
+            onValueChange={(value) => setStageFilter(value ?? "all")}
+          >
+            <SelectTrigger
+              aria-label="客户阶段筛选"
+              className="h-9 w-[132px] rounded-full border-white/70 bg-white/80"
+            >
+              <SelectValue placeholder="全部阶段" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部阶段</SelectItem>
+              {CUSTOMER_STAGE_FILTER_OPTIONS.map((stage) => (
+                <SelectItem key={stage} value={stage}>
+                  {STAGE_LABELS[stage]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <div className="ml-auto text-xs text-muted-foreground">
             共 {listData?.items?.length ?? 0} 家客户
           </div>
@@ -1602,13 +1634,23 @@ export default function CustomersPage() {
         ) : listData?.items?.length === 0 ? (
           <div className="px-6 py-14">
             <EmptyState
-              title="暂无客户"
-              description="新建第一个客户后，这里会显示跟进阶段与联系方式。"
+              title={stageFilter === "all" ? "暂无客户" : "没有符合筛选的客户"}
+              description={
+                stageFilter === "all"
+                  ? "新建第一个客户后，这里会显示跟进阶段与联系方式。"
+                  : `当前筛选（${STAGE_LABELS[stageFilter] ?? stageFilter}）下没有客户，可切换阶段或清除筛选。`
+              }
               action={
-                <Button onClick={() => setShowCreateForm(true)}>
-                  <UserPlus className="mr-1 size-4" />
-                  新建客户
-                </Button>
+                stageFilter === "all" ? (
+                  <Button onClick={() => setShowCreateForm(true)}>
+                    <UserPlus className="mr-1 size-4" />
+                    新建客户
+                  </Button>
+                ) : (
+                  <Button variant="outline" onClick={() => setStageFilter("all")}>
+                    清除阶段筛选
+                  </Button>
+                )
               }
             />
           </div>

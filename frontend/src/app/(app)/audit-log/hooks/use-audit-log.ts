@@ -18,6 +18,9 @@ export interface AuditEntry {
 }
 
 interface AuditLogFilters {
+  /** C25：分页（`GET /admin/audit-log` 支持 page/page_size，上限 100） */
+  page?: number;
+  page_size?: number;
   action?: string;
   actor_id?: string;
   resource_type?: string;
@@ -39,6 +42,8 @@ export function useAuditLog(filters: AuditLogFilters = {}) {
       const { data } = await apiClient.get<{
         items: AuditEntry[];
         total: number;
+        page: number;
+        page_size: number;
       }>(`/admin/audit-log${query ? `?${query}` : ""}`);
       return data;
     },

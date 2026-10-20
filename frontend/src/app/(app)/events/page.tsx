@@ -13,6 +13,10 @@ import { usePageView } from "@/lib/events/use-page-view";
 import { RouteGuard } from "@/components/route-guard";
 import { PageHeader } from "@/components/shared";
 import { usePersistentState } from "@/lib/hooks/use-persistent-state";
+import { PaginationBar } from "@/components/shared/pagination-bar";
+
+/** 与后端 `list_events_api` 的默认 page_size 一致（上限 100） */
+const EVENTS_PAGE_SIZE = 20;
 
 export default function EventsPage() {
   usePageView({ resource_id: "/events" });
@@ -21,8 +25,14 @@ export default function EventsPage() {
     {},
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // C25：页码不入持久化筛选（刷新回到第 1 页）；筛选变化时也回到第 1 页
+  const [page, setPage] = useState(1);
 
-  const { data, isLoading } = useEvents(filters);
+  const { data, isLoading, isFetching } = useEvents({
+    ...filters,
+    page,
+    page_size: EVENTS_PAGE_SIZE,
+  });
 
   const events = data?.items ?? [];
   const selectedEvent = selectedId
@@ -39,7 +49,13 @@ export default function EventsPage() {
             <CardTitle>过滤条件</CardTitle>
           </CardHeader>
           <CardContent>
-            <EventFilters filters={filters} onChange={setFilters} />
+            <EventFilters
+              filters={filters}
+              onChange={(next) => {
+                setFilters(next);
+                setPage(1);
+              }}
+            />
           </CardContent>
         </Card>
 
@@ -67,6 +83,15 @@ export default function EventsPage() {
               }))}
               onSelect={(event) => setSelectedId(event.id)}
               loading={isLoading}
+            />
+            <PaginationBar
+              page={page}
+              pageSize={EVENTS_PAGE_SIZE}
+              total={data?.total ?? 0}
+              currentCount={events.length}
+              loading={isFetching}
+              onPageChange={setPage}
+              ariaLabel="事件列表分页"
             />
           </CardContent>
         </Card>

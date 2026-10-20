@@ -2,6 +2,10 @@
 
 import { useState } from "react";
 import { useAuditLog, type AuditEntry } from "./hooks/use-audit-log";
+import { PaginationBar } from "@/components/shared/pagination-bar";
+
+/** 与后端 `get_audit_log` 的默认 page_size 一致（上限 100） */
+const AUDIT_PAGE_SIZE = 20;
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -167,6 +171,8 @@ function ExpandRow({ entry }: { entry: AuditEntry }) {
 export default function AuditLogPage() {
   usePageView({ resource_id: "/audit-log" });
 
+  // C25：页码不入持久化筛选（刷新回第 1 页）；筛选变化时也重置
+  const [page, setPage] = useState(1);
   const [filters, setFilters] = usePersistentState("ui:audit-log:filters", {
     action: "",
     resource_type: "",
@@ -176,15 +182,21 @@ export default function AuditLogPage() {
 
   const updateFilter = (key: string, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
+    setPage(1);
   };
 
   const resetFilters = () => {
     setFilters({ action: "", resource_type: "", since: "", until: "" });
+    setPage(1);
   };
 
-  const { data, isLoading } = useAuditLog(
-    Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== "")),
-  );
+  const { data, isLoading, isFetching } = useAuditLog({
+    ...Object.fromEntries(
+      Object.entries(filters).filter(([, v]) => v !== ""),
+    ),
+    page,
+    page_size: AUDIT_PAGE_SIZE,
+  });
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
@@ -259,6 +271,16 @@ export default function AuditLogPage() {
                 </Table>
               </div>
             )}
+            <PaginationBar
+              page={page}
+              pageSize={AUDIT_PAGE_SIZE}
+              total={total}
+              currentCount={items.length}
+              loading={isFetching}
+              onPageChange={setPage}
+              ariaLabel="操作日志分页"
+              className="px-4 pb-4"
+            />
           </CardContent>
         </Card>
       </div>
