@@ -12,10 +12,7 @@ import {
 import type { EventFilters as EventFiltersType } from "../hooks/use-events";
 import { Search, X } from "lucide-react";
 
-const EVENT_TYPES = [
-  "audit.access",
-  "capability.update",
-];
+const EVENT_TYPES = ["audit.access", "capability.update"];
 
 interface Props {
   filters: EventFiltersType;
@@ -90,7 +87,12 @@ export function EventFilters({ filters, onChange }: Props) {
       </Button>
 
       {hasFilters && (
-        <Button variant="ghost" size="icon-sm" onClick={clear}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={clear}
+          aria-label="清除筛选条件"
+        >
           <X className="size-4" />
         </Button>
       )}

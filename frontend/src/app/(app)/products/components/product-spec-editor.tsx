@@ -585,6 +585,7 @@ export function ProductSpecEditor({
                           size="icon"
                           variant="ghost"
                           className="size-7 shrink-0 text-muted-foreground"
+                          aria-label="删除该规格选项"
                           onClick={() => {
                             const options = (v.options ?? []).filter(
                               (_, i) => i !== optIdx,
@@ -1031,6 +1032,7 @@ export function ProductSpecEditor({
                 size="icon"
                 variant="ghost"
                 className="size-7 shrink-0 text-muted-foreground"
+                aria-label="删除该备注"
                 onClick={() => removeNote(index)}
               >
                 <Trash2 className="size-3" />
@@ -1065,6 +1067,7 @@ export function ProductSpecEditor({
                 size="icon"
                 variant="ghost"
                 className="size-7 shrink-0 text-muted-foreground"
+                aria-label="删除该常量"
                 onClick={() => removeConstant(k)}
               >
                 <Trash2 className="size-3" />

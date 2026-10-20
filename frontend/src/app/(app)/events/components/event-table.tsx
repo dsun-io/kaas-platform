@@ -83,7 +83,12 @@ function EventRowCell({
         </span>
       </TableCell>
       <TableCell>
-        <Button variant="ghost" size="icon-xs" onClick={() => onSelect(event)}>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={() => onSelect(event)}
+          aria-label="查看事件详情"
+        >
           <Eye className="size-3" />
         </Button>
       </TableCell>

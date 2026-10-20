@@ -89,7 +89,10 @@ export function ShipmentsTable() {
             placeholder="目的国"
             value={searchInput.dest_country}
             onChange={(e) =>
-              setSearchInput((prev) => ({ ...prev, dest_country: e.target.value }))
+              setSearchInput((prev) => ({
+                ...prev,
+                dest_country: e.target.value,
+              }))
             }
             className="w-32"
           />
@@ -119,10 +122,15 @@ export function ShipmentsTable() {
             }
             className="w-36"
           />
-          <Button onClick={handleSearch} size="icon">
+          <Button onClick={handleSearch} size="icon" aria-label="搜索出货记录">
             <Search className="size-4" />
           </Button>
-          <Button onClick={handleReset} variant="outline" size="icon">
+          <Button
+            onClick={handleReset}
+            variant="outline"
+            size="icon"
+            aria-label="重置搜索条件"
+          >
             <RotateCcw className="size-4" />
           </Button>
         </div>
@@ -172,7 +180,9 @@ export function ShipmentsTable() {
                       </TableCell>
                       <TableCell>
                         <Badge
-                          variant={shipment.is_verified ? "default" : "secondary"}
+                          variant={
+                            shipment.is_verified ? "default" : "secondary"
+                          }
                         >
                           {shipment.is_verified ? "已验证" : "未验证"}
                         </Badge>
@@ -194,7 +204,8 @@ export function ShipmentsTable() {
                   上一页
                 </Button>
                 <span className="text-sm text-muted-foreground">
-                  第 {filters.page} 页 / 共 {totalPages} 页（共 {data.total} 条）
+                  第 {filters.page} 页 / 共 {totalPages} 页（共 {data.total}{" "}
+                  条）
                 </span>
                 <Button
                   variant="outline"
