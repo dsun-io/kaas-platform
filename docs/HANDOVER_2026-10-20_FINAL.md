@@ -116,7 +116,7 @@ kaas-preview-storage；KV = `KAAS_PREVIEW`；Workers = `kaas`。
 - **分支保护已配置**（用户 2026-10-20）：限制删除 + 合并需 PR；之后所有改动走 PR。
 - 门禁、迁移、回滚口径见 README §14/§15（唯一权威）。
 
-## 9. 遗留物与本地环境清单（交接时状态）
+## 8. 遗留物与本地环境清单（交接时状态）
 
 | 项 | 状态 | 处理建议 |
 |---|---|---|
@@ -128,7 +128,7 @@ kaas-preview-storage；KV = `KAAS_PREVIEW`；Workers = `kaas`。
 | `.env.local` | 含 Neon 生产 DSN、`DATABASE_URL_PPG`（**已废弃**，可删）、`RESEND_API_KEY` | 勿提交（已 gitignored） |
 | 本地 `/health` 开发入口 | 未常驻启动（按需 `docker compose up -d` / `local_run.py`） | — |
 
-## 10. 自检
+## 9. 自检
 
 - [x] 代码/脚本/workflow 全部提交推送（main = 见 `git log`）
 - [x] 三环境隔离实测（生产断言 PASS；预览前缀/派生；开发本地）
