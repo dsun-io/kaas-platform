@@ -52,6 +52,8 @@ env:
   # 共享预览资源标识（repo **variables**，非机密；本机已建，见 docs/ENV_VERIFICATION）
   KAAS_PREVIEW_KV_NAMESPACE_ID: ${{ vars.KAAS_PREVIEW_KV_NAMESPACE_ID }}
   KAAS_PREVIEW_R2_BUCKET: ${{ vars.KAAS_PREVIEW_R2_BUCKET }}
+  # 生产 Hyperdrive id：预览脚本据此读 origin.database，保证预览库与生产 worker 同库（neondb）
+  PROD_HYPERDRIVE_ID: ${{ vars.PROD_HYPERDRIVE_ID }}
 
 jobs:
   # ── PR 关闭：只做回收，其它 job 全跳过 ──────────────────────────────────────

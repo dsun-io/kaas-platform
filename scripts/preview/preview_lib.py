@@ -281,12 +281,15 @@ class CloudflareClient:
 
     def hyperdrive_create(self, name: str, *, host: str, port: int, user: str,
                           password: str, database: str) -> dict:
+        # 2026-10-20 实测定案：预览 config 必须关查询缓存（caching.disabled=True）——
+        # 开着时 UPDATE 后 60s 内仍读到旧行（实测：重置密码后登录持续 401），
+        # 预览的"改完立即看"语义会被缓存打破。
         _, body = http_json("POST", self._acct("/hyperdrive/configs"), headers=self.headers,
                             payload={"name": name, "origin": {
                                 "type": "postgres", "scheme": "postgres",
                                 "host": host, "port": port,
                                 "user": user, "password": password, "database": database},
-                                "caching": {"disabled": False}})
+                                "caching": {"disabled": True}})
         return (body or {}).get("result", {})  # type: ignore[union-attr]
 
     def hyperdrive_delete(self, config_id: str) -> bool:
@@ -378,6 +381,39 @@ def parse_postgres_uri(uri: str) -> dict:
         "password": urllib.parse.unquote(parsed.password or ""),
         "database": (parsed.path or "/").lstrip("/").split("?")[0],
     }
+
+
+def resolve_preview_database(cf, databases: list[dict],
+                             env_name: str = "PREVIEW_DATABASE_NAME") -> str:
+    """选预览要用的数据库名——**默认跟生产 worker 一致**，而不是分支里的 databases[0]。
+
+    2026-10-20 实测定案：每个 Neon 分支都带**两个库**（`kaas_v2_test` / `neondb`），
+    API 返回顺序里 databases[0] 常是 `kaas_v2_test`（挂载历史遗留的空库），
+    而生产 worker 连的是 `neondb`。取 databases[0] 会导致预览看到的**不是生产快照**。
+
+    优先级：env PREVIEW_DATABASE_NAME > 生产 Hyperdrive config 的 origin.database
+    （PROD_HYPERDRIVE_ID 指定）> "neondb" > databases[0]。
+    """
+    wanted = (os.environ.get(env_name) or "").strip()
+    if not wanted and cf is not None:
+        prod_id = (os.environ.get("PROD_HYPERDRIVE_ID") or "").strip()
+        if prod_id:
+            try:
+                for cfg in cf.hyperdrive_list():
+                    if (cfg.get("id") or "") == prod_id:
+                        wanted = ((cfg.get("origin") or {}).get("database") or "").strip()
+                        break
+            except PreviewError as exc:
+                log(f"⚠ 读取生产 Hyperdrive 失败，数据库名退回默认: {exc}")
+    if not wanted:
+        wanted = "neondb"
+    names = [d.get("name") for d in databases]
+    if wanted in names:
+        evidence("数据库（与生产口径一致）", wanted)
+        return wanted
+    fallback = names[0] if names else ""
+    log(f"⚠ 数据库 {wanted!r} 不在该分支（现有: {names}），退回 {fallback!r}")
+    return fallback
 
 
 def fail(msg: str) -> "NoReturn":  # noqa: F821
