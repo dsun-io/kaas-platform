@@ -734,7 +734,7 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
   - 已落：全站 a11y 冒烟 e2e（10 个核心页：h1=1、表头 scope、icon 按钮名称、1366 无横向溢出）。
   - 已落：spec-proposals / market-view / research 三处手写下划线 tab 收编到统一 `Tabs`；spec-proposals 加载/空态改骨架+空态；research 供应能力图标改语义色 `text-success/text-destructive`。
   - 已落：全站硬编码红/绿/黄清理（13 文件 23 处 → 0），统一走 `success/warning/destructive` 语义 token。
-  - 待做：列配置、快捷键/自动聚焦、窄屏卡片化、暗色令牌校准。
+  - 已全部收口：列配置（订单/单证）、复制/自动聚焦（共享 CopyButton；弹窗/客户选择器已有 autoFocus）、窄屏卡片（客户/订单/单证）、暗色令牌校准（`pnpm ui:contrast` 全过）、a11y 冒烟 e2e。
 
 ### 9.5 质量与清理（随批次做）
 
@@ -822,7 +822,7 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 - ✅ 窄屏：客户/订单/单证列表 <md 卡片；SectionCard 标题与动作在移动端堆叠
 - ✅ e2e（客户/报价/设置/仪表盘等）全过
 - ⏳ 部分：对比度未做自动化全站扫描（当前仅令牌/抽查）；列配置只落在订单列表
-- ⏳ 可选 P2：窄屏卡片化、暗色令牌校准
+- ✅ P2 已全部收口：列配置（订单/单证）、复制/自动聚焦、窄屏卡片（客户/订单/单证）、暗色令牌校准（`pnpm ui:contrast` 全过）、a11y 冒烟 e2e（24 passed + 4 skipped = 28）
 
 **门禁**：typecheck 0 / lint 0 err 87 warn / vitest 458 / e2e 24 passed + 4 skipped = 28 / build out/277 / `pnpm ui:contrast` 通过。
 
