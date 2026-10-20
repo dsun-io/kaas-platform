@@ -67,10 +67,17 @@
 
 ### 2.2 三环境资源隔离矩阵（**目标态 · 尚未实施**）
 
-> ⚠️ **实施状态（2026-10-19 核对）**：下表是**目标态**，不是当前实配。当前生产仍为单环境：
-> `backend/worker/wrangler.jsonc` 只有 1 个 Hyperdrive（`f53fed49…` → Neon 生产分支）、
-> R2 桶名 `kaas-files`、无 KV 绑定、无 preview workflow。**不要按本矩阵直接改配置**；
-> 落地随方案 B 阶段二 S5（preview + deploy）与阶段三执行。
+> ⚠️ **实施状态（2026-10-20 核对）**：下表是**目标态**。S5 预览环境已落地（`scripts/preview/` +
+> `.github/workflows/preview.yml`，2026-10-20，`18ae386`）：每 PR 派生 Neon 分支 `preview-pr-<num>` +
+> 独立 Hyperdrive `kaas-preview-<num>` + 预览 worker `kaas-preview-pr-<num>.workers.dev`，PR 关闭自动回收。
+> **已知的现状与目标态差异（断言按现状值写，S5-d 已落地）**：
+> - 生产 R2 桶实配 = **`kaas-files`**（≠ 目标态 `kaas-prod-storage`；桶迁移另立项，断言变量 `PROD_R2_BUCKET`）；
+> - 生产 worker **尚无 KV 绑定**（目标态 KV 列是前瞻；预览 KV `KAAS_PREVIEW` 已建供预览用）；
+> - Neon 分支 Protected 为**付费功能**，Free 套餐不可用 ⇒ 由预览脚本"删分支双保险校验"
+>   （branch_id ≠ production 且 name ≠ production，缺一拒删）兜底。
+>
+> 当前生产仍为：`backend/worker/wrangler.jsonc` 只有 1 个 Hyperdrive（`f53fed49…` → Neon 生产分支）、
+> R2 桶名 `kaas-files`、无 KV 绑定。**不要按本矩阵直接改生产配置**；预览链路见 `scripts/preview/README.md`。
 
 核心原则：**环境之间物理隔离，不靠代码前缀或运行时判断区分生产与预览；预览之间共享预览专用资源，用 PR 前缀区分；开发默认本地，不触云。**
 
