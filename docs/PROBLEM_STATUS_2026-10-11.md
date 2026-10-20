@@ -118,6 +118,20 @@
 >   `alembic check` 无新操作、downgrade→upgrade 轮回通过；有库 worker **1229 passed / 0 skipped**。
 >   **迁移头由此变为 `202610200005`**（生产未应用，发布检查单已更新）；发布前先跑迁移 docstring
 >   的查重 SQL（存量重复 current 行会让建索引失败）。**本机本地库 106 表 / head 202610200005**。
+> - **A7-3 UI 落地（2026-10-21）→ A7 全部完成**：单证详情新增「事实确认 / 一致性 / 收款登记 / 单证清单」四页签
+>   （事实 summary 与勾选确认、value 只读；一致性 conflict/equivalent/missing 三档 + 手工 lint；收款三档徽标；
+>   清单 PUT 全量替换 + not_by_us 回执/豁免）+ `DocConfirmGate`（签发 422 阻断清单并跳转确认，**不暴露**
+>   `allow_lint_override`）。10 条 MSW handler + 契约 12 测 + 面板 9 测。`verify-export` UI 暂不接（需 PDF
+>   文本抽取，登记 C21）。
+> - **C2 / C10 / C6 / intel 收口（2026-10-21）**：C2 文件存储补 doUpload/排序**页面级**测试（16 条）+
+>   7 条真 PG 集成用例（无库 skip、有库 1229/0）；C10 18/18 模板加 `keep-together`（39 静态断言，18 份 HTML
+>   基准有意重生成；**视觉/分页待 build/e2e/人工打印复核**，归档 Python 不再同步）；intel `/channels` 前端改读
+>   `is_enabled`（free 通道不再误显示未开通）；C6 e2e 数据层根因逐项治理（MSW 0 缺口 + mock 种子确定性 +
+>   playwright 加固 + 单测超时放宽），全量默认并发 616/616 绿。
+> - **收口门禁（工作区静止实测）**：worker **1217 passed + 12 skipped**（有 docker PG：**1229 / 0**）/
+>   orchestrator **247** / 前端 `pnpm test` **616（60 files）** / typecheck 0 / lint 0 error /
+>   contracts R0–R6 PASS / `mocks:check` 未覆盖 **0** / e2e **28（24+4）** / build `out/` **275 文件** /
+>   静态断言 5 项 PASS。**迁移头 = `202610200005`**；发布仍未执行（等用户下令）。
 >
 > **（2026-10-20 晚 · 口径收敛与审计补录：`docs/TODO.md` = 唯一账本）**
 >

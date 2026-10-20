@@ -18,7 +18,7 @@
 |---|---|
 | 代码 | `main` @ `1216e75a`（工作树干净）；**远端只剩 `main`** |
 | 迁移头 | `202610200005`（`trade_doc_facts` + 文件当前版本唯一索引 `NULLS NOT DISTINCT`；生产**尚未应用**，随发布窗口） |
-| 门禁基线（本机 2026-10-21） | worker **1212 passed + 5 skipped**；orchestrator **247**；前端 `pnpm test` **535**（55 files）；typecheck 0 / lint 0 error / contracts R0–R6 PASS / `mocks:check` 未覆盖 0 / 静态断言 5 项 PASS（`check-worker-bundle` 本机 SKIP：uv 0.11.8 < 0.12.3，CI 会执行） |
+| 门禁基线（本机 2026-10-21 收口实测，工作区静止） | worker **1217 passed + 12 skipped**（无库；12 条 db/integration 档按既有约定 skip；有 docker PG 时实测 **1229 passed / 0 skipped**）；orchestrator **247**；前端 `pnpm test` **616 passed（60 files）**；typecheck 0 / lint 0 error / contracts R0–R6 PASS / `mocks:check` 未覆盖 **0** / e2e **28 条（24 passed + 4 skipped）** / `NEXT_EXPORT=1 pnpm build` → `out/` **275 文件** / 静态断言 5 项 PASS（`check-worker-bundle` 本机 SKIP：uv 0.11.8 < 0.12.3，CI 会执行） |
 | 前端 e2e | `playwright test --list` = **28 条**（24 passed + 4 skipped） |
 | 仓库可见性 | **public**（匿名 `git ls-remote` 成功）；`gh` 本机未登录 ⇒ CI 只能用网页/无 token 接口核对 |
 | 分支清理 | ✅ `archive/convergence-aprime-20261019` tag 已推；远端 `feat/convergence-aprime`、`feat/trade-doc-content-a` 已删；本地 `feat/trade-doc-templates`、`tech-stack-next16` 已删 |
@@ -39,17 +39,17 @@
 | A4 | 图片素材库 + 去 base64 | **现状 ≈3/5**：公章租户库（`kaas_common/files/seal.py` + `tenant_company_seals`）、产品图引用库（`{file_id}` + `doc-photo-picker`）已做；**渲染输入仍 base64 内联**（`ws_files.py` `to_data_uri`，一张 PI ≈1.4MB），无独立素材库表 | 先定渲染方案（见 §G-4） | ⏳（3/5） |
 | A5 | 单证编辑体验 | CI/PL 行项批量编辑、条款/备注模板、金额联动校验 | **方案需用户过目**（§G-1） | 🧭 |
 | A6 | 模板逐字段对照真实单据 | 以真实 PI/CI/PL/提单确认件逐字段校准模板措辞/栏目/条款 | **需用户提供样例单据**（§G-2） | 🧭 |
-| A7 | 单证加固 P1/P2 | **内核 ✅ + 结构 ✅ + API ✅，UI 施工中**：①事实层 + ②一致性引擎内核（`trade_doc/facts.py`/`consistency.py`/`equivalents.py`，87 条内核测试）；事实表 `trade_doc_facts`（迁移 `202610200004`）；**10 个 Worker 端点**（facts 读/确认/处置、consistency、lint、receipts、doc-set+回执、verify-export、confirm 闸门，34 条 API 测试）；剩余 = UI（task-13：事实确认/一致性/收款/清单/签发闸门）。设计与 12 条实现裁决见 [`TRADE_DOC_HARDENING.md`](./TRADE_DOC_HARDENING.md) | 无 | 🔨 进行中（UI 收尾） |
+| A7 | 单证加固 P1/P2 | ✅ 2026-10-21 全部落地：①事实层+②一致性引擎内核（87 测）+ 事实表（迁移 `202610200004`）+ **10 个 Worker 端点**（34 测）+ **UI**（事实确认/一致性三档/收款/单证清单/签发闸门，面板 9 + 契约 12 测）。`confirm` 默认拦截未确认事实；`allow_lint_override` 未对前端开放。设计与 12 条裁决见 [`TRADE_DOC_HARDENING.md`](./TRADE_DOC_HARDENING.md)。尾巴：导出后自检 UI 需 PDF 文本抽取（C21） | — | ✅ |
 | A8 | PDF 归档尾巴 | ②③ 已完成（cron + 列表「已变更/模板已更新/待复核」标识）；①端到端真实跑一次 | ①需已部署环境 | ✅ ②③；①随发布后 P4 |
 | A9 | 指纹批量对账定时调度 | cron `40 17 * * *` + `trade_doc_render_checks` 表 + 列表 `render_check` | — | ✅ 2026-10-20 |
 
 ### §A7 子项（施工清单；口径见 `UNCERTAIN.md` #17 + [`TRADE_DOC_HARDENING.md`](./TRADE_DOC_HARDENING.md) §4「实现裁决」）
 
-- [x] A7-① **事实层（fact model）**：内核 + `trade_doc_facts` 表 + `GET/POST/PATCH facts` 端点完成（UI 待接）。
-- [x] A7-② **一致性引擎**：全局等价词表 + 租户增量（`extra` 透传）；diff 三态；`GET /trade-docs/{id}/consistency` + `POST /lint` 已落地。
-- [x] A7-③ **收款容差**：内核 `receipt_rules` + `GET/POST /trade-docs/{id}/receipts`（fx_rounding/short_paid/manual 落库）已落地（UI 待接）。
-- [x] A7-④ **`not_by_us` 回执登记**：`GET/PUT /trade-docs/{id}/doc-set` + `POST .../doc-set/{type}/receipt`（pending→received/waived 状态机）已落地。
-- [x] A7-⑤ **导出后自检**：`POST /trade-docs/{id}/verify-export`（默认阻断 422、`allow_override` 越过并落审计）+ confirm 闸门已落地；**UI 需 PDF 文本抽取（登记 C21）**。
+- [x] A7-① **事实层（fact model）**：内核 + `trade_doc_facts` 表 + `GET/POST/PATCH facts` 端点 + 事实面板完成。
+- [x] A7-② **一致性引擎**：全局等价词表 + 租户增量（`extra` 透传）；diff 三态；`GET /trade-docs/{id}/consistency` + `POST /lint` + 一致性面板完成。
+- [x] A7-③ **收款容差**：内核 `receipt_rules` + `GET/POST /trade-docs/{id}/receipts` + 收款面板（fx_rounding/short_paid/manual 徽标）完成。
+- [x] A7-④ **`not_by_us` 回执登记**：`GET/PUT /trade-docs/{id}/doc-set` + `POST .../doc-set/{type}/receipt` + 单证清单面板完成。
+- [x] A7-⑤ **导出后自检**：`POST /trade-docs/{id}/verify-export`（默认阻断 422、`allow_override` 越过并落审计）+ confirm 闸门完成；**UI 需 PDF 文本抽取（登记 C21）**。
 
 ---
 
@@ -73,7 +73,7 @@
 | C1 | 「流失」拒绝文件链路 | 订单阶段新增 `lost`，拒绝文件链路迁订单阶段 | 🧭 业务设计 + 用户拍板 | 🧭 |
 | C2 | 文件存储收尾 | 真实 DB 用例 / 公章 PI 视觉 QA / 排序过滤测试 / **`products/page.tsx` 的 `doUpload` 无自动化测试** | D2 后更完整 | ⏳ |
 | C5 | 本地 mock 刷新丢数据 | ✅ 2026-10-21：`mocks/persistence.ts` 版本化键 `kaas-mock-v1:<集合>`（47 集合、只持久化被写操作碰过的集合、`?mock_reset=1` 重置、SSR/隐私模式 no-op、e2e 默认种子确定性）；字节类不落盘（避免 5MB 配额） | — | ✅ |
-| C6 | e2e 数据层不稳根治 | 兜底路由掩盖缺口、无 per-test 重置；历史"假红/整轮数字作废"根因 | — | ⏳ |
+| C6 | e2e 数据层不稳根治 | ✅ 2026-10-21 收口（根因逐项治理，非"数字变好"）：①**误报源**：MSW 长尾未覆盖时请求直连网络/500 → 兜底路由掩盖（现覆盖 **0 缺口**，`mocks:check` 门禁）；②**数据不确定**：mock store 改 localStorage 持久化后补"e2e 默认种子 + 新 context 空 storage + `?mock_reset=1`"三保险；③**环境争用**：playwright 已固定 workers=2、NO_PROXY、mock baseURL 指回页面源、`NODE_OPTIONS=2048MB`；④**单测 flake**：xlsx 模板用例 `testTimeout` 15s 已放宽，全量默认并发本次 60 files/616 tests 22s 全绿。**已知限制**：本机多 agent 同时跑门禁时仍可能 worker OOM（资源争用，非产品信号）；CI 两核并发天然受限。**测量纪律**：任何 e2e/构建数字只在工作区静止时作数 | — | ✅ |
 | C7 | Excel xlsx 上传闭环 | ✅ 2026-10-21：纯 stdlib 读取器 `kaas_common/export_quote/xlsx.py`（zipfile+ElementTree；sharedStrings/inlineStr/富文本/公式缓存/日期 serial/合并单元格/行列与解压上限/坏文件），`preview`+`calculate` 接受 `.xlsx` 且与 CSV 共用字段映射；CSV 行为零变化、`.xls` 指路另存；服务端 xlsx **模板**保持 501（浏览器侧 exceljs 已生成，理由见报告）。**前端暂无批量导入上传 UI → 登记 C19**；28 条测试 | — | ✅（上传侧） |
 | C8 | 四源计数端点 | ✅ 2026-10-21：`/leads` 与 `/leads/{id}` 的 `demand_index`/`blank_index` **真实回填**（`chain.py` 新增 `_lead_indices`：2 条参数化 SQL、无 N+1；需求量取 `intel_demand_index` 最新月份合计、地区归一化 + 国家别名兜底；已开发量=抓取+调研+触达(sent)+成交，成交按 F4 `stage∈order/shipment/completed` 或非 cancelled 订单链；无需求行 ⇒ 两字段仍 null 不拿 0 冒充）。**按设计不加独立端点/不改排序**（§6.8 只要求字段回填）。18 条测试 | — | ✅ 2026-10-21 |
 | C9 | 诊断端点收敛 | `_r2_debug` / `fx-rates/_debug` 暴露面收敛 | — | ✅ 2026-10-21 复核：两个端点**已有** `is_admin_role` 闸门（`ws_files.py` r2_debug / `ws_extras.py` fx_provider_debug，B0-6 收敛，普通用户 403），无需改动 |
@@ -161,6 +161,7 @@
 
 ## I. 更新历史
 
+- **2026-10-21 执行批 3（收口）**：A7-3 UI（事实确认/一致性/收款/单证清单/签发闸门，面板 9 + 契约 12 测）→ **A7 全部完成**；C2 文件存储收尾（doUpload/排序页面测试 + 7 条真 PG 用例）→ 发现并修复 **C22**（迁移 `202610200005` 唯一索引 `NULLS NOT DISTINCT`）；C10 18 模板防劈页（39 静态断言，视觉待 build/e2e 复核）；intel/channels 字段错位修复；C20 导入模板端点回落租户产品；C6 收口。**全量门禁**：worker 1217+12skip（有库 1229/0）、orchestrator 247、前端 616、e2e 28（24+4）、build `out/` 275 文件、contracts/mocks/静态断言全 PASS。
 - **2026-10-21 执行批 2**：A7 内核/结构/API 全部落地（内核 87 测 + API 34 测 + `trade_doc_facts`）；B 组验收 → B1 销账（B4 P0 跨团队越权修复、B5 formulas/explain 回落、B6 订阅门同源）；C7 xlsx 导入（28 测）；C8 四源计数（18 测）；C5/C18 mock 持久化 + 长尾覆盖归零；C15 契约错位修复；C16/C17 关闭。新增 C19/C20/C21 与 G-10。门禁：worker **1212+5** / 前端 **535** / typecheck 0 / contracts PASS。
 - **2026-10-21 执行批 1**：D7 重试落地（`1f0d76d7`）；A7 事实层表 `202610200004` + `TradeDocFact`（`32d5fe0c`）；对齐 A 批（/events 闸门、F4 stage 消费、路由守卫/写权限，`a92302eb`）+ 对齐 B 批（MSW 58→111、死代码、mocks:check 门禁）；新增 C17/C18。
 - **2026-10-20 晚**：重写为唯一账本。—— 销账 A2（方案A）、B1 租户级、B2、B3、A8②③、A9、N2、N7；新增 A2-B、C7–C16、N1/N3–N8；D5 改回 ⏳（实测 public）；补安全 4 项与生产两个现网缺陷（D1/D2）；统一 e2e=28。
