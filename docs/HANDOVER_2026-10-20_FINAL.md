@@ -166,7 +166,7 @@ Neon 项目权限 · Resend 账号（`send.powervoy.com` 域名）· 生产域�
 | DB 迁移 | ✅ 生产 `202610180010` → **`202610200005`**（6 条全部 Running：补列 → 内容版本 → 对账表 → 询盘阶段 → 事实表 → 文件唯一索引）；迁移后 **113 表**，`users 3 / customers 10 / file_objects 5` 行数不变，`uq_file_current` 已含 `NULLS NOT DISTINCT` |
 | 前端构建 | ✅ `NEXT_EXPORT=1 pnpm build` → `frontend/out` **275 文件** |
 | Worker 部署 | ✅ `uv run pywrangler deploy`（本机需先修 pyodide 工具链：uv **0.13.3**、`uv python install cpython-3.14.2-emscripten-wasm32-musl`、`UV_PYTHON_INSTALL_DIR` 与 venv home 对齐、`UV_CACHE_DIR=D:\tools\uv-cache`、`PYTHONUTF8=1`）；**新版本 `dae596a5-7e8c-44dc-8a7b-d3fe0c650c2f`**，上传 225 资产，三条 cron 保留 |
-| 冒烟 | ✅ `/health` 200 JSON（`shared.loaded=true`）、`/api/v1/auth/me` 401、`/api/v1/export-quote/products` 401、`/login` 200、`api.kaas.powervoy.com/health` 200 |
+| 冒烟（首发） | ✅ `/health` 200 JSON（`shared.loaded=true`）、`/api/v1/auth/me` 401、`/api/v1/export-quote/products` 401、`/login` 200、`api.kaas.powervoy.com/health` 200 |`n| 二次部署（sweep 修复） | ✅ 版本 **`cd15e9a5-47e3-4758-881d-343f6e13c3b4`**（含 C23 shipments 入口恢复 / C28 渠道枚举 / C29 移除占位导入）；冒烟：`/health` 200、`/shipments` 200、`/login` 200、`/api/v1/shipments` 401 |
 | **回滚** | `cd backend/worker; npx wrangler versions deploy 77901aa1-5794-4013-bfad-3b0a80b8a57b@100% --name kaas --yes`（库回滚走 Neon PITR/快照，**不要** alembic downgrade base） |
 | ⚠️ 冷启动 | `pywrangler` 报 **Worker Startup Time 3386ms** > 验收线 **2,950ms**（该数字≠Dashboard p50）；`backend/worker/coldstart-baseline.json` 仍 **PENDING**，需发布后在 Dashboard → Workers → kaas → Metrics 读 p50 判定，并决定是否裁剪包体（本次上传 11.9 MiB） |
 | 待用户动作 | **D1** `RESEND_API_KEY` 未注入（现有 secrets：`ADMIN_SETUP_TOKEN`/`JWT_SECRET`/`S3_ACCESS_KEY`/`S3_SECRET_KEY`）⇒ 忘记密码邮件仍不发；**D2** R2 新密钥（现 `S3_ACCESS_KEY` 13 位，直传不可用）需在 R2 dashboard 创建后替换；**D4** 生产测试数据清理执行当次确认 |
