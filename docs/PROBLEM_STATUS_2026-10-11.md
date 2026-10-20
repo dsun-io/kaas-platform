@@ -15,6 +15,24 @@
 > [`HANDOVER_2026-10-20_FINAL.md`](./HANDOVER_2026-10-20_FINAL.md)**（状态/资源清单/踩坑/发布检查单/待办）。
 > 本文件继续只做"问题状态"滚动口径。
 >
+> **（2026-10-20 · 单证内容专项开工：A1 内容级版本 + A3 字段体检已落地，分支 `feat/trade-doc-content-a`）**
+>
+> 用户指示「设置 goal 直接做、在分支上、不要和 UI 任务冲突」⇒ 独立 worktree 施工（分支
+> `feat/trade-doc-content-a`），未触碰并行 UI 线的写范围（其 `docs/UI_UX_OPTIMIZATION_*` 与
+> `frontend/**` 未提交改动原样保留）。
+> ① **A1 内容级版本**：新表 `trade_doc_content_versions`（迁移 `202610200001`，单 head）；
+> 五条写路径全部留版（手工保存 / 重新带入上游 / AI 翻译 / 签发冻结 / 恢复），存**整份 payload
+> 快照**（sources + custom）；端点 `GET /trade-docs/{id}/content-versions`（列表不带 payload）、
+> `GET .../{version_no}`（整份）、`POST .../{version_no}/restore`（仅 draft；报价单 409
+> `QUOTATION_DOC_SYNCED`，版本链只增不删）；前端「内容版本」折叠面板（查看/恢复，签发后禁用）。
+> ② **A3 字段体检**：`findBlankPlaceholders()` 区分「模板引用了但 manifest 未登记（拼写/漏登记）」
+> 与「可选字段留空」，在预览状态栏显式提示 —— 把「静静空白」从不可见变为可见；18 类模板实测
+> 0 未登记占位符。
+> 证据：`4878c6c`（后端）+ `db4463e`（前端）；门禁 = worker **972 passed + 5 skipped** /
+> orchestrator **247** / frontend typecheck 0 · vitest **467** · lint 0 error · contracts R0–R6 PASS ·
+> schema-coverage/drift/runtime-deps/sync-shared PASS。**状态：分支已推送、待 PR 评审合入 main**；
+> A2/A4~A9 仍挂在 [`docs/TODO.md`](./TODO.md)。
+>
 > **（2026-10-20 · 口径修订：「待办清零/触发条件制」废止 → 活跃待办账本）**
 >
 > 用户裁决（2026-10-20 晚）：真实工作项不应以触发条件制隐藏，**下方「终局裁决：全部待办清零」中
