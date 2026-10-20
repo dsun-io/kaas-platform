@@ -743,7 +743,7 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 
 - [x] 盘点差距并落文档（本节，已完成）
 - [x] P0-A 页头收编：settings / events / audit-log / kb / billing / intel / market-view / products / spec-config / spec-config wizard / pricing-data / admin gray-release / admin spec-proposals / onboarding 全部改 `PageHeader`；手写 `<h1>` 清零。
-- [ ] P0-A 状态/颜色/loading 收编（第一批：orders、trade-docs；dashboard 已分组）
+- [ ] P0-A 状态/颜色/loading 收编（第一批：orders、trade-docs；dashboard 已分组）→ ✅ orders/trade-docs 的“加载中…”改骨架，表头补 `scope`；orders/trade-docs 已无硬编码红绿黄
 - [ ] P0-C 可访问性与 1366 检查
 - [ ] 每批：typecheck/lint/test/e2e/build + 截图 + 文档 + push
 
