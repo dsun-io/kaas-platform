@@ -167,7 +167,7 @@ jobs:
 
   deploy:
     if: github.event.action != 'closed'
-    name: Deploy probe（加回 checkout+artifact）
+    name: Deploy probe（加回 uv+sync-shared+render+assert）
     needs: [ensure, migrate, build-frontend]
     runs-on: ubuntu-latest
     steps:
@@ -177,5 +177,21 @@ jobs:
         with:
           name: frontend-out-preview
           path: frontend/out
-      - name: echo
-        run: echo "artifact downloaded"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+      - name: Sync shared kernel + quote engine into worker
+        shell: pwsh
+        run: ./scripts/sync-shared.ps1
+      - name: Render preview wrangler config
+        working-directory: ./backend/worker
+        env:
+          PREVIEW_HYPERDRIVE_ID: ${{ needs.ensure.outputs.HYPERDRIVE_ID }}
+          PREVIEW_R2_BUCKET: ${{ vars.KAAS_PREVIEW_R2_BUCKET }}
+          PREVIEW_KV_NAMESPACE_ID: ${{ vars.KAAS_PREVIEW_KV_NAMESPACE_ID }}
+        run: |
+          python3 ../../scripts/preview/render-wrangler-config.py \
+            --slug "${{ env.PR_NUMBER }}" \
+            --out wrangler.preview.jsonc
+      - name: echo done
+        run: echo "render ok"
