@@ -33,7 +33,8 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write   # 预览 URL 评论
+  # 注：pull-requests: write 已下沉到 comment job（2026-10-20：工作流级写权限会让
+  # 公开仓库的 dispatch 触发被 GitHub 标 action_required 待审批，见 PROBLEM_STATUS 交接摘要）。
 
 # 同一 PR 串行；新推送取消旧的部署（但资源回收并发安全：ensure/teardown 均幂等）
 concurrency:
@@ -274,6 +275,9 @@ jobs:
     name: PR 评论预览 URL
     needs: [deploy]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write   # 仅此 job 需要写：评论预览 URL
     steps:
       - name: Comment preview URL（幂等：同标记评论只更新不刷屏）
         uses: actions/github-script@v7
