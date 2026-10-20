@@ -52,7 +52,8 @@
 | D2 | R2 新密钥替换 | 旧 keys 发布前继续有效；发布窗口替换（`wrangler secret put` 与部署同窗口）；发布后用户在 R2 dashboard 删旧 token | ⏳ |
 | D3 | Hyperdrive 生产缓存关闭（可选） | 预览 config 已 `caching.disabled=True`；生产是否同改**需单独批准**（现状保持开启） | 🧭 |
 | D4 | 生产测试数据清理 | 含流失拒绝文件历史；**执行当次需用户确认** | 🧭 |
-| D5 | 仓库转回 private | ✅ **已转 private**（2026-10-20，用户自转）。⚠️ **副作用（2026-10-20 实测）**：private 仓库消耗 Actions 分钟配额，**08:05Z 起所有 workflow 秒失败**（0 步、无 runner、2–4s 结束；`main` 与分支一致，最后一次成功 run 为 05:58Z 的 preview teardown `39377738492`）⇒ CI 红与代码无关。**待用户裁决**：充值 Actions 分钟 / 临时转回 public 跑绿 / 接受红（本地门禁已全绿） | 🧭 待用户处理 |
+| D5 | 仓库转回 private | ✅ **已转 private**（2026-10-20，用户自转）。副作用（已解除）：private 仓库 Actions 配额导致 08:05Z 起所有 workflow 秒失败（0 步/无 runner）；**用户已转回 public，CI 已恢复绿**（2026-10-20：backend:test / Frontend CI / contracts:check / preview 全部 SUCCESS，预览部署 `kaas-preview-pr-5`） | ✅ |
+| D7 | preview ensure 对 Neon 423 做短重试 | 实测（2026-10-20，PR #5）：Neon 分支刚创建、其操作未完成时立刻建 endpoint → `HTTP 423 project already has running conflicting operations`；本次靠 rerun 到 attempt 3 才绿。ensure 脚本应对 423/429 做有限重试（指数退避，别无限等） | ⏳ |
 | D6 | 生产发布走检查单 | `HANDOVER_2026-10-20_FINAL.md` §5 全流程：迁移 → secrets → 构建 → 部署 → 冒烟 → 冷启动基线（≤2,950ms）→ 留痕 → P4 观察期 | ⏳ |
 
 ## E. UI/UX 优化（并行线施工中，细目以方案文档为准）
