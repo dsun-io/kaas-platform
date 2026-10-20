@@ -69,7 +69,7 @@ export function FlagToggle({ tenantId, tenantName, flagKey, enabled }: Props) {
         <CardContent>
           <div className="flex items-center gap-2">
             <div
-              className={`h-3 w-3 rounded-full ${enabled ? "bg-green-500" : "bg-gray-300"}`}
+              className={`h-3 w-3 rounded-full ${enabled ? "bg-success" : "bg-gray-300"}`}
             />
             <span className="text-xs text-muted-foreground">
               {enabled ? "已启用" : "已关闭"}
