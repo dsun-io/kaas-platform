@@ -55,6 +55,7 @@ import {
   useTradeDocRenderData,
   useTradeDocs,
   useUpdateTradeDoc,
+  type PdfArchiveResult,
   type TradeDocRow,
 } from "./hooks/use-trade-docs";
 
@@ -212,24 +213,48 @@ export default function TradeDocsPage() {
   };
 
   const changeStatus = (row: TradeDocRow, status: string) => {
-    update.mutate(
-      { id: row.id, status },
-      {
-        onSuccess: () => {
-          if (status !== "issued") {
-            toast.success("已作废");
-            return;
-          }
-          // 签发即上传单证：不再要求客户先打印另存、再手动导入一次。
-          // 手动入口仍保留（files/upload + 手动上传区）应对渲染器不可用/第三方单据等。
-          toast.success("已签发，正在自动上传单证…");
-          void autoArchiveIssuedDoc(row.id).then((result) => {
-            if (result.ok) toast.success(result.message);
-            else toast.error(`${result.message}（手动上传入口仍可用）`);
-          });
-        },
-      },
-    );
+    if (status !== "issued") {
+      update.mutate(
+        { id: row.id, status },
+        { onSuccess: () => toast.success("已作废") },
+      );
+      return;
+    }
+    // 签发即上传（TODO F1 方案 A）：把**预览用的同一份 HTML** 随 PATCH 一起提交，
+    // 服务端出 PDF 并归档为 render_pdf —— 不再依赖"签发完成后前端再单独上传"。
+    // 失败不回滚签发：后端在响应里带 pdf_archive{ok:false}，这里如实提示并保留
+    // 手动上传兜底（渲染器未配置时自动归档接口同样会 503，不假装成功）。
+    void (async () => {
+      try {
+        const { default: apiClient } = await import("@/lib/api/client");
+        const { data } = await apiClient.get<{
+          doc: TradeDocRow;
+          data: Record<string, unknown>;
+        }>(`/trade-docs/${row.id}/render-data`);
+        const html = renderTradeDoc(data.doc.doc_type, data.data);
+        update.mutate(
+          { id: row.id, status, html, pdf_name: row.doc_no },
+          {
+            onSuccess: (doc) => {
+              const archived = (doc as { pdf_archive?: PdfArchiveResult })
+                .pdf_archive;
+              if (archived?.ok) {
+                toast.success("已签发，单证 PDF 已自动归档");
+                return;
+              }
+              toast.error("已签发，但 PDF 自动归档失败（手动上传入口仍可用）");
+              // 兼容旧后端（不认识 html）：仍走一次前端归档接口；同样失败就只保留提示
+              void autoArchiveIssuedDoc(row.id).then((result) => {
+                if (result.ok) toast.success(result.message);
+              });
+            },
+            onError: () => toast.error("签发失败，请重试"),
+          },
+        );
+      } catch {
+        toast.error("准备签发失败，请重试");
+      }
+    })();
   };
 
   return (

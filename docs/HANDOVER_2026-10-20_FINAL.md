@@ -87,8 +87,8 @@ kaas-preview-storage；KV = `KAAS_PREVIEW`；Workers = `kaas`。
 ## 5. 发布检查单（迁移自旧交接 §7，**待用户下令**）
 
 1. 迁移：`DATABASE_URL=<PROD_DATABASE_URL> uv run --extra migrations alembic upgrade head`
-   → 期望 head **`202610200002`**（本分支新增 `202610200001` 内容版本表、`202610200002` 对账表；
-   两者都是**新增表**，幂等执行，不改既有列）。
+   → 期望 head **`202610200003`**（本分支新增 `202610200001` 内容版本表、`202610200002` 对账表、
+   `202610200003` 询盘阶段表/列；均为**新增**结构，幂等执行，不改既有列语义）。
 2. 补 secret：`cd backend/worker; npx wrangler secret put RESEND_API_KEY --name kaas`
    （值取本机 `.env.local` 的 **`RESEND_API_KEY_PROD`** —— 生产专用 key，2026-10-20 用户提供；
    本地开发继续用 `RESEND_API_KEY`，预览**不配**发信。版本管理未部署状态下普通 put 会被拦，

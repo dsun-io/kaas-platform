@@ -760,25 +760,24 @@ class RenderPdfIn(BaseModel):
     name: Optional[str] = None
 
 
-@app.post("/api/v1/trade-docs/{doc_id}/pdf", status_code=201)
-async def render_doc_pdf(doc_id: int, body: RenderPdfIn, request: Request,
-                         user: dict = Depends(_get_current_user)):
-    """把预览同源的单证 HTML 交给无头浏览器出 PDF，并**落档**到这张单证上。
+async def archive_rendered_pdf(
+    request: Request, doc_id: int, html: str, user: dict, name: Optional[str] = None
+) -> dict:
+    """校验 HTML → 无头浏览器出 PDF → 落档（`render_pdf` 新版本上位）。
 
-    - 复用盖章回传那套链路：`_create_file(kind='render_pdf', supersede=True)`
-      → `attach_doc_file(role='render_pdf')` ⇒ 再归档 = 新版本上位、旧版挂
-      `render_pdf_superseded` 留档（**不物理删**）。
-    - 未配置渲染器 → 503；上游失败/不是 PDF → 502；HTML 含脚本或外链 → 422。
+    **唯一实现**：既给 `POST /trade-docs/{id}/pdf` 用，也给签发自动上传用
+    （TODO F1：方案 A —— 签发请求带前端同一份 HTML，服务端出字节并归档）。
+    失败即抛 HTTPException（422 非法 HTML / 503 未配置渲染器 / 502 上游失败 / 413 超大）。
     """
     try:
         # 外链白名单请求期读（`PDF_HTML_ALLOWED_HOSTS`，默认自家域名）。
         # Python Worker 在 import 期读不到 vars/绑定 ⇒ 必须走 `main._binding`。
         validate_render_html(
-            body.html, allowed_html_hosts(lambda key: _main._binding(key, request)))
+            html, allowed_html_hosts(lambda key: _main._binding(key, request)))
     except FileRuleError as exc:
         raise _fail(exc)
 
-    data, renderer = await _render_pdf_bytes(request, body.html)
+    data, renderer = await _render_pdf_bytes(request, html)
     if not looks_like_pdf(data):
         raise HTTPException(status_code=502, detail={
             "error": "upstream", "code": "PDF_RENDER_FAILED",
@@ -790,15 +789,29 @@ async def render_doc_pdf(doc_id: int, body: RenderPdfIn, request: Request,
             f"生成的 PDF 超过上限 {MAX_RENDER_PDF_BYTES // (1024 * 1024)}MB"
             f"（实际 {len(data)} 字节）"))
 
-    name = (body.name or "").strip() or f"单证 {doc_id} 系统 PDF"
+    archive_name = (name or "").strip() or f"单证 {doc_id} 系统 PDF"
     row = await _create_file(
         request=request, user=user, owner_type="trade_doc", owner_id=str(doc_id),
-        kind=RENDER_PDF_KIND, media_kind=None, name=name, content=data,
-        content_type="application/pdf", file_name=name, supersede=True)
+        kind=RENDER_PDF_KIND, media_kind=None, name=archive_name, content=data,
+        content_type="application/pdf", file_name=archive_name, supersede=True)
     link = await attach_doc_file(
         doc_id, DocFileIn(file_id=row["id"], role=RENDER_PDF_KIND), request, user)
     return {"file": row, "link": link, "renderer": renderer,
             "bytes": len(data), "storage": row["storage"]}
+
+
+@app.post("/api/v1/trade-docs/{doc_id}/pdf", status_code=201)
+async def render_doc_pdf(doc_id: int, body: RenderPdfIn, request: Request,
+                         user: dict = Depends(_get_current_user)):
+    """把预览同源的单证 HTML 交给无头浏览器出 PDF，并**落档**到这张单证上。
+
+    - 复用盖章回传那套链路：`_create_file(kind='render_pdf', supersede=True)`
+      → `attach_doc_file(role='render_pdf')` ⇒ 再归档 = 新版本上位、旧版挂
+      `render_pdf_superseded` 留档（**不物理删**）。
+    - 未配置渲染器 → 503；上游失败/不是 PDF → 502；HTML 含脚本或外链 → 422。
+    - 逻辑本体在 `archive_rendered_pdf`（签发自动上传共用同一份，不另写）。
+    """
+    return await archive_rendered_pdf(request, doc_id, body.html, user, body.name)
 
 
 async def resolve_photo_refs(request: Request, data: dict, user: dict = None) -> dict:
