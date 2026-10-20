@@ -89,6 +89,11 @@
     `pnpm: command not found`，加一个无 BOM 文本 shim（内容 `exec "<node.exe>" "<pnpm.cjs>" "$@"`）
     放进 PATH，Windows 路径写进 shim 内部最稳。
   - ⚠️ **commitlint 的 `subject-case` 规则**禁止句首/帕斯卡大小写 ⇒ subject 用中文或**全小写**才过。
+  - ⚠️ **uv 的 pyodide 探针在 CJK 用户名路径下会坏**（2026-10-20 实证）：设
+    `$env:UV_CACHE_DIR='D:\tools\uv-cache'`（纯 ASCII 路径）即修复；`pywrangler sync/deploy`
+    还须 `$env:PYTHONUTF8='1'`（否则读含中文注释的 `wrangler.jsonc` 报 GBK 解码错）。
+  - ⚠️ **worker 依赖版本由 `backend/worker/pylock.toml` 锁定（已入库）**：pywrangler 检测到
+    锁文件即以其为约束；**禁止删该文件**，升级依赖走显式 `pywrangler sync` + diff 审查提交。
 
 ## 4. 这个工作区可能**同时有多个任务在写** —— 提交纪律
 
