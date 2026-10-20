@@ -1,4 +1,4 @@
-"""S3 行为对等：认证 / 账号治理域（orchestrator ↔ worker）。
+﻿"""S3 行为对等：认证 / 账号治理域（orchestrator ↔ worker）。
 
 为什么有这份文件
 ----------------
@@ -676,7 +676,27 @@ def test_forgot_password_active_user_writes_single_use_token():
     assert "make_interval" not in conn.sql()
 
 
-def test_reset_password_validation_422():
+def test_reset_email_template_matches_brand_ui():
+    """2026-10-21 用户要求：重置密码邮件 UI 与平台新版 UI 对齐（品牌色/圆角/响应式/纯文本兜底）。"""
+    from main import _reset_email_html, _reset_email_text
+
+    link = "https://kaas.powervoy.com/reset-password?token=abc123"
+    html = _reset_email_html(link)
+    text = _reset_email_text(link)
+    # 品牌与结构
+    assert "KaaS" in html and "外贸单证与报价工作台" in html
+    assert "#2563EB" in html and "border-radius:12px" in html
+    assert "max-width:560px" in html and 'role="presentation"' in html
+    # 关键内容与链接
+    assert "重置你的登录密码" in html and link in html
+    assert str(30) in html and "只能使用一次" in html
+    assert "安全提示" in html
+    # 纯文本兜底（邮件客户端不渲染 html 时仍可用）
+    assert link in text and "30 分钟" in text and "KaaS" in text
+    # 不引入外部资源（降低被邮件客户端拦截/追踪风险）
+    assert "<img" not in html
+
+
     """两端一致：缺 token → 422；新密码 <8 → 422（main.py:473-479 / auth.py:471-478）。"""
     resp = client.post(
         "/api/v1/auth/reset-password",

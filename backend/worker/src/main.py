@@ -558,20 +558,81 @@ async def _http_post_json(url: str, headers: dict, payload: dict, timeout: int =
     return int(resp.status), await resp.text()
 
 
-def _reset_email_html(reset_link: str) -> str:
+def _reset_email_text(reset_link: str) -> str:
     return (
-        "<div style=\"font-family:sans-serif;max-width:520px;margin:0 auto;"
-        "padding:24px;line-height:1.6\">"
-        "<h2 style=\"margin:0 0 12px\">重置你的登录密码</h2>"
-        "<p>我们收到了重置密码的请求。点击下面的按钮设置新密码：</p>"
-        f"<p><a href=\"{reset_link}\" style=\"display:inline-block;background:#2563eb;"
-        "color:#fff;text-decoration:none;padding:10px 20px;border-radius:6px\">"
-        "设置新密码</a></p>"
-        f"<p style=\"word-break:break-all;font-size:13px;color:#555\">"
-        f"如果按钮无法点击，请复制以下链接到浏览器打开：<br>{reset_link}</p>"
-        f"<p style=\"font-size:13px;color:#888\">该链接 {_RESET_TTL_MINUTES} 分钟内有效，"
-        "且只能使用一次。若不是你本人操作，可忽略此邮件。</p>"
-        "</div>"
+        "重置你的登录密码\n\n"
+        "我们收到了重置 KaaS 账号密码的请求。\n"
+        "请打开以下链接设置新密码（%d 分钟内有效，仅可使用一次）：\n\n"
+        "%s\n\n"
+        "如果不是你本人操作，请忽略此邮件，你的密码不会被更改。\n\n"
+        "—— KaaS 平台 · 外贸单证与报价工作台"
+    ) % (_RESET_TTL_MINUTES, reset_link)
+
+
+def _reset_email_html(reset_link: str) -> str:
+    """重置密码邮件（2026-10-21 与平台新版 UI 对齐：electric blue 品牌色、12px 圆角、
+    响应式 table 布局、纯文本兜底；不使用外部图片/字体，避免邮件客户端拦截）。"""
+    primary = "#2563EB"
+    primary_dark = "#1D4ED8"
+    ink = "#0F172A"
+    muted = "#64748B"
+    line = "#E2E8F0"
+    bg = "#F5F7FB"
+    year = "2026"
+    return (
+        "<!DOCTYPE html>"
+        "<html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<meta name=\"color-scheme\" content=\"light\">"
+        "<title>重置你的登录密码 · KaaS</title></head>"
+        f"<body style=\"margin:0;padding:0;background:{bg};\">"
+        "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" "
+        f"style=\"background:{bg};padding:32px 16px;\"><tr><td align=\"center\">"
+        "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" "
+        "style=\"max-width:560px;background:#FFFFFF;border:1px solid " + line + ";"
+        "border-radius:12px;box-shadow:0 12px 30px -12px rgba(37,99,235,0.25);\">"
+        # 品牌头部
+        "<tr><td style=\"padding:24px 28px 0;\">"
+        "<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\"><tr>"
+        "<td style=\"width:40px;height:40px;border-radius:10px;"
+        "background:linear-gradient(135deg,#3B82F6,#4F46E5);color:#FFFFFF;"
+        "font:700 20px/40px -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;"
+        "text-align:center;\">K</td>"
+        f"<td style=\"padding-left:12px;font:600 18px/1.2 -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:{ink};\">KaaS"
+        f"<div style=\"font:400 12px/1.6 -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:{muted};\">"
+        "外贸单证与报价工作台</div></td></tr></table></td></tr>"
+        # 正文
+        "<tr><td style=\"padding:20px 28px 0;\">"
+        f"<h1 style=\"margin:0 0 8px;font:700 22px/1.35 -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:{ink};\">"
+        "重置你的登录密码</h1>"
+        f"<p style=\"margin:0;font:400 14px/1.7 -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:{muted};\">"
+        "我们收到了重置 KaaS 账号密码的请求。点击下面的按钮设置新密码即可继续使用平台。</p>"
+        "</td></tr>"
+        # 按钮
+        "<tr><td style=\"padding:24px 28px 0;\">"
+        "<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\"><tr>"
+        f"<td style=\"border-radius:10px;background:{primary};\">"
+        f"<a href=\"{reset_link}\" style=\"display:inline-block;padding:12px 28px;"
+        "font:600 14px/1.2 -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;"
+        f"color:#FFFFFF;text-decoration:none;border-radius:10px;\">设置新密码</a></td>"
+        "</tr></table>"
+        f"<p style=\"margin:14px 0 0;font:400 12px/1.6 -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:{muted};\">"
+        f"该链接 <strong style=\"color:{ink};\">" + str(_RESET_TTL_MINUTES) + "</strong> 分钟内有效，且只能使用一次。</p>"
+        "</td></tr>"
+        # 兜底链接
+        "<tr><td style=\"padding:20px 28px 0;\">"
+        f"<div style=\"border-top:1px solid {line};padding-top:16px;font:400 12px/1.6 -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:{muted};\">"
+        "如果按钮无法点击，请复制以下链接到浏览器打开：<br>"
+        f"<span style=\"word-break:break-all;color:{primary_dark};\">{reset_link}</span></div>"
+        "</td></tr>"
+        # 安全提示 + 页脚
+        "<tr><td style=\"padding:20px 28px 24px;\">"
+        f"<div style=\"background:#F1F5F9;border-radius:10px;padding:12px 14px;font:400 12px/1.6 -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:{muted};\">"
+        "安全提示：KaaS 工作人员不会向你索要密码或重置链接；若不是你本人操作，请忽略此邮件，密码不会被更改。</div>"
+        "</td></tr>"
+        f"<tr><td style=\"padding:16px 28px;border-top:1px solid {line};font:400 12px/1.6 -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:{muted};background:#FAFBFC;border-radius:0 0 12px 12px;\">"
+        f"KaaS 平台 · 外贸单证与报价工作台<br>© {year} KaaS</td></tr>"
+        "</table></td></tr></table></body></html>"
     )
 
 
@@ -590,7 +651,7 @@ async def _send_reset_email(request: Request, to_email: str, reset_link: str) ->
                 "to": [to_email],
                 "subject": "重置你的登录密码",
                 "html": _reset_email_html(reset_link),
-                "text": f"点击以下链接设置新密码（{_RESET_TTL_MINUTES} 分钟内有效，仅可使用一次）：\n{reset_link}",
+                "text": _reset_email_text(reset_link),
             },
         )
         return status in (200, 201)
