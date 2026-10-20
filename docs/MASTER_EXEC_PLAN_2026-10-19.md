@@ -201,10 +201,20 @@
 > 2026-10-20 用户裁决：**全量做（A）** —— 每 PR Neon 子分支 + 独立 Hyperdrive +
 > `kaas-preview-storage` + KV 前缀 + CI 防污染断言；前置为用户提供 Neon/CF 凭据或代建资源。
 > 发布窗口同批裁决：**先不发布**，等 S5 + 技术栈升级后再定。
-- [ ] **S5-a** preview workflow：非 main 分支 push → 预览 URL
-- [ ] **S5-b** 每 PR 独立 Neon 子分支 + 独立 Hyperdrive config（PR 关闭回收）
-- [ ] **S5-c** `kaas-preview-storage` + 预览 KV namespace + `PR_SLUG` 前缀注入
-- [ ] **S5-d** CI 防污染断言（生产/预览绑定的 bucket / KV / Hyperdrive 互异）
+- [x] **S5-a** preview workflow：非 main 分支 push → 预览 URL —— ✅ 2026-10-20
+      落地于 `feat/preview-env`（`.github/workflows/preview.yml`：preflight → ensure → migrate →
+      build（注入预览 API URL）→ deploy（workers.dev）→ PR 评论；closed → teardown）
+- [x] **S5-b** 每 PR 独立 Neon 子分支 + 独立 Hyperdrive config（PR 关闭回收）—— ✅ 2026-10-20
+      `scripts/preview/ensure.py` / `teardown.py`（幂等 + dry-run + 全链路实测；
+      Neon 删除带生产双保险校验）
+- [x] **S5-c** `kaas-preview-storage` + 预览 KV namespace + `PR_SLUG` 前缀注入 —— ✅ 2026-10-20
+      两共享资源已建（R2 + KV `KAAS_PREVIEW`）；`kaas_common.preview` 前缀规则
+      （R2 `pr-<num>/`、KV `pr-<num>:`；PR_SLUG 空 = 生产零影响）+ worker 接线 + /health 探针
+- [x] **S5-d** CI 防污染断言（生产/预览绑定的 bucket / KV / Hyperdrive 互异）—— ✅ 2026-10-20
+      `scripts/preview/assert-bindings.py` 对照**线上真实绑定**；preview 部署前后 +
+      deploy.yml 生产侧（生产模式已对现网 `kaas` 阳性对照通过）
+      > 合并前待办：repo variables × 4（预览 KV id / 预览桶 / 生产桶 / 生产 Hyperdrive id）+
+      > CF token 换五权限 custom token；生产桶名按现状 `kaas-files` 断言（改名另立项）
 
 **S6 静态门禁（0.5–1 人日）**
 - [x] **S6-a** schema 完备性门禁（= S2-d，已落地）

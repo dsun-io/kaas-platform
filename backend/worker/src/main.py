@@ -1755,7 +1755,17 @@ except Exception:  # noqa: BLE001 - 任何加载失败都不应阻断 Worker
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "kaas-intel-worker", "shared": _core_health()}
+    body = {"status": "ok", "service": "kaas-intel-worker", "shared": _core_health()}
+    # S5 预览运行时探针：PR_SLUG 注入成功才回显（生产未注入 ⇒ 字段不出现，零影响；
+    # CI 冒烟用它做「预览真的跑在预览配置里」的阳性对照）。
+    try:
+        from kaas_common.preview import normalize_pr_slug as _nps
+        slug = _nps(_binding("PR_SLUG"))
+    except Exception:  # noqa: BLE001 - 健康检查绝不应因探针失败而挂
+        slug = None
+    if slug:
+        body["preview"] = {"pr_slug": slug}
+    return body
 
 
 # ── Events Ingest (前端事件采集平台级基础设施，所有工位共用) ──

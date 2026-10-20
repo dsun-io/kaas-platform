@@ -11,3 +11,6 @@ pylock.toml
 # 共享内核镜像：由 scripts/sync-shared.ps1 从 backend/kaas_common/ 自动生成，
 # 勿手工编辑（唯一源在 backend/kaas_common/）。
 src/kaas_common/
+
+# S5 预览：render-wrangler-config.py 生成的预览部署配置（CI 每跑每生成，不入库）
+wrangler.preview.jsonc

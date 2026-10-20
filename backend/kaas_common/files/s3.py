@@ -83,7 +83,7 @@ def _split_endpoint(endpoint: str):
     return parsed
 
 
-def presign_url(
+def _signed_url(
     method: str,
     endpoint: str,
     bucket: str,
@@ -96,15 +96,11 @@ def presign_url(
     now: Optional[datetime] = None,
     extra_query: Optional[Mapping[str, str]] = None,
 ) -> str:
-    """生成**预签名 URL**（path-style：`{endpoint}/{bucket}/{key}`）。
-
-    `region`：R2 用 `auto`；MinIO/AWS 用真实区域（如 `us-east-1`）。
-    `expires`：有效期秒数（AWS 上限 604800 = 7 天）；用短时效，别把长期凭证能力泄露出去。
-    """
+    """签名核心。`key` 允许为空串 ⇒ 桶级操作（如 ListObjectsV2）。"""
     if not access_key or not secret_key:
         raise SigV4Error("缺少 S3 访问密钥（access_key / secret_key）")
-    if not bucket or not key:
-        raise SigV4Error("bucket 与 key 都不能为空")
+    if not bucket:
+        raise SigV4Error("bucket 不能为空")
     if expires <= 0 or expires > 604800:
         raise SigV4Error(f"有效期必须在 1..604800 秒之间，收到 {expires}")
 
@@ -145,6 +141,53 @@ def presign_url(
     ).hexdigest()
 
     return f"{parsed.scheme}://{host}{object_path}?{canonical_query}&X-Amz-Signature={signature}"
+
+
+def presign_url(
+    method: str,
+    endpoint: str,
+    bucket: str,
+    key: str,
+    *,
+    access_key: str,
+    secret_key: str,
+    region: str = "auto",
+    expires: int = 900,
+    now: Optional[datetime] = None,
+    extra_query: Optional[Mapping[str, str]] = None,
+) -> str:
+    """生成**预签名 URL**（path-style：`{endpoint}/{bucket}/{key}`）。
+
+    `region`：R2 用 `auto`；MinIO/AWS 用真实区域（如 `us-east-1`）。
+    `expires`：有效期秒数（AWS 上限 604800 = 7 天）；用短时效，别把长期凭证能力泄露出去。
+    """
+    if not key:
+        raise SigV4Error("key 不能为空（桶级操作用 presign_bucket_url）")
+    return _signed_url(method, endpoint, bucket, key, access_key=access_key,
+                       secret_key=secret_key, region=region, expires=expires,
+                       now=now, extra_query=extra_query)
+
+
+def presign_bucket_url(
+    method: str,
+    endpoint: str,
+    bucket: str,
+    *,
+    access_key: str,
+    secret_key: str,
+    region: str = "auto",
+    expires: int = 900,
+    now: Optional[datetime] = None,
+    extra_query: Optional[Mapping[str, str]] = None,
+) -> str:
+    """**桶级**操作的预签名 URL（key 为空，如 ListObjectsV2 按前缀清点/删除前枚举）。
+
+    S5 预览 teardown 用：R2 没有"按前缀删"的 Cloudflare REST 端点，只能走
+    S3 兼容 ListObjectsV2；签名复用本模块这同一段（两端交叉验签过的代码）。
+    """
+    return _signed_url(method, endpoint, bucket, "", access_key=access_key,
+                       secret_key=secret_key, region=region, expires=expires,
+                       now=now, extra_query=extra_query)
 
 
 def presign_put_url(endpoint: str, bucket: str, key: str, **kwargs) -> str:

@@ -64,6 +64,19 @@
 >    **用完尽快转回 private**）；Neon production 已设 Protected（U-S5 ✅）；Rate Limiting 用户自配中（U-S4）；
 >    **U-B2 税率数据暂缓**（生产实测 0 条产品，随上架配置）；S5 预览凭据基本就绪（CF token 权限验证
 >    排到 S5 首个 workflow）。
+> 11. **S5 预览环境全量实现完成（2026-10-20，分支 `feat/preview-env`，待 lead 评审合并）**：
+>    共享预览资源已建（R2 `kaas-preview-storage` + KV `KAAS_PREVIEW` id `c77ab8c9…974`）；
+>    `scripts/preview/` 五脚本（preflight/ensure/render/assert/teardown，纯标准库、幂等、dry-run、
+>    全链路本机实测：ensure 建分支+Hyperdrive → teardown 全回收，生产双保险拒删校验阳性对照过）；
+>    `kaas_common.preview` 前缀规则（R2 `pr-<num>/`、KV `pr-<num>:`，PR_SLUG 空=生产零影响）+
+>    worker 三处 key 生成点接线 + /health 预览探针；`.github/workflows/preview.yml` 全链路
+>    （preflight→ensure→migrate→build→deploy→评论；closed→teardown）；S5-d 防污染断言落地
+>    （preview 部署前后 + deploy.yml 生产侧，**对照线上真实绑定**，生产模式已对现网 `kaas` 阳性对照通过）。
+>    **待办（合并前需用户/lead）**：repo **variables** 配 4 个（`KAAS_PREVIEW_KV_NAMESPACE_ID` /
+>    `KAAS_PREVIEW_R2_BUCKET=kaas-preview-storage` / `PROD_R2_BUCKET=kaas-files` / `PROD_HYPERDRIVE_ID=f53fed49…`）；
+>    CF token 换五权限 custom token（preflight 四项 Account 权限断言兜着）；预览 worker secrets
+>    （JWT_SECRET 等）repo secrets 有则注入、无则告警不阻塞。生产桶仍 `kaas-files`，改名 `kaas-prod-storage`
+>    另立项（桶迁移不动 S5）。详见 `scripts/preview/README.md` 与 `docs/ENV_VERIFICATION_2026-10-19.md` §2。
 >
 > **（2026-10-19 晚场 · 四项决策全部已确认 —— 以下为当前口径，压过本摘要内所有旧条目）**
 >
