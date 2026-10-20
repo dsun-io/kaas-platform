@@ -3,6 +3,22 @@
 > 这些是**用户明确下达的全局规则**。放在仓库根而不是只留在对话里，
 > 是为了让**每一次新会话自动遵守**，不依赖"上次那位记得"。
 
+## 0. 密钥铁律（用户全局规则，2026-10-21）
+
+**用户原话**：
+
+> 全局rules: DSH-Admin 仅供DSH ai使用, 不能用作其他用途, 保持全局环境变量
+
+**具体含义（强制）**：
+
+- **凡命名 `DSH-Admin` 的密钥**（Cloudflare API token、Neon API key、Resend API key、GitHub PAT，以及由其派生的 R2 S3 凭据）**仅供 DSH AI 使用**：
+  - **禁止**配置到平台 / Worker / CI / GitHub Actions secrets / 其他单位或项目；
+  - 必须保持为**用户级全局环境变量**：`CLOUDFLARE_API_TOKEN`、`NEON_API_KEY`、`RESEND_API_KEY`、`GITHUB_TOKEN`、`GH_TOKEN`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`；
+  - 值只存 `~/.dsh/secrets/`（`inventory.md` 记录归属与命名），**不入仓、不打印、不外传**。
+- **系统一律用独立命名**的 `kaas-*` token（如 `kaas-r2-system-*`、`kaas-ci-system-*`、`kaas-prod-system-*`）：
+  **一个密钥只用于一个地方**，命名必须能看出归属（DSH-Admin=DSH 专用；`kaas-*-system`=平台系统）。
+- **破坏性密钥操作**（吊销 / 轮换 / 删除 / 改权限）执行前**必须向用户确认**；只读审计可直接做。
+
 ## 1. 项目更新 = 代码 + 文档 + 推送（缺一不可）
 
 **用户原话（2026-10-11）**：
