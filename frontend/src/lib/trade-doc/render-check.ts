@@ -31,7 +31,11 @@ function when(checkedAt: string | null): string {
   return checkedAt ? `对账时间 ${checkedAt}` : "尚未记录对账时间";
 }
 
-/** 无标识（null）= 不打扰：未对账 / 一致 / 无基线 三种情况都不需要眼睛去处理 */
+/** 无标识（null）= 不打扰：未对账 / 一致 / 无基线 三种情况都不需要眼睛去处理。
+ *
+ * 注意：`no_fingerprint` 是"草稿/老单据没有基线"，属于**正常**状态，
+ * 不要为了"看起来更完整"给它加个灰标 —— 列表里每行都有标等于没有标。
+ */
 export function renderCheckBadge(
   check?: RenderCheckSummary | null,
 ): RenderCheckBadge | null {
