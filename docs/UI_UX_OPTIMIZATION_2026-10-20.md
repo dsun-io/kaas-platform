@@ -769,7 +769,7 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 - 报价记录/成本历史：统一列表模板（筛选条/计数/表格/空态/骨架）；去掉“加载中…”纯文本；成本历史补 mock 或明确空态。（待做）
 - 窄屏（<xl）底部吸底动作条；汇总在移动端置底。（待做）
 
-**门禁（2026-10-20 实测）**：typecheck 0 error；lint 0 error / 86 warn；vitest **458 passed**；e2e **23 passed + 4 skipped = 27**；`NEXT_EXPORT=1` build 成功（`out/` 文件数见构建输出）。
+**门禁（2026-10-20 实测）**：typecheck 0 error；lint 0 error / 87 warn；vitest **458 passed**；e2e **23 passed + 4 skipped = 27**；`NEXT_EXPORT=1` build 成功（`out/` 273 文件）。
 
 ---
 
