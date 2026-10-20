@@ -13,11 +13,38 @@
 > **📌 主交接文档已切换：[README.md](../README.md)**（2026-10-19 晚场起，架构 / 三环境隔离矩阵 /
 > 方案 B 决策 / 冷启动线 / 测试策略的唯一权威）。本文件继续只做"问题状态"滚动口径。
 >
+> **（2026-10-20 · S5 预览链修复 + 云资源清理 + 审批门禁解除）**
+>
+> 1. **三个真 bug 修掉（均有实测证据）**：
+>    ① GitHub 会**静默丢弃含密码的 job output**（日志 `Skip output 'PREVIEW_DATABASE_URL' since it
+>    may contain secret`）⇒ 迁移 job 拿空 DSN；改 `scripts/preview/db-url.py` 在 job 内自取。
+>    ② 预览**选错库**：每个 Neon 分支有两个库（`kaas_v2_test` / `neondb`），ensure 取 `databases[0]`
+>    连到空库；改为跟生产 Hyperdrive `origin.database` 同库名（连的仍是**预览分支快照**，隔离不变）。
+>    ③ 预览 Hyperdrive **查询缓存开着** ⇒ 改库后 60s 内读旧行（重置密码后登录持续 401）；
+>    预览 config 改为 `caching.disabled=True`（生产保持原状）。
+> 2. **审批门禁解除**：`preview.yml` 重写 —— secrets 逐项注入（**去掉 `toJSON(secrets)` 整包**）、
+>    写权限下沉 job 级、迁移/冒烟修正（冒烟等 6 分钟）；实测 `workflow_dispatch` **全绿且不再
+>    action_required**（run `39375956315`）。预览链已可全自动。
+> 3. **云资源清理（用户授权，先备份后删）**：删 `kaas_v2_test`（生产分支，13MB/81 表/冻结
+>    `202609300001`/0 用户，备份 13 个 CSV 到 `backend/.tools/backup-kaas-v2-test-20261020/`）；
+>    删 dev 分支 `kaas_v2_test_records`（89 表/25 行，备份在 `...-records-20261020/`）；
+>    删分支 `pre-deploy-20261018-2150`；删 **`kaas-ppg` Hyperdrive**（PPG 废弃线残留，规则要求不保留）。
+>    现状：分支 = production / dev / preview-pr-424242，各自仅 `neondb`；Hyperdrive = `neon-kaas`（生产）
+>    + `kaas-preview-424242`（演示）。其他项目资源（gaojin/lianjia/powervoy-web）**未动**。
+> 4. **演示预览可用**：424242 连预览分支 neondb（生产快照：10 客户/2 报价/2 单证/3 个生产账号），
+>    补演示管理员 `demo@kaas.preview`；**14 分钟连续 200 无崩溃**（KV 版）。"~10 分钟必崩"**未再复现**,
+>    先前最可能叠加因素 = 错误库（旧 schema `kaas_v2_test`）+ 指向被删 config 的绑定。KV-less 对照
+>    实验开关（`--no-kv`）已加，观察中；依赖钉版（`pylock.toml` 入库）待根因定论后做。
+> 5. **仓库可见性**：当前 **public**（用户裁决：保持公开以让 CI 免费跑，本人稍后自行转回 private；
+>    原"已转回 private"表述已过期）。
+> 6. **并行线**：UI/UX 优化任务（另一会话）与本线**写范围不相交**（本线只动 `docs/`、`.github/`、
+>    `scripts/preview/`、后端脚本），未碰 `frontend/**`。
+>
 > **（2026-10-20 · 终局裁决：全部待办清零 —— 压过本摘要内所有旧待办条目）**
 >
 > 用户裁决：未关闭待办全部清零 —— ✅ = 完成；⏳ = **触发条件制**（到点自动执行 / 用户一声令下），
 > **不再活跃跟踪**。逐项处置见 `USER_ACTIONS_2026-10-19.md` 状态列与 `MASTER_EXEC_PLAN_2026-10-19.md`
-> §5 / 顶部 2026-10-20 状态行。关键落点：仓库已转回 **private**（U-S2 ✅，匿名 403 验证）；
+> §5 / 顶部 2026-10-20 状态行。关键落点：仓库可见性见上条（现为 public，用户自转）；
 > Neon Protected 为付费功能、不升级，预览脚本「删分支双保险校验」替代（U-S5 ✅，README §2.2 已标注）；
 > 生产 R2 桶**永久保留 `kaas-files`**（U-S6 ✅，目标态改名取消）；R2 新 keys + `RESEND_API_KEY`
 > （U-B1/U-B5）、U-E3/U-E4 发布窗口、**Hyperdrive 缓存关闭**、**生产测试数据 / 流失拒绝文件历史清理**
