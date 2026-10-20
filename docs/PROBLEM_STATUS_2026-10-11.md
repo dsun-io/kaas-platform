@@ -336,7 +336,7 @@
 >    本地 Docker PG + 本地 MinIO，不触云）。早场"恢复三层环境模型"条目（见本摘要下方 10-19 晚场前
 >    条目）由本矩阵**细化取代**：预览改为每 PR 独立 Neon 子分支，另有"开发远程冒烟"第四列。
 >
-> **最新交接文档：`README.md`（主交接，唯一权威）**；执行入口 `docs/MASTER_EXEC_PLAN_2026-10-19.md`。
+> **最新交接文档：根 `README.md`（架构/环境/门禁）**；交接检索入口 `docs/README.md`。
 > 2026-10-19 当日交接：`docs/archive/2026-10-20-closeout/HANDOVER_2026-10-19_CI_AND_PROD_FIXES.md`（✅ 已完成：注册 500 / 定价页白屏已修并部署；
 > CI `backend:test` db-tests 已修绿 `6c08900`；含「本机无 Postgres ⇒ 本地 db 测试全 skip」等环境坑与「不要重做」清单）；
 > `docs/archive/2026-10-20-closeout/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
