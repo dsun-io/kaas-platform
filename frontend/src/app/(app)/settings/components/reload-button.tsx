@@ -55,7 +55,7 @@ export function ReloadButton() {
 
         {result && (
           <div>
-            <p className="text-sm text-green-600 mb-2">
+            <p className="text-sm text-success mb-2">
               已重载 {result.reloaded_count} 个租户
             </p>
             <TenantList

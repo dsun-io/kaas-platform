@@ -166,7 +166,7 @@ export default function SpecProposalsPage() {
                         {p.group_code}
                       </span>
                       {p.recommended_for_promotion && (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700">
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-success-muted text-success-muted-foreground">
                           推荐晋升
                         </span>
                       )}
@@ -186,7 +186,7 @@ export default function SpecProposalsPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="text-green-600 hover:text-green-700"
+                      className="text-success hover:text-success/80"
                       onClick={() => {
                         setReviewDialog({ proposal: p, action: "approve" });
                         setReviewNote("");

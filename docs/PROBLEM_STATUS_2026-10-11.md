@@ -189,6 +189,10 @@
 > spec-proposals / market-view / research 三处手写 border-b-2 tab 收编到统一 `Tabs`；
 > spec-proposals 加载/空态改骨架+`EmptyState`；research 供应能力图标改 `text-success/text-destructive`。
 >
+> **（2026-10-20 · P2 语义色清零）**
+> 全站 `app/(app)` 里 `text-red/green/amber/emerald-*`、`bg-*-100` 等硬编码色清零（原 13 文件 23 处），
+> 统一改 `success/warning/destructive` 语义 token（含暗色取值）。
+>
 > **（2026-10-20 · 新会话接手核对：本地 main 同步 + 分支残留清理 + 生产 secrets 实测 + 本机工具链）**
 >
 > 1. **本地 main 已快进到 `fb4b2aa`**（此前落后 origin/main 33 个提交 —— 本地曾停在 10-19 下午的
