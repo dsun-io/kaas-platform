@@ -53,7 +53,7 @@
 
 | ID | 事项 | 选项与影响 | 状态 |
 |---|---|---|---|
-| U-E1 | **S5 预览环境** | **已裁决：A. 全量做**（每 PR Neon 子分支 + 独立 Hyperdrive + `kaas-preview-storage` + KV 前缀 + CI 防污染断言）。**凭据进度（2026-10-20）**：`NEON_API_KEY` + `NEON_PROJECT_ID` 已写入 repo secrets；`CLOUDFLARE_API_TOKEN`（账号级，用户确认）权限在 S5 实施时首个 workflow 里做 whoami 式验证；预览 R2 桶 / KV 可由 token 代建 | 🔧 **前置基本就绪**，代码侧下一轮实施 |
+| U-E1 | **S5 预览环境** | **已裁决：A. 全量做**（每 PR Neon 子分支 + 独立 Hyperdrive + `kaas-preview-storage` + KV 前缀 + CI 防污染断言）。**✅ 已落地（2026-10-20，`18ae386`）**：`scripts/preview/` + `preview.yml` + 前缀规则 + S5-d 断言，repo secrets/variables 全配；预览 secrets 按独立方案供（`JWT_SECRET`/`ADMIN_SETUP_TOKEN` 随机独立值已入 repo secrets；预览桶专用 S3 token 无 API 需 Dashboard 手动建，可选） | ✅ **已落地**，待首次真实 PR 端到端验证 |
 | U-E2 | **技术栈升级**（高-3） | ✅ **已完成（2026-10-20，`9e13ef5`）**：Next **16.4.2** / React **19.3** / ESLint **10.13** / TS **6.0.3** / CI Node 22；回归 typecheck/lint(0 error)/455 tests/e2e 23+4skip/构建全绿；`pnpm audit` 80→39（**0 critical**） | ✅ 已完成，无需你操作 |
 | U-E3 | **生产发布窗口** | 当前部署冻结（`deploy.yml` 仅手动）；**已裁决：先不发布，等 S5 完成后再定**。发布方式建议：本机 `cd backend/worker && npx pywrangler deploy`；迁移已由 `PROD_DATABASE_URL` 配好可自动跑（head `202610190020`） | ⬜ 待你指定时间（届时 §7 检查单批量做：迁移 + RESEND/S3 secrets + 冷启动测量 + Hyperdrive 缓存关闭） |
 | U-E4 | **冷启动基线测量**（S6-c 收尾） | 需一次**经你批准**的 `pywrangler deploy`（或 versions upload）后，在 CF Dashboard → Workers → kaas → Metrics 读 p50 冷启动；把结果写入 `backend/worker/coldstart-baseline.json`（格式：`{"measured_at":"YYYY-MM-DD","p50_ms":<number>,"method":"dashboard metrics","commit":"<sha>"}`）。验收线 **≤2,950ms**，写入后 `scripts/check-worker-bundle.py` 自动校验 | ⬜ 随发布窗口一起（U-E3） |
