@@ -161,6 +161,9 @@ FACT_LABELS: dict[str, tuple[str, str]] = {
     "total_amount": ("总金额", "Total Amount"),
     "total_payable": ("应付总额", "Total Amount Payable"),
     "fx_rate": ("汇率", "Exchange Rate"),
+    # A14：本单包装（来自产品 packaging[].method / 本单 packaging_id，不新增业务字段）
+    "packing_method": ("包装方式", "Packing Method"),
+    "packing_type": ("包装类型", "Packing Type"),
     "port_of_loading": ("装运港", "Port of Loading"),
     "port_of_destination": ("目的港", "Port of Destination"),
     "country_of_origin": ("原产国", "Country of Origin"),
@@ -512,6 +515,83 @@ def normalize_fact_value(key: str, value: Any) -> str:
     if _base_of(key) in ("currency",):
         text = text.upper()
     return text
+
+
+# ─── A14：包装事实（本单包装来自产品 `spec.packaging[].method`）───────────────
+#
+# 为什么要有「包装类型」这个派生事实：A12 触发器能写 `packing_type != "wood"`
+# 才出非木包装声明，但 `packing_method` 是产品里的自由文本（"木托盘"/"wooden pallet"/
+# "纸箱+托盘" 都可能），直接拿它做条件必然写成十种口径。这里用**纯函数归类**把
+# 自由文本收敛成 6 个枚举值，归类规则只有一处（前端/API 不另写）。
+#
+# 归类口径（顺序有意义）：
+# 1. 空 / 明确"无包装"字样 ⇒ `none`；
+# 2. 按分隔符（`+ / & 、 , ; 和 及`）切词，逐词归到 wood / bag / carton；
+#    - 只命中 1 类 ⇒ 该类；
+#    - 命中 2+ 类 ⇒ `mixed`（"木托盘+纸箱"）；
+# 3. 没有分隔符时按关键词**优先级**（木 > 袋 > 箱）取第一类 ——
+#    "木箱" 应归 wood 而不是 mixed（它就是一个木制容器，不是两种包装混用）；
+# 4. 都不命中 ⇒ `other`（铁架/裸装等，交给业务人工判断，不硬塞进 6 类）。
+PACKING_TYPES: tuple[str, ...] = ("wood", "bag", "carton", "none", "mixed", "other")
+
+# 事实 origin（Worker 解析本单包装后传给 `extract_facts(packing=...)` 的标记）
+PACKING_ORIGIN_ROW = "row"                              # 行 spec_snapshot.packaging_id 命中产品配置
+PACKING_ORIGIN_PRODUCT_DEFAULT = "inferred:product_default"  # 本单没带 id ⇒ 产品默认包装
+PACKING_ORIGIN_SNAPSHOT = "inferred:snapshot"           # 产品解析不到，退回快照里的包装名
+PACKING_ORIGIN_NONE = "inferred:none"                   # 产品无包装配置 / 无法解析
+
+_PACKING_NONE_WORDS = (
+    "none", "no packing", "without packing", "n/a", "na", "-", "无包装", "不需包装", "无需包装",
+)
+# 关键词按**优先级**排列：先木、再袋、再箱（"木箱" 归 wood，见上方口径 3）
+_PACKING_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("wood", ("木", "wood", "pallet", "托", "plywood", "lumber", "crate")),
+    ("bag", ("袋", "bag", "sack")),
+    ("carton", ("箱", "carton", "box", "case")),
+)
+_PACKING_DELIMITERS = re.compile(r"[+/&、,，;；]|(?:\band\b)|(?:[及和])")
+
+
+def _packing_norm(method: Any) -> str:
+    text = unicodedata.normalize("NFKC", str(method if method is not None else ""))
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def _packing_category(token: str) -> Optional[str]:
+    for category, keywords in _PACKING_KEYWORDS:
+        if any(keyword in token for keyword in keywords):
+            return category
+    return None
+
+
+def classify_packing_type(method: Any) -> str:
+    """包装方式自由文本 → `wood|bag|carton|none|mixed|other`（纯函数，无副作用）。
+
+    `method` 为空 / 明确"无包装" ⇒ `none`；多类混用（带分隔符命中 2+ 类）⇒ `mixed`；
+    未知措辞 ⇒ `other`（不猜成 wood —— 误判会直接导致"该出的非木声明不出"）。
+    """
+    text = _packing_norm(method)
+    if not text or any(word == text for word in _PACKING_NONE_WORDS):
+        return "none"
+
+    tokens = [token.strip() for token in _PACKING_DELIMITERS.split(text) if token.strip()]
+    if tokens:
+        categories: list[str] = []
+        for token in tokens:
+            category = _packing_category(token)
+            if category and category not in categories:
+                categories.append(category)
+        if len(categories) == 1:
+            return categories[0]
+        if len(categories) > 1:
+            return "mixed"
+        # 没有分隔符命中（或分隔后都没关键词）：按优先级取全文第一类
+    for category, keywords in _PACKING_KEYWORDS:
+        if any(keyword in text for keyword in keywords):
+            return category
+    if any(word in text for word in _PACKING_NONE_WORDS):
+        return "none"
+    return "other"
 
 
 def _dec_or_none(value: Any) -> Optional[Decimal]:
@@ -979,6 +1059,7 @@ def extract_facts(
     *,
     immutable_keys: Optional[Sequence[str]] = None,
     extra_equivalents: Optional[Mapping[str, Any]] = None,
+    packing: Optional[Mapping[str, Any]] = None,
 ) -> list[Fact]:
     """从既有 payload 结构抽取事实（§4-A 的入口）。
 
@@ -997,6 +1078,11 @@ def extract_facts(
     `immutable_keys` 可覆盖"不可改写"清单（默认 `IMMUTABLE_KEYS`）；
     `extra_equivalents` 是租户增量词表，用于把租户自己的付款时点写法认成枚举
     （参数传入、内核不读库，见 `equivalents` 的维护口径）。
+
+    `packing`（A14，可选）是本单包装的**解析结果**（Worker 负责从「行 packaging_id →
+    产品 packaging[]」解析，内核不读产品库）：`{method, origin, packaging_id?, packaging_name?}`。
+    传入时追加 `packing_method`（原文）/`packing_type`（`classify_packing_type` 归类枚举）；
+    不传则**不产生**包装事实（保持既有调用方 payload 口径不变）。
     """
     data: dict = dict(payload) if isinstance(payload, Mapping) else {}
     doc_type = str(doc_type or "other").strip() or "other"
@@ -1102,6 +1188,60 @@ def extract_facts(
         add(payable_key, payable, key="total_payable", currency=currency)
     if _has_value(effective.get("fx_rate")):
         add("fx_rate", effective["fx_rate"])
+
+    # 2.5) 包装事实（A14）：**本单包装由调用方解析后传入**，内核不读产品库。
+    #
+    # `packing` 契约（Worker `_resolve_packing` 产出）：
+    #   {"method": "木托盘", "origin": "row" | "inferred:product_default"
+    #                | "inferred:snapshot" | "inferred:none",
+    #    "packaging_id": "pk_1"?, "packaging_name": "木托盘"?}
+    # `origin` 是产品配置/行的**来源标记**：`row` = 本单行 packaging_id 命中；
+    # `inferred:product_default` = 本单没带 id、回退产品默认包装（任务要求显式标注）。
+    #
+    # trust 一律 confirmed：包装是**产品配置的确定性推导**，不是业务员填的待确认值；
+    # 若标 unverified，任何一张带包装的单据都会因 `gate_trust` 签不出去（事实层的闸门
+    # 是给"人工声明值"用的，不适用于配置派生值）。
+    if packing:
+        packing_origin = str(packing.get("origin") or PACKING_ORIGIN_NONE)
+        packaging_id = str(packing.get("packaging_id") or "").strip()
+        packaging_name = str(packing.get("packaging_name") or "").strip()
+        if packing_origin == PACKING_ORIGIN_ROW and packaging_id:
+            evidence = f"spec_snapshot.packaging_id={packaging_id}"
+        elif packing_origin == PACKING_ORIGIN_PRODUCT_DEFAULT:
+            evidence = PACKING_ORIGIN_PRODUCT_DEFAULT
+            if packaging_id:
+                evidence += f" (packaging_id={packaging_id})"
+            elif packaging_name:
+                evidence += f" (packaging={packaging_name})"
+        elif packing_origin == PACKING_ORIGIN_SNAPSHOT:
+            evidence = PACKING_ORIGIN_SNAPSHOT
+        else:
+            evidence = PACKING_ORIGIN_NONE
+
+        source = SOURCE_MANUAL if packing_origin == PACKING_ORIGIN_ROW else SOURCE_INFERRED
+        method_text = normalize_fact_value(
+            "packing_method", packing.get("method") or "none",
+        ) or "none"
+
+        def add_packing(fact_key: str, fact_value: Any) -> None:
+            if fact_key in seen:
+                return
+            zh, en = _bilingual(fact_value)
+            facts.append(Fact(
+                key=fact_key,
+                value=fact_value,
+                text_zh=zh,
+                text_en=en,
+                source=source,
+                trust=TRUST_CONFIRMED,
+                immutable=False,
+                evidence_ref=evidence,
+            ))
+            seen.add(fact_key)
+
+        # `packing_method` 保留产品里的**原文**（可读、可追溯）；`packing_type` 是归类枚举
+        add_packing("packing_method", method_text)
+        add_packing("packing_type", classify_packing_type(method_text))
 
     # 3) 明细行：qty[i] / unit_price[i] / line_amount[i]（行号 1 起，与界面一致）
     items = effective.get("items")

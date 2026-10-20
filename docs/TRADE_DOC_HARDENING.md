@@ -242,3 +242,78 @@ primary  := "(" expr ")" | "[" 列表 "]" | 字面量 | 事实键
   lint 两类 warning 且 **blocking 为空**、无表达式时零影响；
 - 全量 worker：**1316 passed / 12 skipped**（基线 1237+12，新增 75 条，**不减少**）。
 
+---
+
+## 10. 包装事实 `packing_method` / `packing_type`（A14 · 2026-10-21 落地）
+
+### 10.1 为什么不新增字段
+
+产品管理里**已有**包装设计：`spec.packaging[] = {id, name, method, is_default, created_at, …}`
+（`method` 是包装方式自由文本），报价行把它选中的 `packaging_id` 写进
+`quote_order_items.spec_snapshot.packaging_id`（前端 `line-to-item.ts`），
+订单/单证快照原样继承。A14 只是**读取并归类**这些既有数据，不建表、不加字段。
+
+### 10.2 解析路径（Worker `ws_docs_hardening._packing_of_doc`）
+
+1. 从 `raw_payload.sources.{order|quote|pi|contract}.items[].spec_snapshot` 找**第一条**
+   带 `packaging_id` / `product_key` / `packaging_name` 的行项；
+2. `spec_snapshot.product_key` → 产品定义（`tenant_products` 优先、回退注册表，
+   与 `/formulas`、算价同一解析器 `quote_api._effective_product_raw`）；
+3. 产品 `spec.packaging[]`：本单 `packaging_id` 命中 → 取该条 `method`；
+   未带 id ⇒ `is_default` > 最早 `created_at` > 首条（与引擎 `_pick_packaging` 同口径）；
+4. 产品无 packaging 配置 ⇒ `method="none"`；产品解析不到但快照里有 `packaging_name`
+   ⇒ 退回包装名（至少让触发器有值可判）；解析失败一律降级，**不让 `/facts` 500**。
+
+### 10.3 两条事实与 origin 标注
+
+| fact | 值 | 说明 |
+|---|---|---|
+| `packing_method` | 产品 `packaging[].method` **原文**（无配置 = `none`） | text 事实，可读可追溯 |
+| `packing_type` | `wood \| bag \| carton \| none \| mixed \| other` | 由 `facts.classify_packing_type()` **纯函数归类**（唯一口径） |
+
+`origin` 通过事实的 `source` + `evidence_ref` 标注（**任务要求的"回退默认要标出来"**）：
+
+| origin | source | evidence_ref | 场景 |
+|---|---|---|---|
+| `row` | `manual` | `spec_snapshot.packaging_id=<id>` | 本单行显式选了包装 |
+| `inferred:product_default` | `inferred` | `inferred:product_default (packaging_id=…)` | 本单没带 id，回退产品默认包装 |
+| `inferred:snapshot` | `inferred` | `inferred:snapshot` | 产品解析不到，退回快照里的包装名 |
+| `inferred:none` | `inferred` | `inferred:none` | 产品无包装配置 / 全部解析失败 |
+
+**trust 一律 `confirmed`**：包装是产品配置的确定性推导，不是业务员填的待确认声明；
+若标 `unverified`，任何带包装的单据都会因 `gate_trust` 签不出去（事实层闸门面向"人工声明值"）。
+
+### 10.4 归类口径（`classify_packing_type`）
+
+- 空 / 明确"无包装"（`none`/`no packing`/`无包装`…）⇒ `none`；
+- 按分隔符（`+ / & 、 , ; 和 及`）切词，逐词归到 wood / bag / carton：
+  只命中 1 类 ⇒ 该类；命中 2+ 类 ⇒ `mixed`（如 `木托盘+纸箱`）；
+- 无分隔符时按关键词**优先级**（木 > 袋 > 箱）——`木箱` 归 `wood` 而不是 mixed；
+- 都不命中 ⇒ `other`（铁架/裸装等交给人工判断，**不猜成 wood**，误判会导致该出的声明不出）。
+
+### 10.5 与 A12 触发器的配合（示例）
+
+```jsonc
+// 非木质包装声明：只有「不是木包装」才需要出（木包装单不需要 NON-WOOD 声明）
+{"doc_type": "non_wood_packing", "role": "required",
+ "trigger_expr": "packing_type != \"wood\""}
+
+// 熏蒸/木质包装证明：仅木包装才出
+{"doc_type": "fumigation_cert", "role": "required",
+ "trigger_expr": "packing_type == \"wood\""}
+```
+
+GET `/trade-docs/{id}/doc-set` 会按上述表达式回 `applicable` / `skipped_by_trigger`
+（不可求值时给 `trigger_error`，见 §9）；`/lint` 只给 warning、不阻断。
+
+### 10.6 测试
+
+- 内核 `backend/worker/tests/test_trade_doc_packing.py`：归类表（中英文/木箱优先级/混合/未知）、
+  四种 origin 的 source/trust/evidence、`packing_method=none` 与不传 `packing` 的兼容性；
+- API `backend/worker/tests/test_trade_doc_packing_api.py`：facts 端点四种 origin
+  （行命中/产品默认/无配置/快照名）+ **doc-set GET 端到端**（`packing_type != "wood"`
+  在木质包装单上 `applicable=false` / `skipped_by_trigger=true`）；
+- 全量 worker：**1390 passed + 12 skipped**（基线 1354+12，新增 36，**不减少**）；
+  `sync-shared.ps1 -Check` exit 0。
+
+

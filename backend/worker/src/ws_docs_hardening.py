@@ -347,9 +347,126 @@ def _fact_source_payload(d: dict) -> dict:
     return payload
 
 
-def _kernel_facts(d: dict) -> list[Fact]:
-    """payload 推导出的事实（未叠加表内处置）。"""
-    return extract_facts(_fact_source_payload(d), d.get("doc_type") or "other")
+# ─── A14：本单包装解析（复用产品 spec.packaging，不新增字段）───────────────
+
+# 这些 origin 常量与内核 `kaas_common.trade_doc.facts` 同名常量一一对应
+_PACKING_ORIGIN_ROW = "row"
+_PACKING_ORIGIN_PRODUCT_DEFAULT = "inferred:product_default"
+_PACKING_ORIGIN_SNAPSHOT = "inferred:snapshot"
+_PACKING_ORIGIN_NONE = "inferred:none"
+
+
+async def _packing_of_doc(
+    request: Request,
+    d: dict,
+    user: Optional[dict] = None,
+) -> dict:
+    """解析**本单**包装方式（A14）—— 不新增 DB 字段，只复用既有设计。
+
+    数据路径（按优先级）：
+    1. `raw_payload.sources.{order|quote|pi|contract}.items[].spec_snapshot`
+       —— 报价行落库时把 `packaging_id` 写进 `spec_snapshot`（前端 `line-to-item.ts`），
+       订单/单证快照原样继承；
+    2. `spec_snapshot.product_key` → 产品定义（`tenant_products` 优先、回退注册表，
+       与 `/formulas`、算价同一解析器 `quote_api._effective_product_raw`）；
+    3. 产品 `spec.packaging[]` 里按 `id` 命中本单 `packaging_id`；未带 id ⇒
+       `is_default` > 最早 `created_at` > 首条（与引擎 `_pick_packaging` 同口径）；
+    4. 产品无包装配置 / 产品解析不到 ⇒ `method="none"`；若快照里只有包装名（无 id）
+       则退回包装名（`inferred:snapshot`），至少让触发器有值可判。
+
+    返回内核 `extract_facts(packing=...)` 的契约：
+    `{method, origin, packaging_id, packaging_name}`。
+    `origin` 是**来源标注**（任务要求）：本单行命中 = `row`；回退产品默认 =
+    `inferred:product_default`；快照名/无配置 = `inferred:snapshot` / `inferred:none`。
+    解析失败一律降级为 `none`（facts 是加固增强，不能因为它把 `/facts` 打 500）。
+    """
+    payload = _fact_source_payload(d)
+    raw_sources = payload.get("sources")
+    sources = raw_sources if isinstance(raw_sources, dict) else {}
+
+    snapshot: Optional[dict] = None
+    for kind in ("order", "quote", "pi", "contract"):
+        snap = sources.get(kind)
+        if not isinstance(snap, dict):
+            continue
+        items = snap.get("items")
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            spec_snapshot = item.get("spec_snapshot")
+            if not isinstance(spec_snapshot, dict):
+                continue
+            if (str(spec_snapshot.get("packaging_id") or "").strip()
+                    or str(spec_snapshot.get("product_key") or "").strip()
+                    or str(spec_snapshot.get("packaging_name") or "").strip()):
+                snapshot = spec_snapshot
+                break
+        if snapshot is not None:
+            break
+
+    if snapshot is None:
+        return {
+            "method": "none", "origin": _PACKING_ORIGIN_NONE,
+            "packaging_id": None, "packaging_name": None,
+        }
+
+    product_key = str(snapshot.get("product_key") or "").strip()
+    packaging_id = str(snapshot.get("packaging_id") or "").strip()
+    snapshot_name = str(snapshot.get("packaging_name") or "").strip()
+
+    product = None
+    if product_key:
+        try:
+            from quote_api import _effective_product_raw  # 惰性导入：避免 main 导入期循环
+
+            product = await _effective_product_raw(request, user or {}, product_key)
+        except Exception:  # noqa: BLE001 - 见 docstring：产品解析失败按"无配置"降级
+            product = None
+
+    raw_packaging = None
+    if product is not None:
+        raw_packaging = (
+            product.get("packaging") if isinstance(product, dict)
+            else getattr(product, "packaging", None)
+        )
+    candidates = [p for p in (raw_packaging or []) if isinstance(p, dict)]
+
+    picked: Optional[dict] = None
+    if packaging_id:
+        picked = next(
+            (p for p in candidates if str(p.get("id") or "") == packaging_id), None)
+    if picked is None and candidates:
+        picked = next((p for p in candidates if p.get("is_default")), None)
+        if picked is None:
+            with_created = [p for p in candidates if p.get("created_at")]
+            picked = (
+                min(with_created, key=lambda p: str(p.get("created_at")))
+                if with_created else candidates[0]
+            )
+
+    if picked is None:
+        if snapshot_name:
+            return {
+                "method": snapshot_name, "origin": _PACKING_ORIGIN_SNAPSHOT,
+                "packaging_id": packaging_id or None, "packaging_name": snapshot_name,
+            }
+        return {
+            "method": "none", "origin": _PACKING_ORIGIN_NONE,
+            "packaging_id": packaging_id or None, "packaging_name": None,
+        }
+
+    method = str(picked.get("method") or "").strip()
+    if not method:  # method 是主口径；缺省时退回名称（可读，且归类仍能命中关键词）
+        method = str(picked.get("name") or "").strip() or "none"
+    matched_row = bool(packaging_id) and str(picked.get("id") or "") == packaging_id
+    return {
+        "method": method,
+        "origin": _PACKING_ORIGIN_ROW if matched_row else _PACKING_ORIGIN_PRODUCT_DEFAULT,
+        "packaging_id": str(picked.get("id") or "") or None,
+        "packaging_name": str(picked.get("name") or "") or None,
+    }
 
 
 def _baseline_facts(d: dict) -> list[Fact]:
@@ -394,9 +511,23 @@ def _apply_overlay(facts: list[Fact], rows: dict[str, dict]) -> list[Fact]:
     return merged
 
 
-async def _facts_of(request: Request, d: dict) -> list[Fact]:
-    """单证事实 = 内核抽取 + 表内处置（其它端点都走这一个入口）。"""
-    return _apply_overlay(_kernel_facts(d), await _fact_rows(request, d["id"]))
+async def _facts_of(
+    request: Request,
+    d: dict,
+    user: Optional[dict] = None,
+) -> list[Fact]:
+    """单证事实 = 内核抽取 + 表内处置（其它端点都走这一个入口）。
+
+    A14：额外解析本单包装并作为 `packing=` 传给内核（`packing_method` /
+    `packing_type` 两条事实）；产品解析失败按"无配置"降级，不影响其余事实。
+    """
+    packing = await _packing_of_doc(request, d, user)
+    facts = extract_facts(
+        _fact_source_payload(d),
+        d.get("doc_type") or "other",
+        packing=packing,
+    )
+    return _apply_overlay(facts, await _fact_rows(request, d["id"]))
 
 
 def _summary(facts: list[Fact]) -> dict:
@@ -474,7 +605,7 @@ async def list_trade_doc_facts(
     未确认事实的导出占位由内核 `render_tbc` 在渲染侧处理（TBC/待确认，不猜值）。
     """
     d = await _doc_404(request, doc_id)
-    facts = await _facts_of(request, d)
+    facts = await _facts_of(request, d, user)
     return {
         "doc_id": doc_id,
         "doc_type": d.get("doc_type"),
@@ -504,7 +635,7 @@ async def confirm_trade_doc_facts(
     """
     d = await _doc_404(request, doc_id)
     _require_not_void(d)
-    facts = await _facts_of(request, d)
+    facts = await _facts_of(request, d, user)
     by_key = {fact.key: fact for fact in facts}
 
     if body.keys:
@@ -532,7 +663,7 @@ async def confirm_trade_doc_facts(
             from_ws="trade_doc",
         )
 
-    refreshed = await _facts_of(request, d)
+    refreshed = await _facts_of(request, d, user)
     return {
         "doc_id": doc_id,
         "confirmed": [fact.key for fact in targets],
@@ -566,7 +697,7 @@ async def patch_trade_doc_fact(
             "要改值请改单证内容（draft 期）或作废重开",
         )
 
-    fact = next((item for item in await _facts_of(request, d) if item.key == fact_key), None)
+    fact = next((item for item in await _facts_of(request, d, user) if item.key == fact_key), None)
     if fact is None:
         raise _error(404, FACT_NOT_FOUND,
                      f"单证 {doc_id} 上没有事实「{fact_key}」（值由 payload 推导，未推导出的键不能凭空创建）")
@@ -583,7 +714,7 @@ async def patch_trade_doc_fact(
         text_en=body.text_en,
         evidence_ref=body.evidence_ref,
     )
-    updated = next(item for item in await _facts_of(request, d) if item.key == fact_key)
+    updated = next(item for item in await _facts_of(request, d, user) if item.key == fact_key)
     return {"doc_id": doc_id, "item": _fact_dict(updated)}
 
 
@@ -855,7 +986,7 @@ async def lint_trade_doc(
     这两个 warning 只在 `/lint` 出现，**不进 confirm 闸门**（避免历史单据误伤）。
     """
     d = await _doc_404(request, doc_id)
-    facts = await _facts_of(request, d)
+    facts = await _facts_of(request, d, user)
     blocking, warnings = await collect_lint(request, d, facts=facts)
     warnings.extend(await _trigger_warnings(request, d, facts))
     return {
@@ -1088,7 +1219,7 @@ async def get_trade_doc_doc_set(
     """
     d = await _doc_404(request, doc_id)
     items = await _doc_set_items(request, doc_id)
-    facts = await _facts_of(request, d)
+    facts = await _facts_of(request, d, user)
     return {
         "doc_id": doc_id,
         "items": resolve_doc_set(items, _facts_map(facts)),
