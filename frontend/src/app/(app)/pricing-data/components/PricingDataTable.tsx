@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, RotateCcw, Save } from "lucide-react";
+import { Loader2, Pencil, RotateCcw, Save } from "lucide-react";
 import type {
   PricingCell,
   PricingMatrix,
@@ -19,6 +19,8 @@ interface Props {
   savingKey: string | null;
   onSave: (payload: SavePricingCell, key: string) => void;
   onReset: (cell: PricingCell) => void;
+  /** C36 #11：打开「改价」弹窗（PATCH /pricing-data/{item_id}） */
+  onEdit?: (cell: PricingCell) => void;
   /** 无需写库的提示（如值未变化） */
   onNotice?: (msg: string) => void;
 }
@@ -36,6 +38,7 @@ export function PricingDataTable({
   savingKey,
   onSave,
   onReset,
+  onEdit,
   onNotice,
 }: Props) {
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -195,6 +198,19 @@ export function PricingDataTable({
                           )}
                           保存
                         </Button>
+                        {cell.configured && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title="修改这一格的成本（金额/单位/生效期/备注/状态）"
+                            disabled={saving || cell.item_id == null}
+                            onClick={() => onEdit?.(cell)}
+                            className="gap-1"
+                          >
+                            <Pencil className="size-3" />
+                            编辑
+                          </Button>
+                        )}
                         {cell.configured && (
                           <Button
                             size="sm"

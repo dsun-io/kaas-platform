@@ -2799,6 +2799,17 @@ const MOCK_ARCHIVE_LOGS: Array<{
   },
 ];
 
+/** 定价单位白名单（与 `main.py` 的 `_PRICING_UNIT_TO_COST_TYPE` 键逐字一致；传别的值后端 422） */
+const PRICING_UNIT_VALUES = new Set([
+  "元/kg",
+  "kg",
+  "元/卷",
+  "元/捆",
+  "元/平方米",
+  "元/个",
+  "元/根",
+]);
+
 export const handlers = [  // ── 工位订阅快照（原先没有 mock，是**真正的**缺口）─────────────────────
   // 形状**必须**照 `lib/workstation/visibility.ts` 的 `parseMyWorkstationsPayload()`：
   //   · `workstations` 必须是数组，否则整份 payload 被当成"没读到"(null) → 放行
@@ -7180,6 +7191,166 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
 
   // ── C18 长尾域（intel / market / spec-config / ai-providers / auth 长尾 /
   //    shipments / research / leadgen / outreach / pricing-data / fx / 算价导入）──
+  // ── C36 本期 5 条 UI 写口（税档软删 / 定价改价 / 团队改名 / 手工汇率 / CSV 导入）──
+  // 形状真源逐条标注；**只保证契约与错误语义**：
+  //   · 税档、团队在 handlers.ts 内有真 store ⇒ 写后 GET 能看到变化；
+  //   · 定价矩阵 GET / 汇率 latest GET / leadgen runs GET 在 longtail-handlers.ts 自己的区段，
+  //     这里不改它们的 store（跨模块状态联动不在本批范围），写口只回契约形状。
+  http.delete("/api/v1/tax-archives/:id", ({ params }) => {
+    // ← tax_archives.py:295 delete_tax_archive：软删 status=inactive
+    const id = Number(params.id);
+    const row = taxArchivesStore.find((a) => a.id === id);
+    if (!row) {
+      return HttpResponse.json(
+        { detail: { error: "not_found", code: "TAX_ARCHIVE_NOT_FOUND", detail: "税务档案不存在" } },
+        { status: 404 },
+      );
+    }
+    row.status = "inactive";
+    row.updated_at = new Date().toISOString();
+    return HttpResponse.json({ id: row.id, status: "inactive" });
+  }),
+
+  http.patch("/api/v1/pricing-data/:itemId", async ({ params, request }) => {
+    // ← main.py:2368 update_pricing_data：只改金额/单位/生效期/备注/状态；422 detail 是字符串
+    const itemId = Number(params.itemId);
+    if (!Number.isInteger(itemId) || itemId <= 0) {
+      return HttpResponse.json({ detail: "Pricing data not found" }, { status: 404 });
+    }
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const updates: Record<string, unknown> = {};
+    if ("amount" in body) {
+      const amount = body.amount;
+      if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
+        return HttpResponse.json({ detail: "amount must be > 0" }, { status: 422 });
+      }
+      updates.amount = amount;
+    }
+    if ("unit" in body) {
+      const unit = String(body.unit ?? "").trim();
+      if (!PRICING_UNIT_VALUES.has(unit)) {
+        return HttpResponse.json({ detail: "unit 取值不合法" }, { status: 422 });
+      }
+      updates.unit = unit;
+    }
+    if ("effective_from" in body) {
+      updates.effective_from = body.effective_from
+        ? String(body.effective_from).slice(0, 10)
+        : null;
+    }
+    if ("effective_to" in body) {
+      updates.effective_to = body.effective_to
+        ? String(body.effective_to).slice(0, 10)
+        : null;
+    }
+    if ("notes" in body) updates.notes = body.notes ?? null;
+    if ("status" in body) {
+      const status = String(body.status ?? "").trim();
+      if (!["active", "inactive", "deprecated"].includes(status)) {
+        return HttpResponse.json({ detail: "status 取值不合法" }, { status: 422 });
+      }
+      updates.status = status;
+    }
+    if (Object.keys(updates).length === 0) {
+      return HttpResponse.json({ detail: "No fields to update" }, { status: 422 });
+    }
+    return HttpResponse.json({
+      id: itemId,
+      amount: Number(updates.amount ?? 0),
+      unit: String(updates.unit ?? ""),
+      effective_from: updates.effective_from ?? null,
+      status: String(updates.status ?? "active"),
+    });
+  }),
+
+  http.patch("/api/v1/teams/:id", async ({ params, request }) => {
+    // ← ws_teams.py:245 update_team：仅团队管理员；同名 409；名称规则 422
+    const id = Number(params.id);
+    if (id !== teamStore.id) {
+      return HttpResponse.json(
+        { detail: { error: "not_found", code: "TEAM_NOT_FOUND", message: "团队不存在，或你无权访问" } },
+        { status: 404 },
+      );
+    }
+    const body = (await request.json().catch(() => ({}))) as { name?: unknown };
+    const name = String(body.name ?? "").trim();
+    if (name.length < 2 || name.length > 30) {
+      return HttpResponse.json(
+        { detail: { error: "validation", code: "INVALID_TEAM_NAME", message: "团队名称需 2–30 个字符" } },
+        { status: 422 },
+      );
+    }
+    teamStore.name = name;
+    return HttpResponse.json({
+      id: teamStore.id,
+      name: teamStore.name,
+      created_by: teamStore.created_by,
+      is_admin: true,
+      member_count: teamMembersStore.length,
+    });
+  }),
+
+  http.post("/api/v1/fx-rates", async ({ request }) => {
+    // ← ws_extras.py:217 upsert_fx_rate：rate<=0 ⇒ 422 扁平错误体；否则 UPSERT 返回行
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const rate = Number(body.rate);
+    if (!Number.isFinite(rate) || rate <= 0) {
+      return HttpResponse.json(
+        { error: "invalid_rate", message: "rate must be > 0" },
+        { status: 422 },
+      );
+    }
+    const rateDate =
+      typeof body.rate_date === "string" && body.rate_date.trim() !== ""
+        ? body.rate_date.slice(0, 10)
+        : new Date().toISOString().slice(0, 10);
+    return HttpResponse.json(
+      {
+        base_currency: String(body.base_currency ?? "USD").toUpperCase() || "USD",
+        quote_currency: String(body.quote_currency ?? "CNY").toUpperCase() || "CNY",
+        rate,
+        rate_date: rateDate,
+        source: String(body.source ?? "manual"),
+        is_stale: false,
+      },
+      { status: 201 },
+    );
+  }),
+
+  http.post("/api/v1/leadgen/runs/from-csv", async ({ request }) => {
+    // ← chain.py:1003：multipart 字段名固定 csv_file；返回 run 对象
+    const form = await request.formData().catch(() => null);
+    const file = form?.get("csv_file");
+    if (!file || typeof file === "string") {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "CSV_REQUIRED",
+            detail: "source=csv 需上传 CSV 文件（POST /leadgen/runs/from-csv）",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const text =
+      typeof (file as File).text === "function" ? await (file as File).text() : "";
+    // 与后端同口径的诚实计数：表头 1 行，其余非空行 = 线索数
+    const nonEmpty = text.split(/\r?\n/).filter((line) => line.trim() !== "").length;
+    const leads = Math.max(0, nonEmpty - 1);
+    return HttpResponse.json(
+      {
+        id: 9001,
+        status: "succeeded",
+        leads_found: leads,
+        leads_kept: leads,
+        error: null,
+        deduplicated: false,
+      },
+      { status: 201 },
+    );
+  }),
+
   // 单独成模块：与 P1 组互不依赖，放一处便于按域维护（见文件头注释）。
   ...longtailHandlers,
 ];

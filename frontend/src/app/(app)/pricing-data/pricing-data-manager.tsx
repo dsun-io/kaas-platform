@@ -7,14 +7,20 @@ import {
   useDeactivatePricingCell,
   usePricingMatrix,
   useSavePricingCell,
+  useUpdatePricingCell,
 } from "./hooks/use-pricing-data";
 import { AddOptionPanel } from "./components/AddOptionPanel";
+import {
+  PricingEditDialog,
+  type PricingCellUpdate,
+} from "./components/PricingEditDialog";
 import { PageHeader } from "@/components/shared";
 import {
   PricingAllCustomersTable,
   PricingDataTable,
 } from "./components/PricingDataTable";
 import type { PricingCell, SavePricingCell } from "@contracts/export-quote";
+import { normalizeApiError } from "@/lib/api/api-error";
 
 /**
  * 定价数据（成本价表）—— 算价的输入数据。
@@ -47,6 +53,9 @@ export function PricingDataManager({
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [addingOption, setAddingOption] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // C36 #11：改价弹窗（PATCH /pricing-data/{item_id}）
+  const [editCell, setEditCell] = useState<PricingCell | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
 
   // 权限降级（如登录态刷新）后不能继续停在 cross-customer 视图上
   useEffect(() => {
@@ -61,6 +70,7 @@ export function PricingDataManager({
   } = usePricingMatrix(productKey, scope);
   const saveCell = useSavePricingCell(productKey);
   const deactivateCell = useDeactivatePricingCell(productKey);
+  const updateCell = useUpdatePricingCell(productKey);
 
   const forbidden =
     showAllCustomers &&
@@ -99,6 +109,21 @@ export function PricingDataManager({
       setNotice(typeof msg === "string" ? msg : "新增失败");
     } finally {
       setAddingOption(false);
+    }
+  }
+
+  async function handleUpdate(values: PricingCellUpdate) {
+    if (editCell?.item_id == null) return;
+    setEditError(null);
+    try {
+      await updateCell.mutateAsync({ itemId: editCell.item_id, ...values });
+      setNotice(
+        `已改价：${editCell.labels.join(" · ")} → ${values.amount} ${values.unit}（从下一张报价单起生效）。`,
+      );
+      setEditCell(null);
+    } catch (err: unknown) {
+      // 422/404 的原因是给人看的（amount must be > 0 / unit 不合法 / 行不存在），原样透出
+      setEditError(normalizeApiError(err).message);
     }
   }
 
@@ -187,7 +212,24 @@ export function PricingDataManager({
                 savingKey={savingKey}
                 onSave={handleSave}
                 onReset={handleReset}
+                onEdit={(cell) => {
+                  setEditError(null);
+                  setEditCell(cell);
+                }}
                 onNotice={setNotice}
+              />
+              <PricingEditDialog
+                open={editCell !== null}
+                onOpenChange={(open) => {
+                  if (!open) {
+                    setEditCell(null);
+                    setEditError(null);
+                  }
+                }}
+                cell={editCell}
+                pending={updateCell.isPending}
+                error={editError}
+                onSubmit={handleUpdate}
               />
             </>
           )}

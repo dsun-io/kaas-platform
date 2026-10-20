@@ -54,3 +54,45 @@ export function useDeactivatePricingCell(productKey: string) {
     },
   });
 }
+
+export interface UpdatePricingCellInput {
+  /** `customer_cost_items.id`（矩阵行里的 `item_id`；只有客户配置过的行才有） */
+  itemId: number;
+  amount: number;
+  unit?: string;
+  effective_from?: string | null;
+  notes?: string | null;
+  status?: "active" | "inactive" | "deprecated";
+}
+
+/**
+ * 改价（C36 #11）：`PATCH /api/v1/pricing-data/{item_id}`。
+ *
+ * 契约（`backend/worker/src/main.py:2368` `update_pricing_data`）：
+ * - 只改金额/单位/生效日期/备注/状态；**改规格组合要走 POST 建新版本**；
+ * - `amount <= 0`、`unit` 不在白名单、`status` 非法 ⇒ 422（该端点 422 的 `detail` 是**字符串**）；
+ * - 行不存在 / 不属于当前客户 ⇒ 404。
+ *
+ * 为什么不像保存那样 INSERT 新版本：改错价（金额少个 0、生效期写错）应就地修正，
+ * 而不是"删了重建"——重建会丢历史版本链。
+ */
+export function useUpdatePricingCell(productKey: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ itemId, ...body }: UpdatePricingCellInput) => {
+      const { data } = await apiClient.patch(`/pricing-data/${itemId}`, body, {
+        silent: true,
+      });
+      return data as {
+        id: number;
+        amount: number;
+        unit: string;
+        effective_from: string | null;
+        status: string;
+      };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pricing-data", productKey] });
+    },
+  });
+}

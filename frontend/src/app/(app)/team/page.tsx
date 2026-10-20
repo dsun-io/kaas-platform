@@ -14,9 +14,9 @@
  *   · 团队管理员 → 成员、邀请、工位开通；
  *   · 普通成员 → 只读（团队信息 + 我的工位 + 找管理员开通的提示）。
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AlertCircle, RefreshCw, ShieldCheck, Users } from "lucide-react";
+import { AlertCircle, Pencil, RefreshCw, ShieldCheck, Users } from "lucide-react";
 
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
@@ -31,6 +31,7 @@ import {
 } from "@/lib/workstation/visibility";
 
 import { TeamInvitesPanel } from "./components/team-invites-panel";
+import { TeamRenameDialog } from "./components/team-rename-dialog";
 import { TeamMembersPanel } from "./components/team-members-panel";
 import { TeamSetup } from "./components/team-setup";
 import { TeamSubscriptionsPanel } from "./components/team-subscriptions-panel";
@@ -53,6 +54,8 @@ export default function TeamPage() {
     useTeam();
   const currentUserId = user?.user_id ?? null;
   const subscriptionsRef = useRef<HTMLDivElement | null>(null);
+  // C36 #12：团队改名（PATCH /teams/{id}，仅团队管理员）
+  const [showRename, setShowRename] = useState(false);
 
   // 从"该工位未开通"引导页跳过来时，直接滚到工位开通区
   useEffect(() => {
@@ -125,6 +128,18 @@ export default function TeamPage() {
       <SectionCard
         title="团队信息"
         description="成员录入的客户/询盘/报价/订单/单证，本团队内互相可见；其他团队不可见。"
+        action={
+          isTeamAdmin && team ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowRename(true)}
+            >
+              <Pencil className="mr-1 size-4" />
+              改名
+            </Button>
+          ) : undefined
+        }
       >
         <dl className="grid gap-3 text-sm sm:grid-cols-3">
           <div>
@@ -159,6 +174,18 @@ export default function TeamPage() {
           )}
         </dl>
       </SectionCard>
+
+      {showRename && isTeamAdmin && team ? (
+        <TeamRenameDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setShowRename(false);
+          }}
+          teamId={team.id}
+          currentName={team.name ?? teamName ?? ""}
+          onRenamed={() => void refresh()}
+        />
+      ) : null}
 
       <SectionCard
         title="我的工位"

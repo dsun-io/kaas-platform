@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { usePageView } from "@/lib/events/use-page-view";
 import { RouteGuard } from "@/components/route-guard";
+import { LeadgenCsvImport } from "./components/csv-import-panel";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
@@ -228,6 +229,11 @@ export default function LeadgenPage() {
   };
 
   const run = async () => {
+    // CSV 数据源必须走 multipart 上传端点；JSON 端点收到 source=csv 会 422 CSV_REQUIRED
+    if (cfg.source === "csv") {
+      toast.error("CSV 数据源请用下方「导入 CSV 线索」上传文件");
+      return;
+    }
     setRunning(true);
     try {
       const { data } = await apiClient.post<LeadgenRun>("/leadgen/runs", {
@@ -413,9 +419,12 @@ export default function LeadgenPage() {
             )}
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            CSV 导入使用 POST /leadgen/runs/from-csv（multipart）。Google Places
-            数据源规划中。
+            CSV 数据源通过 POST /leadgen/runs/from-csv（multipart）导入；Google
+            Places 数据源规划中。
           </p>
+          {cfg.source === "csv" && (
+            <LeadgenCsvImport onImported={() => void refetchRuns()} />
+          )}
         </SectionCard>
 
         {/* runs history */}

@@ -33,6 +33,9 @@ import type {
   TaxArchiveList,
 } from "@contracts/export-quote";
 
+import { FxRateCard } from "./components/fx-rate-card";
+import { TaxArchiveDeactivateButton } from "./components/tax-archive-deactivate-button";
+
 const KEY = ["tax-archives"];
 const PT_KEY = ["product-tax-rates"];
 
@@ -425,15 +428,20 @@ export default function TaxArchivesPage() {
                           >
                             <Pencil className="mr-1 h-3 w-3" /> 编辑
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={toggle.isPending}
-                            onClick={() => toggle.mutate(a)}
-                          >
-                            <Power className="mr-1 h-3 w-3" />
-                            {a.status === "active" ? "停用" : "启用"}
-                          </Button>
+                          {a.status === "active" ? (
+                            // C36 #1：停用走 DELETE 软删（二次确认 + 403/404 原样透出）；
+                            // 重新启用仍走 PATCH（后端 DELETE 只做 active→inactive）
+                            <TaxArchiveDeactivateButton archive={a} />
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={toggle.isPending}
+                              onClick={() => toggle.mutate(a)}
+                            >
+                              <Power className="mr-1 h-3 w-3" /> 启用
+                            </Button>
+                          )}
                         </div>
                       ) : (
                         <span className="text-xs text-muted-foreground">只读</span>
@@ -600,6 +608,9 @@ export default function TaxArchivesPage() {
           </div>
         )}
       </SectionCard>
+
+      {/* C36 #14：手工汇率兜底（外部汇率源异常时用） */}
+      <FxRateCard />
     </div>
   );
 }
