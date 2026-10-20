@@ -704,6 +704,8 @@ export default function TradeDocsPage() {
                 docType={renderData.data.doc.doc_type}
                 status={renderData.data.doc.status}
                 payload={renderData.data.doc.raw_payload}
+                // A5-W3：金额摘要条读装配后的数据（items/currency），编辑中的 custom 由表单自己叠
+                data={renderData.data.data}
               />
               {/* 内容版本（A1）：草稿期每次保存/带入/翻译都留一版，可回看与恢复 */}
               <DocContentVersions

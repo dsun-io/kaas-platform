@@ -167,6 +167,8 @@ function renderForm(custom: Record<string, unknown> = {}) {
       docType="contract"
       status="draft"
       payload={{ custom }}
+      // A5-W3 起 DocCustomForm 需要装配后的数据（金额摘要条数据源）；本用例不关心金额
+      data={{}}
     />
   );
 }

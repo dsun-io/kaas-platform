@@ -60,6 +60,9 @@ import { useClauseTemplates } from "@/lib/trade-doc/use-clause-templates";
 import { useProducts } from "@/lib/products/use-products";
 
 import { useUpdateTradeDoc } from "../hooks/use-trade-docs";
+import { effectivePayload } from "@/lib/trade-doc/amount-summary";
+
+import { AmountSummaryBar } from "./amount-summary-bar";
 import { DocPhotoPicker } from "./doc-photo-picker";
 
 /** 单据关联的产品 key 存在 custom 的这个键上（后端共享内核同一口径） */
@@ -70,11 +73,15 @@ export function DocCustomForm({
   docType,
   status,
   payload,
+  data,
 }: {
   docId: number;
   docType: string;
   status: string;
+  /** `raw_payload`（含 sources/custom；保存时整块回写） */
   payload: TradeDocRawPayload | null | undefined;
+  /** 装配后的渲染数据（含 items/currency 与 custom 合并结果）—— 金额摘要条的数据源 */
+  data: Record<string, unknown> | null | undefined;
 }) {
   const update = useUpdateTradeDoc();
   const custom = (payload?.custom ?? {}) as Record<string, unknown>;
@@ -91,6 +98,22 @@ export function DocCustomForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const editable = status === "draft";
+
+  // A5-W3：把正在编辑的 custom 叠到装配数据上 ⇒ 摘要条与「保存后会渲染成什么样」同口径。
+  // 受保护字段（items / total_amount）不参与合并（effectivePayload 内已挡，与后端一致）。
+  const pendingCustom = useMemo(() => {
+    const values: Record<string, unknown> = {};
+    for (const field of fields) {
+      if (field.protected) continue;
+      const parsed = parseInput(field.control, texts[field.name] ?? "");
+      if (parsed.ok && parsed.value !== undefined) values[field.name] = parsed.value;
+    }
+    return values;
+  }, [fields, texts]);
+  const effectiveData = useMemo(
+    () => effectivePayload(data, pendingCustom),
+    [data, pendingCustom],
+  );
 
   /**
    * 条款模板（A5-W1）：只对 manifest 里真实存在的条款字段（payment_terms/inspection/
@@ -252,6 +275,13 @@ export function DocCustomForm({
           该单据状态为「{status}」，内容已冻结，不可修改。
         </p>
       )}
+
+      {/* A5-W3：只读金额摘要条（编辑中即时重算；金额真源仍是 payload，不可在此修改） */}
+      <AmountSummaryBar
+        docType={docType}
+        data={effectiveData}
+        sources={payload?.sources ?? null}
+      />
 
       <div className="grid gap-3 p-3 sm:grid-cols-2">
         {/* 关联产品：决定"产品基础信息"能否带入本单据（后端按字段声明与空值判定） */}
