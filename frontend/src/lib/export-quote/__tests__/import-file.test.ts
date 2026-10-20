@@ -5,6 +5,8 @@ import {
   describeIssue,
   filenameFromDisposition,
   groupIssues,
+  issuesToCsv,
+  issuesToText,
   MULTIPART_CONFIG,
   resultToCsv,
   summarizeResult,
@@ -354,5 +356,67 @@ describe("模板说明契约", () => {
         columns: [{ kind: "scalar", required: false }],
       }),
     ).toThrow();
+  });
+});
+
+describe("问题清单复制/导出（C19：错误行可下载/复制）", () => {
+  const issues: ImportIssue[] = [
+    {
+      row: 2,
+      column: "竖丝间距(cm)",
+      value: "abc",
+      message: "不是数字",
+      severity: "error",
+    },
+    {
+      row: 0,
+      column: "",
+      value: null,
+      message: "重复行已跳过",
+      severity: "warning",
+    },
+    {
+      row: 2,
+      column: "丝径方案",
+      value: null,
+      message: "不在可选值内",
+      severity: "error",
+    },
+  ];
+
+  it("纯文本按行分组、整表级问题排最后，且带列/值/原因", () => {
+    const text = issuesToText(issues);
+    expect(text).toContain("[第 2 行]");
+    expect(text).toContain("竖丝间距(cm): 值「abc」，不是数字");
+    // 同一行的问题聚在一起，整表问题在末尾（与界面展示同序）
+    expect(text.indexOf("[第 2 行]")).toBeLessThan(text.indexOf("[整表]"));
+  });
+
+  it("CSV 带 BOM、中文表头与级别可读，且自动转义逗号/引号", () => {
+    const csv = issuesToCsv(issues);
+    expect(csv.startsWith("\ufeff")).toBe(true);
+    expect(csv).toContain("行号,列,值,级别,问题");
+    expect(csv).toContain("错误");
+    expect(csv).toContain("提示");
+
+    const tricky = issuesToCsv([
+      {
+        row: 1,
+        column: "a,b",
+        value: 'x"y',
+        message: "含,逗号",
+        severity: "error",
+      },
+    ]);
+    expect(tricky).toContain('"a,b"');
+    expect(tricky).toContain('"x""y"');
+    expect(tricky).toContain('"含,逗号"');
+  });
+
+  it("空清单也能导出（只有表头），复制文本为空串", () => {
+    expect(issuesToText([])).toBe("");
+    const csv = issuesToCsv([]);
+    expect(csv.startsWith("\ufeff")).toBe(true);
+    expect(csv.trim().split("\r\n")).toHaveLength(1);
   });
 });

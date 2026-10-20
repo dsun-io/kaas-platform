@@ -48,6 +48,8 @@ import {
   useExportTermsTemplate,
 } from "../../quotations/v2-quote/hooks/use-export-quote-import";
 import type { QuoteView } from "../../quotations/v2-quote/hooks/use-export-quote-calc";
+// C19：批量导入入口（G-10 定在 v2 报价工作台顶部，与单条报价并列）
+import { BulkImportEntry } from "../../quotations/v2-quote/components/bulk-import-dialog";
 import { WorkbenchParamsCard } from "./workbench-params-card";
 import {
   QuoteLineCard,
@@ -649,6 +651,17 @@ export function QuoteWorkbenchView() {
 
   return (
     <>
+      {/* C19：与单条报价并列的批量导入入口（顶层，不塞进某一行卡片里） */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-sm font-medium">单条报价</div>
+          <p className="text-xs text-muted-foreground">
+            逐行算价 → 汇总 → 存成报价单；客户直接给整张表格时，用右侧「批量导入表格」一次算完。
+          </p>
+        </div>
+        <BulkImportEntry />
+      </div>
+
       <div className="grid gap-5 pb-24 xl:grid-cols-[minmax(0,1fr)_380px] xl:pb-0">
         <div className="min-w-0 space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-2">

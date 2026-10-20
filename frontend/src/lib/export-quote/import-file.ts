@@ -131,6 +131,37 @@ export function describeIssue(issue: ImportIssue): string {
   return `${at}${value}${issue.message}`;
 }
 
+/**
+ * 问题清单的纯文本（复制用）：
+ * 先按行分组、整表级问题排最后，与界面展示同一顺序 —— 否则复制出来的
+ * 顺序和屏幕上不一致，用户对照着改表会错行。
+ */
+export function issuesToText(issues: ImportIssue[]): string {
+  return groupIssues(issues)
+    .map((group) =>
+      [`[${group.label}]`, ...group.items.map((it) => `- ${describeIssue(it)}`)].join(
+        "\n",
+      ),
+    )
+    .join("\n");
+}
+
+/**
+ * 问题清单的 CSV（下载用）。带 BOM，Excel 打开中文表头/列名不乱码。
+ * 列与 `ImportIssueSchema` 一一对应，便于用户按「行/列」排序后批量改表。
+ */
+export function issuesToCsv(issues: ImportIssue[]): string {
+  const header = ["行号", "列", "值", "级别", "问题"];
+  const rows = issues.map((it) => [
+    it.row,
+    it.column,
+    it.value ?? "",
+    it.severity === "error" ? "错误" : "提示",
+    it.message,
+  ]);
+  return resultToCsv(header, rows);
+}
+
 /** 预览是否可以直接算：至少有一行可用。 */
 export function canCalculate(preview: ImportPreviewResponse | null): boolean {
   return !!preview && preview.usable_rows > 0;

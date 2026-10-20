@@ -837,4 +837,56 @@ describe("export-quote calculate / import / explain（contracts/export-quote.ts�
     expect(explain.body.steps.length).toBeGreaterThan(0);
     expect(explain.body.steps[0]).toHaveProperty("expr");
   });
+
+  it("导入上传的服务端校验：空文件/.xls/超限/坏 payload 都明确 400（不假装成功）", async () => {
+    const empty = await postForm(
+      "/export-quote/import/preview",
+      { product_key: "field_fence" },
+      new File([new Uint8Array(0)], "empty.xlsx"),
+    );
+    expect(empty.status).toBe(400);
+    expect(
+      ((await empty.json()) as { detail: { error: string } }).detail.error,
+    ).toBe("empty_file");
+
+    const xls = await postForm(
+      "/export-quote/import/preview",
+      { product_key: "field_fence" },
+      new File([new Uint8Array([1, 2, 3])], "old.xls"),
+    );
+    expect(xls.status).toBe(400);
+    expect(
+      ((await xls.json()) as { detail: { error: string } }).detail.error,
+    ).toBe("parse_error");
+
+    const tooLarge = await postForm(
+      "/export-quote/import/preview",
+      { product_key: "field_fence" },
+      new File([new Uint8Array(2 * 1024 * 1024 + 1)], "big.xlsx"),
+    );
+    expect(tooLarge.status).toBe(400);
+    expect(
+      ((await tooLarge.json()) as { detail: { error: string } }).detail.error,
+    ).toBe("file_too_large");
+
+    const badPayload = await postForm(
+      "/export-quote/import/calculate",
+      { product_key: "field_fence", view: "customer", payload: "{bad-json" },
+      new File([new Uint8Array([1, 2, 3])], "sample.xlsx"),
+    );
+    expect(badPayload.status).toBe(400);
+    expect(
+      ((await badPayload.json()) as { detail: { error: string } }).detail.error,
+    ).toBe("bad_payload");
+
+    const badView = await postForm(
+      "/export-quote/import/calculate",
+      { product_key: "field_fence", view: "nope", payload: "{}" },
+      new File([new Uint8Array([1, 2, 3])], "sample.xlsx"),
+    );
+    expect(badView.status).toBe(400);
+    expect(
+      ((await badView.json()) as { detail: { error: string } }).detail.error,
+    ).toBe("bad_view");
+  });
 });
