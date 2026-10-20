@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePageView } from "@/lib/events/use-page-view";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -1467,6 +1467,28 @@ function CustomerDetailPanel({
 export default function CustomersPage() {
   usePageView({ resource_id: "/customers" });
   const [searchQ, setSearchQ] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  // 快捷键：/ 聚焦搜索，Esc 退出搜索（输入框内不劫持）
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const typing =
+        !!target &&
+        (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ||
+          target.isContentEditable);
+      if (e.key === "/" && !typing) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      } else if (
+        e.key === "Escape" &&
+        document.activeElement === searchRef.current
+      ) {
+        searchRef.current?.blur();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
     null,
@@ -1508,7 +1530,9 @@ export default function CustomersPage() {
           <div className="relative w-full max-w-xs">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="搜索客户…"
+              ref={searchRef}
+              placeholder="搜索客户…（按 / 聚焦）"
+              aria-keyshortcuts="/"
               value={searchQ}
               onChange={(e) => setSearchQ(e.target.value)}
               className="h-9 rounded-full border-white/70 bg-white/80 pl-9"
