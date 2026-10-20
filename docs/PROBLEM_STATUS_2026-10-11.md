@@ -108,11 +108,12 @@
 > 证据：`docs/ui-redesign/phase4/`；门禁：typecheck 0 / lint 0 err 86 warn / vitest 455 / e2e 23+4=27 / build out/268。
 > 详见方案文档 §0.3。
 >
-> **（2026-10-20 · 单证签发后自动归档）**
-> Web UI 签发成功即自动 `render-data → renderTradeDoc → POST /trade-docs/{id}/pdf` 落档（版本让位沿用
-> `render_pdf_superseded`）；手动归档/导入入口保留用于渲染器不可用、第三方单据、历史补档。
-> 边界：直接走 API/其他客户端签发不会自动归档（HTML 模板在前端），服务端兜底需跨栈改造，已登记待办。
-> mock 的 `/pdf` 返回 503，前端提示手动归档、不假装成功。
+> **（2026-10-20 · 单证签发后自动上传）**
+> 业务口径统一叫「上传单证」（不再叫归档；内部文件角色仍是 `render_pdf(_superseded)`）。
+> Web UI 签发成功即自动 `render-data → renderTradeDoc → POST /trade-docs/{id}/pdf` 上传（版本让位沿用
+> `render_pdf_superseded`）；手动上传/导入入口保留用于渲染器不可用、第三方单据、历史补档。
+> 边界：直接走 API/其他客户端签发不会自动上传（HTML 模板在前端），服务端兜底需跨栈改造，已登记待办。
+> mock 的 `/pdf` 返回 503，前端提示手动上传、不假装成功。
 > 证据：`frontend/src/lib/trade-doc/auto-archive.ts` + 3 条单测；门禁：typecheck 0 / lint 86 warn / vitest 458 / e2e 23+4 / build out/268。
 > 详见方案文档 §0.4。
 >

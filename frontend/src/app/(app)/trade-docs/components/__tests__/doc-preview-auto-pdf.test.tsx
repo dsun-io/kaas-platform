@@ -6,7 +6,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import apiClient from "@/lib/api/client";
 import { toast } from "sonner";
 
-import { DocPreview, fingerprintVerdict, renderMetaOf, type RenderFingerprintMeta } from "../doc-preview";
+import {
+  DocPreview,
+  fingerprintVerdict,
+  renderMetaOf,
+  type RenderFingerprintMeta,
+} from "../doc-preview";
 import type {
   RenderFingerprintCheck,
   RenderFingerprintReason,
@@ -27,10 +32,12 @@ vi.mock("sonner", () => ({
 }));
 
 // React 18 的 act() 需要这个开关（仓库没有 testing-library / setup 文件）
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 /**
- * 「自动出 PDF 并归档」的守卫（用户要求「自动出pdf字节听起来是降低工作量的设计实现它」）。
+ * 「自动出 PDF 并上传」的守卫（用户要求「自动出pdf字节听起来是降低工作量的设计实现它」）。
  *
  * 这条链路是：预览区按钮 → `POST /trade-docs/{id}/pdf`（body 就是**预览用的那份 HTML**）
  * → 服务端 Browser Rendering 出字节 → 走同一套落档链路（kind=render_pdf，版本让位）。
@@ -76,7 +83,10 @@ async function mount(
   client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
-  invalidate = vi.spyOn(client, "invalidateQueries") as unknown as Invalidations;
+  invalidate = vi.spyOn(
+    client,
+    "invalidateQueries",
+  ) as unknown as Invalidations;
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -119,11 +129,17 @@ function errorTexts(): string[] {
   return vi.mocked(toast.error).mock.calls.map(([msg]) => String(msg));
 }
 
-describe("DocPreview · 自动出 PDF 并归档", () => {
+describe("DocPreview · 自动出 PDF 并上传", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.mocked(apiClient.post).mockResolvedValue(
-      ok({ file: { id: 1 }, link: { id: 2 }, renderer: "binding", bytes: 20480, storage: "s3" }),
+      ok({
+        file: { id: 1 },
+        link: { id: 2 },
+        renderer: "binding",
+        bytes: 20480,
+        storage: "s3",
+      }),
     );
   });
 
@@ -139,7 +155,7 @@ describe("DocPreview · 自动出 PDF 并归档", () => {
 
   it("成功：POST /trade-docs/{id}/pdf，body 的 html 与预览 iframe 同源", async () => {
     await mount();
-    await click("自动出 PDF 并归档");
+    await click("自动出 PDF 并上传");
 
     expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
     const post = vi.mocked(apiClient.post);
@@ -157,9 +173,13 @@ describe("DocPreview · 自动出 PDF 并归档", () => {
     expect(payload.name).toBe(`${DOC_NO}.pdf`);
 
     expect(vi.mocked(toast.success)).toHaveBeenCalledTimes(1);
-    expect(String(vi.mocked(toast.success).mock.calls[0]![0])).toContain("已自动生成并归档");
+    expect(String(vi.mocked(toast.success).mock.calls[0]![0])).toContain(
+      "已自动生成并上传",
+    );
     // 文案要说清版本语义（不是物理覆盖）
-    expect(String(vi.mocked(toast.success).mock.calls[0]![0])).toContain("旧版留档");
+    expect(String(vi.mocked(toast.success).mock.calls[0]![0])).toContain(
+      "旧版留档",
+    );
 
     // 单据文件区（「系统出的 PDF」分区）要立刻刷新
     expect(invalidate!.mock.calls.map((call) => call[0])).toContainEqual({
@@ -174,12 +194,13 @@ describe("DocPreview · 自动出 PDF 并归档", () => {
         detail: {
           error: "unavailable",
           code: "PDF_RENDERER_NOT_CONFIGURED",
-          detail: "服务端未配置 PDF 渲染器。生产 Worker 需在 wrangler.jsonc 声明 browser binding…",
+          detail:
+            "服务端未配置 PDF 渲染器。生产 Worker 需在 wrangler.jsonc 声明 browser binding…",
         },
       }),
     );
 
-    await click("自动出 PDF 并归档");
+    await click("自动出 PDF 并上传");
 
     expect(vi.mocked(toast.success)).not.toHaveBeenCalled();
     expect(errorTexts()).toHaveLength(1);
@@ -189,32 +210,34 @@ describe("DocPreview · 自动出 PDF 并归档", () => {
 
   it("其它失败（500）：走兜底文案，并指向人工归档", async () => {
     await mount();
-    vi.mocked(apiClient.post).mockRejectedValue(apiError(500, { detail: "boom" }));
+    vi.mocked(apiClient.post).mockRejectedValue(
+      apiError(500, { detail: "boom" }),
+    );
 
-    await click("自动出 PDF 并归档");
+    await click("自动出 PDF 并上传");
 
     expect(vi.mocked(toast.success)).not.toHaveBeenCalled();
     expect(errorTexts()).toHaveLength(1);
     expect(errorTexts()[0]).toContain("boom"); // 保留后端原文，便于定位
-    expect(errorTexts()[0]).toContain("归档本版 PDF"); // 必须指向人工兜底
+    expect(errorTexts()[0]).toContain("上传本版 PDF"); // 必须指向人工兜底
   });
 
   it("没有 docId（样板预览）：既不渲染自动按钮，也不渲染人工归档区块", async () => {
     await mount(null);
 
-    expect(container!.textContent).not.toContain("自动出 PDF 并归档");
-    expect(container!.textContent).not.toContain("归档本版 PDF");
+    expect(container!.textContent).not.toContain("自动出 PDF 并上传");
+    expect(container!.textContent).not.toContain("上传本版 PDF");
     expect(vi.mocked(apiClient.post)).not.toHaveBeenCalled();
   });
 
   it("两条路都在：人工归档兜底未被自动出 PDF 取代", async () => {
     await mount();
 
-    expect(buttonByText("自动出 PDF 并归档")).toBeTruthy();
-    expect(buttonByText("归档本版 PDF")).toBeTruthy();
+    expect(buttonByText("自动出 PDF 并上传")).toBeTruthy();
+    expect(buttonByText("上传本版 PDF")).toBeTruthy();
     // 人工归档的选择框与名称输入仍在
     expect(container!.querySelector('input[type="file"]')).not.toBeNull();
-    expect(container!.textContent).toContain("再归档会覆盖当前件，旧版留档");
+    expect(container!.textContent).toContain("再次上传会覆盖当前件，旧版留档");
   });
 });
 
@@ -226,7 +249,8 @@ describe("DocPreview · 自动出 PDF 并归档", () => {
  * 草稿单据凭空多一行（样例场景被污染）、坏形状被渲染成 `vundefined`（看起来像真的）。
  */
 describe("DocPreview · 渲染指纹（签发时冻结）", () => {
-  const SHA = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678abcdef0123456789abcdef01";
+  const SHA =
+    "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678abcdef0123456789abcdef01";
   const FROZEN_AT = "2026-10-12T09:30:00+00:00";
   const META: RenderFingerprintMeta = {
     render_version: 1,
@@ -280,9 +304,9 @@ describe("DocPreview · 渲染指纹（签发时冻结）", () => {
     expect(renderMetaOf({ sources: {}, custom: {} })).toBeNull();
     expect(renderMetaOf({ _render: "a1b2c3d4" })).toBeNull();
     expect(renderMetaOf({ _render: null })).toBeNull();
-    expect(renderMetaOf({ _render: [1, 2] })).toBeNull();   // 数组的 typeof 也是 object
-    expect(renderMetaOf({ _render: {} })).toBeNull();        // 没有 render_version ⇒ 不是指纹
-    expect(renderMetaOf("{\"_render\":{}}")).toBeNull();
+    expect(renderMetaOf({ _render: [1, 2] })).toBeNull(); // 数组的 typeof 也是 object
+    expect(renderMetaOf({ _render: {} })).toBeNull(); // 没有 render_version ⇒ 不是指纹
+    expect(renderMetaOf('{"_render":{}}')).toBeNull();
     // 正常形状原样取出
     expect(renderMetaOf({ _render: META })).toEqual(META);
   });
@@ -310,7 +334,8 @@ describe("DocPreview · 渲染指纹（签发时冻结）", () => {
  * 3. **查不成 ≠ 有结论**：404/500 只能显示"核对失败"，绝不能显示成"已变更"或"一致"。
  */
 describe("DocPreview · 指纹对账（点击才查）", () => {
-  const SHA = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678abcdef0123456789abcdef01";
+  const SHA =
+    "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678abcdef0123456789abcdef01";
   const FROZEN_AT = "2026-10-12T09:30:00+00:00";
   const META: RenderFingerprintMeta = {
     render_version: 1,
@@ -390,7 +415,10 @@ describe("DocPreview · 指纹对账（点击才查）", () => {
 
   it("reason=data_changed ⇒ 红色「签发后数据已被修改」（最重要的信号）", async () => {
     await mountAndCheck(
-      checkResponse("data_changed", { matches: false, current_sha256: "ff".repeat(32) }),
+      checkResponse("data_changed", {
+        matches: false,
+        current_sha256: "ff".repeat(32),
+      }),
     );
 
     expect(container!.textContent).toContain("签发后数据已被修改");
@@ -440,12 +468,16 @@ describe("DocPreview · 指纹对账（点击才查）", () => {
       }),
     );
 
-    expect(container!.textContent).toContain("无法判定（签发时未冻结成功：input_unavailable）");
+    expect(container!.textContent).toContain(
+      "无法判定（签发时未冻结成功：input_unavailable）",
+    );
   });
 
   it("端点失败（500）⇒ 只说「核对失败，请重试」，且可以再点一次重试", async () => {
     await mount(DOC_ID, META);
-    vi.mocked(apiClient.get).mockRejectedValueOnce(apiError(500, { detail: "boom" }));
+    vi.mocked(apiClient.get).mockRejectedValueOnce(
+      apiError(500, { detail: "boom" }),
+    );
 
     await click("核对指纹");
 
@@ -468,7 +500,9 @@ describe("DocPreview · 指纹对账（点击才查）", () => {
     await click("核对指纹");
     expect(container!.textContent).toContain("与签发时一致");
 
-    vi.mocked(apiClient.get).mockRejectedValueOnce(apiError(500, { detail: "boom" }));
+    vi.mocked(apiClient.get).mockRejectedValueOnce(
+      apiError(500, { detail: "boom" }),
+    );
     await click("核对指纹");
 
     expect(container!.textContent).toContain("核对失败，请重试");
@@ -478,16 +512,28 @@ describe("DocPreview · 指纹对账（点击才查）", () => {
 
   it("结论映射是纯函数：覆盖全部 reason + 未知码兜底为「无法判定」", () => {
     expect(fingerprintVerdict(checkResponse("matched"))).toEqual({
-      tone: "matched", text: "与签发时一致",
+      tone: "matched",
+      text: "与签发时一致",
     });
-    expect(fingerprintVerdict(checkResponse("data_changed")).tone).toBe("changed");
-    expect(fingerprintVerdict(checkResponse("version_drift")).tone).toBe("drift");
-    expect(fingerprintVerdict(checkResponse("no_fingerprint")).text).toContain("无法比对");
-    expect(fingerprintVerdict(checkResponse("frozen_unavailable")).tone).toBe("unknown");
-    expect(fingerprintVerdict(checkResponse("current_unavailable")).tone).toBe("unknown");
+    expect(fingerprintVerdict(checkResponse("data_changed")).tone).toBe(
+      "changed",
+    );
+    expect(fingerprintVerdict(checkResponse("version_drift")).tone).toBe(
+      "drift",
+    );
+    expect(fingerprintVerdict(checkResponse("no_fingerprint")).text).toContain(
+      "无法比对",
+    );
+    expect(fingerprintVerdict(checkResponse("frozen_unavailable")).tone).toBe(
+      "unknown",
+    );
+    expect(fingerprintVerdict(checkResponse("current_unavailable")).tone).toBe(
+      "unknown",
+    );
     // 服务端将来新增 reason：宁可"无法判定"，也不能猜一个结论
     const unknown = fingerprintVerdict({
-      ...checkResponse("matched"), reason: "brand_new_reason" as RenderFingerprintReason,
+      ...checkResponse("matched"),
+      reason: "brand_new_reason" as RenderFingerprintReason,
     });
     expect(unknown).toEqual({ tone: "unknown", text: "无法判定（未知结论）" });
   });

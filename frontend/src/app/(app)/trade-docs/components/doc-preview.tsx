@@ -81,9 +81,9 @@ export function defaultArchivePdfName(docNo: string, docType: string): string {
  */
 export function validateArchivePdf(file: File): string | null {
   if (file.type !== PDF_MIME) {
-    return `只接受 PDF：这个文件浏览器上报的类型是 ${file.type || "(空)"}，请在打印对话框里选「另存为 PDF」再归档`;
+    return `只接受 PDF：这个文件浏览器上报的类型是 ${file.type || "(空)"}，请在打印对话框里选「另存为 PDF」再上传`;
   }
-  if (file.size <= 0) return "这个文件是空的（0 字节），请重新导出后再归档";
+  if (file.size <= 0) return "这个文件是空的（0 字节），请重新导出后再上传";
   if (file.size > RENDER_PDF_MAX_BYTES) {
     const mb = RENDER_PDF_MAX_BYTES / (1024 * 1024);
     return `超过 ${mb}MB 上限（实际 ${(file.size / (1024 * 1024)).toFixed(1)}MB）`;
@@ -120,17 +120,25 @@ export interface RenderFingerprintMeta {
  * `渲染指纹 v? · 未冻结` 这种"看起来像真的、其实是坏的"指纹 —— 比不显示更糟。
  * 注意 `Array.isArray`：数组的 `typeof` 也是 `"object"`，只判 null 会把它放进来。
  */
-export function renderMetaOf(rawPayload: unknown): RenderFingerprintMeta | null {
+export function renderMetaOf(
+  rawPayload: unknown,
+): RenderFingerprintMeta | null {
   if (typeof rawPayload !== "object" || rawPayload === null) return null;
   const meta = (rawPayload as Record<string, unknown>)["_render"];
-  if (typeof meta !== "object" || meta === null || Array.isArray(meta)) return null;
+  if (typeof meta !== "object" || meta === null || Array.isArray(meta))
+    return null;
   // 内核**必定**写 `render_version`；没有它就不是我们冻结的那份指纹（宁可不显示）
-  if (typeof (meta as RenderFingerprintMeta).render_version !== "number") return null;
+  if (typeof (meta as RenderFingerprintMeta).render_version !== "number")
+    return null;
   return meta as RenderFingerprintMeta;
 }
 
 /** 对账结论的语气：决定颜色（绿=一致／红=被改／黄=模板升级／灰=说不出结论）。 */
-export type FingerprintVerdictTone = "matched" | "changed" | "drift" | "unknown";
+export type FingerprintVerdictTone =
+  | "matched"
+  | "changed"
+  | "drift"
+  | "unknown";
 
 /**
  * 对账结论 → 一行展示文案（**只按服务端返回的 `reason` 判断**）。
@@ -254,20 +262,26 @@ export function DocPreview({
       toast.error(problem);
       return;
     }
-    const label = (pdfName.trim() || defaultArchivePdfName(docNo, docType)).trim();
+    const label = (
+      pdfName.trim() || defaultArchivePdfName(docNo, docType)
+    ).trim();
     if (label.length > ARCHIVE_NAME_MAX_LEN) {
       toast.error(`名称最长 ${ARCHIVE_NAME_MAX_LEN} 个字符`);
       return;
     }
     try {
-      await archive.mutateAsync({ file: pdfPicked, role: "render_pdf", name: label });
+      await archive.mutateAsync({
+        file: pdfPicked,
+        role: "render_pdf",
+        name: label,
+      });
       // 文案与后端语义一致：旧件不是被物理删掉，而是挂 render_pdf_superseded 留档
-      toast.success("已归档；再归档会覆盖当前件，旧版留档");
+      toast.success("已上传；再次上传会覆盖当前件，旧版留档");
       setPdfPicked(null);
       setPdfName("");
       if (pdfInputRef.current) pdfInputRef.current.value = "";
     } catch {
-      toast.error("归档失败（类型/大小不合规时后端会明确拒绝）");
+      toast.error("上传失败（类型/大小不合规时后端会明确拒绝）");
     }
   };
 
@@ -277,16 +291,18 @@ export function DocPreview({
    *
    * 服务端未配置渲染器时后端返回 503 `PDF_RENDERER_NOT_CONFIGURED` ——
    * 这里**如实把后端的可执行提示给用户**（要开通/配置什么），
-   * 绝不假装成功，也不静默降级；下方「归档本版 PDF」仍是随时可用的兜底。
+   * 绝不假装成功，也不静默降级；下方「上传本版 PDF」仍是随时可用的兜底。
    */
   const archiveAutoPdf = async () => {
     if (docId === undefined) return;
-    const label = (pdfName.trim() || defaultArchivePdfName(docNo, docType)).trim();
+    const label = (
+      pdfName.trim() || defaultArchivePdfName(docNo, docType)
+    ).trim();
     try {
       const res = await autoPdf.mutateAsync({ html, name: label });
       const kb = Math.max(1, Math.round((res?.bytes ?? 0) / 1024));
       toast.success(
-        `已自动生成并归档（${kb} KB，渲染器 ${res?.renderer ?? "?"}）；再归档会覆盖当前件，旧版留档`,
+        `已自动生成并上传（${kb} KB，渲染器 ${res?.renderer ?? "?"}）；再次上传会覆盖当前件，旧版留档`,
       );
     } catch (err) {
       const { code, message } = normalizeApiError(err);
@@ -298,7 +314,9 @@ export function DocPreview({
         return;
       }
       // 其它失败：保留后端原文（便于定位），但**必须**指向人工兜底 —— 否则用户以为没救了
-      toast.error(`${message || "自动出 PDF 失败"}；可以用下方「归档本版 PDF」人工归档兜底`);
+      toast.error(
+        `${message || "自动出 PDF 失败"}；可以用下方「上传本版 PDF」人工上传兜底`,
+      );
     }
   };
 
@@ -324,7 +342,7 @@ export function DocPreview({
               onClick={archiveAutoPdf}
             >
               <FileCheck2 className="mr-1 h-4 w-4" />
-              {autoPdf.isPending ? "生成中…" : "自动出 PDF 并归档"}
+              {autoPdf.isPending ? "生成中…" : "自动出 PDF 并上传"}
             </Button>
           )}
           <Button size="sm" variant="outline" onClick={() => printHtml(html)}>
@@ -386,11 +404,19 @@ export function DocPreview({
             只在"这一次核对成功"时显示结论：**失败或正在重查时都不显示**旧结论 ——
             否则第二次核对失败后，界面会同时挂着上一次的"一致"，等于把过期结论当现状。
           */}
-          {fingerprintCheck.data && !fingerprintCheck.isPending && !fingerprintCheck.isError && (
-            <span className={VERDICT_TONE_CLASS[fingerprintVerdict(fingerprintCheck.data).tone]}>
-              {fingerprintVerdict(fingerprintCheck.data).text}
-            </span>
-          )}
+          {fingerprintCheck.data &&
+            !fingerprintCheck.isPending &&
+            !fingerprintCheck.isError && (
+              <span
+                className={
+                  VERDICT_TONE_CLASS[
+                    fingerprintVerdict(fingerprintCheck.data).tone
+                  ]
+                }
+              >
+                {fingerprintVerdict(fingerprintCheck.data).text}
+              </span>
+            )}
           {/*
             失败（404/500/网络）**不能**显示成"已变更"或"一致" —— 那是把"没查成"
             说成了结论。只说失败，并让按钮可以再点一次（mutation 重新触发即可重试）。
@@ -441,10 +467,10 @@ export function DocPreview({
         <div className="rounded-md border border-dashed p-3">
           <div className="flex flex-wrap items-center gap-2">
             <FileUp className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">归档本版 PDF</span>
+            <span className="text-sm font-medium">上传本版 PDF</span>
             <span className="text-xs text-muted-foreground">
               在「打印 / 导出 PDF」里选「另存为 PDF」，把导出的那份选回来 ——
-              存的就是客户看到的那一版；再归档会覆盖当前件，旧版留档（不删除）。
+              存的就是客户看到的那一版；再次上传会覆盖当前件，旧版留档（不删除）。
             </span>
           </div>
           <div className="mt-2 flex flex-wrap items-end gap-3">
@@ -462,7 +488,7 @@ export function DocPreview({
             </label>
             <label className="min-w-[220px] flex-1 space-y-1">
               <span className="text-xs font-medium">
-                归档名称（可留空，默认用单证号）
+                上传名称（可留空，默认用单证号）
               </span>
               <Input
                 className="h-8 text-xs"
@@ -478,7 +504,7 @@ export function DocPreview({
               onClick={archivePdf}
             >
               <FileUp className="mr-1 h-3.5 w-3.5" />
-              {archive.isPending ? "归档中…" : "归档本版 PDF"}
+              {archive.isPending ? "上传中…" : "上传本版 PDF"}
             </Button>
           </div>
           {pdfPicked && (

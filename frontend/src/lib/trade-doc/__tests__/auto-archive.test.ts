@@ -34,13 +34,13 @@ describe("autoArchiveIssuedDoc", () => {
     expect(result).toMatchObject({ ok: true });
   });
 
-  it("渲染器未配置（503）→ 明确提示手动归档，不假装成功", async () => {
+  it("渲染器未配置（503）→ 明确提示手动上传，不假装成功", async () => {
     post.mockRejectedValue({ response: { status: 503 } });
 
     const result = await autoArchiveIssuedDoc(8);
 
     expect(result.ok).toBe(false);
-    expect(result.message).toContain("手动归档");
+    expect(result.message).toContain("手动上传");
   });
 
   it("渲染接口失败 → 返回可读失败原因", async () => {
@@ -49,6 +49,6 @@ describe("autoArchiveIssuedDoc", () => {
     const result = await autoArchiveIssuedDoc(9);
 
     expect(result.ok).toBe(false);
-    expect(result.message).toContain("自动归档失败");
+    expect(result.message).toContain("自动上传失败");
   });
 });

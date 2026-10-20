@@ -101,7 +101,7 @@
 | 一个报价单能有多个订单吗？ | 能。`orders.quote_id` 只有索引、没有唯一约束，`POST /orders` 也不拦；现实中“分批出货 / 同一报价重复下单”是合理场景，因此 UI 按真实数据支持 1:N，不强制 1:1（要强制需后端加约束，属业务改动） |
 | 询盘和订单怎么挂？ | 不直接挂。`quote_orders.inquiry_id` 挂询盘，`orders.quote_id` 挂报价；一张询盘可有多张报价（改价重报），所以询盘 → 报价 → 订单是传递关系，订单没有 `inquiry_id` |
 | 订单号和单证什么关系？ | `orders.order_no` 全局唯一；`trade_docs.order_id` 1 订单 : N 单证；单证也可只挂 `quote_id`（与 `order_id` 互斥）。多条订单时按订单分组，单条时扁平展示即可 |
-| “上传的系统”有历史记录吗？ | 有**归档文件版本链**：`file_objects.version/is_current/supersedes_id` + `trade_doc_files` 角色 `render_pdf(_superseded)`，旧版不物理删；但**单证内容修改没有版本表**（draft 覆盖、issued 冻结），内容级版本需后端加表 |
+| “上传的系统”有历史记录吗？ | 有**上传文件版本链**：`file_objects.version/is_current/supersedes_id` + `trade_doc_files` 角色 `render_pdf(_superseded)`，旧版不物理删；但**单证内容修改没有版本表**（draft 覆盖、issued 冻结），内容级版本需后端加表 |
 
 **本轮落地**
 
@@ -110,7 +110,7 @@
 - 展开：产品 / 规格 / 联系人（只写名字，点击弹联系人信息弹窗）/ 渠道 / 数量 / 用途 / 创建时间；**删掉报价单+订单编号那一行**（不再重复）；单条订单直接扁平列单证，多条订单按订单分组；单证按生成时间倒序。
 - 联系人：点名字弹出**联系人信息弹窗**（职位/电话/邮箱/WhatsApp），不跳页面、不写“主要”。
 - 单证：点击**直接内嵌完整单据预览**（有单证工位权限时，复用 `DocPreview` + `/trade-docs/{id}/render-data`）；无权限显示说明；“在单证工位打开”降为次要入口；footer 重做为固定操作条（不再有负边距/灰条错位）。
-- 历史留档：预览内展示**归档 PDF 版本链**（当前/历史、vN、时间，点击打开原文件），数据来自现有 `GET /trade-docs/{id}/files`；内容级版本未做（需后端版本表）。
+- 历史留档：预览内展示**上传记录（PDF 版本链）**（当前/历史、vN、时间，点击打开原文件），数据来自现有 `GET /trade-docs/{id}/files`；内容级版本未做（需后端版本表）。
 - 账号区：删除顶栏右侧的账号头像/下拉（与团队名重复且数据不足）；顶栏只保留团队名。侧栏底部新增**账号卡 + 「个人信息」弹窗**（账号类型/角色/团队/套餐，团队与工位、退出登录）。后端目前没有资料修改接口，弹窗明确标注“只读；修改资料请联系管理员”，不伪造编辑能力。
 - mock：补 `render-data` 样板数据（让本地也能看到内嵌预览）、`files` 返回空；联系人种 3 位以演示排序。
 
@@ -118,12 +118,13 @@
 
 **门禁（2026-10-20 实测）**：typecheck 0 error；lint 0 error / 86 warn；vitest **455 passed**；e2e **23 passed + 4 skipped = 27**；`NEXT_EXPORT=1` build 成功（`out/` 268 文件）。
 
-### 0.4 签发后自动归档 PDF（2026-10-20）
+### 0.4 签发后自动上传单证 PDF（2026-10-20）
 
-- Web UI 中**签发成功即自动归档**：`GET /trade-docs/{id}/render-data` → 前端 `renderTradeDoc` 生成 HTML → `POST /trade-docs/{id}/pdf`（服务端 Browser Rendering 出字节 → 既有落档链路：新版本上位、旧版挂 `render_pdf_superseded` 不物理删）。客户不再需要“打印另存 → 再导入一次”。
-- **手动归档入口保留**：`POST /trade-docs/{id}/files/upload`（手动归档区）+ 单证工位「导入已有数据」；覆盖渲染器不可用、第三方签发单据、历史补档等特殊情况。
-- **边界（如实记录）**：自动归档由 Web UI 在签发成功后触发；直接调用 API / 其他客户端签发不会自动出 PDF（HTML 模板在前端）。要服务端兜底，需要把渲染器搬到服务端或在签发接口接收 HTML，属跨栈改造，登记待办。
-- mock：`POST /trade-docs/{id}/pdf` 返回 503（mock 无浏览器渲染器），前端如实提示“请手动归档”，不假装成功。
+- 业务口径统一叫**「上传单证」**，不再叫「归档」（内部文件角色仍是 `render_pdf` / `render_pdf_superseded`，不改表/接口）。
+- Web UI 中**签发成功即自动上传单证**：`GET /trade-docs/{id}/render-data` → 前端 `renderTradeDoc` 生成 HTML → `POST /trade-docs/{id}/pdf`（服务端 Browser Rendering 出字节 → 既有落档链路：新版本上位、旧版挂 `render_pdf_superseded` 不物理删）。客户不再需要“打印另存 → 再导入一次”。
+- **手动上传入口保留**：`POST /trade-docs/{id}/files/upload`（手动上传区）+ 单证工位「导入已有数据」；覆盖渲染器不可用、第三方签发单据、历史补档等特殊情况。
+- **边界（如实记录）**：自动上传由 Web UI 在签发成功后触发；直接调用 API / 其他客户端签发不会自动出 PDF（HTML 模板在前端）。要服务端兜底，需要把渲染器搬到服务端或在签发接口接收 HTML，属跨栈改造，登记待办。
+- mock：`POST /trade-docs/{id}/pdf` 返回 503（mock 无浏览器渲染器），前端如实提示“请手动上传”，不假装成功。
 - 单元测试：`frontend/src/lib/trade-doc/__tests__/auto-archive.test.ts` 3 条（成功 / 503 / 404）。
 
 **门禁（2026-10-20 实测）**：typecheck 0 error；lint 0 error / 86 warn；vitest **458 passed**；e2e **23 passed + 4 skipped = 27**；`NEXT_EXPORT=1` build 成功（`out/` 268 文件）。

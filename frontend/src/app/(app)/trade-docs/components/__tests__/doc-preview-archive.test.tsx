@@ -29,10 +29,12 @@ vi.mock("sonner", () => ({
 }));
 
 // React 18 的 act() 需要这个开关（仓库没有 testing-library / setup 文件）
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 /**
- * 「归档本版 PDF」的守卫（用户要求「pdf 要存」）。
+ * 「上传本版 PDF」的守卫（用户要求「pdf 要存」）。
  *
  * 为什么这几条必须钉住
  * --------------------
@@ -57,10 +59,41 @@ const DOC_NO = "PI-2026-001";
 
 /** 一份带非 ASCII 字节的假 PDF：既验 `%PDF-` 头，也验 0xFF/0x00 这类字节没被改写 */
 const PDF_BYTES = new Uint8Array([
-  0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, // %PDF-1.4
-  0x0a, 0x25, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a, // 二进制标记
-  0x31, 0x20, 0x30, 0x20, 0x6f, 0x62, 0x6a, 0x0a,
-  0xff, 0x00, 0x80, 0xfe, 0x7f, 0x01, 0x0a, 0x25, 0x25, 0x45, 0x4f, 0x46, // %%EOF
+  0x25,
+  0x50,
+  0x44,
+  0x46,
+  0x2d,
+  0x31,
+  0x2e,
+  0x34, // %PDF-1.4
+  0x0a,
+  0x25,
+  0xe2,
+  0xe3,
+  0xcf,
+  0xd3,
+  0x0a, // 二进制标记
+  0x31,
+  0x20,
+  0x30,
+  0x20,
+  0x6f,
+  0x62,
+  0x6a,
+  0x0a,
+  0xff,
+  0x00,
+  0x80,
+  0xfe,
+  0x7f,
+  0x01,
+  0x0a,
+  0x25,
+  0x25,
+  0x45,
+  0x4f,
+  0x46, // %%EOF
 ]);
 
 function pdfFile(): File {
@@ -68,7 +101,11 @@ function pdfFile(): File {
 }
 
 /** 造一个"大小是 N 字节"的文件：真分配 32MB 太浪费，只改 size 读数即可（校验只看 size/type） */
-function fileWithSize(name: string, size: number, type = "application/pdf"): File {
+function fileWithSize(
+  name: string,
+  size: number,
+  type = "application/pdf",
+): File {
   const file = new File([PDF_BYTES], name, { type });
   Object.defineProperty(file, "size", { value: size });
   return file;
@@ -121,7 +158,10 @@ async function mount(docId: number | null = DOC_ID) {
   client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
-  invalidate = vi.spyOn(client, "invalidateQueries") as unknown as Invalidations;
+  invalidate = vi.spyOn(
+    client,
+    "invalidateQueries",
+  ) as unknown as Invalidations;
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -153,22 +193,25 @@ function nameInput(): HTMLInputElement {
   const el = Array.from(container!.querySelectorAll("input")).find(
     (i) => i.type !== "file",
   );
-  if (!el) throw new Error("没有找到归档名称输入框");
+  if (!el) throw new Error("没有找到上传名称输入框");
   return el as HTMLInputElement;
 }
 
 function archiveButton(): HTMLButtonElement {
   const el = Array.from(container!.querySelectorAll("button")).find((b) =>
-    b.textContent?.includes("归档本版 PDF"),
+    b.textContent?.includes("上传本版 PDF"),
   );
-  if (!el) throw new Error("没有找到「归档本版 PDF」按钮");
+  if (!el) throw new Error("没有找到「上传本版 PDF」按钮");
   return el as HTMLButtonElement;
 }
 
 async function pick(file: File) {
   const input = fileInput();
   await act(async () => {
-    Object.defineProperty(input, "files", { value: [file], configurable: true });
+    Object.defineProperty(input, "files", {
+      value: [file],
+      configurable: true,
+    });
     input.dispatchEvent(new Event("change", { bubbles: true }));
   });
   await settle();
@@ -198,10 +241,12 @@ function errorTexts(): string[] {
   return vi.mocked(toast.error).mock.calls.map(([msg]) => String(msg));
 }
 
-describe("DocPreview · 归档本版 PDF", () => {
+describe("DocPreview · 上传本版 PDF", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    vi.mocked(apiClient.post).mockResolvedValue(ok({ file: { id: 1 }, link: { id: 2 } }));
+    vi.mocked(apiClient.post).mockResolvedValue(
+      ok({ file: { id: 1 }, link: { id: 2 } }),
+    );
   });
 
   afterEach(() => {
@@ -244,7 +289,9 @@ describe("DocPreview · 归档本版 PDF", () => {
   it("边界与内核一致：正好 32MB 通过、多 1 字节被拦、0 字节被拦", () => {
     expect(RENDER_PDF_MAX_BYTES).toBe(32 * 1024 * 1024);
 
-    expect(validateArchivePdf(fileWithSize("at.pdf", RENDER_PDF_MAX_BYTES))).toBeNull();
+    expect(
+      validateArchivePdf(fileWithSize("at.pdf", RENDER_PDF_MAX_BYTES)),
+    ).toBeNull();
     expect(
       validateArchivePdf(fileWithSize("over.pdf", RENDER_PDF_MAX_BYTES + 1)),
     ).toContain("32MB");
@@ -268,7 +315,9 @@ describe("DocPreview · 归档本版 PDF", () => {
     const [url, body, config] = post.mock.calls[0]!;
     expect(String(url)).toBe(`/trade-docs/${DOC_ID}/files/upload`);
     expect(
-      (config as { headers?: Record<string, string> }).headers?.["Content-Type"],
+      (config as { headers?: Record<string, string> }).headers?.[
+        "Content-Type"
+      ],
     ).toBe("multipart/form-data");
 
     const form = body as FormData;
@@ -308,7 +357,7 @@ describe("DocPreview · 归档本版 PDF", () => {
 
     // ④ 成功提示说清版本语义（不是"物理覆盖"）
     expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
-      "已归档；再归档会覆盖当前件，旧版留档",
+      "已上传；再次上传会覆盖当前件，旧版留档",
     );
 
     // ⑤ 单据文件区（DocStampReturn 的 role=render_pdf 分区）要能刷新
@@ -321,7 +370,7 @@ describe("DocPreview · 归档本版 PDF", () => {
     expect(nameInput().value).toBe("");
   });
 
-  it("自定义归档名称生效；名称超长时当场拦下（不发请求）", async () => {
+  it("自定义上传名称生效；名称超长时当场拦下（不发请求）", async () => {
     await mount();
     await pick(pdfFile());
     await typeName("BABAN KORI 归档 PI");
@@ -343,13 +392,15 @@ describe("DocPreview · 归档本版 PDF", () => {
 
   it("上传失败：提示失败分支，不发成功提示", async () => {
     await mount();
-    vi.mocked(apiClient.post).mockRejectedValue(new Error("422 BAD_CONTENT_TYPE"));
+    vi.mocked(apiClient.post).mockRejectedValue(
+      new Error("422 BAD_CONTENT_TYPE"),
+    );
     await pick(pdfFile());
     await clickArchive();
 
     expect(vi.mocked(toast.success)).not.toHaveBeenCalled();
     expect(errorTexts()).toHaveLength(1);
-    expect(errorTexts()[0]).toContain("归档失败");
+    expect(errorTexts()[0]).toContain("上传失败");
     // 失败后选择保留，用户可以重试（不能静默清空）
     expect(container!.textContent).toContain("已选：PI-2026-001.pdf");
   });
@@ -357,7 +408,7 @@ describe("DocPreview · 归档本版 PDF", () => {
   it("没有 docId（样板预览没有真实单据）：归档区块完全不渲染", async () => {
     await mount(null);
 
-    expect(container!.textContent).not.toContain("归档本版 PDF");
+    expect(container!.textContent).not.toContain("上传本版 PDF");
     expect(container!.querySelector('input[type="file"]')).toBeNull();
     expect(vi.mocked(apiClient.post)).not.toHaveBeenCalled();
     // 打印/下载这两个不依赖单据 id 的按钮仍在
@@ -365,7 +416,7 @@ describe("DocPreview · 归档本版 PDF", () => {
     expect(container!.textContent).toContain("下载 HTML");
   });
 
-  it("默认归档名称：空单证号兜底、超长截断但保留 .pdf 后缀", () => {
+  it("默认上传名称：空单证号兜底、超长截断但保留 .pdf 后缀", () => {
     expect(defaultArchivePdfName(DOC_NO, "pi")).toBe(`${DOC_NO}.pdf`);
     expect(defaultArchivePdfName("", "pi")).toBe("pi.pdf");
     expect(defaultArchivePdfName("盖章件.pdf", "pi")).toBe("盖章件.pdf");
