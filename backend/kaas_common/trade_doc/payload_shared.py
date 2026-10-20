@@ -3,6 +3,7 @@
 orchestrator 与 Worker 共用；任何适配层不得另写一份判定。
 与 kaas_common.trade_doc.rules 同一原则。
 """
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Optional
 
 __all__ = [
@@ -10,6 +11,9 @@ __all__ = [
     "buyer_block", "seller_block", "clean", "trade_terms_of", "build_render_data",
     "PROTECTED_CUSTOM_FIELDS", "protected_custom_fields", "diff_custom", "append_audit",
     "AUDIT_KEY",
+    # A5-W2：draft 单的行项受控覆盖通道（custom.items_override）
+    "ITEMS_OVERRIDE_KEYS", "ITEMS_OVERRIDE_AMOUNT_KEYS",
+    "items_override_of", "validate_items_override", "apply_items_override",
 ]
 
 DOC_NO_FIELDS = {
@@ -224,6 +228,138 @@ def trade_terms_of(source):
     return out
 
 
+# ── A5-W2：draft 单行项受控覆盖（`custom.items_override`）────────────────────
+#
+# 背景（2026-10-21 b-accept 取证）：`custom.items` 被 PROTECTED_CUSTOM_FIELDS 硬拒，
+# 渲染又只认 sources —— 于是"批量编辑行项"要么改 sources（绕过 A7 护栏、不进审计），
+# 要么根本改不了。裁决 A：新增**受控通道** —— 允许 draft 单在 custom 里挂
+# `items_override`，由内核在**副本**上覆盖渲染行项；被覆盖行的事实标
+# manual/unverified（签发时被 FACT_UNVERIFIED 拦住，与"改完要确认"一致）。
+#
+# 契约（固定，前端 `lib/trade-doc/item-batch.ts` 已按此实现）：
+#   items_override = [{index, qty?, unit_price?, unit?, spec?, origin?}]
+# - 仅 draft（非 draft 由调用方报 422 ITEMS_OVERRIDE_DRAFT_ONLY）；
+# - index 必填、自然数、**不得越界**（422 ITEMS_OVERRIDE_INDEX）；
+# - 不接受金额键（amount/line_amount/total_amount/line_total）——
+#   金额只能由 数量×单价 推导（422 ITEMS_OVERRIDE_AMOUNT_FORBIDDEN）；
+# - qty>0、unit_price≥0（与内核 `validate_items` 同口径）。
+ITEMS_OVERRIDE_KEYS = ("index", "qty", "unit_price", "unit", "spec", "origin")
+ITEMS_OVERRIDE_AMOUNT_KEYS = ("amount", "line_amount", "total_amount", "line_total")
+_OVERRIDE_AMOUNT_QUANT = Decimal("0.0001")
+
+
+def items_override_of(custom) -> list:
+    """从 custom 取 `items_override`（非数组/缺失 → []；空数组=清除覆盖）。"""
+    if not isinstance(custom, dict):
+        return []
+    raw = custom.get("items_override")
+    return list(raw) if isinstance(raw, list) else []
+
+
+def _is_number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _override_amount(qty, unit_price):
+    """行金额一律由 数量×单价 重算（4 位，与前端 item-batch 同口径）。"""
+    try:
+        amount = Decimal(str(qty)) * Decimal(str(unit_price))
+        return float(amount.quantize(_OVERRIDE_AMOUNT_QUANT, rounding=ROUND_HALF_UP))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
+def validate_items_override(override, *, item_count: Optional[int] = None) -> Optional[dict]:
+    """校验 `items_override`；非法返回 `{code, detail}`，合法返回 None。
+
+    **不做 draft 判定**（那是端点层：`doc.status != "draft"` ⇒ 422
+    `ITEMS_OVERRIDE_DRAFT_ONLY`）—— 纯函数只校验结构与行号，便于内核/前端同口径。
+    """
+    if not isinstance(override, list):
+        return {"code": "ITEMS_OVERRIDE_INDEX", "detail": "items_override 必须是数组"}
+    for position, entry in enumerate(override):
+        if not isinstance(entry, dict):
+            return {
+                "code": "ITEMS_OVERRIDE_INDEX",
+                "detail": f"items_override[{position}] 必须是对象",
+            }
+        for key in ITEMS_OVERRIDE_AMOUNT_KEYS:
+            if key in entry:
+                return {
+                    "code": "ITEMS_OVERRIDE_AMOUNT_FORBIDDEN",
+                    "detail": f"行项覆盖不接受金额字段（{key}）：金额只能由 数量×单价 推导",
+                }
+        index = entry.get("index")
+        if not isinstance(index, int) or isinstance(index, bool) or index < 0:
+            return {
+                "code": "ITEMS_OVERRIDE_INDEX",
+                "detail": f"行项下标非法：{index!r}（必须是非负整数）",
+            }
+        if item_count is not None and index >= item_count:
+            return {
+                "code": "ITEMS_OVERRIDE_INDEX",
+                "detail": f"行项下标越界：{index}（本单共 {item_count} 行）",
+            }
+        if "qty" in entry and not (_is_number(entry["qty"]) and entry["qty"] > 0):
+            return {
+                "code": "ITEMS_OVERRIDE_QTY",
+                "detail": f"行项覆盖数量必须为正数：{entry.get('qty')!r}",
+            }
+        if "unit_price" in entry and not (
+            _is_number(entry["unit_price"]) and entry["unit_price"] >= 0
+        ):
+            return {
+                "code": "ITEMS_OVERRIDE_PRICE",
+                "detail": f"行项覆盖单价不能为负：{entry.get('unit_price')!r}",
+            }
+        for key in ("unit", "spec", "origin"):
+            if key in entry and not isinstance(entry[key], str):
+                return {
+                    "code": "ITEMS_OVERRIDE_VALUE",
+                    "detail": f"行项覆盖 {key} 必须是字符串",
+                }
+    return None
+
+
+def apply_items_override(items, override) -> list:
+    """在行项**副本**上应用覆盖（不改入参）；返回新列表。
+
+    映射与前端/MSW 同口径：`unit→qty_unit`、`spec→specification`、
+    `origin→country_of_origin`；`line_amount` 由 数量×单价 重算（不读调用方金额）。
+    """
+    rows = [
+        dict(row) if isinstance(row, dict) else row
+        for row in (items or [])
+    ]
+    for entry in items_override_of({"items_override": list(override or [])}):
+        if not isinstance(entry, dict):
+            continue
+        index = entry.get("index")
+        if not isinstance(index, int) or isinstance(index, bool) or not (0 <= index < len(rows)):
+            continue
+        row = rows[index]
+        if not isinstance(row, dict):
+            continue
+        changed_amount = False
+        if "qty" in entry and _is_number(entry["qty"]):
+            row["qty"] = entry["qty"]
+            changed_amount = True
+        if "unit_price" in entry and _is_number(entry["unit_price"]):
+            row["unit_price"] = entry["unit_price"]
+            changed_amount = True
+        if isinstance(entry.get("unit"), str):
+            row["qty_unit"] = entry["unit"]
+        if isinstance(entry.get("spec"), str):
+            row["specification"] = entry["spec"]
+        if isinstance(entry.get("origin"), str):
+            row["country_of_origin"] = entry["origin"]
+        if changed_amount:
+            amount = _override_amount(row.get("qty"), row.get("unit_price"))
+            if amount is not None:
+                row["line_amount"] = amount
+    return rows
+
+
 def build_render_data(
     *,
     doc_type,
@@ -248,6 +384,10 @@ def build_render_data(
     sources = sources or {}
     upstream = sources.get("order") or sources.get("quote") or {}
     items = [item_from_source(i) for i in (upstream.get("items") or [])]
+    # A5-W2：draft 单的行项覆盖应用到**副本**（sources 不动；行金额重算）
+    override = items_override_of(custom)
+    if override and items:
+        items = apply_items_override(items, override)
     if items:
         data["items"] = items
     if _clean(upstream.get("currency")) is not None:
@@ -273,9 +413,11 @@ def build_render_data(
     if _clean(total_amount) is not None:
         data["total_amount"] = total_amount
     for key, value in (custom or {}).items():
-        if key in PROTECTED_CUSTOM_FIELDS:
+        if key in PROTECTED_CUSTOM_FIELDS or key == "items_override":
             # 受保护字段不接受 custom 覆盖：金额/行项只能来自上游快照或系统计算。
             # 写路径已拒绝（422），这里再挡一次 —— 历史脏数据也骗不了渲染。
+            # `items_override` 是**受控通道**（已按契约校验并应用到行项副本），
+            # 不作为一个顶层渲染键输出。
             continue
         data[key] = value
     return data

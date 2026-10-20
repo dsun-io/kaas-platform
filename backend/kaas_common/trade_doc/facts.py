@@ -71,7 +71,13 @@ from typing import Any, Iterable, Mapping, Optional, Sequence
 from ..workstation.receipt_rules import receipt_tolerance
 from . import equivalents
 from .payload import compose_fields
-from .payload_shared import DOC_NO_FIELDS, PROTECTED_CUSTOM_FIELDS, TRADE_TERM_FIELDS
+from .payload_shared import (
+    DOC_NO_FIELDS,
+    PROTECTED_CUSTOM_FIELDS,
+    TRADE_TERM_FIELDS,
+    apply_items_override,
+    items_override_of,
+)
 from .rules import AMOUNT_DECIMALS, ITEMS_INVALID, RuleError, to_decimal
 
 __all__ = [
@@ -1244,12 +1250,36 @@ def extract_facts(
         add_packing("packing_type", classify_packing_type(method_text))
 
     # 3) 明细行：qty[i] / unit_price[i] / line_amount[i]（行号 1 起，与界面一致）
+    #
+    # A5-W2：draft 单的 `custom.items_override` 是**受控覆盖**（写路径已按契约校验）。
+    # 覆盖后的行项事实按 `manual` + `unverified` 记账（evidence 指向覆盖项），
+    # 这样签发闸门会以 FACT_UNVERIFIED 拦住"改完还没确认"的单据；未覆盖行保持原 trust。
+    # 注意：`_baseline_facts` 会清空 custom ⇒ 基线不受覆盖影响（见 ws_docs_hardening）。
+    override = items_override_of(custom)
+    overridden: dict[int, dict] = {}
     items = effective.get("items")
+    if override and isinstance(items, (list, tuple)):
+        for entry in override:
+            if not isinstance(entry, Mapping):
+                continue
+            index = entry.get("index")
+            if isinstance(index, int) and not isinstance(index, bool) and index >= 0:
+                overridden[index] = dict(entry)
+        effective = dict(effective)
+        effective["items"] = apply_items_override(items, override)
+        items = effective["items"]
     if isinstance(items, (list, tuple)):
         for index, item in enumerate(items, 1):
             if not isinstance(item, Mapping):
                 continue
-            item_source, item_trust, item_evidence = origin("items")
+            zero_based = index - 1
+            item_override = overridden.get(zero_based)
+            if item_override is not None:
+                item_source = SOURCE_MANUAL
+                item_trust = TRUST_UNVERIFIED
+                item_evidence = f"custom.items_override[index={zero_based}]"
+            else:
+                item_source, item_trust, item_evidence = origin("items")
             item_currency = str(item.get("currency") or currency or "").upper()
             for field_name in _ITEM_FIELDS:
                 if not _has_value(item.get(field_name)):
@@ -1260,7 +1290,10 @@ def extract_facts(
                     key=f"{normalize_fact_key(field_name)}[{index}]",
                     source=item_source,
                     trust=item_trust,
-                    evidence=f"{item_evidence}[{index}].{field_name}" if item_evidence else "",
+                    evidence=(
+                        item_evidence if item_override is not None
+                        else (f"{item_evidence}[{index}].{field_name}" if item_evidence else "")
+                    ),
                     currency=item_currency,
                 )
 

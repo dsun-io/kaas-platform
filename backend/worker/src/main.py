@@ -4159,7 +4159,43 @@ from kaas_common.trade_doc.payload_shared import (  # noqa: E402
     TRADE_TERM_FIELDS, DOC_NO_FIELDS, item_from_source,
     buyer_block, trade_terms_of, build_render_data as _build_render_data,
     append_audit, protected_custom_fields,
+    items_override_of, validate_items_override,
 )
+
+
+def _source_items_count(payload) -> int:
+    """本单上游行数（`sources.order|quote.items`，与渲染同源）。用于 items_override 越界校验。"""
+    sources = (payload or {}).get("sources") if isinstance(payload, dict) else {}
+    sources = sources if isinstance(sources, dict) else {}
+    upstream = sources.get("order") or sources.get("quote") or {}
+    items = upstream.get("items") if isinstance(upstream, dict) else None
+    return len(items) if isinstance(items, list) else 0
+
+
+def _validate_items_override_for_patch(doc: dict, body_payload) -> None:
+    """A5-W2：PATCH 的 `custom.items_override` 受控通道校验（仅 body 带 raw_payload 时）。
+
+    - 非空覆盖 + 非 draft ⇒ 422 `ITEMS_OVERRIDE_DRAFT_ONLY`（内容冻结优先于业务码）；
+    - 结构/越界/金额键/数量单价按共享内核 `validate_items_override`（错误码同契约）；
+    - 空数组 = 清除覆盖（不触发 draft-only；非 draft 会被后续 PAYLOAD_LOCKED 409 拦）。
+    """
+    if body_payload is None or not isinstance(body_payload, dict):
+        return
+    custom = body_payload.get("custom") or {}
+    override = items_override_of(custom)
+    if not override:
+        return
+    if str(doc.get("status") or "") != "draft":
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "ITEMS_OVERRIDE_DRAFT_ONLY",
+            "detail": "行项覆盖仅允许 draft 单提交（已签发/作废单内容冻结）",
+        })
+    problem = validate_items_override(
+        override, item_count=_source_items_count(body_payload))
+    if problem:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", **problem,
+        })
 
 
 def _reject_protected_custom(custom) -> None:
@@ -4614,6 +4650,9 @@ async def update_trade_doc(doc_id: int, request: Request, body: dict,
         if d["status"] != "draft" or requested_status != "draft":
             await _require_doc_issuer(request, user, d)
     d = _dp.doc_dict(d)
+    # A5-W2：draft 单的行项覆盖受控通道（校验在 doc_no/状态业务规则之前：
+    # 非 draft 覆盖 ⇒ 422 DRAFT_ONLY；越界/金额键/数量单价 ⇒ 对应 422 错误码）。
+    _validate_items_override_for_patch(d, body.get("raw_payload"))
     new_doc_no = None
     requested_no = body.get("doc_no")
     if requested_no is not None and requested_no != d["doc_no"]:
@@ -4686,6 +4725,14 @@ async def update_trade_doc(doc_id: int, request: Request, body: dict,
             })
     now = datetime.now(timezone.utc)
     raw_payload = body.get("raw_payload")
+    # A5-W2：空数组 = 清除行项覆盖（不把 `items_override: []` 作为"空覆盖"存进库，
+    # 否则审计/前端会被一个无意义的空键长期占位）。
+    if isinstance(raw_payload, dict):
+        body_custom = raw_payload.get("custom")
+        if isinstance(body_custom, dict) and "items_override" in body_custom \
+                and not items_override_of(body_custom):
+            trimmed = {k: v for k, v in body_custom.items() if k != "items_override"}
+            raw_payload = {**raw_payload, "custom": trimmed}
     if raw_payload is not None and d["status"] != "draft":
         raise HTTPException(status_code=409, detail={
             "error": "conflict", "code": "PAYLOAD_LOCKED",
