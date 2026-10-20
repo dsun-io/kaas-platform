@@ -727,6 +727,7 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
   - 已落：订单列表「舒适/紧凑」密度切换（同样记忆），只改行高/字号，不改列含义与数据。
   - 已落：订单列表「列配置」——只允许隐藏现有 7 列、默认全显、至少保留 1 列，偏好持久化。
   - 已落：客户管理搜索快捷键 —— `/` 聚焦搜索框、Esc 退出（输入框内不劫持），占位文案与 `aria-keyshortcuts` 同步。
+  - 已落：客户列表窄屏卡片化（<md 卡片、md+ 原表格，卡片不复制 e2e testid）；单证台账加「舒适/紧凑」密度切换。
   - 已落：spec-proposals / market-view / research 三处手写下划线 tab 收编到统一 `Tabs`；spec-proposals 加载/空态改骨架+空态；research 供应能力图标改语义色 `text-success/text-destructive`。
   - 已落：全站硬编码红/绿/黄清理（13 文件 23 处 → 0），统一走 `success/warning/destructive` 语义 token。
   - 待做：列配置、快捷键/自动聚焦、窄屏卡片化、暗色令牌校准。

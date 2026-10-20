@@ -38,6 +38,8 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { NumberEditDialog } from "@/components/shared/number-edit-dialog";
 import { Button } from "@/components/ui/button";
 import { usePageView } from "@/lib/events/use-page-view";
+import { usePersistentState } from "@/lib/hooks/use-persistent-state";
+import { cn } from "@/lib/utils";
 import { renderTradeDoc } from "@/lib/trade-doc/render";
 import { autoArchiveIssuedDoc } from "@/lib/trade-doc/auto-archive";
 import { exportCsv, exportExcel, printMerged } from "@/lib/trade-doc/export";
@@ -96,6 +98,10 @@ export default function TradeDocsPage() {
   const [showImport, setShowImport] = useState(false);
   const [docNoEdit, setDocNoEdit] = useState<TradeDocRow | null>(null);
   const [docNoError, setDocNoError] = useState<string | null>(null);
+  const [density, setDensity] = usePersistentState<"cozy" | "compact">(
+    "ui:trade-docs:density",
+    "cozy",
+  );
 
   // 深链预览：客户详情「询盘 → 后续单证」点击后带 ?doc=<id> 打开本页并直接选中该单证。
   // 不用 useSearchParams：静态导出下它需要 Suspense 边界（与 quotes 页同一口径）。
@@ -266,7 +272,29 @@ export default function TradeDocsPage() {
       <SectionCard
         title="单证台账"
         action={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div
+              className="flex items-center gap-1"
+              role="group"
+              aria-label="表格密度"
+            >
+              <Button
+                size="sm"
+                variant={density === "cozy" ? "secondary" : "ghost"}
+                onClick={() => setDensity("cozy")}
+                aria-pressed={density === "cozy"}
+              >
+                舒适
+              </Button>
+              <Button
+                size="sm"
+                variant={density === "compact" ? "secondary" : "ghost"}
+                onClick={() => setDensity("compact")}
+                aria-pressed={density === "compact"}
+              >
+                紧凑
+              </Button>
+            </div>
             <select
               className="h-9 rounded-md border border-input bg-background px-2 text-sm"
               value={docTypeFilter}
@@ -358,7 +386,12 @@ export default function TradeDocsPage() {
             description="先在上面开一张单，单据会自动带上订单里的货物与贸易条款。"
           />
         ) : (
-          <div className="overflow-x-auto">
+          <div
+            className={cn(
+              "overflow-x-auto",
+              density === "compact" && "[&_td]:py-1 [&_th]:h-8 [&_tr]:text-xs",
+            )}
+          >
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
