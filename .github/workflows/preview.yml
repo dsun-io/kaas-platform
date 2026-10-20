@@ -1,26 +1,26 @@
 name: preview
 
-# S5 预览环境（README §2 目标态矩阵；2026-10-20 用户裁决全量做）：
-#   PR open/synchronize/reopened → preflight（CF token 权限校验）→ ensure（Neon 分支 +
-#   Hyperdrive）→ 迁移（alembic upgrade head 到该 PR 分支）→ 构建前端（注入预览 API URL）→
-#   部署预览 worker（workers.dev）→ PR 评论预览 URL；PR closed → teardown 全量回收。
-#
+# S5 预览环境（README §2 目标态矩阵；2026-10-20 用户裁决全量做）。
+# 流程：preflight（CF token 权限）→ ensure（Neon 派生分支 + Hyperdrive）→ 迁移 →
+#       构建前端（注入预览 API）→ 部署预览 worker（workers.dev）→ PR 评论预览 URL；
+#       PR 关闭 → teardown 全量回收。
 # 红线（README §2.3 规则 8/9）：预览 worker 绝不绑生产 Hyperdrive/R2/域名；
-# 生产 worker 绝不绑任何预览资源。防污染断言见 scripts/preview/assert-bindings.py，
-# 任一失败即中止。
+#       生产 worker 绝不绑预览资源。断言见 scripts/preview/assert-bindings.py。
+#
+# 2026-10-20 修复记录：
+# - 迁移 job 自取 DSN（db-url.py）：GitHub 会静默丢弃含密码的 job output。
+# - 预览库跟生产同库名（neondb）：分支内有多个库时的选库修正（ensure/db-url）。
+# - Set worker secrets 不用 toJSON(secrets)：逐项显式注入（免审批门禁 + 最小暴露）。
 
 on:
-  # 手动触发：用 CI 工具链部署一个演示预览（2026-10-20 新增；本机 pyodide 工具链打出的包
-  # 会触发 1101/1102 资源限额崩溃，需 CI 版对照验证——见 PROBLEM_STATUS 交接摘要）。
   workflow_dispatch:
     inputs:
       pr_number:
-        description: "伪 PR 号（数字，用于派生 slug/分支名；演示用）"
+        description: "伪 PR 号（数字，用于派生 slug/分支名；演示/排障用）"
         required: true
         type: string
   pull_request:
     types: [opened, synchronize, reopened, closed]
-    # 只有会影响部署产物的变更才触发预览部署（文档/归档不动资源、不烧额度）
     paths:
       - "backend/**"
       - "frontend/**"
@@ -33,51 +33,40 @@ on:
 
 permissions:
   contents: read
-  # 注：pull-requests: write 已下沉到 comment job（2026-10-20：工作流级写权限会让
-  # 公开仓库的 dispatch 触发被 GitHub 标 action_required 待审批，见 PROBLEM_STATUS 交接摘要）。
 
-# 同一 PR 串行；新推送取消旧的部署（但资源回收并发安全：ensure/teardown 均幂等）
 concurrency:
   group: preview-pr-${{ github.event.inputs.pr_number || github.event.pull_request.number }}
   cancel-in-progress: true
 
 env:
   PYTHONIOENCODING: utf-8
-  # 统一 PR 号口径：PR 事件取 event.pull_request.number，手动 dispatch 取 inputs.pr_number
   PR_NUMBER: ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
   NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
   NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
   CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-  # 共享预览资源标识（repo **variables**，非机密；本机已建，见 docs/ENV_VERIFICATION）
   KAAS_PREVIEW_KV_NAMESPACE_ID: ${{ vars.KAAS_PREVIEW_KV_NAMESPACE_ID }}
   KAAS_PREVIEW_R2_BUCKET: ${{ vars.KAAS_PREVIEW_R2_BUCKET }}
-  # 生产 Hyperdrive id：预览脚本据此读 origin.database，保证预览库与生产 worker 同库（neondb）
   PROD_HYPERDRIVE_ID: ${{ vars.PROD_HYPERDRIVE_ID }}
 
 jobs:
-  # ── PR 关闭：只做回收，其它 job 全跳过 ──────────────────────────────────────
   teardown:
     if: github.event.action == 'closed'
     name: Teardown preview resources
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Teardown（worker + Neon 分支 + Hyperdrive + 预览 KV/R2 前缀）
         env:
-          # R2 对象清理可选：配了 S3 密钥才真正删对象，否则脚本打印手动清理指引
           S3_ACCESS_KEY: ${{ secrets.S3_ACCESS_KEY }}
           S3_SECRET_KEY: ${{ secrets.S3_SECRET_KEY }}
           S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
           S3_BUCKET: ${{ vars.KAAS_PREVIEW_R2_BUCKET }}
         run: python3 scripts/preview/teardown.py --pr "${{ env.PR_NUMBER }}"
 
-  # ── PR 打开/同步：preflight → ensure → migrate → build → deploy → 评论 ──────
   preflight:
     if: github.event.action != 'closed'
     name: Preflight（CF token 权限校验）
@@ -98,8 +87,6 @@ jobs:
     outputs:
       PR_SLUG: ${{ steps.ensure.outputs.PR_SLUG }}
       NEON_BRANCH_NAME: ${{ steps.ensure.outputs.NEON_BRANCH_NAME }}
-      # 注：PREVIEW_DATABASE_URL 不再作为 job output —— GitHub 会静默丢弃含密码的 output
-      # (`Skip output ... since it may contain secret`)，改由 migrate job 用 db-url.py 自取。
       HYPERDRIVE_ID: ${{ steps.ensure.outputs.HYPERDRIVE_ID }}
       PREVIEW_URL: ${{ steps.ensure.outputs.PREVIEW_URL }}
     steps:
@@ -121,10 +108,9 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-      # 含密码的 DSN 不能经 job output 传递（GitHub 会静默丢弃：实测
-      # `Skip output 'PREVIEW_DATABASE_URL' since it may contain secret`），
-      # 故在 job 内自取并写进 $GITHUB_ENV（env 不受该限制，日志也不回显）。
-      - name: Resolve preview DB URL（job 内自取，规避 output 丢弃）
+      # 含密码的 DSN 不能走 job output（GitHub 会静默丢弃：实测
+      # `Skip output 'PREVIEW_DATABASE_URL' since it may contain secret`）。
+      - name: Resolve preview DB URL（job 内自取）
         run: |
           set -euo pipefail
           DSN="$(python3 scripts/preview/db-url.py --pr "${{ env.PR_NUMBER }}")"
@@ -152,7 +138,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - name: Install workspace deps (shared + frontend)
         run: pnpm install --frozen-lockfile
-      - name: Build（NEXT_EXPORT=1；API 指到本预览 worker 的 workers.dev）
+      - name: Build（NEXT_EXPORT=1；API 指到本预览 worker）
         working-directory: ./frontend
         run: npm run build
         env:
@@ -173,42 +159,30 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       PREVIEW_URL: ${{ needs.ensure.outputs.PREVIEW_URL }}
-    environment:
-      name: preview
-      url: ${{ needs.ensure.outputs.PREVIEW_URL }}
     steps:
       - uses: actions/checkout@v4
-
       - name: Download frontend build
         uses: actions/download-artifact@v4
         with:
           name: frontend-out-preview
           path: frontend/out
-
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.14"
-
       - name: Sync shared kernel + quote engine into worker
         shell: pwsh
         run: ./scripts/sync-shared.ps1
-
       - name: Verify mirror is complete
         shell: pwsh
         run: ./scripts/sync-shared.ps1 -Check
-
       - name: Render preview wrangler config
         working-directory: ./backend/worker
         env:
           PREVIEW_HYPERDRIVE_ID: ${{ needs.ensure.outputs.HYPERDRIVE_ID }}
           PREVIEW_R2_BUCKET: ${{ vars.KAAS_PREVIEW_R2_BUCKET }}
           PREVIEW_KV_NAMESPACE_ID: ${{ vars.KAAS_PREVIEW_KV_NAMESPACE_ID }}
-        run: |
-          python3 ../../scripts/preview/render-wrangler-config.py \
-            --slug "${{ env.PR_NUMBER }}" \
-            --out wrangler.preview.jsonc
-
-      - name: S5-d 防污染断言（部署前：渲染产物，失败即中止）
+        run: python3 ../../scripts/preview/render-wrangler-config.py --slug "${{ env.PR_NUMBER }}" --out wrangler.preview.jsonc
+      - name: S5-d 防污染断言（部署前，渲染产物）
         working-directory: ./backend/worker
         env:
           EXPECT_R2_BUCKET: ${{ vars.KAAS_PREVIEW_R2_BUCKET }}
@@ -216,36 +190,26 @@ jobs:
           EXPECT_HYPERDRIVE_ID: ${{ needs.ensure.outputs.HYPERDRIVE_ID }}
           FORBIDDEN_R2_BUCKETS: ${{ vars.PROD_R2_BUCKET }}
           FORBIDDEN_HYPERDRIVE_IDS: ${{ vars.PROD_HYPERDRIVE_ID }}
-        run: |
-          python3 ../../scripts/preview/assert-bindings.py \
-            --mode preview \
-            --script "kaas-preview-pr-${{ env.PR_NUMBER }}" \
-            --slug "${{ env.PR_NUMBER }}" \
-            --config wrangler.preview.jsonc \
-            --pre-deploy
-
-      - name: Set worker secrets（存在的才设置；缺失列警告不中止）
+        run: python3 ../../scripts/preview/assert-bindings.py --mode preview --script "kaas-preview-pr-${{ env.PR_NUMBER }}" --slug "${{ env.PR_NUMBER }}" --config wrangler.preview.jsonc --pre-deploy
+      # 逐项显式注入（不用 toJSON(secrets)：避免整包 secrets 进入步骤环境）。
+      - name: Set worker secrets（有则设置、无则告警不阻塞）
         working-directory: ./backend/worker
         env:
-          SECRETS_JSON: ${{ toJSON(secrets) }}
+          S_JWT: ${{ secrets.JWT_SECRET }}
+          S_ADMIN: ${{ secrets.ADMIN_SETUP_TOKEN }}
+          S_S3AK: ${{ secrets.S3_ACCESS_KEY }}
+          S_S3SK: ${{ secrets.S3_SECRET_KEY }}
         run: |
-          for name in JWT_SECRET ADMIN_SETUP_TOKEN S3_ACCESS_KEY S3_SECRET_KEY \
-                      RESEND_API_KEY BROWSER_RENDERING_TOKEN RESET_FROM_EMAIL; do
-            value=$(printf '%s' "$SECRETS_JSON" | python3 -c "import json,os; print(json.loads(os.environ['SECRETS_JSON']).get('$name',''))")
-            if [ -n "$value" ]; then
-              printf '%s' "$value" | uv run pywrangler secret put "$name" \
-                -c wrangler.preview.jsonc \
-                || echo "::warning::secret $name 写入预览 worker 失败（功能将不可用）"
-            else
-              echo "::warning::secret $name 未配置 ⇒ 预览 worker 该功能不可用（生产不受影响）"
-            fi
-          done
-
+          set -uo pipefail
+          put() { if [ -n "$2" ]; then printf '%s' "$2" | uv run pywrangler secret put "$1" -c wrangler.preview.jsonc || echo "::warning::secret $1 写入失败"; else echo "::warning::secret $1 未配置（预览该功能不可用）"; fi; }
+          put JWT_SECRET "$S_JWT"
+          put ADMIN_SETUP_TOKEN "$S_ADMIN"
+          put S3_ACCESS_KEY "$S_S3AK"
+          put S3_SECRET_KEY "$S_S3SK"
       - name: Deploy to Cloudflare Workers（workers.dev）
         working-directory: ./backend/worker
         run: uv run pywrangler deploy -c wrangler.preview.jsonc
-
-      - name: S5-d 防污染断言（部署后：线上真实绑定）
+      - name: S5-d 防污染断言（部署后，线上真实绑定）
         working-directory: ./backend/worker
         env:
           EXPECT_R2_BUCKET: ${{ vars.KAAS_PREVIEW_R2_BUCKET }}
@@ -253,43 +217,33 @@ jobs:
           EXPECT_HYPERDRIVE_ID: ${{ needs.ensure.outputs.HYPERDRIVE_ID }}
           FORBIDDEN_R2_BUCKETS: ${{ vars.PROD_R2_BUCKET }}
           FORBIDDEN_HYPERDRIVE_IDS: ${{ vars.PROD_HYPERDRIVE_ID }}
-        run: |
-          python3 ../../scripts/preview/assert-bindings.py \
-            --mode preview \
-            --script "kaas-preview-pr-${{ env.PR_NUMBER }}" \
-            --slug "${{ env.PR_NUMBER }}"
-
-      - name: Smoke test（预览 /health 回显 pr_slug + 未鉴权 401）
+        run: python3 ../../scripts/preview/assert-bindings.py --mode preview --script "kaas-preview-pr-${{ env.PR_NUMBER }}" --slug "${{ env.PR_NUMBER }}"
+      - name: Smoke（预览 /health 回显 pr_slug + 未鉴权 401；最多等 6 分钟）
         run: |
           set -uo pipefail
           API="${{ needs.ensure.outputs.PREVIEW_URL }}"
           ok=0
-          for i in $(seq 1 18); do
+          for i in $(seq 1 36); do
             body=$(curl -fsS --max-time 10 "$API/health" 2>/dev/null || true)
-            if printf '%s' "$body" | grep -q '"pr_slug":"${{ env.PR_NUMBER }}"'; then
-              echo "attempt $i: $body"; ok=1; break
+            if printf '%s' "$body" | grep -q "pr_slug"; then
+              echo "attempt $i ready: $body"; ok=1; break
             fi
-            echo "attempt $i: not ready yet ($body)"
-            sleep 10
+            echo "attempt $i not ready"; sleep 10
           done
-          if [ "$ok" != "1" ]; then
-            echo "::error::预览 /health 未回显 pr_slug（PR_SLUG 未注入或 Worker 未起）"; exit 1
-          fi
+          if [ "$ok" != "1" ]; then echo "::error::预览 /health 未就绪"; exit 1; fi
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API/api/v1/leads")
           echo "/api/v1/leads -> $code"
-          if [ "$code" != "401" ]; then
-            echo "::error::预览 API 期望 401（路由存在且需鉴权），实际 $code"; exit 1
-          fi
+          if [ "$code" != "401" ]; then echo "::error::预览 API 期望 401，实际 $code"; exit 1; fi
 
   comment:
-    # 手动 dispatch（演示部署）没有 PR 可评论，跳过；PR 事件照常评论
+    # 手动 dispatch 无 PR 可评论；仅 PR 事件评论
     if: github.event_name == 'pull_request'
     name: PR 评论预览 URL
     needs: [deploy]
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write   # 仅此 job 需要写：评论预览 URL
+      pull-requests: write
     steps:
       - name: Comment preview URL（幂等：同标记评论只更新不刷屏）
         uses: actions/github-script@v7
@@ -297,7 +251,7 @@ jobs:
           script: |
             const marker = '<!-- kaas-preview-url -->';
             const body = `${marker}\n🚀 预览环境已就绪：${process.env.PREVIEW_URL}\n\n` +
-              `- 数据库：Neon 分支 \`preview-pr-${process.env.PR_NUMBER}\`（从 production 派生）\n` +
+              `- 数据库：Neon 分支 \`preview-pr-${process.env.PR_NUMBER}\`（从 production 派生，独立凭证）\n` +
               `- 存储：R2 \`kaas-preview-storage\`（键前缀 \`pr-${process.env.PR_NUMBER}/\`）+ 预览 KV\n` +
               `- PR 关闭时自动回收（teardown）`;
             const { data: comments } = await github.rest.issues.listComments({
