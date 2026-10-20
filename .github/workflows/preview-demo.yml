@@ -165,3 +165,11 @@ jobs:
           path: frontend/out
           retention-days: 3
 
+  deploy:
+    if: github.event.action != 'closed'
+    name: Deploy probe（仅 echo，逐步加回定位门禁）
+    needs: [ensure, migrate, build-frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: echo only
+        run: echo "deploy-probe echo ok"
