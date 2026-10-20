@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>PowerVoy UI 优化原型</title>
+<style>
+  :root{
+    /* ── 提案令牌（可直接映射到 globals.css 的 oklch 变量） ── */
+    --bg:#f5f6fa; --surface:#fff; --surface-2:#f8f9fc; --surface-3:#f2f4f8;
+    --border:#e6e9f0; --border-strong:#d7dbe5;
+    --text:#1a1e2b; --text-2:#5b6376; --text-3:#8a91a2;
+    --brand:#5145d6; --brand-hover:#4538bf; --brand-soft:#eeecfd; --brand-ring:rgba(81,69,214,.18);
+    --success:#0e7a4f; --success-soft:#e9f7f0;
+    --warning:#9a6400; --warning-soft:#fff4de;
+    --danger:#c0322b; --danger-soft:#fdecea;
+    --info:#2563c7; --info-soft:#eaf1fd;
+    --radius:10px; --radius-sm:8px; --radius-xs:6px;
+    --shadow:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.06);
+    --sidebar-w:240px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:#e9ebf1}
+  body{font-family:"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;color:var(--text);-webkit-font-smoothing:antialiased}
+  .screen{position:relative;width:1440px;height:900px;display:flex;background:var(--bg);overflow:hidden}
+  .screen + .screen{margin-top:20px}
+  svg{display:block}
+
+  /* ── 侧栏 ── */
+  .sidebar{width:var(--sidebar-w);flex:none;background:#141826;border-right:1px solid #222838;display:flex;flex-direction:column;color:#c3c9d6}
+  .brand{display:flex;align-items:center;gap:10px;height:64px;padding:0 18px;border-bottom:1px solid #202634}
+  .brand .mark{width:26px;height:26px;flex:none}
+  .brand .name{font-size:14px;font-weight:700;letter-spacing:.14em;color:#fff}
+  .brand .collapse{margin-left:auto;color:#6b7385;display:flex;padding:6px;border-radius:6px}
+  .nav{flex:1;overflow:auto;padding:10px 10px 16px}
+  .group{margin-top:14px}
+  .group-label{padding:0 10px 6px;font-size:11px;font-weight:600;letter-spacing:.12em;color:#737b8f}
+  .nav-item{display:flex;align-items:center;gap:10px;height:36px;padding:0 10px;border-radius:8px;color:#b9bfce;font-size:13px;position:relative}
+  .nav-item svg{width:16px;height:16px;flex:none;color:#8d94a6}
+  .nav-item:hover{background:#1b2030;color:#e7eaf1}
+  .nav-item.active{background:rgba(110,96,255,.16);color:#fff;font-weight:600}
+  .nav-item.active svg{color:#a99fff}
+  .nav-item.active::before{content:"";position:absolute;left:-10px;top:9px;bottom:9px;width:3px;border-radius:0 3px 3px 0;background:#8b7cff}
+  .sidebar-foot{padding:12px 18px;border-top:1px solid #202634;font-size:11px;color:#6b7385;line-height:1.6}
+
+  /* ── 顶栏 ── */
+  .main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .topbar{height:56px;flex:none;background:rgba(255,255,255,.9);backdrop-filter:blur(10px);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:16px}
+  .crumbs{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-3)}
+  .crumbs a{color:var(--text-3);text-decoration:none}
+  .crumbs .sep{color:#c6cbd7}
+  .crumbs .cur{color:var(--text);font-weight:500}
+  .top-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+  .env{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--border);border-radius:999px;font-size:12px;color:var(--text-2);background:#fff}
+  .env .dot{width:6px;height:6px;border-radius:50%;background:var(--success)}
+  .avatar{width:30px;height:30px;border-radius:50%;background:var(--brand);color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center}
+  .user{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-2)}
+  .user svg{width:14px;height:14px;color:var(--text-3)}
+
+  /* ── 页面骨架 ── */
+  .page{flex:1;overflow:hidden;padding:26px 32px 32px}
+  .page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:22px}
+  .page-title{font-size:22px;line-height:1.35;font-weight:600;letter-spacing:-.01em}
+  .page-desc{margin-top:5px;font-size:13px;color:var(--text-2);line-height:1.6;max-width:720px}
+  .page-actions{display:flex;align-items:center;gap:10px;flex:none;padding-top:2px}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 13px;border-radius:8px;border:1px solid transparent;font-size:13px;font-weight:500;white-space:nowrap;cursor:default}
+  .btn svg{width:15px;height:15px}
+  .btn-primary{background:var(--brand);color:#fff;box-shadow:0 1px 2px rgba(81,69,214,.28)}
+  .btn-outline{background:#fff;border-color:var(--border-strong);color:var(--text)}
+  .btn-ghost{background:transparent;color:var(--text-2)}
+  .btn[disabled]{opacity:.6}
+  .seg{display:inline-flex;padding:2px;border:1px solid var(--border);border-radius:9px;background:#fff}
+  .seg button{height:28px;padding:0 12px;border:0;background:transparent;border-radius:7px;font-size:12px;color:var(--text-2);font-family:inherit}
+  .seg button.on{background:var(--surface-3);color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(16,24,40,.06)}
+
+  .section-title{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-size:13px;font-weight:600;color:var(--text-2);letter-spacing:.02em}
+  .section-title .count{font-weight:400;color:var(--text-3);font-size:12px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:26px}
+  .kpi-row.two{grid-template-columns:repeat(2,1fr)}
+  .kpi{padding:18px 20px;display:flex;flex-direction:column;gap:10px;min-height:126px}
+  .kpi-top{display:flex;align-items:flex-start;justify-content:space-between}
+  .kpi-label{font-size:13px;color:var(--text-2)}
+  .kpi-icon{width:30px;height:30px;border-radius:8px;background:var(--surface-3);color:var(--text-2);display:flex;align-items:center;justify-content:center}
+  .kpi-icon svg{width:16px;height:16px}
+  .kpi-value{font-size:30px;line-height:1.1;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .kpi-value.sm{font-size:24px}
+  .kpi-foot{margin-top:auto;display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text-3)}
+  .meter{height:4px;border-radius:2px;background:#eceff5;overflow:hidden;flex:1;min-width:40px}
+  .meter i{display:block;height:100%;border-radius:2px;background:var(--brand)}
+  .note{padding:16px 20px;font-size:12px;line-height:1.8;color:var(--text-2);display:grid;grid-template-columns:1fr 1fr;gap:6px 28px}
+  .note b{color:var(--text)}
+
+  /* ── 表格 ── */
+  .list-card{overflow:hidden}
+  .toolbar{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border)}
+  .search{display:flex;align-items:center;gap:8px;height:34px;width:320px;padding:0 12px;border:1px solid var(--border-strong);border-radius:8px;background:#fff;color:var(--text-3);font-size:13px}
+  .search svg{width:15px;height:15px}
+  .toolbar .spacer{flex:1}
+  .toolbar .count{font-size:12px;color:var(--text-3)}
+  table{width:100%;border-collapse:collapse}
+  th{height:40px;padding:0 18px;text-align:left;font-size:12px;font-weight:600;color:var(--text-3);background:var(--surface-2);border-bottom:1px solid var(--border);white-space:nowrap}
+  th:first-child{padding-left:20px}
+  td{height:56px;padding:0 18px;font-size:14px;border-bottom:1px solid var(--border);white-space:nowrap}
+  td:first-child{padding-left:20px}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr:hover{background:#fafbfd}
+  .cell-main{font-weight:600;color:var(--text)}
+  .cell-sub{display:block;margin-top:2px;font-size:12px;color:var(--text-3)}
+  .st{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;border-radius:999px;font-size:12px;font-weight:500}
+  .st .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+  .st.success{background:var(--success-soft);color:var(--success)}
+  .st.neutral{background:var(--surface-3);color:var(--text-2)}
+  .st.neutral .dot{background:transparent;border:1.5px solid currentColor}
+  .st.info{background:var(--info-soft);color:var(--info)}
+  .row-arrow{color:#c2c8d4;width:16px;height:16px}
+  .table-foot{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;font-size:12px;color:var(--text-3);border-top:1px solid var(--border);background:var(--surface-2)}
+
+  /* ── 表单 ── */
+  .form-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px;align-items:start}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:20px}
+  .tab{position:relative;height:38px;padding:0 12px;display:flex;align-items:center;font-size:13px;color:var(--text-2)}
+  .tab.on{color:var(--text);font-weight:600}
+  .tab.on::after{content:"";position:absolute;left:8px;right:8px;bottom:-1px;height:2px;border-radius:2px 2px 0 0;background:var(--brand)}
+  .form-card{padding:0}
+  .form-sec{padding:18px 20px;border-bottom:1px solid var(--border)}
+  .form-sec:last-child{border-bottom:0}
+  .form-sec-head{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}
+  .form-sec-title{font-size:15px;font-weight:600}
+  .form-sec-desc{font-size:12px;color:var(--text-3)}
+  .grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 18px}
+  .grid-4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 18px}
+  .field label{display:block;font-size:13px;font-weight:500;color:var(--text-2);margin-bottom:6px}
+  .field label .req{color:var(--danger);margin-left:2px}
+  .input{height:36px;width:100%;border:1px solid var(--border-strong);border-radius:8px;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 11px;font-size:13px;color:var(--text)}
+  .input .ph{color:var(--text-3)}
+  .input svg{width:14px;height:14px;color:var(--text-3)}
+  .input.err{border-color:var(--danger);box-shadow:0 0 0 3px rgba(192,50,43,.10)}
+  .hint{margin-top:6px;font-size:12px;line-height:1.6;color:var(--text-3)}
+  .hint.err{color:var(--danger);display:flex;align-items:center;gap:5px}
+  .hint.err svg{width:13px;height:13px}
+  .rail{position:sticky;top:0;padding:0;overflow:hidden}
+  .rail-head{padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:baseline;justify-content:space-between}
+  .rail-title{font-size:15px;font-weight:600}
+  .rail-body{padding:16px 18px;display:flex;flex-direction:column;gap:10px;font-size:13px}
+  .rail-row{display:flex;align-items:center;justify-content:space-between;color:var(--text-2)}
+  .rail-row b{color:var(--text);font-variant-numeric:tabular-nums;font-weight:600}
+  .rail-total{border-top:1px solid var(--border);margin-top:6px;padding-top:12px;display:flex;justify-content:space-between;align-items:baseline}
+  .rail-total b{font-size:20px;font-variant-numeric:tabular-nums}
+  .rail-actions{padding:14px 18px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
+  .rail-actions .btn{height:34px;width:100%}
+  .rail-note{font-size:12px;color:var(--text-3);line-height:1.6;padding:0 18px 16px}
+  .spinner{width:13px;height:13px;border:2px solid rgba(255,255,255,.45);border-top-color:#fff;border-radius:50%}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ A · 仪表盘 ═══════════════ -->
+<div class="screen" id="screen-dashboard">
+  <aside class="sidebar">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 24 24" fill="none"><g stroke="#7c6eff" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v18"/><path d="m4.2 7.5 15.6 9"/><path d="m19.8 7.5-15.6 9"/></g></svg>
+      <span class="name">POWERVOY</span>
+      <span class="collapse"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></span>
+    </div>
+    <nav class="nav">
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>仪表盘</div>
+      <div class="group"><div class="group-label">获客</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>市场调研</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>地图源客户信息获取</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>客户触达</div>
+      </div>
+      <div class="group"><div class="group-label">情报</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20"/></svg>市场情报</div>
+      </div>
+      <div class="group"><div class="group-label">客户</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>产品</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>客户管理</div>
+      </div>
+      <div class="group"><div class="group-label">业务</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>报价</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>订单</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>单证</div>
+      </div>
+      <div class="group"><div class="group-label">管理</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>系统设置</div>
+      </div>
+    </nav>
+    <div class="sidebar-foot">默认团队 · 内部账号<br/>PowerVoy v1.0</div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="crumbs"><a>首页</a><span class="sep">/</span><span class="cur">仪表盘</span></div>
+      <div class="top-right">
+        <span class="env"><span class="dot"></span>默认团队 · 内部账号</span>
+        <div class="user"><span class="avatar">平</span>平台管理员<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+      </div>
+    </header>
+
+    <div class="page">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">仪表盘</h1>
+          <p class="page-desc">实时业务指标与系统运行概览</p>
+        </div>
+        <div class="page-actions">
+          <div class="seg"><button class="on">今日</button><button>近 7 天</button><button>近 30 天</button></div>
+        </div>
+      </div>
+
+      <div class="section-title">业务指标</div>
+      <div class="kpi-row two">
+        <div class="card kpi">
+          <div class="kpi-top"><span class="kpi-label">今日报价数</span><span class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></span></div>
+          <div class="kpi-value">42</div>
+          <div class="kpi-foot"><span>采样 10 / 42</span><span class="meter"><i style="width:23.8%"></i></span></div>
+        </div>
+        <div class="card kpi">
+          <div class="kpi-top"><span class="kpi-label">活跃客户</span><span class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span></div>
+          <div class="kpi-value">3</div>
+          <div class="kpi-foot"><span>采样 2 / 3</span><span class="meter"><i style="width:66%"></i></span></div>
+        </div>
+      </div>
+
+      <div class="section-title">系统运行</div>
+      <div class="kpi-row">
+        <div class="card kpi">
+          <div class="kpi-top"><span class="kpi-label">Token 消耗</span><span class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span></div>
+          <div class="kpi-value sm">125,000</div>
+          <div class="kpi-foot">采样 30,000 / 125,000</div>
+        </div>
+        <div class="card kpi">
+          <div class="kpi-top"><span class="kpi-label">P95 延迟</span><span class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span></div>
+          <div class="kpi-value sm">334.4 <span style="font-size:14px;font-weight:500;color:var(--text-3)">ms</span></div>
+          <div class="kpi-foot">采样 80 次请求</div>
+        </div>
+        <div class="card kpi">
+          <div class="kpi-top"><span class="kpi-label">数据集命中</span><span class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg></span></div>
+          <div class="kpi-value sm">3 <span style="font-size:14px;font-weight:500;color:var(--text-3)">个</span></div>
+          <div class="kpi-foot">L1 共通 15 · L2 牛栏网 20 · L3 联佳丝网 7</div>
+        </div>
+        <div class="card kpi">
+          <div class="kpi-top"><span class="kpi-label">采样覆盖率</span><span class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></span></div>
+          <div class="kpi-value sm">23.8%</div>
+          <div class="kpi-foot"><span class="meter"><i style="width:23.8%"></i></span></div>
+        </div>
+      </div>
+
+      <div class="card note">
+        <span><b>口径</b> · 采样值 / 总量；总量为 0 时显示「—」</span>
+        <span><b>刷新</b> · 数据随日期范围实时拉取</span>
+        <span><b>延迟</b> · P95 表示 95% 请求低于该值</span>
+        <span><b>覆盖率</b> · 今日报价数采样占比</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ B · 客户管理 ═══════════════ -->
+<div class="screen" id="screen-customers">
+  <aside class="sidebar">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 24 24" fill="none"><g stroke="#7c6eff" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v18"/><path d="m4.2 7.5 15.6 9"/><path d="m19.8 7.5-15.6 9"/></g></svg>
+      <span class="name">POWERVOY</span>
+      <span class="collapse"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></span>
+    </div>
+    <nav class="nav">
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>仪表盘</div>
+      <div class="group"><div class="group-label">获客</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>市场调研</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>地图源客户信息获取</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>客户触达</div>
+      </div>
+      <div class="group"><div class="group-label">情报</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20"/></svg>市场情报</div>
+      </div>
+      <div class="group"><div class="group-label">客户</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>产品</div>
+        <div class="nav-item active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>客户管理</div>
+      </div>
+      <div class="group"><div class="group-label">业务</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>报价</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>订单</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>单证</div>
+      </div>
+      <div class="group"><div class="group-label">管理</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>系统设置</div>
+      </div>
+    </nav>
+    <div class="sidebar-foot">默认团队 · 内部账号<br/>PowerVoy v1.0</div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="crumbs"><a>首页</a><span class="sep">/</span><a>客户</a><span class="sep">/</span><span class="cur">客户管理</span></div>
+      <div class="top-right">
+        <span class="env"><span class="dot"></span>默认团队 · 内部账号</span>
+        <div class="user"><span class="avatar">平</span>平台管理员<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+      </div>
+    </header>
+
+    <div class="page">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">客户管理</h1>
+          <p class="page-desc">跟进询盘、阶段与联系人</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-outline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>导出</button>
+          <button class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/></svg>新建客户</button>
+        </div>
+      </div>
+
+      <div class="card list-card">
+        <div class="toolbar">
+          <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>搜索客户名称、国家或港口</div>
+          <span class="spacer"></span>
+          <span class="count">共 2 家客户</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width:32%">客户</th>
+              <th style="width:22%">国家 · 港口</th>
+              <th style="width:16%">阶段</th>
+              <th style="width:20%">最近更新</th>
+              <th style="width:10%"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="cell-main">联佳丝网</span><span class="cell-sub">Linjia Wire Mesh</span></td>
+              <td>中国 · 上海</td>
+              <td><span class="st success"><span class="dot"></span>活跃</span></td>
+              <td>2026-10-20</td>
+              <td style="text-align:right"><svg class="row-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></td>
+            </tr>
+            <tr>
+              <td><span class="cell-main">备选客户 B</span><span class="cell-sub">Client B Trading</span></td>
+              <td>美国 · 洛杉矶</td>
+              <td><span class="st neutral"><span class="dot"></span>沉寂</span></td>
+              <td>2026-10-17</td>
+              <td style="text-align:right"><svg class="row-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="table-foot"><span>点击任意一行打开客户详情</span><span>第 1–2 条 / 共 2 条</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ C · 报价（表单） ═══════════════ -->
+<div class="screen" id="screen-quote">
+  <aside class="sidebar">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 24 24" fill="none"><g stroke="#7c6eff" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v18"/><path d="m4.2 7.5 15.6 9"/><path d="m19.8 7.5-15.6 9"/></g></svg>
+      <span class="name">POWERVOY</span>
+      <span class="collapse"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></span>
+    </div>
+    <nav class="nav">
+      <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>仪表盘</div>
+      <div class="group"><div class="group-label">获客</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>市场调研</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>地图源客户信息获取</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>客户触达</div>
+      </div>
+      <div class="group"><div class="group-label">情报</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20"/></svg>市场情报</div>
+      </div>
+      <div class="group"><div class="group-label">客户</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>产品</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>客户管理</div>
+      </div>
+      <div class="group"><div class="group-label">业务</div>
+        <div class="nav-item active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>报价</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>订单</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>单证</div>
+      </div>
+      <div class="group"><div class="group-label">管理</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>系统设置</div>
+      </div>
+    </nav>
+    <div class="sidebar-foot">默认团队 · 内部账号<br/>PowerVoy v1.0</div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="crumbs"><a>首页</a><span class="sep">/</span><a>业务</a><span class="sep">/</span><span class="cur">报价</span></div>
+      <div class="top-right">
+        <span class="env"><span class="dot"></span>默认团队 · 内部账号</span>
+        <div class="user"><span class="avatar">平</span>平台管理员<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+      </div>
+    </header>
+
+    <div class="page">
+      <div class="page-head" style="margin-bottom:14px">
+        <div>
+          <h1 class="page-title">报价</h1>
+          <p class="page-desc">成本历史 → 算价 → 报价记录，一条线走完</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-outline">企业抬头 / 收款信息 / 公章<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></button>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <div class="tab on">产品报价</div><div class="tab">批量报价</div><div class="tab">报价记录</div><div class="tab">成本历史</div>
+      </div>
+
+      <div class="form-layout">
+        <div class="card form-card">
+          <div class="form-sec">
+            <div class="form-sec-head"><span class="form-sec-title">整单参数</span><span class="form-sec-desc">客户、税务档案、利润/杂税、对外报价条款与汇率；这些参数整单只有一份</span></div>
+            <div class="grid-3">
+              <div class="field"><label>客户<span class="req">*</span></label><div class="input"><span>搜索并选择客户…</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div><div class="hint">报价单要挂客户才能计入台账</div></div>
+              <div class="field"><label>询盘编号</label><div class="input"><span class="ph">请先选择客户</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div><div class="hint">选择客户后自动带入该客户名下询盘</div></div>
+              <div class="field"><label>税务档案</label><div class="input"><span>自定义（不套用档案）</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div><div class="hint">未选择档案时按当前填写的税率计算</div></div>
+            </div>
+          </div>
+
+          <div class="form-sec">
+            <div class="grid-4">
+              <div class="field"><label>让利比例（%）</label><div class="input"><span>80</span></div></div>
+              <div class="field"><label>销项税率（%）</label><div class="input"><span>0</span></div></div>
+              <div class="field"><label>杂税（%）</label><div class="input"><span>3</span></div></div>
+              <div class="field"><label>利润率（%）</label><div class="input"><span>5</span></div></div>
+            </div>
+          </div>
+
+          <div class="form-sec">
+            <div class="grid-3">
+              <div class="field"><label>对外报价条款</label><div class="input"><span>EXW · 出厂价（Ex Works）</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
+              <div class="field"><label>汇率</label><div class="input"><span>1 USD = 7.10</span><span style="font-size:12px;color:var(--text-3)">CNY</span></div><div class="hint">切币种会自动带入最新汇率</div></div>
+              <div class="field"><label>报价日期</label><div class="input"><span>2026-10-20</span></div></div>
+            </div>
+          </div>
+
+          <div class="form-sec">
+            <div class="form-sec-head"><span class="form-sec-title">产品行 1</span><span class="form-sec-desc">勾花网 · 每行独立算价</span></div>
+            <div class="grid-4">
+              <div class="field"><label>件数（卷）</label><div class="input"><span class="ph">请填写卷数</span></div></div>
+              <div class="field"><label>总数（m）</label><div class="input" style="background:var(--surface-2);color:var(--text-2)"><span>0</span></div><div class="hint">件数 × 单件数量，自动计算</div></div>
+              <div class="field"><label>税前成本（元/㎡）</label><div class="input err"><span class="ph">必填</span></div><div class="hint err"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>请填写税前成本</div></div>
+              <div class="field"><label>包装方式</label><div class="input"><span class="ph">（该产品未配置包装）</span></div><div class="hint">在「产品」里配置包装与收货区间</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card rail">
+          <div class="rail-head"><span class="rail-title">报价摘要</span><span style="font-size:12px;color:var(--text-3)">勾花网 × 1 行</span></div>
+          <div class="rail-body">
+            <div class="rail-row"><span>总数量</span><b>0 卷</b></div>
+            <div class="rail-row"><span>总米数</span><b>0 m</b></div>
+            <div class="rail-row"><span>税前成本</span><b>—</b></div>
+            <div class="rail-row"><span>预估报价</span><b>—</b></div>
+            <div class="rail-total"><span style="color:var(--text-2)">报价总额</span><b>—</b></div>
+          </div>
+          <div class="rail-actions">
+            <button class="btn btn-primary" disabled><span class="spinner"></span>保存中…</button>
+            <button class="btn btn-outline" disabled>签发报价单</button>
+          </div>
+          <div class="rail-note">至少计算一行后才能保存；保存成功后可签发。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
