@@ -199,7 +199,19 @@ jobs:
           FORBIDDEN_R2_BUCKETS: ${{ vars.PROD_R2_BUCKET }}
           FORBIDDEN_HYPERDRIVE_IDS: ${{ vars.PROD_HYPERDRIVE_ID }}
         run: python3 ../../scripts/preview/assert-bindings.py --mode preview --script "kaas-preview-pr-${{ env.PR_NUMBER }}" --slug "${{ env.PR_NUMBER }}" --config wrangler.preview.jsonc --pre-deploy
-      - name: Deploy to Cloudflare Workers
+      - name: Set worker secrets（存在的才设置；缺失列警告不中止）
+        working-directory: ./backend/worker
+        env:
+          SECRETS_JSON: ${{ toJSON(secrets) }}
+        run: |
+          for name in JWT_SECRET ADMIN_SETUP_TOKEN S3_ACCESS_KEY S3_SECRET_KEY RESEND_API_KEY; do
+            value=$(printf '%s' "$SECRETS_JSON" | python3 -c "import json,os; print(json.loads(os.environ['SECRETS_JSON']).get('$name',''))")
+            if [ -n "$value" ]; then
+              printf '%s' "$value" | uv run pywrangler secret put "$name" -c wrangler.preview.jsonc || echo "::warning::secret $name 写入失败"
+            else
+              echo "::warning::secret $name 未配置"
+            fi
+          done      - name: Deploy to Cloudflare Workers
         working-directory: ./backend/worker
         run: uv run pywrangler deploy -c wrangler.preview.jsonc
       - name: Smoke
