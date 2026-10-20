@@ -53,11 +53,14 @@ kaas-preview-storage；KV = `KAAS_PREVIEW`；Workers = `kaas`。
 - **本机**：`.env.local`（gitignored）：`DATABASE_URL`（Neon 生产）、`DATABASE_URL_PPG`（已废弃，可删）、
   `RESEND_API_KEY`（本地开发用）、**`RESEND_API_KEY_PROD`**（生产专用，发布窗口注入）、
   **`RESEND_API_KEY_PREVIEW`**（预览专用，已同步为 GitHub repo secret）。
-- **GitHub repo secrets（11 个）**：`PROD_DATABASE_URL` / `NEON_API_KEY` / `NEON_PROJECT_ID` /
+  **注意：两把 Resend key 的持久位置是 GitHub repo secrets（换设备不失），本机文件只是副本；
+  最终生效位置是 Cloudflare Worker secret（发布窗口浇入）。**
+- **GitHub repo secrets（12 个）**：`PROD_DATABASE_URL` / `NEON_API_KEY` / `NEON_PROJECT_ID` /
   `CLOUDFLARE_API_TOKEN`（账号级，五权限）/ `CLOUDFLARE_ACCOUNT_ID` / `JWT_SECRET`、
   `ADMIN_SETUP_TOKEN`（**预览专用随机值**）/ `S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_ENDPOINT`
-  （**预览桶专用**，只够 `kaas-preview-storage`）/ **`RESEND_API_KEY_PREVIEW`**（预览专用发信 key，
-  2026-10-20 新增；与生产 key 独立、额度按账号共享）。
+  （**预览桶专用**，只够 `kaas-preview-storage`）/ **`RESEND_API_KEY_PREVIEW`**（预览专用发信 key）/
+  **`RESEND_API_KEY_PROD`**（生产专用发信 key）。两只发信 key 与生产/预览一一对应、额度按账号共享、
+  独立吊销；预览 worker **不得**使用生产 key。
 - **GitHub repo variables（4 个）**：`KAAS_PREVIEW_KV_NAMESPACE_ID`（`c77ab8c9…`）/
   `KAAS_PREVIEW_R2_BUCKET=kaas-preview-storage` / `PROD_R2_BUCKET=kaas-files` /
   `PROD_HYPERDRIVE_ID=f53fed49…`。

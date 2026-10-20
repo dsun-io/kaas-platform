@@ -48,7 +48,7 @@
 
 | # | 待办 | 说明 | 状态 |
 |---|---|---|---|
-| D1 | 生产 worker 注入 `RESEND_API_KEY` | 否则生产「忘记密码」邮件**静默不发**（实测生产 secrets 只有 4 个，缺此项）。**key 分层（2026-10-20 用户裁决，三只 key 全部到位）**：① 生产专用 key（用户命名 `kaas-生产`）存本机 gitignored `.env.local` 的 **`RESEND_API_KEY_PROD`**（不落仓库），发布窗口 `wrangler secret put RESEND_API_KEY --name kaas`（值取它）；② 预览专用 key（`kaas-预览`）存 `.env.local` 的 **`RESEND_API_KEY_PREVIEW`**，已设为 GitHub repo secret `RESEND_API_KEY_PREVIEW` 并由 `preview.yml` 注入预览 worker（预览 worker 跑 PR 分支代码，**绝不复用生产 key**）；③ 本地开发继续用 `RESEND_API_KEY`（旧 key）。发件地址 `RESET_FROM_EMAIL` 默认 `noreply@send.powervoy.com`（三者同域名、同账号额度，独立吊销） | ⏳ |
+| D1 | 生产 worker 注入 `RESEND_API_KEY` | 否则生产「忘记密码」邮件**静默不发**（实测生产 secrets 只有 4 个，缺此项）。**key 分层（2026-10-20 用户裁决，三只 key 全部到位）**：① 生产专用 key（`kaas-生产`）→ GitHub repo secret **`RESEND_API_KEY_PROD`**（换设备不失；本机 `.env.local` 只是副本）；② 预览专用 key（`kaas-预览`）→ GitHub repo secret **`RESEND_API_KEY_PREVIEW`**，已由 `preview.yml` 注入预览 worker（预览跑 PR 分支代码，**绝不复用生产 key**）；③ 本地开发继续用 `RESEND_API_KEY`。**最终持久位置 = Cloudflare Worker secret**（换设备也不重配）：发布窗口 `cd backend/worker; npx wrangler secret put RESEND_API_KEY --name kaas`（值取 repo secret `RESEND_API_KEY_PROD`）；发件地址 `RESET_FROM_EMAIL` 默认 `noreply@send.powervoy.com`。三者同域名、同账号额度、独立吊销 | ⏳（等发布窗口浇入 Cloudflare） |
 | D2 | R2 新密钥替换 | 旧 keys 发布前继续有效；发布窗口替换（`wrangler secret put` 与部署同窗口）；发布后用户在 R2 dashboard 删旧 token | ⏳ |
 | D3 | Hyperdrive 生产缓存关闭（可选） | 预览 config 已 `caching.disabled=True`；生产是否同改**需单独批准**（现状保持开启） | 🧭 |
 | D4 | 生产测试数据清理 | 含流失拒绝文件历史；**执行当次需用户确认** | 🧭 |
@@ -64,6 +64,21 @@
 - 剩余（该方案 §9.2）：30+ 页面内容迁移、列配置/密度切换/筛选记忆、a11y 全量（焦点/对比度/aria/表头 scope）、
   1366 小屏适配、状态标签/按钮/加载态全站收编。
 - ⚠️ 该线另一会话在写 `frontend/**` + `docs/ui-redesign/`；本账本只挂总入口避免双账，施工协调找该线。
+
+---
+
+## F. 用户明确的后端 5 项（2026-10-20 点名，**不得遗漏**）
+
+> 用户原话："后端 5 项：服务端签发自动上传、单证内容版本、个人信息编辑、询盘状态机、报价/订单 1:N 约束
+> —— 这些你都要做啊，不要有遗漏"。本表逐项跟踪；完成一项销账一项。
+
+| # | 待办 | 内容与验收 | 状态 |
+|---|---|---|---|
+| F1 | **服务端签发自动上传 PDF**（= A2） | 签发（含 API/其他客户端签发）后由**服务端**渲染并归档 PDF，不再只依赖前端 UI 触发。现状：HTML 模板在前端，`POST /trade-docs/{id}/pdf` 接收前端给的 HTML → Browser Rendering 出字节；API 签发不产出 PDF。方案待定（评估：服务端渲染器/归档任务化/浏览器渲染服务重放），落地后"任何入口签发都能出 PDF" | 待施工（方案先行） |
+| F2 | **单证内容版本**（= A1） | ✅ 已完成（`4878c6c` 后端 + `db4463e` 前端；迁移 `202610200001`、三端点、面板、12 条后端 + 9 条前端测试） | ✅ |
+| F3 | **个人信息编辑** | 后端提供个人资料修改 API（侧栏账号弹窗现在是**只读**，后端无资料修改接口）；前端弹窗可编辑并保存；改动只作用于"本人"，不做管理员改他人资料 | 待施工 |
+| F4 | **询盘状态机** | 后端真正维护询盘状态流转（现状：UI 按报价/订单**展示推导**状态，后端 `inquiries.status` 不随业务变化）。要明确：状态集（未报价/已报价/已关闭）+ 合法迁移 + 由报价/订单事件驱动还是手动流转 + 校验与审计 | 待施工（口径先确认） |
+| F5 | **报价/订单 1:N 约束** | 后端显式约束与校验（现状：`orders.quote_id` 只有索引无唯一约束，`POST /orders` 不拦；UI 按 1:N 展示）。要明确：允许一报价多订单（分批出货）但需约束什么——数量/金额累计不超报价、订单与报价币种一致、重复下单拦截等 | 待施工（口径先确认） |
 
 ---
 
