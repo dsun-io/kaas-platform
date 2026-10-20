@@ -1,0 +1,14 @@
+name: probe
+# 临时探针（2026-10-20）：验证"为何 preview 工作流 dispatch 被 action_required"。
+# 结论出来后删除本文件。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  echo:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "probe ok"
