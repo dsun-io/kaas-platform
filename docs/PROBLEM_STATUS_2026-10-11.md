@@ -99,6 +99,10 @@
 > - **C5/C18 mock（2026-10-21）**：mock 持久化（`kaas-mock-v1:*`、47 集合、只持久化被写过的集合、
 >   `?mock_reset=1`）+ 长尾覆盖 **72→0**（handler 111→184，`mocks:check` 门槛 MAX_MISSING=20、
 >   P1 54 硬失败）；顺手发现 `GET /intel/channels` 前后端字段错位（`is_enabled` vs `enabled`）→ 已派修。
+> - **C20 导入模板端点回落租户产品（2026-10-21）**：`/export-quote/import/template`、
+>   `/products/{key}/import-template`（说明+下载）、`/import/preview`、`/import/calculate`
+>   全部改走 `_product_or_404_tenant`（与 `/formulas`/`/explain`/算价同口径）——编辑器里新建的
+>   租户产品现在**能选、能算、能下模板、能导入**；新增 5 条测试（租户 200/系统产品回归/跨团队 404/未知 404）。
 >
 > **（2026-10-20 晚 · 口径收敛与审计补录：`docs/TODO.md` = 唯一账本）**
 >

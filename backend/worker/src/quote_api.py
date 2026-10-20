@@ -1001,20 +1001,26 @@ def _template_response(spec, fmt: str, examples: Optional[int], include_spec: bo
 
 @app.get("/api/v1/export-quote/import/template")
 async def export_quote_import_template(
+    request: Request,
     product_key: str = Query("field_fence", description="产品模型 key"),
     format: str = Query("xlsx", description="csv；xlsx 返回 501（Excel 模板由前端生成）"),
     examples: Optional[int] = Query(None, ge=0, le=50),
     include_spec: bool = Query(False, description="是否随附列定义（JSON 头）"),
     user: dict = Depends(_get_current_user),
 ):
-    """下载批量导入模板（服务端只出 csv；Excel 模板由浏览器端生成）。"""
-    spec = _product_or_404(product_key)
+    """下载批量导入模板（服务端只出 csv；Excel 模板由浏览器端生成）。
+
+    2026-10-21（C20）：与 `/formulas`、`/explain` 同口径 —— 先解析**租户运行时产品**，
+    未命中才回落注册表；否则编辑器里新建的产品"能选、能算"却导不出模板。
+    """
+    spec = await _product_or_404_tenant(request, user, product_key)
     return _template_response(spec, format, examples, include_spec)
 
 
 @app.get("/api/v1/export-quote/products/{product_key}/import-template")
 async def export_quote_import_template_info(
     product_key: str,
+    request: Request,
     format: str = Query("", description="给了就下载文件（csv；xlsx 501），不给则返回列定义 JSON"),
     examples: Optional[int] = Query(None, ge=0, le=50),
     include_spec: bool = Query(False),
@@ -1027,7 +1033,7 @@ async def export_quote_import_template_info(
     （说明）与 `/import/template`（文件）两个 —— 线上把 dev 的"文件"那一路
     也映射到这里，使前端两条调用都能命中同一个后端语义，不必改前端。
     """
-    spec = _product_or_404(product_key)
+    spec = await _product_or_404_tenant(request, user, product_key)
     if format:
         return _template_response(spec, format, examples, include_spec)
 
@@ -1066,8 +1072,11 @@ async def export_quote_import_preview(
     sheet: Optional[str] = Form(default=None),
     user: dict = Depends(_get_current_user),
 ):
-    """先看清解析成了什么，再决定要不要算（支持 .xlsx 与 CSV）。"""
-    spec = _product_or_404(product_key)
+    """先看清解析成了什么，再决定要不要算（支持 .xlsx 与 CSV）。
+
+    2026-10-21（C20）：产品解析回落租户运行时产品（与算价/模板同口径）。
+    """
+    spec = await _product_or_404_tenant(request, user, product_key)
     data = await _read_upload(file)
     parsed = _parse_or_400(data, spec, file.filename or "", sheet)
     payload = parsed.to_dict()
@@ -1094,7 +1103,7 @@ async def export_quote_import_calculate(
     if view == "internal":
         _require_internal_admin(user)
 
-    spec = _product_or_404(product_key)
+    spec = await _product_or_404_tenant(request, user, product_key)
     try:
         raw = json.loads(payload or "{}")
         if not isinstance(raw, dict):

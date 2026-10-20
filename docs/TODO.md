@@ -87,7 +87,7 @@
 | C17 | 侧栏 `adminOnly` 过滤口径统一 | **判定为两个不同概念、不统一代码**（已在两边注释钉死）：`Workstation.adminOnly` = **仅内部账号可见**（业务页 /research、/leadgen 等用它挡顾客）；`RouteGuard.adminOnly` = **平台运营**（internal + 管理员，2026-10-20 收紧）。菜单可见但守卫拦截属预期（守卫给出明确无权限页）；若要彻底消除需给契约加 `platformOnly` 并同步 py 镜像，收益低于风险 | — | ✅ 2026-10-21 决策（注释 + 文档口径） |
 | C18 | MSW 长尾覆盖（72 条） | ✅ 2026-10-21：`longtail-handlers.ts` 补齐 72 条（intel/market/leadgen/outreach/research/shipments/ai-providers/spec-config/auth/报价/export-quote），handler **111→184**，未覆盖 **0**；门禁扫描 `src/mocks/**`、`MAX_MISSING=20` 默认失败（`--strict`=0）、P1 54 硬失败。mock 简化三处已注释（导入不解析文件/算价用示例值/scan-replied 不建询盘） | C5 | ✅ |
 | C19 | **批量导入上传 UI** | hooks（`useImportPreview`/`useImportCalculate`/`useDownloadTemplate`）与 `import-file.ts` 齐备，但**没有任何页面组件消费** ⇒ 用户拿不到「下载模板→填→上传」入口（xlsx/CSV 后端都已就绪）。建议接进 v2 报价工作台/批量报价页（放置位置属产品交互 → 待拍板 §G-10） | C7 | 🧭 待定入口位置 |
-| C20 | 导入模板 4 端点仍只查注册表 | `quote_api.py` 的模板/预览 4 条端点对**租户运行时产品**仍 404（与 B5 同类，但走 `_product_or_404` 旧入口）；需统一回落到租户产品 | B5 | ⏳ |
+| C20 | 导入模板 4 端点仍只查注册表 | ✅ 2026-10-21：`/export-quote/import/template`、`/products/{key}/import-template`（说明+下载）、`/import/preview`、`/import/calculate` 全部改走 `_product_or_404_tenant`（与 `/formulas`/`/explain`/算价同口径：租户运行时产品优先、未命中回落注册表）；新增 5 条测试（租户 200 / 系统产品回归 / 跨团队 404 / 未知 404） | B5 | ✅ |
 | C21 | 导出后自检 UI 依赖 PDF 文本抽取 | `verify-export` 后端已可用（文本⊆PDF、图片计数），但前端需要拿到 PDF 文本；方案：pdf.js 解析已生成 PDF，或服务端渲染时抽取 —— 需拍板（涉及新增依赖/包体） | A7 | ⏳ 待定方案 |
 
 ---

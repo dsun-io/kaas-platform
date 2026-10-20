@@ -404,3 +404,63 @@ def test_explain_draft_override_does_not_touch_db():
                                                                "name": "Draft"}})
     assert resp.status_code == 200
     assert db.queries == []
+
+# ═════════════════════════════════════════════════════════════════════════════
+# C20 · 导入模板/预览也回落租户运行时产品（2026-10-21）
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _tenant_fence_row():
+    """用系统 `field_fence` 的完整定义克隆成租户行（模板列来自 columns/space）。"""
+    import dataclasses
+
+    from kaas_common.export_quote.products import get as registry_get
+
+    spec = dataclasses.asdict(registry_get("field_fence"))
+    spec["key"] = "accept_fence_01"
+    spec["name"] = "验收牛栏网"
+    return {"spec": spec, "override": None, "team_id": 1}
+
+
+def test_import_template_info_resolves_tenant_runtime_product():
+    """修复前：模板说明端点只查 Python 注册表 ⇒ 租户产品 404。"""
+    with _patched_quote([_tenant_fence_row()], TEAM1_OWNER):
+        resp = client.get(
+            "/api/v1/export-quote/products/accept_fence_01/import-template")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["product_key"] == "accept_fence_01"
+    assert body["headers"], "模板列定义不能为空（克隆自 field_fence）"
+
+
+def test_import_template_file_resolves_tenant_runtime_product():
+    """下载 CSV 模板也走同一解析（否则"能算价却下不了模板"）。"""
+    with _patched_quote([_TENANT_SPEC_ROW], TEAM1_OWNER):
+        resp = client.get(
+            "/api/v1/export-quote/import/template",
+            params={"product_key": "accept_fence_01", "format": "csv"})
+    assert resp.status_code == 200
+    assert "text/csv" in resp.headers.get("content-type", "")
+    assert "accept_fence_01" in resp.headers.get("content-disposition", "")
+
+
+def test_import_template_system_product_unchanged():
+    with _patched_quote([], TEAM1_OWNER):
+        resp = client.get(
+            "/api/v1/export-quote/products/field_fence/import-template")
+    assert resp.status_code == 200
+    assert resp.json()["product_key"] == "field_fence"
+
+
+def test_import_template_cross_team_product_is_404():
+    with _patched_quote([{**_TENANT_SPEC_ROW, "team_id": 2}], TEAM1_OWNER):
+        resp = client.get(
+            "/api/v1/export-quote/products/accept_fence_01/import-template")
+    assert resp.status_code == 404
+
+
+def test_import_template_unknown_product_still_404():
+    with _patched_quote([], TEAM1_OWNER):
+        resp = client.get(
+            "/api/v1/export-quote/products/nope_not_here/import-template")
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["error"] == "unknown_product"
