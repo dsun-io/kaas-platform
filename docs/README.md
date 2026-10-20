@@ -5,7 +5,7 @@
 > （合并提交 `118af7ce`，main CI 全绿；PR #5 预览资源已 teardown；2026-10-21 之后的新提交持续推送 `main`，CI 三条全绿）。
 > **停止点交接与剩余工作 = `HANDOVER_2026-10-20_FINAL.md` §0.2；新设备/新 agent 接手 = 同文件 §0.3**；
 > 剩余待办全在 [`TODO.md`](./TODO.md)（均在 `main` 上可直接检索）。
-> 本次文档收尾：UI 两份加状态横幅/改状态、单证 PDF 过程记录加「早期章节为过程记录」横幅、e2e 计数统一为 28、
+> 本次文档收尾：UI 两份加状态横幅/改状态、单证 PDF 过程记录加「早期章节为过程记录」横幅、e2e 计数统一为 28（2026-10-21 更新为 27=27+0）、
 > 4 份过时设计/计划移入 [`archive/2026-10-21-doc-closeout/`](./archive/2026-10-21-doc-closeout/README.md)。
 > 历史文档分批归档在 [`archive/`](./archive/)；**不要用归档文档判断当前口径**。
 
@@ -43,7 +43,7 @@
 | [TODO.md](./TODO.md) | 活跃待办唯一账本 |
 | [UNCERTAIN.md](./UNCERTAIN.md) | 决策账本（存疑/裁决落盘） |
 | [QA_TEST_ACCOUNTS.md](./QA_TEST_ACCOUNTS.md) | 测试账号与验收口径 |
-| [E2E_GUIDE.md](./E2E_GUIDE.md) | e2e 一键运行说明（2026-10-20 口径：28 条 = 24 passed + 4 skipped） |
+| [E2E_GUIDE.md](./E2E_GUIDE.md) | e2e 一键运行说明（2026-10-21 口径：27 条 = 27 passed + 0 skipped） |
 | [API_RESERVED_LIST.md](./API_RESERVED_LIST.md) | **后端先行 API 保留清单（C36）**：Worker 有路由、前端未直接调的 60 条分类（内部/REST 契约/待接 UI/可删候选）与证据；新增后端端点/接 UI 后按 §4 维护 |
 
 ## 3. UI/UX（本轮主线）

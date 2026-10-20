@@ -38,6 +38,7 @@
 > - **sweep 后首批修复（2026-10-21）**：① **C23 shipments 恢复上线**（契约 ts↔py `status:active`，原 2026-09-28 门禁前提已不成立；R2 PASS 27 工位）—— 用户拍板"恢复入口"；② **C28 询盘渠道** 由自由输入改**枚举下拉**（与后端 `INQUIRY_CHANNEL` 逐字一致；此前按提示填 `Alibaba` 必 422）；③ **C29** 订单/单证页移除占位「导入已有数据」按钮与弹窗（后端接口未实现；组件保留待挂回）；④ 用户拍板 G-11 主题入口不做、G-13 spec-config 保持 planned。`n> - **A4 渲染去 base64 落地（2026-10-21）**：新增 `kaas_common/files/token.py`（HMAC-SHA256 短期令牌，TTL 900s，绑定用途+资源 id，纯标准库）；装配层产品图与默认公章改为**签名直链**（`/api/v1/file-objects/{id}/render-content?t=`、`/api/v1/tenant/company-seals/{id}/render-content?t=`，令牌即授权、`<img>` 可直载），无 JWT_SECRET/取不到时**回退** data URI；渲染器白名单未改（本就认 http(s)）；素材库复用现有产品图库+公章库。新增 16 条测试（令牌 6 / 文件直链 6 / 公章直链 4；含"换 id 必拒绝"与真回环取字节），worker 全量 **1233 passed + 12 skipped**。
 > `n> `n> - **sweep 主体修复 + 四次生产部署（2026-10-21）**：C19 批量导入 UI（v2 报价工作台：模板/预览/计算/导出，复用既有 hooks，只算不落库）；C21 导出后自检 UI（`pdfjs-dist@4.10.38` 动态 import、前端只抽事实/后端唯一裁决、优先自检已归档 render_pdf，真 pdfjs 在 Node 验证抽取一致）；C25 列表分页（orders/events/audit，共享 PaginationBar）；C32 `/billing` 入口（占位页如实标"即将上线"）；C35 客户 stage 筛选；C34 MSW↔C8 漂移修复；C37 删 OSS 死分支 + 6 处过期注释；C38 文档口径 11 文件刷新；N11 清理脚本落 `scripts/`。**门禁**：worker **1233+12skip** / orchestrator **247** / 前端 **656（67 files）** / e2e **28（24+4）** / build `out/` **277**（pdf worker 资产实测生产 200）/ contracts·mocks·contrast·静态断言 PASS。**生产部署 `3a5ce179-7a0c-484e-9f39-b3e342dc4496`**（四次部署，回滚可用三次 `9d497628`）。**新登记**：C39 `/admin/audit-log` 后端静默忽略筛选参数。
 > `n> - **C33/C39 收尾（2026-10-21）**：①3 条 e2e skip 修复（估算徽章/已废止徽章/手工录入校验；顺带补上"数量"字段错误渲染——此前无效输入无任何提示），e2e 现 **27 passed + 1 skipped = 28**（剩 `events.spec.ts:118` 需 test-only 强制 500 手段）；②`/admin/audit-log` 后端补筛选（`action/actor_id/resource_type/since/until` 参数化 WHERE + 日期含当天），前端筛选从此真生效；新增 4 条回归测试钉 SQL 形状/参数顺序/403 不查库。**生产五次部署 `3d324441-a6dc-41fc-bf6b-34901fca3ab5`**，冒烟 `/quotes`、`/billing`、`/audit-log` 200、无令牌 API 401。
+> `n> - **收尾批（2026-10-21）：A12/A13/C26/C30/C31/C33/C36 + 六次生产部署**：A12 `trigger_expr` 受限求值器（无 eval/exec，GET doc-set `applicable`，PUT 坏表达式 422 不落库，lint 只 warning；**边界**：facts 无包装类事实 → A14 待定字段）、A13 单证「中译英」入口（template 降级如实标注）、C26 a11y（skip-link/main/aria，点状）、C30 事件归档记录接真实 `events_archive_log`（含管理台卡片与分页）、C31 仪表盘改「改版中」占位（不再把无数据渲染成 0）、C33 **4/4** e2e skip 全修（events 用 test-only override；e2e 现 **27=27+0**）、C36 `docs/API_RESERVED_LIST.md`（247 路由 vs 183 FE 路径，实际未接 60 条：保留 18/待接 24/可删候选 18 需确认）。**门禁**：worker **1316+12skip** / orchestrator **247** / 前端 **678（71 files）** / e2e **27=27+0** / build out **276** / contracts·mocks·contrast·静态断言 PASS；**生产部署 `569a8b88-d5f9-4cd6-9719-e9aaf3e595fd`**（六次）。**用户决定**：C24 暂不做、N10 暂缓、安全轮换/改密/转 private 不做（只做归档数据评估）；D1 Resend/D2 R2 仍待用户注入。
 > `n> **（2026-10-21 · 执行批 1：D7 落地、A7 事实层结构、前后端对齐修复进行中）**
 >
 > - **D7（preview ensure 对 Neon 423 重试）✅**：`scripts/preview/preview_lib.py` 对 **423/429**
@@ -4611,3 +4612,82 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
 - **真实 PDF 抽取已验证**：真 `pdfjs-dist@4.10.38` + 手写最小 PDF（1 页/1 张 2×2 RGB 图/文本
   `Hello PDF Self-Check`）在 Node 一次性验证 → `pages=1, images=1, text` 完全一致（脚本不入库）。
   未做：浏览器内 worker 资产发射与真实打印 PDF 的 e2e（未跑 build/e2e，见上方发布检查项）。
+
+---
+
+## 2026-10-21 · C26 a11y 深水项（A10 / A9 / A4）
+
+- **A10 skip-link + main id**：应用外壳 `frontend/src/components/layout/app-layout.tsx`（所有 `(app)/**`
+  页面共用：`app/(app)/layout.tsx` → `AppLayout`）首位新增「跳到主内容」`<a href="#main">`，
+  默认 `sr-only`、`:focus` 浮出（fixed + 白底 + ring）；主内容改为 `<main id="main" tabIndex={-1}>`
+  —— 必须带 `tabIndex=-1`，只写 id 时多数浏览器只滚动、不把焦点交给 main。
+  新增 `frontend/src/components/layout/__tests__/a11y-shell.test.tsx`：钉住 `href="#main"` / 文案 /
+  `main#main` / `tabindex=-1`。
+- **A9 单选组**：仪表盘时间范围 `frontend/src/app/(app)/dashboard/components/range-selector.tsx`
+  由三个互斥按钮改为 `role="radiogroup"` + `aria-label="时间范围"` + 每个按钮 `role="radio"` /
+  `aria-checked`。理由：同一时刻恰有一个范围生效 ⇒ 语义是**单选组**，不是可独立开关的
+  `aria-pressed` 切换按钮；读屏按「n / 3，已选中」播报。测试覆盖点击后 `aria-checked` 跟随受控值变化。
+  既有工具栏密度切换（orders / trade-docs）在 HEAD 里已有 `aria-pressed`，本次未动
+  （trade-docs 属 A13 写范围）。
+- **A4 aria-disabled**：订单列表「列配置」的**最后一个可见列**勾选框改为 `aria-disabled="true"` +
+  `onChange` 守卫（保留可聚焦、不可取消，`title="至少保留一列"`）。理由：原实现是"取消后静默 no-op"；
+  用 aria-disabled 让读屏知道"可聚焦但当前不可取消"且不丢焦点；**未混用原生 `disabled`**。
+  其他原生 `disabled` 控件（提交 pending / 分页边界）按规范不重复加 aria-disabled。
+- **未覆盖（如实）**：① RangeSelector 未做方向键 roving tabindex（原生 button 仍可 Tab 逐个聚焦，
+  语义已正确）；② 全站无 axe 自动化扫描，本次是点状修复 + 3 条定向测试；③ A4 只收了一个"静默 no-op"
+  典型控件，未全站普查。
+- 验证：`pnpm typecheck` 0 error；`pnpm lint` 0 error（88 warn 均既有/他人）；
+  `pnpm exec vitest run src/components/layout 'src/app/(app)/dashboard'` **3 passed**；
+  顺带 `pnpm exec vitest run 'src/app/(app)/orders'` **3 passed**（列配置改动未破坏分页用例）。
+  未跑 build/e2e、未 commit。
+
+## 2026-10-21 · A13 单证「中译英」入口（前端接已实现的 translate 端点）
+
+- **入口位置**：「单证加固」区新增第 6 个 tab **「中译英」**（`trade-docs/components/doc-hardening-section.tsx`
+  + 新增 `doc-translate-panel.tsx`）。选 tab 而非详情工具栏的理由：翻译是**单证级批量内容处理**，
+  不是针对某个输入框的上下文动作；加固区已拿得到 `docId/status`、tab 容器现成，**不用改 `page.tsx` 工具栏**
+  （并行开发改动面最小，也避免页级动作「签发/关闭」与内容动作混排）。
+- **字段来源（真源推导，不手写清单）**：从 `raw_payload.custom` 里取模板 manifest 声明且 `control=text`
+  的字段，且值**非空、含汉字**才列出（日期/数字/布尔/图片/对象与已填英文的字段天然排除；
+  `items`/`total_amount` 另有保护）。纯逻辑在 `frontend/src/lib/trade-doc/translate.ts`
+  （`collectTranslatableFields` / `buildTranslateFields` / 路径语义），边界由
+  `__tests__/translate.test.ts` 10 条钉住。
+- **诚实性口径**（后端 `ws_docs_ext.py translate_trade_doc` 契约）：
+  `path=ai:<provider>` 才显示「AI 翻译（provider）」；`path=template`（无 AI / Provider 全挂）显示
+  **「AI 不可用（模板降级：原样返回）→ 请人工翻译」**，并标 `未翻译`，**绝不显示成已翻译**；
+  `path=none` 显示无可翻译字段。AI 路径下个别字段若等于原文（后端解析回退），逐行标「未翻译（回退原文）」。
+- **写回语义**：draft 态后端自动写回 `raw_payload.custom` 并记内容版本 ⇒ UI 提示「已写回草稿」并失效
+  `["trade-docs"]`（覆盖 detail/render-data/content-versions）；非 draft 后端不写回 ⇒ UI 明说
+  **「未写回（非草稿）：译文仅供参考」**，不伪装已保存。
+- **MSW**：`mocks/handlers.ts` 仅加固区段加 translate handler，形状对齐后端；mock 环境无 AI Provider
+  ⇒ 如实返回 `path:"template"` + 原样字段（不伪造翻译成功）。`pnpm mocks:check` PASS。
+- **测试**：新增 16 条（纯逻辑 10 + 面板 6：AI 成功 draft/非 draft 未写回/逐行回退/template 降级/空态/勾选）；
+  `pnpm exec vitest run 'src/app/(app)/trade-docs' src/lib/trade-doc` **16 files / 206 tests passed**；
+  `pnpm typecheck` 0、`pnpm lint` 0 error。未跑 build/e2e、未 commit、未改后端与 TODO。
+---
+
+## 2026-10-21 · C30 事件归档记录接真实数据（`/admin/archive-logs` + 管理台卡片）
+
+- **后端**（`backend/worker/src/main.py:get_archive_logs`）：端点是**占位空列表**（注释称"Worker 无文件系统"），
+  但数据一直在库里 —— `backend/worker/src/ws_cron.py` 每月把上月事件写成 R2 对象后插一行
+  `events_archive_log(tenant_id='*', month='YYYY-MM', minio_path='{bucket}/events-archive/…', status='archived')`。
+  改为真查询：`page` / `page_size`（钳位 page>=1、page_size∈[1,100]，与相邻 events / audit-log 同口径）/
+  `month`（`YYYY-MM` 可选）→ `{items:[{id,month,path,status,archived_at}],total,page,page_size}`，
+  `ORDER BY archived_at DESC, id DESC`、全参数化（`count(*)` + `LIMIT/OFFSET`）。
+  **tenant 口径**：写入行恒 `tenant_id='*'` ⇒ 查询**不加**租户过滤（加了会把 `'*'` 滤掉、永远空列表）；
+  `_require_platform_ops` 保持不变（`test_admin_authz.py` 的 403 断言仍绿）。
+- **前端**：`admin/hooks/use-archive-logs.ts`（分页 hook）+ `admin/gray-release/components/archive-logs-card.tsx`
+  （month/path/status/archived_at + 复用 `components/shared/pagination-bar.tsx`；三态分开：加载中 / 接口失败可重试 /
+  **真的没有记录**，空态说明"每月自动归档上月事件"），挂在 `/admin/gray-release` 运维页。
+- **MSW**：`handlers.ts` 管理区段新增 `GET /api/v1/admin/archive-logs`（只读静态种子，不参与持久化 store）。
+- **测试**：后端新增 `tests/test_admin_archive_logs.py` 4 条（形状/分页参数顺序、"不做 tenant 过滤"断言、month 占位参数、空列表、边界钳位）；
+  前端新增 `archive-logs-card.test.tsx` 3 条（空态、列表渲染、翻页参数）。全量：worker **1241 passed / 12 skipped**（基线 1237+12，+4）；
+  `pnpm typecheck` 通过、`pnpm lint` 0 error、`pnpm mocks:check` 未覆盖 0。
+- **真机验证**：本机 `events_archive_log` 0 行（cron 尚未跑）⇒ 端点返回真实空态 `{items:[],total:0,page:1,page_size:20}`；
+  临时插入 1 行（`tenant_id='*'`）复验：UUID→字符串、`minio_path`→`path`、`timestamptz`→ISO、`month` 命中/未命中、`page_size` 回显均正确，
+  随后按 `tenant_id='*' AND month` 精确删除（`rows_after=0`）。
+- ⚠️ **顺带发现（环境/迁移，与本端点无关）**：本机库 `events_archive_log.id` **没有默认值**
+  （`information_schema` 显示 `column_default=NULL`，而迁移 `202605030001_add_archive_log_id_default`
+  明确 `SET DEFAULT gen_random_uuid()`；库 head 已到 `202610200005`）⇒ `ws_cron.py` 的 INSERT **不写 id**，
+  在本机会以 `23502 not-null violation` 失败 —— 即"本机 cron 归档跑不起来"是迁移未真正落到该库的表征
+  （与 task-7 发现的 `tenant_subscriptions` 种子缺失同类）。建议运维核对本机库是否按全量迁移建成；读取端点不受影响。

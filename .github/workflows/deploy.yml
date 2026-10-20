@@ -6,8 +6,11 @@ name: deploy
 #（额度稳定 + 系统稳定后用户下令，把下面注释掉的 on.push 加回即可）。
 
 # push 到生产分支 main 即自动构建前端并部署单 Worker "kaas"（含静态资产）。
-# 生产 secrets（JWT_SECRET / ADMIN_SETUP_TOKEN / RESEND_API_KEY）已绑定在
-# Worker 上，wrangler deploy 不会清除，无需在 CI 中重设。
+# 生产 secrets 必须**手工绑定在 Worker 上**：
+#   `cd backend/worker; npx wrangler secret put <NAME> --name kaas`
+# `wrangler deploy` 不会清除已绑定的 secret，但**也不会从 GitHub repo secrets 自动读取**。
+# ⚠️ 2026-10-21 实测（`wrangler secret list --name kaas`）：只有 JWT_SECRET / ADMIN_SETUP_TOKEN / S3_*，
+#    **RESEND_API_KEY 未绑定** ⇒ 忘记密码邮件静默失败（本机 pywrangler deploy 同样不读 GitHub secrets）。
 #
 # 分支策略（2026-09-28 切换）：
 #   · main = 生产分支（本文件只监听它）；已归档旧的 feature/intel-workstation-v1
