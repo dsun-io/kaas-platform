@@ -29,8 +29,10 @@
 > ③ **顺手修线上 bug**：列表端点 `item = _row_to_dict(r, "trade_docs")` 参数不匹配（main 里该函数
 > 只收 1 参）⇒ **`GET /api/v1/trade-docs` 运行期必 500**；改为 `row_to_dict(r, "trade_docs")`，
 > 并由新测试 `test_trade_doc_render_check_list.py` 锁死（此前无测试覆盖真实后端列表）。
-> ④ **密钥分层（用户裁决）**：生产 Resend key（用户命名 `kaas-生产`）已提供，只存本机 gitignored
-> `.env.local` 的 `RESEND_API_KEY_PROD`（**不落仓库**）；本地继续用 `RESEND_API_KEY`；预览不配发信。
+> ④ **密钥分层（用户裁决，三只 key 到位）**：生产 key（`kaas-生产`）→ 本机 gitignored
+> `.env.local` 的 `RESEND_API_KEY_PROD`（不落仓库，发布窗口注入）；预览 key（`kaas-预览`）→
+> `.env.local` 的 `RESEND_API_KEY_PREVIEW`，已设为 GitHub repo secret 并由 `preview.yml` 注入
+> 预览 worker（预览跑 PR 分支代码，**不复用生产 key**）；本地开发继续用 `RESEND_API_KEY`。
 > 证据：worker **982 passed + 5 skipped** / orchestrator **247** / frontend typecheck 0 · vitest **474** ·
 > lint 0 error · contracts R0–R6 PASS · schema-coverage/drift/runtime-deps PASS · alembic 单 head
 > `202610200002`。
