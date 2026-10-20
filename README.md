@@ -71,7 +71,8 @@
 > `.github/workflows/preview.yml`，2026-10-20，`18ae386`）：每 PR 派生 Neon 分支 `preview-pr-<num>` +
 > 独立 Hyperdrive `kaas-preview-<num>` + 预览 worker `kaas-preview-pr-<num>.workers.dev`，PR 关闭自动回收。
 > **已知的现状与目标态差异（断言按现状值写，S5-d 已落地）**：
-> - 生产 R2 桶实配 = **`kaas-files`**（≠ 目标态 `kaas-prod-storage`；桶迁移另立项，断言变量 `PROD_R2_BUCKET`）；
+> - 生产 R2 桶实配 = **`kaas-files`**（**2026-10-20 用户裁决：永久保留该名，目标态改名取消**，U-S6；
+>   CI 断言变量 `PROD_R2_BUCKET` 按 `kaas-files` 断言）；
 > - 生产 worker **尚无 KV 绑定**（目标态 KV 列是前瞻；预览 KV `KAAS_PREVIEW` 已建供预览用）；
 > - Neon 分支 Protected 为**付费功能**，Free 套餐不可用 ⇒ 由预览脚本"删分支双保险校验"
 >   （branch_id ≠ production 且 name ≠ production，缺一拒删）兜底。
@@ -460,7 +461,7 @@ E2E：
 | `202610180010` | 发布后清理：删旧客户税率档案表、清旧进项/退税键 |
 
 生产发布必须分段执行：**先 009 → 部署 Worker → 冒烟 → 再 010**。
-完整步骤见 [docs/DEPLOYMENT_PLAN_2026-10-18.md](docs/DEPLOYMENT_PLAN_2026-10-18.md)。
+完整步骤见 [docs/DEPLOYMENT_PLAN_2026-10-18.md](docs/archive/2026-10-20-closeout/DEPLOYMENT_PLAN_2026-10-18.md)。
 
 ```powershell
 cd backend/orchestrator
@@ -484,7 +485,7 @@ alembic upgrade 202610180010   # 发布后清理
   最终发布改走**本机 `pywrangler deploy`**（或额度恢复后手动 `workflow_dispatch`）。
 - 流程：前端静态导出 → 同步共享内核 → `pywrangler deploy` → 生产冒烟；
 - 冷启动窗口、回滚、Neon/Hyperdrive 说明见 [DEPLOY.md](DEPLOY.md)；
-- 本轮发布顺序、风险、验收清单见 [docs/DEPLOYMENT_PLAN_2026-10-18.md](docs/DEPLOYMENT_PLAN_2026-10-18.md)。
+- 本轮发布顺序、风险、验收清单见 [docs/DEPLOYMENT_PLAN_2026-10-18.md](docs/archive/2026-10-20-closeout/DEPLOYMENT_PLAN_2026-10-18.md)。
 
 常用运维：
 
@@ -554,8 +555,8 @@ docker-compose.yml        本地基础设施 + 本地后端（worker local_run�
 - [docs/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md](docs/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md) — 迁移链 downgrade 审计（drop_table 精确 3 个）
 - [docs/S4_SINGLE_APP_PLAN_2026-10-19.md](docs/S4_SINGLE_APP_PLAN_2026-10-19.md) — S4 单应用收口设计（worker 为唯一运行时）
 - [docs/POC_WORKER_SQLALCHEMY_2026-10-19.md](docs/POC_WORKER_SQLALCHEMY_2026-10-19.md) — 路线 A 否决证据
-- ~~[docs/PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md](docs/PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md)~~ — **已废弃**（决策 1：放弃 PPg 回 Neon）
-- ~~[docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md](docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md)~~ — **已废弃**（决策 1：P1 迁库终止，历史保留）
+- ~~[docs/PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md](docs/archive/2026-10-20-closeout/PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md)~~ — **已废弃**（决策 1：放弃 PPg 回 Neon；2026-10-20 已归档）
+- ~~[docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md](docs/archive/2026-10-20-closeout/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md)~~ — **已废弃**（决策 1：P1 迁库终止，历史保留；2026-10-20 已归档）
 - [docs/TAX_ARCHIVE_HANDOVER_EXECUTION_PLAN_2026-10-18.md](docs/TAX_ARCHIVE_HANDOVER_EXECUTION_PLAN_2026-10-18.md) — 税务改造
 - [docs/BATCH_QUOTE_REDESIGN_PLAN_2026-10-18.md](docs/BATCH_QUOTE_REDESIGN_PLAN_2026-10-18.md) — 批量报价
 - [docs/QUOTE_COST_INSURANCE_2026-10-18.md](docs/QUOTE_COST_INSURANCE_2026-10-18.md) — 成本/保险/计量口径
@@ -565,4 +566,4 @@ docker-compose.yml        本地基础设施 + 本地后端（worker local_run�
 
 ---
 
-**最后更新**：2026-10-19 晚场（记录决策 1–4 与三项已确认修正；分支收编 `88132af` 与文档收口同步）
+**最后更新**：2026-10-20 收尾（待办清零：仓库转回 private（匿名 403）/ Neon Protected 付费不升级、预览脚本双保险校验替代 / 生产桶永久保留 `kaas-files`；过时文档归档 `docs/archive/2026-10-20-closeout/`；下一活跃节点 = 用户发布指令）
