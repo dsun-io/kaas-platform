@@ -167,9 +167,15 @@ jobs:
 
   deploy:
     if: github.event.action != 'closed'
-    name: Deploy probe（仅 echo，逐步加回定位门禁）
+    name: Deploy probe（加回 checkout+artifact）
     needs: [ensure, migrate, build-frontend]
     runs-on: ubuntu-latest
     steps:
-      - name: echo only
-        run: echo "deploy-probe echo ok"
+      - uses: actions/checkout@v4
+      - name: Download frontend build
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-out-preview
+          path: frontend/out
+      - name: echo
+        run: echo "artifact downloaded"
