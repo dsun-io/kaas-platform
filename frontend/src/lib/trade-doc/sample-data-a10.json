@@ -1,0 +1,63 @@
+{
+  "_readme": "A10 P1 两类扩展模板（beneficiary_decl / saso_coc）的基线输入。与 sample-data.json 分开：不放宽 18 类基线的边界，也不改归档 Python 渲染器的复验口径。主体类信息用 [占位符]，证书类字段（证书号/标准/签发机构）用 [待填] 口径，不伪造默认值。",
+  "doc_types": [
+    "beneficiary_decl",
+    "saso_coc"
+  ],
+  "base": {
+    "seller": {
+      "company": "[SELLER COMPANY NAME]",
+      "address": "[SELLER ADDRESS]",
+      "tel": "[TEL]",
+      "email": "[EMAIL]"
+    },
+    "buyer": {
+      "company": "[BUYER COMPANY NAME]",
+      "address": "[BUYER ADDRESS]",
+      "contact": "[CONTACT PERSON]"
+    },
+    "currency": "USD",
+    "invoice_no": "INV-2026-0001",
+    "contract_no": "SC-2026-0001",
+    "lc_no": "LC-2026-0001",
+    "bl_no": "BL-2026-0001",
+    "country_of_origin": "China",
+    "destination_country": "[DESTINATION COUNTRY]",
+    "description_of_goods": "[DESCRIPTION OF GOODS]",
+    "items": [
+      {
+        "product_name": "[PRODUCT NAME 1]",
+        "specification": "[SPECIFICATION 1]",
+        "hs_code": "7314410000",
+        "qty": 500,
+        "qty_unit": "Rolls"
+      },
+      {
+        "product_name": "[PRODUCT NAME 2]",
+        "specification": "[SPECIFICATION 2]",
+        "hs_code": "7308900000",
+        "qty": 2000,
+        "qty_unit": "Pcs"
+      }
+    ]
+  },
+  "per_doc": {
+    "beneficiary_decl": {
+      "declaration_no": "BD-2026-0001",
+      "declaration_date": "2026-10-12",
+      "declaration_type": "shipment",
+      "place_of_issue": "Anping, Hebei, China"
+    },
+    "saso_coc": {
+      "cert_no": "[CERTIFICATE NO.]",
+      "cert_date": "2026-10-12",
+      "applicant": "[APPLICANT NAME]",
+      "standard_applied": "[STANDARD / REGULATION]",
+      "test_report_no": "[TEST REPORT NO.]",
+      "issuing_authority": "[CERTIFICATION BODY]",
+      "valid_until": "2027-10-11",
+      "batch_no": "[BATCH NO.]",
+      "issue_date": "2026-10-12"
+    }
+  }
+}

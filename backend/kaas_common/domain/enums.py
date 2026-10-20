@@ -39,10 +39,11 @@ INQUIRY_CHANNEL = ("email", "whatsapp", "alibaba", "expo", "website", "quote", "
 DOC_TYPE = (
     # 出口商自制
     "quotation", "pi", "contract", "ci", "pl",
-    "shipping_advice", "draft", "beneficiary_cert", "non_wood_packing",
-    "weight_list", "quality_cert", "manufacturer_cert",
+    "shipping_advice", "draft", "beneficiary_cert", "beneficiary_decl",
+    "non_wood_packing", "weight_list", "quality_cert", "manufacturer_cert",
     # 第三方签发
     "bl", "co", "insurance", "customs_declaration", "fumigation_cert",
+    "saso_coc",
     # 通用
     "other",
 )

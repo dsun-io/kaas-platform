@@ -21,6 +21,8 @@ DOC_NO_FIELDS = {
     "shipping_advice": ("advice_no", "advice_date"),
     "draft": ("draft_no", "draft_date"),
     "beneficiary_cert": ("cert_no", "cert_date"),
+    # A10：字段名与 frontend/src/lib/trade-doc/manifest.json 逐字一致
+    "beneficiary_decl": ("declaration_no", "declaration_date"),
     "non_wood_packing": ("declaration_no", "declaration_date"),
     "weight_list": ("weight_list_no", "weight_list_date"),
     "quality_cert": ("quality_cert_no", "quality_cert_date"),
@@ -30,6 +32,7 @@ DOC_NO_FIELDS = {
     "insurance": ("policy_no", None),
     "customs_declaration": ("customs_decl_no", "customs_decl_date"),
     "fumigation_cert": ("fumi_cert_no", "fumi_cert_date"),
+    "saso_coc": ("cert_no", "cert_date"),
     "other": (None, None),
 }
 

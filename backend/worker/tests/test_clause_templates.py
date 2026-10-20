@@ -1,8 +1,8 @@
 """A5-W1 条款模板库内核（`kaas_common.trade_doc.clause_templates`）测试 —— 纯函数。
 
 钉住：
-1. **默认 6 类**：分类齐全、名称唯一、每条 `doc_types` 都是 18 类合法子集、中英至少一侧非空；
-2. **doc_types 校验**：非空、18 类子集、去重保序；空数组/未知类型/字符串都拒绝；
+1. **默认 6 类**：分类齐全、名称唯一、每条 `doc_types` 都是 20 类合法子集、中英至少一侧非空；
+2. **doc_types 校验**：非空、20 类子集、去重保序；空数组/未知类型/字符串都拒绝；
 3. **name/text 校验**：name 非空、至少一侧正文、超长拒绝；单语（只有中文或只有英文）允许；
 4. **sort_order**：必须是整数（字符串整数可接受，`"abc"` 拒绝）；
 5. **pick_for_doc_type**：按单证类型筛选、默认排除停用、稳定排序、非法类型报错；
@@ -35,7 +35,7 @@ from kaas_common.trade_doc.clause_templates import (  # noqa: E402
 
 
 def test_doc_types_match_domain_enums():
-    """内核里的本地 18 类清单必须与 `domain.enums.DOC_TYPE` **逐项一致**。
+    """内核里的本地 20 类清单必须与 `domain.enums.DOC_TYPE` **逐项一致**。
 
     `domain/enums.py` 依赖 FastAPI（orchestrator 内核测试环境没装），所以
     `clause_templates.py` 不能 import 它、只能存一份本地元组；这条测试就是防漂移的

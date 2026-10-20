@@ -71,7 +71,17 @@ const CONFIRMATION_FIELDS = new Set(["buyer_confirmation"]);
  * 客户与银行逐条对照时极难读（"备注要逐点换行"就是这么来的）。
  * 仍然先转义再插 `<br>`：换行是唯一的例外，其余照样按业务值转义，不给注入开口子。
  */
-const MULTILINE_FIELDS = new Set(["remarks", "notes"]);
+const MULTILINE_FIELDS = new Set(["remarks", "notes", "declaration_text"]);
+
+/**
+ * 受益人声明默认正文（A10）：manifest 的 `declaration_text` 可编辑覆盖；
+ * 留空 = 用这句默认（模板只放 `$declaration_text`，不把默认措辞写死在 HTML 里，
+ * 便于业务按信用证逐条核对后整段替换）。具体声明条款差异很大，默认句只作兜底。
+ */
+const DEFAULT_BENEFICIARY_DECLARATION =
+  "We, the beneficiary, hereby declare that the goods described above have been shipped " +
+  "in accordance with the terms and conditions of the contract and/or the letter of credit, " +
+  "and that the statements made in this declaration are true and correct.";
 
 /**
  * 签章区「图章位」的统一高度（mm）。
@@ -1132,6 +1142,15 @@ const ITEM_COLUMNS: Record<string, Column[]> = {
     ["qty_unit", "Unit", "c"],
     ["hs_code", "HS Code", "c"],
   ],
+  // 符合性认证（A10）：证书类只列申报要素（品名/规格/HS/数量/单位），单价金额不上证书
+  saso_coc: [
+    ["no", "No.", "c"],
+    ["product_name", "Description of Goods", "l"],
+    ["specification", "Specification", "l"],
+    ["hs_code", "HS Code", "c"],
+    ["qty", "Quantity", "r"],
+    ["qty_unit", "Unit", "c"],
+  ],
   // 报关信息：按申报要素排列（项号 / 商品编号 / 品名规格 / 数量 / 单价总价），
   // 重量等汇总项置于表格下方的汇总栏，避免表格列过多影响可读性
   customs_declaration: [
@@ -1487,6 +1506,11 @@ function deriveFields(
         ? formatQty(raw)
         : formatAmount(Number(raw));
     }
+  }
+
+  // 受益人声明（A10）：declaration_text 留空时用默认正文；模板只放占位符
+  if (docType === "beneficiary_decl" && !result.declaration_text) {
+    derived.declaration_text = DEFAULT_BENEFICIARY_DECLARATION;
   }
 
   // 卖方名称（签章区提示语用）

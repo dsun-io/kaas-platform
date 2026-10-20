@@ -61,6 +61,7 @@ const ALL_DOC_TYPES = [
   "shipping_advice",
   "draft",
   "beneficiary_cert",
+  "beneficiary_decl",
   "non_wood_packing",
   "weight_list",
   "quality_cert",
@@ -70,6 +71,7 @@ const ALL_DOC_TYPES = [
   "insurance",
   "customs_declaration",
   "fumigation_cert",
+  "saso_coc",
   "other",
 ];
 
@@ -766,5 +768,95 @@ describe("多行字段（remarks / notes）", () => {
       shipping_marks: "LINE1\nLINE2",
     });
     expect(html).not.toContain("LINE1<br>LINE2");
+  });
+});
+
+// ── A10 P1：受益人声明 / 符合性认证（申请信息）────────────────────────────
+
+describe("A10 P1 扩展模板（beneficiary_decl / saso_coc）", () => {
+  const A10_DATA = JSON.parse(
+    readFileSync(join(HERE, "..", "sample-data-a10.json"), "utf-8"),
+  ) as {
+    doc_types: string[];
+    base: Record<string, unknown>;
+    per_doc: Record<string, Record<string, unknown>>;
+  };
+  const dataOf = (docType: string) => ({
+    ...A10_DATA.base,
+    ...(A10_DATA.per_doc[docType] ?? {}),
+  });
+  const normalize = (html: string) => html.replace(/\r\n/g, "\n");
+
+  it("两份新增基线逐字节一致（旧 18 类由上面的主基线钉住）", () => {
+    const mismatches: string[] = [];
+    for (const docType of A10_DATA.doc_types) {
+      const actual = normalize(renderTradeDoc(docType, dataOf(docType)));
+      const expected = normalize(
+        readFileSync(join(GOLDEN_HTML, `sample_${docType}.html`), "utf-8"),
+      );
+      if (actual !== expected) mismatches.push(docType);
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  it("beneficiary_decl：默认声明正文可被 declaration_text 覆盖，换行保留", () => {
+    const base = dataOf("beneficiary_decl");
+    const fallback = renderTradeDoc("beneficiary_decl", base);
+    expect(fallback).toContain("We, the beneficiary, hereby declare");
+    expect(fallback).toContain("Declaration Type");
+    expect(fallback).toContain("shipment");
+
+    const custom = renderTradeDoc("beneficiary_decl", {
+      ...base,
+      declaration_text: "Line one\nLine two",
+    });
+    expect(custom).toContain("Line one<br>Line two");
+    // 自定义正文完整替换默认句，不是"默认 + 追加"
+    expect(custom).not.toContain("We, the beneficiary, hereby declare");
+  });
+
+  it("saso_coc：证书号/标准/签发机构缺失时留空，不伪造默认值", () => {
+    const minimal = renderTradeDoc("saso_coc", {
+      ...A10_DATA.base,
+      destination_country: "[DESTINATION COUNTRY]",
+    });
+    // 版面标签必须在
+    for (const label of [
+      "Certificate No.",
+      "Standard / Regulation",
+      "Test Report No.",
+      "Issuing Authority",
+      "Valid Until",
+      "Batch No.",
+    ]) {
+      expect(minimal, `缺少「${label}」`).toContain(label);
+    }
+    // 但值不许预置：未给就不出现认证机构/标准，也不残留占位符
+    expect(minimal).not.toContain("SASO");
+    expect(minimal).not.toContain("SGS");
+    expect(minimal).not.toContain("Intertek");
+    expect(minimal).not.toMatch(/\$(cert_no|standard_applied|issuing_authority)/);
+  });
+
+  it("saso_coc：给了证书类字段时按证书版式渲染", () => {
+    const html = renderTradeDoc("saso_coc", dataOf("saso_coc"));
+    for (const label of [
+      "Certificate No.",
+      "Date",
+      "Applicant",
+      "Consignee",
+      "Destination Country",
+      "Country of Origin",
+      "Standard / Regulation",
+      "Test Report No.",
+      "Issuing Authority",
+      "Valid Until",
+      "Batch No.",
+      "Issue Date",
+    ]) {
+      expect(html, `缺少「${label}」`).toContain(label);
+    }
+    expect(html).toContain("[CERTIFICATION BODY]");
+    expect(html).toContain("this sheet is not the certificate itself");
   });
 });

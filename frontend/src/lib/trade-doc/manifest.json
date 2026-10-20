@@ -1167,6 +1167,74 @@
       }
     }
   },
+  "beneficiary_decl": {
+    "name_zh": "受益人声明",
+    "name_en": "Beneficiary's Declaration",
+    "description": "信用证项下按条款逐条声明(已发货/原产地/无童工等)；由出口商出具",
+    "template_file": "beneficiary_decl.html",
+    "fields": {
+      "seller": {
+        "type": "object",
+        "required": true,
+        "description": "卖方(受益人)信息"
+      },
+      "buyer": {
+        "type": "object",
+        "required": true,
+        "description": "买方(申请人)信息"
+      },
+      "declaration_no": {
+        "type": "string",
+        "required": true,
+        "description": "声明编号"
+      },
+      "declaration_date": {
+        "type": "date",
+        "required": true,
+        "description": "声明日期"
+      },
+      "invoice_no": {
+        "type": "string",
+        "required": true,
+        "description": "发票号"
+      },
+      "lc_no": {
+        "type": "string",
+        "required": false,
+        "description": "信用证号"
+      },
+      "contract_no": {
+        "type": "string",
+        "required": false,
+        "description": "合同号"
+      },
+      "bl_no": {
+        "type": "string",
+        "required": false,
+        "description": "提单号"
+      },
+      "description_of_goods": {
+        "type": "string",
+        "required": true,
+        "description": "货物描述"
+      },
+      "declaration_type": {
+        "type": "string",
+        "required": false,
+        "description": "声明类型(如 shipment / eligibility / no-child-labour，可自由填写)"
+      },
+      "declaration_text": {
+        "type": "string",
+        "required": false,
+        "description": "声明正文(可编辑；留空使用默认声明，换行保留)"
+      },
+      "place_of_issue": {
+        "type": "string",
+        "required": false,
+        "description": "签发地"
+      }
+    }
+  },
   "non_wood_packing": {
     "name_zh": "非木质包装声明",
     "name_en": "Non-Wood Packing Declaration",
@@ -1582,6 +1650,104 @@
         "type": "date",
         "required": false,
         "description": "处理日期"
+      }
+    }
+  },
+  "saso_coc": {
+    "name_zh": "符合性认证(申请信息)",
+    "name_en": "Certificate of Conformity (Application Information)",
+    "description": "沙特SASO/海湾GCC/尼日利亚SONCAP等装运前符合性认证的申报/申请信息；证书由认证机构签发(本系统只产申请信息)",
+    "template_file": "saso_coc.html",
+    "fields": {
+      "seller": {
+        "type": "object",
+        "required": true,
+        "description": "卖方(出口商)信息"
+      },
+      "buyer": {
+        "type": "object",
+        "required": true,
+        "description": "收货人(Consignee)信息"
+      },
+      "cert_no": {
+        "type": "string",
+        "required": false,
+        "description": "证书编号(取得后填写；未取得留空，不预填)"
+      },
+      "cert_date": {
+        "type": "date",
+        "required": false,
+        "description": "证书日期"
+      },
+      "invoice_no": {
+        "type": "string",
+        "required": true,
+        "description": "发票号"
+      },
+      "contract_no": {
+        "type": "string",
+        "required": false,
+        "description": "合同号"
+      },
+      "applicant": {
+        "type": "string",
+        "required": false,
+        "description": "申请人(Applicant)"
+      },
+      "destination_country": {
+        "type": "string",
+        "required": true,
+        "description": "目的国"
+      },
+      "country_of_origin": {
+        "type": "string",
+        "required": false,
+        "description": "原产国"
+      },
+      "standard_applied": {
+        "type": "string",
+        "required": false,
+        "description": "适用标准/法规(如 SASO/GSO 标准；无真实样例不预置)"
+      },
+      "test_report_no": {
+        "type": "string",
+        "required": false,
+        "description": "检测报告编号"
+      },
+      "issuing_authority": {
+        "type": "string",
+        "required": false,
+        "description": "签发/认证机构(无真实样例不预置)"
+      },
+      "valid_until": {
+        "type": "string",
+        "required": false,
+        "description": "有效期(至)"
+      },
+      "batch_no": {
+        "type": "string",
+        "required": false,
+        "description": "产品批次号"
+      },
+      "issue_date": {
+        "type": "date",
+        "required": false,
+        "description": "签发日期"
+      },
+      "description_of_goods": {
+        "type": "string",
+        "required": true,
+        "description": "货物描述"
+      },
+      "items": {
+        "type": "array",
+        "required": true,
+        "description": "商品明细(品名/规格/HS编码/数量/单位)"
+      },
+      "content": {
+        "type": "string",
+        "required": false,
+        "description": "补充声明(支持 HTML)"
       }
     }
   },

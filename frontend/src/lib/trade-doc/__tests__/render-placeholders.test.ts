@@ -30,7 +30,7 @@ const DERIVED_OR_DESIGNED = new Set([
 ]);
 
 describe("findBlankPlaceholders", () => {
-  it("18 类单据的模板占位符全部在 manifest 登记（未登记 = 拼错或模板漏登）", () => {
+  it("20 类单据的模板占位符全部在 manifest 登记（未登记 = 拼错或模板漏登）", () => {
     for (const docType of DOC_TYPES) {
       const audit = findBlankPlaceholders(docType, {});
       expect(audit.undeclared, `${docType} 有未登记占位符`).toEqual([]);

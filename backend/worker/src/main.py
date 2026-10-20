@@ -3253,11 +3253,13 @@ DOC_TYPE_PREFIX = {
     # 出口商自制
     "quotation": "QUO", "pi": "PI", "contract": "CON", "ci": "CI", "pl": "PL",
     "shipping_advice": "SA", "draft": "DR", "beneficiary_cert": "BEN",
+    # A10：受益声明 BD（fixture declaration_no=BD-2026-0001）/ SASO 符合性 COC
+    "beneficiary_decl": "BD",
     "non_wood_packing": "NWP", "weight_list": "WL", "quality_cert": "QC",
     "manufacturer_cert": "MC",
     # 第三方签发
     "bl": "BL", "co": "CO", "insurance": "INS",
-    "customs_declaration": "CD", "fumigation_cert": "FUM",
+    "customs_declaration": "CD", "fumigation_cert": "FUM", "saso_coc": "COC",
     # 通用与其它单据
     "other": "DOC", "order": "ORD", "shipment": "SHP",
 }
@@ -4137,15 +4139,16 @@ async def list_receivables(request: Request, status: str = None,
 
 # ── 阶段 6 任务2：外贸票据工位 + shipment.documented 事件 ──────────────────
 
-# 18 类单证（与前端模板清单及 dev domain/enums.DOC_TYPE 三方一致，
+# 20 类单证（与前端模板清单及 dev domain/enums.DOC_TYPE 三方一致，
 # 由 scripts/contracts-check.ts 的 R3 规则校验）
 DOC_TYPE_SET = (
     # 出口商自制
     "quotation", "pi", "contract", "ci", "pl",
-    "shipping_advice", "draft", "beneficiary_cert", "non_wood_packing",
-    "weight_list", "quality_cert", "manufacturer_cert",
+    "shipping_advice", "draft", "beneficiary_cert", "beneficiary_decl",
+    "non_wood_packing", "weight_list", "quality_cert", "manufacturer_cert",
     # 第三方签发
     "bl", "co", "insurance", "customs_declaration", "fumigation_cert",
+    "saso_coc",
     # 通用
     "other",
 )

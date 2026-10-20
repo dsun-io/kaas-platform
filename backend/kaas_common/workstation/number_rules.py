@@ -28,9 +28,11 @@ __all__ = [
 DOC_TYPE_PREFIX = {
     "quotation": "QUO", "pi": "PI", "contract": "CON", "ci": "CI", "pl": "PL",
     "shipping_advice": "SA", "draft": "DR", "beneficiary_cert": "BEN",
+    # A10：受益声明用 BD（fixture `declaration_no = BD-2026-0001`）；SASO/COC 用 COC（与 BEN/QC/MC 区分）
+    "beneficiary_decl": "BD",
     "non_wood_packing": "NWP", "weight_list": "WL", "quality_cert": "QC",
     "manufacturer_cert": "MC", "bl": "BL", "co": "CO", "insurance": "INS",
-    "customs_declaration": "CD", "fumigation_cert": "FUM",
+    "customs_declaration": "CD", "fumigation_cert": "FUM", "saso_coc": "COC",
     "other": "DOC", "order": "ORD", "shipment": "SHP",
     "inquiry": "INQ",
 }
