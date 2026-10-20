@@ -157,7 +157,8 @@ describe("POST /api/v1/customers/:id/contacts ← page.tsx:375-395（ContactForm
     const detail = (await (
       await fetch(`${BASE}/customers/1`)
     ).json()) as CustomerRow;
-    expect(detail.contacts.length).toBe(2);
+    // 种子里有 3 位联系人（主要 + 2 位普通），新建后共 4 位
+    expect(detail.contacts.length).toBe(4);
     const primaries = detail.contacts.filter((c) => c.is_primary);
     expect(primaries.length).toBe(1);
     expect(primaries[0]!.name).toBe("李四");
@@ -277,4 +278,3 @@ describe("5 个端点一次性验证：全部被 handler 接住（无一个放�
     expect(results.map((r) => r.status)).toEqual([201, 200, 201, 201, 200]);
   });
 });
-

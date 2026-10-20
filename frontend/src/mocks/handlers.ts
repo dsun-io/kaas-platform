@@ -115,6 +115,8 @@ type MockContact = {
   email: string | null;
   whatsapp: string | null;
   is_primary: boolean;
+  /** 后端 `SELECT *` 会带；客户详情按「主要置顶 + 添加时间倒序」展示 */
+  created_at?: string;
 };
 
 /** 询盘 —— 字段名照后端 `row_to_inquiry()`
@@ -368,6 +370,27 @@ function seedContacts(): MockContact[] {
       email: "wang@example.com",
       whatsapp: null,
       is_primary: true,
+      created_at: "2026-08-01T09:00:00Z",
+    },
+    {
+      id: 2,
+      name: "李工",
+      position: "生产主管",
+      phone: "+86-138-0000-0002",
+      email: "li@example.com",
+      whatsapp: null,
+      is_primary: false,
+      created_at: "2026-10-05T09:00:00Z",
+    },
+    {
+      id: 3,
+      name: "张工",
+      position: "质检",
+      phone: "+86-138-0000-0003",
+      email: "zhang@example.com",
+      whatsapp: null,
+      is_primary: false,
+      created_at: "2026-09-12T09:00:00Z",
     },
   ].map((c) => ({ ...c, id: nextChildId++ }));
 }
@@ -957,6 +980,7 @@ export const handlers = [
       email: optStr(body.email),
       whatsapp: optStr(body.whatsapp),
       is_primary: body.is_primary === true,
+      created_at: nowIso(),
     };
     if (contact.is_primary) {
       for (const other of list) other.is_primary = false;
@@ -1039,6 +1063,9 @@ export const handlers = [
               doc_no: "QUO-202609-0004",
               doc_type: "quotation",
               status: "issued",
+              currency: "USD",
+              total_amount: 12300,
+              created_at: "2026-09-27T14:56:42Z",
             },
           ],
           orders: [
@@ -1055,12 +1082,18 @@ export const handlers = [
                   doc_no: "PI-202609-0002",
                   doc_type: "pi",
                   status: "draft",
+                  currency: "USD",
+                  total_amount: 12300,
+                  created_at: "2026-09-28T10:00:00Z",
                 },
                 {
                   id: 2,
                   doc_no: "CI-202609-0001",
                   doc_type: "ci",
                   status: "issued",
+                  currency: "USD",
+                  total_amount: 12300,
+                  created_at: "2026-09-29T09:00:00Z",
                 },
               ],
             },
@@ -1080,6 +1113,9 @@ export const handlers = [
               doc_no: "QUO-202609-0003",
               doc_type: "quotation",
               status: "draft",
+              currency: "USD",
+              total_amount: 8000,
+              created_at: "2026-09-26T10:00:00Z",
             },
           ],
           orders: [],
@@ -1100,6 +1136,9 @@ export const handlers = [
                 doc_no: "BL-202609-0004",
                 doc_type: "bl",
                 status: "issued",
+                currency: "USD",
+                total_amount: 5400,
+                created_at: "2026-09-21T08:00:00Z",
               },
             ],
           },
@@ -1110,6 +1149,9 @@ export const handlers = [
             doc_no: "PL-202609-0003",
             doc_type: "pl",
             status: "draft",
+            currency: "USD",
+            total_amount: 5400,
+            created_at: "2026-09-21T07:00:00Z",
           },
         ],
       },

@@ -14,7 +14,7 @@
  * 一致性策略：开单时把上游内容**冻结成快照**。draft 阶段可「从上游重新带入」；
  * issued 之后任何上游变更都不再影响已签发单据（它是法律凭证）。
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   Download,
@@ -94,6 +94,15 @@ export default function TradeDocsPage() {
   const [showImport, setShowImport] = useState(false);
   const [docNoEdit, setDocNoEdit] = useState<TradeDocRow | null>(null);
   const [docNoError, setDocNoError] = useState<string | null>(null);
+
+  // 深链预览：客户详情「询盘 → 后续单证」点击后带 ?doc=<id> 打开本页并直接选中该单证。
+  // 不用 useSearchParams：静态导出下它需要 Suspense 边界（与 quotes 页同一口径）。
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = new URLSearchParams(window.location.search).get("doc");
+    const id = raw ? Number(raw) : NaN;
+    if (Number.isFinite(id) && id > 0) setSelectedId(id);
+  }, []);
 
   const list = useTradeDocs({
     doc_type: docTypeFilter || undefined,
