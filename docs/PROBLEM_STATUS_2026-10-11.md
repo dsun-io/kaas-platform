@@ -209,6 +209,14 @@
 > 客户列表 <md 改卡片（md+ 保留表格；卡片不带 `data-testid`，e2e 不变）；
 > 单证台账加「舒适/紧凑」密度切换（localStorage 记忆）。证据：phase5/customers-mobile-cards.png。
 >
+> **（2026-10-20 · P2 续：订单/单证窄屏卡片 + 单号复制）**
+> 订单、单证列表 <md 改卡片（md+ 保留表格，DOM 表格在前避免隐藏节点干扰）；
+> 订单号/单证编号加共享 `CopyButton`（clipboard + 成功/失败提示）。证据：phase5/orders-mobile-cards.png、trade-docs-mobile-cards.png。
+>
+> **（2026-10-20 · P2 续：单证列配置 + 对比度门禁 + 移动端 SectionCard）**
+> 单证台账加列配置（5 列可隐藏、至少保 1、记忆）；SectionCard 标题/动作移动端堆叠；
+> 新增 `pnpm ui:contrast` 对比度门禁（light/dark 全过），浅色 destructive 4.20→5.84。
+>
 > **（2026-10-20 · 后端五项已安排并行任务）**
 > 用户已把 `docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md` 的 5 项安排为并行任务；
 > 该文档作为接口/验收基线，各任务完成后回填状态，前端再接线。前端不阻塞。
