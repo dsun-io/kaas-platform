@@ -28,7 +28,7 @@ sys.path.insert(0, __file__.rsplit("\\", 1)[0] if "\\" in __file__
 
 from preview_lib import (  # noqa: E402
     CloudflareClient, NeonClient, PreviewError, Runner, evidence, github_output,
-    log, parse_postgres_uri, parse_pr_slug, require_env, step,
+    log, parse_postgres_uri, parse_pr_slug, require_env, resolve_preview_database, step,
 )
 
 
@@ -104,7 +104,10 @@ def main() -> int:
     databases = neon.list_databases(branch_id)
     if not databases:
         raise PreviewError(f"分支 {branch_id} 没有可用 database")
-    database = databases[0]
+    # 2026-10-20 实测定案：分支里有多个库（kaas_v2_test / neondb），**必须跟生产 worker 同库**
+    # （生产 Hyperdrive origin.database = neondb），取 databases[0] 会连到空库 ⇒ 预览数据不是生产快照。
+    db_name = resolve_preview_database(cf, databases)
+    database = next(d for d in databases if d.get("name") == db_name)
     evidence("role / database", f"{role.get('name')} / {database.get('name')}")
     uri = neon.connection_uri(branch_id, role["name"], database["name"], pooled=False)
     parsed = parse_postgres_uri(uri)
@@ -128,12 +131,13 @@ def main() -> int:
     step(f"5) Hyperdrive config {hyper_name}")
     cfg = cf.hyperdrive_find(hyper_name)
     if cfg:
-        evidence("复用已存在 config", f"{cfg.get('name')} (id={cfg.get('id')})")
         origin = (cfg.get("origin") or {})
-        if origin.get("host") and origin["host"] != parsed["host"]:
-            log(f"⚠ 已有 config 指向 {origin.get('host')}，与当前分支 {parsed['host']} 不一致"
-                " —— 分支被删后重建会换主机名；删除旧 config 并按新分支重建")
-            runner.write(f"Hyperdrive delete {cfg['id']}（指向过期主机）",
+        host_mismatch = bool(origin.get("host")) and origin["host"] != parsed["host"]
+        db_mismatch = bool(origin.get("database")) and origin["database"] != parsed["database"]
+        if host_mismatch or db_mismatch:
+            log(f"⚠ 已有 config 指向 {origin.get('host')}/{origin.get('database')}，与当前分支"
+                f" {parsed['host']}/{parsed['database']} 不一致 —— 删旧 config 并按新目标重建")
+            runner.write(f"Hyperdrive delete {cfg['id']}（指向过期目标）",
                          lambda: cf.hyperdrive_delete(cfg["id"]))
             cfg = None
     if not cfg:
