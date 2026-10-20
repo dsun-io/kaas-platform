@@ -11,7 +11,7 @@
 | 环境 | 数据库 | 对象存储 | 运行时 | 迁移 head | 状态 |
 |---|---|---|---|---|---|
 | 开发 | 本地 Docker PG `kaas-postgres`（`kaas_local`，102 表） | 本地 MinIO（compose，未启动时相关测试 skip） | `local_run.py`（uvicorn，生产同一份 app） | `202610190020` | ✅ 已验证 |
-| 预览 | 每 PR Neon 分支（**未建**） | `kaas-preview-storage`（**未建**） | preview workflow（**未建**） | — | ⬜ 已裁决 A 全量；**待用户凭据/资源**（见 USER_ACTIONS §C S5 前置清单） |
+| 预览 | 每 PR Neon 分支（脚本动态建） | `kaas-preview-storage`（✅ 已建） | preview workflow（✅ `feat/preview-env` 待合并） | — | ✅ S5 已实现，待合并 + variables/CF token |
 | 生产 | Neon production（只读连接已验证；PG 18.6） | R2 `kaas-files`（binding `FILES`） | Worker `kaas`（api + assets） | `202610180010`（**待应用 020**） | ⚠️ 只读已验证（health/site 200）；密钥/迁移待用户 |
 
 ## 1. 开发环境（已验证）
@@ -29,21 +29,29 @@
 `JWT_SECRET`/`ADMIN_SETUP_TOKEN`）；本地 `uv` 的 pyodide 解释器探针损坏 ⇒
 `pywrangler deploy --dry-run` 在本机不可用（CI 可跑，见 S6-c）。
 
-## 2. 预览环境（未落地 —— 2026-10-20 用户裁决：**A. 全量做**）
+## 2. 预览环境（**S5 已全量实现 · 2026-10-20 · 分支 `feat/preview-env` 待合并**）
 
 > 范围已定：每 PR Neon 子分支 + 独立 Hyperdrive + `kaas-preview-storage` + KV 前缀 + CI 防污染断言（S5）。
-> 实施前置（需用户提供/创建）：Neon API key（或项目 id + key）、Cloudflare API token（Workers/Hyperdrive/R2 权限）、
-> 预览 R2 桶与 KV namespace（可代码创建，需上述 token）。
+> 2026-10-20 用户裁决全量做；本日已落地并本机全链路实测（ensure→teardown 闭环）。
+> 用法与变量契约见 [`scripts/preview/README.md`](../scripts/preview/README.md)。
 
-| 需要 | 当前 | 缺什么 / 谁补 |
-|---|---|---|
-| 每 PR Neon 子分支 | 无 | Neon API key + 分支创建/回收逻辑（S5-b，代码可做；需 U-E1 决策） |
-| 独立 Hyperdrive config | 无（仅生产 `f53fed49705043008737032e4bfa2b8e`） | CF API token + 创建/删除（S5-b） |
-| R2 `kaas-preview-storage` + `pr-<slug>/` 前缀 | 无（仅 `kaas-files`） | 建桶 + 授权（U-E1） |
-| 预览 KV namespace | 无（生产也无 KV 绑定） | 若目标态需要，S5-c |
-| preview workflow + 防污染断言 | 无 | S5-a/S5-d（代码可做，依赖上面资源决策） |
+| 需要 | 状态（2026-10-20 实测） |
+|---|---|
+| 共享 R2 桶 `kaas-preview-storage` | ✅ 已建（wrangler 实测，`r2 bucket list` 可见） |
+| 预览 KV namespace `KAAS_PREVIEW` | ✅ 已建，id `c77ab8c9c3a3422aa09c2afdc33f6974` |
+| 每 PR Neon 子分支 `preview-pr-<num>` | ✅ `scripts/preview/ensure.py`（从 production 派生 + 挂 read_write endpoint；**删除带双保险校验**：拒删根分支/production） |
+| 独立 Hyperdrive `kaas-preview-<num>` | ✅ ensure 创建（origin.scheme=postgres，指向分支 pooler 主机）；teardown 回收 |
+| preview workflow | ✅ `.github/workflows/preview.yml`（preflight 四项权限校验 → ensure → alembic → 构建（注入 workers.dev API URL）→ 部署 → PR 评论；closed → 全量回收） |
+| S5-d 防污染断言 | ✅ `scripts/preview/assert-bindings.py` 对照线上真实绑定；生产模式对现网 `kaas` 阳性对照通过 |
+| PR_SLUG 前缀 | ✅ `kaas_common.preview`（R2 `pr-<num>/`、KV `pr-<num>:`；空=生产零影响）+ /health 探针 |
 
-> ⚠️ README §2.2/2.3 已标注「预览 = 目标态、未实施」，避免有人按矩阵手工搭半个环境。
+**合并前待办**（用户/lead）：repo **variables** 4 个 = `KAAS_PREVIEW_KV_NAMESPACE_ID` /
+`KAAS_PREVIEW_R2_BUCKET=kaas-preview-storage` / `PROD_R2_BUCKET=kaas-files`（现名，改名另立项）/
+`PROD_HYPERDRIVE_ID=f53fed49705043008737032e4bfa2b8e`；CF token 换五权限 custom token（更新
+`CLOUDFLARE_API_TOKEN` secret）；预览 worker secrets（JWT_SECRET 等）有则注入、无则告警。
+
+**已知边界**：预览分支从生产派生 ⇒ 派生前的历史文件字节在预览桶里不存在（新上传正常）；
+R2 对象级清理需 S3 密钥（teardown 不配则打印手动指引）；预览 worker 无 cron（渲染时剥离）。
 
 ## 3. 生产环境（只读已验证，写面待用户）
 

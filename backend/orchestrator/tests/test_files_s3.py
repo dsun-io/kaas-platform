@@ -15,6 +15,7 @@ from minio.signer import presign_v4
 
 from kaas_common.files.s3 import (
     SigV4Error,
+    presign_bucket_url,
     presign_get_url,
     presign_put_url,
     presign_url,
@@ -128,3 +129,50 @@ class TestUriEncode:
         assert uri_encode("a/b", encode_slash=False) == "a/b"
         assert uri_encode("中文.jpg") == "%E4%B8%AD%E6%96%87.jpg"
         assert uri_encode("a+b") == "a%2Bb", "加号必须编码，否则会被当成空格"
+
+
+class TestPresignBucketUrl:
+    """桶级签名（S5 预览 teardown 的 R2 按前缀清点用）：与 minio 独立实现交叉比对。
+
+    ListObjectsV2 是桶级 GET（canonical path = `/bucket/`，key 为空），
+    `presign_url` 拒绝空 key，所以单独走 `presign_bucket_url`。
+    """
+
+    def _minio_bucket_presign(self, extra: dict | None = None):
+        # minio 的 presign_v4 对传入 URL 里的 query **原样透传**（它假定你已编码）；
+        # 这里用 urlencode 预编码，与 _signed_url 的 canonicalization 对齐后比对签名。
+        from urllib.parse import urlencode
+        url = urlsplit(f"{ENDPOINT}/{BUCKET}/")
+        if extra:
+            url = urlsplit(f"{ENDPOINT}/{BUCKET}/?{urlencode(extra)}")
+        signed = presign_v4(
+            method="GET", url=url, region=REGION,
+            credentials=Credentials(AK, SK), date=MOMENT, expires=900,
+        )
+        q = {k: v[0] for k, v in parse_qs(signed.query).items()}
+        return q, f"{signed.scheme}://{signed.netloc}{signed.path}"
+
+    def _mine_bucket(self, extra: dict | None = None):
+        url = presign_bucket_url("GET", ENDPOINT, BUCKET, access_key=AK, secret_key=SK,
+                                 region=REGION, now=MOMENT, extra_query=extra)
+        parts = urlsplit(url)
+        q = {k: v[0] for k, v in parse_qs(parts.query).items()}
+        return q, f"{parts.scheme}://{parts.netloc}{parts.path}"
+
+    def test_bucket_list_matches_minio(self):
+        extra = {"list-type": "2", "prefix": "pr-42/", "max-keys": "1000"}
+        expected_q, expected_base = self._minio_bucket_presign(extra)
+        got_q, got_base = self._mine_bucket(extra)
+        assert got_base == expected_base == f"{ENDPOINT}/{BUCKET}/"
+        for key in _AMZ_KEYS:
+            assert got_q[key] == expected_q[key], f"{key} 不一致"
+        assert got_q["X-Amz-Signature"] == expected_q["X-Amz-Signature"], "桶级签名与独立实现不一致"
+        assert got_q["prefix"] == "pr-42/" and got_q["list-type"] == "2"
+
+    def test_empty_key_object_presign_rejected(self):
+        with pytest.raises(SigV4Error):
+            presign_url("GET", ENDPOINT, BUCKET, "", access_key=AK, secret_key=SK)
+
+    def test_bucket_url_rejects_empty_bucket(self):
+        with pytest.raises(SigV4Error):
+            presign_bucket_url("GET", ENDPOINT, "", access_key=AK, secret_key=SK)

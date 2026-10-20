@@ -1,4 +1,4 @@
-﻿name: deploy
+name: deploy
 
 # 2026-10-18：生产发布（税务档案 / 产品税率 / 成本手填 / 整单保险 / 批量报价）
 # 仓库转公开后 GitHub Actions 额度限制解除；本文件既监听 main push，也支持手动触发。
@@ -137,6 +137,21 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: uv run pywrangler deploy
+
+      # S5-d 生产侧防污染断言（README §2.3 规则 9；2026-10-20 落地）：
+      # 拉线上 script settings 核对**实际绑定** —— R2=生产桶（现名 kaas-files，桶迁移另立项）、
+      # Hyperdrive=生产 config、不得等于任何预览值、不得注入 PR_SLUG。任一失败即中止冒烟。
+      - name: S5-d 防污染断言（production 线上绑定）
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          EXPECT_PROD_R2_BUCKET: ${{ vars.PROD_R2_BUCKET }}
+          EXPECT_PROD_HYPERDRIVE_ID: ${{ vars.PROD_HYPERDRIVE_ID }}
+          FORBIDDEN_R2_BUCKETS: ${{ vars.KAAS_PREVIEW_R2_BUCKET }}
+          FORBIDDEN_KV_IDS: ${{ vars.KAAS_PREVIEW_KV_NAMESPACE_ID }}
+        run: |
+          uv run --no-project python scripts/preview/assert-bindings.py \
+            --mode production --script kaas
 
       # 冒烟测试必须验证「Worker 真的活着」，而不是只看状态码：
       #   - /health 由 Worker 处理，必须返回 JSON（旧版只查状态码，被静态资产的

@@ -48,6 +48,7 @@ from kaas_common.files import (
     validate_render_html,
     validate_upload,
 )
+from kaas_common.preview import apply_storage_prefix, normalize_pr_slug
 
 import main as _main
 
@@ -207,6 +208,23 @@ def _r2_bucket(request=None):
         return None
 
 
+def _pr_slug(request=None):
+    """S5 预览：从请求期绑定读 PR_SLUG 并归一。None = 生产（零影响）。
+
+    非法值由共享内核降级为 None（「宁可无前缀也不写错前缀」，README §2.3 规则 5）。
+    """
+    try:
+        raw = _main._binding("PR_SLUG", request)
+    except Exception:  # noqa: BLE001 - _binding 在极端环境下可能抛，宁可退回生产行为
+        raw = None
+    return normalize_pr_slug(raw)
+
+
+def _prefixed_key(key: str, request=None) -> str:
+    """预览环境给 object_key 加 ``pr-<slug>/`` 前缀；生产原样返回。"""
+    return apply_storage_prefix(key, _pr_slug(request))
+
+
 async def _store_bytes(request: Request, key: str, data: bytes,
                        content_type: str) -> tuple[str, Optional[str], Optional[bytes]]:
     """返回 `(storage, object_key, inline_content)` —— 三者如实反映字节的真实落点。"""
@@ -319,9 +337,9 @@ async def _create_file(*, request: Request, user: dict, owner_type: str, owner_i
         raise _fail(exc)
 
     sha = hashlib.sha256(content).hexdigest()
-    key = object_key(tenant_id=DEFAULT_TENANT, owner_type=owner_type, owner_id=owner_id,
-                     kind=kind, media_kind=media_kind, sha256=sha,
-                     content_type=content_type, file_name=file_name)
+    key = _prefixed_key(object_key(tenant_id=DEFAULT_TENANT, owner_type=owner_type, owner_id=owner_id,
+                                   kind=kind, media_kind=media_kind, sha256=sha,
+                                   content_type=content_type, file_name=file_name), request)
     if pre_uploaded is not None:
         # 浏览器已直传对象存储（预签名 PUT）→ 只登记元数据，字节不再经服务端
         storage, object_key_value, inline = pre_uploaded[0], pre_uploaded[1], None
@@ -864,9 +882,9 @@ async def presign_upload(body: PresignIn, request: Request, user: dict = Depends
     cfg = _s3(request)
     if not cfg:
         return {"configured": False}
-    key = object_key(tenant_id=DEFAULT_TENANT, owner_type=body.owner_type, owner_id=body.owner_id,
-                     kind=body.kind, media_kind=body.media_kind, sha256=sha,
-                     content_type=body.content_type, file_name=body.file_name)
+    key = _prefixed_key(object_key(tenant_id=DEFAULT_TENANT, owner_type=body.owner_type, owner_id=body.owner_id,
+                                   kind=body.kind, media_kind=body.media_kind, sha256=sha,
+                                   content_type=body.content_type, file_name=body.file_name), request)
     url = presign_put_url(
         cfg["endpoint"], cfg["bucket"], key, access_key=cfg["access_key"],
         secret_key=cfg["secret_key"], region=cfg["region"], expires=cfg["expires"])
@@ -877,9 +895,9 @@ async def presign_upload(body: PresignIn, request: Request, user: dict = Depends
 @app.post("/api/v1/file-objects/register", status_code=201)
 async def register_upload(body: RegisterIn, request: Request, user: dict = Depends(_get_current_user)):
     sha = _validate_direct(body)
-    key = object_key(tenant_id=DEFAULT_TENANT, owner_type=body.owner_type, owner_id=body.owner_id,
-                     kind=body.kind, media_kind=body.media_kind, sha256=sha,
-                     content_type=body.content_type, file_name=body.file_name)
+    key = _prefixed_key(object_key(tenant_id=DEFAULT_TENANT, owner_type=body.owner_type, owner_id=body.owner_id,
+                                   kind=body.kind, media_kind=body.media_kind, sha256=sha,
+                                   content_type=body.content_type, file_name=body.file_name), request)
     return await _create_file(
         request=request, user=user, owner_type=body.owner_type, owner_id=body.owner_id,
         kind=body.kind, media_kind=body.media_kind, name=body.name, content=b"",
