@@ -19,6 +19,7 @@ CI 编排见 [`.github/workflows/preview.yml`](../../.github/workflows/preview.y
 |---|---|---|
 | `preflight.py` | CF token 权限校验（verify + policies 四项权限；读不到 policies 降级探针） | `python3 scripts/preview/preflight.py` |
 | `ensure.py` | 建/复用 Neon 分支 + endpoint + Hyperdrive config，输出注入参数 | `python3 scripts/preview/ensure.py --pr 123` |
+| `db-url.py` | 输出该 PR 分支的**直连 DSN**（仅迁移 job 用；绕开 GitHub 丢弃含密码 job output 的坑） | `python3 scripts/preview/db-url.py --pr 123` |
 | `render-wrangler-config.py` | 从生产 wrangler.jsonc 渲染预览配置（去 cron/域名、换绑定、注 PR_SLUG） | 见 workflow |
 | `assert-bindings.py` | S5-d 防污染断言：核对**线上真实绑定**（`--pre-deploy` 只核渲染产物） | 见 workflow |
 | `teardown.py` | 回收 worker + Neon 分支 + Hyperdrive + KV/R2 前缀（删除带生产双保险校验） | `python3 scripts/preview/teardown.py --pr 123` |
