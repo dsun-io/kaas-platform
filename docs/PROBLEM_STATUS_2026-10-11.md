@@ -37,6 +37,9 @@
 > 门禁：worker **1008 passed + 5 skipped** / orchestrator **247** / frontend typecheck 0 ·
 > vitest **474** · lint 0 error / contracts R0–R6 PASS / schema-coverage·drift·runtime-deps·
 > sync-shared PASS / alembic 单 head `202610200003`。
+> **CI 状态（2026-10-20 17:13 实测）**：仓库再次变回 **private**，GitHub Actions 秒失败
+> （0 步/无 runner，与代码无关）；PR #5 最后一次全套绿是 `3a8496b`（public 期间）。
+> 本地门禁对最新 head `9e4e6aa` 全绿；恢复 CI 需用户二选一（转 public 跑绿 / 开通 Actions 分钟）。
 > 另：两把 Resend key 已入 GitHub repo secrets（`RESEND_API_KEY_PROD` / `RESEND_API_KEY_PREVIEW`），
 > 换设备不失；`preview.yml` 已注入预览专用 key。
 >
