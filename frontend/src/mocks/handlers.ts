@@ -181,6 +181,64 @@ type MockAccount = {
 const ordersStore: Array<Record<string, unknown> & { id: number }> = [];
 const docsStore: Array<Record<string, unknown> & { id: number }> = [];
 
+// 单证**内容**版本链（TODO A1）：mock 内存版，按 docId 惰性种子 2 版。
+// 恢复 = 追加一条 restore 版本并回写单据 raw_payload —— 与服务端「只增不删」一致。
+interface MockContentVersion {
+  version_no: number;
+  change_source:
+    | "custom_update"
+    | "refresh_sources"
+    | "issue"
+    | "restore"
+    | "translate";
+  actor_id: string | null;
+  note: string | null;
+  created_at: string;
+  custom_keys: string[];
+  raw_payload: Record<string, unknown>;
+}
+const contentVersionsStore = new Map<number, MockContentVersion[]>();
+
+function contentVersionsOf(docId: number): MockContentVersion[] {
+  const existing = contentVersionsStore.get(docId);
+  if (existing) return existing;
+  const seeded: MockContentVersion[] = [
+    {
+      version_no: 1,
+      change_source: "custom_update",
+      actor_id: "1",
+      note: null,
+      created_at: "2026-10-19T08:30:00Z",
+      custom_keys: ["remarks", "payment_terms"],
+      raw_payload: {
+        sources: {},
+        custom: {
+          remarks: "1) 分批装运 2) 唛头见附件",
+          payment_terms: "30% T/T",
+        },
+      },
+    },
+    {
+      version_no: 2,
+      change_source: "refresh_sources",
+      actor_id: "1",
+      note: null,
+      created_at: "2026-10-20T02:10:00Z",
+      custom_keys: ["remarks", "payment_terms", "shipping_marks"],
+      raw_payload: {
+        sources: { order: { order_no: "ORD-202610-0001" } },
+        custom: {
+          remarks: "1) 分批装运 2) 唛头见附件",
+          payment_terms: "30% T/T",
+          shipping_marks: "KAAS/ACME/HAMBURG",
+        },
+      },
+    },
+  ];
+  contentVersionsStore.set(docId, seeded);
+  return seeded;
+}
+
 /** 枚举真源 = backend/orchestrator/app/domain/enums.py（值逐字照搬）。 */
 const ENUMS_MOCK: Record<string, string[]> = {
   inquiry_status: ["unquoted", "quoted", "closed"],
@@ -1766,6 +1824,103 @@ export const handlers = [
       { status: 503 },
     );
   }),
+
+  // ── 单证内容版本（TODO A1）───────────────────────────────────────────────
+  // 列表**不带**整份 payload（与真实后端一致：图片 base64 会让响应到 1MB+）
+  http.get("/api/v1/trade-docs/:id/content-versions", ({ params }) => {
+    const docId = Number(params.id);
+    const items = contentVersionsOf(docId)
+      .slice()
+      .sort((a, b) => b.version_no - a.version_no)
+      .map((v) => ({
+        version_no: v.version_no,
+        change_source: v.change_source,
+        actor_id: v.actor_id,
+        note: v.note,
+        created_at: v.created_at,
+        custom_keys: v.custom_keys,
+      }));
+    return HttpResponse.json({ doc_id: docId, total: items.length, items });
+  }),
+
+  http.get(
+    "/api/v1/trade-docs/:id/content-versions/:versionNo",
+    ({ params }) => {
+      const version = contentVersionsOf(Number(params.id)).find(
+        (v) => v.version_no === Number(params.versionNo),
+      );
+      if (!version) {
+        return HttpResponse.json(
+          { detail: { error: "not_found", code: "VERSION_NOT_FOUND" } },
+          { status: 404 },
+        );
+      }
+      return HttpResponse.json(version);
+    },
+  ),
+
+  http.post(
+    "/api/v1/trade-docs/:id/content-versions/:versionNo/restore",
+    async ({ params, request }) => {
+      const docId = Number(params.id);
+      const versionNo = Number(params.versionNo);
+      const versions = contentVersionsOf(docId);
+      const target = versions.find((v) => v.version_no === versionNo);
+      if (!target) {
+        return HttpResponse.json(
+          { detail: { error: "not_found", code: "VERSION_NOT_FOUND" } },
+          { status: 404 },
+        );
+      }
+      const doc = docsStore.find((d) => d.id === docId);
+      // 与后端 409 同口径：issued/void 冻结；报价单由报价同步、不收恢复
+      if (doc && doc.status !== "draft") {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "conflict",
+              code: "NOT_DRAFT",
+              detail: "已签发/作废单证内容冻结，不能恢复历史版本",
+            },
+          },
+          { status: 409 },
+        );
+      }
+      if (doc && doc.doc_type === "quotation") {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "conflict",
+              code: "QUOTATION_DOC_SYNCED",
+              detail: "报价单由报价自动同步生成，恢复内容会被下次报价更新覆盖",
+            },
+          },
+          { status: 409 },
+        );
+      }
+      const body = (await request.json().catch(() => ({}))) as {
+        note?: string;
+      };
+      const nextNo = Math.max(...versions.map((v) => v.version_no), 0) + 1;
+      const created: MockContentVersion = {
+        version_no: nextNo,
+        change_source: "restore",
+        actor_id: "1",
+        note: body.note || `恢复至 v${versionNo}`,
+        created_at: nowIso(),
+        custom_keys: Object.keys(
+          (target.raw_payload.custom ?? {}) as Record<string, unknown>,
+        ),
+        raw_payload: target.raw_payload,
+      };
+      versions.push(created);
+      if (doc) doc.raw_payload = target.raw_payload;
+      return HttpResponse.json({
+        doc: doc ?? { id: docId, raw_payload: target.raw_payload },
+        restored_version_no: versionNo,
+      });
+    },
+  ),
 
   // ── 枚举（/enums · 与后端 app/domain/enums.py 同键同值）──────────────────
   http.get("/api/v1/enums", () => {
