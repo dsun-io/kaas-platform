@@ -32,6 +32,13 @@ interface AuthContextValue extends AuthState {
     display_name: string;
     setup_token: string;
   }) => Promise<void>;
+  /** 修改本人显示名（后端 PATCH /auth/me；只改自己，邮箱不可自助改） */
+  updateProfile: (displayName: string) => Promise<void>;
+  /** 修改本人密码（后端 POST /auth/change-password，必须验旧密码） */
+  changePassword: (
+    currentPassword: string,
+    newPassword: string,
+  ) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -170,6 +177,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  /**
+   * 修改本人资料（目前只有显示名）。
+   * 为什么改完要回写会话缓存：侧栏/顶栏直接读 `user.display_name`，只改服务端不回写
+   * 会出现"保存成功但界面还是旧名字"，刷新才变 —— 用户会以为没保存上。
+   */
+  const updateProfile = useCallback(
+    async (displayName: string) => {
+      const res = await apiClient.patch("/auth/me", {
+        display_name: displayName,
+      });
+      const user = buildUser(res.data);
+      const token = state.token ?? getToken() ?? "";
+      const rememberMe = !!localStorage.getItem("kaas_token");
+      setAuthSession({ token, user, rememberMe });
+      updateSession({ accessToken: token, user });
+      setState((s) => ({ ...s, user }));
+    },
+    [state.token],
+  );
+
+  /** 改密码：后端验旧密码（403 INVALID_CURRENT_PASSWORD），前端不缓存任何密码状态 */
+  const changePassword = useCallback(
+    async (currentPassword: string, newPassword: string) => {
+      await apiClient.post("/auth/change-password", {
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+    },
+    [],
+  );
+
   const logout = useCallback(async () => {
     try {
       await apiClient.post("/auth/logout");
@@ -190,7 +228,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ ...state, login, register, setupAdmin, logout }}
+      value={{
+        ...state,
+        login,
+        register,
+        setupAdmin,
+        updateProfile,
+        changePassword,
+        logout,
+      }}
     >
       {children}
     </AuthContext.Provider>

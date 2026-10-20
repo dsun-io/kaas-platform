@@ -418,6 +418,97 @@ async def logout():
     return {"message": "Logged out (client should discard token)"}
 
 
+# ── 个人信息（TODO F3）：只能改**本人**，边界写死在路由里 ────────────────────
+# 为什么单独两条而不是一条"账号编辑"：
+# - 改资料**不需要**密码，改密码**必须**验旧密码 —— 混在一起会让改资料也被要求输密码；
+# - 邮箱是登录标识，改它需要验证新邮箱（发确认链路），当前没有该链路 ⇒ 不提供静默改
+#   （宁可不做，也不能让"短信/邮箱验证缺失"变成账号劫持面）；要改邮箱走管理员。
+# - 管理员改他人资料是**另一条**治理链路（/admin/accounts），不在这里混用。
+
+class UpdateProfileIn(BaseModel):
+    display_name: str
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str
+
+
+def _profile_payload(user: dict, row) -> dict:
+    """把 users 行与当前身份合并成与 GET /auth/me 同形的响应（前端 buildUser 同一套解析）。"""
+    from kaas_common.workstation.scope import effective_role
+
+    merged = {**user, **dict(row)}
+    return {
+        **merged,
+        "user_id": merged["id"],
+        "plan": merged.get("plan") or "free",
+        "effective_role": effective_role(merged.get("role")),
+        "tenant_id": DEFAULT_TENANT,
+    }
+
+
+@app.patch("/api/v1/auth/me")
+async def update_me(request: Request, body: UpdateProfileIn,
+                    user: dict = Depends(_get_current_user)):
+    """修改本人显示名（`display_name`）。只允许改自己：id 取自 token，body 里没有 user_id。"""
+    display_name = (body.display_name or "").strip()
+    if not display_name:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "DISPLAY_NAME_REQUIRED",
+            "detail": "显示名不能为空",
+        })
+    if len(display_name) > 64:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "DISPLAY_NAME_TOO_LONG",
+            "detail": "显示名最长 64 个字符",
+        })
+    async with _acquire(request) as conn:
+        row = await conn.fetchrow(
+            "UPDATE users SET display_name=$1, updated_at=NOW() WHERE id=$2"
+            " RETURNING id, email, display_name, account_type, role, plan, team_id,"
+            " console_access, is_tenant_admin",
+            display_name, user["id"],
+        )
+    if row is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "USER_NOT_FOUND",
+            "detail": "账号不存在",
+        })
+    payload = _profile_payload(user, row)
+    payload["team_name"] = await _team_name_of(request, payload.get("team_id"))
+    return payload
+
+
+@app.post("/api/v1/auth/change-password")
+async def change_password(request: Request, body: ChangePasswordIn,
+                          user: dict = Depends(_get_current_user)):
+    """修改本人密码：**必须验旧密码**；新密码 ≥8（与注册/bootstrap 同口径）。
+
+    错误码与登录/重置口径一致：旧密码错 403 `INVALID_CURRENT_PASSWORD`（不泄露账号状态），
+    新密码太短 422 `PASSWORD_TOO_SHORT`。
+    """
+    new_password = body.new_password or ""
+    if len(new_password) < 8:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "PASSWORD_TOO_SHORT",
+            "detail": "Password must be at least 8 characters",
+        })
+    async with _acquire(request) as conn:
+        row = await conn.fetchrow(
+            "SELECT password_hash FROM users WHERE id=$1", user["id"])
+        if row is None or not _verify_password(body.current_password or "", row["password_hash"]):
+            raise HTTPException(status_code=403, detail={
+                "error": "forbidden", "code": "INVALID_CURRENT_PASSWORD",
+                "detail": "当前密码不正确",
+            })
+        await conn.execute(
+            "UPDATE users SET password_hash=$1, updated_at=NOW() WHERE id=$2",
+            _hash_password(new_password), user["id"],
+        )
+    return {"message": "Password updated"}
+
+
 # ── 忘记密码 / 重置密码（token 只存哈希，30 分钟过期，用后即废）──────────
 # 与 orchestrator `app/api/auth.py` 同契约、同错误码（route-parity.py 会校验）。
 # 发信走 Resend REST + `_binding("RESEND_API_KEY")`（请求期读绑定，见 AGENTS.md 绑定铁律）。

@@ -139,6 +139,9 @@ NEW_ROUTES: set[tuple[str, str]] = {
     ("/api/v1/trade-docs/{doc_id}/content-versions", "GET"),
     ("/api/v1/trade-docs/{doc_id}/content-versions/{version_no}", "GET"),
     ("/api/v1/trade-docs/{doc_id}/content-versions/{version_no}/restore", "POST"),
+    # 个人信息编辑（TODO F3，2026-10-20）
+    ("/api/v1/auth/me", "PATCH"),
+    ("/api/v1/auth/change-password", "POST"),
     # 客户 / 询盘补充端点
     ("/api/v1/customers/{customer_id}", "PATCH"),
     ("/api/v1/customers/{customer_id}/inquiries", "GET"),

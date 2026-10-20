@@ -89,6 +89,11 @@ AUTH_ROUTES = {
     ("/api/v1/auth/login", "POST"),
     ("/api/v1/auth/logout", "POST"),
     ("/api/v1/auth/me", "GET"),
+    # 个人信息编辑（TODO F3，2026-10-20）：本人可改显示名 / 改密码。
+    # orchestrator 侧没有这两条（已删壳），属于 worker 新增能力；
+    # 路由面断言仍按"worker 实际注册的 auth 面"精确锁死，新增必须登记到这里。
+    ("/api/v1/auth/me", "PATCH"),
+    ("/api/v1/auth/change-password", "POST"),
     ("/api/v1/auth/bootstrap-admin", "POST"),
     ("/api/v1/auth/forgot-password", "POST"),
     ("/api/v1/auth/reset-password", "POST"),
