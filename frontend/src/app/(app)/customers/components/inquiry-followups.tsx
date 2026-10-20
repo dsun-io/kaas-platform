@@ -12,8 +12,9 @@
  *  - 单证可点击预览：跳 /trade-docs?doc=<id>（复用单证工位的完整预览）。
  *  - 没有询盘来源的历史单据收在询盘 tab 底部，默认折叠，不会丢。
  */
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, X } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 import { StatusBadge, type StatusTone } from "@/components/shared";
 import { docStatusLabel, docTypeMeta } from "@/components/doc-chip";
@@ -22,10 +23,18 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
-  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { apiClient } from "@/lib/api/client";
+import { useTeam } from "@/lib/team/team-context";
+import {
+  DocPreview,
+  renderMetaOf,
+} from "../../trade-docs/components/doc-preview";
+import {
+  useTradeDocFiles,
+  useTradeDocRenderData,
+} from "../../trade-docs/hooks/use-trade-docs";
 import type {
   CustomerRecordsDirect,
   RecordDocument,
@@ -95,13 +104,35 @@ function byDateDesc(
   return tb - ta;
 }
 
-/** 询盘条目上的「最新业务状态」——纯展示推导，不写回后端询盘 status。 */
+/** 产品名拆分：列表只显示产品名，规格参数进详情。 */
+export function splitProductName(raw: string | null): {
+  name: string;
+  spec: string | null;
+} {
+  if (!raw || raw.trim() === "") return { name: "未填写产品", spec: null };
+  const value = raw.trim();
+  const specRe =
+    /\d+(?:\.\d+)?\s*(?:mm|cm|m2|m²|㎡|目|卷|吨|kg|g|inch|in)\b|\s*[×xX*]\s*\d/i;
+  const match = value.match(specRe);
+  if (!match || match.index === undefined) return { name: value, spec: null };
+  const name = value.slice(0, match.index).replace(/[\s\-–—·]+$/, "");
+  const spec = value
+    .slice(match.index)
+    .replace(/^[\s\-–—×xX*·]+/, "")
+    .trim();
+  return { name: name || value, spec: spec || null };
+}
+
+/** 询盘条目上的「当前阶段」——纯展示推导，不写回后端询盘 status。 */
 export interface InquiryStage {
-  label: string;
+  label: "询盘" | "报价" | "订单" | "发货" | "完结" | "关闭";
   tone: StatusTone;
-  /** 最新一步的补充信息（订单号/报价单号 + 状态） */
+  /** 最新一步的补充信息（单号 + 状态） */
   hint: string | null;
 }
+
+const SHIP_DOC_TYPES = new Set(["pl", "bl"]);
+const ORDER_DOC_TYPES = new Set(["contract", "ci"]);
 
 export function deriveInquiryStage(
   inquiryStatus: string,
@@ -109,35 +140,77 @@ export function deriveInquiryStage(
   loading: boolean,
 ): InquiryStage {
   if (inquiryStatus === "closed") {
-    return { label: "已关闭", tone: "default", hint: null };
+    return { label: "关闭", tone: "default", hint: null };
   }
   if (loading) {
     return {
-      label: inquiryStatus === "quoted" ? "已报价" : "未报价",
+      label: inquiryStatus === "quoted" ? "报价" : "询盘",
       tone: inquiryStatus === "quoted" ? "info" : "default",
       hint: null,
     };
   }
+
   const orders = quotes.flatMap((quote) => quote.orders).sort(byDateDesc);
+  const docs = collectDocuments(quotes);
   const latestOrder = orders[0];
-  if (latestOrder) {
+  const latestDoc = docs[0];
+
+  // 完结：订单已完成（业务终态）
+  const completedOrder = orders.find((order) => order.status === "completed");
+  if (completedOrder) {
     return {
-      label: "已成交",
+      label: "完结",
       tone: "success",
-      hint: `订单 ${latestOrder.order_no} · ${
-        ORDER_STATUS_LABEL[latestOrder.status ?? ""] ?? latestOrder.status ?? ""
-      }`,
+      hint: `订单 ${completedOrder.order_no} · 已完成`,
     };
   }
-  const latestQuote = [...quotes].sort(byDateDesc)[0];
-  if (latestQuote) {
+
+  // 发货：有装箱单/提单，或订单已出运
+  const shipDoc = docs.find((doc) => SHIP_DOC_TYPES.has(doc.doc_type));
+  const shippedOrder = orders.find((order) => order.status === "shipped");
+  if (shipDoc || shippedOrder) {
     return {
-      label: "已报价",
-      tone: "info",
-      hint: `报价单 ${latestQuote.quote_no}`,
+      label: "发货",
+      tone: "success",
+      hint: shipDoc
+        ? `${docTypeMeta(shipDoc.doc_type).label} ${shipDoc.doc_no} · ${
+            docStatusLabel(shipDoc.status) || ""
+          }`
+        : `订单 ${shippedOrder!.order_no} · 已出运`,
     };
   }
-  return { label: "未报价", tone: "default", hint: null };
+
+  // 订单：有销售合同/商业发票，或已存在订单
+  const orderDoc = docs.find((doc) => ORDER_DOC_TYPES.has(doc.doc_type));
+  if (orderDoc || latestOrder) {
+    return {
+      label: "订单",
+      tone: "info",
+      hint: orderDoc
+        ? `${docTypeMeta(orderDoc.doc_type).label} ${orderDoc.doc_no} · ${
+            docStatusLabel(orderDoc.status) || ""
+          }`
+        : `订单 ${latestOrder!.order_no} · ${
+            ORDER_STATUS_LABEL[latestOrder!.status ?? ""] ??
+            latestOrder!.status ??
+            ""
+          }`,
+    };
+  }
+
+  // 报价：有报价单
+  const latestQuote = [...quotes].sort(byDateDesc)[0];
+  if (latestQuote || docs.some((doc) => doc.doc_type === "quotation")) {
+    return {
+      label: "报价",
+      tone: "info",
+      hint: latestQuote
+        ? `报价单 ${latestQuote.quote_no}`
+        : `报价单 ${latestDoc?.doc_no ?? ""}`,
+    };
+  }
+
+  return { label: "询盘", tone: "default", hint: null };
 }
 
 /** 扁平化单证：报价单自带的 + 订单下的，按生成时间倒序。 */
@@ -204,7 +277,70 @@ function DocRow({
   );
 }
 
-/** 单证信息预览（先给摘要；完整单据在新标签打开单证工位）。 */
+/** 归档文件版本（系统 PDF / 盖章回传）：只读展示 + 打开原文件。 */
+function ArchivedVersions({ docId }: { docId: number }) {
+  const files = useTradeDocFiles(docId);
+  const archived = (files.data ?? []).filter(
+    (f) => f.role.startsWith("render_pdf") || f.role.startsWith("stamp_scan"),
+  );
+  if (files.isLoading || archived.length === 0) return null;
+
+  const openFile = async (fileId: number) => {
+    try {
+      const res = await apiClient.get(`/file-objects/${fileId}/content`, {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(res.data as Blob);
+      window.open(url, "_blank", "noopener");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      toast.error("打开归档文件失败，请稍后重试");
+    }
+  };
+
+  const roleLabel = (role: string) =>
+    role.startsWith("render_pdf")
+      ? "系统 PDF"
+      : role.startsWith("stamp_scan")
+        ? "盖章回传"
+        : role;
+
+  return (
+    <div className="mx-auto mt-4 max-w-[900px] overflow-hidden rounded-xl border border-border/70 bg-white/80">
+      <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
+        <span className="text-[11px] font-medium text-muted-foreground">
+          归档版本 {archived.length} 个
+        </span>
+        <span className="text-[11px] text-muted-foreground">
+          当前版本在前 · 历史版本留档
+        </span>
+      </div>
+      {archived.map((file) => (
+        <button
+          key={file.id}
+          type="button"
+          onClick={() => void openFile(file.id)}
+          className="flex w-full items-center gap-3 border-b border-border/60 px-3 py-2 text-left text-xs transition-colors last:border-0 hover:bg-muted/40"
+        >
+          <span className="text-muted-foreground">{roleLabel(file.role)}</span>
+          <span className="font-mono">v{file.version}</span>
+          <StatusBadge
+            tone={file.is_current ? "success" : "default"}
+            className="h-5 px-2 text-[11px]"
+          >
+            {file.is_current ? "当前" : "历史"}
+          </StatusBadge>
+          <span className="ml-auto tabular-nums text-muted-foreground">
+            {formatDate(file.created_at)}
+          </span>
+          <ArrowUpRight className="size-3.5 text-muted-foreground" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** 单证预览：有单证工位权限 → 直接内嵌完整单据；否则只展示信息。 */
 function DocPreviewDialog({
   doc,
   onClose,
@@ -212,7 +348,17 @@ function DocPreviewDialog({
   doc: RecordDocument | null;
   onClose: () => void;
 }) {
+  const { snapshot } = useTeam();
   const meta = doc ? docTypeMeta(doc.doc_type) : null;
+  const docId = doc?.id ?? null;
+  const renderData = useTradeDocRenderData(docId);
+  // 与侧边栏同一口径：快照失败时放行（否则接口未上线会把预览锁死）
+  const canPreview =
+    !snapshot.ok ||
+    snapshot.isPlatformAdmin ||
+    snapshot.workstations.includes("trade-docs") ||
+    snapshot.codes.includes("full_chain");
+
   return (
     <Dialog
       open={doc !== null}
@@ -220,47 +366,92 @@ function DocPreviewDialog({
         if (!open) onClose();
       }}
     >
-      <DialogContent className="max-w-md rounded-2xl border-white/60 bg-white/90 p-0 backdrop-blur-2xl">
-        <DialogHeader className="border-b border-border/60 px-5 py-4">
-          <DialogTitle className="text-base">
-            {meta?.label ?? "单证"} · {doc?.doc_no}
-          </DialogTitle>
-          <DialogDescription>单证信息</DialogDescription>
-        </DialogHeader>
-        <div className="grid grid-cols-2 gap-3 px-5 py-4 text-sm">
-          <span className="text-muted-foreground">状态</span>
-          <span>
-            <StatusBadge
-              tone={DOC_STATUS_TONE[doc?.status ?? ""] ?? "default"}
-              className="h-5 px-2 text-[11px]"
-            >
-              {docStatusLabel(doc?.status) || "—"}
-            </StatusBadge>
-          </span>
-          <span className="text-muted-foreground">金额</span>
-          <span className="tabular-nums">
-            {money(doc?.total_amount ?? null, doc?.currency ?? null)}
-          </span>
-          <span className="text-muted-foreground">生成时间</span>
-          <span className="tabular-nums">{formatDate(doc?.created_at)}</span>
-          <span className="text-muted-foreground">编号</span>
-          <span className="font-mono text-xs">{doc?.doc_no ?? "—"}</span>
-        </div>
-        <DialogFooter className="border-t border-border/60 px-5 py-3">
-          {doc?.id != null && (
-            <a
-              href={`/trade-docs?doc=${doc.id}`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex h-8 items-center rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-            >
-              在单证工位打开完整单据
-            </a>
-          )}
-          <Button size="sm" variant="outline" onClick={onClose}>
-            关闭
+      <DialogContent
+        showCloseButton={false}
+        className="flex h-[min(90vh,920px)] w-[min(1240px,calc(100vw-3rem))] max-w-none flex-col gap-0 overflow-hidden rounded-2xl border border-white/60 bg-white/90 p-0 shadow-[0_30px_80px_-30px_rgba(15,23,42,0.45)] backdrop-blur-2xl sm:max-w-none"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-border/70 px-5 py-4">
+          <div className="min-w-0">
+            <DialogTitle className="truncate text-base">
+              {meta?.label ?? "单证"} · {doc?.doc_no}
+            </DialogTitle>
+            <DialogDescription className="mt-1 flex flex-wrap items-center gap-3 text-xs">
+              <StatusBadge
+                tone={DOC_STATUS_TONE[doc?.status ?? ""] ?? "default"}
+                className="h-5 px-2 text-[11px]"
+              >
+                {docStatusLabel(doc?.status) || "—"}
+              </StatusBadge>
+              <span className="tabular-nums">
+                {money(doc?.total_amount ?? null, doc?.currency ?? null)}
+              </span>
+              <span className="tabular-nums">
+                {formatDate(doc?.created_at)}
+              </span>
+            </DialogDescription>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onClose}
+            aria-label="关闭单证预览"
+          >
+            <X className="size-4" />
           </Button>
-        </DialogFooter>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto bg-slate-100/60 p-4">
+          {!canPreview ? (
+            <div className="mx-auto mt-10 max-w-md rounded-xl border border-dashed border-border bg-white/80 p-6 text-center text-sm text-muted-foreground">
+              当前账号没有「单证」工位权限，无法预览单据内容。
+              <br />
+              可联系管理员开通，或从单证工位查看已有单据。
+            </div>
+          ) : renderData.isLoading ? (
+            <p className="py-16 text-center text-sm text-muted-foreground">
+              正在装配单据…
+            </p>
+          ) : renderData.isError || !renderData.data ? (
+            <div className="mx-auto mt-10 max-w-md rounded-xl border border-dashed border-border bg-white/80 p-6 text-center text-sm text-muted-foreground">
+              单据数据读取失败（可能是 mock 数据或权限不足）。
+            </div>
+          ) : (
+            <div className="mx-auto max-w-[900px] overflow-hidden rounded-xl bg-white shadow-sm">
+              <DocPreview
+                docType={renderData.data.doc.doc_type}
+                docNo={renderData.data.doc.doc_no}
+                data={renderData.data.data}
+                docId={renderData.data.doc.id}
+                renderMeta={renderMetaOf(renderData.data.doc.raw_payload)}
+                companyProfileConfigured={
+                  renderData.data.company_profile_configured
+                }
+              />
+            </div>
+          )}
+          {docId !== null && canPreview && <ArchivedVersions docId={docId} />}
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-border/70 bg-white/70 px-5 py-3">
+          <span className="text-[11px] text-muted-foreground">
+            {canPreview ? "预览内容与单证工位一致" : "无单证工位权限"}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={onClose}>
+              关闭
+            </Button>
+            {doc?.id != null && (
+              <a
+                href={`/trade-docs?doc=${doc.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-8 items-center rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                在单证工位打开
+              </a>
+            )}
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -339,40 +530,45 @@ export function InquiryFollowup({
   }
 
   const orders = quotes.flatMap((quote) => quote.orders).sort(byDateDesc);
-  // quotes.length > 0 已在上面返回，这里一定有值
-  const latestQuote = [...quotes].sort(byDateDesc)[0]!;
-  const latestOrder = orders[0];
   const docs = collectDocuments(quotes);
 
+  // 单条订单：直接给单证表，不再重复写「报价单/订单」编号那两行；
+  // 多条订单（分批发货/多次下单）：按订单分组，组头只写一次订单号。
+  if (orders.length <= 1) {
+    return <DocTable docs={docs} />;
+  }
+
+  const quoteDocs = quotes.flatMap((quote) => quote.documents).sort(byDateDesc);
+
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-        <span className="text-muted-foreground">报价单</span>
-        <span className="font-mono">{latestQuote.quote_no}</span>
-        <StatusBadge
-          tone={QUOTE_STATUS_TONE[latestQuote.status ?? ""] ?? "default"}
-          className="h-5 px-2 text-[11px]"
-        >
-          {QUOTE_STATUS_LABEL[latestQuote.status ?? ""] ??
-            latestQuote.status ??
-            "—"}
-        </StatusBadge>
-        {latestOrder && (
-          <>
+    <div className="space-y-4">
+      {orders.map((order) => (
+        <div key={`order-${order.id ?? order.order_no}`}>
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
             <span className="text-muted-foreground">订单</span>
-            <span className="font-mono">{latestOrder.order_no}</span>
+            <span className="font-mono">{order.order_no}</span>
             <StatusBadge
-              tone={ORDER_STATUS_TONE[latestOrder.status ?? ""] ?? "default"}
+              tone={ORDER_STATUS_TONE[order.status ?? ""] ?? "default"}
               className="h-5 px-2 text-[11px]"
             >
-              {ORDER_STATUS_LABEL[latestOrder.status ?? ""] ??
-                latestOrder.status ??
-                "—"}
+              {ORDER_STATUS_LABEL[order.status ?? ""] ?? order.status ?? "—"}
             </StatusBadge>
-          </>
-        )}
-      </div>
-      <DocTable docs={docs} />
+            <span className="ml-auto tabular-nums text-muted-foreground">
+              {money(order.total_amount, order.currency)} ·{" "}
+              {formatDate(order.created_at)}
+            </span>
+          </div>
+          <DocTable docs={[...order.documents].sort(byDateDesc)} />
+        </div>
+      ))}
+      {quoteDocs.length > 0 && (
+        <div>
+          <div className="mb-2 text-xs text-muted-foreground">
+            报价单 / 未挂订单的单证
+          </div>
+          <DocTable docs={quoteDocs} />
+        </div>
+      )}
     </div>
   );
 }

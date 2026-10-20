@@ -17,6 +17,7 @@ import {
 } from "./data/factory";
 // 工位清单取**唯一真源**，避免 mock 里再抄一份（抄了就迟早漂移）
 import { SUBSCRIBABLE_WORKSTATIONS } from "@/lib/workstation/visibility";
+import tradeDocSample from "@/lib/trade-doc/sample-data.json";
 import {
   MOCK_EXPORT_FORMULAS,
   MOCK_EXPORT_PRODUCTS,
@@ -1674,6 +1675,87 @@ export const handlers = [
       );
     }
     return HttpResponse.json(doc);
+  }),
+
+  // 单证内嵌预览（客户详情 → 单证）：mock 用固定样板数据渲染，避免预览空转。
+  // 真实环境由后端 `/trade-docs/{id}/render-data` 按快照装配。
+  http.get("/api/v1/trade-docs/:id/render-data", ({ params }) => {
+    const id = Number(params.id);
+    const known: Record<
+      number,
+      { doc_type: string; doc_no: string; status: string; total_amount: number }
+    > = {
+      2: {
+        doc_type: "ci",
+        doc_no: "CI-202609-0001",
+        status: "issued",
+        total_amount: 12300,
+      },
+      3: {
+        doc_type: "pi",
+        doc_no: "PI-202609-0002",
+        status: "draft",
+        total_amount: 12300,
+      },
+      11: {
+        doc_type: "quotation",
+        doc_no: "QUO-202609-0003",
+        status: "draft",
+        total_amount: 8000,
+      },
+      12: {
+        doc_type: "quotation",
+        doc_no: "QUO-202609-0004",
+        status: "issued",
+        total_amount: 12300,
+      },
+      21: {
+        doc_type: "bl",
+        doc_no: "BL-202609-0004",
+        status: "issued",
+        total_amount: 5400,
+      },
+      22: {
+        doc_type: "pl",
+        doc_no: "PL-202609-0003",
+        status: "draft",
+        total_amount: 5400,
+      },
+    };
+    const fromStore = docsStore.find((d) => d.id === id);
+    const meta = known[id] ?? fromStore;
+    if (!meta) {
+      return HttpResponse.json(
+        { detail: { error: "not_found" } },
+        { status: 404 },
+      );
+    }
+    const sample = tradeDocSample as unknown as {
+      base: Record<string, unknown>;
+      other_extra?: Record<string, unknown>;
+    };
+    return HttpResponse.json({
+      doc: {
+        id,
+        doc_no: "doc_no" in meta ? meta.doc_no : `DOC-${id}`,
+        doc_type: "doc_type" in meta ? meta.doc_type : "ci",
+        status: "status" in meta ? meta.status : "draft",
+        currency: "USD",
+        total_amount: "total_amount" in meta ? meta.total_amount : null,
+        raw_payload: null,
+        created_at: "2026-09-29T09:00:00Z",
+      },
+      data: {
+        ...sample.base,
+        ...(meta.doc_type === "other" ? (sample.other_extra ?? {}) : {}),
+      },
+      company_profile_configured: false,
+    });
+  }),
+
+  // 单证归档文件版本（真实环境由 files 接口返回 version/is_current/supersedes 链）
+  http.get("/api/v1/trade-docs/:id/files", () => {
+    return HttpResponse.json({ items: [] });
   }),
 
   // ── 枚举（/enums · 与后端 app/domain/enums.py 同键同值）──────────────────

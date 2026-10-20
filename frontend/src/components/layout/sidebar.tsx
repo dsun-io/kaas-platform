@@ -2,9 +2,17 @@
 
 import Link from "next/link";
 import type { Route } from "next";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   LayoutDashboard,
@@ -13,6 +21,7 @@ import {
   Menu,
   ChevronLeft,
   Users,
+  LogOut,
   FileText,
   ToggleLeft,
   BookOpen,
@@ -179,6 +188,111 @@ function SidebarNav({ collapsed }: { collapsed: boolean }) {
   );
 }
 
+/** 侧栏底部：当前账号 + 个人信息管理（只读资料 / 团队入口 / 退出）。 */
+function SidebarUser({ collapsed = false }: { collapsed?: boolean }) {
+  const { user, logout } = useAuth();
+  const { teamName } = useTeam();
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  if (!user) return null;
+
+  const name = user.display_name || user.email;
+  const initials =
+    user.display_name?.slice(0, 2) ??
+    user.email?.slice(0, 2).toUpperCase() ??
+    "?";
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        title={collapsed ? "个人信息" : undefined}
+        aria-label="个人信息"
+        className={cn(
+          "flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left transition-colors hover:bg-white/70",
+          collapsed && "justify-center px-0",
+        )}
+      >
+        <Avatar className="size-8 shrink-0">
+          <AvatarFallback
+            className="text-xs font-semibold text-white"
+            style={{ background: "var(--gradient-brand)" }}
+          >
+            {initials}
+          </AvatarFallback>
+        </Avatar>
+        {!collapsed && (
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium">{name}</p>
+            <p className="truncate text-[11px] text-muted-foreground">
+              {user.email}
+            </p>
+          </div>
+        )}
+      </button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-md rounded-2xl border border-white/60 bg-white/90 backdrop-blur-2xl">
+          <DialogHeader>
+            <DialogTitle>个人信息</DialogTitle>
+            <DialogDescription>
+              当前登录账号信息（只读；修改资料请联系管理员）
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-white/60 p-3">
+            <Avatar className="size-11">
+              <AvatarFallback
+                className="text-sm font-semibold text-white"
+                style={{ background: "var(--gradient-brand)" }}
+              >
+                {initials}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold">{name}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {user.email}
+              </p>
+            </div>
+          </div>
+          <dl className="grid grid-cols-[72px_1fr] gap-x-3 gap-y-2 text-sm">
+            <dt className="text-muted-foreground">账号类型</dt>
+            <dd>
+              {user.account_type === "internal" ? "内部账号" : "客户账号"}
+            </dd>
+            <dt className="text-muted-foreground">角色</dt>
+            <dd>{user.role || "—"}</dd>
+            <dt className="text-muted-foreground">团队</dt>
+            <dd>{teamName || "未加入团队"}</dd>
+            <dt className="text-muted-foreground">套餐</dt>
+            <dd>{user.plan || "—"}</dd>
+          </dl>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                router.push("/team");
+              }}
+            >
+              <Users className="mr-1.5 size-4" />
+              团队与工位
+            </Button>
+            <Button
+              variant="outline"
+              className="text-destructive hover:text-destructive"
+              onClick={() => void logout()}
+            >
+              <LogOut className="mr-1.5 size-4" />
+              退出登录
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function DesktopSidebar() {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -231,6 +345,10 @@ function DesktopSidebar() {
       <div className="min-h-0 flex-1 overflow-y-auto pb-2">
         <SidebarNav collapsed={collapsed} />
       </div>
+
+      <div className="mt-auto border-t border-white/50 px-2 py-2">
+        <SidebarUser collapsed={collapsed} />
+      </div>
     </aside>
   );
 }
@@ -256,7 +374,7 @@ function MobileSidebar() {
       />
       <SheetContent
         side="left"
-        className="w-[268px] border-0 bg-white/80 p-0 backdrop-blur-2xl"
+        className="flex w-[268px] flex-col border-0 bg-white/80 p-0 backdrop-blur-2xl"
       >
         <div className="flex items-center gap-2.5 border-b border-border/70 px-4 py-4">
           <img
@@ -267,6 +385,9 @@ function MobileSidebar() {
         </div>
         <div className="py-2">
           <SidebarNav collapsed={false} />
+        </div>
+        <div className="mt-auto border-t border-white/50 px-2 py-2">
+          <SidebarUser />
         </div>
         {!isInternal && (
           <div className="px-4 py-3 text-[11px] text-muted-foreground">
