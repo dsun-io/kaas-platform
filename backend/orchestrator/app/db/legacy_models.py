@@ -149,6 +149,11 @@ class FileObject(Base):
             "uq_file_current",
             "tenant_id", "owner_type", "owner_id", "kind", "media_kind",
             unique=True,
+            # C22（2026-10-21）：`media_kind` 可空，而真实盖章回传就是 NULL
+            # （worker upload_doc_file → media_kind=None）。PG 唯一索引默认
+            # NULLS DISTINCT ⇒ "当前版本唯一"对 NULL 行不生效。加 NULLS NOT DISTINCT
+            # （PG15+）让 NULL 与 NULL 也互相冲突；迁移 202610200005 同步。
+            postgresql_nulls_not_distinct=True,
             postgresql_where=text(
                 "is_current AND kind = ANY (ARRAY['stamp_scan'::text, 'render_pdf'::text])"
             ),

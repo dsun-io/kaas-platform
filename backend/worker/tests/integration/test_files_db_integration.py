@@ -161,28 +161,41 @@ def test_file_current_unique_blocks_second_current_for_versioned_kind(db):
                  kind="product_photo", media_kind="production", name="产品图")
 
 
-def test_file_current_unique_has_null_media_kind_hole(db):
-    """**现状记录**：`media_kind` 为 NULL 时部分唯一索引不生效（PostgreSQL NULLS DISTINCT）。
+def test_file_current_unique_covers_null_media_kind(db):
+    """C22：`media_kind=NULL` 的第二条"当前件"也必须被唯一约束拒绝。
 
-    离线代码实际就是这么写的：盖章回传上传走 `media_kind=None`
-    （`ws_files.py:667-675 upload_doc_file` 的 `_create_file(..., media_kind=None)`）。
-    ⇒ 两条同归属的"当前 stamp_scan"在库里**可以并存**，"只留一个当前版本"的
-    约束在真实数据形状下没有兜底（目前只靠应用层先 UPDATE 旧件）。
+    背景：真实盖章回传就是 `media_kind=None`（`ws_files.py` 的 `upload_doc_file`
+    → `_create_file(..., media_kind=None)`）。PostgreSQL 唯一索引默认 **NULLS DISTINCT**
+    ⇒ 旧索引对 NULL 行不生效，两条同归属"当前 stamp_scan"可以并存（task-15 发现、
+    C22 登记）。迁移 `202610200005` 给 `uq_file_current` 加了 **NULLS NOT DISTINCT**
+    （PG15+），NULL 与 NULL 视为相等 ⇒ 现在第二条必须被拒。
 
-    这是**给 lead 的发现**（schema 层，不在本任务写范围）：若认定必须由库兜底，
-    需要把索引改成 `NULLS NOT DISTINCT`（PG15+）或把 media_kind 归一成非空。
-    本用例钉的是**当前行为**；将来修了该索引，它会红 —— 届时把断言反过来即可。
+    这条用例在 C22 之前是"characterization（断言可并存）"，现已**反转**成回归守卫：
+    若哪天索引又退回 NULLS DISTINCT，它会红。
     """
     _require_table(db, "file_objects")
 
     first = _insert_file(db, owner_type="trade_doc", owner_id="9",
                          kind="stamp_scan", media_kind=None, name="回传 v1")
+
+    # 同归属 + 同 kind + 都 media_kind=NULL + 都 is_current ⇒ 唯一约束拒绝
+    with pytest.raises(asyncpg.UniqueViolationError):
+        _insert_file(db, owner_type="trade_doc", owner_id="9",
+                     kind="stamp_scan", media_kind=None, name="回传 v2")
+
+    # 版本链的正常写法仍成立：旧件让位（is_current=false）后，新当前件可以插入
+    db.execute("UPDATE file_objects SET is_current=false WHERE id=$1", first)
     second = _insert_file(db, owner_type="trade_doc", owner_id="9",
                           kind="stamp_scan", media_kind=None, name="回传 v2")
-    assert first != second
+    assert second != first
     assert db.fetchval(
-        "SELECT count(*) FROM file_objects WHERE kind='stamp_scan' AND is_current"
-    ) == 2
+        "SELECT count(*) FROM file_objects"
+        " WHERE owner_id='9' AND kind='stamp_scan' AND is_current"
+    ) == 1
+
+    # 其它归属不受影响（约束是"同一归属唯一"，不是全局唯一）
+    _insert_file(db, owner_type="trade_doc", owner_id="10",
+                 kind="stamp_scan", media_kind=None, name="另一张单证")
 
 
 def test_file_primary_unique_one_primary_photo_per_owner(db):

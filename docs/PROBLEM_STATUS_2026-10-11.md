@@ -112,6 +112,12 @@
 >   降级为历史对照（`--allow-divergence`），TS 侧唯一真源 = render.test.ts；**视觉/分页须 build/e2e/人工打印复核**。
 > - **N4/P8 核对（2026-10-21）**：设计文档「P8 联调+E2E+订阅编码 ⏳」已过时 —— 联调（CI 三条全绿+预览实测）、
 >   E2E（28 条=24+4）、订阅编码（R2 PASS 27 工位 + B3 真机开通/撤销）均已成立，`WORKSTATION_DESIGN.md` 段位表已标 ✅。
+> - **C22 文件唯一索引加固（2026-10-21）**：迁移 **`202610200005`** 把 `uq_file_current` 重建为
+>   `NULLS NOT DISTINCT`（原索引含 `media_kind`，真实盖章回传 `media_kind=None` ⇒ PG 默认
+>   NULLS DISTINCT 使"同归属只留一个当前版本"无库级兜底）；ORM 同步、测试反转为回归守卫；
+>   `alembic check` 无新操作、downgrade→upgrade 轮回通过；有库 worker **1229 passed / 0 skipped**。
+>   **迁移头由此变为 `202610200005`**（生产未应用，发布检查单已更新）；发布前先跑迁移 docstring
+>   的查重 SQL（存量重复 current 行会让建索引失败）。**本机本地库 106 表 / head 202610200005**。
 >
 > **（2026-10-20 晚 · 口径收敛与审计补录：`docs/TODO.md` = 唯一账本）**
 >

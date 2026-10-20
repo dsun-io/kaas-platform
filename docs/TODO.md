@@ -17,7 +17,7 @@
 | 项 | 状态 |
 |---|---|
 | 代码 | `main` @ `1216e75a`（工作树干净）；**远端只剩 `main`** |
-| 迁移头 | `202610200004`（新增 `trade_doc_facts`；生产**尚未应用**，随发布窗口） |
+| 迁移头 | `202610200005`（`trade_doc_facts` + 文件当前版本唯一索引 `NULLS NOT DISTINCT`；生产**尚未应用**，随发布窗口） |
 | 门禁基线（本机 2026-10-21） | worker **1212 passed + 5 skipped**；orchestrator **247**；前端 `pnpm test` **535**（55 files）；typecheck 0 / lint 0 error / contracts R0–R6 PASS / `mocks:check` 未覆盖 0 / 静态断言 5 项 PASS（`check-worker-bundle` 本机 SKIP：uv 0.11.8 < 0.12.3，CI 会执行） |
 | 前端 e2e | `playwright test --list` = **28 条**（24 passed + 4 skipped） |
 | 仓库可见性 | **public**（匿名 `git ls-remote` 成功）；`gh` 本机未登录 ⇒ CI 只能用网页/无 token 接口核对 |
@@ -89,7 +89,7 @@
 | C19 | **批量导入上传 UI** | hooks（`useImportPreview`/`useImportCalculate`/`useDownloadTemplate`）与 `import-file.ts` 齐备，但**没有任何页面组件消费** ⇒ 用户拿不到「下载模板→填→上传」入口（xlsx/CSV 后端都已就绪）。建议接进 v2 报价工作台/批量报价页（放置位置属产品交互 → 待拍板 §G-10） | C7 | 🧭 待定入口位置 |
 | C20 | 导入模板 4 端点仍只查注册表 | ✅ 2026-10-21：`/export-quote/import/template`、`/products/{key}/import-template`（说明+下载）、`/import/preview`、`/import/calculate` 全部改走 `_product_or_404_tenant`（与 `/formulas`/`/explain`/算价同口径：租户运行时产品优先、未命中回落注册表）；新增 5 条测试（租户 200 / 系统产品回归 / 跨团队 404 / 未知 404） | B5 | ✅ |
 | C21 | 导出后自检 UI 依赖 PDF 文本抽取 | `verify-export` 后端已可用（文本⊆PDF、图片计数），但前端需要拿到 PDF 文本；方案：pdf.js 解析已生成 PDF，或服务端渲染时抽取 —— 需拍板（涉及新增依赖/包体） | A7 | ⏳ 待定方案 |
-| C22 | `file_objects.uq_file_current` 的 NULLS DISTINCT 缺口 | 部分唯一索引谓词含 `is_current AND kind IN ('stamp_scan','render_pdf')` 且列含 `media_kind`，但真实盖章回传 `media_kind=None` ⇒ PG 默认 NULLS DISTINCT 允许两条同归属"当前 stamp_scan"并存，"同一归属只留一个当前版本"无库级兜底（并发上传可留两个 current，现只靠应用层先 UPDATE）。修法（对齐测试已钉住现状为 characterization 用例）：索引加 `NULLS NOT DISTINCT`（PG15+；生产 Neon 18.6 支持）或把 stamp_scan 的 media_kind 归一为非空或从索引列去掉 | — | ⏳（待实施 + 迁移） |
+| C22 | `file_objects.uq_file_current` 的 NULLS DISTINCT 缺口 | ✅ 2026-10-21 修复：迁移 `202610200005` drop+recreate 唯一索引并加 `NULLS NOT DISTINCT`（列顺序/谓词与 ORM 逐字一致，PG15+；本地 PG16/CI PG16/生产 Neon 18.6 均支持）；ORM `FileObject.uq_file_current` 同步；characterization 用例**反转**为回归守卫（同归属 `media_kind=NULL` 第二条 current 必被拒）。`alembic check` 无新操作、downgrade→upgrade 轮回通过；worker 有库 1229 passed/0 skipped。**发布注意**：迁移 docstring 含查重 SQL（存量重复 current 行会让建索引失败），跑前先查、有重复先人工置 `is_current=false`；drop+create 持表 SHARE 锁，写入毫秒级阻塞、读不受影响 | — | ✅ |
 
 ---
 
@@ -123,7 +123,7 @@
 | # | 项 | 内容 | 状态 |
 |---|---|---|---|
 | N1 | **前后端对齐专项** | UI 重构后，前端调用 ↔ Worker 路由（`backend/worker/src/*.py`）↔ `shared/contracts` ↔ MSW handlers 全量比对；断点清单 + 修复 + 补测试（审计报告 `.tmp/align-report.md`：P0 断点 0、P1 三条、P2 五条） | ✅ 2026-10-21 分两批：**A**（/events 平台闸门、F4 stage 消费 + stage-log、路由守卫口径、写权限只读化）；**B**（MSW handlers **58→111**、`/oss/presign` 死代码删除、deployment_audit 如实 404 + 三态、`pnpm mocks:check` 防漂移门禁 P1 54/54） |
-| N2 | 环境隔离 | `.env.local` 生产 DSN 已加警示注释 + 本地开发指引；本地 compose 栈拉起（postgres/redis/minio/backend）；**新 clone 必须先 `sync-shared.ps1`**（镜像 gitignored，缺 `kaas_common.preview` 会崩）；本地库为空库快径重建（105 表 / head `202610200003`） | ✅ 2026-10-20（本机） |
+| N2 | 环境隔离 | `.env.local` 生产 DSN 已加警示注释 + 本地开发指引；本地 compose 栈拉起（postgres/redis/minio/backend）；**新 clone 必须先 `sync-shared.ps1`**（镜像 gitignored，缺 `kaas_common.preview` 会崩）；本地库为空库快径重建（**106 表 / head `202610200005`**） | ✅ 2026-10-20（本机） |
 | N3 | H-2 用户复验 | 定价页刷新与注册（2026-10-19 已修复上线）等用户确认 | 🧭 需用户复验 |
 | N4 | P8 联调状态核对 | ✅ 2026-10-21 核对：设计文档「P8 联调+E2E+订阅编码 ⏳」已过时 —— 联调=CI 三条全绿 + 预览链路实测；E2E=28 条（24+4）；订阅编码=契约 R2 PASS（27 工位 ts↔py）+ B3 真机开通生效。已在 `WORKSTATION_DESIGN.md` 段位状态表标 ✅ | — | ✅ |
 | N5 | 文档口径收尾批 | PROBLEM_STATUS/UNCERTAIN/HANDOVER + UI 两份/PDF_ARCHIVAL/E2E/README/旧设计稿归档 | ✅ 2026-10-21 |

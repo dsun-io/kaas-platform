@@ -32,14 +32,14 @@ Hyperdrive，并给 worker 依赖钉版入库。**前端 UI 优化 P0/P1/P2 已�
   ⇒ **「转回 private」尚未完成，不是已完成项**，已统一登记 `docs/TODO.md`（D5）；private 期间 GitHub Actions 不可用，
   门禁以本地命令为准；本地各门全绿数字见 §0.1。
 - **发布仍未动**：合并 ≠ 发布；生产部署仍需手动 `workflow_dispatch`（`deploy.yml` 仅手动），
-  迁移 head `202610200003` 随发布窗口应用，发布检查单见 §5。
+  迁移 head `202610200005` 随发布窗口应用，发布检查单见 §5。
 
 ### 0.2.2 已完成（本分支 + 已合入 main 的 UI 线）
 
 - 用户点名的**后端 5 项**：F1 签发自动上传、F2 内容版本、F3 个人信息、F4 询盘状态机、F5 报价/订单 1:N —— 全部 ✅（细节/证据见 §0.1）。
 - 单证内容专项 A 组：A1（内容版本）、A3（字段体检）、A8/A9（指纹对账 cron + 列表标识）✅；
   顺手修线上 `GET /trade-docs` 500。
-- 迁移 head：`202610200003`（三条新增迁移，幂等；生产尚未应用，发布窗口一并上）。
+- 迁移 head：**`202610200005`**（2026-10-21 追加 `202610200004` 单证事实表与 `202610200005` 文件当前版本唯一索引 `NULLS NOT DISTINCT`；生产尚未应用，发布窗口一并上）。
 - 配置：两把 Resend key 已入 GitHub repo secrets（`RESEND_API_KEY_PROD` / `RESEND_API_KEY_PREVIEW`），换设备不失；
   生产 key 待发布窗口注入 Cloudflare（`docs/TODO.md` D1）。
 
@@ -109,7 +109,7 @@ Hyperdrive，并给 worker 依赖钉版入库。**前端 UI 优化 P0/P1/P2 已�
 |---|---|---|
 | `.env.local` | **含密钥**，`.gitignore` 明确忽略；**现只是生产 DSN 存档（已加警示注释）**，本地开发**不读**它（`local_run.py` 用 `LOCAL_DATABASE_URL`，默认 Docker PG） | 新建该文件，按下表变量名填值；值从 GitHub repo secrets / Neon / Resend / 用户处取 |
 | `backend/worker/src/kaas_common/`（**gitignored 生成镜像**） | 由 `scripts/sync-shared.ps1` 从 `backend/kaas_common/` 生成（`backend/worker/.gitignore:15`），不入库 | **clone/切换分支后先跑** `powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1`（本机实测 `-Check` 三行全「一致」）；未同步会崩在 `ModuleNotFoundError: No module named 'kaas_common.preview'`（`ws_files.py:51`） |
-| 本地开发库 `kaas_dev`（Docker volume） | 运行数据，不入库 | 空库快径：`cd backend/orchestrator && uv run --extra migrations alembic upgrade head` → 本机实测 **105 表 / head `202610200003`**；**不要修历史迁移链**。半初始化的旧库（如停在 `202610180010`/93 表、缺 `market_ports`）先 `ALTER DATABASE … RENAME TO …_legacy_<日期>` 保留，再建空库走快径 |
+| 本地开发库 `kaas_dev`（Docker volume） | 运行数据，不入库 | 空库快径：`cd backend/orchestrator && uv run --extra migrations alembic upgrade head` → 本机实测 **106 表 / head `202610200005`**；**不要修历史迁移链**。半初始化的旧库（如停在 `202610180010`/93 表、缺 `market_ports`）先 `ALTER DATABASE … RENAME TO …_legacy_<日期>` 保留，再建空库走快径 |
 | `backend/.tools/`（删除前备份 CSV） | gitignored 的运维临时产物 | 历史备份不必恢复；需要时从旧设备拷 |
 | `frontend/node_modules`、`**/.venv` | 依赖产物 | `cd frontend && pnpm install`；`uv sync`（见 §0.2.4 门禁命令） |
 | 本地 Docker 容器（PG/Redis/MinIO） | 环境 | `docker compose up -d` |
@@ -142,7 +142,7 @@ Hyperdrive，并给 worker 依赖钉版入库。**前端 UI 优化 P0/P1/P2 已�
 4. 建 `.env.local`（变量名见 0.3.3；值找用户/控制台，不要提交）。**注意**：它现只是生产 DSN 存档，
    本地开发不读（`local_run.py` 用 `LOCAL_DATABASE_URL`，默认 Docker PG）。
 5. 本地起环境：`docker compose up -d`；`cd backend/orchestrator && uv run --extra migrations alembic upgrade head`
-   （**空库快径是正路**，不要修历史迁移链；本机实测 → **105 表 / head `202610200003`**）。
+   （**空库快径是正路**，不要修历史迁移链；本机实测 → **106 表 / head `202610200005`**）。
    老库若停在半初始化状态（如 `202610180010` / 93 表、缺 `market_ports` 导致 `202610190020` 迁移失败），
    先 `ALTER DATABASE kaas_dev RENAME TO kaas_dev_legacy_<日期>` 保留数据，再建空库走快径。
    起完 `docker compose up -d backend` 后 `/health` 应 200 且 `shared.loaded=true`（本机实测）。
@@ -171,7 +171,7 @@ Neon 项目权限 · Resend 账号（`send.powervoy.com` 域名）· 生产域�
 | **F5 报价/订单 1:N** | 口径 A（用户拍板）：保留 1:N；新建订单校验币种一致 + 未取消订单金额累计 ≤ 报价合计（422 明细） |
 | **A1/A3/A8/A9** | 内容版本 / 字段体检 / 指纹对账 cron（每日 UTC 17:40）+ 列表「已变更」标识；**顺手修线上 bug**：`GET /trade-docs` 列表因 `_row_to_dict` 参数错必 500 |
 
-- 迁移 head：**`202610200003`**（新增结构，幂等）。
+- 迁移 head：**`202610200005`**（新增结构，幂等；2026-10-21 追加事实表与文件唯一索引）。
 - 门禁：worker **1008 passed + 5 skipped** / orchestrator **247** / frontend vitest **474** ·
   typecheck 0 · lint 0 error / contracts R0–R6 / schema-coverage、drift、runtime-deps、sync-shared PASS。
 - 配置：两把 Resend key 已持久化到 GitHub repo secrets（`RESEND_API_KEY_PROD` / `RESEND_API_KEY_PREVIEW`），
@@ -256,8 +256,8 @@ kaas-preview-storage；KV = `KAAS_PREVIEW`；Workers = `kaas`。
 ## 5. 发布检查单（迁移自旧交接 §7，**待用户下令**）
 
 1. 迁移：`DATABASE_URL=<PROD_DATABASE_URL> uv run --extra migrations alembic upgrade head`
-   → 期望 head **`202610200003`**（本分支新增 `202610200001` 内容版本表、`202610200002` 对账表、
-   `202610200003` 询盘阶段表/列；均为**新增**结构，幂等执行，不改既有列语义）。
+   → 期望 head **`202610200005`**（新增 `202610200001` 内容版本表、`202610200002` 对账表、
+   `202610200003` 询盘阶段表/列、`202610200004` 单证事实表、`202610200005` 文件当前版本唯一索引（`NULLS NOT DISTINCT`）；均为**新增/重建索引**结构，幂等执行，不改既有列语义；`202610200005` 发布前先跑迁移 docstring 里的查重 SQL，有重复 current 行先人工处置）。
 2. 补 secret：`cd backend/worker; npx wrangler secret put RESEND_API_KEY --name kaas`
    （值取本机 `.env.local` 的 **`RESEND_API_KEY_PROD`** —— 生产专用 key，2026-10-20 用户提供；
    本地开发继续用 `RESEND_API_KEY`，预览**不配**发信。版本管理未部署状态下普通 put 会被拦，
