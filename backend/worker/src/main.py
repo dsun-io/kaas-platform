@@ -3961,6 +3961,7 @@ def _reject_protected_custom(custom) -> None:
 # 历史事故：e5ab56e 删除本文件里的 11KB 镜像实现后调用点没改，运行期 NameError
 # （POST/GET/PATCH/render-data 全 500，静态 import 检查发现不了）。详见 doc_payload.py。
 import doc_payload as _dp  # noqa: E402
+import content_versions as _cv  # noqa: E402
 
 # 边表写入语句来自共享内核（与 orchestrator 同一份字符串，避免两端各写一条而漂移）
 from kaas_common.workstation.entity_links import LINK_INSERT_SQL  # noqa: E402
@@ -4372,6 +4373,19 @@ async def update_trade_doc(doc_id: int, request: Request, body: dict,
             DEFAULT_TENANT, doc_id, new_status,
             _json.dumps(raw_payload) if raw_payload is not None else None, now,
             new_doc_no,
+        )
+    # 内容级版本（TODO A1）：本次写入的整份 payload 留一版；仅当确实改了 payload 才记。
+    # 版本在 UPDATE 之后记：写失败就不该留下"从未生效"的版本行。
+    if raw_payload is not None:
+        await _cv.record_content_version(
+            db, request,
+            tenant_id=DEFAULT_TENANT, doc_id=doc_id, payload=raw_payload,
+            source=(
+                _cv.SOURCE_ISSUE
+                if new_status == "issued" and d["status"] == "draft"
+                else _cv.SOURCE_CUSTOM_UPDATE
+            ),
+            actor_id=str(user["id"]),
         )
     d2 = await db.fetchrow(request, "SELECT * FROM trade_docs WHERE tenant_id=$1 AND id=$2",
                            DEFAULT_TENANT, doc_id, table="trade_docs")
