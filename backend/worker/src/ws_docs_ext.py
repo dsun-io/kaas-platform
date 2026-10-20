@@ -77,6 +77,12 @@ import chain as _chain
 import content_versions as _cv
 import doc_payload as _doc_payload
 import main as _main
+# A7 单证加固（事实/一致性/lint/...）：**模块级** import（不是函数内惰性 import）。
+# 为什么：测试里每次 `load_main()` 都会重载 main 与全部同级路由模块（_bootstrap.py），
+# 若在函数体内才 `import ws_docs_hardening`，运行期拿到的是 sys.modules 里**后一次**
+# 重载的模块 → 它绑定的 main 不是当前 app 的 main → 它的 db 是真实连接（KeyError 'env' 500）。
+# 模块级 import 让「同一个 app 的 ws_docs_ext 一定用同一个 hardening 模块」。
+import ws_docs_hardening as _ws_hardening
 
 app = _main.app
 _get_current_user = _main._get_current_user
@@ -95,9 +101,14 @@ class TradeDocConfirmIn(BaseModel):
     失败策略（用户 2026-10-20 口径）：**PDF 失败不回滚签发** —— 签发是法律动作，
     归档是后续动作；响应里带 `pdf_archive: {ok:false, ...}`，界面提示手动上传兜底，
     绝不能因为渲染器没配就把"已签发"静默吞掉。
+
+    `allow_lint_override`（A7 加固，2026-10-20 新增）：越过签发前的事实层闸门
+    （`FACT_UNVERIFIED` / `FACT_IMMUTABLE` / `DOC_REF_BROKEN` / `DOC_SET_NOT_ALLOWED`）。
+    **默认不开放给前端**：只给明确的运维/紧急场景用，且越过必落审计事件。
     """
     html: Optional[str] = None
     pdf_name: Optional[str] = None
+    allow_lint_override: bool = False
 
 
 class TradeDocTranslateIn(BaseModel):
@@ -278,6 +289,26 @@ async def confirm_trade_doc(
                 "error": "validation", "code": "AMOUNT_MISMATCH",
                 "detail": str(exc),
             })
+
+    # ── A7 单证加固：签发前的事实层闸门（HARDENING_PLAN §4-A / §4-B / §4-D）──
+    # 四项 blocking：未确认事实（FACT_UNVERIFIED）/ 基线条款被改（FACT_IMMUTABLE）/
+    # 引用悬空（DOC_REF_BROKEN）/ 越权出单（DOC_SET_NOT_ALLOWED）。
+    # 判定全在共享内核与 ws_docs_hardening（G1：不在这里另写一遍）。
+    # 只读 payload + 事实表（**只用 db.fetch**），不改动上面任何既有校验链；
+    # 没有事实/清单/引用数据的单证 ⇒ blocking 为空 ⇒ 行为与改造前完全一致。
+    # 越过（allow_lint_override）默认不给前端，且必落审计 —— 见 ws_docs_hardening。
+    blocking = await _ws_hardening.confirm_blocking(request, _row_to_doc(d), items)
+    if blocking:
+        if not body.allow_lint_override:
+            first = blocking[0]
+            raise HTTPException(status_code=422, detail={
+                "error": "validation",
+                "code": first.get("code") or "FACT_UNVERIFIED",
+                "detail": first.get("detail") or "签发前存在未通过的加固检查",
+                "blocking": blocking,
+            })
+        await _ws_hardening.record_confirm_override(
+            request, _row_to_doc(d), user, blocking)
 
     payload = await _payload_with_render_fingerprint(request, doc_id, d, user)
     row = await db.fetchrow(

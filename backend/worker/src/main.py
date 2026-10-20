@@ -4885,6 +4885,11 @@ import ws_option_overrides  # noqa: E402,F401
 import ws_crm_ext  # noqa: E402,F401
 import ws_docs_ext  # noqa: E402,F401
 
+# ── 单证加固（A7-2）：事实层 / 跨单证一致性 / lint / 收款 / 单证清单 / 导出自检 ──
+# 内核纯函数在 kaas_common.trade_doc（facts|consistency|equivalents），本模块只做 HTTP 层。
+# 位置紧跟 ws_docs_ext：它是同一工位的加固面，`confirm` 闸门也从那里调用它。
+import ws_docs_hardening  # noqa: E402,F401
+
 # ── 团队（三层组织）管理 ──
 # 团队是生产端"公司级隔离"的那一层（Worker 是单租户部署，账号之间没有 tenant 隔离）。
 import ws_teams  # noqa: E402,F401
