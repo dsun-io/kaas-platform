@@ -194,7 +194,9 @@ const WRITE_RULES: readonly WriteRule[] = [
   { match: /\/inquiries(\/|$)/, collections: ["inquiries", "inquiryStageLog", "counters"] },
   { match: /\/quotes(\/|$)/, collections: ["quotes", "counters"] },
   { match: /\/quotations(\/|$)/, collections: ["quotations"] },
-  { match: /\/trade-docs(\/|$)/, collections: ["docs", "docFileLinks", "contentVersions", "counters"] },
+  // A7 加固三集合（docFacts / docReceipts / docSet）都挂在 trade-docs 下：
+  // 确认事实、登记收款、改单证清单都是单证域的写操作。
+  { match: /\/trade-docs(\/|$)/, collections: ["docs", "docFileLinks", "contentVersions", "docFacts", "docReceipts", "docSet", "counters"] },
   { match: /\/file-objects(\/|$)/, collections: ["fileObjects", "counters"] },
   { match: /\/tenant-products(\/|$)/, collections: ["tenantProducts", "tenantProductStatus", "productProfiles", "fileObjects", "counters"] },
   { match: /\/tenant-product-status$/, collections: ["tenantProductStatus"] },

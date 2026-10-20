@@ -42,12 +42,18 @@ import { usePageView } from "@/lib/events/use-page-view";
 import { usePersistentState } from "@/lib/hooks/use-persistent-state";
 import { cn } from "@/lib/utils";
 import { renderTradeDoc } from "@/lib/trade-doc/render";
+import { parseConfirmBlocked, type ConfirmBlocked } from "@/lib/trade-doc/hardening";
 import { autoArchiveIssuedDoc } from "@/lib/trade-doc/auto-archive";
 import { exportCsv, exportExcel, printMerged } from "@/lib/trade-doc/export";
 
 import { DocCreateForm } from "./components/doc-create-form";
+import { DocConfirmGate } from "./components/doc-confirm-gate";
 import { DocContentVersions } from "./components/doc-content-versions";
 import { DocCustomForm } from "./components/doc-custom-form";
+import {
+  DocHardeningSection,
+  type HardeningTab,
+} from "./components/doc-hardening-section";
 import { DocRenderCheckBadge } from "./components/doc-render-check-badge";
 import { DocStampReturn } from "./components/doc-stamp-return";
 import { DocPreview, renderMetaOf } from "./components/doc-preview";
@@ -111,6 +117,9 @@ export default function TradeDocsPage() {
   const [showImport, setShowImport] = useState(false);
   const [docNoEdit, setDocNoEdit] = useState<TradeDocRow | null>(null);
   const [docNoError, setDocNoError] = useState<string | null>(null);
+  // A7 加固：签发被事实层闸门拦下时的阻断清单（不是 toast —— 要能逐条看、能跳去确认）
+  const [confirmBlocked, setConfirmBlocked] = useState<ConfirmBlocked | null>(null);
+  const [hardeningTab, setHardeningTab] = useState<HardeningTab>("facts");
   const [density, setDensity] = usePersistentState<"cozy" | "compact">(
     "ui:trade-docs:density",
     "cozy",
@@ -137,6 +146,10 @@ export default function TradeDocsPage() {
   const renderData = useTradeDocRenderData(selectedId);
   const update = useUpdateTradeDoc();
   const refresh = useRefreshSources();
+
+  // 换单证时清掉上一张的阻断清单：在选中事件里清（见列表「预览」按钮），
+  // 不用 useEffect —— effect 里 setState 会触发 react-hooks/set-state-in-effect
+  // 告警、且多跑一轮渲染。
 
   const rows = list.data?.items ?? [];
 
@@ -256,6 +269,7 @@ export default function TradeDocsPage() {
           { id: row.id, status, html, pdf_name: row.doc_no },
           {
             onSuccess: (doc) => {
+              setConfirmBlocked(null);
               const archived = (doc as { pdf_archive?: PdfArchiveResult })
                 .pdf_archive;
               if (archived?.ok) {
@@ -268,7 +282,16 @@ export default function TradeDocsPage() {
                 if (result.ok) toast.success(result.message);
               });
             },
-            onError: () => toast.error("签发失败，请重试"),
+            onError: (error) => {
+              // A7：签发闸门返回 422 + `detail.blocking` ⇒ 展开阻断清单，
+              // **不**只弹一句"签发失败"（否则用户不知道去确认哪项事实）
+              const blocked = parseConfirmBlocked(error);
+              if (blocked) {
+                setConfirmBlocked(blocked);
+                return;
+              }
+              toast.error("签发失败，请重试");
+            },
           },
         );
       } catch {
@@ -550,7 +573,13 @@ export default function TradeDocsPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => setSelectedId(row.id)}
+                            onClick={() => {
+                      // 换一张单证就清掉上一张的阻断清单（否则 A 单的阻断会挂在 B 单下面；
+                      // 用事件里清而不是 useEffect —— effect 里 setState 会触发
+                      // react-hooks/set-state-in-effect 告警且多一轮渲染）
+                      setConfirmBlocked(null);
+                      setSelectedId(row.id);
+                    }}
                           >
                             预览
                           </Button>
@@ -626,7 +655,13 @@ export default function TradeDocsPage() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => setSelectedId(row.id)}
+                    onClick={() => {
+                      // 换一张单证就清掉上一张的阻断清单（否则 A 单的阻断会挂在 B 单下面；
+                      // 用事件里清而不是 useEffect —— effect 里 setState 会触发
+                      // react-hooks/set-state-in-effect 告警且多一轮渲染）
+                      setConfirmBlocked(null);
+                      setSelectedId(row.id);
+                    }}
                   >
                     预览
                   </Button>
@@ -694,6 +729,20 @@ export default function TradeDocsPage() {
               />
               {/* 盖章回传不受"已签发冻结"限制：客户是签发**之后**才盖章回传的 */}
               <DocStampReturn docId={renderData.data.doc.id} />
+              {/* A7 加固：签发被事实层闸门拦下时，在这里逐条列出阻断项 */}
+              <DocConfirmGate
+                blocked={confirmBlocked}
+                onGoToFacts={() => setHardeningTab("facts")}
+                onDismiss={() => setConfirmBlocked(null)}
+              />
+              {/* A7 加固：事实确认 / 一致性 / 收款 / 单证清单 */}
+              <DocHardeningSection
+                docId={renderData.data.doc.id}
+                status={renderData.data.doc.status}
+                currency={renderData.data.doc.currency}
+                tab={hardeningTab}
+                onTabChange={setHardeningTab}
+              />
               <DocPreview
                 docType={renderData.data.doc.doc_type}
                 docNo={renderData.data.doc.doc_no}

@@ -21,6 +21,15 @@ import {
   SUBSCRIBABLE_WORKSTATIONS,
 } from "@/lib/workstation/visibility";
 import tradeDocSample from "@/lib/trade-doc/sample-data.json";
+// 收款容差公式与枚举取**唯一真源**（`receipt_rules.py` 的前端镜像，见文件头），
+// 避免 mock 里再抄一份阈值/币种表 —— 抄了迟早和内核漂移。
+import {
+  CURRENCIES,
+  DOC_SET_ISSUERS,
+  DOC_SET_ROLES,
+  SCHEDULE_TYPES,
+  receiptTolerance,
+} from "@/lib/trade-doc/hardening";
 import {
   MOCK_EXPORT_FORMULAS,
   MOCK_EXPORT_PRODUCTS,
@@ -797,6 +806,483 @@ const DOC_RENDER_CHECKS: Record<number, MockRenderCheck | null> = {
     checked_at: "2026-10-20T01:00:00Z",
   },
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// A7 单证加固（事实 / 一致性 / lint / 收款 / 单证清单）
+//
+// 形状真源 = `backend/worker/src/ws_docs_hardening.py`（10 个端点，2026-10-21）。
+// MSW 跑不了 Python 内核 ⇒ 事实推导、差异判定、核销容差在这里**按同一口径简单复刻**，
+// 只保证「形状 + 可手测的故事」；业务真值一律以后端为准（下文逐处标注）。
+//
+// 手测故事（`?mock_reset=1` 回种子后即可复现）：
+//   · 单证 1（PI，order 9）—— 有**待确认**的付款条款（`payment_terms` 未确认）
+//     ⇒ 「事实确认」面板顶部"待确认 ≥1"、列表该行高亮；
+//     「一致性」面板同时能看到与单证 2 的冲突（总金额 12300 vs 9800）、
+//     等价措辞（付款条款两种写法）、缺失（单证 2 没有交付条款）三档；
+//   · 单证 3（草稿 PI）—— 事实未确认 ⇒ 点「签发」会被闸门拦下（422 FACT_UNVERIFIED），
+//     界面展开阻断清单；去事实面板「全部确认」后再签发即成功。
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** 事实信任级（内核 `TRUST_LEVELS`）。 */
+type MockFactTrust = "confirmed" | "unverified" | "inferred";
+
+/** 单条事实的形状 = `ws_docs_hardening._fact_dict()`（value 只读）。 */
+type MockFact = {
+  key: string;
+  value: string;
+  trust: MockFactTrust;
+  source: string | null;
+  immutable: boolean;
+  text_zh: string | null;
+  text_en: string | null;
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+  evidence_ref: string | null;
+  currency: string | null;
+};
+
+function fact(over: Partial<MockFact> & { key: string; value: string }): MockFact {
+  return {
+    trust: "confirmed",
+    source: "payload",
+    immutable: false,
+    text_zh: null,
+    text_en: null,
+    confirmed_by: String(MOCK_ADMIN_USER.user_id),
+    confirmed_at: "2026-10-20T02:00:00Z",
+    evidence_ref: null,
+    currency: null,
+    ...over,
+  };
+}
+
+/**
+ * 每张单证的事实种子（真实环境由 `extract_facts` 从 payload 推导，mock 直接给结果）。
+ *
+ * 刻意保留的演示点：单证 1 的 `payment_terms` 是 `unverified`（付款条款解析结果一律
+ * 待确认 —— 这是 A7 的**主路径**动因，不是 mock 编的）；
+ * 单证 2 与单证 1 同属 order 9，用于演示一致性三档。
+ */
+const DOC_FACT_SEEDS: Record<number, MockFact[]> = {
+  1: [
+    fact({ key: "doc_no", value: "PI-202610-0001", immutable: true }),
+    fact({
+      key: "customer_name",
+      value: "联佳丝网",
+      text_zh: "联佳丝网",
+      text_en: "Lianjia Wire Mesh",
+    }),
+    fact({ key: "currency", value: "USD", immutable: true }),
+    fact({
+      key: "total_amount",
+      value: "12300",
+      immutable: true,
+      currency: "USD",
+    }),
+    // 付款条款：内核 `IMMUTABLE_KEYS` 里的条款类事实，且解析结果一律 unverified
+    fact({
+      key: "payment_terms",
+      value: "30% T/T 预付，余款见提单副本",
+      trust: "unverified",
+      immutable: true,
+      source: "parsed:payment_terms",
+      text_zh: "30% T/T 预付，余款见提单副本",
+      text_en: "30% T/T in advance, balance against copy of B/L",
+      confirmed_by: null,
+      confirmed_at: null,
+      evidence_ref: "合同第 5 条",
+    }),
+    // 贸易术语：immutable 且派生单（CI）通常不携带 ⇒ 一致性里是"缺失"档
+    fact({
+      key: "incoterm",
+      value: "FOB Ningbo",
+      trust: "inferred",
+      immutable: true,
+      source: "parsed:incoterm",
+      text_zh: "FOB 宁波",
+      text_en: "FOB Ningbo",
+      confirmed_by: null,
+      confirmed_at: null,
+    }),
+  ],
+  2: [
+    fact({ key: "doc_no", value: "CI-202609-0001", immutable: true }),
+    fact({ key: "currency", value: "USD", immutable: true }),
+    // 与基线（单证 1）的 12300 超出金额容差 ⇒ 一致性里是冲突（error）
+    fact({
+      key: "total_amount",
+      value: "9800",
+      immutable: true,
+      currency: "USD",
+    }),
+    // 与单证 1 只差空格/标点 ⇒ 等价措辞（warning），不是冲突
+    fact({
+      key: "payment_terms",
+      value: "30%T/T 预付,余款见提单副本",
+      immutable: true,
+      text_zh: "30%T/T 预付,余款见提单副本",
+      text_en: "30%T/T advance, balance against copy of B/L",
+    }),
+    // 没有 incoterm（immutable 的基线事实缺失）⇒ 一致性里是"缺失"（灰）
+  ],
+  3: [
+    fact({ key: "doc_no", value: "PI-202609-0002", immutable: true }),
+    fact({ key: "currency", value: "USD", immutable: true }),
+    fact({
+      key: "total_amount",
+      value: "8000",
+      trust: "unverified",
+      currency: "USD",
+      confirmed_by: null,
+      confirmed_at: null,
+    }),
+    fact({
+      key: "payment_terms",
+      value: "30% T/T 预付，余款见提单副本",
+      trust: "unverified",
+      source: "parsed:payment_terms",
+      text_zh: "30% T/T 预付，余款见提单副本",
+      text_en: "30% T/T in advance, balance against copy of B/L",
+      confirmed_by: null,
+      confirmed_at: null,
+      evidence_ref: "合同第 5 条",
+    }),
+  ],
+  4: [
+    fact({ key: "doc_no", value: "QUO-202610-0002", immutable: true }),
+    fact({ key: "currency", value: "USD", immutable: true }),
+    fact({ key: "total_amount", value: "3612.36", currency: "USD" }),
+  ],
+};
+
+/** 收款记录形状 = `list_trade_doc_receipts`（金额是 `decimal_text` 后的字符串）。 */
+type MockDocReceipt = {
+  id: number;
+  /** 归属单证（真实行 = `trade_doc_receipts.trade_doc_id`，`SELECT *` 会带出来） */
+  trade_doc_id: number;
+  schedule_type: string | null;
+  schedule_amount: string | null;
+  received_amount: string;
+  currency: string;
+  received_at: string;
+  bank_ref: string | null;
+  notes: string | null;
+  diff: string;
+  diff_reason: "fx_rounding" | "short_paid" | "manual";
+  fx_rate_used: string | null;
+  status: "reconciled" | "short_paid" | "manual";
+  created_by: string | null;
+  created_at: string;
+};
+
+/** 三笔种子覆盖三种徽标：自动核销 / 短收挂账 / 手工登记。 */
+const DOC_RECEIPT_SEEDS: MockDocReceipt[] = [
+  {
+    id: 1,
+    trade_doc_id: 1,
+    schedule_type: "deposit",
+    schedule_amount: "3690.00",
+    received_amount: "3689.98",
+    currency: "USD",
+    received_at: "2026-10-15T03:00:00Z",
+    bank_ref: "TT-20261015001",
+    notes: "订金到账，银行手续费扣了 0.02",
+    diff: "-0.02",
+    diff_reason: "fx_rounding",
+    fx_rate_used: null,
+    status: "reconciled",
+    created_by: "1",
+    created_at: "2026-10-15T03:00:00Z",
+  },
+  {
+    id: 2,
+    trade_doc_id: 1,
+    schedule_type: "balance",
+    schedule_amount: "8610.00",
+    received_amount: "8000.00",
+    currency: "USD",
+    received_at: "2026-10-18T05:00:00Z",
+    bank_ref: "TT-20261018007",
+    notes: "客户以质量问题压价 610",
+    diff: "-610.00",
+    diff_reason: "short_paid",
+    fx_rate_used: null,
+    status: "short_paid",
+    created_by: "1",
+    created_at: "2026-10-18T05:00:00Z",
+  },
+  {
+    id: 3,
+    trade_doc_id: 1,
+    schedule_type: null,
+    schedule_amount: null,
+    received_amount: "1000.00",
+    currency: "USD",
+    received_at: "2026-10-19T06:00:00Z",
+    bank_ref: null,
+    notes: "手工登记（无账期）",
+    diff: "0",
+    diff_reason: "manual",
+    fx_rate_used: null,
+    status: "manual",
+    created_by: "1",
+    created_at: "2026-10-19T06:00:00Z",
+  },
+];
+
+/** 单证清单项形状 = `_doc_set_dict()`。 */
+type MockDocSetItem = {
+  doc_type: string;
+  role: "required" | "optional" | "not_by_us";
+  issuer: "ours" | "buyer" | "third_party:ccpit" | "carrier" | "insurer";
+  trigger_expr: string | null;
+  evidence_required: boolean;
+  status: "pending" | "received" | "waived";
+  waived_reason: string | null;
+  received_doc_id: number | null;
+  received_at: string | null;
+};
+
+const DOC_SET_SEEDS: Record<number, MockDocSetItem[]> = {
+  // 单证 1 的清单含一项 not_by_us（对方出单）⇒ 面板上出现「登记回执 / 豁免」
+  1: [
+    {
+      doc_type: "pl",
+      role: "required",
+      issuer: "ours",
+      trigger_expr: null,
+      evidence_required: false,
+      status: "pending",
+      waived_reason: null,
+      received_doc_id: null,
+      received_at: null,
+    },
+    {
+      doc_type: "co",
+      role: "not_by_us",
+      issuer: "third_party:ccpit",
+      trigger_expr: null,
+      evidence_required: true,
+      status: "pending",
+      waived_reason: null,
+      received_doc_id: null,
+      received_at: null,
+    },
+  ],
+  3: [
+    {
+      doc_type: "pi",
+      role: "required",
+      issuer: "ours",
+      trigger_expr: null,
+      evidence_required: false,
+      status: "pending",
+      waived_reason: null,
+      received_doc_id: null,
+      received_at: null,
+    },
+  ],
+};
+
+/** 表内处置叠加的"存储"：key 是 docId（真实环境是 `trade_doc_facts` 表）。 */
+const docFactsStore = new Map<number, MockFact[]>();
+const docReceiptsStore: MockDocReceipt[] = [];
+let docReceiptSeq = 1;
+const docSetStore = new Map<number, MockDocSetItem[]>();
+
+/** lint 的 warning 种子：真实由内核按行项目推导合计比对（`_amount_conflicts`），
+ *  mock 没有行项目推导，用一条固定 warning 演示"黄档不阻断"的呈现。 */
+const DOC_LINT_WARNING_SEEDS: Record<number, Array<Record<string, string>>> = {
+  1: [
+    {
+      code: "FACT_CONFLICT",
+      key: "total_amount",
+      detail: "单证合计与行项目推导合计不一致（推导 12500.00 vs 单证 12300）",
+      expected: "12500.00",
+      provided: "12300",
+    },
+  ],
+};
+
+function seedHardeningStores(): void {
+  docFactsStore.clear();
+  for (const [docId, rows] of Object.entries(DOC_FACT_SEEDS)) {
+    docFactsStore.set(Number(docId), clone(rows));
+  }
+  for (const [docId, rows] of Object.entries(DOC_SET_SEEDS)) {
+    docSetStore.set(Number(docId), clone(rows));
+  }
+  docReceiptsStore.splice(0, docReceiptsStore.length, ...clone(DOC_RECEIPT_SEEDS));
+  docReceiptSeq =
+    docReceiptsStore.reduce((max, r) => Math.max(max, r.id), 0) + 1;
+}
+
+function factsOf(docId: number): MockFact[] {
+  let rows = docFactsStore.get(docId);
+  if (!rows) {
+    rows = [];
+    docFactsStore.set(docId, rows);
+  }
+  return rows;
+}
+
+function factsSummary(facts: MockFact[]) {
+  return {
+    total: facts.length,
+    confirmed: facts.filter((f) => f.trust === "confirmed").length,
+    unverified: facts.filter((f) => f.trust === "unverified").length,
+    inferred: facts.filter((f) => f.trust === "inferred").length,
+  };
+}
+
+/** 身份事实：内核 `consistency.IDENTITY_KEYS` —— 跨单证比较时**排除**
+ *  （PI 的 doc_no 和 CI 的 doc_no 本来就不同，比它等于每张单都"冲突"）。 */
+const HARDENING_IDENTITY_KEYS = new Set(["doc_no", "date"]);
+
+/** 文本归一（去大小写/空白/标点）—— 等价措辞判定用；内核口径见
+ *  `kaas_common/trade_doc/consistency.py:equivalent`。mock 只做这一层近似。 */
+function squashWording(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[\s，,。.；;：:、"'“”‘’()（）\-_/]/g, "");
+}
+
+/** 金额类事实按容差比（与内核 `values_equal` 的 money 分支同口径）。 */
+function moneyEqual(base: string, other: string, currency: string): boolean {
+  const left = Number(base);
+  const right = Number(other);
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return base === other;
+  return Math.abs(left - right) <= receiptTolerance(currency || "USD", left);
+}
+
+/** 同一交易域的兄弟单证（order → quote → 自身，与 `_domain_docs` 同退化顺序）。 */
+function hardeningDomainOf(docId: number): { root: string; docs: number[] } {
+  const self = docsStore.find((d) => Number(d.id) === docId);
+  const orderId = self?.order_id;
+  if (orderId !== null && orderId !== undefined) {
+    const ids = docsStore
+      .filter((d) => d.order_id === orderId && d.status !== "void")
+      .map((d) => Number(d.id));
+    if (ids.length > 0) return { root: `order:${orderId}`, docs: ids };
+  }
+  const quoteId = self?.quote_id;
+  if (quoteId !== null && quoteId !== undefined) {
+    const ids = docsStore
+      .filter((d) => d.quote_id === quoteId && d.status !== "void")
+      .map((d) => Number(d.id));
+    if (ids.length > 0) return { root: `quote:${quoteId}`, docs: ids };
+  }
+  return { root: `doc:${docId}`, docs: [docId] };
+}
+
+/** 一致性三档（§4-B）—— 复刻 `get_trade_doc_consistency` 的两段式判定：
+ *  ① `diff_facts`：**共有 key** 值不同 → 冲突 / 归一后相同 → 等价措辞
+ *     （身份事实 `doc_no`/`date` 除外；金额走容差）；
+ *  ② `lint_pair`：基线**immutable** 事实在派生单里缺失 → 缺失档（内核只对
+ *     immutable 报缺失：派生单不必须携带每条基线事实）。 */
+function consistencyFor(docId: number) {
+  const domain = hardeningDomainOf(docId);
+  const withFacts = domain.docs.filter((id) => factsOf(id).length > 0);
+  if (withFacts.length === 0) {
+    return {
+      ok: true,
+      domain: { root: domain.root, doc_ids: domain.docs.map(String) },
+      items: [] as Array<Record<string, unknown>>,
+    };
+  }
+  const baselineDoc = String([...withFacts].sort((a, b) => a - b)[0]);
+  const baselineFacts = factsOf(Number(baselineDoc));
+  const baseline = new Map(baselineFacts.map((f) => [f.key, f]));
+  const items: Array<Record<string, unknown>> = [];
+  const currency = baseline.get("currency")?.value ?? "USD";
+
+  for (const id of withFacts.map(String)) {
+    if (id === baselineDoc) continue;
+    const currentFacts = factsOf(Number(id));
+    const current = new Map(currentFacts.map((f) => [f.key, f]));
+
+    // ① diff：只比两边都有、且不是身份事实的 key
+    for (const [key, base] of baseline) {
+      if (HARDENING_IDENTITY_KEYS.has(key)) continue;
+      const other = current.get(key);
+      if (!other || other.value === base.value) continue;
+      const equivalent =
+        key === "total_amount"
+          ? moneyEqual(base.value, other.value, base.currency ?? currency)
+          : squashWording(other.value) === squashWording(base.value);
+      if (equivalent && key === "total_amount") continue; // 容差内就等价于相同
+      items.push({
+        severity: equivalent ? "warning" : "error",
+        code: equivalent ? "FACT_EQUIVALENT_WORDING" : "FACT_CONFLICT",
+        key,
+        status: equivalent ? "equivalent" : "conflict",
+        baseline_doc: baselineDoc,
+        values: { [baselineDoc]: base.value, [id]: other.value },
+        detail: equivalent
+          ? `单证 ${id} 与基线措辞不同但语义等价（「${other.value}」vs「${base.value}」）`
+          : `单证 ${id} 与基线取值不同（${other.value} vs ${base.value}）`,
+      });
+    }
+
+    // ② 承继核对：immutable 的基线事实没被承继 ⇒ 缺失（内核 lint_pair 只报这类）
+    for (const [key, base] of baseline) {
+      if (!base.immutable || HARDENING_IDENTITY_KEYS.has(key)) continue;
+      if (current.has(key)) continue;
+      items.push({
+        severity: "error",
+        code: "FACT_MISSING",
+        key,
+        status: "missing",
+        baseline_doc: baselineDoc,
+        values: { [baselineDoc]: base.value },
+        detail: `单证 ${id} 没有承继不可改写事实「${key}」（基线值 ${base.value}）`,
+      });
+    }
+  }
+  return {
+    ok: !items.some((item) => item["severity"] === "error"),
+    domain: { root: domain.root, doc_ids: domain.docs.map(String) },
+    items,
+  };
+}
+
+/** 签发闸门（§4-A/C/D 的 mock 复刻）：未确认事实 + 清单越权出单。 */
+function blockingFor(docId: number): Array<Record<string, unknown>> {
+  const blocking: Array<Record<string, unknown>> = [];
+  const unverified = factsOf(docId).filter((f) => f.trust !== "confirmed");
+  if (unverified.length > 0) {
+    blocking.push({
+      code: "FACT_UNVERIFIED",
+      keys: unverified.map((f) => f.key),
+      detail: `存在未确认事实：${unverified
+        .map((f) => f.key)
+        .join("、")} —— 逐项核对后确认才能签发（未确认值导出为 TBC）`,
+      evidence_ref: unverified[0]?.evidence_ref ?? null,
+    });
+  }
+  // 清单说"对方出单"，但我方真的开了同类型单据 ⇒ 越权出单（§4-C）
+  const notByUs = (docSetStore.get(docId) ?? []).filter(
+    (item) => item.role === "not_by_us",
+  );
+  for (const item of notByUs) {
+    const clash = docsStore.find(
+      (d) =>
+        d.doc_type === item.doc_type &&
+        Number(d.id) !== docId &&
+        d.status !== "void",
+    );
+    if (clash) {
+      blocking.push({
+        code: "DOC_SET_NOT_ALLOWED",
+        doc_type: item.doc_type,
+        doc_id: Number(clash.id),
+        doc_no: clash.doc_no,
+        detail: `清单把「${item.doc_type}」标为对方出单，但同交易域已存在我方单据 ${clash.doc_no}`,
+      });
+    }
+  }
+  return blocking;
+}
 
 /** 询盘状态机（真源 = `worker/src/ws_crm_ext.py:_INQUIRY_NEXT`）。 */
 const INQUIRY_NEXT: Record<string, readonly string[]> = {
@@ -1766,6 +2252,8 @@ function seedMockData(): void {
 
   // P1 组 store（单证/产品/团队/税档/企业信息/公章/文件）一并回到种子
   seedP1Stores();
+  // A7 单证加固 store（事实处置 / 收款登记 / 单证清单）
+  seedHardeningStores();
   // C18 长尾域 store
   seedLongtailMockData();
 }
@@ -1850,6 +2338,46 @@ function registerCoreMockCollections(): void {
     (value) => {
       if (!Array.isArray(value)) return;
       docsStore.splice(0, docsStore.length, ...clone(value as typeof docsStore));
+    },
+  );
+  // A7 加固三集合：事实处置（确认/信任级/双语/证据）、收款登记、单证清单。
+  // 都按 docId → 数组的 Map 存，序列化形态是 `[docId, rows][]`（Map 不能直接 JSON）。
+  registerMockCollection(
+    "docFacts",
+    () => [...docFactsStore.entries()],
+    (value) => {
+      if (!Array.isArray(value)) return;
+      docFactsStore.clear();
+      for (const entry of value) {
+        if (Array.isArray(entry) && entry.length === 2) {
+          docFactsStore.set(Number(entry[0]), clone(entry[1] as MockFact[]));
+        }
+      }
+    },
+  );
+  registerMockCollection(
+    "docReceipts",
+    () => clone(docReceiptsStore),
+    (value) => {
+      if (!Array.isArray(value)) return;
+      docReceiptsStore.splice(
+        0,
+        docReceiptsStore.length,
+        ...clone(value as MockDocReceipt[]),
+      );
+    },
+  );
+  registerMockCollection(
+    "docSet",
+    () => [...docSetStore.entries()],
+    (value) => {
+      if (!Array.isArray(value)) return;
+      docSetStore.clear();
+      for (const entry of value) {
+        if (Array.isArray(entry) && entry.length === 2) {
+          docSetStore.set(Number(entry[0]), clone(entry[1] as MockDocSetItem[]));
+        }
+      }
     },
   );
   registerMockCollection(
@@ -3594,6 +4122,26 @@ export const handlers = [
       string,
       unknown
     >;
+    // A7 签发闸门（真源 `ws_docs_ext.confirm_trade_doc` 的 422）：
+    // 有未确认事实/越权出单 ⇒ 422 + `detail.blocking`。界面据此展开阻断清单，
+    // **不是**只弹一句"签发失败"（否则用户不知道该去哪确认）。
+    if (body.status === "issued") {
+      const blocking = blockingFor(Number(params.id));
+      if (blocking.length > 0) {
+        const first = blocking[0] ?? {};
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "validation",
+              code: String(first["code"] ?? "FACT_UNVERIFIED"),
+              detail: String(first["detail"] ?? "签发前存在未通过的加固检查"),
+              blocking,
+            },
+          },
+          { status: 422 },
+        );
+      }
+    }
     for (const key of ["doc_no", "status", "raw_payload"] as const) {
       if (key in body) doc[key] = body[key];
     }
@@ -3992,6 +4540,489 @@ export const handlers = [
         doc: doc ?? { id: docId, raw_payload: target.raw_payload },
         restored_version_no: versionNo,
       });
+    },
+  ),
+
+  // ── A7 单证加固（事实 / 一致性 / lint / 收款 / 单证清单）──────────────────
+  // 形状真源：`backend/worker/src/ws_docs_hardening.py`。错误体统一
+  // `{detail: {error, code, detail}}`（与后端 `_error()` 同形）。
+  // 注：`POST .../verify-export` **故意不在这里注册** —— 前端不接该 UI
+  // （需 PDF 文本/图片抽取能力，任务口径"暂不接"），mock 一个假成功比缺失更糟。
+
+  http.get("/api/v1/trade-docs/:id/facts", ({ params }) => {
+    const id = Number(params.id);
+    const doc = docsStore.find((d) => Number(d.id) === id);
+    if (!doc) {
+      return HttpResponse.json({ detail: { error: "not_found" } }, { status: 404 });
+    }
+    const facts = factsOf(id);
+    return HttpResponse.json({
+      doc_id: id,
+      doc_type: doc.doc_type,
+      doc_no: doc.doc_no,
+      status: doc.status,
+      items: facts,
+      summary: factsSummary(facts),
+    });
+  }),
+
+  http.post("/api/v1/trade-docs/:id/facts/confirm", async ({ params, request }) => {
+    const id = Number(params.id);
+    const doc = docsStore.find((d) => Number(d.id) === id);
+    if (!doc) {
+      return HttpResponse.json({ detail: { error: "not_found" } }, { status: 404 });
+    }
+    if (doc.status === "void") {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "conflict",
+            code: "DOC_NOT_EDITABLE",
+            detail: "作废单据的事实处置不可再修改",
+          },
+        },
+        { status: 409 },
+      );
+    }
+    const body = (await request.json().catch(() => ({}))) as { keys?: unknown };
+    const keys = Array.isArray(body.keys) ? body.keys.map(String) : [];
+    const facts = factsOf(id);
+    const byKey = new Map(facts.map((f) => [f.key, f]));
+    if (keys.length > 0) {
+      const unknown = keys.filter((key) => !byKey.has(key));
+      if (unknown.length > 0) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "validation",
+              code: "FACT_KEY_UNKNOWN",
+              detail: `以下事实键不存在于本单证：${unknown.join(", ")}`,
+              keys: unknown,
+            },
+          },
+          { status: 422 },
+        );
+      }
+    }
+    const targets =
+      keys.length > 0
+        ? keys.map((key) => byKey.get(key)).filter((f): f is MockFact => !!f)
+        : facts.filter((f) => f.trust !== "confirmed");
+    for (const target of targets) {
+      target.trust = "confirmed";
+      target.confirmed_by = String(MOCK_ADMIN_USER.user_id);
+      target.confirmed_at = nowIso();
+    }
+    return HttpResponse.json({
+      doc_id: id,
+      confirmed: targets.map((f) => f.key),
+      summary: factsSummary(facts),
+    });
+  }),
+
+  http.patch(
+    "/api/v1/trade-docs/:id/facts/:factKey",
+    async ({ params, request }) => {
+      const id = Number(params.id);
+      const doc = docsStore.find((d) => Number(d.id) === id);
+      if (!doc) {
+        return HttpResponse.json({ detail: { error: "not_found" } }, { status: 404 });
+      }
+      if (doc.status === "void") {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "conflict",
+              code: "DOC_NOT_EDITABLE",
+              detail: "作废单据的事实处置不可再修改",
+            },
+          },
+          { status: 409 },
+        );
+      }
+      const body = (await request.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
+      // value 只读：后端 422 FACT_VALUE_IMMUTABLE_STORAGE（"同一条事实两个真相"）
+      if ("value" in body) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "validation",
+              code: "FACT_VALUE_IMMUTABLE_STORAGE",
+              detail:
+                "事实的值由单证 payload 决定，不接受直接修改；要改值请改单证内容或作废重开",
+            },
+          },
+          { status: 422 },
+        );
+      }
+      const factKey = String(params.factKey);
+      const target = factsOf(id).find((f) => f.key === factKey);
+      if (!target) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "not_found",
+              code: "FACT_NOT_FOUND",
+              detail: `单证 ${id} 上没有事实「${factKey}」`,
+            },
+          },
+          { status: 404 },
+        );
+      }
+      if (typeof body.trust === "string") {
+        if (!["confirmed", "unverified", "inferred"].includes(body.trust)) {
+          return HttpResponse.json(
+            {
+              detail: {
+                error: "validation",
+                code: "INVALID_ENUM",
+                detail: `未知信任级：${body.trust}`,
+              },
+            },
+            { status: 422 },
+          );
+        }
+        target.trust = body.trust as MockFactTrust;
+      }
+      if (typeof body.immutable === "boolean") target.immutable = body.immutable;
+      for (const key of ["text_zh", "text_en", "evidence_ref"] as const) {
+        if (key in body) {
+          target[key] =
+            body[key] === null || body[key] === "" ? null : String(body[key]);
+        }
+      }
+      return HttpResponse.json({ doc_id: id, item: target });
+    },
+  ),
+
+  http.get("/api/v1/trade-docs/:id/consistency", ({ params }) => {
+    return HttpResponse.json(consistencyFor(Number(params.id)));
+  }),
+
+  http.post("/api/v1/trade-docs/:id/lint", ({ params }) => {
+    const id = Number(params.id);
+    const blocking = blockingFor(id);
+    const warnings = DOC_LINT_WARNING_SEEDS[id] ?? [];
+    return HttpResponse.json({
+      doc_id: id,
+      ok: blocking.length === 0,
+      blocking,
+      warnings,
+      summary: {
+        blocking: blocking.length,
+        warnings: warnings.length,
+        facts: factsSummary(factsOf(id)),
+      },
+    });
+  }),
+
+  http.get("/api/v1/trade-docs/:id/receipts", ({ params }) => {
+    const id = Number(params.id);
+    const items = docReceiptsStore
+      .filter((receipt) => receipt.trade_doc_id === id)
+      .slice()
+      .sort((a, b) => (a.received_at < b.received_at ? 1 : -1));
+    return HttpResponse.json({ doc_id: id, items, total: items.length });
+  }),
+
+  http.post("/api/v1/trade-docs/:id/receipts", async ({ params, request }) => {
+    const id = Number(params.id);
+    const doc = docsStore.find((d) => Number(d.id) === id);
+    if (!doc) {
+      return HttpResponse.json({ detail: { error: "not_found" } }, { status: 404 });
+    }
+    if (doc.status === "void") {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "conflict",
+            code: "DOC_NOT_EDITABLE",
+            detail: "作废单据不可再登记收款",
+          },
+        },
+        { status: 409 },
+      );
+    }
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    const currency = String(body.currency ?? doc.currency ?? "USD").toUpperCase();
+    if (!CURRENCIES.includes(currency as (typeof CURRENCIES)[number])) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "INVALID_ENUM",
+            detail: `未知币种：${currency}`,
+          },
+        },
+        { status: 422 },
+      );
+    }
+    if (
+      body.schedule_type !== null &&
+      body.schedule_type !== undefined &&
+      body.schedule_type !== "" &&
+      !SCHEDULE_TYPES.includes(body.schedule_type as (typeof SCHEDULE_TYPES)[number])
+    ) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "INVALID_ENUM",
+            detail: `未知账期类型：${String(body.schedule_type)}`,
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const received = Number(body.received_amount);
+    if (!Number.isFinite(received)) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "INVALID_RECEIPT",
+            detail: `实收金额非法：${String(body.received_amount)}`,
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const rawSchedule = body.schedule_amount;
+    const hasSchedule =
+      rawSchedule !== null && rawSchedule !== undefined && rawSchedule !== "";
+    const schedule = hasSchedule ? Number(rawSchedule) : null;
+    if (hasSchedule && !Number.isFinite(schedule as number)) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "INVALID_RECEIPT",
+            detail: `账期金额非法：${String(rawSchedule)}`,
+          },
+        },
+        { status: 422 },
+      );
+    }
+    // 容差口径 = 内核 `classify_receipt_diff`（max(5 美分等值, 0.1%)）
+    let diff = 0;
+    let tolerance = 0;
+    let autoCleared = true;
+    let diffReason: MockDocReceipt["diff_reason"] = "manual";
+    let status: MockDocReceipt["status"] = "manual";
+    if (schedule !== null) {
+      diff = received - schedule;
+      tolerance = receiptTolerance(currency, schedule);
+      autoCleared = Math.abs(diff) <= tolerance;
+      diffReason = autoCleared ? "fx_rounding" : "short_paid";
+      status = autoCleared ? "reconciled" : "short_paid";
+    }
+    const text = (value: number) => String(Number(value.toFixed(2)));
+    const now = nowIso();
+    const item: MockDocReceipt = {
+      id: docReceiptSeq,
+      trade_doc_id: id,
+      schedule_type:
+        body.schedule_type === null || body.schedule_type === undefined
+          ? null
+          : String(body.schedule_type) || null,
+      schedule_amount: schedule === null ? null : text(schedule),
+      received_amount: text(received),
+      currency,
+      received_at: now,
+      bank_ref: typeof body.bank_ref === "string" ? body.bank_ref : null,
+      notes: typeof body.notes === "string" ? body.notes : null,
+      diff: text(diff),
+      diff_reason: diffReason,
+      fx_rate_used: null,
+      status,
+      created_by: String(MOCK_ADMIN_USER.user_id),
+      created_at: now,
+    };
+    docReceiptSeq += 1;
+    docReceiptsStore.unshift(item);
+    return HttpResponse.json(
+      {
+        doc_id: id,
+        item,
+        verdict: {
+          diff: text(diff),
+          tolerance: text(tolerance),
+          auto_cleared: autoCleared,
+          diff_reason: diffReason,
+        },
+      },
+      { status: 201 },
+    );
+  }),
+
+  http.get("/api/v1/trade-docs/:id/doc-set", ({ params }) => {
+    const id = Number(params.id);
+    const items = docSetStore.get(id) ?? [];
+    return HttpResponse.json({ doc_id: id, items, total: items.length });
+  }),
+
+  http.put("/api/v1/trade-docs/:id/doc-set", async ({ params, request }) => {
+    const id = Number(params.id);
+    const doc = docsStore.find((d) => Number(d.id) === id);
+    if (!doc) {
+      return HttpResponse.json({ detail: { error: "not_found" } }, { status: 404 });
+    }
+    if (doc.status === "void") {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "conflict",
+            code: "DOC_NOT_EDITABLE",
+            detail: "作废单据的单证清单不可再修改",
+          },
+        },
+        { status: 409 },
+      );
+    }
+    const body = (await request.json().catch(() => ({}))) as {
+      items?: Array<Record<string, unknown>>;
+    };
+    const incoming = Array.isArray(body.items) ? body.items : [];
+    const seen = new Set<string>();
+    for (const raw of incoming) {
+      const docType = String(raw.doc_type ?? "");
+      if (!docType) {
+        return HttpResponse.json(
+          { detail: { error: "validation", code: "DOC_SET_INVALID", detail: "单证类型不能为空" } },
+          { status: 422 },
+        );
+      }
+      if (seen.has(docType)) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "conflict",
+              code: "DOC_SET_DUPLICATE",
+              detail: `清单里同一单证类型重复：${docType}`,
+            },
+          },
+          { status: 409 },
+        );
+      }
+      seen.add(docType);
+      const role = String(raw.role ?? "required");
+      const issuer = String(raw.issuer ?? "ours");
+      if (!DOC_SET_ROLES.includes(role as (typeof DOC_SET_ROLES)[number])) {
+        return HttpResponse.json(
+          { detail: { error: "validation", code: "DOC_SET_INVALID", detail: `未知清单角色：${role}` } },
+          { status: 422 },
+        );
+      }
+      if (!DOC_SET_ISSUERS.includes(issuer as (typeof DOC_SET_ISSUERS)[number])) {
+        return HttpResponse.json(
+          { detail: { error: "validation", code: "DOC_SET_INVALID", detail: `未知出单方：${issuer}` } },
+          { status: 422 },
+        );
+      }
+    }
+    // 与后端一致：**保留已登记的回执**（同 doc_type 的项只更新 role/issuer/证据要求）
+    const previous = new Map((docSetStore.get(id) ?? []).map((item) => [item.doc_type, item]));
+    const next: MockDocSetItem[] = incoming.map((raw) => {
+      const docType = String(raw.doc_type);
+      const existing = previous.get(docType);
+      return {
+        doc_type: docType,
+        role: String(raw.role ?? "required") as MockDocSetItem["role"],
+        issuer: String(raw.issuer ?? "ours") as MockDocSetItem["issuer"],
+        trigger_expr:
+          raw.trigger_expr === null || raw.trigger_expr === undefined
+            ? null
+            : String(raw.trigger_expr),
+        evidence_required: Boolean(raw.evidence_required),
+        status: existing?.status ?? "pending",
+        waived_reason: existing?.waived_reason ?? null,
+        received_doc_id: existing?.received_doc_id ?? null,
+        received_at: existing?.received_at ?? null,
+      };
+    });
+    docSetStore.set(id, next);
+    return HttpResponse.json({ doc_id: id, items: next });
+  }),
+
+  http.post(
+    "/api/v1/trade-docs/:id/doc-set/:docType/receipt",
+    async ({ params, request }) => {
+      const id = Number(params.id);
+      const docType = String(params.docType);
+      const body = (await request.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
+      const action = String(body.action ?? "").trim().toLowerCase();
+      if (!["receive", "waive"].includes(action)) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "validation",
+              code: "INVALID_ENUM",
+              detail: `未知回执动作：${String(body.action)}（可选 receive | waive）`,
+            },
+          },
+          { status: 422 },
+        );
+      }
+      const reason = String(body.waived_reason ?? "").trim();
+      if (action === "waive" && !reason) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "validation",
+              code: "DOC_SET_INVALID",
+              detail: "豁免（waive）必须填写原因",
+            },
+          },
+          { status: 422 },
+        );
+      }
+      const items = docSetStore.get(id) ?? [];
+      const item = items.find((row) => row.doc_type === docType);
+      if (!item) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "not_found",
+              code: "DOC_SET_ITEM_NOT_FOUND",
+              detail: `单证清单里没有「${docType}」这一项`,
+            },
+          },
+          { status: 404 },
+        );
+      }
+      if (item.status !== "pending") {
+        // 非法状态转移不静默覆盖（后端 409 ILLEGAL_DOC_SET_TRANSITION）
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "conflict",
+              code: "ILLEGAL_DOC_SET_TRANSITION",
+              detail: `清单项「${docType}」当前状态 ${item.status}，不能转为 ${
+                action === "receive" ? "received" : "waived"
+              }`,
+              current: item.status,
+            },
+          },
+          { status: 409 },
+        );
+      }
+      item.status = action === "receive" ? "received" : "waived";
+      item.waived_reason = action === "waive" ? reason : null;
+      item.received_doc_id =
+        action === "receive" && typeof body.received_doc_id === "number"
+          ? body.received_doc_id
+          : null;
+      item.received_at = action === "receive" ? nowIso() : null;
+      return HttpResponse.json({ doc_id: id, item });
     },
   ),
 
