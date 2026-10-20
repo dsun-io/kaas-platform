@@ -2966,20 +2966,49 @@ async def get_audit_log(
     request: Request,
     page: int = 1,
     page_size: int = 20,
+    action: Optional[str] = None,
+    actor_id: Optional[str] = None,
+    resource_type: Optional[str] = None,
+    since: Optional[str] = None,
+    until: Optional[str] = None,
     user: dict = Depends(_get_current_user),
 ):
-    """审计日志（源=feature_flag_audit 表；orchestrator 源=deployment_audit.jsonl）。"""
+    """审计日志（源=feature_flag_audit 表；orchestrator 源=deployment_audit.jsonl）。
+
+    C39（2026-10-21）：补筛选参数 —— 前端一直传 `action/resource_type/since/until`
+    （以及 hook 支持的 `actor_id`），此前后端只接 page/page_size，**静默忽略**筛选，
+    让筛选只影响页码、不影响结果。`since/until` 是日期（`YYYY-MM-DD`，含当天）。
+    """
     _require_platform_ops(user)
     page = max(page, 1)
     page_size = min(max(page_size, 1), 100)
-    total = await db.fetchval(request, "SELECT count(*) FROM feature_flag_audit")
+
+    where: list[str] = []
+    params: list[object] = []
+    for column, value in (("action", action), ("actor_id", actor_id),
+                          ("resource_type", resource_type)):
+        if value:
+            params.append(value)
+            where.append(f"{column} = ${len(params)}")
+    if since:
+        params.append(since)
+        where.append(f"created_at >= ${len(params)}::date")
+    if until:
+        params.append(until)
+        where.append(f"created_at < (${len(params)}::date + interval '1 day')")
+    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+
+    total = await db.fetchval(
+        request, f"SELECT count(*) FROM feature_flag_audit{where_sql}", *params)
+    limit_idx = len(params) + 1
+    offset_idx = len(params) + 2
     rows = await db.fetch(
         request,
-        """SELECT id, action, actor_id, resource_type, resource_id, tenant_id,
+        f"""SELECT id, action, actor_id, resource_type, resource_id, tenant_id,
                   flag_name, old_value, new_value, reason, created_at
-             FROM feature_flag_audit
-            ORDER BY id DESC LIMIT $1 OFFSET $2""",
-        page_size, (page - 1) * page_size,
+             FROM feature_flag_audit{where_sql}
+            ORDER BY id DESC LIMIT ${limit_idx} OFFSET ${offset_idx}""",
+        *params, page_size, (page - 1) * page_size,
     )
     items = [
         {

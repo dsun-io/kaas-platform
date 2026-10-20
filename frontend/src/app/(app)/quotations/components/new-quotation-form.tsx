@@ -124,6 +124,11 @@ export function NewQuotationForm({ onSuccess }: Props) {
                 {...register("items.0.quantity", { valueAsNumber: true })}
                 className="mt-1 h-8 text-xs"
               />
+              {errors.items?.[0]?.quantity && (
+                <p className="mt-0.5 text-xs text-destructive">
+                  {errors.items[0].quantity.message}
+                </p>
+              )}
             </div>
             <div>
               <label className="text-xs font-medium">单价 (¥)</label>

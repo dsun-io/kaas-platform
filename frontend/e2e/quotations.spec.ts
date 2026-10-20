@@ -47,17 +47,37 @@ test.describe('报价工位 /quotes', () => {
     await expect(page.getByRole('tab', { name: '报价记录' })).toBeVisible();
   });
 
-  test.skip('估算行显示警告徽章', async () => {
-    // 暂缓：该徽章由算价结果驱动，`/quotes` 下具体落在哪个视图/选择器尚未定位。
-    // 定位后应断言：含"估算/暂估"语义的行有警告色徽章。
+  test('估算行显示警告徽章', async ({ page }) => {
+    // 徽章真源：`quotations/components/quotation-table.tsx:25`（estimated → destructive
+    // 「参考价 - 需人工确认」）；mock 种子含 estimated 行（mocks/data/factory.ts）。
+    await page.goto('/quotes?tab=records');
+    await expect(page.getByText('参考价 - 需人工确认').first()).toBeVisible({
+      timeout: 15000,
+    });
   });
 
-  test.skip('spec_not_supported 行显示灰色禁用徽章', async () => {
-    // 暂缓：同上。定位后应断言：规格不被支持的行有灰色禁用徽章且不可提交。
+  test('spec_not_supported 行显示灰色禁用徽章', async ({ page }) => {
+    // 真源：`quotation-table.tsx:26`（spec_not_supported → secondary「已废止」）。
+    await page.goto('/quotes?tab=records');
+    await expect(page.getByText('已废止').first()).toBeVisible({ timeout: 15000 });
   });
 
-  test.skip('手工录入表单对无效输入显示校验错误', async () => {
-    // 暂缓：需定位「手工录入」入口（原在旧页面的 new-quotation-form）。
-    // 定位后应断言：无效输入（如数量为 0 / 缺规格）时不通过并显示错误文案。
+  test('手工录入表单对无效输入显示校验错误', async ({ page }) => {
+    // 入口：`quotations/components/new-quotation-form.tsx`（records tab 常驻渲染）。
+    // 用「数量 = 0」触发 `QuoteRequestSchema.items.quantity` 的 `.positive()`：
+    // zod 拦截后不发请求，错误文案渲染在 `p.text-destructive`。
+    // 注意：标题「人工录入报价」在 CardHeader 里、不在 `<form>` 内 ⇒ 用提交按钮定位表单。
+    await page.goto('/quotes?tab=records');
+    await expect(page.getByText('人工录入报价')).toBeVisible({ timeout: 15000 });
+    const form = page
+      .locator('form')
+      .filter({ has: page.getByRole('button', { name: '提交报价' }) })
+      .first();
+    const quantity = form.locator('input[type="number"]').first();
+    await quantity.fill('0');
+    await form.getByRole('button', { name: '提交报价' }).click();
+    await expect(form.locator('p.text-destructive').first()).toBeVisible({
+      timeout: 5000,
+    });
   });
 });
