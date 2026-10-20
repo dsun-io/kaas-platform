@@ -41,7 +41,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { normalizeApiError } from "@/lib/api/api-error";
 import { findMissingRequiredFields } from "@/lib/trade-doc/compliance";
 import { downloadHtml, printHtml } from "@/lib/trade-doc/export";
-import { renderTradeDoc } from "@/lib/trade-doc/render";
+import { findBlankPlaceholders, renderTradeDoc } from "@/lib/trade-doc/render";
 
 import {
   useArchiveRenderedPdf,
@@ -224,6 +224,35 @@ export function DocPreview({
     [docType, data],
   );
 
+  // 字段体检（TODO A3）：模板引用了却渲染为空的字段。签名口径「缺失键渲染为空串」
+  // 保证了不留 `$placeholder`，代价是拼错/漏登记只是静静空白 —— 这里把它显式化。
+  const audit = useMemo(() => {
+    try {
+      return findBlankPlaceholders(docType, data);
+    } catch {
+      // 未知单证类型（上面渲染已给可读提示）不应让预览整块崩掉
+      return { undeclared: [], blankRequired: [], blankOptional: [] };
+    }
+  }, [docType, data]);
+  const blankHint = useMemo(() => {
+    const parts: string[] = [];
+    if (audit.undeclared.length > 0) {
+      parts.push(
+        `模板引用了未登记字段（请查占位符拼写或补 manifest）：${audit.undeclared
+          .map((x) => x.key)
+          .join("、")}`,
+      );
+    }
+    if (audit.blankOptional.length > 0) {
+      parts.push(
+        `可选字段当前为空（如需可填写）：${audit.blankOptional
+          .map((x) => x.label)
+          .join("、")}`,
+      );
+    }
+    return parts.join("\n");
+  }, [audit]);
+
   const [pdfPicked, setPdfPicked] = useState<File | null>(null);
   const [pdfName, setPdfName] = useState("");
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -328,6 +357,27 @@ export function DocPreview({
             ? "必填齐全，可签发"
             : `还差 ${missing.length} 项必填`}
         </StatusBadge>
+        {/*
+          字段体检（TODO A3）：把「会留空的地方」显式化。
+          - 模板引用了未登记字段 = 占位符拼错/模板漏登记（代码问题，危险色提示）
+          - 可选字段留空 = 业务可选，填不填由用户判断（只做提示，不拦签发）
+        */}
+        {blankHint && (
+          <span
+            className="cursor-help text-xs text-muted-foreground underline decoration-dotted underline-offset-2"
+            title={blankHint}
+          >
+            {audit.undeclared.length > 0
+              ? `模板字段未登记 ${audit.undeclared.length} 项`
+              : ""}
+            {audit.undeclared.length > 0 && audit.blankOptional.length > 0
+              ? " · "
+              : ""}
+            {audit.blankOptional.length > 0
+              ? `可选字段留空 ${audit.blankOptional.length} 项`
+              : ""}
+          </span>
+        )}
         {!companyProfileConfigured && (
           <StatusBadge tone="danger" dot>
             未配置企业主体信息 —— 单据卖方抬头为空

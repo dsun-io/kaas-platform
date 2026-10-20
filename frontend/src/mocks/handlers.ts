@@ -181,6 +181,64 @@ type MockAccount = {
 const ordersStore: Array<Record<string, unknown> & { id: number }> = [];
 const docsStore: Array<Record<string, unknown> & { id: number }> = [];
 
+// 单证**内容**版本链（TODO A1）：mock 内存版，按 docId 惰性种子 2 版。
+// 恢复 = 追加一条 restore 版本并回写单据 raw_payload —— 与服务端「只增不删」一致。
+interface MockContentVersion {
+  version_no: number;
+  change_source:
+    | "custom_update"
+    | "refresh_sources"
+    | "issue"
+    | "restore"
+    | "translate";
+  actor_id: string | null;
+  note: string | null;
+  created_at: string;
+  custom_keys: string[];
+  raw_payload: Record<string, unknown>;
+}
+const contentVersionsStore = new Map<number, MockContentVersion[]>();
+
+function contentVersionsOf(docId: number): MockContentVersion[] {
+  const existing = contentVersionsStore.get(docId);
+  if (existing) return existing;
+  const seeded: MockContentVersion[] = [
+    {
+      version_no: 1,
+      change_source: "custom_update",
+      actor_id: "1",
+      note: null,
+      created_at: "2026-10-19T08:30:00Z",
+      custom_keys: ["remarks", "payment_terms"],
+      raw_payload: {
+        sources: {},
+        custom: {
+          remarks: "1) 分批装运 2) 唛头见附件",
+          payment_terms: "30% T/T",
+        },
+      },
+    },
+    {
+      version_no: 2,
+      change_source: "refresh_sources",
+      actor_id: "1",
+      note: null,
+      created_at: "2026-10-20T02:10:00Z",
+      custom_keys: ["remarks", "payment_terms", "shipping_marks"],
+      raw_payload: {
+        sources: { order: { order_no: "ORD-202610-0001" } },
+        custom: {
+          remarks: "1) 分批装运 2) 唛头见附件",
+          payment_terms: "30% T/T",
+          shipping_marks: "KAAS/ACME/HAMBURG",
+        },
+      },
+    },
+  ];
+  contentVersionsStore.set(docId, seeded);
+  return seeded;
+}
+
 /** 枚举真源 = backend/orchestrator/app/domain/enums.py（值逐字照搬）。 */
 const ENUMS_MOCK: Record<string, string[]> = {
   inquiry_status: ["unquoted", "quoted", "closed"],
@@ -559,6 +617,61 @@ export const handlers = [
     }),
   ),
   http.post("/api/v1/auth/logout", () => HttpResponse.json({ ok: true })),
+
+  // 个人信息编辑（TODO F3）：mock 必须**真的**改显示名 —— "保存成功但界面没变"
+  // 正是这层要防的假成功。密码在 mock 里不存明文：只校验长度与非空旧密码
+  // （真实旧密码校验在后端，e2e 只走成功链路）。
+  http.patch("/api/v1/auth/me", async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as {
+      display_name?: string;
+    };
+    const name = String(body.display_name ?? "").trim();
+    if (!name) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "DISPLAY_NAME_REQUIRED",
+            detail: "显示名不能为空",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    MOCK_ADMIN_USER.display_name = name;
+    return HttpResponse.json(MOCK_ADMIN_USER);
+  }),
+  http.post("/api/v1/auth/change-password", async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as {
+      current_password?: string;
+      new_password?: string;
+    };
+    if ((body.new_password ?? "").length < 8) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "PASSWORD_TOO_SHORT",
+            detail: "Password must be at least 8 characters",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    if (!(body.current_password ?? "")) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "forbidden",
+            code: "INVALID_CURRENT_PASSWORD",
+            detail: "当前密码不正确",
+          },
+        },
+        { status: 403 },
+      );
+    }
+    return HttpResponse.json({ message: "Password updated" });
+  }),
 
   // ── Auth · 注册（task-6：原先缺失 ⇒ 放行到网络 ⇒ 自代理永久挂起）─────────
   // 消费方 lib/auth/auth-context.tsx:127-139 `register()`：
@@ -1677,6 +1790,43 @@ export const handlers = [
     return HttpResponse.json(doc);
   }),
 
+  // 签发 / 改内容（TODO F1：PATCH 可携带 html，由服务端出 PDF 并归档）——
+  // mock 环境没有浏览器渲染器，与 `POST /trade-docs/:id/pdf` 同口径**如实失败**
+  // （pdf_archive.ok=false + 503），界面据此提示手动上传，不假装归档成功。
+  http.patch("/api/v1/trade-docs/:id", async ({ params, request }) => {
+    const doc = docsStore.find((d) => d.id === Number(params.id));
+    if (!doc) {
+      return HttpResponse.json(
+        { detail: { error: "not_found" } },
+        { status: 404 },
+      );
+    }
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    for (const key of ["doc_no", "status", "raw_payload"] as const) {
+      if (key in body) doc[key] = body[key];
+    }
+    const out: Record<string, unknown> = { ...doc };
+    if (
+      body.status === "issued" &&
+      typeof body.html === "string" &&
+      body.html.trim()
+    ) {
+      out.pdf_archive = {
+        ok: false,
+        status_code: 503,
+        detail: {
+          error: "unavailable",
+          code: "PDF_RENDERER_NOT_CONFIGURED",
+          detail: "mock 环境未配置浏览器渲染器",
+        },
+      };
+    }
+    return HttpResponse.json(out);
+  }),
+
   // 单证内嵌预览（客户详情 → 单证）：mock 用固定样板数据渲染，避免预览空转。
   // 真实环境由后端 `/trade-docs/{id}/render-data` 按快照装配。
   http.get("/api/v1/trade-docs/:id/render-data", ({ params }) => {
@@ -1766,6 +1916,103 @@ export const handlers = [
       { status: 503 },
     );
   }),
+
+  // ── 单证内容版本（TODO A1）───────────────────────────────────────────────
+  // 列表**不带**整份 payload（与真实后端一致：图片 base64 会让响应到 1MB+）
+  http.get("/api/v1/trade-docs/:id/content-versions", ({ params }) => {
+    const docId = Number(params.id);
+    const items = contentVersionsOf(docId)
+      .slice()
+      .sort((a, b) => b.version_no - a.version_no)
+      .map((v) => ({
+        version_no: v.version_no,
+        change_source: v.change_source,
+        actor_id: v.actor_id,
+        note: v.note,
+        created_at: v.created_at,
+        custom_keys: v.custom_keys,
+      }));
+    return HttpResponse.json({ doc_id: docId, total: items.length, items });
+  }),
+
+  http.get(
+    "/api/v1/trade-docs/:id/content-versions/:versionNo",
+    ({ params }) => {
+      const version = contentVersionsOf(Number(params.id)).find(
+        (v) => v.version_no === Number(params.versionNo),
+      );
+      if (!version) {
+        return HttpResponse.json(
+          { detail: { error: "not_found", code: "VERSION_NOT_FOUND" } },
+          { status: 404 },
+        );
+      }
+      return HttpResponse.json(version);
+    },
+  ),
+
+  http.post(
+    "/api/v1/trade-docs/:id/content-versions/:versionNo/restore",
+    async ({ params, request }) => {
+      const docId = Number(params.id);
+      const versionNo = Number(params.versionNo);
+      const versions = contentVersionsOf(docId);
+      const target = versions.find((v) => v.version_no === versionNo);
+      if (!target) {
+        return HttpResponse.json(
+          { detail: { error: "not_found", code: "VERSION_NOT_FOUND" } },
+          { status: 404 },
+        );
+      }
+      const doc = docsStore.find((d) => d.id === docId);
+      // 与后端 409 同口径：issued/void 冻结；报价单由报价同步、不收恢复
+      if (doc && doc.status !== "draft") {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "conflict",
+              code: "NOT_DRAFT",
+              detail: "已签发/作废单证内容冻结，不能恢复历史版本",
+            },
+          },
+          { status: 409 },
+        );
+      }
+      if (doc && doc.doc_type === "quotation") {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "conflict",
+              code: "QUOTATION_DOC_SYNCED",
+              detail: "报价单由报价自动同步生成，恢复内容会被下次报价更新覆盖",
+            },
+          },
+          { status: 409 },
+        );
+      }
+      const body = (await request.json().catch(() => ({}))) as {
+        note?: string;
+      };
+      const nextNo = Math.max(...versions.map((v) => v.version_no), 0) + 1;
+      const created: MockContentVersion = {
+        version_no: nextNo,
+        change_source: "restore",
+        actor_id: "1",
+        note: body.note || `恢复至 v${versionNo}`,
+        created_at: nowIso(),
+        custom_keys: Object.keys(
+          (target.raw_payload.custom ?? {}) as Record<string, unknown>,
+        ),
+        raw_payload: target.raw_payload,
+      };
+      versions.push(created);
+      if (doc) doc.raw_payload = target.raw_payload;
+      return HttpResponse.json({
+        doc: doc ?? { id: docId, raw_payload: target.raw_payload },
+        restored_version_no: versionNo,
+      });
+    },
+  ),
 
   // ── 枚举（/enums · 与后端 app/domain/enums.py 同键同值）──────────────────
   http.get("/api/v1/enums", () => {

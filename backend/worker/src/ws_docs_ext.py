@@ -74,6 +74,7 @@ from kaas_common.workstation.amount_rules import (
 )
 
 import chain as _chain
+import content_versions as _cv
 import doc_payload as _doc_payload
 import main as _main
 
@@ -86,8 +87,17 @@ db = _main.db
 # ── Schemas（与 orchestrator 同名模型字段一致）──────────────────────────────
 
 class TradeDocConfirmIn(BaseModel):
-    """确认（issued）：校验必填 → 冻结；确认后不可修改（无入参，仅为对齐请求体）。"""
-    pass
+    """确认（issued）：校验必填 → 冻结；确认后不可修改。
+
+    可选 `html` / `pdf_name`（TODO F1 方案 A）：前端随签发提交**预览用的同一份 HTML**，
+    服务端出 PDF 并归档到本单证（`render_pdf` 新版本上位）。不传 html = 旧行为（不产 PDF）。
+
+    失败策略（用户 2026-10-20 口径）：**PDF 失败不回滚签发** —— 签发是法律动作，
+    归档是后续动作；响应里带 `pdf_archive: {ok:false, ...}`，界面提示手动上传兜底，
+    绝不能因为渲染器没配就把"已签发"静默吞掉。
+    """
+    html: Optional[str] = None
+    pdf_name: Optional[str] = None
 
 
 class TradeDocTranslateIn(BaseModel):
@@ -201,6 +211,12 @@ async def refresh_trade_doc_sources(
             " WHERE tenant_id=$1 AND id=$2 RETURNING *",
             DEFAULT_TENANT, doc_id, _json.dumps(payload), table="trade_docs",
         )
+    # 内容级版本（TODO A1）：重新带入上游快照也是一次内容变更，留版
+    await _cv.record_content_version(
+        db, request,
+        tenant_id=DEFAULT_TENANT, doc_id=doc_id, payload=payload,
+        source=_cv.SOURCE_REFRESH_SOURCES, actor_id=str(user["id"]),
+    )
     return {"doc": _row_to_doc(row), "sources": list(new_sources.keys())}
 
 
@@ -272,7 +288,32 @@ async def confirm_trade_doc(
         _json.dumps(payload),
         table="trade_docs",
     )
-    return _row_to_doc(row)
+    # 内容级版本（TODO A1）：签发终版留一版（含 `_render` 指纹），issued 后不再产生版本
+    await _cv.record_content_version(
+        db, request,
+        tenant_id=DEFAULT_TENANT, doc_id=doc_id, payload=payload,
+        source=_cv.SOURCE_ISSUE, actor_id=str(user["id"]),
+    )
+    out = _row_to_doc(row)
+    # 服务端签发自动上传（TODO F1 方案 A）：同请求带 HTML ⇒ 出 PDF 并归档；
+    # 失败**不回滚签发**，只把失败写进 pdf_archive 让界面提示手动上传。
+    if body.html and body.html.strip():
+        try:
+            import ws_files as _ws_files  # 惰性 import：避免与文件路由的加载顺序耦合
+            archived = await _ws_files.archive_rendered_pdf(
+                request, doc_id, body.html, user, body.pdf_name)
+            file_row = archived.get("file") or {}
+            out["pdf_archive"] = {
+                "ok": True,
+                "renderer": archived.get("renderer"),
+                "bytes": archived.get("bytes"),
+                "file_id": file_row.get("id") if hasattr(file_row, "get") else None,
+            }
+        except HTTPException as exc:
+            out["pdf_archive"] = {
+                "ok": False, "status_code": exc.status_code, "detail": exc.detail,
+            }
+    return out
 
 
 async def _payload_with_render_fingerprint(
@@ -509,7 +550,157 @@ async def translate_trade_doc(
                 " WHERE tenant_id=$1 AND id=$2",
                 DEFAULT_TENANT, doc_id, _json.dumps(payload),
             )
+            # 内容级版本（TODO A1）：翻译写回也是一次内容变更
+            await _cv.record_content_version(
+                db, request,
+                tenant_id=DEFAULT_TENANT, doc_id=doc_id, payload=payload,
+                source=_cv.SOURCE_TRANSLATE, actor_id=str(user["id"]),
+            )
         except RuleError:
             pass   # 翻译结果仍返回，仅不写回
 
     return {"fields": merged, "path": path, "task": TRANSLATE_TASK_KEY}
+
+
+# ── 单证内容级版本（TODO A1）─────────────────────────────────────────────────
+# 为什么要有：草稿期 `raw_payload.custom` 改动是**覆盖**，改前找不回；
+# `raw_payload._audit` 只有"谁/何时/改了哪些键"，不含整份快照、不可回滚。
+# 版本链与 `file_objects.version`（上传 PDF 的文件版本）是两条独立链。
+
+class TradeDocRestoreIn(BaseModel):
+    """恢复历史版本：note 可选（落进新版本的备注，便于对账）。"""
+    note: Optional[str] = None
+
+
+def _decode_payload(raw) -> dict:
+    """jsonb 列在 `table=` 解码失败时可能是字符串，统一成 dict。"""
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            loaded = _json.loads(raw)
+            return loaded if isinstance(loaded, dict) else {}
+        except ValueError:
+            return {}
+    return {}
+
+
+@app.get("/api/v1/trade-docs/{doc_id}/content-versions")
+async def list_trade_doc_content_versions(
+    doc_id: int,
+    request: Request,
+    user: dict = Depends(_get_current_user),
+):
+    """内容版本列表（倒序）。**不返回整份 payload**：图片是 base64 内联，
+    一个版本可能 1MB+，列表只带 custom 键名，详情再按版本号取。"""
+    d = await _get_doc_or_404(request, doc_id)
+    rows = await db.fetch(
+        request,
+        "SELECT v.version_no, v.change_source, v.actor_id, v.note, v.created_at,"
+        " COALESCE(("
+        "   SELECT jsonb_agg(k ORDER BY k)"
+        # 包成子查询再 FROM：避免 schema-coverage 门禁把 jsonb_object_keys 当表名
+        "     FROM (SELECT jsonb_object_keys("
+        "       COALESCE(v.raw_payload->'custom', '{}'::jsonb)) AS k) AS keys"
+        " ), '[]'::jsonb) AS custom_keys"
+        " FROM trade_doc_content_versions v"
+        " WHERE v.tenant_id=$1 AND v.trade_doc_id=$2"
+        " ORDER BY v.version_no DESC",
+        DEFAULT_TENANT, d["id"],
+    )
+    items = [{
+        "version_no": r["version_no"],
+        "change_source": r["change_source"],
+        "actor_id": r["actor_id"],
+        "note": r["note"],
+        "created_at": r["created_at"],
+        "custom_keys": r.get("custom_keys") or [],
+    } for r in rows]
+    return {"doc_id": d["id"], "total": len(items), "items": items}
+
+
+@app.get("/api/v1/trade-docs/{doc_id}/content-versions/{version_no}")
+async def get_trade_doc_content_version(
+    doc_id: int,
+    version_no: int,
+    request: Request,
+    user: dict = Depends(_get_current_user),
+):
+    """某个内容版本的完整 payload（回看/对比用）。"""
+    d = await _get_doc_or_404(request, doc_id)
+    row = await db.fetchrow(
+        request,
+        "SELECT version_no, raw_payload, change_source, actor_id, note, created_at"
+        " FROM trade_doc_content_versions"
+        " WHERE tenant_id=$1 AND trade_doc_id=$2 AND version_no=$3",
+        DEFAULT_TENANT, d["id"], version_no, table="trade_doc_content_versions",
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "VERSION_NOT_FOUND",
+            "detail": f"内容版本 v{version_no} 不存在",
+        })
+    return {
+        "version_no": row["version_no"],
+        "change_source": row["change_source"],
+        "actor_id": row["actor_id"],
+        "note": row["note"],
+        "created_at": row["created_at"],
+        "raw_payload": _decode_payload(row["raw_payload"]),
+    }
+
+
+@app.post("/api/v1/trade-docs/{doc_id}/content-versions/{version_no}/restore")
+async def restore_trade_doc_content_version(
+    doc_id: int,
+    version_no: int,
+    request: Request,
+    body: TradeDocRestoreIn,
+    user: dict = Depends(_get_current_user),
+):
+    """把历史版本的内容恢复为当前内容（仅 draft）。
+
+    - issued/void 一律 409：已签发是法律凭证，内容冻结（不能用「恢复」绕过锁）；
+    - 报价单（doc_type='quotation'）409：它是报价的 1:1 同步产物，下次报价更新会覆盖，
+      恢复只会造成"看起来恢复了、同步又变回去"的困惑；
+    - 恢复本身也产生一个新版本（source=restore），版本链只增不删。
+    """
+    d = await _get_doc_or_404(request, doc_id)
+    try:
+        assert_draft(d["status"])
+    except RuleError as exc:
+        raise HTTPException(status_code=409, detail={
+            "error": "conflict", "code": exc.code,
+            "detail": "已签发/作废单证内容冻结，不能恢复历史版本",
+        })
+    if d["doc_type"] == "quotation":
+        raise HTTPException(status_code=409, detail={
+            "error": "conflict", "code": "QUOTATION_DOC_SYNCED",
+            "detail": "报价单由报价自动同步生成，恢复内容会被下次报价更新覆盖",
+        })
+    row = await db.fetchrow(
+        request,
+        "SELECT version_no, raw_payload FROM trade_doc_content_versions"
+        " WHERE tenant_id=$1 AND trade_doc_id=$2 AND version_no=$3",
+        DEFAULT_TENANT, d["id"], version_no, table="trade_doc_content_versions",
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "VERSION_NOT_FOUND",
+            "detail": f"内容版本 v{version_no} 不存在",
+        })
+    payload = _decode_payload(row["raw_payload"])
+    await _cv.record_content_version(
+        db, request,
+        tenant_id=DEFAULT_TENANT, doc_id=d["id"], payload=payload,
+        source=_cv.SOURCE_RESTORE, actor_id=str(user["id"]),
+        note=body.note or f"恢复至 v{version_no}",
+    )
+    new_doc = await db.fetchrow(
+        request,
+        "UPDATE trade_docs SET raw_payload=$3, updated_at=now()"
+        " WHERE tenant_id=$1 AND id=$2 RETURNING *",
+        DEFAULT_TENANT, d["id"], _json.dumps(payload, ensure_ascii=False, default=str),
+        table="trade_docs",
+    )
+    return {"doc": _row_to_doc(new_doc), "restored_version_no": version_no}

@@ -205,6 +205,9 @@ jobs:
           S_ADMIN: ${{ secrets.ADMIN_SETUP_TOKEN }}
           S_S3AK: ${{ secrets.S3_ACCESS_KEY }}
           S_S3SK: ${{ secrets.S3_SECRET_KEY }}
+          # 预览专用发信 key（与生产 key 独立：预览 worker 跑 PR 分支代码，
+          # 用生产 key 等于把生产发信身份交给任意分支；见 docs/TODO.md D1 分层口径）。
+          S_RESEND: ${{ secrets.RESEND_API_KEY_PREVIEW }}
         run: |
           set -uo pipefail
           put() { if [ -n "$2" ]; then printf '%s' "$2" | uv run pywrangler secret put "$1" -c wrangler.preview.jsonc || echo "::warning::secret $1 写入失败"; else echo "::warning::secret $1 未配置（预览该功能不可用）"; fi; }
@@ -212,6 +215,7 @@ jobs:
           put ADMIN_SETUP_TOKEN "$S_ADMIN"
           put S3_ACCESS_KEY "$S_S3AK"
           put S3_SECRET_KEY "$S_S3SK"
+          put RESEND_API_KEY "$S_RESEND"
       - name: Deploy to Cloudflare Workers（workers.dev）
         working-directory: ./backend/worker
         run: uv run pywrangler deploy -c wrangler.preview.jsonc

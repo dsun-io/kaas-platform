@@ -1,5 +1,10 @@
 # 待办账本（活跃 · TODO）
 
+> ⛔ **2026-10-20 晚停止点**：用户指令停止开发并交接收尾。**本表 = 剩余待办（均未做）**；
+> 停止点现状、已完成项、每项前置与恢复路径见
+> [`HANDOVER_2026-10-20_FINAL.md`](./HANDOVER_2026-10-20_FINAL.md) **§0.2**。
+> 恢复开发时：先读该 §0.2，再从本表挑选下一项（A5/A6/C1 等 🧭 项需先问用户）。
+>
 > **口径修订（2026-10-20，用户裁决）**：原「待办清零 → 触发条件制（不再活跃跟踪）」口径**废止**——
 > 真实工作项不应以触发条件制隐藏。以下全部恢复为**活跃待办**，由用户排期执行（用户原话：
 > "这些确实应该安排做，不应该是触发条件制的，修改口径，后边我安排做掉"）。
@@ -15,15 +20,15 @@
 
 | # | 待办 | 内容与验收 | 前置 | 状态 |
 |---|---|---|---|---|
-| A1 | 单证**内容级版本** | 后端加内容版本表：草稿期每次保存留历史（谁/何时/改了哪些字段），可回看/回滚。现状：草稿内容改动直接覆盖；`file_objects.version` 版本链只覆盖**上传的 PDF 文件**，不含内容 | 无 | ⏳ |
+| A1 | 单证**内容级版本** | 后端加内容版本表：草稿期每次保存留历史（谁/何时/改了哪些字段），可回看/回滚。现状：草稿内容改动直接覆盖；`file_objects.version` 版本链只覆盖**上传的 PDF 文件**，不含内容 | 无 | ✅（2026-10-20；后端 `4878c6c` + 前端 `db4463e`） |
 | A2 | **服务端签发兜底** | PDF 渲染+上传搬到服务端：任何入口（API/其他客户端）签发都自动出 PDF 并归档。现状：仅前端 `frontend/src/lib/trade-doc/auto-archive.ts` 在 UI 签发时触发，API 签发不产出 PDF | 需跨栈改造；可与 A1 并行 | ⏳ |
-| A3 | 单证字段**缺失可发现** | 现状：占位符拼错/模板漏声明**只是那一格静静空白**（`TRADE_DOC_TEMPLATES.md` §8 自认代价）。改为：渲染期 warning + 前端「缺失字段」标记 + 签发前提示清单 | 无 | ⏳ |
+| A3 | 单证字段**缺失可发现** | 现状：占位符拼错/模板漏声明**只是那一格静静空白**（`TRADE_DOC_TEMPLATES.md` §8 自认代价）。改为：渲染期 warning + 前端「缺失字段」标记 + 签发前提示清单 | 无 | ✅（2026-10-20；`db4463e`：`findBlankPlaceholders` 运行时体检 + 预览状态栏提示；18 类模板实测无未登记占位符） |
 | A4 | 单证**图片素材库** | 公章、产品图走对象存储（现状：base64 内联进 `raw_payload.custom`，一张 PI ≈1.4MB）；建可复用素材库，替代每次重传 | 与 D2（R2 新密钥）同批更顺 | ⏳ |
 | A5 | 单证**编辑体验** | CI/PL 等长单据填写效率：行项批量编辑、常用条款/备注模板、金额联动校验；施工前先与用户过一遍方案 | 方案需用户过目 | 🧭 |
 | A6 | 模板**逐字段对照真实单据** | 以实际出口单据（PI/CI/PL/提单确认件…）逐字段对照模板措辞/栏目/条款并修正差异。用户即真实用户，这是单证内容验收的最终标准 | 用户提供样例单据 | 🧭 |
 | A7 | 单证加固 P1/P2（原 I-2） | 事实层（fact model）+ 跨单证一致性引擎（全局等价词表 + 租户增量，仅 internal 可改）+ 收款容差（每币种 max(5 美分等值, 0.1%)）+ `not_by_us` 回执登记（expected→received，`trade_doc_receipts`/`trade_doc_doc_set` 两表）+ 导出后自检（默认阻断、可配置越过但落审计）。**5 项口径已拍板**（`UNCERTAIN.md` #17，2026-10-17）；设计文档 = `archive/2026-10-20-closeout/TRADE_DOC_HARDENING_PLAN_2026-10-12.md` | 无（口径已定，可直接施工） | ⏳ |
-| A8 | PDF 归档尾巴（原 I-4） | 端到端跑通一次 / 定时调度 /「已变更」标识 | 无 | ⏳ |
-| A9 | 单证指纹批量对账**定时调度**（原 I-6） | 现状被测试钉死"无定时调度"，接线时需同步改测试 | 无 | ⏳ |
+| A8 | PDF 归档尾巴（原 I-4） | 端到端跑通一次 / 定时调度 /「已变更」标识。**②③ 已落地**（定时调度与 A9 共用一套机制；列表页「已变更/模板已更新/待复核」标识）；**① 端到端真实跑一次**需已部署环境（浏览器渲染 PDF 依赖生产 binding）⇒ 归入发布后 P4 观察期验证 | 无 | ✅（2026-10-20，②③；① 挂发布后验证） |
+| A9 | 单证指纹批量对账**定时调度**（原 I-6） | ✅ cron 每日 `40 17 * * *`（UTC 17:40 = 上海次日 01:40）扫近 30 天 issued 单据（上限 50）逐张对账，结论 upsert 进新表 `trade_doc_render_checks`（迁移 `202610200002`）；列表端点挂 `render_check`；原「测试钉死无定时调度」的断言已同步改为三 cron；**顺手修出一个线上 bug**：`GET /trade-docs` 列表调 `_row_to_dict(r,"trade_docs")` 参数不匹配 ⇒ 运行期 500（已修 + 回归测试） | 无 | ✅（2026-10-20） |
 
 ## B. 产品配置化（原 I-7 主项）
 
@@ -48,11 +53,12 @@
 
 | # | 待办 | 说明 | 状态 |
 |---|---|---|---|
-| D1 | 生产 worker 注入 `RESEND_API_KEY` | 否则生产「忘记密码」邮件**静默不发**（实测生产 secrets 只有 4 个，缺此项）。key 已备于本机 `.env.local`（gitignored）；`cd backend/worker; npx wrangler secret put RESEND_API_KEY --name kaas`；发件地址 `RESET_FROM_EMAIL` 默认 `noreply@send.powervoy.com`（已验证域名 send.powervoy.com，key 已实测真实发信 200） | ⏳ |
+| D1 | 生产 worker 注入 `RESEND_API_KEY` | 否则生产「忘记密码」邮件**静默不发**（实测生产 secrets 只有 4 个，缺此项）。**key 分层（2026-10-20 用户裁决，三只 key 全部到位）**：① 生产专用 key（`kaas-生产`）→ GitHub repo secret **`RESEND_API_KEY_PROD`**（换设备不失；本机 `.env.local` 只是副本）；② 预览专用 key（`kaas-预览`）→ GitHub repo secret **`RESEND_API_KEY_PREVIEW`**，已由 `preview.yml` 注入预览 worker（预览跑 PR 分支代码，**绝不复用生产 key**）；③ 本地开发继续用 `RESEND_API_KEY`。**最终持久位置 = Cloudflare Worker secret**（换设备也不重配）：发布窗口 `cd backend/worker; npx wrangler secret put RESEND_API_KEY --name kaas`（值取 repo secret `RESEND_API_KEY_PROD`）；发件地址 `RESET_FROM_EMAIL` 默认 `noreply@send.powervoy.com`。三者同域名、同账号额度、独立吊销 | ⏳（等发布窗口浇入 Cloudflare） |
 | D2 | R2 新密钥替换 | 旧 keys 发布前继续有效；发布窗口替换（`wrangler secret put` 与部署同窗口）；发布后用户在 R2 dashboard 删旧 token | ⏳ |
 | D3 | Hyperdrive 生产缓存关闭（可选） | 预览 config 已 `caching.disabled=True`；生产是否同改**需单独批准**（现状保持开启） | 🧭 |
 | D4 | 生产测试数据清理 | 含流失拒绝文件历史；**执行当次需用户确认** | 🧭 |
-| D5 | 仓库转回 private | 当前 public（用户裁决：为免费 CI 暂保 public）；用户自转 | ⏳ |
+| D5 | 仓库转回 private | ✅ **已转 private**（2026-10-20，用户自转）。副作用（已解除）：private 仓库 Actions 配额导致 08:05Z 起所有 workflow 秒失败（0 步/无 runner）；**用户已转回 public，CI 已恢复绿**（2026-10-20：backend:test / Frontend CI / contracts:check / preview 全部 SUCCESS，预览部署 `kaas-preview-pr-5`） | ✅ |
+| D7 | preview ensure 对 Neon 423 做短重试 | 实测（2026-10-20，PR #5）：Neon 分支刚创建、其操作未完成时立刻建 endpoint → `HTTP 423 project already has running conflicting operations`；本次靠 rerun 到 attempt 3 才绿。ensure 脚本应对 423/429 做有限重试（指数退避，别无限等） | ⏳ |
 | D6 | 生产发布走检查单 | `HANDOVER_2026-10-20_FINAL.md` §5 全流程：迁移 → secrets → 构建 → 部署 → 冒烟 → 冷启动基线（≤2,950ms）→ 留痕 → P4 观察期 | ⏳ |
 
 ## E. UI/UX 优化（P0/P1/P2 已完成，2026-10-20）
@@ -76,6 +82,21 @@
 | F3 | 个人信息编辑 | 🔨 并行任务中 |
 | F4 | 询盘状态机 | 🔨 并行任务中 |
 | F5 | 报价/订单 1:N 约束 | 🔨 并行任务中 |
+
+---
+
+## F. 用户明确的后端 5 项（2026-10-20 点名，**不得遗漏**）
+
+> 用户原话："后端 5 项：服务端签发自动上传、单证内容版本、个人信息编辑、询盘状态机、报价/订单 1:N 约束
+> —— 这些你都要做啊，不要有遗漏"。本表逐项跟踪；完成一项销账一项。
+
+| # | 待办 | 内容与验收 | 状态 |
+|---|---|---|---|
+| F1 | **服务端签发自动上传 PDF**（= A2） | **方案 A 已落地（2026-10-20）**：`POST /trade-docs/{id}/confirm` 与 `PATCH /trade-docs/{id}`（draft→issued）均可携带前端**预览同一份 HTML**，服务端复用唯一实现 `ws_files.archive_rendered_pdf`（校验→Browser Rendering→落 `render_pdf` 新版本上位）。**失败不回滚签发**：响应带 `pdf_archive{ok:false,status_code,detail}`，界面提示手动上传兜底（不能把已签发状态静默吞掉）。前端签发按钮改为随 PATCH 提交 HTML；不带 HTML 保持旧行为（无 pdf_archive 键）。测试：后端 6 条（成功/失败不回滚/无 HTML/两条入口）+ 前端 mock 如实 503。**"任意第三方客户端"若不带 HTML 仍无法出 PDF**（模板在前端的结构性限制），方案 B（模板迁服务端）留给后续 | ✅（2026-10-20，方案 A） |
+| F2 | **单证内容版本**（= A1） | ✅ 已完成（`4878c6c` 后端 + `db4463e` 前端；迁移 `202610200001`、三端点、面板、12 条后端 + 9 条前端测试） | ✅ |
+| F3 | **个人信息编辑** | ✅ 已完成（2026-10-20）：`PATCH /auth/me`（改显示名，只改本人、邮箱不可自助改）+ `POST /auth/change-password`（验旧密码、新密码≥8）；侧栏个人信息弹窗从只读完变为可编辑；MSW mock 真改显示名；7 条后端边界测试 | ✅ |
+| F4 | **询盘状态机** | ✅ 已完成（2026-10-20，口径：落库+事件驱动）：迁移 `202610200003` 加 `cust_inquiries.stage/stage_updated_at` + `inquiry_stage_log`；阶段 `inquiry<quotation<order<shipment<completed`，`closed` 终态；只前进/幂等；事件钩子 = 报价创建（quotation）/订单创建（order）/订单完成（completed）/出运创建（shipment）/询盘手动关闭（closed）；序列化新增 `stage/stage_updated_at`；`GET /inquiries/{id}/stage-log` 提供变更历史；前端展示推导保留为兜底 | ✅ |
+| F5 | **报价/订单 1:N 约束** | ✅ 已完成（2026-10-20，口径 A：**保留 1:N** + 业务校验）：新建订单若来自报价 ⇒ ①币种必须一致（422 `ORDER_QUOTE_CURRENCY_MISMATCH`）②未取消订单金额累计 ≤ 报价合计（422 `ORDER_EXCEEDS_QUOTE`，按分容差、附报价/已下单/本单金额）。**不加** 1:1 唯一约束（分批出货/重复下单合法，历史多单不迁移）；5 条测试 | ✅ |
 
 ---
 
