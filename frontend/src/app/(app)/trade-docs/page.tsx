@@ -30,6 +30,7 @@ import { toast } from "sonner";
 
 import { ImportExistingDataDialog } from "@/components/import-existing-data-dialog";
 import { DocTypeLabel, docTypeMeta } from "@/components/doc-chip";
+import { CopyButton } from "@/components/shared/copy-button";
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -73,6 +74,15 @@ const STATUS_LABEL: Record<string, string> = {
   void: "已作废",
 };
 
+const DOC_COLUMNS = [
+  { key: "doc_no", label: "单证编号" },
+  { key: "type", label: "类型" },
+  { key: "status", label: "状态" },
+  { key: "amount", label: "金额" },
+  { key: "upstream", label: "上游" },
+] as const;
+type DocColumnKey = (typeof DOC_COLUMNS)[number]["key"];
+
 /**
  * 类型筛选项 —— 顺序取自 `DOC_TYPE_GROUPS`（报价单排在第一位：它是业务链的第一张单据），
  * 中文名与图标取自 `components/doc-chip.tsx` 的元数据表。
@@ -101,6 +111,10 @@ export default function TradeDocsPage() {
   const [density, setDensity] = usePersistentState<"cozy" | "compact">(
     "ui:trade-docs:density",
     "cozy",
+  );
+  const [visibleCols, setVisibleCols] = usePersistentState<DocColumnKey[]>(
+    "ui:trade-docs:columns",
+    DOC_COLUMNS.map((c) => c.key),
   );
 
   // 深链预览：客户详情「询盘 → 后续单证」点击后带 ?doc=<id> 打开本页并直接选中该单证。
@@ -273,6 +287,31 @@ export default function TradeDocsPage() {
         title="单证台账"
         action={
           <div className="flex flex-wrap items-center gap-2">
+            <details className="relative">
+              <summary className="cursor-pointer list-none rounded-md border px-2 py-1.5 text-xs hover:bg-muted">
+                列配置
+              </summary>
+              <div className="absolute right-0 z-20 mt-1 w-40 rounded-lg border bg-white p-2 shadow-lg">
+                {DOC_COLUMNS.map((c) => (
+                  <label
+                    key={c.key}
+                    className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs hover:bg-muted"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={visibleCols.includes(c.key)}
+                      onChange={() => {
+                        const next = visibleCols.includes(c.key)
+                          ? visibleCols.filter((k) => k !== c.key)
+                          : [...visibleCols, c.key];
+                        if (next.length > 0) setVisibleCols(next);
+                      }}
+                    />
+                    {c.label}
+                  </label>
+                ))}
+              </div>
+            </details>
             <div
               className="flex items-center gap-1"
               role="group"
@@ -386,132 +425,182 @@ export default function TradeDocsPage() {
             description="先在上面开一张单，单据会自动带上订单里的货物与贸易条款。"
           />
         ) : (
-          <div
-            className={cn(
-              "overflow-x-auto",
-              density === "compact" && "[&_td]:py-1 [&_th]:h-8 [&_tr]:text-xs",
-            )}
-          >
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  <th scope="col" className="w-8 p-2">
-                    <span className="sr-only">选择</span>
-                  </th>
-                  <th scope="col" className="p-2">
-                    单证编号
-                  </th>
-                  <th scope="col" className="p-2">
-                    类型
-                  </th>
-                  <th scope="col" className="p-2">
-                    状态
-                  </th>
-                  <th scope="col" className="p-2">
-                    金额
-                  </th>
-                  <th scope="col" className="p-2">
-                    上游
-                  </th>
-                  <th scope="col" className="p-2">
-                    操作
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="border-b last:border-0 hover:bg-muted/40"
-                  >
-                    <td className="p-2">
-                      <input
-                        type="checkbox"
-                        checked={checked.has(row.id)}
-                        onChange={() => toggleCheck(row.id)}
-                        aria-label={`选择 ${row.doc_no}`}
-                      />
-                    </td>
-                    <td className="p-2 font-medium">{row.doc_no}</td>
-                    <td className="p-2">
+          <>
+            <div
+              className={cn(
+                "hidden overflow-x-auto md:block",
+                density === "compact" &&
+                  "[&_td]:py-1 [&_th]:h-8 [&_tr]:text-xs",
+              )}
+            >
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-muted-foreground">
+                    <th scope="col" className="w-8 p-2">
+                      <span className="sr-only">选择</span>
+                    </th>
+                    {DOC_COLUMNS.filter((c) => visibleCols.includes(c.key)).map(
+                      (c) => (
+                        <th key={c.key} scope="col" className="p-2">
+                          {c.label}
+                        </th>
+                      ),
+                    )}
+                    <th scope="col" className="p-2">
+                      操作
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr
+                      key={row.id}
+                      className="border-b last:border-0 hover:bg-muted/40"
+                    >
+                      <td className="p-2">
+                        <input
+                          type="checkbox"
+                          checked={checked.has(row.id)}
+                          onChange={() => toggleCheck(row.id)}
+                          aria-label={`选择 ${row.doc_no}`}
+                        />
+                      </td>
+                      {visibleCols.includes("doc_no") && (
+                        <td className="p-2 font-medium">
+                          <span className="inline-flex items-center gap-1">
+                            {row.doc_no}
+                            <CopyButton
+                              value={row.doc_no}
+                              label="复制单证编号"
+                            />
+                          </span>
+                        </td>
+                      )}
+                      {visibleCols.includes("type") && (
+                        <td className="p-2">
+                          <DocTypeLabel docType={row.doc_type} />
+                        </td>
+                      )}
+                      {visibleCols.includes("status") && (
+                        <td className="p-2">
+                          <StatusBadge
+                            tone={STATUS_TONE[row.status] ?? "default"}
+                          >
+                            {STATUS_LABEL[row.status] ?? row.status}
+                          </StatusBadge>
+                        </td>
+                      )}
+                      {visibleCols.includes("amount") && (
+                        <td className="p-2">
+                          {money(row.total_amount, row.currency)}
+                        </td>
+                      )}
+                      {visibleCols.includes("upstream") && (
+                        <td className="p-2 text-muted-foreground">
+                          {row.raw_payload?.sources?.order?.order_no ??
+                            row.raw_payload?.sources?.quote?.quote_no ??
+                            "—"}
+                        </td>
+                      )}
+                      <td className="p-2">
+                        <div className="flex flex-wrap gap-1">
+                          {row.doc_no_editable !== false && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setDocNoError(null);
+                                setDocNoEdit(row);
+                              }}
+                            >
+                              改编号
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setSelectedId(row.id)}
+                          >
+                            预览
+                          </Button>
+                          {row.status === "draft" && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={refresh.isPending}
+                                onClick={() =>
+                                  refresh.mutate(row.id, {
+                                    onSuccess: () =>
+                                      toast.success("已从上游重新带入"),
+                                  })
+                                }
+                              >
+                                <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                                重新带入
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => changeStatus(row, "issued")}
+                              >
+                                <ShieldCheck className="mr-1 h-3.5 w-3.5" />
+                                签发
+                              </Button>
+                            </>
+                          )}
+                          {row.status === "issued" && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => changeStatus(row, "void")}
+                            >
+                              作废
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* 窄屏卡片：DOM 在表格之后，避免隐藏节点干扰文本定位 */}
+            <div className="divide-y divide-border/60 md:hidden">
+              {rows.map((row) => (
+                <div key={row.id} className="flex items-start gap-3 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1">
+                      <span className="truncate font-medium">{row.doc_no}</span>
+                      <CopyButton value={row.doc_no} label="复制单证编号" />
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
                       <DocTypeLabel docType={row.doc_type} />
-                    </td>
-                    <td className="p-2">
                       <StatusBadge tone={STATUS_TONE[row.status] ?? "default"}>
                         {STATUS_LABEL[row.status] ?? row.status}
                       </StatusBadge>
-                    </td>
-                    <td className="p-2">
-                      {money(row.total_amount, row.currency)}
-                    </td>
-                    <td className="p-2 text-muted-foreground">
-                      {row.raw_payload?.sources?.order?.order_no ??
-                        row.raw_payload?.sources?.quote?.quote_no ??
-                        "—"}
-                    </td>
-                    <td className="p-2">
-                      <div className="flex flex-wrap gap-1">
-                        {row.doc_no_editable !== false && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setDocNoError(null);
-                              setDocNoEdit(row);
-                            }}
-                          >
-                            改编号
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setSelectedId(row.id)}
-                        >
-                          预览
-                        </Button>
-                        {row.status === "draft" && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={refresh.isPending}
-                              onClick={() =>
-                                refresh.mutate(row.id, {
-                                  onSuccess: () =>
-                                    toast.success("已从上游重新带入"),
-                                })
-                              }
-                            >
-                              <RefreshCw className="mr-1 h-3.5 w-3.5" />
-                              重新带入
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => changeStatus(row, "issued")}
-                            >
-                              <ShieldCheck className="mr-1 h-3.5 w-3.5" />
-                              签发
-                            </Button>
-                          </>
-                        )}
-                        {row.status === "issued" && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => changeStatus(row, "void")}
-                          >
-                            作废
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span>{money(row.total_amount, row.currency)}</span>
+                      <span className="truncate">
+                        {row.raw_payload?.sources?.order?.order_no ??
+                          row.raw_payload?.sources?.quote?.quote_no ??
+                          "—"}
+                      </span>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setSelectedId(row.id)}
+                  >
+                    预览
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </SectionCard>
 

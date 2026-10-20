@@ -8,11 +8,12 @@
  * 所以这里必须能看、能改；否则单证就只能手工重填，极易与合同不一致。
  */
 import { useState } from "react";
-import { AlertCircle, Bell, Plus, Upload } from "lucide-react";
+import { AlertCircle, Bell, ChevronRight, Plus, Upload } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { ImportExistingDataDialog } from "@/components/import-existing-data-dialog";
+import { CopyButton } from "@/components/shared/copy-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
@@ -250,90 +251,142 @@ export default function OrdersPage() {
             description="从上面的报价单转一张订单试试。"
           />
         ) : (
-          <div
-            className={cn(
-              "overflow-x-auto",
-              density === "compact" && "[&_td]:py-1 [&_th]:h-8 [&_tr]:text-xs",
-            )}
-          >
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  {ORDER_COLUMNS.filter((c) => visibleCols.includes(c.key)).map(
-                    (c) => (
+          <>
+            <div
+              className={cn(
+                "hidden overflow-x-auto md:block",
+                density === "compact" &&
+                  "[&_td]:py-1 [&_th]:h-8 [&_tr]:text-xs",
+              )}
+            >
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-muted-foreground">
+                    {ORDER_COLUMNS.filter((c) =>
+                      visibleCols.includes(c.key),
+                    ).map((c) => (
                       <th key={c.key} scope="col" className="p-2">
                         {c.label}
                       </th>
-                    ),
-                  )}
-                  <th scope="col" className="p-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {list.data!.map((o) => (
-                  <tr
-                    key={o.id}
-                    className="border-b last:border-0 hover:bg-muted/40"
-                  >
-                    {visibleCols.includes("order_no") && (
-                      <td className="p-2 font-medium">{o.order_no}</td>
-                    )}
-                    {visibleCols.includes("customer") && (
-                      <td className="p-2">{o.customer_name ?? "—"}</td>
-                    )}
-                    {visibleCols.includes("status") && (
+                    ))}
+                    <th scope="col" className="p-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.data!.map((o) => (
+                    <tr
+                      key={o.id}
+                      className="border-b last:border-0 hover:bg-muted/40"
+                    >
+                      {visibleCols.includes("order_no") && (
+                        <td className="p-2 font-medium">
+                          <span className="inline-flex items-center gap-1">
+                            {o.order_no}
+                            <CopyButton value={o.order_no} label="复制订单号" />
+                          </span>
+                        </td>
+                      )}
+                      {visibleCols.includes("customer") && (
+                        <td className="p-2">{o.customer_name ?? "—"}</td>
+                      )}
+                      {visibleCols.includes("status") && (
+                        <td className="p-2">
+                          <StatusBadge
+                            tone={STATUS_TONE[o.status] ?? "default"}
+                          >
+                            {STATUS_LABEL[o.status] ?? o.status}
+                          </StatusBadge>
+                        </td>
+                      )}
+                      {visibleCols.includes("amount") && (
+                        <td className="p-2">
+                          {o.total_amount === null
+                            ? "—"
+                            : `${o.currency} ${o.total_amount.toLocaleString(
+                                "en-US",
+                                {
+                                  minimumFractionDigits: 2,
+                                },
+                              )}`}
+                        </td>
+                      )}
+                      {visibleCols.includes("incoterm") && (
+                        <td className="p-2">
+                          {o.incoterm || (
+                            <span className="text-warning">未填</span>
+                          )}
+                        </td>
+                      )}
+                      {visibleCols.includes("payment_terms") && (
+                        <td
+                          className="p-2 max-w-[220px] truncate"
+                          title={o.payment_terms ?? ""}
+                        >
+                          {o.payment_terms || (
+                            <span className="text-warning">未填</span>
+                          )}
+                        </td>
+                      )}
+                      {visibleCols.includes("destination") && (
+                        <td className="p-2">{o.port_of_destination || "—"}</td>
+                      )}
                       <td className="p-2">
-                        <StatusBadge tone={STATUS_TONE[o.status] ?? "default"}>
-                          {STATUS_LABEL[o.status] ?? o.status}
-                        </StatusBadge>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setSelectedId(o.id)}
+                        >
+                          条款
+                        </Button>
                       </td>
-                    )}
-                    {visibleCols.includes("amount") && (
-                      <td className="p-2">
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* 窄屏卡片：DOM 在表格之后，避免隐藏节点干扰文本定位 */}
+            <div className="divide-y divide-border/60 md:hidden">
+              {list.data!.map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  aria-label={`查看订单 ${o.order_no}`}
+                  className="flex w-full items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/30"
+                  onClick={() => setSelectedId(o.id)}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1">
+                      <span className="truncate font-medium">{o.order_no}</span>
+                      <CopyButton value={o.order_no} label="复制订单号" />
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {o.customer_name ?? "—"}
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <StatusBadge tone={STATUS_TONE[o.status] ?? "default"}>
+                        {STATUS_LABEL[o.status] ?? o.status}
+                      </StatusBadge>
+                      <span className="text-xs text-muted-foreground">
                         {o.total_amount === null
                           ? "—"
                           : `${o.currency} ${o.total_amount.toLocaleString(
                               "en-US",
-                              {
-                                minimumFractionDigits: 2,
-                              },
+                              { minimumFractionDigits: 2 },
                             )}`}
-                      </td>
-                    )}
-                    {visibleCols.includes("incoterm") && (
-                      <td className="p-2">
-                        {o.incoterm || (
-                          <span className="text-warning">未填</span>
-                        )}
-                      </td>
-                    )}
-                    {visibleCols.includes("payment_terms") && (
-                      <td
-                        className="p-2 max-w-[220px] truncate"
-                        title={o.payment_terms ?? ""}
-                      >
-                        {o.payment_terms || (
-                          <span className="text-warning">未填</span>
-                        )}
-                      </td>
-                    )}
-                    {visibleCols.includes("destination") && (
-                      <td className="p-2">{o.port_of_destination || "—"}</td>
-                    )}
-                    <td className="p-2">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setSelectedId(o.id)}
-                      >
-                        条款
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      </span>
+                      {o.port_of_destination && (
+                        <span className="text-xs text-muted-foreground">
+                          {o.port_of_destination}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground/60" />
+                </button>
+              ))}
+            </div>
+          </>
         )}
       </SectionCard>
 
