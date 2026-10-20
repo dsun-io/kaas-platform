@@ -23,6 +23,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usePageView } from "@/lib/events/use-page-view";
+import { useTeam } from "@/lib/team/team-context";
 import type {
   ExportProductList,
   ProductTaxRate,
@@ -103,6 +104,12 @@ function errText(e: unknown): string {
 export default function TaxArchivesPage() {
   usePageView({ resource_id: "/settings/tax-archives" });
   const qc = useQueryClient();
+  // 写入权限口径（2026-10-20 前后端对齐审计 P2-6）：
+  // 后端 `tax_archives.py:121-131` 的写接口要「有团队 + 团队管理员（或平台管理员）」，
+  // 前端用 `/teams/me` 的 `is_admin`（useTeam().isTeamAdmin，与后端 is_team_admin 同判据）。
+  // 非管理员**不做整页 403**：税务档案是报价要用的只读资料，保留展示、只隐藏写入入口。
+  const { isTeamAdmin } = useTeam();
+  const canWrite = isTeamAdmin;
   const [form, setForm] = useState<FormState>(EMPTY);
   const [showForm, setShowForm] = useState(false);
   const [ptForm, setPtForm] = useState<PTForm>(EMPTY_PT);
@@ -227,6 +234,10 @@ export default function TaxArchivesPage() {
   });
 
   const submit = () => {
+    if (!canWrite) {
+      toast.error("仅团队管理员可修改税务档案");
+      return;
+    }
     if (!form.name.trim()) {
       toast.error("请填写档案名称");
       return;
@@ -239,6 +250,10 @@ export default function TaxArchivesPage() {
   };
 
   const submitProductTax = () => {
+    if (!canWrite) {
+      toast.error("仅团队管理员可修改税务档案");
+      return;
+    }
     if (ptForm.id == null && !ptForm.product_key) {
       toast.error("请选择产品");
       return;
@@ -269,21 +284,32 @@ export default function TaxArchivesPage() {
         title="税务管理"
         description="企业税档管销项税和杂税；进项税、出口退税率按产品在下方单独维护。"
         actions={
-          <Button
-            onClick={() => {
-              setForm(EMPTY);
-              setShowForm(true);
-            }}
-          >
-            <Plus className="mr-1 h-4 w-4" /> 新建企业税档
-          </Button>
+          canWrite ? (
+            <Button
+              onClick={() => {
+                setForm(EMPTY);
+                setShowForm(true);
+              }}
+            >
+              <Plus className="mr-1 h-4 w-4" /> 新建企业税档
+            </Button>
+          ) : undefined
         }
       />
 
       <div className="rounded-lg border border-warning/40 bg-warning-muted px-3 py-2 text-xs text-warning-muted-foreground">
-        本页<strong>仅团队管理员可保存</strong>
-        ，成员可查看。销项税/杂税按企业税档走；
-        进项税/出口退税率按产品走，报价时自动带出对应产品税率。
+        {canWrite ? (
+          <>
+            本页<strong>仅团队管理员可保存</strong>
+            ，成员可查看。销项税/杂税按企业税档走；
+            进项税/出口退税率按产品走，报价时自动带出对应产品税率。
+          </>
+        ) : (
+          <>
+            当前账号<strong>只能查看</strong>税务档案（保存需团队管理员）。
+            报价时系统会自动带出这里的税率，如需调整请联系团队管理员。
+          </>
+        )}
       </div>
 
       {showForm && (
@@ -387,27 +413,31 @@ export default function TaxArchivesPage() {
                       </StatusBadge>
                     </td>
                     <td className="p-2">
-                      <div className="flex gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setForm(toForm(a));
-                            setShowForm(true);
-                          }}
-                        >
-                          <Pencil className="mr-1 h-3 w-3" /> 编辑
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={toggle.isPending}
-                          onClick={() => toggle.mutate(a)}
-                        >
-                          <Power className="mr-1 h-3 w-3" />
-                          {a.status === "active" ? "停用" : "启用"}
-                        </Button>
-                      </div>
+                      {canWrite ? (
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setForm(toForm(a));
+                              setShowForm(true);
+                            }}
+                          >
+                            <Pencil className="mr-1 h-3 w-3" /> 编辑
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={toggle.isPending}
+                            onClick={() => toggle.mutate(a)}
+                          >
+                            <Power className="mr-1 h-3 w-3" />
+                            {a.status === "active" ? "停用" : "启用"}
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">只读</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -422,15 +452,17 @@ export default function TaxArchivesPage() {
         description="每个产品一条；已配置的产品不能再选。报价时按产品自动带出。"
       >
         <div className="mb-3 flex justify-end">
-          <Button
-            size="sm"
-            onClick={() => {
-              setPtForm(EMPTY_PT);
-              setShowPtForm(true);
-            }}
-          >
-            <Plus className="mr-1 h-4 w-4" /> 新增产品税率
-          </Button>
+          {canWrite && (
+            <Button
+              size="sm"
+              onClick={() => {
+                setPtForm(EMPTY_PT);
+                setShowPtForm(true);
+              }}
+            >
+              <Plus className="mr-1 h-4 w-4" /> 新增产品税率
+            </Button>
+          )}
         </div>
 
         {showPtForm && (
@@ -531,31 +563,35 @@ export default function TaxArchivesPage() {
                       {rateToPct(row.rebate_rate) || "—"}%
                     </td>
                     <td className="p-2">
-                      <div className="flex gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setPtForm({
-                              id: row.id,
-                              product_key: row.product_key,
-                              input_vat: rateToPct(row.input_vat_rate),
-                              rebate: rateToPct(row.rebate_rate),
-                            });
-                            setShowPtForm(true);
-                          }}
-                        >
-                          <Pencil className="mr-1 h-3 w-3" /> 编辑
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={deleteProductTax.isPending}
-                          onClick={() => deleteProductTax.mutate(row)}
-                        >
-                          <Trash2 className="mr-1 h-3 w-3" /> 停用
-                        </Button>
-                      </div>
+                      {canWrite ? (
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setPtForm({
+                                id: row.id,
+                                product_key: row.product_key,
+                                input_vat: rateToPct(row.input_vat_rate),
+                                rebate: rateToPct(row.rebate_rate),
+                              });
+                              setShowPtForm(true);
+                            }}
+                          >
+                            <Pencil className="mr-1 h-3 w-3" /> 编辑
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={deleteProductTax.isPending}
+                            onClick={() => deleteProductTax.mutate(row)}
+                          >
+                            <Trash2 className="mr-1 h-3 w-3" /> 停用
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">只读</span>
+                      )}
                     </td>
                   </tr>
                 ))}

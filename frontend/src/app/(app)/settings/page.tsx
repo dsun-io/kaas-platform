@@ -19,7 +19,9 @@ export default function SettingsPage() {
   usePageView({ resource_id: "/settings" });
   const [tab, setTab] = useState<Tab>("tenants");
   const { data: tenants, isLoading } = useTenants();
-  // 账号治理口径：仅 system_admin 可见（RouteGuard adminOnly 只判 internal，不够）
+  // 账号治理口径：租户 tab 仅平台运营（internal + 管理员）可见。
+  // 2026-10-20 对齐后 `RouteGuard adminOnly` 已与后端 `_require_platform_ops` 同口径，
+  // 这里的 `isSystemAdmin` 只用于**页内 tab 级**细分（admin 历史角色不显示租户管理）。
   const { isSystemAdmin } = useRole();
 
   return (

@@ -22,6 +22,8 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usePageView } from "@/lib/events/use-page-view";
+import { useTeam } from "@/lib/team/team-context";
+import { useAuth } from "@/lib/auth/auth-context";
 
 import {
   useCompanyProfile,
@@ -97,6 +99,17 @@ export default function CompanyProfilePage() {
   const save = useSaveCompanyProfile();
   const [draft, setDraft] = useState<Record<string, string>>({});
 
+  // 写入权限口径（2026-10-20 前后端对齐审计 P2-6）：
+  //   · 企业抬头/收款信息：后端 `_require_team_admin`（main.py:4600-4620）= 团队管理员或平台管理员
+  //     ⇒ 前端用 `/teams/me` 的 `is_admin`（useTeam().isTeamAdmin，与后端 is_team_admin 同判据）；
+  //   · 公章资产：`ws_seals.py:46` 只允许内部账号 ⇒ 团队管理员但非 internal 也隐藏上传入口。
+  // 非管理员**不做整页 403**（页面本身只读展示同样有价值，仓库口径也不给 route 级 403），
+  // 改为禁用写入入口 + 保留只读展示。
+  const { isTeamAdmin } = useTeam();
+  const { user } = useAuth();
+  const canEdit = isTeamAdmin;
+  const canManageSeals = user?.account_type === "internal";
+
   // 服务器数据到了之后灌入表单
   useEffect(() => {
     if (!profile.data) return;
@@ -114,6 +127,10 @@ export default function CompanyProfilePage() {
     setDraft((prev) => ({ ...prev, [key]: value }));
 
   const submit = () => {
+    if (!canEdit) {
+      toast.error("仅团队管理员可保存企业信息");
+      return;
+    }
     const nameEn = (draft.name_en ?? "").trim();
     if (!nameEn) {
       toast.error("公司英文名必填 —— 它是单据上的卖方主体名");
@@ -143,7 +160,7 @@ export default function CompanyProfilePage() {
         title="企业信息"
         description="对外单据的卖方抬头与收款银行。保存一次，所有单证自动带入。"
         actions={
-          <Button onClick={submit} disabled={save.isPending}>
+          <Button onClick={submit} disabled={save.isPending || !canEdit}>
             <Save className="mr-1 h-4 w-4" />
             {save.isPending ? "保存中…" : "保存"}
           </Button>
@@ -151,9 +168,18 @@ export default function CompanyProfilePage() {
       />
 
       <div className="rounded-lg border border-warning/40 bg-warning-muted px-3 py-2 text-xs text-warning-muted-foreground">
-        本页<strong>仅团队管理员可保存</strong>
-        （成员可查看）。企业抬头、收款银行与公章都会直接印在
-        对外单证上，修改前请与营业执照/银行账户核对。
+        {canEdit ? (
+          <>
+            本页<strong>仅团队管理员可保存</strong>
+            （成员可查看）。企业抬头、收款银行与公章都会直接印在
+            对外单证上，修改前请与营业执照/银行账户核对。
+          </>
+        ) : (
+          <>
+            当前账号<strong>只能查看</strong>企业信息（保存需团队管理员）。
+            如需修改抬头、收款银行或公章，请联系团队管理员。
+          </>
+        )}
       </div>
 
       {profile.isLoading ? (
@@ -192,6 +218,7 @@ export default function CompanyProfilePage() {
                     <Input
                       value={draft[field.key as string] ?? ""}
                       placeholder={field.hint}
+                      readOnly={!canEdit}
                       onChange={(e) => set(field.key as string, e.target.value)}
                     />
                   </label>
@@ -201,7 +228,7 @@ export default function CompanyProfilePage() {
           ))}
 
           <div className="flex justify-end">
-            <Button onClick={submit} disabled={save.isPending}>
+            <Button onClick={submit} disabled={save.isPending || !canEdit}>
               <Save className="mr-1 h-4 w-4" />
               {save.isPending ? "保存中…" : "保存企业信息"}
             </Button>
@@ -210,7 +237,7 @@ export default function CompanyProfilePage() {
       )}
 
       {/* 公章是独立资产（tenant_company_seals），不依赖企业信息是否读取成功 */}
-      <CompanySealCard />
+      <CompanySealCard canWrite={canManageSeals} />
     </div>
   );
 }

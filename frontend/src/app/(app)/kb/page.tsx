@@ -17,7 +17,7 @@ export default function KbPage() {
   usePageView({ resource_id: "/kb" });
 
   return (
-    <RouteGuard adminOnly>
+    <RouteGuard internalOnly>
       <div className="space-y-6">
         <PageHeader
           title="知识库管理"

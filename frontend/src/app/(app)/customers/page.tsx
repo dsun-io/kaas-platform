@@ -49,10 +49,12 @@ import {
 } from "@/lib/customer/customer-records";
 import {
   InquiryFollowup,
+  InquiryStageHistory,
   UnlinkedRecords,
   deriveInquiryStage,
   splitProductName,
 } from "./components/inquiry-followups";
+import { resolveInquiryStage } from "./components/inquiry-stage";
 
 // 客户阶段（2026-10-18 用户口径）：只有三种。
 // active / inactive 是手动状态；ordered 由「开启中的订单」自动推导，不可手选。
@@ -125,6 +127,13 @@ interface Inquiry {
   quantity_unit: string | null;
   application: string | null;
   status: string;
+  /**
+   * F4 询盘阶段真值（事件驱动落库：inquiry/quotation/order/shipment/completed/closed）。
+   * 迁移前的历史行可能是 null —— 此时前端回退到 deriveInquiryStage() 推导。
+   */
+  stage?: string | null;
+  /** 阶段最后变更时间（后端序列化；仅展示历史时可用） */
+  stage_updated_at?: string | null;
   created_at: string;
 }
 
@@ -1235,10 +1244,16 @@ function CustomerDetailPanel({
 
                     {detail?.inquiries?.map((inq) => {
                       const linkedQuotes = quotesByInquiry.get(inq.id) ?? [];
-                      const stage = deriveInquiryStage(
+                      // 阶段口径：后端 F4 真值（inq.stage）优先，推导仅作兜底
+                      // （历史行没有 stage / 关闭后重开的陈旧 stage）。
+                      const stage = resolveInquiryStage(
+                        inq.stage,
                         inq.status,
-                        linkedQuotes,
-                        recordsLoading,
+                        deriveInquiryStage(
+                          inq.status,
+                          linkedQuotes,
+                          recordsLoading,
+                        ),
                       );
                       const expanded = expandedInquiries[inq.id] ?? false;
                       const product = splitProductName(inq.product_name_raw);
@@ -1386,6 +1401,8 @@ function CustomerDetailPanel({
                                     : "该询盘还没有报价单。"
                                 }
                               />
+                              {/* F4 阶段变更历史（只读；接口失败静默隐藏） */}
+                              <InquiryStageHistory inquiryId={inq.id} />
                             </div>
                           )}
                         </div>

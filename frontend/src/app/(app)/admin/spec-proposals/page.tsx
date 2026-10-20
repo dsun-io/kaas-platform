@@ -20,6 +20,7 @@ import { PageHeader } from "@/components/shared";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RouteGuard } from "@/components/route-guard";
 
 interface Proposal {
   id: number;
@@ -38,7 +39,23 @@ interface Proposal {
 
 type TabType = "recommended" | "all";
 
+/**
+ * 属性提案审核页 —— 方案 2026-10-20 前后端对齐审计（P2-6）。
+ *
+ * 后端三条接口（`ws_admin_proposals.py:78/97/115`）都要 **internal + 管理员角色**，
+ * 本页此前**没有任何 RouteGuard**（只靠侧栏 adminOnly）⇒ 任意登录用户直接输 URL 就能
+ * 打开页面、然后连吃 3 个 403。这里补平台运营守卫，并把内容拆成子组件：
+ * 守卫不通过时子组件不挂载，列表查询也不会发出去。
+ */
 export default function SpecProposalsPage() {
+  return (
+    <RouteGuard adminOnly>
+      <SpecProposalsContent />
+    </RouteGuard>
+  );
+}
+
+function SpecProposalsContent() {
   const [activeTab, setActiveTab] = useState<TabType>("recommended");
   const [reviewDialog, setReviewDialog] = useState<{
     proposal: Proposal;

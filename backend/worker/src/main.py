@@ -2797,6 +2797,14 @@ async def list_events_api(
     event_type: str = "",
     user: dict = Depends(_get_current_user),
 ):
+    """事件审计列表 —— 平台运营专用。
+
+    2026-10-20 前后端对齐审计（P1-1）：前端 `/events` 整页藏在 `RouteGuard adminOnly` 里，
+    但本端点此前只挂 `Depends(_get_current_user)` ⇒ **任意 customer token 都能读全租户事件**
+    （含其他客户 payload）。前端隐藏不是权限边界（同一教训见 `_require_platform_ops`
+    的 docstring）：这里与 6 个 `/api/v1/admin/*` 端点同口径，补上平台运营闸门。
+    """
+    _require_platform_ops(user)
     page = max(page, 1)
     page_size = min(max(page_size, 1), 100)
     where = "WHERE tenant_id = $1"

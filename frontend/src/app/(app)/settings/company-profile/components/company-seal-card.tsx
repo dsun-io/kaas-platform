@@ -307,7 +307,7 @@ function formatTime(iso: string | null): string {
 
 // ─── 组件 ────────────────────────────────────────────────────────────────────
 
-export function CompanySealCard() {
+export function CompanySealCard({ canWrite = true }: { canWrite?: boolean }) {
   const seals = useCompanySeals();
   const upload = useUploadCompanySeal();
   const setDefault = useSetDefaultCompanySeal();
@@ -388,8 +388,9 @@ export function CompanySealCard() {
         }
       >
         <div className="space-y-4">
-          {/* 上传 */}
-          <div className="space-y-3 rounded-lg border border-dashed bg-muted/20 p-4">
+          {/* 上传（仅内部账号可写：后端 ws_seals.py:46 只允许内部账号管理公章） */}
+          {canWrite ? (
+            <div className="space-y-3 rounded-lg border border-dashed bg-muted/20 p-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="space-y-1">
                 <span className="text-sm font-medium">公章名称（必填）</span>
@@ -448,7 +449,12 @@ export function CompanySealCard() {
                 }}
               />
             </div>
-          </div>
+            </div>
+          ) : (
+            <p className="rounded-lg border border-dashed bg-muted/20 p-4 text-xs text-muted-foreground">
+              当前账号只能查看公章；上传 / 设默认 / 删除需要内部账号。
+            </p>
+          )}
 
           {/* 列表 */}
           {seals.isLoading ? (
@@ -479,6 +485,7 @@ export function CompanySealCard() {
                     key={seal.id}
                     seal={seal}
                     busy={mutatingId === seal.id}
+                    canWrite={canWrite}
                     onSetDefault={() => {
                       setDefault.mutate(seal.id, {
                         onSuccess: () =>
@@ -548,11 +555,13 @@ export function CompanySealCard() {
 function SealRow({
   seal,
   busy,
+  canWrite,
   onSetDefault,
   onDelete,
 }: {
   seal: CompanySeal;
   busy: boolean;
+  canWrite: boolean;
   onSetDefault: () => void;
   onDelete: () => void;
 }) {
@@ -597,7 +606,7 @@ function SealRow({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
-        {!seal.is_default && (
+        {canWrite && !seal.is_default && (
           <Button
             type="button"
             size="sm"
@@ -609,16 +618,18 @@ function SealRow({
             设为默认
           </Button>
         )}
-        <Button
-          type="button"
-          size="sm"
-          variant="destructive"
-          disabled={busy}
-          onClick={onDelete}
-        >
-          <Trash2 className="mr-1 h-3.5 w-3.5" />
-          删除
-        </Button>
+        {canWrite && (
+          <Button
+            type="button"
+            size="sm"
+            variant="destructive"
+            disabled={busy}
+            onClick={onDelete}
+          >
+            <Trash2 className="mr-1 h-3.5 w-3.5" />
+            删除
+          </Button>
+        )}
       </div>
     </li>
   );

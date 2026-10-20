@@ -14,6 +14,7 @@
  */
 import { ArrowUpRight, X } from "lucide-react";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { StatusBadge, type StatusTone } from "@/components/shared";
@@ -27,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { apiClient } from "@/lib/api/client";
 import { useTeam } from "@/lib/team/team-context";
+import type { InquiryStage } from "./inquiry-stage";
 import {
   DocPreview,
   renderMetaOf,
@@ -124,12 +126,9 @@ export function splitProductName(raw: string | null): {
 }
 
 /** 询盘条目上的「当前阶段」——纯展示推导，不写回后端询盘 status。 */
-export interface InquiryStage {
-  label: "询盘" | "报价" | "订单" | "发货" | "完结" | "关闭";
-  tone: StatusTone;
-  /** 最新一步的补充信息（单号 + 状态） */
-  hint: string | null;
-}
+// 类型与「后端 stage 优先」的解析逻辑在 ./inquiry-stage.ts（纯函数，可单测）；
+// 这里保留 re-export，避免既有导入点（page.tsx）改路径。
+export type { InquiryStage } from "./inquiry-stage";
 
 const SHIP_DOC_TYPES = new Set(["pl", "bl"]);
 const ORDER_DOC_TYPES = new Set(["contract", "ci"]);
@@ -568,6 +567,118 @@ export function InquiryFollowup({
           </div>
           <DocTable docs={quoteDocs} />
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── 询盘阶段变更历史（后端 F4 · GET /inquiries/{id}/stage-log）────────────
+
+/** 后端阶段字符串 → 中文（与 inquiry-stage.ts 同一套口径）。 */
+const STAGE_LOG_LABEL: Record<string, string> = {
+  inquiry: "询盘",
+  quotation: "报价",
+  order: "订单",
+  shipment: "发货",
+  completed: "完结",
+  closed: "关闭",
+};
+
+/** 触发阶段推进的业务事件（inquiry_stage.py 的 SOURCE_* 常量）。 */
+const STAGE_SOURCE_LABEL: Record<string, string> = {
+  quote_created: "生成报价单",
+  order_created: "创建订单",
+  order_completed: "订单完成",
+  shipment_created: "生成出运单证",
+  inquiry_closed: "手动关闭",
+};
+
+export interface InquiryStageLogItem {
+  from_stage: string | null;
+  to_stage: string;
+  source_event: string | null;
+  actor_id: string | null;
+  note: string | null;
+  created_at: string | null;
+}
+
+function stageText(stage: string | null | undefined): string {
+  if (!stage) return "—";
+  return STAGE_LOG_LABEL[stage] ?? stage;
+}
+
+function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("zh-CN");
+}
+
+/**
+ * 询盘阶段变更历史（`ws_crm_ext.py:414` 的 GET 端点）。
+ *
+ * 加载失败**静默**（`silent: true` + `retry: false` + isError 时返回 null）：
+ * 老后端 / mock 缺这条端点时，询盘展开区只是少一段历史，
+ * 不影响「报价单 / 订单 / 单证」这条主信息，也不该给用户弹通用报错。
+ */
+export function InquiryStageHistory({ inquiryId }: { inquiryId: number }) {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["inquiry", inquiryId, "stage-log"],
+    queryFn: async () => {
+      const { data } = await apiClient.get<{ items: InquiryStageLogItem[] }>(
+        `/inquiries/${inquiryId}/stage-log`,
+        { silent: true },
+      );
+      return data.items ?? [];
+    },
+    retry: false,
+    staleTime: 60_000,
+  });
+
+  if (isError) return null;
+
+  const items = data ?? [];
+  return (
+    <div className="rounded-xl border border-border/70 bg-white/55">
+      <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
+        <span className="text-[11px] font-medium text-muted-foreground">
+          阶段变更历史
+        </span>
+        <span className="text-[11px] text-muted-foreground">
+          业务事件自动记录 · 只读
+        </span>
+      </div>
+      {isLoading ? (
+        <p className="px-3 py-3 text-xs text-muted-foreground">
+          正在读取阶段历史…
+        </p>
+      ) : items.length === 0 ? (
+        <p className="px-3 py-3 text-xs text-muted-foreground">
+          还没有阶段变更记录。
+        </p>
+      ) : (
+        <ul className="divide-y divide-border/60">
+          {items.map((log, index) => (
+            <li
+              key={`${log.created_at ?? "t"}-${index}-${log.to_stage}`}
+              className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs"
+            >
+              <span className="text-muted-foreground">
+                {stageText(log.from_stage)} → {stageText(log.to_stage)}
+              </span>
+              {log.source_event && (
+                <StatusBadge tone="default" className="h-5 px-2 text-[11px]">
+                  {STAGE_SOURCE_LABEL[log.source_event] ?? log.source_event}
+                </StatusBadge>
+              )}
+              {log.note && (
+                <span className="text-muted-foreground">{log.note}</span>
+              )}
+              <span className="ml-auto tabular-nums text-[11px] text-muted-foreground">
+                {formatDateTime(log.created_at)}
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

@@ -27,6 +27,14 @@
 > - **文档收尾批已推送**：`45cf6cc2`（TODO.md 重写为唯一账本 + 三份交接口径收敛 + 4 份设计稿归档
 >   + 根 README 补 `sync-shared`）；**新设备/新 clone 必须先跑 `scripts/sync-shared.ps1`**
 >   （worker 镜像 gitignored，否则 `ModuleNotFoundError: kaas_common.preview`）。
+> - **前后端对齐 A 批（UI 重构后）**：① `/events` 补 `_require_platform_ops` —— 封堵"任意 customer
+>   token 可读全租户事件"（P1 安全，闸门在查库之前）；② F4 询盘 `stage` 真值前端开始消费
+>   （`resolveInquiryStage`：后端 stage 优先、推导兜底；处理"关闭后重开不回收 stage"语义）
+>   + 展开区接 `GET /inquiries/{id}/stage-log`（silent 降级）；③ `RouteGuard adminOnly` 收紧为
+>   **internal + 管理员**（与后端 `is_admin_role` 同口径）、`/admin/spec-proposals` 补守卫、
+>   company-profile / tax-archives 非 team admin 只读化、`/kb` 改 `internalOnly` 保住原可见性；
+>   新增 C17（侧栏过滤口径待统一）。门禁：worker **1018 passed + 5 skipped** / 前端 **491** /
+>   typecheck 0 / 定向用例 5+18 全过。
 >
 > **（2026-10-20 晚 · 口径收敛与审计补录：`docs/TODO.md` = 唯一账本）**
 >
