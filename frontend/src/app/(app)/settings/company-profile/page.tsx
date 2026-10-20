@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingBlock } from "@/components/shared/loading-block";
+
 /**
  * 企业主体信息（设置 → 企业信息）—— 所有对外单据的卖方抬头。
  *
@@ -155,9 +157,7 @@ export default function CompanyProfilePage() {
       </div>
 
       {profile.isLoading ? (
-        <p className="py-8 text-center text-sm text-muted-foreground">
-          加载中…
-        </p>
+        <LoadingBlock rows={5} className="py-8" />
       ) : profile.isError ? (
         <SectionCard title="无法读取企业信息">
           <p className="text-sm text-destructive">

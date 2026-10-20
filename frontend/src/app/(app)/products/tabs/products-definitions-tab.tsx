@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingBlock } from "@/components/shared/loading-block";
+
 /**
  * 产品工位 · tab「定义」（P14 行为等价搬入）
  *
@@ -663,11 +665,8 @@ export function ProductsDefinitionsTab() {
           <tbody>
             {isLoading ? (
               <tr>
-                <td
-                  colSpan={9}
-                  className="px-4 py-8 text-center text-muted-foreground"
-                >
-                  加载中…
+                <td colSpan={9} className="px-4 py-4">
+                  <LoadingBlock rows={3} />
                 </td>
               </tr>
             ) : (
@@ -736,9 +735,7 @@ export function ProductsDefinitionsTab() {
                                   String(data.spec.name ?? p.product_name) ||
                                   p.product_name,
                               });
-                              setSpecJson(
-                                JSON.stringify(data.spec, null, 2),
-                              );
+                              setSpecJson(JSON.stringify(data.spec, null, 2));
                             } catch {
                               // 读取失败就不打开编辑器（避免把空定义存成租户覆盖）
                             }

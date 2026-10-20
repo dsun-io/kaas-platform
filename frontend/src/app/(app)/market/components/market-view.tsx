@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingBlock } from "@/components/shared/loading-block";
+
 // 由「产品市场对照」页面与「市场情报」工位共用。
 // 注意：这里不能放在 page.tsx 里 —— 页面文件不允许自定义 props。
 
@@ -156,9 +158,7 @@ function RegionTab() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading && (
-            <p className="text-sm text-muted-foreground">加载中…</p>
-          )}
+          {isLoading && <LoadingBlock rows={4} />}
           {!isLoading && products?.length === 0 && selected && (
             <p className="text-sm text-muted-foreground">该地区暂无产品数据</p>
           )}
@@ -349,7 +349,7 @@ function PortsTab() {
         )}
       </div>
 
-      {isLoading && <p className="text-sm text-muted-foreground">加载中…</p>}
+      {isLoading && <LoadingBlock rows={3} />}
       {!isLoading && ports?.length === 0 && (
         <p className="text-sm text-muted-foreground">暂无港口数据</p>
       )}

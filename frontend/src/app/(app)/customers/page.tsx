@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingBlock } from "@/components/shared/loading-block";
+
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePageView } from "@/lib/events/use-page-view";
@@ -977,9 +979,7 @@ function CustomerDetailPanel({
           </Button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-          {isLoading && (
-            <p className="text-sm text-muted-foreground">加载中…</p>
-          )}
+          {isLoading && <LoadingBlock rows={4} />}
           {detail && (
             <div>
               <div className="sticky -top-4 z-10 -mx-6 mb-4 flex gap-1 border-b border-border/70 bg-white/80 px-6 backdrop-blur">

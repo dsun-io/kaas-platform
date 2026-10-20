@@ -193,6 +193,11 @@
 > 全站 `app/(app)` 里 `text-red/green/amber/emerald-*`、`bg-*-100` 等硬编码色清零（原 13 文件 23 处），
 > 统一改 `success/warning/destructive` 语义 token（含暗色取值）。
 >
+> **（2026-10-20 · P0 数据区加载态收尾）**
+> 新增共享 `LoadingBlock`；audit-timeline、客户详情、market、products 定义/图片、报价订单记录、
+> 企业抬头/公章、税务管理、盖章回传的“加载中…”改骨架。剩余纯文本仅为图片/按钮内联状态，
+> 属正常反馈，不再是整块数据区占位。
+>
 > **（2026-10-20 · 新会话接手核对：本地 main 同步 + 分支残留清理 + 生产 secrets 实测 + 本机工具链）**
 >
 > 1. **本地 main 已快进到 `fb4b2aa`**（此前落后 origin/main 33 个提交 —— 本地曾停在 10-19 下午的
