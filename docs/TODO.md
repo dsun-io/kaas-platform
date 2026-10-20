@@ -30,8 +30,8 @@
 | A-10 | **C27 QA 越权审计 7 条留证** | 发布后跑一轮并留证（P4） | 0.5 天 |
 | A-11 | **D6 冷启动基线收尾** | 用 Cloudflare Analytics API 拉 p50，写 `coldstart-baseline.json` 销 PENDING | 0.5 天 |
 | A-12 | **C12 PDF 归档真单证端到端** | 需等平台产生首单真实 PDF（`render_pdf` 当前 0 条）后人工复核 18 类；可先用现有样例做 1 类对照 | 0.5 天 |
-| A-13 | **C36 审计后续（实为 20 条待接）** | ✅ 审计完成 + **删 3 条已批准接口** + **本期 5 条 UI 已接**（税档软删/定价改/团队改名/手工汇率/CSV 导入，前端 789 passed）；剩余：下期 12 + 长期保留 3 + 13 条 owner 确认 | 2 天 |
-| A-14 | **A10：5 类扩展模板实现** | ✅ P1 两件完成（`beneficiary_decl` 12 字段/BD、`saso_coc` 18 字段/COC；金标 23→25；后端 DOC_TYPE 20 类、contracts R3/R4 PASS）；P2 三类按真实样例再排 | — |
+| A-13 | **C36 审计后续** | ✅ 全部完成：审计 + 删 3 条 + 本期 5 + **下期 12 全部接上**（待接 24→3 长期保留；13 条 owner 确认待业务）；遗留缺口：品名对照编辑/删除（后端无 list/PATCH/DELETE，登记为后续后端项） | — |
+| A-14 | **A10：5 类扩展模板实现** | ✅ 全部完成（P1：`beneficiary_decl`/BD、`saso_coc`/COC；P2：`vessel_cert`/VC、`export_license`/EL、`ciq`/CIQ；金标 25→28、DOC_TYPE 23 类、contracts R3/R4 PASS）；无真实样例字段留空待填，未伪造 | — |
 | A-15 | **A8①：归档任务端到端实跑** | ✅ 2026-10-21 已完成并验证：首窗口 cron 失败根因 = `events_archive_log.id` uuid NOT NULL 且现网无默认值（NotNullViolation，重试 3 次静默失败）→ worker 显式传 uuid + 迁移 `202610210001` 补默认；手动触发归档 2026-10-19：**archived=7 / version_count=1**，DB 新增 1 行（`kaas-files/events-archive/2026/10/19/v1.jsonl.gz`）+ R2 对象 326 bytes 实测可下载 | — | ✅ |
 | A-16 | **D2 后直传路径端到端复验** | ✅ 2026-10-21 已验证：临时 QA 账号 → `POST /file-objects/presign` 返回 `configured=true`（签名用系统 token `kaas-r2-system`）→ PUT 200 → GET 200（内容一致）→ DELETE 204；临时账号与对象已清理 | — |
 | A-17 | **重置密码邮件 UI 同步新版** | ✅ 2026-10-21 已完成（electric-blue/12px 圆角/table 响应式/纯文本兜底） | — |
@@ -54,8 +54,8 @@
 
 ### D. 当前生产基线（2026-10-21 收口）
 
-- 生产版本 **`711acb5f-53ac-4fd9-972e-cb8f6415d1b2`**（第 10 次部署）；迁移头 **`202610210001`**（events_archive_log id 默认修复）；
-- 门禁：worker **1523 + 12skip** / orchestrator **247** / 前端 **809（87 files）** / e2e **27 = 27 + 0** / build out **277** / contracts·mocks·contrast·trade-doc:check·静态断言全 PASS。
+- 生产版本 **`e5092262-d595-426f-ad22-4915fa022eaf`**（第 11 次部署）；迁移头 **`202610210001`**；
+- 门禁：worker **1558 + 12skip** / orchestrator **247** / 前端 **926（108 files）** / e2e **27 = 27 + 0** / build out **286** / contracts·mocks·contrast·trade-doc:check·静态断言全 PASS。
 
 ---
 
@@ -200,7 +200,7 @@
 | A11 | FACT_LABELS 未通过 API 返回 | ✅ 复核后**无需改**：`_fact_dict` 已逐条返回 `text_zh`/`text_en`（`ws_docs_hardening.py`），前端 `doc-facts-panel.tsx` 也按 `text_zh/text_en` 展示与编辑 ⇒ 全局 `FACT_LABELS` 只是内核兜底，不构成缺口 | — | ✅（复核销账） |
 | A12 | `trigger_expr` 只存不求值 | ✅ 2026-10-21：新增 `kaas_common/trade_doc/trigger.py`（纯 stdlib 三层解析，**无 eval/exec**；禁函数调用/属性/下标/算术；长度/记号/深度上限）；GET doc-set 追加 `applicable/trigger_error`（不删项、无法求值按适用），PUT 坏表达式 422 不落库，lint 只 warning；内核 68 + API 7 测，worker 1316+12skip。**边界（→A14）**：facts 白名单无包装类事实，"wood_packing" 会以 `TRIGGER_UNKNOWN_KEY` 警告而非生效 | A7 | ✅（求值器就绪） |
 | A13 | 翻译端点无入口 | ✅ 2026-10-21：单证加固新增第 6 tab「中译英」——字段从模板 manifest 推导（只取含汉字 text 字段，不硬编码）；`path=template` 明示 AI 不可用/原样返回/请人工翻译（绝不冒充），非草稿明示未写回；+16 测 | — | ✅ |
-| C27b | 单证加固写端点的角色闸门（D-6 风险，待评估） | branch-audit 复核发现：`ws_docs_hardening` 的 facts confirm / doc-set PUT / receipts POST / verify-export 本次只加了可见性 404（`_doc_404(..., user)`），**没有团队管理员/internal 角色闸门**，与 F3「签发类动作」口径可能不一致；需定：这些动作是否只允许团队管理员/内部，还是任何可见成员可操作。**未修**（避免误伤客户自助流程），先登记待拍板 | C27 后续 | ⏳ 待评估 |
+| C27b | 单证加固写端点的角色闸门 | ✅ 2026-10-21 用户拍板「限团队管理员/internal」→ 已修 5 条写端点（facts confirm / doc-set PUT / receipts POST / verify-export / doc-set/{type}/receipt），顺序 401→404→403→200，读端点不变；新增 35 条角色矩阵测试、worker 1558+12skip | — | ✅ |
 | C28 | 询盘「渠道」枚举不一致（P2: 按提示填必 422） | ✅ 2026-10-21：前端自由输入改为**枚举下拉**（`INQUIRY_CHANNEL_OPTIONS` 与后端 `INQUIRY_CHANNEL` 逐字一致，中文标签→枚举值），只发合法值；typecheck 0 | — | ✅ |
 | C29 | 「导入已有数据」是占位骨架却已挂页面 | ✅ 2026-10-21：已从「订单」「单证」两页移除入口按钮与弹窗（清理 state/import），组件保留并加注"后端批量导入接口就绪后再挂回"；**后端接口本身仍未实现**（实现时合并 C19 的导入 UI 决策） | C19 | ✅（入口已隐藏） |
 | C30 | `/admin/archive-logs` 恒空 + 前端 0 调用 | ✅ 2026-10-21：端点由占位空列表改为真查询 `events_archive_log`（page/page_size/month、参数化、ORDER BY archived_at DESC；**不加租户过滤**以保留 `tenant_id='*'` 写入行）；管理台 gray-release 加归档记录卡片（三态 + 复用分页条）；后端 4 + 前端 3 测、真 PG 临时插行复验后精确删除。首次月度归档前为空属正常 | — | ✅ |
