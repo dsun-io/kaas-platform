@@ -5,8 +5,8 @@
 > 已全部删除，只剩 `app/db` + `alembic`。因此：
 > - 文中出现的 orchestrator 路径/行号仅作**历史证据**，不再是"另一侧实现"；
 > - 「新增后端接口必须两侧落地」与 route-parity 约束**已退役**（无第二后端可比）；
-> - 权威口径见 [README](../README.md)、[HANDOVER_2026-10-20](./HANDOVER_2026-10-20.md)、
->   [MASTER_EXEC_PLAN](./MASTER_EXEC_PLAN_2026-10-19.md)。
+> - 权威口径见 [README](../README.md)、[HANDOVER_2026-10-20](archive/2026-10-20-closeout/HANDOVER_2026-10-20.md)、
+>   [MASTER_EXEC_PLAN](archive/2026-10-20-closeout/MASTER_EXEC_PLAN_2026-10-19.md)。
 >
 > ⚠️ **本文件记的是当时的判断，多处已被代码超越**（stat-card 重复实现 / `POST /quote` /
 > `GET /product-specs` / `customers/{}/stage` 分叉 / 出货工位门禁 均已不成立）。
