@@ -103,6 +103,15 @@
 >   `/products/{key}/import-template`（说明+下载）、`/import/preview`、`/import/calculate`
 >   全部改走 `_product_or_404_tenant`（与 `/formulas`/`/explain`/算价同口径）——编辑器里新建的
 >   租户产品现在**能选、能算、能下模板、能导入**；新增 5 条测试（租户 200/系统产品回归/跨团队 404/未知 404）。
+> - **intel/channels 字段错位修复（2026-10-21）**：结论 = **前端错、后端对** —— 后端列是 `is_enabled`
+>   （`models.py:1132`），前端旧类型读 `enabled` ⇒ free 通道永远显示"未开通"。前端改读
+>   `is_enabled ?? enabled`（唯一入口 `isChannelEnabled()`），mock 形状本就正确、补断言钉住；5 条测试含 SSR 断言。
+> - **C10 模板防劈页（2026-10-21）**：`@media print` 加 `.keep-together`；18/18 模板各一个容器包住
+>   「签章+公章+声明/紧邻条款/备注+页脚」，正文长表格在容器外可跨页；39 条静态断言 + 18 份 HTML 基准有意重生成
+>   （`render.test.ts` 18/18 逐字节仍绿）。**归档 Python 镜像不再同步**：`verify-trade-doc-fixtures.py`
+>   降级为历史对照（`--allow-divergence`），TS 侧唯一真源 = render.test.ts；**视觉/分页须 build/e2e/人工打印复核**。
+> - **N4/P8 核对（2026-10-21）**：设计文档「P8 联调+E2E+订阅编码 ⏳」已过时 —— 联调（CI 三条全绿+预览实测）、
+>   E2E（28 条=24+4）、订阅编码（R2 PASS 27 工位 + B3 真机开通/撤销）均已成立，`WORKSTATION_DESIGN.md` 段位表已标 ✅。
 >
 > **（2026-10-20 晚 · 口径收敛与审计补录：`docs/TODO.md` = 唯一账本）**
 >

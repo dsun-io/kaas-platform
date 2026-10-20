@@ -61,6 +61,15 @@ body {
   */
   table.sign, table.sign tr, table.sign td,
   .certify, .foot { page-break-inside: avoid; break-inside: avoid; }
+
+  /*
+    C10：末尾原子块（声明条款 + 签章区 + 公章 + 页脚；个别模板含
+    紧邻的条款/备注块）由模板包进 `.keep-together`，整体分页 —— 不允许被切开。
+    为什么必须包容器：实测 Chromium 忽略 `break-before/after: avoid`（2026-10-11），
+    纯 CSS 无法保证「签章区不成为新页上的唯一内容」。
+    ⚠️ 正文长表格 / 行项**不在**容器内：items 必须保持可跨页。
+  */
+  .keep-together { page-break-inside: avoid; break-inside: avoid; }
 }
 
 /* ── 卖方信头 ─────────────────────────────────────────────────────────── */
@@ -280,7 +289,8 @@ table.draft-top .amount { font-size: 10.5pt; font-weight: 700; color: #0f2740; }
 
   <!-- 澳新、欧盟、美国等对木质包装有严格检疫要求（ISPM 15）；
        本声明用于申明未使用实木包装，可免于熏蒸/热处理。 -->
-  <div class="certify">
+    <div class="keep-together">
+<div class="certify">
     We hereby declare that the packing materials used for the above-mentioned consignment are
     entirely free from solid wood. The packing materials are made of alternative materials such as
     plywood, particle board, oriented strand board, veneer, or other processed materials.
@@ -303,6 +313,7 @@ table.draft-top .amount { font-size: 10.5pt; font-weight: 700; color: #0f2740; }
   </table>
 
   <div class="foot">Non-Wood Packing Declaration</div>
+  </div>
 
 </div>
 </body>

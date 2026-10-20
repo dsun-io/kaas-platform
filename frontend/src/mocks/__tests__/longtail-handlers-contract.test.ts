@@ -87,6 +87,9 @@ describe("intel ← hooks/use-intel.ts（main.py:867-1040）", () => {
       paid_channels: Array<{ message: string }>;
     }>("/intel/channels");
     expect(channels.body.free_channels.length).toBe(2);
+    // 后端真源字段是 `is_enabled`（不是 `enabled`）：free 通道恒为已开通，
+    // 前端 `isChannelEnabled()` 靠这个字段判断（task-14 A 修复的契约面）。
+    expect(channels.body.free_channels[0]?.is_enabled).toBe(true);
     expect(channels.body.paid_channels[0]?.message).toBe("未开通");
   });
 });

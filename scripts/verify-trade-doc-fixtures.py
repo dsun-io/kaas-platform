@@ -1,13 +1,21 @@
 """用归档的 Python 渲染器复验前端基线：确保 TypeScript 版仍是 Python 版的忠实移植。
 
-为什么必需
+> ⚠️ **2026-10-21 起（TODO C10）本脚本降级为「历史对照工具」**：单证模板加了
+> 签章区原子块（`keep-together`，见 `frontend/src/lib/trade-doc/assets.json`），
+> TS 渲染器**有意**偏离归档 Python 实现 ⇒ 默认会报 18/18 差异（首个差异即 C10 CSS），
+> **这是预期，不是回归**。当前 TS 侧唯一真源是 `frontend/src/lib/trade-doc/__tests__/render.test.ts`
+> 的 18 份逐字节基线；归档 Python 作为历史留档，不再同步。
+> 需要看"差异仍只是模板外壳"时用：`python scripts/verify-trade-doc-fixtures.py --allow-divergence`
+> （有差异也退出 0，并打印说明）。
+
+为什么必需（历史上）
 ----------
 改了样例数据之后重生基线，如果只跑前端测试，那只是「TS 对 TS」自证，
 失去了「逐字节对齐旧实现」的意义。本脚本用**旧实现**渲染同一份数据，
 与前端基线逐字节比对 —— 两边一致才说明迁移与基线都还站得住。
 
-用法：python scripts/verify-trade-doc-fixtures.py
-退出码：0 = 全部一致；1 = 存在差异
+用法：python scripts/verify-trade-doc-fixtures.py [--allow-divergence]
+退出码：0 = 全部一致（或 `--allow-divergence` 下有差异）；1 = 存在差异
 """
 from __future__ import annotations
 
@@ -88,6 +96,12 @@ for doc_type in doc_types:
 
 print()
 if bad:
+    if "--allow-divergence" in sys.argv[1:]:
+        print(f"⚠ {len(bad)} 类不一致 —— 但已传 --allow-divergence：")
+        print("  自 TODO C10（2026-10-21）起 TS 模板有意偏离归档 Python（签章区原子块），")
+        print("  本脚本只作历史对照；TS 侧基线以 frontend 的 render.test.ts 为准。")
+        raise SystemExit(0)
     print(f"✗ {len(bad)} 类不一致：{', '.join(bad)}")
+    print("  （若差异仅来自 C10 的 keep-together 模板改动，加 --allow-divergence 可放行）")
     raise SystemExit(1)
 print(f"✓ {len(doc_types)} 类全部逐字节一致（TypeScript 渲染 == 归档 Python 渲染）")

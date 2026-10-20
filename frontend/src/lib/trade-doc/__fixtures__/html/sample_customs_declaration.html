@@ -61,6 +61,15 @@ body {
   */
   table.sign, table.sign tr, table.sign td,
   .certify, .foot { page-break-inside: avoid; break-inside: avoid; }
+
+  /*
+    C10：末尾原子块（声明条款 + 签章区 + 公章 + 页脚；个别模板含
+    紧邻的条款/备注块）由模板包进 `.keep-together`，整体分页 —— 不允许被切开。
+    为什么必须包容器：实测 Chromium 忽略 `break-before/after: avoid`（2026-10-11），
+    纯 CSS 无法保证「签章区不成为新页上的唯一内容」。
+    ⚠️ 正文长表格 / 行项**不在**容器内：items 必须保持可跨页。
+  */
+  .keep-together { page-break-inside: avoid; break-inside: avoid; }
 }
 
 /* ── 卖方信头 ─────────────────────────────────────────────────────────── */
@@ -298,7 +307,8 @@ table.draft-top .amount { font-size: 10.5pt; font-weight: 700; color: #0f2740; }
     </tr>
   </table>
 
-  <div class="certify">
+    <div class="keep-together">
+<div class="certify">
     The particulars above are provided for the preparation and lodgement of the export customs
     declaration. The official declaration will be lodged with and released by China Customs through
     the customs broker in the prescribed format. The exporter confirms that the information given
@@ -324,6 +334,7 @@ table.draft-top .amount { font-size: 10.5pt; font-weight: 700; color: #0f2740; }
   </table>
 
   <div class="foot">Customs Declaration Data</div>
+  </div>
 
 </div>
 </body>

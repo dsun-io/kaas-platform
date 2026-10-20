@@ -163,8 +163,31 @@ export interface IntelChannel {
   id: number;
   name: string;
   type: string;
-  enabled: boolean;
+  /**
+   * 后端真源字段：`main.py:1024-1040` 原样返回 `intel_data_channels` 行，
+   * 列的 DB 定义是 `is_enabled`（见 `backend ... models.py:1132`）。
+   */
+  is_enabled?: boolean;
+  /**
+   * @deprecated 后端**从未返回** `enabled`。这是前端旧接口定义写错的字段名
+   * （对齐审计 2026-10-20 发现：free 通道因此永远显示"未开通"）。
+   * 仅作向后兼容读取，判断请统一用 `isChannelEnabled()`。
+   */
+  enabled?: boolean;
+  /** 后端只对 paid 通道附加（"未开通"/"已开通"），free 通道可能没有 */
   message?: string;
+}
+
+/**
+ * 通道是否已开通 —— **唯一**判断口径。
+ *
+ * 后端字段是 `is_enabled`；`enabled` 是历史误写，只有旧 mock/中间层才可能有。
+ * 用 `??` 而不是 `||`：`is_enabled: false` 必须压过 `enabled: true`（后端真源优先）。
+ */
+export function isChannelEnabled(
+  channel: Pick<IntelChannel, "is_enabled" | "enabled">,
+): boolean {
+  return channel.is_enabled ?? channel.enabled ?? false;
 }
 
 export interface IntelChannelsResponse {

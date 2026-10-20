@@ -1,6 +1,6 @@
 "use client";
 
-import { useIntelChannels } from "../hooks/use-intel";
+import { isChannelEnabled, useIntelChannels } from "../hooks/use-intel";
 import {
   Card,
   CardContent,
@@ -39,25 +39,29 @@ export function ChannelsView() {
         <h3 className="text-lg font-medium mb-4">免费渠道</h3>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {data?.free_channels?.length ? (
-            data.free_channels.map((channel) => (
-              <Card key={channel.id}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">{channel.name}</CardTitle>
-                    <Badge variant={channel.enabled ? "default" : "secondary"}>
-                      <CheckCircle2 className="size-3 mr-1" />
-                      {channel.enabled ? "已开通" : "未开通"}
-                    </Badge>
-                  </div>
-                  <CardDescription>{channel.type}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">
-                    {channel.message || "暂无描述"}
-                  </p>
-                </CardContent>
-              </Card>
-            ))
+            data.free_channels.map((channel) => {
+              // 后端字段是 `is_enabled`（旧代码读 `enabled` ⇒ free 通道永远"未开通"）
+              const on = isChannelEnabled(channel);
+              return (
+                <Card key={channel.id}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base">{channel.name}</CardTitle>
+                      <Badge variant={on ? "default" : "secondary"}>
+                        <CheckCircle2 className="size-3 mr-1" />
+                        {on ? "已开通" : "未开通"}
+                      </Badge>
+                    </div>
+                    <CardDescription>{channel.type}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">
+                      {channel.message || "暂无描述"}
+                    </p>
+                  </CardContent>
+                </Card>
+              );
+            })
           ) : (
             <p className="text-sm text-muted-foreground col-span-full">
               暂无免费渠道数据
@@ -84,7 +88,7 @@ export function ChannelsView() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-muted-foreground">
-                    {channel.enabled
+                    {isChannelEnabled(channel)
                       ? "渠道已启用"
                       : "升级订阅后可使用此数据渠道"}
                   </p>

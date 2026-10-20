@@ -61,6 +61,15 @@ body {
   */
   table.sign, table.sign tr, table.sign td,
   .certify, .foot { page-break-inside: avoid; break-inside: avoid; }
+
+  /*
+    C10：末尾原子块（声明条款 + 签章区 + 公章 + 页脚；个别模板含
+    紧邻的条款/备注块）由模板包进 `.keep-together`，整体分页 —— 不允许被切开。
+    为什么必须包容器：实测 Chromium 忽略 `break-before/after: avoid`（2026-10-11），
+    纯 CSS 无法保证「签章区不成为新页上的唯一内容」。
+    ⚠️ 正文长表格 / 行项**不在**容器内：items 必须保持可跨页。
+  */
+  .keep-together { page-break-inside: avoid; break-inside: avoid; }
 }
 
 /* ── 卖方信头 ─────────────────────────────────────────────────────────── */
@@ -299,7 +308,8 @@ table.draft-top .amount { font-size: 10.5pt; font-weight: 700; color: #0f2740; }
 
   <table class="items"><thead><tr><th>No.</th><th>Description of Goods</th><th>Specification</th><th>HS Code</th><th>Quantity</th><th>Unit</th><th>Packages</th><th>G.W. (KGS)</th></tr></thead><tbody><tr><td class="c">1</td><td class="l">[PRODUCT NAME 1]</td><td class="l">[SPECIFICATION 1]</td><td class="c">7314410000</td><td class="r">500</td><td class="c">Rolls</td><td class="c">500</td><td class="r">12,500.00</td></tr><tr><td class="c">2</td><td class="l">[PRODUCT NAME 2]</td><td class="l">[SPECIFICATION 2]</td><td class="c">7308900000</td><td class="r">2000</td><td class="c">Pcs</td><td class="c">100</td><td class="r">9,800.00</td></tr><tr><td class="c">3</td><td class="l">[PRODUCT NAME 3]</td><td class="l">[SPECIFICATION 3]</td><td class="c">7314490000</td><td class="r">300</td><td class="c">Rolls</td><td class="c">300</td><td class="r">4,200.00</td></tr><tr class="total"><td class="l" colspan="4">TOTAL</td><td class="r">2800</td><td></td><td class="c">900</td><td></td></tr></tbody></table>
 
-  <div class="certify">
+    <div class="keep-together">
+<div class="certify">
     We hereby advise you that the goods mentioned above have been shipped on board the vessel named
     above, and that the shipping documents are being prepared and will be forwarded to you in
     accordance with the terms of the contract and/or the letter of credit.
@@ -319,6 +329,7 @@ table.draft-top .amount { font-size: 10.5pt; font-weight: 700; color: #0f2740; }
   </table>
 
   <div class="foot">Shipping Advice</div>
+  </div>
 
 </div>
 </body>
