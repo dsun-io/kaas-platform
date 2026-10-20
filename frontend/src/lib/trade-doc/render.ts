@@ -383,8 +383,12 @@ function renderAddressBlock(obj: Record<string, unknown>): string {
  * 图片源白名单：`data:image/*;base64,<base64>` 或 `http(s)` 绝对地址。
  * 其余（javascript:、相对路径、空值、非字符串）一律返回空串 ——
  * 宁可不出图，也不让来路不明的字符串进到 `<img src>`。
+ *
+ * 导出后自检（`pdf-extract.ts` 的 `expectedImageCounts`）也调它判断"这份数据
+ * 到底会渲染出几张图"——与渲染器**同一把尺**，否则自检会把被白名单挡掉的坏图
+ * 也计入期望值。
  */
-function safeImageSrc(value: unknown): string {
+export function safeImageSrc(value: unknown): string {
   if (typeof value !== "string") return "";
   const raw = value.trim();
   if (/^https?:\/\/\S+$/i.test(raw)) return raw;

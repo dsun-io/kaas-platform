@@ -344,6 +344,19 @@ export function useDetachTradeDocFile(docId: number) {
   });
 }
 
+/**
+ * 取文件对象字节（导出后自检读归档 `render_pdf` 用）。
+ *
+ * 为什么走 axios 而不是 `<a href>` / `<img src>`：`/file-objects/{id}/content`
+ * 要 Bearer 授权（A4 的短期直链只用于渲染期 `<img>`，不是给脚本取字节的通路）。
+ */
+export async function fetchFileObjectBytes(fileId: number): Promise<ArrayBuffer> {
+  const res = await apiClient.get(`/file-objects/${fileId}/content`, {
+    responseType: "arraybuffer",
+  });
+  return res.data as ArrayBuffer;
+}
+
 // ── 自动出 PDF（服务端无头浏览器出字节）→ 同一套落档链路 ─────────────────────
 
 export interface RenderPdfResult {

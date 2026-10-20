@@ -24,6 +24,8 @@ import type {
   FactsConfirmResponse,
   LintResponse,
   ReceiptsResponse,
+  VerifyExportRequest,
+  VerifyExportResponse,
 } from "@/lib/trade-doc/hardening";
 
 export const hardeningKeys = {
@@ -204,6 +206,28 @@ export function useDocSetReceipt(docId: number) {
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: hardeningKeys.docSet(docId) });
+    },
+  });
+}
+
+/**
+ * 导出后自检（C21）。
+ *
+ * **不是 query**：用户点「自检」才跑一次（要先在浏览器里用 pdf.js 抽 PDF 文本/图片数），
+ * 挂载即跑会在每次打开面板时白解析一遍 PDF。
+ *
+ * `silent: true`：自检未通过是**业务结论**（422 `EXPORT_SELF_CHECK_FAILED`），
+ * 面板会把阻断项逐条展示；不让通用错误处理再弹一个"无权限/后端繁忙"的 toast。
+ */
+export function useVerifyExport(docId: number) {
+  return useMutation({
+    mutationFn: async (body: VerifyExportRequest) => {
+      const { data } = await apiClient.post<VerifyExportResponse>(
+        `/trade-docs/${docId}/verify-export`,
+        body,
+        { silent: true },
+      );
+      return data;
     },
   });
 }

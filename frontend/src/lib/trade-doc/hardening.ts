@@ -12,8 +12,9 @@
  *   GET    /trade-docs/{id}/doc-set                      → `get_trade_doc_doc_set`
  *   PUT    /trade-docs/{id}/doc-set                      → `put_trade_doc_doc_set`
  *   POST   /trade-docs/{id}/doc-set/{doc_type}/receipt   → `record_doc_set_receipt`
- *   （`POST .../verify-export` 后端有，前端**刻意不接**：需 PDF 文本/图片抽取能力，
- *     见任务口径"导出后自检暂不接 UI"，不在此登记类型以免被误用。）
+ *   POST   /trade-docs/{id}/verify-export                → `verify_trade_doc_export`
+ *          （C21：前端抽 PDF 文本/图片数，**后端裁决**；默认 422 阻断、可越过落审计。
+ *            前端不提供 allow_override 入口，见 `pdf-extract.ts` 模块头注释。）
  *
  * 为什么单独一个文件：四个面板 + 签发闸门读的是同一套字段；类型/标签/错误解析各写一份
  * 必然漂移（G1 老毛病）。这里只放**纯数据与纯函数**，不引 React。
@@ -137,6 +138,109 @@ export interface LintResponse {
   blocking: BlockingItem[];
   warnings: LintWarning[];
   summary: { blocking: number; warnings: number; facts: FactsSummary };
+}
+
+// ── 导出后自检（verify-export）───────────────────────────────────────────────
+
+/**
+ * 请求体 = `ws_docs_hardening.VerifyExportIn` 的逐字段投影。
+ *
+ * **前端只交事实**（PDF 抽出的文本/图片数、要核对的文本清单），判定全在后端。
+ * `image_counts` / `expected_image_counts` 的 key 语义见 `pdf-extract.ts` 头注释
+ * （本系统单证只会有公章 + 产品图两种图，后端默认 key 是 `stamp`）。
+ */
+export interface VerifyExportRequest {
+  texts: string[];
+  pdf_text: string;
+  image_counts: Record<string, number>;
+  expected_image_counts?: Record<string, number>;
+  /** **普通 UI 不提交**：越过自检是管理员/留痕动作（后端落业务事件）。 */
+  allow_override?: boolean;
+}
+
+export interface VerifyExportImageMismatch {
+  key: string;
+  expected: number;
+  actual: number;
+}
+
+export interface VerifyExportChecked {
+  texts: number;
+  missing_texts: string[];
+  image_mismatches: VerifyExportImageMismatch[];
+}
+
+/** 200：自检通过（`overridden=true` = 被显式越过并已留痕）。 */
+export interface VerifyExportResponse extends VerifyExportChecked {
+  doc_id: number;
+  ok: boolean;
+  overridden: boolean;
+}
+
+/** 422：自检未通过（默认阻断）。`detail` 比通用错误体多三个字段。 */
+export interface VerifyExportBlocked {
+  code: string;
+  message: string;
+  missingTexts: string[];
+  imageMismatches: VerifyExportImageMismatch[];
+  checked: VerifyExportChecked | null;
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function asImageMismatches(value: unknown): VerifyExportImageMismatch[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((raw) => asRecord(raw))
+    .filter((raw): raw is Record<string, unknown> => raw !== null)
+    .map((raw) => ({
+      key: String(raw["key"] ?? ""),
+      expected: asNumber(raw["expected"]),
+      actual: asNumber(raw["actual"]),
+    }));
+}
+
+/**
+ * 从 verify-export 的 422 里取出阻断清单。
+ *
+ * 后端形状（`ws_docs_hardening.py` 的 `_error(...)`）：
+ * `{"detail": {"error":"validation","code":"EXPORT_SELF_CHECK_FAILED","detail":"…",
+ *   "missing_texts":[…],"image_mismatches":[…],"checked":{…}}}`
+ * 不是自检阻断（网络/404/其它校验）时返回 null，由调用方按普通错误提示。
+ */
+export function parseVerifyExportBlocked(
+  error: unknown,
+): VerifyExportBlocked | null {
+  const response = asRecord(asRecord(error)?.["response"]);
+  const body = asRecord(response?.["data"]);
+  const detail = asRecord(body?.["detail"]);
+  if (!detail) return null;
+  const code = String(detail["code"] ?? "");
+  if (code !== "EXPORT_SELF_CHECK_FAILED") return null;
+  const checkedRaw = asRecord(detail["checked"]);
+  const checked: VerifyExportChecked | null = checkedRaw
+    ? {
+        texts: asNumber(checkedRaw["texts"]),
+        missing_texts: asStringArray(checkedRaw["missing_texts"]),
+        image_mismatches: asImageMismatches(checkedRaw["image_mismatches"]),
+      }
+    : null;
+  return {
+    code,
+    message: String(detail["detail"] ?? ""),
+    missingTexts: asStringArray(detail["missing_texts"]),
+    imageMismatches: asImageMismatches(detail["image_mismatches"]),
+    checked,
+  };
 }
 
 // ── 收款登记 ────────────────────────────────────────────────────────────────
