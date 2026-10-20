@@ -538,7 +538,22 @@ async def _http_post_json(url: str, headers: dict, payload: dict, timeout: int =
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status, resp.read().decode("utf-8", "replace")
-    opts = {"method": "POST", "headers": {**headers, "Content-Type": "application/json"}, "body": body}
+    # 2026-10-21 修：嵌套 dict 直接传给 js.fetch 在 Python Workers 里会抛出不可捕获的
+    # JS 异常（表现为 Worker 500、无响应体）⇒ 必须先 to_js 转成 JS 对象；并加超时，
+    # 避免出站请求把 isolate 拖死。
+    opts_dict = {
+        "method": "POST",
+        "headers": {**headers, "Content-Type": "application/json"},
+        "body": body,
+    }
+    try:
+        from pyodide.ffi import to_js  # type: ignore
+        from js import AbortSignal  # type: ignore
+
+        opts_dict["signal"] = AbortSignal.timeout(int(timeout) * 1000)
+        opts = to_js(opts_dict)
+    except ImportError:
+        opts = opts_dict
     resp = await fetch(url, opts)
     return int(resp.status), await resp.text()
 
@@ -614,8 +629,9 @@ async def forgot_password(request: Request, body: _ForgotIn):
                 await conn.execute(
                     """INSERT INTO password_reset_tokens
                        (user_id, token_hash, expires_at, requested_ip, created_at)
-                       VALUES ($1,$2, NOW() + make_interval(mins => $3), $4, NOW())""",
-                    row["id"], _hash_reset_token(raw_token), _RESET_TTL_MINUTES,
+                       VALUES ($1,$2,$3,$4,NOW())""",
+                    row["id"], _hash_reset_token(raw_token),
+                    datetime.now(timezone.utc) + timedelta(minutes=_RESET_TTL_MINUTES),
                     request.client.host if request.client else None,
                 )
                 reset_link = (

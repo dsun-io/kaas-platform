@@ -18,6 +18,7 @@
 - **系统一律用独立命名**的 `kaas-*` token（如 `kaas-r2-system-*`、`kaas-ci-system-*`、`kaas-prod-system-*`）：
   **一个密钥只用于一个地方**，命名必须能看出归属（DSH-Admin=DSH 专用；`kaas-*-system`=平台系统）。
 - **破坏性密钥操作**（吊销 / 轮换 / 删除 / 改权限）执行前**必须向用户确认**；只读审计可直接做。
+- **写 Worker secret 的铁律（2026-10-21 实测）**：**不要**用 PowerShell 管道 `Get-Content x | wrangler secret put`——`|` 会给值尾部追加换行，导致 Resend/S3 等 401 且**静默失败**。正确做法：`Set-Content` 写值文件后用 **Cloudflare API** 精确写入（`PUT /accounts/{id}/workers/scripts/{name}/secrets`，body `{name,type:"secret_text",text}`），或 `printf %s` 管道（bash/CI）。写入后必须用真实链路验证（如 Resend 发信记录、R2 presign 回环）。
 
 ## 1. 项目更新 = 代码 + 文档 + 推送（缺一不可）
 

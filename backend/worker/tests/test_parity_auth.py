@@ -669,6 +669,11 @@ def test_forgot_password_active_user_writes_single_use_token():
     assert resp.json()["ok"] is True
     assert "UPDATE password_reset_tokens SET used_at=NOW()" in conn.sql()
     assert "INSERT INTO password_reset_tokens" in conn.sql()
+    # 2026-10-21 生产 500 根因回归：asyncpg 把 Python int 绑成 int8，make_interval(mins => $3) 会
+    # 报 DatatypeMismatchError（argument "mins" must be type integer, not bigint）⇒ 必须显式 ::int。
+    # 2026-10-21 生产 500 根因回归：SQL 里不做时间运算（make_interval + 参数类型在 asyncpg/Hyperdrive 组合下会失败），
+    # 过期时间由 Python 计算后以 timestamptz 参数传入。
+    assert "make_interval" not in conn.sql()
 
 
 def test_reset_password_validation_422():
