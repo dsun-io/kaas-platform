@@ -38,6 +38,7 @@ import { NumberEditDialog } from "@/components/shared/number-edit-dialog";
 import { Button } from "@/components/ui/button";
 import { usePageView } from "@/lib/events/use-page-view";
 import { renderTradeDoc } from "@/lib/trade-doc/render";
+import { autoArchiveIssuedDoc } from "@/lib/trade-doc/auto-archive";
 import { exportCsv, exportExcel, printMerged } from "@/lib/trade-doc/export";
 
 import { DocCreateForm } from "./components/doc-create-form";
@@ -211,8 +212,19 @@ export default function TradeDocsPage() {
     update.mutate(
       { id: row.id, status },
       {
-        onSuccess: () =>
-          toast.success(status === "issued" ? "已签发" : "已作废"),
+        onSuccess: () => {
+          if (status !== "issued") {
+            toast.success("已作废");
+            return;
+          }
+          // 签发即归档：不再要求客户先打印另存、再手动导入一次。
+          // 手动入口仍保留（files/upload + 手动归档区）应对渲染器不可用/第三方单据等。
+          toast.success("已签发，正在自动归档 PDF…");
+          void autoArchiveIssuedDoc(row.id).then((result) => {
+            if (result.ok) toast.success(result.message);
+            else toast.error(`${result.message}（手动归档入口仍可用）`);
+          });
+        },
       },
     );
   };

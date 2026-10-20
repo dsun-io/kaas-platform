@@ -118,6 +118,16 @@
 
 **门禁（2026-10-20 实测）**：typecheck 0 error；lint 0 error / 86 warn；vitest **455 passed**；e2e **23 passed + 4 skipped = 27**；`NEXT_EXPORT=1` build 成功（`out/` 268 文件）。
 
+### 0.4 签发后自动归档 PDF（2026-10-20）
+
+- Web UI 中**签发成功即自动归档**：`GET /trade-docs/{id}/render-data` → 前端 `renderTradeDoc` 生成 HTML → `POST /trade-docs/{id}/pdf`（服务端 Browser Rendering 出字节 → 既有落档链路：新版本上位、旧版挂 `render_pdf_superseded` 不物理删）。客户不再需要“打印另存 → 再导入一次”。
+- **手动归档入口保留**：`POST /trade-docs/{id}/files/upload`（手动归档区）+ 单证工位「导入已有数据」；覆盖渲染器不可用、第三方签发单据、历史补档等特殊情况。
+- **边界（如实记录）**：自动归档由 Web UI 在签发成功后触发；直接调用 API / 其他客户端签发不会自动出 PDF（HTML 模板在前端）。要服务端兜底，需要把渲染器搬到服务端或在签发接口接收 HTML，属跨栈改造，登记待办。
+- mock：`POST /trade-docs/{id}/pdf` 返回 503（mock 无浏览器渲染器），前端如实提示“请手动归档”，不假装成功。
+- 单元测试：`frontend/src/lib/trade-doc/__tests__/auto-archive.test.ts` 3 条（成功 / 503 / 404）。
+
+**门禁（2026-10-20 实测）**：typecheck 0 error；lint 0 error / 86 warn；vitest **458 passed**；e2e **23 passed + 4 skipped = 27**；`NEXT_EXPORT=1` build 成功（`out/` 268 文件）。
+
 ---
 
 ## 1. 展示与交互问题诊断
