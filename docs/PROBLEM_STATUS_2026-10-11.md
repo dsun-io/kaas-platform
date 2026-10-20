@@ -81,6 +81,10 @@
 >    随机独立值（2026-10-20 入 repo secrets，生产值不受影响）⇒ **预览站登录可用**；
 >    预览桶专用 S3 token 无 API（实测 404 No route），要开预览文件功能需 Dashboard 手动建
 >    （R2 → Manage R2 API Tokens → 限 `kaas-preview-storage`，可选）；RESEND 预览按方案跳过。
+>    **✅ 已补（2026-10-20）**：用户建 `kaas-preview-storage-rw` token，双向验签通过
+>    （预览桶可读、生产桶 AccessDenied）⇒ 入 repo secrets（`S3_ACCESS_KEY`/`S3_SECRET_KEY`/`S3_ENDPOINT`，
+>    只被 preview.yml 注入预览 worker + teardown 清理用，生产 worker 不碰）。**预览环境功能全集齐**
+>    （登录/文件/清理全自动；仅发邮件按方案跳过）。repo secrets 共 11 个。
 >    **待首次真实 PR 验证**：preview.yml 端到端（CF token preflight 是首道关）；预览 worker secrets
 >    （JWT_SECRET 等）repo secrets 有则注入、无则告警不阻塞——预览登录体验取决于此（要不要补进
 >    repo secrets 待用户拍板）。生产桶仍 `kaas-files`，改名 `kaas-prod-storage` 另立项（不动 S5）。
