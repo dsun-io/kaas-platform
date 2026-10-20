@@ -3,8 +3,9 @@
 /**
  * 团队管理页的数据层（成员 / 邀请 / 工位订阅）。
  *
- * 为什么不用 `useQuery`：这三个接口**可能还没上线**，要求"失败必须降级成空态 + 提示，
- * 绝不能崩/白屏"。这里用 `useState + useEffect + try/catch` 显式控制：
+ * 为什么不用 `useQuery`：这三个接口已由 worker `ws_teams.py` / `ws_workstations.py` 实现，
+ * 但仍要求"失败必须降级成空态 + 提示，绝不能崩/白屏"（权限/网络/形状异常都可能失败）。
+ * 这里用 `useState + useEffect + try/catch` 显式控制：
  * 失败时 items 归零、error 给中文文案，由 UI 渲染"暂不可用"，不存在被异常打穿的可能。
  *
  * 所有请求都带 `silent: true`：错误由本页自己显示，不再弹全局 toast（避免一条错误弹两遍）。
@@ -185,7 +186,7 @@ export function useTeamMembers(
     teamId === null ? null : `/teams/${teamId}/members`,
     enabled,
     normalizeMembers,
-    "成员列表读取失败（接口可能还没上线）",
+    "成员列表读取失败（可稍后重试）",
   );
 }
 
@@ -197,7 +198,7 @@ export function useTeamInvites(
     teamId === null ? null : `/teams/${teamId}/invites`,
     enabled,
     normalizeInvites,
-    "邀请列表读取失败（接口可能还没上线）",
+    "邀请列表读取失败（可稍后重试）",
   );
 }
 
@@ -209,6 +210,6 @@ export function useTeamSubscriptions(
     teamId === null ? null : `/teams/${teamId}/subscriptions`,
     enabled,
     normalizeSubscriptions,
-    "工位订阅读取失败（接口可能还没上线）",
+    "工位订阅读取失败（可稍后重试）",
   );
 }

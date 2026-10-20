@@ -44,7 +44,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
 把后者也降级成 warning 会让"公式被静默忽略"重新长回来 —— 那正是 SPEC_DELTA 要消灭的东西。
 
-⚠️ 上层**尚未实现**（`app/api` 里还没有"存差异"的端点）⇒ 本文件**只钉契约、不改上层**。
+⚠️ 上层写路径：`app/api` 已随 S4（单应用）删除；差异（override）现由 `/tenant-products`
+的 `override` 列持久化（B5 已落地）。本文件**只钉内核契约、不验上层接线**。
 """
 
 import pytest

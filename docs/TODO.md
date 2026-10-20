@@ -148,7 +148,7 @@
 | A10 | 模板扩展清单 | `TRADE_DOC_TEMPLATES.md:186-188`：SASO/COC、船公司证明、出口许可证、CIQ、受益人声明「待扩展」 | A6 | ⏳ |
 | N9 | = C23 的决策记录（避免两处编号漂移） | 见 C23/§G-12 | — | — |
 | N10 | 事件流联通 `domain_events` | `WORKSTATION_DESIGN.md:88/870/962` 设计承诺（Phase 6/§2.2）；代码/迁移 0 命中 | 产品决策 | ⏳ |
-| N11 | DEPLOY §0.4 清理脚本缺失 | ✅ 2026-10-21：新建 `.tools/cleanup_orphan_lead.py`（DEPLOY 引用的路径；**默认 dry-run**、`--apply` 才删、只匹配 3 个 E2E 前缀、被 `outreach_messages`/`cust_inquiries` 引用的行跳过并列出、事务+`--limit`、`KAAS_DSN` 环境变量读 DSN）；本机空库 dry-run 实测 0 行/exit 0 | — | ✅ |
+| N11 | DEPLOY §0.4 清理脚本缺失 | ✅ 2026-10-21：新建 `scripts/cleanup_orphan_lead.py`（`.tools/` 被 gitignore，改放 tracked 的 scripts/；DEPLOY §0.4 命令同步改为该路径）；**默认 dry-run**、`--apply` 才删、只匹配 3 个 E2E 前缀、被 `outreach_messages`/`cust_inquiries` 引用的行跳过并列出、事务+`--limit`、`KAAS_DSN` 环境变量读 DSN）；本机空库 dry-run 实测 0 行/exit 0 | — | ✅ |
 | A11 | FACT_LABELS 未通过 API 返回 | ✅ 复核后**无需改**：`_fact_dict` 已逐条返回 `text_zh`/`text_en`（`ws_docs_hardening.py`），前端 `doc-facts-panel.tsx` 也按 `text_zh/text_en` 展示与编辑 ⇒ 全局 `FACT_LABELS` 只是内核兜底，不构成缺口 | — | ✅（复核销账） |
 | A12 | `trigger_expr` 只存不求值 | `trade_doc_doc_set_items.trigger_expr` 仅存表达式；"无木包装不出声明"需条件求值器 | A7 | ⏳ |
 | A13 | 翻译端点无入口 | `POST /trade-docs/{id}/translate` 已实现（`ws_docs_ext.py:518`）但前端 0 调用（仅在内容版本显示"AI 翻译"标签） | — | ⏳ |

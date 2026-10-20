@@ -83,7 +83,7 @@ export default function TeamPage() {
         {!snapshot.ok && (
           <div className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm text-muted-foreground">
             <AlertCircle className="size-4 shrink-0" />
-            工位信息接口暂不可用（可能还没上线），这不影响你创建 / 加入团队。
+            工位信息暂不可用（接口异常，可刷新重试），这不影响你创建 / 加入团队。
           </div>
         )}
         <TeamSetup
@@ -118,7 +118,7 @@ export default function TeamPage() {
       {!snapshot.ok && (
         <div className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm text-muted-foreground">
           <AlertCircle className="size-4 shrink-0" />
-          工位信息接口暂不可用（可能还没上线）：入口不会被隐藏，但开通状态暂时无法确认。
+          工位信息暂不可用（接口异常，可刷新重试）：入口不会被隐藏，但开通状态暂时无法确认。
         </div>
       )}
 

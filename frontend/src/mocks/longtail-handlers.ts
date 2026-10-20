@@ -650,7 +650,9 @@ let researchRunsStore: Array<Record<string, unknown> & { id: number }> = [];
 
 // ════════════════════════════════════════════════════════════════════════════
 // 8) leadgen（线索池 / 开发运行）
-// 形状真源：chain.py:940-1250（`_row_to_lead` 整行 + demand_index/blank_index=null）
+// 形状真源：chain.py:940-1250（`_row_to_lead` 整行）。
+// `demand_index`/`blank_index` **不在库里**（C8 的 `_lead_indices` 按地区聚合后
+// 在 API 层回填），因此 store 不存这两个键；由 `leadOut()` 统一补示例值。
 // ════════════════════════════════════════════════════════════════════════════
 
 type MockLead = Record<string, unknown> & { id: number };
@@ -695,8 +697,6 @@ function leadSeed(
     crawled_at: null,
     outreach_status: outreachStatus,
     inquiry_status: "none",
-    demand_index: null,
-    blank_index: null,
     created_at: "2026-10-05T08:00:00.000Z",
     updated_at: "2026-10-05T08:00:00.000Z",
   };
@@ -1123,9 +1123,16 @@ function currencyRate(base: string, quote: string): number {
   return table[`${base}:${quote}`] ?? 1;
 }
 
-/** 商情预留字段：后端恒返回 null（chain.py:_row_to_lead） */
+/**
+ * C8 四源计数（**mock 示例值**）：真实值由后端 `chain.py:_lead_indices` 按地区从
+ * `intel_demand_index`（需求量）+ 四源已开发量（抓取/调研/触达/成交）算出，
+ * 见 `backend/worker/tests/test_lead_indices.py`。mock 不做聚合，只给**确定性示例**，
+ * 让该列在 mock/e2e 下可见（不再是恒 null，否则永远验不了展示）。
+ */
 function leadOut(lead: MockLead) {
-  return { ...lead, demand_index: null, blank_index: null };
+  const demand = 120 + (lead.id % 5) * 30; // 120 / 150 / 180 / 210 / 240（示例）
+  const developed = 20 + (lead.id % 4) * 15; // 20 / 35 / 50 / 65（示例：四源合计）
+  return { ...lead, demand_index: demand, blank_index: demand - developed };
 }
 
 /** `_row_to_provider`（chain.py:558-565） */
@@ -1370,6 +1377,46 @@ function sampleSpecRow(columns: Array<Record<string, unknown>>) {
     row[key] = key === "product_name" ? "Chain link fence" : 1.5;
   }
   return row;
+}
+
+/** 上传前的服务端校验（真源 quote_api.py:943-963 `_read_upload` / `_parse_or_400`）。
+ *  只校验**能在不解析表格的前提下判断**的失败：空文件 / .xls / 超限 / 缺 file 字段；
+ *  真正的表头/单位解析 mock 不做（见 preview handler 的 warning 说明）。 */
+const IMPORT_MAX_MB = 2;
+
+function importUploadError(form: FormData): {
+  detail: { error: string; message: string };
+} | null {
+  const file = form.get("file");
+  if (!file || typeof file === "string") {
+    return {
+      detail: { error: "empty_file", message: "上传的文件是空的" },
+    };
+  }
+  const blob = file as File;
+  if (blob.size === 0) {
+    return {
+      detail: { error: "empty_file", message: "上传的文件是空的" },
+    };
+  }
+  if (blob.size > IMPORT_MAX_MB * 1024 * 1024) {
+    return {
+      detail: {
+        error: "file_too_large",
+        message: `文件过大（${(blob.size / 1048576).toFixed(1)} MB），上限 ${IMPORT_MAX_MB} MB`,
+      },
+    };
+  }
+  if (blob.name.toLowerCase().endsWith(".xls")) {
+    return {
+      detail: {
+        error: "parse_error",
+        message:
+          "不支持老的 .xls 格式；请在 Excel 里另存为 .xlsx（或 CSV UTF-8）后再上传",
+      },
+    };
+  }
+  return null;
 }
 
 /** 成本参考：从 mock 定价单元取同产品 + 同规格的"最近一次成本"
@@ -2984,15 +3031,23 @@ export const longtailHandlers = [
   // POST /export-quote/import/preview ← use-export-quote-import.ts:172
   // 真实后端会解析上传的 xlsx/csv；mock 不解析二进制，固定回 1 行示例并**明确标注**，
   // 让"预览 → 计算"这条 UI 链路能走通（不发网络、不挂起）。
-  http.post("/api/v1/export-quote/import/preview", () => {
+  // 但**服务端能先拒的错**按真源拒掉：空文件 / .xls / 超 2MB（quote_api.py:943-963），
+  // 否则「明显错的文件也返回 200」会让 UI 的空态/错误态无从验证。
+  http.post("/api/v1/export-quote/import/preview", async ({ request }) => {
+    const form = await request.formData();
+    const uploadError = importUploadError(form);
+    if (uploadError) {
+      return HttpResponse.json(uploadError, { status: 400 });
+    }
     const productKey = String(MOCK_EXPORT_PRODUCTS[0]?.key ?? "chain_link");
     const info = importTemplateInfo(productKey);
     const columns = (info?.columns ?? []) as Array<Record<string, unknown>>;
     const row = sampleSpecRow(columns);
+    const uploaded = form.get("file") as File | null;
     return HttpResponse.json({
       product_key: productKey,
       product_name: info?.product_name ?? productKey,
-      source_name: "mock-sample.xlsx",
+      source_name: uploaded?.name || "mock-sample.xlsx",
       total_data_rows: 1,
       usable_rows: 1,
       error_count: 0,
@@ -3018,8 +3073,37 @@ export const longtailHandlers = [
   // POST /export-quote/import/calculate ← use-export-quote-import.ts:203
   http.post("/api/v1/export-quote/import/calculate", async ({ request }) => {
     const form = await request.formData();
-    const productKey = String(form.get("product_key") ?? MOCK_EXPORT_PRODUCTS[0]?.key ?? "");
-    const view = form.get("view") === "internal" ? "internal" : "customer";
+    const uploadError = importUploadError(form);
+    if (uploadError) {
+      return HttpResponse.json(uploadError, { status: 400 });
+    }
+    const viewRaw = String(form.get("view") ?? "customer");
+    if (viewRaw !== "customer" && viewRaw !== "internal") {
+      return HttpResponse.json(
+        { detail: { error: "bad_view", message: "view 只能是 customer 或 internal" } },
+        { status: 400 },
+      );
+    }
+    const payloadRaw = form.get("payload");
+    if (payloadRaw !== null && typeof payloadRaw === "string") {
+      try {
+        JSON.parse(payloadRaw);
+      } catch {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "bad_payload",
+              message: "payload 不是合法 JSON",
+            },
+          },
+          { status: 400 },
+        );
+      }
+    }
+    const productKey = String(
+      form.get("product_key") ?? MOCK_EXPORT_PRODUCTS[0]?.key ?? "",
+    );
+    const view = viewRaw;
     const base = mockCalculateResponse(productKey, {}, view);
     if (!base) {
       return HttpResponse.json(
@@ -3027,10 +3111,11 @@ export const longtailHandlers = [
         { status: 404 },
       );
     }
+    const uploaded = form.get("file") as File | null;
     return HttpResponse.json({
       ...base,
       import: {
-        source_name: "mock-sample.xlsx",
+        source_name: uploaded?.name || "mock-sample.xlsx",
         total_data_rows: 1,
         usable_rows: 1,
         skipped_rows: 0,

@@ -1,9 +1,6 @@
 "use client";
 
 import { EVENT_PAYLOAD_SCHEMAS, type EventType } from "@contracts/events";
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
 
 interface Props {
   event_type: string;
@@ -16,45 +13,11 @@ export function PayloadRenderer({
   schema_version,
   payload,
 }: Props) {
-  const [loadingOss, setLoadingOss] = useState(false);
-  const [ossData, setOssData] = useState<unknown>(null);
-
   const schemaKey =
     `${event_type}:${schema_version}` as `${EventType}:${number}`;
   const schema = EVENT_PAYLOAD_SCHEMAS[schemaKey];
 
   const payloadObj = payload as Record<string, unknown> | null | undefined;
-
-  // OSS key reference — lazy load
-  if (payloadObj?._oss_key && !ossData) {
-    return (
-      <div className="space-y-2">
-        <p className="text-sm text-muted-foreground">
-          Payload 已归档至 OSS:{" "}
-          <code className="text-xs">{String(payloadObj._oss_key)}</code>
-        </p>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={loadingOss}
-          onClick={async () => {
-            setLoadingOss(true);
-            try {
-              // In production: fetch presigned GET URL then fetch the payload
-              // For Phase 0: simulate with a timeout
-              await new Promise((r) => setTimeout(r, 500));
-              setOssData({ _loaded: true, _note: "OSS data placeholder" });
-            } finally {
-              setLoadingOss(false);
-            }
-          }}
-        >
-          {loadingOss && <Loader2 className="mr-1 size-3 animate-spin" />}
-          点击加载完整数据
-        </Button>
-      </div>
-    );
-  }
 
   if (!schema) {
     return (
