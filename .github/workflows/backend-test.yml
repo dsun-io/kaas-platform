@@ -54,14 +54,14 @@ jobs:
       # 空库快径（metadata.create_all + stamp）创建，否则新环境必 500。
       - name: Schema coverage gate
         working-directory: ./backend/orchestrator
-        run: uv run --extra migrations python ../scripts/check-schema-coverage.py
+        run: uv run --extra migrations python ../../scripts/check-schema-coverage.py
 
       # 2026-10-19：表级门禁查不出**列/索引**漂移（本地冒烟实测：生产有 team_id、
       # 模型漏建 ⇒ 全新空库 export-quote/products 500）。用生产列快照做列级对比；
       # 生产独有表（历史遗留）登记在 scripts/schema-drift-allowlist.txt。
       - name: Schema column drift gate (vs production snapshot)
         working-directory: ./backend/orchestrator
-        run: uv run --extra migrations python ../scripts/check-schema-drift.py
+        run: uv run --extra migrations python ../../scripts/check-schema-drift.py
 
       # 说明：route-parity 已于 S4 退役（worker 是唯一后端，没有第二实现可比），
       # 脚本移入 scripts/archive/ 留档；S3 的 parity 测试是退役判据。
@@ -102,7 +102,7 @@ jobs:
       # 冷启动基线文件 backend/worker/coldstart-baseline.json 缺失时打印 PENDING（不失败）。
       - name: Worker bundle size gate (S6-c)
         working-directory: ./backend/worker
-        run: uv run python ../scripts/check-worker-bundle.py
+        run: uv run python ../../scripts/check-worker-bundle.py
 
   # 真 Postgres 写入路径测试（task-8 / 路线 C 子集）。
   # worker 用裸 asyncpg 手写 SQL，假 DB 测不出「NOT NULL 且无默认值 / 漏列」这类
