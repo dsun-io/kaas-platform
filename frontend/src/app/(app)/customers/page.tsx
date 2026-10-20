@@ -9,20 +9,15 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  PageHeader,
-  StatusBadge,
-  SectionCard,
-  EmptyState,
-} from "@/components/shared";
+import { PageHeader, StatusBadge, EmptyState } from "@/components/shared";
 import {
   Plus,
   Search,
   UserPlus,
   ChevronRight,
   ChevronDown,
-  ChevronUp,
   X,
+  MoreHorizontal,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -31,6 +26,12 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -47,6 +48,8 @@ import {
 import {
   InquiryFollowup,
   UnlinkedRecords,
+  collectDocuments,
+  deriveInquiryStage,
 } from "./components/inquiry-followups";
 
 // 客户阶段（2026-10-18 用户口径）：只有三种。
@@ -70,12 +73,6 @@ function stageLabel(stage: string | null | undefined): string {
   if (!stage) return "-";
   return STAGE_LABELS[stage] ?? LEGACY_STAGE_LABELS[stage] ?? stage;
 }
-
-const INQUIRY_STATUS_LABELS: Record<string, string> = {
-  unquoted: "未报价",
-  quoted: "已报价",
-  closed: "已关闭",
-};
 
 const STAGE_TONES: Record<string, import("@/components/shared").StatusTone> = {
   active: "info",
@@ -109,6 +106,8 @@ interface Contact {
   email: string | null;
   whatsapp: string | null;
   is_primary: boolean;
+  /** 后端 `SELECT *` 会带；列表按「主要置顶 + 添加时间倒序」排序 */
+  created_at?: string | null;
 }
 
 interface Inquiry {
@@ -763,7 +762,7 @@ function DeleteCustomer({
   );
 }
 
-type DetailTab = "info" | "contacts" | "inquiries" | "history";
+type DetailTab = "info" | "inquiries" | "history";
 
 function CustomerDetailPanel({
   customer,
@@ -859,10 +858,17 @@ function CustomerDetailPanel({
 
   const tabs: { key: DetailTab; label: string }[] = [
     { key: "info", label: "信息" },
-    { key: "contacts", label: `联系人 (${detail?.contacts?.length ?? 0})` },
     { key: "inquiries", label: `询盘 (${detail?.inquiries?.length ?? 0})` },
     { key: "history", label: "历史" },
   ];
+
+  // 主要联系人置顶；其余按添加时间倒序（2026-10-20 用户口径）。
+  const sortedContacts = [...(detail?.contacts ?? [])].sort((a, b) => {
+    if (a.is_primary !== b.is_primary) return a.is_primary ? -1 : 1;
+    const ta = a.created_at ? Date.parse(a.created_at) : 0;
+    const tb = b.created_at ? Date.parse(b.created_at) : 0;
+    return tb - ta;
+  });
 
   return (
     <Dialog
@@ -873,7 +879,7 @@ function CustomerDetailPanel({
     >
       <DialogContent
         showCloseButton={false}
-        className="flex max-h-[88vh] w-[min(1080px,calc(100vw-2rem))] max-w-none flex-col gap-0 overflow-hidden rounded-2xl border border-white/60 bg-white/85 p-0 shadow-[0_30px_80px_-30px_rgba(15,23,42,0.45)] backdrop-blur-2xl sm:max-w-none"
+        className="flex h-[min(760px,calc(100vh-4rem))] w-[min(1080px,calc(100vw-2rem))] max-w-none flex-col gap-0 overflow-hidden rounded-2xl border border-white/60 bg-white/85 p-0 shadow-[0_30px_80px_-30px_rgba(15,23,42,0.45)] backdrop-blur-2xl sm:max-w-none"
       >
         <div className="flex items-start justify-between gap-4 border-b border-border/70 px-6 py-4">
           <div className="min-w-0">
@@ -1008,14 +1014,14 @@ function CustomerDetailPanel({
                 </div>
               )}
 
-              {activeTab === "contacts" && (
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">
-                      {detail?.contacts?.length ?? 0} 位联系人
+              {activeTab === "info" && (
+                <div className="mt-6 space-y-4 border-t border-border/60 pt-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">
+                      联系人（{detail?.contacts?.length ?? 0}）
                     </span>
                     <Button size="sm" onClick={() => setShowContactForm(true)}>
-                      <Plus className="size-4 mr-1" />
+                      <Plus className="mr-1 size-4" />
                       添加联系人
                     </Button>
                   </div>
@@ -1038,7 +1044,7 @@ function CustomerDetailPanel({
                         暂无联系人
                       </p>
                     )}
-                    {detail?.contacts?.map((c) => (
+                    {sortedContacts.map((c) => (
                       <div
                         key={c.id}
                         className="rounded-lg border bg-card p-4 shadow-[var(--shadow-xs)] transition-shadow hover:shadow-[var(--shadow-sm)]"
@@ -1054,10 +1060,14 @@ function CustomerDetailPanel({
                               )}
                             </p>
                             <p className="text-xs text-muted-foreground mt-1">
-                              {c.position && `${c.position} · `}
-                              {c.phone && `${c.phone} · `}
-                              {c.email && `${c.email} · `}
-                              {c.whatsapp && `WA: ${c.whatsapp}`}
+                              {[
+                                c.position,
+                                c.phone,
+                                c.email,
+                                c.whatsapp ? `WA: ${c.whatsapp}` : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
                             </p>
                           </div>
                           <div className="flex shrink-0 gap-1">
@@ -1148,31 +1158,27 @@ function CustomerDetailPanel({
 
                     {detail?.inquiries?.map((inq) => {
                       const linkedQuotes = quotesByInquiry.get(inq.id) ?? [];
-                      const orderCount = linkedQuotes.reduce(
-                        (sum, quote) => sum + quote.orders.length,
-                        0,
+                      const stage = deriveInquiryStage(
+                        inq.status,
+                        linkedQuotes,
+                        recordsLoading,
                       );
-                      const docCount = linkedQuotes.reduce(
-                        (sum, quote) =>
-                          sum +
-                          quote.documents.length +
-                          quote.orders.reduce(
-                            (n, order) => n + order.documents.length,
-                            0,
-                          ),
-                        0,
-                      );
+                      const docs = collectDocuments(linkedQuotes);
                       const expanded = expandedInquiries[inq.id] ?? false;
-                      const summary =
-                        linkedQuotes.length > 0
-                          ? `${linkedQuotes.length} 张报价单 · ${orderCount} 个订单 · ${docCount} 份单证`
-                          : recordsLoading
-                            ? "正在读取后续单据…"
-                            : "尚未报价";
                       return (
                         <div
                           key={inq.id}
-                          className="rounded-xl border border-border/70 bg-white/70 p-4"
+                          role="button"
+                          tabIndex={0}
+                          aria-expanded={expanded}
+                          onClick={() => toggleInquiry(inq.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              toggleInquiry(inq.id);
+                            }
+                          }}
+                          className="group cursor-pointer rounded-xl border border-border/70 bg-white/70 p-4 transition-colors hover:bg-white/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
                         >
                           <div className="flex flex-wrap items-start justify-between gap-2">
                             <div className="min-w-0">
@@ -1186,18 +1192,16 @@ function CustomerDetailPanel({
                                   {inq.product_name_raw ?? `询盘 #${inq.id}`}
                                 </span>
                                 <StatusBadge
-                                  tone={
-                                    inq.status === "quoted"
-                                      ? "info"
-                                      : inq.status === "closed"
-                                        ? "danger"
-                                        : "default"
-                                  }
+                                  tone={stage.tone}
                                   className="h-5 px-2 text-[11px]"
                                 >
-                                  {INQUIRY_STATUS_LABELS[inq.status] ??
-                                    inq.status}
+                                  {stage.label}
                                 </StatusBadge>
+                                {stage.hint && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {stage.hint}
+                                  </span>
+                                )}
                               </div>
                               <p className="mt-1 text-xs text-muted-foreground">
                                 {[
@@ -1205,67 +1209,93 @@ function CustomerDetailPanel({
                                   inq.quantity != null
                                     ? `${inq.quantity} ${inq.quantity_unit ?? ""}`
                                     : null,
-                                  inq.application,
+                                  docs.length > 0
+                                    ? `${docs.length} 份单证`
+                                    : null,
                                   new Date(inq.created_at).toLocaleDateString(),
                                 ]
                                   .filter(Boolean)
                                   .join(" · ")}
                               </p>
                             </div>
-                            <div className="flex flex-wrap items-center gap-1">
-                              {inq.inquiry_no_editable && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-7 px-2 text-xs"
-                                  onClick={() => {
-                                    setInquiryNoError(null);
-                                    setInquiryNoEdit(inq);
-                                  }}
-                                >
-                                  改编号
-                                </Button>
-                              )}
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 px-2 text-xs"
-                                onClick={() => toggleInquiryClosed(inq)}
-                              >
-                                {inq.status === "closed" ? "重新打开" : "关闭"}
-                              </Button>
+                            <div
+                              className="flex items-center gap-1"
+                              onClick={(e) => e.stopPropagation()}
+                            >
                               <Link
                                 href={`/quotes?tab=product&customer_id=${customer.id}&inquiry_id=${inq.id}`}
                                 className="inline-flex h-7 items-center rounded-lg border border-border bg-white/70 px-2.5 text-xs font-medium text-primary transition-colors hover:bg-white"
                               >
-                                {inq.status === "quoted"
+                                {inq.status === "quoted" ||
+                                linkedQuotes.length > 0
                                   ? "重新报价 →"
                                   : "为此询盘报价 →"}
                               </Link>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger
+                                  className="inline-flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                                  aria-label="更多询盘操作"
+                                >
+                                  <MoreHorizontal className="size-4" />
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent
+                                  align="end"
+                                  className="w-40"
+                                >
+                                  {inq.inquiry_no_editable && (
+                                    <DropdownMenuItem
+                                      className="cursor-pointer"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setInquiryNoError(null);
+                                        setInquiryNoEdit(inq);
+                                      }}
+                                    >
+                                      改编号
+                                    </DropdownMenuItem>
+                                  )}
+                                  <DropdownMenuItem
+                                    className="cursor-pointer"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void toggleInquiryClosed(inq);
+                                    }}
+                                  >
+                                    {inq.status === "closed"
+                                      ? "重新打开询盘"
+                                      : "关闭询盘"}
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                              <ChevronDown
+                                className={`size-4 text-muted-foreground transition-transform ${
+                                  expanded ? "rotate-180" : ""
+                                }`}
+                              />
                             </div>
                           </div>
 
-                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2.5">
-                            <span className="text-xs text-muted-foreground">
-                              {summary}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => toggleInquiry(inq.id)}
-                              aria-expanded={expanded}
-                              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                            >
-                              {expanded ? "收起后续" : "展开后续"}
-                              {expanded ? (
-                                <ChevronUp className="size-3.5" />
-                              ) : (
-                                <ChevronDown className="size-3.5" />
-                              )}
-                            </button>
-                          </div>
-
                           {expanded && (
-                            <div className="mt-3">
+                            <div
+                              className="mt-3 space-y-3 border-t border-border/60 pt-3"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
+                                <span>渠道：{inq.channel ?? "—"}</span>
+                                <span>
+                                  数量：
+                                  {inq.quantity != null
+                                    ? `${inq.quantity} ${inq.quantity_unit ?? ""}`
+                                    : "—"}
+                                </span>
+                                <span>用途：{inq.application ?? "—"}</span>
+                                <span>
+                                  创建：
+                                  {new Date(
+                                    inq.created_at,
+                                  ).toLocaleDateString()}
+                                </span>
+                              </div>
                               <InquiryFollowup
                                 quotes={linkedQuotes}
                                 loading={recordsLoading}
@@ -1285,8 +1315,7 @@ function CustomerDetailPanel({
 
                     <UnlinkedRecords
                       quotes={unlinkedQuotes}
-                      orders={records.direct.orders}
-                      documents={records.direct.documents}
+                      direct={records.direct}
                       loading={recordsLoading}
                       unavailable={recordsUnavailable}
                       onRetry={() => void recordsQuery.refetch()}
