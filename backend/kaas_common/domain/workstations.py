@@ -85,8 +85,9 @@ WORKSTATIONS = [
     {
         "key": "shipments", "name": "出货", "route": "/shipments",
         "group": "business", "order": 50,
-        # 上线门禁（2026-09-28）：/api/v1/shipments 只在开发后端存在。
-        "admin_only": False, "status": "planned", "subscription": None,
+        # 2026-10-21（C23）恢复上线：`/api/v1/shipments` 4 路由已在 Worker
+        # （ws_shipments.py + main.py 已挂载），原 2026-09-28 门禁前提不成立。
+        "admin_only": False, "status": "active", "subscription": None,
     },
     # 情报
     {

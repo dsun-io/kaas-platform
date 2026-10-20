@@ -140,7 +140,7 @@
 
 | # | 项 | 内容/证据 | 前置 | 状态 |
 |---|---|---|---|---|
-| C23 | **shipments 工位被过期上线门禁隐藏** | `shared/contracts/workstations.ts:229-238` 与 `kaas_common/domain/workstations.py:86-89` 仍 `status:'planned'`（注释称"Worker 没有 shipments 4 接口"），但 `ws_shipments.py` 4 路由已在、`main.py:4882` 已挂载、前端页面在、有 6 条测试、根 README 写"已上线" ⇒ 用户看不到出运台账入口 | 需确认是否故意隐藏（§G-12） | 🧭 |
+| C23 | **shipments 工位被过期上线门禁隐藏** | ✅ 2026-10-21 修复（用户拍板"改为 active 恢复入口"）：`shared/contracts/workstations.ts` 与 `kaas_common/domain/workstations.py` 同步 `status:'active'` + 注释改为"原 2026-09-28 门禁前提不成立"；契约 **R2 PASS（27 工位 ts↔py）**、workstation/visibility 定向测试 79 passed | G-12 已拍板 | ✅ |
 | C24 | 客户触达「产品手册附件」（P4 遗留） | 设计：PDF 浏览器生成→R2→随邮件发；代码仅 `chain.py:221` 注释，无实现 | A6/R2 就绪 | ⏳ |
 | C25 | 列表分页 UI（UI T7） | 后端 orders/events 已支持 `page/page_size`，前端 orders/events/audit 无翻页（仅 intel shipments 表有） | — | ⏳ |
 | C26 | a11y 深水项 | `UI_UX:256-262` A4 `aria-disabled`、A9 `aria-pressed`、A10 skip-link + `main id`（代码 skip-link 0 命中） | — | ⏳ |
@@ -152,8 +152,8 @@
 | A11 | FACT_LABELS 未通过 API 返回 | `facts.py:151 FACT_LABELS` 未暴露 ⇒ 事实面板只能显示 key（A7 UI 自述应后端补字段） | — | ⏳ |
 | A12 | `trigger_expr` 只存不求值 | `trade_doc_doc_set_items.trigger_expr` 仅存表达式；"无木包装不出声明"需条件求值器 | A7 | ⏳ |
 | A13 | 翻译端点无入口 | `POST /trade-docs/{id}/translate` 已实现（`ws_docs_ext.py:518`）但前端 0 调用（仅在内容版本显示"AI 翻译"标签） | — | ⏳ |
-| C28 | 询盘「渠道」枚举不一致（P2: 按提示填必 422） | FE `customers/page.tsx:472-474` 自由输入（placeholder 写 `Alibaba / Expo / Web`），BE `ws_crm_ext.py:384-385` + `enums.py:32` 严格小写枚举 ⇒ real 模式 422；mock 也注明"已登记不一致" | — | ⏳ |
-| C29 | 「导入已有数据」是占位骨架却已挂页面 | `import-existing-data-dialog.tsx` 只弹"即将上线"，被 `orders/page.tsx:130`、`trade-docs/page.tsx:316` 引用 | — | ⏳ |
+| C28 | 询盘「渠道」枚举不一致（P2: 按提示填必 422） | ✅ 2026-10-21：前端自由输入改为**枚举下拉**（`INQUIRY_CHANNEL_OPTIONS` 与后端 `INQUIRY_CHANNEL` 逐字一致，中文标签→枚举值），只发合法值；typecheck 0 | — | ✅ |
+| C29 | 「导入已有数据」是占位骨架却已挂页面 | ✅ 2026-10-21：已从「订单」「单证」两页移除入口按钮与弹窗（清理 state/import），组件保留并加注"后端批量导入接口就绪后再挂回"；**后端接口本身仍未实现**（实现时合并 C19 的导入 UI 决策） | C19 | ✅（入口已隐藏） |
 | C30 | `/admin/archive-logs` 恒空 + 前端 0 调用 | `main.py:3003-3008` return 空列表；CLEANUP_LOG 说归档策略待确认 | — | ⏳ |
 | C31 | 仪表盘指标恒 0 且「更新中」占位未实现 | `main.py:1829-1833` token/p95 恒 0；`dashboard/page.tsx:86-100` 直接展示；契约注明 status=placeholder 应改"更新中" | — | ⏳ |
 | C32 | `/billing` 页面无入口 | `billing/page.tsx` 存在但 0 引用；契约说"移入头像菜单"未接 | — | ⏳ |
@@ -180,9 +180,9 @@
 | G-8 | 安全 4 项 | 用户裁"最后做"；做之前需确认是否轮换 Neon 口令（历史泄露）与仓库最终可见性；**范围扩到根 `archive/`（见 P 组 N6+）** |
 | G-9 | `/tenant-product-status` 谁能操作 | 现状无角色校验（任意成员可停用产品）。选项：①保持现状（成员可管）②仅团队管理员/internal。**已授权按推荐默认：保持现状** |
 | G-10 | 批量导入上传 UI 放哪 | hooks/helpers 齐备但无入口。选项：①v2 报价工作台顶部（与单条报价并列）②批量报价页步骤内 ③产品页"导入报价表"。**已授权按推荐默认：①** |
-| G-11 | 主题切换入口 | `UI_UX:395/675`：`.dark` 令牌已有但无入口；`next-themes`/ThemeProvider 0 命中。选项：①不做（跟随系统）②加切换（要接 Provider + 持久化） |
-| G-12 | shipments 工位是否故意隐藏 | C23：契约/py 仍 `planned` 但 4 路由+页面+测试都在、README 写"已上线"。选项：①改为 `active` 恢复入口 ②确认故意隐藏并同步 README/注释 ③保持现状但补文档说明 |
-| G-13 | spec-config 工位去留 | `workstations.ts:374-381`「待用户确认：待上线/废弃」；页面/向导 7 文件齐全 |
+| G-11 | 主题切换入口 | **用户已拍板（2026-10-21）：不做**（跟随系统，`.dark` 令牌保留）。`UI_UX:395/675`；`next-themes`/ThemeProvider 0 命中 | ✅ 不做 |
+| G-12 | shipments 工位是否故意隐藏 | **用户已拍板（2026-10-21）：改为 `active` 恢复入口** → C23 已执行（契约 ts↔py 同步、R2 PASS） | ✅ |
+| G-13 | spec-config 工位去留 | **用户已拍板（2026-10-21）：保持现状**（`planned`、页面保留但暂不加入口），后续商业化再议 | ✅ 保持现状 |
 
 ---
 
@@ -197,7 +197,7 @@
 
 ## I. 更新历史
 
-- **2026-10-21 二轮全量 sweep**：全分支 56 ref/131 reflog/147 unreachable → **0 条新待办**；全文档（含此前未读的 DEPLOY.md 337 行、ui-redesign 64 files、WORKSTATION_DESIGN 1011 行）→ **12 条新发现**；全代码 666 文件/439 命中 → **13 条新发现 + 账本 drift**。已登记 §P（C23–C38、A10–A13、N10/N11、N6+/C12+）与 §G（G-11 主题/G-12 shipments/G-13 spec-config），并更新 goal。\n- **2026-10-21 执行批 3（收口）**：A7-3 UI（事实确认/一致性/收款/单证清单/签发闸门，面板 9 + 契约 12 测）→ **A7 全部完成**；C2 文件存储收尾（doUpload/排序页面测试 + 7 条真 PG 用例）→ 发现并修复 **C22**（迁移 `202610200005` 唯一索引 `NULLS NOT DISTINCT`）；C10 18 模板防劈页（39 静态断言，视觉待 build/e2e 复核）；intel/channels 字段错位修复；C20 导入模板端点回落租户产品；C6 收口。**全量门禁**：worker 1217+12skip（有库 1229/0）、orchestrator 247、前端 616、e2e 28（24+4）、build `out/` 275 文件、contracts/mocks/静态断言全 PASS。
+- **2026-10-21 执行批 4（sweep 后首批修复）**：C23 shipments 恢复 `active`（契约 ts↔py 同步，R2 PASS 27 工位）、C28 询盘渠道改枚举下拉（只发后端合法值）、C29 订单/单证页移除占位「导入已有数据」入口（组件保留待后端接口）；G-11/12/13 用户拍板落盘。门禁：typecheck 0 / 定向 79 passed / contracts PASS / mocks 未覆盖 0。`n- **2026-10-21 二轮全量 sweep**：全分支 56 ref/131 reflog/147 unreachable → **0 条新待办**；全文档（含此前未读的 DEPLOY.md 337 行、ui-redesign 64 files、WORKSTATION_DESIGN 1011 行）→ **12 条新发现**；全代码 666 文件/439 命中 → **13 条新发现 + 账本 drift**。已登记 §P（C23–C38、A10–A13、N10/N11、N6+/C12+）与 §G（G-11 主题/G-12 shipments/G-13 spec-config），并更新 goal。\n- **2026-10-21 执行批 3（收口）**：A7-3 UI（事实确认/一致性/收款/单证清单/签发闸门，面板 9 + 契约 12 测）→ **A7 全部完成**；C2 文件存储收尾（doUpload/排序页面测试 + 7 条真 PG 用例）→ 发现并修复 **C22**（迁移 `202610200005` 唯一索引 `NULLS NOT DISTINCT`）；C10 18 模板防劈页（39 静态断言，视觉待 build/e2e 复核）；intel/channels 字段错位修复；C20 导入模板端点回落租户产品；C6 收口。**全量门禁**：worker 1217+12skip（有库 1229/0）、orchestrator 247、前端 616、e2e 28（24+4）、build `out/` 275 文件、contracts/mocks/静态断言全 PASS。
 - **2026-10-21 执行批 2**：A7 内核/结构/API 全部落地（内核 87 测 + API 34 测 + `trade_doc_facts`）；B 组验收 → B1 销账（B4 P0 跨团队越权修复、B5 formulas/explain 回落、B6 订阅门同源）；C7 xlsx 导入（28 测）；C8 四源计数（18 测）；C5/C18 mock 持久化 + 长尾覆盖归零；C15 契约错位修复；C16/C17 关闭。新增 C19/C20/C21 与 G-10。门禁：worker **1212+5** / 前端 **535** / typecheck 0 / contracts PASS。
 - **2026-10-21 执行批 1**：D7 重试落地（`1f0d76d7`）；A7 事实层表 `202610200004` + `TradeDocFact`（`32d5fe0c`）；对齐 A 批（/events 闸门、F4 stage 消费、路由守卫/写权限，`a92302eb`）+ 对齐 B 批（MSW 58→111、死代码、mocks:check 门禁）；新增 C17/C18。
 - **2026-10-20 晚**：重写为唯一账本。—— 销账 A2（方案A）、B1 租户级、B2、B3、A8②③、A9、N2、N7；新增 A2-B、C7–C16、N1/N3–N8；D5 改回 ⏳（实测 public）；补安全 4 项与生产两个现网缺陷（D1/D2）；统一 e2e=28。

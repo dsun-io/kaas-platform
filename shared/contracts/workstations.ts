@@ -233,9 +233,10 @@ export const WORKSTATIONS: readonly Workstation[] = [
     order: 50,
     icon: 'Truck',
     adminOnly: false,
-    // ⚠️ 上线门禁（2026-09-28）：/api/v1/shipments（订舱/船期/提单 4 个接口）
-    //   只在开发后端存在，Worker 没有 → 上了会 404。详见「上线门禁」。
-    status: 'planned',
+    // 2026-10-21（C23）恢复上线：`/api/v1/shipments` 4 路由已在 Worker
+    // （`backend/worker/src/ws_shipments.py` + `main.py` 已挂载）、前端页面与 6 条测试齐备。
+    // 原「2026-09-28 上线门禁」的前提（Worker 没有 shipments 接口）已不成立。
+    status: 'active',
     subscription: null,
   },
 

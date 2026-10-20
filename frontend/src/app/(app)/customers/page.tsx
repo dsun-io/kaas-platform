@@ -427,6 +427,22 @@ const EMPTY_INQUIRY: InquiryFormState = {
   notes: "",
 };
 
+/**
+ * 询盘渠道：**必须与后端枚举逐字一致**（`kaas_common/domain/enums.py` `INQUIRY_CHANNEL`：
+ * email/whatsapp/alibaba/expo/website/quote/other）。2026-10-21（C28）修：此前这里是自由
+ * 输入框（placeholder 写 `Alibaba / Expo / Web`），用户按提示填 `Alibaba` 会被后端
+ * `validate_enum` 判 422 —— "按提示操作反而失败"。改用下拉，只发枚举值。
+ */
+const INQUIRY_CHANNEL_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "email", label: "邮件" },
+  { value: "whatsapp", label: "WhatsApp" },
+  { value: "alibaba", label: "阿里巴巴" },
+  { value: "expo", label: "展会" },
+  { value: "website", label: "官网" },
+  { value: "quote", label: "报价" },
+  { value: "other", label: "其他" },
+];
+
 function InquiryForm({
   customerId,
   onClose,
@@ -468,11 +484,21 @@ function InquiryForm({
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Input
-          placeholder="渠道（Alibaba / Expo / Web）"
+        <Select
           value={form.channel}
-          onChange={set("channel")}
-        />
+          onValueChange={(v) => setForm({ ...form, channel: v ?? "" })}
+        >
+          <SelectTrigger aria-label="询盘渠道">
+            <SelectValue placeholder="渠道（可留空）" />
+          </SelectTrigger>
+          <SelectContent>
+            {INQUIRY_CHANNEL_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Input
           placeholder="产品名称（原始）"
           value={form.product_name_raw}

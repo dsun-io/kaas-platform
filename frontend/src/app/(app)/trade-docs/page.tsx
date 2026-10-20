@@ -24,11 +24,9 @@ import {
   Printer,
   RefreshCw,
   ShieldCheck,
-  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { ImportExistingDataDialog } from "@/components/import-existing-data-dialog";
 import { DocTypeLabel, docTypeMeta } from "@/components/doc-chip";
 import { CopyButton } from "@/components/shared/copy-button";
 import { PageHeader } from "@/components/shared/page-header";
@@ -114,7 +112,6 @@ export default function TradeDocsPage() {
   const [docTypeFilter, setDocTypeFilter] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [checked, setChecked] = useState<Set<number>>(new Set());
-  const [showImport, setShowImport] = useState(false);
   const [docNoEdit, setDocNoEdit] = useState<TradeDocRow | null>(null);
   const [docNoError, setDocNoError] = useState<string | null>(null);
   // A7 加固：签发被事实层闸门拦下时的阻断清单（不是 toast —— 要能逐条看、能跳去确认）
@@ -305,19 +302,6 @@ export default function TradeDocsPage() {
       <PageHeader
         title="单证"
         description="外贸出口全套单据：开单 → 校对 → 签发 → 打印/导出。单据自动继承上游订单的货物与贸易条款。"
-        actions={
-          <Button variant="outline" onClick={() => setShowImport(true)}>
-            <Upload className="mr-1 h-4 w-4" />
-            导入已有数据
-          </Button>
-        }
-      />
-
-      <ImportExistingDataDialog
-        open={showImport}
-        onOpenChange={setShowImport}
-        resourceLabel="单证"
-        columnsHint="单证编号、单证类型（pi/ci/pl/bl…）、客户、币种、金额、签发日期、关联订单号（可留空）"
       />
 
       <SectionCard

@@ -8,11 +8,10 @@
  * 所以这里必须能看、能改；否则单证就只能手工重填，极易与合同不一致。
  */
 import { useState } from "react";
-import { AlertCircle, Bell, ChevronRight, Plus, Upload } from "lucide-react";
+import { AlertCircle, Bell, ChevronRight, Plus } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { ImportExistingDataDialog } from "@/components/import-existing-data-dialog";
 import { CopyButton } from "@/components/shared/copy-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
@@ -75,7 +74,6 @@ export default function OrdersPage() {
   const quotes = useQuoteOptions();
   const [quoteId, setQuoteId] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [showImport, setShowImport] = useState(false);
   const [density, setDensity] = usePersistentState<"cozy" | "compact">(
     "ui:orders:density",
     "cozy",
@@ -119,19 +117,6 @@ export default function OrdersPage() {
       <PageHeader
         title="订单"
         description="报价谈成后转订单；订单上的贸易条款会一路传到单证，避免单证与合同不一致。"
-        actions={
-          <Button variant="outline" onClick={() => setShowImport(true)}>
-            <Upload className="mr-1 h-4 w-4" />
-            导入已有数据
-          </Button>
-        }
-      />
-
-      <ImportExistingDataDialog
-        open={showImport}
-        onOpenChange={setShowImport}
-        resourceLabel="订单"
-        columnsHint="订单号、客户、币种、金额、订单日期、贸易术语、付款方式、装运港、目的港（列名以实际导出模板为准）"
       />
 
       <SectionCard
