@@ -17,7 +17,8 @@
 | 项 | 状态 |
 |---|---|
 | 代码 | `main` @ `1216e75a`（工作树干净）；**远端只剩 `main`** |
-| 迁移头 | `202610200003`（`alembic heads` 实跑；生产**尚未应用**，随发布窗口） |
+| 迁移头 | `202610200004`（新增 `trade_doc_facts`；生产**尚未应用**，随发布窗口） |
+| 门禁基线（本机 2026-10-21） | worker **1212 passed + 5 skipped**；orchestrator **247**；前端 `pnpm test` **535**（55 files）；typecheck 0 / lint 0 error / contracts R0–R6 PASS / `mocks:check` 未覆盖 0 / 静态断言 5 项 PASS（`check-worker-bundle` 本机 SKIP：uv 0.11.8 < 0.12.3，CI 会执行） |
 | 前端 e2e | `playwright test --list` = **28 条**（24 passed + 4 skipped） |
 | 仓库可见性 | **public**（匿名 `git ls-remote` 成功）；`gh` 本机未登录 ⇒ CI 只能用网页/无 token 接口核对 |
 | 分支清理 | ✅ `archive/convergence-aprime-20261019` tag 已推；远端 `feat/convergence-aprime`、`feat/trade-doc-content-a` 已删；本地 `feat/trade-doc-templates`、`tech-stack-next16` 已删 |
@@ -38,17 +39,17 @@
 | A4 | 图片素材库 + 去 base64 | **现状 ≈3/5**：公章租户库（`kaas_common/files/seal.py` + `tenant_company_seals`）、产品图引用库（`{file_id}` + `doc-photo-picker`）已做；**渲染输入仍 base64 内联**（`ws_files.py` `to_data_uri`，一张 PI ≈1.4MB），无独立素材库表 | 先定渲染方案（见 §G-4） | ⏳（3/5） |
 | A5 | 单证编辑体验 | CI/PL 行项批量编辑、条款/备注模板、金额联动校验 | **方案需用户过目**（§G-1） | 🧭 |
 | A6 | 模板逐字段对照真实单据 | 以真实 PI/CI/PL/提单确认件逐字段校准模板措辞/栏目/条款 | **需用户提供样例单据**（§G-2） | 🧭 |
-| A7 | 单证加固 P1/P2 | **现状 ≈3/5**：③收款容差内核（`workstation/receipt_rules.py`）+ ④两表（迁移 `202610170003`）已就绪；**①事实层 + ②一致性引擎内核已完成**（`trade_doc/facts.py`/`consistency.py`/`equivalents.py`，87 条内核测试）+ 事实表（迁移 `202610200004`）；**API/UI 进行中**（10 个端点）。设计与 12 条实现裁决见 [`TRADE_DOC_HARDENING.md`](./TRADE_DOC_HARDENING.md) | 无（可直接施工） | 🔨 进行中（2026-10-21；内核+结构 ✅，API/UI 施工中；见 §A7 子项） |
+| A7 | 单证加固 P1/P2 | **内核 ✅ + 结构 ✅ + API ✅，UI 施工中**：①事实层 + ②一致性引擎内核（`trade_doc/facts.py`/`consistency.py`/`equivalents.py`，87 条内核测试）；事实表 `trade_doc_facts`（迁移 `202610200004`）；**10 个 Worker 端点**（facts 读/确认/处置、consistency、lint、receipts、doc-set+回执、verify-export、confirm 闸门，34 条 API 测试）；剩余 = UI（task-13：事实确认/一致性/收款/清单/签发闸门）。设计与 12 条实现裁决见 [`TRADE_DOC_HARDENING.md`](./TRADE_DOC_HARDENING.md) | 无 | 🔨 进行中（UI 收尾） |
 | A8 | PDF 归档尾巴 | ②③ 已完成（cron + 列表「已变更/模板已更新/待复核」标识）；①端到端真实跑一次 | ①需已部署环境 | ✅ ②③；①随发布后 P4 |
 | A9 | 指纹批量对账定时调度 | cron `40 17 * * *` + `trade_doc_render_checks` 表 + 列表 `render_check` | — | ✅ 2026-10-20 |
 
 ### §A7 子项（施工清单；口径见 `UNCERTAIN.md` #17 + [`TRADE_DOC_HARDENING.md`](./TRADE_DOC_HARDENING.md) §4「实现裁决」）
 
-- [x] A7-① **事实层（fact model）**：以 `order` 为根的事实域 + trust/source/immutable/双语/证据引用（内核 + `trade_doc_facts` 表完成；API/UI 待接）。
-- [x] A7-② **一致性引擎**：全局等价词表 + 租户增量（`extra` 透传）；diff 三态（conflict/equivalent/missing）；**API 待接**。
-- [ ] A7-③ **收款容差**：内核 `receipt_rules` 已有；补 API（`GET/POST /trade-docs/{id}/receipts`）与 UI 提示。
-- [ ] A7-④ **`not_by_us` 回执登记**：两表已建，缺 API（`doc-set` + `receipt`）与 UI。
-- [ ] A7-⑤ **导出后自检**：默认阻断、可配越过但落审计（`verify-export` + confirm 闸门）。
+- [x] A7-① **事实层（fact model）**：内核 + `trade_doc_facts` 表 + `GET/POST/PATCH facts` 端点完成（UI 待接）。
+- [x] A7-② **一致性引擎**：全局等价词表 + 租户增量（`extra` 透传）；diff 三态；`GET /trade-docs/{id}/consistency` + `POST /lint` 已落地。
+- [x] A7-③ **收款容差**：内核 `receipt_rules` + `GET/POST /trade-docs/{id}/receipts`（fx_rounding/short_paid/manual 落库）已落地（UI 待接）。
+- [x] A7-④ **`not_by_us` 回执登记**：`GET/PUT /trade-docs/{id}/doc-set` + `POST .../doc-set/{type}/receipt`（pending→received/waived 状态机）已落地。
+- [x] A7-⑤ **导出后自检**：`POST /trade-docs/{id}/verify-export`（默认阻断 422、`allow_override` 越过并落审计）+ confirm 闸门已落地；**UI 需 PDF 文本抽取（登记 C21）**。
 
 ---
 
@@ -56,12 +57,12 @@
 
 | # | 待办 | 真实状态 | 前置 | 状态 |
 |---|---|---|---|---|
-| B1 | 租户级产品定义配置化 | **租户级 CRUD 已端到端验通**（201/200/200/204、409 `PRODUCT_KEY_TAKEN`、422 `invalid_spec`、404 `PRODUCT_NOT_FOUND`；运行时生效见 B2）；**但写路径团队隔离缺失**（B4，P0）+ 2 条链路缺口（B5/B6）；系统级仍是 Python `@register` 注册表（`export_quote/products/*.py` 4 个） | B4/B5/B6 修复；系统级口径见 §G-3 | 🔨 修复中（2026-10-21 验收暴露；CRUD 通过，隔离缺陷待修） |
+| B1 | 租户级产品定义配置化 | **租户级 ✅ 销账**（2026-10-21 端到端验收 + 修复后复验）：CRUD 全通（201/200/200/204、409/422/404）、跨团队写/删已封、`/formulas`+`/explain` 支持租户产品、运行时算价即时生效；系统级仍是 Python `@register` 注册表（4 个） | 系统级口径见 §G-3 | ✅ 2026-10-21（B4/B5/B6 全部修复并复验） |
 | B2 | 产品可视化编辑器 | `product-spec-editor.tsx` + `products-definitions-tab.tsx`，保存即生效 | — | ✅ 2026-10-21 端到端验收：克隆 `field_fence` → 与系统产品同价 3.041 → PUT `raw_price×1.2` → **同会话无重启**立即算得 3.6357 元/米（+19.6%），发现列表同步改名 |
 | B3 | 租户开通报价工位 UI | `team/components/team-subscriptions-panel.tsx`（管理员开通/撤销、PUT 后重拉列表）+ 产品页启用开关 | — | ✅ 2026-10-21 端到端验收：`PUT /teams/1/subscriptions/full_chain` 后**同一进程内** `/me/workstations` codes `[]→["full_chain"]`、中间件门从 404 变放行；DELETE 后立即回退（`_invalidate_all` 生效） |
-| B4 | **租户产品写路径团队隔离（P0 安全）** | `PUT/DELETE /tenant-products/{id}` 只校验 `tenant_id`，team2 owner 可改/删 team1 产品（真机复现 200/204），并连带清 `product_profiles`/`tenant_workstation_products`/图片标记；列表与发现层都用了 `is_same_team` | 无 | 🔨 修复中（补 `is_same_team`，非本团队 404 + 测试） |
-| B5 | 租户产品 `/formulas`/`/explain` 回落 | v2 报价规格选择器读 `/formulas`；`_product_or_404` 只查 Python 注册表 ⇒ 租户产品选中后 404（带 `spec_override` 的编辑器试算不受影响） | B4 | 🔨 修复中（`_product_or_404` 回落租户运行时产品，两处同一实现） |
-| B6 | `/workstation-products` 假路由处置 | 门读**租户级** `tenant_subscriptions`，而工位开通写**团队级** `team_subscriptions`，无 HTTP 写接口 ⇒ 管理台与已开通成员都恒 404；前端 0 处使用（启停走 `/tenant-product-status`） | B3 | 🔨 修复中（切团队级订阅 或 显式废弃 410，二选一） |
+| B4 | **租户产品写路径团队隔离（P0 安全）** | ✅ 2026-10-21 修复并复验：PUT/DELETE 复用 `product_scope.is_same_team`（列表同一把尺），非本团队 **404**、零写入；管理员不受限；`team_id IS NULL` 历史行只有无团队者本人可写（写读对称）。20 条测试。原缺陷：只校验 tenant，team2 owner 可改/删 team1 产品（复现 200/204） | — | ✅ |
+| B5 | 租户产品 `/formulas`/`/explain` 回落 | ✅ 2026-10-21：拆 `_effective_product_raw`（团队谓词+override）→ `_product_or_404_tenant` 回落租户运行时产品，两路由共用；租户产品 200，系统产品/未知 key 行为不变，跨团队仍 404；DB 不可用时降级为只查注册表（不 500） | B4 | ✅ |
+| B6 | `/workstation-products` 假路由处置 | ✅ 2026-10-21：选「团队级 + 租户级兼容 union」——与 B3 同源、生产种子行不回归、`required_any:["full_chain","quotes"]`（保留门）；开通后成员 200/管理员 201，撤销订阅即 404。遗留建议：与 `/tenant-product-status` 功能重复（同表同冲突目标），后续收敛为一条再删路由器 | B3 | ✅（建议收敛见 §B 注） |
 
 ---
 
@@ -71,9 +72,9 @@
 |---|---|---|---|---|
 | C1 | 「流失」拒绝文件链路 | 订单阶段新增 `lost`，拒绝文件链路迁订单阶段 | 🧭 业务设计 + 用户拍板 | 🧭 |
 | C2 | 文件存储收尾 | 真实 DB 用例 / 公章 PI 视觉 QA / 排序过滤测试 / **`products/page.tsx` 的 `doUpload` 无自动化测试** | D2 后更完整 | ⏳ |
-| C5 | 本地 mock 刷新丢数据 | MSW state 是模块内存态（`mocks/handlers.ts`），刷新即丢；缺持久化 | — | ⏳ |
+| C5 | 本地 mock 刷新丢数据 | ✅ 2026-10-21：`mocks/persistence.ts` 版本化键 `kaas-mock-v1:<集合>`（47 集合、只持久化被写操作碰过的集合、`?mock_reset=1` 重置、SSR/隐私模式 no-op、e2e 默认种子确定性）；字节类不落盘（避免 5MB 配额） | — | ✅ |
 | C6 | e2e 数据层不稳根治 | 兜底路由掩盖缺口、无 per-test 重置；历史"假红/整轮数字作废"根因 | — | ⏳ |
-| C7 | Excel xlsx 上传闭环 | 上传侧现只收 CSV | — | ⏳ |
+| C7 | Excel xlsx 上传闭环 | ✅ 2026-10-21：纯 stdlib 读取器 `kaas_common/export_quote/xlsx.py`（zipfile+ElementTree；sharedStrings/inlineStr/富文本/公式缓存/日期 serial/合并单元格/行列与解压上限/坏文件），`preview`+`calculate` 接受 `.xlsx` 且与 CSV 共用字段映射；CSV 行为零变化、`.xls` 指路另存；服务端 xlsx **模板**保持 501（浏览器侧 exceljs 已生成，理由见报告）。**前端暂无批量导入上传 UI → 登记 C19**；28 条测试 | — | ✅（上传侧） |
 | C8 | 四源计数端点 | ✅ 2026-10-21：`/leads` 与 `/leads/{id}` 的 `demand_index`/`blank_index` **真实回填**（`chain.py` 新增 `_lead_indices`：2 条参数化 SQL、无 N+1；需求量取 `intel_demand_index` 最新月份合计、地区归一化 + 国家别名兜底；已开发量=抓取+调研+触达(sent)+成交，成交按 F4 `stage∈order/shipment/completed` 或非 cancelled 订单链；无需求行 ⇒ 两字段仍 null 不拿 0 冒充）。**按设计不加独立端点/不改排序**（§6.8 只要求字段回填）。18 条测试 | — | ✅ 2026-10-21 |
 | C9 | 诊断端点收敛 | `_r2_debug` / `fx-rates/_debug` 暴露面收敛 | — | ✅ 2026-10-21 复核：两个端点**已有** `is_admin_role` 闸门（`ws_files.py` r2_debug / `ws_extras.py` fx_provider_debug，B0-6 收敛，普通用户 403），无需改动 |
 | C10 | 18 模板签章区孤行 | 末尾几块包 `break-inside: avoid`（会动全部 18 模板） | — | ⏳ |
@@ -84,7 +85,10 @@
 | C15 | PROBLEM_STATUS 2026-10-12「待排期 5 项」复核 | ①openapi 重生成 ~~作废~~（R6 已退役）；②`POST /admin/feature_flag` 请求体形状无门禁 → **不构成缺陷**（`body: dict` 刻意兼容"后端格式/前端格式"两种，前端已接线；R5 只比响应键集是既定取舍）；③契约错位 **已修**（`ExportProduct.params` 改为二维数组 + 补 `metric_count/invariant_count`；`ProductFormulasResponse.pricing_key[].ui_unit/ui_scale` 改 `.optional()`，类型与运行时一致）；④PATCH stage 409 ~~已过时~~（2026-10-18 口径：客户阶段只有 active/inactive，"流失"移订单，后端不再返 409）；⑤R2 密钥长度已并入 D2 | — | ✅ 2026-10-21 逐条判定完毕（③修，其余复核为过时/不修） |
 | C16 | UNCERTAIN #15 ①②③ | ①旧进度报告/Spec System 报告：全仓无此文件 → **销项**；②归档口径维持「移动」；③不引链接检查工具，用一次性脚本校验（2026-10-21 已实测 11 份文件相对链接全通过） | — | ✅ 2026-10-21 关闭（UNCERTAIN #15 已标收尾裁决） |
 | C17 | 侧栏 `adminOnly` 过滤口径统一 | **判定为两个不同概念、不统一代码**（已在两边注释钉死）：`Workstation.adminOnly` = **仅内部账号可见**（业务页 /research、/leadgen 等用它挡顾客）；`RouteGuard.adminOnly` = **平台运营**（internal + 管理员，2026-10-20 收紧）。菜单可见但守卫拦截属预期（守卫给出明确无权限页）；若要彻底消除需给契约加 `platformOnly` 并同步 py 镜像，收益低于风险 | — | ✅ 2026-10-21 决策（注释 + 文档口径） |
-| C18 | MSW 长尾覆盖（72 条） | `pnpm mocks:check` 显示 FE 172 条调用中 72 条未 mock，集中在 intel/leadgen/outreach/market/research/shipments/ai-providers/spec-config/admin-spec-proposals/fx-rates、报价 calculate/import、auth forgot/reset；mock 模式这些页面会直连网络 | C5/C6 | ⏳ |
+| C18 | MSW 长尾覆盖（72 条） | ✅ 2026-10-21：`longtail-handlers.ts` 补齐 72 条（intel/market/leadgen/outreach/research/shipments/ai-providers/spec-config/auth/报价/export-quote），handler **111→184**，未覆盖 **0**；门禁扫描 `src/mocks/**`、`MAX_MISSING=20` 默认失败（`--strict`=0）、P1 54 硬失败。mock 简化三处已注释（导入不解析文件/算价用示例值/scan-replied 不建询盘） | C5 | ✅ |
+| C19 | **批量导入上传 UI** | hooks（`useImportPreview`/`useImportCalculate`/`useDownloadTemplate`）与 `import-file.ts` 齐备，但**没有任何页面组件消费** ⇒ 用户拿不到「下载模板→填→上传」入口（xlsx/CSV 后端都已就绪）。建议接进 v2 报价工作台/批量报价页（放置位置属产品交互 → 待拍板 §G-10） | C7 | 🧭 待定入口位置 |
+| C20 | 导入模板 4 端点仍只查注册表 | `quote_api.py` 的模板/预览 4 条端点对**租户运行时产品**仍 404（与 B5 同类，但走 `_product_or_404` 旧入口）；需统一回落到租户产品 | B5 | ⏳ |
+| C21 | 导出后自检 UI 依赖 PDF 文本抽取 | `verify-export` 后端已可用（文本⊆PDF、图片计数），但前端需要拿到 PDF 文本；方案：pdf.js 解析已生成 PDF，或服务端渲染时抽取 —— 需拍板（涉及新增依赖/包体） | A7 | ⏳ 待定方案 |
 
 ---
 
@@ -141,6 +145,7 @@
 | G-7 | 发布窗口下令 | D 组是否现在做 |
 | G-8 | 安全 4 项 | 用户已裁"最后做"；做之前需确认是否轮换 Neon 口令（历史泄露）与仓库最终可见性 |
 | G-9 | `/tenant-product-status` 谁能操作 | 现状无角色校验（任意成员可停用产品）。选项：①保持现状（成员可管）②仅团队管理员/internal。影响租户自助能力与误操作风险 |
+| G-10 | 批量导入上传 UI 放哪 | hooks/helpers 齐备但无入口。选项：①v2 报价工作台顶部（与单条报价并列）②批量报价页步骤内 ③产品页"导入报价表"。影响用户动线；按你选的落 C19 |
 
 ---
 
@@ -155,6 +160,7 @@
 
 ## I. 更新历史
 
-- **2026-10-21**：执行批 1 —— D7 重试落地（`1f0d76d7`）；A7 事实层表 `202610200004` + `TradeDocFact`（`32d5fe0c`）；对齐 A 批（/events 闸门、F4 stage 消费、路由守卫/写权限，`a92302eb`）+ 对齐 B 批（MSW 58→111、死代码、mocks:check 门禁）；新增 C17/C18。
+- **2026-10-21 执行批 2**：A7 内核/结构/API 全部落地（内核 87 测 + API 34 测 + `trade_doc_facts`）；B 组验收 → B1 销账（B4 P0 跨团队越权修复、B5 formulas/explain 回落、B6 订阅门同源）；C7 xlsx 导入（28 测）；C8 四源计数（18 测）；C5/C18 mock 持久化 + 长尾覆盖归零；C15 契约错位修复；C16/C17 关闭。新增 C19/C20/C21 与 G-10。门禁：worker **1212+5** / 前端 **535** / typecheck 0 / contracts PASS。
+- **2026-10-21 执行批 1**：D7 重试落地（`1f0d76d7`）；A7 事实层表 `202610200004` + `TradeDocFact`（`32d5fe0c`）；对齐 A 批（/events 闸门、F4 stage 消费、路由守卫/写权限，`a92302eb`）+ 对齐 B 批（MSW 58→111、死代码、mocks:check 门禁）；新增 C17/C18。
 - **2026-10-20 晚**：重写为唯一账本。—— 销账 A2（方案A）、B1 租户级、B2、B3、A8②③、A9、N2、N7；新增 A2-B、C7–C16、N1/N3–N8；D5 改回 ⏳（实测 public）；补安全 4 项与生产两个现网缺陷（D1/D2）；统一 e2e=28。
 - 2026-10-20：用户裁决废止"触发条件制"，A/B/C/D 全部恢复活跃。

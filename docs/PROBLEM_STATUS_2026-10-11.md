@@ -84,6 +84,21 @@
 >   （"数据未接入"语义，不拿 0 冒充）；允许 blank 为负（已开发超需求是真实信号）。
 >   按 §6.8 原文**不加独立端点、不改排序**（设计只要求字段回填）。18 条测试，全量
 >   worker **1212 passed + 5 skipped**。
+> - **A7 API 层落地（2026-10-21）**：`ws_docs_hardening.py`（1202 行）10 端点 —— facts 读/确认/处置、
+>   跨单证一致性（order 域，diff 三态）、lint（trust/immutable/refs/doc-set）、收款容差、
+>   单证清单+回执状态机、导出后自检（默认阻断/可越过落审计）；`confirm` 接 lint 闸门
+>   （`allow_lint_override` 未开放给前端）。34 条 API 测试。取舍：引用完整性读 `entity_links`
+>   （旧 `trade_doc_doc_refs` 已退场为 `*_legacy`，用旧名生产必 500）；doc-set 替换**保留回执**。
+> - **B 组验收修复（2026-10-21）**：**B4 P0 跨团队越权**已封（tenant-products PUT/DELETE 复用
+>   `product_scope.is_same_team`，非本团队 404、零写入，原先复现的 200/204 不再出现）；
+>   **B5** `/formulas`+`/explain` 回落租户运行时产品（200）；**B6** `/workstation-products`
+>   订阅门与 B3 同源（团队级 union 租户级，撤销订阅仍 404）。→ **B1 租户级销账**；20 条测试。
+> - **C7 xlsx 导入（2026-10-21）**：纯 stdlib 读取器（`zipfile`+`ElementTree`，无 openpyxl）+
+>   `preview/calculate` 接受 `.xlsx` 且与 CSV 共用字段映射；服务端 xlsx 模板保持 501（浏览器端
+>   exceljs 已能生成）；**发现前端没有批量导入上传 UI → 登记 C19**；28 条测试。
+> - **C5/C18 mock（2026-10-21）**：mock 持久化（`kaas-mock-v1:*`、47 集合、只持久化被写过的集合、
+>   `?mock_reset=1`）+ 长尾覆盖 **72→0**（handler 111→184，`mocks:check` 门槛 MAX_MISSING=20、
+>   P1 54 硬失败）；顺手发现 `GET /intel/channels` 前后端字段错位（`is_enabled` vs `enabled`）→ 已派修。
 >
 > **（2026-10-20 晚 · 口径收敛与审计补录：`docs/TODO.md` = 唯一账本）**
 >
