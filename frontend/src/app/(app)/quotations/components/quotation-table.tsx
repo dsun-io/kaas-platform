@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
 import { Eye } from "lucide-react";
 import type { Quotation } from "../hooks/use-quotations";
 
@@ -86,9 +88,21 @@ export function QuotationTable({ quotations, onSelect, loading }: Props) {
 
   if (loading) {
     return (
-      <div className="py-8 text-center text-sm text-muted-foreground">
-        加载中...
+      <div className="space-y-2" aria-busy="true" aria-label="报价列表加载中">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-9 w-full rounded-md" />
+        ))}
       </div>
+    );
+  }
+
+  if (quotations.length === 0) {
+    return (
+      <EmptyState
+        title="暂无报价记录"
+        description="调整筛选条件，或从「产品报价」保存一张报价单后再回来查看。"
+        className="border-0 py-8"
+      />
     );
   }
 
