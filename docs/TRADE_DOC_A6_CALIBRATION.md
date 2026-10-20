@@ -45,22 +45,44 @@
 | G4 | **内陆运费行**（含在总价） | ✅ 已实施（2026-10-21）：`Inland Freight to Delivery Address` 行（两币种） | DAP 交付的核心费用项 | **P0** |
 | G5 | **定金/尾款金额**（两币种） | ✅ 已实施（2026-10-21）：`Deposit (30%)` / `Balance (70%)` 两币种行（百分比从 payment_terms 解析，可显式覆盖） | 财务执行口径 | **P0** |
 | G6 | **Total Amount Payable**（含运费）与 Total Goods Value 分列 | ✅ 已实施（2026-10-21）：`Total Goods Value` / `TOTAL AMOUNT PAYABLE` 两行分列（可显式覆盖） | 与真实单据不一致 | **P0** |
-| G7 | **收款账户结构化**（受益人名/址/税号/账号/开户行/SWIFT） | ✅ 部分（2026-10-21）：渲染层支持结构化 key 分行（`beneficiary*`/`account_no`/`bank_address`）；PI 已渲染，**CI 模板缺银行区块**（补区块会改动 18 金标 ⇒ 下一批） | 客户汇款易错；模板无法分行渲染 | **P0** |
-| G8 | **上游引用**（报价单号、PI 号、CI 号、合同号交叉引用） | PI 无 quote/contract；CI 有 contract_no/lc_no；合同只 ref PI | 单据链可追溯性 | P1 |
-| G9 | **双方税号与完整联系方式**（卖方税号/地址/电话/邮箱；买方税号） | `seller`/`buyer` 对象由 sources 渲染，税号字段未纳入 | 报关/开票必需 | P1 |
-| G10 | **BILL TO / CONSIGNED TO 双栏** | CI 只有 Consignee/Notify | 与真实 CI 版式不同 | P1 |
-| G11 | **合同双语条款（12 条）** | 仅 4 条英文（inspection/claims/force_majeure/arbitration），无中文 | 中英双语合同是用户真实业务形态；双语不一致条款风险 | **P1（大项）** |
-| G12 | **有效期 / 包装细则 / 生产照片 / 第三方拼柜方 / 代表签署人** | 部分只能塞 `remarks` 自由文本 | 版式与真实不一致，容易漏 | P2 |
+| G7 | **收款账户结构化**（受益人名/址/税号/账号/开户行/SWIFT） | ✅ **已实施（2026-10-21）**：渲染层结构化 key 分行（`beneficiary*`/`account_no`/`bank_address`）；PI 用 `$bank_info`，**CI 补齐 `$ci_bank_block`**（结构化 `bank_info` 才渲染，旧数据不渲染 ⇒ 18 金标不变） | 客户汇款易错；模板无法分行渲染 | **P0** |
+| G8 | **上游引用**（报价单号、PI 号、CI 号、合同号交叉引用） | ✅ **已实施（2026-10-21）**：`ref_quote_no`（PI/合同）、`ref_contract_no`（PI）、`ref_pi_no`（CI/合同）、合同 `annex_docs[]` → 内联「Ref. …」/「Annexes: …」，空值不输出 | 单据链可追溯性 | P1 |
+| G9 | **双方税号与完整联系方式**（卖方税号/地址/电话/邮箱；买方税号） | ✅ **已实施（2026-10-21）**：`seller`/`buyer`/`notify_party` 的 `tax_id`/`tel` 进地址块（缺 key 输出不变） | 报关/开票必需 | P1 |
+| G10 | **BILL TO / CONSIGNED TO 双栏** | ✅ **已实施（2026-10-21）**：`bill_to`/`consigned_to` 对象 → `$ci_parties_block` 两栏；都有值才渲染 | 与真实 CI 版式不同 | P1 |
+| G11 | **合同双语条款（12 条）** | ✅ **已实施（2026-10-21）**：合同模板改 `$contract_clauses_block`；`clauses` 数组（含 `[]`）触发默认 12 条中英双语、按 `key` 覆盖/未知追加；**无 `clauses` ⇒ 旧 4 条英文逐字节不变**。措辞待法务/业务确认 | 中英双语合同是用户真实业务形态；双语不一致条款风险 | **P1（大项）** |
+| G12 | **有效期 / 包装细则 / 生产照片 / 第三方拼柜方 / 代表签署人** | ✅ **已实施（2026-10-21，仅 PI）**：`packing_details`/`production_photos_note`/`third_party_consolidator`/`signatory` + `valid_until`（**共享字段条件渲染**，见 §2 P1 状态块） | 版式与真实不一致，容易漏 | P2 |
 
-> **G11 数据层已就绪（2026-10-21）**：`frontend/src/lib/trade-doc/contract-clauses.ts`（默认 12 条中英双语条款 + `custom.clauses` 覆盖/追加，纯数据+纯函数）；模板集成待 A6-1 完成后进行（本轮不改模板/渲染器）。
-
-> **A6-1 实施状态（2026-10-21）**：**G1–G6 已落地**、**G7 渲染层已落地（CI 模板待补）**；
-> 实现位置：`frontend/src/lib/trade-doc/render.ts` 的 `computeFxBreakdown()` + `assets.json` 的 `$fx_block`
-> （仅 pi/ci 模板新增一个内联占位符 ⇒ 无 fx 时渲染空串，**18 份单币种金标逐字节不变**）；
-> 金标变体：`sample-data-fx.json` → `__fixtures__/html/sample_{pi,ci}_fx.html`；字段口径见
-> `docs/TRADE_DOC_TEMPLATES.md` §十一。事实层：`facts.py` 新增 `total_payable`（含运费的应付额，
+> **A6-1 实施状态（2026-10-21）**：**G1–G6 已落地**；实现位置：`frontend/src/lib/trade-doc/render.ts` 的
+> `computeFxBreakdown()` + `assets.json` 的 `$fx_block`（仅 pi/ci 模板新增一个内联占位符 ⇒ 无 fx 时渲染空串，
+> **18 份单币种金标逐字节不变**）；金标变体：`sample-data-fx.json` → `__fixtures__/html/sample_{pi,ci}_fx.html`；
+> 字段口径见 `docs/TRADE_DOC_TEMPLATES.md` §十一。事实层：`facts.py` 新增 `total_payable`（含运费的应付额，
 > money 容差，与 `total_amount` 独立）并沿用既有 `fx_rate` 抽取；跨单不一致 ⇒ conflict。
-> **G8–G10 / G12 不在本批**；G11 数据层由 A6-2 并行推进（见下方注）。
+
+> **✅ A6 P1 实施状态（2026-10-21，G7–G12 全部落地；代码未 commit 时以工作树为准）**
+>
+> - **G7–G12 六项全部实施**（矩阵见上）；**G11 数据层已集成**：`frontend/src/lib/trade-doc/contract-clauses.ts`
+>   （默认 12 条中英双语 + `custom.clauses` 按 key 覆盖/未知追加，纯数据+纯函数）由
+>   `render.ts::renderContractClausesBlock` 调起。
+> - **合同双语触发口径（保基线关键）**：payload **没有 `clauses` 字段** ⇒ 输出旧 4 条英文条款
+>   （`inspection`/`claims`/`force_majeure`/`arbitration`），与旧版**逐字节一致**；
+>   `clauses` **是数组**（含 `[]`）⇒ 启用 12 条双语块并**替代**旧 4 条（`[]` = 全用内置 12 条）。
+> - **`valid_until` 共享字段取舍**：它同时是 `quotation` 模板的普通日期字段，基础样例也带它。
+>   PI 上**仅当其它 P2 字段任一存在**（`packing_details` / `production_photos_note` /
+>   `third_party_consolidator` / `signatory`）才随块显示，避免旧 PI 金标多出一行日期。
+> - **金标 20 → 23**：18 份单币种**逐字节不变**；2 份 FX 金标**重生成**（`sample_data_fx` 本就有 `tel` 与
+>   结构化 `bank_info`，G7/G9 渲染生效 ⇒ 多出电话行 / CI 银行块，属预期）；新增 3 份变体
+>   `sample_pi_a6p1.html` / `sample_ci_a6p1.html` / `sample_contract_bilingual.html`
+>   （数据 `sample-data-a6p1.json`，生成器 `__fixtures__/generate-a6p1-fixtures.ts`）。
+> - **测试**：`render.test.ts` 新增「A6 剩余 P1」**7 条**（三份变体逐字节 + G7/G8/G9/G10/G11/G12 各 1 条，
+>   含"旧数据不渲染/不改变"负向断言）；**前端全量 743 passed / 77 files**
+>   （基线 719 ⇒ +24：A5-W3 17 + 本批 7；`--maxWorkers=2` 实测全绿；默认并行轮 `import-template-xlsx` 15s 超时
+>   属并发抖动，单跑 7 passed）。
+> - **未做 / 待确认（不算完成项）**：
+>   1. **合同双币种**：G1 的 fx 金额块只对 PI/CI 生效；合同即便带 `fx_rate` 也**不进双币种**
+>      （`render.test.ts` 有负向断言）——真实合同是否需要双币种待业务确认；
+>   2. **条款措辞待法务/业务确认**：默认 12 条为「可编辑措辞」（蓝本为真实样例，不含成交信息），
+>      正式签署前需逐条抽查；`text_zh`/`text_en` 可覆盖/隐藏；
+>   3. G12 的 P2 字段**只在 PI** 落地（CI/合同是否需要同类字段未做，待业务样例）。
 
 ## 3. 实施建议（拆两个批次）
 
@@ -73,17 +95,20 @@
 - 事实层（A7）：把 `fx_rate`、`total_payable` 纳入 fact 抽取与一致性（跨单必须一致）；
 - 测试：渲染金标新增 2 份（PI/CI 双币种变体）、事实抽取/一致性测试；既有 18 金标不变。
 
-### 批次 A6-2（P1）：合同双语条款 + 引用链
-- 合同 payload 新增 `clauses` 结构（`key/label_zh/label_en/text_zh/text_en`），默认 12 条内置中英模板（条款措辞以真实样例为蓝本，标注"待法务确认"）；
-- 模板渲染双语两栏/两段；保留 `custom` 覆盖；
-- 引用链：`ref_quote_no`、`ref_pi_no`、`annex_docs[]`；
-- 双方税号/代表签署人字段；
-- 测试：条款渲染 + 引用链 + 金标合同变体。
+### 批次 A6-2（P1）：合同双语条款 + 引用链 —— **✅ 已实施（2026-10-21）**
+- 合同 payload `clauses` 结构（`key/label_zh/label_en/text_zh/text_en`），默认 12 条内置中英模板（标注"待法务确认"）；
+- 模板整块 `$contract_clauses_block`（中文在上、英文在下；**无 `clauses` 保持旧 4 条逐字节不变**），保留 `custom` 覆盖；
+- 引用链：`ref_quote_no` / `ref_contract_no` / `ref_pi_no` / 合同 `annex_docs[]`；
+- 双方税号（`tax_id`）/电话（`tel`）/代表签署人（`signatory`）字段；
+- 测试：P1 变体 3 份金标 + 7 条渲染测试（含负向"旧数据不变"）。
 
-### A6-3（P2，可与 A5 合并）
-- 有效期、包装细则、生产照片说明、第三方拼柜方、BILL TO/CONSIGNED TO 双栏——按真实样例优先补 PI/CI。
+### A6-3（P2）—— **✅ 已随 P1 提前落地（2026-10-21，仅 PI）**
+- `valid_until`（条件渲染）、包装细则 `packing_details`、生产照片说明 `production_photos_note`、
+  第三方拼柜方 `third_party_consolidator`、代表签署人 `signatory` 均已在 PI 落地；
+- CI 的 `BILL TO / CONSIGNED TO` 双栏（G10）也已落地（属 P1，不比 P2 晚）；
+- 未做：把上述 P2 字段推广到 CI/合同（无真实样例，待业务确认是否必要）。
 
-## 4. 待用户确认（业务口径）
+## 4. 业务口径（2026-10-21 用户已确认项 + 仍待确认项）
  
 > **用户 2026-10-21 已确认**：**金额一律保留 2 位小数**；汇总按未舍入值计算后四舍五入（差异走「舍入调整」行），**符合常理**即可；单价保留来源精度（真实单据 USD 单价 4 位：3.7297），不改写成 2 位以免与样例/银行实收对不上。A6 实施按此口径（现实现已一致）。
  
@@ -92,15 +117,24 @@
 > 实现按下列**建议项**落地（2026-10-21），用户仍可改口径；改口径只动
 > `render.ts::computeFxBreakdown` 的公式与 `sample-data-fx.json` 金标，不涉及模板结构。
 
-1. **双币种是否所有单证都加**，还是仅 PI/CI/合同？（建议这三个，其他 15 类保持单币种）
-2. **USD 金额精度**：真实单据 USD 单价 4 位小数、金额 2 位；是否固定按此口径（建议是）。
-3. **舍入调整**：按"行未舍入合计 − 行舍入后合计"自动计算并展示（建议），还是允许手工填？
-4. **合同双语条款**：12 条内置措辞是否需要法务/你逐条确认后上线？（建议先上"中英双语 + 标注可编辑"，上线前你抽查一遍）
-5. **对方公司信息**：真实样例买方是个人（Tim Lyons）＋澳大利亚；"对方公司"字段按"有则显示公司名/税号/地址，无则只显示联系人"处理——确认。
+1. **双币种是否所有单证都加**，还是仅 PI/CI/合同？ → **已落地口径（2026-10-21）**：fx 金额块只对 **PI/CI**；
+   **合同保持单币种（未做，`render.test.ts` 负向断言钉住；合同是否要双币种待业务确认）**。
+2. **USD 金额精度**：真实单据 USD 单价 4 位小数、金额 2 位；是否固定按此口径（建议是）。→ ✅ 用户已确认。
+3. **舍入调整**：按"行未舍入合计 − 行舍入后合计"自动计算并展示（建议），还是允许手工填？→ ✅ 用户已确认（自动 + 可显式覆盖）。
+4. **合同双语条款**：12 条内置措辞是否需要法务/你逐条确认后上线？ → **已上"中英双语 + 标注可编辑"**；
+   **措辞仍待法务/业务逐条抽查**（未做项，不算完成）。
+5. **对方公司信息**：真实样例买方是个人（Tim Lyons）＋澳大利亚；"对方公司"字段按"有则显示公司名/税号/地址，无则只显示联系人"处理——确认。→ 实现已按此（`buyer.company/name/tax_id/tel` 有则显示）。
 
 ## 5. 现状证据（供复核）
 
-- 现有模板占位符：`frontend/src/lib/trade-doc/assets.json`（`templates.pi/ci/contract`）；
-- 渲染器：`frontend/src/lib/trade-doc/render.ts`（行项表/金额大写/图片白名单）；
-- 字段声明：`frontend/src/lib/trade-doc/manifest.json`；
-- 事实层白名单：`backend/kaas_common/trade_doc/facts.py`（当前不含 fx/total_payable 等，需批次 A6-1 扩展）。
+- 模板占位符：`frontend/src/lib/trade-doc/assets.json`（`templates.pi/ci/contract`；A6 P1 新增
+  `$ref_*`/`$annex_docs`/`$ci_parties_block`/`$ci_bank_block`/`$contract_clauses_block` 与 PI P2 占位符）；
+- 渲染器：`frontend/src/lib/trade-doc/render.ts`（行项表/金额大写/图片白名单；A6 P1：
+  `INLINE_NOTE_FIELDS`/`renderAnnexBlock`/`renderContractClausesBlock`/`renderCiBankBlock`/`renderCiPartiesBlock`）；
+- 字段声明：`frontend/src/lib/trade-doc/manifest.json`（A6 P1 新增 `ref_*`/`annex_docs`/`clauses`/
+  `bill_to`/`consigned_to`/`packing_details`/`production_photos_note`/`third_party_consolidator`/`signatory`/
+  `valid_until` 及 3 个派生占位符）；
+- 合同条款数据：`frontend/src/lib/trade-doc/contract-clauses.ts`（默认 12 条 + 覆盖/追加，纯函数）；
+- 金标：`frontend/src/lib/trade-doc/__fixtures__/html/` 共 **23 份**（18 旧不变 + 2 FX 更新 + 3 P1 变体）；
+- 事实层：`backend/kaas_common/trade_doc/facts.py`（A6-1 已含 `fx_rate` / `total_payable`；
+  A6 P1 未新增事实键 —— P1 字段属版式/引用，不参与跨单一致性）。

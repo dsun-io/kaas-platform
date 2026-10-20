@@ -4788,3 +4788,121 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
   `check-worker-bundle` / `check-runtime-deps` 全部 exit 0。
 - **上线前提（如实）**：新表随迁移 `202610200006` 部署；**在迁移执行前**，前端 `GET /clause-templates` 会因表不存在 500
   （前端当前按 MSW 模式/未上线提示处理）。未 commit、未跑 build/e2e、未改 `docs/TODO.md`。
+
+## 2026-10-21 · A6 P1 收口（合同双语条款 + G7–G12 前端渲染）
+
+- **范围**：A6 校准矩阵里剩余 6 项（G7 CI 收款账户 / G8 引用链 / G9 税号电话 / G10 BILL TO·CONSIGNED TO 双栏 /
+  G11 合同 12 条中英双语 / G12 PI P2 补充字段），全部落在前端渲染层
+  （`frontend/src/lib/trade-doc/**`）；**不改后端逻辑、不改 `docs/TODO.md`**；代码在工作树**未 commit**。
+- **G7**：CI 模板新增派生占位符 `$ci_bank_block` —— `bank_info` 至少一个结构化 key
+  （`beneficiary`/`beneficiary_address`/`beneficiary_tax_id`/`account_no`）才渲染
+  「Bank Details for Remittance」；旧数据（仅 `bank`/`account`/`swift`）不渲染 ⇒ 18 金标不变。
+- **G8**：`ref_quote_no`（PI/合同）、`ref_contract_no`（PI）、`ref_pi_no`（CI/合同）→ 内联「Ref. …」小字；
+  合同 `annex_docs[]` → 「Annexes forming an integral part…」一行（`ANNEX_FIELDS` 特判，不是行项表）。
+- **G9**：`seller`/`buyer`/`notify_party` 的 `tax_id` → `Tax ID: …`、`tel` → `Tel: …`（缺 key 输出不变）。
+- **G10**：`bill_to`/`consigned_to` 对象 → `$ci_parties_block` 两栏（任一有内容才渲染）。
+- **G11**：合同模板改 `<div class="clauses">$contract_clauses_block</div>`；**无 `clauses` ⇒ 旧 4 条英文逐字节不变**；
+  `clauses` 为数组（含 `[]`）⇒ 默认 12 条中英双语（`contract-clauses.ts`，按 key 覆盖/未知追加），
+  双语块**替代**旧 4 条 label（不重复）。
+- **G12**：PI 新增 `packing_details` / `production_photos_note` / `third_party_consolidator` / `signatory`；
+  `valid_until` 是共享字段（quotation 模板也用），**仅当其它 P2 字段任一存在时** PI 才显示
+  （`render.ts::preprocessData` 的 `piExtrasEnabled`）⇒ 旧 PI 金标不多出日期。
+- **派生占位符**：`contract_clauses_block` / `ci_bank_block` / `ci_parties_block` 入
+  `render.ts::DERIVED_PLACEHOLDERS` + `custom-fields.ts::RENDERER_DERIVED_FIELDS`
+  ⇒「填写单据内容」表单过滤，`trade-doc:check` 不报未声明。
+- **金标 20 → 23**（`frontend/src/lib/trade-doc/__fixtures__/html/`）：18 份单币种**逐字节不变**；
+  2 份 FX 金标**重生成**（其样例数据本就有 `tel` 与结构化 `bank_info`，G7/G9 渲染生效后多出电话行 / CI 银行块，
+  属预期变化）；新增 `sample_pi_a6p1.html` / `sample_ci_a6p1.html` / `sample_contract_bilingual.html`
+  （数据 `sample-data-a6p1.json`，生成器 `__fixtures__/generate-a6p1-fixtures.ts`）。
+- **测试**：`render.test.ts` 新增「A6 剩余 P1」**7 条**（三份变体逐字节 + G7–G12 各 1 条，含"旧数据不渲染/不改变"
+  负向断言）；**前端全量 `743 passed / 77 files`**（基线 719 ⇒ +24：A5-W3 17 + 本批 7；
+  `pnpm exec vitest run --maxWorkers=2` 全绿；默认并行轮 `import-template-xlsx` 15s 超时属并发抖动，
+  单跑 7 passed，不是本批回归）。
+- **未做 / 待确认（不算完成）**：① **合同双币种**：fx 金额块只对 PI/CI；合同即便带 `fx_rate` 也不进双币种
+  （`render.test.ts` 有负向断言），是否要做待业务确认；② **12 条条款措辞待法务/业务逐条确认**
+  （默认是"可编辑措辞"，不含成交信息，可按 key 覆盖或隐藏单语种）；③ PI P2 字段未推广到 CI/合同
+  （无真实样例，待业务确认是否必要）。
+- 文档：`docs/TRADE_DOC_A6_CALIBRATION.md` §2「A6 P1 实施状态」块 / §3 A6-2·A6-3；
+  `docs/TRADE_DOC_TEMPLATES.md` §十一（11.4–11.10）。本批**未 commit、未跑 build/e2e**；门禁数字为工作树实测。
+
+---
+
+## 追加（2026-10-20 深夜 · D6 冷启动 + A8① 归档核查，只读取证）
+
+> 任务 task-40。只读 Cloudflare API（GraphQL + REST，token 从本机 `~/.dsh/secrets` 读取、未打印）与 Neon 生产库
+> （`default_transaction_read_only=on` 只读事务）；**未删/改任何生产数据**；未改 TODO；取数时点 UTC 2026-10-20T15:2xZ
+> （上海 23:2x），工作树有其它并发改动。基线/报告口径：`scripts/check-worker-bundle.py`（冷启动线 ≤2,950ms）。
+> 复现脚本（未入库）：`.tmp/cf_evidence.py`、`.tmp/a8_sql_check.py`、`.tmp/cf_sched_control.py`。
+
+### D6：公开 API 不提供 startup p50 ⇒ **Lead 已拍板：保持 PENDING**（不伪造门禁通过）
+
+- 已查 Cloudflare Analytics GraphQL（account `766f8d7e…`，`scriptName=kaas`，窗口 **UTC 2026-10-13T15:20:45Z
+  .. 2026-10-20T15:20:45Z**）：`workersInvocationsAdaptive` ⇒ requests **1276**、errors **37**；分位：
+  **cpuTimeP50 43.827ms / P99 806.009ms**；durationP50 46.155ms / P99 806.009ms；
+  wallTimeP50 185.124ms / P99 1580.655ms（Cloudflare 口径：cpuTime/wallTime 分位单位 µs，duration 单位 s）。
+  查询用官方教程同款结构（[Querying Workers Metrics with GraphQL](https://developers.cloudflare.com/analytics/graphql-api/tutorials/querying-workers-metrics/)）。
+- **API 边界（为什么 PENDING 不能被 GraphQL 销）**：`workersInvocationsAdaptive` 无 startup 字段 ——
+  introspect `AccountWorkersInvocationsAdaptiveQuantiles` 全字段仅
+  cpuTime/duration/requestDuration/wallTime/memoryUsageBytes/responseBodySize × P25–P999，无 startup；
+  `workersInvocationsScheduled` 近 2 天 account 级也返回空（但 `schedules` API 明确 cron 已建 ⇒ 该 dataset 对本账号
+  未采集/不可用，不能用于 cron 审计）。`Worker Startup Time` 只在 **upload/deploy 响应**由 CF 实测返回
+  （`backend/worker/poc-sqlalchemy/README.md` 同口径），事后无 REST/GraphQL 端点可取；
+  **`GET /workers/scripts/kaas/versions|deployments` 元数据只有 author/created/source，无 startup 元数据**。
+- 因此**不能**把调用 CPU/wall 分位填进 `coldstart-baseline.json` 的 `p50_ms`：`check-worker-bundle.py` 会拿它与
+  **2,950ms** 直接比较，43.8ms 会造成**门禁假通过**。唯一已测 startup = `pywrangler` 2026-10-20 上传报 **3386ms**
+  （>2,950；HANDOVER 已注明「该数字 ≠ Dashboard p50」），单次 deploy 实测不足以当 p50 基线。
+- **当前状态：`backend/worker/coldstart-baseline.json` 仍不存在（PENDING）**，这是事实正确。
+  **Lead 拍板（2026-10-20 深夜）＝ 选 A（保持 PENDING）**，理由：① GraphQL 的 cpu/wall 分位**不能冒充 startup**
+  （会伪造 `p50_ms` 让 2,950ms 门禁假通过）；② deploy 响应里的 3386ms 按既有口径已注明「≠ Dashboard p50」，
+  单次上传实测不足以当 p50；③ 选 B（写 3386ms）会让 `check-worker-bundle` 真红，不符合"门禁反映真实状态"
+  （当前 PENDING 才是真实状态）。**后续口径**：下次部署时从 upload/deploy 响应捕获 `startup_time_ms`（或人工
+  Dashboard → Workers → kaas → Metrics 读 p50）后再写 `coldstart-baseline.json`；写时须注明数据来源，
+  并注明 3386ms 非 Dashboard 口径。在拿到前保持 PENDING。B/C 未采纳。
+
+### A8①：生产 `events_archive_log` 0 行 = 定时任务首次窗口未到（非无数据、非逻辑 bug）
+
+- **实现口径**（`backend/worker/src/ws_cron.py`，`wrangler.jsonc` `triggers.crons`）：
+  - cron **`30 16 * * *` UTC**（= Asia/Shanghai 次日 00:30）；`archive_target_date()` 取 **UTC 昨日**；
+    窗口 `[target 00:00Z, target+1d 00:00Z)`（半开，修掉 orchestrator `23:59:59` 漏最后 1 秒的问题）。
+  - 读 `events` 表 → 按 `schema_version` 分桶 → 写 R2 `events-archive/YYYY/MM/DD/v{N}.jsonl.gz`
+    （`FILES` binding）→ **每桶插一行** `events_archive_log(tenant_id='*', month='YYYY-MM',
+    minio_path='kaas-files/{key}', status='archived')`。**无数据直接 return（不写日志）**；R2 不可用抛错、最多重试 3 次、
+    失败也不写日志；**不删除 events 行**（保留期 = 永久；归档是复制，不是搬迁）。
+- **生产证据（只读）**：
+  1. `GET /accounts/{id}/workers/scripts/kaas/schedules` → 3 条：`*/15 * * * *`、`30 16 * * *`、`40 17 * * *`，
+     **`created_on` 均为 `2026-10-20T12:54:07Z`**（今天才首次挂载 cron；脚本 `handlers=["fetch","scheduled"]`，
+     最新部署 `2026-10-20T15:21:04Z`）。
+  2. ⇒ `30 16` 的**首个触发点 = 2026-10-20T16:30Z**；取证时 UTC 15:2x **还没到** ⇒ 归档任务从未执行。
+  3. `events`：**250 行**（min `2026-09-19T01:32Z`，max `2026-10-20T15:18Z`）；UTC 日分布近段：
+     10-17=45、10-18=4、**10-19=7**、10-20=4（10-11..10-16 为 0）。**归档目标日 2026-10-19 有 7 行
+     （schema_version=1）** ⇒ 数据是满足条件的，不是"无数据可归档"。
+  4. `events_archive_log`：**0 行**（列：`id, tenant_id, month, minio_path, status, archived_at`）。
+  5. Worker settings：`FILES` = `r2_bucket` / `kaas-files` ✓；R2 桶 `kaas-files` 存在；
+     `GET /accounts/{id}/r2/buckets/kaas-files/objects?prefix=events-archive/` = **[]**（从未写过归档对象）。
+- **结论**：0 行 = **cron 刚启用、首个归档窗口尚未到**（排除"无满足条件数据"与"逻辑 bug"；也排除"R2 没配"，
+  binding/桶都在）。**首次预期结果（16:30Z 之后）**：`events_archive_log` +1 行
+  （month=`2026-10`、minio_path=`kaas-files/events-archive/2026/10/19/v1.jsonl.gz`、status=`archived`）；
+  R2 `events-archive/2026/10/19/` 下 +1 个 `v1.jsonl.gz` 对象；`events` 行数不变（不删）。
+- **只读预检 SQL**（本任务已用只读事务执行；可复跑）：
+  ```sql
+  -- 目标日窗口（DB now 的 UTC 昨日）行数
+  SELECT count(*) FROM events
+   WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') - interval '1 day'
+     AND created_at <  date_trunc('day', now() AT TIME ZONE 'UTC');
+  -- 按 schema_version 分桶（决定日志行数/对象数）
+  SELECT schema_version, count(*) FROM events
+   WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') - interval '1 day'
+     AND created_at <  date_trunc('day', now() AT TIME ZONE 'UTC')
+   GROUP BY 1 ORDER BY 1;
+  SELECT count(*) FROM events_archive_log;   -- 当前 0
+  ```
+- **验证清单（16:30Z 之后只读跑）**：
+  1. `SELECT count(*), max(archived_at) FROM events_archive_log;` ⇒ 应 ≥1，`month='2026-10'`；
+  2. `SELECT * FROM events_archive_log ORDER BY id DESC LIMIT 3;` ⇒ path 指向 `.../2026/10/19/v1.jsonl.gz`；
+  3. Cloudflare API `GET /accounts/{id}/r2/buckets/kaas-files/objects?prefix=events-archive/2026/10/19/` ⇒ 1 个对象；
+  4. `workersInvocationsScheduled` 不可用 ⇒ 以 `GET /workers/scripts/kaas/schedules`（确认 `30 16` 仍在）+
+     部署后 `npx wrangler tail kaas --format json` 抓 `[cron] archive_events ok: {...}`；失败则看
+     `[cron] archive_events attempt N/3 failed: ...`（常见：Hyperdrive 连接、R2 put 权限、payload 序列化）；
+  5. 若 16:30Z 后仍 0 行且 R2 无对象：按第 4 步失败日志定位；**不要**直接调内部 archive 函数写库验证（属破坏性写）。
+- **触发方式**：生产**无手动触发端点**（`scheduled` 仅由 cron 触发），也不建议为验证造数据 ⇒ **等 16:30Z 窗口**；
+  本任务不执行任何写操作。

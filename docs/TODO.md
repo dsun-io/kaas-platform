@@ -18,31 +18,32 @@
 
 | # | 事项 | 说明 | 预估 |
 |---|---|---|---|
-| A-1 | **A6-2 模板集成：合同 12 条中英双语条款** | 数据层已就绪（`contract-clauses.ts`，25 测）；接进 contract 模板 + 渲染 + 金标 | 1 天 |
-| A-2 | **A6 G7：CI 银行区块** | 结构化 `bank_info` 渲染层已就绪（受益人名/址/税号/账号/开户行/SWIFT），CI 模板缺区块 | 0.5 天 |
-| A-3 | **A6 G8 引用链** | 报价号/PI 号/CI 号/合同号交叉引用（PI↔CI↔合同） | 0.5 天 |
-| A-4 | **A6 G9 税号与完整联系方式** | seller/buyer 的税号、地址、电话、邮箱进模板（真实单据必需） | 0.5 天 |
-| A-5 | **A6 G10 BILL TO / CONSIGNED TO 双栏** | CI/PI 真实版式 | 0.5 天 |
-| A-6 | **A6 G12 有效期/包装细则/生产照片/第三方拼柜方/代表签署人** | P2 补齐 | 1 天 |
-| A-7 | **A14 包装类事实** | 求值器已就绪，`extract_facts` 缺"是否木包装/熏蒸/托盘"字段；字段口径可从真实单据包装段确定（`custom.packaging`），需你确认后落内核 | 0.5 天 |
-| A-8 | **A5-W3 金额摘要条** | 编辑面板顶部只读摘要：行合计/合计大写/与上游订单差额，改 qty·price 即时重算 | 0.5 天 |
+| A-1 | **A6-2 模板集成：合同 12 条中英双语条款** | ✅ 2026-10-21 已完成（`$contract_clauses_block`；无 `clauses` 时旧 4 条逐字节不变；新增合同双语金标） | — |
+| A-2 | **A6 G7：CI 银行区块** | ✅ 2026-10-21 已完成（`ci_bank_block`：仅结构化 `bank_info` 有 beneficiary/account_no 时渲染，旧数据零差异） | — |
+| A-3 | **A6 G8 引用链** | ✅ 2026-10-21 已完成（PI ref_quote/contract、CI ref_pi、合同 ref_*+annex_docs 渲染 Annexes） | — |
+| A-4 | **A6 G9 税号与完整联系方式** | ✅ 2026-10-21 已完成（`renderAddressBlock` 支持 tax_id/tel/address/email，有值才显示） | — |
+| A-5 | **A6 G10 BILL TO / CONSIGNED TO 双栏** | ✅ 2026-10-21 已完成（CI `bill_to`/`consigned_to`，任一有值才渲染） | — |
+| A-6 | **A6 G12 有效期/包装细则/生产照片/第三方拼柜方/代表签署人** | ✅ 2026-10-21 已完成（PI P2 字段；`valid_until` 仅在其它 P2 字段存在时随块显示，保护旧金标） | — |
+| A-7 | **A14 包装类事实（复用产品 packaging）** | 求值器已就绪；按产品 `spec.packaging[].method` 抽 `packing_method`/`packing_type`（不新增字段）；align-b 施工中 | 0.5 天 |
+| A-8 | **A5-W3 金额摘要条** | ✅ 2026-10-21 已完成（只读、无输入控件；复用 `computeFxBreakdown`/`amountInWords`/`receiptTolerance`；17 测；真实样例应付 2,826.49 钉死） | — |
 | A-9 | **A5-W2 行项批量编辑** | 多选批量改规格/单价/数量/单位，金额仍单一来源推导、改完标未确认、签发仍被拦 | 1.5 天 |
 | A-10 | **C27 QA 越权审计 7 条留证** | 发布后跑一轮并留证（P4） | 0.5 天 |
 | A-11 | **D6 冷启动基线收尾** | 用 Cloudflare Analytics API 拉 p50，写 `coldstart-baseline.json` 销 PENDING | 0.5 天 |
 | A-12 | **C12 PDF 归档真单证端到端** | 需等平台产生首单真实 PDF（`render_pdf` 当前 0 条）后人工复核 18 类；可先用现有样例做 1 类对照 | 0.5 天 |
-| A-13 | **C36：24 条「后端先行待接 UI」** | `docs/API_RESERVED_LIST.md` 已列 60 条未接（保留 18 / 待接 UI 24 / 可删候选 18）；按业务价值逐个接前端，或确认长期保留并标注 |
-| A-14 | **A10：5 类扩展模板实现** | §6.1 已出清单；先做 P1 两件（`beneficiary_decl` 受益人声明、`saso_coc` 目的国符合性认证，结构同构/高频），P2（`vessel_cert`/`export_license`/`ciq`）按真实样例再定 |
-| A-15 | **A8①：归档任务端到端实跑** | 生产 `events_archive_log` 当前 **0 行**；cron 已配（每日），需等首次归档窗口后核对（或补一次可手动触发的验证路径） |
-| A-16 | **D2 后直传路径端到端复验** | R2 系统 token 已回环验证；worker `presign` 端到端需登录态，补一次真实上传+回读验证 |
+| A-13 | **C36 审计后续（实为 20 条待接）** | ✅ 审计完成（`docs/API_RESERVED_LIST_AUDIT.md`）：20 条待接 = 本期 5 + 下期 12 + 长期保留 3；18 可删候选 = 3 可删（证据）+ 2 保留（含 1 条误判纠正）+ 13 需 owner 确认 | 3 天 |
+| A-14 | **A10：5 类扩展模板实现** | §6.1 清单已出；先做 P1 两件（`beneficiary_decl`、`saso_coc`），P2 按真实样例再定 | 1.5 天 |
+| A-15 | **A8①：归档任务端到端实跑** | 🔍 已查清：cron `30 16 * * *` 于 **2026-10-20T12:54Z 首次挂载**，首个窗口 16:30Z 未到 ⇒ `events_archive_log` 0 行属正常；events 250 行（10-19 有 7 行）、R2 `events-archive/` 前缀空、无手动触发端点。窗口后按 4 条清单验证 | 0.5 天 |
+| A-16 | **D2 后直传路径端到端复验** | 🔍 R2 系统 token 已回环（PUT/GET/DELETE 200/200/204）；worker presign 需登录态，下次有测试账号时补验 | 0.5 天 |
+| A-17 | **重置密码邮件 UI 同步新版** | ✅ 2026-10-21 已完成（electric-blue/12px 圆角/table 响应式/纯文本兜底） | — |
 
 ### B. 需要你提供 / 拍板 / 操作
 
 | # | 事项 | 需要你做什么 | 不做的后果 |
 |---|---|---|---|
 | B-1 | **N3 H-2 用户复验** | 打开定价/注册相关页面按口径复验一次 | 该项一直标"待用户复验"，不算完成 |
-| B-2 | **D4 生产测试数据清理** | 执行清理时点头（脚本已就绪，dry-run 0 行风险） | 测试数据继续留在生产库 |
+| B-2 | ~~D4 生产测试数据清理~~ | ✅ **2026-10-21 dry-run 实测 0 行匹配（可删 0、被引用跳过 0）⇒ 无需清理，已关闭**，不需要你操作 | — |
 | B-3 | **C2/C10 打印视觉 QA** | 人工打印 1-2 张含公章 PI，检查签章区不分页、公章位置（文档已尽量自动化，视觉终检需人眼） |
-| B-4 | **C36：18 条「可删候选」确认** | 逐条确认哪些可删（后端可能被第三方/脚本使用，删前必须 owner 确认）；确认后我删除并复跑 contracts/mocks |
+| B-4 | **C36 拍板**：3 条证据可删的执行授权 + 13 条业务 owner 确认 | 我给出审计表（已含逐条证据）；你批准删 3 条，并指定 13 条的业务 owner 由他们确认 |
 | B-5 | **A6 合同 12 条双语条款抽查** | 模板集成后，签署前请业务/法务抽查中英措辞一致性（默认模板已标"可编辑、待确认"） |
 ### C. 已按你裁决不做 / 暂缓（不再列为待办）
 
@@ -146,7 +147,7 @@
 | D1 | 生产注入 `RESEND_API_KEY` | ✅ **2026-10-21 已完成**：已 `wrangler secret put RESEND_API_KEY --name kaas`（secret list 5 项确认）；生产用**仅发送权限** key（最小权限；用户另提供了全权限 key 供运维，未写入 worker）；key 验证：全权限 key `/domains` 200（`send.powervoy.com` verified），发送 key `/domains` 401 属预期 ⇒ 忘记密码邮件链路恢复 | — | ✅ |
 | D2 | R2 新密钥替换 | ✅ **2026-10-21 已完成**：用户提供 R2 S3 凭据（Access Key 32 位 + Secret），已 `wrangler secret put S3_ACCESS_KEY/S3_SECRET_KEY --name kaas`（secret list 确认）；**真回环验证**：用新凭据对 `kaas-files` 做 presigned PUT/GET/DELETE = 200/200/204（测试对象 `_ops/selftest-*` 已删）。生产直传恢复，不再只走兜底；旧 token 可由用户随时在 R2 控制台吊销 | — | ✅ |
 | D3 | Hyperdrive 生产缓存关闭（可选） | **用户已授权按推荐默认：保持开启**（2026-10-21）。预览仍 `caching.disabled=True` | ✅（默认保持） |
-| D4 | 生产测试数据清理 | 发布已执行（2026-10-21），**清理未做**（需执行当次确认，用户尚未确认）；含流失拒绝文件历史 | 🧭 待当次确认 |
+| D4 | 生产测试数据清理 | ✅ **2026-10-21 已用生产 DSN 跑 dry-run：匹配 0 行（可删 0、被引用跳过 0）⇒ 无测试数据残留，无需 `--apply`**；脚本 `scripts/cleanup_orphan_lead.py` 保留供以后用 | — | ✅（0 行） |
 | D5 | 仓库可见性 | ✅ **用户 2026-10-21 决定：保持 public、不做密钥轮换/改密**（安全批按用户口径收窄为"归档数据公开评估"）；已发现 `docs/archive/stowage_raw.json` 等含真实姓名/企业微信 userid/成本价（P1）；**2026-10-21 已按用户批准脱敏**（stowage 身份+228 个成本/售价/利润单元格、17 份样例单据的姓名/电话/邮箱） | — | ✅（按用户决定） |
 | D6 | 生产发布检查单 | ✅ **2026-10-21 已执行 7 次**（迁移至 `202610200006`；构建 out/277；版本 `dae596a5`→`cd15e9a5`→`9d497628`→`3a5ce179`→`3d324441`→`569a8b88`→`69765ef6`；冒烟每次全过；回滚版本 `77901aa1`；记录见 HANDOVER §0.4）。**尾巴**：冷启动 `coldstart-baseline.json` 仍 PENDING（需 Dashboard p50）；P4 观察期进行中 | 🔨（冷启动 1 尾） |
 | D7 | preview ensure 对 Neon 423 重试 | ✅ 2026-10-21：`scripts/preview/preview_lib.py` 对 **423/429** 有限重试（指数退避 2/4/8/16s，上限 20s，`Retry-After` 优先，`PREVIEW_HTTP_RETRIES`/`PREVIEW_HTTP_BACKOFF` 可调；5xx 不重试避免重复创建）+ 5 条单测 `backend/worker/tests/test_preview_http_retry.py` | ✅ |

@@ -101,13 +101,16 @@ raw_payload = {
 }
 ```
 
-- **`custom` 优先，上游快照兜底**（见 `trade_doc_render.py::_build_render_data`）。
+- **`custom` 优先，上游快照兜底**（前端 `frontend/src/lib/trade-doc/render.ts` 的 `preprocessData`/`deriveFields`；
+  数据由 `GET /trade-docs/{id}/render-data` 装配）。
 - 可用字段与类型：`GET /api/v1/trade-doc-templates/{doc_type}`。
 - 渲染器自动派生（无需调用方计算）：
   - `total_amount_words` / `insured_amount_words`：金额英文大写
   - `total_qty` / `total_packages` / `total_gross_weight` / `total_net_weight` / `total_volume`：行项自动汇总
   - `seller_name`：卖方名称（签章区提示语）
   - `fx_block`：**双币种金额块**（仅 PI/CI 且给了 `fx_rate` 时；见 §十一）
+  - `contract_clauses_block`（G11 合同条款块）/ `ci_bank_block`（G7 CI 收款账户）/
+    `ci_parties_block`（G10 BILL TO·CONSIGNED TO 双栏）——整块 HTML，勿手填；见 §十一
   - 日期统一格式化为 `26-Sep-2026`
   - `remarks` / `notes`：**换行保留**（先按业务值转义、再把 `\n` 换成 `<br>`）——
     备注本来就该逐点换行（`1) … 2) … 3) …`），HTML 默认会把换行折叠成空格、
@@ -442,10 +445,12 @@ POST /api/v1/trade-docs/{id}/content-versions/{version_no}/restore   仅 draft
 
 ---
 
-## 十一、双币种金额块（A6-1 · 2026-10-21 新增）
+## 十一、A6 校准落地（2026-10-21）：双币种金额块 + P1（引用链/税号/双栏/合同双语/PI P2）
 
-> 背景与校准依据：`docs/TRADE_DOC_A6_CALIBRATION.md`（G1–G6）。只对 **PI / CI** 生效；
-> **没有 `fx_rate` 时完全不触发** ⇒ 既有 18 份单币种逐字节基线不变（`render.test.ts` 钉住）。
+> 背景与校准依据：`docs/TRADE_DOC_A6_CALIBRATION.md`（G1–G12）。
+> **A6-1（G1–G6）只对 PI / CI 生效，没有 `fx_rate` 时不触发**；
+> **A6 P1（G7–G12）全部按「有值才输出、空值输出空串」实现** ⇒ 既有 18 份单币种逐字节基线不变
+> （`render.test.ts` 钉住；金标口径见 §11.10）。本章字段都在 `raw_payload.custom`，全部可选、向后兼容。
 
 ### 11.1 新增字段（`raw_payload.custom`，全部可选、向后兼容）
 
@@ -472,7 +477,10 @@ POST /api/v1/trade-docs/{id}/content-versions/{version_no}/restore   仅 draft
   `Inland Freight to Delivery Address` → `TOTAL AMOUNT PAYABLE` → `Deposit (30%)` / `Balance (70%)`。
 - 金额英文大写按 **USD 应付总额** 出（与真实单据一致）；`total_amount` 未给时由 `total_payable_usd` 派生。
 
-### 11.3 计算口径（**待用户最终确认**，见校准文档 §4 #2/#3）
+### 11.3 计算口径（**2026-10-21 用户已确认**，见校准文档 §4）
+
+> 确认口径：金额一律保留 **2 位小数**；汇总按**未舍入值**计算后再四舍五入，差异走「舍入调整」行；
+> 单价保留来源精度（真实单据 USD 单价 4 位，如 3.7297，**不压成 2 位**）。
 
 - 本币行金额 = `round2(数量 × round2(本币单价))`；外币单价 = `round4(本币单价 ÷ 汇率)`；
   外币行金额 = `round2(本币行金额 ÷ 汇率)`。
@@ -485,9 +493,89 @@ POST /api/v1/trade-docs/{id}/content-versions/{version_no}/restore   仅 draft
   金标变体数据：`sample-data-fx.json` + `__fixtures__/html/sample_{pi,ci}_fx.html`
   （重生成：`node frontend/node_modules/tsx/dist/cli.mjs frontend/src/lib/trade-doc/__fixtures__/generate-fx-fixtures.ts`）。
 
-### 11.4 收款账户结构化（G7，渲染层）
+### 11.4 收款账户结构化（G7，**已实施 2026-10-21，含 CI**）
 
-`bank_info` 对象新增可选 key，按行渲染（缺 key 时输出与旧版完全一致）：
+`bank_info` 对象支持结构化 key，按行渲染（缺 key 时输出与旧版完全一致）：
 `beneficiary`、`beneficiary_address`、`beneficiary_tax_id`、`bank_address`、`account_no`
-（原有 `bank` / `account` / `swift` 保留）。PI 模板已渲染 `$bank_info`；
-**CI 模板原本就没有银行区块**，补区块会改动既有 18 金标 ⇒ 留到下一批（见校准文档 G7 备注）。
+（原有 `bank` / `account` / `swift` 保留）。
+
+- **PI**：沿用 `$bank_info`（地址块渲染）；
+- **CI（本次补齐）**：模板在行项/金额块之后加 `$ci_bank_block`（派生占位符）。触发条件 =
+  `bank_info` 里**至少一个结构化 key 有值**（`beneficiary` / `beneficiary_address` /
+  `beneficiary_tax_id` / `account_no`）；旧数据（只有 `bank`/`account`/`swift`）⇒ 空串，
+  **18 份金标不变**（`render.test.ts`「G7 CI 收款账户区块」钉住）；
+- 区块标题：`Bank Details for Remittance`；实现：`render.ts::renderCiBankBlock`。
+
+### 11.5 引用链（G8，**已实施 2026-10-21**）
+
+新增可选字段；**有值才输出**，用内联「Ref. …: 值」小字显示在单号栏下方（空值 = 空串）：
+
+| 字段 | 生效单证 | 显示标签 | 模板挂载点 |
+|---|---|---|---|
+| `ref_quote_no` | PI、合同 | `Ref. Quotation No.` | PI：`$pi_no$ref_quote_no$ref_contract_no`；合同：`$contract_no$ref_quote_no$ref_pi_no` |
+| `ref_contract_no` | PI | `Ref. Contract No.` | 同上（PI 单号栏） |
+| `ref_pi_no` | CI、合同 | `Ref. Proforma Invoice No.` | CI：`$invoice_no$ref_pi_no` |
+| `annex_docs` | 合同 | `Annexes forming an integral part of this contract: …` | `$items` 之后一行；数组项可为字符串或 `{label|doc_type, doc_no}` |
+
+> `annex_docs` 是**数组但不是行项表**：渲染器按 `ANNEX_FIELDS` 特判为一行 "Annexes: …"
+> （见 `render.ts::renderAnnexBlock`）；合同模板已挂 `$items$annex_docs`。
+
+### 11.6 双方税号 / 联系方式（G9，**已实施 2026-10-21**）
+
+`seller` / `buyer` / `notify_party` 等地址对象新增可选 key：`tax_id`（渲染 `Tax ID: …`）、
+`tel`（渲染 `Tel: …`；原有 `phone` 保留输出 `Tel:`）。旧数据没有这些 key ⇒ 地址块逐字节不变；
+PI 的「卖方税号 + 买方电话」即来自这一层（样例：`91131125MA0GA4242U` / `+61 438 381 068`）。
+
+### 11.7 CI BILL TO / CONSIGNED TO 双栏（G10，**已实施 2026-10-21**）
+
+`bill_to` / `consigned_to` 两个对象（公司名/地址/联系人，可选 tax_id/tel）→ 派生占位符
+`ci_parties_block`（两栏 `BILL TO` / `CONSIGNED TO`），模板挂在 Consignee/Notify 表之后。
+触发条件：**两个对象任一有内容**才渲染；都没有 ⇒ 空串（旧 CI 仍只有 Consignee/Notify 两栏，金标不变）。
+
+### 11.8 合同双语条款（G11，**已实施 2026-10-21**）
+
+- **数据**：`contract` 的 `raw_payload.custom.clauses`（数组；可空数组）。
+  默认 12 条中英双语在 `frontend/src/lib/trade-doc/contract-clauses.ts`
+  （`quality / packing / payment / delivery / documents / tax / price_basis /
+  inspection_claims / force_majeure / arbitration / governing_law / effectiveness_annexes`）；
+- **触发口径（关键，保基线）**：
+  - **没有 `clauses` 字段** ⇒ 模板输出**旧 4 条英文条款**（`inspection` / `claims` /
+    `force_majeure` / `arbitration`），与旧版**逐字节一致**（18 份金标里的合同基线正是这条路径）；
+  - **`clauses` 是数组**（含空数组 `[]`）⇒ 启用双语块：默认 12 条，按 `key` 覆盖、未知 `key` 追加；
+    空数组 = 12 条全用内置。**双语模式替代旧 4 条**（不重复渲染 `Inspection` 等旧 label）。
+  - 只覆盖显式给出的字符串字段；`text_zh`/`text_en` 传空串 = 隐藏该语种；非法条目忽略并回退内置。
+- **模板**：`<div class="clauses">$contract_clauses_block</div>`（派生占位符，整块由
+  `render.ts::renderContractClausesBlock` 生成：中文在上、英文在下）；
+- **措辞状态**：默认条款为「可编辑措辞」，**正式签署前需法务/业务确认**
+  （见 `docs/TRADE_DOC_A6_CALIBRATION.md` §2「A6 P1 实施状态」的未做项）。
+
+### 11.9 PI P2 补充字段（G12，**已实施 2026-10-21，仅 PI**）
+
+| 字段 | 类型 | 显示 | 模板挂载点 |
+|---|---|---|---|
+| `packing_details` | string（多行） | `Packing: …`（换行保留） | Remarks 格：`$remarks$packing_details$production_photos_note` |
+| `production_photos_note` | string（多行） | `Production Updates: …` | 同上 |
+| `third_party_consolidator` | string | `Third-party Consolidator: …` | Time of Delivery 格：`$delivery_time$valid_until$third_party_consolidator` |
+| `signatory` | string | `Signed for the Seller: …` | 卖方签章左格：`$buyer_confirmation$signatory` |
+| `valid_until` | date | `Valid Until: 14-Oct-2026` | 同第三行（**条件渲染**，见下） |
+
+**`valid_until` 的共享字段取舍（必须知道）**：`valid_until` 同时是 `quotation` 模板的普通日期字段，
+且基础样例数据里就带着它。为了不让旧 PI 金标多出一行日期，PI 上**只在其它 P2 字段任一存在时**
+（`packing_details` / `production_photos_note` / `third_party_consolidator` / `signatory`）
+才随块显示 `valid_until`；「只有有效期、没有其它 P2 信息」时 PI 不渲染它（真实单据一定带包装/生产/签章信息）。
+该判断在 `render.ts::preprocessData` 的 `piExtrasEnabled`。
+
+### 11.10 派生占位符 / 表单过滤 / 金标（23 份）
+
+- **派生占位符**（渲染器生成整块 HTML，**不要手填**，`manifest.json` 里声明只为占位符检查）：
+  `fx_block`（A6-1）、`contract_clauses_block`、`ci_bank_block`、`ci_parties_block`。
+  已加入 `render.ts::DERIVED_PLACEHOLDERS` 与 `custom-fields.ts::RENDERER_DERIVED_FIELDS`
+  ⇒ 「填写单据内容」表单不显示这些输入框，`pnpm -C frontend trade-doc:check` 也不报未声明。
+- **金标 20 → 23**（`frontend/src/lib/trade-doc/__fixtures__/html/`）：
+  - 18 份单币种基线**逐字节不变**；
+  - 2 份 FX 金标（`sample_pi_fx.html` / `sample_ci_fx.html`）**重生成**：其样例数据本就有
+    `tel` 与结构化 `bank_info`，A6 P1 渲染生效后多了电话行 / CI 银行块（属预期变化，非回归）；
+  - 3 份新变体：`sample_pi_a6p1.html`、`sample_ci_a6p1.html`、`sample_contract_bilingual.html`
+    （数据 `sample-data-a6p1.json`，生成器 `__fixtures__/generate-a6p1-fixtures.ts`）。
+- **回归**：`__tests__/render.test.ts` 的「A6 剩余 P1」describe 共 **7 条**（三份变体逐字节、
+  G7/G8/G9/G10/G11/G12 各 1 条，含"旧数据不渲染/不改变"的负向断言）。
