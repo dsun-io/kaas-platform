@@ -80,6 +80,55 @@ Hyperdrive，并给 worker 依赖钉版入库。**前端 UI 优化 P0/P1/P2 已�
   `docs/ui-redesign/**`。
 - 检索入口仍是 [`docs/README.md`](./README.md)（已同步状态与归档批次）。
 
+### 0.3 新设备 / 新 agent 接手清单（**设备无关**，换机也能完整接手）
+
+> 前提：PR #5 已合并到 `main` ⇒ 新设备 `git clone` 即拥有**代码 + 全部交接文档**。
+
+**0.3.1 仓库与文档在哪**
+
+- 仓库：`https://github.com/dsun-io/kaas-platform`；交接文档全在 `docs/`，检索入口 `docs/README.md`。
+- 分支 `feat/trade-doc-content-a` 可能仍保留（历史分支）；**合并后以 `main` 为准**，无需切分支。
+
+**0.3.2 本机有、Git 里没有（换设备会缺，必须重建）**
+
+| 本机东西 | 为什么不入库 | 新设备怎么办 |
+|---|---|---|
+| `.env.local` | **含密钥**，`.gitignore` 明确忽略 | 新建该文件，按下表变量名填值；值从 GitHub repo secrets / Neon / Resend / 用户处取 |
+| `backend/.tools/`（删除前备份 CSV） | gitignored 的运维临时产物 | 历史备份不必恢复；需要时从旧设备拷 |
+| `frontend/node_modules`、`**/.venv` | 依赖产物 | `cd frontend && pnpm install`；`uv sync`（见 §0.2.4 门禁命令） |
+| 本地 Docker 容器（PG/Redis/MinIO） | 环境 | `docker compose up -d` |
+| worktree 路径 `.agents/worktrees/...` | 本机 git worktree 布局 | 新设备不需要 worktree；`git clone` + 在 `main` 上工作即可 |
+
+**0.3.3 密钥/配置的持久位置（克隆仓库不包含，但换设备仍可用）**
+
+- **GitHub repo secrets（12 个，仓库 Settings → Secrets 可见名称）**：`PROD_DATABASE_URL`、
+  `NEON_API_KEY`、`NEON_PROJECT_ID`、`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`JWT_SECRET`、
+  `ADMIN_SETUP_TOKEN`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_ENDPOINT`、
+  **`RESEND_API_KEY_PROD`**、**`RESEND_API_KEY_PREVIEW`**。
+- **Cloudflare Worker（生产 `kaas`）secrets**：`JWT_SECRET` / `ADMIN_SETUP_TOKEN` / `S3_ACCESS_KEY` /
+  `S3_SECRET_KEY`（已配）；**`RESEND_API_KEY` 待发布窗口注入**（值 = repo secret `RESEND_API_KEY_PROD`）。
+- **Neon / Cloudflare / Resend 控制台**：项目、分支、桶、Hyperdrive、域名
+  （`send.powervoy.com` 已验证）都在云上，与设备无关；新设备只需账号权限。
+- `.env.local` 需要的变量名（**只写名，不写值**）：`DATABASE_URL`（Neon 生产只读/读写 DSN）、
+  `RESEND_API_KEY`（本地开发用）、`RESEND_API_KEY_PROD`、`RESEND_API_KEY_PREVIEW`；旧字段
+  `DATABASE_URL_PPG` 已废弃可删。
+
+**0.3.4 新设备首次接手步骤**
+
+1. `git clone https://github.com/dsun-io/kaas-platform && cd kaas-platform`
+2. 装依赖：`cd frontend && pnpm install`；`cd backend/worker && uv sync`；`cd backend/orchestrator && uv sync --extra migrations`
+3. 建 `.env.local`（变量名见 0.3.3；值找用户/控制台，不要提交）
+4. 本地起环境：`docker compose up -d`；`cd backend/orchestrator && uv run --extra migrations alembic upgrade head`（空库快径）
+5. 读交接：`docs/README.md` → 本文件 §0.2/§0.3 → `docs/TODO.md` → `PROBLEM_STATUS` 顶部
+6. 跑门禁确认环境正常（命令与当前数字见 §0.2.4）；工具链坑见 `AGENTS.md`
+7. 剩余工作：本文件 §0.2.3 + `docs/TODO.md`（两者都在 `main` 上，可直接检索到）
+
+**0.3.5 需要的账号/权限**
+
+GitHub 仓库写权限（含 Actions secrets 可见）· Cloudflare 账号（Worker/R2/KV/Hyperdrive/Browser Rendering）·
+Neon 项目权限 · Resend 账号（`send.powervoy.com` 域名）· 生产域名 DNS（`kaas.powervoy.com` / `api.kaas.powervoy.com`）。
+缺权限时先只做本地开发（不触云），发布相关项（D 组）等权限齐再动。
+
 ## 0.1 本轮后端交付（2026-10-20 晚 · 分支 `feat/trade-doc-content-a` · PR #5）
 
 用户点名的**后端 5 项 + 单证内容专项**已全部落地。PR #5 `mergeable_state=clean`，
