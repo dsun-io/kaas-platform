@@ -76,8 +76,9 @@ NEW_ROUTES: set[tuple[str, str]] = {
     ("/api/v1/pricing-data", "POST"),
     ("/api/v1/pricing-data/{item_id}", "PATCH"),
     ("/api/v1/pricing-data/{item_id}", "DELETE"),
-    ("/api/v1/spec/skus/{sku_id}/prices", "POST"),
-    ("/api/v1/spec/prices/{price_id}", "PATCH"),
+    # C36（2026-10-21 用户批准删除，旧规格库价格体系退役）：
+    # `POST /api/v1/spec/skus/{sku_id}/prices` 与 `PATCH /api/v1/spec/prices/{price_id}`
+    # 已从路由表删除，**不再**登记（若哪天回归，下面的断言会先红出来）。
     # 第二批：规格分类树 / 向导 / 事件列表 / 管理 / 能力
     ("/api/v1/spec/categories", "GET"),
     ("/api/v1/spec/categories/{category_id}", "GET"),
@@ -200,6 +201,23 @@ def test_new_routes_registered():
     assert NEW_ROUTES <= _routes()
 
 
+# C36（2026-10-21 用户批准删除）：三条无主接口必须真的消失。
+# 用**负向断言**钉住，防止日后"顺手补回"旧规格库价格入口 / 通用上传入口。
+C36_DELETED_ROUTES = {
+    ("/api/v1/spec/skus/{sku_id}/prices", "POST"),
+    ("/api/v1/spec/prices/{price_id}", "PATCH"),
+    ("/api/v1/file-objects/upload", "POST"),
+}
+
+
+def test_c36_deleted_routes_are_gone():
+    registered = _routes()
+    for path, method in sorted(C36_DELETED_ROUTES):
+        assert (path, method) not in registered, (
+            f"{method} {path} 已在 C36 删除（用户 2026-10-21 批准），不应重新出现"
+        )
+
+
 def test_new_routes_answer_auth_challenge():
     """新接口无凭据应返回 401/403（鉴权在数据库之前），而不是 404。"""
     for path, method in sorted(NEW_ROUTES):
@@ -207,8 +225,6 @@ def test_new_routes_answer_auth_challenge():
         probe = path.replace("{shipment_id}", "1").replace("{customer_id}", "1")
         probe = (
             probe.replace("{item_id}", "1")
-            .replace("{sku_id}", "1")
-            .replace("{price_id}", "1")
             .replace("{category_id}", "1")
             .replace("{order_id}", "1")
             .replace("{schedule_id}", "1")

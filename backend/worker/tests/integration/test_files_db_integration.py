@@ -273,21 +273,31 @@ def test_file_content_bytea_roundtrip_via_upload_and_get(client, db, admin_setup
 
     刻意用**非 UTF-8 / 含 NUL / 0xFF** 的字节：任何"先 decode 再 encode"的写法
     （latent 的 mojibake / 截断）都会在这里露馅。
+
+    2026-10-21 C36：`POST /file-objects/upload` 已按用户批准删除（C1 授权不做），
+    改用**仍在役**的单证回传 multipart 上传 `POST /trade-docs/{id}/files/upload`
+    —— 同一条 `_create_file` → inline bytea 落库链路，覆盖不降级。
     """
     _require_table(db, "file_objects")
     body = _bootstrap_admin(client, admin_setup_token)
     headers = _auth(body["access_token"])
 
     payload = b"\x89PNG\r\n\x1a\n" + bytes(range(256)) + b"\x00\xff\x00tail"
+    # 单证上传要挂到一张单证上；直接插一张最小 draft 单证（本用例只关心文件字节）
+    doc_id = int(db.fetchval(
+        "INSERT INTO trade_docs (tenant_id, doc_no, doc_type, status, raw_payload)"
+        " VALUES ($1,$2,$3,'draft','{}'::jsonb) RETURNING id",
+        "default", "IT-FILES-BYTEAL-1", "ci",
+    ))
 
     resp = client.post(
-        "/api/v1/file-objects/upload",
+        f"/api/v1/trade-docs/{doc_id}/files/upload",
         files={"file": ("roundtrip.png", payload, "image/png")},
-        data={"name": "bytea 往返", "owner_type": "customer", "kind": "other"},
+        data={"name": "bytea 往返", "role": "stamp_scan"},
         headers=headers,
     )
     assert resp.status_code == 201, resp.text
-    file_id = resp.json()["id"]
+    file_id = resp.json()["file"]["id"]
 
     row = db.fetchrow(
         "SELECT storage, content, file_size, sha256 FROM file_objects WHERE id=$1",

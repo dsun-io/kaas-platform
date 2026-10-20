@@ -2456,11 +2456,13 @@ async def delete_pricing_data(
     return {"id": item_id, "status": "inactive"}
 
 
-# ── 阶段 3 · SKU 价格（/api/v1/spec/skus/{id}/prices + /api/v1/spec/prices/{id}）──
-# 规则同 orchestrator services/price_engine.upsert_price：INSERT-only，
-# 改价 = 截断/作废旧价 + 插入新价，不原地修改历史价格。
-# 与 orchestrator 的差异：所有查询带 tenant_id（计划硬要求）；
-# 新价被旧价完全包含时返回 422（orchestrator 为异常 500），错误更清晰。
+# ── 阶段 3 · SKU 价格写入（**仅** `_upsert_price` 内核辅助，C36 已删独立端点）──
+# 2026-10-21 C36（用户批准）：旧规格库价格体系已退役，删除
+# `POST /api/v1/spec/skus/{sku_id}/prices` 与 `PATCH /api/v1/spec/prices/{price_id}`
+# 两个独立价格端点（前端 0 引用、生产相关 7 表 0 行；定价数据接口取代）。
+# `_upsert_price` 仍被 `POST /api/v1/spec/wizard/submit` 的可选带价路径使用
+# （向导建 SKU 时写首价，同一 INSERT-only 口径），故保留：
+# 规则同 orchestrator `services/price_engine.upsert_price`，新价被旧价完全包含时 422。
 
 
 async def _upsert_price(
@@ -2534,99 +2536,6 @@ async def _upsert_price(
         created_by,
     )
     return row["id"]
-
-
-@app.post("/api/v1/spec/skus/{sku_id}/prices")
-async def create_price(
-    sku_id: int,
-    body: dict,
-    request: Request,
-    user: dict = Depends(_get_current_user),
-):
-    """为 SKU 设定价格（INSERT-only 改价规则同 orchestrator）。"""
-    sku = await db.fetchrow(
-        request,
-        "SELECT id FROM product_skus WHERE id = $1 AND tenant_id = $2",
-        sku_id,
-        DEFAULT_TENANT,
-    )
-    if sku is None:
-        return {"error": "not_found"}
-    price = body.get("price")
-    if not isinstance(price, (int, float)) or price <= 0:
-        raise HTTPException(status_code=422, detail="price must be > 0")
-    price_unit = (body.get("price_unit") or "").strip()
-    if not price_unit:
-        raise HTTPException(status_code=422, detail="price_unit is required")
-    unit = await db.fetchrow(
-        request, "SELECT code FROM price_units WHERE code = $1", price_unit
-    )
-    if unit is None:
-        raise HTTPException(
-            status_code=422, detail=f"Unknown price_unit: {price_unit}"
-        )
-    change_reason = (body.get("change_reason") or "").strip()
-    if not change_reason:
-        raise HTTPException(status_code=422, detail="change_reason is required")
-    # 价格按天生效：parse_date 截断到当天（同定价数据）
-    effective_from = parse_date(body.get("effective_from"))
-    if effective_from is None:
-        raise HTTPException(status_code=422, detail="effective_from is required")
-    price_id = await _upsert_price(
-        request,
-        sku_id=sku_id,
-        tenant_id=DEFAULT_TENANT,
-        price=float(price),
-        price_unit=price_unit,
-        effective_from=effective_from,
-        effective_to=parse_date(body.get("effective_to")),
-        min_qty=to_float(body.get("min_qty")),
-        tier_rules=body.get("tier_rules"),
-        note=body.get("note"),
-        change_reason=change_reason,
-        created_by=str(user["id"]),
-    )
-    return {"id": price_id}
-
-
-@app.patch("/api/v1/spec/prices/{price_id}")
-async def patch_price(
-    price_id: int,
-    body: dict,
-    request: Request,
-    user: dict = Depends(_get_current_user),
-):
-    """价格条目维护（只允许改 status / note / effective_to，同 orchestrator）。"""
-    current = await db.fetchrow(
-        request,
-        "SELECT id FROM product_sku_prices WHERE id = $1 AND tenant_id = $2",
-        price_id,
-        DEFAULT_TENANT,
-    )
-    if current is None:
-        return {"error": "not_found"}
-    updates: dict = {}
-    if body.get("status") is not None:
-        updates["status"] = str(body["status"]).strip()
-    if body.get("note") is not None:
-        updates["note"] = body["note"]
-    if body.get("effective_to") is not None:
-        _et = parse_date(body["effective_to"])
-        if _et is not None:
-            updates["effective_to"] = _et
-    if not updates:
-        return {"id": price_id, "status": None}
-    set_parts = [f"{col} = ${i}" for i, col in enumerate(updates.keys(), start=1)]
-    params = list(updates.values()) + [price_id, DEFAULT_TENANT]
-    n = len(updates)
-    row = await db.fetchrow(
-        request,
-        f"""UPDATE product_sku_prices SET {', '.join(set_parts)}
-            WHERE id = ${n + 1} AND tenant_id = ${n + 2}
-            RETURNING id, status""",
-        *params,
-    )
-    return {"id": row["id"], "status": row["status"]}
 
 
 # ══════════ 阶段 3 · 第二批：规格分类树 / 向导 / 事件列表 / 管理 / 能力 ══════════

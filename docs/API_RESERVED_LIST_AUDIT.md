@@ -1,5 +1,10 @@
 # 后端先行 API 取证审计（C36 · 只分析不删）
 
+> **✅ 2026-10-21 删除执行（用户已批准）**：本审计结论「可删（证据）3」已**执行删除**：
+> `PATCH /api/v1/spec/prices/{id}`、`POST /api/v1/spec/skus/{id}/prices`、
+> `POST /api/v1/file-objects/upload`。下方 #11/#16/#17 行与 §2.1/§4A 已同步标 ✅；
+> 本文件其余"不删/需 owner 确认"结论不变（仅 3 条获批）。
+>
 > **给用户一次拍板用的决策表**：24 条「后端先行 · UI 未接」逐条给价值/成本/建议；18 条「可删候选」逐条给使用证据与结论。
 > **本文件不授权删除、也没有删除任何代码**；`docs/API_RESERVED_LIST.md` 的判定本次**未改动**，只在顶部加了指向本文件的入口行。
 >
@@ -14,8 +19,8 @@
 | 类别 | 数量 | 分布 |
 |---|---|---|
 | **24 条「待接 UI」** | 24 | **已接/应移出 4**（C30 归档日志、A13 翻译、A4 渲染直链 ×2）；**本期接 5**；**下期 12**；**长期保留 3** |
-| **18 条「可删候选」** | 18 | **可删（证据）3**；**保留（理由）2**；**需 owner 确认 13** |
-| **需用户拍板** | **16** | 13 条「需 owner 确认」+ 3 条「可删」的执行授权（按 C36 规则删前仍需点头，**本次不删**） |
+| **18 条「可删候选」** | 18 | **✅ 已删除（C36 执行）3**；**保留（理由）2**；**需 owner 确认 13** |
+| **需用户拍板** | **16** | 13 条「需 owner 确认」+ 3 条「可删」（2026-10-21 已获批准并删除，见顶部） |
 
 两个**必须纠正的清单判定**（详见 §3）：
 
@@ -84,18 +89,19 @@
 | 8 | `GET /api/v1/product-options/overrides` | **现行**团队级档位（改显示名/软停用；`ws_option_overrides.py:170`，存储 `team_option_overrides`，前端 UI 未接） | 证据表明**不是旧体系**：用户裁决"团队档位仍应是管理员"（`docs/archive/2026-10-17-doc-cleanup/PRODUCT_MODULE_P1_REPORT.md` §4.4，引 `PRODUCT_MODULE_DECISIONS.md:81,93`）；Worker 2026-10-11 专门补齐以免线上 404（`f61a41db`，`ws_option_overrides.py` 头注释）；FE 0 调用 = UI 未接 | **保留（理由：用户裁决过的现行团队档位能力，UI 待接）** ⇒ 应移入「待接 UI」清单（建议下期接） |
 | 9 | `PATCH /api/v1/customer/{id}/capabilities` | 按客户写能力（`main.py:3227`；handler 注释 `is_active` 无存储列） | FE 0；worker 路由测试 `test_worker_routes.py:98` | **需 owner 确认（客户/产品 owner）**（同 #3） |
 | 10 | `PATCH /api/v1/external-docs/{id}` | 改外部单证状态/备注（`ws_extras.py:405`） | 同 #1 | **需 owner 确认（单证/数据 owner）** |
-| 11 | `PATCH /api/v1/spec/prices/{id}` | 旧规格库价格更新（`product_sku_prices`；`main.py:2531`） | **用户已裁决规格库退役**（"写死的设计没用了"，`docs/PROBLEM_STATUS_2026-10-11.md:1555`；更正说明 `:1618-1658`）；11 条接口 FE 0、对应 7 张表**生产实测全 0 行**（`:1658`）；已被定价数据取代（`:1685`）；仅 `test_worker_routes.py:80`/`test_parity_quote.py` 钉路由 | **可删（证据）**：路由层可删；删时同步改 worker 路由测试与 `scripts/route-parity-allowlist.txt`；表可留待一起清 |
+| 11 | `PATCH /api/v1/spec/prices/{id}` | 旧规格库价格更新（`product_sku_prices`；`main.py:2531`） | **用户已裁决规格库退役**（"写死的设计没用了"，`docs/PROBLEM_STATUS_2026-10-11.md:1555`；更正说明 `:1618-1658`）；11 条接口 FE 0、对应 7 张表**生产实测全 0 行**（`:1658`）；已被定价数据取代（`:1685`）；仅 `test_worker_routes.py:80`/`test_parity_quote.py` 钉路由 | ✅ **已删除（2026-10-21 C36 执行）**：handler 已移除、路由测试改负向断言；表留待统一清 |
 | 12 | `POST /api/v1/actual-costs` | 新增实际成本（`ws_extras.py:284`） | 同 #2 | **需 owner 确认（报价/成本 owner）** |
 | 13 | `POST /api/v1/actual-costs/resolve` | 实际成本换算（纯计算，`ws_extras.py:311`） | 同 #2（FE 0） | **需 owner 确认（报价/成本 owner）**：若成本域整体废弃可直接删；否则保留 |
 | 14 | `POST /api/v1/capabilities` | 登记/更新能力（`main.py:3169`） | 同 #3 | **需 owner 确认（客户/产品 owner）** |
 | 15 | `POST /api/v1/external-docs` | 上传外部单证（写 `external_doc_uploads.content`；`ws_extras.py:335`） | 同 #1 | **需 owner 确认（单证/数据 owner）** |
-| 16 | `POST /api/v1/file-objects/upload` | 通用 multipart 上传，docstring 明示"供客户流失拒绝文件等使用"（`ws_files.py:1054`） | **用户已授权 C1 不做**（`docs/TODO.md:119` "用户 2026-10-21 授权默认：不做"；G-5 `:225`）；FE 0 调用（产品图走 presign/register：`lib/products/use-products.ts`，`use-products.test.ts:193/194`）；仅 worker 集成测试引用 `backend/worker/tests/test_files_db_integration.py:284`（删时改测试） | **可删（证据）**：C1 唯一用途已被用户否决；无数据删除副作用（只删上传入口，已有文件对象保留） |
-| 17 | `POST /api/v1/spec/skus/{id}/prices` | 旧 SKU 价格新增（`main.py:2478`） | 同 #11（用户裁决退役 + 生产 7 表 0 行 + FE 0；`test_worker_routes.py:79` 钉路由） | **可删（证据）**（同 #11） |
+| 16 | `POST /api/v1/file-objects/upload` | 通用 multipart 上传，docstring 明示"供客户流失拒绝文件等使用"（`ws_files.py:1054`） | **用户已授权 C1 不做**（`docs/TODO.md:119` "用户 2026-10-21 授权默认：不做"；G-5 `:225`）；FE 0 调用（产品图走 presign/register：`lib/products/use-products.ts`，`use-products.test.ts:193/194`）；仅 worker 集成测试引用 `backend/worker/tests/test_files_db_integration.py:284`（删时改测试） | ✅ **已删除（2026-10-21 C36 执行）**：handler 已移除；bytea 往返集成测试改用仍保留的 `POST /trade-docs/{id}/files/upload`（覆盖不降级）；已有文件对象保留 |
+| 17 | `POST /api/v1/spec/skus/{id}/prices` | 旧 SKU 价格新增（`main.py:2478`） | 同 #11（用户裁决退役 + 生产 7 表 0 行 + FE 0；`test_worker_routes.py:79` 钉路由） | ✅ **已删除（2026-10-21 C36 执行）**：handler 已移除；`_upsert_price` 仅保留给 `/spec/wizard/submit` 带价路径 |
 | 18 | `PUT /api/v1/product-options/overrides` | **现行**团队档位写口（`ws_option_overrides.py:220`；团队管理员） | 同 #8 | **保留（理由：现行团队档位能力，UI 待接）** |
 
 ### 2.1 18 条结论分布
 
-- **可删（证据）3**：#11 `PATCH /spec/prices/{id}`、#16 `POST /file-objects/upload`、#17 `POST /spec/skus/{id}/prices`。
+- **✅ 已删除 3（2026-10-21 C36 执行，用户已批准）**：#11 `PATCH /spec/prices/{id}`、#16 `POST /file-objects/upload`、#17 `POST /spec/skus/{id}/prices`。
+  路由已移除、worker 路由测试改**负向断言**（防止回补）、`/file-objects/upload` 的集成测试改用仍保留的单证回传上传。
 - **保留（理由）2**：#8 `GET /product-options/overrides`、#18 `PUT /product-options/overrides`（用户裁决过的现行团队档位，**应移入待接 UI，不是删**）。
 - **需 owner 确认 13**：#1/#6/#7/#10/#15（外部单证域 5 条，数据 owner）、#2/#12/#13（实际成本域 3 条，成本 owner）、
   #3/#4/#5/#9/#14（客户能力域 5 条，客户/产品 owner）。
@@ -117,6 +123,8 @@
 ## 4. 一次拍板建议（给用户）
 
 **A. 建议直接批准的「可删（3）」**（只删路由；相应表/历史数据保留，删除时同步改 worker 路由测试与 allowlist）：
+
+> ✅ **2026-10-21 已获用户批准并执行完毕**（C36）：三条 handler 已移除、测试已改；原建议保留供追溯。
 
 - `PATCH /api/v1/spec/prices/{id}`、`POST /api/v1/spec/skus/{id}/prices`（规格库退役，用户已裁决，生产 7 表 0 行）
 - `POST /api/v1/file-objects/upload`（C1 已授权不做，无前端调用）
@@ -144,4 +152,5 @@ git log -3 --date=short -- backend/worker/src/ws_option_overrides.py
 ```
 
 - 本审计**没有**任何代码/测试/TODO 改动；`docs/TODO.md` 未改；未 commit。
-- 工作区当时有并发改动（HEAD `62d2d2cb`），路由/前端调用数字以该时刻为准；若删除动作开始，请先重扫一次。
+- 工作区当时有并发改动（HEAD `62d2d2cb`），路由/前端调用数字以该时刻为准；**删除动作已执行**
+  （2026-10-21 C36，3 条），后续复核请以 `git grep` 的 0 引用 + worker 路由测试的负向断言为准。

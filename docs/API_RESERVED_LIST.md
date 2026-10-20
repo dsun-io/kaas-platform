@@ -8,12 +8,17 @@
 > **用途**：登记「Worker 有路由、前端没有任何调用」的接口，避免下一轮审计把它们误判成“欠账”。
 > 本文件**只登记**，不授权删除；「可删候选」删前需 owner/Lead 确认（后端可能被第三方或自动化脚本使用）。
 >
-> 扫描基线：`main` @ `17e87744`（2026-10-21，工作区有并发改动时只读扫描）；
+> **扫描基线**：`main` @ `17e87744`（2026-10-21，工作区有并发改动时只读扫描）；
 > 扫描脚本与原始数据（未入库，可复现）：`.tmp/c36-scan.ps1`、`.tmp/c36-dead.tsv`、`.tmp/c36-dead-docs.tsv`。
+>
+> **✅ 2026-10-21 删除执行（用户已批准 C36）**：3 条「可删（证据）」已从 Worker 删除并同步改测试：
+> `PATCH /api/v1/spec/prices/{id}`（#11）、`POST /api/v1/spec/skus/{id}/prices`（#17）、
+> `POST /api/v1/file-objects/upload`（#16）。下方保留原行并标 ✅，§0 路由计数同步扣 3。
 
 ## 0. 结论
 
-- Worker 路由：**247** 条（`backend/worker/src/*.py` 的 `@app.<method>`；单应用，无 include_router）。
+- Worker 路由：**247 → 244** 条（`backend/worker/src/*.py` 的 `@app.<method>`；单应用，无 include_router；
+  2026-10-21 C36 删除 3 条见上方）。
 - 前端调用：**212 条原始 / 183 条归一化唯一路径**（`apiClient.*` + 原生 `fetch`，排除测试）。
 - 原始差异：**66 条**「BE 有、FE 无直接调用」；扣除 **6 条假阴性**（动态拼路径/变量 url/查询串/download link，见 §2）
   ⇒ **实际未接 60 条**，分类：**REST/内部/兼容保留 18 条**、**后端先行待接 UI 24 条**、
@@ -98,20 +103,20 @@ backend/worker/.venv/Scripts/python.exe .tmp/c36-docs.py                  # 补 
 | 可删候选（需 owner 确认） | `GET /api/v1/product-options/overrides` | `ws_option_overrides.py:170` | 旧“档位覆盖”体系：前端 0；已被租户产品定义/启用开关（B3/B6）取代 |
 | 可删候选（需 owner 确认） | `PATCH /api/v1/customer/*/capabilities` | `main.py:3211` | 同上（按客户改；handler 注释称 is_active 无存储列） |
 | 可删候选（需 owner 确认） | `PATCH /api/v1/external-docs/*` | `ws_extras.py:405` | 同上 |
-| 可删候选（需 owner 确认） | `PATCH /api/v1/spec/prices/*` | `main.py:2515` | 旧规格库价格体系（`archive/README.md`：规格库 11 条已退役）；前端 0；pricing-data 取代 |
+| ✅ 已删除（2026-10-21 C36） | `PATCH /api/v1/spec/prices/*` | ~~`main.py:2515`~~ | 旧规格库价格体系（`archive/README.md`：规格库 11 条已退役）；前端 0；pricing-data 取代。**用户 2026-10-21 批准删除，handler 已移除** |
 | 可删候选（需 owner 确认） | `POST /api/v1/actual-costs` | `ws_extras.py:284` | 同上 |
 | 可删候选（需 owner 确认） | `POST /api/v1/actual-costs/resolve` | `ws_extras.py:311` | 同上 |
 | 可删候选（需 owner 确认） | `POST /api/v1/capabilities` | `main.py:3153` | 同上（登记/更新） |
 | 可删候选（需 owner 确认） | `POST /api/v1/external-docs` | `ws_extras.py:335` | 同上 |
-| 可删候选（需 owner 确认） | `POST /api/v1/file-objects/upload` | `ws_files.py:1054` | 文档用途=客户流失拒绝文件（C1）；G-5 已授权不做 + 前端 0 调用 ⇒ 可删候选 |
-| 可删候选（需 owner 确认） | `POST /api/v1/spec/skus/*/prices` | `main.py:2462` | 同上 |
+| ✅ 已删除（2026-10-21 C36） | `POST /api/v1/file-objects/upload` | ~~`ws_files.py:1054`~~ | 文档用途=客户流失拒绝文件（C1）；G-5 已授权不做 + 前端 0 调用。**用户 2026-10-21 批准删除，handler 已移除**（产品图走 presign/register；集成测试改用仍保留的单证回传 multipart 上传） |
+| ✅ 已删除（2026-10-21 C36） | `POST /api/v1/spec/skus/*/prices` | ~~`main.py:2462`~~ | 同上。**用户 2026-10-21 批准删除，handler 已移除**（`_upsert_price` 仅保留给 `/spec/wizard/submit` 带价路径） |
 | 可删候选（需 owner 确认） | `PUT /api/v1/product-options/overrides` | `ws_option_overrides.py:220` | 同上 |
 
 ## 3. 与 `docs/TODO.md` 的对应关系
 
 | TODO | 相关路由（本清单） | 状态/说明 |
 |---|---|---|
-| **C36** | 本文件全部条目 | 本清单即 C36 的交付物；是否销账由 Lead 决定 |
+| **C36** | 本文件全部条目 | ✅ 2026-10-21 用户批准删 3 条并**已执行**（#11/#16/#17，见 §2 ✅ 行）；其余 13 条待 owner 后续统一确认 |
 | **A2** | `POST /trade-docs/{id}/confirm` | A2 已完成（两入口）；confirm 保留为 REST/第三方入口 |
 | **A4 / G-4** | `GET /file-objects/{id}/render-content`、`GET /tenant/company-seals/{id}/render-content` | G-4 已选①「渲染器白名单放开走 R2 直链」；这两个直链端点即该方案的服务端口，前端待接 |
 | **A7** | — | A7 的 facts/consistency/lint/receipts/doc-set/verify-export 均已由 FE 调用（不在本清单） |
@@ -119,12 +124,12 @@ backend/worker/.venv/Scripts/python.exe .tmp/c36-docs.py                  # 补 
 | **A12** | `trigger_expr`（非路由） | A12 ⏳；与路由无关 |
 | **A13** | `POST /trade-docs/{id}/translate` | A13 ⏳：端点已实现、前端 0 调用 |
 | **B6** | `GET/POST /workstation-products` | B6 已完成（兼容 union）；建议与 `/tenant-product-status` 收敛后再删 |
-| **C1 / G-5** | `POST /file-objects/upload` | C1 已授权“不做”；该端点用途仅 C1（流失拒绝文件）⇒ 可删候选 |
+| **C1 / G-5** | `POST /file-objects/upload` | ✅ 2026-10-21 已按用户批准删除（C36）；C1 本身仍为"不做" |
 | **C9** | `GET /file-objects/_r2_debug`、`GET /fx-rates/_debug` | C9 已完成（admin 闸门）；保留运维 |
 | **C13 / G-5** | `POST /outreach/webhook` | C13 🧭 已授权“保持”；501 预留桩 |
 | **C19 / C29** | — | 批量导入 UI 已接（v2 报价工作台）；`/import/template` 在用（§2 非死），C29 占位入口已隐藏 |
 | **C30** | `GET /admin/archive-logs` | C30 后端已从占位改真查询；前端 0 调用（待接 UI） |
-| **C36** | 本文件 | 本次产出；若 Lead 采纳请把 C36 改 ✅ 并在 §0 记录本文件 |
+| **C36** | 本文件 | ✅ 2026-10-21 用户批准并执行删除 3 条（见上） |
 
 ## 4. 维护规则
 
