@@ -70,6 +70,11 @@
 >   真实形状测试钉住。④PATCH stage 409 二次确认：**已因 2026-10-18 客户阶段口径变更而过时**
 >   （只剩 active/inactive，"流失"移订单）；⑤R2 密钥长度 → 并入 D2。
 >   门禁：`pnpm typecheck` 0 / contracts R0–R6 PASS。
+> - **C16/C17 关闭（2026-10-21）**：C16 = UNCERTAIN #15 收尾（①销项：全仓无「旧进度报告/Spec System 报告」；
+>   ②维持「移动」归档；③不引链接检查工具，用一次性脚本抽查，本次 11 份文件相对链接全通过）。
+>   C17 = 判定「同名不同义」不统一代码：`Workstation.adminOnly` = **仅内部账号可见**（侧边栏过滤），
+>   `RouteGuard.adminOnly` = **平台运营**（internal + 管理员）；已在 `shared/contracts/workstations.ts`
+>   与 `route-guard.tsx` 注释钉死，菜单可见但守卫拦截属预期。
 >
 > **（2026-10-20 晚 · 口径收敛与审计补录：`docs/TODO.md` = 唯一账本）**
 >

@@ -46,7 +46,15 @@ export const WorkstationSchema = z.object({
   order: z.number().int(),
   /** lucide 图标名（仅字符串，避免契约依赖 React） */
   icon: z.string(),
-  /** 仅内部账号可见 */
+  /**
+   * 仅内部账号可见（**历史语义 = account_type==="internal"**，不含管理员角色要求）。
+   *
+   * ⚠️ 不要和 `RouteGuard` 的 `adminOnly` 混为一谈：后者 2026-10-20 起收紧为
+   * 「internal **且** 管理员角色」（与后端 `_require_platform_ops` 同口径），
+   * 用于 /events、/audit-log、/admin/*、/settings 等平台运营页。
+   * 本字段决定**侧边栏是否展示**；业务页（/research、/leadgen 等）的 adminOnly=true
+   * 只表示"内部员工可见"，顾客不可见。两者同名不同义，改动前先看清调用方。
+   */
   adminOnly: z.boolean().default(false),
   status: WorkstationStatus,
   /**
