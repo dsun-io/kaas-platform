@@ -138,17 +138,38 @@
 
 **剩余实现细节（非策略，align-b 定并写进报告）**：错误码措辞（403 `forbidden` vs `TEAM_ADMIN_REQUIRED`）、`GET /ai/tasks` 是否真需收紧（默认收紧）、PATCH 对 `owner_scope='tenant'` 行的可见性、internal bypass 的辅助函数命名与复用位置。
 
-## 10. 验收记录表（align-b 完成后填写）
+## 10. 验收记录表（2026-10-21 复核已填）
+
+> **复核方式**：`git show 3d56d76c` 读代码 diff + 逐文件定位测试 + 跑全量/定向。复核时 HEAD = `d4007a10`（期间未变动；`3d56d76c/d3a99539/57aa7b45` 均为其祖先）。**只读复核，未改代码、未提交。**
 
 | 矩阵 | 用例数 | 通过 | 失败 | 证据（文件:用例名 / 命令输出摘要） | 验收人 | 时间 | 结论 |
 |---|---|---|---|---|---|---|---|
-| §2 F1 读写 | | | | | | | |
-| §3 F2 读 | | | | | | | |
-| §3 F2b PATCH | | | | | | | |
-| §4 F3 confirm/pdf | | | | | | | |
-| §5 F4 公章读 | | | | | | | |
-| §6 回归 + 全量 | | | | | | | |
-| §7 测试落点齐备 | | | | | | | |
+| §2 F1 读写 | 40 | 40 | 0 | `test_ai_config_admin_guard.py`：8 端点（4 读+4 写）×〔S2/S3/S4→403 且 `detail.error=="forbidden"`、无 token→401、S1→200〕；代码 8/8 端点均调 `_require_ai_admin`→`_require_platform_ops`（`chain.py:31,556,586,603,630,657,678,717,754`） | branch-audit | 2026-10-21 00:22 | ✅ |
+| §3 F2 读 | 26 | 26 | 0 | `test_trade_docs_team_scope.py`：`test_list_filters_by_team_or_owner`、**`test_list_uses_sql_predicate_not_post_filter`**（断言 SQL 含 `team_id = $2` / `owner_id = $` / `COUNT(*) FROM trade_docs`）、`test_list_admin_and_internal_have_no_team_predicate`（阳性对照）、`test_list_no_team_customer_403_without_querying`、detail/render-data 参数化（跨团队/NULL/无团队→404）；代码 `main.py:4272-4290`（列表 SQL 谓词）、`:4619`/`:5018`（详情/render-data 先判可见性） | branch-audit | 2026-10-21 00:22 | ✅ |
+| §3 F2b PATCH | 19 | 19 | 0 | `test_trade_docs_patch_authz.py`：A1 S4→200 / A2 S4→403 `TEAM_ADMIN_REQUIRED` / A3 S4→403 / 跨团队 404（`test_a1_cross_team_or_no_team_is_404_before_write`、`test_a2_cross_team_issue_404_before_403`）+ `test_member_cannot_bypass_via_doc_no_on_issued_doc`（403 先于 409）；代码 `main.py:4644-4651`（可见性→角色→业务校验，顺序正确） | branch-audit | 2026-10-21 00:22 | ✅ |
+| §4 F3 confirm/pdf | 13 | 13 | 0 | `test_trade_doc_confirm_authz.py`：`test_confirm_cross_team_or_no_team_404_before_403`、S4→403 `TEAM_ADMIN_REQUIRED`、S2/S3 过闸落到业务层（409/422）、pdf 同矩阵（特权→503 过闸）；代码 `ws_docs_ext.py:248-251`（404 后 403）、`ws_files.py:821-822`（404 后 403） | branch-audit | 2026-10-21 00:22 | ✅ |
+| §5 F4 公章读 | 7 | 7 | 0 | `test_ws_products_seals.py::test_seal_read_matrix`（S1/S2/S3→200、S4/S5/S6→403 `TEAM_ADMIN_REQUIRED`，列表+看图双端点）+ `test_seal_render_content_unaffected_by_role_gate`（无 token→401）；代码 `ws_seals.py:67,207,225` | branch-audit | 2026-10-21 00:22 | ✅ |
+| §6 回归 + 全量 | — | 全绿 | 0 | 全量 `1523 passed, 12 skipped in 36.03s`（`pytest tests -q`）；5 个 authz 文件定向 `124 passed in 2.86s`；公章**写侧**三端点仍 customer→403 `TEAM_ADMIN_REQUIRED`（`test_seal_management_is_team_admin_only` 未放宽）；改动的既有测试（`test_ws_render_pdf.py`、`test_ws_render_fingerprint_check.py`）只换夹具用户/补 team 字段，**断言未放宽** | branch-audit | 2026-10-21 00:23 | ✅ |
+| §7 测试落点齐备 | 5/5 文件 | 5 | 0 | 4 新建（`test_ai_config_admin_guard` / `test_trade_docs_team_scope` / `test_trade_docs_patch_authz` / `test_trade_doc_confirm_authz`）+ 1 扩展（`test_ws_products_seals`）；唯前端页面级用例缺（见 D-1） | branch-audit | 2026-10-21 00:23 | ✅（附 D-1） |
+
+### 10.1 偏差与未覆盖断言（均不影响"4 类越权已修"结论）
+
+| # | 等级 | 内容 | 建议 |
+|---|---|---|---|
+| D-1 | 中 | 前端 `/settings/ai-providers` 已改 `<RouteGuard adminOnly>`（`page.tsx:127-130`），但 fix commit **未新增页面级前端测试**；既有 `route-guard.test.tsx` 只覆盖 `adminOnly` 语义，不覆盖"本页确实接了这个 prop" | 补一条页面测试（mock auth=customer 渲染"无权限"）；或由 Lead 接受 route-guard 通用覆盖 |
+| D-2 | 低 | AI 矩阵 S5/S6（无团队/别团队 customer）未显式参数化（仅 S2/S3/S4） | 行为同走 `_require_platform_ops`→403；如需逐格对应可 +2 参数 |
+| D-3 | 低 | 单证**列表**缺 `no-token 401` 用例（detail/render-data/confirm/pdf/patch 均有 401 断言） | 端点有 `Depends(_get_current_user)`，风险低；建议补 |
+| D-4 | 低 | render-data 缺单独 401 断言（可见性矩阵已覆盖 404） | 同上 |
+| D-5 | 低 | internal 跨团队**写**（S2 对 team B 单据 PATCH→200）未单列；A1 用 S2(team=None) 对 team A 单据 200，等价覆盖 internal bypass | 语义等价，可接受 |
+| D-6 | 观察（不在 F1–F4） | `ws_docs_hardening.py` 写端点（facts confirm / doc-set PUT / receipts POST / verify-export）本次只加**可见性 404**（`_doc_404(..., user)`），未见"团队管理员/internal"角色闸门——与 F3「签发类动作」口径可能不一致 | Lead 决定是否另立待办 |
+| D-7 | 观察 | `GET /trade-docs/{id}/files` 等 ws_files 附属读端点仍按 `file_objects.team_id` 过滤（不存在的单证也 200 空列表），不泄露存在性；未纳入 F2 | 备查 |
+
+### 10.2 复核结论
+
+**条件通过：5/5 验收项达成（①②③④⑤ 均有代码+测试双证据）。**
+- ① 5 个测试文件齐备且为**状态码参数化断言**（含阳性/阴性对照），非"只跑通过数"；② 404 先于 403 在 patch/confirm/pdf 三处均有 `*_before_403` 用例且代码顺序正确；③ 列表过滤在 SQL 谓词（`main.py:4272-4290`，测试断言 SQL 文本 + 行为双重验证）；④ 公章写侧断言未回退；⑤ 全量 `1523+12skip` 与 Lead 期望一致。
+- 未覆盖项仅 D-1（前端页面级用例）与 D-2~D-5（矩阵逐格轻微缺口），不改变"4 类越权已修"结论。
+- 建议 Lead：**接受本次验收**；D-1 视需要补一条前端测试；D-6（hardening 写端点角色口径）评估是否另立待办；D-7 备查。
 
 ## 11. 验收后的文档同步（由 Lead/align-b 决定，本清单不执行）
 
