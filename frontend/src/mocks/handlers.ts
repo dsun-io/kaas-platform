@@ -21,6 +21,7 @@ import {
   SUBSCRIBABLE_WORKSTATIONS,
 } from "@/lib/workstation/visibility";
 import tradeDocSample from "@/lib/trade-doc/sample-data.json";
+import type { ClauseTemplate } from "@/lib/trade-doc/clause-templates";
 // 收款容差公式与枚举取**唯一真源**（`receipt_rules.py` 的前端镜像，见文件头），
 // 避免 mock 里再抄一份阈值/币种表 —— 抄了迟早和内核漂移。
 import {
@@ -1487,6 +1488,10 @@ type MockCompanySeal = {
 let companySealsStore: MockCompanySeal[] = [];
 let companySealSeq = 1;
 
+/** 条款模板（A5-W1）：形状 = 契约 `{id,name,doc_types,text_zh,text_en,sort_order,is_active}`。 */
+let clauseTemplatesStore: ClauseTemplate[] = [];
+let clauseTemplateSeq = 1;
+
 /** 企业税档（`tax_archives.py:_row_out`）。 */
 type MockTaxArchive = {
   id: number;
@@ -1614,6 +1619,79 @@ const COMPANY_SEAL_SEEDS: MockCompanySeal[] = [
   },
 ];
 
+/**
+ * 预置 6 类常用条款（与后端共享内核 `DEFAULT_CLAUSE_TEMPLATES` 同值：
+ * `backend/kaas_common/trade_doc/clause_templates.py`；用户首次 GET 时懒种子）。
+ * 注意：后端要求 `doc_types` **非空**（18 类子集），因此这里没有"通用"空数组模板。
+ */
+const CLAUSE_TEMPLATE_SEEDS: ClauseTemplate[] = [
+  {
+    id: 1,
+    name: "付款条件（30% 定金 + 70% 发货前付清）",
+    doc_types: ["quotation", "pi", "contract", "ci"],
+    text_zh:
+      "付款方式：订单确认后支付 30% 定金，余款 70% 于发货前付清；所有银行费用由买方承担。",
+    text_en:
+      "Payment Terms: 30% deposit upon order confirmation, 70% balance before shipment. All bank charges are for the Buyer's account.",
+    sort_order: 10,
+    is_active: true,
+  },
+  {
+    id: 2,
+    name: "装运条款（FOB 上海，允许分批与转运）",
+    doc_types: ["quotation", "pi", "contract", "ci", "pl", "shipping_advice", "bl"],
+    text_zh: "装运条款：FOB 上海；装运期以合同约定为准；允许分批装运与转运。",
+    text_en:
+      "Shipment Terms: FOB Shanghai; shipment date as stipulated in the contract; partial shipment and transhipment are allowed.",
+    sort_order: 20,
+    is_active: true,
+  },
+  {
+    id: 3,
+    name: "检验条款（装运前工厂检验）",
+    doc_types: ["contract", "pi", "quality_cert", "manufacturer_cert"],
+    text_zh:
+      "检验条款：以装运前工厂检验结果为准，买方有权派员在场见证；检验标准按合同约定或适用的国际/国家标准执行。",
+    text_en:
+      "Inspection: pre-shipment factory inspection shall be final; the Buyer may attend the inspection. The standards shall be those agreed in the contract or the applicable international/national standards.",
+    sort_order: 30,
+    is_active: true,
+  },
+  {
+    id: 4,
+    name: "索赔条款（到货后 30 天内书面提出）",
+    doc_types: ["contract", "pi", "quality_cert", "insurance"],
+    text_zh:
+      "索赔条款：买方应在货物到达目的港后 30 天内以书面形式提出索赔，并附检验报告等证明文件；逾期视为验收合格。",
+    text_en:
+      "Claims: the Buyer shall lodge any claim in writing within 30 days after the goods arrive at the destination port, supported by inspection reports and other evidence; otherwise the goods shall be deemed accepted.",
+    sort_order: 40,
+    is_active: true,
+  },
+  {
+    id: 5,
+    name: "不可抗力（受影响方免责并及时通知）",
+    doc_types: ["contract", "pi"],
+    text_zh:
+      "不可抗力：因战争、自然灾害、政府行为等不可抗力导致不能履行或延迟履行的，受影响方应及时通知对方并提供证明，据此在影响范围内免除责任。",
+    text_en:
+      "Force Majeure: if performance is prevented or delayed by war, natural disasters, governmental acts or other events of force majeure, the affected party shall promptly notify the other party and provide evidence, and shall be relieved from liability to the extent so affected.",
+    sort_order: 50,
+    is_active: true,
+  },
+  {
+    id: 6,
+    name: "仲裁条款（中国国际经济贸易仲裁委员会）",
+    doc_types: ["contract", "pi"],
+    text_zh:
+      "仲裁条款：因本合同产生的争议，应提交中国国际经济贸易仲裁委员会（CIETAC）按其届时有效的仲裁规则在上海仲裁；仲裁裁决为终局，对双方均有约束力。",
+    text_en:
+      "Arbitration: any dispute arising from this contract shall be submitted to the China International Economic and Trade Arbitration Commission (CIETAC) for arbitration in Shanghai under its rules in effect at the time. The arbitral award shall be final and binding upon both parties.",
+    sort_order: 60,
+    is_active: true,
+  },
+];
+
 const TAX_ARCHIVE_SEEDS: MockTaxArchive[] = [
   {
     id: 1,
@@ -1670,6 +1748,10 @@ function seedP1Stores(): void {
   sealBytesStore.clear();
   companySealSeq =
     companySealsStore.reduce((max, s) => Math.max(max, s.id), 0) + 1;
+  // 条款模板（A5-W1）：每次加载/重置回到「预置 6 类」
+  clauseTemplatesStore = clone(CLAUSE_TEMPLATE_SEEDS);
+  clauseTemplateSeq =
+    clauseTemplatesStore.reduce((max, t) => Math.max(max, t.id), 0) + 1;
   taxArchivesStore = clone(TAX_ARCHIVE_SEEDS);
   taxArchiveSeq =
     taxArchivesStore.reduce((max, a) => Math.max(max, a.id), 0) + 1;
@@ -6780,6 +6862,118 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     }
     companyProfileStore = next;
     return HttpResponse.json(companyProfileResponse());
+  }),
+
+  // ── 条款模板（A5-W1 · 设置 → 企业信息 / 单证表单回填）────────────────────
+  // 契约（后端并行任务）：GET /api/v1/clause-templates?doc_type= → {items}；
+  // POST/PATCH/DELETE 团队级 CRUD；写操作需 team admin（真实 403 由后端给出，
+  // mock 不伪造角色，403/422 的 UI 路径由组件测试用 apiClient mock 覆盖）。
+  http.get("/api/v1/clause-templates", ({ request }) => {
+    const url = new URL(request.url);
+    const docType = url.searchParams.get("doc_type") ?? undefined;
+    const items = clauseTemplatesStore
+      .filter((t) => t.is_active !== false)
+      // 后端 SQL 是 `$3 = ANY(doc_types)`（严格包含；无"空数组=通用"语义）
+      .filter((t) => !docType || t.doc_types.includes(docType))
+      .slice()
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.id - b.id);
+    return HttpResponse.json({ items });
+  }),
+
+  http.post("/api/v1/clause-templates", async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    const name = String(body.name ?? "").trim();
+    const textZh = String(body.text_zh ?? "").trim();
+    const textEn = String(body.text_en ?? "").trim();
+    if (!name) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "CLAUSE_NAME_REQUIRED",
+            detail: "条款模板名称必填",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    if (!textZh && !textEn) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "CLAUSE_TEXT_REQUIRED",
+            detail: "中文或英文条款内容至少填一项",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const docTypes = Array.isArray(body.doc_types)
+      ? body.doc_types.map((d) => String(d))
+      : [];
+    if (docTypes.length === 0) {
+      // 后端 `normalize_doc_types`：非空 18 类子集
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "CLAUSE_DOC_TYPES_REQUIRED",
+            detail: "doc_types 不能为空",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const row: ClauseTemplate = {
+      id: clauseTemplateSeq++,
+      name,
+      doc_types: docTypes,
+      text_zh: textZh,
+      text_en: textEn,
+      sort_order: Number.isFinite(Number(body.sort_order))
+        ? Number(body.sort_order)
+        : 0,
+      is_active: true,
+    };
+    clauseTemplatesStore.push(row);
+    return HttpResponse.json(row, { status: 201 });
+  }),
+
+  http.patch("/api/v1/clause-templates/:id", async ({ params, request }) => {
+    const row = clauseTemplatesStore.find((t) => t.id === Number(params.id));
+    if (!row) {
+      return HttpResponse.json(
+        { detail: { error: "not_found", code: "CLAUSE_NOT_FOUND", message: "条款模板不存在" } },
+        { status: 404 },
+      );
+    }
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    if (typeof body.name === "string") row.name = body.name.trim();
+    if (Array.isArray(body.doc_types)) row.doc_types = body.doc_types.map((d) => String(d));
+    if (typeof body.text_zh === "string") row.text_zh = body.text_zh.trim();
+    if (typeof body.text_en === "string") row.text_en = body.text_en.trim();
+    if (Number.isFinite(Number(body.sort_order))) row.sort_order = Number(body.sort_order);
+    return HttpResponse.json(row);
+  }),
+
+  http.delete("/api/v1/clause-templates/:id", ({ params }) => {
+    const row = clauseTemplatesStore.find((t) => t.id === Number(params.id));
+    if (!row) {
+      return HttpResponse.json(
+        { detail: { error: "not_found", code: "CLAUSE_NOT_FOUND", message: "条款模板不存在" } },
+        { status: 404 },
+      );
+    }
+    // 软删（保留行便于审计）：契约口径
+    row.is_active = false;
+    return HttpResponse.json({ id: row.id, is_active: false });
   }),
 
   // GET list ← company-seal-card.tsx:68；POST ← :88；image ← :135；

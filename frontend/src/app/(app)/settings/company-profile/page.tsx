@@ -32,6 +32,7 @@ import {
 } from "../../trade-docs/hooks/use-trade-docs";
 
 import { CompanySealCard } from "./components/company-seal-card";
+import { ClauseTemplatesCard } from "./components/clause-templates-card";
 
 type FieldKey = keyof CompanyProfile;
 
@@ -238,6 +239,9 @@ export default function CompanyProfilePage() {
 
       {/* 公章是独立资产（tenant_company_seals），不依赖企业信息是否读取成功 */}
       <CompanySealCard canWrite={canManageSeals} />
+
+      {/* 条款模板（A5-W1）：团队级条款库；写入权限 = 后端 team admin（此处沿用同一 canEdit 口径） */}
+      <ClauseTemplatesCard canWrite={canEdit} />
     </div>
   );
 }

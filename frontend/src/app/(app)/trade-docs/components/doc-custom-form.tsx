@@ -32,6 +32,14 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   buildCustom,
   buildPayloadPatch,
   listCustomFields,
@@ -41,6 +49,14 @@ import {
   type CustomFieldDef,
   type TradeDocRawPayload,
 } from "@/lib/trade-doc/custom-fields";
+import {
+  decideFill,
+  isClauseField,
+  pickTemplateFill,
+  templateAppliesTo,
+  type ClauseTemplate,
+} from "@/lib/trade-doc/clause-templates";
+import { useClauseTemplates } from "@/lib/trade-doc/use-clause-templates";
 import { useProducts } from "@/lib/products/use-products";
 
 import { useUpdateTradeDoc } from "../hooks/use-trade-docs";
@@ -75,6 +91,57 @@ export function DocCustomForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const editable = status === "draft";
+
+  /**
+   * 条款模板（A5-W1）：只对 manifest 里真实存在的条款字段（payment_terms/inspection/
+   * claims/force_majeure/arbitration）提供「选择模板回填」；其余字段保持原表单。
+   * 模板列表按 doc_type 过滤（GET ?doc_type=），且前端再按 doc_types 兜一层
+   * （空 doc_types = 通用）。
+   */
+  const clauseFields = useMemo(
+    () => fields.filter((f) => isClauseField(f.name) && !f.protected),
+    [fields],
+  );
+  const clauseTemplatesQuery = useClauseTemplates(docType, {
+    enabled: editable && clauseFields.length > 0,
+  });
+  const clauseTemplates = useMemo(
+    () =>
+      (clauseTemplatesQuery.data ?? []).filter((t) =>
+        templateAppliesTo(t, docType),
+      ),
+    [clauseTemplatesQuery.data, docType],
+  );
+  /** 仅"已填内容 + 模板不同"时才弹二次确认；默认只填空字段（风险 1）。 */
+  const [pendingOverwrite, setPendingOverwrite] = useState<{
+    field: CustomFieldDef;
+    template: ClauseTemplate;
+  } | null>(null);
+  /** 回填后的"备注说明"（单段字段实际回填了英文还是中文；按字段展示） */
+  const [fillNotes, setFillNotes] = useState<Record<string, string>>({});
+
+  const applyTemplate = (field: CustomFieldDef, template: ClauseTemplate) => {
+    if (!editable) return;
+    const fill = pickTemplateFill(template);
+    const decision = decideFill(texts[field.name] ?? "", fill.text);
+    if (decision === "noop") {
+      toast.info(
+        fill.text
+          ? "该模板内容与当前字段一致，无需回填"
+          : "该模板中英文内容都是空的，未回填",
+      );
+      return;
+    }
+    if (decision === "confirm-overwrite") {
+      setPendingOverwrite({ field, template });
+      return;
+    }
+    setText(field.name, fill.text);
+    setFillNotes((prev) => ({ ...prev, [field.name]: fill.note }));
+    toast.success(
+      `已用「${template.name}」回填（${fill.lang === "en" ? "英文" : "中文"}）`,
+    );
+  };
 
   const setText = (name: string, value: string) => {
     setTexts((prev) => ({ ...prev, [name]: value }));
@@ -227,12 +294,73 @@ export function DocCustomForm({
             error={errors[field.name]}
             disabled={!editable}
             onChange={(value) => setText(field.name, value)}
+            clauseTemplates={
+              isClauseField(field.name) ? clauseTemplates : undefined
+            }
+            onApplyClauseTemplate={(template) => applyTemplate(field, template)}
+            clauseFillNote={fillNotes[field.name]}
+            clauseTemplateHint={
+              isClauseField(field.name)
+                ? clauseTemplatesQuery.isLoading
+                  ? "正在读取条款模板…"
+                  : clauseTemplatesQuery.isError
+                    ? "条款模板接口暂不可用，可直接自定义输入。"
+                    : clauseTemplates.length === 0
+                      ? "团队暂无可用模板，可直接自定义输入。"
+                      : "模板为中英双语；该字段是单段文本，按英文单证口径优先回填英文（无英文则中文）。已填内容默认不覆盖。"
+                : undefined
+            }
           />
         ))}
         {photosField && (
           <DocPhotoPicker onPick={appendPhoto} disabled={!editable} pickedIds={pickedIds} />
         )}
       </div>
+
+      {/* 覆盖确认（A5-W1 风险 1）：默认只填空字段；已填内容要覆盖必须用户点头。
+          不用 window.confirm —— 需要可测、可解释（显示字段与模板名）。 */}
+      <Dialog
+        open={pendingOverwrite !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingOverwrite(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>覆盖已填内容？</DialogTitle>
+            <DialogDescription>
+              字段「
+              {pendingOverwrite?.field.spec.description ??
+                pendingOverwrite?.field.name}
+              」已有内容。用模板「{pendingOverwrite?.template.name}」回填会覆盖它
+              —— 默认只填空字段，请确认是否覆盖。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPendingOverwrite(null)}>
+              取消（保留原内容）
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (!pendingOverwrite) return;
+                const fill = pickTemplateFill(pendingOverwrite.template);
+                setText(pendingOverwrite.field.name, fill.text);
+                setFillNotes((prev) => ({
+                  ...prev,
+                  [pendingOverwrite.field.name]: fill.note,
+                }));
+                toast.success(
+                  `已用「${pendingOverwrite.template.name}」覆盖回填（${fill.lang === "en" ? "英文" : "中文"}）`,
+                );
+                setPendingOverwrite(null);
+              }}
+            >
+              覆盖
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -243,12 +371,22 @@ function FieldRow({
   error,
   disabled,
   onChange,
+  clauseTemplates,
+  onApplyClauseTemplate,
+  clauseTemplateHint,
+  clauseFillNote,
 }: {
   field: CustomFieldDef;
   text: string;
   error?: string;
   disabled: boolean;
   onChange: (value: string) => void;
+  /** 仅条款类字段传入：该单证类型可用的模板（已按 doc_type 过滤） */
+  clauseTemplates?: ClauseTemplate[];
+  onApplyClauseTemplate?: (template: ClauseTemplate) => void;
+  clauseTemplateHint?: string;
+  /** 回填后的双语说明（实际回填英文还是中文） */
+  clauseFillNote?: string;
 }) {
   const { name, spec, control } = field;
   const label = spec.description ?? name;
@@ -286,6 +424,50 @@ function FieldRow({
           {control}
         </span>
       </span>
+
+      {/* 条款模板回填（A5-W1）：只对条款类字段出现；"自定义"仍直接用下方输入框 */}
+      {isClauseField(name) && onApplyClauseTemplate && (
+        <div className="space-y-1 rounded-md border border-dashed bg-muted/20 p-2">
+          <select
+            aria-label={`${label} 条款模板`}
+            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            value=""
+            disabled={disabled || !clauseTemplates || clauseTemplates.length === 0}
+            onChange={(e) => {
+              const template = clauseTemplates?.find(
+                (t) => String(t.id) === e.target.value,
+              );
+              // 受控 value="" ⇒ 选完立即回到占位项，允许再次选择同一模板
+              e.target.value = "";
+              if (template) onApplyClauseTemplate(template);
+            }}
+          >
+            <option value="">
+              {clauseTemplates && clauseTemplates.length > 0
+                ? "选择条款模板回填…"
+                : "暂无可用条款模板"}
+            </option>
+            {(clauseTemplates ?? []).map((t) => (
+              <option key={t.id} value={String(t.id)}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+          {clauseTemplateHint && (
+            <span className="block text-[10px] text-muted-foreground">
+              {clauseTemplateHint}
+            </span>
+          )}
+          {clauseFillNote && (
+            <span
+              role="note"
+              className="block text-[10px] text-muted-foreground"
+            >
+              {clauseFillNote}
+            </span>
+          )}
+        </div>
+      )}
 
       {control === "json" && (
         <textarea
