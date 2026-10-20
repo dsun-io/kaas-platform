@@ -4906,3 +4906,30 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
   5. 若 16:30Z 后仍 0 行且 R2 无对象：按第 4 步失败日志定位；**不要**直接调内部 archive 函数写库验证（属破坏性写）。
 - **触发方式**：生产**无手动触发端点**（`scheduled` 仅由 cron 触发），也不建议为验证造数据 ⇒ **等 16:30Z 窗口**；
   本任务不执行任何写操作。
+
+## 2026-10-21 · C36 收口（后端先行 API 审计 → 删 3 → 本期接 5）
+
+- **审计（只读，先于删除/接线）**：`docs/API_RESERVED_LIST_AUDIT.md` —— 24 条「后端先行 · UI 未接」逐条
+  价值/成本/建议 + 18 条「可删候选」使用证据；扫描基线 `docs/API_RESERVED_LIST.md` @ `17e87744`。
+  结论：**可删 3 / 保留 2 / 需 owner 确认 13**；24 条中 **4 条在基线后已接**
+  （C30 归档日志、A13 翻译、A4 渲染直链 ×2）。
+- **删 3 条（用户 2026-10-21 批准并执行）**：`PATCH /spec/prices/{id}`、`POST /spec/skus/{id}/prices`、
+  `POST /file-objects/upload`（`34b4f998`）⇒ Worker 路由 **247 → 244**；`git grep` 0 引用、
+  worker 路由测试改负向断言。
+- **本期接 5 条（C36 UI 批次 `e419d01d`，全部 ✅ 已接）**：
+  1. 税档软删 `DELETE /tax-archives/{id}` → `frontend/src/app/(app)/settings/tax-archives/components/tax-archive-deactivate-button.tsx:39`（`page.tsx:434` 挂载）；
+  2. 定价编辑 `PATCH /pricing-data/{item_id}` → `pricing-data/hooks/use-pricing-data.ts:83` + `PricingEditDialog.tsx`（`pricing-data-manager.tsx:221` 挂载）；
+  3. 团队改名 `PATCH /teams/{id}` → `team/components/team-rename-dialog.tsx:57`（`team/page.tsx:179` 挂载）；
+  4. 手工汇率 `POST /fx-rates` → `lib/fx/use-manual-fx.ts:40` + `settings/tax-archives/components/fx-rate-card.tsx`（`tax-archives/page.tsx:613` 挂载）；
+  5. leadgen CSV `POST /leadgen/runs/from-csv` → `lib/leadgen/csv-import.ts` + `leadgen/components/csv-import-panel.tsx:54`（`leadgen/page.tsx:426` 挂载）。
+  - 接 UI **不改变路由数**（仍 244）；「待接 UI」由 24 条降到 **15 条**（下期 12 + 长期保留 3）。
+- **剩余**：**下期 12**（汇率历史 / 收款计划三件套 / 应收台账 / AI 任务运行 / 情报导入补录 / 手工线索 /
+  品名对照 / 订单状态流转 / 调研补录）；**长期保留 3**（用户级订阅，平台运维口）；**需 owner 确认 13**
+  （可删候选；审计已给逐条证据，未授权不删）。
+- **测试口径（本批快照）**：前端全量 **789 passed / 85 files**（C36 UI 批次，含新增 5 面板/对话框测试）；
+  worker 全量 **1391 passed + 12 skipped**（无库；12 条 db/integration 档按约定 skip，有 docker PG 时真跑）。
+  **注意：后续 C27 / W2 / A10 批次还会再改这些数字；任何时点以当时门禁实测为准，本行只记本批快照。**
+- 文档：`docs/API_RESERVED_LIST.md`（5 行标 ✅ 已接·移出 + §0 计数 + §3 同步）、
+  `docs/API_RESERVED_LIST_AUDIT.md`（§1 五行 ✅、§1.1 分布、§4A 更新）、
+  `docs/README.md`（索引新增 C27 审计/验收、本审计、B 验收包）。
+- 本任务只改文档：未改代码逻辑、未改 `docs/TODO.md`、未 commit、未跑门禁（数字引用自批次实测）。

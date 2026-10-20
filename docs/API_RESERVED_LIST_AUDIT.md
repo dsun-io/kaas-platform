@@ -8,6 +8,10 @@
 > **给用户一次拍板用的决策表**：24 条「后端先行 · UI 未接」逐条给价值/成本/建议；18 条「可删候选」逐条给使用证据与结论。
 > **本文件不授权删除、也没有删除任何代码**；`docs/API_RESERVED_LIST.md` 的判定本次**未改动**，只在顶部加了指向本文件的入口行。
 >
+> **✅ 2026-10-21 C36 UI 批次（`e419d01d`）**：§1 建议「**本期接 5**」的五条**已全部接上**
+> （税档软删 / 定价编辑 / 团队改名 / 手工汇率 / leadgen CSV 上传，入口见 §1 各行的 ✅ 标注）；
+> 因此「待接 UI」由 20 条降为 **15 条**（下期 12 + 长期保留 3）。路由计数不变（接 UI 不加路由）。
+>
 > - 扫描基线：`docs/API_RESERVED_LIST.md` @ `17e87744`（2026-10-21）
 > - 复核基线：当前工作区 HEAD `62d2d2cb`（2026-10-21；并发改动只读扫描）
 > - 方法：重扫 Worker 路由（`backend/worker/src/**` 的 `@app.<method>`）+ 抽取前端全部 `apiClient.*`/`fetch` 调用 220 条，
@@ -18,9 +22,9 @@
 
 | 类别 | 数量 | 分布 |
 |---|---|---|
-| **24 条「待接 UI」** | 24 | **已接/应移出 4**（C30 归档日志、A13 翻译、A4 渲染直链 ×2）；**本期接 5**；**下期 12**；**长期保留 3** |
+| **24 条「待接 UI」** | 24 | **已接 4**（C30 归档日志、A13 翻译、A4 渲染直链 ×2）＋**本期接 5 ✅ 已接（2026-10-21 C36）**；**剩余 15**（下期 12 + 长期保留 3） |
 | **18 条「可删候选」** | 18 | **✅ 已删除（C36 执行）3**；**保留（理由）2**；**需 owner 确认 13** |
-| **需用户拍板** | **16** | 13 条「需 owner 确认」+ 3 条「可删」（2026-10-21 已获批准并删除，见顶部） |
+| **需用户拍板** | **13 + 3（已处置）** | 13 条「需 owner 确认」仍在；3 条「可删」2026-10-21 已获批准并删除（见顶部） |
 
 两个**必须纠正的清单判定**（详见 §3）：
 
@@ -38,7 +42,7 @@
 
 | # | 方法 · 路径 | 后端做什么（证据） | 前端现状/缺口（证据） | 价值 | 成本 | 建议 |
 |---|---|---|---|---|---|---|
-| 1 | `DELETE /api/v1/tax-archives/{id}` | 软删税务档案（`status='inactive'`，团队管理员校验；`tax_archives.py:295`） | 税务档案页只有 GET/POST/PATCH（`settings/tax-archives/page.tsx:121/164/170/187`），**无删除入口** | 中（清理建错的税档；软删可审计） | 低（列表行加"停用"+确认，复用现有 dialog 模式） | **本期接** |
+| 1 | `DELETE /api/v1/tax-archives/{id}` | 软删税务档案（`status='inactive'`，团队管理员校验；`tax_archives.py:295`） | 税务档案页只有 GET/POST/PATCH（`settings/tax-archives/page.tsx:121/164/170/187`），原**无删除入口** → **✅ 已接（2026-10-21 C36）**：`settings/tax-archives/components/tax-archive-deactivate-button.tsx:39`（确认后 DELETE，软删留档），页面 `page.tsx:434` 挂载 | 中（清理建错的税档；软删可审计） | 低（列表行加"停用"+确认，复用现有 dialog 模式） | **✅ 已接·移出** |
 | 2 | `DELETE /api/v1/users/{id}/subscriptions/{code}` | 平台管理员撤销**用户级**工位订阅（`ws_workstations.py:271`） | 前端只有**团队级**订阅面板（`team/components/team-subscriptions-panel.tsx:70/88`）；无用户级订阅页 | 中（平台运维/客服撤权） | 中（管理员账号页加订阅子面板；先确认用户级订阅是否仍是有效模型） | 长期保留（团队级已覆盖主路径，用户级仅运维口） |
 | 3 | `GET /api/v1/admin/archive-logs` | 事件归档记录真查询（C30；`main.py:3048`） | **已接**：`admin/hooks/use-archive-logs.ts:54` + `archive-logs-card.tsx`，灰发页已挂载（`admin/gray-release/page.tsx:80`） | — | — | **已接·移出** |
 | 4 | `GET /api/v1/file-objects/{id}/render-content` | A4 渲染器短期签名直链（令牌即授权；`ws_files.py:920`，URL 在 `ws_files.py:900` 由装配层生成） | **已接（渲染链路）**：渲染数据里返回该直链，浏览器 `<img>` 直接加载（`ws_files.py:820/900`；`main.py:4801` 公章同理），不经 `apiClient` | — | — | **已接·移出** |
@@ -48,13 +52,13 @@
 | 8 | `GET /api/v1/tenant/company-seals/{id}/render-content` | A4 公章签名直链（令牌即授权；`ws_seals.py:221`） | **已接（渲染链路）**：装配层优先填该直链（`main.py:4801`），浏览器加载 | — | — | **已接·移出** |
 | 9 | `GET /api/v1/users/{id}/subscriptions` | 平台管理员读用户级订阅（`ws_workstations.py:229`） | 前端无用户级订阅页（同 #2） | 中（运维排查） | 中（同 #2，同一面板三接口） | 长期保留（同 #2） |
 | 10 | `PATCH /api/v1/payment-schedules/{id}` | 改收款计划（金额/日期；`main.py:4024`） | 无收款计划 UI（同 #6） | 高（同一业务流） | 中（并入 #6 面板） | 下期 |
-| 11 | `PATCH /api/v1/pricing-data/{id}` | 改定价矩阵一项（金额/单位/生效/备注；`main.py:2307`） | 定价页只有 GET/POST/DELETE（`pricing-data/hooks/use-pricing-data.ts:22/36/50`），**无编辑** | 高（改错价/缩短生效期，现只能删了重建） | 低（复用编辑弹窗，调 PATCH） | **本期接** |
-| 12 | `PATCH /api/v1/teams/{id}` | 团队改名（`ws_teams.py:245`） | 团队页只有创建/加入（`team/components/team-setup.tsx`）；无改名入口（220 条扫描无 PATCH /teams） | 中（团队名是单据/报表展示名） | 低（团队设置一个输入+保存） | **本期接** |
+| 11 | `PATCH /api/v1/pricing-data/{id}` | 改定价矩阵一项（金额/单位/生效/备注；`main.py:2307`） | 定价页只有 GET/POST/DELETE（`pricing-data/hooks/use-pricing-data.ts:22/36/50`），原**无编辑** → **✅ 已接（2026-10-21 C36）**：`use-pricing-data.ts:83`（PATCH）+ `PricingEditDialog.tsx`（`PricingDataTable.tsx:207` 编辑按钮），`pricing-data-manager.tsx:221` 挂载 | 高（改错价/缩短生效期，现只能删了重建） | 低（复用编辑弹窗，调 PATCH） | **✅ 已接·移出** |
+| 12 | `PATCH /api/v1/teams/{id}` | 团队改名（`ws_teams.py:245`） | 团队页只有创建/加入（`team/components/team-setup.tsx`），原无改名入口（220 条扫描无 PATCH /teams） → **✅ 已接（2026-10-21 C36）**：`team/components/team-rename-dialog.tsx:57`（PATCH `{name}`），`team/page.tsx:179` 挂载（仅团队管理员） | 中（团队名是单据/报表展示名） | 低（团队设置一个输入+保存） | **✅ 已接·移出** |
 | 13 | `POST /api/v1/ai/tasks/{key}/run` | 手动跑 AI 任务（`chain.py:733`） | AI provider 页只做 provider/binding 管理；无"运行任务"按钮 | 中（运维/调试/补跑） | 中（任务表单+结果展示，任务 payload 各不相同） | 下期 |
-| 14 | `POST /api/v1/fx-rates` | 手工录汇率（`ws_extras.py:217`） | 前端只用 latest，无录入入口 | 中（外部源故障时兜底；审计留痕） | 低（单表单：日期/币种/值） | **本期接** |
+| 14 | `POST /api/v1/fx-rates` | 手工录汇率（`ws_extras.py:217`） | 前端原只用 latest，无录入入口 → **✅ 已接（2026-10-21 C36）**：`lib/fx/use-manual-fx.ts:40`（POST，同日同币对 UPSERT）+ `settings/tax-archives/components/fx-rate-card.tsx`，`tax-archives/page.tsx:613` 挂载 | 中（外部源故障时兜底；审计留痕） | 低（单表单：日期/币种/值） | **✅ 已接·移出** |
 | 15 | `POST /api/v1/intel/import/csv` | 情报货运 CSV 导入（`main.py:944`） | 情报页只读列表（`use-intel.ts:77/90`），无导入 | 中（批量补数据，手工录太慢） | 中（上传+列映射+错误报告） | 下期 |
 | 16 | `POST /api/v1/intel/shipments` | 手工新增情报货运（`main.py:929`） | 前端只读列表（同 #15） | 中（少量补录） | 中（表单+校验，字段多） | 下期 |
-| 17 | `POST /api/v1/leadgen/runs/from-csv` | 从 CSV 创建 leadgen run（`chain.py:1003`） | 页面文案已**承诺**该能力（`leadgen/page.tsx:416`），但无上传控件/调用 | 中（批量线索是 leadgen 主入口） | 低（multipart 上传 + 刷新 run 列表） | **本期接**（文案已承诺，缺口最刺眼） |
+| 17 | `POST /api/v1/leadgen/runs/from-csv` | 从 CSV 创建 leadgen run（`chain.py:1003`） | 页面文案已**承诺**该能力（`leadgen/page.tsx:416`），原无上传控件/调用 → **✅ 已接（2026-10-21 C36）**：`lib/leadgen/csv-import.ts` + `leadgen/components/csv-import-panel.tsx:54`（multipart 字段 `csv_file`），`leadgen/page.tsx:426` 挂载 | 中（批量线索是 leadgen 主入口） | 低（multipart 上传 + 刷新 run 列表） | **✅ 已接·移出** |
 | 18 | `POST /api/v1/leads` | 手工新增线索（`chain.py:1349`） | 线索页用 scan-replied/crawl/批量，**无"新建线索"**；220 条扫描无裸 POST /leads | 中（展会/老客户等手工来源） | 中（线索表单+去重提示） | 下期 |
 | 19 | `POST /api/v1/market/name-mappings` | 新增中外品名对照（`main.py:1732`） | 市场页只读/查询，无维护入口 | 中（品名匹配准确率） | 中（对照表 CRUD 小页面） | 下期 |
 | 20 | `POST /api/v1/orders/{id}/payment-schedules` | 建收款计划（`main.py:3977`） | 无收款计划 UI（同 #6） | 高 | 中（并入 #6） | 下期 |
@@ -66,11 +70,15 @@
 ### 1.1 分布小结
 
 - **已接/移出 4**：#3 归档日志（C30）、#23 翻译（A13）、#4/#8 渲染直链（A4 渲染链路）。
-  ⇒ 「待接 UI」实际只剩 **20 条**。
-- **本期接 5**（成本低、价值中高，建议下一批直接做）：#1 税档停用、#11 定价编辑、#12 团队改名、#14 手工汇率、#17 leadgen CSV。
+  ⇒ 「待接 UI」由 24 降到 **20 条**。
+- **✅ 本期接 5 已全部落地（2026-10-21 C36 UI 批次 `e419d01d`）**：#1 税档停用、#11 定价编辑、#12 团队改名、
+  #14 手工汇率、#17 leadgen CSV（入口逐条见 §1 的 ✅ 标注）。
+  ⇒ 「待接 UI」再降到 **15 条**（下期 12 + 长期保留 3）；**接 UI 不改变路由数**（Worker 仍 244）。
 - **下期 12**：#5 汇率历史、#6/#10/#20 收款计划三件套、#7 应收台账、#13 AI 任务运行、#15/#16 情报导入/补录、
   #18 手工线索、#19 品名对照、#21 订单状态流转、#22 调研补录。
 - **长期保留 3**：#2/#9/#24 用户级订阅（平台运维口；团队级订阅已是主路径，是否值得做 UI 需产品确认）。
+- **未计入上表的 2 条**：审计 §4C 建议把 `GET/PUT /product-options/overrides` 从「可删候选」更正为
+  「现行团队级档位能力、待接 UI（下期）」；本表 15 条仍按原 24 条清单统计，**下次重扫时并入**。
 
 ## 2. 18 条「可删候选」逐条证据与结论
 
@@ -122,9 +130,11 @@
 
 ## 4. 一次拍板建议（给用户）
 
-**A. 建议直接批准的「可删（3）」**（只删路由；相应表/历史数据保留，删除时同步改 worker 路由测试与 allowlist）：
+**A. 建议直接批准的「可删（3）」—— ✅ 已批准并执行（2026-10-21 C36，路由 247→244）**
+（只删路由；相应表/历史数据保留，删除时同步改 worker 路由测试与 allowlist）：
 
-> ✅ **2026-10-21 已获用户批准并执行完毕**（C36）：三条 handler 已移除、测试已改；原建议保留供追溯。
+> ✅ **2026-10-21 已获用户批准并执行完毕**（C36）：三条 handler 已移除、worker 路由测试改负向断言；
+> 本节保留供追溯；**当前状态以 §0 计数与 §1.1 分布为准**（可删候选 3 已删 / 保留 2 / owner 13）。
 
 - `PATCH /api/v1/spec/prices/{id}`、`POST /api/v1/spec/skus/{id}/prices`（规格库退役，用户已裁决，生产 7 表 0 行）
 - `POST /api/v1/file-objects/upload`（C1 已授权不做，无前端调用）
@@ -137,7 +147,7 @@
 
 **C. 建议保留并补进「待接 UI」的 2 条**：`GET/PUT /product-options/overrides`（团队档位；建议下期接管理 UI）。
 
-**D. 待接 UI 的优先级建议**：先做 **5 条本期**（#1/#11/#12/#14/#17，均低成本），
+**D. 待接 UI 的优先级建议**：先做 **5 条本期（✅ 已于 2026-10-21 C36 全部接上，见 §1）**，
 再做订单/收款/应收与订单状态流转（#6/#7/#10/#20/#21，业务价值最高但成本也高），其余下期。
 
 ## 5. 复现与口径

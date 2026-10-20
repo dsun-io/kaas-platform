@@ -2,7 +2,8 @@
 
 > **审计（2026-10-21）**：24 条「待接 UI」的价值/成本 + 18 条「可删候选」的使用证据见
 > [`API_RESERVED_LIST_AUDIT.md`](./API_RESERVED_LIST_AUDIT.md)。
-> 结论速览：待接 **4 条已接移出 / 5 条本期 / 12 条下期 / 3 条长期保留**；可删候选 **可删 3 / 保留 2 / 需 owner 确认 13**
+> 结论速览：待接 **9 条已接移出（C30/A13/A4 共 4 + C36 本期 5）/ 12 条下期 / 3 条长期保留**；
+> 可删候选 **可删 3（已执行删除）/ 保留 2 / 需 owner 确认 13**
 > （其中 `GET/PUT /product-options/overrides` 被本清单误判为可删，审计已更正为现行能力）。
 >
 > **用途**：登记「Worker 有路由、前端没有任何调用」的接口，避免下一轮审计把它们误判成“欠账”。
@@ -14,15 +15,22 @@
 > **✅ 2026-10-21 删除执行（用户已批准 C36）**：3 条「可删（证据）」已从 Worker 删除并同步改测试：
 > `PATCH /api/v1/spec/prices/{id}`（#11）、`POST /api/v1/spec/skus/{id}/prices`（#17）、
 > `POST /api/v1/file-objects/upload`（#16）。下方保留原行并标 ✅，§0 路由计数同步扣 3。
+>
+> **✅ 2026-10-21 UI 接线执行（C36 UI 批次 `e419d01d`）**：本期建议接的 **5 条已全部接上**
+> （税档软删 / 定价编辑 / 团队改名 / 手工汇率 / leadgen CSV，入口见 §2 各行 ✅ 与 §3）。
+> 接 UI **不改变路由数**（仍 244）。
 
 ## 0. 结论
 
 - Worker 路由：**247 → 244** 条（`backend/worker/src/*.py` 的 `@app.<method>`；单应用，无 include_router；
-  2026-10-21 C36 删除 3 条见上方）。
-- 前端调用：**212 条原始 / 183 条归一化唯一路径**（`apiClient.*` + 原生 `fetch`，排除测试）。
+  2026-10-21 C36 删除 3 条见上方；**接 UI 不增删路由**）。
+- 前端调用：**212 条原始 / 183 条归一化唯一路径**（`apiClient.*` + 原生 `fetch`，排除测试；扫描基线快照，
+  C36 UI 批次又新增 5 个调用点）。
 - 原始差异：**66 条**「BE 有、FE 无直接调用」；扣除 **6 条假阴性**（动态拼路径/变量 url/查询串/download link，见 §2）
-  ⇒ **实际未接 60 条**，分类：**REST/内部/兼容保留 18 条**、**后端先行待接 UI 24 条**、
-  **可删候选 18 条**（另 6 条非死）。
+  ⇒ **扫描基线时实际未接 60 条**，分类：**REST/内部/兼容保留 18 条**、**后端先行待接 UI 24 条**、**可删候选 18 条**。
+- **基线后变化（2026-10-21）**：待接 UI 已接移出 **9 条**（C30/A13/A4 共 4 + C36 本期 5）⇒ **待接 UI 剩 15 条**
+  （下期 12 + 长期保留 3）；可删候选已删 **3 条** ⇒ **剩 15 条**；**当前实际未接 ≈ 48 条**
+  （18 REST + 15 待接 + 15 可删），与路由 244 对得上。
 - 与 `docs/TODO.md` 的对应关系见 §3；**本文件不修改 TODO**（C36 是否销账由 Lead 决定）。
 
 ## 1. 方法（可复现）
@@ -41,7 +49,7 @@ backend/worker/.venv/Scripts/python.exe .tmp/c36-docs.py                  # 补 
    ② 模板串带 query（`/market/ports${params}`）；③ 非 `apiClient` 的下载链接（`useDownloadTemplate` 用 blob 下载）。
 4. 仍可能存在：**没有被任何前端代码引用、但被第三方/运维脚本使用**的接口 —— 这类只能靠“可删候选 + owner 确认”兜底。
 
-## 2. 全量清单（66 行：60 未接 + 6 非死）
+## 2. 全量清单（扫描基线 66 行：60 未接 + 6 非死；已接/已删行保留并标 ✅ 供追溯）
 
 | 判定 | 方法 路径 | 模块:行 | 依据 / 对应 TODO |
 |---|---|---|---|
@@ -69,29 +77,29 @@ backend/worker/.venv/Scripts/python.exe .tmp/c36-docs.py                  # 补 
 | 保留 · 内部/运维/CI 与 REST 契约 | `POST /api/v1/trade-docs/*/confirm` | `ws_docs_ext.py:234` | A2 明示两条签发入口；前端走 `PATCH /trade-docs/{id}` |
 | 保留 · 内部/运维/CI 与 REST 契约 | `POST /api/v1/trade-docs/*/files` | `ws_files.py:617` | REST 附件引用；前端上传走 `/files/upload`（服务端归档走内部函数） |
 | 保留 · 内部/运维/CI 与 REST 契约 | `POST /api/v1/workstation-products` | `ws_products.py:458` | B6 兼容写口（同上） |
-| 后端先行 · UI 未接 | `DELETE /api/v1/tax-archives/*` | `tax_archives.py:295` | 税务档案删除 UI 未接（前端只建/改） |
+| ✅ 已接 · 移出待接清单（C36，2026-10-21） | `DELETE /api/v1/tax-archives/*` | `tax_archives.py:295` | 入口：`settings/tax-archives/components/tax-archive-deactivate-button.tsx:39`（确认后软删）+ `page.tsx:434` 挂载 |
 | 后端先行 · UI 未接 | `DELETE /api/v1/users/*/subscriptions/*` | `ws_workstations.py:271` | 同上 |
-| 后端先行 · UI 未接 | `GET /api/v1/admin/archive-logs` | `main.py:3032` | C30：后端已从占位改真查询（`main.py:3032` 查 `events_archive_log`），前端 0 调用 |
-| 后端先行 · UI 未接 | `GET /api/v1/file-objects/*/render-content` | `ws_files.py:920` | A4/G-4：渲染器短期直链（令牌即授权）；前端仍转 data URI |
-| 后端先行 · UI 未接 | `GET /api/v1/fx-rates` | `ws_extras.py:162` | 汇率维护 UI 未接；前端只用 `/fx-rates/latest` |
-| 后端先行 · UI 未接 | `GET /api/v1/orders/*/payment-schedules` | `main.py:3943` | 订单收款计划 UI 未接（orders 页自述“收款计划与应收概览”） |
+| ✅ 已接 · 移出待接清单（C30） | `GET /api/v1/admin/archive-logs` | `main.py:3032` | 入口：`admin/hooks/use-archive-logs.ts:54` + `archive-logs-card.tsx`，`admin/gray-release/page.tsx:80` 挂载（审计更正：原「前端 0 调用」已过时） |
+| ✅ 已接 · 移出待接清单（A4） | `GET /api/v1/file-objects/*/render-content` | `ws_files.py:920` | 渲染链路已用：装配层返回短时效签名直链，浏览器 `<img>` 直接加载（不经 apiClient） |
+| 后端先行 · UI 未接 | `GET /api/v1/fx-rates` | `ws_extras.py:162` | 汇率维护 UI 未接；前端只用 `/fx-rates/latest`（历史列表仍下期） |
+| 后端先行 · UI 未接 | `GET /api/v1/orders/*/payment-schedules` | `main.py:3943` | 订单收款计划 UI 未接（orders 页自述"收款计划与应收概览"） |
 | 后端先行 · UI 未接 | `GET /api/v1/receivables` | `main.py:4102` | 应收台账 UI 未接（订单工位规划里有概览） |
-| 后端先行 · UI 未接 | `GET /api/v1/tenant/company-seals/*/render-content` | `ws_seals.py:221` | A4/G-4：公章渲染直链（同上） |
+| ✅ 已接 · 移出待接清单（A4） | `GET /api/v1/tenant/company-seals/*/render-content` | `ws_seals.py:221` | 公章渲染直链已被装配层使用（`main.py:4801`），浏览器直接加载 |
 | 后端先行 · UI 未接 | `GET /api/v1/users/*/subscriptions` | `ws_workstations.py:229` | 个人订开通 UI 未接（前端只接团队订阅） |
 | 后端先行 · UI 未接 | `PATCH /api/v1/payment-schedules/*` | `main.py:4008` | 同上（改计划） |
-| 后端先行 · UI 未接 | `PATCH /api/v1/pricing-data/*` | `main.py:2291` | 定价数据编辑 UI 未接（前端只 POST 新增/删除） |
-| 后端先行 · UI 未接 | `PATCH /api/v1/teams/*` | `ws_teams.py:245` | 团队改名 UI 未接 |
+| ✅ 已接 · 移出待接清单（C36，2026-10-21） | `PATCH /api/v1/pricing-data/*` | `main.py:2291` | 入口：`pricing-data/hooks/use-pricing-data.ts:83`（PATCH）+ `PricingEditDialog.tsx`（`PricingDataTable.tsx:207` 编辑按钮），`pricing-data-manager.tsx:221` 挂载 |
+| ✅ 已接 · 移出待接清单（C36，2026-10-21） | `PATCH /api/v1/teams/*` | `ws_teams.py:245` | 入口：`team/components/team-rename-dialog.tsx:57`（PATCH `{name}`），`team/page.tsx:179` 挂载（仅团队管理员） |
 | 后端先行 · UI 未接 | `POST /api/v1/ai/tasks/*/run` | `chain.py:733` | AI 任务手动运行 UI 未接（ai-providers 页只做 provider/binding 管理） |
-| 后端先行 · UI 未接 | `POST /api/v1/fx-rates` | `ws_extras.py:217` | 同上（手工录汇率） |
+| ✅ 已接 · 移出待接清单（C36，2026-10-21） | `POST /api/v1/fx-rates` | `ws_extras.py:217` | 入口：`lib/fx/use-manual-fx.ts:40`（POST，同日同币对 UPSERT）+ `settings/tax-archives/components/fx-rate-card.tsx`，`tax-archives/page.tsx:613` 挂载 |
 | 后端先行 · UI 未接 | `POST /api/v1/intel/import/csv` | `main.py:928` | 情报 CSV 导入 UI 未接 |
 | 后端先行 · UI 未接 | `POST /api/v1/intel/shipments` | `main.py:913` | 情报手工录入 UI 未接（前端只读列表） |
-| 后端先行 · UI 未接 | `POST /api/v1/leadgen/runs/from-csv` | `chain.py:1003` | leadgen 页文案已预告“CSV 导入使用该端点”，但无上传 UI（`leadgen/page.tsx:416`） |
+| ✅ 已接 · 移出待接清单（C36，2026-10-21） | `POST /api/v1/leadgen/runs/from-csv` | `chain.py:1003` | 入口：`lib/leadgen/csv-import.ts` + `leadgen/components/csv-import-panel.tsx:54`（multipart 字段 `csv_file`），`leadgen/page.tsx:426` 挂载 |
 | 后端先行 · UI 未接 | `POST /api/v1/leads` | `chain.py:1349` | 手工新增线索 UI 未接（前端用 leadgen run/crawl 链路） |
 | 后端先行 · UI 未接 | `POST /api/v1/market/name-mappings` | `main.py:1716` | 中外品名对照维护 UI 未接 |
 | 后端先行 · UI 未接 | `POST /api/v1/orders/*/payment-schedules` | `main.py:3961` | 同上（建计划） |
 | 后端先行 · UI 未接 | `POST /api/v1/orders/*/status` | `main.py:3851` | 订单状态流转 API；前端只做展示（`PATCH /orders` 只接收条款/客户，见 `main.py:3707+`） |
 | 后端先行 · UI 未接 | `POST /api/v1/research/products` | `chain.py:2232` | 调研手工录入 UI 未接（前端只 from-leadgen/PATCH/DELETE；MSW 有 handler 但真实调用 0） |
-| 后端先行 · UI 未接 | `POST /api/v1/trade-docs/*/translate` | `ws_docs_ext.py:549` | A13：中译英端点已实现（`ws_docs_ext.py:549`），前端只有“AI 翻译”来源标签 |
+| ✅ 已接 · 移出待接清单（A13） | `POST /api/v1/trade-docs/*/translate` | `ws_docs_ext.py:549` | 入口：`trade-docs/hooks/use-trade-docs.ts:241` + `components/doc-translate-panel.tsx`（单证「中译英」面板，A13 已接） |
 | 后端先行 · UI 未接 | `PUT /api/v1/users/*/subscriptions/*` | `ws_workstations.py:243` | 同上 |
 | 可删候选（需 owner 确认） | `DELETE /api/v1/external-docs/*` | `ws_extras.py:420` | 同上 |
 | 可删候选（需 owner 确认） | `GET /api/v1/actual-costs` | `ws_extras.py:262` | 旧实际成本域：前端 0 调用、无文档引用；报价成本走 `quotes/cost-reference` |
@@ -116,20 +124,19 @@ backend/worker/.venv/Scripts/python.exe .tmp/c36-docs.py                  # 补 
 
 | TODO | 相关路由（本清单） | 状态/说明 |
 |---|---|---|
-| **C36** | 本文件全部条目 | ✅ 2026-10-21 用户批准删 3 条并**已执行**（#11/#16/#17，见 §2 ✅ 行）；其余 13 条待 owner 后续统一确认 |
+| **C36** | 本文件全部条目 | 删除部分：✅ 2026-10-21 用户批准删 3 条并**已执行**（#11/#16/#17，见 §2 ✅ 行）；**UI 接线部分：✅ 2026-10-21 本期接 5 条已全部接上**（税档软删/定价编辑/团队改名/手工汇率/leadgen CSV，见 §2 ✅ 行）；其余 owner 确认项按审计 §4 待 owner 统一确认 |
 | **A2** | `POST /trade-docs/{id}/confirm` | A2 已完成（两入口）；confirm 保留为 REST/第三方入口 |
-| **A4 / G-4** | `GET /file-objects/{id}/render-content`、`GET /tenant/company-seals/{id}/render-content` | G-4 已选①「渲染器白名单放开走 R2 直链」；这两个直链端点即该方案的服务端口，前端待接 |
+| **A4 / G-4** | `GET /file-objects/{id}/render-content`、`GET /tenant/company-seals/{id}/render-content` | ✅ 已接（A4 渲染链路）：装配层返回短时效签名直链，浏览器 `<img>` 加载（不经 apiClient） |
 | **A7** | — | A7 的 facts/consistency/lint/receipts/doc-set/verify-export 均已由 FE 调用（不在本清单） |
 | **A9** | `GET /trade-docs/render-fingerprint-checks/batch` | A9 已完成（cron+列表标识）；批量口保留给运维/批处理 |
 | **A12** | `trigger_expr`（非路由） | A12 ⏳；与路由无关 |
-| **A13** | `POST /trade-docs/{id}/translate` | A13 ⏳：端点已实现、前端 0 调用 |
+| **A13** | `POST /trade-docs/{id}/translate` | ✅ 已接（`trade-docs/hooks/use-trade-docs.ts:241` + `doc-translate-panel.tsx`） |
 | **B6** | `GET/POST /workstation-products` | B6 已完成（兼容 union）；建议与 `/tenant-product-status` 收敛后再删 |
 | **C1 / G-5** | `POST /file-objects/upload` | ✅ 2026-10-21 已按用户批准删除（C36）；C1 本身仍为"不做" |
 | **C9** | `GET /file-objects/_r2_debug`、`GET /fx-rates/_debug` | C9 已完成（admin 闸门）；保留运维 |
 | **C13 / G-5** | `POST /outreach/webhook` | C13 🧭 已授权“保持”；501 预留桩 |
 | **C19 / C29** | — | 批量导入 UI 已接（v2 报价工作台）；`/import/template` 在用（§2 非死），C29 占位入口已隐藏 |
-| **C30** | `GET /admin/archive-logs` | C30 后端已从占位改真查询；前端 0 调用（待接 UI） |
-| **C36** | 本文件 | ✅ 2026-10-21 用户批准并执行删除 3 条（见上） |
+| **C30** | `GET /admin/archive-logs` | ✅ 已接（`admin/hooks/use-archive-logs.ts:54` + `archive-logs-card.tsx`，灰发页已挂载） |
 
 ## 4. 维护规则
 
