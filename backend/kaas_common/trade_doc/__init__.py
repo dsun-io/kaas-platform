@@ -11,6 +11,7 @@
 - facts     事实层（A7）：事实模型 / 键值归一 / 信任级闸门 / 不可改写 / 单源推导 / TBC
 - equivalents 等价措辞白名单（A7）：只在表内判等价，绝不静默吞差异
 - consistency 一致性引擎（A7）：跨单证事实矩阵（diff_facts）/ 基线承继核对（lint_pair）
+- trigger   单证清单触发条件（A12）：受限安全求值（**无 eval/exec**）/ doc-set 标注
 """
 from .rules import (  # noqa: F401
     DOC_STATUS,
@@ -145,6 +146,20 @@ from .consistency import (  # noqa: F401
     equivalent,
     lint_pair,
 )
+from .trigger import (  # noqa: F401
+    MAX_DEPTH,
+    MAX_EXPR_LENGTH,
+    MAX_TOKENS,
+    TRIGGER_SYNTAX,
+    TRIGGER_TOO_COMPLEX,
+    TRIGGER_TYPE,
+    TRIGGER_UNKNOWN_KEY,
+    TriggerError,
+    evaluate_trigger,
+    parse_trigger,
+    resolve_doc_set,
+    validate_trigger,
+)
 
 __all__ = [
     "DOC_STATUS", "DOC_NEXT", "DOC_TYPE_PREFIX", "MAX_SEAL_BYTES", "SYSTEM_PROMPT",
@@ -190,4 +205,8 @@ __all__ = [
     # ── A7 一致性引擎（consistency）──
     "IDENTITY_KEYS", "FactDiff", "FactCheck",
     "diff_facts", "lint_pair", "equivalent",
+    # ── A12 单证清单触发条件（trigger，受限求值）──
+    "TriggerError", "TRIGGER_SYNTAX", "TRIGGER_UNKNOWN_KEY", "TRIGGER_TYPE",
+    "TRIGGER_TOO_COMPLEX", "MAX_EXPR_LENGTH", "MAX_TOKENS", "MAX_DEPTH",
+    "evaluate_trigger", "validate_trigger", "parse_trigger", "resolve_doc_set",
 ]

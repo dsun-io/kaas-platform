@@ -169,3 +169,76 @@ PDF 抽取无法区分"公章"和"产品图"，而后端默认期望是 `{"stamp
 - 真实 PDF 抽取：用真 `pdfjs-dist@4.10.38` + 手写最小 PDF（1 页、1 张 2×2 RGB 图、文本
   `Hello PDF Self-Check`）在 Node 一次性验证 → 抽取结果 `pages=1, images=1, text` 完全一致
   （脚本不入库；CI 只跑 mock 的确定性用例）。
+
+---
+
+## 9. `trigger_expr` 求值（A12 · 2026-10-21 落地）
+
+### 9.1 要解决什么
+
+`trade_doc_doc_set_items.trigger_expr` 从 A7 起**只存不求值**：清单项写着"什么条件下才该出
+这类单证"（典型：**没有木质包装就不出非木质包装声明**），但 GET 原样回字段、lint 不看它、
+PUT 也不拦坏表达式 ⇒ 条件等于装饰。A12 加一个**受限安全求值器**并接到 doc-set / lint / PUT。
+
+### 9.2 语法（刻意做小，**内核不使用 `eval`/`exec`**）
+
+实现：`backend/kaas_common/trade_doc/trigger.py`（纯 stdlib，词法 → 递归下降 → 解释执行）。
+
+```
+表达式   := or
+or       := and ("or" and)*
+and      := not ("and" not)*
+not      := "not" not | comparison
+comparison := primary (("=="|"!="|">"|">="|"<"|"<="|"in"|"not" "in") primary)?
+primary  := "(" expr ")" | "[" 列表 "]" | 字面量 | 事实键
+字面量    := 整数 | 浮点 | "字符串" | '字符串' | True/False/None（兼容 true/false/null）
+事实键    := 标识符，可带点号路径（`facts.packaging.has_wood` / `packaging.has_wood` / `has_wood`）
+```
+
+- **没有**函数调用、属性访问、下标、算术表达式（`+` 只能作数字正号）、推导式、赋值 ——
+  `__import__("os")`、`open(...)`、`obj.__class__` 之类只会得到 `TRIGGER_SYNTAX`，**不会执行**；
+- 有上限：表达式 ≤2000 字符、记号 ≤200、嵌套 ≤32 层（`TRIGGER_TOO_COMPLEX`），
+  恶意超长/深嵌套在解析前被拒，不会用栈/CPU 拖死 Worker；
+- 空串 / `None` / 纯空白 = **总是适用**（True），兼容历史空白数据。
+
+### 9.3 事实键与值的比较口径
+
+- 事实来源与 `/facts` **同一入口**（`extract_facts` + `trade_doc_facts` 表覆盖，
+  即 `ws_docs_hardening._facts_of`），内核不读库、不另算一份；
+- 解析顺序：**嵌套 dict 下钻** → **扁平点号键**（`extract_facts` 产出的就是扁平键）→
+  **最后一段**（`has_wood` 直查）。都找不到 ⇒ `TRIGGER_UNKNOWN_KEY`，**不猜默认值**
+  （"键名写错"若静默成"条件永远不满足"，比报错危险）；
+- `Fact.value` 恒为归一字符串，所以比较容忍形态：`"1200" > 1000`（数值）、
+  `"False" == false`（布尔文本）成立；大小比较**只允许数值**（拿文本比大小基本是写错 ⇒ `TRIGGER_TYPE`）；
+- `in`：右侧列表字面量（成员判定，元素用同一套相等口径）或字符串（子串判定）。
+
+### 9.4 求值时机与 API 形状（**坏表达式不落库**）
+
+| 时机 | 函数 | 行为 |
+|---|---|---|
+| 写入 PUT | `validate_trigger(expr)` | **只校验语法/复杂度**；坏表达式 ⇒ 422 `TRIGGER_EXPR_INVALID`（带 `trigger_error`），**不落库**。允许暂时未知的事实键（事实集合随 payload 演进，未知键在读取时暴露） |
+| 读取 GET doc-set | `resolve_doc_set(items, facts)` | 每项**追加**（不删项）：`applicable: bool`、`skipped_by_trigger: bool`（仅 `role=required` 且条件为假）、`trigger_reason: str|null`、无法求值时 `trigger_error: {code,message}`；**无法求值按"适用"处理**，避免必出单证因条件写错从清单里"消失" |
+| lint | 同上 | 仅对 `role=required` 给 **warning**：条件不满足 ⇒ `DOC_SET_TRIGGER_SKIPPED`；无法求值 ⇒ `DOC_SET_TRIGGER_ERROR`。**两者都不 blocking**（条件维护问题不该拦住签发；也不静默） |
+
+### 9.5 已知边界（如实）
+
+1. **事实白名单**：`extract_facts` 只抽贸易条款/币种/金额/明细/身份/付款结构等**白名单**字段，
+   `custom` 里的任意键不会自动变成事实。所以 `packaging.has_wood` / `wood_packing` 这类
+   **领域事实目前还不存在**：真写 `wood_packing == false` 会在 GET/lint 得到
+   `TRIGGER_UNKNOWN_KEY`（warning），不会静默生效。要落地"无木包装不出声明"，
+   需先给事实层补包装类事实（内核扩展，属后续任务，不是本求值器的缺陷）。
+2. **PUT 只做语法校验**：不拿当前 facts 求值（否则"以后才出现的事实键"会被误判）；
+   语义错误（键不存在/类型不符）在读取侧暴露。
+3. GET doc-set 现在多做一次事实抽取（多几条 DB 查询）；清单项数量小（每单 ≤18 类），可接受。
+4. `evidence_required` / `role` 等字段语义未变；`skipped_by_trigger` 只是**标注**，不改变
+   `DOC_SET_NOT_ALLOWED` 的 blocking 判定（清单责任方规则照旧）。
+
+### 9.6 测试
+
+- 内核 `backend/worker/tests/test_trade_doc_trigger.py`（**68 条**）：比较/布尔/括号/优先级/
+  `in`/点号键四种解析路径/未知键/语法错/类型错/超长超深/`__import__` 等注入样例/`resolve_doc_set` 标注；
+- API `backend/worker/tests/test_trade_doc_trigger_api.py`（**7 条**）：GET 标注（含 required 跳过与
+  非 required 不标）、未知键 `trigger_error`、PUT 坏表达式 422 且清单未动、PUT 允许未知键、
+  lint 两类 warning 且 **blocking 为空**、无表达式时零影响；
+- 全量 worker：**1316 passed / 12 skipped**（基线 1237+12，新增 75 条，**不减少**）。
+

@@ -31,6 +31,11 @@
   payload 会分叉，"同一条事实两个真相"。
 - 金额容差、等价措辞、不可改写判定全部调用内核；本文件不做四舍五入、不做同义判断。
 - 未确认事实的导出占位（TBC/待确认）由内核 `render_tbc` 负责，本文件不碰渲染。
+- `trigger_expr`（A12）：求值在共享内核 `kaas_common.trade_doc.trigger`（受限解析，
+  **无 eval/exec**）。本文件只负责三处接线：GET doc-set 追加 `applicable` /
+  `skipped_by_trigger` / `trigger_error`；PUT 先 `validate_trigger` 语法校验（坏表达式
+  422 `TRIGGER_EXPR_INVALID`，不落库）；`/lint` 对 required 条件不满足/无法求值给
+  **warning**（不阻断签发）。
 
 写库纪律
 --------
@@ -59,6 +64,7 @@ from kaas_common.trade_doc import (
     TRUST_LEVELS,
     TRUST_UNVERIFIED,
     Fact,
+    TriggerError,
     check_derived_amount,
     check_immutable,
     decimal_text,
@@ -69,6 +75,8 @@ from kaas_common.trade_doc import (
     gate_trust,
     lint_pair,
     normalize_text,
+    resolve_doc_set,
+    validate_trigger,
 )
 from kaas_common.workstation.receipt_rules import classify_receipt_diff
 
@@ -97,6 +105,10 @@ DOC_SET_INVALID = "DOC_SET_INVALID"
 DOC_SET_DUPLICATE = "DOC_SET_DUPLICATE"
 DOC_SET_ITEM_NOT_FOUND = "DOC_SET_ITEM_NOT_FOUND"
 ILLEGAL_DOC_SET_TRANSITION = "ILLEGAL_DOC_SET_TRANSITION"
+# A12：清单触发条件（`trigger_expr`）—— 写入语法错 422；读取无法求值 / 条件不满足只 warning
+TRIGGER_EXPR_INVALID = "TRIGGER_EXPR_INVALID"
+DOC_SET_TRIGGER_SKIPPED = "DOC_SET_TRIGGER_SKIPPED"
+DOC_SET_TRIGGER_ERROR = "DOC_SET_TRIGGER_ERROR"
 FACT_NOT_FOUND = "FACT_NOT_FOUND"
 FACT_KEY_UNKNOWN = "FACT_KEY_UNKNOWN"
 FACT_VALUE_IMMUTABLE_STORAGE = "FACT_VALUE_IMMUTABLE_STORAGE"
@@ -836,9 +848,16 @@ async def lint_trade_doc(
     request: Request,
     user: dict = Depends(_get_current_user),
 ):
-    """签发前预检：`ok=false` ⇒ blocking 非空（与 confirm 闸门同一份判定）。"""
+    """签发前预检：`ok=false` ⇒ blocking 非空（与 confirm 闸门同一份判定）。
+
+    A12：额外把「单证清单触发条件」作为 **warning** 挂出来（不阻断）——
+    `required` 项条件不满足时提示"本次不出该单证"，条件无法求值时提示原因。
+    这两个 warning 只在 `/lint` 出现，**不进 confirm 闸门**（避免历史单据误伤）。
+    """
     d = await _doc_404(request, doc_id)
-    blocking, warnings = await collect_lint(request, d)
+    facts = await _facts_of(request, d)
+    blocking, warnings = await collect_lint(request, d, facts=facts)
+    warnings.extend(await _trigger_warnings(request, d, facts))
     return {
         "doc_id": doc_id,
         "ok": not blocking,
@@ -847,7 +866,7 @@ async def lint_trade_doc(
         "summary": {
             "blocking": len(blocking),
             "warnings": len(warnings),
-            "facts": _summary(await _facts_of(request, d)),
+            "facts": _summary(facts),
         },
     }
 
@@ -1005,16 +1024,76 @@ async def _doc_set_items(request: Request, doc_id: int) -> list[dict]:
     return [_doc_set_dict(dict(row)) for row in rows or []]
 
 
+def _facts_map(facts: list[Fact]) -> dict:
+    """事实列表 → 求值器入参（`Fact.value` 恒为归一字符串，与 facts 端点同源）。"""
+    return {fact.key: fact.value for fact in facts}
+
+
+async def _trigger_warnings(
+    request: Request,
+    d: dict,
+    facts: list[Fact],
+) -> list[dict]:
+    """A12：`/lint` 的触发条件 warning（**不阻断**）。
+
+    - `DOC_SET_TRIGGER_SKIPPED`：`role=required` 但条件不满足 ⇒ 本次不出该单证；
+    - `DOC_SET_TRIGGER_ERROR`：条件无法求值（未知键/类型错/历史坏表达式）⇒ 提示修正。
+      不把"无法求值"当 blocking：条件写错不应拦住签发（那是清单维护问题），
+      但也不能静默 —— 以 warning 让业务员在编辑期看到。
+    """
+    items = resolve_doc_set(await _doc_set_items(request, d["id"]), _facts_map(facts))
+    warnings: list[dict] = []
+    for item in items:
+        if item.get("role") != "required":
+            continue
+        doc_type = item.get("doc_type")
+        expr = item.get("trigger_expr")
+        error = item.get("trigger_error")
+        if error:
+            warnings.append({
+                "code": DOC_SET_TRIGGER_ERROR,
+                "doc_type": doc_type,
+                "trigger_expr": expr,
+                "trigger_error": error,
+                "detail": (
+                    f"单证清单项「{doc_type}」的触发条件无法求值"
+                    f"（{error.get('code')}: {error.get('message')}）——"
+                    "无法判断是否需要该单证，先按适用处理；请修正 trigger_expr"
+                ),
+            })
+        elif item.get("applicable") is False:
+            warnings.append({
+                "code": DOC_SET_TRIGGER_SKIPPED,
+                "doc_type": doc_type,
+                "trigger_expr": expr,
+                "detail": (
+                    f"单证清单项「{doc_type}」的触发条件不满足（{expr}）—— "
+                    "本次不出该单证（required；仅提示，不阻断签发）"
+                ),
+            })
+    return warnings
+
+
 @app.get("/api/v1/trade-docs/{doc_id}/doc-set")
 async def get_trade_doc_doc_set(
     doc_id: int,
     request: Request,
     user: dict = Depends(_get_current_user),
 ):
-    """单证清单（这一次交易该出哪些单证、谁出、要不要回执）。"""
-    await _doc_404(request, doc_id)
+    """单证清单（这一次交易该出哪些单证、谁出、要不要回执）。
+
+    A12：每项追加 `applicable`（条件是否成立）/ `skipped_by_trigger`（required
+    且条件为假）/ `trigger_reason`，无法求值时再给 `trigger_error`。事实来源与
+    `/facts` 同一入口（`extract_facts` + 表内处置叠加），不另算一份。
+    """
+    d = await _doc_404(request, doc_id)
     items = await _doc_set_items(request, doc_id)
-    return {"doc_id": doc_id, "items": items, "total": len(items)}
+    facts = await _facts_of(request, d)
+    return {
+        "doc_id": doc_id,
+        "items": resolve_doc_set(items, _facts_map(facts)),
+        "total": len(items),
+    }
 
 
 @app.put("/api/v1/trade-docs/{doc_id}/doc-set")
@@ -1049,6 +1128,18 @@ async def put_trade_doc_doc_set(
             raise _error(409, DOC_SET_DUPLICATE,
                          f"清单里同一单证类型重复：{item.doc_type}")
         seen.add(item.doc_type)
+        # A12：新表达式先做**语法/复杂度**校验（只解析不求值 —— 事实键允许随
+        # payload 演进，未知键在读取时以 trigger_error 暴露，不在这里拦）。
+        # 坏表达式一律 422 且**不落库**，避免把"永远求值失败"的清单写进历史。
+        if item.trigger_expr is not None and str(item.trigger_expr).strip():
+            try:
+                validate_trigger(str(item.trigger_expr))
+            except TriggerError as exc:
+                raise _error(
+                    422, TRIGGER_EXPR_INVALID,
+                    f"单证清单项「{item.doc_type}」的触发条件无效：{exc.message}",
+                    trigger_error=exc.as_dict(),
+                ) from exc
 
     doc_types = [item.doc_type for item in body.items]
     async with _main._acquire(request) as conn:
