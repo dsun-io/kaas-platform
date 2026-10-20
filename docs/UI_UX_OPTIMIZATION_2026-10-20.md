@@ -731,6 +731,7 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
   - 已落：订单/单证列表窄屏卡片化（<md 卡片、md+ 表格）；订单号/单证编号加复制按钮（带成功提示与失败兜底）。
   - 已落：单证台账列配置（5 列可隐藏、至少保留 1 列、localStorage 记忆）；单证/订单/客户密度与窄屏布局统一走 SectionCard 移动端堆叠。
   - 已落：暗色令牌校准 —— 新增 `pnpm ui:contrast`（解析 `:root`/`.dark`，OKLCH→sRGB，低于 4.5 失败）；修复浅色 `--destructive` 按钮对比度 4.20→5.84，light/dark 全部通过。
+  - 已落：全站 a11y 冒烟 e2e（10 个核心页：h1=1、表头 scope、icon 按钮名称、1366 无横向溢出）。
   - 已落：spec-proposals / market-view / research 三处手写下划线 tab 收编到统一 `Tabs`；spec-proposals 加载/空态改骨架+空态；research 供应能力图标改语义色 `text-success/text-destructive`。
   - 已落：全站硬编码红/绿/黄清理（13 文件 23 处 → 0），统一走 `success/warning/destructive` 语义 token。
   - 待做：列配置、快捷键/自动聚焦、窄屏卡片化、暗色令牌校准。
@@ -823,7 +824,7 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 - ⏳ 部分：对比度未做自动化全站扫描（当前仅令牌/抽查）；列配置只落在订单列表
 - ⏳ 可选 P2：窄屏卡片化、暗色令牌校准
 
-**门禁**：typecheck 0 / lint 0 err 87 warn / vitest 458 / e2e 23+4 / build out/277。
+**门禁**：typecheck 0 / lint 0 err 87 warn / vitest 458 / e2e 24 passed + 4 skipped = 28 / build out/277 / `pnpm ui:contrast` 通过。
 
 ---
 
