@@ -16,15 +16,15 @@
 
 | 项 | 状态 |
 |---|---|
-| 代码 | `main` @ `1216e75a`（工作树干净）；**远端只剩 `main`** |
-| 迁移头 | `202610200005`（`trade_doc_facts` + 文件当前版本唯一索引 `NULLS NOT DISTINCT`；生产**尚未应用**，随发布窗口） |
+| 代码 | `main` @ `213f87c1`（本轮 21 个提交；工作树干净）；**远端只剩 `main`** |
+| 迁移头 | `202610200005`（`trade_doc_facts` + 文件当前版本唯一索引 `NULLS NOT DISTINCT`）；**发布窗口已把生产从 `202610180010` 升到 `202610200005`（2026-10-21，已建 pre-release 快照）** |
 | 门禁基线（本机 2026-10-21 收口实测，工作区静止） | worker **1217 passed + 12 skipped**（无库；12 条 db/integration 档按既有约定 skip；有 docker PG 时实测 **1229 passed / 0 skipped**）；orchestrator **247**；前端 `pnpm test` **616 passed（60 files）**；typecheck 0 / lint 0 error / contracts R0–R6 PASS / `mocks:check` 未覆盖 **0** / e2e **28 条（24 passed + 4 skipped）** / `NEXT_EXPORT=1 pnpm build` → `out/` **275 文件** / 静态断言 5 项 PASS（`check-worker-bundle` 本机 SKIP：uv 0.11.8 < 0.12.3，CI 会执行） |
 | 前端 e2e | `playwright test --list` = **28 条**（24 passed + 4 skipped） |
 | 仓库可见性 | **public**（匿名 `git ls-remote` 成功）；`gh` 本机未登录 ⇒ CI 只能用网页/无 token 接口核对 |
 | 分支清理 | ✅ `archive/convergence-aprime-20261019` tag 已推；远端 `feat/convergence-aprime`、`feat/trade-doc-content-a` 已删；本地 `feat/trade-doc-templates`、`tech-stack-next16` 已删 |
 | stash | ✅ 2 个历史 stash 已 drop，内容留在本地 `refs/archive/stash0-20261019-2334`、`refs/archive/stash1-20260926-1508` |
 | 本机环境 | Docker 已起（postgres/redis/minio/backend）；`.env.local` 是**生产 DSN 存档**（已加警示注释 + 本地开发指引），不是本地开发配置 |
-| 审计产物 | `.tmp/branch-audit.md`、`.tmp/doc-scan.md`、`.tmp/code-gap.md`、`.tmp/align-report.md` |
+| 审计产物 | `.tmp/branch-audit.md`、`.tmp/doc-scan.md`、`.tmp/code-gap.md`、`.tmp/align-report.md`、`.tmp/handover-gap-{branches,docs,code}.md`（二轮全量 sweep） |
 
 ---
 
@@ -97,12 +97,12 @@
 
 | # | 待办 | 现状/风险 | 状态 |
 |---|---|---|---|
-| D1 | 生产注入 `RESEND_API_KEY` | 生产 secrets 只有 4 个 ⇒ **"忘记密码"邮件静默不发**。值取 repo secret `RESEND_API_KEY_PROD` | ⏳ 等发布窗口 |
-| D2 | R2 新密钥替换 | **生产 `S3_ACCESS_KEY` 只有 13 位（R2 要求 32）⇒ 生产直传当前不可用**（有 R2 binding/服务端代理兜底）。发布窗口 `wrangler secret put`，发布后到 R2 dashboard 删旧 token | ⏳ 等发布窗口 |
-| D3 | Hyperdrive 生产缓存关闭（可选） | 预览已 `caching.disabled=True`；生产现状保持开启，是否同改**需单独批准** | 🧭 |
-| D4 | 生产测试数据清理 | 含流失拒绝文件历史；**执行当次需用户确认** | 🧭 |
+| D1 | 生产注入 `RESEND_API_KEY` | **发布已上线但仍未注入**（2026-10-21 部署后实测 secrets = `ADMIN_SETUP_TOKEN`/`JWT_SECRET`/`S3_ACCESS_KEY`/`S3_SECRET_KEY`）⇒ **忘记密码邮件仍静默不发**。为**用户动作**：值取 repo secret `RESEND_API_KEY_PROD`，在 Cloudflare Dashboard 或 `cd backend/worker; npx wrangler secret put RESEND_API_KEY --name kaas` 设置（无需重新部署） | ⏳ 待用户注入 |
+| D2 | R2 新密钥替换 | **生产 `S3_ACCESS_KEY` 只有 13 位（R2 要求 32）⇒ 生产直传当前不可用**（R2 binding/服务端代理兜底可用）。为**用户动作**：R2 dashboard → Manage R2 API Tokens 建 32 位密钥 → `wrangler secret put S3_ACCESS_KEY/S3_SECRET_KEY --name kaas` → 删旧 token | ⏳ 待用户动作 |
+| D3 | Hyperdrive 生产缓存关闭（可选） | **用户已授权按推荐默认：保持开启**（2026-10-21）。预览仍 `caching.disabled=True` | ✅（默认保持） |
+| D4 | 生产测试数据清理 | 发布已执行（2026-10-21），**清理未做**（需执行当次确认，用户尚未确认）；含流失拒绝文件历史 | 🧭 待当次确认 |
 | D5 | 仓库可见性 | 现 **public**；用户曾裁"收尾后转 private"，private 期间 Actions 不可用（门禁改本地）。与安全项同批（§F-6） | ⏳ 最后做 |
-| D6 | 生产发布检查单 | `HANDOVER §5` 全流程：迁移 `202610200001/2/3` → secrets → 构建 → `pywrangler deploy` → 冒烟 → 冷启动基线（≤2,950ms）→ 留痕 → P4 观察期 | ⏳ 等用户下令 |
+| D6 | 生产发布检查单 | ✅ **2026-10-21 已执行**（迁移 6 条 → 生产 `202610200005`；构建 out/275；pywrangler 部署版本 `dae596a5`；冒烟 5 项全过；回滚版本 `77901aa1`；记录见 HANDOVER §0.4）。**尾巴**：D1/D2 secrets 待用户；冷启动 `coldstart-baseline.json` 仍 PENDING（pywrangler Startup 3386ms > 2950 验收线，需 Dashboard p50）；P4 观察期从这里开始 | 🔨 主体完成（2 项尾巴） |
 | D7 | preview ensure 对 Neon 423 重试 | ✅ 2026-10-21：`scripts/preview/preview_lib.py` 对 **423/429** 有限重试（指数退避 2/4/8/16s，上限 20s，`Retry-After` 优先，`PREVIEW_HTTP_RETRIES`/`PREVIEW_HTTP_BACKOFF` 可调；5xx 不重试避免重复创建）+ 5 条单测 `backend/worker/tests/test_preview_http_retry.py` | ✅ |
 
 ---
@@ -133,20 +133,56 @@
 
 ---
 
+## P. 全量 sweep 新发现（2026-10-21 二轮审计：全分支/全文档/全代码）
+
+> 来源：`.tmp/handover-gap-branches.md`（0 条遗漏）、`.tmp/handover-gap-docs.md`（12 条）、`.tmp/handover-gap-code.md`（13 条 + 账本 drift）。
+> 分支结论：56 ref / 131 reflog commit / 147 unreachable commit 全查，**无新待办**；旧项目线（v1/财务/发票）为历史，不承接。
+
+| # | 项 | 内容/证据 | 前置 | 状态 |
+|---|---|---|---|---|
+| C23 | **shipments 工位被过期上线门禁隐藏** | `shared/contracts/workstations.ts:229-238` 与 `kaas_common/domain/workstations.py:86-89` 仍 `status:'planned'`（注释称"Worker 没有 shipments 4 接口"），但 `ws_shipments.py` 4 路由已在、`main.py:4882` 已挂载、前端页面在、有 6 条测试、根 README 写"已上线" ⇒ 用户看不到出运台账入口 | 需确认是否故意隐藏（§G-12） | 🧭 |
+| C24 | 客户触达「产品手册附件」（P4 遗留） | 设计：PDF 浏览器生成→R2→随邮件发；代码仅 `chain.py:221` 注释，无实现 | A6/R2 就绪 | ⏳ |
+| C25 | 列表分页 UI（UI T7） | 后端 orders/events 已支持 `page/page_size`，前端 orders/events/audit 无翻页（仅 intel shipments 表有） | — | ⏳ |
+| C26 | a11y 深水项 | `UI_UX:256-262` A4 `aria-disabled`、A9 `aria-pressed`、A10 skip-link + `main id`（代码 skip-link 0 命中） | — | ⏳ |
+| C27 | QA 越权审计 7 条留证 | `QA_TEST_ACCOUNTS.md:71-82` 有清单无执行结论；随发布后 P4 跑并留证 | 发布后 | ⏳ |
+| A10 | 模板扩展清单 | `TRADE_DOC_TEMPLATES.md:186-188`：SASO/COC、船公司证明、出口许可证、CIQ、受益人声明「待扩展」 | A6 | ⏳ |
+| N9 | = C23 的决策记录（避免两处编号漂移） | 见 C23/§G-12 | — | — |
+| N10 | 事件流联通 `domain_events` | `WORKSTATION_DESIGN.md:88/870/962` 设计承诺（Phase 6/§2.2）；代码/迁移 0 命中 | 产品决策 | ⏳ |
+| N11 | DEPLOY §0.4 清理脚本缺失 | `DEPLOY.md:95-106` 引用 `cleanup_orphan_lead.py`，全仓 0 命中；`leads` 无 DELETE 端点 ⇒ 脏数据只能手写 SQL | — | ⏳ |
+| A11 | FACT_LABELS 未通过 API 返回 | `facts.py:151 FACT_LABELS` 未暴露 ⇒ 事实面板只能显示 key（A7 UI 自述应后端补字段） | — | ⏳ |
+| A12 | `trigger_expr` 只存不求值 | `trade_doc_doc_set_items.trigger_expr` 仅存表达式；"无木包装不出声明"需条件求值器 | A7 | ⏳ |
+| A13 | 翻译端点无入口 | `POST /trade-docs/{id}/translate` 已实现（`ws_docs_ext.py:518`）但前端 0 调用（仅在内容版本显示"AI 翻译"标签） | — | ⏳ |
+| C28 | 询盘「渠道」枚举不一致（P2: 按提示填必 422） | FE `customers/page.tsx:472-474` 自由输入（placeholder 写 `Alibaba / Expo / Web`），BE `ws_crm_ext.py:384-385` + `enums.py:32` 严格小写枚举 ⇒ real 模式 422；mock 也注明"已登记不一致" | — | ⏳ |
+| C29 | 「导入已有数据」是占位骨架却已挂页面 | `import-existing-data-dialog.tsx` 只弹"即将上线"，被 `orders/page.tsx:130`、`trade-docs/page.tsx:316` 引用 | — | ⏳ |
+| C30 | `/admin/archive-logs` 恒空 + 前端 0 调用 | `main.py:3003-3008` return 空列表；CLEANUP_LOG 说归档策略待确认 | — | ⏳ |
+| C31 | 仪表盘指标恒 0 且「更新中」占位未实现 | `main.py:1829-1833` token/p95 恒 0；`dashboard/page.tsx:86-100` 直接展示；契约注明 status=placeholder 应改"更新中" | — | ⏳ |
+| C32 | `/billing` 页面无入口 | `billing/page.tsx` 存在但 0 引用；契约说"移入头像菜单"未接 | — | ⏳ |
+| C33 | 4 条 e2e skip 未登记 | `events.spec.ts:118`（需强制 500 手段）、`quotations.spec.ts:50/55/59`（选择器未定位） | — | ⏳ |
+| C34 | MSW 与 C8 漂移 | `longtail-handlers.ts:1126-1128` leads 索引仍固定 null（注释"后端恒返 null"已过时）；C18"3 处简化"实为 5 处 | — | ⏳ |
+| C35 | 客户列表缺 stage 筛选 | `handlers.ts:2965` 自述"页面暂未传，留作契约完整"；FE 只发 q | — | ⏳ |
+| C36 | 约 60 条后端路由前端 0 调用 | 建议一次性登记「后端先行 API 保留清单」（`.tmp/align-diff.txt`），避免再被误判欠账 | — | ⏳ |
+| C37 | OSS 死分支 + 7 处过期注释 | `payload-renderer.tsx:27-46` `_oss_key` 死分支；`use-customer-records.ts` 等 7 处注释过期 | — | ⏳ |
+| C38 | 文档口径全面刷新（10+ 处） | worker README「push main 自动部署」**危险误导**、「Worker 无 cron」、HANDOVER §0.2.3 A4/A7/B 未完成、TRADE_DOC_HARDENING「施工中」、PRODUCT_CONFIG 仍写 B1/B3 未完成、DEPLOY 迁移 head/上线门禁/分支改名过时、AGENTS 门禁数字（222/954）与漏列 `ui:contrast`/`mocks:check`、PROBLEM_STATUS Protected 自相矛盾、WORKSTATION_DESIGN 多处旧状态、integration README env.py 风险已修、根 `archive/` 未入索引 | — | ⏳ |
+| N6+ | 安全范围扩展 | N6 ③ 只写 `docs/archive`，实测根 `archive/` 有 **45 个受控文件**（含 18 份真实业务样例），含公司名/电话/邮箱/报价；仓库 public ⇒ 评估范围扩到 `docs/archive/** + archive/**` | 安全批（最后） | ⏳ |
+| C12+ | PDF 归档验收补 2 项 | `TRADE_DOC_PDF_ARCHIVAL.md:579-582`：真实单证 HTML 体积/耗时未实测、生产是否真有 `render_pdf` 未复查 | 发布后 | ⏳ |
+
 ## G. 待用户拍板清单（集中登记；每条写明要定什么）
 
 | # | 要定什么 | 选项与代价 |
 |---|---|---|
 | G-1 | **A5 单证编辑体验方案** | 行项批量编辑 / 条款模板 / 金额联动校验的范围与交互；需要过方案再施工 |
 | G-2 | **A6 真实单据样例** | 能否提供真实 PI/CI/PL/提单确认件（脱敏亦可）？没有样例就无法做"最终验收标准" |
-| G-3 | **B1 系统级产品** | 系统级产品继续走 Python 注册表（现状，改产品需发版），还是做成"平台级产品库"（运行时新增，需平台管理员 UI + 权限） |
-| G-4 | **A4 渲染方案** | ①渲染器白名单放开走 R2 直链（快、但签名 URL 生命周期与泄露面要定）②维持 base64（简单、单据体积大）③模板内嵌占位→服务端替换（改渲染链路，最彻底） |
-| G-5 | C1 流失链路 / C3 CF agent / C4 自动沉寂 / C13 outreach 收紧 | 要不要做、优先级、口径 |
-| G-6 | D3 Hyperdrive 生产缓存 / D4 生产测试数据清理 | 是否执行（D4 执行当次还要再确认） |
-| G-7 | 发布窗口下令 | D 组是否现在做 |
-| G-8 | 安全 4 项 | 用户已裁"最后做"；做之前需确认是否轮换 Neon 口令（历史泄露）与仓库最终可见性 |
-| G-9 | `/tenant-product-status` 谁能操作 | 现状无角色校验（任意成员可停用产品）。选项：①保持现状（成员可管）②仅团队管理员/internal。影响租户自助能力与误操作风险 |
-| G-10 | 批量导入上传 UI 放哪 | hooks/helpers 齐备但无入口。选项：①v2 报价工作台顶部（与单条报价并列）②批量报价页步骤内 ③产品页"导入报价表"。影响用户动线；按你选的落 C19 |
+| G-3 | **B1 系统级产品** | 系统级产品继续走 Python 注册表（现状，改产品需发版），还是做成"平台级产品库"（运行时新增，需平台管理员 UI + 权限）。**已授权按推荐默认：保持现状** |
+| G-4 | **A4 渲染方案** | ①渲染器白名单放开走 R2 直链（快、但签名 URL 生命周期与泄露面要定）②维持 base64（简单、单据体积大）③模板内嵌占位→服务端替换（改渲染链路，最彻底）。**已选 ①（2026-10-21）** |
+| G-5 | C1 流失链路 / C3 CF agent / C4 自动沉寂 / C13 outreach 收紧 | 要不要做、优先级、口径。**已授权按推荐默认：不做/保持** |
+| G-6 | D3 Hyperdrive 生产缓存 / D4 生产测试数据清理 | 是否执行（D4 执行当次还要再确认）。**D3 已授权保持开启；D4 发布当次再确认** |
+| G-7 | 发布窗口下令 | **已下令（2026-10-21）：先发布窗口，安全项发布后做** |
+| G-8 | 安全 4 项 | 用户裁"最后做"；做之前需确认是否轮换 Neon 口令（历史泄露）与仓库最终可见性；**范围扩到根 `archive/`（见 P 组 N6+）** |
+| G-9 | `/tenant-product-status` 谁能操作 | 现状无角色校验（任意成员可停用产品）。选项：①保持现状（成员可管）②仅团队管理员/internal。**已授权按推荐默认：保持现状** |
+| G-10 | 批量导入上传 UI 放哪 | hooks/helpers 齐备但无入口。选项：①v2 报价工作台顶部（与单条报价并列）②批量报价页步骤内 ③产品页"导入报价表"。**已授权按推荐默认：①** |
+| G-11 | 主题切换入口 | `UI_UX:395/675`：`.dark` 令牌已有但无入口；`next-themes`/ThemeProvider 0 命中。选项：①不做（跟随系统）②加切换（要接 Provider + 持久化） |
+| G-12 | shipments 工位是否故意隐藏 | C23：契约/py 仍 `planned` 但 4 路由+页面+测试都在、README 写"已上线"。选项：①改为 `active` 恢复入口 ②确认故意隐藏并同步 README/注释 ③保持现状但补文档说明 |
+| G-13 | spec-config 工位去留 | `workstations.ts:374-381`「待用户确认：待上线/废弃」；页面/向导 7 文件齐全 |
 
 ---
 
@@ -161,7 +197,7 @@
 
 ## I. 更新历史
 
-- **2026-10-21 执行批 3（收口）**：A7-3 UI（事实确认/一致性/收款/单证清单/签发闸门，面板 9 + 契约 12 测）→ **A7 全部完成**；C2 文件存储收尾（doUpload/排序页面测试 + 7 条真 PG 用例）→ 发现并修复 **C22**（迁移 `202610200005` 唯一索引 `NULLS NOT DISTINCT`）；C10 18 模板防劈页（39 静态断言，视觉待 build/e2e 复核）；intel/channels 字段错位修复；C20 导入模板端点回落租户产品；C6 收口。**全量门禁**：worker 1217+12skip（有库 1229/0）、orchestrator 247、前端 616、e2e 28（24+4）、build `out/` 275 文件、contracts/mocks/静态断言全 PASS。
+- **2026-10-21 二轮全量 sweep**：全分支 56 ref/131 reflog/147 unreachable → **0 条新待办**；全文档（含此前未读的 DEPLOY.md 337 行、ui-redesign 64 files、WORKSTATION_DESIGN 1011 行）→ **12 条新发现**；全代码 666 文件/439 命中 → **13 条新发现 + 账本 drift**。已登记 §P（C23–C38、A10–A13、N10/N11、N6+/C12+）与 §G（G-11 主题/G-12 shipments/G-13 spec-config），并更新 goal。\n- **2026-10-21 执行批 3（收口）**：A7-3 UI（事实确认/一致性/收款/单证清单/签发闸门，面板 9 + 契约 12 测）→ **A7 全部完成**；C2 文件存储收尾（doUpload/排序页面测试 + 7 条真 PG 用例）→ 发现并修复 **C22**（迁移 `202610200005` 唯一索引 `NULLS NOT DISTINCT`）；C10 18 模板防劈页（39 静态断言，视觉待 build/e2e 复核）；intel/channels 字段错位修复；C20 导入模板端点回落租户产品；C6 收口。**全量门禁**：worker 1217+12skip（有库 1229/0）、orchestrator 247、前端 616、e2e 28（24+4）、build `out/` 275 文件、contracts/mocks/静态断言全 PASS。
 - **2026-10-21 执行批 2**：A7 内核/结构/API 全部落地（内核 87 测 + API 34 测 + `trade_doc_facts`）；B 组验收 → B1 销账（B4 P0 跨团队越权修复、B5 formulas/explain 回落、B6 订阅门同源）；C7 xlsx 导入（28 测）；C8 四源计数（18 测）；C5/C18 mock 持久化 + 长尾覆盖归零；C15 契约错位修复；C16/C17 关闭。新增 C19/C20/C21 与 G-10。门禁：worker **1212+5** / 前端 **535** / typecheck 0 / contracts PASS。
 - **2026-10-21 执行批 1**：D7 重试落地（`1f0d76d7`）；A7 事实层表 `202610200004` + `TradeDocFact`（`32d5fe0c`）；对齐 A 批（/events 闸门、F4 stage 消费、路由守卫/写权限，`a92302eb`）+ 对齐 B 批（MSW 58→111、死代码、mocks:check 门禁）；新增 C17/C18。
 - **2026-10-20 晚**：重写为唯一账本。—— 销账 A2（方案A）、B1 租户级、B2、B3、A8②③、A9、N2、N7；新增 A2-B、C7–C16、N1/N3–N8；D5 改回 ⏳（实测 public）；补安全 4 项与生产两个现网缺陷（D1/D2）；统一 e2e=28。

@@ -15,6 +15,26 @@
 > [`HANDOVER_2026-10-20_FINAL.md`](./HANDOVER_2026-10-20_FINAL.md)**（状态/资源清单/踩坑/发布检查单/待办）。
 > 本文件继续只做"问题状态"滚动口径。
 >
+> **（2026-10-21 晚 · 生产发布执行 + 二轮全量 sweep：无新遗漏分支，补登 25 项）**
+>
+> - **生产发布已执行**（用户下令"先发布窗口，安全项发布后做"）：迁移前建 Neon 快照
+>   `snap-late-shape-b55lavme`；生产 DB `202610180010` → **`202610200005`**（6 条迁移全部成功；
+>   `users/customers/file_objects` 行数不变；`uq_file_current` 已 `NULLS NOT DISTINCT`）；
+>   前端 `out/` **275 文件**；Worker 部署新版本 **`dae596a5-7e8c-44dc-8a7b-d3fe0c650c2f`**
+>   （上传 225 资产、3 条 cron 保留；回滚版本 `77901aa1-5794-4013-bfad-3b0a80b8a57b`）；
+>   冒烟全过：`/health` 200 JSON（shared.loaded=true）、`/api/v1/*` 401、`/login` 200、
+>   `api` 域名 `/health` 200。⚠️ `pywrangler` 报 **Worker Startup Time 3386ms > 2950ms 验收线**
+>   （指标≠Dashboard p50，`coldstart-baseline.json` 仍 PENDING）。
+>   **待用户动作**：D1 `RESEND_API_KEY` 注入（忘记密码邮件仍不发）、D2 R2 新 32 位密钥（直传不可用）；
+>   D4 清理待当次确认；D5 转 private 归安全批。详见 HANDOVER **§0.4**。
+> - **二轮全量 sweep**（用户质疑交接检索不全）：**全分支 56 ref / reflog 131 commit / unreachable 147
+>   commit → 0 条新待办**（旧 v1/财务/发票线判定历史，stash 备份 ref 与 main 归档逐字节一致）；
+>   **全文档**（补读此前从未读的 `DEPLOY.md` 337 行、`docs/ui-redesign` 64 files、
+>   `WORKSTATION_DESIGN` 1011 行全文等）→ **12 条新发现**；**全代码** 666 文件/439 命中 → **13 条新发现
+>   + 账本 drift**。已登记 `docs/TODO.md` **§P（C23–C38、A10–A13、N10/N11、N6+/C12+）** 与
+>   **§G-11/12/13**，并更新 goal 目标。**最重的两条 P2**：①询盘「渠道」前端自由文本 vs 后端严格小写枚举
+>   （按提示填必 422）；②「导入已有数据」是占位骨架却已挂在订单/单证页。
+>
 > **（2026-10-21 · 执行批 1：D7 落地、A7 事实层结构、前后端对齐修复进行中）**
 >
 > - **D7（preview ensure 对 Neon 423 重试）✅**：`scripts/preview/preview_lib.py` 对 **423/429**

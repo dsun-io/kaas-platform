@@ -156,6 +156,22 @@ GitHub 仓库写权限（含 Actions secrets 可见）· Cloudflare 账号（Wor
 Neon 项目权限 · Resend 账号（`send.powervoy.com` 域名）· 生产域名 DNS（`kaas.powervoy.com` / `api.kaas.powervoy.com`）。
 缺权限时先只做本地开发（不触云），发布相关项（D 组）等权限齐再动。
 
+## 0.4 生产发布记录（2026-10-21，用户下令"先发布窗口，安全项发布后做"）
+
+> 依据：用户 2026-10-21 决策；执行人：DSH 会话。**回滚版本见下**。
+
+| 步骤 | 结果 |
+|---|---|
+| 迁移前快照 | ✅ Neon snapshot `snap-late-shape-b55lavme`（name `pre-release-20261021-2045`，branch `br-raspy-snow-b5bp9zoh`） |
+| DB 迁移 | ✅ 生产 `202610180010` → **`202610200005`**（6 条全部 Running：补列 → 内容版本 → 对账表 → 询盘阶段 → 事实表 → 文件唯一索引）；迁移后 **113 表**，`users 3 / customers 10 / file_objects 5` 行数不变，`uq_file_current` 已含 `NULLS NOT DISTINCT` |
+| 前端构建 | ✅ `NEXT_EXPORT=1 pnpm build` → `frontend/out` **275 文件** |
+| Worker 部署 | ✅ `uv run pywrangler deploy`（本机需先修 pyodide 工具链：uv **0.13.3**、`uv python install cpython-3.14.2-emscripten-wasm32-musl`、`UV_PYTHON_INSTALL_DIR` 与 venv home 对齐、`UV_CACHE_DIR=D:\tools\uv-cache`、`PYTHONUTF8=1`）；**新版本 `dae596a5-7e8c-44dc-8a7b-d3fe0c650c2f`**，上传 225 资产，三条 cron 保留 |
+| 冒烟 | ✅ `/health` 200 JSON（`shared.loaded=true`）、`/api/v1/auth/me` 401、`/api/v1/export-quote/products` 401、`/login` 200、`api.kaas.powervoy.com/health` 200 |
+| **回滚** | `cd backend/worker; npx wrangler versions deploy 77901aa1-5794-4013-bfad-3b0a80b8a57b@100% --name kaas --yes`（库回滚走 Neon PITR/快照，**不要** alembic downgrade base） |
+| ⚠️ 冷启动 | `pywrangler` 报 **Worker Startup Time 3386ms** > 验收线 **2,950ms**（该数字≠Dashboard p50）；`backend/worker/coldstart-baseline.json` 仍 **PENDING**，需发布后在 Dashboard → Workers → kaas → Metrics 读 p50 判定，并决定是否裁剪包体（本次上传 11.9 MiB） |
+| 待用户动作 | **D1** `RESEND_API_KEY` 未注入（现有 secrets：`ADMIN_SETUP_TOKEN`/`JWT_SECRET`/`S3_ACCESS_KEY`/`S3_SECRET_KEY`）⇒ 忘记密码邮件仍不发；**D2** R2 新密钥（现 `S3_ACCESS_KEY` 13 位，直传不可用）需在 R2 dashboard 创建后替换；**D4** 生产测试数据清理执行当次确认 |
+| 未做 | D5 仓库转 private（安全批，用户裁"发布后做"）；P4 观察期从现在开始（1 周） |
+
 ## 0.1 本轮后端交付（2026-10-20 晚 · 分支 `feat/trade-doc-content-a` · PR #5）
 
 用户点名的**后端 5 项 + 单证内容专项**已全部落地。PR #5 `mergeable_state=clean`，
