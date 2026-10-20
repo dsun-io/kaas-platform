@@ -35,6 +35,14 @@
 >   company-profile / tax-archives 非 team admin 只读化、`/kb` 改 `internalOnly` 保住原可见性；
 >   新增 C17（侧栏过滤口径待统一）。门禁：worker **1018 passed + 5 skipped** / 前端 **491** /
 >   typecheck 0 / 定向用例 5+18 全过。
+> - **对齐 B 批（MSW 与死代码）✅**：MSW handlers **58 → 111**（补 P1 组 54 条：customers 询盘/
+>   stage-log、products/media、file-objects、tenant-products、teams、tax-archives、company-profile/seals
+>   等）；`GET /trade-docs` mock 补 `render_check`/`doc_no_editable` 并种 4 种对账故事；
+>   `GET /admin/deployment_audit` 改为**如实 404** + 前端三态（加载中/接口不可用/无记录）；
+>   删除 `POST /oss/presign` 死代码（大 payload 直接内联，注释说明将来改走 `/file-objects/presign`）；
+>   新增防漂移门禁 **`pnpm mocks:check`**（默认警告、`--strict` 收紧、P1 组缺失恒非零退出）。
+>   门禁：前端 **512 passed**（53 files）/ typecheck 0 / lint 0 error / mocks P1 **54/54**；
+>   剩余 72 条长尾未覆盖登记 TODO `C18`。
 >
 > **（2026-10-20 晚 · 口径收敛与审计补录：`docs/TODO.md` = 唯一账本）**
 >

@@ -81,6 +81,7 @@
 | C15 | PROBLEM_STATUS 2026-10-12「待排期 5 项」复核 | openapi 重生成（**R6 已退役，作废**）/ feature_flag 形状 / 契约 `ExportProduct.params` / PATCH stage 409 前端 / R2 密钥长度 | — | ⏳ 逐条判定后销账或转正式项 |
 | C16 | UNCERTAIN #15 ①②③ | 旧进度报告/Spec System 报告指什么、归档"复制/移动"口径、链接检查工具 | 低价值 | ⏳ |
 | C17 | 侧栏 `adminOnly` 过滤口径统一 | `sidebar.tsx:150` 仍按 `account_type === internal` 过滤菜单，而 `RouteGuard adminOnly` 已收紧为 internal+管理员 ⇒ internal 非管理员仍能看到菜单项、点进去被守卫拦。要么菜单同口径过滤，要么给工位契约加 `internalOnly` 标志（`/kb` 已用 internalOnly 保住原可见性） | 无 | ⏳ |
+| C18 | MSW 长尾覆盖（72 条） | `pnpm mocks:check` 显示 FE 172 条调用中 72 条未 mock，集中在 intel/leadgen/outreach/market/research/shipments/ai-providers/spec-config/admin-spec-proposals/fx-rates、报价 calculate/import、auth forgot/reset；mock 模式这些页面会直连网络 | C5/C6 | ⏳ |
 
 ---
 
@@ -113,7 +114,7 @@
 
 | # | 项 | 内容 | 状态 |
 |---|---|---|---|
-| N1 | **前后端对齐专项** | UI 重构后，前端调用 ↔ Worker 路由（`backend/worker/src/*.py`）↔ `shared/contracts` ↔ MSW handlers 全量比对；断点清单 + 修复 + 补测试（审计报告 `.tmp/align-report.md`：P0 断点 0、P1 三条、P2 五条） | 🔨 分两批：**A 批已修**（/events 平台闸门、F4 stage 消费 + stage-log、路由守卫口径、spec-proposals/company-profile/tax-archives 写权限）；**B 批进行中**（MSW 形状/覆盖、/oss/presign 死代码、防漂移门禁） |
+| N1 | **前后端对齐专项** | UI 重构后，前端调用 ↔ Worker 路由（`backend/worker/src/*.py`）↔ `shared/contracts` ↔ MSW handlers 全量比对；断点清单 + 修复 + 补测试（审计报告 `.tmp/align-report.md`：P0 断点 0、P1 三条、P2 五条） | ✅ 2026-10-21 分两批：**A**（/events 平台闸门、F4 stage 消费 + stage-log、路由守卫口径、写权限只读化）；**B**（MSW handlers **58→111**、`/oss/presign` 死代码删除、deployment_audit 如实 404 + 三态、`pnpm mocks:check` 防漂移门禁 P1 54/54） |
 | N2 | 环境隔离 | `.env.local` 生产 DSN 已加警示注释 + 本地开发指引；本地 compose 栈拉起（postgres/redis/minio/backend）；**新 clone 必须先 `sync-shared.ps1`**（镜像 gitignored，缺 `kaas_common.preview` 会崩）；本地库为空库快径重建（105 表 / head `202610200003`） | ✅ 2026-10-20（本机） |
 | N3 | H-2 用户复验 | 定价页刷新与注册（2026-10-19 已修复上线）等用户确认 | 🧭 需用户复验 |
 | N4 | P8 联调状态核对 | `WORKSTATION_DESIGN.md:945`「P8 联调 + E2E + 订阅编码 ⏳ 进行中」是否仍成立 | ⏳ 核对 |
@@ -150,6 +151,6 @@
 
 ## I. 更新历史
 
-- **2026-10-21**：执行批 1 —— D7 重试落地（`1f0d76d7`）；A7 事实层表 `202610200004` + `TradeDocFact`（`32d5fe0c`）；对齐 A 批（/events 闸门、F4 stage 消费、路由守卫/写权限，见 `N1`）+ 新增 C17；无账本级新增待办。
+- **2026-10-21**：执行批 1 —— D7 重试落地（`1f0d76d7`）；A7 事实层表 `202610200004` + `TradeDocFact`（`32d5fe0c`）；对齐 A 批（/events 闸门、F4 stage 消费、路由守卫/写权限，`a92302eb`）+ 对齐 B 批（MSW 58→111、死代码、mocks:check 门禁）；新增 C17/C18。
 - **2026-10-20 晚**：重写为唯一账本。—— 销账 A2（方案A）、B1 租户级、B2、B3、A8②③、A9、N2、N7；新增 A2-B、C7–C16、N1/N3–N8；D5 改回 ⏳（实测 public）；补安全 4 项与生产两个现网缺陷（D1/D2）；统一 e2e=28。
 - 2026-10-20：用户裁决废止"触发条件制"，A/B/C/D 全部恢复活跃。

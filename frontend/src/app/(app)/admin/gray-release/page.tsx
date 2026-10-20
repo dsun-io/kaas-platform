@@ -21,8 +21,11 @@ export default function GrayReleasePage() {
     () => new Date(Date.now() - 7 * 86400000).toISOString(),
     [],
   );
-  const { data: audits, isLoading: auditsLoading } =
-    useDeploymentAudit(since7d);
+  const {
+    data: audits,
+    isLoading: auditsLoading,
+    isError: auditsUnavailable,
+  } = useDeploymentAudit(since7d);
 
   return (
     <RouteGuard adminOnly>
@@ -61,7 +64,14 @@ export default function GrayReleasePage() {
             <CardTitle>变更历史（近 7 天）</CardTitle>
           </CardHeader>
           <CardContent>
-            <AuditTimeline entries={audits ?? []} loading={auditsLoading} />
+            {/* 三态必须分开：加载中 / 接口不可用 / 真的没有记录。
+                `GET /admin/deployment_audit` 生产不存在（404 属设计），
+                空时间线会被读成「近 7 天没有变更」—— 那是假结论。 */}
+            <AuditTimeline
+              entries={audits ?? []}
+              loading={auditsLoading}
+              unavailable={auditsUnavailable}
+            />
           </CardContent>
         </Card>
       </div>

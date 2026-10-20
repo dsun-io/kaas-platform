@@ -1,46 +1,22 @@
 import { apiClient } from '@/lib/api/client';
 import type { EventType } from '@contracts/events';
 
-const OSS_SIZE_THRESHOLD = 10240; // 10 KB
-
-/**
- * If payload JSON exceeds 10 KB, upload via OSS presign and return { _oss_key }.
- * Otherwise return the payload directly.
- */
-export async function maybeUploadOssIfLarge(
-  payload: unknown,
-): Promise<unknown> {
-  try {
-    const json = JSON.stringify(payload);
-    if (json.length <= OSS_SIZE_THRESHOLD) {
-      return payload;
-    }
-
-    // Upload via OSS presign
-    const { data } = await apiClient.post<{ presigned_url: string; key: string }>(
-      '/oss/presign',
-      {
-        content_type: 'application/json',
-        content_length: json.length,
-      },
-    );
-
-    await fetch(data.presigned_url, {
-      method: 'PUT',
-      body: json,
-      headers: { 'Content-Type': 'application/json' },
-    });
-
-    return { _oss_key: data.key };
-  } catch (err) {
-    console.error('[events/client] OSS upload failed:', err);
-    // Fallback: return payload directly if OSS unavailable
-    return payload;
-  }
-}
-
 /**
  * POST /api/v1/events — create a single event.
+ *
+ * **payload 直接内联提交，不再走 OSS 中转。**
+ *
+ * 历史：这里曾按 `>10KB` 先 `POST /oss/presign` 换上传地址、把 payload 传上去、
+ * 只提交 `{ _oss_key }`。但后端**没有这条路由**（worker 全仓 `oss` 0 命中；
+ * 见 `.tmp/align-report.md` §2-5），mock 里那个 200 的 handler 反而掩盖了这一点：
+ * 每次大 payload 都要先打一次必然 404 的请求，再 catch 回退内联 ——
+ * 用两次往返换一个注定失败的尝试，且事件表照样被撑大。
+ *
+ * 若将来确实要归档大 payload：应改走**已存在**的 `/file-objects/presign` +
+ * `/file-objects/register`（`lib/products/use-products.ts` 的直传链路），
+ * 而不是复活这一步。已知代价（P2）：超大 payload 会撑大 events 表，
+ * 需要真后端/对象存储落档才能解决，前端不再假装有这条路。
+ *
  * Never called directly from UI; use useCreateEvent for queue-based writes.
  */
 export async function createEvent(body: {
@@ -53,12 +29,7 @@ export async function createEvent(body: {
   trace_id?: string;
   payload: unknown;
 }): Promise<{ id: string }> {
-  const processed = await maybeUploadOssIfLarge(body.payload);
-
-  const { data } = await apiClient.post<{ id: string }>('/events', {
-    ...body,
-    payload: processed,
-  });
+  const { data } = await apiClient.post<{ id: string }>('/events', body);
 
   return data;
 }
