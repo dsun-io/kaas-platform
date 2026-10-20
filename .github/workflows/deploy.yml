@@ -143,6 +143,22 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: uv run pywrangler deploy
 
+      # 密钥同步（2026-10-21）：生产 Resend key 的**唯一来源** = GitHub secret
+      # `RESEND_API_KEY_PROD`（系统专用，命名与 DSH-Admin 严格分离：DSH-Admin 只给 DSH 用，
+      # 不得配置到平台/CI）。每次部署写入 worker，避免「手工注入后就漂移」。
+      - name: Sync production RESEND_API_KEY（系统密钥唯一来源）
+        working-directory: backend/worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          S_RESEND: ${{ secrets.RESEND_API_KEY_PROD }}
+        run: |
+          if [ -z "$S_RESEND" ]; then
+            echo "::warning::RESEND_API_KEY_PROD 未配置，跳过同步（忘记密码邮件将不可用）"
+            exit 0
+          fi
+          printf '%s' "$S_RESEND" | uv run pywrangler secret put RESEND_API_KEY
+
       # S5-d 生产侧防污染断言（README §2.3 规则 9；2026-10-20 落地）：
       # 拉线上 script settings 核对**实际绑定** —— R2=生产桶（现名 kaas-files，桶迁移另立项）、
       # Hyperdrive=生产 config、不得等于任何预览值、不得注入 PR_SLUG。任一失败即中止冒烟。
