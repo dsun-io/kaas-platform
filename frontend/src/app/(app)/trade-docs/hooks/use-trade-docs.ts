@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import apiClient from "@/lib/api/client";
 import { customerRecordsKeys } from "@/lib/customer/use-customer-records";
+import type { RenderCheckSummary } from "@/lib/trade-doc/render-check";
 
 // 只引**类型**（编译期擦除，不产生 hook ↔ 组件的运行时依赖环）：
 // 指纹形状的定义真源在 `doc-preview.tsx` 的 `RenderFingerprintMeta`。
@@ -47,6 +48,11 @@ export interface TradeDocRow {
   } | null;
   /** 单证号当前是否可改（同一链条上没有更晚单证） */
   doc_no_editable?: boolean;
+  /**
+   * 最近一次**定时对账**结论（TODO A8/A9）：`null` = 从未对账（不冒充"没问题"）。
+   * 列表端点 join `trade_doc_render_checks` 后挂上来，仅用于展示"已变更"标识。
+   */
+  render_check?: RenderCheckSummary | null;
   created_at: string | null;
 }
 
@@ -154,6 +160,16 @@ export function useCreateTradeDoc() {
   });
 }
 
+/** 服务端签发自动上传的结果（TODO F1 方案 A；失败不回滚签发状态） */
+export interface PdfArchiveResult {
+  ok: boolean;
+  status_code?: number;
+  detail?: unknown;
+  renderer?: string | null;
+  bytes?: number;
+  file_id?: number | null;
+}
+
 /** 更新手工填写内容（仅 draft 可改）或流转状态（draft → issued → void） */
 export function useUpdateTradeDoc() {
   const qc = useQueryClient();
@@ -166,11 +182,13 @@ export function useUpdateTradeDoc() {
       status?: string;
       doc_no?: string;
       raw_payload?: Record<string, unknown>;
+      /** 签发时随请求提交的预览 HTML：服务端出 PDF 并归档（TODO F1） */
+      html?: string;
+      pdf_name?: string;
     }) => {
-      const { data } = await apiClient.patch<TradeDocRow>(
-        `/trade-docs/${id}`,
-        body,
-      );
+      const { data } = await apiClient.patch<
+        TradeDocRow & { pdf_archive?: PdfArchiveResult }
+      >(`/trade-docs/${id}`, body);
       return data;
     },
     onSuccess: (_data, variables) => {
@@ -287,15 +305,24 @@ export function useTradeDocFiles(docId: number | null) {
 export function useUploadTradeDocFile(docId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { file: File; role?: string; name?: string; caption?: string }) => {
+    mutationFn: async (input: {
+      file: File;
+      role?: string;
+      name?: string;
+      caption?: string;
+    }) => {
       const form = new FormData();
       form.append("file", input.file);
       form.append("role", input.role ?? "stamp_scan");
       form.append("name", input.name ?? "");
       if (input.caption) form.append("caption", input.caption);
-      const { data } = await apiClient.post(`/trade-docs/${docId}/files/upload`, form, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const { data } = await apiClient.post(
+        `/trade-docs/${docId}/files/upload`,
+        form,
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+        },
+      );
       return data;
     },
     onSuccess: () => {
@@ -312,7 +339,8 @@ export function useDetachTradeDocFile(docId: number) {
     mutationFn: async (linkId: number) => {
       await apiClient.delete(`/trade-docs/${docId}/files/${linkId}`);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["trade-docs", docId, "files"] }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["trade-docs", docId, "files"] }),
   });
 }
 
@@ -320,7 +348,12 @@ export function useDetachTradeDocFile(docId: number) {
 
 export interface RenderPdfResult {
   file: TradeDocFile;
-  link: { id: number; role: string; caption: string | null; sort_order: number };
+  link: {
+    id: number;
+    role: string;
+    caption: string | null;
+    sort_order: number;
+  };
   /** 实际用的渲染器：`binding`（生产 Worker 的 browser binding）/ `rest`（本地 orchestrator） */
   renderer: string;
   /** 本次生成的 PDF 字节数 —— 用于如实提示"存了多少" */
@@ -402,6 +435,103 @@ export function useCheckTradeDocRenderFingerprint(docId: number) {
         `/trade-docs/${docId}/render-fingerprint-check`,
       );
       return data;
+    },
+  });
+}
+
+// ── 单证内容级版本（TODO A1）───────────────────────────────────────────────
+// 后端契约（worker `ws_docs_ext.py`）：
+//   GET  /trade-docs/{id}/content-versions               列表（倒序；**不带**整份 payload）
+//   GET  /trade-docs/{id}/content-versions/{version_no}   某版整份 payload
+//   POST /trade-docs/{id}/content-versions/{version_no}/restore  仅 draft；报价单拒绝
+// 与「上传 PDF 的文件版本链」（useTradeDocFiles）是两条独立链：那条管文件，
+// 这条管**内容**（sources + custom 的整份快照）。
+
+/** 版本产生原因（与后端 `content_versions.py` 的 SOURCE_* 一一对应） */
+export type ContentVersionSource =
+  | "custom_update"
+  | "refresh_sources"
+  | "issue"
+  | "restore"
+  | "translate";
+
+export interface TradeDocContentVersionSummary {
+  version_no: number;
+  change_source: ContentVersionSource;
+  actor_id: string | null;
+  note: string | null;
+  created_at: string | null;
+  /** 该版本 custom 里填过的字段名（列表不返回 payload，靠它做概览） */
+  custom_keys: string[];
+}
+
+export interface TradeDocContentVersionList {
+  doc_id: number;
+  total: number;
+  items: TradeDocContentVersionSummary[];
+}
+
+export interface TradeDocContentVersionDetail {
+  version_no: number;
+  change_source: ContentVersionSource;
+  actor_id: string | null;
+  note: string | null;
+  created_at: string | null;
+  raw_payload: Record<string, unknown>;
+}
+
+export function useTradeDocContentVersions(docId: number | null) {
+  return useQuery({
+    queryKey: ["trade-docs", docId ?? 0, "content-versions"],
+    enabled: docId !== null,
+    queryFn: async () => {
+      const { data } = await apiClient.get<TradeDocContentVersionList>(
+        `/trade-docs/${docId}/content-versions`,
+      );
+      return data;
+    },
+  });
+}
+
+export function useTradeDocContentVersion(
+  docId: number | null,
+  versionNo: number | null,
+) {
+  return useQuery({
+    queryKey: ["trade-docs", docId ?? 0, "content-versions", versionNo ?? 0],
+    enabled: docId !== null && versionNo !== null,
+    queryFn: async () => {
+      const { data } = await apiClient.get<TradeDocContentVersionDetail>(
+        `/trade-docs/${docId}/content-versions/${versionNo}`,
+      );
+      return data;
+    },
+  });
+}
+
+export function useRestoreTradeDocContentVersion(docId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      versionNo,
+      note,
+    }: {
+      versionNo: number;
+      note?: string;
+    }) => {
+      const { data } = await apiClient.post<{
+        doc: TradeDocRow;
+        restored_version_no: number;
+      }>(
+        `/trade-docs/${docId}/content-versions/${versionNo}/restore`,
+        note ? { note } : {},
+      );
+      return data;
+    },
+    onSuccess: () => {
+      // 恢复 = 内容变了 + 版本链多一条：整棵 trade-docs 失效最稳
+      qc.invalidateQueries({ queryKey: tradeDocKeys.all });
+      qc.invalidateQueries({ queryKey: tradeDocKeys.renderData(docId) });
     },
   });
 }

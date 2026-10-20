@@ -277,6 +277,15 @@ pnpm -C frontend trade-doc:check        # exit 0 = 无问题；1 = 有「模板�
 `country_of_origin` 从未声明 ⇒「填写单据内容」面板**列不出唛头与备注**）。
 现已补齐 18 个字段，检查为 **0 ERROR**。
 
+**运行时体检（2026-10-20 新增，TODO A3）**：CI 门禁只在提交时跑，用户编辑时仍可能遇到
+「模板引用了、但这一版没值」的空格。渲染器新增纯函数 `findBlankPlaceholders(docType, data)`
+（`frontend/src/lib/trade-doc/render.ts`），把会留空的地方分成三类：
+`undeclared`（模板用了但 manifest 没登记 —— 拼写错误/模板漏登记，属于要改代码的问题）、
+`blankRequired`（必填但为空，签发门禁会拦）、`blankOptional`（可选字段留空，填不填由业务判断）。
+单证预览页据此在状态栏显示「模板字段未登记 N 项 / 可选字段留空 M 项」，鼠标悬停列出具体字段。
+按设计就为空的（公章位、产品图、买方回签栏）与渲染器自动派生的（金额大写/合计/卖方名/页脚）
+不计入 —— 否则体检会天天报噪音。
+
 安全措施（都是踩出来的）：`--fix --write` 只插入 `required: false` 的声明、
 **不重排 JSON**、写前 `JSON.parse` 校验、**校验不过拒绝写盘**；可重复执行（幂等）。
 开发中它两次拦住了我写错的结构（多一个空行、多一个尾逗号）。
@@ -299,3 +308,35 @@ table.sign, table.sign tr, table.sign td,
   唯一内容」**无法用纯 CSS 保证**；能保证的是**不被切开**，以及声明条款随它同块移动。
   真要杜绝"孤单落在新页"，得让模板把末尾几块包进一个 `break-inside: avoid` 容器
   （会动到全部 18 个模板，本次未做）。
+
+## 十、单证内容版本（2026-10-20 新增 · TODO A1）
+
+**问题**：草稿期「填写单据内容」改的是 `raw_payload`，**整块覆盖** —— 改前写了什么找不回。
+`raw_payload._audit` 只有"谁/何时/改了哪些键"（可读、不可回滚，也不含 sources 快照）。
+
+**做法**：新表 `trade_doc_content_versions`（迁移 `202610200001`）按**单据内递增版本号**存
+**整份 payload 快照**。五条写路径都留版，`change_source` 标明来源：
+
+| change_source | 触发点 |
+|---|---|
+| `custom_update` | PATCH `/trade-docs/{id}` 改 `raw_payload`（草稿手工保存） |
+| `refresh_sources` | `POST .../refresh-sources` 重新带入上游快照 |
+| `translate` | `POST .../translate` AI 翻译写回 |
+| `issue` | 签发冻结（含 `_render` 指纹终版；issued 后不再产生新版本） |
+| `restore` | 恢复历史版本（恢复本身也留一版，**版本链只增不删**） |
+
+**端点**（worker `ws_docs_ext.py`）：
+
+```
+GET  /api/v1/trade-docs/{id}/content-versions                  列表（倒序；不带 payload，只带 custom 键名）
+GET  /api/v1/trade-docs/{id}/content-versions/{version_no}     某版整份 payload
+POST /api/v1/trade-docs/{id}/content-versions/{version_no}/restore   仅 draft
+```
+
+恢复的两条硬边界（与签发冻结口径一致）：**已签发/作废 → 409**（法律凭证内容冻结，不能用"恢复"
+绕过锁）；**报价单（`doc_type='quotation'`）→ 409 `QUOTATION_DOC_SYNCED`**（它由报价自动同步，
+恢复会被下次报价更新覆盖）。前端「内容版本」面板里对应位置直接禁用并给出原因。
+
+**与文件版本链的关系**：`file_objects.version / is_current / supersedes_id` 管的是**上传的 PDF
+文件**（v1/v2 的归档件），本表管的是**内容**（sources + custom 快照）—— 两条链互不替代，
+同一份单据可以"内容 v3 + 文件 v2"。

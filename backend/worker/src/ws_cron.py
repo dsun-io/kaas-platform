@@ -46,6 +46,12 @@ from typing import Any, Optional
 import asyncpg
 
 import main as _main
+from kaas_common.trade_doc import (
+    read_render_fingerprint,
+    render_check_card,
+    render_fingerprint_check,
+    summarize_render_checks,
+)
 
 try:  # pragma: no cover - 真实 Workers（Pyodide）带 zlib，gzip 可用；缺了就降级，不让 import 炸掉整个 Worker
     import gzip
@@ -64,8 +70,10 @@ DEFAULT_TENANT = "default"
 # 所以两边的一致性由 tests/test_ws_cron.py::test_wrangler_crons_match_constants 锁死。
 CRON_SCAN_REPLIED = "*/15 * * * *"   # 每 15 分钟：replied 线索 → 建询盘
 CRON_ARCHIVE_EVENTS = "30 16 * * *"  # 每日 UTC 16:30 = Asia/Shanghai 次日 00:30
+CRON_RENDER_CHECK = "40 17 * * *"    # 每日 UTC 17:40 = Asia/Shanghai 次日 01:40：单证指纹对账
 JOBS_BY_CRON = {
     CRON_ARCHIVE_EVENTS: "archive_events",
+    CRON_RENDER_CHECK: "check_render_fingerprints",
     CRON_SCAN_REPLIED: "scan_replied_leads",
 }
 
@@ -77,6 +85,9 @@ ARCHIVE_KEY_PREFIX = "events-archive"
 DEFAULT_BUCKET_NAME = "kaas-files"
 # replied 线索单轮扫描上限（orchestrator limit=100）
 SCAN_LIMIT = 100
+# 指纹对账：只扫近 30 天签发的单据，单轮上限 50（装配是重操作，与批量对账端点上限一致）
+RENDER_CHECK_WINDOW_DAYS = 30
+RENDER_CHECK_LIMIT = 50
 
 # cust_inquiries.status → lead_candidates.inquiry_status（最终设计 §7.2）。
 # 真源 = orchestrator app/jobs/lead_scan.py 的 INQUIRY_SYNC_MAP；worker 手动路径里
@@ -415,6 +426,122 @@ async def run_archive_events(env, now: Optional[datetime] = None) -> dict:
     }
 
 
+# ── 任务 3：单证指纹定时对账（每日一次）──────────────────────────────────────
+# 为什么需要：签发时冻结的「渲染输入指纹」能回答"这张单据签发后内容被改过吗"，
+# 但此前**没有定时调度**（批量端点一次最多 50 张、必须人工触发），列表页也看不到
+# 结论（见 docs/TRADE_DOC_PDF_ARCHIVAL.md §〇.3「仍未做」）。本任务每天扫近
+# 30 天签发的单据，把每张最近一次结论 upsert 进 `trade_doc_render_checks`；
+# 列表端点 join 它给出「已变更」标识（TODO A8/A9）。
+#
+# 判定**全部**复用共享内核（`read_render_fingerprint` / `render_fingerprint_check`
+# / `render_check_card` / `summarize_render_checks`），本模块只决定"对哪些单据、
+# 结果怎么落库"—— 不在 cron 里另写一套对账语义。
+
+
+class _CronRequest:
+    """scheduled 事件没有 request：给装配层一个最小 request 壳。
+
+    装配函数（`main.get_trade_doc_render_data`）只通过 `request.scope["env"]` 取
+    Hyperdrive 绑定（见 `platform/db.py`），本壳提供的正是这一项 —— 不伪造
+    headers/URL 之类它根本用不到的东西。
+    """
+
+    def __init__(self, env):
+        self.scope = {"env": env}
+
+
+# 对账是**只读**操作：用系统管理员形态取装配数据（团队谓词全部放开，等价于人工
+# 批量对账用管理员账号触发）。不写任何业务行，也不代表某个真实账号的行为。
+CRON_ACTOR = {
+    "id": 0,
+    "account_type": "internal",
+    "role": "system_admin",
+    "tenant_id": "default",
+}
+
+
+def _parse_checked_at(iso: Optional[str]) -> datetime:
+    """内核返回的 checked_at 是 ISO 字符串；解析失败退回 now（不让一行脏值炸整轮）。"""
+    if isinstance(iso, str):
+        try:
+            return datetime.fromisoformat(iso)
+        except ValueError:
+            pass
+    return datetime.now(timezone.utc)
+
+
+async def check_render_fingerprints(conn, request) -> dict:
+    """扫近 `RENDER_CHECK_WINDOW_DAYS` 天签发的单据做指纹对账，结论 upsert 落库。
+
+    每张单据**独立 try**：一张装配失败标 `unavailable`（如实、不假装匹配），
+    其余照常交付 —— 与批量端点「一张炸了不拖垮整批」同口径。
+
+    返回 `summarize_render_checks` 的计数（另加 `checked` = 本轮实际检查张数）。
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=RENDER_CHECK_WINDOW_DAYS)
+    rows = await conn.fetch(
+        "SELECT * FROM trade_docs WHERE tenant_id=$1 AND status='issued'"
+        " AND issued_at >= $2 ORDER BY issued_at DESC LIMIT $3",
+        DEFAULT_TENANT, cutoff, RENDER_CHECK_LIMIT,
+    )
+
+    items = []
+    for row in rows:
+        get = row.get if hasattr(row, "get") else (lambda k, d=None: row[k])
+        doc_id = int(get("id"))
+        frozen = read_render_fingerprint(get("raw_payload"))
+        checked_at = datetime.now(timezone.utc)
+        try:
+            assembled = await _main.get_trade_doc_render_data(
+                doc_id, request, CRON_ACTOR)
+            check = render_fingerprint_check(
+                frozen, assembled.get("data"), checked_at=checked_at.isoformat())
+        except Exception as exc:  # noqa: BLE001 —— 一张失败不能拖垮整轮
+            print(
+                f"[cron] render_check doc={doc_id} 装配失败（如实标 unavailable）："
+                f"{type(exc).__name__}: {exc}"
+            )
+            check = render_fingerprint_check(
+                frozen, None, checked_at=checked_at.isoformat(),
+                current_error=type(exc).__name__,
+            )
+        card = render_check_card(doc_id, get("doc_no"), check)
+        items.append(card)
+        # 覆盖写：每张单据只留最近一次结论（对账是状态，不是事件流）
+        await conn.execute(
+            "INSERT INTO trade_doc_render_checks"
+            " (tenant_id, trade_doc_id, checked_at, matches, reason,"
+            "  render_version_drift, result, updated_at)"
+            " VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb, now())"
+            " ON CONFLICT (tenant_id, trade_doc_id) DO UPDATE SET"
+            "  checked_at=EXCLUDED.checked_at, matches=EXCLUDED.matches,"
+            "  reason=EXCLUDED.reason,"
+            "  render_version_drift=EXCLUDED.render_version_drift,"
+            "  result=EXCLUDED.result, updated_at=now()",
+            DEFAULT_TENANT, doc_id, _parse_checked_at(check.get("checked_at")),
+            bool(check.get("matches")), str(check.get("reason") or "unavailable"),
+            bool(check.get("render_version_drift")),
+            json.dumps({**card, "checked_at": checked_at.isoformat()},
+                       ensure_ascii=False, default=str),
+        )
+
+    summary = summarize_render_checks(items)
+    summary["checked"] = len(items)
+    return summary
+
+
+async def run_check_render_fingerprints(env) -> dict:
+    """Cron 入口：指纹对账（异常**不抛穿**，与另外两个任务同口径）。"""
+    try:
+        async with _acquire(env) as conn:
+            result = await check_render_fingerprints(conn, _CronRequest(env))
+        print(f"[cron] check_render_fingerprints ok: {result}")
+        return result
+    except Exception as exc:  # noqa: BLE001 - Cron 失败不能让调度器变错误态
+        print(f"[cron] check_render_fingerprints failed: {type(exc).__name__}: {exc}")
+        return {"checked": 0, "error": f"{type(exc).__name__}: {exc}"}
+
+
 # ── scheduled 事件入口 ──────────────────────────────────────────────────────
 
 
@@ -430,9 +557,16 @@ async def run_scheduled(env, controller) -> dict:
         print(f"[cron] unknown cron expression, skipped: {cron!r}")
         return {"cron": cron, "job": None, "skipped": True}
 
-    if job == "archive_events":
-        result = await run_archive_events(env)
-    else:
-        result = await run_lead_scan(env)
+    # 运行器表在**调用期**组：测试据此用 monkeypatch 替换单个任务（不重载模块）。
+    runners = {
+        "archive_events": run_archive_events,
+        "scan_replied_leads": run_lead_scan,
+        "check_render_fingerprints": run_check_render_fingerprints,
+    }
+    runner = runners.get(job)
+    if runner is None:
+        print(f"[cron] job registered but no runner: {job!r}, skipped")
+        return {"cron": cron, "job": job, "skipped": True}
+    result = await runner(env)
     print(f"[cron] {job} done: {result}")
     return {"cron": cron, "job": job, "result": result}

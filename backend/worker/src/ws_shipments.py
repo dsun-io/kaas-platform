@@ -46,6 +46,7 @@ from kaas_common.domain.enums import validate_enum
 from kaas_common.workstation.state_machines import SHIPMENT_NEXT, can_transition
 
 import main as _main
+import inquiry_stage as _inquiry_stage
 
 app = _main.app
 _get_current_user = _main._get_current_user
@@ -300,6 +301,13 @@ async def create_shipment(
                         " WHERE tenant_id=$1 AND id=$2",
                         DEFAULT_TENANT, order["id"],
                     )
+                # 询盘阶段（TODO F4）：出运创建 → shipment（沿订单→报价→询盘传递）
+                await _inquiry_stage.advance_for_order(
+                    conn, tenant_id=DEFAULT_TENANT, order_id=order["id"],
+                    target_stage=_inquiry_stage.STAGE_SHIPMENT,
+                    source_event=_inquiry_stage.SOURCE_SHIPMENT_CREATED,
+                    actor_id=str(user["id"]), quote_id=order.get("quote_id"),
+                )
     return _row_to_shipment(row)
 
 

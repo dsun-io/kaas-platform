@@ -418,6 +418,97 @@ async def logout():
     return {"message": "Logged out (client should discard token)"}
 
 
+# ── 个人信息（TODO F3）：只能改**本人**，边界写死在路由里 ────────────────────
+# 为什么单独两条而不是一条"账号编辑"：
+# - 改资料**不需要**密码，改密码**必须**验旧密码 —— 混在一起会让改资料也被要求输密码；
+# - 邮箱是登录标识，改它需要验证新邮箱（发确认链路），当前没有该链路 ⇒ 不提供静默改
+#   （宁可不做，也不能让"短信/邮箱验证缺失"变成账号劫持面）；要改邮箱走管理员。
+# - 管理员改他人资料是**另一条**治理链路（/admin/accounts），不在这里混用。
+
+class UpdateProfileIn(BaseModel):
+    display_name: str
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str
+
+
+def _profile_payload(user: dict, row) -> dict:
+    """把 users 行与当前身份合并成与 GET /auth/me 同形的响应（前端 buildUser 同一套解析）。"""
+    from kaas_common.workstation.scope import effective_role
+
+    merged = {**user, **dict(row)}
+    return {
+        **merged,
+        "user_id": merged["id"],
+        "plan": merged.get("plan") or "free",
+        "effective_role": effective_role(merged.get("role")),
+        "tenant_id": DEFAULT_TENANT,
+    }
+
+
+@app.patch("/api/v1/auth/me")
+async def update_me(request: Request, body: UpdateProfileIn,
+                    user: dict = Depends(_get_current_user)):
+    """修改本人显示名（`display_name`）。只允许改自己：id 取自 token，body 里没有 user_id。"""
+    display_name = (body.display_name or "").strip()
+    if not display_name:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "DISPLAY_NAME_REQUIRED",
+            "detail": "显示名不能为空",
+        })
+    if len(display_name) > 64:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "DISPLAY_NAME_TOO_LONG",
+            "detail": "显示名最长 64 个字符",
+        })
+    async with _acquire(request) as conn:
+        row = await conn.fetchrow(
+            "UPDATE users SET display_name=$1, updated_at=NOW() WHERE id=$2"
+            " RETURNING id, email, display_name, account_type, role, plan, team_id,"
+            " console_access, is_tenant_admin",
+            display_name, user["id"],
+        )
+    if row is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "USER_NOT_FOUND",
+            "detail": "账号不存在",
+        })
+    payload = _profile_payload(user, row)
+    payload["team_name"] = await _team_name_of(request, payload.get("team_id"))
+    return payload
+
+
+@app.post("/api/v1/auth/change-password")
+async def change_password(request: Request, body: ChangePasswordIn,
+                          user: dict = Depends(_get_current_user)):
+    """修改本人密码：**必须验旧密码**；新密码 ≥8（与注册/bootstrap 同口径）。
+
+    错误码与登录/重置口径一致：旧密码错 403 `INVALID_CURRENT_PASSWORD`（不泄露账号状态），
+    新密码太短 422 `PASSWORD_TOO_SHORT`。
+    """
+    new_password = body.new_password or ""
+    if len(new_password) < 8:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "PASSWORD_TOO_SHORT",
+            "detail": "Password must be at least 8 characters",
+        })
+    async with _acquire(request) as conn:
+        row = await conn.fetchrow(
+            "SELECT password_hash FROM users WHERE id=$1", user["id"])
+        if row is None or not _verify_password(body.current_password or "", row["password_hash"]):
+            raise HTTPException(status_code=403, detail={
+                "error": "forbidden", "code": "INVALID_CURRENT_PASSWORD",
+                "detail": "当前密码不正确",
+            })
+        await conn.execute(
+            "UPDATE users SET password_hash=$1, updated_at=NOW() WHERE id=$2",
+            _hash_password(new_password), user["id"],
+        )
+    return {"message": "Password updated"}
+
+
 # ── 忘记密码 / 重置密码（token 只存哈希，30 分钟过期，用后即废）──────────
 # 与 orchestrator `app/api/auth.py` 同契约、同错误码（route-parity.py 会校验）。
 # 发信走 Resend REST + `_binding("RESEND_API_KEY")`（请求期读绑定，见 AGENTS.md 绑定铁律）。
@@ -3388,6 +3479,43 @@ async def create_order_api(
                     total += line
                 computed_lines.append(line)
 
+            # ── 报价/订单 1:N 业务校验（TODO F5，口径 A：**允许**一报价多订单）──────
+            # 为什么不做 1:1 唯一约束：分批出货 / 改价后重复下单是真实业务，UI 已按 1:N
+            # 分组展示（docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md §5 选项 A，2026-10-20
+            # 用户拍板）。但 1:N 必须有**业务闸门**，否则"客户订 100 米"能被系统开出
+            # 300 米的订单，财务应收与单证数量全部对不上：
+            #   ① 币种必须与报价一致（否则累计金额没有可比性）；
+            #   ② 同一报价下**未取消**订单的金额累计不得超过报价合计（按分容差）。
+            # 历史数据不回填、不迁移：校验只作用于**新建**订单（已存在的多单不动）。
+            if quote is not None:
+                quote_currency = (quote.get("currency") or "").upper()
+                if quote_currency and quote_currency != currency:
+                    raise HTTPException(status_code=422, detail={
+                        "error": "validation", "code": "ORDER_QUOTE_CURRENCY_MISMATCH",
+                        "field": "currency",
+                        "detail": (f"订单币种 {currency} 与报价币种 {quote_currency} 不一致；"
+                                   "跨币种请先改报价或另开订单"),
+                    })
+                quote_total = quote.get("total_amount")
+                if quote_total is not None and total:
+                    used = await conn.fetchval(
+                        "SELECT COALESCE(SUM(total_amount), 0) FROM orders"
+                        " WHERE tenant_id=$1 AND quote_id=$2 AND status <> 'cancelled'",
+                        DEFAULT_TENANT, quote["id"],
+                    )
+                    already = float(used or 0)
+                    allowed = float(quote_total) - already
+                    if total > allowed + 0.01:
+                        raise HTTPException(status_code=422, detail={
+                            "error": "validation", "code": "ORDER_EXCEEDS_QUOTE",
+                            "detail": (f"本单金额超过该报价的剩余可下单额度："
+                                       f"报价合计 {float(quote_total):.2f}，"
+                                       f"已下单 {already:.2f}，本单 {total:.2f}"),
+                            "quote_total": float(quote_total),
+                            "quote_ordered": already,
+                            "order_total": total,
+                        })
+
             row = await conn.fetchrow(
                 """INSERT INTO orders
                        (tenant_id, order_no, customer_id, customer_name, status, currency,
@@ -3413,6 +3541,15 @@ async def create_order_api(
                 _term("country_of_origin"),
             )
             order_id = row["id"]
+            # 询盘阶段（TODO F4）：订单创建 → order（沿报价的 inquiry_id 传递；
+            # 手动订单没有报价来源 ⇒ advance_for_order 返回 None，不影响主流程）
+            if quote is not None:
+                await _inquiry_stage.advance_for_order(
+                    conn, tenant_id=DEFAULT_TENANT, order_id=order_id,
+                    target_stage=_inquiry_stage.STAGE_ORDER,
+                    source_event=_inquiry_stage.SOURCE_ORDER_CREATED,
+                    actor_id=str(user["id"]), quote_id=quote.get("id"),
+                )
             # 2026-10-18：客户阶段读时由「开启中的订单」推导，不再在这里回写客户阶段。
             for idx, it in enumerate(items):
                 await conn.execute(
@@ -3686,6 +3823,15 @@ async def change_order_status(order_id: int, request: Request, body: dict,
              "actor_id": user["id"]},
             from_ws="orders", to_ws="trade_docs",
         )
+    if target == "completed":
+        # 询盘阶段（TODO F4）：订单完结 → completed（沿报价传递；无报价来源则 no-op）
+        async with _acquire(request) as conn:
+            await _inquiry_stage.advance_for_order(
+                conn, tenant_id=DEFAULT_TENANT, order_id=order_id,
+                target_stage=_inquiry_stage.STAGE_COMPLETED,
+                source_event=_inquiry_stage.SOURCE_ORDER_COMPLETED,
+                actor_id=str(user["id"]), quote_id=o.get("quote_id"),
+            )
 
     row2 = await db.fetchrow(
         request,
@@ -3961,6 +4107,8 @@ def _reject_protected_custom(custom) -> None:
 # 历史事故：e5ab56e 删除本文件里的 11KB 镜像实现后调用点没改，运行期 NameError
 # （POST/GET/PATCH/render-data 全 500，静态 import 检查发现不了）。详见 doc_payload.py。
 import doc_payload as _dp  # noqa: E402
+import content_versions as _cv  # noqa: E402
+import inquiry_stage as _inquiry_stage  # noqa: E402
 
 # 边表写入语句来自共享内核（与 orchestrator 同一份字符串，避免两端各写一条而漂移）
 from kaas_common.workstation.entity_links import LINK_INSERT_SQL  # noqa: E402
@@ -3989,7 +4137,11 @@ async def list_trade_docs(request: Request, doc_type: str = None, status: str = 
         )
         items = []
         for r in rows:
-            item = _row_to_dict(r, "trade_docs")
+            # 注意：main 里的 `_row_to_dict` 是**1 参**兼容壳（只按 market_ports 解 jsonb），
+            # 带表名的精确解码要走 `row_to_dict(row, "表名")`。
+            # 这里曾写成 `_row_to_dict(r, "trade_docs")` ⇒ TypeError ⇒ 列表接口运行期 500
+            # （2026-10-20 由 test_trade_doc_render_check_list.py 抓出并锁死）。
+            item = row_to_dict(r, "trade_docs")
             if r["quote_id"] is not None:
                 later = await conn.fetchval(
                     "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND quote_id=$2"
@@ -4002,6 +4154,30 @@ async def list_trade_docs(request: Request, doc_type: str = None, status: str = 
                 later = None
             item["doc_no_editable"] = not bool(later)
             items.append(item)
+        # 定时对账结论（TODO A8/A9）：每页多一条查询，让列表能一眼标出「已变更」。
+        # 没有对账记录 = 从未巡到（null），界面不显示任何标识（不冒充"没问题"）。
+        if rows:
+            checks = await conn.fetch(
+                "SELECT trade_doc_id, matches, reason, render_version_drift, checked_at"
+                " FROM trade_doc_render_checks WHERE tenant_id=$1"
+                " AND trade_doc_id = ANY($2::bigint[])",
+                DEFAULT_TENANT, [r["id"] for r in rows],
+            )
+            check_by_doc = {
+                int(c["trade_doc_id"]): {
+                    "matches": bool(c["matches"]),
+                    "reason": c["reason"],
+                    "render_version_drift": bool(c["render_version_drift"]),
+                    "checked_at": (
+                        c["checked_at"].isoformat()
+                        if hasattr(c["checked_at"], "isoformat")
+                        else c["checked_at"]
+                    ),
+                }
+                for c in checks
+            }
+            for item in items:
+                item["render_check"] = check_by_doc.get(int(item["id"]))
     return {
         "items": items,
         "total": total, "page": page, "page_size": page_size,
@@ -4373,9 +4549,42 @@ async def update_trade_doc(doc_id: int, request: Request, body: dict,
             _json.dumps(raw_payload) if raw_payload is not None else None, now,
             new_doc_no,
         )
+    # 内容级版本（TODO A1）：本次写入的整份 payload 留一版；仅当确实改了 payload 才记。
+    # 版本在 UPDATE 之后记：写失败就不该留下"从未生效"的版本行。
+    if raw_payload is not None:
+        await _cv.record_content_version(
+            db, request,
+            tenant_id=DEFAULT_TENANT, doc_id=doc_id, payload=raw_payload,
+            source=(
+                _cv.SOURCE_ISSUE
+                if new_status == "issued" and d["status"] == "draft"
+                else _cv.SOURCE_CUSTOM_UPDATE
+            ),
+            actor_id=str(user["id"]),
+        )
     d2 = await db.fetchrow(request, "SELECT * FROM trade_docs WHERE tenant_id=$1 AND id=$2",
                            DEFAULT_TENANT, doc_id, table="trade_docs")
-    return _dp.doc_dict(d2)
+    out = _dp.doc_dict(d2)
+    # 服务端签发自动上传（TODO F1 方案 A）：PATCH 触发 draft→issued 时若带 HTML，
+    # 同请求出 PDF 并归档。失败**不回滚签发**，只写 pdf_archive 供界面提示手动上传。
+    if (new_status == "issued" and d["status"] == "draft"
+            and isinstance(body.get("html"), str) and body["html"].strip()):
+        try:
+            import ws_files as _ws_files
+            archived = await _ws_files.archive_rendered_pdf(
+                request, doc_id, body["html"], user, body.get("pdf_name"))
+            file_row = archived.get("file") or {}
+            out["pdf_archive"] = {
+                "ok": True,
+                "renderer": archived.get("renderer"),
+                "bytes": archived.get("bytes"),
+                "file_id": file_row.get("id") if hasattr(file_row, "get") else None,
+            }
+        except HTTPException as exc:
+            out["pdf_archive"] = {
+                "ok": False, "status_code": exc.status_code, "detail": exc.detail,
+            }
+    return out
 
 
 # ── 企业主体信息（卖方抬头）────────────────────────────────────────────────

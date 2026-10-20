@@ -46,7 +46,9 @@ import { autoArchiveIssuedDoc } from "@/lib/trade-doc/auto-archive";
 import { exportCsv, exportExcel, printMerged } from "@/lib/trade-doc/export";
 
 import { DocCreateForm } from "./components/doc-create-form";
+import { DocContentVersions } from "./components/doc-content-versions";
 import { DocCustomForm } from "./components/doc-custom-form";
+import { DocRenderCheckBadge } from "./components/doc-render-check-badge";
 import { DocStampReturn } from "./components/doc-stamp-return";
 import { DocPreview, renderMetaOf } from "./components/doc-preview";
 import { SamplePreview } from "./components/sample-preview";
@@ -56,6 +58,7 @@ import {
   useTradeDocRenderData,
   useTradeDocs,
   useUpdateTradeDoc,
+  type PdfArchiveResult,
   type TradeDocRow,
 } from "./hooks/use-trade-docs";
 
@@ -230,24 +233,48 @@ export default function TradeDocsPage() {
   };
 
   const changeStatus = (row: TradeDocRow, status: string) => {
-    update.mutate(
-      { id: row.id, status },
-      {
-        onSuccess: () => {
-          if (status !== "issued") {
-            toast.success("已作废");
-            return;
-          }
-          // 签发即上传单证：不再要求客户先打印另存、再手动导入一次。
-          // 手动入口仍保留（files/upload + 手动上传区）应对渲染器不可用/第三方单据等。
-          toast.success("已签发，正在自动上传单证…");
-          void autoArchiveIssuedDoc(row.id).then((result) => {
-            if (result.ok) toast.success(result.message);
-            else toast.error(`${result.message}（手动上传入口仍可用）`);
-          });
-        },
-      },
-    );
+    if (status !== "issued") {
+      update.mutate(
+        { id: row.id, status },
+        { onSuccess: () => toast.success("已作废") },
+      );
+      return;
+    }
+    // 签发即上传（TODO F1 方案 A）：把**预览用的同一份 HTML** 随 PATCH 一起提交，
+    // 服务端出 PDF 并归档为 render_pdf —— 不再依赖"签发完成后再由前端单独上传"。
+    // 失败不回滚签发：后端在响应里带 pdf_archive{ok:false}，这里如实提示并保留
+    // 手动上传兜底（渲染器未配置时自动归档接口同样会 503，不假装成功）。
+    void (async () => {
+      try {
+        const { default: apiClient } = await import("@/lib/api/client");
+        const { data } = await apiClient.get<{
+          doc: TradeDocRow;
+          data: Record<string, unknown>;
+        }>(`/trade-docs/${row.id}/render-data`);
+        const html = renderTradeDoc(data.doc.doc_type, data.data);
+        update.mutate(
+          { id: row.id, status, html, pdf_name: row.doc_no },
+          {
+            onSuccess: (doc) => {
+              const archived = (doc as { pdf_archive?: PdfArchiveResult })
+                .pdf_archive;
+              if (archived?.ok) {
+                toast.success("已签发，单证 PDF 已自动归档");
+                return;
+              }
+              toast.error("已签发，但 PDF 自动归档失败（手动上传入口仍可用）");
+              // 兼容旧后端（不认识 html）：仍走一次前端归档接口；同样失败就只保留提示
+              void autoArchiveIssuedDoc(row.id).then((result) => {
+                if (result.ok) toast.success(result.message);
+              });
+            },
+            onError: () => toast.error("签发失败，请重试"),
+          },
+        );
+      } catch {
+        toast.error("准备签发失败，请重试");
+      }
+    })();
   };
 
   return (
@@ -483,11 +510,15 @@ export default function TradeDocsPage() {
                       )}
                       {visibleCols.includes("status") && (
                         <td className="p-2">
-                          <StatusBadge
-                            tone={STATUS_TONE[row.status] ?? "default"}
-                          >
-                            {STATUS_LABEL[row.status] ?? row.status}
-                          </StatusBadge>
+                          <div className="flex flex-wrap items-center gap-1">
+                            <StatusBadge
+                              tone={STATUS_TONE[row.status] ?? "default"}
+                            >
+                              {STATUS_LABEL[row.status] ?? row.status}
+                            </StatusBadge>
+                            {/* 定时对账标识（A8/A9）：只在"被改过/模板漂移/待复核"时出现 */}
+                            <DocRenderCheckBadge check={row.render_check} />
+                          </div>
                         </td>
                       )}
                       {visibleCols.includes("amount") && (
@@ -580,6 +611,8 @@ export default function TradeDocsPage() {
                       <StatusBadge tone={STATUS_TONE[row.status] ?? "default"}>
                         {STATUS_LABEL[row.status] ?? row.status}
                       </StatusBadge>
+                      {/* 定时对账标识（A8/A9） */}
+                      <DocRenderCheckBadge check={row.render_check} />
                     </div>
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                       <span>{money(row.total_amount, row.currency)}</span>
@@ -652,6 +685,12 @@ export default function TradeDocsPage() {
                 docType={renderData.data.doc.doc_type}
                 status={renderData.data.doc.status}
                 payload={renderData.data.doc.raw_payload}
+              />
+              {/* 内容版本（A1）：草稿期每次保存/带入/翻译都留一版，可回看与恢复 */}
+              <DocContentVersions
+                docId={renderData.data.doc.id}
+                docType={renderData.data.doc.doc_type}
+                status={renderData.data.doc.status}
               />
               {/* 盖章回传不受"已签发冻结"限制：客户是签发**之后**才盖章回传的 */}
               <DocStampReturn docId={renderData.data.doc.id} />

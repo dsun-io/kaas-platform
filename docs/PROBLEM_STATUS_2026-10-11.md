@@ -15,11 +15,107 @@
 > [`HANDOVER_2026-10-20_FINAL.md`](./HANDOVER_2026-10-20_FINAL.md)**（状态/资源清单/踩坑/发布检查单/待办）。
 > 本文件继续只做"问题状态"滚动口径。
 >
+> **（2026-10-20 晚 · 停止点：开发按用户指令停止；交接与剩余工作已落盘；过时文档归档）**
+>
+> 用户指令："不继续任务了，把现状和剩下的工作全部写进交接文档；把过时文档归档（不要动前端 agent 的交接文档）；
+> 确保交接 agent 能直接检索到最新文档；然后推送到远程。" 已完成收尾：
+> ① **停止点与剩余工作**写入 [`HANDOVER_2026-10-20_FINAL.md`](./HANDOVER_2026-10-20_FINAL.md) **§0.2**
+> （当前分支/PR/CI/预览状态、已完成的 F1–F5 + A1/A3/A8/A9、剩余 A4/A5/A6/A7/B/C 逐项与前置、恢复路径与门禁命令）；
+> ② **过时文档归档**：`ENV_VERIFICATION_2026-10-19.md`（三环境快照已过时）移入
+> `docs/archive/2026-10-20-backend-closeout/`；`E2E_GUIDE.md` 就地更新到 2026-10-20 口径（27 条 = 23+4）；
+> **前端线文档未动**（`UI_UX_OPTIMIZATION_2026-10-20.md` / `UI_BACKEND_DEPENDENCIES_2026-10-20.md` / `docs/ui-redesign/**`）；
+> ③ **检索入口**：[`docs/README.md`](./README.md) 已更新状态、先读顺序（HANDOVER §0.2 提前）与归档批次表；
+> 根 `README.md` / `DEPLOY.md` 的旧文档引用已改指归档或新交接。
+> 代码状态不变：分支 `feat/trade-doc-content-a` / PR #5 `clean` / 四条 CI 绿（代码 head `743bce5`）/
+> 预览 `kaas-preview-pr-5`；生产发布仍待用户下令（迁移 head `202610200003` 随发布应用）。
+>
 > **（2026-10-20 · 文档归档与交接索引）**
 >
 > 过时文档已移入 `docs/archive/2026-10-20-p2-closeout/`（方案 B/S4/技术栈/安全/税务/批量报价/旧 e2e/
 > 旧实现地图等 15 份，清单见批次 README）。**交接检索入口统一为 [`docs/README.md`](./README.md)**：
 > 先读根 `README.md` → `HANDOVER_2026-10-20_FINAL.md` → 本文件 → `TODO.md` → UI 两份文档。
+>
+> **（2026-10-20 · 后端五项全部落地：F1 服务端签发自动上传 / F2 内容版本 / F3 个人信息 / F4 询盘状态机 / F5 报价订单 1:N 校验）**
+>
+> 用户点名"后端 5 项，不要遗漏"；规格 = `docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md`
+> （2026-10-20 已随 UI 线入 main）。本分支逐项完成：
+> ① **F1 服务端签发自动上传（方案 A）**：`POST .../confirm` 与 `PATCH /trade-docs/{id}`
+> （draft→issued）均可携带前端**预览同一份 HTML**，服务端复用唯一实现
+> `ws_files.archive_rendered_pdf` 出 PDF 并落 `render_pdf` 新版本；**失败不回滚签发**，
+> 响应带 `pdf_archive{ok:false,...}` 由界面提示手动上传；前端签发按钮已接线。
+> ② **F2 内容版本**：已完成（`4878c6c` + `db4463e`，迁移 `202610200001`）。
+> ③ **F3 个人信息编辑**：`PATCH /auth/me`（显示名，只改本人；邮箱登录标识不自助改）+
+> `POST /auth/change-password`（验旧密码、≥8 位）；侧栏弹窗从只读变可编辑；MSW 真改显示名。
+> ④ **F4 询盘状态机（落库+事件驱动）**：迁移 `202610200003` 加
+> `cust_inquiries.stage/stage_updated_at` + `inquiry_stage_log`；阶段
+> `inquiry<quotation<order<shipment<completed`、`closed` 终态；**只前进/幂等**；事件钩子 =
+> 报价创建 / 订单创建 / 订单完成 / 出运创建 / 询盘手动关闭；序列化新增阶段字段；
+> `GET /inquiries/{id}/stage-log`。
+> ⑤ **F5 报价/订单 1:N（口径 A）**：保留 1:N（分批出货合法、历史多单不迁移），新建订单校验
+> 币种一致 + 未取消订单金额累计 ≤ 报价合计（422 明细含报价/已下单/本单金额）。
+> 口径拍板（用户 2026-10-20）：F5=A、F4=落库+事件驱动、F3=显示名+密码。
+> 门禁：worker **1008 passed + 5 skipped** / orchestrator **247** / frontend typecheck 0 ·
+> vitest **474** · lint 0 error / contracts R0–R6 PASS / schema-coverage·drift·runtime-deps·
+> sync-shared PASS / alembic 单 head `202610200003`。
+> **CI 状态（2026-10-20 最终）**：与 `origin/main` 合并后 head **`ea5f966`**，四条 workflow
+> 全部绿（pull_request 事件）：backend:test ✅（worker 1008+5 / orchestrator 247 / 静态门禁）·
+> contracts:check ✅（R0–R6）· Frontend CI ✅（typecheck/lint/vitest/e2e/build）· preview ✅
+> （Neon 分支/Hyperdrive/迁移/部署/PR 评论全链路）；PR #5 `mergeable_state=clean`。
+> 预览地址：`https://kaas-preview-pr-5.dspro0124.workers.dev`。
+> 此前 CI 红的两个原因均已闭环：① 仓库 private 期间 Actions 秒失败（0 步/无 runner，与代码无关）；
+> ② preview ensure 的 Neon 423 瞬时并发（rerun 通过，重试优化挂 TODO D7）。
+> 用户口径：CI 跑绿后可把仓库转回 private（转回后 Actions 会再次不可用，以本地门禁为准）。
+> 另：两把 Resend key 已入 GitHub repo secrets（`RESEND_API_KEY_PROD` / `RESEND_API_KEY_PREVIEW`），
+> 换设备不失；`preview.yml` 已注入预览专用 key。
+>
+> **（2026-10-20 · A8/A9 落地：指纹对账定时调度 + 列表「已变更」标识；顺手修线上列表 500）**
+>
+> 同一分支 `feat/trade-doc-content-a` 继续推进（用户指示"按序推进 A8/A9/A2"）：
+> ① **定时调度（A9）**：CF Cron `40 17 * * *`（UTC 17:40 = 上海次日 01:40）→
+> `ws_cron.run_check_render_fingerprints` 扫近 30 天 issued（上限 50）逐张对账；新表
+> `trade_doc_render_checks`（迁移 `202610200002`，tenant+doc 唯一、覆盖写）；判定全用共享内核，
+> 每张独立 try（装配失败标 `current_unavailable`，不假报一致）。原「测试钉死无定时调度」的
+> 断言已同步改为**三 cron**（wrangler.jsonc 三值逐字符锁死）。
+> ② **列表标识（A8 标识部分）**：`GET /api/v1/trade-docs` 每行挂 `render_check`（`null`=从未对账）；
+> 前端「已变更」（data_changed 红）/「模板已更新」（version_drift 黄）/「待复核」（装配失败黄），
+> 一致与无基线不显示。A8 的「端到端真实跑一次」需已部署环境，挂发布后 P4。
+> ③ **顺手修线上 bug**：列表端点 `item = _row_to_dict(r, "trade_docs")` 参数不匹配（main 里该函数
+> 只收 1 参）⇒ **`GET /api/v1/trade-docs` 运行期必 500**；改为 `row_to_dict(r, "trade_docs")`，
+> 并由新测试 `test_trade_doc_render_check_list.py` 锁死（此前无测试覆盖真实后端列表）。
+> ④ **密钥分层（用户裁决，三只 key 到位且换设备不失）**：生产 key（`kaas-生产`）→ GitHub repo
+> secret `RESEND_API_KEY_PROD`；预览 key（`kaas-预览`）→ GitHub repo secret `RESEND_API_KEY_PREVIEW`
+> （已由 `preview.yml` 注入预览 worker；预览跑 PR 分支代码，**不复用生产 key**）；本地开发用
+> `RESEND_API_KEY`。本机 `.env.local` 只是副本；**最终持久位置 = GitHub repo secrets（已配）+
+> Cloudflare Worker secret（发布窗口浇入）**，换设备不需重配。
+> 证据：worker **982 passed + 5 skipped** / orchestrator **247** / frontend typecheck 0 · vitest **474** ·
+> lint 0 error · contracts R0–R6 PASS · schema-coverage/drift/runtime-deps PASS · alembic 单 head
+> `202610200002`。
+>
+> **（2026-10-20 · 单证内容专项开工：A1 内容级版本 + A3 字段体检已落地，分支 `feat/trade-doc-content-a`）**
+>
+> 用户指示「设置 goal 直接做、在分支上、不要和 UI 任务冲突」⇒ 独立 worktree 施工（分支
+> `feat/trade-doc-content-a`），未触碰并行 UI 线的写范围（其 `docs/UI_UX_OPTIMIZATION_*` 与
+> `frontend/**` 未提交改动原样保留）。
+> ① **A1 内容级版本**：新表 `trade_doc_content_versions`（迁移 `202610200001`，单 head）；
+> 五条写路径全部留版（手工保存 / 重新带入上游 / AI 翻译 / 签发冻结 / 恢复），存**整份 payload
+> 快照**（sources + custom）；端点 `GET /trade-docs/{id}/content-versions`（列表不带 payload）、
+> `GET .../{version_no}`（整份）、`POST .../{version_no}/restore`（仅 draft；报价单 409
+> `QUOTATION_DOC_SYNCED`，版本链只增不删）；前端「内容版本」折叠面板（查看/恢复，签发后禁用）。
+> ② **A3 字段体检**：`findBlankPlaceholders()` 区分「模板引用了但 manifest 未登记（拼写/漏登记）」
+> 与「可选字段留空」，在预览状态栏显式提示 —— 把「静静空白」从不可见变为可见；18 类模板实测
+> 0 未登记占位符。
+> 证据：`4878c6c`（后端）+ `db4463e`（前端）；门禁 = worker **972 passed + 5 skipped** /
+> orchestrator **247** / frontend typecheck 0 · vitest **467** · lint 0 error · contracts R0–R6 PASS ·
+> schema-coverage/drift/runtime-deps/sync-shared PASS。**状态：PR #5 已开且 CI 全绿**
+> （backend:test / Frontend CI / contracts:check / preview；预览
+> `https://kaas-preview-pr-5.dspro0124.workers.dev`），待评审合入 main；
+> A2/A4~A9 仍挂在 [`docs/TODO.md`](./TODO.md)。
+>
+> **⚠️ CI 全红与代码无关（同日解决）**：仓库一度被转回 **private**（D5），private 仓库消耗
+> Actions 配额 ⇒ **08:05Z 起所有 workflow 秒失败**（0 步、无 runner、2–4 秒结束，`main` 与分支
+> 一致）。**用户已转回 public**，rerun 后 CI 全绿：backend:test ✅ / Frontend CI ✅ /
+> contracts:check ✅ / preview ✅（attempt 3，预览部署 `kaas-preview-pr-5`）。期间发现 preview
+> ensure 的瞬时并发问题（Neon 分支操作未完成就建 endpoint → HTTP 423），已登记 TODO D7（重试）。
 >
 > **（2026-10-20 · 口径修订：「待办清零/触发条件制」废止 → 活跃待办账本）**
 >
@@ -179,62 +275,6 @@
 > 新增 `usePersistentState`（localStorage；挂载后恢复、避免 SSR hydration mismatch）；
 > 事件审计、操作日志的筛选条件刷新/切换页面后保留。其余 P2（列配置/密度/快捷键）待做。
 >
-> **（2026-10-20 · P2 密度切换 + 后端依赖方案）**
-> 订单列表新增「舒适/紧凑」密度切换（localStorage 记忆，只改行高/字号，不改列含义）；
-> 后端依赖项（服务端自动上传、单证内容版本、个人信息编辑、询盘状态机、报价/订单 1:N 约束）
-> 已单独整理为 `docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md`，含现状/建议方案/验收/顺序。
->
-> **（2026-10-20 · P2 列配置）**
-> 订单列表新增「列配置」：只隐藏现有 7 列、默认全显、至少保留 1 列；偏好 localStorage 记忆。
-> 证据：`docs/ui-redesign/phase5/orders-column-config.png`。
->
-> **（2026-10-20 · P2 客户搜索快捷键）**
-> 客户管理支持 `/` 聚焦搜索、Esc 退出（输入框/可编辑区不劫持）；占位文案与 `aria-keyshortcuts` 同步。
->
-> **（2026-10-20 · P2 tab 收编与语义色）**
-> spec-proposals / market-view / research 三处手写 border-b-2 tab 收编到统一 `Tabs`；
-> spec-proposals 加载/空态改骨架+`EmptyState`；research 供应能力图标改 `text-success/text-destructive`。
->
-> **（2026-10-20 · P2 语义色清零）**
-> 全站 `app/(app)` 里 `text-red/green/amber/emerald-*`、`bg-*-100` 等硬编码色清零（原 13 文件 23 处），
-> 统一改 `success/warning/destructive` 语义 token（含暗色取值）。
->
-> **（2026-10-20 · P0 数据区加载态收尾）**
-> 新增共享 `LoadingBlock`；audit-timeline、客户详情、market、products 定义/图片、报价订单记录、
-> 企业抬头/公章、税务管理、盖章回传的“加载中…”改骨架。剩余纯文本仅为图片/按钮内联状态，
-> 属正常反馈，不再是整块数据区占位。
->
-> **（2026-10-20 · 终验：§8.4 清单 + DOM 审核）**
-> 1366 实测：10 个页面每页 h1=1、无未声明 scope 的表头、icon-only 按钮无可访问名=0、无横向溢出；
-> 源码手写 h1=0、硬编码红绿黄=0、业务页手写 tab=0。修复产品页图片 tab 重复 PageHeader、
-> products 手写 `<th>` 补 scope。详细结论见方案文档 §11。
-> 对比度抽查 8 个核心页无真实失败（头像白字为渐变背景误报）；核心路线图完成，
-> 可选 P2（窄屏卡片化/暗色令牌校准）与后端 5 项单独留档。
->
-> **（2026-10-20 · P2 续：客户窄屏卡片 + 单证密度）**
-> 客户列表 <md 改卡片（md+ 保留表格；卡片不带 `data-testid`，e2e 不变）；
-> 单证台账加「舒适/紧凑」密度切换（localStorage 记忆）。证据：phase5/customers-mobile-cards.png。
->
-> **（2026-10-20 · P2 续：订单/单证窄屏卡片 + 单号复制）**
-> 订单、单证列表 <md 改卡片（md+ 保留表格，DOM 表格在前避免隐藏节点干扰）；
-> 订单号/单证编号加共享 `CopyButton`（clipboard + 成功/失败提示）。证据：phase5/orders-mobile-cards.png、trade-docs-mobile-cards.png。
->
-> **（2026-10-20 · P2 续：单证列配置 + 对比度门禁 + 移动端 SectionCard）**
-> 单证台账加列配置（5 列可隐藏、至少保 1、记忆）；SectionCard 标题/动作移动端堆叠；
-> 新增 `pnpm ui:contrast` 对比度门禁（light/dark 全过），浅色 destructive 4.20→5.84。
->
-> **（2026-10-20 · P2 续：全站 a11y 冒烟 e2e）**
-> 新增 `e2e/a11y.spec.ts`：10 个核心页逐页断言 h1=1、表头 scope、无名称 icon 按钮=0、
-> 1366 无横向溢出。e2e 总数 23→24 passed（+4 skipped = 28）。
->
-> **（2026-10-20 · P2 全部收口）**
-> 列配置（订单/单证）、复制/自动聚焦、窄屏卡片（客户/订单/单证）、暗色令牌校准
-> （`pnpm ui:contrast`）、a11y 冒烟 e2e 均已完成；P2 清单无剩余项。
->
-> **（2026-10-20 · 后端五项已安排并行任务）**
-> 用户已把 `docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md` 的 5 项安排为并行任务；
-> 该文档作为接口/验收基线，各任务完成后回填状态，前端再接线。前端不阻塞。
->
 > **（2026-10-20 · 新会话接手核对：本地 main 同步 + 分支残留清理 + 生产 secrets 实测 + 本机工具链）**
 >
 > 1. **本地 main 已快进到 `fb4b2aa`**（此前落后 origin/main 33 个提交 —— 本地曾停在 10-19 下午的
@@ -310,7 +350,8 @@
 >    **待首次真实 PR 验证**：preview.yml 端到端（CF token preflight 是首道关）；预览 worker secrets
 >    （JWT_SECRET 等）repo secrets 有则注入、无则告警不阻塞——预览登录体验取决于此（要不要补进
 >    repo secrets 待用户拍板）。生产桶仍 `kaas-files`，改名 `kaas-prod-storage` 另立项（不动 S5）。
->    详见 `scripts/preview/README.md` 与 `docs/ENV_VERIFICATION_2026-10-19.md` §2。
+>    详见 `scripts/preview/README.md` 与归档的
+>    `docs/archive/2026-10-20-backend-closeout/ENV_VERIFICATION_2026-10-19.md` §2。
 > 12. **同日收口杂项（2026-10-20）**：① **Rate Limiting ✅（U-S4）**：免费套餐仅支持 10s 窗口，
 >    落地为登录/注册 **2 req/10s/IP**（≈12/min，非原建议 5/min），实测 401→401→429×4 生效；
 >    ② CI 静态门禁脚本路径修复（`../scripts` → `../../scripts`，billing 冻结期 CI 从未真跑才暴露，
@@ -336,7 +377,7 @@
 >    本地 Docker PG + 本地 MinIO，不触云）。早场"恢复三层环境模型"条目（见本摘要下方 10-19 晚场前
 >    条目）由本矩阵**细化取代**：预览改为每 PR 独立 Neon 子分支，另有"开发远程冒烟"第四列。
 >
-> **最新交接文档：根 `README.md`（架构/环境/门禁）**；交接检索入口 `docs/README.md`。
+> **最新交接文档：`README.md`（主交接，唯一权威）**；执行入口 `docs/MASTER_EXEC_PLAN_2026-10-19.md`。
 > 2026-10-19 当日交接：`docs/archive/2026-10-20-closeout/HANDOVER_2026-10-19_CI_AND_PROD_FIXES.md`（✅ 已完成：注册 500 / 定价页白屏已修并部署；
 > CI `backend:test` db-tests 已修绿 `6c08900`；含「本机无 Postgres ⇒ 本地 db 测试全 skip」等环境坑与「不要重做」清单）；
 > `docs/archive/2026-10-20-closeout/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
@@ -381,7 +422,7 @@
 >    实测 `downgrade 002` → 索引齐全 → `upgrade head` 成功；`downgrade -1` 往返成功。
 >    全链 `downgrade base` 仍在 `202610170004`（cust_customers 历史断点）失败 → **定稿策略：
 >    回滚用 Neon PITR/分支，不用 downgrade base**；CI 加「最新迁移可逆」门禁。证据已补进
->    `docs/archive/2026-10-20-p2-closeout/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md` 实测节。
+>    `docs/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md` 实测节。
 > 3. **生产只读冒烟**：`GET https://api.kaas.powervoy.com/health` → 200（core loaded=true）；
 >    `https://kaas.powervoy.com/` → 200。生产 Neon 只读连接此前已验证；迁移 head 仍 `202610180010`
 >    （020 幂等待应用）。
@@ -404,7 +445,7 @@
 >    contracts **R6 openapi 新鲜度退役**（HEAD 无 app 即 INFO 跳过，artifact 冻结）；
 >    route-parity 与 export_openapi 移入 `scripts/archive/`（含退役说明）；前端 Tenant 统一
 >    `display_name`，R5 已知偏差 0 侧。
-> 4. **测试处置**（[docs/archive/2026-10-20-p2-closeout/S4_TEST_MIGRATION_2026-10-19.md](./archive/2026-10-20-p2-closeout/S4_TEST_MIGRATION_2026-10-19.md)）：
+> 4. **测试处置**（[docs/S4_TEST_MIGRATION_2026-10-19.md](./S4_TEST_MIGRATION_2026-10-19.md)）：
 >    1,220 → **222 保留**；**15 个报价引擎测试文件迁 worker**（+364 条，断言零改动）；
 >    worker 全量 **954 passed + 5 skipped**；真 PG 集成 5 passed；orchestrator 222 passed。
 > 5. **CI/deploy**：orchestrator 主依赖清空 + `[project.optional-dependencies].migrations`；
@@ -513,7 +554,7 @@
 >    依赖断言 / schema 完备性 / route-parity / sync-shared 全 PASS。
 >
 > **（2026-10-19 夜场 · 安全审查完成 + 两个真实安全缺陷修复）**
-> 1. 安全审查报告：`docs/archive/2026-10-20-p2-closeout/SECURITY_AUDIT_2026-10-19.md`（危 2 / 高 4 / 中 7 / 低 8，共 21 条）。
+> 1. 安全审查报告：`docs/SECURITY_AUDIT_2026-10-19.md`（危 2 / 高 4 / 中 7 / 低 8，共 21 条）。
 >    结论摘要：**SQL 注入 0 真注入点**（35 个 SQL 插值表达式逐条判定，均为占位符序号/白名单常量）；
 >    tenant/team 隔离抽样未发现跨团队读写；Worker 运行时 6 依赖为最小集 ✓。
 > 2. **修复 高-1（越权）**：`main.py` 6 个 `/api/v1/admin/*`（feature_flag 读写、tenants 读/reload、
@@ -546,7 +587,7 @@
 >    `upgrade()` 内含破坏性操作的 10 个，其中 `drop_table` **仅 3 个**
 >    （drop_conversation_tables / drop_wechat_tables / merge_customers），且 downgrade 均未重建表
 >    ⇒ 灾难回滚会丢数据，发布前需冷备。旧口径「70 个里 35 个含 drop_table」失真，已更正。
->    报告：`docs/archive/2026-10-20-p2-closeout/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md`。
+>    报告：`docs/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md`。
 > 2. route-parity allowlist 8 条逐条复核：补实现位置、更正 comtrade 原因（实为长任务采集器、
 >    前端 0 调用，非"本地定时器"）、pointer 改到归档原文；route-parity 仍 PASS（缺失 8 全登记、过期 0）。
 >
@@ -663,7 +704,7 @@
 >
 > **（2026-10-19 · 收敛 P0 POC 结论：路线 A 不可行 → 转 A′）**
 >
-> POC 文档：`docs/archive/2026-10-20-p2-closeout/POC_WORKER_SQLALCHEMY_2026-10-19.md`（POC 源码
+> POC 文档：`docs/POC_WORKER_SQLALCHEMY_2026-10-19.md`（POC 源码
 > `backend/worker/poc-sqlalchemy/` + 对照组 `poc-baseline/`；**生产 Worker `kaas` 全程未动**，
 > 仅建了两个独立 POC Worker 做边缘验证）。
 > 1. **兼容性硬阻塞**：`greenlet` 在 Workers Python runtime **无可安装 wheel**（Pyodide 314.0.7
@@ -1169,7 +1210,7 @@
 > 单条用例 `--repeat-each=5` 自身只有 **60%** 通过率；
 > ③ 失败根因是「`/api/v1/*` 请求偶发绕过 MSW → 自代理 → 500/挂起」，
 > **已排除 7 个假设**，未收口。
-> 详细证据与**已排除的假设清单**见 `docs/archive/2026-10-20-p2-closeout/E2E_STATUS_2026-10-11.md`。
+> 详细证据与**已排除的假设清单**见 `docs/E2E_STATUS_2026-10-11.md`。
 >
 > **为什么花了这么久（如实记录）**：我在 e2e 上投了约 35 轮，而它**不阻塞业务**；
 > 其中相当一部分是在纠正**我自己的测量错误** —— 一次用**过滤后的输出**得出
@@ -1182,7 +1223,7 @@
 > contracts R0–R4 / 前端 typecheck 0）。
 >
 > **e2e 这条线已暂缓**（不阻塞业务），结论独立成文：
-> `docs/archive/2026-10-20-p2-closeout/E2E_STATUS_2026-10-11.md`。要点：**修掉 2 个真实应用缺陷**
+> `docs/E2E_STATUS_2026-10-11.md`。要点：**修掉 2 个真实应用缺陷**
 > （`customers/page.tsx` 的 `.length` 8 处 + `.map` 4 处，都是"保护了外层对象、
 > 忘了数组本身"），**排除 7 个假设**，根因收窄为"`/api/v1/*` 请求不被 MSW 拦截
 > 而页面请求被拦"，但**未收口**。
@@ -1364,7 +1405,7 @@
    已落后当前稳定线两代；audit 复扫 **80 条**（2 critical / 19 high / 48 moderate / 11 low，
    npmjs registry 口径）——2 个 critical 仍是 Next image optimizer 的 RCE，生产走静态导出 +
    `images.unoptimized`，实际暴露面有限，但 14.x 已不再有新补丁公布。
-   完整依赖矩阵与 A/B/C/D 批次路线见 `docs/archive/2026-10-20-p2-closeout/TECH_STACK_UPGRADE_2026-10-17.md`；
+   完整依赖矩阵与 A/B/C/D 批次路线见 `docs/TECH_STACK_UPGRADE_2026-10-17.md`；
    **2026-10-17 用户裁决：暂不执行升级，只落评估文档**。
 
 ### 依赖漏洞已降 98 → 78（`b5b6f4d`）
@@ -2973,7 +3014,7 @@ orchestrator 598 passed；worker 142 passed；前端 `typecheck` exit 0、
 
 ### e2e 一条线的深度结论另见
 
-`docs/archive/2026-10-20-p2-closeout/E2E_STATUS_2026-10-11.md` —— 因本文档当时被另一条任务（单证 PI 模板）
+`docs/E2E_STATUS_2026-10-11.md` —— 因本文档当时被另一条任务（单证 PI 模板）
 并发编辑，e2e 的结论独立成文，避免写冲突。
 
 ***
@@ -2994,7 +3035,7 @@ orchestrator 598 passed；worker 142 passed；前端 `typecheck` exit 0、
 | E 生产部署先保持 | ✅ | 无需动作 |
 | 规格库 11 条接口 | ✅ | 用户裁决**退役**：`8225bbf`（路由已删、allowlist 已撤） |
 | 依赖漏洞 | 🔶 | 98 → **78**；余 **2 critical 全是 `next`**，只能在 Next ≥ 15.5.24 修（14→15 跨大版本 + React 19）——用户已定**单独排期** |
-| e2e 归真 | 🔶 | 已修 **2 个真实应用缺陷**（`customers/page.tsx` 的 `.length`/`.map`）；**排除 7 个假设**；根因收窄为"`/api/v1/*` 不被 MSW 拦截"；**数字受并发构建污染，须静止重测**。详见 `docs/archive/2026-10-20-p2-closeout/E2E_STATUS_2026-10-11.md` |
+| e2e 归真 | 🔶 | 已修 **2 个真实应用缺陷**（`customers/page.tsx` 的 `.length`/`.map`）；**排除 7 个假设**；根因收窄为"`/api/v1/*` 不被 MSW 拦截"；**数字受并发构建污染，须静止重测**。详见 `docs/E2E_STATUS_2026-10-11.md` |
 | 产品定义可视化编辑器 | ⏸ | **待用户输入**：要编辑哪些字段？存 `tenant_products` 快照还是增量覆盖？（后者有"租户一改就被冻住"的已知风险） |
 | 团队管理员转让 | ✅ | 后端两端 `9d42f44` / `13389b6` + 前端入口 `99f783c`；策略无关校验 9 条单测 |
 | 单证投产联调 | ⏸ | **需生产环境**（字段打通 / PDF·打印 / 盖章 / 双语 + 样张对照）；另一条任务正在做 PI 模板，**可考虑合并联调** |
@@ -3007,7 +3048,7 @@ orchestrator 598 passed；worker 142 passed；前端 `typecheck` exit 0、
 
 **另**：本会话额外产出（不在目标原文里但已落地）——
 原料价历史均价、`AGENTS.md` 全局规则、爬取移植（含**修掉生产 SSRF 绕过**）、
-`docs/archive/2026-10-20-p2-closeout/E2E_STATUS_2026-10-11.md`。
+`docs/E2E_STATUS_2026-10-11.md`。
 
 ---
 

@@ -61,6 +61,10 @@ class CustInquiry(Base):
     quantity_unit = Column(Text, nullable=True)
     application = Column(Text, nullable=True)
     status = Column(Text, nullable=False, server_default='open')
+    # ── 202610200003 询盘阶段落库（TODO F4）：inquiry/quotation/order/shipment/
+    # completed；closed 为终态。真源常量 = backend/worker/src/inquiry_stage.py。
+    stage = Column(Text, nullable=False, server_default='inquiry')
+    stage_updated_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
     # ── 202610100003 询价历史留存：同客户多次询价（不同产品/规格）+ 时间线 ──
     # inquiry_seq：该客户下第几次询价（同订单多次询价时区分）
@@ -78,6 +82,30 @@ class CustInquiry(Base):
     __table_args__ = (
         Index('idx_cust_inquiries_customer', 'customer_id', 'status'),
         Index('idx_cust_inquiries_tenant_status', 'tenant_id', 'status'),
+    )
+
+
+class InquiryStageLog(Base):
+    """询盘阶段变更日志（TODO F4，迁移 202610200003）。
+
+    每次**真实**阶段变更一条（重复事件 no-op 不写）；报表与"历史变更可查"靠它。
+    """
+    __tablename__ = 'inquiry_stage_log'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    inquiry_id = Column(
+        BigInteger, ForeignKey('cust_inquiries.id', ondelete='CASCADE'), nullable=False)
+    from_stage = Column(Text, nullable=False)
+    to_stage = Column(Text, nullable=False)
+    # quote_created | order_created | order_completed | shipment_created | inquiry_closed
+    source_event = Column(Text, nullable=False)
+    actor_id = Column(Text, nullable=True)
+    note = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index('idx_inquiry_stage_log_inquiry', 'tenant_id', 'inquiry_id', 'created_at'),
     )
 
 

@@ -15,10 +15,13 @@
   //   · "30 16 * * *"  —— events 每日归档（原 00:30 Asia/Shanghai = **16:30 UTC 前一日**，
   //     UTC+8 的换算：00:30 - 8h = 前一日 16:30）。归档目标日仍按 orchestrator 口径取
   //     「UTC 昨日」，不改成上海自然日（改口径要同时改 archive_target_date，见 ws_cron.py）。
-  // 这两个字符串必须与 ws_cron.CRON_SCAN_REPLIED / CRON_ARCHIVE_EVENTS 逐字符一致
-  // （scheduled 用 controller.cron 精确匹配分派），由 tests/test_ws_cron.py 锁死。
+  //   · "40 17 * * *"  —— 单证指纹定时对账（每日 UTC 17:40 = Asia/Shanghai 次日 01:40）：
+  //     扫近 30 天签发的单据，结论 upsert 进 trade_doc_render_checks（TODO A8/A9）。
+  // 这三个字符串必须与 ws_cron.CRON_SCAN_REPLIED / CRON_ARCHIVE_EVENTS /
+  // CRON_RENDER_CHECK 逐字符一致（scheduled 用 controller.cron 精确匹配分派），
+  // 由 tests/test_ws_cron.py 锁死。
   "triggers": {
-    "crons": ["*/15 * * * *", "30 16 * * *"]
+    "crons": ["*/15 * * * *", "30 16 * * *", "40 17 * * *"]
   },
   "workers_dev": false,
   "hyperdrive": [
