@@ -44,6 +44,7 @@
 | [UNCERTAIN.md](./UNCERTAIN.md) | 决策账本（存疑/裁决落盘） |
 | [QA_TEST_ACCOUNTS.md](./QA_TEST_ACCOUNTS.md) | 测试账号与验收口径 |
 | [E2E_GUIDE.md](./E2E_GUIDE.md) | e2e 一键运行说明（2026-10-20 口径：28 条 = 24 passed + 4 skipped） |
+| [API_RESERVED_LIST.md](./API_RESERVED_LIST.md) | **后端先行 API 保留清单（C36）**：Worker 有路由、前端未直接调的 60 条分类（内部/REST 契约/待接 UI/可删候选）与证据；新增后端端点/接 UI 后按 §4 维护 |
 
 ## 3. UI/UX（本轮主线）
 

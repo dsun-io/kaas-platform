@@ -103,19 +103,47 @@ test.describe('Events', () => {
     await expect(page.getByText('sampled').first()).toBeVisible({ timeout: 15000 });
   });
 
-  // **2026-10-12 判定：这条一直"假绿"，且它的触发条件根本不存在 ⇒ 显式 skip（不静默丢覆盖）**
-  // · 它原来的断言只有 `await expect(page.locator('body')).toBeVisible()` —— **恒真**，
-  //   修前它 5/5 "通过"，但**没有任何信号**；
-  // · 名字声称测「error=500 时出现错误 toast」，可**这个路径不存在**：
-  //   页面 `events/page.tsx` **不读** `?error=`（只有 `useState<EventFiltersType>({})`），
-  //   `useEvents()` 只把 filters 拼进 query ⇒ 请求 URL **从来不带 `error=500`**；
-  //   而 mock 里那段 500 逻辑（`mocks/handlers.ts:155-167`）读的是 **API 请求**的 `error` 参数。
-  // ⇒ 要真覆盖它，先得有"在 e2e 里强制 `/api/v1/events` 返回 500"的手段
-  //   （同类先例：`handlers.ts:143-152` 的 `__test/override-quote-status`），
-  //   或让页面支持 `?error=`（属应用改动，不在本任务范围）。
-  // **该覆盖应是**：强制 `/api/v1/events` → 500 ⇒ 断言出现 toast 文案
-  //   （`服务器内部错误 | 后端忙碌`，由 `lib/api/error-handler.ts` 触发）。
-  test.skip('error=500 simulation shows error toast', async () => {
-    // 待重写：见上方说明（需要先有强制 500 的手段）。
+  // C33（2026-10-21 修复）：旧版这条是 `test.skip` —— 它的触发条件根本不存在：
+  // 页面 `events/page.tsx` 不读 `?error=`，`useEvents()` 只把 filters 拼进 query，
+  // 所以请求 URL 从来不带 `error=500`（旧的 body-only 断言还是"假绿"）。
+  //
+  // 现在用 **test-only override** 强制 `/api/v1/events` 返回 500：
+  //   `POST /api/v1/__test/override-events-error`（只存在于 MSW，先例
+  //   `__test/override-quote-status`；真实后端没有该端点、生产模式不走 MSW）。
+  // ⚠️ override 是模块级状态、`page.reload()` 会清 ⇒ 必须在**页面内** fetch 设置，
+  // 再靠**改筛选**触发一次新的 `/events` 请求（不能 goto/reload）。
+  // 可观测信号 = 全局 error-handler：500 且无业务码 ⇒ toast「后端忙碌，请稍后重试」
+  // （`lib/api/error-handler.ts` 的 `status >= 500` 分支；axios 对 GET 5xx 会先重试
+  // 3 次≈5s，之后才弹，故断言超时给 20s）。
+  test('events 500 显示后端错误提示（test-only override）', async ({ page }) => {
+    await page.goto('/events');
+    await expect(page.locator('table tbody tr').first()).toBeVisible({
+      timeout: 15000,
+    });
+
+    const setOverride = async (status: number) =>
+      page.evaluate(async (nextStatus) => {
+        const res = await fetch('/api/v1/__test/override-events-error', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: nextStatus }),
+        });
+        return res.ok;
+      }, status);
+
+    try {
+      expect(await setOverride(500)).toBe(true);
+      // 改 event_type ⇒ queryKey 变化 ⇒ 触发一次新的 /events 请求（同 key 不会重发）
+      await page.getByRole('combobox').first().click();
+      await page
+        .getByRole('option', { name: /capability\.update/i })
+        .click();
+      await expect(page.getByText('后端忙碌，请稍后重试')).toBeVisible({
+        timeout: 20000,
+      });
+    } finally {
+      // 清理 override，避免污染后续用例（即使断言失败也执行）
+      await setOverride(0).catch(() => undefined);
+    }
   });
 });

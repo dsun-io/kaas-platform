@@ -104,6 +104,11 @@ const featureFlagsStore: Record<string, Record<string, boolean>> = JSON.parse(
 // NOT present in the real backend. NEVER used in production.
 let __test_quote_status_override: string | null = null;
 
+// Test-only MSW override（C33）：强制 `GET /api/v1/events` 返回指定 HTTP 状态，
+// 供 e2e 验证「后端错误提示」路径（真实后端没有此端点；仅 mock 内存态，reload 即清）。
+// 置 0/null 清除。设置入口 = `POST /api/v1/__test/override-events-error`。
+let __test_events_error_status: number | null = null;
+
 // ── Auth（登录态）的假身份 ────────────────────────────────────────────────
 // **e2e 登录身份的唯一来源**：`e2e/global-setup.ts` 只写了 `has_token` cookie，
 // 用户本身来自这里（webServer 锁定 `NEXT_PUBLIC_API_MODE=mock`）。
@@ -2675,8 +2680,44 @@ export function mockPersistedCollections(): string[] {
   return registeredMockCollections();
 }
 
-export const handlers = [
-  // ── 工位订阅快照（原先没有 mock，是**真正的**缺口）─────────────────────
+/**
+ * C30：事件归档记录种子（只读）。
+ *
+ * 真实行由 `ws_cron.py` 每月归档任务写入 `events_archive_log`：
+ * `(tenant_id='*', month='YYYY-MM', minio_path='{bucket}/events-archive/YYYY/MM/DD/v1.jsonl.gz',
+ *   status='archived')`。归档的是**上月**事件（9 月的事件在 10 月初归档）。
+ */
+const MOCK_ARCHIVE_LOGS: Array<{
+  id: string;
+  month: string;
+  path: string;
+  status: string;
+  archived_at: string | null;
+}> = [
+  {
+    id: "arch-2026-09",
+    month: "2026-09",
+    path: "kaas-events-archive/events-archive/2026/09/01/v1.jsonl.gz",
+    status: "archived",
+    archived_at: "2026-10-01T02:00:05Z",
+  },
+  {
+    id: "arch-2026-08",
+    month: "2026-08",
+    path: "kaas-events-archive/events-archive/2026/08/01/v1.jsonl.gz",
+    status: "archived",
+    archived_at: "2026-09-01T02:00:03Z",
+  },
+  {
+    id: "arch-2026-07",
+    month: "2026-07",
+    path: "kaas-events-archive/events-archive/2026/07/01/v1.jsonl.gz",
+    status: "archived",
+    archived_at: "2026-08-01T02:00:07Z",
+  },
+];
+
+export const handlers = [  // ── 工位订阅快照（原先没有 mock，是**真正的**缺口）─────────────────────
   // 形状**必须**照 `lib/workstation/visibility.ts` 的 `parseMyWorkstationsPayload()`：
   //   · `workstations` 必须是数组，否则整份 payload 被当成"没读到"(null) → 放行
   //   · `has_team` 若不是 boolean → null → **被当成没有团队**
@@ -2879,9 +2920,31 @@ export const handlers = [
     return HttpResponse.json({ ok: true });
   }),
 
+  // C33：e2e 需要验证 `/events` 的 500 错误提示（页面本身不读 `?error=`），
+  // 用 test-only override 强制状态码；body.status 传 0/null 即清除。
+  http.post("/api/v1/__test/override-events-error", async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as {
+      status?: number | null;
+    };
+    const status = Number(body.status);
+    __test_events_error_status =
+      Number.isFinite(status) && status >= 400 ? status : null;
+    return HttpResponse.json({ ok: true, status: __test_events_error_status });
+  }),
+
   // ── Events ───────────────────────────────────────────────────────
   http.get("/api/v1/events", ({ request }) => {
     const url = new URL(request.url);
+    // C33 e2e：test-only override 优先（真实后端没有该机制，仅 mock 内存态）
+    if (__test_events_error_status !== null) {
+      // 刻意**不带业务码**：真实 5xx 通常没有业务码，前端会走
+      // `handleApiError` 的 `status >= 500` 分支 → toast「后端忙碌，请稍后重试」
+      // （`lib/api/error-handler.ts:126`）。
+      return HttpResponse.json(
+        { detail: "Internal Server Error", source: "mock" },
+        { status: __test_events_error_status },
+      );
+    }
     const errorCode = url.searchParams.get("error");
     if (errorCode === "500") {
       return HttpResponse.json(
@@ -3629,6 +3692,30 @@ export const handlers = [
   http.get("/api/v1/admin/deployment_audit", () =>
     HttpResponse.json({ detail: "Not Found" }, { status: 404 }),
   ),
+
+  // ── Archive Logs（C30 · 真数据：events_archive_log）──────────────────────
+  // 形状 = `main.py:get_archive_logs`：`{items:[{id,month,path,status,archived_at}],
+  // total,page,page_size}`；表列名是 `minio_path`，**对外叫 `path`**。
+  // 写入方是 `ws_cron.py` 的每月归档任务（tenant_id='*'、status='archived'），只读，
+  // 故用静态种子（不参与持久化 store / WRITE_RULES）。
+  http.get("/api/v1/admin/archive-logs", ({ request }) => {
+    const url = new URL(request.url);
+    const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+    const pageSize = Math.min(
+      Math.max(1, Number(url.searchParams.get("page_size")) || 20),
+      100,
+    );
+    const month = url.searchParams.get("month") ?? "";
+    let items = MOCK_ARCHIVE_LOGS;
+    if (month) items = items.filter((entry) => entry.month === month);
+    const total = items.length;
+    return HttpResponse.json({
+      items: items.slice((page - 1) * pageSize, page * pageSize),
+      total,
+      page,
+      page_size: pageSize,
+    });
+  }),
 
   // ── Audit Log ────────────────────────────────────────────────────
   http.get("/api/v1/admin/audit-log", ({ request }) => {
@@ -4863,6 +4950,39 @@ export const handlers = [
       ok: true,
       overridden: true,
       ...checked,
+    });
+  }),
+
+  // 单证字段「中译英」（A13）：形状真源 = `ws_docs_ext.py translate_trade_doc`。
+  // mock 环境**没有配置任何 AI Provider** ⇒ 按后端真实降级语义返回 `path:"template"` +
+  // 原样字段（并如实回 `task`）。**不伪造「已翻译」**：要测 AI 成功路径请 mock hook。
+  http.post("/api/v1/trade-docs/:id/translate", async ({ params, request }) => {
+    const id = Number(params.id);
+    const doc = docsStore.find((d) => Number(d.id) === id);
+    if (!doc) {
+      return HttpResponse.json({ detail: { error: "not_found" } }, { status: 404 });
+    }
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    const rawFields = (body.fields ?? {}) as Record<string, unknown>;
+    const fields: Record<string, string> = {};
+    for (const [key, value] of Object.entries(rawFields)) {
+      const text = String(value ?? "");
+      if (text.trim() !== "") fields[key] = text;
+    }
+    if (Object.keys(fields).length === 0) {
+      return HttpResponse.json({
+        fields: {},
+        path: "none",
+        detail: "没有可翻译的字段",
+      });
+    }
+    return HttpResponse.json({
+      fields, // 原样返回（= 后端 path=template 的语义）
+      path: "template",
+      task: "trade_doc_translate",
     });
   }),
 
