@@ -76,12 +76,18 @@ def main() -> int:
     ap.add_argument("--src", default=DEFAULT_SRC)
     ap.add_argument("--out", required=True)
     ap.add_argument("--slug", required=True, help="PR slug（纯数字）")
+    # 2026-10-20 实验开关：怀疑 KV 绑定导致 Python Worker isolate 每 ~10 分钟崩溃，
+    # --no-kv 渲染不带 KV 的预览配置（生产本身无 KV 绑定，预览也不依赖它）。
+    ap.add_argument("--no-kv", action="store_true", default=False,
+                    help="不注入 PREVIEW_KV 绑定（KV 崩溃实验用）")
     args = ap.parse_args()
 
     if not re.fullmatch(r"[0-9]{1,9}", args.slug):
         raise PreviewError(f"slug 非法: {args.slug!r}（只允许纯数字 PR 号）")
-    env = require_env(["PREVIEW_HYPERDRIVE_ID", "PREVIEW_R2_BUCKET",
-                       "PREVIEW_KV_NAMESPACE_ID"])
+    need = ["PREVIEW_HYPERDRIVE_ID", "PREVIEW_R2_BUCKET"]
+    if not args.no_kv:
+        need.append("PREVIEW_KV_NAMESPACE_ID")
+    env = require_env(need)
 
     step(f"读生产配置 {args.src}")
     with open(args.src, encoding="utf-8") as fh:
@@ -102,8 +108,11 @@ def main() -> int:
     cfg.setdefault("kv_namespaces", [])
     cfg["kv_namespaces"] = [
         b for b in cfg["kv_namespaces"] if b.get("binding") != "PREVIEW_KV"]
-    cfg["kv_namespaces"].append({
-        "binding": "PREVIEW_KV", "id": env["PREVIEW_KV_NAMESPACE_ID"]})
+    if args.no_kv:
+        evidence("PREVIEW_KV", "已按 --no-kv 移除（KV 崩溃实验）")
+    else:
+        cfg["kv_namespaces"].append({
+            "binding": "PREVIEW_KV", "id": env["PREVIEW_KV_NAMESPACE_ID"]})
     vars_ = cfg.setdefault("vars", {})
     vars_["PR_SLUG"] = args.slug
     vars_["S3_BUCKET"] = env["PREVIEW_R2_BUCKET"]
@@ -114,7 +123,8 @@ def main() -> int:
     evidence("name / workers_dev", f"{worker_name} / true")
     evidence("HYPERDRIVE.id", env["PREVIEW_HYPERDRIVE_ID"])
     evidence("FILES.bucket", env["PREVIEW_R2_BUCKET"])
-    evidence("PREVIEW_KV.id", env["PREVIEW_KV_NAMESPACE_ID"])
+    if not args.no_kv:
+        evidence("PREVIEW_KV.id", env["PREVIEW_KV_NAMESPACE_ID"])
     evidence("vars.PR_SLUG / S3_BUCKET", f"{args.slug} / {env['PREVIEW_R2_BUCKET']}")
     evidence("routes / crons", "已移除（预览走 workers.dev，无定时任务）")
     log("✅ 渲染完成")

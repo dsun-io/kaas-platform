@@ -19,6 +19,11 @@ on:
         description: "伪 PR 号（数字，用于派生 slug/分支名；演示/排障用）"
         required: true
         type: string
+      no_kv:
+        description: "实验：渲染不带 KV 绑定的预览配置（KV 崩溃定位用）"
+        required: false
+        default: false
+        type: boolean
   pull_request:
     types: [opened, synchronize, reopened, closed]
     paths:
@@ -181,8 +186,9 @@ jobs:
           PREVIEW_HYPERDRIVE_ID: ${{ needs.ensure.outputs.HYPERDRIVE_ID }}
           PREVIEW_R2_BUCKET: ${{ vars.KAAS_PREVIEW_R2_BUCKET }}
           PREVIEW_KV_NAMESPACE_ID: ${{ vars.KAAS_PREVIEW_KV_NAMESPACE_ID }}
-        run: python3 ../../scripts/preview/render-wrangler-config.py --slug "${{ env.PR_NUMBER }}" --out wrangler.preview.jsonc
+        run: python3 ../../scripts/preview/render-wrangler-config.py --slug "${{ env.PR_NUMBER }}" --out wrangler.preview.jsonc ${{ github.event.inputs.no_kv == 'true' && '--no-kv' || '' }}
       - name: S5-d 防污染断言（部署前，渲染产物）
+        if: github.event.inputs.no_kv != 'true'
         working-directory: ./backend/worker
         env:
           EXPECT_R2_BUCKET: ${{ vars.KAAS_PREVIEW_R2_BUCKET }}
@@ -210,6 +216,7 @@ jobs:
         working-directory: ./backend/worker
         run: uv run pywrangler deploy -c wrangler.preview.jsonc
       - name: S5-d 防污染断言（部署后，线上真实绑定）
+        if: github.event.inputs.no_kv != 'true'
         working-directory: ./backend/worker
         env:
           EXPECT_R2_BUCKET: ${{ vars.KAAS_PREVIEW_R2_BUCKET }}
