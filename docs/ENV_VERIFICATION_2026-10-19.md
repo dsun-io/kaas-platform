@@ -74,5 +74,5 @@ R2 对象级清理需 S3 密钥（teardown 不配则打印手动指引）；预�
    （Actions 限额；本机 `pywrangler sync` 的 pyodide 探针损坏 ⇒ 若本机失败，改用 CI 手动 dispatch）。
 3. 冒烟：`/health` 200、登录、客户列表、`export-quote/products`、crons 在 Dashboard 可见。
 4. 回滚预案：**Neon 分支/PITR**（历史链不支持 `downgrade base`，见
-   [MIGRATION_DOWNGRADE_AUDIT](./MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md) 实测节）。
+   [MIGRATION_DOWNGRADE_AUDIT](./archive/2026-10-20-p2-closeout/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md) 实测节）。
 5. 记录：更新 `PROBLEM_STATUS` + 本文件「迁移 head / 部署版本」两行并 push。

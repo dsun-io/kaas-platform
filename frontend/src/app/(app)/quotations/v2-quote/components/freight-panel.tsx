@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingBlock } from "@/components/shared/loading-block";
+
 /**
  * 运费与贸易术语 —— 报价结果**之后**的后续环节。
  *
@@ -277,9 +279,7 @@ export function FreightPanel({
             )}
           </div>
 
-          {termsLoading && (
-            <p className="text-xs text-muted-foreground">费用项加载中…</p>
-          )}
+          {termsLoading && <LoadingBlock rows={2} />}
           {termsFailed && (
             <p className="text-xs text-destructive">
               费用项加载失败，刷新页面重试

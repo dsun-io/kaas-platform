@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingBlock } from "@/components/shared/loading-block";
+
 /**
  * 报价单记录 —— 历史报价的**全信息**视图（UNCERTAIN #19 口径）。
  *
@@ -23,7 +25,11 @@ import { Button } from "@/components/ui/button";
 import { DetailDrawer } from "@/components/shared/detail-drawer";
 import { NumberEditDialog } from "@/components/shared/number-edit-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useQuoteOrder, useQuoteOrders, useUpdateQuoteOrder } from "../hooks/use-quote-orders";
+import {
+  useQuoteOrder,
+  useQuoteOrders,
+  useUpdateQuoteOrder,
+} from "../hooks/use-quote-orders";
 import { useRole } from "@/hooks/use-role";
 import type { QuoteOrder, QuoteOrderItem } from "@contracts/quote-order";
 
@@ -124,7 +130,10 @@ export function QuoteOrderRecords() {
     if (!quoteNoEdit) return;
     setQuoteNoError(null);
     try {
-      await update.mutateAsync({ id: quoteNoEdit.id, patch: { quote_no: value } });
+      await update.mutateAsync({
+        id: quoteNoEdit.id,
+        patch: { quote_no: value },
+      });
       setQuoteNoEdit(null);
     } catch (e) {
       const msg =
@@ -148,9 +157,7 @@ export function QuoteOrderRecords() {
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            加载中…
-          </p>
+          <LoadingBlock rows={3} className="py-6" />
         ) : orders.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
             暂无报价单 —— 在「产品报价」页保存后会出现在这里

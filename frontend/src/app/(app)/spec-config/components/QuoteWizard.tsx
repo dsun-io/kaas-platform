@@ -151,7 +151,7 @@ export function QuoteWizard({ categoryId, categoryName }: Props) {
     return (
       <Card>
         <CardContent className="flex flex-col items-center justify-center py-12 gap-4">
-          <CheckCircle className="h-12 w-12 text-green-500" />
+          <CheckCircle className="h-12 w-12 text-success" />
           <h2 className="text-xl font-semibold">提交成功</h2>
           <p className="text-muted-foreground">SKU ID: {result.sku_id}</p>
           <p className="text-muted-foreground">规格 Hash: {result.spec_hash}</p>
@@ -180,7 +180,7 @@ export function QuoteWizard({ categoryId, categoryName }: Props) {
             <div
               className={`w-8 h-8 rounded-full flex items-center justify-center ${
                 currentStep > i + 1
-                  ? "bg-green-500 text-white"
+                  ? "bg-success text-white"
                   : currentStep === i + 1
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted text-muted-foreground"
@@ -206,7 +206,7 @@ export function QuoteWizard({ categoryId, categoryName }: Props) {
               currentStep === stepOffset + 1
                 ? "bg-primary text-primary-foreground"
                 : currentStep > stepOffset + 1
-                  ? "bg-green-500 text-white"
+                  ? "bg-success text-white"
                   : "bg-muted text-muted-foreground"
             }`}
           >

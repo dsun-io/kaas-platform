@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { LoadingBlock } from "@/components/shared/loading-block";
+
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePageView } from "@/lib/events/use-page-view";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -977,9 +979,7 @@ function CustomerDetailPanel({
           </Button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-          {isLoading && (
-            <p className="text-sm text-muted-foreground">加载中…</p>
-          )}
+          {isLoading && <LoadingBlock rows={4} />}
           {detail && (
             <div>
               <div className="sticky -top-4 z-10 -mx-6 mb-4 flex gap-1 border-b border-border/70 bg-white/80 px-6 backdrop-blur">
@@ -1467,6 +1467,28 @@ function CustomerDetailPanel({
 export default function CustomersPage() {
   usePageView({ resource_id: "/customers" });
   const [searchQ, setSearchQ] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  // 快捷键：/ 聚焦搜索，Esc 退出搜索（输入框内不劫持）
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const typing =
+        !!target &&
+        (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ||
+          target.isContentEditable);
+      if (e.key === "/" && !typing) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      } else if (
+        e.key === "Escape" &&
+        document.activeElement === searchRef.current
+      ) {
+        searchRef.current?.blur();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
     null,
@@ -1508,7 +1530,9 @@ export default function CustomersPage() {
           <div className="relative w-full max-w-xs">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="搜索客户…"
+              ref={searchRef}
+              placeholder="搜索客户…（按 / 聚焦）"
+              aria-keyshortcuts="/"
               value={searchQ}
               onChange={(e) => setSearchQ(e.target.value)}
               className="h-9 rounded-full border-white/70 bg-white/80 pl-9"
@@ -1546,74 +1570,112 @@ export default function CustomersPage() {
             />
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border/70 bg-white/50 text-left text-xs text-muted-foreground">
-                  <th scope="col" className="px-5 py-3 font-medium">
-                    客户
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    国家 · 港口
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    阶段
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    最近更新
-                  </th>
-                  <th scope="col" className="px-5 py-3 text-right font-medium">
-                    操作
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {listData?.items?.map((c) => (
-                  <tr
-                    key={c.id}
-                    data-testid="customer-card"
-                    tabIndex={0}
-                    aria-label={`查看客户 ${c.company_name}`}
-                    className="group cursor-pointer border-b border-border/60 transition-colors last:border-0 hover:bg-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/30"
-                    onClick={() => setSelectedCustomer(c)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        setSelectedCustomer(c);
-                      }
-                    }}
-                  >
-                    <td className="px-5 py-3.5">
-                      <p className="font-medium text-foreground">
-                        {c.company_name}
-                      </p>
-                      {c.abbr && (
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {c.abbr}
+          <>
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/70 bg-white/50 text-left text-xs text-muted-foreground">
+                    <th scope="col" className="px-5 py-3 font-medium">
+                      客户
+                    </th>
+                    <th scope="col" className="px-4 py-3 font-medium">
+                      国家 · 港口
+                    </th>
+                    <th scope="col" className="px-4 py-3 font-medium">
+                      阶段
+                    </th>
+                    <th scope="col" className="px-4 py-3 font-medium">
+                      最近更新
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-5 py-3 text-right font-medium"
+                    >
+                      操作
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {listData?.items?.map((c) => (
+                    <tr
+                      key={c.id}
+                      data-testid="customer-card"
+                      tabIndex={0}
+                      aria-label={`查看客户 ${c.company_name}`}
+                      className="group cursor-pointer border-b border-border/60 transition-colors last:border-0 hover:bg-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/30"
+                      onClick={() => setSelectedCustomer(c)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setSelectedCustomer(c);
+                        }
+                      }}
+                    >
+                      <td className="px-5 py-3.5">
+                        <p className="font-medium text-foreground">
+                          {c.company_name}
                         </p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3.5 text-muted-foreground">
+                        {c.abbr && (
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {c.abbr}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5 text-muted-foreground">
+                        {[c.country, c.default_port]
+                          .filter(Boolean)
+                          .join(" · ") || "—"}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <StatusBadge tone={STAGE_TONES[c.stage] ?? "default"}>
+                          {stageLabel(c.stage)}
+                        </StatusBadge>
+                      </td>
+                      <td className="px-4 py-3.5 text-muted-foreground">
+                        {new Date(c.updated_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        <ChevronRight className="ml-auto size-4 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* 窄屏卡片：DOM 放在表格之后，避免 e2e 的 getByText().first() 命中山卡隐藏节点 */}
+            <div className="divide-y divide-border/60 md:hidden">
+              {listData?.items?.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  aria-label={`查看客户 ${c.company_name}`}
+                  className="flex w-full items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/30"
+                  onClick={() => setSelectedCustomer(c)}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium text-foreground">
+                      {c.company_name}
+                    </p>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
                       {[c.country, c.default_port]
                         .filter(Boolean)
                         .join(" · ") || "—"}
-                    </td>
-                    <td className="px-4 py-3.5">
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
                       <StatusBadge tone={STAGE_TONES[c.stage] ?? "default"}>
                         {stageLabel(c.stage)}
                       </StatusBadge>
-                    </td>
-                    <td className="px-4 py-3.5 text-muted-foreground">
-                      {new Date(c.updated_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      <ChevronRight className="ml-auto size-4 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(c.updated_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground/60" />
+                </button>
+              ))}
+            </div>
+          </>
         )}
       </Card>
 

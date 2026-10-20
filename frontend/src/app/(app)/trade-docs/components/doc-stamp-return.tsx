@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingBlock } from "@/components/shared/loading-block";
+
 /**
  * 客户盖章回传（版本化留档）
  *
@@ -47,7 +49,11 @@ export function DocStampReturn({ docId }: { docId: number }) {
   const doUpload = async () => {
     if (!picked) return toast.error("先选文件（扫描件/照片 PDF 均可）");
     try {
-      await upload.mutateAsync({ file: picked, role: "stamp_scan", name: name.trim() });
+      await upload.mutateAsync({
+        file: picked,
+        role: "stamp_scan",
+        name: name.trim(),
+      });
       toast.success("已回传：新版本上位，旧版本保留在历史里");
       setPicked(null);
       setName("");
@@ -79,7 +85,9 @@ export function DocStampReturn({ docId }: { docId: number }) {
           />
         </label>
         <label className="min-w-[200px] flex-1 space-y-1">
-          <span className="text-xs font-medium">名称（可留空，默认用文件名）</span>
+          <span className="text-xs font-medium">
+            名称（可留空，默认用文件名）
+          </span>
           <Input
             className="h-8 text-xs"
             value={name}
@@ -95,7 +103,7 @@ export function DocStampReturn({ docId }: { docId: number }) {
 
       <div className="space-y-3 p-3">
         {files.isLoading ? (
-          <p className="text-xs text-muted-foreground">加载中…</p>
+          <LoadingBlock rows={2} />
         ) : all.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             还没有附件。产品图可在上方「从产品图库选图」引用；客户盖章后从这里回传。
@@ -103,7 +111,11 @@ export function DocStampReturn({ docId }: { docId: number }) {
         ) : (
           <>
             {currentStamps.length > 0 && (
-              <FileRow title="当前盖章件" files={currentStamps} onDetach={(id) => detach.mutate(id)} />
+              <FileRow
+                title="当前盖章件"
+                files={currentStamps}
+                onDetach={(id) => detach.mutate(id)}
+              />
             )}
             {photos.length > 0 && <FileRow title="产品图引用" files={photos} />}
             {pdfs.length > 0 && <FileRow title="系统出的 PDF" files={pdfs} />}
@@ -119,9 +131,14 @@ export function DocStampReturn({ docId }: { docId: number }) {
                     // 版本号可能跳号/重传，推算出来的号会指向不存在的版本（曾按 +1 写，被队友指出）。
                     const successor = all.find((x) => x.supersedes_id === f.id);
                     return (
-                      <li key={f.link_id} className="text-xs text-muted-foreground">
-                        {f.name} · v{f.version} ·{' '}
-                        {successor ? `已被 v${successor.version} 取代` : "已被新版取代"}
+                      <li
+                        key={f.link_id}
+                        className="text-xs text-muted-foreground"
+                      >
+                        {f.name} · v{f.version} ·{" "}
+                        {successor
+                          ? `已被 v${successor.version} 取代`
+                          : "已被新版取代"}
                       </li>
                     );
                   })}
@@ -159,7 +176,13 @@ function FileRow({
   );
 }
 
-function StampCard({ file, onDetach }: { file: TradeDocFile; onDetach?: (linkId: number) => void }) {
+function StampCard({
+  file,
+  onDetach,
+}: {
+  file: TradeDocFile;
+  onDetach?: (linkId: number) => void;
+}) {
   const isImage = (file.content_type ?? "").startsWith("image/");
   const url = useFileObjectUrl(isImage ? file.id : null);
   return (

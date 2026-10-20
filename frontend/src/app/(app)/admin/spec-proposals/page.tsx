@@ -17,6 +17,9 @@ import {
 } from "@/components/ui/dialog";
 import { Loader2, CheckCircle, XCircle, GitMerge } from "lucide-react";
 import { PageHeader } from "@/components/shared";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface Proposal {
   id: number;
@@ -117,41 +120,35 @@ export default function SpecProposalsPage() {
       />
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b">
-        <button
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === "recommended"
-              ? "border-primary text-primary"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          }`}
-          onClick={() => setActiveTab("recommended")}
-        >
-          推荐晋升 ({recommended?.length ?? 0})
-        </button>
-        <button
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === "all"
-              ? "border-primary text-primary"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          }`}
-          onClick={() => setActiveTab("all")}
-        >
-          全部待审 ({allProposals?.length ?? 0})
-        </button>
-      </div>
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as "recommended" | "all")}
+      >
+        <TabsList variant="line">
+          <TabsTrigger variant="line" value="recommended">
+            推荐晋升 ({recommended?.length ?? 0})
+          </TabsTrigger>
+          <TabsTrigger variant="line" value="all">
+            全部待审 ({allProposals?.length ?? 0})
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {/* List */}
       <Card>
         <CardContent className="py-4">
           {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin mr-2" />
-              加载中...
+            <div className="space-y-2" aria-busy="true">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-16 w-full rounded-lg" />
+              ))}
             </div>
           ) : !items || items.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              暂无{activeTab === "recommended" ? "推荐晋升的" : "待审核的"}提案
-            </p>
+            <EmptyState
+              title="暂无待审提案"
+              description={`当前没有${activeTab === "recommended" ? "推荐晋升的" : "待审核的"}提案。`}
+              className="border-0 py-8"
+            />
           ) : (
             <div className="space-y-3">
               {items.map((p) => (
@@ -169,7 +166,7 @@ export default function SpecProposalsPage() {
                         {p.group_code}
                       </span>
                       {p.recommended_for_promotion && (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700">
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-success-muted text-success-muted-foreground">
                           推荐晋升
                         </span>
                       )}
@@ -189,7 +186,7 @@ export default function SpecProposalsPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="text-green-600 hover:text-green-700"
+                      className="text-success hover:text-success/80"
                       onClick={() => {
                         setReviewDialog({ proposal: p, action: "approve" });
                         setReviewNote("");

@@ -541,7 +541,7 @@ export function BatchQuoteView() {
           )}
         </div>
         {result && result.failed.length > 0 && (
-          <div className="mt-3 space-y-1 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+          <div className="mt-3 space-y-1 rounded-lg border border-warning/40 bg-warning-muted p-2 text-xs text-warning-muted-foreground">
             {result.failed.map((f, i) => (
               <div key={i}>
                 询盘 #{f.inquiry_id}：{f.code} — {f.detail}

@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingBlock } from "@/components/shared/loading-block";
+
 /**
  * 产品工位 · tab「图片与基础信息」（P14 行为等价搬入）
  *
@@ -23,7 +25,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
@@ -150,19 +151,12 @@ export function ProductsMediaTab() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="产品管理"
-        description="维护产品的基础信息与图片（生产/尺寸/重量/成品）。单证直接引用这里的图片 —— 一次维护，重复使用。"
-      />
-
       <SectionCard
         title="产品"
         description="产品来自产品模块的注册表（勾花网 / 牛栏网 / 鹿网），这里维护图片与基础信息。"
       >
         {products.isLoading ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            加载中…
-          </p>
+          <LoadingBlock rows={3} className="py-6" />
         ) : products.isError ? (
           <p className="py-6 text-center text-sm text-destructive">
             读取产品列表失败。
@@ -191,8 +185,7 @@ export function ProductsMediaTab() {
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
                   图片 {p.media_count} 张
-                  {typeof p.profile?.hs_code === "string" &&
-                  p.profile.hs_code
+                  {typeof p.profile?.hs_code === "string" && p.profile.hs_code
                     ? ` · HS ${p.profile.hs_code}`
                     : ""}
                   {Object.keys(p.profile ?? {}).length > 0
@@ -285,9 +278,7 @@ export function ProductsMediaTab() {
             </div>
 
             {media.isLoading ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">
-                加载中…
-              </p>
+              <LoadingBlock rows={3} className="py-6" />
             ) : mediaItems.length === 0 ? (
               <EmptyState
                 icon={ImagePlus}
