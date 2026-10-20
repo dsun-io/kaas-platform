@@ -25,15 +25,16 @@ from __future__ import annotations
 
 from typing import Any, List, Optional
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 import main as _main
 
 app = _main.app
 _get_current_user = _main._get_current_user
-# 本模块的路由**不查库**（explain 只摊开公式、不读客户定价），
-# 所以不在这里绑定 main.db / DEFAULT_TENANT —— 绑了也不用。
+# 本模块只有 `/explain` 一条路由，且它**不碰**客户定价 / 税务档案；但解析"产品定义"时
+# 会经 `quote_api._db` 回落租户运行时产品（2026-10-21 起），因此库句柄由 quote_api 持有，
+# 这里仍不直接绑定 main.db / DEFAULT_TENANT。
 
 # ── 引擎符号：**惰性**取用 ────────────────────────────────────────────────────
 # 为什么不在模块顶部 from kaas_common.export_quote import ...：
@@ -127,6 +128,7 @@ class _ExplainIn(BaseModel):
 async def export_quote_explain_product(
     product_key: str,
     body: _ExplainIn,
+    request: Request,
     user: dict = Depends(_get_current_user),
 ):
     """给定一组规格取值，按公式顺序逐步代入，产出可核对的计算过程。
@@ -134,11 +136,17 @@ async def export_quote_explain_product(
     只做「把公式摊开算一遍」：不进价链、不查税务档案，因此不涉及成本与利润，
     普通登录用户即可调用 —— 客户/业务问「这个 29.9 立方怎么来的」时能当场自证。
 
-    与 orchestrator 一致，这里**不并入客户自定义档位**（dev 的该端点也不查库）：
-    本接口是"照着产品定义自证口径"，取值以产品定义 + 请求给的为准。
+    与 orchestrator 一致，这里**不并入客户自定义档位**：本接口是"照着产品定义自证
+    口径"，取值以产品定义 + 请求给的为准。
+
+    **产品定义来源**（2026-10-21 改）：先查 Python 注册表，未命中再回落**租户运行时
+    产品**（`tenant_products`，团队隔离 + `is_active`，与发现列表同口径，统一走
+    `quote_api._product_or_404_tenant`）。此前只查注册表 ⇒ 租户产品（含编辑器刚保存的）
+    调本接口 404，与"编辑器试算"这一主用途冲突。故本路由现在**会**读一次库来解析定义。
 
     **草稿试算（与 orchestrator 同构，task-26）**：带 `spec_override` 时，用这份**未保存**的
-    定义代替注册表定义来算；只本次请求内生效、不落库；合法草稿连"是否已注册"都不再要求。
+    定义代替注册表定义来算；只本次请求内生效、不落库；合法草稿连"是否已注册"都不再要求
+    （这条路径不查库）。
     """
     import quote_api  # noqa: PLC0415
 
@@ -156,7 +164,7 @@ async def export_quote_explain_product(
             warnings.append("草稿未提供这些字段，按**默认值**参与试算："
                             + "、".join(parsed.defaulted))
     else:
-        spec = quote_api._product_or_404(product_key)
+        spec = await quote_api._product_or_404_tenant(request, user, product_key)
 
     # 规格轴取值：对齐到轴声明的类型（1.2 这类浮点要能与 Decimal 比）
     picked: dict = {}

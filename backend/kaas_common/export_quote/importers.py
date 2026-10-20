@@ -10,6 +10,13 @@
 本模块的表头别名表覆盖中文、英文与内部字段名三种写法，
 所以「上传上次导出的 xlsx → 一键重算」是开箱可用的。
 
+**读表不依赖第三方库**（2026-10-21 C7）：xlsx 由 `.xlsx` 里的纯标准库读取器
+（`zipfile` + `xml.etree`）负责，CSV 用 `csv`。两条路径读出来的都是
+`list[list[str]]`，随后**共用同一份** `_build_header_map / _resolve_column / 行映射`
+—— 不允许为 xlsx 另写一套字段判定（两套口径必然漂移）。
+注意：`build_template_xlsx`（服务端生成 Excel 模板）仍然只在有 openpyxl 的
+开发环境可用；线上 Worker 的模板由前端浏览器生成（`format=xlsx` 维持 501）。
+
 **单位随表头走，不靠猜**：
   表头写 `竖丝间距(cm)` → 值 10 当作 10cm（×10 转成内部 mm）
   表头写 `mesh_mm`       → 值 100 当作 100mm
@@ -33,6 +40,9 @@ from .numeric import dec
 
 MAX_ROWS = 2000
 MAX_BYTES = 2 * 1024 * 1024  # 2 MB
+
+# 老 .xls（OLE2 复合文档）的魔数：不是 zip+XML，读不了 ⇒ 明确指路另存为。
+_OLE2_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 
 # 表头 → (目标字段, 当表头带这个单位时如何换算)
 # 目标字段与引擎 spec_rows 接受的键一致。
@@ -451,34 +461,46 @@ def _read_csv(data: bytes) -> list[list[Any]]:
     return [list(r) for r in csv.reader(io.StringIO(text), dialect)]
 
 
-def _read_xlsx(data: bytes, sheet: str | None = None) -> list[list[Any]]:
-    try:
-        from openpyxl import load_workbook
-    except ImportError as exc:  # pragma: no cover - 依赖已在 pyproject 声明
-        raise ImportError_("缺少 openpyxl，无法读取 xlsx") from exc
-    wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
-    try:
-        ws = wb[sheet] if sheet and sheet in wb.sheetnames else wb[wb.sheetnames[0]]
-        return [list(r) for r in ws.iter_rows(values_only=True)]
-    finally:
-        wb.close()
+def _read_xlsx(
+    data: bytes,
+    sheet: str | None = None,
+    warnings: list[str] | None = None,
+) -> list[list[Any]]:
+    """xlsx → 行列表。**纯标准库**（`zipfile` + `xml.etree`），见 `.xlsx` 模块说明。
+
+    2026-10-21 C7：此前这里依赖 openpyxl，线上 Worker（Pyodide）装不进去，
+    于是上传侧只能显式拒绝 xlsx。改成共享内核里的纯 stdlib 读取器后，
+    CSV 与 .xlsx 走**同一个** `parse_table` 做字段映射，不会出现两套口径。
+    """
+    from .xlsx import read_xlsx
+
+    return read_xlsx(data, sheet=sheet, warnings=warnings)
 
 
-def read_table(data: bytes, filename: str = "", sheet: str | None = None) -> list[list[Any]]:
+def read_table(
+    data: bytes,
+    filename: str = "",
+    sheet: str | None = None,
+    *,
+    warnings: list[str] | None = None,
+) -> list[list[Any]]:
     if len(data) > MAX_BYTES:
         raise ImportError_(
             "文件过大（%.1f MB），上限 %d MB" % (len(data) / 1048576, MAX_BYTES // 1048576)
         )
     name = (filename or "").lower()
     if name.endswith(".xlsx") or name.endswith(".xlsm"):
-        return _read_xlsx(data, sheet)
+        return _read_xlsx(data, sheet, warnings)
     if name.endswith(".xls"):
         raise ImportError_("不支持老的 .xls 格式，请另存为 .xlsx 或 .csv")
     if name.endswith(".csv") or name.endswith(".txt"):
         return _read_csv(data)
-    # 没给后缀：先按 xlsx 的魔数试探，再退回 CSV
+    # 没给后缀：先按 xlsx 的魔数（zip）试探；OLE2 是老的 .xls，指路另存为；
+    # 其余一律按 CSV 处理（与旧行为一致）。
     if data[:2] == b"PK":
-        return _read_xlsx(data, sheet)
+        return _read_xlsx(data, sheet, warnings)
+    if data[:8] == _OLE2_MAGIC:
+        raise ImportError_("不支持老的 .xls 格式，请另存为 .xlsx 或 .csv")
     return _read_csv(data)
 
 
@@ -492,8 +514,13 @@ def parse_table(
     sheet: str | None = None,
 ) -> ParsedTable:
     """把上传的表格解析成 `spec_rows`（可直接喂给引擎）。"""
-    grid = read_table(data, filename, sheet)
+    # xlsx 读取器可能带出"单元格格式无法解析、已按数值读取"这类提示（不抛异常）；
+    # 收进 issues 的 warning 里，让预览页能和其它问题一起展示。
+    xlsx_warnings: list[str] = []
+    grid = read_table(data, filename, sheet, warnings=xlsx_warnings)
     out = ParsedTable(source_name=filename or "")
+    for message in xlsx_warnings:
+        out.issues.append(Issue(0, "", None, message, severity="warning"))
     if not grid:
         raise ImportError_("表格是空的")
 

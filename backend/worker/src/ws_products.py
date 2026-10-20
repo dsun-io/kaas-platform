@@ -17,8 +17,16 @@ orchestrator 落地，线上 Worker 没有对应路由 —— 前端 `/settings/
 - **spec 深度校验**：复用报价引擎 `spec_from_dict`（`scripts/sync-shared.ps1`
   已把引擎打包进 `kaas_common.export_quote`）；引擎未随包时降级为不校验、
   不阻断写库 —— 与 `quote_api.py` 的降级口径一致。
-- **工位订阅**：报价工位未订阅（`tenant_subscriptions` 无有效编码）→ 404
-  `SUBSCRIPTION_REQUIRED`，与 `app/api/subs.py` 同口径；未订阅不写任何数据。
+- **工位订阅**：`/workstation-products`（产品启停矩阵）属**工位功能** —— 报价工位未订阅
+  → 404 `SUBSCRIPTION_REQUIRED`，且不写任何数据。判据与 B3「工位开通」**同源**
+  （团队级 `team_subscriptions`），并 union 历史租户级 `tenant_subscriptions` 作兼容
+  （2026-10-21 修：原先只读租户表，而全仓没有写该表的 HTTP 路由 ⇒ 团队开通了也恒 404）。
+- **产品定义 CRUD 不受工位订阅约束**：`/tenant-products` 在共享内核
+  `workstation/subscriptions.py` 的 `ALWAYS_ALLOWED_PREFIXES`（"产品定义属'我的'配置，
+  不按工位收费"）⇒ 未订阅也能读写本团队的产品定义。旧注释写的"未订阅不写任何数据"
+  只对 `/workstation-products` 成立（2026-10-21 验收实测：未订阅成员 GET 200 / POST 201）。
+- **写/删的团队边界**：与列表同一把尺 `is_same_team` ⇒ 非本团队一律 404（P0 修复，
+  见 `_writable_by`；此前只校验 `tenant_id` ⇒ 同租户可跨团队改/删）。
 """
 from __future__ import annotations
 
@@ -28,6 +36,8 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
+from kaas_common.workstation.product_scope import is_same_team
+
 import main as _main
 
 app = _main.app
@@ -36,9 +46,14 @@ _acquire = _main._acquire
 DEFAULT_TENANT = _main.DEFAULT_TENANT
 
 # 报价工位订阅编码：`full_chain` 是全工位包（docs/WORKSTATION_DESIGN.md §5.4.1）。
-# 与 app/api/subs.py 的 WORKSTATION_CODES["quote"] 必须逐字一致，
-# 否则会出现「本地能开、线上 404」或反之的怪病。
-QUOTE_SUB_CODES = ("full_chain",)
+# `quotes` 是 B3「工位开通」里可单独勾选的工位 key（`kaas_common/workstation/
+# subscriptions.py` 的 `WORKSTATION_PATHS`）—— 团队只开单工位时也必须能进矩阵，
+# 否则会出现「B3 显示已开通、产品矩阵却 404」的自相矛盾。
+QUOTE_SUB_CODES = ("full_chain", "quotes")
+
+# 有效订阅的 SQL 片段（与 `ws_workstations.py:46` 的 `_LIVE` 逐字同义）：
+# active 且未过期（expires_at 为空 = 永久）。
+_LIVE_SUB = "active = true AND (expires_at IS NULL OR expires_at > now())"
 
 # PUT 允许更新的列（白名单：列名直接拼进 SQL，不接受任何外部输入）
 _UPDATABLE_COLUMNS = (
@@ -56,6 +71,32 @@ def _tenant_of(user: dict) -> str:
     此时回落到 DEFAULT_TENANT，与 main.py 其余路由同一口径。"""
     tid = user.get("tenant_id")
     return tid if isinstance(tid, str) and tid else DEFAULT_TENANT
+
+
+def _writable_by(user: dict, row) -> bool:
+    """写/删权限：**与列表同一把尺**（共享内核 `is_same_team`）。
+
+    P0（2026-10-21 B 组验收真机复现）：此前 PUT/DELETE 只校验 `tenant_id`，
+    而单租户下有多个团队 ⇒ team2 的普通账号拿 id 就能改/删 team1 的产品
+    （列表/报价发现里根本看不到它，写路径却放行，且删除会连带清
+    product_profiles / tenant_workstation_products / 图片当前标记）。
+
+    判据与列表 `:205` 那段**完全一致**，不新造第二套口径：
+    - 管理员（`_can_see_all`）不受限；
+    - 有团队的行：`is_same_team`（同团队才可写；管理员分支已在上面返回）；
+    - 历史 `team_id IS NULL` 行：只有**没有团队**的调用者能写 —— 他们自己创建的
+      产品本来就落成 NULL（`create` 用 `user.get("team_id")`），写读对称。
+    """
+    if _main._can_see_all(user):
+        return True
+    row_team = row.get("team_id")
+    if row_team is None:
+        return user.get("team_id") is None
+    return is_same_team(
+        role=user.get("role"),
+        viewer_team_id=user.get("team_id"),
+        row_team_id=row_team,
+    )
 
 
 def _validate_spec(spec: dict) -> None:
@@ -104,12 +145,29 @@ def _validate_override(spec: dict, override: Optional[dict]) -> None:
         })
 
 
-async def _require_quote_subscription(conn) -> None:
-    """报价工位订阅校验。未订阅 → 404（不暴露存在性，与 subs.py 同语义）。"""
+async def _require_quote_subscription(conn, user: dict) -> None:
+    """报价工位订阅校验。未订阅 → 404（不暴露存在性，与 subs.py 同语义）。
+
+    判据与 B3「工位开通」**同源**（2026-10-21 修）：
+      · 团队级 `team_subscriptions`（B3 的 `PUT /teams/{id}/subscriptions/{code}` 写它；
+        中间件 `/me/workstations` 也读它 —— 同一套 `has_workstation` 语义）；
+      · union 历史租户级 `tenant_subscriptions`（迁移 20260921 的
+        `('default','full_chain')` 种子；旧部署靠它，切团队级后仍需兼容）。
+
+    为什么必须 union 而不是直接换表：全仓**没有任何 HTTP 路由写** `tenant_subscriptions`，
+    旧实现只读它 ⇒ 团队开通了 full_chain 也恒 404（本机空库实测）；
+    而生产库由迁移建出、有该种子行 ⇒ 直接换表会让生产行为突变。
+    union 同时满足"B3 开通即生效"与"旧数据不回归"。
+    """
     ok = await conn.fetchval(
-        "SELECT 1 FROM tenant_subscriptions"
-        " WHERE tenant_id=$1 AND code=ANY($2) AND active=true",
-        DEFAULT_TENANT, list(QUOTE_SUB_CODES),
+        "SELECT 1 FROM ("
+        "  SELECT 1 FROM team_subscriptions"
+        f"   WHERE team_id=$1 AND code=ANY($2) AND {_LIVE_SUB}"
+        "  UNION ALL"
+        "  SELECT 1 FROM tenant_subscriptions"
+        "   WHERE tenant_id=$3 AND code=ANY($2) AND active=true"
+        ") AS live LIMIT 1",
+        user.get("team_id"), list(QUOTE_SUB_CODES), DEFAULT_TENANT,
     )
     if not ok:
         raise HTTPException(status_code=404, detail={
@@ -252,7 +310,13 @@ async def update_tenant_product(
     body: TenantProductIn,
     user: dict = Depends(_get_current_user),
 ):
-    """更新产品（部分更新：只写请求里显式出现的字段）。"""
+    """更新产品。
+
+    **不是**任意字段的"部分更新"：`TenantProductIn` 里 `product_key` /
+    `product_name` / `spec` 三项必填（实测只带 `product_name` → 422 三个 missing），
+    其余字段由 `exclude_unset` 决定「只写请求里显式出现的」（不传 `product_name_en`
+    就保持原值）。2026-10-21 验收据此修正了旧 docstring 的说法。
+    """
     tid = _tenant_of(user)
     async with _acquire(request) as conn:
         row = await conn.fetchrow("SELECT * FROM tenant_products WHERE id=$1", product_id)
@@ -264,8 +328,9 @@ async def update_tenant_product(
             raise HTTPException(status_code=403, detail={
                 "error": "forbidden", "message": "系统级产品仅平台管理员可编辑",
             })
-        # 别家的产品一律 404（不泄露存在性）
-        if row["tenant_id"] != tid:
+        # 别家的产品一律 404（不泄露存在性）。两把尺：租户 + **团队**
+        # （P0：缺了团队这把，同租户内可跨团队改别家产品）
+        if row["tenant_id"] != tid or not _writable_by(user, row):
             raise HTTPException(status_code=404, detail={
                 "error": "not_found", "code": "PRODUCT_NOT_FOUND",
             })
@@ -323,7 +388,9 @@ async def delete_tenant_product(
             raise HTTPException(status_code=403, detail={
                 "error": "forbidden", "message": "系统级产品不可删除",
             })
-        if row["tenant_id"] != tid:
+        # 同 PUT：租户 + **团队** 两把尺（P0 —— 否则同租户可跨团队删除别家产品，
+        # 且会连带清掉 product_profiles / 工位绑定 / 图片当前标记）
+        if row["tenant_id"] != tid or not _writable_by(user, row):
             raise HTTPException(status_code=404, detail={
                 "error": "not_found", "code": "PRODUCT_NOT_FOUND",
             })
@@ -369,7 +436,7 @@ async def list_workstation_products(
     """
     tid = _tenant_of(user)
     async with _acquire(request) as conn:
-        await _require_quote_subscription(conn)
+        await _require_quote_subscription(conn, user)
         products = await _matrix_rows(conn, tid, workstation)
         enabled_rows = await conn.fetch(
             "SELECT product_key, is_enabled FROM tenant_workstation_products"
@@ -398,7 +465,7 @@ async def set_workstation_product(
     """启用/停用产品（幂等 upsert）。未订阅报价工位时 404，不写任何数据。"""
     tid = _tenant_of(user)
     async with _acquire(request) as conn:
-        await _require_quote_subscription(conn)
+        await _require_quote_subscription(conn, user)
         product = await conn.fetchrow(
             "SELECT product_key, product_name, is_system FROM tenant_products"
             " WHERE product_key=$1 AND (tenant_id=$2 OR is_system = true)"

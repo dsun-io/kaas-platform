@@ -19,9 +19,12 @@ main.py 已 3000+ 行；本工位有 9 组接口 + 一整套「请求组装 + �
 1. **没有 SQLAlchemy** → 一律 raw asyncpg（`$1` 占位符）。jsonb 列必须经
    `dbjson.row_to_dict(row, "表名")` 解码：asyncpg 在 Workers 里把 jsonb 返回成
    **str**，不解析的话前端会拿到字符串而不是对象。
-2. **没有 openpyxl** → xlsx 模板生成与 xlsx 上传都走不通（openpyxl 依赖 C 扩展，
-   打不进 Pyodide 包）。所以模板只给 CSV、上传只收 CSV，且**显式报错并指路 CSV**，
-   不做静默退化 —— 静默退化会让业务以为"传上去了"。
+2. **没有 openpyxl** → 服务端不生成 xlsx 模板（openpyxl 依赖 C 扩展，打不进 Pyodide）。
+   模板只给 CSV；Excel 模板由**前端浏览器**用 exceljs 现生成（`format=xlsx` 仍返回
+   501，指路 `format=csv` 或页面下载）。**上传侧自 2026-10-21 起支持 .xlsx**：xlsx 是
+   zip+XML，共享内核的纯 stdlib 读取器（`kaas_common/export_quote/xlsx.py`）能读，
+   CSV 与 xlsx 共用同一个 `parse_table` 做字段映射（不存在第二套口径）；老 .xls
+   （OLE2）仍显式拒绝并指路另存为 .xlsx/.csv。
 3. **报价引擎来自 `kaas_common.export_quote`**（`scripts/sync-shared.ps1` 镜像的
    那一份，纯标准库）。它与 dev 的 `app.services.export_quote` 同源，因此金额口径
    天然一致 —— 本模块**不重写任何计算**，只做「组装请求 / 落库 / 投影出参」。
@@ -427,8 +430,12 @@ async def export_quote_product_formulas(
       或"算了但下拉里选不到"。
     - `customer_id` 只允许**管理员**指定（读别的客户的档位）；普通账号传了也会被
       强制回退到自己，防止越权读别家档位。
+
+    **租户运行时产品也支持**（2026-10-21 修）：解析走 `_product_or_404_tenant`
+    （注册表 ∪ `tenant_products` 团队可见行），否则 v2 报价工作台的规格选择器
+    （`use-export-quote-calc.ts` 一律读本接口）选中租户产品就 404。
     """
-    spec = _product_or_404(product_key)
+    spec = await _product_or_404_tenant(request, user, product_key)
     if with_customer_options:
         wanted = None
         if customer_id and _can_see_all(user):
@@ -589,8 +596,8 @@ async def _load_cost_table(request: Request, user: dict, body: "_CalculateIn",
     return table
 
 
-async def _effective_product(request: Request, user: dict, product_key: str):
-    """有效规格空间；产品不存在时返回 None。
+async def _effective_product_raw(request: Request, user: dict, product_key: str):
+    """有效规格空间（**裸**）：不并入客户自定义档位；产品不存在时返回 None。
 
     「产品不存在」在算价入口交给引擎按它自己的口径报（400 engine_error），
     在规格空间入口由调用方报 404 —— 同一个错误在不同入口状态码本来就不同。
@@ -599,6 +606,11 @@ async def _effective_product(request: Request, user: dict, product_key: str):
     1. tenant_products 按团队谓词取行（本团队 > 历史 NULL 仅管理员），
        基线 + override 差异走 resolve_effective_product（hash 不符抛
        SpecUpstreamChanged，绝不静默套用）；2. 回退 Python 注册表。
+
+    为什么拆出"裸"版本（2026-10-21）：`/formulas` 与 `/explain` 也要能解析租户
+    运行时产品（否则"下拉能选、一算 404"），但它们各自还有自己的后处理
+    （前者按 `customer_id` 并档位、后者完全不并档位）—— 合并进来会重复应用。
+    算价入口继续用 `_effective_product`（= 裸版 + 客户档位）。
     """
     _require_engine()
     if not product_key:
@@ -645,12 +657,51 @@ async def _effective_product(request: Request, user: dict, product_key: str):
                 "detail": str(exc),
             })
         if spec is not None:
-            return await _with_customer_options(request, user, spec)
+            return spec
     try:
         product = get_product(product_key)
     except Exception:
         return None
+    return product
+
+
+async def _effective_product(request: Request, user: dict, product_key: str):
+    """算价/规格空间入口的有效定义 = 裸版 + 客户自定义档位（与 dev 同口径）。"""
+    product = await _effective_product_raw(request, user, product_key)
+    if product is None:
+        return None
     return await _with_customer_options(request, user, product)
+
+
+async def _product_or_404_tenant(request: Request, user: dict, product_key: str):
+    """产品定义解析：Python 注册表 ∪ **租户运行时产品**（团队隔离 + is_active）。
+
+    为什么需要它（2026-10-21 B 组验收 P1）：
+    `/export-quote/products`（发现）与 `/calculate`（算价）早已并入了
+    `tenant_products`，但 `/formulas` 与 `/explain` 历史上只走 `_product_or_404`
+    （只查 Python 注册表）⇒ 编辑器里新建的租户产品"下拉里能选、一算 404"，
+    与发现层注释"可见、可选、可算价"自相矛盾。
+
+    这里统一复用 `_effective_product_raw`：它的团队谓词与发现列表
+    （`quote_api.py:354-371`）**同一份**，不新造判据；仍未命中才回落到
+    `_product_or_404` 的原文案 404（保留"已注册: a, b"的提示）。
+
+    **失败降级**：租户解析是"增强"，不是这两条路由的命脉 ⇒ DB 不可用 / 请求没有
+    绑定 Hyperdrive（不接库的调用方、部分单测）时**退回旧行为**（只查注册表），
+    绝不把 `/formulas`、`/explain` 整体 500 掉 —— 与 `ws_products._validate_spec`
+    "引擎缺失就不校验"、`_load_cost_table` "读不到就空表"同一口径。
+    `HTTPException` 必须原样抛：503 引擎不可用 / 409 override 上游已变是**业务**错误。
+    """
+    _require_engine()
+    try:
+        spec = await _effective_product_raw(request, user, product_key)
+    except HTTPException:
+        raise
+    except Exception:  # noqa: BLE001 - 见 docstring：增强失效不得阻断既有能力
+        spec = None
+    if spec is not None:
+        return spec
+    return _product_or_404(product_key)   # 抛 404（unknown_product + 已注册清单）
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -881,35 +932,16 @@ async def export_quote_verify(request: Request, body: _CalculateIn,
 # 表格批量导入
 # ═════════════════════════════════════════════════════════════════════════════
 _IMPORT_MAX_MB = 2
-# xlsx/xls 的魔数：zip（xlsx 是 zip 包）与 OLE2（老 .xls）
-_ZIP_MAGIC = b"PK"
-_OLE2_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
-
-
-def _is_spreadsheet(data: bytes, filename: str) -> bool:
-    name = (filename or "").lower()
-    if name.endswith((".xlsx", ".xlsm", ".xls")):
-        return True
-    return data[:2] == _ZIP_MAGIC or data[:8] == _OLE2_MAGIC
-
-
-def _reject_spreadsheet(data: bytes, filename: str) -> None:
-    """xlsx/xls 一律拒掉并**指路 CSV**，不做静默退化。
-
-    线上 Pyodide 里装不了 openpyxl（它依赖 C 扩展），所以 xlsx 既读不了也生成不了。
-    如果放任下去，`parse_table` 只会抛一句"缺少 openpyxl"—— 那对业务没有可执行的
-    信息（他不知道该怎么办）。这里明确说"另存为 CSV"，一次就能改对。
-    """
-    if _is_spreadsheet(data, filename):
-        raise HTTPException(status_code=400, detail={
-            "error": "xlsx_not_supported",
-            "message": ("线上批量导入只支持 CSV：请在 Excel 里另存为"
-                        "「CSV UTF-8（逗号分隔）」后重新上传"
-                        "（xlsx 解析依赖 openpyxl，Worker 打不进 C 扩展）"),
-        })
+# 2026-10-21 C7：上传侧不再在这里按后缀/魔数"先拒后解析"。
+# 文件类型分派收敛到共享内核 `kaas_common/export_quote/importers.read_table`：
+#   .csv/.txt → csv；.xlsx/.xlsm（或 zip 魔数）→ 纯 stdlib xlsx 读取器；
+#   .xls（OLE2）→ 明确 400 指路另存为 .xlsx/.csv。
+# 这样 CSV 与 xlsx 共用同一份 parse_table（表头别名/单位/行映射），
+# 也避免 worker 侧再维护一套"什么算表格"的判据（两套必然漂移）。
 
 
 async def _read_upload(file: UploadFile) -> bytes:
+    """读上传字节 + 空文件/大小上限（类型分派交给 parse_table）。"""
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail={
@@ -923,6 +955,7 @@ async def _read_upload(file: UploadFile) -> bytes:
 
 
 def _parse_or_400(data: bytes, spec, filename: str = "", sheet: Optional[str] = None):
+    """解析上传表；整表级失败统一 400 `parse_error`（CSV 与 xlsx 同一条通路）。"""
     try:
         return parse_table(data, spec, filename=filename, sheet=sheet)
     except ImportError_ as exc:
@@ -950,14 +983,15 @@ def _template_headers(spec, include_spec: bool) -> dict:
 
 
 def _template_response(spec, fmt: str, examples: Optional[int], include_spec: bool) -> Response:
-    """模板下载。csv 出文件；xlsx 明确 501 —— 见 `_reject_spreadsheet` 的说明。"""
+    """模板下载。csv 出文件；xlsx 明确 501（Excel 模板由前端浏览器端生成）。"""
     if fmt == "xlsx":
         raise HTTPException(status_code=501, detail=(
-            "线上仅支持 CSV 模板，请改用 format=csv"
-            "（xlsx 模板依赖 openpyxl，Worker 打不进 C 扩展）"))
+            "线上不提供 xlsx 模板下载，请改用 format=csv，"
+            "或直接在批量导入页面点「下载 Excel 模板」（由浏览器端生成）"))
     if fmt != "csv":
         raise HTTPException(status_code=422, detail={
-            "error": "bad_format", "message": "format 只能是 csv（线上不支持 xlsx）"})
+            "error": "bad_format",
+            "message": "format 只能是 csv（服务端不生成 xlsx 模板；Excel 模板请在页面下载）"})
     # dev：csv 默认 0 行示例（给脚本生成用），xlsx 默认 3 行
     rows = 0 if examples is None else examples
     body = ("\ufeff" + build_template_csv(spec, examples=rows)).encode("utf-8")
@@ -968,12 +1002,12 @@ def _template_response(spec, fmt: str, examples: Optional[int], include_spec: bo
 @app.get("/api/v1/export-quote/import/template")
 async def export_quote_import_template(
     product_key: str = Query("field_fence", description="产品模型 key"),
-    format: str = Query("xlsx", description="xlsx（dev 默认，线上 501）或 csv"),
+    format: str = Query("xlsx", description="csv；xlsx 返回 501（Excel 模板由前端生成）"),
     examples: Optional[int] = Query(None, ge=0, le=50),
     include_spec: bool = Query(False, description="是否随附列定义（JSON 头）"),
     user: dict = Depends(_get_current_user),
 ):
-    """下载批量导入模板（线上只支持 csv）。"""
+    """下载批量导入模板（服务端只出 csv；Excel 模板由浏览器端生成）。"""
     spec = _product_or_404(product_key)
     return _template_response(spec, format, examples, include_spec)
 
@@ -1016,7 +1050,9 @@ async def export_quote_import_template_info(
         },
         "notes": [
             "模板表头与导出的报价表一致：导出 → 改 → 再导入，不用另对照列名。",
-            "线上只支持 CSV（UTF-8，可带 BOM）：在 Excel 里「另存为 CSV UTF-8」即可。",
+            "上传支持 .xlsx 与 CSV（UTF-8，可带 BOM）；Excel 模板请点「下载 Excel 模板」"
+            "（浏览器端生成，带下拉与填写说明）。",
+            "老的 .xls 请先在 Excel 里另存为 .xlsx（或 CSV UTF-8）再上传。",
             "列名括号里的就是该列单位，按单位填原值即可，不要自己换算。",
         ],
     }
@@ -1025,15 +1061,14 @@ async def export_quote_import_template_info(
 @app.post("/api/v1/export-quote/import/preview")
 async def export_quote_import_preview(
     request: Request,
-    file: UploadFile = File(description="CSV 规格表"),
+    file: UploadFile = File(description="规格表：.xlsx（首选）或 .csv"),
     product_key: str = Form("field_fence"),
     sheet: Optional[str] = Form(default=None),
     user: dict = Depends(_get_current_user),
 ):
-    """先看清解析成了什么，再决定要不要算（只支持 CSV）。"""
+    """先看清解析成了什么，再决定要不要算（支持 .xlsx 与 CSV）。"""
     spec = _product_or_404(product_key)
     data = await _read_upload(file)
-    _reject_spreadsheet(data, file.filename or "")
     parsed = _parse_or_400(data, spec, file.filename or "", sheet)
     payload = parsed.to_dict()
     payload["product_key"] = spec.key
@@ -1045,14 +1080,14 @@ async def export_quote_import_preview(
 @app.post("/api/v1/export-quote/import/calculate")
 async def export_quote_import_calculate(
     request: Request,
-    file: UploadFile = File(description="CSV 规格表"),
+    file: UploadFile = File(description="规格表：.xlsx（首选）或 .csv"),
     payload: str = Form(description="计算参数（_CalculateIn 的 JSON 字符串）"),
     product_key: str = Form("field_fence"),
     sheet: Optional[str] = Form(default=None),
     view: str = Form("customer", description="customer | internal"),
     user: dict = Depends(_get_current_user),
 ):
-    """把整张表的规格一次算完（只支持 CSV）。坏行跳过并随结果一起回报。"""
+    """把整张表的规格一次算完（支持 .xlsx 与 CSV）。坏行跳过并随结果一起回报。"""
     if view not in ("customer", "internal"):
         raise HTTPException(status_code=400, detail={
             "error": "bad_view", "message": "view 只能是 customer 或 internal"})
@@ -1081,7 +1116,6 @@ async def export_quote_import_calculate(
         raise HTTPException(status_code=422, detail={"error": "invalid_payload", "message": detail})
 
     data = await _read_upload(file)
-    _reject_spreadsheet(data, file.filename or "")
     parsed = _parse_or_400(data, spec, file.filename or "", sheet)
     if not parsed.rows:
         raise HTTPException(status_code=400, detail={

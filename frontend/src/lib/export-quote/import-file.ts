@@ -85,10 +85,12 @@ export function validateFile(
   limits: { maxMb?: number; accept?: string[] } = {},
 ): string | null {
   const maxMb = limits.maxMb ?? 2;
+  // .xlsx 直接上传：服务端已经能读（共享内核里的纯 stdlib 读取器，2026-10-21 C7），
+  // **不要**在前端解析后转 CSV —— 那会丢共享字符串之外的格式信息，也等于第二套口径。
   const accept = limits.accept ?? [".csv", ".xlsx", ".xlsm", ".txt"];
   const name = file.name.toLowerCase();
   if (name.endsWith(".xls")) {
-    return "不支持老的 .xls 格式，请在 Excel 里另存为 .xlsx 后再上传";
+    return "不支持老的 .xls 格式，请在 Excel 里另存为 .xlsx（或 CSV）后再上传";
   }
   if (!accept.some((ext) => name.endsWith(ext))) {
     return `只支持 ${accept.join(" / ")} 格式`;

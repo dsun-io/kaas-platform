@@ -51,6 +51,7 @@ from .importers import (
     template_columns,
     template_headers,
 )
+from .xlsx import read_xlsx
 from .expr import ExpressionError, Formula, evaluate
 from .formulas import (
     describe_calculations,
@@ -110,7 +111,7 @@ __all__ = [
     "EngineError", "DEFAULT_VALIDITY_DAYS", "make_request_from_config",
     "ladder_from_config", "spec_from_partial",
     # 表格批量导入
-    "parse_table", "read_table", "build_template_csv", "build_template_xlsx",
+    "parse_table", "read_table", "read_xlsx", "build_template_csv", "build_template_xlsx",
     "template_headers", "template_columns", "TemplateColumn",
     "ParsedTable", "ImportError_",
     # 表达式

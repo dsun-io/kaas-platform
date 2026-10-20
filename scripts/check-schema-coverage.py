@@ -38,6 +38,20 @@ NON_TABLE = {
     "regexp_split_to_table", "string_to_array", "only",
 }
 
+# CTE 名（`WITH captured AS (...), researched AS (...)`）也会被 SQL_TABLE_RE 当成
+# 「FROM 后面的表名」而误报（2026-10-21 C8 的 captured/researched/reached/dealt）。
+# 这里从代码里静态识别 CTE 定义名并排除；不改 SQL、不加 allowlist（CTE 不是 schema 依赖）。
+CTE_RE = re.compile(
+    r"(?:\bWITH\s+(?:RECURSIVE\s+)?|,\s*)([a-z_][a-z0-9_]*)\s+AS\s*"
+    r"(?:NOT\s+MATERIALIZED\s*)?\(",
+    re.IGNORECASE,
+)
+
+
+def cte_names(code: str) -> set[str]:
+    """静态识别本文件 SQL 里定义的 CTE 名（小写）。"""
+    return {m.group(1).lower() for m in CTE_RE.finditer(code)}
+
 
 def worker_table_refs() -> dict[str, set[str]]:
     refs: dict[str, set[str]] = {}
@@ -46,9 +60,10 @@ def worker_table_refs() -> dict[str, set[str]]:
         # 2026-10-19 误报修复：注释里的 SQL 片段（如 "原先这里只 UPDATE due_date/notes"）
         # 会被下面的正则当成表名。先去掉行注释再提取，避免把说明文字当 schema 依赖。
         code = "\n".join(line.split("#", 1)[0] for line in text.splitlines())
+        ctes = cte_names(code)
         for match in SQL_TABLE_RE.finditer(code):
             table = match.group(1)
-            if not table.islower() or table in NON_TABLE:
+            if not table.islower() or table in NON_TABLE or table in ctes:
                 continue
             refs.setdefault(table, set()).add(path.name)
     return refs

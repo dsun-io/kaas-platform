@@ -82,8 +82,10 @@ describe("上传前预检", () => {
     }
   });
 
-  it("老式 .xls 给明确指路，而不是含糊报错", () => {
-    expect(validateFile(fileOf("old.xls"))).toContain("另存为 .xlsx");
+  it("老式 .xls 给明确指路（另存为 .xlsx 或 CSV），而不是含糊报错", () => {
+    const message = validateFile(fileOf("old.xls"));
+    expect(message).toContain("另存为 .xlsx");
+    expect(message).toContain("CSV");
   });
 
   it("拦下不支持的格式、空文件与超大文件", () => {
