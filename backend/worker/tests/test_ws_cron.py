@@ -20,6 +20,8 @@ README §8 已知问题 #5：orchestrator 里两个 APScheduler 任务**生产�
 """
 from __future__ import annotations
 
+import uuid
+
 import asyncio
 import gzip
 import json
@@ -402,10 +404,14 @@ def test_archive_buckets_by_schema_version_and_writes_gzip_to_r2():
     # 每桶一条归档日志（tenant='*'，month=YYYY-MM，路径带 bucket 前缀）
     log_rows = [q for q in conn.queries if "INSERT INTO events_archive_log" in q[0]]
     assert len(log_rows) == 2
-    assert log_rows[0][1] == (
+    # 2026-10-21 生产排查：events_archive_log.id 是 uuid NOT NULL 且现网无默认值
+    # ⇒ worker 显式传 uuid（第一个参数），不依赖库默认。
+    assert len(log_rows[0][1]) == 5
+    assert isinstance(log_rows[0][1][0], uuid.UUID)
+    assert log_rows[0][1][1:] == (
         "*", "2026-10", "kaas-files/events-archive/2026/10/18/v1.jsonl.gz", "archived",
     )
-    assert log_rows[1][1][2].endswith("/v2.jsonl.gz")
+    assert log_rows[1][1][3].endswith("/v2.jsonl.gz")
 
 
 def test_archive_payload_json_string_is_normalized():

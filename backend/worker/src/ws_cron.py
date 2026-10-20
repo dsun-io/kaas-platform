@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import json
 import sys
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -387,9 +388,9 @@ async def archive_events_for_day(
         await bucket.put(key, body, opts)
         await conn.execute(
             """INSERT INTO events_archive_log
-               (tenant_id, month, minio_path, status)
-               VALUES ($1,$2,$3,$4)""",
-            "*", f"{year}-{month}", f"{bucket_name}/{key}", "archived",
+               (id, tenant_id, month, minio_path, status)
+               VALUES ($1,$2,$3,$4,$5)""",
+            uuid.uuid4(), "*", f"{year}-{month}", f"{bucket_name}/{key}", "archived",
         )
         archived += len(events)
 

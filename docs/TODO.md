@@ -32,7 +32,7 @@
 | A-12 | **C12 PDF 归档真单证端到端** | 需等平台产生首单真实 PDF（`render_pdf` 当前 0 条）后人工复核 18 类；可先用现有样例做 1 类对照 | 0.5 天 |
 | A-13 | **C36 审计后续（实为 20 条待接）** | ✅ 审计完成 + **删 3 条已批准接口** + **本期 5 条 UI 已接**（税档软删/定价改/团队改名/手工汇率/CSV 导入，前端 789 passed）；剩余：下期 12 + 长期保留 3 + 13 条 owner 确认 | 2 天 |
 | A-14 | **A10：5 类扩展模板实现** | ✅ P1 两件完成（`beneficiary_decl` 12 字段/BD、`saso_coc` 18 字段/COC；金标 23→25；后端 DOC_TYPE 20 类、contracts R3/R4 PASS）；P2 三类按真实样例再排 | — |
-| A-15 | **A8①：归档任务端到端实跑** | ⏳ 等待 2026-10-21 00:30 首窗口后验证（cron 30 16 UTC；预期 log +1 行 path=`kaas-files/events-archive/2026/10/19/v1.jsonl.gz`、events 行数不变） | 0.5 天 |
+| A-15 | **A8①：归档任务端到端实跑** | ✅ 2026-10-21 已完成并验证：首窗口 cron 失败根因 = `events_archive_log.id` uuid NOT NULL 且现网无默认值（NotNullViolation，重试 3 次静默失败）→ worker 显式传 uuid + 迁移 `202610210001` 补默认；手动触发归档 2026-10-19：**archived=7 / version_count=1**，DB 新增 1 行（`kaas-files/events-archive/2026/10/19/v1.jsonl.gz`）+ R2 对象 326 bytes 实测可下载 | — | ✅ |
 | A-16 | **D2 后直传路径端到端复验** | ✅ 2026-10-21 已验证：临时 QA 账号 → `POST /file-objects/presign` 返回 `configured=true`（签名用系统 token `kaas-r2-system`）→ PUT 200 → GET 200（内容一致）→ DELETE 204；临时账号与对象已清理 | — |
 | A-17 | **重置密码邮件 UI 同步新版** | ✅ 2026-10-21 已完成（electric-blue/12px 圆角/table 响应式/纯文本兜底） | — |
 
@@ -54,7 +54,7 @@
 
 ### D. 当前生产基线（2026-10-21 收口）
 
-- 生产版本 **`2fad8cb9-dd45-4226-9749-ef4a52e62dd5`**（第 9 次部署）；迁移头 **`202610200006`**；
+- 生产版本 **`711acb5f-53ac-4fd9-972e-cb8f6415d1b2`**（第 10 次部署）；迁移头 **`202610210001`**（events_archive_log id 默认修复）；
 - 门禁：worker **1523 + 12skip** / orchestrator **247** / 前端 **809（87 files）** / e2e **27 = 27 + 0** / build out **277** / contracts·mocks·contrast·trade-doc:check·静态断言全 PASS。
 
 ---
