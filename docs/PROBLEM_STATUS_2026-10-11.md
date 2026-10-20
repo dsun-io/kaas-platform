@@ -40,6 +40,7 @@
 > `n> - **C33/C39 收尾（2026-10-21）**：①3 条 e2e skip 修复（估算徽章/已废止徽章/手工录入校验；顺带补上"数量"字段错误渲染——此前无效输入无任何提示），e2e 现 **27 passed + 1 skipped = 28**（剩 `events.spec.ts:118` 需 test-only 强制 500 手段）；②`/admin/audit-log` 后端补筛选（`action/actor_id/resource_type/since/until` 参数化 WHERE + 日期含当天），前端筛选从此真生效；新增 4 条回归测试钉 SQL 形状/参数顺序/403 不查库。**生产五次部署 `3d324441-a6dc-41fc-bf6b-34901fca3ab5`**，冒烟 `/quotes`、`/billing`、`/audit-log` 200、无令牌 API 401。
 > `n> - **收尾批（2026-10-21）：A12/A13/C26/C30/C31/C33/C36 + 六次生产部署**：A12 `trigger_expr` 受限求值器（无 eval/exec，GET doc-set `applicable`，PUT 坏表达式 422 不落库，lint 只 warning；**边界**：facts 无包装类事实 → A14 待定字段）、A13 单证「中译英」入口（template 降级如实标注）、C26 a11y（skip-link/main/aria，点状）、C30 事件归档记录接真实 `events_archive_log`（含管理台卡片与分页）、C31 仪表盘改「改版中」占位（不再把无数据渲染成 0）、C33 **4/4** e2e skip 全修（events 用 test-only override；e2e 现 **27=27+0**）、C36 `docs/API_RESERVED_LIST.md`（247 路由 vs 183 FE 路径，实际未接 60 条：保留 18/待接 24/可删候选 18 需确认）。**门禁**：worker **1316+12skip** / orchestrator **247** / 前端 **678（71 files）** / e2e **27=27+0** / build out **276** / contracts·mocks·contrast·静态断言 PASS；**生产部署 `569a8b88-d5f9-4cd6-9719-e9aaf3e595fd`**（六次）。**用户决定**：C24 暂不做、N10 暂缓、安全轮换/改密/转 private 不做（只做归档数据评估）；D1 Resend/D2 R2 仍待用户注入。
 > `n> - **用户提供真实单据 + Resend key + 安全口径（2026-10-21）**：①用户提供 3 份真实单据（PI/CI/合同 PDF，不入仓，抽取文本在 `.tmp/a6-samples/`）→ **A6 校准矩阵** `docs/TRADE_DOC_A6_CALIBRATION.md`（G1–G12，P0=双币种/汇率/舍入/运费/定金尾款/应付总额；P1=合同 12 条双语条款与引用链）；A6-1/A6-2 施工中。②**D1 完成**：`RESEND_API_KEY` 已注入 worker `kaas`（secret list 5 项；key 仅发送权限，`/domains` 401 属预期）⇒ 忘记密码邮件恢复。③安全：用户决定**不做**口令轮换/改密/filter-repo、仓库保持 public；**归档数据已脱敏**（stowage 身份+228 成本/售价/利润格、17 份样例姓名/电话/邮箱；公司名保留）。④A5 拍板：团队级条款库+预置 6 类，顺序 W1→W3→W2（W1 后端/前端施工中）。
+> `n> - **执行批 8（2026-10-21）：真实单据校准 + 条款库 W1 + 密钥落地 + 七次部署**：①用户提供 3 份真实单据（PI/CI/合同，不入仓）→ A6-1 **PI/CI 双币种金额块**（四列行项/汇率/舍入调整/运费/定金尾款/应付总额，旧 18 金标零差异 + 2 份 FX 金标；facts 增 `total_payable`）、A6-2 **合同 12 条中英双语条款数据层**；②**A5-W1 条款模板库上线**（迁移 `202610200006` + CRUD + 懒种子 6 类 + 设置页卡片 + 单证表单选模板回填/覆盖二次确认）；③**D1 完成**：Resend 发送 key 注入 worker；**D2 完成**：R2 32 位 S3 密钥注入并**真回环验证**（presigned PUT/GET/DELETE 200/200/204，测试对象已删）；④CF API token/R2 凭据由用户授权，仅本会话使用、存于 `~/.dsh/secrets`（不入仓）；⑤归档 P1 已脱敏（stowage 身份+成本/售价/利润 228 格、17 份样例联系方式）。**门禁**：worker **1354+12skip** / orchestrator 247 / 前端 **719（74 files）** / e2e **27=27+0** / build **277** / 契约·mocks·contrast·trade-doc:check·静态断言 PASS；**生产部署 `69765ef6`**（七次）。
 > `n> **（2026-10-21 · 执行批 1：D7 落地、A7 事实层结构、前后端对齐修复进行中）**
 >
 > - **D7（preview ensure 对 Neon 423 重试）✅**：`scripts/preview/preview_lib.py` 对 **423/429**
@@ -4692,3 +4693,95 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
   明确 `SET DEFAULT gen_random_uuid()`；库 head 已到 `202610200005`）⇒ `ws_cron.py` 的 INSERT **不写 id**，
   在本机会以 `23502 not-null violation` 失败 —— 即"本机 cron 归档跑不起来"是迁移未真正落到该库的表征
   （与 task-7 发现的 `tenant_subscriptions` 种子缺失同类）。建议运维核对本机库是否按全量迁移建成；读取端点不受影响。
+
+---
+
+## 2026-10-21 · A5-W1 前端（设置页条款模板 CRUD + 单证表单选模板回填）
+
+- **入口位置**：`设置 → 企业信息`（`frontend/src/app/(app)/settings/company-profile/page.tsx`）底部新增
+  「条款模板」卡片。理由：`/settings` 主页是**平台运营**页（`RouteGuard adminOnly`：租户/账号/系统操作），
+  条款库是**团队级业务数据**；`company-profile` 已是团队管理员维护「单据默认条款（贸易术语/付款方式）」的页面，
+  读写权限口径（`useTeam().isTeamAdmin`）与后端 `team admin` 一致，新增卡片即把「默认条款」升级为「可复用条款库」。
+- **契约现状（与任务预期对照）**：前端按固定契约实现
+  `GET/POST/PATCH/DELETE /api/v1/clause-templates`（`{id,name,doc_types,text_zh,text_en,sort_order,is_active}`），
+  数据层在 `lib/trade-doc/use-clause-templates.ts`。**施工中途后端并行任务已落地**
+  （`backend/worker/src/ws_clause_templates.py`、迁移 `202610200006_tenant_clause_templates.py`、内核
+  `kaas_common/trade_doc/clause_templates.py`；`main.py:4989` 已 import）：读代码核对 **7 字段 / 团队级 / 软删 /
+  懒种子 6 条**均与预期一致，无需改前端；两处按实际代码收紧：① 后端要求 `doc_types` **非空**（18 类子集）
+  ⇒ 设置页提交前校验 + 去掉"空=通用"文案；② 错误码为 `NO_TEAM` / `NOT_TEAM_ADMIN` / `CLAUSE_NAME_TAKEN`(409) /
+  `CLAUSE_TEXT_REQUIRED` 等，UI 按 `message/detail/code` 统一透出。MSW 种子已对齐内核 `DEFAULT_CLAUSE_TEMPLATES`
+  6 条（名称/单证/双语/排序）。契约仍**没有**"模板属于哪个字段"的键 ⇒ 采用"每个条款字段各自选择模板"（见下）。
+- **设置页 CRUD**（`settings/company-profile/components/clause-templates-card.tsx`）：
+  列表（名称 / 适用单证中文标签 / 中英摘要 / 排序）、新建/编辑弹窗（名称、18 类 doc_types 多选 + 全选、
+  中文、英文、排序；`doc_types` 非空为后端硬约束，前端先拦）、删除二次确认；只读账号（`canWrite=false`）
+  无写入口 + 明确提示；403/409/422 的 `message/detail/code` 经 `normalizeApiError` 如实透出
+  （不吞成"请求失败"）；成功后失效 `["clause-templates"]` 查询。
+- **单证表单回填**（`trade-docs/components/doc-custom-form.tsx`，即「填写单据内容」实际编辑表单；
+  `doc-create-form.tsx` 只负责开单类型/客户，无条款字段）：
+  - 按 manifest 真实字段识别条款类 = `payment_terms / inspection / claims / force_majeure / arbitration`；
+    仅这些字段出现「选择条款模板」下拉（`aria-label="<字段中文名> 条款模板"`），其余字段保持原样；
+  - 模板按 `GET ?doc_type=` 过滤（后端 `$3 = ANY(doc_types)` 严格匹配，`doc_types` 后端保证非空）；
+    前端再按 `doc_types` 兜一层（空数组按"通用"防御，正常不会出现）；
+  - **单段字段双语取舍**：manifest 里条款字段是**单段字符串**（没有 `*_zh`/`*_en` 两个槽位），
+    而模板渲染的是英文单证 ⇒ 有 `text_en` 回填英文、否则回填 `text_zh`；实际回填语言在字段下方
+    `role="note"` 说明（未采用的那一版保留在模板库，可手工粘贴）；
+  - **默认只填空字段**（`decideFill` 纯函数）：已填内容 → 弹「覆盖已填内容？」Dialog（显示字段名与模板名），
+    取消保留原内容、确认才覆盖；内容与模板一致 → noop 不弹窗；「自定义」直接输入完全保留。
+- **测试**：新增 10 条（设置卡片 6：列表/新建 POST body/403/422/删除确认/只读；表单回填 4：
+  下拉与过滤/空字段回填英文/已填二次确认与覆盖/noop）。
+  `pnpm exec vitest run 'src/app/(app)/settings' 'src/app/(app)/trade-docs' src/mocks`
+  = **17 files / 152 tests passed**；`pnpm typecheck` 0 error；`pnpm lint` 0 error（88 warn 既有/他人）。
+  未跑 build/e2e、未 commit。
+- **未覆盖 / 风险**：① 本轮未对真机后端做联调（前端测试用 apiClient mock / MSW）；后端已落地，
+  但"前端请求 ↔ 后端真实响应"要等它合入后跑一次页面验收（含懒种子 6 条、403/409/422 三种错误）；
+  ② 契约无"模板属于哪个字段"的键 ⇒ 采用"每个条款字段各自选择模板"的交互（不对模板名做猜测映射）；
+  ③ 未做拖拽排序（只支持 sort_order 数字）；④ e2e 未覆盖。
+
+---
+
+## 2026-10-21 · A5-W1 后端：团队级条款模板库（迁移 + CRUD + 懒种子 6 类）
+
+> 用户已拍板「团队级条款库 + 预置 6 类」，顺序 W1→W3→W2。本节只记 **W1 后端 + 迁移**；
+> 前端设置面板/单证表单引用由同批另一任务完成（其文档写"后端未上线"——本节交付后该条可销）。
+
+- **迁移**：`backend/orchestrator/alembic/versions/202610200006_tenant_clause_templates.py`
+  （`down_revision=202610200005`，当前单 head 即 `202610200006`）。新表 `tenant_clause_templates`：
+  `id BIGSERIAL PK / tenant_id TEXT NOT NULL DEFAULT 'default' / team_id BIGINT NOT NULL /
+  doc_types TEXT[] NOT NULL / name TEXT NOT NULL / text_zh / text_en TEXT /
+  sort_order INT NOT NULL DEFAULT 0 / is_active BOOL NOT NULL DEFAULT true / created_at, updated_at`；
+  唯一 `(tenant_id, team_id, name)`（`uq_tenant_clause_templates_name`）、索引
+  `(tenant_id, team_id, is_active)`（`idx_tenant_clause_templates_active`）。**默认 6 条不写进迁移**（见懒种子）。
+  离线验证：`alembic heads` = `202610200006 (head)`；`upgrade 202610200005:202610200006 --sql` 与
+  `downgrade 202610200006:202610200005 --sql` 均 exit 0（本机无 PG，未跑真实 `alembic check`；
+  ORM 与迁移逐列对齐，另有静态 `check-schema-coverage/drift` 通过——drift 仅把新表列为"模型多出、生产暂无"警告）。
+- **ORM**：`backend/orchestrator/app/db/workstation_models.py` 新增 `TenantClauseTemplate`
+  （`ARRAY(Text)`、两个 Index 与迁移同名；`alembic/env.py` 已显式 import 该模块，metadata 完整）。
+- **内核**（共享、纯 stdlib）：`backend/kaas_common/trade_doc/clause_templates.py`
+  —— `DEFAULT_CLAUSE_CATEGORIES` / `DEFAULT_CLAUSE_TEMPLATES`（6 类中英双语真实外贸措辞，
+  **文件头注明"默认措辞可编辑"**）、`normalize_doc_types`（18 类子集、非空、去重保序）、
+  `validate_clause_template`（name 非空≤120、text_zh/text_en 至少一侧非空且≤8000、sort_order 整数）、
+  `pick_for_doc_type`（按单证类型筛、默认排除停用、`sort_order→id` 稳定排序）、`default_seed_rows`（深拷贝）。
+  注意：内核**不 import** `kaas_common.domain.enums`（它依赖 FastAPI，orchestrator 内核测试环境没有），
+  本地 18 类清单由 worker 测试 `test_doc_types_match_domain_enums` 钉住逐项一致。
+- **Worker 端点**（新模块 `backend/worker/src/ws_clause_templates.py`，`main.py` import + `tests/_bootstrap.py` 登记）：
+  - `GET /api/v1/clause-templates?doc_type=`（登录即可；团队级；无团队 403 `NO_TEAM`；非法 doc_type 422 `INVALID_DOC_TYPE`）；
+  - `POST /api/v1/clause-templates` / `PATCH /api/v1/clause-templates/{id}` / `DELETE /api/v1/clause-templates/{id}`
+    （仅团队创建者或平台管理员；成员 403 `NOT_TEAM_ADMIN`）；DELETE 为**软删** `is_active=false`（重复删 404）；
+  - 校验错误 422 `detail.code` ∈ {`CLAUSE_NAME_REQUIRED`,`CLAUSE_NAME_TOO_LONG`,`CLAUSE_TEXT_REQUIRED`,
+    `CLAUSE_TEXT_TOO_LONG`,`CLAUSE_DOC_TYPES_REQUIRED`,`INVALID_DOC_TYPE`,`CLAUSE_SORT_INVALID`}；
+    同名 409 `CLAUSE_NAME_TAKEN`。
+- **响应形状（前端可依赖）**：`GET → {"items": [{id:int, name:str, doc_types:str[],
+  text_zh:str|null, text_en:str|null, sort_order:int, is_active:bool}], "total":int}`
+  （**恰这 7 个业务字段**，时间戳不暴露）；`POST` 201 → 单个 item（同 7 字段）；
+  `PATCH` 200 → 单个 item；`DELETE` 200 → `{"id": int, "is_active": false}`。列表按 `sort_order, id` 升序。
+- **懒种子**：首次 GET 某团队 **0 条（含软删）** 时插入 6 条默认模板（付款/装运/检验/索赔/不可抗力/仲裁），
+  `INSERT ... ON CONFLICT (tenant_id, team_id, name) DO NOTHING` ⇒ 幂等/并发安全；用户把 6 条全删后
+  **不会**被重新塞回默认值（有意为之，避免"删不掉的系统条款"）。
+- **测试**：worker 新增 `tests/test_clause_templates.py`（内核 18 条）+ `tests/test_clause_templates_api.py`
+  （API 13 条，含懒种子幂等/软删不复种/权限/校验/唯一名/团队隔离）= 31 passed；
+  **worker 全量 1354 passed + 12 skipped（基线 1316+12；含本任务 +31 与并行线 A6-1 的 +7，不减少）**；
+  **orchestrator 247 passed（不变）**；
+  `sync-shared.ps1` + `-Check` 通过（44/21/1，含并行线 facts.py 的最新内容）；`check-schema-coverage` / `check-schema-drift` /
+  `check-worker-bundle` / `check-runtime-deps` 全部 exit 0。
+- **上线前提（如实）**：新表随迁移 `202610200006` 部署；**在迁移执行前**，前端 `GET /clause-templates` 会因表不存在 500
+  （前端当前按 MSW 模式/未上线提示处理）。未 commit、未跑 build/e2e、未改 `docs/TODO.md`。

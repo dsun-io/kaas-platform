@@ -25,6 +25,9 @@ test.describe('Dashboard', () => {
     await expect(page.getByRole('heading', { name: '仪表盘' })).toBeVisible({
       timeout: 15000,
     });
-    await expect(page.getByRole('link', { name: '仪表盘' })).toBeVisible();
+    // 面包屑也会渲染同名 "仪表盘" 的 span[role=link]（aria-disabled）⇒ 严格模式必须限定侧栏
+    await expect(
+      page.getByRole('complementary').getByRole('link', { name: '仪表盘' }),
+    ).toBeVisible();
   });
 });
