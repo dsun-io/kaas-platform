@@ -54,6 +54,17 @@ export interface TradeDocRawPayload {
  */
 export const PROTECTED_FIELDS = ["items", "total_amount"] as const;
 
+/**
+ * 渲染器**派生**字段：manifest 里要声明（模板占位符检查用），但**没有手填意义** ——
+ * 目前只有 A6-1 的 `fx_block`（双币种金额块，由 `renderFxBlock` 按 fx_rate 生成）。
+ * 不把它列进「填写内容」表单，否则用户会看到一个"填 HTML 表格"的荒谬输入框。
+ */
+export const RENDERER_DERIVED_FIELDS = ["fx_block"] as const;
+
+export function isRendererDerivedField(name: string): boolean {
+  return (RENDERER_DERIVED_FIELDS as readonly string[]).includes(name);
+}
+
 export function isProtectedField(name: string): boolean {
   return (PROTECTED_FIELDS as readonly string[]).includes(name);
 }
@@ -82,12 +93,14 @@ export function controlFor(type?: string): CustomControl {
 export function listCustomFields(docType: string): CustomFieldDef[] {
   const fields = getTemplateFields(docType) as Record<string, CustomFieldSpec> | null;
   if (!fields) return [];
-  return Object.entries(fields).map(([name, spec]) => ({
-    name,
-    spec,
-    control: controlFor(spec?.type),
-    protected: isProtectedField(name),
-  }));
+  return Object.entries(fields)
+    .filter(([name]) => !isRendererDerivedField(name))
+    .map(([name, spec]) => ({
+      name,
+      spec,
+      control: controlFor(spec?.type),
+      protected: isProtectedField(name),
+    }));
 }
 
 /** 已填值 → 表单文本（对象/数组按 2 空格缩进 JSON，便于人工核对） */

@@ -107,6 +107,7 @@ raw_payload = {
   - `total_amount_words` / `insured_amount_words`：金额英文大写
   - `total_qty` / `total_packages` / `total_gross_weight` / `total_net_weight` / `total_volume`：行项自动汇总
   - `seller_name`：卖方名称（签章区提示语）
+  - `fx_block`：**双币种金额块**（仅 PI/CI 且给了 `fx_rate` 时；见 §十一）
   - 日期统一格式化为 `26-Sep-2026`
   - `remarks` / `notes`：**换行保留**（先按业务值转义、再把 `\n` 换成 `<br>`）——
     备注本来就该逐点换行（`1) … 2) … 3) …`），HTML 默认会把换行折叠成空格、
@@ -438,3 +439,55 @@ POST /api/v1/trade-docs/{id}/content-versions/{version_no}/restore   仅 draft
 **与文件版本链的关系**：`file_objects.version / is_current / supersedes_id` 管的是**上传的 PDF
 文件**（v1/v2 的归档件），本表管的是**内容**（sources + custom 快照）—— 两条链互不替代，
 同一份单据可以"内容 v3 + 文件 v2"。
+
+---
+
+## 十一、双币种金额块（A6-1 · 2026-10-21 新增）
+
+> 背景与校准依据：`docs/TRADE_DOC_A6_CALIBRATION.md`（G1–G6）。只对 **PI / CI** 生效；
+> **没有 `fx_rate` 时完全不触发** ⇒ 既有 18 份单币种逐字节基线不变（`render.test.ts` 钉住）。
+
+### 11.1 新增字段（`raw_payload.custom`，全部可选、向后兼容）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `fx_rate` | number | 汇率（1 USD = ? CNY，如 `6.7029`）。**有值才进入双币种模式** |
+| `fx_source` | string | 汇率来源（如 `Bank of China USD spot buying rate 670.29 per USD 100`） |
+| `fx_date` | string | 汇率日期（如 `2026-09-28`） |
+| `inland_freight_cny` / `_usd` | number | 内陆运费（USD 留空按汇率换算） |
+| `rounding_adjustment_cny` / `_usd` | number | 舍入调整（留空自动推导） |
+| `total_goods_value_cny` / `_usd` | number | 货物总值（不含运费；留空自动推导） |
+| `total_payable_cny` / `_usd` | number | 应付总额（不含税、含内陆运费；留空自动推导） |
+| `deposit_cny` / `_usd` | number | 定金（留空按付款条款里的百分比自动推导） |
+| `balance_cny` / `_usd` | number | 尾款（留空 = 应付总额 − 定金） |
+
+派生占位符 `fx_block`（渲染器生成整块 HTML，**不要手填**；已从「填写内容」表单过滤）。
+
+### 11.2 行项与金额块版式
+
+- 有 `fx_rate` 时行项表变四列：`Unit Price (CNY) / Amount (CNY) / Unit Price (USD) / Amount (USD)`，
+  **不再输出表内 TOTAL 行**（合计改由金额块分列表达）。
+- 金额块（`$fx_block`，紧跟行项表）依次为：
+  `Currency / Exchange Rate` 行 → `Rounding adjustment` → `Total Goods Value` →
+  `Inland Freight to Delivery Address` → `TOTAL AMOUNT PAYABLE` → `Deposit (30%)` / `Balance (70%)`。
+- 金额英文大写按 **USD 应付总额** 出（与真实单据一致）；`total_amount` 未给时由 `total_payable_usd` 派生。
+
+### 11.3 计算口径（**待用户最终确认**，见校准文档 §4 #2/#3）
+
+- 本币行金额 = `round2(数量 × round2(本币单价))`；外币单价 = `round4(本币单价 ÷ 汇率)`；
+  外币行金额 = `round2(本币行金额 ÷ 汇率)`。
+- **未舍入合计** = `Σ(数量 × 本币单价原始精度)`；货物总值 = `round2(未舍入合计)`；
+  **舍入调整** = 货物总值 − Σ行金额（USD 侧同理由 USD 行金额推导）。
+- 付款拆两段：百分比从 `payment_terms` 里的 `30% / 70%` 读；定金 = `round2(应付总额 × 30%)`，
+  尾款 = 应付总额 − 定金。
+- **显式字段优先**：给出上述任一金额字段即用给定值（真实单据的舍入调整常来自客户表格底稿）。
+- 实现位置：`frontend/src/lib/trade-doc/render.ts` 的 `computeFxBreakdown()`（纯函数，可单测）；
+  金标变体数据：`sample-data-fx.json` + `__fixtures__/html/sample_{pi,ci}_fx.html`
+  （重生成：`node frontend/node_modules/tsx/dist/cli.mjs frontend/src/lib/trade-doc/__fixtures__/generate-fx-fixtures.ts`）。
+
+### 11.4 收款账户结构化（G7，渲染层）
+
+`bank_info` 对象新增可选 key，按行渲染（缺 key 时输出与旧版完全一致）：
+`beneficiary`、`beneficiary_address`、`beneficiary_tax_id`、`bank_address`、`account_no`
+（原有 `bank` / `account` / `swift` 保留）。PI 模板已渲染 `$bank_info`；
+**CI 模板原本就没有银行区块**，补区块会改动既有 18 金标 ⇒ 留到下一批（见校准文档 G7 备注）。

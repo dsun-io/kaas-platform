@@ -52,6 +52,8 @@ from kaas_common.trade_doc.facts import (
     derive_amount,
     derive_unit_price,
     extract_facts,
+    fact_kind,
+    fact_label,
     gate_trust,
     normalize_fact_key,
     parse_payment_terms,
@@ -563,3 +565,50 @@ def test_parse_payment_terms_accepts_tenant_extra_table():
     facts = {fact.key: fact for fact in extract_facts(
         make_payload(payment_terms=sentence), "pi", extra_equivalents=extra)}
     assert facts["payment_balance_timing"].value == "net_60_after_bl"
+
+
+# ─── A6-1：应付总额（TOTAL AMOUNT PAYABLE）与汇率 ─────────────────────────────
+
+
+def test_extract_total_payable_single_field_is_money_fact():
+    """`total_payable` 是**含运费**的实际应付额：金额类事实（走容差），且不 immutable。"""
+    facts = facts_by_key(make_payload(total_payable=18945.66))
+    fact = facts["total_payable"]
+    assert fact.value == "18945.66"
+    assert fact.currency == "USD"
+    assert fact.immutable is False          # 金额不 immutable（部分出运时 CI 与 PI 天然不同）
+    assert fact_kind("total_payable") == "money"
+    zh, en = fact_label("total_payable")
+    assert zh == "应付总额" and en == "Total Amount Payable"
+
+
+def test_extract_total_payable_falls_back_to_currency_side_field():
+    """真实 PI/CI 把应付额拆成两币种字段；按单据币种只取对应一侧。"""
+    usd = facts_by_key(make_payload(total_payable_usd=18945.66))
+    assert usd["total_payable"].value == "18945.66"
+
+    cny = facts_by_key(make_payload(currency="CNY", total_payable_cny=18945.66))
+    assert cny["total_payable"].value == "18945.66"
+
+    # USD 单据不看 CNY 侧（也不把另一币种的值当成同一条事实）
+    only_cny = facts_by_key(make_payload(total_payable_cny=1))
+    assert "total_payable" not in only_cny
+
+
+def test_extract_total_payable_kept_apart_from_total_amount():
+    """`Total Goods Value` 与 `TOTAL AMOUNT PAYABLE` 是两条事实，不能互相顶替。"""
+    facts = facts_by_key(
+        make_payload(total_amount=2826.49, total_payable_usd=2826.86)
+    )
+    assert facts["total_amount"].value == "2826.49"
+    assert facts["total_payable"].value == "2826.86"
+
+
+def test_extract_custom_total_payable_is_manual_source():
+    payload = make_payload()
+    payload["custom"].update({"total_payable_usd": 2826.86})
+    facts = facts_by_key(payload)
+    fact = facts["total_payable"]
+    assert fact.value == "2826.86"
+    assert fact.source == SOURCE_MANUAL
+    assert fact.evidence_ref == "custom.total_payable_usd"

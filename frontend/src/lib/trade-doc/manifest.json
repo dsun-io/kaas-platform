@@ -182,6 +182,86 @@
         "type": "string",
         "required": false,
         "description": "运输唛头（外包装标记，须与发票/装箱单一致）"
+      },
+      "fx_rate": {
+        "type": "number",
+        "required": false,
+        "description": "汇率（1 USD = ? CNY，如 6.7029；有值才渲染双币种金额块）"
+      },
+      "fx_source": {
+        "type": "string",
+        "required": false,
+        "description": "汇率来源（如 Bank of China USD spot buying rate 670.29 per USD 100）"
+      },
+      "fx_date": {
+        "type": "string",
+        "required": false,
+        "description": "汇率日期（如 2026-09-28）"
+      },
+      "rounding_adjustment_cny": {
+        "type": "number",
+        "required": false,
+        "description": "舍入调整 CNY（未舍入合计−舍入后合计；留空自动推导）"
+      },
+      "rounding_adjustment_usd": {
+        "type": "number",
+        "required": false,
+        "description": "舍入调整 USD（留空自动推导）"
+      },
+      "inland_freight_cny": {
+        "type": "number",
+        "required": false,
+        "description": "内陆运费 CNY（已含在应付总额内）"
+      },
+      "inland_freight_usd": {
+        "type": "number",
+        "required": false,
+        "description": "内陆运费 USD（留空按汇率自动换算）"
+      },
+      "deposit_cny": {
+        "type": "number",
+        "required": false,
+        "description": "定金 CNY（留空按付款条款百分比自动推导）"
+      },
+      "deposit_usd": {
+        "type": "number",
+        "required": false,
+        "description": "定金 USD（留空自动推导）"
+      },
+      "balance_cny": {
+        "type": "number",
+        "required": false,
+        "description": "尾款 CNY（留空 = 应付总额 − 定金）"
+      },
+      "balance_usd": {
+        "type": "number",
+        "required": false,
+        "description": "尾款 USD（留空自动推导）"
+      },
+      "total_goods_value_cny": {
+        "type": "number",
+        "required": false,
+        "description": "货物总值 CNY（不含运费；留空按未舍入合计推导）"
+      },
+      "total_goods_value_usd": {
+        "type": "number",
+        "required": false,
+        "description": "货物总值 USD（留空自动推导）"
+      },
+      "total_payable_cny": {
+        "type": "number",
+        "required": false,
+        "description": "应付总额 CNY（货物总值 + 内陆运费；留空自动推导）"
+      },
+      "total_payable_usd": {
+        "type": "number",
+        "required": false,
+        "description": "应付总额 USD（留空自动推导）"
+      },
+      "fx_block": {
+        "type": "string",
+        "required": false,
+        "description": "（渲染器派生：双币种金额块，含汇率/舍入/运费/定金尾款/应付总额，勿手填）"
       }
     }
   },
@@ -373,6 +453,86 @@
         "type": "string",
         "required": false,
         "description": "唛头(无唛填 N/M)"
+      },
+      "fx_rate": {
+        "type": "number",
+        "required": false,
+        "description": "汇率（1 USD = ? CNY，如 6.7029；有值才渲染双币种金额块）"
+      },
+      "fx_source": {
+        "type": "string",
+        "required": false,
+        "description": "汇率来源（如 Bank of China USD spot buying rate 670.29 per USD 100）"
+      },
+      "fx_date": {
+        "type": "string",
+        "required": false,
+        "description": "汇率日期（如 2026-09-28）"
+      },
+      "rounding_adjustment_cny": {
+        "type": "number",
+        "required": false,
+        "description": "舍入调整 CNY（未舍入合计−舍入后合计；留空自动推导）"
+      },
+      "rounding_adjustment_usd": {
+        "type": "number",
+        "required": false,
+        "description": "舍入调整 USD（留空自动推导）"
+      },
+      "inland_freight_cny": {
+        "type": "number",
+        "required": false,
+        "description": "内陆运费 CNY（已含在应付总额内）"
+      },
+      "inland_freight_usd": {
+        "type": "number",
+        "required": false,
+        "description": "内陆运费 USD（留空按汇率自动换算）"
+      },
+      "deposit_cny": {
+        "type": "number",
+        "required": false,
+        "description": "定金 CNY（留空按付款条款百分比自动推导）"
+      },
+      "deposit_usd": {
+        "type": "number",
+        "required": false,
+        "description": "定金 USD（留空自动推导）"
+      },
+      "balance_cny": {
+        "type": "number",
+        "required": false,
+        "description": "尾款 CNY（留空 = 应付总额 − 定金）"
+      },
+      "balance_usd": {
+        "type": "number",
+        "required": false,
+        "description": "尾款 USD（留空自动推导）"
+      },
+      "total_goods_value_cny": {
+        "type": "number",
+        "required": false,
+        "description": "货物总值 CNY（不含运费；留空按未舍入合计推导）"
+      },
+      "total_goods_value_usd": {
+        "type": "number",
+        "required": false,
+        "description": "货物总值 USD（留空自动推导）"
+      },
+      "total_payable_cny": {
+        "type": "number",
+        "required": false,
+        "description": "应付总额 CNY（货物总值 + 内陆运费；留空自动推导）"
+      },
+      "total_payable_usd": {
+        "type": "number",
+        "required": false,
+        "description": "应付总额 USD（留空自动推导）"
+      },
+      "fx_block": {
+        "type": "string",
+        "required": false,
+        "description": "（渲染器派生：双币种金额块，含汇率/舍入/运费/定金尾款/应付总额，勿手填）"
       }
     }
   },

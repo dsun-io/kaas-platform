@@ -1,0 +1,80 @@
+{
+  "doc_types": ["pi", "ci"],
+  "base": {
+    "seller": {
+      "company": "ANPING LIANJIA WIRE MESH PRODUCTS CO., LTD.",
+      "address": "100 meters north of Diwo Village, Anping County, Hengshui City, Hebei Province, China",
+      "tel": "+86 136 0318 1774",
+      "email": "sales@lianjiafence.com"
+    },
+    "buyer": {
+      "company": "Tim Lyons",
+      "address": "Australia",
+      "contact": "Tim Lyons",
+      "tel": "+61 438 381 068",
+      "email": "timlyons@oneatmosphere.com"
+    },
+    "notify_party": {
+      "company": "Tim Lyons",
+      "address": "Australia",
+      "tel": "+61 438 381 068",
+      "email": "timlyons@oneatmosphere.com"
+    },
+    "currency": "USD",
+    "incoterm": "DAP Yangzhou, Jiangsu, China (Incoterms 2020)",
+    "payment_terms": "T/T — 30% deposit upon order confirmation; 70% balance before dispatch",
+    "delivery_time": "Posts approx. 10 days; Field Fence approx. 40 days",
+    "shipping_marks": "N/M",
+    "country_of_origin": "China",
+    "port_of_loading": "Anping, Hebei, China",
+    "port_of_destination": "Yangzhou, Jiangsu, China",
+    "vessel": "—",
+    "bank_info": {
+      "beneficiary": "ANPING LIANJIA WIRE MESH PRODUCTS CO., LTD.",
+      "beneficiary_address": "100 meters north of Diwo Village, Anping County, Hengshui City, Hebei Province, China",
+      "beneficiary_tax_id": "91131125MA0GA4242U",
+      "account_no": "13050171770800004556",
+      "bank": "China Construction Bank Corporation, Hebei Anping Sub-branch",
+      "bank_address": "Anping County, Hengshui City, Hebei Province, China",
+      "swift": "PCBCCNBJHBX"
+    },
+    "fx_rate": 6.7029,
+    "fx_source": "Bank of China USD spot buying rate 670.29 per USD 100",
+    "fx_date": "2026-09-28",
+    "inland_freight_cny": 750,
+    "total_amount": 2826.86,
+    "pi_no": "LJ-PI-20260929-01",
+    "pi_date": "2026-09-29",
+    "invoice_no": "LJ-CI-20261012-01",
+    "invoice_date": "2026-10-12",
+    "contract_no": "LJ-SC-20261012-01",
+    "lc_no": "—",
+    "remarks": "Certificate of Origin: ChAFTA COO where applicable; charges borne by the seller and not included in the total.",
+    "items": [
+      {
+        "product_name": "Y-Type Fence Post",
+        "specification": "Height 1.83 m · Material: rail steel · Hot-dip galvanized · Unit weight 1.86 kg/m",
+        "hs_code": "7308900000",
+        "qty": 400,
+        "qty_unit": "pc",
+        "unit_price": 25.0
+      },
+      {
+        "product_name": "Field Fence (Cattle Fence)",
+        "specification": "Height 1.473 m · Vertical wire Ø 2.4 mm, spacing 10 cm · 50 m per roll · Net weight 53.5 kg/roll",
+        "hs_code": "7314410000",
+        "qty": 20,
+        "qty_unit": "roll",
+        "unit_price": 366.3075
+      },
+      {
+        "product_name": "Electric Fence Support Insulator",
+        "specification": "Support height 200 mm · Insulating material · Manufacturer's packing",
+        "hs_code": "3926909090",
+        "qty": 400,
+        "qty_unit": "pc",
+        "unit_price": 2.18
+      }
+    ]
+  }
+}

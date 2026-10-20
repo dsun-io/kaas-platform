@@ -150,6 +150,61 @@ function esc(value: unknown): string {
     .replace(/'/g, "&#x27;");
 }
 
+// ── 双币种金额块（A6-1 · 2026-10-21 真实 PI/CI 校准）─────────────────────
+//
+// 真实 PI/CI 的行项是「本币（CNY）+ 外币（USD）」四列，表尾还有汇率行、舍入调整、
+// 运费、定金/尾款与 Total Amount Payable。口径（与用户样例对齐，待业务最终确认）：
+//
+//   · 行金额(CNY) = round2(数量 × round2(本币单价))          —— 与单据上「单价×数量」一致
+//   · 外币单价    = round4(本币单价 ÷ 汇率)                  —— 样例 25.00 → 3.7297
+//   · 行金额(USD) = round2(行金额CNY ÷ 汇率)                 —— 样例 10,000 → 1,491.89
+//   · 未舍入合计  = Σ(数量 × 本币单价原始精度)                —— 只用于算舍入调整，不上屏
+//   · 货物总值    = round2(未舍入合计)                        —— 即 "Total Goods Value"
+//   · 舍入调整    = 货物总值 − Σ行金额                        —— 即 "Rounding adjustment"
+//   · 应付总额    = 货物总值 + 内陆运费                       —— 即 "TOTAL AMOUNT PAYABLE"
+//   · 定金/尾款   = 应付总额 × 付款条款里的百分比（30%/70%）
+//
+// 以上每一项都允许 custom 显式覆盖（`rounding_adjustment_cny/usd`、`inland_freight_*`、
+// `deposit_*`、`balance_*`、`total_goods_value_*`、`total_payable_*`）：
+// 真实单据里的舍入调整常来自他们的表格底稿，覆盖率比"我们必须算对"更重要。
+//
+// ⚠️ 无 `fx_rate` 时**完全不触发**：模板里的 `$fx_block` 渲染为空串，
+// 既有 18 份逐字节基线因此保持不变（回归测试会钉住这一点）。
+
+/** 支持双币种金额块的单证类型（合同双语条款属 A6-2，暂不纳入）。 */
+const DUAL_CURRENCY_DOC_TYPES = new Set(["pi", "ci"]);
+
+/**
+ * 双币种行项列（有 fx_rate 时使用）：本币单价/金额 + 外币单价/金额 四列。
+ * 列序与真实单据一致；`hs_code` 在 CI 仍放最后一列（与单币种 CI 版式一致）。
+ */
+const DUAL_ITEM_COLUMNS: Record<string, Column[]> = {
+  pi: [
+    ["no", "No.", "c"],
+    ["product_name", "Description of Goods", "l"],
+    ["specification", "Specification", "l"],
+    ["hs_code", "HS Code", "c"],
+    ["qty", "Quantity", "r"],
+    ["qty_unit", "Unit", "c"],
+    ["unit_price_cny", "Unit Price (CNY)", "r"],
+    ["line_amount_cny", "Amount (CNY)", "r"],
+    ["unit_price_usd", "Unit Price (USD)", "r"],
+    ["line_amount_usd", "Amount (USD)", "r"],
+  ],
+  ci: [
+    ["no", "No.", "c"],
+    ["product_name", "Description of Goods", "l"],
+    ["specification", "Specification", "l"],
+    ["qty", "Quantity", "r"],
+    ["qty_unit", "Unit", "c"],
+    ["unit_price_cny", "Unit Price (CNY)", "r"],
+    ["line_amount_cny", "Amount (CNY)", "r"],
+    ["unit_price_usd", "Unit Price (USD)", "r"],
+    ["line_amount_usd", "Amount (USD)", "r"],
+    ["hs_code", "HS Code", "c"],
+  ],
+};
+
 // ── 数字 / 日期格式化（对齐 Python 的 format 语义）────────────────────────
 
 /** 等价 Python `f"{n:,.2f}"`：千分位 + 固定 2 位小数 */
@@ -208,6 +263,273 @@ function formatNumber(key: string, value: number): string {
     return formatAmount(value);
   }
   return Number.isInteger(value) ? String(Math.trunc(value)) : String(value);
+}
+
+/** 任意小数位的千分位格式（外币单价要 4 位：样例 3.7297 / 54.6495 / 0.3252） */
+function formatAmountFixed(n: number, digits: number): string {
+  const negative = n < 0;
+  const parts = Math.abs(n).toFixed(digits).split(".");
+  const intPart = parts[0] ?? "0";
+  const fracPart = parts[1] ?? "";
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const suffix = digits > 0 ? `.${fracPart.padEnd(digits, "0")}` : "";
+  return `${negative ? "-" : ""}${grouped}${suffix}`;
+}
+
+/** 四舍五入到指定小数位（与 `formatAmount` 的 toFixed 口径一致，避免两处各写一套） */
+function roundTo(value: number, digits: number): number {
+  return Number(value.toFixed(digits));
+}
+
+/** 宽容取数：数字或数字字符串 → number；空/非法 → null（不猜、不补零） */
+function numericOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+// ── 双币种金额推导（纯函数，供渲染与测试共用）──────────────────────────────
+
+export interface FxLine {
+  /** 本币单价（显示精度 2 位） */
+  unitPriceCny: number;
+  /** 本币行金额 = 数量 × 本币单价（2 位） */
+  amountCny: number;
+  /** 外币单价（4 位） */
+  unitPriceUsd: number;
+  /** 外币行金额 = 本币行金额 ÷ 汇率（2 位） */
+  amountUsd: number;
+}
+
+export interface FxBreakdown {
+  fxRate: number;
+  /** 汇率行文本：`1 USD = 6.7029 CNY · <来源> (<日期>)` */
+  rateNote: string;
+  lines: FxLine[];
+  roundingCny: number;
+  roundingUsd: number;
+  goodsCny: number;
+  goodsUsd: number;
+  freightCny: number | null;
+  freightUsd: number | null;
+  payableCny: number | null;
+  payableUsd: number | null;
+  depositPct: number | null;
+  balancePct: number | null;
+  depositCny: number | null;
+  depositUsd: number | null;
+  balanceCny: number | null;
+  balanceUsd: number | null;
+}
+
+/**
+ * 推导双币种金额块（见文件内 A6-1 口径注释）。
+ *
+ * 返回 null 的情形：非 PI/CI、没有 `fx_rate`、或 `fx_rate <= 0` ⇒ 调用方走原单币种路径，
+ * 输出与 A6-1 之前**逐字节一致**。
+ *
+ * 显式字段优先：`total_goods_value_*` / `rounding_adjustment_*` / `inland_freight_*` /
+ * `total_payable_*` / `deposit_*` / `balance_*` 给了就用给定值，没给才按公式推导。
+ */
+export function computeFxBreakdown(
+  docType: string,
+  data: Record<string, unknown>,
+): FxBreakdown | null {
+  if (!DUAL_CURRENCY_DOC_TYPES.has(docType)) return null;
+  const fxRate = numericOrNull(data.fx_rate);
+  if (fxRate === null || fxRate <= 0) return null;
+
+  const rawItems = Array.isArray(data.items) ? data.items : [];
+  const lines: FxLine[] = [];
+  let rawCnyTotal = 0;
+  let sumCny = 0;
+  let sumUsd = 0;
+  for (const raw of rawItems) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const item = raw as Record<string, unknown>;
+    const qty = numericOrNull(item.qty) ?? 0;
+    const rawPrice = numericOrNull(item.unit_price) ?? 0;
+    const unitPriceCny = roundTo(rawPrice, 2);
+    const amountCny = roundTo(qty * unitPriceCny, 2);
+    const unitPriceUsd = roundTo(rawPrice / fxRate, 4);
+    const amountUsd = roundTo(amountCny / fxRate, 2);
+    rawCnyTotal += qty * rawPrice;
+    sumCny += amountCny;
+    sumUsd += amountUsd;
+    lines.push({ unitPriceCny, amountCny, unitPriceUsd, amountUsd });
+  }
+
+  // 货物总值 = 未舍入合计四舍五入到 2 位（舍入调整 = 货物总值 − 行金额合计）
+  const goodsCny = roundTo(numericOrNull(data.total_goods_value_cny) ?? rawCnyTotal, 2);
+  const goodsUsd = roundTo(
+    numericOrNull(data.total_goods_value_usd) ?? rawCnyTotal / fxRate,
+    2,
+  );
+  const roundingCny = roundTo(
+    numericOrNull(data.rounding_adjustment_cny) ?? goodsCny - sumCny,
+    2,
+  );
+  const roundingUsd = roundTo(
+    numericOrNull(data.rounding_adjustment_usd) ?? goodsUsd - sumUsd,
+    2,
+  );
+
+  const freightCny = numericOrNull(data.inland_freight_cny);
+  const freightUsd =
+    numericOrNull(data.inland_freight_usd) ??
+    (freightCny === null ? null : roundTo(freightCny / fxRate, 2));
+  const payableCny =
+    numericOrNull(data.total_payable_cny) ??
+    (freightCny === null ? goodsCny : roundTo(goodsCny + freightCny, 2));
+  const payableUsd =
+    numericOrNull(data.total_payable_usd) ??
+    (freightUsd === null
+      ? goodsUsd
+      : roundTo(goodsUsd + freightUsd, 2));
+
+  // 定金/尾款：比例从付款条款文本里取（真实样例 "T/T — 30% deposit … 70% balance"）
+  const pcts = [...String(data.payment_terms ?? "").matchAll(/(\d{1,3})\s*%/g)]
+    .map((match) => Number(match[1]))
+    .filter((pct) => Number.isFinite(pct) && pct > 0 && pct <= 100);
+  const depositPct = pcts[0] ?? null;
+  const balancePct = pcts[1] ?? (depositPct === null ? null : 100 - depositPct);
+  const depositCny =
+    numericOrNull(data.deposit_cny) ??
+    (depositPct === null ? null : roundTo((payableCny * depositPct) / 100, 2));
+  const depositUsd =
+    numericOrNull(data.deposit_usd) ??
+    (depositPct === null ? null : roundTo((payableUsd * depositPct) / 100, 2));
+  const balanceCny =
+    numericOrNull(data.balance_cny) ??
+    (depositCny === null ? null : roundTo(payableCny - depositCny, 2));
+  const balanceUsd =
+    numericOrNull(data.balance_usd) ??
+    (depositUsd === null ? null : roundTo(payableUsd - depositUsd, 2));
+
+  const source = String(data.fx_source ?? "").trim();
+  const date = String(data.fx_date ?? "").trim();
+  const rateNote = [
+    `1 USD = ${fxRate} CNY`,
+    source ? `· ${source}` : "",
+    date ? ` (${date})` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return {
+    fxRate,
+    rateNote,
+    lines,
+    roundingCny,
+    roundingUsd,
+    goodsCny,
+    goodsUsd,
+    freightCny,
+    freightUsd,
+    payableCny,
+    payableUsd,
+    depositPct,
+    balancePct,
+    depositCny,
+    depositUsd,
+    balanceCny,
+    balanceUsd,
+  };
+}
+
+/** 金额块表格的一行：左标签 + 本币金额 + 外币金额（已格式化文本） */
+function fxMoneyRow(
+  label: string,
+  cny: number | null,
+  usd: number | null,
+  className = "",
+): string {
+  const cnyText = cny === null ? "" : `CNY ${formatAmount(cny)}`;
+  const usdText = usd === null ? "" : `USD ${formatAmount(usd)}`;
+  return (
+    `    <tr${className ? ` class="${className}"` : ""}>` +
+    `<td class="fx-label">${esc(label)}</td>` +
+    `<td class="fx-amt">${cnyText}</td>` +
+    `<td class="fx-amt">${usdText}</td>` +
+    `</tr>`
+  );
+}
+
+/**
+ * 生成模板里的 `$fx_block`：汇率行 + 舍入调整 + 货物总值 + 内陆运费 + 应付总额
+ * + 定金/尾款。**只在 fx 模式下产出**；无 fx 时返回空串（旧金标逐字节不变）。
+ *
+ * 为什么自带 `<style>` 而不写进 sharedStyle：共享样式是 18 份基线的共同输入，
+ * 改它等于把全部基线一次性作废；这一块是 fx 专属，样式跟块走更安全。
+ */
+function renderFxBlock(breakdown: FxBreakdown | null): string {
+  if (!breakdown) return "";
+  const rows = [
+    fxMoneyRow(
+      "Rounding adjustment (unit prices rounded to 2 decimals)",
+      breakdown.roundingCny,
+      breakdown.roundingUsd,
+    ),
+    fxMoneyRow("Total Goods Value", breakdown.goodsCny, breakdown.goodsUsd),
+  ];
+  if (breakdown.freightCny !== null || breakdown.freightUsd !== null) {
+    rows.push(
+      fxMoneyRow(
+        "Inland Freight to Delivery Address",
+        breakdown.freightCny,
+        breakdown.freightUsd,
+      ),
+    );
+  }
+  rows.push(
+    fxMoneyRow(
+      "TOTAL AMOUNT PAYABLE",
+      breakdown.payableCny,
+      breakdown.payableUsd,
+      "fx-total",
+    ),
+  );
+  if (breakdown.depositCny !== null || breakdown.depositUsd !== null) {
+    const pct = (value: number | null) =>
+      value === null ? "" : ` (${value}%)`;
+    rows.push(
+      fxMoneyRow(
+        `Deposit${pct(breakdown.depositPct)}`,
+        breakdown.depositCny,
+        breakdown.depositUsd,
+        "fx-split",
+      ),
+    );
+    rows.push(
+      fxMoneyRow(
+        `Balance${pct(breakdown.balancePct)}`,
+        breakdown.balanceCny,
+        breakdown.balanceUsd,
+        "fx-split",
+      ),
+    );
+  }
+
+  const lines = [
+    "",
+    "",
+    `  <style>`,
+    `    .fx-money{width:100%;border-collapse:collapse;font-size:8.7pt;table-layout:fixed;margin-top:0;}`,
+    `    .fx-money td{border:.9pt solid #ccd4dc;padding:1.4mm 1.8mm;vertical-align:top;}`,
+    `    .fx-money td.fx-label{text-align:left;}`,
+    `    .fx-money td.fx-amt{text-align:right;white-space:nowrap;width:17%;font-variant-numeric:tabular-nums;}`,
+    `    .fx-money tr.fx-rate td{background:#f5f8fa;font-size:8pt;color:#55636f;}`,
+    `    .fx-money tr.fx-total td{background:#eaeff4;font-weight:700;border-top:1.6pt solid #0f2740;}`,
+    `    .fx-money tr.fx-split td{font-size:8.2pt;color:#2b3641;}`,
+    `    @media print{.fx-money tr{page-break-inside:avoid;}}`,
+    `  </style>`,
+    `  <table class="fx-money">`,
+    // 汇率出处：双币种换算依据（审计必看），放在金额块第一行
+    `    <tr class="fx-rate"><td class="fx-label" colspan="3">Currency / Exchange Rate: ${esc(breakdown.rateNote)}</td></tr>`,
+    ...rows,
+    `  </table>`,
+  ];
+  return lines.join("\n");
 }
 
 const MONTH_ABBR = [
@@ -373,7 +695,15 @@ function renderAddressBlock(obj: Record<string, unknown>): string {
   if (obj.phone) lines.push(`Tel: ${esc(obj.phone)}`);
   if (obj.fax) lines.push(`Fax: ${esc(obj.fax)}`);
   if (obj.email) lines.push(`E-mail: ${esc(obj.email)}`);
+  // A6-1 / G7：收款账户结构化（bank_info 对象里的可选 key；缺 key 时输出与旧版一致）
+  if (obj.beneficiary) lines.push(`Beneficiary: ${esc(obj.beneficiary)}`);
+  if (obj.beneficiary_address)
+    lines.push(`Beneficiary Address: ${esc(obj.beneficiary_address)}`);
+  if (obj.beneficiary_tax_id)
+    lines.push(`Beneficiary Tax ID: ${esc(obj.beneficiary_tax_id)}`);
+  if (obj.bank_address) lines.push(esc(obj.bank_address));
   if (obj.bank) lines.push(esc(obj.bank));
+  if (obj.account_no) lines.push(`Account No.: ${esc(obj.account_no)}`);
   if (obj.account) lines.push(`A/C: ${esc(obj.account)}`);
   if (obj.swift) lines.push(`SWIFT: ${esc(obj.swift)}`);
   return lines.join("<br>");
@@ -780,12 +1110,44 @@ function renderDynamicTable(items: Record<string, unknown>[]): string {
   return `<table class="items"><thead><tr>${head}</tr></thead><tbody>${rows.join("")}</tbody></table>`;
 }
 
+/** 双币种行项表：本币/外币四列由 `FxBreakdown.lines` 提供，**不出 TOTAL 行**
+ * （合计行在 `$fx_block` 里分列呈现：货物总值 / 运费 / 应付总额）。 */
+function renderDualTable(
+  items: Record<string, unknown>[],
+  columns: Column[],
+  fx: FxBreakdown,
+): string {
+  const head = columns.map(([, label]) => `<th>${label}</th>`).join("");
+  const rows = items.map((item, i) => {
+    const line = fx.lines[i];
+    const cells = columns.map(([key, , align]) => {
+      let rendered = "";
+      if (key === "no") rendered = String(i + 1);
+      else if (key === "unit_price_cny")
+        rendered = line ? formatAmount(line.unitPriceCny) : "";
+      else if (key === "line_amount_cny")
+        rendered = line ? formatAmount(line.amountCny) : "";
+      else if (key === "unit_price_usd")
+        rendered = line ? formatAmountFixed(line.unitPriceUsd, 4) : "";
+      else if (key === "line_amount_usd")
+        rendered = line ? formatAmount(line.amountUsd) : "";
+      else rendered = renderCell(key, item[key] ?? "");
+      return `<td class="${align}">${rendered}</td>`;
+    });
+    return `<tr>${cells.join("")}</tr>`;
+  });
+  return `<table class="items"><thead><tr>${head}</tr></thead><tbody>${rows.join("")}</tbody></table>`;
+}
+
 function renderItemsTable(
   items: Record<string, unknown>[],
   docType?: string,
   context: Record<string, unknown> = {},
+  fx: FxBreakdown | null = null,
 ): string {
   if (!items.length) return "";
+  const dualColumns = fx ? DUAL_ITEM_COLUMNS[docType ?? ""] : undefined;
+  if (fx && dualColumns) return renderDualTable(items, dualColumns, fx);
   const columns = ITEM_COLUMNS[docType ?? ""];
   return columns
     ? renderFixedTable(items, columns, context)
@@ -810,6 +1172,8 @@ function preprocessData(
       if (summed !== null) context[field] = summed;
     }
   }
+  // 双币种（A6-1）：只有 PI/CI 且给了 fx_rate 才触发；否则 fx=null ⇒ 输出与旧版一致
+  const fx = computeFxBreakdown(docType, data);
 
   const result: Record<string, string> = {};
 
@@ -824,7 +1188,12 @@ function preprocessData(
       result[key] = renderBuyerConfirmation(value, data);
     } else if (Array.isArray(value)) {
       result[key] = value.length
-        ? renderItemsTable(value as Record<string, unknown>[], docType, context)
+        ? renderItemsTable(
+            value as Record<string, unknown>[],
+            docType,
+            context,
+            fx,
+          )
         : "";
     } else if (typeof value === "object") {
       result[key] = renderAddressBlock(value as Record<string, unknown>);
@@ -842,16 +1211,17 @@ function preprocessData(
     }
   }
 
-  Object.assign(result, deriveFields(docType, data, context, result));
+  Object.assign(result, deriveFields(docType, data, context, result, fx));
   return result;
 }
 
-/** 派生模板常用字段：金额大写、数量合计、卖方名、页脚 */
+/** 派生模板常用字段：金额大写、数量合计、卖方名、页脚、双币种金额块 */
 function deriveFields(
   docType: string,
   data: Record<string, unknown>,
   context: Record<string, unknown>,
   result: Record<string, string>,
+  fx: FxBreakdown | null = null,
 ): Record<string, string> {
   const derived: Record<string, string> = {};
 
@@ -865,6 +1235,15 @@ function deriveFields(
   ] as const) {
     if (!isEmpty(data[amountKey])) {
       derived[field] = esc(amountInWords(data[amountKey], currency));
+    }
+  }
+
+  // 双币种金额块：汇率行 / 舍入调整 / 货物总值 / 运费 / 应付总额 / 定金尾款。
+  // 金额大写按「应付总额 USD」出的口径与真实单据一致（样例只对 USD 总额出大写）。
+  if (fx) {
+    derived.fx_block = renderFxBlock(fx);
+    if (isEmpty(data.total_amount) && fx.payableUsd !== null) {
+      derived.total_amount_words = esc(amountInWords(fx.payableUsd, "USD"));
     }
   }
 
@@ -937,6 +1316,8 @@ const DERIVED_PLACEHOLDERS = new Set<string>([
   "insured_amount_words",
   "seller_name",
   "footer_note",
+  // A6-1：双币种金额块（无 fx_rate 时渲染为空串，不参与体检）
+  "fx_block",
   ...Object.keys(AUTO_SUMS),
 ]);
 

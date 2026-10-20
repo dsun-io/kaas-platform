@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Commercial Invoice - LJ-CI-20261012-01</title>
+<style>
+/* ==========================================================================
+   外贸单证 · 共享打印样式（印刷级 A4）
+   --------------------------------------------------------------------------
+   由 trade_doc_renderer 在渲染完成后注入到各模板的 <style> 中
+   （模板内写占位注释，标记见 renderer 的 _STYLE_PLACEHOLDER）。
+   9 类单证共用一份，避免样式重复维护、保证系列单据视觉统一。
+
+   命名约定：
+     .lh      卖方信头(Letterhead)      .meta   元信息表
+     .party   收发货人区块              .items  商品明细表
+     .words   金额英文大写              .clause 条款 / .certify 声明
+     .sign    签章区                    .foot   页脚
+
+   打印策略：屏幕预览模拟 A4 纸（210mm 宽 + 投影），打印时铺满 @page 版面。
+   ========================================================================== */
+
+@page { size: A4; margin: 13mm 13mm 11mm; }
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+body {
+  font-family: Arial, Helvetica, "Helvetica Neue", "Microsoft YaHei", sans-serif;
+  font-size: 9.5pt;
+  line-height: 1.4;
+  color: #101820;
+  background: #eef1f4;
+}
+
+/* 纸张容器：宽 210mm - 左右各 13mm 内边距 = 184mm，与打印区宽度一致 */
+.doc {
+  width: 210mm;
+  margin: 8mm auto;
+  padding: 13mm 13mm 11mm;
+  background: #fff;
+  box-shadow: 0 3px 18px rgba(16, 24, 32, .16);
+}
+
+@media print {
+  body { background: #fff; }
+  .doc { width: auto; margin: 0; padding: 0; box-shadow: none; }
+  .no-print { display: none !important; }
+  /* 避免表格行 / 区块被拦腰截断 */
+  table.items tr, .party, .sign-box, .words { page-break-inside: avoid; }
+  /*
+    签章区（所有单证的最后一块）：整块不可被分页切开。
+    - `table.sign` 自己也要 avoid：只保护内层 `.sign-box` 时，左右两格**可能被分到两页**
+      （买方回签在上一页、卖方公章在下一页）—— 这是最难看的失败形态。
+    - `.certify` / `.foot` 同理，声明条款与页脚不被切开。
+    实测（2026-10-11，Chromium）：**`break-before/after: avoid` 被忽略** ——
+    给 `table.sign` 加与不加，PDF 逐字节相同（SHA 相同）。所以「签章绝不成为
+    新页上的唯一内容」无法用纯 CSS 保证；能保证的是**不被切开**，
+    以及声明条款随它同块移动。
+  */
+  table.sign, table.sign tr, table.sign td,
+  .certify, .foot { page-break-inside: avoid; break-inside: avoid; }
+
+  /*
+    C10：末尾原子块（声明条款 + 签章区 + 公章 + 页脚；个别模板含
+    紧邻的条款/备注块）由模板包进 `.keep-together`，整体分页 —— 不允许被切开。
+    为什么必须包容器：实测 Chromium 忽略 `break-before/after: avoid`（2026-10-11），
+    纯 CSS 无法保证「签章区不成为新页上的唯一内容」。
+    ⚠️ 正文长表格 / 行项**不在**容器内：items 必须保持可跨页。
+  */
+  .keep-together { page-break-inside: avoid; break-inside: avoid; }
+}
+
+/* ── 卖方信头 ─────────────────────────────────────────────────────────── */
+.lh {
+  padding-bottom: 3mm;
+  border-bottom: 2.4pt solid #0f2740;
+  margin-bottom: 4.5mm;
+  font-size: 7.8pt;
+  line-height: 1.6;
+  color: #4d5a66;
+}
+.lh strong {
+  display: block;
+  font-size: 14.5pt;
+  font-weight: 700;
+  letter-spacing: .4pt;
+  line-height: 1.25;
+  color: #0f2740;
+  margin-bottom: 1.5mm;
+}
+
+/* ── 单据标题 ─────────────────────────────────────────────────────────── */
+.title { text-align: center; margin-bottom: 5mm; }
+.title h1 {
+  font-size: 15pt;
+  font-weight: 700;
+  letter-spacing: 4pt;
+  text-transform: uppercase;
+  color: #0f2740;
+}
+.title .sub {
+  font-size: 7.4pt;
+  letter-spacing: 1.8pt;
+  text-transform: uppercase;
+  color: #7a8794;
+  margin-top: 1.2mm;
+}
+
+/* ── 元信息表（标签 / 值 成对） ────────────────────────────────────────── */
+/* fixed 布局：标签列固定 32mm，值列自动等分 —— 避免长字段挤压导致编号折行 */
+table.meta { width: 100%; border-collapse: collapse; margin-bottom: 4mm; table-layout: fixed; }
+table.meta td {
+  border: .9pt solid #ccd4dc;
+  padding: 1.5mm 2.2mm;
+  font-size: 8.6pt;
+  vertical-align: top;
+  word-wrap: break-word;
+}
+table.meta td.k {
+  width: 32mm;
+  background: #f5f8fa;
+  color: #55636f;
+  font-size: 7.5pt;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .3pt;
+  white-space: nowrap;
+}
+table.meta td.v { font-weight: 600; color: #101820; }
+
+/* ── 收发货人区块 ─────────────────────────────────────────────────────── */
+table.parties { width: 100%; border-collapse: collapse; margin-bottom: 4mm; }
+table.parties td.party {
+  border: .9pt solid #ccd4dc;
+  padding: 2mm 2.4mm;
+  vertical-align: top;
+}
+table.parties td.gap { width: 3mm; border: none; }
+.party .lbl {
+  font-size: 7.4pt;
+  font-weight: 700;
+  letter-spacing: 1pt;
+  text-transform: uppercase;
+  color: #0f2740;
+  margin-bottom: 1.2mm;
+}
+.party .bd { font-size: 8.8pt; line-height: 1.5; }
+.party .bd strong { font-weight: 700; }
+
+/* ── 商品明细表 ───────────────────────────────────────────────────────── */
+table.items { width: 100%; border-collapse: collapse; font-size: 8.7pt; }
+table.items th, table.items td { border: .9pt solid #ccd4dc; padding: 1.5mm 1.8mm; }
+table.items thead th {
+  background: #0f2740;
+  color: #fff;
+  font-size: 7.7pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .35pt;
+  text-align: center;
+  line-height: 1.3;
+}
+table.items tbody tr:nth-child(even) td { background: #fafbfc; }
+table.items td.c { text-align: center; white-space: nowrap; }
+table.items td.l { text-align: left; }
+table.items td.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.items tr.total td {
+  background: #eaeff4;
+  font-weight: 700;
+  border-top: 1.6pt solid #0f2740;
+}
+
+/* ── 金额英文大写 ─────────────────────────────────────────────────────── */
+.words {
+  margin-top: 2.6mm;
+  border: .9pt solid #ccd4dc;
+  border-left: 2.4pt solid #0f2740;
+  background: #f7fafc;
+  padding: 2mm 2.6mm;
+}
+.words .lbl {
+  font-size: 7.2pt;
+  letter-spacing: .9pt;
+  text-transform: uppercase;
+  color: #55636f;
+  font-weight: 700;
+  margin-bottom: .8mm;
+}
+.words .val { font-size: 8.8pt; font-weight: 700; letter-spacing: .25pt; color: #101820; }
+
+/* ── 条款 / 声明 ──────────────────────────────────────────────────────── */
+.clauses { margin-top: 3.4mm; }
+.clause { margin-bottom: 1.8mm; font-size: 8.3pt; line-height: 1.55; }
+.clause .lbl { font-weight: 700; color: #0f2740; letter-spacing: .3pt; }
+.certify {
+  margin-top: 3.4mm;
+  padding: 2.4mm 3mm;
+  background: #f7fafc;
+  border-left: 2.4pt solid #0f2740;
+  font-size: 8.1pt;
+  line-height: 1.6;
+  color: #2b3641;
+  text-align: justify;
+}
+
+/* ── 签章区 ───────────────────────────────────────────────────────────── */
+table.sign { width: 100%; border-collapse: collapse; margin-top: 9mm; }
+table.sign td { vertical-align: bottom; font-size: 8pt; }
+.sign-box { text-align: center; }
+.sign-box .rule { width: 60mm; margin: 0 auto 1.2mm; border-top: .9pt solid #7a8794; }
+.sign-box .cap { font-size: 7.6pt; color: #55636f; }
+.stamp-hint {
+  font-size: 7.2pt;
+  color: #93a1ad;
+  font-style: italic;
+  text-align: center;
+  margin-top: 1.4mm;
+}
+
+/* ── 页脚 ─────────────────────────────────────────────────────────────── */
+.foot {
+  margin-top: 5mm;
+  padding-top: 2mm;
+  border-top: .9pt solid #e4e9ee;
+  text-align: center;
+  font-size: 7pt;
+  letter-spacing: .3pt;
+  color: #93a1ad;
+}
+
+/* ── 汇票（Bill of Exchange）──────────────────────────────────────────── */
+/* 汇票是金融票据，按国际惯例用「句子式」排版而非表格：             */
+/* 出票金额与日期靠右、付款指令居中、付款人(To)与出票人签章分列两侧。 */
+table.draft-top { width: 100%; border-collapse: collapse; margin-bottom: 7mm; }
+table.draft-top td { vertical-align: top; font-size: 9pt; line-height: 1.7; }
+table.draft-top td.right { text-align: right; }
+table.draft-top .amount { font-size: 10.5pt; font-weight: 700; color: #0f2740; }
+.draft-sentence { font-size: 9.5pt; line-height: 2.2; text-align: justify; }
+.draft-sentence .fill {
+  font-weight: 700;
+  border-bottom: .8pt solid #9aa5b1;
+  padding: 0 1.5mm;
+}
+.draft-party { font-size: 8.6pt; line-height: 1.7; }
+.draft-party .hint { color: #7a8794; font-size: 7.6pt; }
+
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <!-- 卖方信头：正式单证必须以卖方抬头开篇 -->
+  <div class="lh"><strong>ANPING LIANJIA WIRE MESH PRODUCTS CO., LTD.</strong><br>100 meters north of Diwo Village, Anping County, Hengshui City, Hebei Province, China<br>E-mail: sales@lianjiafence.com</div>
+
+  <div class="title">
+    <h1>Commercial Invoice</h1>
+  </div>
+
+  <table class="meta">
+    <tr>
+      <td class="k">Invoice No.</td><td class="v">LJ-CI-20261012-01</td>
+      <td class="k">Date</td><td class="v">12-Oct-2026</td>
+    </tr>
+    <tr>
+      <td class="k">Contract No.</td><td class="v">LJ-SC-20261012-01</td>
+      <td class="k">L/C No.</td><td class="v">—</td>
+    </tr>
+    <tr>
+      <td class="k">Terms of Delivery</td><td class="v">DAP Yangzhou, Jiangsu, China (Incoterms 2020)</td>
+      <td class="k">Terms of Payment</td><td class="v">T/T — 30% deposit upon order confirmation; 70% balance before dispatch</td>
+    </tr>
+    <tr>
+      <td class="k">Currency</td><td class="v">USD</td>
+      <td class="k">Country of Origin</td><td class="v">China</td>
+    </tr>
+  </table>
+
+  <table class="parties">
+    <tr>
+      <td class="party">
+        <div class="lbl">Consignee</div>
+        <div class="bd"><strong>Tim Lyons</strong><br>Australia<br>Attn: Tim Lyons<br>E-mail: timlyons@oneatmosphere.com</div>
+      </td>
+      <td class="gap"></td>
+      <td class="party">
+        <div class="lbl">Notify Party</div>
+        <div class="bd"><strong>Tim Lyons</strong><br>Australia<br>E-mail: timlyons@oneatmosphere.com</div>
+      </td>
+    </tr>
+  </table>
+
+  <table class="meta">
+    <tr>
+      <td class="k">Vessel / Flight</td><td class="v">—</td>
+      <td class="k">Port of Loading</td><td class="v">Anping, Hebei, China</td>
+    </tr>
+    <tr>
+      <td class="k">Port of Discharge</td><td class="v">Yangzhou, Jiangsu, China</td>
+      <td class="k">Shipping Marks</td><td class="v">N/M</td>
+    </tr>
+  </table>
+
+  <table class="items"><thead><tr><th>No.</th><th>Description of Goods</th><th>Specification</th><th>Quantity</th><th>Unit</th><th>Unit Price (CNY)</th><th>Amount (CNY)</th><th>Unit Price (USD)</th><th>Amount (USD)</th><th>HS Code</th></tr></thead><tbody><tr><td class="c">1</td><td class="l">Y-Type Fence Post</td><td class="l">Height 1.83 m · Material: rail steel · Hot-dip galvanized · Unit weight 1.86 kg/m</td><td class="r">400</td><td class="c">pc</td><td class="r">25.00</td><td class="r">10,000.00</td><td class="r">3.7297</td><td class="r">1,491.89</td><td class="c">7308900000</td></tr><tr><td class="c">2</td><td class="l">Field Fence (Cattle Fence)</td><td class="l">Height 1.473 m · Vertical wire Ø 2.4 mm, spacing 10 cm · 50 m per roll · Net weight 53.5 kg/roll</td><td class="r">20</td><td class="c">roll</td><td class="r">366.31</td><td class="r">7,326.20</td><td class="r">54.6491</td><td class="r">1,092.99</td><td class="c">7314410000</td></tr><tr><td class="c">3</td><td class="l">Electric Fence Support Insulator</td><td class="l">Support height 200 mm · Insulating material · Manufacturer&#x27;s packing</td><td class="r">400</td><td class="c">pc</td><td class="r">2.18</td><td class="r">872.00</td><td class="r">0.3252</td><td class="r">130.09</td><td class="c">3926909090</td></tr></tbody></table>
+
+  <style>
+    .fx-money{width:100%;border-collapse:collapse;font-size:8.7pt;table-layout:fixed;margin-top:0;}
+    .fx-money td{border:.9pt solid #ccd4dc;padding:1.4mm 1.8mm;vertical-align:top;}
+    .fx-money td.fx-label{text-align:left;}
+    .fx-money td.fx-amt{text-align:right;white-space:nowrap;width:17%;font-variant-numeric:tabular-nums;}
+    .fx-money tr.fx-rate td{background:#f5f8fa;font-size:8pt;color:#55636f;}
+    .fx-money tr.fx-total td{background:#eaeff4;font-weight:700;border-top:1.6pt solid #0f2740;}
+    .fx-money tr.fx-split td{font-size:8.2pt;color:#2b3641;}
+    @media print{.fx-money tr{page-break-inside:avoid;}}
+  </style>
+  <table class="fx-money">
+    <tr class="fx-rate"><td class="fx-label" colspan="3">Currency / Exchange Rate: 1 USD = 6.7029 CNY · Bank of China USD spot buying rate 670.29 per USD 100  (2026-09-28)</td></tr>
+    <tr><td class="fx-label">Rounding adjustment (unit prices rounded to 2 decimals)</td><td class="fx-amt">CNY -0.05</td><td class="fx-amt">USD 0.00</td></tr>
+    <tr><td class="fx-label">Total Goods Value</td><td class="fx-amt">CNY 18,198.15</td><td class="fx-amt">USD 2,714.97</td></tr>
+    <tr><td class="fx-label">Inland Freight to Delivery Address</td><td class="fx-amt">CNY 750.00</td><td class="fx-amt">USD 111.89</td></tr>
+    <tr class="fx-total"><td class="fx-label">TOTAL AMOUNT PAYABLE</td><td class="fx-amt">CNY 18,948.15</td><td class="fx-amt">USD 2,826.86</td></tr>
+    <tr class="fx-split"><td class="fx-label">Deposit (30%)</td><td class="fx-amt">CNY 5,684.44</td><td class="fx-amt">USD 848.06</td></tr>
+    <tr class="fx-split"><td class="fx-label">Balance (70%)</td><td class="fx-amt">CNY 13,263.71</td><td class="fx-amt">USD 1,978.80</td></tr>
+  </table>
+
+  <div class="words">
+    <div class="lbl">Amount in Words</div>
+    <div class="val">SAY US DOLLARS TWO THOUSAND EIGHT HUNDRED AND TWENTY-SIX AND CENTS EIGHTY-SIX ONLY</div>
+  </div>
+
+  <!-- 报关 / 清关 / 议付通用声明条款 -->
+    <div class="keep-together">
+<div class="certify">
+    We hereby certify that the goods described in this invoice are of Chinese origin, that the
+    particulars stated above are true and correct in every respect, and that this invoice is
+    issued for customs clearance and payment purposes only.
+  </div>
+
+  <table class="sign">
+    <tr>
+      <td style="width: 50%"></td>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">Authorised Signature &amp; Company Stamp</div>
+          <div class="stamp-hint">For and on behalf of ANPING LIANJIA WIRE MESH PRODUCTS CO., LTD.</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="foot">Commercial Invoice</div>
+  </div>
+
+</div>
+</body>
+</html>

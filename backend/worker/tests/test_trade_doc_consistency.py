@@ -419,3 +419,40 @@ def test_fact_conflict_values_are_normalized_text_not_objects():
     assert diff.values["pi"] == "2826.49"        # 十进制串，可直接 JSON
     assert isinstance(diff.values["ci"], str)
     assert diff.kind == "money"
+
+
+# ─── A6-1：应付总额（total_payable）跨单一致性 ───────────────────────────────
+
+
+def test_total_payable_beyond_tolerance_is_conflict():
+    """含运费的应付总额：跨单不一致（超出金额容差）⇒ conflict，并带容差说明。"""
+    pi = facts_of("pi", total_payable_usd=18945.66)
+    ci = facts_of("ci", total_payable_usd=20445.66)   # 差 1500 USD，远超 0.1% 容差
+    diffs = diff_facts({"pi": pi, "ci": ci}, root="pi")
+
+    assert [diff.key for diff in diffs] == ["total_payable"]
+    diff = diffs[0]
+    assert diff.kind == "money"
+    assert diff.status == "conflict"
+    assert diff.tolerance                    # 金额类 diff 必须带容差（界面要显示）
+    assert diff.diff_amount
+
+
+def test_total_payable_within_tolerance_is_equivalent_not_conflict():
+    """几分钱的尾差属于容差内（与 total_amount 同一把尺子），不报冲突。"""
+    pi = facts_of("pi", total_payable_usd=18945.66)
+    ci = facts_of("ci", total_payable_usd=18945.68)
+    diffs = diff_facts({"pi": pi, "ci": ci}, root="pi")
+
+    assert [diff.key for diff in diffs] == ["total_payable"]
+    assert diffs[0].status == "equivalent"
+    assert "容差" in diffs[0].detail_zh
+
+
+def test_total_payable_and_total_amount_are_independent_facts():
+    """只改其中一条，不应把另一条也拖进 diff。"""
+    pi = facts_of("pi", total_amount=2826.49, total_payable_usd=2826.49)
+    ci = facts_of("ci", total_amount=2826.49, total_payable_usd=2826.86)
+    diffs = diff_facts({"pi": pi, "ci": ci}, root="pi")
+
+    assert [diff.key for diff in diffs] == ["total_payable"]

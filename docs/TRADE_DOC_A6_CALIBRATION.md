@@ -39,22 +39,32 @@
 
 | # | 差距 | 现状（代码/模板） | 影响 | 优先级 |
 |---|---|---|---|---|
-| G1 | **双币种行金额**（CNY + USD 四列） | `items` 渲染单币种列（`render.ts` item table） | 真实单据核心版式；客户/银行按 USD 付款，缺 USD 列不可用 | **P0** |
-| G2 | **汇率行**（汇率+来源日期） | 无字段/无渲染 | 双币种换算依据，审计必需 | **P0** |
-| G3 | **舍入调整行** | 无 | 真实单据"行合计 ≠ 未舍入合计"的差必须显式列出，否则对账差几分 | **P0** |
-| G4 | **内陆运费行**（含在总价） | 无独立行 | DAP 交付的核心费用项 | **P0** |
-| G5 | **定金/尾款金额**（两币种） | 仅 `payment_terms` 文本 | 财务执行口径 | **P0** |
-| G6 | **Total Amount Payable**（含运费）与 Total Goods Value 分列 | 仅 `total_amount` 单一合计 | 与真实单据不一致 | **P0** |
-| G7 | **收款账户结构化**（受益人名/址/税号/账号/开户行/SWIFT） | `bank_info` 自由文本 | 客户汇款易错；模板无法分行渲染 | **P0** |
+| G1 | **双币种行金额**（CNY + USD 四列） | ✅ 已实施（2026-10-21）：有 `fx_rate` 时渲染四列（无 fx 维持单币种，18 金标不变） | 真实单据核心版式；客户/银行按 USD 付款，缺 USD 列不可用 | **P0** |
+| G2 | **汇率行**（汇率+来源日期） | ✅ 已实施（2026-10-21）：`$fx_block` 首行 `Currency / Exchange Rate`（`fx_rate`/`fx_source`/`fx_date`） | 双币种换算依据，审计必需 | **P0** |
+| G3 | **舍入调整行** | ✅ 已实施（2026-10-21）：`Rounding adjustment` 行（可显式覆盖，留空按未舍入合计−舍入后合计推导） | 真实单据"行合计 ≠ 未舍入合计"的差必须显式列出，否则对账差几分 | **P0** |
+| G4 | **内陆运费行**（含在总价） | ✅ 已实施（2026-10-21）：`Inland Freight to Delivery Address` 行（两币种） | DAP 交付的核心费用项 | **P0** |
+| G5 | **定金/尾款金额**（两币种） | ✅ 已实施（2026-10-21）：`Deposit (30%)` / `Balance (70%)` 两币种行（百分比从 payment_terms 解析，可显式覆盖） | 财务执行口径 | **P0** |
+| G6 | **Total Amount Payable**（含运费）与 Total Goods Value 分列 | ✅ 已实施（2026-10-21）：`Total Goods Value` / `TOTAL AMOUNT PAYABLE` 两行分列（可显式覆盖） | 与真实单据不一致 | **P0** |
+| G7 | **收款账户结构化**（受益人名/址/税号/账号/开户行/SWIFT） | ✅ 部分（2026-10-21）：渲染层支持结构化 key 分行（`beneficiary*`/`account_no`/`bank_address`）；PI 已渲染，**CI 模板缺银行区块**（补区块会改动 18 金标 ⇒ 下一批） | 客户汇款易错；模板无法分行渲染 | **P0** |
 | G8 | **上游引用**（报价单号、PI 号、CI 号、合同号交叉引用） | PI 无 quote/contract；CI 有 contract_no/lc_no；合同只 ref PI | 单据链可追溯性 | P1 |
 | G9 | **双方税号与完整联系方式**（卖方税号/地址/电话/邮箱；买方税号） | `seller`/`buyer` 对象由 sources 渲染，税号字段未纳入 | 报关/开票必需 | P1 |
 | G10 | **BILL TO / CONSIGNED TO 双栏** | CI 只有 Consignee/Notify | 与真实 CI 版式不同 | P1 |
 | G11 | **合同双语条款（12 条）** | 仅 4 条英文（inspection/claims/force_majeure/arbitration），无中文 | 中英双语合同是用户真实业务形态；双语不一致条款风险 | **P1（大项）** |
 | G12 | **有效期 / 包装细则 / 生产照片 / 第三方拼柜方 / 代表签署人** | 部分只能塞 `remarks` 自由文本 | 版式与真实不一致，容易漏 | P2 |
 
+> **G11 数据层已就绪（2026-10-21）**：`frontend/src/lib/trade-doc/contract-clauses.ts`（默认 12 条中英双语条款 + `custom.clauses` 覆盖/追加，纯数据+纯函数）；模板集成待 A6-1 完成后进行（本轮不改模板/渲染器）。
+
+> **A6-1 实施状态（2026-10-21）**：**G1–G6 已落地**、**G7 渲染层已落地（CI 模板待补）**；
+> 实现位置：`frontend/src/lib/trade-doc/render.ts` 的 `computeFxBreakdown()` + `assets.json` 的 `$fx_block`
+> （仅 pi/ci 模板新增一个内联占位符 ⇒ 无 fx 时渲染空串，**18 份单币种金标逐字节不变**）；
+> 金标变体：`sample-data-fx.json` → `__fixtures__/html/sample_{pi,ci}_fx.html`；字段口径见
+> `docs/TRADE_DOC_TEMPLATES.md` §十一。事实层：`facts.py` 新增 `total_payable`（含运费的应付额，
+> money 容差，与 `total_amount` 独立）并沿用既有 `fx_rate` 抽取；跨单不一致 ⇒ conflict。
+> **G8–G10 / G12 不在本批**；G11 数据层由 A6-2 并行推进（见下方注）。
+
 ## 3. 实施建议（拆两个批次）
 
-### 批次 A6-1（P0，先做）：双币种金额块
+### 批次 A6-1（P0，**2026-10-21 已实施**）：双币种金额块
 - 新增 payload 字段（`custom` 内，保持向后兼容）：`fx_rate`（如 6.7029）、`fx_source`（如 `Bank of China USD spot buying rate 670.29 per USD 100`）、`fx_date`、
   `rounding_adjustment_cny/usd`、`inland_freight_cny/usd`、`deposit_cny/usd`、`balance_cny/usd`、
   `total_goods_value_cny/usd`、`total_payable_cny/usd`（或由行/汇率推导 + 可覆盖）；
@@ -74,6 +84,9 @@
 - 有效期、包装细则、生产照片说明、第三方拼柜方、BILL TO/CONSIGNED TO 双栏——按真实样例优先补 PI/CI。
 
 ## 4. 待用户确认（业务口径）
+
+> 实现按下列**建议项**落地（2026-10-21），用户仍可改口径；改口径只动
+> `render.ts::computeFxBreakdown` 的公式与 `sample-data-fx.json` 金标，不涉及模板结构。
 
 1. **双币种是否所有单证都加**，还是仅 PI/CI/合同？（建议这三个，其他 15 类保持单币种）
 2. **USD 金额精度**：真实单据 USD 单价 4 位小数、金额 2 位；是否固定按此口径（建议是）。

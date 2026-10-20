@@ -159,6 +159,7 @@ FACT_LABELS: dict[str, tuple[str, str]] = {
     "payment_full_timing": ("全额付款时点", "Full Payment Timing"),
     "currency": ("币种", "Currency"),
     "total_amount": ("总金额", "Total Amount"),
+    "total_payable": ("应付总额", "Total Amount Payable"),
     "fx_rate": ("汇率", "Exchange Rate"),
     "port_of_loading": ("装运港", "Port of Loading"),
     "port_of_destination": ("目的港", "Port of Destination"),
@@ -320,6 +321,14 @@ _KEY_ALIASES: dict[str, str] = {
     "contract_amount": "total_amount",
     "总金额": "total_amount",
     "合计": "total_amount",
+    # 应付总额（A6-1）：真实单据里 "TOTAL AMOUNT PAYABLE" 与 "Total Goods Value" 分列，
+    # 它是**含运费**的实际应付额，与 total_amount（历史口径的单一起总）不是同一事实。
+    "total_payable": "total_payable",
+    "total_amount_payable": "total_payable",
+    "amount_payable": "total_payable",
+    "payable_total": "total_payable",
+    "应付总额": "total_payable",
+    "应付总金额": "total_payable",
     "fx_rate": "fx_rate",
     "exchange_rate": "fx_rate",
     "ex_rate": "fx_rate",
@@ -439,6 +448,8 @@ _MONEY_BASES = frozenset({
     "total_amount", "line_amount", "amount", "subtotal",
     "deposit_amount", "balance_amount", "payment_deposit_amount",
     "payment_balance_amount", "freight_amount", "insurance_amount",
+    # A6-1：含运费的实际应付额（与 total_amount 分开，容差规则一致）
+    "total_payable",
 })
 
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
@@ -1069,6 +1080,26 @@ def extract_facts(
         currency = fact.value if fact is not None else ""
     if _has_value(effective.get("total_amount")):
         add("total_amount", effective["total_amount"], currency=currency)
+    # 应付总额（A6-1 真实单据校准）：含内陆运费的实际应付额，与 total_amount 分开抽取。
+    # 真实 PI/CI 把它拆成两币种字段（total_payable_cny / total_payable_usd），
+    # 这里按单据币种取对应一侧；两币种值都由渲染侧推导，事实层只记录单据币种口径。
+    payable: Any = None
+    payable_key = ""
+    for candidate in ("total_payable", "total_amount_payable", "amount_payable"):
+        if _has_value(effective.get(candidate)):
+            payable, payable_key = effective[candidate], candidate
+            break
+    if payable is None:
+        by_currency = (
+            "total_payable_cny"
+            if str(currency).upper() in ("CNY", "RMB")
+            else "total_payable_usd"
+        )
+        if _has_value(effective.get(by_currency)):
+            payable, payable_key = effective[by_currency], by_currency
+    if _has_value(payable):
+        # 用命中的**原始字段名**做 origin 查询：否则 custom.total_payable_usd 会被误标成"推断值"
+        add(payable_key, payable, key="total_payable", currency=currency)
     if _has_value(effective.get("fx_rate")):
         add("fx_rate", effective["fx_rate"])
 

@@ -116,6 +116,106 @@ describe("逐字节基准比对（Python 版输出 → TypeScript 版输出）",
   });
 });
 
+// ── 双币种金额块（A6-1）─────────────────────────────────────────────────
+
+describe("双币种金额块（有 fx_rate 才渲染）", () => {
+  const FX_DATA = JSON.parse(
+    readFileSync(join(HERE, "..", "sample-data-fx.json"), "utf-8"),
+  ) as { doc_types: string[]; base: Record<string, unknown> };
+
+  it("PI/CI 双币种变体与基线逐字节一致（含四列行项 + 金额块）", () => {
+    expect(FX_DATA.doc_types).toEqual(["pi", "ci"]);
+    const normalize = (s: string) => s.replace(/\r\n/g, "\n");
+    for (const docType of FX_DATA.doc_types) {
+      const actual = normalize(renderTradeDoc(docType, FX_DATA.base));
+      const expected = normalize(
+        readFileSync(join(GOLDEN_HTML, `sample_${docType}_fx.html`), "utf-8"),
+      );
+      expect(actual, `${docType} 与双币种基线不一致`).toBe(expected);
+    }
+  });
+
+  it("四列表头 + 汇率行 + 舍入/货物总值/运费/应付总额/定金尾款都在", () => {
+    const html = renderTradeDoc("pi", FX_DATA.base);
+    for (const label of [
+      "Unit Price (CNY)",
+      "Amount (CNY)",
+      "Unit Price (USD)",
+      "Amount (USD)",
+      "Currency / Exchange Rate: 1 USD = 6.7029 CNY",
+      "Rounding adjustment",
+      "Total Goods Value",
+      "Inland Freight to Delivery Address",
+      "TOTAL AMOUNT PAYABLE",
+      "Deposit (30%)",
+      "Balance (70%)",
+    ]) {
+      expect(html, `缺少「${label}」`).toContain(label);
+    }
+    // 真实样例的换算口径：25.00 CNY → 3.7297 USD；10,000.00 CNY → 1,491.89 USD
+    expect(html).toContain(">3.7297<");
+    expect(html).toContain(">1,491.89<");
+    // 旧单币种 TOTAL 行不应与金额块同时出现（价格列已由金额块表达）
+    expect(html).not.toContain('<tr class="total">');
+  });
+
+  it("无 fx_rate 时旧输出不变：不出现双币种表格", () => {
+    const legacy = renderTradeDoc("pi", payload.base);
+    expect(legacy).not.toContain("fx-money");
+    expect(legacy).not.toContain("Unit Price (CNY)");
+    // 与 18 份基线中的 PI 完全一致（同一份单币种样例数据）
+    expect(legacy.replace(/\r\n/g, "\n")).toBe(
+      readFileSync(join(GOLDEN_HTML, "sample_pi.html"), "utf-8").replace(
+        /\r\n/g,
+        "\n",
+      ),
+    );
+  });
+
+  it("G7 收款账户结构化：beneficiary / 税号 / 账号 / 银行 / SWIFT 分行渲染", () => {
+    const html = renderTradeDoc("pi", FX_DATA.base);
+    for (const label of [
+      "Beneficiary: ANPING LIANJIA WIRE MESH PRODUCTS CO., LTD.",
+      "Beneficiary Address:",
+      "Beneficiary Tax ID: 91131125MA0GA4242U",
+      "Account No.: 13050171770800004556",
+      "China Construction Bank Corporation, Hebei Anping Sub-branch",
+      "SWIFT: PCBCCNBJHBX",
+    ]) {
+      expect(html, `缺少「${label}」`).toContain(label);
+    }
+  });
+
+  it("显式覆盖优先于推导（order-level custom 可对齐客户底稿）", () => {
+    const html = renderTradeDoc("pi", {
+      ...FX_DATA.base,
+      rounding_adjustment_cny: -2.54,
+      rounding_adjustment_usd: -0.37,
+      total_goods_value_cny: 18195.66,
+      total_goods_value_usd: 2714.6,
+      inland_freight_cny: 750,
+      inland_freight_usd: 111.89,
+      total_payable_cny: 18945.66,
+      total_payable_usd: 2826.49,
+      deposit_cny: 5683.7,
+      deposit_usd: 847.95,
+      balance_cny: 13261.96,
+      balance_usd: 1978.54,
+    });
+    expect(html).toContain("CNY -2.54");
+    expect(html).toContain("USD -0.37");
+    expect(html).toContain("CNY 18,945.66");
+    expect(html).toContain("USD 2,826.49");
+    expect(html).toContain("Deposit (30%)");
+    expect(html).toContain("CNY 5,683.70");
+  });
+
+  it("其它单证类型即便带 fx_rate 也不进入双币种（合同双语属 A6-2）", () => {
+    const html = renderTradeDoc("contract", FX_DATA.base);
+    expect(html).not.toContain("fx-money");
+  });
+});
+
 // ── 模板清单与字段 ──────────────────────────────────────────────────────
 
 describe("模板清单", () => {
