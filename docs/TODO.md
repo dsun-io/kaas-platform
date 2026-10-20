@@ -38,17 +38,17 @@
 | A4 | 图片素材库 + 去 base64 | **现状 ≈3/5**：公章租户库（`kaas_common/files/seal.py` + `tenant_company_seals`）、产品图引用库（`{file_id}` + `doc-photo-picker`）已做；**渲染输入仍 base64 内联**（`ws_files.py` `to_data_uri`，一张 PI ≈1.4MB），无独立素材库表 | 先定渲染方案（见 §G-4） | ⏳（3/5） |
 | A5 | 单证编辑体验 | CI/PL 行项批量编辑、条款/备注模板、金额联动校验 | **方案需用户过目**（§G-1） | 🧭 |
 | A6 | 模板逐字段对照真实单据 | 以真实 PI/CI/PL/提单确认件逐字段校准模板措辞/栏目/条款 | **需用户提供样例单据**（§G-2） | 🧭 |
-| A7 | 单证加固 P1/P2 | **现状 ≈2/5**：③收款容差内核（`kaas_common/workstation/receipt_rules.py`）+ ④两表（迁移 `202610170003_trade_doc_receipts_and_doc_set`）已就绪；**①事实层、②一致性引擎、③④的 API/UI、⑤导出后自检 未做**。口径已拍板（`UNCERTAIN.md` #17） | 无（可直接施工） | 🔨 进行中（2026-10-21 开工；见 §A7 子项） |
+| A7 | 单证加固 P1/P2 | **现状 ≈3/5**：③收款容差内核（`workstation/receipt_rules.py`）+ ④两表（迁移 `202610170003`）已就绪；**①事实层 + ②一致性引擎内核已完成**（`trade_doc/facts.py`/`consistency.py`/`equivalents.py`，87 条内核测试）+ 事实表（迁移 `202610200004`）；**API/UI 进行中**（10 个端点）。设计与 12 条实现裁决见 [`TRADE_DOC_HARDENING.md`](./TRADE_DOC_HARDENING.md) | 无（可直接施工） | 🔨 进行中（2026-10-21；内核+结构 ✅，API/UI 施工中；见 §A7 子项） |
 | A8 | PDF 归档尾巴 | ②③ 已完成（cron + 列表「已变更/模板已更新/待复核」标识）；①端到端真实跑一次 | ①需已部署环境 | ✅ ②③；①随发布后 P4 |
 | A9 | 指纹批量对账定时调度 | cron `40 17 * * *` + `trade_doc_render_checks` 表 + 列表 `render_check` | — | ✅ 2026-10-20 |
 
-### §A7 子项（施工清单，口径见 `UNCERTAIN.md` #17）
+### §A7 子项（施工清单；口径见 `UNCERTAIN.md` #17 + [`TRADE_DOC_HARDENING.md`](./TRADE_DOC_HARDENING.md) §4「实现裁决」）
 
-- [ ] A7-① **事实层（fact model）**：以 `order` 为根的事实域（同 order 下所有单证共享 fact），支持跨单证取值与差异检测。
-- [ ] A7-② **一致性引擎**：全局等价词表（`kaas_common`）+ 租户增量表（仅 internal 可改）；输出 cross-doc 差异清单。
-- [ ] A7-③ **收款容差**：每币种 `max(5 美分等值, 0.1%)`；内核已有，补 API/UI 与提示。
-- [ ] A7-④ **`not_by_us` 回执登记**：expected→received 流程（`trade_doc_receipts` / `trade_doc_doc_set` 两表已建，缺 API/UI）。
-- [ ] A7-⑤ **导出后自检**：默认阻断、tenant 可配越过但落审计。
+- [x] A7-① **事实层（fact model）**：以 `order` 为根的事实域 + trust/source/immutable/双语/证据引用（内核 + `trade_doc_facts` 表完成；API/UI 待接）。
+- [x] A7-② **一致性引擎**：全局等价词表 + 租户增量（`extra` 透传）；diff 三态（conflict/equivalent/missing）；**API 待接**。
+- [ ] A7-③ **收款容差**：内核 `receipt_rules` 已有；补 API（`GET/POST /trade-docs/{id}/receipts`）与 UI 提示。
+- [ ] A7-④ **`not_by_us` 回执登记**：两表已建，缺 API（`doc-set` + `receipt`）与 UI。
+- [ ] A7-⑤ **导出后自检**：默认阻断、可配越过但落审计（`verify-export` + confirm 闸门）。
 
 ---
 

@@ -8,6 +8,9 @@
 - translate 翻译 prompt / 响应解析
 - product_defaults 产品基础信息 → 单据行项默认值（一次维护、重复使用）
 - render_fingerprint 签发时冻结的渲染输入指纹（C 方案：可复现可追溯）
+- facts     事实层（A7）：事实模型 / 键值归一 / 信任级闸门 / 不可改写 / 单源推导 / TBC
+- equivalents 等价措辞白名单（A7）：只在表内判等价，绝不静默吞差异
+- consistency 一致性引擎（A7）：跨单证事实矩阵（diff_facts）/ 基线承继核对（lint_pair）
 """
 from .rules import (  # noqa: F401
     DOC_STATUS,
@@ -74,6 +77,74 @@ from .render_fingerprint import (  # noqa: F401
     render_input_digest,
     summarize_render_checks,
 )
+from .facts import (  # noqa: F401
+    FACT_CONFLICT,
+    FACT_EQUIVALENT_WORDING,
+    FACT_IMMUTABLE,
+    FACT_LABELS,
+    FACT_MANUAL_AMOUNT,
+    FACT_MISSING,
+    FACT_UNVERIFIED,
+    IMMUTABLE_KEYS,
+    SOURCE_AI,
+    SOURCE_INFERRED,
+    SOURCE_KINDS,
+    SOURCE_MANUAL,
+    SOURCE_PI,
+    SOURCE_UPSTREAM,
+    TBC,
+    TBC_EN,
+    TBC_ZH,
+    TRUST_CONFIRMED,
+    TRUST_INFERRED,
+    TRUST_LEVELS,
+    TRUST_UNVERIFIED,
+    Fact,
+    PaymentTermPart,
+    RuleViolation,
+    amount_tolerance,
+    assert_no_manual_amount,
+    check_derived_amount,
+    check_immutable,
+    confirm_fact,
+    decimal_text,
+    derive_amount,
+    derive_unit_price,
+    extract_facts,
+    fact_kind,
+    fact_label,
+    gate_trust,
+    normalize_fact_key,
+    normalize_fact_value,
+    parse_payment_terms,
+    render_tbc,
+    values_equal,
+)
+from .equivalents import (  # noqa: F401
+    EQUIVALENT_GROUPS,
+    INCO_TERMS,
+    TIMING_GROUPS,
+    AmountParts,
+    IncotermParts,
+    amount_parts,
+    canonical_phrase,
+    date_parts,
+    equivalent_text,
+    incoterm_equivalent,
+    incoterm_parts,
+    normalize_text,
+    timing_canonical,
+    timing_match,
+    payment_clause_signature,
+)
+from .consistency import (  # noqa: F401
+    IDENTITY_KEYS,
+    FactCheck,
+    FactDiff,
+    diff_facts,
+    equivalent,
+    lint_pair,
+)
 
 __all__ = [
     "DOC_STATUS", "DOC_NEXT", "DOC_TYPE_PREFIX", "MAX_SEAL_BYTES", "SYSTEM_PROMPT",
@@ -95,4 +166,28 @@ __all__ = [
     "RENDER_CHECK_DOC_IDS_LIMIT", "RENDER_CHECK_DOC_IDS_REQUIRED",
     "RENDER_CHECK_SUMMARY_FIELDS", "RenderCheckBatchError",
     "parse_render_check_doc_ids", "render_check_card", "summarize_render_checks",
+    # ── A7 事实层（facts）──
+    "SOURCE_KINDS", "TRUST_LEVELS", "FACT_LABELS", "IMMUTABLE_KEYS",
+    "SOURCE_PI", "SOURCE_UPSTREAM", "SOURCE_MANUAL", "SOURCE_AI", "SOURCE_INFERRED",
+    "TRUST_CONFIRMED", "TRUST_UNVERIFIED", "TRUST_INFERRED",
+    "FACT_CONFLICT", "FACT_UNVERIFIED", "FACT_IMMUTABLE", "FACT_MANUAL_AMOUNT",
+    "FACT_MISSING", "FACT_EQUIVALENT_WORDING",
+    "TBC", "TBC_ZH", "TBC_EN",
+    "Fact", "RuleViolation", "PaymentTermPart",
+    "normalize_fact_key", "normalize_fact_value", "fact_kind", "fact_label",
+    "decimal_text", "values_equal", "amount_tolerance",
+    "extract_facts", "parse_payment_terms", "confirm_fact",
+    "gate_trust", "check_immutable",
+    "derive_amount", "derive_unit_price", "assert_no_manual_amount", "check_derived_amount",
+    "render_tbc",
+    # ── A7 等价措辞白名单（equivalents）──
+    "EQUIVALENT_GROUPS", "TIMING_GROUPS", "INCO_TERMS",
+    "IncotermParts", "AmountParts",
+    "normalize_text", "canonical_phrase", "timing_canonical",
+    "timing_match", "payment_clause_signature",
+    "incoterm_parts", "incoterm_equivalent", "amount_parts", "date_parts",
+    "equivalent_text",
+    # ── A7 一致性引擎（consistency）──
+    "IDENTITY_KEYS", "FactDiff", "FactCheck",
+    "diff_facts", "lint_pair", "equivalent",
 ]

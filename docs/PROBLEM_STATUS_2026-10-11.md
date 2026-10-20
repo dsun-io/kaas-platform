@@ -43,6 +43,12 @@
 >   新增防漂移门禁 **`pnpm mocks:check`**（默认警告、`--strict` 收紧、P1 组缺失恒非零退出）。
 >   门禁：前端 **512 passed**（53 files）/ typecheck 0 / lint 0 error / mocks P1 **54/54**；
 >   剩余 72 条长尾未覆盖登记 TODO `C18`。
+> - **A7 内核 ✅（2026-10-21）**：`kaas_common/trade_doc/facts.py`（1198 行）/`consistency.py`（474 行）/
+>   `equivalents.py`（737 行）落地，`trade_doc/__init__.py` 新增 63 个导出；**87 条内核测试**
+>   （58 facts + 29 consistency，覆盖计划 §8 断言 1–3 + 边界），全量 worker **1105 passed + 5 skipped**、
+>   `sync-shared -Check` 三段一致。**12 条实现裁决**（容差只用于总额/行金额、diff 三态、付款条款结构签名、
+>   付款解析=unverified 需确认、不可改写只圈条款等）写入 [`TRADE_DOC_HARDENING.md`](./TRADE_DOC_HARDENING.md) §4，
+>   该文档同时替代归档里的原始方案作为活跃施工依据。A7-API/UI 进行中。
 >
 > **（2026-10-20 晚 · 口径收敛与审计补录：`docs/TODO.md` = 唯一账本）**
 >

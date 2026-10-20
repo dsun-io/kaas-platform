@@ -59,6 +59,7 @@
 | [WORKSTATION_DESIGN.md](./WORKSTATION_DESIGN.md) | 工位能力网设计 |
 | [PRODUCT_CONFIG_TENANT_UNFINISHED.md](./PRODUCT_CONFIG_TENANT_UNFINISHED.md) | 租户级产品配置化未竟清单 |
 | [TRADE_DOC_TEMPLATES.md](./TRADE_DOC_TEMPLATES.md) | 单证模板规范 |
+| [TRADE_DOC_HARDENING.md](./TRADE_DOC_HARDENING.md) | **单证加固 A7 活跃设计**（事实层/一致性引擎/回执/导出自检的施工依据，含 12 条实现裁决） |
 | [TRADE_DOC_PDF_ARCHIVAL.md](./TRADE_DOC_PDF_ARCHIVAL.md) | 单证 PDF 留档与对账（过程记录；现状见文首横幅与 `TODO.md` A2-B/C12） |
 
 > 已归档（不再代表当前口径）：`PLATFORM_UPGRADE_PLAN`、`TEAMS_AND_VISIBILITY`、`CUSTOMER_DOCUMENTS_VIEW`、
