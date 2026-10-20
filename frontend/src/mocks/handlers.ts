@@ -1758,6 +1758,15 @@ export const handlers = [
     return HttpResponse.json({ items: [] });
   }),
 
+  // 自动出 PDF（服务端 Browser Rendering）：mock 环境没有渲染器，
+  // 如实返回 503，让前端走“手动归档”的降级提示，而不是假装成功。
+  http.post("/api/v1/trade-docs/:id/pdf", () => {
+    return HttpResponse.json(
+      { detail: { error: "renderer_unavailable" } },
+      { status: 503 },
+    );
+  }),
+
   // ── 枚举（/enums · 与后端 app/domain/enums.py 同键同值）──────────────────
   http.get("/api/v1/enums", () => {
     return HttpResponse.json(ENUMS_MOCK);
