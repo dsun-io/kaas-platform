@@ -96,7 +96,8 @@ jobs:
     outputs:
       PR_SLUG: ${{ steps.ensure.outputs.PR_SLUG }}
       NEON_BRANCH_NAME: ${{ steps.ensure.outputs.NEON_BRANCH_NAME }}
-      PREVIEW_DATABASE_URL: ${{ steps.ensure.outputs.PREVIEW_DATABASE_URL }}
+      # 注：PREVIEW_DATABASE_URL 不再作为 job output —— GitHub 会静默丢弃含密码的 output
+      # (`Skip output ... since it may contain secret`)，改由 migrate job 用 db-url.py 自取。
       HYPERDRIVE_ID: ${{ steps.ensure.outputs.HYPERDRIVE_ID }}
       PREVIEW_URL: ${{ steps.ensure.outputs.PREVIEW_URL }}
     steps:
@@ -118,10 +119,19 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+      # 含密码的 DSN 不能经 job output 传递（GitHub 会静默丢弃：实测
+      # `Skip output 'PREVIEW_DATABASE_URL' since it may contain secret`），
+      # 故在 job 内自取并写进 $GITHUB_ENV（env 不受该限制，日志也不回显）。
+      - name: Resolve preview DB URL（job 内自取，规避 output 丢弃）
+        run: |
+          set -euo pipefail
+          DSN="$(python3 scripts/preview/db-url.py --pr "${{ env.PR_NUMBER }}")"
+          if [ -z "$DSN" ]; then
+            echo "::error::db-url.py 未输出 DSN（检查 ensure 是否成功建分支）"; exit 1
+          fi
+          echo "DATABASE_URL=$DSN" >> "$GITHUB_ENV"
       - name: Alembic upgrade head（预览分支）
         working-directory: ./backend/orchestrator
-        env:
-          DATABASE_URL: ${{ needs.ensure.outputs.PREVIEW_DATABASE_URL }}
         run: uv run --extra migrations alembic upgrade head
 
   build-frontend:
