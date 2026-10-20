@@ -27,6 +27,17 @@ from pydantic import BaseModel
 
 from main import app, _acquire, _get_current_user, DEFAULT_TENANT, _next_inquiry_no
 
+
+def _require_ai_admin(user: dict) -> None:
+    """C27（F1/D5）：AI 配置（读 + 写/执行）全部**平台运营** admin-only。
+
+    复用 `main._require_platform_ops`（internal 账号 + 管理员，与 6 个 /admin/* 端点
+    同一把尺），不在本文件另写判定。懒 import 避免 chain↔main 导入期循环。
+    """
+    from main import _require_platform_ops
+
+    _require_platform_ops(user)
+
 # jsonb 列解析的唯一真源在 dbjson.py（历史上本文件与 main.py 各存一份，
 # 且签名不一致，新增表时容易漏改）。调用处均传入表名，故此处直接别名。
 from dbjson import row_to_dict as _row_to_dict
@@ -542,6 +553,7 @@ async def ai_tasks(user: dict = Depends(_get_current_user)):
     （2026-09-22 冒烟测试发现：此前无鉴权，未带 token 也能 200；
     其余 /ai/* 端点均有 Depends(_get_current_user)）
     """
+    _require_ai_admin(user)
     return {"items": [
         {"task_key": k, "name": v["name"],
          "recommended_provider": v["recommended_provider"]}
@@ -571,6 +583,7 @@ def _row_to_provider(p) -> dict:
 
 @app.get("/api/v1/ai/providers")
 async def ai_list_providers(request: Request, user: dict = Depends(_get_current_user)):
+    _require_ai_admin(user)
     async with _acquire(request) as conn:
         rows = await conn.fetch(
             "SELECT * FROM ai_providers WHERE tenant_id=$1", DEFAULT_TENANT)
@@ -587,6 +600,7 @@ async def ai_list_providers(request: Request, user: dict = Depends(_get_current_
 @app.put("/api/v1/ai/providers/{name}")
 async def ai_upsert_provider(name: str, body: ProviderUpsert,
                              request: Request, user: dict = Depends(_get_current_user)):
+    _require_ai_admin(user)
     if name not in PROVIDER_DEFAULTS:
         raise HTTPException(status_code=422, detail={
             "error": "validation", "code": "BAD_PROVIDER", "allowed": list(PROVIDER_DEFAULTS)})
@@ -613,6 +627,7 @@ async def ai_upsert_provider(name: str, body: ProviderUpsert,
 
 @app.post("/api/v1/ai/providers/{name}/test")
 async def ai_test_provider(name: str, request: Request, user: dict = Depends(_get_current_user)):
+    _require_ai_admin(user)
     if name not in PROVIDER_DEFAULTS:
         raise HTTPException(status_code=422, detail={"error": "validation", "code": "BAD_PROVIDER"})
     async with _acquire(request) as conn:
@@ -639,6 +654,7 @@ async def ai_test_provider(name: str, request: Request, user: dict = Depends(_ge
 
 @app.get("/api/v1/ai/task-bindings")
 async def ai_list_bindings(request: Request, user: dict = Depends(_get_current_user)):
+    _require_ai_admin(user)
     async with _acquire(request) as conn:
         rows = await conn.fetch(
             "SELECT * FROM ai_task_bindings WHERE tenant_id=$1", DEFAULT_TENANT)
@@ -659,6 +675,7 @@ async def ai_list_bindings(request: Request, user: dict = Depends(_get_current_u
 @app.put("/api/v1/ai/task-bindings/{task_key}")
 async def ai_upsert_binding(task_key: str, body: BindingUpsert,
                             request: Request, user: dict = Depends(_get_current_user)):
+    _require_ai_admin(user)
     if task_key not in TASKS:
         raise HTTPException(status_code=404, detail={
             "error": "not_found", "code": "UNKNOWN_TASK"})
@@ -697,6 +714,7 @@ async def ai_usage(request: Request, user: dict = Depends(_get_current_user),
                    provider: Optional[str] = None,
                    status: Optional[str] = None,
                    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=200)):
+    _require_ai_admin(user)
     where = ["tenant_id = $1"]
     params: list = [DEFAULT_TENANT]
     idx = 2
@@ -733,6 +751,7 @@ async def ai_usage(request: Request, user: dict = Depends(_get_current_user),
 @app.post("/api/v1/ai/tasks/{task_key}/run")
 async def ai_run_task(task_key: str, body: TaskRun,
                       request: Request, user: dict = Depends(_get_current_user)):
+    _require_ai_admin(user)
     async with _acquire(request) as conn:
         return await run_ai_task(conn, task_key, body.payload)
 

@@ -179,7 +179,14 @@ async def inquiry_snapshot(db, request, inquiry_id: int) -> dict:
     }
 
 
-async def get_doc_or_404(db, request, doc_id: int) -> dict:
+async def get_doc_or_404(db, request, doc_id: int, user: Optional[dict] = None) -> dict:
+    """取单证；给了 `user` 时按 C27 团队/owner 可见性过滤（不可见 ⇒ 404）。
+
+    为什么把可见性放在这里而不是各端点：`ws_docs_ext` 的 7 个读/写入口全部经本函数，
+    一处收口才不会出现"补了 A 入口、漏了 B 入口"。判定口径与 `main._doc_visible`
+    完全一致（internal 含非管理员跨团队、customer 仅本团队/owner/tenant 共享、
+    无团队客户 404）—— 两个模块不互相 import 是为了避免 main↔doc_payload 循环。
+    """
     row = await db.fetchrow(
         request, "SELECT * FROM trade_docs WHERE tenant_id=$1 AND id=$2",
         DEFAULT_TENANT, doc_id, table="trade_docs",
@@ -187,4 +194,21 @@ async def get_doc_or_404(db, request, doc_id: int) -> dict:
     if row is None:
         raise HTTPException(status_code=404, detail={
             "error": "not_found", "code": "DOC_NOT_FOUND"})
+    if user is not None:
+        from kaas_common.workstation.scope import is_admin_role
+
+        privileged = (user.get("account_type") == "internal"
+                      or is_admin_role(user.get("role")))
+        if not privileged:
+            row_team, viewer_team = row.get("team_id"), user.get("team_id")
+            visible = (
+                row.get("owner_scope") == "tenant"
+                or (row.get("owner_id") is not None
+                    and str(row.get("owner_id")) == str(user.get("id")))
+                or (row_team is not None and viewer_team is not None
+                    and str(row_team) == str(viewer_team))
+            )
+            if viewer_team is None or not visible:
+                raise HTTPException(status_code=404, detail={
+                    "error": "not_found", "code": "DOC_NOT_FOUND"})
     return row

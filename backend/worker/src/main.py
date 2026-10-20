@@ -4189,6 +4189,96 @@ import inquiry_stage as _inquiry_stage  # noqa: E402
 from kaas_common.workstation.entity_links import LINK_INSERT_SQL  # noqa: E402
 
 
+# ── C27：单证可见性 / 签发角色闸门（2026-10-21）────────────────────────────
+#
+# 审计（`docs/QA_AUTHZ_AUDIT_2026-10-21.md`）确认：单证读/写此前只有 tenant 过滤，
+# 任何登录账号都能跨团队读、任何客户成员都能把 draft 改成 issued。Lead 裁决 D1/D2/D3：
+# - **internal（含非管理员）**可跨团队读（显式 bypass，不能靠 `_team_scope` —— 那形状下
+#   无团队会掉进 `NO_TEAM`）；
+# - customer 只看本团队 / owner / `owner_scope='tenant'`；
+# - 无团队客户的详情/写一律 **404**（不泄露存在性），列表仍 403 `NO_TEAM`；
+# - 签发动作（draft→issued / 改 issued 单）仅团队管理员或 internal（404 先于 403）。
+
+def _internal_or_platform_admin(user: dict) -> bool:
+    """内部账号（含非管理员）或平台管理员：跨团队可见 + 可签发（D1）。"""
+    from kaas_common.workstation.scope import is_admin_role
+
+    return (user.get("account_type") == "internal"
+            or is_admin_role(user.get("role")))
+
+
+def _doc_not_found() -> None:
+    raise HTTPException(status_code=404, detail={
+        "error": "not_found", "code": "DOC_NOT_FOUND"})
+
+
+def _doc_visible(user: dict, d) -> bool:
+    """单条单证是否对访问者可见（与列表谓词同一口径）。"""
+    if _internal_or_platform_admin(user):
+        return True
+    if d.get("owner_scope") == "tenant":
+        return True
+    if d.get("owner_id") is not None and str(d.get("owner_id")) == str(user.get("id")):
+        return True
+    row_team, viewer_team = d.get("team_id"), user.get("team_id")
+    return (row_team is not None and viewer_team is not None
+            and str(row_team) == str(viewer_team))
+
+
+def _require_doc_visible(user: dict, d) -> None:
+    """详情/写入口的读闸门：不可见或客户无团队 ⇒ **404**（D3，不泄露存在性）。"""
+    if not _internal_or_platform_admin(user) and user.get("team_id") is None:
+        _doc_not_found()
+    if not _doc_visible(user, d):
+        _doc_not_found()
+
+
+def _doc_scope_sql(user: dict, next_index: int) -> tuple[str, list]:
+    """列表用 SQL 谓词（**必须在 SQL 里过滤**，否则 total 会泄露别团队行数）。
+
+    - internal/平台管理员：不加谓词（跨团队全量）；
+    - 无团队客户：403 `NO_TEAM`（与其它工位一致）；
+    - 有团队客户：`team_id=本团队 OR owner_id=我 OR owner_scope='tenant'`。
+    """
+    if _internal_or_platform_admin(user):
+        return "", []
+    team = user.get("team_id")
+    if team is None:
+        raise HTTPException(status_code=403, detail={
+            "error": "forbidden", "code": "NO_TEAM"})
+    return (
+        f" AND (team_id = ${next_index} OR owner_id = ${next_index + 1}"
+        " OR owner_scope = 'tenant')",
+        [team, str(user.get("id"))],
+    )
+
+
+async def _require_doc_issuer(request: Request, user: dict, d) -> None:
+    """签发/改已签发单的角色闸门：internal（含非管理员）、平台管理员、团队管理员。
+
+    客户普通成员 ⇒ 403 `TEAM_ADMIN_REQUIRED`。**调用前必须先过读闸门**（404 先于 403）。
+    """
+    from kaas_common.workstation.teams import is_team_admin
+
+    if _internal_or_platform_admin(user):
+        return
+    team_id = d.get("team_id")
+    if team_id is None:
+        raise HTTPException(status_code=403, detail={
+            "error": "forbidden", "code": "TEAM_ADMIN_REQUIRED",
+            "detail": "仅团队管理员或内部账号可签发/修改已签发单据",
+        })
+    row = await db.fetchrow(
+        request, "SELECT created_by FROM teams WHERE id=$1", team_id, table="teams")
+    if row is None or not is_team_admin(
+        row.get("created_by"), user.get("id"), user.get("role"),
+    ):
+        raise HTTPException(status_code=403, detail={
+            "error": "forbidden", "code": "TEAM_ADMIN_REQUIRED",
+            "detail": "仅团队管理员或内部账号可签发/修改已签发单据",
+        })
+
+
 @app.get("/api/v1/trade-docs")
 async def list_trade_docs(request: Request, doc_type: str = None, status: str = None,
                           order_id: int = None, page: int = 1, page_size: int = 20,
@@ -4203,7 +4293,9 @@ async def list_trade_docs(request: Request, doc_type: str = None, status: str = 
         where.append(f"status = ${idx}"); params.append(status); idx += 1
     if order_id:
         where.append(f"order_id = ${idx}"); params.append(order_id); idx += 1
-    where_sql = " AND ".join(where)
+    scope_sql, scope_params = _doc_scope_sql(user, idx)
+    params.extend(scope_params); idx += len(scope_params)
+    where_sql = " AND ".join(where) + scope_sql
     async with _acquire(request) as conn:
         total = await conn.fetchval(f"SELECT COUNT(*) FROM trade_docs WHERE {where_sql}", *params)
         rows = await conn.fetch(
@@ -4488,6 +4580,7 @@ async def get_trade_doc(doc_id: int, request: Request,
                           DEFAULT_TENANT, doc_id, table="trade_docs")
     if not d:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "DOC_NOT_FOUND"})
+    _require_doc_visible(user, d)
     # 上游 refs 一律来自**列 + 边表**（旧 `trade_doc_*_refs` 已改名留档、不再读）
     async with _acquire(request) as conn:
         refs = await _doc_upstream_links(conn, d)
@@ -4512,6 +4605,14 @@ async def update_trade_doc(doc_id: int, request: Request, body: dict,
                           DEFAULT_TENANT, doc_id, table="trade_docs")
     if not d:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "DOC_NOT_FOUND"})
+    _require_doc_visible(user, d)
+    # C27 / R-1：写闸门在业务校验**之前**（顺序 401→404→403→200/409）。
+    # 客户普通成员只能改本团队 draft 的字段；签发（draft→issued）与改已 issued 单
+    # 等同签发动作 ⇒ 仅团队管理员或 internal（D2）。
+    if not _internal_or_platform_admin(user):
+        requested_status = (body.get("status") or d["status"]).strip()
+        if d["status"] != "draft" or requested_status != "draft":
+            await _require_doc_issuer(request, user, d)
     d = _dp.doc_dict(d)
     new_doc_no = None
     requested_no = body.get("doc_no")
@@ -4867,6 +4968,7 @@ async def get_trade_doc_render_data(doc_id: int, request: Request,
                           DEFAULT_TENANT, doc_id, table="trade_docs")
     if not d:
         raise HTTPException(status_code=404, detail={"error": "not_found", "code": "DOC_NOT_FOUND"})
+    _require_doc_visible(user, d)
     doc = _dp.doc_dict(d)
 
     payload = doc.get("raw_payload") or {}

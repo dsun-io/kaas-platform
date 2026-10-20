@@ -121,8 +121,8 @@ class TradeDocTranslateIn(BaseModel):
 # 为什么必须共用：这些装配函数原先在 main.py 里也有一份，e5ab56e 删掉镜像后
 # 调用点没跟着改，线上单证端点就 NameError 500 了 —— 两份实现是根因。
 
-async def _get_doc_or_404(request, doc_id: int) -> dict:
-    return await _doc_payload.get_doc_or_404(db, request, doc_id)
+async def _get_doc_or_404(request, doc_id: int, user: Optional[dict] = None) -> dict:
+    return await _doc_payload.get_doc_or_404(db, request, doc_id, user)
 
 
 async def _order_snapshot(request, order_id: int) -> dict:
@@ -158,7 +158,7 @@ async def refresh_trade_doc_sources(
     注意 sources 是**整体替换**（只保留 custom），与 orchestrator 一致：
     旧快照不留残键，避免"上一版上游字段"继续参与渲染。
     """
-    d = await _get_doc_or_404(request, doc_id)
+    d = await _get_doc_or_404(request, doc_id, user)
     if d["status"] != "draft":
         raise HTTPException(status_code=409, detail={
             "error": "conflict", "code": "NOT_DRAFT",
@@ -245,7 +245,10 @@ async def confirm_trade_doc(
     - `assert_transition` 状态机同态校验（draft→issued 合法）；
     - `validate_confirm` 行项目（品名/数量/金额勾稽）+ 买方识别 + 各类型必填。
     """
-    d = await _get_doc_or_404(request, doc_id)
+    d = await _get_doc_or_404(request, doc_id, user)
+    # C27（F3）：签发是团队管理员/internal 的动作；customer 普通成员 403。
+    # 顺序：上一行已先做可见性 404，所以跨团队/无团队看到 404 而不是 403。
+    await _main._require_doc_issuer(request, user, d)
 
     rows = await db.fetch(
         request,
@@ -392,7 +395,7 @@ async def check_trade_doc_render_fingerprint(
     现在装配失败 ⇒ `current_sha256=null` + `current_note`，`matches=false`（不假装匹配）；
     "模板改过"（`render_version_drift`）与"数据被改"（`reason=data_changed`）分开报。
     """
-    d = await _get_doc_or_404(request, doc_id)
+    d = await _get_doc_or_404(request, doc_id, user)
     return await _check_one_doc_render_fingerprint(d, doc_id, request, user)
 
 
@@ -558,7 +561,7 @@ async def translate_trade_doc(
     走 ai_task 语义（可绑 Provider / 可降级 / 记 ai_usage）；无 AI 时降级为
     原样回传并标注 path=template，前端据此提示人工翻译。
     """
-    d = await _get_doc_or_404(request, doc_id)
+    d = await _get_doc_or_404(request, doc_id, user)
 
     fields = {k: str(v) for k, v in (body.fields or {}).items() if str(v or "").strip()}
     if not fields:
@@ -624,7 +627,7 @@ async def list_trade_doc_content_versions(
 ):
     """内容版本列表（倒序）。**不返回整份 payload**：图片是 base64 内联，
     一个版本可能 1MB+，列表只带 custom 键名，详情再按版本号取。"""
-    d = await _get_doc_or_404(request, doc_id)
+    d = await _get_doc_or_404(request, doc_id, user)
     rows = await db.fetch(
         request,
         "SELECT v.version_no, v.change_source, v.actor_id, v.note, v.created_at,"
@@ -658,7 +661,7 @@ async def get_trade_doc_content_version(
     user: dict = Depends(_get_current_user),
 ):
     """某个内容版本的完整 payload（回看/对比用）。"""
-    d = await _get_doc_or_404(request, doc_id)
+    d = await _get_doc_or_404(request, doc_id, user)
     row = await db.fetchrow(
         request,
         "SELECT version_no, raw_payload, change_source, actor_id, note, created_at"
@@ -696,7 +699,7 @@ async def restore_trade_doc_content_version(
       恢复只会造成"看起来恢复了、同步又变回去"的困惑；
     - 恢复本身也产生一个新版本（source=restore），版本链只增不删。
     """
-    d = await _get_doc_or_404(request, doc_id)
+    d = await _get_doc_or_404(request, doc_id, user)
     try:
         assert_draft(d["status"])
     except RuleError as exc:

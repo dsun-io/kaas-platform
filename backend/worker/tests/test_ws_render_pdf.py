@@ -231,6 +231,26 @@ class TestRestQuickAction:
 
 # ── 端点：校验 → 出字节 → 落档（假 _create_file / attach_doc_file） ──────────
 
+# C27/F3：端点现在先做可见性/签发角色闸门 ⇒ 单测用平台管理员 + 假 doc 行，
+# 闸门矩阵由 `test_trade_doc_confirm_authz.py` 专门覆盖。
+ADMIN_USER = {"id": 1, "account_type": "internal", "role": "system_admin", "team_id": None}
+
+
+class _DocDb:
+    """`render_doc_pdf` 的闸门只查一次 trade_docs 主键。"""
+
+    async def fetchrow(self, request, sql, *args, table=None):
+        if "FROM trade_docs" in sql:
+            return {"id": 5, "tenant_id": "default", "team_id": None,
+                    "owner_id": None, "owner_scope": "private", "status": "draft"}
+        return None
+
+
+@pytest.fixture(autouse=True)
+def _doc_db(monkeypatch):
+    monkeypatch.setattr(wsf, "db", _DocDb())
+
+
 class _Created:
     def __init__(self):
         self.creates: list[dict] = []
@@ -259,7 +279,7 @@ class TestRenderDocPdfEndpoint:
         with pytest.raises(HTTPException) as ei:
             _run(wsf.render_doc_pdf(
                 5, wsf.RenderPdfIn(html='<html><body><iframe src="https://evil"></iframe></body></html>'),
-                _FakeRequest({}), {"id": 1}))
+                _FakeRequest({}), ADMIN_USER))
         assert ei.value.status_code == 422
         assert ei.value.detail["code"] == "HTML_UNSAFE_MARKUP"
         assert archived.creates == []
@@ -268,7 +288,7 @@ class TestRenderDocPdfEndpoint:
         with pytest.raises(HTTPException) as ei:
             _run(wsf.render_doc_pdf(
                 5, wsf.RenderPdfIn(html='<html><body><img src="https://evil/a.png"></body></html>'),
-                _FakeRequest({}), {"id": 1}))
+                _FakeRequest({}), ADMIN_USER))
         assert ei.value.status_code == 422
         assert ei.value.detail["code"] == "HTML_EXTERNAL_RESOURCE"
 
@@ -276,7 +296,7 @@ class TestRenderDocPdfEndpoint:
         """默认白名单（自家域名）放行 ⇒ 走到 503（未配渲染器），而不是被 422 挡住。"""
         html = '<html><body><img src="https://kaas.powervoy.com/a.png"></body></html>'
         with pytest.raises(HTTPException) as ei:
-            _run(wsf.render_doc_pdf(5, wsf.RenderPdfIn(html=html), _FakeRequest({}), {"id": 1}))
+            _run(wsf.render_doc_pdf(5, wsf.RenderPdfIn(html=html), _FakeRequest({}), ADMIN_USER))
         assert ei.value.status_code == 503
         assert ei.value.detail["code"] == "PDF_RENDERER_NOT_CONFIGURED"
 
@@ -286,13 +306,13 @@ class TestRenderDocPdfEndpoint:
         html = '<html><body><img src="https://files.example.com/a.png"></body></html>'
         request = _FakeRequest({"PDF_HTML_ALLOWED_HOSTS": "files.example.com"})
         with pytest.raises(HTTPException) as ei:
-            _run(wsf.render_doc_pdf(5, wsf.RenderPdfIn(html=html), request, {"id": 1}))
+            _run(wsf.render_doc_pdf(5, wsf.RenderPdfIn(html=html), request, ADMIN_USER))
         assert ei.value.status_code == 503
         assert ei.value.detail["code"] == "PDF_RENDERER_NOT_CONFIGURED"
 
         html_default = '<html><body><img src="https://kaas.powervoy.com/a.png"></body></html>'
         with pytest.raises(HTTPException) as ei2:
-            _run(wsf.render_doc_pdf(5, wsf.RenderPdfIn(html=html_default), request, {"id": 1}))
+            _run(wsf.render_doc_pdf(5, wsf.RenderPdfIn(html=html_default), request, ADMIN_USER))
         assert ei2.value.status_code == 422
         assert ei2.value.detail["code"] == "HTML_EXTERNAL_RESOURCE"
 
@@ -304,14 +324,14 @@ class TestRenderDocPdfEndpoint:
             with pytest.raises(HTTPException) as ei:
                 _run(wsf.render_doc_pdf(
                     5, wsf.RenderPdfIn(html=f'<html><body><img src="{url}"></body></html>'),
-                    _FakeRequest({}), {"id": 1}))
+                    _FakeRequest({}), ADMIN_USER))
             assert ei.value.status_code == 422
             assert ei.value.detail["code"] == "HTML_EXTERNAL_RESOURCE"
 
     def test_not_configured_is_503(self, archived):
         with pytest.raises(HTTPException) as ei:
             _run(wsf.render_doc_pdf(5, wsf.RenderPdfIn(html=GOOD_HTML),
-                                    _FakeRequest({}), {"id": 1}))
+                                    _FakeRequest({}), ADMIN_USER))
         assert ei.value.status_code == 503
         assert ei.value.detail["code"] == "PDF_RENDERER_NOT_CONFIGURED"
         assert archived.creates == []
@@ -323,7 +343,7 @@ class TestRenderDocPdfEndpoint:
         monkeypatch.setattr(wsf, "_render_pdf_bytes", _fake)
         with pytest.raises(HTTPException) as ei:
             _run(wsf.render_doc_pdf(5, wsf.RenderPdfIn(html=GOOD_HTML),
-                                    _FakeRequest({}), {"id": 1}))
+                                    _FakeRequest({}), ADMIN_USER))
         assert ei.value.status_code == 502
         assert ei.value.detail["code"] == "PDF_RENDER_FAILED"
         assert archived.creates == []
@@ -337,7 +357,7 @@ class TestRenderDocPdfEndpoint:
         monkeypatch.setattr(wsf, "_render_pdf_bytes", _fake)
         with pytest.raises(HTTPException) as ei:
             _run(wsf.render_doc_pdf(5, wsf.RenderPdfIn(html=GOOD_HTML),
-                                    _FakeRequest({}), {"id": 1}))
+                                    _FakeRequest({}), ADMIN_USER))
         assert ei.value.status_code == 422
         assert ei.value.detail["code"] == "FILE_TOO_LARGE"
         assert archived.creates == []
@@ -349,7 +369,7 @@ class TestRenderDocPdfEndpoint:
 
         monkeypatch.setattr(wsf, "_render_pdf_bytes", _fake)
         out = _run(wsf.render_doc_pdf(5, wsf.RenderPdfIn(html=GOOD_HTML, name="PI-2026-001 系统版"),
-                                      _FakeRequest({"BROWSER": _FakeBinding()}), {"id": 1}))
+                                      _FakeRequest({"BROWSER": _FakeBinding()}), ADMIN_USER))
 
         assert out["renderer"] == "binding"
         assert out["bytes"] == len(PDF_BYTES)
@@ -371,5 +391,5 @@ class TestRenderDocPdfEndpoint:
 
         monkeypatch.setattr(wsf, "_render_pdf_bytes", _fake)
         _run(wsf.render_doc_pdf(5, wsf.RenderPdfIn(html=GOOD_HTML),
-                                _FakeRequest({"BROWSER": _FakeBinding()}), {"id": 1}))
+                                _FakeRequest({"BROWSER": _FakeBinding()}), ADMIN_USER))
         assert archived.creates[0]["name"] == "单证 5 系统 PDF"

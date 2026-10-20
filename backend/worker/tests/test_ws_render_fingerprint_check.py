@@ -73,7 +73,12 @@ class _FakeDb:
 
 
 def _doc(payload):
-    return {"id": DOC_ID, "doc_type": "pi", "status": "issued", "raw_payload": payload}
+    return {"id": DOC_ID, "doc_type": "pi", "status": "issued", "raw_payload": payload,
+            "team_id": 1, "owner_id": "1", "owner_scope": "private"}
+
+
+# C27/F2：读端点先做可见性（团队/owner）；本文件只关心指纹接线 ⇒ 本团队 owner。
+READER = {"id": 1, "account_type": "customer", "role": "owner", "team_id": 1}
 
 
 def _run(coro):
@@ -85,7 +90,7 @@ def _check(monkeypatch, *, payload, assembly):
     db = _FakeDb(_doc(payload))
     monkeypatch.setattr(ws_docs_ext, "db", db)
     monkeypatch.setattr(ws_docs_ext._main, "get_trade_doc_render_data", assembly)
-    return _run(ws_docs_ext.check_trade_doc_render_fingerprint(DOC_ID, object(), {"id": 1}))
+    return _run(ws_docs_ext.check_trade_doc_render_fingerprint(DOC_ID, object(), READER))
 
 
 def _frozen_payload(**meta_overrides):

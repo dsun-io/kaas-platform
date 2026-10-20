@@ -124,8 +124,10 @@ export default function AiProvidersPage() {
     } catch { toast.error("保存失败"); }
   };
 
+  // C27/D6：AI 配置读写全部 admin-only（后端 `_require_platform_ops` 同口径）。
+  // 用 adminOnly 让非平台运营账号直连 URL 也被拦，而不是"页面能进、请求全 403"。
   return (
-    <RouteGuard>
+    <RouteGuard adminOnly>
       <PageHeader title="AI 服务商" description="自备密钥、为任务绑定服务商、审计每一次调用" />
       <div className="space-y-6 p-6">
         {/* providers */}

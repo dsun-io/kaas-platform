@@ -319,9 +319,13 @@ def _error(status_code: int, code: str, detail: str, **extra) -> HTTPException:
     return HTTPException(status_code=status_code, detail=payload)
 
 
-async def _doc_404(request: Request, doc_id: int) -> dict:
-    """取单证（404 由 doc_payload 的统一实现给出），转成 dict。"""
-    row = await _dp.get_doc_or_404(_db(), request, doc_id)
+async def _doc_404(request: Request, doc_id: int, user: Optional[dict] = None) -> dict:
+    """取单证（404 由 doc_payload 的统一实现给出），转成 dict。
+
+    C27：传 `user` 即按团队/owner 可见性过滤（跨团队/无团队 404，与 /facts、
+    /lint、/doc-set 的读口径一致）。
+    """
+    row = await _dp.get_doc_or_404(_db(), request, doc_id, user)
     return _dp.doc_dict(dict(row))
 
 
@@ -604,7 +608,7 @@ async def list_trade_doc_facts(
     返回的 `summary` 就是界面上"✓ 已确认 N 项 / ⚠ 待确认 M 项"的来源；
     未确认事实的导出占位由内核 `render_tbc` 在渲染侧处理（TBC/待确认，不猜值）。
     """
-    d = await _doc_404(request, doc_id)
+    d = await _doc_404(request, doc_id, user)
     facts = await _facts_of(request, d, user)
     return {
         "doc_id": doc_id,
@@ -633,7 +637,7 @@ async def confirm_trade_doc_facts(
 
     `keys` 为空 = 确认全部未确认事实；给了具体 key 则只确认这些（未知 key ⇒ 422）。
     """
-    d = await _doc_404(request, doc_id)
+    d = await _doc_404(request, doc_id, user)
     _require_not_void(d)
     facts = await _facts_of(request, d, user)
     by_key = {fact.key: fact for fact in facts}
@@ -687,7 +691,7 @@ async def patch_trade_doc_fact(
     表里再存一份可改的值，就会出现"同一条事实两个真相"——那正是这套加固要消灭的东西。
     改值请求返回 422 `FACT_VALUE_IMMUTABLE_STORAGE`，而不是静默忽略。
     """
-    d = await _doc_404(request, doc_id)
+    d = await _doc_404(request, doc_id, user)
     _require_not_void(d)
 
     if "value" in getattr(body, "model_fields_set", set()):
@@ -773,7 +777,7 @@ async def get_trade_doc_consistency(
     - `warning`（⚠ 等价措辞 / 缺失）→ 可见但不阻断（"绝不静默吞差异"）；
     - `info`（✓ 一致）不逐条返回（只有差异才回来，否则一屏都是 ✓）。
     """
-    d = await _doc_404(request, doc_id)
+    d = await _doc_404(request, doc_id, user)
     root, docs = await _domain_docs(request, d)
     facts_by_doc: dict[str, list[Fact]] = {}
     for row in docs:
@@ -985,7 +989,7 @@ async def lint_trade_doc(
     `required` 项条件不满足时提示"本次不出该单证"，条件无法求值时提示原因。
     这两个 warning 只在 `/lint` 出现，**不进 confirm 闸门**（避免历史单据误伤）。
     """
-    d = await _doc_404(request, doc_id)
+    d = await _doc_404(request, doc_id, user)
     facts = await _facts_of(request, d, user)
     blocking, warnings = await collect_lint(request, d, facts=facts)
     warnings.extend(await _trigger_warnings(request, d, facts))
@@ -1045,7 +1049,7 @@ async def list_trade_doc_receipts(
     user: dict = Depends(_get_current_user),
 ):
     """收款登记列表（按到账时间倒序）。"""
-    await _doc_404(request, doc_id)
+    await _doc_404(request, doc_id, user)
     rows = await _db().fetch(request, _SQL_RECEIPTS, DEFAULT_TENANT, doc_id)
     items = []
     for row in rows or []:
@@ -1075,7 +1079,7 @@ async def create_trade_doc_receipt(
     判定完全交给内核 `receipt_rules.classify_receipt_diff`（与收款台账同一把尺子），
     本文件不做第二套阈值。
     """
-    d = await _doc_404(request, doc_id)
+    d = await _doc_404(request, doc_id, user)
     _require_not_void(d)
     currency = (body.currency or d.get("currency") or "USD").upper()
     if currency not in CURRENCY:
@@ -1217,7 +1221,7 @@ async def get_trade_doc_doc_set(
     且条件为假）/ `trigger_reason`，无法求值时再给 `trigger_error`。事实来源与
     `/facts` 同一入口（`extract_facts` + 表内处置叠加），不另算一份。
     """
-    d = await _doc_404(request, doc_id)
+    d = await _doc_404(request, doc_id, user)
     items = await _doc_set_items(request, doc_id)
     facts = await _facts_of(request, d, user)
     return {
@@ -1241,7 +1245,7 @@ async def put_trade_doc_doc_set(
     （只是补一项），若删光重建会把已登记的回执抹掉 —— 那是数据丢失，不是"替换清单"。
     所以：**不在新清单里的行删除，仍在的保留回执状态**（doc_type 为天然主键）。
     """
-    d = await _doc_404(request, doc_id)
+    d = await _doc_404(request, doc_id, user)
     _require_not_void(d)
 
     seen: set[str] = set()
@@ -1306,7 +1310,7 @@ async def record_doc_set_receipt(
 
     非法转移（已 received 又 waive、已 waived 又 receive）⇒ 409，不静默覆盖。
     """
-    await _doc_404(request, doc_id)
+    await _doc_404(request, doc_id, user)
     action = (body.action or "").strip().lower()
     if action not in ("receive", "waive"):
         raise _error(422, INVALID_ENUM,
@@ -1371,7 +1375,7 @@ async def verify_trade_doc_export(
     越过必须是**留痕动作**，而不是把校验关掉。
     PDF 的文本抽取与图片计数由前端做（后端零图像库，见方案 §F 的实现对照）。
     """
-    d = await _doc_404(request, doc_id)
+    d = await _doc_404(request, doc_id, user)
 
     pdf_text = _squash(body.pdf_text)
     missing_texts = [

@@ -811,6 +811,15 @@ async def render_doc_pdf(doc_id: int, body: RenderPdfIn, request: Request,
     - 未配置渲染器 → 503；上游失败/不是 PDF → 502；HTML 含脚本或外链 → 422。
     - 逻辑本体在 `archive_rendered_pdf`（签发自动上传共用同一份，不另写）。
     """
+    # C27（F3）：可见性 404 先于角色 403；customer 普通成员不可代签/出 PDF。
+    d = await db.fetchrow(
+        request, "SELECT * FROM trade_docs WHERE tenant_id=$1 AND id=$2",
+        DEFAULT_TENANT, doc_id, table="trade_docs")
+    if not d:
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "DOC_NOT_FOUND"})
+    _main._require_doc_visible(user, d)
+    await _main._require_doc_issuer(request, user, d)
     return await archive_rendered_pdf(request, doc_id, body.html, user, body.name)
 
 

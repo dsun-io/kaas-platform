@@ -220,12 +220,15 @@ def test_tenant_products_create_rejects_invalid_spec():
 def test_seal_management_is_team_admin_only():
     """2026-10-18 用户口径：公章归企业抬头，只有团队管理员可**改**。
 
-    读取（列表/看图）允许团队成员；写操作（上传/设默认/删除）拒绝非团队管理员。
+    C27/D4（2026-10-21）：**读**也收紧为「团队管理员 或 internal」——
+    普通客户成员不再能读列表/看图（403 `TEAM_ADMIN_REQUIRED`）；写侧口径不变。
     """
     for method, path, kwargs in (
         ("post", "/api/v1/tenant/company-seals", {"files": {"file": ("s.png", PNG_120x80, "image/png")}, "data": {"name": "公章"}}),
         ("put", "/api/v1/tenant/company-seals/1/default", {}),
         ("delete", "/api/v1/tenant/company-seals/1", {}),
+        ("get", "/api/v1/tenant/company-seals", {}),
+        ("get", "/api/v1/tenant/company-seals/1/image", {}),
     ):
         conn = _FakeConn()
         with _patched(conn, user=CUSTOMER):
@@ -234,12 +237,68 @@ def test_seal_management_is_team_admin_only():
         assert resp.json()["detail"]["code"] == "TEAM_ADMIN_REQUIRED"
         assert conn.calls == []          # 拒绝在建连与查库之前
 
-    # 列表：成员可读（本项目客户账号看不到系统设置入口，但接口层允许只读）
-    conn = _FakeConn(fetch=[[]])
-    with _patched(conn, user=CUSTOMER):
-        resp = client.get("/api/v1/tenant/company-seals")
-    assert resp.status_code == 200
-    assert resp.json()["items"] == []
+
+# ── C27 / F4：公章读 = team admin 或 internal ───────────────────────────────
+
+SEAL_S1_ADMIN = {"id": 1, "email": "root@qa.test", "account_type": "internal", "role": "system_admin", "team_id": None}
+SEAL_S2_INTERNAL = {"id": 2, "email": "ops@qa.test", "account_type": "internal", "role": "user", "team_id": None}
+SEAL_S3_TEAM_ADMIN = {"id": 3, "email": "owner@qa.test", "account_type": "customer", "role": "owner", "team_id": 10}
+SEAL_S4_MEMBER = {"id": 4, "email": "member@qa.test", "account_type": "customer", "role": "user", "team_id": 10}
+SEAL_S5_NO_TEAM = {"id": 5, "email": "noteam@qa.test", "account_type": "customer", "role": "owner", "team_id": None}
+SEAL_S6_TEAM_B = {"id": 6, "email": "teamB@qa.test", "account_type": "customer", "role": "user", "team_id": 20}
+
+
+class _TeamsDb:
+    """只给 `_main._require_team_admin` 的 `SELECT created_by FROM teams` 用。"""
+
+    def __init__(self, created_by: dict[int, int]) -> None:
+        self.created_by = created_by
+        self.calls = 0
+
+    async def fetchrow(self, request, sql, *args, table=None):
+        self.calls += 1
+        if "FROM teams" in sql:
+            value = self.created_by.get(args[0])
+            return {"created_by": value} if value is not None else None
+        return None
+
+
+@contextmanager
+def _patched_seals_read(conn: _FakeConn, user: dict, teams: _TeamsDb | None = None):
+    with _patched(conn, user=user):
+        old_db = worker_main.db
+        if teams is not None:
+            worker_main.db = teams
+        try:
+            yield conn
+        finally:
+            worker_main.db = old_db
+
+
+@pytest.mark.parametrize(("user", "teams", "status"), [
+    (SEAL_S1_ADMIN, None, 200),
+    (SEAL_S2_INTERNAL, None, 200),
+    (SEAL_S3_TEAM_ADMIN, _TeamsDb({10: 3}), 200),
+    (SEAL_S4_MEMBER, _TeamsDb({10: 3}), 403),
+    (SEAL_S5_NO_TEAM, None, 403),
+    (SEAL_S6_TEAM_B, _TeamsDb({20: 99}), 403),
+], ids=["S1-admin", "S2-internal", "S3-team-admin", "S4-member", "S5-no-team", "S6-teamB"])
+def test_seal_read_matrix(user, teams, status):
+    conn = _FakeConn(fetch=[[]], fetchrow=[_seal_row(png_bytes=PNG_120x80)])
+    with _patched_seals_read(conn, user, teams):
+        listed = client.get("/api/v1/tenant/company-seals")
+        image = client.get("/api/v1/tenant/company-seals/7/image")
+    assert listed.status_code == status, (user["email"], "list", listed.text)
+    assert image.status_code == status, (user["email"], "image", image.text)
+    if status == 403:
+        assert listed.json()["detail"]["code"] == "TEAM_ADMIN_REQUIRED"
+
+
+def test_seal_render_content_unaffected_by_role_gate():
+    """签名直链走令牌校验（不受角色影响）；无 token 一律 401。"""
+    resp = client.get("/api/v1/tenant/company-seals/7/render-content")
+    assert resp.status_code == 401
+    assert resp.json()["detail"]["code"] == "RENDER_TOKEN_INVALID"
 
 
 def test_seal_upload_first_seal_becomes_default():

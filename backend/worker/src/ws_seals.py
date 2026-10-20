@@ -64,6 +64,22 @@ def _tenant_of(user: dict) -> str:
     return tid if isinstance(tid, str) and tid else DEFAULT_TENANT
 
 
+async def _require_seal_reader(request: Request, user: dict) -> None:
+    """C27（F4）：公章**读**收紧为「团队管理员 或 internal」。
+
+    - internal（含非管理员，D1/D4）⇒ 放行；
+    - customer 团队管理员（团队创建者）⇒ 放行；
+    - 普通成员 / 无团队 / 别团队客户 ⇒ 403 `TEAM_ADMIN_REQUIRED`。
+    写侧继续用 `_main._require_team_admin`（口径不变）；签名 `render-content`
+    走令牌校验、不受角色影响。
+    """
+    from kaas_common.workstation.scope import is_admin_role
+
+    if user.get("account_type") == _INTERNAL_ACCOUNT or is_admin_role(user.get("role")):
+        return
+    await _main._require_team_admin(request, user)
+
+
 def _validate_png(data: bytes) -> tuple[int, int]:
     """公章图校验（内核纯 Python）：非空、≤5MB、PNG 魔数 + IHDR 尺寸。"""
     try:
@@ -188,6 +204,7 @@ async def list_seals(
     user: dict = Depends(_get_current_user),
 ):
     """列表只回元数据 + 预览 URL，不回裸字节（取图走专用端点，便于缓存与鉴权）。"""
+    await _require_seal_reader(request, user)
     tenant_id = _tenant_of(user)
     async with _acquire(request) as conn:
         rows = await conn.fetch(
@@ -205,6 +222,7 @@ async def get_seal_image(
     user: dict = Depends(_get_current_user),
 ):
     """回 PNG 字节。tenant 校验在 _get_or_404 内 —— 越权看图 = 404。"""
+    await _require_seal_reader(request, user)
     tenant_id = _tenant_of(user)
     async with _acquire(request) as conn:
         row = await _get_or_404(conn, tenant_id, seal_id)
