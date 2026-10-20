@@ -1,9 +1,10 @@
 # 归档批次 · 2026-10-20 收尾（待办清零 + 过时文档归档）
 
 > 归档执行：2026-10-20，用户裁决「把未关闭的待办全部关闭 + 过时文档归档」。**`git mv` 移动（git 历史
-> 保留，禁止删除）**。本批共 19 份。当前权威口径以根 `README.md` + `docs/HANDOVER_2026-10-20.md` +
-> `docs/PROBLEM_STATUS_2026-10-11.md` + `docs/MASTER_EXEC_PLAN_2026-10-19.md` +
-> `docs/USER_ACTIONS_2026-10-19.md` + `docs/ENV_VERIFICATION_2026-10-19.md` 为准。
+> 保留，禁止删除）**。本批共 **22 份**（10-20 深夜再移入 `HANDOVER_2026-10-20`、`USER_ACTIONS_2026-10-19`、
+> `MASTER_EXEC_PLAN_2026-10-19`：前者发布检查单已迁入 `HANDOVER_2026-10-20_FINAL.md` §5，后两份为已清零账本）。
+> 当前权威口径以根 `README.md` + **`docs/HANDOVER_2026-10-20_FINAL.md`（交接总入口）** +
+> `docs/PROBLEM_STATUS_2026-10-11.md` + `docs/ENV_VERIFICATION_2026-10-19.md` 为准。
 
 ## 归档理由（分组）
 
