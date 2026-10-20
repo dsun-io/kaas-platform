@@ -13,6 +13,25 @@
 > **📌 主交接文档已切换：[README.md](../README.md)**（2026-10-19 晚场起，架构 / 三环境隔离矩阵 /
 > 方案 B 决策 / 冷启动线 / 测试策略的唯一权威）。本文件继续只做"问题状态"滚动口径。
 >
+> **（2026-10-20 · 新会话接手核对：本地 main 同步 + 分支残留清理 + 生产 secrets 实测 + 本机工具链）**
+>
+> 1. **本地 main 已快进到 `fb4b2aa`**（此前落后 origin/main 33 个提交 —— 本地曾停在 10-19 下午的
+>    `4b156fc`，任何按本地 HEAD 做的判断都已过时；最新交接 = `HANDOVER_2026-10-20.md`）。
+> 2. **残留分支清理**：`docs/plan-b-handoff`、`feat/plan-b-single-worker`（远端已删、内容被 main 覆盖，
+>    后者唯一提交是更旧版 PLAN_B_EVALUATION）—— 本地 worktree 与分支已删（用户裁决）。
+>    **`feat/convergence-aprime` 保留**（含决策 1 明令不得合并的 PPG 改动：wrangler 切 PPG +
+>    `scripts/migrate-ppg/`；其 3 项可用改动已由 `88132af` 收编）。远端 `prisma-cloud/setup` 已被他人删除。
+> 3. **生产 Worker secrets 实测缺 `RESEND_API_KEY`**（期望 5 个，实测 4 个）⇒ 生产「忘记密码」邮件
+>    静默不发。key 已由用户提供（对应已验证域名 `send.powervoy.com`），暂存本机 `.env.local`（gitignored）。
+>    **用户裁决：当前不进生产，发布窗口随部署一起补**（实测直接 `wrangler secret put` 因版本管理
+>    被拦、生产零改动）。已登记 `USER_ACTIONS` **U-B5** + `HANDOVER_2026-10-20.md` §7 检查单第 2 步；
+>    同窗口可顺带（需单独批准）Hyperdrive `--caching-disabled`（10-18 起挂账，"新建客户 60s 旧读"根因）。
+> 4. **本机工具链补齐（2026-10-20）**：Docker Desktop 4.96 / 引擎 29.9.1 / compose v5.6.0 **已可用**
+>    （曾因 WSL 3.0.3 更新中断起不来，已恢复）；pnpm **12.14.0** 已装并入 PATH
+>    （`C:\Users\河北慷逊公司\AppData\Roaming\npm`）；gh CLI **v2.102.0** 已装并入 PATH
+>    （`D:\tools\gh-cli\bin`，**未登录** ⇒ GitHub secrets/billing/可见性仍需你 `gh auth login` 或网页操作）。
+>    ⚠️ 本会话 shell 的 PATH 是会话启动时的快照 ⇒ 本会话内一律用绝对路径调用上述工具。
+>
 > **（2026-10-19 晚场 · 四项决策全部已确认 —— 以下为当前口径，压过本摘要内所有旧条目）**
 >
 > 1. **决策 1 · 生产库回 Neon、放弃 PPg**：PPg 10 连接上限 + 不支持扩展 = 结构性阻塞；

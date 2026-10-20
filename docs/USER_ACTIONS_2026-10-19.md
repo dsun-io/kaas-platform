@@ -23,7 +23,7 @@
 |---|---|---|---|---|
 | U-S1 | **`.codex/config.toml` 里的 Notion 令牌**（危-1） | **无需操作**：2026-10-20 用户裁决**不清理**（不吊销、不重写 git 历史）。代码层面 `.codex/config.toml` 已从索引删除（`100e767`），并已在 `.gitignore`；历史中保留令牌属**用户接受的风险** | 无需验证；风险接受留痕见 `SECURITY_AUDIT_2026-10-19.md` 危-1 裁决注记 | ✅ 已裁决「不清理」（2026-10-20） |
 | U-S2 | **确认仓库可见性**（危-2） | GitHub → Settings → General → 确认 Private；若仍 public ⇒ 改 private（推翻 10-17「不轮换」裁决需你点头，可顺带轮换 Neon 口令） | `curl -s -o NUL -w "%{http_code}" https://api.github.com/repos/dsun-io/kaas-platform` → 404（private 匿名不可见） | ⬜ 待确认（2026-10-19 匿名探测为 404，倾向已是 private） |
-| U-S3 | **核对生产 Worker secrets**（只读） | `cd backend/worker; npx wrangler secret list --name kaas` | 必含 `JWT_SECRET`、`ADMIN_SETUP_TOKEN`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`RESEND_API_KEY`；缺 `JWT_SECRET` ⇒ 全站 503 | ⬜ 待你执行（我无凭据） |
+| U-S3 | **核对生产 Worker secrets**（只读） | `cd backend/worker; npx wrangler secret list --name kaas` | 必含 `JWT_SECRET`、`ADMIN_SETUP_TOKEN`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`RESEND_API_KEY`；缺 `JWT_SECRET` ⇒ 全站 503 | ✅ **已代核（2026-10-20，本机 wrangler 已登录账号 `dspro0124@163.com`）**：实测只有 **4 个** —— `ADMIN_SETUP_TOKEN`/`JWT_SECRET`/`S3_ACCESS_KEY`/`S3_SECRET_KEY`，**缺 `RESEND_API_KEY`** ⇒ 生产「忘记密码」邮件当前静默不发。补法见 **U-B5** |
 | U-S4 | **Cloudflare Rate Limiting Rules**（高-4 推荐） | CF Dashboard → Security → WAF/Rate limiting：对 `/api/v1/auth/login`、`/api/v1/auth/register` 配 5 req/min/IP | 超限返回 429；日志里出现 rate limit 命中 | ⬜ 待决策 |
 | U-S5 | **Neon 生产分支设为 Protected** | Neon Console → Project → Branches → production → Protect（禁止误删/重置） | 分支页显示 Protected | ⬜ 待执行 |
 | U-S6 | **R2 桶命名决策**（中-2） | 二选一：① 保留 `kaas-files` 并修订文档；② 改名 `kaas-prod-storage`（需迁移对象 + 改 `wrangler.jsonc` + 重部署） | `wrangler.jsonc` 与 README 一致；对象数/大小迁移前后一致 | ⬜ 待决策 |
@@ -38,6 +38,7 @@
 | U-B2 | **生产 `product_tax_rates` 配置数据**（U-2） | 按 `docs/DEPLOYMENT_PLAN_2026-10-18.md` 顶部清单，在 Neon production 写入税率行（0 条则批量报价不放行） | `select count(*) from product_tax_rates;` > 0；批量报价接口不再返回「税率未配置」 | ⬜ 待执行 |
 | U-B3 | **智能表格 21 行缺失输入补全**（U-4） | **无需操作**：2026-10-20 用户裁决**不用补**（表格数据缺口保留为历史核验记录，不影响上线） | 无需验证；风险接受留痕于任务清单/交接文档 | ✅ 已裁决「不用补」（2026-10-20） |
 | U-B4 | **仓库 billing / Actions 配额**（U-3） | GitHub → Billing：确认 Actions 配额/付款方式；当前限额已耗尽（CI 仅 workflow_dispatch） | `gh run list` 可正常触发（或账单页显示额度） | ⬜ 待执行 |
+| U-B5 | **补生产 Worker secret `RESEND_API_KEY`**（2026-10-20 新发现） | key 已由用户提供（对应已验证域名 `send.powervoy.com`），暂存本机 `.env.local`（gitignored）。**用户裁决：当前不进生产，先做本地，发布窗口随部署一起上**（直接 `wrangler secret put` 会因版本管理触发部署，2026-10-20 实测被安全拦下、生产零改动）。发布时：`cd backend/worker; npx wrangler secret put RESEND_API_KEY --name kaas` | `npx wrangler secret list --name kaas` 出现第 5 项 `RESEND_API_KEY`；随后用 forgot-password 触发一次发信，日志无「未配 Resend API Key」 | ⏳ 挂起至发布窗口（已登记进 `HANDOVER_2026-10-20.md` §7 检查单） |
 
 ## C. 环境/发布决策类
 
