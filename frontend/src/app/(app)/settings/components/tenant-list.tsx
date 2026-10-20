@@ -9,6 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { Tenant } from "./types";
 
 interface Props {
@@ -19,8 +20,10 @@ interface Props {
 export function TenantList({ tenants, loading }: Props) {
   if (loading) {
     return (
-      <div className="py-8 text-center text-sm text-muted-foreground">
-        加载中...
+      <div className="space-y-2" aria-busy="true">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
       </div>
     );
   }

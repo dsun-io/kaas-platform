@@ -31,6 +31,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SectionCard } from "@/components/shared/section-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -178,9 +179,11 @@ export function TeamInvitesPanel({ teamId }: TeamInvitesPanelProps) {
         )}
 
         {loading ? (
-          <p className="py-4 text-center text-sm text-muted-foreground">
-            加载中…
-          </p>
+          <div className="space-y-2" aria-busy="true">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full rounded-lg" />
+            ))}
+          </div>
         ) : error ? (
           <div className="flex flex-col items-start gap-2 py-2 text-sm">
             <div className="flex items-center gap-2 text-destructive">

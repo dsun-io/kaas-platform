@@ -18,6 +18,7 @@ import { teamErrorMessage } from "@/lib/team/team-errors";
 import { subscribableWorkstationOptions } from "@/lib/workstation/visibility";
 import { useTeam } from "@/lib/team/team-context";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SectionCard } from "@/components/shared/section-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 
@@ -109,9 +110,11 @@ export function TeamSubscriptionsPanel({
       }
     >
       {loading ? (
-        <p className="py-6 text-center text-sm text-muted-foreground">
-          加载中…
-        </p>
+        <div className="space-y-2" aria-busy="true">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full rounded-lg" />
+          ))}
+        </div>
       ) : error ? (
         <div className="flex flex-col items-start gap-2 py-4 text-sm">
           <div className="flex items-center gap-2 text-destructive">

@@ -18,6 +18,7 @@ import { teamErrorMessage } from "@/lib/team/team-errors";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SectionCard } from "@/components/shared/section-card";
 
 import { useTeamMembers, type TeamMember } from "../hooks/use-team-admin";
@@ -139,9 +140,11 @@ export function TeamMembersPanel({
       }
     >
       {loading ? (
-        <p className="py-6 text-center text-sm text-muted-foreground">
-          加载中…
-        </p>
+        <div className="space-y-2" aria-busy="true">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full rounded-lg" />
+          ))}
+        </div>
       ) : error ? (
         <div className="flex flex-col items-start gap-2 py-4 text-sm">
           <div className="flex items-center gap-2 text-destructive">
