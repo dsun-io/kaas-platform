@@ -148,8 +148,8 @@ export function PricingDataTable({
                       <span
                         className={`text-xs px-1.5 py-0.5 rounded ${
                           cell.configured
-                            ? "bg-green-100 text-green-700"
-                            : "bg-amber-100 text-amber-700"
+                            ? "bg-success-muted text-success-muted-foreground"
+                            : "bg-warning-muted text-warning-muted-foreground"
                         }`}
                       >
                         {cell.configured ? "客户配置" : "产品兜底"}
@@ -277,8 +277,8 @@ export function PricingAllCustomersTable({
                       <span
                         className={`text-xs px-1.5 py-0.5 rounded ${
                           c.configured_count === total
-                            ? "bg-green-100 text-green-700"
-                            : "bg-amber-100 text-amber-700"
+                            ? "bg-success-muted text-success-muted-foreground"
+                            : "bg-warning-muted text-warning-muted-foreground"
                         }`}
                       >
                         {c.configured_count} / {total}

@@ -47,7 +47,7 @@ input:not(:-webkit-autofill) {
     --muted-foreground: 0.5 0.01 255;
     --accent: 0.945 0.015 278;
     --accent-foreground: 0.42 0.15 278;
-    --destructive: 0.6 0.21 25;
+    --destructive: 0.52 0.2 25;
     --destructive-foreground: 0.985 0.003 250;
 
     --border: 0.92 0.006 255;

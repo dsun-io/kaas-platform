@@ -255,10 +255,18 @@ export function ProductSpecTryout({
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="border-b bg-muted/40 text-left">
-                        <th className="p-2">指标</th>
-                        <th className="p-2">公式</th>
-                        <th className="p-2">结果</th>
-                        <th className="p-2">单位</th>
+                        <th scope="col" className="p-2">
+                          指标
+                        </th>
+                        <th scope="col" className="p-2">
+                          公式
+                        </th>
+                        <th scope="col" className="p-2">
+                          结果
+                        </th>
+                        <th scope="col" className="p-2">
+                          单位
+                        </th>
                       </tr>
                     </thead>
                     <tbody>

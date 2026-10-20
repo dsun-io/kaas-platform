@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingBlock } from "@/components/shared/loading-block";
+
 /**
  * 企业主体信息（设置 → 企业信息）—— 所有对外单据的卖方抬头。
  *
@@ -148,15 +150,14 @@ export default function CompanyProfilePage() {
         }
       />
 
-      <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-        本页<strong>仅团队管理员可保存</strong>（成员可查看）。企业抬头、收款银行与公章都会直接印在
+      <div className="rounded-lg border border-warning/40 bg-warning-muted px-3 py-2 text-xs text-warning-muted-foreground">
+        本页<strong>仅团队管理员可保存</strong>
+        （成员可查看）。企业抬头、收款银行与公章都会直接印在
         对外单证上，修改前请与营业执照/银行账户核对。
       </div>
 
       {profile.isLoading ? (
-        <p className="py-8 text-center text-sm text-muted-foreground">
-          加载中…
-        </p>
+        <LoadingBlock rows={5} className="py-8" />
       ) : profile.isError ? (
         <SectionCard title="无法读取企业信息">
           <p className="text-sm text-destructive">

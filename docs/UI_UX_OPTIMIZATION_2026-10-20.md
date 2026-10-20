@@ -724,6 +724,17 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
   - 已落：events 列表、audit-log 日志的“加载中…”→骨架 + 空态；settings 租户/账号、team 成员/邀请/工位面板的“加载中…”→骨架；intel 内部 4 个 tab 改统一 `Tabs`（手写 border-b-2 清零）；shipments 列表加载骨架 + `scope`；intel 货运表格空态统一。
 - P2：列配置/密度切换/筛选记忆/快捷键/复制/自动聚焦、a11y 全量、窄屏卡片化、暗色令牌校准。
   - 已落：`usePersistentState`（localStorage，挂载后恢复、避免 hydration mismatch）；事件审计、操作日志的筛选条件会记忆，刷新/回工位后保留。
+  - 已落：订单列表「舒适/紧凑」密度切换（同样记忆），只改行高/字号，不改列含义与数据。
+  - 已落：订单列表「列配置」——只允许隐藏现有 7 列、默认全显、至少保留 1 列，偏好持久化。
+  - 已落：客户管理搜索快捷键 —— `/` 聚焦搜索框、Esc 退出（输入框内不劫持），占位文案与 `aria-keyshortcuts` 同步。
+  - 已落：客户列表窄屏卡片化（<md 卡片、md+ 原表格，卡片不复制 e2e testid）；单证台账加「舒适/紧凑」密度切换。
+  - 已落：订单/单证列表窄屏卡片化（<md 卡片、md+ 表格）；订单号/单证编号加复制按钮（带成功提示与失败兜底）。
+  - 已落：单证台账列配置（5 列可隐藏、至少保留 1 列、localStorage 记忆）；单证/订单/客户密度与窄屏布局统一走 SectionCard 移动端堆叠。
+  - 已落：暗色令牌校准 —— 新增 `pnpm ui:contrast`（解析 `:root`/`.dark`，OKLCH→sRGB，低于 4.5 失败）；修复浅色 `--destructive` 按钮对比度 4.20→5.84，light/dark 全部通过。
+  - 已落：全站 a11y 冒烟 e2e（10 个核心页：h1=1、表头 scope、icon 按钮名称、1366 无横向溢出）。
+  - 已落：spec-proposals / market-view / research 三处手写下划线 tab 收编到统一 `Tabs`；spec-proposals 加载/空态改骨架+空态；research 供应能力图标改语义色 `text-success/text-destructive`。
+  - 已落：全站硬编码红/绿/黄清理（13 文件 23 处 → 0），统一走 `success/warning/destructive` 语义 token。
+  - 已全部收口：列配置（订单/单证）、复制/自动聚焦（共享 CopyButton；弹窗/客户选择器已有 autoFocus）、窄屏卡片（客户/订单/单证）、暗色令牌校准（`pnpm ui:contrast` 全过）、a11y 冒烟 e2e。
 
 ### 9.5 质量与清理（随批次做）
 
@@ -732,6 +743,9 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 - mock：`docsStore` 为空、`/pdf` 固定 503；需要时补种子单证让签发/预览链路可演示。
 
 ### 9.6 后端依赖（单独排期，不混入纯前端批次）
+
+> 详细方案已单独落盘：[`docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md`](UI_BACKEND_DEPENDENCIES_2026-10-20.md)（现状事实、建议方案、验收与顺序）。
+> 2026-10-20：用户已安排 5 项并行任务；该文档作为接口/验收基线，完成后再回填状态与前端接线。
 
 | 事项 | 现状 | 需要的跨栈改动 |
 |---|---|---|
@@ -745,7 +759,7 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 
 - [x] 盘点差距并落文档（本节，已完成）
 - [x] P0-A 页头收编：settings / events / audit-log / kb / billing / intel / market-view / products / spec-config / spec-config wizard / pricing-data / admin gray-release / admin spec-proposals / onboarding 全部改 `PageHeader`；手写 `<h1>` 清零。
-- [ ] P0-A 状态/颜色/loading 收编（第一批：orders、trade-docs；dashboard 已分组）→ ✅ orders/trade-docs 的“加载中…”改骨架，表头补 `scope`；orders/trade-docs 已无硬编码红绿黄
+- [ ] P0-A 状态/颜色/loading 收编 → ✅ orders/trade-docs 的“加载中…”改骨架，表头补 `scope`；orders/trade-docs 已无硬编码红绿黄；新增共享 `LoadingBlock`，audit-timeline/客户详情/market/products/报价订单记录/企业抬头/税务/盖章回传的整块“加载中…”已改骨架（剩余纯文本仅为图片/按钮内联状态）
 - [ ] P0-C 可访问性与 1366 检查 → ✅ `TableHead` 默认 `scope="col"`（全站 100 处表头一次覆盖）；icon-only 按钮补可访问名；`maximumScale:1` 移除；补 `prefers-reduced-motion`；1366 下 dashboard/quotes/customers/orders/trade-docs/products/settings 均无横向溢出
 - [ ] 每批：typecheck/lint/test/e2e/build + 截图 + 文档 + push
 
@@ -776,6 +790,41 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 - 报价重构第二阶段收尾完成。
 
 **门禁（2026-10-20 实测）**：typecheck 0 error；lint 0 error / 87 warn；vitest **458 passed**；e2e **23 passed + 4 skipped = 27**；`NEXT_EXPORT=1` build 成功（`out/` 273 文件）。
+
+---
+
+## 11. 终验结果（2026-10-20 · 浏览器实测）
+
+**DOM 审核**（1366×768，mock 模式，dashboard/customers/quotes/orders/trade-docs/products/events/settings/intel/shipments）：
+
+| 指标 | 结果 |
+|---|---|
+| 每页 `<h1>` 数量 | 全部 = 1（含 products；已去掉图片 tab 内重复 PageHeader） |
+| `<th>` 无 `scope` | 0（products 里手写 `<th>` 也已补；其余走 `TableHead` 默认） |
+| icon-only 按钮无可访问名 | 0 |
+| 横向溢出（`scrollWidth > innerWidth`） | 0 |
+| 手写 `<h1>`（`app/(app)` 源码） | 0 |
+| 硬编码红/绿/黄 | 0 |
+| 手写 `border-b-2` tab（业务页） | 0 |
+
+**§8.4 验收清单结论**
+
+- ✅ 唯一页头/Tab/状态标签/按钮体系；状态色已语义化
+- ✅ 状态不只靠颜色（StatusBadge 带文案；语义色有文本）
+- ✅ 加载态：主数据区改骨架；剩余纯文本仅为图片/按钮内联反馈
+- ✅ 空态：主列表/日志/事件/团队/报价记录均有 EmptyState
+- ✅ 危险操作确认：保留原有 ConfirmDialog；删除/作废按钮危险色
+- ✅ focus 环 / `aria-current` / reduced-motion / 键盘打开客户详情
+- ✅ `maximumScale` 已移除；1366 无横向错位
+- ✅ 表格 `scope` 覆盖率 100%；icon-only 按钮均有可访问名
+- ✅ 对比度抽查：8 个核心页文本对比度扫描无真实失败；唯一告警是侧栏头像「平台」白字（背景为内联蓝色渐变，扫描器按页面底色误判，实际非 4.5 以下）
+- ✅ 对比度门禁：`pnpm ui:contrast` 解析 light/dark 语义 token，全部 >= 4.5（浅色 destructive 已由 4.20 调到 5.84）
+- ✅ 窄屏：客户/订单/单证列表 <md 卡片；SectionCard 标题与动作在移动端堆叠
+- ✅ e2e（客户/报价/设置/仪表盘等）全过
+- ⏳ 部分：对比度未做自动化全站扫描（当前仅令牌/抽查）；列配置只落在订单列表
+- ✅ P2 已全部收口：列配置（订单/单证）、复制/自动聚焦、窄屏卡片（客户/订单/单证）、暗色令牌校准（`pnpm ui:contrast` 全过）、a11y 冒烟 e2e（24 passed + 4 skipped = 28）
+
+**门禁**：typecheck 0 / lint 0 err 87 warn / vitest 458 / e2e 24 passed + 4 skipped = 28 / build out/277 / `pnpm ui:contrast` 通过。
 
 ---
 

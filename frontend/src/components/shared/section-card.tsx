@@ -22,14 +22,20 @@ export function SectionCard({
   hover = false,
 }: SectionCardProps) {
   return (
-    <div className={cn(hover ? "card-base card-hover" : "card-base", className)}>
+    <div
+      className={cn(hover ? "card-base card-hover" : "card-base", className)}
+    >
       {(title || action) && (
-        <div className="flex items-center justify-between border-b px-5 py-4">
-          <div className="space-y-0.5">
-            {title && <h3 className="text-[0.9375rem] font-semibold">{title}</h3>}
-            {description && <p className="text-sm text-muted-foreground">{description}</p>}
+        <div className="flex flex-col items-start gap-3 border-b px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 space-y-0.5">
+            {title && (
+              <h3 className="text-[0.9375rem] font-semibold">{title}</h3>
+            )}
+            {description && (
+              <p className="text-sm text-muted-foreground">{description}</p>
+            )}
           </div>
-          {action}
+          {action && <div className="w-full sm:w-auto">{action}</div>}
         </div>
       )}
       <div className={cn("p-5", bodyClassName)}>{children}</div>

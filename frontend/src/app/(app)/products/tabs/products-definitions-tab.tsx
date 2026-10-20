@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingBlock } from "@/components/shared/loading-block";
+
 /**
  * 产品工位 · tab「定义」（P14 行为等价搬入）
  *
@@ -649,25 +651,40 @@ export function ProductsDefinitionsTab() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/50">
-              <th className="px-4 py-2 text-left">Key</th>
-              <th className="px-4 py-2 text-left">名称</th>
-              <th className="px-4 py-2 text-left">利润模式</th>
-              <th className="px-4 py-2 text-left">利润率</th>
-              <th className="px-4 py-2 text-left">税费系数</th>
-              <th className="px-4 py-2 text-left">HS 编码</th>
-              <th className="px-4 py-2 text-left">包装</th>
-              <th className="px-4 py-2 text-left">状态</th>
-              <th className="px-4 py-2 text-left">操作</th>
+              <th scope="col" className="px-4 py-2 text-left">
+                Key
+              </th>
+              <th scope="col" className="px-4 py-2 text-left">
+                名称
+              </th>
+              <th scope="col" className="px-4 py-2 text-left">
+                利润模式
+              </th>
+              <th scope="col" className="px-4 py-2 text-left">
+                利润率
+              </th>
+              <th scope="col" className="px-4 py-2 text-left">
+                税费系数
+              </th>
+              <th scope="col" className="px-4 py-2 text-left">
+                HS 编码
+              </th>
+              <th scope="col" className="px-4 py-2 text-left">
+                包装
+              </th>
+              <th scope="col" className="px-4 py-2 text-left">
+                状态
+              </th>
+              <th scope="col" className="px-4 py-2 text-left">
+                操作
+              </th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr>
-                <td
-                  colSpan={9}
-                  className="px-4 py-8 text-center text-muted-foreground"
-                >
-                  加载中…
+                <td colSpan={9} className="px-4 py-4">
+                  <LoadingBlock rows={3} />
                 </td>
               </tr>
             ) : (
@@ -736,9 +753,7 @@ export function ProductsDefinitionsTab() {
                                   String(data.spec.name ?? p.product_name) ||
                                   p.product_name,
                               });
-                              setSpecJson(
-                                JSON.stringify(data.spec, null, 2),
-                              );
+                              setSpecJson(JSON.stringify(data.spec, null, 2));
                             } catch {
                               // 读取失败就不打开编辑器（避免把空定义存成租户覆盖）
                             }

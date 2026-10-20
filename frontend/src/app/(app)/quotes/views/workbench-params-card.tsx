@@ -28,10 +28,7 @@ import {
 } from "@/components/customer-picker";
 import { termOptionLabel } from "../../quotations/v2-quote/components/freight-panel";
 import { requiredFeeKeysFor } from "../lib/terms-amortize";
-import type {
-  ExportTermsTemplate,
-  TaxArchive,
-} from "@contracts/export-quote";
+import type { ExportTermsTemplate, TaxArchive } from "@contracts/export-quote";
 
 const CURRENCIES = ["USD", "EUR", "GBP", "AUD", "CAD", "JPY", "CNY"] as const;
 
@@ -176,10 +173,10 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
     rate == null ? input.trim() === "" : Number(input) === Number(rate * 100);
   const archiveModified = Boolean(
     selectedArchive &&
-      !(
-        samePct(outputVatRatePct, selectedArchive.tax_values.output_vat_rate) &&
-        samePct(miscTaxPct, selectedArchive.tax_values.misc_fee_rate)
-      ),
+    !(
+      samePct(outputVatRatePct, selectedArchive.tax_values.output_vat_rate) &&
+      samePct(miscTaxPct, selectedArchive.tax_values.misc_fee_rate)
+    ),
   );
 
   return (
@@ -273,7 +270,7 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
                 <span
                   className={
                     archiveModified
-                      ? "text-amber-700"
+                      ? "text-warning-muted-foreground"
                       : "text-muted-foreground"
                   }
                 >
@@ -317,10 +314,7 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
             />
           </div>
           <div className="space-y-1.5">
-            <Label
-              className="text-xs"
-              title="销项增值税税率（出口零税率填 0）"
-            >
+            <Label className="text-xs" title="销项增值税税率（出口零税率填 0）">
               销项税率（%）
             </Label>
             <Input
@@ -432,7 +426,9 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
                 placeholder="按报价当日汇率"
                 className="h-8 rounded-none border-0 text-xs focus-visible:ring-0"
               />
-              <span className="flex items-center bg-muted px-2 text-xs">CNY</span>
+              <span className="flex items-center bg-muted px-2 text-xs">
+                CNY
+              </span>
             </div>
             <p className="text-[11px] text-muted-foreground">
               切币种会自动带入最新汇率；手改后以手填为准

@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingBlock } from "@/components/shared/loading-block";
+
 /**
  * 税务管理（TAX-04）—— 企业税档 + 产品税率。
  *
@@ -58,7 +60,12 @@ type PTForm = {
   rebate: string;
 };
 
-const EMPTY_PT: PTForm = { id: null, product_key: "", input_vat: "", rebate: "" };
+const EMPTY_PT: PTForm = {
+  id: null,
+  product_key: "",
+  input_vat: "",
+  rebate: "",
+};
 
 function pctToRate(value: string): number | undefined {
   const text = value.trim();
@@ -112,9 +119,8 @@ export default function TaxArchivesPage() {
   const productTaxes = useQuery({
     queryKey: PT_KEY,
     queryFn: async () => {
-      const { data } = await apiClient.get<ProductTaxRateList>(
-        "/product-tax-rates",
-      );
+      const { data } =
+        await apiClient.get<ProductTaxRateList>("/product-tax-rates");
       return data;
     },
   });
@@ -148,7 +154,10 @@ export default function TaxArchivesPage() {
         tax_values,
       };
       if (state.id == null) {
-        const { data } = await apiClient.post<TaxArchive>("/tax-archives", body);
+        const { data } = await apiClient.post<TaxArchive>(
+          "/tax-archives",
+          body,
+        );
         return data;
       }
       const { data } = await apiClient.patch<TaxArchive>(
@@ -271,8 +280,9 @@ export default function TaxArchivesPage() {
         }
       />
 
-      <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-        本页<strong>仅团队管理员可保存</strong>，成员可查看。销项税/杂税按企业税档走；
+      <div className="rounded-lg border border-warning/40 bg-warning-muted px-3 py-2 text-xs text-warning-muted-foreground">
+        本页<strong>仅团队管理员可保存</strong>
+        ，成员可查看。销项税/杂税按企业税档走；
         进项税/出口退税率按产品走，报价时自动带出对应产品税率。
       </div>
 
@@ -338,9 +348,7 @@ export default function TaxArchivesPage() {
 
       <SectionCard title="企业税档（销项税 / 杂税）">
         {list.isLoading ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            加载中…
-          </p>
+          <LoadingBlock rows={3} className="py-6" />
         ) : items.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
             暂无企业税档。可新建一份，报价页会自动选中最新一份。
@@ -442,7 +450,7 @@ export default function TaxArchivesPage() {
               >
                 <option value="">请选择产品</option>
                 {(ptForm.id != null
-                  ? products.data?.products ?? []
+                  ? (products.data?.products ?? [])
                   : availableProducts
                 ).map((p) => (
                   <option key={p.key} value={p.key}>
@@ -491,9 +499,7 @@ export default function TaxArchivesPage() {
         )}
 
         {productTaxes.isLoading ? (
-          <p className="py-4 text-center text-sm text-muted-foreground">
-            加载中…
-          </p>
+          <LoadingBlock rows={3} className="py-4" />
         ) : ptItems.length === 0 ? (
           <p className="py-4 text-center text-sm text-muted-foreground">
             暂无产品税率。新增后报价页按产品自动带出。
@@ -521,7 +527,9 @@ export default function TaxArchivesPage() {
                     <td className="p-2">
                       {rateToPct(row.input_vat_rate) || "—"}%
                     </td>
-                    <td className="p-2">{rateToPct(row.rebate_rate) || "—"}%</td>
+                    <td className="p-2">
+                      {rateToPct(row.rebate_rate) || "—"}%
+                    </td>
                     <td className="p-2">
                       <div className="flex gap-1">
                         <Button
