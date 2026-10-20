@@ -140,6 +140,8 @@ export function QuoteLineCard({
     effectiveProduct && refProductName ? refProductName : null,
   );
   const [expanded, setExpanded] = useState(false);
+  /** 表单折叠：算出一行后收起，列表变紧凑；点「编辑规格」再展开。 */
+  const [formOpen, setFormOpen] = useState(true);
 
   // 换产品 → 规格空间变了 → 回到"未选择"。
   // 不预置第一组取值：预置会让人不填就报价，而规格决定成本/重量/体积。
@@ -172,8 +174,7 @@ export function QuoteLineCard({
   const referenceCost = costRef.data?.cost ?? null;
   const effectiveCost = typedCost !== "" ? Number(typedCost) || 0 : 0;
   /** 只有手填/点应用参考后才传成本覆盖 */
-  const costOverrideToSend =
-    typedCost !== "" ? Number(typedCost) || 0 : null;
+  const costOverrideToSend = typedCost !== "" ? Number(typedCost) || 0 : null;
 
   // ── 包装（需求 20）：默认包装优先；区间按当前规格取值 ────────────────────
   const packagingOptions = formulas.data?.packaging ?? [];
@@ -335,9 +336,7 @@ export function QuoteLineCard({
         !costApplied && costField
           ? {
               [costField]:
-                typedCost !== ""
-                  ? Number(typedCost) || 0
-                  : costOverrideToSend,
+                typedCost !== "" ? Number(typedCost) || 0 : costOverrideToSend,
             }
           : undefined;
       const payload = buildLineRequest({
@@ -390,6 +389,7 @@ export function QuoteLineCard({
         error: null,
         spaceDeduction: formulas.data.space_deduction,
       });
+      setFormOpen(false);
     } catch (err) {
       const message =
         err instanceof Error && "response" in err
@@ -398,6 +398,7 @@ export function QuoteLineCard({
             ? err.message
             : "算价失败";
       onChange({ result: null, built: null, error: message });
+      setFormOpen(true);
     }
   };
 
@@ -463,283 +464,327 @@ export function QuoteLineCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {reference.data && reference.data.count > 0 ? (
-          <p className="text-xs text-muted-foreground">
-            历史参考（近 {reference.data.days} 天 · 同客户同产品{" "}
-            {reference.data.count} 次）：{reference.data.min?.toFixed(2)} ~{" "}
-            {reference.data.max?.toFixed(2)}，中位{" "}
-            {reference.data.median?.toFixed(2)}
-            {reference.data.last_at
-              ? ` · 最近 ${new Date(reference.data.last_at).toLocaleDateString("zh-CN")}`
-              : ""}
-          </p>
-        ) : null}
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {pieceInputs.map((pi) => {
-            const { value, hint } = displayOf(pi as never);
-            const unit = pi.ui_unit || pi.unit;
-            return (
-              <div key={pi.key} className="space-y-1.5">
-                <Label className="text-xs">
-                  {pi.label}
-                  {unit ? `（${unit}）` : ""}
-                </Label>
-                <Input
-                  type="number"
-                  step="any"
-                  value={value}
-                  onChange={(e) =>
-                    onChange({
-                      pieceOverrides: {
-                        ...line.pieceOverrides,
-                        [pi.key]: e.target.value,
-                      },
-                    })
-                  }
-                  className="h-8 text-xs"
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  默认跟随规格（{hint || "—"}）
-                </p>
-              </div>
-            );
-          })}
-
-          <div className="space-y-1.5">
-            <Label className="text-xs">件数（卷）</Label>
-            <Input
-              type="number"
-              min={1}
-              value={line.pieces}
-              onChange={(e) => onChange({ pieces: e.target.value })}
-              placeholder="请填写卷数"
-              className="h-8 text-xs"
-            />
-            {rollLengthForMeters ? (
-              <p className="text-[11px] text-muted-foreground">
-                1 卷 = {rollLengthForMeters} 米；也可直接填客户需求米数，系统自动进一换卷
-              </p>
-            ) : null}
-          </div>
-
-          {rollLengthForMeters ? (
-            <div className="space-y-1.5">
-              <Label className="text-xs">客户需求（米，可选）</Label>
-              <Input
-                type="number"
-                min={0}
-                value={metersDemand}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setMetersDemand(v);
-                  const meters = Number(v);
-                  if (Number.isFinite(meters) && meters > 0) {
-                    onChange({
-                      pieces: String(Math.ceil(meters / rollLengthForMeters)),
-                    });
-                  }
-                }}
-                placeholder={`按 ${rollLengthForMeters} 米/卷自动换算`}
-                className="h-8 text-xs"
-              />
-              <p className="text-[11px] text-muted-foreground">
-                卷数 = 总米数 ÷ {rollLengthForMeters}，小数进一
-              </p>
-            </div>
-          ) : null}
-
-          <div className="space-y-1.5">
-            <Label className="text-xs">
-              总数（{unitQtyInput?.unit || "m"}）
-            </Label>
-            <Input
-              type="number"
-              value={Number.isFinite(total) ? total : 0}
-              readOnly
-              className="h-8 bg-muted text-xs"
-            />
-            <p className="text-[11px] text-muted-foreground">
-              单件数量 × 件数，系统计算
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs">
-              税前成本{costUnitLabel ? `（${costUnitLabel}）` : ""}
-            </Label>
-            <Input
-              type="number"
-              step="any"
-              value={line.costOverride}
-              onChange={(e) => onChange({ costOverride: e.target.value })}
-              placeholder="请填写成本"
-              className="h-8 text-xs"
-            />
-            <div className="text-[11px] text-muted-foreground">
-              {typedCost !== "" ? (
-                "本单手填，只影响本单"
-              ) : referenceCost !== null ? (
-                <div className="flex flex-wrap items-center gap-1">
-                  <span>
-                    参考历史成本 ¥{referenceCost}
-                    {costUnitLabel
-                      ? `/${costUnitLabel.replace("元/", "")}`
-                      : ""}
-                    （
-                    {costRef.data?.source === "latest"
-                      ? "同规格最近一次"
-                      : "近 30 天中位数"}
-                    ）
-                  </span>
-                  <button
-                    type="button"
-                    className="underline"
-                    onClick={() =>
-                      onChange({ costOverride: String(referenceCost) })
-                    }
-                  >
-                    应用参考成本
-                  </button>
-                </div>
-              ) : (
-                "请手动填写成本（不会自动使用产品定义里的成本）"
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs">包装方式</Label>
-            <select
-              value={effectivePackaging?.id ?? ""}
-              onChange={(e) => onChange({ packagingId: e.target.value })}
-              disabled={packagingOptions.length === 0}
-              className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {packagingOptions.length === 0 && (
-                <option value="">（该产品未配置包装）</option>
-              )}
-              {packagingOptions.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                  {p.is_default ? "（默认）" : ""}
-                </option>
-              ))}
-            </select>
-            <p className="text-[11px] text-muted-foreground">
-              {effectivePackaging
-                ? `按规格自动读取：¥${packagingFee.toFixed(2)}/卷`
-                : "在产品管理里配置包装与收费区间"}
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label
-              className="text-xs"
-              title="逐行覆盖利润率（%）。不同产品毛利不同；留空 = 继承整单默认"
-            >
-              本行利润率（%）
-            </Label>
-            <Input
-              type="number"
-              step="0.01"
-              value={line.profitPctOverride}
-              onChange={(e) =>
-                onChange({ profitPctOverride: e.target.value })
-              }
-              placeholder="留空 = 用整单默认"
-              className="h-8 text-xs"
-            />
-            <p className="text-[11px] text-muted-foreground">
-              售价 = 成本 ÷ (1 − 利润率 − 杂税)
-            </p>
-          </div>
-        </div>
-
-        {formulas.data && (
-          <SpecPicker
-            formulas={formulas.data}
-            value={line.spec}
-            onChange={(next) => onChange({ spec: next })}
-            disabled={calc.isPending}
-          />
-        )}
-        {formulas.isError && (
-          <p className="text-xs text-destructive">规格加载失败，请刷新重试</p>
-        )}
-
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-          <div className="flex flex-col gap-1">
+        {!formOpen && line.built && (
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs">
+            <span>
+              <span className="text-muted-foreground">规格 </span>
+              {Object.values(line.spec).filter(Boolean).join(" × ") || "—"}
+            </span>
+            <span>
+              <span className="text-muted-foreground">件数 </span>
+              {line.pieces || "—"} 卷
+            </span>
+            <span>
+              <span className="text-muted-foreground">总数 </span>
+              {Number.isFinite(total) ? total : 0} {unitQtyInput?.unit || "m"}
+            </span>
+            <span>
+              <span className="text-muted-foreground">成本 </span>
+              {typedCost || referenceCost || "—"}
+              {costUnitLabel ? ` ${costUnitLabel}` : ""}
+            </span>
+            <span>
+              <span className="text-muted-foreground">单卷价 </span>
+              {unitPriceFx === null ? "—" : unitPriceFx.toFixed(4)}
+            </span>
+            <span>
+              <span className="text-muted-foreground">行小计 </span>
+              <b className="font-medium">
+                {lineAmount === null ? "—" : lineAmount.toFixed(2)}
+              </b>
+            </span>
             <Button
               type="button"
               size="sm"
-              className="w-fit"
-              disabled={!canSubmit || calc.isPending}
-              onClick={compute}
+              variant="outline"
+              className="ml-auto h-7 px-2 text-xs"
+              onClick={() => setFormOpen(true)}
             >
-              {calc.isPending && (
-                <Loader2 className="mr-2 size-3.5 animate-spin" />
-              )}
-              {calc.isPending ? "计算中…" : "计算本行"}
+              编辑规格
             </Button>
-            {!canSubmit && !calc.isPending && (
+          </div>
+        )}
+
+        <div className={cn("space-y-4", !formOpen && "hidden")}>
+          {reference.data && reference.data.count > 0 ? (
+            <p className="text-xs text-muted-foreground">
+              历史参考（近 {reference.data.days} 天 · 同客户同产品{" "}
+              {reference.data.count} 次）：{reference.data.min?.toFixed(2)} ~{" "}
+              {reference.data.max?.toFixed(2)}，中位{" "}
+              {reference.data.median?.toFixed(2)}
+              {reference.data.last_at
+                ? ` · 最近 ${new Date(reference.data.last_at).toLocaleDateString("zh-CN")}`
+                : ""}
+            </p>
+          ) : null}
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {pieceInputs.map((pi) => {
+              const { value, hint } = displayOf(pi as never);
+              const unit = pi.ui_unit || pi.unit;
+              return (
+                <div key={pi.key} className="space-y-1.5">
+                  <Label className="text-xs">
+                    {pi.label}
+                    {unit ? `（${unit}）` : ""}
+                  </Label>
+                  <Input
+                    type="number"
+                    step="any"
+                    value={value}
+                    onChange={(e) =>
+                      onChange({
+                        pieceOverrides: {
+                          ...line.pieceOverrides,
+                          [pi.key]: e.target.value,
+                        },
+                      })
+                    }
+                    className="h-8 text-xs"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    默认跟随规格（{hint || "—"}）
+                  </p>
+                </div>
+              );
+            })}
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">件数（卷）</Label>
+              <Input
+                type="number"
+                min={1}
+                value={line.pieces}
+                onChange={(e) => onChange({ pieces: e.target.value })}
+                placeholder="请填写卷数"
+                className="h-8 text-xs"
+              />
+              {rollLengthForMeters ? (
+                <p className="text-[11px] text-muted-foreground">
+                  1 卷 = {rollLengthForMeters}{" "}
+                  米；也可直接填客户需求米数，系统自动进一换卷
+                </p>
+              ) : null}
+            </div>
+
+            {rollLengthForMeters ? (
+              <div className="space-y-1.5">
+                <Label className="text-xs">客户需求（米，可选）</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={metersDemand}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setMetersDemand(v);
+                    const meters = Number(v);
+                    if (Number.isFinite(meters) && meters > 0) {
+                      onChange({
+                        pieces: String(Math.ceil(meters / rollLengthForMeters)),
+                      });
+                    }
+                  }}
+                  placeholder={`按 ${rollLengthForMeters} 米/卷自动换算`}
+                  className="h-8 text-xs"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  卷数 = 总米数 ÷ {rollLengthForMeters}，小数进一
+                </p>
+              </div>
+            ) : null}
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">
+                总数（{unitQtyInput?.unit || "m"}）
+              </Label>
+              <Input
+                type="number"
+                value={Number.isFinite(total) ? total : 0}
+                readOnly
+                className="h-8 bg-muted text-xs"
+              />
               <p className="text-[11px] text-muted-foreground">
-                请选完整规格，并填写件数与整单汇率
+                单件数量 × 件数，系统计算
               </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">
+                税前成本{costUnitLabel ? `（${costUnitLabel}）` : ""}
+              </Label>
+              <Input
+                type="number"
+                step="any"
+                value={line.costOverride}
+                onChange={(e) => onChange({ costOverride: e.target.value })}
+                placeholder="请填写成本"
+                className="h-8 text-xs"
+              />
+              <div className="text-[11px] text-muted-foreground">
+                {typedCost !== "" ? (
+                  "本单手填，只影响本单"
+                ) : referenceCost !== null ? (
+                  <div className="flex flex-wrap items-center gap-1">
+                    <span>
+                      参考历史成本 ¥{referenceCost}
+                      {costUnitLabel
+                        ? `/${costUnitLabel.replace("元/", "")}`
+                        : ""}
+                      （
+                      {costRef.data?.source === "latest"
+                        ? "同规格最近一次"
+                        : "近 30 天中位数"}
+                      ）
+                    </span>
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={() =>
+                        onChange({ costOverride: String(referenceCost) })
+                      }
+                    >
+                      应用参考成本
+                    </button>
+                  </div>
+                ) : (
+                  "请手动填写成本（不会自动使用产品定义里的成本）"
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">包装方式</Label>
+              <select
+                value={effectivePackaging?.id ?? ""}
+                onChange={(e) => onChange({ packagingId: e.target.value })}
+                disabled={packagingOptions.length === 0}
+                className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {packagingOptions.length === 0 && (
+                  <option value="">（该产品未配置包装）</option>
+                )}
+                {packagingOptions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                    {p.is_default ? "（默认）" : ""}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-muted-foreground">
+                {effectivePackaging
+                  ? `按规格自动读取：¥${packagingFee.toFixed(2)}/卷`
+                  : "在产品管理里配置包装与收费区间"}
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label
+                className="text-xs"
+                title="逐行覆盖利润率（%）。不同产品毛利不同；留空 = 继承整单默认"
+              >
+                本行利润率（%）
+              </Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={line.profitPctOverride}
+                onChange={(e) =>
+                  onChange({ profitPctOverride: e.target.value })
+                }
+                placeholder="留空 = 用整单默认"
+                className="h-8 text-xs"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                售价 = 成本 ÷ (1 − 利润率 − 杂税)
+              </p>
+            </div>
+          </div>
+
+          {formulas.data && (
+            <SpecPicker
+              formulas={formulas.data}
+              value={line.spec}
+              onChange={(next) => onChange({ spec: next })}
+              disabled={calc.isPending}
+            />
+          )}
+          {formulas.isError && (
+            <p className="text-xs text-destructive">规格加载失败，请刷新重试</p>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+            <div className="flex flex-col gap-1">
+              <Button
+                type="button"
+                size="sm"
+                className="w-fit"
+                disabled={!canSubmit || calc.isPending}
+                onClick={compute}
+              >
+                {calc.isPending && (
+                  <Loader2 className="mr-2 size-3.5 animate-spin" />
+                )}
+                {calc.isPending ? "计算中…" : "计算本行"}
+              </Button>
+              {!canSubmit && !calc.isPending && (
+                <p className="text-[11px] text-muted-foreground">
+                  请选完整规格，并填写件数与整单汇率
+                </p>
+              )}
+            </div>
+
+            {line.built && (
+              <dl className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
+                <div>
+                  <dt className="text-muted-foreground">
+                    单卷价（{shared.quoteCurrency}/卷）
+                  </dt>
+                  <dd className="tabular-nums">
+                    {unitPriceFx === null ? "—" : unitPriceFx.toFixed(4)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">单价（元/米）</dt>
+                  <dd className="tabular-nums">
+                    {pricePerMeter === null ? "—" : pricePerMeter.toFixed(4)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">
+                    行小计（{shared.quoteCurrency}）
+                  </dt>
+                  <dd className="font-medium tabular-nums">
+                    {lineAmount === null ? "—" : lineAmount.toFixed(2)}
+                  </dd>
+                </div>
+              </dl>
             )}
           </div>
 
-          {line.built && (
-            <dl className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
-              <div>
-                <dt className="text-muted-foreground">
-                  单卷价（{shared.quoteCurrency}/卷）
-                </dt>
-                <dd className="tabular-nums">
-                  {unitPriceFx === null ? "—" : unitPriceFx.toFixed(4)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">单价（元/米）</dt>
-                <dd className="tabular-nums">
-                  {pricePerMeter === null ? "—" : pricePerMeter.toFixed(4)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">
-                  行小计（{shared.quoteCurrency}）
-                </dt>
-                <dd className="font-medium tabular-nums">
-                  {lineAmount === null ? "—" : lineAmount.toFixed(2)}
-                </dd>
-              </div>
-            </dl>
+          {line.error && (
+            <p className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              {line.error}
+            </p>
+          )}
+
+          {line.built && line.built.missing.length > 0 && (
+            <div className="flex gap-2 rounded-lg border border-warning/40 bg-warning-muted px-3 py-2 text-xs text-warning-muted-foreground">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              <p>
+                单证要素缺失：{line.built.missing.join("、")}。
+                缺项会在单证上留空白（**不会填 0** —— 报关表上印 0
+                重量比空白更危险）， 请在单证工位补齐后再签发。
+              </p>
+            </div>
+          )}
+
+          {line.result && (line.result.meta.diagnostics?.length ?? 0) > 0 && (
+            <ul className="space-y-1 text-xs text-muted-foreground">
+              {line.result.meta.diagnostics.map((d, i) => (
+                <li key={i}>· {d}</li>
+              ))}
+            </ul>
           )}
         </div>
-
-        {line.error && (
-          <p className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-            {line.error}
-          </p>
-        )}
-
-        {line.built && line.built.missing.length > 0 && (
-          <div className="flex gap-2 rounded-lg border border-warning/40 bg-warning-muted px-3 py-2 text-xs text-warning-muted-foreground">
-            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-            <p>
-              单证要素缺失：{line.built.missing.join("、")}。
-              缺项会在单证上留空白（**不会填 0** —— 报关表上印 0
-              重量比空白更危险）， 请在单证工位补齐后再签发。
-            </p>
-          </div>
-        )}
-
-        {line.result && (line.result.meta.diagnostics?.length ?? 0) > 0 && (
-          <ul className="space-y-1 text-xs text-muted-foreground">
-            {line.result.meta.diagnostics.map((d, i) => (
-              <li key={i}>· {d}</li>
-            ))}
-          </ul>
-        )}
 
         {line.result && (
           <div className="space-y-2">
@@ -765,4 +810,3 @@ export function QuoteLineCard({
     </Card>
   );
 }
-
