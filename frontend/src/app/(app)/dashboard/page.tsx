@@ -1,134 +1,40 @@
 "use client";
 
-import { useState } from "react";
-import { useDashboard } from "./hooks/use-dashboard";
-import { RangeSelector } from "./components/range-selector";
-import { usePageView } from "@/lib/events/use-page-view";
-import { PageHeader, StatCard } from "@/components/shared";
-import {
-  FileText,
-  Users,
-  Database,
-  Cpu,
-  Clock,
-  TrendingUp,
-} from "lucide-react";
+import { Construction } from "lucide-react";
 
+import { PageHeader } from "@/components/shared";
+import { usePageView } from "@/lib/events/use-page-view";
+
+/**
+ * 仪表盘（契约状态 = `placeholder`）。
+ *
+ * 为什么不展示原来的 6 张卡（2026-10-21，C31）：
+ * 契约 `shared/contracts/workstations.ts` 对 dashboard 的状态是 `placeholder`
+ * ——「现有实现只展示系统运行指标（Token/延迟/采样率），对业务无用 → 改『更新中』」。
+ * 而 `GET /dashboard/summary` 的 token/p95 在生产**恒为 0**（`main.py` 无真实采集源），
+ * 把「没有数据」渲染成「0」比不显示更糟（见 AGENTS 规则 5 的口径）。所以这里
+ * 如实改成占位，等新的业务指标口径落地再恢复卡片；旧实现留在这句注释里可追溯。
+ */
 export default function DashboardPage() {
   usePageView({ resource_id: "/dashboard" });
-  const [range, setRange] = useState("today");
-  const { data, isLoading } = useDashboard(range);
-
-  const summary = data;
-
-  /**
-   * 数据集命中：**形状不认识就别当成 0，也别崩**。
-   *
-   * `useSafeQuery` 对**不合 schema** 的响应是 **fail-open**
-   * （`lib/query/safe-query.ts:16-22` 只 `console.warn` 然后 `return raw`），
-   * 所以 `summary` 完全可能是 `{}` —— **truthy 但字段全缺**。
-   * 此时旧写法 `Object.keys(summary.dataset_hits)` 会抛
-   * `TypeError: Cannot convert undefined to object` ⇒ **整页进错误边界**。
-   *
-   * 2026-10-11 实测（`E2E_FALLBACK=1`：兜底路由对 `/dashboard/summary` 回 `200 {}`）：
-   * 渲染快照 = 「仪表盘加载异常 / 后端繁忙，请稍后重试」，`h1` 为空、
-   * `.grid > *` 找不到 ⇒ `dashboard:4` **0/3**；修后同条件 **3/3**。
-   *
-   * 缺字段时显示 `—`（=「不知道」），**不是 `0 个数据集`**（=「确定没有」）——
-   * 与 `frontend/src/mocks/handlers.ts` 里那条 fail-open 教训同一个方向：
-   * 把"我不知道"改写成"我确定没有"，比直接失败更糟。
-   */
-  const datasetHits = summary?.dataset_hits;
 
   return (
     <div className="space-y-8">
-      <PageHeader
-        title="仪表盘"
-        description="实时业务指标与系统运行概览"
-        actions={<RangeSelector value={range} onChange={setRange} />}
-      />
+      <PageHeader title="仪表盘" description="业务指标改版中" />
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-muted-foreground">
-          业务指标
-        </h2>
-        <div className="grid gap-5 sm:grid-cols-2">
-          <StatCard
-            label="今日报价数"
-            icon={FileText}
-            value={summary?.quotations_total ?? "—"}
-            variant="gradient"
-            hint={
-              summary
-                ? `采样 ${summary.quotations_sampled}/${summary.quotations_total}`
-                : undefined
-            }
-          />
-          <StatCard
-            label="活跃客户"
-            icon={Users}
-            value={summary?.active_customers ?? "—"}
-            hint={
-              summary
-                ? `采样 ${summary.customers_sampled}/${summary.active_customers}`
-                : undefined
-            }
-          />
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-muted-foreground">
-          系统运行
-        </h2>
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            label="Token 消耗"
-            icon={Cpu}
-            value={summary?.token_total ?? "—"}
-            hint={
-              summary
-                ? `采样 ${summary.token_sampled}/${summary.token_total}`
-                : undefined
-            }
-          />
-          <StatCard
-            label="P95 延迟"
-            icon={Clock}
-            value={summary ? `${summary.p95_latency_ms} ms` : "—"}
-            hint={
-              summary ? `采样 ${summary.latency_sampled} 次请求` : undefined
-            }
-          />
-          <StatCard
-            label="数据集命中率"
-            icon={Database}
-            value={
-              datasetHits ? `${Object.keys(datasetHits).length} 个数据集` : "—"
-            }
-            hint={
-              datasetHits
-                ? Object.entries(datasetHits)
-                    .map(([k, v]) => `${k}: ${v}`)
-                    .join(" · ")
-                : undefined
-            }
-          />
-          <StatCard
-            label="采样覆盖率"
-            icon={TrendingUp}
-            value={
-              isLoading
-                ? "—"
-                : summary && summary.quotations_total > 0
-                  ? `${(
-                      (summary.quotations_sampled / summary.quotations_total) *
-                      100
-                    ).toFixed(1)}%`
-                  : "—"
-            }
-          />
-        </div>
+      <section
+        aria-label="仪表盘改版说明"
+        className="rounded-xl border border-dashed p-10 text-center"
+      >
+        <Construction
+          aria-hidden
+          className="mx-auto mb-3 h-10 w-10 text-muted-foreground"
+        />
+        <p className="text-sm font-medium">仪表盘改版中</p>
+        <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+          原有指标（Token 消耗、P95 延迟、采样覆盖率）对业务判断帮助有限，正在按新的
+          业务口径重做。上线前请从侧栏各工位查看具体数据。
+        </p>
       </section>
     </div>
   );

@@ -195,25 +195,36 @@ export default function OrdersPage() {
                 列配置
               </summary>
               <div className="absolute right-0 z-20 mt-1 w-44 rounded-lg border bg-white p-2 shadow-lg">
-                {ORDER_COLUMNS.map((c) => (
-                  <label
-                    key={c.key}
-                    className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs hover:bg-muted"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={visibleCols.includes(c.key)}
-                      onChange={() => {
-                        const next = visibleCols.includes(c.key)
-                          ? visibleCols.filter((k) => k !== c.key)
-                          : [...visibleCols, c.key];
-                        // 至少保留一列，避免表格变成空壳
-                        if (next.length > 0) setVisibleCols(next);
-                      }}
-                    />
-                    {c.label}
-                  </label>
-                ))}
+                {ORDER_COLUMNS.map((c) => {
+                  const checked = visibleCols.includes(c.key);
+                  // a11y（C26/A4）：只剩最后一列时，该勾选框**保留可聚焦**但取消会清空表格 ⇒
+                  // 用 aria-disabled + 真正拦住动作，而不是原生 disabled（原生会丢焦点、
+                  // 读屏也只说"不可用"而不说原因）。至少保留一列是产品约束，不是临时状态。
+                  const locked = checked && visibleCols.length === 1;
+                  return (
+                    <label
+                      key={c.key}
+                      title={locked ? "至少保留一列" : undefined}
+                      className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs hover:bg-muted"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        aria-disabled={locked || undefined}
+                        className={locked ? "cursor-not-allowed opacity-60" : undefined}
+                        onChange={() => {
+                          if (locked) return;
+                          const next = checked
+                            ? visibleCols.filter((k) => k !== c.key)
+                            : [...visibleCols, c.key];
+                          // 至少保留一列，避免表格变成空壳
+                          if (next.length > 0) setVisibleCols(next);
+                        }}
+                      />
+                      {c.label}
+                    </label>
+                  );
+                })}
               </div>
             </details>
           </div>
