@@ -435,7 +435,9 @@ function renderPhotoGrid(value: unknown): string {
   const cells = photos.map(
     (photo, index) =>
       `<td><img src="${esc(photo.src)}" alt="${esc(`Product photo ${index + 1}`)}">` +
-      (photo.caption ? `<div class="photo-cap">${esc(photo.caption)}</div>` : "") +
+      (photo.caption
+        ? `<div class="photo-cap">${esc(photo.caption)}</div>`
+        : "") +
       `</td>`,
   );
   if (cells.length % 2 === 1) cells.push("<td></td>"); // 单数张时补空格，保持两列版面对齐
@@ -880,4 +882,99 @@ function deriveFields(
   derived.footer_note = footer ? esc(footer) : esc(nameEn);
 
   return derived;
+}
+
+// ── 字段体检（TODO A3：「缺失字段可发现」）──────────────────────────────────
+
+/**
+ * 模板引用了、但渲染后为空的字段。
+ *
+ * 为什么需要：`substitute` 的口径是「缺失键渲染为空串」—— 好处是不残留
+ * `$placeholder`、单据不会出丑；**代价是拼错 / 模板漏登记的那一格只是静静空白**，
+ * 没人会注意到（docs/TRADE_DOC_TEMPLATES.md §8 自认的代价）。
+ * 本函数把"会留空的地方"分类列出来，界面据此提示，而不是让使用者逐格肉眼找。
+ *
+ * 分类（对使用者的动作不同）：
+ * - `undeclared`：模板用了、manifest 没声明 —— 多半是占位符拼错或模板漏登记
+ *   （要改模板或补 manifest，属于**代码/配置问题**）；
+ * - `blankRequired`：声明了且必填、当前为空 —— 签发门禁会拦（此处仅用于汇总展示）；
+ * - `blankOptional`：声明了、非必填、当前为空 —— 可选字段，填不填由业务判断。
+ *
+ * 按设计就该为空的不算：图片位（公司公章）、产品图、买方回签栏，以及渲染器
+ * 自动派生的字段（金额大写 / 合计 / 卖方名 / 页脚）。
+ */
+export interface BlankPlaceholder {
+  /** 模板占位符名 */
+  key: string;
+  /** manifest 中文说明；未声明时回退为 key 本身 */
+  label: string;
+  declared: boolean;
+}
+
+export interface PlaceholderAudit {
+  undeclared: BlankPlaceholder[];
+  blankRequired: BlankPlaceholder[];
+  blankOptional: BlankPlaceholder[];
+}
+
+const DESIGN_BLANK_FIELDS = new Set<string>([
+  ...IMAGE_FIELDS,
+  ...IMAGE_LIST_FIELDS,
+  ...CONFIRMATION_FIELDS,
+]);
+
+const DERIVED_PLACEHOLDERS = new Set<string>([
+  "total_amount_words",
+  "insured_amount_words",
+  "seller_name",
+  "footer_note",
+  ...Object.keys(AUTO_SUMS),
+]);
+
+export function findBlankPlaceholders(
+  docType: string,
+  data: Record<string, unknown>,
+): PlaceholderAudit {
+  const template = TEMPLATES[docType];
+  if (template === undefined) throw new Error(`模板文件不存在: ${docType}`);
+  const fields = getTemplateFields(docType) ?? {};
+  const processed = preprocessData(docType, data);
+
+  const audit: PlaceholderAudit = {
+    undeclared: [],
+    blankRequired: [],
+    blankOptional: [],
+  };
+  const seen = new Set<string>();
+
+  template.replace(
+    /\$\$|\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g,
+    (match, braced?: string, named?: string) => {
+      if (match === "$$") return match;
+      const key = braced ?? named ?? "";
+      if (!key || seen.has(key)) return match;
+      seen.add(key);
+      if (DESIGN_BLANK_FIELDS.has(key) || DERIVED_PLACEHOLDERS.has(key)) {
+        return match;
+      }
+      const value = processed[key];
+      if (value !== undefined && value !== "") return match;
+
+      const declared = Object.prototype.hasOwnProperty.call(fields, key);
+      const spec = declared
+        ? (fields[key] as { required?: boolean; description?: string })
+        : undefined;
+      const item: BlankPlaceholder = {
+        key,
+        label: spec?.description || key,
+        declared,
+      };
+      if (!declared) audit.undeclared.push(item);
+      else if (spec?.required) audit.blankRequired.push(item);
+      else audit.blankOptional.push(item);
+      return match;
+    },
+  );
+
+  return audit;
 }

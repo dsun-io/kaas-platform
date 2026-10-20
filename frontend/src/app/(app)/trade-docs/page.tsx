@@ -43,6 +43,7 @@ import { autoArchiveIssuedDoc } from "@/lib/trade-doc/auto-archive";
 import { exportCsv, exportExcel, printMerged } from "@/lib/trade-doc/export";
 
 import { DocCreateForm } from "./components/doc-create-form";
+import { DocContentVersions } from "./components/doc-content-versions";
 import { DocCustomForm } from "./components/doc-custom-form";
 import { DocStampReturn } from "./components/doc-stamp-return";
 import { DocPreview, renderMetaOf } from "./components/doc-preview";
@@ -530,6 +531,12 @@ export default function TradeDocsPage() {
                 docType={renderData.data.doc.doc_type}
                 status={renderData.data.doc.status}
                 payload={renderData.data.doc.raw_payload}
+              />
+              {/* 内容版本（A1）：草稿期每次保存/带入/翻译都留一版，可回看与恢复 */}
+              <DocContentVersions
+                docId={renderData.data.doc.id}
+                docType={renderData.data.doc.doc_type}
+                status={renderData.data.doc.status}
               />
               {/* 盖章回传不受"已签发冻结"限制：客户是签发**之后**才盖章回传的 */}
               <DocStampReturn docId={renderData.data.doc.id} />
