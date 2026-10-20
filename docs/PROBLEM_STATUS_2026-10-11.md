@@ -61,6 +61,15 @@
 >   **B5** 租户产品在 `/formulas`/`/explain` 404（规格选择器打不开）、**B6** `/workstation-products`
 >   门读租户级订阅而开通写团队级 ⇒ 恒 404（前端 0 使用）；另新增拍板项 `G-9`
 >   （`/tenant-product-status` 是否限团队管理员）。修复进行中（task-9）。
+> - **C15「待排期 5 项」复核完毕（2026-10-21）**：①openapi 重生成作废（R6 退役）；
+>   ②`POST /admin/feature_flag` 的 `body: dict` 是**刻意兼容两种请求体**（后端格式/前端格式），
+>   不构成缺陷；③**契约错位已修**：`ExportProduct.params` 由 `z.record` 改为**二维数组**
+>   （后端真源 `ProductSpec.params = [[参数,取值,单位,说明],…]`）+ 补 `metric_count/invariant_count`；
+>   `ProductFormulasResponse.pricing_key[].ui_unit/ui_scale` 由 `.default()` 改 `.optional()`
+>   （`.default()` 语义是"输入可选、输出必填"，与后端不产出的实际不符）；两处都有 mock 侧
+>   真实形状测试钉住。④PATCH stage 409 二次确认：**已因 2026-10-18 客户阶段口径变更而过时**
+>   （只剩 active/inactive，"流失"移订单）；⑤R2 密钥长度 → 并入 D2。
+>   门禁：`pnpm typecheck` 0 / contracts R0–R6 PASS。
 >
 > **（2026-10-20 晚 · 口径收敛与审计补录：`docs/TODO.md` = 唯一账本）**
 >

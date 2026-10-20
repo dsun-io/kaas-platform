@@ -134,7 +134,7 @@ function product(): ExportProduct {
     hs_codes: ["73144100"],
     cost_basis: "pretax",
     cost_unit: "元/kg",
-    params: {},
+    params: [],
   };
 }
 

@@ -81,7 +81,7 @@
 | C12 | PDF 归档验收尾巴 | 真实 18 类单证端到端未跑、页面级接线仅 typecheck 保驾、按快照重出未做 | 随发布后 | ⏳ |
 | C13 | outreach/webhook 收紧 | `GET` 回调是否收紧到 `POST`（将来实现 inbound 回写必须去掉 GET） | 产品决策 | 🧭 |
 | C14 | `product_tax_rates` 生产数据 | 生产 0 条则批量报价不放行 | 发布窗口 | ⏳（D 组同批） |
-| C15 | PROBLEM_STATUS 2026-10-12「待排期 5 项」复核 | openapi 重生成（**R6 已退役，作废**）/ feature_flag 形状 / 契约 `ExportProduct.params` / PATCH stage 409 前端 / R2 密钥长度 | — | ⏳ 逐条判定后销账或转正式项 |
+| C15 | PROBLEM_STATUS 2026-10-12「待排期 5 项」复核 | ①openapi 重生成 ~~作废~~（R6 已退役）；②`POST /admin/feature_flag` 请求体形状无门禁 → **不构成缺陷**（`body: dict` 刻意兼容"后端格式/前端格式"两种，前端已接线；R5 只比响应键集是既定取舍）；③契约错位 **已修**（`ExportProduct.params` 改为二维数组 + 补 `metric_count/invariant_count`；`ProductFormulasResponse.pricing_key[].ui_unit/ui_scale` 改 `.optional()`，类型与运行时一致）；④PATCH stage 409 ~~已过时~~（2026-10-18 口径：客户阶段只有 active/inactive，"流失"移订单，后端不再返 409）；⑤R2 密钥长度已并入 D2 | — | ✅ 2026-10-21 逐条判定完毕（③修，其余复核为过时/不修） |
 | C16 | UNCERTAIN #15 ①②③ | 旧进度报告/Spec System 报告指什么、归档"复制/移动"口径、链接检查工具 | 低价值 | ⏳ |
 | C17 | 侧栏 `adminOnly` 过滤口径统一 | `sidebar.tsx:150` 仍按 `account_type === internal` 过滤菜单，而 `RouteGuard adminOnly` 已收紧为 internal+管理员 ⇒ internal 非管理员仍能看到菜单项、点进去被守卫拦。要么菜单同口径过滤，要么给工位契约加 `internalOnly` 标志（`/kb` 已用 internalOnly 保住原可见性） | 无 | ⏳ |
 | C18 | MSW 长尾覆盖（72 条） | `pnpm mocks:check` 显示 FE 172 条调用中 72 条未 mock，集中在 intel/leadgen/outreach/market/research/shipments/ai-providers/spec-config/admin-spec-proposals/fx-rates、报价 calculate/import、auth forgot/reset；mock 模式这些页面会直连网络 | C5/C6 | ⏳ |

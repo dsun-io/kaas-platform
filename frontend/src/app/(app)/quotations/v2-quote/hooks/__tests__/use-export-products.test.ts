@@ -84,7 +84,7 @@ function product(key: string, extra: Record<string, unknown> = {}) {
     hs_codes: [],
     cost_basis: "",
     cost_unit: "",
-    params: {},
+    params: [],
     ...extra,
   };
 }

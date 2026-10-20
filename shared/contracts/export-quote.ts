@@ -237,7 +237,16 @@ export const ExportProductSchema = z.object({
   hs_codes: z.array(z.string()).default([]),
   cost_basis: z.string().default(''),
   cost_unit: z.string().default(''),
-  params: z.record(z.unknown()).default({}),
+  /**
+   * 业务参数：后端真源是 `ProductSpec.params` = `[[参数, 取值, 单位, 说明], …]`
+   * （二维数组，见 `kaas_common/export_quote/models.py` 字段注释）。
+   * 2026-10-21 修正：此前写成 `z.record(z.unknown())`（对象）与真实形状不符，
+   * 属"类型撒谎、运行时 undefined"（`frontend/src/mocks/export-quote-data.ts` 已钉住真实形状）。
+   */
+  params: z.array(z.array(z.unknown())).default([]),
+  /** 后端 `/export-quote/products` 同时回这两个计数（此前未进契约）。 */
+  metric_count: z.number().int().optional(),
+  invariant_count: z.number().int().optional(),
 });
 export type ExportProduct = z.infer<typeof ExportProductSchema>;
 
@@ -566,8 +575,15 @@ export const PricingKeyDimSchema = z.object({
    * 而查价键仍带着这一维，就变成「存进去了但查不到」。
    */
   kind: z.enum(['axis', 'variant', 'numeric']).default('axis'),
-  ui_unit: z.string().default(''),
-  ui_scale: z.number().default(1),
+  /**
+   * 界面单位/换算比例：**后端 `describe_product` 对定价键维度并不产出这两个键**
+   * （只有 piece_inputs / numeric_inputs 才有）。2026-10-21 修正：原先用 `.default()`
+   * 声明，zod 语义是"输入可选、**输出必填**" ⇒ TS 类型要求存在、运行时是 undefined
+   * （`frontend/src/mocks/export-quote-data.ts` 已如实记录这处类型撒谎）。
+   * 消费方一律用 `|| 1` / `|| unit` 兜底，改成 optional 后类型与运行时一致。
+   */
+  ui_unit: z.string().optional(),
+  ui_scale: z.number().optional(),
   options: z.array(z.object({
     value: z.union([z.string(), z.number()]),
     label: z.string(),
