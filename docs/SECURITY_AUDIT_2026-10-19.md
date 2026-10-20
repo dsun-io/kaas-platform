@@ -52,7 +52,7 @@
 ### 危-2（Critical，已裁决）生产 Neon 口令 / 管理员口令仍在 git 历史中可读
 
 - **证据（本轮复核，未打印明文）**
-  - 当前树：`git grep 'npg_'` 仅命中 `docs/ACCOUNT_GOVERNANCE_HANDOVER_2026-10-12.md:219` 的**说明文字**；
+  - 当前树：`git grep 'npg_'` 仅命中 `docs/archive/2026-10-20-closeout/ACCOUNT_GOVERNANCE_HANDOVER_2026-10-12.md:219` 的**说明文字**；
     `backend/.tools/{list_columns,list_tables,seed_ports,seed_port_coords}.py` 已于 `fbced671` 改为读 `KAAS_DSN`
     ⇒ **当前树干净 ✓**。
   - 历史：`git show 5e78d9ce:backend/.tools/list_columns.py` 仍含

@@ -13,6 +13,18 @@
 > **📌 主交接文档已切换：[README.md](../README.md)**（2026-10-19 晚场起，架构 / 三环境隔离矩阵 /
 > 方案 B 决策 / 冷启动线 / 测试策略的唯一权威）。本文件继续只做"问题状态"滚动口径。
 >
+> **（2026-10-20 · 终局裁决：全部待办清零 —— 压过本摘要内所有旧待办条目）**
+>
+> 用户裁决：未关闭待办全部清零 —— ✅ = 完成；⏳ = **触发条件制**（到点自动执行 / 用户一声令下），
+> **不再活跃跟踪**。逐项处置见 `USER_ACTIONS_2026-10-19.md` 状态列与 `MASTER_EXEC_PLAN_2026-10-19.md`
+> §5 / 顶部 2026-10-20 状态行。关键落点：仓库已转回 **private**（U-S2 ✅，匿名 403 验证）；
+> Neon Protected 为付费功能、不升级，预览脚本「删分支双保险校验」替代（U-S5 ✅，README §2.2 已标注）；
+> 生产 R2 桶**永久保留 `kaas-files`**（U-S6 ✅，目标态改名取消）；R2 新 keys + `RESEND_API_KEY`
+> （U-B1/U-B5）、U-E3/U-E4 发布窗口、**Hyperdrive 缓存关闭**、**生产测试数据 / 流失拒绝文件历史清理**
+> → ⏳ **发布窗口**（**数据清理执行当次仍需用户确认**；检查单 = `HANDOVER_2026-10-20.md` §7）。
+> 过时文档已 `git mv` 归档 `docs/archive/2026-10-20-closeout/`（19 份 + 目录 README）。
+> **下一活跃节点 = 用户发布指令。**
+>
 > **（2026-10-20 · 新会话接手核对：本地 main 同步 + 分支残留清理 + 生产 secrets 实测 + 本机工具链）**
 >
 > 1. **本地 main 已快进到 `fb4b2aa`**（此前落后 origin/main 33 个提交 —— 本地曾停在 10-19 下午的
@@ -115,10 +127,10 @@
 >    条目）由本矩阵**细化取代**：预览改为每 PR 独立 Neon 子分支，另有"开发远程冒烟"第四列。
 >
 > **最新交接文档：`README.md`（主交接，唯一权威）**；执行入口 `docs/MASTER_EXEC_PLAN_2026-10-19.md`。
-> 2026-10-19 当日交接：`docs/HANDOVER_2026-10-19_CI_AND_PROD_FIXES.md`（✅ 已完成：注册 500 / 定价页白屏已修并部署；
+> 2026-10-19 当日交接：`docs/archive/2026-10-20-closeout/HANDOVER_2026-10-19_CI_AND_PROD_FIXES.md`（✅ 已完成：注册 500 / 定价页白屏已修并部署；
 > CI `backend:test` db-tests 已修绿 `6c08900`；含「本机无 Postgres ⇒ 本地 db 测试全 skip」等环境坑与「不要重做」清单）；
-> `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
-> 上一份：`docs/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/HANDOVER_2026-10-17.md`。
+> `docs/archive/2026-10-20-closeout/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`（❌ 已废弃，决策 1 回 Neon）。
+> 上一份：`docs/archive/2026-10-20-closeout/HANDOVER_2026-10-18.md`（历史，顶部已加更正横幅）；更早 `docs/archive/2026-10-20-closeout/HANDOVER_2026-10-17.md`。
 >
 > **（2026-10-20 · 前端技术栈升级完成 + 全量回归 + 交接文档）**
 > 1. **技术栈全量升级完成**（`9e13ef5`，独立 worktree 后 ff 合并）：Next **16.4.2** / React **19.3** /
@@ -394,7 +406,7 @@
 >    `route-parity` PASS；`sync-shared -Check` PASS（先跑了一次同步修复本地镜像漂移）。
 
 > **（2026-10-19 峰值时段检查点 · P1 迁库暂停在 70% —— 交接见
-> `docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`）**
+> `docs/archive/2026-10-20-closeout/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md`）**
 >
 > **生产仍跑 Neon，未切换、未部署。** PPG 库已建（`kaas-prod`，PG17.2/us-east-1）、
 > schema 已建 114 表、**数据已全量复制且行数 0 不一致**、Hyperdrive 新配置
@@ -495,7 +507,7 @@
 > 用户裁决：① **双后端按路线 A 合并**（CF 免费托管不可放弃 ⇒ 排除换 VPS；先 POC 再全量）；
 > ② **恢复三层环境模型**（推翻当日上午"降级两层"裁决，DB 方案 §0 已同步）——理由链：
 > 双后端时代 orchestrator 充当准预览，单后端时代 push 即上生产、预览环境是唯一安全网，
-> 两者是同一决策。**执行计划：`docs/DUAL_BACKEND_CONVERGENCE_EXEC_PLAN_2026-10-19.md`**
+> 两者是同一决策。**执行计划：`docs/archive/2026-10-20-closeout/DUAL_BACKEND_CONVERGENCE_EXEC_PLAN_2026-10-19.md`**
 > （P0 POC 0.5–1 天 → P1 迁库 → P2 预览环境（先于收敛，作安全网）→ P3 全量收敛 3–5 天
 > → P4 观察期；硬性分批、不可跨 Phase 混合提交）。**状态：批次 0 已开工。**
 > 工作区全面盘点（双审计：状态类 36 处 ⏳ + 全部计划文档）已汇总为总执行清单：
@@ -505,7 +517,7 @@
 
 > **（2026-10-19 · 双后端收敛评估重激活 —— 新口径）**
 >
-> 新评估文档：`docs/DUAL_BACKEND_CONVERGENCE_2026-10-19.md`（取代 2026-09 归档版；核心变化：
+> 新评估文档：`docs/archive/2026-10-20-closeout/DUAL_BACKEND_CONVERGENCE_2026-10-19.md`（取代 2026-09 归档版；核心变化：
 > `asyncpg`/`bcrypt` 已在生产 Worker 实际运行 ⇒ 旧版"Pyodide 不能跑 C 扩展"前提失效，
 > **"Worker 跑统一代码"从不可能降级为未验证的工程风险**，路线 A（单应用源码 + Worker 装载）
 > 开放评估）。**硬约束：CF 免费托管不可放弃**（用户 2026-10-19 裁决，排除"弃 worker 换 VPS"）。
@@ -519,7 +531,7 @@
 > **（2026-10-19 · 优化方案盘点与待办总账清理 —— 待办口径以此为准；
 > 双后端收敛评估已重激活，见上一条）**
 >
-> ~~新方案文档：`docs/PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md`（Neon→PPG 迁移 + Hyperdrive 双 binding
+> ~~新方案文档：`docs/archive/2026-10-20-closeout/PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md`（Neon→PPG 迁移 + Hyperdrive 双 binding
 > 缓存 + Worker 启动第二刀；已定稿**待执行**，用户裁决本轮只写文档不动手）。~~
 > ❌ 该方案已随**决策 1 废弃**（放弃 PPg 回 Neon），权威 = README §2/§9。
 > 另已更正三处过时口径：10-18 部署**已完成**（10-18 22:00，生产迁移至 `202610180010`；
@@ -532,14 +544,14 @@
 > 用户裁决"先手动"）；Ghost 方案（从未存在于本项目，已否决）。
 >
 > **⏳ 当前有效待办（按优先级）**
-> - **P0 欠账**：① Hyperdrive 缓存关闭（`--caching-disabled` 大概率未执行；验证=生产新建客户
+> - **P0 欠账**：① ~~Hyperdrive 缓存关闭~~ → ⏳ 发布窗口（2026-10-20 终局裁决，已并入 `HANDOVER_2026-10-20.md` §7 检查单第 2 步；原挂账备注：`--caching-disabled` 大概率未执行；验证=生产新建客户
 >   立即刷新可见）② R2 `S3_ACCESS_KEY` 重建 32 位（待用户 dashboard 操作，见
 >   PRODUCT_MEDIA_STORAGE_PLAN §5.3）③ 生产 `product_tax_rates` 配置数据（0 条则批量报价不放行）
 > - **P1**：④ 仓库改回 private + 确认 Actions billing ⑤ Cloudflare agent 接入（未执行）
 >   ⑥ ~~Neon→PPG 生产迁移（方案已定稿；生产为空黄金窗口，越晚代价越大）~~
 >   ❌ **已废弃（决策 1，见本摘要顶部 2026-10-19 晚场条目）**：放弃 PPg 回 Neon，本项永久取消
 > - **P2**：⑦「流失」拒绝文件链路迁订单阶段（等订单阶段新增 lost）⑧ Excel xlsx 上传闭环
->   （上传侧现只收 CSV）⑨ 生产测试数据 / 流失拒绝文件历史数据清理（数据删除，**需用户确认**）
+>   （上传侧现只收 CSV）⑨ ~~生产测试数据 / 流失拒绝文件历史数据清理~~ → ⏳ 发布窗口（数据删除，**执行当次仍需用户确认**；2026-10-20 终局裁决）
 >   ⑩ 诊断端点收敛（`_r2_debug` / `fx-rates/_debug`）⑪ ~~Frontend CI `crypto.subtle.digest`
 >   类型红~~ ✅ 10-19 已修（B0-1，见上一条）⑫ ~~货代询价文案补 DAP/DDP 费用项~~
 >   ✅ 10-19 已补（B0-2，见上一条）
@@ -548,7 +560,7 @@
 >   （PRODUCT_CONFIG_TENANT_UNFINISHED）
 >
 > **未来评估项**：~~换运行时/单运行时收敛~~ **已重激活为在评方案**（见上一条与
-> `docs/DUAL_BACKEND_CONVERGENCE_2026-10-19.md`；路线 A POC ⏳ 待拍板；排期建议 POC → 迁库 → 收敛，
+> `docs/archive/2026-10-20-closeout/DUAL_BACKEND_CONVERGENCE_2026-10-19.md`；路线 A POC ⏳ 待拍板；排期建议 POC → 迁库 → 收敛，
 > 三个大变更不同批）、preview/staging 环境（触发=多团队真实使用）、Neon 读副本
 > （触发=生产撞免费档限制）。
 
@@ -602,7 +614,7 @@
 > 1. **客户创建后不能删除** → 前端从来没有删除入口；后端软删除接口两端都有。
 >    本轮补 UI（二次确认）并加规则：**名下有开启中的订单时 409 `OPEN_ORDERS_EXIST`**。
 > 2. **新建客户刷新后消失** → 根因是 **Cloudflare Hyperdrive 查询缓存**（默认 max_age 60s、
->    stale_while_revalidate 15s，写后不失效）；`docs/HANDOVER_2026-10-17.md` §3.3 已记录该现象。
+>    stale_while_revalidate 15s，写后不失效）；`docs/archive/2026-10-20-closeout/HANDOVER_2026-10-17.md` §3.3 已记录该现象。
 >    代码侧无法关闭；部署时执行
 >    `npx wrangler hyperdrive update f53fed49705043008737032e4bfa2b8e --caching-disabled`
 >    （或改为按读一致性拆分两个 Hyperdrive 配置）。**未执行**（部署延期）。
@@ -826,7 +838,7 @@
 >   与本线无关，待前端线修）。
 
 > **（交接 · 2026-10-12 17:3x · 平台账号治理）→ 详细交接见
-> [`ACCOUNT_GOVERNANCE_HANDOVER_2026-10-12.md`](./ACCOUNT_GOVERNANCE_HANDOVER_2026-10-12.md)**
+> [`ACCOUNT_GOVERNANCE_HANDOVER_2026-10-12.md`](./archive/2026-10-20-closeout/ACCOUNT_GOVERNANCE_HANDOVER_2026-10-12.md)**
 >
 > - **生产数据（已完成 · 用户弹窗确认）**：清空**全部团队（1 个）+ 账号（3 个）**，
 >   只留一个系统管理员 `david@powervoy.com`（`internal` / `system_admin` / `active`，
@@ -847,7 +859,7 @@
 >   端到端验收（t3：三类账号权限 + 自停/最后管理员保护 + 停用后登录被拒）。
 
 > **（交接 · 2026-10-12 傍晚 · 产品模块合并线 + 忘记密码）→ 详细交接见
-> [`SESSION_HANDOFF_2026-10-12_PM.md`](./SESSION_HANDOFF_2026-10-12_PM.md)**
+> [`SESSION_HANDOFF_2026-10-12_PM.md`](./archive/2026-10-20-closeout/SESSION_HANDOFF_2026-10-12_PM.md)**
 >
 > **本场次交付 10 个提交（全部已推送 `main`）**，按线分组：
 > - **后端主线（P13 账本接回 + P7/P8 残余清零）**：`c217bc5` Loader 团队谓词 →
@@ -2298,8 +2310,8 @@ services/quote_engine.create_quote
 | 4 | **待补路由 22 条**：其中 11 条规格库（`/product-specs`、`/spec/attributes*`、`/spec/skus*`、`/spec/templates*`）前端未直接调用，allowlist 标"按需补" | `scripts/route-parity-allowlist.txt` | 低 |
 | 5 | **产品组合数三方不一致**：前端按轴相乘得 **120**，常量是 **160**，测试断言 **48**；后端 4 处断言 `combo_count == 160` | `shared/contracts/niulanwang.ts:99,175`；`test_export_quote_api.py:96,276`、`test_export_quote_formulas.py:324`、`test_export_quote_import.py:82,283` | 中（A2 一并解决：轴改自由数值后该口径作废） |
 | 6 | **前端认证契约残留**（不影响功能，`tsc` exit 0）：`lib/auth/session-cache.ts` 仍有 `tenant` 结构与 `user?.tenant_id` 读取；`lib/api/client.ts:43-46` 仍会注入 `X-Tenant-Id`（值恒为空，实际不发） | 只读扫描 | 低（死代码） |
-| 7 | **依赖债**：next `^14.2.0 → 15.x` 专项未做。**实测 98 个漏洞**（3 严重 / 24 高危 / 56 中 / 15 低）—— 比 `CLEANUP_LOG.md:110` 记的 82 **更差** | `pnpm audit`（2026-10-11 实测） | 中 |
-| 8 | **e2e 26 条失败未归真**：依赖本机后端 + 数据库，属"页面没数据"，本轮未复跑 | `CLEANUP_LOG.md:32-34`、`E2E_GUIDE.md:38` | 中 |
+| 7 | **依赖债**：next `^14.2.0 → 15.x` 专项未做。**实测 98 个漏洞**（3 严重 / 24 高危 / 56 中 / 15 低）—— 比 `docs/archive/2026-10-20-closeout/CLEANUP_LOG.md:110` 记的 82 **更差** | `pnpm audit`（2026-10-11 实测） | 中 |
+| 8 | **e2e 26 条失败未归真**：依赖本机后端 + 数据库，属"页面没数据"，本轮未复跑 | `docs/archive/2026-10-20-closeout/CLEANUP_LOG.md:32-34`、`E2E_GUIDE.md:38` | 中 |
 
 ### 生产库对齐（2026-10-11 已执行，先演练后上生产）
 
@@ -2700,8 +2712,8 @@ services/quote_engine.create_quote
 | 文档 | 状态 |
 |---|---|
 | `CURRENT_IMPLEMENTATION_MAP.md` | 多处过期（stat-card / POST quote / product-specs / stage 分叉 / shipments 门禁） |
-| `MULTI_PRODUCT_QUOTE_PLAN.md` | `:86`、`:380`、`:482` 三项已不成立 |
-| `WORKER_ORCHESTRATOR_DRIFT.md` | 数字口径过期（当时工具只读 `worker/src/main.py`），已被 `route-parity.py` ＋ 修好的 `route-parity-audit.py` 取代 |
+| `archive/2026-10-20-closeout/MULTI_PRODUCT_QUOTE_PLAN.md` | `:86`、`:380`、`:482` 三项已不成立 |
+| `archive/2026-10-20-closeout/WORKER_ORCHESTRATOR_DRIFT.md` | 数字口径过期（当时工具只读 `worker/src/main.py`），已被 `route-parity.py` ＋ 修好的 `route-parity-audit.py` 取代 |
 | `DUAL_BACKEND_CONVERGENCE.md` | 方案仍"待批准"；A 类 33 → 现 6、B 类 10 → 现 8 |
 | `EXECUTION_SUMMARY_2026-10-10.md` | `:69` 与 `PRODUCT_CONFIG_TENANT_UNFINISHED.md` 自相矛盾 |
 | `FRONTEND_PRODUCTION_READINESS.md` | A/B/D 标"执行中"，实际已落地 |
@@ -3475,7 +3487,7 @@ DSN 用 `neon env pull --file <temp> --project-id falling-salad-31662168` 重取
 ## 智能体团队收口（2026-10-12）—— **详细版另见，本节只放结论与入口**
 
 > 本轮（用户指示"创建智能体团队提高效率"之后）**18 项任务**的完整收口见
-> **`docs/SESSION_CLOSEOUT_2026-10-12.md`**（含设计要点、自证证据、专用文档索引）。
+> **`docs/archive/2026-10-20-closeout/SESSION_CLOSEOUT_2026-10-12.md`**（含设计要点、自证证据、专用文档索引）。
 > 之所以另立：本文档当时**多写者**（另一条线在持续追加），为它连写两次补丁一败一成，
 > 第三次读到尾部后又被追加 ⇒ 锚点移位。**按"不硬抢多写者文件"原则独立成文**，内容自洽。
 
@@ -3553,7 +3565,7 @@ orchestrator **946** / worker **217** / `route-parity` **PASS** / `sync-shared -
 | `product_profiles` 主键 + `put_profile` 的 `ON CONFLICT` | `app/api/files.py:283`（**另一条任务正在改**）+ `backend/worker/src/ws_files.py:319`（禁碰） |
 | `uq_tenant_ws_product` + worker 的 `ON CONFLICT` 与断言 | `backend/worker/src/ws_products.py:347` + `tests/test_ws_products_seals.py:149`（断言该字面量） |
 
-⇒ 这两项**必须与两端代码同批**（P9 必做清单已写进 `PRODUCT_MODULE_IMPL_PLAN.md` §8.4）。
+⇒ 这两项**必须与两端代码同批**（P9 必做清单已写进 `archive/2026-10-20-closeout/PRODUCT_MODULE_IMPL_PLAN.md` §8.4）。
 **如实记录的后果：P9 之前，两个团队仍不能各自持有同一 `product_key` 的基础信息**（Q1=B 还差这一步）。
 （可安全改的两处已改：`uq_tenant_products_key` **无** `ON CONFLICT` 依赖 —— worker 用普通 INSERT + 捕获 `"duplicate key"` ⇒ 409 语义不变；
 `uq_file_primary` 亦无依赖，主图靠 UPDATE 维护。）
@@ -3566,7 +3578,7 @@ orchestrator **946** / worker **217** / `route-parity` **PASS** / `sync-shared -
 
 ## ⭐ 跨设备交接指引（2026-10-12 10:38）
 
-> **在别的设备继续前，先读 [`docs/SESSION_CLOSEOUT_2026-10-12.md`](SESSION_CLOSEOUT_2026-10-12.md) 的
+> **在别的设备继续前，先读 [`docs/SESSION_CLOSEOUT_2026-10-12.md`](archive/2026-10-20-closeout/SESSION_CLOSEOUT_2026-10-12.md) 的
 > 「跨设备交接记录」一节** —— 里面有：
 >
 > 1. ~~⚠️ 6 个文件的未提交改动不会转移~~ → 【10:44 更正：经 `git diff HEAD` 逐文件核实，
@@ -3955,7 +3967,7 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
 > ⚠️ **2026-10-18 已被取代**：客户阶段与订单阶段分离为两层。客户阶段只有
 > **活跃 / 沉寂 / 已下单** 三种；「已下单」由开启中的订单推导；手动活跃/沉寂不再被
 > 覆盖；30/90 天自动规则与询盘/报价联动已删除；「流失」归属订单阶段，
-> 客户阶段不再有 `lost`。**现行口径见 `docs/HANDOVER_2026-10-18.md` 与
+> 客户阶段不再有 `lost`。**现行口径见 `docs/archive/2026-10-20-closeout/HANDOVER_2026-10-18.md` 与
 > `docs/WORKSTATION_DESIGN.md §6.4`**，以下 10-17 记录仅作历史。
 > 同段中的「写后 60s 旧读（Hyperdrive 查询缓存）」为真实现象，处置见新交接文档。
 

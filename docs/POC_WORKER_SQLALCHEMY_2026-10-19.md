@@ -2,8 +2,8 @@
 
 > **状态：POC 完成；未提交/未部署任何生产代码，生产 Worker `kaas` 全程未动**（对 `kaas`
 > 只做了 `wrangler deploy --dry-run`）。本文为 task-3 交付物；是否落地由 lead 裁决。
-> 关联：[双后端收敛评估](./DUAL_BACKEND_CONVERGENCE_2026-10-19.md) §3.1/§5、
-> [执行计划](./DUAL_BACKEND_CONVERGENCE_EXEC_PLAN_2026-10-19.md) Phase 0。
+> 关联：[双后端收敛评估](./archive/2026-10-20-closeout/DUAL_BACKEND_CONVERGENCE_2026-10-19.md) §3.1/§5、
+> [执行计划](./archive/2026-10-20-closeout/DUAL_BACKEND_CONVERGENCE_EXEC_PLAN_2026-10-19.md) Phase 0。
 > POC 源码：[`backend/worker/poc-sqlalchemy/`](../backend/worker/poc-sqlalchemy/README.md)。
 
 ## 0. 结论（一句话）
