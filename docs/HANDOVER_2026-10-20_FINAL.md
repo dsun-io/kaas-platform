@@ -106,15 +106,29 @@ kaas-preview-storage；KV = `KAAS_PREVIEW`；Workers = `kaas`。
 
 ## 7. 交接提醒（给下一个会话）
 
-- **并行写纪律**：本工作区同时有 UI 任务在写 `frontend/**` 与 `docs/ui-redesign/`；提交用私有
-  `GIT_INDEX_FILE` + 显式路径，**不要碰这两处未提交改动**。
+- **并行写纪律**：本工作区同时有 UI 任务在写；**截至 2026-10-20 22:1x 其未提交改动已扩大到后端**：
+  `backend/kaas_common/workstation/customer_records.py`、`backend/worker/src/ws_customer_records.py`
+  （另含 `frontend/**` 多处 + 未跟踪 `docs/ui-redesign/phase1/`）。**不要提交别人的这些改动**；
+  其中 `kaas_common` 改动**必须跑 `scripts/sync-shared.ps1`** 才会进 worker 镜像——由该线自己负责。
 - **预览触发**：PR 打开/推送 → 自动部署并评论 URL；PR 关闭 → 自动 teardown；手动演示用
   `gh workflow run preview.yml -f pr_number=<伪号>`（可加 `-f no_kv=true` 实验）。
 - **发布**：push main **不会**自动部署（`deploy.yml` 仅 workflow_dispatch）。
 - **分支保护已配置**（用户 2026-10-20）：限制删除 + 合并需 PR；之后所有改动走 PR。
 - 门禁、迁移、回滚口径见 README §14/§15（唯一权威）。
 
-## 8. 自检
+## 9. 遗留物与本地环境清单（交接时状态）
+
+| 项 | 状态 | 处理建议 |
+|---|---|---|
+| 分支 `feat/convergence-aprime`（本地 worktree `.agents/worktrees/feat/convergence-aprime`） | **保留**（决策 1：其 PPG 改动不得合并；可用部分已由 `88132af` 收编） | 历史存档，勿合并；确认无用后可删 |
+| 分支 `feature/intel-workstation-v1` | 远端已删（gone），本地保留 | 同上 |
+| `backend/worker/poc-baseline/`、`poc-sqlalchemy/` | POC 遗留目录（含旧 pylock，未跟踪） | 可清理；未动以免影响并行线 |
+| `backend/.tools/`（脚本 + 删除前备份 CSV） | gitignored；**备份目录** `backup-kaas-v2-test-20261020/`（13 CSV）、`backup-kaas-v2-test-records-20261020/`（7 CSV） | 留作回查；确认无需后可删 |
+| 本机 Docker 容器 | `kaas-postgres` / `kaas-redis` / `kaas-minio` 运行中（开发环境） | `docker compose stop` 可停 |
+| `.env.local` | 含 Neon 生产 DSN、`DATABASE_URL_PPG`（**已废弃**，可删）、`RESEND_API_KEY` | 勿提交（已 gitignored） |
+| 本地 `/health` 开发入口 | 未常驻启动（按需 `docker compose up -d` / `local_run.py`） | — |
+
+## 10. 自检
 
 - [x] 代码/脚本/workflow 全部提交推送（main = 见 `git log`）
 - [x] 三环境隔离实测（生产断言 PASS；预览前缀/派生；开发本地）
