@@ -80,6 +80,11 @@ QA_SEED_CONFIRM=yes QA_PASSWORD='<强密码>' \
 | 6 | 无 token / 伪造 token 访问任一接口 | `401` |
 | 7 | `qa_user` 修改系统配置（AI Provider 等） | `403` |
 
+> **逐条代码级结论（2026-10-21 审计）**：见 [`QA_AUTHZ_AUDIT_2026-10-21.md`](./QA_AUTHZ_AUDIT_2026-10-21.md)
+> —— 7 条＝**已有闸门 3 条**（4/5/6）、**闸门缺失（风险）4 条**（1 读侧 / 2 / 3 / 7），高风险 3 条。
+> 该文 §0 另列三处前提漂移（`scripts/seed_qa.py` 不在仓库、单租户常量 `default` 非 `qa_smoke` 独立租户、
+> 公章写闸门实际是 `403 TEAM_ADMIN_REQUIRED` 而非 `INTERNAL_ONLY`）——真机执行前先按 §0/§3 核对账号。
+
 ---
 
 ## 5. 与既有机制的关系
