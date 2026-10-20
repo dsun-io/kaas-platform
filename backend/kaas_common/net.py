@@ -31,15 +31,20 @@ SSRF 防护的两条要点
 ------------------------------------
 判定是**纯正则 + 主机名字符串匹配**，**不解析 DNS**，
 因此挡不住"域名解析到内网 IP"（DNS rebinding / 恶意 A 记录）。
-worker 跑在 Pyodide 里做不了 socket 级校验，只能如此；
-orchestrator 是完整 Python，本可再叠一层"解析后的 IP"校验 ——
-但那是**加固**，与两端统一口径是两件事，故留成 TODO，
-避免出现"某几处加强了、其余仍按旧口径"这种更难排查的中间状态。
+worker 跑在 Pyodide 里做不了 socket 级校验，只能如此。
+
+**2026-10-21 加固（TODO C11）**：新增**可选**的解析后校验 ——
+`is_safe_crawl_url(url, resolve=True, resolver=...)` / `next_redirect_url(..., resolve=True)`。
+- 默认 `resolve=False`，**两端行为不变**（worker/Pyodide 没有 socket，保持字符串判定）；
+- 具备 socket 的 Python 运行时（本地脚本、测试、未来非 Pyodide 的调用方）可传 `resolve=True`，
+  解析出的每个 IP 都会过一遍私网/回环/链路本地/保留段判定（含 IPv4-mapped 与 169.254.169.254）；
+- 解析失败（DNS 异常/无结果）时**不额外阻断**（请求本身也会失败，避免把网络抖动变成安全误杀）。
 """
 from __future__ import annotations
 
+import ipaddress
 import re
-from typing import Optional
+from typing import Callable, Optional
 from urllib.parse import urljoin, urlparse
 
 # SSRF 防护：只允许公网 http(s)，拒绝内网/回环/云元数据地址
@@ -57,7 +62,56 @@ MAX_REDIRECTS = 5
 REDIRECT_CODES = (301, 302, 303, 307, 308)
 
 
-def is_safe_crawl_url(url: str) -> bool:
+def _is_blocked_ip(ip: str) -> bool:
+    """IP 是否落在禁止访问的段（私网/回环/链路本地/保留/组播/未指定/云元数据）。"""
+    try:
+        addr = ipaddress.ip_address((ip or "").strip().strip("[]"))
+    except ValueError:
+        # 解析出的不是合法 IP（例如空串）：按不安全处理，宁可多挡
+        return True
+    # IPv4-mapped IPv6（::ffff:10.0.0.5）按 IPv4 判
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+        addr = addr.ipv4_mapped
+    if isinstance(addr, ipaddress.IPv4Address) and str(addr) == "169.254.169.254":
+        return True  # 云元数据（部分实现的 is_link_local 已覆盖，这里显式钉住）
+    return bool(
+        addr.is_private or addr.is_loopback or addr.is_link_local
+        or addr.is_multicast or addr.is_reserved or addr.is_unspecified
+    )
+
+
+def resolve_host_ips(
+    host: str,
+    resolver: Optional[Callable[[str], list[str]]] = None,
+) -> list[str]:
+    """解析主机名的全部 IP（去重排序）。
+
+    - 传入 `resolver` 时直接用它（测试/调用方注入，便于离线断言）；
+    - 否则尝试 `socket.getaddrinfo`：Pyodide/受限运行时没有 socket，导入或调用失败
+      一律返回空列表（**不抛异常**，交给调用方决定语义）。
+    """
+    if resolver is not None:
+        try:
+            return sorted({str(ip) for ip in resolver(host)})
+        except Exception:  # noqa: BLE001 - 注入的 resolver 出错按"解析不到"处理
+            return []
+    try:
+        import socket  # 局部导入：Pyodide 无此模块，模块顶层导入会直接炸
+    except Exception:  # noqa: BLE001
+        return []
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except Exception:  # noqa: BLE001
+        return []
+    return sorted({str(info[4][0]) for info in infos if info[4] and info[4][0]})
+
+
+def is_safe_crawl_url(
+    url: str,
+    *,
+    resolve: bool = False,
+    resolver: Optional[Callable[[str], list[str]]] = None,
+) -> bool:
     """只允许抓取公网 http(s) 地址（防御 CSV/线索注入内网地址）。
 
     三条判断：
@@ -65,8 +119,8 @@ def is_safe_crawl_url(url: str) -> bool:
       2. 主机名必须存在且含 "."（挡掉裸主机名，如 `http://intranet/`）
       3. 不在封禁前缀里（回环 / 私有网段 / 链路本地 / 云元数据 169.254.x / IPv6 私网）
 
-    TODO（加固，非本次范围）：解析 DNS 后对**解析出的 IP** 再判一次，
-    以覆盖"域名指向内网"。见模块 docstring 的「已知局限」。
+    `resolve=True` 时额外做**解析后校验**（DNS rebinding 加固）：
+    解析出的每个 IP 都必须通过 `_is_blocked_ip`；解析不到则不额外阻断。
     """
     parsed = urlparse(url or "")
     if parsed.scheme not in ("http", "https"):
@@ -74,10 +128,23 @@ def is_safe_crawl_url(url: str) -> bool:
     host = (parsed.hostname or "").lower()
     if not host or "." not in host:
         return False
-    return not _BLOCKED_HOST_RE.match(host)
+    if _BLOCKED_HOST_RE.match(host):
+        return False
+    if not resolve:
+        return True
+    ips = resolve_host_ips(host, resolver)
+    if not ips:
+        return True  # 解析不到：不额外阻断（抓取本身会失败）
+    return all(not _is_blocked_ip(ip) for ip in ips)
 
 
-def next_redirect_url(current_url: str, location: str) -> Optional[str]:
+def next_redirect_url(
+    current_url: str,
+    location: str,
+    *,
+    resolve: bool = False,
+    resolver: Optional[Callable[[str], list[str]]] = None,
+) -> Optional[str]:
     """返回**经过校验**的下一跳绝对地址；不安全或非法则返回 None。
 
     调用方必须关掉客户端的自动跟随（Workers 用 `redirect: "manual"`，
@@ -86,4 +153,4 @@ def next_redirect_url(current_url: str, location: str) -> Optional[str]:
     if not location:
         return None
     target = urljoin(current_url, location.strip())
-    return target if is_safe_crawl_url(target) else None
+    return target if is_safe_crawl_url(target, resolve=resolve, resolver=resolver) else None

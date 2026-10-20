@@ -49,6 +49,11 @@
 >   `sync-shared -Check` 三段一致。**12 条实现裁决**（容差只用于总额/行金额、diff 三态、付款条款结构签名、
 >   付款解析=unverified 需确认、不可改写只圈条款等）写入 [`TRADE_DOC_HARDENING.md`](./TRADE_DOC_HARDENING.md) §4，
 >   该文档同时替代归档里的原始方案作为活跃施工依据。A7-API/UI 进行中。
+> - **C9 复核 ✅ / C11 落地 ✅（2026-10-21）**：① C9 诊断端点（`/file-objects/_r2_debug`、
+>   `/fx-rates/_debug`）**已各有 `is_admin_role` 闸门**（B0-6 收敛），普通登录用户 403，无需改动；
+>   ② C11 SSRF 加固：`kaas_common/net.py` 新增**可选** DNS 解析后校验（`resolve=True` + 可注入
+>   `resolver`），默认关闭保持两端行为不变（worker/Pyodide 无 socket），解析出的每个 IP 过
+>   私网/回环/链路本地/保留/组播 + 云元数据 + IPv4-mapped 判定，解析失败不额外阻断；7 条测试。
 >
 > **（2026-10-20 晚 · 口径收敛与审计补录：`docs/TODO.md` = 唯一账本）**
 >

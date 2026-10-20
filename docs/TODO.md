@@ -72,9 +72,9 @@
 | C6 | e2e 数据层不稳根治 | 兜底路由掩盖缺口、无 per-test 重置；历史"假红/整轮数字作废"根因 | — | ⏳ |
 | C7 | Excel xlsx 上传闭环 | 上传侧现只收 CSV | — | ⏳ |
 | C8 | 四源计数端点 | `WORKSTATION_DESIGN.md:849`；代码仍占位（`chain.py` `demand_index=None`/`blank_index=None`） | — | ⏳ |
-| C9 | 诊断端点收敛 | `_r2_debug` / `fx-rates/_debug` 暴露面收敛 | — | ⏳ |
+| C9 | 诊断端点收敛 | `_r2_debug` / `fx-rates/_debug` 暴露面收敛 | — | ✅ 2026-10-21 复核：两个端点**已有** `is_admin_role` 闸门（`ws_files.py` r2_debug / `ws_extras.py` fx_provider_debug，B0-6 收敛，普通用户 403），无需改动 |
 | C10 | 18 模板签章区孤行 | 末尾几块包 `break-inside: avoid`（会动全部 18 模板） | — | ⏳ |
-| C11 | SSRF DNS rebinding 加固 | `kaas_common/net.py` 不做 DNS 解析后再校验（当前只校验字面 IP/域名） | — | ⏳ |
+| C11 | SSRF DNS rebinding 加固 | `kaas_common/net.py` 新增**可选**解析后校验：`is_safe_crawl_url(url, resolve=True, resolver=...)` / `next_redirect_url(..., resolve=True)`；默认 `resolve=False` 保持两端行为不变（worker/Pyodide 无 socket），具备 socket 的运行时逐个 IP 判私网/回环/链路本地/保留/组播 + 169.254.169.254 + IPv4-mapped；解析不到不额外阻断 | — | ✅ 2026-10-21（7 条测试 `test_net_ssrf_dns.py`） |
 | C12 | PDF 归档验收尾巴 | 真实 18 类单证端到端未跑、页面级接线仅 typecheck 保驾、按快照重出未做 | 随发布后 | ⏳ |
 | C13 | outreach/webhook 收紧 | `GET` 回调是否收紧到 `POST`（将来实现 inbound 回写必须去掉 GET） | 产品决策 | 🧭 |
 | C14 | `product_tax_rates` 生产数据 | 生产 0 条则批量报价不放行 | 发布窗口 | ⏳（D 组同批） |
