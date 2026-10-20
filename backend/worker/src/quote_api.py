@@ -55,6 +55,7 @@ from main import (  # noqa: E402
     db as _db,
 )
 from dbjson import row_to_dict as _row_to_dict
+import inquiry_stage as _inquiry_stage
 from kaas_common.workstation.number_rules import (  # noqa: E402
     NumberError,
     build_number,
@@ -1448,7 +1449,7 @@ async def _resolve_or_create_inquiry(
     """报价来源询盘：选了就校验并自动「未报价→已报价」；没选就自动建一条。"""
     if inquiry_id is not None:
         inq = await conn.fetchrow(
-            "SELECT id, status, customer_id FROM cust_inquiries"
+            "SELECT id, status, customer_id, stage FROM cust_inquiries"
             " WHERE tenant_id=$1 AND id=$2",
             tenant, inquiry_id,
         )
@@ -1457,12 +1458,21 @@ async def _resolve_or_create_inquiry(
                 "error": "not_found", "code": "INQUIRY_NOT_FOUND",
                 "detail": "所选询盘不存在或不属于该客户",
             })
+        previous_status = inq["status"]
         if inq["status"] == "unquoted":
             await conn.execute(
                 "UPDATE cust_inquiries SET status='quoted', updated_at=now()"
                 " WHERE tenant_id=$1 AND id=$2",
                 tenant, inquiry_id,
             )
+        # 询盘阶段（TODO F4）：报价创建 → quotation（只前进，重复报价 no-op）
+        await _inquiry_stage.advance(
+            conn, tenant_id=tenant, inquiry_id=int(inquiry_id),
+            target_stage=_inquiry_stage.STAGE_QUOTATION,
+            source_event=_inquiry_stage.SOURCE_QUOTE_CREATED,
+            actor_id=str(user["id"]),
+            current_stage=inq.get("stage"), current_status=previous_status,
+        )
         return int(inquiry_id)
 
     inquiry_no = await _next_customer_no(conn, "inquiry",
@@ -1477,7 +1487,18 @@ async def _resolve_or_create_inquiry(
         tenant, customer["id"], inquiry_no, product_name,
         str(user["id"]), owner_scope, customer.get("team_id"),
     )
-    return int(row["id"])
+    inquiry_id = int(row["id"])
+    # 询盘阶段（TODO F4）：自动建询盘 + 报价 → quotation（新建行就是 inquiry，前进一档；
+    # 已知 stage/status，直接传进来省一次 SELECT）
+    await _inquiry_stage.advance(
+        conn, tenant_id=tenant, inquiry_id=inquiry_id,
+        target_stage=_inquiry_stage.STAGE_QUOTATION,
+        source_event=_inquiry_stage.SOURCE_QUOTE_CREATED,
+        actor_id=str(user["id"]),
+        current_stage=_inquiry_stage.STAGE_INQUIRY,
+        current_status="quoted",
+    )
+    return inquiry_id
 
 
 async def _ensure_quotation_doc(conn, tenant: str, q: dict, items: list,

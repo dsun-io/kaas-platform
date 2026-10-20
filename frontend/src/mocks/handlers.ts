@@ -1790,6 +1790,43 @@ export const handlers = [
     return HttpResponse.json(doc);
   }),
 
+  // 签发 / 改内容（TODO F1：PATCH 可携带 html，由服务端出 PDF 并归档）——
+  // mock 环境没有浏览器渲染器，与 `POST /trade-docs/:id/pdf` 同口径**如实失败**
+  // （pdf_archive.ok=false + 503），界面据此提示手动上传，不假装归档成功。
+  http.patch("/api/v1/trade-docs/:id", async ({ params, request }) => {
+    const doc = docsStore.find((d) => d.id === Number(params.id));
+    if (!doc) {
+      return HttpResponse.json(
+        { detail: { error: "not_found" } },
+        { status: 404 },
+      );
+    }
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    for (const key of ["doc_no", "status", "raw_payload"] as const) {
+      if (key in body) doc[key] = body[key];
+    }
+    const out: Record<string, unknown> = { ...doc };
+    if (
+      body.status === "issued" &&
+      typeof body.html === "string" &&
+      body.html.trim()
+    ) {
+      out.pdf_archive = {
+        ok: false,
+        status_code: 503,
+        detail: {
+          error: "unavailable",
+          code: "PDF_RENDERER_NOT_CONFIGURED",
+          detail: "mock 环境未配置浏览器渲染器",
+        },
+      };
+    }
+    return HttpResponse.json(out);
+  }),
+
   // 单证内嵌预览（客户详情 → 单证）：mock 用固定样板数据渲染，避免预览空转。
   // 真实环境由后端 `/trade-docs/{id}/render-data` 按快照装配。
   http.get("/api/v1/trade-docs/:id/render-data", ({ params }) => {

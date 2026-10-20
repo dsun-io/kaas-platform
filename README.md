@@ -172,7 +172,7 @@
   迁移依赖隔离（主依赖去 ORM、`[project.optional-dependencies].migrations`）随 **S4** 落地。
 - **迁移依赖隔离已落地（S4）**：orchestrator 主依赖为空，`[project.optional-dependencies].migrations`
   才装 sqlalchemy/alembic/psycopg2；CI 与 deploy 的迁移步骤统一 `uv sync --extra migrations` / `uv run --extra migrations alembic …`。
-- 现状命令与 head（`202610190020`）见 [§15 数据库迁移](#15-数据库迁移)；**开发迁移目标永远是本地 Docker PG**（§2.3 规则 1）。
+- 现状命令与 head（`202610200003`）见 [§15 数据库迁移](#15-数据库迁移)；**开发迁移目标永远是本地 Docker PG**（§2.3 规则 1）。
 
 ---
 
@@ -449,12 +449,15 @@ E2E：
 
 ## 15. 数据库迁移
 
-当前 head：**`202610190020`**。
+当前 head：**`202610200003`**（分支 `feat/trade-doc-content-a`；合入 main 后以 `alembic heads` 为准）。
 
 本轮相关迁移：
 
 | 版本 | 内容 |
 |---|---|
+| `202610200003` | 询盘阶段落库（`cust_inquiries.stage/stage_updated_at` + `inquiry_stage_log`；事件驱动，TODO F4） |
+| `202610200002` | 单证指纹定时对账结果表 `trade_doc_render_checks`（TODO A8/A9） |
+| `202610200001` | 单证内容版本表 `trade_doc_content_versions`（TODO A1） |
 | `202610190020` | 补齐生产已有、迁移链缺失的列（`trade_docs.owner_id/owner_scope`、`market_ports.created_at/updated_at`；幂等 DO 块） |
 | `202610180006` | 企业税务档案表 + 种子 + 旧客户税率档案迁移 |
 | `202610180007` | 报价单税务快照 |

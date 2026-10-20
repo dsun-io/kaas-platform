@@ -3479,6 +3479,43 @@ async def create_order_api(
                     total += line
                 computed_lines.append(line)
 
+            # ── 报价/订单 1:N 业务校验（TODO F5，口径 A：**允许**一报价多订单）──────
+            # 为什么不做 1:1 唯一约束：分批出货 / 改价后重复下单是真实业务，UI 已按 1:N
+            # 分组展示（docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md §5 选项 A，2026-10-20
+            # 用户拍板）。但 1:N 必须有**业务闸门**，否则"客户订 100 米"能被系统开出
+            # 300 米的订单，财务应收与单证数量全部对不上：
+            #   ① 币种必须与报价一致（否则累计金额没有可比性）；
+            #   ② 同一报价下**未取消**订单的金额累计不得超过报价合计（按分容差）。
+            # 历史数据不回填、不迁移：校验只作用于**新建**订单（已存在的多单不动）。
+            if quote is not None:
+                quote_currency = (quote.get("currency") or "").upper()
+                if quote_currency and quote_currency != currency:
+                    raise HTTPException(status_code=422, detail={
+                        "error": "validation", "code": "ORDER_QUOTE_CURRENCY_MISMATCH",
+                        "field": "currency",
+                        "detail": (f"订单币种 {currency} 与报价币种 {quote_currency} 不一致；"
+                                   "跨币种请先改报价或另开订单"),
+                    })
+                quote_total = quote.get("total_amount")
+                if quote_total is not None and total:
+                    used = await conn.fetchval(
+                        "SELECT COALESCE(SUM(total_amount), 0) FROM orders"
+                        " WHERE tenant_id=$1 AND quote_id=$2 AND status <> 'cancelled'",
+                        DEFAULT_TENANT, quote["id"],
+                    )
+                    already = float(used or 0)
+                    allowed = float(quote_total) - already
+                    if total > allowed + 0.01:
+                        raise HTTPException(status_code=422, detail={
+                            "error": "validation", "code": "ORDER_EXCEEDS_QUOTE",
+                            "detail": (f"本单金额超过该报价的剩余可下单额度："
+                                       f"报价合计 {float(quote_total):.2f}，"
+                                       f"已下单 {already:.2f}，本单 {total:.2f}"),
+                            "quote_total": float(quote_total),
+                            "quote_ordered": already,
+                            "order_total": total,
+                        })
+
             row = await conn.fetchrow(
                 """INSERT INTO orders
                        (tenant_id, order_no, customer_id, customer_name, status, currency,
@@ -3504,6 +3541,15 @@ async def create_order_api(
                 _term("country_of_origin"),
             )
             order_id = row["id"]
+            # 询盘阶段（TODO F4）：订单创建 → order（沿报价的 inquiry_id 传递；
+            # 手动订单没有报价来源 ⇒ advance_for_order 返回 None，不影响主流程）
+            if quote is not None:
+                await _inquiry_stage.advance_for_order(
+                    conn, tenant_id=DEFAULT_TENANT, order_id=order_id,
+                    target_stage=_inquiry_stage.STAGE_ORDER,
+                    source_event=_inquiry_stage.SOURCE_ORDER_CREATED,
+                    actor_id=str(user["id"]), quote_id=quote.get("id"),
+                )
             # 2026-10-18：客户阶段读时由「开启中的订单」推导，不再在这里回写客户阶段。
             for idx, it in enumerate(items):
                 await conn.execute(
@@ -3777,6 +3823,15 @@ async def change_order_status(order_id: int, request: Request, body: dict,
              "actor_id": user["id"]},
             from_ws="orders", to_ws="trade_docs",
         )
+    if target == "completed":
+        # 询盘阶段（TODO F4）：订单完结 → completed（沿报价传递；无报价来源则 no-op）
+        async with _acquire(request) as conn:
+            await _inquiry_stage.advance_for_order(
+                conn, tenant_id=DEFAULT_TENANT, order_id=order_id,
+                target_stage=_inquiry_stage.STAGE_COMPLETED,
+                source_event=_inquiry_stage.SOURCE_ORDER_COMPLETED,
+                actor_id=str(user["id"]), quote_id=o.get("quote_id"),
+            )
 
     row2 = await db.fetchrow(
         request,
@@ -4053,6 +4108,7 @@ def _reject_protected_custom(custom) -> None:
 # （POST/GET/PATCH/render-data 全 500，静态 import 检查发现不了）。详见 doc_payload.py。
 import doc_payload as _dp  # noqa: E402
 import content_versions as _cv  # noqa: E402
+import inquiry_stage as _inquiry_stage  # noqa: E402
 
 # 边表写入语句来自共享内核（与 orchestrator 同一份字符串，避免两端各写一条而漂移）
 from kaas_common.workstation.entity_links import LINK_INSERT_SQL  # noqa: E402
@@ -4508,7 +4564,27 @@ async def update_trade_doc(doc_id: int, request: Request, body: dict,
         )
     d2 = await db.fetchrow(request, "SELECT * FROM trade_docs WHERE tenant_id=$1 AND id=$2",
                            DEFAULT_TENANT, doc_id, table="trade_docs")
-    return _dp.doc_dict(d2)
+    out = _dp.doc_dict(d2)
+    # 服务端签发自动上传（TODO F1 方案 A）：PATCH 触发 draft→issued 时若带 HTML，
+    # 同请求出 PDF 并归档。失败**不回滚签发**，只写 pdf_archive 供界面提示手动上传。
+    if (new_status == "issued" and d["status"] == "draft"
+            and isinstance(body.get("html"), str) and body["html"].strip()):
+        try:
+            import ws_files as _ws_files
+            archived = await _ws_files.archive_rendered_pdf(
+                request, doc_id, body["html"], user, body.get("pdf_name"))
+            file_row = archived.get("file") or {}
+            out["pdf_archive"] = {
+                "ok": True,
+                "renderer": archived.get("renderer"),
+                "bytes": archived.get("bytes"),
+                "file_id": file_row.get("id") if hasattr(file_row, "get") else None,
+            }
+        except HTTPException as exc:
+            out["pdf_archive"] = {
+                "ok": False, "status_code": exc.status_code, "detail": exc.detail,
+            }
+    return out
 
 
 # ── 企业主体信息（卖方抬头）────────────────────────────────────────────────

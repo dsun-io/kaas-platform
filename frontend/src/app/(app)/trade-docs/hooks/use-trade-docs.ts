@@ -160,6 +160,16 @@ export function useCreateTradeDoc() {
   });
 }
 
+/** 服务端签发自动上传的结果（TODO F1 方案 A；失败不回滚签发状态） */
+export interface PdfArchiveResult {
+  ok: boolean;
+  status_code?: number;
+  detail?: unknown;
+  renderer?: string | null;
+  bytes?: number;
+  file_id?: number | null;
+}
+
 /** 更新手工填写内容（仅 draft 可改）或流转状态（draft → issued → void） */
 export function useUpdateTradeDoc() {
   const qc = useQueryClient();
@@ -172,11 +182,13 @@ export function useUpdateTradeDoc() {
       status?: string;
       doc_no?: string;
       raw_payload?: Record<string, unknown>;
+      /** 签发时随请求提交的预览 HTML：服务端出 PDF 并归档（TODO F1） */
+      html?: string;
+      pdf_name?: string;
     }) => {
-      const { data } = await apiClient.patch<TradeDocRow>(
-        `/trade-docs/${id}`,
-        body,
-      );
+      const { data } = await apiClient.patch<
+        TradeDocRow & { pdf_archive?: PdfArchiveResult }
+      >(`/trade-docs/${id}`, body);
       return data;
     },
     onSuccess: (_data, variables) => {

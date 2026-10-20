@@ -15,6 +15,31 @@
 > [`HANDOVER_2026-10-20_FINAL.md`](./HANDOVER_2026-10-20_FINAL.md)**（状态/资源清单/踩坑/发布检查单/待办）。
 > 本文件继续只做"问题状态"滚动口径。
 >
+> **（2026-10-20 · 后端五项全部落地：F1 服务端签发自动上传 / F2 内容版本 / F3 个人信息 / F4 询盘状态机 / F5 报价订单 1:N 校验）**
+>
+> 用户点名"后端 5 项，不要遗漏"；规格 = `docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md`
+> （2026-10-20 已随 UI 线入 main）。本分支逐项完成：
+> ① **F1 服务端签发自动上传（方案 A）**：`POST .../confirm` 与 `PATCH /trade-docs/{id}`
+> （draft→issued）均可携带前端**预览同一份 HTML**，服务端复用唯一实现
+> `ws_files.archive_rendered_pdf` 出 PDF 并落 `render_pdf` 新版本；**失败不回滚签发**，
+> 响应带 `pdf_archive{ok:false,...}` 由界面提示手动上传；前端签发按钮已接线。
+> ② **F2 内容版本**：已完成（`4878c6c` + `db4463e`，迁移 `202610200001`）。
+> ③ **F3 个人信息编辑**：`PATCH /auth/me`（显示名，只改本人；邮箱登录标识不自助改）+
+> `POST /auth/change-password`（验旧密码、≥8 位）；侧栏弹窗从只读变可编辑；MSW 真改显示名。
+> ④ **F4 询盘状态机（落库+事件驱动）**：迁移 `202610200003` 加
+> `cust_inquiries.stage/stage_updated_at` + `inquiry_stage_log`；阶段
+> `inquiry<quotation<order<shipment<completed`、`closed` 终态；**只前进/幂等**；事件钩子 =
+> 报价创建 / 订单创建 / 订单完成 / 出运创建 / 询盘手动关闭；序列化新增阶段字段；
+> `GET /inquiries/{id}/stage-log`。
+> ⑤ **F5 报价/订单 1:N（口径 A）**：保留 1:N（分批出货合法、历史多单不迁移），新建订单校验
+> 币种一致 + 未取消订单金额累计 ≤ 报价合计（422 明细含报价/已下单/本单金额）。
+> 口径拍板（用户 2026-10-20）：F5=A、F4=落库+事件驱动、F3=显示名+密码。
+> 门禁：worker **1008 passed + 5 skipped** / orchestrator **247** / frontend typecheck 0 ·
+> vitest **474** · lint 0 error / contracts R0–R6 PASS / schema-coverage·drift·runtime-deps·
+> sync-shared PASS / alembic 单 head `202610200003`。
+> 另：两把 Resend key 已入 GitHub repo secrets（`RESEND_API_KEY_PROD` / `RESEND_API_KEY_PREVIEW`），
+> 换设备不失；`preview.yml` 已注入预览专用 key。
+>
 > **（2026-10-20 · A8/A9 落地：指纹对账定时调度 + 列表「已变更」标识；顺手修线上列表 500）**
 >
 > 同一分支 `feat/trade-doc-content-a` 继续推进（用户指示"按序推进 A8/A9/A2"）：

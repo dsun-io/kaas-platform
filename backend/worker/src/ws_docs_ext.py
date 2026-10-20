@@ -87,8 +87,17 @@ db = _main.db
 # ── Schemas（与 orchestrator 同名模型字段一致）──────────────────────────────
 
 class TradeDocConfirmIn(BaseModel):
-    """确认（issued）：校验必填 → 冻结；确认后不可修改（无入参，仅为对齐请求体）。"""
-    pass
+    """确认（issued）：校验必填 → 冻结；确认后不可修改。
+
+    可选 `html` / `pdf_name`（TODO F1 方案 A）：前端随签发提交**预览用的同一份 HTML**，
+    服务端出 PDF 并归档到本单证（`render_pdf` 新版本上位）。不传 html = 旧行为（不产 PDF）。
+
+    失败策略（用户 2026-10-20 口径）：**PDF 失败不回滚签发** —— 签发是法律动作，
+    归档是后续动作；响应里带 `pdf_archive: {ok:false, ...}`，界面提示手动上传兜底，
+    绝不能因为渲染器没配就把"已签发"静默吞掉。
+    """
+    html: Optional[str] = None
+    pdf_name: Optional[str] = None
 
 
 class TradeDocTranslateIn(BaseModel):
@@ -285,7 +294,26 @@ async def confirm_trade_doc(
         tenant_id=DEFAULT_TENANT, doc_id=doc_id, payload=payload,
         source=_cv.SOURCE_ISSUE, actor_id=str(user["id"]),
     )
-    return _row_to_doc(row)
+    out = _row_to_doc(row)
+    # 服务端签发自动上传（TODO F1 方案 A）：同请求带 HTML ⇒ 出 PDF 并归档；
+    # 失败**不回滚签发**，只把失败写进 pdf_archive 让界面提示手动上传。
+    if body.html and body.html.strip():
+        try:
+            import ws_files as _ws_files  # 惰性 import：避免与文件路由的加载顺序耦合
+            archived = await _ws_files.archive_rendered_pdf(
+                request, doc_id, body.html, user, body.pdf_name)
+            file_row = archived.get("file") or {}
+            out["pdf_archive"] = {
+                "ok": True,
+                "renderer": archived.get("renderer"),
+                "bytes": archived.get("bytes"),
+                "file_id": file_row.get("id") if hasattr(file_row, "get") else None,
+            }
+        except HTTPException as exc:
+            out["pdf_archive"] = {
+                "ok": False, "status_code": exc.status_code, "detail": exc.detail,
+            }
+    return out
 
 
 async def _payload_with_render_fingerprint(

@@ -154,6 +154,9 @@ ORCH_CRM_ROUTES = {
     ("/api/v1/customers/{customer_id}/records", "GET"),
     ("/api/v1/inquiries", "GET"),
     ("/api/v1/inquiries/{inquiry_id}", "PATCH"),
+    # TODO F4（2026-10-20）：worker 新增的询盘阶段历史端点（orchestrator 已删壳，
+    # 这是"落库+事件驱动"的一部分；路由面锁死 worker 实际注册面，新端点必须登记）。
+    ("/api/v1/inquiries/{inquiry_id}/stage-log", "GET"),
 }
 
 # orchestrator `row_to_customer` / `row_to_inquiry`（共享内核）的键集 —— 两端必须逐字一致
@@ -164,6 +167,8 @@ _CUSTOMER_KEYS = {
 _INQUIRY_KEYS = {
     "id", "customer_id", "inquiry_no", "lead_id", "channel", "category_id",
     "product_name_raw", "quantity", "quantity_unit", "application", "status",
+    # TODO F4（2026-10-20）：阶段落库后序列化新增两键（迁移 202610200003）
+    "stage", "stage_updated_at",
     "created_at",
 }
 # 子资源行的**投影**键集：orchestrator customers.py:406-410 / 416-420 / 556-558
