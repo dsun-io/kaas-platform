@@ -1,6 +1,8 @@
-﻿name: Frontend CI
+name: Frontend CI
 
 on:
+  # 手动触发：CI 排障单跑（与 backend-test 同口径）；本文件在自身 push paths 内，改动即自触发。
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
