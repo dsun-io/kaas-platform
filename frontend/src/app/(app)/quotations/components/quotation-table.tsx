@@ -68,7 +68,12 @@ function QuotationRow({
         {new Date(q.effective_from).toLocaleDateString("zh-CN")}
       </TableCell>
       <TableCell>
-        <Button variant="ghost" size="icon-xs" onClick={() => onSelect(q)}>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={() => onSelect(q)}
+          aria-label="查看报价详情"
+        >
           <Eye className="size-3" />
         </Button>
       </TableCell>

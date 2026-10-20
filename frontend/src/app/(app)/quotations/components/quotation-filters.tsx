@@ -65,7 +65,12 @@ export function QuotationFilters({ filters, onChange }: Props) {
         搜索
       </Button>
       {hasFilters && (
-        <Button variant="ghost" size="icon-sm" onClick={clear}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={clear}
+          aria-label="清除筛选条件"
+        >
           <X className="size-4" />
         </Button>
       )}

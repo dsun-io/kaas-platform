@@ -70,7 +70,10 @@ export function TradeStatsView() {
             placeholder="进出口类型"
             value={searchInput.trade_flow}
             onChange={(e) =>
-              setSearchInput((prev) => ({ ...prev, trade_flow: e.target.value }))
+              setSearchInput((prev) => ({
+                ...prev,
+                trade_flow: e.target.value,
+              }))
             }
             className="w-32"
           />
@@ -82,7 +85,7 @@ export function TradeStatsView() {
             }
             className="w-32"
           />
-          <Button onClick={handleSearch} size="icon">
+          <Button onClick={handleSearch} size="icon" aria-label="搜索贸易统计">
             <Search className="size-4" />
           </Button>
         </div>
@@ -115,7 +118,9 @@ export function TradeStatsView() {
                 <TableBody>
                   {data.map((stat) => (
                     <TableRow key={stat.id}>
-                      <TableCell className="font-medium">{stat.hs_code}</TableCell>
+                      <TableCell className="font-medium">
+                        {stat.hs_code}
+                      </TableCell>
                       <TableCell>{stat.period}</TableCell>
                       <TableCell>{stat.partner_country}</TableCell>
                       <TableCell>
