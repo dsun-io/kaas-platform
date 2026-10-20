@@ -56,9 +56,12 @@
 
 | # | 待办 | 真实状态 | 前置 | 状态 |
 |---|---|---|---|---|
-| B1 | 租户级产品定义配置化 | **租户级已完成**（worker `ws_products.py` 8 条路由；`tenant_products.spec` JSONB 每请求读库；前端 `/settings/tenant-products`）；**系统级仍是 Python `@register` 注册表**（`export_quote/products/*.py` 4 个） | 系统级口径见 §G-3 | ✅ 租户级 2026-10-20；系统级 🧭 |
-| B2 | 产品可视化编辑器 | `product-spec-editor.tsx` + `products-definitions-tab.tsx`，保存即生效 | — | ✅ 代码完成，待 P3 端到端验收后销账 |
-| B3 | 租户开通报价工位 UI | `team/components/team-subscriptions-panel.tsx`（管理员开通/撤销、PUT 后重拉列表）+ 产品页启用开关 | — | ✅ 代码完成，待 P3 端到端验收后销账 |
+| B1 | 租户级产品定义配置化 | **租户级 CRUD 已端到端验通**（201/200/200/204、409 `PRODUCT_KEY_TAKEN`、422 `invalid_spec`、404 `PRODUCT_NOT_FOUND`；运行时生效见 B2）；**但写路径团队隔离缺失**（B4，P0）+ 2 条链路缺口（B5/B6）；系统级仍是 Python `@register` 注册表（`export_quote/products/*.py` 4 个） | B4/B5/B6 修复；系统级口径见 §G-3 | 🔨 修复中（2026-10-21 验收暴露；CRUD 通过，隔离缺陷待修） |
+| B2 | 产品可视化编辑器 | `product-spec-editor.tsx` + `products-definitions-tab.tsx`，保存即生效 | — | ✅ 2026-10-21 端到端验收：克隆 `field_fence` → 与系统产品同价 3.041 → PUT `raw_price×1.2` → **同会话无重启**立即算得 3.6357 元/米（+19.6%），发现列表同步改名 |
+| B3 | 租户开通报价工位 UI | `team/components/team-subscriptions-panel.tsx`（管理员开通/撤销、PUT 后重拉列表）+ 产品页启用开关 | — | ✅ 2026-10-21 端到端验收：`PUT /teams/1/subscriptions/full_chain` 后**同一进程内** `/me/workstations` codes `[]→["full_chain"]`、中间件门从 404 变放行；DELETE 后立即回退（`_invalidate_all` 生效） |
+| B4 | **租户产品写路径团队隔离（P0 安全）** | `PUT/DELETE /tenant-products/{id}` 只校验 `tenant_id`，team2 owner 可改/删 team1 产品（真机复现 200/204），并连带清 `product_profiles`/`tenant_workstation_products`/图片标记；列表与发现层都用了 `is_same_team` | 无 | 🔨 修复中（补 `is_same_team`，非本团队 404 + 测试） |
+| B5 | 租户产品 `/formulas`/`/explain` 回落 | v2 报价规格选择器读 `/formulas`；`_product_or_404` 只查 Python 注册表 ⇒ 租户产品选中后 404（带 `spec_override` 的编辑器试算不受影响） | B4 | 🔨 修复中（`_product_or_404` 回落租户运行时产品，两处同一实现） |
+| B6 | `/workstation-products` 假路由处置 | 门读**租户级** `tenant_subscriptions`，而工位开通写**团队级** `team_subscriptions`，无 HTTP 写接口 ⇒ 管理台与已开通成员都恒 404；前端 0 处使用（启停走 `/tenant-product-status`） | B3 | 🔨 修复中（切团队级订阅 或 显式废弃 410，二选一） |
 
 ---
 
@@ -137,6 +140,7 @@
 | G-6 | D3 Hyperdrive 生产缓存 / D4 生产测试数据清理 | 是否执行（D4 执行当次还要再确认） |
 | G-7 | 发布窗口下令 | D 组是否现在做 |
 | G-8 | 安全 4 项 | 用户已裁"最后做"；做之前需确认是否轮换 Neon 口令（历史泄露）与仓库最终可见性 |
+| G-9 | `/tenant-product-status` 谁能操作 | 现状无角色校验（任意成员可停用产品）。选项：①保持现状（成员可管）②仅团队管理员/internal。影响租户自助能力与误操作风险 |
 
 ---
 

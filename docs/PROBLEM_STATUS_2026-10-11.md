@@ -54,6 +54,13 @@
 >   ② C11 SSRF 加固：`kaas_common/net.py` 新增**可选** DNS 解析后校验（`resolve=True` + 可注入
 >   `resolver`），默认关闭保持两端行为不变（worker/Pyodide 无 socket），解析出的每个 IP 过
 >   私网/回环/链路本地/保留/组播 + 云元数据 + IPv4-mapped 判定，解析失败不额外阻断；7 条测试。
+> - **B 组端到端验收（2026-10-21）**：B2 ✅（克隆系统产品 → 同价 3.041 → PUT `raw_price×1.2` →
+>   同会话立即 3.6357 元/米）、B3 ✅（team 订阅 PUT 后 `/me/workstations` codes 同进程生效、撤销即回退）；
+>   **B1 降级为"租户级 CRUD 已验 + 隔离缺陷待修"**：暴露并登记 **B4 P0 跨团队越权**
+>   （PUT/DELETE 只校验 tenant，team2 owner 可改/删 team1 产品，真机复现 200/204）、
+>   **B5** 租户产品在 `/formulas`/`/explain` 404（规格选择器打不开）、**B6** `/workstation-products`
+>   门读租户级订阅而开通写团队级 ⇒ 恒 404（前端 0 使用）；另新增拍板项 `G-9`
+>   （`/tenant-product-status` 是否限团队管理员）。修复进行中（task-9）。
 >
 > **（2026-10-20 晚 · 口径收敛与审计补录：`docs/TODO.md` = 唯一账本）**
 >
