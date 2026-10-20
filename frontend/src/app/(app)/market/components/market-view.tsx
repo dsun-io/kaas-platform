@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type TabKey = "region" | "product" | "usage" | "ports";
 
@@ -423,28 +424,28 @@ export function MarketView({ showHeader = true }: { showHeader?: boolean }) {
         />
       )}
 
-      <div className="flex gap-2 border-b">
-        {TABS.map((tab) => (
-          <Button
-            key={tab.key}
-            variant="ghost"
-            className={cn(
-              "rounded-none border-b-2 border-transparent px-4 pb-2",
-              activeTab === tab.key && "border-primary font-medium",
-            )}
-            onClick={() => setActiveTab(tab.key)}
-          >
-            {tab.label}
-          </Button>
-        ))}
-      </div>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabKey)}>
+        <TabsList variant="line">
+          {TABS.map((tab) => (
+            <TabsTrigger key={tab.key} variant="line" value={tab.key}>
+              {tab.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
 
-      <div className="mt-6">
-        {activeTab === "region" && <RegionTab />}
-        {activeTab === "product" && <ProductTab />}
-        {activeTab === "usage" && <UsageTab />}
-        {activeTab === "ports" && <PortsTab />}
-      </div>
+        <TabsContent value="region" keepMounted={false}>
+          <RegionTab />
+        </TabsContent>
+        <TabsContent value="product" keepMounted={false}>
+          <ProductTab />
+        </TabsContent>
+        <TabsContent value="usage" keepMounted={false}>
+          <UsageTab />
+        </TabsContent>
+        <TabsContent value="ports" keepMounted={false}>
+          <PortsTab />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
