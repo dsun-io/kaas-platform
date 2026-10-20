@@ -45,6 +45,7 @@ import { exportCsv, exportExcel, printMerged } from "@/lib/trade-doc/export";
 import { DocCreateForm } from "./components/doc-create-form";
 import { DocContentVersions } from "./components/doc-content-versions";
 import { DocCustomForm } from "./components/doc-custom-form";
+import { DocRenderCheckBadge } from "./components/doc-render-check-badge";
 import { DocStampReturn } from "./components/doc-stamp-return";
 import { DocPreview, renderMetaOf } from "./components/doc-preview";
 import { SamplePreview } from "./components/sample-preview";
@@ -405,9 +406,15 @@ export default function TradeDocsPage() {
                       <DocTypeLabel docType={row.doc_type} />
                     </td>
                     <td className="p-2">
-                      <StatusBadge tone={STATUS_TONE[row.status] ?? "default"}>
-                        {STATUS_LABEL[row.status] ?? row.status}
-                      </StatusBadge>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <StatusBadge
+                          tone={STATUS_TONE[row.status] ?? "default"}
+                        >
+                          {STATUS_LABEL[row.status] ?? row.status}
+                        </StatusBadge>
+                        {/* 定时对账标识（A8/A9）：只在"被改过/模板漂移/待复核"时出现 */}
+                        <DocRenderCheckBadge check={row.render_check} />
+                      </div>
                     </td>
                     <td className="p-2">
                       {money(row.total_amount, row.currency)}

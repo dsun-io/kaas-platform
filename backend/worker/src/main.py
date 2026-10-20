@@ -3990,7 +3990,11 @@ async def list_trade_docs(request: Request, doc_type: str = None, status: str = 
         )
         items = []
         for r in rows:
-            item = _row_to_dict(r, "trade_docs")
+            # 注意：main 里的 `_row_to_dict` 是**1 参**兼容壳（只按 market_ports 解 jsonb），
+            # 带表名的精确解码要走 `row_to_dict(row, "表名")`。
+            # 这里曾写成 `_row_to_dict(r, "trade_docs")` ⇒ TypeError ⇒ 列表接口运行期 500
+            # （2026-10-20 由 test_trade_doc_render_check_list.py 抓出并锁死）。
+            item = row_to_dict(r, "trade_docs")
             if r["quote_id"] is not None:
                 later = await conn.fetchval(
                     "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND quote_id=$2"
@@ -4003,6 +4007,30 @@ async def list_trade_docs(request: Request, doc_type: str = None, status: str = 
                 later = None
             item["doc_no_editable"] = not bool(later)
             items.append(item)
+        # 定时对账结论（TODO A8/A9）：每页多一条查询，让列表能一眼标出「已变更」。
+        # 没有对账记录 = 从未巡到（null），界面不显示任何标识（不冒充"没问题"）。
+        if rows:
+            checks = await conn.fetch(
+                "SELECT trade_doc_id, matches, reason, render_version_drift, checked_at"
+                " FROM trade_doc_render_checks WHERE tenant_id=$1"
+                " AND trade_doc_id = ANY($2::bigint[])",
+                DEFAULT_TENANT, [r["id"] for r in rows],
+            )
+            check_by_doc = {
+                int(c["trade_doc_id"]): {
+                    "matches": bool(c["matches"]),
+                    "reason": c["reason"],
+                    "render_version_drift": bool(c["render_version_drift"]),
+                    "checked_at": (
+                        c["checked_at"].isoformat()
+                        if hasattr(c["checked_at"], "isoformat")
+                        else c["checked_at"]
+                    ),
+                }
+                for c in checks
+            }
+            for item in items:
+                item["render_check"] = check_by_doc.get(int(item["id"]))
     return {
         "items": items,
         "total": total, "page": page, "page_size": page_size,

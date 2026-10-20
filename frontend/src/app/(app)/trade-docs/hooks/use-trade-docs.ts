@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import apiClient from "@/lib/api/client";
 import { customerRecordsKeys } from "@/lib/customer/use-customer-records";
+import type { RenderCheckSummary } from "@/lib/trade-doc/render-check";
 
 // 只引**类型**（编译期擦除，不产生 hook ↔ 组件的运行时依赖环）：
 // 指纹形状的定义真源在 `doc-preview.tsx` 的 `RenderFingerprintMeta`。
@@ -47,6 +48,11 @@ export interface TradeDocRow {
   } | null;
   /** 单证号当前是否可改（同一链条上没有更晚单证） */
   doc_no_editable?: boolean;
+  /**
+   * 最近一次**定时对账**结论（TODO A8/A9）：`null` = 从未对账（不冒充"没问题"）。
+   * 列表端点 join `trade_doc_render_checks` 后挂上来，仅用于展示"已变更"标识。
+   */
+  render_check?: RenderCheckSummary | null;
   created_at: string | null;
 }
 

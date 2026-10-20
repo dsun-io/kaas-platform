@@ -82,9 +82,12 @@ kaas-preview-storage；KV = `KAAS_PREVIEW`；Workers = `kaas`。
 ## 5. 发布检查单（迁移自旧交接 §7，**待用户下令**）
 
 1. 迁移：`DATABASE_URL=<PROD_DATABASE_URL> uv run --extra migrations alembic upgrade head`
-   → 期望 head `202610190020`（幂等）。
+   → 期望 head **`202610200002`**（本分支新增 `202610200001` 内容版本表、`202610200002` 对账表；
+   两者都是**新增表**，幂等执行，不改既有列）。
 2. 补 secret：`cd backend/worker; npx wrangler secret put RESEND_API_KEY --name kaas`
-   （key 在 `.env.local`；版本管理未部署状态下普通 put 会被拦，须与部署同窗口或 `versions secret put`）。
+   （值取本机 `.env.local` 的 **`RESEND_API_KEY_PROD`** —— 生产专用 key，2026-10-20 用户提供；
+   本地开发继续用 `RESEND_API_KEY`，预览**不配**发信。版本管理未部署状态下普通 put 会被拦，
+   须与部署同窗口或 `versions secret put`）。
    同窗口可顺带（需单独批准）：S3 新密钥替换 + `npx wrangler hyperdrive update f53fed49… --caching-disabled`。
 3. 构建：`cd frontend; $env:NEXT_EXPORT="1"; pnpm build` → `out/` 267 文件。
 4. 部署：`cd backend/worker; npx pywrangler deploy`（或 GitHub `deploy.yml` workflow_dispatch）。

@@ -15,6 +15,26 @@
 > [`HANDOVER_2026-10-20_FINAL.md`](./HANDOVER_2026-10-20_FINAL.md)**（状态/资源清单/踩坑/发布检查单/待办）。
 > 本文件继续只做"问题状态"滚动口径。
 >
+> **（2026-10-20 · A8/A9 落地：指纹对账定时调度 + 列表「已变更」标识；顺手修线上列表 500）**
+>
+> 同一分支 `feat/trade-doc-content-a` 继续推进（用户指示"按序推进 A8/A9/A2"）：
+> ① **定时调度（A9）**：CF Cron `40 17 * * *`（UTC 17:40 = 上海次日 01:40）→
+> `ws_cron.run_check_render_fingerprints` 扫近 30 天 issued（上限 50）逐张对账；新表
+> `trade_doc_render_checks`（迁移 `202610200002`，tenant+doc 唯一、覆盖写）；判定全用共享内核，
+> 每张独立 try（装配失败标 `current_unavailable`，不假报一致）。原「测试钉死无定时调度」的
+> 断言已同步改为**三 cron**（wrangler.jsonc 三值逐字符锁死）。
+> ② **列表标识（A8 标识部分）**：`GET /api/v1/trade-docs` 每行挂 `render_check`（`null`=从未对账）；
+> 前端「已变更」（data_changed 红）/「模板已更新」（version_drift 黄）/「待复核」（装配失败黄），
+> 一致与无基线不显示。A8 的「端到端真实跑一次」需已部署环境，挂发布后 P4。
+> ③ **顺手修线上 bug**：列表端点 `item = _row_to_dict(r, "trade_docs")` 参数不匹配（main 里该函数
+> 只收 1 参）⇒ **`GET /api/v1/trade-docs` 运行期必 500**；改为 `row_to_dict(r, "trade_docs")`，
+> 并由新测试 `test_trade_doc_render_check_list.py` 锁死（此前无测试覆盖真实后端列表）。
+> ④ **密钥分层（用户裁决）**：生产 Resend key（用户命名 `kaas-生产`）已提供，只存本机 gitignored
+> `.env.local` 的 `RESEND_API_KEY_PROD`（**不落仓库**）；本地继续用 `RESEND_API_KEY`；预览不配发信。
+> 证据：worker **982 passed + 5 skipped** / orchestrator **247** / frontend typecheck 0 · vitest **474** ·
+> lint 0 error · contracts R0–R6 PASS · schema-coverage/drift/runtime-deps PASS · alembic 单 head
+> `202610200002`。
+>
 > **（2026-10-20 · 单证内容专项开工：A1 内容级版本 + A3 字段体检已落地，分支 `feat/trade-doc-content-a`）**
 >
 > 用户指示「设置 goal 直接做、在分支上、不要和 UI 任务冲突」⇒ 独立 worktree 施工（分支

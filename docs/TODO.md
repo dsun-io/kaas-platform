@@ -22,8 +22,8 @@
 | A5 | 单证**编辑体验** | CI/PL 等长单据填写效率：行项批量编辑、常用条款/备注模板、金额联动校验；施工前先与用户过一遍方案 | 方案需用户过目 | 🧭 |
 | A6 | 模板**逐字段对照真实单据** | 以实际出口单据（PI/CI/PL/提单确认件…）逐字段对照模板措辞/栏目/条款并修正差异。用户即真实用户，这是单证内容验收的最终标准 | 用户提供样例单据 | 🧭 |
 | A7 | 单证加固 P1/P2（原 I-2） | 事实层（fact model）+ 跨单证一致性引擎（全局等价词表 + 租户增量，仅 internal 可改）+ 收款容差（每币种 max(5 美分等值, 0.1%)）+ `not_by_us` 回执登记（expected→received，`trade_doc_receipts`/`trade_doc_doc_set` 两表）+ 导出后自检（默认阻断、可配置越过但落审计）。**5 项口径已拍板**（`UNCERTAIN.md` #17，2026-10-17）；设计文档 = `archive/2026-10-20-closeout/TRADE_DOC_HARDENING_PLAN_2026-10-12.md` | 无（口径已定，可直接施工） | ⏳ |
-| A8 | PDF 归档尾巴（原 I-4） | 端到端跑通一次 / 定时调度 /「已变更」标识 | 无 | ⏳ |
-| A9 | 单证指纹批量对账**定时调度**（原 I-6） | 现状被测试钉死"无定时调度"，接线时需同步改测试 | 无 | ⏳ |
+| A8 | PDF 归档尾巴（原 I-4） | 端到端跑通一次 / 定时调度 /「已变更」标识。**②③ 已落地**（定时调度与 A9 共用一套机制；列表页「已变更/模板已更新/待复核」标识）；**① 端到端真实跑一次**需已部署环境（浏览器渲染 PDF 依赖生产 binding）⇒ 归入发布后 P4 观察期验证 | 无 | ✅（2026-10-20，②③；① 挂发布后验证） |
+| A9 | 单证指纹批量对账**定时调度**（原 I-6） | ✅ cron 每日 `40 17 * * *`（UTC 17:40 = 上海次日 01:40）扫近 30 天 issued 单据（上限 50）逐张对账，结论 upsert 进新表 `trade_doc_render_checks`（迁移 `202610200002`）；列表端点挂 `render_check`；原「测试钉死无定时调度」的断言已同步改为三 cron；**顺手修出一个线上 bug**：`GET /trade-docs` 列表调 `_row_to_dict(r,"trade_docs")` 参数不匹配 ⇒ 运行期 500（已修 + 回归测试） | 无 | ✅（2026-10-20） |
 
 ## B. 产品配置化（原 I-7 主项）
 
@@ -48,7 +48,7 @@
 
 | # | 待办 | 说明 | 状态 |
 |---|---|---|---|
-| D1 | 生产 worker 注入 `RESEND_API_KEY` | 否则生产「忘记密码」邮件**静默不发**（实测生产 secrets 只有 4 个，缺此项）。key 已备于本机 `.env.local`（gitignored）；`cd backend/worker; npx wrangler secret put RESEND_API_KEY --name kaas`；发件地址 `RESET_FROM_EMAIL` 默认 `noreply@send.powervoy.com`（已验证域名 send.powervoy.com，key 已实测真实发信 200） | ⏳ |
+| D1 | 生产 worker 注入 `RESEND_API_KEY` | 否则生产「忘记密码」邮件**静默不发**（实测生产 secrets 只有 4 个，缺此项）。**key 分层（2026-10-20 用户裁决）**：生产专用 key（用户命名 `kaas-生产`）已提供，存本机 gitignored `.env.local` 的 **`RESEND_API_KEY_PROD`**（不落仓库）；本地开发继续用 `RESEND_API_KEY`（旧 key，暂存同文件）；预览**不配**（防 PR 分支代码用生产身份发信；如需预览验收发信再单独建 `kaas-preview`）。发布窗口：`wrangler secret put RESEND_API_KEY --name kaas`（值取 `RESEND_API_KEY_PROD`）；发件地址 `RESET_FROM_EMAIL` 默认 `noreply@send.powervoy.com` | ⏳ |
 | D2 | R2 新密钥替换 | 旧 keys 发布前继续有效；发布窗口替换（`wrangler secret put` 与部署同窗口）；发布后用户在 R2 dashboard 删旧 token | ⏳ |
 | D3 | Hyperdrive 生产缓存关闭（可选） | 预览 config 已 `caching.disabled=True`；生产是否同改**需单独批准**（现状保持开启） | 🧭 |
 | D4 | 生产测试数据清理 | 含流失拒绝文件历史；**执行当次需用户确认** | 🧭 |
