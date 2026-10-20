@@ -146,7 +146,10 @@ git status --short                       # 自证：自家路径干净，别人�
 `next dev` 也读写同一目录 ⇒ 客户端分块变 500（`Cannot find module './xxxx.js'`）⇒
 **不 hydration ⇒ MSW 不运行 ⇒ 零请求 ⇒ 页面全白** ⇒ **e2e 那一轮数字全部作废**（不是产品信号）。
 
-- **构建/导出 与 e2e 不能同时跑**；跑 e2e 前先确认 `/_next/static/chunks/main-app.js` 返回 200。
+- **构建/导出 与 e2e 不能同时跑**；跑 e2e 前的分块探针（2026-10-20 更正）：Next 16 dev 走
+  Turbopack，**不再有** `/_next/static/chunks/main-app.js`（恒 404，旧探针是 Next 14 webpack 时代写法）。
+  等效口径：请求 `/login` 触发编译后，**把页面引用的全部 `/_next/*.js` chunk 逐一探测 200**（2026-10-20
+  实测 25/25），或直接依赖 playwright webServer 的就绪探测；不满足 ⇒ hydration 前提不成立，e2e 数字作废。
 - **构建门的数字只在工作区静止时作数**（`NEXT_DIST_DIR` 只隔离产物目录，**不隔离源码并发写**）。
 
 ## 5. 测量纪律（本项目已因此错过多次）
