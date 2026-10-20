@@ -4704,3 +4704,6 @@ import tax_archives  # noqa: E402,F401
 # 注意：ws_cron 在「文件末尾」import，是 sibling 路由模块的同一挂载约定；scheduled
 # 方法体内是调用期引用，不受 import 顺序影响。
 import ws_cron  # noqa: E402,F401
+
+# [chore/ci-preview-probe] 2026-10-20 触发首个真实 PR 预览流水线验证（验证完删除此分支）
+
