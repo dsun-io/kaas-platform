@@ -10,6 +10,14 @@ name: preview
 # 任一失败即中止。
 
 on:
+  # 手动触发：用 CI 工具链部署一个演示预览（2026-10-20 新增；本机 pyodide 工具链打出的包
+  # 会触发 1101/1102 资源限额崩溃，需 CI 版对照验证——见 PROBLEM_STATUS 交接摘要）。
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "伪 PR 号（数字，用于派生 slug/分支名；演示用）"
+        required: true
+        type: string
   pull_request:
     types: [opened, synchronize, reopened, closed]
     # 只有会影响部署产物的变更才触发预览部署（文档/归档不动资源、不烧额度）
@@ -29,11 +37,13 @@ permissions:
 
 # 同一 PR 串行；新推送取消旧的部署（但资源回收并发安全：ensure/teardown 均幂等）
 concurrency:
-  group: preview-pr-${{ github.event.pull_request.number }}
+  group: preview-pr-${{ github.event.inputs.pr_number || github.event.pull_request.number }}
   cancel-in-progress: true
 
 env:
   PYTHONIOENCODING: utf-8
+  # 统一 PR 号口径：PR 事件取 event.pull_request.number，手动 dispatch 取 inputs.pr_number
+  PR_NUMBER: ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
   NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
   NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -62,7 +72,7 @@ jobs:
           S3_SECRET_KEY: ${{ secrets.S3_SECRET_KEY }}
           S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
           S3_BUCKET: ${{ vars.KAAS_PREVIEW_R2_BUCKET }}
-        run: python3 scripts/preview/teardown.py --pr "${{ github.event.pull_request.number }}"
+        run: python3 scripts/preview/teardown.py --pr "${{ env.PR_NUMBER }}"
 
   # ── PR 打开/同步：preflight → ensure → migrate → build → deploy → 评论 ──────
   preflight:
@@ -95,7 +105,7 @@ jobs:
           python-version: "3.12"
       - name: Ensure preview resources
         id: ensure
-        run: python3 scripts/preview/ensure.py --pr "${{ github.event.pull_request.number }}"
+        run: python3 scripts/preview/ensure.py --pr "${{ env.PR_NUMBER }}"
 
   migrate:
     if: github.event.action != 'closed'
@@ -182,7 +192,7 @@ jobs:
           PREVIEW_KV_NAMESPACE_ID: ${{ vars.KAAS_PREVIEW_KV_NAMESPACE_ID }}
         run: |
           python3 ../../scripts/preview/render-wrangler-config.py \
-            --slug "${{ github.event.pull_request.number }}" \
+            --slug "${{ env.PR_NUMBER }}" \
             --out wrangler.preview.jsonc
 
       - name: S5-d 防污染断言（部署前：渲染产物，失败即中止）
@@ -196,8 +206,8 @@ jobs:
         run: |
           python3 ../../scripts/preview/assert-bindings.py \
             --mode preview \
-            --script "kaas-preview-pr-${{ github.event.pull_request.number }}" \
-            --slug "${{ github.event.pull_request.number }}" \
+            --script "kaas-preview-pr-${{ env.PR_NUMBER }}" \
+            --slug "${{ env.PR_NUMBER }}" \
             --config wrangler.preview.jsonc \
             --pre-deploy
 
@@ -233,8 +243,8 @@ jobs:
         run: |
           python3 ../../scripts/preview/assert-bindings.py \
             --mode preview \
-            --script "kaas-preview-pr-${{ github.event.pull_request.number }}" \
-            --slug "${{ github.event.pull_request.number }}"
+            --script "kaas-preview-pr-${{ env.PR_NUMBER }}" \
+            --slug "${{ env.PR_NUMBER }}"
 
       - name: Smoke test（预览 /health 回显 pr_slug + 未鉴权 401）
         run: |
@@ -243,7 +253,7 @@ jobs:
           ok=0
           for i in $(seq 1 18); do
             body=$(curl -fsS --max-time 10 "$API/health" 2>/dev/null || true)
-            if printf '%s' "$body" | grep -q '"pr_slug":"${{ github.event.pull_request.number }}"'; then
+            if printf '%s' "$body" | grep -q '"pr_slug":"${{ env.PR_NUMBER }}"'; then
               echo "attempt $i: $body"; ok=1; break
             fi
             echo "attempt $i: not ready yet ($body)"
@@ -259,7 +269,8 @@ jobs:
           fi
 
   comment:
-    if: github.event.action != 'closed'
+    # 手动 dispatch（演示部署）没有 PR 可评论，跳过；PR 事件照常评论
+    if: github.event_name == 'pull_request'
     name: PR 评论预览 URL
     needs: [deploy]
     runs-on: ubuntu-latest
@@ -291,4 +302,4 @@ jobs:
             }
         env:
           PREVIEW_URL: ${{ needs.deploy.outputs.PREVIEW_URL }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ env.PR_NUMBER }}
