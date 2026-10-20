@@ -638,6 +638,9 @@ async def confirm_trade_doc_facts(
     `keys` 为空 = 确认全部未确认事实；给了具体 key 则只确认这些（未知 key ⇒ 422）。
     """
     d = await _doc_404(request, doc_id, user)
+    # C27b（用户 2026-10-21 拍板）：加固写端点限**团队管理员/internal**；
+    # 可见性 404 已先判（`_doc_404`），此处 403 `TEAM_ADMIN_REQUIRED`。
+    await _main._require_doc_issuer(request, user, d)
     _require_not_void(d)
     facts = await _facts_of(request, d, user)
     by_key = {fact.key: fact for fact in facts}
@@ -1080,6 +1083,8 @@ async def create_trade_doc_receipt(
     本文件不做第二套阈值。
     """
     d = await _doc_404(request, doc_id, user)
+    # C27b：登记收款属加固写操作 ⇒ 仅团队管理员/internal（可见性 404 先判）。
+    await _main._require_doc_issuer(request, user, d)
     _require_not_void(d)
     currency = (body.currency or d.get("currency") or "USD").upper()
     if currency not in CURRENCY:
@@ -1246,6 +1251,8 @@ async def put_trade_doc_doc_set(
     所以：**不在新清单里的行删除，仍在的保留回执状态**（doc_type 为天然主键）。
     """
     d = await _doc_404(request, doc_id, user)
+    # C27b：单证清单全量替换属加固写操作 ⇒ 仅团队管理员/internal。
+    await _main._require_doc_issuer(request, user, d)
     _require_not_void(d)
 
     seen: set[str] = set()
@@ -1310,7 +1317,9 @@ async def record_doc_set_receipt(
 
     非法转移（已 received 又 waive、已 waived 又 receive）⇒ 409，不静默覆盖。
     """
-    await _doc_404(request, doc_id, user)
+    d = await _doc_404(request, doc_id, user)
+    # C27b：回执登记（receive/waive）属加固写操作 ⇒ 仅团队管理员/internal。
+    await _main._require_doc_issuer(request, user, d)
     action = (body.action or "").strip().lower()
     if action not in ("receive", "waive"):
         raise _error(422, INVALID_ENUM,
@@ -1376,6 +1385,8 @@ async def verify_trade_doc_export(
     PDF 的文本抽取与图片计数由前端做（后端零图像库，见方案 §F 的实现对照）。
     """
     d = await _doc_404(request, doc_id, user)
+    # C27b：导出后自检（含 allow_override 放行）属加固写操作 ⇒ 仅团队管理员/internal。
+    await _main._require_doc_issuer(request, user, d)
 
     pdf_text = _squash(body.pdf_text)
     missing_texts = [
