@@ -70,7 +70,7 @@
 
 | # | 待办 | 内容 | 前置 | 状态 |
 |---|---|---|---|---|
-| C1 | 「流失」拒绝文件链路 | 订单阶段新增 `lost`，拒绝文件链路迁订单阶段 | 🧭 业务设计 + 用户拍板 | 🧭 |
+| C1 | 「流失」拒绝文件链路 | 订单阶段新增 `lost`，拒绝文件链路迁订单阶段 | **用户 2026-10-21 授权默认：不做** | ✅（不做） |
 | C2 | 文件存储收尾 | ✅ 2026-10-21：`doUpload`/排序改错误文案透出后端可执行原因 + **16 条页面级测试**（直传/回退/configured=false/register 失败不回退；排序顺序/PATCH body/422 越界）；**7 条真 PG 集成用例**（部分唯一索引/跨租户/bytea 往返/公章约束；无库 skip，有库 1245/0）。尾巴：公章 PI **视觉 QA** 需人工打印复核（并入 C10 视觉尾巴）、D2 R2 新密钥后直传路径再验 | D2/视觉 | ✅（视觉尾巴） |
 | C5 | 本地 mock 刷新丢数据 | ✅ 2026-10-21：`mocks/persistence.ts` 版本化键 `kaas-mock-v1:<集合>`（47 集合、只持久化被写操作碰过的集合、`?mock_reset=1` 重置、SSR/隐私模式 no-op、e2e 默认种子确定性）；字节类不落盘（避免 5MB 配额） | — | ✅ |
 | C6 | e2e 数据层不稳根治 | ✅ 2026-10-21 收口（根因逐项治理，非"数字变好"）：①**误报源**：MSW 长尾未覆盖时请求直连网络/500 → 兜底路由掩盖（现覆盖 **0 缺口**，`mocks:check` 门禁）；②**数据不确定**：mock store 改 localStorage 持久化后补"e2e 默认种子 + 新 context 空 storage + `?mock_reset=1`"三保险；③**环境争用**：playwright 已固定 workers=2、NO_PROXY、mock baseURL 指回页面源、`NODE_OPTIONS=2048MB`；④**单测 flake**：xlsx 模板用例 `testTimeout` 15s 已放宽，全量默认并发本次 60 files/616 tests 22s 全绿。**已知限制**：本机多 agent 同时跑门禁时仍可能 worker OOM（资源争用，非产品信号）；CI 两核并发天然受限。**测量纪律**：任何 e2e/构建数字只在工作区静止时作数 | — | ✅ |
@@ -80,7 +80,7 @@
 | C10 | 18 模板签章区孤行 | ✅ 2026-10-21：`@media print` 加 `.keep-together { page-break-inside: avoid; break-inside: avoid; }`；18/18 模板**各恰好一个容器**包住「签章+公章+声明/紧邻条款/备注+页脚」，**正文长表格在容器外**（可跨页）；39 条静态断言 + 18 份 HTML 基准有意重生成（`render.test.ts` 18/18 逐字节仍绿）。**尾巴**：归档 Python 镜像不同步（历史留档），`verify-trade-doc-fixtures.py` 自本项起只作历史对照（加 `--allow-divergence` 放行）；**视觉/分页验收待 build/e2e 与人工打印复核** | — | ✅（视觉待验） |
 | C11 | SSRF DNS rebinding 加固 | `kaas_common/net.py` 新增**可选**解析后校验：`is_safe_crawl_url(url, resolve=True, resolver=...)` / `next_redirect_url(..., resolve=True)`；默认 `resolve=False` 保持两端行为不变（worker/Pyodide 无 socket），具备 socket 的运行时逐个 IP 判私网/回环/链路本地/保留/组播 + 169.254.169.254 + IPv4-mapped；解析不到不额外阻断 | — | ✅ 2026-10-21（7 条测试 `test_net_ssrf_dns.py`） |
 | C12 | PDF 归档验收尾巴 | 真实 18 类单证端到端未跑、页面级接线仅 typecheck 保驾、按快照重出未做 | 随发布后 | ⏳ |
-| C13 | outreach/webhook 收紧 | `GET` 回调是否收紧到 `POST`（将来实现 inbound 回写必须去掉 GET） | 产品决策 | 🧭 |
+| C13 | outreach/webhook 收紧 | `GET` 回调是否收紧到 `POST`（将来实现 inbound 回写必须去掉 GET） | **用户 2026-10-21 授权默认：不做/保持现状**（webhook 仍 501 预留） | ✅（不做） |
 | C14 | `product_tax_rates` 生产数据 | 生产 0 条则批量报价不放行 | 发布窗口 | ⏳（D 组同批） |
 | C15 | PROBLEM_STATUS 2026-10-12「待排期 5 项」复核 | ①openapi 重生成 ~~作废~~（R6 已退役）；②`POST /admin/feature_flag` 请求体形状无门禁 → **不构成缺陷**（`body: dict` 刻意兼容"后端格式/前端格式"两种，前端已接线；R5 只比响应键集是既定取舍）；③契约错位 **已修**（`ExportProduct.params` 改为二维数组 + 补 `metric_count/invariant_count`；`ProductFormulasResponse.pricing_key[].ui_unit/ui_scale` 改 `.optional()`，类型与运行时一致）；④PATCH stage 409 ~~已过时~~（2026-10-18 口径：客户阶段只有 active/inactive，"流失"移订单，后端不再返 409）；⑤R2 密钥长度已并入 D2 | — | ✅ 2026-10-21 逐条判定完毕（③修，其余复核为过时/不修） |
 | C16 | UNCERTAIN #15 ①②③ | ①旧进度报告/Spec System 报告：全仓无此文件 → **销项**；②归档口径维持「移动」；③不引链接检查工具，用一次性脚本校验（2026-10-21 已实测 11 份文件相对链接全通过） | — | ✅ 2026-10-21 关闭（UNCERTAIN #15 已标收尾裁决） |
@@ -97,12 +97,12 @@
 
 | # | 待办 | 现状/风险 | 状态 |
 |---|---|---|---|
-| D1 | 生产注入 `RESEND_API_KEY` | ✅ **2026-10-21 已完成**：用户提供 key，已 `wrangler secret put RESEND_API_KEY --name kaas`（secret list 5 项确认）；key 为**仅发送权限**（`/domains` 401 属预期，`/emails` 可用）⇒ 忘记密码邮件链路恢复。旧状态（保留追溯）：**发布已上线但仍未注入**（2026-10-21 部署后实测 secrets = `ADMIN_SETUP_TOKEN`/`JWT_SECRET`/`S3_ACCESS_KEY`/`S3_SECRET_KEY`）⇒ **忘记密码邮件仍静默不发**。为**用户动作**：值取 repo secret `RESEND_API_KEY_PROD`，在 Cloudflare Dashboard 或 `cd backend/worker; npx wrangler secret put RESEND_API_KEY --name kaas` 设置（无需重新部署） | ⏳ 待用户注入 |
+| D1 | 生产注入 `RESEND_API_KEY` | ✅ **2026-10-21 已完成**：已 `wrangler secret put RESEND_API_KEY --name kaas`（secret list 5 项确认）；生产用**仅发送权限** key（最小权限；用户另提供了全权限 key 供运维，未写入 worker）；key 验证：全权限 key `/domains` 200（`send.powervoy.com` verified），发送 key `/domains` 401 属预期 ⇒ 忘记密码邮件链路恢复 | — | ✅ |
 | D2 | R2 新密钥替换 | ✅ **2026-10-21 已完成**：用户提供 R2 S3 凭据（Access Key 32 位 + Secret），已 `wrangler secret put S3_ACCESS_KEY/S3_SECRET_KEY --name kaas`（secret list 确认）；**真回环验证**：用新凭据对 `kaas-files` 做 presigned PUT/GET/DELETE = 200/200/204（测试对象 `_ops/selftest-*` 已删）。生产直传恢复，不再只走兜底；旧 token 可由用户随时在 R2 控制台吊销 | — | ✅ |
 | D3 | Hyperdrive 生产缓存关闭（可选） | **用户已授权按推荐默认：保持开启**（2026-10-21）。预览仍 `caching.disabled=True` | ✅（默认保持） |
 | D4 | 生产测试数据清理 | 发布已执行（2026-10-21），**清理未做**（需执行当次确认，用户尚未确认）；含流失拒绝文件历史 | 🧭 待当次确认 |
 | D5 | 仓库可见性 | ✅ **用户 2026-10-21 决定：保持 public、不做密钥轮换/改密**（安全批按用户口径收窄为"归档数据公开评估"）；已发现 `docs/archive/stowage_raw.json` 等含真实姓名/企业微信 userid/成本价（P1）；**2026-10-21 已按用户批准脱敏**（stowage 身份+228 个成本/售价/利润单元格、17 份样例单据的姓名/电话/邮箱） | — | ✅（按用户决定） |
-| D6 | 生产发布检查单 | ✅ **2026-10-21 已执行**（迁移 6 条 → 生产 `202610200005`；构建 out/275；pywrangler 部署版本 `dae596a5`；冒烟 5 项全过；回滚版本 `77901aa1`；记录见 HANDOVER §0.4）。**尾巴**：D1/D2 secrets 待用户；冷启动 `coldstart-baseline.json` 仍 PENDING（pywrangler Startup 3386ms > 2950 验收线，需 Dashboard p50）；P4 观察期从这里开始 | 🔨 主体完成（2 项尾巴） |
+| D6 | 生产发布检查单 | ✅ **2026-10-21 已执行 7 次**（迁移至 `202610200006`；构建 out/277；版本 `dae596a5`→`cd15e9a5`→`9d497628`→`3a5ce179`→`3d324441`→`569a8b88`→`69765ef6`；冒烟每次全过；回滚版本 `77901aa1`；记录见 HANDOVER §0.4）。**尾巴**：冷启动 `coldstart-baseline.json` 仍 PENDING（需 Dashboard p50）；P4 观察期进行中 | 🔨（冷启动 1 尾） |
 | D7 | preview ensure 对 Neon 423 重试 | ✅ 2026-10-21：`scripts/preview/preview_lib.py` 对 **423/429** 有限重试（指数退避 2/4/8/16s，上限 20s，`Retry-After` 优先，`PREVIEW_HTTP_RETRIES`/`PREVIEW_HTTP_BACKOFF` 可调；5xx 不重试避免重复创建）+ 5 条单测 `backend/worker/tests/test_preview_http_retry.py` | ✅ |
 
 ---
@@ -129,7 +129,7 @@
 | N5 | 文档口径收尾批 | PROBLEM_STATUS/UNCERTAIN/HANDOVER + UI 两份/PDF_ARCHIVAL/E2E/README/旧设计稿归档 | ✅ 2026-10-21 |
 | N6 | **安全 4 项（最后做）** | **用户 2026-10-21 决定：①口令轮换/②管理员改密/④filter-repo 均不做（仓库保持 public）**；③归档数据公开评估**已完成并脱敏**（`docs/archive/stowage_raw.json` 身份+成本/售价/利润 228 格；`archive/.../sample_docs/*` 姓名/电话/邮箱；公司名保留） | — | ✅（按用户口径） |
 | N7 | 分支/遗留清理 | convergence-aprime 打 tag 后删远端、删已合并分支、清 2 个 stash、POC 目录（`backend/worker/poc-*`） | ✅ 分支/stash；POC 目录 ⏳ |
-| N8 | A′（SQL/DDL 内核同源） | 原并行线遗留，是否重激活为在评方案 | 🧭 待拍板 |
+| N8 | A′（SQL/DDL 内核同源） | 原并行线遗留，是否重激活为在评方案 | **用户 2026-10-21 授权默认：不做**（保持现状） | ✅（不做） |
 
 ---
 
