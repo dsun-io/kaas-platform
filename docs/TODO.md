@@ -37,7 +37,7 @@
 | **A2-B** | **方案 B：模板迁服务端** | 让"不带预览 HTML 的第三方客户端"也能出 PDF（模板现在在前端，是结构性限制）。需先定模板渲染归属（服务端 HTML 模板 vs 前端产物回传） | 方案讨论；与 A4/A7 渲染层同一片 | 🧭 需用户定要不要做（成本高、收益=第三方客户端/自动化） |
 | A3 | 字段缺失可发现 | 渲染期 warning + 前端「缺失字段」标记 + 签发前清单 | — | ✅ 2026-10-20（`findBlankPlaceholders` + 预览状态栏；18 类模板无未登记占位符） |
 | A4 | 图片素材库 + 去 base64 | ✅ 2026-10-21（用户选 R2 直链方案）：新增 `kaas_common/files/token.py`（HMAC 短期令牌，TTL 900s，purpose+资源 id 绑定）；装配层 `resolve_photo_refs` / `_apply_default_seal` 改为**签名直链**（`/file-objects/{id}/render-content?t=`、`/company-seals/{id}/render-content?t=`），无密钥/取不到时回退原 data URI；渲染器白名单**未改**（本来就认 http(s)）；素材库=复用现有产品图库+公章库+picker（不新增表）。测试 +16（令牌 6 / 文件直链 6 / 公章直链 4） | G-4 已拍板 | ✅ |
-| A5 | 单证编辑体验 | CI/PL 行项批量编辑、条款/备注模板、金额联动校验 | **方案需用户过目**（§G-1） | 🧭 |
+| A5 | 单证编辑体验 | CI/PL 行项批量编辑、条款/备注模板、金额联动校验 | 方案稿已出：**[`TRADE_DOC_EDIT_PLAN.md`](./TRADE_DOC_EDIT_PLAN.md)**（W1 条款模板 2 天 / W3 金额摘要 0.5 天 / W2 行项批量 1.5 天 / A6 校准 0.5 天 ≈4.5 天；待拍板：条款库团队级 vs 租户级、是否预置 6 类默认模板、实施顺序）。**未施工**（等过目，§G-1） | 🧭 待过目 |
 | A6 | 模板逐字段对照真实单据 | 以真实 PI/CI/PL/提单确认件逐字段校准模板措辞/栏目/条款 | **需用户提供样例单据**（§G-2） | 🧭 |
 | A7 | 单证加固 P1/P2 | ✅ 2026-10-21 全部落地：①事实层+②一致性引擎内核（87 测）+ 事实表（迁移 `202610200004`）+ **10 个 Worker 端点**（34 测）+ **UI**（事实确认/一致性三档/收款/单证清单/签发闸门，面板 9 + 契约 12 测）。`confirm` 默认拦截未确认事实；`allow_lint_override` 未对前端开放。设计与 12 条裁决见 [`TRADE_DOC_HARDENING.md`](./TRADE_DOC_HARDENING.md)。尾巴：导出后自检 UI 需 PDF 文本抽取（C21） | — | ✅ |
 | A8 | PDF 归档尾巴 | ②③ 已完成（cron + 列表「已变更/模板已更新/待复核」标识）；①端到端真实跑一次 | ①需已部署环境 | ✅ ②③；①随发布后 P4 |
@@ -145,16 +145,17 @@
 | C25 | 列表分页 UI（UI T7） | ✅ 2026-10-21：共享 `PaginationBar`（第 a–b 条/共 N 条、末页按真实条数、钳位不显示越界页、一屏不渲染）；orders 新增 `use-orders-list`（真分页，不再拿 100/页下拉源当列表）；events/audit 页码独立 state、筛选变化回第 1 页；三端点契约 `{items,total,page,page_size}` 均无 has_more。尾巴已销账（C39 audit-log 筛选后端已补） | — | ✅ |
 | C26 | a11y 深水项 | ✅ 2026-10-21：外壳加「跳到主内容」skip-link（sr-only、focus 可见）+ `main#main tabIndex=-1`；RangeSelector 改 `radiogroup/aria-checked`（单选组语义，非 aria-pressed）；订单列配置最后一列 `aria-disabled` + 动作守卫（不再静默 no-op）；+3 组件测。**尾巴**：未做方向键 roving、全站无 axe 扫描 | — | ✅（点状） |
 | C27 | QA 越权审计 7 条留证 | `QA_TEST_ACCOUNTS.md:71-82` 有清单无执行结论；随发布后 P4 跑并留证 | 发布后 | ⏳ |
-| A10 | 模板扩展清单 | `TRADE_DOC_TEMPLATES.md:186-188`：SASO/COC、船公司证明、出口许可证、CIQ、受益人声明「待扩展」 | A6 | ⏳ |
+| A10 | 模板扩展清单 | ✅ 2026-10-21：`TRADE_DOC_TEMPLATES.md` 新增 §6.1「待扩展模板清单」——SASO/COC、船公司证明、出口许可证、CIQ、受益人声明，逐类给用途/关键字段/数据来源/优先级/A6 依赖（先做 beneficiary_decl + saso_coc），并修正旧架构指针。**模板本身未实现**（等 A6 真实样例校准，属设计依赖非欠账） | A6 样例 | ✅（清单已出） |
 | N9 | = C23 的决策记录（避免两处编号漂移） | 见 C23/§G-12 | — | — |
 | N10 | 事件流联通 `domain_events` | ⏸ **用户 2026-10-21 拍板：暂缓，等未来功能成熟稳定再实现**；设计承诺保留在 `WORKSTATION_DESIGN` 并已标注"未实现、有需求再做"，不再作为当前欠账 | — | ⏸ 暂缓 |
 | N11 | DEPLOY §0.4 清理脚本缺失 | ✅ 2026-10-21：新建 `scripts/cleanup_orphan_lead.py`（`.tools/` 被 gitignore，改放 tracked 的 scripts/；DEPLOY §0.4 命令同步改为该路径）；**默认 dry-run**、`--apply` 才删、只匹配 3 个 E2E 前缀、被 `outreach_messages`/`cust_inquiries` 引用的行跳过并列出、事务+`--limit`、`KAAS_DSN` 环境变量读 DSN）；本机空库 dry-run 实测 0 行/exit 0 | — | ✅ |
-| A14 | 包装类事实缺失（A12 的真落地前提） | 求值器已就绪，但 `extract_facts` 白名单**未抽包装信息**（如是否木包装）⇒ "无木包装不出声明" 只能得到 `TRIGGER_UNKNOWN_KEY` warning。需定：payload 里哪个字段表示包装（`custom.packaging`？`shipping_marks` 文本？）与枚举值；建议等 A6 真实样例确认字段后补内核抽取（可同时补"是否熏蒸/是否托盘"等） | A6 样例/字段口径 | ⏳ |\n| A11 | FACT_LABELS 未通过 API 返回 | ✅ 复核后**无需改**：`_fact_dict` 已逐条返回 `text_zh`/`text_en`（`ws_docs_hardening.py`），前端 `doc-facts-panel.tsx` 也按 `text_zh/text_en` 展示与编辑 ⇒ 全局 `FACT_LABELS` 只是内核兜底，不构成缺口 | — | ✅（复核销账） |
+| A14 | 包装类事实缺失（A12 的真落地前提） | 求值器已就绪，但 `extract_facts` 白名单**未抽包装信息**（如是否木包装）⇒ "无木包装不出声明" 只能得到 `TRIGGER_UNKNOWN_KEY` warning。需定：payload 里哪个字段表示包装（`custom.packaging`？`shipping_marks` 文本？）与枚举值；建议等 A6 真实样例确认字段后补内核抽取（可同时补"是否熏蒸/是否托盘"等） | A6 样例/字段口径 | ⏳ |
+| A11 | FACT_LABELS 未通过 API 返回 | ✅ 复核后**无需改**：`_fact_dict` 已逐条返回 `text_zh`/`text_en`（`ws_docs_hardening.py`），前端 `doc-facts-panel.tsx` 也按 `text_zh/text_en` 展示与编辑 ⇒ 全局 `FACT_LABELS` 只是内核兜底，不构成缺口 | — | ✅（复核销账） |
 | A12 | `trigger_expr` 只存不求值 | ✅ 2026-10-21：新增 `kaas_common/trade_doc/trigger.py`（纯 stdlib 三层解析，**无 eval/exec**；禁函数调用/属性/下标/算术；长度/记号/深度上限）；GET doc-set 追加 `applicable/trigger_error`（不删项、无法求值按适用），PUT 坏表达式 422 不落库，lint 只 warning；内核 68 + API 7 测，worker 1316+12skip。**边界（→A14）**：facts 白名单无包装类事实，"wood_packing" 会以 `TRIGGER_UNKNOWN_KEY` 警告而非生效 | A7 | ✅（求值器就绪） |
-| A13 | 翻译端点无入口 | `POST /trade-docs/{id}/translate` 已实现（`ws_docs_ext.py:518`）但前端 0 调用（仅在内容版本显示"AI 翻译"标签） | — | ⏳ |
+| A13 | 翻译端点无入口 | ✅ 2026-10-21：单证加固新增第 6 tab「中译英」——字段从模板 manifest 推导（只取含汉字 text 字段，不硬编码）；`path=template` 明示 AI 不可用/原样返回/请人工翻译（绝不冒充），非草稿明示未写回；+16 测 | — | ✅ |
 | C28 | 询盘「渠道」枚举不一致（P2: 按提示填必 422） | ✅ 2026-10-21：前端自由输入改为**枚举下拉**（`INQUIRY_CHANNEL_OPTIONS` 与后端 `INQUIRY_CHANNEL` 逐字一致，中文标签→枚举值），只发合法值；typecheck 0 | — | ✅ |
 | C29 | 「导入已有数据」是占位骨架却已挂页面 | ✅ 2026-10-21：已从「订单」「单证」两页移除入口按钮与弹窗（清理 state/import），组件保留并加注"后端批量导入接口就绪后再挂回"；**后端接口本身仍未实现**（实现时合并 C19 的导入 UI 决策） | C19 | ✅（入口已隐藏） |
-| C30 | `/admin/archive-logs` 恒空 + 前端 0 调用 | `main.py:3003-3008` return 空列表；CLEANUP_LOG 说归档策略待确认 | — | ⏳ |
+| C30 | `/admin/archive-logs` 恒空 + 前端 0 调用 | ✅ 2026-10-21：端点由占位空列表改为真查询 `events_archive_log`（page/page_size/month、参数化、ORDER BY archived_at DESC；**不加租户过滤**以保留 `tenant_id='*'` 写入行）；管理台 gray-release 加归档记录卡片（三态 + 复用分页条）；后端 4 + 前端 3 测、真 PG 临时插行复验后精确删除。首次月度归档前为空属正常 | — | ✅ |
 | C31 | 仪表盘指标恒 0 且「更新中」占位未实现 | ✅ 2026-10-21：契约 status=placeholder ⇒ 仪表盘页改为「改版中」占位（说明原指标无数据/对业务无用，引导去各工位），不再把"没有数据"渲染成 0；旧 3 条测无意义指标的 e2e 替换为占位断言（2 条，实测 passed）；后端 `/dashboard/summary` 零采集源的根治留待新业务口径（N 组另议） | — | ✅ |
 | C32 | `/billing` 页面无入口 | ✅ 2026-10-21：侧栏底部账号弹窗加「升级订阅（即将上线）」→ `/billing`（桌面/移动共用）；权限口径与契约一致（`adminOnly:false / subscription:null`，页面本就对登录用户可达，**未加宽权限**）；页面仍是占位（不伪造计费），菜单如实标"即将上线" | — | ✅ |
 | C39 | `/admin/audit-log` 筛选参数被后端静默忽略 | ✅ 2026-10-21：后端补参数化 WHERE（`action`/`actor_id`/`resource_type` 精确匹配，`since/until` 日期含当天边界），limit/offset 占位符顺延；新增 4 条回归测试钉 SQL 形状与参数顺序（含无筛选时 SQL 不变、customer 403 且不查库） | — | ✅ |

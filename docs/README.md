@@ -60,6 +60,7 @@
 | [WORKSTATION_DESIGN.md](./WORKSTATION_DESIGN.md) | 工位能力网设计 |
 | [PRODUCT_CONFIG_TENANT_UNFINISHED.md](./PRODUCT_CONFIG_TENANT_UNFINISHED.md) | 租户级产品配置化（**B1/B3 已于 2026-10-21 收口**；本文保留实现/验收记录） |
 | [TRADE_DOC_TEMPLATES.md](./TRADE_DOC_TEMPLATES.md) | 单证模板规范 |
+| [TRADE_DOC_EDIT_PLAN.md](./TRADE_DOC_EDIT_PLAN.md) | **单证编辑体验升级 A5 方案稿**（条款模板/行项批量/金额摘要；待用户过目） |
 | [TRADE_DOC_HARDENING.md](./TRADE_DOC_HARDENING.md) | **单证加固 A7 已完成设计 + 验收记录**（事实层/一致性引擎/回执/导出自检；含 12 条实现裁决与 §6 验收结果） |
 | [TRADE_DOC_PDF_ARCHIVAL.md](./TRADE_DOC_PDF_ARCHIVAL.md) | 单证 PDF 留档与对账（过程记录；现状见文首横幅与 `TODO.md` A2-B/C12） |
 
