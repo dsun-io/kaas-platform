@@ -76,7 +76,11 @@
 >    orchestrator 247 / worker 960+5 / 静态断言全 PASS（镜像过期按既定教训 sync-shared 修复）。
 >    **已配**：repo **variables** ×4（`KAAS_PREVIEW_KV_NAMESPACE_ID` / `KAAS_PREVIEW_R2_BUCKET` /
 >    `PROD_R2_BUCKET=kaas-files` / `PROD_HYPERDRIVE_ID=f53fed49…`，gh 代配）；五权限 CF token 已换
->    （`CLOUDFLARE_API_TOKEN` 2026-10-20 更新，preflight 四项 Account 权限断言兜着）。
+>    （`CLOUDFLARE_API_TOKEN` 2026-10-20 更新，preflight 四项 Account 权限断言兜着）；
+>    **预览 secrets 独立方案已落地（用户裁决 A）**：`JWT_SECRET`/`ADMIN_SETUP_TOKEN` 为预览专用的
+>    随机独立值（2026-10-20 入 repo secrets，生产值不受影响）⇒ **预览站登录可用**；
+>    预览桶专用 S3 token 无 API（实测 404 No route），要开预览文件功能需 Dashboard 手动建
+>    （R2 → Manage R2 API Tokens → 限 `kaas-preview-storage`，可选）；RESEND 预览按方案跳过。
 >    **待首次真实 PR 验证**：preview.yml 端到端（CF token preflight 是首道关）；预览 worker secrets
 >    （JWT_SECRET 等）repo secrets 有则注入、无则告警不阻塞——预览登录体验取决于此（要不要补进
 >    repo secrets 待用户拍板）。生产桶仍 `kaas-files`，改名 `kaas-prod-storage` 另立项（不动 S5）。
