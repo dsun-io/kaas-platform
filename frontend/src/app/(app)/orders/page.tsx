@@ -56,6 +56,17 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: "已取消",
 };
 
+const ORDER_COLUMNS = [
+  { key: "order_no", label: "订单号" },
+  { key: "customer", label: "客户" },
+  { key: "status", label: "状态" },
+  { key: "amount", label: "金额" },
+  { key: "incoterm", label: "贸易术语" },
+  { key: "payment_terms", label: "付款方式" },
+  { key: "destination", label: "目的港" },
+] as const;
+type OrderColumnKey = (typeof ORDER_COLUMNS)[number]["key"];
+
 export default function OrdersPage() {
   usePageView({ resource_id: "/orders" });
   const qc = useQueryClient();
@@ -67,6 +78,10 @@ export default function OrdersPage() {
   const [density, setDensity] = usePersistentState<"cozy" | "compact">(
     "ui:orders:density",
     "cozy",
+  );
+  const [visibleCols, setVisibleCols] = usePersistentState<OrderColumnKey[]>(
+    "ui:orders:columns",
+    ORDER_COLUMNS.map((c) => c.key),
   );
 
   const selected = list.data?.find((o) => o.id === selectedId) ?? null;
@@ -161,27 +176,55 @@ export default function OrdersPage() {
       <SectionCard
         title="订单列表"
         action={
-          <div
-            className="flex items-center gap-1"
-            role="group"
-            aria-label="表格密度"
-          >
-            <Button
-              size="sm"
-              variant={density === "cozy" ? "secondary" : "ghost"}
-              onClick={() => setDensity("cozy")}
-              aria-pressed={density === "cozy"}
+          <div className="flex items-center gap-2">
+            <div
+              className="flex items-center gap-1"
+              role="group"
+              aria-label="表格密度"
             >
-              舒适
-            </Button>
-            <Button
-              size="sm"
-              variant={density === "compact" ? "secondary" : "ghost"}
-              onClick={() => setDensity("compact")}
-              aria-pressed={density === "compact"}
-            >
-              紧凑
-            </Button>
+              <Button
+                size="sm"
+                variant={density === "cozy" ? "secondary" : "ghost"}
+                onClick={() => setDensity("cozy")}
+                aria-pressed={density === "cozy"}
+              >
+                舒适
+              </Button>
+              <Button
+                size="sm"
+                variant={density === "compact" ? "secondary" : "ghost"}
+                onClick={() => setDensity("compact")}
+                aria-pressed={density === "compact"}
+              >
+                紧凑
+              </Button>
+            </div>
+            <details className="relative">
+              <summary className="cursor-pointer list-none rounded-md border px-2 py-1.5 text-xs hover:bg-muted">
+                列配置
+              </summary>
+              <div className="absolute right-0 z-20 mt-1 w-44 rounded-lg border bg-white p-2 shadow-lg">
+                {ORDER_COLUMNS.map((c) => (
+                  <label
+                    key={c.key}
+                    className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs hover:bg-muted"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={visibleCols.includes(c.key)}
+                      onChange={() => {
+                        const next = visibleCols.includes(c.key)
+                          ? visibleCols.filter((k) => k !== c.key)
+                          : [...visibleCols, c.key];
+                        // 至少保留一列，避免表格变成空壳
+                        if (next.length > 0) setVisibleCols(next);
+                      }}
+                    />
+                    {c.label}
+                  </label>
+                ))}
+              </div>
+            </details>
           </div>
         }
       >
@@ -216,27 +259,13 @@ export default function OrdersPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
-                  <th scope="col" className="p-2">
-                    订单号
-                  </th>
-                  <th scope="col" className="p-2">
-                    客户
-                  </th>
-                  <th scope="col" className="p-2">
-                    状态
-                  </th>
-                  <th scope="col" className="p-2">
-                    金额
-                  </th>
-                  <th scope="col" className="p-2">
-                    贸易术语
-                  </th>
-                  <th scope="col" className="p-2">
-                    付款方式
-                  </th>
-                  <th scope="col" className="p-2">
-                    目的港
-                  </th>
+                  {ORDER_COLUMNS.filter((c) => visibleCols.includes(c.key)).map(
+                    (c) => (
+                      <th key={c.key} scope="col" className="p-2">
+                        {c.label}
+                      </th>
+                    ),
+                  )}
                   <th scope="col" className="p-2" />
                 </tr>
               </thead>
@@ -246,35 +275,51 @@ export default function OrdersPage() {
                     key={o.id}
                     className="border-b last:border-0 hover:bg-muted/40"
                   >
-                    <td className="p-2 font-medium">{o.order_no}</td>
-                    <td className="p-2">{o.customer_name ?? "—"}</td>
-                    <td className="p-2">
-                      <StatusBadge tone={STATUS_TONE[o.status] ?? "default"}>
-                        {STATUS_LABEL[o.status] ?? o.status}
-                      </StatusBadge>
-                    </td>
-                    <td className="p-2">
-                      {o.total_amount === null
-                        ? "—"
-                        : `${o.currency} ${o.total_amount.toLocaleString(
-                            "en-US",
-                            {
-                              minimumFractionDigits: 2,
-                            },
-                          )}`}
-                    </td>
-                    <td className="p-2">
-                      {o.incoterm || <span className="text-warning">未填</span>}
-                    </td>
-                    <td
-                      className="p-2 max-w-[220px] truncate"
-                      title={o.payment_terms ?? ""}
-                    >
-                      {o.payment_terms || (
-                        <span className="text-warning">未填</span>
-                      )}
-                    </td>
-                    <td className="p-2">{o.port_of_destination || "—"}</td>
+                    {visibleCols.includes("order_no") && (
+                      <td className="p-2 font-medium">{o.order_no}</td>
+                    )}
+                    {visibleCols.includes("customer") && (
+                      <td className="p-2">{o.customer_name ?? "—"}</td>
+                    )}
+                    {visibleCols.includes("status") && (
+                      <td className="p-2">
+                        <StatusBadge tone={STATUS_TONE[o.status] ?? "default"}>
+                          {STATUS_LABEL[o.status] ?? o.status}
+                        </StatusBadge>
+                      </td>
+                    )}
+                    {visibleCols.includes("amount") && (
+                      <td className="p-2">
+                        {o.total_amount === null
+                          ? "—"
+                          : `${o.currency} ${o.total_amount.toLocaleString(
+                              "en-US",
+                              {
+                                minimumFractionDigits: 2,
+                              },
+                            )}`}
+                      </td>
+                    )}
+                    {visibleCols.includes("incoterm") && (
+                      <td className="p-2">
+                        {o.incoterm || (
+                          <span className="text-warning">未填</span>
+                        )}
+                      </td>
+                    )}
+                    {visibleCols.includes("payment_terms") && (
+                      <td
+                        className="p-2 max-w-[220px] truncate"
+                        title={o.payment_terms ?? ""}
+                      >
+                        {o.payment_terms || (
+                          <span className="text-warning">未填</span>
+                        )}
+                      </td>
+                    )}
+                    {visibleCols.includes("destination") && (
+                      <td className="p-2">{o.port_of_destination || "—"}</td>
+                    )}
                     <td className="p-2">
                       <Button
                         size="sm"
