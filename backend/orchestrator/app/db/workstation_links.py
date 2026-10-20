@@ -467,3 +467,50 @@ class TradeDocDocSetItem(Base):
     __table_args__ = (
         Index("uq_trade_doc_doc_set_item", "tenant_id", "trade_doc_id", "doc_type", unique=True),
     )
+
+
+class TradeDocFact(Base):
+    """单证事实（P1 · HARDENING_PLAN §A 事实层，迁移 202610200004）。
+
+    「单证 payload 里的一坨字段」升级为**可追溯、有信任级、有不可改写属性**的事实：
+    - `trust`：confirmed / unverified / inferred —— issued 单证不允许存在非 confirmed 事实；
+    - `immutable`：基线事实（如 PI 的定金比例）派生单只能原值引用，改值 ⇒ FACT_IMMUTABLE；
+    - `text_zh`/`text_en`：双语成对（一句一事实，中英同一条记录）；
+    - `source` + `evidence_ref`：值从哪来（pi/上游单证/手工/AI 建议/推断），可回溯。
+
+    金额额外落 `value_num`（Numeric）供容差比对；其余值落 `value_text`（规范化字符串）。
+    同一定义域内同一 `fact_key` 只允许一行（唯一索引）。
+    """
+    __tablename__ = "trade_doc_facts"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    # 事实挂在具体单证上；单证删除时事实一并回收（事实不是对外凭证）
+    trade_doc_id = Column(
+        BigInteger, ForeignKey("trade_docs.id", ondelete="CASCADE"), nullable=False,
+    )
+    doc_type = Column(Text, nullable=False)
+    doc_no = Column(Text, nullable=True)
+    fact_key = Column(Text, nullable=False)
+    value_text = Column(Text, nullable=True)
+    value_num = Column(Numeric(20, 6), nullable=True)
+    currency = Column(Text, nullable=True)
+    text_zh = Column(Text, nullable=True)
+    text_en = Column(Text, nullable=True)
+    source = Column(Text, nullable=False, default="manual")
+    trust = Column(Text, nullable=False, default="unverified")
+    immutable = Column(Boolean, nullable=False, default=False)
+    confirmed_by = Column(Text, nullable=True)
+    confirmed_at = Column(DateTime(timezone=True), nullable=True)
+    evidence_ref = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False,
+        server_default=func.now(), onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        Index("uq_trade_doc_fact", "tenant_id", "trade_doc_id", "fact_key", unique=True),
+        Index("idx_trade_doc_facts_doc", "tenant_id", "trade_doc_id"),
+        Index("idx_trade_doc_facts_key", "tenant_id", "fact_key"),
+    )
