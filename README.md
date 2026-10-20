@@ -10,7 +10,7 @@
 
 > 📌 **本文是主交接文档**（架构 / 环境隔离 / 双后端优化决策 / 开发与测试口径的唯一权威来源）。
 > 决策依据与取证出处见 [docs/PLAN_B_EVALUATION_2026-10-19.md](docs/PLAN_B_EVALUATION_2026-10-19.md)；
-> 执行入口见 [docs/MASTER_EXEC_PLAN_2026-10-19.md](docs/MASTER_EXEC_PLAN_2026-10-19.md)。
+> 执行入口见 [docs/MASTER_EXEC_PLAN_2026-10-19.md](docs/archive/2026-10-20-closeout/MASTER_EXEC_PLAN_2026-10-19.md)。
 
 ---
 
@@ -50,7 +50,9 @@
   TypeScript **6.0.3**；CI Node **22**（本地 Node 24）；`pnpm audit` **0 critical**
   （3 high 均为 dev-only：wrangler→sharp、shadcn→MCP SDK、micromatch→braces）。
   升级账本见 [docs/TECH_STACK_UPGRADE_2026-10-17.md](docs/TECH_STACK_UPGRADE_2026-10-17.md)；
-  本轮交接见 [docs/HANDOVER_2026-10-20.md](docs/HANDOVER_2026-10-20.md)。
+  **最新交接总入口**：[docs/HANDOVER_2026-10-20_FINAL.md](docs/HANDOVER_2026-10-20_FINAL.md)
+  （S5 预览交付/三环境现状/云资源清单/踩坑/发布检查单）。worker 依赖已由
+  `backend/worker/pylock.toml` 锁定（9/22 可稳组合，防"每次部署漂到当天最新依赖"）。
 
 ---
 
@@ -545,16 +547,15 @@ docker-compose.yml        本地基础设施 + 本地后端（worker local_run�
 **主交接文档：本文（架构 / 三环境隔离 / 方案 B 决策 / 冷启动 / 测试策略）**
 
 - [DEPLOY.md](DEPLOY.md) — 生产部署与运维速查
-- [docs/HANDOVER_2026-10-20.md](docs/HANDOVER_2026-10-20.md) — **2026-10-20 交接总入口**（本轮改动/回归证据/待你操作事项/发布检查单）
-- [docs/USER_ACTIONS_2026-10-19.md](docs/USER_ACTIONS_2026-10-19.md) — 需用户执行的操作（安全/业务/环境决策，含步骤与验证）
+- [docs/HANDOVER_2026-10-20_FINAL.md](docs/HANDOVER_2026-10-20_FINAL.md) — **2026-10-20 最终交接（当前总入口）**：S5 预览交付/三环境现状/云资源清单/踩坑/发布检查单/待办
 - [docs/ENV_VERIFICATION_2026-10-19.md](docs/ENV_VERIFICATION_2026-10-19.md) — 三环境核对与发布检查单
 - [docs/PLAN_B_EVALUATION_2026-10-19.md](docs/PLAN_B_EVALUATION_2026-10-19.md) — 方案 B 阶段一评估报告（四问取证，结论 B-可行）
-- [docs/MASTER_EXEC_PLAN_2026-10-19.md](docs/MASTER_EXEC_PLAN_2026-10-19.md) — 总执行清单（P1 迁库批次已随决策 1 废弃）
 - [docs/PROBLEM_STATUS_2026-10-11.md](docs/PROBLEM_STATUS_2026-10-11.md) — 问题状态滚动口径
 - [docs/SECURITY_AUDIT_2026-10-19.md](docs/SECURITY_AUDIT_2026-10-19.md) — 安全审查报告（危/高/中/低 + 三环境核对 + 需用户操作清单）
 - [docs/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md](docs/MIGRATION_DOWNGRADE_AUDIT_2026-10-19.md) — 迁移链 downgrade 审计（drop_table 精确 3 个）
 - [docs/S4_SINGLE_APP_PLAN_2026-10-19.md](docs/S4_SINGLE_APP_PLAN_2026-10-19.md) — S4 单应用收口设计（worker 为唯一运行时）
 - [docs/POC_WORKER_SQLALCHEMY_2026-10-19.md](docs/POC_WORKER_SQLALCHEMY_2026-10-19.md) — 路线 A 否决证据
+- [docs/UI_UX_OPTIMIZATION_2026-10-20.md](docs/UI_UX_OPTIMIZATION_2026-10-20.md) — 全系统 UI/UX 优化方案（并行线，落地中）
 - ~~[docs/PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md](docs/archive/2026-10-20-closeout/PROD_DB_OPTIMIZATION_PLAN_2026-10-19.md)~~ — **已废弃**（决策 1：放弃 PPg 回 Neon；2026-10-20 已归档）
 - ~~[docs/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md](docs/archive/2026-10-20-closeout/HANDOVER_2026-10-19_P1_PPG_MIGRATION.md)~~ — **已废弃**（决策 1：P1 迁库终止，历史保留；2026-10-20 已归档）
 - [docs/TAX_ARCHIVE_HANDOVER_EXECUTION_PLAN_2026-10-18.md](docs/TAX_ARCHIVE_HANDOVER_EXECUTION_PLAN_2026-10-18.md) — 税务改造
@@ -566,4 +567,4 @@ docker-compose.yml        本地基础设施 + 本地后端（worker local_run�
 
 ---
 
-**最后更新**：2026-10-20 收尾（待办清零：仓库转回 private（匿名 403）/ Neon Protected 付费不升级、预览脚本双保险校验替代 / 生产桶永久保留 `kaas-files`；过时文档归档 `docs/archive/2026-10-20-closeout/`；下一活跃节点 = 用户发布指令）
+**最后更新**：2026-10-20 深夜定稿（① **S5 预览环境全量交付并端到端验证**：PR 自动建库/部署/评论/回收，免审批；修复 3 个真 bug（含密码 output 被丢弃/预览选错库/预览缓存）；② **依赖钉版**：`backend/worker/pylock.toml` 入库；③ **云资源治理**：删 `kaas_v2_test`、`kaas_v2_test_records`、`pre-deploy-20261018-2150`、`kaas-ppg` Hyperdrive（均有备份/证据）；④ 生产桶永久保留 `kaas-files`；Neon Protected 付费不升级、预览脚本双保险替代；⑤ 过时文档归档 `docs/archive/2026-10-20-closeout/`（22 份）；⑥ 仓库当前 public（用户自转 private）；⑦ **下一活跃节点 = UI 任务收尾 → 用户预览验收 → 发布**（检查单见 `docs/HANDOVER_2026-10-20_FINAL.md` §5））
