@@ -74,7 +74,7 @@
 | C5 | 本地 mock 刷新丢数据 | MSW state 是模块内存态（`mocks/handlers.ts`），刷新即丢；缺持久化 | — | ⏳ |
 | C6 | e2e 数据层不稳根治 | 兜底路由掩盖缺口、无 per-test 重置；历史"假红/整轮数字作废"根因 | — | ⏳ |
 | C7 | Excel xlsx 上传闭环 | 上传侧现只收 CSV | — | ⏳ |
-| C8 | 四源计数端点 | `WORKSTATION_DESIGN.md:849`；代码仍占位（`chain.py` `demand_index=None`/`blank_index=None`） | — | ⏳ |
+| C8 | 四源计数端点 | ✅ 2026-10-21：`/leads` 与 `/leads/{id}` 的 `demand_index`/`blank_index` **真实回填**（`chain.py` 新增 `_lead_indices`：2 条参数化 SQL、无 N+1；需求量取 `intel_demand_index` 最新月份合计、地区归一化 + 国家别名兜底；已开发量=抓取+调研+触达(sent)+成交，成交按 F4 `stage∈order/shipment/completed` 或非 cancelled 订单链；无需求行 ⇒ 两字段仍 null 不拿 0 冒充）。**按设计不加独立端点/不改排序**（§6.8 只要求字段回填）。18 条测试 | — | ✅ 2026-10-21 |
 | C9 | 诊断端点收敛 | `_r2_debug` / `fx-rates/_debug` 暴露面收敛 | — | ✅ 2026-10-21 复核：两个端点**已有** `is_admin_role` 闸门（`ws_files.py` r2_debug / `ws_extras.py` fx_provider_debug，B0-6 收敛，普通用户 403），无需改动 |
 | C10 | 18 模板签章区孤行 | 末尾几块包 `break-inside: avoid`（会动全部 18 模板） | — | ⏳ |
 | C11 | SSRF DNS rebinding 加固 | `kaas_common/net.py` 新增**可选**解析后校验：`is_safe_crawl_url(url, resolve=True, resolver=...)` / `next_redirect_url(..., resolve=True)`；默认 `resolve=False` 保持两端行为不变（worker/Pyodide 无 socket），具备 socket 的运行时逐个 IP 判私网/回环/链路本地/保留/组播 + 169.254.169.254 + IPv4-mapped；解析不到不额外阻断 | — | ✅ 2026-10-21（7 条测试 `test_net_ssrf_dns.py`） |

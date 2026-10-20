@@ -18,6 +18,7 @@ import re
 import time
 import hashlib
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import List, Optional
 from urllib.parse import urljoin, urlparse
 
@@ -29,6 +30,11 @@ from main import app, _acquire, _get_current_user, DEFAULT_TENANT, _next_inquiry
 # jsonb 列解析的唯一真源在 dbjson.py（历史上本文件与 main.py 各存一份，
 # 且签名不一致，新增表时容易漏改）。调用处均传入表名，故此处直接别名。
 from dbjson import row_to_dict as _row_to_dict
+
+# 「已成交」的判定阶段（C8）：唯一真源是 F4 询盘状态机（inquiry_stage.py）。
+# 不把 cust_inquiries.status 当成交依据：迁移 202610180005 把 won/lost 都映射成
+# closed，closed 已不区分"成交"与"流失"。
+from inquiry_stage import STAGE_COMPLETED, STAGE_ORDER, STAGE_SHIPMENT
 
 RESEND_API_URL = "https://api.resend.com/emails"
 VAR_RE = re.compile(r"\{\{\s*(\w+)\s*\}\}")
@@ -1037,13 +1043,284 @@ async def leadgen_get_run(run_id: int, request: Request,
     return {**_row_to_dict(run, "leadgen_runs"), "leads": [dict(l) for l in leads]}
 
 
-def _row_to_lead(l: dict) -> dict:
+# ═══════════════════════════════════════════════════════════════════
+# C8 · 四源计数：需求量 / 已开发量 / 空白指数（WORKSTATION_DESIGN §6.8）
+# ═══════════════════════════════════════════════════════════════════
+#
+# 口径（2026-10-20 依据现库 schema 落地，**不改响应键**，只把占位换成真值）：
+#   已开发量 = 已抓取数（lead_candidates）+ 已调研数（research_products）
+#            + 已触达数（outreach_messages.status='sent'）
+#            + 已成交数（cust_inquiries 达到订单/发货/完结，或已关联非取消订单）
+#   空白指数 = 需求量（intel_demand_index.demand_index）− 已开发量
+#
+# 三个不能想当然的点：
+# 1. **已成交不能看 `status`**：2026-10-18 起询盘 status 只有 unquoted/quoted/closed，
+#    且迁移 202610180005 把历史 won/lost 都映射成 closed ⇒ closed 里既有成交也有流失。
+#    真源是 F4 的 `stage`（inquiry<quotation<order<shipment<completed，closed 终态）。
+#    但 closed 是"从任意非终态进入"的终态：一张已下单的询盘被人工关闭后 stage=closed，
+#    成交证据只剩订单链 ⇒ 所以**再叠加** `quote_orders.inquiry_id → orders.quote_id`
+#    存在非 cancelled 订单的判定（历史行 stage 回填也从不会到 order，这条能兜住老数据）。
+# 2. **地区维度以 lead_candidates.region 为准**，country 只做需求量兜底：
+#    - 开发量四源都按 lead.region 归属（research_products 优先用自己的 region，
+#      为空再回落到 source_ref 指向的 lead；outreach/cust_inquiries 一律 join lead）；
+#    - 需求量先按 intel_demand_index.region 匹配，匹配不到才按 country 兜底；
+#    - 归一化 = 去首尾空白 + 内部连续空白压一个 + casefold；再用 REGIONS 的
+#      code↔name 别名表把 "US-TX" / "Texas, USA" / "Texas" 归到同一 canonical key
+#      （否则 intel 用代码、线索用地名时永远对不上）；country 另有一张小别名表
+#      （US/USA/United States …）；
+#    - region 为空的行**不猜**：两个字段都返回 null（无地区就无法归属，不拿 0 顶替）。
+# 3. **需求量缺失 ≠ 0**：intel_demand_index 没该地区数据 ⇒ demand_index/blank_index
+#    都为 null（"数据未接入"语义）；有需求行才计算，且 blank 允许为负（已开发量超过
+#    需求量 = 过度覆盖，这是真实业务信号，不静默夹到 0）。
+#
+# 性能：列表按页批量算 —— **固定 2 条 SQL**（四源计数 1 条 UNION ALL + 需求量 1 条），
+# 不做"每个 lead 一次查询"的 N+1；所有值走参数（tenant=$1、地区键 ANY($n)、
+# 阶段 ANY($n)），不拼字符串。
+_DEALT_STAGES = (STAGE_ORDER, STAGE_SHIPMENT, STAGE_COMPLETED)
+
+# DB 侧地区键与 Python `_norm_region` 同口径：btrim + 内部空白折叠 + lower
+# （否则 "Texas,  USA" 这类多空格写法会与折叠后的参数键对不上）。
+# 四源已开发量：按 lead.region 分组（1 条 SQL，避免 4 次往返 / N+1）。
+_LEAD_DEVELOPED_SQL = """
+WITH captured AS (
+    SELECT lower(regexp_replace(btrim(COALESCE(region, '')), '[[:space:]]+', ' ', 'g')) AS k,
+           COUNT(*) AS n
+    FROM lead_candidates
+    WHERE tenant_id = $1
+      AND lower(regexp_replace(btrim(COALESCE(region, '')), '[[:space:]]+', ' ', 'g')) = ANY($2::text[])
+    GROUP BY 1
+), researched AS (
+    SELECT lower(regexp_replace(btrim(COALESCE(rp.region, lc.region, '')), '[[:space:]]+', ' ', 'g')) AS k,
+           COUNT(*) AS n
+    FROM research_products rp
+    LEFT JOIN lead_candidates lc
+           ON lc.tenant_id = rp.tenant_id AND lc.id = rp.source_ref
+    WHERE rp.tenant_id = $1
+      AND lower(regexp_replace(btrim(COALESCE(rp.region, lc.region, '')), '[[:space:]]+', ' ', 'g')) = ANY($2::text[])
+    GROUP BY 1
+), reached AS (
+    SELECT lower(regexp_replace(btrim(COALESCE(lc.region, '')), '[[:space:]]+', ' ', 'g')) AS k,
+           COUNT(*) AS n
+    FROM outreach_messages om
+    JOIN lead_candidates lc
+      ON lc.tenant_id = om.tenant_id AND lc.id = om.lead_id
+    WHERE om.tenant_id = $1
+      AND om.status = 'sent'
+      AND lower(regexp_replace(btrim(COALESCE(lc.region, '')), '[[:space:]]+', ' ', 'g')) = ANY($2::text[])
+    GROUP BY 1
+), dealt AS (
+    SELECT lower(regexp_replace(btrim(COALESCE(lc.region, '')), '[[:space:]]+', ' ', 'g')) AS k,
+           COUNT(DISTINCT ci.id) AS n
+    FROM cust_inquiries ci
+    JOIN lead_candidates lc
+      ON lc.tenant_id = ci.tenant_id AND lc.id = ci.lead_id
+    WHERE ci.tenant_id = $1
+      AND lower(regexp_replace(btrim(COALESCE(lc.region, '')), '[[:space:]]+', ' ', 'g')) = ANY($2::text[])
+      AND (
+          ci.stage = ANY($3::text[])
+          OR EXISTS (
+              SELECT 1 FROM quote_orders q
+              JOIN orders o
+                ON o.tenant_id = q.tenant_id AND o.quote_id = q.id
+              WHERE q.tenant_id = ci.tenant_id AND q.inquiry_id = ci.id
+                AND o.status IS DISTINCT FROM 'cancelled'
+          )
+      )
+    GROUP BY 1
+)
+SELECT 'captured' AS src, k, n FROM captured
+UNION ALL SELECT 'researched', k, n FROM researched
+UNION ALL SELECT 'reached', k, n FROM reached
+UNION ALL SELECT 'dealt', k, n FROM dealt
+"""
+
+# 需求量：取该租户命中地区/国家的全部候选行，月份选择与品类加总放在 Python
+# （SQL 保持"一条查询"，且 month 是 text，跨库比较交给调用方统一处理）。
+_LEAD_DEMAND_SQL = """
+SELECT lower(regexp_replace(btrim(COALESCE(region, '')), '[[:space:]]+', ' ', 'g')) AS rk,
+       lower(regexp_replace(btrim(COALESCE(country, '')), '[[:space:]]+', ' ', 'g')) AS ck,
+       COALESCE(month, '') AS month_key,
+       demand_index
+FROM intel_demand_index
+WHERE tenant_id = $1
+  AND demand_index IS NOT NULL
+  AND (
+      lower(regexp_replace(btrim(COALESCE(region, '')), '[[:space:]]+', ' ', 'g')) = ANY($2::text[])
+      OR lower(regexp_replace(btrim(COALESCE(country, '')), '[[:space:]]+', ' ', 'g')) = ANY($3::text[])
+  )
+"""
+
+
+def _norm_region(value) -> str:
+    """地区键归一化：去首尾空白 + 内部连续空白压一个 + casefold；空/None → ''。"""
+    if value is None:
+        return ""
+    return " ".join(str(value).split()).casefold()
+
+
+# REGIONS（本文件 :REGIONS）里的地区是 "US-TX" / "Texas, USA" 两种形态，
+# 线索池里两种都可能出现（country 列同理：ISO2 / 英文全称）。
+# 这里建 code↔name↔首段 的别名组；canonical key 取组内排序第一个（只用于内部归并，
+# 不对外暴露），保证"同一地区不同写法"的开发量/需求量落在同一个桶里。
+def _build_alias_index(groups) -> dict:
+    index: dict = {}
+    for group in groups:
+        normed = frozenset(k for k in (_norm_region(v) for v in group) if k)
+        for key in normed:
+            index[key] = normed
+    return index
+
+
+_REGION_GROUPS = tuple(
+    {r["code"], r["name"], r["name"].split(",")[0]} for r in REGIONS
+)
+_REGION_INDEX = _build_alias_index(_REGION_GROUPS)
+
+# country 别名（只覆盖演示/常见贸易国；未知值按原样作为 canonical key）。
+_COUNTRY_GROUPS = (
+    {"US", "USA", "United States", "United States of America"},
+    {"CA", "Canada"},
+    {"AU", "Australia"},
+    {"GB", "UK", "United Kingdom", "England"},
+    {"DE", "Germany"},
+    {"FR", "France"},
+    {"AE", "UAE", "United Arab Emirates"},
+    {"SA", "Saudi Arabia"},
+    {"ZA", "South Africa"},
+    {"BR", "Brazil"},
+    {"MX", "Mexico"},
+    {"CN", "China"},
+)
+_COUNTRY_INDEX = _build_alias_index(_COUNTRY_GROUPS)
+
+
+def _alias_group(index: dict, value) -> frozenset:
+    key = _norm_region(value)
+    if not key:
+        return frozenset()
+    return index.get(key, frozenset({key}))
+
+
+def _canonical(index: dict, value) -> str:
+    """把地区/国家写法归到同一 canonical key；认不出就用自己的归一化值。"""
+    key = _norm_region(value)
+    group = index.get(key)
+    return sorted(group)[0] if group else key
+
+
+def _region_key(lead) -> str:
+    """lead 的地区 canonical key；无 region → ''（不参与归属）。"""
+    return _canonical(_REGION_INDEX, lead.get("region"))
+
+
+def _cell(row, key: str, default=None):
+    """asyncpg Record 无 .get()，dict 有 —— 两种都收（同 inquiry_stage._get 风格）。"""
+    if row is None:
+        return default
+    if hasattr(row, "get"):
+        return row.get(key, default)
+    try:
+        return row[key]
+    except (KeyError, IndexError):
+        return default
+
+
+def _latest_month_demand(rows) -> Optional[Decimal]:
+    """同地区多行（月份×品类）→ 取**最新月份**的 demand 合计。
+
+    月份列是 text；intel 侧约定写成 ISO `YYYY-MM`（字符串序=时间序）。
+    空月份归入 '' 桶（只有它时也正常工作）；没有任何可加总行 → None。
+    """
+    buckets: dict = {}
+    for month, demand in rows:
+        if demand is None:
+            continue
+        key = month or ""
+        buckets[key] = buckets.get(key, Decimal(0)) + Decimal(str(demand))
+    if not buckets:
+        return None
+    return buckets[max(buckets)]
+
+
+def _lead_index_values(demand, developed) -> dict:
+    """（需求量, 已开发量）→ 对外两个字段。
+
+    需求量缺失（intel 无数据）⇒ 两个都是 null：不能拿 0 冒充"没有需求"。
+    空白指数用 Decimal 算，避免 float 在 0.1% 级数据上漂移。
+    """
+    if demand is None:
+        return {"demand": None, "blank": None}
+    demand_dec = Decimal(str(demand))
+    blank = demand_dec - Decimal(int(developed or 0))
+    return {"demand": float(demand_dec), "blank": float(blank)}
+
+
+async def _lead_indices(conn, leads: list) -> dict:
+    """批量算每条 lead 的 {demand, blank}（**固定 2 条 SQL**，无 N+1）。
+
+    `leads` 用 dict（已 `dict(row)`），返回 {lead_id: {"demand": ..., "blank": ...}}。
+    """
+    result = {int(lead["id"]): {"demand": None, "blank": None} for lead in leads}
+    region_keys = sorted({_region_key(lead) for lead in leads} - {""})
+    if not region_keys:
+        return result
+
+    region_params = sorted({
+        alias for lead in leads for alias in _alias_group(_REGION_INDEX, lead.get("region"))
+    })
+    country_params = sorted({
+        alias for lead in leads for alias in _alias_group(_COUNTRY_INDEX, lead.get("country"))
+    })
+
+    count_rows = await conn.fetch(
+        _LEAD_DEVELOPED_SQL, DEFAULT_TENANT, region_params, list(_DEALT_STAGES))
+    developed: dict = {}
+    for row in count_rows:
+        key = _canonical(_REGION_INDEX, _cell(row, "k"))
+        n = _cell(row, "n")
+        if key and n is not None:
+            developed[key] = developed.get(key, 0) + int(n)
+
+    demand_rows = await conn.fetch(
+        _LEAD_DEMAND_SQL, DEFAULT_TENANT, region_params, country_params)
+    by_region: dict = {}
+    by_country: dict = {}
+    for row in demand_rows:
+        month, value = _cell(row, "month_key"), _cell(row, "demand_index")
+        rk = _canonical(_REGION_INDEX, _cell(row, "rk"))
+        ck = _canonical(_COUNTRY_INDEX, _cell(row, "ck"))
+        if rk:
+            by_region.setdefault(rk, []).append((month, value))
+        if ck:
+            by_country.setdefault(ck, []).append((month, value))
+
+    for lead in leads:
+        key = _region_key(lead)
+        if not key:
+            continue
+        bucket = list(by_region.get(key, ()))
+        if not bucket:
+            # 地区粒度没有需求行 → 允许按国家兜底（intel 可能只到国家级）
+            for ck in {_canonical(_COUNTRY_INDEX, c)
+                       for c in _alias_group(_COUNTRY_INDEX, lead.get("country"))}:
+                bucket.extend(by_country.get(ck, ()))
+        demand = _latest_month_demand(bucket)
+        if demand is None:
+            continue
+        result[int(lead["id"])] = _lead_index_values(demand, developed.get(key, 0))
+    return result
+
+
+def _row_to_lead(l: dict, indices: Optional[dict] = None) -> dict:
     d = _row_to_dict(l, "lead_candidates")
     d.pop("raw", None)
-    # P6 商情预留：数据接入前恒为 null（§5.5 接口返回 null 字段）
-    d["demand_index"] = None
-    d["blank_index"] = None
+    # C8：需求量/空白指数由 `_lead_indices` 批量回填；只有列表/详情这些展示面
+    # 会预计算（写操作返回不额外查库，前端拿到列表后自然刷新）。
+    idx = indices or {}
+    d["demand_index"] = idx.get("demand")
+    d["blank_index"] = idx.get("blank")
     return d
+
 
 
 class LeadCreate(BaseModel):
@@ -1129,8 +1406,10 @@ async def lead_list(request: Request, user: dict = Depends(_get_current_user),
             f"""SELECT * FROM lead_candidates WHERE {where_sql}
                 ORDER BY {order_sql} LIMIT ${idx} OFFSET ${idx+1}""",
             *params, page_size, (page - 1) * page_size)
-    return {"items": [_row_to_lead(r) for r in rows], "total": total,
-            "page": page, "page_size": page_size}
+        # C8：按本页地区批量回填需求量/空白指数（2 条 SQL，固定成本）
+        indices = await _lead_indices(conn, [dict(r) for r in rows])
+    return {"items": [_row_to_lead(r, indices.get(int(r["id"]))) for r in rows],
+            "total": total, "page": page, "page_size": page_size}
 
 
 @app.post("/api/v1/leads/scan-replied")
@@ -1202,7 +1481,9 @@ async def lead_get(lead_id: int, request: Request, user: dict = Depends(_get_cur
             """SELECT id, status, channel, created_at FROM cust_inquiries
                WHERE tenant_id=$1 AND lead_id=$2 ORDER BY created_at DESC""",
             DEFAULT_TENANT, lead_id)
-    return {**_row_to_lead(lead),
+        # C8：详情也回填（单条同样固定 2 条 SQL，不做逐条查询）
+        indices = await _lead_indices(conn, [dict(lead)])
+    return {**_row_to_lead(lead, indices.get(int(lead["id"]))),
             "outreach_history": [dict(m) for m in messages],
             "inquiry_history": [dict(i) for i in inquiries]}
 

@@ -75,6 +75,15 @@
 >   C17 = 判定「同名不同义」不统一代码：`Workstation.adminOnly` = **仅内部账号可见**（侧边栏过滤），
 >   `RouteGuard.adminOnly` = **平台运营**（internal + 管理员）；已在 `shared/contracts/workstations.ts`
 >   与 `route-guard.tsx` 注释钉死，菜单可见但守卫拦截属预期。
+> - **C8 四源计数落地（2026-10-21）**：`/leads` 与 `/leads/{id}` 的 `demand_index`/`blank_index`
+>   不再恒为 null —— `chain.py` 新增 `_lead_indices()`（**2 条参数化 SQL**，`= ANY($n::text[])`，
+>   无 N+1）；需求量 = `intel_demand_index` **最新月份**该地区 demand 合计（region 归一化 +
+>   国家别名兜底），已开发量 = 抓取 + 调研 + 触达(status=sent) + 成交；成交口径按 2026-10-18 后
+>   现库语义修正为 **`stage∈(order,shipment,completed)` 或存在非 cancelled 订单链**（原设计
+>   `status='won'` 已不存在；`closed` 含流失故不能单独用）。无需求行 ⇒ 两字段保持 null
+>   （"数据未接入"语义，不拿 0 冒充）；允许 blank 为负（已开发超需求是真实信号）。
+>   按 §6.8 原文**不加独立端点、不改排序**（设计只要求字段回填）。18 条测试，全量
+>   worker **1212 passed + 5 skipped**。
 >
 > **（2026-10-20 晚 · 口径收敛与审计补录：`docs/TODO.md` = 唯一账本）**
 >
