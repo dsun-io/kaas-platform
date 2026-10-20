@@ -57,9 +57,9 @@
 | 文档 | 内容 |
 |---|---|
 | [WORKSTATION_DESIGN.md](./WORKSTATION_DESIGN.md) | 工位能力网设计 |
-| [PRODUCT_CONFIG_TENANT_UNFINISHED.md](./PRODUCT_CONFIG_TENANT_UNFINISHED.md) | 租户级产品配置化未竟清单 |
+| [PRODUCT_CONFIG_TENANT_UNFINISHED.md](./PRODUCT_CONFIG_TENANT_UNFINISHED.md) | 租户级产品配置化（**B1/B3 已于 2026-10-21 收口**；本文保留实现/验收记录） |
 | [TRADE_DOC_TEMPLATES.md](./TRADE_DOC_TEMPLATES.md) | 单证模板规范 |
-| [TRADE_DOC_HARDENING.md](./TRADE_DOC_HARDENING.md) | **单证加固 A7 活跃设计**（事实层/一致性引擎/回执/导出自检的施工依据，含 12 条实现裁决） |
+| [TRADE_DOC_HARDENING.md](./TRADE_DOC_HARDENING.md) | **单证加固 A7 已完成设计 + 验收记录**（事实层/一致性引擎/回执/导出自检；含 12 条实现裁决与 §6 验收结果） |
 | [TRADE_DOC_PDF_ARCHIVAL.md](./TRADE_DOC_PDF_ARCHIVAL.md) | 单证 PDF 留档与对账（过程记录；现状见文首横幅与 `TODO.md` A2-B/C12） |
 
 > 已归档（不再代表当前口径）：`PLATFORM_UPGRADE_PLAN`、`TEAMS_AND_VISIBILITY`、`CUSTOMER_DOCUMENTS_VIEW`、
@@ -73,8 +73,9 @@
 | [archive/2026-10-20-backend-closeout/](./archive/2026-10-20-backend-closeout/README.md) | **2026-10-20 晚 · 后端五项收尾批**：`ENV_VERIFICATION_2026-10-19`（三环境快照已过时；现看根 README §2 + HANDOVER §2/§3/§5） |
 | [archive/2026-10-20-p2-closeout/](./archive/2026-10-20-p2-closeout/README.md) | **2026-10-20 下午批**：方案 B/S4/技术栈/安全/税务/批量报价/旧 e2e/旧实现地图等 15 份已完成或已被取代文档 |
 | [archive/2026-10-20-closeout/](./archive/2026-10-20-closeout/README.md) | 2026-10-20 收尾批：A′ 计划、PPG 迁移、历史交接/部署/模块计划等 22 份 |
-| [archive/2026-10-19-master-exec/](./archive/2026-10-19-master-exec/) | 契约与 mock 既定决策（已归档） |
+| [archive/2026-10-19-master-exec/](./archive/2026-10-19-master-exec/README.md) | 2026-10-19 契约与 mock 既定决策（批次 README 于 2026-10-21 补齐） |
 | [archive/2026-10-17-doc-cleanup/](./archive/2026-10-17-doc-cleanup/README.md) | 2026-10-17 清理批 |
+| 根 [`archive/`](../archive/) | **历史参考实现**（45 个受控文件：trade-doc Python 渲染器 + 18 类模板 + 样例），**非当前口径**；当前单证实现在 `frontend/src/lib/trade-doc/` + [TRADE_DOC_TEMPLATES.md](./TRADE_DOC_TEMPLATES.md) |
 | [archive/](./archive/) | 更早归档批次（2026-09 等） |
 
 ## 6. 维护规则

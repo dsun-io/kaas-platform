@@ -5,6 +5,9 @@
 > 既能**独立运行**，又能通过统一的数据层与其它工作站**上下游联通**。
 >
 > 本文档定义工作站体系结构、数据连通契约与演进路线，是后续所有工位开发的**不变参照**。
+>
+> ⚠️ **口径说明（2026-10-21 文档收尾）**：本文是**设计文档**，各节「规划中 / 预留口子 / 未实现」等状态已按
+> 2026-10-21 代码事实逐处更新；**任何状态以 [`docs/TODO.md`](./TODO.md)（活跃待办唯一账本）与代码为准**。
 
 ---
 
@@ -80,12 +83,14 @@
 | **AI 层** | AI 能力托管 | ✅ 已上线 | 5+ 任务注册表、Provider 绑定、互备降级、用量落库 |
 | **市场调研** (research) | 微观市场数据 | ✅ 已上线 | 从地图源挑选 → 深化（品类/价格/观察/能否提供） |
 
-### 2.2 规划中（按优先级）
+### 2.2 规划与现状（market / 事件流）
 
-| 工作站 | 域 | 优先级 | 与现有数据链的关系 |
+> **现行口径以 [`docs/TODO.md`](./TODO.md) 为准**（活跃待办唯一账本）；下表只描述设计阶段的优先级。
+
+| 工作站 | 域 | 现状（2026-10-21 核对） | 与现有数据链的关系 |
 |--------|----|--------|-------------------|
-| **产品市场对照** (market) | 地区×产品×规格知识 | P1 | 支撑报价工位：地区/品名/用途→规格/港口 |
-| **事件流联通** | 异步联动 | P2 | 引入 `domain_events`，替代手动触发扫描 |
+| **产品市场对照** (market) | 地区×产品×规格知识 | **页面与 API 已在**：`/market` 页面 + `market/regions`、`/regions/{code}/products`、`name-lookup`、`name-mappings`、`usages`、`ports` **6 条路由**（`main.py:1663-1740`）；契约 `status: 'hidden'`（页面保留、不给侧栏入口，见 `shared/contracts/workstations.ts`） | 支撑报价工位：地区/品名/用途→规格/港口 |
+| **事件流联通** | 异步联动 | **仍未实现**：`domain_events` 代码/迁移 0 命中（TODO `N10` ⏳ 待产品决策）；当前靠手动触发扫描 | 引入 `domain_events`，替代手动触发扫描 |
 
 > 优先级不代表开发顺序，实际排期由业务驱动。各工位可**独立先行**开发，
 > 只要遵循 §5 的数据连通契约即可保证后续无缝集成。
@@ -234,10 +239,13 @@ subscription_bundles (
 | `export_pro` | customers + market + quote + orders + docs | 成熟外贸企业 |
 | `full_chain` | 全工位 | 全链路数字化 |
 
-### 5.4.1 实际落地的订阅编码（2026-09-22 口径）
+### 5.4.1 实际落地的订阅编码（2026-09-22 口径；2026-10-21 状态更新）
 
-> **本期不激活订阅治理**：`tenant_subscriptions` 保持 `default = full_chain`，
-> 前端不暴露订阅入口。编码已在 `chain.py` `SUB_CODES` 登记，填行即生效。
+> **✅ 订阅治理已上线（B3，2026-10-21 端到端验收）**：团队管理员可在前端「团队 → 订阅」面板
+> 开通/撤销工位（`GET/PUT/DELETE /api/v1/teams/{team_id}/subscriptions[/{code}]`，
+> 个人级 `/api/v1/users/{user_id}/subscriptions`，`ws_workstations.py`），开通/撤销即时生效；
+> `default` 租户预置 `full_chain`。旧口径「本期不激活、前端不暴露订阅入口」已过时。
+> 现行待办与验收记录见 [`docs/TODO.md`](./TODO.md) §B（B1/B3/B6）。
 
 | 编码 | 包含 | 工位 key |
 |------|------|---------|
@@ -297,9 +305,9 @@ SUB_CODES = {
 
 ## 6. 各工位 Schema 概要
 
-### 6.1 智能报价工位 `quote_orders`（预留口子 + 报价引擎 V2 规划）
+### 6.1 智能报价工位 `quote_orders`（已上线；报价引擎 V2 规划）
 
-承载从商情雷达信号 / 询盘意向 → 结构化报价单的全链路。当前已建表，业务逻辑按下方报价引擎设计填充。
+承载从商情雷达信号 / 询盘意向 → 结构化报价单的全链路。**已上线**（`/api/v1/quote-orders/*` + `/quotes` 四 tab：产品报价/批量报价/报价记录/成本历史）；报价引擎 V2 已落地（见 §6.1.1）。
 
 **核心表**：
 - `quote_orders` — 报价单头（客户、币种、有效期、状态机）
@@ -434,7 +442,7 @@ FormulaSpec("wave_add_kg",
 | **单卷净体积** | `π/4 × 卷径² × 网高`（按**实际圆柱体**，即 π × (卷径/2)² × 网高） |
 | **单卷长方体体积** | `卷径² × 网高`（按**外接方柱**，用于堆码与报运价） |
 | 长方体总体积 | `单卷长方体体积 × 卷数`（**尚未扣减**） |
-| **实际占用体积** | `长方体总体积 − 2.5 m³`（2~3 取中位数，**每单只扣一次**） |
+| **实际占用体积** | `长方体总体积 × (1 − 扣减比例)` = **× 装柜系数 0.96**（ratio 模式，扣减比例 0.04；**固定 `−2.5 m³` 已禁用**——小单会算出负体积；UNCERTAIN #19 2026-10-17 裁决） |
 | 卷数 | `订单总长度 ÷ 每卷长度`（全丝2.5 每卷 50 米、其余 100 米） |
 | 单卷售价 / 每米价 / 外币价 | `单价 × 单卷净重` → `÷ 卷长` → `÷ 汇率` |
 
@@ -641,35 +649,36 @@ QuoteRequest(spec_rows=[
 - 市场对照工位港口情报推荐（Phase 6）
 - 历史运费均值（同港口 + 同货类）
 
-### 6.2 订单工位 `orders`（预留口子）
-承接客户成交 → 履约订单。当前仅建表。
+### 6.2 订单工位 `orders`（已上线）
+承接客户成交 → 履约订单。API `/api/v1/orders/*` + 前端 `/orders` **已上线**（状态机、应收/付款计划、汇兑损益；报价转订单 1:N 校验见 `UI_BACKEND_DEPENDENCIES` §5）。
 
 核心表：
 - `orders` — 销售订单头（客户、币种、总金额、履约状态）
 - `order_items` — 订单行项（SKU、数量、单价）
 - 关联：`order_quote_refs`（上游=报价单）、`order_customer_refs`（上游=客户工位成交询盘）、`order_shipment_refs`（物流=商情雷达货运）
 
-### 6.3 外贸票据工位 `trade_docs`（预留口子）
-基于订单生成外贸全套票据。当前仅建表。
+### 6.3 外贸票据工位 `trade_docs`（已上线）
+基于订单/报价生成外贸全套票据（18 类英文单据）已上线：API `/api/v1/trade-docs/*` + 前端 `/trade-docs`（开单→校对→签发→打印/导出；A7 加固见 `TRADE_DOC_HARDENING.md`）。
 
 核心表：
 - `trade_docs` — 票据主表（类型、编号、签发信息、金额）
 - `trade_doc_items` — 票据行项（品名、数量、包装）
 - `trade_doc_order_refs`（上游=订单）
 
-### 6.4 客户管理工位 `customers`（规划中，统一底座）
+### 6.4 客户管理工位 `customers`（已上线，统一底座）
 
-承载客户全生命周期：从询盘录入 → 客户建档 → 阶段跟踪 → 成交转化。
-
-核心表（规划）：
+承载客户全生命周期：从询盘录入 → 客户建档 → 阶段跟踪 → 成交转化。API `/api/v1/customers/*`、`/inquiries/*`
++ 前端 `/customers` **已上线**。核心表（已建，实际表名）：
 - `customers` — 客户主档（公司名、联系人、国家、地址、默认港口、信用等级）
-- `customer_contacts` — 联系人多条（姓名、职位、电话、email、whatsapp、微信）
-- `customer_inquiries` — **询盘记录**（从询盘入口直接录入，自动关联客户）
-  - 询盘渠道（email/whatsapp/阿里/展会/其他）
+- `cust_contacts` — 联系人多条（姓名、职位、电话、email、whatsapp、微信）
+- `cust_inquiries` — **询盘记录**（从询盘入口直接录入，自动关联客户）
+  - 询盘渠道：**枚举下拉**（`INQUIRY_CHANNEL`，与后端逐字一致；2026-10-21 C28 已由自由输入改枚举）
   - 意向产品（品类 + 品名原文 + 数量 + 用途）
-  - 询盘状态：`询盘中 / 已报价 / 已成交 / 已流失`（**单据阶段**，与客户阶段是两层）
+  - **询盘 `status`**：`unquoted / quoted / closed`（报价三态；旧四态「询盘中 / 已报价 / 已成交 / 已流失」已废）
+  - **询盘 `stage`（F4 落库，2026-10-20）**：`inquiry < quotation < order < shipment < completed`，`closed` 终态；
+    事件驱动（报价/订单/出运/关闭）、只前进幂等，历史在 `inquiry_stage_log`；前端按 stage 展示，旧展示推导保留为兜底
   - 成交后自动生成 `orders` 记录（订单状态是订单自己的阶段）
-- `customer_stage_log` — **客户阶段**变更历史（只记手动切换活跃/沉寂）
+- `cust_stage_log` — **客户阶段**变更历史（只记手动切换活跃/沉寂）
 
 **客户阶段（2026-10-18 用户口径，已实现）**
 
@@ -713,11 +722,14 @@ QuoteRequest(spec_rows=[
    客户阶段 = 已成交
 ```
 
-### 6.5 产品市场对照工位 `market`（规划中）
+### 6.5 产品市场对照工位 `market`（**页面与 API 已在，侧栏 hidden**）
 
 回答"什么地区卖什么产品、常用什么规格、当地人管这个产品叫什么"。支持按**地区**、**产品名（中英文/各语种）**、**用途**查询。
+**现状（2026-10-21）**：`/market` 页面 + `market-view.tsx` 已在，6 条 API 已落地
+（`market/regions`、`regions/{code}/products`、`name-lookup`、`name-mappings`、`usages`、`ports`，`main.py:1663-1740`）；
+契约 `status: 'hidden'`（页面保留、不给侧栏入口）。**不再是"规划中"**；上线/入口决策见 `docs/TODO.md`。
 
-核心表（规划）：
+核心表（已建）：
 - `market_region_products` — 地区×产品对照（需求等级、认证要求、执行标准、季节规律）
 - `market_region_product_specs` — 常见规格参数对照（spec_key/spec_value/unit + 频率排序 + SKU 挂接）
 - `market_product_name_mappings` — 中外品名对照（region + lang → 当地品名、别名 JSONB、HS 编码、是否核实）
@@ -823,7 +835,7 @@ crawl_status ← success | failed | no_website
 规格、国家、城市、店铺、店铺类型、电话、链接、官网、地址、能否提供），
 无需逐条爬取。`能否提供` 列解析 `TRUE/FALSE/是/否/1/0`，**未知值一律落 NULL**。
 
-### 6.8 情报体系数据回流闭环（第一版不接，接口预留）
+### 6.8 情报体系数据回流闭环（**C8 已落地：四源计数真实回填**）
 
 ```
 地图源客户信息获取 ──→ 已抓取数 ──┐
@@ -844,11 +856,13 @@ crawl_status ← success | failed | no_website
 | 已抓取数 | 地图源客户信息获取 | `COUNT(lead_candidates)` |
 | 已调研数 | 市场调研 | `COUNT(research_products)` |
 | 已触达数 | 客户触达 | `COUNT(outreach_messages WHERE status='sent')` |
-| 已成交数 | 询盘 | `COUNT(cust_inquiries WHERE status='won')` |
+| 已成交数 | 询盘 | F4 `stage ∈ order/shipment/completed`（或非 cancelled 订单链；**不再用 `status='won'`**，status 只有报价三态） |
 
-**当前状态**：四源的计数端点尚未实现；`intel_demand_index` 为空表（口子已建），
-`/leads` 排序接口恒定返回 `demand_index=null` / `blank_index=null` 占位。
-填数据即生效，无需改接口。
+**当前状态（2026-10-21，C8 ✅）**：`/leads` 与 `/leads/{id}` 的 `demand_index` / `blank_index` 已**真实回填**
+（`chain.py` 的 `_lead_indices`：2 条参数化 SQL、无 N+1；需求量取 `intel_demand_index` 最新月份合计，
+地区归一化 + 国家别名兜底；已开发量 = 抓取 + 调研 + 触达(sent) + 成交）。**无需求行时两字段仍为 `null`**（不拿 0 冒充）；
+按设计**不加独立端点、不改排序**（18 条测试，见 `docs/TODO.md` C8）。
+⚠️ 前端 MSW 侧仍固定 null（TODO `C34`：mock 与 C8 漂移，待修）。
 
 ### 6.9 与现有模型的关系
 - 工位通过 `customer_id` 关联到现有 `customers` 表（只读引用）
@@ -959,9 +973,9 @@ crawl_status ← success | failed | no_website
 | **Phase 4** ✅ | 订单工位 MVP | 报价转化 + 订单履约 + 前端页面 |
 | **Phase 5** ✅ | 票据工位 MVP | 票据生成 + refs 溯源 + 前端页面 |
 | **Phase 5.5** ✅ | 工位链（AI/线索/触达/调研） | 迁移 `20260921_*` + `20260922_research_workstation` |
-| **Phase 6** | 产品手册附件 + 事件流联通 | R2 附件 + 引入 `domain_events`，替代手动触发扫描 |
+| **Phase 6** | 产品手册附件 + 事件流联通 | ⏳ 未做：附件管道未建；`domain_events` 仍无代码/迁移（TODO `N10`） |
 | **Phase 7** | 智能闭环 | AI 驱动的报价推荐、风险预警、自动单证 |
-| **Phase 8** | 情报回流闭环 | 已开发量四源聚合 → 空白指数 → 地图源地区排序 |
+| **Phase 8** | 情报回流闭环 | ✅ 四源聚合已落（2026-10-21 C8：`/leads` 的 `demand_index`/`blank_index` 真实回填，18 测）；「地图源地区排序」未做（C8 按设计不改排序） |
 
 ---
 

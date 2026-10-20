@@ -480,14 +480,14 @@ async def _create_database(info: PgInfo) -> None:
 #     `relation "customer_capabilities" already exists` 处炸掉（已实测）。
 # 所以「用 alembic upgrade head 建库」在空库上得到的其实就是 ORM metadata schema。
 #
-# 但 env.py 只 import 了 `app.db.models` / `app.db.tax_models`，**漏了**
-# `app.db.workstation_models`（cust_contacts / cust_inquiries / cust_stage_log /
-# trade_doc_*_refs / fx_rates 等 legacy 表）。worker 的客户工位直接读写这批表 ⇒
-# 只走快径建出来的库**没有 cust_contacts**，worker 创建客户必 500。
-# 这是**新建环境（预览环境 / CI 全新库 / 本机）的真实风险**，已报给 lead；
-# 正解应在 orchestrator `alembic/env.py` 补 import（不在本任务写范围）。
+# 【2026-10-19 已修】`backend/orchestrator/alembic/env.py:54-64` 现在显式 import 了
+# `workstation_models` / `market_models` / `actual_cost` / `external_docs` /
+# `workstation_links` / `legacy_models` ⇒ 空库快径建出的表与生产一致。
+# 此前 env.py 只 import `models` / `tax_models`，漏 `workstation_models`
+# （cust_contacts / cust_inquiries / cust_stage_log / trade_doc_*_refs / fx_rates 等
+# legacy 表），空库会缺 `cust_contacts` 导致 worker 建客户 500 —— 该风险已关闭。
 #
-# 本测试底座的补偿（不掩盖风险，只让 worker 用例跑在"生产有这些表"的前提上）：
+# 本测试底座的补偿**保留**（幂等兜底：兼容旧分支/旧解释器/已建一半的库）：
 # alembic 跑完后若缺这些 legacy 表，就用 workstation_models 的 metadata
 # `create_all(checkfirst=True)` **只补缺失的表**，并断言 worker 写入路径依赖的表都在。
 # 注意：这套 schema 与生产历史迁移后的形状"近似"而非逐字节一致，README 已写明。
@@ -500,7 +500,7 @@ from sqlalchemy import create_engine
 from app.db.base import Base
 import app.db.models  # noqa: F401
 import app.db.tax_models  # noqa: F401
-import app.db.workstation_models  # noqa: F401  (legacy cust_* 等表，env.py 漏 import)
+import app.db.workstation_models  # noqa: F401  (legacy cust_* 等表；env.py 自 2026-10-19 已 import，此行兜底)
 
 engine = create_engine(os.environ["KAAS_TEST_SYNC_URL"])
 Base.metadata.create_all(engine, checkfirst=True)  # checkfirst: 只补缺失的表
@@ -572,7 +572,7 @@ def _migrate(python: Path, info: PgInfo) -> None:
 
     missing = _missing_required_tables(info)
     if missing:
-        # env.py 漏 import app.db.workstation_models ⇒ 空库快径不会建 cust_* 等 legacy 表。
+        # 正常不会进这里（env.py 自 2026-10-19 已 import 全模型）；仅旧分支/旧库兜底。
         # 这里只补缺，不重建已有表（详见本节顶部说明）。
         _supplement_legacy_tables(python, info)
         missing = _missing_required_tables(info)

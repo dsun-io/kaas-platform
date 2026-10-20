@@ -54,11 +54,11 @@
 - **技术栈基线（2026-10-20 升级后，勿回退）**：Next **16.4.2** / React **19.3** /
   ESLint **10.13（flat config：`frontend/eslint.config.mjs`，`next lint` 已删除）** /
   TypeScript **6.0.3**；CI Node **22**。`pnpm audit` 目标：0 critical。
-- **门禁**（改完都要跑；2026-10-20 口径）：
-  - orchestrator（仅迁移/模型/内核测试，222 条）：
+- **门禁**（改完都要跑；**2026-10-21 收口实测口径**，工作区静止时数字才作数）：
+  - orchestrator（仅迁移/模型/内核测试，**247** 条）：
     `cd backend/orchestrator; uv run --extra migrations pytest tests -q`
-  - worker（唯一运行时，954+ 条）：`cd backend/worker; uv run --frozen --with pytest --with httpx2 python -m pytest tests -q`
-  - 前端：`cd frontend; pnpm typecheck`（内含 `next typegen && tsc --noEmit`）`; pnpm lint; pnpm test; pnpm contracts:check; pnpm e2e`
+  - worker（唯一运行时，**1233 passed + 12 skipped**；12 条 db/integration 档按约定 skip，有 docker PG 时这 12 条会真跑、总数 1245）：`cd backend/worker; uv run --frozen --with pytest --with httpx2 python -m pytest tests -q`
+  - 前端：`cd frontend; pnpm typecheck`（内含 `next typegen && tsc --noEmit`）`; pnpm lint; pnpm test`（**616 passed / 60 files**）`; pnpm contracts:check; pnpm mocks:check; pnpm ui:contrast; pnpm e2e`（**28 条 = 24 passed + 4 skipped**）
   - 静态断言：`scripts/check-runtime-deps.py`、`scripts/check-schema-coverage.py`、
     `scripts/check-schema-drift.py`、`scripts/check-worker-bundle.py`、`scripts/sync-shared.ps1 -Check`
   - 构建：`cd frontend; $env:NEXT_EXPORT="1"; pnpm build` → **`frontend/out`**

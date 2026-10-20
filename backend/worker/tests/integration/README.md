@@ -76,7 +76,8 @@ cd backend/worker
 python -m pytest tests -m "not integration" -q   # 5 deselected
 ```
 
-`tests` 全量在无 PG 时同样安全：集成用例整体 skip，其余 303 条照常跑。
+`tests` 全量在无 PG 时同样安全：集成用例整体 skip，其余照常跑（2026-10-21 口径：worker 全量
+**1233 passed + 12 skipped**；12 条 db/integration 档按约定 skip，有 docker PG 时这 12 条会真跑、总数 1245）。
 
 ## schema 从哪来（重要，附两处已确认的项目级问题）
 
@@ -89,20 +90,17 @@ python -m pytest tests -m "not integration" -q   # 5 deselected
    `relation "customer_capabilities" already exists`（本机实测）。所以快径是当前
    唯一能建出「完整 schema」的路径。
 
-因此本底座的 schema = `alembic upgrade head`（空库快径）**+ 补偿**：
-`env.py` 只 import 了 `app.db.models` / `app.db.tax_models`，**漏了
-`app.db.workstation_models`**（`cust_contacts` / `cust_inquiries` / `cust_stage_log` /
-`trade_doc_*_refs` / `fx_rates` … 一批 legacy 表，worker 客户工位直接写它们）。
-只走快径建库会**缺 `cust_contacts`**，`POST /api/v1/customers` 会因
-`relation "cust_contacts" does not exist` 报 500。
+因此本底座的 schema = `alembic upgrade head`（空库快径）**+ 幂等补建兜底**：
 
-> **这是新建环境（预览环境 / CI 全新库 / 本机）的真实风险，不只是测试问题。**
-> 正解应在 `backend/orchestrator/alembic/env.py` 补一行
-> `from app.db import workstation_models  # noqa: F401`（orchestrator 侧，不在
-> task-8 写范围，已报 lead）。在修好之前，conftest 用
-> `workstation_models` 的 metadata `create_all(checkfirst=True)` **只补缺失的表**
-> （不改已有表），并断言 `users/teams/customers/cust_contacts/quotations/
-> team_subscriptions` 都在；缺表会 fail 而不是静默跑过。
+> **✅ 2026-10-19 已修（原「env.py 漏 import」风险已关闭）**：`backend/orchestrator/alembic/env.py:54-64`
+> 现在显式 import **全部模型模块**（`workstation_models` / `market_models` / `actual_cost` /
+> `external_docs` / `workstation_links` / `legacy_models`）—— 空库快径建出的表集合与生产一致
+> （修复前只建 61 张、生产 109 张；缺 `cust_contacts` 会让 `POST /api/v1/customers` 在全新库 500）。
+>
+> `conftest.py` 里「用 `workstation_models` metadata `create_all(checkfirst=True)` 只补缺失表」
+> 的补偿**仍保留**：它现在是**幂等兜底**（兼容旧分支/旧解释器/建了一半的库），不是对未修 bug 的绕过；
+> 其注释里「env.py 漏 import」的历史表述已于 2026-10-21 更正。
+> 缺表仍会 fail 而不是静默跑过（断言 `users/teams/customers/cust_contacts/quotations/team_subscriptions` 都在）。
 
 ## CI
 
@@ -110,7 +108,7 @@ python -m pytest tests -m "not integration" -q   # 5 deselected
 `TEST_DATABASE_URL`，先在 `backend/orchestrator` `uv sync`（只为拿 alembic 解释器），
 再跑 `pytest tests -m integration`。无 PG 的 `worker-tests` job 不受影响（集成用例 skip）。
 
-## 本机实测数字（2026-10-19，Python 3.14.7）
+## 本机实测数字（2026-10-19 快照，Python 3.14.7；当前全量口径见 `AGENTS.md` 门禁）
 
 | 命令 | 结果 |
 |---|---|
@@ -123,7 +121,7 @@ python -m pytest tests -m "not integration" -q   # 5 deselected
 ## 已知限制
 
 - 走 alembic 快径 + 补建，schema 与「生产历史迁移后的库」**近似**而非逐字节一致；
-  真正的逐字节一致性要等 `env.py` 补 import（或提供可重放的历史链基线）。
+  `env.py` 已自 2026-10-19 补齐全模型 import（表集合对齐生产），但快径仍不等于「从 base 重放历史迁移链」。
 - 不支持 SSL 测试库（`_acquire` 写死 `ssl=False`，worker 生产侧行为如此）。
 - 每个用例前 `TRUNCATE ... RESTART IDENTITY CASCADE` 清业务表（保留 `alembic_version`），
   用例间互不影响；不支持并行跑同一测试库。

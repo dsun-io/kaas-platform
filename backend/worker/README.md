@@ -52,13 +52,21 @@ ADMIN_SETUP_TOKEN=<一次性初始化令牌>
 
 ## 部署
 
-**正常路径：push 到 `main` 自动部署。** `.github/workflows/deploy.yml` 会构建前端、
-`sync-shared.ps1` 同步共享内核、`pywrangler deploy`、跑生产冒烟；**不需要手动 deploy**。
-纯文档提交（`**.md` / `docs/**` / `.tools/**`）被 `paths-ignore` 跳过，要强制发布用 `workflow_dispatch`。
+> ⚠️ **2026-10-20 起「push 到 `main` 自动部署」已取消（用户裁决）**：`.github/workflows/deploy.yml`
+> **只接受 `workflow_dispatch`**（`on:` 下仅手动触发，见文件顶部注释）；push 到 `main` **不会**自动发布。
+> 2026-10-21 生产发布实际走**本机 `pywrangler deploy`**（三次部署：`dae596a5` → `cd15e9a5` → `9d497628`，
+> 见 `docs/HANDOVER_2026-10-20_FINAL.md` §0.4）。未获用户明确发布指令不发布；发布前后按
+> `docs/HANDOVER_2026-10-20_FINAL.md` §5 检查单执行。
 
-手动部署（仅在 CI 不可用时排障；2026-10-17 实测 `npx wrangler deploy` 也可用）：
+发布路径（二选一，均需用户下令）：
+
+1. **本机 `pywrangler deploy`（首选，2026-10-21 实测）**：GitHub Actions 额度/权限不稳时用它；
+   流程 = `sync-shared.ps1` → 前端 `NEXT_EXPORT=1 pnpm build` → 部署 → 生产冒烟。
+2. **GitHub Actions 手动 dispatch**：Actions → `deploy` → `Run workflow`（**仅手动**，无 push 触发；
+   纯文档提交不会触发任何部署）。
 
 ```powershell
+cd backend/worker
 uv run pywrangler deploy                       # 含 api.kaas.powervoy.com 自定义域名
 ```
 
@@ -107,7 +115,7 @@ workers.dev 默认关闭；旧名 `kaas-intel-api` 已合并为单 Worker，见 
 | GET/POST | `/api/v1/leadgen/runs` `…/runs/from-csv` | 抓取运行（demo/CSV，config_hash 幂等） |
 | POST | `/api/v1/leadgen/validate` | 配置校验（AI 任务） |
 | GET/POST/PATCH | `/api/v1/leads[/{id}]` | 线索池（共享表，跨工位状态只读）；产品字段（图片/中文对照/规格/能否提供）可写 |
-| POST | `/api/v1/leads/scan-replied` | replied 扫描建询盘（Worker 无 cron，手动触发） |
+| POST | `/api/v1/leads/scan-replied` | replied 扫描建询盘（**cron 每 15 分钟自动跑**：`*/15 * * * *` → `ws_cron.run_lead_scan`；手动端点保留用于即时触发） |
 | POST | `/api/v1/leads/{id}/crawl` | 爬单条官网提取产品信息（名称/图片/规格/链接） |
 | POST | `/api/v1/leads/crawl-batch` | 批量爬取（默认只爬 pending，上限 20） |
 | GET | `/api/v1/research/products` | 市场调研列表（国家/城市/品类/能否提供/搜索 + 分页） |
@@ -121,9 +129,13 @@ workers.dev 默认关闭；旧名 `kaas-intel-api` 已合并为单 Worker，见 
 | * | `/api/v1/outreach/webhook` | 501 预留（inbound 回写） |
 
 订阅治理：leadgen/outreach/research/intel 端点未订阅返回 404 `SUBSCRIPTION_REQUIRED`；
-`/ai/*` 不查订阅。编码登记见 `chain.py` `SUB_CODES`（本期不激活，`default` 仍为 `full_chain`）：
-`intel_trade_starter` / `intel_research_starter` / `intel_full` / `leadgen_starter` /
-`outreach_starter` / `full_chain`。
+`/ai/*` 不查订阅。编码登记见 `chain.py` `SUB_CODES`：`intel_trade_starter` /
+`intel_research_starter` / `intel_full` / `leadgen_starter` / `outreach_starter` / `full_chain`。
+**团队级订阅已上线（B3，2026-10-21 端到端验收）**：`GET/PUT/DELETE /api/v1/teams/{team_id}/subscriptions[/{code}]`
+（+ 个人级 `/api/v1/users/{user_id}/subscriptions`，`ws_workstations.py`）；管理员在
+前端「团队 → 订阅」面板开通/撤销，开通/撤销即时生效（订阅缓存 `_invalidate_all`）；
+`default` 租户预置 `full_chain`。旧口径「本期不激活」（`chain.py` 注释）已过时，
+以 `docs/TODO.md` B3 与本段为准。
 
 ## 已知限制（Python Workers beta）
 

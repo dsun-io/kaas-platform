@@ -2,25 +2,34 @@
 
 > 📌 **口径对齐（2026-10-19 · 决策 1 已确认）**：本文的 **Neon 口径正确**
 > （放弃 PPg 后生产库回 Neon，与 main 生产实配一致：Hyperdrive config `f53fed49705043008737032e4bfa2b8e`
-> 指向 Neon 生产分支）——此前"DEPLOY.md 与实配漂移"的评估结论随决策 1 失效。
-> 三环境隔离矩阵、10 条硬规则、部署防污染断言见 **[README.md](README.md)（主交接文档）§2**；
-> 命名差异备忘：本文称 Neon 根分支为 `production`，README §2 矩阵目标态命名为受保护 Root 分支 `main`，
-> 实施时以矩阵命名为准（属方案 B 落地项，本文执行时不擅自改名）。
+> 指向 Neon 生产分支）。
+> 三环境隔离矩阵、硬规则、部署防污染断言见 **[README.md](README.md)（主交接文档）§2**。
 >
-> 🚫 **部署冻结（2026-10-19 重构期 · 用户指令）**：**中途不部署**，只有用户明确下达部署指令后才发布。
-> `deploy.yml` 已改为仅 `workflow_dispatch`（不再随 push 自动部署）；且 GitHub Actions 额度已达限额，
-> CI 可能无法启动 ⇒ 最终发布优先走**本机 `pywrangler deploy`**（见本文 §0.2 流程与回滚预案）。
+> **【历史，勿再执行】Neon 根分支改名段（2026-09/10 旧计划）**：原计划把根分支 `production`
+> 改名为受保护 Root 分支 `main`；**该改名未执行，且已被 U-S5 裁决取代**
+> （Neon Protected 是付费功能、Free 套餐不可用 ⇒ 用户裁决不升级，改用「预览脚本删分支双保险」，
+> 见 `docs/PROBLEM_STATUS_2026-10-11.md` U-S5 与根 README §2）。**现行命名以根 README §2 矩阵为准**，
+> 本文执行时不再改名。
+>
+> 🚫 **发布纪律（2026-10-20 用户裁决，仍有效）**：`deploy.yml` **仅 `workflow_dispatch`**（不再随 push
+> 自动部署），且 GitHub Actions 额度/权限不稳 ⇒ **最终发布优先走本机 `pywrangler deploy`**。
+> 未收到用户明确部署指令**不发布**。
+>
+> ✅ **2026-10-21 生产发布已完成（§0.4 记录）**：迁移 生产 `202610180010` → **`202610200005`**（6 条），
+> Worker 三次部署（`dae596a5` → `cd15e9a5` → `9d497628`），冒烟通过；**回滚版本见
+> [docs/HANDOVER_2026-10-20_FINAL.md](docs/HANDOVER_2026-10-20_FINAL.md) §0.4**。
+> 后续发布沿用本文 §1/§3/§4 与 HANDOVER §5 检查单，按「发布预案」逐次执行。
 >
 > ✅ **2026-10-20 口径更新（方案 B S4 + 技术栈升级后）**：
 > - **单应用**：运行时唯一实现 = `backend/worker/src/main.py`；orchestrator 只剩 `app/db` + `alembic`（不可运行后端）。
 >   `docker compose` 的 `backend` 服务跑 `worker/local_run.py`，**不再自动执行迁移**（需手动 `alembic upgrade head`）。
-> - **迁移 head = `202610190020`**（`trade_docs.owner_id/owner_scope`、`market_ports` 时间戳；幂等补列，生产已有列）。
->   **注意（2026-10-20 晚）**：分支 `feat/trade-doc-content-a`（PR #5）把 head 推进到 **`202610200003`**
->   （内容版本/对账表/询盘阶段），合并后发布窗口一并升级；以 `alembic heads` 为准。
+> - **迁移 head = `202610200005`**（自 `202610180010` 共 6 条：`202610190020` 幂等补列 / `202610200001` 内容版本 /
+>   `002` 对账表 / `003` 询盘阶段 / `004` 单证事实表 / `005` 文件当前版本唯一索引 `NULLS NOT DISTINCT`）。
+>   **2026-10-21 已在生产应用**（`202610180010` → `202610200005`）；以 `alembic heads` 为准。
 >   migrate job 依赖 secret `PROD_DATABASE_URL`；当前未配置则告警跳过（手动迁移）。
 > - **前端 = Next 16.4.2**：`NEXT_EXPORT=1 pnpm build` → `frontend/out`；**不要再设 `NEXT_DIST_DIR`**（会改导出落点）。
 > - 完整交接与发布前检查单见 [docs/HANDOVER_2026-10-20_FINAL.md](docs/HANDOVER_2026-10-20_FINAL.md)
->   （§0.2 停止点与剩余工作、§2/§3 三环境、§5 发布检查单）。
+>   （§0.2 停止点与剩余工作、§0.4 生产发布记录、§2/§3 三环境、§5 发布检查单）。
 
 ## 架构
 
@@ -139,18 +148,25 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 
 ### 1.1 本地 Docker 开发环境（2026-10-20 更新：单应用入口）
 
+> ⚠️ **新 clone / 换设备必做：先 `scripts/sync-shared.ps1`**。`backend/worker/src/kaas_common/`
+> 是 gitignored 生成镜像，跳过会 `ModuleNotFoundError: No module named 'kaas_common.preview'`；
+> `GET /health` 返回 `shared.loaded=true` 才说明镜像同步成功。完整顺序见根 `README.md` §3。
+
 本地开发**不需要**碰生产 Worker：`docker compose up -d` 起
 Postgres / Redis / MinIO / backend（= `worker/local_run.py`，与生产同一份 app），前端在宿主用 `next dev` 直连。
 
 ```powershell
 cd D:\MyProject\kaas-platform
+# 0) 首次：同步共享内核镜像（改 backend/kaas_common 后也要重跑）
+powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1
+
 docker compose up -d
 # 首次建表（不再自动迁移；与生产同一套 Alembic）
 cd backend/orchestrator
 uv sync --extra migrations
 $env:DATABASE_URL="postgresql+asyncpg://kaas:kaas_dev@localhost:5432/kaas_dev"
 uv run --extra migrations alembic upgrade head
-# 健康检查：http://localhost:8000/health -> {"status":"ok"}
+# 健康检查：http://localhost:8000/health -> {"status":"ok","shared":{"loaded":true}}
 
 cd ..\..\frontend
 pnpm dev                      # http://localhost:3000（.env.development=real → localhost:8000）
@@ -218,8 +234,11 @@ uv run --extra migrations alembic upgrade head
 uv run --extra migrations alembic check        # 可选：metadata ↔ schema 零漂移
 ```
 
-当前迁移头**以 `alembic heads` 为准**（2026-10-20 = **`202610190020`**，幂等补列；
-此前 2026-10-18 发布分段执行到 `202610180010`）。发布前确认库已到 head，否则新列缺失会让单证/港口等页面 500。
+当前迁移头**以 `alembic heads` 为准**（2026-10-21 = **`202610200005`**；
+生产已于 2026-10-21 从 `202610180010` 一次升到 `202610200005`，**6 条迁移**：内容版本 / 对账表 / 询盘阶段 /
+单证事实表 / 文件当前版本唯一索引 `NULLS NOT DISTINCT` + 幂等补列段）。发布前确认库已到 head，
+否则新列缺失会让单证/港口等页面 500；**回滚版本与快照见
+[docs/HANDOVER_2026-10-20_FINAL.md](docs/HANDOVER_2026-10-20_FINAL.md) §0.4**。
 **deploy.yml 的 migrate job**：配置 secret `PROD_DATABASE_URL` 时自动 `alembic upgrade head`；
 未配置时告警跳过（保持手动迁移）。
 
@@ -271,10 +290,12 @@ pnpm build
 - [ ] `/research` 页面可加载（列表/统计/挑选/运行记录三个标签）
 - [ ] `POST /api/v1/intel/import/csv` 上传 CSV 成功
 
-## 4. CI 自动部署
+## 4. CI 部署（手动 dispatch）
 
-> **2026-10-19 起已冻结**：`deploy.yml` 仅 `workflow_dispatch`（不再随 push 自动部署）；
-> 用户下达发布指令后，优先本机 `pywrangler deploy`（Actions 额度限额见 §4.1）。
+> **现行口径（2026-10-20 用户裁决，2026-10-21 已按此发布三次）**：`deploy.yml` **仅 `workflow_dispatch`**
+> （**不再随 push 自动部署**）；用户下达发布指令后，优先本机 `pywrangler deploy`
+> （Actions 额度/权限不稳，见 §4.1）。生产已发布（迁移 `202610200005` + worker `9d497628`），
+> 后续发布按「发布预案」逐次执行。
 
 `.github/workflows/deploy.yml`：手动 dispatch →
 TypeScript 构建前端 → **同步共享内核并校验** → （若配了 `PROD_DATABASE_URL`）migrate job `alembic upgrade head` → `pywrangler deploy` → 生产冒烟测试
@@ -296,7 +317,7 @@ TypeScript 构建前端 → **同步共享内核并校验** → （若配了 `PR
 -------------------------
 | 分支 | 角色 |
 |---|---|
-| **`main`** | **生产分支** —— 只有它触发部署 |
+| **`main`** | **生产分支** —— 生产代码基线；发布 = 手动 `workflow_dispatch` 或本机 `pywrangler deploy`（**push 不触发部署**） |
 | ~~`feat/trade-doc-templates`~~ | **已于 2026-10-17 删除**：该分支 tip（`4fc5a6e`）的树里仍带着历史硬编码的生产 DSN（`backend/.tools/*.py`），且它已落后 `main` 279 个提交、**没有独有提交**（是 `main` 的祖先）⇒ 删除无内容损失，只关掉一个"当前可读"的泄露入口 |
 | ~~`feature/intel-workstation-v1`~~ | 已归档（旧部署分支，内容已全部包含在开发分支里） |
 
@@ -305,16 +326,22 @@ TypeScript 构建前端 → **同步共享内核并校验** → （若配了 `PR
 > 现在生产分支 = `main`，部署分支不再兼作开发分支。
 >
 > **上线门禁**：部分功能的前端已完成、但后端接口尚未在 Worker 落地，
-> 它们以 `workstations.ts` 的 `status: 'planned'` 挡在侧边栏之外。
-> 清单与放开条件见 `docs/CURRENT_IMPLEMENTATION_MAP.md`「上线门禁」。
+> 它们以 `workstations.ts` 的 `status: 'planned'` / `'hidden'` 挡在侧边栏之外。
+> **现行清单与放开条件见 [`docs/TODO.md`](docs/TODO.md)（活跃待办唯一账本）+ `shared/contracts/workstations.ts`**，
+> 发布检查单见 [`docs/HANDOVER_2026-10-20_FINAL.md`](docs/HANDOVER_2026-10-20_FINAL.md) §5；
+> 旧的 `CURRENT_IMPLEMENTATION_MAP.md` 已归档 `docs/archive/2026-10-20-p2-closeout/`，不再作当前口径。
 
-**路径过滤（2026-09-22 加）**：`**.md` / `docs/**` / `.tools/**` / `**/.tools/**` 的**纯文档提交
+**路径过滤（2026-09-22 加，历史保护）**：`**.md` / `docs/**` / `.tools/**` / `**/.tools/**` 的**纯文档提交
 不触发部署**——因为每次部署都会让全部 isolate 失效、重新经历一次冷启动窗口（§0.2），
 不适当地触发部署等于凭空制造一次生产风险窗口。
+> 注：**2026-10-20 起 push 已完全不触发部署（仅手动 dispatch）**，本节路径过滤只在「将来恢复 push 自动部署」时才有意义；
+> 当前要发布一律 Actions `Run workflow` 或本机 `pywrangler deploy`。
 
 需要强制部署（例如只改了文档但要同步 Worker）时：Actions 页面手动 `Run workflow`。
 
 ### 4.1 部署没跑起来怎么排查（2026-10-17 实战）
+
+> 注：2026-10-20 起 push **本就不触发部署**；下表适用于「手动 dispatch 未生效」或历史 push 期间的情形。
 
 | 现象 | 判据 / 处理 |
 |---|---|
