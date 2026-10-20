@@ -30,6 +30,10 @@
 | A-10 | **C27 QA 越权审计 7 条留证** | 发布后跑一轮并留证（P4） | 0.5 天 |
 | A-11 | **D6 冷启动基线收尾** | 用 Cloudflare Analytics API 拉 p50，写 `coldstart-baseline.json` 销 PENDING | 0.5 天 |
 | A-12 | **C12 PDF 归档真单证端到端** | 需等平台产生首单真实 PDF（`render_pdf` 当前 0 条）后人工复核 18 类；可先用现有样例做 1 类对照 | 0.5 天 |
+| A-13 | **C36：24 条「后端先行待接 UI」** | `docs/API_RESERVED_LIST.md` 已列 60 条未接（保留 18 / 待接 UI 24 / 可删候选 18）；按业务价值逐个接前端，或确认长期保留并标注 |
+| A-14 | **A10：5 类扩展模板实现** | §6.1 已出清单；先做 P1 两件（`beneficiary_decl` 受益人声明、`saso_coc` 目的国符合性认证，结构同构/高频），P2（`vessel_cert`/`export_license`/`ciq`）按真实样例再定 |
+| A-15 | **A8①：归档任务端到端实跑** | 生产 `events_archive_log` 当前 **0 行**；cron 已配（每日），需等首次归档窗口后核对（或补一次可手动触发的验证路径） |
+| A-16 | **D2 后直传路径端到端复验** | R2 系统 token 已回环验证；worker `presign` 端到端需登录态，补一次真实上传+回读验证 |
 
 ### B. 需要你提供 / 拍板 / 操作
 
@@ -37,8 +41,9 @@
 |---|---|---|---|
 | B-1 | **N3 H-2 用户复验** | 打开定价/注册相关页面按口径复验一次 | 该项一直标"待用户复验"，不算完成 |
 | B-2 | **D4 生产测试数据清理** | 执行清理时点头（脚本已就绪，dry-run 0 行风险） | 测试数据继续留在生产库 |
-| B-3 | **A14 包装字段口径** | 确认 payload 用 `custom.packaging`（或 `shipping_marks` 文本）表示包装，并给枚举值（如 `wood_pallet`/`carton`/`none`） | "无木包装不出声明"只能给 warning，无法真正拦截 |
-
+| B-3 | **C2/C10 打印视觉 QA** | 人工打印 1-2 张含公章 PI，检查签章区不分页、公章位置（文档已尽量自动化，视觉终检需人眼） |
+| B-4 | **C36：18 条「可删候选」确认** | 逐条确认哪些可删（后端可能被第三方/脚本使用，删前必须 owner 确认）；确认后我删除并复跑 contracts/mocks |
+| B-5 | **A6 合同 12 条双语条款抽查** | 模板集成后，签署前请业务/法务抽查中英措辞一致性（默认模板已标"可编辑、待确认"） |
 ### C. 已按你裁决不做 / 暂缓（不再列为待办）
 
 - **C24** 客户触达「产品手册附件」——暂缓；**N10** 事件流联通——暂缓；
@@ -60,7 +65,7 @@
 | 代码 | `main` @ `213f87c1`（本轮 21 个提交；工作树干净）；**远端只剩 `main`** |
 | 迁移头 | **`202610200006`**（A5-W1 条款模板表；前序：`trade_doc_facts` + 文件唯一索引 NULLS NOT DISTINCT）。**生产已从 `202610180010` 升到 `202610200006`（2026-10-21，pre-release 快照 `snap-late-shape-b55lavme`）** |
 | 门禁基线（本机 2026-10-21 收口实测，工作区静止） | worker **1354 passed + 12 skipped**（无库；12 条 db/integration 档按既有约定 skip；有 docker PG 时这 12 条真跑、总数 **1245**）；orchestrator **247**；前端 `pnpm test` **719 passed（74 files）**；typecheck 0 / lint 0 error / contracts R0–R6 PASS / `mocks:check` 未覆盖 **0** / e2e **27 条（27 passed + 0 skipped）** / `NEXT_EXPORT=1 pnpm build` → `out/` **277 文件**（含 pdf.js worker 资产，已实测生产可加载） / 静态断言 5 项 PASS（`check-worker-bundle` 本机 SKIP：uv 0.11.8 < 0.12.3，CI 会执行） |
-| 前端 e2e | `playwright test --list` = **28 条**（24 passed + 4 skipped） |
+| 前端 e2e | `playwright test --list` = **27 条**（27 passed + 0 skipped） |
 | 仓库可见性 | **public**（匿名 `git ls-remote` 成功）；`gh` 本机未登录 ⇒ CI 只能用网页/无 token 接口核对 |
 | 分支清理 | ✅ `archive/convergence-aprime-20261019` tag 已推；远端 `feat/convergence-aprime`、`feat/trade-doc-content-a` 已删；本地 `feat/trade-doc-templates`、`tech-stack-next16` 已删 |
 | stash | ✅ 2 个历史 stash 已 drop，内容留在本地 `refs/archive/stash0-20261019-2334`、`refs/archive/stash1-20260926-1508` |
