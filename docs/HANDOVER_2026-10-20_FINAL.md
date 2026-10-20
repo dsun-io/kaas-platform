@@ -13,6 +13,31 @@ Hyperdrive，并给 worker 依赖钉版入库。**前端 UI 优化 P0/P1/P2 已�
 发布窗口项，由用户排期执行）。**后端 5 项依赖已拆为并行任务**（`UI_BACKEND_DEPENDENCIES_2026-10-20.md`）。
 剩余主线：**等后端并行任务 + 用户在预览验收 → 用户下令发布生产**（发布检查单见 §5）。
 
+## 0.1 本轮后端交付（2026-10-20 晚 · 分支 `feat/trade-doc-content-a` · PR #5）
+
+用户点名的**后端 5 项 + 单证内容专项**已全部落地。PR #5 `mergeable_state=clean`，
+四条 workflow（backend:test / contracts:check / Frontend CI / preview）在合并后 head 全绿：
+预览 `https://kaas-preview-pr-5.dspro0124.workers.dev`。
+
+| 项 | 落地要点 |
+|---|---|
+| **F1 服务端签发自动上传** | `confirm` / `PATCH` 可携带预览同一份 HTML → 服务端唯一实现 `ws_files.archive_rendered_pdf` 出 PDF 并落 `render_pdf` 新版本；**失败不回滚签发**（响应 `pdf_archive{ok:false}`，界面提示手动上传）；前端签发已接线 |
+| **F2 单证内容版本** | 迁移 `202610200001`；五条写路径全部留版；列表/详情/恢复三端点 + 前端「内容版本」面板 |
+| **F3 个人信息编辑** | `PATCH /auth/me`（显示名，只改本人；邮箱登录标识不自助改）+ `POST /auth/change-password`（验旧密码、≥8 位）；侧栏弹窗可编辑；MSW 真改显示名 |
+| **F4 询盘状态机** | 迁移 `202610200003`：`stage/stage_updated_at` + `inquiry_stage_log`；事件驱动（报价/订单/出运/关闭）、只前进幂等、`closed` 终态；`GET /inquiries/{id}/stage-log` |
+| **F5 报价/订单 1:N** | 口径 A（用户拍板）：保留 1:N；新建订单校验币种一致 + 未取消订单金额累计 ≤ 报价合计（422 明细） |
+| **A1/A3/A8/A9** | 内容版本 / 字段体检 / 指纹对账 cron（每日 UTC 17:40）+ 列表「已变更」标识；**顺手修线上 bug**：`GET /trade-docs` 列表因 `_row_to_dict` 参数错必 500 |
+
+- 迁移 head：**`202610200003`**（新增结构，幂等）。
+- 门禁：worker **1008 passed + 5 skipped** / orchestrator **247** / frontend vitest **474** ·
+  typecheck 0 · lint 0 error / contracts R0–R6 / schema-coverage、drift、runtime-deps、sync-shared PASS。
+- 配置：两把 Resend key 已持久化到 GitHub repo secrets（`RESEND_API_KEY_PROD` / `RESEND_API_KEY_PREVIEW`），
+  换设备不失；生产 key 待**发布窗口**浇入 Cloudflare Worker secret（D1）。
+- 合并纪律：与并行 UI 线的冲突（README / PROBLEM_STATUS / `trade-docs/page.tsx`）已解决 ——
+  采用 UI 线新版页面布局后，重新接回 F1/A1/A3/A8/A9 的前端改动。
+- 剩余（`docs/TODO.md`）：A4 图片素材库、A5 编辑体验（需方案确认）、A6 真单据对照（需用户样例）、
+  A7 单证加固 P1/P2、B1–B3 产品配置化、C1–C6；D 组发布窗口项待用户下令。
+
 ## 1. 本轮完成（按时间，均有 commit/实测证据）
 
 | # | 事项 | 证据 |
