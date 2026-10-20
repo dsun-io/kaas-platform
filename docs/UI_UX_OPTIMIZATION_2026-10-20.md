@@ -64,6 +64,9 @@
 | L5 | 详情呈现三套并存：客户在列表下方整卡展开、事件用右侧 Sheet、单证用预览区 | `detail-drawer.tsx` 注释自述；`customers/page.tsx:1261-1267`；events 截图 | P1 | 纯前端 | 统一 `DetailDrawer`（右侧抽屉，480/560px），保留行点击打开；单证预览除外（整页预览合理） | 客户/事件/订单详情打开方式一致 |
 | L6 | 侧栏信息架构偏重：内部账号 9 组约 20 项，组标题与项视觉权重接近；底部版本号 10px | `workstations.ts:64-73`；截图 `dashboard.png` | P1 | 纯前端 | 组标题 11px/600 + 更明显留白；导航项 36px/13px；折叠态保留 tooltip；**分组重排需契约同步，暂不动** | 侧栏可 3 秒内定位目标工位；折叠后可用 |
 | L7 | 内容宽度/密度未按页面类型区分：仪表盘 6 卡后大留白；客户列表 2 行占满 | `dashboard.png`、`customers.png` | P1 | 纯前端 | 列出「工作台/列表/表单/预览」四类模板，各自控制 max-width 与密度（§2） | 1440×900 首屏无“无信息大留白” |
+| L8 | **1366×768 下侧栏导航被页脚裁切**：滚动区实际 691px > 可视 652px，末项「税务管理」被页脚压住 | 只读 DOM 探针（11 个页面一致）；`sidebar.tsx:230-240` | **P0** | 纯前端 | 页脚移入滚动区；压缩分组间距（`pt-4→pt-3`、`py-2→1.5`）；1366 默认折叠或分组折叠 | 1366×768 下 `scrollHeight ≤ clientHeight`，截图无裁切 |
+| L9 | 同一页两个 h1：`/products` 页面 h1 + 子区块 `PageHeader`「产品管理」；`/quotes` 页面 h1 + 工作台 h1「产品报价」 | 探针 h1Count=2（两页）；`products-media-tab.tsx:153-156`、`quote-workbench-view.tsx:655`；`products.png` | P1 | 纯前端 | 子区块标题降为 h2/SectionCard title，h1 只留页面级 | 探针 h1Count=1；标题层级严格递减 |
+| L10 | 单证页首屏被「样板预览」占满，开单/台账在第 2–3 屏（1366 探针 main 高 2430px） | `trade-docs/page.tsx:231-245`、`trade-docs.png` | P2 | 需产品确认（是否把样板预览改成折叠/独立入口） | 产品确认后：首屏可见开单入口 |
 
 ### 1.2 视觉层级
 
@@ -85,6 +88,7 @@
 | S4 | 图标尺寸 14/15/16/18/20 混用，侧栏 18px 与内容 16px 不齐 | `sidebar.tsx:163-169`、`header.tsx` | P2 | 纯前端 | 统一 16px（侧栏/按钮/表格），18px 仅空态插画 | 视觉对齐 |
 | S5 | 表格单元格 `p-2`（8px）与卡片 20px 内边距不协调，行高无令牌 | `ui/table.tsx:68-91` | P1 | 纯前端 | 行高 44/52 两档、横向 16px；表头 40px + 底色 | 表格密度可配置且默认舒适 |
 | S6 | 数字未全局等宽：KPI 有 `tabular-nums`，表格金额列部分没有 | `quote-order-records.tsx:205`、`quote-summary-card.tsx:106` | P1 | 纯前端 | 金额/数量/日期统一 `tabular-nums`；数字列右对齐 | 金额列数字逐位对齐 |
+| S7 | 字体栈未真正生效：`layout.tsx:12` 加载 Inter 并注入 `--font-sans`，但 `tailwind.config.ts` 未扩展 `fontFamily.sans` → 实测 body 仍是 `ui-sans-serif, system-ui`，中文逐字回退 | 探针 `document.fonts.check('16px Inter')=false`；`tailwind.config.ts` 无 fontFamily | P2 | 纯前端 | 在 `fontFamily.sans` 首项放 `var(--font-sans)` + `"PingFang SC"/"Microsoft YaHei"`；或删掉未使用的 Inter 请求 | 探针 bodyFont 含 Inter 与 CJK 栈；中文不逐字回退 |
 
 ### 1.4 颜色与状态标签
 
@@ -93,7 +97,7 @@
 | C1 | 状态标签 3 套实现：`StatusBadge`（.badge-*）、shadcn `Badge`、页面内联 badge | `status-badge.tsx`、`tenant-list.tsx:47`、`badge.tsx` | P0 | 纯前端 | 只保留 `StatusBadge`，`Badge` 仅用于计数/分类，不用于状态 | 状态标签只有一种组件 |
 | C2 | 语义色被装饰化/硬编码：`text-red-600`（退出登录）、`text-green-*` 等 28 处绕过 `--success/--destructive` 令牌 | `header.tsx:183`、`git grep` 统计 28 行 | P0 | 纯前端 | 禁用调色板直引；只允许 `text-success/warning/destructive/info` | 全站无 `text-red-*` 等硬编码语义色 |
 | C3 | 状态只靠颜色：部分场景只有彩色圆点/色块，无文字/图标 | `badge-dot::before` 设计、`trade-docs` 状态行 | P1 | 纯前端 | 状态 = 颜色 + 文案；必要处加 `aria-label`/图标；圆点仅作辅助 | 灰度打印仍可区分状态 |
-| C4 | 对比度不足：侧栏组标题 `oklch(--sidebar-foreground/0.5)` 11px（估算 ≈3.3:1）、footer 10px/30%（≈2:1） | `globals.css:322-325`、`sidebar.tsx:236-238` | P1 | 纯前端 | 组标题 0.72 透明度、12px；footer ≥0.6/12px | 正文/标签 ≥4.5:1 |
+| C4 | 对比度不足（实测）：侧栏组标题 4.45:1@11px、侧栏页脚 2.41:1@10px、错误文字 4.38:1，均 <4.5:1；**状态徽章 7.30–13.01:1 全部通过**（不作为问题） | 探针按 OKLCH→sRGB→WCAG 计算；`globals.css:322-325`、`sidebar.tsx:236-238`、`globals.css:50` | P1 | 纯前端 | 组标题 `/70` 或 12px 加粗；页脚 `/45` 以上；错误文字用更深语义色 | 重算 ≥4.5:1；已通过项不回退 |
 | C5 | 品牌强调色过度使用，用户无法区分“可点击/选中/状态/装饰” | 截图：active nav、主按钮、KPI 图标、日期选择器都用同一靛蓝 | P1 | 纯前端 | 靛蓝 = 交互主色（按钮/链接/焦点/选中）；状态色独立；装饰仅 logo/登录页 | 主色出现位置可枚举 |
 
 ### 1.5 表格展示与交互
@@ -106,6 +110,7 @@
 | T4 | 行内操作数量不受控，超过 2 个仍全部平铺 | `quote-order-records.tsx:181`、`audit-log` 行操作 | P1 | 纯前端 | 1 个主操作平铺，其余进「…」菜单；菜单项文案/图标齐全 | 行高稳定，操作可发现 |
 | T5 | 空态/加载态用纯文本，无骨架；`audit-log`/`tenant-list` 都是“加载中…” | `audit-log/page.tsx:220`、`tenant-list.tsx:20-26`、`dashboard/page.tsx:117-119` | P0 | 纯前端 | 表格/卡片用结构一致 Skeleton；空态用 `EmptyState` + 现有主操作 | 首屏无跳动，加载态与内容同构 |
 | T6 | 无选中/批量能力；**不建议新增批量操作**（当前无对应业务动作，新增=新能力） | 现状 | — | 超出前端范围 | 仅预留视觉位，不实现批量动作 | 不出现无效复选框 |
+| T7 | 4 个列表页无分页/虚拟滚动（订单/出货/事件/审计），仅情报出货表有上一页/下一页；事件 mock 已 12 行、审计 10+ 行 | `intel/components/shipments-table.tsx:194-205`；`orders/shipments/events/audit-log` | P1 | 前端（若接口已返回全量）/ 需业务（若需后端分页） | 先查接口是否支持 limit/offset：支持则接分页组件；不支持则前端虚拟滚动或明确条数上限，**不改数据获取方式** | 长列表滚到底有明确边界或分页；不静默截断 |
 
 ### 1.6 表单展示与交互
 
@@ -118,6 +123,7 @@
 | F5 | 只读/禁用/无权限视觉混用：都表现为灰色低透明 | `button.tsx` disabled、只读输入 | P1 | 纯前端 | 三态区分：disabled（50% + 禁指针 + 说明）、readonly（浅底不降文字对比 + “只读”标记）、无权限（不渲染或锁定说明） | 三态可截图区分；不靠颜色单独传达 |
 | F6 | 数字输入无单位/千分位/等宽提示；单位散落在 label 与提示中 | `quotes.png`、`quote-line-card.tsx` | P2 | 纯前端 | 输入后缀单位、聚焦时千分位、失焦格式化；不改校验 | 金额/比例输入可读、可复制 |
 | F7 | 新建客户为页面内 Card，与全站抽屉模式不一致；成功后详情在列表下方，上下文丢失 | `customers/page.tsx:1203-1215` | P1 | 纯前端 | 新建→右侧 Drawer（复用 `DetailDrawer`）；成功后关闭并聚焦新行 | 打开/关闭方式与详情一致 |
+| F8 | **报价工作台 23/23 个控件无程序化标签**（`Label` 无 `htmlFor`、`select` 无 `aria-label`），读屏无法完成核心报价 | 1366 探针 unlabeled=23/23；`workbench-params-card.tsx:210,251,378,411,443,452`、`quote-line-card.tsx:552,567`；`form-field.tsx` 已支持 htmlFor 但未用 | **P0** | 纯前端 | 统一走 `FormField`（label htmlFor + errorId）；动态行用 `aria-labelledby` | 探针 unlabeled=0；读屏可读出字段名与错误 |
 
 ### 1.7 筛选区
 
@@ -126,16 +132,19 @@
 | R1 | 客户页只有搜索框，塞在 CardHeader 内与标题同排；无计数、无清除、无筛选 | `customers/page.tsx:1217-1228` | P0 | 纯前端 | 搜索进 Toolbar（320px，带清除按钮）；右侧计数；不新增后端筛选 | 搜索/清除/计数可用 |
 | R2 | 情报筛选 7 个控件一行 + 图标按钮（搜索/重置），占位符承担 label，无展开更多 | `intel.png`、`intel-section.tsx` | P1 | 纯前端 | label 外置或 tooltip；搜索/重置改带文字按钮；>4 条件折叠到「更多筛选」；已选条件用 tag 展示（仅前端） | 1366 下一行放下且不换行挤压 |
 | R3 | 各页筛选样式各异（input 高度/图标按钮/组合方式） | `research`、`orders`、`quotes` 页面 | P1 | 纯前端 | 统一 `FilterBar` 组件（§6.2） | 所有筛选区结构一致 |
+| R4 | 用 placeholder 当标签：情报 6 个、事件 2 个、客户搜索、审计筛选；单证同类两个 select 一个有 `aria-label` 一个没有 | 探针 unlabeled；`shipments-table.tsx:73-115`、`event-filters.tsx:38-69`、`customers:1221-1226`、`audit-log:96-104`、`trade-docs:248-270` | P1 | 纯前端 | 每个筛选项补 `aria-label` 或 sr-only label；同栏口径一致 | 探针六个筛选区 unlabeled=0 |
 
 ### 1.8 反馈与空态/加载态
 
 | ID | 问题 | 证据 | 级别 | 边界 | 前端改法 | 验收标准 |
 |---|---|---|---|---|---|---|
-| E1 | 28 个页面/组件用纯文本“加载中…”，仅 11 处 Skeleton | `git grep` 统计；`dashboard/page.tsx:117`、`customers/page.tsx:1230` | P0 | 纯前端 | 表格→行骨架；卡片→卡骨架；按钮→spinner；页面级→`loading.tsx` | 所有数据区有同构 loading |
+| E1 | 28 个页面/组件用纯文本“加载中…”，仅 12 处 Skeleton（6 个 `loading.tsx` + 侧栏/顶栏 + 情报 4 组件） | `git grep` 统计；`dashboard/page.tsx:117`、`customers/page.tsx:1230` | P0 | 纯前端 | 表格→行骨架；卡片→卡骨架；按钮→spinner；页面级→`loading.tsx` | 所有数据区有同构 loading |
 | E2 | 空态 12 处用 `EmptyState`，其余纯文本或无；空态无下一步 | `customers/page.tsx:1233-1235`、`audit-log:224` | P0 | 纯前端 | 空态 = 图标 + 标题 + 一句原因 + 现有主操作 | 每个空态都有可执行动作或明确原因 |
 | E3 | 错误反馈位置/时长不统一；toast 已装（sonner）但未成规范 | `toaster.tsx`、各页 `toast` 调用 | P1 | 纯前端 | 成功 toast 右上 4s；错误 toast 不自动消失且带“重试”；表单错误内联 | 同一操作全站反馈一致 |
 | E4 | 提交按钮 loading 只在报价摘要卡实现（Loader2 + disabled），其他页面无统一防重复 | `quote-summary-card.tsx:197-240`、`customers` 创建按钮 | P0 | 纯前端 | 统一 `useSubmit`：>300ms 进入 loading、disabled、`aria-busy`；按钮宽度不跳动 | 双击不产生重复请求（前端层面） |
 | E5 | 删除等危险操作确认弹窗样式/按钮位置不统一 | `customers/page.tsx` 删除确认 | P1 | 纯前端 | 统一 `ConfirmDialog`：标题=动词+对象，正文=影响，按钮「取消（左）/删除（右，危险色）」；不增删确认步骤 | 危险按钮均为 danger 色 |
+| E6 | 错误页 6 份拷贝（根 `error.tsx` + 5 个路由 `error.tsx`），文案/操作易漂移 | `app/error.tsx`、`(app)/{audit-log,dashboard,events}/error.tsx` 等 | P2 | 纯前端 | 抽 `ErrorState` 组件复用 | 6 处同一实现 |
+| E7 | 成功状态重复表达 + 工程口径文案：「必填齐全，可签发」badge 与绿字「必填项齐全…」同屏；标题「样板预览（不需要后端）」 | `doc-preview.tsx:308-311,427`、`trade-docs/page.tsx:231-233` | P2 | 纯前端 | 合并为一条结论；用户可见文案去掉「后端」等工程词 | 同区块仅一处状态结论 |
 
 ### 1.9 前端易用性
 
@@ -145,6 +154,9 @@
 | U2 | 客户列表行用 `div onClick`，不可键盘聚焦/回车打开 | `customers/page.tsx:1238-1243` | P0 | 纯前端 | 行改 `<tr tabIndex=0 onKeyDown>` 或行尾 `<button aria-label="查看…">`；保留行点击 | Tab 可达、Enter 打开 |
 | U3 | 侧栏收起后图标无 tooltip/aria-label；折叠状态不持久 | `sidebar.tsx:157-171,181-190` | P1 | 纯前端 | 折叠态加 `title`/tooltip + `aria-label`；折叠状态存 localStorage | 折叠后可用、刷新后保持 |
 | U4 | Tab 切换无 URL/无键盘左右键（手写 tabs 用 Button） | `intel-section.tsx:29-43`、`spec-proposals`、`customers` | P2 | 纯前端 | 收敛到 `ui/tabs`（base-ui 自带方向键/role=tab） | 键盘可切换、屏幕阅读器识别 |
+| U5 | 事件页「搜索」按钮实际执行 `clear()`（文案与行为不符，属前端 bug） | `event-filters.tsx:87-90` vs `:30-32`；e2e 不依赖该按钮（已核） | P1 | 纯前端（行为修正，不改业务规则） | 即时筛选就只保留「清除」；若要显式提交则改为应用筛选 | 文案与行为一致；筛选条件不丢 |
+| U6 | 可点行/卡没有任何可点提示（无箭头/「查看」，仅 hover） | `customers:1238-1241`、`audit-log:121-124`、`quote-order-records:174` | P2 | 纯前端 | 行尾加 chevron/「查看」，hover 整行高亮 | 可用性测试 3/3 能指出点击位置 |
+| U7 | 团队页 3 个「刷新」入口（页头/工位开通/成员面板）；长页 5 个 SectionCard | `team/page.tsx:107-115`、`team-members-panel.tsx:133-138`、`team.png` | P2 | 纯前端 | 页头保留唯一「刷新全部」，卡片内只在错误时给重试 | 页面仅 1 个主动刷新入口 |
 
 ### 1.10 可访问性
 
@@ -155,15 +167,21 @@
 | A3 | 表格无 `scope`/caption；部分图标按钮无可访问名 | `ui/table.tsx`、各页 icon-only 按钮 | P1 | 纯前端 | `th scope="col"`；icon-only 按钮补 `aria-label` | axe 扫描无 name 缺失（仅展示层） |
 | A4 | 禁用态无 `aria-disabled`，仅 opacity | `button.tsx:8` | P1 | 纯前端 | 补 `aria-disabled` 与原因说明 | 读屏可感知禁用 |
 | A5 | 对比度：见 C4；状态色单独表达见 C3 | — | P1 | 纯前端 | 令牌调值 + 状态加文字 | 对比度工具 ≥4.5:1 |
+| A6 | `viewport maximumScale:1` 禁止双指缩放（WCAG 1.4.4） | `app/layout.tsx:20-24` | P1 | 纯前端 | 去掉 `maximumScale`，保留 `initialScale:1` | meta viewport 无 maximum-scale |
+| A7 | 全站表头无 `scope`：`TableHead` 不设置，全仓 132 处 `th` 均无 | `ui/table.tsx:68-78`；探针 `th[scope]`=0/132 | P1 | 纯前端 | `TableHead` 默认 `scope="col"`；行头表用 `scope="row"` | 探针表头 scope 覆盖率 100% |
+| A8 | 图标按钮无无障碍名：事件 14 个、情报 4 个、仪表盘 2 个（侧栏折叠按钮也无） | 探针统计；`event-table.tsx:85-89`、`sidebar.tsx:212-227` | P1 | 纯前端 | icon-only 按钮一律 `aria-label`；装饰图标 `aria-hidden` | 各页 icon-only 无名按钮=0 |
+| A9 | 仪表盘范围选择器选中态只靠颜色，无 `aria-pressed`/`role=tab` | `range-selector.tsx:18-29` | P2 | 纯前端 | 改用 `ui/tabs` pills 或补 `aria-pressed` + 选中描边 | 有 `aria-pressed` 或 tab 语义 |
+| A10 | 缺少 skip-link；`<main>` 无 id/名称，读屏需逐项跳过 13 个导航项 | `app-layout.tsx:10-12` | P2 | 纯前端 | `main id="main-content"` + 首个可聚焦「跳到主内容」 | Tab 第一下出现 skip link |
 
 ### 1.11 分辨率适配
 
 | ID | 问题 | 证据 | 级别 | 边界 | 前端改法 | 验收标准 |
 |---|---|---|---|---|---|---|
-| D1 | 9 列表格 + 全单元格 nowrap，1366 横向滚动；产品页 9 列最明显 | `products` 表格截图；`ui/table.tsx:86` | P0 | 纯前端 | 列优先级（P0 列常显，P1 列 1366 显示，P2 列收进「列配置」）；表头 sticky；操作列固定右侧 | 1366×768 无横向错位、操作列始终可见 |
+| D1 | 表格横向风险：**1366 实测 11 页当前均无横向溢出**（`over=[]`），但 9 列产品表 + 全单元格 `whitespace-nowrap` 在列增长/长文本时无缓冲 | 1366 探针（已实测通过，防误报）；`ui/table.tsx:86` | P1 | 纯前端 | 列优先级（P0 列常显、P1 列 1366 显示、P2 列进「列配置」）；表头 sticky；操作列固定右侧 | 改版后用同一探针复测 `over=[]` 保持 |
 | D2 | 报价表单 4 列在 1366 变窄 | `quotes.png` | P1 | 纯前端 | 响应式栅格（3/2/1 列） | 输入框 ≥180px |
 | D3 | 侧栏 240px 固定；<1024 才隐藏（`lg:`），平板横屏 1024–1200 内容区偏窄 | `sidebar.tsx:185-190` | P2 | 纯前端 | <1280 收起为 68px 图标栏（可展开） | 1024–1280 无内容挤压 |
 | D4 | 移动端仅有顶部栏 + Sheet，表格页无移动方案 | `app-layout.tsx`、`table.tsx` | P2 | 纯前端 | 表格在 <768 改卡片列表（同一数据） | 手机可读可操作 |
+| D5 | **1366×768 侧栏导航被页脚裁切**（详见 L8）；首屏可用区被页头+筛选卡吃掉近半：事件表首行 y=388、审计 y=342（视口 768） | 探针 `navWrap 691/652`；`events/page.tsx:29-53`、`audit-log:188-226` | **P0** | 纯前端 | 页脚入滚动区 + 压缩导航间距；筛选收成一行工具条 | 1366 无裁切；首行 y ≤320；单屏 ≥7 行 |
 
 ---
 
@@ -187,7 +205,7 @@
 
 | 区域 | 规格 | 说明 |
 |---|---|---|
-| 侧栏 | 宽 240（收起 68），背景 `#141826`，选中态 = 半透明主色 + 左侧 3px 指示条 + 白字（**去掉渐变胶囊**） | 品牌识别保留，视觉重量下降 |
+| 侧栏 | 宽 240（收起 68），背景 `#141826`，选中态 = 半透明主色 + 左侧 3px 指示条 + 白字（**去掉渐变胶囊**）；页脚移入滚动区，1366 默认紧凑间距/可折叠 | 品牌识别保留，视觉重量下降；解决 1366 下导航被页脚裁切（L8） |
 | 顶栏 | 高 56，白 90% + blur，1px 底边；面包屑 13px；右侧团队胶囊 + 头像 | 不加全局搜索（无后端能力，超出范围） |
 | 内容区 | 背景 `#F5F6FA`，容器 max 1400 + 24/32 padding；区块间距 24 | 与卡片白底形成弱对比 |
 | 页头 | 标题 22/600，描述 13/1.6，主操作 32px 高、右对齐；与内容间距 22 | 替代 30/36px 大标题 |
@@ -343,7 +361,8 @@
 | 表格表头 | 12 | 20 | 600，`text-muted-foreground` |
 
 - 中文不加大字距；英文/数字标题 `letter-spacing: -0.01em`；
-- 最小字号 12px（10/11px 仅允许非文本场景）。
+- 最小字号 12px（10/11px 仅允许非文本场景）；
+- 字体栈：`Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif`，并在 `fontFamily.sans` 里引用 `var(--font-sans)`（现状见 S7：Inter 已加载但未生效）。
 
 ### 5.3 间距 / 圆角 / 阴影 / 控件高度
 
@@ -395,8 +414,8 @@
 
 ### 6.3 表单 `FormField`
 
-- label 13px/500 + 必填 `*`（前置/红色）；控件 36px；help 12px（默认 1 行）；
-- 错误：红边 + 3px 红色 ring + 12px 错误文案 + `aria-invalid`/`aria-describedby`；
+- label 13px/500 + 必填 `*`（前置/红色）；**每个控件必须有 `id` + `<Label htmlFor>` 或 `aria-label`**；控件 36px；help 12px（默认 1 行）；
+- 错误：红边 + 3px 红色 ring + 12px 错误文案 + `aria-invalid`/`aria-describedby`（`form-field.tsx` 已支持，页面须改用）；
 - 只读：浅底 + 正常对比 + 「只读」标记；禁用：50% + 禁指针 + 原因 tooltip；
 - 提交失败：滚动到首个错误 + focus；顶部摘要可点击跳转。
 
@@ -466,7 +485,7 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 
 **不改动项**：接口与字段（客户列表/详情/新建/编辑/删除/阶段）、权限、`data-testid="customer-card"`（保留在行上）、按钮可访问名（新建客户/创建客户/编辑档案/保存档案/更新阶段/保存阶段/删除客户/确认删除）。
 
-**验收**：1440 同屏 ≥8 行；1366 无横向错位；Tab 可打开详情；搜索/清除/计数可用；e2e `customers.spec.ts` 5 条全过。
+**验收**：1440 同屏 ≥8 行；1366 无横向错位；Tab 可打开详情；搜索/清除/计数可用；探针 h1Count=1；e2e `customers.spec.ts` 5 条全过。
 
 ### 7.2 仪表盘（工作台模板样板）
 
@@ -548,8 +567,11 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 - [ ] 键盘可完成：导航 → 列表 → 打开详情 → 关闭返回
 - [ ] 焦点环在导航/行/按钮可见；active nav 有 `aria-current`
 - [ ] 系统开启 reduced-motion 后无位移动画
-- [ ] 1366×768 无横向错位、操作列可见
+- [ ] 1366×768 无横向错位、操作列可见；**侧栏导航不被页脚裁切**（scrollHeight ≤ clientHeight）
 - [ ] 文字对比度 ≥4.5:1（12px 辅助文本同）
+- [ ] 报价工作台控件 unlabeled=0；表头 `scope` 覆盖率 100%；icon-only 按钮均有可访问名
+- [ ] `maximumScale` 不再禁止缩放；`/products`、`/quotes` 探针 h1Count=1
+- [ ] 事件页「搜索」按钮行为与文案一致（clear 按钮改名「清除」）
 - [ ] 列表页搜索/计数/清除可用，筛选条件可记忆
 - [ ] 客户列表 e2e、报价 e2e、设置 e2e、仪表盘 e2e 全过
 - [ ] `pnpm typecheck`、`pnpm lint`、`pnpm test` 通过
@@ -582,12 +604,18 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 | `TabsTrigger` 文件 | 3 |
 | 手写 `border-b-2` tabs 文件 | 5（spec-proposals / customers / intel-section / market-view / research） |
 | “加载中” 文件 | 28 |
-| `Skeleton` 文件 | 11 |
+| `Skeleton` 文件 | 12 |
 | `EmptyState` 文件 | 12 |
 | `text-[10px]` / `text-[11px]` 出现 | 76 |
 | 硬编码 `text-red/green/amber-*` 行 | 28 |
 | `prefers-reduced-motion` | 0 |
 | `.btn-brand` 使用 | 0（仅定义） |
+| 1366 侧栏 nav 滚动区 / 可视区 | 691 / 652（11 页一致，末项被页脚裁切） |
+| `/quotes` 无程序化标签控件 | 23 / 23 |
+| 表头 `th[scope]` | 0 / 132 |
+| icon-only 无名按钮（/events） | 14 |
+| `/quotes`、`/products` h1Count | 2、2 |
+| RangeSelector `aria-pressed` | 0 |
 
 ### A.2 截图（1440×900，`NEXT_PUBLIC_API_MODE=mock`）
 
@@ -618,6 +646,10 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 1. 你提供的截图中侧栏顶部有“搜索”输入框，但 `main` 分支当前构建（含两个 worktree 分支）**没有该控件**；本方案以 `main` 为准。若该截图来自在研分支/预览，请提供分支名，相关结论需复核。
 2. 该截图右侧内容被裁切（右上头像贴近右缘、卡片被切断），判断以 1440×900 全屏截图为准。
 3. 本轮只产出方案与静态原型，**未修改产品代码**；落地前需确认视觉方向与优先级。
+
+### A.5 独立审计报告（互补证据）
+
+`artifacts/ui-redesign/audit/interaction-audit.md`（159 行、A–M 共 13 张表；`artifacts/` 被 `.gitignore` 忽略，属本地证据）：结论 P0 3 条（报价表单 23/23 无标签、客户行键盘不可达、1366 侧栏被页脚裁切）、P1 19 条、P2 35 条，另有 e2e 硬约束 10 条与勾选式验收总纲。本方案已吸收其关键项（L8/L9/F8/R4/U5/U6/U7/A6–A10/D5/T7 等）。
 
 ---
 
