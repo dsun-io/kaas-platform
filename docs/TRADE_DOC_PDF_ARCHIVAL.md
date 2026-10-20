@@ -195,10 +195,19 @@ orchestrator `backend/orchestrator/app/api/trade_docs.py:979`、worker `backend/
 - 路径为什么取 `…/render-fingerprint-checks/batch`（代码注释里写明）：`/trade-docs/{doc_id}` 是**不带 int
   转换器**的动态段，会把 `…/trade-docs/render-fingerprint-checks` 先吃掉 ⇒ 必须多一段静态后缀。
 
-**仍未做（如实标注，别当成已完成）**：
-1. **定时调度未做**：批量是**按需调用**（一次最多 50 张），**没有** cron / 定时任务；
-2. **列表页未标出"哪些被改过"**：结论要**逐张点开**或**调批量接口**才看得到，
-   单证列表里**没有**"这单被改过"的一眼标识。
+**已落地（2026-10-20，TODO A8/A9）：定时调度 + 列表标识**
+
+1. **定时调度**：CF Cron `40 17 * * *`（UTC 17:40 = Asia/Shanghai 次日 01:40）由
+   `ws_cron.run_check_render_fingerprints` 执行 —— 扫**近 30 天签发**的单据（单轮上限 50，
+   与批量端点同上限），逐张复用同一套内核判定；每张独立 try（一张装配失败标
+   `current_unavailable`，不拖垮整轮），结论 **upsert** 进 `trade_doc_render_checks`
+   （迁移 `202610200002`，tenant+doc 唯一、覆盖写，不是事件流）。
+2. **列表标识**：`GET /api/v1/trade-docs` 每行挂 `render_check`（最近一次结论；
+   `null` = 从未对账）；前端列表显示「已变更」（`data_changed` 红）/「模板已更新」
+   （`version_drift` 黄）/「待复核」（装配失败黄），一致与无基线不显示标识（常态不打扰）。
+3. 批量端点（下文）保持不变，仍用于**按需立即对账**；定时任务只是周期性补扫。
+4. 仍未验证的边界：本分支**未在已部署环境真实跑过一次 cron**（需部署后触发，归发布后
+   P4 观察期）；cron 首轮结果可从 `/cdn-cgi/local/scheduled` 或日志的 `[cron]` 行核对。
 
 **性质说明（不是 bug，但值得留档）**：对账的前提是"两边同一套装配"。若将来给 `render-data`
 加了**新数据源**却忘了同步到**签发冻结**那条路径，两边会**一起变**、`matches` 仍报 `true` ——

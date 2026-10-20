@@ -1,4 +1,4 @@
-"""Cloudflare Cron 两个任务的行为锁（纯假连接，无数据库、无网络）。
+"""Cloudflare Cron 三个任务的行为锁（纯假连接，无数据库、无网络）。
 
 为什么需要这个文件
 ------------------
@@ -11,7 +11,9 @@ README §8 已知问题 #5：orchestrator 里两个 APScheduler 任务**生产�
    筛选条件 / 幂等 / 客户复用与团队归属 / 询盘 INSERT 字段 / 线索状态回写；
 2. **events 每日归档**（真源 `app/jobs/archive.py`）：
    UTC 时间窗 / 按 schema_version 分桶 / JSONL+GZIP / R2 键 / events_archive_log 行；
-3. **接线与健壮性**：空数据与异常都不抛穿；scheduled 只按 `controller.cron` 分派；
+3. **单证指纹定时对账**（TODO A8/A9）：
+   近 30 天 issued 单据 / 每张独立 try（一张炸不拖垮整轮）/ 结论 upsert 覆盖写；
+4. **接线与健壮性**：空数据与异常都不抛穿；scheduled 只按 `controller.cron` 分派；
    `wrangler.jsonc` 的 crons 与 `ws_cron` 常量逐字符一致（防「改了配置忘了改代码」）。
 
 假连接的约定见 `_Conn`：结果按调用顺序预置，每条查询都记进 `queries` 供断言。
@@ -485,6 +487,7 @@ def test_run_archive_events_retries_three_times_then_returns_error(monkeypatch):
     [
         (ws_cron.CRON_SCAN_REPLIED, "scan_replied_leads", "scan"),
         (ws_cron.CRON_ARCHIVE_EVENTS, "archive_events", "archive"),
+        (ws_cron.CRON_RENDER_CHECK, "check_render_fingerprints", "render"),
     ],
 )
 def test_run_scheduled_dispatches_by_exact_cron(monkeypatch, cron, job, runner):
@@ -498,15 +501,25 @@ def test_run_scheduled_dispatches_by_exact_cron(monkeypatch, cron, job, runner):
         recorded.append(("archive", env))
         return {"archived": 0, "message": "No events on 2026-10-18"}
 
+    async def fake_render(env):
+        recorded.append(("render", env))
+        return {"total": 0, "matched": 0}
+
     monkeypatch.setattr(ws_cron, "run_lead_scan", fake_scan)
     monkeypatch.setattr(ws_cron, "run_archive_events", fake_archive)
+    monkeypatch.setattr(ws_cron, "run_check_render_fingerprints", fake_render)
     env = _Env(HYPERDRIVE=_Hd())
 
     result = _run(ws_cron.run_scheduled(env, SimpleNamespace(cron=cron)))
 
     assert [name for name, _env in recorded] == [runner]
     assert result["job"] == job and result["cron"] == cron
-    assert result["result"]["archived" if job == "archive_events" else "scanned"] == 0
+    zero_key = {
+        "scan_replied_leads": "scanned",
+        "archive_events": "archived",
+        "check_render_fingerprints": "total",
+    }[job]
+    assert result["result"][zero_key] == 0
     assert recorded[0][1] is env
 
 
@@ -551,12 +564,141 @@ def test_wrangler_crons_match_ws_cron_constants():
     data = json.loads(stripped)
 
     crons = data["triggers"]["crons"]
-    assert crons == [ws_cron.CRON_SCAN_REPLIED, ws_cron.CRON_ARCHIVE_EVENTS]
+    assert crons == [
+        ws_cron.CRON_SCAN_REPLIED,
+        ws_cron.CRON_ARCHIVE_EVENTS,
+        ws_cron.CRON_RENDER_CHECK,
+    ]
     assert set(ws_cron.JOBS_BY_CRON) == set(crons)
 
 
 def test_cron_expressions_are_five_field_utc_schedules():
-    for cron in (ws_cron.CRON_SCAN_REPLIED, ws_cron.CRON_ARCHIVE_EVENTS):
+    for cron in (
+        ws_cron.CRON_SCAN_REPLIED,
+        ws_cron.CRON_ARCHIVE_EVENTS,
+        ws_cron.CRON_RENDER_CHECK,
+    ):
         assert len(cron.split()) == 5
     # 归档：Asia/Shanghai 00:30 == UTC 16:30 前一日（UTC+8）
     assert ws_cron.CRON_ARCHIVE_EVENTS == "30 16 * * *"
+    # 对账：Asia/Shanghai 次日 01:40 == UTC 前一日 17:40（UTC+8），避开归档窗口
+    assert ws_cron.CRON_RENDER_CHECK == "40 17 * * *"
+
+
+# ── 任务 3：单证指纹定时对账（TODO A8/A9）───────────────────────────────────
+
+def _issued_doc_row(**over):
+    row = {
+        "id": 7, "doc_no": "PI-202610-0007", "status": "issued", "raw_payload": {},
+    }
+    row.update(over)
+    return row
+
+
+def _fingerprint_row(data):
+    """构造一张「签发时冻结了指纹」的单据行（冻结输入 = data）。"""
+    from kaas_common.trade_doc import render_fingerprint
+
+    return _issued_doc_row(raw_payload={
+        "_render": render_fingerprint(data, frozen_at="2026-10-20T00:00:00+00:00"),
+    })
+
+
+def _patch_render_data(monkeypatch, data=None, exc=None):
+    """替换装配函数：cron 对账要把每张单据的渲染输入重新装配一遍。
+
+    `request` 在真实现里只用来取 Hyperdrive 绑定；这里替换后完全不碰网络。
+    """
+    async def fake_render_data(doc_id, request, user):
+        if exc is not None:
+            raise exc
+        return {"data": data}
+
+    monkeypatch.setattr(ws_cron._main, "get_trade_doc_render_data", fake_render_data)
+
+
+def _render_check_inserts(conn):
+    return [
+        (sql, args) for sql, args in conn.queries
+        if "INSERT INTO trade_doc_render_checks" in sql
+    ]
+
+
+def test_render_check_no_issued_docs_returns_zero():
+    conn = _Conn([])
+    result = _run(ws_cron.check_render_fingerprints(conn, SimpleNamespace(scope={})))
+
+    assert result["total"] == 0 and result["checked"] == 0
+    # 只扫 issued + 近 30 天 + 上限 50；空结果不写对账表
+    sql, args = conn.queries[0]
+    assert "status='issued'" in sql and "LIMIT $3" in sql
+    assert args[0] == ws_cron.DEFAULT_TENANT
+    assert args[2] == ws_cron.RENDER_CHECK_LIMIT
+    assert _render_check_inserts(conn) == []
+
+
+def test_render_check_matched_persists_upsert(monkeypatch):
+    data = {"currency": "USD", "total_amount": 1200, "items": [], "remarks": "x"}
+    conn = _Conn([_fingerprint_row(data)])
+    _patch_render_data(monkeypatch, data)
+
+    result = _run(ws_cron.check_render_fingerprints(conn, SimpleNamespace(scope={})))
+
+    assert result["matched"] == 1 and result["checked"] == 1
+    inserts = _render_check_inserts(conn)
+    assert len(inserts) == 1
+    sql, args = inserts[0]
+    # 覆盖写：每张单据只留最近一次结论（不是事件流）
+    assert "ON CONFLICT (tenant_id, trade_doc_id) DO UPDATE" in sql
+    assert args[0] == ws_cron.DEFAULT_TENANT and args[1] == 7
+    assert args[3] is True and args[4] == "matched"
+
+
+def test_render_check_after_data_change_reports_changed(monkeypatch):
+    frozen = {"currency": "USD", "total_amount": 1200}
+    conn = _Conn([_fingerprint_row(frozen)])
+    _patch_render_data(monkeypatch, {**frozen, "total_amount": 999})
+
+    result = _run(ws_cron.check_render_fingerprints(conn, SimpleNamespace(scope={})))
+
+    assert result["data_changed"] == 1
+    _sql, args = _render_check_inserts(conn)[0]
+    assert args[3] is False and args[4] == "data_changed"
+
+
+def test_render_check_assembly_error_marks_unavailable(monkeypatch):
+    """一张装配失败只能标 unavailable —— 绝不假装匹配，也不能拖垮整轮。"""
+    conn = _Conn([_fingerprint_row({"currency": "USD"})])
+    _patch_render_data(monkeypatch, exc=RuntimeError("no company profile"))
+
+    result = _run(ws_cron.check_render_fingerprints(conn, SimpleNamespace(scope={})))
+
+    assert result["unavailable"] == 1
+    assert result["matched"] == 0
+    _sql, args = _render_check_inserts(conn)[0]
+    # reason 存内核原值（current_unavailable），汇总时才折进 unavailable 桶
+    assert args[3] is False and args[4] == "current_unavailable"
+
+
+def test_run_render_check_uses_hyperdrive_and_closes(monkeypatch):
+    data = {"currency": "USD"}
+    conn = _Conn([_fingerprint_row(data)])
+    calls = _patch_connect(monkeypatch, conn)
+    _patch_render_data(monkeypatch, data)
+
+    result = _run(ws_cron.run_check_render_fingerprints(_Env(HYPERDRIVE=_Hd())))
+
+    assert result["checked"] == 1
+    assert conn.closed is True
+    # 连接参数与 main._acquire 同口径（真实 binding 的 port 是字符串 → 转 int）
+    assert calls[0]["host"] == "db.example.invalid"
+    assert calls[0]["port"] == 5432 and calls[0]["ssl"] is False
+
+
+def test_run_render_check_swallows_error(monkeypatch):
+    _patch_connect(monkeypatch, RuntimeError("boom"))
+
+    result = _run(ws_cron.run_check_render_fingerprints(_Env(HYPERDRIVE=_Hd())))
+
+    assert result["checked"] == 0
+    assert "boom" in result["error"]     # 异常不抛穿（Cron 不能让调度器变错误态）

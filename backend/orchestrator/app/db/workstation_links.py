@@ -293,6 +293,39 @@ class TradeDoc(Base):
     )
 
 
+class TradeDocRenderCheck(Base):
+    """单证指纹对账结果（TODO A8/A9，迁移 `202610200002`）。
+
+    每张单据**一行**（tenant+doc 唯一、覆盖写）：cron 每日扫描近期签发单据，
+    把最近一次对账结论落库；列表端点 join 它显示「已变更」标识。
+    不是业务事件流（只增不删）；完整卡片存 `result`，排查时不用重跑。
+    """
+    __tablename__ = "trade_doc_render_checks"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    trade_doc_id = Column(
+        BigInteger, ForeignKey("trade_docs.id", ondelete="CASCADE"), nullable=False,
+    )
+    checked_at = Column(DateTime(timezone=True), nullable=False)
+    matches = Column(Boolean, nullable=False)
+    # matched | data_changed | version_drift | no_fingerprint |
+    # current_unavailable | frozen_unavailable（内核原值）
+    reason = Column(Text, nullable=False)
+    render_version_drift = Column(Boolean, nullable=False, default=False, server_default="false")
+    result = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index(
+            "uq_trade_doc_render_checks_doc",
+            "tenant_id", "trade_doc_id",
+            unique=True,
+        ),
+    )
+
+
 class TradeDocContentVersion(Base):
     """单证**内容**版本链（TODO A1，迁移 `202610200001`）。
 
