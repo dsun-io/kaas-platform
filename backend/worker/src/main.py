@@ -3030,10 +3030,59 @@ async def get_audit_log(
 
 
 @app.get("/api/v1/admin/archive-logs")
-async def get_archive_logs(user: dict = Depends(_get_current_user)):
+async def get_archive_logs(
+    request: Request,
+    page: int = 1,
+    page_size: int = 20,
+    month: str = "",
+    user: dict = Depends(_get_current_user),
+):
+    """事件归档记录（表 `events_archive_log`）。
+
+    C30（2026-10-21）：此前是**占位空列表**（注释称"Worker 无文件系统"），但归档记录
+    本来就在库里 —— `ws_cron.py` 每月把上月事件写成 R2 对象后**同一事务外**插入一行：
+    `(tenant_id='*', month='YYYY-MM', minio_path='{bucket}/events-archive/…', status='archived')`。
+    前端此前 0 调用 ⇒ 即使有数据也看不到。
+
+    **tenant 口径**：写入行恒为 `tenant_id='*'`（全租户一个桶一份归档）。所以这里**不加**
+    租户过滤 —— 加 `tenant_id=$1` 会把 `'*'` 过滤掉、永远返回空列表（这正是"占位"之外
+    最容易踩的坑）。平台运营闸门 `_require_platform_ops` 保持不变。
+
+    `month`（`YYYY-MM`）可选过滤；分页与相邻的管理端点（events / audit-log）同口径：
+    `page>=1`、`page_size∈[1,100]`，越界钳位而不是 422。
+    """
     _require_platform_ops(user)
-    # Worker 无文件系统，归档日志占位空列表（语义差见 docs/archive/2026-10-20-closeout/CLEANUP_LOG.md）
-    return {"items": [], "total": 0}
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 100)
+    month = (month or "").strip()
+    where = "WHERE TRUE"
+    args: list = []
+    if month:
+        args.append(month)
+        where += f" AND month = ${len(args)}"
+    total = await db.fetchval(
+        request, f"SELECT count(*) FROM events_archive_log {where}", *args)
+    args.extend([page_size, (page - 1) * page_size])
+    rows = await db.fetch(
+        request,
+        f"""SELECT id, month, minio_path, status, archived_at
+              FROM events_archive_log {where}
+             ORDER BY archived_at DESC, id DESC
+             LIMIT ${len(args) - 1} OFFSET ${len(args)}""",
+        *args,
+    )
+    items = [
+        {
+            "id": str(r["id"]),
+            "month": r["month"],
+            # 字段名对前端是 `path`（表列叫 minio_path；契约见 shared 前端类型）
+            "path": r["minio_path"],
+            "status": r["status"],
+            "archived_at": r["archived_at"].isoformat() if r["archived_at"] else None,
+        }
+        for r in rows
+    ]
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 # ── 阶段 3 · 客户能力（/api/v1/capabilities*，表 customer_capabilities）──

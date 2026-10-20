@@ -6,6 +6,7 @@ import { useDeploymentAudit } from "./hooks/use-deployment-audit";
 import { useTenants } from "../../settings/hooks/use-tenants";
 import { FlagToggle } from "./components/flag-toggle";
 import { AuditTimeline } from "./components/audit-timeline";
+import { ArchiveLogsCard } from "./components/archive-logs-card";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { usePageView } from "@/lib/events/use-page-view";
 import { RouteGuard } from "@/components/route-guard";
@@ -74,6 +75,9 @@ export default function GrayReleasePage() {
             />
           </CardContent>
         </Card>
+
+        {/* C30：事件归档记录（每月把上月事件写 R2 并记账；数据在 events_archive_log） */}
+        <ArchiveLogsCard />
       </div>
     </RouteGuard>
   );
