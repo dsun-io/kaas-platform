@@ -4,7 +4,7 @@
 ----------
 本项目的线上后端是**单文件 Worker**（Pyodide + 裸 asyncpg），开发后端是
 完整的 orchestrator（SQLAlchemy）。历史上业务规则被**手写两遍**，导致同类
-接口行为漂移（详见 `docs/WORKER_ORCHESTRATOR_DRIFT.md`）。
+接口行为漂移（详见 `docs/archive/2026-10-20-closeout/WORKER_ORCHESTRATOR_DRIFT.md`）。
 
 本包是**唯一实现**：两侧各自只负责数据访问，业务规则只在这里写一次。
 

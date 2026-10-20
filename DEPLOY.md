@@ -328,7 +328,7 @@ TypeScript 构建前端 → **同步共享内核并校验** → （若配了 `PR
 > deploy 与冒烟均绿；`backend:test` 首次全绿（run `39016277997`）。
 > 同日 17:0x–19:0x 连续多次 push 自动部署，最后一次代码部署为提交 **`b7f97a0`**（deploy 冒烟绿）；
 > 之后 `f04c716` 仅文档。本轮上线内容：新建客户 500 修复、汇率实时拉取、Excel 模板前端生成、
-> 客户阶段改由订单状态推导、流失强制上传拒绝文件（R2）。详见 `docs/HANDOVER_2026-10-17.md`。
+> 客户阶段改由订单状态推导、流失强制上传拒绝文件（R2）。详见 `docs/archive/2026-10-20-closeout/HANDOVER_2026-10-17.md`。
 
 其他工作流：`backend-test.yml`（S4 后 = 迁移/模型测试 + schema 双门禁 + 依赖断言 + worker 全量 + 真 PG 集成；
 `paths: backend/**`、`scripts/**`）、`frontend-ci.yml`（typecheck/lint/test/build + e2e）、

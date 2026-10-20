@@ -5,7 +5,7 @@
 
 `alembic upgrade <prev>:<rev> --sql` 是**离线模式**：只渲染 SQL、不连库
 （本机没有 Postgres，这条通路是 task-5 实测出来的，见
-`docs/PRODUCT_MODULE_IMPL_PLAN.md` §1.4 的 L0）。本文件把它**程序化**成单测：
+`docs/archive/2026-10-20-closeout/PRODUCT_MODULE_IMPL_PLAN.md` §1.4 的 L0）。本文件把它**程序化**成单测：
 只要迁移脚本能被解析、链接正确、渲染出的 DDL 含我们承诺的约束，就通过；
 一旦有人改坏迁移（丢约束 / 改错连接 / 动了不该动的主键），立刻红。
 

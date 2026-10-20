@@ -9,7 +9,7 @@
  *     行小计都取 `卷数 × 单卷外币价`（精确相乘，不预先舍入）。
  *     口径写在两处就会两处不一致，所以集中在本文件，并配单测卡住。
  *
- * 数量口径（D3，用户 2026-09-27 决定，依据见 docs/MULTI_PRODUCT_QUOTE_PLAN.md §10）：
+ * 数量口径（D3，用户 2026-09-27 决定，依据见 docs/archive/2026-10-20-closeout/MULTI_PRODUCT_QUOTE_PLAN.md §10）：
  *   `Quantity = 卷数`、`Unit = ROLLS`、`Unit Price = 单卷外币价`，
  *   每卷多少米写进 `Specification`（并另给总米数用于汇总展示）。
  *   不把"按米"当主口径：引擎只有人民币/米列，外币反算的 4 位舍入会破坏

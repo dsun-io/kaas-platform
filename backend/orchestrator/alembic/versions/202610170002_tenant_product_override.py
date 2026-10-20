@@ -4,7 +4,7 @@ Revision ID: 202610170002
 Revises: 202610170001
 Create Date: 2026-10-17
 
-背景（SESSION_HANDOFF §四-B / PRODUCT_MODULE_MERGE_PLAN）：
+背景（docs/archive/2026-10-20-closeout/SESSION_HANDOFF_2026-10-12_PM.md §四-B / docs/archive/2026-10-20-closeout/PRODUCT_MODULE_MERGE_PLAN.md）：
 团队级「基线 + 差异」改不动的原因就是缺这两列 —— `spec` 列存完整基线
 快照，团队自定义此前只能整表复制（上游改了不会跟着变）。现在：
 

@@ -2463,7 +2463,7 @@ async def patch_price(
 
 # ══════════ 阶段 3 · 第二批：规格分类树 / 向导 / 事件列表 / 管理 / 能力 ══════════
 # 形状与 backend/orchestrator 对齐（契约 shared/contracts/spec-system.ts）；
-# 存储语义差（tenants.yaml→单租户 / reload no-op 等）见 docs/CLEANUP_LOG.md。
+# 存储语义差（tenants.yaml→单租户 / reload no-op 等）见 docs/archive/2026-10-20-closeout/CLEANUP_LOG.md。
 
 
 def _build_category_tree(flat: list, parent_id=None):
@@ -2729,7 +2729,7 @@ async def list_events_api(
     }
 
 
-# ── 阶段 3 · 管理（/api/v1/admin/*；yaml→DB 等语义差见 docs/CLEANUP_LOG.md）──
+# ── 阶段 3 · 管理（/api/v1/admin/*；yaml→DB 等语义差见 docs/archive/2026-10-20-closeout/CLEANUP_LOG.md）──
 @app.get("/api/v1/admin/feature_flag")
 async def get_feature_flag(
     request: Request,
@@ -2835,7 +2835,7 @@ async def list_tenants(user: dict = Depends(_get_current_user)):
 
 @app.post("/api/v1/admin/tenants/reload")
 async def reload_tenants(request: Request, user: dict = Depends(_get_current_user)):
-    """租户重载：Worker 无 yaml，仅记审计 no-op（语义差见 docs/CLEANUP_LOG.md）。
+    """租户重载：Worker 无 yaml，仅记审计 no-op（语义差见 docs/archive/2026-10-20-closeout/CLEANUP_LOG.md）。
 
     形状按前端消费契约返回**重载后的启用租户清单**（reload-button.tsx:56-66 直接
     `active_tenants.map(...)`）；单租户部署永远 1 条，同样不伪造多条。
@@ -2904,7 +2904,7 @@ async def get_audit_log(
 @app.get("/api/v1/admin/archive-logs")
 async def get_archive_logs(user: dict = Depends(_get_current_user)):
     _require_platform_ops(user)
-    # Worker 无文件系统，归档日志占位空列表（语义差见 docs/CLEANUP_LOG.md）
+    # Worker 无文件系统，归档日志占位空列表（语义差见 docs/archive/2026-10-20-closeout/CLEANUP_LOG.md）
     return {"items": [], "total": 0}
 
 
@@ -3035,7 +3035,7 @@ async def get_customer_capabilities(
 async def patch_customer_capability(
     customer_id: str, body: dict, request: Request, user: dict = Depends(_get_current_user)
 ):
-    """更新单条能力（body {id, spec_constraints, is_active}；is_active 无存储列，见 CLEANUP_LOG）。"""
+    """更新单条能力（body {id, spec_constraints, is_active}；is_active 无存储列，见 docs/archive/2026-10-20-closeout/CLEANUP_LOG.md）。"""
     cap_id = body.get("id")
     if not isinstance(cap_id, int):
         raise HTTPException(status_code=422, detail="id is required")

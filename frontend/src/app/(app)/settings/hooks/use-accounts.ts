@@ -6,7 +6,7 @@ import { apiClient } from "@/lib/api/client";
 /**
  * 平台账号治理 hook —— 数据源 `GET/PATCH /api/v1/admin/accounts`（两端同契约）。
  * 类型是**白名单**：绝不声明 password_hash / token 等敏感字段
- * （契约见 docs/ACCOUNT_GOVERNANCE_HANDOVER_2026-10-12.md §②）。
+ * （契约见 docs/archive/2026-10-20-closeout/ACCOUNT_GOVERNANCE_HANDOVER_2026-10-12.md §②）。
  */
 
 export type AccountStatus = "active" | "disabled";

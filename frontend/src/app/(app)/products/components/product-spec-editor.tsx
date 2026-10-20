@@ -3,7 +3,7 @@
 /**
  * 产品规格可视化编辑器（P16 · 第一步 S6.1）。
  *
- * 三段式（与 PRODUCT_MODULE_MERGE_PLAN §5 对齐）：
+ * 三段式（与 docs/archive/2026-10-20-closeout/PRODUCT_MODULE_MERGE_PLAN.md §5 对齐）：
  *   S6.1 本文件 = 数值参数（`numeric_inputs`）+ 变体档位（`variants`）
  *                 + 派生公式（`derived`）
  *   S6.2 后续 = 列（`columns`）+ 不变量（`invariants`）+ 空间扣减（`space_deduction`）

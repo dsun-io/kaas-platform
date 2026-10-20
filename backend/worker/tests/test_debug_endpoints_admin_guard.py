@@ -1,6 +1,6 @@
 """B0-6 诊断端点收敛：`_r2_debug` / `fx-rates/_debug` 仅平台管理员可用。
 
-背景（PROBLEM_STATUS P2-⑩ / HANDOVER_2026-10-17）：两个诊断端点是排障期留下的
+背景（PROBLEM_STATUS P2-⑩ / docs/archive/2026-10-20-closeout/HANDOVER_2026-10-17.md）：两个诊断端点是排障期留下的
 线上自检口（R2 binding put/get 真实错误、汇率源直连探测），文档口径「管理员可访问，
 不是公开面；收尾后可按需删除」。本次收敛选择**加保护而非删除**：HANDOVER 的故障
 排查手册（汇率 503 先打 `/fx-rates/_debug`、文件 404 先打 `_r2_debug`）仍引用它们，
