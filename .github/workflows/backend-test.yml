@@ -159,7 +159,7 @@ jobs:
       # 方案 B S2：空库快径（metadata.create_all + stamp）必须与 models 零漂移。
       # 用独立库 kaas_migtest，不干扰集成用例的 kaas_v2_test。
       - name: Create fresh DB for migration check
-        run: PGPASSWORD=kaas_dev_pw psql -h localhost -U kaas -d postgres -vc "CREATE DATABASE kaas_migtest"
+        run: PGPASSWORD=kaas_dev_pw psql -h localhost -U kaas -d postgres -c "CREATE DATABASE kaas_migtest"
 
       - name: Alembic upgrade head on empty DB (fast path)
         working-directory: ./backend/orchestrator
