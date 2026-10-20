@@ -166,12 +166,12 @@ docker-compose.yml 本地基础设施 + 本地后端
 
 | 文档 | 用途 |
 |---|---|
-| [docs/HANDOVER_2026-10-20_FINAL.md](docs/HANDOVER_2026-10-20_FINAL.md) | 最新交接：S5 预览、云资源、发布检查单、踩坑 |
+| [docs/HANDOVER_2026-10-20_FINAL.md](docs/HANDOVER_2026-10-20_FINAL.md) | 最新交接：**§0.2 停止点/剩余工作/恢复路径**、S5 预览、云资源、发布检查单、踩坑 |
+| [docs/README.md](docs/README.md) | **交接检索入口**（先读顺序 / 当前权威 / 归档分层） |
 | [docs/PROBLEM_STATUS_2026-10-11.md](docs/PROBLEM_STATUS_2026-10-11.md) | 滚动问题状态 |
 | [docs/TODO.md](docs/TODO.md) | 活跃待办唯一账本 |
-| [docs/ENV_VERIFICATION_2026-10-19.md](docs/ENV_VERIFICATION_2026-10-19.md) | 三环境核对 + 发布前检查单/回滚 |
-| [docs/UI_UX_OPTIMIZATION_2026-10-20.md](docs/UI_UX_OPTIMIZATION_2026-10-20.md) | UI 路线、报价重构、终验 |
-| [docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md](docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md) | 后端 5 项接口/验收基线 |
+| [docs/UI_UX_OPTIMIZATION_2026-10-20.md](docs/UI_UX_OPTIMIZATION_2026-10-20.md) | UI 路线、报价重构、终验（前端线文档） |
+| [docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md](docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md) | 后端 5 项验收基线（**已完成**） |
 | [docs/archive/](docs/archive/) | 历史文档（只读，不代表当前架构） |
 
 ---

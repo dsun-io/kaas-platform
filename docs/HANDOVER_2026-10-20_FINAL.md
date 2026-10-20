@@ -10,8 +10,75 @@
 Hyperdrive，并给 worker 依赖钉版入库。**前端 UI 优化 P0/P1/P2 已于 2026-10-20 下午全部收口**
 （详见 `UI_UX_OPTIMIZATION_2026-10-20.md` §11）；**待办账本 = [`docs/TODO.md`](./TODO.md)**（2026-10-20 晚
 口径修订：原「触发条件制」项全部恢复为活跃待办——单证内容专项 / 产品配置化 / 原 I-1~I-7 /
-发布窗口项，由用户排期执行）。**后端 5 项依赖已拆为并行任务**（`UI_BACKEND_DEPENDENCIES_2026-10-20.md`）。
-剩余主线：**等后端并行任务 + 用户在预览验收 → 用户下令发布生产**（发布检查单见 §5）。
+发布窗口项，由用户排期执行）。**后端 5 项已完成**（见 §0.1；`UI_BACKEND_DEPENDENCIES_2026-10-20.md` 转为验收基线）。
+**开发已于 2026-10-20 晚按用户指令停止**，停止点与剩余工作见 **§0.2**。
+
+## 0.2 停止点交接：当前状态与剩余工作（**交接 agent 必读**）
+
+### 0.2.1 停止点（2026-10-20 晚）
+
+- **用户指令**：停止继续开发；把现状与剩余工作写进交接文档；归档过时文档；推送远程。
+- **代码位置**：分支 `feat/trade-doc-content-a`（独立 worktree
+  `D:\projects\kaas-platform\.agents\worktrees\feat\trade-doc-content-a`；主工作树是并行 UI 线在用，**未改动**）。
+- **PR [#5](https://github.com/dsun-io/kaas-platform/pull/5)**：`mergeable_state=clean`，
+  head = 本提交（含与 `origin/main` 的合并）；四条 workflow（backend:test / contracts:check /
+  Frontend CI / preview）在上一代码 head `743bce5` 全绿；纯文档提交后以 **`743bce5` 为代码门禁证据**。
+- **预览**：`https://kaas-preview-pr-5.dspro0124.workers.dev`（PR 关闭自动回收）。
+- **仓库可见性**：用户口径 = CI 跑绿后转回 **private**（转回后 GitHub Actions 会再次不可用，
+  门禁以本地命令为准；本地各门全绿数字见 §0.1）。
+- **未合并即是当前状态**：PR 未合入 `main`；合并动作由用户决定（合并后生产部署仍需手动 dispatch，`deploy.yml` 仅 `workflow_dispatch`）。
+
+### 0.2.2 已完成（本分支 + 已合入 main 的 UI 线）
+
+- 用户点名的**后端 5 项**：F1 签发自动上传、F2 内容版本、F3 个人信息、F4 询盘状态机、F5 报价/订单 1:N —— 全部 ✅（细节/证据见 §0.1）。
+- 单证内容专项 A 组：A1（内容版本）、A3（字段体检）、A8/A9（指纹对账 cron + 列表标识）✅；
+  顺手修线上 `GET /trade-docs` 500。
+- 迁移 head：`202610200003`（三条新增迁移，幂等；生产尚未应用，发布窗口一并上）。
+- 配置：两把 Resend key 已入 GitHub repo secrets（`RESEND_API_KEY_PROD` / `RESEND_API_KEY_PREVIEW`），换设备不失；
+  生产 key 待发布窗口注入 Cloudflare（`docs/TODO.md` D1）。
+
+### 0.2.3 剩余工作（全部登记在 [`docs/TODO.md`](./TODO.md)，按建议顺序）
+
+| 组 | 项 | 前置 / 备注 |
+|---|---|---|
+| A4 | 单证图片素材库（公章/产品图走对象存储 + 可复用素材库） | 与发布窗口 R2 新密钥同批更顺；现状 base64 内联（一张 PI ≈1.4MB） |
+| A5 | 单证编辑体验（行项批量编辑、条款模板、金额联动校验） | **需先与用户过方案**（🧭） |
+| A6 | 模板逐字段对照真实出口单据 | **需用户提供样例单据**（🧭），是单证内容的最终验收标准 |
+| A7 | 单证加固 P1/P2（事实层/一致性引擎/收款容差/回执登记/导出自检） | 口径已拍板（`UNCERTAIN.md` #17），设计在归档的 `TRADE_DOC_HARDENING_PLAN_2026-10-12.md`，可直接施工 |
+| A8-① | PDF 归档「端到端真实跑一次」 | 需已部署环境（Browser Rendering 依赖生产 binding），归发布后 P4 |
+| A9-补充 | preview ensure 对 Neon 423 短重试（TODO D7） | 低优先；本次靠 rerun 通过 |
+| B1 | 租户级产品定义配置化（运行时新增产品，现状要写 Python + 重启） | 无前置 |
+| B2 | 产品可视化编辑器收尾（运行时生效链路） | 依赖 B1 |
+| B3 | 租户开通报价工位 UI 交互 | 无前置 |
+| C1 | 「流失」拒绝文件链路（订单新增 `lost`） | 🧭 需业务设计 + 用户拍板 |
+| C2 | 文件存储收尾 3 项（真实 DB 用例 / 公章 PI 视觉 QA / 排序过滤测试） | 发布后验证更完整 |
+| C3 | Cloudflare agent 接入 | 🧭 价值未明，待用户排优先级 |
+| C4 | 30/90 天客户自动沉寂 | 🧭 用户曾裁「先手动」，要做需重新设计 |
+| C5 | 本地 mock 刷新丢数据（MSW 限制） | 开发体验项 |
+| C6 | e2e 数据层不稳根治 | 历史 e2e 假红根因治理 |
+| D1–D6 | 发布窗口项（RESEND 注入 / R2 新密钥 / Hyperdrive 缓存 / 生产测试数据清理 / 仓库转 private / 发布检查单 §5） | **等用户下令发布**；D3/D4 执行前需弹窗确认 |
+
+### 0.2.4 恢复工作的最短路径
+
+1. 进入 worktree：`cd D:\projects\kaas-platform\.agents\worktrees\feat\trade-doc-content-a`
+   （或在主工作树 `git worktree list` 找回；分支 `feat/trade-doc-content-a`）。
+2. 先读：`docs/README.md`（检索入口）→ 本文件 §0.2 → `TODO.md` → `PROBLEM_STATUS` 顶部。
+3. 改完代码同步文档（`PROBLEM_STATUS` 顶部 + `TODO.md` 销账），推送分支；PR #5 自动更新。
+4. 门禁命令（本机实测可用，注意 AGENTS.md 的工具链坑）：
+   - worker：`cd backend/worker; uv run --frozen --with pytest --with httpx2 python -m pytest tests -q`（现 **1008+5**）
+   - orchestrator：`cd backend/orchestrator; uv run --extra migrations pytest tests -q`（现 **247**）
+   - 前端：`pnpm typecheck` / `pnpm lint` / `pnpm test`（现 **474**）/ `pnpm contracts:check`；构建与 e2e **不要同时跑**（共用 `.next`）
+   - 静态：`scripts/check-runtime-deps.py`、`check-schema-coverage.py`、`check-schema-drift.py`、`scripts/sync-shared.ps1 -Check`
+5. 改 `backend/kaas_common/**` 后必须 `powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1`（否则 worker 镜像是旧的）。
+
+### 0.2.5 本轮文档整理
+
+- 新归档批：[`docs/archive/2026-10-20-backend-closeout/`](./archive/2026-10-20-backend-closeout/README.md)
+  （`ENV_VERIFICATION_2026-10-19.md`：迁移 head/预览状态已过时，当前看根 README §2 + 本文件 §2/§3/§5）。
+- `E2E_GUIDE.md` 已就地更新到 2026-10-20 口径（27 条：23 passed + 4 skipped、`pnpm dev`）。
+- **前端线文档一律未动**：`UI_UX_OPTIMIZATION_2026-10-20.md`、`UI_BACKEND_DEPENDENCIES_2026-10-20.md`、
+  `docs/ui-redesign/**`。
+- 检索入口仍是 [`docs/README.md`](./README.md)（已同步状态与归档批次）。
 
 ## 0.1 本轮后端交付（2026-10-20 晚 · 分支 `feat/trade-doc-content-a` · PR #5）
 

@@ -15,10 +15,12 @@
 > - **单应用**：运行时唯一实现 = `backend/worker/src/main.py`；orchestrator 只剩 `app/db` + `alembic`（不可运行后端）。
 >   `docker compose` 的 `backend` 服务跑 `worker/local_run.py`，**不再自动执行迁移**（需手动 `alembic upgrade head`）。
 > - **迁移 head = `202610190020`**（`trade_docs.owner_id/owner_scope`、`market_ports` 时间戳；幂等补列，生产已有列）。
+>   **注意（2026-10-20 晚）**：分支 `feat/trade-doc-content-a`（PR #5）把 head 推进到 **`202610200003`**
+>   （内容版本/对账表/询盘阶段），合并后发布窗口一并升级；以 `alembic heads` 为准。
 >   migrate job 依赖 secret `PROD_DATABASE_URL`；当前未配置则告警跳过（手动迁移）。
 > - **前端 = Next 16.4.2**：`NEXT_EXPORT=1 pnpm build` → `frontend/out`；**不要再设 `NEXT_DIST_DIR`**（会改导出落点）。
-> - 完整交接与发布前检查单见 [docs/HANDOVER_2026-10-20.md](docs/HANDOVER_2026-10-20.md)；
->   三环境核对见 [docs/ENV_VERIFICATION_2026-10-19.md](docs/ENV_VERIFICATION_2026-10-19.md)。
+> - 完整交接与发布前检查单见 [docs/HANDOVER_2026-10-20_FINAL.md](docs/HANDOVER_2026-10-20_FINAL.md)
+>   （§0.2 停止点与剩余工作、§2/§3 三环境、§5 发布检查单）。
 
 ## 架构
 
