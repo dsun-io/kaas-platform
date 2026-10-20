@@ -142,6 +142,10 @@
 > `TableHead` 默认 `scope="col"`（全站表头一次覆盖）；事件/报价/出货/贸易统计等 icon-only 按钮补
 > `aria-label`；移除 viewport `maximumScale:1`；globals 补 `prefers-reduced-motion`；
 > 1366×768 抽查 dashboard/quotes/customers/orders/trade-docs/products/settings 无横向溢出。
+>
+> **（2026-10-20 · 报价重构第二阶段收尾）**
+> 产品行算完自动收起；批量报价/报价记录/成本历史骨架与空态统一；<xl 底部吸底动作条
+> （总额/产品行 + 保存/单证/签发）已落，xl 起隐藏；报价工位重构完成。
 > 证据：`docs/ui-redesign/phase5/`；详见方案文档 §10。
 >
 > **（2026-10-20 · 新会话接手核对：本地 main 同步 + 分支残留清理 + 生产 secrets 实测 + 本机工具链）**

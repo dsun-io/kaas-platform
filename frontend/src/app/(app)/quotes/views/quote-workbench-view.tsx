@@ -648,213 +648,264 @@ export function QuoteWorkbenchView() {
   );
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-      <div className="min-w-0 space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
-            <span>
-              客户：
-              <b className="font-medium text-foreground">
-                {customer?.name ?? "未选择"}
-              </b>
-            </span>
-            <span>
-              询盘：
-              <b className="font-medium text-foreground">
-                {selectedInquiry?.inquiry_no ??
-                  (inquiryId ? `#${inquiryId}` : "未选择")}
-              </b>
-            </span>
-            <span>
-              币种：
-              <b className="font-medium text-foreground">{quoteCurrency}</b>
-            </span>
-            <span>
-              条款：
-              <b className="font-medium text-foreground">{effectiveQuoteAs}</b>
-            </span>
-            <span>
-              利润率：
-              <b className="font-medium text-foreground">{profitPct}%</b>
-            </span>
+    <>
+      <div className="grid gap-5 pb-24 xl:grid-cols-[minmax(0,1fr)_380px] xl:pb-0">
+        <div className="min-w-0 space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+              <span>
+                客户：
+                <b className="font-medium text-foreground">
+                  {customer?.name ?? "未选择"}
+                </b>
+              </span>
+              <span>
+                询盘：
+                <b className="font-medium text-foreground">
+                  {selectedInquiry?.inquiry_no ??
+                    (inquiryId ? `#${inquiryId}` : "未选择")}
+                </b>
+              </span>
+              <span>
+                币种：
+                <b className="font-medium text-foreground">{quoteCurrency}</b>
+              </span>
+              <span>
+                条款：
+                <b className="font-medium text-foreground">
+                  {effectiveQuoteAs}
+                </b>
+              </span>
+              <span>
+                利润率：
+                <b className="font-medium text-foreground">{profitPct}%</b>
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => setParamsOpen((v) => !v)}
+              >
+                {paramsOpen ? "收起参数" : customer ? "调整参数" : "选择客户"}
+              </Button>
+            </div>
+          </div>
+
+          {paramsOpen && (
+            <WorkbenchParamsCard
+              customer={customer}
+              setCustomer={setCustomer}
+              customerError={customerError}
+              setCustomerError={setCustomerError}
+              inquiryId={inquiryId}
+              setInquiryId={setInquiryId}
+              inquiries={inquiries}
+              onCreateInquiry={() => createInquiry.mutate()}
+              creatingInquiry={createInquiry.isPending}
+              taxArchives={taxArchives}
+              taxArchiveId={taxArchiveId}
+              setTaxArchiveId={setTaxArchiveId}
+              applyTaxArchive={applyTaxArchive}
+              clearTaxArchive={clearTaxArchive}
+              inputVatRatePct={inputVatRatePct}
+              setInputVatRatePct={setInputVatRatePct}
+              giveRatioPct={giveRatioPct}
+              setGiveRatioPct={setGiveRatioPct}
+              outputVatRatePct={outputVatRatePct}
+              setOutputVatRatePct={setOutputVatRatePct}
+              rebateRatePct={rebateRatePct}
+              setRebateRatePct={setRebateRatePct}
+              miscTaxPct={miscTaxPct}
+              setMiscTaxPct={setMiscTaxPct}
+              profitPct={profitPct}
+              setProfitPct={setProfitPct}
+              profitAmountHint={profitAmountHint}
+              quoteCurrency={quoteCurrency}
+              setQuoteCurrency={setQuoteCurrency}
+              fxRate={fxRate}
+              setFxRate={(v) => {
+                setFxTouched(true);
+                setFxRate(v);
+              }}
+              quoteDate={quoteDate}
+              setQuoteDate={setQuoteDate}
+              validityDays={validityDays}
+              setValidityDays={setValidityDays}
+              termsTemplate={termsTemplate}
+              termsQuery={termsQuery}
+              quoteAs={effectiveQuoteAs}
+              setQuoteAs={setQuoteAs}
+              carrier={carrier}
+              setCarrier={setCarrier}
+              feeInputs={feeInputs}
+              setFeeInputs={setFeeInputs}
+              freightFrom={freightFrom}
+              setFreightFrom={setFreightFrom}
+              freightTo={freightTo}
+              setFreightTo={setFreightTo}
+            />
+          )}
+
+          {lines.map((line, index) => (
+            <QuoteLineCard
+              key={line.id}
+              index={index}
+              line={line}
+              shared={shared}
+              view={view}
+              terms={termsByLine?.terms[index] ?? null}
+              lineCount={lines.length}
+              customerId={customer?.id ?? null}
+              productTaxMap={productTaxMap}
+              calcSignal={calcSignal}
+              onChange={(patch) =>
+                setLines((prev) =>
+                  prev.map((l) => (l.id === line.id ? { ...l, ...patch } : l)),
+                )
+              }
+              onRemove={() =>
+                setLines((prev) => prev.filter((l) => l.id !== line.id))
+              }
+            />
+          ))}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              onClick={() => setCalcSignal((v) => v + 1)}
+              className="flex-1 sm:flex-none"
+            >
+              整单报价（计算全部行）
+            </Button>
             <Button
               type="button"
               variant="outline"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={() => setParamsOpen((v) => !v)}
+              onClick={() => {
+                const first = productOptions.data?.products?.[0]?.key ?? "";
+                setAddPick(first);
+                setAddOpen(true);
+              }}
             >
-              {paramsOpen ? "收起参数" : customer ? "调整参数" : "选择客户"}
+              <Plus className="mr-1.5 size-4" />
+              添加产品
             </Button>
           </div>
-        </div>
 
-        {paramsOpen && (
-          <WorkbenchParamsCard
-            customer={customer}
-            setCustomer={setCustomer}
-            customerError={customerError}
-            setCustomerError={setCustomerError}
-            inquiryId={inquiryId}
-            setInquiryId={setInquiryId}
-            inquiries={inquiries}
-            onCreateInquiry={() => createInquiry.mutate()}
-            creatingInquiry={createInquiry.isPending}
-            taxArchives={taxArchives}
-            taxArchiveId={taxArchiveId}
-            setTaxArchiveId={setTaxArchiveId}
-            applyTaxArchive={applyTaxArchive}
-            clearTaxArchive={clearTaxArchive}
-            inputVatRatePct={inputVatRatePct}
-            setInputVatRatePct={setInputVatRatePct}
-            giveRatioPct={giveRatioPct}
-            setGiveRatioPct={setGiveRatioPct}
-            outputVatRatePct={outputVatRatePct}
-            setOutputVatRatePct={setOutputVatRatePct}
-            rebateRatePct={rebateRatePct}
-            setRebateRatePct={setRebateRatePct}
-            miscTaxPct={miscTaxPct}
-            setMiscTaxPct={setMiscTaxPct}
-            profitPct={profitPct}
-            setProfitPct={setProfitPct}
-            profitAmountHint={profitAmountHint}
-            quoteCurrency={quoteCurrency}
-            setQuoteCurrency={setQuoteCurrency}
-            fxRate={fxRate}
-            setFxRate={(v) => {
-              setFxTouched(true);
-              setFxRate(v);
-            }}
-            quoteDate={quoteDate}
-            setQuoteDate={setQuoteDate}
-            validityDays={validityDays}
-            setValidityDays={setValidityDays}
-            termsTemplate={termsTemplate}
-            termsQuery={termsQuery}
-            quoteAs={effectiveQuoteAs}
-            setQuoteAs={setQuoteAs}
-            carrier={carrier}
-            setCarrier={setCarrier}
-            feeInputs={feeInputs}
-            setFeeInputs={setFeeInputs}
-            freightFrom={freightFrom}
-            setFreightFrom={setFreightFrom}
-            freightTo={freightTo}
-            setFreightTo={setFreightTo}
-          />
-        )}
-
-        {lines.map((line, index) => (
-          <QuoteLineCard
-            key={line.id}
-            index={index}
-            line={line}
-            shared={shared}
-            view={view}
-            terms={termsByLine?.terms[index] ?? null}
-            lineCount={lines.length}
-            customerId={customer?.id ?? null}
-            productTaxMap={productTaxMap}
-            calcSignal={calcSignal}
-            onChange={(patch) =>
-              setLines((prev) =>
-                prev.map((l) => (l.id === line.id ? { ...l, ...patch } : l)),
-              )
-            }
-            onRemove={() =>
-              setLines((prev) => prev.filter((l) => l.id !== line.id))
-            }
-          />
-        ))}
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            onClick={() => setCalcSignal((v) => v + 1)}
-            className="flex-1 sm:flex-none"
-          >
-            整单报价（计算全部行）
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              const first = productOptions.data?.products?.[0]?.key ?? "";
-              setAddPick(first);
-              setAddOpen(true);
-            }}
-          >
-            <Plus className="mr-1.5 size-4" />
-            添加产品
-          </Button>
-        </div>
-
-        {addOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div className="w-full max-w-md rounded-xl border bg-background p-4 shadow-xl">
-              <h3 className="text-sm font-semibold">添加产品</h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                先选产品，确定后再在行内选择规格（规格决定成本/重量/体积）。
-              </p>
-              <select
-                value={addPick}
-                onChange={(e) => setAddPick(e.target.value)}
-                className="mt-3 h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
-              >
-                {(productOptions.data?.products ?? []).map((p) => (
-                  <option key={p.key} value={p.key}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-              <div className="mt-4 flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setAddOpen(false)}
+          {addOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+              <div className="w-full max-w-md rounded-xl border bg-background p-4 shadow-xl">
+                <h3 className="text-sm font-semibold">添加产品</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  先选产品，确定后再在行内选择规格（规格决定成本/重量/体积）。
+                </p>
+                <select
+                  value={addPick}
+                  onChange={(e) => setAddPick(e.target.value)}
+                  className="mt-3 h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
                 >
-                  取消
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={!addPick}
-                  onClick={() => {
-                    setLines((prev) => [...prev, newLineDraft(addPick)]);
-                    setAddOpen(false);
-                  }}
-                >
-                  添加
-                </Button>
+                  {(productOptions.data?.products ?? []).map((p) => (
+                    <option key={p.key} value={p.key}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="mt-4 flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setAddOpen(false)}
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!addPick}
+                    onClick={() => {
+                      setLines((prev) => [...prev, newLineDraft(addPick)]);
+                      setAddOpen(false);
+                    }}
+                  >
+                    添加
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
+
+        <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
+          <QuoteSummaryCard
+            summary={summary}
+            currency={quoteCurrency}
+            effectiveVolume={effectiveVolume}
+            missing={missing}
+            amortizedFees={termsByLine?.amortized ?? []}
+            docTypes={docTypes}
+            docPick={docPick}
+            onDocPickChange={setDocPick}
+            onGenerateDocs={onGenerateDocs}
+            onSave={onSave}
+            onIssue={onIssue}
+            saving={
+              create.isPending || update.isPending || replaceItems.isPending
+            }
+            issuing={update.isPending}
+            generating={generating}
+            saved={savedDoc}
+            notice={notice}
+          />
+        </aside>
       </div>
 
-      <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
-        <QuoteSummaryCard
-          summary={summary}
-          currency={quoteCurrency}
-          effectiveVolume={effectiveVolume}
-          missing={missing}
-          amortizedFees={termsByLine?.amortized ?? []}
-          docTypes={docTypes}
-          docPick={docPick}
-          onDocPickChange={setDocPick}
-          onGenerateDocs={onGenerateDocs}
-          onSave={onSave}
-          onIssue={onIssue}
-          saving={
-            create.isPending || update.isPending || replaceItems.isPending
-          }
-          issuing={update.isPending}
-          generating={generating}
-          saved={savedDoc}
-          notice={notice}
-        />
-      </aside>
-    </div>
+      {/* <xl：底部吸底动作条，避免保存/签发按钮被长表单推到很远 */}
+      <div className="fixed inset-x-3 bottom-3 z-30 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/70 bg-white/85 py-2 pl-4 pr-16 shadow-lg backdrop-blur-xl xl:hidden">
+        <div className="text-xs text-muted-foreground">
+          总额{" "}
+          <b className="text-foreground tabular-nums">
+            {summary.totalAmount.toFixed(2)}
+          </b>{" "}
+          {quoteCurrency}
+          <span className="mx-1.5">·</span>
+          {summary.lineCount} 个产品行
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={
+              summary.lineCount === 0 ||
+              create.isPending ||
+              update.isPending ||
+              replaceItems.isPending
+            }
+            onClick={onSave}
+          >
+            {savedDoc ? "保存修改" : "保存"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={
+              summary.lineCount === 0 || generating || docPick.length === 0
+            }
+            onClick={onGenerateDocs}
+          >
+            单证（{docPick.length}）
+          </Button>
+          <Button
+            size="sm"
+            disabled={
+              !savedDoc || savedDoc.status !== "draft" || update.isPending
+            }
+            onClick={onIssue}
+          >
+            签发
+          </Button>
+        </div>
+      </div>
+    </>
   );
 }
