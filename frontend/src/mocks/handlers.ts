@@ -1865,6 +1865,45 @@ export const handlers = [
     });
   }),
 
+  // 成本历史（报价工位「成本历史」tab）：mock 给一张完整矩阵，
+  // 否则该 tab 会一直停在“加载中…”。形状对齐 contracts/export-quote PricingMatrix。
+  http.get("/api/v1/pricing-data", ({ request }) => {
+    const url = new URL(request.url);
+    const productKey = url.searchParams.get("product_key") ?? "";
+    const product = MOCK_EXPORT_PRODUCTS.find((p) => p.key === productKey);
+    const values = [2.5, 3.0, 3.5];
+    const amounts = [2.3, 2.5, 2.7];
+    return HttpResponse.json({
+      product_key: productKey,
+      product_name: product?.name ?? productKey,
+      cost_unit: "元/㎡",
+      scope: url.searchParams.get("scope") === "all" ? "all" : "own",
+      dims: [
+        {
+          field: "wire_diameter",
+          label: "丝径/线径",
+          unit: "mm",
+          kind: "axis",
+          ui_unit: "mm",
+          ui_scale: 1,
+          options: values.map((v) => ({ value: v, label: `${v}mm` })),
+        },
+      ],
+      rows: values.map((value, i) => ({
+        key: `wire_diameter=${value}`,
+        values: { wire_diameter: value },
+        labels: [`${value}mm`],
+        amount: amounts[i],
+        unit: "元/㎡",
+        item_id: i === 0 ? 301 : null,
+        effective_from: "2026-10-01",
+        source: i === 0 ? "manual" : "product_default",
+        notes: null,
+        configured: i === 0,
+      })),
+    });
+  }),
+
   // 消费方：`quote-line-card.tsx:110` `useProductFormulas(effectiveProduct, true)`
   //（`with_columns=true` ⇒ 请求会带 `?with_columns=true`，MSW 默认忽略 query）
   http.get(
