@@ -117,6 +117,11 @@
 > 证据：`frontend/src/lib/trade-doc/auto-archive.ts` + 3 条单测；门禁：typecheck 0 / lint 86 warn / vitest 458 / e2e 23+4 / build out/268。
 > 详见方案文档 §0.4。
 >
+> **（2026-10-20 · 后续 UI 路线已登记）**
+> 剩余工作盘点 + 批次安排写入方案文档 §9（P0-A 页头/状态/颜色/loading 收编；P0-B 仪表盘/报价/订单/单证/产品模板化；
+> P0-C a11y/1366；P1/P2 后续；后端依赖单列）。已删除未引用的 `customer-records-tree.tsx`。
+> 下一步从 P0-A 开始，按批跑门禁/截图/文档/push。
+>
 > **（2026-10-20 · 新会话接手核对：本地 main 同步 + 分支残留清理 + 生产 secrets 实测 + 本机工具链）**
 >
 > 1. **本地 main 已快进到 `fb4b2aa`**（此前落后 origin/main 33 个提交 —— 本地曾停在 10-19 下午的

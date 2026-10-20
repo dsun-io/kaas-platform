@@ -672,6 +672,82 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 
 ---
 
+## 9. 剩余工作与批次安排（2026-10-20 盘点）
+
+### 9.1 已完成基线（不再重复做）
+
+- 应用框架：浅色毛玻璃侧栏/顶栏、`app-backdrop`、响应式折叠、`aria-current`、reduced-motion、焦点环。
+- 登录页：左右分栏、错误内联、loading 防重复。
+- 客户管理：表格化列表、搜索/计数/空态、屏幕内固定尺寸弹窗、信息/询盘/历史 tab、联系人合并+主要置顶+添加时间倒序、联系人信息弹窗。
+- 询盘链路：编号主标题+阶段徽章（关闭/询盘/报价/订单/发货/完结）、产品名/规格拆分、单条扁平/多条按订单分组、单证内嵌完整预览、上传记录版本链。
+- 单证：签发后自动上传（Web UI），手动上传/导入保留；账号区（侧栏底部+个人信息弹窗）。
+- 门禁基线：typecheck 0 / lint 0 err（86 warn）/ vitest 458 / e2e 23+4 / build out/268。
+
+### 9.2 剩余盘点（代码事实，2026-10-20）
+
+| 指标 | 现状 | 目标 |
+|---|---|---|
+| `page.tsx` 用 `PageHeader` | 12 / 28 个页面 | 全部页面统一页头 |
+| 手写 `<h1>` | 16 个文件 | 0（含 market-view / pricing-data-manager / quote-workbench-view） |
+| “加载中/正在加载”文本 | 28 个文件（56 处） | 数据区统一 Skeleton/局部 loading |
+| 使用 `EmptyState` | 12 个文件 | 所有列表/详情空态 |
+| 硬编码 `text-red/green/amber` | 13 个文件 / 23 处 | 统一 StatusBadge/语义 token |
+| 手写 tabs（`border-b-2`） | 5 个文件 | 统一 Tabs |
+| `prefers-reduced-motion` | 已有全局样式 | 新动画逐一接入 |
+
+### 9.3 下一批（P0，按顺序）
+
+**P0-A 组件与页头收编（先做，全局收益最大）**
+
+- 页头：`admin/gray-release`、`admin/spec-proposals`、`audit-log`、`billing`、`events`、`intel`、`kb`、`market`、`onboarding`、`pricing-data`、`products`、`quotes`（含 `quote-workbench-view`）、`settings`、`spec-config`、`spec-config/wizard` 改用 `PageHeader`；保留每页原 h1 文案与 `h1Count=1`。
+- 状态/颜色：清掉 13 个文件的硬编码色，统一走 `StatusBadge` 语义色（活跃/沉寂/已下单/草稿/已签发/启用/停用）。
+- loading/空态：28 个“加载中”文件逐页替换为 Skeleton 或就近 loading；空态含图标/原因/主操作。
+- 按钮/危险操作：统一 `Button` 尺寸/顺序/危险色；icon-only 按钮补 `aria-label`。
+
+**P0-B 高频页面模板化**（按 §7 示例）
+
+- 仪表盘：6 卡分组（业务指标/系统运行）、统一样式、保留 `stat-card` 与 `采样 n/m`、不加新指标接口。
+- 报价：参数 3 列 + 说明一行（tooltip）、右侧 sticky 摘要（保存/生成单证/签发）、错误滚动定位；保留按钮文案/`?tab=`/e2e 选择器。
+- 订单：列表模板化（计数/空态/筛选/详情）、收款计划区块统一。
+- 单证：列表/创建/预览一致性收尾（上传单证文案已统一）、`scope`/图标按钮可访问名。
+- 产品：去掉重复层级，页面标题只出现一次「产品」，保留表格列/接口。
+
+**P0-C 可访问性与适配**
+
+- 表格 `scope` 覆盖率、icon-only 按钮可访问名、焦点环、`aria-current`。
+- 1366×768 无横向错位；侧栏导航不被页脚裁切（`scrollHeight ≤ clientHeight`）。
+- 对比度 ≥4.5:1；`maximumScale` 不再禁止缩放；reduced-motion 下无位移动画。
+
+### 9.4 P1 / P2（后续批次）
+
+- P1：intel 双层 tab、products 层级、events/audit-log/settings/team/shipments 列表模板化、筛选区组件化、抽屉统一。
+- P2：列配置/密度切换/筛选记忆/快捷键/复制/自动聚焦、a11y 全量、窄屏卡片化、暗色令牌校准。
+
+### 9.5 质量与清理（随批次做）
+
+- 新交互补测试：联系人弹窗、个人信息弹窗、单证内嵌预览权限分支、签发自动上传成功/503 降级、产品名/规格拆分。
+- 清理：未引用的 `frontend/src/app/(app)/customers/components/customer-records-tree.tsx` 删除；`DocPreview` 引入客户详情后关注 bundle，必要时 `next/dynamic`。
+- mock：`docsStore` 为空、`/pdf` 固定 503；需要时补种子单证让签发/预览链路可演示。
+
+### 9.6 后端依赖（单独排期，不混入纯前端批次）
+
+| 事项 | 现状 | 需要的跨栈改动 |
+|---|---|---|
+| 服务端签发自动上传 | 仅 Web UI 触发；HTML 模板在前端 | 渲染器搬服务端，或签发接口接收 HTML 后服务端出 PDF |
+| 单证内容版本 | 无版本表，draft 覆盖/issued 冻结 | `trade_doc_versions` + 版本接口/快照 + 前端版本切换 |
+| 个人信息编辑 | 只读弹窗 | 资料修改接口 + 校验 + 前端表单 |
+| 询盘状态机 | 前端展示推导 | 若要求真实状态流转，后端状态迁移/触发 |
+| 报价/订单 1:N 约束 | DB/接口未拦 | 若业务要求 1:1，需后端唯一约束+冲突提示 |
+
+### 9.7 本轮先做的事（checklist）
+
+- [ ] 盘点差距并落文档（本节，已完成）
+- [ ] P0-A 页头/状态/颜色/loading 收编（第一批：dashboard、quotes、orders、trade-docs）
+- [ ] P0-C 可访问性与 1366 检查
+- [ ] 每批：typecheck/lint/test/e2e/build + 截图 + 文档 + push
+
+---
+
 ## 附录 A 证据
 
 ### A.1 代码检索统计（2026-10-20，`frontend/src`）
