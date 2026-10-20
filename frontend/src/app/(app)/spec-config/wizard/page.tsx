@@ -4,10 +4,11 @@ import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useCategory } from "../hooks/use-categories";
 import { QuoteWizard } from "../components/QuoteWizard";
-import { Loader2 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
+import { PageHeader } from "@/components/shared";
 
 function CategoryWizardInner() {
   const searchParams = useSearchParams();
@@ -16,9 +17,13 @@ function CategoryWizardInner() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-6 w-6 animate-spin mr-2" />
-        加载品类...
+      <div className="space-y-6">
+        <PageHeader title="规格向导" description="正在加载品类与规格定义…" />
+        <div className="space-y-3">
+          <Skeleton className="h-10 w-2/3 rounded-lg" />
+          <Skeleton className="h-40 w-full rounded-xl" />
+          <Skeleton className="h-10 w-32 rounded-lg" />
+        </div>
       </div>
     );
   }
@@ -46,12 +51,11 @@ function CategoryWizardInner() {
             返回
           </Button>
         </Link>
-        <div>
-          <h1 className="text-2xl font-semibold">{category.name}</h1>
-          <p className="text-muted-foreground mt-1">
-            规格向导 — 填写属性并录入价格
-          </p>
-        </div>
+        <PageHeader
+          title={category.name}
+          description="规格向导 — 填写属性并录入价格"
+          className="flex-1"
+        />
       </div>
       <QuoteWizard categoryId={categoryId} categoryName={category.name} />
     </div>

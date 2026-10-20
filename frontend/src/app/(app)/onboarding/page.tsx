@@ -11,16 +11,15 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { ArrowRight, Calculator, Database, Target } from "lucide-react";
+import { PageHeader } from "@/components/shared";
 
 export default function OnboardingPage() {
   return (
     <div className="flex flex-col gap-6 p-6 max-w-2xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold">新手引导</h1>
-        <p className="text-muted-foreground mt-1">
-          完成以下步骤，开始使用智能报价系统
-        </p>
-      </div>
+      <PageHeader
+        title="新手引导"
+        description="完成以下步骤，开始使用智能报价系统"
+      />
 
       <Card>
         <CardHeader>

@@ -16,6 +16,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Loader2, CheckCircle, XCircle, GitMerge } from "lucide-react";
+import { PageHeader } from "@/components/shared";
 
 interface Proposal {
   id: number;
@@ -110,12 +111,10 @@ export default function SpecProposalsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">属性提案审核</h1>
-        <p className="text-muted-foreground mt-1">
-          审核租户提交的新属性提案，晋升到公库
-        </p>
-      </div>
+      <PageHeader
+        title="属性提案审核"
+        description="审核租户提交的新属性提案，晋升到公库"
+      />
 
       {/* Tabs */}
       <div className="flex gap-2 border-b">

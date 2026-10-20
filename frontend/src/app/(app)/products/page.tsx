@@ -13,6 +13,7 @@ import { useEffect, useRef } from "react";
 
 import { ProductsMediaTab } from "./tabs/products-media-tab";
 import { ProductsDefinitionsTab } from "./tabs/products-definitions-tab";
+import { PageHeader } from "@/components/shared";
 
 export default function ProductsWorkstationPage() {
   const definitionsRef = useRef<HTMLDivElement>(null);
@@ -27,13 +28,10 @@ export default function ProductsWorkstationPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">产品</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          一个产品一页：基础信息、图片、规格定义（含利润/成本/包装）都在这里维护；
-          单证与报价都引用这里的数据。
-        </p>
-      </div>
+      <PageHeader
+        title="产品"
+        description="一个产品一页：基础信息、图片、规格定义（含利润/成本/包装）都在这里维护；单证与报价都引用这里的数据。"
+      />
 
       <section className="space-y-4">
         <h2 className="text-lg font-medium">图片与基础信息</h2>
@@ -41,7 +39,9 @@ export default function ProductsWorkstationPage() {
       </section>
 
       <section ref={definitionsRef} className="space-y-4">
-        <h2 className="text-lg font-medium">定义（规格 / 利润 / 包装 / HS 编码）</h2>
+        <h2 className="text-lg font-medium">
+          定义（规格 / 利润 / 包装 / HS 编码）
+        </h2>
         <ProductsDefinitionsTab />
       </section>
     </div>

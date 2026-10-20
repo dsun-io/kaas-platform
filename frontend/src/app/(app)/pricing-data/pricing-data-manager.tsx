@@ -9,6 +9,7 @@ import {
   useSavePricingCell,
 } from "./hooks/use-pricing-data";
 import { AddOptionPanel } from "./components/AddOptionPanel";
+import { PageHeader } from "@/components/shared";
 import {
   PricingAllCustomersTable,
   PricingDataTable,
@@ -116,12 +117,10 @@ export function PricingDataManager({
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         {!embedded && (
-          <div>
-            <h1 className="text-2xl font-bold">定价数据</h1>
-            <p className="text-muted-foreground mt-1">
-              每个客户的成本价表，是报价计算的输入
-            </p>
-          </div>
+          <PageHeader
+            title="定价数据"
+            description="每个客户的成本价表，是报价计算的输入"
+          />
         )}
         {isTenantAdmin && (
           <label className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">

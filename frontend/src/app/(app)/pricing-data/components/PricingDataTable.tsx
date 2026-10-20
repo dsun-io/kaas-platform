@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2, RotateCcw, Save } from "lucide-react";
 import type {
   PricingCell,
@@ -42,8 +43,10 @@ export function PricingDataTable({
   if (loading) {
     return (
       <Card>
-        <CardContent className="py-8">
-          <p className="text-sm text-muted-foreground">加载中…</p>
+        <CardContent className="space-y-2 py-6">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-9 w-full rounded-md" />
+          ))}
         </CardContent>
       </Card>
     );
