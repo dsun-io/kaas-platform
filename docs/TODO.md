@@ -26,13 +26,13 @@
 | A-6 | **A6 G12 有效期/包装细则/生产照片/第三方拼柜方/代表签署人** | ✅ 2026-10-21 已完成（PI P2 字段；`valid_until` 仅在其它 P2 字段存在时随块显示，保护旧金标） | — |
 | A-7 | **A14 包装类事实（复用产品 packaging）** | 求值器已就绪；按产品 `spec.packaging[].method` 抽 `packing_method`/`packing_type`（不新增字段）；align-b 施工中 | 0.5 天 |
 | A-8 | **A5-W3 金额摘要条** | ✅ 2026-10-21 已完成（只读、无输入控件；复用 `computeFxBreakdown`/`amountInWords`/`receiptTolerance`；17 测；真实样例应付 2,826.49 钉死） | — |
-| A-9 | **A5-W2 行项批量编辑** | 多选批量改规格/单价/数量/单位，金额仍单一来源推导、改完标未确认、签发仍被拦 | 1.5 天 |
+| A-9 | **A5-W2 行项批量编辑** | ✅ 2026-10-21 已完成（前端多选/预览/一次 PATCH/撤销 + 后端 `custom.items_override` 受控通道；渲染副本覆盖、行金额重算、facts manual/unverified、签发闸门拦截；新增 35+27 测） | — |
 | A-10 | **C27 QA 越权审计 7 条留证** | 发布后跑一轮并留证（P4） | 0.5 天 |
 | A-11 | **D6 冷启动基线收尾** | 用 Cloudflare Analytics API 拉 p50，写 `coldstart-baseline.json` 销 PENDING | 0.5 天 |
 | A-12 | **C12 PDF 归档真单证端到端** | 需等平台产生首单真实 PDF（`render_pdf` 当前 0 条）后人工复核 18 类；可先用现有样例做 1 类对照 | 0.5 天 |
 | A-13 | **C36 审计后续（实为 20 条待接）** | ✅ 审计完成 + **删 3 条已批准接口** + **本期 5 条 UI 已接**（税档软删/定价改/团队改名/手工汇率/CSV 导入，前端 789 passed）；剩余：下期 12 + 长期保留 3 + 13 条 owner 确认 | 2 天 |
-| A-14 | **A10：5 类扩展模板实现** | 🔨 P1 两件（`beneficiary_decl`/`saso_coc`）前端模板+金标已完成（23→25），**后端 DOC_TYPE 扩 20 类施工中**（task-48，完成前 contracts R3 红）；P2 按真实样例再定 | 1.5 天 |
-| A-15 | **A8①：归档任务端到端实跑** | 🔍 已查清：cron `30 16 * * *` 于 **2026-10-20T12:54Z 首次挂载**，首个窗口 16:30Z 未到 ⇒ `events_archive_log` 0 行属正常；events 250 行（10-19 有 7 行）、R2 `events-archive/` 前缀空、无手动触发端点。窗口后按 4 条清单验证 | 0.5 天 |
+| A-14 | **A10：5 类扩展模板实现** | ✅ P1 两件完成（`beneficiary_decl` 12 字段/BD、`saso_coc` 18 字段/COC；金标 23→25；后端 DOC_TYPE 20 类、contracts R3/R4 PASS）；P2 三类按真实样例再排 | — |
+| A-15 | **A8①：归档任务端到端实跑** | ⏳ 等待 2026-10-21 00:30 首窗口后验证（cron 30 16 UTC；预期 log +1 行 path=`kaas-files/events-archive/2026/10/19/v1.jsonl.gz`、events 行数不变） | 0.5 天 |
 | A-16 | **D2 后直传路径端到端复验** | ✅ 2026-10-21 已验证：临时 QA 账号 → `POST /file-objects/presign` 返回 `configured=true`（签名用系统 token `kaas-r2-system`）→ PUT 200 → GET 200（内容一致）→ DELETE 204；临时账号与对象已清理 | — |
 | A-17 | **重置密码邮件 UI 同步新版** | ✅ 2026-10-21 已完成（electric-blue/12px 圆角/table 响应式/纯文本兜底） | — |
 
@@ -54,8 +54,8 @@
 
 ### D. 当前生产基线（2026-10-21 收口）
 
-- 生产版本 **`5295d362-b6ba-48b4-b8a1-de3235f95658`**（第 8 次部署）；迁移头 **`202610200006`**；
-- 门禁：worker **1390 + 12skip** / orchestrator **247** / 前端 **743（77 files）** / e2e **27 = 27 + 0** / build out **277** / contracts·mocks·contrast·trade-doc:check·静态断言全 PASS。
+- 生产版本 **`2fad8cb9-dd45-4226-9749-ef4a52e62dd5`**（第 9 次部署）；迁移头 **`202610200006`**；
+- 门禁：worker **1523 + 12skip** / orchestrator **247** / 前端 **809（87 files）** / e2e **27 = 27 + 0** / build out **277** / contracts·mocks·contrast·trade-doc:check·静态断言全 PASS。
 
 ---
 
@@ -191,7 +191,7 @@
 | C24 | 客户触达「产品手册附件」（P4 遗留） | ⏸ **用户 2026-10-21 拍板：暂不做**（等有真实手册素材/业务需要再做）；设计记录保留在 G-14 | — | ⏸ 暂缓 |
 | C25 | 列表分页 UI（UI T7） | ✅ 2026-10-21：共享 `PaginationBar`（第 a–b 条/共 N 条、末页按真实条数、钳位不显示越界页、一屏不渲染）；orders 新增 `use-orders-list`（真分页，不再拿 100/页下拉源当列表）；events/audit 页码独立 state、筛选变化回第 1 页；三端点契约 `{items,total,page,page_size}` 均无 has_more。尾巴已销账（C39 audit-log 筛选后端已补） | — | ✅ |
 | C26 | a11y 深水项 | ✅ 2026-10-21：外壳加「跳到主内容」skip-link（sr-only、focus 可见）+ `main#main tabIndex=-1`；RangeSelector 改 `radiogroup/aria-checked`（单选组语义，非 aria-pressed）；订单列配置最后一列 `aria-disabled` + 动作守卫（不再静默 no-op）；+3 组件测。**尾巴**：未做方向键 roving、全站无 axe 扫描 | — | ✅（点状） |
-| C27 | QA 越权审计 7 条留证 | `QA_TEST_ACCOUNTS.md:71-82` 有清单无执行结论；随发布后 P4 跑并留证 | 发布后 | ⏳ |
+| C27 | QA 越权审计 7 条留证 + 修复 | ✅ 2026-10-21：审计（`QA_AUTHZ_AUDIT_2026-10-21.md`：3 已有闸门/4 缺失）+ 用户批准修全部 4 类 → 代码修复完成（AI 配置 admin-only、单证 team/owner 读、confirm/pdf 角色、公章读收紧 + R-1 PATCH；新增 105 测、worker 1523+12skip）；`QA_AUTHZ_VERIFY` v2 矩阵待 branch-audit 独立复核 | — | ✅（复核中） |
 | A10 | 模板扩展清单 | ✅ 2026-10-21：`TRADE_DOC_TEMPLATES.md` 新增 §6.1「待扩展模板清单」——SASO/COC、船公司证明、出口许可证、CIQ、受益人声明，逐类给用途/关键字段/数据来源/优先级/A6 依赖（先做 beneficiary_decl + saso_coc），并修正旧架构指针。**模板本身未实现**（等 A6 真实样例校准，属设计依赖非欠账） | A6 样例 | ✅（清单已出） |
 | N9 | = C23 的决策记录（避免两处编号漂移） | 见 C23/§G-12 | — | — |
 | N10 | 事件流联通 `domain_events` | ⏸ **用户 2026-10-21 拍板：暂缓，等未来功能成熟稳定再实现**；设计承诺保留在 `WORKSTATION_DESIGN` 并已标注"未实现、有需求再做"，不再作为当前欠账 | — | ⏸ 暂缓 |
