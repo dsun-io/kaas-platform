@@ -17,6 +17,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import apiClient from "@/lib/api/client";
 import { usePageView } from "@/lib/events/use-page-view";
@@ -193,9 +194,15 @@ export default function ShipmentsPage() {
         }
       >
         {list.isLoading ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            加载中…
-          </p>
+          <div
+            className="space-y-2"
+            aria-busy="true"
+            aria-label="出货列表加载中"
+          >
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full rounded-md" />
+            ))}
+          </div>
         ) : list.isError ? (
           <div className="flex items-center gap-2 py-8 text-sm text-destructive">
             <AlertCircle className="h-4 w-4" />
@@ -212,14 +219,28 @@ export default function ShipmentsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
-                  <th className="p-2">出货单号</th>
-                  <th className="p-2">客户</th>
-                  <th className="p-2">状态</th>
-                  <th className="p-2">船名/航次</th>
-                  <th className="p-2">提单号</th>
-                  <th className="p-2">ETD</th>
-                  <th className="p-2">ETA</th>
-                  <th className="p-2" />
+                  <th scope="col" className="p-2">
+                    出货单号
+                  </th>
+                  <th scope="col" className="p-2">
+                    客户
+                  </th>
+                  <th scope="col" className="p-2">
+                    状态
+                  </th>
+                  <th scope="col" className="p-2">
+                    船名/航次
+                  </th>
+                  <th scope="col" className="p-2">
+                    提单号
+                  </th>
+                  <th scope="col" className="p-2">
+                    ETD
+                  </th>
+                  <th scope="col" className="p-2">
+                    ETA
+                  </th>
+                  <th scope="col" className="p-2" />
                 </tr>
               </thead>
               <tbody>

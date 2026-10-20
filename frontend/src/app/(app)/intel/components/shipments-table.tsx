@@ -14,6 +14,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
 import {
   useIntelShipments,
   type IntelShipmentFilters,
@@ -219,9 +220,11 @@ export function ShipmentsTable() {
             )}
           </>
         ) : (
-          <div className="text-center py-8 text-muted-foreground">
-            暂无货运记录数据
-          </div>
+          <EmptyState
+            title="暂无货运记录数据"
+            description="调整筛选条件后再试，或先导入/采集货运数据。"
+            className="border-0 py-8"
+          />
         )}
       </CardContent>
     </Card>

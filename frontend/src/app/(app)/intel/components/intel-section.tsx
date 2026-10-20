@@ -5,8 +5,7 @@ import { ShipmentsTable } from "./shipments-table";
 import { TradeStatsView } from "./trade-stats-view";
 import { AdapterRunsList } from "./adapter-runs-list";
 import { ChannelsView } from "./channels-view";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type TabKey = "shipments" | "trade-stats" | "channels" | "runs";
 
@@ -25,29 +24,27 @@ export function IntelSection() {
   const [activeTab, setActiveTab] = useState<TabKey>("shipments");
 
   return (
-    <div className="space-y-6">
-      <div className="flex gap-2 border-b">
+    <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabKey)}>
+      <TabsList variant="line">
         {TABS.map((tab) => (
-          <Button
-            key={tab.key}
-            variant="ghost"
-            className={cn(
-              "rounded-none border-b-2 border-transparent px-4 pb-2",
-              activeTab === tab.key && "border-primary font-medium",
-            )}
-            onClick={() => setActiveTab(tab.key)}
-          >
+          <TabsTrigger key={tab.key} variant="line" value={tab.key}>
             {tab.label}
-          </Button>
+          </TabsTrigger>
         ))}
-      </div>
+      </TabsList>
 
-      <div className="mt-6">
-        {activeTab === "shipments" && <ShipmentsTable />}
-        {activeTab === "trade-stats" && <TradeStatsView />}
-        {activeTab === "channels" && <ChannelsView />}
-        {activeTab === "runs" && <AdapterRunsList />}
-      </div>
-    </div>
+      <TabsContent value="shipments" keepMounted={false}>
+        <ShipmentsTable />
+      </TabsContent>
+      <TabsContent value="trade-stats" keepMounted={false}>
+        <TradeStatsView />
+      </TabsContent>
+      <TabsContent value="channels" keepMounted={false}>
+        <ChannelsView />
+      </TabsContent>
+      <TabsContent value="runs" keepMounted={false}>
+        <AdapterRunsList />
+      </TabsContent>
+    </Tabs>
   );
 }

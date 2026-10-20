@@ -150,6 +150,10 @@
 > **（2026-10-20 · P1 首批：事件/操作日志/设置/团队加载态）**
 > 事件列表、操作日志的“加载中/暂无”改为骨架 + `EmptyState`；设置页租户/平台账号、
 > 团队页成员/邀请/工位面板的“加载中…”全部改骨架。e2e/typecheck/lint/test 通过。
+>
+> **（2026-10-20 · P1 第二批：intel / shipments）**
+> intel 内部 4 个 tab 从手写 border-b-2 收编到统一 `Tabs`（keepMounted=false 行为不变）；
+> shipments 列表加载改骨架、表头补 `scope`；intel 货运表格空态改 `EmptyState`。
 > 证据：`docs/ui-redesign/phase5/`；详见方案文档 §10。
 >
 > **（2026-10-20 · 新会话接手核对：本地 main 同步 + 分支残留清理 + 生产 secrets 实测 + 本机工具链）**
