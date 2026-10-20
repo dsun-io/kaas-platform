@@ -9,6 +9,8 @@ import { AuditTimeline } from "./components/audit-timeline";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { usePageView } from "@/lib/events/use-page-view";
 import { RouteGuard } from "@/components/route-guard";
+import { PageHeader } from "@/components/shared";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function GrayReleasePage() {
   usePageView({ resource_id: "/admin/gray-release" });
@@ -25,7 +27,7 @@ export default function GrayReleasePage() {
   return (
     <RouteGuard adminOnly>
       <div className="space-y-6">
-        <h1 className="text-2xl font-semibold">灰度发布</h1>
+        <PageHeader title="灰度发布" description="灰度开关与发布审计" />
 
         <Card>
           <CardHeader className="pb-3">
@@ -33,7 +35,11 @@ export default function GrayReleasePage() {
           </CardHeader>
           <CardContent>
             {tenantsLoading || flagsLoading ? (
-              <p className="text-sm text-muted-foreground">加载中...</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full rounded-lg" />
+                ))}
+              </div>
             ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {(tenants ?? []).map((t) => (

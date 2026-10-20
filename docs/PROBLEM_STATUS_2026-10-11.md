@@ -128,6 +128,11 @@
 > 未改算价/接口/字段/tab 深链；e2e 通过。第二阶段：产品行紧凑化（算完自动收起为摘要行）已落，
 > 批量报价已选摘要+骨架+空态、报价记录表格骨架+空态已落；成本历史补 mock 矩阵，tab 不再卡加载；
 > 仪表盘 6 卡已按“业务指标 2 / 系统运行 4”分组并去掉纯文本加载态。窄屏吸底待做。
+>
+> **（2026-10-20 · P0-A 页头收编完成）**
+> 手写 `<h1>` 清零：billing / intel / market-view / products / spec-config / spec-config wizard /
+> pricing-data / admin gray-release / admin spec-proposals / onboarding 全部改 `PageHeader`；
+> gray-release、spec-config、pricing 表格的“加载中…”改骨架屏。e2e/typecheck/lint/test 通过。
 > 证据：`docs/ui-redesign/phase5/`；详见方案文档 §10。
 >
 > **（2026-10-20 · 新会话接手核对：本地 main 同步 + 分支残留清理 + 生产 secrets 实测 + 本机工具链）**

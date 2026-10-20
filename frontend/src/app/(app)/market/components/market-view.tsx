@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { PageHeader } from "@/components/shared";
 
 type TabKey = "region" | "product" | "usage" | "ports";
 
@@ -284,15 +285,14 @@ function UsageTab() {
   const { data: usages } = useQuery({
     queryKey: ["market", "usages"],
     queryFn: async () => {
-      const { data } =
-        await apiClient.get<
-          {
-            id: number;
-            usage_code: string;
-            usage_name: string;
-            description: string | null;
-          }[]
-        >("/market/usages");
+      const { data } = await apiClient.get<
+        {
+          id: number;
+          usage_code: string;
+          usage_name: string;
+          description: string | null;
+        }[]
+      >("/market/usages");
       return data;
     },
   });
@@ -417,12 +417,10 @@ export function MarketView({ showHeader = true }: { showHeader?: boolean }) {
   return (
     <div className="space-y-6">
       {showHeader && (
-        <div>
-          <h1 className="text-xl font-semibold md:text-2xl">产品市场对照</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            按地区 / 品名 / 用途查询产品与规格，港口情报与最近港口匹配
-          </p>
-        </div>
+        <PageHeader
+          title="产品市场对照"
+          description="按地区 / 品名 / 用途查询产品与规格，港口情报与最近港口匹配"
+        />
       )}
 
       <div className="flex gap-2 border-b">

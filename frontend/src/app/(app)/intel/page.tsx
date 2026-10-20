@@ -5,6 +5,7 @@ import { IntelSection } from "./components/intel-section";
 import { MarketView } from "../market/components/market-view";
 import { usePageView } from "@/lib/events/use-page-view";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHeader } from "@/components/shared";
 
 /**
  * 情报工位（一个工位 = 一个侧边栏入口）
@@ -36,10 +37,7 @@ export default function IntelWorkstationPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold md:text-2xl">市场情报</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{current.desc}</p>
-      </div>
+      <PageHeader title="市场情报" description={current.desc} />
 
       {/* 2026-10-17 tab 收编到 ui/tabs：条件渲染（keepMounted={false}）
           行为与收编前一致；文案不变。 */}

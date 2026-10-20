@@ -687,9 +687,9 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 
 | 指标 | 现状 | 目标 |
 |---|---|---|
-| `page.tsx` 用 `PageHeader` | 12 / 28 个页面 | 全部页面统一页头 |
-| 手写 `<h1>` | 16 个文件 | 0（含 market-view / pricing-data-manager / quote-workbench-view） |
-| “加载中/正在加载”文本 | 28 个文件（56 处） | 数据区统一 Skeleton/局部 loading |
+| `page.tsx` 用 `PageHeader` | 27 / 27 个页面（3 条 redirect/wrapper 由组件内 PageHeader 覆盖） | 全部页面统一页头 ✅ |
+| 手写 `<h1>` | **0** | 0 ✅ |
+| “加载中/正在加载”文本 | 26 个文件 | 数据区统一 Skeleton/局部 loading |
 | 使用 `EmptyState` | 12 个文件 | 所有列表/详情空态 |
 | 硬编码 `text-red/green/amber` | 13 个文件 / 23 处 | 统一 StatusBadge/语义 token |
 | 手写 tabs（`border-b-2`） | 5 个文件 | 统一 Tabs |
@@ -742,8 +742,8 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 ### 9.7 本轮先做的事（checklist）
 
 - [x] 盘点差距并落文档（本节，已完成）
-- [x] P0-A 页头首批：settings / events / audit-log / kb 已统一 PageHeader（2026-10-20）；其余 admin/onboarding/pricing-data/products/quotes/spec-config 等按 §9.3 继续
-- [ ] P0-A 状态/颜色/loading 收编（第一批：dashboard、quotes、orders、trade-docs）
+- [x] P0-A 页头收编：settings / events / audit-log / kb / billing / intel / market-view / products / spec-config / spec-config wizard / pricing-data / admin gray-release / admin spec-proposals / onboarding 全部改 `PageHeader`；手写 `<h1>` 清零。
+- [ ] P0-A 状态/颜色/loading 收编（第一批：orders、trade-docs；dashboard 已分组）
 - [ ] P0-C 可访问性与 1366 检查
 - [ ] 每批：typecheck/lint/test/e2e/build + 截图 + 文档 + push
 
