@@ -10,7 +10,9 @@
 
 > 📌 **交接先看 [docs/README.md](docs/README.md)**（当前权威 / 运行手册 / 归档分层）。
 > 本文只保留：架构、环境、命令、门禁、业务规则；历史决策与已完成计划在 `docs/archive/`。
-> **当前状态（2026-10-20 下午）**：前端 UI 优化 P0/P1/P2 已完成；后端 5 项依赖已拆并行任务。
+> **当前状态（2026-10-21）**：前端 UI 优化 P0/P1/P2 已完成；后端 5 项依赖（签发自动上传 / 内容版本 /
+> 个人信息 / 询盘状态机 / 报价订单 1:N）已全部完成并合并入 `main`
+> （2026-10-20，逐项证据见 [`HANDOVER_2026-10-20_FINAL.md`](docs/HANDOVER_2026-10-20_FINAL.md) §0.1）。
 
 ---
 
@@ -50,22 +52,36 @@
 
 ## 3. 本地开发
 
+> ⚠️ **先同步共享内核，再起后端**：`backend/worker/src/kaas_common/` 是 `scripts/sync-shared.ps1`
+> 从 `backend/kaas_common/` 生成的**镜像**（已被 `backend/worker/.gitignore:15` 忽略，不在 git 里）。
+> 新 clone / 换设备若跳过这步直接起 backend，会报
+> `ModuleNotFoundError: No module named 'kaas_common.preview'`（镜像缺 `preview.py`，另有 4 个文件过期）。
+> 正确顺序：**装依赖 → `sync-shared` → `docker compose up -d` → 空库 `alembic upgrade head` → `pnpm dev`**。
+
 ```powershell
-# 1) 基础设施 + 本地后端（worker local_run）
+# 0) 首次装依赖（后端 uv / 前端 pnpm）
+cd backend/orchestrator; uv sync --extra migrations; cd ../..
+cd frontend; pnpm install; cd ..
+
+# 1) 同步共享内核镜像（新 clone 必做；每次改 backend/kaas_common 后也要重跑）
+powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1
+
+# 2) 基础设施 + 本地后端（worker local_run；compose 映射 8000）
 docker compose up -d
 
-# 2) 首次建表（空库；与生产同一套 Alembic）
+# 3) 首次建表（空库快径；与生产同一套 Alembic）
 cd backend/orchestrator
-uv sync --extra migrations
 $env:DATABASE_URL="postgresql+asyncpg://kaas:kaas_dev@localhost:5432/kaas_dev"
 uv run --extra migrations alembic upgrade head
+cd ../..
 
-# 3) 前端
+# 4) 前端
 cd frontend
-pnpm install
 pnpm dev
 ```
 
+- 本地后端 = `http://localhost:8000`（compose 的 backend 容器映射 8000）；`GET /health` 实测 200 且返回
+  `shared.loaded=true` —— **这条可用来确认共享内核镜像已同步成功**（`loaded=false` 说明镜像没打进/没同步）。
 - 前端默认 `.env.development`：`NEXT_PUBLIC_API_MODE=real`、`NEXT_PUBLIC_API_BASE_URL=http://localhost:8000`。
   只跑 mock 时改 `NEXT_PUBLIC_API_MODE=mock`。
 - 本地首次登录：用 `ADMIN_SETUP_TOKEN` 调 `POST /api/v1/auth/bootstrap-admin` 引导管理员；
@@ -170,10 +186,11 @@ docker-compose.yml 本地基础设施 + 本地后端
 | [docs/README.md](docs/README.md) | **交接检索入口**（先读顺序 / 当前权威 / 归档分层） |
 | [docs/PROBLEM_STATUS_2026-10-11.md](docs/PROBLEM_STATUS_2026-10-11.md) | 滚动问题状态 |
 | [docs/TODO.md](docs/TODO.md) | 活跃待办唯一账本 |
-| [docs/UI_UX_OPTIMIZATION_2026-10-20.md](docs/UI_UX_OPTIMIZATION_2026-10-20.md) | UI 路线、报价重构、终验（前端线文档） |
-| [docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md](docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md) | 后端 5 项验收基线（**已完成**） |
+| [docs/UI_UX_OPTIMIZATION_2026-10-20.md](docs/UI_UX_OPTIMIZATION_2026-10-20.md) | UI 方案、报价重构、终验（P0/P1/P2 已完成，§11 为终验） |
+| [docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md](docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md) | 后端 5 项验收基线（**已完成**，历史基线；现状以 TODO + 代码为准） |
+| [docs/archive/2026-10-21-doc-closeout/](docs/archive/2026-10-21-doc-closeout/README.md) | 2026-10-21 归档批：平台升级/团队可见性/客户单据视图/产品媒体存储（替代指针见批次 README） |
 | [docs/archive/](docs/archive/) | 历史文档（只读，不代表当前架构） |
 
 ---
 
-**最后更新**：2026-10-20 下午（README 瘦身；UI P0/P1/P2 已完成，后端 5 项并行任务中）。
+**最后更新**：2026-10-21（文档收尾：过时文档归档 + UI/单证文档状态口径统一；UI P0/P1/P2 与后端 5 项均已完成）。

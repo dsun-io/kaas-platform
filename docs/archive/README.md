@@ -18,6 +18,7 @@
 | [2026-10-20-closeout/](./2026-10-20-closeout/README.md) | 2026-10-20 | 方案 B 收尾批：A′ 计划、PPG 迁移、历史交接/部署/模块计划等 22 份 | 移动归档 |
 | [2026-10-20-p2-closeout/](./2026-10-20-p2-closeout/README.md) | 2026-10-20 | **P2 收尾批**：方案 B/S4/技术栈/安全/税务/批量报价/旧 e2e/旧实现地图等 15 份已完成或已被取代文档 | 移动归档 |
 | [2026-10-20-backend-closeout/](./2026-10-20-backend-closeout/README.md) | 2026-10-20 | **后端五项收尾批**：`ENV_VERIFICATION_2026-10-19`（三环境快照过时） | 移动归档 |
+| [2026-10-21-doc-closeout/](./2026-10-21-doc-closeout/README.md) | 2026-10-21 | **文档收尾批**：`TEAMS_AND_VISIBILITY` / `CUSTOMER_DOCUMENTS_VIEW` / `PRODUCT_MEDIA_STORAGE_PLAN` / `PLATFORM_UPGRADE_PLAN`（设计稿/计划；落地表与剩余项已折入 TODO，含「生产 S3 key 13 位 ⇒ 直传不可用」结论） | 移动归档 |
 
 ## 归档后去哪找
 

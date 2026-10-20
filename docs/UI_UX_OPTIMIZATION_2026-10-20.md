@@ -6,6 +6,11 @@
 > 证据：`main` 分支代码 + 2026-10-20 用 Playwright 在 `NEXT_PUBLIC_API_MODE=mock` 下抓取的 1440×900 全屏截图（见 §附录 A）  
 > 高保真静态原型（v1.0 方案示意，已被 §0.1 的实施方向取代）：`docs/ui-redesign/prototype/index.html`
 
+> **状态（2026-10-21 文档收尾）**：**P0/P1/P2 已全部完成**（2026-10-20，终验见 §11）。
+> 本文保留为 UI 线的方案与验收记录；正文中「本轮未做 / 待做」均为**当时**口径，已逐处标注完成状态。
+> 活跃待办以 [`TODO.md`](./TODO.md) 为准；后端依赖五项同样是**历史验收基线**（见
+> [`UI_BACKEND_DEPENDENCIES_2026-10-20.md`](./UI_BACKEND_DEPENDENCIES_2026-10-20.md)）。
+
 ---
 
 ## 0. 一页速览
@@ -70,9 +75,9 @@
 - `detail-dialog.png`（客户详情弹窗）、`inquiry-followups.png` / `inquiry-1440.png` / `inquiry-1366.png`（询盘后续）
 - `stage-select-1440.png` / `stage-select-1366.png`（统一下拉框）
 
-**门禁（2026-10-20 实测）**：typecheck 0 error；lint 0 error / 89 warn（与基线一致）；vitest **455 passed**；contracts **R0–R6 PASS**；e2e **23 passed + 4 skipped = 27**；`NEXT_EXPORT=1` build 成功（`out/` 268 文件）；orchestrator records **8 passed**；worker records+parity **65 passed**；`sync-shared` PASS。
+**门禁（2026-10-20 实测）**：typecheck 0 error；lint 0 error / 89 warn（与基线一致）；vitest **455 passed**；contracts **R0–R6 PASS**；e2e **23 passed + 4 skipped**（当轮；P2 收口后总计 28 = 24 + 4，见 §11）；`NEXT_EXPORT=1` build 成功（`out/` 268 文件）；orchestrator records **8 passed**；worker records+parity **65 passed**；`sync-shared` PASS。
 
-**本轮未做**（仍按 v1.0 计划）：其余 30+ 页面的内容迁移、列配置/密度切换/筛选记忆、报价表单 sticky 摘要、全站 Tab/按钮/加载态收编、a11y 全量修复。
+**当时未做、后续批次已全部完成**（2026-10-20，见 §11）：其余 30+ 页面的内容迁移、列配置/密度切换/筛选记忆、报价表单 sticky 摘要、全站 Tab/按钮/加载态收编、a11y 全量修复。
 
 ### 0.2 第二轮反馈落地（2026-10-20 · 细节修订）
 
@@ -90,7 +95,7 @@
 
 证据：`docs/ui-redesign/phase3/*.png`（列表 / 详情（联系人）/ 询盘折叠 / 展开（单证倒序）/ 单证预览 / 1366）。
 
-**门禁（2026-10-20 实测）**：typecheck 0 error；lint 0 error / 89 warn；vitest **455 passed**；e2e **23 passed + 4 skipped = 27**；`NEXT_EXPORT=1` build 成功（`out/` 268 文件）。
+**门禁（2026-10-20 实测）**：typecheck 0 error；lint 0 error / 89 warn；vitest **455 passed**；e2e **23 passed + 4 skipped**（当轮；P2 收口后总计 28 = 24 + 4，见 §11）；`NEXT_EXPORT=1` build 成功（`out/` 268 文件）。
 
 ### 0.3 第三轮反馈：询盘链路与单证内嵌预览（2026-10-20）
 
@@ -101,7 +106,7 @@
 | 一个报价单能有多个订单吗？ | 能。`orders.quote_id` 只有索引、没有唯一约束，`POST /orders` 也不拦；现实中“分批出货 / 同一报价重复下单”是合理场景，因此 UI 按真实数据支持 1:N，不强制 1:1（要强制需后端加约束，属业务改动） |
 | 询盘和订单怎么挂？ | 不直接挂。`quote_orders.inquiry_id` 挂询盘，`orders.quote_id` 挂报价；一张询盘可有多张报价（改价重报），所以询盘 → 报价 → 订单是传递关系，订单没有 `inquiry_id` |
 | 订单号和单证什么关系？ | `orders.order_no` 全局唯一；`trade_docs.order_id` 1 订单 : N 单证；单证也可只挂 `quote_id`（与 `order_id` 互斥）。多条订单时按订单分组，单条时扁平展示即可 |
-| “上传的系统”有历史记录吗？ | 有**上传文件版本链**：`file_objects.version/is_current/supersedes_id` + `trade_doc_files` 角色 `render_pdf(_superseded)`，旧版不物理删；但**单证内容修改没有版本表**（draft 覆盖、issued 冻结），内容级版本需后端加表 |
+| “上传的系统”有历史记录吗？ | 有**上传文件版本链**：`file_objects.version/is_current/supersedes_id` + `trade_doc_files` 角色 `render_pdf(_superseded)`，旧版不物理删；单证**内容级版本已落地**（2026-10-20：迁移 `202610200001` + `GET/POST /trade-docs/{id}/content-versions` + 前端「内容版本」面板） |
 
 **本轮落地**
 
@@ -110,24 +115,24 @@
 - 展开：产品 / 规格 / 联系人（只写名字，点击弹联系人信息弹窗）/ 渠道 / 数量 / 用途 / 创建时间；**删掉报价单+订单编号那一行**（不再重复）；单条订单直接扁平列单证，多条订单按订单分组；单证按生成时间倒序。
 - 联系人：点名字弹出**联系人信息弹窗**（职位/电话/邮箱/WhatsApp），不跳页面、不写“主要”。
 - 单证：点击**直接内嵌完整单据预览**（有单证工位权限时，复用 `DocPreview` + `/trade-docs/{id}/render-data`）；无权限显示说明；“在单证工位打开”降为次要入口；footer 重做为固定操作条（不再有负边距/灰条错位）。
-- 历史留档：预览内展示**上传记录（PDF 版本链）**（当前/历史、vN、时间，点击打开原文件），数据来自现有 `GET /trade-docs/{id}/files`；内容级版本未做（需后端版本表）。
-- 账号区：删除顶栏右侧的账号头像/下拉（与团队名重复且数据不足）；顶栏只保留团队名。侧栏底部新增**账号卡 + 「个人信息」弹窗**（账号类型/角色/团队/套餐，团队与工位、退出登录）。后端目前没有资料修改接口，弹窗明确标注“只读；修改资料请联系管理员”，不伪造编辑能力。
+- 历史留档：预览内展示**上传记录（PDF 版本链）**（当前/历史、vN、时间，点击打开原文件），数据来自现有 `GET /trade-docs/{id}/files`；**内容级版本已落地**（2026-10-20，迁移 `202610200001` + 前端「内容版本」面板，可回看/恢复；仅 draft）。
+- 账号区：删除顶栏右侧的账号头像/下拉（与团队名重复且数据不足）；顶栏只保留团队名。侧栏底部新增**账号卡 + 「个人信息」弹窗**（账号类型/角色/团队/套餐，团队与工位、退出登录）。**当时**后端没有资料修改接口，弹窗明确标注“只读；修改资料请联系管理员”，不伪造编辑能力；**2026-10-20 已补** `PATCH /auth/me` + `POST /auth/change-password`，弹窗已可编辑（见 [`UI_BACKEND_DEPENDENCIES_2026-10-20.md`](./UI_BACKEND_DEPENDENCIES_2026-10-20.md) §3）。
 - mock：补 `render-data` 样板数据（让本地也能看到内嵌预览）、`files` 返回空；联系人种 3 位以演示排序。
 
 证据：`docs/ui-redesign/phase4/*.png`（列表 / 展开 / 联系人弹窗 / 单证内嵌预览 / 账号区与个人信息）；`docs/ui-redesign/phase3/*.png` 保留上一轮。
 
-**门禁（2026-10-20 实测）**：typecheck 0 error；lint 0 error / 86 warn；vitest **455 passed**；e2e **23 passed + 4 skipped = 27**；`NEXT_EXPORT=1` build 成功（`out/` 268 文件）。
+**门禁（2026-10-20 实测）**：typecheck 0 error；lint 0 error / 86 warn；vitest **455 passed**；e2e **23 passed + 4 skipped**（当轮；P2 收口后总计 28 = 24 + 4，见 §11）；`NEXT_EXPORT=1` build 成功（`out/` 268 文件）。
 
 ### 0.4 签发后自动上传单证 PDF（2026-10-20）
 
 - 业务口径统一叫**「上传单证」**，不再叫「归档」（内部文件角色仍是 `render_pdf` / `render_pdf_superseded`，不改表/接口）。
 - Web UI 中**签发成功即自动上传单证**：`GET /trade-docs/{id}/render-data` → 前端 `renderTradeDoc` 生成 HTML → `POST /trade-docs/{id}/pdf`（服务端 Browser Rendering 出字节 → 既有落档链路：新版本上位、旧版挂 `render_pdf_superseded` 不物理删）。客户不再需要“打印另存 → 再导入一次”。
 - **手动上传入口保留**：`POST /trade-docs/{id}/files/upload`（手动上传区）+ 单证工位「导入已有数据」；覆盖渲染器不可用、第三方签发单据、历史补档等特殊情况。
-- **边界（如实记录）**：自动上传由 Web UI 在签发成功后触发；直接调用 API / 其他客户端签发不会自动出 PDF（HTML 模板在前端）。要服务端兜底，需要把渲染器搬到服务端或在签发接口接收 HTML，属跨栈改造，登记待办。
+- **边界（2026-10-21 更新）**：签发接口已接收前端 HTML（方案 A，2026-10-20 落地；见 [`UI_BACKEND_DEPENDENCIES_2026-10-20.md`](./UI_BACKEND_DEPENDENCIES_2026-10-20.md) §1）：`POST /trade-docs/{id}/confirm` 与 `PATCH /trade-docs/{id}`（draft→issued）带 HTML 即由服务端出 PDF 并落档，失败不回滚签发。**不带 HTML 的第三方客户端仍不出 PDF**（模板在前端，属结构性限制）——方案 B（模板迁服务端）未做，登记在 `TODO.md` A2-B。
 - mock：`POST /trade-docs/{id}/pdf` 返回 503（mock 无浏览器渲染器），前端如实提示“请手动上传”，不假装成功。
 - 单元测试：`frontend/src/lib/trade-doc/__tests__/auto-archive.test.ts` 3 条（成功 / 503 / 404）。
 
-**门禁（2026-10-20 实测）**：typecheck 0 error；lint 0 error / 86 warn；vitest **458 passed**；e2e **23 passed + 4 skipped = 27**；`NEXT_EXPORT=1` build 成功（`out/` 268 文件）。
+**门禁（2026-10-20 实测）**：typecheck 0 error；lint 0 error / 86 warn；vitest **458 passed**；e2e **23 passed + 4 skipped**（当轮；P2 收口后总计 28 = 24 + 4，见 §11）；`NEXT_EXPORT=1` build 成功（`out/` 268 文件）。
 
 ---
 
@@ -681,7 +686,7 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 - 客户管理：表格化列表、搜索/计数/空态、屏幕内固定尺寸弹窗、信息/询盘/历史 tab、联系人合并+主要置顶+添加时间倒序、联系人信息弹窗。
 - 询盘链路：编号主标题+阶段徽章（关闭/询盘/报价/订单/发货/完结）、产品名/规格拆分、单条扁平/多条按订单分组、单证内嵌完整预览、上传记录版本链。
 - 单证：签发后自动上传（Web UI），手动上传/导入保留；账号区（侧栏底部+个人信息弹窗）。
-- 门禁基线：typecheck 0 / lint 0 err（86 warn）/ vitest 458 / e2e 23+4 / build out/268。
+- 门禁基线（**终验口径，见 §11**）：typecheck 0 / lint 0 err（87 warn）/ vitest 458 / e2e **24 + 4 = 28** / build `out/` 277 / `pnpm ui:contrast` 通过。
 
 ### 9.2 剩余盘点（代码事实，2026-10-20）
 
@@ -695,7 +700,10 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 | 手写 tabs（`border-b-2`） | 5 个文件 | 统一 Tabs |
 | `prefers-reduced-motion` | 已有全局样式 | 新动画逐一接入 |
 
-### 9.3 下一批（P0，按顺序）
+> 上表是 **2026-10-20 盘点时的快照**；P2 收口后的终值见 §11（手写 `<h1>` = 0、硬编码语义色 = 0、
+> 加载态只剩图片/按钮内联文本、Tabs 已收编、a11y 冒烟 e2e 已补）。保留快照是为了看清"从哪出发"。
+
+### 9.3 已完成批次（P0，按顺序；2026-10-20 收口）
 
 **P0-A 组件与页头收编（先做，全局收益最大）**
 
@@ -718,7 +726,7 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 - 1366×768 无横向错位；侧栏导航不被页脚裁切（`scrollHeight ≤ clientHeight`）。
 - 对比度 ≥4.5:1；`maximumScale` 不再禁止缩放；reduced-motion 下无位移动画。
 
-### 9.4 P1 / P2（后续批次）
+### 9.4 P1 / P2（已完成批次，2026-10-20）
 
 - P1：intel 双层 tab、products 层级、events/audit-log/settings/team/shipments 列表模板化、筛选区组件化、抽屉统一。
   - 已落：events 列表、audit-log 日志的“加载中…”→骨架 + 空态；settings 租户/账号、team 成员/邀请/工位面板的“加载中…”→骨架；intel 内部 4 个 tab 改统一 `Tabs`（手写 border-b-2 清零）；shipments 列表加载骨架 + `scope`；intel 货运表格空态统一。
@@ -742,26 +750,26 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 - 清理：未引用的 `frontend/src/app/(app)/customers/components/customer-records-tree.tsx` 删除；`DocPreview` 引入客户详情后关注 bundle，必要时 `next/dynamic`。
 - mock：`docsStore` 为空、`/pdf` 固定 503；需要时补种子单证让签发/预览链路可演示。
 
-### 9.6 后端依赖（单独排期，不混入纯前端批次）
+### 9.6 后端依赖（**已全部完成**，2026-10-20）
 
-> 详细方案已单独落盘：[`docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md`](UI_BACKEND_DEPENDENCIES_2026-10-20.md)（现状事实、建议方案、验收与顺序）。
-> 2026-10-20：用户已安排 5 项并行任务；该文档作为接口/验收基线，完成后再回填状态与前端接线。
+> 详细方案已单独落盘：[`docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md`](UI_BACKEND_DEPENDENCIES_2026-10-20.md)（现状事实、建议方案、验收与顺序；该文已加「历史验收基线」横幅）。
+> **2026-10-20 五项已全部完成并合并入 `main`**（合并提交 `118af7ce`），前端接线也已落地；下表「现状」是提出时快照，保留供对照。
 
-| 事项 | 现状 | 需要的跨栈改动 |
+| 事项 | 提出时现状 | 完成情况（2026-10-20） |
 |---|---|---|
-| 服务端签发自动上传 | 仅 Web UI 触发；HTML 模板在前端 | 渲染器搬服务端，或签发接口接收 HTML 后服务端出 PDF |
-| 单证内容版本 | 无版本表，draft 覆盖/issued 冻结 | `trade_doc_versions` + 版本接口/快照 + 前端版本切换 |
-| 个人信息编辑 | 只读弹窗 | 资料修改接口 + 校验 + 前端表单 |
-| 询盘状态机 | 前端展示推导 | 若要求真实状态流转，后端状态迁移/触发 |
-| 报价/订单 1:N 约束 | DB/接口未拦 | 若业务要求 1:1，需后端唯一约束+冲突提示 |
+| 服务端签发自动上传 | 仅 Web UI 触发；HTML 模板在前端 | ✅ 方案 A：`confirm`/`PATCH` 带 HTML 即服务端出 PDF 并落档（`ws_files.archive_rendered_pdf`）；方案 B 未做（`TODO.md` A2-B） |
+| 单证内容版本 | 无版本表，draft 覆盖/issued 冻结 | ✅ 迁移 `202610200001` + 内容版本三端点 + 前端面板 |
+| 个人信息编辑 | 只读弹窗 | ✅ `PATCH /auth/me` + `POST /auth/change-password` + 侧栏弹窗可编辑 |
+| 询盘状态机 | 前端展示推导 | ✅ 迁移 `202610200003` 落库 + 事件驱动，前端推导保留为兜底 |
+| 报价/订单 1:N 约束 | DB/接口未拦 | ✅ 口径 A 保留 1:N + 币种/金额业务闸门（422 明细） |
 
-### 9.7 本轮先做的事（checklist）
+### 9.7 本轮先做的事（checklist，已全部完成）
 
 - [x] 盘点差距并落文档（本节，已完成）
 - [x] P0-A 页头收编：settings / events / audit-log / kb / billing / intel / market-view / products / spec-config / spec-config wizard / pricing-data / admin gray-release / admin spec-proposals / onboarding 全部改 `PageHeader`；手写 `<h1>` 清零。
-- [ ] P0-A 状态/颜色/loading 收编 → ✅ orders/trade-docs 的“加载中…”改骨架，表头补 `scope`；orders/trade-docs 已无硬编码红绿黄；新增共享 `LoadingBlock`，audit-timeline/客户详情/market/products/报价订单记录/企业抬头/税务/盖章回传的整块“加载中…”已改骨架（剩余纯文本仅为图片/按钮内联状态）
-- [ ] P0-C 可访问性与 1366 检查 → ✅ `TableHead` 默认 `scope="col"`（全站 100 处表头一次覆盖）；icon-only 按钮补可访问名；`maximumScale:1` 移除；补 `prefers-reduced-motion`；1366 下 dashboard/quotes/customers/orders/trade-docs/products/settings 均无横向溢出
-- [ ] 每批：typecheck/lint/test/e2e/build + 截图 + 文档 + push
+- [x] P0-A 状态/颜色/loading 收编 → ✅ orders/trade-docs 的“加载中…”改骨架，表头补 `scope`；orders/trade-docs 已无硬编码红绿黄；新增共享 `LoadingBlock`，audit-timeline/客户详情/market/products/报价订单记录/企业抬头/税务/盖章回传的整块“加载中…”已改骨架（剩余纯文本仅为图片/按钮内联状态）
+- [x] P0-C 可访问性与 1366 检查 → ✅ `TableHead` 默认 `scope="col"`（全站 100 处表头一次覆盖）；icon-only 按钮补可访问名；`maximumScale:1` 移除；补 `prefers-reduced-motion`；1366 下 dashboard/quotes/customers/orders/trade-docs/products/settings 均无横向溢出
+- [x] 每批：typecheck/lint/test/e2e/build + 截图 + 文档 + push
 
 ---
 
@@ -775,21 +783,21 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 - 双栏工作台：`xl` 起左侧“整单参数 + 产品行 + 添加产品”，右侧 **sticky「整单汇总」**（总额/数量/重量/体积/单证要素 + 生成单证选择 + 保存/生成/签发）。滚到任何位置都能看到汇总与动作。
 - 整单参数：顶部一行摘要（客户 / 询盘 / 币种 / 条款 / 利润率）+「选择客户 / 调整参数」按钮；参数卡默认收起，展开后仍是原有字段与校验。首屏从“参数卡占满一屏”降到“摘要条 + 产品行”。
 - 产品行：规格选择在 1440/1366 下改为 3 列（≥1536 才 5 列），避免左侧栏变窄后字段被挤成多行；`QuoteSummaryCard` 在 380px 侧栏内改为 2/3 列指标。
-- 产品行紧凑化（第二阶段已先落一半）：算出本行后自动收起表单，只留一行摘要（规格/件数/总数/成本/单卷价/行小计 +「编辑规格」）；点开可继续改，出错时自动展开。
+- 产品行紧凑化（第二阶段）：算出本行后自动收起表单，只留一行摘要（规格/件数/总数/成本/单卷价/行小计 +「编辑规格」）；点开可继续改，出错时自动展开。
 - 批量报价：顶部增加「已选客户/已选询盘/预计生成」摘要；客户与询盘加载改骨架屏，无客户/未勾选询盘用统一空态；已选表补 `scope="col"`。
 - 报价记录：`QuotationTable` 的“加载中...”改为 5 行骨架，空列表用 `EmptyState`（不再是一片空白）。
 - 成本历史：补 mock `/pricing-data` 矩阵（3 档成本），该 tab 不再卡在“加载中…”；现有表格/保存/恢复兜底行为不变。
 - 证据：`docs/ui-redesign/phase5/quote-redesign-1440.png`、`quote-redesign-1366.png`、`quote-params-open-1440.png`、`quote-sticky-summary-1440.png`。
 
-### 10.2 第二阶段（进行中）
+### 10.2 第二阶段（已完成，2026-10-20）
 
 - 产品行改**紧凑行 + 行内展开**：✅ 算出本行后自动收起为摘要行（规格/件数/总数/成本/单卷价/行小计），点「编辑规格」展开；错误时自动展开。
-- 批量报价：✅ 顶部已选摘要 + 客户/询盘骨架 + 空态；固定底部动作条待做。
+- 批量报价：✅ 顶部已选摘要 + 客户/询盘骨架 + 空态；生成动作固定在步骤 3 卡片底部（**未另做吸底条**——收尾时判定批量页步骤 1–3 可一屏完成，无需吸底；吸底条只加在报价工作台窄屏，见下行）。
 - 报价记录：✅ `QuotationTable` 骨架 + 空态；成本历史 ✅ 补 mock `/pricing-data` 矩阵，tab 不再卡加载。
 - 窄屏（<xl）：✅ 底部吸底动作条（总额/产品行 + 保存/单证/签发），`pb-24` 防遮挡；xl 起隐藏。
 - 报价重构第二阶段收尾完成。
 
-**门禁（2026-10-20 实测）**：typecheck 0 error；lint 0 error / 87 warn；vitest **458 passed**；e2e **23 passed + 4 skipped = 27**；`NEXT_EXPORT=1` build 成功（`out/` 273 文件）。
+**门禁（2026-10-20 实测）**：typecheck 0 error；lint 0 error / 87 warn；vitest **458 passed**；e2e **23 passed + 4 skipped**（当轮；P2 收口后总计 28 = 24 + 4，见 §11）；`NEXT_EXPORT=1` build 成功（`out/` 273 文件）。
 
 ---
 
@@ -821,7 +829,7 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 - ✅ 对比度门禁：`pnpm ui:contrast` 解析 light/dark 语义 token，全部 >= 4.5（浅色 destructive 已由 4.20 调到 5.84）
 - ✅ 窄屏：客户/订单/单证列表 <md 卡片；SectionCard 标题与动作在移动端堆叠
 - ✅ e2e（客户/报价/设置/仪表盘等）全过
-- ⏳ 部分：对比度未做自动化全站扫描（当前仅令牌/抽查）；列配置只落在订单列表
+- ✅ 对比度自动化：`pnpm ui:contrast` 覆盖 light/dark 全部语义 token（**令牌级**，不逐页扫描渲染后 DOM）+ 8 个核心页抽查；列配置已覆盖**订单 + 单证**（此前只订单列表）
 - ✅ P2 已全部收口：列配置（订单/单证）、复制/自动聚焦、窄屏卡片（客户/订单/单证）、暗色令牌校准（`pnpm ui:contrast` 全过）、a11y 冒烟 e2e（24 passed + 4 skipped = 28）
 
 **门禁**：typecheck 0 / lint 0 err 87 warn / vitest 458 / e2e 24 passed + 4 skipped = 28 / build out/277 / `pnpm ui:contrast` 通过。
@@ -884,7 +892,7 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 
 1. 你提供的截图中侧栏顶部有“搜索”输入框，但 `main` 分支当前构建（含两个 worktree 分支）**没有该控件**；本方案以 `main` 为准。若该截图来自在研分支/预览，请提供分支名，相关结论需复核。
 2. 该截图右侧内容被裁切（右上头像贴近右缘、卡片被切断），判断以 1440×900 全屏截图为准。
-3. v1.1 起第一批已落地（客户管理 + 登录页 + records.inquiry_id），见 §0.1；其余页面仍按 P1/P2 待做。
+3. v1.1 起第一批已落地（客户管理 + 登录页 + records.inquiry_id），见 §0.1；**P1/P2 已于 2026-10-20 全部收口**（终验见 §11），本节仅为当时的假设记录。
 
 ### A.5 独立审计报告（互补证据）
 

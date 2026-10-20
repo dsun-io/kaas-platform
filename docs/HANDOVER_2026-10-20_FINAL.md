@@ -21,13 +21,16 @@ Hyperdrive，并给 worker 依赖钉版入库。**前端 UI 优化 P0/P1/P2 已�
 - **代码已在 `main`（2026-10-20 晚合并完成）**：PR #5 已合并，合并提交 **`118af7c`**；
   **`main` 的 CI 三条 workflow 全绿**（backend:test / contracts:check / Frontend CI；
   preview 只在 PR 事件跑）。**新设备 / 新 agent `git clone` 即拥有全部代码与交接文档**，
-  无需切分支（分支 `feat/trade-doc-content-a` 是历史分支，可删）。
-- **原开发位置**（历史）：分支 `feat/trade-doc-content-a`（独立 worktree
-  `D:\projects\kaas-platform\.agents\worktrees\feat\trade-doc-content-a`；主工作树是并行 UI 线在用，**未改动**）。
+  无需切分支（分支 `feat/trade-doc-content-a` 是历史分支，**已删除**，见 §8）。
+- **原开发位置**（仅历史记录）：分支 `feat/trade-doc-content-a`（独立 worktree
+  `D:\projects\kaas-platform\.agents\worktrees\feat\trade-doc-content-a` **现已不存在**，勿按此路径找；
+  主工作树当时是并行 UI 线在用，**未改动**）。
 - **预览已回收**：PR #5 合并后按 `pull_request closed` 触发 teardown，**worker / Neon 分支 `preview-pr-5` /
   Hyperdrive / R2 前缀 / 预览 KV 已全部回收**（worker 现 404；Teardown job green）。
-- **仓库可见性**：用户口径 = 收尾完成后转回 **private**（private 期间 GitHub Actions 不可用，
-  门禁以本地命令为准；本地各门全绿数字见 §0.1）。
+- **仓库可见性（2026-10-20 审计复核）**：用户口径 = 收尾完成后转回 **private**，但**实测当前仍为 public**
+  （匿名 `git ls-remote https://github.com/dsun-io/kaas-platform` 成功；`gh` 本机未登录，Settings/Actions 未核）
+  ⇒ **「转回 private」尚未完成，不是已完成项**，已统一登记 `docs/TODO.md`（D5）；private 期间 GitHub Actions 不可用，
+  门禁以本地命令为准；本地各门全绿数字见 §0.1。
 - **发布仍未动**：合并 ≠ 发布；生产部署仍需手动 `workflow_dispatch`（`deploy.yml` 仅手动），
   迁移 head `202610200003` 随发布窗口应用，发布检查单见 §5。
 
@@ -44,33 +47,38 @@ Hyperdrive，并给 worker 依赖钉版入库。**前端 UI 优化 P0/P1/P2 已�
 
 | 组 | 项 | 前置 / 备注 |
 |---|---|---|
-| A4 | 单证图片素材库（公章/产品图走对象存储 + 可复用素材库） | 与发布窗口 R2 新密钥同批更顺；现状 base64 内联（一张 PI ≈1.4MB） |
+| A2-方案B | 模板迁服务端（方案 B）：让「任意客户端/API 签发」都能服务端出 PDF | **方案 A 已完成**（`ws_files.archive_rendered_pdf`，confirm/PATCH 两入口已接线）；方案 B 未做，**已登记 TODO `A2-B`（🧭 需用户定要不要做）** |
+| A4 | 单证图片素材库 | **约 3/5**：公章库 `kaas_common/files/seal.py`、产品图 `{file_id}` 引用库已做；渲染仍 base64 内联（`ws_files.py` `to_data_uri`，一张 PI ≈1.4MB），素材库/对象存储未做 |
 | A5 | 单证编辑体验（行项批量编辑、条款模板、金额联动校验） | **需先与用户过方案**（🧭） |
 | A6 | 模板逐字段对照真实出口单据 | **需用户提供样例单据**（🧭），是单证内容的最终验收标准 |
-| A7 | 单证加固 P1/P2（事实层/一致性引擎/收款容差/回执登记/导出自检） | 口径已拍板（`UNCERTAIN.md` #17），设计在归档的 `TRADE_DOC_HARDENING_PLAN_2026-10-12.md`，可直接施工 |
+| A7 | 单证加固 P1/P2（事实层/一致性引擎/收款容差/回执登记/导出自检） | **约 2/5**：容差内核 `kaas_common/workstation/receipt_rules.py` + 迁移 `202610170003_trade_doc_receipts_and_doc_set.py` 已有；事实层/一致性引擎/回执 API/导出后自检未做；口径见 `UNCERTAIN.md` #17，设计在归档的 `TRADE_DOC_HARDENING_PLAN_2026-10-12.md` |
 | A8-① | PDF 归档「端到端真实跑一次」 | 需已部署环境（Browser Rendering 依赖生产 binding），归发布后 P4 |
 | A9-补充 | preview ensure 对 Neon 423 短重试（TODO D7） | 低优先；本次靠 rerun 通过 |
-| B1 | 租户级产品定义配置化（运行时新增产品，现状要写 Python + 重启） | 无前置 |
-| B2 | 产品可视化编辑器收尾（运行时生效链路） | 依赖 B1 |
-| B3 | 租户开通报价工位 UI 交互 | 无前置 |
+| B1 | 租户级产品定义配置化 | **代码层已完成**（2026-10-20 审计核实）：worker `ws_products.py` 8 条 `/api/v1/tenant-products|workstation-products|tenant-product-status` 路由 + 前端 `/settings/tenant-products` 等三处页面均在；**唯一口径缺口** = 系统级产品仍靠 Python `@register` 注册表，新增系统级产品仍需改代码 + 重启 |
+| B2 | 产品可视化编辑器收尾（运行时生效链路） | **代码层已完成**（`products/tabs/products-definitions-tab.tsx` 在）；随 B1 一并销项 |
+| B3 | 租户开通报价工位 UI 交互 | **代码层已完成**（`team/components/team-subscriptions-panel.tsx` 在）；最终状态以 `docs/TODO.md`（Lead 同步修正后）为准 |
 | C1 | 「流失」拒绝文件链路（订单新增 `lost`） | 🧭 需业务设计 + 用户拍板 |
-| C2 | 文件存储收尾 3 项（真实 DB 用例 / 公章 PI 视觉 QA / 排序过滤测试） | 发布后验证更完整 |
+| C2 | 文件存储收尾 4 项（真实 DB 用例 / 公章 PI 视觉 QA / 排序过滤测试 / 产品图 `doUpload` 页面层测试） | 发布后验证更完整（TODO C2） |
 | C3 | Cloudflare agent 接入 | 🧭 价值未明，待用户排优先级 |
 | C4 | 30/90 天客户自动沉寂 | 🧭 用户曾裁「先手动」，要做需重新设计 |
 | C5 | 本地 mock 刷新丢数据（MSW 限制） | 开发体验项 |
 | C6 | e2e 数据层不稳根治 | 历史 e2e 假红根因治理 |
-| D1–D6 | 发布窗口项（RESEND 注入 / R2 新密钥 / Hyperdrive 缓存 / 生产测试数据清理 / 仓库转 private / 发布检查单 §5） | **等用户下令发布**；D3/D4 执行前需弹窗确认 |
+| D1–D7 | 发布窗口项（RESEND 注入 / R2 新密钥 / Hyperdrive 缓存 / 生产测试数据清理 / 仓库转 private / 发布检查单 §5 / preview ensure 对 Neon 423 重试） | **等用户下令发布**；D3/D4 执行前需弹窗确认。注意 D3 口径：TODO 记 🧭 待批准，`PROBLEM_STATUS` 旧记录写「⏳ 发布窗口」，以 TODO 为准 |
 
 ### 0.2.4 恢复工作的最短路径
 
-1. 进入 worktree：`cd D:\projects\kaas-platform\.agents\worktrees\feat\trade-doc-content-a`
-   （或在主工作树 `git worktree list` 找回；分支 `feat/trade-doc-content-a`）。
+1. **在 `main` 上工作**：`git clone` 后直接改 `main`（PR #5 已合并，**无需切分支**）。
+   历史 worktree `D:\projects\kaas-platform\.agents\worktrees\feat\trade-doc-content-a` 在新设备/本机均已不存在，
+   勿再按旧路径找；`git worktree list` 当前只有主工作树。
 2. 先读：`docs/README.md`（检索入口）→ 本文件 §0.2 → `TODO.md` → `PROBLEM_STATUS` 顶部。
-3. 改完代码同步文档（`PROBLEM_STATUS` 顶部 + `TODO.md` 销账），推送分支；PR #5 自动更新。
-4. 门禁命令（本机实测可用，注意 AGENTS.md 的工具链坑）：
+3. 改完代码同步文档（`PROBLEM_STATUS` 顶部 + `TODO.md` 销账），提交并 push **`main`**
+   （PR #5 已合并，不会再有「推送分支 → PR 自动更新」；需要预览就新开 PR）。
+4. 门禁命令（**跑之前先确认 `scripts/sync-shared.ps1` 已同步**——`backend/worker/src/kaas_common/`
+   是 gitignored 生成镜像，缺 `kaas_common.preview` 会直接 `ModuleNotFoundError`；其余注意 AGENTS.md 的工具链坑）：
    - worker：`cd backend/worker; uv run --frozen --with pytest --with httpx2 python -m pytest tests -q`（现 **1008+5**）
    - orchestrator：`cd backend/orchestrator; uv run --extra migrations pytest tests -q`（现 **247**）
-   - 前端：`pnpm typecheck` / `pnpm lint` / `pnpm test`（现 **474**）/ `pnpm contracts:check`；构建与 e2e **不要同时跑**（共用 `.next`）
+   - 前端：`pnpm typecheck` / `pnpm lint` / `pnpm test`（现 **474**）/ `pnpm contracts:check` /
+     `pnpm e2e`（**实测 28 条 = 24 passed + 4 skipped**，2026-10-20 `playwright test --list`）；构建与 e2e **不要同时跑**（共用 `.next`）
    - 静态：`scripts/check-runtime-deps.py`、`check-schema-coverage.py`、`check-schema-drift.py`、`scripts/sync-shared.ps1 -Check`
 5. 改 `backend/kaas_common/**` 后必须 `powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1`（否则 worker 镜像是旧的）。
 
@@ -78,7 +86,9 @@ Hyperdrive，并给 worker 依赖钉版入库。**前端 UI 优化 P0/P1/P2 已�
 
 - 新归档批：[`docs/archive/2026-10-20-backend-closeout/`](./archive/2026-10-20-backend-closeout/README.md)
   （`ENV_VERIFICATION_2026-10-19.md`：迁移 head/预览状态已过时，当前看根 README §2 + 本文件 §2/§3/§5）。
-- `E2E_GUIDE.md` 已就地更新到 2026-10-20 口径（27 条：23 passed + 4 skipped、`pnpm dev`）。
+- `E2E_GUIDE.md` 已就地更新到 2026-10-20 口径。**2026-10-20 审计复核（以实测为准）**：
+  `playwright test --list` = **28 条（24 passed + 4 skipped）**；原文写的「27 条（23+4）」少 1 条，
+  由 docs-b 在 `E2E_GUIDE.md` 同步修正，本文件不再复述旧数字。
 - **前端线文档一律未动**：`UI_UX_OPTIMIZATION_2026-10-20.md`、`UI_BACKEND_DEPENDENCIES_2026-10-20.md`、
   `docs/ui-redesign/**`。
 - 检索入口仍是 [`docs/README.md`](./README.md)（已同步状态与归档批次）。
@@ -91,13 +101,15 @@ Hyperdrive，并给 worker 依赖钉版入库。**前端 UI 优化 P0/P1/P2 已�
 **0.3.1 仓库与文档在哪**
 
 - 仓库：`https://github.com/dsun-io/kaas-platform`；交接文档全在 `docs/`，检索入口 `docs/README.md`。
-- 以 `main` 为准（新设备 clone 默认分支即 `main`）；分支 `feat/trade-doc-content-a` 是已合并的历史分支，可删。
+- 以 `main` 为准（新设备 clone 默认分支即 `main`）；分支 `feat/trade-doc-content-a` 是已合并的历史分支，**已删除**。
 
 **0.3.2 本机有、Git 里没有（换设备会缺，必须重建）**
 
 | 本机东西 | 为什么不入库 | 新设备怎么办 |
 |---|---|---|
-| `.env.local` | **含密钥**，`.gitignore` 明确忽略 | 新建该文件，按下表变量名填值；值从 GitHub repo secrets / Neon / Resend / 用户处取 |
+| `.env.local` | **含密钥**，`.gitignore` 明确忽略；**现只是生产 DSN 存档（已加警示注释）**，本地开发**不读**它（`local_run.py` 用 `LOCAL_DATABASE_URL`，默认 Docker PG） | 新建该文件，按下表变量名填值；值从 GitHub repo secrets / Neon / Resend / 用户处取 |
+| `backend/worker/src/kaas_common/`（**gitignored 生成镜像**） | 由 `scripts/sync-shared.ps1` 从 `backend/kaas_common/` 生成（`backend/worker/.gitignore:15`），不入库 | **clone/切换分支后先跑** `powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1`（本机实测 `-Check` 三行全「一致」）；未同步会崩在 `ModuleNotFoundError: No module named 'kaas_common.preview'`（`ws_files.py:51`） |
+| 本地开发库 `kaas_dev`（Docker volume） | 运行数据，不入库 | 空库快径：`cd backend/orchestrator && uv run --extra migrations alembic upgrade head` → 本机实测 **105 表 / head `202610200003`**；**不要修历史迁移链**。半初始化的旧库（如停在 `202610180010`/93 表、缺 `market_ports`）先 `ALTER DATABASE … RENAME TO …_legacy_<日期>` 保留，再建空库走快径 |
 | `backend/.tools/`（删除前备份 CSV） | gitignored 的运维临时产物 | 历史备份不必恢复；需要时从旧设备拷 |
 | `frontend/node_modules`、`**/.venv` | 依赖产物 | `cd frontend && pnpm install`；`uv sync`（见 §0.2.4 门禁命令） |
 | 本地 Docker 容器（PG/Redis/MinIO） | 环境 | `docker compose up -d` |
@@ -113,19 +125,30 @@ Hyperdrive，并给 worker 依赖钉版入库。**前端 UI 优化 P0/P1/P2 已�
   `S3_SECRET_KEY`（已配）；**`RESEND_API_KEY` 待发布窗口注入**（值 = repo secret `RESEND_API_KEY_PROD`）。
 - **Neon / Cloudflare / Resend 控制台**：项目、分支、桶、Hyperdrive、域名
   （`send.powervoy.com` 已验证）都在云上，与设备无关；新设备只需账号权限。
-- `.env.local` 需要的变量名（**只写名，不写值**）：`DATABASE_URL`（Neon 生产只读/读写 DSN）、
-  `RESEND_API_KEY`（本地开发用）、`RESEND_API_KEY_PROD`、`RESEND_API_KEY_PREVIEW`；旧字段
-  `DATABASE_URL_PPG` 已废弃可删。
+- `.env.local` 需要的变量名（**只写名，不写值**）：`DATABASE_URL`（Neon 生产 DSN **存档**，已加警示注释）、
+  `RESEND_API_KEY`、`RESEND_API_KEY_PROD`、`RESEND_API_KEY_PREVIEW`；旧字段 `DATABASE_URL_PPG` 已废弃可删。
+  **注意：本地开发不读 `.env.local`** —— `local_run.py` 用 `LOCAL_DATABASE_URL`（默认 Docker PG）。
 
 **0.3.4 新设备首次接手步骤**
 
 1. `git clone https://github.com/dsun-io/kaas-platform && cd kaas-platform`
 2. 装依赖：`cd frontend && pnpm install`；`cd backend/worker && uv sync`；`cd backend/orchestrator && uv sync --extra migrations`
-3. 建 `.env.local`（变量名见 0.3.3；值找用户/控制台，不要提交）
-4. 本地起环境：`docker compose up -d`；`cd backend/orchestrator && uv run --extra migrations alembic upgrade head`（空库快径）
-5. 读交接：`docs/README.md` → 本文件 §0.2/§0.3 → `docs/TODO.md` → `PROBLEM_STATUS` 顶部
-6. 跑门禁确认环境正常（命令与当前数字见 §0.2.4）；工具链坑见 `AGENTS.md`
-7. 剩余工作：本文件 §0.2.3 + `docs/TODO.md`（两者都在 `main` 上，可直接检索到）
+3. **先跑共享内核同步（必须，别跳过）**：
+   `powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1`
+   —— `backend/worker/src/kaas_common/` 是 **gitignored 生成镜像**（源 38 文件，`backend/worker/.gitignore:15`），
+   clone 后不跑会崩在 `ModuleNotFoundError: No module named 'kaas_common.preview'`
+   （`backend/worker/src/ws_files.py:51` → `kaas_common/preview.py` 缺失；本机实测镜像少 1 文件且有 4 个文件内容过期）。
+   跑完用 `-Check` 自证：三行应全「一致」。
+4. 建 `.env.local`（变量名见 0.3.3；值找用户/控制台，不要提交）。**注意**：它现只是生产 DSN 存档，
+   本地开发不读（`local_run.py` 用 `LOCAL_DATABASE_URL`，默认 Docker PG）。
+5. 本地起环境：`docker compose up -d`；`cd backend/orchestrator && uv run --extra migrations alembic upgrade head`
+   （**空库快径是正路**，不要修历史迁移链；本机实测 → **105 表 / head `202610200003`**）。
+   老库若停在半初始化状态（如 `202610180010` / 93 表、缺 `market_ports` 导致 `202610190020` 迁移失败），
+   先 `ALTER DATABASE kaas_dev RENAME TO kaas_dev_legacy_<日期>` 保留数据，再建空库走快径。
+   起完 `docker compose up -d backend` 后 `/health` 应 200 且 `shared.loaded=true`（本机实测）。
+6. 读交接：`docs/README.md` → 本文件 §0.2/§0.3 → `docs/TODO.md` → `PROBLEM_STATUS` 顶部
+7. 跑门禁确认环境正常（命令与当前数字见 §0.2.4；跑前再确认一次 sync-shared）；工具链坑见 `AGENTS.md`
+8. 剩余工作：本文件 §0.2.3 + `docs/TODO.md`（两者都在 `main` 上，可直接检索到）
 
 **0.3.5 需要的账号/权限**
 
@@ -251,11 +274,11 @@ kaas-preview-storage；KV = `KAAS_PREVIEW`；Workers = `kaas`。
 
 | # | 事项 | 触发条件 |
 |---|---|---|
-| 1 | **UI/UX 优化任务收尾**（另一会话，并行线；写范围 `frontend/**` + `docs/ui-redesign/`） | 用户/该线完成 |
-| 2 | **用户在预览验收**（UI 任务产出 → PR → 预览自动部署 → 用户点验） | UI 收尾后 |
+| 1 | **UI/UX 优化任务收尾**（另一会话，并行线；写范围 `frontend/**` + `docs/ui-redesign/`） | ✅ 已收口（2026-10-20，P0/P1/P2 完成，见 `UI_UX_OPTIMIZATION_2026-10-20.md` §11 与 §0.1）；残留文档勾选口径由 docs-b 处理 |
+| 2 | **用户在预览验收** | 预览已随 PR #5 teardown（§0.2.1）⇒ 改为「发布后在生产/新预览验收」，并入第 3/4 项 |
 | 3 | **生产发布**（按 §5 检查单） | 用户下令 |
 | 4 | 发布后 P4 观察期（冷启动/5xx/延迟，1 周） | 发布后 |
-| 5 | 仓库转回 private（当前 public；用户自转） | 用户决定 |
+| 5 | 仓库转回 private（**实测当前 public**；用户自转） | 用户决定，**仍未完成**（2026-10-20 审计复核） |
 
 **口径修订（2026-10-20 晚，用户裁决）**：原「触发条件制（不活跃跟踪，到点自动执行）」的
 U-B1/U-B5 发布窗口项、Hyperdrive 缓存关闭、生产测试数据清理（执行当次需用户确认）、批次 7
@@ -265,10 +288,14 @@ A1–A9、产品配置化 B1–B3），由用户排期执行。Neon Protected �
 
 ## 7. 交接提醒（给下一个会话）
 
-- **并行写纪律**：本工作区同时有 UI 任务在写；**截至 2026-10-20 22:1x 其未提交改动已扩大到后端**：
-  `backend/kaas_common/workstation/customer_records.py`、`backend/worker/src/ws_customer_records.py`
-  （另含 `frontend/**` 多处 + 未跟踪 `docs/ui-redesign/phase1/`）。**不要提交别人的这些改动**；
-  其中 `kaas_common` 改动**必须跑 `scripts/sync-shared.ps1`** 才会进 worker 镜像——由该线自己负责。
+- **并行写纪律（2026-10-20 审计复核：原「未提交改动已扩大到后端」警告已过期）**：当时列出的
+  `backend/kaas_common/workstation/customer_records.py`、`backend/worker/src/ws_customer_records.py` 已随
+  `a299ea60` 提交，`frontend/**` 相关改动已合入，`docs/ui-redesign/phase1/` 不存在；交接时 `git status`
+  除未跟踪 `.tmp/` 外干净。**通用纪律仍然有效**：只提交自己写范围、不要 `git add -A`、`kaas_common`
+  改动必须跑 `scripts/sync-shared.ps1`。
+- **分支收尾（2026-10-20 已完成）**：`archive/convergence-aprime-20261019` tag 已建、远端
+  `feat/convergence-aprime` 已删；本地 `feat/trade-doc-templates`、`tech-stack-next16` 已删；
+  远端 `feat/trade-doc-content-a` 已删；本地仅剩 `main`（`git branch` 实测）。POC 目录清理仍挂 TODO F7。
 - **预览触发**：PR 打开/推送 → 自动部署并评论 URL；PR 关闭 → 自动 teardown；手动演示用
   `gh workflow run preview.yml -f pr_number=<伪号>`（可加 `-f no_kv=true` 实验）。
 - **发布**：push main **不会**自动部署（`deploy.yml` 仅 workflow_dispatch）。
@@ -279,9 +306,11 @@ A1–A9、产品配置化 B1–B3），由用户排期执行。Neon Protected �
 
 | 项 | 状态 | 处理建议 |
 |---|---|---|
-| 分支 `feat/convergence-aprime`（本地 worktree `.agents/worktrees/feat/convergence-aprime`） | **保留**（决策 1：其 PPG 改动不得合并；可用部分已由 `88132af` 收编） | 历史存档，勿合并；确认无用后可删 |
+| 分支 `feat/convergence-aprime` | **✅ 已处置（2026-10-20 收尾，实测）**：tag `archive/convergence-aprime-20261019` 已建、**保留**；远端分支已删（`git ls-remote` 现仅 `main`），本地 worktree/分支均不存在。理由：合并会让生产连已删的 Hyperdrive `kaas-ppg` | 保持现状，勿合并 |
+| 本地分支 `feat/trade-doc-templates`、`tech-stack-next16` | **✅ 已删除**（2026-10-20 收尾；`git branch` 现仅 `main`） | 无需处理 |
+| 远端分支 `feat/trade-doc-content-a` | **✅ 已删除**（已并入 `main` 的历史分支） | 无需处理 |
 | 分支 `feature/intel-workstation-v1` | 远端已删（gone），本地保留 | 同上 |
-| `backend/worker/poc-baseline/`、`poc-sqlalchemy/` | POC 遗留目录（含旧 pylock，未跟踪） | 可清理；未动以免影响并行线 |
+| `backend/worker/poc-baseline/`、`poc-sqlalchemy/` | POC 遗留目录（含旧 pylock，未跟踪） | 可清理；**仍挂 TODO F7（POC 目录部分 ⏳）** |
 | `backend/.tools/`（脚本 + 删除前备份 CSV） | gitignored；**备份目录** `backup-kaas-v2-test-20261020/`（13 CSV）、`backup-kaas-v2-test-records-20261020/`（7 CSV） | 留作回查；确认无需后可删 |
 | 本机 Docker 容器 | `kaas-postgres` / `kaas-redis` / `kaas-minio` 运行中（开发环境） | `docker compose stop` 可停 |
 | `.env.local` | 含 Neon 生产 DSN、`DATABASE_URL_PPG`（**已废弃**，可删）、`RESEND_API_KEY` | 勿提交（已 gitignored） |

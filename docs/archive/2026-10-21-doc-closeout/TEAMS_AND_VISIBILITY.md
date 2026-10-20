@@ -1,5 +1,8 @@
 # 三层组织与数据可见性（管理员 / 团队 / 成员）
 
+> ⚠️ **已归档（2026-10-21）· 历史留档，不代表当前口径。** 归档理由与替代指针见 [`README.md`](./README.md)（本批归档说明）；
+> 规则真源是代码 `backend/kaas_common/workstation/scope.py`（可见性）/ `teams.py`（团队规则）。当前交接入口：[`../../README.md`](../../README.md)。
+
 > 2026-10-11 落地。业务规则由产品确认，**判定只有一份实现**：
 > `backend/kaas_common/workstation/scope.py`（可见性）与 `.../teams.py`（团队规则），
 > orchestrator 与 Worker 共用。

@@ -7,6 +7,11 @@
 > **本轮后续（2026-10-11 晚，用户：「自动出pdf字节听起来是降低工作量的设计实现它」）**：
 > 本文推荐的 **D 方案（Cloudflare Browser Rendering）已落地并实测**，同时先落了人工归档兜底。
 > 落地现状与实测证据见下方「§〇 本轮落地」。**§一~§四 是当时的现状核实与方案设计，保留原样**。
+>
+> **⚠️ 状态横幅（2026-10-21 文档收尾）**：本文是 **PDF 生成与留档的过程记录 + 方案设计**，不是当前待办。
+> 「早期章节」（§一～§五）写于 2026-10-11，其中不少「未做 / 未验证」已被后续实现推翻；
+> **现状以 §〇 / §〇.2 / §〇.3（含下方「已落地（2026-10-20，TODO A8/A9）」）与 `docs/TODO.md` 为准**。
+> 仍未收口的尾巴集中在 `TODO.md`：A2-B（模板迁服务端）、C12（PDF 归档验收尾巴）。
 
 ## 〇、本轮落地（实测，2026-10-11 晚）
 
@@ -118,7 +123,10 @@ orchestrator 会给 `float`、Worker 的 asyncpg 会给 `Decimal`，不归一两
 ＋ 前端「核对指纹」按钮（task-19：**仅已签发单据显示**、**点了才查**、按 `reason` 显示一行结论，
 `data_changed` 红字「签发后数据已被修改」）；**task-20 已补批量对账**
 （`GET /api/v1/trade-docs/render-fingerprint-checks/batch`，实际契约见 §〇.3）。
-**仍未做**：定时调度、列表页一眼标出"哪些被改过"。
+**已做（2026-10-20，TODO A8/A9）**：定时调度 = CF Cron `40 17 * * *`（UTC 17:40 = Asia/Shanghai 次日 01:40）→
+`ws_cron.run_check_render_fingerprints`（三 cron 全文见 `backend/worker/wrangler.jsonc` 的 `triggers.crons`）；
+列表页 `GET /api/v1/trade-docs` 每行挂 `render_check`，「已变更 / 模板已更新 / 待复核」一眼可见。
+详见下方「已落地（2026-10-20，TODO A8/A9）：定时调度 + 列表标识」。
 ④ **orchestrator 侧 `confirm` 的落库路径没有单测**
 （worker 侧有：`tests/test_four_domains.py::test_trade_doc_confirm_locks_draft` 从
 `UPDATE ... raw_payload=...` 的**实参**里验了 `_render` 的形状）；orchestrator 只单测了
@@ -222,6 +230,10 @@ orchestrator `backend/orchestrator/app/api/trade_docs.py:979`、worker `backend/
 **不采用** jspdf/html2canvas 这类"前端自己画 PDF"的做法（产物与打印版不一致）。
 
 ---
+
+> **⚠️ 「早期章节为过程记录」**：以下 §一～§五 写于 2026-10-11，是当时的现状核实、方案推演与「未做」清单，**保留原样**；
+> 其中多项已被后续实现推翻（如"PDF 字节不落地""`render_pdf` 没有生产者""定时调度未做"），**不要用它们判断当前口径**——
+> 当前口径看文首横幅、§〇 系列与 `docs/TODO.md`。
 
 ## 一、现状核实
 

@@ -15,6 +15,33 @@
 > [`HANDOVER_2026-10-20_FINAL.md`](./HANDOVER_2026-10-20_FINAL.md)**（状态/资源清单/踩坑/发布检查单/待办）。
 > 本文件继续只做"问题状态"滚动口径。
 >
+> **（2026-10-20 晚 · 口径收敛与审计补录：`docs/TODO.md` = 唯一账本）**
+>
+> 本轮只读审计把三份核心交接文档与代码/实测对齐，要点：
+> ① **唯一账本 = [`docs/TODO.md`](./TODO.md)**：本文件下方「当前有效待办」「未来评估项」及各节
+>    "仍未做"表述，凡与 TODO 冲突**一律以 TODO 为准**；已过时结论就地标 `❌已过时`。
+> ② **实测口径**：e2e `playwright test --list` = **28 条（24 passed + 4 skipped）**；迁移 head =
+>    `202610200003`（`alembic heads` 实跑）；仓库当前 **public**（匿名 `git ls-remote` 成功；
+>    `gh` 未登录，Settings/Actions 未核）⇒「转回 private」**未完成**，不是已完成项。
+> ③ **完成度校正**：A2 方案 A 已落（`ws_files.archive_rendered_pdf`，confirm/PATCH 两入口接线），
+>    **方案 B（模板迁服务端）未做、需新登记**；A4≈3/5（公章库 `kaas_common/files/seal.py` + 产品图
+>    `{file_id}` 引用库已做，渲染仍 base64 内联）；A7≈2/5（容差内核 `kaas_common/workstation/receipt_rules.py`
+>    + 迁移 `202610170003_trade_doc_receipts_and_doc_set.py` 已有；事实层/一致性引擎/回执 API/导出自检未做）；
+>    **B1–B3 代码层已完成**（worker `ws_products.py` 8 条 tenant-products/workstation-products 路由 +
+>    前端 `/settings/tenant-products` 等三处页面），仅「系统级产品仍靠 Python `@register`」是口径缺口。
+> ④ **新增/补录活跃待办**见下文「2026-10-20 审计补录」，**已由 Lead 登记 `docs/TODO.md`**
+>    （安全 4 项 = `N6`；生产 `product_tax_rates` = `C14`；xlsx = `C7`；诊断端点 = `C9`；
+>    四源计数 = `C8`；18 模板孤行 = `C10`；SSRF = `C11`；A2 方案 B = `A2-B`；PDF 验收尾巴 = `C12`）。
+> ⑤ [`UNCERTAIN.md`](./UNCERTAIN.md) #15/#18/#20/#22 已加「2026-10-20 复核」，并新增 #23 仓库可见性口径；
+>    `HANDOVER_2026-10-20_FINAL.md` §0.2.4/§6/§7/§8 已修正过期路径、过期警告与分支处置。
+> ⑥ **新设备/新 clone 必须先跑共享内核同步**：`backend/worker/src/kaas_common/` 是 **gitignored 生成镜像**
+>    （`backend/worker/.gitignore:15`）；不跑 `powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1`
+>    会崩在 `ModuleNotFoundError: No module named 'kaas_common.preview'`（`backend/worker/src/ws_files.py:51`）。
+>    本机实测：镜像少 1 文件 + 4 文件内容过期，同步后 `-Check` 三行全「一致」。本地开发库走**空库快径**
+>    （`alembic upgrade head` → 本机实测 **105 表 / head `202610200003`**）；半初始化旧库（如停在
+>    `202610180010` / 93 表）先改名保留、不要修历史迁移链；`.env.local` 现只是生产 DSN 存档，
+>    本地开发不读（`local_run.py` 用 `LOCAL_DATABASE_URL`）。详见 `HANDOVER` §0.3.2/§0.3.4。
+>
 > **（2026-10-20 晚 · 合并完成：PR #5 → main `118af7c`；main CI 全绿；预览资源已回收；交接已全部在 main 可见）**
 >
 > 用户要求"确保内容能够完全交接（换设备后其他 agent 能顺利接手）"。已完成：
@@ -24,8 +51,8 @@
 > 预览 KV 全部回收（预览域名现 404），未留计费资源；
 > ④ **交接入口**：`docs/README.md` → `HANDOVER_2026-10-20_FINAL.md` **§0.2（停止点/剩余工作/恢复路径）**
 > + **§0.3（新设备/新 agent 接手清单：本机 gitignore 内容、secrets 持久位置、初始化步骤、权限）**
-> → `docs/TODO.md`（剩余 A4/A5/A6/A7、B1–B3、C1–C6、D1–D6 全部在册）。
-> **新设备 `git clone` `main` 即可获得全部代码与交接文档**，无需切分支；分支 `feat/trade-doc-content-a` 为历史分支可删。
+> → `docs/TODO.md`（剩余 A4/A5/A6/A7、B1–B3、C1–C6、D1–D7 全部在册；D7 为后补，见最新账本）。
+> **新设备 `git clone` `main` 即可获得全部代码与交接文档**，无需切分支；分支 `feat/trade-doc-content-a` 为历史分支（**现已删除**）。
 > 仓库可见性：用户将在收尾后转回 private（private 期间 Actions 不可用，门禁以本地命令为准）。
 > 发布仍未执行（迁移 head `202610200003` 待发布窗口应用）。
 >
@@ -216,7 +243,8 @@
 > 证据：`docs/ui-redesign/phase2/`（列表/登录/弹窗/询盘后续/下拉框/1366）。
 > 门禁：typecheck 0 / lint 0 err / vitest 455 / contracts R0–R6 PASS / e2e 23+4 skipped=27 /
 > NEXT_EXPORT build out/268 / orchestrator records 8 / worker records+parity 65 / sync-shared PASS。
-> **其余 30+ 页面内容迁移与 P1/P2 项仍未做**，详见方案文档 §0.1。
+> **其余 30+ 页面内容迁移与 P1/P2 项仍未做**，详见方案文档 §0.1。**❌已过时（2026-10-20 收口：
+> P0/P1/P2 全部完成，见 `UI_UX_OPTIMIZATION_2026-10-20.md` §11 与 `docs/TODO.md` E 组）**。
 >
 > **（2026-10-20 · UI/UX 第二轮修订：信息密度与询盘链路）**
 > 侧栏/顶栏毛玻璃再透；联系人并入「信息」tab（主要置顶 + 其余添加时间倒序，前端排序）；
@@ -808,26 +836,54 @@
 > PLAN_CUSTOMER_RECORDS 主体（worker `/records` 已上线）；30/90 天自动推导（整套已删，
 > 用户裁决"先手动"）；Ghost 方案（从未存在于本项目，已否决）。
 >
-> **⏳ 当前有效待办（按优先级）**
-> - **P0 欠账**：① ~~Hyperdrive 缓存关闭~~ → ⏳ 发布窗口（2026-10-20 终局裁决，已并入 `HANDOVER_2026-10-20.md` §7 检查单第 2 步；原挂账备注：`--caching-disabled` 大概率未执行；验证=生产新建客户
->   立即刷新可见）② R2 `S3_ACCESS_KEY` 重建 32 位（待用户 dashboard 操作，见
->   PRODUCT_MEDIA_STORAGE_PLAN §5.3）③ 生产 `product_tax_rates` 配置数据（0 条则批量报价不放行）
-> - **P1**：④ 仓库改回 private + 确认 Actions billing ⑤ Cloudflare agent 接入（未执行）
->   ⑥ ~~Neon→PPG 生产迁移（方案已定稿；生产为空黄金窗口，越晚代价越大）~~
->   ❌ **已废弃（决策 1，见本摘要顶部 2026-10-19 晚场条目）**：放弃 PPg 回 Neon，本项永久取消
-> - **P2**：⑦「流失」拒绝文件链路迁订单阶段（等订单阶段新增 lost）⑧ Excel xlsx 上传闭环
->   （上传侧现只收 CSV）⑨ ~~生产测试数据 / 流失拒绝文件历史数据清理~~ → ⏳ 发布窗口（数据删除，**执行当次仍需用户确认**；2026-10-20 终局裁决）
->   ⑩ 诊断端点收敛（`_r2_debug` / `fx-rates/_debug`）⑪ ~~Frontend CI `crypto.subtle.digest`
->   类型红~~ ✅ 10-19 已修（B0-1，见上一条）⑫ ~~货代询价文案补 DAP/DDP 费用项~~
->   ✅ 10-19 已补（B0-2，见上一条）
-> - **P3 暂缓**：技术栈升级（触发条件制，见 TECH_STACK_UPGRADE §0）、30/90 天自动沉寂、
->   本地 mock 刷新丢数据（MSW 限制）、e2e 数据层不稳根治、租户级产品定义配置化
->   （PRODUCT_CONFIG_TENANT_UNFINISHED）
+> **📌 当前有效待办（2026-10-20 口径收敛：本清单不再是账本；唯一账本 = [`docs/TODO.md`](./TODO.md)）**
+> - **P0 欠账**：① Hyperdrive 缓存关闭 → 状态以 **TODO D3** 为准（🧭 需单独批准；原「⏳ 发布窗口自动执行」
+>   口径废止；`--caching-disabled` 大概率未执行，验证=生产新建客户立即刷新可见）② R2 `S3_ACCESS_KEY`
+>   重建 32 位 → **TODO D2**（生产直传当前**不可用**：实测 key 只有 13 位 / R2 要求 32；服务端代理有兜底）③ 生产
+>   `product_tax_rates` 配置数据（0 条则批量报价不放行）→ **TODO C14**
+> - **P1**：④ 仓库改回 private + 确认 Actions billing → **仍未完成**（2026-10-20 实测当前 public；
+>   **TODO D5 已修正为 ⏳「最后做」**，与实测一致）⑤ Cloudflare agent 接入 → **TODO C3**
+>   ⑥ ~~Neon→PPG 生产迁移~~ ❌ **已废弃（决策 1）**：放弃 PPG 回 Neon，本项永久取消
+> - **P2**：⑦「流失」拒绝文件链路迁订单阶段 → **TODO C1**；⑧ Excel xlsx 上传闭环（上传侧现只收 CSV）
+>   → **TODO C7**；⑨ 生产测试数据 / 流失拒绝文件历史数据清理 → **TODO D4**（**执行当次仍需
+>   用户确认**）；⑩ 诊断端点收敛（`_r2_debug` / `fx-rates/_debug`）→ **TODO C9**；
+>   ⑪ Frontend CI `crypto.subtle.digest` 类型红 ✅ 10-19 已修；⑫ 货代询价文案补 DAP/DDP 费用项 ✅ 10-19 已补
+> - **P3**：~~技术栈升级~~ **❌已过时（2026-10-20 已升级 Next16 / React19 / ESLint10 / TS6，见 `AGENTS.md`
+>   「技术栈基线」）**；30/90 天客户自动沉寂 → **TODO C4**；本地 mock 刷新丢数据（MSW）→ **TODO C5**；
+>   e2e 数据层不稳根治 → **TODO C6**；~~租户级产品定义配置化~~ **❌已过时：代码层已完成（B1–B3；仅系统级
+>   产品仍 `@register`，剩余是口径缺口）**
 >
-> **未来评估项**：~~换运行时/单运行时收敛~~ **已重激活为在评方案**（见上一条与
-> `docs/archive/2026-10-20-closeout/DUAL_BACKEND_CONVERGENCE_2026-10-19.md`；路线 A POC ⏳ 待拍板；排期建议 POC → 迁库 → 收敛，
-> 三个大变更不同批）、preview/staging 环境（触发=多团队真实使用）、Neon 读副本
-> （触发=生产撞免费档限制）。
+> **未来评估项（2026-10-20 复核）**：~~换运行时/单运行时收敛「已重激活为在评方案，路线 A POC ⏳ 待拍板」~~
+> **❌已过时** —— **单应用（单运行时）已落地**（`README.md` §1：orchestrator 只保留 `app/db` + `alembic`，
+> 本地与生产跑同一份 `backend/worker/src/main.py`），不存在「双后端收敛 POC 待拍板」；保留
+> `preview/staging 环境`（触发=多团队真实使用）、`Neon 读副本`（触发=生产撞免费档限制）两项触发条件。
+>
+> **（2026-10-20 · 审计补录：原账本遗漏的活跃待办 —— 已登记 [`docs/TODO.md`](./TODO.md)）**
+>
+> - **安全 4 项（P0/P1，最后做）→ TODO `N6`（拍板口径 `G-8`）**：Neon 生产口令轮换 / 管理员
+>   `david@powervoy.com` 改密 / 评估 `docs/archive` 业务数据能否公开 / 可选 `git filter-repo`。
+>   证据：本文件「公开仓库安全审计 · 三、处置清单」的 4 个 `[ ]`；用户 2026-10-17 仅裁「暂不」，
+>   而仓库现为 **public** ⇒ 暴露面比裁决时更大。
+> - **生产 `product_tax_rates` 配置数据**（0 条则批量报价不放行）→ TODO `C14`。
+> - **Excel xlsx 上传闭环**（上传侧现只收 CSV）→ TODO `C7`。
+> - **诊断端点收敛**（`_r2_debug` / `fx-rates/_debug`）→ TODO `C9`。
+> - **四源计数端点** → TODO `C8`（`WORKSTATION_DESIGN.md` §6.8：`intel_demand_index` 空表、`/leads`
+>   恒返回 `demand_index=null`；代码仍占位 `backend/worker/src/chain.py` 的 `demand_index=None`/`blank_index=None`）。
+> - **18 模板签章区孤行分页** → TODO `C10`（`TRADE_DOC_TEMPLATES.md` §九：把末尾几块包进
+>   `break-inside: avoid` 容器，会动全部 18 个模板，本次未做）。
+> - **SSRF DNS rebinding 加固** → TODO `C11`（`backend/kaas_common/net.py` 模块 docstring 已显式记
+>   「已知局限…留成 TODO」：解析 DNS 后对解析出的 IP 再判一次；worker 在 Pyodide 里做不了，orchestrator 可叠一层）。
+> - **A2 方案 B** → TODO `A2-B`（🧭 需用户定要不要做）：模板迁服务端，让任意客户端/API 签发都能服务端出 PDF。
+> - **A4/A7 剩余部分**：A4 渲染仍 base64（`ws_files.py` `to_data_uri`）、素材库未做（渲染路线见 TODO `G-4`）；
+>   A7 事实层 / 一致性引擎 / 回执 API / 导出后自检未做（TODO `A7`）。
+> - **PDF 归档真实验收尾巴** → TODO `C12`：真实 18 类单证端到端未跑、页面级接线无测试、按快照重出未做
+>   （`TRADE_DOC_PDF_ARCHIVAL.md` §〇.2）。
+> - **`outreach/webhook` 是否收紧到 POST** → TODO `C13`（对应 §二 #3 / §三 第 2 条）：处理体是 501
+>   预留桩、当前无副作用，不急；但将来实现 inbound 回写前必须去掉 GET —— 仍待拍板。
+> - **产品图 `doUpload` 页面层测试缺失** → TODO `C2`（`docs/archive/2026-10-21-doc-closeout/PRODUCT_MEDIA_STORAGE_PLAN.md`
+>   §6 第 4 项；该文档 2026-10-21 已归档）。
+> - **P8 联调状态核对** → TODO `N4`（`WORKSTATION_DESIGN.md:945` 的「P8 ⏳ 进行中」是否仍成立）。
+> 以上均属「发现但未入账」，现已在 `docs/TODO.md` 有对应 ID；**本文件不再另设账本**。
 
 > **（2026-10-19 · 生产注册 500 修复 + 注册页去重）**
 >
@@ -1404,23 +1460,27 @@
 
 ### 还没做的（建议顺序）
 
+> **2026-10-20 复核**：本清单已大量过时，现行状态以顶部摘要 / `docs/TODO.md` 为准；下方逐条标 `❌已过时` 的不要再据此施工。
+
 1. ~~**反向漂移 8 条**~~ ✅ **已结**：6 条修掉（webhook 收敛 4 + 爬取端点 2），
    余 2 条 `subscriptions` 有既有裁决「有意保留」。详见下「反向漂移：逐条取证与处置」。
 2. ~~**前端认证契约残留**~~ ✅ **已收口**（`35a89a8`）：前端不再发 `X-Tenant-Id`，
    `Session` 不再带 `tenant` 字段。原因见下。
 3. **接口级测试**（#2b 与均价都只有纯函数单测）、**前端档位管理界面**。
-4. ~~规格库 11 条接口~~ ✅ **已退役**（`8225bbf`）/ e2e 归真 🔶 **进行中**
-   （"26 条"里大部分是环境问题，已修到 18 条真实失败，见下）/
-   产品定义可视化编辑器 / 团队管理员转让 / 单证投产联调。
-5. ~~依赖漏洞 98 个~~ 🔶 **部分**：已降到 **78**，critical 3 → 2；
-   余下 2 个 critical **全是 `next`**，只能在 Next ≥ 15.5.24 修
-   （即 14→15 跳大版本，而 Next 15 又要求 React 19）——用户已定**单独排期**。
+4. ~~规格库 11 条接口~~ ✅ **已退役**（`8225bbf`）/ e2e 归真 **❌已过时（2026-10-20：实测
+   `playwright test --list` = 28 条、0 failed；旧口径以 `E2E_GUIDE.md` 为准）**/
+   产品定义可视化编辑器 **✅ 已完成（2026-10-17，P16）** / 团队管理员转让 **✅ 已完成（见下「追加」）** /
+   单证投产联调 → 部分并入 A6（真单据对照）/A8-①（发布后真实跑一次）。
+5. ~~依赖漏洞 98 个~~ **❌已过时（2026-10-20 已升级技术栈：Next 16.4.2 / React 19.3 / ESLint 10.13 /
+   TS 6.0.3，见 `AGENTS.md` 技术栈基线）**：本节 78 条审计数字仅为 10-11 时点记录。
 6. **技术栈升级盘点（2026-10-17）**：Next 14.2.35 / Node 20（CI）/ ESLint 8 / TypeScript 5.9
    已落后当前稳定线两代；audit 复扫 **80 条**（2 critical / 19 high / 48 moderate / 11 low，
    npmjs registry 口径）——2 个 critical 仍是 Next image optimizer 的 RCE，生产走静态导出 +
    `images.unoptimized`，实际暴露面有限，但 14.x 已不再有新补丁公布。
-   完整依赖矩阵与 A/B/C/D 批次路线见 `docs/TECH_STACK_UPGRADE_2026-10-17.md`；
-   **2026-10-17 用户裁决：暂不执行升级，只落评估文档**。
+   完整依赖矩阵与 A/B/C/D 批次路线见归档的 `docs/archive/2026-10-20-p2-closeout/TECH_STACK_UPGRADE_2026-10-17.md`；
+   ~~**2026-10-17 用户裁决：暂不执行升级，只落评估文档**~~ **❌已过时（2026-10-20 已执行升级并固化，
+   见 `AGENTS.md` §「技术栈基线」；`frontend/package.json` = next `^16.4.2` / react `^19.3.1` /
+   eslint `^10.13.0` / typescript `^6.0.3`）**。
 
 ### 依赖漏洞已降 98 → 78（`b5b6f4d`）
 
@@ -2567,16 +2627,20 @@ services/quote_engine.create_quote
 
 ## 二、仍然存在（已取证）
 
+> ❌ **2026-10-20 复核：本节是 2026-10-11 快照，标题与多数行已不再代表现状**（旧表活读取路径已收口、
+> 反向漂移已结、依赖债已随技术栈升级解决、e2e 已归真）。逐行标注见下表；现行状态以顶部摘要与
+> `docs/TODO.md` 为准，**不要用本节判断"还剩什么问题"**。
+
 | # | 问题 | 证据 | 严重度 |
 |---|---|---|---|
-| 1 | **旧表仍有一条活读取路径**：`quote_engine.py:15 → niulanwang_pricing.py:12,113 → pricing_profiles_repo.get_current_profile` 读 `customer_pricing_profiles`；插入新模型行会被按加价倍率**静默误读**，不报错不告警 | `backend/orchestrator/app/services/niulanwang_pricing.py` | 中高（静默错误） |
-| 2 | **反向漂移 8 条**：`outreach/webhook`×4 方法、`subscriptions`×2、`leads/crawl`×2 —— 只存在于 worker，用 orchestrator 重新生成 worker 会丢功能 | `route-parity.py` worker 独有清单 | 中 |
-| 3 | **`outreach/webhook` 线上攻击面更宽**：worker 允许 GET/POST/PUT/PATCH/DELETE，orchestrator 只有 POST。**注意**：处理体是预留桩，任何方法都直接返回 501、无副作用 → 不是安全洞，只是两端不一致 | `worker/src/chain.py:1685` | 低（待复核） |
-| 4 | **待补路由 22 条**：其中 11 条规格库（`/product-specs`、`/spec/attributes*`、`/spec/skus*`、`/spec/templates*`）前端未直接调用，allowlist 标"按需补" | `scripts/route-parity-allowlist.txt` | 低 |
-| 5 | **产品组合数三方不一致**：前端按轴相乘得 **120**，常量是 **160**，测试断言 **48**；后端 4 处断言 `combo_count == 160` | `shared/contracts/niulanwang.ts:99,175`；`test_export_quote_api.py:96,276`、`test_export_quote_formulas.py:324`、`test_export_quote_import.py:82,283` | 中（A2 一并解决：轴改自由数值后该口径作废） |
-| 6 | **前端认证契约残留**（不影响功能，`tsc` exit 0）：`lib/auth/session-cache.ts` 仍有 `tenant` 结构与 `user?.tenant_id` 读取；`lib/api/client.ts:43-46` 仍会注入 `X-Tenant-Id`（值恒为空，实际不发） | 只读扫描 | 低（死代码） |
-| 7 | **依赖债**：next `^14.2.0 → 15.x` 专项未做。**实测 98 个漏洞**（3 严重 / 24 高危 / 56 中 / 15 低）—— 比 `docs/archive/2026-10-20-closeout/CLEANUP_LOG.md:110` 记的 82 **更差** | `pnpm audit`（2026-10-11 实测） | 中 |
-| 8 | **e2e 26 条失败未归真**：依赖本机后端 + 数据库，属"页面没数据"，本轮未复跑 | `docs/archive/2026-10-20-closeout/CLEANUP_LOG.md:32-34`、`E2E_GUIDE.md:38` | 中 |
+| 1 | **旧表仍有一条活读取路径**：`quote_engine.py:15 → niulanwang_pricing.py:12,113 → pricing_profiles_repo.get_current_profile` 读 `customer_pricing_profiles`；插入新模型行会被按加价倍率**静默误读**，不报错不告警 | `backend/orchestrator/app/services/niulanwang_pricing.py` | 中高（静默错误）❌**已过时**：见下「旧表 `customer_pricing_profiles` 活读取路径已收口（`51e26f9` 之后）」 |
+| 2 | **反向漂移 8 条**：`outreach/webhook`×4 方法、`subscriptions`×2、`leads/crawl`×2 —— 只存在于 worker，用 orchestrator 重新生成 worker 会丢功能 | `route-parity.py` worker 独有清单 | 中 ❌**已过时**：8 条已结（6 修掉 + 2 有裁决「有意保留」），见下「反向漂移：逐条取证与处置」 |
+| 3 | **`outreach/webhook` 线上攻击面更宽**：worker 允许 GET/POST/PUT/PATCH/DELETE，orchestrator 只有 POST。**注意**：处理体是预留桩，任何方法都直接返回 501、无副作用 → 不是安全洞，只是两端不一致 | `worker/src/chain.py:1685` | 低（待复核）——**该项仍可能有效，未在 2026-10-20 复核**；"是否收紧到 POST"仍待决策 |
+| 4 | **待补路由 22 条**：其中 11 条规格库（`/product-specs`、`/spec/attributes*`、`/spec/skus*`、`/spec/templates*`）前端未直接调用，allowlist 标"按需补" | `scripts/route-parity-allowlist.txt` | 低 ❌**已过时**：`route-parity.py` 已退役归档（`scripts/archive/`），该清单不再维护 |
+| 5 | **产品组合数三方不一致**：前端按轴相乘得 **120**，常量是 **160**，测试断言 **48**；后端 4 处断言 `combo_count == 160` | `shared/contracts/niulanwang.ts:99,175`；`test_export_quote_api.py:96,276`、`test_export_quote_formulas.py:324`、`test_export_quote_import.py:82,283` | 中（原计划 A2 一并解决：轴改自由数值后该口径作废）**未验证是否仍存在** |
+| 6 | **前端认证契约残留**（不影响功能，`tsc` exit 0）：`lib/auth/session-cache.ts` 仍有 `tenant` 结构与 `user?.tenant_id` 读取；`lib/api/client.ts:43-46` 仍会注入 `X-Tenant-Id`（值恒为空，实际不发） | 只读扫描 | 低（死代码）❌**已过时**：见下「前端认证契约残留已收口（`35a89a8`）」 |
+| 7 | **依赖债**：next `^14.2.0 → 15.x` 专项未做。**实测 98 个漏洞**（3 严重 / 24 高危 / 56 中 / 15 低）—— 比 `docs/archive/2026-10-20-closeout/CLEANUP_LOG.md:110` 记的 82 **更差** | `pnpm audit`（2026-10-11 实测） | 中 ❌**已过时**：2026-10-20 技术栈已升级到 Next 16.4.2 / React 19.3 / ESLint 10.13 / TS 6.0.3（`pnpm audit` 目标 0 critical） |
+| 8 | **e2e 26 条失败未归真**：依赖本机后端 + 数据库，属"页面没数据"，本轮未复跑 | `docs/archive/2026-10-20-closeout/CLEANUP_LOG.md:32-34`、`E2E_GUIDE.md:38` | 中 ❌**已过时**：e2e 已归真（2026-10-20 实测 `playwright test --list` = **28 条 = 24 passed + 4 skipped**、0 failed）；`E2E_GUIDE.md` 旧数字由 docs-b 同步 |
 
 ### 生产库对齐（2026-10-11 已执行，先演练后上生产）
 
@@ -2946,12 +3010,16 @@ services/quote_engine.create_quote
 
 ## 三、需要产品决策（不擅自改）
 
+> **2026-10-20 复核**：下列第 1 条已由 `UNCERTAIN.md` #19 裁决；第 2 条仍待决策（未入 TODO，见补录）。
+
 1. **A2 的柜级体积扣减层级**：2–3 m³ 是「圆柱体按长方体算、对**整柜**多占的量」（工厂经验总结）。
    现在引擎 `resolve_space_deduction` 把它解析成**一个数、只扣一次**（等价"每单一次"）。
    一单多柜时应改为 `扣除额 × 柜数` —— 需你确认按「每单一次」还是「每柜一次」。
+   ❌**已过时（2026-10-17 已裁）**：`UNCERTAIN.md` #19 —— **只用 ratio 模式、语义钉死「每柜等效」**
+   （比例模式下每单/每柜数学等价，无需改引擎）；本条不再待决。
 2. **`outreach/webhook` 是否收紧到 POST**（对应 §二 #3）：处理体是 501 预留桩、
    任何方法都无副作用，所以不急；但将来若实现 inbound 回写，`GET` 必须去掉
-   —— 邮件客户端预取链接会误触发（标记已回复之类）。
+   —— 邮件客户端预取链接会误触发（标记已回复之类）。**仍为未决项（2026-10-20 复核）**。
 
 **已定的（记录口径，勿再当作待决）**：
 
@@ -2963,16 +3031,28 @@ services/quote_engine.create_quote
 
 ## 四、需要排期 / 环境（非本轮）
 
+> **2026-10-20 复核**：本节多数已落地或并入新账本，逐条见下；现行状态以顶部摘要 / `docs/TODO.md` 为准。
+
 - ~~规格库 11 条接口补齐~~ ✅ **已退役**（`8225bbf`，见下「规格库 11 条已退役」）
-- 依赖升级专项（next 15 + 漏洞收敛）
-- e2e 26 条归真
-- 产品定义**可视化**编辑器（现仅 JSONB 文本编辑）
-- 团队管理员转让（现固定为创建者）
-- 单证渲染**投产联调验收**：18 种模板就绪，生产联调（字段打通 / PDF·打印 / 盖章 / 双语 + 样张对照）未做
+- ~~依赖升级专项（next 15 + 漏洞收敛）~~ **❌已过时**：2026-10-20 已升级 Next 16.4.2 / React 19.3 /
+  ESLint 10.13 / TS 6.0.3（`AGENTS.md` 技术栈基线）
+- ~~e2e 26 条归真~~ **❌已过时**：2026-10-20 实测 28 条 = 24 passed + 4 skipped、0 failed
+- ~~产品定义**可视化**编辑器（现仅 JSONB 文本编辑）~~ **❌已过时**：2026-10-17 P16 三小步已完成；
+  运行时「保存即生效」链路并入 B1（口径缺口 = 系统级产品仍 `@register`）
+- ~~团队管理员转让（现固定为创建者）~~ **❌已过时：已完成**（见下「追加：团队管理员转让 —— 全链路完成
+  （`9d42f44` + `99f783c`）」）
+- 单证渲染**投产联调验收**：18 种模板就绪，生产联调（字段打通 / PDF·打印 / 盖章 / 双语 + 样张对照）
+  未做 → **部分转由 A6（真单据对照，需用户样例）/ A8-①（发布后真实跑一次）承接**；其余未验证
 
 ---
 
 ## 五、文档状态（照旧文档施工会踩空）
+
+> **2026-10-20 复核**：下表所列多数文件已在 2026-10-20 / 2026-10-21 归档批次移入 `docs/archive/`（如
+> `CURRENT_IMPLEMENTATION_MAP` / `DUAL_BACKEND_CONVERGENCE` / `EXECUTION_SUMMARY_2026-10-10` /
+> `FRONTEND_PRODUCTION_READINESS` / `ROUTE_PARITY_2026-10-10` / `DB_LAYER_OPTIMIZATION` /
+> `PLATFORM_UPGRADE_PLAN` / `PRODUCT_MEDIA_STORAGE_PLAN` / `TEAMS_AND_VISIBILITY` / `CUSTOMER_DOCUMENTS_VIEW`），
+> 行内路径按归档批次内的 `README.md` 查找；**不要把下表当现行文档索引**（现行入口 = `docs/README.md`）。
 
 | 文档 | 状态 |
 |---|---|
@@ -3331,12 +3411,16 @@ c) 前端两处：界面把 Markdown `**` 当文本渲染；历史版本号用 `
 
 ### 待排期（均为发现，无 CI 会红）
 
-1. `orchestrator/docs/openapi.json:6673-6734` 仍是旧形状 ⇒ 需重生成（**无新鲜度校验**）
-2. **worker `POST /admin/feature_flag` 是请求体形状 ⇒ R5 只比响应键集，此缺陷无门禁覆盖**
+> **2026-10-20 复核**：本清单是 2026-10-12 快照，**大部分未纳入 `docs/TODO.md`**；除 #1 已因 R6 退役失效、
+> #5 的 R2 密钥问题已并入 TODO D2 外，其余未逐条复核（标"未验证"），需要时再立项。
+
+1. ~~`orchestrator/docs/openapi.json:6673-6734` 仍是旧形状 ⇒ 需重生成（**无新鲜度校验**）~~
+   **❌已过时**：R6（openapi 新鲜度）已退役，artifact 冻结、不再重生成（`AGENTS.md`「契约检查口径」）
+2. **worker `POST /admin/feature_flag` 是请求体形状 ⇒ R5 只比响应键集，此缺陷无门禁覆盖**（未验证）
 3. 契约错位：`ExportProduct.params` 契约写**对象**、后端回**二维数组**；`pricing_key[].ui_unit/ui_scale` 用 zod `.default()`
-   声明成输出必填、后端不产出（**类型撒谎、运行时 undefined**）
-4. 前端真缺陷：`PATCH /customers/:id/stage` 的 409 二次确认门前端未实现 + **对象型 detail 崩 JSX**；`inquiries` 的 `channel` 枚举与前端自由文本不符
-5. 另一条任务的**生产验收卡在 R2 密钥长度 13≠32**；`sampling_rate: 0.1` 非 bool
+   声明成输出必填、后端不产出（**类型撒谎、运行时 undefined**）（未验证）
+4. 前端真缺陷：`PATCH /customers/:id/stage` 的 409 二次确认门前端未实现 + **对象型 detail 崩 JSX**；`inquiries` 的 `channel` 枚举与前端自由文本不符（未验证）
+5. 另一条任务的**生产验收卡在 R2 密钥长度 13≠32** → **已并入 TODO D2**（重建 32 位密钥后验收）；`sampling_rate: 0.1` 非 bool（未验证）
 
 ***
 
@@ -3445,7 +3529,8 @@ worker 侧另有 `backend/worker/tests/test_ws_render_fingerprint_check.py`，
   **一张失败不拖垮整批**（该卡 `reason=unavailable` + `error`，其余照常）；
   **五桶之和恒等于 `total`**（不允许漏桶）。
 - ⏳ **仍未做**：① **定时调度**（批量是**按需调用**，没有 cron）；② **列表页一眼标出"哪些被改过"**
-  （结论要逐张点开或调批量接口才看得到）。
+  （结论要逐张点开或调批量接口才看得到）。**❌已过时（2026-10-20 已落地 A8/A9：cron `40 17 * * *` +
+  列表 `render_check` 标识；见 `TRADE_DOC_PDF_ARCHIVAL.md`「已落地…」与 `backend/worker/src/ws_cron.py`）**。
 
 **6. 一条性质说明（不是 bug，但值得留档）**
 对账的前提是"两边同一套装配"。若将来给 `render-data` 加了**新数据源**却忘了同步到**签发冻结**
@@ -4117,6 +4202,10 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
 - 本地 `refs/dsh-time-machine/*`、`refs/agents/*`（118 个仅本地提交）**未推送**；`git ls-remote` 仅 `main`。
 
 ### 三、处置清单
+
+> **2026-10-20 复核**：仓库经实测**仍为 public**（匿名 `git ls-remote` 成功）⇒「改回 private」止血手段尚未生效，
+> 下方 4 个 `[ ]` 仍全部未闭环；用户 10-17 的「暂不轮换/暂不改」只是**暂缓**，不是销项。这 4 项已作为
+> 「安全 4 项」补录到本文件顶部摘要，并交 Lead 统一登记 `docs/TODO.md`（暂定最后做）。
 
 - [x] 删除远端分支 `feat/trade-doc-templates`（2026-10-17，关闭"当前可读"入口）
 - [ ] **轮换 Neon 口令**（Neon Console → 项目 `falling-salad-31662168` → `production` → Roles →
