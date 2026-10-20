@@ -43,6 +43,9 @@ def _quote_out(row: Mapping[str, Any]) -> dict:
         "id": row["id"], "quote_no": _get(row, "quote_no"), "status": _get(row, "status"),
         "currency": _get(row, "currency"), "total_amount": _money(_get(row, "total_amount")),
         "created_at": _iso(_get(row, "created_at")),
+        # 询盘来源：前端「客户详情 → 询盘」需要把报价/订单/单证挂回对应询盘。
+        # 一个询盘最多一张报价单（DB 侧由 quote_orders.inquiry_id 记录）；null = 未关联询盘。
+        "inquiry_id": _get(row, "inquiry_id"),
     }
 
 

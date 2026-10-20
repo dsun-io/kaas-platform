@@ -44,6 +44,8 @@ export interface RecordQuote {
   currency: string | null;
   total_amount: number | null;
   created_at: string | null;
+  /** 询盘来源：客户详情「询盘」页签按它把后续单据挂回询盘；null = 未关联询盘 */
+  inquiry_id: number | null;
   documents: RecordDocument[];
   orders: RecordOrder[];
 }
@@ -179,6 +181,7 @@ function normalizeQuote(raw: unknown): RecordQuote | null {
     currency: asNullableText(raw.currency),
     total_amount: asNumber(raw.total_amount),
     created_at: asNullableText(raw.created_at),
+    inquiry_id: asInteger(raw.inquiry_id),
     documents,
     orders,
   };

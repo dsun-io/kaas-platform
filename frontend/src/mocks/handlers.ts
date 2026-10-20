@@ -1016,6 +1016,11 @@ export const handlers = [
   http.get("/api/v1/customers/:id/records", ({ params }) => {
     const customer = customersStore.find((c) => c.id === Number(params.id));
     const customerName = customer?.company_name ?? String(params.id ?? "");
+    // 询盘来源：报价单通过 inquiry_id 挂回询盘（与后端 quote_orders.inquiry_id 同口径）。
+    // 第一条报价挂到该客户现有询盘；第二条报价刻意不挂，用来演示"未关联询盘的单据"。
+    const linkedInquiryId = customer
+      ? (inquiriesOf(customer.id)[0]?.id ?? null)
+      : null;
     return HttpResponse.json({
       customer: { id: customer?.id ?? null, name: customerName, team_id: 1 },
       counts: { quotes: 2, orders: 2, documents: 6 },
@@ -1027,6 +1032,7 @@ export const handlers = [
           currency: "USD",
           total_amount: 12300,
           created_at: "2026-09-27T14:56:42Z",
+          inquiry_id: linkedInquiryId,
           documents: [
             {
               id: 12,
@@ -1067,6 +1073,7 @@ export const handlers = [
           currency: "USD",
           total_amount: 8000,
           created_at: "2026-09-26T10:00:00Z",
+          inquiry_id: null,
           documents: [
             {
               id: 11,
