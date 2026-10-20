@@ -30,8 +30,15 @@
 > 0 未登记占位符。
 > 证据：`4878c6c`（后端）+ `db4463e`（前端）；门禁 = worker **972 passed + 5 skipped** /
 > orchestrator **247** / frontend typecheck 0 · vitest **467** · lint 0 error · contracts R0–R6 PASS ·
-> schema-coverage/drift/runtime-deps/sync-shared PASS。**状态：分支已推送、待 PR 评审合入 main**；
+> schema-coverage/drift/runtime-deps/sync-shared PASS。**状态：分支已推送、PR #5 已开，待评审合入 main**；
 > A2/A4~A9 仍挂在 [`docs/TODO.md`](./TODO.md)。
+>
+> **⚠️ CI 全红与代码无关（同日发现，待用户处理）**：仓库已由用户转回 **private**（D5 ✅），
+> private 仓库消耗 Actions 分钟配额 ⇒ **2026-10-20 08:05Z 起所有 workflow 秒失败**（0 步、
+> 无 runner、2–4 秒结束，`main` 与分支一致；最后一次成功 run = 05:58Z 的 preview teardown
+> `39377738492`）。本地门禁（worker 972+5 / orchestrator 247 / typecheck / vitest 467 / lint /
+> contracts R0–R6 / 四个静态断言）全绿。**恢复方式（充值 Actions / 临时 public / 接受红）
+> 待用户裁决**，见 TODO.md D5。
 >
 > **（2026-10-20 · 口径修订：「待办清零/触发条件制」废止 → 活跃待办账本）**
 >
