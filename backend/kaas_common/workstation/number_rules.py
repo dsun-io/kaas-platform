@@ -33,6 +33,8 @@ DOC_TYPE_PREFIX = {
     "non_wood_packing": "NWP", "weight_list": "WL", "quality_cert": "QC",
     "manufacturer_cert": "MC", "bl": "BL", "co": "CO", "insurance": "INS",
     "customs_declaration": "CD", "fumigation_cert": "FUM", "saso_coc": "COC",
+    # A10 P2：船公司证明 VC / 出口许可证 EL / 商检证书 CIQ
+    "vessel_cert": "VC", "export_license": "EL", "ciq": "CIQ",
     "other": "DOC", "order": "ORD", "shipment": "SHP",
     "inquiry": "INQ",
 }

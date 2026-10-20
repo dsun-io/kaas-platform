@@ -1,4 +1,4 @@
-﻿"""条款模板库（A5-W1）—— 团队级常用条款 + 校验 + 按单证类型挑选（纯 stdlib）。
+"""条款模板库（A5-W1）—— 团队级常用条款 + 校验 + 按单证类型挑选（纯 stdlib）。
 
 为什么放共享内核
 ----------------
@@ -9,12 +9,12 @@
 数据模型（表 `tenant_clause_templates`，团队级）
 -----------------------------------------------
 团队内可维护一组常用条款（付款条件/装运/检验/索赔/不可抗力/仲裁），
-每条挂若干适用单证类型（`DOC_TYPE` 的 20 类子集），中英双语、可排序、可停用。
+每条挂若干适用单证类型（`DOC_TYPE` 的 23 类子集），中英双语、可排序、可停用。
 **不做条款版本管理**（v2 再议），也不自动改写历史单据 —— 模板只是"填单时的候选值"。
 
 口径
 ----
-- `doc_types`：非空数组、元素必须在 `DOC_TYPE` 20 类内、去重保序；
+- `doc_types`：非空数组、元素必须在 `DOC_TYPE` 23 类内、去重保序；
 - `name`：非空、团队内唯一（唯一键 `(tenant_id, team_id, name)`）；
 - `text_zh` / `text_en`：至少一个非空（只有中文或只有英文都允许 —— 外贸实务里
   中文给国内同事看、英文给客户看，强行要求双语会逼出机翻）；
@@ -56,7 +56,7 @@ CLAUSE_SORT_INVALID = "CLAUSE_SORT_INVALID"
 CLAUSE_NAME_MAX = 120
 CLAUSE_TEXT_MAX = 8000
 
-# 20 类单证（与 `kaas_common.domain.enums.DOC_TYPE` **逐项一致**）。
+# 23 类单证（与 `kaas_common.domain.enums.DOC_TYPE` **逐项一致**）。
 #
 # 为什么不直接 import enums：`domain/enums.py` 依赖 FastAPI（HTTPException 做枚举校验），
 # 而本内核是**纯 stdlib**、orchestrator 侧的迁移/内核测试环境没装 FastAPI
@@ -69,7 +69,7 @@ CLAUSE_DOC_TYPES = (
     "non_wood_packing", "weight_list", "quality_cert", "manufacturer_cert",
     # 第三方签发
     "bl", "co", "insurance", "customs_declaration", "fumigation_cert",
-    "saso_coc",
+    "saso_coc", "vessel_cert", "export_license", "ciq",
     # 通用
     "other",
 )
@@ -197,12 +197,12 @@ class ClauseTemplateError(ValueError):
 
 
 def is_valid_doc_type(doc_type: Any) -> bool:
-    """单证类型是否属于 20 类枚举（字符串精确匹配，不做大小写/别名猜测）。"""
+    """单证类型是否属于 23 类枚举（字符串精确匹配，不做大小写/别名猜测）。"""
     return isinstance(doc_type, str) and doc_type.strip() in DOC_TYPE_SET
 
 
 def normalize_doc_types(raw: Any) -> list[str]:
-    """规范化 `doc_types`：必须是**非空**的 20 类子集，去重保序。
+    """规范化 `doc_types`：必须是**非空**的 23 类子集，去重保序。
 
     为什么空数组也拒绝：一条"不适用于任何单证"的条款模板没有意义，
     且会让前端下拉出现永远选不中的幽灵项。
@@ -210,7 +210,7 @@ def normalize_doc_types(raw: Any) -> list[str]:
     if isinstance(raw, (str, bytes)) or not isinstance(raw, Sequence):
         raise ClauseTemplateError(
             CLAUSE_DOC_TYPES_REQUIRED,
-            "doc_types 必须是单证类型数组（DOC_TYPE 的 20 类子集）",
+            "doc_types 必须是单证类型数组（DOC_TYPE 的 23 类子集）",
         )
     if not raw:
         raise ClauseTemplateError(CLAUSE_DOC_TYPES_REQUIRED, "doc_types 不能为空")

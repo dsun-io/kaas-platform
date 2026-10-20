@@ -72,6 +72,9 @@ const ALL_DOC_TYPES = [
   "customs_declaration",
   "fumigation_cert",
   "saso_coc",
+  "vessel_cert",
+  "export_license",
+  "ciq",
   "other",
 ];
 
@@ -858,5 +861,122 @@ describe("A10 P1 扩展模板（beneficiary_decl / saso_coc）", () => {
     }
     expect(html).toContain("[CERTIFICATION BODY]");
     expect(html).toContain("this sheet is not the certificate itself");
+  });
+});
+
+// ── A10 P2：船公司证明 / 出口许可证 / 商检证书（申请信息）──────────────────
+
+describe("A10 P2 扩展模板（vessel_cert / export_license / ciq）", () => {
+  const P2_DATA = JSON.parse(
+    readFileSync(join(HERE, "..", "sample-data-a10p2.json"), "utf-8"),
+  ) as {
+    doc_types: string[];
+    base: Record<string, unknown>;
+    per_doc: Record<string, Record<string, unknown>>;
+  };
+  const dataOf = (docType: string) => ({
+    ...P2_DATA.base,
+    ...(P2_DATA.per_doc[docType] ?? {}),
+  });
+  const normalize = (html: string) => html.replace(/\r\n/g, "\n");
+
+  it("三份新增基线逐字节一致（旧 25 份由各自基线钉住）", () => {
+    const mismatches: string[] = [];
+    for (const docType of P2_DATA.doc_types) {
+      const actual = normalize(renderTradeDoc(docType, dataOf(docType)));
+      const expected = normalize(
+        readFileSync(join(GOLDEN_HTML, `sample_${docType}.html`), "utf-8"),
+      );
+      if (actual !== expected) mismatches.push(docType);
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  it("三类按证书/许可证版式渲染：编号/签发方/日期/有效期/标准或范围齐全", () => {
+    const labels: Record<string, string[]> = {
+      vessel_cert: [
+        "Certificate No.",
+        "Vessel",
+        "Voyage No.",
+        "IMO No.",
+        "Flag",
+        "Owner",
+        "Operator",
+        "Classification Society",
+        "Vessel Age",
+        "Issued By",
+      ],
+      export_license: [
+        "Licence No.",
+        "Date",
+        "Invoice No.",
+        "Contract No.",
+        "Applicant",
+        "Consignee",
+        "Exporter",
+        "Destination Country",
+        "HS Code",
+        "Trade Mode",
+        "Quantity",
+        "Valid Until",
+        "Total Amount",
+        "Issuing Authority",
+      ],
+      ciq: [
+        "Certificate No.",
+        "Date",
+        "Applicant",
+        "Consignee",
+        "Inspection Type",
+        "Standard Applied",
+        "Quantity",
+        "Packages",
+        "Gross Weight (KGS)",
+        "Net Weight (KGS)",
+        "Place of Inspection",
+        "Issue Date",
+        "Issuing Authority",
+        "Inspection Result",
+      ],
+    };
+    for (const [docType, expected] of Object.entries(labels)) {
+      const html = renderTradeDoc(docType, dataOf(docType));
+      for (const label of expected) {
+        expect(html, `${docType} 缺少「${label}」`).toContain(label);
+      }
+      // 第三方签发：必须如实标注申请信息，不伪装正式证书
+      expect(html).toContain("not the official");
+    }
+  });
+
+  it("无样例的证书字段留空：不伪造签发方 / 标准 / 证书号", () => {
+    const vessel = renderTradeDoc("vessel_cert", {
+      seller: P2_DATA.base.seller,
+      vessel: "[VESSEL NAME]",
+      issue_by: "[CARRIER / SHIP AGENT]",
+    });
+    expect(vessel).toContain("Issued By");
+    expect(vessel).not.toContain("Bureau Veritas");
+    expect(vessel).not.toContain("SGS");
+    expect(vessel).not.toMatch(/\$(cert_no|imo_no|classification_society)/);
+
+    const licence = renderTradeDoc("export_license", {
+      seller: P2_DATA.base.seller,
+      description_of_goods: "[DESCRIPTION OF GOODS]",
+      destination_country: "[DESTINATION COUNTRY]",
+      items: P2_DATA.base.items,
+    });
+    expect(licence).toContain("Issuing Authority");
+    expect(licence).not.toContain("MOFCOM");
+    expect(licence).not.toContain("[COMPETENT AUTHORITY]");
+
+    const ciq = renderTradeDoc("ciq", {
+      seller: P2_DATA.base.seller,
+      description_of_goods: "[DESCRIPTION OF GOODS]",
+      items: P2_DATA.base.items,
+    });
+    expect(ciq).toContain("Standard Applied");
+    expect(ciq).not.toContain("GB/T");
+    expect(ciq).not.toContain("[INSPECTION AUTHORITY]");
   });
 });

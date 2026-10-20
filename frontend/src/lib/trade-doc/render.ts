@@ -1151,6 +1151,23 @@ const ITEM_COLUMNS: Record<string, Column[]> = {
     ["qty", "Quantity", "r"],
     ["qty_unit", "Unit", "c"],
   ],
+  // A10 P2：出口许可证 / 商检证书的申报要素同证书类（不列单价金额）
+  export_license: [
+    ["no", "No.", "c"],
+    ["product_name", "Description of Goods", "l"],
+    ["specification", "Specification", "l"],
+    ["hs_code", "HS Code", "c"],
+    ["qty", "Quantity", "r"],
+    ["qty_unit", "Unit", "c"],
+  ],
+  ciq: [
+    ["no", "No.", "c"],
+    ["product_name", "Description of Goods", "l"],
+    ["specification", "Specification", "l"],
+    ["hs_code", "HS Code", "c"],
+    ["qty", "Quantity", "r"],
+    ["qty_unit", "Unit", "c"],
+  ],
   // 报关信息：按申报要素排列（项号 / 商品编号 / 品名规格 / 数量 / 单价总价），
   // 重量等汇总项置于表格下方的汇总栏，避免表格列过多影响可读性
   customs_declaration: [

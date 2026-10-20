@@ -1,0 +1,88 @@
+{
+  "_readme": "A10 P2 三类扩展模板（vessel_cert / export_license / ciq）的基线输入。与 sample-data.json 的 18 类主基线分开；证书类字段（证号/签发方/标准）用 [占位] 口径，不伪造默认值。",
+  "doc_types": [
+    "vessel_cert",
+    "export_license",
+    "ciq"
+  ],
+  "base": {
+    "seller": {
+      "company": "[SELLER COMPANY NAME]",
+      "address": "[SELLER ADDRESS]",
+      "tel": "[TEL]",
+      "email": "[EMAIL]"
+    },
+    "buyer": {
+      "company": "[BUYER COMPANY NAME]",
+      "address": "[BUYER ADDRESS]",
+      "contact": "[CONTACT PERSON]"
+    },
+    "currency": "USD",
+    "invoice_no": "INV-2026-0001",
+    "contract_no": "SC-2026-0001",
+    "description_of_goods": "[DESCRIPTION OF GOODS]",
+    "hs_code": "7314410000",
+    "items": [
+      {
+        "product_name": "[PRODUCT NAME 1]",
+        "specification": "[SPECIFICATION 1]",
+        "hs_code": "7314410000",
+        "qty": 500,
+        "qty_unit": "Rolls"
+      },
+      {
+        "product_name": "[PRODUCT NAME 2]",
+        "specification": "[SPECIFICATION 2]",
+        "hs_code": "7308900000",
+        "qty": 2000,
+        "qty_unit": "Pcs"
+      }
+    ]
+  },
+  "per_doc": {
+    "vessel_cert": {
+      "cert_no": "[CERTIFICATE NO.]",
+      "cert_date": "2026-10-12",
+      "vessel": "[VESSEL NAME]",
+      "voyage_no": "[VOYAGE NO.]",
+      "imo_no": "[IMO NO.]",
+      "flag": "[FLAG]",
+      "owner": "[VESSEL OWNER]",
+      "operator": "[VESSEL OPERATOR]",
+      "classification_society": "[CLASSIFICATION SOCIETY]",
+      "vessel_age": "[VESSEL AGE]",
+      "issue_by": "[CARRIER / SHIP AGENT]",
+      "content": "<p>[ADDITIONAL DECLARATION, IF REQUIRED BY THE CREDIT]</p>"
+    },
+    "export_license": {
+      "license_no": "[LICENCE NO.]",
+      "license_date": "2026-10-12",
+      "applicant": "[APPLICANT]",
+      "exporter": "[EXPORTER]",
+      "consignee": "[CONSIGNEE]",
+      "quantity": 2500,
+      "unit": "Pcs",
+      "total_amount": 14250,
+      "destination_country": "[DESTINATION COUNTRY]",
+      "trade_mode": "General trade",
+      "valid_until": "2027-10-11",
+      "issuing_authority": "[COMPETENT AUTHORITY]"
+    },
+    "ciq": {
+      "cert_no": "[CERTIFICATE NO.]",
+      "cert_date": "2026-10-12",
+      "applicant": "[APPLICANT]",
+      "consignee": "[CONSIGNEE]",
+      "quantity": 2500,
+      "packages": 100,
+      "gross_weight": 18600,
+      "net_weight": 17800,
+      "inspection_type": "[INSPECTION TYPE]",
+      "standard_applied": "[STANDARD APPLIED]",
+      "inspection_result": "[PASS / QUALIFIED]",
+      "place_of_inspection": "[PLACE OF INSPECTION]",
+      "issue_date": "2026-10-12",
+      "issuing_authority": "[INSPECTION AUTHORITY]"
+    }
+  }
+}

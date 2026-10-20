@@ -43,7 +43,7 @@ DOC_TYPE = (
     "non_wood_packing", "weight_list", "quality_cert", "manufacturer_cert",
     # 第三方签发
     "bl", "co", "insurance", "customs_declaration", "fumigation_cert",
-    "saso_coc",
+    "saso_coc", "vessel_cert", "export_license", "ciq",
     # 通用
     "other",
 )

@@ -37,6 +37,10 @@ DOC_NO_FIELDS = {
     "customs_declaration": ("customs_decl_no", "customs_decl_date"),
     "fumigation_cert": ("fumi_cert_no", "fumi_cert_date"),
     "saso_coc": ("cert_no", "cert_date"),
+    # A10 P2：字段名与 frontend manifest 逐字一致
+    "vessel_cert": ("cert_no", "cert_date"),
+    "export_license": ("license_no", "license_date"),
+    "ciq": ("cert_no", "cert_date"),
     "other": (None, None),
 }
 

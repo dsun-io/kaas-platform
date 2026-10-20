@@ -1,5 +1,5 @@
 /**
- * C10 防回归：单证模板（当前 20 类 = 原 18 类 + A10 新增 2 类）的**末尾原子块**必须整体分页
+ * C10 防回归：单证模板（当前 23 类 = 原 18 类 + A10 新增 5 类）的**末尾原子块**必须整体分页
  *
  * 背景（TODO C10 / `docs/TRADE_DOC_TEMPLATES.md` §九）：
  * 签章区、公章、紧邻的声明/条款/备注块原先可能被分页切开 —— 最难看的是
@@ -37,9 +37,9 @@ const DOC_TYPES = Object.keys(manifest);
 const KEEP_OPEN = '<div class="keep-together">';
 const FOOT = '<div class="foot">$footer_note</div>';
 
-describe("C10：20 类模板末尾原子块 keep-together", () => {
-  it("覆盖全部 20 类单证（不是 19、也不是 21）", () => {
-    expect(DOC_TYPES.length).toBe(20);
+describe("C10：23 类模板末尾原子块 keep-together", () => {
+  it("覆盖全部 23 类单证（不是 22、也不是 24）", () => {
+    expect(DOC_TYPES.length).toBe(23);
     expect(Object.keys(assets.templates).sort()).toEqual(DOC_TYPES.sort());
   });
 

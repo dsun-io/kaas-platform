@@ -1751,6 +1751,295 @@
       }
     }
   },
+  "vessel_cert": {
+    "name_zh": "船公司证明(申请信息)",
+    "name_en": "Certificate of Vessel's Ownership / Classification (Application Information)",
+    "description": "证明船籍/船龄/船级社等（信用证或目的国清关要求）；由承运人/船代签发，本系统只产申请信息",
+    "template_file": "vessel_cert.html",
+    "fields": {
+      "seller": {
+        "type": "object",
+        "required": true,
+        "description": "出口商(申请人)信息"
+      },
+      "buyer": {
+        "type": "object",
+        "required": false,
+        "description": "收件方(买方/银行)信息"
+      },
+      "cert_no": {
+        "type": "string",
+        "required": false,
+        "description": "证书编号(取得后填写；未取得留空，不预填)"
+      },
+      "cert_date": {
+        "type": "date",
+        "required": false,
+        "description": "证书日期"
+      },
+      "vessel": {
+        "type": "string",
+        "required": true,
+        "description": "船名"
+      },
+      "voyage_no": {
+        "type": "string",
+        "required": false,
+        "description": "航次号"
+      },
+      "imo_no": {
+        "type": "string",
+        "required": false,
+        "description": "IMO 编号"
+      },
+      "flag": {
+        "type": "string",
+        "required": false,
+        "description": "船籍国"
+      },
+      "owner": {
+        "type": "string",
+        "required": false,
+        "description": "船东"
+      },
+      "operator": {
+        "type": "string",
+        "required": false,
+        "description": "经营人"
+      },
+      "classification_society": {
+        "type": "string",
+        "required": false,
+        "description": "船级社(无真实样例不预置)"
+      },
+      "vessel_age": {
+        "type": "string",
+        "required": false,
+        "description": "船龄"
+      },
+      "issue_by": {
+        "type": "string",
+        "required": true,
+        "description": "签发方(承运人/船代)"
+      },
+      "content": {
+        "type": "string",
+        "required": false,
+        "description": "补充声明(支持 HTML)"
+      }
+    }
+  },
+  "export_license": {
+    "name_zh": "出口许可证(申请信息)",
+    "name_en": "Export Licence (Application Information)",
+    "description": "两用物项/管制商品出口许可证申报信息；由商务部门签发(本系统只产申请信息)",
+    "template_file": "export_license.html",
+    "fields": {
+      "seller": {
+        "type": "object",
+        "required": true,
+        "description": "出口商信息"
+      },
+      "license_no": {
+        "type": "string",
+        "required": false,
+        "description": "许可证号(取得后填写；未取得留空，不预填)"
+      },
+      "license_date": {
+        "type": "date",
+        "required": false,
+        "description": "许可证日期"
+      },
+      "applicant": {
+        "type": "string",
+        "required": false,
+        "description": "申请人"
+      },
+      "exporter": {
+        "type": "string",
+        "required": false,
+        "description": "出口商名称"
+      },
+      "consignee": {
+        "type": "string",
+        "required": false,
+        "description": "收货人"
+      },
+      "contract_no": {
+        "type": "string",
+        "required": false,
+        "description": "合同号"
+      },
+      "invoice_no": {
+        "type": "string",
+        "required": false,
+        "description": "发票号"
+      },
+      "description_of_goods": {
+        "type": "string",
+        "required": true,
+        "description": "货物描述"
+      },
+      "hs_code": {
+        "type": "string",
+        "required": false,
+        "description": "HS 编码"
+      },
+      "items": {
+        "type": "array",
+        "required": true,
+        "description": "商品明细(品名/规格/HS/数量/单位)"
+      },
+      "quantity": {
+        "type": "number",
+        "required": false,
+        "description": "总数量"
+      },
+      "unit": {
+        "type": "string",
+        "required": false,
+        "description": "数量单位"
+      },
+      "total_amount": {
+        "type": "number",
+        "required": false,
+        "description": "总金额(受保护：来自上游/系统计算)"
+      },
+      "currency": {
+        "type": "string",
+        "required": false,
+        "description": "币种"
+      },
+      "destination_country": {
+        "type": "string",
+        "required": true,
+        "description": "目的国"
+      },
+      "trade_mode": {
+        "type": "string",
+        "required": false,
+        "description": "贸易方式(如一般贸易)"
+      },
+      "valid_until": {
+        "type": "string",
+        "required": false,
+        "description": "有效期(至)"
+      },
+      "issuing_authority": {
+        "type": "string",
+        "required": false,
+        "description": "发证机关(无真实样例不预置)"
+      }
+    }
+  },
+  "ciq": {
+    "name_zh": "商检证书(申请信息)",
+    "name_en": "Inspection Certificate (Application Information)",
+    "description": "法检/信用证要求的 Inspection Certificate 报检/申请信息；由海关/检验机构签发",
+    "template_file": "ciq.html",
+    "fields": {
+      "seller": {
+        "type": "object",
+        "required": true,
+        "description": "卖方/报检人信息"
+      },
+      "cert_no": {
+        "type": "string",
+        "required": false,
+        "description": "证书编号(取得后填写；未取得留空，不预填)"
+      },
+      "cert_date": {
+        "type": "date",
+        "required": false,
+        "description": "证书日期"
+      },
+      "applicant": {
+        "type": "string",
+        "required": false,
+        "description": "申请人"
+      },
+      "consignee": {
+        "type": "string",
+        "required": false,
+        "description": "收货人"
+      },
+      "invoice_no": {
+        "type": "string",
+        "required": false,
+        "description": "发票号"
+      },
+      "contract_no": {
+        "type": "string",
+        "required": false,
+        "description": "合同号"
+      },
+      "description_of_goods": {
+        "type": "string",
+        "required": true,
+        "description": "货物描述"
+      },
+      "hs_code": {
+        "type": "string",
+        "required": false,
+        "description": "HS 编码"
+      },
+      "items": {
+        "type": "array",
+        "required": true,
+        "description": "商品明细(品名/规格/HS/数量/单位)"
+      },
+      "quantity": {
+        "type": "number",
+        "required": false,
+        "description": "总数量"
+      },
+      "packages": {
+        "type": "number",
+        "required": false,
+        "description": "件数"
+      },
+      "gross_weight": {
+        "type": "number",
+        "required": false,
+        "description": "毛重(KGS)"
+      },
+      "net_weight": {
+        "type": "number",
+        "required": false,
+        "description": "净重(KGS)"
+      },
+      "inspection_type": {
+        "type": "string",
+        "required": false,
+        "description": "检验类型(品质/数量/重量/卫生等)"
+      },
+      "standard_applied": {
+        "type": "string",
+        "required": false,
+        "description": "检验依据标准(无真实样例不预置)"
+      },
+      "inspection_result": {
+        "type": "string",
+        "required": false,
+        "description": "检验结论(如 PASS / QUALIFIED)"
+      },
+      "place_of_inspection": {
+        "type": "string",
+        "required": false,
+        "description": "检验地点"
+      },
+      "issue_date": {
+        "type": "date",
+        "required": false,
+        "description": "签发日期"
+      },
+      "issuing_authority": {
+        "type": "string",
+        "required": false,
+        "description": "检验/签发机构(无真实样例不预置)"
+      }
+    }
+  },
   "other": {
     "name_zh": "其他单证",
     "name_en": "Other Document",

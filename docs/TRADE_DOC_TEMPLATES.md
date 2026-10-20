@@ -207,13 +207,14 @@ node <node> frontend/node_modules/tsx/dist/cli.mjs scripts/render-trade-doc.ts `
 > 见 `docs/TRADE_DOC_HARDENING.md`）④租户档案（企业抬头/地址/银行/默认公章，`render-data` 注入）。
 > 合规边界沿用 §二：**第三方签发的只产「申报/申请信息」，不伪装成正式证书**。
 
-> **2026-10-21 状态**：§6.1.1 `saso_coc` 与 §6.1.5 `beneficiary_decl` **已实现**
-> （前端模板 + 渲染 + 表单字段 + 金标 23→25）；其余 3 类（`vessel_cert`/`export_license`/`ciq`）仍待 A6 样例。
-> ✅ **后端 DOC_TYPE 已同步 20 类（2026-10-21，A10 后端任务）**：`backend/kaas_common/domain/enums.py::DOC_TYPE`、
-> `workstation/number_rules.py::DOC_TYPE_PREFIX`（`beneficiary_decl`→`BD`、`saso_coc`→`COC`）、
+> **2026-10-21 状态**：§6.1 的 **5 类候选全部已实现**（A10 P1：`saso_coc`/`beneficiary_decl`；
+> A10 P2：`vessel_cert`/`export_license`/`ciq`）：前端模板 + 渲染 + 表单字段 + 金标 **23→28**。
+> ✅ **后端 DOC_TYPE 已同步 23 类（2026-10-21，A10 后端任务）**：`backend/kaas_common/domain/enums.py::DOC_TYPE`、
+> `workstation/number_rules.py::DOC_TYPE_PREFIX`（`beneficiary_decl`→`BD`、`saso_coc`→`COC`、
+> `vessel_cert`→`VC`、`export_license`→`EL`、`ciq`→`CIQ`）、
 > `trade_doc/payload_shared.py::DOC_NO_FIELDS`、`trade_doc/clause_templates.py::CLAUSE_DOC_TYPES`、
-> `backend/worker/src/main.py` 的 `DOC_TYPE_SET`/`DOC_TYPE_PREFIX` 均已加两类并 `sync-shared`；
-> `pnpm contracts:check` R3/R4 全绿（20 类）。
+> `backend/worker/src/main.py` 的 `DOC_TYPE_SET`/`DOC_TYPE_PREFIX` 均已同步并 `sync-shared`；
+> `pnpm contracts:check` R3/R4 全绿（23 类）。
 
 #### 6.1.1 `saso_coc` — 目的国符合性认证（SASO / COC / SONCAP / PVoC / GOEIC 类）
 
@@ -242,6 +243,13 @@ node <node> frontend/node_modules/tsx/dist/cli.mjs scripts/render-trade-doc.ts `
 
 #### 6.1.2 `vessel_cert` — 船公司证明（Certificate of Vessel's Ownership / Classification）
 
+> **✅ 已实现（2026-10-21，A10 P2）**：单号前缀 **`VC`**；金标 `sample_vessel_cert.html`。
+> 实际字段（14 个）：`seller` / `buyer` / `cert_no` / `cert_date` / `vessel` / `voyage_no` /
+> `imo_no` / `flag` / `owner` / `operator` / `classification_society` / `vessel_age` /
+> `issue_by` / `content`（补充声明，HTML 透传）。
+> 实现口径：证书类排版 + 如实标注「Application Information / 本页不是证书本身」（承运人/船代签发）；
+> 证书号/IMO/船级社/船龄等**无真实样例不预置默认值**（留空 = 待填）。
+
 - **①用途与触发**：信用证及部分中东/非洲国家进口要求证明**船籍/船龄/船级社/承运人资质**（如抵制条款相关证明）。
   **触发**：信用证 46A 单据条款点名该类证明，或目的国清关要求时，向承运人/船代索取。
 - **②关键字段**：`cert_no` / `cert_date` / `vessel` / `voyage_no` / `imo_no` / `flag` / `owner` / `operator` /
@@ -252,6 +260,14 @@ node <node> frontend/node_modules/tsx/dist/cli.mjs scripts/render-trade-doc.ts `
 - **⑤与 A6**：船公司抬头、声明版本、船级社名称写法**待 A6 校准**。
 
 #### 6.1.3 `export_license` — 出口许可证（申报信息表）
+
+> **✅ 已实现（2026-10-21，A10 P2）**：单号前缀 **`EL`**；金标 `sample_export_license.html`。
+> 实际字段（19 个）：`seller` / `license_no` / `license_date` / `applicant` / `exporter` /
+> `consignee` / `contract_no` / `invoice_no` / `description_of_goods` / `hs_code` / `items` /
+> `quantity` / `unit` / `total_amount`（受保护：来自上游/系统计算，表单不可手填） / `currency` /
+> `destination_country` / `trade_mode` / `valid_until` / `issuing_authority`。
+> 实现口径：许可证类排版 + 如实标注申请信息；许可证号/发证机关**无真实样例不预置**；
+> `items` 固定列 = 品名/规格/HS/数量/单位（不列单价金额）。
 
 - **①用途与触发**：中国对两用物项/部分金属制品/农产品等管制商品出口需商务部门许可证；报关必备。
   **触发**：品类命中出口管制目录（系统**不判断**是否命中，由业务/报关代理确认）。
@@ -264,6 +280,14 @@ node <node> frontend/node_modules/tsx/dist/cli.mjs scripts/render-trade-doc.ts `
 - **⑤与 A6**：证面栏目、商品编码填报规则**待 A6 样例校准**。
 
 #### 6.1.4 `ciq` — 商检证书（CIQ / Inspection Certificate）
+
+> **✅ 已实现（2026-10-21，A10 P2）**：单号前缀 **`CIQ`**；金标 `sample_ciq.html`。
+> 实际字段（20 个）：`seller` / `cert_no` / `cert_date` / `applicant` / `consignee` / `invoice_no` /
+> `contract_no` / `description_of_goods` / `hs_code` / `items` / `quantity` / `packages` /
+> `gross_weight` / `net_weight` / `inspection_type` / `standard_applied` / `inspection_result` /
+> `place_of_inspection` / `issue_date` / `issuing_authority`。
+> 实现口径：检验证书排版 + 如实标注申请信息；证书号/检验依据/检验结论/机构**无真实样例不预置**；
+> `items` 固定列 = 品名/规格/HS/数量/单位；CIQ 与 `quality_cert` 分开（前者第三方签发申请信息）。
 
 - **①用途与触发**：法检商品出口由海关/检验机构出具品质/数量/重量/卫生证书；信用证常点名。
   **触发**：品类属法检或信用证要求 Inspection Certificate 时，产「报检/申请信息」。
@@ -434,7 +458,7 @@ table.sign, table.sign tr, table.sign td,
   给 `table.sign` 加与不加，产物 SHA256 完全相同。所以「签章区绝不成为新页上的
   唯一内容」**无法用纯 CSS 保证**；能保证的是**不被切开**，以及声明条款随它同块移动。
   真要杜绝"孤单落在新页"，得让模板把末尾几块包进一个 `break-inside: avoid` 容器
-  （会动到当时的全部 18 个模板，本次未做；2026-10-21 A10 后为 20 类）。
+  （会动到当时的全部 18 个模板，本次未做；2026-10-21 A10 后为 23 类）。
 
 ## 十、单证内容版本（2026-10-20 新增 · TODO A1）
 
@@ -590,13 +614,13 @@ PI 的「卖方税号 + 买方电话」即来自这一层（样例：`91131125MA
 才随块显示 `valid_until`；「只有有效期、没有其它 P2 信息」时 PI 不渲染它（真实单据一定带包装/生产/签章信息）。
 该判断在 `render.ts::preprocessData` 的 `piExtrasEnabled`。
 
-### 11.10 派生占位符 / 表单过滤 / 金标（25 份）
+### 11.10 派生占位符 / 表单过滤 / 金标（28 份）
 
 - **派生占位符**（渲染器生成整块 HTML，**不要手填**，`manifest.json` 里声明只为占位符检查）：
   `fx_block`（A6-1）、`contract_clauses_block`、`ci_bank_block`、`ci_parties_block`。
   已加入 `render.ts::DERIVED_PLACEHOLDERS` 与 `custom-fields.ts::RENDERER_DERIVED_FIELDS`
   ⇒ 「填写单据内容」表单不显示这些输入框，`pnpm -C frontend trade-doc:check` 也不报未声明。
-- **金标 20 → 25**（`frontend/src/lib/trade-doc/__fixtures__/html/`）：
+- **金标 20 → 28**（`frontend/src/lib/trade-doc/__fixtures__/html/`）：
   - 18 份单币种基线**逐字节不变**；
   - 2 份 FX 金标（`sample_pi_fx.html` / `sample_ci_fx.html`）**重生成**：其样例数据本就有
     `tel` 与结构化 `bank_info`，A6 P1 渲染生效后多了电话行 / CI 银行块（属预期变化，非回归）；
@@ -605,5 +629,8 @@ PI 的「卖方税号 + 买方电话」即来自这一层（样例：`91131125MA
   - **A10 P1 新增 2 份**：`sample_beneficiary_decl.html`、`sample_saso_coc.html`
     （数据 `sample-data-a10.json`，生成器 `__fixtures__/generate-a10-fixtures.ts`；
     与 18 类主基线/`sample-data.json` 分开，不改归档 Python 渲染器的复验口径）。
+  - **A10 P2 新增 3 份**：`sample_vessel_cert.html`、`sample_export_license.html`、`sample_ciq.html`
+    （数据 `sample-data-a10p2.json`，生成器 `__fixtures__/generate-a10p2-fixtures.ts`；
+    同理与主基线/既有变体分开）。
 - **回归**：`__tests__/render.test.ts` 的「A6 剩余 P1」describe 共 **7 条**（三份变体逐字节、
   G7/G8/G9/G10/G11/G12 各 1 条，含"旧数据不渲染/不改变"的负向断言）。

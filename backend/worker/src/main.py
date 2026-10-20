@@ -3260,6 +3260,8 @@ DOC_TYPE_PREFIX = {
     # 第三方签发
     "bl": "BL", "co": "CO", "insurance": "INS",
     "customs_declaration": "CD", "fumigation_cert": "FUM", "saso_coc": "COC",
+    # A10 P2：船公司证明 VC / 出口许可证 EL / 商检证书 CIQ
+    "vessel_cert": "VC", "export_license": "EL", "ciq": "CIQ",
     # 通用与其它单据
     "other": "DOC", "order": "ORD", "shipment": "SHP",
 }
@@ -4139,7 +4141,7 @@ async def list_receivables(request: Request, status: str = None,
 
 # ── 阶段 6 任务2：外贸票据工位 + shipment.documented 事件 ──────────────────
 
-# 20 类单证（与前端模板清单及 dev domain/enums.DOC_TYPE 三方一致，
+# 23 类单证（与前端模板清单及 dev domain/enums.DOC_TYPE 三方一致，
 # 由 scripts/contracts-check.ts 的 R3 规则校验）
 DOC_TYPE_SET = (
     # 出口商自制
@@ -4148,7 +4150,7 @@ DOC_TYPE_SET = (
     "non_wood_packing", "weight_list", "quality_cert", "manufacturer_cert",
     # 第三方签发
     "bl", "co", "insurance", "customs_declaration", "fumigation_cert",
-    "saso_coc",
+    "saso_coc", "vessel_cert", "export_license", "ciq",
     # 通用
     "other",
 )
