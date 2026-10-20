@@ -8,6 +8,8 @@ const nextConfig = {
   // 于是"构建门禁"在某些时刻根本跑不起来。换目录即可并存，不必停别人的 dev。
   distDir: process.env.NEXT_DIST_DIR || ".next",
   reactStrictMode: true,
+  // 本地预览不显示 Next dev 指示器：它固定在左下角，会压在侧栏上（2026-10-20 用户反馈）。
+  devIndicators: false,
   // Next 15.5+：typedRoutes 从 experimental 提升为顶层选项（Next 16 仍支持）
   typedRoutes: true,
   // Cloudflare deploy: static export (assets-only Worker). Rewrites only apply

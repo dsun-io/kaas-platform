@@ -85,7 +85,7 @@ export function Header() {
   const isFree = user?.plan === "free";
 
   return (
-    <header className="glass sticky top-0 z-10 flex h-14 items-center gap-3 border-b px-4 md:px-6">
+    <header className="glass-bar sticky top-3 z-20 mx-3 flex h-14 items-center gap-3 rounded-2xl px-4 md:px-5">
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
@@ -119,6 +119,12 @@ export function Header() {
         </BreadcrumbList>
       </Breadcrumb>
       <div className="ml-auto" />
+      {!snapshot.loading && teamName && (
+        <span className="hidden items-center gap-1.5 rounded-full border border-white/70 bg-white/60 px-2.5 py-1 text-xs text-muted-foreground md:inline-flex">
+          <Users className="size-3" />
+          {teamName}
+        </span>
+      )}
       {user ? (
         <DropdownMenu>
           <DropdownMenuTrigger className="cursor-pointer rounded-full transition-shadow hover:shadow-md">
@@ -180,7 +186,7 @@ export function Header() {
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={logout}
-              className="cursor-pointer text-red-600 focus:text-red-600"
+              className="cursor-pointer text-destructive focus:text-destructive"
             >
               <LogOut className="mr-2 size-4" />
               退出登录

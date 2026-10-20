@@ -59,7 +59,9 @@ test.describe('Customers', () => {
       .click();
 
     await page.getByRole('button', { name: '更新阶段' }).click();
-    await page.locator('select').last().selectOption('inactive');
+    // 2026-10-20：原生 <select> 已换成统一 Select（base-ui），按可访问名操作
+    await page.getByRole('combobox', { name: '客户阶段' }).click();
+    await page.getByRole('option', { name: '沉寂' }).click();
     await page.getByRole('button', { name: '保存阶段' }).click();
 
     // 保存后详情面板阶段徽章应为「沉寂」

@@ -15,9 +15,39 @@ import {
   SectionCard,
   EmptyState,
 } from "@/components/shared";
-import { Plus, Search, UserPlus } from "lucide-react";
-import { CustomerRecordsTree } from "./components/customer-records-tree";
+import {
+  Plus,
+  Search,
+  UserPlus,
+  ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  X,
+} from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { NumberEditDialog } from "@/components/shared/number-edit-dialog";
+import { useCustomerRecords } from "@/lib/customer/use-customer-records";
+import {
+  EMPTY_CUSTOMER_RECORDS,
+  type RecordQuote,
+} from "@/lib/customer/customer-records";
+import {
+  InquiryFollowup,
+  UnlinkedRecords,
+} from "./components/inquiry-followups";
 
 // 客户阶段（2026-10-18 用户口径）：只有三种。
 // active / inactive 是手动状态；ordered 由「开启中的订单」自动推导，不可手选。
@@ -155,9 +185,8 @@ function errMsg(e: unknown): string {
 
 /** 删除客户 409（有开启中的订单）时，把订单清单也带出来给用户看。 */
 function deleteConflictMessage(e: unknown): string | null {
-  const detail = (
-    e as { response?: { data?: { detail?: unknown } } }
-  )?.response?.data?.detail;
+  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response
+    ?.data?.detail;
   if (!detail || typeof detail !== "object") return null;
   const obj = detail as {
     code?: string;
@@ -251,9 +280,7 @@ function CustomerForm({
 
   const handleSubmit = async () => {
     if (!identityOk) {
-      setError(
-        isEdit ? "公司名称不能为空" : "公司名称和联系人至少填写一个",
-      );
+      setError(isEdit ? "公司名称不能为空" : "公司名称和联系人至少填写一个");
       return;
     }
     setIsPending(true);
@@ -292,9 +319,7 @@ function CustomerForm({
     <div className="space-y-3">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input
-          placeholder={
-            isEdit ? "公司名称 *" : "公司名称（与联系人至少填一个）"
-          }
+          placeholder={isEdit ? "公司名称 *" : "公司名称（与联系人至少填一个）"}
           value={form.company_name}
           onChange={set("company_name")}
         />
@@ -355,7 +380,7 @@ function CustomerForm({
         />
       </div>
       <Input placeholder="备注" value={form.notes} onChange={set("notes")} />
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && <p className="text-sm text-destructive">{error}</p>}
       <div className="flex gap-2">
         <Button onClick={handleSubmit} disabled={!identityOk || isPending}>
           {isPending
@@ -463,7 +488,7 @@ function InquiryForm({
         onChange={set("application")}
       />
       <Input placeholder="备注" value={form.notes} onChange={set("notes")} />
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && <p className="text-sm text-destructive">{error}</p>}
       <div className="flex gap-2">
         <Button onClick={handleSubmit} disabled={isPending}>
           {isPending ? "提交中…" : "添加询盘"}
@@ -596,7 +621,7 @@ function ContactForm({
         />
         主要联系人
       </label>
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && <p className="text-sm text-destructive">{error}</p>}
       <div className="flex gap-2">
         <Button onClick={handleSubmit} disabled={!form.name || isPending}>
           {isPending ? "提交中…" : isEdit ? "保存联系人" : "添加联系人"}
@@ -647,14 +672,21 @@ function StageUpdate({
 
   return (
     <div className="space-y-3">
-      <select
+      <Select
         value={stage}
-        onChange={(e) => setStage(e.target.value)}
-        className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+        onValueChange={(value) => setStage(value as "active" | "inactive")}
       >
-        <option value="active">活跃</option>
-        <option value="inactive">沉寂</option>
-      </select>
+        <SelectTrigger
+          className="h-10 w-full rounded-xl border-white/70 bg-white/80"
+          aria-label="客户阶段"
+        >
+          <SelectValue placeholder="选择客户阶段" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="active">活跃</SelectItem>
+          <SelectItem value="inactive">沉寂</SelectItem>
+        </SelectContent>
+      </Select>
       <p className="text-xs text-muted-foreground">
         「已下单」由开启中的订单自动推导，无需手动设置；「流失」属于订单阶段，
         不在客户阶段里。
@@ -664,7 +696,7 @@ function StageUpdate({
         value={reason}
         onChange={(e) => setReason(e.target.value)}
       />
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && <p className="text-sm text-destructive">{error}</p>}
       <div className="flex gap-2">
         <Button onClick={handleUpdate} disabled={isPending}>
           {isPending ? "更新中…" : "保存阶段"}
@@ -711,10 +743,10 @@ function DeleteCustomer({
   return (
     <div className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
       <p className="text-sm">
-        确认删除客户「{customer.company_name}」？列表里将不再显示，历史报价/订单/单证
-        仍保留引用。
+        确认删除客户「{customer.company_name}
+        」？列表里将不再显示，历史报价/订单/单证 仍保留引用。
       </p>
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && <p className="text-sm text-destructive">{error}</p>}
       <div className="flex gap-2">
         <Button
           variant="destructive"
@@ -756,7 +788,30 @@ function CustomerDetailPanel({
   const [inquiryNoEdit, setInquiryNoEdit] = useState<Inquiry | null>(null);
   const [inquiryNoPending, setInquiryNoPending] = useState(false);
   const [inquiryNoError, setInquiryNoError] = useState<string | null>(null);
+  const [expandedInquiries, setExpandedInquiries] = useState<
+    Record<number, boolean>
+  >({});
   const qc = useQueryClient();
+
+  // 询盘 → 后续单据：records 接口的 quotes[].inquiry_id 是唯一关联依据。
+  const recordsQuery = useCustomerRecords(customer.id);
+  const recordsResult = recordsQuery.data;
+  const records = recordsResult?.records ?? EMPTY_CUSTOMER_RECORDS;
+  const recordsLoading = recordsQuery.isLoading;
+  const recordsUnavailable =
+    recordsQuery.isError || (recordsResult !== undefined && !recordsResult.ok);
+  const quotesByInquiry = new Map<number, RecordQuote[]>();
+  for (const quote of records.quotes) {
+    if (quote.inquiry_id == null) continue;
+    const list = quotesByInquiry.get(quote.inquiry_id) ?? [];
+    list.push(quote);
+    quotesByInquiry.set(quote.inquiry_id, list);
+  }
+  const unlinkedQuotes = records.quotes.filter(
+    (quote) => quote.inquiry_id == null,
+  );
+  const toggleInquiry = (id: number) =>
+    setExpandedInquiries((prev) => ({ ...prev, [id]: !(prev[id] ?? false) }));
 
   const handleInquiryNoSave = async (value: string) => {
     if (!inquiryNoEdit) return;
@@ -792,9 +847,7 @@ function CustomerDetailPanel({
 
   const handleDeleteContact = async (contactId: number) => {
     try {
-      await apiClient.delete(
-        `/customers/${customer.id}/contacts/${contactId}`,
-      );
+      await apiClient.delete(`/customers/${customer.id}/contacts/${contactId}`);
       setConfirmDeleteContactId(null);
       qc.invalidateQueries({
         queryKey: ["customers", "detail", customer.id],
@@ -812,366 +865,490 @@ function CustomerDetailPanel({
   ];
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle>{customer.company_name}</CardTitle>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            关闭
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent
+        showCloseButton={false}
+        className="flex max-h-[88vh] w-[min(1080px,calc(100vw-2rem))] max-w-none flex-col gap-0 overflow-hidden rounded-2xl border border-white/60 bg-white/85 p-0 shadow-[0_30px_80px_-30px_rgba(15,23,42,0.45)] backdrop-blur-2xl sm:max-w-none"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-border/70 px-6 py-4">
+          <div className="min-w-0">
+            <DialogTitle className="truncate text-lg font-semibold">
+              {customer.company_name}
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-xs text-muted-foreground">
+              客户详情 · {stageLabel(detail?.stage ?? customer.stage)}
+            </DialogDescription>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onClose}
+            aria-label="关闭客户详情"
+          >
+            <X className="size-4" />
           </Button>
         </div>
-      </CardHeader>
-      <CardContent>
-        {isLoading && <p className="text-sm text-muted-foreground">加载中…</p>}
-        {detail && (
-          <div>
-            <div className="flex gap-2 border-b mb-4">
-              {tabs.map((tab) => (
-                <Button
-                  key={tab.key}
-                  variant="ghost"
-                  className={`rounded-none border-b-2 border-transparent px-4 pb-2 ${activeTab === tab.key ? "border-primary font-medium" : ""}`}
-                  onClick={() => setActiveTab(tab.key)}
-                >
-                  {tab.label}
-                </Button>
-              ))}
-            </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+          {isLoading && (
+            <p className="text-sm text-muted-foreground">加载中…</p>
+          )}
+          {detail && (
+            <div>
+              <div className="sticky -top-4 z-10 -mx-6 mb-4 flex gap-1 border-b border-border/70 bg-white/80 px-6 backdrop-blur">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`relative h-10 px-3 text-sm transition-colors ${
+                      activeTab === tab.key
+                        ? "font-medium text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
 
-            {activeTab === "info" && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">国家：</span>
-                    <span className="ml-1">{detail.country ?? "-"}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">信用等级：</span>
-                    <span className="ml-1">{detail.credit_level ?? "-"}</span>
-                  </div>
-                  <div className="col-span-2">
-                    <span className="text-muted-foreground">地址：</span>
-                    <span className="ml-1">{detail.address ?? "-"}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">默认港口：</span>
-                    <span className="ml-1">{detail.default_port ?? "-"}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">阶段：</span>
-                    <StatusBadge
-                      tone={STAGE_TONES[detail.stage] ?? "default"}
-                      className="ml-1"
-                    >
-                      {stageLabel(detail.stage)}
-                    </StatusBadge>
-                    {detail.stage === "ordered" && (
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        由开启中的订单自动推导
-                      </span>
+              {activeTab === "info" && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">国家：</span>
+                      <span className="ml-1">{detail.country ?? "-"}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">信用等级：</span>
+                      <span className="ml-1">{detail.credit_level ?? "-"}</span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-muted-foreground">地址：</span>
+                      <span className="ml-1">{detail.address ?? "-"}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">默认港口：</span>
+                      <span className="ml-1">{detail.default_port ?? "-"}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">阶段：</span>
+                      <StatusBadge
+                        tone={STAGE_TONES[detail.stage] ?? "default"}
+                        className="ml-1"
+                      >
+                        {stageLabel(detail.stage)}
+                      </StatusBadge>
+                      {detail.stage === "ordered" && (
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          由开启中的订单自动推导
+                        </span>
+                      )}
+                    </div>
+                    {detail.notes && (
+                      <div className="col-span-2">
+                        <span className="text-muted-foreground">备注：</span>
+                        <span className="ml-1">{detail.notes}</span>
+                      </div>
                     )}
                   </div>
-                  {detail.notes && (
-                    <div className="col-span-2">
-                      <span className="text-muted-foreground">备注：</span>
-                      <span className="ml-1">{detail.notes}</span>
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowEditForm(true)}
-                  >
-                    编辑档案
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowStageUpdate(true)}
-                  >
-                    更新阶段
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => setShowDelete(true)}
-                  >
-                    删除客户
-                  </Button>
-                </div>
-                {showEditForm && (
-                  <CustomerForm
-                    initial={customer}
-                    onCreated={(raw) => {
-                      setShowEditForm(false);
-                      onUpdated(raw);
-                    }}
-                    onClose={() => setShowEditForm(false)}
-                  />
-                )}
-                {showStageUpdate && (
-                  <StageUpdate
-                    customer={customer}
-                    onClose={() => setShowStageUpdate(false)}
-                  />
-                )}
-                {showDelete && (
-                  <DeleteCustomer
-                    customer={customer}
-                    onClose={() => setShowDelete(false)}
-                    onDeleted={onClose}
-                  />
-                )}
-              </div>
-            )}
-
-            {activeTab === "contacts" && (
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">
-                    {detail?.contacts?.length ?? 0} 位联系人
-                  </span>
-                  <Button size="sm" onClick={() => setShowContactForm(true)}>
-                    <Plus className="size-4 mr-1" />
-                    添加联系人
-                  </Button>
-                </div>
-                {showContactForm && (
-                  <ContactForm
-                    customerId={customer.id}
-                    onClose={() => setShowContactForm(false)}
-                  />
-                )}
-                {editingContact && (
-                  <ContactForm
-                    customerId={customer.id}
-                    initial={editingContact}
-                    onClose={() => setEditingContact(null)}
-                  />
-                )}
-                <div className="space-y-2">
-                  {detail?.contacts?.length === 0 && (
-                    <p className="text-sm text-muted-foreground">暂无联系人</p>
-                  )}
-                  {detail?.contacts?.map((c) => (
-                    <div
-                      key={c.id}
-                      className="rounded-lg border bg-card p-4 shadow-[var(--shadow-xs)] transition-shadow hover:shadow-[var(--shadow-sm)]"
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowEditForm(true)}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="font-medium text-sm">
-                            {c.name}
-                            {c.is_primary && (
-                              <Badge variant="default" className="ml-2">
-                                主要
-                              </Badge>
-                            )}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {c.position && `${c.position} · `}
-                            {c.phone && `${c.phone} · `}
-                            {c.email && `${c.email} · `}
-                            {c.whatsapp && `WA: ${c.whatsapp}`}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setEditingContact(c)}
-                          >
-                            编辑
-                          </Button>
-                          {confirmDeleteContactId === c.id ? (
-                            <>
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => handleDeleteContact(c.id)}
-                              >
-                                确认删除
-                              </Button>
+                      编辑档案
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowStageUpdate(true)}
+                    >
+                      更新阶段
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setShowDelete(true)}
+                    >
+                      删除客户
+                    </Button>
+                  </div>
+                  {showEditForm && (
+                    <CustomerForm
+                      initial={customer}
+                      onCreated={(raw) => {
+                        setShowEditForm(false);
+                        onUpdated(raw);
+                      }}
+                      onClose={() => setShowEditForm(false)}
+                    />
+                  )}
+                  {showStageUpdate && (
+                    <StageUpdate
+                      customer={customer}
+                      onClose={() => setShowStageUpdate(false)}
+                    />
+                  )}
+                  {showDelete && (
+                    <DeleteCustomer
+                      customer={customer}
+                      onClose={() => setShowDelete(false)}
+                      onDeleted={onClose}
+                    />
+                  )}
+                </div>
+              )}
+
+              {activeTab === "contacts" && (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">
+                      {detail?.contacts?.length ?? 0} 位联系人
+                    </span>
+                    <Button size="sm" onClick={() => setShowContactForm(true)}>
+                      <Plus className="size-4 mr-1" />
+                      添加联系人
+                    </Button>
+                  </div>
+                  {showContactForm && (
+                    <ContactForm
+                      customerId={customer.id}
+                      onClose={() => setShowContactForm(false)}
+                    />
+                  )}
+                  {editingContact && (
+                    <ContactForm
+                      customerId={customer.id}
+                      initial={editingContact}
+                      onClose={() => setEditingContact(null)}
+                    />
+                  )}
+                  <div className="space-y-2">
+                    {detail?.contacts?.length === 0 && (
+                      <p className="text-sm text-muted-foreground">
+                        暂无联系人
+                      </p>
+                    )}
+                    {detail?.contacts?.map((c) => (
+                      <div
+                        key={c.id}
+                        className="rounded-lg border bg-card p-4 shadow-[var(--shadow-xs)] transition-shadow hover:shadow-[var(--shadow-sm)]"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="font-medium text-sm">
+                              {c.name}
+                              {c.is_primary && (
+                                <Badge variant="default" className="ml-2">
+                                  主要
+                                </Badge>
+                              )}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {c.position && `${c.position} · `}
+                              {c.phone && `${c.phone} · `}
+                              {c.email && `${c.email} · `}
+                              {c.whatsapp && `WA: ${c.whatsapp}`}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setEditingContact(c)}
+                            >
+                              编辑
+                            </Button>
+                            {confirmDeleteContactId === c.id ? (
+                              <>
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => handleDeleteContact(c.id)}
+                                >
+                                  确认删除
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    setConfirmDeleteContactId(null)
+                                  }
+                                >
+                                  取消
+                                </Button>
+                              </>
+                            ) : (
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => setConfirmDeleteContactId(null)}
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => setConfirmDeleteContactId(c.id)}
                               >
-                                取消
+                                删除
                               </Button>
-                            </>
-                          ) : (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() => setConfirmDeleteContactId(c.id)}
-                            >
-                              删除
-                            </Button>
-                          )}
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {activeTab === "inquiries" && (
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">
-                    {detail?.inquiries?.length ?? 0} 条询盘
-                  </span>
-                  <Button size="sm" onClick={() => setShowInquiryForm(true)}>
-                    <Plus className="size-4 mr-1" />
-                    添加询盘
-                  </Button>
-                </div>
-                {showInquiryForm && (
-                  <InquiryForm
-                    customerId={customer.id}
-                    onClose={() => setShowInquiryForm(false)}
-                  />
-                )}
-                <div className="space-y-2">
-                  {detail?.inquiries?.length === 0 && (
-                    <p className="text-sm text-muted-foreground">暂无询盘</p>
-                  )}
-                  {detail?.inquiries?.map((inq) => (
-                    <div
-                      key={inq.id}
-                      className="rounded-lg border bg-card p-4 shadow-[var(--shadow-xs)]"
-                    >
-                      <div className="flex items-center justify-between">
-                        <p className="font-medium text-sm">
-                          {inq.inquiry_no && (
-                            <span className="mr-2 font-mono text-xs text-muted-foreground">
-                              {inq.inquiry_no}
-                            </span>
-                          )}
-                          {inq.product_name_raw ?? `询盘 #${inq.id}`}
-                        </p>
-                        <div className="flex items-center gap-2">
-                          {inq.inquiry_no_editable && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 px-2 text-xs"
-                              onClick={() => {
-                                setInquiryNoError(null);
-                                setInquiryNoEdit(inq);
-                              }}
-                            >
-                              改编号
-                            </Button>
-                          )}
-                          <Link
-                            href={`/quotes?tab=product&customer_id=${customer.id}&inquiry_id=${inq.id}`}
-                            className="text-xs text-primary hover:underline"
-                          >
-                            为此询盘报价 →
-                          </Link>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 px-2 text-xs"
-                            onClick={() => toggleInquiryClosed(inq)}
-                          >
-                            {inq.status === "closed" ? "重新打开询盘" : "关闭询盘"}
-                          </Button>
-                          <StatusBadge
-                            tone={
-                              inq.status === "quoted"
-                                ? "success"
-                                : inq.status === "closed"
-                                  ? "danger"
-                                  : "default"
-                            }
-                          >
-                            {INQUIRY_STATUS_LABELS[inq.status] ?? inq.status}
-                          </StatusBadge>
-                        </div>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {inq.channel && `${inq.channel} · `}
-                        {inq.quantity != null &&
-                          `${inq.quantity} ${inq.quantity_unit ?? ""} · `}
-                        {inq.application && `${inq.application} · `}
-                        {new Date(inq.created_at).toLocaleDateString()}
+              {activeTab === "inquiries" && (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium">
+                        {detail?.inquiries?.length ?? 0} 条询盘
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        每条询盘下按「报价单 → 订单 → 单证」展示后续进度
                       </p>
                     </div>
-                  ))}
-                  <NumberEditDialog
-                    open={inquiryNoEdit !== null}
-                    onOpenChange={(open) => {
-                      if (!open) setInquiryNoEdit(null);
-                    }}
-                    title="修改询盘编号"
-                    label="询盘编号"
-                    currentValue={inquiryNoEdit?.inquiry_no ?? ""}
-                    description="询盘编号默认自动生成；生成报价单之前可以修改。"
-                    warning="确认后编号会立即生效。一旦用该询盘生成报价单，编号将自动锁定，不能再改。"
-                    pending={inquiryNoPending}
-                    error={inquiryNoError}
-                    onConfirm={handleInquiryNoSave}
-                  />
+                    <Button size="sm" onClick={() => setShowInquiryForm(true)}>
+                      <Plus className="mr-1 size-4" />
+                      添加询盘
+                    </Button>
+                  </div>
+
+                  {showInquiryForm && (
+                    <InquiryForm
+                      customerId={customer.id}
+                      onClose={() => setShowInquiryForm(false)}
+                    />
+                  )}
+
+                  <div className="space-y-3">
+                    {detail?.inquiries?.length === 0 && (
+                      <EmptyState
+                        title="暂无询盘"
+                        description="询盘是报价与单据的起点：先添加询盘，再生成报价单。"
+                        action={
+                          <Button
+                            size="sm"
+                            onClick={() => setShowInquiryForm(true)}
+                          >
+                            <Plus className="mr-1 size-4" />
+                            添加询盘
+                          </Button>
+                        }
+                      />
+                    )}
+
+                    {detail?.inquiries?.map((inq) => {
+                      const linkedQuotes = quotesByInquiry.get(inq.id) ?? [];
+                      const orderCount = linkedQuotes.reduce(
+                        (sum, quote) => sum + quote.orders.length,
+                        0,
+                      );
+                      const docCount = linkedQuotes.reduce(
+                        (sum, quote) =>
+                          sum +
+                          quote.documents.length +
+                          quote.orders.reduce(
+                            (n, order) => n + order.documents.length,
+                            0,
+                          ),
+                        0,
+                      );
+                      const expanded = expandedInquiries[inq.id] ?? false;
+                      const summary =
+                        linkedQuotes.length > 0
+                          ? `${linkedQuotes.length} 张报价单 · ${orderCount} 个订单 · ${docCount} 份单证`
+                          : recordsLoading
+                            ? "正在读取后续单据…"
+                            : "尚未报价";
+                      return (
+                        <div
+                          key={inq.id}
+                          className="rounded-xl border border-border/70 bg-white/70 p-4"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                {inq.inquiry_no && (
+                                  <span className="font-mono text-xs text-muted-foreground">
+                                    {inq.inquiry_no}
+                                  </span>
+                                )}
+                                <span className="text-sm font-medium">
+                                  {inq.product_name_raw ?? `询盘 #${inq.id}`}
+                                </span>
+                                <StatusBadge
+                                  tone={
+                                    inq.status === "quoted"
+                                      ? "info"
+                                      : inq.status === "closed"
+                                        ? "danger"
+                                        : "default"
+                                  }
+                                  className="h-5 px-2 text-[11px]"
+                                >
+                                  {INQUIRY_STATUS_LABELS[inq.status] ??
+                                    inq.status}
+                                </StatusBadge>
+                              </div>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {[
+                                  inq.channel,
+                                  inq.quantity != null
+                                    ? `${inq.quantity} ${inq.quantity_unit ?? ""}`
+                                    : null,
+                                  inq.application,
+                                  new Date(inq.created_at).toLocaleDateString(),
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1">
+                              {inq.inquiry_no_editable && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2 text-xs"
+                                  onClick={() => {
+                                    setInquiryNoError(null);
+                                    setInquiryNoEdit(inq);
+                                  }}
+                                >
+                                  改编号
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => toggleInquiryClosed(inq)}
+                              >
+                                {inq.status === "closed" ? "重新打开" : "关闭"}
+                              </Button>
+                              <Link
+                                href={`/quotes?tab=product&customer_id=${customer.id}&inquiry_id=${inq.id}`}
+                                className="inline-flex h-7 items-center rounded-lg border border-border bg-white/70 px-2.5 text-xs font-medium text-primary transition-colors hover:bg-white"
+                              >
+                                {inq.status === "quoted"
+                                  ? "重新报价 →"
+                                  : "为此询盘报价 →"}
+                              </Link>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2.5">
+                            <span className="text-xs text-muted-foreground">
+                              {summary}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => toggleInquiry(inq.id)}
+                              aria-expanded={expanded}
+                              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                            >
+                              {expanded ? "收起后续" : "展开后续"}
+                              {expanded ? (
+                                <ChevronUp className="size-3.5" />
+                              ) : (
+                                <ChevronDown className="size-3.5" />
+                              )}
+                            </button>
+                          </div>
+
+                          {expanded && (
+                            <div className="mt-3">
+                              <InquiryFollowup
+                                quotes={linkedQuotes}
+                                loading={recordsLoading}
+                                unavailable={recordsUnavailable}
+                                onRetry={() => void recordsQuery.refetch()}
+                                emptyText={
+                                  inq.status === "quoted"
+                                    ? "该询盘已标记为「已报价」，但暂时没有找到关联的报价单。"
+                                    : "该询盘还没有报价单。"
+                                }
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    <UnlinkedRecords
+                      quotes={unlinkedQuotes}
+                      orders={records.direct.orders}
+                      documents={records.direct.documents}
+                      loading={recordsLoading}
+                      unavailable={recordsUnavailable}
+                      onRetry={() => void recordsQuery.refetch()}
+                    />
+
+                    <NumberEditDialog
+                      open={inquiryNoEdit !== null}
+                      onOpenChange={(open) => {
+                        if (!open) setInquiryNoEdit(null);
+                      }}
+                      title="修改询盘编号"
+                      label="询盘编号"
+                      currentValue={inquiryNoEdit?.inquiry_no ?? ""}
+                      description="询盘编号默认自动生成；生成报价单之前可以修改。"
+                      warning="确认后编号会立即生效。一旦用该询盘生成报价单，编号将自动锁定，不能再改。"
+                      pending={inquiryNoPending}
+                      error={inquiryNoError}
+                      onConfirm={handleInquiryNoSave}
+                    />
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {activeTab === "history" && (
-              <div className="space-y-2">
-                {detail?.stage_log?.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">暂无历史记录</p>
-                ) : (
-                  detail?.stage_log?.map((log) => (
-                    <div
-                      key={log.id}
-                      className="rounded-lg border bg-card p-4 text-sm shadow-[var(--shadow-xs)]"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span>
-                          {log.from_stage ? stageLabel(log.from_stage) : "创建"}
-                          {" -> "}
-                          {stageLabel(log.to_stage)}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(log.created_at).toLocaleString()}
-                        </span>
+              {activeTab === "history" && (
+                <div className="space-y-2">
+                  {detail?.stage_log?.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      暂无历史记录
+                    </p>
+                  ) : (
+                    detail?.stage_log?.map((log) => (
+                      <div
+                        key={log.id}
+                        className="rounded-lg border bg-card p-4 text-sm shadow-[var(--shadow-xs)]"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span>
+                            {log.from_stage
+                              ? stageLabel(log.from_stage)
+                              : "创建"}
+                            {" -> "}
+                            {stageLabel(log.to_stage)}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(log.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                        {log.reason && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {log.reason}
+                          </p>
+                        )}
                       </div>
-                      {log.reason && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {log.reason}
-                        </p>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-
-            {/*
-              往来记录：与该客户的「信息 / 联系人 / 询盘 / 历史」并列的一块，
-              刻意**不塞进 tab** —— 它是"这个客户发生过什么"的主视图，
-              藏在 tab 里会让"客户名下有哪些报价/订单/单证"变得不容易发现。
-              自成一块的好处是：接口还没上线时，只有这一块降级，
-              上面的 tab 内容照常可用（设计文档 §1.6 / §4）。
-            */}
-            <div className="mt-6 border-t pt-4">
-              <CustomerRecordsTree
-                customerId={customer.id}
-                customerName={customer.company_name}
-              />
+                    ))
+                  )}
+                </div>
+              )}
             </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1214,56 +1391,128 @@ export default function CustomersPage() {
         </Card>
       )}
 
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <Search className="size-4 text-muted-foreground" />
+      <Card className="overflow-hidden rounded-2xl border-white/70 bg-white/80 shadow-[0_1px_2px_rgba(16,24,40,0.04),0_16px_40px_-24px_rgba(23,30,60,0.18)] backdrop-blur-xl">
+        <div className="flex flex-wrap items-center gap-3 border-b border-border/70 px-5 py-4">
+          <div className="relative w-full max-w-xs">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="搜索客户…"
               value={searchQ}
               onChange={(e) => setSearchQ(e.target.value)}
-              className="max-w-sm"
+              className="h-9 rounded-full border-white/70 bg-white/80 pl-9"
             />
           </div>
-        </CardHeader>
-        <CardContent>
-          {isLoading && (
-            <p className="text-sm text-muted-foreground">加载中…</p>
-          )}
-          {!isLoading && listData?.items?.length === 0 && (
-            <p className="text-sm text-muted-foreground">暂无客户</p>
-          )}
-          <div className="space-y-2">
-            {listData?.items?.map((c) => (
+          <div className="ml-auto text-xs text-muted-foreground">
+            共 {listData?.items?.length ?? 0} 家客户
+          </div>
+        </div>
+
+        {isLoading ? (
+          <div>
+            {[0, 1, 2].map((i) => (
               <div
-                key={c.id}
-                data-testid="customer-card"
-                className="rounded-lg border bg-card p-4 cursor-pointer transition-all hover:shadow-[var(--shadow-md)] hover:border-primary/20"
-                onClick={() => setSelectedCustomer(c)}
+                key={i}
+                className="flex items-center gap-4 border-b border-border/60 px-5 py-4 last:border-0"
               >
-                <div className="flex items-center justify-between">
-                  <p className="font-medium text-sm">{c.company_name}</p>
-                  <StatusBadge tone={STAGE_TONES[c.stage] ?? "default"}>
-                    {stageLabel(c.stage)}
-                  </StatusBadge>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {c.country && `${c.country} · `}
-                  {c.default_port && `${c.default_port} · `}
-                  更新于 {new Date(c.updated_at).toLocaleDateString()}
-                </p>
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="ml-auto h-5 w-14 rounded-full" />
               </div>
             ))}
           </div>
-        </CardContent>
+        ) : listData?.items?.length === 0 ? (
+          <div className="px-6 py-14">
+            <EmptyState
+              title="暂无客户"
+              description="新建第一个客户后，这里会显示跟进阶段与联系方式。"
+              action={
+                <Button onClick={() => setShowCreateForm(true)}>
+                  <UserPlus className="mr-1 size-4" />
+                  新建客户
+                </Button>
+              }
+            />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border/70 bg-white/50 text-left text-xs text-muted-foreground">
+                  <th scope="col" className="px-5 py-3 font-medium">
+                    客户
+                  </th>
+                  <th scope="col" className="px-4 py-3 font-medium">
+                    国家 · 港口
+                  </th>
+                  <th scope="col" className="px-4 py-3 font-medium">
+                    阶段
+                  </th>
+                  <th scope="col" className="px-4 py-3 font-medium">
+                    最近更新
+                  </th>
+                  <th scope="col" className="px-5 py-3 text-right font-medium">
+                    操作
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {listData?.items?.map((c) => (
+                  <tr
+                    key={c.id}
+                    data-testid="customer-card"
+                    tabIndex={0}
+                    aria-label={`查看客户 ${c.company_name}`}
+                    className="group cursor-pointer border-b border-border/60 transition-colors last:border-0 hover:bg-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/30"
+                    onClick={() => setSelectedCustomer(c)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setSelectedCustomer(c);
+                      }
+                    }}
+                  >
+                    <td className="px-5 py-3.5">
+                      <p className="font-medium text-foreground">
+                        {c.company_name}
+                      </p>
+                      {c.abbr && (
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {c.abbr}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3.5 text-muted-foreground">
+                      {[c.country, c.default_port]
+                        .filter(Boolean)
+                        .join(" · ") || "—"}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <StatusBadge tone={STAGE_TONES[c.stage] ?? "default"}>
+                        {stageLabel(c.stage)}
+                      </StatusBadge>
+                    </td>
+                    <td className="px-4 py-3.5 text-muted-foreground">
+                      {new Date(c.updated_at).toLocaleDateString()}
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      <ChevronRight className="ml-auto size-4 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
 
       {selectedCustomer && (
-        <CustomerDetailPanel
-          customer={selectedCustomer}
-          onClose={() => setSelectedCustomer(null)}
-          onUpdated={setSelectedCustomer}
-        />
+        <div className="mt-2">
+          <CustomerDetailPanel
+            customer={selectedCustomer}
+            onClose={() => setSelectedCustomer(null)}
+            onUpdated={setSelectedCustomer}
+          />
+        </div>
       )}
     </div>
   );

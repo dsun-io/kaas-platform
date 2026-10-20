@@ -186,6 +186,7 @@ describe("记录计数与默认展开", () => {
         currency: null,
         total_amount: null,
         created_at: null,
+        inquiry_id: null,
         documents: [],
         orders: [],
       }),
@@ -197,6 +198,7 @@ describe("记录计数与默认展开", () => {
         currency: null,
         total_amount: null,
         created_at: null,
+        inquiry_id: null,
         documents: [],
         orders: [
           {

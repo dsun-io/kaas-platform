@@ -86,9 +86,7 @@ function SidebarNavSkeleton({ collapsed }: { collapsed: boolean }) {
     <div className="flex flex-col gap-4 px-3" aria-hidden="true">
       {[0, 1, 2].map((group) => (
         <div key={group} className="flex flex-col gap-1">
-          {!collapsed && (
-            <Skeleton className="mb-1 h-3 w-12 bg-sidebar-foreground/15" />
-          )}
+          {!collapsed && <Skeleton className="mb-1 h-3 w-12 bg-slate-300/60" />}
           {[0, 1].map((row) => (
             <div
               key={row}
@@ -97,9 +95,9 @@ function SidebarNavSkeleton({ collapsed }: { collapsed: boolean }) {
                 collapsed && "flex-col",
               )}
             >
-              <Skeleton className="size-[18px] rounded-md bg-sidebar-foreground/15" />
+              <Skeleton className="size-[18px] rounded-md bg-slate-300/60" />
               {!collapsed && (
-                <Skeleton className="h-3.5 flex-1 bg-sidebar-foreground/15" />
+                <Skeleton className="h-3.5 flex-1 bg-slate-300/60" />
               )}
             </div>
           ))}
@@ -154,6 +152,9 @@ function SidebarNav({ collapsed }: { collapsed: boolean }) {
                     key={w.key}
                     href={w.route as Route}
                     prefetch={true}
+                    aria-current={active ? "page" : undefined}
+                    aria-label={collapsed ? w.name : undefined}
+                    title={collapsed ? w.name : undefined}
                     className={cn(
                       "nav-item no-underline",
                       active && "active",
@@ -184,39 +185,39 @@ function DesktopSidebar() {
   return (
     <aside
       className={cn(
-        "hidden h-screen flex-col text-sidebar-foreground lg:flex",
-        "border-r border-sidebar-border",
-        collapsed ? "w-[68px]" : "w-[240px]",
+        "glass-panel relative my-3 ml-3 hidden h-[calc(100vh-1.5rem)] shrink-0 flex-col overflow-hidden rounded-[22px] text-sidebar-foreground transition-[width] duration-200 lg:flex",
+        collapsed ? "w-[76px]" : "w-[236px]",
       )}
-      style={{ background: "var(--gradient-sidebar)" }}
     >
       <div
         className={cn(
-          "flex items-center gap-2.5 px-4 pb-6 pt-5",
-          collapsed && "flex-col px-2",
+          "flex items-center gap-2.5 px-4 pb-4 pt-5",
+          collapsed && "flex-col gap-2 px-2",
         )}
       >
         {collapsed ? (
           <img
             src="/assets/brand/logo.png"
             alt="PowerVoy"
-            className="h-8 w-8 shrink-0 rounded-lg"
+            className="h-8 w-8 shrink-0 rounded-lg object-contain"
           />
         ) : (
           <img
-            src="/assets/brand/logo-lockup-white.png"
+            src="/assets/brand/logo-lockup.png"
             alt="PowerVoy 智能报价平台"
-            className="h-8 w-auto shrink-0"
+            className="h-7 w-auto shrink-0"
           />
         )}
         <Button
           variant="ghost"
           size="icon"
           className={cn(
-            "size-7 text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground",
+            "size-7 text-muted-foreground hover:bg-white/80 hover:text-foreground",
             !collapsed && "ml-auto",
           )}
           onClick={() => setCollapsed(!collapsed)}
+          aria-label={collapsed ? "展开侧栏" : "收起侧栏"}
+          aria-expanded={!collapsed}
         >
           <ChevronLeft
             className={cn(
@@ -227,24 +228,15 @@ function DesktopSidebar() {
         </Button>
       </div>
 
-      <div className="flex-1 overflow-y-auto pb-4">
+      <div className="min-h-0 flex-1 overflow-y-auto pb-2">
         <SidebarNav collapsed={collapsed} />
       </div>
-
-      {!collapsed && (
-        <div className="border-t border-sidebar-border px-4 py-3">
-          <p className="text-[10px] text-sidebar-foreground/30">
-            PowerVoy Intel Workstation v1.0
-          </p>
-        </div>
-      )}
     </aside>
   );
 }
 
 function MobileSidebar() {
   const [open, setOpen] = useState(false);
-  const pathname = usePathname();
   const { user } = useAuth();
   const isInternal = user?.account_type === "internal";
 
@@ -252,26 +244,35 @@ function MobileSidebar() {
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger
         render={
-          <Button variant="ghost" size="icon" className="lg:hidden">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="lg:hidden"
+            aria-label="打开导航"
+          >
             <Menu className="h-5 w-5" />
           </Button>
         }
       />
       <SheetContent
         side="left"
-        className="w-[260px] p-0"
-        style={{ background: "var(--gradient-sidebar)" }}
+        className="w-[268px] border-0 bg-white/80 p-0 backdrop-blur-2xl"
       >
-        <div className="flex items-center gap-2.5 border-b border-sidebar-border px-4 py-4">
+        <div className="flex items-center gap-2.5 border-b border-border/70 px-4 py-4">
           <img
-            src="/assets/brand/logo-lockup-white.png"
+            src="/assets/brand/logo-lockup.png"
             alt="PowerVoy 智能报价平台"
-            className="h-8 w-auto"
+            className="h-7 w-auto"
           />
         </div>
         <div className="py-2">
           <SidebarNav collapsed={false} />
         </div>
+        {!isInternal && (
+          <div className="px-4 py-3 text-[11px] text-muted-foreground">
+            客户账号
+          </div>
+        )}
       </SheetContent>
     </Sheet>
   );
@@ -281,16 +282,13 @@ export function Sidebar() {
   return (
     <>
       <DesktopSidebar />
-      <div className="flex items-center border-b bg-card px-3 py-2 lg:hidden">
+      <div className="glass-bar mx-3 mt-3 flex items-center gap-2 rounded-2xl px-3 py-2 lg:hidden">
         <MobileSidebar />
-        <div className="ml-2 flex items-center gap-2">
-          <img
-            src="/assets/brand/logo.png"
-            alt="PowerVoy"
-            className="h-7 w-7 rounded-md"
-          />
-          <span className="text-[15px] font-bold">PowerVoy</span>
-        </div>
+        <img
+          src="/assets/brand/logo-lockup.png"
+          alt="PowerVoy"
+          className="ml-1 h-6 w-auto"
+        />
       </div>
     </>
   );

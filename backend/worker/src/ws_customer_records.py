@@ -43,7 +43,7 @@ async def customer_records(
     async with _acquire(request) as conn:
         customer = await _customer_or_404(conn, customer_id, user)
         quotes = await conn.fetch(
-            "SELECT id, quote_no, status, currency, total_amount, created_at"
+            "SELECT id, quote_no, inquiry_id, status, currency, total_amount, created_at"
             " FROM quote_orders WHERE customer_id=$1 AND tenant_id=$2"
             " ORDER BY created_at DESC",
             customer_id, DEFAULT_TENANT)
