@@ -43,13 +43,14 @@
 > 门禁：worker **1008 passed + 5 skipped** / orchestrator **247** / frontend typecheck 0 ·
 > vitest **474** · lint 0 error / contracts R0–R6 PASS / schema-coverage·drift·runtime-deps·
 > sync-shared PASS / alembic 单 head `202610200003`。
-> **CI 状态（2026-10-20 17:23 实测，仓库转为 public 后）**：四条 workflow 在 head
-> **`617a21f`** 全部绿 —— backend:test ✅（worker 1008+5 / orchestrator 247 / 静态门禁）·
-> contracts:check ✅（R0–R6）· Frontend CI ✅（typecheck/lint/vitest/e2e/build）·
-> preview ✅（Neon 分支/Hyperdrive/迁移/部署/PR 评论全链路）。此前 CI 红的两个原因均已闭环：
-> ① 仓库 private 期间 Actions 秒失败（0 步/无 runner，与代码无关，用户转 public 后消失）；
-> ② preview ensure 的 Neon 423 瞬时并发（rerun 后通过，重试优化仍挂 TODO D7）。
-> 最新 head 之后若再有**纯文档**提交，代码面未变，以 `617a21f` 的绿灯为代码门禁证据。
+> **CI 状态（2026-10-20 最终）**：与 `origin/main` 合并后 head **`ea5f966`**，四条 workflow
+> 全部绿（pull_request 事件）：backend:test ✅（worker 1008+5 / orchestrator 247 / 静态门禁）·
+> contracts:check ✅（R0–R6）· Frontend CI ✅（typecheck/lint/vitest/e2e/build）· preview ✅
+> （Neon 分支/Hyperdrive/迁移/部署/PR 评论全链路）；PR #5 `mergeable_state=clean`。
+> 预览地址：`https://kaas-preview-pr-5.dspro0124.workers.dev`。
+> 此前 CI 红的两个原因均已闭环：① 仓库 private 期间 Actions 秒失败（0 步/无 runner，与代码无关）；
+> ② preview ensure 的 Neon 423 瞬时并发（rerun 通过，重试优化挂 TODO D7）。
+> 用户口径：CI 跑绿后可把仓库转回 private（转回后 Actions 会再次不可用，以本地门禁为准）。
 > 另：两把 Resend key 已入 GitHub repo secrets（`RESEND_API_KEY_PROD` / `RESEND_API_KEY_PREVIEW`），
 > 换设备不失；`preview.yml` 已注入预览专用 key。
 >
