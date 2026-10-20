@@ -86,6 +86,12 @@
 >    ② CI 静态门禁脚本路径修复（`../scripts` → `../../scripts`，billing 冻结期 CI 从未真跑才暴露，
 >    `555cc15`）；③ Neon Protected = **付费功能**，Free 套餐不可用 ⇒ 用户裁决**不升级**，预览脚本
 >    删分支双保险兜底（README §2.2 已标注）；④ 仓库仍**临时 public**，CI 稳定后尽快转回 private。
+> 13. **main 的 CI 自 billing 冻结以来首次全绿（2026-10-20，run `39364936582`）**：修了两枚
+>    "从未真跑过"的 CI 欠账（门禁脚本路径 `555cc15` + `psql -vc` 拆词 `91b010c`）后，
+>    **backend:test 三 job 全绿**（迁移/模型+静态门禁 17s / worker:integration 真 PG 54s /
+>    worker:tests 63s），`contracts:check` 绿（S5 合并推送自动触发）。这是 S4 之后 33+ 个提交
+>    首次完整过 CI。遗留观察项：actions/checkout@v4、setup-uv@v5 有 Node 20 弃用告警
+>    （被强制跑在 Node 24， cosmetic），后续随依赖升级顺手处理。
 >
 > **（2026-10-19 晚场 · 四项决策全部已确认 —— 以下为当前口径，压过本摘要内所有旧条目）**
 >
