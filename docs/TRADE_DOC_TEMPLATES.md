@@ -1,10 +1,13 @@
 # 外贸单证模板规范（单证工位）
 
-> 模板目录：`backend/orchestrator/app/templates/trade_docs/`
-> 共享样式：`backend/orchestrator/app/templates/trade_docs/_shared.css`
-> 渲染器：`backend/orchestrator/app/renderers/trade_doc_renderer.py`
-> 接口：`backend/orchestrator/app/api/trade_doc_render.py`
-> 样例产出：`backend/orchestrator/sample_docs/*.html`
+> **现行实现（S4 后：前端渲染，Worker 不带模板引擎）**：
+> - 模板 + 共享样式：`frontend/src/lib/trade-doc/assets.json`（`templates` / `sharedStyle`）
+> - 字段清单（含必填/类型/描述）：`frontend/src/lib/trade-doc/manifest.json`
+> - 渲染器：`frontend/src/lib/trade-doc/render.ts`（`$var` 占位、缺失渲染空串、值一律转义）
+> - 接口：`GET /api/v1/trade-doc-templates[/{doc_type}]`、`GET /api/v1/trade-docs/{id}/render-data`
+> - 基准产出：`frontend/src/lib/trade-doc/__fixtures__/html/*.html`（18 份，`__tests__/render.test.ts` 逐字节守护）
+>
+> 历史：归档 Python 渲染器/模板在根 `archive/2026-09-trade-doc-xprime-python/`（只读留档，**非当前口径**）。
 
 ---
 
@@ -115,10 +118,11 @@ raw_payload = {
 
 ## 五、使用方式
 
+> ⚠️ 下面这条是**归档 Python 渲染器时代**的样例命令（现只在根 `archive/2026-09-trade-doc-xprime-python/`
+> 留档；`backend/orchestrator` 现在只剩迁移/ORM，跑不了它）。现行前端渲染与离线出单见本节下方「离线渲染」。
+
 ```powershell
-# 生成全部 9 类英文样例（自包含 HTML，双击即可预览 / 打印 PDF）
-cd backend/orchestrator
-python scripts/render_all_samples.py
+# 【历史，勿再执行】归档时代的 9 类英文样例（原件在 archive/2026-09-trade-doc-xprime-python/）
 ```
 
 接口：
@@ -173,19 +177,113 @@ node <node> frontend/node_modules/tsx/dist/cli.mjs scripts/render-trade-doc.ts `
 
 ## 六、扩展新单证
 
-1. 在 `templates.json` 增加一条定义（`name_zh` / `name_en` / `description` / `template_file` / `fields`），
+1. 在 `frontend/src/lib/trade-doc/manifest.json` 增加一条定义（`name_zh` / `name_en` / `description` / `template_file` / `fields`），
    并在 `description` 中写清**由谁出具**。
-2. 新建 `xxx.html`，`<style>` 内写 `/*__SHARED_STYLE__*/` 占位即可复用共享样式。
-3. 若表格列需固定，在 `trade_doc_renderer.py::_ITEM_COLUMNS` 增加该类型的列定义
-   （格式：`(字段 key, 英文表头, 对齐 c/l/r)`）。
-4. 在 `tests/test_trade_doc_renderer.py` 补对应的渲染与字段用例。
+2. 在 `frontend/src/lib/trade-doc/assets.json` 的 `templates` 里加该类型 HTML（`<style>` 内写
+   `/*__SHARED_STYLE__*/` 占位即可复用共享样式）。
+3. 若表格列需固定，在 `frontend/src/lib/trade-doc/render.ts` 的 `ITEM_COLUMNS` 增加该类型的列定义
+   （格式：`[字段 key, 英文表头, 对齐]`）。
+4. 补测试与基准：`__tests__/render.test.ts`（golden HTML 逐字节）、`__tests__/render-placeholders.test.ts`，
+   并在 `frontend/src/lib/trade-doc/__fixtures__/html/` 落一份 `sample_<type>.html`；
+   `pnpm -C frontend trade-doc:check` 必须 0 ERROR。
 
-**已验证的约束**：凡模板使用 `$items` 的，必须同时在 `_ITEM_COLUMNS` 定义固定列
-（由 `test_every_template_using_items_defines_fixed_columns` 自动化卡住）。
+**已验证的约束**：凡模板使用 `$items` 的，必须同时在 `render.ts` 的 `ITEM_COLUMNS` 定义固定列
+（由 `__tests__/render.test.ts:353`「凡使用 $items 的模板都必须定义固定列」自动化卡住；
+归档 Python 时代同名测试 `test_every_template_using_items_defines_fixed_columns` 已不适用）。
 
-**待扩展的常见单证**（可按上述步骤添加）：
-SASO / COC 等目的国认证文件、船公司证明（Certificate of Vessel's Ownership）、
-出口许可证、商检证书（CIQ）、受益人声明（Beneficiary's Declaration）等。
+**待扩展的常见单证**：见下方 §6.1（A10 清单，含字段/数据来源/优先级/A6 依赖）。
+
+### 6.1 待扩展模板清单（TODO A10，2026-10-21 盘点）
+
+> **口径**：本节只列「下一批候选模板」的实现要素，**不包含任何已实现的业务规则**。
+> 字段名按现有 18 类模板的 `$placeholder` 风格与 `manifest.json` 字段命名习惯整理；
+> **所有字段/触发条件的最终口径一律以 A6（真实单据逐字段校准）为准** —— 本节每类均标注「待 A6 样例校准」。
+> 数据来源统一为四层：①`raw_payload.custom`（手填/AI 填充，渲染优先）②`sources.order/quote/inquiry` 上游快照
+> ③A7 事实层 `facts`（已确认的 `doc_no/date/incoterm/payment_terms/currency/ports/country_of_origin` 等，
+> 见 `docs/TRADE_DOC_HARDENING.md`）④租户档案（企业抬头/地址/银行/默认公章，`render-data` 注入）。
+> 合规边界沿用 §二：**第三方签发的只产「申报/申请信息」，不伪装成正式证书**。
+
+#### 6.1.1 `saso_coc` — 目的国符合性认证（SASO / COC / SONCAP / PVoC / GOEIC 类）
+
+- **①用途与触发**：沙特（SASO/SABER）、海湾 GCC、尼日利亚 SONCAP、肯尼亚 PVoC、埃及 GOEIC 等
+  **装运前符合性认证**；进口清关强制件。**触发**：目的国属上述市场且客户/信用证要求 COC 时，随商业发票一并出具申请信息。
+- **②关键字段**：`cert_no` / `cert_date` / `applicant` / `exporter` / `consignee` / `invoice_no` /
+  `contract_no` / `description_of_goods` / `hs_code` / `items` / `quantity` / `country_of_origin` /
+  `destination_country` / `standard_applied` / `test_report_no` / `issue_date` / `valid_until` / `content`（声明条款）
+- **③数据来源**：`payload.custom`（证书号/认证机构/标准/报告号，通常线下取得）＋`sources`（发票/合同/货物/数量）
+  ＋`facts`（已确认的贸易术语/币种/港口/原产国）；签发方=认证机构（**B 类性质**）。
+- **④优先级：P1**（与 `beneficiary_decl` 同批先做）。理由：中东/非洲市场清关强制、询单高频；
+  字段与现有 `ci` + `co` 重合度高（`items`/`hs_code`/`country_of_origin` 可复用固定列），模板成本低。
+- **⑤与 A6**：证书编号规则、认证机构抬头、标准/法规清单、声明措辞**全部待 A6 真实样例校准**；
+  未校准前不要预置默认措辞（避免印出与真实证书不符的合规声明）。
+
+#### 6.1.2 `vessel_cert` — 船公司证明（Certificate of Vessel's Ownership / Classification）
+
+- **①用途与触发**：信用证及部分中东/非洲国家进口要求证明**船籍/船龄/船级社/承运人资质**（如抵制条款相关证明）。
+  **触发**：信用证 46A 单据条款点名该类证明，或目的国清关要求时，向承运人/船代索取。
+- **②关键字段**：`cert_no` / `cert_date` / `vessel` / `voyage_no` / `imo_no` / `flag` / `owner` / `operator` /
+  `classification_society` / `vessel_age` / `issue_by`（承运人/船代）/ `content`（声明正文）
+- **③数据来源**：`payload.custom`（船名/航次/IMO/船籍/船级社/船龄，业务或货代提供）＋
+  `sources.order` 的 `vessel` 与 `bl` 号＋`facts`（若 `vessel` 已登记）；签发方=承运人（**B 类性质**）。
+- **④优先级：P2**。理由：模板结构短、实现快；但信息依赖货代/船司，且不同船司格式差异大，需先攒真实件。
+- **⑤与 A6**：船公司抬头、声明版本、船级社名称写法**待 A6 校准**。
+
+#### 6.1.3 `export_license` — 出口许可证（申报信息表）
+
+- **①用途与触发**：中国对两用物项/部分金属制品/农产品等管制商品出口需商务部门许可证；报关必备。
+  **触发**：品类命中出口管制目录（系统**不判断**是否命中，由业务/报关代理确认）。
+- **②关键字段**：`license_no` / `license_date` / `applicant` / `exporter` / `consignee` / `contract_no` /
+  `invoice_no` / `description_of_goods` / `hs_code` / `items` / `quantity` / `unit` / `total_amount` /
+  `currency` / `destination_country` / `trade_mode` / `valid_until` / `issuing_authority`
+- **③数据来源**：`payload.custom`（许可证号/发证机关/有效期，企业或代理线下取得）＋`sources`（合同/发票/货值/数量）
+  ＋`facts`（金额/数量派生）；签发方=商务部门（**B 类性质**）。
+- **④优先级：P3**。理由：仅少数受管制品类需要；且许可证号通常线下办理，系统只能汇总申报要素。
+- **⑤与 A6**：证面栏目、商品编码填报规则**待 A6 样例校准**。
+
+#### 6.1.4 `ciq` — 商检证书（CIQ / Inspection Certificate）
+
+- **①用途与触发**：法检商品出口由海关/检验机构出具品质/数量/重量/卫生证书；信用证常点名。
+  **触发**：品类属法检或信用证要求 Inspection Certificate 时，产「报检/申请信息」。
+- **②关键字段**：`cert_no` / `cert_date` / `applicant` / `consignee` / `invoice_no` / `contract_no` /
+  `description_of_goods` / `hs_code` / `items` / `quantity` / `packages` / `gross_weight` / `net_weight` /
+  `inspection_type` / `standard_applied` / `inspection_result` / `place_of_inspection` / `issue_date` / `issuing_authority`
+- **③数据来源**：`payload.custom`（检验类型/依据/结论/机构）＋`sources`（行项/件数/毛净重）＋`facts`；
+  签发方=检验机构（**B 类性质**）。
+- **④优先级：P3**。理由：与现有 `quality_cert` 高度重叠——**过渡方案**：先用 `quality_cert` + `custom` 字段承载，
+  待 A6 拿到真实 CIQ 后再决定是否单列模板。
+- **⑤与 A6**：检验机构抬头、检验依据、结论措辞**待 A6 校准**。
+
+#### 6.1.5 `beneficiary_decl` — 受益人声明（Beneficiary's Declaration）
+
+- **①用途与触发**：信用证项下常见声明（已发货/已寄单/货物非某产地/未使用童工/符合原产地要求等）。
+  **触发**：信用证 46A 要求 "Beneficiary's Declaration" 时；与现有 `beneficiary_cert` 是**不同单据**
+  （后者是"已按要求寄单"的自我证明，前者按信用证逐条声明），不能互相顶替。
+- **②关键字段**：`declaration_no` / `declaration_date` / `seller` / `buyer` / `invoice_no` / `lc_no` /
+  `bl_no` / `contract_no` / `description_of_goods` / `declaration_type`（shipment / eligibility / no-child-labour …）/
+  `content`（声明正文，**必填**）/ `place_of_issue` / `company_stamp`
+- **③数据来源**：`payload.custom`（声明类型与正文，业务或 AI 起草后人工确认）＋`sources`（发票/合同/提单号）
+  ＋`facts`（可引用已确认事实）＋租户档案（抬头/公章直链）；**A 类性质**（出口商自制 + 签章）。
+- **④优先级：P1**（与 `saso_coc` 同批先做）。理由：与现有 `beneficiary_cert` 结构几乎同构（差异在标题与正文），
+  可复用签章区/`content` 透传（与 `other` 同机制）；信用证业务高频、实现成本最低。
+- **⑤与 A6**：信用证声明措辞差异极大（不同银行/国家条款），`declaration_type` 词表与正文模板**待 A6 用真实信用证/声明校准**。
+
+#### 6.1.6 实施顺序与共同成本
+
+| 顺序 | 模板 | 理由 |
+|---|---|---|
+| 1 | `beneficiary_decl` | 与 `beneficiary_cert` 同构、成本最低；信用证高频 |
+| 2 | `saso_coc` | 中东/非洲清关强制；`items`/HS/原产国可复用 `ci`/`co` 固定列 |
+| 3 | `vessel_cert` | 结构短，但依赖货代信息与真实船司格式（等 A6 样例） |
+| 4 | `export_license` | 仅受管制品类；许可证号线下取得 |
+| 5 | `ciq` | 先用 `quality_cert` + `custom` 过渡，见真实 CIQ 再决定 |
+
+共同成本（每类）：`manifest.json` 加定义与 `fields`（名称/必填/类型/描述）→ `assets.json.templates`
+加 HTML（保留 `/*__SHARED_STYLE__*/`）→ 若使用 `$items` 必须在 `render.ts` 的 `ITEM_COLUMNS` 定义固定列
+（与 §六 现有约束一致）→ 补 `__tests__/render.test.ts`（含 golden HTML）与 `render-placeholders.test.ts`
+（模板用了但 manifest 没声明的字段会被 `trade-doc:check` 抓出）→ 用 A6 真实样例逐字段核对后再生效。
+
+> ⚠️ **A6 是硬前置**：上表任何一类在拿到**真实单据样例**并由业务确认字段/措辞前，**不投产**；
+> 尤其 `saso_coc` / `ciq` / `vessel_cert` 属第三方签发，措辞错误会被视为单据不符点/造假风险。
 
 ---
 

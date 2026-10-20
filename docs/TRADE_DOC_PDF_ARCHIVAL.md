@@ -12,6 +12,8 @@
 > 「早期章节」（§一～§五）写于 2026-10-11，其中不少「未做 / 未验证」已被后续实现推翻；
 > **现状以 §〇 / §〇.2 / §〇.3（含下方「已落地（2026-10-20，TODO A8/A9）」）与 `docs/TODO.md` 为准**。
 > 仍未收口的尾巴集中在 `TODO.md`：A2-B（模板迁服务端）、C12（PDF 归档验收尾巴）。
+> **C12 的 §五 #4/#5 已于 2026-10-21 补可执行验收步骤**：体积基线已本地实测、生产 `render_pdf` 已只读复查（当前 0 行）；
+> 真实渲染耗时与"有记录"仍属**数据待复核**（见 §五）。
 
 ## 〇、本轮落地（实测，2026-10-11 晚）
 
@@ -566,7 +568,10 @@ Chrome 是否逐字节一致未验证**（不同 Chrome 版本与打印参数会
 ## 五、未验证事项（明确列出来，避免被当成结论）
 
 > 共 6 条。**2026-10-11 晚更新：第 1–3 条已用真实调用核实**（结论见 §〇 表格），
-> 第 6 条此前已核对并修正；**仍开放的是第 4、5 条**。
+> 第 6 条此前已核对并修正。
+> **2026-10-21 更新：第 4、5 条「可验收步骤已补 / 数据待复核」** ——
+> #4 体积有本地基线（18 份 golden HTML 实测）、#5 生产库已只读复查（`render_pdf` 当前 **0 行**）；
+> 但 #4 的**真实渲染耗时**、#5 的**真实归档记录**都还没拿到，**仍不是「已完成」**。
 
 1. ~~**Cloudflare Browser Rendering 在本账户的可用性**~~ **✅ 已实测（§〇）**：可用、无需付费；
    账号订阅为 `teams_free` / `r2_paid`（均 price 0），Browser Rendering 自带
@@ -576,13 +581,107 @@ Chrome 是否逐字节一致未验证**（不同 Chrome 版本与打印参数会
 3. ~~**Browser Rendering 输出与本地 Chrome `--print-to-pdf` 是否逐字节一致**~~ **✅ 已判为"不能假定一致"**：
    本次实测只证明"能拿到真 PDF 字节"，**没有**做与本地 Chrome 的逐字节比对；§四 风险 1/2 的
    口径（以归档版为准、记录渲染器）仍然适用。
-4. **单证 HTML 的实际体积与渲染耗时**（文档只给到请求体 50MB 上限）—— **未实测**
-   （本次探针是最小 HTML；内核把入参上限定在 2MB 作为防滥用上限）。
-5. **生产是否真的存在 `render_pdf` 记录**：本文引用 `docs/PROBLEM_STATUS_2026-10-11.md:1873`
-   的"生产 `trade_docs=0`"，**本次未直连生产库复查**。
+4. **单证 HTML 的实际体积与渲染耗时** —— **【可验收步骤已补 / 数据待复核】2026-10-21**：
+   体积有本地基线（真实模板，可复跑）；**Browser Rendering 真实耗时仍未实测**（需生产/预览环境与权限，不伪造）。
+   - **上限事实**：本系统收单上限 = **`MAX_RENDER_HTML_BYTES = 2 MiB`**
+     （`backend/kaas_common/files/render_pdf.py:54`；校验 `validate_render_html` 同文件 `:196-228`，
+     超限抛 `HTML_TOO_LARGE`；**实际 HTTP 状态 = 422**，因为 `ws_files.py::_fail` 对 `FileRuleError`
+     统一映射 422 —— 该函数 docstring 里的「413 超大」与代码不一致，以 `_fail` 行为为准）。
+     PDF 产物上限 32MB（`backend/kaas_common/files/rules.py:50-53` 的 `MAX_BYTES['render_pdf']`，
+     `render_pdf.py:50` 复用为 `MAX_RENDER_PDF_BYTES`）。**注意**：本文早期写的「请求体 50MB 上限」
+     指 Browser Rendering 服务自身的限制，**不是**本系统收单上限。
+   - **体积基线（已实测，本地、无需云权限）**：18 类模板的 golden HTML 在
+     `frontend/src/lib/trade-doc/__fixtures__/html/*.html`（由 `render.ts` 产出，`__tests__/render.test.ts` 逐字节守护）。
+     实测 **10.8–13.6 KiB/份（最小 11,104 B / 最大 13,958 B），18 份合计 233,069 B（227.6 KiB）**；
+     按字符数同批复核：**8,779–11,633 字符/份，合计 190,073 字符**（UTF-8 中文/标识占多字节，故字节数 > 字符数）；
+     字节数占 2 MiB 上限的 **0.53%–0.67%**（含内联 `<style>`，不含图片）。
+   - **带图场景**：A4（2026-10-21）前图片以 base64 内联，一张 PI 曾达 **≈1.4 MB**（见
+     `docs/TRADE_DOC_TEMPLATES.md` §七）；A4 后产品图/公章改为**短时效签名直链**
+     （`/file-objects/{id}/render-content?t=`、`/company-seals/{id}/render-content?t=`），图片字节**不再进 HTML**
+     ⇒ HTML 回落到 10~20 KiB 量级。**存量仍含 base64 的旧 payload 例外**（重排版前仍是旧体积）。
+   - **复跑命令（体积/字符数）**：
+     ```powershell
+     Get-ChildItem frontend/src/lib/trade-doc/__fixtures__/html/*.html | ForEach-Object {
+       [pscustomobject]@{
+         Name  = $_.Name
+         Bytes = $_.Length
+         Chars = (Get-Content -Raw -Encoding UTF8 $_.FullName).Length
+       }
+     } | Sort-Object Bytes
+     ```
+     真实单证 HTML（与前端预览同一渲染器，见 `TRADE_DOC_TEMPLATES.md` §五「离线渲染」）：
+     `node <node> frontend/node_modules/tsx/dist/cli.mjs scripts/render-trade-doc.ts --type pi --data artifacts/pi-payload.json --out artifacts/pi.html`，
+     量 `artifacts/pi.html` 的字节数即为该票真实体积。
+   - **复跑步骤（耗时，需生产/预览环境 + 渲染器可用）**：
+     1. 生产/预览签一张测试单证（或在已签发单据上重跑归档），调
+        `POST /api/v1/trade-docs/{id}/pdf`（body `{ "html": <与预览同源的 HTML>, "name": ... }`），或
+        `PATCH /api/v1/trade-docs/{id}`（draft→issued）时带 `html`（服务端同一实现）；
+     2. 用 `curl.exe` 记录分段耗时（把 URL/token 换成环境变量，勿写进文档）：
+        ```powershell
+        curl.exe -sS -o out.pdf -w "ttfb=%{time_starttransfer}s total=%{time_total}s`n" `
+          -X POST "$env:KAAS_API/api/v1/trade-docs/$env:DOC_ID/pdf" `
+          -H "Authorization: Bearer $env:KAAS_TOKEN" -H "Content-Type: application/json" `
+          --data-binary "@$env:HTML_JSON"
+        ```
+     3. **同时记录**响应 JSON 的 `renderer`（`binding`=BROWSER binding / `rest`=REST token）、`bytes`（PDF 字节）、
+        `storage`（`s3`/`r2`/`inline`），以及 `html` 字节数（请求体长度）。连续 **5 次取中位数**，
+        第一次单独标注（Browser Rendering/Worker 冷启动可能显著偏慢，不参与中位数）；
+        若要报 **P95**，样本量需 ≥20 次（5 次只报中位数/最大最小，不冒充 P95）。
+     4. **判据建议（需用户确认，无既有 SLA）**：单份中位数 ≤ 10s、最慢 ≤ 30s 作为观察线；
+        HTML 硬上限维持 2 MiB（实测模板余量 >99%）；可选在 `validate_render_html` 外**加日志告警**
+        （>1.5 MiB 打一条 warning，不改校验）。
+     5. **记录位置**：实测后回填本节 + `docs/PROBLEM_STATUS_2026-10-11.md`（含环境/日期/版本），
+        不得只写"已测"而不给数字。
+5. **生产是否真的存在 `render_pdf` 记录** —— **【可验收步骤已补 / 数据待复核】2026-10-21**：
+   **只读复查已完成**（生产库 SELECT，`readonly=True`，无任何写入/迁移），**结论：当前 `render_pdf` = 0 行**。
+   - **当前生产基线（2026-10-21 实测，库头 `alembic_version=202610200005`）**：
+
+     | 口径（三处） | SQL | 结果 |
+     |---|---|---|
+     | `file_objects` 总量 | `SELECT count(*) FROM file_objects` | **5** |
+     | `file_objects` 的 `render_pdf` | `SELECT count(*) FROM file_objects WHERE kind='render_pdf'` | **0** |
+     | 其中当前版本 | `... and is_current` | **0** |
+     | `trade_doc_files` 关联 | `SELECT count(*) FROM trade_doc_files WHERE role='render_pdf'` | **0** |
+     | 让位旧版 | `... WHERE role='render_pdf_superseded'` | **0** |
+     | `trade_docs` 总量 | `SELECT count(*) FROM trade_docs` | **2** |
+     | A9 对账表 | `SELECT to_regclass('public.trade_doc_render_checks')` + `count(*)` | 表**存在**、**0 行** |
+
+   - **为什么查三处**：`file_objects`（kind='render_pdf'）是**字节/版本链真源**；`trade_doc_files.role='render_pdf'`
+     是**单证与文件的挂接关系**；`trade_doc_render_checks` 是 **A9 对账结论**（是否被扫过、结论如何）。
+     三处全 0 ⇒ 不只是"没有归档 PDF"，连"对账扫过"都没有。
+   - **解读（不要写成已完成）**：生产当前没有任何已归档 PDF ⇒ **"服务端能真实产出一份 `render_pdf` 并落档"仍未被生产数据验证**；
+     本项仍是 C12 尾巴。**签发一张真实单证并完成自动/手动归档后**，再跑同一 SQL，期望
+     `file_objects(kind='render_pdf') >= 1` 且 `trade_doc_files(role='render_pdf') >= 1`。
+     注：本文早期引用的「生产 `trade_docs=0`」是 2026-10-11 的记录；本次实测为 **2**（期间已产生数据），
+     `render_pdf` 仍为 0 ⇒ 有单证但没有归档 PDF，正是本项要补的缺口。
+   - **复跑命令（只读）**：
+     ```sql
+     SELECT count(*) FROM file_objects WHERE kind='render_pdf';
+     SELECT count(*) FROM file_objects WHERE kind='render_pdf' AND is_current;
+     SELECT count(*) FROM trade_doc_files WHERE role IN ('render_pdf','render_pdf_superseded');
+     SELECT count(*) FROM trade_doc_render_checks;
+     ```
+     ```powershell
+     # 用 backend/orchestrator/.venv 的 psycopg2，DSN 从 .env.local 读（只读会话；脚本勿提交、勿打印 DSN）
+     ```
+     前端/API 只读入口（有登录态时）：`GET /api/v1/trade-docs/{id}/files`（看该单证的 PDF 版本链）、
+     `GET /api/v1/trade-docs`（列表每行 `render_check`，见 A9）。
 6. ~~**`docs/TRADE_DOC_TEMPLATES.md:130` 写的 `GET /api/v1/trade-docs/{id}/render`**~~ **✅ 已核对并修正**：
    该路由在代码里确实不存在（已核实的路由清单见 §1.5），而**该文档行已被修正为 `render-data`**，
    现存说法与代码一致 —— 本条**不再是**未验证事项。
+
+### 五.1 C12+ 验收执行清单（2026-10-21 补步骤；**数据待复核，不是已完成**）
+
+| # | 验收项 | 步骤在哪 | 当前状态 | 完成判据 |
+|---|---|---|---|---|
+| a | 18 类 golden HTML 体积/字符数 | #4「复跑命令（体积/字符数）」 | **基线已取（本地实测，非验收完成）**：11,104–13,958 B（8,779–11,633 字符）/份；18 份合计 233,069 B / 190,073 字符（字节数占 2 MiB 上限 0.53%–0.67%） | 任一类 >2 MiB ⇒ 校验 422 `HTML_TOO_LARGE`；>1.5 MiB 建议加日志告警 |
+| b | 真实单证 HTML 体积（含业务数据/图片） | #4 离线渲染命令 | ⏳ **数据待复核**（待有真实 payload；A4 后图片走直链，预期仍 <50 KiB；存量 base64 旧 payload 例外） | 每类记录一票实际字节数 |
+| c | Browser Rendering 真实耗时 | #4「复跑步骤（耗时）」 | ⏳ **数据待复核**（**待生产/预览环境 + 渲染器权限**，不得伪造） | 5 次中位数 + 最大最小（P95 需 ≥20 次）；记录 `renderer`/`bytes`/`storage` |
+| d | 生产 `render_pdf` 记录（三处口径） | #5 SQL | **只读基线已取（2026-10-21，非验收完成）**：`file_objects(kind=render_pdf)=0`、`trade_doc_files(role=render_pdf)=0`、`trade_doc_render_checks=0`（`file_objects` 总 5、`trade_docs` 总 2） | 真实归档一票后 ≥1，再复查三处 |
+| e | 对账表是否被 cron 扫过 | #5 `trade_doc_render_checks` | **只读基线已取**：表存在、**0 行**（= 从未扫过；发布后首轮 cron 才有行） | 发布后 cron 跑一轮应有行且不变式成立 |
+
+**执行顺序建议**：先在**有权限的环境**跑 c（拿耗时）→ 用同一票跑 d 的「≥1」验证（拿"有记录"）→ 顺手看 e（cron 首轮）。
+a/d/e 的只读/本地基线现已记录；**b/c 与 d 的 ≥1 验证拿到之前，C12 不得标为已完成**。
 
 ---
 
