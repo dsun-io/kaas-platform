@@ -2,7 +2,7 @@
 
 > **审计（2026-10-21）**：24 条「待接 UI」的价值/成本 + 18 条「可删候选」的使用证据见
 > [`API_RESERVED_LIST_AUDIT.md`](./API_RESERVED_LIST_AUDIT.md)。
-> 结论速览：待接 **9 条已接移出（C30/A13/A4 共 4 + C36 本期 5）/ 12 条下期 / 3 条长期保留**；
+> 结论速览：待接 **21 条已接移出（C30/A13/A4 共 4 + C36 本期 5 + C36 下期 12）/ 3 条长期保留（无下期待接）**；
 > 可删候选 **可删 3（已执行删除）/ 保留 2 / 需 owner 确认 13**
 > （其中 `GET/PUT /product-options/overrides` 被本清单误判为可删，审计已更正为现行能力）。
 >
@@ -18,7 +18,12 @@
 >
 > **✅ 2026-10-21 UI 接线执行（C36 UI 批次 `e419d01d`）**：本期建议接的 **5 条已全部接上**
 > （税档软删 / 定价编辑 / 团队改名 / 手工汇率 / leadgen CSV，入口见 §2 各行 ✅ 与 §3）。
-> 接 UI **不改变路由数**（仍 244）。
+>
+> **✅ 2026-10-21 C36 下期 12 条全部接上（4 批）**：订单收款计划三件套（#6/#10/#20）/ 订单状态流转（#21）/
+> 汇率历史（#5）；应收台账（#7）/ AI 任务运行（#13）；情报 CSV+手工货运（#15/#16）/ 新建线索（#18）；
+> 品名对照（#19）/ 调研手工录入（#22）。⇒ 待接 UI 剩 **3 条**（长期保留的用户级订阅 #2/#9/#24）。
+> 接 UI **不改变路由数**（仍 244）。**遗留缺口**：#19 品名对照的编辑/删除因后端无全量列表/PATCH/DELETE 未做；
+> AI 任务运行因任务无统一 schema 用最小表单（详见审计顶部与 §1.1）。
 
 ## 0. 结论
 
@@ -28,9 +33,9 @@
   C36 UI 批次又新增 5 个调用点）。
 - 原始差异：**66 条**「BE 有、FE 无直接调用」；扣除 **6 条假阴性**（动态拼路径/变量 url/查询串/download link，见 §2）
   ⇒ **扫描基线时实际未接 60 条**，分类：**REST/内部/兼容保留 18 条**、**后端先行待接 UI 24 条**、**可删候选 18 条**。
-- **基线后变化（2026-10-21）**：待接 UI 已接移出 **9 条**（C30/A13/A4 共 4 + C36 本期 5）⇒ **待接 UI 剩 15 条**
-  （下期 12 + 长期保留 3）；可删候选已删 **3 条** ⇒ **剩 15 条**；**当前实际未接 ≈ 48 条**
-  （18 REST + 15 待接 + 15 可删），与路由 244 对得上。
+- **基线后变化（2026-10-21）**：待接 UI 已接移出 **21 条**（C30/A13/A4 共 4 + C36 本期 5 + C36 下期 12）
+  ⇒ **待接 UI 剩 3 条**（仅长期保留的 #2/#9/#24 用户级订阅）；可删候选已删 **3 条** ⇒ **剩 15 条**；
+  **当前实际未接 ≈ 36 条**（18 REST + 3 待接 + 15 可删），与路由 244 对得上。
 - 与 `docs/TODO.md` 的对应关系见 §3；**本文件不修改 TODO**（C36 是否销账由 Lead 决定）。
 
 ## 1. 方法（可复现）
@@ -81,24 +86,24 @@ backend/worker/.venv/Scripts/python.exe .tmp/c36-docs.py                  # 补 
 | 后端先行 · UI 未接 | `DELETE /api/v1/users/*/subscriptions/*` | `ws_workstations.py:271` | 同上 |
 | ✅ 已接 · 移出待接清单（C30） | `GET /api/v1/admin/archive-logs` | `main.py:3032` | 入口：`admin/hooks/use-archive-logs.ts:54` + `archive-logs-card.tsx`，`admin/gray-release/page.tsx:80` 挂载（审计更正：原「前端 0 调用」已过时） |
 | ✅ 已接 · 移出待接清单（A4） | `GET /api/v1/file-objects/*/render-content` | `ws_files.py:920` | 渲染链路已用：装配层返回短时效签名直链，浏览器 `<img>` 直接加载（不经 apiClient） |
-| 后端先行 · UI 未接 | `GET /api/v1/fx-rates` | `ws_extras.py:162` | 汇率维护 UI 未接；前端只用 `/fx-rates/latest`（历史列表仍下期） |
-| 后端先行 · UI 未接 | `GET /api/v1/orders/*/payment-schedules` | `main.py:3943` | 订单收款计划 UI 未接（orders 页自述"收款计划与应收概览"） |
-| 后端先行 · UI 未接 | `GET /api/v1/receivables` | `main.py:4102` | 应收台账 UI 未接（订单工位规划里有概览） |
+| ✅ 已接 · 移出待接清单（C36 下期，2026-10-21） | `GET /api/v1/fx-rates` | `ws_extras.py:162` | 入口：`settings/tax-archives/components/fx-history-card.tsx`（`lib/fx/use-fx-history.ts`），`tax-archives/page.tsx:615` 挂载 |
+| ✅ 已接 · 移出待接清单（C36 下期，2026-10-21） | `GET /api/v1/orders/*/payment-schedules` | `main.py:3943` | 入口：`orders/components/payment-schedules-panel.tsx` + `orders/hooks/use-order-schedules.ts`，`orders/page.tsx:452` 挂载 |
+| ✅ 已接 · 移出待接清单（C36 下期，2026-10-21） | `GET /api/v1/receivables` | `main.py:4102` | 入口：`app/(app)/receivables/page.tsx` + `receivables/hooks/use-receivables.ts`；订单页 `orders/page.tsx:133` 有 `/receivables` 链接 |
 | ✅ 已接 · 移出待接清单（A4） | `GET /api/v1/tenant/company-seals/*/render-content` | `ws_seals.py:221` | 公章渲染直链已被装配层使用（`main.py:4801`），浏览器直接加载 |
 | 后端先行 · UI 未接 | `GET /api/v1/users/*/subscriptions` | `ws_workstations.py:229` | 个人订开通 UI 未接（前端只接团队订阅） |
-| 后端先行 · UI 未接 | `PATCH /api/v1/payment-schedules/*` | `main.py:4008` | 同上（改计划） |
+| ✅ 已接 · 移出待接清单（C36 下期，2026-10-21） | `PATCH /api/v1/payment-schedules/*` | `main.py:4008` | 入口：`orders/components/schedule-edit-dialog.tsx` + `use-order-schedules.ts:74`（标记收款另有 `mark-paid-dialog.tsx`） |
 | ✅ 已接 · 移出待接清单（C36，2026-10-21） | `PATCH /api/v1/pricing-data/*` | `main.py:2291` | 入口：`pricing-data/hooks/use-pricing-data.ts:83`（PATCH）+ `PricingEditDialog.tsx`（`PricingDataTable.tsx:207` 编辑按钮），`pricing-data-manager.tsx:221` 挂载 |
 | ✅ 已接 · 移出待接清单（C36，2026-10-21） | `PATCH /api/v1/teams/*` | `ws_teams.py:245` | 入口：`team/components/team-rename-dialog.tsx:57`（PATCH `{name}`），`team/page.tsx:179` 挂载（仅团队管理员） |
-| 后端先行 · UI 未接 | `POST /api/v1/ai/tasks/*/run` | `chain.py:733` | AI 任务手动运行 UI 未接（ai-providers 页只做 provider/binding 管理） |
+| ✅ 已接 · 移出待接清单（C36 下期，2026-10-21） | `POST /api/v1/ai/tasks/*/run` | `chain.py:733` | 入口：`settings/ai-providers/hooks/use-run-ai-task.ts` + `components/run-task-dialog.tsx`，`ai-providers/page.tsx:216` 挂载（任务无统一 schema ⇒ 最小表单） |
 | ✅ 已接 · 移出待接清单（C36，2026-10-21） | `POST /api/v1/fx-rates` | `ws_extras.py:217` | 入口：`lib/fx/use-manual-fx.ts:40`（POST，同日同币对 UPSERT）+ `settings/tax-archives/components/fx-rate-card.tsx`，`tax-archives/page.tsx:613` 挂载 |
-| 后端先行 · UI 未接 | `POST /api/v1/intel/import/csv` | `main.py:928` | 情报 CSV 导入 UI 未接 |
-| 后端先行 · UI 未接 | `POST /api/v1/intel/shipments` | `main.py:913` | 情报手工录入 UI 未接（前端只读列表） |
+| ✅ 已接 · 移出待接清单（C36 下期，2026-10-21） | `POST /api/v1/intel/import/csv` | `main.py:928` | 入口：`intel/components/csv-import-dialog.tsx:85`（multipart 字段 `file`），`intel/components/shipments-table.tsx:249` 挂载 |
+| ✅ 已接 · 移出待接清单（C36 下期，2026-10-21） | `POST /api/v1/intel/shipments` | `main.py:913` | 入口：`intel/components/manual-shipment-dialog.tsx:65`（JSON），`shipments-table.tsx:250` 挂载 |
 | ✅ 已接 · 移出待接清单（C36，2026-10-21） | `POST /api/v1/leadgen/runs/from-csv` | `chain.py:1003` | 入口：`lib/leadgen/csv-import.ts` + `leadgen/components/csv-import-panel.tsx:54`（multipart 字段 `csv_file`），`leadgen/page.tsx:426` 挂载 |
-| 后端先行 · UI 未接 | `POST /api/v1/leads` | `chain.py:1349` | 手工新增线索 UI 未接（前端用 leadgen run/crawl 链路） |
-| 后端先行 · UI 未接 | `POST /api/v1/market/name-mappings` | `main.py:1716` | 中外品名对照维护 UI 未接 |
-| 后端先行 · UI 未接 | `POST /api/v1/orders/*/payment-schedules` | `main.py:3961` | 同上（建计划） |
-| 后端先行 · UI 未接 | `POST /api/v1/orders/*/status` | `main.py:3851` | 订单状态流转 API；前端只做展示（`PATCH /orders` 只接收条款/客户，见 `main.py:3707+`） |
-| 后端先行 · UI 未接 | `POST /api/v1/research/products` | `chain.py:2232` | 调研手工录入 UI 未接（前端只 from-leadgen/PATCH/DELETE；MSW 有 handler 但真实调用 0） |
+| ✅ 已接 · 移出待接清单（C36 下期，2026-10-21） | `POST /api/v1/leads` | `chain.py:1349` | 入口：`leadgen/components/manual-lead-dialog.tsx:66`（手工线索表单），`leadgen/page.tsx:860` 挂载 |
+| ✅ 已接 · 移出待接清单（C36 下期，2026-10-21） | `POST /api/v1/market/name-mappings` | `main.py:1793` | 入口：`market/components/name-mapping-panel.tsx`（市场页「品名对照」tab：关键词搜索 + 新增中英品名 + 重复预检）；**遗留缺口**：后端无全量列表/PATCH/DELETE ⇒ 编辑/删除未做（面板已标注，建议后续后端补接口） |
+| ✅ 已接 · 移出待接清单（C36 下期，2026-10-21） | `POST /api/v1/orders/*/payment-schedules` | `main.py:3961` | 入口：`orders/components/payment-schedules-panel.tsx`（新建表单）+ `use-order-schedules.ts:48` |
+| ✅ 已接 · 移出待接清单（C36 下期，2026-10-21） | `POST /api/v1/orders/*/status` | `main.py:3851` | 入口：`orders/components/order-status-dialog.tsx:66`（状态流转确认弹窗），`orders/page.tsx:460` 挂载 |
+| ✅ 已接 · 移出待接清单（C36 下期，2026-10-21） | `POST /api/v1/research/products` | `chain.py:2232` | 入口：`research/components/manual-research-dialog.tsx`（调研页「手工录入」：可从线索挑选 source_ref / 手工填字段；409 ALREADY_PICKED 透出），`research/page.tsx:827` 挂载 |
 | ✅ 已接 · 移出待接清单（A13） | `POST /api/v1/trade-docs/*/translate` | `ws_docs_ext.py:549` | 入口：`trade-docs/hooks/use-trade-docs.ts:241` + `components/doc-translate-panel.tsx`（单证「中译英」面板，A13 已接） |
 | 后端先行 · UI 未接 | `PUT /api/v1/users/*/subscriptions/*` | `ws_workstations.py:243` | 同上 |
 | 可删候选（需 owner 确认） | `DELETE /api/v1/external-docs/*` | `ws_extras.py:420` | 同上 |
@@ -124,7 +129,7 @@ backend/worker/.venv/Scripts/python.exe .tmp/c36-docs.py                  # 补 
 
 | TODO | 相关路由（本清单） | 状态/说明 |
 |---|---|---|
-| **C36** | 本文件全部条目 | 删除部分：✅ 2026-10-21 用户批准删 3 条并**已执行**（#11/#16/#17，见 §2 ✅ 行）；**UI 接线部分：✅ 2026-10-21 本期接 5 条已全部接上**（税档软删/定价编辑/团队改名/手工汇率/leadgen CSV，见 §2 ✅ 行）；其余 owner 确认项按审计 §4 待 owner 统一确认 |
+| **C36** | 本文件全部条目 | 删除部分：✅ 2026-10-21 用户批准删 3 条并**已执行**（#11/#16/#17，见 §2 ✅ 行）；**UI 接线部分：✅ 本期 5 条 + 下期 12 条已全部接上**（详见 §2 各行 ✅；下期 12 的入口见审计 §1.1 与 §2）；**遗留缺口**：#19 品名对照编辑/删除待后端补接口；其余 owner 确认项按审计 §4 待 owner 统一确认 |
 | **A2** | `POST /trade-docs/{id}/confirm` | A2 已完成（两入口）；confirm 保留为 REST/第三方入口 |
 | **A4 / G-4** | `GET /file-objects/{id}/render-content`、`GET /tenant/company-seals/{id}/render-content` | ✅ 已接（A4 渲染链路）：装配层返回短时效签名直链，浏览器 `<img>` 加载（不经 apiClient） |
 | **A7** | — | A7 的 facts/consistency/lint/receipts/doc-set/verify-export 均已由 FE 调用（不在本清单） |

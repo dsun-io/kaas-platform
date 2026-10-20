@@ -4935,3 +4935,65 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
   `docs/API_RESERVED_LIST_AUDIT.md`（§1 五行 ✅、§1.1 分布、§4A 更新）、
   `docs/README.md`（索引新增 C27 审计/验收、本审计、B 验收包）。
 - 本任务只改文档：未改代码逻辑、未改 `docs/TODO.md`、未 commit、未跑门禁（数字引用自批次实测）。
+
+---
+
+## 2026-10-21 · C36 下期 UI 第 4 批：品名对照维护 + 调研手工录入
+
+- **品名对照（#19）**：入口 = 市场页「产品市场对照」新增第 5 个 tab「品名对照」
+  （`market/components/name-mapping-panel.tsx`，`market-view.tsx:451` 挂载）。
+  - 列表 = **关键词搜索**（`GET /market/name-lookup?q=&region_code=`），中英品名可搜；新增弹窗支持
+    中文/英文品名（各自成行，`lang=zh/en`）、地区（必填）、类目 id、别名（逗号分隔去重）、HS 编码、已核实；
+  - **重复冲突**：提交前用 name-lookup 预检「同地区 + 同语言 + 同品名」，命中则**不提交**并列出「已存在：…」；
+    后端写失败时透出 `message/detail/code`，对 500 明确提示"可能是唯一约束（地区+语言+类目）重复"（后端未把
+    唯一冲突包成 409，这是如实呈现，不是前端编造）；
+  - **契约缺口（如实记录）**：后端只有 `POST /market/name-mappings` + `GET /market/name-lookup`，
+    **没有全量列表 / PATCH / DELETE** ⇒ 本批做「搜索 + 新增」，**编辑/删除未做**（不伪造 PATCH；
+    已在面板内提示，等后端补接口后再做）。
+- **调研手工录入（#22）**：入口 = 调研页「产品」tab 的「手工录入」按钮
+  （`research/components/manual-research-dialog.tsx`，`research/page.tsx` 挂载）。
+  - 支持**从线索挑选**（下拉 `lead_candidates`，`source_ref`；留空的产品/店铺字段由后端回填）或纯手工录入；
+    字段：产品名/中文名/类目/店铺/国家/州/城市/本地价格/币种/能否供货/市场备注；
+  - 校验：产品名或线索至少一个；价格必须非负数字；成功 → `invalidateQueries(["research-products"|"research-stats"])`；
+  - 错误：409 `ALREADY_PICKED` 显示「该线索已在调研集中（调研产品 #id）」；404 线索不存在；403 未开通调研工位 —— 均如实透出。
+- **MSW**：`mocks/handlers.ts` 只加「品名对照」区段（`POST /market/name-mappings` + 唯一冲突 409）；
+  调研 POST 已有 longtail handler，未重复添加。
+- **测试**：新增 **21** 条（品名对照纯函数 7 + 面板 4；调研纯函数 6 + 弹窗 4）。
+  全量 `pnpm exec vitest run --maxWorkers=2` = **101 files / 886 passed**；`pnpm typecheck` 0；
+  `pnpm lint` 0 error（90 warn 既有/他人）；`pnpm mocks:check` 通过。
+  未跑 build/e2e、未 commit、未改 `docs/TODO.md`。
+
+## 2026-10-21 · C36 下期收口（12 条全部接上，待接 UI 15 → 3）
+
+- **背景**：C36 API 审计的「下期 12 条」由 4 批全部接上；`docs/API_RESERVED_LIST_AUDIT.md` §1 各行与
+  `docs/API_RESERVED_LIST.md` §2 均已标 ✅ 已接·移出。**「后端先行待接 UI」由 15 条降到 3 条**
+  （只剩长期保留的 #2/#9/#24 用户级订阅）；**路由数不变（244）**，接 UI 不增删路由。
+- **4 批入口（逐条 file:line 见两份清单）**：
+  1. **订单收款计划三件套（#6 GET / #10 PATCH / #20 POST）**：`orders/components/payment-schedules-panel.tsx`
+     + `schedule-edit-dialog.tsx` / `mark-paid-dialog.tsx` + `orders/hooks/use-order-schedules.ts`，
+     `orders/page.tsx:452` 挂载；**订单状态流转（#21）**：`orders/components/order-status-dialog.tsx:66`，
+     `orders/page.tsx:460`；**汇率历史（#5）**：`settings/tax-archives/components/fx-history-card.tsx`，
+     `tax-archives/page.tsx:615`。
+  2. **应收台账（#7）**：`app/(app)/receivables/page.tsx` + `receivables/hooks/use-receivables.ts`，
+     订单页 `orders/page.tsx:133` 提供 `/receivables` 入口；**AI 任务运行（#13）**：
+     `settings/ai-providers/hooks/use-run-ai-task.ts` + `components/run-task-dialog.tsx`，页面 `:216`。
+  3. **情报 CSV 导入（#15）/ 手工货运（#16）**：`intel/components/csv-import-dialog.tsx:85`、
+     `manual-shipment-dialog.tsx:65`（挂 `shipments-table.tsx:249/250`）；
+     **新建线索（#18）**：`leadgen/components/manual-lead-dialog.tsx:66`，`leadgen/page.tsx:860`。
+  4. **品名对照（#19）**：`market/components/name-mapping-panel.tsx`，`market-view.tsx:451`；
+     **调研手工录入（#22）**：`research/components/manual-research-dialog.tsx`，`research/page.tsx:827`。
+- **测试快照（本批）**：前端全量 **914 passed / 108 files**（C36 下期 4 批累计；`--maxWorkers=2`）；
+  worker 全量 **1523 passed + 12 skipped**（无库；12 条 db/integration 按约定 skip）。
+  **后续批次数字还会变，任何时点以当时门禁实测为准，本行只记本批快照。**
+- **未做 / 口径说明（不算完成项）**：
+  1. **品名对照「编辑 / 删除」未做**：后端只有 `POST /market/name-mappings` + `GET /market/name-lookup`，
+     **没有全量列表 / PATCH / DELETE** ⇒ 面板只做「搜索 + 新增 + 重复预检」，编辑/删除已在面板内标注；
+     建议后续后端补列表/改/删接口后再接（新缺口，未登记 TODO，由 Lead 决定是否入账）。
+  2. **AI 任务运行用最小表单**：任务 payload 无统一 schema（每个 task 入参不同）⇒ 运行弹窗为
+     `task_key` + JSON 文本 + 结果展示，不做逐任务动态表单；要更好体验需任务 schema 进 manifest。
+  3. **应收台账的「逾期」口径**：`GET /receivables` 不返到期日（`receivables` 表无 `due_date`），
+     也不支持客户/逾期参数 ⇒ 前端按**当前页订单**逐单取 `GET /orders/{id}/payment-schedules` 的真实到期日
+     计算逾期（`receivables/hooks/use-order-due-dates.ts`）；翻页后才覆盖新页，不是全量逾期汇总。
+- 文档：`docs/API_RESERVED_LIST_AUDIT.md`（§0 计数 24→已接21/剩3、§1 十二行 ✅、§1.1 四批入口与缺口）、
+  `docs/API_RESERVED_LIST.md`（§2 十二行 ✅ 已接·移出、§0 当前未接 ≈36、§3 C36 状态同步）。
+- 本任务只改文档：未改代码、未改 `docs/TODO.md`、未 commit、未跑门禁（数字引用自批次实测）。

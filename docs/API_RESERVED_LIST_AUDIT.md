@@ -12,6 +12,14 @@
 > （税档软删 / 定价编辑 / 团队改名 / 手工汇率 / leadgen CSV 上传，入口见 §1 各行的 ✅ 标注）；
 > 因此「待接 UI」由 20 条降为 **15 条**（下期 12 + 长期保留 3）。路由计数不变（接 UI 不加路由）。
 >
+> **✅ 2026-10-21 C36 下期（4 批，task-54~56 系列）**：原「下期 12 条」**已全部接上**——
+> 订单收款计划三件套（#6/#10/#20）/ 订单状态流转（#21）/ 汇率历史（#5）；
+> 应收台账（#7）/ AI 任务运行（#13）；情报 CSV+手工货运（#15/#16）/ 新建线索（#18）；
+> 品名对照（#19）/ 调研手工录入（#22）。⇒「待接 UI」**15 → 3 条**（只剩长期保留的 3 条用户级订阅），
+> 路由计数不变（仍 244）。**遗留缺口**：#19 品名对照的「编辑 / 删除」因后端**没有全量列表 / PATCH / DELETE**
+> 未做（面板已标注），建议后续后端补接口；AI 任务运行因任务 payload 无统一 schema，用最小表单
+> （`task_key` + JSON 文本）承载。
+>
 > - 扫描基线：`docs/API_RESERVED_LIST.md` @ `17e87744`（2026-10-21）
 > - 复核基线：当前工作区 HEAD `62d2d2cb`（2026-10-21；并发改动只读扫描）
 > - 方法：重扫 Worker 路由（`backend/worker/src/**` 的 `@app.<method>`）+ 抽取前端全部 `apiClient.*`/`fetch` 调用 220 条，
@@ -22,7 +30,7 @@
 
 | 类别 | 数量 | 分布 |
 |---|---|---|
-| **24 条「待接 UI」** | 24 | **已接 4**（C30 归档日志、A13 翻译、A4 渲染直链 ×2）＋**本期接 5 ✅ 已接（2026-10-21 C36）**；**剩余 15**（下期 12 + 长期保留 3） |
+| **24 条「待接 UI」** | 24 | **已接 21 = 早期 4（C30/A13/A4）+ 本期 5（C36）+ 下期 12（C36 下期）**；**剩余 3**（长期保留：用户级订阅 #2/#9/#24） |
 | **18 条「可删候选」** | 18 | **✅ 已删除（C36 执行）3**；**保留（理由）2**；**需 owner 确认 13** |
 | **需用户拍板** | **13 + 3（已处置）** | 13 条「需 owner 确认」仍在；3 条「可删」2026-10-21 已获批准并删除（见顶部） |
 
@@ -46,24 +54,24 @@
 | 2 | `DELETE /api/v1/users/{id}/subscriptions/{code}` | 平台管理员撤销**用户级**工位订阅（`ws_workstations.py:271`） | 前端只有**团队级**订阅面板（`team/components/team-subscriptions-panel.tsx:70/88`）；无用户级订阅页 | 中（平台运维/客服撤权） | 中（管理员账号页加订阅子面板；先确认用户级订阅是否仍是有效模型） | 长期保留（团队级已覆盖主路径，用户级仅运维口） |
 | 3 | `GET /api/v1/admin/archive-logs` | 事件归档记录真查询（C30；`main.py:3048`） | **已接**：`admin/hooks/use-archive-logs.ts:54` + `archive-logs-card.tsx`，灰发页已挂载（`admin/gray-release/page.tsx:80`） | — | — | **已接·移出** |
 | 4 | `GET /api/v1/file-objects/{id}/render-content` | A4 渲染器短期签名直链（令牌即授权；`ws_files.py:920`，URL 在 `ws_files.py:900` 由装配层生成） | **已接（渲染链路）**：渲染数据里返回该直链，浏览器 `<img>` 直接加载（`ws_files.py:820/900`；`main.py:4801` 公章同理），不经 `apiClient` | — | — | **已接·移出** |
-| 5 | `GET /api/v1/fx-rates` | 汇率历史列表（base/quote，最多 365 条；`ws_extras.py:162`） | 前端只用 `/fx-rates/latest`（`lib/fx/use-latest-fx.ts:26`），无历史页 | 中（汇率审计/回看；外部源异常时核对） | 中（小表格+筛选；可与 settings 合页） | 下期 |
-| 6 | `GET /api/v1/orders/{id}/payment-schedules` | 读订单收款计划（`main.py:3959`） | 订单页只有列表/状态展示（`orders/page.tsx:64/293`；`orders/hooks/use-orders-list.ts`），无收款计划面板 | 高（收款节点/逾期判断） | 中（订单详情子面板 + 金额/状态展示） | 下期 |
-| 7 | `GET /api/v1/receivables` | 应收台账（分页；`main.py:4118`） | 前端无应收页面/调用（220 条调用扫描 0 命中） | 高（现金流/催收） | 高（新页面：筛选/汇总/逾期） | 下期 |
+| 5 | `GET /api/v1/fx-rates` | 汇率历史列表（base/quote，最多 365 条；`ws_extras.py:162`） | 前端原只用 `/fx-rates/latest`（`lib/fx/use-latest-fx.ts:26`） → **✅ 已接（2026-10-21 C36 下期）**：「汇率历史」卡 `settings/tax-archives/components/fx-history-card.tsx`（`lib/fx/use-fx-history.ts`），`tax-archives/page.tsx:615` 挂载 | 中（汇率审计/回看；外部源异常时核对） | 中（小表格+筛选；可与 settings 合页） | **✅ 已接·移出** |
+| 6 | `GET /api/v1/orders/{id}/payment-schedules` | 读订单收款计划（`main.py:3959`） | 订单页原只有列表/状态展示（`orders/page.tsx:64/293`；`orders/hooks/use-orders-list.ts`） → **✅ 已接（2026-10-21 C36 下期）**：`orders/components/payment-schedules-panel.tsx` + `orders/hooks/use-order-schedules.ts`，`orders/page.tsx:452` 挂载 | 高（收款节点/逾期判断） | 中（订单详情子面板 + 金额/状态展示） | **✅ 已接·移出** |
+| 7 | `GET /api/v1/receivables` | 应收台账（分页；`main.py:4118`） | 原无应收页面/调用（220 条调用扫描 0 命中） → **✅ 已接（2026-10-21 C36 下期）**：`app/(app)/receivables/page.tsx` + `receivables/hooks/use-receivables.ts`；入口 `orders/page.tsx:133`（`<Link href="/receivables">`） | 高（现金流/催收） | 高（新页面：筛选/汇总/逾期） | **✅ 已接·移出** |
 | 8 | `GET /api/v1/tenant/company-seals/{id}/render-content` | A4 公章签名直链（令牌即授权；`ws_seals.py:221`） | **已接（渲染链路）**：装配层优先填该直链（`main.py:4801`），浏览器加载 | — | — | **已接·移出** |
 | 9 | `GET /api/v1/users/{id}/subscriptions` | 平台管理员读用户级订阅（`ws_workstations.py:229`） | 前端无用户级订阅页（同 #2） | 中（运维排查） | 中（同 #2，同一面板三接口） | 长期保留（同 #2） |
-| 10 | `PATCH /api/v1/payment-schedules/{id}` | 改收款计划（金额/日期；`main.py:4024`） | 无收款计划 UI（同 #6） | 高（同一业务流） | 中（并入 #6 面板） | 下期 |
+| 10 | `PATCH /api/v1/payment-schedules/{id}` | 改收款计划（金额/日期；`main.py:4024`） | 原无收款计划 UI（同 #6） → **✅ 已接（2026-10-21 C36 下期）**：`orders/components/schedule-edit-dialog.tsx` + `use-order-schedules.ts:74`（标记收款另有 `mark-paid-dialog.tsx`） | 高（同一业务流） | 中（并入 #6 面板） | **✅ 已接·移出** |
 | 11 | `PATCH /api/v1/pricing-data/{id}` | 改定价矩阵一项（金额/单位/生效/备注；`main.py:2307`） | 定价页只有 GET/POST/DELETE（`pricing-data/hooks/use-pricing-data.ts:22/36/50`），原**无编辑** → **✅ 已接（2026-10-21 C36）**：`use-pricing-data.ts:83`（PATCH）+ `PricingEditDialog.tsx`（`PricingDataTable.tsx:207` 编辑按钮），`pricing-data-manager.tsx:221` 挂载 | 高（改错价/缩短生效期，现只能删了重建） | 低（复用编辑弹窗，调 PATCH） | **✅ 已接·移出** |
 | 12 | `PATCH /api/v1/teams/{id}` | 团队改名（`ws_teams.py:245`） | 团队页只有创建/加入（`team/components/team-setup.tsx`），原无改名入口（220 条扫描无 PATCH /teams） → **✅ 已接（2026-10-21 C36）**：`team/components/team-rename-dialog.tsx:57`（PATCH `{name}`），`team/page.tsx:179` 挂载（仅团队管理员） | 中（团队名是单据/报表展示名） | 低（团队设置一个输入+保存） | **✅ 已接·移出** |
-| 13 | `POST /api/v1/ai/tasks/{key}/run` | 手动跑 AI 任务（`chain.py:733`） | AI provider 页只做 provider/binding 管理；无"运行任务"按钮 | 中（运维/调试/补跑） | 中（任务表单+结果展示，任务 payload 各不相同） | 下期 |
+| 13 | `POST /api/v1/ai/tasks/{key}/run` | 手动跑 AI 任务（`chain.py:733`） | AI provider 页原只做 provider/binding 管理 → **✅ 已接（2026-10-21 C36 下期）**：`settings/ai-providers/hooks/use-run-ai-task.ts` + `components/run-task-dialog.tsx`，`ai-providers/page.tsx:216` 挂载（任务 payload 无统一 schema ⇒ 最小表单：`task_key` + JSON 文本） | 中（运维/调试/补跑） | 中（任务表单+结果展示，任务 payload 各不相同） | **✅ 已接·移出** |
 | 14 | `POST /api/v1/fx-rates` | 手工录汇率（`ws_extras.py:217`） | 前端原只用 latest，无录入入口 → **✅ 已接（2026-10-21 C36）**：`lib/fx/use-manual-fx.ts:40`（POST，同日同币对 UPSERT）+ `settings/tax-archives/components/fx-rate-card.tsx`，`tax-archives/page.tsx:613` 挂载 | 中（外部源故障时兜底；审计留痕） | 低（单表单：日期/币种/值） | **✅ 已接·移出** |
-| 15 | `POST /api/v1/intel/import/csv` | 情报货运 CSV 导入（`main.py:944`） | 情报页只读列表（`use-intel.ts:77/90`），无导入 | 中（批量补数据，手工录太慢） | 中（上传+列映射+错误报告） | 下期 |
-| 16 | `POST /api/v1/intel/shipments` | 手工新增情报货运（`main.py:929`） | 前端只读列表（同 #15） | 中（少量补录） | 中（表单+校验，字段多） | 下期 |
+| 15 | `POST /api/v1/intel/import/csv` | 情报货运 CSV 导入（`main.py:944`） | 情报页原只读列表（`use-intel.ts:77/90`） → **✅ 已接（2026-10-21 C36 下期）**：`intel/components/csv-import-dialog.tsx:85`（multipart 字段 `file`），`intel/components/shipments-table.tsx:249` 挂载 | 中（批量补数据，手工录太慢） | 中（上传+列映射+错误报告） | **✅ 已接·移出** |
+| 16 | `POST /api/v1/intel/shipments` | 手工新增情报货运（`main.py:929`） | 前端原只读列表（同 #15） → **✅ 已接（2026-10-21 C36 下期）**：`intel/components/manual-shipment-dialog.tsx:65`（JSON），`shipments-table.tsx:250` 挂载 | 中（少量补录） | 中（表单+校验，字段多） | **✅ 已接·移出** |
 | 17 | `POST /api/v1/leadgen/runs/from-csv` | 从 CSV 创建 leadgen run（`chain.py:1003`） | 页面文案已**承诺**该能力（`leadgen/page.tsx:416`），原无上传控件/调用 → **✅ 已接（2026-10-21 C36）**：`lib/leadgen/csv-import.ts` + `leadgen/components/csv-import-panel.tsx:54`（multipart 字段 `csv_file`），`leadgen/page.tsx:426` 挂载 | 中（批量线索是 leadgen 主入口） | 低（multipart 上传 + 刷新 run 列表） | **✅ 已接·移出** |
-| 18 | `POST /api/v1/leads` | 手工新增线索（`chain.py:1349`） | 线索页用 scan-replied/crawl/批量，**无"新建线索"**；220 条扫描无裸 POST /leads | 中（展会/老客户等手工来源） | 中（线索表单+去重提示） | 下期 |
-| 19 | `POST /api/v1/market/name-mappings` | 新增中外品名对照（`main.py:1732`） | 市场页只读/查询，无维护入口 | 中（品名匹配准确率） | 中（对照表 CRUD 小页面） | 下期 |
-| 20 | `POST /api/v1/orders/{id}/payment-schedules` | 建收款计划（`main.py:3977`） | 无收款计划 UI（同 #6） | 高 | 中（并入 #6） | 下期 |
-| 21 | `POST /api/v1/orders/{id}/status` | 订单状态机流转（确认建应收、发货发跨工位事件；`main.py:3867`） | 订单页只显示状态/筛选（`orders/page.tsx:52/293`），无流转按钮；前端只有 `PATCH /orders/{id}`（字段编辑） | 高（订单全链路推进/事件联动） | 中（按钮+确认+刷新；状态机规则需照后端） | 下期 |
-| 22 | `POST /api/v1/research/products` | 手工录入调研产品（`chain.py:2232`；含从线索挑选） | 调研页只 GET/PATCH/DELETE（`research` 页面调用扫描；无 POST） | 中（无线索时的补录） | 中（表单，字段多） | 下期 |
+| 18 | `POST /api/v1/leads` | 手工新增线索（`chain.py:1349`） | 线索页原用 scan-replied/crawl/批量 → **✅ 已接（2026-10-21 C36 下期）**：`leadgen/components/manual-lead-dialog.tsx:66`（手工线索表单），`leadgen/page.tsx:860` 挂载 | 中（展会/老客户等手工来源） | 中（线索表单+去重提示） | **✅ 已接·移出** |
+| 19 | `POST /api/v1/market/name-mappings` | 新增中外品名对照（`main.py:1793`；另有 `GET /market/name-lookup` 关键词查询） | 市场页原无维护入口 → **✅ 已接（2026-10-21 C36 下期）**：新增「品名对照」tab（`market/components/name-mapping-panel.tsx`，`market-view.tsx:451`）：搜索列表 + 中英品名新增 + 重复预检；**遗留缺口（新登记）**：后端无全量列表/PATCH/DELETE ⇒ **编辑/删除未做**（面板内已标注，建议后续后端补接口后再接） | 中（品名匹配准确率） | 中（对照表 CRUD 小页面） | **✅ 已接·移出（缺口见左）** |
+| 20 | `POST /api/v1/orders/{id}/payment-schedules` | 建收款计划（`main.py:3977`） | 原无收款计划 UI（同 #6） → **✅ 已接（2026-10-21 C36 下期）**：`orders/components/payment-schedules-panel.tsx`（新建表单）+ `use-order-schedules.ts:48` | 高 | 中（并入 #6） | **✅ 已接·移出** |
+| 21 | `POST /api/v1/orders/{id}/status` | 订单状态机流转（确认建应收、发货发跨工位事件；`main.py:3867`） | 订单页原只显示状态/筛选（`orders/page.tsx:52/293`） → **✅ 已接（2026-10-21 C36 下期）**：`orders/components/order-status-dialog.tsx:66`（状态流转确认弹窗），`orders/page.tsx:460` 挂载 | 高（订单全链路推进/事件联动） | 中（按钮+确认+刷新；状态机规则需照后端） | **✅ 已接·移出** |
+| 22 | `POST /api/v1/research/products` | 手工录入调研产品（`chain.py:2232`；含从线索挑选） | 调研页原只 GET/PATCH/DELETE → **✅ 已接（2026-10-21 C36 下期）**：`research/components/manual-research-dialog.tsx`（`research/page.tsx:827` 挂载）：「手工录入」支持从线索挑选（source_ref）+ 手工字段，409 ALREADY_PICKED/404/403 如实透出 | 中（无线索时的补录） | 中（表单，字段多） | **✅ 已接·移出** |
 | 23 | `POST /api/v1/trade-docs/{id}/translate` | 单证字段中译英（A13；`ws_docs_ext.py:549`） | **已接**：`use-trade-docs.ts:241` + `doc-translate-panel.tsx:66`，经 `doc-hardening-section.tsx:79` 挂载；A13 已销账 | — | — | **已接·移出** |
 | 24 | `PUT /api/v1/users/{id}/subscriptions/{code}` | 平台管理员开通用户级订阅（`ws_workstations.py:243`） | 同 #2/#9 | 中 | 中 | 长期保留（同 #2） |
 
@@ -71,14 +79,28 @@
 
 - **已接/移出 4**：#3 归档日志（C30）、#23 翻译（A13）、#4/#8 渲染直链（A4 渲染链路）。
   ⇒ 「待接 UI」由 24 降到 **20 条**。
-- **✅ 本期接 5 已全部落地（2026-10-21 C36 UI 批次 `e419d01d`）**：#1 税档停用、#11 定价编辑、#12 团队改名、
-  #14 手工汇率、#17 leadgen CSV（入口逐条见 §1 的 ✅ 标注）。
-  ⇒ 「待接 UI」再降到 **15 条**（下期 12 + 长期保留 3）；**接 UI 不改变路由数**（Worker 仍 244）。
-- **下期 12**：#5 汇率历史、#6/#10/#20 收款计划三件套、#7 应收台账、#13 AI 任务运行、#15/#16 情报导入/补录、
-  #18 手工线索、#19 品名对照、#21 订单状态流转、#22 调研补录。
+- **✅ 本期接 5（2026-10-21 C36 UI 批次 `e419d01d`）**：#1 税档停用、#11 定价编辑、#12 团队改名、
+  #14 手工汇率、#17 leadgen CSV（入口逐条见 §1 的 ✅ 标注）⇒ 20 → **15 条**。
+- **✅ 下期 12 全部接上（2026-10-21 C36 下期，4 批）**：
+  - 批 1：订单收款计划三件套 **#6/#10/#20**（`orders/components/payment-schedules-panel.tsx` + `use-order-schedules.ts`，
+    `orders/page.tsx:452`）、订单状态流转 **#21**（`order-status-dialog.tsx:66`，`orders/page.tsx:460`）、
+    汇率历史 **#5**（`settings/tax-archives/components/fx-history-card.tsx`，`tax-archives/page.tsx:615`）；
+  - 批 2：应收台账 **#7**（`app/(app)/receivables/page.tsx` + `use-receivables.ts`，入口 `orders/page.tsx:133`）、
+    AI 任务运行 **#13**（`ai-providers/hooks/use-run-ai-task.ts` + `run-task-dialog.tsx`，页面 `:216`）；
+  - 批 3：情报 CSV **#15**（`intel/components/csv-import-dialog.tsx:85`）、手工货运 **#16**
+    （`manual-shipment-dialog.tsx:65`，二者挂 `shipments-table.tsx:249/250`）、新建线索 **#18**
+    （`leadgen/components/manual-lead-dialog.tsx:66`，`leadgen/page.tsx:860`）；
+  - 批 4：品名对照 **#19**（`market/components/name-mapping-panel.tsx`，`market-view.tsx:451`）、
+    调研手工录入 **#22**（`research/components/manual-research-dialog.tsx`，`research/page.tsx:827`）。
+  ⇒ **待接 UI = 3 条（长期保留的 #2/#9/#24）**；接 UI 不改变路由数（Worker 仍 244）。
 - **长期保留 3**：#2/#9/#24 用户级订阅（平台运维口；团队级订阅已是主路径，是否值得做 UI 需产品确认）。
+- **新登记缺口（建议后续处理）**：**#19 品名对照的「编辑 / 删除」** —— 后端目前**没有**全量列表 / PATCH / DELETE
+  端点（只有 `POST /market/name-mappings` + `GET /market/name-lookup`），面板已标注；建议后续后端补
+  列表/改/删接口后再接 UI（不影响本期"搜索+新增"可用）。
+- **AI 任务运行的取舍**：任务 payload **无统一 schema**（每个 task 的入参不同）⇒ 运行弹窗用**最小表单**
+  （`task_key` + JSON 文本 + 运行结果），不做逐任务动态表单；如需更友好体验，需任务 schema 进 `manifest`。
 - **未计入上表的 2 条**：审计 §4C 建议把 `GET/PUT /product-options/overrides` 从「可删候选」更正为
-  「现行团队级档位能力、待接 UI（下期）」；本表 15 条仍按原 24 条清单统计，**下次重扫时并入**。
+  「现行团队级档位能力、待接 UI（下期）」；本表 **3 条**仍按原 24 条清单统计，**下次重扫时并入**。
 
 ## 2. 18 条「可删候选」逐条证据与结论
 

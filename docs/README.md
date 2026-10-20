@@ -44,13 +44,13 @@
 | [UNCERTAIN.md](./UNCERTAIN.md) | 决策账本（存疑/裁决落盘） |
 | [QA_TEST_ACCOUNTS.md](./QA_TEST_ACCOUNTS.md) | 测试账号与验收口径 |
 | [E2E_GUIDE.md](./E2E_GUIDE.md) | e2e 一键运行说明（2026-10-21 口径：27 条 = 27 passed + 0 skipped） |
-| [API_RESERVED_LIST.md](./API_RESERVED_LIST.md) | **后端先行 API 保留清单（C36）**：扫描基线 60 条未接分类（内部/REST 契约/待接 UI/可删候选）；**2026-10-21 删 3 + 接 5 后剩余约 48 条**，证据与计数见该文 §0；新增端点/接 UI 后按 §4 维护 |
+| [API_RESERVED_LIST.md](./API_RESERVED_LIST.md) | **后端先行 API 保留清单（C36）**：扫描基线 60 条未接分类（内部/REST 契约/待接 UI/可删候选）；**2026-10-21 删 3 + 接 21（本期 5 + 下期 12）后剩余约 36 条**（待接 UI 仅 3 条长期保留），证据与计数见该文 §0；新增端点/接 UI 后按 §4 维护 |
 
 ### 2.1 审计 / 验收留证（2026-10-21）
 
 | 文档 | 内容 |
 |---|---|
-| [API_RESERVED_LIST_AUDIT.md](./API_RESERVED_LIST_AUDIT.md) | **C36 API 取证审计**：24 条「后端先行 UI 未接」逐条价值/成本/建议 + 18 条可删候选证据；本期接 5 条与删 3 条落点（2026-10-21） |
+| [API_RESERVED_LIST_AUDIT.md](./API_RESERVED_LIST_AUDIT.md) | **C36 API 取证审计**：24 条「后端先行 UI 未接」逐条价值/成本/建议 + 18 条可删候选证据；**2026-10-21 已接 21 条（本期 5 + 下期 12）、删 3 条**，仅剩长期保留 3 条（品名对照编辑/删除缺口见顶部说明） |
 | [QA_AUTHZ_AUDIT_2026-10-21.md](./QA_AUTHZ_AUDIT_2026-10-21.md) | **C27 越权审计留证（7 条）**：只读代码审计，逐条三选一结论（已有闸门/缺失/需修复）+ 账号前提核查 |
 | [QA_AUTHZ_VERIFY_2026-10-21.md](./QA_AUTHZ_VERIFY_2026-10-21.md) | **C27 越权修复验收矩阵 v2**：F1–F4 + R-1 的「该验什么/期望/证据在哪」；只定义验收，不执行 |
 | [acceptance/B_PACKAGE_2026-10-21.md](./acceptance/B_PACKAGE_2026-10-21.md) | **B 组验收包**：打印视觉 QA、条款、N3 等「需要用户一次过目」的事项清单与证据（含 print-qa 产物） |
