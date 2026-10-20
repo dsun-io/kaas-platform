@@ -182,7 +182,7 @@ Neon 项目权限 · Resend 账号（`send.powervoy.com` 域名）· 生产域�
 | ⚠️ 冷启动 | `pywrangler` 报 **Worker Startup Time 3386ms** > 验收线 **2,950ms**（该数字≠Dashboard p50）；`backend/worker/coldstart-baseline.json` 仍 **PENDING**，需发布后在 Dashboard → Workers → kaas → Metrics 读 p50 判定，并决定是否裁剪包体（本次上传 11.9 MiB） |
 | 待用户动作 | **D1 ✅ 2026-10-21 已完成**（`RESEND_API_KEY` 已 `wrangler secret put`，secret list 5 项；key 权限=仅发送，`/domains` 401 属预期）⇒ 忘记密码邮件恢复；**D2** R2 新 32 位密钥仍待创建（现 `S3_ACCESS_KEY` 13 位，直传走兜底）；**D4** 生产测试数据清理执行当次确认 |
 | 未做 | D5 转 private（用户 2026-10-21 决定保持 public）；P4 观察期进行中 |
-| 密钥托管（2026-10-21） | 用户授权密钥存于 `~/.dsh/secrets/`（**不入仓、不打印**）并写入用户级环境变量：`CLOUDFLARE_API_TOKEN` / `NEON_API_KEY` / `RESEND_API_KEY`（全权限，仅供运维）/ `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`。生产 worker 只绑定**仅发送** Resend key（最小权限）。**操作纪律**：仅本会话使用；破坏性操作（删数据/删桶/吊销 token/轮换密钥）执行前必须先向用户确认 |
+| 密钥托管（2026-10-21，**AI 与系统分离**） | **AI 运维专用**（我使用，存 `~/.dsh/secrets/` + 用户级 env，不入仓）：CF `DSH-Admin`、Neon `DSH-Admin`、Resend `DSH-Admin`（全权限，仅审计/管理，不用于发信）。**平台自身用**：worker `kaas` 的 R2 S3 = 独立系统 token（`kaas-r2-system-20261021`，仅 `kaas-files` 对象读写）；worker Resend = `kaas-生产`（仅发送）；Neon `kaas` = GitHub/CI/preview 自动化；**预览环境是设计内**：R2 `kaas-preview-storage` + KV `KAAS_PREVIEW` + CF token `kaas-preview-storage-rw` + Resend `kaas-预览`（**不是脏资源，勿删**）。**待确认**：旧 CF token `kaas R2 Account Token`（疑似上一版系统 token，已被新系统 token 取代）；Neon `neon-cli-mcp-*`（若 MCP 已换 key 再清理）。**操作纪律**：破坏性操作（删数据/删桶/吊销/轮换）执行前必须先向用户确认 |
 
 ## 0.1 本轮后端交付（2026-10-20 晚 · 分支 `feat/trade-doc-content-a` · PR #5）
 
