@@ -98,6 +98,16 @@
 > 证据：`docs/ui-redesign/phase3/`；门禁：typecheck 0 / lint 0 err / vitest 455 / e2e 23+4=27 / build out/268。
 > 详见方案文档 §0.2。
 >
+> **（2026-10-20 · UI/UX 第三轮：询盘编号/阶段/单证内嵌预览/账号区）**
+> 询盘列表改为“询盘编号 + 阶段徽章（关闭/询盘/报价/订单/发货/完结）”，产品名降为副行只显示名称；
+> 阶段按单证类型 + 订单状态**展示推导**（不改后端 status）；展开删掉重复的报价单/订单编号行，
+> 单条订单扁平、多条按订单分组，单证按生成时间倒序；联系人只写名字、点击弹联系人信息（不跳页）；
+> 单证点击**有权限时直接内嵌完整预览**（DocPreview + render-data），无权限给说明；footer 重做；
+> 预览内展示归档 PDF 版本链（files API 的 version/is_current/supersedes）；顶栏右侧头像删除，
+> 侧栏底部加账号卡 + 个人信息弹窗（只读，后端无资料修改接口）。mock 补 render-data 样板数据。
+> 证据：`docs/ui-redesign/phase4/`；门禁：typecheck 0 / lint 0 err 86 warn / vitest 455 / e2e 23+4=27 / build out/268。
+> 详见方案文档 §0.3。
+>
 > **（2026-10-20 · 新会话接手核对：本地 main 同步 + 分支残留清理 + 生产 secrets 实测 + 本机工具链）**
 >
 > 1. **本地 main 已快进到 `fb4b2aa`**（此前落后 origin/main 33 个提交 —— 本地曾停在 10-19 下午的

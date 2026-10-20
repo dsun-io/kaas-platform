@@ -48,8 +48,8 @@ import {
 import {
   InquiryFollowup,
   UnlinkedRecords,
-  collectDocuments,
   deriveInquiryStage,
+  splitProductName,
 } from "./components/inquiry-followups";
 
 // 客户阶段（2026-10-18 用户口径）：只有三种。
@@ -639,6 +639,82 @@ function ContactForm({
  * 「已下单」由开启中的订单自动推导，不在这里出现 —— 客户阶段与订单阶段是两层
  * （2026-10-18 用户口径）；「流失」属于订单阶段，客户阶段已删除该值。
  */
+/** 联系人信息弹窗（询盘详情里点联系人名字打开，不跳页）。 */
+function ContactInfoDialog({
+  contact,
+  onClose,
+}: {
+  contact: Contact | null;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog
+      open={contact !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent
+        showCloseButton={false}
+        className="max-w-sm rounded-2xl border border-white/60 bg-white/90 p-0 backdrop-blur-2xl"
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-border/70 px-5 py-4">
+          <div>
+            <DialogTitle className="text-base">
+              {contact?.name ?? "联系人"}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              联系人信息
+            </DialogDescription>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onClose}
+            aria-label="关闭联系人信息"
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
+        <dl className="grid grid-cols-[72px_1fr] gap-x-3 gap-y-2 px-5 py-4 text-sm">
+          {contact?.position && (
+            <>
+              <dt className="text-muted-foreground">职位</dt>
+              <dd>{contact.position}</dd>
+            </>
+          )}
+          {contact?.phone && (
+            <>
+              <dt className="text-muted-foreground">电话</dt>
+              <dd className="tabular-nums">{contact.phone}</dd>
+            </>
+          )}
+          {contact?.email && (
+            <>
+              <dt className="text-muted-foreground">邮箱</dt>
+              <dd className="break-all">{contact.email}</dd>
+            </>
+          )}
+          {contact?.whatsapp && (
+            <>
+              <dt className="text-muted-foreground">WhatsApp</dt>
+              <dd className="tabular-nums">{contact.whatsapp}</dd>
+            </>
+          )}
+          {!contact?.position &&
+            !contact?.phone &&
+            !contact?.email &&
+            !contact?.whatsapp && (
+              <dd className="col-span-2 text-muted-foreground">
+                暂无更多联系方式
+              </dd>
+            )}
+        </dl>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function StageUpdate({
   customer,
   onClose,
@@ -787,6 +863,7 @@ function CustomerDetailPanel({
   const [inquiryNoEdit, setInquiryNoEdit] = useState<Inquiry | null>(null);
   const [inquiryNoPending, setInquiryNoPending] = useState(false);
   const [inquiryNoError, setInquiryNoError] = useState<string | null>(null);
+  const [contactInfo, setContactInfo] = useState<Contact | null>(null);
   const [expandedInquiries, setExpandedInquiries] = useState<
     Record<number, boolean>
   >({});
@@ -1163,8 +1240,12 @@ function CustomerDetailPanel({
                         linkedQuotes,
                         recordsLoading,
                       );
-                      const docs = collectDocuments(linkedQuotes);
                       const expanded = expandedInquiries[inq.id] ?? false;
+                      const product = splitProductName(inq.product_name_raw);
+                      const primaryContact =
+                        detail?.contacts?.find((c) => c.is_primary) ??
+                        detail?.contacts?.[0] ??
+                        null;
                       return (
                         <div
                           key={inq.id}
@@ -1183,13 +1264,8 @@ function CustomerDetailPanel({
                           <div className="flex flex-wrap items-start justify-between gap-2">
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-2">
-                                {inq.inquiry_no && (
-                                  <span className="font-mono text-xs text-muted-foreground">
-                                    {inq.inquiry_no}
-                                  </span>
-                                )}
-                                <span className="text-sm font-medium">
-                                  {inq.product_name_raw ?? `询盘 #${inq.id}`}
+                                <span className="font-mono text-sm font-medium">
+                                  {inq.inquiry_no ?? `询盘 #${inq.id}`}
                                 </span>
                                 <StatusBadge
                                   tone={stage.tone}
@@ -1197,25 +1273,9 @@ function CustomerDetailPanel({
                                 >
                                   {stage.label}
                                 </StatusBadge>
-                                {stage.hint && (
-                                  <span className="text-xs text-muted-foreground">
-                                    {stage.hint}
-                                  </span>
-                                )}
                               </div>
                               <p className="mt-1 text-xs text-muted-foreground">
-                                {[
-                                  inq.channel,
-                                  inq.quantity != null
-                                    ? `${inq.quantity} ${inq.quantity_unit ?? ""}`
-                                    : null,
-                                  docs.length > 0
-                                    ? `${docs.length} 份单证`
-                                    : null,
-                                  new Date(inq.created_at).toLocaleDateString(),
-                                ]
-                                  .filter(Boolean)
-                                  .join(" · ")}
+                                {product.name}
                               </p>
                             </div>
                             <div
@@ -1281,6 +1341,25 @@ function CustomerDetailPanel({
                               onClick={(e) => e.stopPropagation()}
                             >
                               <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
+                                <span>产品：{product.name}</span>
+                                <span>规格：{product.spec ?? "—"}</span>
+                                <span className="sm:col-span-2">
+                                  联系人：
+                                  {primaryContact ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setContactInfo(primaryContact);
+                                      }}
+                                      className="font-medium text-primary hover:underline"
+                                    >
+                                      {primaryContact.name}
+                                    </button>
+                                  ) : (
+                                    "—"
+                                  )}
+                                </span>
                                 <span>渠道：{inq.channel ?? "—"}</span>
                                 <span>
                                   数量：
@@ -1377,6 +1456,10 @@ function CustomerDetailPanel({
           )}
         </div>
       </DialogContent>
+      <ContactInfoDialog
+        contact={contactInfo}
+        onClose={() => setContactInfo(null)}
+      />
     </Dialog>
   );
 }
