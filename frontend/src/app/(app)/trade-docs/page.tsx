@@ -33,6 +33,7 @@ import { DocTypeLabel, docTypeMeta } from "@/components/doc-chip";
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
 import { NumberEditDialog } from "@/components/shared/number-edit-dialog";
 import { Button } from "@/components/ui/button";
@@ -330,9 +331,15 @@ export default function TradeDocsPage() {
         }
       >
         {list.isLoading ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            加载中…
-          </p>
+          <div
+            className="space-y-2"
+            aria-busy="true"
+            aria-label="单证台账加载中"
+          >
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full rounded-md" />
+            ))}
+          </div>
         ) : list.isError ? (
           <div className="space-y-1 py-8 text-sm">
             <div className="flex items-center gap-2 text-destructive">
@@ -355,13 +362,27 @@ export default function TradeDocsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
-                  <th className="w-8 p-2" />
-                  <th className="p-2">单证编号</th>
-                  <th className="p-2">类型</th>
-                  <th className="p-2">状态</th>
-                  <th className="p-2">金额</th>
-                  <th className="p-2">上游</th>
-                  <th className="p-2">操作</th>
+                  <th scope="col" className="w-8 p-2">
+                    <span className="sr-only">选择</span>
+                  </th>
+                  <th scope="col" className="p-2">
+                    单证编号
+                  </th>
+                  <th scope="col" className="p-2">
+                    类型
+                  </th>
+                  <th scope="col" className="p-2">
+                    状态
+                  </th>
+                  <th scope="col" className="p-2">
+                    金额
+                  </th>
+                  <th scope="col" className="p-2">
+                    上游
+                  </th>
+                  <th scope="col" className="p-2">
+                    操作
+                  </th>
                 </tr>
               </thead>
               <tbody>

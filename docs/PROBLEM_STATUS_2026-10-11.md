@@ -133,6 +133,10 @@
 > 手写 `<h1>` 清零：billing / intel / market-view / products / spec-config / spec-config wizard /
 > pricing-data / admin gray-release / admin spec-proposals / onboarding 全部改 `PageHeader`；
 > gray-release、spec-config、pricing 表格的“加载中…”改骨架屏。e2e/typecheck/lint/test 通过。
+>
+> **（2026-10-20 · P0 订单/单证加载与表头收编）**
+> orders 列表、trade-docs 台账的“加载中…”改骨架行；两页表头补 `scope="col"`（空勾选列表头加 sr-only）；
+> 两页已无硬编码红绿黄。e2e/typecheck/lint/test 通过。
 > 证据：`docs/ui-redesign/phase5/`；详见方案文档 §10。
 >
 > **（2026-10-20 · 新会话接手核对：本地 main 同步 + 分支残留清理 + 生产 secrets 实测 + 本机工具链）**
