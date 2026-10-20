@@ -47,6 +47,16 @@
 >    （pull 报 repository does not exist，非网络问题）⇒ `docker-compose.yml` 改用第三方打包官方二进制的
 >    `elestio/minio:latest`（实测 minio RELEASE.2025-09-07 + mc 均可用；备选 `cleanstart/minio`）。
 >    开发默认存储口径不变（仍是本地 MinIO，桶 `kaas-dev`），仅镜像来源变。恢复官方源：Hub 上架后改回。
+> 8. **pnpm 12 供应链冷却放宽（2026-10-20 用户裁决）**：pnpm 12.14.0 内置 `minimumReleaseAge`（默认拒装
+>    发布未满 24h 的包），会把 lockfile 里的 `ignore@7.0.13`（10-20 升级引入）卡死**所有新设备的
+>    pnpm install**（本机 npmrc / CLI 均无法覆盖，唯一生效位置 = `pnpm-workspace.yaml` 顶层键）。
+>    用户裁决放宽 ⇒ `pnpm-workspace.yaml` 加 `minimumReleaseAge: 0`（含理由与代价注释）。
+>    lockfile 指纹未变（298c4b4…）。代价留痕：未来 add/update 无 24h 冷却保护。
+> 9. **前端门禁复跑全 PASS（2026-10-20，修复 install 后）**：install ✅（目标栈确认 Next 16.4.2 /
+>    React 19.3.1 / ESLint 10.13 / TS 6.0.3）、typecheck 0 error ✅、lint **0 err / 91 warn**（与基线一致）✅、
+>    test **455 passed** ✅、contracts:check R0–R5 全 PASS ✅、e2e **23 passed + 4 skipped** ✅
+>    （前置探针已按 Turbopack 口径更正进 AGENTS.md）、NEXT_EXPORT 构建 **out/ 267 文件**（与基线一致）✅。
+>    **本地环境全量验收结论：后端 + 前端门禁全部与 2026-10-20 基线对齐，本地开发环境可用。**
 >
 > **（2026-10-19 晚场 · 四项决策全部已确认 —— 以下为当前口径，压过本摘要内所有旧条目）**
 >

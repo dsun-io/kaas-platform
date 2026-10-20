@@ -28,3 +28,9 @@ overrides:
   'proxy-addr@2.x': 2.0.8
   # 2026-10-20 升级后复扫：undici <7.29.1（jsdom 测试环境）
   'undici@7.x': 7.29.1
+
+# 2026-10-20 用户裁决：放宽 pnpm 12 内置供应链冷却（默认拒装发布未满 24h 的包）。
+# 理由：lockfile 已锁定日常安装版本，该策略只在"新增/升级依赖"一刻起作用；
+# 且不放宽会被 10-20 升级引入的 ignore@7.0.13 卡死所有新设备的 pnpm install。
+# 代价：未来 add/update 拉到发布不足 24h 的包时无冷却保护，接受此风险。
+minimumReleaseAge: 0
