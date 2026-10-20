@@ -39,6 +39,16 @@
 >    原"已转回 private"表述已过期）。
 > 6. **并行线**：UI/UX 优化任务（另一会话）与本线**写范围不相交**（本线只动 `docs/`、`.github/`、
 >    `scripts/preview/`、后端脚本），未碰 `frontend/**`。
+> 7. **依赖钉版已落地（2026-10-20，`3abdcad`）**：`backend/worker/pylock.toml` **入库**（解析结果 =
+>    9/22 基线可稳组合：fastapi 0.141.1 / starlette 1.6.0 / pydantic 2.12.5 / asyncpg 0.31.0 /
+>    bcrypt 5.0.0），`.gitignore` 改为只忽略 POC 子目录；pywrangler 检测到锁文件即以其为约束 ⇒
+>    **不再"每次部署解析当天最新依赖"**。AGENTS.md 补：uv pyodide 探针在 CJK 路径下坏的修法
+>    （`UV_CACHE_DIR` 指 ASCII 路径 + `PYTHONUTF8=1`）。
+> 8. **预览链端到端验证（2026-10-20）**：① `workflow_dispatch` 部署 **全绿**（preflight→ensure→
+>    migrate→build→deploy→smoke，run `39377320026`，锁文件版）；② **PR 关闭 → teardown 自动执行成功**
+>    （PR #4 closed 事件 run `39377738492`，7s 回收）；③ 演示环境登录 200 + `/auth/me` + 客户列表
+>    2 条（生产快照数据可读写）；④ 稳定性：CI 部署版**连续 14 分钟 200 无崩溃**（此前"~10 分钟必死"
+>    未再复现）；"KV-less" 对照实验开关（`--no-kv`）已具备，长时间监视仍在进行。
 >
 > **（2026-10-20 · 终局裁决：全部待办清零 —— 压过本摘要内所有旧待办条目）**
 >
