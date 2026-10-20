@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 `notes` / `hs_codes` 是**标量列表**（元素是字符串），而 `item_identity()` 要求
 条目是带 `key`/`name` 的对象 ⇒ 对它们做 `add`/`remove` 以前**直接抛
 `SpecDeltaError`**（"列表条目必须是对象（dict）"），报错文案没说清"这两个字段
-不支持按条增删" ⇒ 体验缺口（`PRODUCT_MODULE_IMPL_PLAN.md` §8.5）。
+不支持按条增删" ⇒ 体验缺口（`docs/archive/2026-10-20-closeout/PRODUCT_MODULE_IMPL_PLAN.md` §8.5）。
 
 本轮修复（用户已批准扩范围到引擎包）：**修法②** —— 仍在 `add`/`remove` 阶段
 **报错**（不静默、不按值增删），但报错文案**明确说明**：

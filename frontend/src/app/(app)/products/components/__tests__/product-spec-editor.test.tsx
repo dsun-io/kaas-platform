@@ -1,7 +1,7 @@
 /**
  * 产品规格可视化编辑器（S6.1）—— 数值参数 / 变体档位 / 派生公式 表单 + JSON 双向同步。
  *
- * 钉死口径（PRODUCT_MODULE_MERGE_PLAN §5）：
+ * 钉死口径（docs/archive/2026-10-20-closeout/PRODUCT_MODULE_MERGE_PLAN.md §5）：
  * 1. `specJson` 是**唯一真源** —— 表单改动生成新 JSON 写回（P14 约束保留）；
  * 2. 不按 Axis 设计（数值参数=连续值，变体=枚举档位）；
  * 3. JSON 语法错时表单**锁定**并提示，修正后解锁（不静默丢编辑）。

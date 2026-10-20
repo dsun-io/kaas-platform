@@ -1,6 +1,6 @@
 """`kaas_common/workstation/product_scope.py` 的单测（**纯逻辑、无 DB、无 skip**）。
 
-对应 `docs/PRODUCT_MODULE_IMPL_PLAN.md` 的 **P11**，口径以 **§8.1 裁决后的版本**为准：
+对应 `docs/archive/2026-10-20-closeout/PRODUCT_MODULE_IMPL_PLAN.md` 的 **P11**，口径以 **§8.1 裁决后的版本**为准：
 
 - **Q1 = B 全私式**：定义人人可读；产品**相关信息**（图片/基础信息）**一律团队私有**，
   **系统级也不例外**；历史 `team_id IS NULL` 的行 **仅管理员可见**；

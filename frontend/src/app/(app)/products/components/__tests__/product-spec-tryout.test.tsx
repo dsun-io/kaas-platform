@@ -1,7 +1,7 @@
 /**
  * 公式试算（S6.3-b）—— /explain + spec_override 的草稿定义自证。
  *
- * 钉死口径（PRODUCT_MODULE_MERGE_PLAN §5）：
+ * 钉死口径（docs/archive/2026-10-20-closeout/PRODUCT_MODULE_MERGE_PLAN.md §5）：
  * 1. 试算走 `POST /export-quote/products/{key}/explain`，body 带
  *    `spec_override`（当前草稿）—— **不新建接口**；
  * 2. 取值来自 numeric_inputs 默认值 + variants 首选项；

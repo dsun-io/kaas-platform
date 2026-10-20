@@ -4,7 +4,7 @@
  * 公式试算（P16 · S6.3-b）—— 用 `/explain` 的 `spec_override` 做草稿定义的
  * 「逐步代入计算逻辑」自证。
  *
- * 为什么必须做（PRODUCT_MODULE_MERGE_PLAN §5）：
+ * 为什么必须做（docs/archive/2026-10-20-closeout/PRODUCT_MODULE_MERGE_PLAN.md §5）：
  * `spec_from_dict` 的 422 闸门**不校验 `expr`** —— 公式写错（`d**2.1`、
  * 变量名笔误）要到算价时才炸，且报的是引擎内部错误，业务看不懂。
  * 试算把「这组取值下每一步怎么算」当场展示，公式写错立刻看到。

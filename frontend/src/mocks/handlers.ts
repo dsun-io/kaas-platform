@@ -1632,7 +1632,7 @@ export const handlers = [
     return HttpResponse.json(ENUMS_MOCK);
   }),
 
-  // ── 平台账号治理（admin/accounts · 契约见 docs/ACCOUNT_GOVERNANCE_HANDOVER §②）──  // 写操作必须**真的**改 store：停用/恢复后列表与详情要跟着变，否则 e2e 断言失效。
+  // ── 平台账号治理（admin/accounts · 契约见 docs/archive/2026-10-20-closeout/ACCOUNT_GOVERNANCE_HANDOVER_2026-10-12.md §②）──  // 写操作必须**真的**改 store：停用/恢复后列表与详情要跟着变，否则 e2e 断言失效。
   // 白名单字段照后端 _account_out：绝不含 password_hash / token。
   http.get("/api/v1/admin/accounts", ({ request }) => {
     const url = new URL(request.url);

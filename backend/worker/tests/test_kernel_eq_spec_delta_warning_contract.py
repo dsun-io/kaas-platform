@@ -213,7 +213,7 @@ class TestIdempotentRepeat:
 
 class TestKnownGapScalarLists:
     def test_标量列表的remove目前会报错而不是warning_这是待修缺口(self):
-        """**缺口**（已记进 `PRODUCT_MODULE_IMPL_PLAN.md` §8.5 待办）：
+        """**缺口**（已记进 `docs/archive/2026-10-20-closeout/PRODUCT_MODULE_IMPL_PLAN.md` §8.5 待办）：
 
         `notes` / `hs_codes` 的元素是**字符串**，而 `item_identity()` 要求条目是
         带 `key`/`name` 的对象 ⇒ 对它们做 `remove` **直接抛 `SpecDeltaError`**，

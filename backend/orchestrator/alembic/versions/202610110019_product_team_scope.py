@@ -4,7 +4,7 @@ Revision ID: 202610110019
 Revises: 202610110018
 Create Date: 2026-10-12
 
-对应 `docs/PRODUCT_MODULE_IMPL_PLAN.md` 的 **P5**（首版）+ **P9**（本版补齐唯一键那一半），
+对应 `docs/archive/2026-10-20-closeout/PRODUCT_MODULE_IMPL_PLAN.md` 的 **P5**（首版）+ **P9**（本版补齐唯一键那一半），
 口径以 **§8.1 裁决后的版本**为准：
 
 - **Q1 = B 全私式**：产品**相关信息**（图片 / 基础信息）**一律团队私有**，系统级也不例外；
@@ -23,7 +23,7 @@ Worker/静态资源），本地也没有 Postgres ⇒ 不可能有库把 019 记
 **前提条件（部署前必须确认一次）**：任何要跑的库
 `SELECT version_num FROM alembic_version;` **不得已经是 `202610110019`**。
 若已是 ⇒ 说明这个库跑过 019 的首版，此时**必须**改用增量迁移 020（DDL 见
-`docs/PRODUCT_MODULE_IMPL_PLAN.md` §8.6 的备忘），否则该库会静默缺少本版新增的
+`docs/archive/2026-10-20-closeout/PRODUCT_MODULE_IMPL_PLAN.md` §8.6 的备忘），否则该库会静默缺少本版新增的
 主键替换与 `uq_tenant_ws_product` 替换。
 
 ## ⚠️ "新写入强制、历史容忍 NULL" 为什么**不**做成 `NOT NULL`
