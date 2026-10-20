@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { usePageView } from "@/lib/events/use-page-view";
+import { PageHeader } from "@/components/shared";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { QuoteWorkbenchView } from "./views/quote-workbench-view";
 import { QuotationRecordsView } from "./views/quotation-records-view";
@@ -67,12 +69,18 @@ export default function QuotesWorkstationPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">报价</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          成本历史 → 算价 → 报价记录，一条线走完
-        </p>
-      </div>
+      <PageHeader
+        title="报价"
+        description="成本历史 → 算价 → 报价记录，一条线走完"
+        actions={
+          <Link
+            href="/settings/company-profile"
+            className="rounded-lg border px-3 py-1.5 text-xs hover:bg-muted"
+          >
+            企业抬头 / 收款信息 / 公章 →
+          </Link>
+        }
+      />
 
       <Tabs value={tab} onValueChange={(v) => switchTab(v as QuoteTab)}>
         <TabsList variant="line">

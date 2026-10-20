@@ -8,7 +8,13 @@
  * 三者必须逐分一致 —— 凡是在某一处先四舍五入再相加，就会差 1 分，
  * 而这种差异在界面上"看着完全正常"。
  */
-import { AlertTriangle, FileText, Loader2, Save, ShieldCheck } from "lucide-react";
+import {
+  AlertTriangle,
+  FileText,
+  Loader2,
+  Save,
+  ShieldCheck,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -85,7 +91,8 @@ export function QuoteSummaryCard({
           <div className="space-y-1">
             <CardTitle className="text-base">整单汇总</CardTitle>
             <p className="text-xs text-muted-foreground">
-              {summary.lineCount} 个产品行 · 总额 = 各行小计之和（与单证 TOTAL 同源）
+              {summary.lineCount} 个产品行 · 总额 = 各行小计之和（与单证 TOTAL
+              同源）
             </p>
           </div>
           {saved && (
@@ -100,7 +107,7 @@ export function QuoteSummaryCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-3 xl:grid-cols-6">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-3">
           <div>
             <dt className="text-muted-foreground">总额（{currency}）</dt>
             <dd className="text-base font-semibold tabular-nums">
@@ -125,16 +132,21 @@ export function QuoteSummaryCard({
             <dt className="text-muted-foreground">体积（CBM）</dt>
             <dd className="tabular-nums">
               {num(summary.totalBoxVolume, 4)}
-              {effectiveVolume !== null && effectiveVolume !== summary.totalBoxVolume && (
-                <span className="ml-1 text-muted-foreground">
-                  （实际占用 {num(effectiveVolume, 4)}）
-                </span>
-              )}
+              {effectiveVolume !== null &&
+                effectiveVolume !== summary.totalBoxVolume && (
+                  <span className="ml-1 text-muted-foreground">
+                    （实际占用 {num(effectiveVolume, 4)}）
+                  </span>
+                )}
             </dd>
           </div>
           <div>
             <dt className="text-muted-foreground">单证要素</dt>
-            <dd className={cn(missing.length > 0 && "text-warning-muted-foreground")}>
+            <dd
+              className={cn(
+                missing.length > 0 && "text-warning-muted-foreground",
+              )}
+            >
               {missing.length === 0 ? "齐全" : `${missing.length} 行待补`}
             </dd>
           </div>
@@ -142,7 +154,8 @@ export function QuoteSummaryCard({
 
         {amortizedFees.length > 0 && (
           <p className="text-[11px] text-muted-foreground">
-            整批费用（{amortizedFees.join("、")}）已按**件数比例**分摊到每个产品行，
+            整批费用（{amortizedFees.join("、")}
+            ）已按**件数比例**分摊到每个产品行，
             逐行累加等于你填写的整批金额；摊到单卷后各行一致。
           </p>
         )}
@@ -186,7 +199,9 @@ export function QuoteSummaryCard({
           <p
             className={cn(
               "text-xs",
-              notice.tone === "error" ? "text-destructive" : "text-muted-foreground",
+              notice.tone === "error"
+                ? "text-destructive"
+                : "text-muted-foreground",
             )}
           >
             {notice.text}
