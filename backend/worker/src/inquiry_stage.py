@@ -52,7 +52,11 @@ def _get(row: Any, key: str, default: Any = None) -> Any:
 
 
 def current_stage_of(row: Any) -> str:
-    """行的当前阶段；历史行没有 stage 列值时按 status 退化（closed→closed，其余→inquiry）。"""
+    """行的当前阶段；历史行没有 stage 列值时按 status 退化（closed→closed，其余→inquiry）。
+
+    注意：`status` 与 `stage` 是**两层**语义（报价三态 vs 流程进度），退化只在
+    "这一行没有 stage 值"时兜底，不会把 status 的 quoted 当成流程阶段。
+    """
     stage = _get(row, "stage")
     if stage in ALL_STAGES:
         return stage
