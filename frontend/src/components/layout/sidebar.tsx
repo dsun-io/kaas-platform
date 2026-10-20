@@ -13,7 +13,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { toast } from "sonner";
+import { normalizeApiError } from "@/lib/api/api-error";
 import {
   LayoutDashboard,
   ScrollText,
@@ -190,11 +193,57 @@ function SidebarNav({ collapsed }: { collapsed: boolean }) {
 
 /** 侧栏底部：当前账号 + 个人信息管理（只读资料 / 团队入口 / 退出）。 */
 function SidebarUser({ collapsed = false }: { collapsed?: boolean }) {
-  const { user, logout } = useAuth();
+  const { user, logout, updateProfile, changePassword } = useAuth();
   const { teamName } = useTeam();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  // 个人信息编辑（TODO F3）：显示名可改；密码单独折叠块（必须验旧密码）
+  const [displayName, setDisplayName] = useState("");
+  const [savingName, setSavingName] = useState(false);
+  const [showPwd, setShowPwd] = useState(false);
+  const [currentPwd, setCurrentPwd] = useState("");
+  const [newPwd, setNewPwd] = useState("");
+  const [savingPwd, setSavingPwd] = useState(false);
   if (!user) return null;
+
+  const openProfile = () => {
+    setDisplayName(user.display_name || user.email);
+    setShowPwd(false);
+    setCurrentPwd("");
+    setNewPwd("");
+    setOpen(true);
+  };
+
+  const saveName = async () => {
+    const next = displayName.trim();
+    if (!next || next === user.display_name) return;
+    setSavingName(true);
+    try {
+      await updateProfile(next);
+      toast.success("显示名已更新");
+    } catch (err) {
+      const { message } = normalizeApiError(err);
+      toast.error(message || "保存失败，请重试");
+    } finally {
+      setSavingName(false);
+    }
+  };
+
+  const savePassword = async () => {
+    setSavingPwd(true);
+    try {
+      await changePassword(currentPwd, newPwd);
+      toast.success("密码已修改，下次登录请使用新密码");
+      setCurrentPwd("");
+      setNewPwd("");
+      setShowPwd(false);
+    } catch (err) {
+      const { message } = normalizeApiError(err);
+      toast.error(message || "修改失败：当前密码可能不正确");
+    } finally {
+      setSavingPwd(false);
+    }
+  };
 
   const name = user.display_name || user.email;
   const initials =
@@ -206,7 +255,7 @@ function SidebarUser({ collapsed = false }: { collapsed?: boolean }) {
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={openProfile}
         title={collapsed ? "个人信息" : undefined}
         aria-label="个人信息"
         className={cn(
@@ -237,7 +286,7 @@ function SidebarUser({ collapsed = false }: { collapsed?: boolean }) {
           <DialogHeader>
             <DialogTitle>个人信息</DialogTitle>
             <DialogDescription>
-              当前登录账号信息（只读；修改资料请联系管理员）
+              可修改显示名与密码；邮箱是登录标识，如需更换请联系管理员。
             </DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-white/60 p-3">
@@ -256,6 +305,82 @@ function SidebarUser({ collapsed = false }: { collapsed?: boolean }) {
               </p>
             </div>
           </div>
+          {/* 显示名（可编辑，TODO F3） */}
+          <div className="space-y-1.5">
+            <label
+              className="text-xs font-medium text-muted-foreground"
+              htmlFor="profile-display-name"
+            >
+              显示名
+            </label>
+            <div className="flex gap-2">
+              <Input
+                id="profile-display-name"
+                value={displayName}
+                maxLength={64}
+                disabled={savingName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void saveName();
+                }}
+              />
+              <Button
+                size="sm"
+                onClick={() => void saveName()}
+                disabled={
+                  savingName ||
+                  !displayName.trim() ||
+                  displayName.trim() === (user.display_name ?? "")
+                }
+              >
+                {savingName ? "保存中…" : "保存"}
+              </Button>
+            </div>
+          </div>
+
+          {/* 修改密码（折叠；必须验旧密码，后端 403 INVALID_CURRENT_PASSWORD） */}
+          <div className="rounded-xl border border-border/60 bg-white/40 p-3">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between text-sm font-medium"
+              onClick={() => setShowPwd((v) => !v)}
+            >
+              修改密码
+              <span className="text-xs font-normal text-muted-foreground">
+                {showPwd ? "收起" : "展开"}
+              </span>
+            </button>
+            {showPwd && (
+              <div className="mt-2 space-y-2">
+                <Input
+                  type="password"
+                  placeholder="当前密码"
+                  autoComplete="current-password"
+                  value={currentPwd}
+                  disabled={savingPwd}
+                  onChange={(e) => setCurrentPwd(e.target.value)}
+                />
+                <Input
+                  type="password"
+                  placeholder="新密码（至少 8 位）"
+                  autoComplete="new-password"
+                  value={newPwd}
+                  disabled={savingPwd}
+                  onChange={(e) => setNewPwd(e.target.value)}
+                />
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    onClick={() => void savePassword()}
+                    disabled={savingPwd || !currentPwd || newPwd.length < 8}
+                  >
+                    {savingPwd ? "提交中…" : "修改密码"}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+
           <dl className="grid grid-cols-[72px_1fr] gap-x-3 gap-y-2 text-sm">
             <dt className="text-muted-foreground">账号类型</dt>
             <dd>

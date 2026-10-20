@@ -618,6 +618,61 @@ export const handlers = [
   ),
   http.post("/api/v1/auth/logout", () => HttpResponse.json({ ok: true })),
 
+  // 个人信息编辑（TODO F3）：mock 必须**真的**改显示名 —— "保存成功但界面没变"
+  // 正是这层要防的假成功。密码在 mock 里不存明文：只校验长度与非空旧密码
+  // （真实旧密码校验在后端，e2e 只走成功链路）。
+  http.patch("/api/v1/auth/me", async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as {
+      display_name?: string;
+    };
+    const name = String(body.display_name ?? "").trim();
+    if (!name) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "DISPLAY_NAME_REQUIRED",
+            detail: "显示名不能为空",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    MOCK_ADMIN_USER.display_name = name;
+    return HttpResponse.json(MOCK_ADMIN_USER);
+  }),
+  http.post("/api/v1/auth/change-password", async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as {
+      current_password?: string;
+      new_password?: string;
+    };
+    if ((body.new_password ?? "").length < 8) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "PASSWORD_TOO_SHORT",
+            detail: "Password must be at least 8 characters",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    if (!(body.current_password ?? "")) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "forbidden",
+            code: "INVALID_CURRENT_PASSWORD",
+            detail: "当前密码不正确",
+          },
+        },
+        { status: 403 },
+      );
+    }
+    return HttpResponse.json({ message: "Password updated" });
+  }),
+
   // ── Auth · 注册（task-6：原先缺失 ⇒ 放行到网络 ⇒ 自代理永久挂起）─────────
   // 消费方 lib/auth/auth-context.tsx:127-139 `register()`：
   //   · `res.data.access_token` 必须存在（:130 直接写进会话）
