@@ -15,6 +15,8 @@ import {
 import { usePageView } from "@/lib/events/use-page-view";
 import { RouteGuard } from "@/components/route-guard";
 import { PageHeader } from "@/components/shared";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
 import { Search, X, ChevronDown, ChevronRight } from "lucide-react";
 
 const ACTION_OPTIONS = [
@@ -217,13 +219,21 @@ export default function AuditLogPage() {
         <Card>
           <CardContent className="p-0">
             {isLoading ? (
-              <div className="p-8 text-center text-sm text-muted-foreground">
-                加载中...
+              <div
+                className="space-y-2 p-4"
+                aria-busy="true"
+                aria-label="操作日志加载中"
+              >
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full rounded-md" />
+                ))}
               </div>
             ) : items.length === 0 ? (
-              <div className="p-8 text-center text-sm text-muted-foreground">
-                暂无操作记录
-              </div>
+              <EmptyState
+                title="暂无操作记录"
+                description="调整筛选条件后再试。"
+                className="border-0 py-8"
+              />
             ) : (
               <div className="overflow-x-auto">
                 <Table>

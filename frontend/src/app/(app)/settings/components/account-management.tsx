@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -114,8 +115,10 @@ export function AccountManagement() {
 
   if (isLoading) {
     return (
-      <div className="py-8 text-center text-sm text-muted-foreground">
-        加载中…
+      <div className="space-y-2" aria-busy="true">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-10 w-full rounded-md" />
+        ))}
       </div>
     );
   }

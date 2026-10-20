@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
 import { Eye } from "lucide-react";
 
 const EVENT_TYPE_VARIANT: Record<string, "default" | "secondary" | "outline"> =
@@ -108,17 +110,21 @@ export function EventTable({ events, onSelect, loading }: Props) {
 
   if (loading) {
     return (
-      <div className="py-8 text-center text-sm text-muted-foreground">
-        加载中...
+      <div className="space-y-2" aria-busy="true" aria-label="事件列表加载中">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} className="h-10 w-full rounded-md" />
+        ))}
       </div>
     );
   }
 
   if (events.length === 0) {
     return (
-      <div className="py-8 text-center text-sm text-muted-foreground">
-        暂无事件数据
-      </div>
+      <EmptyState
+        title="暂无事件数据"
+        description="调整筛选条件，或等系统产生新的事件后再来看。"
+        className="border-0 py-8"
+      />
     );
   }
 
