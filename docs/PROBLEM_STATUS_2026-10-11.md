@@ -169,6 +169,10 @@
 > shipments 列表加载改骨架、表头补 `scope`；intel 货运表格空态改 `EmptyState`。
 > 证据：`docs/ui-redesign/phase5/`；详见方案文档 §10。
 >
+> **（2026-10-20 · P2 首批：筛选条件记忆）**
+> 新增 `usePersistentState`（localStorage；挂载后恢复、避免 SSR hydration mismatch）；
+> 事件审计、操作日志的筛选条件刷新/切换页面后保留。其余 P2（列配置/密度/快捷键）待做。
+>
 > **（2026-10-20 · 新会话接手核对：本地 main 同步 + 分支残留清理 + 生产 secrets 实测 + 本机工具链）**
 >
 > 1. **本地 main 已快进到 `fb4b2aa`**（此前落后 origin/main 33 个提交 —— 本地曾停在 10-19 下午的

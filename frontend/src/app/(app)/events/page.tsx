@@ -12,10 +12,14 @@ import {
 import { usePageView } from "@/lib/events/use-page-view";
 import { RouteGuard } from "@/components/route-guard";
 import { PageHeader } from "@/components/shared";
+import { usePersistentState } from "@/lib/hooks/use-persistent-state";
 
 export default function EventsPage() {
   usePageView({ resource_id: "/events" });
-  const [filters, setFilters] = useState<EventFiltersType>({});
+  const [filters, setFilters] = usePersistentState<EventFiltersType>(
+    "ui:events:filters",
+    {},
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const { data, isLoading } = useEvents(filters);

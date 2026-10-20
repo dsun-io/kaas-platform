@@ -17,6 +17,7 @@ import { RouteGuard } from "@/components/route-guard";
 import { PageHeader } from "@/components/shared";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
+import { usePersistentState } from "@/lib/hooks/use-persistent-state";
 import { Search, X, ChevronDown, ChevronRight } from "lucide-react";
 
 const ACTION_OPTIONS = [
@@ -166,7 +167,7 @@ function ExpandRow({ entry }: { entry: AuditEntry }) {
 export default function AuditLogPage() {
   usePageView({ resource_id: "/audit-log" });
 
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = usePersistentState("ui:audit-log:filters", {
     action: "",
     resource_type: "",
     since: "",
