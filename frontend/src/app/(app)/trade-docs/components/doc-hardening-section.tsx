@@ -1,11 +1,14 @@
 "use client";
 
 /**
- * A7 单证加固区块（单证详情页的五个面板）
+ * A7 单证加固区块（单证详情页的六个面板）
  *
- * 组合顺序按业务动线：**先确认事实 → 再看一致性 → 登记收款 → 核对清单 → 导出自检**。
- * 五个面板共享一个 SectionCard，避免详情页再长出五张卡片（原本已有预览/内容版本/
+ * 组合顺序按业务动线：**先确认事实 → 再看一致性 → 登记收款 → 核对清单 → 导出自检 → 中译英**。
+ * 六个面板共享一个 SectionCard，避免详情页再长出六张卡片（原本已有预览/内容版本/
  * 盖章回传三块）。tab 受控：签发被闸门拦下时，「去确认事实」要把用户直接送到事实面板。
+ *
+ * 「中译英」（A13）放在这里的理由：它是**单证级内容处理**（批量翻手工字段），
+ * 不是针对某个输入框的上下文动作；加固区已拿得到 docId/status，不用改详情页工具栏。
  */
 import { SectionCard } from "@/components/shared/section-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -15,13 +18,15 @@ import { DocExportVerifyPanel } from "./doc-export-verify-panel";
 import { DocFactsPanel } from "./doc-facts-panel";
 import { DocReceiptsPanel } from "./doc-receipts-panel";
 import { DocSetPanel } from "./doc-set-panel";
+import { DocTranslatePanel } from "./doc-translate-panel";
 
 export type HardeningTab =
   | "facts"
   | "consistency"
   | "receipts"
   | "doc-set"
-  | "export-verify";
+  | "export-verify"
+  | "translate";
 
 interface Props {
   docId: number;
@@ -41,7 +46,7 @@ export function DocHardeningSection({
   return (
     <SectionCard
       title="单证加固"
-      description="事实确认 → 一致性 → 收款 → 清单 → 导出自检；未确认事实会阻断签发（不是可选项）。"
+      description="事实确认 → 一致性 → 收款 → 清单 → 导出自检 → 中译英；未确认事实会阻断签发（不是可选项）。"
     >
       <Tabs
         value={tab}
@@ -53,6 +58,7 @@ export function DocHardeningSection({
           <TabsTrigger value="receipts">收款登记</TabsTrigger>
           <TabsTrigger value="doc-set">单证清单</TabsTrigger>
           <TabsTrigger value="export-verify">导出自检</TabsTrigger>
+          <TabsTrigger value="translate">中译英</TabsTrigger>
         </TabsList>
         <TabsContent value="facts">
           <DocFactsPanel docId={docId} status={status} />
@@ -68,6 +74,9 @@ export function DocHardeningSection({
         </TabsContent>
         <TabsContent value="export-verify">
           <DocExportVerifyPanel docId={docId} />
+        </TabsContent>
+        <TabsContent value="translate">
+          <DocTranslatePanel docId={docId} status={status} />
         </TabsContent>
       </Tabs>
     </SectionCard>

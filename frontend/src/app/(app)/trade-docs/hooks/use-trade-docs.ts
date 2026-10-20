@@ -11,6 +11,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/lib/api/client";
 import { customerRecordsKeys } from "@/lib/customer/use-customer-records";
 import type { RenderCheckSummary } from "@/lib/trade-doc/render-check";
+import type {
+  TranslateRequest,
+  TranslateResponse,
+} from "@/lib/trade-doc/translate";
 
 // 只引**类型**（编译期擦除，不产生 hook ↔ 组件的运行时依赖环）：
 // 指纹形状的定义真源在 `doc-preview.tsx` 的 `RenderFingerprintMeta`。
@@ -213,6 +217,36 @@ export function useRefreshSources() {
     onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: tradeDocKeys.all });
       qc.invalidateQueries({ queryKey: tradeDocKeys.renderData(id) });
+    },
+  });
+}
+
+/**
+ * 单证字段「中译英」（A13）：`POST /trade-docs/{id}/translate`。
+ *
+ * 后端行为（`ws_docs_ext.py` `translate_trade_doc`）：
+ * - **draft** 态：把返回的字段写回 `raw_payload.custom` 并记一条内容版本 ⇒ 需要失效
+ *   `["trade-docs"]` 前缀（覆盖 detail / render-data / content-versions）；
+ * - **非 draft**：只返回译文、**不写回**（前端据此提示"未写回（非草稿）"）；
+ * - 无 AI：`path="template"`、字段原样返回 ⇒ UI 必须提示人工翻译。
+ *
+ * `silent: true`：翻译失败是业务结果（无 AI / Provider 全挂走 template，非错误），
+ * 401/403 等真错误由面板如实显示，不让通用 toast 抢戏。
+ */
+export function useTranslateTradeDoc(docId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: TranslateRequest) => {
+      const { data } = await apiClient.post<TranslateResponse>(
+        `/trade-docs/${docId}/translate`,
+        { fields: body.fields, target: body.target ?? "en" },
+        { silent: true },
+      );
+      return data;
+    },
+    onSuccess: () => {
+      // 写回只发生在 draft；但非 draft 也可能被别处改动 —— 统一失效一次，代价小
+      qc.invalidateQueries({ queryKey: tradeDocKeys.all });
     },
   });
 }
