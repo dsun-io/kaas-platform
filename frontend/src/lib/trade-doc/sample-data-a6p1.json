@@ -1,0 +1,110 @@
+{
+  "doc_types": ["pi", "ci", "contract"],
+  "base": {
+    "seller": {
+      "company": "ANPING LIANJIA WIRE MESH PRODUCTS CO., LTD.",
+      "address": "100 meters north of Diwo Village, Anping County, Hengshui City, Hebei Province, China",
+      "tax_id": "91131125MA0GA4242U",
+      "tel": "+86 136 0318 1774",
+      "email": "sales@lianjiafence.com"
+    },
+    "buyer": {
+      "company": "Tim Lyons",
+      "address": "Australia",
+      "contact": "Tim Lyons",
+      "tel": "+61 438 381 068",
+      "email": "timlyons@oneatmosphere.com"
+    },
+    "notify_party": {
+      "company": "Tim Lyons",
+      "address": "Australia",
+      "tel": "+61 438 381 068",
+      "email": "timlyons@oneatmosphere.com"
+    },
+    "currency": "USD",
+    "total_amount": 2826.49,
+    "incoterm": "DAP Yangzhou, Jiangsu, China (Incoterms 2020)",
+    "payment_terms": "T/T — 30% deposit upon order confirmation; 70% balance before dispatch",
+    "delivery_time": "Posts approx. 10 days; Field Fence approx. 40 days",
+    "shipping_marks": "N/M",
+    "country_of_origin": "China",
+    "port_of_loading": "Anping, Hebei, China",
+    "port_of_destination": "Yangzhou, Jiangsu, China",
+    "vessel": "—",
+    "bank_info": {
+      "beneficiary": "ANPING LIANJIA WIRE MESH PRODUCTS CO., LTD.",
+      "beneficiary_address": "100 meters north of Diwo Village, Anping County, Hengshui City, Hebei Province, China",
+      "beneficiary_tax_id": "91131125MA0GA4242U",
+      "account_no": "13050171770800004556",
+      "bank": "China Construction Bank Corporation, Hebei Anping Sub-branch",
+      "swift": "PCBCCNBJHBX"
+    },
+    "items": [
+      {
+        "product_name": "Y-Type Fence Post",
+        "specification": "Height 1.83 m · Material: rail steel · Hot-dip galvanized",
+        "hs_code": "7308900000",
+        "qty": 400,
+        "qty_unit": "pc",
+        "unit_price": 25.0,
+        "line_amount": 10000.0
+      },
+      {
+        "product_name": "Field Fence (Cattle Fence)",
+        "specification": "50 m per roll · Net weight 53.5 kg/roll",
+        "hs_code": "7314410000",
+        "qty": 20,
+        "qty_unit": "roll",
+        "unit_price": 366.31,
+        "line_amount": 7326.2
+      }
+    ]
+  },
+  "per_doc": {
+    "pi": {
+      "pi_no": "LJ-PI-20260929-01",
+      "pi_date": "2026-09-29",
+      "ref_quote_no": "LJ-Q-20260928-01",
+      "ref_contract_no": "LJ-SC-20261012-01",
+      "valid_until": "2026-10-14",
+      "packing_details": "Y-Type posts: 400 pcs per pallet; optional one woven bag per 10 posts at CNY 2.50/bag.\nField Fence: unwrapped; optional self-adhesive film wrapping at CNY 1.00/roll.",
+      "production_photos_note": "The seller will provide photographs of the goods at each stage of production.",
+      "third_party_consolidator": "Jiangsu Juncheng Vehicle Industry Co., Ltd. — the buyer's designated consolidator in Yangzhou, Jiangsu.",
+      "signatory": "Sun Jiaze (David Sun), Sales Manager"
+    },
+    "ci": {
+      "invoice_no": "LJ-CI-20261012-01",
+      "invoice_date": "2026-10-12",
+      "contract_no": "LJ-SC-20261012-01",
+      "lc_no": "—",
+      "ref_pi_no": "LJ-PI-20260929-01",
+      "bill_to": {
+        "company": "Tim Lyons",
+        "address": "Australia",
+        "tel": "+61 438 381 068",
+        "email": "timlyons@oneatmosphere.com"
+      },
+      "consigned_to": {
+        "company": "Jiangsu Juncheng Vehicle Industry Co., Ltd.",
+        "address": "No. 1 Guangling Road, Sheyanghu Industrial Park, Baoying County, Yangzhou City, Jiangsu Province, China"
+      }
+    },
+    "contract": {
+      "contract_no": "LJ-SC-20261012-01",
+      "contract_date": "2026-10-12",
+      "place_of_issue": "Anping, Hebei, China",
+      "ref_quote_no": "LJ-Q-20260928-01",
+      "ref_pi_no": "LJ-PI-20260929-01",
+      "annex_docs": [
+        { "label": "Proforma Invoice", "doc_no": "LJ-PI-20260929-01" },
+        { "label": "Commercial Invoice", "doc_no": "LJ-CI-20261012-01" }
+      ],
+      "clauses": [
+        {
+          "key": "quality",
+          "text_en": "The goods shall conform to the description and specification set out above and shall be hot-dip galvanized. Country of origin: P. R. China (customized wording)."
+        }
+      ]
+    }
+  }
+}

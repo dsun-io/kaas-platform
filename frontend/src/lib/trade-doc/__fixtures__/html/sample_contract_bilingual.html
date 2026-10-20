@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Sales Contract - LJ-SC-20261012-01</title>
+<style>
+/* ==========================================================================
+   外贸单证 · 共享打印样式（印刷级 A4）
+   --------------------------------------------------------------------------
+   由 trade_doc_renderer 在渲染完成后注入到各模板的 <style> 中
+   （模板内写占位注释，标记见 renderer 的 _STYLE_PLACEHOLDER）。
+   9 类单证共用一份，避免样式重复维护、保证系列单据视觉统一。
+
+   命名约定：
+     .lh      卖方信头(Letterhead)      .meta   元信息表
+     .party   收发货人区块              .items  商品明细表
+     .words   金额英文大写              .clause 条款 / .certify 声明
+     .sign    签章区                    .foot   页脚
+
+   打印策略：屏幕预览模拟 A4 纸（210mm 宽 + 投影），打印时铺满 @page 版面。
+   ========================================================================== */
+
+@page { size: A4; margin: 13mm 13mm 11mm; }
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+body {
+  font-family: Arial, Helvetica, "Helvetica Neue", "Microsoft YaHei", sans-serif;
+  font-size: 9.5pt;
+  line-height: 1.4;
+  color: #101820;
+  background: #eef1f4;
+}
+
+/* 纸张容器：宽 210mm - 左右各 13mm 内边距 = 184mm，与打印区宽度一致 */
+.doc {
+  width: 210mm;
+  margin: 8mm auto;
+  padding: 13mm 13mm 11mm;
+  background: #fff;
+  box-shadow: 0 3px 18px rgba(16, 24, 32, .16);
+}
+
+@media print {
+  body { background: #fff; }
+  .doc { width: auto; margin: 0; padding: 0; box-shadow: none; }
+  .no-print { display: none !important; }
+  /* 避免表格行 / 区块被拦腰截断 */
+  table.items tr, .party, .sign-box, .words { page-break-inside: avoid; }
+  /*
+    签章区（所有单证的最后一块）：整块不可被分页切开。
+    - `table.sign` 自己也要 avoid：只保护内层 `.sign-box` 时，左右两格**可能被分到两页**
+      （买方回签在上一页、卖方公章在下一页）—— 这是最难看的失败形态。
+    - `.certify` / `.foot` 同理，声明条款与页脚不被切开。
+    实测（2026-10-11，Chromium）：**`break-before/after: avoid` 被忽略** ——
+    给 `table.sign` 加与不加，PDF 逐字节相同（SHA 相同）。所以「签章绝不成为
+    新页上的唯一内容」无法用纯 CSS 保证；能保证的是**不被切开**，
+    以及声明条款随它同块移动。
+  */
+  table.sign, table.sign tr, table.sign td,
+  .certify, .foot { page-break-inside: avoid; break-inside: avoid; }
+
+  /*
+    C10：末尾原子块（声明条款 + 签章区 + 公章 + 页脚；个别模板含
+    紧邻的条款/备注块）由模板包进 `.keep-together`，整体分页 —— 不允许被切开。
+    为什么必须包容器：实测 Chromium 忽略 `break-before/after: avoid`（2026-10-11），
+    纯 CSS 无法保证「签章区不成为新页上的唯一内容」。
+    ⚠️ 正文长表格 / 行项**不在**容器内：items 必须保持可跨页。
+  */
+  .keep-together { page-break-inside: avoid; break-inside: avoid; }
+}
+
+/* ── 卖方信头 ─────────────────────────────────────────────────────────── */
+.lh {
+  padding-bottom: 3mm;
+  border-bottom: 2.4pt solid #0f2740;
+  margin-bottom: 4.5mm;
+  font-size: 7.8pt;
+  line-height: 1.6;
+  color: #4d5a66;
+}
+.lh strong {
+  display: block;
+  font-size: 14.5pt;
+  font-weight: 700;
+  letter-spacing: .4pt;
+  line-height: 1.25;
+  color: #0f2740;
+  margin-bottom: 1.5mm;
+}
+
+/* ── 单据标题 ─────────────────────────────────────────────────────────── */
+.title { text-align: center; margin-bottom: 5mm; }
+.title h1 {
+  font-size: 15pt;
+  font-weight: 700;
+  letter-spacing: 4pt;
+  text-transform: uppercase;
+  color: #0f2740;
+}
+.title .sub {
+  font-size: 7.4pt;
+  letter-spacing: 1.8pt;
+  text-transform: uppercase;
+  color: #7a8794;
+  margin-top: 1.2mm;
+}
+
+/* ── 元信息表（标签 / 值 成对） ────────────────────────────────────────── */
+/* fixed 布局：标签列固定 32mm，值列自动等分 —— 避免长字段挤压导致编号折行 */
+table.meta { width: 100%; border-collapse: collapse; margin-bottom: 4mm; table-layout: fixed; }
+table.meta td {
+  border: .9pt solid #ccd4dc;
+  padding: 1.5mm 2.2mm;
+  font-size: 8.6pt;
+  vertical-align: top;
+  word-wrap: break-word;
+}
+table.meta td.k {
+  width: 32mm;
+  background: #f5f8fa;
+  color: #55636f;
+  font-size: 7.5pt;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .3pt;
+  white-space: nowrap;
+}
+table.meta td.v { font-weight: 600; color: #101820; }
+
+/* ── 收发货人区块 ─────────────────────────────────────────────────────── */
+table.parties { width: 100%; border-collapse: collapse; margin-bottom: 4mm; }
+table.parties td.party {
+  border: .9pt solid #ccd4dc;
+  padding: 2mm 2.4mm;
+  vertical-align: top;
+}
+table.parties td.gap { width: 3mm; border: none; }
+.party .lbl {
+  font-size: 7.4pt;
+  font-weight: 700;
+  letter-spacing: 1pt;
+  text-transform: uppercase;
+  color: #0f2740;
+  margin-bottom: 1.2mm;
+}
+.party .bd { font-size: 8.8pt; line-height: 1.5; }
+.party .bd strong { font-weight: 700; }
+
+/* ── 商品明细表 ───────────────────────────────────────────────────────── */
+table.items { width: 100%; border-collapse: collapse; font-size: 8.7pt; }
+table.items th, table.items td { border: .9pt solid #ccd4dc; padding: 1.5mm 1.8mm; }
+table.items thead th {
+  background: #0f2740;
+  color: #fff;
+  font-size: 7.7pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .35pt;
+  text-align: center;
+  line-height: 1.3;
+}
+table.items tbody tr:nth-child(even) td { background: #fafbfc; }
+table.items td.c { text-align: center; white-space: nowrap; }
+table.items td.l { text-align: left; }
+table.items td.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.items tr.total td {
+  background: #eaeff4;
+  font-weight: 700;
+  border-top: 1.6pt solid #0f2740;
+}
+
+/* ── 金额英文大写 ─────────────────────────────────────────────────────── */
+.words {
+  margin-top: 2.6mm;
+  border: .9pt solid #ccd4dc;
+  border-left: 2.4pt solid #0f2740;
+  background: #f7fafc;
+  padding: 2mm 2.6mm;
+}
+.words .lbl {
+  font-size: 7.2pt;
+  letter-spacing: .9pt;
+  text-transform: uppercase;
+  color: #55636f;
+  font-weight: 700;
+  margin-bottom: .8mm;
+}
+.words .val { font-size: 8.8pt; font-weight: 700; letter-spacing: .25pt; color: #101820; }
+
+/* ── 条款 / 声明 ──────────────────────────────────────────────────────── */
+.clauses { margin-top: 3.4mm; }
+.clause { margin-bottom: 1.8mm; font-size: 8.3pt; line-height: 1.55; }
+.clause .lbl { font-weight: 700; color: #0f2740; letter-spacing: .3pt; }
+.certify {
+  margin-top: 3.4mm;
+  padding: 2.4mm 3mm;
+  background: #f7fafc;
+  border-left: 2.4pt solid #0f2740;
+  font-size: 8.1pt;
+  line-height: 1.6;
+  color: #2b3641;
+  text-align: justify;
+}
+
+/* ── 签章区 ───────────────────────────────────────────────────────────── */
+table.sign { width: 100%; border-collapse: collapse; margin-top: 9mm; }
+table.sign td { vertical-align: bottom; font-size: 8pt; }
+.sign-box { text-align: center; }
+.sign-box .rule { width: 60mm; margin: 0 auto 1.2mm; border-top: .9pt solid #7a8794; }
+.sign-box .cap { font-size: 7.6pt; color: #55636f; }
+.stamp-hint {
+  font-size: 7.2pt;
+  color: #93a1ad;
+  font-style: italic;
+  text-align: center;
+  margin-top: 1.4mm;
+}
+
+/* ── 页脚 ─────────────────────────────────────────────────────────────── */
+.foot {
+  margin-top: 5mm;
+  padding-top: 2mm;
+  border-top: .9pt solid #e4e9ee;
+  text-align: center;
+  font-size: 7pt;
+  letter-spacing: .3pt;
+  color: #93a1ad;
+}
+
+/* ── 汇票（Bill of Exchange）──────────────────────────────────────────── */
+/* 汇票是金融票据，按国际惯例用「句子式」排版而非表格：             */
+/* 出票金额与日期靠右、付款指令居中、付款人(To)与出票人签章分列两侧。 */
+table.draft-top { width: 100%; border-collapse: collapse; margin-bottom: 7mm; }
+table.draft-top td { vertical-align: top; font-size: 9pt; line-height: 1.7; }
+table.draft-top td.right { text-align: right; }
+table.draft-top .amount { font-size: 10.5pt; font-weight: 700; color: #0f2740; }
+.draft-sentence { font-size: 9.5pt; line-height: 2.2; text-align: justify; }
+.draft-sentence .fill {
+  font-weight: 700;
+  border-bottom: .8pt solid #9aa5b1;
+  padding: 0 1.5mm;
+}
+.draft-party { font-size: 8.6pt; line-height: 1.7; }
+.draft-party .hint { color: #7a8794; font-size: 7.6pt; }
+
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <div class="lh"><strong>ANPING LIANJIA WIRE MESH PRODUCTS CO., LTD.</strong><br>100 meters north of Diwo Village, Anping County, Hengshui City, Hebei Province, China<br>Tax ID: 91131125MA0GA4242U<br>Tel: +86 136 0318 1774<br>E-mail: sales@lianjiafence.com</div>
+
+  <div class="title">
+    <h1>Sales Contract</h1>
+  </div>
+
+  <table class="meta">
+    <tr>
+      <td class="k">Contract No.</td><td class="v">LJ-SC-20261012-01<div style="font-size:8pt;color:#55636f;margin-top:1mm;line-height:1.5;">Ref. Quotation No.: LJ-Q-20260928-01</div><div style="font-size:8pt;color:#55636f;margin-top:1mm;line-height:1.5;">Ref. Proforma Invoice No.: LJ-PI-20260929-01</div></td>
+      <td class="k">Date</td><td class="v">12-Oct-2026</td>
+    </tr>
+    <tr>
+      <td class="k">Signed At</td><td class="v">Anping, Hebei, China</td>
+      <td class="k">Currency</td><td class="v">USD</td>
+    </tr>
+  </table>
+
+  <table class="parties">
+    <tr>
+      <td class="party">
+        <div class="lbl">The Seller</div>
+        <div class="bd"><strong>ANPING LIANJIA WIRE MESH PRODUCTS CO., LTD.</strong><br>100 meters north of Diwo Village, Anping County, Hengshui City, Hebei Province, China<br>Tax ID: 91131125MA0GA4242U<br>Tel: +86 136 0318 1774<br>E-mail: sales@lianjiafence.com</div>
+      </td>
+      <td class="gap"></td>
+      <td class="party">
+        <div class="lbl">The Buyer</div>
+        <div class="bd"><strong>Tim Lyons</strong><br>Australia<br>Attn: Tim Lyons<br>Tel: +61 438 381 068<br>E-mail: timlyons@oneatmosphere.com</div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="certify">
+    This contract is made by and between the Seller and the Buyer, whereby the Seller agrees to sell
+    and the Buyer agrees to buy the under-mentioned goods subject to the terms and conditions
+    stipulated below. Both parties have read and accepted all the terms hereof.
+  </div>
+
+  <table class="items"><thead><tr><th>No.</th><th>Description of Goods</th><th>Specification</th><th>HS Code</th><th>Quantity</th><th>Unit</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody><tr><td class="c">1</td><td class="l">Y-Type Fence Post</td><td class="l">Height 1.83 m · Material: rail steel · Hot-dip galvanized</td><td class="c">7308900000</td><td class="r">400</td><td class="c">pc</td><td class="r">25.00</td><td class="r">10,000.00</td></tr><tr><td class="c">2</td><td class="l">Field Fence (Cattle Fence)</td><td class="l">50 m per roll · Net weight 53.5 kg/roll</td><td class="c">7314410000</td><td class="r">20</td><td class="c">roll</td><td class="r">366.31</td><td class="r">7,326.20</td></tr><tr class="total"><td class="l" colspan="4">TOTAL</td><td class="r">420</td><td></td><td></td><td class="r">USD 2,826.49</td></tr></tbody></table>
+
+  <div class="certify">Annexes forming an integral part of this contract: Proforma Invoice No. LJ-PI-20260929-01; Commercial Invoice No. LJ-CI-20261012-01.</div>
+
+  <div class="words">
+    <div class="lbl">Total Amount in Words</div>
+    <div class="val">SAY US DOLLARS TWO THOUSAND EIGHT HUNDRED AND TWENTY-SIX AND CENTS FORTY-NINE ONLY</div>
+  </div>
+
+  <table class="meta">
+    <tr>
+      <td class="k">Terms of Delivery</td><td class="v">DAP Yangzhou, Jiangsu, China (Incoterms 2020)</td>
+      <td class="k">Terms of Payment</td><td class="v">T/T — 30% deposit upon order confirmation; 70% balance before dispatch</td>
+    </tr>
+    <tr>
+      <td class="k">Time of Delivery</td><td class="v">Posts approx. 10 days; Field Fence approx. 40 days</td>
+      <td class="k">Port of Loading</td><td class="v">Anping, Hebei, China</td>
+    </tr>
+    <tr>
+      <td class="k">Port of Destination</td><td class="v">Yangzhou, Jiangsu, China</td>
+      <td class="k">Shipping Marks</td><td class="v">N/M</td>
+    </tr>
+  </table>
+
+    <div class="keep-together">
+<div class="clauses">
+
+  <style>.bi-clauses{margin-top:1mm;}.bi-clause{margin-bottom:2.2mm;page-break-inside:avoid;}.bi-head{font-size:8.6pt;font-weight:700;color:#0f2740;margin-bottom:.8mm;}.bi-zh{font-size:8.3pt;line-height:1.6;color:#101820;margin-bottom:.6mm;}.bi-en{font-size:8.1pt;line-height:1.55;color:#40515f;}</style><div class="bi-clauses">
+    <div class="bi-clause"><div class="bi-head">1. 品质 / Quality</div><div class="bi-zh">货物应符合上表所列名称与规格，并按要求进行热浸镀锌处理。原产国：中国。</div><div class="bi-en">The goods shall conform to the description and specification set out above and shall be hot-dip galvanized. Country of origin: P. R. China (customized wording).</div></div>
+    <div class="bi-clause"><div class="bi-head">2. 包装 / Packing</div><div class="bi-zh">Y 型立柱：每托 400 根；可选每 10 根加装编织袋，费用见本合同约定。牛栏网：裸装供货；可选自吸膜缠绕包装，费用见本合同约定（按卷高区分费率）。电围栏支撑绝缘子：原厂包装；无原厂包装时装袋发货。可选包装另行计费。货物无商标，可按需贴牌。唛头：N/M（除双方另有约定）。</div><div class="bi-en">Y-Type Fence Posts: 400 pcs per pallet; optional one woven bag per 10 posts, at the rate agreed in this Contract. Field Fence: supplied unwrapped; optional self-adhesive film wrapping at the rate agreed in this Contract (rate depends on roll height). Electric Fence Support Insulators: in the manufacturer&#x27;s original packing, or in bags where the original packing is unavailable. Optional packing is charged extra. Goods are supplied unbranded; OEM marking on request. Shipping marks: N/M unless otherwise agreed.</div></div>
+    <div class="bi-clause"><div class="bi-head">3. 付款 / Payment</div><div class="bi-zh">电汇（T/T）支付至上述收款人账户：订单确认后支付 30% 定金，发货至约定交货地（交货前）付清 70% 尾款。定金/尾款金额见上表「付款与收款账户」栏；请以美元汇款。</div><div class="bi-en">T/T in USD to the beneficiary account stated above: 30% deposit upon order confirmation; 70% balance to be paid in full upon dispatch of the goods to the agreed delivery place (before delivery). The deposit and balance amounts are those stated in the payment &amp; bank details block above. Please remit in USD.</div></div>
+    <div class="bi-clause"><div class="bi-head">4. 交货 / Delivery</div><div class="bi-zh">交货条件：DAP 约定目的地（Incoterms 2020），送货至买方指定地址；卖方责任至该指定地址交货为止，此后货物的拼柜与出运由买方自行安排（包括买方指定的其他供货商）。发运后运输约 4–5 天；具体交货期见上表（Y 型立柱约 10 天、牛栏网约 40 天，自订单确认起算）。总重与总体积见上表；至交货地址的内陆运费（如有）见上表金额块，并已含在应付总额内。生产期间卖方将按生产环节向买方提供货物照片。</div><div class="bi-en">Delivery term: DAP at the agreed destination (Incoterms 2020), to the address designated by the Buyer. The Seller&#x27;s responsibility ends upon delivery to that address; consolidation and export from there are arranged by the Buyer (including any other supplier designated by the Buyer). Transit takes approximately 4–5 days after dispatch; delivery lead times are those stated above (approx. 10 days for Y-type posts and 40 days for field fence, counted from order confirmation). Total weight and volume are as shown above; inland freight to the delivery address, if any, is stated in the amount block above and is included in the total amount payable. The Seller will keep the Buyer informed by providing photographs of the goods at each stage of production.</div></div>
+    <div class="bi-clause"><div class="bi-head">5. 单据 / Documents</div><div class="bi-zh">卖方提供：适用自贸协定项下的原产地证（如适用，例如中澳自贸协定 ChAFTA COO），便于买方享受关税优惠；无法出具时提供普通 CO。原产地证费用由卖方承担，不计入总价。买方应协助卖方提供相关出口报关单证——报关单、装箱单、运输单据副本及其他所需的单证——用于卖方出口退税及办理原产地证。</div><div class="bi-en">Documents provided by the Seller: a Certificate of Origin under the applicable free trade agreement (where applicable, e.g. the China–Australia FTA / ChAFTA COO) enabling the Buyer to claim preferential tariff treatment; if such a certificate cannot be issued, a standard CO shall be provided instead. Charges for the Certificate of Origin are borne by the Seller and are NOT included in the total. The Buyer shall assist the Seller in providing the relevant export customs declaration documents — customs declaration form, packing list, copies of the transport documents and such other documents as may be required — for the Seller&#x27;s export tax rebate and for the issuance of the Certificate of Origin.</div></div>
+    <div class="bi-clause"><div class="bi-head">6. 税费 / Tax</div><div class="bi-zh">出口贸易（一般贸易）。出口销售适用零税率（0% VAT），出口退税由卖方办理。</div><div class="bi-en">Export trade (general trade). Export sales are zero-rated (0% VAT); the Seller handles the export tax rebate.</div></div>
+    <div class="bi-clause"><div class="bi-head">7. 价格基础 / Price Basis</div><div class="bi-zh">单价按 2 位小数四舍五入列示；合计按未舍入单价计算（见上表「舍入调整」行）。美元金额按本合同约定汇率折算（中国银行美元现汇买入价；汇率与日期见上表）。</div><div class="bi-en">Unit prices are rounded to 2 decimal places; totals are calculated from unrounded unit prices (see the rounding adjustment in the amount block above). USD amounts are converted at the exchange rate stated in this Contract (Bank of China USD spot buying rate; rate and date as shown above).</div></div>
+    <div class="bi-clause"><div class="bi-head">8. 检验与索赔 / Inspection &amp; Claims</div><div class="bi-zh">买方应于货到后检验；如有索赔，应于到货后 30 天内书面通知卖方，并附认可检验机构出具的检验报告。因不当储存、搬运或使用引起的索赔，卖方不承担责任。</div><div class="bi-en">The Buyer shall inspect the goods upon arrival and shall notify the Seller in writing of any claim within 30 days of arrival, supported by an inspection report issued by a recognised surveyor. The Seller shall not be liable for claims arising from improper storage, handling or use.</div></div>
+    <div class="bi-clause"><div class="bi-head">9. 不可抗力 / Force Majeure</div><div class="bi-zh">因不可抗力（包括但不限于自然灾害、战争、政府行为、疫情、港口拥堵、罢工）导致不能或延迟履行的，双方互不承担责任。受影响方应及时通知对方并提供证明。</div><div class="bi-en">Neither party shall be liable for failure or delay in performance caused by events beyond its reasonable control, including but not limited to natural disasters, war, government action, epidemics, port congestion or strikes. The affected party shall notify the other party promptly and furnish evidence.</div></div>
+    <div class="bi-clause"><div class="bi-head">10. 仲裁 / Arbitration</div><div class="bi-zh">因本合同引起的或与本合同有关的任何争议，应首先友好协商解决；协商不成的，提交中国国际经济贸易仲裁委员会（CIETAC）按其现行仲裁规则仲裁。仲裁裁决为终局裁决，对双方均有约束力。</div><div class="bi-en">Any dispute arising out of or in connection with this Contract shall first be settled amicably; failing which it shall be submitted to the China International Economic and Trade Arbitration Commission (CIETAC) for arbitration in accordance with its rules then in force. The award shall be final and binding upon both parties.</div></div>
+    <div class="bi-clause"><div class="bi-head">11. 适用法律 / Governing Law</div><div class="bi-zh">本合同适用中华人民共和国法律。本合同依据上表所列形式发票签订，该形式发票条款构成本合同组成部分；两者如有不一致，以该形式发票为准。本合同以中英文书就，两种文本具有同等法律效力；如中英文不一致，以中文文本为准。任何修改须经双方书面签署。一式两份，双方各执一份。</div><div class="bi-en">This Contract shall be governed by the laws of the People&#x27;s Republic of China. This Contract is made pursuant to the Proforma Invoice referenced above, the terms of which form part of this Contract; in the event of any inconsistency between the two, the Proforma Invoice shall prevail. This Contract is made in English and Chinese, both texts being equally authentic. In case of any discrepancy, the Chinese version shall prevail. Any amendment shall be made in writing signed by both parties. Two originals, one for each party.</div></div>
+    <div class="bi-clause"><div class="bi-head">12. 生效与附件 / Effectiveness &amp; Annexes</div><div class="bi-zh">本合同自双方签字盖章之日起生效。双方同意本合同可通过电子方式签署并交换——以电子邮件交换扫描件，或经电子签名平台签署——该等签署副本与原件具有同等法律效力。构成本合同组成部分的附件：上表所列形式发票与商业发票。</div><div class="bi-en">This Contract shall come into effect upon being signed and stamped by both parties. The parties agree that it may be signed and exchanged by electronic means — scanned copies exchanged by e-mail, or signature through an electronic signature platform — and that such signed copies shall have the same legal effect as the originals. Annexes forming an integral part of this Contract: the Proforma Invoice and Commercial Invoice referenced above.</div></div>
+  </div></div>
+
+  <table class="sign">
+    <tr>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">The Seller</div>
+        </div>
+      </td>
+      <td style="width: 50%">
+        <div class="sign-box">
+          <div class="rule"></div>
+          <div class="cap">The Buyer</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="foot">Sales Contract</div>
+  </div>
+
+</div>
+</body>
+</html>

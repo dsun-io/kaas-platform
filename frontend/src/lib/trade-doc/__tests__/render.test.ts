@@ -216,6 +216,116 @@ describe("双币种金额块（有 fx_rate 才渲染）", () => {
   });
 });
 
+// ── A6 剩余 P1（G7–G12）变体 ──────────────────────────────────────────────
+
+describe("A6 剩余 P1：引用链 / 税号 / CI 双栏 / 合同双语 / PI P2", () => {
+  const P1_DATA = JSON.parse(
+    readFileSync(join(HERE, "..", "sample-data-a6p1.json"), "utf-8"),
+  ) as {
+    doc_types: string[];
+    base: Record<string, unknown>;
+    per_doc: Record<string, Record<string, unknown>>;
+  };
+
+  const dataOf = (docType: string) => ({
+    ...P1_DATA.base,
+    ...(P1_DATA.per_doc[docType] ?? {}),
+  });
+  const normalize = (s: string) => s.replace(/\r\n/g, "\n");
+
+  it("三份 P1 变体（PI / CI / 合同双语）与基线逐字节一致", () => {
+    const goldens: Record<string, string> = {
+      pi: "sample_pi_a6p1.html",
+      ci: "sample_ci_a6p1.html",
+      contract: "sample_contract_bilingual.html",
+    };
+    for (const [docType, file] of Object.entries(goldens)) {
+      const actual = normalize(renderTradeDoc(docType, dataOf(docType)));
+      const expected = normalize(
+        readFileSync(join(GOLDEN_HTML, file), "utf-8"),
+      );
+      expect(actual, `${docType} 与 P1 变体基线不一致`).toBe(expected);
+    }
+  });
+
+  it("G8 引用链：PI 带报价/合同号、CI 带 PI 号、合同带报价/PI 号", () => {
+    expect(renderTradeDoc("pi", dataOf("pi"))).toContain(
+      "Ref. Quotation No.: LJ-Q-20260928-01",
+    );
+    expect(renderTradeDoc("pi", dataOf("pi"))).toContain(
+      "Ref. Contract No.: LJ-SC-20261012-01",
+    );
+    expect(renderTradeDoc("ci", dataOf("ci"))).toContain(
+      "Ref. Proforma Invoice No.: LJ-PI-20260929-01",
+    );
+    const contract = renderTradeDoc("contract", dataOf("contract"));
+    expect(contract).toContain("Ref. Quotation No.: LJ-Q-20260928-01");
+    expect(contract).toContain("Ref. Proforma Invoice No.: LJ-PI-20260929-01");
+    // 附件清单（G8）渲染成 Annexes 行，而不是行项表
+    expect(contract).toContain("Annexes forming an integral part of this contract");
+    expect(contract).toContain("Proforma Invoice No. LJ-PI-20260929-01");
+  });
+
+  it("G9 税号/联系方式：seller/buyer 对象的 tax_id 与 tel 被渲染", () => {
+    const html = renderTradeDoc("pi", dataOf("pi"));
+    expect(html).toContain("Tax ID: 91131125MA0GA4242U");
+    expect(html).toContain("Tel: +61 438 381 068");
+  });
+
+  it("G7 CI 收款账户区块：结构化 bank_info 才渲染", () => {
+    const html = renderTradeDoc("ci", dataOf("ci"));
+    for (const label of [
+      "Bank Details for Remittance",
+      "Beneficiary: ANPING LIANJIA WIRE MESH PRODUCTS CO., LTD.",
+      "Beneficiary Tax ID: 91131125MA0GA4242U",
+      "Account No.: 13050171770800004556",
+      "SWIFT: PCBCCNBJHBX",
+    ]) {
+      expect(html).toContain(label);
+    }
+    // 旧数据（仅 bank/account/swift）不渲染该区块 ⇒ 18 份基线不变
+    const legacy = renderTradeDoc("ci", payload.base);
+    expect(legacy).not.toContain("Bank Details for Remittance");
+  });
+
+  it("G10 CI BILL TO / CONSIGNED TO 双栏：有对象才渲染", () => {
+    const html = renderTradeDoc("ci", dataOf("ci"));
+    expect(html).toContain("BILL TO");
+    expect(html).toContain("CONSIGNED TO");
+    expect(html).toContain("Jiangsu Juncheng Vehicle Industry Co., Ltd.");
+    expect(renderTradeDoc("ci", payload.base)).not.toContain("BILL TO");
+  });
+
+  it("G11 合同双语条款：默认 12 条中英双语，custom.clauses 可覆盖", () => {
+    const html = renderTradeDoc("contract", dataOf("contract"));
+    expect(html.match(/class="bi-clause"/g)?.length).toBe(12);
+    expect(html).toContain("1. 品质 / Quality");
+    expect(html).toContain("12. 生效与附件 / Effectiveness &amp; Annexes");
+    expect(html).toContain("customized wording"); // per_doc 里覆盖了 quality 的英文
+    // 双语模式替代旧 4 条英文条款（不重复出现旧 label 区块）
+    expect(html).not.toContain('<span class="lbl">Inspection</span>');
+    // 不传 clauses ⇒ 旧 4 条英文条款原样输出（18 份基线路径）
+    const legacy = renderTradeDoc("contract", payload.base);
+    expect(legacy).toContain('<span class="lbl">Inspection</span>');
+    expect(legacy).not.toContain("品质 / Quality");
+  });
+
+  it("G12 PI P2：有效期/包装/生产进度/拼柜方/签署人（有值才显示）", () => {
+    const html = renderTradeDoc("pi", dataOf("pi"));
+    for (const label of [
+      "Valid Until: 14-Oct-2026",
+      "Packing:",
+      "Production Updates:",
+      "Third-party Consolidator:",
+      "Signed for the Seller: Sun Jiaze",
+    ]) {
+      expect(html).toContain(label);
+    }
+    // 老 PI 数据（共享 base 带 valid_until、但没有 P2 字段）不显示有效期 ⇒ 基线不变
+    expect(renderTradeDoc("pi", payload.base)).not.toContain("Valid Until");
+  });
+});
+
 // ── 模板清单与字段 ──────────────────────────────────────────────────────
 
 describe("模板清单", () => {

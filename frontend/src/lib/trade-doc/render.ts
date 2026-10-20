@@ -27,6 +27,10 @@
  */
 import manifest from "./manifest.json";
 import assets from "./assets.json";
+import {
+  resolveContractClauses,
+  type ContractClause,
+} from "./contract-clauses";
 
 export type TradeDocType = keyof typeof manifest;
 
@@ -691,7 +695,10 @@ function renderAddressBlock(obj: Record<string, unknown>): string {
   if (obj.company) lines.push(`<strong>${esc(obj.company)}</strong>`);
   if (obj.name) lines.push(esc(obj.name));
   if (obj.address) lines.push(esc(obj.address));
+  // G9（A6-1 第二批）：税号/电话（真实单据的双方信息栏）；旧数据没有这些 key ⇒ 输出不变
+  if (obj.tax_id) lines.push(`Tax ID: ${esc(obj.tax_id)}`);
   if (obj.contact) lines.push(`Attn: ${esc(obj.contact)}`);
+  if (obj.tel) lines.push(`Tel: ${esc(obj.tel)}`);
   if (obj.phone) lines.push(`Tel: ${esc(obj.phone)}`);
   if (obj.fax) lines.push(`Fax: ${esc(obj.fax)}`);
   if (obj.email) lines.push(`E-mail: ${esc(obj.email)}`);
@@ -707,6 +714,188 @@ function renderAddressBlock(obj: Record<string, unknown>): string {
   if (obj.account) lines.push(`A/C: ${esc(obj.account)}`);
   if (obj.swift) lines.push(`SWIFT: ${esc(obj.swift)}`);
   return lines.join("<br>");
+}
+
+/**
+ * A6-1 第二批（P1）· 需要「标签 + 值」内联展示的补充字段（G8 引用链 / G12 P2）。
+ *
+ * 为什么用映射表而不是模板里写死标签：模板是静态字符串，写死的标签在字段为空时
+ * 仍会输出（18 份基线就全变了）。这里「有值才输出 `<div style=...>标签: 值</div>`」，
+ * 字段为空 ⇒ 空串 ⇒ 模板里内联占位符位置与 A6-1 之前逐字节一致。
+ */
+const INLINE_NOTE_FIELDS: Record<
+  string,
+  { label: string; docs: readonly string[]; multiline?: boolean; date?: boolean }
+> = {
+  // G8 引用链：PI 引用报价/合同，CI 引用 PI，合同引用报价/PI
+  ref_quote_no: { label: "Ref. Quotation No.", docs: ["pi", "contract"] },
+  ref_contract_no: { label: "Ref. Contract No.", docs: ["pi"] },
+  ref_pi_no: { label: "Ref. Proforma Invoice No.", docs: ["ci", "contract"] },
+  // G12 P2（只对 PI）：有效期 / 包装细则 / 生产进度 / 第三方拼柜方 / 签署人。
+  // 注意 `valid_until` 在 quotation 模板里是普通日期字段（不能套包装器），所以按单据限定。
+  valid_until: { label: "Valid Until", docs: ["pi"], date: true },
+  packing_details: { label: "Packing", docs: ["pi"], multiline: true },
+  production_photos_note: {
+    label: "Production Updates",
+    docs: ["pi"],
+    multiline: true,
+  },
+  third_party_consolidator: {
+    label: "Third-party Consolidator",
+    docs: ["pi"],
+    multiline: true,
+  },
+  signatory: { label: "Signed for the Seller", docs: ["pi"] },
+};
+
+/** 附件清单（G8）：数组，渲染为一行「Annexes: …」 */
+const ANNEX_FIELDS = new Set(["annex_docs"]);
+
+function renderInlineNote(key: string, value: unknown): string {
+  const spec = INLINE_NOTE_FIELDS[key];
+  if (!spec) return "";
+  const raw = spec.date ? formatDate(value) : String(value ?? "");
+  if (!raw.trim()) return "";
+  const text = spec.multiline
+    ? esc(raw.replace(/\r\n?/g, "\n")).replace(/\n/g, "<br>")
+    : esc(raw);
+  return (
+    `<div style="font-size:8pt;color:#55636f;margin-top:1mm;line-height:1.5;">` +
+    `${esc(spec.label)}: ${text}</div>`
+  );
+}
+
+/** 附件的展示文本：字符串原样；对象取 `label/doc_type + doc_no/name`。 */
+function annexEntryText(entry: unknown): string {
+  if (typeof entry === "string") return entry.trim();
+  if (typeof entry !== "object" || entry === null) return "";
+  const record = entry as Record<string, unknown>;
+  const label =
+    record.label ?? record.doc_type ?? record.name ?? record.type ?? "";
+  const no = record.doc_no ?? record.number ?? record.no ?? "";
+  const labelText = typeof label === "string" ? label.trim() : "";
+  const noText = typeof no === "string" ? no.trim() : "";
+  if (labelText && noText) return `${labelText} No. ${noText}`;
+  return labelText || noText;
+}
+
+/** 合同附件清单（G8）：`annex_docs` 数组 → 一行 "Annexes: …"（无值 = 空串）。 */
+function renderAnnexBlock(value: unknown): string {
+  const entries = Array.isArray(value) ? value : [];
+  const parts = entries.map(annexEntryText).filter((text) => text !== "");
+  if (parts.length === 0) return "";
+  return (
+    "\n\n  <div class=\"certify\">Annexes forming an integral part of this " +
+    `contract: ${parts.map((text) => esc(text)).join("; ")}.</div>`
+  );
+}
+
+/**
+ * 合同条款块（G11 / A6-2）：模板里整块由本函数生成 ——
+ * - 无 `clauses` 字段 ⇒ 输出**与旧版 4 条英文条款逐字节一致**（18 份基线不变）；
+ * - 有 `clauses`（数组，可空数组）⇒ 调 `resolveContractClauses` 得 12 条中英双语，
+ *   渲染为双语条款块（中文在上、英文在下），并**替代**旧 4 条（旧字段值不再渲染）。
+ */
+function renderContractClausesBlock(
+  data: Record<string, unknown>,
+  result: Record<string, string>,
+): string {
+  const legacy = ["inspection", "claims", "force_majeure", "arbitration"];
+  const bilingual = Array.isArray(data.clauses);
+  if (!bilingual) {
+    // 与旧模板逐字节一致：注意缩进（4 空格）与结尾的 "\n  "
+    const rows = legacy.map((key) => {
+      const label = CONTRACT_LEGACY_LABELS[key] ?? key;
+      return `\n    <div class="clause"><span class="lbl">${label}</span> ${
+        result[key] ?? ""
+      }</div>`;
+    });
+    return `${rows.join("")}\n  `;
+  }
+
+  const clauses = resolveContractClauses({ clauses: data.clauses });
+  const blocks = clauses
+    .map((clause, index) => {
+      const title = [clause.label_zh, clause.label_en]
+        .filter((text) => text.trim() !== "")
+        .join(" / ");
+      const zh = clause.text_zh
+        ? `<div class="bi-zh">${esc(clause.text_zh)}</div>`
+        : "";
+      const en = clause.text_en
+        ? `<div class="bi-en">${esc(clause.text_en)}</div>`
+        : "";
+      if (!title && !zh && !en) return "";
+      return (
+        `\n    <div class="bi-clause">` +
+        `<div class="bi-head">${index + 1}. ${esc(title)}</div>` +
+        `${zh}${en}</div>`
+      );
+    })
+    .filter((block) => block !== "");
+  if (blocks.length === 0) return "";
+  return (
+    "\n\n  <style>" +
+    ".bi-clauses{margin-top:1mm;}" +
+    ".bi-clause{margin-bottom:2.2mm;page-break-inside:avoid;}" +
+    ".bi-head{font-size:8.6pt;font-weight:700;color:#0f2740;margin-bottom:.8mm;}" +
+    ".bi-zh{font-size:8.3pt;line-height:1.6;color:#101820;margin-bottom:.6mm;}" +
+    ".bi-en{font-size:8.1pt;line-height:1.55;color:#40515f;}" +
+    "</style>" +
+    `<div class="bi-clauses">${blocks.join("")}\n  </div>`
+  );
+}
+
+const CONTRACT_LEGACY_LABELS: Record<string, string> = {
+  inspection: "Inspection",
+  claims: "Claims",
+  force_majeure: "Force Majeure",
+  arbitration: "Arbitration",
+};
+
+/**
+ * CI 收款账户区块（G7）：`bank_info` 里**有结构化 key**（beneficiary/account_no/
+ * beneficiary_tax_id）才渲染；旧数据（仅 bank/account/swift）⇒ 空串，18 份基线不变。
+ */
+function renderCiBankBlock(data: Record<string, unknown>): string {
+  const bank = data.bank_info;
+  if (typeof bank !== "object" || bank === null) return "";
+  const record = bank as Record<string, unknown>;
+  const structured = ["beneficiary", "beneficiary_address", "beneficiary_tax_id", "account_no"]
+    .some((key) => typeof record[key] === "string" && String(record[key]).trim() !== "");
+  if (!structured) return "";
+  return (
+    "\n\n  <table class=\"parties\"><tr><td class=\"party\" colspan=\"3\">" +
+    `<div class="lbl">Bank Details for Remittance</div>` +
+    `<div class="bd">${renderAddressBlock(record)}</div>` +
+    "</td></tr></table>"
+  );
+}
+
+/**
+ * CI 双栏 BILL TO / CONSIGNED TO（G10）：两个对象任一有内容才渲染；
+ * 都没有 ⇒ 空串（旧 CI 仍用 Consignee/Notify Party 两栏，基线不变）。
+ */
+function renderCiPartiesBlock(data: Record<string, unknown>): string {
+  const billTo =
+    typeof data.bill_to === "object" && data.bill_to !== null
+      ? (data.bill_to as Record<string, unknown>)
+      : null;
+  const consignedTo =
+    typeof data.consigned_to === "object" && data.consigned_to !== null
+      ? (data.consigned_to as Record<string, unknown>)
+      : null;
+  if (!billTo && !consignedTo) return "";
+  const cell = (label: string, value: Record<string, unknown> | null) =>
+    `<td class="party"><div class="lbl">${label}</div>` +
+    `<div class="bd">${value ? renderAddressBlock(value) : ""}</div></td>`;
+  return (
+    "\n\n  <table class=\"parties\"><tr>" +
+    cell("BILL TO", billTo) +
+    '<td class="gap"></td>' +
+    cell("CONSIGNED TO", consignedTo) +
+    "</tr></table>"
+  );
 }
 
 /**
@@ -1174,6 +1363,16 @@ function preprocessData(
   }
   // 双币种（A6-1）：只有 PI/CI 且给了 fx_rate 才触发；否则 fx=null ⇒ 输出与旧版一致
   const fx = computeFxBreakdown(docType, data);
+  // G12 P2 的 `valid_until` 是**共享字段**（quotation 模板本来就用它），
+  // 样例 base 里也带着它 ⇒ 不能无条件在 PI 上渲染（否则旧 PI 金标会变）。
+  // 触发条件：PI 的 P2 补充字段任一存在（包装细则/生产进度/拼柜方/签署人），
+  // 此时 valid_until 随块一起显示 —— "只有有效期、没有其它 P2 信息"时宁可不渲染，
+  // 以保住 18 份基线（真实单据一定有包装/生产/签章信息）。
+  const piExtrasEnabled =
+    docType === "pi" &&
+    ["packing_details", "production_photos_note", "third_party_consolidator", "signatory"].some(
+      (key) => !isEmpty(data[key]),
+    );
 
   const result: Record<string, string> = {};
 
@@ -1187,14 +1386,23 @@ function preprocessData(
     } else if (CONFIRMATION_FIELDS.has(key)) {
       result[key] = renderBuyerConfirmation(value, data);
     } else if (Array.isArray(value)) {
-      result[key] = value.length
-        ? renderItemsTable(
-            value as Record<string, unknown>[],
-            docType,
-            context,
-            fx,
-          )
-        : "";
+      if (ANNEX_FIELDS.has(key)) {
+        // 附件清单（G8）：数组不是行项，渲染成一行 "Annexes: …"
+        result[key] = renderAnnexBlock(value);
+      } else if (key === "clauses") {
+        // 合同条款（G11）：整块由 deriveFields 的 contract_clauses_block 生成，
+        // 这里不渲染成行项表（也避免占位符误用）
+        result[key] = "";
+      } else {
+        result[key] = value.length
+          ? renderItemsTable(
+              value as Record<string, unknown>[],
+              docType,
+              context,
+              fx,
+            )
+          : "";
+      }
     } else if (typeof value === "object") {
       result[key] = renderAddressBlock(value as Record<string, unknown>);
     } else if (typeof value === "number") {
@@ -1204,6 +1412,17 @@ function preprocessData(
     } else if (typeof value === "string" && MULTILINE_FIELDS.has(key)) {
       // 先转义、再把换行换成 <br>：顺序不能反，否则 <br> 会被一起转义
       result[key] = esc(value.replace(/\r\n?/g, "\n")).replace(/\n/g, "<br>");
+    } else if (
+      key in INLINE_NOTE_FIELDS &&
+      INLINE_NOTE_FIELDS[key]!.docs.includes(docType)
+    ) {
+      // G8/G12：带标签的内联补充字段（有值才输出；空值 = 空串 ⇒ 旧金标不变）。
+      // PI 的 valid_until 是共享字段：仅在 P2 补充块启用时渲染（见 piExtrasEnabled 注释），
+      // 否则显式置空（不能落到下面的日期分支，否则旧 PI 金标会多出日期）。
+      result[key] =
+        key === "valid_until" && !piExtrasEnabled
+          ? ""
+          : renderInlineNote(key, value);
     } else if (isDateKey(key)) {
       result[key] = formatDate(value);
     } else {
@@ -1245,6 +1464,19 @@ function deriveFields(
     if (isEmpty(data.total_amount) && fx.payableUsd !== null) {
       derived.total_amount_words = esc(amountInWords(fx.payableUsd, "USD"));
     }
+  }
+
+  // 合同条款块（G11）：无 clauses 时输出旧 4 条英文条款（逐字节一致），
+  // 有 clauses 时输出 12 条中英双语（custom.clauses 覆盖/追加）
+  if (docType === "contract") {
+    derived.contract_clauses_block = renderContractClausesBlock(data, result);
+  }
+
+  // CI 的 P1 区块（G7 收款账户 / G10 BILL TO & CONSIGNED TO）——
+  // 没有结构化数据时为空串，旧 CI 输出不变
+  if (docType === "ci") {
+    derived.ci_bank_block = renderCiBankBlock(data);
+    derived.ci_parties_block = renderCiPartiesBlock(data);
   }
 
   // 合计字段（数量/件数/毛净重/体积）：模板未自带时补上
@@ -1318,6 +1550,10 @@ const DERIVED_PLACEHOLDERS = new Set<string>([
   "footer_note",
   // A6-1：双币种金额块（无 fx_rate 时渲染为空串，不参与体检）
   "fx_block",
+  // A6-1 第二批：合同条款块 / CI 收款账户 / CI 双栏（无数据时为空串）
+  "contract_clauses_block",
+  "ci_bank_block",
+  "ci_parties_block",
   ...Object.keys(AUTO_SUMS),
 ]);
 

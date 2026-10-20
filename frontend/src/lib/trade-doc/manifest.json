@@ -262,6 +262,41 @@
         "type": "string",
         "required": false,
         "description": "（渲染器派生：双币种金额块，含汇率/舍入/运费/定金尾款/应付总额，勿手填）"
+      },
+      "ref_quote_no": {
+        "type": "string",
+        "required": false,
+        "description": "引用报价单号（如 LJ-Q-20260928-01；有值才在单号栏显示）"
+      },
+      "ref_contract_no": {
+        "type": "string",
+        "required": false,
+        "description": "引用合同号（有值才显示）"
+      },
+      "valid_until": {
+        "type": "date",
+        "required": false,
+        "description": "有效期至（PI 报价有效期）"
+      },
+      "packing_details": {
+        "type": "string",
+        "required": false,
+        "description": "包装细则（多行；换行保留，有值才显示）"
+      },
+      "production_photos_note": {
+        "type": "string",
+        "required": false,
+        "description": "生产进度照片说明（多行，有值才显示）"
+      },
+      "third_party_consolidator": {
+        "type": "string",
+        "required": false,
+        "description": "第三方拼柜方（有值才显示）"
+      },
+      "signatory": {
+        "type": "string",
+        "required": false,
+        "description": "卖方签署人（姓名/职务，有值才显示）"
       }
     }
   },
@@ -360,6 +395,31 @@
         "type": "string",
         "required": false,
         "description": "运输唛头（外包装标记，须与发票/装箱单一致）"
+      },
+      "ref_quote_no": {
+        "type": "string",
+        "required": false,
+        "description": "引用报价单号（有值才在合同号栏显示）"
+      },
+      "ref_pi_no": {
+        "type": "string",
+        "required": false,
+        "description": "引用形式发票号（有值才显示）"
+      },
+      "annex_docs": {
+        "type": "array",
+        "required": false,
+        "description": "附件清单：字符串数组或 [{label|doc_type, doc_no}]；有值才显示 Annexes 行"
+      },
+      "clauses": {
+        "type": "array",
+        "required": false,
+        "description": "中英双语条款（默认内置 12 条；按 key 覆盖，未知 key 追加；提供即启用双语块）"
+      },
+      "contract_clauses_block": {
+        "type": "string",
+        "required": false,
+        "description": "（渲染器派生：合同条款块，勿手填）"
       }
     }
   },
@@ -533,6 +593,31 @@
         "type": "string",
         "required": false,
         "description": "（渲染器派生：双币种金额块，含汇率/舍入/运费/定金尾款/应付总额，勿手填）"
+      },
+      "ref_pi_no": {
+        "type": "string",
+        "required": false,
+        "description": "引用形式发票号（有值才在发票号栏显示）"
+      },
+      "bill_to": {
+        "type": "object",
+        "required": false,
+        "description": "BILL TO 抬头（公司名/地址/联系人；有值才渲染双栏）"
+      },
+      "consigned_to": {
+        "type": "object",
+        "required": false,
+        "description": "CONSIGNED TO 抬头（公司名/地址/联系人；有值才渲染双栏）"
+      },
+      "ci_bank_block": {
+        "type": "string",
+        "required": false,
+        "description": "（渲染器派生：收款账户区块，需 bank_info 有结构化 key，勿手填）"
+      },
+      "ci_parties_block": {
+        "type": "string",
+        "required": false,
+        "description": "（渲染器派生：BILL TO / CONSIGNED TO 双栏，需 bill_to/consigned_to 有值，勿手填）"
       }
     }
   },
