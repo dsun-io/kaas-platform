@@ -1,0 +1,17 @@
+name: probe4
+# 临时探针 4（2026-10-20）：验证 **push 触发的 run 是否也被审批门禁拦**。
+# 若不被拦 ⇒ 预览改为"分支 push 触发"即可绕开门禁（也符合 S5-a 目标态）。
+on:
+  push:
+    branches-ignore: [main]
+    paths:
+      - "backend/**"
+
+permissions:
+  contents: read
+
+jobs:
+  echo:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "probe4 ok branch=${{ github.ref_name }}"
