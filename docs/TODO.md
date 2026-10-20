@@ -38,7 +38,7 @@
 | A3 | 字段缺失可发现 | 渲染期 warning + 前端「缺失字段」标记 + 签发前清单 | — | ✅ 2026-10-20（`findBlankPlaceholders` + 预览状态栏；18 类模板无未登记占位符） |
 | A4 | 图片素材库 + 去 base64 | ✅ 2026-10-21（用户选 R2 直链方案）：新增 `kaas_common/files/token.py`（HMAC 短期令牌，TTL 900s，purpose+资源 id 绑定）；装配层 `resolve_photo_refs` / `_apply_default_seal` 改为**签名直链**（`/file-objects/{id}/render-content?t=`、`/company-seals/{id}/render-content?t=`），无密钥/取不到时回退原 data URI；渲染器白名单**未改**（本来就认 http(s)）；素材库=复用现有产品图库+公章库+picker（不新增表）。测试 +16（令牌 6 / 文件直链 6 / 公章直链 4） | G-4 已拍板 | ✅ |
 | A5 | 单证编辑体验 | CI/PL 行项批量编辑、条款/备注模板、金额联动校验 | 方案稿已出：**[`TRADE_DOC_EDIT_PLAN.md`](./TRADE_DOC_EDIT_PLAN.md)**（W1 条款模板 2 天 / W3 金额摘要 0.5 天 / W2 行项批量 1.5 天 / A6 校准 0.5 天 ≈4.5 天；待拍板：条款库团队级 vs 租户级、是否预置 6 类默认模板、实施顺序）。**未施工**（等过目，§G-1） | 🧭 待过目 |
-| A6 | 模板逐字段对照真实单据 | 以真实 PI/CI/PL/提单确认件逐字段校准模板措辞/栏目/条款 | **需用户提供样例单据**（§G-2） | 🧭 |
+| A6 | 模板逐字段对照真实单据 | **2026-10-21 用户已提供 3 份真实单据**（PI/CI/合同，PDF）→ 校准矩阵 [`TRADE_DOC_A6_CALIBRATION.md`](./TRADE_DOC_A6_CALIBRATION.md)（G1–G12）；A6-1 双币种金额块（P0）与 A6-2 合同双语条款数据层施工中；G8–G12 待后续 | A6-1/A6-2 | 🔨 进行中 |
 | A7 | 单证加固 P1/P2 | ✅ 2026-10-21 全部落地：①事实层+②一致性引擎内核（87 测）+ 事实表（迁移 `202610200004`）+ **10 个 Worker 端点**（34 测）+ **UI**（事实确认/一致性三档/收款/单证清单/签发闸门，面板 9 + 契约 12 测）。`confirm` 默认拦截未确认事实；`allow_lint_override` 未对前端开放。设计与 12 条裁决见 [`TRADE_DOC_HARDENING.md`](./TRADE_DOC_HARDENING.md)。尾巴：导出后自检 UI 需 PDF 文本抽取（C21） | — | ✅ |
 | A8 | PDF 归档尾巴 | ②③ 已完成（cron + 列表「已变更/模板已更新/待复核」标识）；①端到端真实跑一次 | ①需已部署环境 | ✅ ②③；①随发布后 P4 |
 | A9 | 指纹批量对账定时调度 | cron `40 17 * * *` + `trade_doc_render_checks` 表 + 列表 `render_check` | — | ✅ 2026-10-20 |
@@ -97,11 +97,11 @@
 
 | # | 待办 | 现状/风险 | 状态 |
 |---|---|---|---|
-| D1 | 生产注入 `RESEND_API_KEY` | **发布已上线但仍未注入**（2026-10-21 部署后实测 secrets = `ADMIN_SETUP_TOKEN`/`JWT_SECRET`/`S3_ACCESS_KEY`/`S3_SECRET_KEY`）⇒ **忘记密码邮件仍静默不发**。为**用户动作**：值取 repo secret `RESEND_API_KEY_PROD`，在 Cloudflare Dashboard 或 `cd backend/worker; npx wrangler secret put RESEND_API_KEY --name kaas` 设置（无需重新部署） | ⏳ 待用户注入 |
+| D1 | 生产注入 `RESEND_API_KEY` | ✅ **2026-10-21 已完成**：用户提供 key，已 `wrangler secret put RESEND_API_KEY --name kaas`（secret list 5 项确认）；key 为**仅发送权限**（`/domains` 401 属预期，`/emails` 可用）⇒ 忘记密码邮件链路恢复。旧状态（保留追溯）：**发布已上线但仍未注入**（2026-10-21 部署后实测 secrets = `ADMIN_SETUP_TOKEN`/`JWT_SECRET`/`S3_ACCESS_KEY`/`S3_SECRET_KEY`）⇒ **忘记密码邮件仍静默不发**。为**用户动作**：值取 repo secret `RESEND_API_KEY_PROD`，在 Cloudflare Dashboard 或 `cd backend/worker; npx wrangler secret put RESEND_API_KEY --name kaas` 设置（无需重新部署） | ⏳ 待用户注入 |
 | D2 | R2 新密钥替换 | **生产 `S3_ACCESS_KEY` 只有 13 位（R2 要求 32）⇒ 生产直传当前不可用**（R2 binding/服务端代理兜底可用）。为**用户动作**：R2 dashboard → Manage R2 API Tokens 建 32 位密钥 → `wrangler secret put S3_ACCESS_KEY/S3_SECRET_KEY --name kaas` → 删旧 token | ⏳ 待用户动作 |
 | D3 | Hyperdrive 生产缓存关闭（可选） | **用户已授权按推荐默认：保持开启**（2026-10-21）。预览仍 `caching.disabled=True` | ✅（默认保持） |
 | D4 | 生产测试数据清理 | 发布已执行（2026-10-21），**清理未做**（需执行当次确认，用户尚未确认）；含流失拒绝文件历史 | 🧭 待当次确认 |
-| D5 | 仓库可见性 | ✅ **用户 2026-10-21 决定：保持 public、不做密钥轮换/改密**（安全批按用户口径收窄为"归档数据公开评估"）；已发现 `docs/archive/stowage_raw.json` 等含真实姓名/企业微信 userid/成本价（P1），建议**脱敏**这些历史文件（待用户确认，不改公开性） | — | ✅（按用户决定） |
+| D5 | 仓库可见性 | ✅ **用户 2026-10-21 决定：保持 public、不做密钥轮换/改密**（安全批按用户口径收窄为"归档数据公开评估"）；已发现 `docs/archive/stowage_raw.json` 等含真实姓名/企业微信 userid/成本价（P1）；**2026-10-21 已按用户批准脱敏**（stowage 身份+228 个成本/售价/利润单元格、17 份样例单据的姓名/电话/邮箱） | — | ✅（按用户决定） |
 | D6 | 生产发布检查单 | ✅ **2026-10-21 已执行**（迁移 6 条 → 生产 `202610200005`；构建 out/275；pywrangler 部署版本 `dae596a5`；冒烟 5 项全过；回滚版本 `77901aa1`；记录见 HANDOVER §0.4）。**尾巴**：D1/D2 secrets 待用户；冷启动 `coldstart-baseline.json` 仍 PENDING（pywrangler Startup 3386ms > 2950 验收线，需 Dashboard p50）；P4 观察期从这里开始 | 🔨 主体完成（2 项尾巴） |
 | D7 | preview ensure 对 Neon 423 重试 | ✅ 2026-10-21：`scripts/preview/preview_lib.py` 对 **423/429** 有限重试（指数退避 2/4/8/16s，上限 20s，`Retry-After` 优先，`PREVIEW_HTTP_RETRIES`/`PREVIEW_HTTP_BACKOFF` 可调；5xx 不重试避免重复创建）+ 5 条单测 `backend/worker/tests/test_preview_http_retry.py` | ✅ |
 
@@ -127,7 +127,7 @@
 | N3 | H-2 用户复验 | 定价页刷新与注册（2026-10-19 已修复上线）等用户确认 | 🧭 需用户复验 |
 | N4 | P8 联调状态核对 | ✅ 2026-10-21 核对：设计文档「P8 联调+E2E+订阅编码 ⏳」已过时 —— 联调=CI 三条全绿 + 预览链路实测；E2E=28 条（24+4）；订阅编码=契约 R2 PASS（27 工位 ts↔py）+ B3 真机开通生效。已在 `WORKSTATION_DESIGN.md` 段位状态表标 ✅ | — | ✅ |
 | N5 | 文档口径收尾批 | PROBLEM_STATUS/UNCERTAIN/HANDOVER + UI 两份/PDF_ARCHIVAL/E2E/README/旧设计稿归档 | ✅ 2026-10-21 |
-| N6 | **安全 4 项（最后做）** | ① Neon 生产口令轮换（git 历史明文与现用口令相同，仓库现 public）②管理员 `david@powervoy.com` 改密 ③评估 `docs/archive` 业务数据能否公开 ④可选 `git filter-repo` 清历史 | ⏳ 用户裁"最后再做" |
+| N6 | **安全 4 项（最后做）** | **用户 2026-10-21 决定：①口令轮换/②管理员改密/④filter-repo 均不做（仓库保持 public）**；③归档数据公开评估**已完成并脱敏**（`docs/archive/stowage_raw.json` 身份+成本/售价/利润 228 格；`archive/.../sample_docs/*` 姓名/电话/邮箱；公司名保留） | — | ✅（按用户口径） |
 | N7 | 分支/遗留清理 | convergence-aprime 打 tag 后删远端、删已合并分支、清 2 个 stash、POC 目录（`backend/worker/poc-*`） | ✅ 分支/stash；POC 目录 ⏳ |
 | N8 | A′（SQL/DDL 内核同源） | 原并行线遗留，是否重激活为在评方案 | 🧭 待拍板 |
 

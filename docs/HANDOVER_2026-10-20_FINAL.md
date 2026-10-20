@@ -179,7 +179,7 @@ Neon 项目权限 · Resend 账号（`send.powervoy.com` 域名）· 生产域�
 | 六次部署（A12/A13/C26/C30/C31/C36） | ✅ 版本 **`569a8b88-d5f9-4cd6-9719-e9aaf3e595fd`**（trigger_expr 求值/A13 中译英/C30 归档页/C26 a11y/C31 仪表盘占位/C33 events 修复/C36 API 清单）；`out/` **276**；冒烟：`/health`、`/dashboard`、`/quotes`、`/trade-docs`、`/billing` 200，`/admin/archive-logs`、`/render-content` 无令牌 401；e2e **27 passed + 0 skipped** |
 | **回滚** | `cd backend/worker; npx wrangler versions deploy 77901aa1-5794-4013-bfad-3b0a80b8a57b@100% --name kaas --yes`（库回滚走 Neon PITR/快照，**不要** alembic downgrade base） |
 | ⚠️ 冷启动 | `pywrangler` 报 **Worker Startup Time 3386ms** > 验收线 **2,950ms**（该数字≠Dashboard p50）；`backend/worker/coldstart-baseline.json` 仍 **PENDING**，需发布后在 Dashboard → Workers → kaas → Metrics 读 p50 判定，并决定是否裁剪包体（本次上传 11.9 MiB） |
-| 待用户动作 | **D1** `RESEND_API_KEY` 未注入（现有 secrets：`ADMIN_SETUP_TOKEN`/`JWT_SECRET`/`S3_ACCESS_KEY`/`S3_SECRET_KEY`）⇒ 忘记密码邮件仍不发；**D2** R2 新密钥（现 `S3_ACCESS_KEY` 13 位，直传不可用）需在 R2 dashboard 创建后替换；**D4** 生产测试数据清理执行当次确认 |
+| 待用户动作 | **D1 ✅ 2026-10-21 已完成**（`RESEND_API_KEY` 已 `wrangler secret put`，secret list 5 项；key 权限=仅发送，`/domains` 401 属预期）⇒ 忘记密码邮件恢复；**D2** R2 新 32 位密钥仍待创建（现 `S3_ACCESS_KEY` 13 位，直传走兜底）；**D4** 生产测试数据清理执行当次确认 |
 | 未做 | D5 仓库转 private（安全批，用户裁"发布后做"）；P4 观察期从现在开始（1 周） |
 
 ## 0.1 本轮后端交付（2026-10-20 晚 · 分支 `feat/trade-doc-content-a` · PR #5）
