@@ -167,7 +167,7 @@ jobs:
 
   deploy:
     if: github.event.action != 'closed'
-    name: Deploy probe（加回 uv+sync-shared+render+assert）
+    name: Deploy probe（加回 assert+真部署+冒烟）
     needs: [ensure, migrate, build-frontend]
     runs-on: ubuntu-latest
     steps:
@@ -189,9 +189,26 @@ jobs:
           PREVIEW_HYPERDRIVE_ID: ${{ needs.ensure.outputs.HYPERDRIVE_ID }}
           PREVIEW_R2_BUCKET: ${{ vars.KAAS_PREVIEW_R2_BUCKET }}
           PREVIEW_KV_NAMESPACE_ID: ${{ vars.KAAS_PREVIEW_KV_NAMESPACE_ID }}
+        run: python3 ../../scripts/preview/render-wrangler-config.py --slug "${{ env.PR_NUMBER }}" --out wrangler.preview.jsonc
+      - name: S5-d 断言（部署前）
+        working-directory: ./backend/worker
+        env:
+          EXPECT_R2_BUCKET: ${{ vars.KAAS_PREVIEW_R2_BUCKET }}
+          EXPECT_KV_ID: ${{ vars.KAAS_PREVIEW_KV_NAMESPACE_ID }}
+          EXPECT_HYPERDRIVE_ID: ${{ needs.ensure.outputs.HYPERDRIVE_ID }}
+          FORBIDDEN_R2_BUCKETS: ${{ vars.PROD_R2_BUCKET }}
+          FORBIDDEN_HYPERDRIVE_IDS: ${{ vars.PROD_HYPERDRIVE_ID }}
+        run: python3 ../../scripts/preview/assert-bindings.py --mode preview --script "kaas-preview-pr-${{ env.PR_NUMBER }}" --slug "${{ env.PR_NUMBER }}" --config wrangler.preview.jsonc --pre-deploy
+      - name: Deploy to Cloudflare Workers
+        working-directory: ./backend/worker
+        run: uv run pywrangler deploy -c wrangler.preview.jsonc
+      - name: Smoke
         run: |
-          python3 ../../scripts/preview/render-wrangler-config.py \
-            --slug "${{ env.PR_NUMBER }}" \
-            --out wrangler.preview.jsonc
-      - name: echo done
-        run: echo "render ok"
+          set -uo pipefail
+          API="${{ needs.ensure.outputs.PREVIEW_URL }}"
+          for i in $(seq 1 18); do
+            body=$(curl -fsS --max-time 10 "$API/health" 2>/dev/null || true)
+            if printf '%s' "$body" | grep -q '"pr_slug":"${{ env.PR_NUMBER }}"'; then echo "ok: $body"; exit 0; fi
+            echo "attempt $i not ready"; sleep 10
+          done
+          echo "::error::preview not ready"; exit 1
