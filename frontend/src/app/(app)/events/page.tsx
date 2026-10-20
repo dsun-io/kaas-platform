@@ -11,6 +11,7 @@ import {
 } from "./hooks/use-events";
 import { usePageView } from "@/lib/events/use-page-view";
 import { RouteGuard } from "@/components/route-guard";
+import { PageHeader } from "@/components/shared";
 
 export default function EventsPage() {
   usePageView({ resource_id: "/events" });
@@ -27,9 +28,7 @@ export default function EventsPage() {
   return (
     <RouteGuard adminOnly>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">事件审计</h1>
-        </div>
+        <PageHeader title="事件审计" description="系统事件与操作审计记录" />
 
         <Card>
           <CardHeader className="pb-3">
