@@ -89,6 +89,7 @@
 | C19 | **批量导入上传 UI** | hooks（`useImportPreview`/`useImportCalculate`/`useDownloadTemplate`）与 `import-file.ts` 齐备，但**没有任何页面组件消费** ⇒ 用户拿不到「下载模板→填→上传」入口（xlsx/CSV 后端都已就绪）。建议接进 v2 报价工作台/批量报价页（放置位置属产品交互 → 待拍板 §G-10） | C7 | 🧭 待定入口位置 |
 | C20 | 导入模板 4 端点仍只查注册表 | ✅ 2026-10-21：`/export-quote/import/template`、`/products/{key}/import-template`（说明+下载）、`/import/preview`、`/import/calculate` 全部改走 `_product_or_404_tenant`（与 `/formulas`/`/explain`/算价同口径：租户运行时产品优先、未命中回落注册表）；新增 5 条测试（租户 200 / 系统产品回归 / 跨团队 404 / 未知 404） | B5 | ✅ |
 | C21 | 导出后自检 UI 依赖 PDF 文本抽取 | `verify-export` 后端已可用（文本⊆PDF、图片计数），但前端需要拿到 PDF 文本；方案：pdf.js 解析已生成 PDF，或服务端渲染时抽取 —— 需拍板（涉及新增依赖/包体） | A7 | ⏳ 待定方案 |
+| C22 | `file_objects.uq_file_current` 的 NULLS DISTINCT 缺口 | 部分唯一索引谓词含 `is_current AND kind IN ('stamp_scan','render_pdf')` 且列含 `media_kind`，但真实盖章回传 `media_kind=None` ⇒ PG 默认 NULLS DISTINCT 允许两条同归属"当前 stamp_scan"并存，"同一归属只留一个当前版本"无库级兜底（并发上传可留两个 current，现只靠应用层先 UPDATE）。修法（对齐测试已钉住现状为 characterization 用例）：索引加 `NULLS NOT DISTINCT`（PG15+；生产 Neon 18.6 支持）或把 stamp_scan 的 media_kind 归一为非空或从索引列去掉 | — | ⏳（待实施 + 迁移） |
 
 ---
 

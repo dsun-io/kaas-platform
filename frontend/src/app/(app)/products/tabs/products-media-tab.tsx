@@ -43,6 +43,7 @@ import {
   useUploadProductMedia,
   type ProductMedia,
 } from "@/lib/products/use-products";
+import { sortErrorMessage, uploadErrorMessage } from "../upload-errors";
 
 /** 基础信息字段（存进 product_profiles.info，键名稳定、可被单证/报价引用） */
 const PROFILE_FIELDS: [string, string, string][] = [
@@ -120,7 +121,8 @@ export function ProductsMediaTab() {
     });
     reorder.mutate(patches, {
       onSuccess: () => toast.success("顺序已更新"),
-      onError: () => toast.error("排序失败，请重试"),
+      // 422 = sort_order 越界（0–9999，用户可修正）⇒ 把后端原因带出来；其它给可重试提示。
+      onError: (err) => toast.error(sortErrorMessage(err)),
     });
   };
 
@@ -144,8 +146,10 @@ export function ProductsMediaTab() {
       );
       setName("");
       setFile(null);
-    } catch {
-      toast.error("上传失败（类型/大小/命名不合规时后端会明确拒绝）");
+    } catch (err) {
+      // 失败原因可能是后端 detail（类型/大小/命名不合规），也可能是上传 hook 抛的
+      // 可执行文案（例如"字节已直传成功但登记失败，请重试"）；别再统一回一句含糊提示。
+      toast.error(uploadErrorMessage(err));
     }
   };
 
