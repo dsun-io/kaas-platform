@@ -18,15 +18,18 @@ Hyperdrive，并给 worker 依赖钉版入库。**前端 UI 优化 P0/P1/P2 已�
 ### 0.2.1 停止点（2026-10-20 晚）
 
 - **用户指令**：停止继续开发；把现状与剩余工作写进交接文档；归档过时文档；推送远程。
-- **代码位置**：分支 `feat/trade-doc-content-a`（独立 worktree
+- **代码已在 `main`（2026-10-20 晚合并完成）**：PR #5 已合并，合并提交 **`118af7c`**；
+  **`main` 的 CI 三条 workflow 全绿**（backend:test / contracts:check / Frontend CI；
+  preview 只在 PR 事件跑）。**新设备 / 新 agent `git clone` 即拥有全部代码与交接文档**，
+  无需切分支（分支 `feat/trade-doc-content-a` 是历史分支，可删）。
+- **原开发位置**（历史）：分支 `feat/trade-doc-content-a`（独立 worktree
   `D:\projects\kaas-platform\.agents\worktrees\feat\trade-doc-content-a`；主工作树是并行 UI 线在用，**未改动**）。
-- **PR [#5](https://github.com/dsun-io/kaas-platform/pull/5)**：`mergeable_state=clean`，
-  head = 本提交（含与 `origin/main` 的合并）；四条 workflow（backend:test / contracts:check /
-  Frontend CI / preview）在上一代码 head `743bce5` 全绿；纯文档提交后以 **`743bce5` 为代码门禁证据**。
-- **预览**：`https://kaas-preview-pr-5.dspro0124.workers.dev`（PR 关闭自动回收）。
-- **仓库可见性**：用户口径 = CI 跑绿后转回 **private**（转回后 GitHub Actions 会再次不可用，
+- **预览已回收**：PR #5 合并后按 `pull_request closed` 触发 teardown，**worker / Neon 分支 `preview-pr-5` /
+  Hyperdrive / R2 前缀 / 预览 KV 已全部回收**（worker 现 404；Teardown job green）。
+- **仓库可见性**：用户口径 = 收尾完成后转回 **private**（private 期间 GitHub Actions 不可用，
   门禁以本地命令为准；本地各门全绿数字见 §0.1）。
-- **未合并即是当前状态**：PR 未合入 `main`；合并动作由用户决定（合并后生产部署仍需手动 dispatch，`deploy.yml` 仅 `workflow_dispatch`）。
+- **发布仍未动**：合并 ≠ 发布；生产部署仍需手动 `workflow_dispatch`（`deploy.yml` 仅手动），
+  迁移 head `202610200003` 随发布窗口应用，发布检查单见 §5。
 
 ### 0.2.2 已完成（本分支 + 已合入 main 的 UI 线）
 
@@ -82,12 +85,13 @@ Hyperdrive，并给 worker 依赖钉版入库。**前端 UI 优化 P0/P1/P2 已�
 
 ### 0.3 新设备 / 新 agent 接手清单（**设备无关**，换机也能完整接手）
 
-> 前提：PR #5 已合并到 `main` ⇒ 新设备 `git clone` 即拥有**代码 + 全部交接文档**。
+> 前提：PR #5 **已合并到 `main`（合并提交 `118af7c`，main CI 全绿）** ⇒ 新设备 `git clone` 即拥有
+> **代码 + 全部交接文档**（`docs/TODO.md` 的剩余待办也在 `main` 上，直接可检索）。
 
 **0.3.1 仓库与文档在哪**
 
 - 仓库：`https://github.com/dsun-io/kaas-platform`；交接文档全在 `docs/`，检索入口 `docs/README.md`。
-- 分支 `feat/trade-doc-content-a` 可能仍保留（历史分支）；**合并后以 `main` 为准**，无需切分支。
+- 以 `main` 为准（新设备 clone 默认分支即 `main`）；分支 `feat/trade-doc-content-a` 是已合并的历史分支，可删。
 
 **0.3.2 本机有、Git 里没有（换设备会缺，必须重建）**
 

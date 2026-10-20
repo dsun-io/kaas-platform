@@ -15,6 +15,20 @@
 > [`HANDOVER_2026-10-20_FINAL.md`](./HANDOVER_2026-10-20_FINAL.md)**（状态/资源清单/踩坑/发布检查单/待办）。
 > 本文件继续只做"问题状态"滚动口径。
 >
+> **（2026-10-20 晚 · 合并完成：PR #5 → main `118af7c`；main CI 全绿；预览资源已回收；交接已全部在 main 可见）**
+>
+> 用户要求"确保内容能够完全交接（换设备后其他 agent 能顺利接手）"。已完成：
+> ① **PR #5 合并入 `main`**（合并提交 `118af7c`，合并标题"单证内容专项 + 后端五项…"）；
+> ② **main CI 三条全绿**：backend:test / contracts:check / Frontend CI（preview 仅 PR 事件，已无 PR）；
+> ③ **PR #5 预览资源 teardown 成功**：worker / Neon 分支 `preview-pr-5` / Hyperdrive / R2 前缀 /
+> 预览 KV 全部回收（预览域名现 404），未留计费资源；
+> ④ **交接入口**：`docs/README.md` → `HANDOVER_2026-10-20_FINAL.md` **§0.2（停止点/剩余工作/恢复路径）**
+> + **§0.3（新设备/新 agent 接手清单：本机 gitignore 内容、secrets 持久位置、初始化步骤、权限）**
+> → `docs/TODO.md`（剩余 A4/A5/A6/A7、B1–B3、C1–C6、D1–D6 全部在册）。
+> **新设备 `git clone` `main` 即可获得全部代码与交接文档**，无需切分支；分支 `feat/trade-doc-content-a` 为历史分支可删。
+> 仓库可见性：用户将在收尾后转回 private（private 期间 Actions 不可用，门禁以本地命令为准）。
+> 发布仍未执行（迁移 head `202610200003` 待发布窗口应用）。
+>
 > **（2026-10-20 晚 · 停止点：开发按用户指令停止；交接与剩余工作已落盘；过时文档归档）**
 >
 > 用户指令："不继续任务了，把现状和剩下的工作全部写进交接文档；把过时文档归档（不要动前端 agent 的交接文档）；
