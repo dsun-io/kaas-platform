@@ -1,7 +1,8 @@
-# 交接文档 · 2026-10-20 最终版（S5 预览交付 + 云资源治理 + 发布待命）
+# 交接文档 · 2026-10-20 最终版（S5 预览交付 + 云资源治理 + 2026-10-21 生产发布已完成）
 
 > **本文是当前主交接文档**。历史口径见 `PROBLEM_STATUS_2026-10-11.md`（滚动状态）与
-> `README.md`（架构/环境矩阵/门禁唯一权威）。本文日期区间：**2026-10-20 全天**。
+> `README.md`（架构/环境矩阵/门禁唯一权威）。本文日期区间：**2026-10-20 全天**；
+> **2026-10-21 生产发布三次部署与最终状态见 §0.4 / §0.2.1**。
 
 ## 0. 一句话状态
 
@@ -12,6 +13,8 @@ Hyperdrive，并给 worker 依赖钉版入库。**前端 UI 优化 P0/P1/P2 已�
 口径修订：原「触发条件制」项全部恢复为活跃待办——单证内容专项 / 产品配置化 / 原 I-1~I-7 /
 发布窗口项，由用户排期执行）。**后端 5 项已完成**（见 §0.1；`UI_BACKEND_DEPENDENCIES_2026-10-20.md` 转为验收基线）。
 **开发已于 2026-10-20 晚按用户指令停止**，停止点与剩余工作见 **§0.2**。
+**2026-10-21 已按用户指令完成生产发布窗口**：生产迁移 `202610180010`→**`202610200005`**（6 条），
+Worker 三次部署（`dae596a5` → `cd15e9a5` → `9d497628`），冒烟通过；P4 观察期自 2026-10-21 起，详见 §0.4。
 
 ## 0.2 停止点交接：当前状态与剩余工作（**交接 agent 必读**）
 
@@ -31,15 +34,17 @@ Hyperdrive，并给 worker 依赖钉版入库。**前端 UI 优化 P0/P1/P2 已�
   （匿名 `git ls-remote https://github.com/dsun-io/kaas-platform` 成功；`gh` 本机未登录，Settings/Actions 未核）
   ⇒ **「转回 private」尚未完成，不是已完成项**，已统一登记 `docs/TODO.md`（D5）；private 期间 GitHub Actions 不可用，
   门禁以本地命令为准；本地各门全绿数字见 §0.1。
-- **发布仍未动**：合并 ≠ 发布；生产部署仍需手动 `workflow_dispatch`（`deploy.yml` 仅手动），
-  迁移 head `202610200005` 随发布窗口应用，发布检查单见 §5。
+- **发布已于 2026-10-21 完成（详见 §0.4）**：用户下令后执行「迁移 → 构建 → 本机 `pywrangler deploy` → 冒烟」，
+  生产迁移 `202610180010` → **`202610200005`**（6 条），Worker 三次部署
+  （`dae596a5` → `cd15e9a5` → `9d497628`），三条 cron 保留；回滚版本见 §0.4。
+  **后续发布仍仅手动**（`deploy.yml` 只 `workflow_dispatch`；优先本机 `pywrangler deploy`），按 §5 检查单走。
 
 ### 0.2.2 已完成（本分支 + 已合入 main 的 UI 线）
 
 - 用户点名的**后端 5 项**：F1 签发自动上传、F2 内容版本、F3 个人信息、F4 询盘状态机、F5 报价/订单 1:N —— 全部 ✅（细节/证据见 §0.1）。
 - 单证内容专项 A 组：A1（内容版本）、A3（字段体检）、A8/A9（指纹对账 cron + 列表标识）✅；
   顺手修线上 `GET /trade-docs` 500。
-- 迁移 head：**`202610200005`**（2026-10-21 追加 `202610200004` 单证事实表与 `202610200005` 文件当前版本唯一索引 `NULLS NOT DISTINCT`；生产尚未应用，发布窗口一并上）。
+- 迁移 head：**`202610200005`**（2026-10-21 追加 `202610200004` 单证事实表与 `202610200005` 文件当前版本唯一索引 `NULLS NOT DISTINCT`；**生产已于 2026-10-21 应用到该 head**，见 §0.4）。
 - 配置：两把 Resend key 已入 GitHub repo secrets（`RESEND_API_KEY_PROD` / `RESEND_API_KEY_PREVIEW`），换设备不失；
   生产 key 待发布窗口注入 Cloudflare（`docs/TODO.md` D1）。
 
@@ -51,19 +56,19 @@ Hyperdrive，并给 worker 依赖钉版入库。**前端 UI 优化 P0/P1/P2 已�
 | A4 | 单证图片素材库 | ✅ 2026-10-21：渲染改**短期签名直链**（`files/token.py` HMAC 900s + `render-content` 端点，文件/公章各一条），回退 data URI；素材库复用现有产品图库+公章库（无新表） |
 | A5 | 单证编辑体验（行项批量编辑、条款模板、金额联动校验） | **需先与用户过方案**（🧭） |
 | A6 | 模板逐字段对照真实出口单据 | **需用户提供样例单据**（🧭），是单证内容的最终验收标准 |
-| A7 | 单证加固 P1/P2（事实层/一致性引擎/收款容差/回执登记/导出自检） | **约 2/5**：容差内核 `kaas_common/workstation/receipt_rules.py` + 迁移 `202610170003_trade_doc_receipts_and_doc_set.py` 已有；事实层/一致性引擎/回执 API/导出后自检未做；口径见 `UNCERTAIN.md` #17，设计在归档的 `TRADE_DOC_HARDENING_PLAN_2026-10-12.md` |
+| A7 | 单证加固 P1/P2（事实层/一致性引擎/收款容差/回执登记/导出自检） | ✅ **2026-10-21 全部落地**：①事实层 + ②一致性引擎内核（87 测）+ 事实表（迁移 `202610200004`）+ **10 个 Worker 端点**（34 测）+ **UI**（事实确认/一致性三档/收款/单证清单/签发闸门，面板 9 + 契约 12 测）。`confirm` 默认拦截未确认事实，`allow_lint_override` 未对前端开放；口径见 [`TRADE_DOC_HARDENING.md`](./TRADE_DOC_HARDENING.md)。尾巴：导出自检 UI 需 PDF 文本抽取（TODO C21） |
 | A8-① | PDF 归档「端到端真实跑一次」 | 需已部署环境（Browser Rendering 依赖生产 binding），归发布后 P4 |
 | A9-补充 | preview ensure 对 Neon 423 短重试（TODO D7） | 低优先；本次靠 rerun 通过 |
-| B1 | 租户级产品定义配置化 | **代码层已完成**（2026-10-20 审计核实）：worker `ws_products.py` 8 条 `/api/v1/tenant-products|workstation-products|tenant-product-status` 路由 + 前端 `/settings/tenant-products` 等三处页面均在；**唯一口径缺口** = 系统级产品仍靠 Python `@register` 注册表，新增系统级产品仍需改代码 + 重启 |
-| B2 | 产品可视化编辑器收尾（运行时生效链路） | **代码层已完成**（`products/tabs/products-definitions-tab.tsx` 在）；随 B1 一并销项 |
-| B3 | 租户开通报价工位 UI 交互 | **代码层已完成**（`team/components/team-subscriptions-panel.tsx` 在）；最终状态以 `docs/TODO.md`（Lead 同步修正后）为准 |
+| B1 | 租户级产品定义配置化 | ✅ **2026-10-21 销账**（端到端验收 + B4/B5/B6 修复复验）：`/tenant-products` CRUD 全通（201/200/200/204、409/422/404）、跨团队写/删 404、`/formulas`+`/explain` 回落租户产品、运行时算价即时生效；**系统级**产品仍靠 Python `@register`（4 个），属 §G-3 待用户定口径 |
+| B2 | 产品可视化编辑器收尾（运行时生效链路） | ✅ **2026-10-21 端到端验收**：克隆 `field_fence` → 同价 3.041 → PUT `raw_price×1.2` → **同会话无重启**立即算得 3.6357 元/米（+19.6%），列表同步改名 |
+| B3 | 租户开通报价工位 UI 交互 | ✅ **2026-10-21 端到端验收**：`PUT /teams/{id}/subscriptions/{code}` 后同一进程内 `/me/workstations` codes `[]→["full_chain"]`、中间件门 404→放行；`DELETE` 后立即回退（缓存失效生效） |
 | C1 | 「流失」拒绝文件链路（订单新增 `lost`） | 🧭 需业务设计 + 用户拍板 |
-| C2 | 文件存储收尾 4 项（真实 DB 用例 / 公章 PI 视觉 QA / 排序过滤测试 / 产品图 `doUpload` 页面层测试） | 发布后验证更完整（TODO C2） |
+| C2 | 文件存储收尾 4 项（真实 DB 用例 / 公章 PI 视觉 QA / 排序过滤测试 / 产品图 `doUpload` 页面层测试） | ✅ **2026-10-21 收口**：`products-page-upload-and-sort.test.tsx`（页面级 upload/排序）+ 真 PG 写入路径用例（`tests/integration/`）；顺修 C22（迁移 `202610200005` 文件唯一索引 `NULLS NOT DISTINCT`）。TODO 账本由 Lead 销账 |
 | C3 | Cloudflare agent 接入 | 🧭 价值未明，待用户排优先级 |
 | C4 | 30/90 天客户自动沉寂 | 🧭 用户曾裁「先手动」，要做需重新设计 |
-| C5 | 本地 mock 刷新丢数据（MSW 限制） | 开发体验项 |
-| C6 | e2e 数据层不稳根治 | 历史 e2e 假红根因治理 |
-| D1–D7 | 发布窗口项（RESEND 注入 / R2 新密钥 / Hyperdrive 缓存 / 生产测试数据清理 / 仓库转 private / 发布检查单 §5 / preview ensure 对 Neon 423 重试） | **等用户下令发布**；D3/D4 执行前需弹窗确认。注意 D3 口径：TODO 记 🧭 待批准，`PROBLEM_STATUS` 旧记录写「⏳ 发布窗口」，以 TODO 为准 |
+| C5 | 本地 mock 刷新丢数据（MSW 限制） | ✅ 2026-10-21：`mocks/persistence.ts` 版本化键 localStorage 持久化（47 集合、`?mock_reset=1` 重置、SSR no-op） |
+| C6 | e2e 数据层不稳根治 | ✅ 2026-10-21：MSW 长尾覆盖 0 缺口（`mocks:check` 门禁）+ e2e 种子/空 storage/`?mock_reset=1` 三保险 + workers=2/NO_PROXY；全量 60 files/616 tests 22s 全绿 |
+| D1–D7 | 发布窗口项（RESEND 注入 / R2 新密钥 / Hyperdrive 缓存 / 生产测试数据清理 / 仓库转 private / 发布检查单 §5 / preview ensure 对 Neon 423 重试） | **发布已于 2026-10-21 执行（§0.4）**；**D1/D2/D4 待用户动作**（D4 执行前需弹窗确认），D5 仓库转 private 待用户处理。注意 D3 口径：TODO 记 🧭 待批准，`PROBLEM_STATUS` 旧记录写「⏳ 发布窗口」，以 TODO 为准 |
 
 ### 0.2.4 恢复工作的最短路径
 
@@ -75,9 +80,9 @@ Hyperdrive，并给 worker 依赖钉版入库。**前端 UI 优化 P0/P1/P2 已�
    （PR #5 已合并，不会再有「推送分支 → PR 自动更新」；需要预览就新开 PR）。
 4. 门禁命令（**跑之前先确认 `scripts/sync-shared.ps1` 已同步**——`backend/worker/src/kaas_common/`
    是 gitignored 生成镜像，缺 `kaas_common.preview` 会直接 `ModuleNotFoundError`；其余注意 AGENTS.md 的工具链坑）：
-   - worker：`cd backend/worker; uv run --frozen --with pytest --with httpx2 python -m pytest tests -q`（现 **1008+5**）
+   - worker：`cd backend/worker; uv run --frozen --with pytest --with httpx2 python -m pytest tests -q`（现 **1233 passed + 12 skipped**；12 条 db/integration 档按约定 skip，有 docker PG 时会真跑、总数 1245）
    - orchestrator：`cd backend/orchestrator; uv run --extra migrations pytest tests -q`（现 **247**）
-   - 前端：`pnpm typecheck` / `pnpm lint` / `pnpm test`（现 **474**）/ `pnpm contracts:check` /
+   - 前端：`pnpm typecheck` / `pnpm lint` / `pnpm test`（现 **616 passed / 60 files**）/ `pnpm contracts:check` / `pnpm mocks:check` / `pnpm ui:contrast` /
      `pnpm e2e`（**实测 28 条 = 24 passed + 4 skipped**，2026-10-20 `playwright test --list`）；构建与 e2e **不要同时跑**（共用 `.next`）
    - 静态：`scripts/check-runtime-deps.py`、`check-schema-coverage.py`、`check-schema-drift.py`、`scripts/sync-shared.ps1 -Check`
 5. 改 `backend/kaas_common/**` 后必须 `powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1`（否则 worker 镜像是旧的）。
@@ -89,8 +94,9 @@ Hyperdrive，并给 worker 依赖钉版入库。**前端 UI 优化 P0/P1/P2 已�
 - `E2E_GUIDE.md` 已就地更新到 2026-10-20 口径。**2026-10-20 审计复核（以实测为准）**：
   `playwright test --list` = **28 条（24 passed + 4 skipped）**；原文写的「27 条（23+4）」少 1 条，
   由 docs-b 在 `E2E_GUIDE.md` 同步修正，本文件不再复述旧数字。
-- **前端线文档一律未动**：`UI_UX_OPTIMIZATION_2026-10-20.md`、`UI_BACKEND_DEPENDENCIES_2026-10-20.md`、
-  `docs/ui-redesign/**`。
+- **UI 线文档已加状态横幅/逐处改状态（2026-10-21 C38 文档收尾）**：`UI_UX_OPTIMIZATION_2026-10-20.md`（P0/P1/P2 完成、§11 终验）、
+  `UI_BACKEND_DEPENDENCIES_2026-10-20.md`（历史验收基线）；另有 4 份过时设计/计划移入
+  [`docs/archive/2026-10-21-doc-closeout/`](./archive/2026-10-21-doc-closeout/README.md)。
 - 检索入口仍是 [`docs/README.md`](./README.md)（已同步状态与归档批次）。
 
 ### 0.3 新设备 / 新 agent 接手清单（**设备无关**，换机也能完整接手）
@@ -167,6 +173,8 @@ Neon 项目权限 · Resend 账号（`send.powervoy.com` 域名）· 生产域�
 | 前端构建 | ✅ `NEXT_EXPORT=1 pnpm build` → `frontend/out` **275 文件** |
 | Worker 部署 | ✅ `uv run pywrangler deploy`（本机需先修 pyodide 工具链：uv **0.13.3**、`uv python install cpython-3.14.2-emscripten-wasm32-musl`、`UV_PYTHON_INSTALL_DIR` 与 venv home 对齐、`UV_CACHE_DIR=D:\tools\uv-cache`、`PYTHONUTF8=1`）；**新版本 `dae596a5-7e8c-44dc-8a7b-d3fe0c650c2f`**，上传 225 资产，三条 cron 保留 |
 | 冒烟（首发） | ✅ `/health` 200 JSON（`shared.loaded=true`）、`/api/v1/auth/me` 401、`/api/v1/export-quote/products` 401、`/login` 200、`api.kaas.powervoy.com/health` 200 |`n| 二次部署（sweep 修复） | ✅ 版本 **`cd15e9a5-47e3-4758-881d-343f6e13c3b4`**（含 C23 shipments 入口恢复 / C28 渠道枚举 / C29 移除占位导入）；冒烟：`/health` 200、`/shipments` 200、`/login` 200、`/api/v1/shipments` 401 |
+| 三次部署（A4 渲染直链） | ✅ 版本 **`9d497628-4ef1-47bf-ae98-4e703326bfe2`**（渲染图片/公章改短期签名直链，去 base64）；冒烟：`/health` 200、`/render-content`（无令牌）401 `RENDER_TOKEN_INVALID`、`/login` 200 |
+| 四次部署（sweep 主体修复） | ✅ 版本 **`3a5ce179-7a0c-484e-9f39-b3e342dc4496`**（C19 批量导入 / C21 导出后自检 pdf.js / C25 分页 / C32 billing 入口 / C35 stage 筛选）；`out/` **277**（含 `pdf.worker.min.*.mjs`）；冒烟：`/health`、`/login`、`/billing`、`/quotes`、pdf worker 资产均 200，`/render-content` 无令牌 401；e2e 28（24+4） |
 | **回滚** | `cd backend/worker; npx wrangler versions deploy 77901aa1-5794-4013-bfad-3b0a80b8a57b@100% --name kaas --yes`（库回滚走 Neon PITR/快照，**不要** alembic downgrade base） |
 | ⚠️ 冷启动 | `pywrangler` 报 **Worker Startup Time 3386ms** > 验收线 **2,950ms**（该数字≠Dashboard p50）；`backend/worker/coldstart-baseline.json` 仍 **PENDING**，需发布后在 Dashboard → Workers → kaas → Metrics 读 p50 判定，并决定是否裁剪包体（本次上传 11.9 MiB） |
 | 待用户动作 | **D1** `RESEND_API_KEY` 未注入（现有 secrets：`ADMIN_SETUP_TOKEN`/`JWT_SECRET`/`S3_ACCESS_KEY`/`S3_SECRET_KEY`）⇒ 忘记密码邮件仍不发；**D2** R2 新密钥（现 `S3_ACCESS_KEY` 13 位，直传不可用）需在 R2 dashboard 创建后替换；**D4** 生产测试数据清理执行当次确认 |
@@ -188,14 +196,16 @@ Neon 项目权限 · Resend 账号（`send.powervoy.com` 域名）· 生产域�
 | **A1/A3/A8/A9** | 内容版本 / 字段体检 / 指纹对账 cron（每日 UTC 17:40）+ 列表「已变更」标识；**顺手修线上 bug**：`GET /trade-docs` 列表因 `_row_to_dict` 参数错必 500 |
 
 - 迁移 head：**`202610200005`**（新增结构，幂等；2026-10-21 追加事实表与文件唯一索引）。
-- 门禁：worker **1008 passed + 5 skipped** / orchestrator **247** / frontend vitest **474** ·
-  typecheck 0 · lint 0 error / contracts R0–R6 / schema-coverage、drift、runtime-deps、sync-shared PASS。
+- 门禁（**2026-10-21 收口实测**）：worker **1233 passed + 12 skipped**（12 条 db/integration 档按约定 skip；有 docker PG 时全跑，总数 1245）/
+  orchestrator **247** / frontend vitest **616（60 files）** ·
+  typecheck 0 · lint 0 error / contracts R0–R6 / `mocks:check` 未覆盖 0 / `ui:contrast` 通过 /
+  schema-coverage、drift、runtime-deps、sync-shared PASS。
 - 配置：两把 Resend key 已持久化到 GitHub repo secrets（`RESEND_API_KEY_PROD` / `RESEND_API_KEY_PREVIEW`），
   换设备不失；生产 key 待**发布窗口**浇入 Cloudflare Worker secret（D1）。
 - 合并纪律：与并行 UI 线的冲突（README / PROBLEM_STATUS / `trade-docs/page.tsx`）已解决 ——
   采用 UI 线新版页面布局后，重新接回 F1/A1/A3/A8/A9 的前端改动。
-- 剩余（`docs/TODO.md`）：A4 图片素材库、A5 编辑体验（需方案确认）、A6 真单据对照（需用户样例）、
-  A7 单证加固 P1/P2、B1–B3 产品配置化、C1–C6；D 组发布窗口项待用户下令。
+- 剩余（`docs/TODO.md`）：A2-B 方案 B（需用户定）、A5 编辑体验（需方案确认）、A6 真单据对照（需用户样例）、
+  C21 导出自检 UI（PDF 文本抽取）；A4/A7 与 B1–B3 已于 2026-10-21 收口；D 组发布窗口项中 D1/D2/D4 待用户动作，发布已执行（§0.4）。
 
 ## 1. 本轮完成（按时间，均有 commit/实测证据）
 
@@ -269,7 +279,7 @@ kaas-preview-storage；KV = `KAAS_PREVIEW`；Workers = `kaas`。
 7. **PowerShell 批量改文件曾把中文写坏**（Set-Content 默认编码）⇒ 改中文文件一律用 edit/write 工具，
    改后 `git diff` 自检。
 
-## 5. 发布检查单（迁移自旧交接 §7，**待用户下令**）
+## 5. 发布检查单（迁移自旧交接 §7；**2026-10-21 已按此执行三次部署**，后续发布沿用）
 
 1. 迁移：`DATABASE_URL=<PROD_DATABASE_URL> uv run --extra migrations alembic upgrade head`
    → 期望 head **`202610200005`**（新增 `202610200001` 内容版本表、`202610200002` 对账表、
@@ -279,8 +289,8 @@ kaas-preview-storage；KV = `KAAS_PREVIEW`；Workers = `kaas`。
    本地开发继续用 `RESEND_API_KEY`，预览**不配**发信。版本管理未部署状态下普通 put 会被拦，
    须与部署同窗口或 `versions secret put`）。
    同窗口可顺带（需单独批准）：S3 新密钥替换 + `npx wrangler hyperdrive update f53fed49… --caching-disabled`。
-3. 构建：`cd frontend; $env:NEXT_EXPORT="1"; pnpm build` → `out/` 267 文件。
-4. 部署：`cd backend/worker; npx pywrangler deploy`（或 GitHub `deploy.yml` workflow_dispatch）。
+3. 构建：`cd frontend; $env:NEXT_EXPORT="1"; pnpm build` → `out/` **275 文件**（2026-10-21 实测）。
+4. 部署：`cd backend/worker; uv run pywrangler deploy`（首选；或 GitHub `deploy.yml` workflow_dispatch）。
 5. 冒烟：`/health` 200（JSON+shared.loaded）、登录、客户列表、`export-quote/products`、crons 在 Dashboard 可见。
 6. 冷启动基线：CF Dashboard → Workers → kaas → Metrics 读 p50 写入 `backend/worker/coldstart-baseline.json`（验收线 ≤2,950ms）。
 7. 回滚：`wrangler versions deploy <上一版>`；库回滚走 Neon PITR/分支（**不要** `alembic downgrade base`）。
@@ -290,17 +300,18 @@ kaas-preview-storage；KV = `KAAS_PREVIEW`；Workers = `kaas`。
 
 | # | 事项 | 触发条件 |
 |---|---|---|
-| 1 | **UI/UX 优化任务收尾**（另一会话，并行线；写范围 `frontend/**` + `docs/ui-redesign/`） | ✅ 已收口（2026-10-20，P0/P1/P2 完成，见 `UI_UX_OPTIMIZATION_2026-10-20.md` §11 与 §0.1）；残留文档勾选口径由 docs-b 处理 |
+| 1 | **UI/UX 优化任务收尾**（另一会话，并行线；写范围 `frontend/**` + `docs/ui-redesign/`） | ✅ 已收口（2026-10-20，P0/P1/P2 完成，见 `UI_UX_OPTIMIZATION_2026-10-20.md` §11 与 §0.1）；残留文档勾选口径已在 2026-10-21 C38 文档收尾中处理完毕 |
 | 2 | **用户在预览验收** | 预览已随 PR #5 teardown（§0.2.1）⇒ 改为「发布后在生产/新预览验收」，并入第 3/4 项 |
-| 3 | **生产发布**（按 §5 检查单） | 用户下令 |
-| 4 | 发布后 P4 观察期（冷启动/5xx/延迟，1 周） | 发布后 |
+| 3 | **生产发布**（按 §5 检查单） | ✅ **2026-10-21 已执行**：迁移 `202610180010`→`202610200005` + Worker 三次部署（`dae596a5`→`cd15e9a5`→`9d497628`），冒烟通过（§0.4） |
+| 4 | 发布后 P4 观察期（冷启动/5xx/延迟，1 周） | **进行中**（自 2026-10-21 起，至 2026-10-28；冷启动 p50 待在 Dashboard 读） |
 | 5 | 仓库转回 private（**实测当前 public**；用户自转） | 用户决定，**仍未完成**（2026-10-20 审计复核） |
 
-**口径修订（2026-10-20 晚，用户裁决）**：原「触发条件制（不活跃跟踪，到点自动执行）」的
+**口径修订（2026-10-20 晚，用户裁决；2026-10-21 状态更新）**：原「触发条件制（不活跃跟踪，到点自动执行）」的
 U-B1/U-B5 发布窗口项、Hyperdrive 缓存关闭、生产测试数据清理（执行当次需用户确认）、批次 7
-（I-1~I-7）**已全部恢复为活跃待办**，统一登记在 [`docs/TODO.md`](./TODO.md)（另含单证内容专项
-A1–A9、产品配置化 B1–B3），由用户排期执行。Neon Protected 维持「付费不升级、删分支双保险
-校验替代」（U-S5，README §2.2）。
+（I-1~I-7）**已全部恢复为活跃待办**，统一登记在 [`docs/TODO.md`](./TODO.md)。
+其中**生产发布已于 2026-10-21 执行**（§0.4）；单证内容专项 A4/A7 与产品配置化 B1–B3 已于 2026-10-21 收口
+（A5/A6 需用户方案/样例，仍是活跃待办）。Neon Protected 维持「付费不升级、删分支双保险
+校验替代」（U-S5，现行锚点 = **根 `README.md` §2 三环境矩阵**；旧文写的「README §2.2」已不存在）。
 
 ## 7. 交接提醒（给下一个会话）
 

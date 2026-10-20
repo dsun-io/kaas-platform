@@ -36,7 +36,8 @@
 >   （按提示填必 422）；②「导入已有数据」是占位骨架却已挂在订单/单证页。
 >
 > - **sweep 后首批修复（2026-10-21）**：① **C23 shipments 恢复上线**（契约 ts↔py `status:active`，原 2026-09-28 门禁前提已不成立；R2 PASS 27 工位）—— 用户拍板"恢复入口"；② **C28 询盘渠道** 由自由输入改**枚举下拉**（与后端 `INQUIRY_CHANNEL` 逐字一致；此前按提示填 `Alibaba` 必 422）；③ **C29** 订单/单证页移除占位「导入已有数据」按钮与弹窗（后端接口未实现；组件保留待挂回）；④ 用户拍板 G-11 主题入口不做、G-13 spec-config 保持 planned。`n> - **A4 渲染去 base64 落地（2026-10-21）**：新增 `kaas_common/files/token.py`（HMAC-SHA256 短期令牌，TTL 900s，绑定用途+资源 id，纯标准库）；装配层产品图与默认公章改为**签名直链**（`/api/v1/file-objects/{id}/render-content?t=`、`/api/v1/tenant/company-seals/{id}/render-content?t=`，令牌即授权、`<img>` 可直载），无 JWT_SECRET/取不到时**回退** data URI；渲染器白名单未改（本就认 http(s)）；素材库复用现有产品图库+公章库。新增 16 条测试（令牌 6 / 文件直链 6 / 公章直链 4；含"换 id 必拒绝"与真回环取字节），worker 全量 **1233 passed + 12 skipped**。
-> `n> `n> **（2026-10-21 · 执行批 1：D7 落地、A7 事实层结构、前后端对齐修复进行中）**
+> `n> `n> - **sweep 主体修复 + 四次生产部署（2026-10-21）**：C19 批量导入 UI（v2 报价工作台：模板/预览/计算/导出，复用既有 hooks，只算不落库）；C21 导出后自检 UI（`pdfjs-dist@4.10.38` 动态 import、前端只抽事实/后端唯一裁决、优先自检已归档 render_pdf，真 pdfjs 在 Node 验证抽取一致）；C25 列表分页（orders/events/audit，共享 PaginationBar）；C32 `/billing` 入口（占位页如实标"即将上线"）；C35 客户 stage 筛选；C34 MSW↔C8 漂移修复；C37 删 OSS 死分支 + 6 处过期注释；C38 文档口径 11 文件刷新；N11 清理脚本落 `scripts/`。**门禁**：worker **1233+12skip** / orchestrator **247** / 前端 **656（67 files）** / e2e **28（24+4）** / build `out/` **277**（pdf worker 资产实测生产 200）/ contracts·mocks·contrast·静态断言 PASS。**生产部署 `3a5ce179-7a0c-484e-9f39-b3e342dc4496`**（四次部署，回滚可用三次 `9d497628`）。**新登记**：C39 `/admin/audit-log` 后端静默忽略筛选参数。
+> `n> **（2026-10-21 · 执行批 1：D7 落地、A7 事实层结构、前后端对齐修复进行中）**
 >
 > - **D7（preview ensure 对 Neon 423 重试）✅**：`scripts/preview/preview_lib.py` 对 **423/429**
 >   有限重试（指数退避 2/4/8/16s、上限 20s、`Retry-After` 优先、`PREVIEW_HTTP_RETRIES`/
@@ -359,8 +360,8 @@
 > 用户裁决：未关闭待办全部清零 —— ✅ = 完成；⏳ = **触发条件制**（到点自动执行 / 用户一声令下），
 > **不再活跃跟踪**。逐项处置见归档的 `USER_ACTIONS_2026-10-19.md` 状态列与
 > `MASTER_EXEC_PLAN_2026-10-19.md` §5 / 顶部 2026-10-20 状态行。关键落点：仓库可见性见上条（现为
-> public，用户自转）；Neon Protected 为付费功能、不升级，预览脚本「删分支双保险校验」替代
-> （U-S5 ✅，README §2.2 已标注）；生产 R2 桶**永久保留 `kaas-files`**（U-S6 ✅，目标态改名取消）；
+> public，用户自转）；Neon Protected 为付费功能、**Free 套餐不可用 ⇒ 用户裁决不升级、未开启**，预览脚本
+> 「删分支双保险校验」替代（U-S5 ✅，根 `README.md` §2 已标注）；生产 R2 桶**永久保留 `kaas-files`**（U-S6 ✅，目标态改名取消）；
 > R2 新 keys + `RESEND_API_KEY`（U-B1/U-B5）、U-E3/U-E4 发布窗口、**Hyperdrive 缓存关闭**、
 > **生产测试数据 / 流失拒绝文件历史清理** → ⏳ **发布窗口**（**数据清理执行当次仍需用户确认**；
 > 检查单 = `HANDOVER_2026-10-20_FINAL.md` §5）。
@@ -504,7 +505,8 @@
 >    repo secrets 已配 3 个（`PROD_DATABASE_URL`/`NEON_API_KEY`/`NEON_PROJECT_ID`，gh 代写）；R2 新密钥
 >    实测有效但 `secret put` 被版本管理拦截 ⇒ **与 RESEND_API_KEY 同批挂到发布窗口**；仓库已**临时转
 >    public**（解决 Actions billing，U-B4 ✅）⇒ git 历史 Notion 令牌随之公开（U-S1 维持不轮换，
->    **用完尽快转回 private**）；Neon production 已设 Protected（U-S5 ✅）；Rate Limiting 用户自配中（U-S4）；
+>    **用完尽快转回 private**）；Neon Protected = **付费功能，Free 套餐不可用 ⇒ 用户裁决不升级、未开启**（U-S5 ✅，
+>    预览删分支走脚本双保险）；Rate Limiting 用户自配中（U-S4）；
 >    **U-B2 税率数据暂缓**（生产实测 0 条产品，随上架配置）；S5 预览凭据基本就绪（CF token 权限验证
 >    排到 S5 首个 workflow）。
 > 11. **S5 预览环境全量落地（2026-10-20，`18ae386`，已评审合并进 main）**：
@@ -536,8 +538,8 @@
 > 12. **同日收口杂项（2026-10-20）**：① **Rate Limiting ✅（U-S4）**：免费套餐仅支持 10s 窗口，
 >    落地为登录/注册 **2 req/10s/IP**（≈12/min，非原建议 5/min），实测 401→401→429×4 生效；
 >    ② CI 静态门禁脚本路径修复（`../scripts` → `../../scripts`，billing 冻结期 CI 从未真跑才暴露，
->    `555cc15`）；③ Neon Protected = **付费功能**，Free 套餐不可用 ⇒ 用户裁决**不升级**，预览脚本
->    删分支双保险兜底（README §2.2 已标注）；④ 仓库仍**临时 public**，CI 稳定后尽快转回 private。
+>    `555cc15`）；③ Neon Protected = **付费功能**，Free 套餐不可用 ⇒ 用户裁决**不升级（未开启）**，预览脚本
+>    删分支双保险兜底（根 `README.md` §2 已标注）；④ 仓库仍**临时 public**，CI 稳定后尽快转回 private。
 > 13. **main 的 CI 自 billing 冻结以来首次全绿（2026-10-20，run `39364936582`）**：修了两枚
 >    "从未真跑过"的 CI 欠账（门禁脚本路径 `555cc15` + `psql -vc` 拆词 `91b010c`）后，
 >    **backend:test 三 job 全绿**（迁移/模型+静态门禁 17s / worker:integration 真 PG 54s /
@@ -626,7 +628,7 @@
 >    contracts **R6 openapi 新鲜度退役**（HEAD 无 app 即 INFO 跳过，artifact 冻结）；
 >    route-parity 与 export_openapi 移入 `scripts/archive/`（含退役说明）；前端 Tenant 统一
 >    `display_name`，R5 已知偏差 0 侧。
-> 4. **测试处置**（[docs/S4_TEST_MIGRATION_2026-10-19.md](./S4_TEST_MIGRATION_2026-10-19.md)）：
+> 4. **测试处置**（[docs/S4_TEST_MIGRATION_2026-10-19.md](./archive/2026-10-20-p2-closeout/S4_TEST_MIGRATION_2026-10-19.md)，已归档；现行测试口径见 `AGENTS.md` 门禁与根 `README.md` §4）：
 >    1,220 → **222 保留**；**15 个报价引擎测试文件迁 worker**（+364 条，断言零改动）；
 >    worker 全量 **954 passed + 5 skipped**；真 PG 集成 5 passed；orchestrator 222 passed。
 > 5. **CI/deploy**：orchestrator 主依赖清空 + `[project.optional-dependencies].migrations`；
@@ -830,7 +832,7 @@
 >    `alembic/env.py` 补 5 个模型模块 import（空库快径避免缺表）、`session.py` SSL 判定去 neon 硬编码、
 >    worker 真 PG 写入路径测试 5 条 + CI job `worker-db-tests`。PPG 相关的 `wrangler.jsonc` 切换与
 >    `scripts/migrate-ppg/` **未收编**（决策 1）。
-> 2. 文档收口：README §2.2/§2.3 标注为**目标态**、本文指向改回 README、MASTER_EXEC_PLAN §3 正文改为方案 B、
+> 2. 文档收口：README §2.2/§2.3 标注为**目标态**（**旧编号；现行锚点 = 根 `README.md` §2 三环境矩阵**）、本文指向改回 README、MASTER_EXEC_PLAN §3 正文改为方案 B、
 >    PLAN_B §8 附注去 PPG、docs/README 修断链+补 10-19 索引、AGENTS.md 本机工具链路径更新。
 > 3. 清理 4 个无价值远程分支（`feat/plan-b-single-worker` / `docs/plan-b-handoff` /
 >    `feat/trade-doc-templates` / `prisma-cloud/setup`），保留 `feat/convergence-aprime` 备查。
@@ -4508,3 +4510,103 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
   `TypeError: Failed to execute 'digest' on 'SubtleCrypto'` —— 与 Node/jsdom 的
   `crypto.subtle.digest` 入参类型有关，属**既有问题**，需单独修（与本轮客户/汇率/模板改动无关）。
 - `backend:test`、`deploy`、`contracts:check` 在 `c025c67` 上均**绿**。
+
+---
+
+## 2026-10-21 · C32/C35 小收口（头像菜单 `/billing` + 客户列表 `stage` 筛选）
+
+- **C32 `/billing` 入口**：`frontend/src/components/layout/sidebar.tsx` 的账号弹窗（侧栏底部头像菜单）
+  新增「升级订阅（即将上线）」→ `/billing`。权限依据：`shared/contracts/workstations.ts` 的 billing =
+  `adminOnly:false / subscription:null / status:'hidden'`（注释「移入右上角头像菜单」），页面自身**无**
+  `RouteGuard` ⇒ 所有登录用户本就可达，本次只补入口、**未加宽权限**。页面实际为占位
+  （「当前方案：免费版 / 订阅升级功能即将开放，请联系管理员」），故菜单如实标「即将上线」，未伪造计费。
+- **C35 客户列表 `stage` 筛选**：后端 `GET /api/v1/customers` 已支持 `stage`
+  （`backend/worker/src/main.py:1290-1310`，**展示值**语义：ordered 由「开启中订单」推导、inactive 走手动列；
+  非法值 422）。前端 `frontend/src/app/(app)/customers/page.tsx` 筛选区新增「客户阶段」下拉
+  （全部 / 活跃 / 沉寂 / 已下单，请求透传 `stage`；该页无分页，故无需"回第 1 页"）；空态区分
+  「暂无客户」与「无符合筛选」并给「清除阶段筛选」。MSW `frontend/src/mocks/handlers.ts` 客户列表区段
+  同步展示值语义（现查 `ordersStore` 推导 ordered、非法枚举回 422）——**只改客户区段**。
+- 验证：`pnpm typecheck` / `pnpm lint` / `pnpm exec vitest run 'src/app/(app)/customers' src/components/layout`
+  （结果见交付报告）；未跑 build/e2e、未 commit。
+---
+
+## 2026-10-21 · C25 列表分页 UI（orders / events / audit-log）
+
+- **三个端点契约（实测，均支持分页且返回同形）**：
+  - `GET /api/v1/orders`：`page`（`Query(1, ge=1)`，越界 422）/ `page_size`（`Query(20, ge=1, le=200)`）/
+    `status` / `customer_id` / `q` → `{items, total, page, page_size}`（`backend/worker/src/main.py:3313`）。
+  - `GET /api/v1/events`：`page` / `page_size`（普通 int，后端钳位 `page>=1`、`page_size∈[1,100]`）/
+    `event_type` → 同形（`main.py:2792`）。
+  - `GET /api/v1/admin/audit-log`：`page` / `page_size`（同样钳位）→ 同形（`main.py:2964`）。
+  - **三个端点都没有 `has_more`**：总页数一律由 `total / page_size` 推导。
+- **前端**：新增共享控件 `frontend/src/components/shared/pagination-bar.tsx`（显示「第 a–b 条 / 共 N 条」
+  +「第 p / P 页」+ 上一页/下一页；末页范围按真实条数算、后端钳位后不显示越界页；一页装得下不渲染）。
+  - orders：新增 `orders/hooks/use-orders-list.ts`（**不复用** `useOrderOptions` —— 那个是下拉选择器专用、
+    只回 `items` 且固定 `page_size:100`），页面改用分页查询并保留原筛选/列配置/密度。
+  - events / audit-log：页码作为页面独立 state（**不进**持久化的筛选对象，刷新回第 1 页）；
+    筛选变化时回到第 1 页。
+- **MSW**：`frontend/src/mocks/handlers.ts` 只改 orders / events / audit-log 三个区段，按真实返回结构
+  真分页（orders 钳位与后端 `ge/le` 同界；events/audit 按 `main.py` 的 clamp 规则）——未重排文件、未动他人区段。
+- **测试**：`pagination-bar`（5）+ orders（3）+ events（3）+ audit-log（3）= **14 passed**；
+  `pnpm typecheck` 通过、`pnpm lint` **0 error**、`pnpm mocks:check` 未覆盖 **0**（P1 组无缺失）。
+- 限制：`/admin/audit-log` 的 worker 实现**只接受 page/page_size**（action/resource_type/since/until
+  被静默忽略），故真实环境下 audit 页的筛选项不改变结果、只改变页码；MSW 侧照旧实现筛选
+  （与前端既有行为一致）——如需真正支持，属后端改动，本轮不改后端。
+
+---
+
+## 2026-10-21 · C19 批量导入上传 UI 接线（G-10 定在 v2 报价工作台顶部）
+
+- **入口位置**：`/quotes` → 「产品报价」tab（v2 工作台）顶部，单条报价标题行右侧
+  「批量导入表格」按钮 → 弹窗。文件：
+  `frontend/src/app/(app)/quotes/views/quote-workbench-view.tsx`（仅加 1 个入口块，未改工作台逻辑）、
+  `frontend/src/app/(app)/quotations/v2-quote/components/bulk-import-dialog.tsx`（弹窗 + 成功后失效查询）、
+  `frontend/src/app/(app)/quotations/v2-quote/components/bulk-import-panel.tsx`（面板主体，从 git 历史
+  `aca4631b^` 恢复并适配：视图随账号、`validity_days` 默认 30、问题清单可复制/下载、计算成功回调）。
+- **复用的既有能力（未另写解析器）**：hooks `useExportProducts` / `useImportTemplateInfo` /
+  `useDownloadTemplate` / `useImportPreview` / `useImportCalculate`（`quotations/v2-quote/hooks/use-export-quote-import.ts`）；
+  纯逻辑 `lib/export-quote/import-file.ts`（`buildImportFormData` / `validateFile` / `groupIssues` /
+  `describeIssue` / `summarizeResult` / `resultToCsv` / `triggerBlobDownload` / `filenameFromDisposition`）
+  与 `import-template-xlsx.ts`（浏览器端 Excel 模板）；新增 `issuesToText` / `issuesToCsv` 两个纯函数（含测试）。
+  端点真源：`backend/worker/src/quote_api.py:1002-1148`（`/import/template`、`/products/{key}/import-template`、
+  `/import/preview`、`/import/calculate`）。
+- **交互口径**：下载模板（Excel 含说明页 / CSV 仅表头）→ 本地预检（`.xls`/空文件/超限明确提示，不发请求）→
+  上传 → 先预览（逐行问题 + 已忽略列）→ 「确认导入（批量计算）」→ 摘要（行数/总净重/总价）+ 结果表（最多 200 行）
+  → 导出 CSV；问题清单可**复制**或**下载 CSV**。计算成功后失效 `["export-quote"]` / `["quote-orders"]` 查询。
+- **MSW**：`mocks/longtail-handlers.ts` 仅导入区段（C18 已有 preview/calculate）补**服务端该拒的错**：
+  空文件/缺 `file`、`.xls`、>2MB、坏 `payload`、非法 `view` ⇒ 400（对齐 `quote_api.py:943-963`）；未动
+  `mocks/handlers.ts`（C21 并发区段）。
+- **测试**：组件 `bulk-import-panel.test.tsx` **5**（格式错/空文件不发请求、预览可用 0 行时禁用确认、
+  预览→确认成功并触发刷新回调、复制/下载问题清单）+ `import-file.test.ts` 新增 **3**（文本分组顺序、CSV BOM/转义、
+  空清单）+ `longtail-handlers-contract.test.ts` 新增 **1**（5 种 400 校验）；`pnpm exec vitest run 'src/app/(app)/quotations'`
+  **3 files / 11 tests passed**，全量相关 61 passed；`pnpm lint` 0 error。
+- **限制（如实）**：① 该流程**只算不落库**（设计如此，见 `WORKSTATION_DESIGN §6.1.4`）⇒ 不会新增报价单记录；
+  要"导入即生成报价单"需新增后端持久化端点；② mock 不真正解析上传表格（回 1 行示例并标 warning），
+  UI 主链路靠组件测试 + 端点契约测试分别覆盖；③ 未跑 build/e2e，未做浏览器手测；④ 未 commit（Lead 统一提交）。
+
+
+## 2026-10-21 · C21 导出后自检 UI（pdf.js，前端抽取 / 后端裁决）
+
+- **入口**：单证详情 →「单证加固」→「导出自检」tab（`trade-docs/components/doc-hardening-section.tsx`
+  + 新增 `doc-export-verify-panel.tsx`）。对象优先取已归档 `role=render_pdf`（`GET /trade-docs/{id}/files`
+  的 `is_current`，字节走 `GET /file-objects/{id}/content`），无归档件时可选本地导出的 PDF。
+- **职责**：前端只抽事实（`lib/trade-doc/pdf-extract.ts`：pdf.js 抽 PDF 文本 + 图片绘制数；从
+  `renderTradeDoc(doc_type, data)` 同源 HTML 抽应出现的文本；从渲染数据算期望图片数）；**判定全在后端**
+  `POST /trade-docs/{id}/verify-export`（默认 422 阻断 `EXPORT_SELF_CHECK_FAILED`；`allow_override`
+  为管理员留痕动作，普通 UI **不提供入口**）。三态展示：通过 / 阻断（逐条 missing_texts + 图片计数不符）/
+  无法自检（解析失败时**不调用后端**）。
+- **依赖**：`pdfjs-dist@4.10.38`（选 v4：v6 依赖 `Uint8Array.prototype.toHex`，本地 Node 24 实测报错；
+  v4 engines node>=20、浏览器兼容面更广）。**动态 import** ⇒ 首屏 0；首次点「自检」增量 ≈99–133 KB gzip
+  + worker ≈402 KB gzip。worker 走 `new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url)`；
+  **发布检查项**：`NEXT_EXPORT=1 pnpm build` 后确认 worker 资产已发射（本次按约定未跑 build）。
+- **图片计数口径**：后端默认 key 只有 `stamp`、PDF 抽取无法区分公章/产品图 ⇒ 提交
+  `image_counts.stamp = 抽取图片总数 − 渲染数据可渲染产品图数`、`expected_image_counts.stamp = 期望公章数`；
+  两者相等 ⟺ "PDF 图片总数 == 渲染数据应渲染图片总数"，仍由后端裁决（详见 `docs/TRADE_DOC_HARDENING.md` §8）。
+- **MSW**：`mocks/handlers.ts` 仅加固区段新增 verify-export handler（与后端同口径裁决，不伪造通过）；
+  `pnpm mocks:check` PASS。
+- **测试**：新增 16 条（抽取层 12 + 面板 4：通过/阻断/解析失败不调用后端/无归档件走本地文件）；
+  `pnpm exec vitest run 'src/app/(app)/trade-docs' src/lib/trade-doc` **14 files / 190 tests passed**；
+  全量 `pnpm test` **67 files / 656 passed**；`pnpm typecheck` 0、`pnpm lint` 0 error。
+- **真实 PDF 抽取已验证**：真 `pdfjs-dist@4.10.38` + 手写最小 PDF（1 页/1 张 2×2 RGB 图/文本
+  `Hello PDF Self-Check`）在 Node 一次性验证 → `pages=1, images=1, text` 完全一致（脚本不入库）。
+  未做：浏览器内 worker 资产发射与真实打印 PDF 的 e2e（未跑 build/e2e，见上方发布检查项）。
