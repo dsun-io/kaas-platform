@@ -27,7 +27,7 @@ import hashlib
 import json as _json
 from typing import Optional
 
-from fastapi import Depends, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel
 
 from kaas_common.files import (
@@ -815,11 +815,13 @@ async def render_doc_pdf(doc_id: int, body: RenderPdfIn, request: Request,
 
 
 async def resolve_photo_refs(request: Request, data: dict, user: dict = None) -> dict:
-    """把单证 `product_photos` 里的 `{file_id}` 引用解析成 data URI。
+    """把单证 `product_photos` 里的 `{file_id}` 引用解析成**可渲染图片源**。
 
-    由 `main.get_trade_doc_render_data` 在**装配层**调用：渲染器的图片白名单只认
-    `data:` 与 `http(s)`（防注入设计，不放开），而 `{file_id}` 不是图片源 ——
-    在这里解析，渲染器一行都不用改。取不到字节（未上线/R2 读失败）就跳过该条，不印坏图。
+    2026-10-21（A4）：优先给**短期签名直链**（`.../render-content?t=<token>`，默认 900s），
+    不再把字节内联成 data URI —— 一张 PI 曾因内联 ≈1.4MB。回退顺序：
+    ①签名 URL（生产有 JWT_SECRET 时）→ ②data URI（旧行为，测试/无密钥环境）。
+    渲染器白名单只认 `data:` 与 `http(s)` 绝对地址，所以 URL 用请求 host 拼绝对地址；
+    取不到行/字节就跳过该条，不印坏图。
 
     团队谓词（2026-10-12，task-6）：把 `user` 传进来，按 `file_objects.team_id` 过滤
     —— 本团队取图，别团队跳过不印坏图。`user=None` 时跳过团队判定（兼容旧调用方）。
@@ -844,15 +846,101 @@ async def resolve_photo_refs(request: Request, data: dict, user: dict = None) ->
             table=None)
         if not row:
             continue
+        caption = entry.get("caption") or row.get("name") or ""
+        url = _asset_url(request, "file", int(entry["file_id"]))
+        if url:
+            resolved.append({"image": url, "caption": caption})
+            continue
         blob = await _load_bytes(request, row)
         if blob is None:
             continue
         resolved.append({
             "image": to_data_uri(row.get("content_type"), blob, row.get("file_name")),
-            "caption": entry.get("caption") or row.get("name") or "",
+            "caption": caption,
         })
     data["product_photos"] = resolved
     return data
+
+
+# ── A4：渲染图片直链（短期签名 URL，替代 data URI 内联）──────────────────────
+_ASSET_TTL_SECONDS = 900
+
+
+def _public_base(request) -> str:
+    """渲染数据里的图片必须是**绝对地址**（渲染器白名单只认 data: 与 http(s)）。"""
+    headers = getattr(request, "headers", None) or {}
+    try:
+        host = headers.get("host") or ""
+    except Exception:  # noqa: BLE001 - 假 request（测试）没有 headers
+        host = ""
+    if not host:
+        return ""
+    try:
+        scheme = headers.get("x-forwarded-proto") or ""
+    except Exception:  # noqa: BLE001
+        scheme = ""
+    if not scheme:
+        scheme = getattr(getattr(request, "url", None), "scheme", "") or "https"
+    return f"{scheme}://{host}"
+
+
+def _asset_url(request, purpose: str, ref_id) -> str:
+    """签发渲染资源 URL；任一步不可用返回 ""（调用方回退 data URI）。"""
+    base = _public_base(request)
+    if not base:
+        return ""
+    try:
+        from kaas_common.files import make_asset_token
+
+        token = make_asset_token(
+            _main._jwt_secret(request), purpose, ref_id, ttl=_ASSET_TTL_SECONDS)
+    except Exception:  # noqa: BLE001 - 无密钥/测试环境：回退内联
+        return ""
+    if purpose == "file":
+        return f"{base}/api/v1/file-objects/{ref_id}/render-content?t={token}"
+    if purpose == "seal":
+        return f"{base}/api/v1/tenant/company-seals/{ref_id}/render-content?t={token}"
+    return ""
+
+
+def _require_asset_token(request, purpose: str, ref_id, token: str) -> None:
+    """校验渲染资源令牌（失败 401，不泄露资源是否存在）。"""
+    from kaas_common.files import verify_asset_token
+
+    try:
+        secret = _main._jwt_secret(request)
+    except HTTPException:
+        secret = ""
+    if not verify_asset_token(secret, purpose, ref_id, token):
+        raise HTTPException(status_code=401, detail={
+            "error": "unauthorized", "code": "RENDER_TOKEN_INVALID",
+            "message": "渲染资源令牌无效或已过期"})
+
+
+@app.get("/api/v1/file-objects/{file_id}/render-content")
+async def get_file_render_content(file_id: int, request: Request, t: str = Query("")):
+    """A4：给渲染器用的短期直链（令牌即授权；不依赖登录头，<img> 可直接加载）。"""
+    _require_asset_token(request, "file", file_id, t)
+    row = await db.fetchrow(
+        request,
+        "SELECT content_type, file_name, content, object_key, storage FROM file_objects"
+        " WHERE tenant_id=$1 AND id=$2 AND is_current",
+        DEFAULT_TENANT, file_id, table=None)
+    if row is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "FILE_NOT_FOUND"})
+    data = await _load_bytes(request, dict(row))
+    if data is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "FILE_BODY_NOT_FOUND"})
+    return Response(
+        content=data,
+        media_type=row.get("content_type") or "application/octet-stream",
+        headers={
+            "Cache-Control": f"private, max-age={_ASSET_TTL_SECONDS}",
+            "Content-Disposition": f'inline; filename="file-{file_id}"',
+        },
+    )
 
 
 # ── 直传（预签名）：字节不过服务端 ────────────────────────────────────────

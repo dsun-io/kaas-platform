@@ -4702,15 +4702,27 @@ def _seal_tenant_of(user) -> str:
 
 
 async def _apply_default_seal(request: Request, user: dict, data: dict, custom) -> dict:
-    """装配层最后一步：只在单据**没**显式给 `company_stamp` 时才查库（省无谓查询）。"""
+    """装配层最后一步：只在单据**没**显式给 `company_stamp` 时才查库（省无谓查询）。
+
+    2026-10-21（A4）：优先填**短期签名直链**（`/company-seals/{id}/render-content?t=`），
+    不再把 PNG 内联成 data URI；签名不可用（无 JWT_SECRET/测试）时回退内核的 data URI。
+    """
     if isinstance(custom, dict) and "company_stamp" in custom:
         return data
+    from ws_files import _asset_url  # 模块在文件末尾导入，函数内惰性引用
+
     row = await db.fetchrow(
         request,
-        "SELECT png_bytes, mime FROM tenant_company_seals"
+        "SELECT id, png_bytes, mime FROM tenant_company_seals"
         " WHERE tenant_id=$1 AND is_default ORDER BY id LIMIT 1",
         _seal_tenant_of(user),
     )
+    if row is not None:
+        seal_id = row.get("id") if hasattr(row, "get") else row["id"]
+        url = _asset_url(request, "seal", seal_id)
+        if url:
+            data["company_stamp"] = url
+            return data
     return apply_default_seal(data, custom, row)
 
 

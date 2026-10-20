@@ -35,7 +35,8 @@
 >   **§G-11/12/13**，并更新 goal 目标。**最重的两条 P2**：①询盘「渠道」前端自由文本 vs 后端严格小写枚举
 >   （按提示填必 422）；②「导入已有数据」是占位骨架却已挂在订单/单证页。
 >
-> - **sweep 后首批修复（2026-10-21）**：① **C23 shipments 恢复上线**（契约 ts↔py `status:active`，原 2026-09-28 门禁前提已不成立；R2 PASS 27 工位）—— 用户拍板"恢复入口"；② **C28 询盘渠道** 由自由输入改**枚举下拉**（与后端 `INQUIRY_CHANNEL` 逐字一致；此前按提示填 `Alibaba` 必 422）；③ **C29** 订单/单证页移除占位「导入已有数据」按钮与弹窗（后端接口未实现；组件保留待挂回）；④ 用户拍板 G-11 主题入口不做、G-13 spec-config 保持 planned。`n> `n> **（2026-10-21 · 执行批 1：D7 落地、A7 事实层结构、前后端对齐修复进行中）**
+> - **sweep 后首批修复（2026-10-21）**：① **C23 shipments 恢复上线**（契约 ts↔py `status:active`，原 2026-09-28 门禁前提已不成立；R2 PASS 27 工位）—— 用户拍板"恢复入口"；② **C28 询盘渠道** 由自由输入改**枚举下拉**（与后端 `INQUIRY_CHANNEL` 逐字一致；此前按提示填 `Alibaba` 必 422）；③ **C29** 订单/单证页移除占位「导入已有数据」按钮与弹窗（后端接口未实现；组件保留待挂回）；④ 用户拍板 G-11 主题入口不做、G-13 spec-config 保持 planned。`n> - **A4 渲染去 base64 落地（2026-10-21）**：新增 `kaas_common/files/token.py`（HMAC-SHA256 短期令牌，TTL 900s，绑定用途+资源 id，纯标准库）；装配层产品图与默认公章改为**签名直链**（`/api/v1/file-objects/{id}/render-content?t=`、`/api/v1/tenant/company-seals/{id}/render-content?t=`，令牌即授权、`<img>` 可直载），无 JWT_SECRET/取不到时**回退** data URI；渲染器白名单未改（本就认 http(s)）；素材库复用现有产品图库+公章库。新增 16 条测试（令牌 6 / 文件直链 6 / 公章直链 4；含"换 id 必拒绝"与真回环取字节），worker 全量 **1233 passed + 12 skipped**。
+> `n> `n> **（2026-10-21 · 执行批 1：D7 落地、A7 事实层结构、前后端对齐修复进行中）**
 >
 > - **D7（preview ensure 对 Neon 423 重试）✅**：`scripts/preview/preview_lib.py` 对 **423/429**
 >   有限重试（指数退避 2/4/8/16s、上限 20s、`Retry-After` 优先、`PREVIEW_HTTP_RETRIES`/

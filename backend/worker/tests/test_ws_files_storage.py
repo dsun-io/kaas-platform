@@ -573,3 +573,91 @@ def test_resolve_photo_refs_is_a_noop_without_refs(monkeypatch, data):
 
     assert out is data  # 原对象原样返回
     assert db.calls == []
+
+# ════════════════════════════════════════════════════════════════════════════
+# 5. A4 渲染图片直链：{file_id} → 短期签名 URL（回退 data URI）
+# ════════════════════════════════════════════════════════════════════════════
+
+
+class _Url:
+    def __init__(self, scheme: str):
+        self.scheme = scheme
+
+
+class _AssetRequest:
+    """带 headers/url 的假请求（`_public_base` 需要真实 Host 才能拼绝对地址）。"""
+
+    def __init__(self, bindings: dict | None = None, *, host: str = "kaas.example.com",
+                 scheme: str = "https", proto: str | None = None):
+        self.scope = {"env": _Env(bindings or {})}
+        self.headers = {"host": host} if host else {}
+        if proto:
+            self.headers["x-forwarded-proto"] = proto
+        self.url = _Url(scheme)
+
+
+def test_public_base_builds_absolute_origin():
+    assert wsf._public_base(_AssetRequest()) == "https://kaas.example.com"
+    assert wsf._public_base(_AssetRequest(proto="http")) == "http://kaas.example.com"
+    assert wsf._public_base(_AssetRequest(scheme="http")) == "http://kaas.example.com"
+    assert wsf._public_base(_AssetRequest(host="")) == ""
+
+
+def test_asset_url_requires_host_and_secret(monkeypatch):
+    monkeypatch.delenv("JWT_SECRET", raising=False)
+    assert wsf._asset_url(_AssetRequest(host=""), "file", 7) == ""
+    # 有 host 但没 JWT_SECRET（测试/无密钥环境）⇒ 回退 data URI
+    assert wsf._asset_url(_AssetRequest({"JWT_SECRET": ""}), "file", 7) == ""
+    assert wsf._asset_url(_AssetRequest({"JWT_SECRET": "s3cret"}), "unknown", 7) == ""
+
+
+def test_asset_url_binds_file_id_purpose_and_verifies():
+    from kaas_common.files import verify_asset_token
+
+    req = _AssetRequest({"JWT_SECRET": "s3cret"})
+    url = wsf._asset_url(req, "file", 7)
+    assert url.startswith("https://kaas.example.com/api/v1/file-objects/7/render-content?t=")
+    token = url.split("t=", 1)[1]
+    assert verify_asset_token("s3cret", "file", 7, token)
+    assert not verify_asset_token("s3cret", "file", 8, token)
+    assert not verify_asset_token("s3cret", "seal", 7, token)
+
+
+def test_resolve_photo_refs_prefers_signed_url_and_skips_byte_loading(monkeypatch):
+    _install_db(monkeypatch, _FakeDB({
+        "name": "产品图 A", "content_type": "image/png", "file_name": "p7.png",
+        "content": None, "object_key": "media/7.png", "storage": "s3",
+    }))
+    req = _AssetRequest({"JWT_SECRET": "s3cret"})
+    data = {"product_photos": [{"file_id": 7, "caption": "盖章"}]}
+
+    out = _run(wsf.resolve_photo_refs(req, data))
+
+    assert out["product_photos"] == [{
+        "image": wsf._asset_url(req, "file", 7),
+        "caption": "盖章",
+    }]
+    assert out["product_photos"][0]["image"].startswith("https://")
+
+
+def test_file_render_content_rejects_bad_or_expired_token():
+    req = _AssetRequest({"JWT_SECRET": "s3cret"})
+    for bad in ("", "1.2", "9999999999." + "0" * 64):
+        with pytest.raises(Exception) as exc:
+            _run(wsf.get_file_render_content(7, req, t=bad))
+        assert getattr(exc.value, "status_code", 0) == 401
+
+
+def test_file_render_content_serves_bytes_with_valid_token(monkeypatch):
+    _install_db(monkeypatch, _FakeDB({
+        "content_type": "image/png", "file_name": "p7.png",
+        "content": PNG_BYTES, "object_key": None, "storage": "inline",
+    }))
+    req = _AssetRequest({"JWT_SECRET": "s3cret"})
+    token = wsf._asset_url(req, "file", 7).split("t=", 1)[1]
+
+    resp = _run(wsf.get_file_render_content(7, req, t=token))
+
+    assert resp.status_code == 200
+    assert resp.body == PNG_BYTES
+    assert resp.headers["content-type"] == "image/png"

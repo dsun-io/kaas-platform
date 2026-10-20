@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
 
 from kaas_common.trade_doc import PngError, validate_seal_image
@@ -213,6 +213,39 @@ async def get_seal_image(
         media_type="image/png",
         headers={
             "Cache-Control": "private, max-age=3600",
+            "Content-Disposition": f'inline; filename="seal-{seal_id}.png"',
+        },
+    )
+
+
+@app.get("/api/v1/tenant/company-seals/{seal_id}/render-content")
+async def get_seal_render_content(
+    request: Request,
+    seal_id: int,
+    t: str = Query(""),
+):
+    """A4：给渲染器用的短期直链（令牌即授权，`<img>` 不带登录头也能加载）。
+
+    令牌由装配层（`main._apply_default_seal` → `ws_files._asset_url`）在**已授权**
+    渲染数据请求里签发，TTL 900s；`seal_id` 与令牌绑定，换 id 即签名不符 → 401。
+    """
+    from kaas_common.files import verify_asset_token
+
+    try:
+        secret = _main._jwt_secret(request)
+    except Exception:  # noqa: BLE001 - 无密钥环境一律拒绝
+        secret = ""
+    if not verify_asset_token(secret, "seal", seal_id, t):
+        raise HTTPException(status_code=401, detail={
+            "error": "unauthorized", "code": "RENDER_TOKEN_INVALID",
+            "message": "渲染资源令牌无效或已过期"})
+    async with _acquire(request) as conn:
+        row = await _get_or_404(conn, DEFAULT_TENANT, seal_id)
+    return Response(
+        content=bytes(row["png_bytes"]),
+        media_type="image/png",
+        headers={
+            "Cache-Control": "private, max-age=900",
             "Content-Disposition": f'inline; filename="seal-{seal_id}.png"',
         },
     )

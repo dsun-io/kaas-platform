@@ -172,9 +172,13 @@ class TestRowEndpointsCarryPredicate:
 _ALLOWED_WITHOUT_PREDICATE: dict[str, str] = {
     "SET is_current=false, updated_at=now() WHERE id=$1":
         "supersede：id 来自上面已按团队过滤的 `_current_file`（拿不到别团队的 id）",
+    "SELECT content_type, file_name, content, object_key, storage FROM file_objects":
+        "A4 渲染直链 `get_file_render_content`：**令牌即授权**（用途/资源 id/TTL 绑定，"
+        "签发于已授权的渲染数据请求；<img> 带不了登录头）⇒ 刻意不按 team 过滤，"
+        "换 team 必须换令牌；令牌用 JWT_SECRET HMAC，不落库",
     "SELECT name, content_type, file_name, content, object_key, storage FROM file_objects":
         "`resolve_photo_refs` 是装配层函数、没有 auth 上下文，调用方在 main.py（本轮不授权）"
-        " ⇒ 已知缺口，源码里已留注释，等 main.py 干净后再补",
+        " ⇒ 已知缺口，源码里已留注释，等 main.py 干净后再补（user 传入时已带 team 谓词）",
 }
 
 

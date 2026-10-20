@@ -48,7 +48,7 @@ Hyperdrive，并给 worker 依赖钉版入库。**前端 UI 优化 P0/P1/P2 已�
 | 组 | 项 | 前置 / 备注 |
 |---|---|---|
 | A2-方案B | 模板迁服务端（方案 B）：让「任意客户端/API 签发」都能服务端出 PDF | **方案 A 已完成**（`ws_files.archive_rendered_pdf`，confirm/PATCH 两入口已接线）；方案 B 未做，**已登记 TODO `A2-B`（🧭 需用户定要不要做）** |
-| A4 | 单证图片素材库 | **约 3/5**：公章库 `kaas_common/files/seal.py`、产品图 `{file_id}` 引用库已做；渲染仍 base64 内联（`ws_files.py` `to_data_uri`，一张 PI ≈1.4MB），素材库/对象存储未做 |
+| A4 | 单证图片素材库 | ✅ 2026-10-21：渲染改**短期签名直链**（`files/token.py` HMAC 900s + `render-content` 端点，文件/公章各一条），回退 data URI；素材库复用现有产品图库+公章库（无新表） |
 | A5 | 单证编辑体验（行项批量编辑、条款模板、金额联动校验） | **需先与用户过方案**（🧭） |
 | A6 | 模板逐字段对照真实出口单据 | **需用户提供样例单据**（🧭），是单证内容的最终验收标准 |
 | A7 | 单证加固 P1/P2（事实层/一致性引擎/收款容差/回执登记/导出自检） | **约 2/5**：容差内核 `kaas_common/workstation/receipt_rules.py` + 迁移 `202610170003_trade_doc_receipts_and_doc_set.py` 已有；事实层/一致性引擎/回执 API/导出后自检未做；口径见 `UNCERTAIN.md` #17，设计在归档的 `TRADE_DOC_HARDENING_PLAN_2026-10-12.md` |
