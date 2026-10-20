@@ -104,7 +104,7 @@ export function SpecPicker({ formulas, value, onChange, disabled }: Props) {
         <p className="text-[11px] text-muted-foreground">规格维度：{formula}</p>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
         {[...axes, ...variants].map((group) => {
           const isVariant = group.kind === "variant";
           const selected = current(value, group.name);
