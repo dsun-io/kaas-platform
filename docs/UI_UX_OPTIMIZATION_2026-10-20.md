@@ -721,7 +721,7 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 ### 9.4 P1 / P2（后续批次）
 
 - P1：intel 双层 tab、products 层级、events/audit-log/settings/team/shipments 列表模板化、筛选区组件化、抽屉统一。
-  - 已落：events 列表、audit-log 日志的“加载中…”→骨架 + 空态；settings 租户/账号、team 成员/邀请/工位面板的“加载中…”→骨架。
+  - 已落：events 列表、audit-log 日志的“加载中…”→骨架 + 空态；settings 租户/账号、team 成员/邀请/工位面板的“加载中…”→骨架；intel 内部 4 个 tab 改统一 `Tabs`（手写 border-b-2 清零）；shipments 列表加载骨架 + `scope`；intel 货运表格空态统一。
 - P2：列配置/密度切换/筛选记忆/快捷键/复制/自动聚焦、a11y 全量、窄屏卡片化、暗色令牌校准。
 
 ### 9.5 质量与清理（随批次做）
