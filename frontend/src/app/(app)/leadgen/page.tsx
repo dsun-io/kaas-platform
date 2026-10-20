@@ -4,6 +4,7 @@ import { useState } from "react";
 import { usePageView } from "@/lib/events/use-page-view";
 import { RouteGuard } from "@/components/route-guard";
 import { LeadgenCsvImport } from "./components/csv-import-panel";
+import { ManualLeadDialog } from "./components/manual-lead-dialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
@@ -176,6 +177,7 @@ export default function LeadgenPage() {
   const [inquiryFilter, setInquiryFilter] = useState("");
   const [sort, setSort] = useState("score");
   const [detail, setDetail] = useState<LeadDetail | null>(null);
+  const [manualLeadOpen, setManualLeadOpen] = useState(false);
   const [crawling, setCrawling] = useState<number | null>(null);
 
   const { data: regionsData } = useQuery({
@@ -511,6 +513,13 @@ export default function LeadgenPage() {
               <option value="recent">排序：最近</option>
               <option value="name">排序：名称</option>
             </select>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setManualLeadOpen(true)}
+            >
+              新建线索
+            </Button>
           </div>
 
           {leads.length === 0 ? (
@@ -848,6 +857,10 @@ export default function LeadgenPage() {
             </div>
           )}
         </SectionCard>
+        <ManualLeadDialog
+          open={manualLeadOpen}
+          onOpenChange={setManualLeadOpen}
+        />
       </div>
     </RouteGuard>
   );

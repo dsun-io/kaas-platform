@@ -15,14 +15,17 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { NameMappingPanel } from "./name-mapping-panel";
 
-type TabKey = "region" | "product" | "usage" | "ports";
+type TabKey = "region" | "product" | "usage" | "ports" | "names";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "region", label: "按地区查询" },
   { key: "product", label: "按品名查询" },
   { key: "usage", label: "按用途查询" },
   { key: "ports", label: "港口情报" },
+  // C36 #19：品名对照维护（搜索 + 新增；后端暂无可编辑接口）
+  { key: "names", label: "品名对照" },
 ];
 
 interface RegionProduct {
@@ -444,6 +447,9 @@ export function MarketView({ showHeader = true }: { showHeader?: boolean }) {
         </TabsContent>
         <TabsContent value="ports" keepMounted={false}>
           <PortsTab />
+        </TabsContent>
+        <TabsContent value="names" keepMounted={false}>
+          <NameMappingPanel />
         </TabsContent>
       </Tabs>
     </div>

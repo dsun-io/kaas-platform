@@ -20,10 +20,14 @@ import {
   type IntelShipmentFilters,
 } from "../hooks/use-intel";
 import { Search, RotateCcw } from "lucide-react";
+import { IntelCsvImportDialog } from "./csv-import-dialog";
+import { ManualShipmentDialog } from "./manual-shipment-dialog";
 
 const PAGE_SIZE = 20;
 
 export function ShipmentsTable() {
+  const [importOpen, setImportOpen] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
   const [filters, setFilters] = useState<IntelShipmentFilters>({
     page: 1,
     page_size: PAGE_SIZE,
@@ -68,7 +72,21 @@ export function ShipmentsTable() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>货运记录查询</CardTitle>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle>货运记录查询</CardTitle>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setImportOpen(true)}
+            >
+              导入 CSV
+            </Button>
+            <Button size="sm" onClick={() => setManualOpen(true)}>
+              手工新增
+            </Button>
+          </div>
+        </div>
         <div className="flex flex-wrap gap-2 mt-4">
           <Input
             placeholder="发货人"
@@ -227,6 +245,9 @@ export function ShipmentsTable() {
           />
         )}
       </CardContent>
+
+      <IntelCsvImportDialog open={importOpen} onOpenChange={setImportOpen} />
+      <ManualShipmentDialog open={manualOpen} onOpenChange={setManualOpen} />
     </Card>
   );
 }

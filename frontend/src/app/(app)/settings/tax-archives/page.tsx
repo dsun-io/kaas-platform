@@ -33,6 +33,7 @@ import type {
   TaxArchiveList,
 } from "@contracts/export-quote";
 
+import { FxHistoryCard } from "./components/fx-history-card";
 import { FxRateCard } from "./components/fx-rate-card";
 import { TaxArchiveDeactivateButton } from "./components/tax-archive-deactivate-button";
 
@@ -609,8 +610,9 @@ export default function TaxArchivesPage() {
         )}
       </SectionCard>
 
-      {/* C36 #14：手工汇率兜底（外部汇率源异常时用） */}
+      {/* C36 #14/#5：手工汇率兜底 + 汇率历史（同一屏：写与查） */}
       <FxRateCard />
+      <FxHistoryCard />
     </div>
   );
 }

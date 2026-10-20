@@ -10,7 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader, StatusBadge, SectionCard, EmptyState } from "@/components/shared";
 import { toast } from "sonner";
-import { KeyRound, FlaskConical, Save } from "lucide-react";
+import { KeyRound, FlaskConical, Play, Save } from "lucide-react";
+import { RunTaskDialog } from "./components/run-task-dialog";
 
 /* ── types ─────────────────────────────────────────────────────────────── */
 interface Provider {
@@ -59,6 +60,8 @@ export default function AiProvidersPage() {
   usePageView({ resource_id: "/settings/ai-providers" });
   const qc = useQueryClient();
   const [keys, setKeys] = useState<Record<string, string>>({});
+  // C36 #13：运行任务弹窗（null = 关闭）
+  const [runTask, setRunTask] = useState<TaskMeta | null>(null);
 
   const { data: provData, refetch: refetchProv } = useQuery({
     queryKey: ["ai-providers"],
@@ -210,6 +213,34 @@ export default function AiProvidersPage() {
           )}
         </SectionCard>
 
+        {/* 运行任务（C36 #13 · POST /ai/tasks/{key}/run） */}
+        <SectionCard title="运行任务（调试/补跑）">
+          <p className="mb-3 text-xs text-muted-foreground">
+            手动触发一次任务：未启用 AI 时走内置模板（结果不带耗时）；启用后走「绑定服务商 → 兜底链」。
+            每次调用都会记入下方用量审计；无权限(403)/冲突(409) 会如实透出后端错误码。
+          </p>
+          {(taskData?.items ?? []).length === 0 ? (
+            <EmptyState title="暂无任务" />
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {(taskData?.items ?? []).map((t) => (
+                <Button
+                  key={t.task_key}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRunTask(t)}
+                >
+                  <Play className="mr-1 h-3.5 w-3.5" />
+                  {t.name}
+                  <span className="ml-2 font-mono text-[11px] text-muted-foreground">
+                    {t.task_key}
+                  </span>
+                </Button>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+
         {/* usage audit */}
         <SectionCard title="用量审计" >
           <div className="mb-2">
@@ -244,6 +275,21 @@ export default function AiProvidersPage() {
           )}
         </SectionCard>
       </div>
+
+      {runTask && (
+        <RunTaskDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setRunTask(null);
+          }}
+          taskKey={runTask.task_key}
+          taskName={runTask.name}
+          onRan={() => {
+            refetchUsage();
+            refetchBindings();
+          }}
+        />
+      )}
     </RouteGuard>
   );
 }

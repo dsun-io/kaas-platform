@@ -8,7 +8,8 @@
  * 所以这里必须能看、能改；否则单证就只能手工重填，极易与合同不一致。
  */
 import { useState } from "react";
-import { AlertCircle, Bell, ChevronRight, Plus } from "lucide-react";
+import Link from "next/link";
+import { AlertCircle, Bell, ChevronRight, Plus, Wallet } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -33,6 +34,8 @@ import {
 import { useOrdersList, ORDERS_PAGE_SIZE } from "./hooks/use-orders-list";
 
 import { OrderCreateForm } from "./components/order-create-form";
+import { OrderStatusDialog } from "./components/order-status-dialog";
+import { PaymentSchedulesPanel } from "./components/payment-schedules-panel";
 
 /** 订单行（与后端 /orders 返回一致） */
 type OrderRow = OrderOption;
@@ -79,6 +82,8 @@ export default function OrdersPage() {
   const quotes = useQuoteOptions();
   const [quoteId, setQuoteId] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  // C36 下期 #21：状态流转弹窗（一次只开一个订单）
+  const [statusOrder, setStatusOrder] = useState<OrderRow | null>(null);
   const [density, setDensity] = usePersistentState<"cozy" | "compact">(
     "ui:orders:density",
     "cozy",
@@ -122,6 +127,16 @@ export default function OrdersPage() {
       <PageHeader
         title="订单"
         description="报价谈成后转订单；订单上的贸易条款会一路传到单证，避免单证与合同不一致。"
+        actions={
+          // C36 #7：应收台账入口放在订单页 —— 侧栏导航由共享契约 workstations.ts 驱动
+          // （R2 与后端共享内核逐条比对），加导航项属契约变更；应收由订单产生，此处进入最顺。
+          <Link href="/receivables">
+            <Button variant="outline" size="sm">
+              <Wallet className="mr-1 h-4 w-4" />
+              应收台账
+            </Button>
+          </Link>
+        }
       />
 
       <SectionCard
@@ -332,13 +347,22 @@ export default function OrdersPage() {
                         <td className="p-2">{o.port_of_destination || "—"}</td>
                       )}
                       <td className="p-2">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setSelectedId(o.id)}
-                        >
-                          条款
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setStatusOrder(o)}
+                          >
+                            状态
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setSelectedId(o.id)}
+                          >
+                            条款
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -421,6 +445,33 @@ export default function OrdersPage() {
             onSave={(patch) => saveTerms.mutate({ id: selected.id, ...patch })}
           />
         </SectionCard>
+      )}
+
+      {/* C36 下期 #6/#10/#20：选中订单的收款计划（列表/新建/改计划/标记收款） */}
+      {selected && (
+        <PaymentSchedulesPanel
+          key={`schedules-${selected.id}`}
+          orderId={selected.id}
+          currency={selected.currency ?? null}
+        />
+      )}
+
+      {statusOrder && (
+        <OrderStatusDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setStatusOrder(null);
+          }}
+          order={{
+            id: statusOrder.id,
+            order_no: statusOrder.order_no,
+            status: statusOrder.status,
+          }}
+          onChanged={() => {
+            setStatusOrder(null);
+            void qc.invalidateQueries({ queryKey: ["upstream", "orders"] });
+          }}
+        />
       )}
     </div>
   );

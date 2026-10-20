@@ -476,6 +476,10 @@ const AI_TASKS = [
   { task_key: "opening_line", name: "开场白生成", recommended_provider: "kimi" },
   { task_key: "email_generation", name: "邮件生成", recommended_provider: "kimi" },
   { task_key: "inquiry_classification", name: "询盘分类", recommended_provider: "kimi" },
+  // 真机核对（2026-10-21，`GET /api/v1/ai/tasks` 实测 7 个）：mock 原缺这两条，
+  // 导致 AI 页「运行任务」在 mock 下看不到它们 —— 契约漂移本次一并修正。
+  { task_key: "spec_extract", name: "规格结构化", recommended_provider: "deepseek" },
+  { task_key: "product_translate", name: "产品名翻译", recommended_provider: "kimi" },
 ];
 
 type MockAiProvider = {
@@ -1511,6 +1515,137 @@ export const longtailHandlers = [
     }),
   ),
 
+  // C36 #16：手工新增情报货运（形状 = main.py:189 ShipmentCreate / 990 create_shipment）
+  http.post("/api/v1/intel/shipments", async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    const required = ["shipper", "consignee", "product_desc"];
+    const missing = required.filter(
+      (key) => typeof body[key] !== "string" || String(body[key]).trim() === "",
+    );
+    if (missing.length > 0) {
+      return HttpResponse.json(
+        {
+          detail: missing.map((key) => ({
+            loc: ["body", key],
+            msg: "Field required",
+            type: "missing",
+          })),
+        },
+        { status: 422 },
+      );
+    }
+    const now = nowIso();
+    const row: MockIntelShipment = {
+      ...body,
+      id: nextId(),
+      tenant_id: "default",
+      source_channel: "manual",
+      source_ref: null,
+      is_verified: false,
+      created_by: "mock",
+      created_at: now,
+      updated_at: now,
+    };
+    intelShipmentsStore.unshift(row);
+    return HttpResponse.json(row, { status: 201 });
+  }),
+
+  // C36 #15：情报货运 CSV 导入（multipart，字段名 `file`；形状 = main.py:1005 import_csv）
+  http.post("/api/v1/intel/import/csv", async ({ request }) => {
+    const form = await request.formData().catch(() => null);
+    const file = form?.get("file");
+    if (!(file instanceof File)) {
+      return HttpResponse.json(
+        { detail: "缺少 file 字段（multipart，字段名必须是 file）" },
+        { status: 422 },
+      );
+    }
+    const alias: Record<string, string> = {
+      shipper: "shipper",
+      发货人: "shipper",
+      exporter: "shipper",
+      consignee: "consignee",
+      收货人: "consignee",
+      importer: "consignee",
+      product_desc: "product_desc",
+      产品描述: "product_desc",
+      产品: "product_desc",
+      goods: "product_desc",
+      ship_date: "ship_date",
+      日期: "ship_date",
+      date: "ship_date",
+      dest_country: "dest_country",
+      目的国: "dest_country",
+      destination: "dest_country",
+      origin_country: "origin_country",
+      原产国: "origin_country",
+      hs_code: "hs_code",
+      hs编码: "hs_code",
+      qty: "qty",
+      数量: "qty",
+      qty_unit: "qty_unit",
+      单位: "qty_unit",
+      carrier: "carrier",
+      承运人: "carrier",
+      bl_no: "bl_no",
+      提单号: "bl_no",
+    };
+    const text = await (file as File).text();
+    const lines = text
+      .replace(/^\uFEFF/, "")
+      .split(/\r?\n/)
+      .filter((line) => line.trim() !== "");
+    const header = (lines[0] ?? "").split(",").map((cell) => cell.trim());
+    const errors: Array<{ row: number; error: string }> = [];
+    let inserted = 0;
+    let processed = 0;
+    const now = nowIso();
+    for (let index = 1; index < lines.length; index += 1) {
+      processed = index;
+      const cells = lines[index]!.split(",").map((cell) => cell.trim());
+      const row: Record<string, string> = {};
+      header.forEach((head, headIndex) => {
+        const mapped =
+          alias[head.toLowerCase()] ?? alias[head] ?? undefined;
+        const value = cells[headIndex] ?? "";
+        if (mapped && value !== "") row[mapped] = value;
+      });
+      if (
+        !("shipper" in row) ||
+        !("consignee" in row) ||
+        !("product_desc" in row)
+      ) {
+        errors.push({
+          row: index + 1,
+          error: "缺少必填字段 (shipper/consignee/product_desc)",
+        });
+        continue;
+      }
+      intelShipmentsStore.unshift({
+        ...row,
+        id: nextId(),
+        tenant_id: "default",
+        source_channel: "manual_csv",
+        source_ref: (file as File).name,
+        is_verified: false,
+        created_by: "mock",
+        created_at: now,
+        updated_at: now,
+      });
+      inserted += 1;
+    }
+    return HttpResponse.json({
+      status: "success",
+      processed,
+      inserted,
+      errors: errors.length,
+      error_details: errors.slice(0, 10),
+    });
+  }),
+
   // ── market ───────────────────────────────────────────────────────────────
   http.get("/api/v1/market/regions", () =>
     HttpResponse.json(MARKET_REGIONS.slice()),
@@ -1720,6 +1855,62 @@ export const longtailHandlers = [
   http.get("/api/v1/ai/tasks", () =>
     HttpResponse.json({ items: AI_TASKS.map((t) => ({ ...t })) }),
   ),
+
+  // C36 #13：手动运行任务。契约 = `chain.py:751 run_ai_task`：
+  //   body `{payload:{}}` → 200 `{result, path, task, latency_ms?}`
+  //   · 绑定未启用/服务商无密钥 ⇒ `path="template"`（模板兜底，**无 latency_ms**）
+  //   · 启用且服务商可用 ⇒ `path="ai:<provider>"` + `latency_ms`
+  //   · 未知任务 ⇒ 404 `UNKNOWN_TASK`
+  // 每次运行都记一条 ai_usage（与真实后端"全程落 usage"一致），页面刷新用量即可看到。
+  http.post("/api/v1/ai/tasks/:taskKey/run", async ({ params, request }) => {
+    const taskKey = String(params.taskKey);
+    if (!AI_TASKS.some((t) => t.task_key === taskKey)) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "not_found",
+            code: "UNKNOWN_TASK",
+            task_key: taskKey,
+          },
+        },
+        { status: 404 },
+      );
+    }
+    const body = (await request.json().catch(() => ({}))) as {
+      payload?: Record<string, unknown>;
+    };
+    const payload = body.payload ?? {};
+    const binding = aiBindingsStore.find((b) => b.task_key === taskKey);
+    const provider = binding?.enabled
+      ? aiProvidersStore.find(
+          (p) =>
+            p.provider === binding.provider && p.enabled && Boolean(p.api_key),
+        )
+      : undefined;
+    const started = Date.now();
+    const latency = Math.max(1, (Date.now() - started) % 900 + 120);
+    const result = provider
+      ? { ok: true, task_key: taskKey, payload, provider: provider.provider }
+      : { ok: true, task_key: taskKey, payload, template: true };
+    aiUsageStore.push({
+      id: aiUsageStore.length + AI_USAGE_SEEDS.length + 1,
+      task_key: taskKey,
+      provider: provider?.provider ?? null,
+      model: provider?.model ?? null,
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      cost_usd: null,
+      status: provider ? "success" : "template_only",
+      error: null,
+      latency_ms: latency,
+      created_at: new Date().toISOString(),
+    });
+    return HttpResponse.json(
+      provider
+        ? { result, path: `ai:${provider.provider}`, task: taskKey, latency_ms: latency }
+        : { result, path: "template", task: taskKey },
+    );
+  }),
 
   http.get("/api/v1/ai/providers", () =>
     HttpResponse.json({ items: aiProvidersStore.map(providerOut) }),
@@ -2424,6 +2615,77 @@ export const longtailHandlers = [
       },
       { status: 201 },
     );
+  }),
+
+  // C36 #18：手工新增线索（形状 = chain.py:1349 lead_create；重复公司 409 DUPLICATE_PLACE）
+  http.post("/api/v1/leads", async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    const company =
+      typeof body.company_name === "string" ? body.company_name.trim() : "";
+    if (!company) {
+      return HttpResponse.json(
+        {
+          detail: [
+            { loc: ["body", "company_name"], msg: "Field required", type: "missing" },
+          ],
+        },
+        { status: 422 },
+      );
+    }
+    const duplicate = leadsStore.some(
+      (lead) => String(lead.company_name).toLowerCase() === company.toLowerCase(),
+    );
+    if (duplicate) {
+      return HttpResponse.json(
+        { detail: { error: "conflict", code: "DUPLICATE_PLACE" } },
+        { status: 409 },
+      );
+    }
+    const now = nowIso();
+    const companySlug = company
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 24);
+    const lead: MockLead = {
+      id: nextId(),
+      tenant_id: "default",
+      place_id:
+        typeof body.place_id === "string" && body.place_id.trim()
+          ? body.place_id.trim()
+          : `manual-${companySlug || "unknown"}`,
+      company_name: company,
+      country: optStr(body.country),
+      region: optStr(body.region),
+      city: optStr(body.city),
+      address: optStr(body.address),
+      phone: optStr(body.phone),
+      website: optStr(body.website),
+      email: optStr(body.email),
+      industry: optStr(body.industry),
+      source: "manual",
+      opening_line: optStr(body.opening_line),
+      shop_type: optStr(body.shop_type),
+      product_name: optStr(body.product_name),
+      product_name_cn: optStr(body.product_name_cn),
+      product_image_url: null,
+      spec_raw: optStr(body.spec_raw),
+      link_url: optStr(body.link_url),
+      can_supply:
+        typeof body.can_supply === "boolean" ? body.can_supply : null,
+      supply_notes: optStr(body.supply_notes),
+      crawl_status: "no_website",
+      fit_score: 0,
+      outreach_status: "none",
+      inquiry_status: "none",
+      created_at: now,
+      updated_at: now,
+    };
+    leadsStore.unshift(lead);
+    return HttpResponse.json(leadOut(lead), { status: 201 });
   }),
 
   http.get("/api/v1/leads", ({ request }) => {

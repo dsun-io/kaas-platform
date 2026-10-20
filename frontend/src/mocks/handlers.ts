@@ -80,6 +80,30 @@ capabilitiesStore.set(
   JSON.parse(JSON.stringify(MOCK_CAPABILITIES["cust-client-b"])),
 );
 
+/**
+ * 品名对照（C36 #19）：`POST /market/name-mappings` 的 mock 写库 + 唯一冲突。
+ *
+ * 列表读取仍由 `longtail-handlers.ts` 的 `GET /market/name-lookup`（静态种子）提供；
+ * 这里只保证**写路径不 404**、同 `(category_id, region_code, lang)` 唯一键命中时回 409
+ * ——与后端唯一约束 `(tenant_id, category_id, region_code, lang)` 同口径
+ * （迁移 `20260919_customers_market_subs.py`；PG 中 category_id 为 NULL 时不算冲突）。
+ */
+type MockNameMapping = {
+  id: number;
+  category_id: number | null;
+  region_code: string;
+  lang: string;
+  local_name: string;
+  alt_names: string[];
+  hs_code: string | null;
+  source: string;
+  confidence: string | null;
+  is_verified: boolean;
+  created_at: string;
+};
+const nameMappingStore: MockNameMapping[] = [];
+let nameMappingSeq = 1;
+
 // Stateful store for feature flags (per-tenant, persists across HMR)
 //
 // ⚠️ key 必须是**租户号**，不是客户号。
@@ -2752,6 +2776,9 @@ function bootstrapMockData(): void {
  */
 export function resetMockData(): void {
   seedMockData();
+  // 品名对照是本次新增的写库（见 nameMappingStore）；重置时清空
+  nameMappingStore.length = 0;
+  nameMappingSeq = 1;
   clearMockPersistence();
 }
 
@@ -2798,6 +2825,37 @@ const MOCK_ARCHIVE_LOGS: Array<{
     archived_at: "2026-08-01T02:00:07Z",
   },
 ];
+
+/** 订单状态机（与 `main.py:3301` 的 `ORDER_NEXT` 逐字一致；只用于 mock 的 409 判定） */
+const MOCK_ORDER_NEXT: Record<string, string[]> = {
+  pending: ["confirmed", "cancelled"],
+  confirmed: ["producing", "cancelled"],
+  producing: ["shipped"],
+  shipped: ["completed"],
+};
+const MOCK_ORDER_STATUSES = [
+  "pending",
+  "confirmed",
+  "producing",
+  "shipped",
+  "completed",
+  "cancelled",
+];
+const MOCK_SCHEDULE_TYPES = ["deposit", "balance", "full"];
+const MOCK_SCHEDULE_STATUSES = ["pending", "paid", "overdue"];
+
+/** 收款计划 mock 行：14 键（= `order_serializers.row_to_schedule`） */
+type MockSchedule = Record<string, unknown> & { id: number };
+const mockSchedules: MockSchedule[] = [];
+
+/** mock 里订单的锁定汇率（= 订单行的 fx_rate；没有就返回 null，不猜） */
+function order_fx_rate_of(orderId: number): number | null {
+  const order = ordersStore.find((o) => o.id === orderId);
+  const raw = order?.fx_rate;
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+}
+
+let mockScheduleSeq = 1;
 
 /** 定价单位白名单（与 `main.py` 的 `_PRICING_UNIT_TO_COST_TYPE` 键逐字一致；传别的值后端 422） */
 const PRICING_UNIT_VALUES = new Set([
@@ -2878,6 +2936,45 @@ function applyItemsOverrideToRows(
     return next;
   });
 }
+/**
+ * 应收台账种子（C36 下期 #7）：形状 = worker `list_receivables` 的行
+ * （共享 12 键 + join 的 order_no/customer_name）。
+ *
+ * 说明：`order_id` 指向 mock 的订单 store（默认空，需先在订单页转单/建单）；
+ * 找不到订单时其收款计划接口 404 ⇒ 页面逾期列显示「未知」——这是**如实行为**
+ * （没有到期日就不能判定逾期），不是 bug。组件测试用注入的到期日覆盖红标路径。
+ */
+const RECEIVABLE_SEEDS: Array<Record<string, unknown>> = [
+  {
+    id: 9001, order_id: 1, currency: "USD", total_amount: 26450, received_amount: 7935,
+    fx_rate: 6.7029, fx_rate_date: "2026-09-28", base_currency: "CNY",
+    base_amount: 177281.7, exchange_gain_loss: null, status: "partial",
+    created_at: "2026-09-29T09:00:00.000Z",
+    order_no: "ORD-202609-0001", customer_name: "Lone Star Fence Co",
+  },
+  {
+    id: 9002, order_id: 2, currency: "USD", total_amount: 12300, received_amount: 0,
+    fx_rate: null, fx_rate_date: null, base_currency: null, base_amount: null,
+    exchange_gain_loss: null, status: "unpaid",
+    created_at: "2026-09-30T09:00:00.000Z",
+    order_no: "ORD-202609-0002", customer_name: "Gulf Coast Wire Mesh",
+  },
+  {
+    id: 9003, order_id: 3, currency: "USD", total_amount: 8600, received_amount: 8600,
+    fx_rate: null, fx_rate_date: null, base_currency: null, base_amount: null,
+    exchange_gain_loss: 12.4, status: "paid",
+    created_at: "2026-09-20T09:00:00.000Z",
+    order_no: "ORD-202609-0003", customer_name: "SunState Fencing",
+  },
+  {
+    id: 9004, order_id: 4, currency: "CNY", total_amount: 58000, received_amount: 20000,
+    fx_rate: null, fx_rate_date: null, base_currency: null, base_amount: null,
+    exchange_gain_loss: null, status: "partial",
+    created_at: "2026-10-01T09:00:00.000Z",
+    order_no: "ORD-202610-0004", customer_name: "安平联佳丝网",
+  },
+];
+
 export const handlers = [  // ── 工位订阅快照（原先没有 mock，是**真正的**缺口）─────────────────────
   // 形状**必须**照 `lib/workstation/visibility.ts` 的 `parseMyWorkstationsPayload()`：
   //   · `workstations` 必须是数组，否则整份 payload 被当成"没读到"(null) → 放行
@@ -3187,6 +3284,76 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
   // catch 后回退内联，看起来一切正常。
   // 现在前端已删掉该死代码路径（事件 payload 直接内联，理由见该文件注释），
   // mock 也一并移除 —— 不存在的接口不应继续被 mock 撑成"存在"。
+
+  // ── 品名对照（C36 #19 · 市场页「品名对照」新增）──────────────────────
+  // GET 列表/查询由 longtail-handlers.ts 的 `GET /market/name-lookup` 提供
+  // （静态种子）；本 handler 只补后端已有的写口 `POST /market/name-mappings`
+  // （main.py:1793-1805），并按唯一约束 (tenant, category_id, region_code, lang)
+  // 回 409 —— 后端现在实际会因未捕获唯一冲突而 500，前端对 500/409 都按
+  // "可能重复"如实提示（不改后端）。
+  http.post("/api/v1/market/name-mappings", async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    const region = String(body.region_code ?? "").trim().toUpperCase();
+    const lang = String(body.lang ?? "").trim();
+    const localName = String(body.local_name ?? "").trim();
+    if (!region || !lang || !localName) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "NAME_MAPPING_REQUIRED",
+            detail: "region_code / lang / local_name 必填",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const categoryId =
+      body.category_id === null || body.category_id === undefined
+        ? null
+        : Number(body.category_id);
+    const conflict =
+      categoryId !== null &&
+      nameMappingStore.some(
+        (r) =>
+          r.category_id === categoryId &&
+          r.region_code === region &&
+          r.lang === lang,
+      );
+    if (conflict) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "conflict",
+            code: "NAME_MAPPING_CONFLICT",
+            detail: "同一地区 + 语言 + 类目已存在品名对照",
+          },
+        },
+        { status: 409 },
+      );
+    }
+    const row: MockNameMapping = {
+      id: nameMappingSeq++,
+      category_id: Number.isFinite(categoryId) ? categoryId : null,
+      region_code: region,
+      lang,
+      local_name: localName,
+      alt_names: Array.isArray(body.alt_names)
+        ? body.alt_names.map((a) => String(a))
+        : [],
+      hs_code: typeof body.hs_code === "string" ? body.hs_code : null,
+      source: typeof body.source === "string" ? body.source : "manual",
+      confidence:
+        typeof body.confidence === "string" ? body.confidence : null,
+      is_verified: body.is_verified === true,
+      created_at: new Date().toISOString(),
+    };
+    nameMappingStore.push(row);
+    return HttpResponse.json(row, { status: 201 });
+  }),
 
   // ── Customers ────────────────────────────────────────────────────
   // ⚠️ 形状必须对齐后端 `GET /customers`
@@ -4289,6 +4456,38 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
       id: quote.id,
       total_amount: quote.total_amount,
       items: items.map((it) => ({ ...it })),
+    });
+  }),
+
+  // ── 应收台账（receivables，C36 下期 #7）──────────────────────────────────
+  // 形状/参数 = worker `list_receivables`（main.py:4090）：**只支持** status + page/page_size；
+  // 非法 status ⇒ 422 `bad_receivable_status`；行 = 共享 12 键 + order_no/customer_name。
+  // ⚠️ 后端没有 customer/due_date 参数与字段 ⇒ mock 也不提供（否则前端会写出"mock 能筛、
+  //    生产不能筛"的假功能）。
+  http.get("/api/v1/receivables", ({ request }) => {
+    const url = new URL(request.url);
+    const status = url.searchParams.get("status");
+    if (status && !["unpaid", "partial", "paid"].includes(status)) {
+      return HttpResponse.json(
+        { detail: { error: "bad_receivable_status" } },
+        { status: 422 },
+      );
+    }
+    const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+    const pageSize = Math.min(
+      Math.max(1, Number(url.searchParams.get("page_size")) || 20),
+      200,
+    );
+    let rows = RECEIVABLE_SEEDS.slice().sort(
+      (a, b) => Number(b.id) - Number(a.id),
+    );
+    if (status) rows = rows.filter((row) => row.status === status);
+    const total = rows.length;
+    return HttpResponse.json({
+      items: rows.slice((page - 1) * pageSize, page * pageSize),
+      total,
+      page,
+      page_size: pageSize,
     });
   }),
 
@@ -7440,6 +7639,210 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
       },
       { status: 201 },
     );
+  }),
+
+  // ── C36 下期 1/4：订单收款计划三件套 / 订单状态流转 / 汇率历史 ─────────────
+  // 形状真源：main.py（list/create/update_schedule、change_order_status、ORDER_NEXT）；
+  // ws_extras.py:162（GET /fx-rates 返回**裸数组**）。只保证契约与错误语义。
+  http.get("/api/v1/orders/:orderId/payment-schedules", ({ params }) => {
+    const orderId = Number(params.orderId);
+    const order = ordersStore.find((o) => o.id === orderId);
+    if (!order) {
+      return HttpResponse.json({ detail: { error: "order_not_found" } }, { status: 404 });
+    }
+    const items = mockSchedules
+      .filter((s) => s.order_id === orderId)
+      .sort((a, b) => {
+        const ad = String(a.due_date ?? "");
+        const bd = String(b.due_date ?? "");
+        if (ad === bd) return a.id - b.id;
+        if (ad === "") return 1;
+        if (bd === "") return -1;
+        return ad < bd ? -1 : 1;
+      });
+    return HttpResponse.json({ items, total: items.length });
+  }),
+
+  http.post("/api/v1/orders/:orderId/payment-schedules", async ({ params, request }) => {
+    const orderId = Number(params.orderId);
+    const order = ordersStore.find((o) => o.id === orderId);
+    if (!order) {
+      return HttpResponse.json({ detail: { error: "order_not_found" } }, { status: 404 });
+    }
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const rawType = body.schedule_type;
+    if (rawType === undefined || String(rawType).trim() === "") {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "SCHEDULE_TYPE_REQUIRED",
+            field: "schedule_type",
+            detail: "付款计划必须指定 schedule_type",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const scheduleType = String(rawType).trim();
+    if (!MOCK_SCHEDULE_TYPES.includes(scheduleType)) {
+      return HttpResponse.json({ detail: { error: "bad_schedule_type" } }, { status: 422 });
+    }
+    const ratio = body.ratio ?? null;
+    let amount = body.amount ?? null;
+    if (amount == null && ratio != null && order.total_amount != null) {
+      amount = Number((Number(order.total_amount) * Number(ratio)).toFixed(2));
+    }
+    const schedule: MockSchedule = {
+      id: mockScheduleSeq++,
+      order_id: orderId,
+      trade_doc_id: null,
+      schedule_type: scheduleType,
+      ratio: ratio == null ? null : Number(ratio),
+      amount: amount == null ? null : Number(amount),
+      currency: order.currency ?? "USD",
+      due_date: body.due_date ? String(body.due_date).slice(0, 10) : null,
+      actual_date: null,
+      status: "pending",
+      fx_rate: null,
+      exchange_gain_loss: null,
+      notes: body.notes ? String(body.notes) : null,
+      created_at: new Date().toISOString(),
+    };
+    mockSchedules.push(schedule);
+    return HttpResponse.json(schedule, { status: 201 });
+  }),
+
+  http.patch("/api/v1/payment-schedules/:scheduleId", async ({ params, request }) => {
+    const scheduleId = Number(params.scheduleId);
+    const schedule = mockSchedules.find((s) => s.id === scheduleId);
+    if (!schedule) {
+      return HttpResponse.json({ detail: { error: "schedule_not_found" } }, { status: 404 });
+    }
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    if (body.status !== undefined) {
+      const status = String(body.status).trim();
+      if (!MOCK_SCHEDULE_STATUSES.includes(status)) {
+        return HttpResponse.json(
+          { detail: { error: "bad_schedule_status" } },
+          { status: 422 },
+        );
+      }
+      if (schedule.status === "paid" && status !== "paid") {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "conflict",
+              code: "ILLEGAL_TRANSITION",
+              field: "status",
+              from: "paid",
+              to: status,
+            },
+          },
+          { status: 409 },
+        );
+      }
+      if (status === "paid") {
+        const rate = body.fx_rate == null ? null : Number(body.fx_rate);
+        schedule.status = "paid";
+        schedule.actual_date = body.actual_date
+          ? String(body.actual_date).slice(0, 10)
+          : new Date().toISOString().slice(0, 10);
+        schedule.fx_rate = rate;
+        // mock 不读订单锁定汇率 ⇒ 只在给了实际汇率且能拿到锁定汇率时才模拟损益
+        const locked = order_fx_rate_of(Number(schedule.order_id));
+        schedule.exchange_gain_loss =
+          rate != null && locked != null
+            ? Number(
+                (Number(schedule.amount ?? 0) * (rate - locked)).toFixed(2),
+              )
+            : null;
+      }
+    }
+    if (body.amount !== undefined) schedule.amount = Number(body.amount);
+    if (body.due_date !== undefined) {
+      schedule.due_date = body.due_date
+        ? String(body.due_date).slice(0, 10)
+        : null;
+    }
+    if (body.notes !== undefined) {
+      schedule.notes = body.notes ? String(body.notes) : null;
+    }
+    return HttpResponse.json(schedule);
+  }),
+
+  http.post("/api/v1/orders/:orderId/status", async ({ params, request }) => {
+    const orderId = Number(params.orderId);
+    const order = ordersStore.find((o) => o.id === orderId);
+    if (!order) {
+      return HttpResponse.json({ detail: { error: "order_not_found" } }, { status: 404 });
+    }
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const raw = body.status;
+    if (raw === undefined || String(raw).trim() === "") {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "STATUS_REQUIRED",
+            field: "status",
+            detail: "缺少目标状态 status",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const target = String(raw).trim();
+    if (!MOCK_ORDER_STATUSES.includes(target)) {
+      return HttpResponse.json(
+        { detail: { error: "INVALID_ENUM", field: "order_status", value: target } },
+        { status: 422 },
+      );
+    }
+    const current = String(order.status ?? "");
+    const allowed = MOCK_ORDER_NEXT[current] ?? [];
+    if (target !== current && !allowed.includes(target)) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "conflict",
+            code: "ILLEGAL_TRANSITION",
+            field: "status",
+            from: current,
+            to: target,
+            allowed,
+          },
+        },
+        { status: 409 },
+      );
+    }
+    order.status = target;
+    return HttpResponse.json(order);
+  }),
+
+  http.get("/api/v1/fx-rates", ({ request }) => {
+    // ← ws_extras.py:162：裸数组、rate_date DESC、limit 1..365（后端 clamp）
+    const url = new URL(request.url);
+    const base = (url.searchParams.get("base_currency") || "USD").toUpperCase();
+    const quote = (url.searchParams.get("quote_currency") || "CNY").toUpperCase();
+    const limit = Math.min(
+      Math.max(Number(url.searchParams.get("limit") || "30"), 1),
+      365,
+    );
+    // mock 历史：以 6.7029 为基准生成若干天（确定性，便于 e2e 断言）
+    const rows = Array.from({ length: Math.min(limit, 8) }).map((_, index) => {
+      const day = 21 - index;
+      const date = `2026-10-${String(day).padStart(2, "0")}`;
+      return {
+        base_currency: base,
+        quote_currency: quote,
+        rate: Number((6.7029 + index * 0.0042).toFixed(4)),
+        rate_date: date,
+        source: index === 0 ? "manual" : "external",
+        is_stale: index === 7,
+      };
+    });
+    return HttpResponse.json(rows);
   }),
 
   // 单独成模块：与 P1 组互不依赖，放一处便于按域维护（见文件头注释）。

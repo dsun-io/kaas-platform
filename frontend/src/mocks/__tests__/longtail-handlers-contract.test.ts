@@ -214,7 +214,8 @@ describe("ai-providers ← settings/ai-providers/page.tsx（chain.py:532-726）"
     const tasks = await getJson<{ items: Array<{ task_key: string }> }>(
       "/ai/tasks",
     );
-    expect(tasks.body.items.length).toBe(5);
+    // 真机核对（2026-10-21）：后端 `GET /ai/tasks` 实测 7 个（含 spec_extract/product_translate）
+    expect(tasks.body.items.length).toBe(7);
 
     const providers = await getJson<{
       items: Array<{ provider: string; has_key: boolean }>;
@@ -254,7 +255,8 @@ describe("ai-providers ← settings/ai-providers/page.tsx（chain.py:532-726）"
     const bindings = await getJson<{
       items: Array<{ task_key: string; use_ai: boolean }>;
     }>("/ai/task-bindings");
-    expect(bindings.body.items.length).toBe(5);
+    // 真机核对（2026-10-21）：后端会为全部 7 个任务各返回一条绑定
+    expect(bindings.body.items.length).toBe(7);
     const enabled = await sendJson<{ use_ai: boolean; enabled: boolean }>(
       "/ai/task-bindings/email_generation",
       "PUT",

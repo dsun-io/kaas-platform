@@ -11,6 +11,9 @@ export interface LatestFxRate {
   is_stale: boolean;
 }
 
+/** `/fx-rates`（历史列表）的行形状 —— 与 latest 同形，后端返回**裸数组**。 */
+export type FxRateHistoryRow = LatestFxRate;
+
 /**
  * 最新汇率（带服务端缓存）。
  *

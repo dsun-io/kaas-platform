@@ -28,8 +28,10 @@ import {
   XCircle,
   History,
   Download,
+  Plus,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ManualResearchDialog } from "./components/manual-research-dialog";
 
 /* ── types ─────────────────────────────────────────────────────────────── */
 interface ResearchProduct {
@@ -140,6 +142,7 @@ export default function ResearchPage() {
   const [editing, setEditing] = useState<ResearchProduct | null>(null);
   const [picked, setPicked] = useState<number[]>([]);
   const [picking, setPicking] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
 
   /* ── queries ── */
   const statsQuery = useQuery({
@@ -181,7 +184,7 @@ export default function ResearchPage() {
           "/leads?page_size=200&sort=recent",
         )
       ).data,
-    enabled: tab === "pick",
+    enabled: tab === "pick" || createOpen,
   });
   const leads = leadsQuery.data?.items ?? [];
 
@@ -357,14 +360,23 @@ export default function ResearchPage() {
             <SectionCard
               title={`产品 (${productsQuery.data?.total ?? 0})`}
               action={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={exportCsv}
-                  disabled={products.length === 0}
-                >
-                  <Download className="mr-1 h-4 w-4" /> 导出 CSV
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setCreateOpen(true)}
+                  >
+                    <Plus className="mr-1 h-4 w-4" /> 手工录入
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={exportCsv}
+                    disabled={products.length === 0}
+                  >
+                    <Download className="mr-1 h-4 w-4" /> 导出 CSV
+                  </Button>
+                </div>
               }
             >
               <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -811,6 +823,18 @@ export default function ResearchPage() {
           </SectionCard>
         )}
       </div>
+
+      <ManualResearchDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        categories={categories}
+        leads={leads}
+        leadsLoading={leadsQuery.isLoading}
+        onCreated={() => {
+          refresh();
+          setTab("products");
+        }}
+      />
     </RouteGuard>
   );
 }
