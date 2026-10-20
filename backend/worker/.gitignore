@@ -6,7 +6,9 @@ __pycache__/
 .dev.vars
 .tools/
 python_modules/
-pylock.toml
+# 依赖锁文件**入库**（2026-10-20：防"每次部署解析当天最新依赖"漂移；见 AGENTS.md 本机工具链）
+# 仅忽略 POC 子目录的临时锁文件
+poc-*/pylock.toml
 
 # 共享内核镜像：由 scripts/sync-shared.ps1 从 backend/kaas_common/ 自动生成，
 # 勿手工编辑（唯一源在 backend/kaas_common/）。
