@@ -1,7 +1,9 @@
 name: deploy
 
 # 2026-10-18：生产发布（税务档案 / 产品税率 / 成本手填 / 整单保险 / 批量报价）
-# 仓库转公开后 GitHub Actions 额度限制解除；本文件既监听 main push，也支持手动触发。
+# 2026-10-20 口径：本文件**只接受手动 workflow_dispatch**（用户裁决）。
+# 顶部残留"既监听 main push"的旧注释已作废——恢复自动部署的条件见 HANDOVER_2026-10-20 §10.1
+#（额度稳定 + 系统稳定后用户下令，把下面注释掉的 on.push 加回即可）。
 
 # push 到生产分支 main 即自动构建前端并部署单 Worker "kaas"（含静态资产）。
 # 生产 secrets（JWT_SECRET / ADMIN_SETUP_TOKEN / RESEND_API_KEY）已绑定在
