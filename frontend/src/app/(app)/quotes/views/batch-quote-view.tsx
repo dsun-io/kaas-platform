@@ -20,14 +20,19 @@ import { useLatestFxRate } from "@/lib/fx/use-latest-fx";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
 import { SectionCard } from "@/components/shared/section-card";
 import { StatusBadge } from "@/components/shared/status-badge";
-import type { ExportProduct, ExportQuoteResponse } from "@contracts/export-quote";
-import type { BatchQuoteResponse, QuoteOrderItemIn } from "@contracts/quote-order";
 import type {
-  ProductTaxRate,
-  TaxArchive,
+  ExportProduct,
+  ExportQuoteResponse,
 } from "@contracts/export-quote";
+import type {
+  BatchQuoteResponse,
+  QuoteOrderItemIn,
+} from "@contracts/quote-order";
+import type { ProductTaxRate, TaxArchive } from "@contracts/export-quote";
 import { useExportProducts } from "../../quotations/v2-quote/hooks/use-export-quote-import";
 import { useProductFormulas } from "../../quotations/v2-quote/hooks/use-export-quote-calc";
 import { buildLineItem } from "../lib/line-to-item";
@@ -300,12 +305,39 @@ export function BatchQuoteView() {
 
   return (
     <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-xl border border-border/70 bg-white/60 px-4 py-2.5 text-xs text-muted-foreground">
+        <span>
+          已选客户：
+          <b className="font-medium text-foreground">{customerIds.length}</b>
+        </span>
+        <span>
+          已选询盘：
+          <b className="font-medium text-foreground">{selectedRows.length}</b>
+        </span>
+        <span>
+          预计生成：
+          <b className="font-medium text-foreground">
+            {selectedRows.length}
+          </b>{" "}
+          张报价单
+        </span>
+      </div>
+
       <SectionCard
         title="1. 选客户与询盘"
         description="勾选客户后加载其名下询盘；已关闭询盘不出现。单批最多 200 行。"
       >
         {customers.isLoading ? (
-          <p className="text-sm text-muted-foreground">加载客户…</p>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Skeleton className="h-64 w-full rounded-lg" />
+            <Skeleton className="h-64 w-full rounded-lg" />
+          </div>
+        ) : (customers.data ?? []).length === 0 ? (
+          <EmptyState
+            title="还没有客户"
+            description="先到「客户管理」创建客户与询盘，再回来批量报价。"
+            className="border-0 py-8"
+          />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             <div className="max-h-64 space-y-1 overflow-auto rounded-lg border p-2">
@@ -332,7 +364,11 @@ export function BatchQuoteView() {
                   先在左侧选择客户
                 </p>
               ) : inquiries.isLoading ? (
-                <p className="p-2 text-xs text-muted-foreground">加载询盘…</p>
+                <div className="space-y-2 p-1">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Skeleton key={i} className="h-8 w-full rounded-md" />
+                  ))}
+                </div>
               ) : (
                 (inquiries.data ?? []).map((i) => {
                   const key = `${i.customer_id}:${i.id}`;
@@ -352,7 +388,9 @@ export function BatchQuoteView() {
                       <span className="truncate">
                         {i.product_name_raw ?? "—"}
                       </span>
-                      <StatusBadge tone={i.status === "quoted" ? "success" : "default"}>
+                      <StatusBadge
+                        tone={i.status === "quoted" ? "success" : "default"}
+                      >
                         {STATUS_CN[i.status] ?? i.status}
                       </StatusBadge>
                     </label>
@@ -438,15 +476,25 @@ export function BatchQuoteView() {
 
       <SectionCard title={`3. 已选 ${selectedRows.length} 个询盘`}>
         {selectedRows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">尚未勾选询盘。</p>
+          <EmptyState
+            title="尚未勾选询盘"
+            description="在步骤 1 勾选客户与询盘后，这里会显示本批要生成的报价单。"
+            className="border-0 py-8"
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th className="p-2">询盘</th>
-                  <th className="p-2">产品</th>
-                  <th className="p-2">件数（卷）</th>
+                  <th scope="col" className="p-2">
+                    询盘
+                  </th>
+                  <th scope="col" className="p-2">
+                    产品
+                  </th>
+                  <th scope="col" className="p-2">
+                    件数（卷）
+                  </th>
                 </tr>
               </thead>
               <tbody>
