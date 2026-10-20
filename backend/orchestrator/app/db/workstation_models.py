@@ -15,7 +15,7 @@ from sqlalchemy import (
     Column, BigInteger, Integer, Text, Boolean, Numeric,
     DateTime, Date, Index, func, ForeignKey, LargeBinary, text as sa_text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from app.db.base import Base
 
 
@@ -746,4 +746,37 @@ class TradeDocDocRef(Base):
               'source_trade_doc_id', unique=True),
         Index('idx_trade_doc_doc_refs_doc', 'tenant_id', 'trade_doc_id'),
         Index('idx_trade_doc_doc_refs_source', 'tenant_id', 'source_trade_doc_id'),
+    )
+
+
+class TenantClauseTemplate(Base):
+    """团队级条款模板（A5-W1）。
+
+    一个团队维护一组常用条款（付款/装运/检验/索赔/不可抗力/仲裁），
+    每条挂若干适用单证类型（`DOC_TYPE` 18 类子集），中英双语、可排序、可软删。
+    首次读取某团队 0 条时由 Worker **懒种子** 6 条默认措辞（可编辑）。
+
+    唯一性：`(tenant_id, team_id, name)` —— 同团队内名称唯一（方便下拉辨认）；
+    软删（`is_active=false`）行仍占名字，避免"删了又建同名"产生两条历史。
+    对应迁移：202610200006_tenant_clause_templates.py（建表）
+    """
+    __tablename__ = 'tenant_clause_templates'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False, server_default='default')
+    team_id = Column(BigInteger, nullable=False)
+    doc_types = Column(ARRAY(Text), nullable=False)
+    name = Column(Text, nullable=False)
+    text_zh = Column(Text, nullable=True)
+    text_en = Column(Text, nullable=True)
+    sort_order = Column(Integer, nullable=False, server_default='0')
+    is_active = Column(Boolean, nullable=False, server_default='true')
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False,
+                        server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index('uq_tenant_clause_templates_name', 'tenant_id', 'team_id', 'name',
+              unique=True),
+        Index('idx_tenant_clause_templates_active', 'tenant_id', 'team_id', 'is_active'),
     )

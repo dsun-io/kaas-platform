@@ -4984,6 +4984,10 @@ import ws_docs_hardening  # noqa: E402,F401
 # 团队是生产端"公司级隔离"的那一层（Worker 是单租户部署，账号之间没有 tenant 隔离）。
 import ws_teams  # noqa: E402,F401
 
+# ── 条款模板库（A5-W1）：团队级常用条款 CRUD + 首次懒种子（6 类默认措辞）──
+# 契约/校验在共享内核 kaas_common.trade_doc.clause_templates；本模块只做 HTTP + DB。
+import ws_clause_templates  # noqa: E402,F401
+
 # ── 工位订阅：开通/撤销 + 未开通拦截 ──
 # 授权边界是"这个团队/个人开通了哪些工位"，不以租户鉴权（见 docs/TEAMS_AND_VISIBILITY.md）。
 import ws_workstations  # noqa: E402,F401

@@ -33,6 +33,8 @@ _SIBLING_MODULES = (
     # A7-2 单证加固 HTTP 层（事实/一致性/lint/收款/清单/导出自检）：
     # 由 main 与 ws_docs_ext 共同引用，必须一起重载，否则新 app 上缺这些路由。
     "ws_docs_hardening",
+    # A5-W1 条款模板库（团队级 CRUD + 懒种子）
+    "ws_clause_templates",
     "ws_quote_ext",
     "ws_crm_ext",
     "ws_teams",

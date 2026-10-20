@@ -12,6 +12,7 @@
 - equivalents 等价措辞白名单（A7）：只在表内判等价，绝不静默吞差异
 - consistency 一致性引擎（A7）：跨单证事实矩阵（diff_facts）/ 基线承继核对（lint_pair）
 - trigger   单证清单触发条件（A12）：受限安全求值（**无 eval/exec**）/ doc-set 标注
+- clause_templates 条款模板库（A5-W1）：默认 6 类 + doc_types 校验 + 按单证类型挑选
 """
 from .rules import (  # noqa: F401
     DOC_STATUS,
@@ -160,6 +161,19 @@ from .trigger import (  # noqa: F401
     resolve_doc_set,
     validate_trigger,
 )
+from .clause_templates import (  # noqa: F401
+    CLAUSE_DOC_TYPE_SET,
+    CLAUSE_NAME_MAX,
+    CLAUSE_TEXT_MAX,
+    DEFAULT_CLAUSE_CATEGORIES,
+    DEFAULT_CLAUSE_TEMPLATES,
+    ClauseTemplateError,
+    default_seed_rows,
+    is_valid_doc_type,
+    normalize_doc_types,
+    pick_for_doc_type,
+    validate_clause_template,
+)
 
 __all__ = [
     "DOC_STATUS", "DOC_NEXT", "DOC_TYPE_PREFIX", "MAX_SEAL_BYTES", "SYSTEM_PROMPT",
@@ -209,4 +223,9 @@ __all__ = [
     "TriggerError", "TRIGGER_SYNTAX", "TRIGGER_UNKNOWN_KEY", "TRIGGER_TYPE",
     "TRIGGER_TOO_COMPLEX", "MAX_EXPR_LENGTH", "MAX_TOKENS", "MAX_DEPTH",
     "evaluate_trigger", "validate_trigger", "parse_trigger", "resolve_doc_set",
+    # ── A5-W1 条款模板库（clause_templates）──
+    "ClauseTemplateError", "DEFAULT_CLAUSE_TEMPLATES", "DEFAULT_CLAUSE_CATEGORIES",
+    "CLAUSE_DOC_TYPE_SET", "CLAUSE_NAME_MAX", "CLAUSE_TEXT_MAX",
+    "normalize_doc_types", "is_valid_doc_type", "validate_clause_template",
+    "default_seed_rows", "pick_for_doc_type",
 ]
