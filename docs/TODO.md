@@ -48,7 +48,7 @@
 
 | # | 待办 | 说明 | 状态 |
 |---|---|---|---|
-| D1 | 生产 worker 注入 `RESEND_API_KEY` | 否则生产「忘记密码」邮件**静默不发**（实测生产 secrets 只有 4 个，缺此项）。**key 分层（2026-10-20 用户裁决）**：生产专用 key（用户命名 `kaas-生产`）已提供，存本机 gitignored `.env.local` 的 **`RESEND_API_KEY_PROD`**（不落仓库）；本地开发继续用 `RESEND_API_KEY`（旧 key，暂存同文件）；预览**不配**（防 PR 分支代码用生产身份发信；如需预览验收发信再单独建 `kaas-preview`）。发布窗口：`wrangler secret put RESEND_API_KEY --name kaas`（值取 `RESEND_API_KEY_PROD`）；发件地址 `RESET_FROM_EMAIL` 默认 `noreply@send.powervoy.com` | ⏳ |
+| D1 | 生产 worker 注入 `RESEND_API_KEY` | 否则生产「忘记密码」邮件**静默不发**（实测生产 secrets 只有 4 个，缺此项）。**key 分层（2026-10-20 用户裁决，三只 key 全部到位）**：① 生产专用 key（用户命名 `kaas-生产`）存本机 gitignored `.env.local` 的 **`RESEND_API_KEY_PROD`**（不落仓库），发布窗口 `wrangler secret put RESEND_API_KEY --name kaas`（值取它）；② 预览专用 key（`kaas-预览`）存 `.env.local` 的 **`RESEND_API_KEY_PREVIEW`**，已设为 GitHub repo secret `RESEND_API_KEY_PREVIEW` 并由 `preview.yml` 注入预览 worker（预览 worker 跑 PR 分支代码，**绝不复用生产 key**）；③ 本地开发继续用 `RESEND_API_KEY`（旧 key）。发件地址 `RESET_FROM_EMAIL` 默认 `noreply@send.powervoy.com`（三者同域名、同账号额度，独立吊销） | ⏳ |
 | D2 | R2 新密钥替换 | 旧 keys 发布前继续有效；发布窗口替换（`wrangler secret put` 与部署同窗口）；发布后用户在 R2 dashboard 删旧 token | ⏳ |
 | D3 | Hyperdrive 生产缓存关闭（可选） | 预览 config 已 `caching.disabled=True`；生产是否同改**需单独批准**（现状保持开启） | 🧭 |
 | D4 | 生产测试数据清理 | 含流失拒绝文件历史；**执行当次需用户确认** | 🧭 |
