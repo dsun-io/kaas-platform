@@ -4,6 +4,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { usePageView } from "@/lib/events/use-page-view";
 import { BookOpen, FileText, Layers, Clock } from "lucide-react";
 import { RouteGuard } from "@/components/route-guard";
+import { PageHeader, StatusBadge } from "@/components/shared";
 
 const STATS = [
   { label: "知识条目", value: 48, icon: FileText },
@@ -18,12 +19,11 @@ export default function KbPage() {
   return (
     <RouteGuard adminOnly>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">知识库管理</h1>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300">
-            建设中
-          </span>
-        </div>
+        <PageHeader
+          title="知识库管理"
+          description="产品知识与工位能力资料"
+          actions={<StatusBadge tone="warning">建设中</StatusBadge>}
+        />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {STATS.map((s) => (

@@ -741,8 +741,9 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 
 ### 9.7 本轮先做的事（checklist）
 
-- [ ] 盘点差距并落文档（本节，已完成）
-- [ ] P0-A 页头/状态/颜色/loading 收编（第一批：dashboard、quotes、orders、trade-docs）
+- [x] 盘点差距并落文档（本节，已完成）
+- [x] P0-A 页头首批：settings / events / audit-log / kb 已统一 PageHeader（2026-10-20）；其余 admin/onboarding/pricing-data/products/quotes/spec-config 等按 §9.3 继续
+- [ ] P0-A 状态/颜色/loading 收编（第一批：dashboard、quotes、orders、trade-docs）
 - [ ] P0-C 可访问性与 1366 检查
 - [ ] 每批：typecheck/lint/test/e2e/build + 截图 + 文档 + push
 

@@ -10,6 +10,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePageView } from "@/lib/events/use-page-view";
 import { RouteGuard } from "@/components/route-guard";
+import { PageHeader } from "@/components/shared";
 import { useRole } from "@/hooks/use-role";
 
 type Tab = "tenants" | "accounts" | "system";
@@ -24,7 +25,7 @@ export default function SettingsPage() {
   return (
     <RouteGuard adminOnly>
       <div className="space-y-6">
-        <h1 className="text-2xl font-semibold">系统设置</h1>
+        <PageHeader title="系统设置" description="租户、平台账号与系统操作" />
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
           <TabsList variant="pills">

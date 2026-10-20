@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { usePageView } from "@/lib/events/use-page-view";
 import { RouteGuard } from "@/components/route-guard";
+import { PageHeader } from "@/components/shared";
 import { Search, X, ChevronDown, ChevronRight } from "lucide-react";
 
 const ACTION_OPTIONS = [
@@ -188,7 +189,7 @@ export default function AuditLogPage() {
   return (
     <RouteGuard adminOnly>
       <div className="space-y-6">
-        <h1 className="text-2xl font-semibold">操作日志</h1>
+        <PageHeader title="操作日志" description="平台操作审计与追溯" />
 
         <Card>
           <CardHeader className="pb-3">
