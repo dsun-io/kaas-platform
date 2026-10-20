@@ -15,6 +15,20 @@
 > [`HANDOVER_2026-10-20_FINAL.md`](./HANDOVER_2026-10-20_FINAL.md)**（状态/资源清单/踩坑/发布检查单/待办）。
 > 本文件继续只做"问题状态"滚动口径。
 >
+> **（2026-10-20 晚 · 停止点：开发按用户指令停止；交接与剩余工作已落盘；过时文档归档）**
+>
+> 用户指令："不继续任务了，把现状和剩下的工作全部写进交接文档；把过时文档归档（不要动前端 agent 的交接文档）；
+> 确保交接 agent 能直接检索到最新文档；然后推送到远程。" 已完成收尾：
+> ① **停止点与剩余工作**写入 [`HANDOVER_2026-10-20_FINAL.md`](./HANDOVER_2026-10-20_FINAL.md) **§0.2**
+> （当前分支/PR/CI/预览状态、已完成的 F1–F5 + A1/A3/A8/A9、剩余 A4/A5/A6/A7/B/C 逐项与前置、恢复路径与门禁命令）；
+> ② **过时文档归档**：`ENV_VERIFICATION_2026-10-19.md`（三环境快照已过时）移入
+> `docs/archive/2026-10-20-backend-closeout/`；`E2E_GUIDE.md` 就地更新到 2026-10-20 口径（27 条 = 23+4）；
+> **前端线文档未动**（`UI_UX_OPTIMIZATION_2026-10-20.md` / `UI_BACKEND_DEPENDENCIES_2026-10-20.md` / `docs/ui-redesign/**`）；
+> ③ **检索入口**：[`docs/README.md`](./README.md) 已更新状态、先读顺序（HANDOVER §0.2 提前）与归档批次表；
+> 根 `README.md` / `DEPLOY.md` 的旧文档引用已改指归档或新交接。
+> 代码状态不变：分支 `feat/trade-doc-content-a` / PR #5 `clean` / 四条 CI 绿（代码 head `743bce5`）/
+> 预览 `kaas-preview-pr-5`；生产发布仍待用户下令（迁移 head `202610200003` 随发布应用）。
+>
 > **（2026-10-20 · 文档归档与交接索引）**
 >
 > 过时文档已移入 `docs/archive/2026-10-20-p2-closeout/`（方案 B/S4/技术栈/安全/税务/批量报价/旧 e2e/
@@ -336,7 +350,8 @@
 >    **待首次真实 PR 验证**：preview.yml 端到端（CF token preflight 是首道关）；预览 worker secrets
 >    （JWT_SECRET 等）repo secrets 有则注入、无则告警不阻塞——预览登录体验取决于此（要不要补进
 >    repo secrets 待用户拍板）。生产桶仍 `kaas-files`，改名 `kaas-prod-storage` 另立项（不动 S5）。
->    详见 `scripts/preview/README.md` 与 `docs/ENV_VERIFICATION_2026-10-19.md` §2。
+>    详见 `scripts/preview/README.md` 与归档的
+>    `docs/archive/2026-10-20-backend-closeout/ENV_VERIFICATION_2026-10-19.md` §2。
 > 12. **同日收口杂项（2026-10-20）**：① **Rate Limiting ✅（U-S4）**：免费套餐仅支持 10s 窗口，
 >    落地为登录/注册 **2 req/10s/IP**（≈12/min，非原建议 5/min），实测 401→401→429×4 生效；
 >    ② CI 静态门禁脚本路径修复（`../scripts` → `../../scripts`，billing 冻结期 CI 从未真跑才暴露，
