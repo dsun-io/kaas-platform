@@ -11,6 +11,7 @@
 由 main.py 文件末尾 `import chain` 挂载（复用 main 的 app/_acquire/_get_current_user）。
 """
 import json
+import logging
 import os
 import re
 import time
@@ -42,6 +43,8 @@ from dbjson import row_to_dict as _row_to_dict
 # 不把 cust_inquiries.status 当成交依据：迁移 202610180005 把 won/lost 都映射成
 # closed，closed 已不区分"成交"与"流失"。
 from inquiry_stage import STAGE_COMPLETED, STAGE_ORDER, STAGE_SHIPMENT
+
+logger = logging.getLogger(__name__)
 
 RESEND_API_URL = "https://api.resend.com/emails"
 VAR_RE = re.compile(r"\{\{\s*(\w+)\s*\}\}")
@@ -509,7 +512,7 @@ async def run_ai_task(conn, task_key: str, payload: dict) -> dict:
                              "success", None, latency)
             return {"result": result, "path": f"ai:{provider_name}",
                     "task": task_key, "latency_ms": latency}
-        except Exception as e:
+        except Exception as e:  # 有意兜底：该 provider 失败记入用量日志，继续 fallback 链
             latency = int((time.perf_counter() - started) * 1000)
             await _log_usage(conn, task_key, provider_name, model, {},
                              "failed", str(e)[:500], latency)
@@ -642,7 +645,7 @@ async def ai_test_provider(name: str, request: Request, user: dict = Depends(_ge
             return {"ok": True,
                     "latency_ms": int((time.perf_counter() - started) * 1000),
                     "reply": content[:100], "usage": usage}
-        except Exception as e:
+        except Exception as e:  # 有意兜底：连通性探测失败如实返回 ok=False（错误已带出）
             return {"ok": False,
                     "latency_ms": int((time.perf_counter() - started) * 1000),
                     "error": str(e)[:500]}
@@ -886,16 +889,16 @@ async def _enrich_product(conn, lead: dict) -> None:
         try:
             res = await run_ai_task(conn, "spec_extract", lead)
             lead["spec_normalized"] = res["result"].get("spec_normalized")
-        except Exception:
-            pass
+        except Exception as _exc:  # 有意兜底：AI 规格抽取失败保留原值继续，但留下日志
+            logger.warning("[leadgen] spec_extract failed: %s: %s", type(_exc).__name__, _exc)
     if lead.get("product_name") and not lead.get("product_name_cn"):
         try:
             res = await run_ai_task(conn, "product_translate", lead)
             cn = res["result"].get("product_name_cn")
             if cn:
                 lead["product_name_cn"] = cn
-        except Exception:
-            pass
+        except Exception as _exc:  # 有意兜底：AI 翻译失败保留原值继续，但留下日志
+            logger.warning("[leadgen] product_translate failed: %s: %s", type(_exc).__name__, _exc)
 
 
 async def _run_pipeline(conn, run_id: int, config: dict, csv_content: Optional[bytes],
@@ -953,7 +956,7 @@ async def _run_pipeline(conn, run_id: int, config: dict, csv_content: Optional[b
             """UPDATE leadgen_runs SET status='succeeded', leads_found=$2,
                leads_kept=$3, finished_at=NOW() WHERE id=$1""",
             run_id, len(raw), inserted)
-    except Exception as e:
+    except Exception as e:  # 有意兜底：run 级失败如实落库（status='failed' + error 摘要）
         await conn.execute(
             """UPDATE leadgen_runs SET status='failed', error=$2, finished_at=NOW()
                WHERE id=$1""", run_id, str(e)[:1000])
@@ -1559,7 +1562,7 @@ async def lead_patch(lead_id: int, body: LeadPatch, request: Request,
             if isinstance(raw_val, str):
                 try:
                     raw_val = json.loads(raw_val)
-                except Exception:
+                except json.JSONDecodeError:
                     raw_val = {}
             merged = dict(raw_val or {})
             merged.update(fields["notes_raw"])
@@ -1644,7 +1647,7 @@ async def _send_one(conn, msg: dict, mailbox: dict) -> dict:
                    WHERE tenant_id=$1 AND id=$2""",
                 DEFAULT_TENANT, msg["lead_id"])
         return {"status": "sent"}
-    except Exception as e:
+    except Exception as e:  # 有意兜底：外联发送失败如实落库 status='failed' 并带出错误
         err = str(e)[:500]
         await conn.execute(
             """UPDATE outreach_messages SET status='failed', error=$3
@@ -1769,7 +1772,7 @@ async def mb_test(mailbox_id: int, to: str, request: Request,
             if status not in (200, 201):
                 raise RuntimeError(f"HTTP {status}: {text[:300]}")
             return {"status": "sent", "resend_message_id": json.loads(text).get("id")}
-        except Exception as e:
+        except Exception as e:  # 有意兜底：连通性测试失败如实返回 failed（SMTP/HTTP 任意错误）
             return {"status": "failed", "error": str(e)[:500]}
 
 
@@ -2040,7 +2043,7 @@ async def _crawl_one(conn, lead: dict) -> dict:
                 "product_name": merged.get("product_name"),
                 "has_image": bool(merged.get("product_image_url")),
                 "has_spec": bool(merged.get("spec_raw"))}
-    except Exception as e:
+    except Exception as e:  # 有意兜底：抓取失败落库 crawl_status='failed' 并返回错误
         await conn.execute(
             """UPDATE lead_candidates SET crawl_status='failed', crawled_at=NOW(),
                updated_at=NOW() WHERE tenant_id=$1 AND id=$2""",

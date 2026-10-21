@@ -13,7 +13,7 @@ stdlib only（Pyodide 可跑），与 amount_rules 同风格。
 """
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
 __all__ = [
@@ -62,7 +62,7 @@ def _dec(v: Any) -> Optional[Decimal]:
         return None
     try:
         return Decimal(str(v))
-    except Exception:  # noqa: BLE001 - 非数值按"缺数据"处理
+    except InvalidOperation:  # 非数值按"缺数据"处理
         return None
 
 

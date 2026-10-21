@@ -20,7 +20,7 @@ async def main() -> None:
         name = r["tablename"]
         try:
             cnt = await conn.fetchval(f'select count(*) from "{name}"')
-        except Exception as exc:  # noqa: BLE001
+        except asyncpg.PostgresError as exc:
             cnt = f"err: {exc}"
         print(f"{name}: {cnt}")
     await conn.close()

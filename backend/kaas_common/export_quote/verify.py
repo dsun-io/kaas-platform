@@ -19,7 +19,7 @@ import io
 import os
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import Decimal, localcontext
+from decimal import Decimal, InvalidOperation, localcontext
 from fractions import Fraction
 from typing import Any, Optional
 
@@ -125,7 +125,7 @@ def verify_precision(result: QuoteResult) -> VerificationReport:
     except (EngineError, ExpressionError) as exc:
         rep.issues.append(Issue(2, 0, "Fraction 重算", f"无法在精确模式下重算: {exc}"))
         return rep
-    except Exception as exc:  # noqa: BLE001 - 非整数指数/无理开方
+    except Exception as exc:  # noqa: BLE001 - 有意兜底：Fraction 精确重算失败（非整数指数/无理开方）如实报 issue
         rep.issues.append(Issue(2, 0, "Fraction 重算", f"无法在精确模式下重算: {exc}"))
         return rep
 
@@ -325,7 +325,7 @@ def _compare_cell(rep: VerificationReport, row_no: int, col, mem_val, file_val) 
         want = quantize(to_decimal(mem_val), nd) if nd is not None else to_decimal(mem_val)
         try:
             got = to_decimal(file_val)
-        except Exception:  # noqa: BLE001
+        except (InvalidOperation, TypeError, ValueError):
             rep.issues.append(Issue(3, row_no, col.label, f"成品值不可解析为数值: {file_val!r}"))
             return
         nd_cmp = nd if nd is not None else 6

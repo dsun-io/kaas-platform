@@ -57,7 +57,7 @@ from kaas_common.trade_doc import (
 
 try:  # pragma: no cover - 真实 Workers（Pyodide）带 zlib，gzip 可用；缺了就降级，不让 import 炸掉整个 Worker
     import gzip
-except Exception:  # noqa: BLE001
+except ImportError:
     gzip = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
@@ -230,7 +230,7 @@ async def run_lead_scan(env, tenant_id: str = DEFAULT_TENANT) -> dict:
         async with _acquire(env) as conn:
             async with conn.transaction():
                 result = await scan_replied_leads(conn, tenant_id)
-    except Exception as exc:  # noqa: BLE001 - Cron 失败不能让调度器变错误态
+    except Exception as exc:  # noqa: BLE001 - 有意兜底：Cron 失败不能让调度器变错误态
         logger.warning("[cron] scan_replied_leads failed: %s: %s", type(exc).__name__, exc)
         return {"scanned": 0, "created": 0, "already_linked": 0,
                 "error": f"{type(exc).__name__}: {exc}"}
@@ -324,7 +324,7 @@ def _r2_body(data: bytes, content_type: str) -> tuple[Any, Any]:
         from js import Uint8Array  # type: ignore
 
         return Uint8Array.new(data), opts
-    except Exception:  # noqa: BLE001 - 本地 CPython / 极老 runtime
+    except Exception:  # noqa: BLE001 - 有意兜底：本地 CPython / 极老 runtime 无 js 互操作
         return data, opts
 
 
@@ -337,7 +337,7 @@ def r2_bucket(env):
         from js import FILES  # type: ignore  (旧 runtime 的全局绑定)
 
         return FILES
-    except Exception:  # noqa: BLE001
+    except ImportError:
         return None
 
 
@@ -416,7 +416,7 @@ async def run_archive_events(env, now: Optional[datetime] = None) -> dict:
                     )
             logger.info("[cron] archive_events ok: %s", result)
             return result
-        except Exception as exc:  # noqa: BLE001 - Cron 失败不能让调度器变错误态
+        except Exception as exc:  # noqa: BLE001 - 有意兜底：Cron 失败不能让调度器变错误态
             last_error = exc
             logger.warning(
                 "[cron] archive_events attempt %d/%d failed: %s: %s",
@@ -500,7 +500,7 @@ async def check_render_fingerprints(conn, request) -> dict:
                 doc_id, request, CRON_ACTOR)
             check = render_fingerprint_check(
                 frozen, assembled.get("data"), checked_at=checked_at.isoformat())
-        except Exception as exc:  # noqa: BLE001 —— 一张失败不能拖垮整轮
+        except Exception as exc:  # noqa: BLE001 - 有意兜底：一张失败不能拖垮整轮
             logger.warning(
                 "[cron] render_check doc=%d 装配失败（如实标 unavailable）：%s: %s",
                 doc_id, type(exc).__name__, exc,
@@ -541,7 +541,7 @@ async def run_check_render_fingerprints(env) -> dict:
             result = await check_render_fingerprints(conn, _CronRequest(env))
         logger.info("[cron] check_render_fingerprints ok: %s", result)
         return result
-    except Exception as exc:  # noqa: BLE001 - Cron 失败不能让调度器变错误态
+    except Exception as exc:  # noqa: BLE001 - 有意兜底：Cron 失败不能让调度器变错误态
         logger.warning("[cron] check_render_fingerprints failed: %s: %s", type(exc).__name__, exc)
         return {"checked": 0, "error": f"{type(exc).__name__}: {exc}"}
 

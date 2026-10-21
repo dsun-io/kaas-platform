@@ -370,7 +370,7 @@ async def _payload_with_render_fingerprint(
     try:
         assembled = await _main.get_trade_doc_render_data(doc_id, request, user)
         meta = render_fingerprint(assembled.get("data"), frozen_at=frozen_at)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - 有意兜底：装配失败不阻断签发，指纹如实标不可用
         logger.warning("[trade-docs] 渲染指纹装配失败（签发继续，指纹标注不可用）：%s: %s",
                          type(exc).__name__, exc)
         meta = render_fingerprint(None, frozen_at=frozen_at)
@@ -417,7 +417,7 @@ async def _check_one_doc_render_fingerprint(d: dict, doc_id: int, request: Reque
     try:
         assembled = await _main.get_trade_doc_render_data(doc_id, request, user)
         return render_fingerprint_check(frozen, assembled.get("data"), checked_at=checked_at)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - 有意兜底：装配失败如实标出，不假装匹配
         logger.warning("[trade-docs] 对账时装配失败（如实标出，不假装匹配）：%s: %s",
                          type(exc).__name__, exc)
         return render_fingerprint_check(
@@ -477,7 +477,7 @@ async def batch_check_trade_doc_render_fingerprints(
         try:
             check = await _check_one_doc_render_fingerprint(d, doc_id, request, user)
             items.append(render_check_card(doc_id, d.get("doc_no"), check))
-        except Exception as exc:  # noqa: BLE001 —— 一张炸了不能拖垮整批
+        except Exception as exc:  # noqa: BLE001 - 有意兜底：一张炸了不能拖垮整批
             logger.warning("[trade-docs] 批量对账：单据 %d 意外失败（其余照常交付）：%s: %s",
                              doc_id, type(exc).__name__, exc)
             items.append(render_check_card(doc_id, d.get("doc_no"), error=type(exc).__name__))
@@ -537,7 +537,7 @@ async def _translate_fields(request, fields: dict) -> tuple[dict, str]:
                                         usage, "success", None, latency)
                 # 解析层兜底：未翻译到的键回退原文（不丢数据）
                 return parse_translation(content, fields), f"ai:{provider_name}"
-            except Exception as exc:      # 单 Provider 失败不致命：继续 fallback 链
+            except Exception as exc:      # 有意兜底：单 Provider 失败不致命，继续 fallback 链
                 latency = int((time.perf_counter() - started) * 1000)
                 await _chain._log_usage(conn, TRANSLATE_TASK_KEY, provider_name, model,
                                         {}, "failed", str(exc)[:500], latency)

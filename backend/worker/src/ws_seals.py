@@ -251,7 +251,7 @@ async def get_seal_render_content(
 
     try:
         secret = _main._jwt_secret(request)
-    except Exception:  # noqa: BLE001 - 无密钥环境一律拒绝
+    except Exception:  # noqa: BLE001 - 有意兜底：无密钥环境按空 secret 处理，后续验签一律拒绝
         secret = ""
     if not verify_asset_token(secret, "seal", seal_id, t):
         raise HTTPException(status_code=401, detail={

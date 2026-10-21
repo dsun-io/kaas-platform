@@ -52,7 +52,7 @@ async def _http_get_json(url: str, timeout: int = 20):
         resp = await fetch(url)  # 最小参数：部分 runtime 对 options 里的 headers 处理不一致
         status = int(resp.status)
         text = await resp.text()
-    except Exception as exc:  # noqa: BLE001 - Pyodide JsException → 可读 RuntimeError
+    except Exception as exc:  # noqa: BLE001 - 有意兜底：Pyodide JsException 包成可读 RuntimeError 重抛
         raise RuntimeError(f"fetch failed: {type(exc).__name__}: {exc}") from exc
     if status != 200:
         raise RuntimeError(f"fx provider HTTP {status}: {str(text)[:200]}")
@@ -115,7 +115,7 @@ async def _ensure_fresh_fx(conn, base_currency: str, quote_currency: str) -> dic
     try:
         payload = await _http_get_json(FX_PROVIDER_URL.format(base=base))
         rate, rate_date = parse_fx_payload(payload, quote)
-    except Exception as exc:  # noqa: BLE001 - 外部源失败时降级到缓存，而不是把报价打挂
+    except Exception as exc:  # noqa: BLE001 - 有意兜底：外部源失败降级到缓存，而不是把报价打挂
         if row is not None:
             return _fx_out(row, stale=True)
         raise HTTPException(status_code=503, detail={

@@ -249,7 +249,7 @@ async def create_clause_template(
             DEFAULT_TENANT, team_id, normalized["name"], normalized["doc_types"],
             normalized["text_zh"], normalized["text_en"], normalized["sort_order"],
         )
-    except Exception as exc:  # uq_tenant_clause_templates_name
+    except Exception as exc:  # 有意兜底：仅唯一键撞码转 409（uq_tenant_clause_templates_name），其余原样重抛
         if "uq_tenant_clause_templates_name" in str(exc) or "duplicate key" in str(exc):
             raise HTTPException(status_code=409, detail={
                 "error": "conflict", "code": "CLAUSE_NAME_TAKEN",
@@ -298,7 +298,7 @@ async def update_clause_template(
             normalized["doc_types"], normalized["text_zh"], normalized["text_en"],
             normalized["sort_order"],
         )
-    except Exception as exc:  # 改名撞唯一键
+    except Exception as exc:  # 有意兜底：仅改名撞唯一键转 409，其余原样重抛
         if "uq_tenant_clause_templates_name" in str(exc) or "duplicate key" in str(exc):
             raise HTTPException(status_code=409, detail={
                 "error": "conflict", "code": "CLAUSE_NAME_TAKEN",

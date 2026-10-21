@@ -438,7 +438,7 @@ def _loose_eq(a, b) -> bool:
         return Decimal(str(a)) == Decimal(str(b))
     except (InvalidOperation, TypeError, ValueError):
         # 只有「真·非数值」（如 "abc"、"1.5mm"）才退回字符串比较。
-        # 这里**不能**用宽泛的 `except Exception`：它会把 NameError / AttributeError
+        # 这里**不能**用宽泛的裸 except（Exception 基类）：它会把 NameError / AttributeError
         # 这类编程错误一并吞掉，使上面的数值分支静默失效。
         # 历史缺陷即由此产生：模块内原本缺少 `Decimal` 导入，导致 2.0 与 2
         # 被当成两个不同的值，导出 Excel 再回导会丢掉一半规格行。
@@ -478,7 +478,7 @@ def _numeric_value(ni, raw, row_index: int):
     parsed = None
     try:
         parsed = to_decimal(raw)
-    except Exception:
+    except (InvalidOperation, TypeError, ValueError):
         # 只容忍**与声明单位一致**的后缀（"1.2m" 之于 unit="m"）。
         # 不能盲 strip：那会把 "10cm" 当成 10mm 用，差十倍 ——
         # 单位换算是**导入器**的职责（它按表头单位换算），引擎不跨单位换算。
@@ -487,7 +487,7 @@ def _numeric_value(ni, raw, row_index: int):
             if len(s) > len(ni.unit) and s.endswith(ni.unit):
                 try:
                     parsed = to_decimal(s[: -len(ni.unit)].strip())
-                except Exception:
+                except (InvalidOperation, TypeError, ValueError):
                     parsed = None
     if parsed is None:
         raise EngineError(

@@ -201,12 +201,12 @@ def _r2_bucket(request=None):
         bucket = getattr(env, "FILES", None) if env is not None else None
         if bucket is not None:
             return bucket
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 有意兜底：读 env 绑定异常时退回旧 js 全局
         pass
     try:
         from js import FILES  # type: ignore  (旧 runtime 的全局绑定)
         return FILES
-    except Exception:  # noqa: BLE001
+    except ImportError:
         return None
 
 
@@ -217,7 +217,7 @@ def _pr_slug(request=None):
     """
     try:
         raw = _main._binding("PR_SLUG", request)
-    except Exception:  # noqa: BLE001 - _binding 在极端环境下可能抛，宁可退回生产行为
+    except Exception:  # noqa: BLE001 - 有意兜底：_binding 在极端环境下可能抛，宁可退回生产行为
         raw = None
     return normalize_pr_slug(raw)
 
@@ -239,7 +239,7 @@ async def _store_bytes(request: Request, key: str, data: bytes,
                 region=cfg["region"], expires=cfg["expires"])
             await _js_fetch_bytes(url, "PUT", data, content_type)
             return "s3", key, None
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 - 有意兜底：S3 失败回退 R2 binding
             logger.warning("[files] S3 put 失败，回退 binding：%s: %s", type(exc).__name__, exc)
 
     bucket = _r2_bucket(request)
@@ -261,7 +261,7 @@ async def _store_bytes(request: Request, key: str, data: bytes,
                 opts = {"httpMetadata": {"contentType": content_type}}
             await bucket.put(key, body, opts)
             return "s3", key, None
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 - 有意兜底：R2 失败回退 inline，不把上传变成 500
             # 回退：不把用户的上传动作变成一个 500；落库并如实标注 storage='inline'
             logger.warning("[files] R2 put 失败，回退 inline：%s: %s", type(exc).__name__, exc)
     return "inline", key, data
@@ -274,7 +274,7 @@ def _to_bytes(buf) -> bytes:
     """
     try:
         return bytes(buf)
-    except Exception:  # noqa: BLE001 - 旧 runtime 返回 JsProxy
+    except Exception:  # noqa: BLE001 - 有意兜底：旧 runtime 返回 JsProxy，退 bytes(buf.to_py())
         return bytes(buf.to_py())
 
 
@@ -291,7 +291,7 @@ async def _load_bytes(request: Request, row) -> Optional[bytes]:
                 access_key=cfg["access_key"], secret_key=cfg["secret_key"],
                 region=cfg["region"], expires=cfg["expires"])
             return await _js_fetch_bytes(url, "GET")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 - 有意兜底：S3 失败回退 R2 binding
             logger.warning("[files] S3 get 失败，回退 binding：%s: %s", type(exc).__name__, exc)
     bucket = _r2_bucket(request)
     if bucket is None:
@@ -305,9 +305,9 @@ async def _load_bytes(request: Request, row) -> Optional[bytes]:
         # 之前 `bytes(buf.to_py())` 抛 AttributeError 被吞成 None → 线上 R2 文件读回 404。
         try:
             return bytes(buf)
-        except Exception:  # noqa: BLE001 - 极老 runtime 返回 JsProxy
+        except Exception:  # noqa: BLE001 - 有意兜底：极老 runtime 返回 JsProxy
             return _to_bytes(buf)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - 有意兜底：R2 get 失败如实返回 None（已记日志）
         logger.warning("[files] R2 get 失败：%s: %s", type(exc).__name__, exc)
         return None
 
@@ -708,7 +708,7 @@ def _pdf_or_error(data: bytes) -> bytes:
     head = data[:160]
     try:
         text = head.decode("utf-8", "replace")
-    except Exception:  # noqa: BLE001
+    except UnicodeError:  # 防御：errors="replace" 下实际到不了这里
         text = repr(head)
     raise RuntimeError(f"非 PDF 响应（{len(data)}B）：{text}")
 
@@ -786,7 +786,7 @@ async def _render_pdf_bytes(request: Request, html: str) -> tuple[bytes, str]:
     if binding is not None:
         try:
             return await _binding_quick_action_pdf(binding, html), "binding"
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 - 有意兜底：binding 失败如实 502，不偷偷换 REST 掩盖故障
             # binding 已声明却失败 ⇒ 如实 502；不再偷偷换 REST（那会掩盖真实故障）
             logger.warning("[files] browser binding 出 PDF 失败：%s: %s", type(exc).__name__, exc)
             raise HTTPException(status_code=502, detail={
@@ -928,13 +928,13 @@ def _public_base(request) -> str:
     headers = getattr(request, "headers", None) or {}
     try:
         host = headers.get("host") or ""
-    except Exception:  # noqa: BLE001 - 假 request（测试）没有 headers
+    except AttributeError:  # 假 request（测试）没有 headers
         host = ""
     if not host:
         return ""
     try:
         scheme = headers.get("x-forwarded-proto") or ""
-    except Exception:  # noqa: BLE001
+    except AttributeError:
         scheme = ""
     if not scheme:
         scheme = getattr(getattr(request, "url", None), "scheme", "") or "https"
@@ -951,7 +951,7 @@ def _asset_url(request, purpose: str, ref_id) -> str:
 
         token = make_asset_token(
             _main._jwt_secret(request), purpose, ref_id, ttl=_ASSET_TTL_SECONDS)
-    except Exception:  # noqa: BLE001 - 无密钥/测试环境：回退内联
+    except Exception:  # noqa: BLE001 - 有意兜底：无密钥/测试环境回退内联
         return ""
     if purpose == "file":
         return f"{base}/api/v1/file-objects/{ref_id}/render-content?t={token}"
@@ -1090,7 +1090,7 @@ async def r2_debug(request: Request, key: str = "_debug/r2-test.txt",
             opts = {}
         await bucket.put(key, body, opts)
         out["put_ok"] = True
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - 有意兜底：诊断探针把错误写进 out，不抛穿
         out["put_error"] = f"{type(exc).__name__}: {exc}"
     try:
         obj = await bucket.get(key)
@@ -1101,9 +1101,9 @@ async def r2_debug(request: Request, key: str = "_debug/r2-test.txt",
             try:
                 out["bytes_len"] = len(_to_bytes(buf))
                 out["get_ok"] = True
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 - 有意兜底：诊断探针把错误写进 out，不抛穿
                 out["to_py_error"] = f"{type(exc).__name__}: {exc}"
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - 有意兜底：诊断探针把错误写进 out，不抛穿
         out["get_error"] = f"{type(exc).__name__}: {exc}"
     return out
 

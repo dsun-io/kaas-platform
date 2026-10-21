@@ -36,7 +36,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
 from . import equivalents
@@ -360,7 +360,7 @@ def diff_facts(
 def _as_decimal(value: Any) -> Optional[Decimal]:
     try:
         return Decimal(str(value))
-    except Exception:  # noqa: BLE001 - 非数值就按"没法算差额"处理
+    except InvalidOperation:  # 非数值就按"没法算差额"处理
         return None
 
 

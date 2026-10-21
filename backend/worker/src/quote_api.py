@@ -146,7 +146,7 @@ def _ensure_engine_loaded() -> bool:
         # 这里只记录，不改已经定型的模型默认值（改不了），但让它在 /health 之外可见。
         if _MAX_ROWS != MAX_ROWS:
             globals()["_ENGINE_CONST_DRIFT"] = "MAX_ROWS: 本地 %s / 引擎 %s" % (MAX_ROWS, _MAX_ROWS)
-    except Exception as _exc:  # noqa: BLE001 - 任何导入失败都不该让 Worker 起不来
+    except Exception as _exc:  # noqa: BLE001 - 有意兜底：任何引擎导入失败都不该让 Worker 起不来
         _ENGINE_IMPORT_ERROR = "%s: %s" % (type(_exc).__name__, _exc)
         globals().update({name: None for name in _ENGINE_SYMBOLS})
         for _name in ("EngineError", "PricingError", "TermsError", "ImportError_"):
@@ -375,7 +375,7 @@ async def export_quote_products(request: Request, user: dict = Depends(_get_curr
     for key, spec_dict in best.items():
         try:
             specs[key] = spec_from_dict(spec_dict)
-        except Exception:  # noqa: BLE001 - 单条坏定义不拖垮整个列表
+        except Exception:  # noqa: BLE001 - 有意兜底：单条坏定义跳过，不拖垮整个列表
             continue
 
     # 需求 16：被本团队停用的产品不出现在报价下拉（复用 tenant_workstation_products）
@@ -571,7 +571,7 @@ async def _load_cost_table(request: Request, user: dict, body: "_CalculateIn",
     if product is None:
         try:
             product = get_product(body.product_key)
-        except Exception:
+        except (KeyError, TypeError):
             return {}  # 产品不存在时让引擎报它自己的错，这里不抢先
     if not product.pricing_key:
         return {}
@@ -660,7 +660,7 @@ async def _effective_product_raw(request: Request, user: dict, product_key: str)
             return spec
     try:
         product = get_product(product_key)
-    except Exception:
+    except (KeyError, TypeError):
         return None
     return product
 
@@ -1115,12 +1115,12 @@ async def export_quote_import_calculate(
     raw.setdefault("product_key", product_key)
     try:
         body = _CalculateIn(**raw)
-    except Exception as exc:
+    except ValueError as exc:  # pydantic ValidationError 是 ValueError 子类
         # 用 pydantic 自己的 JSON 序列化再 loads：`exc.errors()` 的 ctx 里可能带
         # 原始异常对象，直接塞进 detail 会让 422 变成 500（FastAPI 编不出来）。
         try:
             detail = json.loads(exc.json())[:5]  # type: ignore[attr-defined]
-        except Exception:
+        except (ValueError, TypeError, AttributeError):
             detail = str(exc)
         raise HTTPException(status_code=422, detail={"error": "invalid_payload", "message": detail})
 
@@ -1279,7 +1279,7 @@ def _quote_json(row: dict, item_count: int = 0) -> dict:
     if isinstance(d.get("tax_snapshot"), str):
         try:
             d["tax_snapshot"] = json.loads(d["tax_snapshot"])
-        except Exception:
+        except json.JSONDecodeError:
             d["tax_snapshot"] = None
     return row_to_quote(d, item_count)
 
@@ -1908,7 +1908,7 @@ async def create_quote_batch(request: Request, body: _BatchQuoteIn,
                 "code": detail.get("code") or f"HTTP_{exc.status_code}",
                 "detail": detail.get("detail") or str(exc.detail),
             })
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 - 有意兜底：单组失败如实进 failed，不拖垮整批
             failed.append({
                 "inquiry_id": group.inquiry_id,
                 "customer_id": str(group.customer_id),

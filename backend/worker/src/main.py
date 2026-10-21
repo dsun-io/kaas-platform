@@ -5,6 +5,7 @@
 """
 import os
 import re
+import logging
 import contextvars
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
@@ -37,6 +38,8 @@ db = _module_from_spec(_db_spec)
 _db_spec.loader.exec_module(db)
 
 DEFAULT_TENANT = "default"
+
+logger = logging.getLogger(__name__)
 
 import json as _json
 
@@ -243,7 +246,7 @@ async def cors_middleware(request: Request, call_next):
         )
     try:
         response = await call_next(request)
-    except Exception:
+    except Exception:  # 有意兜底：见下（2026-10-19 生产实证，ServerErrorMiddleware 绕过会丢 CORS 头）
         # 未捕获异常由外层的 ServerErrorMiddleware 接走时会绕过本中间件，
         # 浏览器只能看到"无 CORS 头"，把真实 500 伪装成跨域问题（2026-10-19 生产实证）。
         # 这里自己兜一层：带上 CORS 头的 500，前端至少能读到错误。
@@ -653,6 +656,7 @@ async def _send_reset_email(request: Request, to_email: str, reset_link: str) ->
         )
         return status in (200, 201)
     except Exception:
+        logger.exception("password reset email send failed")
         return False
 
 
@@ -1048,7 +1052,7 @@ async def import_csv(request: Request, file: UploadFile = File(...), user: dict 
                     DEFAULT_TENANT, str(user["id"]), file.filename, *vals,
                 )
                 inserted += 1
-            except Exception as e:
+            except Exception as e:  # 有意兜底：单行坏数据记入 errors，不拖垮整批 CSV
                 errors.append({"row": i, "error": str(e)})
 
     return {"status": "success", "processed": processed, "inserted": inserted, "errors": len(errors), "error_details": errors[:10]}
@@ -1917,7 +1921,7 @@ async def dashboard_summary(
 # 只在 /health 里显示 loaded=false —— 部署后一眼就能确认打包链路是否通。
 try:
     from kaas_common import core_health as _core_health
-except Exception:  # noqa: BLE001 - 任何加载失败都不应阻断 Worker
+except Exception:  # noqa: BLE001 - 有意兜底：打包未带上 kaas_common 也不阻断 Worker 启动
     def _core_health():  # type: ignore[misc]
         return {"core": "kaas_common", "loaded": False}
 
@@ -1930,7 +1934,7 @@ async def health():
     try:
         from kaas_common.preview import normalize_pr_slug as _nps
         slug = _nps(_binding("PR_SLUG"))
-    except Exception:  # noqa: BLE001 - 健康检查绝不应因探针失败而挂
+    except Exception:  # noqa: BLE001 - 有意兜底：健康检查探针失败不挂 /health
         slug = None
     if slug:
         body["preview"] = {"pr_slug": slug}
@@ -1980,7 +1984,8 @@ async def create_event(body: EventCreate, request: Request,
             )
             return {"id": str(row["id"])}
     except Exception:
-        # 落库失败也吸收，避免前端疯狂重试
+        logger.exception("analytics event persist failed; absorbing to avoid retry storm")
+        # 落库失败也吸收，避免前端疯狂重试（有意兜底，见 logger.exception 堆栈）
         return {"id": "absorbed"}
 
 
@@ -2171,7 +2176,7 @@ async def list_pricing_data(
         raise HTTPException(status_code=422, detail="product_key is required")
     try:
         product = quote_api.get_product(product_key)
-    except Exception:
+    except (KeyError, TypeError):  # 引擎对未注册产品抛 KeyError；TypeError=引擎符号缺失（已先 _require_engine）
         raise HTTPException(status_code=404, detail=f"未知产品: {product_key}")
 
     scope = (request.query_params.get("scope") or "own").strip()
@@ -2280,7 +2285,7 @@ async def create_pricing_data(
         raise HTTPException(status_code=422, detail="product_key is required")
     try:
         product = quote_api.get_product(product_key)
-    except Exception:
+    except (KeyError, TypeError):
         raise HTTPException(status_code=404, detail=f"未知产品: {product_key}")
     if not product.pricing_key:
         raise HTTPException(

@@ -32,7 +32,7 @@ import csv
 import io
 import re
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable, Mapping
 
 from .models import ProductSpec
@@ -655,7 +655,7 @@ def _display_value(value: Any, factor: Decimal) -> Any:
         return value
     try:
         q = dec(str(value)) / factor
-    except Exception:  # pragma: no cover - 非数值轴不换算
+    except (InvalidOperation, TypeError, ValueError, ZeroDivisionError):  # pragma: no cover - 非数值轴不换算
         return value
     q = q.normalize()
     if q == q.to_integral_value():

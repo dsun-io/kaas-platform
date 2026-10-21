@@ -260,7 +260,7 @@ def run(left_base: str, right_base: str, requests: list, delay: float,
 def main() -> int:
     try:
         sys.stdout.reconfigure(encoding="utf-8")
-    except Exception:
+    except (AttributeError, OSError, ValueError):
         pass
 
     parser = argparse.ArgumentParser(description="金标对照 harness 原型")

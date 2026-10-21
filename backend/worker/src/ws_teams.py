@@ -137,7 +137,7 @@ async def _insert_invite(conn, *, team_id: int, email: Optional[str], user: dict
                 DEFAULT_TENANT, team_id, email, token, user["id"], expires_at,
             )
             return dict(row)
-        except Exception as exc:  # asyncpg.UniqueViolationError（撞码）
+        except Exception as exc:  # 有意兜底：仅 asyncpg.UniqueViolationError 撞码重试，其余原样重抛
             if "uq_team_invites_token" not in str(exc) and "duplicate key" not in str(exc):
                 raise
     raise HTTPException(status_code=500, detail={

@@ -93,15 +93,15 @@ def resolve_host_ips(
     if resolver is not None:
         try:
             return sorted({str(ip) for ip in resolver(host)})
-        except Exception:  # noqa: BLE001 - 注入的 resolver 出错按"解析不到"处理
+        except Exception:  # noqa: BLE001 - 有意兜底：注入的 resolver 出错按"解析不到"处理
             return []
     try:
         import socket  # 局部导入：Pyodide 无此模块，模块顶层导入会直接炸
-    except Exception:  # noqa: BLE001
+    except ImportError:
         return []
     try:
         infos = socket.getaddrinfo(host, None)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 有意兜底：受限 runtime 的 getaddrinfo 失败按"解析不到"处理
         return []
     return sorted({str(info[4][0]) for info in infos if info[4] and info[4][0]})
 

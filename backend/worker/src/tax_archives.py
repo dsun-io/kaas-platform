@@ -103,7 +103,7 @@ def _row_out(row) -> dict:
     if isinstance(d.get("tax_values"), str):
         try:
             d["tax_values"] = json.loads(d["tax_values"])
-        except Exception:
+        except json.JSONDecodeError:
             d["tax_values"] = {}
     for key in ("effective_from", "effective_to", "created_at", "updated_at"):
         if d.get(key) is not None and hasattr(d[key], "isoformat"):

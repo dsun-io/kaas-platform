@@ -338,7 +338,7 @@ def worked_example(product: ProductSpec, scope: dict, only=None) -> list[dict]:
     for f, stage in order_list:
         try:
             value = eval_expr(f.expr, local)
-        except Exception as exc:  # noqa: BLE001 - 示例不成立时如实回报
+        except Exception as exc:  # noqa: BLE001 - 有意兜底：示例公式不成立时如实回报错误
             computed.append({
                 "code": f.name, "label": f.label or f.name, "stage": stage,
                 "expr": f.expr, "unit": f.unit, "decimals": f.decimals,

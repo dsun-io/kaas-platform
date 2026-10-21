@@ -23,6 +23,7 @@ orchestrator 的 `app/api/export_quote.py` 有一条报价辅助路由，线上 
 """
 from __future__ import annotations
 
+from decimal import InvalidOperation
 from typing import Any, List, Optional
 
 from fastapi import Depends, HTTPException, Request
@@ -73,7 +74,7 @@ def _ensure_engine() -> dict:
             SpecOverrideError,
             parse_spec_override,
         )
-    except Exception as exc:  # noqa: BLE001 - 镜像残缺时不该是 500 裸栈
+    except Exception as exc:  # noqa: BLE001 - 有意兜底：镜像残缺转 503 明示，不让它变 500 裸栈
         raise HTTPException(status_code=503, detail={
             "error": "engine_unavailable",
             "message": ("报价引擎符号缺失（kaas_common.export_quote.* 导入失败：%s: %s）。"
@@ -180,7 +181,7 @@ async def export_quote_explain_product(
             raw = body.spec[ni.key]
             try:
                 value = eng["to_decimal"](raw)
-            except Exception:
+            except (InvalidOperation, TypeError, ValueError):
                 raise HTTPException(status_code=400, detail={
                     "error": "invalid_numeric",
                     "message": f"{ni.label or ni.key} 不是数值: {raw!r}",

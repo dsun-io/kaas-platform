@@ -293,7 +293,7 @@ def render_markdown(routes, builtin_routes) -> str:
 def main() -> int:
     try:
         sys.stdout.reconfigure(encoding="utf-8")  # 控制台 GBK 下中文不炸
-    except Exception:
+    except (AttributeError, OSError, ValueError):
         pass
     worker_main = _import_worker_app()
     routes, builtin = extract_routes(worker_main)

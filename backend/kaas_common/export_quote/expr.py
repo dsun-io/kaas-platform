@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import ast
-from decimal import localcontext
+from decimal import InvalidOperation, localcontext
 
 from .numeric import DECIMAL, FRACTION, PRECISION, dec, is_integral
 
@@ -213,7 +213,7 @@ class Formula:
                     continue
                 try:
                     out[key] = mode.convert(dec(value))
-                except Exception:  # noqa: BLE001 - 非数值字符串原样保留
+                except (InvalidOperation, TypeError, ValueError):  # 有意兜底：非数值字符串原样保留
                     out[key] = value
                 continue
             out[key] = mode.convert(value)

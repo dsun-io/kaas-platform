@@ -426,7 +426,7 @@ async def _packing_of_doc(
             from quote_api import _effective_product_raw  # 惰性导入：避免 main 导入期循环
 
             product = await _effective_product_raw(request, user or {}, product_key)
-        except Exception:  # noqa: BLE001 - 见 docstring：产品解析失败按"无配置"降级
+        except Exception:  # noqa: BLE001 - 有意兜底：产品解析失败按"无配置"降级（见 docstring）
             product = None
 
     raw_packaging = None
@@ -903,7 +903,7 @@ def _amount_conflicts(d: dict, items: list[dict]) -> list[dict]:
         if amount is None:
             try:
                 amount = derive_amount(item.get("qty"), item.get("unit_price"))
-            except Exception:  # noqa: BLE001 - 缺数量/单价：交给确认必填校验报，不在此重复
+            except Exception:  # noqa: BLE001 - 有意兜底：缺数量/单价交给确认必填校验报，不在此重复
                 return []
         total += amount
     violations = check_derived_amount(decimal_text(total), d.get("total_amount"),

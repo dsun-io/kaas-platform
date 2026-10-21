@@ -61,7 +61,7 @@ class OptionOverrideIn(BaseModel):
 def _product_or_404(product_key: str):
     try:
         return get_product(product_key)
-    except Exception:
+    except (KeyError, TypeError):
         raise HTTPException(status_code=404, detail={
             "error": "unknown_product", "product_key": product_key})
 
@@ -140,7 +140,7 @@ async def _load_overrides(conn, team_id: int, product_key: str) -> dict:
 
         try:
             raw = json.loads(raw)
-        except Exception:
+        except json.JSONDecodeError:
             return {}
     return _normalize(raw)
 

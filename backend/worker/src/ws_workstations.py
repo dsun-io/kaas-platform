@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Optional
 
@@ -341,6 +342,7 @@ async def enforce_workstation_subscription(request: Request, call_next):
     if workstation is None:
         return await call_next(request)
 
+    logger = logging.getLogger(__name__)
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         return await call_next(request)
@@ -355,5 +357,6 @@ async def enforce_workstation_subscription(request: Request, call_next):
                 "detail": "该工位未开通，请在“工位开通”里启用",
             })
     except Exception:
-        pass
+        logger.exception("workstation gate error; falling through to downstream auth")
+        pass  # 有意兜底：工位门控尽力而为，放行后由下游鉴权兜底
     return await call_next(request)

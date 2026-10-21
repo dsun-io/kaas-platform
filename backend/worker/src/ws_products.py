@@ -114,7 +114,7 @@ def _validate_spec(spec: dict) -> None:
         return
     try:
         spec_from_dict(spec)
-    except Exception as exc:  # 引擎的校验异常类型不止一种，一律转 422 带出原文
+    except Exception as exc:  # 有意兜底：引擎校验异常类型不止一种，一律转 422 带出原文
         raise HTTPException(status_code=422, detail={
             "error": "invalid_spec", "message": str(exc),
         })
@@ -293,7 +293,7 @@ async def create_tenant_product(
                 _spec_fingerprint(body.spec) if body.override else None,
                 body.is_active,
             )
-        except Exception as exc:  # uq_tenant_products_key 唯一约束
+        except Exception as exc:  # 有意兜底：仅 uq_tenant_products_key 撞码转 409，其余原样重抛
             if "uq_tenant_products_key" in str(exc) or "duplicate key" in str(exc):
                 raise HTTPException(status_code=409, detail={
                     "error": "conflict", "code": "PRODUCT_KEY_TAKEN",

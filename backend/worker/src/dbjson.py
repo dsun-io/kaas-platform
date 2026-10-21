@@ -68,6 +68,6 @@ def row_to_dict(row, table: str | None = None) -> dict:
         if isinstance(v, str) and v:
             try:
                 d[k] = json.loads(v)
-            except Exception:
-                pass
+            except json.JSONDecodeError:
+                pass  # 非 JSON 字符串按原样保留（列里可能本来就存纯文本）
     return d
