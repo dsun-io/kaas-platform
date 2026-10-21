@@ -54,7 +54,8 @@
 | [QA_AUTHZ_AUDIT_2026-10-21.md](./QA_AUTHZ_AUDIT_2026-10-21.md) | **C27 越权审计留证（7 条）**：只读代码审计，逐条三选一结论（已有闸门/缺失/需修复）+ 账号前提核查 |
 | [QA_AUTHZ_VERIFY_2026-10-21.md](./QA_AUTHZ_VERIFY_2026-10-21.md) | **C27 越权修复验收矩阵 v2**：F1–F4 + R-1 的「该验什么/期望/证据在哪」；只定义验收，不执行 |
 | [PROD_PERFORMANCE_AUDIT_2026-10-21.md](./PROD_PERFORMANCE_AUDIT_2026-10-21.md) | **生产性能体检**：实测 Worker 冷启动为主瓶颈（/health 0.4–5.1s）、DB 无问题（最大表 304kB）；P0/P1 已部署、P2 已迁新加坡（RTT 245→75ms） |
-| [OPTIMIZATION_PLAN_2026-10-21.md](./OPTIMIZATION_PLAN_2026-10-21.md) | **优化执行计划（活跃）**：W1 性能收尾快赢 / W2 结构债 P0 批 / W3 TS Worker 全量迁移（用户拍板不折中，3–5 周四阶段）/ W4 退役收口 |
+| [OPTIMIZATION_PLAN_2026-10-21.md](./OPTIMIZATION_PLAN_2026-10-21.md) | **优化执行计划（活跃）**：W1 性能收尾 ✅ / W2 结构债（P0 ✅，P2 在途）/ W3 TS 门面+Python 内核（Phase 0·1 ✅，Phase 2 在途）/ W4 退役 / W5 MCP·REST |
+| [EXECUTION_PLAYBOOK_2026-10-21.md](./EXECUTION_PLAYBOOK_2026-10-21.md) | **执行者强化手册**（用户下发，参考为主实际为准）：架构边界/跨层契约/金标纪律/测量与提交纪律 13 节；派任务时携带 |
 | [acceptance/B_PACKAGE_2026-10-21.md](./acceptance/B_PACKAGE_2026-10-21.md) | **B 组验收包**：打印视觉 QA、条款、N3 等「需要用户一次过目」的事项清单与证据（含 print-qa 产物） |
 | [STRUCTURAL_DEBT.md](./STRUCTURAL_DEBT.md) | **结构性缺口账本（2026-10-21 建档）**：main.py 巨石/循环依赖/无 TODO 锚点/裸 except+print/单人无第二 review/技术选型无论证 6 条 S 组条目 + 免费版优先级矩阵 + 免费版撑不住暂不动项（冷启动/地理）+ 附：历史密钥清理专章（§6，待用户拍板）|
 | [ARCH_DECISIONS.md](./ARCH_DECISIONS.md) | **技术选型 ADR（2026-10-21 建档）**：7 条历史决策留痕（raw asyncpg / 无 Redis / 文件三级落点 / Hyperdrive 直连 / Python Worker→已被 TS 迁移取代 / import 挂载 / Neon 新加坡迁库）；新选型先立 ADR 再动手 |
