@@ -10,6 +10,13 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-21 · W1 性能收尾 ✅ + 运维注意）** ①登录 429 根因定位=zone 限流规则
+> （2026-10-20 U-S4 设 auth 端点 2 次/10 秒/IP），用户批准放宽至 **5 次/10 秒**（防共享出口 NAT 误伤）；
+> ②静态资产缓存：`frontend/public/_headers`（`/_next/static/*` → immutable 1 年）+ CF 缓存规则
+> （ruleset `c5f56989`，edge+browser TTL 30d 覆盖源站 max-age=0），部署 version `f8171937` 生效实测；
+> ③**运维注意：wrangler OAuth 已过期且自动刷新失败，本机部署必须 `$env:CLOUDFLARE_API_TOKEN=`
+> User 作用域 token 后再 `uv run pywrangler deploy`**。
+>
 > **（2026-10-21 · UI 规范固化为硬约束）** 新增 [`UI_STANDARDS.md`](./UI_STANDARDS.md)
 > （页面骨架/Tabs/颜色/表格/加载空态/a11y/新增页面 DoD），并新增 `frontend/scripts/ui-standards-check.cjs`
 > + `pnpm ui:standards` 静态门禁；`pnpm e2e` 的 a11y 用例改为**自动发现 `src/app/(app)` 全部路由**，

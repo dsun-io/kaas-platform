@@ -63,6 +63,12 @@ jobs:
         working-directory: ./backend/orchestrator
         run: uv run --extra migrations python ../../scripts/check-schema-drift.py
 
+      # 2026-10-21 结构性债门禁（STRUCTURAL_DEBT.md §4.1）：main.py 行数 / noqa:E402 /
+      # except Exception / print() 阈值拦截新增债。已登记的 S-1/S-2 超阈值用 --allow-known 放行。
+      - name: Structural debt gate
+        working-directory: ./backend/orchestrator
+        run: uv run --extra migrations python ../../scripts/check-structural-debt.py --allow-known
+
       # 说明：route-parity 已于 S4 退役（worker 是唯一后端，没有第二实现可比），
       # 脚本移入 scripts/archive/ 留档；S3 的 parity 测试是退役判据。
 

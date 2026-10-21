@@ -26,8 +26,8 @@
 
 | 项 | 动作 | 验收 |
 |---|---|---|
-| P3a 静态资产边缘缓存 | CF Cache Rule：`/_next/static/*` + `/_next/image/*` 长 TTL（immutable 指纹文件名，安全）；`Cache-Control` 已由 Next 导出带 immutable，规则补边缘强制 | 资产重复请求 <100ms、`cf-cache-status: HIT` |
-| P3b 登录 429 + 26s | 查 zone WAF/Rate Limiting 事件日志，定位 429 来源规则；误伤则调阈值或加 skip | 正常登录不再 429；登录 P95 <3s |
+| P3a 静态资产边缘缓存 | ✅ **已完成**：`frontend/public/_headers`（Workers Assets `_headers` 机制；注意 Next 静态导出不应用 next.config headers）+ CF 缓存规则（ruleset `c5f56989`；注意 CF API 表达式 `starts_with` 函数式会 400，wildcard/infix 才合法）；部署 `f8171937` 实测返回 immutable | 已达成 |
+| P3b 登录 429 + 26s | ✅ **已完成**：根因=zone 限流规则（2026-10-20 U-S4，auth 端点 2 次/10 秒/IP；worker 源码 0 处 429）。已放宽至 **5 次/10 秒**（用户弹窗批准，防共享出口 NAT 误伤），mitigation 10s 不变。26s 样本=冷启动+被拦叠加，随 W3 根治 | 已达成 |
 | 迁库后观察 | 部署后 24–48h 观察 cron（*/15 replied 扫描等）写库正常、无 5xx 尖峰 | cron 日志正常 |
 | 旧 Neon 项目清理 | **2026-10-28 提醒已设**（schedule-3cc18076）：复查后弹窗请用户确认删除 falling-salad-31662168 + 旧 Hyperdrive f53fed…（破坏性，必须确认） | 用户确认后执行并销账 |
 
