@@ -80,7 +80,10 @@
 >   **第十三次部署**：run `39528133552`，Worker **`8edaaa4a-7d96-442d-81cf-dd5370b3f106`**；
 >   线上未带 token 的 `GET /api/v1/teams` → 401；`/admin/teams` 的 20 个 chunk 与 CI 产物
 >   SHA256 **逐一相同**（部署产物可核）。⚠️ **C40 假红复现**（S5-d 读 Hyperdrive API 403），
->   Worker 部署本身成功、冒烟被跳过（已人工核 API/页面产物）。
+>   Worker 部署本身成功、冒烟被跳过（已人工核 API/页面产物）。**C40 已于同日修复**：
+>   用户授权后用 CF API 给 CI 系统 token 补 `Hyperdrive Read`（只加读、token 值不变），
+>   deploy run `39528856290` **全绿**（S5-d + 冒烟均通过），Worker
+>   **`56692255-bc87-48a3-a541-23b230ad05d5`**。
 >
 > **（2026-10-21 晚 · 生产发布执行 + 二轮全量 sweep：无新遗漏分支，补登 25 项）**
 >
