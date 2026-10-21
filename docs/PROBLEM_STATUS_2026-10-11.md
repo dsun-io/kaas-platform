@@ -14,6 +14,14 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-21 · W3 Phase 2 波 A ✅ + 引擎域透传层）** 门面迁移第一批完成：auth 9 / customers 20 /
+> teams 15 = **44 条**（`backend/ts-worker/src/routes/`），挂载进 kaas-edge；协议层 session/serializers/
+> rules/http 落地；**引擎域透传层** `src/proxy.ts`（quotes/trade-docs/ai → KERNEL.fetch：鉴权纵深、
+> 4xx 原样、5xx 归一 `kernel_error`、不可达 502）并启用 KERNEL service binding。
+> 门禁：ts-worker **45 测全绿（8 文件）**、typecheck 0 error。语义差异已登记 ts-worker README
+> （422 而非 400 / 时间戳精度 / expires_at 解析宽容度 / forgot-password 暂不发信 TODO:TS2）。
+> 波 B（orders/files/outreach/admin 48 条）进行中；波 C 计划 workstations/intel。
+>
 > **（2026-10-21 · 历史密钥清理 ✅ 新裁决执行）** 用户新裁决：清理提交历史中的密钥明文（推翻 2026-10-20
 > 「接受风险」）。blob 级全历史扫描（5039 blob）→ **git filter-repo 重写**（明文→`***REMOVED***`，
 > 1053→774 提交，已 force push main）→ **旧 Neon 库口令轮换**（泄露 DSN 指向 `ep-wandering-frost`，

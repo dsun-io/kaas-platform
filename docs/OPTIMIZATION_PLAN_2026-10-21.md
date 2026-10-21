@@ -92,6 +92,12 @@ Python；全量重写牺牲生态、风险最大。**修订为永久两层架构
 - CI 门禁：typecheck / lint / test / bundle 体积断言（对照现 11.7MB，TS 侧预期 <3MB）。
 
 ### Phase 2 · 按域迁移（2–3 周，每域独立可交付）
+
+> **进度（2026-10-21）**：波 A ✅（auth 9 / customers 20 / teams 15 = 44 条，commit `c80f894`；
+> 45 测全绿、typecheck 0）+ 引擎域透传层 ✅（`src/proxy.ts`：quotes/trade-docs/ai → KERNEL.fetch，
+> 鉴权纵深/4xx 原样/5xx 归一/不可达 502，7 条单测）；波 B 进行中（orders/files/outreach/admin 48 条）。
+> 波 C 计划：workstations(35) + intel(34) + dashboard/meta(2)。每域 DoD：形状一致 + 关键分支测试 + app 挂载。
+
 顺序原则：**读多写少、低耦合的先切**；引擎域不移植、走透传（见 §2.0.1）。
 1. auth/users/teams（含登录/注册/bootstrap）
 2. customers / inquiries（cust_*）
