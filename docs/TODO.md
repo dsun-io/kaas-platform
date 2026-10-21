@@ -49,6 +49,7 @@
 
 - **C24** 客户触达「产品手册附件」——暂缓；**N10** 事件流联通——暂缓；
 - **安全 4 项**（Neon 口令轮换/管理员改密/仓库转 private/filter-repo）——不做；归档数据已按批准脱敏；
+| S1 | **结构性缺口账本建档（S-1~S-6）+ 门禁** | ✅ 2026-10-21：新建 [`STRUCTURAL_DEBT.md`](./STRUCTURAL_DEBT.md) 登记 6 条结构性债（main.py 巨石 5170 行 / 循环依赖 34+2 处 noqa:E402 / 无 TODO 锚点 / 88 处裸 except + 18 处 print / 单人无第二 review / 技术选型无论证）；新增 `scripts/check-structural-debt.py` 静态门禁（main.py≤4000 行、noqa:E402≤40、except Exception≤100、print≤20）；补 `docs/ARCH_DECISIONS.md` ADR 6 条。**未改任何生产代码**，纯文档+门禁脚本 | — | ✅
 - **C1/C13/N8**——不做（业务默认）；**C14** 产品税率——"使用时再设置"，不预铺；
 - **D1/D2** 已完成（Resend 注入、R2 32 位密钥 + 回环验证）；**D5** 关闭。
 
@@ -217,6 +218,10 @@
 | C12+ | PDF 归档验收补 2 项 | ✅ 取证完成（2026-10-21）：生产库实测 `file_objects` **5 行 / render_pdf 0 / trade_doc_files(role=render_pdf) 0 / trade_doc_render_checks 0** ⇒ 生产尚无归档 PDF 样本（符合"未实际使用"预期）；`events_archive_log` 0 行（首次月度归档未到）。可执行验收步骤已由 docs-b 补入 `TRADE_DOC_PDF_ARCHIVAL.md` §五（体积/耗时测法 + 三处口径 SQL）；**真实 PDF 样本复核**待 P4 首单产生后执行（属人工复核，不是代码缺口） | 发布后样本 | ✅（步骤已补，样本待有） |
 | C40 | CI 部署门禁 S5-d 假红（token 缺 Hyperdrive 读权限） | 2026-10-21 第十二次部署实测：`deploy.yml` 的「S5-d 防污染断言」调 `GET /hyperdrive/configs` → **403 Authentication error**（repo secret `CLOUDFLARE_API_TOKEN` / CI 系统 token 没有 Hyperdrive 读取权限）。从 script settings 读到的 R2/KV/Hyperdrive 绑定断言全部 ✔，**Worker 部署本身成功**（版本 `acaa6415-146e-4f84-8412-63c2e390e11b`），但该步让 run 变红并跳过冒烟。**2026-10-21 已修（用户授权走 ①）**：用 CF API 给 `kaas-ci-system-20261021`（id `44f3c314…`）补 `Hyperdrive Read`（**只加读权限**，token 值不变、不轮换；改前 policy 备份在 `~/.dsh/secrets/cf-ci-token-policy-backup-20261021-094212.json`）；重跑 deploy run `39528856290` **全绿**（S5-d + Smoke test 均 ✓），Worker `56692255-bc87-48a3-a541-23b230ad05d5`。断言未降级 | 用户已授权 | ✅ |
 
+
+| G-9 | 历史密钥清理路径 | 见 [`STRUCTURAL_DEBT.md`](./STRUCTURAL_DEBT.md) §6：①是否执行全历史 gitleaks/trufflehog 扫描（需先安装工具）；②三条路径（A 接受风险 / B 只轮换 / C 轮换+filter-repo 重写历史）选哪条；③若选 B/C，逐项授权轮换 Neon 口令/Notion 令牌/GitHub PAT；④§6.4 四项防再犯约束（pre-commit gitleaks / CI gitleaks / .gitignore 加固 / 凭据命名纪律）是否本批落地（建议做，零成本）。**用户 2026-10-20 口头已选 A（接受风险），待确认是否维持**
+| G-10 | 冷启动根治路径 | ✅ **已定（2026-10-21）**：用户拍板**全量迁 TS Worker、不折中**。执行计划 [`OPTIMIZATION_PLAN_2026-10-21.md`](./OPTIMIZATION_PLAN_2026-10-21.md) W3（3–5 周四阶段）；框架/引擎移植方式待 D1/D2 拍板 |
+| G-11 | 地理迁移停机窗口 | ✅ **已完成（2026-10-21）**：迁至 **aws-ap-southeast-1 新加坡**（Neon 免费档无东京），RTT 245→75ms；新 Hyperdrive `6830420703984a19a99a334afff6776e`、version `cd87aba7`；旧库保留 7 天后删除待确认（提醒已设 2026-10-28）。详见 [`PROD_PERFORMANCE_AUDIT_2026-10-21.md`](./PROD_PERFORMANCE_AUDIT_2026-10-21.md) §4.2 |
 ## G. 待用户拍板清单（集中登记；每条写明要定什么）
 
 | # | 要定什么 | 选项与代价 |

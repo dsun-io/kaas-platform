@@ -25,6 +25,14 @@
 > 门禁：typecheck 0、lint 0 err（92 warn）、vitest 929、contracts/mocks/ui:contrast PASS、
 > e2e 27 passed、build `out/` 290。证据：`docs/ui-redesign/audit-2026-10-21/fixed/`。
 >
+> **（2026-10-21 · 优化计划建档：TS Worker 全量迁移拍板）** 用户裁决：**不折中，全量迁 TS Worker**
+> （根治 Python 冷启动唯一路径）；确认 CF 权限在手（OAuth + User-scope token）。三条线合并为
+> [`OPTIMIZATION_PLAN_2026-10-21.md`](./OPTIMIZATION_PLAN_2026-10-21.md)：W1 性能收尾快赢（静态资产缓存规则 /
+> 登录 429 排查）→ W2 结构债 P0 批（S-3 TODO 锚点 / S-6 ADR 补录 / S-4① / §6.4 / 门禁并 CI）→
+> **W3 TS 迁移 3–5 周四阶段**（Phase 0 金标对照先行 → Hono 骨架 → 按域迁移 → kaas_common 引擎直译双跑 → 切换退役）
+> → W4 收口。S-1/S-2 Python 拆分被 W3 取代（⛔ 不投入）。D1–D4 决策点待用户拍板。
+> G-10/G-11 已在 TODO 更新（G-11 迁库当日完成：新加坡，RTT 245→75ms）。
+>
 > **（2026-10-21 · 生产性能体检 + P0/P1 修复）** 用户反馈「生产运行很慢、数据更新很慢」。
 > 实测体检（证据：[`PROD_PERFORMANCE_AUDIT_2026-10-21.md`](./PROD_PERFORMANCE_AUDIT_2026-10-21.md)）：
 > **主瓶颈是 Python Worker 冷启动**（/health 不碰库实测 0.4–5.1s、API 401 也要 1.4–7s），
@@ -1655,6 +1663,7 @@
 | — | 立 `AGENTS.md` 收录全局规则（更新须带文档 + 推送） | `9250376` |
 | — | 单证工位 PI **公章 + 产品照片 + 买方回签栏（两侧等高）**字段（渲染器 / 模板 / manifest / 测试 / 文档） | `43be2f7`、`06a0ba7` |
 
+> **2026-10-21 追加：结构性缺口账本建档** —— 后端 main.py 巨石（5170 行）/ 循环依赖（34+2 处 noqa:E402）/ 全仓无 TODO 锚点 / 88 处裸 except + 18 处 print / 单人无第二 review / 技术选型无论证 6 条结构性债已登记到 [`STRUCTURAL_DEBT.md`](./STRUCTURAL_DEBT.md)，并新增 `scripts/check-structural-debt.py` 静态门禁防再犯；历史密钥清理路径（gitleaks 全历史扫描 / 三条治理路径）见该文档 §6，待用户拍板。 
 ### 当前门禁（**工作区静止**时实测；并发写期间构建会假红）
 
 | 门禁 | 结果 |
