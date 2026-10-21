@@ -8,6 +8,7 @@ import { Hono } from "hono";
 
 import { getEnv, type Env } from "./env";
 import adminRoutes from "./routes/admin";
+import apiTokenRoutes from "./routes/api-tokens";
 import authRoutes from "./routes/auth";
 import customerRoutes from "./routes/customers";
 import fileRoutes from "./routes/files";
@@ -84,6 +85,7 @@ app.route("/", orderRoutes);
 app.route("/", fileRoutes);
 app.route("/", outreachRoutes);
 app.route("/", adminRoutes);
+app.route("/", apiTokenRoutes);
 
 // ── 引擎域透传（quotes / trade-docs / ai）：门面只鉴权+协议转换，不重写业务（ADR-008）──
 // 详见 backend/ts-migration/route-classification.md 与 AGENTS.md 铁纪律。

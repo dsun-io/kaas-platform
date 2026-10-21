@@ -70,7 +70,16 @@ describe("路由面覆盖（Python到TS门面）", () => {
   });
 
   it("TS 侧没有多余路由", () => {
-    const allowedExtra = new Set(["GET /health", "GET /openapi.json", "ALL /*"]);
+    // 门面自有路由（Python 无对应真源）：存活探针 / OpenAPI / W5 M1 API token 管理面。
+    // 管理面是 TS 域（docs/W5_MCP_REST_DESIGN_2026-10-21.md §2），不来自 routes.json。
+    const allowedExtra = new Set([
+      "GET /health",
+      "GET /openapi.json",
+      "ALL /*",
+      "GET /api/v1/api-tokens",
+      "POST /api/v1/api-tokens",
+      "DELETE /api/v1/api-tokens/:p",
+    ]);
     const pyPaths = new Set(direct.map((r) => normParam(r.path)));
     const extra = ts
       .filter((r) => !pyPaths.has(r.path))
