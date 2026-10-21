@@ -90,6 +90,34 @@ REQUESTS = [
         "side_effect": "none",
     },
 ]
+# 门面域 401 形状探针（2026-10-21 波 A/B 起）
+# 全部无 token + side_effect=none：探「路由存在 + 鉴权拒绝信封」，不触达数据。
+_FACADE_PROBES = [
+    ("GET", "/api/v1/auth/me"),
+    ("GET", "/api/v1/customers"),
+    ("GET", "/api/v1/customers/capabilities"),
+    ("GET", "/api/v1/teams"),
+    ("GET", "/api/v1/teams/me"),
+    ("GET", "/api/v1/orders"),
+    ("GET", "/api/v1/files"),
+    ("GET", "/api/v1/outreach"),
+    ("GET", "/api/v1/admin/feature_flag"),
+    ("GET", "/api/v1/quotes"),
+    ("GET", "/api/v1/trade-docs"),
+    ("GET", "/api/v1/ai"),
+]
+for _m, _p in _FACADE_PROBES:
+    REQUESTS.append({
+        "group": "facade401",
+        "name": "unauth_" + _p.strip("/").replace("/", "_").replace("-", "_"),
+        "method": _m,
+        "path": _p,
+        "body": None,
+        "headers": {},
+        "expect_status": 401,
+        "side_effect": "none",
+    })
+
 
 # 白名单：不稳定字段在 JSON 语义 diff 时忽略（计划 §2 风险表：显式登记，不静默放过）。
 IGNORE_KEYS = {
