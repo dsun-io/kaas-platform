@@ -73,7 +73,7 @@ Python；全量重写牺牲生态、风险最大。**修订为永久两层架构
    ——比「翻译 1565 条 pytest」更准且快。
 3. 从 1565 条 pytest 中筛 HTTP 层用例 → 生成 TS 侧 conformance 套件（优先鉴权/报价/单证）。
 
-### Phase 1 · TS 骨架（2–3 天）
+### Phase 1 · TS 骨架 ✅ 已完成（2026-10-21，commit db5810f）
 - 框架 **Hono**（见 §4 决策点 D1）；运行时 Node.js（Workers 官方一等公民）。
 - Binding 封装：Hyperdrive（postgres.js 驱动，连接串即 Hyperdrive 暴露的 `postgresql://`）、R2、Browser Rendering、S3 预签名（aws4fetch 直译现有 SigV4 逻辑）。
 - 中间件：CORS（现有双中间件语义对齐）、env 注入（AsyncLocalStorage 等价现 ContextVar）。

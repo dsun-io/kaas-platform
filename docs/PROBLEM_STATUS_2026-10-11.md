@@ -17,6 +17,10 @@
 > 防漂移铁纪律落 AGENTS.md 口径区（业务规则只在 Python 内核；门面禁写业务逻辑；zod 从 pydantic 生成；
 > 金标 harness 常态化）。免费版评估：配额按 Worker 独立计，内核 0 公网请求，$0/月不变。
 > W3 Phase 0 ✅（253 路由清单=249 业务+4 内置；金标 harness 原型 prod 基线 5/5 形状符合）。
+> **W3 Phase 1 ✅（2026-10-21，db5810f）**：`backend/ts-worker`（kaas-edge）Hono 骨架——CORS 对齐
+> Python 语义、/openapi.json 显式 JSON（金标差异登记：Python 侧被 CF fallback text/html）、auth
+> （jose+bcryptjs 与 Python 实测互通）/db（postgres.js 每请求连接）/kernel（Service Binding 封装）；
+> vitest 17 条全绿，bundle 60KB（对照 Python 11.7MB）；ts-edge CI 已接入。
 >
 > **（2026-10-21 · W1 性能收尾 ✅ + 运维注意）** ①登录 429 根因定位=zone 限流规则
 > （2026-10-20 U-S4 设 auth 端点 2 次/10 秒/IP），用户批准放宽至 **5 次/10 秒**（防共享出口 NAT 误伤）；
