@@ -14,6 +14,14 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-21 · W4 切流完成 ✅ 生产已由 TS 门面承载）** 用户裁决「直接切流，不用等低峰期」。
+> 执行：预发部署 kaas-edge（workers.dev 验证）→ JWT_SECRET **轮换并经 CF API 精确写入双端**（自签 token
+> 双端 `/me` 均 200、形状一致）→ 内核摘除自定义域名（部署 `25133623`，3 条 cron 保留）→ 门面接管
+> `kaas/api.powervoy.com`（部署 `8f1c2129`）。切后冒烟全过：门面域返回 `service=kaas-edge`、登录页/资产 200、
+> auth 401/200 正确、customers/teams/orders 直连 DB 200、**quotes/trade-docs/export-quote 经 KERNEL 透传正常**、
+> 资产 immutable 生效。⚠️ **JWT 已轮换：所有用户需重新登录一次**。回滚路径保留（内核版本 + 域名回切，2 周窗口）。
+> 执行记录见 [`W4_CUTOVER_RUNBOOK_2026-10-21.md`](./W4_CUTOVER_RUNBOOK_2026-10-21.md) §7。
+>
 > **（2026-10-21 · W3 Phase 2 波 A ✅ + 引擎域透传层）** 门面迁移第一批完成：auth 9 / customers 20 /
 > teams 15 = **44 条**（`backend/ts-worker/src/routes/`），挂载进 kaas-edge；协议层 session/serializers/
 > rules/http 落地；**引擎域透传层** `src/proxy.ts`（quotes/trade-docs/ai → KERNEL.fetch：鉴权纵深、

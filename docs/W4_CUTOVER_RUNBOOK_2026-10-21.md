@@ -67,3 +67,20 @@ CF 不返回 secret 明文 ⇒ 无法直接复制到 kaas-edge。
 ---
 
 *本 runbook 由 lead 起草于 2026-10-21；执行前需用户确认切换窗口，执行后回填实测数字。*
+---
+
+## 7. 执行记录（2026-10-21 12:40–13:00，用户裁决「直接切流，不用等低峰期」）
+
+| 步骤 | 结果 |
+|---|---|
+| 前端静态导出 | `NEXT_EXPORT=1 pnpm build` → `frontend/out` ✅ |
+| 门面预发部署 | `kaas-edge` workers.dev 子域，版本 `8312b518` → 修 KERNEL binding 后 `db62066a` → 404 信封修复 `e87a26a9` |
+| JWT_SECRET 轮换 | 新随机值写入 `~/.dsh/secrets/jwt-secret-20261021.txt`；经 **CF API 精确写入** kaas + kaas-edge（response success=true 双端）；自签 token 调双端 `/me` **均 200 且 11 键形状一致** ⇒ secret 同步验证通过；**既有用户 token 已失效（需重新登录一次）** |
+| 预发金标 | edge(workers.dev) vs 生产 Python：13/17 一致 → 修 404 信封后 **15/17**；仅剩 `/health`（身份差异）与 `/openapi.json`（有意 JSON 化） |
+| 内核摘域名 | `backend/worker/wrangler.jsonc` routes → `[]`，部署版本 `25133623`（3 条 cron 保留）；内核不再有公网域名，门面经 Service Binding 调用 |
+| 门面接域名 | `backend/ts-worker/wrangler.jsonc` 增加两条 custom_domain，部署版本 `8f1c2129` → 接管 kaas./api. 两个域名 |
+| 切后冒烟（全部 200/401 符合预期） | `/health` = `kaas-edge`；`/login` `/` 200；`api.kaas.powervoy.com/health` 200；`/api/v1/auth/me` 无 token 401 / 带 token 200（11 键一致）；customers/teams/orders 200（门面直连 DB）；**quotes / trade-docs / export-quote/products / pricing-data 经 KERNEL 透传 200/422 正常**；静态资产 `immutable` 头生效 |
+| 回滚路径 | 内核版本 `25133623` 仍在（cron 常驻）；回滚 = 内核 wrangler 恢复 routes + 部署 → 门面移除 routes + 部署；JWT_SECRET 两边同值，回滚后用户无需再次重登 |
+
+**遗留/待观察**：① 下一次 cron（*/15）执行后核对内核日志；② 门面 `workers_dev` 暂留 true（调试用），验收期后改 false；
+③ 内核旧版本保留 2 周（W4 观察窗口），期间不回滚即清理；④ 旧 Neon 项目删除等 2026-10-28 提醒确认。

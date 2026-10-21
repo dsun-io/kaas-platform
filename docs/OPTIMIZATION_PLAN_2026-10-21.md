@@ -119,7 +119,7 @@ Python；全量重写牺牲生态、风险最大。**修订为永久两层架构
   （金标单据集已有——2026-10-21 执行批 8 的 3 份真实单据 + FX 金标可直接复用）。
 - 引擎双跑期：Python 引擎留原 worker 专门跑计算端点（内部分流），验证 TS 引擎输出 100% 一致后再切。
 
-### Phase 4 · 切换与退役（2–3 天）—— 详细步骤见 [`W4_CUTOVER_RUNBOOK_2026-10-21.md`](./W4_CUTOVER_RUNBOOK_2026-10-21.md)
+### Phase 4 · 切换与退役 ✅ 已执行（2026-10-21，用户批准直接切流）—— 详细步骤见 [`W4_CUTOVER_RUNBOOK_2026-10-21.md`](./W4_CUTOVER_RUNBOOK_2026-10-21.md)
 - 全量切流（单一 TS Worker，域名/绑定不动）；Python 版本保留 2 周可回滚（wrangler versions）。
 - 文档收口：根 README / HANDOVER / AGENTS 技术栈基线改 TS 口径；`check-worker-bundle.py` 等门禁改 TS 侧；`STRUCTURAL_DEBT.md` 销账 S-1/S-2（以「被 W3 解决」销账）。
 - **Python 内核瘦身**：迁出的 UI 路由代码从 main.py/ws_* 删除后，main.py 应收至内核规模（目标 ≤3000 行），
