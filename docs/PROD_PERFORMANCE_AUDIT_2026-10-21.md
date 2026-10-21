@@ -110,12 +110,34 @@ main.py 244KB / 约 5200 行 + chain.py 118KB + quote_api.py 113KB + ws_* 若干
 - 结论：**P0+P1 是边际改善；结构性提速必须靠 P2（迁库降 RTT）+ P3
   （静态资产边缘缓存）+ 长期选项（TS Worker 重写 API 层）**。已如实记录，未夸大收益。
 
+### 4.2 P2 迁库执行记录（2026-10-21 09:58–10:10，用户批准「现在低峰期直接迁」）
+
+- **新库**：Neon 项目 `cold-king-20466417`（KaaS-SG，**aws-ap-southeast-1 新加坡**，PG18）。
+  注：Neon 无东京区域，新加坡是最近可选。
+- **迁移方式**：生产库 schema 与 alembic head **不一致**（生产多 7 张已弃用表 + 2 个触发器函数
+  属人工演进），故放弃「alembic 重建 + COPY 数据」，改用 **pg_dump/pg_restore 全量**（本机无
+  pg_dump，临时下载 EDB PG18 便携版）。
+- **一致性验证**：114 表 / 2 函数 / alembic_version=202610210001 全部一致；
+  **逐表 count(*) 精确对比 0 差异**（全库 127 行）。
+- **RTT 实测（本机）**：旧 us-east-2 查询 245ms → **新加坡 75ms**（3.3×）；建连 1509→467ms。
+- **切换**：新建 Hyperdrive `6830420703984a19a99a334afff6776e`（kaas-apac，指向新加坡 pooler）→
+  `wrangler.jsonc` 换绑定 → 部署 version `cd87aba7-92e3-4a41-8246-44fa62b13e8c`。
+- **生产验证**：`/health` 200 loaded=true；错误密码登录返回 **401 Invalid credentials**
+  （证明经 Hyperdrive→新加坡库整条链路通，用户行读到、密码校验执行）。
+- **回滚路径**：旧库（falling-salad-31662168）与旧 Hyperdrive（f53fed…）均保留，
+  改回 wrangler.jsonc 再部署即可，分钟级回滚。
+- **密钥落位**：新 DSN 存 `~/.dsh/secrets/neon-prod-dsn-apac.txt`，inventory.md 已登记；
+  旧 DSN 保留（旧项目存活期间继续有效）。含机密的临时文件（dump/DSN 副本）已清除。
+- **遗留**：① dump 到切换间几分钟的增量写入若存在则未同步（低峰期执行，风险已告知用户）；
+  ② 旧项目保留 7 天观察后需用户确认再删（破坏性操作另行确认）；③ 本地 dev 分支在旧项目，
+  本次未动。
+
 ## 4. 验收口径（修完后复测）
 
 - `/health` P50 < 1s、P95 < 2.5s（部署后实测 P50 ≈ 2.1s——**未达标**，冷启动主导，需 P2/P3/长期项）。
 - 登录接口（含 401 路径）P95 < 3s（当前 4–7s）。
 - 体感项：A 页面改数据 → B 标签页回到 A，≤5s 内自动出现新数据（依赖 P0）。
-- DB 迁移后：生产库 RTT（从国内测）< 100ms。
+- DB 迁移后：生产库 RTT（从国内测）< 100ms——**达标：75ms**（§4.2）。
 
 ---
 
