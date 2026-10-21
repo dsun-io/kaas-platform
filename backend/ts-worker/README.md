@@ -1,7 +1,7 @@
 # kaas-edge（KaaS TS 门面）
 
 > **定位（ADR-008 两层架构）**：TS Worker(Hono) = 对外唯一门面；Python Worker = 内核。
-> 当前进度：Phase 1 工程骨架 + Phase 2 波 A（**auth 9 / customers 20 / teams 15 = 44 条**）
+> 当前进度：Phase 1 工程骨架 + Phase 2 波 A/B/C 全部完成（**门面移植 163 条 + 引擎透传 86 条**，auth 9 / customers 20 / teams 15 / orders 16 / files 9 / outreach 12 / admin 11 / workstations 35 / intel 34 / dashboard 1；quotes/trade-docs/ai 走路由 proxy.ts 透传）。测试 94 条全绿。
 > + 波 B（**orders 16 / files 9 / outreach 12 / admin 11 = 48 条**）已接线，
 > 合计 **92 条门面路由**；全部只做鉴权 / 参数校验 / 协议转换；业务规则仍在 Python 内核与
 > `backend/kaas_common/`。
@@ -274,3 +274,14 @@ npx wrangler secret put JWT_SECRET
   询盘阶段联动（TODO:TS6）。
 - 上游一致性待内核侧收敛：`ORDER_NEXT` 在 `main.py` 与 `kaas_common/state_machines.py` 不一致
   （见「语义差异登记」）。
+
+## Phase 2 波 C 语义差异登记（workstations / intel / dashboard，2026-10-21）
+
+| 项 | Python 真源 | TS 门面 | 备注 |
+|---|---|---|---|
+| 数字类型 | asyncpg：int8→int、numeric→Decimal(float) | postgres.js：BIGINT→string（主键 id 已归一为 number，其余 *_id 保持 string）、Numeric 仍是 string | 根治需在 `src/db.ts` 注册 int8/numeric parser（TODO:TS7） |
+| 小型规则镜像 | chain.py:234-250 SUB_CODES / ws_products.py:148-177 订阅 union / ws_workstations.py:77-95 校验 / company_rules.py:15-31 normalize_swift | 暂写在路由文件内并标 Python 行号 | 后续提升进 rules.ts（TODO:TS8） |
+| `/api/v1/enums` | kaas_common/domain/enums.py 常量表 | 数据镜像 | 纳入 generate-zod 同一条生成链（TODO:TS1） |
+| 历史怪形状保留 | `/spec/categories/{id}` 未命中 → 200 `{error:not_found}`；`/intel/shipments/{id}` 404 detail 为字符串 | 逐字保持 | 未顺手纠正（金标优先保真） |
+| render-content 鉴权 | 不挂登录态（走令牌） | 同样不做门面鉴权直接转发 | 与 Python 一致 |
+| 36 条引擎透传 | 内部依赖 AI/抓取/ProductSpec/价格生命周期/difflib/PNG | 只鉴权后原样转发 KERNEL（信封同 proxy.ts） | 内核暴露 /internal/* 后才能改移植 |

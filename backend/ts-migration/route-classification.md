@@ -44,6 +44,13 @@ app.all('/api/v1/quotes/*', auth, async (c) => {
 每域 DoD：① 端点与 Python 形状一致（zod schema 从 pydantic 生成，禁止手抄）；② vitest 覆盖关键分支；
 ③ 金标 harness 对应 case 全绿；④ README 进度表更新。
 
+## 4.1 波 C 注记（2026-10-21）
+
+- workstations(35) 与 intel(34) 中有 **26 条**按路径属该域、按语义属引擎（AI run/抓取/需求指数/ProductSpec 注册表/
+  spec 校验与 fingerprint/价格生命周期/option overrides/difflib 近似名/PNG 校验）→ 归入**内核透传**，
+  不计入门面移植数。上表「门面移植 ≈163」按路径口径统计，实际移植 = 163 − 26 = **137 条**，透传 = 86 + 26 = **112 条**。
+- 内核暴露 `/internal/{product-registry,spec-validate,price-lifecycle,rules/*}` 后，这 26 条可转为门面移植。
+
 ## 5. 待办
 
 - [ ] 透传层（proxy.ts）+ 3 个前缀挂载（quotes/trade-docs/ai）

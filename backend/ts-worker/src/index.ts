@@ -14,6 +14,9 @@ import fileRoutes from "./routes/files";
 import orderRoutes from "./routes/orders";
 import outreachRoutes from "./routes/outreach";
 import teamRoutes from "./routes/teams";
+import intelRoutes from "./routes/intel";
+import workstationsRoutes from "./routes/workstations";
+import dashboardRoutes from "./routes/dashboard";
 import { createProxyApp } from "./proxy";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -72,6 +75,11 @@ function corsHeaders(allowed: string): Record<string, string> {
 app.route("/api/v1/auth", authRoutes);
 app.route("/", customerRoutes);
 app.route("/", teamRoutes);
+// 波 C：intel（leadgen/leads/research/shipments/market）+ workstations（enums/spec/products/tenant/subscriptions）+ dashboard
+// 注意：Hono 先注册先命中；workstations.ts 含 /api/v1/products* 5 条透传，后续 files 域若注册同路径需调整顺序。
+app.route("/", intelRoutes);
+app.route("/", workstationsRoutes);
+app.route("/", dashboardRoutes);
 app.route("/", orderRoutes);
 app.route("/", fileRoutes);
 app.route("/", outreachRoutes);
