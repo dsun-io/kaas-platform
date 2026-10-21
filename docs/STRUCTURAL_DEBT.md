@@ -203,6 +203,9 @@ backend/orchestrator/.venv/Scripts/python.exe scripts/check-structural-debt.py -
 
 ### 6.1 已知泄露事实（来自 `SECURITY_AUDIT_2026-10-19.md`，本文不重复审计，只引用）
 
+> **注（2026-10-21 重写后）**：下表 commit 引用（`c91cf0e50`/`100e767`/`5e78d9ce`/`fbced671` 等）是**重写前历史标识**，
+> 全历史已被 filter-repo 重写并 force push，这些 hash 已不再指向新历史中的提交；仅作历史证据留档（泄露值已轮换作废）。
+
 | 凭据类型 | 泄露位置 | 当前状态 | 备注 |
 |---|---|---|---|
 | Notion 集成令牌（`ntn_` 开头） | `.codex/config.toml` 第 14 行 `--api-key=ntn_...`，commit `c91cf0e50` 引入 | 已从当前树删除（commit `100e767`），**git 历史仍可读** | 用户 2026-10-20 裁决：不清理、不轮换，风险接受关闭 |
