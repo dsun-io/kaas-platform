@@ -1,0 +1,8006 @@
+{
+ "chain.ProviderUpsert": {
+  "properties": {
+   "api_key": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Api Key"
+   },
+   "model": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Model"
+   },
+   "base_url": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Base Url"
+   },
+   "enabled": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Enabled"
+   }
+  },
+  "title": "ProviderUpsert",
+  "type": "object"
+ },
+ "chain.BindingUpsert": {
+  "properties": {
+   "provider": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Provider"
+   },
+   "model": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Model"
+   },
+   "enabled": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Enabled"
+   },
+   "config": {
+    "anyOf": [
+     {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Config"
+   }
+  },
+  "title": "BindingUpsert",
+  "type": "object"
+ },
+ "chain.TaskRun": {
+  "properties": {
+   "payload": {
+    "additionalProperties": true,
+    "default": {},
+    "title": "Payload",
+    "type": "object"
+   }
+  },
+  "title": "TaskRun",
+  "type": "object"
+ },
+ "chain.LeadgenConfig": {
+  "properties": {
+   "region": {
+    "title": "Region",
+    "type": "string"
+   },
+   "industry": {
+    "title": "Industry",
+    "type": "string"
+   },
+   "icp": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Icp"
+   },
+   "quantity": {
+    "default": 10,
+    "title": "Quantity",
+    "type": "integer"
+   },
+   "source": {
+    "default": "demo",
+    "title": "Source",
+    "type": "string"
+   }
+  },
+  "required": [
+   "region",
+   "industry"
+  ],
+  "title": "LeadgenConfig",
+  "type": "object"
+ },
+ "chain.LeadCreate": {
+  "properties": {
+   "company_name": {
+    "title": "Company Name",
+    "type": "string"
+   },
+   "country": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Country"
+   },
+   "region": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Region"
+   },
+   "city": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "City"
+   },
+   "address": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Address"
+   },
+   "phone": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Phone"
+   },
+   "website": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Website"
+   },
+   "email": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Email"
+   },
+   "industry": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Industry"
+   },
+   "place_id": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Place Id"
+   },
+   "opening_line": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Opening Line"
+   },
+   "shop_type": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Shop Type"
+   },
+   "product_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Product Name"
+   },
+   "product_name_cn": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Product Name Cn"
+   },
+   "product_image_url": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Product Image Url"
+   },
+   "spec_raw": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Spec Raw"
+   },
+   "link_url": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Link Url"
+   },
+   "can_supply": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Can Supply"
+   },
+   "supply_notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Supply Notes"
+   }
+  },
+  "required": [
+   "company_name"
+  ],
+  "title": "LeadCreate",
+  "type": "object"
+ },
+ "chain.LeadPatch": {
+  "properties": {
+   "company_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Company Name"
+   },
+   "email": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Email"
+   },
+   "website": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Website"
+   },
+   "phone": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Phone"
+   },
+   "industry": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Industry"
+   },
+   "fit_score": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Fit Score"
+   },
+   "opening_line": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Opening Line"
+   },
+   "notes_raw": {
+    "anyOf": [
+     {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notes Raw"
+   },
+   "owner_scope": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Owner Scope"
+   },
+   "shop_type": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Shop Type"
+   },
+   "product_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Product Name"
+   },
+   "product_name_cn": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Product Name Cn"
+   },
+   "product_image_url": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Product Image Url"
+   },
+   "spec_raw": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Spec Raw"
+   },
+   "link_url": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Link Url"
+   },
+   "can_supply": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Can Supply"
+   },
+   "supply_notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Supply Notes"
+   }
+  },
+  "title": "LeadPatch",
+  "type": "object"
+ },
+ "chain.MailboxCreate": {
+  "properties": {
+   "email": {
+    "title": "Email",
+    "type": "string"
+   },
+   "name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Name"
+   },
+   "api_key": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Api Key"
+   },
+   "is_default": {
+    "default": false,
+    "title": "Is Default",
+    "type": "boolean"
+   },
+   "daily_limit": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Daily Limit"
+   }
+  },
+  "required": [
+   "email"
+  ],
+  "title": "MailboxCreate",
+  "type": "object"
+ },
+ "chain.MailboxPatch": {
+  "properties": {
+   "name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Name"
+   },
+   "api_key": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Api Key"
+   },
+   "is_default": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Is Default"
+   },
+   "daily_limit": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Daily Limit"
+   },
+   "enabled": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Enabled"
+   }
+  },
+  "title": "MailboxPatch",
+  "type": "object"
+ },
+ "chain.CampaignCreate": {
+  "properties": {
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "subject_template": {
+    "title": "Subject Template",
+    "type": "string"
+   },
+   "body_template": {
+    "title": "Body Template",
+    "type": "string"
+   },
+   "mailbox_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Mailbox Id"
+   }
+  },
+  "required": [
+   "name",
+   "subject_template",
+   "body_template"
+  ],
+  "title": "CampaignCreate",
+  "type": "object"
+ },
+ "chain.CampaignSend": {
+  "properties": {
+   "lead_ids": {
+    "items": {
+     "type": "integer"
+    },
+    "title": "Lead Ids",
+    "type": "array"
+   }
+  },
+  "required": [
+   "lead_ids"
+  ],
+  "title": "CampaignSend",
+  "type": "object"
+ },
+ "chain.CrawlBatch": {
+  "properties": {
+   "lead_ids": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "integer"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Lead Ids"
+   },
+   "only_pending": {
+    "default": true,
+    "title": "Only Pending",
+    "type": "boolean"
+   },
+   "limit": {
+    "default": 10,
+    "title": "Limit",
+    "type": "integer"
+   }
+  },
+  "title": "CrawlBatch",
+  "type": "object"
+ },
+ "chain.ResearchCreate": {
+  "description": "手工录入 / 从线索挑选（source_ref 给定时自动回填线索字段）。",
+  "properties": {
+   "source_ref": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Source Ref"
+   },
+   "source": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Source"
+   },
+   "product_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Product Name"
+   },
+   "product_name_cn": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Product Name Cn"
+   },
+   "product_image_url": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Product Image Url"
+   },
+   "spec_raw": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Spec Raw"
+   },
+   "product_category": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Product Category"
+   },
+   "country": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Country"
+   },
+   "region": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Region"
+   },
+   "city": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "City"
+   },
+   "shop_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Shop Name"
+   },
+   "shop_type": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Shop Type"
+   },
+   "address": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Address"
+   },
+   "phone": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Phone"
+   },
+   "email": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Email"
+   },
+   "website": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Website"
+   },
+   "link_url": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Link Url"
+   },
+   "price_local": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Price Local"
+   },
+   "price_currency": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Price Currency"
+   },
+   "market_note": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Market Note"
+   },
+   "can_supply": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Can Supply"
+   },
+   "supply_notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Supply Notes"
+   }
+  },
+  "title": "ResearchCreate",
+  "type": "object"
+ },
+ "chain.ResearchPatch": {
+  "properties": {
+   "product_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Product Name"
+   },
+   "product_name_cn": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Product Name Cn"
+   },
+   "product_image_url": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Product Image Url"
+   },
+   "spec_raw": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Spec Raw"
+   },
+   "spec_normalized": {
+    "anyOf": [
+     {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Spec Normalized"
+   },
+   "product_category": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Product Category"
+   },
+   "country": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Country"
+   },
+   "region": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Region"
+   },
+   "city": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "City"
+   },
+   "shop_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Shop Name"
+   },
+   "shop_type": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Shop Type"
+   },
+   "address": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Address"
+   },
+   "phone": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Phone"
+   },
+   "email": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Email"
+   },
+   "website": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Website"
+   },
+   "link_url": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Link Url"
+   },
+   "price_local": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Price Local"
+   },
+   "price_currency": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Price Currency"
+   },
+   "market_note": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Market Note"
+   },
+   "can_supply": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Can Supply"
+   },
+   "supply_notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Supply Notes"
+   },
+   "research_status": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Research Status"
+   }
+  },
+  "title": "ResearchPatch",
+  "type": "object"
+ },
+ "chain.PickFromLeadgen": {
+  "properties": {
+   "lead_ids": {
+    "items": {
+     "type": "integer"
+    },
+    "title": "Lead Ids",
+    "type": "array"
+   }
+  },
+  "required": [
+   "lead_ids"
+  ],
+  "title": "PickFromLeadgen",
+  "type": "object"
+ },
+ "quote_api._OrderIn": {
+  "properties": {
+   "name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Name"
+   },
+   "total": {
+    "title": "Total",
+    "type": "number"
+   },
+   "unit": {
+    "default": "m",
+    "title": "Unit",
+    "type": "string"
+   },
+   "label": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Label"
+   },
+   "label_en": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Label En"
+   }
+  },
+  "required": [
+   "total"
+  ],
+  "title": "_OrderIn",
+  "type": "object"
+ },
+ "quote_api._PolicyIn": {
+  "description": "报价政策覆盖项；未给的字段从税务档案取法定默认值。",
+  "properties": {
+   "input_vat_rate": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "进项票税点，如 0.10",
+    "title": "Input Vat Rate"
+   },
+   "output_vat_rate": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "销项税率；出口零税率填 0",
+    "title": "Output Vat Rate"
+   },
+   "output_vat_mode": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "additive | inclusive",
+    "title": "Output Vat Mode"
+   },
+   "profit_mode": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "fixed | ratio | margin_on_price",
+    "title": "Profit Mode"
+   },
+   "profit_value": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Profit Value"
+   },
+   "misc_fee_rate": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "综合税费系数（除销项增值税外的杂税总和，相对销项计征；售价加成模式使用）",
+    "title": "Misc Fee Rate"
+   },
+   "give_ratio": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "让出可退进项增值税额的比例",
+    "title": "Give Ratio"
+   },
+   "refund_ratio": {
+    "anyOf": [
+     {},
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "可退税比例；'auto' = 出口退税率 ÷ 进项票税点",
+    "title": "Refund Ratio"
+   },
+   "rebate_rate": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "出口退税率（auto 模式使用）",
+    "title": "Rebate Rate"
+   },
+   "stamp_rate": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "印花税率",
+    "title": "Stamp Rate"
+   },
+   "stamp_base": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "profit | cost | base_quote",
+    "title": "Stamp Base"
+   },
+   "extras": {
+    "anyOf": [
+     {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Extras"
+   }
+  },
+  "title": "_PolicyIn",
+  "type": "object"
+ },
+ "quote_api._CalculateIn": {
+  "$defs": {
+   "_OrderIn": {
+    "properties": {
+     "name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Name"
+     },
+     "total": {
+      "title": "Total",
+      "type": "number"
+     },
+     "unit": {
+      "default": "m",
+      "title": "Unit",
+      "type": "string"
+     },
+     "label": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Label"
+     },
+     "label_en": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Label En"
+     }
+    },
+    "required": [
+     "total"
+    ],
+    "title": "_OrderIn",
+    "type": "object"
+   },
+   "_PolicyIn": {
+    "description": "报价政策覆盖项；未给的字段从税务档案取法定默认值。",
+    "properties": {
+     "input_vat_rate": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "进项票税点，如 0.10",
+      "title": "Input Vat Rate"
+     },
+     "output_vat_rate": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "销项税率；出口零税率填 0",
+      "title": "Output Vat Rate"
+     },
+     "output_vat_mode": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "additive | inclusive",
+      "title": "Output Vat Mode"
+     },
+     "profit_mode": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "fixed | ratio | margin_on_price",
+      "title": "Profit Mode"
+     },
+     "profit_value": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Profit Value"
+     },
+     "misc_fee_rate": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "综合税费系数（除销项增值税外的杂税总和，相对销项计征；售价加成模式使用）",
+      "title": "Misc Fee Rate"
+     },
+     "give_ratio": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "让出可退进项增值税额的比例",
+      "title": "Give Ratio"
+     },
+     "refund_ratio": {
+      "anyOf": [
+       {},
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "可退税比例；'auto' = 出口退税率 ÷ 进项票税点",
+      "title": "Refund Ratio"
+     },
+     "rebate_rate": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "出口退税率（auto 模式使用）",
+      "title": "Rebate Rate"
+     },
+     "stamp_rate": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "印花税率",
+      "title": "Stamp Rate"
+     },
+     "stamp_base": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "description": "profit | cost | base_quote",
+      "title": "Stamp Base"
+     },
+     "extras": {
+      "anyOf": [
+       {
+        "items": {
+         "additionalProperties": true,
+         "type": "object"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Extras"
+     }
+    },
+    "title": "_PolicyIn",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "product_key": {
+    "description": "产品模型 key，如 field_fence",
+    "title": "Product Key",
+    "type": "string"
+   },
+   "rate_set_code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "税务档案编号；空则按报价日取当期生效的一份",
+    "title": "Rate Set Code"
+   },
+   "fx_rate": {
+    "description": "汇率：1 报价币 = ? 本币",
+    "title": "Fx Rate",
+    "type": "number"
+   },
+   "fx_source": {
+    "default": "",
+    "title": "Fx Source",
+    "type": "string"
+   },
+   "orders": {
+    "description": "订单量方案，至少一个",
+    "items": {
+     "$ref": "#/$defs/_OrderIn"
+    },
+    "title": "Orders",
+    "type": "array"
+   },
+   "policy": {
+    "anyOf": [
+     {
+      "$ref": "#/$defs/_PolicyIn"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null
+   },
+   "terms": {
+    "anyOf": [
+     {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "贸易术语阶梯配置",
+    "title": "Terms"
+   },
+   "price_inputs": {
+    "anyOf": [
+     {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "当期价格输入（运费等）",
+    "title": "Price Inputs"
+   },
+   "variant_overrides": {
+    "anyOf": [
+     {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "变体数值覆盖",
+    "title": "Variant Overrides"
+   },
+   "packaging_id": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Packaging Id"
+   },
+   "spec_rows": {
+    "anyOf": [
+     {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "只算这些规格行；不传则展开产品的全部组合",
+    "title": "Spec Rows"
+   },
+   "constants_override": {
+    "anyOf": [
+     {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Constants Override"
+   },
+   "validity_days": {
+    "default": 7,
+    "maximum": 365,
+    "minimum": 1,
+    "title": "Validity Days",
+    "type": "integer"
+   },
+   "quote_date": {
+    "anyOf": [
+     {
+      "format": "date",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Quote Date"
+   },
+   "with_verification": {
+    "default": false,
+    "description": "是否附带三遍核验结果",
+    "title": "With Verification",
+    "type": "boolean"
+   },
+   "currency": {
+    "default": "CNY",
+    "title": "Currency",
+    "type": "string"
+   },
+   "quote_currency": {
+    "default": "USD",
+    "title": "Quote Currency",
+    "type": "string"
+   }
+  },
+  "required": [
+   "product_key",
+   "fx_rate",
+   "orders"
+  ],
+  "title": "_CalculateIn",
+  "type": "object"
+ },
+ "quote_api._QuoteItemIn": {
+  "properties": {
+   "sku_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Sku Id"
+   },
+   "product_name": {
+    "title": "Product Name",
+    "type": "string"
+   },
+   "spec_snapshot": {
+    "anyOf": [
+     {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Spec Snapshot"
+   },
+   "qty": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+      "type": "string"
+     }
+    ],
+    "title": "Qty"
+   },
+   "qty_unit": {
+    "default": "ROLLS",
+    "title": "Qty Unit",
+    "type": "string"
+   },
+   "unit_price": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Unit Price"
+   },
+   "currency": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Currency"
+   },
+   "line_amount": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Line Amount"
+   },
+   "sort_order": {
+    "default": 0,
+    "title": "Sort Order",
+    "type": "integer"
+   },
+   "policy_override": {
+    "anyOf": [
+     {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Policy Override"
+   },
+   "price_source": {
+    "default": "auto",
+    "title": "Price Source",
+    "type": "string"
+   },
+   "cost_override": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Cost Override"
+   },
+   "price_override": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Price Override"
+   },
+   "weight_override": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Weight Override"
+   },
+   "volume_override": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Volume Override"
+   },
+   "image_url": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Image Url"
+   },
+   "cost_breakdown": {
+    "anyOf": [
+     {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Cost Breakdown"
+   }
+  },
+  "required": [
+   "product_name",
+   "qty"
+  ],
+  "title": "_QuoteItemIn",
+  "type": "object"
+ },
+ "quote_api._QuoteOrderCreate": {
+  "$defs": {
+   "_QuoteItemIn": {
+    "properties": {
+     "sku_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Sku Id"
+     },
+     "product_name": {
+      "title": "Product Name",
+      "type": "string"
+     },
+     "spec_snapshot": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Spec Snapshot"
+     },
+     "qty": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       }
+      ],
+      "title": "Qty"
+     },
+     "qty_unit": {
+      "default": "ROLLS",
+      "title": "Qty Unit",
+      "type": "string"
+     },
+     "unit_price": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Unit Price"
+     },
+     "currency": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Currency"
+     },
+     "line_amount": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Line Amount"
+     },
+     "sort_order": {
+      "default": 0,
+      "title": "Sort Order",
+      "type": "integer"
+     },
+     "policy_override": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Policy Override"
+     },
+     "price_source": {
+      "default": "auto",
+      "title": "Price Source",
+      "type": "string"
+     },
+     "cost_override": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Cost Override"
+     },
+     "price_override": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Price Override"
+     },
+     "weight_override": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Weight Override"
+     },
+     "volume_override": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Volume Override"
+     },
+     "image_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Image Url"
+     },
+     "cost_breakdown": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Cost Breakdown"
+     }
+    },
+    "required": [
+     "product_name",
+     "qty"
+    ],
+    "title": "_QuoteItemIn",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "customer_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Customer Id"
+   },
+   "customer_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Customer Name"
+   },
+   "inquiry_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Inquiry Id"
+   },
+   "currency": {
+    "default": "USD",
+    "title": "Currency",
+    "type": "string"
+   },
+   "valid_until": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Valid Until"
+   },
+   "notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notes"
+   },
+   "owner_scope": {
+    "default": "private",
+    "title": "Owner Scope",
+    "type": "string"
+   },
+   "incoterm": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Incoterm"
+   },
+   "payment_terms": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Payment Terms"
+   },
+   "port_of_loading": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Port Of Loading"
+   },
+   "port_of_destination": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Port Of Destination"
+   },
+   "shipping_marks": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Shipping Marks"
+   },
+   "country_of_origin": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Country Of Origin"
+   },
+   "freight_valid_from": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Freight Valid From"
+   },
+   "freight_valid_to": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Freight Valid To"
+   },
+   "tax_archive_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tax Archive Id"
+   },
+   "tax_archive_code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tax Archive Code"
+   },
+   "tax_archive_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tax Archive Name"
+   },
+   "tax_snapshot": {
+    "anyOf": [
+     {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tax Snapshot"
+   },
+   "items": {
+    "default": [],
+    "items": {
+     "$ref": "#/$defs/_QuoteItemIn"
+    },
+    "title": "Items",
+    "type": "array"
+   }
+  },
+  "title": "_QuoteOrderCreate",
+  "type": "object"
+ },
+ "quote_api._QuoteOrderPatch": {
+  "properties": {
+   "quote_no": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Quote No"
+   },
+   "customer_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Customer Id"
+   },
+   "customer_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Customer Name"
+   },
+   "currency": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Currency"
+   },
+   "valid_until": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Valid Until"
+   },
+   "notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notes"
+   },
+   "status": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Status"
+   },
+   "incoterm": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Incoterm"
+   },
+   "payment_terms": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Payment Terms"
+   },
+   "port_of_loading": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Port Of Loading"
+   },
+   "port_of_destination": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Port Of Destination"
+   },
+   "shipping_marks": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Shipping Marks"
+   },
+   "country_of_origin": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Country Of Origin"
+   },
+   "freight_valid_from": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Freight Valid From"
+   },
+   "freight_valid_to": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Freight Valid To"
+   },
+   "tax_archive_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tax Archive Id"
+   },
+   "tax_archive_code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tax Archive Code"
+   },
+   "tax_archive_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tax Archive Name"
+   },
+   "tax_snapshot": {
+    "anyOf": [
+     {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tax Snapshot"
+   }
+  },
+  "title": "_QuoteOrderPatch",
+  "type": "object"
+ },
+ "quote_api._BatchQuoteGroup": {
+  "$defs": {
+   "_QuoteItemIn": {
+    "properties": {
+     "sku_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Sku Id"
+     },
+     "product_name": {
+      "title": "Product Name",
+      "type": "string"
+     },
+     "spec_snapshot": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Spec Snapshot"
+     },
+     "qty": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       }
+      ],
+      "title": "Qty"
+     },
+     "qty_unit": {
+      "default": "ROLLS",
+      "title": "Qty Unit",
+      "type": "string"
+     },
+     "unit_price": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Unit Price"
+     },
+     "currency": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Currency"
+     },
+     "line_amount": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Line Amount"
+     },
+     "sort_order": {
+      "default": 0,
+      "title": "Sort Order",
+      "type": "integer"
+     },
+     "policy_override": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Policy Override"
+     },
+     "price_source": {
+      "default": "auto",
+      "title": "Price Source",
+      "type": "string"
+     },
+     "cost_override": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Cost Override"
+     },
+     "price_override": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Price Override"
+     },
+     "weight_override": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Weight Override"
+     },
+     "volume_override": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Volume Override"
+     },
+     "image_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Image Url"
+     },
+     "cost_breakdown": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Cost Breakdown"
+     }
+    },
+    "required": [
+     "product_name",
+     "qty"
+    ],
+    "title": "_QuoteItemIn",
+    "type": "object"
+   }
+  },
+  "description": "批量报价的一组：一个询盘一张报价单。",
+  "properties": {
+   "customer_id": {
+    "title": "Customer Id",
+    "type": "integer"
+   },
+   "customer_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Customer Name"
+   },
+   "inquiry_id": {
+    "title": "Inquiry Id",
+    "type": "integer"
+   },
+   "currency": {
+    "default": "USD",
+    "title": "Currency",
+    "type": "string"
+   },
+   "valid_until": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Valid Until"
+   },
+   "notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notes"
+   },
+   "owner_scope": {
+    "default": "private",
+    "title": "Owner Scope",
+    "type": "string"
+   },
+   "incoterm": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Incoterm"
+   },
+   "payment_terms": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Payment Terms"
+   },
+   "port_of_loading": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Port Of Loading"
+   },
+   "port_of_destination": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Port Of Destination"
+   },
+   "shipping_marks": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Shipping Marks"
+   },
+   "country_of_origin": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Country Of Origin"
+   },
+   "freight_valid_from": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Freight Valid From"
+   },
+   "freight_valid_to": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Freight Valid To"
+   },
+   "tax_archive_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tax Archive Id"
+   },
+   "tax_archive_code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tax Archive Code"
+   },
+   "tax_archive_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tax Archive Name"
+   },
+   "tax_snapshot": {
+    "anyOf": [
+     {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tax Snapshot"
+   },
+   "items": {
+    "default": [],
+    "items": {
+     "$ref": "#/$defs/_QuoteItemIn"
+    },
+    "title": "Items",
+    "type": "array"
+   }
+  },
+  "required": [
+   "customer_id",
+   "inquiry_id"
+  ],
+  "title": "_BatchQuoteGroup",
+  "type": "object"
+ },
+ "quote_api._BatchQuoteIn": {
+  "$defs": {
+   "_BatchQuoteGroup": {
+    "description": "批量报价的一组：一个询盘一张报价单。",
+    "properties": {
+     "customer_id": {
+      "title": "Customer Id",
+      "type": "integer"
+     },
+     "customer_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Customer Name"
+     },
+     "inquiry_id": {
+      "title": "Inquiry Id",
+      "type": "integer"
+     },
+     "currency": {
+      "default": "USD",
+      "title": "Currency",
+      "type": "string"
+     },
+     "valid_until": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Valid Until"
+     },
+     "notes": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Notes"
+     },
+     "owner_scope": {
+      "default": "private",
+      "title": "Owner Scope",
+      "type": "string"
+     },
+     "incoterm": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Incoterm"
+     },
+     "payment_terms": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Payment Terms"
+     },
+     "port_of_loading": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Port Of Loading"
+     },
+     "port_of_destination": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Port Of Destination"
+     },
+     "shipping_marks": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Shipping Marks"
+     },
+     "country_of_origin": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Country Of Origin"
+     },
+     "freight_valid_from": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Freight Valid From"
+     },
+     "freight_valid_to": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Freight Valid To"
+     },
+     "tax_archive_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Tax Archive Id"
+     },
+     "tax_archive_code": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Tax Archive Code"
+     },
+     "tax_archive_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Tax Archive Name"
+     },
+     "tax_snapshot": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Tax Snapshot"
+     },
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/$defs/_QuoteItemIn"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "customer_id",
+     "inquiry_id"
+    ],
+    "title": "_BatchQuoteGroup",
+    "type": "object"
+   },
+   "_QuoteItemIn": {
+    "properties": {
+     "sku_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Sku Id"
+     },
+     "product_name": {
+      "title": "Product Name",
+      "type": "string"
+     },
+     "spec_snapshot": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Spec Snapshot"
+     },
+     "qty": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       }
+      ],
+      "title": "Qty"
+     },
+     "qty_unit": {
+      "default": "ROLLS",
+      "title": "Qty Unit",
+      "type": "string"
+     },
+     "unit_price": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Unit Price"
+     },
+     "currency": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Currency"
+     },
+     "line_amount": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Line Amount"
+     },
+     "sort_order": {
+      "default": 0,
+      "title": "Sort Order",
+      "type": "integer"
+     },
+     "policy_override": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Policy Override"
+     },
+     "price_source": {
+      "default": "auto",
+      "title": "Price Source",
+      "type": "string"
+     },
+     "cost_override": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Cost Override"
+     },
+     "price_override": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Price Override"
+     },
+     "weight_override": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Weight Override"
+     },
+     "volume_override": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Volume Override"
+     },
+     "image_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Image Url"
+     },
+     "cost_breakdown": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Cost Breakdown"
+     }
+    },
+    "required": [
+     "product_name",
+     "qty"
+    ],
+    "title": "_QuoteItemIn",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "groups": {
+    "items": {
+     "$ref": "#/$defs/_BatchQuoteGroup"
+    },
+    "title": "Groups",
+    "type": "array"
+   }
+  },
+  "required": [
+   "groups"
+  ],
+  "title": "_BatchQuoteIn",
+  "type": "object"
+ },
+ "quote_api._QuoteItemsReplace": {
+  "$defs": {
+   "_QuoteItemIn": {
+    "properties": {
+     "sku_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Sku Id"
+     },
+     "product_name": {
+      "title": "Product Name",
+      "type": "string"
+     },
+     "spec_snapshot": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Spec Snapshot"
+     },
+     "qty": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       }
+      ],
+      "title": "Qty"
+     },
+     "qty_unit": {
+      "default": "ROLLS",
+      "title": "Qty Unit",
+      "type": "string"
+     },
+     "unit_price": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Unit Price"
+     },
+     "currency": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Currency"
+     },
+     "line_amount": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Line Amount"
+     },
+     "sort_order": {
+      "default": 0,
+      "title": "Sort Order",
+      "type": "integer"
+     },
+     "policy_override": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Policy Override"
+     },
+     "price_source": {
+      "default": "auto",
+      "title": "Price Source",
+      "type": "string"
+     },
+     "cost_override": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Cost Override"
+     },
+     "price_override": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Price Override"
+     },
+     "weight_override": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Weight Override"
+     },
+     "volume_override": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Volume Override"
+     },
+     "image_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Image Url"
+     },
+     "cost_breakdown": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Cost Breakdown"
+     }
+    },
+    "required": [
+     "product_name",
+     "qty"
+    ],
+    "title": "_QuoteItemIn",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "items": {
+    "items": {
+     "$ref": "#/$defs/_QuoteItemIn"
+    },
+    "title": "Items",
+    "type": "array"
+   }
+  },
+  "required": [
+   "items"
+  ],
+  "title": "_QuoteItemsReplace",
+  "type": "object"
+ },
+ "ws_extras.FxRateIn": {
+  "properties": {
+   "base_currency": {
+    "default": "USD",
+    "title": "Base Currency",
+    "type": "string"
+   },
+   "quote_currency": {
+    "default": "CNY",
+    "title": "Quote Currency",
+    "type": "string"
+   },
+   "rate": {
+    "title": "Rate",
+    "type": "number"
+   },
+   "rate_date": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Rate Date"
+   },
+   "source": {
+    "default": "manual",
+    "title": "Source",
+    "type": "string"
+   }
+  },
+  "required": [
+   "rate"
+  ],
+  "title": "FxRateIn",
+  "type": "object"
+ },
+ "ws_extras.FxRateOut": {
+  "properties": {
+   "base_currency": {
+    "title": "Base Currency",
+    "type": "string"
+   },
+   "quote_currency": {
+    "title": "Quote Currency",
+    "type": "string"
+   },
+   "rate": {
+    "title": "Rate",
+    "type": "number"
+   },
+   "rate_date": {
+    "title": "Rate Date",
+    "type": "string"
+   },
+   "source": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Source"
+   },
+   "is_stale": {
+    "title": "Is Stale",
+    "type": "boolean"
+   }
+  },
+  "required": [
+   "base_currency",
+   "quote_currency",
+   "rate",
+   "rate_date",
+   "source",
+   "is_stale"
+  ],
+  "title": "FxRateOut",
+  "type": "object"
+ },
+ "ws_extras.ActualCostIn": {
+  "properties": {
+   "product_key": {
+    "title": "Product Key",
+    "type": "string"
+   },
+   "supplier_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Supplier Name"
+   },
+   "effective_from": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Effective From"
+   },
+   "effective_to": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Effective To"
+   },
+   "unit_cost_actual": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Unit Cost Actual"
+   },
+   "total_cost_actual": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Total Cost Actual"
+   },
+   "qty_snapshot": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Qty Snapshot"
+   },
+   "qty_unit": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Qty Unit"
+   },
+   "cost_basis": {
+    "default": "pretax",
+    "title": "Cost Basis",
+    "type": "string"
+   },
+   "input_vat_rate_snapshot": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Input Vat Rate Snapshot"
+   },
+   "currency": {
+    "default": "CNY",
+    "title": "Currency",
+    "type": "string"
+   },
+   "notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notes"
+   }
+  },
+  "required": [
+   "product_key"
+  ],
+  "title": "ActualCostIn",
+  "type": "object"
+ },
+ "ws_extras.ActualCostResolveIn": {
+  "properties": {
+   "unit_cost_actual": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Unit Cost Actual"
+   },
+   "total_cost_actual": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Total Cost Actual"
+   },
+   "qty": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Qty"
+   },
+   "cost_basis": {
+    "default": "pretax",
+    "title": "Cost Basis",
+    "type": "string"
+   },
+   "input_vat_rate": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Input Vat Rate"
+   }
+  },
+  "title": "ActualCostResolveIn",
+  "type": "object"
+ },
+ "ws_products.TenantProductIn": {
+  "properties": {
+   "product_key": {
+    "title": "Product Key",
+    "type": "string"
+   },
+   "product_name": {
+    "title": "Product Name",
+    "type": "string"
+   },
+   "product_name_en": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Product Name En"
+   },
+   "category_code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Category Code"
+   },
+   "cost_field": {
+    "default": "raw_price",
+    "title": "Cost Field",
+    "type": "string"
+   },
+   "cost_basis": {
+    "default": "pretax",
+    "title": "Cost Basis",
+    "type": "string"
+   },
+   "cost_unit": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Cost Unit"
+   },
+   "profit_mode": {
+    "default": "margin_on_price",
+    "title": "Profit Mode",
+    "type": "string"
+   },
+   "profit_value": {
+    "default": 0.06,
+    "title": "Profit Value",
+    "type": "number"
+   },
+   "misc_fee_rate": {
+    "default": 0.03,
+    "title": "Misc Fee Rate",
+    "type": "number"
+   },
+   "spec": {
+    "additionalProperties": true,
+    "title": "Spec",
+    "type": "object"
+   },
+   "override": {
+    "anyOf": [
+     {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Override"
+   },
+   "is_active": {
+    "default": true,
+    "title": "Is Active",
+    "type": "boolean"
+   }
+  },
+  "required": [
+   "product_key",
+   "product_name",
+   "spec"
+  ],
+  "title": "TenantProductIn",
+  "type": "object"
+ },
+ "ws_products.WorkstationProductIn": {
+  "properties": {
+   "product_key": {
+    "title": "Product Key",
+    "type": "string"
+   },
+   "is_enabled": {
+    "default": true,
+    "title": "Is Enabled",
+    "type": "boolean"
+   }
+  },
+  "required": [
+   "product_key"
+  ],
+  "title": "WorkstationProductIn",
+  "type": "object"
+ },
+ "ws_products._TenantProductStatusIn": {
+  "properties": {
+   "product_key": {
+    "title": "Product Key",
+    "type": "string"
+   },
+   "is_enabled": {
+    "default": true,
+    "title": "Is Enabled",
+    "type": "boolean"
+   }
+  },
+  "required": [
+   "product_key"
+  ],
+  "title": "_TenantProductStatusIn",
+  "type": "object"
+ },
+ "ws_shipments.ShipmentCreate": {
+  "properties": {
+   "order_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Order Id"
+   },
+   "customer_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Customer Id"
+   },
+   "consignee": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Consignee"
+   },
+   "notify_party": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notify Party"
+   },
+   "cargo_desc": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Cargo Desc"
+   },
+   "cargo_qty": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Cargo Qty"
+   },
+   "cargo_qty_unit": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Cargo Qty Unit"
+   },
+   "cargo_weight_kg": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Cargo Weight Kg"
+   },
+   "cargo_volume_cbm": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Cargo Volume Cbm"
+   },
+   "pol": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Pol"
+   },
+   "pod": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Pod"
+   },
+   "pol_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Pol Name"
+   },
+   "pod_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Pod Name"
+   },
+   "vessel": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Vessel"
+   },
+   "voyage": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Voyage"
+   },
+   "container_no": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Container No"
+   },
+   "so_no": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "So No"
+   },
+   "booking_no": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Booking No"
+   },
+   "bl_no": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Bl No"
+   },
+   "bl_type": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Bl Type"
+   },
+   "etd": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Etd"
+   },
+   "eta": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Eta"
+   },
+   "atd": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Atd"
+   },
+   "ata": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Ata"
+   },
+   "freight_remark": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Freight Remark"
+   },
+   "owner_scope": {
+    "default": "private",
+    "title": "Owner Scope",
+    "type": "string"
+   }
+  },
+  "title": "ShipmentCreate",
+  "type": "object"
+ },
+ "ws_shipments.ShipmentPatch": {
+  "properties": {
+   "consignee": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Consignee"
+   },
+   "notify_party": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notify Party"
+   },
+   "cargo_desc": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Cargo Desc"
+   },
+   "bl_no": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Bl No"
+   },
+   "bl_type": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Bl Type"
+   },
+   "etd": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Etd"
+   },
+   "eta": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Eta"
+   },
+   "atd": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Atd"
+   },
+   "ata": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Ata"
+   },
+   "vessel": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Vessel"
+   },
+   "voyage": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Voyage"
+   },
+   "container_no": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Container No"
+   },
+   "so_no": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "So No"
+   },
+   "booking_no": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Booking No"
+   },
+   "status": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Status"
+   },
+   "freight_remark": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Freight Remark"
+   }
+  },
+  "title": "ShipmentPatch",
+  "type": "object"
+ },
+ "ws_quote_ext._ExplainIn": {
+  "description": "逐步代入计算逻辑的输入：给一组规格取值。",
+  "properties": {
+   "spec": {
+    "additionalProperties": true,
+    "description": "规格取值，如 {'height_m': 1.2, 'mesh_mm': 100, 'wire': '全丝2.0', 'coating': '普锌40g/㎡', 'wave': '无波款'}",
+    "title": "Spec",
+    "type": "object"
+   },
+   "total": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "订单总长度，用于算件数与订单级指标",
+    "title": "Total"
+   },
+   "constants": {
+    "anyOf": [
+     {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "常量覆盖（如 wave_add_per_100m）",
+    "title": "Constants"
+   },
+   "metrics": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "只算这些指标；不传则全算",
+    "title": "Metrics"
+   },
+   "spec_override": {
+    "anyOf": [
+     {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "**草稿定义**（可选）：用这份**未保存**的 ProductSpec 代替产品注册表里的定义来试算。只在本次请求内生效、**不落库**；结构不合法会 422（未知字段/类型不对都报错，不会静默取默认）。缺字段则按默认值参与，并在响应的 `warnings` 里如实列出。**与 orchestrator 的 ExplainIn 逐字段一致**（同一份解析器）。",
+    "title": "Spec Override"
+   }
+  },
+  "title": "_ExplainIn",
+  "type": "object"
+ },
+ "ws_option_overrides.OptionOverrideIn": {
+  "description": "改一个维度的档位（增量，不是整体覆盖）。字段与 orchestrator 逐字一致。",
+  "properties": {
+   "product_key": {
+    "description": "产品 key，如 field_fence",
+    "title": "Product Key",
+    "type": "string"
+   },
+   "field": {
+    "description": "维度字段，如 coating_code 或 coating",
+    "title": "Field",
+    "type": "string"
+   },
+   "rename": {
+    "anyOf": [
+     {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Rename"
+   },
+   "disable": {
+    "anyOf": [
+     {
+      "items": {},
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Disable"
+   },
+   "enable": {
+    "anyOf": [
+     {
+      "items": {},
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Enable"
+   }
+  },
+  "required": [
+   "product_key",
+   "field"
+  ],
+  "title": "OptionOverrideIn",
+  "type": "object"
+ },
+ "ws_crm_ext._CustomerUpdate": {
+  "properties": {
+   "company_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Company Name"
+   },
+   "abbr": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Abbr"
+   },
+   "country": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Country"
+   },
+   "address": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Address"
+   },
+   "default_port": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Default Port"
+   },
+   "credit_level": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Credit Level"
+   },
+   "notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notes"
+   },
+   "owner_scope": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Owner Scope"
+   }
+  },
+  "title": "_CustomerUpdate",
+  "type": "object"
+ },
+ "ws_crm_ext._InquiryUpdate": {
+  "properties": {
+   "status": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Status"
+   },
+   "inquiry_no": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Inquiry No"
+   },
+   "channel": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Channel"
+   },
+   "product_name_raw": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Product Name Raw"
+   },
+   "quantity": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Quantity"
+   },
+   "quantity_unit": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Quantity Unit"
+   },
+   "application": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Application"
+   },
+   "notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notes"
+   },
+   "owner_scope": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Owner Scope"
+   }
+  },
+  "title": "_InquiryUpdate",
+  "type": "object"
+ },
+ "ws_docs_hardening.FactsConfirmIn": {
+  "description": "确认事实。`keys` 为空 = 确认全部未确认事实（界面上\"全部确认\"）。",
+  "properties": {
+   "keys": {
+    "default": [],
+    "items": {
+     "type": "string"
+    },
+    "title": "Keys",
+    "type": "array"
+   }
+  },
+  "title": "FactsConfirmIn",
+  "type": "object"
+ },
+ "ws_docs_hardening.FactPatchIn": {
+  "description": "改事实的**处置**（不是改值）。`value` 显式声明只为给出明确错误码。",
+  "properties": {
+   "trust": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Trust"
+   },
+   "immutable": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Immutable"
+   },
+   "text_zh": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Text Zh"
+   },
+   "text_en": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Text En"
+   },
+   "evidence_ref": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Evidence Ref"
+   },
+   "value": {
+    "anyOf": [
+     {},
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Value"
+   }
+  },
+  "title": "FactPatchIn",
+  "type": "object"
+ },
+ "ws_docs_hardening.ReceiptIn": {
+  "description": "登记一笔收款（§4-E）。金额用 Any 接收再宽容转 Decimal，非法值 422。",
+  "properties": {
+   "schedule_type": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Schedule Type"
+   },
+   "schedule_amount": {
+    "anyOf": [
+     {},
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Schedule Amount"
+   },
+   "received_amount": {
+    "title": "Received Amount"
+   },
+   "currency": {
+    "default": "USD",
+    "title": "Currency",
+    "type": "string"
+   },
+   "received_at": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Received At"
+   },
+   "bank_ref": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Bank Ref"
+   },
+   "notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notes"
+   },
+   "fx_rate_used": {
+    "anyOf": [
+     {},
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Fx Rate Used"
+   }
+  },
+  "required": [
+   "received_amount"
+  ],
+  "title": "ReceiptIn",
+  "type": "object"
+ },
+ "ws_docs_hardening.DocSetItemIn": {
+  "properties": {
+   "doc_type": {
+    "title": "Doc Type",
+    "type": "string"
+   },
+   "role": {
+    "default": "required",
+    "title": "Role",
+    "type": "string"
+   },
+   "issuer": {
+    "default": "ours",
+    "title": "Issuer",
+    "type": "string"
+   },
+   "trigger_expr": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Trigger Expr"
+   },
+   "evidence_required": {
+    "default": false,
+    "title": "Evidence Required",
+    "type": "boolean"
+   }
+  },
+  "required": [
+   "doc_type"
+  ],
+  "title": "DocSetItemIn",
+  "type": "object"
+ },
+ "ws_docs_hardening.DocSetIn": {
+  "$defs": {
+   "DocSetItemIn": {
+    "properties": {
+     "doc_type": {
+      "title": "Doc Type",
+      "type": "string"
+     },
+     "role": {
+      "default": "required",
+      "title": "Role",
+      "type": "string"
+     },
+     "issuer": {
+      "default": "ours",
+      "title": "Issuer",
+      "type": "string"
+     },
+     "trigger_expr": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Trigger Expr"
+     },
+     "evidence_required": {
+      "default": false,
+      "title": "Evidence Required",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "doc_type"
+    ],
+    "title": "DocSetItemIn",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "items": {
+    "default": [],
+    "items": {
+     "$ref": "#/$defs/DocSetItemIn"
+    },
+    "title": "Items",
+    "type": "array"
+   }
+  },
+  "title": "DocSetIn",
+  "type": "object"
+ },
+ "ws_docs_hardening.DocSetReceiptIn": {
+  "properties": {
+   "action": {
+    "title": "Action",
+    "type": "string"
+   },
+   "received_doc_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Received Doc Id"
+   },
+   "waived_reason": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Waived Reason"
+   }
+  },
+  "required": [
+   "action"
+  ],
+  "title": "DocSetReceiptIn",
+  "type": "object"
+ },
+ "ws_docs_hardening.VerifyExportIn": {
+  "description": "导出后自检入参（前端从 PDF 提取文本与图片计数）。",
+  "properties": {
+   "texts": {
+    "default": [],
+    "items": {
+     "type": "string"
+    },
+    "title": "Texts",
+    "type": "array"
+   },
+   "pdf_text": {
+    "default": "",
+    "title": "Pdf Text",
+    "type": "string"
+   },
+   "image_counts": {
+    "additionalProperties": {
+     "type": "integer"
+    },
+    "default": {},
+    "title": "Image Counts",
+    "type": "object"
+   },
+   "expected_image_counts": {
+    "anyOf": [
+     {
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Expected Image Counts"
+   },
+   "allow_override": {
+    "default": false,
+    "title": "Allow Override",
+    "type": "boolean"
+   }
+  },
+  "title": "VerifyExportIn",
+  "type": "object"
+ },
+ "ws_docs_ext.TradeDocConfirmIn": {
+  "description": "确认（issued）：校验必填 → 冻结；确认后不可修改。\n\n可选 `html` / `pdf_name`（TODO(TODO:F1) 方案 A）：前端随签发提交**预览用的同一份 HTML**，\n服务端出 PDF 并归档到本单证（`render_pdf` 新版本上位）。不传 html = 旧行为（不产 PDF）。\n\n失败策略（用户 2026-10-20 口径）：**PDF 失败不回滚签发** —— 签发是法律动作，\n归档是后续动作；响应里带 `pdf_archive: {ok:false, ...}`，界面提示手动上传兜底，\n绝不能因为渲染器没配就把\"已签发\"静默吞掉。\n\n`allow_lint_override`（A7 加固，2026-10-20 新增）：越过签发前的事实层闸门\n（`FACT_UNVERIFIED` / `FACT_IMMUTABLE` / `DOC_REF_BROKEN` / `DOC_SET_NOT_ALLOWED`）。\n**默认不开放给前端**：只给明确的运维/紧急场景用，且越过必落审计事件。",
+  "properties": {
+   "html": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Html"
+   },
+   "pdf_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Pdf Name"
+   },
+   "allow_lint_override": {
+    "default": false,
+    "title": "Allow Lint Override",
+    "type": "boolean"
+   }
+  },
+  "title": "TradeDocConfirmIn",
+  "type": "object"
+ },
+ "ws_docs_ext.TradeDocTranslateIn": {
+  "properties": {
+   "fields": {
+    "additionalProperties": {
+     "type": "string"
+    },
+    "default": {},
+    "title": "Fields",
+    "type": "object"
+   },
+   "target": {
+    "default": "en",
+    "title": "Target",
+    "type": "string"
+   }
+  },
+  "title": "TradeDocTranslateIn",
+  "type": "object"
+ },
+ "ws_docs_ext.TradeDocRestoreIn": {
+  "description": "恢复历史版本：note 可选（落进新版本的备注，便于对账）。",
+  "properties": {
+   "note": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Note"
+   }
+  },
+  "title": "TradeDocRestoreIn",
+  "type": "object"
+ },
+ "ws_teams.TeamCreateIn": {
+  "properties": {
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "workstations": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Workstations"
+   }
+  },
+  "required": [
+   "name"
+  ],
+  "title": "TeamCreateIn",
+  "type": "object"
+ },
+ "ws_teams.TeamPatchIn": {
+  "properties": {
+   "name": {
+    "title": "Name",
+    "type": "string"
+   }
+  },
+  "required": [
+   "name"
+  ],
+  "title": "TeamPatchIn",
+  "type": "object"
+ },
+ "ws_teams.InviteCreateIn": {
+  "properties": {
+   "email": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Email"
+   }
+  },
+  "title": "InviteCreateIn",
+  "type": "object"
+ },
+ "ws_teams.JoinIn": {
+  "properties": {
+   "token": {
+    "title": "Token",
+    "type": "string"
+   }
+  },
+  "required": [
+   "token"
+  ],
+  "title": "JoinIn",
+  "type": "object"
+ },
+ "ws_teams.TeamTransferIn": {
+  "description": "转让团队管理权：把团队交给另一个成员。",
+  "properties": {
+   "user_id": {
+    "title": "User Id",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "user_id"
+  ],
+  "title": "TeamTransferIn",
+  "type": "object"
+ },
+ "ws_teams.ConsoleAccessIn": {
+  "properties": {
+   "allowed": {
+    "title": "Allowed",
+    "type": "boolean"
+   }
+  },
+  "required": [
+   "allowed"
+  ],
+  "title": "ConsoleAccessIn",
+  "type": "object"
+ },
+ "ws_clause_templates.ClauseTemplateIn": {
+  "description": "新建一条条款模板（字段与前端设置页一致）。",
+  "properties": {
+   "name": {
+    "description": "条款名称（团队内唯一，下拉辨认用）",
+    "title": "Name",
+    "type": "string"
+   },
+   "doc_types": {
+    "description": "适用单证类型（DOC_TYPE 18 类子集）",
+    "items": {
+     "type": "string"
+    },
+    "title": "Doc Types",
+    "type": "array"
+   },
+   "text_zh": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "中文条款正文",
+    "title": "Text Zh"
+   },
+   "text_en": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "英文条款正文",
+    "title": "Text En"
+   },
+   "sort_order": {
+    "default": 0,
+    "description": "排序（小的在前）",
+    "title": "Sort Order",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "name",
+   "doc_types"
+  ],
+  "title": "ClauseTemplateIn",
+  "type": "object"
+ },
+ "ws_clause_templates.ClauseTemplatePatchIn": {
+  "description": "局部更新：`exclude_unset` 区分\"没传\"与\"显式 null\"。",
+  "properties": {
+   "name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Name"
+   },
+   "doc_types": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Doc Types"
+   },
+   "text_zh": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Text Zh"
+   },
+   "text_en": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Text En"
+   },
+   "sort_order": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Sort Order"
+   }
+  },
+  "title": "ClauseTemplatePatchIn",
+  "type": "object"
+ },
+ "ws_workstations.SubscriptionIn": {
+  "properties": {
+   "active": {
+    "default": true,
+    "title": "Active",
+    "type": "boolean"
+   },
+   "expires_at": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Expires At"
+   }
+  },
+  "title": "SubscriptionIn",
+  "type": "object"
+ },
+ "ws_admin_accounts.AccountStatusIn": {
+  "properties": {
+   "status": {
+    "title": "Status",
+    "type": "string"
+   }
+  },
+  "required": [
+   "status"
+  ],
+  "title": "AccountStatusIn",
+  "type": "object"
+ },
+ "ws_files.ProfileIn": {
+  "properties": {
+   "info": {
+    "additionalProperties": true,
+    "title": "Info",
+    "type": "object"
+   }
+  },
+  "required": [
+   "info"
+  ],
+  "title": "ProfileIn",
+  "type": "object"
+ },
+ "ws_files.FilePatch": {
+  "properties": {
+   "name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Name"
+   },
+   "is_primary": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Is Primary"
+   },
+   "caption": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Caption"
+   },
+   "sort_order": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Sort Order"
+   }
+  },
+  "title": "FilePatch",
+  "type": "object"
+ },
+ "ws_files.DocFileIn": {
+  "properties": {
+   "file_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "File Id"
+   },
+   "role": {
+    "default": "product_photo",
+    "title": "Role",
+    "type": "string"
+   },
+   "caption": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Caption"
+   },
+   "sort_order": {
+    "default": 0,
+    "title": "Sort Order",
+    "type": "integer"
+   }
+  },
+  "title": "DocFileIn",
+  "type": "object"
+ },
+ "ws_files.RenderPdfIn": {
+  "properties": {
+   "html": {
+    "title": "Html",
+    "type": "string"
+   },
+   "name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Name"
+   }
+  },
+  "required": [
+   "html"
+  ],
+  "title": "RenderPdfIn",
+  "type": "object"
+ },
+ "ws_files.PresignIn": {
+  "properties": {
+   "owner_type": {
+    "title": "Owner Type",
+    "type": "string"
+   },
+   "owner_id": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Owner Id"
+   },
+   "kind": {
+    "title": "Kind",
+    "type": "string"
+   },
+   "media_kind": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Media Kind"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "content_type": {
+    "title": "Content Type",
+    "type": "string"
+   },
+   "size": {
+    "title": "Size",
+    "type": "integer"
+   },
+   "sha256": {
+    "title": "Sha256",
+    "type": "string"
+   },
+   "file_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "File Name"
+   }
+  },
+  "required": [
+   "owner_type",
+   "kind",
+   "name",
+   "content_type",
+   "size",
+   "sha256"
+  ],
+  "title": "PresignIn",
+  "type": "object"
+ },
+ "ws_files.RegisterIn": {
+  "properties": {
+   "owner_type": {
+    "title": "Owner Type",
+    "type": "string"
+   },
+   "owner_id": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Owner Id"
+   },
+   "kind": {
+    "title": "Kind",
+    "type": "string"
+   },
+   "media_kind": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Media Kind"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "content_type": {
+    "title": "Content Type",
+    "type": "string"
+   },
+   "size": {
+    "title": "Size",
+    "type": "integer"
+   },
+   "sha256": {
+    "title": "Sha256",
+    "type": "string"
+   },
+   "file_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "File Name"
+   },
+   "supersede": {
+    "default": false,
+    "title": "Supersede",
+    "type": "boolean"
+   }
+  },
+  "required": [
+   "owner_type",
+   "kind",
+   "name",
+   "content_type",
+   "size",
+   "sha256"
+  ],
+  "title": "RegisterIn",
+  "type": "object"
+ },
+ "tax_archives.TaxValuesIn": {
+  "properties": {
+   "output_vat_rate": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Output Vat Rate"
+   },
+   "misc_fee_rate": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Misc Fee Rate"
+   }
+  },
+  "title": "TaxValuesIn",
+  "type": "object"
+ },
+ "tax_archives.TaxArchiveCreate": {
+  "$defs": {
+   "TaxValuesIn": {
+    "properties": {
+     "output_vat_rate": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Output Vat Rate"
+     },
+     "misc_fee_rate": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Misc Fee Rate"
+     }
+    },
+    "title": "TaxValuesIn",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "name": {
+    "maxLength": 60,
+    "minLength": 1,
+    "title": "Name",
+    "type": "string"
+   },
+   "code": {
+    "anyOf": [
+     {
+      "maxLength": 40,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Code"
+   },
+   "effective_from": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Effective From"
+   },
+   "effective_to": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Effective To"
+   },
+   "tax_values": {
+    "$ref": "#/$defs/TaxValuesIn"
+   },
+   "source": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Source"
+   }
+  },
+  "required": [
+   "name",
+   "tax_values"
+  ],
+  "title": "TaxArchiveCreate",
+  "type": "object"
+ },
+ "tax_archives.TaxArchivePatch": {
+  "$defs": {
+   "TaxValuesIn": {
+    "properties": {
+     "output_vat_rate": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Output Vat Rate"
+     },
+     "misc_fee_rate": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Misc Fee Rate"
+     }
+    },
+    "title": "TaxValuesIn",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "name": {
+    "anyOf": [
+     {
+      "maxLength": 60,
+      "minLength": 1,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Name"
+   },
+   "code": {
+    "anyOf": [
+     {
+      "maxLength": 40,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Code"
+   },
+   "effective_from": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Effective From"
+   },
+   "effective_to": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Effective To"
+   },
+   "tax_values": {
+    "anyOf": [
+     {
+      "$ref": "#/$defs/TaxValuesIn"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null
+   },
+   "source": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Source"
+   },
+   "status": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Status"
+   }
+  },
+  "title": "TaxArchivePatch",
+  "type": "object"
+ },
+ "tax_archives.ProductTaxRateIn": {
+  "properties": {
+   "product_key": {
+    "maxLength": 80,
+    "minLength": 1,
+    "title": "Product Key",
+    "type": "string"
+   },
+   "input_vat_rate": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Input Vat Rate"
+   },
+   "rebate_rate": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Rebate Rate"
+   }
+  },
+  "required": [
+   "product_key"
+  ],
+  "title": "ProductTaxRateIn",
+  "type": "object"
+ },
+ "tax_archives.ProductTaxRatePatch": {
+  "properties": {
+   "input_vat_rate": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Input Vat Rate"
+   },
+   "rebate_rate": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Rebate Rate"
+   }
+  },
+  "title": "ProductTaxRatePatch",
+  "type": "object"
+ },
+ "main.BootstrapRequest": {
+  "properties": {
+   "email": {
+    "title": "Email",
+    "type": "string"
+   },
+   "password": {
+    "title": "Password",
+    "type": "string"
+   },
+   "display_name": {
+    "title": "Display Name",
+    "type": "string"
+   }
+  },
+  "required": [
+   "email",
+   "password",
+   "display_name"
+  ],
+  "title": "BootstrapRequest",
+  "type": "object"
+ },
+ "main.LoginRequest": {
+  "properties": {
+   "email": {
+    "title": "Email",
+    "type": "string"
+   },
+   "password": {
+    "title": "Password",
+    "type": "string"
+   }
+  },
+  "required": [
+   "email",
+   "password"
+  ],
+  "title": "LoginRequest",
+  "type": "object"
+ },
+ "main.ShipmentCreate": {
+  "properties": {
+   "shipper": {
+    "title": "Shipper",
+    "type": "string"
+   },
+   "consignee": {
+    "title": "Consignee",
+    "type": "string"
+   },
+   "product_desc": {
+    "title": "Product Desc",
+    "type": "string"
+   },
+   "ship_date": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Ship Date"
+   },
+   "carrier": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Carrier"
+   },
+   "notify_party": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notify Party"
+   },
+   "origin_port": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Origin Port"
+   },
+   "origin_country": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Origin Country"
+   },
+   "dest_port": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Dest Port"
+   },
+   "dest_country": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Dest Country"
+   },
+   "product_desc_norm": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Product Desc Norm"
+   },
+   "hs_code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Hs Code"
+   },
+   "qty": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Qty"
+   },
+   "qty_unit": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Qty Unit"
+   },
+   "gross_weight_kg": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Gross Weight Kg"
+   },
+   "net_weight_kg": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Net Weight Kg"
+   },
+   "volume_cbm": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Volume Cbm"
+   },
+   "container_no": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Container No"
+   },
+   "container_type": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Container Type"
+   },
+   "bl_no": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Bl No"
+   },
+   "voyage_no": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Voyage No"
+   },
+   "declared_value": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Declared Value"
+   },
+   "currency": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Currency"
+   },
+   "marks": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Marks"
+   },
+   "remarks": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Remarks"
+   },
+   "shipment_type": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Shipment Type"
+   },
+   "incoterm": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Incoterm"
+   },
+   "freight_prepaid": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Freight Prepaid"
+   },
+   "source_channel": {
+    "default": "manual_api",
+    "title": "Source Channel",
+    "type": "string"
+   },
+   "source_ref": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Source Ref"
+   },
+   "is_verified": {
+    "default": false,
+    "title": "Is Verified",
+    "type": "boolean"
+   }
+  },
+  "required": [
+   "shipper",
+   "consignee",
+   "product_desc"
+  ],
+  "title": "ShipmentCreate",
+  "type": "object"
+ },
+ "main.UpdateProfileIn": {
+  "properties": {
+   "display_name": {
+    "title": "Display Name",
+    "type": "string"
+   }
+  },
+  "required": [
+   "display_name"
+  ],
+  "title": "UpdateProfileIn",
+  "type": "object"
+ },
+ "main.ChangePasswordIn": {
+  "properties": {
+   "current_password": {
+    "title": "Current Password",
+    "type": "string"
+   },
+   "new_password": {
+    "title": "New Password",
+    "type": "string"
+   }
+  },
+  "required": [
+   "current_password",
+   "new_password"
+  ],
+  "title": "ChangePasswordIn",
+  "type": "object"
+ },
+ "main._ForgotIn": {
+  "properties": {
+   "email": {
+    "default": "",
+    "title": "Email",
+    "type": "string"
+   }
+  },
+  "title": "_ForgotIn",
+  "type": "object"
+ },
+ "main._ResetIn": {
+  "properties": {
+   "token": {
+    "default": "",
+    "title": "Token",
+    "type": "string"
+   },
+   "new_password": {
+    "default": "",
+    "title": "New Password",
+    "type": "string"
+   }
+  },
+  "title": "_ResetIn",
+  "type": "object"
+ },
+ "main.RegisterRequest": {
+  "properties": {
+   "email": {
+    "title": "Email",
+    "type": "string"
+   },
+   "password": {
+    "title": "Password",
+    "type": "string"
+   },
+   "display_name": {
+    "title": "Display Name",
+    "type": "string"
+   },
+   "company_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Company Name"
+   },
+   "product_category": {
+    "title": "Product Category",
+    "type": "string"
+   },
+   "contact": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Contact"
+   },
+   "invite_token": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Invite Token"
+   },
+   "team_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Team Name"
+   },
+   "workstations": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Workstations"
+   }
+  },
+  "required": [
+   "email",
+   "password",
+   "display_name",
+   "product_category"
+  ],
+  "title": "RegisterRequest",
+  "type": "object"
+ },
+ "main.CustomerCreate": {
+  "properties": {
+   "company_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Company Name"
+   },
+   "contact_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Contact Name"
+   },
+   "contact_phone": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Contact Phone"
+   },
+   "contact_email": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Contact Email"
+   },
+   "abbr": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Abbr"
+   },
+   "country": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Country"
+   },
+   "address": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Address"
+   },
+   "default_port": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Default Port"
+   },
+   "credit_level": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Credit Level"
+   },
+   "stage": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "active",
+    "title": "Stage"
+   },
+   "notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notes"
+   },
+   "owner_scope": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Owner Scope"
+   }
+  },
+  "title": "CustomerCreate",
+  "type": "object"
+ },
+ "main.ContactCreate": {
+  "properties": {
+   "customer_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Customer Id"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "position": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Position"
+   },
+   "phone": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Phone"
+   },
+   "email": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Email"
+   },
+   "whatsapp": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Whatsapp"
+   },
+   "wechat": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Wechat"
+   },
+   "is_primary": {
+    "default": false,
+    "title": "Is Primary",
+    "type": "boolean"
+   }
+  },
+  "required": [
+   "name"
+  ],
+  "title": "ContactCreate",
+  "type": "object"
+ },
+ "main.InquiryCreate": {
+  "properties": {
+   "customer_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Customer Id"
+   },
+   "channel": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Channel"
+   },
+   "lead_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Lead Id"
+   },
+   "owner_scope": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Owner Scope"
+   },
+   "category_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Category Id"
+   },
+   "product_name_raw": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Product Name Raw"
+   },
+   "quantity": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Quantity"
+   },
+   "quantity_unit": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Quantity Unit"
+   },
+   "application": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Application"
+   },
+   "status": {
+    "default": "unquoted",
+    "title": "Status",
+    "type": "string"
+   },
+   "notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notes"
+   }
+  },
+  "title": "InquiryCreate",
+  "type": "object"
+ },
+ "main.StageUpdate": {
+  "properties": {
+   "stage": {
+    "title": "Stage",
+    "type": "string"
+   },
+   "reason": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Reason"
+   }
+  },
+  "required": [
+   "stage"
+  ],
+  "title": "StageUpdate",
+  "type": "object"
+ },
+ "main.ContactUpdate": {
+  "properties": {
+   "name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Name"
+   },
+   "position": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Position"
+   },
+   "phone": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Phone"
+   },
+   "email": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Email"
+   },
+   "whatsapp": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Whatsapp"
+   },
+   "wechat": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Wechat"
+   },
+   "is_primary": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Is Primary"
+   }
+  },
+  "title": "ContactUpdate",
+  "type": "object"
+ },
+ "main.MarketProductCreate": {
+  "properties": {
+   "region_code": {
+    "title": "Region Code",
+    "type": "string"
+   },
+   "category_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Category Id"
+   },
+   "demand_level": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Demand Level"
+   },
+   "popularity_rank": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Popularity Rank"
+   },
+   "cert_requirements": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Cert Requirements"
+   },
+   "standards": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Standards"
+   },
+   "seasonality": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Seasonality"
+   },
+   "source": {
+    "default": "manual",
+    "title": "Source",
+    "type": "string"
+   },
+   "confidence": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Confidence"
+   }
+  },
+  "required": [
+   "region_code"
+  ],
+  "title": "MarketProductCreate",
+  "type": "object"
+ },
+ "main.MarketSpecCreate": {
+  "properties": {
+   "market_product_id": {
+    "title": "Market Product Id",
+    "type": "integer"
+   },
+   "spec_key": {
+    "title": "Spec Key",
+    "type": "string"
+   },
+   "spec_value": {
+    "title": "Spec Value",
+    "type": "string"
+   },
+   "unit": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Unit"
+   },
+   "frequency_rank": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Frequency Rank"
+   },
+   "sku_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Sku Id"
+   }
+  },
+  "required": [
+   "market_product_id",
+   "spec_key",
+   "spec_value"
+  ],
+  "title": "MarketSpecCreate",
+  "type": "object"
+ },
+ "main.NameMappingCreate": {
+  "properties": {
+   "category_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Category Id"
+   },
+   "region_code": {
+    "title": "Region Code",
+    "type": "string"
+   },
+   "lang": {
+    "title": "Lang",
+    "type": "string"
+   },
+   "local_name": {
+    "title": "Local Name",
+    "type": "string"
+   },
+   "alt_names": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Alt Names"
+   },
+   "hs_code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Hs Code"
+   },
+   "source": {
+    "default": "manual",
+    "title": "Source",
+    "type": "string"
+   },
+   "confidence": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Confidence"
+   },
+   "is_verified": {
+    "default": false,
+    "title": "Is Verified",
+    "type": "boolean"
+   }
+  },
+  "required": [
+   "region_code",
+   "lang",
+   "local_name"
+  ],
+  "title": "NameMappingCreate",
+  "type": "object"
+ },
+ "main.EventCreate": {
+  "properties": {
+   "schema_version": {
+    "default": 1,
+    "title": "Schema Version",
+    "type": "integer"
+   },
+   "event_type": {
+    "title": "Event Type",
+    "type": "string"
+   },
+   "event_source": {
+    "default": "frontend",
+    "title": "Event Source",
+    "type": "string"
+   },
+   "tenant_id": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tenant Id"
+   },
+   "actor_id": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Actor Id"
+   },
+   "session_id": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Session Id"
+   },
+   "trace_id": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Trace Id"
+   },
+   "payload": {
+    "anyOf": [
+     {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Payload"
+   }
+  },
+  "required": [
+   "event_type"
+  ],
+  "title": "EventCreate",
+  "type": "object"
+ },
+ "main.QuotationCreateBody": {
+  "description": "手动录入报价记录（POST /api/v1/quotations）。",
+  "properties": {
+   "customer_id": {
+    "title": "Customer Id",
+    "type": "string"
+   },
+   "product_category": {
+    "title": "Product Category",
+    "type": "string"
+   },
+   "product_spec": {
+    "additionalProperties": true,
+    "default": {},
+    "title": "Product Spec",
+    "type": "object"
+   },
+   "quantity": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Quantity"
+   },
+   "unit_price": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Unit Price"
+   },
+   "currency": {
+    "default": "CNY",
+    "title": "Currency",
+    "type": "string"
+   },
+   "unit": {
+    "default": "meter",
+    "title": "Unit",
+    "type": "string"
+   },
+   "discount": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Discount"
+   },
+   "notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notes"
+   },
+   "source": {
+    "default": "manual",
+    "title": "Source",
+    "type": "string"
+   }
+  },
+  "required": [
+   "customer_id",
+   "product_category"
+  ],
+  "title": "QuotationCreateBody",
+  "type": "object"
+ }
+}
