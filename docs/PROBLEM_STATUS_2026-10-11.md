@@ -10,6 +10,18 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-21 · 生产性能体检 + P0/P1 修复）** 用户反馈「生产运行很慢、数据更新很慢」。
+> 实测体检（证据：[`PROD_PERFORMANCE_AUDIT_2026-10-21.md`](./PROD_PERFORMANCE_AUDIT_2026-10-21.md)）：
+> **主瓶颈是 Python Worker 冷启动**（/health 不碰库实测 0.4–5.1s、API 401 也要 1.4–7s），
+> **数据库完全健康**（最大表 304kB、索引在位），跨太平洋 RTT 215ms 次之，前端
+> `refetchOnWindowFocus:false` 加剧更新慢的体感。已落地（用户弹窗全选批准）：
+> **P0** provider.tsx 回标签页自动刷新（refetchOnWindowFocus/reconnect=true，业务列表 staleTime 巡检
+> 全部 ≤5min 无需降）；**P1** worker 顶层导入裁剪（main/chain/ws_files 懒加载 bcrypt/csv/io/hmac/
+> hashlib/secrets/urlparse，路由数 253 不变，本地导入中位 694→640ms，Pyodide 预期收益更大）。
+> 门禁：worker **1565 passed + 12 skipped**；前端 vitest **929 passed**。
+> **P2 数据库迁亚太（东京/新加坡）runbook 已写，等用户定停机窗口**；P3 记录在案
+> （静态资产边缘缓存规则 / 登录 429 / Smart Placement / 长期 TS Worker 选项）。
+
 > **📌 主交接文档已切换：[README.md](../README.md)**（2026-10-19 晚场起，架构 / 三环境隔离矩阵 /
 > 方案 B 决策 / 冷启动线 / 测试策略的唯一权威）。**最新交接总入口（2026-10-20 定稿）：
 > [`HANDOVER_2026-10-20_FINAL.md`](./HANDOVER_2026-10-20_FINAL.md)**（状态/资源清单/踩坑/发布检查单/待办）。

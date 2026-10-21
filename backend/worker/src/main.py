@@ -4,20 +4,13 @@
 数据链: 谁(shipper) → 什么时间(ship_date) → 通过谁(carrier) → 向什么地区(dest_country) → 谁(consignee) → 发了什么货(product_desc)
 """
 import os
-import csv
-import io
-import hmac
 import re
-import secrets
-import hashlib
 import contextvars
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
-from urllib.parse import urlparse
 
 import asyncpg
-import bcrypt
 import jwt
 from fastapi import FastAPI, Request, HTTPException, Query, UploadFile, File, Depends
 from pydantic import BaseModel
@@ -109,10 +102,12 @@ JWT_ALGORITHM = "HS256"
 # ── Auth helpers ──
 def _hash_password(password: str) -> str:
     """与原后端 (bcrypt) 格式一致。"""
+    import bcrypt  # 惰性导入：仅认证端点使用，避开 Worker 冷启动开销
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def _verify_password(password: str, hashed: str) -> bool:
+    import bcrypt  # 惰性导入：仅认证端点使用，避开 Worker 冷启动开销
     return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
 
 
@@ -306,6 +301,7 @@ async def bootstrap_admin(request: Request, body: BootstrapRequest):
     if not auth.startswith("Bearer "):
         # 与 orchestrator 同口径：缺凭据 = 401（原来并档成 403，PARITY-DIFF-1）
         raise HTTPException(status_code=401, detail="Not authenticated")
+    import hmac  # 惰性导入：仅 bootstrap-admin 使用
     if not hmac.compare_digest(auth[7:], setup_token):
         raise HTTPException(status_code=403, detail="Invalid setup token")
 
@@ -518,6 +514,7 @@ _RESET_TTL_MINUTES = 30
 
 
 def _hash_reset_token(raw: str) -> str:
+    import hashlib  # 惰性导入：仅重置密码端点使用
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -681,6 +678,7 @@ async def forgot_password(request: Request, body: _ForgotIn):
                 "SELECT id, email, status FROM users WHERE email=$1", email
             )
             if row and row["status"] == "active":
+                import secrets  # 惰性导入：仅发 token 端点使用
                 raw_token = secrets.token_urlsafe(32)
                 await conn.execute(
                     """UPDATE password_reset_tokens SET used_at=NOW()
@@ -786,6 +784,7 @@ class RegisterRequest(BaseModel):
 
 
 async def _unique_customer_code(conn, company_name: str) -> str:
+    import secrets  # 惰性导入：仅生成客户编码时使用
     base = _slugify(company_name)
     for _ in range(5):
         candidate = f"{base}_{secrets.token_hex(3)}"
@@ -1005,6 +1004,8 @@ async def create_shipment(request: Request, body: ShipmentCreate, user: dict = D
 @app.post("/api/v1/intel/import/csv")
 async def import_csv(request: Request, file: UploadFile = File(...), user: dict = Depends(_get_current_user)):
     content = await file.read()
+    import csv  # 惰性导入：仅 CSV 导入端点使用
+    import io
     text = content.decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(text))
 
@@ -3225,6 +3226,7 @@ async def patch_customer_capability(
 # CI 冒烟测试形同虚设，Worker 实际已挂却仍然"通过"。
 class Default(WorkerEntrypoint):
     async def fetch(self, request):
+        from urllib.parse import urlparse  # 惰性导入：仅入口分发使用
         path = urlparse(request.url).path
         if path.startswith("/api/") or path == "/health":
             return await asgi.fetch(app, request, self.env)

@@ -23,7 +23,6 @@
 """
 from __future__ import annotations
 
-import hashlib
 import json as _json
 from typing import Optional
 
@@ -336,6 +335,7 @@ async def _create_file(*, request: Request, user: dict, owner_type: str, owner_i
     except FileRuleError as exc:
         raise _fail(exc)
 
+    import hashlib  # 惰性导入：仅文件写入哈希使用
     sha = hashlib.sha256(content).hexdigest()
     key = _prefixed_key(object_key(tenant_id=DEFAULT_TENANT, owner_type=owner_type, owner_id=owner_id,
                                    kind=kind, media_kind=media_kind, sha256=sha,

@@ -10,17 +10,13 @@
 注：Workers 无常驻调度器，replied 扫描仅手动触发（POST /api/v1/leads/scan-replied）。
 由 main.py 文件末尾 `import chain` 挂载（复用 main 的 app/_acquire/_get_current_user）。
 """
-import csv
-import io
 import json
 import os
 import re
 import time
-import hashlib
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import List, Optional
-from urllib.parse import urljoin, urlparse
 
 from fastapi import Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
@@ -833,6 +829,8 @@ _CSV_OPTIONAL = (
 
 
 def _fetch_csv(content: bytes) -> List[dict]:
+    import csv  # 惰性导入：仅 CSV 导入路径使用
+    import io
     text = content.decode("utf-8-sig", errors="replace")
     reader = csv.DictReader(io.StringIO(text))
     required = {"company_name", "country"}
@@ -984,6 +982,7 @@ async def leadgen_validate(body: LeadgenConfig, request: Request,
 
 async def _create_run_common(request, config: dict, csv_content: Optional[bytes],
                              created_by: str):
+    import hashlib  # 惰性导入：仅 run 配置哈希使用
     if config.get("source") == "csv" and csv_content is None:
         raise HTTPException(status_code=422, detail={
             "error": "validation", "code": "CSV_REQUIRED",
@@ -1368,6 +1367,7 @@ class LeadCreate(BaseModel):
 @app.post("/api/v1/leads", status_code=201)
 async def lead_create(body: LeadCreate, request: Request,
                       user: dict = Depends(_get_current_user)):
+    import hashlib  # 惰性导入：仅 manual place_id 哈希使用
     async with _acquire(request) as conn:
         await _require_sub(conn, "leadgen")
         place_id = body.place_id or f"manual-{hashlib.sha256(body.company_name.encode()).hexdigest()[:16]}"
@@ -2252,6 +2252,7 @@ async def research_stats(request: Request, user: dict = Depends(_get_current_use
 async def research_create(body: ResearchCreate, request: Request,
                           user: dict = Depends(_get_current_user)):
     """手工录入，或从线索挑选（source_ref → 自动回填线索上的产品/店铺字段）。"""
+    import hashlib  # 惰性导入：仅 run 配置哈希使用
     async with _acquire(request) as conn:
         await _require_sub(conn, "research")
         data = body.model_dump(exclude_none=True)
@@ -2375,6 +2376,7 @@ class PickFromLeadgen(BaseModel):
 async def research_from_leadgen(body: PickFromLeadgen, request: Request,
                                 user: dict = Depends(_get_current_user)):
     """从地图源批量挑选进市场调研（已挑选过的跳过，不报错）。"""
+    import hashlib  # 惰性导入：仅 run 配置哈希使用
     if not body.lead_ids:
         raise HTTPException(status_code=422, detail={
             "error": "validation", "code": "EMPTY_SELECTION"})

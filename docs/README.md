@@ -53,6 +53,7 @@
 | [API_RESERVED_LIST_AUDIT.md](./API_RESERVED_LIST_AUDIT.md) | **C36 API 取证审计**：24 条「后端先行 UI 未接」逐条价值/成本/建议 + 18 条可删候选证据；**2026-10-21 已接 21 条（本期 5 + 下期 12）、删 3 条**，仅剩长期保留 3 条（品名对照编辑/删除缺口见顶部说明） |
 | [QA_AUTHZ_AUDIT_2026-10-21.md](./QA_AUTHZ_AUDIT_2026-10-21.md) | **C27 越权审计留证（7 条）**：只读代码审计，逐条三选一结论（已有闸门/缺失/需修复）+ 账号前提核查 |
 | [QA_AUTHZ_VERIFY_2026-10-21.md](./QA_AUTHZ_VERIFY_2026-10-21.md) | **C27 越权修复验收矩阵 v2**：F1–F4 + R-1 的「该验什么/期望/证据在哪」；只定义验收，不执行 |
+| [PROD_PERFORMANCE_AUDIT_2026-10-21.md](./PROD_PERFORMANCE_AUDIT_2026-10-21.md) | **生产性能体检**：实测 Worker 冷启动为主瓶颈（/health 0.4–5.1s）、DB 无问题（最大表 304kB）、修复路线 P0 前端/P1 worker/P2 迁亚太（需窗口） |
 | [acceptance/B_PACKAGE_2026-10-21.md](./acceptance/B_PACKAGE_2026-10-21.md) | **B 组验收包**：打印视觉 QA、条款、N3 等「需要用户一次过目」的事项清单与证据（含 print-qa 产物） |
 
 ## 3. UI/UX（本轮主线）
