@@ -53,6 +53,7 @@
 | [QA_AUTHZ_VERIFY_2026-10-21.md](./QA_AUTHZ_VERIFY_2026-10-21.md) | **C27 越权修复验收矩阵 v2**：F1–F4 + R-1 的「该验什么/期望/证据在哪」；只定义验收，不执行 |
 | [PROD_PERFORMANCE_AUDIT_2026-10-21.md](./PROD_PERFORMANCE_AUDIT_2026-10-21.md) | **生产性能体检**：实测 Worker 冷启动为主瓶颈（/health 0.4–5.1s）、DB 无问题（最大表 304kB）；P0/P1 已部署、P2 已迁新加坡（RTT 245→75ms） |
 | [OPTIMIZATION_PLAN_2026-10-21.md](./OPTIMIZATION_PLAN_2026-10-21.md) | **优化执行计划（活跃）**：W1 性能收尾 ✅ / W2 结构债（P0 ✅，P2 在途）/ W3 TS 门面+Python 内核（Phase 0·1 ✅，Phase 2 在途）/ W4 退役 / W5 MCP·REST |
+| [W5_EXTERNAL_USAGE_2026-10-21.md](./W5_EXTERNAL_USAGE_2026-10-21.md) | **对外使用文档（M4）**：REST curl 示例 / MCP client 配置 / scope 清单 / 审计边界 / 验收清单 |
 | [W5_MCP_REST_DESIGN_2026-10-21.md](./W5_MCP_REST_DESIGN_2026-10-21.md) | **W5 对外能力设计**（草案）：API token 模型（kaas_oat_/哈希存储/scope）+ REST OpenAPI 规整 + MCP tools/resources；建在 TS 门面 |
 | [W4_CUTOVER_RUNBOOK_2026-10-21.md](./W4_CUTOVER_RUNBOOK_2026-10-21.md) | **W4 切换退役 runbook**：前置检查/密钥迁移（JWT_SECRET 轮换卡点）/资产切门面/域名切分/验收/回滚/收尾；执行前需用户确认窗口 |
 | [EXECUTION_PLAYBOOK_2026-10-21.md](./EXECUTION_PLAYBOOK_2026-10-21.md) | **执行者强化手册**（用户下发，参考为主实际为准）：架构边界/跨层契约/金标纪律/测量与提交纪律 13 节；派任务时携带 |
