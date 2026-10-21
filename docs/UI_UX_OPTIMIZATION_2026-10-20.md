@@ -8,8 +8,8 @@
 
 > **状态（2026-10-21 文档收尾）**：**P0/P1/P2 已全部完成**（2026-10-20，终验见 §11）。
 > 本文保留为 UI 线的方案与验收记录；正文中「本轮未做 / 待做」均为**当时**口径，已逐处标注完成状态。
-> 活跃待办以 [`TODO.md`](./TODO.md) 为准；后端依赖五项同样是**历史验收基线**（见
-> [`UI_BACKEND_DEPENDENCIES_2026-10-20.md`](./UI_BACKEND_DEPENDENCIES_2026-10-20.md)）。
+> 活跃待办以 [`TODO.md`](./TODO.md) 为准；后端依赖五项同样是**历史验收基线**（见已归档的
+> [`archive/2026-10-21-final-closeout/UI_BACKEND_DEPENDENCIES_2026-10-20.md`](./archive/2026-10-21-final-closeout/UI_BACKEND_DEPENDENCIES_2026-10-20.md)）。
 
 ---
 
@@ -116,7 +116,7 @@
 - 联系人：点名字弹出**联系人信息弹窗**（职位/电话/邮箱/WhatsApp），不跳页面、不写“主要”。
 - 单证：点击**直接内嵌完整单据预览**（有单证工位权限时，复用 `DocPreview` + `/trade-docs/{id}/render-data`）；无权限显示说明；“在单证工位打开”降为次要入口；footer 重做为固定操作条（不再有负边距/灰条错位）。
 - 历史留档：预览内展示**上传记录（PDF 版本链）**（当前/历史、vN、时间，点击打开原文件），数据来自现有 `GET /trade-docs/{id}/files`；**内容级版本已落地**（2026-10-20，迁移 `202610200001` + 前端「内容版本」面板，可回看/恢复；仅 draft）。
-- 账号区：删除顶栏右侧的账号头像/下拉（与团队名重复且数据不足）；顶栏只保留团队名。侧栏底部新增**账号卡 + 「个人信息」弹窗**（账号类型/角色/团队/套餐，团队与工位、退出登录）。**当时**后端没有资料修改接口，弹窗明确标注“只读；修改资料请联系管理员”，不伪造编辑能力；**2026-10-20 已补** `PATCH /auth/me` + `POST /auth/change-password`，弹窗已可编辑（见 [`UI_BACKEND_DEPENDENCIES_2026-10-20.md`](./UI_BACKEND_DEPENDENCIES_2026-10-20.md) §3）。
+- 账号区：删除顶栏右侧的账号头像/下拉（与团队名重复且数据不足）；顶栏只保留团队名。侧栏底部新增**账号卡 + 「个人信息」弹窗**（账号类型/角色/团队/套餐，团队与工位、退出登录）。**当时**后端没有资料修改接口，弹窗明确标注“只读；修改资料请联系管理员”，不伪造编辑能力；**2026-10-20 已补** `PATCH /auth/me` + `POST /auth/change-password`，弹窗已可编辑（见已归档的 [`archive/2026-10-21-final-closeout/UI_BACKEND_DEPENDENCIES_2026-10-20.md`](./archive/2026-10-21-final-closeout/UI_BACKEND_DEPENDENCIES_2026-10-20.md) §3）。
 - mock：补 `render-data` 样板数据（让本地也能看到内嵌预览）、`files` 返回空；联系人种 3 位以演示排序。
 
 证据：`docs/ui-redesign/phase4/*.png`（列表 / 展开 / 联系人弹窗 / 单证内嵌预览 / 账号区与个人信息）；`docs/ui-redesign/phase3/*.png` 保留上一轮。
@@ -128,7 +128,7 @@
 - 业务口径统一叫**「上传单证」**，不再叫「归档」（内部文件角色仍是 `render_pdf` / `render_pdf_superseded`，不改表/接口）。
 - Web UI 中**签发成功即自动上传单证**：`GET /trade-docs/{id}/render-data` → 前端 `renderTradeDoc` 生成 HTML → `POST /trade-docs/{id}/pdf`（服务端 Browser Rendering 出字节 → 既有落档链路：新版本上位、旧版挂 `render_pdf_superseded` 不物理删）。客户不再需要“打印另存 → 再导入一次”。
 - **手动上传入口保留**：`POST /trade-docs/{id}/files/upload`（手动上传区）+ 单证工位「导入已有数据」；覆盖渲染器不可用、第三方签发单据、历史补档等特殊情况。
-- **边界（2026-10-21 更新）**：签发接口已接收前端 HTML（方案 A，2026-10-20 落地；见 [`UI_BACKEND_DEPENDENCIES_2026-10-20.md`](./UI_BACKEND_DEPENDENCIES_2026-10-20.md) §1）：`POST /trade-docs/{id}/confirm` 与 `PATCH /trade-docs/{id}`（draft→issued）带 HTML 即由服务端出 PDF 并落档，失败不回滚签发。**不带 HTML 的第三方客户端仍不出 PDF**（模板在前端，属结构性限制）——方案 B（模板迁服务端）未做，登记在 `TODO.md` A2-B。
+- **边界（2026-10-21 更新）**：签发接口已接收前端 HTML（方案 A，2026-10-20 落地；见 [`UI_BACKEND_DEPENDENCIES_2026-10-20.md`](./archive/2026-10-21-final-closeout/UI_BACKEND_DEPENDENCIES_2026-10-20.md)（已归档）§1）：`POST /trade-docs/{id}/confirm` 与 `PATCH /trade-docs/{id}`（draft→issued）带 HTML 即由服务端出 PDF 并落档，失败不回滚签发。**不带 HTML 的第三方客户端仍不出 PDF**（模板在前端，属结构性限制）——方案 B（模板迁服务端）未做，登记在 `TODO.md` A2-B。
 - mock：`POST /trade-docs/{id}/pdf` 返回 503（mock 无浏览器渲染器），前端如实提示“请手动上传”，不假装成功。
 - 单元测试：`frontend/src/lib/trade-doc/__tests__/auto-archive.test.ts` 3 条（成功 / 503 / 404）。
 
@@ -752,7 +752,7 @@ PageHeader   客户管理 / 跟进询盘、阶段与联系人            [新建
 
 ### 9.6 后端依赖（**已全部完成**，2026-10-20）
 
-> 详细方案已单独落盘：[`docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md`](UI_BACKEND_DEPENDENCIES_2026-10-20.md)（现状事实、建议方案、验收与顺序；该文已加「历史验收基线」横幅）。
+> 详细方案已单独落盘并归档：[`docs/archive/2026-10-21-final-closeout/UI_BACKEND_DEPENDENCIES_2026-10-20.md`](./archive/2026-10-21-final-closeout/UI_BACKEND_DEPENDENCIES_2026-10-20.md)（现状事实、建议方案、验收与顺序；该文已加「历史验收基线」横幅）。
 > **2026-10-20 五项已全部完成并合并入 `main`**（合并提交 `118af7ce`），前端接线也已落地；下表「现状」是提出时快照，保留供对照。
 
 | 事项 | 提出时现状 | 完成情况（2026-10-20） |

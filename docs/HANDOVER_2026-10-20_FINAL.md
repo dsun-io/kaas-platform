@@ -16,6 +16,20 @@ Hyperdrive，并给 worker 依赖钉版入库。**前端 UI 优化 P0/P1/P2 已�
 **2026-10-21 已按用户指令完成生产发布窗口**：生产迁移 `202610180010`→**`202610200005`**（6 条），
 Worker 三次部署（`dae596a5` → `cd15e9a5` → `9d497628`），冒烟通过；P4 观察期自 2026-10-21 起，详见 §0.4。
 
+## 0.5 2026-10-21 最终收口（**最新状态，优先于本文 §0.2**）
+
+- **A 组**：除 **A-11（D6 冷启动）用户决定继续挂起**（CF 公开 API 不暴露 startup 指标）外，其余全部完成：
+  A6 真实单据校准（PI/CI/合同双语条款）、A14 包装事实、A5-W2/W3、C36 **24 条待接 API 全部接 UI**
+  （本期 5 + 下期 12 + 长期保留 3）、A10 **5 类模板**（DOC_TYPE 23 类、金标 28）、A8 归档实跑
+  （含 events_archive_log id 默认修复）、D2 presign 回环、C27 越权审计 + 修复（含 C27b）、
+  **C12 真 PDF 归档 22/23 类**（QA 数据与 R2 对象已清理）、重置密码邮件 UI 同步并验证送达。
+- **B 组**：**用户 2026-10-21 确认关闭**（N3/打印视觉 QA/C36 删 3 条/合同条款均已完成；13 条 owner 候选 + 3 条长期保留按审计判定保留）。
+- **生产**：版本 **`83647f7a-7ab7-431d-8d7e-a554208e7dd0`**（e5092262 主批 + 4 次热修），迁移头 **`202610210001`**；
+  冒烟：`/health` 200、`/login`、`/receivables`、`/trade-docs` 200、`/clause-templates` 无令牌 401、login 401（DB 通）。
+- **门禁**：worker **1560+12skip** / orchestrator **247** / 前端 **926（108 files）** / e2e **27=27+0** /
+  build `out` **286** / contracts·mocks·contrast·trade-doc·静态断言 PASS。
+- **剩余**：仅 A-11（用户挂起）+ 用户把仓库转 private。新接手先读 `README.md` + `docs/README.md`。
+
 ## 0.2 停止点交接：当前状态与剩余工作（**交接 agent 必读**）
 
 ### 0.2.1 停止点（2026-10-20 晚）
@@ -97,6 +111,9 @@ Worker 三次部署（`dae596a5` → `cd15e9a5` → `9d497628`），冒烟通过
 - **UI 线文档已加状态横幅/逐处改状态（2026-10-21 C38 文档收尾）**：`UI_UX_OPTIMIZATION_2026-10-20.md`（P0/P1/P2 完成、§11 终验）、
   `UI_BACKEND_DEPENDENCIES_2026-10-20.md`（历史验收基线）；另有 4 份过时设计/计划移入
   [`docs/archive/2026-10-21-doc-closeout/`](./archive/2026-10-21-doc-closeout/README.md)。
+- **2026-10-21 最终收口批（补记）**：`UI_BACKEND_DEPENDENCIES_2026-10-20.md` 已移入
+  [`archive/2026-10-21-final-closeout/`](./archive/2026-10-21-final-closeout/README.md)（本批 5 份，含 A5/A6/C12/产品配置化）；
+  现行口径见根 README、[`docs/README.md`](./README.md) 与 [`docs/TODO.md`](./TODO.md)。
 - 检索入口仍是 [`docs/README.md`](./README.md)（已同步状态与归档批次）。
 
 ### 0.3 新设备 / 新 agent 接手清单（**设备无关**，换机也能完整接手）

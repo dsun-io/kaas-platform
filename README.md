@@ -10,9 +10,11 @@
 
 > 📌 **交接先看 [docs/README.md](docs/README.md)**（当前权威 / 运行手册 / 归档分层）。
 > 本文只保留：架构、环境、命令、门禁、业务规则；历史决策与已完成计划在 `docs/archive/`。
-> **当前状态（2026-10-21）**：前端 UI 优化 P0/P1/P2 已完成；后端 5 项依赖（签发自动上传 / 内容版本 /
-> 个人信息 / 询盘状态机 / 报价订单 1:N）已全部完成并合并入 `main`
-> （2026-10-20，逐项证据见 [`HANDOVER_2026-10-20_FINAL.md`](docs/HANDOVER_2026-10-20_FINAL.md) §0.1）。
+> **当前状态（2026-10-21 最终收口）**：A 组除 **A-11（D6 冷启动，用户决定挂起）** 外全部完成
+> （A6 真实单据校准、A14 包装事实、A5-W2/W3、C36 24 条 API 全部接 UI、A10 五类模板、A8 归档实跑、
+> D2 presign、C27 越权审计+修复、C12 真 PDF 归档 22/23 类、重置邮件 UI）；**B 组用户已确认关闭**。
+> 生产版本 **`83647f7a`**、迁移头 **`202610210001`**；门禁：worker **1560+12skip** / orchestrator 247 /
+> 前端 **926（108 files）** / e2e **27=27+0** / build `out` **286**。
 
 ---
 
@@ -187,10 +189,11 @@ docker-compose.yml 本地基础设施 + 本地后端
 | [docs/PROBLEM_STATUS_2026-10-11.md](docs/PROBLEM_STATUS_2026-10-11.md) | 滚动问题状态 |
 | [docs/TODO.md](docs/TODO.md) | 活跃待办唯一账本 |
 | [docs/UI_UX_OPTIMIZATION_2026-10-20.md](docs/UI_UX_OPTIMIZATION_2026-10-20.md) | UI 方案、报价重构、终验（P0/P1/P2 已完成，§11 为终验） |
-| [docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md](docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md) | 后端 5 项验收基线（**已完成**，历史基线；现状以 TODO + 代码为准） |
+| [docs/archive/2026-10-21-final-closeout/UI_BACKEND_DEPENDENCIES_2026-10-20.md](docs/archive/2026-10-21-final-closeout/UI_BACKEND_DEPENDENCIES_2026-10-20.md) | 后端 5 项验收基线（**已完成**；**2026-10-21 已归档**，历史基线，现状以 TODO + 代码为准） |
+| [docs/archive/2026-10-21-final-closeout/](docs/archive/2026-10-21-final-closeout/README.md) | **2026-10-21 最终收口批（5 份）**：A5 编辑方案、A6 校准矩阵、C12 PDF 归档、后端 5 项基线、租户产品配置化（替代指针见批次 README） |
 | [docs/archive/2026-10-21-doc-closeout/](docs/archive/2026-10-21-doc-closeout/README.md) | 2026-10-21 归档批：平台升级/团队可见性/客户单据视图/产品媒体存储（替代指针见批次 README） |
 | [docs/archive/](docs/archive/) | 历史文档（只读，不代表当前架构） |
 
 ---
 
-**最后更新**：2026-10-21（文档收尾：过时文档归档 + UI/单证文档状态口径统一；UI P0/P1/P2 与后端 5 项均已完成）。
+**最后更新**：2026-10-21（最终收口：A 组除 D6 挂起外全部完成、B 组用户确认关闭；过时文档归档到 `docs/archive/2026-10-21-final-closeout/`）。

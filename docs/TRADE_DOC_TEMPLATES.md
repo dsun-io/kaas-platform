@@ -496,7 +496,7 @@ POST /api/v1/trade-docs/{id}/content-versions/{version_no}/restore   仅 draft
 
 ## 十一、A6 校准落地（2026-10-21）：双币种金额块 + P1（引用链/税号/双栏/合同双语/PI P2）
 
-> 背景与校准依据：`docs/TRADE_DOC_A6_CALIBRATION.md`（G1–G12）。
+> 背景与校准依据（已归档）：`docs/archive/2026-10-21-final-closeout/TRADE_DOC_A6_CALIBRATION.md`（G1–G12）。
 > **A6-1（G1–G6）只对 PI / CI 生效，没有 `fx_rate` 时不触发**；
 > **A6 P1（G7–G12）全部按「有值才输出、空值输出空串」实现** ⇒ 既有 18 份单币种逐字节基线不变
 > （`render.test.ts` 钉住；金标口径见 §11.10）。本章字段都在 `raw_payload.custom`，全部可选、向后兼容。
@@ -596,7 +596,7 @@ PI 的「卖方税号 + 买方电话」即来自这一层（样例：`91131125MA
 - **模板**：`<div class="clauses">$contract_clauses_block</div>`（派生占位符，整块由
   `render.ts::renderContractClausesBlock` 生成：中文在上、英文在下）；
 - **措辞状态**：默认条款为「可编辑措辞」，**正式签署前需法务/业务确认**
-  （见 `docs/TRADE_DOC_A6_CALIBRATION.md` §2「A6 P1 实施状态」的未做项）。
+  （见已归档的 `docs/archive/2026-10-21-final-closeout/TRADE_DOC_A6_CALIBRATION.md` §2「A6 P1 实施状态」的未做项）。
 
 ### 11.9 PI P2 补充字段（G12，**已实施 2026-10-21，仅 PI**）
 

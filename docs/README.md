@@ -1,12 +1,12 @@
 # 文档索引 · 交接从这里开始
 
-> 更新时间：**2026-10-21（执行批 3 收口：A7 单证加固全链路完成、B1/B4–B6、C2/C5/C6/C7/C8/C10/C15/C16/C17/C20/C22 完成；全量门禁与 build/e2e 实测见 `TODO.md` §0）**
-> 当前状态：**前端 P0/P1/P2 已完成**；**后端 5 项 + 单证内容专项 A1/A3/A8/A9 + 单证加固 A7 全部落地并合并入 `main`**
-> （合并提交 `118af7ce`，main CI 全绿；PR #5 预览资源已 teardown；2026-10-21 之后的新提交持续推送 `main`，CI 三条全绿）。
+> 更新时间：**2026-10-21 最终收口** —— **A 组除 A-11（D6，用户决定挂起）外全部完成；B 组用户已确认关闭**；
+> 生产版本 `83647f7a`、迁移头 `202610210001`；门禁 **worker 1560 passed + 12 skipped / 前端 926 passed（108 files）/
+> e2e 27 条（27+0）/ 构建 `frontend/out` 286 文件**（数字随批次变化，以当时门禁为准）。
 > **停止点交接与剩余工作 = `HANDOVER_2026-10-20_FINAL.md` §0.2；新设备/新 agent 接手 = 同文件 §0.3**；
-> 剩余待办全在 [`TODO.md`](./TODO.md)（均在 `main` 上可直接检索）。
-> 本次文档收尾：UI 两份加状态横幅/改状态、单证 PDF 过程记录加「早期章节为过程记录」横幅、e2e 计数统一为 28（2026-10-21 更新为 27=27+0）、
-> 4 份过时设计/计划移入 [`archive/2026-10-21-doc-closeout/`](./archive/2026-10-21-doc-closeout/README.md)。
+> 剩余待办全在 [`TODO.md`](./TODO.md)（A-11/D6 挂起项、C36 owner 确认项等）。
+> 本次文档收尾：**2026-10-21 最终收口批 5 份已完成文档移入
+> [`archive/2026-10-21-final-closeout/`](./archive/2026-10-21-final-closeout/README.md)**（每份都有替代指针）。
 > 历史文档分批归档在 [`archive/`](./archive/)；**不要用归档文档判断当前口径**。
 
 ## 0. 交接 agent 先读（按顺序）
@@ -18,7 +18,7 @@
 | 3 | [PROBLEM_STATUS_2026-10-11.md](./PROBLEM_STATUS_2026-10-11.md) | 滚动问题状态（顶部按时间倒序，含后端五项与 CI 记录） |
 | 4 | [TODO.md](./TODO.md) | **活跃待办唯一账本**（A 单证 / B 产品 / C 其他 / D 发布 / E UI） |
 | 5 | [UI_UX_OPTIMIZATION_2026-10-20.md](./UI_UX_OPTIMIZATION_2026-10-20.md) | UI 方案与终验：P0/P1/P2 已完成，§11 为终验结论（历史「未做」已逐处标注完成状态） |
-| 6 | [UI_BACKEND_DEPENDENCIES_2026-10-20.md](./UI_BACKEND_DEPENDENCIES_2026-10-20.md) | 后端 5 项**历史验收基线**（2026-10-20 全部完成；逐项证据见 HANDOVER §0.1，现状以 `TODO.md` + 代码为准） |
+| 6 | [archive/2026-10-21-final-closeout/UI_BACKEND_DEPENDENCIES_2026-10-20.md](./archive/2026-10-21-final-closeout/UI_BACKEND_DEPENDENCIES_2026-10-20.md)（历史留档） | 后端 5 项**历史验收基线**（2026-10-20 全部完成并入 `main`）；**现行口径看根 README + HANDOVER §0.1**，不要据此判断现状 |
 
 > **换设备 / 新 clone 起本地环境**：先跑 `powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1`
 > 再起后端（`backend/worker/src/kaas_common/` 是 gitignored 生成镜像；跳过会 `ModuleNotFoundError: kaas_common.preview`）。
@@ -60,19 +60,24 @@
 | 文档 | 内容 |
 |---|---|
 | [UI_UX_OPTIMIZATION_2026-10-20.md](./UI_UX_OPTIMIZATION_2026-10-20.md) | 全系统 UI/UX 方案；P0/P1/P2 已完成，§11 为终验结论 |
-| [UI_BACKEND_DEPENDENCIES_2026-10-20.md](./UI_BACKEND_DEPENDENCIES_2026-10-20.md) | 后端 5 项依赖清单（**全部已完成**，留作历史验收基线；方案 B 未做见 `TODO.md` A2-B） |
+
+> 已归档：`UI_BACKEND_DEPENDENCIES_2026-10-20.md`（后端 5 项历史验收基线）→ 见 §5
+> [`archive/2026-10-21-final-closeout/`](./archive/2026-10-21-final-closeout/README.md)；
+> 现行口径看根 README、[`HANDOVER_2026-10-20_FINAL.md`](./HANDOVER_2026-10-20_FINAL.md) §0.1 与 [`TODO.md`](./TODO.md)。
 
 ## 4. 业务/设计参考（仍有效）
 
 | 文档 | 内容 |
 |---|---|
 | [WORKSTATION_DESIGN.md](./WORKSTATION_DESIGN.md) | 工位能力网设计 |
-| [PRODUCT_CONFIG_TENANT_UNFINISHED.md](./PRODUCT_CONFIG_TENANT_UNFINISHED.md) | 租户级产品配置化（**B1/B3 已于 2026-10-21 收口**；本文保留实现/验收记录） |
-| [TRADE_DOC_TEMPLATES.md](./TRADE_DOC_TEMPLATES.md) | 单证模板规范 |
-| [TRADE_DOC_A6_CALIBRATION.md](./TRADE_DOC_A6_CALIBRATION.md) | **A6 真实单证校准矩阵**（3 份真实 PI/CI/合同；G1–G12 差距与 P0/P1 拆分） |
-| [TRADE_DOC_EDIT_PLAN.md](./TRADE_DOC_EDIT_PLAN.md) | **单证编辑体验升级 A5 方案稿**（条款模板/行项批量/金额摘要；待用户过目） |
+| [TRADE_DOC_TEMPLATES.md](./TRADE_DOC_TEMPLATES.md) | 单证模板规范（**现行**：前端 `assets.json`/`manifest.json`/`render.ts` + §十一 A6 双币种/G7–G12） |
 | [TRADE_DOC_HARDENING.md](./TRADE_DOC_HARDENING.md) | **单证加固 A7 已完成设计 + 验收记录**（事实层/一致性引擎/回执/导出自检；含 12 条实现裁决与 §6 验收结果） |
-| [TRADE_DOC_PDF_ARCHIVAL.md](./TRADE_DOC_PDF_ARCHIVAL.md) | 单证 PDF 留档与对账（过程记录；现状见文首横幅与 `TODO.md` A2-B/C12） |
+
+> 已归档（2026-10-21 最终收口批，均有替代指针，见 §5
+> [`archive/2026-10-21-final-closeout/`](./archive/2026-10-21-final-closeout/README.md)）：
+> `PRODUCT_CONFIG_TENANT_UNFINISHED`（B1/B3 收口 → TODO B）、`TRADE_DOC_A6_CALIBRATION`（A6 收口 → TODO A-6 +
+> [`TRADE_DOC_TEMPLATES.md`](./TRADE_DOC_TEMPLATES.md) §十一）、`TRADE_DOC_EDIT_PLAN`（A5 上线 → TODO A-9）、
+> `TRADE_DOC_PDF_ARCHIVAL`（C12 完成 → TODO A-12 + 代码）。
 
 > 已归档（不再代表当前口径）：`PLATFORM_UPGRADE_PLAN`、`TEAMS_AND_VISIBILITY`、`CUSTOMER_DOCUMENTS_VIEW`、
 > `PRODUCT_MEDIA_STORAGE_PLAN` → 见 §5 [`archive/2026-10-21-doc-closeout/`](./archive/2026-10-21-doc-closeout/README.md)。
@@ -81,6 +86,7 @@
 
 | 位置 | 内容 |
 |---|---|
+| [archive/2026-10-21-final-closeout/](./archive/2026-10-21-final-closeout/README.md) | **2026-10-21 最终收口批（5 份）**：A5 单证编辑方案、A6 真实单据校准矩阵、C12 PDF 归档过程记录、后端 5 项验收基线、租户产品配置化设计 —— 全部已完成、**各有替代指针**（TODO A-9 / A-6 / A-12、根 README + HANDOVER、TODO B） |
 | [archive/2026-10-21-doc-closeout/](./archive/2026-10-21-doc-closeout/README.md) | **2026-10-21 业务/设计过时批**：平台升级方案、团队与数据可见性、客户单据视图、产品媒体存储规划（4 份移入；**含「生产 `S3_ACCESS_KEY` 只有 13 位 ⇒ 直传不可用」结论摘要**） |
 | [archive/2026-10-20-backend-closeout/](./archive/2026-10-20-backend-closeout/README.md) | **2026-10-20 晚 · 后端五项收尾批**：`ENV_VERIFICATION_2026-10-19`（三环境快照已过时；现看根 README §2 + HANDOVER §2/§3/§5） |
 | [archive/2026-10-20-p2-closeout/](./archive/2026-10-20-p2-closeout/README.md) | **2026-10-20 下午批**：方案 B/S4/技术栈/安全/税务/批量报价/旧 e2e/旧实现地图等 15 份已完成或已被取代文档 |
