@@ -3,8 +3,8 @@
  *
  * 1) 客户（本文件主体）
  *    `GET /api/v1/customers` 原先返回**裸数组**、元素是 `{customer_id, customer_name}`；
- *    而页面契约是 `{items:[{id, company_name, ...}]}`（后端 backend/orchestrator/app/api/
- *    customers.py:215 的 `{items, total}`）。后果是 mock 模式下客户列表恒为 0 行，
+ *    而页面契约是 `{items:[{id, company_name, ...}]}`（后端 worker GET /customers 的
+ *    `{items, total}`；历史对齐 orchestrator，业务壳已删，行号仅供参考）。后果是 mock 模式下客户列表恒为 0 行，
  *    客户选择器也一个候选都没有。
  * 2) 灰度开关
  *    `GET /api/v1/admin/feature_flag` 的 key 原先写成客户风格 id
@@ -121,7 +121,9 @@ describe("mock GET /api/v1/customers/:id（页面: page.tsx:520-757）", () => {
 
 describe("mock GET /api/v1/customers/:id/records（normalizeCustomerRecords）", () => {
   it("customer.id 是数字，normalizeCustomerRecords 才能读出 id", async () => {
-    const body = (await (await fetch(`${BASE}/customers/1/records`)).json()) as {
+    const body = (await (
+      await fetch(`${BASE}/customers/1/records`)
+    ).json()) as {
       customer: { id: number | null; name: string };
       quotes: unknown[];
     };
@@ -151,7 +153,10 @@ describe("mock 客户写操作（2026-10-18：新建 / 编辑 / 阶段 / 删除�
       await fetch(`${BASE}/customers/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ company_name: "契约测试客户（改名）", country: "DE" }),
+        body: JSON.stringify({
+          company_name: "契约测试客户（改名）",
+          country: "DE",
+        }),
       })
     ).json();
     expect(edited.company_name).toBe("契约测试客户（改名）");
@@ -181,14 +186,17 @@ describe("mock 客户写操作（2026-10-18：新建 / 编辑 / 阶段 / 删除�
     // 删除：列表里消失
     const del = await fetch(`${BASE}/customers/${id}`, { method: "DELETE" });
     expect(del.status).toBe(204);
-    const list = (await (await fetch(`${BASE}/customers`)).json()) as CustomerList;
+    const list = (await (
+      await fetch(`${BASE}/customers`)
+    ).json()) as CustomerList;
     expect(list.items.some((c) => c.id === id)).toBe(false);
   });
 
   it("客户阶段下拉的 key 只能是 active / inactive（页面 STAGE_LABELS 同值）", async () => {
-    const flags = (await (
-      await fetch(`${BASE}/enums`)
-    ).json()) as Record<string, string[]>;
+    const flags = (await (await fetch(`${BASE}/enums`)).json()) as Record<
+      string,
+      string[]
+    >;
     expect(flags.customer_stage).toEqual(["active", "inactive", "ordered"]);
   });
 });

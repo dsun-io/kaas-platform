@@ -359,9 +359,9 @@ SUB_CODES = {
 **进项退税与让利**。已按正确的税链实现为独立服务层，与产品解耦：
 
 ```
-backend/orchestrator/app/services/export_quote/
+backend/kaas_common/export_quote/（S4 起真源迁入共享内核；orchestrator 业务壳已删）
 ├── pricing.py    价链：成本 → 进项税 → 退税让利 → 印花税 → 销项税 → 报价
-├── rates.py      税务档案（版本化）+ HS 退税率查询（可插拔 Provider）
+├── rates.py      HS 退税率查询（可插拔 Provider）；旧文件版税务档案已下线（改由 DB 表 tax_archives 承载）
 ├── terms.py      贸易术语阶梯 EXW→FCA→FOB→CFR→CIF
 ├── engine.py     组装：规格展开 → 派生 → 价链 → 术语 → 指标 → 列投影
 ├── verify.py     三遍交叉核验 + 关系式 + 阶梯 + 档案自检

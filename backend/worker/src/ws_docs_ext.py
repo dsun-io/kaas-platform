@@ -3,10 +3,10 @@
 为什么需要这个文件
 ------------------
 生产 API 就是本 Worker（`backend/worker/wrangler.jsonc` 把 `kaas.powervoy.com` 与
-`api.kaas.powervoy.com` 都指向它，`deploy.yml` 的冒烟测试也打线上域名），
-而开发在 orchestrator 里做 —— 两边是**两套代码**。`scripts/sync-shared.ps1 -Check`
-只保证 `kaas_common` 共享内核一致，**管不到路由面**，于是「本地新加接口、线上忘了补」
-没有任何自动防线（见 `docs/ROUTE_PARITY_2026-10-10.md`）。
+`api.kaas.powervoy.com` 都指向它，`deploy.yml` 的冒烟测试也打线上域名）。
+方案 B 收敛后 orchestrator 业务壳已删，但「本地新加接口、线上忘了补」仍需靠
+`scripts/sync-shared.ps1 -Check` 保共享内核一致 + 前端契约/测试兜底（历史
+route-parity 门禁已退役，见 `scripts/archive/`）。
 
 单证工位缺的正是这三条，前端页面能开、数据请求却 404：
 
@@ -14,7 +14,7 @@
     POST /api/v1/trade-docs/{doc_id}/confirm            （确认 → issued 锁死）
     POST /api/v1/trade-docs/{doc_id}/translate          （字段中译英）
 
-对齐口径（真源：`backend/orchestrator/app/api/trade_docs.py`）
+对齐口径（业务壳删除前对齐了 orchestrator 历史语义；当前真源 = 共享内核 `kaas_common/trade_doc/` + 本 Worker 路由）
 --------------------------------------------------------------
 - **业务判定一律调用共享内核** `kaas_common.trade_doc.rules`
   （`assert_draft` / `assert_transition` / `validate_confirm`），

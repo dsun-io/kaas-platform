@@ -1,6 +1,6 @@
-# ─── Kaas v2 · Docker Compose · 本地开发环境 ───
-# 包含: PostgreSQL + Redis + MinIO + Backend
-# v2 设计文档 Q5: 本地优先（Docker + FastAPI + PostgreSQL + Redis）
+# ─── KaaS · Docker Compose · 本地开发环境 ───
+# 包含: PostgreSQL + MinIO + Backend（2026-10-21 起移除 Redis —— 运行时无 redis 客户端，
+# 历史归档 docs/archive/2026-10-20-p2-closeout/TECH_STACK_UPGRADE_2026-10-17.md 已判「删除或真接线二选一」）
 
 services:
   # ─── PostgreSQL (L4 quotations + customer_capabilities + L0 events) ───
@@ -17,18 +17,6 @@ services:
       - kaas_pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kaas -d kaas_dev"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ─── Redis (L5 会话短期记忆 · TTL 24h) ───
-  redis:
-    image: redis:7-alpine
-    container_name: kaas-redis
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5

@@ -1,8 +1,8 @@
 /**
  * 出口报价契约（EXW / FCA / FOB / CFR / CIF）
  *
- * Single source of truth: backend `app/api/export_quote.py`（前缀 /api/v1/export-quote）
- * 对应的计算内核在 `backend/orchestrator/app/services/export_quote/`。
+ * Single source of truth: backend `backend/worker/src/quote_api.py`（前缀 /api/v1/export-quote）
+ * 对应的计算内核在 `backend/kaas_common/export_quote/`（方案 B 收敛后 orchestrator 业务壳已删）。
  *
  * 两条铁律在这里体现：
  *  1. `view=customer` 的响应**不含**任何成本/利润/税额列 —— 前端即便直接渲染
@@ -93,8 +93,9 @@ export const ExportPolicyInSchema = z.object({
   refund_ratio: z.union([z.number().min(0).max(1), z.literal('auto')]).optional(),
   /** 出口退税率（refund_ratio='auto' 时使用） */
   rebate_rate: z.number().min(0).max(1).optional(),
+  /** @deprecated 2026-10-21：引擎已忽略（pricing.py 标注「已废弃：传入即忽略」），仅向后兼容保留 */
   stamp_rate: z.number().min(0).max(1).optional(),
-  /** 印花税计税基数；默认按加工利润 */
+  /** @deprecated 2026-10-21：引擎已忽略，仅向后兼容保留（历史默认按加工利润） */
   stamp_base: z.enum(['profit', 'cost', 'base_quote']).optional(),
   extras: z.array(z.record(z.unknown())).optional(),
 });

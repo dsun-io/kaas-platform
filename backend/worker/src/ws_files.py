@@ -1,6 +1,6 @@
 """文件 / 产品媒体 API（Worker 镜像 · 生产对齐）
 
-契约真源：`backend/orchestrator/app/api/files.py`。本文件只做**适配**，不改口径。
+本文件即生产契约真源（方案 B 收敛后 orchestrator 业务壳已删，不再有两套代码）。
 
 为什么必须有这个文件
 --------------------

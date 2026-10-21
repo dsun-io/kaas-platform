@@ -1,5 +1,5 @@
 /**
- * Single source of truth: backend/orchestrator/app/domain/schema_registry.py
+ * Single source of truth: backend/kaas_common/domain/schema_registry.py
  * Reference: v2 design document §3.7.5
  *
  * event_type literals must exactly match PAYLOAD_SCHEMAS keys (R0 redline).

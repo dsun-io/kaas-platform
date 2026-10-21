@@ -1,10 +1,9 @@
 """客户 / 询盘域补充端点（Worker 镜像 · 生产对齐）。
 
-为什么需要这个文件
+为什么需要这个文件（历史背景）
 -----------------
-orchestrator 的 `app/api/customers.py` 有 6 组客户/询盘路由，线上 Worker 只搬了
-一半（列表 / 新建 / 详情 / 联系人 / 新建询盘 / 改阶段）。剩下这四条一直没搬，
-已登记在 `scripts/route-parity-allowlist.txt`（「待补」= 承认的缺口）：
+方案 B 收敛前，客户/询盘域只存在于 orchestrator 业务壳；线上 Worker 只搬了一半
+（列表 / 新建 / 详情 / 联系人 / 新建询盘 / 改阶段），剩下这四条一直没搬：
 
     PATCH /api/v1/customers/{customer_id}           客户档案更新
     GET   /api/v1/customers/{customer_id}/inquiries 某客户询盘列表
@@ -12,8 +11,8 @@ orchestrator 的 `app/api/customers.py` 有 6 组客户/询盘路由，线上 Wo
     PATCH /api/v1/inquiries/{inquiry_id}            询盘状态流转（驱动客户 stage）
 
 缺口的表现不是报错而是「页面能开、数据拉不到」：线上调用一律 404。
-本文件把缺口补齐，语义逐条对齐 orchestrator（真源 = `app/api/customers.py`
-L268-290 / L481-501 / L536-559 / L560-631）。
+本文件把缺口补齐（业务壳已删，历史行号仅供参考；当前真源 = 共享内核
+`kaas_common/` + 本 Worker 路由）。
 
 对齐口径
 -------

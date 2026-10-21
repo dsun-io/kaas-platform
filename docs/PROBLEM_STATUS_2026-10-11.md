@@ -15,6 +15,16 @@
 > [`HANDOVER_2026-10-20_FINAL.md`](./HANDOVER_2026-10-20_FINAL.md)**（状态/资源清单/踩坑/发布检查单/待办）。
 > 本文件继续只做"问题状态"滚动口径。
 >
+> **（2026-10-21 过时引用收口 · orchestrator 旧路径/死配置清理）**
+>
+> - **幽灵真源引用清零**：方案 B 删壳后活跃代码/契约头仍指已删的 backend/orchestrator/app/{api,services,domain,...}
+>   （约 20 处），本次全改当前口径——worker 路由层头、共享契约头、前端 mocks 注释；历史滚动文档与
+>   archive 的历史行号引用保留不动。
+> - **残留产物清理**：删 orchestrator/app/ 下 8 个空壳目录的 __pycache__（仅留活的 app/db）；删
+>   docker-compose 无人用的 redis:7-alpine（运行时无客户端）。
+> - **契约/文档口径**：export-quote.ts 真源改指 kaas_common/export_quote/；WORKSTATION_DESIGN 引擎路径同步；
+>   stamp_rate/stamp_base 标 @deprecated（引擎已忽略，仅向后兼容）。
+>
 > **（2026-10-21 · 认证三页新版 UI + 生产账号重置 + 第十二次部署）**
 >
 > - **认证三页新版 UI ✅**：`/forgot-password`、`/reset-password`、`/register` 全部改用共享外壳

@@ -1,12 +1,12 @@
 """报价工位（export-quote）与报价单（quotes）— Python Worker 版。
 
-**这是一次移植，不是重写。** 唯一真源是 dev 后端：
+**方案 B 收敛前的历史背景**：本模块曾对齐 orchestrator 业务壳的对应路由；业务壳已删，当前本文件即生产唯一实现，业务规则真源在共享内核 kaas_common/export_quote/：
 
-    backend/orchestrator/app/api/export_quote.py      → 算价 / 规格空间 / 税务档案 / 导入
-    backend/orchestrator/app/api/quote_orders.py      → 报价单（/api/v1/quotes）
-    backend/orchestrator/app/api/quote_profiles.py    → 客户税率档案
-    backend/orchestrator/app/api/ws_common.py         → 取号 / 汇率锁定 / 可见范围
-    backend/orchestrator/app/services/pricing_table.py → 客户定价数据 → 引擎的成本表
+    算价 / 规格空间 / 税务档案 / 导入   → 本模块（引擎调 kaas_common/export_quote）
+    报价单（/api/v1/quotes）            → 本模块
+    客户税率档案                        → 本模块
+    取号 / 汇率锁定 / 可见范围          → ws_common 相关路由
+    客户定价数据 → 引擎成本表           → 本模块
 
 为什么单开一个模块而不是继续堆进 main.py
 ----------------------------------------
@@ -275,7 +275,7 @@ def _identity_match(user: dict, body: Optional[dict], tenant: str, customer: str
 # ═════════════════════════════════════════════════════════════════════════════
 # 枚举白名单
 # ═════════════════════════════════════════════════════════════════════════════
-# 真源是 backend/orchestrator/app/domain/enums.py。线上只带本工位用到的三张表
+# 真源是 backend/kaas_common/domain/enums.py（sync-shared 镜像）。线上只带本工位用到的三张表
 # （整份复制过去只会多一处需要同步的副本）；值必须逐字一致，否则同一状态在
 # dev 能存、线上 422。
 # 2026-10-19（PARITY-QUOTE-2）：补 closed —— orchestrator 的 QUOTE_STATUS 含 closed

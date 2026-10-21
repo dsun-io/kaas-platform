@@ -103,7 +103,7 @@ export function makeFeatureFlags(overrides?: Record<string, boolean>) {
  *   客户列表在 mock 模式下恒为 0 行。
  *   `id` 必须是 number：前端把它直接插进 `GET /customers/{id}`（page.tsx:117）
  *   与 `/customers/{id}/records`（lib/customer/use-customer-records.ts:44），
- *   后端该主键是 BIGINT（backend/orchestrator/app/api/customers.py:246）。
+ *   后端该主键是 BIGINT（worker customers 路由；历史对齐 orchestrator，业务壳已删，行号仅供参考）。
  */
 export function makeCustomer(
   overrides?: Partial<{

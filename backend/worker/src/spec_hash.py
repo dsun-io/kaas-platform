@@ -1,9 +1,8 @@
-"""spec_hash 规范算法（阶段 3 · 与 orchestrator app/domain/spec_hash.py 同一算法）。
+"""spec_hash 规范算法。
 
-⚠️ 同步义务：本文件与 backend/orchestrator/app/domain/spec_hash.py 保持逐字一致
-（compute_spec_hash / normalize_value / compute_sku_hash 三个函数体）。两个运行时之间
-没有共享包机制，复制是结构性的；改任何一侧必须同步另一侧，否则同一规格会算出不同
-hash、报价匹配会断。
+⚠️ 口径：方案 B 收敛后只有一个运行时（本 Worker），orchestrator 业务壳已删，本文件
+即唯一实现（compute_spec_hash / normalize_value / compute_sku_hash 三个函数体），
+无需再与第二侧保持同步；改本文件即改唯一真源，同一规格的 hash 全局一致。
 """
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
 """Admin 属性沉淀提案（`/api/v1/admin/spec/attribute-proposals`）—— Worker 端。
 
-与 orchestrator `app/api/admin_proposals.py` 同路径、同方法、同响应键：
+端点（业务壳删除前对齐了 orchestrator 历史口径，现为本 Worker 独有实现）：
 - ``GET    /api/v1/admin/spec/attribute-proposals[?status=pending]``
 - ``GET    /api/v1/admin/spec/attribute-proposals/recommended``
 - ``PATCH  /api/v1/admin/spec/attribute-proposals/{proposal_id}``
@@ -8,10 +8,10 @@
 为什么补（2026-10-19 方案 B S3 首项）
 ------------------------------------
 前端 `admin/spec-proposals` 页面（`page.tsx:53/64/83`）一直在调这三个端点，
-但生产 Worker 从未实现 ⇒ 管理员看到的是 404。它们原先登记在
-`scripts/route-parity-allowlist.txt` 的缺口清单里。
+但生产 Worker 从未实现 ⇒ 管理员看到的是 404（route-parity 门禁已退役并归档于
+`scripts/archive/`，本文件即当前实现）。
 
-鉴权口径与 orchestrator `require_platform_ops` 一致：**internal 账号 + 管理员角色**。
+鉴权口径：**internal 账号 + 管理员角色**（对齐历史 orchestrator `require_platform_ops` 语义）。
 写操作在一条事务里完成（approve 会同时插 `spec_attributes` 并回写提案状态）。
 """
 from __future__ import annotations

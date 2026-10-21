@@ -8,7 +8,7 @@ import { z } from 'zod';
  *      已经产生真实不一致（/market 面包屑写成「市场调研」，与 /research 重名；4 个工位显示英文 slug）。
  *
  * 同步要求：
- *   · 后端镜像 backend/orchestrator/app/domain/workstations.py 必须与本文件一致
+ *   · 后端镜像 backend/kaas_common/domain/workstations.py 必须与本文件一致（S4 起迁入共享内核）
  *   · `pnpm contracts:check`（scripts/contracts-check.ts 的 R2）强制校验
  *
  * 命名纪律：同一事物用一个名字，不同事物用不同名字。

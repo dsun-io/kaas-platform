@@ -110,7 +110,7 @@ let nameMappingSeq = 1;
 // 消费方 gray-release/page.tsx:39-46 拿 `GET /admin/tenants` 的 `tenant_id` 去查
 // `flags?.[t.tenant_id]?.["use_v2"]`（第 45 行）；而该接口返回的是
 // `lianjia` / `client-b`（见下面 /admin/tenants handler + factory.ts 的 makeTenant）。
-// 后端同口径：orchestrator/app/api/admin.py:197-202 用租户号做 key 返回全量 map，
+// 后端同口径：feature_flag 接口用租户号做 key 返回全量 map（历史对齐 orchestrator，业务壳已删，行号仅供参考），
 // 租户号见 tests/conftest.py:87/96（"lianjia" / "client_b"）。
 // 原先这里写成 `cust-lianjia` / `cust-client-b`（客户风格的 id）→ 查不到 →
 // 灰度页所有开关**恒显示 OFF**，`lianjia 的 use_v2=true` 这条种子数据等于丢了。
@@ -316,7 +316,7 @@ function contentVersionsOf(docId: number): MockContentVersion[] {
   return seeded;
 }
 
-/** 枚举真源 = backend/orchestrator/app/domain/enums.py（值逐字照搬）。 */
+/** 枚举真源 = backend/kaas_common/domain/enums.py（sync-shared 镜像，值逐字照搬）。 */
 const ENUMS_MOCK: Record<string, string[]> = {
   inquiry_status: ["unquoted", "quoted", "closed"],
   customer_stage: ["active", "inactive", "ordered"],
@@ -590,8 +590,7 @@ function quoteItemsFromBody(
       unit_price: unitPrice,
       currency: typeof row.currency === "string" ? row.currency : "USD",
       line_amount: lineAmount,
-      sort_order:
-        typeof row.sort_order === "number" ? row.sort_order : index,
+      sort_order: typeof row.sort_order === "number" ? row.sort_order : index,
       cost_override:
         typeof row.cost_override === "number" ? row.cost_override : null,
       cost_breakdown:
@@ -606,9 +605,7 @@ function quoteItemsFromBody(
 function quoteTotal(items: MockQuoteItem[]): number | null {
   if (items.length === 0) return null;
   return Number(
-    items
-      .reduce((sum, item) => sum + (item.line_amount ?? 0), 0)
-      .toFixed(2),
+    items.reduce((sum, item) => sum + (item.line_amount ?? 0), 0).toFixed(2),
   );
 }
 
@@ -637,10 +634,8 @@ function createQuoteFromBody(body: Record<string, unknown>): MockQuote {
     id,
     quote_no: nextQuoteNo(),
     customer_id: customerId,
-    customer_name:
-      optStr(body.customer_name) ?? customer?.company_name ?? null,
-    inquiry_id:
-      typeof body.inquiry_id === "number" ? body.inquiry_id : null,
+    customer_name: optStr(body.customer_name) ?? customer?.company_name ?? null,
+    inquiry_id: typeof body.inquiry_id === "number" ? body.inquiry_id : null,
     status: "draft",
     currency: String(body.currency ?? "USD"),
     total_amount: quoteTotal(items),
@@ -686,8 +681,6 @@ const QUOTE_TERM_FIELDS = [
   "freight_valid_from",
   "freight_valid_to",
 ] as const;
-
-
 
 const nowIso = () => new Date().toISOString();
 const optStr = (v: unknown): string | null =>
@@ -885,7 +878,9 @@ type MockFact = {
   currency: string | null;
 };
 
-function fact(over: Partial<MockFact> & { key: string; value: string }): MockFact {
+function fact(
+  over: Partial<MockFact> & { key: string; value: string },
+): MockFact {
   return {
     trust: "confirmed",
     source: "payload",
@@ -1156,7 +1151,11 @@ function seedHardeningStores(): void {
   for (const [docId, rows] of Object.entries(DOC_SET_SEEDS)) {
     docSetStore.set(Number(docId), clone(rows));
   }
-  docReceiptsStore.splice(0, docReceiptsStore.length, ...clone(DOC_RECEIPT_SEEDS));
+  docReceiptsStore.splice(
+    0,
+    docReceiptsStore.length,
+    ...clone(DOC_RECEIPT_SEEDS),
+  );
   docReceiptSeq =
     docReceiptsStore.reduce((max, r) => Math.max(max, r.id), 0) + 1;
 }
@@ -1186,9 +1185,7 @@ const HARDENING_IDENTITY_KEYS = new Set(["doc_no", "date"]);
 /** 文本归一（去大小写/空白/标点）—— 等价措辞判定用；内核口径见
  *  `kaas_common/trade_doc/consistency.py:equivalent`。mock 只做这一层近似。 */
 function squashWording(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[\s，,。.；;：:、"'“”‘’()（）\-_/]/g, "");
+  return text.toLowerCase().replace(/[\s，,。.；;：:、"'“”‘’()（）\-_/]/g, "");
 }
 
 /** 金额类事实按容差比（与内核 `values_equal` 的 money 分支同口径）。 */
@@ -1616,7 +1613,8 @@ const TEAM_SUBSCRIPTION_SEEDS: MockTeamSubscription[] = [
 const COMPANY_PROFILE_SEED: Record<string, string | null> = {
   name_en: "ANPING KAAS WIRE MESH CO., LTD.",
   name_zh: "安平凯斯丝网有限公司",
-  address_en: "Wire Mesh Industrial Park, Anping County, Hengshui, Hebei, China",
+  address_en:
+    "Wire Mesh Industrial Park, Anping County, Hengshui, Hebei, China",
   address_zh: "河北省衡水市安平县丝网工业园",
   phone: "+86-318-765-4321",
   email: "export@kaas.local",
@@ -1663,7 +1661,15 @@ const CLAUSE_TEMPLATE_SEEDS: ClauseTemplate[] = [
   {
     id: 2,
     name: "装运条款（FOB 上海，允许分批与转运）",
-    doc_types: ["quotation", "pi", "contract", "ci", "pl", "shipping_advice", "bl"],
+    doc_types: [
+      "quotation",
+      "pi",
+      "contract",
+      "ci",
+      "pl",
+      "shipping_advice",
+      "bl",
+    ],
     text_zh: "装运条款：FOB 上海；装运期以合同约定为准；允许分批装运与转运。",
     text_en:
       "Shipment Terms: FOB Shanghai; shipment date as stipulated in the contract; partial shipment and transhipment are allowed.",
@@ -1814,15 +1820,11 @@ function docNoEditable(doc: Record<string, unknown>): boolean {
   const id = Number(doc.id);
   const quoteId = doc.quote_id;
   if (quoteId !== null && quoteId !== undefined) {
-    return !docsStore.some(
-      (d) => Number(d.id) > id && d.quote_id === quoteId,
-    );
+    return !docsStore.some((d) => Number(d.id) > id && d.quote_id === quoteId);
   }
   const orderId = doc.order_id;
   if (orderId !== null && orderId !== undefined) {
-    return !docsStore.some(
-      (d) => Number(d.id) > id && d.order_id === orderId,
-    );
+    return !docsStore.some((d) => Number(d.id) > id && d.order_id === orderId);
   }
   return true;
 }
@@ -1948,11 +1950,7 @@ function pngSize(bytes: Uint8Array): { width: number; height: number } | null {
   for (let i = 0; i < sig.length; i += 1) {
     if (bytes[i] !== sig[i]) return null;
   }
-  const view = new DataView(
-    bytes.buffer,
-    bytes.byteOffset + 16,
-    8,
-  );
+  const view = new DataView(bytes.buffer, bytes.byteOffset + 16, 8);
   return { width: view.getUint32(0), height: view.getUint32(4) };
 }
 
@@ -1966,7 +1964,10 @@ function renderFingerprintCheckOf(docId: number) {
     payload !== null &&
     "_render" in payload &&
     typeof (payload as Record<string, unknown>)._render === "object"
-      ? ((payload as Record<string, unknown>)._render as Record<string, unknown>)
+      ? ((payload as Record<string, unknown>)._render as Record<
+          string,
+          unknown
+        >)
       : null;
   const checkedAt = nowIso();
   if (!frozen) {
@@ -2197,7 +2198,6 @@ function taxValuesError(code: string) {
 /** 公章图片字节（与 file_objects 的 id 空间分开存，避免 id 撞号）。 */
 const sealBytesStore = new Map<number, Uint8Array>();
 
-
 function seedContacts(): MockContact[] {
   return [
     {
@@ -2306,7 +2306,7 @@ const stageLogsOf = (id: number): MockStageLog[] => {
 };
 
 /** 客户详情响应体 —— `row_to_customer()` + 三个子资源
- * （后端形状 backend/orchestrator/app/api/customers.py:274-287；
+ * （后端形状 worker GET /customers/{id} 响应；历史对齐 orchestrator，业务壳已删，行号仅供参考；
  *  消费方 page.tsx:520 `useCustomerDetail(customer.id)`，面板读 page.tsx:565-591 / 629-740）。 */
 function customerDetail(customer: MockCustomer) {
   return {
@@ -2462,7 +2462,11 @@ function registerCoreMockCollections(): void {
     () => clone(docsStore),
     (value) => {
       if (!Array.isArray(value)) return;
-      docsStore.splice(0, docsStore.length, ...clone(value as typeof docsStore));
+      docsStore.splice(
+        0,
+        docsStore.length,
+        ...clone(value as typeof docsStore),
+      );
     },
   );
   // A7 加固三集合：事实处置（确认/信任级/双语/证据）、收款登记、单证清单。
@@ -2500,7 +2504,10 @@ function registerCoreMockCollections(): void {
       docSetStore.clear();
       for (const entry of value) {
         if (Array.isArray(entry) && entry.length === 2) {
-          docSetStore.set(Number(entry[0]), clone(entry[1] as MockDocSetItem[]));
+          docSetStore.set(
+            Number(entry[0]),
+            clone(entry[1] as MockDocSetItem[]),
+          );
         }
       }
     },
@@ -2534,7 +2541,8 @@ function registerCoreMockCollections(): void {
     "fileObjects",
     () => clone(fileObjectsStore),
     (value) => {
-      if (Array.isArray(value)) fileObjectsStore = clone(value as MockFileObject[]);
+      if (Array.isArray(value))
+        fileObjectsStore = clone(value as MockFileObject[]);
     },
   );
   registerMockCollection(
@@ -2587,14 +2595,16 @@ function registerCoreMockCollections(): void {
     "teamMembers",
     () => clone(teamMembersStore),
     (value) => {
-      if (Array.isArray(value)) teamMembersStore = clone(value as MockTeamMember[]);
+      if (Array.isArray(value))
+        teamMembersStore = clone(value as MockTeamMember[]);
     },
   );
   registerMockCollection(
     "teamInvites",
     () => clone(teamInvitesStore),
     (value) => {
-      if (Array.isArray(value)) teamInvitesStore = clone(value as MockTeamInvite[]);
+      if (Array.isArray(value))
+        teamInvitesStore = clone(value as MockTeamInvite[]);
     },
   );
   registerMockCollection(
@@ -2610,21 +2620,24 @@ function registerCoreMockCollections(): void {
     "companyProfile",
     () => clone(companyProfileStore),
     (value) => {
-      companyProfileStore = (value as Record<string, string | null> | null) ?? null;
+      companyProfileStore =
+        (value as Record<string, string | null> | null) ?? null;
     },
   );
   registerMockCollection(
     "companySeals",
     () => clone(companySealsStore),
     (value) => {
-      if (Array.isArray(value)) companySealsStore = clone(value as MockCompanySeal[]);
+      if (Array.isArray(value))
+        companySealsStore = clone(value as MockCompanySeal[]);
     },
   );
   registerMockCollection(
     "taxArchives",
     () => clone(taxArchivesStore),
     (value) => {
-      if (Array.isArray(value)) taxArchivesStore = clone(value as MockTaxArchive[]);
+      if (Array.isArray(value))
+        taxArchivesStore = clone(value as MockTaxArchive[]);
     },
   );
   registerMockCollection(
@@ -2669,7 +2682,11 @@ function registerCoreMockCollections(): void {
     () => clone(accountsStore),
     (value) => {
       if (!Array.isArray(value)) return;
-      accountsStore.splice(0, accountsStore.length, ...clone(value as MockAccount[]));
+      accountsStore.splice(
+        0,
+        accountsStore.length,
+        ...clone(value as MockAccount[]),
+      );
     },
   );
   registerMockCollection(
@@ -2871,7 +2888,12 @@ const PRICING_UNIT_VALUES = new Set([
 // ── A5-W2：`custom.items_override` mock 契约（与 task-47 后端契约一致）────────
 // 只允许 draft；禁金额键；index 必须是自然数。命中行按 override 覆盖，
 // 行金额一律由 数量×单价 重算（4 位）——与前端 `lib/trade-doc/item-batch.ts` 同语义。
-const ITEMS_OVERRIDE_AMOUNT_KEYS = ["line_amount", "amount", "total_amount", "line_total"] as const;
+const ITEMS_OVERRIDE_AMOUNT_KEYS = [
+  "line_amount",
+  "amount",
+  "total_amount",
+  "line_total",
+] as const;
 
 function guardItemsOverride(
   docStatus: unknown,
@@ -2918,20 +2940,26 @@ function applyItemsOverrideToRows(
   override: readonly Record<string, unknown>[],
 ): unknown {
   if (!Array.isArray(rows) || override.length === 0) return rows;
-  const byIndex = new Map(override.map((entry) => [Number(entry.index), entry]));
+  const byIndex = new Map(
+    override.map((entry) => [Number(entry.index), entry]),
+  );
   return rows.map((row, index) => {
     const entry = byIndex.get(index);
     if (!entry || typeof row !== "object" || row === null) return row;
-    const next: Record<string, unknown> = { ...(row as Record<string, unknown>) };
+    const next: Record<string, unknown> = {
+      ...(row as Record<string, unknown>),
+    };
     if (typeof entry.qty === "number") next.qty = entry.qty;
-    if (typeof entry.unit_price === "number") next.unit_price = entry.unit_price;
+    if (typeof entry.unit_price === "number")
+      next.unit_price = entry.unit_price;
     if (typeof entry.unit === "string") next.qty_unit = entry.unit;
     if (typeof entry.spec === "string") next.specification = entry.spec;
     if (typeof entry.origin === "string") next.country_of_origin = entry.origin;
     const qty = Number(next.qty);
     const price = Number(next.unit_price);
     if (Number.isFinite(qty) && Number.isFinite(price)) {
-      next.line_amount = Math.round((qty * price + Number.EPSILON) * 10000) / 10000;
+      next.line_amount =
+        Math.round((qty * price + Number.EPSILON) * 10000) / 10000;
     }
     return next;
   });
@@ -2946,36 +2974,73 @@ function applyItemsOverrideToRows(
  */
 const RECEIVABLE_SEEDS: Array<Record<string, unknown>> = [
   {
-    id: 9001, order_id: 1, currency: "USD", total_amount: 26450, received_amount: 7935,
-    fx_rate: 6.7029, fx_rate_date: "2026-09-28", base_currency: "CNY",
-    base_amount: 177281.7, exchange_gain_loss: null, status: "partial",
+    id: 9001,
+    order_id: 1,
+    currency: "USD",
+    total_amount: 26450,
+    received_amount: 7935,
+    fx_rate: 6.7029,
+    fx_rate_date: "2026-09-28",
+    base_currency: "CNY",
+    base_amount: 177281.7,
+    exchange_gain_loss: null,
+    status: "partial",
     created_at: "2026-09-29T09:00:00.000Z",
-    order_no: "ORD-202609-0001", customer_name: "Lone Star Fence Co",
+    order_no: "ORD-202609-0001",
+    customer_name: "Lone Star Fence Co",
   },
   {
-    id: 9002, order_id: 2, currency: "USD", total_amount: 12300, received_amount: 0,
-    fx_rate: null, fx_rate_date: null, base_currency: null, base_amount: null,
-    exchange_gain_loss: null, status: "unpaid",
+    id: 9002,
+    order_id: 2,
+    currency: "USD",
+    total_amount: 12300,
+    received_amount: 0,
+    fx_rate: null,
+    fx_rate_date: null,
+    base_currency: null,
+    base_amount: null,
+    exchange_gain_loss: null,
+    status: "unpaid",
     created_at: "2026-09-30T09:00:00.000Z",
-    order_no: "ORD-202609-0002", customer_name: "Gulf Coast Wire Mesh",
+    order_no: "ORD-202609-0002",
+    customer_name: "Gulf Coast Wire Mesh",
   },
   {
-    id: 9003, order_id: 3, currency: "USD", total_amount: 8600, received_amount: 8600,
-    fx_rate: null, fx_rate_date: null, base_currency: null, base_amount: null,
-    exchange_gain_loss: 12.4, status: "paid",
+    id: 9003,
+    order_id: 3,
+    currency: "USD",
+    total_amount: 8600,
+    received_amount: 8600,
+    fx_rate: null,
+    fx_rate_date: null,
+    base_currency: null,
+    base_amount: null,
+    exchange_gain_loss: 12.4,
+    status: "paid",
     created_at: "2026-09-20T09:00:00.000Z",
-    order_no: "ORD-202609-0003", customer_name: "SunState Fencing",
+    order_no: "ORD-202609-0003",
+    customer_name: "SunState Fencing",
   },
   {
-    id: 9004, order_id: 4, currency: "CNY", total_amount: 58000, received_amount: 20000,
-    fx_rate: null, fx_rate_date: null, base_currency: null, base_amount: null,
-    exchange_gain_loss: null, status: "partial",
+    id: 9004,
+    order_id: 4,
+    currency: "CNY",
+    total_amount: 58000,
+    received_amount: 20000,
+    fx_rate: null,
+    fx_rate_date: null,
+    base_currency: null,
+    base_amount: null,
+    exchange_gain_loss: null,
+    status: "partial",
     created_at: "2026-10-01T09:00:00.000Z",
-    order_no: "ORD-202610-0004", customer_name: "安平联佳丝网",
+    order_no: "ORD-202610-0004",
+    customer_name: "安平联佳丝网",
   },
 ];
 
-export const handlers = [  // ── 工位订阅快照（原先没有 mock，是**真正的**缺口）─────────────────────
+export const handlers = [
+  // ── 工位订阅快照（原先没有 mock，是**真正的**缺口）─────────────────────
   // 形状**必须**照 `lib/workstation/visibility.ts` 的 `parseMyWorkstationsPayload()`：
   //   · `workstations` 必须是数组，否则整份 payload 被当成"没读到"(null) → 放行
   //   · `has_team` 若不是 boolean → null → **被当成没有团队**
@@ -3084,7 +3149,7 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
   //   · `res.data.access_token` 必须存在（:130 直接写进会话）
   //   · `buildUser(res.data)`（:55-67）要 user_id/email/display_name/account_type/
   //     role/plan/team_id/team_name/console_access 共 8 项
-  // 后端 orchestrator/app/api/auth.py:162-281（无 status_code ⇒ 200）：
+  // 后端 auth 路由（历史对齐 orchestrator app/api/auth.py，业务壳已删，行号仅供参考；无 status_code ⇒ 200）：
   //   `_auth_response`（:145-159）= 上面 8 项 + access_token/token_type；
   //   强制 `account_type="customer"`、`plan="free"`（:250-252）；
   //   角色 `"user"`(凭邀请码) / `"owner"`（:245）。
@@ -3296,7 +3361,9 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
       string,
       unknown
     >;
-    const region = String(body.region_code ?? "").trim().toUpperCase();
+    const region = String(body.region_code ?? "")
+      .trim()
+      .toUpperCase();
     const lang = String(body.lang ?? "").trim();
     const localName = String(body.local_name ?? "").trim();
     if (!region || !lang || !localName) {
@@ -3346,8 +3413,7 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
         : [],
       hs_code: typeof body.hs_code === "string" ? body.hs_code : null,
       source: typeof body.source === "string" ? body.source : "manual",
-      confidence:
-        typeof body.confidence === "string" ? body.confidence : null,
+      confidence: typeof body.confidence === "string" ? body.confidence : null,
       is_verified: body.is_verified === true,
       created_at: new Date().toISOString(),
     };
@@ -3357,7 +3423,7 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
 
   // ── Customers ────────────────────────────────────────────────────
   // ⚠️ 形状必须对齐后端 `GET /customers`
-  // （backend/orchestrator/app/api/customers.py:188-216）：
+  // （worker GET /customers 响应形状；历史对齐 orchestrator，业务壳已删，行号仅供参考）：
   //   {items:[row_to_customer...], total, page, page_size}
   // 原先返回**裸数组**，于是两个消费方都读 `data.items` 拿到 undefined：
   //   · 客户管理页 `useCustomerList`（frontend/src/app/(app)/customers/page.tsx:97-110，
@@ -4312,7 +4378,11 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     let spec: Record<string, unknown>;
     try {
       const parsed = JSON.parse(specRaw);
-      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
         throw new Error("spec must be object");
       }
       spec = parsed as Record<string, unknown>;
@@ -4374,7 +4444,16 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     }
     if ("status" in body) {
       const status = String(body.status ?? "");
-      if (!["draft", "sent", "accepted", "rejected", "expired", "closed"].includes(status)) {
+      if (
+        ![
+          "draft",
+          "sent",
+          "accepted",
+          "rejected",
+          "expired",
+          "closed",
+        ].includes(status)
+      ) {
         return HttpResponse.json(
           {
             detail: {
@@ -4407,7 +4486,8 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
         quote.customer_name = customer.company_name;
       }
     }
-    if ("currency" in body) quote.currency = String(body.currency ?? quote.currency);
+    if ("currency" in body)
+      quote.currency = String(body.currency ?? quote.currency);
     for (const key of ["valid_until", "notes"] as const) {
       if (key in body) quote[key] = optStr(body[key]);
     }
@@ -4759,7 +4839,10 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     // A5-W2：真实环境 render-data 会返回 `doc.raw_payload`（表单靠它做初始值）并把
     // `custom.items_override` 应用到行项副本。mock 也要同语义，否则"保存后行项变了"
     // 在 mock 下永远看不到（假成功）。
-    const storePayload = (fromStore?.raw_payload ?? null) as Record<string, unknown> | null;
+    const storePayload = (fromStore?.raw_payload ?? null) as Record<
+      string,
+      unknown
+    > | null;
     const override = itemsOverrideOf(storePayload);
     const baseData: Record<string, unknown> = {
       ...sample.base,
@@ -4768,8 +4851,13 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     // 行项来源与后端 `build_render_data` 同序：`sources.order|quote.items` 优先，
     // 没有快照才用样板数据（否则"保存了行项却看不到"= 假成功）。
     const sources = (storePayload?.sources ?? {}) as Record<string, unknown>;
-    const upstream = (sources.order ?? sources.quote ?? {}) as Record<string, unknown>;
-    const baseItems = Array.isArray(upstream.items) ? upstream.items : baseData.items;
+    const upstream = (sources.order ?? sources.quote ?? {}) as Record<
+      string,
+      unknown
+    >;
+    const baseItems = Array.isArray(upstream.items)
+      ? upstream.items
+      : baseData.items;
     return HttpResponse.json({
       doc: {
         id,
@@ -4812,100 +4900,99 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
 
   // 上传并挂到单证（客户盖章回传）。`role` 属于版本化角色时旧"当前件"退位、
   // 旧链接改挂 `<role>_superseded`（ws_files.py:634-640 + 660-678）。
-  http.post("/api/v1/trade-docs/:id/files/upload", async ({ params, request }) => {
-    const docId = Number(params.id);
-    const doc = docsStore.find((d) => d.id === docId);
-    if (!doc) {
-      return HttpResponse.json(
-        { detail: { error: "not_found", code: "DOC_NOT_FOUND" } },
-        { status: 404 },
-      );
-    }
-    const form = await request.formData();
-    const fileEntry = form.get("file");
-    if (!isBlobLike(fileEntry)) {
-      return HttpResponse.json(
-        {
-          detail: {
-            error: "validation",
-            code: "FILE_REQUIRED",
-            detail: "缺少上传文件",
-          },
-        },
-        { status: 422 },
-      );
-    }
-    const roleRaw = form.get("role");
-    const role = typeof roleRaw === "string" && roleRaw ? roleRaw : "stamp_scan";
-    const nameRaw = form.get("name");
-    const name =
-      (typeof nameRaw === "string" ? nameRaw.trim() : "") ||
-      fileEntry.name ||
-      "回传件";
-    const captionRaw = form.get("caption");
-    const caption =
-      typeof captionRaw === "string" && captionRaw.trim()
-        ? captionRaw.trim()
-        : null;
-    const bytes = new Uint8Array(await fileEntry.arrayBuffer());
-    const created = createMockFile({
-      owner_type: "trade_doc",
-      owner_id: String(docId),
-      kind: role,
-      name,
-      content_type: fileEntry.type || "application/octet-stream",
-      file_name: fileEntry.name || null,
-      file_size: bytes.byteLength,
-      bytes,
-      supersede: role === "stamp_scan" || role === "render_pdf",
-    });
-    const links = docFileLinksOf(docId);
-    if (role === "stamp_scan" || role === "render_pdf") {
-      for (const link of links) {
-        if (link.role === role) link.role = `${role}_superseded`;
-      }
-    }
-    const link: MockDocFileLink = {
-      link_id: docFileLinkSeq++,
-      file_id: created.id,
-      role,
-      caption,
-      sort_order: 0,
-    };
-    links.push(link);
-    return HttpResponse.json(
-      {
-        file: fileOut(created),
-        link: {
-          id: link.link_id,
-          role: link.role,
-          caption: link.caption,
-          sort_order: link.sort_order,
-        },
-      },
-      { status: 201 },
-    );
-  }),
-
-  // 摘除引用（不删文件本身：文件是留档资料，只解绑）—— ws_files.py:648-657
-  http.delete(
-    "/api/v1/trade-docs/:id/files/:linkId",
-    ({ params }) => {
+  http.post(
+    "/api/v1/trade-docs/:id/files/upload",
+    async ({ params, request }) => {
       const docId = Number(params.id);
-      const links = docFileLinksOf(docId);
-      const index = links.findIndex(
-        (l) => l.link_id === Number(params.linkId),
-      );
-      if (index < 0) {
+      const doc = docsStore.find((d) => d.id === docId);
+      if (!doc) {
         return HttpResponse.json(
-          { detail: { error: "not_found", code: "LINK_NOT_FOUND" } },
+          { detail: { error: "not_found", code: "DOC_NOT_FOUND" } },
           { status: 404 },
         );
       }
-      links.splice(index, 1);
-      return new HttpResponse(null, { status: 204 });
+      const form = await request.formData();
+      const fileEntry = form.get("file");
+      if (!isBlobLike(fileEntry)) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "validation",
+              code: "FILE_REQUIRED",
+              detail: "缺少上传文件",
+            },
+          },
+          { status: 422 },
+        );
+      }
+      const roleRaw = form.get("role");
+      const role =
+        typeof roleRaw === "string" && roleRaw ? roleRaw : "stamp_scan";
+      const nameRaw = form.get("name");
+      const name =
+        (typeof nameRaw === "string" ? nameRaw.trim() : "") ||
+        fileEntry.name ||
+        "回传件";
+      const captionRaw = form.get("caption");
+      const caption =
+        typeof captionRaw === "string" && captionRaw.trim()
+          ? captionRaw.trim()
+          : null;
+      const bytes = new Uint8Array(await fileEntry.arrayBuffer());
+      const created = createMockFile({
+        owner_type: "trade_doc",
+        owner_id: String(docId),
+        kind: role,
+        name,
+        content_type: fileEntry.type || "application/octet-stream",
+        file_name: fileEntry.name || null,
+        file_size: bytes.byteLength,
+        bytes,
+        supersede: role === "stamp_scan" || role === "render_pdf",
+      });
+      const links = docFileLinksOf(docId);
+      if (role === "stamp_scan" || role === "render_pdf") {
+        for (const link of links) {
+          if (link.role === role) link.role = `${role}_superseded`;
+        }
+      }
+      const link: MockDocFileLink = {
+        link_id: docFileLinkSeq++,
+        file_id: created.id,
+        role,
+        caption,
+        sort_order: 0,
+      };
+      links.push(link);
+      return HttpResponse.json(
+        {
+          file: fileOut(created),
+          link: {
+            id: link.link_id,
+            role: link.role,
+            caption: link.caption,
+            sort_order: link.sort_order,
+          },
+        },
+        { status: 201 },
+      );
     },
   ),
+
+  // 摘除引用（不删文件本身：文件是留档资料，只解绑）—— ws_files.py:648-657
+  http.delete("/api/v1/trade-docs/:id/files/:linkId", ({ params }) => {
+    const docId = Number(params.id);
+    const links = docFileLinksOf(docId);
+    const index = links.findIndex((l) => l.link_id === Number(params.linkId));
+    if (index < 0) {
+      return HttpResponse.json(
+        { detail: { error: "not_found", code: "LINK_NOT_FOUND" } },
+        { status: 404 },
+      );
+    }
+    links.splice(index, 1);
+    return new HttpResponse(null, { status: 204 });
+  }),
 
   // 从上游重新带入快照（仅 draft；已签发冻结）—— ws_docs_ext.py:refresh-sources
   // 响应 `{doc, sources:[...]}`；无上游 ⇒ 422 NO_UPSTREAM。
@@ -4938,7 +5025,9 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
       };
     }
     if (doc.quote_id != null) {
-      sources.quote = { quote_no: `QUO-2026${String(doc.quote_id).padStart(4, "0")}` };
+      sources.quote = {
+        quote_no: `QUO-2026${String(doc.quote_id).padStart(4, "0")}`,
+      };
     }
     if (Object.keys(sources).length === 0) {
       return HttpResponse.json(
@@ -4971,20 +5060,17 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
   // （kaas_common/trade_doc/render_fingerprint.py:290-314）。
   // 消费方 `useCheckTradeDocRenderFingerprint`（use-trade-docs.ts:431-440），
   // 用户点「对账」才发一次（不挂自动查询）。
-  http.get(
-    "/api/v1/trade-docs/:id/render-fingerprint-check",
-    ({ params }) => {
-      const id = Number(params.id);
-      const doc = docsStore.find((d) => d.id === id);
-      if (!doc) {
-        return HttpResponse.json(
-          { detail: { error: "not_found", code: "DOC_NOT_FOUND" } },
-          { status: 404 },
-        );
-      }
-      return HttpResponse.json(renderFingerprintCheckOf(id));
-    },
-  ),
+  http.get("/api/v1/trade-docs/:id/render-fingerprint-check", ({ params }) => {
+    const id = Number(params.id);
+    const doc = docsStore.find((d) => d.id === id);
+    if (!doc) {
+      return HttpResponse.json(
+        { detail: { error: "not_found", code: "DOC_NOT_FOUND" } },
+        { status: 404 },
+      );
+    }
+    return HttpResponse.json(renderFingerprintCheckOf(id));
+  }),
 
   // 自动出 PDF（服务端 Browser Rendering）：mock 环境没有渲染器，
   // 如实返回 503，让前端走“手动归档”的降级提示，而不是假装成功。
@@ -5102,7 +5188,10 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     const id = Number(params.id);
     const doc = docsStore.find((d) => Number(d.id) === id);
     if (!doc) {
-      return HttpResponse.json({ detail: { error: "not_found" } }, { status: 404 });
+      return HttpResponse.json(
+        { detail: { error: "not_found" } },
+        { status: 404 },
+      );
     }
     const facts = factsOf(id);
     return HttpResponse.json({
@@ -5115,59 +5204,67 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     });
   }),
 
-  http.post("/api/v1/trade-docs/:id/facts/confirm", async ({ params, request }) => {
-    const id = Number(params.id);
-    const doc = docsStore.find((d) => Number(d.id) === id);
-    if (!doc) {
-      return HttpResponse.json({ detail: { error: "not_found" } }, { status: 404 });
-    }
-    if (doc.status === "void") {
-      return HttpResponse.json(
-        {
-          detail: {
-            error: "conflict",
-            code: "DOC_NOT_EDITABLE",
-            detail: "作废单据的事实处置不可再修改",
-          },
-        },
-        { status: 409 },
-      );
-    }
-    const body = (await request.json().catch(() => ({}))) as { keys?: unknown };
-    const keys = Array.isArray(body.keys) ? body.keys.map(String) : [];
-    const facts = factsOf(id);
-    const byKey = new Map(facts.map((f) => [f.key, f]));
-    if (keys.length > 0) {
-      const unknown = keys.filter((key) => !byKey.has(key));
-      if (unknown.length > 0) {
+  http.post(
+    "/api/v1/trade-docs/:id/facts/confirm",
+    async ({ params, request }) => {
+      const id = Number(params.id);
+      const doc = docsStore.find((d) => Number(d.id) === id);
+      if (!doc) {
+        return HttpResponse.json(
+          { detail: { error: "not_found" } },
+          { status: 404 },
+        );
+      }
+      if (doc.status === "void") {
         return HttpResponse.json(
           {
             detail: {
-              error: "validation",
-              code: "FACT_KEY_UNKNOWN",
-              detail: `以下事实键不存在于本单证：${unknown.join(", ")}`,
-              keys: unknown,
+              error: "conflict",
+              code: "DOC_NOT_EDITABLE",
+              detail: "作废单据的事实处置不可再修改",
             },
           },
-          { status: 422 },
+          { status: 409 },
         );
       }
-    }
-    const targets =
-      keys.length > 0
-        ? keys.map((key) => byKey.get(key)).filter((f): f is MockFact => !!f)
-        : facts.filter((f) => f.trust !== "confirmed");
-    for (const target of targets) {
-      target.trust = "confirmed";
-      target.confirmed_by = String(MOCK_ADMIN_USER.user_id);
-      target.confirmed_at = nowIso();
-    }
-    return HttpResponse.json({
-      doc_id: id,
-      confirmed: targets.map((f) => f.key),
-      summary: factsSummary(facts),
-    });
-  }),
+      const body = (await request.json().catch(() => ({}))) as {
+        keys?: unknown;
+      };
+      const keys = Array.isArray(body.keys) ? body.keys.map(String) : [];
+      const facts = factsOf(id);
+      const byKey = new Map(facts.map((f) => [f.key, f]));
+      if (keys.length > 0) {
+        const unknown = keys.filter((key) => !byKey.has(key));
+        if (unknown.length > 0) {
+          return HttpResponse.json(
+            {
+              detail: {
+                error: "validation",
+                code: "FACT_KEY_UNKNOWN",
+                detail: `以下事实键不存在于本单证：${unknown.join(", ")}`,
+                keys: unknown,
+              },
+            },
+            { status: 422 },
+          );
+        }
+      }
+      const targets =
+        keys.length > 0
+          ? keys.map((key) => byKey.get(key)).filter((f): f is MockFact => !!f)
+          : facts.filter((f) => f.trust !== "confirmed");
+      for (const target of targets) {
+        target.trust = "confirmed";
+        target.confirmed_by = String(MOCK_ADMIN_USER.user_id);
+        target.confirmed_at = nowIso();
+      }
+      return HttpResponse.json({
+        doc_id: id,
+        confirmed: targets.map((f) => f.key),
+        summary: factsSummary(facts),
+      });
+    },
+  ),
 
   http.patch(
     "/api/v1/trade-docs/:id/facts/:factKey",
@@ -5175,7 +5272,10 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
       const id = Number(params.id);
       const doc = docsStore.find((d) => Number(d.id) === id);
       if (!doc) {
-        return HttpResponse.json({ detail: { error: "not_found" } }, { status: 404 });
+        return HttpResponse.json(
+          { detail: { error: "not_found" } },
+          { status: 404 },
+        );
       }
       if (doc.status === "void") {
         return HttpResponse.json(
@@ -5236,7 +5336,8 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
         }
         target.trust = body.trust as MockFactTrust;
       }
-      if (typeof body.immutable === "boolean") target.immutable = body.immutable;
+      if (typeof body.immutable === "boolean")
+        target.immutable = body.immutable;
       for (const key of ["text_zh", "text_en", "evidence_ref"] as const) {
         if (key in body) {
           target[key] =
@@ -5271,70 +5372,79 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
   // 导出后自检（C21）：与后端 `verify_trade_doc_export` 同口径 ——
   // 文本按"去掉全部空白"比对是否 ⊆ PDF 文本；图片计数逐 key 比对。
   // 未通过且 `allow_override!==true` ⇒ 422 `EXPORT_SELF_CHECK_FAILED`（默认阻断）。
-  http.post("/api/v1/trade-docs/:id/verify-export", async ({ params, request }) => {
-    const id = Number(params.id);
-    const doc = docsStore.find((d) => Number(d.id) === id);
-    if (!doc) {
-      return HttpResponse.json({ detail: { error: "not_found" } }, { status: 404 });
-    }
-    const body = (await request.json().catch(() => ({}))) as Record<
-      string,
-      unknown
-    >;
-    const squash = (value: unknown) => String(value ?? "").replace(/\s+/g, "");
-    const pdfText = squash(body.pdf_text);
-    const texts = Array.isArray(body.texts) ? body.texts.map(String) : [];
-    const missingTexts = texts.filter(
-      (text) => text.trim() !== "" && !pdfText.includes(squash(text)),
-    );
-    const expected: Record<string, number> = {
-      stamp: 1,
-      ...((body.expected_image_counts as Record<string, number> | undefined) ??
-        {}),
-    };
-    const counts = (body.image_counts as Record<string, unknown> | undefined) ?? {};
-    const imageMismatches = Object.entries(expected)
-      .map(([key, want]) => ({
-        key,
-        expected: Number(want),
-        actual: Number(counts[key] ?? 0),
-      }))
-      .filter((item) => item.actual !== item.expected);
-    const checked = {
-      texts: texts.filter((text) => text.trim() !== "").length,
-      missing_texts: missingTexts,
-      image_mismatches: imageMismatches,
-    };
-    const ok = missingTexts.length === 0 && imageMismatches.length === 0;
-    if (ok) {
+  http.post(
+    "/api/v1/trade-docs/:id/verify-export",
+    async ({ params, request }) => {
+      const id = Number(params.id);
+      const doc = docsStore.find((d) => Number(d.id) === id);
+      if (!doc) {
+        return HttpResponse.json(
+          { detail: { error: "not_found" } },
+          { status: 404 },
+        );
+      }
+      const body = (await request.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
+      const squash = (value: unknown) =>
+        String(value ?? "").replace(/\s+/g, "");
+      const pdfText = squash(body.pdf_text);
+      const texts = Array.isArray(body.texts) ? body.texts.map(String) : [];
+      const missingTexts = texts.filter(
+        (text) => text.trim() !== "" && !pdfText.includes(squash(text)),
+      );
+      const expected: Record<string, number> = {
+        stamp: 1,
+        ...((body.expected_image_counts as
+          | Record<string, number>
+          | undefined) ?? {}),
+      };
+      const counts =
+        (body.image_counts as Record<string, unknown> | undefined) ?? {};
+      const imageMismatches = Object.entries(expected)
+        .map(([key, want]) => ({
+          key,
+          expected: Number(want),
+          actual: Number(counts[key] ?? 0),
+        }))
+        .filter((item) => item.actual !== item.expected);
+      const checked = {
+        texts: texts.filter((text) => text.trim() !== "").length,
+        missing_texts: missingTexts,
+        image_mismatches: imageMismatches,
+      };
+      const ok = missingTexts.length === 0 && imageMismatches.length === 0;
+      if (ok) {
+        return HttpResponse.json({
+          doc_id: id,
+          ok: true,
+          overridden: false,
+          ...checked,
+        });
+      }
+      if (body.allow_override !== true) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "validation",
+              code: "EXPORT_SELF_CHECK_FAILED",
+              detail:
+                "导出后自检未通过：文本缺失或图片计数不符，请先修正版式（默认阻断导出）",
+              ...checked,
+            },
+          },
+          { status: 422 },
+        );
+      }
       return HttpResponse.json({
         doc_id: id,
         ok: true,
-        overridden: false,
+        overridden: true,
         ...checked,
       });
-    }
-    if (body.allow_override !== true) {
-      return HttpResponse.json(
-        {
-          detail: {
-            error: "validation",
-            code: "EXPORT_SELF_CHECK_FAILED",
-            detail:
-              "导出后自检未通过：文本缺失或图片计数不符，请先修正版式（默认阻断导出）",
-            ...checked,
-          },
-        },
-        { status: 422 },
-      );
-    }
-    return HttpResponse.json({
-      doc_id: id,
-      ok: true,
-      overridden: true,
-      ...checked,
-    });
-  }),
+    },
+  ),
 
   // 单证字段「中译英」（A13）：形状真源 = `ws_docs_ext.py translate_trade_doc`。
   // mock 环境**没有配置任何 AI Provider** ⇒ 按后端真实降级语义返回 `path:"template"` +
@@ -5343,7 +5453,10 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     const id = Number(params.id);
     const doc = docsStore.find((d) => Number(d.id) === id);
     if (!doc) {
-      return HttpResponse.json({ detail: { error: "not_found" } }, { status: 404 });
+      return HttpResponse.json(
+        { detail: { error: "not_found" } },
+        { status: 404 },
+      );
     }
     const body = (await request.json().catch(() => ({}))) as Record<
       string,
@@ -5382,7 +5495,10 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     const id = Number(params.id);
     const doc = docsStore.find((d) => Number(d.id) === id);
     if (!doc) {
-      return HttpResponse.json({ detail: { error: "not_found" } }, { status: 404 });
+      return HttpResponse.json(
+        { detail: { error: "not_found" } },
+        { status: 404 },
+      );
     }
     if (doc.status === "void") {
       return HttpResponse.json(
@@ -5400,7 +5516,9 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
       string,
       unknown
     >;
-    const currency = String(body.currency ?? doc.currency ?? "USD").toUpperCase();
+    const currency = String(
+      body.currency ?? doc.currency ?? "USD",
+    ).toUpperCase();
     if (!CURRENCIES.includes(currency as (typeof CURRENCIES)[number])) {
       return HttpResponse.json(
         {
@@ -5417,7 +5535,9 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
       body.schedule_type !== null &&
       body.schedule_type !== undefined &&
       body.schedule_type !== "" &&
-      !SCHEDULE_TYPES.includes(body.schedule_type as (typeof SCHEDULE_TYPES)[number])
+      !SCHEDULE_TYPES.includes(
+        body.schedule_type as (typeof SCHEDULE_TYPES)[number],
+      )
     ) {
       return HttpResponse.json(
         {
@@ -5521,7 +5641,10 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     const id = Number(params.id);
     const doc = docsStore.find((d) => Number(d.id) === id);
     if (!doc) {
-      return HttpResponse.json({ detail: { error: "not_found" } }, { status: 404 });
+      return HttpResponse.json(
+        { detail: { error: "not_found" } },
+        { status: 404 },
+      );
     }
     if (doc.status === "void") {
       return HttpResponse.json(
@@ -5544,7 +5667,13 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
       const docType = String(raw.doc_type ?? "");
       if (!docType) {
         return HttpResponse.json(
-          { detail: { error: "validation", code: "DOC_SET_INVALID", detail: "单证类型不能为空" } },
+          {
+            detail: {
+              error: "validation",
+              code: "DOC_SET_INVALID",
+              detail: "单证类型不能为空",
+            },
+          },
           { status: 422 },
         );
       }
@@ -5565,19 +5694,35 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
       const issuer = String(raw.issuer ?? "ours");
       if (!DOC_SET_ROLES.includes(role as (typeof DOC_SET_ROLES)[number])) {
         return HttpResponse.json(
-          { detail: { error: "validation", code: "DOC_SET_INVALID", detail: `未知清单角色：${role}` } },
+          {
+            detail: {
+              error: "validation",
+              code: "DOC_SET_INVALID",
+              detail: `未知清单角色：${role}`,
+            },
+          },
           { status: 422 },
         );
       }
-      if (!DOC_SET_ISSUERS.includes(issuer as (typeof DOC_SET_ISSUERS)[number])) {
+      if (
+        !DOC_SET_ISSUERS.includes(issuer as (typeof DOC_SET_ISSUERS)[number])
+      ) {
         return HttpResponse.json(
-          { detail: { error: "validation", code: "DOC_SET_INVALID", detail: `未知出单方：${issuer}` } },
+          {
+            detail: {
+              error: "validation",
+              code: "DOC_SET_INVALID",
+              detail: `未知出单方：${issuer}`,
+            },
+          },
           { status: 422 },
         );
       }
     }
     // 与后端一致：**保留已登记的回执**（同 doc_type 的项只更新 role/issuer/证据要求）
-    const previous = new Map((docSetStore.get(id) ?? []).map((item) => [item.doc_type, item]));
+    const previous = new Map(
+      (docSetStore.get(id) ?? []).map((item) => [item.doc_type, item]),
+    );
     const next: MockDocSetItem[] = incoming.map((raw) => {
       const docType = String(raw.doc_type);
       const existing = previous.get(docType);
@@ -5609,7 +5754,9 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
         string,
         unknown
       >;
-      const action = String(body.action ?? "").trim().toLowerCase();
+      const action = String(body.action ?? "")
+        .trim()
+        .toLowerCase();
       if (!["receive", "waive"].includes(action)) {
         return HttpResponse.json(
           {
@@ -5898,7 +6045,8 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
             detail: {
               error: "conflict",
               code: "INQUIRY_NO_LOCKED",
-              detail: "该询盘已生成报价单，编号已锁定；如需改号请先处理关联报价",
+              detail:
+                "该询盘已生成报价单，编号已锁定；如需改号请先处理关联报价",
             },
           },
           { status: 409 },
@@ -5934,7 +6082,8 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
         );
       }
       // 已有报价 ⇒ 重开时回到「已报价」（ws_crm_ext.py:366-372）
-      const target = requested === "unquoted" && hasQuote ? "quoted" : requested;
+      const target =
+        requested === "unquoted" && hasQuote ? "quoted" : requested;
       const allowed = INQUIRY_NEXT[inquiry.status] ?? [];
       if (target !== inquiry.status && !allowed.includes(target)) {
         return HttpResponse.json(
@@ -6055,25 +6204,20 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
   ),
 
   // DELETE ← customers/page.tsx:928（handleDeleteContact）。204；不存在 404。
-  http.delete(
-    "/api/v1/customers/:id/contacts/:contactId",
-    ({ params }) => {
-      const customer = customersStore.find((c) => c.id === Number(params.id));
-      if (!customer) return customerNotFound(params.id);
-      const list = contactsOf(customer.id);
-      const index = list.findIndex(
-        (c) => c.id === Number(params.contactId),
+  http.delete("/api/v1/customers/:id/contacts/:contactId", ({ params }) => {
+    const customer = customersStore.find((c) => c.id === Number(params.id));
+    if (!customer) return customerNotFound(params.id);
+    const list = contactsOf(customer.id);
+    const index = list.findIndex((c) => c.id === Number(params.contactId));
+    if (index < 0) {
+      return HttpResponse.json(
+        { detail: { error: "not_found", code: "CONTACT_NOT_FOUND" } },
+        { status: 404 },
       );
-      if (index < 0) {
-        return HttpResponse.json(
-          { detail: { error: "not_found", code: "CONTACT_NOT_FOUND" } },
-          { status: 404 },
-        );
-      }
-      list.splice(index, 1);
-      return new HttpResponse(null, { status: 204 });
-    },
-  ),
+    }
+    list.splice(index, 1);
+    return new HttpResponse(null, { status: 204 });
+  }),
 
   // ── 产品（注册表产品 + 租户可编辑的基础信息/图片）────────────────────────
   // GET ← lib/products/use-products.ts:61；形状 = ws_files.py:394-405
@@ -6107,31 +6251,34 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     });
   }),
 
-  http.put("/api/v1/products/:productKey/profile", async ({ params, request }) => {
-    const productKey = String(params.productKey);
-    const body = (await request.json().catch(() => ({}))) as {
-      info?: unknown;
-    };
-    const info = body.info;
-    if (typeof info !== "object" || info === null || Array.isArray(info)) {
-      return HttpResponse.json(
-        {
-          detail: {
-            error: "validation",
-            code: "INVALID_PROFILE",
-            detail: "info 必须是对象",
+  http.put(
+    "/api/v1/products/:productKey/profile",
+    async ({ params, request }) => {
+      const productKey = String(params.productKey);
+      const body = (await request.json().catch(() => ({}))) as {
+        info?: unknown;
+      };
+      const info = body.info;
+      if (typeof info !== "object" || info === null || Array.isArray(info)) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "validation",
+              code: "INVALID_PROFILE",
+              detail: "info 必须是对象",
+            },
           },
-        },
-        { status: 422 },
-      );
-    }
-    productProfilesStore.set(productKey, info as Record<string, unknown>);
-    return HttpResponse.json({
-      product_key: productKey,
-      info: productProfilesStore.get(productKey),
-      updated_at: nowIso(),
-    });
-  }),
+          { status: 422 },
+        );
+      }
+      productProfilesStore.set(productKey, info as Record<string, unknown>);
+      return HttpResponse.json({
+        product_key: productKey,
+        info: productProfilesStore.get(productKey),
+        updated_at: nowIso(),
+      });
+    },
+  ),
 
   // GET / POST media ← use-products.ts:100 / :147（服务端代理上传）
   // 形状 = ws_files.py:458-481（`{items,_media_kinds}` / 201 + `_row_to_file`）
@@ -6206,7 +6353,9 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     const body = (await request.json().catch(() => ({}))) as {
       sha256?: string;
     };
-    const sha = String(body.sha256 ?? "").trim().toLowerCase();
+    const sha = String(body.sha256 ?? "")
+      .trim()
+      .toLowerCase();
     if (!/^[0-9a-f]{64}$/.test(sha)) {
       return HttpResponse.json(
         {
@@ -6228,7 +6377,9 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
       string,
       unknown
     >;
-    const sha = String(body.sha256 ?? "").trim().toLowerCase();
+    const sha = String(body.sha256 ?? "")
+      .trim()
+      .toLowerCase();
     if (!/^[0-9a-f]{64}$/.test(sha)) {
       return HttpResponse.json(
         {
@@ -6258,9 +6409,7 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
 
   // content ← use-products.ts:328（blob→objectURL）；返回真实字节（mock 返回上传时的字节）
   http.get("/api/v1/file-objects/:fileId/content", ({ params }) => {
-    const file = fileObjectsStore.find(
-      (f) => f.id === Number(params.fileId),
-    );
+    const file = fileObjectsStore.find((f) => f.id === Number(params.fileId));
     if (!file) {
       return HttpResponse.json(
         { detail: { error: "not_found", code: "FILE_NOT_FOUND" } },
@@ -6272,7 +6421,9 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
       status: 200,
       headers: {
         "Content-Type":
-          stored?.contentType ?? file.content_type ?? "application/octet-stream",
+          stored?.contentType ??
+          file.content_type ??
+          "application/octet-stream",
         "Cache-Control": "private, max-age=3600",
       },
     });
@@ -6280,9 +6431,7 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
 
   // url ← use-products.ts:269；mock 没有对象存储 ⇒ `{configured:false}`（ws_files.py:992-1008）
   http.get("/api/v1/file-objects/:fileId/url", ({ params }) => {
-    const file = fileObjectsStore.find(
-      (f) => f.id === Number(params.fileId),
-    );
+    const file = fileObjectsStore.find((f) => f.id === Number(params.fileId));
     if (!file) {
       return HttpResponse.json(
         { detail: { error: "not_found", code: "FILE_NOT_FOUND" } },
@@ -6307,7 +6456,9 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
       (f) =>
         f.owner_type === ownerType &&
         f.is_current &&
-        (ownerId === null ? (f.owner_id ?? "") === "" : f.owner_id === ownerId) &&
+        (ownerId === null
+          ? (f.owner_id ?? "") === ""
+          : f.owner_id === ownerId) &&
         (kind ? f.kind === kind : true),
     );
     return HttpResponse.json({ items: items.map((f) => fileOut(f)) });
@@ -6315,9 +6466,7 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
 
   // PATCH ← use-products.ts:285 / :304（改名 / 主图 / 排序）；响应 `{ok:true}`（ws_files.py:539）
   http.patch("/api/v1/file-objects/:fileId", async ({ params, request }) => {
-    const file = fileObjectsStore.find(
-      (f) => f.id === Number(params.fileId),
-    );
+    const file = fileObjectsStore.find((f) => f.id === Number(params.fileId));
     if (!file) {
       return HttpResponse.json(
         { detail: { error: "not_found", code: "FILE_NOT_FOUND" } },
@@ -6392,9 +6541,7 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
 
   // DELETE ← use-products.ts:315（退役，不物理删：is_current=false）；ws_files.py:542-552
   http.delete("/api/v1/file-objects/:fileId", ({ params }) => {
-    const file = fileObjectsStore.find(
-      (f) => f.id === Number(params.fileId),
-    );
+    const file = fileObjectsStore.find((f) => f.id === Number(params.fileId));
     if (!file) {
       return HttpResponse.json(
         { detail: { error: "not_found", code: "FILE_NOT_FOUND" } },
@@ -6469,9 +6616,7 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
   }),
 
   http.put("/api/v1/tenant-products/:id", async ({ params, request }) => {
-    const product = tenantProductsStore.find(
-      (p) => p.id === Number(params.id),
-    );
+    const product = tenantProductsStore.find((p) => p.id === Number(params.id));
     if (!product) {
       return HttpResponse.json(
         { detail: { error: "not_found", code: "PRODUCT_NOT_FOUND" } },
@@ -6510,16 +6655,13 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
       const value = body[key];
       if (key === "is_active") product.is_active = value === true;
       else if (key === "misc_fee_rate") product.misc_fee_rate = Number(value);
-      else (product as unknown as Record<string, unknown>)[key] =
-        typeof value === "string" ? value : null;
+      else
+        (product as unknown as Record<string, unknown>)[key] =
+          typeof value === "string" ? value : null;
     }
     if ("profit_value" in body)
       product.profit_value = Number(body.profit_value);
-    if (
-      "spec" in body &&
-      typeof body.spec === "object" &&
-      body.spec !== null
-    ) {
+    if ("spec" in body && typeof body.spec === "object" && body.spec !== null) {
       product.spec = body.spec as Record<string, unknown>;
     }
     return HttpResponse.json(tenantProductOut(product));
@@ -6544,7 +6686,10 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     }
     // 与后端一致：删产品时一并清理基础信息 / 图片 / 工位绑定（ws_products.py:330-342）
     for (const file of fileObjectsStore) {
-      if (file.owner_type === "product" && file.owner_id === product.product_key) {
+      if (
+        file.owner_type === "product" &&
+        file.owner_id === product.product_key
+      ) {
         file.is_current = false;
         file.is_primary = false;
       }
@@ -6733,7 +6878,10 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     const email =
       typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     // 邮箱点名且对方已在团队里 ⇒ 后端 409（ws_teams.py:340-346）
-    if (email && teamMembersStore.some((m) => m.email.toLowerCase() === email)) {
+    if (
+      email &&
+      teamMembersStore.some((m) => m.email.toLowerCase() === email)
+    ) {
       return HttpResponse.json(
         {
           detail: {
@@ -6891,7 +7039,9 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     const code =
       (typeof body.code === "string" ? body.code.trim() : "") ||
       `TAX-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${taxArchiveSeq}`;
-    if (taxArchivesStore.some((a) => a.status === "active" && a.name === name)) {
+    if (
+      taxArchivesStore.some((a) => a.status === "active" && a.name === name)
+    ) {
       return HttpResponse.json(
         {
           detail: {
@@ -7248,7 +7398,13 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     const row = clauseTemplatesStore.find((t) => t.id === Number(params.id));
     if (!row) {
       return HttpResponse.json(
-        { detail: { error: "not_found", code: "CLAUSE_NOT_FOUND", message: "条款模板不存在" } },
+        {
+          detail: {
+            error: "not_found",
+            code: "CLAUSE_NOT_FOUND",
+            message: "条款模板不存在",
+          },
+        },
         { status: 404 },
       );
     }
@@ -7257,10 +7413,12 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
       unknown
     >;
     if (typeof body.name === "string") row.name = body.name.trim();
-    if (Array.isArray(body.doc_types)) row.doc_types = body.doc_types.map((d) => String(d));
+    if (Array.isArray(body.doc_types))
+      row.doc_types = body.doc_types.map((d) => String(d));
     if (typeof body.text_zh === "string") row.text_zh = body.text_zh.trim();
     if (typeof body.text_en === "string") row.text_en = body.text_en.trim();
-    if (Number.isFinite(Number(body.sort_order))) row.sort_order = Number(body.sort_order);
+    if (Number.isFinite(Number(body.sort_order)))
+      row.sort_order = Number(body.sort_order);
     return HttpResponse.json(row);
   }),
 
@@ -7268,7 +7426,13 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     const row = clauseTemplatesStore.find((t) => t.id === Number(params.id));
     if (!row) {
       return HttpResponse.json(
-        { detail: { error: "not_found", code: "CLAUSE_NOT_FOUND", message: "条款模板不存在" } },
+        {
+          detail: {
+            error: "not_found",
+            code: "CLAUSE_NOT_FOUND",
+            message: "条款模板不存在",
+          },
+        },
         { status: 404 },
       );
     }
@@ -7283,8 +7447,7 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     const items = companySealsStore
       .slice()
       .sort(
-        (a, b) =>
-          Number(b.is_default) - Number(a.is_default) || a.id - b.id,
+        (a, b) => Number(b.is_default) - Number(a.is_default) || a.id - b.id,
       )
       .map(sealOut);
     return HttpResponse.json({ items });
@@ -7392,9 +7555,7 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
   }),
 
   http.get("/api/v1/tenant/company-seals/:sealId/image", ({ params }) => {
-    const seal = companySealsStore.find(
-      (s) => s.id === Number(params.sealId),
-    );
+    const seal = companySealsStore.find((s) => s.id === Number(params.sealId));
     if (!seal) {
       return HttpResponse.json(
         { detail: { error: "not_found", code: "SEAL_NOT_FOUND" } },
@@ -7413,9 +7574,7 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
   }),
 
   http.put("/api/v1/tenant/company-seals/:sealId/default", ({ params }) => {
-    const seal = companySealsStore.find(
-      (s) => s.id === Number(params.sealId),
-    );
+    const seal = companySealsStore.find((s) => s.id === Number(params.sealId));
     if (!seal) {
       return HttpResponse.json(
         { detail: { error: "not_found", code: "SEAL_NOT_FOUND" } },
@@ -7492,7 +7651,13 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     const row = taxArchivesStore.find((a) => a.id === id);
     if (!row) {
       return HttpResponse.json(
-        { detail: { error: "not_found", code: "TAX_ARCHIVE_NOT_FOUND", detail: "税务档案不存在" } },
+        {
+          detail: {
+            error: "not_found",
+            code: "TAX_ARCHIVE_NOT_FOUND",
+            detail: "税务档案不存在",
+          },
+        },
         { status: 404 },
       );
     }
@@ -7505,21 +7670,37 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     // ← main.py:2368 update_pricing_data：只改金额/单位/生效期/备注/状态；422 detail 是字符串
     const itemId = Number(params.itemId);
     if (!Number.isInteger(itemId) || itemId <= 0) {
-      return HttpResponse.json({ detail: "Pricing data not found" }, { status: 404 });
+      return HttpResponse.json(
+        { detail: "Pricing data not found" },
+        { status: 404 },
+      );
     }
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
     const updates: Record<string, unknown> = {};
     if ("amount" in body) {
       const amount = body.amount;
-      if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
-        return HttpResponse.json({ detail: "amount must be > 0" }, { status: 422 });
+      if (
+        typeof amount !== "number" ||
+        !Number.isFinite(amount) ||
+        amount <= 0
+      ) {
+        return HttpResponse.json(
+          { detail: "amount must be > 0" },
+          { status: 422 },
+        );
       }
       updates.amount = amount;
     }
     if ("unit" in body) {
       const unit = String(body.unit ?? "").trim();
       if (!PRICING_UNIT_VALUES.has(unit)) {
-        return HttpResponse.json({ detail: "unit 取值不合法" }, { status: 422 });
+        return HttpResponse.json(
+          { detail: "unit 取值不合法" },
+          { status: 422 },
+        );
       }
       updates.unit = unit;
     }
@@ -7537,12 +7718,18 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     if ("status" in body) {
       const status = String(body.status ?? "").trim();
       if (!["active", "inactive", "deprecated"].includes(status)) {
-        return HttpResponse.json({ detail: "status 取值不合法" }, { status: 422 });
+        return HttpResponse.json(
+          { detail: "status 取值不合法" },
+          { status: 422 },
+        );
       }
       updates.status = status;
     }
     if (Object.keys(updates).length === 0) {
-      return HttpResponse.json({ detail: "No fields to update" }, { status: 422 });
+      return HttpResponse.json(
+        { detail: "No fields to update" },
+        { status: 422 },
+      );
     }
     return HttpResponse.json({
       id: itemId,
@@ -7558,7 +7745,13 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     const id = Number(params.id);
     if (id !== teamStore.id) {
       return HttpResponse.json(
-        { detail: { error: "not_found", code: "TEAM_NOT_FOUND", message: "团队不存在，或你无权访问" } },
+        {
+          detail: {
+            error: "not_found",
+            code: "TEAM_NOT_FOUND",
+            message: "团队不存在，或你无权访问",
+          },
+        },
         { status: 404 },
       );
     }
@@ -7566,7 +7759,13 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     const name = String(body.name ?? "").trim();
     if (name.length < 2 || name.length > 30) {
       return HttpResponse.json(
-        { detail: { error: "validation", code: "INVALID_TEAM_NAME", message: "团队名称需 2–30 个字符" } },
+        {
+          detail: {
+            error: "validation",
+            code: "INVALID_TEAM_NAME",
+            message: "团队名称需 2–30 个字符",
+          },
+        },
         { status: 422 },
       );
     }
@@ -7582,7 +7781,10 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
 
   http.post("/api/v1/fx-rates", async ({ request }) => {
     // ← ws_extras.py:217 upsert_fx_rate：rate<=0 ⇒ 422 扁平错误体；否则 UPSERT 返回行
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
     const rate = Number(body.rate);
     if (!Number.isFinite(rate) || rate <= 0) {
       return HttpResponse.json(
@@ -7596,8 +7798,10 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
         : new Date().toISOString().slice(0, 10);
     return HttpResponse.json(
       {
-        base_currency: String(body.base_currency ?? "USD").toUpperCase() || "USD",
-        quote_currency: String(body.quote_currency ?? "CNY").toUpperCase() || "CNY",
+        base_currency:
+          String(body.base_currency ?? "USD").toUpperCase() || "USD",
+        quote_currency:
+          String(body.quote_currency ?? "CNY").toUpperCase() || "CNY",
         rate,
         rate_date: rateDate,
         source: String(body.source ?? "manual"),
@@ -7624,9 +7828,13 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
       );
     }
     const text =
-      typeof (file as File).text === "function" ? await (file as File).text() : "";
+      typeof (file as File).text === "function"
+        ? await (file as File).text()
+        : "";
     // 与后端同口径的诚实计数：表头 1 行，其余非空行 = 线索数
-    const nonEmpty = text.split(/\r?\n/).filter((line) => line.trim() !== "").length;
+    const nonEmpty = text
+      .split(/\r?\n/)
+      .filter((line) => line.trim() !== "").length;
     const leads = Math.max(0, nonEmpty - 1);
     return HttpResponse.json(
       {
@@ -7648,7 +7856,10 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     const orderId = Number(params.orderId);
     const order = ordersStore.find((o) => o.id === orderId);
     if (!order) {
-      return HttpResponse.json({ detail: { error: "order_not_found" } }, { status: 404 });
+      return HttpResponse.json(
+        { detail: { error: "order_not_found" } },
+        { status: 404 },
+      );
     }
     const items = mockSchedules
       .filter((s) => s.order_id === orderId)
@@ -7663,121 +7874,150 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     return HttpResponse.json({ items, total: items.length });
   }),
 
-  http.post("/api/v1/orders/:orderId/payment-schedules", async ({ params, request }) => {
-    const orderId = Number(params.orderId);
-    const order = ordersStore.find((o) => o.id === orderId);
-    if (!order) {
-      return HttpResponse.json({ detail: { error: "order_not_found" } }, { status: 404 });
-    }
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    const rawType = body.schedule_type;
-    if (rawType === undefined || String(rawType).trim() === "") {
-      return HttpResponse.json(
-        {
-          detail: {
-            error: "validation",
-            code: "SCHEDULE_TYPE_REQUIRED",
-            field: "schedule_type",
-            detail: "付款计划必须指定 schedule_type",
-          },
-        },
-        { status: 422 },
-      );
-    }
-    const scheduleType = String(rawType).trim();
-    if (!MOCK_SCHEDULE_TYPES.includes(scheduleType)) {
-      return HttpResponse.json({ detail: { error: "bad_schedule_type" } }, { status: 422 });
-    }
-    const ratio = body.ratio ?? null;
-    let amount = body.amount ?? null;
-    if (amount == null && ratio != null && order.total_amount != null) {
-      amount = Number((Number(order.total_amount) * Number(ratio)).toFixed(2));
-    }
-    const schedule: MockSchedule = {
-      id: mockScheduleSeq++,
-      order_id: orderId,
-      trade_doc_id: null,
-      schedule_type: scheduleType,
-      ratio: ratio == null ? null : Number(ratio),
-      amount: amount == null ? null : Number(amount),
-      currency: order.currency ?? "USD",
-      due_date: body.due_date ? String(body.due_date).slice(0, 10) : null,
-      actual_date: null,
-      status: "pending",
-      fx_rate: null,
-      exchange_gain_loss: null,
-      notes: body.notes ? String(body.notes) : null,
-      created_at: new Date().toISOString(),
-    };
-    mockSchedules.push(schedule);
-    return HttpResponse.json(schedule, { status: 201 });
-  }),
-
-  http.patch("/api/v1/payment-schedules/:scheduleId", async ({ params, request }) => {
-    const scheduleId = Number(params.scheduleId);
-    const schedule = mockSchedules.find((s) => s.id === scheduleId);
-    if (!schedule) {
-      return HttpResponse.json({ detail: { error: "schedule_not_found" } }, { status: 404 });
-    }
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    if (body.status !== undefined) {
-      const status = String(body.status).trim();
-      if (!MOCK_SCHEDULE_STATUSES.includes(status)) {
+  http.post(
+    "/api/v1/orders/:orderId/payment-schedules",
+    async ({ params, request }) => {
+      const orderId = Number(params.orderId);
+      const order = ordersStore.find((o) => o.id === orderId);
+      if (!order) {
         return HttpResponse.json(
-          { detail: { error: "bad_schedule_status" } },
-          { status: 422 },
+          { detail: { error: "order_not_found" } },
+          { status: 404 },
         );
       }
-      if (schedule.status === "paid" && status !== "paid") {
+      const body = (await request.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
+      const rawType = body.schedule_type;
+      if (rawType === undefined || String(rawType).trim() === "") {
         return HttpResponse.json(
           {
             detail: {
-              error: "conflict",
-              code: "ILLEGAL_TRANSITION",
-              field: "status",
-              from: "paid",
-              to: status,
+              error: "validation",
+              code: "SCHEDULE_TYPE_REQUIRED",
+              field: "schedule_type",
+              detail: "付款计划必须指定 schedule_type",
             },
           },
-          { status: 409 },
+          { status: 422 },
         );
       }
-      if (status === "paid") {
-        const rate = body.fx_rate == null ? null : Number(body.fx_rate);
-        schedule.status = "paid";
-        schedule.actual_date = body.actual_date
-          ? String(body.actual_date).slice(0, 10)
-          : new Date().toISOString().slice(0, 10);
-        schedule.fx_rate = rate;
-        // mock 不读订单锁定汇率 ⇒ 只在给了实际汇率且能拿到锁定汇率时才模拟损益
-        const locked = order_fx_rate_of(Number(schedule.order_id));
-        schedule.exchange_gain_loss =
-          rate != null && locked != null
-            ? Number(
-                (Number(schedule.amount ?? 0) * (rate - locked)).toFixed(2),
-              )
-            : null;
+      const scheduleType = String(rawType).trim();
+      if (!MOCK_SCHEDULE_TYPES.includes(scheduleType)) {
+        return HttpResponse.json(
+          { detail: { error: "bad_schedule_type" } },
+          { status: 422 },
+        );
       }
-    }
-    if (body.amount !== undefined) schedule.amount = Number(body.amount);
-    if (body.due_date !== undefined) {
-      schedule.due_date = body.due_date
-        ? String(body.due_date).slice(0, 10)
-        : null;
-    }
-    if (body.notes !== undefined) {
-      schedule.notes = body.notes ? String(body.notes) : null;
-    }
-    return HttpResponse.json(schedule);
-  }),
+      const ratio = body.ratio ?? null;
+      let amount = body.amount ?? null;
+      if (amount == null && ratio != null && order.total_amount != null) {
+        amount = Number(
+          (Number(order.total_amount) * Number(ratio)).toFixed(2),
+        );
+      }
+      const schedule: MockSchedule = {
+        id: mockScheduleSeq++,
+        order_id: orderId,
+        trade_doc_id: null,
+        schedule_type: scheduleType,
+        ratio: ratio == null ? null : Number(ratio),
+        amount: amount == null ? null : Number(amount),
+        currency: order.currency ?? "USD",
+        due_date: body.due_date ? String(body.due_date).slice(0, 10) : null,
+        actual_date: null,
+        status: "pending",
+        fx_rate: null,
+        exchange_gain_loss: null,
+        notes: body.notes ? String(body.notes) : null,
+        created_at: new Date().toISOString(),
+      };
+      mockSchedules.push(schedule);
+      return HttpResponse.json(schedule, { status: 201 });
+    },
+  ),
+
+  http.patch(
+    "/api/v1/payment-schedules/:scheduleId",
+    async ({ params, request }) => {
+      const scheduleId = Number(params.scheduleId);
+      const schedule = mockSchedules.find((s) => s.id === scheduleId);
+      if (!schedule) {
+        return HttpResponse.json(
+          { detail: { error: "schedule_not_found" } },
+          { status: 404 },
+        );
+      }
+      const body = (await request.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
+      if (body.status !== undefined) {
+        const status = String(body.status).trim();
+        if (!MOCK_SCHEDULE_STATUSES.includes(status)) {
+          return HttpResponse.json(
+            { detail: { error: "bad_schedule_status" } },
+            { status: 422 },
+          );
+        }
+        if (schedule.status === "paid" && status !== "paid") {
+          return HttpResponse.json(
+            {
+              detail: {
+                error: "conflict",
+                code: "ILLEGAL_TRANSITION",
+                field: "status",
+                from: "paid",
+                to: status,
+              },
+            },
+            { status: 409 },
+          );
+        }
+        if (status === "paid") {
+          const rate = body.fx_rate == null ? null : Number(body.fx_rate);
+          schedule.status = "paid";
+          schedule.actual_date = body.actual_date
+            ? String(body.actual_date).slice(0, 10)
+            : new Date().toISOString().slice(0, 10);
+          schedule.fx_rate = rate;
+          // mock 不读订单锁定汇率 ⇒ 只在给了实际汇率且能拿到锁定汇率时才模拟损益
+          const locked = order_fx_rate_of(Number(schedule.order_id));
+          schedule.exchange_gain_loss =
+            rate != null && locked != null
+              ? Number(
+                  (Number(schedule.amount ?? 0) * (rate - locked)).toFixed(2),
+                )
+              : null;
+        }
+      }
+      if (body.amount !== undefined) schedule.amount = Number(body.amount);
+      if (body.due_date !== undefined) {
+        schedule.due_date = body.due_date
+          ? String(body.due_date).slice(0, 10)
+          : null;
+      }
+      if (body.notes !== undefined) {
+        schedule.notes = body.notes ? String(body.notes) : null;
+      }
+      return HttpResponse.json(schedule);
+    },
+  ),
 
   http.post("/api/v1/orders/:orderId/status", async ({ params, request }) => {
     const orderId = Number(params.orderId);
     const order = ordersStore.find((o) => o.id === orderId);
     if (!order) {
-      return HttpResponse.json({ detail: { error: "order_not_found" } }, { status: 404 });
+      return HttpResponse.json(
+        { detail: { error: "order_not_found" } },
+        { status: 404 },
+      );
     }
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
     const raw = body.status;
     if (raw === undefined || String(raw).trim() === "") {
       return HttpResponse.json(
@@ -7795,7 +8035,13 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     const target = String(raw).trim();
     if (!MOCK_ORDER_STATUSES.includes(target)) {
       return HttpResponse.json(
-        { detail: { error: "INVALID_ENUM", field: "order_status", value: target } },
+        {
+          detail: {
+            error: "INVALID_ENUM",
+            field: "order_status",
+            value: target,
+          },
+        },
         { status: 422 },
       );
     }
@@ -7824,7 +8070,9 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
     // ← ws_extras.py:162：裸数组、rate_date DESC、limit 1..365（后端 clamp）
     const url = new URL(request.url);
     const base = (url.searchParams.get("base_currency") || "USD").toUpperCase();
-    const quote = (url.searchParams.get("quote_currency") || "CNY").toUpperCase();
+    const quote = (
+      url.searchParams.get("quote_currency") || "CNY"
+    ).toUpperCase();
     const limit = Math.min(
       Math.max(Number(url.searchParams.get("limit") || "30"), 1),
       365,
@@ -7848,4 +8096,3 @@ export const handlers = [  // ── 工位订阅快照（原先没有 mock，�
   // 单独成模块：与 P1 组互不依赖，放一处便于按域维护（见文件头注释）。
   ...longtailHandlers,
 ];
-

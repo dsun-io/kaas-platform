@@ -1,11 +1,10 @@
 """团队级档位覆盖（Worker 镜像 · 生产对齐）。
 
-缺口来源
+缺口来源（历史背景）
 --------
-orchestrator 的 `app/api/option_overrides.py` 有两条团队档位路由，线上 Worker
-一直没有 —— 已登记在 `scripts/route-parity-allowlist.txt`（「待补」= 承认的缺口）。
-前端档位管理界面一调用，线上就是 404。本文件把缺口补齐，语义逐条对齐
-orchestrator（真源 = `backend/orchestrator/app/api/option_overrides.py`）。
+方案 B 收敛前，团队档位覆盖只存在于 orchestrator 业务壳；线上 Worker 一直没有
+这两条路由，前端档位管理界面一调用就是 404。本文件把缺口补齐。业务规则的真源
+早已迁入共享内核 `kaas_common/`（orchestrator 业务壳已删，见 `scripts/sync-shared.ps1`）。
 
 对齐口径
 --------

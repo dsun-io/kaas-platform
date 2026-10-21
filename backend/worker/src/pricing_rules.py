@@ -1,9 +1,7 @@
-"""品类规范化与定价录入规则（阶段 3 · 与 orchestrator 同源规则）。
+"""品类规范化与定价录入规则。
 
-⚠️ 同步义务：品类映射与规格字段规则来源于
-backend/orchestrator/app/domain/category_normalizer.py 与 app/api/pricing_data.py。
-两个运行时之间没有共享包机制，规则复制是结构性的；改任何一侧必须同步另一侧，
-否则同一品类/规格在两个运行时会算出不同的 spec_hash、报价匹配会断。
+⚠️ 口径：方案 B 收敛后只有一个运行时（本 Worker），orchestrator 业务壳已删，本文件
+即唯一实现，无需再与第二侧保持同步；改本文件即改唯一真源。
 """
 from __future__ import annotations
 

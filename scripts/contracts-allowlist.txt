@@ -18,7 +18,7 @@
 #   GET  /api/v1/admin/feature_flag   → Record<tenant_id, Record<flag, bool>>
 #   （P2 已定统一 display_name；P4 已定 reload 必须返回租户清单）
 #
-# 本文件是**棘轮**（照 scripts/route-parity-allowlist.txt 的纪律）：
+# 本文件是**棘轮**（纪律同已退役的 route-parity-allowlist，现归档于 scripts/archive/）：
 #   · 只有登记在案的偏差才允许存在；
 #   · **修好后必须删行** —— 否则 R5 判「过期登记」失败（双向生效）；
 #   · 新出现的偏差（未登记）直接失败。

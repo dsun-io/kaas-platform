@@ -8,10 +8,10 @@
 
 真源只有一个
 ------------
-`backend/orchestrator/app/domain/enums.py`，由 `scripts/sync-shared.ps1` 的第三段
-镜像成 `kaas_common/domain/enums.py`（同一份文件，不是手抄），并且它的 `DOC_TYPE`
-还被 `scripts/contracts-check.ts` 的 R3 规则与前端的 `manifest.json` 交叉校验。
-**绝不在 worker 里另写一份常量表。**
+`backend/kaas_common/domain/enums.py`（业务壳删除后唯一真源），由
+`scripts/sync-shared.ps1` 的第三段镜像到本 Worker 的 `kaas_common/domain/enums.py`
+（同一份文件，不是手抄）。它的 `DOC_TYPE` 还被 `scripts/contracts-check.ts` 的
+R3 规则与前端的 `manifest.json` 交叉校验。**绝不在 worker 里另写一份常量表。**
 """
 from __future__ import annotations
 

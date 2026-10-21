@@ -29,6 +29,7 @@ Worker 三次部署（`dae596a5` → `cd15e9a5` → `9d497628`），冒烟通过
 - **门禁**：worker **1560+12skip** / orchestrator **247** / 前端 **926（108 files）** / e2e **27=27+0** /
   build `out` **286** / contracts·mocks·contrast·trade-doc·静态断言 PASS。
 - **剩余**：仅 A-11（用户挂起）+ 用户把仓库转 private。新接手先读 `README.md` + `docs/README.md`。
+- **2026-10-21 过时引用收口**：删壳后活跃代码/契约头指向已删 orchestrator/app/ 的引用（约 20 处）全改为 kaas_common/worker 当前口径；清 orchestrator/app 空壳 __pycache__（留 app/db）+ compose 无人用 redis；stamp_rate/stamp_base 标 @deprecated。历史滚动文档与 archive 历史行号保留。详见 PROBLEM_STATUS 顶部本条。
 
 ## 0.2 停止点交接：当前状态与剩余工作（**交接 agent 必读**）
 

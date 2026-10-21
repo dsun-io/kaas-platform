@@ -413,7 +413,7 @@ async def logout():
 
     与 orchestrator `app/api/auth.py` 的 /logout 同语义、同响应体。
     此前线上**没有**这条路由，而前端 `lib/auth/auth-context.tsx` 会调用它 ——
-    用户点登出拿到的是 404（原登记在 scripts/route-parity-allowlist.txt 的待补项，本次已摘除）。
+    用户点登出拿到的是 404（route-parity 门禁已退役，历史待补登记归档于 scripts/archive/；本路由即当前实现）。
     """
     return {"message": "Logged out (client should discard token)"}
 
@@ -3247,7 +3247,7 @@ class Default(WorkerEntrypoint):
 # - 汇率锁定 fx_rates（缺汇率后补，与 dev ws_common.lock_fx_rate 对齐）
 # - 报价转化只记录来源与业务事件，不复制报价行项（quotations 结构确认后补）
 
-# 必须覆盖全部单证类型（与 orchestrator/app/api/ws_common.py 一致）：
+# 必须覆盖全部单证类型（历史口径对齐 orchestrator ws_common；业务壳已删，本常量即唯一真源）：
 # 漏登记会用前三位大写兜底，产生 SA/NON/WEI 这类无业务含义的编号。
 DOC_TYPE_PREFIX = {
     # 出口商自制
