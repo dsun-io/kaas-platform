@@ -40,11 +40,11 @@
 
 | | 开发（默认） | 预览 | 生产 |
 |---|---|---|---|
-| 数据库 | 本地 Docker PG `kaas_dev` | 每 PR 独立 Neon 分支 `preview-pr-<num>` | Neon `production` 分支 `neondb` |
+| 数据库 | 本地 Docker PG `kaas_dev` | 每 PR 独立 Neon 分支 `preview-pr-<num>` | Neon **新加坡** `cold-king-20466417` / 分支 `production` |
 | 存储 | 本地 MinIO `kaas-dev` | R2 `kaas-preview-storage`，键前缀 `pr-<num>/` | R2 **`kaas-files`**（永久保留此名） |
-| Hyperdrive | 本地直连 | 每 PR 独立 `kaas-preview-<num>`（`caching.disabled=true`） | `neon-kaas`（`f53fed49…`） |
+| Hyperdrive | 本地直连 | 每 PR 独立 `kaas-preview-<num>`（`caching.disabled=true`） | `kaas-apac`（`68304207…`）→ 新加坡库 |
 | KV | 不用 | `KAAS_PREVIEW`，前缀 `pr-<num>:` | **无 KV 绑定** |
-| Worker | uvicorn | `kaas-preview-pr-<num>.workers.dev` | `kaas` |
+| Worker | uvicorn | `kaas-preview-pr-<num>.workers.dev` | **`kaas-edge`（TS 门面，对外）+ `kaas`（Python 内核，仅 Service Binding）** |
 | 入口 | `docker compose up -d` + `pnpm dev` | PR 自动 / `workflow_dispatch` | push main 只跑 CI；**部署仅手动 dispatch** |
 
 **原则**：环境物理隔离；开发默认不触云；预览之间共享预览资源、按 PR 前缀隔离。
@@ -97,7 +97,10 @@ pnpm dev
 cd backend/orchestrator
 uv run --extra migrations pytest tests -q
 
-# worker（唯一运行时）
+# TS 门面（对外唯一入口）
+cd backend/ts-worker; pnpm typecheck; pnpm test      # 99 测 / 17 文件
+
+# worker（Python 内核）
 cd backend/worker
 uv run --frozen --with pytest --with httpx2 python -m pytest tests -q
 
@@ -127,11 +130,23 @@ backend/orchestrator/.venv/Scripts/python.exe scripts/check-worker-bundle.py
 
 ## 5. 数据库迁移与部署
 
+> **2026-10-21 切流后：生产分两个 Worker**——① `kaas-edge`（TS 门面，对外域名 + 静态资产）；
+> ② `kaas`（Python 内核，无公网域名，仅 Service Binding + cron）。部署顺序：先内核后门面；
+> 门面资产需先 `cd frontend; $env:NEXT_EXPORT="1"; pnpm build`。两者部署都必须带
+> `$env:CLOUDFLARE_API_TOKEN`（wrangler OAuth 已过期）：
+> ```
+> cd backend/worker;   uv run pywrangler deploy     # 内核
+> cd backend/ts-worker; pnpm wrangler deploy         # 门面（含 frontend/out 资产）
+> ```
+> 回滚：`wrangler versions deploy <prev>@100% --name <worker>`；域名回切见
+> `docs/W4_CUTOVER_RUNBOOK_2026-10-21.md` §5。
+
 - **Alembic 是唯一 Schema 变更来源**；执行位置是 CI/独立 CLI，不在 Worker 请求路径中执行 DDL。
 - 开发迁移目标永远是**本地 Docker PG**；生产连接串只放本机环境变量 / `.env.local`，不提交。
 - **部署必须手动触发**：`deploy.yml` 只保留 `workflow_dispatch`；未收到用户明确部署指令不发布。
 - 生产发布顺序：迁移 → secrets → 前端静态导出 → `pywrangler deploy` → 冒烟/回滚检查；
-  详细检查单见 [`HANDOVER_2026-10-20_FINAL.md`](docs/HANDOVER_2026-10-20_FINAL.md) §5。
+  详细检查单见 [`HANDOVER_2026-10-21_CUTOVER.md`](docs/HANDOVER_2026-10-21_CUTOVER.md) 与
+[切流 runbook](docs/W4_CUTOVER_RUNBOOK_2026-10-21.md)（2026-10-20 批次检查单已归档）。
 
 ```powershell
 cd backend/orchestrator
@@ -184,7 +199,8 @@ docker-compose.yml 本地基础设施 + 本地后端
 
 | 文档 | 用途 |
 |---|---|
-| [docs/HANDOVER_2026-10-20_FINAL.md](docs/HANDOVER_2026-10-20_FINAL.md) | 最新交接：**§0.2 停止点/剩余工作/恢复路径**、S5 预览、云资源、发布检查单、踩坑 |
+| [docs/HANDOVER_2026-10-21_CUTOVER.md](docs/HANDOVER_2026-10-21_CUTOVER.md) | **当前交接（切流收口）**：两层架构现状/运维命令/剩余事项/实测坑（2026-10-20 交接已归档） |
+| [docs/archive/2026-10-21-cutover/HANDOVER_2026-10-20_FINAL.md](docs/archive/2026-10-21-cutover/HANDOVER_2026-10-20_FINAL.md) | 历史交接（归档）：S5 预览、云资源、发布检查单、踩坑 |
 | [docs/README.md](docs/README.md) | **交接检索入口**（先读顺序 / 当前权威 / 归档分层） |
 | [docs/PROBLEM_STATUS_2026-10-11.md](docs/PROBLEM_STATUS_2026-10-11.md) | 滚动问题状态 |
 | [docs/TODO.md](docs/TODO.md) | 活跃待办唯一账本 |

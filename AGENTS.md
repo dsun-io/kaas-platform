@@ -81,11 +81,16 @@
 - **门禁**（改完都要跑；**2026-10-21 收口实测口径**，工作区静止时数字才作数）：
   - orchestrator（仅迁移/模型/内核测试，**247** 条）：
     `cd backend/orchestrator; uv run --extra migrations pytest tests -q`
-  - worker（唯一运行时，**1560 passed + 12 skipped**；12 条 db/integration 档按约定 skip，有 docker PG 时这 12 条会真跑、总数 1572）：`cd backend/worker; uv run --frozen --with pytest --with httpx2 python -m pytest tests -q`
+  - TS 门面（对外唯一入口，切流后新增）：`cd backend/ts-worker; pnpm typecheck; pnpm test`（**99 测 / 17 文件**）；
+    路由面机检 `tests/route-surface.test.ts`（249 = 163 直接 + 86 透传，0 缺失 0 多余）；
+  - worker（Python 内核，**1565 passed + 12 skipped**；12 条 db/integration 档按约定 skip，有 docker PG 时这 12 条会真跑、总数 1572）：`cd backend/worker; uv run --frozen --with pytest --with httpx2 python -m pytest tests -q`
   - 前端：`cd frontend; pnpm typecheck`（内含 `next typegen && tsc --noEmit`）`; pnpm lint; pnpm test`（**926 passed / 108 files**）`; pnpm contracts:check; pnpm mocks:check; pnpm ui:standards; pnpm ui:contrast; pnpm e2e`（**27 条 = 27 passed + 0 skipped**；a11y 路由自动发现）
   - 静态断言：`scripts/check-runtime-deps.py`、`scripts/check-schema-coverage.py`、
     `scripts/check-schema-drift.py`、`scripts/check-worker-bundle.py`、`scripts/sync-shared.ps1 -Check`
-  - 构建：`cd frontend; $env:NEXT_EXPORT="1"; pnpm build` → **`frontend/out`**
+  - 构建：`cd frontend; $env:NEXT_EXPORT="1"; pnpm build` → **`frontend/out`**（门面 assets 伺服）
+  - **部署（2026-10-21 起两个 Worker）**：`kaas-edge`（TS 门面，对外域名）+ `kaas`（Python 内核，无公网域名）；
+    两者都必须带 `$env:CLOUDFLARE_API_TOKEN`（wrangler OAuth 已过期）；先内核后门面；
+    详见 `docs/HANDOVER_2026-10-21_CUTOVER.md` §2
     （Next 16 下**不要**设 `NEXT_DIST_DIR`：静态导出会落到该目录，导致 `out/` 缺产物）
   - **已退役**（不要再跑/不要新增引用）：`route-parity.py`、`export_openapi.py`、contracts `R6`
     —— 归档在 `scripts/archive/`，说明见 `scripts/archive/README.md`。

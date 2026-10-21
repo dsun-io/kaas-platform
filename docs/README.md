@@ -1,23 +1,21 @@
 # 文档索引 · 交接从这里开始
 
-> 更新时间：**2026-10-21 最终收口** —— **A 组除 A-11（D6，用户决定挂起）外全部完成；B 组用户已确认关闭**；
-> 生产版本 `83647f7a`、迁移头 `202610210001`；门禁 **worker 1560 passed + 12 skipped / 前端 926 passed（108 files）/
-> e2e 27 条（27+0）/ 构建 `frontend/out` 286 文件**（数字随批次变化，以当时门禁为准）。
-> **停止点交接与剩余工作 = `HANDOVER_2026-10-20_FINAL.md` §0.2；新设备/新 agent 接手 = 同文件 §0.3**；
-> 剩余待办全在 [`TODO.md`](./TODO.md)（A-11/D6 挂起项、C36 owner 确认项等）。
-> 本次文档收尾：**2026-10-21 最终收口批 5 份已完成文档移入
-> [`archive/2026-10-21-final-closeout/`](./archive/2026-10-21-final-closeout/README.md)**（每份都有替代指针）。
+> 更新时间：**2026-10-21 切流收口** —— **生产已由 TS 门面 `kaas-edge` 承载（两层架构生效）**；
+> Python Worker `kaas` 退居内核（引擎/AI/cron，仅经 Service Binding）。门面冷启动 ~25ms（内核 4674ms）。
+> 门禁：ts-worker **99（17 文件）** / worker **1565+12skip** / orchestrator 247 / 前端 926 / e2e 27 / 四项静态门禁 PASS。
+> **完成后归档**：过时交接与历史计划已移入 [`archive/2026-10-21-cutover/`](./archive/2026-10-21-cutover/README.md)；
+> 当前交接= [`HANDOVER_2026-10-21_CUTOVER.md`](./HANDOVER_2026-10-21_CUTOVER.md)；**W5（MCP+REST）已设计待实施**；
+> 剩余窗口项（内核瘦身/旧 Neon 清理）已登记 [`TODO.md`](./TODO.md) 与 2026-11-04 / 2026-10-28 提醒。
 > 历史文档分批归档在 [`archive/`](./archive/)；**不要用归档文档判断当前口径**。
-
 ## 0. 交接 agent 先读（按顺序）
 
 | 顺序 | 文档 | 读它来回答什么 |
 |---|---|---|
 | 1 | [../README.md](../README.md) | 架构、三环境隔离矩阵、方案 B 决策、冷启动线、测试与门禁（**主交接/唯一权威**） |
-| 2 | [HANDOVER_2026-10-20_FINAL.md](./HANDOVER_2026-10-20_FINAL.md) | **最新交接**：§0.2 停止点/剩余工作/恢复路径；**§0.3 新设备/新 agent 接手清单**；§2 三环境、§5 发布检查单、踩坑 |
+| 2 | [archive/2026-10-21-cutover/HANDOVER_2026-10-20_FINAL.md](./archive/2026-10-21-cutover/HANDOVER_2026-10-20_FINAL.md) | **最新交接**：§0.2 停止点/剩余工作/恢复路径；**§0.3 新设备/新 agent 接手清单**；§2 三环境、§5 发布检查单、踩坑 |
 | 3 | [PROBLEM_STATUS_2026-10-11.md](./PROBLEM_STATUS_2026-10-11.md) | 滚动问题状态（顶部按时间倒序，含后端五项与 CI 记录） |
 | 4 | [TODO.md](./TODO.md) | **活跃待办唯一账本**（A 单证 / B 产品 / C 其他 / D 发布 / E UI） |
-| 5 | [UI_UX_OPTIMIZATION_2026-10-20.md](./UI_UX_OPTIMIZATION_2026-10-20.md) | UI 方案与终验：P0/P1/P2 已完成，§11 为终验结论（历史「未做」已逐处标注完成状态） |
+| 5 | [archive/2026-10-21-cutover/UI_UX_OPTIMIZATION_2026-10-20.md](./archive/2026-10-21-cutover/UI_UX_OPTIMIZATION_2026-10-20.md) | UI 方案与终验：P0/P1/P2 已完成，§11 为终验结论（历史「未做」已逐处标注完成状态） |
 | 6 | [archive/2026-10-21-final-closeout/UI_BACKEND_DEPENDENCIES_2026-10-20.md](./archive/2026-10-21-final-closeout/UI_BACKEND_DEPENDENCIES_2026-10-20.md)（历史留档） | 后端 5 项**历史验收基线**（2026-10-20 全部完成并入 `main`）；**现行口径看根 README + HANDOVER §0.1**，不要据此判断现状 |
 
 > **换设备 / 新 clone 起本地环境**：先跑 `powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1`
@@ -38,7 +36,7 @@
 | 文档 | 内容 |
 |---|---|
 | [../README.md](../README.md) | 主交接（**唯一权威**） |
-| [HANDOVER_2026-10-20_FINAL.md](./HANDOVER_2026-10-20_FINAL.md) | 2026-10-20 最终交接（**§0.2 = 停止点与剩余工作**） |
+| [archive/2026-10-21-cutover/HANDOVER_2026-10-20_FINAL.md](./archive/2026-10-21-cutover/HANDOVER_2026-10-20_FINAL.md) | 2026-10-20 最终交接（**§0.2 = 停止点与剩余工作**） |
 | [PROBLEM_STATUS_2026-10-11.md](./PROBLEM_STATUS_2026-10-11.md) | 问题状态滚动口径 |
 | [TODO.md](./TODO.md) | 活跃待办唯一账本 |
 | [UNCERTAIN.md](./UNCERTAIN.md) | 决策账本（存疑/裁决落盘） |
@@ -66,7 +64,7 @@
 
 | 文档 | 内容 |
 |---|---|
-| [UI_UX_OPTIMIZATION_2026-10-20.md](./UI_UX_OPTIMIZATION_2026-10-20.md) | 全系统 UI/UX 方案；P0/P1/P2 已完成，§11 为终验结论 |
+| [archive/2026-10-21-cutover/UI_UX_OPTIMIZATION_2026-10-20.md](./archive/2026-10-21-cutover/UI_UX_OPTIMIZATION_2026-10-20.md) | 全系统 UI/UX 方案；P0/P1/P2 已完成，§11 为终验结论 |
 | [UI_STANDARDS.md](./UI_STANDARDS.md) | **UI 设计规范硬性约束**：新增页面/组件必须遵守；`pnpm ui:standards` + `pnpm ui:contrast` + e2e a11y 自动发现路由 |
 
 > 已归档：`UI_BACKEND_DEPENDENCIES_2026-10-20.md`（后端 5 项历史验收基线）→ 见 §5
