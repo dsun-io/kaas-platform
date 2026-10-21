@@ -15,6 +15,30 @@
 > [`HANDOVER_2026-10-20_FINAL.md`](./HANDOVER_2026-10-20_FINAL.md)**（状态/资源清单/踩坑/发布检查单/待办）。
 > 本文件继续只做"问题状态"滚动口径。
 >
+> **（2026-10-21 · 认证三页新版 UI + 生产账号重置 + 第十二次部署）**
+>
+> - **认证三页新版 UI ✅**：`/forgot-password`、`/reset-password`、`/register` 全部改用共享外壳
+>   `frontend/src/components/auth/auth-shell.tsx`（与 `/login` 同一套石墨冷灰 + 电光蓝毛玻璃：
+>   左品牌信息 / 右表单卡），三页业务逻辑、元素 id、既有文案零改动；输入框统一 `AUTH_INPUT_CLASS`
+>   （可见中性描边，避免白底上看不出输入框）。门禁：typecheck 0 error；lint 0 error / 92 warn（基线一致）；
+>   vitest **926 passed（108 files）**；contracts **R0–R6 PASS**；mocks check PASS；ui:contrast PASS；
+>   e2e **27 passed**；`NEXT_EXPORT=1` 构建成功（37 条静态路由）。
+> - **生产账号重置 ✅（用户裁决：保留 david@powervoy.com，其余全清）**：新增
+>   `scripts/reset-production-accounts.py`（默认 dry-run；`--apply` + `RESET_CONFIRM=yes` 才执行；
+>   `--keep-user` 白名单账号在 TRUNCATE 后原样插回；预检「保留表→待清表」外键，拒绝隐式 CASCADE）。
+>   执行后生产库：`users=1`（david@powervoy.com / system_admin / id=4 / 原密码哈希）、`teams=0`、
+>   `customers/orders/trade_docs/events/password_reset_tokens/file_objects=0`；保留表行数不变
+>   （`market_ports=103`、`units=10`、`unit_groups=5`、`fx_rates=4`、`ai_providers=1`）；
+>   `alembic_version=202610210001` 不变。脚本自检 PASS。R2 中 5 个文件对象成为孤儿
+>   （DB 引用已删，对象待单独清理）。
+> - **第十二次生产部署**：GitHub Actions run `39526087007`，Worker 新版本
+>   **`acaa6415-146e-4f84-8412-63c2e390e11b`**；线上 `/health` 200（shared.loaded=true）、
+>   未带 token 的 `/api/v1/auth/login` 401、`/login` `/forgot-password` `/reset-password` `/register`
+>   均 200 且为新版 UI（生产 1440×900 截图逐页核对）。⚠️ 该 run 在 **S5-d 防污染断言**步骤**红**：
+>   CI 的 `CLOUDFLARE_API_TOKEN` 调 `GET /hyperdrive/configs` 返回 403（token 缺 Hyperdrive 读权限）；
+>   从 script settings 读到的 R2/KV/Hyperdrive 绑定断言全部 ✔，**Worker 部署本身已成功**，冒烟步骤
+>   因此被跳过（已人工补验 health / 401 / 四个页面）。修法见 `docs/TODO.md` **C40**。
+>
 > **（2026-10-21 晚 · 生产发布执行 + 二轮全量 sweep：无新遗漏分支，补登 25 项）**
 >
 > - **生产发布已执行**（用户下令"先发布窗口，安全项发布后做"）：迁移前建 Neon 快照

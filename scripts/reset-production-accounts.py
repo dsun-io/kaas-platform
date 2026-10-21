@@ -68,7 +68,6 @@ KEEP_TABLES = frozenset(
         "ai_providers",
         "feature_flags",
         "feature_flag_audit",
-        "user_roles",
         # 市场情报的系统级配置（非用户业务数据）
         "intel_sources",
         "intel_data_channels",
@@ -174,6 +173,23 @@ def main(argv: list[str] | None = None) -> int:
         if not business:
             print("没有可清的业务表，退出。")
             return 0
+
+        # 预检：保留表如果有外键指向待清表，PostgreSQL 会拒绝 TRUNCATE（不能靠 CASCADE
+        # 静默扩大清理范围）。这里显式列出并拒绝执行，避免误删全局配置。
+        cur.execute(
+            "select tc.table_name, ccu.table_name from information_schema.table_constraints tc "
+            "join information_schema.key_column_usage kcu on kcu.constraint_name=tc.constraint_name "
+            "  and kcu.table_schema=tc.table_schema "
+            "join information_schema.constraint_column_usage ccu on ccu.constraint_name=tc.constraint_name "
+            "  and ccu.table_schema=tc.table_schema "
+            "where tc.constraint_type='FOREIGN KEY' and tc.table_schema='public'"
+        )
+        blockers = sorted(
+            {(child, parent) for child, parent in cur.fetchall() if child in KEEP_TABLES and parent in business}
+        )
+        if blockers:
+            print(f"拒绝执行：保留表外键指向待清表，先裁决归属：{blockers}")
+            return 6
 
         before_keep = {t: count(cur, t) for t in tables if t in KEEP_TABLES}
         before_business = {t: count(cur, t) for t in business}

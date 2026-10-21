@@ -215,6 +215,7 @@
 | C38 | 文档口径全面刷新（10+ 处） | ✅ 2026-10-21（docs-b，11 文件）：worker README 三处误导（自动部署/cron/订阅未激活）按代码与发布记录更正；DEPLOY 迁移 head→`202610200005`、部署冻结→已发布+回滚指针、上线门禁/分支改名标历史；AGENTS 门禁数字→247/1233+12/616/28；HANDOVER 发布状态与 §0.2.3 全量更新；TRADE_DOC_HARDENING「施工中」→已完成；PRODUCT_CONFIG 标题/坏路径/已完成项修正；PROBLEM_STATUS Protected 矛盾统一为"Free 不升级→未开启"、断链修复；WORKSTATION_DESIGN 8 处旧状态按现行改（含 ratio 0.96）；integration README env.py 已修；根 `archive/` 入 docs/README 索引 + master-exec 批次补 README。`sync-shared -Check` PASS、相对链接自检全通过 | — | ✅ |
 | N6+ | 安全范围扩展 | N6 ③ 只写 `docs/archive`，实测根 `archive/` 有 **45 个受控文件**（含 18 份真实业务样例），含公司名/电话/邮箱/报价；仓库 public ⇒ 评估范围扩到 `docs/archive/** + archive/**` | 安全批（最后） | ⏳ |
 | C12+ | PDF 归档验收补 2 项 | ✅ 取证完成（2026-10-21）：生产库实测 `file_objects` **5 行 / render_pdf 0 / trade_doc_files(role=render_pdf) 0 / trade_doc_render_checks 0** ⇒ 生产尚无归档 PDF 样本（符合"未实际使用"预期）；`events_archive_log` 0 行（首次月度归档未到）。可执行验收步骤已由 docs-b 补入 `TRADE_DOC_PDF_ARCHIVAL.md` §五（体积/耗时测法 + 三处口径 SQL）；**真实 PDF 样本复核**待 P4 首单产生后执行（属人工复核，不是代码缺口） | 发布后样本 | ✅（步骤已补，样本待有） |
+| C40 | CI 部署门禁 S5-d 假红（token 缺 Hyperdrive 读权限） | 2026-10-21 第十二次部署实测：`deploy.yml` 的「S5-d 防污染断言」调 `GET /hyperdrive/configs` → **403 Authentication error**（repo secret `CLOUDFLARE_API_TOKEN` / CI 系统 token 没有 Hyperdrive 读取权限）。从 script settings 读到的 R2/KV/Hyperdrive 绑定断言全部 ✔，**Worker 部署本身成功**（版本 `acaa6415-146e-4f84-8412-63c2e390e11b`），但该步让 run 变红并跳过冒烟。修法二选一：① 给 CI token 加 `Hyperdrive:Read`；② 把交叉核对降级为「读不到 Hyperdrive API 时 warning、仅以 script settings 绑定为准」 | 用户授权改 token 或裁决降级 | ⏳ |
 
 ## G. 待用户拍板清单（集中登记；每条写明要定什么）
 
