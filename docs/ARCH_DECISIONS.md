@@ -79,3 +79,15 @@
 
 *维护纪律：新选型先立 ADR（状态=已决策）再实施；决策被取代时不删条目，改状态并链接取代者；
 每条重新评估条件被触发时，由当时接手 agent 在本文件续写新条目而非覆盖旧条目。*
+
+## ADR-008 · TS 门面 + Python 内核两层架构（2026-10-21，现行架构）
+
+| 字段 | 内容 |
+|---|---|
+| 状态 | **已决策**（取代 ADR-005 的「Python Worker 承载全部」；ADR-005 保留为历史） |
+| 背景 | 用户反馈生产慢，体检定位主因=Python Worker 冷启动（/health 0.4–5.1s，PROD_PERFORMANCE_AUDIT_2026-10-21 §1.1）。初版计划全量迁 TS Worker；用户提出系统定位=智能制造业务管理+工位化+未来 AI+对外 MCP/API，Python 在 AI/数据/业务规则生态占优，且金标资产最厚的 kaas_common 引擎是 Python——全量重写牺牲生态、风险最大。 |
+| 备选方案 | ① 全量迁 TS：冷启动全消但引擎重写风险最大、AI/数据生态转 TS；② 不迁、Python 侧缓解（Smart Placement/保温）：实测边际改善，根治不了；③ **分层：TS 门面 + Python 内核（选定）**。 |
+| 决策 | 两层永久架构：**TS Worker(Hono)=对外唯一门面**（全部 UI 面路由、鉴权/会话/CRUD/文件、对外 MCP+REST 网关，冷启动 ~50ms）；**Python Worker=智能/计算内核**（kaas_common 报价/单证引擎、未来 AI/数据能力、cron 3 条），经 **Service Binding**（同账号 Worker 互调，免费档可用）被门面调用。生产域名 kaas/api.powervoy.com 指门面；Python Worker 保留内部域。 |
+| 理由 | ① 体感速度由门面层决定，引擎端点本就以秒计（loading 呈现）；② 引擎零重写，语义漂移风险归零；③ 免费版配额按 Worker 独立计，多一个 Worker 不摊薄额度，内核 Worker 0 公网请求（service binding 不计请求配额）；④ 对外 MCP/REST 在 TS 生态是一等公民。 |
+| 重新评估条件 | ① Service Binding 契约漂移频繁出现且 harness 拦不住；② Python Worker 出现免费档跑不动的负载（CPU 10ms/请求超限）；③ Cloudflare 推出 Python 冷启动根治方案（原生 CPython/快照），届时可回归单运行时。 |
+| 防漂移铁纪律 | 业务规则只在 Python 内核一处实现；TS 门面只做鉴权/参数校验/协议转换，禁止业务 if；TS 侧 zod schema 从 Python pydantic 模型代码生成，禁止手抄；金标 harness（backend/ts-migration/golden/）常态化 diff。 |

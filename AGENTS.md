@@ -65,6 +65,11 @@
 ## 其它需要知道的口径
 
 - **租户 ≠ 团队**：`tenant_id` 恒为 `"default"`，**团队（`team_id`）才是隔离边界**。
+- **两层架构（ADR-008，2026-10-21 拍板）**：TS Worker(Hono)=对外门面（UI 路由/鉴权/MCP/REST 网关），
+  Python Worker=内核（kaas_common 报价/单证引擎、未来 AI/数据能力、cron 3 条），经 Service Binding 互调。
+  **铁纪律：业务规则只在 Python 内核一处实现；TS 门面只做鉴权/参数校验/协议转换，禁止写业务逻辑；**
+  TS 侧 zod schema 从 Python pydantic 模型代码生成，禁止手抄；跨层契约变更必须同 PR + 金标 harness 全绿
+  （backend/ts-migration/golden/）。优化全计划与进度唯一权威 = `docs/OPTIMIZATION_PLAN_2026-10-21.md`。
 - **共享内核**：共享逻辑全部放 `backend/kaas_common/`（**S4 起含报价引擎 `export_quote/` 与
   `domain/enums.py`；orchestrator 不再是任何真源**）。改完必须跑
   `powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1`，否则 worker 端是旧的。

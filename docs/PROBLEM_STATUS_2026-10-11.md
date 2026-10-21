@@ -10,6 +10,14 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-21 · 架构修订拍板：TS 门面 + Python 内核，取代全量迁 TS）** 用户提出系统定位
+> （智能制造业务管理/工位化/未来 AI/对外 MCP·API）下 Python 生态更优，全量迁 TS 与未来发展背道而驰。
+> 修订为**永久两层架构**（ADR-008）：TS Worker(Hono)=对外门面（UI 路由+鉴权+MCP/REST 网关，冷启动 ~50ms），
+> Python Worker=内核（kaas_common 引擎/未来 AI/cron，Service Binding 被门面调用，引擎零重写）。
+> 防漂移铁纪律落 AGENTS.md 口径区（业务规则只在 Python 内核；门面禁写业务逻辑；zod 从 pydantic 生成；
+> 金标 harness 常态化）。免费版评估：配额按 Worker 独立计，内核 0 公网请求，$0/月不变。
+> W3 Phase 0 ✅（253 路由清单=249 业务+4 内置；金标 harness 原型 prod 基线 5/5 形状符合）。
+>
 > **（2026-10-21 · W1 性能收尾 ✅ + 运维注意）** ①登录 429 根因定位=zone 限流规则
 > （2026-10-20 U-S4 设 auth 端点 2 次/10 秒/IP），用户批准放宽至 **5 次/10 秒**（防共享出口 NAT 误伤）；
 > ②静态资产缓存：`frontend/public/_headers`（`/_next/static/*` → immutable 1 年）+ CF 缓存规则

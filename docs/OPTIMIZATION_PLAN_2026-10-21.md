@@ -12,7 +12,8 @@
 |---|---|---|---|---|
 | W1 | 性能收尾快赢 | 静态资产缓存规则、登录 429 排查、迁库后观察 | 0.5–1 天 | CF 权限 ✅ 已有 |
 | W2 | 结构性债务批 | S-3/S-6/S-4①/§6.4 防再犯（P0 批）；S-4②/S-5（P2 批） | 1.5–2.5 天 | 无 |
-| W3 | **TS Worker 全量迁移** | 见 §2 分阶段 | **3–5 周** | W2 的 S-6 ADR 先行 |
+| W3 | **TS 门面 + Python 内核分层迁移（修订版，§2.0）** | UI 面迁 Hono；引擎/AI/cron 留 Python | **2–3 周** | W2 的 S-6 ADR 先行 |
+| W5 | 对外能力：MCP + REST 双暴露 | TS 门面挂 MCP Server + REST 规整（复用鉴权） | 1 周 | W3 Phase 2 后 |
 | W4 | 收尾退役 | Python worker 下线、文档收口、门禁迁移 | 2–3 天 | W3 |
 
 **W2 与 W3 的关系（重要）**：原 P1 批「S-1/S-2（Python 巨石拆分 + 循环依赖消除，3–5 天）」
@@ -31,7 +32,39 @@
 | 迁库后观察 | 部署后 24–48h 观察 cron（*/15 replied 扫描等）写库正常、无 5xx 尖峰 | cron 日志正常 |
 | 旧 Neon 项目清理 | **2026-10-28 提醒已设**（schedule-3cc18076）：复查后弹窗请用户确认删除 falling-salad-31662168 + 旧 Hyperdrive f53fed…（破坏性，必须确认） | 用户确认后执行并销账 |
 
-## 2. W3 TS Worker 全量迁移（主工程）
+## 2. W3 TS 门面 + Python 内核分层迁移（主工程）
+
+### 2.0 架构修订（2026-10-21 用户拍板，取代原「全量迁 TS」）
+
+**原 W3（全量迁 TS）作废原因**：用户指出系统定位=智能制造业务管理 + 工位化能力 + 未来 AI +
+对外 MCP/API——Python 在 AI/数据/业务规则生态上占优，且金标资产最厚的 `kaas_common` 引擎是
+Python；全量重写牺牲生态、风险最大。**修订为永久两层架构（非临时折中）**：
+
+```
+外部调用(脚本/agent/MCP/REST)
+        │
+┌───────▼──────────────┐   Service Binding（同账号 Worker 互调，免费档可用，零新基础设施）
+│ TS Worker (Hono)      │ ───────────────────────────────────────┐
+│ · 全部 UI 面路由(迁出)  │                                         │
+│ · 鉴权/会话/CRUD/文件    │                                ┌─────────▼────────┐
+│ · 对外 MCP + REST 网关  │                                │ Python Worker     │
+│ · 冷启动 ~50ms ✅       │                                │ · 报价/单证引擎     │
+└───────────────────────┘                                │ · 未来 AI/数据能力  │
+        │                                                │ · cron 定时任务     │
+        └──────────────► Hyperdrive ◄────────────────────└───────────────────┘
+                          Neon（新加坡）
+```
+
+- **体感速度 = TS 门面给**（UI 路由冷启动 ~50ms）；引擎/AI 端点在 Python 侧（本就以秒计，
+  界面 loading 呈现），其冷启动不再影响体感。
+- **Phase 3「引擎 TS 直译」作废**（原 D2 决策一并作废）：引擎零重写，Python 内核经
+  Service Binding 被 TS 门面调用；契约=内部 JSON 接口 + 金标对照。
+- 路由清单按 **门面（迁 TS）/ 内核（留 Python）** 两类标注（ts-scout Phase 0 产物扩展一列）。
+- 域名切分：生产自定义域名指 TS 门面；Python Worker 保留独立访问域（内部/调试/cron 自有触发器）。
+- 新增 **W5 对外能力**：MCP Server + REST 规整双暴露，建在 TS 门面（一等公民）。
+- 风险变化：引擎行为漂移风险归零（不重写）；新增风险=service binding 契约漂移 ⇒ 金标对照覆盖。
+
+原 Phase 0/1/2/4 框架保留适用（域顺序按新分类调整），下文中「全量」「引擎移植」字样以本节为准。
 
 ### Phase 0 · 基线与金标（1–2 天，先行）
 1. 导出 **253 条路由清单**（method / path / 鉴权依赖 / DB 读写），作为迁移 checklist 与进度看板。
@@ -133,3 +166,27 @@
 
 *计划创建：lead（DSH AI），2026-10-21。执行顺序：W1 → W2(P0) → W3 Phase 0 起。*
 *每完成一项按 AGENTS.md 规则 1 更新文档（PROBLEM_STATUS 交接摘要 + 本文销账）并推送。*
+
+## 5. Goal 持久化副本（防长会话失忆；goal 本体因自动续轮限制待用户直接发言时同步）
+
+```text
+KaaS 平台优化全计划执行（唯一权威文档=本文档，每轮先读核对进度再动手）。
+
+[最终架构 2026-10-21 拍板] TS 门面 + Python 内核两层：
+- TS Worker(Hono) = 对外唯一门面：UI 面路由迁出 + MCP/REST 双暴露 + 鉴权/CRUD/文件；冷启动 ~50ms。
+- Python Worker = 内核：kaas_common 引擎 + 未来 AI/数据 + cron(3条)；Service Binding 被门面调用；引擎零重写。
+- 铁纪律：业务规则只在 Python 内核一处；TS 门面只做鉴权/校验/协议转换；zod schema 从 pydantic 生成；金标 harness 常态化。
+- 域名 kaas/api→TS 门面；Python 留内部域；DB=Neon 新加坡+Hyperdrive(68304207…776e)。
+
+[进度] W1 ✅；W2 P0 ✅(P2 批=except 收敛+S-5 低优先)；W3 Phase 0 ✅；下一步=W3 Phase 1 Hono 骨架。
+待拍板小项：/openapi.json 生产现返回 text/html，Phase 1 Hono 显式服务 JSON 并登记金标差异。
+
+[决策] D1 Hono；D3 跳过 S-1/S-2；分层架构；MCP+REST；D4/G-9 密钥维持不清理。
+
+[运维坑] wrangler OAuth 过期→部署须 $env:CLOUDFLARE_API_TOKEN(User 作用域)；PYTHONUTF8=1 跑含 emoji 脚本；
+CF 表达式用 wildcard/infix(函数式 400)；静态 immutable 靠 public/_headers；auth 限流 5 次/10 秒/IP；
+PATH 的 python 坏→用各 .venv；uv 需 UV_CACHE_DIR=D:\tools\uv-cache。
+
+[纪律] 私有 index 提交+归位；完成一项即更新 PROBLEM_STATUS+本文销账+推 main；
+旧 Neon 删除等 2026-10-28 提醒弹窗确认；生产变更先取证、要确认的弹窗。
+```
