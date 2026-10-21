@@ -90,6 +90,18 @@ app.route("/", adminRoutes);
 app.route("/api/v1/quotes", createProxyApp("/api/v1/quotes"));
 app.route("/api/v1/trade-docs", createProxyApp("/api/v1/trade-docs"));
 app.route("/api/v1/ai", createProxyApp("/api/v1/ai"));
+// 引擎/辅助域透传（未迁门面的 41 条）：clause-templates / events / export-quote / external-docs /
+// fx-rates / pricing-data / product-tax-rates / quotations / tax-archives —— 一律门面鉴权后原样转发 KERNEL，
+// 禁止在门面重写这些业务（如将来要迁，先在内核暴露 /internal/* 或补 rules 镜像，再逐条移植）。
+app.route("/api/v1/clause-templates", createProxyApp("/api/v1/clause-templates"));
+app.route("/api/v1/events", createProxyApp("/api/v1/events"));
+app.route("/api/v1/export-quote", createProxyApp("/api/v1/export-quote"));
+app.route("/api/v1/external-docs", createProxyApp("/api/v1/external-docs"));
+app.route("/api/v1/fx-rates", createProxyApp("/api/v1/fx-rates"));
+app.route("/api/v1/pricing-data", createProxyApp("/api/v1/pricing-data"));
+app.route("/api/v1/product-tax-rates", createProxyApp("/api/v1/product-tax-rates"));
+app.route("/api/v1/quotations", createProxyApp("/api/v1/quotations"));
+app.route("/api/v1/tax-archives", createProxyApp("/api/v1/tax-archives"));
 
 // ── 存活探针（对齐 Python 版 GET /health 语义；service 名按本 worker 名标注）──
 app.get("/health", (c) => {

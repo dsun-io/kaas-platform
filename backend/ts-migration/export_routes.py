@@ -31,6 +31,7 @@ WindowsApps 占位符）。
 from __future__ import annotations
 
 import inspect
+import json
 import os
 import sys
 import types
@@ -306,6 +307,11 @@ def main() -> int:
     total = len(routes)
     builtin_n = len(builtin)
     grand = total + builtin_n
+    # 2026-10-21：额外输出 JSON（供 TS 侧 route-surface 测试做机检覆盖）
+    json_out = os.path.join(HERE, "routes.json")
+    with open(json_out, "w", encoding="utf-8", newline="\n") as f:
+        json.dump({"routes": routes, "builtin": builtin}, f, ensure_ascii=False, indent=1)
+
     print("APIRoute 业务路由: %d；内置文档路由: %d；合计 %d（期望 %d）-> %s"
           % (total, builtin_n, grand, EXPECTED_TOTAL, "OK" if grand == EXPECTED_TOTAL else "MISMATCH"))
     for b in builtin:

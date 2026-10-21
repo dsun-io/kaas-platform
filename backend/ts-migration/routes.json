@@ -1,0 +1,3747 @@
+{
+ "routes": [
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/auth/bootstrap-admin",
+   "endpoint": "bootstrap_admin",
+   "file": "worker/src/main.py",
+   "line": 298,
+   "depends": [],
+   "auth": false,
+   "ops": false,
+   "domain": "auth"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/auth/login",
+   "endpoint": "login",
+   "file": "worker/src/main.py",
+   "line": 338,
+   "depends": [],
+   "auth": false,
+   "ops": false,
+   "domain": "auth"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/auth/me",
+   "endpoint": "get_me",
+   "file": "worker/src/main.py",
+   "line": 390,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "auth"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/auth/logout",
+   "endpoint": "logout",
+   "file": "worker/src/main.py",
+   "line": 409,
+   "depends": [],
+   "auth": false,
+   "ops": false,
+   "domain": "auth"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/auth/me",
+   "endpoint": "update_me",
+   "file": "worker/src/main.py",
+   "line": 450,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "auth"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/auth/change-password",
+   "endpoint": "change_password",
+   "file": "worker/src/main.py",
+   "line": 482,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "auth"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/auth/forgot-password",
+   "endpoint": "forgot_password",
+   "file": "worker/src/main.py",
+   "line": 672,
+   "depends": [],
+   "auth": false,
+   "ops": false,
+   "domain": "auth"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/auth/reset-password",
+   "endpoint": "reset_password",
+   "file": "worker/src/main.py",
+   "line": 708,
+   "depends": [],
+   "auth": false,
+   "ops": false,
+   "domain": "auth"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/auth/register",
+   "endpoint": "register",
+   "file": "worker/src/main.py",
+   "line": 800,
+   "depends": [],
+   "auth": false,
+   "ops": false,
+   "domain": "auth"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/intel/shipments",
+   "endpoint": "list_shipments",
+   "file": "worker/src/main.py",
+   "line": 947,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/intel/shipments/{shipment_id}",
+   "endpoint": "get_shipment",
+   "file": "worker/src/main.py",
+   "line": 981,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/intel/shipments",
+   "endpoint": "create_shipment",
+   "file": "worker/src/main.py",
+   "line": 993,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/intel/import/csv",
+   "endpoint": "import_csv",
+   "file": "worker/src/main.py",
+   "line": 1008,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/intel/trade-stats",
+   "endpoint": "list_trade_stats",
+   "file": "worker/src/main.py",
+   "line": 1061,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/intel/adapter-runs",
+   "endpoint": "list_adapter_runs",
+   "file": "worker/src/main.py",
+   "line": 1085,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/intel/channels",
+   "endpoint": "list_channels",
+   "file": "worker/src/main.py",
+   "line": 1106,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/customers",
+   "endpoint": "list_customers",
+   "file": "worker/src/main.py",
+   "line": 1372,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "customers"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/customers",
+   "endpoint": "create_customer",
+   "file": "worker/src/main.py",
+   "line": 1433,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "customers"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/customers/{customer_id}",
+   "endpoint": "get_customer",
+   "file": "worker/src/main.py",
+   "line": 1506,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "customers"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/customers/{customer_id}/contacts",
+   "endpoint": "add_contact",
+   "file": "worker/src/main.py",
+   "line": 1537,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "customers"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/customers/{customer_id}/contacts/{contact_id}",
+   "endpoint": "update_contact",
+   "file": "worker/src/main.py",
+   "line": 1569,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "customers"
+  },
+  {
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/customers/{customer_id}/contacts/{contact_id}",
+   "endpoint": "delete_contact",
+   "file": "worker/src/main.py",
+   "line": 1601,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "customers"
+  },
+  {
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/customers/{customer_id}",
+   "endpoint": "soft_delete_customer",
+   "file": "worker/src/main.py",
+   "line": 1619,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "customers"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/customers/{customer_id}/inquiries",
+   "endpoint": "add_inquiry",
+   "file": "worker/src/main.py",
+   "line": 1650,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "customers"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/customers/{customer_id}/stage",
+   "endpoint": "update_stage",
+   "file": "worker/src/main.py",
+   "line": 1679,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "customers"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/market/regions",
+   "endpoint": "list_market_regions",
+   "file": "worker/src/main.py",
+   "line": 1745,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/market/regions/{region_code}/products",
+   "endpoint": "list_region_products",
+   "file": "worker/src/main.py",
+   "line": 1755,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/market/name-lookup",
+   "endpoint": "name_lookup",
+   "file": "worker/src/main.py",
+   "line": 1778,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/market/name-mappings",
+   "endpoint": "create_name_mapping",
+   "file": "worker/src/main.py",
+   "line": 1798,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/market/usages",
+   "endpoint": "list_usages",
+   "file": "worker/src/main.py",
+   "line": 1813,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/market/ports",
+   "endpoint": "list_ports",
+   "file": "worker/src/main.py",
+   "line": 1822,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/subscriptions",
+   "endpoint": "list_subscriptions",
+   "file": "worker/src/main.py",
+   "line": 1845,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/subscriptions/bundles",
+   "endpoint": "list_bundles",
+   "file": "worker/src/main.py",
+   "line": 1854,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/dashboard/summary",
+   "endpoint": "dashboard_summary",
+   "file": "worker/src/main.py",
+   "line": 1864,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "dashboard"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/health",
+   "endpoint": "health",
+   "file": "worker/src/main.py",
+   "line": 1929,
+   "depends": [],
+   "auth": false,
+   "ops": false,
+   "domain": "meta"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/events",
+   "endpoint": "create_event",
+   "file": "worker/src/main.py",
+   "line": 1958,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "cron"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/quotations",
+   "endpoint": "list_quotations_api",
+   "file": "worker/src/main.py",
+   "line": 2010,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/quotations",
+   "endpoint": "create_quotation_manual",
+   "file": "worker/src/main.py",
+   "line": 2052,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/pricing-data",
+   "endpoint": "list_pricing_data",
+   "file": "worker/src/main.py",
+   "line": 2161,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/pricing-data",
+   "endpoint": "create_pricing_data",
+   "file": "worker/src/main.py",
+   "line": 2266,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/pricing-data/{item_id}",
+   "endpoint": "update_pricing_data",
+   "file": "worker/src/main.py",
+   "line": 2374,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/pricing-data/{item_id}",
+   "endpoint": "delete_pricing_data",
+   "file": "worker/src/main.py",
+   "line": 2442,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/spec/categories",
+   "endpoint": "list_spec_categories",
+   "file": "worker/src/main.py",
+   "line": 2582,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/spec/categories/{category_id}",
+   "endpoint": "get_spec_category",
+   "file": "worker/src/main.py",
+   "line": 2598,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/spec/categories/{category_id}/bindings",
+   "endpoint": "get_spec_category_bindings",
+   "file": "worker/src/main.py",
+   "line": 2613,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/spec/wizard/submit",
+   "endpoint": "wizard_submit",
+   "file": "worker/src/main.py",
+   "line": 2671,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/spec/wizard/propose-attribute",
+   "endpoint": "wizard_propose_attribute",
+   "file": "worker/src/main.py",
+   "line": 2741,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/events",
+   "endpoint": "list_events_api",
+   "file": "worker/src/main.py",
+   "line": 2784,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": true,
+   "domain": "cron"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/admin/feature_flag",
+   "endpoint": "get_feature_flag",
+   "file": "worker/src/main.py",
+   "line": 2824,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": true,
+   "domain": "admin"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/admin/feature_flag",
+   "endpoint": "set_feature_flag",
+   "file": "worker/src/main.py",
+   "line": 2858,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": true,
+   "domain": "admin"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/admin/tenants",
+   "endpoint": "list_tenants",
+   "file": "worker/src/main.py",
+   "line": 2910,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": true,
+   "domain": "admin"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/admin/tenants/reload",
+   "endpoint": "reload_tenants",
+   "file": "worker/src/main.py",
+   "line": 2927,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": true,
+   "domain": "admin"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/admin/audit-log",
+   "endpoint": "get_audit_log",
+   "file": "worker/src/main.py",
+   "line": 2956,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": true,
+   "domain": "admin"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/admin/archive-logs",
+   "endpoint": "get_archive_logs",
+   "file": "worker/src/main.py",
+   "line": 3024,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": true,
+   "domain": "admin"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/capability-customers",
+   "endpoint": "list_capability_customers",
+   "file": "worker/src/main.py",
+   "line": 3101,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "customers"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/capabilities",
+   "endpoint": "list_capabilities_api",
+   "file": "worker/src/main.py",
+   "line": 3123,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "customers"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/capabilities",
+   "endpoint": "upsert_capability_api",
+   "file": "worker/src/main.py",
+   "line": 3145,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "customers"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/customer/{customer_id}/capabilities",
+   "endpoint": "get_customer_capabilities",
+   "file": "worker/src/main.py",
+   "line": 3185,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "customers"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/customer/{customer_id}/capabilities",
+   "endpoint": "patch_customer_capability",
+   "file": "worker/src/main.py",
+   "line": 3203,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "customers"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/orders",
+   "endpoint": "list_orders_api",
+   "file": "worker/src/main.py",
+   "line": 3394,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/orders",
+   "endpoint": "create_order_api",
+   "file": "worker/src/main.py",
+   "line": 3472,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/orders/{order_id}",
+   "endpoint": "get_order_api",
+   "file": "worker/src/main.py",
+   "line": 3688,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/orders/{order_id}",
+   "endpoint": "update_order_api",
+   "file": "worker/src/main.py",
+   "line": 3741,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/orders/{order_id}/status",
+   "endpoint": "change_order_status",
+   "file": "worker/src/main.py",
+   "line": 3854,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/orders/{order_id}/payment-schedules",
+   "endpoint": "list_schedules",
+   "file": "worker/src/main.py",
+   "line": 3946,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/orders/{order_id}/payment-schedules",
+   "endpoint": "create_schedule",
+   "file": "worker/src/main.py",
+   "line": 3964,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/payment-schedules/{schedule_id}",
+   "endpoint": "update_schedule",
+   "file": "worker/src/main.py",
+   "line": 4011,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/receivables",
+   "endpoint": "list_receivables",
+   "file": "worker/src/main.py",
+   "line": 4105,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/trade-docs",
+   "endpoint": "list_trade_docs",
+   "file": "worker/src/main.py",
+   "line": 4333,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/trade-docs",
+   "endpoint": "create_trade_doc",
+   "file": "worker/src/main.py",
+   "line": 4487,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}",
+   "endpoint": "get_trade_doc",
+   "file": "worker/src/main.py",
+   "line": 4627,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}",
+   "endpoint": "update_trade_doc",
+   "file": "worker/src/main.py",
+   "line": 4652,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tenant/company-profile",
+   "endpoint": "get_company_profile",
+   "file": "worker/src/main.py",
+   "line": 4863,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/tenant/company-profile",
+   "endpoint": "put_company_profile",
+   "file": "worker/src/main.py",
+   "line": 4876,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/render-data",
+   "endpoint": "get_trade_doc_render_data",
+   "file": "worker/src/main.py",
+   "line": 5021,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/ai/tasks",
+   "endpoint": "ai_tasks",
+   "file": "worker/src/chain.py",
+   "line": 548,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": true,
+   "domain": "ai"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/ai/providers",
+   "endpoint": "ai_list_providers",
+   "file": "worker/src/chain.py",
+   "line": 583,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": true,
+   "domain": "ai"
+  },
+  {
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/ai/providers/{name}",
+   "endpoint": "ai_upsert_provider",
+   "file": "worker/src/chain.py",
+   "line": 599,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": true,
+   "domain": "ai"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/ai/providers/{name}/test",
+   "endpoint": "ai_test_provider",
+   "file": "worker/src/chain.py",
+   "line": 627,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": true,
+   "domain": "ai"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/ai/task-bindings",
+   "endpoint": "ai_list_bindings",
+   "file": "worker/src/chain.py",
+   "line": 654,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": true,
+   "domain": "ai"
+  },
+  {
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/ai/task-bindings/{task_key}",
+   "endpoint": "ai_upsert_binding",
+   "file": "worker/src/chain.py",
+   "line": 674,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": true,
+   "domain": "ai"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/ai/usage",
+   "endpoint": "ai_usage",
+   "file": "worker/src/chain.py",
+   "line": 710,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": true,
+   "domain": "ai"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/ai/tasks/{task_key}/run",
+   "endpoint": "ai_run_task",
+   "file": "worker/src/chain.py",
+   "line": 750,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": true,
+   "domain": "ai"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/leadgen/regions",
+   "endpoint": "leadgen_regions",
+   "file": "worker/src/chain.py",
+   "line": 973,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/leadgen/validate",
+   "endpoint": "leadgen_validate",
+   "file": "worker/src/chain.py",
+   "line": 978,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/leadgen/runs",
+   "endpoint": "leadgen_create_run",
+   "file": "worker/src/chain.py",
+   "line": 1018,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/leadgen/runs/from-csv",
+   "endpoint": "leadgen_create_run_csv",
+   "file": "worker/src/chain.py",
+   "line": 1024,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/leadgen/runs",
+   "endpoint": "leadgen_list_runs",
+   "file": "worker/src/chain.py",
+   "line": 1033,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/leadgen/runs/{run_id}",
+   "endpoint": "leadgen_get_run",
+   "file": "worker/src/chain.py",
+   "line": 1050,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/leads",
+   "endpoint": "lead_create",
+   "file": "worker/src/chain.py",
+   "line": 1370,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/leads",
+   "endpoint": "lead_list",
+   "file": "worker/src/chain.py",
+   "line": 1402,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/leads/scan-replied",
+   "endpoint": "lead_scan_replied",
+   "file": "worker/src/chain.py",
+   "line": 1437,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/leads/{lead_id}",
+   "endpoint": "lead_get",
+   "file": "worker/src/chain.py",
+   "line": 1489,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/leads/{lead_id}",
+   "endpoint": "lead_patch",
+   "file": "worker/src/chain.py",
+   "line": 1542,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/outreach/mailboxes",
+   "endpoint": "mb_list",
+   "file": "worker/src/chain.py",
+   "line": 1685,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "outreach"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/outreach/mailboxes",
+   "endpoint": "mb_create",
+   "file": "worker/src/chain.py",
+   "line": 1695,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "outreach"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/outreach/mailboxes/{mailbox_id}",
+   "endpoint": "mb_patch",
+   "file": "worker/src/chain.py",
+   "line": 1719,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "outreach"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/outreach/mailboxes/{mailbox_id}/test",
+   "endpoint": "mb_test",
+   "file": "worker/src/chain.py",
+   "line": 1752,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "outreach"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/outreach/campaigns",
+   "endpoint": "camp_list",
+   "file": "worker/src/chain.py",
+   "line": 1790,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "outreach"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/outreach/campaigns",
+   "endpoint": "camp_create",
+   "file": "worker/src/chain.py",
+   "line": 1800,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "outreach"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/outreach/generate",
+   "endpoint": "camp_generate",
+   "file": "worker/src/chain.py",
+   "line": 1814,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "outreach"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/outreach/campaigns/{campaign_id}/send",
+   "endpoint": "camp_send",
+   "file": "worker/src/chain.py",
+   "line": 1822,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "outreach"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/outreach/messages",
+   "endpoint": "msg_list",
+   "file": "worker/src/chain.py",
+   "line": 1899,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "outreach"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/outreach/messages/{message_id}",
+   "endpoint": "msg_get",
+   "file": "worker/src/chain.py",
+   "line": 1928,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "outreach"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/outreach/messages/{message_id}/retry",
+   "endpoint": "msg_retry",
+   "file": "worker/src/chain.py",
+   "line": 1941,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "outreach"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/outreach/webhook",
+   "endpoint": "outreach_webhook",
+   "file": "worker/src/chain.py",
+   "line": 1977,
+   "depends": [],
+   "auth": false,
+   "ops": false,
+   "domain": "outreach"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/leads/{lead_id}/crawl",
+   "endpoint": "lead_crawl",
+   "file": "worker/src/chain.py",
+   "line": 2054,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/leads/crawl-batch",
+   "endpoint": "lead_crawl_batch",
+   "file": "worker/src/chain.py",
+   "line": 2079,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/research/categories",
+   "endpoint": "research_categories",
+   "file": "worker/src/chain.py",
+   "line": 2182,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/research/products",
+   "endpoint": "research_list",
+   "file": "worker/src/chain.py",
+   "line": 2187,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/research/stats",
+   "endpoint": "research_stats",
+   "file": "worker/src/chain.py",
+   "line": 2229,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/research/products",
+   "endpoint": "research_create",
+   "file": "worker/src/chain.py",
+   "line": 2254,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/research/products/{research_id}",
+   "endpoint": "research_patch",
+   "file": "worker/src/chain.py",
+   "line": 2326,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/research/products/{research_id}",
+   "endpoint": "research_delete",
+   "file": "worker/src/chain.py",
+   "line": 2359,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/research/from-leadgen",
+   "endpoint": "research_from_leadgen",
+   "file": "worker/src/chain.py",
+   "line": 2378,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/research/runs",
+   "endpoint": "research_runs",
+   "file": "worker/src/chain.py",
+   "line": 2420,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "intel"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/export-quote/products",
+   "endpoint": "export_quote_products",
+   "file": "worker/src/quote_api.py",
+   "line": 339,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/export-quote/products/{product_key}/formulas",
+   "endpoint": "export_quote_product_formulas",
+   "file": "worker/src/quote_api.py",
+   "line": 414,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/export-quote/terms/template",
+   "endpoint": "export_quote_terms_template",
+   "file": "worker/src/quote_api.py",
+   "line": 447,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/export-quote/calculate",
+   "endpoint": "export_quote_calculate",
+   "file": "worker/src/quote_api.py",
+   "line": 886,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/export-quote/calculate-internal",
+   "endpoint": "export_quote_calculate_internal",
+   "file": "worker/src/quote_api.py",
+   "line": 899,
+   "depends": [
+    "_require_internal_admin_dep"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/export-quote/verify",
+   "endpoint": "export_quote_verify",
+   "file": "worker/src/quote_api.py",
+   "line": 909,
+   "depends": [
+    "_require_internal_admin_dep"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/export-quote/import/template",
+   "endpoint": "export_quote_import_template",
+   "file": "worker/src/quote_api.py",
+   "line": 1002,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/export-quote/products/{product_key}/import-template",
+   "endpoint": "export_quote_import_template_info",
+   "file": "worker/src/quote_api.py",
+   "line": 1020,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/export-quote/import/preview",
+   "endpoint": "export_quote_import_preview",
+   "file": "worker/src/quote_api.py",
+   "line": 1067,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/export-quote/import/calculate",
+   "endpoint": "export_quote_import_calculate",
+   "file": "worker/src/quote_api.py",
+   "line": 1089,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/quotes",
+   "endpoint": "list_quote_orders",
+   "file": "worker/src/quote_api.py",
+   "line": 1738,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/quotes",
+   "endpoint": "create_quote_order",
+   "file": "worker/src/quote_api.py",
+   "line": 1803,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/quotes/batch",
+   "endpoint": "create_quote_batch",
+   "file": "worker/src/quote_api.py",
+   "line": 1881,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/quotes/reference-price",
+   "endpoint": "quote_reference_price",
+   "file": "worker/src/quote_api.py",
+   "line": 1922,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/quotes/cost-reference",
+   "endpoint": "quote_cost_reference",
+   "file": "worker/src/quote_api.py",
+   "line": 1974,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/quotes/{quote_id}",
+   "endpoint": "get_quote_order",
+   "file": "worker/src/quote_api.py",
+   "line": 2055,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/quotes/{quote_id}",
+   "endpoint": "update_quote_order",
+   "file": "worker/src/quote_api.py",
+   "line": 2081,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/quotes/{quote_id}/items",
+   "endpoint": "replace_quote_items",
+   "file": "worker/src/quote_api.py",
+   "line": 2214,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/export-quote/products/{product_key}/spec",
+   "endpoint": "export_quote_product_spec",
+   "file": "worker/src/quote_api.py",
+   "line": 2262,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/fx-rates",
+   "endpoint": "list_fx_rates",
+   "file": "worker/src/ws_extras.py",
+   "line": 162,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/fx-rates/latest",
+   "endpoint": "latest_fx_rate",
+   "file": "worker/src/ws_extras.py",
+   "line": 179,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/fx-rates/_debug",
+   "endpoint": "fx_provider_debug",
+   "file": "worker/src/ws_extras.py",
+   "line": 196,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/fx-rates",
+   "endpoint": "upsert_fx_rate",
+   "file": "worker/src/ws_extras.py",
+   "line": 217,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/actual-costs",
+   "endpoint": "list_actual_costs",
+   "file": "worker/src/ws_extras.py",
+   "line": 262,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/actual-costs",
+   "endpoint": "create_actual_cost",
+   "file": "worker/src/ws_extras.py",
+   "line": 284,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/actual-costs/resolve",
+   "endpoint": "resolve_actual_cost",
+   "file": "worker/src/ws_extras.py",
+   "line": 311,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/external-docs",
+   "endpoint": "upload_external_doc",
+   "file": "worker/src/ws_extras.py",
+   "line": 335,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/external-docs",
+   "endpoint": "list_external_docs",
+   "file": "worker/src/ws_extras.py",
+   "line": 362,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/external-docs/{doc_id}/download",
+   "endpoint": "download_external_doc",
+   "file": "worker/src/ws_extras.py",
+   "line": 392,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/external-docs/{doc_id}",
+   "endpoint": "update_external_doc",
+   "file": "worker/src/ws_extras.py",
+   "line": 405,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/external-docs/{doc_id}",
+   "endpoint": "delete_external_doc",
+   "file": "worker/src/ws_extras.py",
+   "line": 420,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tenant-products",
+   "endpoint": "list_tenant_products",
+   "file": "worker/src/ws_products.py",
+   "line": 233,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/tenant-products",
+   "endpoint": "create_tenant_product",
+   "file": "worker/src/ws_products.py",
+   "line": 269,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/tenant-products/{product_id}",
+   "endpoint": "update_tenant_product",
+   "file": "worker/src/ws_products.py",
+   "line": 306,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/tenant-products/{product_id}",
+   "endpoint": "delete_tenant_product",
+   "file": "worker/src/ws_products.py",
+   "line": 374,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/workstation-products",
+   "endpoint": "list_workstation_products",
+   "file": "worker/src/ws_products.py",
+   "line": 426,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/workstation-products",
+   "endpoint": "set_workstation_product",
+   "file": "worker/src/ws_products.py",
+   "line": 458,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tenant-product-status",
+   "endpoint": "list_tenant_product_status",
+   "file": "worker/src/ws_products.py",
+   "line": 502,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/tenant-product-status",
+   "endpoint": "set_tenant_product_status",
+   "file": "worker/src/ws_products.py",
+   "line": 525,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/tenant/company-seals",
+   "endpoint": "upload_seal",
+   "file": "worker/src/ws_seals.py",
+   "line": 125,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tenant/company-seals",
+   "endpoint": "list_seals",
+   "file": "worker/src/ws_seals.py",
+   "line": 201,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tenant/company-seals/{seal_id}/image",
+   "endpoint": "get_seal_image",
+   "file": "worker/src/ws_seals.py",
+   "line": 218,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tenant/company-seals/{seal_id}/render-content",
+   "endpoint": "get_seal_render_content",
+   "file": "worker/src/ws_seals.py",
+   "line": 239,
+   "depends": [],
+   "auth": false,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/tenant/company-seals/{seal_id}/default",
+   "endpoint": "set_default_seal",
+   "file": "worker/src/ws_seals.py",
+   "line": 272,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/tenant/company-seals/{seal_id}",
+   "endpoint": "delete_seal",
+   "file": "worker/src/ws_seals.py",
+   "line": 294,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/enums",
+   "endpoint": "list_enums",
+   "file": "worker/src/ws_enums.py",
+   "line": 25,
+   "depends": [],
+   "auth": false,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/shipments",
+   "endpoint": "list_shipments",
+   "file": "worker/src/ws_shipments.py",
+   "line": 171,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/shipments",
+   "endpoint": "create_shipment",
+   "file": "worker/src/ws_shipments.py",
+   "line": 213,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/shipments/{shipment_id}",
+   "endpoint": "get_shipment",
+   "file": "worker/src/ws_shipments.py",
+   "line": 314,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/shipments/{shipment_id}",
+   "endpoint": "update_shipment",
+   "file": "worker/src/ws_shipments.py",
+   "line": 323,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/export-quote/products/{product_key}/explain",
+   "endpoint": "export_quote_explain_product",
+   "file": "worker/src/ws_quote_ext.py",
+   "line": 128,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/product-options/overrides",
+   "endpoint": "list_option_overrides",
+   "file": "worker/src/ws_option_overrides.py",
+   "line": 169,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/product-options/overrides",
+   "endpoint": "update_option_overrides",
+   "file": "worker/src/ws_option_overrides.py",
+   "line": 219,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/customers/{customer_id}",
+   "endpoint": "update_customer",
+   "file": "worker/src/ws_crm_ext.py",
+   "line": 166,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "customers"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/customers/{customer_id}/inquiries",
+   "endpoint": "list_customer_inquiries",
+   "file": "worker/src/ws_crm_ext.py",
+   "line": 216,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "customers"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/inquiries",
+   "endpoint": "list_inquiries",
+   "file": "worker/src/ws_crm_ext.py",
+   "line": 259,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "customers"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/inquiries/{inquiry_id}",
+   "endpoint": "update_inquiry",
+   "file": "worker/src/ws_crm_ext.py",
+   "line": 301,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "customers"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/inquiries/{inquiry_id}/stage-log",
+   "endpoint": "list_inquiry_stage_log",
+   "file": "worker/src/ws_crm_ext.py",
+   "line": 413,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "customers"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/facts",
+   "endpoint": "list_trade_doc_facts",
+   "file": "worker/src/ws_docs_hardening.py",
+   "line": 600,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/facts/confirm",
+   "endpoint": "confirm_trade_doc_facts",
+   "file": "worker/src/ws_docs_hardening.py",
+   "line": 625,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/facts/{fact_key}",
+   "endpoint": "patch_trade_doc_fact",
+   "file": "worker/src/ws_docs_hardening.py",
+   "line": 683,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/consistency",
+   "endpoint": "get_trade_doc_consistency",
+   "file": "worker/src/ws_docs_hardening.py",
+   "line": 770,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/lint",
+   "endpoint": "lint_trade_doc",
+   "file": "worker/src/ws_docs_hardening.py",
+   "line": 983,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/receipts",
+   "endpoint": "list_trade_doc_receipts",
+   "file": "worker/src/ws_docs_hardening.py",
+   "line": 1048,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/receipts",
+   "endpoint": "create_trade_doc_receipt",
+   "file": "worker/src/ws_docs_hardening.py",
+   "line": 1069,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/doc-set",
+   "endpoint": "get_trade_doc_doc_set",
+   "file": "worker/src/ws_docs_hardening.py",
+   "line": 1217,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/doc-set",
+   "endpoint": "put_trade_doc_doc_set",
+   "file": "worker/src/ws_docs_hardening.py",
+   "line": 1239,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/doc-set/{doc_type}/receipt",
+   "endpoint": "record_doc_set_receipt",
+   "file": "worker/src/ws_docs_hardening.py",
+   "line": 1305,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/verify-export",
+   "endpoint": "verify_trade_doc_export",
+   "file": "worker/src/ws_docs_hardening.py",
+   "line": 1369,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/refresh-sources",
+   "endpoint": "refresh_trade_doc_sources",
+   "file": "worker/src/ws_docs_ext.py",
+   "line": 150,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/confirm",
+   "endpoint": "confirm_trade_doc",
+   "file": "worker/src/ws_docs_ext.py",
+   "line": 237,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/render-fingerprint-check",
+   "endpoint": "check_trade_doc_render_fingerprint",
+   "file": "worker/src/ws_docs_ext.py",
+   "line": 384,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/trade-docs/render-fingerprint-checks/batch",
+   "endpoint": "batch_check_trade_doc_render_fingerprints",
+   "file": "worker/src/ws_docs_ext.py",
+   "line": 438,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/translate",
+   "endpoint": "translate_trade_doc",
+   "file": "worker/src/ws_docs_ext.py",
+   "line": 555,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/content-versions",
+   "endpoint": "list_trade_doc_content_versions",
+   "file": "worker/src/ws_docs_ext.py",
+   "line": 625,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/content-versions/{version_no}",
+   "endpoint": "get_trade_doc_content_version",
+   "file": "worker/src/ws_docs_ext.py",
+   "line": 659,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/content-versions/{version_no}/restore",
+   "endpoint": "restore_trade_doc_content_version",
+   "file": "worker/src/ws_docs_ext.py",
+   "line": 690,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/teams",
+   "endpoint": "create_team",
+   "file": "worker/src/ws_teams.py",
+   "line": 160,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "teams"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/teams/me",
+   "endpoint": "my_team",
+   "file": "worker/src/ws_teams.py",
+   "line": 221,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "teams"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/teams",
+   "endpoint": "list_teams",
+   "file": "worker/src/ws_teams.py",
+   "line": 246,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "teams"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/teams/{team_id}",
+   "endpoint": "update_team",
+   "file": "worker/src/ws_teams.py",
+   "line": 308,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "teams"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/teams/{team_id}/members",
+   "endpoint": "list_members",
+   "file": "worker/src/ws_teams.py",
+   "line": 335,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "teams"
+  },
+  {
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/teams/{team_id}/members/{user_id}",
+   "endpoint": "remove_member",
+   "file": "worker/src/ws_teams.py",
+   "line": 355,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "teams"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/teams/{team_id}/invites",
+   "endpoint": "create_invite",
+   "file": "worker/src/ws_teams.py",
+   "line": 385,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "teams"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/teams/{team_id}/invites",
+   "endpoint": "list_invites",
+   "file": "worker/src/ws_teams.py",
+   "line": 422,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "teams"
+  },
+  {
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/teams/{team_id}/invites/{invite_id}",
+   "endpoint": "revoke_invite",
+   "file": "worker/src/ws_teams.py",
+   "line": 439,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "teams"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/teams/join",
+   "endpoint": "join_team",
+   "file": "worker/src/ws_teams.py",
+   "line": 460,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "teams"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/teams/{team_id}/transfer",
+   "endpoint": "transfer_team",
+   "file": "worker/src/ws_teams.py",
+   "line": 507,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "teams"
+  },
+  {
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/teams/{team_id}/members/{user_id}/console-access",
+   "endpoint": "set_console_access",
+   "file": "worker/src/ws_teams.py",
+   "line": 547,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "teams"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/clause-templates",
+   "endpoint": "list_clause_templates",
+   "file": "worker/src/ws_clause_templates.py",
+   "line": 192,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/clause-templates",
+   "endpoint": "create_clause_template",
+   "file": "worker/src/ws_clause_templates.py",
+   "line": 226,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/clause-templates/{template_id}",
+   "endpoint": "update_clause_template",
+   "file": "worker/src/ws_clause_templates.py",
+   "line": 262,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/clause-templates/{template_id}",
+   "endpoint": "delete_clause_template",
+   "file": "worker/src/ws_clause_templates.py",
+   "line": 316,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/me/workstations",
+   "endpoint": "my_workstations",
+   "file": "worker/src/ws_workstations.py",
+   "line": 123,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/teams/{team_id}/subscriptions",
+   "endpoint": "list_team_subscriptions",
+   "file": "worker/src/ws_workstations.py",
+   "line": 155,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "teams"
+  },
+  {
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/teams/{team_id}/subscriptions/{code}",
+   "endpoint": "set_team_subscription",
+   "file": "worker/src/ws_workstations.py",
+   "line": 169,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "teams"
+  },
+  {
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/teams/{team_id}/subscriptions/{code}",
+   "endpoint": "revoke_team_subscription",
+   "file": "worker/src/ws_workstations.py",
+   "line": 200,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "teams"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/users/{user_id}/subscriptions",
+   "endpoint": "list_user_subscriptions",
+   "file": "worker/src/ws_workstations.py",
+   "line": 230,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/users/{user_id}/subscriptions/{code}",
+   "endpoint": "set_user_subscription",
+   "file": "worker/src/ws_workstations.py",
+   "line": 244,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/users/{user_id}/subscriptions/{code}",
+   "endpoint": "revoke_user_subscription",
+   "file": "worker/src/ws_workstations.py",
+   "line": 272,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/admin/accounts",
+   "endpoint": "list_accounts",
+   "file": "worker/src/ws_admin_accounts.py",
+   "line": 53,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "admin"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/admin/accounts/{user_id}",
+   "endpoint": "update_account_status",
+   "file": "worker/src/ws_admin_accounts.py",
+   "line": 80,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "admin"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/admin/spec/attribute-proposals",
+   "endpoint": "list_attribute_proposals",
+   "file": "worker/src/ws_admin_proposals.py",
+   "line": 71,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": true,
+   "domain": "admin"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/admin/spec/attribute-proposals/recommended",
+   "endpoint": "list_recommended_proposals",
+   "file": "worker/src/ws_admin_proposals.py",
+   "line": 91,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": true,
+   "domain": "admin"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/admin/spec/attribute-proposals/{proposal_id}",
+   "endpoint": "review_attribute_proposal",
+   "file": "worker/src/ws_admin_proposals.py",
+   "line": 108,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": true,
+   "domain": "admin"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/customers/{customer_id}/records",
+   "endpoint": "customer_records",
+   "file": "worker/src/ws_customer_records.py",
+   "line": 36,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "customers"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/products",
+   "endpoint": "list_products",
+   "file": "worker/src/ws_files.py",
+   "line": 378,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/products/{product_key}/profile",
+   "endpoint": "get_profile",
+   "file": "worker/src/ws_files.py",
+   "line": 415,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/products/{product_key}/profile",
+   "endpoint": "put_profile",
+   "file": "worker/src/ws_files.py",
+   "line": 440,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/products/{product_key}/media",
+   "endpoint": "list_media",
+   "file": "worker/src/ws_files.py",
+   "line": 461,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/products/{product_key}/media",
+   "endpoint": "upload_media",
+   "file": "worker/src/ws_files.py",
+   "line": 473,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "workstations"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/file-objects/{file_id}",
+   "endpoint": "patch_file",
+   "file": "worker/src/ws_files.py",
+   "line": 496,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "files"
+  },
+  {
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/file-objects/{file_id}",
+   "endpoint": "retire_file",
+   "file": "worker/src/ws_files.py",
+   "line": 545,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "files"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/file-objects/{file_id}/content",
+   "endpoint": "get_file_content",
+   "file": "worker/src/ws_files.py",
+   "line": 558,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "files"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/file-objects",
+   "endpoint": "list_files",
+   "file": "worker/src/ws_files.py",
+   "line": 574,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "files"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/files",
+   "endpoint": "list_doc_files",
+   "file": "worker/src/ws_files.py",
+   "line": 600,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/files",
+   "endpoint": "attach_doc_file",
+   "file": "worker/src/ws_files.py",
+   "line": 620,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/files/{link_id}",
+   "endpoint": "detach_doc_file",
+   "file": "worker/src/ws_files.py",
+   "line": 651,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/files/upload",
+   "endpoint": "upload_doc_file",
+   "file": "worker/src/ws_files.py",
+   "line": 663,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/trade-docs/{doc_id}/pdf",
+   "endpoint": "render_doc_pdf",
+   "file": "worker/src/ws_files.py",
+   "line": 851,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/file-objects/{file_id}/render-content",
+   "endpoint": "get_file_render_content",
+   "file": "worker/src/ws_files.py",
+   "line": 977,
+   "depends": [],
+   "auth": false,
+   "ops": false,
+   "domain": "files"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/file-objects/presign",
+   "endpoint": "presign_upload",
+   "file": "worker/src/ws_files.py",
+   "line": 1037,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "files"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/file-objects/register",
+   "endpoint": "register_upload",
+   "file": "worker/src/ws_files.py",
+   "line": 1053,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "files"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/file-objects/_r2_debug",
+   "endpoint": "r2_debug",
+   "file": "worker/src/ws_files.py",
+   "line": 1066,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "files"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/file-objects/{file_id}/url",
+   "endpoint": "get_file_url",
+   "file": "worker/src/ws_files.py",
+   "line": 1111,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "files"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tax-archives",
+   "endpoint": "list_tax_archives",
+   "file": "worker/src/tax_archives.py",
+   "line": 202,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/tax-archives",
+   "endpoint": "create_tax_archive",
+   "file": "worker/src/tax_archives.py",
+   "line": 218,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/tax-archives/{archive_id}",
+   "endpoint": "update_tax_archive",
+   "file": "worker/src/tax_archives.py",
+   "line": 248,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/tax-archives/{archive_id}",
+   "endpoint": "delete_tax_archive",
+   "file": "worker/src/tax_archives.py",
+   "line": 295,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/product-tax-rates",
+   "endpoint": "list_product_tax_rates",
+   "file": "worker/src/tax_archives.py",
+   "line": 372,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/product-tax-rates",
+   "endpoint": "create_product_tax_rate",
+   "file": "worker/src/tax_archives.py",
+   "line": 386,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/product-tax-rates/{rate_id}",
+   "endpoint": "update_product_tax_rate",
+   "file": "worker/src/tax_archives.py",
+   "line": 440,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/product-tax-rates/{rate_id}",
+   "endpoint": "delete_product_tax_rate",
+   "file": "worker/src/tax_archives.py",
+   "line": 468,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  }
+ ],
+ "builtin": [
+  {
+   "path": "/openapi.json",
+   "methods": [
+    "GET",
+    "HEAD"
+   ]
+  },
+  {
+   "path": "/docs",
+   "methods": [
+    "GET",
+    "HEAD"
+   ]
+  },
+  {
+   "path": "/docs/oauth2-redirect",
+   "methods": [
+    "GET",
+    "HEAD"
+   ]
+  },
+  {
+   "path": "/redoc",
+   "methods": [
+    "GET",
+    "HEAD"
+   ]
+  }
+ ]
+}
