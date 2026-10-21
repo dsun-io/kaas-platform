@@ -412,7 +412,8 @@ describe("POST /api/v1/api-tokens", () => {
     expect(insert?.params[0]).toBe("default");
     expect(insert?.params[1]).toBeNull(); // user.team_id = null
     expect(insert?.params[2]).toBe("CI token");
-    expect(insert?.params[3]).toEqual(["customers:read", "quotes:calc"]);
+    // fetch_types:false 下数组以 PG 字面量 + ::text[] 强转传参（生产实测 22P02 修复）
+    expect(insert?.params[3]).toBe('{"customers:read","quotes:calc"}');
     expect(insert?.params[4]).toBe(hashApiToken(body.plaintext));
     expect(insert?.params[5]).toBe(body.prefix);
     expect(insert?.params[6]).toBe(5);

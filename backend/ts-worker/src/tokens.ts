@@ -127,7 +127,14 @@ export async function verifyApiToken(
     id,
     tenantId: String(row.tenant_id),
     teamId: row.team_id === null || row.team_id === undefined ? null : Number(row.team_id),
-    scopes: Array.isArray(row.scopes) ? row.scopes.map((value) => String(value)) : [],
+    // fetch_types:false 时 text[] 可能回传 PG 字面量字符串（{a,b}），统一归一
+    scopes: Array.isArray(row.scopes)
+      ? row.scopes.map((value) => String(value))
+      : String(row.scopes ?? "")
+          .replace(/^\{|\}$/g, "")
+          .split(",")
+          .map((s) => s.trim().replace(/^"|"$/g, ""))
+          .filter(Boolean),
     name: String(row.name),
   };
 }

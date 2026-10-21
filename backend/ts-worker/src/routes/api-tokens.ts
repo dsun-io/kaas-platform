@@ -18,11 +18,8 @@ import { withDb, type Db } from "../db";
 import { getEnv, type Env } from "../env";
 import { httpError, num, parseBody, parseQuery, pyIso, respond } from "../http";
 import { requireUser } from "../session";
-import {
-  API_TOKEN_SCOPES,
-  isKnownApiTokenScope,
-  mintApiToken,
-} from "../tokens";
+import { API_TOKEN_SCOPES, isKnownApiTokenScope, mintApiToken } from "../tokens";
+import { pgTextArray } from "../pg-array";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -51,7 +48,14 @@ function tokenOut(row: Row): Record<string, unknown> {
     id: num(row.id),
     name: row.name,
     prefix: row.prefix,
-    scopes: Array.isArray(row.scopes) ? row.scopes.map((value) => String(value)) : [],
+    // fetch_types:false 时 text[] 可能回传 PG 数组字面量字符串（{a,b}），统一归一为 string[]
+    scopes: Array.isArray(row.scopes)
+      ? row.scopes.map((value) => String(value))
+      : String(row.scopes ?? "")
+          .replace(/^\{|\}$/g, "")
+          .split(",")
+          .map((s) => s.trim().replace(/^"|"$/g, ""))
+          .filter(Boolean),
     created_at: pyIso(row.created_at),
     last_used_at: pyIso(row.last_used_at),
     expires_at: pyIso(row.expires_at),
@@ -96,7 +100,7 @@ app.post("/api/v1/api-tokens", (c) => respond(c, async () => {
     INSERT INTO api_tokens
       (tenant_id, team_id, name, scopes, token_hash, prefix, created_by, expires_at)
     VALUES
-      (${DEFAULT_TENANT}, ${user.team_id}, ${body.name}, ${scopes},
+      (${DEFAULT_TENANT}, ${user.team_id}, ${body.name}, ${pgTextArray(scopes)}::text[],
        ${minted.tokenHash}, ${minted.prefix}, ${user.id}, ${expiresAt})
     RETURNING id, name, prefix, scopes, created_at, last_used_at, expires_at, revoked_at`);
   const row = (rows as Row[])[0];
