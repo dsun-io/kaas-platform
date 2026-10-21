@@ -20,6 +20,7 @@ import {
   FULL_CHAIN_CODE,
   SUBSCRIBABLE_WORKSTATIONS,
 } from "@/lib/workstation/visibility";
+import { API_TOKEN_SCOPES } from "@/lib/api-tokens/scopes";
 import tradeDocSample from "@/lib/trade-doc/sample-data.json";
 import type { ClauseTemplate } from "@/lib/trade-doc/clause-templates";
 // 收款容差公式与枚举取**唯一真源**（`receipt_rules.py` 的前端镜像，见文件头），
@@ -1476,6 +1477,72 @@ let teamInvitesStore: MockTeamInvite[] = [];
 let teamSubscriptionStore: MockTeamSubscription[] = [];
 let teamInviteSeq = 1;
 
+/**
+ * API 令牌（W5 M1）mock store。
+ * 形状 = `backend/ts-worker/src/routes/api-tokens.ts:tokenOut`；**绝不存 plaintext**，
+ * 明文只在 POST 响应里临时拼出来一次。
+ */
+type MockApiToken = {
+  id: number;
+  name: string;
+  prefix: string;
+  scopes: string[];
+  created_at: string | null;
+  last_used_at: string | null;
+  expires_at: string | null;
+  revoked_at: string | null;
+};
+
+const API_TOKEN_SEEDS: MockApiToken[] = [
+  {
+    id: 1,
+    name: "官网询盘同步",
+    prefix: "kaas_oat_AbCdEf12",
+    scopes: ["customers:read", "inquiries:read", "inquiries:write"],
+    created_at: "2026-10-12T08:00:00.000Z",
+    last_used_at: "2026-10-20T09:30:00.000Z",
+    expires_at: null,
+    revoked_at: null,
+  },
+  {
+    id: 2,
+    name: "旧版报表脚本",
+    prefix: "kaas_oat_XyZ98765",
+    scopes: ["orders:read", "quotes:read"],
+    created_at: "2026-09-30T02:00:00.000Z",
+    last_used_at: "2026-10-14T11:00:00.000Z",
+    expires_at: null,
+    revoked_at: "2026-10-15T03:00:00.000Z",
+  },
+  {
+    id: 3,
+    name: "临时测试令牌",
+    prefix: "kaas_oat_Qa1Ws2Ed",
+    scopes: ["files:read"],
+    created_at: "2026-08-01T00:00:00.000Z",
+    last_used_at: null,
+    expires_at: "2026-09-01T00:00:00.000Z",
+    revoked_at: null,
+  },
+];
+
+let apiTokenStore: MockApiToken[] = [];
+let apiTokenSeq = 1;
+
+/** 输出投影：永远不含 plaintext / token_hash（与后端 tokenOut 同口径）。 */
+function apiTokenOut(token: MockApiToken): MockApiToken {
+  return {
+    id: token.id,
+    name: token.name,
+    prefix: token.prefix,
+    scopes: [...token.scopes],
+    created_at: token.created_at,
+    last_used_at: token.last_used_at,
+    expires_at: token.expires_at,
+    revoked_at: token.revoked_at,
+  };
+}
+
 /** 企业主体信息字段（真源 = `worker/src/main.py:4595-4597` 的 `_COMPANY_FIELDS`）。 */
 const COMPANY_PROFILE_FIELDS = [
   "name_en",
@@ -1773,6 +1840,8 @@ function seedP1Stores(): void {
   teamSubscriptionStore = clone(TEAM_SUBSCRIPTION_SEEDS);
   teamInviteSeq =
     teamInvitesStore.reduce((max, i) => Math.max(max, i.id), 0) + 1;
+  apiTokenStore = clone(API_TOKEN_SEEDS);
+  apiTokenSeq = apiTokenStore.reduce((max, t) => Math.max(max, t.id), 0) + 1;
   companyProfileStore = clone(COMPANY_PROFILE_SEED);
   companySealsStore = clone(COMPANY_SEAL_SEEDS);
   sealBytesStore.clear();
@@ -7041,6 +7110,162 @@ export const handlers = [
     }
     row.active = false;
     return HttpResponse.json({ revoked: true, code });
+  }),
+
+  // ── API 令牌（W5 M1 · 设置 → API 令牌）─────────────────────────────────
+  // 形状 = backend/ts-worker/src/routes/api-tokens.ts 的 tokenOut / 创建响应。
+  // JWT-only（API token 不能管理 token，防自举提权）；mock 固定放行会话。
+  // GET 列表：{ items, total }，只含当前 mock 用户创建的令牌（这里是唯一用户）。
+  http.get("/api/v1/api-tokens", () => {
+    const items = apiTokenStore.map(apiTokenOut);
+    return HttpResponse.json({ items, total: items.length });
+  }),
+
+  // POST 创建：201 { ...token, plaintext }；plaintext **只在这里出现一次**。
+  http.post("/api/v1/api-tokens", async ({ request }) => {
+    let body: Record<string, unknown>;
+    try {
+      const raw: unknown = await request.json();
+      body =
+        typeof raw === "object" && raw !== null
+          ? (raw as Record<string, unknown>)
+          : {};
+    } catch {
+      return HttpResponse.json(
+        {
+          detail: [
+            { type: "json_invalid", loc: ["body"], msg: "Invalid JSON" },
+          ],
+        },
+        { status: 422 },
+      );
+    }
+
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    if (!name) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "VALIDATION",
+            message: "name 必填",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    if (name.length > 100) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "VALIDATION",
+            message: "name 最多 100 个字符",
+          },
+        },
+        { status: 422 },
+      );
+    }
+
+    const rawScopes = Array.isArray(body.scopes) ? body.scopes : [];
+    const scopes = [
+      ...new Set(
+        rawScopes.filter((scope): scope is string => typeof scope === "string"),
+      ),
+    ];
+    const unknown = scopes.filter((scope) => !API_TOKEN_SCOPES.includes(scope));
+    if (unknown.length > 0) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "UNKNOWN_SCOPE",
+            message: `未知 scope：${unknown.join(", ")}；可选：${API_TOKEN_SCOPES.join(", ")}`,
+          },
+        },
+        { status: 422 },
+      );
+    }
+
+    const expiresRaw = body.expires_in_days;
+    const expiresInDays =
+      typeof expiresRaw === "number" &&
+      Number.isInteger(expiresRaw) &&
+      expiresRaw > 0 &&
+      expiresRaw <= 3650
+        ? expiresRaw
+        : null;
+    if (expiresRaw !== undefined && expiresInDays === null) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "VALIDATION",
+            message: "expires_in_days 必须是 1..3650 的整数",
+          },
+        },
+        { status: 422 },
+      );
+    }
+
+    const id = apiTokenSeq++;
+    const plaintext = `kaas_oat_${String(id).padStart(4, "0")}${"m".repeat(35)}`;
+    const token: MockApiToken = {
+      id,
+      name,
+      prefix: plaintext.slice(0, 17),
+      scopes,
+      created_at: new Date().toISOString(),
+      last_used_at: null,
+      expires_at:
+        expiresInDays === null
+          ? null
+          : new Date(Date.now() + expiresInDays * 86_400_000).toISOString(),
+      revoked_at: null,
+    };
+    apiTokenStore = [token, ...apiTokenStore];
+    return HttpResponse.json(
+      { ...apiTokenOut(token), plaintext },
+      { status: 201 },
+    );
+  }),
+
+  // DELETE 软撤销：200 { revoked, id, revoked_at }；重复撤销 409。
+  http.delete("/api/v1/api-tokens/:id", ({ params }) => {
+    const id = Number(params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return HttpResponse.json(
+        {
+          detail: [
+            {
+              type: "value_error",
+              loc: ["path", "id"],
+              msg: "id 必须是正整数",
+            },
+          ],
+        },
+        { status: 422 },
+      );
+    }
+    const token = apiTokenStore.find((item) => item.id === id);
+    if (!token) {
+      return HttpResponse.json(
+        { detail: { error: "not_found", code: "TOKEN_NOT_FOUND" } },
+        { status: 404 },
+      );
+    }
+    if (token.revoked_at) {
+      return HttpResponse.json(
+        { detail: { error: "conflict", code: "TOKEN_ALREADY_REVOKED" } },
+        { status: 409 },
+      );
+    }
+    token.revoked_at = new Date().toISOString();
+    return HttpResponse.json({
+      revoked: true,
+      id,
+      revoked_at: token.revoked_at,
+    });
   }),
 
   // ── 企业税档 / 产品税率（settings/tax-archives）─────────────────────────

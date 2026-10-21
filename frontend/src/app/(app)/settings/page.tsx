@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Users } from "lucide-react";
+import { KeyRound, Users } from "lucide-react";
 import { useTenants } from "./hooks/use-tenants";
 import { TenantList } from "./components/tenant-list";
 import { ReloadButton } from "./components/reload-button";
@@ -109,6 +109,28 @@ export default function SettingsPage() {
             </div>
           </TabsContent>
         </Tabs>
+
+        {/* API 令牌入口：令牌管理按 created_by 隔离（任何登录用户只能看到/撤销
+            自己创建的令牌）；/settings 本身是平台运营页，这里只负责放入口。 */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle>API 令牌</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">
+                创建用于 REST API / MCP 访问的令牌；明文只在创建时显示一次。
+              </p>
+              <Link
+                href="/settings/api-tokens"
+                className={buttonVariants({ variant: "outline", size: "sm" })}
+              >
+                <KeyRound className="size-3.5" />
+                管理 API 令牌
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* 团队管理入口：**仅系统管理员**可见（与 /admin/teams 的 adminOnly 同口径）。
             后端 GET /teams 是 ADMIN_ONLY，非管理员即使点到也只会看到 403 —— 不给入口。 */}
