@@ -19,7 +19,7 @@ orchestrator 用 APScheduler 注册了两个定时任务，但 orchestrator 在�
 * **scheduled 事件没有 request**：Cloudflare 的 ``scheduled(controller, env, ctx)`` 只给 env，
   而 ``main._acquire(request)`` 要读 ``request.scope["env"]`` —— 所以这里按 env 直连
   Hyperdrive，连接参数与 ``main._acquire`` **逐项相同**（不是另造一套连接口径）。
-* **不抛穿**：两个任务都是「catch → print → 返回结果字典」。Cron 失败不该让 Worker
+* **不抛穿**：两个任务都是「catch → 记日志 → 返回结果字典」。Cron 失败不该让 Worker
   变错误态；``/cdn-cgi/local/scheduled?format=json`` 和日志里能看到 ``error`` 字段。
 * **tenant 口径**：与 worker 全线一致，``tenant_id`` 恒为 ``"default"``；归档日志行
   的 tenant 是通配 ``"*"``（与 orchestrator ``insert_archive_log`` 同口径）。
@@ -38,6 +38,7 @@ orchestrator 用 APScheduler 注册了两个定时任务，但 orchestrator 在�
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import uuid
 from contextlib import asynccontextmanager
@@ -58,6 +59,8 @@ try:  # pragma: no cover - 真实 Workers（Pyodide）带 zlib，gzip 可用；�
     import gzip
 except Exception:  # noqa: BLE001
     gzip = None  # type: ignore[assignment]
+
+logger = logging.getLogger(__name__)
 
 
 # 与 main.DEFAULT_TENANT / platform/db.py 同口径。
@@ -228,10 +231,10 @@ async def run_lead_scan(env, tenant_id: str = DEFAULT_TENANT) -> dict:
             async with conn.transaction():
                 result = await scan_replied_leads(conn, tenant_id)
     except Exception as exc:  # noqa: BLE001 - Cron 失败不能让调度器变错误态
-        print(f"[cron] scan_replied_leads failed: {type(exc).__name__}: {exc}")
+        logger.warning("[cron] scan_replied_leads failed: %s: %s", type(exc).__name__, exc)
         return {"scanned": 0, "created": 0, "already_linked": 0,
                 "error": f"{type(exc).__name__}: {exc}"}
-    print(f"[cron] scan_replied_leads ok: {result}")
+    logger.info("[cron] scan_replied_leads ok: %s", result)
     return result
 
 
@@ -411,13 +414,13 @@ async def run_archive_events(env, now: Optional[datetime] = None) -> dict:
                     result = await archive_events_for_day(
                         conn, bucket, target_date, bucket_name=bucket_name,
                     )
-            print(f"[cron] archive_events ok: {result}")
+            logger.info("[cron] archive_events ok: %s", result)
             return result
         except Exception as exc:  # noqa: BLE001 - Cron 失败不能让调度器变错误态
             last_error = exc
-            print(
-                f"[cron] archive_events attempt {attempt}/{MAX_ARCHIVE_RETRIES} "
-                f"failed: {type(exc).__name__}: {exc}"
+            logger.warning(
+                "[cron] archive_events attempt %d/%d failed: %s: %s",
+                attempt, MAX_ARCHIVE_RETRIES, type(exc).__name__, exc,
             )
 
     return {
@@ -498,9 +501,9 @@ async def check_render_fingerprints(conn, request) -> dict:
             check = render_fingerprint_check(
                 frozen, assembled.get("data"), checked_at=checked_at.isoformat())
         except Exception as exc:  # noqa: BLE001 —— 一张失败不能拖垮整轮
-            print(
-                f"[cron] render_check doc={doc_id} 装配失败（如实标 unavailable）："
-                f"{type(exc).__name__}: {exc}"
+            logger.warning(
+                "[cron] render_check doc=%d 装配失败（如实标 unavailable）：%s: %s",
+                doc_id, type(exc).__name__, exc,
             )
             check = render_fingerprint_check(
                 frozen, None, checked_at=checked_at.isoformat(),
@@ -536,10 +539,10 @@ async def run_check_render_fingerprints(env) -> dict:
     try:
         async with _acquire(env) as conn:
             result = await check_render_fingerprints(conn, _CronRequest(env))
-        print(f"[cron] check_render_fingerprints ok: {result}")
+        logger.info("[cron] check_render_fingerprints ok: %s", result)
         return result
     except Exception as exc:  # noqa: BLE001 - Cron 失败不能让调度器变错误态
-        print(f"[cron] check_render_fingerprints failed: {type(exc).__name__}: {exc}")
+        logger.warning("[cron] check_render_fingerprints failed: %s: %s", type(exc).__name__, exc)
         return {"checked": 0, "error": f"{type(exc).__name__}: {exc}"}
 
 
@@ -550,12 +553,12 @@ async def run_scheduled(env, controller) -> dict:
     """``main.Default.scheduled`` 调它：按 ``controller.cron`` 分派到对应任务。
 
     返回结构化结果（本地 ``/cdn-cgi/local/scheduled?format=json`` 与日志都能看到），
-    未登记的 cron 只打印并跳过 —— **不猜**该跑哪个任务（猜错会重复归档/重复扫描）。
+    未登记的 cron 只记日志并跳过 —— **不猜**该跑哪个任务（猜错会重复归档/重复扫描）。
     """
     cron = getattr(controller, "cron", None) or ""
     job = JOBS_BY_CRON.get(cron)
     if job is None:
-        print(f"[cron] unknown cron expression, skipped: {cron!r}")
+        logger.warning("[cron] unknown cron expression, skipped: %r", cron)
         return {"cron": cron, "job": None, "skipped": True}
 
     # 运行器表在**调用期**组：测试据此用 monkeypatch 替换单个任务（不重载模块）。
@@ -566,8 +569,8 @@ async def run_scheduled(env, controller) -> dict:
     }
     runner = runners.get(job)
     if runner is None:
-        print(f"[cron] job registered but no runner: {job!r}, skipped")
+        logger.warning("[cron] job registered but no runner: %r, skipped", job)
         return {"cron": cron, "job": job, "skipped": True}
     result = await runner(env)
-    print(f"[cron] {job} done: {result}")
+    logger.info("[cron] %s done: %s", job, result)
     return {"cron": cron, "job": job, "result": result}

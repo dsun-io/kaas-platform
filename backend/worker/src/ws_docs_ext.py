@@ -55,6 +55,7 @@ route-parity 门禁已退役，见 `scripts/archive/`）。
 from __future__ import annotations
 
 import json as _json
+import logging
 import time
 from datetime import datetime, timezone
 from typing import Optional
@@ -68,6 +69,8 @@ from kaas_common.trade_doc import (
     render_fingerprint, render_fingerprint_check, summarize_render_checks,
     validate_confirm,
 )
+
+logger = logging.getLogger(__name__)
 from kaas_common.trade_doc.translate import build_messages, parse_translation
 from kaas_common.workstation.amount_rules import (
     AmountMismatchError, calc_line_amount, check_amount_reconciliation,
@@ -368,8 +371,8 @@ async def _payload_with_render_fingerprint(
         assembled = await _main.get_trade_doc_render_data(doc_id, request, user)
         meta = render_fingerprint(assembled.get("data"), frozen_at=frozen_at)
     except Exception as exc:  # noqa: BLE001
-        print(f"[trade-docs] 渲染指纹装配失败（签发继续，指纹标注不可用）："
-              f"{type(exc).__name__}: {exc}")
+        logger.warning("[trade-docs] 渲染指纹装配失败（签发继续，指纹标注不可用）：%s: %s",
+                         type(exc).__name__, exc)
         meta = render_fingerprint(None, frozen_at=frozen_at)
 
     payload = dict(_payload_of(d) or {})
@@ -415,8 +418,8 @@ async def _check_one_doc_render_fingerprint(d: dict, doc_id: int, request: Reque
         assembled = await _main.get_trade_doc_render_data(doc_id, request, user)
         return render_fingerprint_check(frozen, assembled.get("data"), checked_at=checked_at)
     except Exception as exc:  # noqa: BLE001
-        print(f"[trade-docs] 对账时装配失败（如实标出，不假装匹配）："
-              f"{type(exc).__name__}: {exc}")
+        logger.warning("[trade-docs] 对账时装配失败（如实标出，不假装匹配）：%s: %s",
+                         type(exc).__name__, exc)
         return render_fingerprint_check(
             frozen, None, checked_at=checked_at, current_error=type(exc).__name__)
 
@@ -475,8 +478,8 @@ async def batch_check_trade_doc_render_fingerprints(
             check = await _check_one_doc_render_fingerprint(d, doc_id, request, user)
             items.append(render_check_card(doc_id, d.get("doc_no"), check))
         except Exception as exc:  # noqa: BLE001 —— 一张炸了不能拖垮整批
-            print(f"[trade-docs] 批量对账：单据 {doc_id} 意外失败（其余照常交付）："
-                  f"{type(exc).__name__}: {exc}")
+            logger.warning("[trade-docs] 批量对账：单据 %d 意外失败（其余照常交付）：%s: %s",
+                             doc_id, type(exc).__name__, exc)
             items.append(render_check_card(doc_id, d.get("doc_no"), error=type(exc).__name__))
     return {**summarize_render_checks(items), "items": items}
 

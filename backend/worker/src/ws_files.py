@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import json as _json
+import logging
 from typing import Optional
 
 from fastapi import Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
@@ -57,6 +58,8 @@ from kaas_common.export_quote.products import get as get_product, keys as produc
 
 from kaas_common.workstation.product_scope import REASON_NO_TEAM, product_info_access
 from kaas_common.workstation.scope import is_admin_role
+
+logger = logging.getLogger(__name__)
 
 app = _main.app
 _get_current_user = _main._get_current_user
@@ -237,7 +240,7 @@ async def _store_bytes(request: Request, key: str, data: bytes,
             await _js_fetch_bytes(url, "PUT", data, content_type)
             return "s3", key, None
         except Exception as exc:  # noqa: BLE001
-            print(f"[files] S3 put 失败，回退 binding：{type(exc).__name__}: {exc}")
+            logger.warning("[files] S3 put 失败，回退 binding：%s: %s", type(exc).__name__, exc)
 
     bucket = _r2_bucket(request)
     if bucket is not None:
@@ -260,7 +263,7 @@ async def _store_bytes(request: Request, key: str, data: bytes,
             return "s3", key, None
         except Exception as exc:  # noqa: BLE001
             # 回退：不把用户的上传动作变成一个 500；落库并如实标注 storage='inline'
-            print(f"[files] R2 put 失败，回退 inline：{type(exc).__name__}: {exc}")
+            logger.warning("[files] R2 put 失败，回退 inline：%s: %s", type(exc).__name__, exc)
     return "inline", key, data
 
 def _to_bytes(buf) -> bytes:
@@ -289,7 +292,7 @@ async def _load_bytes(request: Request, row) -> Optional[bytes]:
                 region=cfg["region"], expires=cfg["expires"])
             return await _js_fetch_bytes(url, "GET")
         except Exception as exc:  # noqa: BLE001
-            print(f"[files] S3 get 失败，回退 binding：{type(exc).__name__}: {exc}")
+            logger.warning("[files] S3 get 失败，回退 binding：%s: %s", type(exc).__name__, exc)
     bucket = _r2_bucket(request)
     if bucket is None:
         return None
@@ -305,7 +308,7 @@ async def _load_bytes(request: Request, row) -> Optional[bytes]:
         except Exception:  # noqa: BLE001 - 极老 runtime 返回 JsProxy
             return _to_bytes(buf)
     except Exception as exc:  # noqa: BLE001
-        print(f"[files] R2 get 失败：{type(exc).__name__}: {exc}")
+        logger.warning("[files] R2 get 失败：%s: %s", type(exc).__name__, exc)
         return None
 
 
@@ -785,7 +788,7 @@ async def _render_pdf_bytes(request: Request, html: str) -> tuple[bytes, str]:
             return await _binding_quick_action_pdf(binding, html), "binding"
         except Exception as exc:  # noqa: BLE001
             # binding 已声明却失败 ⇒ 如实 502；不再偷偷换 REST（那会掩盖真实故障）
-            print(f"[files] browser binding 出 PDF 失败：{type(exc).__name__}: {exc}")
+            logger.warning("[files] browser binding 出 PDF 失败：%s: %s", type(exc).__name__, exc)
             raise HTTPException(status_code=502, detail={
                 "error": "upstream", "code": "PDF_RENDER_FAILED",
                 "detail": (f"Browser Rendering（binding）失败：{type(exc).__name__}: {exc}"),
