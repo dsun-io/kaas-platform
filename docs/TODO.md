@@ -28,7 +28,7 @@
 | A-8 | **A5-W3 金额摘要条** | ✅ 2026-10-21 已完成（只读、无输入控件；复用 `computeFxBreakdown`/`amountInWords`/`receiptTolerance`；17 测；真实样例应付 2,826.49 钉死） | — |
 | A-9 | **A5-W2 行项批量编辑** | ✅ 2026-10-21 已完成（前端多选/预览/一次 PATCH/撤销 + 后端 `custom.items_override` 受控通道；渲染副本覆盖、行金额重算、facts manual/unverified、签发闸门拦截；新增 35+27 测） | — |
 | A-10 | **C27 QA 越权审计 7 条留证** | 发布后跑一轮并留证（P4） | 0.5 天 |
-| A-11 | **D6 冷启动基线收尾** | 用 Cloudflare Analytics API 拉 p50，写 `coldstart-baseline.json` 销 PENDING | 0.5 天 |
+| A-11 | **D6 冷启动基线收尾** | ⏳ **用户 2026-10-21 决定继续挂起**：Cloudflare 公开 Analytics/GraphQL 不暴露 Worker startup 指标（仅 CPU/请求/墙钟等），无法按原定义写 p50；保持 PENDING，等 CF 开放指标或另定口径 | — | ⏳（用户决定挂起） |
 | A-12 | **C12 PDF 归档真单证端到端** | ✅ 2026-10-21 完成：用 QA 账号走真实 API（注册→客户→23 类建单→渲染 HTML→PDF 归档），**22/23 类**产出真 PDF 并落 R2（大小 42–83KB，`file_objects.kind=render_pdf`、`trade_doc_files.role=render_pdf`）；过程中修 **2 个生产 bug**：①`business_events.actor_id` text 传 int ⇒ 建单 500（单据已落库）；②Browser Binding `quickAction` 返回 Response 的字节读取（`arrayBuffer` 不可用 → `bytes()`/`.to_py()`）；`other` 类因 Worker CPU 1102 待重试；证据与清理已留档（QA 数据/R2 对象已删） | — |
 | A-13 | **C36 审计后续** | ✅ 全部完成：审计 + 删 3 条 + 本期 5 + **下期 12 全部接上**（待接 24→3 长期保留；13 条 owner 确认待业务）；遗留缺口：品名对照编辑/删除（后端无 list/PATCH/DELETE，登记为后续后端项） | — |
 | A-14 | **A10：5 类扩展模板实现** | ✅ 全部完成（P1：`beneficiary_decl`/BD、`saso_coc`/COC；P2：`vessel_cert`/VC、`export_license`/EL、`ciq`/CIQ；金标 25→28、DOC_TYPE 23 类、contracts R3/R4 PASS）；无真实样例字段留空待填，未伪造 | — |
