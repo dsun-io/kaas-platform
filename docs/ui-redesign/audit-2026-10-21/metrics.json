@@ -1,0 +1,510 @@
+[
+  {
+    "route": "/dashboard",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "仪表盘"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 0,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/customers",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "客户管理"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 5,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/quotes",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "报价"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 0,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/orders",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "订单"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 0,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 1,
+    "scrollH": 900
+  },
+  {
+    "route": "/trade-docs",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "单证"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 7,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 1,
+    "scrollH": 900
+  },
+  {
+    "route": "/products",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "产品"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 9,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/events",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "事件审计"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 8,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/settings",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "系统设置"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 13,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/intel",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "市场情报"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 7,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/shipments",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "出货"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 8,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 1,
+    "scrollH": 900
+  },
+  {
+    "route": "/audit-log",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "操作日志"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 7,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/billing",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "升级订阅"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 0,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/kb",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "知识库管理"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 0,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/leadgen",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "线索开发"
+    ],
+    "unlabeled": 0,
+    "unscoped": 11,
+    "th": 11,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/market",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "产品市场对照"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 0,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/onboarding",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "新手引导"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 0,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/outreach",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "邮件外联"
+    ],
+    "unlabeled": 0,
+    "unscoped": 5,
+    "th": 5,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/pricing-data",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "定价数据"
+    ],
+    "unlabeled": 0,
+    "unscoped": 5,
+    "th": 5,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/receivables",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "应收台账"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 8,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/research",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "市场调研"
+    ],
+    "unlabeled": 0,
+    "unscoped": 9,
+    "th": 9,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/spec-config",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "规格配置"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 0,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/spec-config/wizard",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 0,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/team",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "示例团队"
+    ],
+    "unlabeled": 0,
+    "unscoped": 13,
+    "th": 13,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/admin/gray-release",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "灰度发布"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 4,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 1,
+    "scrollH": 900
+  },
+  {
+    "route": "/admin/spec-proposals",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "属性提案审核"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 0,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/admin/teams",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "团队管理"
+    ],
+    "unlabeled": 0,
+    "unscoped": 6,
+    "th": 6,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/settings/ai-providers",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "AI 服务商"
+    ],
+    "unlabeled": 6,
+    "unscoped": 12,
+    "th": 12,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/settings/company-profile",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "企业信息"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 0,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/settings/tax-archives",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "税务管理"
+    ],
+    "unlabeled": 0,
+    "unscoped": 16,
+    "th": 16,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  },
+  {
+    "route": "/settings/tenant-products",
+    "ok": true,
+    "title": "PowerVoy 智能报价平台",
+    "h1": [
+      "产品"
+    ],
+    "unlabeled": 0,
+    "unscoped": 0,
+    "th": 9,
+    "overflow": false,
+    "mainOverflow": false,
+    "hasLegacyCard": true,
+    "loadingText": 0,
+    "emptyText": 0,
+    "scrollH": 900
+  }
+]
