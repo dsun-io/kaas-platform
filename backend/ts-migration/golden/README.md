@@ -80,3 +80,13 @@ $py = "backend/orchestrator/.venv/Scripts/python.exe"
    auth/customers/quotes 三域），写操作请求打本地双跑环境。
 2. 清单支持模板变量（token 注入：先 login 拿 token 再带 token 回放）。
 3. 报告接入迁移看板（按域统计 parity 百分比）。
+
+## 已知差异登记（2026-10-21）
+
+1. **`/health` service 字段**：门面 `kaas-edge` vs 内核 `kaas-intel-worker` —— 设计差异，W4 后断言改为门面值。
+2. **本地 dev 的 proxy 路由**：wrangler dev 无 Service Binding ⇒ 引擎域透传本地恒 503 `kernel_error`；
+   引擎域一致性与透传语义**只能在部署环境验证**（预发/生产），本地跑 `--only facade401` 的 proxy 探针无意义。
+3. **`/openapi.json`**：Python 生产被 SPA fallback 成 text/html；门面显式返回 JSON —— 有意修正（Phase 1 已登记）。
+4. **`/api/v1/ai`**：Python 侧本就 404；门面透传前缀保留与否待 W5 决策。
+
+上述差异必须在报告中显式解释，**禁止加入 IGNORE_KEYS 静默忽略**。
