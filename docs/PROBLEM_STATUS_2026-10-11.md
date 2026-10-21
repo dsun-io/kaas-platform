@@ -14,6 +14,15 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-21 · W5 M3 MCP + token 接入业务路由 ✅ 上线）** 门面新增 `scope-map.ts`（有序 method+path→scope，
+> 未命中 403 `SCOPE_NOT_DECLARED`）与 `mcp.ts`（`POST /mcp` JSON-RPC 2.0：initialize/ping/tools.list/tools.call/
+> resources.list/resources.read；8 tools 内部复用 REST，quotes 经透传）；**API token 现可用于业务路由**
+> （全局中间件写 apiTokenActor → requireUser token 分支，JWT 路径零改动；proxy 把 token 转换为 60s 内部 JWT，
+> 不转发 kaas_oat_ 明文）。**生产验证**：token 调 customers/orders/trade-docs 200、越权 outreach 403、
+> MCP initialize/tools-list（按 scope 过滤为 7 个）/customers_list 200/quotes_calculate 走通（422 参数校验为内核真实响应）、
+> 无 token 或 JWT 访问 MCP 均 401。门禁 **203 测（22 文件）**、typecheck 0。
+> 边界登记：内核不消费 team_id claim（TS 侧强制）；token 调用审计、MCP SSE、UI 令牌管理页、M4 外部文档待做。
+>
 > **（2026-10-21 · W5 M2 OpenAPI 上线）** 门面新增 `src/openapi.ts`：从 app.routes 自动生成 OpenAPI 3.1
 > （141 path / 227 operation / 12 透传 mount / 16 tags；securitySchemes `bearerAuth`+`apiToken`）；
 > `/openapi.json` 惰性构建（生产 301KB JSON 实测）、`/docs` swagger-ui（CDN 零依赖）；schema 边界：23 个

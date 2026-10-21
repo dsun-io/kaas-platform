@@ -2,7 +2,10 @@
 
 > **进度**：M1 ✅（api_tokens 迁移+门面管理端点，生产实测通过）；M2 ✅（`src/openapi.ts` 自动生成 OpenAPI 3.1：
 > 141 path/227 operation、12 透传 mount、bearerAuth+apiToken 双 scheme，生产 `/openapi.json` 301KB + `/docs` 可用）；
-> M3 在途（MCP server + token 接入业务路由）；M4 待做。实施细节与实测坑见 PROBLEM_STATUS 与 backend/ts-worker/README。
+> M3 ✅（2026-10-21 生产验证：API token 可用于业务路由（customers/orders/trade-docs 200、越权 403）；
+> MCP `POST /mcp` initialize/tools-list/tools-call 全通（8 tools 按 scope 过滤、7 tools 实测可用、
+> quotes 透传经 token→内部 JWT 打通、无 token/JWT 均 401））；**M4（外部文档+验收）与 UI 令牌管理页待做**。
+> 实施细节与实测坑见 PROBLEM_STATUS 与 backend/ts-worker/README。
 
 > 用户拍板（2026-10-21）：对外能力形态 = **MCP + REST 双暴露**；建在 **TS 门面**（ADR-008），
 > 复用门面鉴权，不在 Python 内核另起一套。本设计在 W3 Phase 2 完成后开工。
