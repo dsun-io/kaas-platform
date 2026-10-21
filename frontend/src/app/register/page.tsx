@@ -13,6 +13,10 @@
  *   ① 新建团队与加入团队**互斥**（后端 422 TEAM_ACTION_CONFLICT），UI 只允许选一个；
  *   ② 工位多选默认全选，且**不允许全不选** —— 传空数组会得到一个"进得去但什么都用不了"
  *      的团队（后端把 `workstations=[]` 当成"一个都不开"）。
+ *
+ * 视觉：2026-10-21 起与登录页同一套新版权威口径（`app/login/page.tsx`）——
+ *   复用 `components/auth/auth-shell.tsx` 的 AuthShell wide 外壳 + 毛玻璃分区表单，
+ *   字段、校验、payload 与改造前完全一致。
  */
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
@@ -27,13 +31,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { WorkstationPicker } from "@/components/workstation-picker";
 import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-} from "@/components/ui/card";
+  AuthAlert,
+  AuthShell,
+  AUTH_INPUT_CLASS,
+} from "@/components/auth/auth-shell";
+import { cn } from "@/lib/utils";
 import { Loader2, Users } from "lucide-react";
 
 const CATEGORIES = [
@@ -53,6 +55,17 @@ const CATEGORIES = [
 const ALL_STATION_KEYS = subscribableWorkstationOptions().map((s) => s.key);
 
 type TeamMode = "create" | "join" | "none";
+
+/** 团队三选一的卡片式单选（原生 radio 保留，键盘/读屏可正常操作） */
+const TEAM_MODE_OPTIONS: {
+  value: TeamMode;
+  label: string;
+  hint: string;
+}[] = [
+  { value: "create", label: "新建团队", hint: "我当管理员，并开通工位" },
+  { value: "join", label: "加入现有团队", hint: "邀请码 / 邀请链接" },
+  { value: "none", label: "稍后再说", hint: "先进入，登录后再设置" },
+];
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -149,196 +162,291 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 px-4 py-8">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">免费注册</CardTitle>
-          <CardDescription>创建您的报价管理账号</CardDescription>
-        </CardHeader>
-        <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-4">
+    <AuthShell wide>
+      <h2 className="text-xl font-semibold tracking-tight">免费注册</h2>
+      <p className="mt-1 text-sm text-muted-foreground">创建您的报价管理账号</p>
+
+      <form onSubmit={handleSubmit} className="mt-7 space-y-6">
+        {/* ── 账号 ─────────────────────────────────────────────────── */}
+        <section
+          aria-labelledby="register-account-heading"
+          className="space-y-4"
+        >
+          <div>
+            <h3
+              id="register-account-heading"
+              className="text-sm font-medium text-foreground"
+            >
+              账号信息
+            </h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              用于登录与团队内的身份识别
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="email" className="text-sm font-medium">
+              邮箱 *
+            </Label>
+            <Input
+              id="email"
+              type="email"
+              placeholder="your@email.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
+              disabled={submitting}
+              className={AUTH_INPUT_CLASS}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="email">邮箱 *</Label>
+              <Label htmlFor="password" className="text-sm font-medium">
+                密码 *
+              </Label>
               <Input
-                id="email"
-                type="email"
-                placeholder="your@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
+                id="password"
+                type="password"
+                placeholder="至少 8 位"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
                 disabled={submitting}
+                className={AUTH_INPUT_CLASS}
               />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="password">密码 *</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="至少 8 位"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="new-password"
-                  disabled={submitting}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="confirmPassword">确认密码 *</Label>
-                <Input
-                  id="confirmPassword"
-                  type="password"
-                  placeholder="再次输入密码"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  autoComplete="new-password"
-                  disabled={submitting}
-                />
-              </div>
-            </div>
             <div className="space-y-2">
-              <Label htmlFor="displayName">姓名 *</Label>
+              <Label htmlFor="confirmPassword" className="text-sm font-medium">
+                确认密码 *
+              </Label>
+              <Input
+                id="confirmPassword"
+                type="password"
+                placeholder="再次输入密码"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                autoComplete="new-password"
+                disabled={submitting}
+                className={AUTH_INPUT_CLASS}
+              />
+            </div>
+          </div>
+        </section>
+
+        <div
+          aria-hidden="true"
+          className="h-px bg-gradient-to-r from-transparent via-slate-300/60 to-transparent"
+        />
+
+        {/* ── 资料 ─────────────────────────────────────────────────── */}
+        <section
+          aria-labelledby="register-profile-heading"
+          className="space-y-4"
+        >
+          <div>
+            <h3
+              id="register-profile-heading"
+              className="text-sm font-medium text-foreground"
+            >
+              个人资料
+            </h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              用于初始化报价模板与联系信息
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="displayName" className="text-sm font-medium">
+                姓名 *
+              </Label>
               <Input
                 id="displayName"
                 placeholder="您的称呼"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 disabled={submitting}
+                className={AUTH_INPUT_CLASS}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="productCategory">主营丝网类型 *</Label>
-              <p className="text-xs text-muted-foreground">
-                用于初始化报价模板，后续可继续添加具体产品。
-              </p>
-              <select
-                id="productCategory"
-                value={productCategory}
-                onChange={(e) => setProductCategory(e.target.value)}
-                disabled={submitting}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <option value="">请选择</option>
-                {CATEGORIES.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="contact">联系方式</Label>
+              <Label htmlFor="contact" className="text-sm font-medium">
+                联系方式
+              </Label>
               <Input
                 id="contact"
                 placeholder="手机号或微信号（选填）"
                 value={contact}
                 onChange={(e) => setContact(e.target.value)}
                 disabled={submitting}
+                className={AUTH_INPUT_CLASS}
               />
             </div>
+          </div>
 
-            {/* ── 团队（二选一）────────────────────────────────────────── */}
-            <div className="space-y-3 rounded-lg border p-3">
-              <div className="flex items-center gap-2">
-                <Users className="size-4 text-muted-foreground" />
-                <span className="text-sm font-medium">团队</span>
-                <span className="text-xs text-muted-foreground">
-                  二选一；工位订阅挂在团队上
-                </span>
-              </div>
-
-              <div className="flex flex-wrap gap-4 text-sm">
-                <label className="flex cursor-pointer items-center gap-1.5">
-                  <input
-                    type="radio"
-                    name="teamMode"
-                    checked={teamMode === "create"}
-                    onChange={() => setTeamMode("create")}
-                    disabled={submitting}
-                  />
-                  新建团队（我当管理员）
-                </label>
-                <label className="flex cursor-pointer items-center gap-1.5">
-                  <input
-                    type="radio"
-                    name="teamMode"
-                    checked={teamMode === "join"}
-                    onChange={() => setTeamMode("join")}
-                    disabled={submitting}
-                  />
-                  加入现有团队
-                </label>
-                <label className="flex cursor-pointer items-center gap-1.5">
-                  <input
-                    type="radio"
-                    name="teamMode"
-                    checked={teamMode === "none"}
-                    onChange={() => setTeamMode("none")}
-                    disabled={submitting}
-                  />
-                  稍后再说
-                </label>
-              </div>
-
-              {teamMode === "none" && (
-                <p className="text-xs text-muted-foreground">
-                  可以先进去：登录后在「团队与工位」里创建或凭邀请码加入团队。
-                  注意一个人同一时刻只能属于一个团队 ——
-                  先随便建一个团队，之后就没法再加入同事的团队了，所以不确定时选这一项。
-                </p>
-              )}
-
-              {teamMode === "create" ? (
-                <div className="space-y-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="teamName">团队名称 *</Label>
-                    <Input
-                      id="teamName"
-                      placeholder="如：安平县联佳丝网制品有限公司"
-                      value={teamName}
-                      onChange={(e) => setTeamName(e.target.value)}
-                      disabled={submitting}
-                    />
-                  </div>
-                  <WorkstationPicker
-                    value={stations}
-                    onChange={setStations}
-                    disabled={submitting}
-                    idPrefix="register"
-                  />
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <Label htmlFor="inviteToken">邀请码 / 邀请链接 *</Label>
-                  <Input
-                    id="inviteToken"
-                    placeholder="粘贴同事发来的邀请链接或邀请码"
-                    value={inviteToken}
-                    onChange={(e) => setInviteToken(e.target.value)}
-                    disabled={submitting}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    整条邀请链接直接粘贴即可，系统会自动识别其中的邀请码。
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {error && <p className="text-sm text-destructive">{error}</p>}
-          </CardContent>
-          <CardFooter className="flex flex-col gap-3">
-            <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
-              注册
-            </Button>
-            <p className="text-sm text-muted-foreground text-center">
-              已有账号？
-              <Link href="/login" className="text-primary hover:underline ml-1">
-                去登录
-              </Link>
+          <div className="space-y-2">
+            <Label htmlFor="productCategory" className="text-sm font-medium">
+              主营丝网类型 *
+            </Label>
+            <select
+              id="productCategory"
+              value={productCategory}
+              onChange={(e) => setProductCategory(e.target.value)}
+              disabled={submitting}
+              className="h-10 w-full rounded-xl border border-slate-200/90 bg-white/85 px-3 text-sm text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <option value="">请选择</option>
+              {CATEGORIES.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              用于初始化报价模板，后续可继续添加具体产品。
             </p>
-          </CardFooter>
-        </form>
-      </Card>
-    </div>
+          </div>
+        </section>
+
+        <div
+          aria-hidden="true"
+          className="h-px bg-gradient-to-r from-transparent via-slate-300/60 to-transparent"
+        />
+
+        {/* ── 团队（三选一）────────────────────────────────────────── */}
+        <section
+          aria-labelledby="register-team-heading"
+          className="space-y-4 rounded-2xl border border-white/80 bg-primary/[0.04] p-4"
+        >
+          <div className="flex items-start gap-2">
+            <Users className="mt-0.5 size-4 shrink-0 text-primary/70" />
+            <div className="min-w-0">
+              <h3
+                id="register-team-heading"
+                className="text-sm font-medium text-foreground"
+              >
+                团队与工位
+              </h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                三选一；工位订阅挂在团队上
+              </p>
+            </div>
+          </div>
+
+          <div
+            role="radiogroup"
+            aria-labelledby="register-team-heading"
+            className="grid grid-cols-1 gap-2"
+          >
+            {TEAM_MODE_OPTIONS.map((opt) => {
+              const selected = teamMode === opt.value;
+              return (
+                <label
+                  key={opt.value}
+                  className={cn(
+                    "flex cursor-pointer items-start gap-2 rounded-xl border px-3 py-2.5 text-left transition-colors",
+                    selected
+                      ? "border-primary/40 bg-primary/[0.06]"
+                      : "border-slate-200/80 bg-white/70 hover:border-primary/30 hover:bg-white/90",
+                    submitting && "cursor-not-allowed opacity-60",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="teamMode"
+                    value={opt.value}
+                    checked={selected}
+                    onChange={() => setTeamMode(opt.value)}
+                    disabled={submitting}
+                    aria-describedby={`team-mode-hint-${opt.value}`}
+                    className="mt-0.5 size-4 shrink-0 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium leading-tight text-foreground">
+                      {opt.label}
+                    </span>
+                    <span
+                      id={`team-mode-hint-${opt.value}`}
+                      className="mt-1 block text-xs leading-snug text-muted-foreground"
+                    >
+                      {opt.hint}
+                    </span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+
+          {teamMode === "none" && (
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              可以先进去：登录后在「团队与工位」里创建或凭邀请码加入团队。
+              注意一个人同一时刻只能属于一个团队 ——
+              先随便建一个团队，之后就没法再加入同事的团队了，所以不确定时选这一项。
+            </p>
+          )}
+
+          {teamMode === "create" ? (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="teamName" className="text-sm font-medium">
+                  团队名称 *
+                </Label>
+                <Input
+                  id="teamName"
+                  placeholder="如：安平县联佳丝网制品有限公司"
+                  value={teamName}
+                  onChange={(e) => setTeamName(e.target.value)}
+                  disabled={submitting}
+                  className={AUTH_INPUT_CLASS}
+                />
+              </div>
+              <WorkstationPicker
+                value={stations}
+                onChange={setStations}
+                disabled={submitting}
+                idPrefix="register"
+              />
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor="inviteToken" className="text-sm font-medium">
+                邀请码 / 邀请链接 *
+              </Label>
+              <Input
+                id="inviteToken"
+                placeholder="粘贴同事发来的邀请链接或邀请码"
+                value={inviteToken}
+                onChange={(e) => setInviteToken(e.target.value)}
+                disabled={submitting}
+                className={AUTH_INPUT_CLASS}
+              />
+              <p className="text-xs text-muted-foreground">
+                整条邀请链接直接粘贴即可，系统会自动识别其中的邀请码。
+              </p>
+            </div>
+          )}
+        </section>
+
+        {error && <AuthAlert>{error}</AuthAlert>}
+
+        <div className="space-y-3">
+          <Button
+            type="submit"
+            className="h-11 w-full rounded-xl text-[15px]"
+            disabled={submitting}
+          >
+            {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
+            注册
+          </Button>
+          <p className="text-center text-sm text-muted-foreground">
+            已有账号？
+            <Link href="/login" className="ml-1 text-primary hover:underline">
+              去登录
+            </Link>
+          </p>
+        </div>
+      </form>
+    </AuthShell>
   );
 }
