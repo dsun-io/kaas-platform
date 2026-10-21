@@ -75,6 +75,8 @@ describe("路由面覆盖（Python到TS门面）", () => {
     const allowedExtra = new Set([
       "GET /health",
       "GET /openapi.json",
+      // /docs 是 Swagger UI 静态页（W5 M2），不属于 Python 真源路由
+      "GET /docs",
       "ALL /*",
       "GET /api/v1/api-tokens",
       "POST /api/v1/api-tokens",

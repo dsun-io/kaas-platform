@@ -18,6 +18,7 @@ import teamRoutes from "./routes/teams";
 import intelRoutes from "./routes/intel";
 import workstationsRoutes from "./routes/workstations";
 import dashboardRoutes from "./routes/dashboard";
+import { buildOpenApiDocument } from "./openapi";
 import { createProxyApp } from "./proxy";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -110,48 +111,44 @@ app.get("/health", (c) => {
   return c.json({ status: "ok", service: "kaas-edge" });
 });
 
-// ── OpenAPI 描述（显式服务，application/json）──
+// ── API 文档：/openapi.json（OpenAPI 3.1，路径从 app.routes 自动发现）+ /docs（Swagger UI）──
 // 金标差异登记：Python 版 GET /openapi.json 被 CF SPA fallback 成 text/html
 // （backend/ts-migration/golden/README.md「已知发现」）。TS 门面显式返回真 JSON。
-// 目前仅覆盖 /health；全量 paths 随域迁移从 pydantic 模型生成，禁止手抄。
-// TODO(TODO:TS1) openapi paths 改为从 Python pydantic 模型代码生成
-const OPENAPI = {
-  openapi: "3.0.3",
-  info: {
-    title: "KaaS Edge API",
-    version: "0.1.0",
-    description:
-      "KaaS TS 门面（kaas-edge）。业务规则在 Python 内核实现；本描述仅覆盖门面已迁移路由。",
-  },
-  paths: {
-    "/health": {
-      get: {
-        summary: "存活探针",
-        responses: {
-          "200": {
-            description: "OK",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    status: { type: "string", example: "ok" },
-                    service: { type: "string", example: "kaas-edge" },
-                  },
-                  required: ["status", "service"],
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  },
-} as const;
+// 生成逻辑全部在 src/openapi.ts（不维护第二份路由表；业务规则仍在 Python 内核）。
+let openApiDocument: ReturnType<typeof buildOpenApiDocument> | null = null;
 
 app.get("/openapi.json", (c) => {
-  return c.json(OPENAPI);
+  // 惰性构建：确保 app.routes 已包含全部挂载（含本路由与 /docs）；每个 isolate 只建一次。
+  openApiDocument ??= buildOpenApiDocument(app.routes);
+  return c.json(openApiDocument);
 });
+
+// /docs：轻量静态页；swagger-ui 走 CDN，不引入构建期/运行期重依赖，也不进 Worker 包。
+const DOCS_HTML = `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>KaaS Edge API · OpenAPI 3.1</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css" />
+<style>body{margin:0}#swagger-ui .topbar{display:none}</style>
+</head>
+<body>
+<div id="swagger-ui"></div>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js" crossorigin></script>
+<script>
+  window.ui = SwaggerUIBundle({
+    url: "/openapi.json",
+    dom_id: "#swagger-ui",
+    deepLinking: true,
+    persistAuthorization: true,
+    tryItOutEnabled: true
+  });
+</script>
+</body>
+</html>`;
+
+app.get("/docs", (c) => c.html(DOCS_HTML));
 
 // 未匹配 API 路由的 404 信封对齐 Python（FastAPI 返回 {"detail":"Not Found"} JSON；
 // Hono 默认是 text/plain，会让前端按 JSON 解析失败）。非 /api 路径维持纯文本 404（正常情况不会到 Hono）。
