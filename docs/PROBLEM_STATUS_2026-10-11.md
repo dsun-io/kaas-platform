@@ -26,11 +26,20 @@
 > - **生产账号重置 ✅（用户裁决：保留 david@powervoy.com，其余全清）**：新增
 >   `scripts/reset-production-accounts.py`（默认 dry-run；`--apply` + `RESET_CONFIRM=yes` 才执行；
 >   `--keep-user` 白名单账号在 TRUNCATE 后原样插回；预检「保留表→待清表」外键，拒绝隐式 CASCADE）。
->   执行后生产库：`users=1`（david@powervoy.com / system_admin / id=4 / 原密码哈希）、`teams=0`、
+>   执行后生产库：`users=1`（david@powervoy.com / system_admin / id=4 / 原密码哈希）、`teams=0`
+>   （随后按用户裁决建了 1 个兜底「系统管理员团队」，见下条）、
 >   `customers/orders/trade_docs/events/password_reset_tokens/file_objects=0`；保留表行数不变
 >   （`market_ports=103`、`units=10`、`unit_groups=5`、`fx_rates=4`、`ai_providers=1`）；
 >   `alembic_version=202610210001` 不变。脚本自检 PASS。R2 中 5 个文件对象成为孤儿
 >   （DB 引用已删，对象待单独清理）。
+> - **系统管理员与团队（用户裁决 2026-10-21）**：系统管理员**不加入业务团队**、天然管理所有团队
+>   （数据可见性见 `kaas_common/workstation/scope.py`：`is_admin_role` 全租户可见；团队管理
+>   `is_team_admin` 对平台管理员恒真）。但团队级设置（公司抬头/税务档案/产品库/条款库/工位订阅）
+>   需要 `team_id` 上下文，无团队会 403 `TEAM_REQUIRED`/`NO_TEAM` ⇒ 按用户授权建**专用兜底团队**
+>   「系统管理员团队」（`teams.id=1`，`created_by=4`，不承载业务数据），并把
+>   `david@powervoy.com` 的 `users.team_id` 设为 1。**现状缺口**：`/team` 只展示自己团队、
+>   没有「全部团队」列表页或 `GET /api/v1/teams` 全量接口 ⇒ 「在 UI 里管理所有团队」尚未实现
+>   （仅 API/数据层具备），是否补 UI 待用户裁决。
 > - **第十二次生产部署**：GitHub Actions run `39526087007`，Worker 新版本
 >   **`acaa6415-146e-4f84-8412-63c2e390e11b`**；线上 `/health` 200（shared.loaded=true）、
 >   未带 token 的 `/api/v1/auth/login` 401、`/login` `/forgot-password` `/reset-password` `/register`
