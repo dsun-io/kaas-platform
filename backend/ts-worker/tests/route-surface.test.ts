@@ -81,6 +81,9 @@ describe("路由面覆盖（Python到TS门面）", () => {
       "GET /api/v1/api-tokens",
       "POST /api/v1/api-tokens",
       "DELETE /api/v1/api-tokens/:p",
+      // W5 M3：MCP server（JSON-RPC over POST /mcp；GET 显式 405，不出现在 Python routes.json）
+      "POST /mcp",
+      "GET /mcp",
     ]);
     const pyPaths = new Set(direct.map((r) => normParam(r.path)));
     const extra = ts

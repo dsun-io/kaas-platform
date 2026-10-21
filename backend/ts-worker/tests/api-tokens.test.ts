@@ -65,6 +65,7 @@ function tokenRow(overrides: Partial<DbRow> = {}): DbRow {
     name: "CI token",
     scopes: ["customers:read"],
     prefix: "kaas_oat_AbCdEf12",
+    created_by: 5,
     created_at: new Date("2026-10-21T03:00:00Z"),
     last_used_at: null,
     expires_at: null,
@@ -159,6 +160,7 @@ describe("verifyApiToken", () => {
       teamId: 4,
       scopes: ["customers:read", "quotes:calc"],
       name: "Robot",
+      createdBy: 5,
     });
     // 查的是 sha256，不是明文
     const lookup = dbCallsContaining("FROM api_tokens")[0];
@@ -275,6 +277,7 @@ describe("resolveActor", () => {
       teamId: 4,
       scopes: ["trade_docs:read"],
       name: "CI token",
+      createdBy: 5,
     });
     expect(dbCallsContaining("FROM users WHERE id")).toHaveLength(0);
   });

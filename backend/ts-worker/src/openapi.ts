@@ -368,7 +368,7 @@ function defOf(schema: ZodTypeAny): ZodDef {
   return (schema as unknown as { _def?: ZodDef })._def ?? {};
 }
 
-function zodToJsonSchema(schema: ZodTypeAny, seen: Set<ZodTypeAny> = new Set()): JsonSchema {
+export function zodToJsonSchema(schema: ZodTypeAny, seen: Set<ZodTypeAny> = new Set()): JsonSchema {
   const def = defOf(schema);
   const out = convertCore(schema, def, seen);
   if (

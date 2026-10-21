@@ -93,6 +93,13 @@ export interface ApiTokenRecord {
   teamId: number | null;
   scopes: string[];
   name: string;
+  /**
+   * token 创建人（W5 M3 凭据转换用）：
+   * - TS 业务路由用它装载会话用户（requireUser 的 API token 分支）；
+   * - KERNEL 透传用它铸造短时效内部 JWT 的 sub（内核按 sub 查 users）。
+   * 明文/hash 仍然绝不出现。
+   */
+  createdBy: number;
 }
 
 /**
@@ -111,7 +118,7 @@ export async function verifyApiToken(
 
   const tokenHash = hashApiToken(plaintext);
   const rows = await sql`
-    SELECT id, tenant_id, team_id, scopes, name
+    SELECT id, tenant_id, team_id, scopes, name, created_by
       FROM api_tokens
      WHERE token_hash = ${tokenHash}
        AND revoked_at IS NULL
@@ -136,6 +143,7 @@ export async function verifyApiToken(
           .map((s) => s.trim().replace(/^"|"$/g, ""))
           .filter(Boolean),
     name: String(row.name),
+    createdBy: Number(row.created_by),
   };
 }
 

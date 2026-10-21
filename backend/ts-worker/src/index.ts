@@ -6,7 +6,10 @@
  */
 import { Hono } from "hono";
 
-import { getEnv, type Env } from "./env";
+import { type AppEnv } from "./actor";
+import { getEnv } from "./env";
+import { createMcpApp } from "./mcp";
+import { apiTokenScopeMiddleware } from "./scope-map";
 import adminRoutes from "./routes/admin";
 import apiTokenRoutes from "./routes/api-tokens";
 import authRoutes from "./routes/auth";
@@ -21,7 +24,7 @@ import dashboardRoutes from "./routes/dashboard";
 import { buildOpenApiDocument } from "./openapi";
 import { createProxyApp } from "./proxy";
 
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<AppEnv>();
 
 // ── CORS 中间件（语义逐条对齐 backend/worker/src/main.py cors_middleware）──
 // 白名单、回退来源、OPTIONS 204、Max-Age、Vary 头均与 Python 版一致。
@@ -71,6 +74,12 @@ function corsHeaders(allowed: string): Record<string, string> {
   };
 }
 
+// ── W5 M3：API token scope 闸门（只拦 Bearer kaas_oat_...；JWT/缺失原样透传）──
+// 设计 = docs/W5_MCP_REST_DESIGN_2026-10-21.md §2；规则表在 src/scope-map.ts。
+// 必须在业务路由之前注册：通过后把 actor 写入 c.set("apiTokenActor")，代理/路由复用同一身份。
+// 用全局 * 注册（中间件内部只处理 /api/*）：若注册成 /api/*，OpenAPI 生成器会把它当成透传 mount。
+app.use("*", apiTokenScopeMiddleware);
+
 // ── 业务域挂载（Phase 2；语义真源 = backend/worker/src/main.py + ws_*.py）──
 // auth 的 9 条路由用域内相对路径（/login、/me…），挂到 /api/v1/auth；
 // customers/teams 沿用 Python 侧的完整 /api/v1 前缀（与真源逐字对照方便），挂到根。
@@ -105,6 +114,11 @@ app.route("/api/v1/pricing-data", createProxyApp("/api/v1/pricing-data"));
 app.route("/api/v1/product-tax-rates", createProxyApp("/api/v1/product-tax-rates"));
 app.route("/api/v1/quotations", createProxyApp("/api/v1/quotations"));
 app.route("/api/v1/tax-archives", createProxyApp("/api/v1/tax-archives"));
+
+// ── W5 M3：MCP server（POST /mcp，JSON-RPC 2.0 / Streamable HTTP 最小实现）──
+// 传入同一个 app 供 tools 内部复用 REST 路由（scope/数据一条链路）；MCP 不在 /api/* 下，
+// 因此不经过上面的 REST scope 闸门，而是在 handler 内按 tool 的 scope 校验/裁剪。
+app.route("/", createMcpApp(app));
 
 // ── 存活探针（对齐 Python 版 GET /health 语义；service 名按本 worker 名标注）──
 app.get("/health", (c) => {

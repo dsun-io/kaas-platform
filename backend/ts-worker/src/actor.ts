@@ -12,7 +12,7 @@
 import type { Context } from "hono";
 
 import { withDb, type Db } from "./db";
-import { getEnv } from "./env";
+import { getEnv, type Env } from "./env";
 import { httpError } from "./http";
 import { requireUser, type CurrentUser } from "./session";
 import { API_TOKEN_PREFIX, verifyApiToken } from "./tokens";
@@ -35,12 +35,52 @@ export interface ApiTokenActor {
   teamId: number | null;
   scopes: string[];
   name: string;
+  /** token 创建人（凭据转换：TS 路由装载该用户，KERNEL JWT 以它为 sub）。 */
+  createdBy: number;
 }
 
 export type Actor = UserActor | ApiTokenActor;
 
+/** Hono 请求上下文里由 API token 中间件写入的身份（W5 M3）。 */
+export interface ApiTokenVariables {
+  apiTokenActor: ApiTokenActor;
+}
+
+/** 门面 App 的 Hono env 形状（Bindings + Variables）。 */
+export type AppEnv = { Bindings: Env; Variables: ApiTokenVariables };
+
 function unauthorized(message: string): never {
   throw httpError(401, { error: "unauthorized", message });
+}
+
+/**
+ * 只解析 API token（W5 M3 全局 scope 中间件用）：
+ * - 非 `Bearer kaas_oat_...` → null（调用方必须原样放行，JWT 语义零改动）；
+ * - 是本前缀但无效/撤销/过期 → 401（与 resolveActor 同信封）。
+ *
+ * 与 resolveActor 分离，避免中间件为了判断前缀而顺带跑 JWT/查 users。
+ */
+export async function resolveApiTokenActor(c: Context): Promise<ApiTokenActor | null> {
+  const authorization = c.req.header("Authorization") ?? "";
+  if (!authorization.startsWith("Bearer ")) return null;
+  const bearer = authorization.slice("Bearer ".length);
+  if (!bearer.startsWith(API_TOKEN_PREFIX)) return null;
+
+  const env = getEnv(c);
+  const record = await withDb(env, (sql: Db) => verifyApiToken(sql, bearer));
+  if (!record) {
+    // 未知 / 已撤销 / 已过期 不区分，避免给爆破方提供存在性信号
+    unauthorized("Invalid or expired token");
+  }
+  return {
+    kind: "api_token",
+    tokenId: record.id,
+    tenantId: record.tenantId,
+    teamId: record.teamId,
+    scopes: record.scopes,
+    name: record.name,
+    createdBy: record.createdBy,
+  };
 }
 
 /**
@@ -50,27 +90,12 @@ function unauthorized(message: string): never {
  * - 其他 → JWT（requireUser：过期/签名非法/用户停用都是 401）。
  */
 export async function resolveActor(c: Context): Promise<Actor> {
+  const apiTokenActor = await resolveApiTokenActor(c);
+  if (apiTokenActor) return apiTokenActor;
+
   const authorization = c.req.header("Authorization") ?? "";
   if (!authorization.startsWith("Bearer ")) {
     unauthorized("Authentication required");
-  }
-  const bearer = authorization.slice("Bearer ".length);
-
-  if (bearer.startsWith(API_TOKEN_PREFIX)) {
-    const env = getEnv(c);
-    const record = await withDb(env, (sql: Db) => verifyApiToken(sql, bearer));
-    if (!record) {
-      // 未知 / 已撤销 / 已过期 不区分，避免给爆破方提供存在性信号
-      unauthorized("Invalid or expired token");
-    }
-    return {
-      kind: "api_token",
-      tokenId: record.id,
-      tenantId: record.tenantId,
-      teamId: record.teamId,
-      scopes: record.scopes,
-      name: record.name,
-    };
   }
 
   const user = await requireUser(c);
