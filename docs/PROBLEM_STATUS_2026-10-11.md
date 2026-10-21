@@ -47,9 +47,8 @@
 >   `is_team_admin` 对平台管理员恒真）。但团队级设置（公司抬头/税务档案/产品库/条款库/工位订阅）
 >   需要 `team_id` 上下文，无团队会 403 `TEAM_REQUIRED`/`NO_TEAM` ⇒ 按用户授权建**专用兜底团队**
 >   「系统管理员团队」（`teams.id=1`，`created_by=4`，不承载业务数据），并把
->   `david@powervoy.com` 的 `users.team_id` 设为 1。**现状缺口**：`/team` 只展示自己团队、
->   没有「全部团队」列表页或 `GET /api/v1/teams` 全量接口 ⇒ 「在 UI 里管理所有团队」尚未实现
->   （仅 API/数据层具备），是否补 UI 待用户裁决。
+>   `david@powervoy.com` 的 `users.team_id` 设为 1。**「在 UI 里管理所有团队」已补**
+>   （2026-10-21 用户拍板后落地，见下条）。
 > - **第十二次生产部署**：GitHub Actions run `39526087007`，Worker 新版本
 >   **`acaa6415-146e-4f84-8412-63c2e390e11b`**；线上 `/health` 200（shared.loaded=true）、
 >   未带 token 的 `/api/v1/auth/login` 401、`/login` `/forgot-password` `/reset-password` `/register`
@@ -57,6 +56,19 @@
 >   CI 的 `CLOUDFLARE_API_TOKEN` 调 `GET /hyperdrive/configs` 返回 403（token 缺 Hyperdrive 读权限）；
 >   从 script settings 读到的 R2/KV/Hyperdrive 绑定断言全部 ✔，**Worker 部署本身已成功**，冒烟步骤
 >   因此被跳过（已人工补验 health / 401 / 四个页面）。修法见 `docs/TODO.md` **C40**。
+> - **平台管理员全量团队视图 ✅（2026-10-21 用户拍板「要」）**：后端新增 `GET /api/v1/teams`
+>   （**仅 internal + 管理员**，与 `main._require_platform_ops` / 前端 `isPlatformOperator` 同口径；
+>   401 / 403 `ADMIN_ONLY`；返回团队名/创建者/成员数/已开通工位数与工位码/创建时间）；前端新增
+>   `/admin/teams` 页（RouteGuard `adminOnly`，表格 + 详情弹窗，弹窗直接复用
+>   `TeamMembersPanel` / `TeamSubscriptionsPanel` 查看成员与开通工位），并在 `/settings` 给
+>   系统管理员增加入口。测试：worker `test_teams_api.py` **+5**（含「customer + system_admin
+>   角色提权仍 403」），前端 vitest **+3**。**门禁**：worker **1565 passed + 12 skipped**；
+>   前端 typecheck 0 error、lint 0 error / 92 warn、**929 passed（109 files）**、contracts R0–R6、
+>   mocks PASS、contrast PASS、e2e **27 passed**、`NEXT_EXPORT=1` 构建成功（38 条路由）。
+>   **第十三次部署**：run `39528133552`，Worker **`8edaaa4a-7d96-442d-81cf-dd5370b3f106`**；
+>   线上未带 token 的 `GET /api/v1/teams` → 401；`/admin/teams` 的 20 个 chunk 与 CI 产物
+>   SHA256 **逐一相同**（部署产物可核）。⚠️ **C40 假红复现**（S5-d 读 Hyperdrive API 403），
+>   Worker 部署本身成功、冒烟被跳过（已人工核 API/页面产物）。
 >
 > **（2026-10-21 晚 · 生产发布执行 + 二轮全量 sweep：无新遗漏分支，补登 25 项）**
 >
