@@ -27,6 +27,7 @@ from typing import List, Optional
 from fastapi import Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
+from kaas_common.workstation.scope import is_admin_role
 from kaas_common.workstation.subscriptions import all_workstations
 from kaas_common.workstation.teams import (
     INVITE_TTL_DAYS,
@@ -240,6 +241,68 @@ async def my_team(request: Request, user: dict = Depends(_get_current_user)):
         "is_admin": is_team_admin(team["created_by"], user["id"], user.get("role")),
         "member_count": count,
     }
+
+
+@app.get("/api/v1/teams")
+async def list_teams(request: Request, user: dict = Depends(_get_current_user)):
+    """全量团队列表（**仅平台管理员**；供 /admin/teams 页使用）。
+
+    权限与 `main._require_platform_ops` **完全同口径**：`account_type='internal'`
+    且 `is_admin_role(role)`。前端 /admin/teams 的 RouteGuard 用
+    `isPlatformOperator`（internal + 管理员）判定，前后端必须一致 —— 否则
+    customer 账号若被写成 system_admin 角色即可越权看到全量团队。
+
+    与 `/teams/me` 不同：这里要跨团队看全量，所以必须按 `tenant_id` 过滤
+    （生产 Worker 是单租户部署，租户恒为 `default`）。
+    - `member_count`：`users.team_id` 计数（与 `_member_count` 同口径），
+      用标量子查询而不是多 JOIN 一个 users，避免与订阅行做笛卡尔积；
+    - `workstation_count` / `workstation_codes`：只算该团队 **active** 的
+      `team_subscriptions`（唯一约束 `(team_id, code)` 保证不重复），code 按字母序；
+    - 创建人信息 LEFT JOIN `users`：`created_by` 可为 NULL（外键 ON DELETE SET NULL），
+      此时 email/display_name 输出 null，而不是把团队整行丢掉。
+    """
+    # 权限判定在查库之前：非平台运营不应触达数据库（也避免无谓连接）。
+    # 口径 = main._require_platform_ops：internal 账号 + 管理员角色，缺一不可。
+    if (user.get("account_type") != "internal"
+            or not is_admin_role(user.get("role"))):
+        raise HTTPException(status_code=403, detail={
+            "error": "forbidden", "code": "ADMIN_ONLY",
+            "message": "仅平台管理员可查看全部团队"})
+    async with _acquire(request) as conn:
+        rows = await conn.fetch(
+            "SELECT t.id, t.name, t.created_by, t.created_at,"
+            "       cu.email AS created_by_email,"
+            "       cu.display_name AS created_by_name,"
+            "       (SELECT count(*) FROM users m WHERE m.team_id = t.id)"
+            "           AS member_count,"
+            "       count(ts.code) AS workstation_count,"
+            "       coalesce(array_agg(ts.code ORDER BY ts.code)"
+            "                FILTER (WHERE ts.code IS NOT NULL),"
+            "                ARRAY[]::text[]) AS workstation_codes"
+            "  FROM teams t"
+            "  LEFT JOIN users cu ON cu.id = t.created_by"
+            "  LEFT JOIN team_subscriptions ts"
+            "         ON ts.team_id = t.id AND ts.active"
+            " WHERE t.tenant_id = $1"
+            " GROUP BY t.id, t.name, t.created_by, t.created_at,"
+            "          cu.email, cu.display_name"
+            " ORDER BY t.created_at, t.id",
+            DEFAULT_TENANT)
+    items = []
+    for row in rows:
+        d = dict(row)
+        items.append({
+            "id": d["id"],
+            "name": d["name"],
+            "created_by": d["created_by"],
+            "created_by_email": d.get("created_by_email"),
+            "created_by_name": d.get("created_by_name"),
+            "member_count": int(d.get("member_count") or 0),
+            "workstation_count": int(d.get("workstation_count") or 0),
+            "workstation_codes": list(d.get("workstation_codes") or []),
+            "created_at": d["created_at"].isoformat() if d.get("created_at") else None,
+        })
+    return {"items": items, "total": len(items)}
 
 
 @app.patch("/api/v1/teams/{team_id}")

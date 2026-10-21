@@ -435,3 +435,113 @@ def test_create_team_rejects_unknown_workstation():
         resp = client.post("/api/v1/teams", json={"name": "X", "workstations": ["nope"]})
     assert resp.status_code == 422
     assert resp.json()["detail"]["code"] == "UNKNOWN_WORKSTATION"
+
+
+# ── 全量团队列表（管理端 /admin/teams） ─────────────────────────────────────
+
+_TEAM_ITEM_KEYS = {"id", "name", "created_by", "created_by_email", "created_by_name",
+                   "member_count", "workstation_count", "workstation_codes", "created_at"}
+
+
+def _team_list_row(**over):
+    """全量列表的单行 —— 与 SQL 的列别名一一对应（含聚合结果）。"""
+    row = {"id": 1, "name": "系统管理员团队", "created_by": 4,
+           "created_by_email": "david@powervoy.com",
+           "created_by_name": "David / 系统管理员",
+           "member_count": 1, "workstation_count": 0, "workstation_codes": [],
+           "created_at": datetime(2026, 10, 21, 1, 23, 45, tzinfo=timezone.utc)}
+    row.update(over)
+    return row
+
+
+def test_list_teams_requires_token():
+    """无 token → 401（由 _get_current_user 拦截，不查库）。"""
+    resp = client.get("/api/v1/teams")
+    assert resp.status_code == 401
+
+
+def test_list_teams_forbidden_for_member():
+    """普通成员 → 403 ADMIN_ONLY，且 handler 不触达数据库。"""
+    conn = _FakeConn(fetch=[[_team_list_row()]])
+    with _patched(conn, MEMBER_USER):
+        resp = client.get("/api/v1/teams")
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["code"] == "ADMIN_ONLY"
+    assert resp.json()["detail"]["error"] == "forbidden"
+    assert conn.calls == []                 # 鉴权失败在 _acquire 之前返回
+
+
+def test_list_teams_forbidden_for_customer_with_admin_role():
+    """customer 账号即使被写入 system_admin 角色也不放行。
+
+    与 `main._require_platform_ops` 同口径（internal + 管理员角色）：
+    前端 /admin/teams 的 RouteGuard 用 isPlatformOperator 判定，后端必须一致，
+    否则"角色提权"就能越权读全量团队。
+    """
+    impostor = {"id": 10, "email": "impostor@buyer.com", "display_name": "冒充者",
+                "account_type": "customer", "role": "system_admin", "team_id": None}
+    conn = _FakeConn(fetch=[[_team_list_row()]])
+    with _patched(conn, impostor):
+        resp = client.get("/api/v1/teams")
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["code"] == "ADMIN_ONLY"
+    assert conn.calls == []                 # 鉴权失败在 _acquire 之前返回
+
+
+def test_list_teams_returns_all_fields_for_admin():
+    row_old = _team_list_row(
+        id=2, name="安平县联佳丝网制品有限公司", created_by=3,
+        created_by_email="lianjia@kaas.local", created_by_name="联佳",
+        member_count=4, workstation_count=2,
+        workstation_codes=["customers", "orders"],
+        created_at=datetime(2026, 10, 11, 8, 0, 0, tzinfo=timezone.utc))
+    row_empty = _team_list_row()            # 无 active 订阅、1 个成员的团队
+    conn = _FakeConn(fetch=[[row_old, row_empty]])
+    with _patched(conn, PLATFORM_ADMIN):
+        resp = client.get("/api/v1/teams")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 2 and len(body["items"]) == 2
+    assert conn.calls[0][1] == ("default",)   # 只查 DEFAULT_TENANT
+
+    for item in body["items"]:
+        assert set(item.keys()) == _TEAM_ITEM_KEYS
+    # 顺序按 SQL 的 ORDER BY created_at, id 原样透出
+    assert [i["id"] for i in body["items"]] == [2, 1]
+
+    old, empty = body["items"]
+    assert old["name"] == "安平县联佳丝网制品有限公司"
+    assert old["created_by"] == 3
+    assert old["created_by_email"] == "lianjia@kaas.local"
+    assert old["created_by_name"] == "联佳"
+    assert old["member_count"] == 4
+    assert old["workstation_count"] == 2
+    assert old["workstation_codes"] == ["customers", "orders"]
+    assert old["created_at"] == "2026-10-11T08:00:00+00:00"
+
+    assert empty["member_count"] == 1 and empty["workstation_count"] == 0
+    assert empty["workstation_codes"] == []
+    assert empty["created_at"] == "2026-10-21T01:23:45+00:00"
+
+    sql = conn.sql()
+    assert "t.tenant_id = $1" in sql
+    assert "ORDER BY t.created_at, t.id" in sql
+    assert "LEFT JOIN team_subscriptions ts" in sql
+    assert "array_agg(ts.code ORDER BY ts.code)" in sql
+    assert len(conn.calls) == 1             # 单条聚合查询：不再逐团队补查
+
+
+def test_list_teams_counts_only_active_subscriptions():
+    """非 active 的订阅不计入 count / codes（SQL 层只 JOIN active，聚合行透出）。"""
+    conn = _FakeConn(fetch=[[_team_list_row(
+        workstation_count=0, workstation_codes=[])]])
+    with _patched(conn, PLATFORM_ADMIN):
+        resp = client.get("/api/v1/teams")
+    assert resp.status_code == 200
+    item = resp.json()["items"][0]
+    assert item["workstation_count"] == 0
+    assert item["workstation_codes"] == []
+    sql = conn.sql()
+    # 语义锁死：LEFT JOIN 条件里带 active，聚合只取非空 code
+    assert "ON ts.team_id = t.id AND ts.active" in sql
+    assert "FILTER (WHERE ts.code IS NOT NULL)" in sql

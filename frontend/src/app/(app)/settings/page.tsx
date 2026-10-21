@@ -1,12 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { Users } from "lucide-react";
 import { useTenants } from "./hooks/use-tenants";
 import { TenantList } from "./components/tenant-list";
 import { ReloadButton } from "./components/reload-button";
 import { ProductCategories } from "./components/product-categories";
 import { AccountManagement } from "./components/account-management";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePageView } from "@/lib/events/use-page-view";
 import { RouteGuard } from "@/components/route-guard";
@@ -106,6 +109,30 @@ export default function SettingsPage() {
             </div>
           </TabsContent>
         </Tabs>
+
+        {/* 团队管理入口：**仅系统管理员**可见（与 /admin/teams 的 adminOnly 同口径）。
+            后端 GET /teams 是 ADMIN_ONLY，非管理员即使点到也只会看到 403 —— 不给入口。 */}
+        {isSystemAdmin ? (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle>团队管理</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  查看所有团队、成员与工位开通情况（仅系统管理员）。
+                </p>
+                <Link
+                  href="/admin/teams"
+                  className={buttonVariants({ variant: "outline", size: "sm" })}
+                >
+                  <Users className="size-3.5" />
+                  进入团队管理
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
     </RouteGuard>
   );

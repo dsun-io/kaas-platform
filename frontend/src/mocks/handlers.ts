@@ -6739,6 +6739,44 @@ export const handlers = [
   // 形状 = ws_teams.py 的 `_team_out` / `_invite_out`、ws_workstations.py 的 `_sub_out`。
   // ⚠️ 静态抽取看不到这些路径：`use-team-admin.ts:160` 的 path 是**变量**
   //   （`/teams/${teamId}/members` 等 3 条），所以防漂移门禁把 3 条硬编码进 P1 表。
+  // GET /api/v1/teams ← 平台管理端「团队管理」页（`admin/teams/page.tsx`）
+  // 形状 = worker `ws_teams.py` 的管理员**全量**团队列表（2026-10-21 新增契约）：
+  //   { items: [{ id, name, created_by, created_by_email, created_by_name,
+  //               member_count, workstation_count, workstation_codes, created_at }], total }
+  // 403 ADMIN_ONLY 由后端判；mock 固定以平台管理员身份返回成功。
+  // ⚠️ 第 2 个团队是**静态夹具**：只有第 1 个团队有成员/邀请/工位详情
+  //    （`/teams/:id/...` 只认 `teamStore.id`），点第 2 行会看到接口 404 降级态。
+  http.get("/api/v1/teams", () => {
+    const activeCodes = teamSubscriptionStore
+      .filter((sub) => sub.active)
+      .map((sub) => sub.code);
+    const items = [
+      {
+        id: teamStore.id,
+        name: teamStore.name,
+        created_by: teamStore.created_by,
+        created_by_email: MOCK_ADMIN_USER.email,
+        created_by_name: MOCK_ADMIN_USER.display_name,
+        member_count: teamMembersStore.length,
+        workstation_count: activeCodes.length,
+        workstation_codes: activeCodes,
+        created_at: teamStore.created_at,
+      },
+      {
+        id: 2,
+        name: "联佳丝网",
+        created_by: 2,
+        created_by_email: "ops@kaas.local",
+        created_by_name: "运营小李",
+        member_count: 3,
+        workstation_count: 2,
+        workstation_codes: ["research", "customers"],
+        created_at: "2026-10-08T08:00:00.000Z",
+      },
+    ];
+    return HttpResponse.json({ items, total: items.length });
+  }),
+
   http.get("/api/v1/teams/:id/members", ({ params }) => {
     if (Number(params.id) !== teamStore.id) return teamNotFound();
     const items = teamMembersStore.map((m) => ({
