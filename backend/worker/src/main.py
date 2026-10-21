@@ -3332,14 +3332,20 @@ def _receivable_dict(row) -> dict:
 async def _record_business_event(
     request, event_type: str, payload: dict, from_ws: str = None, to_ws: str = None
 ):
-    """跨工位业务事件流水（阶段 6 · business_events）。"""
+    """跨工位业务事件流水（阶段 6 · business_events）。
+
+    2026-10-21 修复：`actor_id` 列是 text，而 payload 里的 actor_id 来自 JWT 是 int
+    ⇒ asyncpg 抛「expected str, got int」；该调用在单据事务**提交之后**，于是表现为
+    「单据已创建但接口 500」。这里统一转成 str（None 保持 None）。
+    """
+    actor = payload.get("actor_id")
     await db.execute(
         request,
         """INSERT INTO business_events
                (tenant_id, event_type, from_workstation, to_workstation, payload, actor_id)
            VALUES ($1, $2, $3, $4, $5, $6)""",
         DEFAULT_TENANT, event_type, from_ws, to_ws,
-        _json.dumps(payload), payload.get("actor_id"),
+        _json.dumps(payload), None if actor is None else str(actor),
     )
 
 

@@ -697,17 +697,62 @@ def _browser_binding(request: Request):
     return binding if binding else None
 
 
+def _pdf_or_error(data: bytes) -> bytes:
+    """渲染服务返回的字节必须是 PDF；否则把前 160 字节带进错误（便于诊断配额/网关错误）。"""
+    from kaas_common.files import looks_like_pdf as _is_pdf
+    if _is_pdf(data):
+        return data
+    head = data[:160]
+    try:
+        text = head.decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001
+        text = repr(head)
+    raise RuntimeError(f"非 PDF 响应（{len(data)}B）：{text}")
+
+
 async def _binding_quick_action_pdf(binding, html: str) -> bytes:
     """用 binding 调 Quick Action `pdf`，拿回字节。
 
-    照抄仓库既有的 Pyodide 互操作写法（见 `_js_fetch_bytes`）：JS Promise 直接 await，
-    `arrayBuffer()` 之后 `.to_py()` 才是 Python bytes。
+    2026-10-21 生产实测：`quickAction()` 返回的是 workerd `Response` 的 JsProxy，
+    但该对象的 `arrayBuffer` **不可直接取**（AttributeError: 'Response' object has
+    no attribute 'arrayBuffer'）⇒ 按可用性依次尝试 `arrayBuffer` / `bytes`，
+    并保留 `body`（ReadableStream）作为最后兜底；都不可用才报错（错误里带属性清单，
+    便于后续定位，不假装成功）。
     """
     from pyodide.ffi import to_js  # type: ignore  (Pyodide / Python Workers)
 
     res = await binding.quickAction("pdf", to_js({"html": html}))
-    buf = await res.arrayBuffer()
-    return _to_bytes(buf)
+
+    for attr in ("arrayBuffer", "array_buffer", "bytes"):
+        fn = getattr(res, attr, None)
+        if fn is None:
+            continue
+        out = fn()
+        if hasattr(out, "__await__"):
+            out = await out
+        # Pyodide 的 Uint8Array 必须走 .to_py() 才是真正的 bytes；直接 bytes(proxy)
+        # 可能得到空/错误字节（表现为「渲染服务没有返回 PDF 字节」）。
+        to_py = getattr(out, "to_py", None)
+        if to_py is not None:
+            return _pdf_or_error(bytes(to_py()))
+        if isinstance(out, (bytes, bytearray, memoryview)):
+            return _pdf_or_error(bytes(out))
+        return _pdf_or_error(_to_bytes(out))
+
+    body = getattr(res, "body", None)
+    if body is not None:
+        reader = body.getReader()
+        chunks: list[bytes] = []
+        while True:
+            step = await reader.read()
+            if step.done:
+                break
+            chunk = step.value  # Uint8Array (JsProxy)
+            chunks.append(_to_bytes(chunk))
+        return b"".join(chunks)
+
+    attrs = sorted(a for a in dir(res) if not a.startswith("_"))[:40]
+    raise RuntimeError(f"Response 无可用字节读取方法；attrs={attrs}")
 
 
 async def _rest_quick_action_pdf(cfg: dict, html: str) -> bytes:
@@ -743,7 +788,7 @@ async def _render_pdf_bytes(request: Request, html: str) -> tuple[bytes, str]:
             print(f"[files] browser binding 出 PDF 失败：{type(exc).__name__}: {exc}")
             raise HTTPException(status_code=502, detail={
                 "error": "upstream", "code": "PDF_RENDER_FAILED",
-                "detail": f"Browser Rendering（binding）失败：{type(exc).__name__}",
+                "detail": (f"Browser Rendering（binding）失败：{type(exc).__name__}: {exc}"),
             }) from exc
 
     cfg = render_pdf_rest_config(lambda key: _main._binding(key, request))

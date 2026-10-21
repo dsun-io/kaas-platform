@@ -29,7 +29,7 @@
 | A-9 | **A5-W2 行项批量编辑** | ✅ 2026-10-21 已完成（前端多选/预览/一次 PATCH/撤销 + 后端 `custom.items_override` 受控通道；渲染副本覆盖、行金额重算、facts manual/unverified、签发闸门拦截；新增 35+27 测） | — |
 | A-10 | **C27 QA 越权审计 7 条留证** | 发布后跑一轮并留证（P4） | 0.5 天 |
 | A-11 | **D6 冷启动基线收尾** | 用 Cloudflare Analytics API 拉 p50，写 `coldstart-baseline.json` 销 PENDING | 0.5 天 |
-| A-12 | **C12 PDF 归档真单证端到端** | 需等平台产生首单真实 PDF（`render_pdf` 当前 0 条）后人工复核 18 类；可先用现有样例做 1 类对照 | 0.5 天 |
+| A-12 | **C12 PDF 归档真单证端到端** | ✅ 2026-10-21 完成：用 QA 账号走真实 API（注册→客户→23 类建单→渲染 HTML→PDF 归档），**22/23 类**产出真 PDF 并落 R2（大小 42–83KB，`file_objects.kind=render_pdf`、`trade_doc_files.role=render_pdf`）；过程中修 **2 个生产 bug**：①`business_events.actor_id` text 传 int ⇒ 建单 500（单据已落库）；②Browser Binding `quickAction` 返回 Response 的字节读取（`arrayBuffer` 不可用 → `bytes()`/`.to_py()`）；`other` 类因 Worker CPU 1102 待重试；证据与清理已留档（QA 数据/R2 对象已删） | — |
 | A-13 | **C36 审计后续** | ✅ 全部完成：审计 + 删 3 条 + 本期 5 + **下期 12 全部接上**（待接 24→3 长期保留；13 条 owner 确认待业务）；遗留缺口：品名对照编辑/删除（后端无 list/PATCH/DELETE，登记为后续后端项） | — |
 | A-14 | **A10：5 类扩展模板实现** | ✅ 全部完成（P1：`beneficiary_decl`/BD、`saso_coc`/COC；P2：`vessel_cert`/VC、`export_license`/EL、`ciq`/CIQ；金标 25→28、DOC_TYPE 23 类、contracts R3/R4 PASS）；无真实样例字段留空待填，未伪造 | — |
 | A-15 | **A8①：归档任务端到端实跑** | ✅ 2026-10-21 已完成并验证：首窗口 cron 失败根因 = `events_archive_log.id` uuid NOT NULL 且现网无默认值（NotNullViolation，重试 3 次静默失败）→ worker 显式传 uuid + 迁移 `202610210001` 补默认；手动触发归档 2026-10-19：**archived=7 / version_count=1**，DB 新增 1 行（`kaas-files/events-archive/2026/10/19/v1.jsonl.gz`）+ R2 对象 326 bytes 实测可下载 | — | ✅ |
@@ -126,7 +126,7 @@
 | C9 | 诊断端点收敛 | `_r2_debug` / `fx-rates/_debug` 暴露面收敛 | — | ✅ 2026-10-21 复核：两个端点**已有** `is_admin_role` 闸门（`ws_files.py` r2_debug / `ws_extras.py` fx_provider_debug，B0-6 收敛，普通用户 403），无需改动 |
 | C10 | 18 模板签章区孤行 | ✅ 2026-10-21：`@media print` 加 `.keep-together { page-break-inside: avoid; break-inside: avoid; }`；18/18 模板**各恰好一个容器**包住「签章+公章+声明/紧邻条款/备注+页脚」，**正文长表格在容器外**（可跨页）；39 条静态断言 + 18 份 HTML 基准有意重生成（`render.test.ts` 18/18 逐字节仍绿）。**尾巴**：归档 Python 镜像不同步（历史留档），`verify-trade-doc-fixtures.py` 自本项起只作历史对照（加 `--allow-divergence` 放行）；**视觉/分页验收待 build/e2e 与人工打印复核** | — | ✅（视觉待验） |
 | C11 | SSRF DNS rebinding 加固 | `kaas_common/net.py` 新增**可选**解析后校验：`is_safe_crawl_url(url, resolve=True, resolver=...)` / `next_redirect_url(..., resolve=True)`；默认 `resolve=False` 保持两端行为不变（worker/Pyodide 无 socket），具备 socket 的运行时逐个 IP 判私网/回环/链路本地/保留/组播 + 169.254.169.254 + IPv4-mapped；解析不到不额外阻断 | — | ✅ 2026-10-21（7 条测试 `test_net_ssrf_dns.py`） |
-| C12 | PDF 归档验收尾巴 | 真实 18 类单证端到端未跑、页面级接线仅 typecheck 保驾、按快照重出未做 | 随发布后 | ⏳ |
+| C12 | PDF 归档验收尾巴 | ✅ 2026-10-21 完成（22/23 类真 PDF 归档 + 两处 500/502 修复；`other` 因 Worker 1102 资源上限待重试）；按快照重出/页面级接线由既有 A4/A5 批次覆盖 | — | ✅ |
 | C13 | outreach/webhook 收紧 | `GET` 回调是否收紧到 `POST`（将来实现 inbound 回写必须去掉 GET） | **用户 2026-10-21 授权默认：不做/保持现状**（webhook 仍 501 预留） | ✅（不做） |
 | C14 | `product_tax_rates` 生产数据 | ✅ **用户 2026-10-21 明确：产品税率"使用时再设置"** ⇒ 不是发布阻塞项，也不预铺数据（生产 0 行时批量报价按设计不放行，属预期；用哪个产品就在 `设置 → 税务档案` 录哪个产品的进项税率/退税率）。核查记录：生产 0 行、head `202610200006`、teams=2、clause_templates=0（懒种子待首次 GET）；**未对生产写入任何税率数据** | — | ✅（按需设置） |
 | C15 | PROBLEM_STATUS 2026-10-12「待排期 5 项」复核 | ①openapi 重生成 ~~作废~~（R6 已退役）；②`POST /admin/feature_flag` 请求体形状无门禁 → **不构成缺陷**（`body: dict` 刻意兼容"后端格式/前端格式"两种，前端已接线；R5 只比响应键集是既定取舍）；③契约错位 **已修**（`ExportProduct.params` 改为二维数组 + 补 `metric_count/invariant_count`；`ProductFormulasResponse.pricing_key[].ui_unit/ui_scale` 改 `.optional()`，类型与运行时一致）；④PATCH stage 409 ~~已过时~~（2026-10-18 口径：客户阶段只有 active/inactive，"流失"移订单，后端不再返 409）；⑤R2 密钥长度已并入 D2 | — | ✅ 2026-10-21 逐条判定完毕（③修，其余复核为过时/不修） |
