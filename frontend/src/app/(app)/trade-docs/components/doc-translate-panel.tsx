@@ -100,7 +100,9 @@ export function DocTranslatePanel({
   };
 
   if (renderData.isLoading) {
-    return <p className="py-6 text-sm text-muted-foreground">正在读取单据内容…</p>;
+    return (
+      <p className="py-6 text-sm text-muted-foreground">正在读取单据内容…</p>
+    );
   }
   if (renderData.isError) {
     return (
@@ -110,15 +112,17 @@ export function DocTranslatePanel({
     );
   }
 
-  const fallback = Boolean(outcome && isTemplateFallback(outcome.response.path));
+  const fallback = Boolean(
+    outcome && isTemplateFallback(outcome.response.path),
+  );
   const provider = outcome ? aiProviderOf(outcome.response.path) : null;
 
   return (
     <div className="space-y-3">
       <div className="rounded-md border px-3 py-2 text-xs text-muted-foreground">
-        只翻译<b>手工内容</b>（`raw_payload.custom`）里<b>含中文的文本字段</b>；上游带入的
-        英文 / 日期 / 数字 / 图片不在此列。翻译由后端 AI 任务完成 ——
-        没配 AI 时会<b>原样返回</b>，请以结果区提示为准。
+        只翻译<b>手工内容</b>（`raw_payload.custom`）里<b>含中文的文本字段</b>
+        ；上游带入的 英文 / 日期 / 数字 / 图片不在此列。翻译由后端 AI 任务完成
+        —— 没配 AI 时会<b>原样返回</b>，请以结果区提示为准。
       </div>
 
       {fields.length === 0 ? (
@@ -188,7 +192,7 @@ export function DocTranslatePanel({
       {translate.isError && !outcome && (
         <p
           data-testid="translate-error"
-          className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+          className="rounded-md border border-warning/40 bg-warning-muted px-3 py-2 text-sm text-warning-muted-foreground"
         >
           翻译请求失败：{describeError(translate.error)}
         </p>
@@ -199,8 +203,8 @@ export function DocTranslatePanel({
           data-testid="translate-result"
           className={
             fallback
-              ? "space-y-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900"
-              : "space-y-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-900"
+              ? "space-y-2 rounded-md border border-warning/40 bg-warning-muted px-3 py-2 text-warning-muted-foreground"
+              : "space-y-2 rounded-md border border-success/40 bg-success-muted px-3 py-2 text-success-muted-foreground"
           }
         >
           <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -248,7 +252,9 @@ export function DocTranslatePanel({
                       {name}
                     </span>
                     {unchanged && (
-                      <StatusBadge tone="warning">未翻译（回退原文）</StatusBadge>
+                      <StatusBadge tone="warning">
+                        未翻译（回退原文）
+                      </StatusBadge>
                     )}
                   </div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-1">

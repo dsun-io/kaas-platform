@@ -31,13 +31,16 @@ function CategoryWizardInner() {
   if (!category) {
     return (
       <div className="space-y-4">
-        <p className="text-destructive">品类不存在</p>
-        <Link href="/spec-config">
-          <Button variant="outline">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            返回
-          </Button>
-        </Link>
+        <PageHeader title="规格向导" description="当前品类不存在或已删除" />
+        <div className="flex items-center gap-3">
+          <p className="text-destructive">品类不存在</p>
+          <Link href="/spec-config">
+            <Button variant="outline">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              返回
+            </Button>
+          </Link>
+        </div>
       </div>
     );
   }

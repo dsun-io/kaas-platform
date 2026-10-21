@@ -10,6 +10,14 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-21 · UI 巡检修复：dashboard 除外全部收口）** 依据
+> [`UI_AUDIT_2026-10-21.md`](./UI_AUDIT_2026-10-21.md) 修复非 dashboard 项：18 个源文件裸 `<th>`
+> 补 `scope="col"`、23 处硬编码状态色改语义 token、`/settings/ai-providers` 6 个 icon-only 按钮补可访问名、
+> `/spec-config/wizard` 错误分支补页头、`/market` 补空态、`/billing` `/kb` `/events` `/audit-log`
+> 迁 `SectionCard`。复查：受影响路由 h1=1 / 无名称按钮=0 / 无 scope 表头=0 / 1366 无横向溢出。
+> 门禁：typecheck 0、lint 0 err（92 warn）、vitest 929、contracts/mocks/ui:contrast PASS、
+> e2e 27 passed、build `out/` 290。证据：`docs/ui-redesign/audit-2026-10-21/fixed/`。
+>
 > **（2026-10-21 · 生产性能体检 + P0/P1 修复）** 用户反馈「生产运行很慢、数据更新很慢」。
 > 实测体检（证据：[`PROD_PERFORMANCE_AUDIT_2026-10-21.md`](./PROD_PERFORMANCE_AUDIT_2026-10-21.md)）：
 > **主瓶颈是 Python Worker 冷启动**（/health 不碰库实测 0.4–5.1s、API 401 也要 1.4–7s），

@@ -230,12 +230,27 @@ function AdminTeamsContent() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">
-                    <th className="px-4 py-2.5 font-medium">团队</th>
-                    <th className="px-4 py-2.5 font-medium">创建者</th>
-                    <th className="px-4 py-2.5 font-medium">成员数</th>
-                    <th className="px-4 py-2.5 font-medium">已开通工位</th>
-                    <th className="px-4 py-2.5 font-medium">创建时间</th>
-                    <th className="px-4 py-2.5 text-right font-medium">操作</th>
+                    <th scope="col" className="px-4 py-2.5 font-medium">
+                      团队
+                    </th>
+                    <th scope="col" className="px-4 py-2.5 font-medium">
+                      创建者
+                    </th>
+                    <th scope="col" className="px-4 py-2.5 font-medium">
+                      成员数
+                    </th>
+                    <th scope="col" className="px-4 py-2.5 font-medium">
+                      已开通工位
+                    </th>
+                    <th scope="col" className="px-4 py-2.5 font-medium">
+                      创建时间
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-4 py-2.5 text-right font-medium"
+                    >
+                      操作
+                    </th>
                   </tr>
                 </thead>
                 <tbody>

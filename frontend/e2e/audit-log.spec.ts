@@ -7,7 +7,9 @@ test.describe('Audit Log', () => {
     // **2026-10-12：去掉 `networkidle`** —— 下一行断言就是在等具体元素
     // （`audit-log/page.tsx:191` 的 h1「操作日志」），不需要额外等待。
     // Heading should be visible
-    await expect(page.getByRole('heading', { name: '操作日志' })).toBeVisible({ timeout: 10000 });
+    await expect(
+      page.getByRole('heading', { level: 1, name: '操作日志' }),
+    ).toBeVisible({ timeout: 10000 });
 
     // Filter card should be visible
     await expect(page.getByText('日志筛选')).toBeVisible();

@@ -205,10 +205,18 @@ export function TeamInvitesPanel({ teamId }: TeamInvitesPanelProps) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
-                  <th className="p-2">邀请对象</th>
-                  <th className="p-2">状态</th>
-                  <th className="p-2">到期时间</th>
-                  <th className="p-2">操作</th>
+                  <th scope="col" className="p-2">
+                    邀请对象
+                  </th>
+                  <th scope="col" className="p-2">
+                    状态
+                  </th>
+                  <th scope="col" className="p-2">
+                    到期时间
+                  </th>
+                  <th scope="col" className="p-2">
+                    操作
+                  </th>
                 </tr>
               </thead>
               <tbody>

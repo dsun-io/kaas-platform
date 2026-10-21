@@ -1,10 +1,14 @@
 "use client";
 
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { usePageView } from "@/lib/events/use-page-view";
 import { BookOpen, FileText, Layers, Clock } from "lucide-react";
 import { RouteGuard } from "@/components/route-guard";
-import { PageHeader, StatusBadge } from "@/components/shared";
+import {
+  PageHeader,
+  StatusBadge,
+  SectionCard,
+  EmptyState,
+} from "@/components/shared";
 
 const STATS = [
   { label: "知识条目", value: 48, icon: FileText },
@@ -25,36 +29,30 @@ export default function KbPage() {
           actions={<StatusBadge tone="warning">建设中</StatusBadge>}
         />
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {STATS.map((s) => (
-            <Card key={s.label} data-testid="stat-card">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  {s.label}
-                </CardTitle>
-                <s.icon className="size-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-semibold">{s.value}</p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <SectionCard title="概览">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {STATS.map((s) => (
+              <div
+                key={s.label}
+                className="rounded-lg border border-border/70 bg-muted/20 p-4"
+              >
+                <div className="flex items-center justify-between text-sm text-muted-foreground">
+                  <span>{s.label}</span>
+                  <s.icon className="size-4" />
+                </div>
+                <p className="mt-2 text-2xl font-semibold">{s.value}</p>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>知识库内容</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="py-12 text-center text-muted-foreground space-y-2">
-              <BookOpen className="size-12 mx-auto opacity-30" />
-              <p className="text-sm">知识库管理功能即将上线</p>
-              <p className="text-xs">
-                支持工位能力网知识分层编辑、规格参数管理、公式配置
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        <SectionCard title="知识库内容">
+          <EmptyState
+            icon={BookOpen}
+            title="知识库管理功能即将上线"
+            description="支持工位能力网知识分层编辑、规格参数管理、公式配置。"
+          />
+        </SectionCard>
       </div>
     </RouteGuard>
   );

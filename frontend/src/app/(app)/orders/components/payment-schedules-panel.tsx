@@ -33,7 +33,10 @@ import {
   useUpdateSchedule,
 } from "../hooks/use-order-schedules";
 import { MarkPaidDialog, type MarkPaidValues } from "./mark-paid-dialog";
-import { ScheduleEditDialog, type ScheduleEditValues } from "./schedule-edit-dialog";
+import {
+  ScheduleEditDialog,
+  type ScheduleEditValues,
+} from "./schedule-edit-dialog";
 
 function money(value: number | null, currency: string | null): string {
   if (value === null || value === undefined) return "—";
@@ -68,7 +71,9 @@ export function PaymentSchedulesPanel({
     due_date: "",
     notes: "",
   });
-  const [editSchedule, setEditSchedule] = useState<PaymentSchedule | null>(null);
+  const [editSchedule, setEditSchedule] = useState<PaymentSchedule | null>(
+    null,
+  );
   const [editError, setEditError] = useState<string | null>(null);
   const [paySchedule, setPaySchedule] = useState<PaymentSchedule | null>(null);
   const [payError, setPayError] = useState<string | null>(null);
@@ -136,7 +141,11 @@ export function PaymentSchedulesPanel({
       title="收款计划"
       description="定金/尾款/全额分期；标记收款时可选填实际汇率以记汇兑损益（不填只落日期，不记损益）。"
       action={
-        <Button size="sm" variant="outline" onClick={() => setShowCreate((v) => !v)}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setShowCreate((v) => !v)}
+        >
           <Plus className="mr-1 h-4 w-4" />
           {showCreate ? "收起" : "新增收款计划"}
         </Button>
@@ -227,7 +236,9 @@ export function PaymentSchedulesPanel({
       )}
 
       {list.isLoading ? (
-        <p className="py-6 text-center text-sm text-muted-foreground">正在读取收款计划…</p>
+        <p className="py-6 text-center text-sm text-muted-foreground">
+          正在读取收款计划…
+        </p>
       ) : list.isError ? (
         <p className="py-6 text-center text-sm text-destructive">
           收款计划读取失败：{scheduleErrorText(list.error)}
@@ -242,26 +253,46 @@ export function PaymentSchedulesPanel({
           <div className="mb-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <span>共 {summary.count} 期</span>
             <span>应收合计 {money(summary.totalAmount, currency)}</span>
-            <span className="text-emerald-700">
-              已收 {money(summary.paidAmount, currency)}（{summary.paidCount} 期）
+            <span className="text-success">
+              已收 {money(summary.paidAmount, currency)}（{summary.paidCount}{" "}
+              期）
             </span>
-            <span className="text-amber-700">
-              待收 {money(summary.pendingAmount, currency)}（{summary.pendingCount} 期）
+            <span className="text-warning-muted-foreground">
+              待收 {money(summary.pendingAmount, currency)}（
+              {summary.pendingCount} 期）
             </span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th className="p-2">期次</th>
-                  <th className="p-2">类型</th>
-                  <th className="p-2">比例</th>
-                  <th className="p-2">金额</th>
-                  <th className="p-2">到期日</th>
-                  <th className="p-2">状态</th>
-                  <th className="p-2">实收日期</th>
-                  <th className="p-2">汇兑损益</th>
-                  <th className="p-2">操作</th>
+                  <th scope="col" className="p-2">
+                    期次
+                  </th>
+                  <th scope="col" className="p-2">
+                    类型
+                  </th>
+                  <th scope="col" className="p-2">
+                    比例
+                  </th>
+                  <th scope="col" className="p-2">
+                    金额
+                  </th>
+                  <th scope="col" className="p-2">
+                    到期日
+                  </th>
+                  <th scope="col" className="p-2">
+                    状态
+                  </th>
+                  <th scope="col" className="p-2">
+                    实收日期
+                  </th>
+                  <th scope="col" className="p-2">
+                    汇兑损益
+                  </th>
+                  <th scope="col" className="p-2">
+                    操作
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -269,11 +300,16 @@ export function PaymentSchedulesPanel({
                   <tr key={item.id} className="border-b last:border-0">
                     <td className="p-2">#{index + 1}</td>
                     <td className="p-2">
-                      {SCHEDULE_TYPE_LABEL[item.schedule_type] ?? item.schedule_type}
+                      {SCHEDULE_TYPE_LABEL[item.schedule_type] ??
+                        item.schedule_type}
                     </td>
                     <td className="p-2">{pct(item.ratio)}</td>
-                    <td className="p-2">{money(item.amount, item.currency ?? currency)}</td>
-                    <td className="p-2">{item.due_date?.slice(0, 10) ?? "—"}</td>
+                    <td className="p-2">
+                      {money(item.amount, item.currency ?? currency)}
+                    </td>
+                    <td className="p-2">
+                      {item.due_date?.slice(0, 10) ?? "—"}
+                    </td>
                     <td className="p-2">
                       <StatusBadge
                         tone={SCHEDULE_STATUS_TONE[item.status] ?? "default"}
@@ -281,11 +317,17 @@ export function PaymentSchedulesPanel({
                         {SCHEDULE_STATUS_LABEL[item.status] ?? item.status}
                       </StatusBadge>
                     </td>
-                    <td className="p-2">{item.actual_date?.slice(0, 10) ?? "—"}</td>
                     <td className="p-2">
-                      {item.exchange_gain_loss === null || item.exchange_gain_loss === undefined
+                      {item.actual_date?.slice(0, 10) ?? "—"}
+                    </td>
+                    <td className="p-2">
+                      {item.exchange_gain_loss === null ||
+                      item.exchange_gain_loss === undefined
                         ? "—"
-                        : money(item.exchange_gain_loss, item.currency ?? currency)}
+                        : money(
+                            item.exchange_gain_loss,
+                            item.currency ?? currency,
+                          )}
                     </td>
                     <td className="p-2">
                       <div className="flex gap-1">

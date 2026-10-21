@@ -20,7 +20,13 @@
  *   - 保存成功前**不显示"已保存"**；失败如实显示后端错误码/文案，且保留工作副本供重试/撤销。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRightLeft, CheckCheck, RotateCcw, Save, Undo2 } from "lucide-react";
+import {
+  ArrowRightLeft,
+  CheckCheck,
+  RotateCcw,
+  Save,
+  Undo2,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -115,12 +121,16 @@ export function DocItemsBatchEditor({
 }: DocItemsBatchEditorProps) {
   const sourceItems = useMemo<ItemRow[]>(() => {
     const raw = data?.items;
-    return Array.isArray(raw) ? (raw as ItemRow[]).map((row) => ({ ...row })) : [];
+    return Array.isArray(raw)
+      ? (raw as ItemRow[]).map((row) => ({ ...row }))
+      : [];
   }, [data]);
 
   const editable = status === "draft";
   const [items, setItems] = useState<ItemRow[]>(sourceItems);
-  const [override, setOverride] = useState<ItemsOverrideEntry[]>(initialOverride ?? []);
+  const [override, setOverride] = useState<ItemsOverrideEntry[]>(
+    initialOverride ?? [],
+  );
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [field, setField] = useState<BatchField>("unit_price");
   const [value, setValue] = useState("");
@@ -146,7 +156,8 @@ export function DocItemsBatchEditor({
   // 既有 override 变化（页面刷新/撤销后回填）⇒ 同步基线；用内容签名比较，
   // 避免父组件每次渲染都传新数组导致无谓重置。
   const overrideSignature = JSON.stringify(initialOverride ?? []);
-  const [lastOverrideSignature, setLastOverrideSignature] = useState(overrideSignature);
+  const [lastOverrideSignature, setLastOverrideSignature] =
+    useState(overrideSignature);
   if (lastOverrideSignature !== overrideSignature) {
     setLastOverrideSignature(overrideSignature);
     setOverride(initialOverride ?? []);
@@ -174,7 +185,11 @@ export function DocItemsBatchEditor({
     }
   }, [state]);
 
-  const forbidden = preview ? validateItemsOverride(preview.entries as unknown as Record<string, unknown>[]) : null;
+  const forbidden = preview
+    ? validateItemsOverride(
+        preview.entries as unknown as Record<string, unknown>[],
+      )
+    : null;
   const canApply =
     editable &&
     !saving &&
@@ -266,12 +281,15 @@ export function DocItemsBatchEditor({
         )}
         {saving && <span className="text-muted-foreground">保存中…</span>}
         {!saving && savedAt && (
-          <span className="rounded bg-emerald-50 px-2 py-0.5 text-emerald-800">
+          <span className="rounded bg-success-muted px-2 py-0.5 text-success-muted-foreground">
             已保存 {savedAt}（后端将把受影响行项事实标为未确认，签发前请复核）
           </span>
         )}
         {!saving && saveError && (
-          <span className="rounded bg-destructive/10 px-2 py-0.5 text-destructive" role="alert">
+          <span
+            className="rounded bg-destructive/10 px-2 py-0.5 text-destructive"
+            role="alert"
+          >
             未保存：{saveError}
           </span>
         )}
@@ -323,12 +341,23 @@ export function DocItemsBatchEditor({
               value={value}
               disabled={!editable || saving}
               onChange={(e) => setValue(e.target.value)}
-              placeholder={field === "qty" || field === "unit_price" ? "如 30 / 26.5" : "文本"}
+              placeholder={
+                field === "qty" || field === "unit_price"
+                  ? "如 30 / 26.5"
+                  : "文本"
+              }
             />
           </label>
-          <Button size="sm" className="h-8" onClick={() => void apply()} disabled={!canApply}>
+          <Button
+            size="sm"
+            className="h-8"
+            onClick={() => void apply()}
+            disabled={!canApply}
+          >
             <CheckCheck className="mr-1 h-3.5 w-3.5" />
-            {onSave ? `保存（${selected.size} 行，一次提交）` : `应用到工作副本（${selected.size} 行）`}
+            {onSave
+              ? `保存（${selected.size} 行，一次提交）`
+              : `应用到工作副本（${selected.size} 行）`}
           </Button>
           {undo && (
             <Button
@@ -350,7 +379,9 @@ export function DocItemsBatchEditor({
             </span>
           )}
           {validation.ok && selected.size > 0 && preview?.applied.unchanged && (
-            <span className="text-muted-foreground">选中行的该字段已经等于这个值（没有变化）</span>
+            <span className="text-muted-foreground">
+              选中行的该字段已经等于这个值（没有变化）
+            </span>
           )}
           {forbidden && (
             <span className="text-destructive" role="alert">
@@ -392,24 +423,48 @@ export function DocItemsBatchEditor({
                   aria-label="全选行项"
                   checked={state === "all"}
                   disabled={!editable || saving || items.length === 0}
-                  onChange={() => setSelected(toggleAll(selected, items.length))}
+                  onChange={() =>
+                    setSelected(toggleAll(selected, items.length))
+                  }
                 />
               </th>
-              <th scope="col" className="p-2">#</th>
-              <th scope="col" className="p-2">品名</th>
-              <th scope="col" className="p-2">规格</th>
-              <th scope="col" className="p-2">数量</th>
-              <th scope="col" className="p-2">单位</th>
-              <th scope="col" className="p-2">单价</th>
-              <th scope="col" className="p-2">行金额（只读）</th>
-              <th scope="col" className="p-2">原产国</th>
+              <th scope="col" className="p-2">
+                #
+              </th>
+              <th scope="col" className="p-2">
+                品名
+              </th>
+              <th scope="col" className="p-2">
+                规格
+              </th>
+              <th scope="col" className="p-2">
+                数量
+              </th>
+              <th scope="col" className="p-2">
+                单位
+              </th>
+              <th scope="col" className="p-2">
+                单价
+              </th>
+              <th scope="col" className="p-2">
+                行金额（只读）
+              </th>
+              <th scope="col" className="p-2">
+                原产国
+              </th>
             </tr>
           </thead>
           <tbody>
             {items.map((row, index) => {
               const checked = selected.has(index);
               return (
-                <tr key={index} className={cn("border-b last:border-0", checked && "bg-primary/5")}>
+                <tr
+                  key={index}
+                  className={cn(
+                    "border-b last:border-0",
+                    checked && "bg-primary/5",
+                  )}
+                >
                   <td className="p-2">
                     <input
                       type="checkbox"
@@ -419,7 +474,9 @@ export function DocItemsBatchEditor({
                       onChange={() => setSelected(toggleRow(selected, index))}
                     />
                   </td>
-                  <td className="p-2 text-xs text-muted-foreground">{index + 1}</td>
+                  <td className="p-2 text-xs text-muted-foreground">
+                    {index + 1}
+                  </td>
                   <td className="p-2">{rowText(row, "product_name")}</td>
                   <td
                     className="max-w-[16rem] truncate p-2 text-xs"
@@ -434,7 +491,9 @@ export function DocItemsBatchEditor({
                     {rowText(row, "line_amount")}
                     <span className="ml-1 text-[10px]">只读</span>
                   </td>
-                  <td className="p-2 text-xs">{rowText(row, "country_of_origin")}</td>
+                  <td className="p-2 text-xs">
+                    {rowText(row, "country_of_origin")}
+                  </td>
                 </tr>
               );
             })}
@@ -443,7 +502,8 @@ export function DocItemsBatchEditor({
       </div>
       <p className="flex items-center gap-1 px-3 py-1.5 text-[11px] text-muted-foreground">
         <Save className="h-3 w-3" />
-        一次保存 = 一次 PATCH（写 `custom.items_override`，只含真正变化的行/字段）；
+        一次保存 = 一次 PATCH（写
+        `custom.items_override`，只含真正变化的行/字段）；
         保存后受影响行项事实标为未确认，签发闸门会拦住直到人工确认。
       </p>
     </div>

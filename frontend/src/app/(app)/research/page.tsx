@@ -434,15 +434,31 @@ export default function ResearchPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b text-left text-xs text-muted-foreground">
-                        <th className="p-2">图片</th>
-                        <th className="p-2">产品（本地 / 中文）</th>
-                        <th className="p-2">规格</th>
-                        <th className="p-2">地区</th>
-                        <th className="p-2">店铺</th>
-                        <th className="p-2">联系方式</th>
-                        <th className="p-2">价格</th>
-                        <th className="p-2">可供货</th>
-                        <th className="p-2" />
+                        <th scope="col" className="p-2">
+                          图片
+                        </th>
+                        <th scope="col" className="p-2">
+                          产品（本地 / 中文）
+                        </th>
+                        <th scope="col" className="p-2">
+                          规格
+                        </th>
+                        <th scope="col" className="p-2">
+                          地区
+                        </th>
+                        <th scope="col" className="p-2">
+                          店铺
+                        </th>
+                        <th scope="col" className="p-2">
+                          联系方式
+                        </th>
+                        <th scope="col" className="p-2">
+                          价格
+                        </th>
+                        <th scope="col" className="p-2">
+                          可供货
+                        </th>
+                        <th scope="col" className="p-2" />
                       </tr>
                     </thead>
                     <tbody>
@@ -718,13 +734,25 @@ export default function ResearchPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b text-left text-xs text-muted-foreground">
-                      <th className="p-2 w-8" />
-                      <th className="p-2">公司</th>
-                      <th className="p-2">地区</th>
-                      <th className="p-2">店铺类型</th>
-                      <th className="p-2">产品</th>
-                      <th className="p-2">爬取</th>
-                      <th className="p-2">可供货</th>
+                      <th scope="col" className="p-2 w-8" />
+                      <th scope="col" className="p-2">
+                        公司
+                      </th>
+                      <th scope="col" className="p-2">
+                        地区
+                      </th>
+                      <th scope="col" className="p-2">
+                        店铺类型
+                      </th>
+                      <th scope="col" className="p-2">
+                        产品
+                      </th>
+                      <th scope="col" className="p-2">
+                        爬取
+                      </th>
+                      <th scope="col" className="p-2">
+                        可供货
+                      </th>
                     </tr>
                   </thead>
                   <tbody>

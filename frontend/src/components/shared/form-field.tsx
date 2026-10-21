@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
  *
  * 收编「placeholder 当 label」的旧写法（customers 页三个表单）：
  * 占位符在输入后即消失，用户回看时不知道字段是什么；错误信息此前是
- * 裸 `text-red-500` 逃逸值。本组件把三件套的语义一次给全。
+ * 裸 `text-destructive` 逃逸值。本组件把三件套的语义一次给全。
  */
 
 interface FormFieldProps extends React.ComponentProps<"div"> {

@@ -49,7 +49,9 @@ export function ReceivablesSummaryCards({
             ))}
           </div>
         ) : summary.byCurrency.length === 0 ? (
-          <p className="text-sm text-muted-foreground">当前筛选下没有应收记录。</p>
+          <p className="text-sm text-muted-foreground">
+            当前筛选下没有应收记录。
+          </p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {summary.byCurrency.map((entry) => (
@@ -61,11 +63,13 @@ export function ReceivablesSummaryCards({
                 <dl className="space-y-0.5 text-sm">
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">应收总额</dt>
-                    <dd className="font-mono">{money(entry.currency, entry.total)}</dd>
+                    <dd className="font-mono">
+                      {money(entry.currency, entry.total)}
+                    </dd>
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">已收</dt>
-                    <dd className="font-mono text-emerald-700">
+                    <dd className="font-mono text-success">
                       {money(entry.currency, entry.received)}
                     </dd>
                   </div>
@@ -83,7 +87,8 @@ export function ReceivablesSummaryCards({
         {!loading && summary.byCurrency.length > 0 && (
           <p className="mt-2 text-[11px] text-muted-foreground">
             状态分布：未收 {summary.byStatus.unpaid ?? 0} · 部分收款{" "}
-            {summary.byStatus.partial ?? 0} · 已收清 {summary.byStatus.paid ?? 0}
+            {summary.byStatus.partial ?? 0} · 已收清{" "}
+            {summary.byStatus.paid ?? 0}
           </p>
         )}
       </CardContent>

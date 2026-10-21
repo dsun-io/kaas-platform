@@ -37,7 +37,7 @@ function ConsistencyRow({ item }: { item: ConsistencyItem }) {
         item.status === "conflict"
           ? "bg-destructive/5"
           : item.status === "equivalent"
-            ? "bg-amber-50/60"
+            ? "bg-warning-muted/60"
             : "bg-muted/20",
       )}
     >
@@ -83,7 +83,9 @@ export function DocConsistencyPanel({ docId }: { docId: number }) {
   // 三档计数按 `status` 而不是 `severity`：后端对"缺失"也可能标 error（承继核对只报
   // 不可改写事实的缺失），但产品口径是灰档、不按红色吓人（见 CONSISTENCY_META）。
   const conflicts = items.filter((item) => item.status === "conflict").length;
-  const equivalents = items.filter((item) => item.status === "equivalent").length;
+  const equivalents = items.filter(
+    (item) => item.status === "equivalent",
+  ).length;
   const missings = items.filter((item) => item.status === "missing").length;
   const grouped = ORDER.map((status) => ({
     status,
@@ -96,7 +98,7 @@ export function DocConsistencyPanel({ docId }: { docId: number }) {
         className={cn(
           "flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm",
           data?.ok
-            ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+            ? "border-success/40 bg-success-muted text-success-muted-foreground"
             : "border-destructive/30 bg-destructive/5 text-destructive",
         )}
       >
@@ -111,7 +113,8 @@ export function DocConsistencyPanel({ docId }: { docId: number }) {
             : `存在差异：冲突 ${conflicts} / 等价 ${equivalents} / 缺失 ${missings}（冲突会阻断导出与签发）`}
         </span>
         <span className="text-xs opacity-70">
-          交易域：{data?.domain.root ?? "—"}（{data?.domain.doc_ids.length ?? 0} 张单证）
+          交易域：{data?.domain.root ?? "—"}（{data?.domain.doc_ids.length ?? 0}{" "}
+          张单证）
         </span>
         <Button
           size="sm"
@@ -180,7 +183,9 @@ export function DocConsistencyPanel({ docId }: { docId: number }) {
                 >
                   <span className="font-mono">{item.code}</span>
                   {item.keys?.length ? `：${item.keys.join(", ")}` : ""}
-                  <span className="ml-1 text-muted-foreground">{item.detail}</span>
+                  <span className="ml-1 text-muted-foreground">
+                    {item.detail}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -190,10 +195,12 @@ export function DocConsistencyPanel({ docId }: { docId: number }) {
               {lint.data.warnings.map((item, index) => (
                 <li
                   key={`${item.code}-${index}`}
-                  className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-900"
+                  className="rounded-md bg-warning-muted px-2 py-1 text-xs text-warning-muted-foreground"
                 >
                   <span className="font-mono">{item.code}</span>
-                  <span className="ml-1 text-muted-foreground">{item.detail}</span>
+                  <span className="ml-1 text-muted-foreground">
+                    {item.detail}
+                  </span>
                 </li>
               ))}
             </ul>

@@ -32,9 +32,9 @@ import {
 const STATUS_TONE_TEXT: Record<string, string> = {
   confirmed: "text-blue-700",
   producing: "text-blue-700",
-  shipped: "text-emerald-700",
-  completed: "text-emerald-700",
-  cancelled: "text-red-700",
+  shipped: "text-success",
+  completed: "text-success",
+  cancelled: "text-destructive",
 };
 
 export function OrderStatusDialog({
@@ -96,7 +96,8 @@ export function OrderStatusDialog({
 
         {allowed.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            「{ORDER_STATUS_LABEL[order?.status ?? ""] ?? order?.status}」是终态，没有可流转的目标。
+            「{ORDER_STATUS_LABEL[order?.status ?? ""] ?? order?.status}
+            」是终态，没有可流转的目标。
           </p>
         ) : (
           <div className="space-y-3">

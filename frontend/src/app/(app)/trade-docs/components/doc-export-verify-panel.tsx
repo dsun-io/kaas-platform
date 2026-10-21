@@ -14,7 +14,12 @@
  * 动态加载，不进首屏包（见 `lib/trade-doc/pdf-extract.ts`）。
  */
 import { useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, FileSearch, ShieldAlert } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  FileSearch,
+  ShieldAlert,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -50,7 +55,12 @@ type Outcome =
       textCount: number;
       source: string;
     }
-  | { kind: "blocked"; blocked: VerifyExportBlocked; facts: PdfFacts; source: string }
+  | {
+      kind: "blocked";
+      blocked: VerifyExportBlocked;
+      facts: PdfFacts;
+      source: string;
+    }
   | { kind: "error"; message: string; source: string };
 
 const MAX_LISTED = 20;
@@ -140,8 +150,9 @@ export function DocExportVerifyPanel({ docId }: { docId: number }) {
   return (
     <div className="space-y-3">
       <div className="rounded-md border px-3 py-2 text-xs text-muted-foreground">
-        前端只做<b>抽取</b>（PDF 文本 / 图片张数，pdf.js 在点按钮时才加载）；是否
-        通过由<b>后端裁决</b>。未通过默认<b>阻断</b>，系统不会自动放行。
+        前端只做<b>抽取</b>（PDF 文本 / 图片张数，pdf.js
+        在点按钮时才加载）；是否 通过由<b>后端裁决</b>。未通过默认<b>阻断</b>
+        ，系统不会自动放行。
       </div>
 
       <div className="space-y-2 rounded-md border p-3">
@@ -154,7 +165,8 @@ export function DocExportVerifyPanel({ docId }: { docId: number }) {
             </StatusBadge>
           ) : (
             <span className="text-xs text-muted-foreground">
-              还没有归档的导出 PDF（可先打印另存为 PDF 并归档，或直接选本地文件）
+              还没有归档的导出 PDF（可先打印另存为 PDF
+              并归档，或直接选本地文件）
             </span>
           )}
         </div>
@@ -181,7 +193,7 @@ export function DocExportVerifyPanel({ docId }: { docId: number }) {
           )}
         </div>
         {files.isError && (
-          <p className="text-xs text-amber-700">
+          <p className="text-xs text-warning-muted-foreground">
             读取单据文件列表失败：无法确定有没有归档 PDF，仍可用本地文件自检。
           </p>
         )}
@@ -190,7 +202,7 @@ export function DocExportVerifyPanel({ docId }: { docId: number }) {
       {outcome?.kind === "ok" && (
         <div
           data-testid="export-verify-result"
-          className="space-y-1 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
+          className="space-y-1 rounded-md border border-success/40 bg-success-muted px-3 py-2 text-sm text-success-muted-foreground"
         >
           <div className="flex flex-wrap items-center gap-2">
             <CheckCircle2 className="h-4 w-4" />
@@ -200,11 +212,14 @@ export function DocExportVerifyPanel({ docId }: { docId: number }) {
             )}
           </div>
           <p className="text-xs">
-            {outcome.facts.pageCount} 页 · 抽到图片 {outcome.facts.imageCount} 张（期望{" "}
-            {outcome.expected.total} 张：产品图 {outcome.expected.photos} + 公章{" "}
-            {outcome.expected.stamp}） · 核对文本 {outcome.textCount} 段全部命中
+            {outcome.facts.pageCount} 页 · 抽到图片 {outcome.facts.imageCount}{" "}
+            张（期望 {outcome.expected.total} 张：产品图{" "}
+            {outcome.expected.photos} + 公章 {outcome.expected.stamp}） ·
+            核对文本 {outcome.textCount} 段全部命中
           </p>
-          <p className="text-[11px] text-emerald-800/70">{outcome.source}</p>
+          <p className="text-[11px] text-success-muted-foreground/70">
+            {outcome.source}
+          </p>
         </div>
       )}
 
@@ -215,7 +230,9 @@ export function DocExportVerifyPanel({ docId }: { docId: number }) {
         >
           <div className="flex items-center gap-2">
             <ShieldAlert className="h-4 w-4" />
-            <span className="font-medium">自检未通过 —— 已阻断（后端裁决）</span>
+            <span className="font-medium">
+              自检未通过 —— 已阻断（后端裁决）
+            </span>
           </div>
           {outcome.blocked.message && (
             <p className="text-xs">{outcome.blocked.message}</p>
@@ -223,7 +240,8 @@ export function DocExportVerifyPanel({ docId }: { docId: number }) {
           {outcome.blocked.missingTexts.length > 0 && (
             <div className="space-y-1">
               <p className="text-xs font-medium">
-                文本缺失 {outcome.blocked.missingTexts.length} 处（PDF 里找不到，常见于行高截断）
+                文本缺失 {outcome.blocked.missingTexts.length} 处（PDF
+                里找不到，常见于行高截断）
               </p>
               <ul className="space-y-0.5 text-xs">
                 {outcome.blocked.missingTexts
@@ -236,7 +254,8 @@ export function DocExportVerifyPanel({ docId }: { docId: number }) {
               </ul>
               {outcome.blocked.missingTexts.length > MAX_LISTED && (
                 <p className="text-[11px] opacity-70">
-                  仅列出前 {MAX_LISTED} 处，共 {outcome.blocked.missingTexts.length} 处
+                  仅列出前 {MAX_LISTED} 处，共{" "}
+                  {outcome.blocked.missingTexts.length} 处
                 </p>
               )}
             </div>
@@ -264,7 +283,7 @@ export function DocExportVerifyPanel({ docId }: { docId: number }) {
       {outcome?.kind === "error" && (
         <div
           data-testid="export-verify-result"
-          className="space-y-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+          className="space-y-1 rounded-md border border-warning/40 bg-warning-muted px-3 py-2 text-sm text-warning-muted-foreground"
         >
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4" />
@@ -272,7 +291,8 @@ export function DocExportVerifyPanel({ docId }: { docId: number }) {
           </div>
           <p className="text-xs">{outcome.message}</p>
           <p className="text-[11px] opacity-70">
-            未调用后端裁决（没有结论 = 没有通过，不会显示为通过）。{outcome.source}
+            未调用后端裁决（没有结论 = 没有通过，不会显示为通过）。
+            {outcome.source}
           </p>
         </div>
       )}

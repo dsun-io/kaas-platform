@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { EventFilters } from "./components/event-filters";
 import { EventTable } from "./components/event-table";
 import { EventDetailSheet } from "./components/event-detail";
@@ -11,7 +10,7 @@ import {
 } from "./hooks/use-events";
 import { usePageView } from "@/lib/events/use-page-view";
 import { RouteGuard } from "@/components/route-guard";
-import { PageHeader } from "@/components/shared";
+import { PageHeader, SectionCard } from "@/components/shared";
 import { usePersistentState } from "@/lib/hooks/use-persistent-state";
 import { PaginationBar } from "@/components/shared/pagination-bar";
 
@@ -44,57 +43,49 @@ export default function EventsPage() {
       <div className="space-y-6">
         <PageHeader title="事件审计" description="系统事件与操作审计记录" />
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle>过滤条件</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <EventFilters
-              filters={filters}
-              onChange={(next) => {
-                setFilters(next);
-                setPage(1);
-              }}
-            />
-          </CardContent>
-        </Card>
+        <SectionCard title="过滤条件">
+          <EventFilters
+            filters={filters}
+            onChange={(next) => {
+              setFilters(next);
+              setPage(1);
+            }}
+          />
+        </SectionCard>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle>
-              事件列表
-              {data && (
-                <span className="ml-2 text-sm font-normal text-muted-foreground">
-                  共 {data.total} 条
-                </span>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <EventTable
-              events={events.map((e) => ({
-                id: e.id,
-                event_type: e.event_type,
-                schema_version: e.schema_version,
-                actor_id: e.actor_id ?? "",
-                created_at: e.created_at,
-                sampled: e.sampled ?? false,
-                event_source: e.event_source,
-              }))}
-              onSelect={(event) => setSelectedId(event.id)}
-              loading={isLoading}
-            />
-            <PaginationBar
-              page={page}
-              pageSize={EVENTS_PAGE_SIZE}
-              total={data?.total ?? 0}
-              currentCount={events.length}
-              loading={isFetching}
-              onPageChange={setPage}
-              ariaLabel="事件列表分页"
-            />
-          </CardContent>
-        </Card>
+        <SectionCard
+          title="事件列表"
+          action={
+            data ? (
+              <span className="text-sm font-normal text-muted-foreground">
+                共 {data.total} 条
+              </span>
+            ) : undefined
+          }
+        >
+          <EventTable
+            events={events.map((e) => ({
+              id: e.id,
+              event_type: e.event_type,
+              schema_version: e.schema_version,
+              actor_id: e.actor_id ?? "",
+              created_at: e.created_at,
+              sampled: e.sampled ?? false,
+              event_source: e.event_source,
+            }))}
+            onSelect={(event) => setSelectedId(event.id)}
+            loading={isLoading}
+          />
+          <PaginationBar
+            page={page}
+            pageSize={EVENTS_PAGE_SIZE}
+            total={data?.total ?? 0}
+            currentCount={events.length}
+            loading={isFetching}
+            onPageChange={setPage}
+            ariaLabel="事件列表分页"
+          />
+        </SectionCard>
 
         <EventDetailSheet
           event={

@@ -6,7 +6,7 @@ import { PaginationBar } from "@/components/shared/pagination-bar";
 
 /** 与后端 `get_audit_log` 的默认 page_size 一致（上限 100） */
 const AUDIT_PAGE_SIZE = 20;
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { SectionCard } from "@/components/shared/section-card";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -22,7 +22,7 @@ import { PageHeader } from "@/components/shared";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
 import { usePersistentState } from "@/lib/hooks/use-persistent-state";
-import { Search, X, ChevronDown, ChevronRight } from "lucide-react";
+import { X, ChevronDown, ChevronRight } from "lucide-react";
 
 const ACTION_OPTIONS = [
   { value: "", label: "全部操作" },
@@ -191,9 +191,7 @@ export default function AuditLogPage() {
   };
 
   const { data, isLoading, isFetching } = useAuditLog({
-    ...Object.fromEntries(
-      Object.entries(filters).filter(([, v]) => v !== ""),
-    ),
+    ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== "")),
     page,
     page_size: AUDIT_PAGE_SIZE,
   });
@@ -206,83 +204,75 @@ export default function AuditLogPage() {
       <div className="space-y-6">
         <PageHeader title="操作日志" description="平台操作审计与追溯" />
 
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Search className="size-4" />
-                日志筛选
-              </CardTitle>
-              {total > 0 && (
-                <span className="text-xs text-muted-foreground">
-                  {total} 条记录
-                </span>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent>
-            <AuditFilters
-              filters={filters}
-              onChange={updateFilter}
-              onReset={resetFilters}
-            />
-          </CardContent>
-        </Card>
+        <SectionCard
+          title="日志筛选"
+          action={
+            total > 0 ? (
+              <span className="text-xs text-muted-foreground">
+                {total} 条记录
+              </span>
+            ) : undefined
+          }
+        >
+          <AuditFilters
+            filters={filters}
+            onChange={updateFilter}
+            onReset={resetFilters}
+          />
+        </SectionCard>
 
-        <Card>
-          <CardContent className="p-0">
-            {isLoading ? (
-              <div
-                className="space-y-2 p-4"
-                aria-busy="true"
-                aria-label="操作日志加载中"
-              >
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-10 w-full rounded-md" />
-                ))}
-              </div>
-            ) : items.length === 0 ? (
-              <EmptyState
-                title="暂无操作记录"
-                description="调整筛选条件后再试。"
-                className="border-0 py-8"
-              />
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-8" />
-                      <TableHead className="text-xs">时间</TableHead>
-                      <TableHead className="text-xs">操作者</TableHead>
-                      <TableHead className="text-xs">操作</TableHead>
-                      <TableHead className="text-xs">资源类型</TableHead>
-                      <TableHead className="hidden sm:table-cell text-xs">
-                        资源 ID
-                      </TableHead>
-                      <TableHead className="text-xs">说明</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {items.map((entry) => (
-                      <ExpandRow key={entry.id} entry={entry} />
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-            <PaginationBar
-              page={page}
-              pageSize={AUDIT_PAGE_SIZE}
-              total={total}
-              currentCount={items.length}
-              loading={isFetching}
-              onPageChange={setPage}
-              ariaLabel="操作日志分页"
-              className="px-4 pb-4"
+        <SectionCard title="操作日志" bodyClassName="p-0">
+          {isLoading ? (
+            <div
+              className="space-y-2 p-4"
+              aria-busy="true"
+              aria-label="操作日志加载中"
+            >
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full rounded-md" />
+              ))}
+            </div>
+          ) : items.length === 0 ? (
+            <EmptyState
+              title="暂无操作记录"
+              description="调整筛选条件后再试。"
+              className="border-0 py-8"
             />
-          </CardContent>
-        </Card>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-8" />
+                    <TableHead className="text-xs">时间</TableHead>
+                    <TableHead className="text-xs">操作者</TableHead>
+                    <TableHead className="text-xs">操作</TableHead>
+                    <TableHead className="text-xs">资源类型</TableHead>
+                    <TableHead className="hidden sm:table-cell text-xs">
+                      资源 ID
+                    </TableHead>
+                    <TableHead className="text-xs">说明</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.map((entry) => (
+                    <ExpandRow key={entry.id} entry={entry} />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          <PaginationBar
+            page={page}
+            pageSize={AUDIT_PAGE_SIZE}
+            total={total}
+            currentCount={items.length}
+            loading={isFetching}
+            onPageChange={setPage}
+            ariaLabel="操作日志分页"
+            className="px-4 pb-4"
+          />
+        </SectionCard>
       </div>
     </RouteGuard>
   );

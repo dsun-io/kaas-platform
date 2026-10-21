@@ -50,14 +50,30 @@ export function ReceivablesTable({
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b text-left text-muted-foreground">
-            <th scope="col" className="p-2">订单号</th>
-            <th scope="col" className="p-2">客户</th>
-            <th scope="col" className="p-2">应收总额</th>
-            <th scope="col" className="p-2">已收</th>
-            <th scope="col" className="p-2">未收</th>
-            <th scope="col" className="p-2">状态</th>
-            <th scope="col" className="p-2">最早未付到期</th>
-            <th scope="col" className="p-2">逾期</th>
+            <th scope="col" className="p-2">
+              订单号
+            </th>
+            <th scope="col" className="p-2">
+              客户
+            </th>
+            <th scope="col" className="p-2">
+              应收总额
+            </th>
+            <th scope="col" className="p-2">
+              已收
+            </th>
+            <th scope="col" className="p-2">
+              未收
+            </th>
+            <th scope="col" className="p-2">
+              状态
+            </th>
+            <th scope="col" className="p-2">
+              最早未付到期
+            </th>
+            <th scope="col" className="p-2">
+              逾期
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -70,28 +86,36 @@ export function ReceivablesTable({
               <tr
                 key={row.id}
                 data-overdue={overdue ? "true" : undefined}
-                className={cn("border-b last:border-0", overdue && "bg-destructive/5")}
+                className={cn(
+                  "border-b last:border-0",
+                  overdue && "bg-destructive/5",
+                )}
               >
                 <td className="p-2 font-mono text-xs">{row.order_no ?? "—"}</td>
                 <td className="p-2">{row.customer_name ?? "—"}</td>
                 <td className="p-2 font-mono">
                   {money(String(row.currency ?? "—"), totalOf(row))}
                 </td>
-                <td className="p-2 font-mono text-emerald-700">
+                <td className="p-2 font-mono text-success">
                   {money(String(row.currency ?? "—"), receivedOf(row))}
                 </td>
                 <td
                   className={cn(
                     "p-2 font-mono font-semibold",
-                    outstandingOf(row) > 0 ? "text-destructive" : "text-muted-foreground",
+                    outstandingOf(row) > 0
+                      ? "text-destructive"
+                      : "text-muted-foreground",
                   )}
                 >
                   {money(String(row.currency ?? "—"), outstandingOf(row))}
                 </td>
                 <td className="p-2">
-                  <StatusBadge tone={STATUS_TONE[String(row.status)] ?? "default"}>
-                    {RECEIVABLE_STATUS_LABEL[String(row.status) as keyof typeof RECEIVABLE_STATUS_LABEL] ??
-                      String(row.status)}
+                  <StatusBadge
+                    tone={STATUS_TONE[String(row.status)] ?? "default"}
+                  >
+                    {RECEIVABLE_STATUS_LABEL[
+                      String(row.status) as keyof typeof RECEIVABLE_STATUS_LABEL
+                    ] ?? String(row.status)}
                   </StatusBadge>
                 </td>
                 <td className="p-2 font-mono text-xs">
@@ -120,7 +144,10 @@ export function ReceivablesTable({
                   ) : due ? (
                     <span className="text-muted-foreground">未到期</span>
                   ) : (
-                    <span className="text-muted-foreground" title="无到期日，无法判定">
+                    <span
+                      className="text-muted-foreground"
+                      title="无到期日，无法判定"
+                    >
                       未知
                     </span>
                   )}

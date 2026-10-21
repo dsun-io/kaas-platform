@@ -71,7 +71,12 @@ export function runErrorText(error: unknown): string {
       ? (data as { detail?: unknown }).detail
       : undefined;
   if (detail && typeof detail === "object") {
-    const obj = detail as { error?: unknown; code?: unknown; detail?: unknown; detail_text?: unknown };
+    const obj = detail as {
+      error?: unknown;
+      code?: unknown;
+      detail?: unknown;
+      detail_text?: unknown;
+    };
     const code = typeof obj.code === "string" ? obj.code : "";
     const text =
       typeof obj.detail === "string"
@@ -79,9 +84,19 @@ export function runErrorText(error: unknown): string {
         : typeof obj.detail_text === "string"
           ? obj.detail_text
           : "";
-    const prefix = status === 403 ? "无权限" : status === 404 ? "任务不存在" : status === 409 ? "冲突" : "";
+    const prefix =
+      status === 403
+        ? "无权限"
+        : status === 404
+          ? "任务不存在"
+          : status === 409
+            ? "冲突"
+            : "";
     const body = [code, text].filter(Boolean).join("：");
-    return [prefix, body].filter(Boolean).join(" · ") || `运行失败（HTTP ${status ?? "?"}）`;
+    return (
+      [prefix, body].filter(Boolean).join(" · ") ||
+      `运行失败（HTTP ${status ?? "?"}）`
+    );
   }
   if (typeof detail === "string") return detail;
   return anyError.message ?? "运行失败（网络错误）";
@@ -131,8 +146,9 @@ export function RunTaskDialog({
         <DialogHeader>
           <DialogTitle>运行任务：{taskName}</DialogTitle>
           <DialogDescription>
-            {taskKey} · 一次调用会写入 AI 用量审计；`GET /ai/tasks` 没有输入 schema，
-            因此用最小 key/value 传参（值先按 JSON 解析，失败按字符串）。
+            {taskKey} · 一次调用会写入 AI 用量审计；`GET /ai/tasks` 没有输入
+            schema， 因此用最小 key/value 传参（值先按 JSON
+            解析，失败按字符串）。
           </DialogDescription>
         </DialogHeader>
 
@@ -190,14 +206,20 @@ export function RunTaskDialog({
         </div>
 
         {run.isPending && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
+          <div
+            className="flex items-center gap-2 text-xs text-muted-foreground"
+            role="status"
+          >
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             运行中…
           </div>
         )}
 
         {error && (
-          <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive" role="alert">
+          <div
+            className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive"
+            role="alert"
+          >
             运行失败：{error}
           </div>
         )}
@@ -205,17 +227,26 @@ export function RunTaskDialog({
         {result && (
           <div className="space-y-1 rounded-md border p-2 text-xs">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded bg-emerald-50 px-2 py-0.5 text-emerald-800">运行成功</span>
-              <span className="text-muted-foreground">
-                执行路径：{result.path === "template" ? "模板兜底（未启用 AI）" : result.path}
+              <span className="rounded bg-success-muted px-2 py-0.5 text-success-muted-foreground">
+                运行成功
               </span>
               <span className="text-muted-foreground">
-                耗时：{typeof result.latency_ms === "number" ? `${result.latency_ms} ms` : "—（模板路径不返回耗时）"}
+                执行路径：
+                {result.path === "template"
+                  ? "模板兜底（未启用 AI）"
+                  : result.path}
+              </span>
+              <span className="text-muted-foreground">
+                耗时：
+                {typeof result.latency_ms === "number"
+                  ? `${result.latency_ms} ms`
+                  : "—（模板路径不返回耗时）"}
               </span>
             </div>
             {result.note === "all_providers_failed" && (
-              <div className="text-amber-700">
-                注意：所有 AI 服务商都失败了，本次结果由内置模板兜底（note=all_providers_failed）。
+              <div className="text-warning-muted-foreground">
+                注意：所有 AI
+                服务商都失败了，本次结果由内置模板兜底（note=all_providers_failed）。
               </div>
             )}
             <pre className="max-h-64 overflow-auto rounded bg-muted/30 p-2 text-[11px]">

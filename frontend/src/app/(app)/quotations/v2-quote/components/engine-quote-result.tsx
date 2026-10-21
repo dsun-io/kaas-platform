@@ -67,6 +67,7 @@ function QuoteTableView({ table }: { table: QuoteTable }) {
           <tr>
             {table.header.map((h, i) => (
               <th
+                scope="col"
                 key={`${h}-${i}`}
                 className="whitespace-nowrap px-2 py-2 text-left font-medium text-muted-foreground"
               >

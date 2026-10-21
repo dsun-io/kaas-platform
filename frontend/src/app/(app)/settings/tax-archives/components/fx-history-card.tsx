@@ -75,18 +75,29 @@ export function FxHistoryCard() {
         </p>
       ) : rows.length === 0 ? (
         <p className="py-4 text-sm text-muted-foreground">
-          该币种对还没有历史记录（{base}/{quote}）。外部源首次刷新或手工录入后会出现在这里。
+          该币种对还没有历史记录（{base}/{quote}
+          ）。外部源首次刷新或手工录入后会出现在这里。
         </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-left text-xs text-muted-foreground">
-                <th className="p-2">日期</th>
-                <th className="p-2">币种对</th>
-                <th className="p-2">汇率</th>
-                <th className="p-2">来源</th>
-                <th className="p-2">状态</th>
+                <th scope="col" className="p-2">
+                  日期
+                </th>
+                <th scope="col" className="p-2">
+                  币种对
+                </th>
+                <th scope="col" className="p-2">
+                  汇率
+                </th>
+                <th scope="col" className="p-2">
+                  来源
+                </th>
+                <th scope="col" className="p-2">
+                  状态
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -105,7 +116,9 @@ export function FxHistoryCard() {
                   </td>
                   <td className="p-2">
                     {row.is_stale ? (
-                      <StatusBadge tone="warning">缓存（外部源不可用）</StatusBadge>
+                      <StatusBadge tone="warning">
+                        缓存（外部源不可用）
+                      </StatusBadge>
                     ) : (
                       <StatusBadge tone="success">正常</StatusBadge>
                     )}
@@ -115,7 +128,8 @@ export function FxHistoryCard() {
             </tbody>
           </table>
           <p className="mt-2 text-xs text-muted-foreground">
-            共 {rows.length} 条（本次查询上限 {limit} 条 / 后端上限 {FX_HISTORY_MAX} 条）。
+            共 {rows.length} 条（本次查询上限 {limit} 条 / 后端上限{" "}
+            {FX_HISTORY_MAX} 条）。
           </p>
         </div>
       )}

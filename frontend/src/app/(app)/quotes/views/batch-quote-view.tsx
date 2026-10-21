@@ -554,8 +554,12 @@ export function BatchQuoteView() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
-                  <th className="p-2">询盘</th>
-                  <th className="p-2">报价单号</th>
+                  <th scope="col" className="p-2">
+                    询盘
+                  </th>
+                  <th scope="col" className="p-2">
+                    报价单号
+                  </th>
                 </tr>
               </thead>
               <tbody>

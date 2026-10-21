@@ -44,8 +44,10 @@ function DiffBadge({ diff }: { diff: AmountDiff }) {
   const same = Math.abs(diff.amount) < 0.005;
   if (!diff.overTolerance) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs text-emerald-800">
-        {same ? "与订单一致" : `与订单差 ${signed(diff.amount)} ${diff.currency}`}
+      <span className="inline-flex items-center gap-1 rounded-md bg-success-muted px-2 py-0.5 text-xs text-success-muted-foreground">
+        {same
+          ? "与订单一致"
+          : `与订单差 ${signed(diff.amount)} ${diff.currency}`}
         <span className="text-[10px] opacity-70">
           （容差 ±{diff.tolerance}）
         </span>
@@ -122,7 +124,10 @@ export function AmountSummaryBar({
       ) : (
         <span>
           <span className="text-muted-foreground">行合计 </span>
-          {money(summary.single?.amount ?? null, summary.single?.currency ?? "—")}
+          {money(
+            summary.single?.amount ?? null,
+            summary.single?.currency ?? "—",
+          )}
           <span className="text-muted-foreground">
             （{summary.lineCount} 行 · 无汇率，仅单币种摘要）
           </span>

@@ -138,11 +138,21 @@ export function TeamSubscriptionsPanel({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
-                  <th className="p-2">工位</th>
-                  <th className="p-2">状态</th>
-                  <th className="p-2">到期</th>
-                  <th className="p-2">来源</th>
-                  <th className="p-2">操作</th>
+                  <th scope="col" className="p-2">
+                    工位
+                  </th>
+                  <th scope="col" className="p-2">
+                    状态
+                  </th>
+                  <th scope="col" className="p-2">
+                    到期
+                  </th>
+                  <th scope="col" className="p-2">
+                    来源
+                  </th>
+                  <th scope="col" className="p-2">
+                    操作
+                  </th>
                 </tr>
               </thead>
               <tbody>

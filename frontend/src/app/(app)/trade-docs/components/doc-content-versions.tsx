@@ -177,11 +177,21 @@ export function DocContentVersions({
               <table className="w-full text-xs">
                 <thead className="bg-muted/40 text-left text-muted-foreground">
                   <tr>
-                    <th className="px-2 py-1.5">版本</th>
-                    <th className="px-2 py-1.5">变更</th>
-                    <th className="px-2 py-1.5">时间</th>
-                    <th className="px-2 py-1.5">字段</th>
-                    <th className="px-2 py-1.5 text-right">操作</th>
+                    <th scope="col" className="px-2 py-1.5">
+                      版本
+                    </th>
+                    <th scope="col" className="px-2 py-1.5">
+                      变更
+                    </th>
+                    <th scope="col" className="px-2 py-1.5">
+                      时间
+                    </th>
+                    <th scope="col" className="px-2 py-1.5">
+                      字段
+                    </th>
+                    <th scope="col" className="px-2 py-1.5 text-right">
+                      操作
+                    </th>
                   </tr>
                 </thead>
                 <tbody>

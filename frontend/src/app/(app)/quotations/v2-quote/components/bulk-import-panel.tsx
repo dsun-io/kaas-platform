@@ -547,7 +547,7 @@ export function BulkImportPanel({ onImported }: { onImported?: () => void }) {
                 <span>
                   数据行 <b>{previewResult.total_data_rows}</b>
                 </span>
-                <span className="text-emerald-600 dark:text-emerald-500">
+                <span className="text-success">
                   可用 <b>{previewResult.usable_rows}</b>
                 </span>
                 <span
@@ -668,7 +668,7 @@ export function BulkImportPanel({ onImported }: { onImported?: () => void }) {
             </div>
 
             {result.meta.diagnostics.length > 0 && (
-              <ul className="list-disc space-y-1 rounded-md border bg-amber-50 p-3 pl-7 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+              <ul className="list-disc space-y-1 rounded-md border bg-warning-muted p-3 pl-7 text-xs text-warning-muted-foreground">
                 {result.meta.diagnostics.map((d, i) => (
                   <li key={i}>{d}</li>
                 ))}
@@ -717,6 +717,7 @@ function ResultTable({
             <tr>
               {table.header.map((h, i) => (
                 <th
+                  scope="col"
                   key={`${h}-${i}`}
                   className="whitespace-nowrap border-b px-2 py-1.5 text-left font-medium"
                 >

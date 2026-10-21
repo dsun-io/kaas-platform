@@ -149,7 +149,8 @@ export function IntelCsvImportDialog({
                         : "rounded bg-destructive/10 px-2 py-0.5 text-xs text-destructive"
                     }
                   >
-                    {column.raw || "(空列)"} → {column.field ?? "未识别（忽略）"}
+                    {column.raw || "(空列)"} →{" "}
+                    {column.field ?? "未识别（忽略）"}
                   </span>
                 ))}
               </div>
@@ -173,11 +174,13 @@ export function IntelCsvImportDialog({
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b bg-muted/40 text-left">
-                      <th className="p-2">行</th>
+                      <th scope="col" className="p-2">
+                        行
+                      </th>
                       {analysis.columns
                         .filter((column) => column.field)
                         .map((column) => (
-                          <th key={column.raw} className="p-2">
+                          <th scope="col" key={column.raw} className="p-2">
                             {column.field}
                           </th>
                         ))}
@@ -190,7 +193,10 @@ export function IntelCsvImportDialog({
                         {analysis.columns
                           .filter((column) => column.field)
                           .map((column) => (
-                            <td key={column.raw} className="max-w-48 truncate p-2">
+                            <td
+                              key={column.raw}
+                              className="max-w-48 truncate p-2"
+                            >
                               {row.values[column.field as string] || "-"}
                             </td>
                           ))}

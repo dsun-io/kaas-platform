@@ -542,11 +542,19 @@ export default function OutreachPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">
-                    <th className="p-2">收件人</th>
-                    <th className="p-2">主题</th>
-                    <th className="p-2">状态</th>
-                    <th className="p-2">发送时间</th>
-                    <th className="p-2" />
+                    <th scope="col" className="p-2">
+                      收件人
+                    </th>
+                    <th scope="col" className="p-2">
+                      主题
+                    </th>
+                    <th scope="col" className="p-2">
+                      状态
+                    </th>
+                    <th scope="col" className="p-2">
+                      发送时间
+                    </th>
+                    <th scope="col" className="p-2" />
                   </tr>
                 </thead>
                 <tbody>

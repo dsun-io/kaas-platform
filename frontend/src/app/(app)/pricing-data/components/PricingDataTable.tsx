@@ -110,15 +110,23 @@ export function PricingDataTable({
             <thead>
               <tr className="border-b text-left text-muted-foreground">
                 {dims.map((d) => (
-                  <th key={d.field} className="py-2 pr-4">
+                  <th scope="col" key={d.field} className="py-2 pr-4">
                     {d.label}
                     {d.unit ? `（${d.unit}）` : ""}
                   </th>
                 ))}
-                <th className="py-2 pr-4 text-right">成本（{unitLabel}）</th>
-                <th className="py-2 pr-4">来源</th>
-                <th className="py-2 pr-4">生效日期</th>
-                <th className="py-2">操作</th>
+                <th scope="col" className="py-2 pr-4 text-right">
+                  成本（{unitLabel}）
+                </th>
+                <th scope="col" className="py-2 pr-4">
+                  来源
+                </th>
+                <th scope="col" className="py-2 pr-4">
+                  生效日期
+                </th>
+                <th scope="col" className="py-2">
+                  操作
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -277,9 +285,15 @@ export function PricingAllCustomersTable({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
-                  <th className="py-2 pr-4">客户</th>
-                  <th className="py-2 pr-4">已配置</th>
-                  <th className="py-2">已配置明细（{unitLabel}）</th>
+                  <th scope="col" className="py-2 pr-4">
+                    客户
+                  </th>
+                  <th scope="col" className="py-2 pr-4">
+                    已配置
+                  </th>
+                  <th scope="col" className="py-2">
+                    已配置明细（{unitLabel}）
+                  </th>
                 </tr>
               </thead>
               <tbody>

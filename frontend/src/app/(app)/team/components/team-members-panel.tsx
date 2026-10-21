@@ -166,10 +166,18 @@ export function TeamMembersPanel({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-left text-muted-foreground">
-                <th className="p-2">成员</th>
-                <th className="p-2">角色</th>
-                <th className="p-2">官网数据后台</th>
-                <th className="p-2">操作</th>
+                <th scope="col" className="p-2">
+                  成员
+                </th>
+                <th scope="col" className="p-2">
+                  角色
+                </th>
+                <th scope="col" className="p-2">
+                  官网数据后台
+                </th>
+                <th scope="col" className="p-2">
+                  操作
+                </th>
               </tr>
             </thead>
             <tbody>

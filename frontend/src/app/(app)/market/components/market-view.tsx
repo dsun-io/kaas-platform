@@ -1,6 +1,7 @@
 "use client";
 
 import { LoadingBlock } from "@/components/shared/loading-block";
+import { EmptyState } from "@/components/shared/empty-state";
 
 // 由「产品市场对照」页面与「市场情报」工位共用。
 // 注意：这里不能放在 page.tsx 里 —— 页面文件不允许自定义 props。
@@ -162,8 +163,19 @@ function RegionTab() {
         </CardHeader>
         <CardContent>
           {isLoading && <LoadingBlock rows={4} />}
-          {!isLoading && products?.length === 0 && selected && (
-            <p className="text-sm text-muted-foreground">该地区暂无产品数据</p>
+          {!isLoading && !selected && (
+            <EmptyState
+              title="选择地区后查看"
+              description="从左侧选择一个地区，这里会显示在售产品、认证要求与常见规格。"
+              className="border-0 py-10"
+            />
+          )}
+          {!isLoading && selected && products?.length === 0 && (
+            <EmptyState
+              title="该地区暂无产品数据"
+              description="换个地区看看，或到「按品名查询 / 按用途查询」继续查。"
+              className="border-0 py-8"
+            />
           )}
           <div className="space-y-4">
             {products?.map((p) => (

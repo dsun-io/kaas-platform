@@ -74,7 +74,7 @@ export function NumberEditDialog({
             disabled={pending}
             className="font-mono"
           />
-          <p className="text-xs text-amber-700">{warning}</p>
+          <p className="text-xs text-warning-muted-foreground">{warning}</p>
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
 

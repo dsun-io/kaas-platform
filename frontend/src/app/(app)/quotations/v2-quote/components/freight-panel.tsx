@@ -373,6 +373,7 @@ export function FreightPanel({
                       `整批总价（${quoteCurrency}）`,
                     ].map((h) => (
                       <th
+                        scope="col"
                         key={h}
                         className="whitespace-nowrap px-2 py-2 text-left font-medium text-muted-foreground"
                       >

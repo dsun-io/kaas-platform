@@ -388,13 +388,27 @@ export default function TaxArchivesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th className="p-2">名称</th>
-                  <th className="p-2">编码</th>
-                  <th className="p-2">生效日期</th>
-                  <th className="p-2">销项</th>
-                  <th className="p-2">杂税</th>
-                  <th className="p-2">状态</th>
-                  <th className="p-2">操作</th>
+                  <th scope="col" className="p-2">
+                    名称
+                  </th>
+                  <th scope="col" className="p-2">
+                    编码
+                  </th>
+                  <th scope="col" className="p-2">
+                    生效日期
+                  </th>
+                  <th scope="col" className="p-2">
+                    销项
+                  </th>
+                  <th scope="col" className="p-2">
+                    杂税
+                  </th>
+                  <th scope="col" className="p-2">
+                    状态
+                  </th>
+                  <th scope="col" className="p-2">
+                    操作
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -445,7 +459,9 @@ export default function TaxArchivesPage() {
                           )}
                         </div>
                       ) : (
-                        <span className="text-xs text-muted-foreground">只读</span>
+                        <span className="text-xs text-muted-foreground">
+                          只读
+                        </span>
                       )}
                     </td>
                   </tr>
@@ -550,10 +566,18 @@ export default function TaxArchivesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th className="p-2">产品</th>
-                  <th className="p-2">进项增值税率</th>
-                  <th className="p-2">出口退税率</th>
-                  <th className="p-2">操作</th>
+                  <th scope="col" className="p-2">
+                    产品
+                  </th>
+                  <th scope="col" className="p-2">
+                    进项增值税率
+                  </th>
+                  <th scope="col" className="p-2">
+                    出口退税率
+                  </th>
+                  <th scope="col" className="p-2">
+                    操作
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -599,7 +623,9 @@ export default function TaxArchivesPage() {
                           </Button>
                         </div>
                       ) : (
-                        <span className="text-xs text-muted-foreground">只读</span>
+                        <span className="text-xs text-muted-foreground">
+                          只读
+                        </span>
                       )}
                     </td>
                   </tr>
