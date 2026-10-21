@@ -10,6 +10,14 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-21 · 历史密钥清理 ✅ 新裁决执行）** 用户新裁决：清理提交历史中的密钥明文（推翻 2026-10-20
+> 「接受风险」）。blob 级全历史扫描（5039 blob）→ **git filter-repo 重写**（明文→`***REMOVED***`，
+> 1053→774 提交，已 force push main）→ **旧 Neon 库口令轮换**（泄露 DSN 指向 `ep-wandering-frost`，
+> 属旧项目 falling-salad）+ 旧 Hyperdrive 连接串同步（回滚路径保持可用）→ 重写后全历史 **0 命中**。
+> 遗留：**Notion 集成 token 需用户到 Notion 后台吊销**（API 无吊销端点）。执行记录见
+> [`STRUCTURAL_DEBT.md`](./STRUCTURAL_DEBT.md) §6.6；TODO G-9 已销账。
+> ⚠️ 历史已重写：其他未同步 clone/旧分支需重新 clone（旧 `feat/*` worktree 引用已失效）。
+>
 > **（2026-10-21 · 架构修订拍板：TS 门面 + Python 内核，取代全量迁 TS）** 用户提出系统定位
 > （智能制造业务管理/工位化/未来 AI/对外 MCP·API）下 Python 生态更优，全量迁 TS 与未来发展背道而驰。
 > 修订为**永久两层架构**（ADR-008）：TS Worker(Hono)=对外门面（UI 路由+鉴权+MCP/REST 网关，冷启动 ~50ms），

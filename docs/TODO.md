@@ -220,7 +220,7 @@
 | C40 | CI 部署门禁 S5-d 假红（token 缺 Hyperdrive 读权限） | 2026-10-21 第十二次部署实测：`deploy.yml` 的「S5-d 防污染断言」调 `GET /hyperdrive/configs` → **403 Authentication error**（repo secret `CLOUDFLARE_API_TOKEN` / CI 系统 token 没有 Hyperdrive 读取权限）。从 script settings 读到的 R2/KV/Hyperdrive 绑定断言全部 ✔，**Worker 部署本身成功**（版本 `acaa6415-146e-4f84-8412-63c2e390e11b`），但该步让 run 变红并跳过冒烟。**2026-10-21 已修（用户授权走 ①）**：用 CF API 给 `kaas-ci-system-20261021`（id `44f3c314…`）补 `Hyperdrive Read`（**只加读权限**，token 值不变、不轮换；改前 policy 备份在 `~/.dsh/secrets/cf-ci-token-policy-backup-20261021-094212.json`）；重跑 deploy run `39528856290` **全绿**（S5-d + Smoke test 均 ✓），Worker `56692255-bc87-48a3-a541-23b230ad05d5`。断言未降级 | 用户已授权 | ✅ |
 
 
-| G-9 | 历史密钥清理路径 | 见 [`STRUCTURAL_DEBT.md`](./STRUCTURAL_DEBT.md) §6：①是否执行全历史 gitleaks/trufflehog 扫描（需先安装工具）；②三条路径（A 接受风险 / B 只轮换 / C 轮换+filter-repo 重写历史）选哪条；③若选 B/C，逐项授权轮换 Neon 口令/Notion 令牌/GitHub PAT；④§6.4 四项防再犯约束（pre-commit gitleaks / CI gitleaks / .gitignore 加固 / 凭据命名纪律）是否本批落地（建议做，零成本）。**用户 2026-10-20 口头已选 A（接受风险），待确认是否维持**
+| G-9 | 历史密钥清理路径 | ✅ **已完成（2026-10-21 新裁决：清理）**：blob 级全历史扫描 → filter-repo 重写（1053→774 提交，force push）→ 旧 Neon 口令轮换 + 旧 Hyperdrive 同步 → 重写后 0 命中。**遗留：Notion token 需用户后台吊销**。执行记录见 [`STRUCTURAL_DEBT.md`](./STRUCTURAL_DEBT.md) §6.6 |
 | G-10 | 冷启动根治路径 | ✅ **已定（2026-10-21）**：用户拍板**全量迁 TS Worker、不折中**。执行计划 [`OPTIMIZATION_PLAN_2026-10-21.md`](./OPTIMIZATION_PLAN_2026-10-21.md) W3（3–5 周四阶段）；框架/引擎移植方式待 D1/D2 拍板 |
 | G-11 | 地理迁移停机窗口 | ✅ **已完成（2026-10-21）**：迁至 **aws-ap-southeast-1 新加坡**（Neon 免费档无东京），RTT 245→75ms；新 Hyperdrive `6830420703984a19a99a334afff6776e`、version `cd87aba7`；旧库保留 7 天后删除待确认（提醒已设 2026-10-28）。详见 [`PROD_PERFORMANCE_AUDIT_2026-10-21.md`](./PROD_PERFORMANCE_AUDIT_2026-10-21.md) §4.2 |
 ## G. 待用户拍板清单（集中登记；每条写明要定什么）

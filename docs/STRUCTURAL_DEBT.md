@@ -242,6 +242,19 @@ trufflehog git file://. --only-verified --json > .tmp/trufflehog-full-history.js
 3. **`.gitignore` 加固**：确认 `.codex/`、`.env*`、`~/.dsh/secrets/` 相关路径已在 `.gitignore`（`.codex/` 已在，2026-10-21 实测）；新增「密钥文件一律走环境变量、不入仓」的纪律写入 `AGENTS.md`。
 4. **凭据命名纪律**（`AGENTS.md` §0 已有）：`kaas-*-system-*` 一个密钥只用于一个地方——继续强化，新增凭据时先查 `~/.dsh/secrets/inventory.md` 确认命名归属。
 
+
+### 6.6 执行记录（2026-10-21 · 用户新裁决：清理，推翻 2026-10-20「接受风险」）
+
+| 步骤 | 内容 | 结果 |
+|---|---|---|
+| 1. 全历史取证 | blob 级扫描 5039 个 blob（逐 commit 口径有假阴性，blob 级为准） | 真实泄露：**Notion token**（`.codex/config.toml`/`.mcp.json`，2 blob）+ **Neon 旧库 DSN**（`DEPLOY.md`、`backend/.tools/*.py` 8 文件、审计文档副本）；AWS `AKIAMINIOEXAMPLE0001` 为 MinIO 示例假值排除；GitHub PAT/Resend 0 命中 |
+| 2. 历史重写 | mirror 克隆 + `git filter-repo --replace-text`（明文→`***REMOVED***`），1053 提交→774（273 条纯噪声提交变空被 prune），force push main | ✅ 重写后对 4 个真实泄露值全历史 **0 命中** |
+| 3. 本地同步 | `fetch + reset --hard origin/main`，在途未跟踪文件（ts-worker 迁移中文件）原样保留 | ✅ |
+| 4. 凭据轮换 | 旧项目 `falling-salad-31662168` 角色口令 Neon API `reset_password` 轮换（泄露 DSN 指向其 `ep-wandering-frost` 端点）；旧 Hyperdrive `f53fed…` 连接串同步更新；`~/.dsh/secrets/neon-prod-dsn.txt` 更新 | ✅ 新口令实测可连；旧口令作废；**回滚路径保持可用** |
+| 5. 收尾 | 删 mirror 与临时明文文件（不留副本） | ✅ |
+
+**遗留（需用户在外部平台操作）**：① **Notion 集成 token 需在 Notion 后台吊销**（API 无吊销端点，只能由用户在 Settings→Connections 操作）；② GitHub/仓库侧：历史已重写，其他未同步的本地 clone / 旧分支需重新 clone（本项目单人环境，`feat/*` 旧 worktree 分支已自动失效）；③ GitHub 服务端对象缓存可能短暂保留旧对象，但泄露值已通过轮换失效，风险已闭环。
+
 ### 6.5 本次不执行，待用户拍板
 
 - [ ] 是否执行 §6.2 全历史扫描（需先安装 gitleaks/trufflehog）
