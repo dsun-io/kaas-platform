@@ -1,0 +1,1 @@
+This folder contains the built output assets for the worker "kaas-edge" generated at 2026-10-21T04:09:17.919Z.

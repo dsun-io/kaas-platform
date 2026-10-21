@@ -7,6 +7,10 @@
 import { Hono } from "hono";
 
 import { getEnv, type Env } from "./env";
+import authRoutes from "./routes/auth";
+import customerRoutes from "./routes/customers";
+import teamRoutes from "./routes/teams";
+import { createProxyApp } from "./proxy";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -57,6 +61,19 @@ function corsHeaders(allowed: string): Record<string, string> {
     "Vary": "Origin",
   };
 }
+
+// ── 业务域挂载（Phase 2；语义真源 = backend/worker/src/main.py + ws_*.py）──
+// auth 的 9 条路由用域内相对路径（/login、/me…），挂到 /api/v1/auth；
+// customers/teams 沿用 Python 侧的完整 /api/v1 前缀（与真源逐字对照方便），挂到根。
+app.route("/api/v1/auth", authRoutes);
+app.route("/", customerRoutes);
+app.route("/", teamRoutes);
+
+// ── 引擎域透传（quotes / trade-docs / ai）：门面只鉴权+协议转换，不重写业务（ADR-008）──
+// 详见 backend/ts-migration/route-classification.md 与 AGENTS.md 铁纪律。
+app.route("/api/v1/quotes", createProxyApp("/api/v1/quotes"));
+app.route("/api/v1/trade-docs", createProxyApp("/api/v1/trade-docs"));
+app.route("/api/v1/ai", createProxyApp("/api/v1/ai"));
 
 // ── 存活探针（对齐 Python 版 GET /health 语义；service 名按本 worker 名标注）──
 app.get("/health", (c) => {

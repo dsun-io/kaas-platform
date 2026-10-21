@@ -35,6 +35,8 @@ export interface Env {
   S3_BUCKET: string;
   S3_REGION: string;
   S3_PRESIGN_EXPIRES: string;
+  /** 前端基址（重置密码链接用；对齐 Python _binding("FRONTEND_BASE_URL")，未配则回退官方域名）。 */
+  FRONTEND_BASE_URL?: string;
 
   // ── secrets（占位：wrangler secret put 写入，绝不入仓/打印）──
   /** JWT HS256 签名密钥。缺失 = 503（对齐 Python _jwt_secret）。 */

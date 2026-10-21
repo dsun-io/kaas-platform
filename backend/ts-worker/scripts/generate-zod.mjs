@@ -15,9 +15,16 @@ const out = [
 ];
 let ok = 0, fail = 0;
 for (const [key, schema] of Object.entries(schemas)) {
-  const name = key.split('.').pop();
+  // 用「模块_类名」保证唯一（不同模块同名模型如 ShipmentCreate 会撞名）
+  const name = key.replace(/[^A-Za-z0-9_]/g, '_');
   try {
-    const zod = jsonSchemaToZod(schema, { module: 'esm', name });
+    const raw = jsonSchemaToZod(schema, { module: 'esm', name });
+    // 去掉每个 schema 自带的 import/export 行：只保留顶层单次 import z
+    const zod = String(raw)
+      .split('\n')
+      .filter((line) => !/^\s*import\s/.test(line) && !/^\s*export default/.test(line))
+      .join('\n')
+      .trim();
     out.push('// ' + key);
     out.push(zod);
     ok++;

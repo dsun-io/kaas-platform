@@ -12,8 +12,14 @@ import postgres from "postgres";
 
 import type { Env } from "./env";
 
+/** 请求级 SQL 句柄（`Sql<any>`：参数类型放宽，路由层的 `unknown` 值可直传）。 */
+export type Db = postgres.Sql<any>;
+
+/** 事务内 SQL 句柄（`sql.begin` 回调参数）。 */
+export type Tx = postgres.TransactionSql<any>;
+
 /** 用 Hyperdrive 暴露的连接字段创建 postgres.js 客户端（对齐 asyncpg.connect(host/port/user/password/database, ssl=False)）。 */
-export function createSql(env: Env): postgres.Sql {
+export function createSql(env: Env): Db {
   const hd = env.HYPERDRIVE;
   return postgres({
     host: hd.host,
@@ -34,7 +40,7 @@ export function createSql(env: Env): postgres.Sql {
  * 用法：
  *   const rows = await withDb(env, async (sql) => await sql`SELECT ...`);
  */
-export async function withDb<T>(env: Env, fn: (sql: postgres.Sql) => Promise<T>): Promise<T> {
+export async function withDb<T>(env: Env, fn: (sql: Db) => Promise<T>): Promise<T> {
   const sql = createSql(env);
   try {
     return await fn(sql);
