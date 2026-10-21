@@ -55,12 +55,14 @@
 | [QA_AUTHZ_VERIFY_2026-10-21.md](./QA_AUTHZ_VERIFY_2026-10-21.md) | **C27 越权修复验收矩阵 v2**：F1–F4 + R-1 的「该验什么/期望/证据在哪」；只定义验收，不执行 |
 | [PROD_PERFORMANCE_AUDIT_2026-10-21.md](./PROD_PERFORMANCE_AUDIT_2026-10-21.md) | **生产性能体检**：实测 Worker 冷启动为主瓶颈（/health 0.4–5.1s）、DB 无问题（最大表 304kB）、修复路线 P0 前端/P1 worker/P2 迁亚太（需窗口） |
 | [acceptance/B_PACKAGE_2026-10-21.md](./acceptance/B_PACKAGE_2026-10-21.md) | **B 组验收包**：打印视觉 QA、条款、N3 等「需要用户一次过目」的事项清单与证据（含 print-qa 产物） |
+| [STRUCTURAL_DEBT.md](./STRUCTURAL_DEBT.md) | **结构性缺口账本（2026-10-21 建档）**：main.py 巨石/循环依赖/无 TODO 锚点/裸 except+print/单人无第二 review/技术选型无论证 6 条 S 组条目 + 免费版优先级矩阵 + 免费版撑不住暂不动项（冷启动/地理）+ 附：历史密钥清理专章（§6，待用户拍板）|
 
 ## 3. UI/UX（本轮主线）
 
 | 文档 | 内容 |
 |---|---|
 | [UI_UX_OPTIMIZATION_2026-10-20.md](./UI_UX_OPTIMIZATION_2026-10-20.md) | 全系统 UI/UX 方案；P0/P1/P2 已完成，§11 为终验结论 |
+| [UI_STANDARDS.md](./UI_STANDARDS.md) | **UI 设计规范硬性约束**：新增页面/组件必须遵守；`pnpm ui:standards` + `pnpm ui:contrast` + e2e a11y 自动发现路由 |
 
 > 已归档：`UI_BACKEND_DEPENDENCIES_2026-10-20.md`（后端 5 项历史验收基线）→ 见 §5
 > [`archive/2026-10-21-final-closeout/`](./archive/2026-10-21-final-closeout/README.md)；

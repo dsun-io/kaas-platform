@@ -48,6 +48,10 @@ jobs:
 
       - run: pnpm contracts:check
 
+      # UI 设计规范硬约束：新增页面/组件由扫描自动覆盖（见 docs/UI_STANDARDS.md）
+      - run: pnpm ui:standards
+      - run: pnpm ui:contrast
+
       - run: pnpm build
         env:
           # secret 只在 push（同仓、受信任）时注入；pull_request（含 fork）留空

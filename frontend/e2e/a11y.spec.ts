@@ -1,7 +1,13 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
 import { test, expect } from './fixtures';
 
 /**
- * 全站 a11y/一致性冒烟：核心页面逐页检查
+ * 全站 a11y/一致性冒烟：自动发现 `src/app/(app)` 下所有 page.tsx。
+ * 新增页面不需要改这份清单，路由会自动纳入硬约束。
+ *
+ * 逐页检查：
  *  - 只有一个 h1
  *  - 表头都有 scope
  *  - 没有无名称的 icon-only 按钮
@@ -9,21 +15,27 @@ import { test, expect } from './fixtures';
  *
  * 只做结构断言，不校验业务数据；mock 模式下页面应稳定可打开。
  */
-const PAGES = [
-  '/dashboard',
-  '/customers',
-  '/quotes',
-  '/orders',
-  '/trade-docs',
-  '/products',
-  '/events',
-  '/settings',
-  '/intel',
-  '/shipments',
-];
+const APP_DIR = path.join(process.cwd(), 'src', 'app', '(app)');
 
-test('core pages pass structural a11y checks', async ({ page }) => {
-  test.setTimeout(120_000);
+function collectRoutes(dir: string, prefix: string): string[] {
+  const routes: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    const routePath = `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) {
+      routes.push(...collectRoutes(full, routePath));
+    } else if (entry.name === 'page.tsx') {
+      routes.push(prefix || '/');
+    }
+  }
+  return routes;
+}
+
+const PAGES = collectRoutes(APP_DIR, '').sort();
+
+test('all app routes pass structural a11y checks', async ({ page }) => {
+  test.setTimeout(240_000);
+  expect(PAGES.length, '至少发现一个 (app) 路由').toBeGreaterThan(0);
 
   for (const path of PAGES) {
     await page.goto(path);

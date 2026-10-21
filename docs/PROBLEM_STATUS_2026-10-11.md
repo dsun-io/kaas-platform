@@ -10,6 +10,13 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-21 · UI 规范固化为硬约束）** 新增 [`UI_STANDARDS.md`](./UI_STANDARDS.md)
+> （页面骨架/Tabs/颜色/表格/加载空态/a11y/新增页面 DoD），并新增 `frontend/scripts/ui-standards-check.cjs`
+> + `pnpm ui:standards` 静态门禁；`pnpm e2e` 的 a11y 用例改为**自动发现 `src/app/(app)` 全部路由**，
+> 新增页面无需手工登记即被覆盖。Frontend CI 已接入 `ui:standards` / `ui:contrast`；
+> AGENTS.md 规则同步要求改 UI 必跑两项门禁。实测：ui:standards PASS、ui:contrast PASS、
+> typecheck 0、lint 0 err（92 warn）、vitest 929、e2e 27 passed（a11y 自动发现全路由）、build `out/` 290。
+>
 > **（2026-10-21 · UI 巡检修复：dashboard 除外全部收口）** 依据
 > [`UI_AUDIT_2026-10-21.md`](./UI_AUDIT_2026-10-21.md) 修复非 dashboard 项：18 个源文件裸 `<th>`
 > 补 `scope="col"`、23 处硬编码状态色改语义 token、`/settings/ai-providers` 6 个 icon-only 按钮补可访问名、
