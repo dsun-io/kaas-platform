@@ -96,7 +96,11 @@ Python；全量重写牺牲生态、风险最大。**修订为永久两层架构
 > **进度（2026-10-21）**：波 A ✅（auth 9 / customers 20 / teams 15 = 44 条，commit `c80f894`；
 > 45 测全绿、typecheck 0）+ 引擎域透传层 ✅（`src/proxy.ts`：quotes/trade-docs/ai → KERNEL.fetch，
 > 鉴权纵深/4xx 原样/5xx 归一/不可达 502，7 条单测）；波 B 进行中（orders/files/outreach/admin 48 条）。
-> 波 C 计划：workstations(35) + intel(34) + dashboard/meta(2)。每域 DoD：形状一致 + 关键分支测试 + app 挂载。
+> 波 C ✅（workstations 35 / intel 34 / dashboard 1 = 70 条，meta 的 /health 已存在；commit `efb6cbc`）。
+> **Phase 2 全部完成**：249 业务路由 = **163 直接注册 + 86 前缀透传**，机检 0 缺失/0 多余
+> （`tests/route-surface.test.ts`，归一 `{id}`/`:id` 后 method+path 全等）；97 测全绿、typecheck 0。
+> 本地金标双跑（门面 vs 生产 Python）：可验证 10 条全部一致，4 条差异全为预期（/health 身份 + 本地无
+> service binding 的 3 条 proxy）——报告归档 `backend/ts-migration/golden/local-edge-vs-prod.report.md`。
 
 顺序原则：**读多写少、低耦合的先切**；引擎域不移植、走透传（见 §2.0.1）。
 1. auth/users/teams（含登录/注册/bootstrap）

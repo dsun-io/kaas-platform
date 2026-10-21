@@ -21,7 +21,12 @@
 > 门禁：ts-worker **45 测全绿（8 文件）**、typecheck 0 error。语义差异已登记 ts-worker README
 > （422 而非 400 / 时间戳精度 / expires_at 解析宽容度 / forgot-password 暂不发信 TODO:TS2）。
 > 波 B ✅（orders 16 / files 9 / outreach 12 / admin 11 = 48 条，`c5ee5c8`；93 测全绿、typecheck 0）；
-> 波 C（workstations 35 / intel 34 / dashboard·meta 2）在途。迁移中发现真源不一致已登记 TODO §F2
+> 波 C ✅（workstations 35 / intel 34 / dashboard 1 = 70 条，`efb6cbc`）。**W3 Phase 2 全部完成**：
+> 249 业务路由 = 163 直接注册 + 86 前缀透传（clause-templates/events/export-quote/external-docs/fx-rates/
+> pricing-data/product-tax-rates/quotations/tax-archives 共 41 条补透传），**路由面机检 0 缺失 0 多余**
+> （`tests/route-surface.test.ts`）；97 测全绿、typecheck 0。**本地金标双跑**（wrangler dev 门面 vs 生产）：
+> 10 条可验证面全部一致，4 条差异全为预期（/health 身份、本地无 service binding 的 3 条 proxy），
+> 报告归档 golden/local-edge-vs-prod.report.md。迁移中发现真源不一致已登记 TODO §F2
 > （ORDER_NEXT producing 是否可 cancelled：main.py 与 state_machines.py 不同；门面按 worker 实际行为镜像）。
 > TODO:TS4（outreach-generate 接 KERNEL）/TS5（SigV4 预签名）/TS6（询盘阶段联动）登记在 ts-worker README。
 >
