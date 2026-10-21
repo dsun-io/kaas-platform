@@ -151,6 +151,15 @@ app.get("/openapi.json", (c) => {
   return c.json(OPENAPI);
 });
 
+// 未匹配 API 路由的 404 信封对齐 Python（FastAPI 返回 {"detail":"Not Found"} JSON；
+// Hono 默认是 text/plain，会让前端按 JSON 解析失败）。非 /api 路径维持纯文本 404（正常情况不会到 Hono）。
+app.notFound((c) => {
+  if (c.req.path.startsWith("/api/")) {
+    return c.json({ detail: "Not Found" }, 404);
+  }
+  return c.text("404 Not Found", 404);
+});
+
 export default app;
 
 // 供测试与非 Workers 环境直接取 env（Workers 请求期经 c.env 注入，语义对齐 Python 请求期读绑定）

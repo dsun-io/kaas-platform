@@ -6,7 +6,14 @@
   "name": "kaas-edge",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-18",
-  "workers_dev": false,
+  // 静态资产（Next 静态导出；切流后由门面伺服，替代 Python worker 的 assets 绑定）
+  // 与 backend/worker/wrangler.jsonc 同口径：/_headers 的 immutable 缓存随 out/ 一起上传。
+  "assets": {
+    "directory": "../../frontend/out",
+    // 未命中路径回退 index.html（SPA），但 /api/* 与 /health 由 Hono 先处理，不会落到这里
+    "not_found_handling": "single-page-application"
+  },
+  "workers_dev": true,  // 2026-10-21 预发验证期临时开启（切流后改回 false）
   // Hyperdrive 复用现有实例（与 backend/worker/wrangler.jsonc 同一 id）
   "hyperdrive": [
     {
@@ -26,10 +33,10 @@
     "binding": "BROWSER"
   },
   // Python 内核 Worker 的 Service Binding（契约见 src/kernel.ts）。
-  // 集成期取消注释并指向内核 worker 名（当前 backend/worker/wrangler.jsonc 的 name=kaas）：
-  // "services": [
-  //   { "binding": "KERNEL", "service": "kaas" }
-  // ],
+  // 2026-10-21 启用：指向内核 worker（backend/worker/wrangler.jsonc 的 name=kaas）。
+  "services": [
+    { "binding": "KERNEL", "service": "kaas" }
+  ],
   // 非机密 S3 配置（机密 S3_ACCESS_KEY / S3_SECRET_KEY 走 secret put；
   // 值与 backend/worker/wrangler.jsonc 的 vars 逐字对齐）
   "vars": {
