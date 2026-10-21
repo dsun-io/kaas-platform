@@ -38,6 +38,13 @@
 
 ## 2. W3 TS 门面 + Python 内核分层迁移（主工程）
 
+
+### 2.0.1 Phase 2 执行口径：门面移植 vs 内核透传（2026-10-21）
+
+- **门面移植 ≈163 条**：auth/customers/teams/orders/files/outreach/admin/workstations/intel/dashboard/meta。
+- **内核透传 ≈86 条**：quotes/trade-docs/ai/cron —— 门面只做鉴权+协议转换+错误归一，转发 `KERNEL.fetch`，
+  **不逐端点重写**（禁止第二份实现）。详见 `backend/ts-migration/route-classification.md`。
+- 收益：Phase 2 工作量大幅收敛；迁移收益不变（所有 UI 请求先过门面，冷启动 ~50ms）。
 ### 2.0 架构修订（2026-10-21 用户拍板，取代原「全量迁 TS」）
 
 **原 W3（全量迁 TS）作废原因**：用户指出系统定位=智能制造业务管理 + 工位化能力 + 未来 AI +
@@ -85,7 +92,7 @@ Python；全量重写牺牲生态、风险最大。**修订为永久两层架构
 - CI 门禁：typecheck / lint / test / bundle 体积断言（对照现 11.7MB，TS 侧预期 <3MB）。
 
 ### Phase 2 · 按域迁移（2–3 周，每域独立可交付）
-顺序原则：**读多写少、低耦合的先切**；引擎重的后切。
+顺序原则：**读多写少、低耦合的先切**；引擎域不移植、走透传（见 §2.0.1）。
 1. auth/users/teams（含登录/注册/bootstrap）
 2. customers / inquiries（cust_*）
 3. orders / quotes API 壳（不含引擎计算）
