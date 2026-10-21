@@ -126,6 +126,8 @@ main.py 244KB / 约 5200 行 + chain.py 118KB + quote_api.py 113KB + ws_* 若干
   （证明经 Hyperdrive→新加坡库整条链路通，用户行读到、密码校验执行）。
 - **回滚路径**：旧库（falling-salad-31662168）与旧 Hyperdrive（f53fed…）均保留，
   改回 wrangler.jsonc 再部署即可，分钟级回滚。
+  > **2026-10-21 更新**：旧库与旧 Hyperdrive **已删除**（用户授权，切流后验证稳定）；回滚现为应用层回滚
+  > （域名回指内核 + 版本回退，均用新加坡库），详见 ARCH_DECISIONS ADR-007 附注。
 - **密钥落位**：新 DSN 存 `~/.dsh/secrets/neon-prod-dsn-apac.txt`，inventory.md 已登记；
   旧 DSN 保留（旧项目存活期间继续有效）。含机密的临时文件（dump/DSN 副本）已清除。
 - **遗留**：① dump 到切换间几分钟的增量写入若存在则未同步（低峰期执行，风险已告知用户）；

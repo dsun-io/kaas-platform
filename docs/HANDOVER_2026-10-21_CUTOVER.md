@@ -45,7 +45,7 @@ backend/orchestrator/.venv/Scripts/python.exe backend/ts-migration/golden/diff_r
 |---|---|---|
 | **W5 对外 MCP+REST 实施** | 设计完成（`W5_MCP_REST_DESIGN_2026-10-21.md`），未开工 | 用户立项后按 M1→M4 |
 | 内核瘦身（main.py ≤3000 行） | 等 2 周回滚窗口结束 | 提醒 **2026-11-04**（schedule-50e7d5be） |
-| 旧 Neon 项目 `falling-salad` + 旧 Hyperdrive 删除 | 破坏性，需用户确认 | 提醒 **2026-10-28**（schedule-3cc18076） |
+| 旧 Neon 项目 `falling-salad` + 旧 Hyperdrive `f53fed…` | ✅ **已删除（2026-10-21，用户授权；验证：hyperdrive 仅剩 kaas-apac、旧项目 404）** | — |
 | Notion 集成 token 吊销 | 用户在 Notion 后台操作（API 无端点） | 用户方便时 |
 | TS 门面已知差异 | 见 `backend/ts-worker/README.md`（422 措辞/时间戳精度/BigInt 类型/SigV4 TODO:TS5 等） | 各项 TODO 编号 |
 | 真源不一致 `ORDER_NEXT` | `TODO.md §F2` | 内核侧收敛时 |

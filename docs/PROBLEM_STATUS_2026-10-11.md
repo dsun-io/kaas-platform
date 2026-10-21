@@ -14,6 +14,15 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-21 · 旧资源清理 ✅ + W5 M1 上线）** ①用户授权后删除旧 Neon 项目 `falling-salad-31662168`
+> 与旧 Hyperdrive `f53fed…`（验证：hyperdrive 仅剩 `kaas-apac`；旧项目 API 404；生产 health 正常）；
+> 回滚改为**应用层回滚**（域名回指内核+版本回退，用新加坡库），ADR-007 已加附注；旧 DSN 密钥文件已删。
+> ②**W5 M1（API token 基座）已上线**：迁移 `202610210002_api_tokens` 已应用生产；门面新增
+> `tokens.ts/actor.ts/routes/api-tokens.ts`（JWT-only 管理端、哈希存储、一次性明文、软撤销 409）；
+> 生产实测 创建 201→列表无明文/hash→token 访问管理面 401→撤销 200→重复撤销 409 全符合。
+> 排障实录：`fetch_types:false` 下 postgres.js 数组参数被压扁 → 22P02，新增 `pgTextArray` 字面量+`::text[]`
+> 修复（生产验证 + 回归测试）；ts-worker **133 测（19 文件）**、typecheck 0。
+>
 > **（2026-10-21 · W4 切流完成 ✅ 生产已由 TS 门面承载）** 用户裁决「直接切流，不用等低峰期」。
 > 执行：预发部署 kaas-edge（workers.dev 验证）→ JWT_SECRET **轮换并经 CF API 精确写入双端**（自签 token
 > 双端 `/me` 均 200、形状一致）→ 内核摘除自定义域名（部署 `25133623`，3 条 cron 保留）→ 门面接管
