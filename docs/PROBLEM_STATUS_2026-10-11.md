@@ -19,6 +19,9 @@
 > 全部 ≤5min 无需降）；**P1** worker 顶层导入裁剪（main/chain/ws_files 懒加载 bcrypt/csv/io/hmac/
 > hashlib/secrets/urlparse，路由数 253 不变，本地导入中位 694→640ms，Pyodide 预期收益更大）。
 > 门禁：worker **1565 passed + 12 skipped**；前端 vitest **929 passed**。
+> **第十三次部署 ✅（2026-10-21，用户弹窗批准）**：version `586ab897-c55c-4928-9539-98e6ce50b732`，
+> 含 P0+P1 与并行线 admin teams 页（b53055e，纯新增）。部署后 `/health` 复测 P50 ≈ 2.1s、最优 319ms——
+> **冷启动分布未变**，裁剪仅为边际改善（详见体检报告 §4.1）；结构性提速看 P2/P3/长期项。
 > **P2 数据库迁亚太（东京/新加坡）runbook 已写，等用户定停机窗口**；P3 记录在案
 > （静态资产边缘缓存规则 / 登录 429 / Smart Placement / 长期 TS Worker 选项）。
 
