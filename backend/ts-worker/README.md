@@ -114,6 +114,7 @@
 | 团队/订阅规则判定 | `kaas_common/workstation/{teams,scope,subscriptions}.py` | `rules.ts` 逐行镜像（KERNEL 目前无 `/internal/rules/*` 端点；`TODO(TODO:TS3)` 后切 Service Binding） |
 | `expires_at` 解析 | `datetime.fromisoformat`（严格 ISO） | JS `Date` 解析更宽松（登记为输入宽容度差异；非法值仍 422） |
 | 邀请码撞码重试 | 事务内重试 5 次（唯一约束冲突） | 同语义逐行直译（撞码概率可忽略，保留兜底） |
+| 重置密码请求 IP | `request.client.host` | Workers 无 client 对象，取 `CF-Connecting-IP` 头（同义数据源） |
 
 ## TODO 标记位置
 
