@@ -14,6 +14,11 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-21 · W5 M2 OpenAPI 上线）** 门面新增 `src/openapi.ts`：从 app.routes 自动生成 OpenAPI 3.1
+> （141 path / 227 operation / 12 透传 mount / 16 tags；securitySchemes `bearerAuth`+`apiToken`）；
+> `/openapi.json` 惰性构建（生产 301KB JSON 实测）、`/docs` swagger-ui（CDN 零依赖）；schema 边界：23 个
+> z 校验端点关联 generated 模型，其余 generic（完整契约以内核为准，文件头注明）。门禁 140 测 / typecheck 0。
+>
 > **（2026-10-21 · 旧资源清理 ✅ + W5 M1 上线）** ①用户授权后删除旧 Neon 项目 `falling-salad-31662168`
 > 与旧 Hyperdrive `f53fed…`（验证：hyperdrive 仅剩 `kaas-apac`；旧项目 API 404；生产 health 正常）；
 > 回滚改为**应用层回滚**（域名回指内核+版本回退，用新加坡库），ADR-007 已加附注；旧 DSN 密钥文件已删。

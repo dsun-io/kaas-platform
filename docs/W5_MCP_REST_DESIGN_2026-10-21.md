@@ -1,7 +1,8 @@
 # W5 对外能力设计：MCP + REST 双暴露（2026-10-21）
 
-> **进度**：M1 ✅（2026-10-21 上线：api_tokens 迁移 + 门面管理端点，生产实测通过）；M2 在途（OpenAPI 规整）；
-> M3（MCP server）/M4（文档+验收）待做。实施细节与实测坑见 PROBLEM_STATUS 2026-10-21 条目与 backend/ts-worker/README。
+> **进度**：M1 ✅（api_tokens 迁移+门面管理端点，生产实测通过）；M2 ✅（`src/openapi.ts` 自动生成 OpenAPI 3.1：
+> 141 path/227 operation、12 透传 mount、bearerAuth+apiToken 双 scheme，生产 `/openapi.json` 301KB + `/docs` 可用）；
+> M3 在途（MCP server + token 接入业务路由）；M4 待做。实施细节与实测坑见 PROBLEM_STATUS 与 backend/ts-worker/README。
 
 > 用户拍板（2026-10-21）：对外能力形态 = **MCP + REST 双暴露**；建在 **TS 门面**（ADR-008），
 > 复用门面鉴权，不在 Python 内核另起一套。本设计在 W3 Phase 2 完成后开工。
