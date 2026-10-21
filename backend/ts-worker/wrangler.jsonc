@@ -13,7 +13,7 @@
     // 未命中路径回退 index.html（SPA），但 /api/* 与 /health 由 Hono 先处理，不会落到这里
     "not_found_handling": "single-page-application"
   },
-  "workers_dev": true,  // 预发验证期临时开启（W4 验收通过后改回 false）
+  "workers_dev": false,  // W4 验收通过（2026-10-21）：关闭 workers.dev 调试入口，仅保留生产自定义域名
   // 2026-10-21 W4 切流：生产自定义域名指向 TS 门面（内核不再暴露公网域名）
   "routes": [
     {
