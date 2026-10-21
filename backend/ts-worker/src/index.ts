@@ -7,8 +7,12 @@
 import { Hono } from "hono";
 
 import { getEnv, type Env } from "./env";
+import adminRoutes from "./routes/admin";
 import authRoutes from "./routes/auth";
 import customerRoutes from "./routes/customers";
+import fileRoutes from "./routes/files";
+import orderRoutes from "./routes/orders";
+import outreachRoutes from "./routes/outreach";
 import teamRoutes from "./routes/teams";
 import { createProxyApp } from "./proxy";
 
@@ -68,6 +72,10 @@ function corsHeaders(allowed: string): Record<string, string> {
 app.route("/api/v1/auth", authRoutes);
 app.route("/", customerRoutes);
 app.route("/", teamRoutes);
+app.route("/", orderRoutes);
+app.route("/", fileRoutes);
+app.route("/", outreachRoutes);
+app.route("/", adminRoutes);
 
 // ── 引擎域透传（quotes / trade-docs / ai）：门面只鉴权+协议转换，不重写业务（ADR-008）──
 // 详见 backend/ts-migration/route-classification.md 与 AGENTS.md 铁纪律。

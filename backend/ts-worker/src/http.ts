@@ -8,7 +8,7 @@
  * 对照真源：backend/worker/src/main.py 各端点的 HTTPException 抛出处。
  */
 import type { Context } from "hono";
-import { ZodError, type ZodType } from "zod";
+import { ZodError, type ZodTypeAny, type output } from "zod";
 
 import { MissingSecretError } from "./env";
 
@@ -68,7 +68,7 @@ function invalidTypeIssue(loc: (string | number)[], input: unknown, msg: string)
  * - 校验失败 → 422 detail 数组（loc 前缀 "body"，对齐 pydantic v2 形状；
  *   逐字 message 对齐依赖 schema 生成器，TODO(TODO:TS1)，当前为近似形状）。
  */
-export async function parseBody<T>(c: Context, schema: ZodType<T>): Promise<T> {
+export async function parseBody<S extends ZodTypeAny>(c: Context, schema: S): Promise<output<S>> {
   let body: unknown;
   try {
     body = await c.req.json();
@@ -81,11 +81,15 @@ export async function parseBody<T>(c: Context, schema: ZodType<T>): Promise<T> {
 }
 
 /** 解析 query/path 参数（loc 前缀对齐 FastAPI："query" / "path"）。 */
-export function parseQuery<T>(schema: ZodType<T>, input: unknown, where: "query" | "path" = "query"): T {
+export function parseQuery<S extends ZodTypeAny>(
+  schema: S,
+  input: unknown,
+  where: "query" | "path" = "query",
+): output<S> {
   return parseWith(schema, input, [where]);
 }
 
-function parseWith<T>(schema: ZodType<T>, input: unknown, locPrefix: string[]): T {
+function parseWith<S extends ZodTypeAny>(schema: S, input: unknown, locPrefix: string[]): output<S> {
   const result = schema.safeParse(input);
   if (result.success) return result.data;
   throw httpError(422, result.error.issues.map((issue) => {

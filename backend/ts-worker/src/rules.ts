@@ -508,3 +508,193 @@ export function buildRecords(
     direct,
   };
 }
+
+// ── 枚举/状态机/文件规则镜像（Phase 2 波 B：orders / files / outreach / admin）──
+// ⚠️ TODO(TODO:TS3)：以下全部 = 内核纯函数的机械直译，待内核暴露 /internal/rules/* 后删除。
+
+/** 业务枚举（kaas_common/domain/enums.py:ENUMS 的镜像；改动只改 Python 侧）。 */
+export const ENUMS: Record<string, readonly string[]> = {
+  order_status: ["pending", "confirmed", "producing", "shipped", "completed", "cancelled"],
+  shipment_status: ["booking", "in_transit", "arrived", "customs", "delivered"],
+  owner_scope: ["private", "tenant"],
+  currency: ["USD", "CNY", "EUR", "GBP", "JPY", "AUD", "CAD", "HKD"],
+  schedule_type: ["deposit", "balance", "full"],
+  schedule_status: ["pending", "paid", "overdue"],
+  receivable_status: ["unpaid", "partial", "paid"],
+  bl_type: ["original", "telex", "seaway"],
+  doc_status: ["draft", "issued", "void"],
+};
+
+/**
+ * validate_enum 逐字对齐（enums.py:88-109）。
+ * 非法值 → RuleError("INVALID_ENUM")，由路由层落成 422 信封（同 customers.ts 口径）。
+ */
+export function validateEnum(field: string, value: string | null | undefined): string | null | undefined {
+  if (value === null || value === undefined) return value;
+  const allowed = ENUMS[field];
+  if (!allowed) {
+    throw new RuleError("UNKNOWN_ENUM_FIELD", `unknown enum field: ${field}`);
+  }
+  if (!allowed.includes(value)) {
+    throw new RuleError("INVALID_ENUM", JSON.stringify({ field, value, allowed: [...allowed] }));
+  }
+  return value;
+}
+
+/**
+ * 订单状态机（真源 = backend/worker/src/main.py:3310 ORDER_NEXT，逐条对齐）。
+ *
+ * ⚠️ 已知上游不一致（本迁移发现，未擅自改口径）：内核
+ * kaas_common/workstation/state_machines.py:ORDER_NEXT 的 "producing" 还允许 "cancelled"，
+ * worker main.py 的本地常量不允许。门面以 **worker 实际行为**为准（409 的 allowed 列表
+ * 是前端契约），差异登记在 README「语义差异登记」。
+ */
+export const ORDER_NEXT: Record<string, readonly string[]> = {
+  pending: ["confirmed", "cancelled"],
+  confirmed: ["producing", "cancelled"],
+  producing: ["shipped"],
+  shipped: ["completed"],
+};
+
+/** 出运状态机（state_machines.py:SHIPMENT_NEXT 逐条对齐）。 */
+export const SHIPMENT_NEXT: Record<string, readonly string[]> = {
+  booking: ["in_transit"],
+  in_transit: ["arrived"],
+  arrived: ["customs"],
+  customs: ["delivered"],
+  delivered: [],
+};
+
+/** can_transition（state_machines.py:58-63）：目标 == 当前视为合法。 */
+export function canTransition(kind: "order" | "shipment", current: string, target: string): boolean {
+  if (target === current) return true;
+  const table = kind === "order" ? ORDER_NEXT : SHIPMENT_NEXT;
+  return (table[current] ?? []).includes(target);
+}
+
+// ── kaas_common/files/rules.py（文件用量规则；上传校验的唯一真源）────────────
+
+export const FILE_OWNER_TYPES = ["product", "trade_doc", "customer", "company"] as const;
+export const FILE_KINDS = ["product_photo", "stamp_scan", "render_pdf", "other"] as const;
+export const FILE_MEDIA_KINDS = ["production", "size", "weight", "finished", "other"] as const;
+
+/** 产品图类型标签（rules.py:34 MEDIA_KIND_LABELS）。 */
+export const MEDIA_KIND_LABELS: Record<string, string> = {
+  production: "生产图片",
+  size: "尺寸图片",
+  weight: "重量图片",
+  finished: "成品图片",
+  other: "其它",
+};
+
+const IMAGE_MIMES = ["image/png", "image/jpeg", "image/webp"];
+const KIND_MIMES: Record<string, readonly string[]> = {
+  product_photo: IMAGE_MIMES,
+  stamp_scan: [...IMAGE_MIMES, "application/pdf"],
+  render_pdf: ["application/pdf"],
+  other: [...IMAGE_MIMES, "application/pdf"],
+};
+const KIND_MAX_BYTES: Record<string, number> = {
+  product_photo: 8 * 1024 * 1024,
+  stamp_scan: 16 * 1024 * 1024,
+  render_pdf: 32 * 1024 * 1024,
+  other: 16 * 1024 * 1024,
+};
+const EXT_BY_MIME: Record<string, string> = {
+  "image/png": ".png",
+  "image/jpeg": ".jpg",
+  "image/webp": ".webp",
+  "application/pdf": ".pdf",
+};
+
+/** file_ext（rules.py:75-89）：content_type 优先，文件名只作兜底。 */
+export function fileExt(contentType: string | null | undefined, fileName?: string | null): string {
+  if (contentType) {
+    const mime = contentType.split(";")[0]!.trim().toLowerCase();
+    if (EXT_BY_MIME[mime]) return EXT_BY_MIME[mime]!;
+  }
+  if (fileName && fileName.includes(".")) {
+    const ext = "." + fileName.split(".").pop()!.toLowerCase();
+    if (Object.values(EXT_BY_MIME).includes(ext)) return ext;
+  }
+  return "";
+}
+
+/** validate_upload（rules.py:92-139）：不满足即 RuleError（code 与两端 API 一一对应）。 */
+export function validateFileUpload(input: {
+  ownerType: string;
+  kind: string;
+  mediaKind?: string | null;
+  name: string;
+  contentType?: string | null;
+  size?: number | null;
+}): void {
+  const { ownerType, kind, mediaKind, name, contentType, size } = input;
+  if (!(FILE_OWNER_TYPES as readonly string[]).includes(ownerType)) {
+    throw new RuleError("BAD_OWNER_TYPE", `归属类型非法：${ownerType}`);
+  }
+  if (!(FILE_KINDS as readonly string[]).includes(kind)) {
+    throw new RuleError("BAD_FILE_KIND", `文件用途非法：${kind}`);
+  }
+  if (kind === "product_photo") {
+    if (!mediaKind) throw new RuleError("MEDIA_KIND_REQUIRED", "产品图片必须选类型（生产/尺寸/重量/成品）");
+    if (!(FILE_MEDIA_KINDS as readonly string[]).includes(mediaKind)) {
+      throw new RuleError("BAD_MEDIA_KIND", `产品图类型非法：${mediaKind}`);
+    }
+  } else if (mediaKind && !(FILE_MEDIA_KINDS as readonly string[]).includes(mediaKind)) {
+    throw new RuleError("BAD_MEDIA_KIND", `产品图类型非法：${mediaKind}`);
+  }
+  const label = (name ?? "").trim();
+  if (!label) throw new RuleError("NAME_REQUIRED", "图片必须命名（用户要求：上传后给图片起名）");
+  if (label.length > 80) throw new RuleError("NAME_TOO_LONG", "名称最长 80 个字符");
+  const mime = (contentType ?? "").split(";")[0]!.trim().toLowerCase();
+  const allowed = KIND_MIMES[kind]!;
+  if (!allowed.includes(mime)) {
+    throw new RuleError("BAD_CONTENT_TYPE", `${kind} 只接受 ${[...allowed].sort().join("/")}，收到 ${mime || "(空)"}`);
+  }
+  const limit = KIND_MAX_BYTES[kind]!;
+  if (size === null || size === undefined || size <= 0) {
+    throw new RuleError("BAD_SIZE", "文件大小缺失或为 0");
+  }
+  if (size > limit) {
+    throw new RuleError("FILE_TOO_LARGE", `超过上限 ${Math.floor(limit / (1024 * 1024))}MB（实际 ${size} 字节）`);
+  }
+}
+
+/** object_key（rules.py:142-167）：确定性 key，同一份内容 + 同一归属 ⇒ 同一个 key。 */
+export function fileObjectKey(input: {
+  tenantId: string;
+  ownerType: string;
+  ownerId?: string | null;
+  kind: string;
+  mediaKind?: string | null;
+  sha256: string;
+  contentType?: string | null;
+  fileName?: string | null;
+}): string {
+  const seg = (value: unknown, fallback = "-"): string => {
+    const text = String(value ?? "").trim().replace(/[^0-9A-Za-z._-]+/g, "_");
+    return text || fallback;
+  };
+  const digest = (input.sha256 ?? "").trim().toLowerCase().slice(0, 16) || "nohash";
+  const parts = [
+    "t", seg(input.tenantId, "default"), seg(input.ownerType), seg(input.ownerId, "-"),
+    seg(input.kind), seg(input.mediaKind, "-"),
+  ];
+  return parts.join("/") + `/${digest}${fileExt(input.contentType, input.fileName)}`;
+}
+
+/** next_version（rules.py:180-189）：盖章回传「覆盖」语义（旧行留档 is_current=false）。 */
+export function nextFileVersion(current: Record<string, unknown> | null | undefined): [number, unknown] {
+  if (!current) return [1, null];
+  return [Number(current.version ?? 1) + 1, current.id];
+}
+
+/** current_of（rules.py:170-177）：优先 is_current 行，否则取版本号最大者。 */
+export function currentFileOf(rows: Record<string, unknown>[]): Record<string, unknown> | null {
+  if (!rows.length) return null;
+  for (const row of rows) if (row.is_current) return row;
+  return rows.reduce((best, row) =>
+    Number(row.version ?? 0) > Number(best.version ?? 0) ? row : best);
+}
+
