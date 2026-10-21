@@ -14,6 +14,13 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-21 · W5 全部完成 ✅ 对外 MCP+REST 能力上线）** ①M4 对外文档：[`W5_EXTERNAL_USAGE_2026-10-21.md`](./W5_EXTERNAL_USAGE_2026-10-21.md)
+> （REST curl 示例 / MCP client 配置 / 21 项 scope 清单与默认拒绝 / 审计边界如实登记）；②**UI 令牌管理页上线**
+> `/settings/api-tokens`（列表/创建 21 scopes 多选/一次性明文强制手动关闭/撤销二次确认 409 展示；
+> 前端门禁 typecheck·lint·ui:standards·ui:contrast·mocks 全过，vitest **934（110 文件）**、e2e **27 passed**）；
+> ③门面部署 `e206adaf`（含新资产），生产验证 `/settings/api-tokens` 200、`/openapi.json` 303KB、`/health` 正常。
+> **W5 闭环**；登记后续增强：token 逐次审计日志、MCP SSE、更多 tools/resources。
+>
 > **（2026-10-21 · W5 M3 MCP + token 接入业务路由 ✅ 上线）** 门面新增 `scope-map.ts`（有序 method+path→scope，
 > 未命中 403 `SCOPE_NOT_DECLARED`）与 `mcp.ts`（`POST /mcp` JSON-RPC 2.0：initialize/ping/tools.list/tools.call/
 > resources.list/resources.read；8 tools 内部复用 REST，quotes 经透传）；**API token 现可用于业务路由**

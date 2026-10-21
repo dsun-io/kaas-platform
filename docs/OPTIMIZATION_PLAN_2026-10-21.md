@@ -16,7 +16,7 @@
 | W1 | 性能收尾快赢 | 静态资产缓存规则、登录 429 排查、迁库后观察 | 0.5–1 天 | CF 权限 ✅ 已有 |
 | W2 | 结构性债务批 ✅ 全批完成 | S-3/S-6/S-4①（P0）；S-4② except 收敛 86 处（e6778c3）/S-5 流程约束/S-7 建档 | 完成 | — |
 | W3 | **TS 门面 + Python 内核分层迁移（修订版，§2.0）** | UI 面迁 Hono；引擎/AI/cron 留 Python | **2–3 周** | W2 的 S-6 ADR 先行 |
-| W5 | 对外能力：MCP + REST 双暴露 | M1 ✅ token 基座 / M2 ✅ OpenAPI+docs / M3 ✅ MCP server+token 接入业务路由（生产验证）/ M4 文档验收 + UI 令牌页待做 | 1 周 | 已启动 |
+| W5 | 对外能力：MCP + REST 双暴露 | ✅ **全部完成**：M1 token 基座 / M2 OpenAPI+docs / M3 MCP server+token 接入业务路由 / M4 对外文档 + UI 令牌管理页（均生产验证） | 完成 | — |
 | W4 | 收尾退役 | Python worker 下线、文档收口、门禁迁移 | 2–3 天 | W3 |
 
 **W2 与 W3 的关系（重要）**：原 P1 批「S-1/S-2（Python 巨石拆分 + 循环依赖消除，3–5 天）」

@@ -43,7 +43,8 @@ backend/orchestrator/.venv/Scripts/python.exe backend/ts-migration/golden/diff_r
 
 | 项 | 状态 | 触发点 |
 |---|---|---|
-| **W5 对外 MCP+REST 实施** | 设计完成（`W5_MCP_REST_DESIGN_2026-10-21.md`），未开工 | 用户立项后按 M1→M4 |
+| **W5 对外 MCP+REST** | ✅ **已完成（M1–M4 全部上线：token 基座/OpenAPI+docs/MCP server+token 接入/对外文档+UI 令牌页）** | — |
+| W5 后续增强（登记） | token 逐次审计日志、MCP SSE、更多 tools/resources | 按需 |
 | 内核瘦身（main.py ≤3000 行） | 等 2 周回滚窗口结束 | 提醒 **2026-11-04**（schedule-50e7d5be） |
 | 旧 Neon 项目 `falling-salad` + 旧 Hyperdrive `f53fed…` | ✅ **已删除（2026-10-21，用户授权；验证：hyperdrive 仅剩 kaas-apac、旧项目 404）** | — |
 | Notion 集成 token 吊销 | 用户在 Notion 后台操作（API 无端点） | 用户方便时 |

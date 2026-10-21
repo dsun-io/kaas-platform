@@ -81,7 +81,7 @@
 - **门禁**（改完都要跑；**2026-10-21 收口实测口径**，工作区静止时数字才作数）：
   - orchestrator（仅迁移/模型/内核测试，**247** 条）：
     `cd backend/orchestrator; uv run --extra migrations pytest tests -q`
-  - TS 门面（对外唯一入口，切流后新增）：`cd backend/ts-worker; pnpm typecheck; pnpm test`（**99 测 / 17 文件**）；
+  - TS 门面（对外唯一入口，切流后新增）：`cd backend/ts-worker; pnpm typecheck; pnpm test`（**203 测 / 22 文件**）；
     路由面机检 `tests/route-surface.test.ts`（249 = 163 直接 + 86 透传，0 缺失 0 多余）；
   - worker（Python 内核，**1565 passed + 12 skipped**；12 条 db/integration 档按约定 skip，有 docker PG 时这 12 条会真跑、总数 1572）：`cd backend/worker; uv run --frozen --with pytest --with httpx2 python -m pytest tests -q`
   - 前端：`cd frontend; pnpm typecheck`（内含 `next typegen && tsc --noEmit`）`; pnpm lint; pnpm test`（**926 passed / 108 files**）`; pnpm contracts:check; pnpm mocks:check; pnpm ui:standards; pnpm ui:contrast; pnpm e2e`（**27 条 = 27 passed + 0 skipped**；a11y 路由自动发现）

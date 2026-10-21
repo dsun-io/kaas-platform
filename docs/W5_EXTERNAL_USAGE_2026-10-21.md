@@ -94,7 +94,7 @@ curl -s -X POST "$BASE/mcp" -H "Authorization: Bearer $TOKEN" \
 - [x] MCP initialize/tools.list/tools.call（含 quotes_calculate 透传）200（生产实测）
 - [x] 无 token / JWT 访问 MCP → 401（生产实测）
 - [x] /openapi.json 141 path / 227 operation；/docs 可访问
-- [ ] UI 令牌管理页（进行中）
+- [x] UI 令牌管理页（`/settings/api-tokens`，2026-10-21 上线，前端门禁 + e2e 27 全过）
 - [ ] 审计日志接线（后续）
 
 ---
