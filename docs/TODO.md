@@ -223,6 +223,13 @@
 | G-9 | 历史密钥清理路径 | ✅ **已完成（2026-10-21 新裁决：清理）**：blob 级全历史扫描 → filter-repo 重写（1053→774 提交，force push）→ 旧 Neon 口令轮换 + 旧 Hyperdrive 同步 → 重写后 0 命中。**遗留：Notion token 需用户后台吊销**。执行记录见 [`STRUCTURAL_DEBT.md`](./STRUCTURAL_DEBT.md) §6.6 |
 | G-10 | 冷启动根治路径 | ✅ **已定（2026-10-21）**：用户拍板**全量迁 TS Worker、不折中**。执行计划 [`OPTIMIZATION_PLAN_2026-10-21.md`](./OPTIMIZATION_PLAN_2026-10-21.md) W3（3–5 周四阶段）；框架/引擎移植方式待 D1/D2 拍板 |
 | G-11 | 地理迁移停机窗口 | ✅ **已完成（2026-10-21）**：迁至 **aws-ap-southeast-1 新加坡**（Neon 免费档无东京），RTT 245→75ms；新 Hyperdrive `6830420703984a19a99a334afff6776e`、version `cd87aba7`；旧库保留 7 天后删除待确认（提醒已设 2026-10-28）。详见 [`PROD_PERFORMANCE_AUDIT_2026-10-21.md`](./PROD_PERFORMANCE_AUDIT_2026-10-21.md) §4.2 |
+## F2. 内核侧待收敛（门面迁移发现的真源不一致，2026-10-21）
+
+| # | 事项 | 现状与建议 |
+|---|---|---|
+| F2-1 | ORDER_NEXT 口径不一致 | `backend/worker/src/main.py` 中 producing 只允许 `shipped`；`kaas_common/workstation/state_machines.py` 还允许 `cancelled`。门面按 worker 实际行为镜像（409 allowed 是前端契约）。**建议内核侧收敛为单一真源**（先查前端契约再定哪边对） |
+| F2-2 | 报价/单证引擎 Decimal vs TS double | 门面金额用 double+round2（Python Decimal ROUND_HALF_UP），分边界可能差 0.01；TS 只做协议层展示，**引擎计算不受影响**（引擎仍在 Python）。清理项：确认前端显示不依赖 TS 计算值 |
+
 ## G. 待用户拍板清单（集中登记；每条写明要定什么）
 
 | # | 要定什么 | 选项与代价 |

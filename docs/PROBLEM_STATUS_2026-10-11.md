@@ -20,7 +20,10 @@
 > 4xx 原样、5xx 归一 `kernel_error`、不可达 502）并启用 KERNEL service binding。
 > 门禁：ts-worker **45 测全绿（8 文件）**、typecheck 0 error。语义差异已登记 ts-worker README
 > （422 而非 400 / 时间戳精度 / expires_at 解析宽容度 / forgot-password 暂不发信 TODO:TS2）。
-> 波 B（orders/files/outreach/admin 48 条）进行中；波 C 计划 workstations/intel。
+> 波 B ✅（orders 16 / files 9 / outreach 12 / admin 11 = 48 条，`c5ee5c8`；93 测全绿、typecheck 0）；
+> 波 C（workstations 35 / intel 34 / dashboard·meta 2）在途。迁移中发现真源不一致已登记 TODO §F2
+> （ORDER_NEXT producing 是否可 cancelled：main.py 与 state_machines.py 不同；门面按 worker 实际行为镜像）。
+> TODO:TS4（outreach-generate 接 KERNEL）/TS5（SigV4 预签名）/TS6（询盘阶段联动）登记在 ts-worker README。
 >
 > **（2026-10-21 · 历史密钥清理 ✅ 新裁决执行）** 用户新裁决：清理提交历史中的密钥明文（推翻 2026-10-20
 > 「接受风险」）。blob 级全历史扫描（5039 blob）→ **git filter-repo 重写**（明文→`***REMOVED***`，
