@@ -1,0 +1,6 @@
+# pnpm v11：构建白名单用 allowBuilds（onlyBuiltDependencies 为旧键）。
+# esbuild / workerd 是 wrangler 的合法构建依赖。
+# 本目录不在根 workspace 的 packages 内，是独立子项目，故自带此文件。
+allowBuilds:
+  esbuild: true
+  workerd: true

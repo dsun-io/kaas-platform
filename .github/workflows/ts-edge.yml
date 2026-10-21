@@ -1,0 +1,50 @@
+# KaaS TS 门面（kaas-edge）CI（2026-10-21 接入：W3 Phase 1 骨架合入后启用）
+name: ts-edge
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/ts-worker/**"
+      - ".github/workflows/ts-edge.yml"
+  pull_request:
+    paths:
+      - "backend/ts-worker/**"
+      - ".github/workflows/ts-edge.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: typecheck + test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/ts-worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: backend/ts-worker/pnpm-lock.yaml
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck (tsc --noEmit)
+        run: pnpm typecheck
+
+      - name: Unit tests (vitest run)
+        run: pnpm test
+
+      # Phase 2 起追加：
+      # - bundle 体积断言（对照 Python 版 11.7MB，TS 侧预期 <3MB，OPTIMIZATION_PLAN §2 Phase 1）
+      # - 金标 harness 对本地双跑 diff（backend/ts-migration/golden/）

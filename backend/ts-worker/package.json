@@ -1,0 +1,27 @@
+{
+  "name": "kaas-edge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "KaaS TS 门面（Hono on Cloudflare Workers）——只做鉴权/参数校验/协议转换，业务逻辑一律在 Python 内核（ADR-008）",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "hono": "^4.9.0",
+    "zod": "^3.25.0",
+    "jose": "^6.0.10",
+    "bcryptjs": "^3.0.2",
+    "postgres": "^3.4.5"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251021.0",
+    "typescript": "^6.0.3",
+    "vitest": "^3.2.4",
+    "wrangler": "^4.0.0"
+  }
+}

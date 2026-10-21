@@ -1,0 +1,42 @@
+{
+  // KaaS TS 门面（Hono）——对外唯一门面（ADR-008，kaas-edge）。
+  // 铁纪律：本 Worker 只做鉴权/参数校验/协议转换，业务规则只在 Python 内核一处实现。
+  // 与 backend/worker/wrangler.jsonc 的关系：绑定/vars 口径对齐；triggers 无 cron
+  // （三条 cron 留在 Python 内核 worker）；routes 暂不配（切流时由 lead 接入）。
+  "name": "kaas-edge",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-18",
+  "workers_dev": false,
+  // Hyperdrive 复用现有实例（与 backend/worker/wrangler.jsonc 同一 id）
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "6830420703984a19a99a334afff6776e"
+    }
+  ],
+  // 文件本体（同口径：业务行在 PG，字节在 R2，库里只存 object_key）
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "kaas-files"
+    }
+  ],
+  // Browser Rendering（单证 PDF；要求 compatibility_date >= 2026-03-24 ✓）
+  "browser": {
+    "binding": "BROWSER"
+  },
+  // Python 内核 Worker 的 Service Binding（契约见 src/kernel.ts）。
+  // 集成期取消注释并指向内核 worker 名（当前 backend/worker/wrangler.jsonc 的 name=kaas）：
+  // "services": [
+  //   { "binding": "KERNEL", "service": "kaas" }
+  // ],
+  // 非机密 S3 配置（机密 S3_ACCESS_KEY / S3_SECRET_KEY 走 secret put；
+  // 值与 backend/worker/wrangler.jsonc 的 vars 逐字对齐）
+  "vars": {
+    "S3_ENDPOINT": "https://766f8d7eb5a7d20e272673073ec8c3fd.r2.cloudflarestorage.com",
+    "S3_BUCKET": "kaas-files",
+    "S3_REGION": "auto",
+    "S3_PRESIGN_EXPIRES": "900"
+  }
+  // 无 triggers（门面不跑 cron）
+}
