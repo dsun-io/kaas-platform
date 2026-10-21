@@ -224,7 +224,7 @@ export function DocPreview({
     [docType, data],
   );
 
-  // 字段体检（TODO A3）：模板引用了却渲染为空的字段。签名口径「缺失键渲染为空串」
+  // 字段体检（TODO(TODO:A3)）：模板引用了却渲染为空的字段。签名口径「缺失键渲染为空串」
   // 保证了不留 `$placeholder`，代价是拼错/漏登记只是静静空白 —— 这里把它显式化。
   const audit = useMemo(() => {
     try {
@@ -358,7 +358,7 @@ export function DocPreview({
             : `还差 ${missing.length} 项必填`}
         </StatusBadge>
         {/*
-          字段体检（TODO A3）：把「会留空的地方」显式化。
+          字段体检（TODO(TODO:A3)）：把「会留空的地方」显式化。
           - 模板引用了未登记字段 = 占位符拼错/模板漏登记（代码问题，危险色提示）
           - 可选字段留空 = 业务可选，填不填由用户判断（只做提示，不拦签发）
         */}

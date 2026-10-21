@@ -258,7 +258,7 @@ type MockAccount = {
 const ordersStore: Array<Record<string, unknown> & { id: number }> = [];
 const docsStore: Array<Record<string, unknown> & { id: number }> = [];
 
-// 单证**内容**版本链（TODO A1）：mock 内存版，按 docId 惰性种子 2 版。
+// 单证**内容**版本链（TODO(TODO:A1)）：mock 内存版，按 docId 惰性种子 2 版。
 // 恢复 = 追加一条 restore 版本并回写单据 raw_payload —— 与服务端「只增不删」一致。
 interface MockContentVersion {
   version_no: number;
@@ -706,7 +706,7 @@ const SEED_ACCOUNTS = clone(accountsStore);
 // 数据全部落在本模块的可变 store 里，`resetMockData()` 能恢复种子（测试可重复）。
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** 单证列表的最近一次对账结论（TODO A8/A9）。形状 = worker `main.py:4161-4180`。 */
+/** 单证列表的最近一次对账结论（TODO(TODO:A8/A9)）。形状 = worker `main.py:4161-4180`。 */
 type MockRenderCheck = {
   matches: boolean;
   /** 共享内核 reason 原值：matched / version_drift / data_changed / ... */
@@ -3089,7 +3089,7 @@ export const handlers = [
   ),
   http.post("/api/v1/auth/logout", () => HttpResponse.json({ ok: true })),
 
-  // 个人信息编辑（TODO F3）：mock 必须**真的**改显示名 —— "保存成功但界面没变"
+  // 个人信息编辑（TODO(TODO:F3)）：mock 必须**真的**改显示名 —— "保存成功但界面没变"
   // 正是这层要防的假成功。密码在 mock 里不存明文：只校验长度与非空旧密码
   // （真实旧密码校验在后端，e2e 只走成功链路）。
   http.patch("/api/v1/auth/me", async ({ request }) => {
@@ -4713,7 +4713,7 @@ export const handlers = [
     return HttpResponse.json(doc);
   }),
 
-  // 签发 / 改内容（TODO F1：PATCH 可携带 html，由服务端出 PDF 并归档）——
+  // 签发 / 改内容（TODO(TODO:F1)：PATCH 可携带 html，由服务端出 PDF 并归档）——
   // mock 环境没有浏览器渲染器，与 `POST /trade-docs/:id/pdf` 同口径**如实失败**
   // （pdf_archive.ok=false + 503），界面据此提示手动上传，不假装归档成功。
   http.patch("/api/v1/trade-docs/:id", async ({ params, request }) => {
@@ -5042,7 +5042,7 @@ export const handlers = [
       );
     }
     doc.raw_payload = { sources, custom };
-    // 内容级版本：重新带入上游快照也是一次内容变更，留版（TODO A1 同口径）
+    // 内容级版本：重新带入上游快照也是一次内容变更，留版（TODO(TODO:A1) 同口径）
     const versions = contentVersionsOf(Number(doc.id));
     versions.push({
       version_no: Math.max(...versions.map((v) => v.version_no), 0) + 1,
@@ -5081,7 +5081,7 @@ export const handlers = [
     );
   }),
 
-  // ── 单证内容版本（TODO A1）───────────────────────────────────────────────
+  // ── 单证内容版本（TODO(TODO:A1)）───────────────────────────────────────────────
   // 列表**不带**整份 payload（与真实后端一致：图片 base64 会让响应到 1MB+）
   http.get("/api/v1/trade-docs/:id/content-versions", ({ params }) => {
     const docId = Number(params.id);
@@ -6100,7 +6100,7 @@ export const handlers = [
       if (target !== inquiry.status) {
         patch.status = target;
         if (target === "closed") {
-          // 询盘阶段（TODO F4）：手动关闭 → closed（终态），并留一条阶段流水
+          // 询盘阶段（TODO(TODO:F4)）：手动关闭 → closed（终态），并留一条阶段流水
           inquiryStageLogsOf(id).push({
             from_stage:
               typeof inquiry.stage === "string" ? inquiry.stage : "inquiry",

@@ -70,7 +70,7 @@ def row_to_inquiry(i: Any) -> dict:
         "quantity_unit": g("quantity_unit"),
         "application": g("application"),
         "status": g("status"),
-        # 询盘阶段（TODO F4，迁移 202610200003）：读不到 stage 的历史行按 status 退化，
+        # 询盘阶段（TODO(TODO:F4)，迁移 202610200003）：读不到 stage 的历史行按 status 退化，
         # 前端据此显示真实流程进度（展示推导仅作兜底）。
         "stage": g("stage"),
         "stage_updated_at": _iso(g("stage_updated_at")),

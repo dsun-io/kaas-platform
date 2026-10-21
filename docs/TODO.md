@@ -50,6 +50,7 @@
 - **C24** 客户触达「产品手册附件」——暂缓；**N10** 事件流联通——暂缓；
 - **安全 4 项**（Neon 口令轮换/管理员改密/仓库转 private/filter-repo）——不做；归档数据已按批准脱敏；
 | S1 | **结构性缺口账本建档（S-1~S-6）+ 门禁** | ✅ 2026-10-21：新建 [`STRUCTURAL_DEBT.md`](./STRUCTURAL_DEBT.md) 登记 6 条结构性债（main.py 巨石 5170 行 / 循环依赖 34+2 处 noqa:E402 / 无 TODO 锚点 / 88 处裸 except + 18 处 print / 单人无第二 review / 技术选型无论证）；新增 `scripts/check-structural-debt.py` 静态门禁（main.py≤4000 行、noqa:E402≤40、except Exception≤100、print≤20）；补 `docs/ARCH_DECISIONS.md` ADR 6 条。**未改任何生产代码**，纯文档+门禁脚本 | — | ✅
+| S2 | **技术选型 ADR 建档（S-6）** | ✅ 2026-10-21：新建 [`ARCH_DECISIONS.md`](./ARCH_DECISIONS.md)（ADR 简化版第一版），补录 7 条历史选型决策：raw asyncpg 直连 / 无 Redis·消息队列 / 文件三级落点（R2 binding→S3 预签名→inline 兜底）/ Hyperdrive 每请求直连无池 / Python Worker 承载（已被 2026-10-21 TS Worker 迁移拍板取代，链 OPTIMIZATION_PLAN §2 W3）/ 文件末尾 import 挂载 / Neon 新加坡+Hyperdrive 迁库。纯文档，未改代码 | — | ✅
 - **C1/C13/N8**——不做（业务默认）；**C14** 产品税率——"使用时再设置"，不预铺；
 - **D1/D2** 已完成（Resend 注入、R2 32 位密钥 + 回环验证）；**D5** 关闭。
 
@@ -250,6 +251,140 @@
 2. **新待办直接加本表**；不得再用"触发条件制"隐藏工作项；必须用户拍板的标 🧭 并写清拍什么。
 3. 涉及授权策略/数据删除/生产操作（D3/D4/安全项）执行前一律走 `ask_user_question` 弹窗（`AGENTS.md` 规则 2）。
 4. 每批提交前跑门禁（见根 `README.md` §4）；提交纪律见 `AGENTS.md` 规则 4（私有 `GIT_INDEX_FILE`、不碰他人改动）。
+
+
+### TODO 注释反查索引（2026-10-21 S-3 治理）
+
+> 生产源码 52 处 `TODO(TODO:<id>)` 注释锚点一览（排除 `tests/` / `__tests__/`；`docs/` 与 `*.md` 不在口径内）。
+> `<id>` = 本表任务编号（A1=内容级版本、A3=字段缺失可发现、A8/A9=PDF 归档与指纹对账、C10=模板防劈页、C11=SSRF 加固、D7=preview 重试、F1–F5=后端五项）。
+> 新增 TODO 注释必须带锚点：`TODO(TODO:<id>)`（对得上本表）或 `TODO(SD:S-x)`（对得上 STRUCTURAL_DEBT）。
+
+#### `backend/kaas_common/net.py`
+
+- L36 → **C11** — 2026-10-21 加固：新增**可选**的解析后校验
+
+#### `backend/kaas_common/workstation/customer_serializers.py`
+
+- L73 → **F4** — 询盘阶段（迁移 202610200003）：读不到 stage 的历史行按 status 退化
+
+#### `backend/orchestrator/alembic/versions/202610200001_trade_doc_content_versions.py`
+
+- L1 → **A1** — 单证内容级版本表 `trade_doc_content_versions`
+
+#### `backend/orchestrator/alembic/versions/202610200002_trade_doc_render_checks.py`
+
+- L1 → **A8/A9** — 单证指纹对账结果表 `trade_doc_render_checks`
+
+#### `backend/orchestrator/alembic/versions/202610200003_inquiry_stage.py`
+
+- L1 → **F4** — 询盘阶段落库：`cust_inquiries.stage` + `inquiry_stage_log`
+
+#### `backend/orchestrator/app/db/workstation_links.py`
+
+- L297 → **A8/A9** — 单证指纹对账结果（迁移 `202610200002`）。
+- L330 → **A1** — 单证**内容**版本链（迁移 `202610200001`）。
+
+#### `backend/orchestrator/app/db/workstation_models.py`
+
+- L64 → **F4** — ─ 202610200003 询盘阶段落库：inquiry/quotation/order/shipme…
+- L89 → **F4** — 询盘阶段变更日志（迁移 202610200003）。
+
+#### `backend/worker/src/content_versions.py`
+
+- L1 → **A1** — 单证内容级版本—— 每次 `raw_payload` 落库前留一版快照。
+
+#### `backend/worker/src/inquiry_stage.py`
+
+- L1 → **F4** — 询盘阶段状态机——落库 + 事件驱动，前端展示推导作兜底。
+
+#### `backend/worker/src/main.py`
+
+- L417 → **F3** — ─ 个人信息：只能改**本人**，边界写死在路由里 ─
+- L3566 → **F5** — ─ 报价/订单 1:N 业务校验（口径 A：**允许**一报价多订单）─
+- L3628 → **F4** — 询盘阶段：订单创建 → order（沿报价的 inquiry_id 传递；
+- L3911 → **F4** — 询盘阶段：订单完结 → completed（沿报价传递；无报价来源则 no-op）
+- L4370 → **A8/A9** — 定时对账结论：每页多一条查询，让列表能一眼标出「已变更」。
+- L4785 → **A1** — 内容级版本：本次写入的整份 payload 留一版；仅当确实改了 payload 才记。
+- L4801 → **F1** — 服务端签发自动上传（ 方案 A）：PATCH 触发 draft→issued 时若带 HTML
+
+#### `backend/worker/src/quote_api.py`
+
+- L1511 → **F4** — 询盘阶段：报价创建 → quotation（只前进，重复报价 no-op）
+- L1534 → **F4** — 询盘阶段：自动建询盘 + 报价 → quotation（新建行就是 inquiry，前进一档；
+
+#### `backend/worker/src/ws_crm_ext.py`
+
+- L402 → **F4** — 询盘阶段：手动关闭 → closed（终态；重开不回收 stage，只回状态）
+- L419 → **F4** — 询盘阶段变更历史：审计与"历史变更可查"的验收入口。
+
+#### `backend/worker/src/ws_cron.py`
+
+- L438 → **A8/A9** — 列表端点 join 它给出「已变更」标识。
+
+#### `backend/worker/src/ws_docs_ext.py`
+
+- L101 → **F1** — 可选 `html` / `pdf_name`（ 方案 A）：前端随签发提交**预览用的同一份 HTML*…
+- L228 → **A1** — 内容级版本：重新带入上游快照也是一次内容变更，留版
+- L328 → **A1** — 内容级版本：签发终版留一版（含 `_render` 指纹），issued 后不再产生版本
+- L335 → **F1** — 服务端签发自动上传（ 方案 A）：同请求带 HTML ⇒ 出 PDF 并归档；
+- L590 → **A1** — 内容级版本：翻译写回也是一次内容变更
+- L602 → **A1** — ─ 单证内容级版本─
+
+#### `backend/worker/src/ws_files.py`
+
+- L817 → **F1** — （方案 A —— 签发请求带前端同一份 HTML，服务端出字节并归档）。
+
+#### `backend/worker/src/ws_shipments.py`
+
+- L304 → **F4** — 询盘阶段：出运创建 → shipment（沿订单→报价→询盘传递）
+
+#### `frontend/src/app/(app)/trade-docs/components/doc-content-versions.tsx`
+
+- L4 → **A1** — 单证内容版本面板
+
+#### `frontend/src/app/(app)/trade-docs/components/doc-preview.tsx`
+
+- L227 → **A3** — // 字段体检：模板引用了却渲染为空的字段。签名口径「缺失键渲染为空串」
+- L361 → **A3** — 字段体检：把「会留空的地方」显式化。
+
+#### `frontend/src/app/(app)/trade-docs/components/doc-render-check-badge.tsx`
+
+- L10 → **A8/A9** — 单证列表里的「对账标识」。
+
+#### `frontend/src/app/(app)/trade-docs/hooks/use-trade-docs.ts`
+
+- L56 → **A8/A9** — 最近一次**定时对账**结论：`null` = 从未对账（不冒充"没问题"）。
+- L167 → **F1** — 服务端签发自动上传的结果（ 方案 A；失败不回滚签发状态）
+- L189 → **F1** — 签发时随请求提交的预览 HTML：服务端出 PDF 并归档
+- L489 → **A1** — // ─ 单证内容级版本─
+
+#### `frontend/src/app/(app)/trade-docs/page.tsx`
+
+- L259 → **F1** — // 签发即上传（ 方案 A）：把**预览用的同一份 HTML** 随 PATCH 一起提交
+
+#### `frontend/src/components/layout/sidebar.tsx`
+
+- L200 → **F3** — // 个人信息编辑：显示名可改；密码单独折叠块（必须验旧密码）
+- L308 → **F3** — 显示名（可编辑，）
+
+#### `frontend/src/lib/trade-doc/render-check.ts`
+
+- L2 → **A8/A9** — 「定时对账」结论 → 单证列表的一眼标识
+
+#### `frontend/src/lib/trade-doc/render.ts`
+
+- L11 → **C10** — 18 类差异（属模板结构演进，不是渲染回归；见 ）。
+- L1548 → **A3** — // ─ 字段体检（「缺失字段可发现」）─
+
+#### `frontend/src/mocks/handlers.ts`
+
+- L261 → **A1** — // 单证**内容**版本链：mock 内存版，按 docId 惰性种子 2 版。
+- L709 → **A8/A9** — 单证列表的最近一次对账结论。形状 = worker `main.py:4161-4180`。
+- L3092 → **F3** — // 个人信息编辑：mock 必须**真的**改显示名 —— "保存成功但界面没变"
+- L4716 → **F1** — // 签发 / 改内容（PATCH 可携带 html，由服务端出 PDF 并归档）
+- L5045 → **A1** — // 内容级版本：重新带入上游快照也是一次内容变更，留版（ 同口径）
+- L5084 → **A1** — // ─ 单证内容版本─
+- L6103 → **F4** — // 询盘阶段：手动关闭 → closed（终态），并留一条阶段流水
 
 ---
 

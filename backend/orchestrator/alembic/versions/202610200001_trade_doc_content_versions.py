@@ -1,4 +1,4 @@
-"""单证内容级版本表 `trade_doc_content_versions`（TODO A1）
+"""单证内容级版本表 `trade_doc_content_versions`（TODO(TODO:A1)）
 
 背景
 ----

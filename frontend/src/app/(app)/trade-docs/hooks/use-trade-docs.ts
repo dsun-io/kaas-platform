@@ -53,7 +53,7 @@ export interface TradeDocRow {
   /** 单证号当前是否可改（同一链条上没有更晚单证） */
   doc_no_editable?: boolean;
   /**
-   * 最近一次**定时对账**结论（TODO A8/A9）：`null` = 从未对账（不冒充"没问题"）。
+   * 最近一次**定时对账**结论（TODO(TODO:A8/A9)）：`null` = 从未对账（不冒充"没问题"）。
    * 列表端点 join `trade_doc_render_checks` 后挂上来，仅用于展示"已变更"标识。
    */
   render_check?: RenderCheckSummary | null;
@@ -164,7 +164,7 @@ export function useCreateTradeDoc() {
   });
 }
 
-/** 服务端签发自动上传的结果（TODO F1 方案 A；失败不回滚签发状态） */
+/** 服务端签发自动上传的结果（TODO(TODO:F1) 方案 A；失败不回滚签发状态） */
 export interface PdfArchiveResult {
   ok: boolean;
   status_code?: number;
@@ -186,7 +186,7 @@ export function useUpdateTradeDoc() {
       status?: string;
       doc_no?: string;
       raw_payload?: Record<string, unknown>;
-      /** 签发时随请求提交的预览 HTML：服务端出 PDF 并归档（TODO F1） */
+      /** 签发时随请求提交的预览 HTML：服务端出 PDF 并归档（TODO(TODO:F1)） */
       html?: string;
       pdf_name?: string;
     }) => {
@@ -384,7 +384,9 @@ export function useDetachTradeDocFile(docId: number) {
  * 为什么走 axios 而不是 `<a href>` / `<img src>`：`/file-objects/{id}/content`
  * 要 Bearer 授权（A4 的短期直链只用于渲染期 `<img>`，不是给脚本取字节的通路）。
  */
-export async function fetchFileObjectBytes(fileId: number): Promise<ArrayBuffer> {
+export async function fetchFileObjectBytes(
+  fileId: number,
+): Promise<ArrayBuffer> {
   const res = await apiClient.get(`/file-objects/${fileId}/content`, {
     responseType: "arraybuffer",
   });
@@ -486,7 +488,7 @@ export function useCheckTradeDocRenderFingerprint(docId: number) {
   });
 }
 
-// ── 单证内容级版本（TODO A1）───────────────────────────────────────────────
+// ── 单证内容级版本（TODO(TODO:A1)）───────────────────────────────────────────────
 // 后端契约（worker `ws_docs_ext.py`）：
 //   GET  /trade-docs/{id}/content-versions               列表（倒序；**不带**整份 payload）
 //   GET  /trade-docs/{id}/content-versions/{version_no}   某版整份 payload

@@ -435,7 +435,7 @@ async def run_archive_events(env, now: Optional[datetime] = None) -> dict:
 # 但此前**没有定时调度**（批量端点一次最多 50 张、必须人工触发），列表页也看不到
 # 结论（见 docs/TRADE_DOC_PDF_ARCHIVAL.md §〇.3「仍未做」）。本任务每天扫近
 # 30 天签发的单据，把每张最近一次结论 upsert 进 `trade_doc_render_checks`；
-# 列表端点 join 它给出「已变更」标识（TODO A8/A9）。
+# 列表端点 join 它给出「已变更」标识（TODO(TODO:A8/A9)）。
 #
 # 判定**全部**复用共享内核（`read_render_fingerprint` / `render_fingerprint_check`
 # / `render_check_card` / `summarize_render_checks`），本模块只决定"对哪些单据、

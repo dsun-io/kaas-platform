@@ -57,6 +57,7 @@
 | [OPTIMIZATION_PLAN_2026-10-21.md](./OPTIMIZATION_PLAN_2026-10-21.md) | **优化执行计划（活跃）**：W1 性能收尾快赢 / W2 结构债 P0 批 / W3 TS Worker 全量迁移（用户拍板不折中，3–5 周四阶段）/ W4 退役收口 |
 | [acceptance/B_PACKAGE_2026-10-21.md](./acceptance/B_PACKAGE_2026-10-21.md) | **B 组验收包**：打印视觉 QA、条款、N3 等「需要用户一次过目」的事项清单与证据（含 print-qa 产物） |
 | [STRUCTURAL_DEBT.md](./STRUCTURAL_DEBT.md) | **结构性缺口账本（2026-10-21 建档）**：main.py 巨石/循环依赖/无 TODO 锚点/裸 except+print/单人无第二 review/技术选型无论证 6 条 S 组条目 + 免费版优先级矩阵 + 免费版撑不住暂不动项（冷启动/地理）+ 附：历史密钥清理专章（§6，待用户拍板）|
+| [ARCH_DECISIONS.md](./ARCH_DECISIONS.md) | **技术选型 ADR（2026-10-21 建档）**：7 条历史决策留痕（raw asyncpg / 无 Redis / 文件三级落点 / Hyperdrive 直连 / Python Worker→已被 TS 迁移取代 / import 挂载 / Neon 新加坡迁库）；新选型先立 ADR 再动手 |
 
 ## 3. UI/UX（本轮主线）
 

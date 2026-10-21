@@ -8,7 +8,7 @@
  * ⚠️ **2026-10-20 C10 有意偏离**：模板末尾原子块（声明/签章/公章/页脚）加了
  * `.keep-together` 包裹以防分页撕裂（18 类模板全改），18 份 HTML 基准已**故意重生成**。
  * 归档 Python 镜像尚未同步 ⇒ `scripts/verify-trade-doc-fixtures.py` 在同步前会报
- * 18 类差异（属模板结构演进，不是渲染回归；见 TODO C10）。
+ * 18 类差异（属模板结构演进，不是渲染回归；见 TODO(TODO:C10)）。
  *
  * 为什么渲染放前端（而不是后端）：
  *   线上 Worker 为精简体积刻意不带模板引擎，导致「能开单但渲染不出单据」的断层；
@@ -374,7 +374,10 @@ export function computeFxBreakdown(
   }
 
   // 货物总值 = 未舍入合计四舍五入到 2 位（舍入调整 = 货物总值 − 行金额合计）
-  const goodsCny = roundTo(numericOrNull(data.total_goods_value_cny) ?? rawCnyTotal, 2);
+  const goodsCny = roundTo(
+    numericOrNull(data.total_goods_value_cny) ?? rawCnyTotal,
+    2,
+  );
   const goodsUsd = roundTo(
     numericOrNull(data.total_goods_value_usd) ?? rawCnyTotal / fxRate,
     2,
@@ -397,9 +400,7 @@ export function computeFxBreakdown(
     (freightCny === null ? goodsCny : roundTo(goodsCny + freightCny, 2));
   const payableUsd =
     numericOrNull(data.total_payable_usd) ??
-    (freightUsd === null
-      ? goodsUsd
-      : roundTo(goodsUsd + freightUsd, 2));
+    (freightUsd === null ? goodsUsd : roundTo(goodsUsd + freightUsd, 2));
 
   // 定金/尾款：比例从付款条款文本里取（真实样例 "T/T — 30% deposit … 70% balance"）
   const pcts = [...String(data.payment_terms ?? "").matchAll(/(\d{1,3})\s*%/g)]
@@ -735,7 +736,12 @@ function renderAddressBlock(obj: Record<string, unknown>): string {
  */
 const INLINE_NOTE_FIELDS: Record<
   string,
-  { label: string; docs: readonly string[]; multiline?: boolean; date?: boolean }
+  {
+    label: string;
+    docs: readonly string[];
+    multiline?: boolean;
+    date?: boolean;
+  }
 > = {
   // G8 引用链：PI 引用报价/合同，CI 引用 PI，合同引用报价/PI
   ref_quote_no: { label: "Ref. Quotation No.", docs: ["pi", "contract"] },
@@ -795,7 +801,7 @@ function renderAnnexBlock(value: unknown): string {
   const parts = entries.map(annexEntryText).filter((text) => text !== "");
   if (parts.length === 0) return "";
   return (
-    "\n\n  <div class=\"certify\">Annexes forming an integral part of this " +
+    '\n\n  <div class="certify">Annexes forming an integral part of this ' +
     `contract: ${parts.map((text) => esc(text)).join("; ")}.</div>`
   );
 }
@@ -871,11 +877,18 @@ function renderCiBankBlock(data: Record<string, unknown>): string {
   const bank = data.bank_info;
   if (typeof bank !== "object" || bank === null) return "";
   const record = bank as Record<string, unknown>;
-  const structured = ["beneficiary", "beneficiary_address", "beneficiary_tax_id", "account_no"]
-    .some((key) => typeof record[key] === "string" && String(record[key]).trim() !== "");
+  const structured = [
+    "beneficiary",
+    "beneficiary_address",
+    "beneficiary_tax_id",
+    "account_no",
+  ].some(
+    (key) =>
+      typeof record[key] === "string" && String(record[key]).trim() !== "",
+  );
   if (!structured) return "";
   return (
-    "\n\n  <table class=\"parties\"><tr><td class=\"party\" colspan=\"3\">" +
+    '\n\n  <table class="parties"><tr><td class="party" colspan="3">' +
     `<div class="lbl">Bank Details for Remittance</div>` +
     `<div class="bd">${renderAddressBlock(record)}</div>` +
     "</td></tr></table>"
@@ -900,7 +913,7 @@ function renderCiPartiesBlock(data: Record<string, unknown>): string {
     `<td class="party"><div class="lbl">${label}</div>` +
     `<div class="bd">${value ? renderAddressBlock(value) : ""}</div></td>`;
   return (
-    "\n\n  <table class=\"parties\"><tr>" +
+    '\n\n  <table class="parties"><tr>' +
     cell("BILL TO", billTo) +
     '<td class="gap"></td>' +
     cell("CONSIGNED TO", consignedTo) +
@@ -1406,9 +1419,12 @@ function preprocessData(
   // 以保住 18 份基线（真实单据一定有包装/生产/签章信息）。
   const piExtrasEnabled =
     docType === "pi" &&
-    ["packing_details", "production_photos_note", "third_party_consolidator", "signatory"].some(
-      (key) => !isEmpty(data[key]),
-    );
+    [
+      "packing_details",
+      "production_photos_note",
+      "third_party_consolidator",
+      "signatory",
+    ].some((key) => !isEmpty(data[key]));
 
   const result: Record<string, string> = {};
 
@@ -1545,7 +1561,7 @@ function deriveFields(
   return derived;
 }
 
-// ── 字段体检（TODO A3：「缺失字段可发现」）──────────────────────────────────
+// ── 字段体检（TODO(TODO:A3)：「缺失字段可发现」）──────────────────────────────────
 
 /**
  * 模板引用了、但渲染后为空的字段。

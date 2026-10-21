@@ -61,7 +61,7 @@ class CustInquiry(Base):
     quantity_unit = Column(Text, nullable=True)
     application = Column(Text, nullable=True)
     status = Column(Text, nullable=False, server_default='open')
-    # ── 202610200003 询盘阶段落库（TODO F4）：inquiry/quotation/order/shipment/
+    # ── 202610200003 询盘阶段落库（TODO(TODO:F4)）：inquiry/quotation/order/shipment/
     # completed；closed 为终态。真源常量 = backend/worker/src/inquiry_stage.py。
     stage = Column(Text, nullable=False, server_default='inquiry')
     stage_updated_at = Column(DateTime(timezone=True), nullable=True)
@@ -86,7 +86,7 @@ class CustInquiry(Base):
 
 
 class InquiryStageLog(Base):
-    """询盘阶段变更日志（TODO F4，迁移 202610200003）。
+    """询盘阶段变更日志（TODO(TODO:F4)，迁移 202610200003）。
 
     每次**真实**阶段变更一条（重复事件 no-op 不写）；报表与"历史变更可查"靠它。
     """

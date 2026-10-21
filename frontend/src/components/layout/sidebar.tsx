@@ -197,7 +197,7 @@ function SidebarUser({ collapsed = false }: { collapsed?: boolean }) {
   const { teamName } = useTeam();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  // 个人信息编辑（TODO F3）：显示名可改；密码单独折叠块（必须验旧密码）
+  // 个人信息编辑（TODO(TODO:F3)）：显示名可改；密码单独折叠块（必须验旧密码）
   const [displayName, setDisplayName] = useState("");
   const [savingName, setSavingName] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
@@ -305,7 +305,7 @@ function SidebarUser({ collapsed = false }: { collapsed?: boolean }) {
               </p>
             </div>
           </div>
-          {/* 显示名（可编辑，TODO F3） */}
+          {/* 显示名（可编辑，TODO(TODO:F3)） */}
           <div className="space-y-1.5">
             <label
               className="text-xs font-medium text-muted-foreground"

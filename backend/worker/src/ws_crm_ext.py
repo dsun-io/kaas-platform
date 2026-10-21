@@ -399,7 +399,7 @@ async def update_inquiry(
             )
         else:
             row = inq  # 无变更：dev 也不会发 UPDATE，原样回显
-        # 询盘阶段（TODO F4）：手动关闭 → closed（终态；重开不回收 stage，只回状态）
+        # 询盘阶段（TODO(TODO:F4)）：手动关闭 → closed（终态；重开不回收 stage，只回状态）
         if new_status == "closed" and inq.get("status") != "closed":
             await _inquiry_stage.advance(
                 conn, tenant_id=DEFAULT_TENANT, inquiry_id=inquiry_id,
@@ -416,7 +416,7 @@ async def list_inquiry_stage_log(
     request: Request,
     user: dict = Depends(_get_current_user),
 ):
-    """询盘阶段变更历史（TODO F4）：审计与"历史变更可查"的验收入口。"""
+    """询盘阶段变更历史（TODO(TODO:F4)）：审计与"历史变更可查"的验收入口。"""
     inq = await db.fetchrow(
         request,
         "SELECT id FROM cust_inquiries WHERE id=$1 AND tenant_id=$2",

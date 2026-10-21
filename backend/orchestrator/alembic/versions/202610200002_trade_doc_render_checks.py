@@ -1,4 +1,4 @@
-"""单证指纹对账结果表 `trade_doc_render_checks`（TODO A8/A9）
+"""单证指纹对账结果表 `trade_doc_render_checks`（TODO(TODO:A8/A9)）
 
 背景
 ----

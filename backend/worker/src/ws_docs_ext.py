@@ -98,7 +98,7 @@ db = _main.db
 class TradeDocConfirmIn(BaseModel):
     """确认（issued）：校验必填 → 冻结；确认后不可修改。
 
-    可选 `html` / `pdf_name`（TODO F1 方案 A）：前端随签发提交**预览用的同一份 HTML**，
+    可选 `html` / `pdf_name`（TODO(TODO:F1) 方案 A）：前端随签发提交**预览用的同一份 HTML**，
     服务端出 PDF 并归档到本单证（`render_pdf` 新版本上位）。不传 html = 旧行为（不产 PDF）。
 
     失败策略（用户 2026-10-20 口径）：**PDF 失败不回滚签发** —— 签发是法律动作，
@@ -225,7 +225,7 @@ async def refresh_trade_doc_sources(
             " WHERE tenant_id=$1 AND id=$2 RETURNING *",
             DEFAULT_TENANT, doc_id, _json.dumps(payload), table="trade_docs",
         )
-    # 内容级版本（TODO A1）：重新带入上游快照也是一次内容变更，留版
+    # 内容级版本（TODO(TODO:A1)）：重新带入上游快照也是一次内容变更，留版
     await _cv.record_content_version(
         db, request,
         tenant_id=DEFAULT_TENANT, doc_id=doc_id, payload=payload,
@@ -325,14 +325,14 @@ async def confirm_trade_doc(
         _json.dumps(payload),
         table="trade_docs",
     )
-    # 内容级版本（TODO A1）：签发终版留一版（含 `_render` 指纹），issued 后不再产生版本
+    # 内容级版本（TODO(TODO:A1)）：签发终版留一版（含 `_render` 指纹），issued 后不再产生版本
     await _cv.record_content_version(
         db, request,
         tenant_id=DEFAULT_TENANT, doc_id=doc_id, payload=payload,
         source=_cv.SOURCE_ISSUE, actor_id=str(user["id"]),
     )
     out = _row_to_doc(row)
-    # 服务端签发自动上传（TODO F1 方案 A）：同请求带 HTML ⇒ 出 PDF 并归档；
+    # 服务端签发自动上传（TODO(TODO:F1) 方案 A）：同请求带 HTML ⇒ 出 PDF 并归档；
     # 失败**不回滚签发**，只把失败写进 pdf_archive 让界面提示手动上传。
     if body.html and body.html.strip():
         try:
@@ -587,7 +587,7 @@ async def translate_trade_doc(
                 " WHERE tenant_id=$1 AND id=$2",
                 DEFAULT_TENANT, doc_id, _json.dumps(payload),
             )
-            # 内容级版本（TODO A1）：翻译写回也是一次内容变更
+            # 内容级版本（TODO(TODO:A1)）：翻译写回也是一次内容变更
             await _cv.record_content_version(
                 db, request,
                 tenant_id=DEFAULT_TENANT, doc_id=doc_id, payload=payload,
@@ -599,7 +599,7 @@ async def translate_trade_doc(
     return {"fields": merged, "path": path, "task": TRANSLATE_TASK_KEY}
 
 
-# ── 单证内容级版本（TODO A1）─────────────────────────────────────────────────
+# ── 单证内容级版本（TODO(TODO:A1)）─────────────────────────────────────────────────
 # 为什么要有：草稿期 `raw_payload.custom` 改动是**覆盖**，改前找不回；
 # `raw_payload._audit` 只有"谁/何时/改了哪些键"，不含整份快照、不可回滚。
 # 版本链与 `file_objects.version`（上传 PDF 的文件版本）是两条独立链。

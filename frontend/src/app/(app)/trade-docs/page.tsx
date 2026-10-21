@@ -40,7 +40,10 @@ import { usePageView } from "@/lib/events/use-page-view";
 import { usePersistentState } from "@/lib/hooks/use-persistent-state";
 import { cn } from "@/lib/utils";
 import { renderTradeDoc } from "@/lib/trade-doc/render";
-import { parseConfirmBlocked, type ConfirmBlocked } from "@/lib/trade-doc/hardening";
+import {
+  parseConfirmBlocked,
+  type ConfirmBlocked,
+} from "@/lib/trade-doc/hardening";
 import { autoArchiveIssuedDoc } from "@/lib/trade-doc/auto-archive";
 import { exportCsv, exportExcel, printMerged } from "@/lib/trade-doc/export";
 
@@ -121,7 +124,9 @@ export default function TradeDocsPage() {
   const [docNoEdit, setDocNoEdit] = useState<TradeDocRow | null>(null);
   const [docNoError, setDocNoError] = useState<string | null>(null);
   // A7 加固：签发被事实层闸门拦下时的阻断清单（不是 toast —— 要能逐条看、能跳去确认）
-  const [confirmBlocked, setConfirmBlocked] = useState<ConfirmBlocked | null>(null);
+  const [confirmBlocked, setConfirmBlocked] = useState<ConfirmBlocked | null>(
+    null,
+  );
   const [hardeningTab, setHardeningTab] = useState<HardeningTab>("facts");
   const [density, setDensity] = usePersistentState<"cozy" | "compact">(
     "ui:trade-docs:density",
@@ -256,7 +261,7 @@ export default function TradeDocsPage() {
       );
       return;
     }
-    // 签发即上传（TODO F1 方案 A）：把**预览用的同一份 HTML** 随 PATCH 一起提交，
+    // 签发即上传（TODO(TODO:F1) 方案 A）：把**预览用的同一份 HTML** 随 PATCH 一起提交，
     // 服务端出 PDF 并归档为 render_pdf —— 不再依赖"签发完成后再由前端单独上传"。
     // 失败不回滚签发：后端在响应里带 pdf_archive{ok:false}，这里如实提示并保留
     // 手动上传兜底（渲染器未配置时自动归档接口同样会 503，不假装成功）。
@@ -564,12 +569,12 @@ export default function TradeDocsPage() {
                             size="sm"
                             variant="ghost"
                             onClick={() => {
-                      // 换一张单证就清掉上一张的阻断清单（否则 A 单的阻断会挂在 B 单下面；
-                      // 用事件里清而不是 useEffect —— effect 里 setState 会触发
-                      // react-hooks/set-state-in-effect 告警且多一轮渲染）
-                      setConfirmBlocked(null);
-                      setSelectedId(row.id);
-                    }}
+                              // 换一张单证就清掉上一张的阻断清单（否则 A 单的阻断会挂在 B 单下面；
+                              // 用事件里清而不是 useEffect —— effect 里 setState 会触发
+                              // react-hooks/set-state-in-effect 告警且多一轮渲染）
+                              setConfirmBlocked(null);
+                              setSelectedId(row.id);
+                            }}
                           >
                             预览
                           </Button>
@@ -719,11 +724,17 @@ export default function TradeDocsPage() {
                 status={renderData.data.doc.status}
                 data={renderData.data.data}
                 initialOverride={readItemsOverride(
-                  renderData.data.doc.raw_payload as Record<string, unknown> | null,
+                  renderData.data.doc.raw_payload as Record<
+                    string,
+                    unknown
+                  > | null,
                 )}
                 onSave={async (override: ItemsOverrideEntry[]) => {
                   const payload = buildItemsOverridePayload(
-                    renderData.data.doc.raw_payload as Record<string, unknown> | null,
+                    renderData.data.doc.raw_payload as Record<
+                      string,
+                      unknown
+                    > | null,
                     override,
                   );
                   await update.mutateAsync({

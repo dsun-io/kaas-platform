@@ -301,7 +301,7 @@ async def create_shipment(
                         " WHERE tenant_id=$1 AND id=$2",
                         DEFAULT_TENANT, order["id"],
                     )
-                # 询盘阶段（TODO F4）：出运创建 → shipment（沿订单→报价→询盘传递）
+                # 询盘阶段（TODO(TODO:F4)）：出运创建 → shipment（沿订单→报价→询盘传递）
                 await _inquiry_stage.advance_for_order(
                     conn, tenant_id=DEFAULT_TENANT, order_id=order["id"],
                     target_stage=_inquiry_stage.STAGE_SHIPMENT,

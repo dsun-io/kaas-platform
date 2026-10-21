@@ -814,7 +814,7 @@ async def archive_rendered_pdf(
     """校验 HTML → 无头浏览器出 PDF → 落档（`render_pdf` 新版本上位）。
 
     **唯一实现**：既给 `POST /trade-docs/{id}/pdf` 用，也给签发自动上传用
-    （TODO F1：方案 A —— 签发请求带前端同一份 HTML，服务端出字节并归档）。
+    （TODO(TODO:F1)：方案 A —— 签发请求带前端同一份 HTML，服务端出字节并归档）。
     失败即抛 HTTPException（422 非法 HTML / 503 未配置渲染器 / 502 上游失败 / 413 超大）。
     """
     try:

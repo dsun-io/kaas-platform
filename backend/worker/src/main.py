@@ -414,7 +414,7 @@ async def logout():
     return {"message": "Logged out (client should discard token)"}
 
 
-# ── 个人信息（TODO F3）：只能改**本人**，边界写死在路由里 ────────────────────
+# ── 个人信息（TODO(TODO:F3)）：只能改**本人**，边界写死在路由里 ────────────────────
 # 为什么单独两条而不是一条"账号编辑"：
 # - 改资料**不需要**密码，改密码**必须**验旧密码 —— 混在一起会让改资料也被要求输密码；
 # - 邮箱是登录标识，改它需要验证新邮箱（发确认链路），当前没有该链路 ⇒ 不提供静默改
@@ -3563,7 +3563,7 @@ async def create_order_api(
                     total += line
                 computed_lines.append(line)
 
-            # ── 报价/订单 1:N 业务校验（TODO F5，口径 A：**允许**一报价多订单）──────
+            # ── 报价/订单 1:N 业务校验（TODO(TODO:F5)，口径 A：**允许**一报价多订单）──────
             # 为什么不做 1:1 唯一约束：分批出货 / 改价后重复下单是真实业务，UI 已按 1:N
             # 分组展示（docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md §5 选项 A，2026-10-20
             # 用户拍板）。但 1:N 必须有**业务闸门**，否则"客户订 100 米"能被系统开出
@@ -3625,7 +3625,7 @@ async def create_order_api(
                 _term("country_of_origin"),
             )
             order_id = row["id"]
-            # 询盘阶段（TODO F4）：订单创建 → order（沿报价的 inquiry_id 传递；
+            # 询盘阶段（TODO(TODO:F4)）：订单创建 → order（沿报价的 inquiry_id 传递；
             # 手动订单没有报价来源 ⇒ advance_for_order 返回 None，不影响主流程）
             if quote is not None:
                 await _inquiry_stage.advance_for_order(
@@ -3908,7 +3908,7 @@ async def change_order_status(order_id: int, request: Request, body: dict,
             from_ws="orders", to_ws="trade_docs",
         )
     if target == "completed":
-        # 询盘阶段（TODO F4）：订单完结 → completed（沿报价传递；无报价来源则 no-op）
+        # 询盘阶段（TODO(TODO:F4)）：订单完结 → completed（沿报价传递；无报价来源则 no-op）
         async with _acquire(request) as conn:
             await _inquiry_stage.advance_for_order(
                 conn, tenant_id=DEFAULT_TENANT, order_id=order_id,
@@ -4367,7 +4367,7 @@ async def list_trade_docs(request: Request, doc_type: str = None, status: str = 
                 later = None
             item["doc_no_editable"] = not bool(later)
             items.append(item)
-        # 定时对账结论（TODO A8/A9）：每页多一条查询，让列表能一眼标出「已变更」。
+        # 定时对账结论（TODO(TODO:A8/A9)）：每页多一条查询，让列表能一眼标出「已变更」。
         # 没有对账记录 = 从未巡到（null），界面不显示任何标识（不冒充"没问题"）。
         if rows:
             checks = await conn.fetch(
@@ -4782,7 +4782,7 @@ async def update_trade_doc(doc_id: int, request: Request, body: dict,
             _json.dumps(raw_payload) if raw_payload is not None else None, now,
             new_doc_no,
         )
-    # 内容级版本（TODO A1）：本次写入的整份 payload 留一版；仅当确实改了 payload 才记。
+    # 内容级版本（TODO(TODO:A1)）：本次写入的整份 payload 留一版；仅当确实改了 payload 才记。
     # 版本在 UPDATE 之后记：写失败就不该留下"从未生效"的版本行。
     if raw_payload is not None:
         await _cv.record_content_version(
@@ -4798,7 +4798,7 @@ async def update_trade_doc(doc_id: int, request: Request, body: dict,
     d2 = await db.fetchrow(request, "SELECT * FROM trade_docs WHERE tenant_id=$1 AND id=$2",
                            DEFAULT_TENANT, doc_id, table="trade_docs")
     out = _dp.doc_dict(d2)
-    # 服务端签发自动上传（TODO F1 方案 A）：PATCH 触发 draft→issued 时若带 HTML，
+    # 服务端签发自动上传（TODO(TODO:F1) 方案 A）：PATCH 触发 draft→issued 时若带 HTML，
     # 同请求出 PDF 并归档。失败**不回滚签发**，只写 pdf_archive 供界面提示手动上传。
     if (new_status == "issued" and d["status"] == "draft"
             and isinstance(body.get("html"), str) and body["html"].strip()):

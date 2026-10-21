@@ -1508,7 +1508,7 @@ async def _resolve_or_create_inquiry(
                 " WHERE tenant_id=$1 AND id=$2",
                 tenant, inquiry_id,
             )
-        # 询盘阶段（TODO F4）：报价创建 → quotation（只前进，重复报价 no-op）
+        # 询盘阶段（TODO(TODO:F4)）：报价创建 → quotation（只前进，重复报价 no-op）
         await _inquiry_stage.advance(
             conn, tenant_id=tenant, inquiry_id=int(inquiry_id),
             target_stage=_inquiry_stage.STAGE_QUOTATION,
@@ -1531,7 +1531,7 @@ async def _resolve_or_create_inquiry(
         str(user["id"]), owner_scope, customer.get("team_id"),
     )
     inquiry_id = int(row["id"])
-    # 询盘阶段（TODO F4）：自动建询盘 + 报价 → quotation（新建行就是 inquiry，前进一档；
+    # 询盘阶段（TODO(TODO:F4)）：自动建询盘 + 报价 → quotation（新建行就是 inquiry，前进一档；
     # 已知 stage/status，直接传进来省一次 SELECT）
     await _inquiry_stage.advance(
         conn, tenant_id=tenant, inquiry_id=inquiry_id,

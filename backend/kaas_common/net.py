@@ -33,7 +33,7 @@ SSRF 防护的两条要点
 因此挡不住"域名解析到内网 IP"（DNS rebinding / 恶意 A 记录）。
 worker 跑在 Pyodide 里做不了 socket 级校验，只能如此。
 
-**2026-10-21 加固（TODO C11）**：新增**可选**的解析后校验 ——
+**2026-10-21 加固（TODO(TODO:C11)）**：新增**可选**的解析后校验 ——
 `is_safe_crawl_url(url, resolve=True, resolver=...)` / `next_redirect_url(..., resolve=True)`。
 - 默认 `resolve=False`，**两端行为不变**（worker/Pyodide 没有 socket，保持字符串判定）；
 - 具备 socket 的 Python 运行时（本地脚本、测试、未来非 Pyodide 的调用方）可传 `resolve=True`，
