@@ -15,8 +15,9 @@
 > 自动部署），且 GitHub Actions 额度/权限不稳 ⇒ **最终发布优先走本机 `pywrangler deploy`**。
 > 未收到用户明确部署指令**不发布**。
 >
-> 🧹 **CI 瘦身（2026-10-22）**：私有仓库免费额度 2,000 分钟/月吃紧，已把 e2e（push 时）、真 PG 集成（push 时）、
-> PR 预览（改为 `preview` label 触发）移出高频路径，并加 `concurrency` 取消过期 run；**门禁未删**。
+> 🧹 **CI 瘦身（2026-10-22）**：已把 e2e（push 时）、真 PG 集成（push 时）、PR 预览（改为 `preview` label 触发）
+> 移出高频路径，并加 `concurrency` 取消过期 run；**门禁未删**。同日仓库已转 **public** ⇒ GitHub-hosted 标准 runner
+> 免费无限（瘦身保留用于减冗余/提速；若以后转回 private 需重新看 2,000 分钟/月额度）。
 > 实测与回滚方法见 [`docs/CI_OPTIMIZATION_2026-10-22.md`](docs/CI_OPTIMIZATION_2026-10-22.md)。
 >
 > ✅ **2026-10-21 生产发布已完成（§0.4 记录）**：迁移 生产 `202610180010` → **`202610200005`**（6 条），
