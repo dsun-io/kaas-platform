@@ -150,7 +150,7 @@ no-prefetch   /products  -> /products (跳转!)
 | 项 | 状态 | 证据/备注 |
 |---|---|---|
 | P0：`prefetch={false}` + 重建 + 部署门面 | ✅ **已完成（2026-10-22，用户弹窗批准）** | 见 §7 |
-| P1：改 CI/Linux 构建静态导出并重新部署 | ⏳ 未做（本次仍用 Windows 产物，逐段预取 404 仍在） | 见 §7.3 |
+| P1：改 CI/Linux 构建静态导出并重新部署 | ✅ **已完成（2026-10-22，Docker `node:22` 容器内构建）** | 见 §7.5 |
 | P2：AGENTS.md 立规 + 导出态 e2e | ⏳ 未做 | 待排期 |
 
 ## 7. 执行记录（2026-10-22，P0）
@@ -170,11 +170,47 @@ no-prefetch   /products  -> /products (跳转!)
    - 限制（如实）：**「点击侧边栏」无法用 curl 在生产复验**（需登录态）；判定依据 = 产物逐字节一致 + 本机同产物点击通过。
      若复访仍点不动，请先 **Ctrl+F5 强刷**（旧 chunk 可能被 immutable 1 年 + CF 30d 规则留住），并把 Console/Network 截图给我。
 
-### 7.3 仍未修（P1，独立缺陷）
+### 7.3 P1 缺陷说明（已修，留档）
 
-线上仍有「逐段预取 404」：`/products/__next.!KGFwcCk.products.__PAGE__.txt` → 404；实际文件被写成目录形态
-（本次 wrangler 日志里可见 `/products/__next.!KGFwcCk/products/__PAGE__.txt`）。它**不再阻塞导航**（P0 已绕过 prefetch 路径），
-只影响预取效率与 404 噪声。修法 = 改用 Linux/CI 构建产物再 deploy 一次。
+Windows 本机构建时，Next 用 `path.relative()` 得到反斜杠路径、而 `convertSegmentPathToStaticExportFilename()` 只把 `/` 换成 `.`，
+于是逐段文件被写成 **目录**：`out/products/__next.!KGFwcCk/products/__PAGE__.txt`；
+客户端请求的是点号名 `__next.!KGFwcCk.products.__PAGE__.txt` ⇒ 全站预取 404（不阻塞导航，只损预取 + 404 噪声）。
+Linux 构建（`path.relative()` 返回 `/`）直接产出正确点号名，故此缺陷只在 Windows 构建时出现。
+
+### 7.4 并发提交碰撞留痕（2026-10-22，已核对无内容丢失）
+
+本工作区当日上午**另有会话在并行提交 CI 瘦身**，我的提交与它撞了 `HEAD` ref 锁，结果：
+
+- `c6da7ef`（对方）：CI 瘦身正式提交，内容完整；
+- `e972c78`（**message 是我的、内容其实是对方 `CI_OPTIMIZATION_2026-10-22.md` 的 +15 行补充**）；
+- `432fec4`（我的真修复）：只含 `sidebar.tsx` + 3 份文档，`git show --stat` 已逐条核对。
+
+核对结论：**双方内容都没有丢失**（对方的 CI 文档在 `c6da7ef`+`e972c78` 里都在；我的修复在 `432fec4`）。
+唯一问题是 `e972c78` 的 commit message 与内容不符（历史已推送，改写需 force-push 共享 main）。
+处置：不擅自改写历史；按 §7.4 记录在案，后续如需整洁可 `git rebase -i` reword 后**与所有会话约定**再 force-push。
+
+### 7.5 执行记录（2026-10-22，P1：改用 Linux 构建产物）
+
+背景：CI 走不通（当日上午 GitHub Actions 额度被账单拦截，本地也无 Linux 环境），改用 **Docker 容器构建**。
+
+1. **准备最小树**：把 `package.json` / `pnpm-workspace.yaml` / `pnpm-lock.yaml` / `frontend/`（排除 `node_modules` `.next` `out`）/ `shared/`
+   复制到 `%TEMP%\kaas-linux-build`（552 个文件）。
+2. **容器内构建**（`node:22`，挂载该目录为 `/work`，pnpm store 单独挂载复用）：
+   `pnpm install --frozen-lockfile`（1035 包，约 9 分钟，含拉镜像）→ `cd frontend && NEXT_EXPORT=1 pnpm build`
+   → **`✓ Compiled successfully in 39.0s`**，39 条静态路由，`out/` **302 文件**。
+   - 期间 Docker Desktop 自行重启过一次（daemon 版本 29.9.1→29.9.2），第一次 `docker run --rm` 被 `unexpected EOF` 打断；
+     改为 **detached + 日志轮询**（`docker run -d --name kaas-build … > /work/build.log`）后才稳定跑完。
+3. **产物验收（本地）**：`out/products/` 下为 `__next.!KGFwcCk.products.__PAGE__.txt`、`__next._full.txt`、`__next._tree.txt`；
+   `Get-ChildItem -Recurse | Where-Object { $_.Name -match '\\\\' }` **0 命中**；`__next.*` 目录 **0 个**。
+   静态服务 4176：点号名 **200**、旧目录形态 **404**；`click7.cjs` 点侧边栏 **`/quotes` → `/products` 跳转成功**。
+4. **部署**：`node node_modules/wrangler/bin/wrangler.js deploy` → **Uploaded 237 files（64 unchanged），version `71be6dbb-56c7-4b78-b4cb-a0634abc5032`**。
+5. **生产验证**：
+   - `GET /products/__next.!KGFwcCk.products.__PAGE__.txt` → **200**（修复前 404）；
+   - `GET /quotes/__next.!KGFwcCk.quotes.__PAGE__.txt` → **200**；旧形态 `/products/__next.!KGFwcCk/products/__PAGE__.txt` → **404**（符合预期）；
+   - 产物一致性：线上 `/quotes` 与本地 `frontend/out/quotes.html` **SHA256 相同**（`73CDFC94E33C…`）；
+     线上逐段文件与本地同名文件 **SHA256 相同**（`AAF42F842B7D…`）；
+   - 冒烟：`/health` 200、`/api/v1/auth/me` 401、`/products` 200、`/login` 200。
+6. **结论**：P0（点击挂死）+ P1（逐段预取 404）**均已修复并上线**；后续发版请走 Linux/CI 构建，别再用 Windows 产物直接 deploy（P2 待立规）。
 
 ---
 
