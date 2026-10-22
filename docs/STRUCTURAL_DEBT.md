@@ -258,6 +258,8 @@ trufflehog git file://. --only-verified --json > .tmp/trufflehog-full-history.js
 
 **遗留（需用户在外部平台操作）**：① **Notion 集成 token 需在 Notion 后台吊销**（API 无吊销端点，只能由用户在 Settings→Connections 操作）；② GitHub/仓库侧：历史已重写，其他未同步的本地 clone / 旧分支需重新 clone（本项目单人环境，`feat/*` 旧 worktree 分支已自动失效）；③ GitHub 服务端对象缓存可能短暂保留旧对象，但泄露值已通过轮换失效，风险已闭环。
 
+**2026-10-22 复核（仓库已转 public）**：当前树扫描无明文凭据（GitHub PAT / 私钥 / OpenAI / Resend 均 0 命中；DSN 类命中均为本地 `localhost` 占位）；`DEPLOY.md` 里残留的**旧 Neon 端点示例**已改为 `<user>:<pwd>@<neon-branch-host>` 占位符——该端点所属项目已于 2026-10-21 删除、角色口令已轮换，属于**失效引用**的清理。
+
 ### 6.5 本次不执行，待用户拍板
 
 - [ ] 是否执行 §6.2 全历史扫描（需先安装 gitleaks/trufflehog）
