@@ -1,6 +1,6 @@
 # 询盘与订单模型重构 · 优化方案（2026-10-22）
 
-> 状态：**设计定稿待实施**（用户 2026-10-22 拍板「落盘设计文档再实现」；同日追加拍板 D-1~D-5 见 §12.1）。
+> 状态：**设计定稿，全部拍板完毕，M1 可开工**（用户 2026-10-22 拍板「落盘设计文档再实现」；D-1~D-9 见 §12.1）。
 > 本文件是本次重构的**唯一设计基准**；实施进度在 [`TODO.md`](./TODO.md) §Q 销账。
 > 所有结论均经代码核实（附 `文件:行号`），非推测。
 
@@ -156,12 +156,31 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 |---|---|---|---|
 | 询盘 | 询盘详情/工位内「编辑」：产品行增删改、渠道、备注 | `PATCH /inquiries/{id}` 已支持 items/channel（`ws_crm_ext.py:318-442`），前端接线即可 | 已生成报价的询盘：编号锁定（现规则）；产品行允许改并留 `updated_at` |
 | 报价 | 报价记录详情抽屉「编辑」：行项整批替换、条款、客户、币种、有效期、状态流转 | `QuoteOrderPatch` + `QuoteOrderItemsReplace` 已有（`shared/contracts/quote-order.ts:142-170`） | 已转订单/已开单证的报价：行项与金额锁定，仅允许状态流转；锁定原因明示 |
-| 订单 | 订单详情「货物明细」可增删改（行级编辑 + 整批替换两种交互） | **两端新增**：内核 `update_order_api` 支持 items 替换 + 重算 total/amount_breakdown；门面透传；契约 `OrderItemsReplace` | confirmed 及以后：行项锁定（改单走取消重下或显式改单理由）；pending 可自由改 |
+| 订单 | 订单详情「货物明细」可增删改（行级编辑 + 整批替换两种交互） | **两端新增**：内核 `update_order_api` 支持 items 替换 + 重算 total/amount_breakdown；门面透传；契约 `OrderItemsReplace` | pending：可自由改；confirmed 及以后：**允许改，但需管理员审批 + 留痕**（D-8，见 §6.1） |
+
+### 6.1 已确认订单的明细变更审批（D-8，2026-10-22 拍板）
+
+用户拍板：**允许改，留痕，并且改动需要管理员审批**。
+
+**流程**：
+1. 任何人对 `status >= confirmed` 的订单提交行项变更 → 生成**变更申请**（含新旧明细对比、变更原因、申请人、时间），订单本身**不立即变化**；
+2. 管理员（团队管理员 / internal 角色）在订单详情或待办里批准 → 应用行项替换 + 重算 `total_amount`/`amount_breakdown` + 写审计事件；拒绝则原样保留并记录理由；
+3. 若该订单已开单证，申请页与批准页**必须列出受影响单证**（PI/CI/PL/BL…），批准后提示「需重开/作废哪些单证」，避免合同与单证不一致；
+4. 管理员自己改也走同一流程（申请人=批准人，仍留痕），不提供"管理员直改"旁路——审计链完整。
+
+**数据**：新表 `order_item_change_requests`（`order_id` / `requested_by` / `reason` / `items`（新） / `snapshot`（旧） / `status`(pending|approved|rejected) / `decided_by` / `decided_at` / `created_at` / `team_id`）。
+
+**端点**（内核实现，门面透传）：
+- `POST /orders/{id}/item-change-requests`（提交变更申请）
+- `GET /orders/{id}/item-change-requests`（申请历史）
+- `POST /orders/{id}/item-change-requests/{rid}/approve` / `/reject`（仅管理员）
+
+**界面**：订单列表「有变更待批」角标；订单详情顶部待批横幅（新旧对比 + 批准/拒绝）；批准时二次确认受影响单证清单。
 
 ## 7. 统计与权重口径（业务规则只在 Python 内核）
 
 - **商机漏斗**：询盘数 → 已报价询盘数 → 已下单询盘数 → 已成笔数/成交金额；
-- **权重**（初始值，待用户拍板）：询盘 1 / 报价 2 / 订单 10（订单=实际付款，权重最大；可选按订单金额加权）；
+- **权重**（2026-10-22 拍板 D-6）：**询盘 1 / 报价 2 / 订单 10**（订单=实际付款，权重最大；综合分 = 询盘数×1 + 报价数×2 + 订单数×10）；
 - **转化率**：分渠道（`source_channel`）、分时间段；「询盘转化 vs 直接下单」占比；
 - **入口**：dashboard 占位页落地为「商机漏斗 + 分渠道转化 + 订单/应收概览」；`/dashboard/summary` 三表混计数废弃，改漏斗结构；
 - **规则位置**：`backend/kaas_common/workstation/funnel.py`（新增，纯函数），worker/门面两端共用。
@@ -172,7 +191,10 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 |---|---|---|
 | `POST /orders` | 接受 `inquiry_id`、`source_type`、`source_channel`；自动判定+显式覆盖；转化时冗余回写 inquiry_id | 内核 + 门面 |
 | `GET /orders` / `GET /orders/{id}` | 返回 `source_type`/`source_channel`/`inquiry_id`；列表支持 `source_type`/`source_channel` 筛选 | 内核 + 门面 |
-| `PATCH /orders/{id}` | 新增 `items` 整批替换 + 重算金额（pending 状态） | 内核 + 门面 |
+| `PATCH /orders/{id}` | 新增 `items` 整批替换 + 重算金额（pending 状态直接生效） | 内核 + 门面 |
+| `POST /orders/{id}/item-change-requests`（**新端点**） | confirmed 及以后的行项变更申请（新旧明细对比 + 原因）；管理员批准/拒绝后生效 | 内核 + 门面 |
+| `GET /orders/{id}/item-change-requests`（**新端点**） | 变更申请历史（含受影响单证清单） | 内核 + 门面 |
+| `POST /orders/{id}/item-change-requests/{rid}/approve` `/reject`（**新端点**） | 仅管理员；批准后应用行项 + 重算 + 审计 | 内核 + 门面 |
 | `GET /inquiries`（**新端点**） | 跨客户询盘列表：渠道/stage/客户/时间筛选，带报价数/订单计数字段 | 内核 + 门面 |
 | `GET /inquiries/{id}` | 详情带**报价历史**（1:N，含每次时间/金额/状态）+ 关联订单 + stage 流水 | 内核 + 门面 |
 | `PATCH /inquiries/{id}` | 已有能力前端接线（items/channel）；无需后端改动 | 前端 |
@@ -194,7 +216,7 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 
 - 列表新增列：**来源**（询盘转化/直接下单·渠道）、**关联询盘/报价**（可点跳转）；筛选：状态、来源、渠道、客户；
 - 顶部入口重组：「报价转订单」与「直接新建订单」**平级**（后者升为常规入口，不再隐藏）；
-- 详情：头部展示来源链（询盘→报价→本订单，可点跳转）；货物明细**可编辑**（pending）；贸易条款可编辑（现有）；单证/收款/出运时间线汇总。
+- 详情：头部展示来源链（询盘→报价→本订单，可点跳转）；货物明细可编辑（pending 直接改；confirmed 后走变更申请 + 管理员审批，列表有「有变更待批」角标）；贸易条款可编辑（现有）；单证/收款/出运时间线汇总。
 
 ### 9.3 报价工位改造
 
@@ -219,8 +241,8 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 
 | 阶段 | 内容 | 验收 |
 |---|---|---|
-| **M1 模型与内核** | 枚举/迁移/回填；orders 三新字段 + 写入逻辑；订单 items 增删改（内核+门面+契约）；`funnel.py` 统计规则；`GET /inquiries` 列表/详情（含报价历史）；TS6 收口 | orchestrator/worker/ts-worker 测试 + contracts R0–R5 + 金标 + 回填 dry-run 留证 |
-| **M2 门面与前端** | `/inquiries` 工位；`/orders` 来源列/筛选/详情来源链/货物行编辑；报价记录编辑入口；询盘编辑入口；客户详情语义调整 | 前端全套（typecheck/lint/test/ui/e2e）+ mocks 同步 |
+| **M1 模型与内核** | 枚举/迁移/回填；orders 三新字段 + 写入逻辑 + `ck_orders_source_inquiry`；订单 items 增删改（内核+门面+契约）；`order_item_change_requests` 表 + 审批端点（D-8）；`funnel.py` 统计（1/2/10）；`GET /inquiries` 列表/详情（含报价历史）；TS6 收口 | orchestrator/worker/ts-worker 测试 + contracts R0–R5 + 金标 + 回填 dry-run 留证 |
+| **M2 门面与前端** | `/inquiries` 工位；`/orders` 来源列/筛选/详情来源链/货物行编辑 + 变更申请与审批入口；报价记录编辑入口；询盘编辑入口；客户详情语义调整 | 前端全套（typecheck/lint/test/ui/e2e）+ mocks 同步 |
 | **M3 仪表盘** | dashboard 落地漏斗/分渠道转化/订单应收概览；`/dashboard/summary` 废弃混计数 | e2e + 与内核漏斗单测交叉验证 |
 
 ## 12. 拍板记录
@@ -234,14 +256,13 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 | D-3 | 线下同步订单初始状态 | **如实录入**：允许直接选 confirmed/producing/shipped/completed 并带真实日期；已收款走实收登记 → 见 §3.3 R5 |
 | D-4 | 线下单记录程度 | **三级渐进**：T1 必填 / T2 尽量可后补 / T3 可选；允许先记 T1 后补 T2/T3 → 见 §3.4 |
 | D-5 | 「补录」标记字段 | **不加**：下单日期 vs 录入时间自然呈现后期同步，`source_channel` 已回答来源 → 见 §3.3 R5 |
+| D-6 | 综合分权重 | **询盘 1 / 报价 2 / 订单 10**；综合分 = 询盘数×1 + 报价数×2 + 订单数×10 → 见 §7 |
+| D-7 | 渠道枚举扩展 | **加** `phone`（电话）与 `referral`（老客户介绍）；线下电话单/转介绍单能归位 → 见 §4 |
+| D-8 | 已确认订单行项变更 | **允许改，但需管理员审批 + 留痕**：生成变更申请（新旧对比+原因），管理员批准后生效；已开单证需列出受影响清单 → 见 §6.1 |
+| D-9 | 询盘主入口 | **独立 `/inquiries` 工位**（与订单平级，跨客户筛选）→ 见 §9.1 |
 
-### 12.2 仍待拍板（实施 M1 前）
+### 12.2 仍待拍板
 
-| # | 事项 | 选项与代价 |
-|---|---|---|
-| Q-1 | **权重数值** | 建议 询盘1/报价2/订单10（订单=付款，权重最大）；备选按订单金额加权（更精细但漏斗图变复合指标） |
-| Q-2 | **渠道枚举扩展** | 是否加 phone/referral（线下电话/老客户介绍是真实主源）；不加则直下单只能记 other |
-| Q-3 | **confirmed 后订单行项锁定** | 建议锁定（已确认=合同已立，改单走取消重下并留痕）；备选允许改并记审计事件 |
-| Q-4 | **询盘主入口形态** | 独立 `/inquiries` 工位（推荐，与订单对等）vs 继续挂在客户页但升为完整页 |
+**无。** 全部决策已拍板（D-1~D-9，2026-10-22），M1 可开工。
 
 > 拍板方式：`ask_user_question` 弹窗（AGENTS 规则 2）；拍板结果回填本文件并销 TODO §Q 对应条目。
