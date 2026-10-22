@@ -82,9 +82,24 @@
  │          │                  每张报价单自动伴随一张可打印的报价单文件
  │          │                  （trade_docs.doc_type='quotation'，doc_no=quote_no，镜像而非第二实体）
  │          └── 订单 Order  一等公民：source_type + source_channel + inquiry_id(可空) + quote_id(可空)
- │                └── 单证 TradeDoc  挂订单，继承订单全部条款
+ │                └── 单证 TradeDoc  归属订单/报价（parent）；数据来源按单证链派生（见 §3.5）
  └── 订单也可不经询盘/报价直接存在（source_type=direct，source_channel 记渠道）
 ```
+
+### 3.5 单证链与数据来源（2026-10-22 用户校正）
+
+**归属（parent）与数据来源（derivation）是两件事**，不能混：
+
+| 单证 | 归属 parent | 数据来源 |
+|---|---|---|
+| 报价单文件 `quotation` | 报价单（`quote_id`） | 报价单（同事务自动镜像，D-15） |
+| `pi`（形式发票） | 订单（`order_id`） | 订单；客户签回后成为**基线** |
+| `contract`（SC 销售合同） | 订单（`order_id`） | **PI 数据**（不是订单直连） |
+| `ci` / `pl` / `bl` 等 | 订单（`order_id`） | 订单 / PI（按现有 `ref_pi` 引用链） |
+
+系统已有事实层口径：`facts.py:984-985` 的上游快照优先级为
+`("pi", "contract", "order", "quote", "quotation", "inquiry")`，注释明确「**PI 是客户签回的基线**」。
+本设计沿用该口径：**SC 依赖 PI 数据，PI 依赖订单**——单证始终是订单的下游，不得反向驱动订单状态（D-16）。
 
 **术语（D-15）**：
 - **报价**＝动作/过程（算价、发价）；**报价单**＝产物，即 `quote_orders`，是业务真源；
@@ -176,7 +191,7 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 2. 无定金期次的订单：**首笔任意期次实收**（>0）同样触发确认（否则没有定金结构的单永远等不到）；
 3. **部分到账也算确认**（人已上传打款凭证并登记，视为业务判断），但订单详情标注「定金部分到账（实收 X / 应收 Y）」；
 4. 已 `confirmed` 的订单再收款**不改状态**；
-5. **CI/SC 等单证签发不触发订单状态**——单证依赖订单数据生成，不能反向驱动（避免循环）；
+5. **CI/SC 等单证签发不触发订单状态**——单证链是 报价单 → PI → SC、CI/PL/BL 由订单/PI 派生（§3.5），单证始终是订单的下游，不能反向驱动；
 6. 通知：本期通知范围仅审批相关（D-13），确认事件只写审计 + 时间线，不发站内通知（后续需要再单独立项）。
 
 **数据**：`orders` 新增 `confirmed_at`（timestamptz）、`confirmed_by`（text）、`confirmed_source`（`manual` | `deposit_receipt`）。
@@ -353,7 +368,7 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 | D-13 | 通知范围 | **只做审批相关**（申请/批准/拒绝三类）；不建设通用事件总线（`domain_events` 仍按 G-15 暂缓）→ 见 §6.2 |
 | D-14 | 指定审批人机制 | 团队可配多名指定审批人（`team_approvers`）；**有指定人则审批权与通知归指定人，否则归管理员**；配置入口在团队页，仅管理员可改 → 见 §6.2 |
 | D-15 | 报价单与报价单文件 | **一次报价 = 一张报价单**（`quote_orders`，业务真源）；报价单文件（`trade_docs.doc_type='quotation'`）同事务自动产出、`doc_no=quote_no`、编辑后自动同步；报价历史 = 多张报价单 → 见 §3 术语 |
-| D-16 | 「已确认」触发事件 | **定金到账登记（实收登记）即自动确认**（部分到账也算，详情标注）；人工确认保留；CI/SC 签发不触发；补 `confirmed_at/by/source` → 见 §5.1 |
+| D-16 | 「已确认」触发事件 | **定金到账登记（实收登记）即自动确认**（部分到账也算，详情标注）；人工确认保留；CI/SC 签发不触发（**SC 依赖 PI，PI 依赖订单**，§3.5）；补 `confirmed_at/by/source` → 见 §5.1 |
 
 ### 12.2 仍待拍板
 
