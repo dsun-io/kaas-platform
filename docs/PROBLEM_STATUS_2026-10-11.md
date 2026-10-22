@@ -14,6 +14,25 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-22 · 询盘与订单模型重构 M1 内核收口 ✅）** 设计基准 `OPTIMIZATION_PLAN_2026-10-22_INQUIRY_ORDER_MODEL.md`
+> 全部 17 条决策已拍板并逐条落地：
+> - **M1-a** 枚举与迁移：`ORDER_SOURCE_TYPE`/`ORDER_CONFIRM_SOURCE`/`ORDER_CHANNEL` 入共享内核；
+>   迁移 `202610220004` 给 `orders` 加 `source_type/source_channel/inquiry_id/confirmed_at/confirmed_by/confirmed_source`
+>   + CHECK + 触发器回填 `entity_links`；`202610220005` 建 `team_approvers`/`order_item_change_requests`/`notifications`。
+> - **M1-b** 内核订单写入与 items 编辑：`create_order_api` 解析来源三元组（显式 inquiry_id > 报价的 inquiry > direct），
+>   `PATCH /orders/{id}` 支持 items 整批替换（pending 直接改、confirmed 走审批）。
+> - **M1-c** 定金到账联动确认：`create_order_receipt` 后若订单仍 pending → 自动 `_apply_order_confirmation(source="deposit_receipt")`；
+>   人工确认保留 `source="manual"`；无自动支付识别。
+> - **M1-d** 询盘列表与详情：`GET /inquiries` 带 `stage/channel/date_from/date_to/q` 筛选 + 子查询 `quote_count/order_count/latest_quote_at`；
+>   `GET /inquiries/{id}` 返回询盘 + `quotes`（共享 `row_to_quote` + item_count/order_count）+ `orders`（共享 `row_to_order`）+ `stage_log` + `counts`。
+> - **M1-e** 审批与通知：`ws_approvals.py` 6 组端点（变更申请提交/列表、批准/拒绝、审批中心、通知读/未读/标已读/全读、团队审批人 CRUD）；
+>   审批人路由：指定审批人 → 团队管理员 → 租户系统管理员；管理员兜底（`admin_fallback`）；自批默认禁止、单人团队放行并标注 `self_approve_solo`；
+>   批准后整批替换 + 重算总额 + 同步未收应收 + 列出受影响单证；通知只发审批相关（提交时给审批人、决定时给申请人）。
+> - **门禁**：worker **1685 passed + 12 skipped**（3 条 `test_pdf_privileged_passes_gate[S1..S3]` 环境缺 `js` 模块，与文件无关）；
+>   orchestrator **266 passed**；ts-worker **232 passed / 23 文件**；sync-shared `-Check` 一致；
+>   `check-schema-coverage` PASS（0 缺失）/`check-schema-drift` PASS（0 列漂移）。
+> - **提交链**：`fe9be1f`（M1-a/M1-b）→ `1ba758d`（M1-c）→ `15c4fcab`（M1-d）→ `a0e33d91`（M1-e）。
+>
 > **（2026-10-22 · 产品图上传重做 + 全站拖拽排序 ✅）** 用户口径：「产品图片上传的交互设计太反人类」→
 > 「上移下移的箭头不要，改为鼠标拖动排列」→「**所有排序的部分都设计为拖拽排序**」。结论：痛点全在交互层，
 > 后端能力（直传+代理回退、软删可恢复、改名、重排、sha256 去重）早已齐备，只是被「选类型 → 起名 → 选文件 →
