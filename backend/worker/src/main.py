@@ -55,6 +55,7 @@ from kaas_common.workstation.number_rules import build_number, NumberError, norm
 from kaas_common.workstation.scope import can_view, can_write, is_admin_role
 from kaas_common.workstation.teams import (
     TeamRuleError, invite_state, normalize_invite_token, validate_team_name,
+    validate_application_message,
 )
 
 
@@ -787,6 +788,10 @@ class RegisterRequest(BaseModel):
     contact: Optional[str] = None
     invite_token: Optional[str] = None   # 加入现有团队（凭邀请码）
     team_name: Optional[str] = None      # 新建团队（成为团队管理员）
+    # 2026-10-22：加入申请的第三条路 —— 团队名已存在时直接申请，管理员审核通过才入团。
+    # 与 invite_token / team_name 三方互斥（422 TEAM_ACTION_CONFLICT）。
+    apply_team_name: Optional[str] = None
+    apply_message: Optional[str] = None  # 申请人留言（选填，≤200 字）
     # 新建团队时勾选要开通的工位（当前阶段全部免费）；不传 = 默认全部工位
     workstations: Optional[List[str]] = None
 
@@ -817,6 +822,8 @@ async def register(request: Request, body: RegisterRequest):
     product_category = (body.product_category or "").strip().lower()
     invite_raw = (body.invite_token or "").strip()
     team_name_raw = (body.team_name or "").strip()
+    apply_team_name_raw = (body.apply_team_name or "").strip()
+    apply_message_raw = (body.apply_message or "").strip()
 
     if not email or not password or not display_name:
         raise HTTPException(status_code=422, detail=(
@@ -830,10 +837,13 @@ async def register(request: Request, body: RegisterRequest):
             "validation_error: Password must be at least 8 characters"))
     if "@" not in email or "." not in email.split("@")[-1]:
         raise HTTPException(status_code=422, detail="validation_error: Invalid email format")
-    if invite_raw and team_name_raw:
+    # 团队动作三方互斥（2026-10-22 起）：邀请码 / 新建团队 / 加入申请，
+    # 一次注册只能做一个（后端强制，前端同样只发一个）
+    team_actions = [bool(invite_raw), bool(team_name_raw), bool(apply_team_name_raw)]
+    if sum(team_actions) > 1:
         raise HTTPException(status_code=422, detail={
             "error": "validation", "code": "TEAM_ACTION_CONFLICT",
-            "detail": "只能二选一：凭邀请码加入现有团队，或新建一个团队"})
+            "detail": "只能三选一：凭邀请码加入现有团队、新建一个团队、或向已存在团队发起加入申请"})
 
     # 工位编码在**解析期**就校验（orchestrator 同口径）：即使不建团队也要 422，
     # 不能静默忽略客户端写错的工位 key（PARITY-DIFF-10）。
@@ -845,8 +855,10 @@ async def register(request: Request, body: RegisterRequest):
             invite = None
             if invite_raw:
                 token = normalize_invite_token(invite_raw)
+                # FOR UPDATE：一次一码的并发保证 —— 两个请求抢同一个码时，
+                # 后一个在行锁上等到前一个提交，再读状态已是 accepted → used → 409。
                 invite = await conn.fetchrow(
-                    "SELECT * FROM team_invites WHERE token=$1", token)
+                    "SELECT * FROM team_invites WHERE token=$1 FOR UPDATE", token)
                 state = invite_state(dict(invite) if invite is not None else None)
                 if state == "not_found":
                     raise HTTPException(status_code=404, detail={
@@ -860,6 +872,28 @@ async def register(request: Request, body: RegisterRequest):
                 if state == "expired":
                     raise HTTPException(status_code=410, detail={
                         "error": "gone", "code": "INVITE_EXPIRED"})
+
+            # ── 加入申请预校验（2026-10-22；放在建账号之前，失败即整体回滚）──
+            # 顺序与邀请码对齐：团队不存在 404 优先于邮箱占用 409（PARITY-DIFF-12 同思路）。
+            apply_team_id = None
+            apply_team_name_out = None
+            apply_message = None
+            if apply_team_name_raw:
+                try:
+                    apply_message = validate_application_message(apply_message_raw)
+                    apply_team_name_norm = validate_team_name(apply_team_name_raw)
+                except TeamRuleError as exc:
+                    raise HTTPException(status_code=422, detail={
+                        "error": "validation", "code": exc.code, "detail": exc.detail})
+                apply_team = await conn.fetchrow(
+                    "SELECT id, name FROM teams WHERE tenant_id=$1 AND name=$2",
+                    DEFAULT_TENANT, apply_team_name_norm)
+                if apply_team is None:
+                    raise HTTPException(status_code=404, detail={
+                        "error": "not_found", "code": "TEAM_NOT_FOUND",
+                        "message": f"团队「{apply_team_name_norm}」不存在："
+                                   f"可向团队管理员要邀请码，或改为新建团队"})
+                apply_team_id, apply_team_name_out = apply_team["id"], apply_team["name"]
 
             new_team_name = None
             if team_name_raw:
@@ -881,8 +915,8 @@ async def register(request: Request, body: RegisterRequest):
             if await conn.fetchval("SELECT 1 FROM users WHERE email=$1", email) is not None:
                 raise HTTPException(status_code=409, detail="conflict: Email already registered")
 
-            # 建团队的成为团队管理员（role=owner）；凭码加入的是普通成员（role=user）
-            role = "user" if invite is not None else "owner"
+            # 建团队的成为团队管理员（role=owner）；凭码加入或发起申请的是普通成员（role=user）
+            role = "user" if (invite is not None or apply_team_id is not None) else "owner"
             user_row = await conn.fetchrow(
                 "INSERT INTO users (email, password_hash, display_name, account_type, role,"
                 " plan, status, is_tenant_admin) VALUES ($1,$2,$3,'customer',$4,'free','active',false)"
@@ -930,6 +964,22 @@ async def register(request: Request, body: RegisterRequest):
                     await conn.execute(
                         "UPDATE users SET team_id=$2 WHERE id=$1", uid, team_id)
                     await _open_workstations(team_id)
+                elif apply_team_id is not None:
+                    # 加入申请（2026-10-22）：账号建成但**不入团**（team_id 留空），
+                    # 等团队管理员审核通过才落 team_id —— 与邀请码"拿到就能进"不同，
+                    # 申请是"请求进入"，把关权在团队侧。
+                    application = await conn.fetchrow(
+                        "INSERT INTO team_join_applications"
+                        " (tenant_id, team_id, user_id, email, display_name, message, status)"
+                        " VALUES ($1,$2,$3,$4,$5,$6,'pending')"
+                        " RETURNING id",
+                        DEFAULT_TENANT, apply_team_id, uid, email, display_name, apply_message)
+                    application_out = {
+                        "id": application["id"],
+                        "team_id": apply_team_id,
+                        "team_name": apply_team_name_out,
+                        "status": "pending",
+                    }
 
     # 扁平响应：前端 buildUser() 读 user_id / team_id / team_name / console_access
     return {
@@ -941,6 +991,8 @@ async def register(request: Request, body: RegisterRequest):
         "plan": "free",
         "team_id": team_id,
         "team_name": team_name_out,
+        # 加入申请待审标记（2026-10-22）：未申请时为 null，不破坏旧客户端
+        "application": application_out if apply_team_id is not None else None,
         "console_access": False,          # 官网数据后台权限：默认关闭，由团队管理员授予
         "access_token": _create_token(uid, request),
         "token_type": "bearer",
@@ -5518,6 +5570,10 @@ import ws_docs_hardening  # noqa: E402,F401
 # ── 团队（三层组织）管理 ──
 # 团队是生产端"公司级隔离"的那一层（Worker 是单租户部署，账号之间没有 tenant 隔离）。
 import ws_teams  # noqa: E402,F401
+
+# ── 团队加入申请（2026-10-22）：注册时团队已存在 → 直接申请，管理员审核入团 ──
+# 注册时的申请创建在 main.py:register 同一事务；本模块负责登录后的查询/审核/撤回。
+import ws_join_applications  # noqa: E402,F401
 
 # ── 条款模板库（A5-W1）：团队级常用条款 CRUD + 首次懒种子（6 类默认措辞）──
 # 契约/校验在共享内核 kaas_common.trade_doc.clause_templates；本模块只做 HTTP + DB。

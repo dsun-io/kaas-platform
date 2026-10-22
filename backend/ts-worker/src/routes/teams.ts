@@ -19,15 +19,18 @@ import { getEnv, type Env } from "../env";
 import { bool, httpError, num, num0, parseBody, parseQuery, pyIso, respond } from "../http";
 import {
   allWorkstations,
+  canTransitionApplication,
   FULL_CHAIN,
   generateInviteToken,
   INVITE_TTL_DAYS,
   inviteState,
   isAdminRole,
   isTeamAdmin,
+  JOIN_APPLICATION_STATUS,
   normalizeInviteToken,
   resolveSignupWorkstations,
   RuleError,
+  validateRejectReason,
   validateTeamName,
   validateTransferTarget,
 } from "../rules";
@@ -192,6 +195,12 @@ const inviteParam = z.object({
   team_id: z.coerce.number().int(),
   invite_id: z.coerce.number().int(),
 });
+const applicationParam = z.object({
+  team_id: z.coerce.number().int(),
+  application_id: z.coerce.number().int(),
+});
+const applicationIdParam = z.object({ application_id: z.coerce.number().int() });
+const applicationRejectSchema = z.object({ reason: z.string().nullish() });
 const subscriptionParam = z.object({
   team_id: z.coerce.number().int(),
   code: z.string(),
@@ -482,6 +491,183 @@ app.post("/api/v1/teams/join", (c) => respond(c, async () => {
        WHERE id=${num((invite as Row).id)}`;
     const count = await memberCount(tx, num(team.id) as number);
     return { joined: true, team: teamOutOf(team, user, count) };
+  }));
+  return c.json(payload);
+}));
+
+// ── 加入申请（ws_join_applications.py，2026-10-22） ─────────────────────────
+
+/** 申请输出（ws_join_applications.py:_application_out 逐键对齐）。 */
+function applicationOut(row: Row): Record<string, unknown> {
+  return {
+    id: num(row.id),
+    team_id: num(row.team_id),
+    team_name: row.team_name ?? null,
+    user_id: num(row.user_id),
+    email: row.email,
+    display_name: row.display_name,
+    message: row.message ?? null,
+    status: row.status,
+    reject_reason: row.reject_reason ?? null,
+    reviewed_by: num(row.reviewed_by),
+    reviewed_at: pyIso(row.reviewed_at),
+    created_at: pyIso(row.created_at),
+  };
+}
+
+// GET /api/v1/teams/check-name（公开：注册页查重，只返回布尔，不暴露团队列表）
+app.get("/api/v1/teams/check-name", (c) => respond(c, async () => {
+  let normalized: string;
+  try {
+    normalized = validateTeamName(c.req.query("name") ?? "");
+  } catch (err) {
+    if (err instanceof RuleError) rule422(err);
+    throw err;
+  }
+  const payload = await withDb(getEnv(c), async (sql) => {
+    const rows = await sql`
+      SELECT 1 FROM teams WHERE tenant_id=${DEFAULT_TENANT} AND name=${normalized}`;
+    return { name: normalized, exists: rows.length > 0 };
+  });
+  return c.json(payload);
+}));
+
+// GET /api/v1/teams/{team_id}/join-applications?status=（ws_join_applications.py:list_applications）
+app.get("/api/v1/teams/:team_id/join-applications", (c) => respond(c, async () => {
+  const user = await requireUser(c);
+  const { team_id: teamId } = parseQuery(teamIdParam, c.req.param(), "path");
+  const status = c.req.query("status") ?? "pending";
+  if (status !== "all" && !(JOIN_APPLICATION_STATUS as readonly string[]).includes(status)) {
+    throw httpError(422, {
+      error: "validation", code: "INVALID_STATUS",
+      detail: "status 只能是 pending/all/" + JOIN_APPLICATION_STATUS.join("/"),
+    });
+  }
+  const payload = await withDb(getEnv(c), async (sql) => {
+    const team = await teamOr404(sql, teamId);
+    requireTeamAdmin(team, user);
+    const rows = status === "all"
+      ? await sql`
+          SELECT * FROM team_join_applications WHERE team_id=${teamId}
+           ORDER BY (status = 'pending') DESC, id DESC`
+      : await sql`
+          SELECT * FROM team_join_applications WHERE team_id=${teamId} AND status=${status}
+           ORDER BY id DESC`;
+    const items = (rows as Row[]).map(applicationOut);
+    return { items, total: items.length };
+  });
+  return c.json(payload);
+}));
+
+// POST /api/v1/teams/{team_id}/join-applications/{id}/approve（ws_join_applications.py:approve）
+app.post("/api/v1/teams/:team_id/join-applications/:application_id/approve", (c) => respond(c, async () => {
+  const user = await requireUser(c);
+  const { team_id: teamId, application_id: applicationId } =
+    parseQuery(applicationParam, c.req.param(), "path");
+  const payload = await withDb(getEnv(c), (sql) => sql.begin(async (tx) => {
+    const team = await teamOr404(tx, teamId);
+    requireTeamAdmin(team, user);
+    const rows = await tx`
+      SELECT * FROM team_join_applications WHERE id=${applicationId} FOR UPDATE`;
+    const row = (rows[0] as Row | undefined) ?? null;
+    if (!row || num(row.team_id) !== teamId) {
+      throw httpError(404, { error: "not_found", code: "APPLICATION_NOT_FOUND" });
+    }
+    if (!canTransitionApplication(row.status as string | null, "approved")) {
+      throw conflict("APPLICATION_ALREADY_REVIEWED", "该申请已被处理，不能重复审核");
+    }
+    const targetRows = await tx`SELECT id, team_id FROM users WHERE id=${num(row.user_id)}`;
+    const target = targetRows[0] as Row | undefined;
+    if (!target) {
+      throw httpError(404, { error: "not_found", code: "USER_NOT_FOUND" });
+    }
+    if (target.team_id !== null && target.team_id !== undefined) {
+      throw conflict("ALREADY_IN_TEAM", "该申请人已属于一个团队，不能重复入团");
+    }
+    await tx`
+      UPDATE users SET team_id=${teamId}, updated_at=now() WHERE id=${num(target.id)}`;
+    const updated = await tx`
+      UPDATE team_join_applications
+         SET status='approved', reviewed_by=${user.id}, reviewed_at=now(), updated_at=now()
+       WHERE id=${applicationId} RETURNING *`;
+    const count = await memberCount(tx, teamId);
+    return { approved: true, application: applicationOut(updated[0] as Row), member_count: count };
+  }));
+  return c.json(payload);
+}));
+
+// POST /api/v1/teams/{team_id}/join-applications/{id}/reject（ws_join_applications.py:reject）
+app.post("/api/v1/teams/:team_id/join-applications/:application_id/reject", (c) => respond(c, async () => {
+  const user = await requireUser(c);
+  const { team_id: teamId, application_id: applicationId } =
+    parseQuery(applicationParam, c.req.param(), "path");
+  const body = await parseBody(c, applicationRejectSchema);
+  let reason: string | null;
+  try {
+    reason = validateRejectReason(body.reason);
+  } catch (err) {
+    if (err instanceof RuleError) rule422(err);
+    throw err;
+  }
+  const payload = await withDb(getEnv(c), (sql) => sql.begin(async (tx) => {
+    const team = await teamOr404(tx, teamId);
+    requireTeamAdmin(team, user);
+    const rows = await tx`
+      SELECT * FROM team_join_applications WHERE id=${applicationId} FOR UPDATE`;
+    const row = (rows[0] as Row | undefined) ?? null;
+    if (!row || num(row.team_id) !== teamId) {
+      throw httpError(404, { error: "not_found", code: "APPLICATION_NOT_FOUND" });
+    }
+    if (!canTransitionApplication(row.status as string | null, "rejected")) {
+      throw conflict("APPLICATION_ALREADY_REVIEWED", "该申请已被处理，不能重复审核");
+    }
+    const updated = await tx`
+      UPDATE team_join_applications
+         SET status='rejected', reviewed_by=${user.id}, reviewed_at=now(),
+             reject_reason=${reason}, updated_at=now()
+       WHERE id=${applicationId} RETURNING *`;
+    return { rejected: true, application: applicationOut(updated[0] as Row) };
+  }));
+  return c.json(payload);
+}));
+
+// GET /api/v1/me/join-application（ws_join_applications.py:my_join_application）
+app.get("/api/v1/me/join-application", (c) => respond(c, async () => {
+  const user = await requireUser(c);
+  const payload = await withDb(getEnv(c), async (sql) => {
+    const rows = await sql`
+      SELECT a.*, t.name AS team_name
+        FROM team_join_applications a JOIN teams t ON t.id = a.team_id
+       WHERE a.user_id=${user.id} ORDER BY a.id DESC LIMIT 1`;
+    return { application: rows.length > 0 ? applicationOut(rows[0] as Row) : null };
+  });
+  return c.json(payload);
+}));
+
+// POST /api/v1/join-applications/{id}/cancel（ws_join_applications.py:cancel_application）
+app.post("/api/v1/join-applications/:application_id/cancel", (c) => respond(c, async () => {
+  const user = await requireUser(c);
+  const { application_id: applicationId } =
+    parseQuery(applicationIdParam, c.req.param(), "path");
+  const payload = await withDb(getEnv(c), (sql) => sql.begin(async (tx) => {
+    const rows = await tx`
+      SELECT * FROM team_join_applications WHERE id=${applicationId} FOR UPDATE`;
+    const row = (rows[0] as Row | undefined) ?? null;
+    // 非本人访问一律 404（不暴露"这条申请存在但不属于你"）
+    if (!row || num(row.user_id) !== user.id) {
+      throw httpError(404, { error: "not_found", code: "APPLICATION_NOT_FOUND" });
+    }
+    if (!canTransitionApplication(row.status as string | null, "canceled")) {
+      throw conflict("APPLICATION_ALREADY_REVIEWED", "该申请已被处理，无法撤回");
+    }
+    const updated = await tx`
+      UPDATE team_join_applications SET status='canceled', updated_at=now()
+       WHERE id=${applicationId} RETURNING *`;
+    const out = applicationOut(updated[0] as Row);
+    const trows = await tx`SELECT name FROM teams WHERE id=${num(out.team_id)}`;
+    const trow = trows[0] as Row | undefined;
+    if (trow) out.team_name = trow.name;
+    return { canceled: true, application: out };
   }));
   return c.json(payload);
 }));

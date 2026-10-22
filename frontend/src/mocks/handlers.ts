@@ -1519,6 +1519,21 @@ type MockTeamSubscription = {
   source: string | null;
   created_at: string | null;
 };
+/** 加入申请（2026-10-22）：形状 = 内核 ws_join_applications.py:_application_out */
+type MockTeamApplication = {
+  id: number;
+  team_id: number;
+  team_name: string | null;
+  user_id: number;
+  email: string;
+  display_name: string;
+  message: string | null;
+  status: string;
+  reject_reason: string | null;
+  reviewed_by: number | null;
+  reviewed_at: string | null;
+  created_at: string | null;
+};
 
 let teamStore: MockTeam = {
   id: 1,
@@ -1529,6 +1544,7 @@ let teamStore: MockTeam = {
 let teamMembersStore: MockTeamMember[] = [];
 let teamInvitesStore: MockTeamInvite[] = [];
 let teamSubscriptionStore: MockTeamSubscription[] = [];
+let teamApplicationsStore: MockTeamApplication[] = [];
 let teamInviteSeq = 1;
 
 /**
@@ -1736,6 +1752,24 @@ const TEAM_SUBSCRIPTION_SEEDS: MockTeamSubscription[] = [
   },
 ];
 
+/** 加入申请种子：一条待审，让「加入申请」面板在 mock/dev 下有内容可审。 */
+const TEAM_APPLICATION_SEEDS: MockTeamApplication[] = [
+  {
+    id: 1,
+    team_id: 1,
+    team_name: "示例团队",
+    user_id: 9001,
+    email: "applicant@example.com",
+    display_name: "王五",
+    message: "我是销售部王五，想加入团队一起做报价。",
+    status: "pending",
+    reject_reason: null,
+    reviewed_by: null,
+    reviewed_at: null,
+    created_at: "2026-10-21T09:30:00.000Z",
+  },
+];
+
 const COMPANY_PROFILE_SEED: Record<string, string | null> = {
   name_en: "ANPING KAAS WIRE MESH CO., LTD.",
   name_zh: "安平凯斯丝网有限公司",
@@ -1901,6 +1935,7 @@ function seedP1Stores(): void {
   teamMembersStore = clone(TEAM_MEMBER_SEEDS);
   teamInvitesStore = clone(TEAM_INVITE_SEEDS);
   teamSubscriptionStore = clone(TEAM_SUBSCRIPTION_SEEDS);
+  teamApplicationsStore = clone(TEAM_APPLICATION_SEEDS);
   teamInviteSeq =
     teamInvitesStore.reduce((max, i) => Math.max(max, i.id), 0) + 1;
   apiTokenStore = clone(API_TOKEN_SEEDS);
@@ -3498,17 +3533,28 @@ export const handlers = [
 
     const inviteToken = String(body.invite_token ?? "").trim();
     const teamName = String(body.team_name ?? "").trim();
+    const applyTeamName = String(body.apply_team_name ?? "").trim();
     const userId = nextUserId++;
+    // 加入申请（2026-10-22）：账号建成但**不入团**（team_id=null），返回待审申请
     const teamId = teamName ? 2 : inviteToken ? 1 : null;
+    const application = applyTeamName
+      ? {
+          id: 1,
+          team_id: 1,
+          team_name: applyTeamName,
+          status: "pending" as const,
+        }
+      : null;
     return HttpResponse.json({
       user_id: userId,
       email,
       display_name: displayName,
       account_type: "customer",
-      role: inviteToken ? "user" : "owner",
+      role: inviteToken || applyTeamName ? "user" : "owner",
       plan: "free",
       team_id: teamId,
       team_name: teamName || (inviteToken ? "示例团队" : null),
+      application,
       console_access: false,
       access_token: `mock-access-token-${userId}`,
       token_type: "bearer",
@@ -7934,6 +7980,134 @@ export const handlers = [
         },
       },
       { status: 409 },
+    );
+  }),
+
+  // ── 加入申请（2026-10-22）：契约 = ws_join_applications.py ────────────────
+
+  // GET /teams/check-name ← register/page.tsx。只回布尔（不暴露团队列表）。
+  http.get("/api/v1/teams/check-name", ({ request }) => {
+    const name = new URL(request.url).searchParams.get("name") ?? "";
+    const normalized = name.trim().replace(/\s+/g, " ");
+    if (!normalized) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "INVALID_TEAM_NAME",
+            detail: "团队名称不能为空",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    return HttpResponse.json({
+      name: normalized,
+      exists: normalized === teamStore.name,
+    });
+  }),
+
+  http.get("/api/v1/teams/:id/join-applications", ({ params, request }) => {
+    if (Number(params.id) !== teamStore.id) return teamNotFound();
+    const status = new URL(request.url).searchParams.get("status") ?? "pending";
+    const rows =
+      status === "all"
+        ? [...teamApplicationsStore].sort((a, b) => {
+            const ap = a.status === "pending" ? 0 : 1;
+            const bp = b.status === "pending" ? 0 : 1;
+            return ap !== bp ? ap - bp : b.id - a.id;
+          })
+        : teamApplicationsStore.filter((a) => a.status === status);
+    return HttpResponse.json({ items: rows, total: rows.length });
+  }),
+
+  http.post(
+    "/api/v1/teams/:id/join-applications/:applicationId/approve",
+    ({ params }) => {
+      if (Number(params.id) !== teamStore.id) return teamNotFound();
+      const app = teamApplicationsStore.find(
+        (a) => a.id === Number(params.applicationId),
+      );
+      if (!app) {
+        return HttpResponse.json(
+          { detail: { error: "not_found", code: "APPLICATION_NOT_FOUND" } },
+          { status: 404 },
+        );
+      }
+      if (app.status !== "pending") {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "conflict",
+              code: "APPLICATION_ALREADY_REVIEWED",
+              message: "该申请已被处理，不能重复审核",
+            },
+          },
+          { status: 409 },
+        );
+      }
+      app.status = "approved";
+      app.reviewed_by = MOCK_ADMIN_USER.user_id;
+      app.reviewed_at = nowIso();
+      return HttpResponse.json({
+        approved: true,
+        application: app,
+        member_count: teamMembersStore.length + 1,
+      });
+    },
+  ),
+
+  http.post(
+    "/api/v1/teams/:id/join-applications/:applicationId/reject",
+    async ({ params, request }) => {
+      if (Number(params.id) !== teamStore.id) return teamNotFound();
+      const body = (await request.json().catch(() => ({}))) as {
+        reason?: string | null;
+      };
+      const app = teamApplicationsStore.find(
+        (a) => a.id === Number(params.applicationId),
+      );
+      if (!app) {
+        return HttpResponse.json(
+          { detail: { error: "not_found", code: "APPLICATION_NOT_FOUND" } },
+          { status: 404 },
+        );
+      }
+      if (app.status !== "pending") {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "conflict",
+              code: "APPLICATION_ALREADY_REVIEWED",
+              message: "该申请已被处理，不能重复审核",
+            },
+          },
+          { status: 409 },
+        );
+      }
+      const reason =
+        typeof body.reason === "string" && body.reason.trim()
+          ? body.reason.trim()
+          : null;
+      app.status = "rejected";
+      app.reject_reason = reason;
+      app.reviewed_by = MOCK_ADMIN_USER.user_id;
+      app.reviewed_at = nowIso();
+      return HttpResponse.json({ rejected: true, application: app });
+    },
+  ),
+
+  // GET /me/join-application ← team/page.tsx（无团队分支）。
+  // mock 登录身份已属于示例团队，因此"我的最近一条申请"如实返回 null。
+  http.get("/api/v1/me/join-application", () => {
+    return HttpResponse.json({ application: null });
+  }),
+
+  // POST /join-applications/:id/cancel ← team/page.tsx。mock 身份没有申请 ⇒ 404。
+  http.post("/api/v1/join-applications/:applicationId/cancel", () => {
+    return HttpResponse.json(
+      { detail: { error: "not_found", code: "APPLICATION_NOT_FOUND" } },
+      { status: 404 },
     );
   }),
 

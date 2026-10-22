@@ -10,14 +10,16 @@
  *     所以"未开通工位"的用户永远走得到这里自救。
  *
  * 三种视角（docs §全局优化「权限差异」）：
- *   · 无团队   → 创建 / 加入引导；
- *   · 团队管理员 → 成员、邀请、工位开通；
+ *   · 无团队   → 创建 / 加入引导（+ 2026-10-22：我的加入申请状态与撤回）；
+ *   · 团队管理员 → 团队信息 + **团队管理侧边栏**（工位开通 / 成员管理 / 邀请码 / 加入申请）；
  *   · 普通成员 → 只读（团队信息 + 我的工位 + 找管理员开通的提示）。
  */
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import {
   AlertCircle,
+  Clock,
   Pencil,
   RefreshCw,
   ShieldCheck,
@@ -31,6 +33,11 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useTeam } from "@/lib/team/team-context";
+import { teamErrorMessage } from "@/lib/team/team-errors";
+import {
+  APPLICATION_STATUS_TEXT,
+  isApplicationPending,
+} from "@/lib/team/join-applications";
 import {
   isWorkstationEnabled,
   subscribableWorkstationOptions,
@@ -42,6 +49,16 @@ import { TeamRenameDialog } from "./components/team-rename-dialog";
 import { TeamMembersPanel } from "./components/team-members-panel";
 import { TeamSetup } from "./components/team-setup";
 import { TeamSubscriptionsPanel } from "./components/team-subscriptions-panel";
+import { TeamApplicationsPanel } from "./components/team-applications-panel";
+import {
+  TeamManageNav,
+  type TeamManageTab,
+} from "./components/team-manage-nav";
+import {
+  cancelJoinApplication,
+  useMyJoinApplication,
+  useTeamJoinApplications,
+} from "./hooks/use-team-admin";
 
 function TeamPageSkeleton() {
   return (
@@ -50,6 +67,72 @@ function TeamPageSkeleton() {
       <Skeleton className="h-24 w-full" />
       <Skeleton className="h-40 w-full" />
     </div>
+  );
+}
+
+/** 无团队视角：我的加入申请状态卡（pending 待审可撤回；历史态只读提示）。 */
+function MyApplicationCard({ onChanged }: { onChanged: () => void }) {
+  const { application, loading, reload } = useMyJoinApplication(true);
+  const [busy, setBusy] = useState(false);
+
+  if (loading || application === null) return null;
+
+  async function cancel() {
+    if (!application) return;
+    setBusy(true);
+    try {
+      await cancelJoinApplication(application.id);
+      toast.success("已撤回加入申请");
+      reload();
+      onChanged();
+    } catch (err: unknown) {
+      toast.error(teamErrorMessage(err, "撤回失败，请稍后重试"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <SectionCard
+      title="我的加入申请"
+      description="你已向团队发起加入申请，团队管理员审核通过后自动入团。"
+    >
+      <div className="space-y-3 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Clock className="size-4 text-muted-foreground" />
+            <span className="font-medium">
+              {application.team_name ?? "未知团队"}
+            </span>
+            <StatusBadge
+              tone={
+                isApplicationPending(application.status) ? "info" : "default"
+              }
+            >
+              {APPLICATION_STATUS_TEXT[application.status] ??
+                application.status}
+            </StatusBadge>
+          </div>
+          {isApplicationPending(application.status) && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => void cancel()}
+            >
+              撤回申请
+            </Button>
+          )}
+        </div>
+        {application.status === "rejected" && (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            该申请被驳回
+            {application.reject_reason ? `：${application.reject_reason}` : ""}
+            。 你可以修正后重新发起申请，或向团队管理员索取邀请码。
+          </p>
+        )}
+      </div>
+    </SectionCard>
   );
 }
 
@@ -63,6 +146,14 @@ export default function TeamPage() {
   const subscriptionsRef = useRef<HTMLDivElement | null>(null);
   // C36 #12：团队改名（PATCH /teams/{id}，仅团队管理员）
   const [showRename, setShowRename] = useState(false);
+
+  // ── 团队管理侧边栏（2026-10-22）：待审计数在页面级取一次，徽标与面板共用。
+  //    必须在 early return **之前**无条件调用（React Hooks 顺序约束）。
+  const pendingApplications = useTeamJoinApplications(
+    team?.id ?? null,
+    Boolean(isTeamAdmin && team),
+    "pending",
+  );
 
   // 从"该工位未开通"引导页跳过来时，直接滚到工位开通区
   useEffect(() => {
@@ -97,6 +188,8 @@ export default function TeamPage() {
             加入团队。
           </div>
         )}
+        {/* 2026-10-22：注册时发起的加入申请，在这里看状态 / 撤回 */}
+        <MyApplicationCard onChanged={() => void refresh()} />
         <TeamSetup
           initialMode={tab === "join" ? "join" : "create"}
           onDone={refresh}
@@ -112,6 +205,13 @@ export default function TeamPage() {
   const disabledStations = stationOptions.filter(
     (s) => !isWorkstationEnabled(snapshot, s.key),
   );
+
+  // ── 团队管理侧边栏（2026-10-22）：仅团队管理员；待审计数已在上方取好，
+  //    徽标与面板共用，避免两个组件各查各的。
+  const manageTab: TeamManageTab =
+    tab === "members" || tab === "invites" || tab === "applications"
+      ? tab
+      : "subscriptions";
 
   return (
     <div className="space-y-4" id="team">
@@ -238,17 +338,40 @@ export default function TeamPage() {
       </SectionCard>
 
       {isTeamAdmin && team ? (
-        <>
-          <div
-            ref={subscriptionsRef}
-            id="subscriptions"
-            className="scroll-mt-20"
-          >
-            <TeamSubscriptionsPanel teamId={team.id} />
+        // ── 团队管理：侧边栏 + 当前面板（2026-10-22） ─────────────────────
+        <div className="grid gap-4 lg:grid-cols-[13rem_1fr]">
+          <aside className="lg:sticky lg:top-20 lg:self-start">
+            <TeamManageNav
+              teamId={team.id}
+              active={manageTab}
+              pendingApplications={pendingApplications.items.length}
+            />
+          </aside>
+          <div className="min-w-0">
+            {manageTab === "subscriptions" && (
+              <div
+                ref={subscriptionsRef}
+                id="subscriptions"
+                className="scroll-mt-20"
+              >
+                <TeamSubscriptionsPanel teamId={team.id} />
+              </div>
+            )}
+            {manageTab === "members" && (
+              <TeamMembersPanel
+                teamId={team.id}
+                currentUserId={currentUserId}
+              />
+            )}
+            {manageTab === "invites" && <TeamInvitesPanel teamId={team.id} />}
+            {manageTab === "applications" && (
+              <TeamApplicationsPanel
+                teamId={team.id}
+                pending={pendingApplications}
+              />
+            )}
           </div>
-          <TeamMembersPanel teamId={team.id} currentUserId={currentUserId} />
-          <TeamInvitesPanel teamId={team.id} />
-        </>
+        </div>
       ) : (
         <SectionCard
           title="团队管理"

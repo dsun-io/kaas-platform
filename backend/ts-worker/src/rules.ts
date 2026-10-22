@@ -77,6 +77,13 @@ export const INVITE_STATUS = ["pending", "accepted", "revoked"] as const;
 export const INVITE_TTL_DAYS = 14;
 export const TEAM_NAME_MAX = 40;
 
+/** 加入申请状态（teams.py:JOIN_APPLICATION_STATUS）。 */
+export const JOIN_APPLICATION_STATUS = ["pending", "approved", "rejected", "canceled"] as const;
+/** 加入申请留言上限（teams.py:APPLICATION_MESSAGE_MAX）。 */
+export const APPLICATION_MESSAGE_MAX = 200;
+/** 驳回理由上限（teams.py:REJECT_REASON_MAX）。 */
+export const REJECT_REASON_MAX = 200;
+
 /** 邀请码字符集：URL 安全、去除容易看错的 0/O/1/l/I（teams.py:_TOKEN_ALPHABET）。 */
 const TOKEN_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
 const TOKEN_LENGTH = 24;
@@ -179,6 +186,40 @@ export function validateTransferTarget(input: {
   if (!members.has(target)) {
     throw new RuleError("TRANSFER_TARGET_NOT_MEMBER", "转让目标必须是本团队成员");
   }
+}
+
+/** 加入申请留言规范化 + 校验：去空白；空 → null；上限 200 字（teams.py:validate_application_message）。 */
+export function validateApplicationMessage(message: string | null | undefined): string | null {
+  const text = (message ?? "").trim();
+  if (!text) return null;
+  if (text.length > APPLICATION_MESSAGE_MAX) {
+    throw new RuleError(
+      "APPLICATION_MESSAGE_TOO_LONG",
+      `申请留言不能超过 ${APPLICATION_MESSAGE_MAX} 个字符`,
+    );
+  }
+  return text;
+}
+
+/** 驳回理由规范化 + 校验：去空白；空 → null；上限 200 字（teams.py:validate_reject_reason）。 */
+export function validateRejectReason(reason: string | null | undefined): string | null {
+  const text = (reason ?? "").trim();
+  if (!text) return null;
+  if (text.length > REJECT_REASON_MAX) {
+    throw new RuleError(
+      "REJECT_REASON_TOO_LONG",
+      `驳回理由不能超过 ${REJECT_REASON_MAX} 个字符`,
+    );
+  }
+  return text;
+}
+
+/** 加入申请状态流转：只有 pending 能被审/撤（teams.py:can_transition_application）。 */
+export function canTransitionApplication(current: string | null | undefined, target: string): boolean {
+  if (current === "pending" && (target === "approved" || target === "rejected" || target === "canceled")) {
+    return true;
+  }
+  return false;
 }
 
 // ── kaas_common/workstation/customer_rules.py（本域用到的子集，逐行对齐）──────

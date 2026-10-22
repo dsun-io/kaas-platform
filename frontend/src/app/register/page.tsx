@@ -6,23 +6,29 @@
  * 为什么注册就要选团队/工位（docs/FRONTEND_PRODUCTION_READINESS.md §B1）：
  *   生产是单租户部署，数据隔离靠**团队**、能力边界靠**工位订阅**；
  *   注册后没有团队 = 看不到任何数据，且无法自救（要再找管理员）。
- *   所以注册时就把"新建团队（顺带开通工位）/ 凭邀请码加入"二选一做掉；
- *   也保留"稍后再说" —— 一个人只能属于一个团队，先随便建一个就再也加不进同事的团队了。
+ *   所以注册时就把"新建团队（顺带开通工位）/ 凭邀请码加入 / 向已存在团队发起
+ *   加入申请"三选一做掉；也保留"稍后再说" —— 一个人只能属于一个团队，
+ *   先随便建一个就再也加不进同事的团队了。
  *
- * 两个易错点：
- *   ① 新建团队与加入团队**互斥**（后端 422 TEAM_ACTION_CONFLICT），UI 只允许选一个；
+ * 几个易错点：
+ *   ① 新建 / 邀请码 / 加入申请**三方互斥**（后端 422 TEAM_ACTION_CONFLICT），UI 只允许选一个；
  *   ② 工位多选默认全选，且**不允许全不选** —— 传空数组会得到一个"进得去但什么都用不了"
- *      的团队（后端把 `workstations=[]` 当成"一个都不开"）。
+ *      的团队（后端把 `workstations=[]` 当成"一个都不开"）；
+ *   ③ 团队名查重（2026-10-22 新增）：输入团队名后 debounce 调
+ *      `GET /teams/check-name`（只回布尔，**不暴露团队列表**）；
+ *      已存在 → 引导改走"申请加入"或"填邀请码"；不存在 → 提示可新建。
+ *      查重失败（网络/接口异常）不拦提交 —— 后端仍是唯一真源（409 TEAM_NAME_TAKEN）。
  *
  * 视觉：2026-10-21 起与登录页同一套新版权威口径（`app/login/page.tsx`）——
  *   复用 `components/auth/auth-shell.tsx` 的 AuthShell wide 外壳 + 毛玻璃分区表单，
- *   字段、校验、payload 与改造前完全一致。
+ *   字段、校验、payload 与改造前一致。
  */
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth/auth-context";
 import type { RegisterRequest } from "@/lib/auth/types";
+import apiClient from "@/lib/api/client";
 import { teamErrorMessage } from "@/lib/team/team-errors";
 import { extractInviteToken } from "@/lib/team/invites";
 import { subscribableWorkstationOptions } from "@/lib/workstation/visibility";
@@ -54,18 +60,22 @@ const CATEGORIES = [
 /** 工位选项来自契约（顺序与名称 = 侧边栏同一份，避免两处不一致） */
 const ALL_STATION_KEYS = subscribableWorkstationOptions().map((s) => s.key);
 
-type TeamMode = "create" | "join" | "none";
+type TeamMode = "create" | "join" | "apply" | "none";
 
-/** 团队三选一的卡片式单选（原生 radio 保留，键盘/读屏可正常操作） */
+/** 团队四选一的卡片式单选（原生 radio 保留，键盘/读屏可正常操作） */
 const TEAM_MODE_OPTIONS: {
   value: TeamMode;
   label: string;
   hint: string;
 }[] = [
   { value: "create", label: "新建团队", hint: "我当管理员，并开通工位" },
-  { value: "join", label: "加入现有团队", hint: "邀请码 / 邀请链接" },
+  { value: "join", label: "凭邀请码加入", hint: "已有同事给的邀请码 / 链接" },
+  { value: "apply", label: "申请加入团队", hint: "团队已存在，请管理员审核" },
   { value: "none", label: "稍后再说", hint: "先进入，登录后再设置" },
 ];
+
+/** 团队名查重的防抖间隔（毫秒）：太短会每敲一个字打一次接口 */
+const NAME_CHECK_DEBOUNCE_MS = 400;
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -79,12 +89,16 @@ export default function RegisterPage() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // 团队动作（三选一，互斥：新建 / 加入 / 稍后再说）
+  // 团队动作（四选一，互斥：新建 / 邀请码 / 申请 / 稍后再说）
   const [teamMode, setTeamMode] = useState<TeamMode>("create");
   const [teamName, setTeamName] = useState("");
   // 新建团队默认全选：当前所有工位免费，新团队一建好就能用（避免空壳团队）
   const [stations, setStations] = useState<string[]>(ALL_STATION_KEYS);
   const [inviteToken, setInviteToken] = useState("");
+  const [applyMessage, setApplyMessage] = useState("");
+  // 团队名是否已存在：null = 未查/查失败（不拦提交），true/false = 查询结果
+  const [nameExists, setNameExists] = useState<boolean | null>(null);
+  const [nameChecking, setNameChecking] = useState(false);
 
   // 从邀请链接进来（/register?token=xxx）→ 默认走"加入团队"并预填邀请码，
   // 这样同事发来的链接点开即用，不需要再手抄一遍码
@@ -94,6 +108,40 @@ export default function RegisterPage() {
     setTeamMode("join");
     setInviteToken(tokenFromLink);
   }, [tokenFromLink]);
+
+  // 团队名查重（新建 / 申请两种模式都要知道"这个名字到底存不存在"）
+  useEffect(() => {
+    const name = teamName.trim();
+    const shouldCheck =
+      (teamMode === "create" || teamMode === "apply") && name.length >= 2;
+    if (!shouldCheck) {
+      setNameExists(null);
+      setNameChecking(false);
+      return;
+    }
+    let cancelled = false;
+    setNameChecking(true);
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const { data } = await apiClient.get<{ exists?: unknown }>(
+            "/teams/check-name",
+            { params: { name }, silent: true },
+          );
+          if (!cancelled) setNameExists(data?.exists === true);
+        } catch {
+          // 查重失败不阻断注册：后端建团队/申请时仍会给出准确结果
+          if (!cancelled) setNameExists(null);
+        } finally {
+          if (!cancelled) setNameChecking(false);
+        }
+      })();
+    }, NAME_CHECK_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [teamMode, teamName]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -124,6 +172,12 @@ export default function RegisterPage() {
         setError("请填写团队名称");
         return;
       }
+      if (nameExists === true) {
+        setError(
+          "该团队已存在：请改用「申请加入团队」（等管理员审核）或「凭邀请码加入」",
+        );
+        return;
+      }
       if (stations.length === 0) {
         setError("请至少勾选一个要开通的工位（当前全部免费）");
         return;
@@ -131,9 +185,18 @@ export default function RegisterPage() {
     } else if (teamMode === "join" && extractInviteToken(inviteToken) === "") {
       setError("请填写邀请码或整条邀请链接");
       return;
+    } else if (teamMode === "apply") {
+      if (!teamName.trim()) {
+        setError("请填写要加入的团队名称");
+        return;
+      }
+      if (nameExists === false) {
+        setError("没有找到这个团队，请核对团队名称（或改为新建团队）");
+        return;
+      }
     }
 
-    // 团队动作二选一（也可以都不选）：只带其中一个参数，
+    // 团队动作三选一（也可以都不选）：只带其中一个参数，
     // 避免后端 422 TEAM_ACTION_CONFLICT
     const payload: RegisterRequest = {
       email: email.trim(),
@@ -148,6 +211,9 @@ export default function RegisterPage() {
     } else if (teamMode === "join") {
       // 整条邀请链接也可以：后端 normalize_invite_token 会自己取 ?token=
       payload.invite_token = inviteToken.trim();
+    } else if (teamMode === "apply") {
+      payload.apply_team_name = teamName.trim();
+      if (applyMessage.trim()) payload.apply_message = applyMessage.trim();
     }
 
     setSubmitting(true);
@@ -160,6 +226,35 @@ export default function RegisterPage() {
       setSubmitting(false);
     }
   }
+
+  const teamNameInput = (
+    <div className="space-y-2">
+      <Label htmlFor="teamName" className="text-sm font-medium">
+        团队名称 *
+      </Label>
+      <Input
+        id="teamName"
+        placeholder="如：安平县联佳丝网制品有限公司"
+        value={teamName}
+        onChange={(e) => setTeamName(e.target.value)}
+        disabled={submitting}
+        aria-describedby="team-name-hint"
+        className={AUTH_INPUT_CLASS}
+      />
+      <p
+        id="team-name-hint"
+        className="text-xs leading-relaxed text-muted-foreground"
+      >
+        {nameChecking
+          ? "正在查询该团队是否存在…"
+          : nameExists === true
+            ? `团队「${teamName.trim()}」已存在：可以申请加入（管理员审核），或改用邀请码加入。`
+            : nameExists === false
+              ? `没有找到团队「${teamName.trim()}」：确认名称无误后可新建。`
+              : "填写公司/团队全称；系统会检查是否已存在。"}
+      </p>
+    </div>
+  );
 
   return (
     <AuthShell wide>
@@ -314,7 +409,7 @@ export default function RegisterPage() {
           className="h-px bg-gradient-to-r from-transparent via-slate-300/60 to-transparent"
         />
 
-        {/* ── 团队（三选一）────────────────────────────────────────── */}
+        {/* ── 团队（四选一）────────────────────────────────────────── */}
         <section
           aria-labelledby="register-team-heading"
           className="space-y-4 rounded-2xl border border-white/80 bg-primary/[0.04] p-4"
@@ -329,7 +424,7 @@ export default function RegisterPage() {
                 团队与工位
               </h3>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                三选一；工位订阅挂在团队上
+                四选一；工位订阅挂在团队上
               </p>
             </div>
           </div>
@@ -337,7 +432,7 @@ export default function RegisterPage() {
           <div
             role="radiogroup"
             aria-labelledby="register-team-heading"
-            className="grid grid-cols-1 gap-2"
+            className="grid grid-cols-1 gap-2 sm:grid-cols-2"
           >
             {TEAM_MODE_OPTIONS.map((opt) => {
               const selected = teamMode === opt.value;
@@ -386,21 +481,38 @@ export default function RegisterPage() {
             </p>
           )}
 
-          {teamMode === "create" ? (
+          {teamMode === "create" && (
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="teamName" className="text-sm font-medium">
-                  团队名称 *
-                </Label>
-                <Input
-                  id="teamName"
-                  placeholder="如：安平县联佳丝网制品有限公司"
-                  value={teamName}
-                  onChange={(e) => setTeamName(e.target.value)}
-                  disabled={submitting}
-                  className={AUTH_INPUT_CLASS}
-                />
-              </div>
+              {teamNameInput}
+              {nameExists === true && (
+                <div className="space-y-2 rounded-xl border border-warning/40 bg-warning-muted p-3">
+                  <p className="text-xs leading-relaxed text-warning-muted-foreground">
+                    团队「{teamName.trim()}
+                    」已存在，不能重复创建。你可以直接向它发起
+                    加入申请（团队管理员审核通过后入团），或改用同事给的邀请码。
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={submitting}
+                      onClick={() => setTeamMode("apply")}
+                    >
+                      改为申请加入
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={submitting}
+                      onClick={() => setTeamMode("join")}
+                    >
+                      我有邀请码
+                    </Button>
+                  </div>
+                </div>
+              )}
               <WorkstationPicker
                 value={stations}
                 onChange={setStations}
@@ -408,7 +520,9 @@ export default function RegisterPage() {
                 idPrefix="register"
               />
             </div>
-          ) : (
+          )}
+
+          {teamMode === "join" && (
             <div className="space-y-2">
               <Label htmlFor="inviteToken" className="text-sm font-medium">
                 邀请码 / 邀请链接 *
@@ -423,7 +537,34 @@ export default function RegisterPage() {
               />
               <p className="text-xs text-muted-foreground">
                 整条邀请链接直接粘贴即可，系统会自动识别其中的邀请码。
+                没有邀请码？填团队名选择「申请加入团队」，由管理员审核。
               </p>
+            </div>
+          )}
+
+          {teamMode === "apply" && (
+            <div className="space-y-4">
+              {teamNameInput}
+              <div className="space-y-2">
+                <Label htmlFor="applyMessage" className="text-sm font-medium">
+                  给管理员的留言（选填）
+                </Label>
+                <textarea
+                  id="applyMessage"
+                  placeholder="例如：我是销售部张三，公司邮箱是…（≤200 字）"
+                  maxLength={200}
+                  value={applyMessage}
+                  onChange={(e) => setApplyMessage(e.target.value)}
+                  disabled={submitting}
+                  className="min-h-[76px] w-full rounded-xl border border-slate-200/90 bg-white/85 px-3 py-2 text-sm text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+                />
+                <p className="text-xs text-muted-foreground">
+                  提交后账号立即创建，但需要团队管理员审核通过才入团（可在「团队与工位」
+                  查看进度、撤回申请）。
+                  {applyMessage.length > 0 &&
+                    ` 已输入 ${applyMessage.length}/200 字。`}
+                </p>
+              </div>
             </div>
           )}
         </section>
@@ -437,7 +578,7 @@ export default function RegisterPage() {
             disabled={submitting}
           >
             {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
-            注册
+            {teamMode === "apply" ? "提交申请并注册" : "注册"}
           </Button>
           <p className="text-center text-sm text-muted-foreground">
             已有账号？

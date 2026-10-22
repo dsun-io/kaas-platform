@@ -474,6 +474,37 @@ class TeamInvite(Base):
     )
 
 
+class TeamJoinApplication(Base):
+    """团队加入申请（2026-10-22：注册时团队已存在的第二条加入路径）。
+
+    与邀请码并行：用户不想/不能拿到邀请码时，注册时直接向已存在团队发起申请，
+    团队管理员审核通过才入团。状态机真源 =
+    `kaas_common/workstation/teams.py:can_transition_application`
+    （pending → approved/rejected/canceled，终态不可再流转）。
+    `uq_join_applications_user_pending`（部分唯一索引）保证一个用户同时只有
+    一条待审申请。
+    """
+    __tablename__ = "team_join_applications"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    email = Column(Text, nullable=False)          # 申请人快照（审核视图不 JOIN users）
+    display_name = Column(Text, nullable=False)
+    message = Column(Text, nullable=True)         # 申请人留言（选填，≤200 字）
+    status = Column(Text, nullable=False, server_default="pending")
+    reviewed_by = Column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    reject_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("idx_join_applications_team_status", "team_id", "status"),
+    )
+
+
 class Customer(Base):
     """客户表"""
     __tablename__ = "customers"

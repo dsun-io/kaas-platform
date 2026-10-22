@@ -29,9 +29,17 @@ export const TEAM_ERROR_TEXT: Record<string, string> = {
   UNKNOWN_WORKSTATION: "未知工位",
   SUBSCRIPTION_NOT_FOUND: "该工位尚未开通过",
   INVALID_EXPIRES_AT: "到期时间格式不正确",
-  TEAM_ACTION_CONFLICT: "只能二选一：加入现有团队，或新建团队",
+  TEAM_ACTION_CONFLICT:
+    "只能三选一：凭邀请码加入现有团队、新建一个团队、或向已存在团队发起加入申请",
   ADMIN_ONLY: "仅平台管理员可操作",
   USER_NOT_FOUND: "登录状态异常，请重新登录",
+  // 加入申请（2026-10-22）
+  APPLICATION_NOT_FOUND: "申请不存在，或已被处理",
+  APPLICATION_ALREADY_REVIEWED: "该申请已被处理，不能重复操作",
+  APPLICATION_ALREADY_PENDING: "你已有一条待审核的加入申请，请等待处理",
+  APPLICATION_MESSAGE_TOO_LONG: "申请留言不能超过 200 个字符",
+  REJECT_REASON_TOO_LONG: "驳回理由不能超过 200 个字符",
+  INVALID_STATUS: "筛选状态不合法",
 };
 
 /** 是否包含中文字符（用来判断后端文案能不能直接给用户看） */

@@ -27,6 +27,7 @@ import {
   normalizeInviteToken,
   resolveSignupWorkstations as resolveSignupWorkstationsCompat,
   RuleError,
+  validateApplicationMessage,
   validateTeamName,
 } from "../rules";
 
@@ -324,6 +325,9 @@ const registerSchema = z.object({
   contact: z.string().nullish(),
   invite_token: z.string().nullish(),
   team_name: z.string().nullish(),
+  // 2026-10-22：加入申请（与 invite_token / team_name 三方互斥）
+  apply_team_name: z.string().nullish(),
+  apply_message: z.string().nullish(),
   workstations: z.array(z.string()).nullish(),
 });
 
@@ -341,6 +345,8 @@ app.post("/register", (c) => respond(c, async () => {
   const productCategory = (body.product_category ?? "").trim().toLowerCase();
   const inviteRaw = (body.invite_token ?? "").trim();
   const teamNameRaw = (body.team_name ?? "").trim();
+  const applyTeamNameRaw = (body.apply_team_name ?? "").trim();
+  const applyMessageRaw = (body.apply_message ?? "").trim();
 
   if (!email || !password || !displayName) {
     throw httpError(422, "validation_error: email, password, display_name are required");
@@ -357,10 +363,13 @@ app.post("/register", (c) => respond(c, async () => {
   if (!email.includes("@") || !email.split("@").pop()!.includes(".")) {
     throw httpError(422, "validation_error: Invalid email format");
   }
-  if (inviteRaw && teamNameRaw) {
+  // 团队动作三方互斥（2026-10-22 起，与内核 main.py 同口径）：
+  // 邀请码 / 新建团队 / 加入申请，一次注册只能做一个
+  const teamActions = [Boolean(inviteRaw), Boolean(teamNameRaw), Boolean(applyTeamNameRaw)];
+  if (teamActions.filter(Boolean).length > 1) {
     throw httpError(422, {
       error: "validation", code: "TEAM_ACTION_CONFLICT",
-      detail: "只能二选一：凭邀请码加入现有团队，或新建一个团队",
+      detail: "只能三选一：凭邀请码加入现有团队、新建一个团队、或向已存在团队发起加入申请",
     });
   }
 
@@ -379,7 +388,8 @@ app.post("/register", (c) => respond(c, async () => {
       let invite: Record<string, unknown> | null = null;
       if (inviteRaw) {
         const token = normalizeInviteToken(inviteRaw);
-        const rows = await tx`SELECT * FROM team_invites WHERE token=${token}`;
+        // FOR UPDATE：一次一码的并发保证（与内核 main.py 同口径）
+        const rows = await tx`SELECT * FROM team_invites WHERE token=${token} FOR UPDATE`;
         invite = (rows[0] as Record<string, unknown> | undefined) ?? null;
         const state = inviteState(invite);
         if (state === "not_found") {
@@ -393,6 +403,32 @@ app.post("/register", (c) => respond(c, async () => {
         }
         if (state === "expired") {
           throw httpError(410, { error: "gone", code: "INVITE_EXPIRED" });
+        }
+      }
+
+      // ── 加入申请预校验（2026-10-22；放在建账号之前，失败即整体回滚）──
+      // 顺序与邀请码对齐：团队不存在 404 优先于邮箱占用 409（PARITY-DIFF-12 同思路）。
+      let applyTeamId: number | null = null;
+      let applyTeamNameOut: string | null = null;
+      let applyMessage: string | null = null;
+      if (applyTeamNameRaw) {
+        try {
+          applyMessage = validateApplicationMessage(applyMessageRaw);
+          const applyTeamNameNorm = validateTeamName(applyTeamNameRaw);
+          const arows = await tx`
+            SELECT id, name FROM teams WHERE tenant_id=${"default"} AND name=${applyTeamNameNorm}`;
+          const ateam = arows[0] as Record<string, unknown> | undefined;
+          if (!ateam) {
+            throw httpError(404, {
+              error: "not_found", code: "TEAM_NOT_FOUND",
+              message: `团队「${applyTeamNameNorm}」不存在：可向团队管理员要邀请码，或改为新建团队`,
+            });
+          }
+          applyTeamId = Number(ateam.id);
+          applyTeamNameOut = ateam.name as string;
+        } catch (e) {
+          if (e instanceof RuleError) rule422(e);
+          throw e;
         }
       }
 
@@ -420,8 +456,8 @@ app.post("/register", (c) => respond(c, async () => {
         throw httpError(409, "conflict: Email already registered");
       }
 
-      // 建团队的成为团队管理员（role=owner）；凭码加入的是普通成员（role=user）
-      const role = invite !== null ? "user" : "owner";
+      // 建团队的成为团队管理员（role=owner）；凭码加入或发起申请的是普通成员（role=user）
+      const role = invite !== null || applyTeamId !== null ? "user" : "owner";
       const inserted = await tx`
         INSERT INTO users (email, password_hash, display_name, account_type, role,
                plan, status, is_tenant_admin)
@@ -434,6 +470,7 @@ app.post("/register", (c) => respond(c, async () => {
       // 不再为注册者创建 customers 行：公司身份由团队承载。
       let teamId: number | null = null;
       let teamNameOut: string | null = null;
+      let applicationOut: Record<string, unknown> | null = null;
 
       const openWorkstations = async (tid: number): Promise<void> => {
         for (const wsCode of chosenWorkstations) {
@@ -464,8 +501,22 @@ app.post("/register", (c) => respond(c, async () => {
         teamNameOut = t.name as string;
         await tx`UPDATE users SET team_id=${teamId} WHERE id=${uid}`;
         await openWorkstations(teamId);
+      } else if (applyTeamId !== null) {
+        // 加入申请（2026-10-22）：账号建成但**不入团**，等团队管理员审核通过才落 team_id
+        const appRows = await tx`
+          INSERT INTO team_join_applications
+                 (tenant_id, team_id, user_id, email, display_name, message, status)
+          VALUES (${"default"}, ${applyTeamId}, ${uid}, ${email}, ${displayName},
+                  ${applyMessage}, 'pending')
+          RETURNING id`;
+        applicationOut = {
+          id: Number((appRows[0] as Record<string, unknown>).id),
+          team_id: applyTeamId,
+          team_name: applyTeamNameOut,
+          status: "pending",
+        };
       }
-      return { userRow, uid, teamId, teamNameOut };
+      return { userRow, uid, teamId, teamNameOut, applicationOut };
     });
   });
 
@@ -479,6 +530,8 @@ app.post("/register", (c) => respond(c, async () => {
     plan: "free",
     team_id: result.teamId,
     team_name: result.teamNameOut,
+    // 加入申请待审标记（2026-10-22）：未申请时为 null，不破坏旧客户端
+    application: result.applicationOut,
     console_access: false, // 官网数据后台权限：默认关闭，由团队管理员授予
     access_token: await createToken(result.uid, requireSecret(env, "JWT_SECRET")),
     token_type: "bearer",

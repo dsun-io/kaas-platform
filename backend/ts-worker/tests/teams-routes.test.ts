@@ -283,3 +283,252 @@ describe("POST /api/v1/teams/join", () => {
     expect(dbState.calls).toHaveLength(1);
   });
 });
+
+// ── 加入申请（2026-10-22）：契约 = ws_join_applications.py ────────────────────
+
+const APPLICATION_ROW: DbRow = {
+  id: 31,
+  team_id: 11,
+  user_id: 77,
+  email: "applicant@qa.test",
+  display_name: "申请人",
+  message: "想加入",
+  status: "pending",
+  reviewed_by: null,
+  reviewed_at: null,
+  reject_reason: null,
+  created_at: new Date("2026-10-22T02:00:00Z"),
+  updated_at: null,
+};
+
+describe("GET /api/v1/teams/check-name（公开只读）", () => {
+  it("不需要 token；只回 {name,exists}，不返回团队详情", async () => {
+    resetDb((query) => (query.includes("FROM teams WHERE tenant_id") ? [{ "?column?": 1 }] : []));
+
+    const res = await app.request("/api/v1/teams/check-name?name=%20Acme%20Team%20", {}, TEST_ENV);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ name: "Acme Team", exists: true });
+  });
+
+  it("空名 → 422 INVALID_TEAM_NAME（不查库）", async () => {
+    resetDb(() => []);
+
+    const res = await app.request("/api/v1/teams/check-name?name=%20%20", {}, TEST_ENV);
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      detail: { error: "validation", code: "INVALID_TEAM_NAME", detail: "团队名称不能为空" },
+    });
+    expect(dbState.calls).toHaveLength(0);
+  });
+});
+
+describe("GET /api/v1/teams/{id}/join-applications", () => {
+  it("非团队管理员 → 403 NOT_TEAM_ADMIN", async () => {
+    const user = userRow({ team_id: 11, role: "user", id: 6 });
+    resetDb((query) => {
+      if (query.includes("FROM users WHERE id")) return [user];
+      if (query.includes("FROM teams WHERE tenant_id")) return [TEAM_ROW];
+      return [];
+    });
+
+    const res = await request("/api/v1/teams/11/join-applications", user);
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      detail: { error: "forbidden", code: "NOT_TEAM_ADMIN", message: "仅团队管理员可管理该团队" },
+    });
+  });
+
+  it("管理员 → 200，默认只看 pending，字段与内核 _application_out 对齐", async () => {
+    const user = userRow({ team_id: 11 });
+    resetDb((query) => {
+      if (query.includes("FROM users WHERE id")) return [user];
+      if (query.includes("FROM teams WHERE tenant_id")) return [TEAM_ROW];
+      if (query.includes("FROM team_join_applications")) return [APPLICATION_ROW];
+      return [];
+    });
+
+    const res = await request("/api/v1/teams/11/join-applications", user);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      items: [{
+        id: 31,
+        team_id: 11,
+        team_name: null,
+        user_id: 77,
+        email: "applicant@qa.test",
+        display_name: "申请人",
+        message: "想加入",
+        status: "pending",
+        reject_reason: null,
+        reviewed_by: null,
+        reviewed_at: null,
+        created_at: "2026-10-22T02:00:00.000+00:00",
+      }],
+      total: 1,
+    });
+    expect(dbCallsContaining("AND status=").length).toBe(1);
+  });
+
+  it("status=bogus → 422 INVALID_STATUS", async () => {
+    const user = userRow({ team_id: 11 });
+    resetDb((query) => (query.includes("FROM users WHERE id") ? [user] : []));
+
+    const res = await request("/api/v1/teams/11/join-applications?status=bogus", user);
+
+    expect(res.status).toBe(422);
+    expect((await res.json() as { detail: { code: string } }).detail.code).toBe("INVALID_STATUS");
+  });
+});
+
+describe("POST /api/v1/teams/{id}/join-applications/{aid}/approve", () => {
+  it("通过：落 users.team_id + 申请 approved + member_count", async () => {
+    const user = userRow({ team_id: 11 });
+    resetDb((query) => {
+      if (query.includes("SELECT id, team_id FROM users")) return [{ id: 77, team_id: null }];
+      if (query.includes("FROM users WHERE id")) return [user];
+      if (query.includes("FROM teams WHERE tenant_id")) return [TEAM_ROW];
+      if (query.includes("FROM team_join_applications WHERE id=")) return [APPLICATION_ROW];
+      if (query.includes("UPDATE team_join_applications")) {
+        return [{ ...APPLICATION_ROW, status: "approved", reviewed_by: 5 }];
+      }
+      if (query.includes("count(*) FROM users WHERE team_id")) return [{ count: "3" }];
+      return [];
+    });
+
+    const res = await request("/api/v1/teams/11/join-applications/31/approve", user, postJson({}));
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { approved: boolean; member_count: number; application: { status: string } };
+    expect(body.approved).toBe(true);
+    expect(body.member_count).toBe(3);
+    expect(body.application.status).toBe("approved");
+    expect(dbCallsContaining("UPDATE users SET team_id=").length).toBe(1);
+    expect(dbCallsContaining("FOR UPDATE").length).toBeGreaterThan(0);
+  });
+
+  it("非 pending → 409 APPLICATION_ALREADY_REVIEWED", async () => {
+    const user = userRow({ team_id: 11 });
+    resetDb((query) => {
+      if (query.includes("FROM users WHERE id")) return [user];
+      if (query.includes("FROM teams WHERE tenant_id")) return [TEAM_ROW];
+      if (query.includes("FROM team_join_applications WHERE id=")) {
+        return [{ ...APPLICATION_ROW, status: "approved" }];
+      }
+      return [];
+    });
+
+    const res = await request("/api/v1/teams/11/join-applications/31/approve", user, postJson({}));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      detail: {
+        error: "conflict", code: "APPLICATION_ALREADY_REVIEWED",
+        message: "该申请已被处理，不能重复审核",
+      },
+    });
+    expect(dbCallsContaining("UPDATE users SET team_id=")).toHaveLength(0);
+  });
+
+  it("申请人已属其他团队 → 409 ALREADY_IN_TEAM", async () => {
+    const user = userRow({ team_id: 11 });
+    resetDb((query) => {
+      if (query.includes("SELECT id, team_id FROM users")) return [{ id: 77, team_id: 99 }];
+      if (query.includes("FROM users WHERE id")) return [user];
+      if (query.includes("FROM teams WHERE tenant_id")) return [TEAM_ROW];
+      if (query.includes("FROM team_join_applications WHERE id=")) return [APPLICATION_ROW];
+      return [];
+    });
+
+    const res = await request("/api/v1/teams/11/join-applications/31/approve", user, postJson({}));
+
+    expect(res.status).toBe(409);
+    expect((await res.json() as { detail: { code: string } }).detail.code).toBe("ALREADY_IN_TEAM");
+  });
+});
+
+describe("POST /api/v1/teams/{id}/join-applications/{aid}/reject", () => {
+  it("理由超长 → 422 REJECT_REASON_TOO_LONG", async () => {
+    const user = userRow({ team_id: 11 });
+    resetDb((query) => (query.includes("FROM users WHERE id") ? [user] : []));
+
+    const res = await request(
+      "/api/v1/teams/11/join-applications/31/reject", user, postJson({ reason: "长".repeat(201) }),
+    );
+
+    expect(res.status).toBe(422);
+    expect((await res.json() as { detail: { code: string } }).detail.code).toBe("REJECT_REASON_TOO_LONG");
+  });
+
+  it("驳回写入理由 → 200", async () => {
+    const user = userRow({ team_id: 11 });
+    resetDb((query) => {
+      if (query.includes("FROM users WHERE id")) return [user];
+      if (query.includes("FROM teams WHERE tenant_id")) return [TEAM_ROW];
+      if (query.includes("FROM team_join_applications WHERE id=")) return [APPLICATION_ROW];
+      if (query.includes("UPDATE team_join_applications")) {
+        return [{ ...APPLICATION_ROW, status: "rejected", reject_reason: "请用公司邮箱" }];
+      }
+      return [];
+    });
+
+    const res = await request(
+      "/api/v1/teams/11/join-applications/31/reject", user, postJson({ reason: " 请用公司邮箱 " }),
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { rejected: boolean; application: { reject_reason: string } };
+    expect(body.rejected).toBe(true);
+    expect(body.application.reject_reason).toBe("请用公司邮箱");
+  });
+});
+
+describe("GET /api/v1/me/join-application 与撤回", () => {
+  it("没有申请 → {application:null}", async () => {
+    const user = userRow({ team_id: null });
+    resetDb((query) => (query.includes("FROM users WHERE id") ? [user] : []));
+
+    const res = await request("/api/v1/me/join-application", user);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ application: null });
+  });
+
+  it("撤回：本人 pending → canceled，并带团队名", async () => {
+    const user = userRow({ team_id: null, id: 77 });
+    resetDb((query) => {
+      if (query.includes("FROM users WHERE id")) return [user];
+      if (query.includes("FROM team_join_applications WHERE id=")) return [APPLICATION_ROW];
+      if (query.includes("UPDATE team_join_applications")) {
+        return [{ ...APPLICATION_ROW, status: "canceled" }];
+      }
+      if (query.includes("SELECT name FROM teams")) return [{ name: "Acme Team" }];
+      return [];
+    });
+
+    const res = await request("/api/v1/join-applications/31/cancel", user, postJson({}));
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { canceled: boolean; application: { status: string; team_name: string } };
+    expect(body.canceled).toBe(true);
+    expect(body.application.status).toBe("canceled");
+    expect(body.application.team_name).toBe("Acme Team");
+  });
+
+  it("撤回别人的申请 → 404 APPLICATION_NOT_FOUND", async () => {
+    const user = userRow({ team_id: null, id: 88 });
+    resetDb((query) => {
+      if (query.includes("FROM users WHERE id")) return [user];
+      if (query.includes("FROM team_join_applications WHERE id=")) return [APPLICATION_ROW];
+      return [];
+    });
+
+    const res = await request("/api/v1/join-applications/31/cancel", user, postJson({}));
+
+    expect(res.status).toBe(404);
+    expect((await res.json() as { detail: { code: string } }).detail.code).toBe("APPLICATION_NOT_FOUND");
+  });
+});

@@ -1,8 +1,9 @@
 # 文档索引 · 交接从这里开始
 
-> 更新时间：**2026-10-22 CI 瘦身**（见 [`CI_OPTIMIZATION_2026-10-22.md`](./CI_OPTIMIZATION_2026-10-22.md)）· 2026-10-21 切流收口 —— **生产已由 TS 门面 `kaas-edge` 承载（两层架构生效）**；
+> 更新时间：**2026-10-22 团队加入申请模块收口**（见 [`JOIN_APPLICATION_MODULE_2026-10-22.md`](./JOIN_APPLICATION_MODULE_2026-10-22.md)）· 2026-10-21 切流收口 —— **生产已由 TS 门面 `kaas-edge` 承载（两层架构生效）**；
 > Python Worker `kaas` 退居内核（引擎/AI/cron，仅经 Service Binding）。门面冷启动 ~25ms（内核 4674ms）。
-> 门禁：ts-worker **99（17 文件）** / worker **1565+12skip** / orchestrator 247 / 前端 926 / e2e 27 / 四项静态门禁 PASS。
+> 门禁（2026-10-22 实测）：ts-worker **232（23 文件）** / worker **1616+12skip**（3 条 `js` 模块缺失为本机环境问题）/
+> orchestrator 258 / 前端 **1051（125 文件）** / e2e 27 / 静态断言全 PASS；迁移头 **`202610220003`**。
 > **完成后归档**：过时交接与历史计划已移入 [`archive/2026-10-21-cutover/`](./archive/2026-10-21-cutover/README.md)；
 > 当前交接= [`HANDOVER_2026-10-21_CUTOVER.md`](./HANDOVER_2026-10-21_CUTOVER.md)；**W5（MCP+REST）已设计待实施**；
 > 剩余窗口项（内核瘦身/旧 Neon 清理）已登记 [`TODO.md`](./TODO.md) 与 2026-11-04 / 2026-10-28 提醒。
@@ -42,6 +43,7 @@
 | [TODO.md](./TODO.md) | 活跃待办唯一账本 |
 | [UNCERTAIN.md](./UNCERTAIN.md) | 决策账本（存疑/裁决落盘） |
 | [CI_OPTIMIZATION_2026-10-22.md](./CI_OPTIMIZATION_2026-10-22.md) | **CI 成本口径（2026-10-22）**：实测月耗、触发面瘦身清单、保留的门禁、验证/回滚方法、**self-hosted runner 规划（已批准、未实施）** |
+| [JOIN_APPLICATION_MODULE_2026-10-22.md](./JOIN_APPLICATION_MODULE_2026-10-22.md) | **团队加入申请模块（2026-10-22 已实施，全门禁绿）**：设计 + 4 项决策结论（仅注册时 / 只回布尔不列团队 / 先站内通知 / 绿后推 main）+ 实施偏差 §10（4 模式单选卡、400ms、迁移号 `202610220003`、`_SIBLING_MODULES` 登记坑、邀请码 `FOR UPDATE`）+ 门禁实测 |
 | [OPTIMIZATION_PLAN_2026-10-22_PRODUCT_INQUIRY_ORDER.md](./OPTIMIZATION_PLAN_2026-10-22_PRODUCT_INQUIRY_ORDER.md) | **2026-10-22 优化方案（已实施，提交 9de3794）**：产品图片归位 / 隐藏产品 key / 规格傻瓜化 + 管理员高级设置 / 询盘多产品 / 手工订单信息与附件 / 全站配置页去技术名词；含数据迁移、验收与待拍板项 |
 | [OPTIMIZATION_PLAN_2026-10-22_INQUIRY_ORDER_MODEL.md](./OPTIMIZATION_PLAN_2026-10-22_INQUIRY_ORDER_MODEL.md) | **询盘与订单模型重构设计（2026-10-22，待实施）**：订单一等公民 + 询盘独立；orders 增 source_type/source_channel/inquiry_id；询盘/报价/订单编辑入口补齐（后端契约已验证齐全、前端零暴露）；漏斗+权重统计（询盘1/报价2/订单10）；分期 M1 模型 → M2 前端 → M3 仪表盘；实施进度在 TODO §Q |
 | [QA_TEST_ACCOUNTS.md](./QA_TEST_ACCOUNTS.md) | 测试账号与验收口径 |

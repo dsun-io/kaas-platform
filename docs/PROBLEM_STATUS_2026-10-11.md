@@ -14,6 +14,40 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-22 · 团队加入申请模块 ✅ + 邀请码单次使用并发加固）** 用户需求三项：①团队已存在时，注册可
+> **直接发起加入申请**（不再只能靠邀请码）；②团队管理员界面加**团队管理侧边栏**（成员 / 邀请码 / **审核申请**）；
+> ③**一个邀请码只能用一次**。落地：
+> - **迁移** `202610220003_team_join_applications`（新 head，纯新增表）：`team_join_applications`
+>   + 状态 `CHECK (pending/approved/rejected/canceled)` + **部分唯一索引** `(user_id) WHERE status='pending'`
+>   （同一用户只允许一条待审）+ 索引 `(team_id, status)`。ORM `TeamJoinApplication` 已加。
+> - **共享内核** `kaas_common/workstation/teams.py`（唯一源）：`JOIN_APPLICATION_STATUS`、
+>   `APPLICATION_MESSAGE_MAX=200`、`REJECT_REASON_MAX=200`、`validate_application_message`、
+>   `validate_reject_reason`、`can_transition_application`；TS 镜像 `ts-worker/src/rules.ts` 同步，`sync-shared -Check` 一致。
+> - **内核** 新模块 `backend/worker/src/ws_join_applications.py`（6 条路由）：`GET /teams/check-name`（公开，**只回
+>   `{exists}` 布尔，不暴露团队列表**）、`GET /teams/{id}/join-applications`、`POST .../{id}/approve`、
+>   `POST .../{id}/reject`、`GET /me/join-application`、`POST /join-applications/{id}/cancel`；复用
+>   `ws_teams._team_or_404/_require_team_admin`，审批走 `FOR UPDATE` + `can_transition_application` + 409 `ALREADY_IN_TEAM`。
+>   注册 `main.py` 扩 `apply_team_name`/`apply_message`，与 `team_name`/`invite_token` **三方互斥** 422 `TEAM_ACTION_CONFLICT`；
+>   申请路径建用户 `role=user, team_id=NULL` + pending 申请，响应加 `application`（旧客户端不破）。
+> - **邀请码单次使用**：语义本来就有（`accepted`→`used`），但两处兑换路径（注册 / `join_team`）都是
+>   SELECT→UPDATE **无行锁** ⇒ 统一加 `FOR UPDATE`，补 3 条回归（锁行、同码二次 409、注册路径锁行）。
+> - **门面** `routes/teams.ts` / `auth.ts` 镜像全部 6 条 + 注册分支；`routes.json` 重新生成，
+>   route-surface **174 直接 / 260 总**（`openapi.test.ts` 已同步）。
+> - **前端**：注册页 4 模式单选卡（`create/join/apply/none`）+ 400ms debounce 查重 + 团队已存在提示卡
+>   （［改为申请加入］［我有邀请码］）+ 申请留言 ≤200；`/team` 管理员视图改 `lg:grid-cols-[13rem_1fr]`
+>   侧边栏 + `?tab=subscriptions|members|invites|applications` 四面板（加入申请带待审徽标）；无团队用户显示
+>   「审核中 + 撤回申请」卡；新增 `team-manage-nav.tsx` / `team-applications-panel.tsx` / `lib/team/join-applications.ts`；
+>   mock 6 端点 + 错误码中文。
+> - **踩坑（值得记）**：`backend/worker/tests/_bootstrap.py::_SIBLING_MODULES` **必须登记 `ws_join_applications`** ——
+>   单独跑新测试全绿、全量跑 20 条集体 404/405（兄弟模块靠 import 挂 `app`，未登记会挂到过期实例）。
+> - **门禁**：orchestrator **258** / ts-worker **232（23 文件，typecheck 净）** / worker **1616 passed + 12 skipped**
+>   （另 3 条 `test_trade_doc_confirm_authz.py::test_pdf_privileged_passes_gate[S1..S3]` 因本机缺 `js` 模块失败，
+>   **环境问题、文件未改**）/ 前端 typecheck 净、lint 0 error、**1051 测（125 文件）**、
+>   `contracts:check`/`mocks:check`/`ui:standards`/`ui:contrast` PASS、e2e **27 passed**；静态断言
+>   `check-schema-coverage`（缺失 0）/`check-schema-drift`（列漂移 0）/`check-worker-bundle`（11.79 MiB·606 文件）/
+>   `sync-shared -Check`（44·21·1）/`route-parity-audit`（线上坏 0）全 PASS。
+> - 设计与偏差详见 [`JOIN_APPLICATION_MODULE_2026-10-22.md`](./JOIN_APPLICATION_MODULE_2026-10-22.md) §9/§10。
+
 > **（2026-10-22 · 企业信息功能已上线 ✅ + 恢复 push 自动部署）** 用户下令「改动全部提交 main 后部署，且部署流程应自动触发」：
 > `deploy.yml` 新增 `push(main)` 触发（`docs/**`/`archive/**`/`**/*.md` 不触发）+ `wait-for-ci`（同 SHA 的 CI 全绿才继续；
 > 任一失败即停，绝不把红代码发生产）；`workflow_dispatch` 保留排障/单端发布。首轮自动发布 run `39735755230` 全绿：

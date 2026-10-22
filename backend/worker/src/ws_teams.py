@@ -474,8 +474,11 @@ async def join_team(
 
     async with _acquire(request) as conn:
         async with conn.transaction():
+            # FOR UPDATE：一次一码的并发保证（与注册时兑换 main.py 同口径）——
+            # 两个请求抢同一个码时，后一个在行锁上等到前一个提交，
+            # 再读状态已是 accepted → used → 409 INVITE_ALREADY_USED。
             invite = await conn.fetchrow(
-                "SELECT * FROM team_invites WHERE token=$1", token)
+                "SELECT * FROM team_invites WHERE token=$1 FOR UPDATE", token)
             state = invite_state(dict(invite) if invite is not None else None)
             if state == "not_found":
                 raise HTTPException(status_code=404, detail={

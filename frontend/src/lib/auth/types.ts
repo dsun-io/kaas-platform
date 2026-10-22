@@ -14,15 +14,19 @@ export interface RegisterRequest {
   product_category: string;
   contact?: string;
   /**
-   * 团队动作（可选，**互斥二选一**）：
+   * 团队动作（可选，**三方互斥**，后端 422 TEAM_ACTION_CONFLICT）：
    *   · 新建团队 → `team_name`（注册者即团队管理员）+ `workstations`（要开通的工位 key；
    *     当前全部免费，但**不传 ≠ 空数组**：不传后端开通全部，传空数组会得到一个什么都用不了的团队）；
-   *   · 加入团队 → `invite_token`（邀请码或**整条邀请链接**，后端自己会取 `?token=`）；
+   *   · 凭邀请码加入 → `invite_token`（邀请码或**整条邀请链接**，后端自己会取 `?token=`）；
+   *   · 向已存在团队发起加入申请 → `apply_team_name`（+ 可选 `apply_message` 留言 ≤200 字；
+   *     账号建成但**不入团**，团队管理员审核通过才入团）；
    *   · 都不传 → 允许，进去后由团队页引导"创建/加入团队"。
    */
   team_name?: string;
   workstations?: string[];
   invite_token?: string;
+  apply_team_name?: string;
+  apply_message?: string;
 }
 
 export interface UserInfo {

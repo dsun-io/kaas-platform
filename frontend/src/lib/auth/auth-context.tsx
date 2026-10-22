@@ -143,7 +143,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setState({ user, token, isLoading: false, isAuthenticated: true });
 
-    window.location.href = "/onboarding";
+    // 加入申请待审（2026-10-22）：注册即申请的用户先去「团队与工位」看审核状态，
+    // 而不是直接进 onboarding —— 他还没有团队，onboarding 没有可引导的内容。
+    const application = (res.data as { application?: unknown }).application;
+    window.location.href = application ? "/team" : "/onboarding";
   }, []);
 
   const setupAdmin = useCallback(

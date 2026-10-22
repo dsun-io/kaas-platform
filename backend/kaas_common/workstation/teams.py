@@ -10,8 +10,11 @@ orchestrator 与 Worker 共用；任何适配层不得另写一份判定。
   （改名、邀请成员、移除成员）。
 - 成员归属：一个用户同一时刻只属于一个团队（`users.team_id`）。
 - **建团队 / 加入团队只能二选一**：已经有团队的人不能再建或再加。
-- 加入现有团队**必须凭邀请码**（不设"随便挑一个团队就加入"，否则 A 公司的人
-  可以自由进入 B 公司团队并看到 B 的数据）。
+- 加入现有团队两条路（2026-10-22 扩展）：
+  1. **凭邀请码**（一次一码，兑换时行锁保证并发单飞）；
+  2. **发起加入申请**（注册时团队名已存在 → 直接申请，团队管理员审核通过才入团）。
+  不设"随便挑一个团队就加入"，否则 A 公司的人可以自由进入 B 公司团队
+  并看到 B 的数据。
 - 邀请成员两条路：
   1. **邮箱点名**：对方已注册 → 直接入队；未注册 → 生成邀请码留给他注册时用。
   2. **通用邀请码**：不指定邮箱，谁拿到谁用。
@@ -30,14 +33,21 @@ from typing import Any, Mapping, Optional
 
 __all__ = [
     "INVITE_STATUS", "INVITE_TTL_DAYS", "TEAM_NAME_MAX",
+    "JOIN_APPLICATION_STATUS", "APPLICATION_MESSAGE_MAX", "REJECT_REASON_MAX",
     "TeamRuleError", "validate_team_name", "normalize_invite_token",
     "generate_invite_token", "invite_state", "is_team_admin",
-    "validate_transfer_target",
+    "validate_transfer_target", "validate_application_message",
+    "validate_reject_reason", "can_transition_application",
 ]
 
 INVITE_STATUS = ("pending", "accepted", "revoked")
 INVITE_TTL_DAYS = 14
 TEAM_NAME_MAX = 40
+
+# 加入申请（2026-10-22 新增）：注册时团队已存在 → 直接申请，管理员审核后入团
+JOIN_APPLICATION_STATUS = ("pending", "approved", "rejected", "canceled")
+APPLICATION_MESSAGE_MAX = 200
+REJECT_REASON_MAX = 200
 
 # 邀请码字符集：URL 安全、去除容易看错的 0/O/1/l/I（邀请码要靠人转述/手抄）
 _TOKEN_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
@@ -149,3 +159,41 @@ def validate_transfer_target(*, target_user_id: Any, current_owner_id: Any,
     if target not in members:
         raise TeamRuleError("TRANSFER_TARGET_NOT_MEMBER",
                             "转让目标必须是本团队成员")
+
+
+def validate_application_message(message: Optional[str]) -> Optional[str]:
+    """加入申请留言规范化 + 校验：去首尾空白；空 → None；上限 200 字。
+
+    留言是**选填**的——没有留言的申请同样合法（用户可能就是不想写字）。
+    """
+    text = (message or "").strip()
+    if not text:
+        return None
+    if len(text) > APPLICATION_MESSAGE_MAX:
+        raise TeamRuleError(
+            "APPLICATION_MESSAGE_TOO_LONG",
+            f"申请留言不能超过 {APPLICATION_MESSAGE_MAX} 个字符")
+    return text
+
+
+def validate_reject_reason(reason: Optional[str]) -> Optional[str]:
+    """驳回理由规范化 + 校验：去首尾空白；空 → None；上限 200 字。"""
+    text = (reason or "").strip()
+    if not text:
+        return None
+    if len(text) > REJECT_REASON_MAX:
+        raise TeamRuleError(
+            "REJECT_REASON_TOO_LONG",
+            f"驳回理由不能超过 {REJECT_REASON_MAX} 个字符")
+    return text
+
+
+def can_transition_application(current: Optional[str], target: str) -> bool:
+    """加入申请状态流转是否合法：只有 `pending` 能被审/撤。
+
+    三个终态（approved/rejected/canceled）**不可再流转** —— 重复审核一律
+    409 APPLICATION_ALREADY_REVIEWED，不做静默幂等（静默成功比报错更难查）。
+    """
+    if current == "pending" and target in ("approved", "rejected", "canceled"):
+        return True
+    return False

@@ -271,6 +271,32 @@ def test_join_success_sets_team_and_marks_invite_used():
     assert "status='accepted'" in sql
 
 
+def test_join_locks_invite_row_for_single_use():
+    """一次一码的并发保证（2026-10-22）：兑换前必须 `FOR UPDATE` 锁住邀请行。
+
+    没有行锁时，两个请求可能同时读到 pending，双双入队 —— 一个码被用两次。
+    加锁后第二个请求等第一个提交，再读状态已是 accepted → 409 INVITE_ALREADY_USED。
+    """
+    conn = _FakeConn(fetchrow=[_invite_row(token="TOK123"), _team_row()], fetchval=[2])
+    with _patched(conn, MEMBER_USER):
+        resp = client.post("/api/v1/teams/join", json={"token": "TOK123"})
+    assert resp.status_code == 200
+    invite_select = next(
+        sql for sql, _ in conn.calls if "FROM team_invites WHERE token=" in sql
+    )
+    assert invite_select.rstrip().upper().endswith("FOR UPDATE")
+
+
+def test_join_second_redemption_of_same_code_409():
+    """同码第二次兑换：状态已是 accepted → 409（一次一码的业务可见结果）。"""
+    conn = _FakeConn(fetchrow=[_invite_row(token="TOK123", status="accepted")])
+    with _patched(conn, MEMBER_USER):
+        resp = client.post("/api/v1/teams/join", json={"token": "TOK123"})
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "INVITE_ALREADY_USED"
+    assert conn.executed == []          # 不写任何东西
+
+
 def test_join_accepts_full_url_token():
     """用户常常把整条邀请链接粘进来 —— normalize_invite_token 要能取出 token。"""
     conn = _FakeConn(fetchrow=[_invite_row(token="TOK123"), _team_row()], fetchval=[2])
@@ -337,6 +363,27 @@ def test_register_validates_payload_without_touching_db():
     assert resp.status_code == 422
     resp = client.post("/api/v1/auth/register", json=_register_body(product_category="nope"))
     assert resp.status_code == 422
+
+
+def test_register_with_invite_locks_row_for_single_use():
+    """注册时兑换邀请码同样 `FOR UPDATE`（2026-10-22，与 /teams/join 同口径）。"""
+    conn = _FakeConn(
+        fetchrow=[_invite_row(token="TOK123"), _user_row(), {"name": "联佳"}],
+        fetchval=[None],          # 邮箱未占用
+    )
+    with _patched_main_acquire(conn), _jwt_env():
+        resp = client.post("/api/v1/auth/register",
+                           json=_register_body(invite_token="TOK123"))
+    assert resp.status_code == 200, resp.text
+    # 凭码入队 = 普通成员：INSERT users 的 role 参数必须是 'user'（fake 行的 role 只是回显）
+    insert_args = next(
+        args for sql, args in conn.calls if sql.lstrip().startswith("INSERT INTO users")
+    )
+    assert "user" in insert_args and "owner" not in insert_args
+    invite_select = next(
+        sql for sql, _ in conn.calls if "FROM team_invites WHERE token=" in sql
+    )
+    assert invite_select.rstrip().upper().endswith("FOR UPDATE")
     resp = client.post("/api/v1/auth/register", json=_register_body(email="not-an-email"))
     assert resp.status_code == 422
 

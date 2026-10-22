@@ -745,16 +745,20 @@ def test_reset_password_success_updates_hash_and_burns_tokens():
 # 6. POST /api/v1/auth/register
 # ════════════════════════════════════════════════════════════════════════════
 
-def test_register_rejects_both_team_actions():
-    """两端一致：邀请码 + 团队名同时给 → 422 TEAM_ACTION_CONFLICT（main.py:588-591）。"""
-    resp = client.post(
-        "/api/v1/auth/register", json=_register_body(invite_token="T", team_name="X")
-    )
-    assert resp.status_code == 422
-    assert resp.json()["detail"] == {
+def test_register_rejects_conflicting_team_actions():
+    """两端一致：团队动作三方互斥 → 422 TEAM_ACTION_CONFLICT（2026-10-22 起含申请）。"""
+    expected = {
         "error": "validation", "code": "TEAM_ACTION_CONFLICT",
-        "detail": "只能二选一：凭邀请码加入现有团队，或新建一个团队",
+        "detail": "只能三选一：凭邀请码加入现有团队、新建一个团队、或向已存在团队发起加入申请",
     }
+    for payload in (
+        _register_body(invite_token="T", team_name="X"),
+        _register_body(invite_token="T", apply_team_name="X"),
+        _register_body(team_name="X", apply_team_name="X"),
+    ):
+        resp = client.post("/api/v1/auth/register", json=payload)
+        assert resp.status_code == 422
+        assert resp.json()["detail"] == expected
 
 
 def test_register_field_rules_422_without_db():
@@ -808,10 +812,13 @@ def test_register_plain_success_shape_and_anti_forgery():
 
     assert resp.status_code == 200, resp.text
     body = resp.json()
+    # 2026-10-22 起多一个 application（未申请时为 None）
     assert set(body) == {
         "user_id", "email", "display_name", "account_type", "role", "plan",
-        "team_id", "team_name", "console_access", "access_token", "token_type",
+        "team_id", "team_name", "application", "console_access", "access_token",
+        "token_type",
     }
+    assert body["application"] is None
     assert body["account_type"] == "customer"
     assert body["role"] == "owner"
     assert body["plan"] == "free"
