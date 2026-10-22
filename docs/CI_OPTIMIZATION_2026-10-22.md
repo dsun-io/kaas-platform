@@ -30,6 +30,21 @@
 > 口径提醒：我早前用 `updated_at−created_at`（墙钟）估的 772 分钟/7 天会**低估约 40–50%**——
 > GitHub 按每个 job 的分钟相加计费，并行的 `check`+`e2e` 各算各的。本文一律用 job 相加口径。
 
+### 1.1 本次落地的当口，额度**已经用尽**（实测证据）
+
+2026-10-22 推送瘦身提交后，三个 workflow 都正常触发、job 选择也正确（e2e / 真 PG 集成均 skipped），
+但**所有 job 在 0–3 秒内失败**，annotation 原文：
+
+```text
+The job was not started because recent account payments have failed or your spending limit needs to be increased.
+Please check the 'Billing & plans' section in your settings
+```
+
+⇒ 这是**额度/账单拦截，不是代码或 workflow 语法问题**（同一 annotation 在 2026-10-17 出现过一次）。
+恢复路径（三选一）：① GitHub → Settings → Billing and plans → Actions 提高 spending limit / 绑定支付方式；
+② 等新计费周期免费分钟重置（Free 计划 2,000 分钟/月）；③ 按 §6 接 **self-hosted runner**（不吃 GitHub-hosted 分钟，
+通常也不受该 spending limit 拦截）——这也是它值得做的直接原因。
+
 ## 2. 本次改动（逐文件）
 
 | 文件 | 改动 | 预计省（分钟/月） |
