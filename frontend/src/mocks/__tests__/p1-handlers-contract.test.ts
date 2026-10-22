@@ -163,14 +163,17 @@ describe("GET /trade-docs/:id/render-fingerprint-check ← use-trade-docs.ts:434
 
 describe("POST /trade-docs/:id/refresh-sources ← use-trade-docs.ts:207", () => {
   it("draft + 有上游 ⇒ 200 `{doc,sources}`；已签发 409；无上游 422", async () => {
-    const ok = await sendJson<{ doc: { raw_payload: unknown }; sources: string[] }>(
-      "/trade-docs/4/refresh-sources",
-      "POST",
-    );
+    const ok = await sendJson<{
+      doc: { raw_payload: unknown };
+      sources: string[];
+    }>("/trade-docs/4/refresh-sources", "POST");
     expect(ok.status).toBe(200);
     expect(ok.body.sources).toEqual(["quote"]);
 
-    const issued = await sendJson<unknown>("/trade-docs/1/refresh-sources", "POST");
+    const issued = await sendJson<unknown>(
+      "/trade-docs/1/refresh-sources",
+      "POST",
+    );
     expect(issued.status).toBe(409);
 
     const noUpstream = await sendJson<unknown>(
@@ -197,7 +200,12 @@ describe("单证文件版本链 ← use-trade-docs.ts:319 / :340（上传 / 解�
     expect(created.link.role).toBe("stamp_scan");
 
     const listed = await getJson<{
-      items: Array<{ id: number; link_id: number; role: string; is_current: boolean }>;
+      items: Array<{
+        id: number;
+        link_id: number;
+        role: string;
+        is_current: boolean;
+      }>;
     }>("/trade-docs/3/files");
     expect(listed.body.items.length).toBe(1);
     expect(listed.body.items[0]?.link_id).toBe(created.link.id);
@@ -316,9 +324,9 @@ describe("PATCH /inquiries/:id ← customers/page.tsx:899/:917", () => {
 
 describe("联系人更新/删除 ← customers/page.tsx:554/:928", () => {
   it("PATCH 返 7 键投影；DELETE 204 且详情里真的少一条", async () => {
-    const detail = await getJson<{ contacts: Array<{ id: number; name: string }> }>(
-      "/customers/1",
-    );
+    const detail = await getJson<{
+      contacts: Array<{ id: number; name: string }>;
+    }>("/customers/1");
     const first = detail.body.contacts[0];
     expect(first).toBeDefined();
 
@@ -366,11 +374,10 @@ describe("GET /products 与 profile ← lib/products/use-products.ts", () => {
     ]);
     expect(list.body.media_kinds.production).toBe("生产图片");
 
-    const saved = await sendJson<{ product_key: string; info: Record<string, unknown> }>(
-      "/products/field_fence/profile",
-      "PUT",
-      { info: { moq: 100 } },
-    );
+    const saved = await sendJson<{
+      product_key: string;
+      info: Record<string, unknown>;
+    }>("/products/field_fence/profile", "PUT", { info: { moq: 100 } });
     expect(saved.status).toBe(200);
     const read = await getJson<{ info: Record<string, unknown> }>(
       "/products/field_fence/profile",
@@ -389,9 +396,9 @@ describe("产品图与 file-objects ← use-products.ts:147/:208/:269/:315", () 
     expect(uploaded.status).toBe(201);
     const media = (await uploaded.json()) as { id: number; name: string };
 
-    const listed = await getJson<{ items: Array<{ id: number; name: string }> }>(
-      "/products/field_fence/media",
-    );
+    const listed = await getJson<{
+      items: Array<{ id: number; name: string }>;
+    }>("/products/field_fence/media");
     expect(listed.body.items.length).toBe(1);
 
     const content = await fetch(`${BASE}/file-objects/${media.id}/content`);
@@ -410,9 +417,14 @@ describe("产品图与 file-objects ← use-products.ts:147/:208/:269/:315", () 
     );
     expect(patched.body.ok).toBe(true);
 
-    const retired = await sendJson<unknown>(`/file-objects/${media.id}`, "DELETE");
+    const retired = await sendJson<unknown>(
+      `/file-objects/${media.id}`,
+      "DELETE",
+    );
     expect(retired.status).toBe(204);
-    const after = await getJson<{ items: unknown[] }>("/products/field_fence/media");
+    const after = await getJson<{ items: unknown[] }>(
+      "/products/field_fence/media",
+    );
     expect(after.body.items).toEqual([]);
   });
 
@@ -448,9 +460,10 @@ describe("产品图与 file-objects ← use-products.ts:147/:208/:269/:315", () 
 
 describe("tenant-products ← products-definitions-tab.tsx:191-287", () => {
   it("列表是数组；创建/改名/停用/删除都真的改 store", async () => {
-    const before = await getJson<Array<{ id: number; product_key: string }>>(
-      "/tenant-products",
-    );
+    const before =
+      await getJson<Array<{ id: number; product_key: string }>>(
+        "/tenant-products",
+      );
     expect(Array.isArray(before.body)).toBe(true);
     expect(before.body.length).toBe(1);
 
@@ -552,9 +565,9 @@ describe("团队 member/invite/subscription ← team/components/*（ws_teams.py�
       "DELETE",
     );
     expect(revoked.body.revoked).toBe(true);
-    const list = await getJson<{ items: Array<{ id: number; status: string }> }>(
-      "/teams/1/invites",
-    );
+    const list = await getJson<{
+      items: Array<{ id: number; status: string }>;
+    }>("/teams/1/invites");
     expect(
       list.body.items.find((i) => i.id === created.body.invite_id)?.status,
     ).toBe("revoked");
@@ -562,7 +575,11 @@ describe("团队 member/invite/subscription ← team/components/*（ws_teams.py�
 
   it("订阅：列表带 created_at；PUT 只回 4 键；DELETE 只置 active=false", async () => {
     const listed = await getJson<{
-      items: Array<{ code: string; active: boolean; created_at: string | null }>;
+      items: Array<{
+        code: string;
+        active: boolean;
+        created_at: string | null;
+      }>;
     }>("/teams/1/subscriptions");
     expect(listed.body.items[0]?.code).toBe("full_chain");
     expect(listed.body.items[0]?.active).toBe(true);
@@ -588,7 +605,9 @@ describe("团队 member/invite/subscription ← team/components/*（ws_teams.py�
     const after = await getJson<{
       items: Array<{ code: string; active: boolean }>;
     }>("/teams/1/subscriptions");
-    expect(after.body.items.find((s) => s.code === "quotes")?.active).toBe(false);
+    expect(after.body.items.find((s) => s.code === "quotes")?.active).toBe(
+      false,
+    );
   });
 });
 
@@ -596,21 +615,21 @@ describe("团队 member/invite/subscription ← team/components/*（ws_teams.py�
 
 describe("tax-archives / product-tax-rates ← settings/tax-archives/page.tsx", () => {
   it("税档列表/新增/停用；产品税率重复 409、未知产品 422、删除软删", async () => {
-    const list = await getJson<{ items: Array<{ id: number; name: string }>; total: number }>(
-      "/tax-archives",
-    );
+    const list = await getJson<{
+      items: Array<{ id: number; name: string }>;
+      total: number;
+    }>("/tax-archives");
     expect(list.body.total).toBe(1);
 
-    const created = await sendJson<{ id: number; tax_values: Record<string, number> }>(
-      "/tax-archives",
-      "POST",
-      {
-        name: "低税率档",
-        code: null,
-        effective_from: "2026-10-20",
-        tax_values: { output_vat_rate: 0.09, misc_fee_rate: 0.02 },
-      },
-    );
+    const created = await sendJson<{
+      id: number;
+      tax_values: Record<string, number>;
+    }>("/tax-archives", "POST", {
+      name: "低税率档",
+      code: null,
+      effective_from: "2026-10-20",
+      tax_values: { output_vat_rate: 0.09, misc_fee_rate: 0.02 },
+    });
     expect(created.status).toBe(201);
     expect(created.body.tax_values.output_vat_rate).toBe(0.09);
 
@@ -649,15 +668,17 @@ describe("tax-archives / product-tax-rates ← settings/tax-archives/page.tsx", 
       "DELETE",
     );
     expect(removed.body).toEqual({ id: 1, status: "inactive" });
-    const afterDelete = await getJson<{ items: unknown[] }>("/product-tax-rates");
+    const afterDelete = await getJson<{ items: unknown[] }>(
+      "/product-tax-rates",
+    );
     expect(afterDelete.body.items).toEqual([]);
   });
 });
 
 // ── 企业信息 / 公章 ─────────────────────────────────────────────────────────
 
-describe("tenant/company-profile ← trade-docs/hooks/use-trade-docs.ts:224/:238", () => {
-  it("GET 14 键 + configured；PUT 空 name_en 422；PUT 清空字段生效", async () => {
+describe("tenant/company-profile ← trade-docs/hooks/use-trade-docs.ts:254/:266", () => {
+  it("GET 18 键 + configured；PUT 空 name_en 422；税号归一化；清空字段生效", async () => {
     const profile = await getJson<Record<string, unknown>>(
       "/tenant/company-profile",
     );
@@ -670,7 +691,11 @@ describe("tenant/company-profile ← trade-docs/hooks/use-trade-docs.ts:224/:238
       "phone",
       "email",
       "website",
+      "tax_id",
       "bank_name",
+      "bank_address_en",
+      "bank_name_zh",
+      "bank_address_zh",
       "bank_account",
       "swift_code",
       "logo_url",
@@ -682,6 +707,8 @@ describe("tenant/company-profile ← trade-docs/hooks/use-trade-docs.ts:224/:238
       expect(profile.body, `缺字段 ${key}`).toHaveProperty(key);
     }
     expect(profile.body.configured).toBe(true);
+    expect(profile.body.tax_id).toBe("91131125MA0GA4242U");
+    expect(profile.body.bank_name_zh).toBe("中国银行安平支行");
 
     const bad = await sendJson<{ detail: { code: string } }>(
       "/tenant/company-profile",
@@ -700,6 +727,34 @@ describe("tenant/company-profile ← trade-docs/hooks/use-trade-docs.ts:224/:238
     expect(saved.body.name_en).toBe("NEW NAME CO., LTD.");
     // 未提交的字段按后端口径被覆盖为 null（允许"擦掉填错的字段"）
     expect(saved.body.phone).toBeNull();
+    expect(saved.body.tax_id).toBeNull();
+
+    // 税号 trim + 大写（用户常粘贴带空格/小写的统一社会信用代码）
+    const taxSaved = await sendJson<Record<string, unknown>>(
+      "/tenant/company-profile",
+      "PUT",
+      { name_en: "NEW NAME CO., LTD.", tax_id: " 91131125ma0ga4242u " },
+    );
+    expect(taxSaved.body.tax_id).toBe("91131125MA0GA4242U");
+  });
+});
+
+describe("POST /trade-docs ← doc-create-form.tsx（盖公司默认公章随单保存）", () => {
+  it("with_seal 显式为 false 时如实保存（不能当没传）", async () => {
+    const created = await sendJson<Record<string, unknown>>(
+      "/trade-docs",
+      "POST",
+      { doc_type: "pi", with_seal: false },
+    );
+    expect(created.status).toBe(201);
+    expect(created.body.with_seal).toBe(false);
+
+    const defaulted = await sendJson<Record<string, unknown>>(
+      "/trade-docs",
+      "POST",
+      { doc_type: "pi", with_seal: true },
+    );
+    expect(defaulted.body.with_seal).toBe(true);
   });
 });
 
@@ -744,7 +799,10 @@ describe("tenant/company-seals ← company-seal-card.tsx:68-135", () => {
     expect(blocked.body.detail.code).toBe("DEFAULT_SEAL");
 
     // 把默认转回原章后即可删除
-    await sendJson<{ is_default: boolean }>("/tenant/company-seals/1/default", "PUT");
+    await sendJson<{ is_default: boolean }>(
+      "/tenant/company-seals/1/default",
+      "PUT",
+    );
     const removed = await sendJson<{ deleted: boolean }>(
       `/tenant/company-seals/${seal.id}`,
       "DELETE",

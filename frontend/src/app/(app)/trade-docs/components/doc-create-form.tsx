@@ -53,6 +53,9 @@ export function DocCreateForm({
   const [sourceKind, setSourceKind] = useState<SourceKind>("order");
   const [sourceId, setSourceId] = useState("");
   const [currency, setCurrency] = useState("USD");
+  // 是否盖公司默认公章（默认勾选）：随单保存；未配置默认章时后端不报错、只不盖章。
+  // 目前只在开单时选择（已开单要改盖章需重开单；后端 with_seal 列已就绪，后续可扩 draft PATCH）。
+  const [withSeal, setWithSeal] = useState(true);
   const [customer, setCustomer] = useState<CustomerPickerValue | null>(null);
   const [customerError, setCustomerError] = useState<string | null>(null);
 
@@ -115,6 +118,9 @@ export function DocCreateForm({
             customer_id: toCustomerIdPayload(customer.id),
             currency,
             doc_type: docType,
+            // 始终显式带上（false 也要带）：否则后端无法区分
+            // 「用户取消了盖章」和「老客户端没这个字段」
+            with_seal: withSeal,
           }),
         );
       } catch {
@@ -269,6 +275,22 @@ export function DocCreateForm({
             value={currency}
             onChange={(e) => setCurrency(e.target.value.toUpperCase())}
           />
+        </label>
+
+        <label className="flex items-start gap-2 text-sm sm:col-span-2">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={withSeal}
+            onChange={(e) => setWithSeal(e.target.checked)}
+          />
+          <span>
+            <span className="font-medium">盖公司默认公章</span>
+            <span className="block text-xs text-muted-foreground">
+              默认勾选，随单保存。公章（含默认章）在「企业信息」里维护；
+              未配置默认章时不会盖章，也不影响开单。
+            </span>
+          </span>
         </label>
       </div>
 

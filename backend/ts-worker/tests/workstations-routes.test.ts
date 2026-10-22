@@ -207,7 +207,88 @@ describe("企业抬头（main.py:4833-4911）", () => {
     const body = (await res.json()) as DbRow;
     expect(body.name_en).toBeNull();
     expect(body.swift_code).toBeNull();
+    expect(body.tax_id).toBeNull();
+    expect(body.bank_name_zh).toBeNull();
+    expect(body.bank_address_en).toBeNull();
+    expect(body.bank_address_zh).toBeNull();
     expect(body.configured).toBe(false);
-    expect(Object.keys(body)).toHaveLength(15);
+    // 14 个既有字段 + 4 个新增字段 + configured
+    expect(Object.keys(body)).toHaveLength(19);
+  });
+
+  it("PUT 新字段（tax_id 去空格/转大写）→ 响应回显且 INSERT 列序参数正确", async () => {
+    const user = userRow();
+    resetDb((query) => {
+      if (query.includes("FROM users WHERE id")) return [user];
+      if (query.includes("FROM teams WHERE id")) return [{ created_by: user.id }];
+      if (query.includes("FROM tenant_company_profile")) {
+        return [{
+          name_en: "Acme Trading Co.",
+          tax_id: "91310000MA1FL1234X",
+          bank_name_zh: "中国银行上海分行",
+          bank_address_en: "1 Bank Street, Shanghai",
+          bank_address_zh: "上海市银行路 1 号",
+        }];
+      }
+      return [];
+    });
+
+    const res = await request(
+      "/api/v1/tenant/company-profile",
+      user,
+      putJson({
+        name_en: "Acme Trading Co.",
+        tax_id: " 91310000ma1fl1234x ",
+        bank_name_zh: "中国银行上海分行",
+        bank_address_en: "1 Bank Street, Shanghai",
+        bank_address_zh: "上海市银行路 1 号",
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as DbRow;
+    expect(body.tax_id).toBe("91310000MA1FL1234X");
+    expect(body.bank_name_zh).toBe("中国银行上海分行");
+    expect(body.bank_address_en).toBe("1 Bank Street, Shanghai");
+    expect(body.bank_address_zh).toBe("上海市银行路 1 号");
+
+    const insert = dbState.calls.find((call) => call.query.includes("INSERT INTO tenant_company_profile"));
+    expect(insert).toBeDefined();
+    // 列顺序 = 既有 14 列 + tax_id, bank_name_zh, bank_address_en, bank_address_zh（与 Python 内核一致）
+    expect(insert?.query).toContain(
+      "default_country_of_origin, tax_id, bank_name_zh, bank_address_en, bank_address_zh)",
+    );
+    // 绑定参数 = [tenant_id, ...COMPANY_FIELDS]；tax_id 在 params[15]（既有 14 列之后第 1 列）。
+    expect(insert?.params[0]).toBe("default");
+    expect(insert?.params[15]).toBe("91310000MA1FL1234X");
+    expect(insert?.params[16]).toBe("中国银行上海分行");
+    expect(insert?.params[17]).toBe("1 Bank Street, Shanghai");
+    expect(insert?.params[18]).toBe("上海市银行路 1 号");
+  });
+
+  it("PUT 非法 tax_id → 422 INVALID_TAX_ID（权限通过后、不写库）", async () => {
+    const user = userRow();
+    resetDb((query) => {
+      if (query.includes("FROM users WHERE id")) return [user];
+      if (query.includes("FROM teams WHERE id")) return [{ created_by: user.id }];
+      return [];
+    });
+
+    const res = await request(
+      "/api/v1/tenant/company-profile",
+      user,
+      putJson({ name_en: "Acme Trading Co.", tax_id: "12345" }),
+    );
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      detail: {
+        error: "validation", code: "INVALID_TAX_ID",
+        detail: "税号必须是 6–32 位字母/数字（统一社会信用代码 18 位）",
+      },
+    });
+    expect(
+      dbState.calls.some((call) => call.query.includes("INSERT INTO tenant_company_profile")),
+    ).toBe(false);
   });
 });

@@ -575,6 +575,20 @@ POST /api/v1/trade-docs/{id}/content-versions/{version_no}/restore   仅 draft
 `tel`（渲染 `Tel: …`；原有 `phone` 保留输出 `Tel:`）。旧数据没有这些 key ⇒ 地址块逐字节不变；
 PI 的「卖方税号 + 买方电话」即来自这一层（样例：`91131125MA0GA4242U` / `+61 438 381 068`）。
 
+### 11.6a 企业信息自动带入：公司税号 + 结构化收款账户（**已实施 2026-10-22**）
+
+- **数据来源**：`tenant_company_profile`（团队管理员在「企业信息」维护；入口 = 侧边栏「账号 → 企业信息」/
+  头像菜单 / 团队与工位页区块）。
+- **卖方税号**：新增列 `tax_id` → 装配为 `seller.tax_id` → 渲染 `Tax ID: …`（复用 §11.6 的地址块）。
+- **收款账户**：render-data 的 `bank_info` 改由共享内核 `payload_shared.bank_block()` 装配（不再复用
+  `seller_block`）：`beneficiary←name_en`、`beneficiary_address←address_en`、`beneficiary_tax_id←tax_id`、
+  `bank←bank_name`（英文开户行）、`bank_address←bank_address_en`、`account_no←bank_account`、`swift←swift_code`。
+  中文列 `bank_name_zh` / `bank_address_zh` 仅内部参考，**不进英文单证**；英文列由用户手填（不做 AI 翻译，
+  2026-10-22 用户裁决）。
+- **盖章开关**：`trade_docs.with_seal`（开单表单「盖公司默认公章」默认勾选、随单保存）。为 `false` 时
+  render-data **不注入**默认公章；显式 `custom.company_stamp` 仍以单据为准。迁移与契约见
+  `PROBLEM_STATUS_2026-10-11.md` 2026-10-22 条目（迁移 `202610220002`）。
+
 ### 11.7 CI BILL TO / CONSIGNED TO 双栏（G10，**已实施 2026-10-21**）
 
 `bill_to` / `consigned_to` 两个对象（公司名/地址/联系人，可选 tax_id/tel）→ 派生占位符

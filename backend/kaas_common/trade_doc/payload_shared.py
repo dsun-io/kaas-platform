@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 __all__ = [
     "DOC_NO_FIELDS", "TRADE_TERM_FIELDS", "item_from_source",
-    "buyer_block", "seller_block", "clean", "trade_terms_of", "build_render_data",
+    "buyer_block", "seller_block", "bank_block", "clean", "trade_terms_of", "build_render_data",
     "PROTECTED_CUSTOM_FIELDS", "protected_custom_fields", "diff_custom", "append_audit",
     "AUDIT_KEY",
     # A5-W2：draft 单的行项受控覆盖通道（custom.items_override）
@@ -207,6 +207,43 @@ def seller_block(profile):
         ("company", "name_en"), ("address", "address_en"),
         ("phone", "phone"), ("email", "email"),
         ("bank", "bank_name"), ("account", "bank_account"),
+        ("swift", "swift_code"),
+        # 2026-10-22：卖方税号（CI/合同/报关需要）。渲染器对 seller 的 tax_id 已支持。
+        ("tax_id", "tax_id"),
+    ):
+        value = _clean(get(field))
+        if value is not None:
+            out[key] = value
+    return out
+
+
+def bank_block(profile):
+    """企业主体信息 → **结构化收款账户**（PI/CI 的 beneficiary 区块）。
+
+    G7 口径（2026-10-21）：渲染器认的是结构化 key（受益人名/址/税号/账号/开户行/SWIFT），
+    不是旧版 seller_block 的 company/bank/account/swift。两份映射分开：
+    seller_block 描述"卖方是谁"，bank_block 描述"钱汇给谁"。
+
+    与 seller_block 一致地兼容 dict 行（Worker db 返回 dict）与 ORM 对象
+    （orchestrator），只做显式列名 → 渲染键的映射，不在这里做业务判定。
+    """
+    if profile is None:
+        return {}
+
+    def get(field):
+        if isinstance(profile, dict):
+            return profile.get(field)
+        return getattr(profile, field, None)
+
+    out = {}
+    for key, field in (
+        ("beneficiary", "name_en"),
+        ("beneficiary_address", "address_en"),
+        ("beneficiary_tax_id", "tax_id"),
+        # bank_name 仍是**英文**开户行；bank_name_zh 是内部中文名，不进英文单证
+        ("bank", "bank_name"),
+        ("bank_address", "bank_address_en"),
+        ("account_no", "bank_account"),
         ("swift", "swift_code"),
     ):
         value = _clean(get(field))

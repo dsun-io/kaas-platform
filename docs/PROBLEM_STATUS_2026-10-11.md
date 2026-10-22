@@ -14,6 +14,20 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-22 · 企业信息补充 ✅：团队管理员维护 + 侧边栏入口 + 公司税号/中英收款银行 + 单证盖章开关）**
+> 用户口径：①团队信息（公司抬头/收款银行/税号/公章）只有团队管理员可维护；原公章卡片用
+> `account_type === 'internal'` 判权限，团队管理员（客户账号）看不到上传/设默认/删除入口 ⇒ 改
+> `canManageSeals = isTeamAdmin`（与后端 `_require_team_admin` 同判据）。②企业信息原来只能从报价页链接进
+> ⇒ 侧边栏「账号 → 企业信息」+ 头像菜单 + 团队与工位页区块三入口（`/settings/company-profile`，
+> `adminOnly:false`、成员只读；R2 工位 28 条 PASS）。③新增公司税号 `tax_id` 与中英银行双栏：
+> `bank_name` 仍是英文开户行（印单据），新增 `bank_address_en`（印单据）、`bank_name_zh`/`bank_address_zh`
+> （仅内部参考）；英文手填、不做 AI 翻译（用户裁决）。单据装配：`seller.tax_id` 渲染 Tax ID，`bank_info`
+> 改用共享内核 `bank_block()`（beneficiary/beneficiary_address/beneficiary_tax_id/bank/bank_address/
+> account_no/swift）。④开单表单新增「盖公司默认公章」勾选（默认勾选、随单保存）：`trade_docs.with_seal`
+> （迁移 202610220002，默认 TRUE）为 FALSE 时 render-data 不注入默认章。门禁（手工执行；Test Pilot 本工作区
+> 未配置 runner）：ts-worker 219/23、前端 vitest 1045/124、contracts R2 PASS、ui:standards/contrast PASS；
+> 详细条目见文末「## 2026-10-22 · 企业信息补充与单证盖章开关（B 线）」。
+>
 > **（2026-10-22 · 内核域名配置债修复 + 双 Worker 发布流水线 ✅ 代码已入库）** 取证：2026-10-21 切流时
 > `backend/worker/wrangler.jsonc` 的 `routes → []` 只改在工作树、**未入库**（HEAD 仍声明 `kaas.powervoy.com` /
 > `api.kaas.powervoy.com` 两条 custom domain；线上域名在 `kaas-edge`）⇒ 任何一次内核部署（`pywrangler deploy`
@@ -5246,3 +5260,62 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
 - 文档：`docs/API_RESERVED_LIST_AUDIT.md`（§0 计数 24→已接21/剩3、§1 十二行 ✅、§1.1 四批入口与缺口）、
   `docs/API_RESERVED_LIST.md`（§2 十二行 ✅ 已接·移出、§0 当前未接 ≈36、§3 C36 状态同步）。
 - 本任务只改文档：未改代码、未改 `docs/TODO.md`、未 commit、未跑门禁（数字引用自批次实测）。
+---
+
+## 2026-10-22 · 企业信息补充与单证盖章开关（B 线）
+
+用户原话（2026-10-22）：
+
+> 补充团队信息优化：团队信息只有团队管理员可以维护，包括公章等，现在公章团队管理员不能维护。
+> 英文的银行收款信息怎么添加，可以自己添加还是系统自动翻译。公司税号也要支持配置，使用的时候可以直接用。
+> 另外在生成单证时可以选择是否盖章。现在的企业信息只能在报价页面进入，需要加侧边栏入口，或者 在右上角 企业名称下修改。
+> 是否盖章可以选择。（补充）
+
+### 1. 结论（已实现）
+
+| # | 需求 | 落地 |
+|---|---|---|
+| 1 | 团队信息（含公章）只有团队管理员可维护 | **后端本来就是团队管理员写**（`ws_seals.py` 三写端点走 `_main._require_team_admin`；依据 `docs/QA_AUTHZ_AUDIT_2026-10-21.md` P-3）。真正的 bug 在前端：`company-profile/page.tsx` 用 `canManageSeals = user.account_type === 'internal'` ⇒ 团队管理员（客户账号）看不到上传/设默认/删除，普通成员反而可能误操作。已改为 `canManageSeals = canEdit = useTeam().isTeamAdmin`（与后端同判据），并抽成纯函数 `canManageCompanySeals()` 便于单测。 |
+| 2 | 企业信息入口（原来只在报价页链接） | 侧边栏「账号 → 企业信息」（`shared/contracts/workstations.ts` 新增 `company-profile` 工位：`/settings/company-profile`、`adminOnly:false`、`subscription:null`、`status:active`，Python 镜像同步）＋ 头像菜单「企业信息」按钮 ＋「团队与工位」页新增企业信息区块（`team/components/team-company-profile-card.tsx`：管理员见「维护企业信息」入口，成员只读提示）。页面仍复用 `/settings/company-profile`，不新建路由。 |
+| 3 | 英文银行收款信息怎么加 / 是否自动翻译 | **自己填**（用户裁决，不做 AI 翻译）：`tenant_company_profile` 新增 `tax_id`、`bank_name_zh`、`bank_address_en`、`bank_address_zh`。`bank_name` 明确为**英文开户行**（印单据）；`bank_address_en` 印单据；`bank_*_zh` 仅内部参考、不印英文单证。表单拆「英文栏 / 中文栏」，英文栏注明印单据，受益人名/址/税号自动取公司英文名/英文地址/税号。 |
+| 4 | 公司税号可配置、使用时直接用 | `tax_id` 列 + 表单「公司税号」（trim + 大写，空允许，非空 6–32 位字母/数字）。单据装配自动带入：`seller.tax_id` → `Tax ID:`；`bank_info.beneficiary_tax_id` → `Beneficiary Tax ID:`。 |
+| 5 | 生成单证时可选是否盖章 | 开单表单新增「盖公司默认公章」勾选（默认勾选）；`CreateTradeDocInput.with_seal` 显式随单提交 → `trade_docs.with_seal BOOLEAN NOT NULL DEFAULT TRUE`（迁移 202610220002）；`with_seal=false` 时 render-data 不注入默认章（显式 `custom.company_stamp` 行为不变）。 |
+
+### 2. 契约与数据（唯一真源）
+
+- **DB 迁移**：`backend/orchestrator/alembic/versions/202610220002_company_profile_tax_bank_and_doc_seal.py`
+  （`down_revision = 202610220001`，即 2026-10-22 并行任务的「订单金额构成+实收登记+询盘多产品」迁移；两者必须同批上线，否则 alembic 找不到前驱）。
+  - `tenant_company_profile`: `tax_id`, `bank_name_zh`, `bank_address_en`, `bank_address_zh`（TEXT NULL，追加在既有列后）。
+  - `trade_docs`: `with_seal BOOLEAN NOT NULL DEFAULT TRUE`（历史行行为不变）。
+  - `scripts/prod-schema-columns.json` **不需要更新**：`check-schema-drift.py` 只断言「生产快照的列 ⊆ ORM metadata」（快照缺新列只影响提前发现旧库缺列，不会红）。
+- **共享内核**：`kaas_common/workstation/company_rules.py` 新增 `normalize_tax_id()` / `TaxIdError`；
+  `kaas_common/trade_doc/payload_shared.py` 的 `seller_block` 加 `tax_id` 映射、新增 `bank_block()`（受益人名/址/税号 + 英文开户行/银行地址 + `account_no` + `swift`）；
+  `kaas_common/domain/workstations.py` 加 `company-profile` 工位镜像（R2 契约）。改动后必须 `scripts/sync-shared.ps1`（worker 端 `src/kaas_common/**` 是 gitignored 镜像）。
+- **Python 内核**（`backend/worker/src/main.py`）：`_COMPANY_FIELDS` 追加 4 列（顺序 = INSERT 列序，与 TS 门面逐项一致）；PUT 校验税号 422 `INVALID_TAX_ID`；
+  `render-data` 的 `bank_info` 改用 `_dp.bank_block(profile)`；`_apply_default_seal(..., with_seal=)`；`POST /trade-docs` 读 `with_seal`（仅 `False/0/'false'/'0'` 视为不盖章）。
+- **TS 门面**（`backend/ts-worker/src/routes/workstations.ts`）：`COMPANY_FIELDS` 同步 18 列；`normalizeTaxId()` 与 Python 同规则同文案；PUT 在 `requireTeamAdmin` 后归一化。
+- **前端**：`CompanyProfile` / `CreateTradeDocInput` 类型加字段；`company-profile-rules.ts` 承载税号/SWIFT 归一与保存 payload 校验（纯函数）；MSW mock 形状同步 18 键 + 开单 `with_seal`。
+
+### 3. 手动验收（本机实测）
+
+- `backend/ts-worker`: `pnpm typecheck` 0；`pnpm test` **219 tests / 23 files** 全绿（含并行任务用例；新 company-profile 用例 +3）。
+- `frontend`: `pnpm test`（vitest）**1045 tests / 124 files** 全绿；新增 18 条（rules 10 / team card 5 / 开单盖章 2 / visibility 1）；
+  `pnpm typecheck` 0；`pnpm contracts:check` **PASS R2: 28 workstations consistent**；`pnpm ui:standards` / `pnpm ui:contrast` 通过。
+- `backend/worker` / `backend/orchestrator`：见本轮最终门禁记录（下方「4. 门禁」）。
+- **Test Pilot 未配置 runner**（`test_pilot_status` = `no-tests`，workspace 未声明 runner）⇒ 本轮以手工门禁为准，不伪造 Test Pilot 报告。
+
+### 4. 门禁（本轮收口时补记）
+
+- `backend/worker`: `uv run --frozen --with pytest --with httpx2 python -m pytest tests -q --basetemp=D:\tools\pytest-tmp-kaas` —— **1593 passed / 12 skipped**（61.83s；12 条 db/integration 按约定 skip）。
+  注：默认 basetemp 在 CJK 用户名路径下 pytest 收尾会 tmpdir `PermissionError`（测试本身已全绿），收口统一改用 ASCII `--basetemp`。
+- `backend/orchestrator`: `uv run --extra migrations pytest tests -q` —— **258 passed**。
+- `scripts/sync-shared.ps1` + `-Check` —— **PASS**（44/21/1 文件一致；worker 端镜像不入库）。
+- `backend/ts-worker`: `pnpm test` **219 tests / 23 files**、`pnpm typecheck` 0。
+- `frontend`: `pnpm test` **1045 tests / 124 files**、`pnpm typecheck` 0、`contracts:check` PASS（R2 = 28 workstations）、`mocks:check` PASS、`ui:standards` / `ui:contrast` PASS。
+- 静态：`check-schema-coverage` / `check-runtime-deps` / `check-worker-bundle`（11.77 MiB / 605 files）PASS；`check-schema-drift` PASS（列漂移 0 表；GBK 控制台需 `PYTHONUTF8=1` 才能打印 ⚠️ 行，否则末行编码崩——与本改动无关）。
+
+### 5. 边界与后续（明确未做）
+
+- **不做 AI 翻译**（用户选「中英双栏手填」）：英文收款信息由团队管理员按银行资料手填，避免 AI 翻错银行名/地址导致收汇失败。
+- **盖章选择只在开单时**：`with_seal` 随单保存；暂未提供「已开草稿单再切换盖章」的 PATCH UI（后端已有列，后续要加时在 draft PATCH 暴露一个布尔字段即可）。
+- 公章为租户级资产（无 `team_id` 列），任一客户团队管理员可读全租户公章 —— 这是 2026-10-21 裁决 D4 的已知可执行含义，本轮未改。

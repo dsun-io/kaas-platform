@@ -288,6 +288,9 @@ class TradeDoc(Base):
     owner_scope = Column(Text, nullable=False, default="private", server_default="private")
     # 三层组织：本行归属的团队（写入时取创建者的团队；NULL = 未分组，保持原有可见性）
     team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
+    # 盖章开关（迁移 202610220002）：默认 TRUE ⇒ 历史行行为不变（自动带默认章）；
+    # FALSE 时 render-data 不注入默认章（显式 custom.company_stamp 仍以单据为准）。
+    with_seal = Column(Boolean(), nullable=False, default=True, server_default=text("true"))
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 

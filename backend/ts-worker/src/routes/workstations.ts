@@ -466,11 +466,12 @@ app.get("/api/v1/spec/categories/:category_id/bindings", (c) => respond(c, async
 // 企业抬头 / 收款信息（main.py:4833-4911）
 // ══════════════════════════════════════════════════════════════════════════════
 
-/** main.py:4833-4835 _COMPANY_FIELDS（列顺序即 INSERT 列序）。 */
+/** main.py:4833-4835 _COMPANY_FIELDS（列顺序即 INSERT 列序，必须与内核逐项一致）。 */
 const COMPANY_FIELDS = [
   "name_en", "name_zh", "address_en", "address_zh", "phone", "email",
   "website", "bank_name", "bank_account", "swift_code", "logo_url",
   "default_incoterm", "default_payment_terms", "default_country_of_origin",
+  "tax_id", "bank_name_zh", "bank_address_en", "bank_address_zh",
 ] as const;
 
 /** company_rules.py:15-31 normalize_swift（逐字直译：空→None，合法→大写）。 */
@@ -484,6 +485,22 @@ function normalizeSwift(value: unknown): string | null {
     throw httpError(422, {
       error: "validation", code: "INVALID_SWIFT",
       detail: "SWIFT 编码必须是 8 位或 11 位字母/数字（如 BKCHCNBJ 或 BKCHCNBJ220）",
+    });
+  }
+  return text;
+}
+
+/** company_rules.py normalize_tax_id（冻结契约）：空→None，非空 6–32 位字母/数字→大写。 */
+const TAX_ID_RE = /^[0-9A-Z]{6,32}$/;
+
+function normalizeTaxId(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim().toUpperCase();
+  if (!text) return null;
+  if (!TAX_ID_RE.test(text)) {
+    throw httpError(422, {
+      error: "validation", code: "INVALID_TAX_ID",
+      detail: "税号必须是 6–32 位字母/数字（统一社会信用代码 18 位）",
     });
   }
   return text;
@@ -540,8 +557,10 @@ app.put("/api/v1/tenant/company-profile", (c) => respond(c, async () => {
   const payload = await withDb(getEnv(c), async (sql: Db) => {
     await requireTeamAdmin(sql, user);
     const swiftCode = normalizeSwift(body.swift_code);
+    const taxId = normalizeTaxId(body.tax_id);
     const values = COMPANY_FIELDS.map((field) => {
       if (field === "swift_code") return swiftCode;
+      if (field === "tax_id") return taxId;
       if (field === "name_en") return nameEn;
       return body[field] ?? null;
     });

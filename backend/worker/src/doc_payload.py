@@ -31,6 +31,7 @@ from typing import Optional
 from fastapi import HTTPException
 
 from kaas_common.trade_doc.payload_shared import (  # noqa: F401  (re-export)
+    bank_block,
     buyer_block,
     clean,
     seller_block,

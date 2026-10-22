@@ -1606,7 +1606,12 @@ const COMPANY_PROFILE_FIELDS = [
   "phone",
   "email",
   "website",
+  // 2026-10-22 新增：公司税号 + 中英银行双栏（英文栏印单据、中文栏仅内部参考）
+  "tax_id",
   "bank_name",
+  "bank_address_en",
+  "bank_name_zh",
+  "bank_address_zh",
   "bank_account",
   "swift_code",
   "logo_url",
@@ -1740,7 +1745,11 @@ const COMPANY_PROFILE_SEED: Record<string, string | null> = {
   phone: "+86-318-765-4321",
   email: "export@kaas.local",
   website: "https://kaas.local",
+  tax_id: "91131125MA0GA4242U",
   bank_name: "Bank of China, Anping Sub-branch",
+  bank_address_en: "Anping County, Hengshui, Hebei, China",
+  bank_name_zh: "中国银行安平支行",
+  bank_address_zh: "河北省衡水市安平县",
   bank_account: "1234567890",
   swift_code: "BKCHCNBJ220",
   logo_url: null,
@@ -2372,9 +2381,7 @@ function normalizeMockInquiryItems(raw: unknown): MockInquiryItem[] {
         product_name_raw: optStr(name),
         spec_text: optStr(it.spec_text),
         quantity:
-          qty === undefined || qty === null || qty === ""
-            ? null
-            : Number(qty),
+          qty === undefined || qty === null || qty === "" ? null : Number(qty),
         quantity_unit: optStr(it.quantity_unit),
         application: optStr(it.application),
         notes: optStr(it.notes),
@@ -3114,9 +3121,9 @@ function scheduleWithReceived(schedule: MockSchedule) {
   const legacyPaid = received === 0 && schedule.status === "paid";
   return {
     ...schedule,
-    received_amount: Math.round(
-      (legacyPaid ? Number(schedule.amount ?? 0) : received) * 100,
-    ) / 100,
+    received_amount:
+      Math.round((legacyPaid ? Number(schedule.amount ?? 0) : received) * 100) /
+      100,
   };
 }
 
@@ -3147,8 +3154,7 @@ function recomputeMockPayment(orderId: number): void {
       s.status = "pending";
     }
   }
-  const received =
-    Math.round((receiptsTotal + legacyPaidTotal) * 100) / 100;
+  const received = Math.round((receiptsTotal + legacyPaidTotal) * 100) / 100;
   const recv = orderReceivablesStore.get(orderId);
   if (recv) {
     const total = Number(recv.total_amount ?? 0);
@@ -4020,7 +4026,9 @@ export const handlers = [
       lead_id: null,
       channel: optStr(body.channel),
       category_id: null,
-      product_name_raw: optStr(firstItem?.product_name_raw ?? body.product_name_raw),
+      product_name_raw: optStr(
+        firstItem?.product_name_raw ?? body.product_name_raw,
+      ),
       quantity:
         firstQty !== undefined && firstQty !== null
           ? firstQty
@@ -5207,9 +5215,7 @@ export const handlers = [
         : Number(rawScheduleId);
     if (
       scheduleId !== null &&
-      !mockSchedules.some(
-        (s) => s.id === scheduleId && s.order_id === id,
-      )
+      !mockSchedules.some((s) => s.id === scheduleId && s.order_id === id)
     ) {
       return HttpResponse.json(
         {
@@ -5253,9 +5259,7 @@ export const handlers = [
     const items = fileObjectsStore
       .filter(
         (f) =>
-          f.owner_type === "order" &&
-          f.owner_id === String(id) &&
-          f.is_current,
+          f.owner_type === "order" && f.owner_id === String(id) && f.is_current,
       )
       .map(fileOut);
     return HttpResponse.json({ items });
@@ -5623,6 +5627,9 @@ export const handlers = [
       issued_at: null,
       issued_by: null,
       raw_payload: null,
+      // 开单表单新增「盖公司默认公章」（默认勾选）。真实后端把它随单保存；
+      // mock 只做最小支持：显式记录客户端意图，便于契约测试断言。
+      with_seal: typeof body.with_seal === "boolean" ? body.with_seal : null,
       created_at: nowIso(),
     };
     docsStore.push(doc);
@@ -8447,7 +8454,14 @@ export const handlers = [
       if (field === "name_en") next[field] = nameEn;
       else if (field === "swift_code")
         next[field] = swiftRaw ? swiftRaw.toUpperCase() : null;
-      else {
+      else if (field === "tax_id") {
+        // 与后端同口径：trim + 大写；空 = null（清空字段的语义是「没有」）
+        const value = body[field];
+        next[field] =
+          typeof value === "string" && value.trim()
+            ? value.trim().toUpperCase()
+            : null;
+      } else {
         const value = body[field];
         next[field] = typeof value === "string" ? value : null;
       }
@@ -8794,9 +8808,9 @@ export const handlers = [
       packaging?: unknown[];
     };
     const formula =
-      (MOCK_EXPORT_FORMULAS as unknown as Record<string, SpecHints | undefined>)[
-        product.key
-      ] ?? {};
+      (
+        MOCK_EXPORT_FORMULAS as unknown as Record<string, SpecHints | undefined>
+      )[product.key] ?? {};
     const space = formula.space ?? {};
     const cost = formula.cost ?? {};
     return HttpResponse.json({

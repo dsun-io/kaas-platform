@@ -16,7 +16,13 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AlertCircle, Pencil, RefreshCw, ShieldCheck, Users } from "lucide-react";
+import {
+  AlertCircle,
+  Pencil,
+  RefreshCw,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
 
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
@@ -30,6 +36,7 @@ import {
   subscribableWorkstationOptions,
 } from "@/lib/workstation/visibility";
 
+import { TeamCompanyProfileCard } from "./components/team-company-profile-card";
 import { TeamInvitesPanel } from "./components/team-invites-panel";
 import { TeamRenameDialog } from "./components/team-rename-dialog";
 import { TeamMembersPanel } from "./components/team-members-panel";
@@ -86,7 +93,8 @@ export default function TeamPage() {
         {!snapshot.ok && (
           <div className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm text-muted-foreground">
             <AlertCircle className="size-4 shrink-0" />
-            工位信息暂不可用（接口异常，可刷新重试），这不影响你创建 / 加入团队。
+            工位信息暂不可用（接口异常，可刷新重试），这不影响你创建 /
+            加入团队。
           </div>
         )}
         <TeamSetup
@@ -174,6 +182,10 @@ export default function TeamPage() {
           )}
         </dl>
       </SectionCard>
+
+      {/* 企业信息（2026-10-22 用户要求）：团队管理员见「维护企业信息」入口，
+          成员只读提示。区块本身不读公章列表（成员会被 403）。 */}
+      <TeamCompanyProfileCard />
 
       {showRename && isTeamAdmin && team ? (
         <TeamRenameDialog

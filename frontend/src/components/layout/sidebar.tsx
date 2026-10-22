@@ -44,6 +44,7 @@ import {
   ClipboardCheck,
   Truck,
   Layers,
+  Building2,
   Circle,
 } from "lucide-react";
 import { useState, useMemo, Fragment } from "react";
@@ -82,6 +83,7 @@ const STATION_ICONS: Record<
   Compass,
   Layers,
   ClipboardCheck,
+  Building2,
   ScrollText,
   History,
   ToggleLeft,
@@ -420,6 +422,19 @@ function SidebarUser({ collapsed = false }: { collapsed?: boolean }) {
             >
               <Users className="mr-1.5 size-4" />
               团队与工位
+            </Button>
+            {/* 企业信息（2026-10-22 用户要求）：入口原来只藏在报价页的链接里，
+                现在侧边栏「账号」组 + 头像菜单双入口。**所有登录用户可见** ——
+                页面本身对成员只读（保存要团队管理员，与后端 _require_team_admin 同口径），
+                所以这里不按角色隐藏，否则成员连「查看抬头/收款行」都做不到。 */}
+            <Button
+              variant="outline"
+              onClick={() => {
+                router.push("/settings/company-profile");
+              }}
+            >
+              <Building2 className="mr-1.5 size-4" />
+              企业信息
             </Button>
             <Button
               variant="outline"

@@ -141,6 +141,16 @@ WORKSTATIONS = [
         "group": "admin", "order": 22,
         "admin_only": False, "status": "active", "subscription": None,
     },
+    # 企业信息（团队级：团队管理员可改、成员只读）
+    {
+        # 2026-10-22：侧边栏新增「企业信息」入口（原入口藏在系统设置里，用户找不到）。
+        # 团队级配置、不按工位收费 ⇒ subscription=None；写权限由接口层判团队管理员。
+        # 与 shared/contracts/workstations.ts 的同名条目逐字段镜像（R2 契约校验）。
+        "key": "company-profile", "name": "企业信息",
+        "route": "/settings/company-profile",
+        "group": "account", "order": 1,
+        "admin_only": False, "status": "active", "subscription": None,
+    },
     # 不上侧边栏
     {
         # 团队与工位：入口在右上角头像菜单。**不属于计费工位 → 永远可达**，

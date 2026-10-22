@@ -4828,6 +4828,15 @@ async def _doc_quote_id(conn, doc: dict):
     return row["dst_id"] if row is not None else None
 
 
+def _doc_with_seal(body: dict) -> bool:
+    """开单是否盖章：只认 False/0/'false'/'0' 为不盖章（缺省/其它值都算盖章）。
+
+    与前端 doc-create-form 的默认勾选一致；存进 `trade_docs.with_seal`，
+    render-data 据此决定是否注入租户默认公章（列 NOT NULL DEFAULT TRUE）。
+    """
+    return body.get("with_seal", True) not in (False, 0, "false", "0")
+
+
 @app.post("/api/v1/trade-docs", status_code=201)
 async def create_trade_doc(request: Request, body: dict,
                            user: dict = Depends(_get_current_user)):
@@ -4850,6 +4859,8 @@ async def create_trade_doc(request: Request, body: dict,
         raise HTTPException(status_code=422, detail={"error": "bad_doc_type"})
     currency = (body.get("currency") or "USD").strip().upper() or "USD"
     validate_enum("currency", currency)
+    # 盖章开关：开单时未勾选 ⇒ 存 False，渲染阶段不注入默认章
+    with_seal = _doc_with_seal(body)
 
     order_id = _as_bigint(body.get("order_id"), field="order_id",
                           code="INVALID_ORDER_ID")
@@ -4931,12 +4942,14 @@ async def create_trade_doc(request: Request, body: dict,
             d = await conn.fetchrow(
                 "INSERT INTO trade_docs (tenant_id, doc_no, doc_type, order_id,"
                 " quote_id, customer_id, status, currency, total_amount,"
-                " raw_payload, team_id)"
-                " VALUES ($1,$2,$3,$4,$5,$6,'draft',$7,$8,$9,$10) RETURNING *",
+                " raw_payload, team_id, with_seal)"
+                " VALUES ($1,$2,$3,$4,$5,$6,'draft',$7,$8,$9,$10,$11) RETURNING *",
                 DEFAULT_TENANT, doc_no, doc_type, order_id, quote_id,
                 customer["id"], currency, total_amount, _json.dumps(payload),
                 # 单据与客户同团队（管理员替别家团队开单时不能留在自己团队）
                 customer.get("team_id"),
+                # 盖章开关（迁移 202610220002；列 NOT NULL DEFAULT TRUE）
+                with_seal,
             )
             # 订单 / 报价关系只写列（上面 INSERT 已完成）：触发器 `trg_trade_docs_links`
             # 自动派生 `entity_links` 边。旧 refs 表已随 202610110014 改名 `_legacy` 留档，
@@ -5176,7 +5189,10 @@ async def update_trade_doc(doc_id: int, request: Request, body: dict,
 
 _COMPANY_FIELDS = ("name_en", "name_zh", "address_en", "address_zh", "phone", "email",
                    "website", "bank_name", "bank_account", "swift_code", "logo_url",
-                   "default_incoterm", "default_payment_terms", "default_country_of_origin")
+                   "default_incoterm", "default_payment_terms", "default_country_of_origin",
+                   # 2026-10-22：税号 + 银行中文名/中英地址（追加在既有列之后 ⇒ 老列序不变）。
+                   # 顺序即 INSERT 列序，改这里必须同步迁移 202610220002 与 ts-worker 门面。
+                   "tax_id", "bank_name_zh", "bank_address_en", "bank_address_zh")
 
 
 async def _require_team_admin(request: Request, user: dict) -> None:
@@ -5229,7 +5245,9 @@ async def put_company_profile(request: Request, body: dict,
     # 权限：团队管理员（或平台管理员）才能改企业抬头
     await _require_team_admin(request, user)
     # SWIFT 编码：8/11 位字母数字（用户 2026-10-18 要求）
-    from kaas_common.workstation.company_rules import SwiftError, normalize_swift
+    from kaas_common.workstation.company_rules import (
+        SwiftError, TaxIdError, normalize_swift, normalize_tax_id,
+    )
     try:
         swift_code = normalize_swift(body.get("swift_code"))
     except SwiftError as exc:
@@ -5237,10 +5255,19 @@ async def put_company_profile(request: Request, body: dict,
             "error": "validation", "code": "INVALID_SWIFT",
             "detail": str(exc),
         })
+    # 税号：去空格转大写 + 6–32 位字母/数字（2026-10-22 用户要求）
+    try:
+        tax_id = normalize_tax_id(body.get("tax_id"))
+    except TaxIdError as exc:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "INVALID_TAX_ID",
+            "detail": str(exc),
+        })
     # 逐字段覆盖（含 NULL）：允许把填错的字段清空，而不是"擦不掉"
     values = [
         swift_code if f == "swift_code"
-        else (body.get(f) if f != "name_en" else name_en)
+        else (tax_id if f == "tax_id"
+              else (body.get(f) if f != "name_en" else name_en))
         for f in _COMPANY_FIELDS
     ]
     cols = ", ".join(_COMPANY_FIELDS)
@@ -5275,12 +5302,18 @@ def _seal_tenant_of(user) -> str:
     return tid if isinstance(tid, str) and tid else DEFAULT_TENANT
 
 
-async def _apply_default_seal(request: Request, user: dict, data: dict, custom) -> dict:
+async def _apply_default_seal(request: Request, user: dict, data: dict, custom,
+                              *, with_seal: bool = True) -> dict:
     """装配层最后一步：只在单据**没**显式给 `company_stamp` 时才查库（省无谓查询）。
 
     2026-10-21（A4）：优先填**短期签名直链**（`/company-seals/{id}/render-content?t=`），
     不再把 PNG 内联成 data URI；签名不可用（无 JWT_SECRET/测试）时回退内核的 data URI。
+
+    `with_seal=False`（开单时未勾选盖章）⇒ **不注入**默认章、也不查库；
+    单据显式给的 `custom.company_stamp` 已由 build_render_data 带进 data，行为不变。
     """
+    if not with_seal:
+        return data
     if isinstance(custom, dict) and "company_stamp" in custom:
         return data
     from ws_files import _asset_url  # 模块在文件末尾导入，函数内惰性引用
@@ -5420,7 +5453,7 @@ async def get_trade_doc_render_data(doc_id: int, request: Request,
         total_amount=doc.get("total_amount"),
         created_at=doc.get("created_at"), issued_at=doc.get("issued_at"),
         seller=_dp.seller_block(profile), buyer=buyer,
-        bank_info=_dp.seller_block(profile),
+        bank_info=_dp.bank_block(profile),
         sources=sources,
         trade_terms={f: upstream.get(f) for f in TRADE_TERM_FIELDS
                      if _dp.clean(upstream.get(f)) is not None},
@@ -5434,8 +5467,13 @@ async def get_trade_doc_render_data(doc_id: int, request: Request,
     # 单证引用产品图：把 `{file_id}` 解析成图片源（装配层做，渲染器一行不改）
     import ws_files as _ws_files  # 模块在文件末尾导入，函数内惰性引用
     data = await _ws_files.resolve_photo_refs(request, data, user=user)
-    # 单据没显式给 company_stamp → 自动带出租户默认公章（同样转 data URI）
-    data = await _apply_default_seal(request, user, data, custom)
+    # 单据没显式给 company_stamp → 自动带出租户默认公章（同样转 data URI）。
+    # `trade_docs.with_seal=False`（开单时未勾选盖章）⇒ 不注入默认章。
+    doc_with_seal = doc.get("with_seal")
+    if doc_with_seal is None:
+        doc_with_seal = True
+    data = await _apply_default_seal(request, user, data, custom,
+                                     with_seal=bool(doc_with_seal))
     # 单据关联了产品 → 把产品档案的基础信息补进仍为空的行项（见共享内核 product_defaults）
     data = await _apply_product_defaults(request, doc["doc_type"], data, custom, user=user)
     return {

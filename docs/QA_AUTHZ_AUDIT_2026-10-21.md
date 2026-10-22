@@ -40,6 +40,7 @@
 - `_require_internal`（`ws_seals.py:53-59`，返回 `INTERNAL_ONLY`）在 `git grep '_require_internal('` 下**只有定义与测试**（`tests/test_ws_products_seals.py:340-345`），端点从未调用。
 - 测试事实（可作闸门证据，不作越权结论）：`test_seal_management_is_team_admin_only` 明确断言 customer 写三端点 **403 TEAM_ADMIN_REQUIRED**、且**列表 200**（`test_ws_products_seals.py:220-242`）。
 - 前端：`canManageSeals = user?.account_type === "internal"` 仅隐藏上传入口（`settings/company-profile/page.tsx:106-112`），注释称「ws_seals.py:46 只允许内部账号」与后端实际（team admin）不符。
+  - **2026-10-22 已修**：改为 `canManageSeals = isTeamAdmin`（与 `_require_team_admin` 同判据），抽成 `company-profile-rules.ts::canManageCompanySeals()`；团队管理员（客户账号）现在能看到上传/设默认/删除，成员只读。见 `PROBLEM_STATUS_2026-10-11.md` 2026-10-22 条目。
 - 建议：①若口径仍要「仅内部」，读端点补 `_require_platform_ops` 同口径闸门；②否则把 QA 期望改为「写 403 TEAM_ADMIN_REQUIRED / 读 200（团队成员）」，并修正前端注释与 §0-P3 的文档漂移。
 
 ### 2.2 跨租户读公章/单证（#2）

@@ -74,6 +74,33 @@ describe("工位清单（契约派生）", () => {
     expect(ws?.status).toBe("hidden");
   });
 
+  it("企业信息有侧边栏入口（2026-10-22 用户要求），且永不被订阅拦", () => {
+    const ws = workstationByRoute("/settings/company-profile");
+    expect(ws?.key).toBe("company-profile");
+    expect(ws?.name).toBe("企业信息");
+    expect(ws?.status).toBe("active");
+    // 非计费工位：所有登录用户都能进（团队管理员写、成员只读）
+    expect(ws?.subscription).toBeNull();
+    expect(ws?.adminOnly).toBe(false);
+
+    // 侧边栏「账号」组里出现（不是 hidden，也不是只藏在头像菜单）
+    const navKeys = visibleNavGroups()
+      .flatMap((g) => g.items)
+      .map((w) => w.key);
+    expect(navKeys).toContain("company-profile");
+
+    // 最容易踩的：/settings 也是工位路由，最长前缀匹配不能被它抢走
+    expect(workstationByRoute("/settings")?.key).toBe("settings");
+
+    // 订阅快照里一个工位都没开通，企业信息也必须放行
+    expect(
+      isWorkstationEnabled(
+        snapshot({ hasTeam: true, workstations: [] }),
+        "company-profile",
+      ),
+    ).toBe(true);
+  });
+
   it("workstationName 与契约一致，未知 key 原样返回", () => {
     expect(workstationName("quotes")).toBe("报价");
     expect(workstationName("nope")).toBe("nope");

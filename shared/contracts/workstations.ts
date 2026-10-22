@@ -346,6 +346,24 @@ export const WORKSTATIONS: readonly Workstation[] = [
     subscription: null,
   },
 
+  // ── 账号（自助：企业信息） ──
+  {
+    // 企业信息（卖方抬头 / 收款银行 / 公章 / 单据默认条款）—— 2026-10-22 用户要求
+    // **必须有侧边栏入口**（此前只能从报价页链接进去，等于被藏起来了）。
+    // 权限：团队管理员写、成员只读。因此 adminOnly=false —— 成员也能进入查看，
+    // 保存按钮按 useTeam().isTeamAdmin 禁用（与后端 _require_team_admin 同口径）。
+    // subscription: null ⇒ 非计费工位、永不被订阅拦（它不是任何套餐的能力）。
+    key: 'company-profile',
+    name: '企业信息',
+    route: '/settings/company-profile',
+    group: 'account',
+    order: 1,
+    icon: 'Building2',
+    adminOnly: false,
+    status: 'active',
+    subscription: null,
+  },
+
   // ── 不上侧边栏（页面保留 / 待定去留 / 已摘除） ──
   {
     // 团队与工位：入口在右上角头像菜单。**不属于计费工位 → 永远可达**，

@@ -82,9 +82,18 @@ export interface CompanyProfile {
   phone: string | null;
   email: string | null;
   website: string | null;
+  /** 公司税号（统一社会信用代码/纳税人识别号）：单据上的 Tax ID / Beneficiary Tax ID */
+  tax_id: string | null;
+  /** 英文开户行（印在英文单据上） */
   bank_name: string | null;
+  /** 英文银行地址（印在英文单据上） */
+  bank_address_en: string | null;
   bank_account: string | null;
   swift_code: string | null;
+  /** 中文开户行（仅内部参考，不印单据；英文手填，不做 AI 翻译） */
+  bank_name_zh: string | null;
+  /** 中文银行地址（仅内部参考，不印单据） */
+  bank_address_zh: string | null;
   logo_url: string | null;
   default_incoterm: string | null;
   default_payment_terms: string | null;
@@ -146,6 +155,11 @@ export interface CreateTradeDocInput {
   customer_id?: number | string | null;
   currency?: string | null;
   raw_payload?: Record<string, unknown> | null;
+  /**
+   * 是否盖公司默认公章（开单表单「盖公司默认公章」勾选，默认 true）。
+   * 后端据此在生成 PDF 时叠加默认章；没有默认章时后端不报错、只不盖章。
+   */
+  with_seal?: boolean;
 }
 
 export function useCreateTradeDoc() {

@@ -204,6 +204,12 @@ class TenantCompanyProfile(Base):
     default_incoterm = Column(Text, nullable=True)
     default_payment_terms = Column(Text, nullable=True)
     default_country_of_origin = Column(Text, nullable=True)
+    # 2026-10-22（迁移 202610220002）：税号 + 银行中文名/中英地址。
+    # bank_name 仍存**英文**开户行（英文单证只取英文列）；中文列仅内部识别/中文单据。
+    tax_id = Column(Text, nullable=True)
+    bank_name_zh = Column(Text, nullable=True)
+    bank_address_en = Column(Text, nullable=True)
+    bank_address_zh = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
