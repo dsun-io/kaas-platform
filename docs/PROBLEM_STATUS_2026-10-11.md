@@ -14,6 +14,14 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-22 · 企业信息功能已上线 ✅ + 恢复 push 自动部署）** 用户下令「改动全部提交 main 后部署，且部署流程应自动触发」：
+> `deploy.yml` 新增 `push(main)` 触发（`docs/**`/`archive/**`/`**/*.md` 不触发）+ `wait-for-ci`（同 SHA 的 CI 全绿才继续；
+> 任一失败即停，绝不把红代码发生产）；`workflow_dispatch` 保留排障/单端发布。首轮自动发布 run `39735755230` 全绿：
+> wait-for-ci → build（ubuntu 静态导出 + `assets:check`）→ migrate（生产库 `202610210002 → 202610220001 → 202610220002`）
+> → kernel `a1dd8727-f033-41e4-b693-47148e9db682` → edge `859083dd-8bcb-4ac3-bddc-3acc0524e8e1` → smoke 通过。
+> 线上复核：`/health`=`kaas-edge`、`/health?deep=1` = kernel `ok` + `shared_loaded=true`、`/settings/company-profile` 200、
+> 企业信息 API 无 token 401。
+>
 > **（2026-10-22 · 企业信息补充 ✅：团队管理员维护 + 侧边栏入口 + 公司税号/中英收款银行 + 单证盖章开关）**
 > 用户口径：①团队信息（公司抬头/收款银行/税号/公章）只有团队管理员可维护；原公章卡片用
 > `account_type === 'internal'` 判权限，团队管理员（客户账号）看不到上传/设默认/删除入口 ⇒ 改
@@ -5313,6 +5321,7 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
 - `backend/ts-worker`: `pnpm test` **219 tests / 23 files**、`pnpm typecheck` 0。
 - `frontend`: `pnpm test` **1045 tests / 124 files**、`pnpm typecheck` 0、`contracts:check` PASS（R2 = 28 workstations）、`mocks:check` PASS、`ui:standards` / `ui:contrast` PASS、`pnpm e2e` **27 passed**（a11y 路由自动发现覆盖新入口 `/settings/company-profile`）。
 - 静态：`check-schema-coverage` / `check-runtime-deps` / `check-worker-bundle`（11.77 MiB / 605 files）PASS；`check-schema-drift` PASS（列漂移 0 表；GBK 控制台需 `PYTHONUTF8=1` 才能打印 ⚠️ 行，否则末行编码崩——与本改动无关）。
+- **生产发布（2026-10-22 自动触发）**：push `main` → deploy run `39735755230`：wait-for-ci → build → migrate（`202610210002→202610220001→202610220002`）→ kernel `a1dd8727-f033-41e4-b693-47148e9db682` → edge `859083dd-8bcb-4ac3-bddc-3acc0524e8e1` → smoke 通过；线上复核见顶部交接摘要。
 
 ### 5. 边界与后续（明确未做）
 
