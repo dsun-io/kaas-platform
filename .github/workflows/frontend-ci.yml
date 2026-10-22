@@ -101,3 +101,33 @@ jobs:
       - run: pnpm e2e
         env:
           NEXT_PUBLIC_API_MODE: mock
+
+  # 导出态 e2e（2026-10-22 新增）：跑在**真实静态导出产物**上，专抓 dev 态 e2e 的盲区 ——
+  # 侧边栏点击导航挂死（P0）、逐段预取文件 404（P1）这两个 2026-10-22 线上事故都属于这类。
+  # 只在夜间定时 / 手动触发：单次含构建约 3–4 分钟，放 push/PR 不划算。
+  e2e-export:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: npx playwright install chromium --with-deps
+
+      # 内部流程：构建（NEXT_EXPORT=1 + mock API）→ 起静态服务器 → 跑 e2e-export/*.spec.ts
+      - run: pnpm e2e:export

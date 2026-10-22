@@ -95,6 +95,9 @@
     `cd frontend; pnpm assets:check`（校验：无含 `\` 的文件名、无 `__next.*` 目录、`/_next/static/*` 引用全部可解析）。
     另：**侧边栏等 `Link` 不要显式 `prefetch={true}`** —— 静态导出下点击导航会永久挂死（`linkClicked` 先 preventDefault、
     随后等 prefetch 永不 resolve）；根因与取证见 `docs/HANDOVER_2026-10-21_NAV_STUCK.md`。
+  - **导出态 e2e（2026-10-22 新增，nightly）**：`cd frontend; pnpm e2e:export`（构建导出产物 → 起静态服务 →
+    跑 `e2e-export/*.spec.ts`：真实点侧边栏跳转 + RSC 200 + 无逐段 404 + 路由直达）。**dev 态 `pnpm e2e` 抓不到导出态缺陷**
+    （2026-10-22 两个线上事故都在这个盲区）；CI 里是 `frontend-ci.yml` 的 `e2e-export` job，只在 schedule/手动跑。
   - **部署（2026-10-21 起两个 Worker）**：`kaas-edge`（TS 门面，对外域名）+ `kaas`（Python 内核，无公网域名）；
     两者都必须带 `$env:CLOUDFLARE_API_TOKEN`（wrangler OAuth 已过期）；先内核后门面；
     详见 `docs/HANDOVER_2026-10-21_CUTOVER.md` §2
@@ -232,3 +235,4 @@ git status --short                       # 自证：自家路径干净，别人�
 - **例外**：用户明确说"先算了/到此为止"时，按用户裁决停手并如实记录边界（≠ 自己放弃）。
 - **把这条规则本身写进本文档**就是一次教训：口头"记下了"不算数，用户下达的**长期行为准则**
   必须像规则 1–5 一样**当场落盘**，否则下一个会话不会自动遵守。
+

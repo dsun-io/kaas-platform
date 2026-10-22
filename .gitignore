@@ -72,6 +72,10 @@ minio_data/
 frontend/test-results/
 frontend/playwright-report/
 frontend/blob-report/
+# 导出态 e2e（2026-10-22）：产物报告/登录态/临时 out 不提交
+frontend/e2e-export/.auth/
+frontend/e2e-export/test-results/
+frontend/e2e-export/report/
 
 # AI 辅助工具本地配置
 .mcp.json

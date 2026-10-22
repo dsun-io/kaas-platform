@@ -151,7 +151,8 @@ no-prefetch   /products  -> /products (跳转!)
 |---|---|---|
 | P0：`prefetch={false}` + 重建 + 部署门面 | ✅ **已完成（2026-10-22，用户弹窗批准）** | 见 §7 |
 | P1：改 CI/Linux 构建静态导出并重新部署 | ✅ **已完成（2026-10-22，Docker `node:22` 容器内构建）** | 见 §7.5 |
-| P2：AGENTS.md 立规 + 产物门禁 + 垃圾忽略 | ✅ **已完成（2026-10-22）** | 见 §7.6（用静态门禁 `pnpm assets:check` 替代重型「导出态 e2e」，理由见该节） |
+| P2：AGENTS.md 立规 + 产物门禁 + 垃圾忽略 | ✅ **已完成（2026-10-22）** | 见 §7.6 |
+| P3：导出态 e2e（nightly，真实导出产物上点侧边栏） | ✅ **已完成（2026-10-22，6/6 通过并接入 nightly）** | 见 §7.7 |
 
 ## 7. 执行记录（2026-10-22，P0）
 
@@ -232,6 +233,36 @@ Linux 构建（`path.relative()` 返回 `/`）直接产出正确点号名，故�
    `frontend/.next` 硬冲突纪律都吃不消；而本次两个缺陷的根因特征都能**静态判定**（A/B/C/D），故用门禁代替。
    代价（如实）：门禁只抓「已知形态」，抓不到新的未知交互类回归；真要做端到端，建议放 nightly 独立 job 再立项。
 5. **未跟踪垃圾**：`.gitignore` 新增「未跟踪垃圾一律忽略」段（含实测的 `%SystemDrive%/`、`*.orig`、`*.rej`）。
+
+### 7.7 导出态 e2e（nightly，2026-10-22 补齐）
+
+补的是「dev 态 e2e 的盲区」：现有 27 条 e2e 全部跑 `next dev`（`frontend/playwright.config.ts` 的 webServer），
+2026-10-22 两个线上事故（P0 点击挂死、P1 逐段 404）在 dev 态根本复现不出来 ⇒ 只能靠人肉构建+手点。
+
+**新增文件**：
+
+| 文件 | 作用 |
+|---|---|
+| `frontend/playwright.export.config.ts` | 独立配置：`webServer` 起静态服务器（4173），`baseURL` 同源，只跑 `e2e-export/` |
+| `frontend/e2e-export/global-setup.ts` | 种 `has_token` cookie + `kaas_token`（origin 换成 4173，不能照抄 3000） |
+| `frontend/e2e-export/navigation.spec.ts` | 3 条：点击`产品`URL 变化+RSC 200；连点 3 个入口不挂死；全程无 `__next*.txt` 4xx |
+| `frontend/e2e-export/smoke.spec.ts` | 3 条：关键路由直达 200 且有内容；点号段文件 200；未命中 `.txt` 必须 404（不被 SPA 回退伪装） |
+| `frontend/scripts/build-export-e2e.mjs` | 构建导出产物（`NEXT_EXPORT=1` + mock API），Windows 上把段文件名拍平成 Linux 形态 |
+| `frontend/scripts/serve-export.mjs` | 静态服务器，SPA 回退语义对齐 Workers Assets（只对 `Accept: text/html` 回退） |
+| `.github/workflows/frontend-ci.yml` | 新 job `e2e-export`，`if: schedule / workflow_dispatch`，跑 `pnpm e2e:export` |
+
+**本地跑法**：`cd frontend; pnpm e2e:export`（自动构建+跑）；只想重跑用例：`pnpm e2e:export:only`。
+
+**实测口径（2026-10-22，本机 Windows）**：
+
+- `6 passed (11.3s)`，构建 `9.5s`（Turbopack 增量）；
+- Windows 构建照例把 **37 个**逐段文件写成目录，`build-export-e2e.mjs` 拍平后与 Linux 产物同形 ⇒ 本地可测；
+  **CI（ubuntu）上 `path.relative()` 返回 `/`，该拍平函数是 no-op**，测的是原生 Linux 产物；
+- **阳性对照（证明用例不是空跑）**：把 `products/__next.!KGFwcCk.products.__PAGE__.txt` 删掉 ⇒ P1 用例 `Expected: 200 / Received: 404` 失败；
+  把 `products.txt` 删掉 ⇒ 导航用例 `期望 /products.txt?_rsc=… 的 200` 失败（实捕获 `[{"url":"…/products.txt?_rsc=…","status":404}]`）。
+
+**边界（如实）**：产物用 mock API 构建（`NEXT_PUBLIC_API_MODE=mock`）+ 本地静态服务器，不覆盖真实 API / CF 缓存 / 域名；
+`/e2e` 之外的真实数据流仍由契约测试 + ts-worker 测试兜。CI 只在 nightly/手动跑（含构建约 3–4 分钟）。
 
 ---
 

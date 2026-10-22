@@ -26,6 +26,10 @@
 > **P2 防复发（同日）**：AGENTS.md 立规「Windows 产物不得直接 deploy / Link 不显式 prefetch」+ 新增产物门禁
 > `cd frontend; pnpm assets:check`（校验反斜杠文件名、`__next.*` 目录、`/_next/static/*` 引用、`prefetch={true}`；
 > 已用违规样本做阳性对照 exit 1，当前 Linux 产物 PASS）；`.gitignore` 增加「未跟踪垃圾一律忽略」段。
+> **P3 导出态 e2e（nightly）**：`cd frontend; pnpm e2e:export` —— 在**真实静态导出产物**上跑 6 条
+>（点侧边栏跳转 + RSC 200、连点不挂死、全程无逐段 404、路由直达、点号段文件 200、未命中 `.txt` 必须 404），
+> 实测 **6/6 passed (11.3s)**，并做了删文件阳性对照（分别 `Expected 200 / Received 404`）；已接 `frontend-ci.yml`
+> 的 `e2e-export` job（schedule/手动）。**dev 态 `pnpm e2e` 抓不到导出态缺陷**，两套并行保留。
 
 > **（2026-10-22 · CI 瘦身 ✅，不删门禁）** GitHub Actions 私有仓库免费额度 2,000 分钟/月长期吃紧
 > （实测按 job 计费口径月耗 ≈3,400–4,700 分钟；2026-10-17 曾因额度/账单被挡在任务启动前）。本次只瘦触发面：

@@ -12,7 +12,7 @@
 | 顺序 | 文档 | 读它来回答什么 |
 |---|---|---|
 | 1 | [../README.md](../README.md) | 架构、三环境隔离矩阵、方案 B 决策、冷启动线、测试与门禁（**主交接/唯一权威**） |
-| 1b | [HANDOVER_2026-10-21_NAV_STUCK.md](./HANDOVER_2026-10-21_NAV_STUCK.md) | **已闭环排障（2026-10-22，P0/P1/P2 全完成）**：P0=`<Link prefetch={true}>`+静态导出使点击导航挂死 → 改 `prefetch={false}`；P1=Windows 构建使逐段预取 404 → 改 Docker `node:22` Linux 构建（version `71be6dbb` 上线）；P2=AGENTS 立规 + 产物门禁 `pnpm assets:check` + `.gitignore` 垃圾段。含离线复现脚本与全部执行记录 |
+| 1b | [HANDOVER_2026-10-21_NAV_STUCK.md](./HANDOVER_2026-10-21_NAV_STUCK.md) | **已闭环排障（2026-10-22，P0/P1/P2 全完成）**：P0=`<Link prefetch={true}>`+静态导出使点击导航挂死 → 改 `prefetch={false}`；P1=Windows 构建使逐段预取 404 → 改 Docker `node:22` Linux 构建（version `71be6dbb` 上线）；P2=AGENTS 立规 + 产物门禁 `pnpm assets:check` + `.gitignore` 垃圾段；P3=导出态 e2e（`pnpm e2e:export`，真实导出产物上 6 条用例，接 nightly）。含离线复现脚本与全部执行记录 |
 | 2 | [archive/2026-10-21-cutover/HANDOVER_2026-10-20_FINAL.md](./archive/2026-10-21-cutover/HANDOVER_2026-10-20_FINAL.md) | **最新交接**：§0.2 停止点/剩余工作/恢复路径；**§0.3 新设备/新 agent 接手清单**；§2 三环境、§5 发布检查单、踩坑 |
 | 3 | [PROBLEM_STATUS_2026-10-11.md](./PROBLEM_STATUS_2026-10-11.md) | 滚动问题状态（顶部按时间倒序，含后端五项与 CI 记录） |
 | 4 | [TODO.md](./TODO.md) | **活跃待办唯一账本**（A 单证 / B 产品 / C 其他 / D 发布 / E UI） |
