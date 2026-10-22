@@ -269,7 +269,7 @@
 
 | # | 事项 | 内容与验收 | 前置 | 状态 |
 |---|---|---|---|---|
-| Q-M1 | 模型与内核 | 枚举（ORDER_SOURCE_TYPE、渠道去 quote 加 phone/referral）+ 迁移回填（orders.source_type/source_channel/inquiry_id，存量经 quote→inquiry 回填）；订单 items 增删改（内核+门面+契约）；`kaas_common/workstation/funnel.py` 统计；`GET /inquiries` 列表/详情（报价历史 1:N）；TS6 收口（门面 completed 联动询盘阶段） | G-16 拍板 | ⏳ |
+| Q-M1 | 模型与内核 | 枚举（ORDER_SOURCE_TYPE、渠道去 quote 加 phone/referral）+ 迁移回填（orders.source_type/source_channel/inquiry_id，存量经 quote→inquiry 回填）；订单 items 增删改（内核+门面+契约）；`kaas_common/workstation/funnel.py` 统计；`GET /inquiries` 列表/详情（报价历史 1:N）；TS6 收口（门面 completed 联动询盘阶段） | G-16 拍板 | ✅ 2026-10-22：M1-a~M1-e 全部完成并 push（`fe9be1f` `1ba758d` `15c4fcab` `a0e33d91`）；worker 1685 passed + 12 skipped（3 env），orchestrator 266 passed，ts-worker 232 passed，sync-shared 一致 |
 | Q-M2 | 门面与前端 | `/inquiries` 工位；`/orders` 来源列/筛选/来源链/货物行编辑；报价记录编辑入口（行项/条款/状态流转）；询盘编辑入口；客户详情 UnlinkedRecords 改「直接下单」正常分类 | Q-M1 | ⏳ |
 | Q-M3 | 仪表盘 | dashboard 落地漏斗/分渠道转化/订单应收概览；`/dashboard/summary` 废弃三表混计数 | Q-M1 | ⏳ |
 
