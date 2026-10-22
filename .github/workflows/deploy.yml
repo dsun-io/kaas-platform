@@ -107,7 +107,10 @@ jobs:
   # 生产库连接串放 secret PROD_DATABASE_URL；未配置时跳过并告警（保持手动迁移）。
   migrate:
     name: DB migration (alembic upgrade head)
-    if: ${{ github.event.inputs.target != 'edge' }}
+    # 防误触：confirm/target 校验在 build-frontend 第一步；migrate 是唯一写生产库的 job，
+    # 必须等 build-frontend 成功（confirm 错误时 build 失败 ⇒ 绝不迁移）。
+    needs: [build-frontend]
+    if: ${{ !cancelled() && github.event.inputs.target != 'edge' && needs.build-frontend.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
