@@ -1,6 +1,6 @@
 # 询盘与订单模型重构 · 优化方案（2026-10-22）
 
-> 状态：**设计定稿，全部拍板完毕，M1 可开工**（用户 2026-10-22 拍板「落盘设计文档再实现」；D-1~D-13 见 §12.1）。
+> 状态：**设计定稿，全部拍板完毕，M1 可开工**（用户 2026-10-22 拍板「落盘设计文档再实现」；D-1~D-14 见 §12.1）。
 > 本文件是本次重构的**唯一设计基准**；实施进度在 [`TODO.md`](./TODO.md) §Q 销账。
 > 所有结论均经代码核实（附 `文件:行号`），非推测。
 
@@ -164,7 +164,7 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 
 **流程**：
 1. 任何人对 `status >= confirmed` 的订单提交行项变更 → 生成**变更申请**（含新旧明细对比、变更原因、申请人、时间），订单本身**不立即变化**；
-2. 管理员（**仅团队管理员**，D-11）在订单详情或待办里批准 → 应用行项替换 + 重算 `total_amount`/`amount_breakdown` + 写审计事件；拒绝则原样保留并记录理由；
+2. 审批人（**指定审批人优先，否则团队管理员**，D-11/D-14）在订单详情或待办里批准 → 应用行项替换 + 重算 `total_amount`/`amount_breakdown` + 写审计事件；拒绝则原样保留并记录理由；
 3. 若该订单已开单证，申请页与批准页**必须列出受影响单证**（PI/CI/PL/BL…），批准后提示「需重开/作废哪些单证」，避免合同与单证不一致；
 4. 管理员自己改也走同一流程（申请人=批准人，仍留痕），不提供"管理员直改"旁路——审计链完整。
 
@@ -185,12 +185,13 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 
 **数据模型**：
 - `notifications`：`id` / `tenant_id` / `team_id` / `user_id`（收件人） / `type`（`approval_requested` | `approval_approved` | `approval_rejected`） / `title` / `body` / `link`（深链） / `ref_type` / `ref_id` / `read_at` / `created_at`；索引 `(user_id, read_at, created_at desc)`；
+- `team_approvers`：`team_id` / `user_id` / `created_by` / `created_at`（指定审批人名单，空=管理员审批）；
 - 审批数据复用 `order_item_change_requests`（§6.1）。
 
 **通知触发**（与主流程同事务写入，best-effort，通知失败不阻塞业务）：
-1. 提交变更申请 → 给**每位团队管理员**写通知（`approval_requested`，link=`/approvals?focus={rid}`）；
+1. 提交变更申请 → 按审批路由写通知（`approval_requested`，link=`/approvals?focus={rid}`）：**有指定审批人 → 只发指定审批人；未指定 → 发每位团队管理员**；
 2. 批准 / 拒绝 → 给申请人写通知（`approval_approved` / `approval_rejected`）；
-3. **邮件（可选开关，默认关）**：同一申请只发一次，走 Resend 发管理员账号邮箱；失败只记日志不重试（站内已有记录）。
+3. **邮件（可选开关，默认关）**：同一申请只发一次，走 Resend 发审批人账号邮箱；失败只记日志不重试（站内已有记录）。
 
 **端点**：
 - `GET /notifications?unread=1&page=&page_size=`
@@ -207,7 +208,12 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 
 **导航契约**：`shared/contracts/workstations.ts` 新增 `key='approvals', name='审批', route='/approvals', group='business', order=35, icon='ClipboardCheck', adminOnly=false, status='active', subscription=null`；**同 PR 同步** `backend/kaas_common/domain/workstations.py`（R2 机器比对），否则 `contracts:check` 变红。
 
-**权限细则（D-11）**：审批动作仅团队管理员；申请人不能批自己的申请；团队**仅一名管理员**时允许其自批（否则单人团队死锁），审计事件标注「自批」。
+**审批人路由（D-11 / D-14）**：
+- 团队可设**指定审批人**（新表 `team_approvers`：`team_id` / `user_id` / `created_by` / `created_at`；管理员在团队页维护，可多人）；
+- 路由规则：**有指定审批人 → 审批权与通知都归指定审批人；未指定 → 团队管理员**；
+- 兜底：指定审批人长期不处理时，管理员仍可介入审批，审计事件标注「管理员兜底」——避免流程卡死；
+- 自批：申请人不能批自己的申请；若可批人集合只剩申请人（单人团队 / 指定审批人=申请人且无管理员），允许自批并在审计标注「自批」；
+- 「待我审批」= 我是指定审批人的待批 + 未指定审批人时管理员的待批。
 
 **实时性**：轮询（60s + 窗口 focus 刷新），不引入 WebSocket（Worker 无长连接）。
 
@@ -232,6 +238,7 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 | `GET /approvals?view=pending\|mine\|done`（**新端点**） | 审批中心聚合列表（本期仅 order_item_change 类型） | 内核 + 门面 |
 | `GET /notifications` / `GET /notifications/unread-count`（**新端点**） | 站内通知列表与未读数 | 内核 + 门面 |
 | `POST /notifications/{id}/read` / `POST /notifications/read-all`（**新端点**） | 已读标记 | 内核 + 门面 |
+| `GET /team/approvers` / `PUT /team/approvers`（**新端点**） | 指定审批人名单读写（仅团队管理员）；空名单=管理员审批 | 内核 + 门面 |
 | `GET /inquiries`（**新端点**） | 跨客户询盘列表：渠道/stage/客户/时间筛选，带报价数/订单计数字段 | 内核 + 门面 |
 | `GET /inquiries/{id}` | 详情带**报价历史**（1:N，含每次时间/金额/状态）+ 关联订单 + stage 流水 | 内核 + 门面 |
 | `PATCH /inquiries/{id}` | 已有能力前端接线（items/channel）；无需后端改动 | 前端 |
@@ -271,7 +278,8 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 - **页面**：三视图（待我审批 / 我发起的 / 已处理）；详情含新旧明细对比 + 受影响单证 + 批准/拒绝（拒绝必填理由）；
 - **通知铃铛**：顶部固定入口，未读角标；点开为通知抽屉（列表 + 已读/全部已读），点击条目深链到审批详情或订单详情；
 - **订单页联动**：列表「有变更待批」角标；详情顶部待批横幅；
-- **邮件开关**：系统设置里一个「审批邮件通知」开关（默认关），开启后需配置管理员收件邮箱。
+- **审批设置**：团队页新增「审批设置」区块——指定审批人（从团队成员多选），空=管理员审批；仅团队管理员可改；
+- **邮件开关**：系统设置里一个「审批邮件通知」开关（默认关），开启后需配置审批人收件邮箱。
 
 ## 10. 落地约束与门禁
 
@@ -286,8 +294,8 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 
 | 阶段 | 内容 | 验收 |
 |---|---|---|
-| **M1 模型与内核** | 枚举/迁移/回填；orders 三新字段 + 写入逻辑 + `ck_orders_source_inquiry`；订单 items 增删改（内核+门面+契约）；`order_item_change_requests` 表 + 审批端点（D-8）；**`notifications` 表 + 4 个通知端点 + 审批触发写入 + 邮件开关（D-10）**；`GET /approvals` 聚合；`funnel.py` 统计（1/2/10）；`GET /inquiries` 列表/详情（含报价历史）；TS6 收口 | orchestrator/worker/ts-worker 测试 + contracts R0–R5 + 金标 + 回填 dry-run 留证 |
-| **M2 门面与前端** | `/inquiries` 工位；`/orders` 来源列/筛选/详情来源链/货物行编辑 + 变更申请与审批入口；**`/approvals` 审批中心 + 通知铃铛/抽屉 + 导航契约双端同步（D-12）**；报价记录编辑入口；询盘编辑入口；客户详情语义调整 | 前端全套（typecheck/lint/test/ui/e2e）+ mocks 同步 |
+| **M1 模型与内核** | 枚举/迁移/回填；orders 三新字段 + 写入逻辑 + `ck_orders_source_inquiry`；订单 items 增删改（内核+门面+契约）；`order_item_change_requests` 表 + 审批端点（D-8）；**`notifications` + `team_approvers` 表 + 通知端点 + 审批路由（指定审批人优先，否则管理员）+ 邮件开关（D-10/D-14）**；`GET /approvals` 聚合；`funnel.py` 统计（1/2/10）；`GET /inquiries` 列表/详情（含报价历史）；TS6 收口 | orchestrator/worker/ts-worker 测试 + contracts R0–R5 + 金标 + 回填 dry-run 留证 |
+| **M2 门面与前端** | `/inquiries` 工位；`/orders` 来源列/筛选/详情来源链/货物行编辑 + 变更申请与审批入口；**`/approvals` 审批中心 + 通知铃铛/抽屉 + 团队页「审批设置」（指定审批人）+ 导航契约双端同步（D-12/D-14）**；报价记录编辑入口；询盘编辑入口；客户详情语义调整 | 前端全套（typecheck/lint/test/ui/e2e）+ mocks 同步 |
 | **M3 仪表盘** | dashboard 落地漏斗/分渠道转化/订单应收概览；`/dashboard/summary` 废弃混计数 | e2e + 与内核漏斗单测交叉验证 |
 
 ## 12. 拍板记录
@@ -306,12 +314,13 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 | D-8 | 已确认订单行项变更 | **允许改，但需管理员审批 + 留痕**：生成变更申请（新旧对比+原因），管理员批准后生效；已开单证需列出受影响清单 → 见 §6.1 |
 | D-9 | 询盘主入口 | **独立 `/inquiries` 工位**（与订单平级，跨客户筛选）→ 见 §9.1 |
 | D-10 | 审批通知渠道 | **站内先行**（铃铛+通知中心），邮件作为可选开关（默认关，Resend 已具备）；见 §6.2 |
-| D-11 | 审批人范围 | **仅团队管理员**；申请人不能批自己的申请；单人团队允许自批但审计标注 → 见 §6.2 |
+| D-11 | 审批人范围 | **指定审批人优先，否则团队管理员**；管理员可兜底介入（审计标注）；申请人不能自批，单人团队允许自批+标注 → 见 §6.2 |
 | D-12 | 审批中心入口 | **独立侧边栏「审批」**（`/approvals`，group=business order=35），导航契约双端同步 → 见 §6.2/§9.5 |
 | D-13 | 通知范围 | **只做审批相关**（申请/批准/拒绝三类）；不建设通用事件总线（`domain_events` 仍按 G-15 暂缓）→ 见 §6.2 |
+| D-14 | 指定审批人机制 | 团队可配多名指定审批人（`team_approvers`）；**有指定人则审批权与通知归指定人，否则归管理员**；配置入口在团队页，仅管理员可改 → 见 §6.2 |
 
 ### 12.2 仍待拍板
 
-**无。** 全部决策已拍板（D-1~D-13，2026-10-22），M1 可开工。
+**无。** 全部决策已拍板（D-1~D-14，2026-10-22），M1 可开工。
 
 > 拍板方式：`ask_user_question` 弹窗（AGENTS 规则 2）；拍板结果回填本文件并销 TODO §Q 对应条目。
