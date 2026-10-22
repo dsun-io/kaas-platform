@@ -154,6 +154,9 @@ ORCH_CRM_ROUTES = {
     ("/api/v1/customers/{customer_id}/records", "GET"),
     ("/api/v1/inquiries", "GET"),
     ("/api/v1/inquiries/{inquiry_id}", "PATCH"),
+    # 2026-10-22（设计 §8）：询盘详情 = 报价历史(1:N) + 关联订单 + 阶段流水。
+    # 询盘成为独立工位后必须能单独打开一条看全链路，而不是只能从客户页钻。
+    ("/api/v1/inquiries/{inquiry_id}", "GET"),
     # TODO F4（2026-10-20）：worker 新增的询盘阶段历史端点（orchestrator 已删壳，
     # 这是"落库+事件驱动"的一部分；路由面锁死 worker 实际注册面，新端点必须登记）。
     ("/api/v1/inquiries/{inquiry_id}/stage-log", "GET"),
@@ -174,6 +177,10 @@ _INQUIRY_KEYS = {
     "stage", "stage_updated_at",
     "created_at",
 }
+# 2026-10-22（设计 §8）：GET /inquiries 每项额外带的"后来怎样了"计数。
+# 只对**列表**端点生效，详情/客户子列表不带（详情本来就有 quotes/orders 全量）。
+_INQUIRY_LIST_EXTRA_KEYS = {"company_name", "quote_count", "order_count",
+                            "latest_quote_at"}
 # 子资源行的**投影**键集：orchestrator customers.py:406-410 / 416-420 / 556-558
 # 与 worker 的 `_contact_api` / `_stage_log_api` 用的是同一组键（PARITY-CRM-6/7/11）。
 _ORCH_CONTACT_KEYS = {
@@ -1111,7 +1118,7 @@ def test_all_inquiries_list_shape_scope_and_order():
     body = resp.json()
     assert set(body) == {"items", "total"} and body["total"] == 1
     item = body["items"][0]
-    assert set(item) == _INQUIRY_KEYS | {"company_name"}
+    assert set(item) == _INQUIRY_KEYS | _INQUIRY_LIST_EXTRA_KEYS
     assert item["company_name"] == "ACME"
 
     sql = db.sql()

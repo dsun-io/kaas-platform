@@ -48,6 +48,9 @@ ADMIN = {
 }
 
 _RECEIPT_KEYS = set(order_serializers.row_to_receipt({}))
+# POST /orders/{id}/receipts 比 GET 列表多一个 auto_confirmed（设计 §8）：
+# 登记定金后订单被联动确认时，前端要能就地知道、不必再拉一次订单。
+_RECEIPT_CREATE_KEYS = _RECEIPT_KEYS | {"auto_confirmed"}
 
 _ORIGINAL_MAIN_ACQUIRE = worker_main._acquire
 _ORIGINAL_DB_ACQUIRE = worker_main.db.acquire
@@ -359,7 +362,9 @@ def test_post_receipt_partial_recomputes_schedule_and_receivable():
         "schedule_id": 31, "amount": 1000, "received_date": "2026-10-22",
     })
     assert resp.status_code == 201, resp.text
-    assert set(resp.json()) == _RECEIPT_KEYS
+    assert set(resp.json()) == _RECEIPT_CREATE_KEYS
+    # 定金 1000（订单总额 3180 的 31%）到账 ⇒ 订单联动确认（设计 §5.1）
+    assert resp.json()["auto_confirmed"] is True
     assert resp.json()["schedule_id"] == 31
 
     status_sql, status_args = conn.first("UPDATE payment_schedules SET status")

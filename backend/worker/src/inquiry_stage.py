@@ -7,8 +7,9 @@
   幂等靠"目标 rank ≤ 当前 rank 就 no-op"，不改任何行、不写日志。
 - 每次**真实变更**写一条 `inquiry_stage_log`（谁 / 哪个事件 / 从哪到哪），
   报表与"历史变更可查"的验收都靠它。
-- 订单本身不挂 `inquiry_id`（经报价传递：`quote_orders.inquiry_id`）——
-  所以订单/出运事件要先沿 `orders.quote_id → quote_orders.inquiry_id` 找到询盘。
+- 2026-10-22（设计 §3.1，迁移 202610220004）：订单**也**直挂 `orders.inquiry_id`
+  （询盘转化单不走报价时也能溯源），所以订单→询盘有两条路：正列优先、报价传递兜底
+  （见 `inquiry_id_of_order`）。
 
 为什么不改 `cust_inquiries.status`：status 是"报价三态"（unquoted/quoted/closed，
 前端与线索池同步都用它）。阶段是**业务流程进度**，两者语义不同：一张"已报价"的询盘

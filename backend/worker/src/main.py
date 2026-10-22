@@ -4781,11 +4781,15 @@ async def create_order_receipt(order_id: int, request: Request, body: dict,
             # 触发**永远是人**：登记这笔实收本身就是业务动作，系统不做任何自动识别。
             # 只在 pending → confirmed 单向生效（已确认的订单重复登记只是记账）。
             # 客户阶段读时由「开启中的订单」推导，这里同样不需要回写客户阶段。
+            auto_confirmed = False
             if order.get("status") == "pending":
                 await _apply_order_confirmation(
                     request, dict(order), user,
                     source="deposit_receipt", conn=conn)
-    return _receipt_dict(row)
+                auto_confirmed = True
+    # 设计 §8：登记定金后订单被联动确认时，前端要能就地刷新订单状态
+    # （否则用户看到"收款成功"但订单仍显示待确认，会以为没生效）。
+    return {**_receipt_dict(row), "auto_confirmed": auto_confirmed}
 
 
 @app.get("/api/v1/receivables")
