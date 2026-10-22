@@ -251,6 +251,22 @@
 | G-13 | spec-config 工位去留 | **用户已拍板（2026-10-21）：保持现状**（`planned`、页面保留但暂不加入口），后续商业化再议 | ✅ 保持现状 |
 | G-14 | C24 产品手册附件的**投递口径** | **用户 2026-10-21：暂不做**（等真实手册素材再议）；备选口径保留供以后用： ①**附件直发**（Resend `attachments` base64，单封限 ~10MB，客户能离线看，但影响送达率）②**短链下载**（上传 R2 → 签名/短期 URL 随邮件，体积友好，但客户需联网且链接会过期）③两者按大小自动切换。需你定口径与"手册内容"（产品图册/参数表/报价附件？） |
 | G-15 | N10 `domain_events` 事件流 | **用户 2026-10-21：暂缓，等未来功能成熟稳定再实现**； 设计承诺（WORKSTATION_DESIGN Phase 6/§2.2）但 0 代码/迁移。要做需定：①发什么事件（业务域白名单）②消费者（审计/分析/外部订阅）③保留期与采样。**不做**则从设计文档移除该承诺（当前已标注为待决策） |
+| G-16 | **询盘/订单模型重构 4 项拍板** | 设计见 [`OPTIMIZATION_PLAN_2026-10-22_INQUIRY_ORDER_MODEL.md`](./OPTIMIZATION_PLAN_2026-10-22_INQUIRY_ORDER_MODEL.md) §12：Q-1 权重（建议 询盘1/报价2/订单10）· Q-2 渠道枚举加 phone/referral · Q-3 confirmed 后订单行项锁定（建议锁定）· Q-4 询盘独立工位（建议 `/inquiries`）。**实施 M1 前需拍板** | 🧭 |
+
+---
+
+## Q. 询盘与订单模型重构（2026-10-22 设计定稿，见 §G-16）
+
+> 设计基准 = [`OPTIMIZATION_PLAN_2026-10-22_INQUIRY_ORDER_MODEL.md`](./OPTIMIZATION_PLAN_2026-10-22_INQUIRY_ORDER_MODEL.md)（7 条问题全部带代码证据）。
+> 用户指示：订单一等公民、询盘与订单独立、订单加来源（询盘转化/渠道直下单）、订单统计权重最大、报价链补编辑入口。
+
+| # | 事项 | 内容与验收 | 前置 | 状态 |
+|---|---|---|---|---|
+| Q-M1 | 模型与内核 | 枚举（ORDER_SOURCE_TYPE、渠道去 quote 加 phone/referral）+ 迁移回填（orders.source_type/source_channel/inquiry_id，存量经 quote→inquiry 回填）；订单 items 增删改（内核+门面+契约）；`kaas_common/workstation/funnel.py` 统计；`GET /inquiries` 列表/详情（报价历史 1:N）；TS6 收口（门面 completed 联动询盘阶段） | G-16 拍板 | ⏳ |
+| Q-M2 | 门面与前端 | `/inquiries` 工位；`/orders` 来源列/筛选/来源链/货物行编辑；报价记录编辑入口（行项/条款/状态流转）；询盘编辑入口；客户详情 UnlinkedRecords 改「直接下单」正常分类 | Q-M1 | ⏳ |
+| Q-M3 | 仪表盘 | dashboard 落地漏斗/分渠道转化/订单应收概览；`/dashboard/summary` 废弃三表混计数 | Q-M1 | ⏳ |
+
+---
 
 ---
 
@@ -399,6 +415,7 @@
 
 ## I. 更新历史
 
+- **2026-10-22 全站 UI/UX 与结构审计（只读，未改代码）**：37 路由逐页审计 → 产出 `docs/UI_UX_AUDIT_2026-10-22.md`（P0 三个：群发无确认、research 删除无确认、spec-config 向导提交零反馈；P1 约 20；P2 约 90，均带 `文件:行号`）。根因裁定：组件无公共约束+门禁只查静态项+规范无正面模板+前端无契约层 → 方案四层（L1 模式契约/L2 共享原语/L3 门禁升级/L4 boy-scout 迁移），路线图 5 批见报告 §6。用户追加裁定：**行内展开改为默认不采用**（详情默认 DetailDrawer、编辑默认 Dialog/独立页，按数据量判断，非一刀切，8 处现存位置见报告 §1.5）。**待办（硬性）**：① 并行任务（产品图片上传、拖拽排序）完成后复跑审计并同步本报告；② 每批整改后更新条目状态；③ 收尾后把 L1 契约并入 `docs/UI_STANDARDS.md` 并更新 `docs/README.md` 索引。
 - **2026-10-21 执行批 8（真实单据校准 + 条款库 W1 + 用户授权落地）**：用户提供 3 份真实单据 + Cloudflare/Resend/R2 凭据 → A6-1 PI/CI 双币种金额块（旧 18 金标零差异 + 2 份 FX 金标、facts 增 total_payable）、A6-2 合同 12 条双语条款数据层、A5-W1 团队级条款库（迁移 `202610200006` + CRUD + 懒种子 6 类 + 设置页与单证表单）、D1 Resend 注入（仅发送 key）、D2 R2 32 位密钥注入并真回环验证（PUT/GET/DELETE 200/200/204）、归档敏感数据脱敏（stowage 身份+228 成本/售价/利润格、17 份样例联系方式）。**门禁**：worker **1354+12skip** / orchestrator 247 / 前端 **719（74 files）** / e2e **27=27+0** / build out **277** / contracts·mocks·contrast·trade-doc:check·静态断言 PASS；生产部署 **`69765ef6`**（七次部署）。\n- **2026-10-21 执行批 7（收尾：A12/A13/C26/C30/C31/C33/C36 + 六次部署）**：A12 `trigger_expr` 受限求值器上线（doc-set applicable + lint warning；边界→A14 包装事实）、A13 中译英入口、C26 a11y（skip-link/main/aria）、C30 归档记录真实数据、C31 仪表盘占位、C33 4/4 e2e skip 全修、C36 `API_RESERVED_LIST.md`（60 条未接：保留 18/待接 24/可删候选 18）。**门禁**：worker **1316+12skip** / orchestrator 247 / 前端 **678（71 files）** / e2e **27=27+0** / build out **276** / contracts·mocks·contrast·静态断言 PASS；生产版本 **`569a8b88`**（六次部署）。\n- **2026-10-21 执行批 6（C33/C39 + 生产五次部署）**：3 条 quotations e2e skip 修复并补『数量』字段错误渲染；`/admin/audit-log` 后端补 action/actor_id/resource_type/since/until 参数化筛选（4 条回归测试）；worker **1237+12skip** / 前端 656 / e2e **27+1** / build out 277；生产部署 **`3d324441`**。\n- **2026-10-21 执行批 5（sweep 主体修复 + 生产四次部署）**：C19 批量导入 UI（v2 报价工作台）、C21 导出后自检 UI（pdf.js，前端只抽事实/后端裁决）、C25 列表分页（orders/events/audit）、C32 `/billing` 入口、C35 客户 stage 筛选、C33 取证、C34 MSW↔C8 漂移、C37 死代码/过期注释、C38 文档口径全面刷新（11 文件）、N11 清理脚本；**门禁**：worker 1233+12skip / orchestrator 247 / 前端 **656（67 files）** / e2e 28（24+4）/ build out **277** / contracts·mocks·contrast·静态断言全 PASS；生产部署版本 **`3a5ce179`**（冒烟含 pdf worker 资产 200）。\n- **2026-10-21 执行批 4（sweep 后首批修复）**：C23 shipments 恢复 `active`（契约 ts↔py 同步，R2 PASS 27 工位）、C28 询盘渠道改枚举下拉（只发后端合法值）、C29 订单/单证页移除占位「导入已有数据」入口（组件保留待后端接口）；G-11/12/13 用户拍板落盘。门禁：typecheck 0 / 定向 79 passed / contracts PASS / mocks 未覆盖 0。`n- **2026-10-21 二轮全量 sweep**：全分支 56 ref/131 reflog/147 unreachable → **0 条新待办**；全文档（含此前未读的 DEPLOY.md 337 行、ui-redesign 64 files、WORKSTATION_DESIGN 1011 行）→ **12 条新发现**；全代码 666 文件/439 命中 → **13 条新发现 + 账本 drift**。已登记 §P（C23–C38、A10–A13、N10/N11、N6+/C12+）与 §G（G-11 主题/G-12 shipments/G-13 spec-config），并更新 goal。\n- **2026-10-21 执行批 3（收口）**：A7-3 UI（事实确认/一致性/收款/单证清单/签发闸门，面板 9 + 契约 12 测）→ **A7 全部完成**；C2 文件存储收尾（doUpload/排序页面测试 + 7 条真 PG 用例）→ 发现并修复 **C22**（迁移 `202610200005` 唯一索引 `NULLS NOT DISTINCT`）；C10 18 模板防劈页（39 静态断言，视觉待 build/e2e 复核）；intel/channels 字段错位修复；C20 导入模板端点回落租户产品；C6 收口。**全量门禁**：worker 1217+12skip（有库 1229/0）、orchestrator 247、前端 616、e2e 28（24+4）、build `out/` 275 文件、contracts/mocks/静态断言全 PASS。
 - **2026-10-21 执行批 2**：A7 内核/结构/API 全部落地（内核 87 测 + API 34 测 + `trade_doc_facts`）；B 组验收 → B1 销账（B4 P0 跨团队越权修复、B5 formulas/explain 回落、B6 订阅门同源）；C7 xlsx 导入（28 测）；C8 四源计数（18 测）；C5/C18 mock 持久化 + 长尾覆盖归零；C15 契约错位修复；C16/C17 关闭。新增 C19/C20/C21 与 G-10。门禁：worker **1212+5** / 前端 **535** / typecheck 0 / contracts PASS。
 - **2026-10-21 执行批 1**：D7 重试落地（`1f0d76d7`）；A7 事实层表 `202610200004` + `TradeDocFact`（`32d5fe0c`）；对齐 A 批（/events 闸门、F4 stage 消费、路由守卫/写权限，`a92302eb`）+ 对齐 B 批（MSW 58→111、死代码、mocks:check 门禁）；新增 C17/C18。
