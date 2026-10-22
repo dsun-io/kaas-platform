@@ -26,6 +26,7 @@ on:
       - 'scripts/check-schema-drift.py'
       - 'scripts/check-structural-debt.py'
       - 'scripts/check-worker-bundle.py'
+      - 'scripts/check-deploy-domains.py'
       - 'scripts/sync-shared.ps1'
       - '.github/workflows/backend-test.yml'
   pull_request:
@@ -43,6 +44,7 @@ on:
       - 'scripts/check-schema-drift.py'
       - 'scripts/check-structural-debt.py'
       - 'scripts/check-worker-bundle.py'
+      - 'scripts/check-deploy-domains.py'
       - 'scripts/sync-shared.ps1'
       - '.github/workflows/backend-test.yml'
   schedule:
@@ -107,6 +109,12 @@ jobs:
       - name: Structural debt gate
         working-directory: ./backend/orchestrator
         run: uv run --extra migrations python ../../scripts/check-structural-debt.py --allow-known
+
+      # 2026-10-22 部署拓扑门禁（ADR-008 双 Worker）：生产域名只归 kaas-edge；
+      # 内核 wrangler.jsonc 的 routes 必须为空（否则内核部署会把域名抢回内核）。
+      - name: Deploy topology gate
+        working-directory: ./backend/orchestrator
+        run: uv run --no-project python ../../scripts/check-deploy-domains.py
 
       # 说明：route-parity 已于 S4 退役（worker 是唯一后端，没有第二实现可比），
       # 脚本移入 scripts/archive/ 留档；S3 的 parity 测试是退役判据。

@@ -23,6 +23,7 @@ import workstationsRoutes from "./routes/workstations";
 import dashboardRoutes from "./routes/dashboard";
 import { buildOpenApiDocument } from "./openapi";
 import { createProxyApp } from "./proxy";
+import { callKernel } from "./kernel";
 
 const app = new Hono<AppEnv>();
 
@@ -121,8 +122,40 @@ app.route("/api/v1/tax-archives", createProxyApp("/api/v1/tax-archives"));
 app.route("/", createMcpApp(app));
 
 // ── 存活探针（对齐 Python 版 GET /health 语义；service 名按本 worker 名标注）──
-app.get("/health", (c) => {
-  return c.json({ status: "ok", service: "kaas-edge" });
+// ?deep=1：额外经 KERNEL Service Binding 探内核（部署流水线的内核探活用）。
+// 默认（不带参数）不触发内核，避免监控高频探针放大 Python 冷启动。
+app.get("/health", async (c) => {
+  const base = { status: "ok", service: "kaas-edge" };
+  if (c.req.query("deep") !== "1") return c.json(base);
+
+  try {
+    const res = await callKernel(getEnv(c).KERNEL, "/health");
+    const kernel = (await res.json()) as {
+      status?: string;
+      service?: string;
+      shared?: { loaded?: boolean };
+    };
+    return c.json({
+      ...base,
+      kernel: {
+        status: kernel.status ?? "unknown",
+        service: kernel.service ?? null,
+        shared_loaded: kernel.shared?.loaded ?? null,
+        http_status: res.status,
+      },
+    });
+  } catch (err) {
+    return c.json(
+      {
+        ...base,
+        kernel: {
+          status: "unreachable",
+          message: err instanceof Error ? err.message : String(err),
+        },
+      },
+      503,
+    );
+  }
 });
 
 // ── API 文档：/openapi.json（OpenAPI 3.1，路径从 app.routes 自动发现）+ /docs（Swagger UI）──

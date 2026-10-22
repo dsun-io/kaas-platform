@@ -1,41 +1,74 @@
 name: deploy
 
-# 2026-10-18：生产发布（税务档案 / 产品税率 / 成本手填 / 整单保险 / 批量报价）
-# 2026-10-20 口径：本文件**只接受手动 workflow_dispatch**（用户裁决）。
-# 顶部残留"既监听 main push"的旧注释已作废——恢复自动部署的条件见 HANDOVER_2026-10-20 §10.1
-#（额度稳定 + 系统稳定后用户下令，把下面注释掉的 on.push 加回即可）。
-
-# push 到生产分支 main 即自动构建前端并部署单 Worker "kaas"（含静态资产）。
-# 生产 secrets 必须**手工绑定在 Worker 上**：
-#   `cd backend/worker; npx wrangler secret put <NAME> --name kaas`
-# `wrangler deploy` 不会清除已绑定的 secret，但**也不会从 GitHub repo secrets 自动读取**。
-# ⚠️ 2026-10-21 实测（`wrangler secret list --name kaas`）：只有 JWT_SECRET / ADMIN_SETUP_TOKEN / S3_*，
-#    **RESEND_API_KEY 未绑定** ⇒ 忘记密码邮件静默失败（本机 pywrangler deploy 同样不读 GitHub secrets）。
+# 生产发布（ADR-008 两层架构）：一条 workflow、两个部署 job（内核 → 门面）。
 #
-# 分支策略（2026-09-28 切换）：
-#   · main = 生产分支（本文件只监听它）；已归档旧的 feature/intel-workstation-v1
-#   · feat/trade-doc-templates = 唯一的开发分支（未完成的功能留在这里，完成后合入 main）
-# 2026-10-19（用户指令）：**重构期冻结自动部署** —— push 到 main 不再自动部署；
-# 只在用户明确下达部署指令后，由人工 `workflow_dispatch` 触发（或临时恢复 push 触发）。
-# 每个提交都部署会让全部 isolate 失效、经历数分钟冷启动窗口，且重构期需要先全量回归。
-on:
-  # 自动部署已冻结：不再监听 push（2026-10-19 重构期，用户指令）。
-  # 交付验收通过后，由用户确认并手动触发本工作流。
-  workflow_dispatch:
+# ┌─ 2026-10-22 改造口径 ────────────────────────────────────────────────────┐
+# │ 运行时是双 Worker：kaas-edge（TS 门面，持有生产域名）+ kaas（Python 内核， │
+# │ 无公网域名，仅 Service Binding）。发布流水线必须与运行时一致：             │
+# │   build-frontend（ubuntu 静态导出 + assets:check）                        │
+# │   migrate（Alembic → 生产库；target=edge 时跳过）                         │
+# │   deploy-kernel（内核；先跑部署拓扑门禁；再 pywrangler deploy）            │
+# │   deploy-edge（门面；needs deploy-kernel ⇒ 顺序由依赖保证）               │
+# │ target=both（默认）/ kernel / edge；一次 dispatch 完成一次发布。          │
+# │ 域名纪律：只有 kaas-edge 可声明 custom domain；内核 routes 必须为 []      │
+# │ （scripts/check-deploy-domains.py 静态 + --live 双重拦截）。               │
+# └──────────────────────────────────────────────────────────────────────────┘
+#
+# 自动部署仍冻结（2026-10-19 用户裁决）：本文件只接受 workflow_dispatch。
+# 恢复 push 触发的条件见 docs/HANDOVER_2026-10-20 §10.1（额度稳定 + 系统稳定 + 用户下令）。
+#
+# 生产 secrets 必须**手工绑定在 Worker 上**（wrangler deploy 不读 GitHub repo secrets）：
+#   kernel: JWT_SECRET / ADMIN_SETUP_TOKEN / S3_* / RESEND_API_KEY（由本流程从 RESEND_API_KEY_PROD 同步）
+#   edge:   JWT_SECRET（与内核同值，双端轮换必须同步）/ RESEND_API_KEY / S3_*
+# 静态导出产物铁律（2026-10-22）：禁止用 Windows 本机构建的 out/ 直接 deploy；
+# 本 workflow 固定 ubuntu runner 构建并跑 pnpm assets:check（见 AGENTS.md）。
 
-# 串行部署，避免并发 push 把旧版本覆盖到新版本之后
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "发布目标：both=内核+门面（默认，推荐）；kernel=只内核；edge=只门面"
+        type: choice
+        options:
+          - both
+          - kernel
+          - edge
+        default: both
+      confirm:
+        description: "生产发布确认：输入 deploy 才执行"
+        required: true
+        default: ""
+
 concurrency:
+  # 串行发布，避免两个 dispatch 交叉覆盖（内核/门面必须成对有序）
   group: deploy-production
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: "1"
+
 jobs:
   build-frontend:
-    name: Build frontend (static export)
+    name: Build frontend (Linux static export)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
+      - name: Validate dispatch inputs
+        run: |
+          if [ "${{ inputs.confirm }}" != "deploy" ]; then
+            echo "::error::生产发布必须输入 confirm=deploy（防误触）"; exit 1
+          fi
+          case "${{ inputs.target }}" in
+            both|kernel|edge) ;;
+            *) echo "::error::target 非法: ${{ inputs.target }}"; exit 1 ;;
+          esac
+          echo "target=${{ inputs.target }}"
+
       - uses: actions/checkout@v4
 
-      # pnpm 12（与本地 corepack 口径一致），先启用再让 setup-node 缓存 pnpm store
       - name: Enable pnpm (corepack)
         run: corepack enable
 
@@ -45,16 +78,21 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      # monorepo 单锁（pnpm-lock.yaml）一次装齐 shared（zod 契约包）+ frontend，
-      # 与本地开发口径一致（pnpm 12，无需 --legacy-peer-deps）
       - name: Install workspace deps (shared + frontend)
         run: pnpm install --frozen-lockfile
 
+      # 2026-10-22 硬约束：必须在 Linux 构建（Windows 的 path.relative 会产生反斜杠，
+      # 逐段预取文件会被写成目录 ⇒ 全站预取 404）。
       - name: Build (NEXT_EXPORT=1 → out/)
         working-directory: ./frontend
         run: npm run build
         env:
           NEXT_EXPORT: "1"
+
+      # 产物门禁：无含 "\" 的文件名、无 __next.* 目录、/_next/static/* 引用全部可解析。
+      - name: Assets export gate (pnpm assets:check)
+        working-directory: ./frontend
+        run: pnpm assets:check
 
       - name: Upload out/ artifact
         uses: actions/upload-artifact@v4
@@ -64,12 +102,13 @@ jobs:
           retention-days: 7
 
   # 方案 B · 迁移执行位置 = CI（README §5）：Alembic 是唯一 Schema 变更来源，
-  # 部署 Worker 前先 upgrade head，避免「代码已上线、库还没迁」。
-  # 生产库连接串放 secret `PROD_DATABASE_URL`（Neon production，psycopg2 可用形式）；
-  # 未配置时**跳过并告警**（保持现状：手动迁移），配好后自动接管。
+  # 部署内核前先 upgrade head，避免「代码已上线、库还没迁」。
+  # 生产库连接串放 secret PROD_DATABASE_URL；未配置时跳过并告警（保持手动迁移）。
   migrate:
-    name: "DB migration (alembic upgrade head)"
+    name: DB migration (alembic upgrade head)
+    if: ${{ inputs.target != 'edge' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       MIGRATION_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
     steps:
@@ -83,7 +122,6 @@ jobs:
         if: env.MIGRATION_DATABASE_URL == ''
         run: |
           echo "::warning::secret PROD_DATABASE_URL 未配置 ⇒ 跳过自动迁移（当前仍为手动迁移）。"
-          echo "配置后本 job 会自动 alembic upgrade head；见 README §5。"
           exit 0
 
       - name: Install migration deps
@@ -98,10 +136,110 @@ jobs:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: uv run --extra migrations alembic upgrade head
 
-  deploy-worker:
-    name: Deploy Worker kaas (api + assets)
+  deploy-kernel:
+    name: Deploy kernel kaas (no public domain)
     needs: [build-frontend, migrate]
+    if: ${{ !cancelled() && inputs.target != 'edge' && needs.build-frontend.result == 'success' && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # 内核在 2026-11-04 回滚窗口结束前仍保留 assets 绑定（main.py:3238 SPA 回退），
+      # 因此部署内核仍需要前端产物；assets 退场后本步骤可只给门面。
+      - name: Download frontend build
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-out
+          path: frontend/out
+
+      - name: Setup Python + uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+
+      # backend/worker/.gitignore 忽略 src/kaas_common/ 镜像；漏同步 ⇒ /health shared.loaded=false
+      # 且报价引擎整包缺失（报价工位 503）。同步是幂等的。
+      - name: Sync shared kernel + quote engine into worker
+        shell: pwsh
+        run: ./scripts/sync-shared.ps1
+
+      - name: Verify mirror is complete
+        shell: pwsh
+        run: ./scripts/sync-shared.ps1 -Check
+
+      - name: Runtime dependency gate
+        run: uv run --no-project python scripts/check-runtime-deps.py
+
+      # 域名归属门禁（静态）：内核 routes 必须为 []；门面必须持有两条生产域名。
+      # 这是 2026-10-21 切流配置债的永久防线（wrangler 部署会把域名从门面抢回内核）。
+      - name: Deploy topology gate (static)
+        run: uv run --no-project python scripts/check-deploy-domains.py
+
+      # 域名归属门禁（线上，部署前）：若域名当前不在门面上，先别部署内核。
+      - name: Deploy topology gate (live preflight)
+        run: uv run --no-project python scripts/check-deploy-domains.py --live --retries 12 --delay 10
+
+      - name: Deploy kernel to Cloudflare Workers
+        working-directory: backend/worker
+        run: uv run pywrangler deploy
+
+      # 密钥同步（2026-10-21）：生产 Resend key 的唯一来源 = GitHub secret RESEND_API_KEY_PROD
+      # （系统专用命名；DSH-Admin 只给 DSH 用，不得配置到平台/CI）。
+      - name: Sync production RESEND_API_KEY（系统密钥唯一来源）
+        working-directory: backend/worker
+        env:
+          S_RESEND: ${{ secrets.RESEND_API_KEY_PROD }}
+        run: |
+          if [ -z "$S_RESEND" ]; then
+            echo "::warning::RESEND_API_KEY_PROD 未配置，跳过同步（忘记密码邮件将不可用）"
+            exit 0
+          fi
+          printf '%s' "$S_RESEND" | uv run pywrangler secret put RESEND_API_KEY
+
+      # S5-d 生产侧防污染断言（线上实际绑定：R2/Hyperdrive 不得等于预览值/注入 PR_SLUG）。
+      - name: S5-d 防污染断言（production 线上绑定）
+        env:
+          EXPECT_PROD_R2_BUCKET: ${{ vars.PROD_R2_BUCKET }}
+          EXPECT_PROD_HYPERDRIVE_ID: ${{ vars.PROD_HYPERDRIVE_ID }}
+          FORBIDDEN_R2_BUCKETS: ${{ vars.KAAS_PREVIEW_R2_BUCKET }}
+          FORBIDDEN_KV_IDS: ${{ vars.KAAS_PREVIEW_KV_NAMESPACE_ID }}
+        run: |
+          uv run --no-project python scripts/preview/assert-bindings.py \
+            --mode production --script kaas
+
+      # 内核没有公网域名，只能用门面的深探针（/health?deep=1 经 KERNEL binding 调内核）。
+      # 门面尚未升级到带 deep 探针的版本时（本流水线首次上线前）降级为 warning。
+      - name: Kernel liveness probe (via edge deep health)
+        run: |
+          set -uo pipefail
+          API=https://api.kaas.powervoy.com
+          body=$(curl -sS --max-time 60 "$API/health?deep=1" 2>/dev/null || true)
+          if ! printf '%s' "$body" | grep -q '"kernel"'; then
+            echo "::warning::门面尚未支持 /health?deep=1，跳过内核探活（首次部署带 deep 探针的门面后自动生效）"
+            exit 0
+          fi
+          echo "$body"
+          if ! printf '%s' "$body" | grep -q '"kernel":{"status":"ok"'; then
+            echo "::error::内核探活失败（kernel.status != ok）"; exit 1
+          fi
+          if ! printf '%s' "$body" | grep -q '"shared_loaded":true'; then
+            echo "::error::内核 kaas_common 未随包发布（shared_loaded != true）"; exit 1
+          fi
+          echo "✅ kernel liveness passed"
+
+  deploy-edge:
+    name: Deploy edge kaas-edge (public domains)
+    needs: [build-frontend, deploy-kernel]
+    if: ${{ !cancelled() && inputs.target != 'kernel' && needs.build-frontend.result == 'success' && (inputs.target == 'edge' || needs.deploy-kernel.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -111,99 +249,68 @@ jobs:
           name: frontend-out
           path: frontend/out
 
-      # Python Workers 需要 pywrangler 打包 WASM 依赖（pylock.toml → python_modules/）
-      # npx wrangler deploy 不会自动做这一步，会报 ModuleNotFoundError: No module named 'asyncpg'
-      - name: Setup Python + uv
-        uses: astral-sh/setup-uv@v5
+      - name: Enable pnpm (corepack)
+        run: corepack enable
+
+      - uses: actions/setup-node@v4
         with:
-          python-version: "3.14"
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: backend/ts-worker/pnpm-lock.yaml
 
-      # 为什么必须有这一步（2026-09 踩过的坑）：
-      #   `backend/worker/.gitignore` 忽略 `src/kaas_common/`，镜像**不进仓库**；
-      #   而本工作流此前只有 `pywrangler deploy`，没人跑同步脚本。
-      #   后果：线上 bundle 里根本没有 kaas_common —— /health 显示
-      #   shared.loaded=false，且报价引擎整包缺失（报价工位全部 503）。
-      # 同步是幂等的、无人工判断的：把唯一源复制进 Worker 的 src/ 树。
-      - name: Sync shared kernel + quote engine into worker
-        shell: pwsh
-        run: ./scripts/sync-shared.ps1
+      - name: Install ts-worker deps
+        working-directory: ./backend/ts-worker
+        run: pnpm install --frozen-lockfile
 
-      - name: Verify mirror is complete
-        shell: pwsh
-        run: ./scripts/sync-shared.ps1 -Check
+      # 部署前静态门禁：确保门面 config 仍持有两条域名、内核 config 仍为空。
+      - name: Deploy topology gate (static)
+        run: python3 scripts/check-deploy-domains.py
 
-      # 方案 B 阶段二 S1：部署前断言运行时依赖干净（生产 Worker 不得含 ORM/迁移依赖）。
-      - name: Runtime dependency gate
-        run: uv run --no-project python scripts/check-runtime-deps.py
+      - name: Deploy edge to Cloudflare Workers
+        working-directory: ./backend/ts-worker
+        run: pnpm wrangler deploy
 
-      - name: Deploy to Cloudflare Workers
-        working-directory: backend/worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: uv run pywrangler deploy
+      # 部署后线上归属断言：两条域名必须归 kaas-edge（等待 Cloudflare 归属切换完成）。
+      - name: Verify live domain ownership (edge)
+        run: python3 scripts/check-deploy-domains.py --live --retries 24 --delay 10
 
-      # 密钥同步（2026-10-21）：生产 Resend key 的**唯一来源** = GitHub secret
-      # `RESEND_API_KEY_PROD`（系统专用，命名与 DSH-Admin 严格分离：DSH-Admin 只给 DSH 用，
-      # 不得配置到平台/CI）。每次部署写入 worker，避免「手工注入后就漂移」。
-      - name: Sync production RESEND_API_KEY（系统密钥唯一来源）
-        working-directory: backend/worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          S_RESEND: ${{ secrets.RESEND_API_KEY_PROD }}
-        run: |
-          if [ -z "$S_RESEND" ]; then
-            echo "::warning::RESEND_API_KEY_PROD 未配置，跳过同步（忘记密码邮件将不可用）"
-            exit 0
-          fi
-          printf '%s' "$S_RESEND" | uv run pywrangler secret put RESEND_API_KEY
-
-      # S5-d 生产侧防污染断言（README §2.3 规则 9；2026-10-20 落地）：
-      # 拉线上 script settings 核对**实际绑定** —— R2=生产桶（现名 kaas-files，桶迁移另立项）、
-      # Hyperdrive=生产 config、不得等于任何预览值、不得注入 PR_SLUG。任一失败即中止冒烟。
-      - name: S5-d 防污染断言（production 线上绑定）
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          EXPECT_PROD_R2_BUCKET: ${{ vars.PROD_R2_BUCKET }}
-          EXPECT_PROD_HYPERDRIVE_ID: ${{ vars.PROD_HYPERDRIVE_ID }}
-          FORBIDDEN_R2_BUCKETS: ${{ vars.KAAS_PREVIEW_R2_BUCKET }}
-          FORBIDDEN_KV_IDS: ${{ vars.KAAS_PREVIEW_KV_NAMESPACE_ID }}
-        run: |
-          uv run --no-project python scripts/preview/assert-bindings.py \
-            --mode production --script kaas
-
-      # 冒烟测试必须验证「Worker 真的活着」，而不是只看状态码：
-      #   - /health 由 Worker 处理，必须返回 JSON（旧版只查状态码，被静态资产的
-      #     SPA 回退返回的 index.html 200 骗过，Worker 挂掉也能"通过"）
-      #   - /api/* 未带 token 必须返回 401（证明脚本启动 + 路由注册 + 鉴权生效）
-      #   - 新版本切换存在数分钟窗口，故带重试
-      - name: Smoke test (production)
+      # 冒烟：门面存活 + 内核深探针 + 鉴权 + 静态资产 chunk 可解析。
+      - name: "Smoke test (production: edge + kernel)"
         run: |
           set -uo pipefail
           API=https://api.kaas.powervoy.com
           WEB=https://kaas.powervoy.com
 
-          echo "── 1) Worker 存活（/health 返回 JSON）──"
+          echo "── 1) 门面存活（/health 必须是 kaas-edge）──"
           ok=0
           for i in $(seq 1 24); do
             body=$(curl -fsS --max-time 10 "$API/health" 2>/dev/null || true)
-            if printf '%s' "$body" | grep -q '"status":"ok"'; then
+            if printf '%s' "$body" | grep -q '"service":"kaas-edge"'; then
               echo "attempt $i: $body"; ok=1; break
             fi
             echo "attempt $i: not ready yet"
             sleep 10
           done
           if [ "$ok" != "1" ]; then
-            echo "::error::Worker /health 未返回 JSON（脚本可能启动失败）"; exit 1
+            echo "::error::门面 /health 未返回 kaas-edge（域名可能又被打回内核）"; exit 1
           fi
 
-          echo "── 2) API 路由与鉴权（未带 token 必须 401）──"
-          # 报价工位 + 税务相关路由：若共享内核/引擎漏打包，这里会变成 503（而不是 401），
-          # 从而在最前面就把「镜像没进包」这个事故拦住。
-          # 2026-10-18：旧 `/export-quote/rate-sets`、`/quote-profiles` 已随 TAX-06 下线，
-          # 不能再断言 401（会 404）；改测新的税务/产品税率路由。
+          echo "── 2) 内核深探针（门面 → KERNEL binding）──"
+          ok=0
+          for i in $(seq 1 12); do
+            body=$(curl -sS --max-time 60 "$API/health?deep=1" 2>/dev/null || true)
+            if printf '%s' "$body" | grep -q '"kernel":{"status":"ok"' \
+               && printf '%s' "$body" | grep -q '"shared_loaded":true'; then
+              echo "attempt $i: $body"; ok=1; break
+            fi
+            echo "attempt $i: kernel not ready: $body"
+            sleep 10
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::内核探活失败（/health?deep=1 未返回 ok + shared_loaded=true）"; exit 1
+          fi
+
+          echo "── 3) 鉴权（未带 token 必须 401，证明门面路由与鉴权生效）──"
           for p in /api/v1/research/categories /api/v1/research/stats \
                    /api/v1/leads /api/v1/ai/tasks \
                    /api/v1/export-quote/products \
@@ -216,22 +323,32 @@ jobs:
             fi
           done
 
-          echo "── 2b) 共享内核已随包发布 ──"
-          # /health 里的 shared.loaded 是「kaas_common 是否打进 bundle」的唯一直接探针。
-          # 这条断言就是为上面那个坑加的：只查 status:ok 是发现不了的。
-          health=$(curl -fsS --max-time 10 "$API/health" 2>/dev/null || true)
-          if ! printf '%s' "$health" | grep -q '"loaded":true'; then
-            echo "::error::共享内核未随包发布（/health shared.loaded != true）: $health"; exit 1
-          fi
-          echo "$health"
-
-          echo "── 3) 前端页面（静态资产）──"
-          for p in /research /leadgen /intel /outreach /settings/ai-providers; do
+          echo "── 4) 静态资产（页面 200 + 引用 chunk 200）──"
+          for p in / /login /research /leadgen /intel /outreach /settings/ai-providers; do
             code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$WEB$p")
             echo "$p -> $code"
             if [ "$code" != "200" ]; then
               echo "::error::$p 期望 200，实际 $code"; exit 1
             fi
           done
+          html=$(curl -fsS --max-time 20 "$WEB/login")
+          chunks=$(printf '%s' "$html" | grep -oE '/_next/static/[^"]+\.js' | sort -u | head -n 5)
+          if [ -z "$chunks" ]; then
+            echo "::error::/login 未引用任何 /_next/static/*.js（导出产物异常）"; exit 1
+          fi
+          for chunk in $chunks; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$WEB$chunk")
+            echo "$chunk -> $code"
+            if [ "$code" != "200" ]; then
+              echo "::error::$chunk 期望 200，实际 $code（hydration 前提不成立）"; exit 1
+            fi
+          done
 
-          echo "✅ smoke test passed"
+          echo "── 5) OpenAPI ──"
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$API/openapi.json")
+          echo "/openapi.json -> $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::/openapi.json 期望 200，实际 $code"; exit 1
+          fi
+
+          echo "✅ smoke test passed（edge + kernel + assets）"

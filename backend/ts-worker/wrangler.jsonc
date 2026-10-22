@@ -2,7 +2,8 @@
   // KaaS TS 门面（Hono）——对外唯一门面（ADR-008，kaas-edge）。
   // 铁纪律：本 Worker 只做鉴权/参数校验/协议转换，业务规则只在 Python 内核一处实现。
   // 与 backend/worker/wrangler.jsonc 的关系：绑定/vars 口径对齐；triggers 无 cron
-  // （三条 cron 留在 Python 内核 worker）；routes 暂不配（切流时由 lead 接入）。
+  // （三条 cron 留在 Python 内核 worker）；生产域名由本 Worker 持有（2026-10-21 切流，
+  // 内核 routes 必须为空；门禁 scripts/check-deploy-domains.py）。
   "name": "kaas-edge",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-18",

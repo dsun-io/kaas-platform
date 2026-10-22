@@ -1,9 +1,9 @@
 {
-  // KaaS 统一 Worker：Python FastAPI（/api/*）+ 前端静态资产（Next.js 导出，../../frontend/out）
-  // 一个 Worker 同时服务两个自定义域名：
-  //   kaas.powervoy.com      → 前端页面 + /api/*（同源，无 CORS）
-  //   api.kaas.powervoy.com  → 仅 API（历史域名，保留兼容）
-  // 工位独立是系统设计层面的（表前缀 / API 命名空间 / 路由隔离），不依赖 Worker 数量。
+  // KaaS Python 内核 Worker：报价/单证引擎、AI/数据能力、cron 3 条（ADR-008）。
+  // ⚠️ 内核不持有公网域名：kaas.powervoy.com / api.kaas.powervoy.com 归 kaas-edge（TS 门面），
+  //    对外流量与静态资产均由门面伺服，内核只经 Service Binding（env.KERNEL）被调用。
+  //    禁止在本文件声明 custom domain —— 部署会把域名从门面抢走（2026-10-21 切流的配置债，
+  //    2026-10-22 修复；门禁 scripts/check-deploy-domains.py）。
   "name": "kaas",
   "main": "src/main.py",
   "compatibility_date": "2026-09-18",
@@ -64,18 +64,9 @@
     "S3_REGION": "auto",
     "S3_PRESIGN_EXPIRES": "900"
   },
-  "routes": [
-    {
-      "pattern": "kaas.powervoy.com",
-      "zone_name": "powervoy.com",
-      "custom_domain": true
-    },
-    {
-      "pattern": "api.kaas.powervoy.com",
-      "zone_name": "powervoy.com",
-      "custom_domain": true
-    }
-  ],
+  // 内核不暴露公网域名：必须保持为空。wrangler 只对 custom_domain 路由调 publishCustomDomains，
+  // 空数组 = 部署不会触碰任何域名；删掉注释/回填域名会被 scripts/check-deploy-domains.py 拦下。
+  "routes": [],
   "assets": {
     "directory": "../../frontend/out",
     "binding": "ASSETS",
