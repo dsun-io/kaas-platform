@@ -46,6 +46,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read   # actions/upload-artifact + download-artifact
 
 env:
   PYTHONUTF8: "1"
@@ -58,14 +59,14 @@ jobs:
     steps:
       - name: Validate dispatch inputs
         run: |
-          if [ "${{ inputs.confirm }}" != "deploy" ]; then
+          if [ "${{ github.event.inputs.confirm }}" != "deploy" ]; then
             echo "::error::生产发布必须输入 confirm=deploy（防误触）"; exit 1
           fi
-          case "${{ inputs.target }}" in
+          case "${{ github.event.inputs.target }}" in
             both|kernel|edge) ;;
-            *) echo "::error::target 非法: ${{ inputs.target }}"; exit 1 ;;
+            *) echo "::error::target 非法: ${{ github.event.inputs.target }}"; exit 1 ;;
           esac
-          echo "target=${{ inputs.target }}"
+          echo "target=${{ github.event.inputs.target }}"
 
       - uses: actions/checkout@v4
 
@@ -106,7 +107,7 @@ jobs:
   # 生产库连接串放 secret PROD_DATABASE_URL；未配置时跳过并告警（保持手动迁移）。
   migrate:
     name: DB migration (alembic upgrade head)
-    if: ${{ inputs.target != 'edge' }}
+    if: ${{ github.event.inputs.target != 'edge' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -139,7 +140,7 @@ jobs:
   deploy-kernel:
     name: Deploy kernel kaas (no public domain)
     needs: [build-frontend, migrate]
-    if: ${{ !cancelled() && inputs.target != 'edge' && needs.build-frontend.result == 'success' && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped') }}
+    if: ${{ !cancelled() && github.event.inputs.target != 'edge' && needs.build-frontend.result == 'success' && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -234,7 +235,7 @@ jobs:
   deploy-edge:
     name: Deploy edge kaas-edge (public domains)
     needs: [build-frontend, deploy-kernel]
-    if: ${{ !cancelled() && inputs.target != 'kernel' && needs.build-frontend.result == 'success' && (inputs.target == 'edge' || needs.deploy-kernel.result == 'success') }}
+    if: ${{ !cancelled() && github.event.inputs.target != 'kernel' && needs.build-frontend.result == 'success' && (github.event.inputs.target == 'edge' || needs.deploy-kernel.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -249,8 +250,12 @@ jobs:
           name: frontend-out
           path: frontend/out
 
-      - name: Enable pnpm (corepack)
-        run: corepack enable
+      # 顺序硬要求：pnpm 必须先装好，setup-node 的 cache: pnpm 才能解析
+      # （反了会报 Unable to locate executable file: pnpm；ts-edge.yml 2026-10-22 实测）。
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
 
       - uses: actions/setup-node@v4
         with:
