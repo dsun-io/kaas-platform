@@ -14,8 +14,9 @@ name: deploy
 # │ （scripts/check-deploy-domains.py 静态 + --live 双重拦截）。               │
 # └──────────────────────────────────────────────────────────────────────────┘
 #
-# 自动部署仍冻结（2026-10-19 用户裁决）：本文件只接受 workflow_dispatch。
-# 恢复 push 触发的条件见 docs/HANDOVER_2026-10-20 §10.1（额度稳定 + 系统稳定 + 用户下令）。
+# 自动部署（2026-10-22 用户下令恢复）：push 到 main 自动触发；先由 wait-for-ci 等待同 SHA 的
+# CI（backend:test / contracts:check / Frontend CI / ts-edge）全绿，再 build → migrate → 内核 → 门面。
+# workflow_dispatch 保留用于排障与单端发布（target=kernel/edge）；文档/归档改动不触发（paths-ignore）。
 #
 # 生产 secrets 必须**手工绑定在 Worker 上**（wrangler deploy 不读 GitHub repo secrets）：
 #   kernel: JWT_SECRET / ADMIN_SETUP_TOKEN / S3_* / RESEND_API_KEY（由本流程从 RESEND_API_KEY_PROD 同步）
@@ -24,6 +25,13 @@ name: deploy
 # 本 workflow 固定 ubuntu runner 构建并跑 pnpm assets:check（见 AGENTS.md）。
 
 on:
+  push:
+    branches: [main]
+    # 文档/归档不触发部署（避免无谓的生产发布与 Actions 消耗）
+    paths-ignore:
+      - "docs/**"
+      - "archive/**"
+      - "**/*.md"
   workflow_dispatch:
     inputs:
       target:
@@ -52,24 +60,80 @@ env:
   PYTHONUTF8: "1"
 
 jobs:
+  # push 触发的自动发布：先等待同一个 commit 上的 CI 全部结束并全绿。
+  # 为什么不让 deploy 自己重复跑测试：CI 已在 push 上跑（backend:test/contracts:check/
+  # Frontend CI/ts-edge），再跑一遍等于双倍 Actions 消耗；这里用 API 等结果即可。
+  # 任何 CI 失败 ⇒ 直接失败、不进入 build/migrate/deploy（绝不把红代码发到生产）。
+  wait-for-ci:
+    name: Wait for same-SHA CI to pass
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Wait for push CI runs
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          CURRENT_RUN: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # 给 push 同时触发的 CI 一点注册时间；随后轮询到全部 completed。
+          sleep 120
+          deadline=$(( $(date +%s) + 1500 ))
+          empty_waits=0
+          while :; do
+            raw=$(gh api "repos/$REPO/actions/runs?head_sha=$SHA&per_page=100")
+            runs=$(jq -c --arg cur "$CURRENT_RUN" '[.workflow_runs[] | select((.id|tostring) != $cur and .name != "deploy" and .event == "push") | {name: .name, status: .status, conclusion: .conclusion}]' <<<"$raw")
+            total=$(jq 'length' <<<"$runs")
+            if [ "$total" -eq 0 ]; then
+              empty_waits=$((empty_waits + 1))
+              if [ "$empty_waits" -ge 3 ]; then
+                echo "::warning::该 SHA 没有 push CI 运行（可能只改了本 workflow）⇒ 直接进入构建"
+                exit 0
+              fi
+              sleep 30; continue
+            fi
+            pending=$(jq '[.[] | select(.status != "completed")] | length' <<<"$runs")
+            if [ "$pending" -gt 0 ]; then
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "::error::同 SHA 的 CI 超过 25 分钟仍未完成: $(jq -r '[.[] | select(.status != "completed") | .name] | join(", ")' <<<"$runs")"
+                exit 1
+              fi
+              sleep 20; continue
+            fi
+            bad=$(jq -r '[.[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral") | (.name + "=" + (.conclusion // "null"))] | join(", ")' <<<"$runs")
+            if [ -n "$bad" ]; then
+              echo "::error::同 SHA 的 CI 未全绿: $bad"
+              exit 1
+            fi
+            echo "✅ 同 SHA 的 CI 全绿: $(jq -r '[.[].name] | join(", ")' <<<"$runs")"
+            exit 0
+          done
+
   build-frontend:
     name: Build frontend (Linux static export)
+    needs: [wait-for-ci]
+    if: ${{ !cancelled() && needs.wait-for-ci.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Validate dispatch inputs
         env:
+          EVENT_NAME: ${{ github.event_name }}
           CONFIRM: ${{ github.event.inputs.confirm }}
           TARGET: ${{ github.event.inputs.target }}
         run: |
-          if [ "$CONFIRM" != "deploy" ]; then
+          # push 触发时没有 inputs：target 缺省 both、无需 confirm；dispatch 仍要求 confirm=deploy 防误触。
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$CONFIRM" != "deploy" ]; then
             echo "::error::生产发布必须输入 confirm=deploy（防误触）"; exit 1
           fi
-          case "$TARGET" in
+          target="${TARGET:-both}"
+          case "$target" in
             both|kernel|edge) ;;
-            *) echo "::error::target 非法: $TARGET"; exit 1 ;;
+            *) echo "::error::target 非法: $target"; exit 1 ;;
           esac
-          echo "target=$TARGET"
+          echo "event=$EVENT_NAME target=$target"
 
       - uses: actions/checkout@v4
 

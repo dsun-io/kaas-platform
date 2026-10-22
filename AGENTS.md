@@ -73,9 +73,12 @@
 - **双 Worker 发布纪律（2026-10-22 落盘，硬约束）**：生产自定义域名**只归 `kaas-edge`**；内核
   `backend/worker/wrangler.jsonc` 的 `routes` 必须为 `[]`（新增域名/回填会被
   `scripts/check-deploy-domains.py` 的静态断言和 `--live` 线上归属断言拦下，CI 与 deploy 前置都跑）。
-  发布唯一入口 = `.github/workflows/deploy.yml` 一次 `workflow_dispatch`（`target=both|kernel|edge`）：
-  `deploy-kernel` → `deploy-edge` 由 `needs` 保证先内核后门面，内核失败不更新门面，edge-only 不部署内核。
-  手工部署仅排障且必须内核→门面；自动部署仍冻结（用户裁决）。
+  发布唯一入口 = `.github/workflows/deploy.yml`：
+  · **自动触发（2026-10-22 用户下令恢复）**：push 到 `main`（`docs/**`、`archive/**`、`**/*.md` 除外）即触发；
+    `wait-for-ci` 先等同 SHA 的 CI（backend:test / contracts:check / Frontend CI / ts-edge）全绿，任一失败则不 build/migrate/deploy；
+    之后 `build-frontend` → `migrate` → `deploy-kernel` → `deploy-edge`，`needs` 保证先内核后门面、内核失败不更新门面。
+  · `workflow_dispatch` 保留排障与单端发布（`target=both|kernel|edge`，仍需输入 `confirm=deploy`）；
+    edge-only 不跑 migrate/内核。手工部署仅排障且必须内核→门面。
 - **共享内核**：共享逻辑全部放 `backend/kaas_common/`（**S4 起含报价引擎 `export_quote/` 与
   `domain/enums.py`；orchestrator 不再是任何真源**）。改完必须跑
   `powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1`，否则 worker 端是旧的。
