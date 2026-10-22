@@ -163,7 +163,11 @@ function SidebarNav({ collapsed }: { collapsed: boolean }) {
                   <Link
                     key={w.key}
                     href={w.route as Route}
-                    prefetch={true}
+                    // 2026-10-22 修复「点侧边栏无响应」：静态导出（output:"export"）下显式
+                    // prefetch={true} 会让点击导航永久挂死（linkClicked 已 preventDefault，
+                    // 随后等 prefetch 完成而永不 resolve：30s 内零请求、零报错）。
+                    // 本机 A/B：true ⇒ 点击无反应；false ⇒ 立即跳转（见 docs/HANDOVER_2026-10-21_NAV_STUCK.md）。
+                    prefetch={false}
                     aria-current={active ? "page" : undefined}
                     aria-label={collapsed ? w.name : undefined}
                     title={collapsed ? w.name : undefined}

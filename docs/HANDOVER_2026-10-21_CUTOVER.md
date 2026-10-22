@@ -50,7 +50,7 @@ backend/orchestrator/.venv/Scripts/python.exe backend/ts-migration/golden/diff_r
 | Notion 集成 token 吊销 | 用户在 Notion 后台操作（API 无端点） | 用户方便时 |
 | TS 门面已知差异 | 见 `backend/ts-worker/README.md`（422 措辞/时间戳精度/BigInt 类型/SigV4 TODO:TS5 等） | 各项 TODO 编号 |
 | 真源不一致 `ORDER_NEXT` | `TODO.md §F2` | 内核侧收敛时 |
-| **前端侧边栏点击不跳转（已定案，待修）** | 根因=`sidebar.tsx:166` 的 `prefetch={true}` + 静态导出 ⇒ 点击挂死（本机 A/B 已证实）；P0 一行修复 + 改用 Linux/CI 产物重建，均待用户拍板 | [`HANDOVER_2026-10-21_NAV_STUCK.md`](./HANDOVER_2026-10-21_NAV_STUCK.md) |
+| **前端侧边栏点击不跳转** | ✅ **已修并上线（2026-10-22）**：根因=`sidebar.tsx:166` 的 `prefetch={true}` + 静态导出 ⇒ 点击导航永久挂死；改 `prefetch={false}` + 重建 + 部署 `kaas-edge`（version `fe855137-87ac-4c05-8238-9d5266d44567`），线上产物与本地逐字节一致。**遗留 P1**：Windows 产物导致逐段预取 404（不阻塞导航，待 Linux/CI 重建） | [`HANDOVER_2026-10-21_NAV_STUCK.md`](./HANDOVER_2026-10-21_NAV_STUCK.md) |
 
 ## 4. 接手注意（实测坑）
 
