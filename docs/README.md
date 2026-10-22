@@ -42,6 +42,7 @@
 | [TODO.md](./TODO.md) | 活跃待办唯一账本 |
 | [UNCERTAIN.md](./UNCERTAIN.md) | 决策账本（存疑/裁决落盘） |
 | [CI_OPTIMIZATION_2026-10-22.md](./CI_OPTIMIZATION_2026-10-22.md) | **CI 成本口径（2026-10-22）**：实测月耗、触发面瘦身清单、保留的门禁、验证/回滚方法、**self-hosted runner 规划（已批准、未实施）** |
+| [OPTIMIZATION_PLAN_2026-10-22_PRODUCT_INQUIRY_ORDER.md](./OPTIMIZATION_PLAN_2026-10-22_PRODUCT_INQUIRY_ORDER.md) | **2026-10-22 优化方案（设计稿，待实施）**：产品图片归位 / 隐藏产品 key / 规格傻瓜化 + 管理员高级设置 / 询盘多产品 / 手工订单信息与附件 / 全站配置页去技术名词；含数据迁移、验收与待拍板项 |
 | [QA_TEST_ACCOUNTS.md](./QA_TEST_ACCOUNTS.md) | 测试账号与验收口径 |
 | [E2E_GUIDE.md](./E2E_GUIDE.md) | e2e 一键运行说明（2026-10-21 口径：27 条 = 27 passed + 0 skipped） |
 | [API_RESERVED_LIST.md](./API_RESERVED_LIST.md) | **后端先行 API 保留清单（C36）**：扫描基线 60 条未接分类（内部/REST 契约/待接 UI/可删候选）；**2026-10-21 删 3 + 接 21（本期 5 + 下期 12）后剩余约 36 条**（待接 UI 仅 3 条长期保留），证据与计数见该文 §0；新增端点/接 UI 后按 §4 维护 |
