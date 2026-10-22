@@ -98,7 +98,7 @@ cd backend/orchestrator
 uv run --extra migrations pytest tests -q
 
 # TS 门面（对外唯一入口）
-cd backend/ts-worker; pnpm typecheck; pnpm test      # 206 测 / 22 文件
+cd backend/ts-worker; pnpm typecheck; pnpm test      # 208 测 / 22 文件
 
 # worker（Python 内核）
 cd backend/worker
@@ -151,8 +151,8 @@ backend/orchestrator/.venv/Scripts/python.exe scripts/check-deploy-domains.py   
 - **Alembic 是唯一 Schema 变更来源**；执行位置是 CI/独立 CLI，不在 Worker 请求路径中执行 DDL。
 - 开发迁移目标永远是**本地 Docker PG**；生产连接串只放本机环境变量 / `.env.local`，不提交。
 - **部署必须手动触发**：`deploy.yml` 只保留 `workflow_dispatch`；未收到用户明确部署指令不发布。
-- 生产发布顺序（由 workflow 固化）：迁移 → secrets → 前端静态导出（ubuntu + assets:check）→
-  `deploy-kernel` → `deploy-edge` → 分层冒烟/回滚检查；
+- 生产发布顺序（由 workflow 固化）：build（ubuntu 静态导出 + `assets:check`）→ migrate →
+  `deploy-kernel`（先同步 RESEND secret）→ `deploy-edge`（同步 edge secrets）→ 分层冒烟/回滚检查；
   详细检查单见 [`HANDOVER_2026-10-21_CUTOVER.md`](docs/HANDOVER_2026-10-21_CUTOVER.md) 与
 [切流 runbook](docs/W4_CUTOVER_RUNBOOK_2026-10-21.md)（2026-10-20 批次检查单已归档）。
 

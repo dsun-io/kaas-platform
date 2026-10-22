@@ -22,7 +22,7 @@
 
 | 文件 | 说明 |
 |---|---|
-| `src/index.ts` | Hono app：CORS 中间件（语义对齐 `backend/worker/src/main.py` cors_middleware）、三域挂载、`GET /health`、`GET /openapi.json`（显式 JSON） |
+| `src/index.ts` | Hono app：CORS 中间件（语义对齐 `backend/worker/src/main.py` cors_middleware）、三域挂载、`GET /health`（`?deep=1` 经 KERNEL Service Binding 探内核）、`GET /openapi.json`（显式 JSON） |
 | `src/env.ts` | Bindings 类型 + `getEnv` / `requireSecret`（缺失即报错，不回退默认） |
 | `src/db.ts` | postgres.js 请求级连接封装（每请求建/释，不池化；ADR-004 与 Python `platform/db.py` 同语义） |
 | `src/http.ts` | FastAPI 风格错误信封（`{"detail": ...}`）、zod body/query/path 解析、int8→number/timestamptz→iso 规范化 |

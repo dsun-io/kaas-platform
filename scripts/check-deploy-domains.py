@@ -83,7 +83,42 @@ def strip_jsonc(text: str) -> str:
             continue
         out.append(ch)
         i += 1
-    return re.sub(r",(\s*[}\]])", r"\1", "".join(out))
+    return _strip_trailing_commas("".join(out))
+
+
+def _strip_trailing_commas(text: str) -> str:
+    """在字符串**外**删除 } / ] 前的尾逗号（不能直接对全文用正则，否则会误伤字符串内容）。"""
+    out: list[str] = []
+    i, n = 0, len(text)
+    in_str = False
+    escaped = False
+    while i < n:
+        ch = text[i]
+        if in_str:
+            out.append(ch)
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_str = False
+            i += 1
+            continue
+        if ch == '"':
+            in_str = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == ",":
+            j = i + 1
+            while j < n and text[j] in " \t\r\n":
+                j += 1
+            if j < n and text[j] in "}]":
+                i += 1
+                continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
 
 
 def load_config(path: Path) -> dict:
@@ -91,6 +126,8 @@ def load_config(path: Path) -> dict:
         text = path.read_text(encoding="utf-8-sig")
     except FileNotFoundError as exc:
         raise CheckError(f"找不到配置文件: {path}") from exc
+    except (UnicodeDecodeError, OSError) as exc:
+        raise CheckError(f"读取配置文件失败（编码/权限）: {path}: {exc}") from exc
     try:
         return json.loads(strip_jsonc(text))
     except json.JSONDecodeError as exc:
@@ -130,8 +167,19 @@ def check_static(root: Path) -> list[str]:
         errors.append("门面 workers_dev 必须为 false（仅保留生产自定义域名）")
     edge_domains = custom_domains(edge)
     patterns = [d.get("pattern") for d in edge_domains]
-    if set(patterns) != KERNEL_HOSTS:
-        errors.append(f"门面 custom domains 应恰为 {sorted(KERNEL_HOSTS)}，实际 {patterns!r}")
+    if set(patterns) != KERNEL_HOSTS or len(patterns) != len(KERNEL_HOSTS):
+        errors.append(
+            f"门面 custom domains 应恰为 {sorted(KERNEL_HOSTS)}（且不重复），实际 {patterns!r}"
+        )
+    services = edge.get("services") or []
+    kernel_bindings = [
+        s for s in services if isinstance(s, dict) and s.get("binding") == "KERNEL"
+    ]
+    if not kernel_bindings or kernel_bindings[0].get("service") != KERNEL_SCRIPT:
+        errors.append(
+            "门面 services 必须声明 {binding: KERNEL, service: kaas}，实际 "
+            + repr(kernel_bindings)
+        )
     for domain in edge_domains:
         if domain.get("zone_name") != ZONE:
             errors.append(
@@ -141,28 +189,57 @@ def check_static(root: Path) -> list[str]:
     return errors
 
 
-def _cf_get(url: str, token: str) -> dict:
-    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as res:
-            payload = json.loads(res.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace")[:300]
-        raise CheckError(f"Cloudflare API HTTP {exc.code}: {detail}") from exc
-    except urllib.error.URLError as exc:
-        raise CheckError(f"Cloudflare API 不可达: {exc.reason}") from exc
-    if not payload.get("success"):
-        raise CheckError(f"Cloudflare API 返回失败: {payload.get('errors')}")
-    return payload
+def _cf_get(url: str, token: str, attempts: int = 3) -> dict:
+    """GET CF API；429/5xx/网络错误做有限重试（云侧抖动 ≠ 配置违规），401/403 快速失败。"""
+    last: CheckError | None = None
+    for attempt in range(1, attempts + 1):
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as res:
+                payload = json.loads(res.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:300]
+            last = CheckError(f"Cloudflare API HTTP {exc.code}: {detail}")
+            if (exc.code == 429 or exc.code >= 500) and attempt < attempts:
+                time.sleep(2 * attempt)
+                continue
+            raise last from exc
+        except urllib.error.URLError as exc:
+            last = CheckError(f"Cloudflare API 不可达: {exc.reason}")
+            if attempt < attempts:
+                time.sleep(2 * attempt)
+                continue
+            raise last from exc
+        if not payload.get("success"):
+            raise CheckError(f"Cloudflare API 返回失败: {payload.get('errors')}")
+        return payload
+    raise last or CheckError("Cloudflare API 请求失败")
+
+
+def _fetch_all_domains(account_id: str, token: str) -> list[dict]:
+    """分页拉取账号全部 Worker custom domains（默认每页 20，必须翻页）。"""
+    base = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/workers/domains"
+    out: list[dict] = []
+    page = 1
+    while page <= 20:
+        payload = _cf_get(f"{base}?per_page=100&page={page}", token)
+        result = payload.get("result") or []
+        out.extend(result)
+        info = payload.get("result_info") or {}
+        total = info.get("total_count")
+        if not result or (isinstance(total, int) and len(out) >= total):
+            break
+        page += 1
+    return out
 
 
 def check_live(account_id: str, token: str, retries: int, delay: float) -> list[str]:
-    url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/workers/domains"
     last = ""
     for attempt in range(1, retries + 1):
-        payload = _cf_get(url, token)
+        # environment 缺失时按 production 处理（避免 API 字段口径变化造成假 FAIL）
         domains = [
-            d for d in (payload.get("result") or []) if d.get("environment") == "production"
+            d for d in _fetch_all_domains(account_id, token)
+            if d.get("environment") in (None, "production")
         ]
         owners = {d.get("hostname"): d.get("service") for d in domains}
         errors: list[str] = []

@@ -1,5 +1,13 @@
 # KaaS Platform 部署指南
 
+> ⚠️ **口径变更（2026-10-22，先看这段）**：生产已是**双 Worker**（`kaas-edge` TS 门面持有
+> `kaas.powervoy.com`/`api.kaas.powervoy.com` + `kaas` Python 内核无公网域名、仅 Service Binding，ADR-008）。
+> 本文 §1 与下方架构图仍是**切流前单 Worker 口径**，仅作历史/回滚参考，**不要再按它发布**。
+> 现行发布唯一入口 = GitHub Actions `deploy`（`target=both|kernel|edge`，先内核后门面，冒烟含
+> `/health?deep=1`）；架构/纪律见 [AGENTS.md](AGENTS.md) 与
+> [docs/HANDOVER_2026-10-21_CUTOVER.md](docs/HANDOVER_2026-10-21_CUTOVER.md)；
+> 生产配置事实源 = `backend/worker/wrangler.jsonc` + `backend/ts-worker/wrangler.jsonc`。
+
 > 📌 **口径对齐（2026-10-19 · 决策 1 已确认）**：本文的 **Neon 口径正确**
 > （放弃 PPg 后生产库回 Neon，与 main 生产实配一致：Hyperdrive config `f53fed49705043008737032e4bfa2b8e`
 > 指向 Neon 生产分支）。
@@ -11,9 +19,9 @@
 > 见 `docs/PROBLEM_STATUS_2026-10-11.md` U-S5 与根 README §2）。**现行命名以根 README §2 矩阵为准**，
 > 本文执行时不再改名。
 >
-> 🚫 **发布纪律（2026-10-20 用户裁决，仍有效）**：`deploy.yml` **仅 `workflow_dispatch`**（不再随 push
-> 自动部署），且 GitHub Actions 额度/权限不稳 ⇒ **最终发布优先走本机 `pywrangler deploy`**。
-> 未收到用户明确部署指令**不发布**。
+> 🚫 **发布纪律（2026-10-22 更新）**：自动部署仍冻结（`deploy.yml` **仅 `workflow_dispatch`**）；
+> 发布唯一入口 = GitHub Actions `deploy`（`target=both|kernel|edge`，先内核后门面）。
+> 未收到用户明确部署指令**不发布**；本机手工部署仅排障（见 HANDOVER §2）。
 >
 > 🧹 **CI 瘦身（2026-10-22）**：已把 e2e（push 时）、真 PG 集成（push 时）、PR 预览（改为 `preview` label 触发）
 > 移出高频路径，并加 `concurrency` 取消过期 run；**门禁未删**。同日仓库已转 **public** ⇒ GitHub-hosted 标准 runner
@@ -150,6 +158,8 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 ```
 
 ## 1. 部署（单 Worker，前后端一体）
+
+> **历史口径（切流前）**：以下单 Worker 步骤仅作回滚/考古参考；现行双 Worker 发布见本文顶部与 README §5。
 
 ### 1.1 本地 Docker 开发环境（2026-10-20 更新：单应用入口）
 

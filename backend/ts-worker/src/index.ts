@@ -135,22 +135,29 @@ app.get("/health", async (c) => {
       service?: string;
       shared?: { loaded?: boolean };
     };
-    return c.json({
-      ...base,
-      kernel: {
-        status: kernel.status ?? "unknown",
-        service: kernel.service ?? null,
-        shared_loaded: kernel.shared?.loaded ?? null,
-        http_status: res.status,
+    // 深探针是部署/排障契约：内核 status 非 ok 或 kaas_common 未加载时返回 503，
+    // 避免 HTTP 监控看到 200 而误判健康。
+    const kernelOk = kernel.status === "ok" && kernel.shared?.loaded === true;
+    return c.json(
+      {
+        ...base,
+        kernel: {
+          status: kernel.status ?? "unknown",
+          service: kernel.service ?? null,
+          shared_loaded: kernel.shared?.loaded ?? null,
+          http_status: res.status,
+        },
       },
-    });
+      kernelOk ? 200 : 503,
+    );
   } catch (err) {
+    console.error("[health] deep probe failed", err);
     return c.json(
       {
         ...base,
         kernel: {
           status: "unreachable",
-          message: err instanceof Error ? err.message : String(err),
+          message: "kernel unreachable",
         },
       },
       503,

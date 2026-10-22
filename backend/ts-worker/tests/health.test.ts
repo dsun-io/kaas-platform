@@ -51,6 +51,40 @@ describe("GET /health", () => {
     expect(seen).toEqual(["https://kernel.internal/health"]);
   });
 
+  it("?deep=1 内核 200 但 status != ok → 503（避免监控误判健康）", async () => {
+    const env = makeTestEnv({
+      KERNEL: {
+        fetch: async () =>
+          new Response(JSON.stringify({ status: "degraded", service: "kaas", shared: { loaded: true } }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+      },
+    });
+    const res = await app.request("/health?deep=1", {}, env);
+
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { kernel: { status: string } };
+    expect(body.kernel.status).toBe("degraded");
+  });
+
+  it("?deep=1 内核 200 但 shared_loaded=false → 503（kaas_common 未随包）", async () => {
+    const env = makeTestEnv({
+      KERNEL: {
+        fetch: async () =>
+          new Response(JSON.stringify({ status: "ok", service: "kaas", shared: { loaded: false } }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+      },
+    });
+    const res = await app.request("/health?deep=1", {}, env);
+
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { kernel: { shared_loaded: boolean } };
+    expect(body.kernel.shared_loaded).toBe(false);
+  });
+
   it("?deep=1 内核不可达 → 503 且给出 unreachable（流水线据此判失败）", async () => {
     const env = makeTestEnv({
       KERNEL: {
@@ -70,6 +104,6 @@ describe("GET /health", () => {
     expect(body.status).toBe("ok");
     expect(body.service).toBe("kaas-edge");
     expect(body.kernel.status).toBe("unreachable");
-    expect(body.kernel.message).toContain("service binding down");
+    expect(body.kernel.message).toBe("kernel unreachable");
   });
 });

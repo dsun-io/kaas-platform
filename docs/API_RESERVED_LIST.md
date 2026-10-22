@@ -67,7 +67,7 @@ backend/worker/.venv/Scripts/python.exe .tmp/c36-docs.py                  # 补 
 | 保留 · 内部/运维/CI 与 REST 契约 | `GET /api/v1/file-objects` | `ws_files.py:571` | 通用列表 REST；前端走 `/products/{key}/media`、`/file-objects/{id}/content` |
 | 保留 · 内部/运维/CI 与 REST 契约 | `GET /api/v1/file-objects/_r2_debug` | `ws_files.py:1009` | 线上自检（C9）；`ws_files.py:1009` 有 admin 闸门，注释“排查完可删” |
 | 保留 · 内部/运维/CI 与 REST 契约 | `GET /api/v1/fx-rates/_debug` | `ws_extras.py:196` | 线上自检（C9）；`ws_extras.py:196` 有 admin 闸门 |
-| 保留 · 内部/运维/CI 与 REST 契约 | `GET /api/v1/health` | `main.py:1847` | CI smoke 调它（`deploy.yml:172/203`、`preview.yml:235`）；Worker 平台健康检查 |
+| 保留 · 内部/运维/CI 与 REST 契约 | `GET /api/v1/health` | `main.py:1847` | CI smoke 调它（`deploy.yml` 冒烟、`preview.yml` 冒烟）；Worker 平台健康检查 |
 | 保留 · 内部/运维/CI 与 REST 契约 | `GET /api/v1/inquiries` | `ws_crm_ext.py:260` | REST 列表（按客户归类）；前端走 `/customers/{id}/inquiries` |
 | 保留 · 内部/运维/CI 与 REST 契约 | `GET /api/v1/leadgen/runs/*` | `chain.py:1029` | REST 运行详情；前端走 `GET /leadgen/runs` 列表 |
 | 保留 · 内部/运维/CI 与 REST 契约 | `GET /api/v1/orders/*` | `main.py:3685` | REST 详情；前端目前只有列表（详情页未建） |

@@ -58,20 +58,26 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Validate dispatch inputs
+        env:
+          CONFIRM: ${{ github.event.inputs.confirm }}
+          TARGET: ${{ github.event.inputs.target }}
         run: |
-          if [ "${{ github.event.inputs.confirm }}" != "deploy" ]; then
+          if [ "$CONFIRM" != "deploy" ]; then
             echo "::error::生产发布必须输入 confirm=deploy（防误触）"; exit 1
           fi
-          case "${{ github.event.inputs.target }}" in
+          case "$TARGET" in
             both|kernel|edge) ;;
-            *) echo "::error::target 非法: ${{ github.event.inputs.target }}"; exit 1 ;;
+            *) echo "::error::target 非法: $TARGET"; exit 1 ;;
           esac
-          echo "target=${{ github.event.inputs.target }}"
+          echo "target=$TARGET"
 
       - uses: actions/checkout@v4
 
-      - name: Enable pnpm (corepack)
-        run: corepack enable
+      # 顺序硬要求：pnpm 先装，setup-node 的 cache: pnpm 才能解析（与 ts-edge.yml 同口径）。
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
 
       - uses: actions/setup-node@v4
         with:
@@ -143,7 +149,7 @@ jobs:
   deploy-kernel:
     name: Deploy kernel kaas (no public domain)
     needs: [build-frontend, migrate]
-    if: ${{ !cancelled() && github.event.inputs.target != 'edge' && needs.build-frontend.result == 'success' && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped') }}
+    if: ${{ !cancelled() && github.event.inputs.target != 'edge' && needs.build-frontend.result == 'success' && needs.migrate.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -183,16 +189,16 @@ jobs:
       - name: Deploy topology gate (static)
         run: uv run --no-project python scripts/check-deploy-domains.py
 
-      # 域名归属门禁（线上，部署前）：若域名当前不在门面上，先别部署内核。
+      # 域名归属门禁（线上，部署前）：
+      # 若域名已被抢回内核，**不要**因此中断整轮 —— target=both 里修复正是靠后续 deploy-edge
+      # 把域名改回门面。这里降级为 warning（continue-on-error），由 edge 的部署后断言兜底。
       - name: Deploy topology gate (live preflight)
+        continue-on-error: true
         run: uv run --no-project python scripts/check-deploy-domains.py --live --retries 12 --delay 10
-
-      - name: Deploy kernel to Cloudflare Workers
-        working-directory: backend/worker
-        run: uv run pywrangler deploy
 
       # 密钥同步（2026-10-21）：生产 Resend key 的唯一来源 = GitHub secret RESEND_API_KEY_PROD
       # （系统专用命名；DSH-Admin 只给 DSH 用，不得配置到平台/CI）。
+      # 2026-10-22：同步放在 deploy 之前 —— 失败时不要留下「内核已上线但 secret 未同步」的半成品。
       - name: Sync production RESEND_API_KEY（系统密钥唯一来源）
         working-directory: backend/worker
         env:
@@ -203,6 +209,10 @@ jobs:
             exit 0
           fi
           printf '%s' "$S_RESEND" | uv run pywrangler secret put RESEND_API_KEY
+
+      - name: Deploy kernel to Cloudflare Workers
+        working-directory: backend/worker
+        run: uv run pywrangler deploy
 
       # S5-d 生产侧防污染断言（线上实际绑定：R2/Hyperdrive 不得等于预览值/注入 PR_SLUG）。
       - name: S5-d 防污染断言（production 线上绑定）
@@ -215,25 +225,39 @@ jobs:
           uv run --no-project python scripts/preview/assert-bindings.py \
             --mode production --script kaas
 
+      - name: Assert kernel secrets present (names only)
+        run: |
+          names=$(curl -fsS --retry 3 --retry-connrefused --retry-delay 2 --max-time 20 \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/kaas/secrets" \
+            | jq -r '.result[].name' | sort)
+          echo "$names"
+          for required in JWT_SECRET ADMIN_SETUP_TOKEN RESEND_API_KEY S3_ACCESS_KEY S3_SECRET_KEY; do
+            if ! printf '%s\n' "$names" | grep -qx "$required"; then
+              echo "::error::内核缺少 secret: $required"; exit 1
+            fi
+          done
+
       # 内核没有公网域名，只能用门面的深探针（/health?deep=1 经 KERNEL binding 调内核）。
-      # 门面尚未升级到带 deep 探针的版本时（本流水线首次上线前）降级为 warning。
+      # 门面尚未升级到带 deep 探针的版本时（本流水线首次上线前）降级为 warning；
+      # 其余情况（门面异常 / 内核 status 非 ok / shared 未加载）一律 error。
       - name: Kernel liveness probe (via edge deep health)
         run: |
-          set -uo pipefail
+          set +e
           API=https://api.kaas.powervoy.com
-          body=$(curl -sS --max-time 60 "$API/health?deep=1" 2>/dev/null || true)
-          if ! printf '%s' "$body" | grep -q '"kernel"'; then
-            echo "::warning::门面尚未支持 /health?deep=1，跳过内核探活（首次部署带 deep 探针的门面后自动生效）"
-            exit 0
-          fi
+          body=$(curl -sS --retry 3 --retry-connrefused --retry-delay 2 --max-time 60 "$API/health?deep=1" 2>/dev/null)
           echo "$body"
-          if ! printf '%s' "$body" | grep -q '"kernel":{"status":"ok"'; then
-            echo "::error::内核探活失败（kernel.status != ok）"; exit 1
+          if ! printf '%s' "$body" | jq -e '.service=="kaas-edge"' >/dev/null 2>&1; then
+            echo "::error::门面 /health 不是 kaas-edge（域名可能被抢或门面异常）"; exit 1
           fi
-          if ! printf '%s' "$body" | grep -q '"shared_loaded":true'; then
-            echo "::error::内核 kaas_common 未随包发布（shared_loaded != true）"; exit 1
+          if printf '%s' "$body" | jq -e 'has("kernel")' >/dev/null 2>&1; then
+            if ! printf '%s' "$body" | jq -e '.kernel.status=="ok" and .kernel.shared_loaded==true' >/dev/null 2>&1; then
+              echo "::error::内核探活失败（kernel.status!=ok 或 shared_loaded!=true）"; exit 1
+            fi
+            echo "✅ kernel liveness passed"
+          else
+            echo "::warning::门面尚未支持 /health?deep=1，跳过内核探活（首次部署带 deep 探针的门面后自动生效）"
           fi
-          echo "✅ kernel liveness passed"
 
   deploy-edge:
     name: Deploy edge kaas-edge (public domains)
@@ -270,6 +294,22 @@ jobs:
         working-directory: ./backend/ts-worker
         run: pnpm install --frozen-lockfile
 
+      # 门面侧密钥（2026-10-22 补）：此前 kaas-edge 只有 JWT_SECRET，RESEND/S3 缺失 ⇒
+      # 忘记密码邮件/直传静默降级而流水线仍绿。唯一来源 = GitHub secrets，printf %s 不追加换行。
+      - name: Sync edge secrets (RESEND / S3)
+        working-directory: ./backend/ts-worker
+        env:
+          S_RESEND: ${{ secrets.RESEND_API_KEY_PROD }}
+          S3_AK: ${{ secrets.S3_ACCESS_KEY }}
+          S3_SK: ${{ secrets.S3_SECRET_KEY }}
+        run: |
+          set +e
+          rc=0
+          if [ -n "$S_RESEND" ]; then printf '%s' "$S_RESEND" | pnpm wrangler secret put RESEND_API_KEY || rc=1; else echo "::warning::RESEND_API_KEY_PROD 未配置"; fi
+          if [ -n "$S3_AK" ]; then printf '%s' "$S3_AK" | pnpm wrangler secret put S3_ACCESS_KEY || rc=1; else echo "::warning::S3_ACCESS_KEY 未配置"; fi
+          if [ -n "$S3_SK" ]; then printf '%s' "$S3_SK" | pnpm wrangler secret put S3_SECRET_KEY || rc=1; else echo "::warning::S3_SECRET_KEY 未配置"; fi
+          exit $rc
+
       # 部署前静态门禁：确保门面 config 仍持有两条域名、内核 config 仍为空。
       - name: Deploy topology gate (static)
         run: python3 scripts/check-deploy-domains.py
@@ -282,21 +322,38 @@ jobs:
       - name: Verify live domain ownership (edge)
         run: python3 scripts/check-deploy-domains.py --live --retries 24 --delay 10
 
+      # 密钥存在性（只查名字，不读值）：JWT_SECRET 缺失/漂移会让所有带 token 请求 503。
+      - name: Assert edge secrets present (names only)
+        run: |
+          names=$(curl -fsS --retry 3 --retry-connrefused --retry-delay 2 --max-time 20 \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/kaas-edge/secrets" \
+            | jq -r '.result[].name' | sort)
+          echo "$names"
+          for required in JWT_SECRET RESEND_API_KEY S3_ACCESS_KEY S3_SECRET_KEY; do
+            if ! printf '%s\n' "$names" | grep -qx "$required"; then
+              echo "::error::门面缺少 secret: $required"; exit 1
+            fi
+          done
+
       # 冒烟：门面存活 + 内核深探针 + 鉴权 + 静态资产 chunk 可解析。
+      # 2026-10-22：JSON 判断改 jq（不依赖键序）；curl 带重试；set +e 保证自写诊断生效
+      # （GitHub 默认 bash -e 会让失败 curl 直接退出、跳过 ::error:: 文案）。
       - name: "Smoke test (production: edge + kernel)"
         run: |
-          set -uo pipefail
+          set +e
           API=https://api.kaas.powervoy.com
           WEB=https://kaas.powervoy.com
+          curl_api() { curl -sS --retry 3 --retry-connrefused --retry-delay 2 --max-time 20 "$@"; }
 
-          echo "── 1) 门面存活（/health 必须是 kaas-edge）──"
+          echo "── 1) 门面存活（/health 必须是 kaas-edge JSON）──"
           ok=0
           for i in $(seq 1 24); do
-            body=$(curl -fsS --max-time 10 "$API/health" 2>/dev/null || true)
-            if printf '%s' "$body" | grep -q '"service":"kaas-edge"'; then
+            body=$(curl_api "$API/health")
+            if printf '%s' "$body" | jq -e '.status=="ok" and .service=="kaas-edge"' >/dev/null 2>&1; then
               echo "attempt $i: $body"; ok=1; break
             fi
-            echo "attempt $i: not ready yet"
+            echo "attempt $i: not ready: $body"
             sleep 10
           done
           if [ "$ok" != "1" ]; then
@@ -306,16 +363,15 @@ jobs:
           echo "── 2) 内核深探针（门面 → KERNEL binding）──"
           ok=0
           for i in $(seq 1 12); do
-            body=$(curl -sS --max-time 60 "$API/health?deep=1" 2>/dev/null || true)
-            if printf '%s' "$body" | grep -q '"kernel":{"status":"ok"' \
-               && printf '%s' "$body" | grep -q '"shared_loaded":true'; then
+            body=$(curl_api "$API/health?deep=1")
+            if printf '%s' "$body" | jq -e '.kernel.status=="ok" and .kernel.shared_loaded==true' >/dev/null 2>&1; then
               echo "attempt $i: $body"; ok=1; break
             fi
             echo "attempt $i: kernel not ready: $body"
             sleep 10
           done
           if [ "$ok" != "1" ]; then
-            echo "::error::内核探活失败（/health?deep=1 未返回 ok + shared_loaded=true）"; exit 1
+            echo "::error::内核探活失败（/health?deep=1 未返回 kernel.status=ok + shared_loaded=true）"; exit 1
           fi
 
           echo "── 3) 鉴权（未带 token 必须 401，证明门面路由与鉴权生效）──"
@@ -324,7 +380,7 @@ jobs:
                    /api/v1/export-quote/products \
                    /api/v1/tax-archives /api/v1/product-tax-rates \
                    /api/v1/quotes; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API$p")
+            code=$(curl_api -o /dev/null -w '%{http_code}' "$API$p")
             echo "$p -> $code"
             if [ "$code" != "401" ]; then
               echo "::error::$p 期望 401（路由存在且需鉴权），实际 $code"; exit 1
@@ -333,30 +389,27 @@ jobs:
 
           echo "── 4) 静态资产（页面 200 + 引用 chunk 200）──"
           for p in / /login /research /leadgen /intel /outreach /settings/ai-providers; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$WEB$p")
+            code=$(curl_api -o /dev/null -w '%{http_code}' "$WEB$p")
             echo "$p -> $code"
             if [ "$code" != "200" ]; then
               echo "::error::$p 期望 200，实际 $code"; exit 1
             fi
           done
-          html=$(curl -fsS --max-time 20 "$WEB/login")
+          html=$(curl_api "$WEB/login")
           chunks=$(printf '%s' "$html" | grep -oE '/_next/static/[^"]+\.js' | sort -u | head -n 5)
           if [ -z "$chunks" ]; then
             echo "::error::/login 未引用任何 /_next/static/*.js（导出产物异常）"; exit 1
           fi
           for chunk in $chunks; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$WEB$chunk")
+            code=$(curl_api -o /dev/null -w '%{http_code}' "$WEB$chunk")
             echo "$chunk -> $code"
             if [ "$code" != "200" ]; then
               echo "::error::$chunk 期望 200，实际 $code（hydration 前提不成立）"; exit 1
             fi
           done
 
-          echo "── 5) OpenAPI ──"
-          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$API/openapi.json")
-          echo "/openapi.json -> $code"
-          if [ "$code" != "200" ]; then
-            echo "::error::/openapi.json 期望 200，实际 $code"; exit 1
+          echo "── 5) OpenAPI（必须是真 JSON，不能是 SPA 回退的 200）──"
+          if ! curl_api "$API/openapi.json" | jq -e '.openapi and (.paths | length > 0)' >/dev/null 2>&1; then
+            echo "::error::/openapi.json 不是有效 OpenAPI JSON（可能是 SPA 回退 200）"; exit 1
           fi
-
           echo "✅ smoke test passed（edge + kernel + assets）"

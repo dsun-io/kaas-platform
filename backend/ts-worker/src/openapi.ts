@@ -200,6 +200,11 @@ const HEALTH_SCHEMA = {
   properties: {
     status: { type: "string", example: "ok" },
     service: { type: "string", example: "kaas-edge" },
+    kernel: {
+      type: "object",
+      additionalProperties: true,
+      description: "仅 ?deep=1 时出现：经 KERNEL Service Binding 探内核的结果。",
+    },
   },
   required: ["status", "service"],
 } as const;
@@ -543,7 +548,8 @@ function buildOperation(options: OperationOptions): Record<string, unknown> {
   if (params.length > 0) operation.parameters = params;
 
   if (special === "health") {
-    operation.description = "存活探针（对齐 Python 版 GET /health；无需鉴权）。";
+    operation.description =
+      "存活探针（对齐 Python 版 GET /health；无需鉴权）。?deep=1 时经 KERNEL Service Binding 探内核（部署冒烟用）。";
     operation.security = [];
     operation.responses = {
       "200": { description: "OK", content: jsonContent(HEALTH_SCHEMA) },

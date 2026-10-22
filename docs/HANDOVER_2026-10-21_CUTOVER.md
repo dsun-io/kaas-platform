@@ -36,7 +36,7 @@ backend/orchestrator/.venv/Scripts/python.exe scripts/check-deploy-domains.py
 backend/orchestrator/.venv/Scripts/python.exe scripts/check-deploy-domains.py --live
 
 # 门禁：
-cd backend/ts-worker; pnpm typecheck; pnpm test          # 206 测 / 22 文件
+cd backend/ts-worker; pnpm typecheck; pnpm test          # 208 测 / 22 文件
 cd backend/worker; uv run --frozen --with pytest --with httpx2 python -m pytest tests -q   # 1565+12skip
 cd backend/orchestrator; uv run --extra migrations pytest tests -q                          # 247
 backend/orchestrator/.venv/Scripts/python.exe scripts/check-structural-debt.py --allow-known

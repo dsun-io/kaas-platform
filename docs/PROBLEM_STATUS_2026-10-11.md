@@ -22,9 +22,18 @@
 > `scripts/check-deploy-domains.py`（静态 + `--live` 线上归属断言，接入 backend-test 与 deploy 前置）；
 > `deploy.yml` 改为**一条 workflow、两个部署 job**（`deploy-kernel` → `deploy-edge`，`target=both|kernel|edge`，
 > `needs` 保证先内核后门面，内核失败不更新门面）；门面 `/health?deep=1` 经 KERNEL binding 探内核（冒烟断言
-> `kernel.status=ok` + `shared_loaded=true`）。门禁：ts-worker **206 测 / 22 文件**（+3 deep health）、typecheck 0、
-> worker **1565 passed + 12 skipped**、`check-deploy-domains` 正/负控制通过。文档：HANDOVER §1–§4、runbook §7 补记、
+> `kernel.status=ok` + `shared_loaded=true`）。门禁：ts-worker **208 测 / 22 文件**（+5 deep health）、typecheck 0、
+> worker **1565 passed + 12 skipped**、`check-deploy-domains` 正/负控制通过。另修正 repo variable
+> `PROD_HYPERDRIVE_ID`（旧 `f53fed…` 已删除 → `68304207…`），否则 S5-d 绑定断言必红。文档：HANDOVER §1–§4、runbook §7 补记、
 > AGENTS 双 Worker 发布纪律、ADR-008 附注、README §1/§4/§5。
+>
+> **首次 dispatch（run 39721593102）在 migrate 阶段失败，未部署任何 Worker**：repo secret `PROD_DATABASE_URL`
+> 仍指向已删除的 us-east-2 旧 Neon（password auth failed）；repo variable `PROD_HYPERDRIVE_ID` 仍是旧
+> `f53fed…`。已分别更新为新加坡 `-pooler` DSN（只读验证连接成功、`alembic_version=202610210002`）与
+> `6830420703984a19a99a334afff6776e`。另取证：`kaas-edge` 线上只有 `JWT_SECRET`（RESEND/S3 缺失 ⇒
+> 发信/直传静默降级而流水线全绿）⇒ 流水线新增 edge 侧 RESEND/S3 同步 + 内核/门面 secret 存在性断言。
+> 顺带加固：JSONC 尾逗号字符串感知、`--live` 分页与 429/5xx 重试、smoke 改 jq（不依赖键序）、curl 重试、
+> 内核探针 JSON 校验、migrate `needs` build（确认没通过不碰生产库）、edge pnpm 10 顺序修正。
 
 > **（2026-10-22 · 侧边栏点击不跳转 ✅ 已修上线）** 根因 = `frontend/src/components/layout/sidebar.tsx:166` 的
 > `<Link prefetch={true}>` + 静态导出：`linkClicked` 先 `preventDefault`，随后卡在等 prefetch 完成（永不 resolve），
