@@ -147,13 +147,35 @@ no-prefetch   /products  -> /products (跳转!)
 
 ## 6. 待办登记
 
-| 项 | 状态 | 触发点 |
+| 项 | 状态 | 证据/备注 |
 |---|---|---|
-| P0：`prefetch={false}` + 重建 + 部署门面 | ⏳ **未做**（等用户拍板；改代码/发版按规则需确认） | 用户确认 |
-| P1：改 CI/Linux 构建静态导出并重新部署 | ⏳ 未做 | 与 P0 同批 |
-| P2：AGENTS.md 立规 + 导出态 e2e | ⏳ 未做 | P0 之后 |
-| 部署后补验证结果到本交接 | ⏳ 未做 | 部署后 |
+| P0：`prefetch={false}` + 重建 + 部署门面 | ✅ **已完成（2026-10-22，用户弹窗批准）** | 见 §7 |
+| P1：改 CI/Linux 构建静态导出并重新部署 | ⏳ 未做（本次仍用 Windows 产物，逐段预取 404 仍在） | 见 §7.3 |
+| P2：AGENTS.md 立规 + 导出态 e2e | ⏳ 未做 | 待排期 |
+
+## 7. 执行记录（2026-10-22，P0）
+
+1. **改代码**：`frontend/src/components/layout/sidebar.tsx:166`，`prefetch={true}` → `prefetch={false}`（带注释说明原因）。
+2. **重建产物**：`cd frontend; $env:NEXT_EXPORT='1'; node node_modules/next/dist/bin/next build` → exit 0（39 静态路由）。
+3. **发版前本机复验**（对即将上传的同一份 `frontend/out`）：`serve.mjs frontend/out 4173` + `click7.cjs` →
+   **`/quotes` 点「产品」→ `/products`，`GET /products.txt?_rsc=…` 200**（修复生效）。
+4. **门禁**：`pnpm typecheck`（`next typegen && tsc --noEmit`）**exit 0**。
+5. **部署**：`cd backend/ts-worker; node node_modules/wrangler/bin/wrangler.js deploy`（带 `CLOUDFLARE_API_TOKEN`）
+   → **Uploaded 153 files（148 unchanged），Worker Startup 27ms，version `fe855137-87ac-4c05-8238-9d5266d44567`**；
+   `kaas.powervoy.com` / `api.kaas.powervoy.com` 两条 custom domain 已接。
+6. **生产验证**：
+   - 产物一致性：线上 `GET /quotes` 与本地 `frontend/out/quotes.html` **SHA256 完全相同**（`901F91EF3B88…`）
+     ⇒ 线上跑的就是本机通过点击实验的那份产物。
+   - 冒烟：`/health` 200、`/api/v1/auth/me` 401（门面鉴权仍在）、`/products` 200、`/login` 200。
+   - 限制（如实）：**「点击侧边栏」无法用 curl 在生产复验**（需登录态）；判定依据 = 产物逐字节一致 + 本机同产物点击通过。
+     若复访仍点不动，请先 **Ctrl+F5 强刷**（旧 chunk 可能被 immutable 1 年 + CF 30d 规则留住），并把 Console/Network 截图给我。
+
+### 7.3 仍未修（P1，独立缺陷）
+
+线上仍有「逐段预取 404」：`/products/__next.!KGFwcCk.products.__PAGE__.txt` → 404；实际文件被写成目录形态
+（本次 wrangler 日志里可见 `/products/__next.!KGFwcCk/products/__PAGE__.txt`）。它**不再阻塞导航**（P0 已绕过 prefetch 路径），
+只影响预取效率与 404 噪声。修法 = 改用 Linux/CI 构建产物再 deploy 一次。
 
 ---
 
-*取证：lead（DSH AI），2026-10-21 立案 / 2026-10-22 定案。仅文档与 `artifacts/` 下本地实验脚本；`frontend/src` 已回滚为原样，未部署。*
+*取证与修复：lead（DSH AI），2026-10-21 立案 / 2026-10-22 定案并修复上线。*
