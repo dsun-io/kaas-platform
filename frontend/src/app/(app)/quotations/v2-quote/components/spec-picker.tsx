@@ -213,17 +213,3 @@ export function isSpecComplete(
     (ni) => ni.default !== null || current(value, ni.key) !== "",
   );
 }
-
-/** 默认选中每个规格组的第一项 —— 让页面打开即可算价，不用逐项点。 */
-export function defaultSpecRow(formulas: ProductFormulasResponse): SpecRow {
-  const row: SpecRow = {};
-  for (const g of [...formulas.space.axes, ...formulas.space.variants]) {
-    const first = g.options[0];
-    if (first) row[g.name] = first.value;
-  }
-  // 自由数值参数带默认值 → 页面打开即可算价，不用逐项点
-  for (const ni of formulas.numeric_inputs ?? []) {
-    if (ni.default !== null) row[ni.key] = ni.default;
-  }
-  return row;
-}

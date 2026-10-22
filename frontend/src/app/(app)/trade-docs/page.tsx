@@ -35,6 +35,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
 import { NumberEditDialog } from "@/components/shared/number-edit-dialog";
+import { PaginationBar } from "@/components/shared/pagination-bar";
 import { Button } from "@/components/ui/button";
 import { usePageView } from "@/lib/events/use-page-view";
 import { usePersistentState } from "@/lib/hooks/use-persistent-state";
@@ -68,13 +69,15 @@ import { DocPreview, renderMetaOf } from "./components/doc-preview";
 import { SamplePreview } from "./components/sample-preview";
 import { DOC_TYPE_GROUPS } from "./lib/doc-type-groups";
 import {
+  TRADE_DOCS_PAGE_SIZE,
+  fetchAllTradeDocs,
   useRefreshSources,
   useTradeDocRenderData,
-  useTradeDocs,
   useUpdateTradeDoc,
   type PdfArchiveResult,
   type TradeDocRow,
 } from "./hooks/use-trade-docs";
+import { useTradeDocsLedger } from "./hooks/use-trade-docs-ledger";
 
 const STATUS_TONE: Record<
   string,
@@ -118,8 +121,19 @@ function money(amount: number | null, currency: string) {
 export default function TradeDocsPage() {
   usePageView({ resource_id: "/trade-docs" });
 
-  const [statusFilter, setStatusFilter] = useState("");
-  const [docTypeFilter, setDocTypeFilter] = useState("");
+  // 台账筛选/分页：筛选进 URL（doc_type/status），页码本地；
+  // 切筛选自动回第 1 页（见 use-trade-docs-ledger.ts）
+  const {
+    docType: docTypeFilter,
+    status: statusFilter,
+    setDocType: setDocTypeFilter,
+    setStatus: setStatusFilter,
+    page: ledgerPage,
+    setPage: setLedgerPage,
+    list,
+    rows,
+    total: ledgerTotal,
+  } = useTradeDocsLedger();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [docNoEdit, setDocNoEdit] = useState<TradeDocRow | null>(null);
@@ -147,11 +161,6 @@ export default function TradeDocsPage() {
     if (Number.isFinite(id) && id > 0) setSelectedId(id);
   }, []);
 
-  const list = useTradeDocs({
-    doc_type: docTypeFilter || undefined,
-    status: statusFilter || undefined,
-    page_size: 100,
-  });
   const renderData = useTradeDocRenderData(selectedId);
   const update = useUpdateTradeDoc();
   const refresh = useRefreshSources();
@@ -159,8 +168,6 @@ export default function TradeDocsPage() {
   // 换单证时清掉上一张的阻断清单：在选中事件里清（见列表「预览」按钮），
   // 不用 useEffect —— effect 里 setState 会触发 react-hooks/set-state-in-effect
   // 告警、且多跑一轮渲染。
-
-  const rows = list.data?.items ?? [];
 
   const saveDocNo = async (value: string) => {
     if (!docNoEdit) return;
@@ -174,6 +181,12 @@ export default function TradeDocsPage() {
           ?.response?.data?.detail?.detail ?? "修改失败，请重试";
       setDocNoError(msg);
     }
+  };
+
+  /** 导出时的筛选（与列表相同；导出取**全部筛选结果**，不是当前页） */
+  const exportFilters = {
+    doc_type: docTypeFilter || undefined,
+    status: statusFilter || undefined,
   };
 
   /** 台账导出列（与页面展示保持一致，避免"看到的"和"导出的"不一致） */
@@ -408,8 +421,15 @@ export default function TradeDocsPage() {
               size="sm"
               variant="outline"
               onClick={() => {
-                exportCsv("单证台账.csv", rows, exportColumns);
-                toast.success("CSV 已导出");
+                void (async () => {
+                  try {
+                    const all = await fetchAllTradeDocs(exportFilters);
+                    exportCsv("单证台账.csv", all, exportColumns);
+                    toast.success(`CSV 已导出（${all.length} 条）`);
+                  } catch {
+                    toast.error("导出 CSV 失败，请重试");
+                  }
+                })();
               }}
               disabled={rows.length === 0}
             >
@@ -422,13 +442,15 @@ export default function TradeDocsPage() {
               disabled={rows.length === 0}
               onClick={async () => {
                 try {
+                  // 分页后不能再导当前页：先取全部筛选结果（否则台账会悄悄缺行）
+                  const all = await fetchAllTradeDocs(exportFilters);
                   await exportExcel(
                     "单证台账.xlsx",
                     "单证台账",
-                    rows,
+                    all,
                     exportColumns,
                   );
-                  toast.success("Excel 已导出");
+                  toast.success(`Excel 已导出（${all.length} 条）`);
                 } catch {
                   toast.error("导出 Excel 失败");
                 }
@@ -613,6 +635,17 @@ export default function TradeDocsPage() {
                 </tbody>
               </table>
             </div>
+
+            {/* T3：台账分页（原来写死 page_size=100、total 取了不用 ⇒ 100 条之后看不到） */}
+            <PaginationBar
+              page={ledgerPage}
+              pageSize={list.data?.page_size ?? TRADE_DOCS_PAGE_SIZE}
+              total={ledgerTotal}
+              currentCount={rows.length}
+              loading={list.isFetching}
+              onPageChange={setLedgerPage}
+              ariaLabel="单证台账分页"
+            />
 
             {/* 窄屏卡片：DOM 在表格之后，避免隐藏节点干扰文本定位 */}
             <div className="divide-y divide-border/60 md:hidden">

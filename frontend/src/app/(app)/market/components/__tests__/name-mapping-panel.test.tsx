@@ -20,8 +20,9 @@ vi.mock("sonner", () => ({
   toast: { success: (...a: unknown[]) => toastSuccess(...a) },
 }));
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const ROW = {
   id: 1,
@@ -45,6 +46,14 @@ async function settle(times = 4) {
       await new Promise((r) => setTimeout(r, 0));
     }
   });
+}
+
+/** 搜索输入有 300ms 防抖（U-P1E）：等它落地再断言请求 */
+async function waitDebounce() {
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 350));
+  });
+  await settle();
 }
 
 function mount(element: ReactNode) {
@@ -101,7 +110,8 @@ function clickButton(text: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.get.mockImplementation((url: string) => {
-    if (url === "/market/regions") return Promise.resolve({ data: ["DE", "US"] });
+    if (url === "/market/regions")
+      return Promise.resolve({ data: ["DE", "US"] });
     if (url.startsWith("/market/name-lookup")) {
       return Promise.resolve({ data: [] });
     }
@@ -130,7 +140,8 @@ describe("NameMappingPanel", () => {
       )!,
       "chain link",
     );
-    await settle();
+    // 输入 → 300ms 防抖后才发 name-lookup
+    await waitDebounce();
 
     const text = document.body.textContent ?? "";
     expect(text).toContain("chain link fence");

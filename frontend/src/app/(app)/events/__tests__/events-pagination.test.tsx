@@ -25,7 +25,9 @@ vi.mock("@/components/route-guard", () => ({
 
 import EventsPage from "../page";
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 type GetResp = Awaited<ReturnType<typeof apiClient.get>>;
 const ok = (data: unknown) => ({ data }) as unknown as GetResp;
@@ -42,6 +44,14 @@ async function settle(times = 3) {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
   }
+}
+
+/** 等输入类筛选的 300ms 防抖窗口过去（再 settle 让请求落地） */
+async function waitDebounce() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  });
+  await settle();
 }
 
 /** 一条符合 `EventsResponseSchema` 的事件行 */
@@ -127,6 +137,8 @@ async function typeInto(el: HTMLInputElement, value: string) {
 beforeEach(() => {
   vi.resetAllMocks();
   window.localStorage.clear();
+  // 筛选改存 URL（U-P1E）：每个用例从干净 URL 开始，避免上一条的筛选串场
+  window.history.replaceState(null, "", "/events");
   vi.mocked(apiClient.get).mockImplementation(async (url: string) => {
     const path = String(url);
     const match = /[?&]page=(\d+)/.exec(path);
@@ -181,7 +193,8 @@ describe("事件列表分页（C25）", () => {
     );
     expect(tenantInput).not.toBeNull();
     await typeInto(tenantInput!, "default");
-    await settle();
+    // 输入防抖 300ms：停顿后才发请求（U-P1E）
+    await waitDebounce();
 
     expect(lastPageParam()).toBe(1);
     expect(lastUrl()).toContain("tenant_id=default");
@@ -194,9 +207,9 @@ describe("事件列表分页（C25）", () => {
     expect(container!.textContent).toContain("界面操作");
     expect(container!.textContent).not.toContain("audit.access");
 
-    const detailButton = Array.from(
-      container!.querySelectorAll("button"),
-    ).find((el) => el.getAttribute("aria-label") === "查看事件详情");
+    const detailButton = Array.from(container!.querySelectorAll("button")).find(
+      (el) => el.getAttribute("aria-label") === "查看事件详情",
+    );
     await act(async () => {
       detailButton!.click();
     });

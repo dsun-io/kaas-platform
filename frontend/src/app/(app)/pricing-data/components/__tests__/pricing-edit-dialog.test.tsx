@@ -144,4 +144,48 @@ describe("PricingEditDialog", () => {
     expect([...PRICING_UNITS]).toContain("元/kg");
     expect([...PRICING_UNITS]).not.toContain("元/t");
   });
+
+  const UNCONFIGURED = {
+    ...CELL,
+    key: "wire:3.0",
+    values: { wire: "3.0" },
+    labels: ["边丝径 3.0"],
+    amount: null,
+    unit: "kg",
+    item_id: null,
+    effective_from: null,
+    notes: null,
+    configured: false,
+    source: "product_default",
+  } as unknown as PricingCell;
+
+  it("配置模式（未配置行）：只填金额/单位，提交按 POST 契约形状", () => {
+    const onSubmit = vi.fn<(values: PricingCellUpdate) => void>();
+    mount(
+      <PricingEditDialog
+        open
+        onOpenChange={() => {}}
+        cell={UNCONFIGURED}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    expect(document.body.textContent).toContain("配置成本");
+    expect(document.body.textContent).toContain("尚未配置，当前用产品兜底");
+    // 生效期/备注/状态是 PATCH 才有的事，配置模式不展示（避免"改了没生效"）
+    expect(document.querySelector("#pricing-effective")).toBeNull();
+    expect(document.querySelector("#pricing-notes")).toBeNull();
+    expect(document.querySelector("#pricing-status")).toBeNull();
+
+    setInput("#pricing-amount", "4.8");
+    clickButton("保存成本");
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      amount: 4.8,
+      unit: "kg",
+      effective_from: null,
+      notes: null,
+      status: "active",
+    });
+  });
 });

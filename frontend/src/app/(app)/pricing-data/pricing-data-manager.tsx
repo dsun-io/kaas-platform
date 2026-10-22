@@ -56,7 +56,6 @@ export function PricingDataManager({
   }, [productKey, products]);
 
   const [showAllCustomers, setShowAllCustomers] = useState(false);
-  const [savingKey, setSavingKey] = useState<string | null>(null);
   const [addingOption, setAddingOption] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   // C36 #11：改价弹窗（PATCH /pricing-data/{item_id}）
@@ -85,22 +84,6 @@ export function PricingDataManager({
     !!error &&
     (error as { response?: { status?: number } })?.response?.status === 403;
 
-  async function handleSave(payload: SavePricingCell, key: string) {
-    setSavingKey(key);
-    setNotice(null);
-    try {
-      await saveCell.mutateAsync(payload);
-      setNotice("已保存。该组合的成本从下一张报价单起生效。");
-    } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data
-          ?.detail ?? "保存失败";
-      setNotice(typeof msg === "string" ? msg : "保存失败");
-    } finally {
-      setSavingKey(null);
-    }
-  }
-
   async function handleAddOption(payload: SavePricingCell) {
     setAddingOption(true);
     setNotice(null);
@@ -120,14 +103,32 @@ export function PricingDataManager({
     }
   }
 
-  async function handleUpdate(values: PricingCellUpdate) {
-    if (editCell?.item_id == null) return;
+  /**
+   * 弹窗提交（X8）：未配置行 → POST 建版本（配置成本）；已配置行 → PATCH 改价。
+   *
+   * 两种失败都**留在弹窗里**显示原因（422/404 的 detail 是给人看的），
+   * 用户可以改完再点保存 —— 失败不关窗、不把原因丢进页面顶部提示。
+   */
+  async function handleDialogSubmit(values: PricingCellUpdate) {
+    if (!editCell) return;
     setEditError(null);
     try {
-      await updateCell.mutateAsync({ itemId: editCell.item_id, ...values });
-      setNotice(
-        `已改价：${editCell.labels.join(" · ")} → ${values.amount} ${values.unit}（从下一张报价单起生效）。`,
-      );
+      if (editCell.item_id == null) {
+        await saveCell.mutateAsync({
+          product_key: matrix?.product_key ?? productKey,
+          values: editCell.values,
+          amount: values.amount,
+          unit: values.unit,
+        });
+        setNotice(
+          `已配置成本：${editCell.labels.join(" · ")} → ${values.amount} ${values.unit}（从下一张报价单起生效）。`,
+        );
+      } else {
+        await updateCell.mutateAsync({ itemId: editCell.item_id, ...values });
+        setNotice(
+          `已改价：${editCell.labels.join(" · ")} → ${values.amount} ${values.unit}（从下一张报价单起生效）。`,
+        );
+      }
       setEditCell(null);
     } catch (err: unknown) {
       // 422/404 的原因是给人看的（amount must be > 0 / unit 不合法 / 行不存在），原样透出
@@ -237,14 +238,11 @@ export function PricingDataManager({
               <PricingDataTable
                 matrix={matrix}
                 loading={isLoading}
-                savingKey={savingKey}
-                onSave={handleSave}
                 onReset={handleReset}
                 onEdit={(cell) => {
                   setEditError(null);
                   setEditCell(cell);
                 }}
-                onNotice={setNotice}
               />
               <PricingEditDialog
                 open={editCell !== null}
@@ -255,9 +253,9 @@ export function PricingDataManager({
                   }
                 }}
                 cell={editCell}
-                pending={updateCell.isPending}
+                pending={updateCell.isPending || saveCell.isPending}
                 error={editError}
-                onSubmit={handleUpdate}
+                onSubmit={handleDialogSubmit}
               />
             </>
           )}

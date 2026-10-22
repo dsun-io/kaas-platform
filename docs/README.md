@@ -3,7 +3,7 @@
 > 更新时间：**2026-10-22 全项目性能优化审计**（见 [`PERFORMANCE_AUDIT_2026-10-22.md`](./PERFORMANCE_AUDIT_2026-10-22.md)）· 2026-10-22 团队加入申请模块收口（见 [`JOIN_APPLICATION_MODULE_2026-10-22.md`](./JOIN_APPLICATION_MODULE_2026-10-22.md)）· 2026-10-21 切流收口 —— **生产已由 TS 门面 `kaas-edge` 承载（两层架构生效）**；
 > Python Worker `kaas` 退居内核（引擎/AI/cron，仅经 Service Binding）。门面冷启动 ~25ms（内核 4674ms）。
 > 门禁（2026-10-23 实测）：ts-worker **278（24 文件）** / worker **1709+12skip**（3 条 `js` 模块缺失为本机环境问题）/
-> orchestrator **266** / 前端 **1457（189 文件）** / e2e **28 passed** / 静态断言全 PASS；迁移头 **`202610220005`**。
+> orchestrator **266** / 前端 **1487（201 文件）** / e2e **28 passed** / 静态断言全 PASS；迁移头 **`202610220005`**。
 > 2026-10-23 已完成 M1-f（门面 12 条透传 + 273 路由对齐）、M3 后端（/dashboard/funnel cohort 口径）、
 > M2-A（/inquiries 工位 + 导航契约 R2=29）、M2-B（订单来源链/行项编辑/报价编辑）、M2-C（审批中心/通知铃铛/审批设置，
 > R2=30）、M3 前端（仪表盘漏斗看板）。

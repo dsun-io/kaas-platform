@@ -295,8 +295,9 @@
 | U-P0B5 | 页头/错误边界 | 7 个 error.tsx + 6 loading + RouteGuard + WorkstationGate + 全局 not-found + 剩余 window.confirm | ✅ 2026-10-23：原生确认清单内清零（ui:patterns native-dialog 7→3） |
 | U-P0B5 | 页头/错误边界 | 8 个 error.tsx + loading + RouteGuard + WorkstationGate + 全局 not-found | ⏳ |
 | U-P0B6 | 行内展开迁移 | X1–X8 按默认范式迁 DetailDrawer/Dialog | ⏳ |
-| U-P1D | 结构债 | 拆 7 个巨型组件、幽灵 /quotations、FreightPanel、状态映射三份重复 | ⏳ |
-| U-P1E | 体验一致性 | 分页/URL 筛选/搜索防抖/FormField/键盘可达/aria-label | ⏳ |
+| U-P0B6 | 行内展开迁移 | X1 customers 询盘详情 / X2 leadgen 线索 / X3 outreach 邮件 / X4 research 编辑 / X5 shipments 编辑 / X6 audit-log 键盘 / X7 quotes 记录堆叠 / X8 pricing 单元格 | ✅ 2026-10-23：全部迁 DetailDrawer/Dialog（X5 用行快照，筛选变化不丢编辑现场）；新增 11 测 |
+| U-P1D | 结构债 | 死代码（FreightPanel/defaultSpecRow）、幽灵 /quotations、状态映射收敛、拆巨型文件 | 🔨 部分：FreightPanel 289 行（0 引用）+ defaultSpecRow 已删（文件未整删，termOptionLabel 仍被引用，登记后续）；/quotations 仅登记（无 page.tsx）；status-tones 收敛因页面并行延后 |
+| U-P1E | 体验一致性 | 分页/URL 筛选/搜索防抖/FormField/键盘可达/aria-label | 🔨 部分：trade-docs 分页+URL 筛选（导出改为全量筛选结果）、events 筛选入 URL+防抖、market 三处防抖；其余页分页/防抖/FormField 待后续 |
 
 ---
 

@@ -56,7 +56,10 @@ const ACTION_OPTIONS = [
 
 const RESOURCE_OPTIONS = [
   { value: "", label: "全部对象" },
-  ...Object.entries(RESOURCE_LABELS).map(([value, label]) => ({ value, label })),
+  ...Object.entries(RESOURCE_LABELS).map(([value, label]) => ({
+    value,
+    label,
+  })),
 ];
 
 function formatTime(iso: string) {
@@ -145,9 +148,19 @@ function ExpandRow({ entry }: { entry: AuditEntry }) {
 
   return (
     <>
+      {/* X6（审计 §1.5）：折叠行必须键盘可达 —— 原来只有 onClick，
+          键盘用户无法展开任何一条日志的原始 JSON。 */}
       <TableRow
-        className="cursor-pointer hover:bg-muted/50"
+        className="cursor-pointer hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/30"
+        tabIndex={0}
+        aria-expanded={open}
         onClick={() => setOpen(!open)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setOpen((value) => !value);
+          }
+        }}
       >
         <TableCell className="w-8">
           {open ? (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { usePageView } from "@/lib/events/use-page-view";
 import { RouteGuard } from "@/components/route-guard";
 import { LeadgenCsvImport } from "./components/csv-import-panel";
@@ -18,6 +18,8 @@ import {
   ErrorState,
   AsyncButton,
 } from "@/components/shared";
+import { DetailDrawer } from "@/components/shared/detail-drawer";
+import { LoadingBlock } from "@/components/shared/loading-block";
 import { useAsyncAction } from "@/lib/hooks/use-async-action";
 import { toast } from "sonner";
 import {
@@ -182,6 +184,10 @@ export default function LeadgenPage() {
   const [detail, setDetail] = useState<LeadDetail | null>(null);
   /** 正在加载详情的线索 id（用于行级 pending 与重试） */
   const [detailId, setDetailId] = useState<number | null>(null);
+  /** U-P0B6/X2：详情改为右侧抽屉（列表不再被 200 行内联面板下推） */
+  const [detailOpen, setDetailOpen] = useState(false);
+  /** 关闭抽屉后把焦点还给触发它的「详情」按钮（键盘用户不丢位置） */
+  const detailOpenerRef = useRef<HTMLElement | null>(null);
   const [manualLeadOpen, setManualLeadOpen] = useState(false);
   const [crawling, setCrawling] = useState<number | null>(null);
 
@@ -295,13 +301,24 @@ export default function LeadgenPage() {
     { onSuccess: (data) => setDetail(data) },
   );
 
-  const openDetail = (id: number) => {
+  const openDetail = (id: number, opener?: HTMLElement | null) => {
+    detailOpenerRef.current = opener ?? null;
     setDetailId(id);
+    setDetail(null);
+    setDetailOpen(true);
     void detailAction.run(id);
   };
 
   const retryDetail = () => {
     if (detailId !== null) void detailAction.run(detailId);
+  };
+
+  const closeDetail = () => {
+    setDetailOpen(false);
+    setDetail(null);
+    // 等抽屉卸载后再归还焦点，避免被 base-ui 的 finalFocus 覆盖
+    const opener = detailOpenerRef.current;
+    window.setTimeout(() => opener?.focus(), 0);
   };
 
   /* ── 爬官网（产品信息唯一来源；Google Places 看不到产品）───────────── */
@@ -697,7 +714,7 @@ export default function LeadgenPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => openDetail(l.id)}
+                          onClick={(e) => openDetail(l.id, e.currentTarget)}
                           disabled={detailAction.pending && detailId === l.id}
                         >
                           {detailAction.pending && detailId === l.id
@@ -712,224 +729,239 @@ export default function LeadgenPage() {
             </div>
           )}
 
-          {/* P0-B2/L3：详情加载失败不再是死路 —— 给出原因 + 重试 */}
-          {detailAction.error ? (
-            <ErrorState
-              title="线索详情加载失败"
-              message={detailAction.error}
-              onRetry={retryDetail}
-              className="mt-4"
-            />
-          ) : null}
-
-          {/* detail panel */}
-          {detail && (
-            <div className="mt-4 rounded-md border p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <h3 className="font-semibold">{detail.company_name}</h3>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setDetail(null)}
-                >
-                  关闭
-                </Button>
-              </div>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm md:grid-cols-3">
-                <div>
-                  <span className="text-muted-foreground">官网：</span>{" "}
-                  {detail.website ? (
-                    <a
-                      className="text-blue-600 underline"
-                      href={detail.website}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {detail.website}
-                    </a>
-                  ) : (
-                    "—"
-                  )}
-                </div>
-                <div>
-                  <span className="text-muted-foreground">电话：</span>{" "}
-                  {detail.phone ?? "—"}
-                </div>
-                <div>
-                  <span className="text-muted-foreground">店铺类型：</span>{" "}
-                  {detail.shop_type ?? detail.industry ?? "—"}
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Google 评分：</span>{" "}
-                  {detail.google_rating ?? "—"} (共 {detail.google_reviews ?? 0}{" "}
-                  条评价)
-                </div>
-                <div>
-                  <span className="text-muted-foreground">匹配理由：</span>{" "}
-                  {(detail.fit_reasons ?? []).join(", ") || "—"}
-                </div>
-              </div>
-
-              {/* 产品信息（爬官网）：Google Places 拿不到产品 */}
-              <div className="mt-4 rounded-md border p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <h4 className="text-sm font-semibold">
-                    产品信息（来自官网爬取）
-                  </h4>
-                  <div className="flex items-center gap-2">
-                    <StatusBadge
-                      tone={
-                        CRAWL_TONES[detail.crawl_status ?? "pending"] ??
-                        "default"
-                      }
-                    >
-                      {CRAWL_STATUS_CN[detail.crawl_status ?? "pending"] ??
-                        detail.crawl_status ??
-                        "pending"}
-                    </StatusBadge>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={crawling !== null}
-                      onClick={() => crawlOne(detail.id)}
-                    >
-                      <Globe className="mr-1 h-4 w-4" /> 爬取
-                    </Button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          {/*
+            U-P0B6/X2：线索详情从「列表下方 200 行内联面板」改为右侧 DetailDrawer。
+            · 列表不再被详情整体下推；
+            · 加载/失败复用 useAsyncAction（LoadingBlock / ErrorState + 重试）；
+            · 关闭后焦点归还触发它的「详情」按钮。
+          */}
+          <DetailDrawer
+            open={detailOpen}
+            onOpenChange={(open) => {
+              if (!open) closeDetail();
+            }}
+            title={detail?.company_name ?? "线索详情"}
+            description={
+              detail
+                ? `${detail.country ?? "—"}${detail.city ? ` · ${detail.city}` : ""} · 线索 #${detail.id}`
+                : "正在加载…"
+            }
+            footer={
+              <Button variant="outline" size="sm" onClick={closeDetail}>
+                关闭
+              </Button>
+            }
+          >
+            {detailAction.pending && !detail ? <LoadingBlock rows={5} /> : null}
+            {detailAction.error ? (
+              <ErrorState
+                title="线索详情加载失败"
+                message={detailAction.error}
+                onRetry={retryDetail}
+              />
+            ) : null}
+            {detail && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm md:grid-cols-3">
                   <div>
-                    {detail.product_image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={detail.product_image_url}
-                        alt={detail.product_name ?? "product"}
-                        className="h-28 w-28 rounded object-cover"
-                      />
+                    <span className="text-muted-foreground">官网：</span>{" "}
+                    {detail.website ? (
+                      <a
+                        className="text-blue-600 underline"
+                        href={detail.website}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {detail.website}
+                      </a>
                     ) : (
-                      <div className="flex h-28 w-28 items-center justify-center rounded bg-secondary">
-                        <ImageOff className="h-5 w-5 text-muted-foreground" />
-                      </div>
+                      "—"
                     )}
                   </div>
-                  <div className="md:col-span-3 space-y-1 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">本地名称：</span>{" "}
-                      {detail.product_name ?? "—"}
+                  <div>
+                    <span className="text-muted-foreground">电话：</span>{" "}
+                    {detail.phone ?? "—"}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">店铺类型：</span>{" "}
+                    {detail.shop_type ?? detail.industry ?? "—"}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Google 评分：</span>{" "}
+                    {detail.google_rating ?? "—"} (共{" "}
+                    {detail.google_reviews ?? 0} 条评价)
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">匹配理由：</span>{" "}
+                    {(detail.fit_reasons ?? []).join(", ") || "—"}
+                  </div>
+                </div>
+
+                {/* 产品信息（爬官网）：Google Places 拿不到产品 */}
+                <div className="mt-4 rounded-md border p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <h4 className="text-sm font-semibold">
+                      产品信息（来自官网爬取）
+                    </h4>
+                    <div className="flex items-center gap-2">
+                      <StatusBadge
+                        tone={
+                          CRAWL_TONES[detail.crawl_status ?? "pending"] ??
+                          "default"
+                        }
+                      >
+                        {CRAWL_STATUS_CN[detail.crawl_status ?? "pending"] ??
+                          detail.crawl_status ??
+                          "pending"}
+                      </StatusBadge>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={crawling !== null}
+                        onClick={() => crawlOne(detail.id)}
+                      >
+                        <Globe className="mr-1 h-4 w-4" /> 爬取
+                      </Button>
                     </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                     <div>
-                      <span className="text-muted-foreground">中文名称：</span>{" "}
-                      {detail.product_name_cn ?? "—"}
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">规格：</span>{" "}
-                      {detail.spec_raw ?? "—"}
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">链接：</span>{" "}
-                      {detail.link_url ? (
-                        <a
-                          className="text-blue-600 underline"
-                          href={detail.link_url}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          打开
-                        </a>
+                      {detail.product_image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={detail.product_image_url}
+                          alt={detail.product_name ?? "product"}
+                          className="h-28 w-28 rounded object-cover"
+                        />
                       ) : (
-                        "—"
+                        <div className="flex h-28 w-28 items-center justify-center rounded bg-secondary">
+                          <ImageOff className="h-5 w-5 text-muted-foreground" />
+                        </div>
                       )}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">
-                        可供货（由你判定）：
-                      </span>
-                      <Button
-                        variant={
-                          detail.can_supply === true ? "default" : "outline"
-                        }
-                        size="sm"
-                        onClick={() => setSupply(detail.id, true)}
-                      >
-                        <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> 是
-                      </Button>
-                      <Button
-                        variant={
-                          detail.can_supply === false ? "default" : "outline"
-                        }
-                        size="sm"
-                        onClick={() => setSupply(detail.id, false)}
-                      >
-                        <XCircle className="mr-1 h-3.5 w-3.5" /> 否
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setSupply(detail.id, null)}
-                      >
-                        清除
-                      </Button>
+                    <div className="md:col-span-3 space-y-1 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">
+                          本地名称：
+                        </span>{" "}
+                        {detail.product_name ?? "—"}
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">
+                          中文名称：
+                        </span>{" "}
+                        {detail.product_name_cn ?? "—"}
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">规格：</span>{" "}
+                        {detail.spec_raw ?? "—"}
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">链接：</span>{" "}
+                        {detail.link_url ? (
+                          <a
+                            className="text-blue-600 underline"
+                            href={detail.link_url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            打开
+                          </a>
+                        ) : (
+                          "—"
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">
+                          可供货（由你判定）：
+                        </span>
+                        <Button
+                          variant={
+                            detail.can_supply === true ? "default" : "outline"
+                          }
+                          size="sm"
+                          onClick={() => setSupply(detail.id, true)}
+                        >
+                          <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> 是
+                        </Button>
+                        <Button
+                          variant={
+                            detail.can_supply === false ? "default" : "outline"
+                          }
+                          size="sm"
+                          onClick={() => setSupply(detail.id, false)}
+                        >
+                          <XCircle className="mr-1 h-3.5 w-3.5" /> 否
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setSupply(detail.id, null)}
+                        >
+                          清除
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-              {detail.opening_line && (
-                <div className="mt-3 rounded bg-muted p-2 text-sm italic">
-                  “{detail.opening_line}”
-                </div>
-              )}
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                <div>
-                  <div className="mb-1 text-xs font-medium text-muted-foreground">
-                    触达历史（只读，由触达工位维护）
+                {detail.opening_line && (
+                  <div className="mt-3 rounded bg-muted p-2 text-sm italic">
+                    “{detail.opening_line}”
                   </div>
-                  {detail.outreach_history.length === 0 ? (
-                    <div className="text-xs text-muted-foreground">无</div>
-                  ) : (
-                    detail.outreach_history.map((m) => (
-                      <div key={m.id} className="flex gap-2 text-xs">
-                        <StatusBadge
-                          tone={OUTREACH_TONES[m.status] ?? "default"}
-                        >
-                          {OUTREACH_STATUS_CN[m.status] ?? m.status}
-                        </StatusBadge>
-                        <span className="text-muted-foreground">
-                          {m.sent_at?.slice(0, 19) ?? ""}
-                        </span>
-                        {m.error && (
-                          <span className="text-destructive">{m.error}</span>
-                        )}
-                      </div>
-                    ))
-                  )}
-                </div>
-                <div>
-                  <div className="mb-1 text-xs font-medium text-muted-foreground">
-                    询盘历史（只读，由询盘工位维护）
+                )}
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <div>
+                    <div className="mb-1 text-xs font-medium text-muted-foreground">
+                      触达历史（只读，由触达工位维护）
+                    </div>
+                    {detail.outreach_history.length === 0 ? (
+                      <div className="text-xs text-muted-foreground">无</div>
+                    ) : (
+                      detail.outreach_history.map((m) => (
+                        <div key={m.id} className="flex gap-2 text-xs">
+                          <StatusBadge
+                            tone={OUTREACH_TONES[m.status] ?? "default"}
+                          >
+                            {OUTREACH_STATUS_CN[m.status] ?? m.status}
+                          </StatusBadge>
+                          <span className="text-muted-foreground">
+                            {m.sent_at?.slice(0, 19) ?? ""}
+                          </span>
+                          {m.error && (
+                            <span className="text-destructive">{m.error}</span>
+                          )}
+                        </div>
+                      ))
+                    )}
                   </div>
-                  {detail.inquiry_history.length === 0 ? (
-                    <div className="text-xs text-muted-foreground">无</div>
-                  ) : (
-                    detail.inquiry_history.map((i) => (
-                      <div key={i.id} className="flex gap-2 text-xs">
-                        <StatusBadge
-                          tone={INQUIRY_TONES[i.status] ?? "default"}
-                        >
-                          {INQUIRY_STATUS_CN[i.status] ?? i.status}
-                        </StatusBadge>
-                        <span className="text-muted-foreground">
-                          询盘 #{i.id} · {i.created_at.slice(0, 19)}
-                        </span>
-                      </div>
-                    ))
-                  )}
+                  <div>
+                    <div className="mb-1 text-xs font-medium text-muted-foreground">
+                      询盘历史（只读，由询盘工位维护）
+                    </div>
+                    {detail.inquiry_history.length === 0 ? (
+                      <div className="text-xs text-muted-foreground">无</div>
+                    ) : (
+                      detail.inquiry_history.map((i) => (
+                        <div key={i.id} className="flex gap-2 text-xs">
+                          <StatusBadge
+                            tone={INQUIRY_TONES[i.status] ?? "default"}
+                          >
+                            {INQUIRY_STATUS_CN[i.status] ?? i.status}
+                          </StatusBadge>
+                          <span className="text-muted-foreground">
+                            询盘 #{i.id} · {i.created_at.slice(0, 19)}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  线索池里的评分与联系方式可在此页维护；触达与询盘状态由对应工位自动回写。
+                </p>
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                线索池里的评分与联系方式可在此页维护；触达与询盘状态由对应工位自动回写。
-              </p>
-            </div>
-          )}
+            )}
+          </DetailDrawer>
         </SectionCard>
         <ManualLeadDialog
           open={manualLeadOpen}

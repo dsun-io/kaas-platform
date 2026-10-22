@@ -54,6 +54,14 @@ async function settle(times = 4) {
   }
 }
 
+/** 搜索输入有 300ms 防抖（U-P1E）：等它落地再断言 */
+async function waitDebounce() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  });
+  await settle();
+}
+
 async function mount() {
   client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
@@ -193,7 +201,8 @@ describe("市场对照 · 其余四个 tab", () => {
       'input[placeholder^="输入品名"]',
     ) as HTMLInputElement;
     setInputValue(productInput, "chain link fence");
-    await settle();
+    // 品名/港口输入防抖 300ms（U-P1E）
+    await waitDebounce();
     expect(alertText()).toContain("品名查询失败");
     expect(alertText()).toContain("品名服务不可用");
     expect(container!.textContent).not.toContain("未找到匹配品名");
@@ -219,7 +228,7 @@ describe("市场对照 · 其余四个 tab", () => {
       'input[aria-label="搜索品名对照"]',
     ) as HTMLInputElement;
     setInputValue(nameInput, "勾花网");
-    await settle();
+    await waitDebounce();
     expect(alertText()).toContain("品名对照查询失败");
     expect(alertText()).toContain("品名服务不可用");
   });

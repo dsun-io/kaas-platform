@@ -10,6 +10,7 @@ import { normalizeApiError } from "@/lib/api/api-error";
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import { apiClient } from "@/lib/api/client";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -269,13 +270,16 @@ function RegionTab() {
 function ProductTab() {
   const [q, setQ] = useState("");
   const [region, setRegion] = useState("");
+  // 输入即时回显，查询用防抖值：原来每击键都打一次 /market/name-lookup
+  const debouncedQ = useDebouncedValue(q, 300);
+  const lookupTerm = debouncedQ.trim();
   const {
     data: results,
     isLoading,
     isError,
     error,
     refetch,
-  } = useNameLookup(q, region || undefined);
+  } = useNameLookup(lookupTerm, region || undefined);
   const { data: regions } = useRegions();
 
   return (
@@ -310,7 +314,7 @@ function ProductTab() {
           onRetry={() => void refetch()}
         />
       ) : null}
-      {!isLoading && !isError && q && results?.length === 0 && (
+      {!isLoading && !isError && lookupTerm && results?.length === 0 && (
         <EmptyState
           title="未找到匹配品名"
           description="换个关键词（中英文都可以），或到「品名对照」录入新的对照。"
@@ -412,13 +416,15 @@ function UsageTab() {
 
 function PortsTab() {
   const [country, setCountry] = useState("");
+  // 同上：国家代码输入防抖，避免每个字符都请求港口列表
+  const debouncedCountry = useDebouncedValue(country, 300);
   const {
     data: ports,
     isLoading,
     isError,
     error,
     refetch,
-  } = usePorts(country || undefined);
+  } = usePorts(debouncedCountry || undefined);
 
   return (
     <div className="space-y-4">

@@ -109,6 +109,17 @@ export interface TradeDocFilters {
   page_size?: number;
 }
 
+/**
+ * 台账每页条数（内核 `GET /trade-docs` 的 page_size 默认 20、上限 200）。
+ *
+ * 历史问题（审计 T3）：页面写死 `page_size: 100` 且 total 取了不用 ⇒ 超过 100 张
+ * 单证时**后边的永远看不到**，也没有翻页入口。现在走标准分页。
+ */
+export const TRADE_DOCS_PAGE_SIZE = 20;
+
+/** 导出时每页取 200（后端上限），把"导出"与"当前页"解耦：导出的是**全部筛选结果**。 */
+export const TRADE_DOCS_EXPORT_PAGE_SIZE = 200;
+
 export const tradeDocKeys = {
   all: ["trade-docs"] as const,
   list: (filters: TradeDocFilters) => ["trade-docs", "list", filters] as const,
@@ -123,10 +134,45 @@ export function useTradeDocs(filters: TradeDocFilters = {}) {
     queryFn: async () => {
       const { data } = await apiClient.get<TradeDocList>("/trade-docs", {
         params: filters,
+        // 筛选/翻页失败由页面显式渲染错误态；不额外弹全局 toast
+        silent: true,
       });
       return data;
     },
+    // 翻页时保留上一页，表格不闪成骨架屏（与订单/事件列表同口径）
+    placeholderData: (previous) => previous,
   });
+}
+
+/**
+ * 取**全部筛选结果**（导出用）：按 page_size=200 逐页拉，直到凑满 total / 空页。
+ *
+ * 为什么导出不能直接用当前页 `rows`：台账接分页后一页只有 20 条，直接导会把
+ * "导出 CSV"偷偷变成"导出本页"，用户拿到的台账缺行且无从察觉。
+ * 这里只在点击导出时多打几次请求，不污染列表查询。
+ */
+export async function fetchAllTradeDocs(
+  filters: Pick<TradeDocFilters, "doc_type" | "status"> = {},
+): Promise<TradeDocRow[]> {
+  const base = {
+    ...(filters.doc_type ? { doc_type: filters.doc_type } : {}),
+    ...(filters.status ? { status: filters.status } : {}),
+  };
+  const all: TradeDocRow[] = [];
+  // 防御性上限：避免后端 total 异常（例如 0 但始终返回满页）导致死循环
+  for (let page = 1; page <= 50; page += 1) {
+    const { data } = await apiClient.get<TradeDocList>("/trade-docs", {
+      params: { ...base, page, page_size: TRADE_DOCS_EXPORT_PAGE_SIZE },
+      silent: true,
+    });
+    const items = Array.isArray(data?.items) ? data.items : [];
+    all.push(...items);
+    const total = Number(data?.total ?? 0);
+    if (items.length === 0) break;
+    if (Number.isFinite(total) && all.length >= total) break;
+    if (items.length < TRADE_DOCS_EXPORT_PAGE_SIZE) break;
+  }
+  return all;
 }
 
 export function useTradeDocRenderData(id: number | null) {

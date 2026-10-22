@@ -111,4 +111,7 @@
 | 2026-10-23 | **P0-B1/B4 止血完成**：8 处危险操作确认 + pending 防重（新增 27 测）；剩 U-P0A-FE 前端接线与 B2/B3/B4/B5/B6/P1 批次 |
 | 2026-10-23 | **U-P0A-FE ✅**：订单待批角标+深链、审批聚合 affected_docs、dashboard 应收真实数据、direct 分币种、通知 link |
 | 2026-10-23 | **U-P0B2/B3/B5 ✅**：失败反馈统一（useAsyncAction）、失败≠空态（events/pricing/market/intel/kb 假统计下线）、7+6 边界页头与原生确认清零；全量前端 1457 passed |
-| 2026-10-23 | 待做：U-P0B4 剩余、U-P0B6 行内展开迁移、U-P1D 结构债、U-P1E 体验一致性；2026-10-30 ui:patterns 转强制 |
+| 2026-10-23 | **U-P0B6 ✅**：X1–X8 行内展开全部迁 DetailDrawer/Dialog（X5 行快照消除数据丢失风险）；新增 11 测试 |
+| 2026-10-23 | **U-P1D 部分 ✅**：FreightPanel 289 行（0 引用）与 defaultSpecRow 删除；/quotations 确认无 page.tsx；status-tones 收敛延后 |
+| 2026-10-23 | **U-P1E 部分 ✅**：trade-docs 分页+URL 筛选+全量导出；events URL+防抖；market 三处防抖 |
+| 2026-10-23 | 待做：U-P0B4 剩余（批量抓取/添加邮箱/创建活动）、U-P1D 拆巨型文件与 /quotations 迁移、U-P1E 其余页、status-tones 收敛；2026-10-30 ui:patterns 转强制 |

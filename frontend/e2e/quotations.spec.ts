@@ -51,6 +51,8 @@ test.describe('报价工位 /quotes', () => {
     // 徽章真源：`quotations/components/quotation-table.tsx:25`（estimated → destructive
     // 「参考价 - 需人工确认」）；mock 种子含 estimated 行（mocks/data/factory.ts）。
     await page.goto('/quotes?tab=records');
+    // X7 后旧台账默认收起（主视图只留 quote_orders）⇒ 先展开再断言旧表徽章
+    await page.getByRole('button', { name: '展开旧台账' }).click();
     await expect(page.getByText('参考价 - 需人工确认').first()).toBeVisible({
       timeout: 15000,
     });
@@ -59,6 +61,7 @@ test.describe('报价工位 /quotes', () => {
   test('spec_not_supported 行显示灰色禁用徽章', async ({ page }) => {
     // 真源：`quotation-table.tsx:26`（spec_not_supported → secondary「已废止」）。
     await page.goto('/quotes?tab=records');
+    await page.getByRole('button', { name: '展开旧台账' }).click();
     await expect(page.getByText('已废止').first()).toBeVisible({ timeout: 15000 });
   });
 
@@ -68,7 +71,11 @@ test.describe('报价工位 /quotes', () => {
     // zod 拦截后不发请求，错误文案渲染在 `p.text-destructive`。
     // 注意：标题「人工录入报价」在 CardHeader 里、不在 `<form>` 内 ⇒ 用提交按钮定位表单。
     await page.goto('/quotes?tab=records');
-    await expect(page.getByText('人工录入报价')).toBeVisible({ timeout: 15000 });
+    // X7 后手工补录改为 Dialog（不在主视图常驻）
+    await page.getByRole('button', { name: '手工补录' }).click();
+    await expect(
+      page.getByRole('heading', { name: '手工补录报价（旧台账）' }),
+    ).toBeVisible({ timeout: 15000 });
     const form = page
       .locator('form')
       .filter({ has: page.getByRole('button', { name: '提交报价' }) })

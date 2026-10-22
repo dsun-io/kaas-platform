@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { normalizeApiError } from "@/lib/api/api-error";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { DetailDrawer } from "@/components/shared/detail-drawer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -673,30 +674,67 @@ export default function OutreachPage() {
               </table>
             </div>
           )}
-          {openMsg && (
-            <div className="mt-4 rounded-md border p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <h3 className="font-semibold">{openMsg.subject}</h3>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setOpenMsg(null)}
-                >
-                  关闭
-                </Button>
+        </SectionCard>
+      </div>
+
+      {/* X3（审计 §1.5）：邮件正文从「表格下方内联块」改为右侧 DetailDrawer ——
+          内联块会把表格越推越长，且与行内重试/关闭混在一起；抽屉保留同一份数据来源。 */}
+      <DetailDrawer
+        open={openMsg !== null}
+        onOpenChange={(open) => {
+          if (!open) setOpenMsg(null);
+        }}
+        title={openMsg?.subject ?? ""}
+        description={
+          openMsg
+            ? `收件人：${openMsg.to_name ?? "—"} <${openMsg.to_email}>`
+            : undefined
+        }
+        widthClassName="sm:max-w-2xl"
+      >
+        {openMsg ? (
+          <div className="space-y-4">
+            <dl className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+              <div className="flex gap-2">
+                <dt className="shrink-0">状态</dt>
+                <dd>
+                  <StatusBadge tone={MSG_TONES[openMsg.status] ?? "default"}>
+                    {STATUS_LABELS[openMsg.status] ?? openMsg.status}
+                  </StatusBadge>
+                </dd>
               </div>
-              <div className="mb-2 text-xs text-muted-foreground">
-                收件人：{openMsg.to_name} &lt;{openMsg.to_email}&gt; · 活动 #
-                {openMsg.campaign_id ?? "—"} · 潜在客户 #
-                {openMsg.lead_id ?? "—"}
+              <div className="flex gap-2">
+                <dt className="shrink-0">发送时间</dt>
+                <dd>{openMsg.sent_at?.slice(0, 19) ?? "—"}</dd>
               </div>
+              <div className="flex gap-2">
+                <dt className="shrink-0">活动</dt>
+                <dd>#{openMsg.campaign_id ?? "—"}</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="shrink-0">潜在客户</dt>
+                <dd>#{openMsg.lead_id ?? "—"}</dd>
+              </div>
+            </dl>
+            {openMsg.error ? (
+              <p
+                role="alert"
+                className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+              >
+                发送失败：{openMsg.error}
+              </p>
+            ) : null}
+            <div>
+              <p className="mb-1 text-xs font-medium text-muted-foreground">
+                邮件正文（渲染后）
+              </p>
               <pre className="whitespace-pre-wrap rounded bg-muted p-3 text-sm">
                 {openMsg.body_rendered ?? "—"}
               </pre>
             </div>
-          )}
-        </SectionCard>
-      </div>
+          </div>
+        ) : null}
+      </DetailDrawer>
 
       {/* P0-B1：测试邮件收件人弹窗（替代 window.prompt） */}
       <TestMailboxDialog

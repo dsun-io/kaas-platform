@@ -19,7 +19,6 @@ import {
   Search,
   UserPlus,
   ChevronRight,
-  ChevronDown,
   X,
   MoreHorizontal,
 } from "lucide-react";
@@ -50,12 +49,11 @@ import {
   type RecordQuote,
 } from "@/lib/customer/customer-records";
 import {
-  InquiryFollowup,
-  InquiryStageHistory,
   UnlinkedRecords,
   deriveInquiryStage,
 } from "./components/inquiry-followups";
 import { resolveInquiryStage } from "./components/inquiry-stage";
+import { InquiryDetailDrawer } from "./components/inquiry-detail-drawer";
 import { InquiryForm } from "./components/inquiry-form";
 import {
   displayInquiryItems,
@@ -784,9 +782,8 @@ function CustomerDetailPanel({
   const [inquiryNoPending, setInquiryNoPending] = useState(false);
   const [inquiryNoError, setInquiryNoError] = useState<string | null>(null);
   const [contactInfo, setContactInfo] = useState<Contact | null>(null);
-  const [expandedInquiries, setExpandedInquiries] = useState<
-    Record<number, boolean>
-  >({});
+  // X1：询盘详情改为右侧抽屉（不再在卡片下方内联展开）
+  const [inquiryDetailId, setInquiryDetailId] = useState<number | null>(null);
   const qc = useQueryClient();
 
   // 询盘 → 后续单据：records 接口的 quotes[].inquiry_id 是唯一关联依据。
@@ -806,8 +803,29 @@ function CustomerDetailPanel({
   const unlinkedQuotes = records.quotes.filter(
     (quote) => quote.inquiry_id == null,
   );
-  const toggleInquiry = (id: number) =>
-    setExpandedInquiries((prev) => ({ ...prev, [id]: !(prev[id] ?? false) }));
+  // 抽屉数据：选中询盘 + 它自己的后续单据 + 阶段（后端真值优先，推导兜底）
+  const inquiryDetail =
+    inquiryDetailId === null
+      ? null
+      : (detail?.inquiries?.find((inq) => inq.id === inquiryDetailId) ?? null);
+  const inquiryDetailQuotes = inquiryDetail
+    ? (quotesByInquiry.get(inquiryDetail.id) ?? [])
+    : [];
+  const inquiryDetailStage = inquiryDetail
+    ? resolveInquiryStage(
+        inquiryDetail.stage,
+        inquiryDetail.status,
+        deriveInquiryStage(
+          inquiryDetail.status,
+          inquiryDetailQuotes,
+          recordsLoading,
+        ),
+      )
+    : null;
+  const primaryContact =
+    detail?.contacts?.find((c) => c.is_primary) ??
+    detail?.contacts?.[0] ??
+    null;
 
   const handleInquiryNoSave = async (value: string) => {
     if (!inquiryNoEdit) return;
@@ -1170,24 +1188,20 @@ function CustomerDetailPanel({
                           recordsLoading,
                         ),
                       );
-                      const expanded = expandedInquiries[inq.id] ?? false;
                       // 多产品行（items 优先；历史询盘用旧标量字段合成一行）
                       const productViews = displayInquiryItems(inq);
-                      const primaryContact =
-                        detail?.contacts?.find((c) => c.is_primary) ??
-                        detail?.contacts?.[0] ??
-                        null;
                       return (
                         <div
                           key={inq.id}
                           role="button"
                           tabIndex={0}
-                          aria-expanded={expanded}
-                          onClick={() => toggleInquiry(inq.id)}
+                          aria-haspopup="dialog"
+                          aria-label={`查看询盘 ${inq.inquiry_no ?? inq.id} 详情`}
+                          onClick={() => setInquiryDetailId(inq.id)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
-                              toggleInquiry(inq.id);
+                              setInquiryDetailId(inq.id);
                             }
                           }}
                           className="group cursor-pointer rounded-xl border border-border/70 bg-white/70 p-4 transition-colors hover:bg-white/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
@@ -1258,99 +1272,34 @@ function CustomerDetailPanel({
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
-                              <ChevronDown
-                                className={`size-4 text-muted-foreground transition-transform ${
-                                  expanded ? "rotate-180" : ""
-                                }`}
+                              <ChevronRight
+                                className="size-4 text-muted-foreground"
+                                aria-hidden="true"
                               />
                             </div>
                           </div>
-
-                          {expanded && (
-                            <div
-                              className="mt-3 space-y-3 border-t border-border/60 pt-3"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <div className="space-y-2">
-                                <p className="text-xs font-medium text-muted-foreground">
-                                  产品（{productViews.length}）
-                                </p>
-                                {productViews.length === 0 ? (
-                                  <p className="text-xs text-muted-foreground">
-                                    未填写产品
-                                  </p>
-                                ) : (
-                                  productViews.map((item, itemIndex) => (
-                                    <div
-                                      key={"inquiry-item-" + itemIndex}
-                                      className="rounded-lg border border-border/60 bg-white/60 px-3 py-2 text-xs"
-                                    >
-                                      <div className="flex flex-wrap items-center justify-between gap-2">
-                                        <span className="font-medium text-foreground">
-                                          {item.name}
-                                        </span>
-                                        <span className="text-muted-foreground">
-                                          {item.quantity != null
-                                            ? item.quantity +
-                                              " " +
-                                              (item.quantityUnit ?? "")
-                                            : "数量未填"}
-                                        </span>
-                                      </div>
-                                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-muted-foreground">
-                                        <span>规格：{item.spec ?? "—"}</span>
-                                        <span>
-                                          用途：{item.application ?? "—"}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  ))
-                                )}
-                              </div>
-                              <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-                                <span className="sm:col-span-2">
-                                  联系人：
-                                  {primaryContact ? (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setContactInfo(primaryContact);
-                                      }}
-                                      className="font-medium text-primary hover:underline"
-                                    >
-                                      {primaryContact.name}
-                                    </button>
-                                  ) : (
-                                    "—"
-                                  )}
-                                </span>
-                                <span>渠道：{inq.channel ?? "—"}</span>
-                                <span>
-                                  创建：
-                                  {new Date(
-                                    inq.created_at,
-                                  ).toLocaleDateString()}
-                                </span>
-                              </div>
-                              <InquiryFollowup
-                                quotes={linkedQuotes}
-                                loading={recordsLoading}
-                                unavailable={recordsUnavailable}
-                                onRetry={() => void recordsQuery.refetch()}
-                                emptyText={
-                                  inq.status === "quoted"
-                                    ? "该询盘已标记为「已报价」，但暂时没有找到关联的报价单。"
-                                    : "该询盘还没有报价单。"
-                                }
-                              />
-                              {/* F4 阶段变更历史（只读；接口失败静默隐藏） */}
-                              <InquiryStageHistory inquiryId={inq.id} />
-                            </div>
-                          )}
                         </div>
                       );
                     })}
+
+                    {/* X1：询盘详情抽屉（产品 / 联系人 / 报价→订单→单证 / 阶段历史） */}
+                    <InquiryDetailDrawer
+                      open={inquiryDetail !== null}
+                      onOpenChange={(open) => {
+                        if (!open) setInquiryDetailId(null);
+                      }}
+                      inquiry={inquiryDetail}
+                      stage={inquiryDetailStage}
+                      quotes={inquiryDetailQuotes}
+                      primaryContact={primaryContact}
+                      onContactClick={() => {
+                        if (primaryContact) setContactInfo(primaryContact);
+                        setInquiryDetailId(null);
+                      }}
+                      recordsLoading={recordsLoading}
+                      recordsUnavailable={recordsUnavailable}
+                      onRetryRecords={() => void recordsQuery.refetch()}
+                    />
 
                     <UnlinkedRecords
                       quotes={unlinkedQuotes}

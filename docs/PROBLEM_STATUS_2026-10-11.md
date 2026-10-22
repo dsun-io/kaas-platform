@@ -14,6 +14,25 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-23 · UI 整改第三批：P0-B6 行内展开迁移 + P1D/P1E 部分 ✅）**
+> - **U-P0B6（审计 §1.5 用户裁定「默认不用行内展开」）**：
+>   X1 customers 询盘详情 → DetailDrawer（删除 80 行内联块）；X2 leadgen 200 行线索详情 → DetailDrawer；
+>   X3 outreach 邮件正文 → DetailDrawer；X4 research 158 行编辑 → Dialog；X5 shipments 编辑面板改为
+>   **行快照 + 独立 Dialog**（改筛选不再丢编辑现场，数据丢失风险消除）；X6 audit-log 折叠行补
+>   tabIndex/Enter/Space/aria-expanded；X7 quotes 记录页四层堆叠收敛（旧台账+过滤收进折叠容器、手工补录改 Dialog）；
+>   X8 pricing 矩阵单元格内联改价 → 选中行 + Dialog（配置/改价两模式、失败留窗可重试）。
+>   统一焦点归还（记录触发元素 + next-tick focus）；新增 11 个测试文件。
+> - **U-P1D 部分**：`FreightPanel`（289 行，全仓 0 引用）与 `defaultSpecRow` 已删；freight-panel.tsx 保留 41 行
+>   （`termOptionLabel` 仍被报价工位引用，文件级删除登记待办）；`/quotations` 确认无 page.tsx（非幽灵路由），
+>   组件仍被 quotes 引用，迁移留后续；状态 tone 收敛因三页并行改写延后。
+> - **U-P1E 部分**：trade-docs 台账接 PaginationBar + doc_type/status 入 URL（**导出改为导出全部筛选结果**，
+>   避免分页后偷偷只导当前页）；events 四个筛选入 URL + 两处防抖；market 品名/港口/品名对照三处防抖。
+> - **门禁**：前端 typecheck 0 / lint 0 error / **1487 passed（201 文件）**；ui:standards / ui:contrast PASS；
+>   e2e 本轮需复跑（DOM 结构变更：抽屉/对话框/折叠台账）。
+> - **遗留**：U-P1D 拆巨型文件与 /quotations 迁移、U-P1E 其余页分页/防抖/FormField、status-tones 收敛；
+>   shipments 未接真·detail 查询（mock 缺 `GET /shipments/{id}`，当前用行快照等价实现）；
+>   pricing「恢复兜底」无二次确认；trade-docs mock 已补 page/page_size 支持。
+>
 > **（2026-10-23 · UI 整改第二批：P0-A-FE / P0-B2 / P0-B3 / P0-B5 ✅）**
 > - **U-P0A-FE**：订单列表「有变更待批」角标（aria-label 含条数；宽屏/窄屏各一份）+ `/orders?id=` 深链打开详情；
 >   审批详情优先用聚合 `affected_docs`（`[]` 视为权威，旧行才兜底拉 /trade-docs）；dashboard 应收概览接

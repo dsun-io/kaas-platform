@@ -7,7 +7,7 @@
  * 这里的船名/航次/提单号/ETD/ETA 正是提单、装运通知、报关资料要印的内容，
  * 所以要在出运环节录全，单证才不用再问货代。
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AlertCircle, Ship } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -20,6 +20,14 @@ import { SectionCard } from "@/components/shared/section-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import apiClient from "@/lib/api/client";
 import { usePageView } from "@/lib/events/use-page-view";
@@ -88,7 +96,13 @@ export default function ShipmentsPage() {
   usePageView({ resource_id: "/shipments" });
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState("");
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  /**
+   * U-P0B6/X5：编辑对象改为**打开时的行快照**（editor 独立于当前筛选结果）。
+   * 旧实现 `selected = rows.find(...)`：一改筛选/状态，选中行从 rows 消失 ⇒
+   * 编辑面板连同未保存的输入一起消失（数据丢失）。现在筛选只影响列表，不影响编辑现场。
+   */
+  const [editing, setEditing] = useState<ShipmentRow | null>(null);
+  const editorOpenerRef = useRef<HTMLElement | null>(null);
   const [orderId, setOrderId] = useState("");
   const orders = useOrderOptions();
 
@@ -123,7 +137,8 @@ export default function ShipmentsPage() {
       onSuccess: (s) => {
         toast.success(`已建出货单 ${s.shipment_no}（客户与货物已从订单带入）`);
         setOrderId("");
-        setSelectedId(s.id);
+        // 建单成功直接打开编辑弹窗（快照 = 刚创建的行）
+        setEditing(s);
         qc.invalidateQueries({ queryKey: ["shipments"] });
       },
     },
@@ -142,6 +157,8 @@ export default function ShipmentsPage() {
       onSuccess: () => {
         toast.success("已保存");
         qc.invalidateQueries({ queryKey: ["shipments"] });
+        // 保存成功关闭编辑弹窗（失败时由 error 留在弹窗内，见 onError/渲染）
+        closeEditor();
       },
     },
   );
@@ -164,7 +181,18 @@ export default function ShipmentsPage() {
   );
 
   const rows = list.data?.items ?? [];
-  const selected = rows.find((s) => s.id === selectedId) ?? null;
+
+  /** 打开编辑弹窗（行快照 + 记下触发按钮，关闭归还焦点）。 */
+  const openEditor = (row: ShipmentRow, opener?: HTMLElement | null) => {
+    editorOpenerRef.current = opener ?? null;
+    setEditing(row);
+  };
+
+  const closeEditor = () => {
+    setEditing(null);
+    const opener = editorOpenerRef.current;
+    window.setTimeout(() => opener?.focus(), 0);
+  };
 
   return (
     <div className="space-y-6">
@@ -307,7 +335,7 @@ export default function ShipmentsPage() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => setSelectedId(s.id)}
+                          onClick={(e) => openEditor(s, e.currentTarget)}
                         >
                           编辑
                         </Button>
@@ -346,28 +374,42 @@ export default function ShipmentsPage() {
         ) : null}
       </SectionCard>
 
-      {selected && (
-        <SectionCard
-          title={`出货信息 · ${selected.shipment_no}`}
-          description="录全船名/航次/提单号/ETD/ETA，开提单与装运通知时就不用再问货代。"
-          action={
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setSelectedId(null)}
-            >
-              关闭
-            </Button>
-          }
+      {/*
+        U-P0B6/X5：编辑面板迁入 Dialog，对象是**打开时的行快照**。
+        改筛选/推进状态只会重取列表，弹窗与未保存的输入都还在（旧实现会直接消失）。
+      */}
+      {editing && (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !save.pending) closeEditor();
+          }}
         >
-          <ShipmentForm
-            key={selected.id}
-            shipment={selected}
-            saving={save.pending}
-            error={save.error}
-            onSave={(body) => void save.run({ id: selected.id, ...body })}
-          />
-        </SectionCard>
+          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{"出货信息 · " + editing.shipment_no}</DialogTitle>
+              <DialogDescription>
+                录全船名/航次/提单号/ETD/ETA，开提单与装运通知时就不用再问货代。
+              </DialogDescription>
+            </DialogHeader>
+            <ShipmentForm
+              key={editing.id}
+              shipment={editing}
+              saving={save.pending}
+              error={save.error}
+              onSave={(body) => void save.run({ id: editing.id, ...body })}
+            />
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={closeEditor}
+                disabled={save.pending}
+              >
+                关闭
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

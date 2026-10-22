@@ -28,6 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import { normalizeApiError } from "@/lib/api/api-error";
 import { apiClient } from "@/lib/api/client";
 import {
@@ -83,6 +84,8 @@ export function NameMappingPanel() {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [region, setRegion] = useState("");
+  // M1：输入即时回显，检索用防抖值（原来每击键都打 /market/name-lookup）
+  const debouncedQ = useDebouncedValue(q, 300);
 
   const regionsQuery = useQuery({
     queryKey: ["market", "regions"],
@@ -94,9 +97,9 @@ export function NameMappingPanel() {
   const regions = regionsQuery.data ?? [];
 
   const lookupQuery = useQuery({
-    queryKey: ["market", "name-lookup", q.trim(), region],
-    queryFn: () => lookupMappings(q.trim(), region || undefined),
-    enabled: q.trim().length > 0,
+    queryKey: ["market", "name-lookup", debouncedQ.trim(), region],
+    queryFn: () => lookupMappings(debouncedQ.trim(), region || undefined),
+    enabled: debouncedQ.trim().length > 0,
   });
 
   const [open, setOpen] = useState(false);
@@ -226,6 +229,9 @@ export function NameMappingPanel() {
         <p className="py-6 text-sm text-muted-foreground">
           输入中/英品名后显示对照结果；暂无全量列表接口。
         </p>
+      ) : q.trim() !== debouncedQ.trim() ? (
+        // 防抖窗口内：输入已变、检索还没发 —— 显示加载，而不是闪一下「未找到」
+        <LoadingBlock rows={3} />
       ) : lookupQuery.isLoading ? (
         <LoadingBlock rows={3} />
       ) : lookupQuery.isError ? (

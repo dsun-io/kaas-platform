@@ -3,27 +3,24 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingBlock } from "@/components/shared/loading-block";
-import { Loader2, Pencil, RotateCcw, Save } from "lucide-react";
-import type {
-  PricingCell,
-  PricingMatrix,
-  SavePricingCell,
-} from "@contracts/export-quote";
+import { Pencil, RotateCcw } from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { PricingCell, PricingMatrix } from "@contracts/export-quote";
 
 interface Props {
   matrix: PricingMatrix | undefined;
   loading: boolean;
-  /** 正在保存的格（定价键），用于只让那一行转圈 */
-  savingKey: string | null;
-  onSave: (payload: SavePricingCell, key: string) => void;
+  /**
+   * 打开「配置成本 / 改价」弹窗。
+   *
+   * 同一入口两种语义，由调用方按 item_id 判：没有 item_id = 尚未配置（POST 建版本），
+   * 有 = 客户已配置（PATCH 改价）。
+   */
+  onEdit: (cell: PricingCell) => void;
+  /** 停用自定义成本，回退到产品定义的兜底值 */
   onReset: (cell: PricingCell) => void;
-  /** C36 #11：打开「改价」弹窗（PATCH /pricing-data/{item_id}） */
-  onEdit?: (cell: PricingCell) => void;
-  /** 无需写库的提示（如值未变化） */
-  onNotice?: (msg: string) => void;
 }
 
 /**
@@ -32,17 +29,21 @@ interface Props {
  * 之所以做成矩阵而不是「已有数据列表」：
  * 成本是算价的输入，业务要能一眼看出**哪一格还没配**。列表式界面里
  * 「没配的组合」根本不会出现，于是没人发现它在用兜底值 —— 矩阵不会漏。
+ *
+ * X8（U-P1D 审计）：矩阵**只做展示**。旧实现在每个单元格里塞 Input 原地改价，
+ * 后果是：① 表格每行一个受控输入框，几十行时输入明显卡；② 金额/单位/生效期/备注/状态
+ * 只有一个金额能改，另外四项还得另开弹窗 —— 同一件事两套入口。
+ * 现在统一为「选中行 → 弹窗」：矩阵保持完整可读，改价只有一条路径（PricingEditDialog）。
  */
-export function PricingDataTable({
-  matrix,
-  loading,
-  savingKey,
-  onSave,
-  onReset,
-  onEdit,
-  onNotice,
-}: Props) {
-  const [draft, setDraft] = useState<Record<string, string>>({});
+export function PricingDataTable({ matrix, loading, onEdit, onReset }: Props) {
+  // 选中行：连同产品 key 一起记，换产品后自然失效（用派生判断，不用 effect 清
+  // ——effect 里 setState 会多一轮级联渲染，且旧 key 可能跨产品撞名如 "2.0"）。
+  // 也不存 cell 对象：保存后 react-query 会刷新矩阵，金额/配置状态都变了，
+  // 按 key 从最新 matrix 里取行才是对的。
+  const [picked, setPicked] = useState<{
+    productKey: string;
+    key: string;
+  } | null>(null);
 
   if (loading) {
     // B3：加载态 = LoadingBlock（共享），不再各组件手写骨架屏
@@ -75,25 +76,14 @@ export function PricingDataTable({
   const unitLabel = matrix.cost_unit
     ? matrix.cost_unit.replace(/^CNY\//, "元/")
     : "元/kg";
-
-  function valueOf(cell: PricingCell) {
-    return draft[cell.key] ?? (cell.amount == null ? "" : String(cell.amount));
-  }
-
-  /**
-   * 只要填了一个正数就允许保存。
-   *
-   * 这里**故意不按「是否改动过」来置灰**：置灰的保存按钮在用户眼里就是
-   * 「点了没反应 / 存不上」—— 上一版就是这么被当成 bug 的。
-   * 值确实没变的情况改由 onClick 里提前拦下并给出文字提示，
-   * 既不写无意义的版本，也不会让人对着死按钮发慌。
-   */
-  function canSave(cell: PricingCell) {
-    const raw = valueOf(cell).trim();
-    if (raw === "") return false;
-    const num = Number(raw);
-    return Number.isFinite(num) && num > 0;
-  }
+  const selectedKey =
+    picked != null && picked.productKey === matrix.product_key
+      ? picked.key
+      : null;
+  const selected =
+    selectedKey == null
+      ? null
+      : (matrix.rows.find((r) => r.key === selectedKey) ?? null);
 
   return (
     <Card>
@@ -115,7 +105,7 @@ export function PricingDataTable({
                 {dims.map((d) => (
                   <th scope="col" key={d.field} className="py-2 pr-4">
                     {d.label}
-                    {d.unit ? `（${d.unit}）` : ""}
+                    {d.unit ? "（" + d.unit + "）" : ""}
                   </th>
                 ))}
                 <th scope="col" className="py-2 pr-4 text-right">
@@ -124,118 +114,68 @@ export function PricingDataTable({
                 <th scope="col" className="py-2 pr-4">
                   来源
                 </th>
-                <th scope="col" className="py-2 pr-4">
-                  生效日期
-                </th>
                 <th scope="col" className="py-2">
-                  操作
+                  生效日期
                 </th>
               </tr>
             </thead>
             <tbody>
               {matrix.rows.map((cell) => {
-                const saving = savingKey === cell.key;
+                const isSelected = selectedKey === cell.key;
                 return (
-                  <tr key={cell.key} className="border-b last:border-0">
+                  <tr
+                    key={cell.key}
+                    // 行选中用 aria-current（全局状态属性；不伪造 grid/aria-selected 语义）
+                    aria-current={isSelected ? "true" : undefined}
+                    tabIndex={0}
+                    onClick={() =>
+                      setPicked({
+                        productKey: matrix.product_key,
+                        key: cell.key,
+                      })
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setPicked({
+                          productKey: matrix.product_key,
+                          key: cell.key,
+                        });
+                      }
+                    }}
+                    className={cn(
+                      "border-b last:border-0 cursor-pointer transition-colors",
+                      "hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2",
+                      "focus-visible:ring-inset focus-visible:ring-primary/30",
+                      isSelected && "bg-muted/60",
+                    )}
+                  >
                     {dims.map((d, i) => (
                       <td key={d.field} className="py-2 pr-4">
                         {cell.labels[i] ?? String(cell.values[d.field] ?? "—")}
                       </td>
                     ))}
-                    <td className="py-2 pr-3 text-right">
-                      <Input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        inputMode="decimal"
-                        className="h-8 w-28 text-right"
-                        value={valueOf(cell)}
-                        onChange={(e) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            [cell.key]: e.target.value,
-                          }))
-                        }
-                      />
+                    <td className="py-2 pr-4 text-right tabular-nums">
+                      {cell.amount == null ? (
+                        <span className="text-muted-foreground">未配置</span>
+                      ) : (
+                        cell.amount
+                      )}
                     </td>
                     <td className="py-2 pr-4">
                       <span
-                        className={`text-xs px-1.5 py-0.5 rounded ${
+                        className={cn(
+                          "text-xs px-1.5 py-0.5 rounded",
                           cell.configured
                             ? "bg-success-muted text-success-muted-foreground"
-                            : "bg-warning-muted text-warning-muted-foreground"
-                        }`}
+                            : "bg-warning-muted text-warning-muted-foreground",
+                        )}
                       >
                         {cell.configured ? "客户配置" : "产品兜底"}
                       </span>
                     </td>
-                    <td className="py-2 pr-4 text-muted-foreground">
+                    <td className="py-2 text-muted-foreground">
                       {cell.effective_from?.split("T")[0] ?? "—"}
-                    </td>
-                    <td className="py-2">
-                      <div className="flex gap-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!canSave(cell) || saving}
-                          onClick={() => {
-                            const num = Number(valueOf(cell));
-                            // 值没变就不写新版本：成本历史是审计线索，
-                            // 塞满重复条目等于没有历史。
-                            if (
-                              cell.configured &&
-                              cell.amount != null &&
-                              num === cell.amount
-                            ) {
-                              onNotice?.("成本未变化，未写入新版本。");
-                              return;
-                            }
-                            onSave(
-                              {
-                                product_key: matrix.product_key,
-                                values: cell.values,
-                                amount: num,
-                                unit: cell.unit || "kg",
-                              },
-                              cell.key,
-                            );
-                          }}
-                          className="gap-1"
-                        >
-                          {saving ? (
-                            <Loader2 className="size-3 animate-spin" />
-                          ) : (
-                            <Save className="size-3" />
-                          )}
-                          保存
-                        </Button>
-                        {cell.configured && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            title="修改这一格的成本（金额/单位/生效期/备注/状态）"
-                            disabled={saving || cell.item_id == null}
-                            onClick={() => onEdit?.(cell)}
-                            className="gap-1"
-                          >
-                            <Pencil className="size-3" />
-                            编辑
-                          </Button>
-                        )}
-                        {cell.configured && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            title="停用自定义成本，回退到产品定义的兜底值"
-                            disabled={saving}
-                            onClick={() => onReset(cell)}
-                            className="gap-1 text-muted-foreground"
-                          >
-                            <RotateCcw className="size-3" />
-                            恢复兜底
-                          </Button>
-                        )}
-                      </div>
                     </td>
                   </tr>
                 );
@@ -243,6 +183,61 @@ export function PricingDataTable({
             </tbody>
           </table>
         </div>
+
+        {selected ? (
+          <div
+            role="group"
+            aria-label="选中行的操作"
+            className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-muted/40 px-3 py-2"
+          >
+            <span className="text-xs text-muted-foreground">
+              已选中：
+              <span className="text-foreground">
+                {selected.labels.join(" · ")}
+              </span>
+              {" · "}
+              {selected.configured
+                ? "当前成本 " +
+                  (selected.amount == null ? "—" : selected.amount) +
+                  " " +
+                  selected.unit
+                : "尚未配置（用产品兜底）"}
+            </span>
+            <div className="ml-auto flex flex-wrap gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1"
+                title="修改这一行成本的金额/单位/生效期/备注/状态"
+                onClick={() => onEdit(selected)}
+              >
+                <Pencil className="size-3" />
+                {selected.configured ? "改价" : "配置成本"}
+              </Button>
+              {selected.configured && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="gap-1 text-muted-foreground"
+                  title="停用自定义成本，回退到产品定义的兜底值"
+                  onClick={() => onReset(selected)}
+                >
+                  <RotateCcw className="size-3" />
+                  恢复兜底
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={() => setPicked(null)}>
+                取消选择
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <p className="mt-3 text-xs text-muted-foreground">
+            点选一行（或聚焦后按 Enter / 空格）后配置成本 /
+            改价：矩阵不再支持单元格原地编辑。
+          </p>
+        )}
+
         <p className="mt-3 text-xs text-muted-foreground">
           成本改动从下一张报价单开始生效；已发出的报价仍按当时的成本复现（历史不删）。
         </p>

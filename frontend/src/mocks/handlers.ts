@@ -6441,10 +6441,26 @@ export const handlers = [
   //     A8/A9 的「已变更 / 模板已更新 / 待复核」标识在 mock 下永远不会出现。
   //   `null` = 从未对账 ⇒ 前端**不显示任何标识**（`lib/trade-doc/render-check.ts:39-44`
   //   的口径：不能把"没查过"画成"没问题"）。
-  http.get("/api/v1/trade-docs", () => {
-    const items = docsStore
-      .slice()
-      .sort((a, b) => b.id - a.id)
+  // 形状 = worker main.py:list_trade_docs（doc_type/status/order_id + page/page_size；
+  // 分页参数与后端同口径，避免 mock 比后端宽松造成"假翻页"）。
+  http.get("/api/v1/trade-docs", ({ request }) => {
+    const url = new URL(request.url);
+    const docType = url.searchParams.get("doc_type") ?? "";
+    const status = url.searchParams.get("status") ?? "";
+    const orderIdRaw = url.searchParams.get("order_id") ?? "";
+    const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+    const pageSize = Math.min(
+      Math.max(1, Number(url.searchParams.get("page_size")) || 20),
+      200,
+    );
+    let rows = docsStore.slice().sort((a, b) => b.id - a.id);
+    if (docType) rows = rows.filter((doc) => String(doc.doc_type) === docType);
+    if (status) rows = rows.filter((doc) => String(doc.status) === status);
+    if (orderIdRaw) {
+      rows = rows.filter((doc) => Number(doc.order_id) === Number(orderIdRaw));
+    }
+    const items = rows
+      .slice((page - 1) * pageSize, page * pageSize)
       .map((doc) => ({
         ...doc,
         doc_no_editable: docNoEditable(doc),
@@ -6452,9 +6468,9 @@ export const handlers = [
       }));
     return HttpResponse.json({
       items,
-      total: items.length,
-      page: 1,
-      page_size: 50,
+      total: rows.length,
+      page,
+      page_size: pageSize,
     });
   }),
 

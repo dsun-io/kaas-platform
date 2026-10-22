@@ -34,6 +34,10 @@ import {
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ManualResearchDialog } from "./components/manual-research-dialog";
+import {
+  ResearchEditDialog,
+  type ResearchEditValue,
+} from "./components/research-edit-dialog";
 
 /* ── types ─────────────────────────────────────────────────────────────── */
 interface ResearchProduct {
@@ -155,6 +159,9 @@ export default function ResearchPage() {
   // P0-B4：深化记录保存的 pending 防重（R51）
   const [savingEdit, setSavingEdit] = useState(false);
   const savingEditRef = useRef(false);
+  // U-P0B6/X4：编辑改为 Dialog（草稿独立于列表）；保存失败留在弹窗内
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const editOpenerRef = useRef<HTMLElement | null>(null);
 
   /* ── queries ── */
   const statsQuery = useQuery({
@@ -221,25 +228,41 @@ export default function ResearchPage() {
     qc.invalidateQueries({ queryKey: ["research-runs"] });
   };
 
-  const saveEdit = async () => {
-    if (!editing || savingEditRef.current) return;
+  /** 打开编辑弹窗：记录触发按钮，关闭时归还焦点。 */
+  const openEdit = (product: ResearchProduct, opener?: HTMLElement | null) => {
+    editOpenerRef.current = opener ?? null;
+    setSaveError(null);
+    setEditing(product);
+  };
+
+  const closeEdit = () => {
+    setEditing(null);
+    setSaveError(null);
+    const opener = editOpenerRef.current;
+    window.setTimeout(() => opener?.focus(), 0);
+  };
+
+  /** 保存弹窗里的草稿（失败写回弹窗内错误，不关闭弹窗）。 */
+  const saveEdit = async (draft: ResearchEditValue) => {
+    if (savingEditRef.current) return;
     savingEditRef.current = true;
     setSavingEdit(true);
+    setSaveError(null);
     try {
-      await apiClient.patch(`/research/products/${editing.id}`, {
-        product_name_cn: editing.product_name_cn || null,
-        product_category: editing.product_category || null,
-        price_local: editing.price_local,
-        price_currency: editing.price_currency || null,
-        market_note: editing.market_note || null,
-        can_supply: editing.can_supply,
-        supply_notes: editing.supply_notes || null,
+      await apiClient.patch(`/research/products/${draft.id}`, {
+        product_name_cn: draft.product_name_cn || null,
+        product_category: draft.product_category || null,
+        price_local: draft.price_local,
+        price_currency: draft.price_currency || null,
+        market_note: draft.market_note || null,
+        can_supply: draft.can_supply,
+        supply_notes: draft.supply_notes || null,
       });
       toast.success("已保存");
       setEditing(null);
       refresh();
-    } catch {
-      toast.error("保存失败");
+    } catch (err) {
+      setSaveError(normalizeApiError(err).message);
     } finally {
       savingEditRef.current = false;
       setSavingEdit(false);
@@ -553,7 +576,7 @@ export default function ResearchPage() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => setEditing({ ...p })}
+                                onClick={(e) => openEdit(p, e.currentTarget)}
                                 title="深化"
                               >
                                 <Pencil className="h-4 w-4" />
@@ -578,171 +601,6 @@ export default function ResearchPage() {
                 </div>
               )}
             </SectionCard>
-
-            {editing && (
-              <SectionCard
-                title="深化记录"
-                description="供货能力由你判定 —— 绝不由系统推断"
-                action={
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setEditing(null)}
-                      disabled={savingEdit}
-                    >
-                      取消
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => void saveEdit()}
-                      disabled={savingEdit}
-                    >
-                      {savingEdit ? "保存中…" : "保存"}
-                    </Button>
-                  </div>
-                }
-              >
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <div>
-                    <label className="text-xs text-muted-foreground">
-                      本地产品
-                    </label>
-                    <Input value={editing.product_name ?? ""} disabled />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground">
-                      中文产品名
-                    </label>
-                    <Input
-                      value={editing.product_name_cn ?? ""}
-                      onChange={(e) =>
-                        setEditing({
-                          ...editing,
-                          product_name_cn: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground">
-                      类目
-                    </label>
-                    <select
-                      className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                      value={editing.product_category ?? ""}
-                      onChange={(e) =>
-                        setEditing({
-                          ...editing,
-                          product_category: e.target.value,
-                        })
-                      }
-                    >
-                      <option value="">—</option>
-                      {categories.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground">
-                      当地价格
-                    </label>
-                    <Input
-                      type="number"
-                      value={editing.price_local ?? ""}
-                      onChange={(e) =>
-                        setEditing({
-                          ...editing,
-                          price_local:
-                            e.target.value === ""
-                              ? null
-                              : Number(e.target.value),
-                        })
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground">
-                      币种
-                    </label>
-                    <Input
-                      value={editing.price_currency ?? ""}
-                      onChange={(e) =>
-                        setEditing({
-                          ...editing,
-                          price_currency: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground">
-                      可供货
-                    </label>
-                    <select
-                      className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                      value={
-                        editing.can_supply === null
-                          ? ""
-                          : editing.can_supply
-                            ? "true"
-                            : "false"
-                      }
-                      onChange={(e) =>
-                        setEditing({
-                          ...editing,
-                          can_supply:
-                            e.target.value === ""
-                              ? null
-                              : e.target.value === "true",
-                        })
-                      }
-                    >
-                      <option value="">未填</option>
-                      <option value="true">是</option>
-                      <option value="false">否</option>
-                    </select>
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="text-xs text-muted-foreground">
-                      供货备注
-                    </label>
-                    <Input
-                      value={editing.supply_notes ?? ""}
-                      onChange={(e) =>
-                        setEditing({ ...editing, supply_notes: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="md:col-span-3">
-                    <label className="text-xs text-muted-foreground">
-                      市场备注
-                    </label>
-                    <textarea
-                      className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                      rows={3}
-                      value={editing.market_note ?? ""}
-                      onChange={(e) =>
-                        setEditing({ ...editing, market_note: e.target.value })
-                      }
-                    />
-                  </div>
-                </div>
-                {editing.spec_raw && (
-                  <div className="mt-3">
-                    <p className="text-xs text-muted-foreground">
-                      规格（来自来源）
-                    </p>
-                    <p className="mt-1 rounded bg-secondary/50 p-2 text-xs">
-                      {editing.spec_raw}
-                    </p>
-                  </div>
-                )}
-              </SectionCard>
-            )}
           </>
         )}
 
@@ -900,6 +758,19 @@ export default function ResearchPage() {
           setTab("products");
         }}
       />
+
+      {/* U-P0B6/X4：编辑改为 Dialog（草稿独立于列表，失败留弹窗可重试） */}
+      {editing && (
+        <ResearchEditDialog
+          key={editing.id}
+          product={editing}
+          categories={categories}
+          pending={savingEdit}
+          error={saveError}
+          onSubmit={(draft) => void saveEdit(draft)}
+          onClose={closeEdit}
+        />
+      )}
 
       {/* P0-B1：移除调研产品的二次确认 —— 深化数据不可恢复 */}
       <ConfirmDialog
