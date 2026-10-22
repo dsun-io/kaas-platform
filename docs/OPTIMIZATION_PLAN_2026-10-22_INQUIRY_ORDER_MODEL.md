@@ -1,6 +1,6 @@
 # 询盘与订单模型重构 · 优化方案（2026-10-22）
 
-> 状态：**设计定稿，全部拍板完毕，M1 可开工**（用户 2026-10-22 拍板「落盘设计文档再实现」；D-1~D-16 见 §12.1）。
+> 状态：**设计定稿，全部拍板完毕，M1 可开工**（用户 2026-10-22 拍板「落盘设计文档再实现」；D-1~D-17 见 §12.1）。
 > 本文件是本次重构的**唯一设计基准**；实施进度在 [`TODO.md`](./TODO.md) §Q 销账。
 > 所有结论均经代码核实（附 `文件:行号`），非推测。
 
@@ -180,19 +180,21 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 
 | 迁移 | 触发事件 | 副作用 |
 |---|---|---|
-| `pending → confirmed` | ① **定金到账登记**（`POST /orders/{id}/receipts`，金额>0）自动确认；② 人工确认（保留：先确认后打款 / 线下已确认） | 锁汇率 + 生成应收 + 写 `confirmed_at`/`confirmed_by`/`confirmed_source` + 审计事件 |
+| `pending → confirmed` | ① **人工登记定金到账**（`POST /orders/{id}/receipts`，金额>0）→ 订单**联动确认**；② 人工确认（保留：先确认后打款 / 线下已确认） | 锁汇率 + 生成应收 + 写 `confirmed_at`/`confirmed_by`/`confirmed_source` + 审计事件 |
 | `confirmed → producing` | 人工（内部排产） | — |
 | `producing → shipped` | 人工 / 出运台账 | `order.shipped` 业务事件 |
 | `shipped → completed` | 人工 | 联动询盘 stage（TS6 收口） |
 | 任意 → `cancelled` | 人工 | 审计 + 应收冲销（按现有口径） |
 
 **判定规则**：
-1. 定金期次优先：`payment_schedules.schedule_type='deposit'` 的期次收到任意金额（>0）即确认；
-2. 无定金期次的订单：**首笔任意期次实收**（>0）同样触发确认（否则没有定金结构的单永远等不到）；
-3. **部分到账也算确认**（人已上传打款凭证并登记，视为业务判断），但订单详情标注「定金部分到账（实收 X / 应收 Y）」；
-4. 已 `confirmed` 的订单再收款**不改状态**；
-5. **CI/SC 等单证签发不触发订单状态**——单证链是 报价单 → PI → SC、CI/PL/BL 由订单/PI 派生（§3.5），单证始终是订单的下游，不能反向驱动；
-6. 通知：本期通知范围仅审批相关（D-13），确认事件只写审计 + 时间线，不发站内通知（后续需要再单独立项）。
+1. **收款确认永远是人工操作（D-17）**：触发源只能是业务在订单详情「实收登记」里人工录入（金额 / 到账日期 / 凭证截图）；系统**不做**任何自动识别、银行对账、金额匹配或自动入账。所谓“联动确认”仅指订单状态跟随这次人工登记变化，不存在系统自动确认收款。
+2. `payment_receipts` 登记即确认，**不引入「待确认收款」状态**：`created_by` 即确认人，`file_id` 为到账凭证截图；定金类登记在前端**必填截图**（后端保持可空以兼容历史/导入数据）。
+3. 定金期次优先：`payment_schedules.schedule_type='deposit'` 的期次登记任意金额（>0）即触发；
+4. 无定金期次的订单：**首笔任意期次实收**（>0）同样触发（否则没有定金结构的单永远等不到）；
+5. **部分到账也算确认**（人已核并登记），但订单详情标注「定金部分到账（实收 X / 应收 Y）」；
+6. 已 `confirmed` 的订单再收款**不改状态**；
+7. **CI/SC 等单证签发不触发订单状态**——单证链是 报价单 → PI → SC、CI/PL/BL 由订单/PI 派生（§3.5），单证始终是订单的下游，不能反向驱动；
+8. 通知：本期通知范围仅审批相关（D-13），确认事件只写审计 + 时间线，不发站内通知（后续需要再单独立项）。
 
 **数据**：`orders` 新增 `confirmed_at`（timestamptz）、`confirmed_by`（text）、`confirmed_source`（`manual` | `deposit_receipt`）。
 
@@ -279,7 +281,7 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 |---|---|---|
 | `POST /orders` | 接受 `inquiry_id`、`source_type`、`source_channel`；自动判定+显式覆盖；转化时冗余回写 inquiry_id | 内核 + 门面 |
 | `GET /orders` / `GET /orders/{id}` | 返回 `source_type`/`source_channel`/`inquiry_id`；列表支持 `source_type`/`source_channel` 筛选 | 内核 + 门面 |
-| `POST /orders/{id}/receipts` | 行为扩展：登记定金到账后若订单仍 pending → 同事务自动确认（锁汇率+建应收），返回 `auto_confirmed` | 内核 + 门面 |
+| `POST /orders/{id}/receipts` | 行为扩展：**人工**登记定金到账后若订单仍 pending → 同事务联动确认（锁汇率+建应收），返回 `auto_confirmed` | 内核 + 门面 |
 | `PATCH /orders/{id}` | 新增 `items` 整批替换 + 重算金额（pending 状态直接生效） | 内核 + 门面 |
 | `POST /orders/{id}/item-change-requests`（**新端点**） | confirmed 及以后的行项变更申请（新旧明细对比 + 原因）；管理员批准/拒绝后生效 | 内核 + 门面 |
 | `GET /orders/{id}/item-change-requests`（**新端点**） | 变更申请历史（含受影响单证清单） | 内核 + 门面 |
@@ -368,10 +370,11 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 | D-13 | 通知范围 | **只做审批相关**（申请/批准/拒绝三类）；不建设通用事件总线（`domain_events` 仍按 G-15 暂缓）→ 见 §6.2 |
 | D-14 | 指定审批人机制 | 团队可配多名指定审批人（`team_approvers`）；**有指定人则审批权与通知归指定人，否则归管理员**；配置入口在团队页，仅管理员可改 → 见 §6.2 |
 | D-15 | 报价单与报价单文件 | **一次报价 = 一张报价单**（`quote_orders`，业务真源）；报价单文件（`trade_docs.doc_type='quotation'`）同事务自动产出、`doc_no=quote_no`、编辑后自动同步；报价历史 = 多张报价单 → 见 §3 术语 |
-| D-16 | 「已确认」触发事件 | **定金到账登记（实收登记）即自动确认**（部分到账也算，详情标注）；人工确认保留；CI/SC 签发不触发（**SC 依赖 PI，PI 依赖订单**，§3.5）；补 `confirmed_at/by/source` → 见 §5.1 |
+| D-16 | 「已确认」触发事件 | **人工登记定金到账 → 订单联动确认**（部分到账也算，详情标注）；人工确认保留；CI/SC 签发不触发（**SC 依赖 PI，PI 依赖订单**，§3.5）；补 `confirmed_at/by/source` → 见 §5.1 |
+| D-17 | 收款确认方式 | **永远是人工操作**：只认业务在「实收登记」里录入金额/到账日期/凭证截图；不做自动识别、银行对账、金额匹配；`payment_receipts` 登记即确认，不设「待确认收款」状态；定金类前端必填截图 → 见 §5.1 |
 
 ### 12.2 仍待拍板
 
-**无。** 全部决策已拍板（D-1~D-16，2026-10-22），M1 可开工。
+**无。** 全部决策已拍板（D-1~D-17，2026-10-22），M1 可开工。
 
 > 拍板方式：`ask_user_question` 弹窗（AGENTS 规则 2）；拍板结果回填本文件并销 TODO §Q 对应条目。
