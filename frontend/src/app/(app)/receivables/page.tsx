@@ -119,7 +119,7 @@ export default function ReceivablesPage() {
 
         <SectionCard
           title="应收明细"
-          description={`服务端支持状态筛选与分页；客户名/只看逾期作用于当前页（后端接口暂未提供这两个参数）。${
+          description={`状态筛选与分页对全部记录生效；客户名与「只看逾期」仅筛选当前页。${
             failedCount > 0
               ? ` 有 ${failedCount} 个订单的收款计划读取失败，逾期列显示「未知」。`
               : ""

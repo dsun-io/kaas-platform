@@ -50,7 +50,7 @@ export default function KbPage() {
           <EmptyState
             icon={BookOpen}
             title="知识库管理功能即将上线"
-            description="支持工位能力网知识分层编辑、规格参数管理、公式配置。"
+            description="支持按工位与产品分类整理知识条目，方便一线同事随时查阅。"
           />
         </SectionCard>
       </div>

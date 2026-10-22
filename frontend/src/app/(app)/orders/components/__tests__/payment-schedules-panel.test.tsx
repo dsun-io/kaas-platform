@@ -1,8 +1,9 @@
 /**
- * 收款计划面板（C36 下期 #6/#10/#20）——三件套接线与错误透出。
+ * 收款计划 + 实收记录面板（C36 #6/#10/#20 → §13.3 扩展）。
  *
- * 用**真 hooks + mock apiClient**（而不是 mock hooks），这样 GET/POST/PATCH 的路径、
- * 请求体与失效逻辑都在测试里真跑一遍。
+ * 用真 hooks + mock apiClient：GET/POST/PATCH 路径、请求体、失效逻辑都在测试里真跑。
+ * 覆盖：计划汇总 / 新建 / 标记收款（旧口径）/ 登记收款（实收、可改金额）/ 差异 /
+ * 未分配收款 / 历史 paid 兼容 / 到账截图补传。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, type ReactNode } from "react";
@@ -21,10 +22,17 @@ vi.mock("@/lib/api/client", () => ({
   default: { get: mocks.get, post: mocks.post, patch: mocks.patch },
   apiClient: { get: mocks.get, post: mocks.post, patch: mocks.patch },
 }));
+vi.mock("sonner", () => ({
+  toast: {
+    success: vi.fn(),
+    warning: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+  },
+}));
 
-(
-  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
-).IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
+  true;
 
 const SCHEDULES = [
   {
@@ -33,13 +41,14 @@ const SCHEDULES = [
     trade_doc_id: null,
     schedule_type: "deposit",
     ratio: 0.3,
-    amount: 848.06,
+    amount: 300,
     currency: "USD",
     due_date: "2026-10-01",
     actual_date: null,
     status: "pending",
     fx_rate: null,
     exchange_gain_loss: null,
+    received_amount: 0,
     notes: "订单确认后",
     created_at: "2026-10-01T00:00:00Z",
   },
@@ -49,17 +58,34 @@ const SCHEDULES = [
     trade_doc_id: null,
     schedule_type: "balance",
     ratio: 0.7,
-    amount: 1978.8,
+    amount: 700,
     currency: "USD",
     due_date: "2026-11-01",
     actual_date: "2026-10-20",
     status: "paid",
     fx_rate: 6.7029,
     exchange_gain_loss: 0,
+    received_amount: 700,
     notes: null,
     created_at: "2026-10-01T00:00:00Z",
   },
 ];
+
+function receipt(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 1,
+    order_id: 9,
+    schedule_id: 1,
+    amount: 100,
+    currency: "USD",
+    received_date: "2026-10-20",
+    fx_rate: null,
+    file_id: null,
+    notes: null,
+    created_at: "2026-10-20T00:00:00Z",
+    ...overrides,
+  };
+}
 
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
@@ -87,13 +113,17 @@ function mount(element: ReactNode) {
   });
 }
 
-function clickButton(text: string) {
-  const button = Array.from(document.querySelectorAll("button")).find(
-    (b) => (b.textContent ?? "").trim() === text,
+function allButtons(text: string): HTMLButtonElement[] {
+  return Array.from(document.querySelectorAll("button")).filter(
+    (el) => (el.textContent ?? "").trim() === text,
   );
-  if (!button) throw new Error(`没找到按钮「${text}」`);
+}
+
+function clickButton(text: string, index = 0) {
+  const el = allButtons(text)[index];
+  if (!el) throw new Error(`没找到按钮「${text}」#${index}`);
   act(() => {
-    button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
 }
 
@@ -110,9 +140,27 @@ function setValue(selector: string, value: string) {
   });
 }
 
+function attachFile(selector: string, file: File) {
+  const el = document.querySelector<HTMLInputElement>(selector);
+  if (!el) throw new Error(`没找到 ${selector}`);
+  Object.defineProperty(el, "files", { value: [file], configurable: true });
+  act(() => {
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.get.mockResolvedValue({ data: { items: SCHEDULES, total: 2 } });
+  mocks.get.mockImplementation(async (url: string) => {
+    const path = String(url);
+    if (path === "/orders/9/payment-schedules") {
+      return { data: { items: SCHEDULES, total: 2 } };
+    }
+    if (path === "/orders/9/receipts") {
+      return { data: { items: [], total: 0 } };
+    }
+    return { data: { items: [], total: 0 } };
+  });
 });
 
 afterEach(() => {
@@ -123,10 +171,11 @@ afterEach(() => {
   container = null;
   client?.clear();
   client = null;
+  vi.restoreAllMocks();
 });
 
 describe("PaymentSchedulesPanel", () => {
-  it("列表 + 汇总：显示三期金额、已收/待收、已收款行没有「标记收款」", async () => {
+  it("列表 + 汇总：应收取收、旧计划历史收款标注、已收款行没有「标记收款」", async () => {
     mount(<PaymentSchedulesPanel orderId={9} currency="USD" />);
     await settle();
 
@@ -136,11 +185,34 @@ describe("PaymentSchedulesPanel", () => {
     expect(text).toContain("尾款");
     expect(text).toContain("已收款");
     expect(text).toContain("应收合计");
-    // 已收款行只保留「修改」，未收款行有「标记收款」
-    const markPaidButtons = Array.from(
-      document.querySelectorAll("button"),
-    ).filter((b) => (b.textContent ?? "").trim() === "标记收款");
-    expect(markPaidButtons.length).toBe(1);
+    expect(text).toContain("历史收款（无截图）");
+    expect(allButtons("标记收款")).toHaveLength(1);
+  });
+
+  it("部分收款：显示「部分收款」、已收金额与差异（不把计划金额算成已收）", async () => {
+    mocks.get.mockImplementation(async (url: string) => {
+      const path = String(url);
+      if (path === "/orders/9/payment-schedules") {
+        return {
+          data: {
+            items: [SCHEDULES[0], { ...SCHEDULES[1], status: "pending", received_amount: 0 }],
+            total: 2,
+          },
+        };
+      }
+      if (path === "/orders/9/receipts") {
+        return { data: { items: [receipt({ amount: 100 })], total: 1 } };
+      }
+      return { data: { items: [], total: 0 } };
+    });
+    mount(<PaymentSchedulesPanel orderId={9} currency="USD" />);
+    await settle();
+
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("部分收款");
+    expect(text).toContain("USD 100.00");
+    expect(text).toContain("USD -200.00");
+    expect(text).toContain("实收登记 1 笔");
   });
 
   it("新建：POST 路径与请求体（类型 + 金额），成功后收起表单", async () => {
@@ -160,7 +232,7 @@ describe("PaymentSchedulesPanel", () => {
     );
   });
 
-  it("标记收款：PATCH 带 status/actual_date/fx_rate（含汇兑损益口径）", async () => {
+  it("标记收款（旧口径）：PATCH 带 status/actual_date/fx_rate", async () => {
     mocks.patch.mockResolvedValue({ data: SCHEDULES[0] });
     mount(<PaymentSchedulesPanel orderId={9} currency="USD" />);
     await settle();
@@ -176,6 +248,121 @@ describe("PaymentSchedulesPanel", () => {
     expect(body).toMatchObject({ status: "paid", fx_rate: 6.75 });
     expect(typeof (body as Record<string, unknown>).actual_date).toBe("string");
     expect(config).toEqual({ silent: true });
+  });
+
+  it("登记收款：实收金额默认 = 剩余应收，可改；POST schedule_id + amount + 日期", async () => {
+    mocks.get.mockImplementation(async (url: string) => {
+      const path = String(url);
+      if (path === "/orders/9/payment-schedules") {
+        return { data: { items: SCHEDULES, total: 2 } };
+      }
+      if (path === "/orders/9/receipts") {
+        return { data: { items: [receipt({ amount: 100 })], total: 1 } };
+      }
+      return { data: { items: [], total: 0 } };
+    });
+    mocks.post.mockResolvedValue({ data: receipt({ id: 7, amount: 150 }) });
+    mount(<PaymentSchedulesPanel orderId={9} currency="USD" />);
+    await settle();
+
+    // 第 1 期：应收 300、已收 100 ⇒ 默认 200；改成实际到账 150
+    clickButton("登记收款", 1);
+    await settle(2);
+    expect(
+      document.querySelector<HTMLInputElement>("#receipt-amount")?.value,
+    ).toBe("200.00");
+    setValue("#receipt-amount", "150");
+    setValue("#receipt-date", "2026-10-22");
+    clickButton("确认登记");
+    await settle();
+
+    expect(mocks.post).toHaveBeenCalledWith(
+      "/orders/9/receipts",
+      { schedule_id: 1, amount: 150, received_date: "2026-10-22" },
+      { silent: true },
+    );
+  });
+
+  it("未分配收款（schedule_id=null）单独展示，不摊到任何一期", async () => {
+    mocks.get.mockImplementation(async (url: string) => {
+      const path = String(url);
+      if (path === "/orders/9/payment-schedules") {
+        return { data: { items: SCHEDULES, total: 2 } };
+      }
+      if (path === "/orders/9/receipts") {
+        return {
+          data: {
+            items: [
+              receipt({ id: 3, schedule_id: null, amount: 55, notes: "客户多汇" }),
+            ],
+            total: 1,
+          },
+        };
+      }
+      return { data: { items: [], total: 0 } };
+    });
+    mount(<PaymentSchedulesPanel orderId={9} currency="USD" />);
+    await settle();
+
+    expect(document.body.textContent).toContain("未分配收款 1 笔");
+    expect(document.body.textContent).toContain("客户多汇");
+  });
+
+  it("到账截图：有 file_id 可查看；没有时可补传（multipart file）", async () => {
+    const createObjectURL = vi.fn(() => "blob:receipt");
+    const revokeObjectURL = vi.fn();
+    (URL as unknown as { createObjectURL: typeof createObjectURL }).createObjectURL =
+      createObjectURL;
+    (URL as unknown as { revokeObjectURL: typeof revokeObjectURL }).revokeObjectURL =
+      revokeObjectURL;
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+
+    mocks.get.mockImplementation(async (url: string) => {
+      const path = String(url);
+      if (path === "/orders/9/payment-schedules") {
+        return { data: { items: SCHEDULES, total: 2 } };
+      }
+      if (path === "/orders/9/receipts") {
+        return {
+          data: {
+            items: [
+              receipt({ id: 4, file_id: 33 }),
+              receipt({ id: 5, schedule_id: null, amount: 10 }),
+            ],
+            total: 2,
+          },
+        };
+      }
+      if (path === "/file-objects/33/content") return { data: new Blob(["x"]) };
+      return { data: { items: [], total: 0 } };
+    });
+    mocks.post.mockResolvedValue({ data: { id: 66 } });
+
+    mount(<PaymentSchedulesPanel orderId={9} currency="USD" />);
+    await settle();
+
+    clickButton("查看到账截图");
+    await settle();
+    expect(mocks.get).toHaveBeenCalledWith("/file-objects/33/content", {
+      responseType: "blob",
+    });
+    expect(open).toHaveBeenCalled();
+
+    const file = new File([new Uint8Array(4)], "receipt.png", {
+      type: "image/png",
+    });
+    attachFile('input[aria-label="补传到账截图 #5"]', file);
+    await settle();
+
+    expect(mocks.post).toHaveBeenCalledTimes(1);
+    const [url, form, config] = mocks.post.mock.calls[0]!;
+    expect(url).toBe("/payment-receipts/5/files");
+    expect(form).toBeInstanceOf(FormData);
+    expect((form as FormData).get("file")).toBeInstanceOf(File);
+    expect(config).toMatchObject({
+      headers: { "Content-Type": "multipart/form-data" },
+      silent: true,
+    });
   });
 
   it("409 已收款不可回退：错误展示在弹窗里且不关闭", async () => {
@@ -197,7 +384,6 @@ describe("PaymentSchedulesPanel", () => {
     mount(<PaymentSchedulesPanel orderId={9} currency="USD" />);
     await settle();
 
-    // 修改已收款那一期会触发 409（后端禁止 paid→非 paid）
     clickButton("修改");
     setValue("#schedule-amount", "2000");
     clickButton("保存");

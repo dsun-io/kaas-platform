@@ -91,9 +91,9 @@ describe("FxHistoryCard", () => {
     const text = document.body.textContent ?? "";
     expect(text).toContain("2026-10-21");
     expect(text).toContain("6.7029");
-    expect(text).toContain("manual");
-    expect(text).toContain("缓存（外部源不可用）");
-    expect(text).toContain("后端上限 365 条");
+    expect(text).toContain("手工录入");
+    expect(text).toContain("备用数据（外部汇率源暂不可用）");
+    expect(text).toContain("最多 365 条");
   });
 
   it("切换条数后按新 limit 重新请求（上限 365 由 hook 夹紧）", async () => {

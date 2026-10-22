@@ -102,7 +102,7 @@ export function DocSetPanel({
       toast.success("清单已保存（已登记的回执保留）");
       setEditing(false);
     } catch {
-      toast.error("保存失败：单证类型/角色/出单方需为后端枚举值");
+      toast.error("保存失败：单证类型、角色或出单方不符合要求，请刷新后重试");
     }
   };
 
@@ -123,7 +123,7 @@ export function DocSetPanel({
       setWaiving(null);
       setWaiveReason("");
     } catch {
-      toast.error("回执登记失败：已登记过的状态不能覆盖（后端 409）");
+      toast.error("回执登记失败：这一项已经有登记，不能直接覆盖");
     }
   };
 
@@ -136,7 +136,7 @@ export function DocSetPanel({
           共 {items.length} 项
         </StatusBadge>
         <span className="text-xs text-muted-foreground">
-          全量替换会保留已登记的回执（后端按 doc_type upsert）
+          保存会整表更新，但已登记的回执会保留
         </span>
         <Button
           size="sm"

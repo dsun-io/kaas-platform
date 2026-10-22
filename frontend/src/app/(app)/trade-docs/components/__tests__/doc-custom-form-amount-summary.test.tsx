@@ -45,13 +45,11 @@ function text() {
   return container?.textContent ?? "";
 }
 
-/** 按 manifest 字段名找输入框（表单里每个字段的 label 内都有 `<code>字段名</code>`） */
+/** 按内容项名找输入框（label 上有 data-field；界面不展示内部字段名） */
 function inputByName(name: string): HTMLInputElement {
-  const code = Array.from(container!.querySelectorAll("code")).find(
-    (el) => el.textContent === name,
-  );
-  const input = code?.closest("label")?.querySelector("input");
-  if (!input) throw new Error(`没找到字段 ${name} 的输入框`);
+  const label = container!.querySelector(`label[data-field="${name}"]`);
+  const input = label?.querySelector("input");
+  if (!input) throw new Error(`没找到内容项 ${name} 的输入框`);
   return input as HTMLInputElement;
 }
 

@@ -166,7 +166,10 @@ _CUSTOMER_KEYS = {
 }
 _INQUIRY_KEYS = {
     "id", "customer_id", "inquiry_no", "lead_id", "channel", "category_id",
-    "product_name_raw", "quantity", "quantity_unit", "application", "status",
+    "product_name_raw", "quantity", "quantity_unit", "application",
+    # 2026-10-22（设计 §5）：询盘多产品行（迁移 202610220001 的 items）
+    "items",
+    "status",
     # TODO F4（2026-10-20）：阶段落库后序列化新增两键（迁移 202610200003）
     "stage", "stage_updated_at",
     "created_at",

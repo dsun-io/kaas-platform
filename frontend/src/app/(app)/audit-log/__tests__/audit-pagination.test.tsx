@@ -175,4 +175,28 @@ describe("操作日志分页（C25）", () => {
     expect(lastPageParam()).toBe(1);
     expect(lastUrl()).toContain("action=tenant.reload");
   });
+
+  it("操作名/对象类型翻中文；原始数据默认折叠，点「查看详情」才出现", async () => {
+    await mount();
+
+    // 内部代码 tenant.reload / tenant 不出现在列表上，改为中文说法
+    expect(container!.textContent).toContain("重载空间配置");
+    expect(container!.textContent).toContain("空间");
+    expect(container!.textContent).not.toContain('"tenant.reload"');
+
+    // 展开一行：先给摘要，原始 JSON 仍是折叠的
+    const row = container!.querySelector<HTMLTableRowElement>("tbody tr")!;
+    await act(async () => {
+      row.click();
+    });
+    await settle();
+    expect(container!.textContent).toContain("查看详情（一般不需要看）");
+    expect(container!.textContent).not.toContain('"resource_type"');
+
+    // 点「查看详情」才把原始 JSON 铺开
+    await act(async () => {
+      button("查看详情（一般不需要看）")!.click();
+    });
+    expect(container!.textContent).toContain('"resource_type"');
+  });
 });

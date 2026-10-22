@@ -238,14 +238,14 @@ export function DocPreview({
     const parts: string[] = [];
     if (audit.undeclared.length > 0) {
       parts.push(
-        `模板引用了未登记字段（请查占位符拼写或补 manifest）：${audit.undeclared
+        `模板里有内容项未登记（请联系管理员核对模板）：${audit.undeclared
           .map((x) => x.key)
           .join("、")}`,
       );
     }
     if (audit.blankOptional.length > 0) {
       parts.push(
-        `可选字段当前为空（如需可填写）：${audit.blankOptional
+        `可选内容项当前为空（如需可填写）：${audit.blankOptional
           .map((x) => x.label)
           .join("、")}`,
       );
@@ -358,9 +358,9 @@ export function DocPreview({
             : `还差 ${missing.length} 项必填`}
         </StatusBadge>
         {/*
-          字段体检（TODO(TODO:A3)）：把「会留空的地方」显式化。
-          - 模板引用了未登记字段 = 占位符拼错/模板漏登记（代码问题，危险色提示）
-          - 可选字段留空 = 业务可选，填不填由用户判断（只做提示，不拦签发）
+          内容项体检（TODO(TODO:A3)）：把「会留空的地方」显式化。
+          - 模板引用了未登记内容项 = 模板里写错/漏登记（技术问题，危险色提示）
+          - 可选内容项留空 = 业务可选，填不填由用户判断（只做提示，不拦签发）
         */}
         {blankHint && (
           <span
@@ -368,13 +368,13 @@ export function DocPreview({
             title={blankHint}
           >
             {audit.undeclared.length > 0
-              ? `模板字段未登记 ${audit.undeclared.length} 项`
+              ? `模板内容项未登记 ${audit.undeclared.length} 项`
               : ""}
             {audit.undeclared.length > 0 && audit.blankOptional.length > 0
               ? " · "
               : ""}
             {audit.blankOptional.length > 0
-              ? `可选字段留空 ${audit.blankOptional.length} 项`
+              ? `可选内容项留空 ${audit.blankOptional.length} 项`
               : ""}
           </span>
         )}

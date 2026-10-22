@@ -681,6 +681,101 @@ async def upload_doc_file(doc_id: int, request: Request,
     return {"file": row, "link": link}
 
 
+# ── 订单随单附件（设计 §6 / §13.3）──────────────────────────────────────────
+# 合同 / PO / 信用证扫描件是**随单附件**，与正式单证（模板渲染 + 签发）生命周期不同：
+# 前者可补传、可多份，后者走单证工位；两者不混在一张表里，避免把单证流程做复杂。
+# owner_type='order' + kind='other'（PDF/JPG/PNG，沿用 16MB 上限，规则在共享内核）。
+
+async def _visible_order(request, order_id: int, user: dict):
+    """订单存在 + 可见（与 main 的 _owner_visible 同一把尺）；不可见一律 404。"""
+    row = await db.fetchrow(
+        request, "SELECT * FROM orders WHERE tenant_id=$1 AND id=$2",
+        DEFAULT_TENANT, order_id, table="orders")
+    if row is None or not _main._owner_visible(user, row):
+        raise HTTPException(
+            status_code=404, detail={"error": "order_not_found"})
+    return row
+
+
+@app.get("/api/v1/orders/{order_id}/files")
+async def list_order_files(order_id: int, request: Request,
+                           user: dict = Depends(_get_current_user)):
+    """订单附件列表（当前件；团队隔离谓词与产品图/单证一致）。"""
+    await _visible_order(request, order_id, user)
+    rows = await db.fetch(
+        request,
+        f"SELECT {_META_COLS} FROM file_objects WHERE tenant_id=$1"
+        " AND owner_type='order' AND owner_id=$2 AND is_current"
+        + _team_scope(user, 3)[0]
+        + f" ORDER BY {_FILE_ORDER_BY}",
+        DEFAULT_TENANT, str(order_id), *_team_scope(user, 3)[1], table=None)
+    return {"items": [_row_to_file(r) for r in rows]}
+
+
+@app.post("/api/v1/orders/{order_id}/files", status_code=201)
+async def upload_order_file(order_id: int, request: Request,
+                            file: UploadFile = File(...),
+                            name: str = Form(""),
+                            kind: str = Form("other"),
+                            user: dict = Depends(_get_current_user)):
+    """上传订单附件：合同 / PO / 信用证扫描件（可多份、可补传）。
+
+    multipart 字段：file（必填）、name（显示名，缺省用文件名）；
+    kind 只接受 'other'（文件用途白名单在共享内核 kaas_common.files）；
+    “合同/PO/信用证”的类别请写在 name 里（设计上不新增 file_objects 列）。
+    """
+    order = await _visible_order(request, order_id, user)
+    _main._check_write_access(user, order)
+    if (kind or "other").strip() != "other":
+        raise _fail(FileRuleError(
+            "BAD_FILE_KIND",
+            "订单附件只接受 kind=other（合同/PO/信用证扫描件）"))
+    data = await file.read()
+    label = (name or "").strip() or (file.filename or "订单附件")
+    return await _create_file(
+        request=request, user=user, owner_type="order", owner_id=str(order_id),
+        kind="other", media_kind=None, name=label, content=data,
+        content_type=file.content_type or "", file_name=file.filename,
+        supersede=False)
+
+
+@app.post("/api/v1/payment-receipts/{receipt_id}/files", status_code=201)
+async def upload_receipt_file(receipt_id: int, request: Request,
+                              file: UploadFile = File(...),
+                              name: str = Form(""),
+                              user: dict = Depends(_get_current_user)):
+    """上传到账截图并挂到实收登记（owner_type='payment_receipt'）。
+
+    登记后把 payment_receipts.file_id 指向该文件（可重复上传，最新一次生效；
+    旧文件保留在 file_objects 里可审计）。截图经由 GET /file-objects/{id}/content 取。
+    """
+    receipt = await db.fetchrow(
+        request, "SELECT * FROM payment_receipts WHERE tenant_id=$1 AND id=$2",
+        DEFAULT_TENANT, receipt_id, table="payment_receipts")
+    if receipt is None:
+        raise HTTPException(
+            status_code=404, detail={"error": "receipt_not_found"})
+    order = await db.fetchrow(
+        request, "SELECT * FROM orders WHERE tenant_id=$1 AND id=$2",
+        DEFAULT_TENANT, receipt["order_id"], table="orders")
+    if order is None or not _main._owner_visible(user, order):
+        raise HTTPException(
+            status_code=404, detail={"error": "receipt_not_found"})
+    _main._check_write_access(user, order)
+    data = await file.read()
+    label = (name or "").strip() or (file.filename or "到账截图")
+    row = await _create_file(
+        request=request, user=user, owner_type="payment_receipt",
+        owner_id=str(receipt_id), kind="other", media_kind=None, name=label,
+        content=data, content_type=file.content_type or "",
+        file_name=file.filename, supersede=False)
+    await db.execute(
+        request, "UPDATE payment_receipts SET file_id=$3"
+        " WHERE tenant_id=$1 AND id=$2",
+        DEFAULT_TENANT, receipt_id, row["id"])
+    return row
+
+
 # ── 自动出 PDF（Cloudflare Browser Rendering）→ 复用上面的落档链路 ──────────────
 #
 # 与 orchestrator `app/api/files.py` 同契约、同路径、同字段（route-parity 卡着）。

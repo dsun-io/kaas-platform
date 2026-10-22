@@ -33,6 +33,7 @@ import {
   contactApi,
   customerApi,
   inquiryStageLogApi,
+  normalizeInquiryItems,
   rowToCustomer,
   rowToInquiry,
   stageLogApi,
@@ -453,6 +454,8 @@ const inquiryCreateSchema = z.object({
   quantity: z.coerce.number().nullish(),
   quantity_unit: z.string().nullish(),
   application: z.string().nullish(),
+  // 多产品行（设计 §5）：一个询盘可录多个产品；第一行同步写上面四个旧字段。
+  items: z.array(z.record(z.unknown())).optional(),
   status: z.string().default("unquoted"),
   notes: z.string().nullish(),
 });
@@ -483,15 +486,26 @@ app.post("/api/v1/customers/:customer_id/inquiries", (c) => respond(c, async () 
     const channel = validateEnum("inquiry_channel", body.channel);
     const ownerScope = validateEnum("owner_scope", body.owner_scope) ?? "private";
     const inquiryNo = await nextInquiryNo(sql, customer);
+    // 多产品行（设计 §5）：items 是权威来源，**第一行同步写旧标量字段**
+    // （旧报表/链式分析读 product_name_raw/quantity，不能只写 items）。
+    const items = normalizeInquiryItems(body.items ?? []);
+    const first = items[0];
+    const productNameRaw = body.product_name_raw || first?.product_name_raw || null;
+    const quantity = body.quantity !== null && body.quantity !== undefined
+      ? body.quantity
+      : (first?.quantity ?? null);
+    const quantityUnit = body.quantity_unit || first?.quantity_unit || null;
+    const application = body.application || first?.application || null;
     const inserted = await sql`
       INSERT INTO cust_inquiries
              (tenant_id, customer_id, inquiry_no, channel, lead_id, category_id,
               product_name_raw, quantity, quantity_unit, application, status, notes,
-              created_by, owner_id, owner_scope, team_id)
+              created_by, owner_id, owner_scope, team_id, items)
       VALUES (${DEFAULT_TENANT}, ${customerId}, ${inquiryNo}, ${channel}, ${body.lead_id},
-              ${body.category_id}, ${body.product_name_raw}, ${body.quantity},
-              ${body.quantity_unit}, ${body.application}, 'unquoted', ${body.notes},
-              ${String(user.id)}, ${String(user.id)}, ${ownerScope}, ${user.team_id})
+              ${body.category_id}, ${productNameRaw}, ${quantity},
+              ${quantityUnit}, ${application}, 'unquoted', ${body.notes},
+              ${String(user.id)}, ${String(user.id)}, ${ownerScope}, ${user.team_id},
+              ${JSON.stringify(items)}::jsonb)
       RETURNING *`;
     return inserted[0] as Record<string, unknown>;
   });
@@ -702,6 +716,8 @@ const inquiryUpdateSchema = z.object({
   quantity: z.coerce.number().nullish(),
   quantity_unit: z.string().nullish(),
   application: z.string().nullish(),
+  // 多产品行（设计 §5）：PATCH 支持改 items，第一行同步回旧标量字段
+  items: z.array(z.record(z.unknown())).optional(),
   notes: z.string().nullish(),
   owner_scope: z.string().nullish(),
 });
@@ -808,6 +824,25 @@ app.patch("/api/v1/inquiries/:inquiry_id", (c) => respond(c, async () => {
       }
       if (provided("owner_scope")) {
         validateEnum("owner_scope", body.owner_scope);
+      }
+      // 多产品行（设计 §5）：items 落 jsonb，**第一行同步写旧标量字段**
+      // （显式传了同名列时以显式值为准 —— 与 Python ws_crm_ext 同序）。
+      if (provided("items")) {
+        const items = normalizeInquiryItems(body.items ?? []);
+        params.push(JSON.stringify(items));
+        sets.push("items = $" + String(params.length) + "::jsonb");
+        const first = items[0];
+        const legacy: [string, unknown][] = [
+          ["product_name_raw", first?.product_name_raw ?? null],
+          ["quantity", first?.quantity ?? null],
+          ["quantity_unit", first?.quantity_unit ?? null],
+          ["application", first?.application ?? null],
+        ];
+        for (const [column, value] of legacy) {
+          if (provided(column)) continue;
+          params.push(value);
+          sets.push(column + " = $" + String(params.length));
+        }
       }
       for (const column of INQUIRY_COLUMNS) {
         if (provided(column)) {

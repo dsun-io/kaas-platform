@@ -86,7 +86,7 @@ export function ApiTokensView() {
     setRevokeError(null);
     try {
       await revoke.mutateAsync(revokeTarget.id);
-      toast.success(`已撤销令牌「${revokeTarget.name}」`);
+      toast.success(`已撤销密钥「${revokeTarget.name}」`);
       setRevokeTarget(null);
     } catch (error) {
       setRevokeError(formatApiTokenError(error));
@@ -96,8 +96,8 @@ export function ApiTokensView() {
   return (
     <div className="space-y-6">
       <SectionCard
-        title="我的 API 令牌"
-        description="用于 REST API / MCP 客户端访问；只显示你本人创建的令牌。"
+        title="我的系统对接密钥"
+        description="用于外部系统或自动化工具对接；只显示你本人创建的密钥。"
         action={
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-muted-foreground">共 {total} 个</span>
@@ -113,7 +113,7 @@ export function ApiTokensView() {
             </Button>
             <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
               <Plus className="size-3.5" />
-              创建令牌
+              创建密钥
             </Button>
           </div>
         }
@@ -142,12 +142,12 @@ export function ApiTokensView() {
           <div className="p-5">
             <EmptyState
               icon={KeyRound}
-              title="还没有 API 令牌"
-              description="创建一个令牌，用 Bearer 调用 REST API，或连接 MCP 客户端。明文只在创建成功后显示一次。"
+              title="还没有系统对接密钥"
+              description="创建一个密钥，让外部系统或自动化工具对接平台业务数据。完整密钥只在创建成功后显示一次。"
               action={
                 <Button type="button" onClick={() => setCreateOpen(true)}>
                   <Plus className="size-4" />
-                  创建第一个令牌
+                  创建第一个密钥
                 </Button>
               }
             />
@@ -157,8 +157,8 @@ export function ApiTokensView() {
             <TableHeader>
               <TableRow>
                 <TableHead>名称</TableHead>
-                <TableHead>前缀</TableHead>
-                <TableHead>作用域</TableHead>
+                <TableHead>密钥标识</TableHead>
+                <TableHead>权限范围</TableHead>
                 <TableHead>创建时间</TableHead>
                 <TableHead>最后使用</TableHead>
                 <TableHead>状态</TableHead>
@@ -194,7 +194,7 @@ export function ApiTokensView() {
                                   (scope) => `${scopeLabel(scope)}（${scope}）`,
                                 )
                                 .join("、")
-                            : "未选择作用域"
+                            : "未选择权限范围"
                         }
                       >
                         {summarizeScopes(token.scopes)}
@@ -219,7 +219,7 @@ export function ApiTokensView() {
                           type="button"
                           size="sm"
                           variant="destructive"
-                          aria-label={`撤销令牌 ${token.name}`}
+                          aria-label={`撤销密钥 ${token.name}`}
                           onClick={() => {
                             setRevokeError(null);
                             setRevokeTarget(token);
@@ -240,7 +240,7 @@ export function ApiTokensView() {
       <div className="flex items-start gap-2 rounded-lg border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
         <ShieldCheck className="mt-0.5 size-4 shrink-0" />
         <p>
-          令牌明文只在创建成功后显示一次，平台不保存明文；请勿写入代码仓库或聊天记录。
+          完整密钥只在创建成功后显示一次，平台不保存密钥内容；请勿写入代码或聊天记录。
           怀疑泄露时立即撤销并重新创建。
         </p>
       </div>
@@ -258,8 +258,8 @@ export function ApiTokensView() {
             setRevokeError(null);
           }
         }}
-        title="撤销 API 令牌"
-        description={`撤销后使用「${revokeTarget?.name ?? ""}」的脚本或 MCP 客户端会立即收到 401，且无法恢复。确定撤销吗？`}
+        title="撤销系统对接密钥"
+        description={`撤销后使用「${revokeTarget?.name ?? ""}」的外部系统或自动化工具将无法再连接平台，且无法恢复。确定撤销吗？`}
         confirmLabel="确认撤销"
         pending={revoke.isPending}
         error={revokeError}

@@ -25,7 +25,12 @@ __all__ = [
     "is_file_ref", "to_data_uri", "coerce_file_ref_id",
 ]
 
-OWNER_TYPES = ("product", "trade_doc", "customer", "company")
+# 归属类型（file_objects.owner_type）：
+#   product 产品图 / trade_doc 单证 / customer 客户 / company 公司
+#   order 订单随单附件（合同/PO/信用证扫描件，kind=other）
+#   payment_receipt 到账截图（kind=other，PNG/JPG/PDF，16MB 上限）
+# 2026-10-22（设计 §13.3）：新增 order / payment_receipt，复用 other 的大小与类型限制。
+OWNER_TYPES = ("product", "trade_doc", "customer", "company", "order", "payment_receipt")
 FILE_KINDS = ("product_photo", "stamp_scan", "render_pdf", "other")
 MEDIA_KINDS = ("production", "size", "weight", "finished", "other")
 STORAGE_BACKENDS = ("s3", "inline")

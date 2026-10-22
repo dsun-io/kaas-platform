@@ -58,8 +58,13 @@ CURRENCY = ("USD", "CNY", "EUR", "GBP", "JPY", "AUD", "CAD", "HKD")
 OWNER_SCOPE = ("private", "tenant")
 
 # ── 付款计划 ─────────────────────────────────────────────────────────────────
-SCHEDULE_TYPE = ("deposit", "balance", "full")
-SCHEDULE_STATUS = ("pending", "paid", "overdue")
+# 收款期次类型：定金 / 尾款 / 全额 / 其他（2026-10-22 设计 §13.3 新增 other：
+# 「期次类型（定金/尾款/其他）」，运费后补等场景需要非标准期次）。
+SCHEDULE_TYPE = ("deposit", "balance", "full", "other")
+# 收款期次状态：pending 未收 / partial 部分实收 / paid 已收清 / overdue 逾期未收
+# 2026-10-22（设计 §13.3）：新增 partial —— 「一次收款一行」的实收登记后，
+# 期次已收金额 > 0 且 < 应收金额 ⇒ partial；已 paid 的历史行不回退。
+SCHEDULE_STATUS = ("pending", "partial", "paid", "overdue")
 
 # ── 应收状态 ─────────────────────────────────────────────────────────────────
 RECEIVABLE_STATUS = ("unpaid", "partial", "paid")

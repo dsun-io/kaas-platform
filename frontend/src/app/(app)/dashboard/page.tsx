@@ -32,8 +32,8 @@ export default function DashboardPage() {
         />
         <p className="text-sm font-medium">仪表盘改版中</p>
         <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-          原有指标（Token 消耗、P95 延迟、采样覆盖率）对业务判断帮助有限，正在按新的
-          业务口径重做。上线前请从侧栏各工位查看具体数据。
+          原有指标偏系统运行状态，对业务判断帮助有限，正在按业务口径重做。
+          上线前请从侧栏各工位查看具体数据。
         </p>
       </section>
     </div>

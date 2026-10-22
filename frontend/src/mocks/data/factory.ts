@@ -76,9 +76,13 @@ export function makeTenant(
     is_active: boolean;
   }>,
 ) {
+  const name = overrides?.name ?? "联佳丝网";
   return {
     tenant_id: "lianjia",
-    name: "联佳丝网",
+    name,
+    // 页面契约（settings/hooks/use-tenants.ts）读 display_name；mock 同时给两个字段，
+    // 避免「卡片标题空白」这种假象。
+    display_name: name,
     is_active: true,
     ...overrides,
   };

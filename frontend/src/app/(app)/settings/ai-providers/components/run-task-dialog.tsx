@@ -31,6 +31,14 @@ import { Input } from "@/components/ui/input";
 
 import { useRunAiTask, type AiTaskRunResult } from "../hooks/use-run-ai-task";
 
+/** 服务商显示名（界面不展示英文技术标识；请求值仍是 deepseek/kimi/zhipu）。 */
+const PROVIDER_LABELS: Record<string, string> = {
+  deepseek: "DeepSeek",
+  kimi: "Kimi",
+  zhipu: "智谱",
+};
+const providerLabel = (name: string) => PROVIDER_LABELS[name] ?? name;
+
 interface Row {
   key: string;
   value: string;
@@ -95,7 +103,7 @@ export function runErrorText(error: unknown): string {
     const body = [code, text].filter(Boolean).join("：");
     return (
       [prefix, body].filter(Boolean).join(" · ") ||
-      `运行失败（HTTP ${status ?? "?"}）`
+      `运行失败（状态码 ${status ?? "?"}）`
     );
   }
   if (typeof detail === "string") return detail;
@@ -146,13 +154,16 @@ export function RunTaskDialog({
         <DialogHeader>
           <DialogTitle>运行任务：{taskName}</DialogTitle>
           <DialogDescription>
-            {taskKey} · 一次调用会写入 AI 用量审计；`GET /ai/tasks` 没有输入
-            schema， 因此用最小 key/value 传参（值先按 JSON
-            解析，失败按字符串）。
+            一次运行会记入调用记录。一般无需填写参数，直接运行即可；
+            确需传参时展开下方「高级参数」。
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-2">
+        <details className="rounded-md border bg-muted/20 p-2">
+          <summary className="cursor-pointer text-xs text-muted-foreground">
+            高级参数（一般不需要修改）
+          </summary>
+          <div className="mt-2 space-y-2">
           {rows.map((row, index) => (
             <div key={index} className="flex items-center gap-2">
               <Input
@@ -165,7 +176,7 @@ export function RunTaskDialog({
               <Input
                 aria-label={`参数值 ${index + 1}`}
                 className="h-8 flex-1 text-xs"
-                placeholder='值（JSON 或字符串，如 "Fence" / 30）'
+                placeholder='值（文本或数字，如 "Fence" / 30）'
                 value={row.value}
                 onChange={(e) => updateRow(index, { value: e.target.value })}
               />
@@ -189,21 +200,21 @@ export function RunTaskDialog({
           >
             <Plus className="mr-1 h-3.5 w-3.5" /> 添加参数
           </Button>
-        </div>
-
-        <div className="rounded-md border bg-muted/20 p-2">
-          <div className="mb-1 text-[11px] text-muted-foreground">
-            实际请求体（`POST /ai/tasks/{taskKey}/run`）
           </div>
-          <pre className="max-h-32 overflow-auto text-[11px]">
-            {JSON.stringify({ payload }, null, 2)}
-          </pre>
-          {payloadKeys.length === 0 && (
-            <div className="mt-1 text-[11px] text-muted-foreground">
-              未填参数 ⇒ 发送空 payload <code>{`{}`}</code>（不少任务可空跑）
+          <div className="mt-2 border-t pt-2">
+            <div className="mb-1 text-[11px] text-muted-foreground">
+              参数预览
             </div>
-          )}
-        </div>
+            <pre className="max-h-32 overflow-auto text-[11px]">
+              {JSON.stringify({ payload }, null, 2)}
+            </pre>
+            {payloadKeys.length === 0 && (
+              <div className="mt-1 text-[11px] text-muted-foreground">
+                未填参数时会以空内容运行（多数任务可直接运行）
+              </div>
+            )}
+          </div>
+        </details>
 
         {run.isPending && (
           <div
@@ -231,27 +242,33 @@ export function RunTaskDialog({
                 运行成功
               </span>
               <span className="text-muted-foreground">
-                执行路径：
+                执行方式：
                 {result.path === "template"
-                  ? "模板兜底（未启用 AI）"
-                  : result.path}
+                  ? "内置模板（未启用 AI）"
+                  : result.path?.startsWith("ai:")
+                    ? `AI 服务（${providerLabel(result.path.slice(3))}）`
+                    : "AI 服务"}
               </span>
               <span className="text-muted-foreground">
                 耗时：
                 {typeof result.latency_ms === "number"
                   ? `${result.latency_ms} ms`
-                  : "—（模板路径不返回耗时）"}
+                  : "—（使用内置模板时不返回耗时）"}
               </span>
             </div>
             {result.note === "all_providers_failed" && (
               <div className="text-warning-muted-foreground">
-                注意：所有 AI
-                服务商都失败了，本次结果由内置模板兜底（note=all_providers_failed）。
+                注意：所有 AI 服务商都未返回结果，本次由内置模板完成。
               </div>
             )}
-            <pre className="max-h-64 overflow-auto rounded bg-muted/30 p-2 text-[11px]">
-              {JSON.stringify(result.result, null, 2)}
-            </pre>
+            <details>
+              <summary className="cursor-pointer text-[11px] text-muted-foreground">
+                查看原始返回（一般不需要看）
+              </summary>
+              <pre className="mt-1 max-h-64 overflow-auto rounded bg-muted/30 p-2 text-[11px]">
+                {JSON.stringify(result.result, null, 2)}
+              </pre>
+            </details>
           </div>
         )}
 

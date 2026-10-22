@@ -196,7 +196,7 @@ describe("中译英面板 · 字段选择与空态", () => {
     });
     renderPanel("draft");
 
-    expect(text()).toContain("当前没有需要翻译的中文字段");
+    expect(text()).toContain("当前没有需要翻译的中文内容");
     expect(
       Array.from(container.querySelectorAll("button")).some((btn) =>
         (btn.textContent ?? "").includes("翻译为英文"),
@@ -222,7 +222,7 @@ describe("中译英面板 · 字段选择与空态", () => {
 
     // 取消 claims
     const claimsCheckbox = container.querySelector(
-      'input[aria-label="选择翻译字段 claims"]',
+      'input[data-field="claims"]',
     ) as HTMLInputElement;
     await act(async () => {
       claimsCheckbox.click();

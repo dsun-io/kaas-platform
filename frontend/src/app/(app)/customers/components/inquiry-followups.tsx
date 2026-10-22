@@ -106,24 +106,9 @@ function byDateDesc(
   return tb - ta;
 }
 
-/** 产品名拆分：列表只显示产品名，规格参数进详情。 */
-export function splitProductName(raw: string | null): {
-  name: string;
-  spec: string | null;
-} {
-  if (!raw || raw.trim() === "") return { name: "未填写产品", spec: null };
-  const value = raw.trim();
-  const specRe =
-    /\d+(?:\.\d+)?\s*(?:mm|cm|m2|m²|㎡|目|卷|吨|kg|g|inch|in)\b|\s*[×xX*]\s*\d/i;
-  const match = value.match(specRe);
-  if (!match || match.index === undefined) return { name: value, spec: null };
-  const name = value.slice(0, match.index).replace(/[\s\-–—·]+$/, "");
-  const spec = value
-    .slice(match.index)
-    .replace(/^[\s\-–—×xX*·]+/, "")
-    .trim();
-  return { name: name || value, spec: spec || null };
-}
+// 产品名拆分（列表只显示产品名，规格参数进详情）已移到纯函数文件 ./inquiry-items.ts：
+// 询盘多产品行的详情卡片也要用，避免从本文件（依赖单证预览等重模块）导入。
+export { splitProductName } from "./inquiry-items";
 
 /** 询盘条目上的「当前阶段」——纯展示推导，不写回后端询盘 status。 */
 // 类型与「后端 stage 优先」的解析逻辑在 ./inquiry-stage.ts（纯函数，可单测）；

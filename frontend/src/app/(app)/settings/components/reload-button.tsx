@@ -39,9 +39,9 @@ export function ReloadButton() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>重载租户配置</CardTitle>
+        <CardTitle>重载产品配置</CardTitle>
         <CardDescription>
-          重新加载所有租户的 YAML 配置，刷新缓存中的租户信息。
+          重新加载产品配置，刷新所有空间的产品与分类信息。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -50,13 +50,13 @@ export function ReloadButton() {
             <Loader2 className="mr-1 size-4 animate-spin" />
           )}
           <RefreshCw className="mr-1 size-4" />
-          重载租户配置
+          重载产品配置
         </Button>
 
         {result && (
           <div>
             <p className="text-sm text-success mb-2">
-              已重载 {result.reloaded_count} 个租户
+              已重载 {result.reloaded_count} 个空间
             </p>
             <TenantList
               tenants={result.active_tenants.map((t) => ({

@@ -97,8 +97,9 @@ describe("RunTaskDialog · 参数表单与结果展示（C36 #13）", () => {
   it("默认空 payload 如实展示请求体；可加参数行并预览最终 payload", async () => {
     mount();
     expect(text()).toContain("运行任务：线索评分");
-    expect(text()).toContain("lead_scoring");
-    // 请求体预览（空 payload）
+    // 高级参数与请求体预览默认折叠，但用户展开后可见
+    expect(text()).toContain("高级参数（一般不需要修改）");
+    expect(text()).toContain("参数预览");
     expect(text()).toContain('"payload": {}');
 
     await fillParam(1, "company", '"Lone Star Fence"');
@@ -129,8 +130,8 @@ describe("RunTaskDialog · 参数表单与结果展示（C36 #13）", () => {
       { silent: true },
     );
     expect(text()).toContain("运行成功");
-    expect(text()).toContain("模板兜底（未启用 AI）");
-    expect(text()).toContain("—（模板路径不返回耗时）");
+    expect(text()).toContain("内置模板（未启用 AI）");
+    expect(text()).toContain("—（使用内置模板时不返回耗时）");
     expect(text()).toContain('"score": 88');
     expect(onRan).toHaveBeenCalledTimes(1);
   });
@@ -152,9 +153,11 @@ describe("RunTaskDialog · 参数表单与结果展示（C36 #13）", () => {
       await Promise.resolve();
     });
 
-    expect(text()).toContain("ai:deepseek");
+    expect(text()).toContain("AI 服务（DeepSeek）");
     expect(text()).toContain("812 ms");
-    expect(text()).toContain("note=all_providers_failed");
+    expect(text()).toContain("所有 AI 服务商都未返回结果");
+    // 原始返回默认折叠，但内容仍在（可展开查看）
+    expect(text()).toContain("查看原始返回");
   });
 
   it("403 ⇒ 如实显示「无权限」+ 后端错误码/文案，且不出现「运行成功」", async () => {

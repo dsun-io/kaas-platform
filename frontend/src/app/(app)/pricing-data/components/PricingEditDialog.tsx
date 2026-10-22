@@ -182,7 +182,7 @@ export function PricingEditDialog({
             </select>
           </div>
           <p className="text-xs text-muted-foreground">
-            改价只影响金额/单位/生效期/备注/状态；**规格组合**不能在这里改（需新建版本）。
+            改价只影响金额 / 单位 / 生效期 / 备注 / 状态；规格组合不能在这里改（需新建版本）。
           </p>
           {shownError ? (
             <p role="alert" className="text-xs text-destructive">

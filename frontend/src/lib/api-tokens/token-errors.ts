@@ -11,12 +11,12 @@ export function formatApiTokenError(error: unknown): string {
 
   switch (info.code) {
     case "TOKEN_ALREADY_REVOKED":
-      return "该令牌已经撤销，请刷新列表后重试。";
+      return "该系统对接密钥已经撤销，请刷新列表后重试。";
     case "TOKEN_NOT_FOUND":
-      return "令牌不存在，或不属于当前账号。";
+      return "密钥不存在，或不属于当前账号。";
     case "UNKNOWN_SCOPE":
       // 后端 message 会列出白名单；原样透出比通用文案更有用。
-      return info.message || "选择了后端不支持的作用域，请刷新页面后重试。";
+      return info.message || "选择了系统不支持的权限范围，请刷新页面后重试。";
     default:
       break;
   }

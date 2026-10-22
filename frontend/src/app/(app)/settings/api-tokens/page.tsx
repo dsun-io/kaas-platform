@@ -22,8 +22,8 @@ export default function ApiTokensPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="API 令牌"
-        description="创建与管理用于 REST API / MCP 访问的 API 令牌；明文只显示一次。"
+        title="系统对接密钥"
+        description="创建与管理给外部系统或自动化工具对接用的密钥；完整密钥只显示一次。"
         actions={
           <Link
             href="/settings"

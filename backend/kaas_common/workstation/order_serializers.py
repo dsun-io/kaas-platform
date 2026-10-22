@@ -1,10 +1,26 @@
-"""订单/付款计划/应收序列化 —— 纯函数、零三方依赖（stdlib only）。
+"""订单/付款计划/应收/实收序列化 —— 纯函数、零三方依赖（stdlib only）。
 
 orchestrator 与 Worker 共用；任何适配层不得另写一份判定。
+
+2026-10-22（设计 §13.3）：订单金额构成 + 实收登记
+-----------------------------------------------
+- `orders.amount_breakdown`（jsonb）：四项金额
+  `{goods_amount, freight_amount, insurance_amount, other_amount}`；
+  订单总额仍以 `orders.total_amount` 为准（历史行没有 amount_breakdown ⇒ null）。
+- `payment_receipts`（一次收款一行）：`row_to_receipt` 输出前端消费的键；
+  `schedule_id` 可空（未分配收款），`amount` 是实际到账金额（可与期次金额不同）。
 """
+import json
 from typing import Any
 
-__all__ = ["row_to_order", "row_to_order_item", "row_to_schedule", "row_to_receivable"]
+__all__ = [
+    "row_to_order", "row_to_order_item", "row_to_schedule", "row_to_receivable",
+    "row_to_receipt", "normalize_amount_breakdown",
+]
+
+AMOUNT_BREAKDOWN_KEYS = (
+    "goods_amount", "freight_amount", "insurance_amount", "other_amount",
+)
 
 
 def row_to_order(o: Any) -> dict:
@@ -13,6 +29,8 @@ def row_to_order(o: Any) -> dict:
         "id": g("id"), "order_no": g("order_no"), "customer_id": g("customer_id"),
         "customer_name": g("customer_name"), "status": g("status"), "currency": g("currency"),
         "total_amount": _float(g("total_amount")),
+        # 金额构成（迁移 202610220001）：历史订单为 null，前端回退 total_amount。
+        "amount_breakdown": _json_obj(g("amount_breakdown")),
         "order_date": _iso(g("order_date")),
         "delivery_date": _iso(g("delivery_date")),
         "notes": g("notes"),
@@ -74,6 +92,45 @@ def row_to_receivable(r: Any) -> dict:
     }
 
 
+def row_to_receipt(r: Any) -> dict:
+    """实收登记行 → API 响应（前端订单详情/收款计划面板消费的 10 键）。"""
+    g = _getter(r)
+    return {
+        "id": g("id"),
+        "order_id": g("order_id"),
+        # 可空：一笔款暂不指定期次（页面「未分配收款」区）
+        "schedule_id": g("schedule_id"),
+        "amount": _float(g("amount")),
+        "currency": g("currency"),
+        # 到账日期（date → YYYY-MM-DD）
+        "received_date": _iso(g("received_date")),
+        "fx_rate": _float(g("fx_rate")),
+        # 到账截图：挂在 file_objects(owner_type='payment_receipt') 的当前件
+        "file_id": g("file_id"),
+        "notes": g("notes"),
+        "created_at": _iso(g("created_at")),
+    }
+
+
+def normalize_amount_breakdown(raw: Any):
+    """入参 amount_breakdown → 只保留四项金额（数字）的 dict；空/非法返回 None。
+
+    不落 total —— 订单总额的唯一真源是 `orders.total_amount`，两份会有漂移。
+    """
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw) if raw.strip() else None
+        except ValueError:
+            return None
+    if not isinstance(raw, dict):
+        return None
+    out = {k: _float(raw.get(k)) for k in AMOUNT_BREAKDOWN_KEYS}
+    if all(v is None for v in out.values()):
+        return None
+    # 缺项按 0 处理：前端只填了运费时，货物金额单独看由订单行汇总负责
+    return {k: (0.0 if v is None else v) for k, v in out.items()}
+
+
 def _getter(obj):
     if isinstance(obj, dict):
         return obj.get
@@ -81,7 +138,22 @@ def _getter(obj):
 
 
 def _float(v):
-    return float(v) if v is not None else None
+    if v is None or v == "":
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _json_obj(v):
+    """jsonb 列：asyncpg 在 Workers 里可能返回 str；解析失败按 None（不抛 500）。"""
+    if isinstance(v, str):
+        try:
+            return json.loads(v) if v.strip() else None
+        except ValueError:
+            return None
+    return v
 
 
 def _iso(dt):

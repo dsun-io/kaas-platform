@@ -518,8 +518,10 @@ export const ENUMS: Record<string, readonly string[]> = {
   shipment_status: ["booking", "in_transit", "arrived", "customs", "delivered"],
   owner_scope: ["private", "tenant"],
   currency: ["USD", "CNY", "EUR", "GBP", "JPY", "AUD", "CAD", "HKD"],
-  schedule_type: ["deposit", "balance", "full"],
-  schedule_status: ["pending", "paid", "overdue"],
+  // 2026-10-22（设计 §13.3）：other = 非标准期次（运费后补等）；
+  // schedule_status 新增 partial = 部分实收（一次收款一行登记后重算）。
+  schedule_type: ["deposit", "balance", "full", "other"],
+  schedule_status: ["pending", "partial", "paid", "overdue"],
   receivable_status: ["unpaid", "partial", "paid"],
   bl_type: ["original", "telex", "seaway"],
   doc_status: ["draft", "issued", "void"],
@@ -574,7 +576,10 @@ export function canTransition(kind: "order" | "shipment", current: string, targe
 
 // ── kaas_common/files/rules.py（文件用量规则；上传校验的唯一真源）────────────
 
-export const FILE_OWNER_TYPES = ["product", "trade_doc", "customer", "company"] as const;
+// 2026-10-22（设计 §13.3）：order = 订单随单附件；payment_receipt = 到账截图（均 kind=other）。
+export const FILE_OWNER_TYPES = [
+  "product", "trade_doc", "customer", "company", "order", "payment_receipt",
+] as const;
 export const FILE_KINDS = ["product_photo", "stamp_scan", "render_pdf", "other"] as const;
 export const FILE_MEDIA_KINDS = ["production", "size", "weight", "finished", "other"] as const;
 

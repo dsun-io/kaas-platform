@@ -17,7 +17,7 @@ export default function BillingPage() {
           <div className="space-y-1">
             <p className="text-lg font-semibold">当前方案：免费版</p>
             <p className="text-sm text-muted-foreground">
-              升级后可解锁更多报价模板、批量导入、API
+              升级后可解锁更多报价模板、批量导入、系统
               对接等高级功能。如有需要，请先联系系统管理员开通。
             </p>
           </div>

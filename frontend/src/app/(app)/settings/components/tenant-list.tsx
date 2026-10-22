@@ -32,8 +32,7 @@ export function TenantList({ tenants, loading }: Props) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>租户 ID</TableHead>
-          <TableHead>名称</TableHead>
+          <TableHead>空间名称</TableHead>
           <TableHead>区域</TableHead>
           <TableHead>语言</TableHead>
           <TableHead>状态</TableHead>
@@ -42,7 +41,6 @@ export function TenantList({ tenants, loading }: Props) {
       <TableBody>
         {tenants.map((t) => (
           <TableRow key={t.tenant_id}>
-            <TableCell className="font-mono text-xs">{t.tenant_id}</TableCell>
             <TableCell className="font-medium">{t.display_name}</TableCell>
             <TableCell className="text-xs">{t.region}</TableCell>
             <TableCell className="text-xs">{t.locale}</TableCell>

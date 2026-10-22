@@ -20,24 +20,29 @@ test.describe('Audit Log', () => {
     await expect(hasRows.first().or(hasEmpty)).toBeVisible({ timeout: 10000 });
   });
 
-  test('click row expands detail JSON', async ({ page }) => {
+  test('click row expands summary; raw JSON collapses behind 查看详情', async ({ page }) => {
     await page.goto('/audit-log');
 
     // **2026-10-12：把 `networkidle` 换成等具体元素**（表格首行）。
-    // 源码：`audit-log/page.tsx:228-247` —— 只有 `items.length > 0` 才渲染 `<Table>`；
-    // mock `/admin/audit-log` 有 5+ 条（`mocks/handlers.ts:588-663`）。
-    // 这样若行确实不存在，失败会是有信息量的 `element(s) not found`，
-    // 而不是 `click` 的 30s 超时。
+    // 源码：`audit-log/page.tsx` —— 只有 `items.length > 0` 才渲染 `<Table>`；
+    // mock `/admin/audit-log` 有 5+ 条（`mocks/handlers.ts`）。
     const firstRow = page.locator('table tbody tr').first();
     await expect(firstRow).toBeVisible({ timeout: 15000 });
 
-    // Click first table row
+    // Click first table row ⇒ 展开中文摘要
     await firstRow.click();
-    await page.waitForTimeout(300);
 
-    // JSON detail should be visible somewhere on the page
-    const jsonText = page.getByText(/actor_id|timestamp|action/i);
-    const count = await jsonText.count();
-    expect(count).toBeGreaterThanOrEqual(1);
+    // 2026-10-22：原始 JSON 默认折叠（设计稿 §1/§7），先出现的是「查看详情（一般不需要看）」
+    const rawToggle = page
+      .getByRole('button', { name: '查看详情（一般不需要看）' })
+      .first();
+    await expect(rawToggle).toBeVisible({ timeout: 10000 });
+    expect(await page.getByText(/actor_id|timestamp/i).count()).toBe(0);
+
+    // 点开后原始 JSON 才出现
+    await rawToggle.click();
+    await expect(page.getByText(/actor_id|timestamp/i).first()).toBeVisible({
+      timeout: 10000,
+    });
   });
 });

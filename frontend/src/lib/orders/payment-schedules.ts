@@ -15,20 +15,32 @@
  */
 import { normalizeApiError } from "@/lib/api/api-error";
 
-export const SCHEDULE_TYPES = ["deposit", "balance", "full"] as const;
+export const SCHEDULE_TYPES = [
+  "deposit",
+  "balance",
+  "full",
+  "other",
+] as const;
 export type ScheduleType = (typeof SCHEDULE_TYPES)[number];
 
-export const SCHEDULE_STATUSES = ["pending", "paid", "overdue"] as const;
+export const SCHEDULE_STATUSES = [
+  "pending",
+  "partial",
+  "paid",
+  "overdue",
+] as const;
 export type ScheduleStatus = (typeof SCHEDULE_STATUSES)[number];
 
 export const SCHEDULE_TYPE_LABEL: Record<string, string> = {
   deposit: "定金",
   balance: "尾款",
   full: "全额",
+  other: "其他",
 };
 
 export const SCHEDULE_STATUS_LABEL: Record<string, string> = {
   pending: "待收款",
+  partial: "部分收款",
   paid: "已收款",
   overdue: "已逾期",
 };
@@ -38,6 +50,7 @@ export const SCHEDULE_STATUS_TONE: Record<
   "default" | "success" | "warning" | "danger" | "info"
 > = {
   pending: "warning",
+  partial: "info",
   paid: "success",
   overdue: "danger",
 };
@@ -58,6 +71,11 @@ export interface PaymentSchedule {
   exchange_gain_loss: number | null;
   notes: string | null;
   created_at: string | null;
+  /**
+   * 该期实收合计（后端 §13.3 新增，含历史 paid 兼容口径）。
+   * 老后端不返回时可缺省 —— 前端用 receipts 自行汇总兜底。
+   */
+  received_amount?: number | null;
 }
 
 export interface ScheduleListResponse {
@@ -209,37 +227,233 @@ export function scheduleErrorText(error: unknown): string {
   return normalized.message;
 }
 
-/** 列表汇总：总额 / 已收 / 待收（按 amount 求和；null 金额按 0 计） */
-export function summarizeSchedules(items: PaymentSchedule[]): {
+/**
+ * 实收记录（§13.3 新增）。
+ *
+ * 一次到账一行，允许同一期多次收款；`schedule_id` 为空 = 这笔钱暂未指定期次
+ * （"应收/实收对应不上"的场景），页面单独展示、不强行摊到某期。
+ */
+export interface PaymentReceipt {
+  id: number;
+  order_id: number;
+  schedule_id: number | null;
+  amount: number;
+  currency: string | null;
+  received_date: string | null;
+  fx_rate: number | null;
+  file_id: number | null;
+  notes: string | null;
+  created_at: string | null;
+}
+
+export interface ReceiptListResponse {
+  items: PaymentReceipt[];
+  total: number;
+}
+
+export interface ReceiptCreateInput {
+  schedule_id?: number | null;
+  /** 实收金额（必填 > 0） */
+  amount: string;
+  /** 收款日期（必填） */
+  received_date: string;
+  /** 实际汇率（选填） */
+  fx_rate?: string;
+  notes?: string;
+}
+
+function moneyNumber(
+  text: string | undefined,
+  label: string,
+): { ok: true; value?: number } | { ok: false; error: string } {
+  const raw = (text ?? "").trim();
+  if (raw === "") return { ok: true };
+  const num = Number(raw);
+  if (!Number.isFinite(num) || num <= 0) {
+    return { ok: false, error: `${label}必须是大于 0 的数字` };
+  }
+  return { ok: true, value: num };
+}
+
+/** 组 `POST /orders/{id}/receipts` 的请求体（本地先拦：金额必填 > 0、日期必填）。 */
+export function buildReceiptCreate(
+  input: ReceiptCreateInput,
+): BuildResult<Record<string, unknown>> {
+  const amount = moneyNumber(input.amount, "实收金额");
+  if (!amount.ok) return amount;
+  if (amount.value === undefined) {
+    return { ok: false, error: "请填写实收金额（实际到账多少就填多少）" };
+  }
+  const received = (input.received_date ?? "").trim();
+  if (!received) return { ok: false, error: "请选择收款日期" };
+  const body: Record<string, unknown> = {
+    amount: amount.value,
+    received_date: received,
+  };
+  if (input.schedule_id !== undefined && input.schedule_id !== null) {
+    body.schedule_id = input.schedule_id;
+  }
+  const fxRate = moneyNumber(input.fx_rate, "实际汇率");
+  if (!fxRate.ok) return fxRate;
+  if (fxRate.value !== undefined) body.fx_rate = fxRate.value;
+  const notes = (input.notes ?? "").trim();
+  if (notes) body.notes = notes;
+  return { ok: true, body };
+}
+
+/** 登记收款失败的原因：后端校验错误翻成人话，其余走统一归一。 */
+export function receiptErrorText(error: unknown): string {
+  const normalized = normalizeApiError(error);
+  const detail = (
+    error as { response?: { data?: { detail?: unknown } } } | null
+  )?.response?.data?.detail;
+  const record =
+    typeof detail === "object" && detail !== null
+      ? (detail as { code?: unknown; detail?: unknown })
+      : null;
+  if (normalized.code === "INVALID_RECEIPT_AMOUNT") {
+    return "实收金额必须大于 0";
+  }
+  if (normalized.code === "RECEIPT_DATE_REQUIRED") {
+    return "请选择收款日期";
+  }
+  if (normalized.code === "SCHEDULE_NOT_IN_ORDER") {
+    return "所选期次不属于这张订单，请刷新后重选";
+  }
+  if (record && typeof record.detail === "string" && record.detail.trim()) {
+    return record.detail;
+  }
+  return normalized.message;
+}
+
+function amountOf(receipt: PaymentReceipt): number {
+  return typeof receipt.amount === "number" && Number.isFinite(receipt.amount)
+    ? receipt.amount
+    : 0;
+}
+
+/** 某一期的实收记录（含未指定期次的收款不算进任何一期）。 */
+export function receiptsForSchedule(
+  receipts: PaymentReceipt[],
+  scheduleId: number,
+): PaymentReceipt[] {
+  return receipts.filter((receipt) => receipt.schedule_id === scheduleId);
+}
+
+/** 某期已收金额：优先 receipts 合计，其次后端 received_amount，最后历史 paid 的 amount。 */
+export function receivedAmountForSchedule(
+  schedule: PaymentSchedule,
+  receipts: PaymentReceipt[] = [],
+): number {
+  const own = receiptsForSchedule(receipts, schedule.id);
+  if (own.length > 0) return own.reduce((sum, r) => sum + amountOf(r), 0);
+  if (typeof schedule.received_amount === "number") {
+    return schedule.received_amount;
+  }
+  if (schedule.status === "paid" && typeof schedule.amount === "number") {
+    return schedule.amount;
+  }
+  return 0;
+}
+
+/**
+ * 期次实际状态（前端推导，供展示与差异提示）：
+ * 有实收 > 0 且未收满 ⇒ partial；收满或后端已是 paid ⇒ paid；其余沿用后端状态。
+ */
+export function effectiveScheduleStatus(
+  schedule: PaymentSchedule,
+  receipts: PaymentReceipt[] = [],
+): ScheduleStatus {
+  const received = receivedAmountForSchedule(schedule, receipts);
+  const due = typeof schedule.amount === "number" ? schedule.amount : 0;
+  if (schedule.status === "paid") return "paid";
+  if (received <= 0) {
+    return schedule.status === "overdue" ? "overdue" : "pending";
+  }
+  if (due > 0 && received + 0.005 >= due) return "paid";
+  return "partial";
+}
+
+/** 差异 = 实收 − 应收；应收为空时返回 null（没有可比对象）。 */
+export function scheduleDifference(
+  schedule: PaymentSchedule,
+  receipts: PaymentReceipt[] = [],
+): number | null {
+  if (typeof schedule.amount !== "number") return null;
+  return (
+    Math.round(
+      (receivedAmountForSchedule(schedule, receipts) - schedule.amount) * 100,
+    ) / 100
+  );
+}
+
+/** 历史已收但没有任何 receipts 的计划：展示「历史收款（无截图）」，不强制补录。 */
+export function isHistoricalPaidNoReceipt(
+  schedule: PaymentSchedule,
+  receipts: PaymentReceipt[] = [],
+): boolean {
+  return (
+    schedule.status === "paid" &&
+    receiptsForSchedule(receipts, schedule.id).length === 0
+  );
+}
+
+/** 未分配收款（schedule_id 为空）：应收对不上时先挂在这里，不静默摊到某期。 */
+export function unallocatedReceipts(
+  receipts: PaymentReceipt[],
+): PaymentReceipt[] {
+  return receipts.filter((receipt) => receipt.schedule_id === null);
+}
+
+/** 实收汇总：笔数 + 金额合计。 */
+export function summarizeReceipts(receipts: PaymentReceipt[]): {
+  count: number;
+  totalAmount: number;
+} {
+  return {
+    count: receipts.length,
+    totalAmount: receipts.reduce((sum, r) => sum + amountOf(r), 0),
+  };
+}
+
+/**
+ * 列表汇总：总额 / 已收 / 待收（按 amount 求和；null 金额按 0 计）。
+ *
+ * 已收口径：给了 receipts 就用实收合计（含历史 paid 兜底），否则按 status=paid
+ * 的计划金额（保持 C36 旧行为，历史数据语义不变）。
+ */
+export function summarizeSchedules(
+  items: PaymentSchedule[],
+  receipts: PaymentReceipt[] = [],
+): {
   count: number;
   totalAmount: number;
   paidAmount: number;
   pendingAmount: number;
   paidCount: number;
   pendingCount: number;
+  partialCount: number;
 } {
   let totalAmount = 0;
   let paidAmount = 0;
-  let pendingAmount = 0;
   let paidCount = 0;
-  let pendingCount = 0;
+  let partialCount = 0;
   for (const item of items) {
     const amount = typeof item.amount === "number" ? item.amount : 0;
     totalAmount += amount;
-    if (item.status === "paid") {
-      paidAmount += amount;
-      paidCount += 1;
-    } else {
-      pendingAmount += amount;
-      pendingCount += 1;
-    }
+    const received = receivedAmountForSchedule(item, receipts);
+    paidAmount += received;
+    const status = effectiveScheduleStatus(item, receipts);
+    if (status === "paid") paidCount += 1;
+    else if (status === "partial") partialCount += 1;
   }
   return {
     count: items.length,
     totalAmount,
     paidAmount,
-    pendingAmount,
+    pendingAmount: totalAmount - paidAmount,
     paidCount,
-    pendingCount,
+    pendingCount: items.length - paidCount,
+    partialCount,
   };
 }

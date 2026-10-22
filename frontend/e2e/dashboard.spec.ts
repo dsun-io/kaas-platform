@@ -14,7 +14,10 @@ test.describe('Dashboard', () => {
     await page.goto('/dashboard');
 
     await expect(page.getByText('仪表盘改版中')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText(/原有指标（Token 消耗、P95 延迟、采样覆盖率）/)).toBeVisible();
+    await expect(
+      page.getByText(/原有指标偏系统运行状态，对业务判断帮助有限/),
+    ).toBeVisible();
+    await expect(page.getByText(/Token|P95|采样覆盖率/)).toHaveCount(0);
     // 旧实现的指标卡不应再出现（否则又会把"没有数据"渲染成 0）
     await expect(page.getByTestId('stat-card')).toHaveCount(0);
   });

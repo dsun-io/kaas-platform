@@ -39,7 +39,8 @@ test.describe('Events', () => {
     const filter = page.getByRole('combobox').first();
     if (await filter.isVisible()) {
       await filter.click();
-      const option = page.getByRole('option', { name: /audit\.access/i });
+      // 2026-10-22：事件类型在界面上已翻成中文（设计稿 §1/§7），选项按中文名匹配
+      const option = page.getByRole('option', { name: /访问审计/ });
       if (await option.isVisible()) {
         await option.click();
         // **2026-10-12：把 `networkidle` 换成等具体元素**（筛选后列表的第一行）。
@@ -69,9 +70,9 @@ test.describe('Events', () => {
     // 真实断言（源码依据）：
     //   · `event-table.tsx:85-89` —— 每行**唯一**的按钮是 `Eye`（`onClick={() => onSelect(event)}`）
     //     ⇒ 取首个 `table tbody tr` **行内**的按钮就是它；
-    //   · `event-detail.tsx:34-40, 52-75` —— 点开后打开 Sheet
+    //   · `event-detail.tsx` —— 点开后打开 Sheet
     //     （`components/ui/sheet.tsx:4` 用 `@base-ui/react/dialog` 的 `Popup` ⇒ `role="dialog"`），
-    //     内含静态标签「租户 / 操作人 / 会话 / Trace / 时间」。
+    //     内含静态标签「操作人 / 时间」（原始数据收在「查看详情（一般不需要看）」里）。
     const table = page.locator('table');
     await expect(table).toBeVisible({ timeout: 15000 });
 
@@ -97,10 +98,10 @@ test.describe('Events', () => {
     // 报错 `toBeGreaterThanOrEqual Expected: >= 1, Received: 0`。
     //
     // 真实断言（源码依据）：
-    //   · `events/components/event-table.tsx:65-71` —— `event.sampled` 为真时渲染
-    //     `<Badge variant="secondary">sampled</Badge>`
+    //   · `events/components/event-table.tsx` —— `event.sampled` 为真时渲染
+    //     `<Badge variant="secondary">已采样</Badge>`（2026-10-22 起不再显示英文 sampled）
     //   · `mocks/handlers.ts:25-31` —— 12 条事件里 `sampled: i % 5 === 0` ⇒ 3 条带徽章
-    await expect(page.getByText('sampled').first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('已采样').first()).toBeVisible({ timeout: 15000 });
   });
 
   // C33（2026-10-21 修复）：旧版这条是 `test.skip` —— 它的触发条件根本不存在：
@@ -136,7 +137,7 @@ test.describe('Events', () => {
       // 改 event_type ⇒ queryKey 变化 ⇒ 触发一次新的 /events 请求（同 key 不会重发）
       await page.getByRole('combobox').first().click();
       await page
-        .getByRole('option', { name: /capability\.update/i })
+        .getByRole('option', { name: /能力配置更新/ })
         .click();
       await expect(page.getByText('后端忙碌，请稍后重试')).toBeVisible({
         timeout: 20000,

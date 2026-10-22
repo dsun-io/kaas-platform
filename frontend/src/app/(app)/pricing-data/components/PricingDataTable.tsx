@@ -278,7 +278,7 @@ export function PricingAllCustomersTable({
       <CardContent>
         {customers.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            本租户还没有客户配置过定价数据。
+            本空间还没有客户配置过定价数据。
           </p>
         ) : (
           <div className="overflow-x-auto">

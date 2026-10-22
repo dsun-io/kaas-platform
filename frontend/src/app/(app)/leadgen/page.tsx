@@ -409,7 +409,7 @@ export default function LeadgenPage() {
               <div className="flex items-center gap-2 text-sm">
                 {validation.valid ? (
                   <Badge className="bg-success-muted text-success-muted-foreground">
-                    配置正常 ({validation.path})
+                    配置正常
                   </Badge>
                 ) : (
                   <Badge className="bg-destructive/10 text-destructive">
@@ -421,8 +421,7 @@ export default function LeadgenPage() {
             )}
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            CSV 数据源通过 POST /leadgen/runs/from-csv（multipart）导入；Google
-            Places 数据源规划中。
+            CSV 文件可直接导入线索；地图搜索等更多数据源正在规划中。
           </p>
           {cfg.source === "csv" && (
             <LeadgenCsvImport onImported={() => void refetchRuns()} />
@@ -709,10 +708,6 @@ export default function LeadgenPage() {
                   <span className="text-muted-foreground">匹配理由：</span>{" "}
                   {(detail.fit_reasons ?? []).join(", ") || "—"}
                 </div>
-                <div>
-                  <span className="text-muted-foreground">Place ID:</span>{" "}
-                  {detail.place_id ?? "—"}
-                </div>
               </div>
 
               {/* 产品信息（爬官网）：Google Places 拿不到产品 */}
@@ -826,7 +821,7 @@ export default function LeadgenPage() {
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <div>
                   <div className="mb-1 text-xs font-medium text-muted-foreground">
-                    触达历史（只读，由 Outreach 工作站维护）
+                    触达历史（只读，由触达工位维护）
                   </div>
                   {detail.outreach_history.length === 0 ? (
                     <div className="text-xs text-muted-foreground">无</div>
@@ -850,7 +845,7 @@ export default function LeadgenPage() {
                 </div>
                 <div>
                   <div className="mb-1 text-xs font-medium text-muted-foreground">
-                    询盘历史（只读，由 Pipeline 工作站维护）
+                    询盘历史（只读，由询盘工位维护）
                   </div>
                   {detail.inquiry_history.length === 0 ? (
                     <div className="text-xs text-muted-foreground">无</div>
@@ -871,8 +866,7 @@ export default function LeadgenPage() {
                 </div>
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
-                线索池字段（评分、联系方式）可通过 PATCH /leads/{detail.id}{" "}
-                修改；触达/询盘状态仅由对应工作站回写。
+                线索池里的评分与联系方式可在此页维护；触达与询盘状态由对应工位自动回写。
               </p>
             </div>
           )}

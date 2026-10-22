@@ -108,6 +108,12 @@ NEW_ROUTES: set[tuple[str, str]] = {
     ("/api/v1/orders/{order_id}/payment-schedules", "POST"),
     ("/api/v1/payment-schedules/{schedule_id}", "PATCH"),
     ("/api/v1/receivables", "GET"),
+    # 订单金额/实收/截图 + 订单附件（设计 §13.3，2026-10-22）
+    ("/api/v1/orders/{order_id}/receipts", "GET"),
+    ("/api/v1/orders/{order_id}/receipts", "POST"),
+    ("/api/v1/payment-receipts/{receipt_id}/files", "POST"),
+    ("/api/v1/orders/{order_id}/files", "GET"),
+    ("/api/v1/orders/{order_id}/files", "POST"),
     # E：外贸票据工位
     ("/api/v1/trade-docs", "GET"),
     ("/api/v1/trade-docs", "POST"),

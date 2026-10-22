@@ -294,7 +294,7 @@ export default function OutreachPage() {
             />
             <Input
               className="w-56"
-              placeholder="Resend API 密钥（可选，缺省读环境变量）"
+              placeholder="发信服务密钥（可选，留空则用系统默认配置）"
               value={mbForm.api_key}
               onChange={(e) =>
                 setMbForm({ ...mbForm, api_key: e.target.value })
@@ -332,7 +332,8 @@ export default function OutreachPage() {
                     <Badge className="bg-blue-100 text-blue-800">默认</Badge>
                   )}
                   <span className="text-xs text-muted-foreground">
-                    密钥：{m.api_key_masked ?? "环境变量 RESEND_API_KEY"}
+                    发信服务：
+                    {m.has_own_key ? "已配置" : "未配置（使用系统默认）"}
                   </span>
                   <span className="text-xs text-muted-foreground">
                     今日：{m.sent_today}

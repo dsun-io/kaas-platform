@@ -18,7 +18,7 @@ export function ProductCategories() {
       <CardHeader>
         <CardTitle>产品分类配置</CardTitle>
         <CardDescription>
-          当前租户可用的产品分类（只读，编辑功能将后续开放）。
+          当前空间可用的产品分类（只读，编辑功能将后续开放）。
         </CardDescription>
       </CardHeader>
       <CardContent>

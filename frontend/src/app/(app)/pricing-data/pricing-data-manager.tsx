@@ -97,9 +97,9 @@ export function PricingDataManager({
     setAddingOption(true);
     setNotice(null);
     try {
-      const r = await saveCell.mutateAsync(payload);
+      await saveCell.mutateAsync(payload);
       setNotice(
-        `已新增档位：${r?.key ?? ""}，成本 ${payload.amount} 元/${payload.unit}。` +
+        `已新增档位，成本 ${payload.amount} 元/${payload.unit}。` +
           "报价页的规格下拉已同步。",
       );
     } catch (err: unknown) {
@@ -164,7 +164,7 @@ export function PricingDataManager({
         <p className="text-sm text-muted-foreground">加载产品…</p>
       ) : products.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          还没有已注册的产品定义，无法配置定价数据。
+          还没有可用的产品，先到产品工位添加产品，再来配置定价数据。
         </p>
       ) : (
         <>
@@ -195,7 +195,7 @@ export function PricingDataManager({
 
           {forbidden ? (
             <p className="text-sm text-muted-foreground">
-              只有租户管理员可以查看所有客户的定价数据。
+              只有空间管理员可以查看所有客户的定价数据。
             </p>
           ) : scope === "all" ? (
             <PricingAllCustomersTable matrix={matrix} />

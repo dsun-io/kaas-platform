@@ -8,6 +8,7 @@ import { TenantList } from "./components/tenant-list";
 import { ReloadButton } from "./components/reload-button";
 import { ProductCategories } from "./components/product-categories";
 import { AccountManagement } from "./components/account-management";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -30,12 +31,12 @@ export default function SettingsPage() {
   return (
     <RouteGuard adminOnly>
       <div className="space-y-6">
-        <PageHeader title="系统设置" description="租户、平台账号与系统操作" />
+        <PageHeader title="系统设置" description="空间、平台账号与系统操作" />
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
           <TabsList variant="pills">
             <TabsTrigger variant="pills" value="tenants">
-              租户配置
+              空间配置
             </TabsTrigger>
             {isSystemAdmin ? (
               <TabsTrigger variant="pills" value="accounts">
@@ -64,7 +65,7 @@ export default function SettingsPage() {
             <div className="space-y-6">
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle>租户列表</CardTitle>
+                  <CardTitle>空间列表</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <TenantList
@@ -90,18 +91,20 @@ export default function SettingsPage() {
               <ReloadButton />
               <Card>
                 <CardHeader>
-                  <CardTitle>API 密钥引用</CardTitle>
+                  <CardTitle>第三方服务密钥</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-1 text-sm">
-                    <p className="font-mono text-xs text-muted-foreground">
-                      ENV:FASTGPT_API_KEY_LIANJIA
-                    </p>
-                    <p className="font-mono text-xs text-muted-foreground">
-                      ENV:DB_DSN_LIANJIA
-                    </p>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span>智能助手服务</span>
+                      <Badge variant="secondary">已配置</Badge>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>业务数据库</span>
+                      <Badge variant="secondary">已配置</Badge>
+                    </div>
                     <p className="text-xs text-muted-foreground mt-2">
-                      密钥通过环境变量注入，不在此页面显示明文。
+                      服务密钥由运维统一配置，这里只显示配置状态，不显示密钥内容。
                     </p>
                   </div>
                 </CardContent>
@@ -110,23 +113,23 @@ export default function SettingsPage() {
           </TabsContent>
         </Tabs>
 
-        {/* API 令牌入口：令牌管理按 created_by 隔离（任何登录用户只能看到/撤销
+        {/* 系统对接密钥入口：密钥管理按 created_by 隔离（任何登录用户只能看到/撤销
             自己创建的令牌）；/settings 本身是平台运营页，这里只负责放入口。 */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle>API 令牌</CardTitle>
+            <CardTitle>系统对接密钥</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-muted-foreground">
-                创建用于 REST API / MCP 访问的令牌；明文只在创建时显示一次。
+                给外部系统或自动化工具对接平台用；完整密钥只在创建时显示一次，普通成员不需要。
               </p>
               <Link
                 href="/settings/api-tokens"
                 className={buttonVariants({ variant: "outline", size: "sm" })}
               >
                 <KeyRound className="size-3.5" />
-                管理 API 令牌
+                管理系统对接密钥
               </Link>
             </div>
           </CardContent>

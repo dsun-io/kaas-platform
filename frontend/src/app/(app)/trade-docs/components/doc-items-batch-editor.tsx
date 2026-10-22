@@ -70,7 +70,15 @@ function rowText(row: ItemRow, key: string): string {
   return String(value);
 }
 
-/** 从 axios 错误里取后端 `detail.code/detail`（PATCH 422 的形状） */
+/** 已知错误代码 → 人话（代码本身只在标题/折叠里留痕，不摆在用户面前） */
+const KNOWN_ERROR_CODES: Record<string, string> = {
+  ITEMS_OVERRIDE_DRAFT_ONLY: "这张单据已不是草稿，内容冻结，不能再批量修改",
+  ITEMS_OVERRIDE_AMOUNT_FORBIDDEN:
+    "金额不能在这里改：金额由「数量 × 单价」自动算出",
+  ITEMS_OVERRIDE_INDEX: "行号对不上，请刷新后重试",
+};
+
+/** 从 axios 错误里取后端 `detail.code/detail`（PATCH 422 的形状），并翻成人话 */
 function errorTextOf(error: unknown): string {
   const anyError = error as {
     response?: { data?: { detail?: unknown } | unknown; status?: number };
@@ -86,7 +94,7 @@ function errorTextOf(error: unknown): string {
     const obj = inner as { code?: unknown; detail?: unknown };
     const code = typeof obj.code === "string" ? obj.code : "";
     const text = typeof obj.detail === "string" ? obj.detail : "";
-    return [code, text].filter(Boolean).join("：") || "保存失败";
+    return KNOWN_ERROR_CODES[code] ?? text ?? "保存失败，请稍后重试";
   }
   return anyError.message ?? "保存失败（网络错误）";
 }
@@ -208,7 +216,10 @@ export function DocItemsBatchEditor({
       nextOverride as unknown as Record<string, unknown>[],
     );
     if (blocked) {
-      setSaveError([blocked.code, blocked.detail].filter(Boolean).join("："));
+      setSaveError(
+        KNOWN_ERROR_CODES[blocked.code] ??
+          (blocked.detail || "这次修改没有被接受，请刷新后重试"),
+      );
       return;
     }
     setSaving(true);
@@ -315,9 +326,9 @@ export function DocItemsBatchEditor({
       {selected.size > 0 && (
         <div className="flex flex-wrap items-end gap-2 border-b bg-background px-3 py-2 text-xs">
           <label className="flex flex-col gap-1">
-            <span className="text-muted-foreground">要改的字段</span>
+            <span className="text-muted-foreground">要改的内容项</span>
             <select
-              aria-label="批量字段"
+              aria-label="批量修改内容项"
               className="h-8 rounded-md border border-input bg-background px-2 text-xs"
               value={field}
               disabled={!editable || saving}
@@ -380,12 +391,14 @@ export function DocItemsBatchEditor({
           )}
           {validation.ok && selected.size > 0 && preview?.applied.unchanged && (
             <span className="text-muted-foreground">
-              选中行的该字段已经等于这个值（没有变化）
+              选中行的该内容项已经等于这个值（没有变化）
             </span>
           )}
           {forbidden && (
-            <span className="text-destructive" role="alert">
-              {forbidden.code}：{forbidden.detail}
+            <span className="text-destructive" role="alert" title={forbidden.code}>
+              {KNOWN_ERROR_CODES[forbidden.code] ??
+                (forbidden.detail ||
+                  "这次修改没有被接受，请刷新后重试")}
             </span>
           )}
           {validation.ok && preview && !preview.applied.unchanged && (

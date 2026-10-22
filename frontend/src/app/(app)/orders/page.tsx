@@ -20,7 +20,6 @@ import { PaginationBar } from "@/components/shared/pagination-bar";
 import { SectionCard } from "@/components/shared/section-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import apiClient from "@/lib/api/client";
 import { usePageView } from "@/lib/events/use-page-view";
@@ -33,7 +32,10 @@ import {
 
 import { useOrdersList, ORDERS_PAGE_SIZE } from "./hooks/use-orders-list";
 
-import { OrderCreateForm } from "./components/order-create-form";
+import { OrderAttachmentsPanel } from "./components/order-attachments-panel";
+import { OrderCreateWizard } from "./components/order-create-wizard";
+import { OrderDetailPanel } from "./components/order-detail-panel";
+import { OrderExternalDocsPanel } from "./components/order-external-docs-panel";
 import { OrderStatusDialog } from "./components/order-status-dialog";
 import { PaymentSchedulesPanel } from "./components/payment-schedules-panel";
 
@@ -110,18 +112,6 @@ export default function OrdersPage() {
     },
   });
 
-  const saveTerms = useMutation({
-    mutationFn: async (body: Partial<OrderRow> & { id: number }) => {
-      const { id, ...rest } = body;
-      const { data } = await apiClient.patch<OrderRow>(`/orders/${id}`, rest);
-      return data;
-    },
-    onSuccess: () => {
-      toast.success("订单条款已保存，新开的单证会带上这些条款");
-      qc.invalidateQueries({ queryKey: ["upstream", "orders"] });
-    },
-  });
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -173,10 +163,10 @@ export default function OrdersPage() {
       </SectionCard>
 
       <SectionCard
-        title="手动新建订单"
-        description="历史订单 / 线下成交的单：客户必选，报价可选（有报价就按转单处理，没有就直接归到该客户名下）。"
+        title="手工新建订单（五步向导）"
+        description="客户与来源 → 订单信息 → 货物与金额 → 收款计划 → 附件。历史订单 / 线下成交也走这里：客户必选，报价可选（有报价就按转单处理）。"
       >
-        <OrderCreateForm onCreated={(order) => setSelectedId(order.id)} />
+        <OrderCreateWizard onCreated={(order) => setSelectedId(order.id)} />
       </SectionCard>
 
       <SectionCard
@@ -360,7 +350,7 @@ export default function OrdersPage() {
                             variant="ghost"
                             onClick={() => setSelectedId(o.id)}
                           >
-                            条款
+                            详情
                           </Button>
                         </div>
                       </td>
@@ -424,36 +414,29 @@ export default function OrdersPage() {
         )}
       </SectionCard>
 
+      {/* §13.3 订单详情：金额构成 / 货物明细 / 贸易条款；收款计划与附件独立面板 */}
       {selected && (
-        <SectionCard
-          title={`贸易条款 · ${selected.order_no}`}
-          description="这些字段会被单证继承。留空会让单证上对应栏位空白，报关/审单可能因此被退。"
-          action={
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setSelectedId(null)}
-            >
-              关闭
-            </Button>
-          }
-        >
-          <TermsForm
-            key={selected.id}
-            order={selected}
-            saving={saveTerms.isPending}
-            onSave={(patch) => saveTerms.mutate({ id: selected.id, ...patch })}
+        <>
+          <OrderDetailPanel
+            key={`detail-${selected.id}`}
+            orderId={selected.id}
+            onClose={() => setSelectedId(null)}
           />
-        </SectionCard>
-      )}
-
-      {/* C36 下期 #6/#10/#20：选中订单的收款计划（列表/新建/改计划/标记收款） */}
-      {selected && (
-        <PaymentSchedulesPanel
-          key={`schedules-${selected.id}`}
-          orderId={selected.id}
-          currency={selected.currency ?? null}
-        />
+          <PaymentSchedulesPanel
+            key={`schedules-${selected.id}`}
+            orderId={selected.id}
+            currency={selected.currency ?? null}
+          />
+          <OrderAttachmentsPanel
+            key={`files-${selected.id}`}
+            orderId={selected.id}
+          />
+          {/* 已有单证台账（外部单证），与随单附件分开展示 */}
+          <OrderExternalDocsPanel
+            key={`external-docs-${selected.id}`}
+            orderId={selected.id}
+          />
+        </>
       )}
 
       {statusOrder && (
@@ -477,64 +460,3 @@ export default function OrdersPage() {
   );
 }
 
-const TERM_FIELDS: { key: keyof OrderRow; label: string; hint?: string }[] = [
-  { key: "incoterm", label: "贸易术语", hint: "如 FOB Tianjin / CIF Brisbane" },
-  {
-    key: "payment_terms",
-    label: "付款方式",
-    hint: "如 T/T 30% deposit, balance against B/L copy",
-  },
-  {
-    key: "port_of_loading",
-    label: "装运港",
-    hint: "如 Xingang, Tianjin, China",
-  },
-  {
-    key: "port_of_destination",
-    label: "目的港",
-    hint: "如 Brisbane, Australia",
-  },
-  { key: "shipping_marks", label: "唛头", hint: "无唛头填 N/M" },
-  { key: "country_of_origin", label: "原产国", hint: "如 China" },
-];
-
-function TermsForm({
-  order,
-  saving,
-  onSave,
-}: {
-  order: OrderRow;
-  saving: boolean;
-  onSave: (patch: Partial<OrderRow>) => void;
-}) {
-  const [draft, setDraft] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      TERM_FIELDS.map((f) => [f.key as string, (order[f.key] as string) ?? ""]),
-    ),
-  );
-
-  return (
-    <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2">
-        {TERM_FIELDS.map((field) => (
-          <label key={field.key as string} className="space-y-1">
-            <span className="text-sm font-medium">{field.label}</span>
-            <Input
-              value={draft[field.key as string] ?? ""}
-              placeholder={field.hint}
-              onChange={(e) =>
-                setDraft((prev) => ({ ...prev, [field.key]: e.target.value }))
-              }
-            />
-          </label>
-        ))}
-      </div>
-      <Button
-        disabled={saving}
-        onClick={() => onSave(draft as Partial<OrderRow>)}
-      >
-        {saving ? "保存中…" : "保存条款"}
-      </Button>
-    </div>
-  );
-}

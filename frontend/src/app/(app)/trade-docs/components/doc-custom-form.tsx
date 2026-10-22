@@ -68,6 +68,30 @@ import { DocPhotoPicker } from "./doc-photo-picker";
 /** 单据关联的产品 key 存在 custom 的这个键上（后端共享内核同一口径） */
 const PRODUCT_KEY = "product_key";
 
+/**
+ * 内容项填错时给人话（解析能力不变，只改展示）：
+ * - 多项内容（原 JSON 文本域）格式不对 ⇒ 告诉他"照提示填 / 留空沿用上游"，不甩解析错误；
+ * - 标量沿用既有可读提示（如"不是合法数字"）。
+ */
+function fieldErrorMessage(control: string, error?: string): string {
+  if (control === "json") {
+    return "格式无法识别：请按输入框里的提示填写；一般留空即可沿用上游带入的内容";
+  }
+  return error && error !== "未知字段" && error !== "JSON 解析失败"
+    ? error
+    : "这项内容格式不对，请检查后重试";
+}
+
+/** 控件类型换成业务说法（不把 json/boolean 这些类型名摆给用户） */
+const CONTROL_LABELS: Record<string, string> = {
+  text: "文本",
+  date: "日期",
+  number: "数字",
+  boolean: "是 / 否",
+  image: "图片",
+  json: "多项内容",
+};
+
 export function DocCustomForm({
   docId,
   docType,
@@ -150,7 +174,7 @@ export function DocCustomForm({
     if (decision === "noop") {
       toast.info(
         fill.text
-          ? "该模板内容与当前字段一致，无需回填"
+          ? "该模板内容与当前内容项一致，无需回填"
           : "该模板中英文内容都是空的，未回填",
       );
       return;
@@ -189,13 +213,14 @@ export function DocCustomForm({
     const values: Record<string, unknown> = {};
     for (const field of fields) {
       const parsed = parseInput(field.control, texts[field.name] ?? "");
-      if (!parsed.ok) nextErrors[field.name] = parsed.error ?? "格式不对";
-      else values[field.name] = parsed.value;
+      if (!parsed.ok) {
+        nextErrors[field.name] = fieldErrorMessage(field.control, parsed.error);
+      } else values[field.name] = parsed.value;
     }
     values[PRODUCT_KEY] = productKey.trim() ? productKey.trim() : undefined;
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
-      toast.error("有字段格式不对，先改完再保存");
+      toast.error("有内容项格式不对，请按提示改完再保存");
       return;
     }
     update.mutate(
@@ -232,12 +257,12 @@ export function DocCustomForm({
       try {
         const parsed: unknown = JSON.parse(current);
         if (!Array.isArray(parsed)) {
-          toast.error("产品照片需要是数组形式，先改好再加图");
+          toast.error("产品照片的填写格式无法识别，请先修正后再加图");
           return;
         }
         arr = parsed;
       } catch {
-        toast.error("现有内容不是合法 JSON，先修好再加图");
+        toast.error("现有内容格式无法识别，请先修正后再加图");
         return;
       }
     }
@@ -289,9 +314,6 @@ export function DocCustomForm({
           <span className="flex items-center gap-1 text-xs font-medium">
             <Package className="h-3.5 w-3.5" />
             关联产品
-            <code className="rounded bg-muted px-1 text-[10px] text-muted-foreground">
-              {PRODUCT_KEY}
-            </code>
           </span>
           <select
             className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
@@ -302,7 +324,7 @@ export function DocCustomForm({
             <option value="">（不关联）</option>
             {(products.data?.items ?? []).map((p) => (
               <option key={p.product_key} value={p.product_key}>
-                {p.name}（{p.product_key}）
+                {p.name}
               </option>
             ))}
           </select>
@@ -334,10 +356,10 @@ export function DocCustomForm({
                 ? clauseTemplatesQuery.isLoading
                   ? "正在读取条款模板…"
                   : clauseTemplatesQuery.isError
-                    ? "条款模板接口暂不可用，可直接自定义输入。"
+                    ? "条款模板暂时读不到，可直接手动填写。"
                     : clauseTemplates.length === 0
                       ? "团队暂无可用模板，可直接自定义输入。"
-                      : "模板为中英双语；该字段是单段文本，按英文单证口径优先回填英文（无英文则中文）。已填内容默认不覆盖。"
+                      : "模板为中英双语；这项内容是一段文本，按英文单证口径优先回填英文（无英文则中文）。已填内容默认不覆盖。"
                 : undefined
             }
           />
@@ -359,11 +381,11 @@ export function DocCustomForm({
           <DialogHeader>
             <DialogTitle>覆盖已填内容？</DialogTitle>
             <DialogDescription>
-              字段「
+              内容项「
               {pendingOverwrite?.field.spec.description ??
                 pendingOverwrite?.field.name}
               」已有内容。用模板「{pendingOverwrite?.template.name}」回填会覆盖它
-              —— 默认只填空字段，请确认是否覆盖。
+              —— 默认只填空的内容项，请确认是否覆盖。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -430,28 +452,25 @@ function FieldRow({
         <span className="flex items-center gap-1 text-xs font-medium">
           <Lock className="h-3 w-3" />
           {label}
-          <code className="rounded bg-muted px-1 text-[10px] text-muted-foreground">
-            {name}
-          </code>
         </span>
         <p className="text-[11px] text-muted-foreground">
           只能来自上游订单/报价或系统计算，<b>不接受手工覆盖</b>
-          （服务端会直接拒绝）。改了上游再「重新带入」即可。
+          （系统会自动挡住）。改了上游再「重新带入」即可。
         </p>
       </div>
     );
   }
 
   return (
-    <label className={`space-y-1 ${wide ? "sm:col-span-2" : ""}`}>
+    <label
+      className={`space-y-1 ${wide ? "sm:col-span-2" : ""}`}
+      data-field={name}
+    >
       <span className="flex items-center gap-1 text-xs font-medium">
         {label}
-        <code className="rounded bg-muted px-1 text-[10px] text-muted-foreground">
-          {name}
-        </code>
         {spec.required && <span className="text-destructive">*</span>}
         <span className="text-[10px] font-normal text-muted-foreground">
-          {control}
+          {CONTROL_LABELS[control] ?? "文本"}
         </span>
       </span>
 
@@ -500,13 +519,22 @@ function FieldRow({
       )}
 
       {control === "json" && (
-        <textarea
-          className="min-h-[88px] w-full rounded-md border border-input bg-background p-2 font-mono text-xs"
-          value={text}
-          disabled={disabled}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={name === "product_photos" ? '[{"image":"data:image/jpeg;base64,…","caption":"…"}]' : "{}"}
-        />
+        <div className="space-y-1">
+          <textarea
+            className="min-h-[88px] w-full rounded-md border border-input bg-background p-2 text-xs"
+            value={text}
+            disabled={disabled}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={
+              name === "product_photos"
+                ? "从下方图库选图即可，一般不用手填"
+                : "一般留空即可沿用上游带入的内容"
+            }
+          />
+          <span className="block text-[10px] text-muted-foreground">
+            需要手填多项内容时，请按系统要求的格式填写；一般留空即可。
+          </span>
+        </div>
       )}
 
       {control === "boolean" && (
@@ -556,7 +584,7 @@ function FieldRow({
           ) : (
             <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
               <ImageUp className="h-3.5 w-3.5" />
-              选择图片后会内联成 data URI 存进单据（渲染器只收 data: 与 http(s)）
+              选择图片后会随单据一起保存，打印/导出时自动带上
             </span>
           )}
         </div>

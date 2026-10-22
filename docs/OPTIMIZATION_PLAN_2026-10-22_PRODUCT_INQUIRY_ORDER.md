@@ -305,3 +305,118 @@ payment_terms / port_of_loading / port_of_destination / shipping_marks / country
 - 询盘：`frontend/src/app/(app)/customers/page.tsx`、`backend/worker/src/main.py`（InquiryCreate / add_inquiry）、`backend/kaas_common/workstation/customer_serializers.py`
 - 订单：`frontend/src/app/(app)/orders/components/order-create-form.tsx`、`orders/page.tsx`、`backend/worker/src/main.py`（create_order_api / get_order_api）
 - 文件规则：`backend/kaas_common/files/rules.py`
+
+---
+
+## 13. 用户裁决与补充设计（2026-10-22，最终口径）
+
+### 13.1 三项已拍板
+
+| 项 | 裁决 |
+|---|---|
+| 询盘多产品 | **方案 A**：一条询盘多个产品行，`cust_inquiries` 加 `items jsonb`，旧字段保留兼容 |
+| 订单“上传单证” | **按推荐**：订单附件（合同/PO/信用证扫描件）+ 正式单证仍走单证工位 |
+| 新增产品 | **保留空白新建**；空白产品必须能补齐计算规则（见 13.2） |
+
+### 13.2 空白新建产品：如何补齐规则
+
+空白产品没有 `derived` 公式，报价引擎算不出重量/体积/成本。设计为**三步兜底**：
+
+1. **新建弹窗增加“计算方式”**（必选）：
+   - 从现有产品复制计算规则（默认，选 勾花网 / 牛栏网 / 鹿网）；
+   - 空白，稍后由平台管理员配置。
+2. **空白产品保存后进入“待配置规则”状态**：
+   - 产品卡与详情显示黄色提示“待配置计算规则，暂不可报价”；
+   - “去报价”按钮禁用，避免用户以为系统坏了；
+   - 平台管理员可见“配置计算规则”按钮，打开折叠的高级设置（原有完整编辑器）；
+   - 普通成员不可见高级入口，只看到提示“请联系平台管理员补齐计算规则”。
+3. **可随时从其他产品补规则**：详情里提供“从其他产品带入计算规则”，把目标产品的
+   `derived / columns / invariants / space_deduction / constants / params` 复制过来，
+   名称/图片/基础信息/自定义档位保持不变。
+4. 判定“已配置”：`spec.derived` 非空（或产品有内置规则）。前端只用于提示与禁用报价，
+   不新增数据库列，避免状态漂移。
+
+### 13.3 订单金额、应收、实收与到账截图（新增需求 4）
+
+用户口径：创建订单时要填各项金额；应收款用填写的金额和比例直接算；后期可填实收金额
+（应收与实收可能对应不上）、收款时间、确认到账截图。
+
+#### 订单金额构成
+创建订单分四块金额：
+- **货物金额**：由货物明细自动汇总（数量 × 单价；也允许直接改行金额）；
+- **运费**：手填；
+- **保险费**：手填；
+- **其他费用**：手填（如佣金、包装附加）；
+- **订单总额** = 货物金额 + 运费 + 保险费 + 其他费用（自动计算，只读展示）。
+
+落库：
+- `orders.total_amount` = 订单总额（沿用现有列，应收/报表都读它）；
+- 新增 `orders.amount_breakdown jsonb` 保存四项金额，供订单详情回显与修改；
+- 货物明细仍进 `order_items`。
+
+#### 收款计划（应收按金额和比例自动算）
+创建订单时“收款安排”区：
+- 一键模板：`30% 定金 + 70% 发货前`、`50% + 50%`、`100% 预付`、`自定义`；
+- 每行：期次类型（定金/尾款/其他）、比例（%）、金额、到期日、备注；
+- 比例变化时金额自动 = 订单总额 × 比例（可手改，改金额时反算比例只做提示）；
+- 提交时后端在**同一个事务**里创建订单、订单行、收款计划、应收台账；
+- 校验：比例合计 ≤ 100%；金额合计与订单总额不一致时给出提示（允许差异，如运费后补）。
+
+后端接口：`POST /api/v1/orders` 增加可选 `amount_breakdown` 与 `payment_plan[]`；
+创建成功后立即生成 `receivables` 行（`status='unpaid'`），不再等到“确认订单”才建应收。
+
+#### 实收登记（核心新能力）
+新增表 `payment_receipts`（一次收款一行，允许同一期多次收款）：
+```
+id, tenant_id, order_id, schedule_id(可空), amount, currency,
+received_date, fx_rate(可空), file_id(可空), notes,
+created_by, owner_id, owner_scope, team_id, created_at
+```
+- 登记入口：收款计划行“登记收款”；实收金额默认 = 该期剩余应收，可改成实际到账金额；
+- 必填：实收金额、收款日期；选填：实际汇率、备注、**确认到账截图**（PNG/JPG/PDF）；
+- 到账截图走现有文件管线：新增 `payment_receipt` 归属类型，文件挂到 `file_id`；
+- 允许多次登记；每次登记后重算：
+  - 该期已收 = 所有 receipts 金额之和；
+  - 期次状态：`pending` / `partial` / `paid`（`SCHEDULE_STATUS` 增加 `partial`）；
+  - 应收台账：`received_amount` = 该订单所有 receipts 之和；
+    `status` = `unpaid` / `partial` / `paid`；
+  - 超收/差异：不强行改计划金额，页面显示“差异 = 实收 − 应收”，供财务核对。
+- “对应不起来”的处理：`schedule_id` 可为空（一笔款暂不指定期次），
+  或收款金额与期次金额不一致；页面提供“未分配收款”区与差异列。
+- 兼容历史：已标记 `paid` 但没有 receipts 的旧计划，展示为“历史收款（无截图）”，
+  实收金额取其 `amount`，不强制补录；新登记才写 receipts。
+
+#### 接口清单
+- `POST /api/v1/orders`：新增 `amount_breakdown`、`payment_plan[]`；
+- `GET /api/v1/orders/{id}`：返回 `amount_breakdown`、`items`、`payment_schedules`、`receipts`；
+- `GET /api/v1/orders/{id}/receipts`、`POST /api/v1/orders/{id}/receipts`；
+- `POST /api/v1/payment-receipts/{id}/files`（multipart，到账截图）；
+- `GET /api/v1/file-objects?owner_type=payment_receipt&owner_id={receipt_id}`（复用）；
+- `POST /api/v1/orders/{id}/files`、`GET /api/v1/orders/{id}/files`（订单附件）。
+
+#### 迁移
+1. `cust_inquiries.items jsonb NOT NULL DEFAULT '[]'`；
+2. `orders.amount_breakdown jsonb`；
+3. 新表 `payment_receipts`；
+4. `SCHEDULE_STATUS` 增加 `partial`（只需共享枚举 + 校验，无表约束）；
+5. 共享文件规则 `OWNER_TYPES` 增加 `order`、`payment_receipt`（复用 `kind='other'`）。
+
+### 13.4 更新后的实施顺序
+
+1. **P0 产品工位**（Lead）：产品卡/详情、图片归位、隐藏 key、业务规格、管理员高级设置、
+   空白新建 + 计算方式 + 待配置规则提示。
+2. **P1 订单与收款**（前后端并行）：金额构成、收款计划自动生成、订单附件、
+   实收登记 + 截图 + 应收台账联动。
+3. **P2 询盘多产品**（前后端并行）：`items` 迁移、API、弹窗多行、客户详情多产品。
+4. **P3 全站配置页术语清理**（并行）：settings / leadgen / dashboard / kb / receivables /
+   pricing-data；审计/事件/灰度/账单/单证原始数据默认折叠。
+5. **P4 验收**：门禁 + mock 模式实拍；旧数据兼容回归。
+
+### 13.5 新增验收标准
+
+- [ ] 空白新建产品可选“从现有产品复制规则”或“稍后配置”；未配置规则时不能报价且提示明确。
+- [ ] 建单时可填货物明细、运费/保险/其他费用，订单总额自动汇总。
+- [ ] 选择 30/70 等比例后，收款计划金额自动算出；保存后应收台账立即出现在应收页。
+- [ ] 登记实收时可填实收金额、收款日期、到账截图；支持同一期多次收款与金额差异。
+- [ ] 应收/实收对应不上时，页面显示差异与“未分配收款”，不静默改计划金额。
+- [ ] 订单附件与正式单证分开：订单附件可补传，正式单证仍在单证工位生成。

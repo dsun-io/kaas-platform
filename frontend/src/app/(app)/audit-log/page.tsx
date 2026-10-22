@@ -24,22 +24,39 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { usePersistentState } from "@/lib/hooks/use-persistent-state";
 import { X, ChevronDown, ChevronRight } from "lucide-react";
 
+/** 操作名、对象类型翻成中文（内部代码只在「查看详情」里出现，设计稿 §1/§7） */
+const ACTION_LABELS: Record<string, string> = {
+  update: "更新",
+  "tenant.reload": "重载空间配置",
+  "capability.update": "更新能力配置",
+  "quotation.create": "录入报价",
+  "oss.upload": "上传文件",
+};
+
+const RESOURCE_LABELS: Record<string, string> = {
+  feature_flag: "灰度开关",
+  tenant: "空间",
+  capability: "能力配置",
+  quotation: "报价单",
+  oss: "文件存储",
+};
+
+function actionLabel(value: string): string {
+  return ACTION_LABELS[value] ?? "其他操作";
+}
+
+function resourceLabel(value: string): string {
+  return RESOURCE_LABELS[value] ?? "其他对象";
+}
+
 const ACTION_OPTIONS = [
   { value: "", label: "全部操作" },
-  { value: "update", label: "更新" },
-  { value: "tenant.reload", label: "租户重载" },
-  { value: "capability.update", label: "能力更新" },
-  { value: "quotation.create", label: "报价录入" },
-  { value: "oss.upload", label: "OSS 上传" },
+  ...Object.entries(ACTION_LABELS).map(([value, label]) => ({ value, label })),
 ];
 
 const RESOURCE_OPTIONS = [
-  { value: "", label: "全部资源" },
-  { value: "feature_flag", label: "灰度开关" },
-  { value: "tenant", label: "租户" },
-  { value: "capability", label: "能力配置" },
-  { value: "quotation", label: "报价" },
-  { value: "oss", label: "对象存储" },
+  { value: "", label: "全部对象" },
+  ...Object.entries(RESOURCE_LABELS).map(([value, label]) => ({ value, label })),
 ];
 
 function formatTime(iso: string) {
@@ -123,6 +140,8 @@ function AuditFilters({
 
 function ExpandRow({ entry }: { entry: AuditEntry }) {
   const [open, setOpen] = useState(false);
+  // 原始数据默认折叠：运营多半只看摘要（设计稿 §1/§7）
+  const [showRaw, setShowRaw] = useState(false);
 
   return (
     <>
@@ -142,11 +161,13 @@ function ExpandRow({ entry }: { entry: AuditEntry }) {
         </TableCell>
         <TableCell className="font-mono text-xs">{entry.actor_id}</TableCell>
         <TableCell>
-          <span className="text-xs px-1.5 py-0.5 rounded bg-muted font-mono">
-            {entry.action}
+          <span className="text-xs px-1.5 py-0.5 rounded bg-muted">
+            {actionLabel(entry.action)}
           </span>
         </TableCell>
-        <TableCell className="text-xs">{entry.resource_type}</TableCell>
+        <TableCell className="text-xs">
+          {resourceLabel(entry.resource_type)}
+        </TableCell>
         <TableCell className="hidden sm:table-cell font-mono text-xs">
           {entry.resource_id}
         </TableCell>
@@ -158,9 +179,41 @@ function ExpandRow({ entry }: { entry: AuditEntry }) {
         <TableRow className="bg-muted/30">
           <TableCell />
           <TableCell colSpan={6}>
-            <pre className="text-xs whitespace-pre-wrap p-2">
-              {JSON.stringify(entry, null, 2)}
-            </pre>
+            <div className="space-y-2 p-2 text-xs">
+              <dl className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
+                <div className="flex gap-2">
+                  <dt className="shrink-0 text-muted-foreground">操作</dt>
+                  <dd>{actionLabel(entry.action)}</dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt className="shrink-0 text-muted-foreground">对象</dt>
+                  <dd>
+                    {resourceLabel(entry.resource_type)} · {entry.resource_id}
+                  </dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt className="shrink-0 text-muted-foreground">操作人</dt>
+                  <dd>{entry.actor_id}</dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt className="shrink-0 text-muted-foreground">时间</dt>
+                  <dd>{new Date(entry.timestamp).toLocaleString("zh-CN")}</dd>
+                </div>
+              </dl>
+              <button
+                type="button"
+                className="text-muted-foreground underline decoration-dotted underline-offset-2"
+                aria-expanded={showRaw}
+                onClick={() => setShowRaw((value) => !value)}
+              >
+                查看详情（一般不需要看）
+              </button>
+              {showRaw && (
+                <pre className="whitespace-pre-wrap rounded bg-muted p-2 font-mono text-[11px]">
+                  {JSON.stringify(entry, null, 2)}
+                </pre>
+              )}
+            </div>
           </TableCell>
         </TableRow>
       )}
@@ -247,9 +300,9 @@ export default function AuditLogPage() {
                     <TableHead className="text-xs">时间</TableHead>
                     <TableHead className="text-xs">操作者</TableHead>
                     <TableHead className="text-xs">操作</TableHead>
-                    <TableHead className="text-xs">资源类型</TableHead>
+                    <TableHead className="text-xs">对象类型</TableHead>
                     <TableHead className="hidden sm:table-cell text-xs">
-                      资源 ID
+                      关联对象
                     </TableHead>
                     <TableHead className="text-xs">说明</TableHead>
                   </TableRow>

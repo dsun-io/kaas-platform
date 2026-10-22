@@ -358,6 +358,12 @@ ORDER_ROUTES = {
     ("/api/v1/orders/{order_id}/payment-schedules", "POST"),
     ("/api/v1/payment-schedules/{schedule_id}", "PATCH"),
     ("/api/v1/receivables", "GET"),
+    # 2026-10-22（设计 §13.3）：实收登记 + 订单随单附件（orchestrator 无对应实现，
+    # 属用户新增能力；路由面按 worker 实际注册登记，防止漂移）。
+    ("/api/v1/orders/{order_id}/receipts", "GET"),
+    ("/api/v1/orders/{order_id}/receipts", "POST"),
+    ("/api/v1/orders/{order_id}/files", "GET"),
+    ("/api/v1/orders/{order_id}/files", "POST"),
 }
 
 
@@ -1224,7 +1230,8 @@ def test_get_order_detail_shape():
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert set(body) == _ORDER_KEYS | {
-        "items", "quote_refs", "payment_schedules", "receivable"}
+        # 2026-10-22（设计 §13.3）：实收登记直接进详情，前端不用再发第二个请求
+        "items", "quote_refs", "payment_schedules", "receipts", "receivable"}
     item = body["items"][0]
     assert set(item) == _ORDER_ITEM_KEYS         # 精确 11 键（与 orchestrator 同）
     assert item["qty"] == 10.0 and isinstance(item["qty"], float)

@@ -52,9 +52,15 @@ import {
   InquiryStageHistory,
   UnlinkedRecords,
   deriveInquiryStage,
-  splitProductName,
 } from "./components/inquiry-followups";
 import { resolveInquiryStage } from "./components/inquiry-stage";
+import { InquiryForm } from "./components/inquiry-form";
+import {
+  displayInquiryItems,
+  inquiryProductSummary,
+  type InquiryItem,
+} from "./components/inquiry-items";
+import { errMsg } from "./components/error-message";
 
 // 客户阶段（2026-10-18 用户口径）：只有三种。
 // active / inactive 是手动状态；ordered 由「开启中的订单」自动推导，不可手选。
@@ -130,6 +136,13 @@ interface Inquiry {
   quantity: number | null;
   quantity_unit: string | null;
   application: string | null;
+  /**
+   * 多产品行（设计稿 docs/OPTIMIZATION_PLAN_2026-10-22_PRODUCT_INQUIRY_ORDER.md §13
+   * 方案 A）。历史询盘 / 后端暂未返回时为空 ⇒ 卡片回退到上面的旧标量字段展示。
+   */
+  items?: InquiryItem[] | null;
+  /** 询盘备注（后端序列化目前不含，仅本地新数据可能有） */
+  notes?: string | null;
   status: string;
   /**
    * F4 询盘阶段真值（事件驱动落库：inquiry/quotation/order/shipment/completed/closed）。
@@ -183,21 +196,6 @@ function useCustomerDetail(id: number | null) {
     },
     enabled: !!id,
   });
-}
-
-function errMsg(e: unknown): string {
-  const err = e as {
-    response?: { data?: { detail?: unknown; message?: string; code?: string } };
-    message?: string;
-  };
-  const detail = err?.response?.data?.detail;
-  if (typeof detail === "string" && detail) return detail;
-  if (detail && typeof detail === "object") {
-    // 后端部分错误把可读说明放在对象型 detail 里（如 {code, detail, open_orders}）
-    const obj = detail as { detail?: string; message?: string; code?: string };
-    return obj.detail || obj.message || obj.code || "请求失败";
-  }
-  return err?.response?.data?.message ?? err?.message ?? "请求失败";
 }
 
 /** 删除客户 409（有开启中的订单）时，把订单清单也带出来给用户看。 */
@@ -407,134 +405,6 @@ function CustomerForm({
             : isEdit
               ? "保存档案"
               : "创建客户"}
-        </Button>
-        <Button variant="outline" onClick={onClose}>
-          取消
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-type InquiryFormState = {
-  channel: string;
-  product_name_raw: string;
-  quantity: string;
-  quantity_unit: string;
-  application: string;
-  notes: string;
-};
-
-const EMPTY_INQUIRY: InquiryFormState = {
-  channel: "",
-  product_name_raw: "",
-  quantity: "",
-  quantity_unit: "",
-  application: "",
-  notes: "",
-};
-
-/**
- * 询盘渠道：**必须与后端枚举逐字一致**（`kaas_common/domain/enums.py` `INQUIRY_CHANNEL`：
- * email/whatsapp/alibaba/expo/website/quote/other）。2026-10-21（C28）修：此前这里是自由
- * 输入框（placeholder 写 `Alibaba / Expo / Web`），用户按提示填 `Alibaba` 会被后端
- * `validate_enum` 判 422 —— "按提示操作反而失败"。改用下拉，只发枚举值。
- */
-const INQUIRY_CHANNEL_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: "email", label: "邮件" },
-  { value: "whatsapp", label: "WhatsApp" },
-  { value: "alibaba", label: "阿里巴巴" },
-  { value: "expo", label: "展会" },
-  { value: "website", label: "官网" },
-  { value: "quote", label: "报价" },
-  { value: "other", label: "其他" },
-];
-
-function InquiryForm({
-  customerId,
-  onClose,
-}: {
-  customerId: number;
-  onClose: () => void;
-}) {
-  const qc = useQueryClient();
-  const [form, setForm] = useState<InquiryFormState>(EMPTY_INQUIRY);
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, setIsPending] = useState(false);
-
-  const set =
-    (k: keyof InquiryFormState) => (e: React.ChangeEvent<HTMLInputElement>) =>
-      setForm({ ...form, [k]: e.target.value });
-
-  const handleSubmit = async () => {
-    setIsPending(true);
-    setError(null);
-    try {
-      await apiClient.post<Inquiry>(`/customers/${customerId}/inquiries`, {
-        customer_id: customerId,
-        channel: form.channel || undefined,
-        product_name_raw: form.product_name_raw || undefined,
-        quantity: form.quantity ? Number(form.quantity) : undefined,
-        quantity_unit: form.quantity_unit || undefined,
-        application: form.application || undefined,
-        notes: form.notes || undefined,
-      });
-      qc.invalidateQueries({ queryKey: ["customers", "detail", customerId] });
-      onClose();
-    } catch (e: unknown) {
-      setError(errMsg(e));
-    } finally {
-      setIsPending(false);
-    }
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Select
-          value={form.channel}
-          onValueChange={(v) => setForm({ ...form, channel: v ?? "" })}
-        >
-          <SelectTrigger aria-label="询盘渠道">
-            <SelectValue placeholder="渠道（可留空）" />
-          </SelectTrigger>
-          <SelectContent>
-            {INQUIRY_CHANNEL_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Input
-          placeholder="产品名称（原始）"
-          value={form.product_name_raw}
-          onChange={set("product_name_raw")}
-        />
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Input
-          placeholder="数量"
-          type="number"
-          value={form.quantity}
-          onChange={set("quantity")}
-        />
-        <Input
-          placeholder="单位（平方米 / 卷 / 吨）"
-          value={form.quantity_unit}
-          onChange={set("quantity_unit")}
-        />
-      </div>
-      <Input
-        placeholder="用途"
-        value={form.application}
-        onChange={set("application")}
-      />
-      <Input placeholder="备注" value={form.notes} onChange={set("notes")} />
-      {error && <p className="text-sm text-destructive">{error}</p>}
-      <div className="flex gap-2">
-        <Button onClick={handleSubmit} disabled={isPending}>
-          {isPending ? "提交中…" : "添加询盘"}
         </Button>
         <Button variant="outline" onClick={onClose}>
           取消
@@ -1289,7 +1159,8 @@ function CustomerDetailPanel({
                         ),
                       );
                       const expanded = expandedInquiries[inq.id] ?? false;
-                      const product = splitProductName(inq.product_name_raw);
+                      // 多产品行（items 优先；历史询盘用旧标量字段合成一行）
+                      const productViews = displayInquiryItems(inq);
                       const primaryContact =
                         detail?.contacts?.find((c) => c.is_primary) ??
                         detail?.contacts?.[0] ??
@@ -1323,7 +1194,7 @@ function CustomerDetailPanel({
                                 </StatusBadge>
                               </div>
                               <p className="mt-1 text-xs text-muted-foreground">
-                                {product.name}
+                                {inquiryProductSummary(productViews)}
                               </p>
                             </div>
                             <div
@@ -1388,9 +1259,41 @@ function CustomerDetailPanel({
                               className="mt-3 space-y-3 border-t border-border/60 pt-3"
                               onClick={(e) => e.stopPropagation()}
                             >
+                              <div className="space-y-2">
+                                <p className="text-xs font-medium text-muted-foreground">
+                                  产品（{productViews.length}）
+                                </p>
+                                {productViews.length === 0 ? (
+                                  <p className="text-xs text-muted-foreground">
+                                    未填写产品
+                                  </p>
+                                ) : (
+                                  productViews.map((item, itemIndex) => (
+                                    <div
+                                      key={"inquiry-item-" + itemIndex}
+                                      className="rounded-lg border border-border/60 bg-white/60 px-3 py-2 text-xs"
+                                    >
+                                      <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <span className="font-medium text-foreground">
+                                          {item.name}
+                                        </span>
+                                        <span className="text-muted-foreground">
+                                          {item.quantity != null
+                                            ? item.quantity +
+                                              " " +
+                                              (item.quantityUnit ?? "")
+                                            : "数量未填"}
+                                        </span>
+                                      </div>
+                                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-muted-foreground">
+                                        <span>规格：{item.spec ?? "—"}</span>
+                                        <span>用途：{item.application ?? "—"}</span>
+                                      </div>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
                               <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-                                <span>产品：{product.name}</span>
-                                <span>规格：{product.spec ?? "—"}</span>
                                 <span className="sm:col-span-2">
                                   联系人：
                                   {primaryContact ? (
@@ -1409,13 +1312,6 @@ function CustomerDetailPanel({
                                   )}
                                 </span>
                                 <span>渠道：{inq.channel ?? "—"}</span>
-                                <span>
-                                  数量：
-                                  {inq.quantity != null
-                                    ? `${inq.quantity} ${inq.quantity_unit ?? ""}`
-                                    : "—"}
-                                </span>
-                                <span>用途：{inq.application ?? "—"}</span>
                                 <span>
                                   创建：
                                   {new Date(

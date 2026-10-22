@@ -1,5 +1,9 @@
 /**
- * KaaS TS 门面 · orders 域（16 条路由：订单 9 + 实际成本 3 + 出运 4）。
+ * KaaS TS 门面 · orders 域（21 条路由：订单 14 + 实际成本 3 + 出运 4）。
+ *
+ * 2026-10-22（设计 §13.3）：订单域新增 5 条 —— 实收登记 GET/POST
+ * /orders/{id}/receipts、订单附件 GET/POST /orders/{id}/files、
+ * 到账截图 POST /payment-receipts/{id}/files。
  *
  * 真源逐条对齐：
  * - backend/worker/src/main.py:3389-4152（订单列表/新建/详情/改单/状态机/付款计划/应收）
@@ -28,6 +32,13 @@ import {
   validateEnum,
 } from "../rules";
 import { requireUser, type CurrentUser } from "../session";
+import { rowToReceipt } from "../serializers";
+import {
+  META_COLS,
+  createFileFromBytes,
+  rowToFile,
+  teamScope,
+} from "./files";
 import {
   ws_extras_ActualCostIn,
   ws_extras_ActualCostResolveIn,
@@ -148,12 +159,14 @@ function asFloat(value: unknown): number | null {
   return Number(value);
 }
 
-/** row_to_order：20 键（金额一律 float，时间一律 isoformat）。 */
+/** row_to_order：21 键（金额一律 float，时间一律 isoformat）。 */
 function rowToOrder(row: Row): Record<string, unknown> {
   return {
     id: num(row.id), order_no: row.order_no, customer_id: num(row.customer_id),
     customer_name: row.customer_name, status: row.status, currency: row.currency,
     total_amount: asFloat(row.total_amount),
+    // 金额构成（迁移 202610220001）：历史订单为 null，前端回退 total_amount
+    amount_breakdown: row.amount_breakdown ?? null,
     order_date: isoDate(row.order_date), delivery_date: isoDate(row.delivery_date),
     notes: row.notes,
     fx_rate: asFloat(row.fx_rate), fx_rate_date: isoDate(row.fx_rate_date),
@@ -203,6 +216,198 @@ function rowToReceivable(row: Row): Record<string, unknown> {
   };
 }
 
+// ── 金额构成 / 收款计划 / 实收重算（设计 §13.3 · 2026-10-22）──────────────────
+
+/** order_serializers.AMOUNT_BREAKDOWN_KEYS：金额构成四项（不落 total，总额只认 total_amount）。 */
+const AMOUNT_BREAKDOWN_KEYS = [
+  "goods_amount", "freight_amount", "insurance_amount", "other_amount",
+] as const;
+
+/** 入参 amount_breakdown → 四项数字；空/非法返回 null（Python normalize_amount_breakdown）。 */
+function normalizeAmountBreakdown(raw: unknown): Record<string, number> | null {
+  let value = raw;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value || "null");
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const obj = value as Record<string, unknown>;
+  const out: Record<string, number> = {};
+  let any = false;
+  for (const key of AMOUNT_BREAKDOWN_KEYS) {
+    const raw = obj[key];
+    const num = raw === null || raw === undefined || raw === "" ? null : Number(raw);
+    if (num !== null && Number.isNaN(num)) return null;
+    out[key] = num ?? 0;
+    if (num !== null) any = true;
+  }
+  return any ? out : null;
+}
+
+/** 建单收款安排（Python main._normalize_payment_plan 直译）。 */
+function normalizePaymentPlan(raw: unknown, total: number | null): {
+  scheduleType: string; ratio: number | null; amount: number | null;
+  dueDate: Date | null; notes: string | null;
+}[] {
+  if (raw === null || raw === undefined || raw === "") return [];
+  if (!Array.isArray(raw)) {
+    throw httpError(422, {
+      error: "validation", code: "INVALID_PAYMENT_PLAN",
+      field: "payment_plan", detail: "payment_plan 必须是数组",
+    });
+  }
+  const plan: {
+    scheduleType: string; ratio: number | null; amount: number | null;
+    dueDate: Date | null; notes: string | null;
+  }[] = [];
+  let ratioSum = 0;
+  raw.forEach((row, idx) => {
+    if (typeof row !== "object" || row === null) {
+      throw httpError(422, {
+        error: "validation", code: "INVALID_PAYMENT_PLAN",
+        field: "payment_plan[" + String(idx) + "]", detail: "收款安排每行必须是对象",
+      });
+    }
+    const item = row as Record<string, unknown>;
+    const scheduleType = String(item.schedule_type ?? "").trim();
+    const allowedTypes = ["deposit", "balance", "full", "other"];
+    if (!allowedTypes.includes(scheduleType)) {
+      throw httpError(422, {
+        error: "validation", code: "INVALID_SCHEDULE_TYPE",
+        field: "payment_plan[" + String(idx) + "].schedule_type",
+        detail: "期次类型非法：" + (scheduleType || "(空)")
+          + "，允许 " + allowedTypes.join("/"),
+      });
+    }
+    const ratioRaw = item.ratio;
+    const ratio = ratioRaw === null || ratioRaw === undefined || ratioRaw === ""
+      ? null : Number(ratioRaw);
+    if (ratio !== null && (Number.isNaN(ratio) || ratio < 0 || ratio > 1)) {
+      throw httpError(422, {
+        error: "validation", code: "INVALID_SCHEDULE_RATIO",
+        field: "payment_plan[" + String(idx) + "].ratio",
+        detail: "比例必须是 0~1 的小数（0.3 = 30%）",
+      });
+    }
+    const amountRaw = item.amount;
+    let amount = amountRaw === null || amountRaw === undefined || amountRaw === ""
+      ? null : Number(amountRaw);
+    if (amount !== null && Number.isNaN(amount)) amount = null;
+    if (amount === null && ratio !== null && total !== null) {
+      amount = round2(total * ratio);
+    }
+    ratioSum += ratio ?? 0;
+    plan.push({
+      scheduleType,
+      ratio,
+      amount,
+      dueDate: parseDate(item.due_date),
+      notes: item.notes === null || item.notes === undefined || item.notes === ""
+        ? null : String(item.notes),
+    });
+  });
+  if (ratioSum > 1 + 1e-6) {
+    throw httpError(422, {
+      error: "validation", code: "PAYMENT_PLAN_RATIO_EXCEEDS",
+      field: "payment_plan",
+      detail: "收款比例合计 " + (ratioSum * 100).toFixed(2) + "% 超过 100%",
+    });
+  }
+  return plan;
+}
+
+/** 按 schedule_id 汇总实收（未分配收款 schedule_id 为空，不计入任何期次）。 */
+function receiptsBySchedule(receipts: Row[]): Map<number, number> {
+  const totals = new Map<number, number>();
+  for (const r of receipts) {
+    if (r.schedule_id === null || r.schedule_id === undefined) continue;
+    const sid = Number(r.schedule_id);
+    totals.set(sid, (totals.get(sid) ?? 0) + Number(r.amount ?? 0));
+  }
+  return totals;
+}
+
+/** 收款计划行 + received_amount（历史 paid 且无 receipts 的期次按金额显示）。 */
+function scheduleWithReceived(
+  row: Row, bySchedule: Map<number, number>,
+): Record<string, unknown> {
+  const out = rowToSchedule(row);
+  let received = bySchedule.get(Number(row.id)) ?? 0;
+  if (received === 0 && row.status === "paid") received = Number(row.amount ?? 0);
+  out.received_amount = round2(received);
+  return out;
+}
+
+/**
+ * 重算期次状态 + 应收台账（Python main._recompute_payment_state 直译）。
+ * 0 < 已收 < 应收 ⇒ partial；已收 ≥ 应收 ⇒ paid；无 receipts 且历史 paid ⇒ 保持 paid。
+ */
+async function recomputePaymentState(sql: Queryable, orderId: number): Promise<void> {
+  const schedules = await sql.unsafe(
+    "SELECT id, amount, status FROM payment_schedules"
+    + " WHERE tenant_id=$1 AND order_id=$2",
+    [DEFAULT_TENANT, orderId] as never[],
+  ) as unknown as Row[];
+  const receipts = await sql.unsafe(
+    "SELECT schedule_id, amount FROM payment_receipts"
+    + " WHERE tenant_id=$1 AND order_id=$2",
+    [DEFAULT_TENANT, orderId] as never[],
+  ) as unknown as Row[];
+  const per = new Map<number, number>();
+  let receiptsTotal = 0;
+  for (const r of receipts) {
+    const amount = Number(r.amount ?? 0);
+    receiptsTotal += amount;
+    if (r.schedule_id !== null && r.schedule_id !== undefined) {
+      const sid = Number(r.schedule_id);
+      per.set(sid, (per.get(sid) ?? 0) + amount);
+    }
+  }
+  let legacyPaidTotal = 0;
+  for (const s of schedules) {
+    const sid = Number(s.id);
+    const expected = Number(s.amount ?? 0);
+    const got = per.get(sid) ?? 0;
+    let target: string;
+    if (got > 0) {
+      target = got >= expected - 0.005 ? "paid" : "partial";
+    } else if (s.status === "paid") {
+      legacyPaidTotal += expected;
+      target = "paid";
+    } else if (s.status === "overdue") {
+      target = "overdue";
+    } else {
+      target = "pending";
+    }
+    if (target !== s.status) {
+      await sql.unsafe(
+        "UPDATE payment_schedules SET status=$3, updated_at=now()"
+        + " WHERE tenant_id=$1 AND id=$2",
+        [DEFAULT_TENANT, sid, target] as never[],
+      );
+    }
+  }
+  const received = round2(receiptsTotal + legacyPaidTotal);
+  const recvRows = await sql.unsafe(
+    "SELECT id, total_amount FROM receivables"
+    + " WHERE tenant_id=$1 AND order_id=$2 LIMIT 1",
+    [DEFAULT_TENANT, orderId] as never[],
+  ) as unknown as Row[];
+  const recv = recvRows[0];
+  if (!recv) return;
+  const total = Number(recv.total_amount ?? 0);
+  const status = total > 0 && received >= total - 0.005
+    ? "paid" : (received > 0 ? "partial" : "unpaid");
+  await sql.unsafe(
+    "UPDATE receivables SET received_amount=$3, status=$4, updated_at=now()"
+    + " WHERE tenant_id=$1 AND id=$2",
+    [DEFAULT_TENANT, recv.id, received, status] as never[],
+  );
+}
+
 // ── 单据闸门（main.py:1259-1369 的三个助手）──────────────────────────────────
 
 /** main.py:1259 _customer_or_404：未删除 + 三层可见性；不可见一律 404。 */
@@ -215,6 +420,19 @@ async function customerOr404(sql: Queryable, customerId: number, user: CurrentUs
   const row = (rows as unknown as Row[])[0];
   if (!row || !ownerVisible(user, row)) {
     throw httpError(404, { error: "not_found", code: "CUSTOMER_NOT_FOUND" });
+  }
+  return row;
+}
+
+/** 订单存在 + 可见（实收/附件端点共用；不可见一律 404 order_not_found）。 */
+async function orderOr404(sql: Queryable, orderId: number, user: CurrentUser): Promise<Row> {
+  const rows = await sql.unsafe(
+    "SELECT * FROM orders WHERE tenant_id=$1 AND id=$2",
+    [DEFAULT_TENANT, orderId] as never[],
+  ) as unknown as Row[];
+  const row = rows[0];
+  if (!row || !ownerVisible(user, row)) {
+    throw httpError(404, { error: "order_not_found" });
   }
   return row;
 }
@@ -434,6 +652,36 @@ app.post("/api/v1/orders", (c) => respond(c, async () => {
       computedLines.push(line);
     }
 
+    // ── 金额构成 + 收款安排（设计 §13.3，迁移 202610220001）──────────────
+    // 订单总额的唯一真源仍是 orders.total_amount：显式传优先；否则有
+    // amount_breakdown 时 = 四项之和；都没有时沿用「订单行汇总」。
+    const rawBreakdown = body.amount_breakdown;
+    const breakdown = normalizeAmountBreakdown(rawBreakdown);
+    if (breakdown !== null) {
+      const rawGoods = (typeof rawBreakdown === "object" && rawBreakdown !== null)
+        ? (rawBreakdown as Row).goods_amount
+        : null;
+      if (rawGoods === null || rawGoods === undefined || rawGoods === "") {
+        breakdown.goods_amount = round2(total);
+      }
+      const explicitTotal = body.total_amount;
+      if (explicitTotal === null || explicitTotal === undefined || explicitTotal === "") {
+        total = round2(
+          Object.values(breakdown).reduce((sum, value) => sum + value, 0),
+        );
+      } else {
+        const parsed = Number(explicitTotal);
+        if (Number.isNaN(parsed)) {
+          throw httpError(422, {
+            error: "validation", code: "INVALID_TOTAL_AMOUNT",
+            field: "total_amount", detail: "订单总额必须是数字",
+          });
+        }
+        total = parsed;
+      }
+    }
+    const paymentPlan = normalizePaymentPlan(body.payment_plan, total);
+
     if (quote !== null) {
       // ① 币种必须与报价一致；② 同一报价下未取消订单金额累计不得超过报价合计（按分容差）
       const quoteCurrency = String(quote.currency ?? "").toUpperCase();
@@ -480,16 +728,17 @@ app.post("/api/v1/orders", (c) => respond(c, async () => {
       + " total_amount, order_date, delivery_date, notes, quote_id,"
       + " created_by, owner_id, owner_scope, team_id,"
       + " incoterm, payment_terms, port_of_loading, port_of_destination,"
-      + " shipping_marks, country_of_origin)"
+      + " shipping_marks, country_of_origin, amount_breakdown)"
       + " VALUES ($1,$2,$3,$4,'pending',$5,$6,$7,$8,$9,$10,$11,$11,$12,$13,"
-      + " $14,$15,$16,$17,$18,$19) RETURNING *",
+      + " $14,$15,$16,$17,$18,$19,$20::jsonb) RETURNING *",
       [DEFAULT_TENANT, orderNo, customer.id, customerName, currency,
         total || null, parseDate(body.order_date), parseDate(body.delivery_date),
         body.notes ?? null, quote ? quote.id : null, String(user.id), ownerScope,
         customer.team_id ?? null,
         term("incoterm"), term("payment_terms"), term("port_of_loading"),
         term("port_of_destination"), term("shipping_marks"),
-        term("country_of_origin")] as never[],
+        term("country_of_origin"),
+        breakdown === null ? null : JSON.stringify(breakdown)] as never[],
     );
     const row = (inserted as unknown as Row[])[0] as Row;
     const orderId = row.id;
@@ -507,6 +756,28 @@ app.post("/api/v1/orders", (c) => respond(c, async () => {
           item.qty_unit ?? null, item.unit_price ?? null,
           item.currency ?? currency, computedLines[idx],
           item.sort_order ?? idx] as never[],
+      );
+    }
+    // ── 收款计划 + 应收台账：与订单/行项**同一事务**（设计 §13.3）────────
+    for (const planRow of paymentPlan) {
+      await tx.unsafe(
+        "INSERT INTO payment_schedules (tenant_id, order_id, schedule_type, ratio,"
+        + " amount, currency, due_date, notes, status, owner_id, owner_scope, team_id)"
+        + " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',$9,$10,$11)",
+        [DEFAULT_TENANT, orderId, planRow.scheduleType, planRow.ratio,
+          planRow.amount, currency, planRow.dueDate, planRow.notes,
+          String(user.id), ownerScope, customer.team_id ?? null] as never[],
+      );
+    }
+    if (total !== null || paymentPlan.length > 0) {
+      await tx.unsafe(
+        "INSERT INTO receivables"
+        + " (tenant_id, order_id, currency, total_amount, fx_rate, fx_rate_date,"
+        + " base_currency, base_amount, received_amount, status, owner_id,"
+        + " owner_scope, team_id)"
+        + " VALUES ($1,$2,$3,$4,NULL,NULL,'CNY',NULL,0,'unpaid',$5,$6,$7)",
+        [DEFAULT_TENANT, orderId, currency, total || 0, String(user.id),
+          ownerScope, customer.team_id ?? null] as never[],
       );
     }
     if (quote !== null) {
@@ -564,15 +835,23 @@ app.get("/api/v1/orders/:order_id", (c) => respond(c, async () => {
       "SELECT * FROM receivables WHERE tenant_id = $1 AND order_id = $2 LIMIT 1",
       [DEFAULT_TENANT, orderId] as never[],
     ) as unknown as Row[];
-    return { row, items, quoteLinks, schedules, receivables };
+    // 实收登记（设计 §13.3）：详情直接带 receipts + 每期 received_amount
+    const receipts = await sql.unsafe(
+      "SELECT * FROM payment_receipts WHERE tenant_id = $1 AND order_id = $2"
+      + " ORDER BY received_date, id",
+      [DEFAULT_TENANT, orderId] as never[],
+    ) as unknown as Row[];
+    return { row, items, quoteLinks, schedules, receivables, receipts };
   });
+  const received = receiptsBySchedule(payload.receipts);
   return c.json({
     ...rowToOrder(payload.row),
     items: payload.items.map(rowToOrderItem),
     quote_refs: payload.quoteLinks.map((link) => ({
       quote_order_id: num(link.quote_order_id), ref_type: link.rel_type,
     })),
-    payment_schedules: payload.schedules.map(rowToSchedule),
+    payment_schedules: payload.schedules.map((s) => scheduleWithReceived(s, received)),
+    receipts: payload.receipts.map(rowToReceipt),
     receivable: payload.receivables.length > 0 ? rowToReceivable(payload.receivables[0]!) : null,
   });
 }));
@@ -766,7 +1045,18 @@ app.get("/api/v1/orders/:order_id/payment-schedules", (c) => respond(c, async ()
       [DEFAULT_TENANT, orderId] as never[],
     ) as unknown as Row[];
   });
-  return c.json({ items: rows.map(rowToSchedule), total: rows.length });
+  const receipts = await withDb(getEnv(c), async (sql: Db) => (
+    await sql.unsafe(
+      "SELECT schedule_id, amount FROM payment_receipts"
+      + " WHERE tenant_id=$1 AND order_id=$2",
+      [DEFAULT_TENANT, orderId] as never[],
+    )
+  ) as unknown as Row[]);
+  const bySchedule = receiptsBySchedule(receipts);
+  return c.json({
+    items: rows.map((s) => scheduleWithReceived(s, bySchedule)),
+    total: rows.length,
+  });
 }));
 
 // POST /api/v1/orders/{order_id}/payment-schedules（main.py:3964）
@@ -813,7 +1103,7 @@ app.post("/api/v1/orders/:order_id/payment-schedules", (c) => respond(c, async (
     );
     return (inserted as unknown as Row[])[0] as Row;
   });
-  return c.json(rowToSchedule(row), 201);
+  return c.json({ ...rowToSchedule(row), received_amount: 0 }, 201);
 }));
 
 // PATCH /api/v1/payment-schedules/{schedule_id}（main.py:4011）
@@ -911,9 +1201,203 @@ app.patch("/api/v1/payment-schedules/:schedule_id", (c) => respond(c, async () =
       [DEFAULT_TENANT, scheduleId] as never[],
     );
     schedule = (finalRows as unknown as Row[])[0] as Row;
+    // 标记收款也走同一套重算（期次 + 应收台账口径只有一份）
+    await recomputePaymentState(sql, Number(schedule.order_id));
     return schedule;
   });
-  return c.json(rowToSchedule(updated));
+  const receiptRows = await withDb(getEnv(c), async (sql: Db) => (
+    await sql.unsafe(
+      "SELECT * FROM payment_receipts WHERE tenant_id=$1 AND order_id=$2"
+      + " ORDER BY received_date, id",
+      [DEFAULT_TENANT, Number(updated.order_id)] as never[],
+    )
+  ) as unknown as Row[]);
+  return c.json(scheduleWithReceived(updated, receiptsBySchedule(receiptRows)));
+}));
+
+// ── 实收登记（设计 §13.3 · 2026-10-22）──────────────────────────────────────
+// 一次收款一行：允许同一期多次收款、允许 schedule_id 为空（未分配收款）、
+// 允许金额与期次金额不同 —— 只记录事实并重算状态，绝不静默改收款计划金额。
+
+// GET /api/v1/orders/{order_id}/receipts（main.py:list_order_receipts）
+app.get("/api/v1/orders/:order_id/receipts", (c) => respond(c, async () => {
+  const user = await requireUser(c);
+  const orderId = Number(c.req.param("order_id"));
+  const rows = await withDb(getEnv(c), async (sql: Db) => {
+    await orderOr404(sql, orderId, user);
+    return sql.unsafe(
+      "SELECT * FROM payment_receipts WHERE tenant_id=$1 AND order_id=$2"
+      + " ORDER BY received_date, id",
+      [DEFAULT_TENANT, orderId] as never[],
+    ) as unknown as Row[];
+  });
+  return c.json({ items: rows.map(rowToReceipt), total: rows.length });
+}));
+
+// POST /api/v1/orders/{order_id}/receipts（main.py:create_order_receipt）
+app.post("/api/v1/orders/:order_id/receipts", (c) => respond(c, async () => {
+  const user = await requireUser(c);
+  const orderId = Number(c.req.param("order_id"));
+  const body = await parseBody(c, z.record(z.unknown()));
+  const amountRaw = body.amount;
+  const amount = amountRaw === null || amountRaw === undefined || amountRaw === ""
+    ? Number.NaN : Number(amountRaw);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw httpError(422, {
+      error: "validation", code: "INVALID_RECEIPT_AMOUNT", field: "amount",
+      detail: "实收金额必须是大于 0 的数字",
+    });
+  }
+  const receivedDate = parseDate(body.received_date);
+  if (receivedDate === null) {
+    throw httpError(422, {
+      error: "validation", code: "RECEIVED_DATE_REQUIRED", field: "received_date",
+      detail: "收款日期必填（YYYY-MM-DD）",
+    });
+  }
+  const rawSchedule = body.schedule_id;
+  const scheduleId = rawSchedule === null || rawSchedule === undefined || rawSchedule === ""
+    ? null : asBigint(rawSchedule, "schedule_id", "INVALID_SCHEDULE_ID");
+  const receipt = await withDb(getEnv(c), (sql: Db) => sql.begin(async (tx) => {
+    const order = await orderOr404(tx, orderId, user);
+    checkWriteAccess(user, order);
+    if (scheduleId !== null) {
+      const belongs = await tx.unsafe(
+        "SELECT 1 FROM payment_schedules"
+        + " WHERE tenant_id=$1 AND id=$2 AND order_id=$3",
+        [DEFAULT_TENANT, scheduleId, orderId] as never[],
+      ) as unknown as Row[];
+      if (belongs.length === 0) {
+        throw httpError(422, {
+          error: "validation", code: "SCHEDULE_NOT_IN_ORDER", field: "schedule_id",
+          detail: "该收款期次不属于当前订单",
+        });
+      }
+    }
+    const inserted = await tx.unsafe(
+      "INSERT INTO payment_receipts (tenant_id, order_id, schedule_id, amount,"
+      + " currency, received_date, fx_rate, notes, created_by, owner_id,"
+      + " owner_scope, team_id)"
+      + " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *",
+      [DEFAULT_TENANT, orderId, scheduleId, amount,
+        order.currency ?? "USD", receivedDate,
+        body.fx_rate === null || body.fx_rate === undefined || body.fx_rate === ""
+          ? null : Number(body.fx_rate),
+        body.notes ?? null, String(user.id), order.owner_id,
+        order.owner_scope ?? "private", order.team_id ?? null] as never[],
+    );
+    await recomputePaymentState(tx, orderId);
+    return (inserted as unknown as Row[])[0] as Row;
+  }));
+  return c.json(rowToReceipt(receipt), 201);
+}));
+
+// ── 订单随单附件（合同/PO/信用证扫描件）+ 到账截图（multipart）───────────────
+// 复用 files.ts 的服务端代理上传（团队隔离/校验/版本化都在 rules.ts 共享口径）。
+
+/** multipart 里的文件字段（duck-typing：Workers 与 Node 测试环境的 File 不同 realm）。 */
+function uploadedFileOf(value: unknown): File | null {
+  if (typeof value !== "object" || value === null) return null;
+  const candidate = value as { arrayBuffer?: unknown };
+  if (typeof candidate.arrayBuffer !== "function") return null;
+  return value as File;
+}
+
+// GET /api/v1/orders/{order_id}/files（ws_files.py:list_order_files）
+app.get("/api/v1/orders/:order_id/files", (c) => respond(c, async () => {
+  const user = await requireUser(c);
+  const orderId = Number(c.req.param("order_id"));
+  const params: unknown[] = [DEFAULT_TENANT, String(orderId)];
+  let sqlText = "SELECT " + META_COLS + " FROM file_objects"
+    + " WHERE tenant_id=$1 AND owner_type='order' AND owner_id=$2 AND is_current";
+  const scope = teamScope(user, params.length + 1);
+  sqlText += scope.frag;
+  params.push(...scope.extra);
+  sqlText += " ORDER BY is_primary DESC, sort_order, id";
+  const rows = await withDb(getEnv(c), async (sql: Db) => {
+    await orderOr404(sql, orderId, user);
+    return sql.unsafe(sqlText, params as never[]) as unknown as Row[];
+  });
+  return c.json({ items: rows.map(rowToFile) });
+}));
+
+// POST /api/v1/orders/{order_id}/files（ws_files.py:upload_order_file）
+app.post("/api/v1/orders/:order_id/files", (c) => respond(c, async () => {
+  const user = await requireUser(c);
+  const orderId = Number(c.req.param("order_id"));
+  const form = await c.req.parseBody();
+  const file = uploadedFileOf(form.file);
+  if (file === null) {
+    throw httpError(422, {
+      error: "validation", code: "FILE_REQUIRED", detail: "缺少上传文件",
+    });
+  }
+  const kindRaw = typeof form.kind === "string" && form.kind.trim()
+    ? form.kind.trim() : "other";
+  if (kindRaw !== "other") {
+    throw httpError(422, {
+      error: "validation", code: "BAD_FILE_KIND",
+      detail: "订单附件只接受 kind=other（合同/PO/信用证扫描件）",
+    });
+  }
+  const nameRaw = typeof form.name === "string" ? form.name.trim() : "";
+  const name = nameRaw || file.name || "订单附件";
+  await withDb(getEnv(c), async (sql: Db) => {
+    const order = await orderOr404(sql, orderId, user);
+    checkWriteAccess(user, order);
+  });
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const row = await createFileFromBytes(getEnv(c), user, {
+    ownerType: "order",
+    ownerId: String(orderId),
+    kind: "other",
+    name,
+    contentType: file.type || "application/octet-stream",
+    fileName: file.name || null,
+    bytes,
+  });
+  return c.json(row, 201);
+}));
+
+// POST /api/v1/payment-receipts/{receipt_id}/files（ws_files.py:upload_receipt_file）
+app.post("/api/v1/payment-receipts/:receipt_id/files", (c) => respond(c, async () => {
+  const user = await requireUser(c);
+  const receiptId = Number(c.req.param("receipt_id"));
+  const form = await c.req.parseBody();
+  const file = uploadedFileOf(form.file);
+  if (file === null) {
+    throw httpError(422, {
+      error: "validation", code: "FILE_REQUIRED", detail: "缺少上传文件",
+    });
+  }
+  const nameRaw = typeof form.name === "string" ? form.name.trim() : "";
+  const name = nameRaw || file.name || "到账截图";
+  const receiptAndOrder = await withDb(getEnv(c), async (sql: Db) => {
+    const rows = await sql.unsafe(
+      "SELECT * FROM payment_receipts WHERE tenant_id=$1 AND id=$2",
+      [DEFAULT_TENANT, receiptId] as never[],
+    ) as unknown as Row[];
+    const receipt = rows[0];
+    if (!receipt) throw httpError(404, { error: "receipt_not_found" });
+    const order = await orderOr404(sql, Number(receipt.order_id), user);
+    checkWriteAccess(user, order);
+    return { receipt };
+  });
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const row = await createFileFromBytes(getEnv(c), user, {
+    ownerType: "payment_receipt",
+    ownerId: String(receiptAndOrder.receipt.id),
+    kind: "other",
+    name,
+    contentType: file.type || "application/octet-stream",
+    fileName: file.name || null,
+    bytes,
+  });
+  await withDb(getEnv(c), (sql: Db) => sql.unsafe(
+    "UPDATE payment_receipts SET file_id=$3 WHERE tenant_id=$1 AND id=$2",
+    [DEFAULT_TENANT, receiptId, row.id] as never[],
+  ));
+  return c.json(row, 201);
 }));
 
 // GET /api/v1/receivables（main.py:4105）

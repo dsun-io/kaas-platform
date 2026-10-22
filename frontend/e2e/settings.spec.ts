@@ -9,7 +9,7 @@ test.describe('Settings', () => {
     // 下面这行断言**本身**就是在等具体元素（`settings/page.tsx:25-40` 的 tab 按钮），
     // 所以这里不需要任何额外等待。
     // Tenant config tab should be active by default
-    const tenantTab = page.getByRole('tab', { name: /租户配置/i });
+    const tenantTab = page.getByRole('tab', { name: /空间配置/i });
     await expect(tenantTab).toBeVisible();
 
     // Click system operations tab
@@ -18,7 +18,7 @@ test.describe('Settings', () => {
     await page.waitForTimeout(300);
 
     // System tab content should now be visible
-    const reloadBtn = page.getByRole('button', { name: /重载租户配置/i });
+    const reloadBtn = page.getByRole('button', { name: /重载产品配置/i });
     await expect(reloadBtn).toBeVisible();
   });
 
@@ -33,7 +33,7 @@ test.describe('Settings', () => {
     await page.waitForTimeout(300);
 
     // Click reload button
-    const reloadBtn = page.getByRole('button', { name: /重载租户配置/i });
+    const reloadBtn = page.getByRole('button', { name: /重载产品配置/i });
     await reloadBtn.click();
     await page.waitForTimeout(2000);
 
@@ -52,15 +52,12 @@ test.describe('Settings', () => {
       timeout: 15000,
     });
 
-    // No plaintext API keys should be visible
-    const envRefs = page.locator('text=/FASTGPT_API_KEY|DB_DSN/i');
-    const count = await envRefs.count();
-    // These are ENV key references, not plaintext values
-    for (let i = 0; i < count; i++) {
-      const text = await envRefs.nth(i).textContent();
-      // Should only show ENV: prefix, not actual key value
-      expect(text).not.toMatch(/sk-[a-zA-Z0-9]{20,}/);
-      expect(text).not.toMatch(/postgres:\/\//);
-    }
+    // 2026-10-22：配置页去技术名词后不再显示 ENV:xxx / 变量名；
+    // 只允许出现「已配置/未配置」这类业务状态。
+    await expect(
+      page.getByText(/ENV:|RESEND_API_KEY|FASTGPT_API_KEY|DB_DSN/),
+    ).toHaveCount(0);
+    // 状态徽章在「系统操作」tab 内，默认 tab 下是隐藏的；只要已渲染即可。
+    await expect(page.getByText(/已配置|未配置/).first()).toBeAttached();
   });
 });

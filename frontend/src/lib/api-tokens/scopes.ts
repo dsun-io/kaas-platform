@@ -122,7 +122,7 @@ export function scopeLabel(scope: string): string {
  * 完整 scope 列表放在 title 里，避免 21 项把行撑得极高。
  */
 export function summarizeScopes(scopes: readonly string[], max = 3): string {
-  if (scopes.length === 0) return "未选择作用域";
+  if (scopes.length === 0) return "未选择权限范围";
   const labels = scopes.map(scopeLabel);
   if (labels.length <= max) return labels.join("、");
   return `${labels.slice(0, max).join("、")} +${labels.length - max}`;

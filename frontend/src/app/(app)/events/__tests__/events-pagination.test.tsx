@@ -177,7 +177,7 @@ describe("事件列表分页（C25）", () => {
     expect(lastPageParam()).toBe(2);
 
     const tenantInput = container!.querySelector<HTMLInputElement>(
-      'input[placeholder="租户 ID"]',
+      'input[placeholder="空间 ID"]',
     );
     expect(tenantInput).not.toBeNull();
     await typeInto(tenantInput!, "default");
@@ -185,5 +185,37 @@ describe("事件列表分页（C25）", () => {
 
     expect(lastPageParam()).toBe(1);
     expect(lastUrl()).toContain("tenant_id=default");
+  });
+
+  it("事件类型/来源翻中文；原始数据默认折叠，点「查看详情」才出现", async () => {
+    await mount();
+
+    expect(container!.textContent).toContain("访问审计");
+    expect(container!.textContent).toContain("界面操作");
+    expect(container!.textContent).not.toContain("audit.access");
+
+    const detailButton = Array.from(
+      container!.querySelectorAll("button"),
+    ).find((el) => el.getAttribute("aria-label") === "查看事件详情");
+    await act(async () => {
+      detailButton!.click();
+    });
+    await settle();
+
+    // 详情只给中文摘要；原始数据收在「查看详情（一般不需要看）」后面
+    expect(document.body.textContent).toContain("查看详情（一般不需要看）");
+    expect(document.body.textContent).toContain("访问对象");
+    // 资源名给中文摘要（"/events" ⇒ "事件审计"），不是一串路由
+    expect(document.body.textContent).toContain("事件审计");
+    expect(document.body.textContent).not.toContain('"/events"');
+    expect(document.body.textContent).not.toContain('"resource_id"');
+
+    const rawButton = Array.from(document.body.querySelectorAll("button")).find(
+      (el) => (el.textContent ?? "").includes("查看详情（一般不需要看）"),
+    );
+    await act(async () => {
+      rawButton!.click();
+    });
+    expect(document.body.textContent).toContain('"resource_id"');
   });
 });

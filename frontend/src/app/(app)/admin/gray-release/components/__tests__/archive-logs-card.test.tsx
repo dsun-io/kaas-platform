@@ -112,7 +112,7 @@ describe("ArchiveLogsCard（C30 事件归档记录）", () => {
     expect(container!.querySelector("nav")).toBeNull();
   });
 
-  it("有记录时展示 month / path / status / archived_at，并显示总数", async () => {
+  it("有记录时展示 month / status / archived_at；归档文件位置默认折叠，点「查看详情」才出现", async () => {
     vi.mocked(apiClient.get).mockResolvedValue(
       ok({
         items: [
@@ -137,12 +137,20 @@ describe("ArchiveLogsCard（C30 事件归档记录）", () => {
 
     const text = container!.textContent ?? "";
     expect(text).toContain("2026-09");
-    expect(text).toContain(
-      "kaas-events-archive/events-archive/2026/09/01/v1.jsonl.gz",
-    );
     expect(text).toContain("archived");
     expect(text).toContain("2026"); // archived_at 已格式化，不吞成空
     expect(text).toContain("共 42 条");
+    // 归档文件位置是内部存储路径：默认只给「查看详情（一般不需要看）」，不直接铺在表格里
+    expect(text).toContain("查看详情（一般不需要看）");
+    expect(text).not.toContain(
+      "kaas-events-archive/events-archive/2026/09/01/v1.jsonl.gz",
+    );
+    await act(async () => {
+      button("查看详情（一般不需要看）")!.click();
+    });
+    expect(container!.textContent).toContain(
+      "kaas-events-archive/events-archive/2026/09/01/v1.jsonl.gz",
+    );
     // 42 > 20 ⇒ 分页条出现；范围按**真实条数**算（本页 fixture 只有 2 条 ⇒ 第 1–2 条）
     expect(text).toContain("第 1–2 条 / 共 42 条");
   });

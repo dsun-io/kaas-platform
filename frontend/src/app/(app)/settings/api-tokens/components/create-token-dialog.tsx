@@ -81,15 +81,15 @@ export function CreateTokenDialog({
   async function submit() {
     const trimmed = name.trim();
     if (!trimmed) {
-      setFormError("请填写令牌名称（用于在列表里识别用途）。");
+      setFormError("请填写密钥名称（用于在列表里识别用途）。");
       return;
     }
     if (trimmed.length > 100) {
-      setFormError("令牌名称最多 100 个字符。");
+      setFormError("密钥名称最多 100 个字符。");
       return;
     }
     if (selected.length === 0) {
-      setFormError("至少选择一个作用域；没有作用域的令牌无法调用任何接口。");
+      setFormError("至少选择一个权限范围；没有权限的密钥无法调用任何功能。");
       return;
     }
 
@@ -101,12 +101,12 @@ export function CreateTokenDialog({
         ...(expiresInDays ? { expires_in_days: Number(expiresInDays) } : {}),
       });
       if (!result.plaintext) {
-        setFormError("创建成功但响应缺少明文，请刷新列表后重新创建。");
+        setFormError("创建成功但未拿到完整密钥，请刷新列表后重新创建。");
         return;
       }
       setCreated(result);
       setCopied(false);
-      toast.success("API 令牌已创建");
+      toast.success("系统对接密钥已创建");
     } catch (error) {
       setFormError(formatApiTokenError(error));
     }
@@ -117,10 +117,10 @@ export function CreateTokenDialog({
     try {
       await navigator.clipboard.writeText(created.plaintext);
       setCopied(true);
-      toast.success("令牌已复制");
+      toast.success("密钥已复制");
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error("复制失败，请手动选择令牌明文");
+      toast.error("复制失败，请手动选择完整密钥");
     }
   }
 
@@ -133,9 +133,9 @@ export function CreateTokenDialog({
         {created ? (
           <>
             <DialogHeader>
-              <DialogTitle>API 令牌已创建</DialogTitle>
+              <DialogTitle>系统对接密钥已创建</DialogTitle>
               <DialogDescription>
-                令牌「{created.name}」已生成。请现在保存明文。
+                密钥「{created.name}」已生成。请现在保存完整密钥。
               </DialogDescription>
             </DialogHeader>
 
@@ -149,7 +149,7 @@ export function CreateTokenDialog({
                 <div className="space-y-0.5">
                   <p className="text-sm font-semibold">仅显示一次</p>
                   <p className="text-xs">
-                    关闭本窗口后无法再次查看明文。请立即复制并妥善保存；
+                    关闭本窗口后无法再次查看完整密钥。请立即复制并妥善保存；
                     如果泄露，请吊销后重新创建。
                   </p>
                 </div>
@@ -166,10 +166,10 @@ export function CreateTokenDialog({
                   ) : (
                     <Copy className="size-3.5" />
                   )}
-                  {copied ? "已复制" : "复制令牌"}
+                  {copied ? "已复制" : "复制密钥"}
                 </Button>
                 <span className="text-xs">
-                  {created.scopes.length} 个作用域 ·{" "}
+                  {created.scopes.length} 个权限范围 ·{" "}
                   {created.expires_at ? "已设置有效期" : "永不过期"}
                 </span>
               </div>
@@ -184,10 +184,10 @@ export function CreateTokenDialog({
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>创建 API 令牌</DialogTitle>
+              <DialogTitle>创建系统对接密钥</DialogTitle>
               <DialogDescription>
-                令牌用于以 Bearer 方式调用 REST API 或连接 MCP 客户端；
-                明文只在创建成功后显示一次。
+                密钥用于外部系统或自动化工具对接平台；
+                完整密钥只在创建成功后显示一次。
               </DialogDescription>
             </DialogHeader>
 
@@ -202,7 +202,7 @@ export function CreateTokenDialog({
                   value={name}
                   maxLength={100}
                   autoComplete="off"
-                  placeholder="例如：CI 只读同步"
+                  placeholder="例如：官网询盘同步"
                   onChange={(event) => {
                     setName(event.target.value);
                     setFormError(null);
@@ -229,15 +229,15 @@ export function CreateTokenDialog({
                   ))}
                 </select>
                 <p className="text-xs text-muted-foreground">
-                  到期后令牌自动失效；需要长期使用时再创建新令牌。
+                  到期后密钥自动失效；需要长期使用时再创建新密钥。
                 </p>
               </div>
 
               <fieldset className="space-y-2">
-                <legend className="sr-only">作用域（至少选择一项）</legend>
+                <legend className="sr-only">权限范围（至少选择一项）</legend>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-medium">
-                    作用域 <span className="text-destructive">*</span>
+                    权限范围 <span className="text-destructive">*</span>
                     <span className="ml-1 text-xs font-normal text-muted-foreground">
                       已选 {selected.length} / {API_TOKEN_SCOPES.length} 项
                     </span>
@@ -290,9 +290,6 @@ export function CreateTokenDialog({
                             <span className="min-w-0 flex-1">
                               {scope.label}
                             </span>
-                            <code className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                              {scope.value}
-                            </code>
                           </label>
                         ))}
                       </div>
@@ -331,7 +328,7 @@ export function CreateTokenDialog({
                 onClick={submit}
                 disabled={create.isPending}
               >
-                {create.isPending ? "创建中…" : "生成令牌"}
+                {create.isPending ? "创建中…" : "生成密钥"}
               </Button>
             </DialogFooter>
           </>

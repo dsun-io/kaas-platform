@@ -316,7 +316,7 @@ export default function TradeDocsPage() {
       />
 
       <SectionCard
-        title="样板预览（不需要后端）"
+        title="样板预览（不需要真实单据）"
         description="用固定样例数据渲染 18 类单据，用于校对版式、金额大写与日期写法。不写数据库、不产生业务记录。"
       >
         <SamplePreview />
@@ -456,11 +456,11 @@ export default function TradeDocsPage() {
           <div className="space-y-1 py-8 text-sm">
             <div className="flex items-center gap-2 text-destructive">
               <AlertCircle className="h-4 w-4" />
-              读取单证台账失败：连不上开发后端（默认 http://localhost:8000）。
+              读取单证台账失败：暂时连不上数据服务。
             </div>
             <p className="text-muted-foreground">
-              台账需要后端数据库。想先看单据长什么样、校对版式，请用下面的「样板预览」——
-              它不需要后端。
+              台账数据需要连上服务后才能显示。想先看单据长什么样、校对版式，
+              请用下面的「样板预览」—— 它不需要真实单据。
             </p>
           </div>
         ) : rows.length === 0 ? (

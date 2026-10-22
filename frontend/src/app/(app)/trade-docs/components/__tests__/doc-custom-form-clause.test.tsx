@@ -122,11 +122,9 @@ function clickButton(text: string) {
   });
 }
 
-/** payment_terms 字段所在 label 里的 <input>（字段名以 <code> 显示） */
+/** payment_terms 内容项所在 label 里的 <input>（label 上有 data-field） */
 function clauseInput(): HTMLInputElement | null {
-  const label = Array.from(document.querySelectorAll("label")).find((l) =>
-    l.textContent?.includes("payment_terms"),
-  );
+  const label = document.querySelector('label[data-field="payment_terms"]');
   return label?.querySelector<HTMLInputElement>("input") ?? null;
 }
 

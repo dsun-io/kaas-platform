@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/select";
 import type { EventFilters as EventFiltersType } from "../hooks/use-events";
 import { Search, X } from "lucide-react";
+import { eventTypeLabel } from "./event-labels";
 
 const EVENT_TYPES = ["audit.access", "capability.update"];
 
@@ -33,7 +34,7 @@ export function EventFilters({ filters, onChange }: Props) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Input
-        placeholder="租户 ID"
+        placeholder="空间 ID"
         value={filters.tenant_id ?? ""}
         onChange={(e) => set("tenant_id", e.target.value)}
         className="w-full sm:w-36"
@@ -51,8 +52,8 @@ export function EventFilters({ filters, onChange }: Props) {
         <SelectContent>
           <SelectItem value="all">全部类型</SelectItem>
           {EVENT_TYPES.map((t) => (
-            <SelectItem key={t} value={t}>
-              {t}
+            <SelectItem key={t} value={t} title={t}>
+              {eventTypeLabel(t)}
             </SelectItem>
           ))}
         </SelectContent>

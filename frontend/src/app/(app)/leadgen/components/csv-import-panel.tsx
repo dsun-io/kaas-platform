@@ -108,7 +108,7 @@ export function LeadgenCsvImport({
           </span>
         ) : (
           <span className="text-xs text-muted-foreground">
-            支持列：company_name / country / city / website 等（后端按表头解析）
+            支持公司名称、国家、城市、网站等列（按首行表头自动识别）
           </span>
         )}
       </div>

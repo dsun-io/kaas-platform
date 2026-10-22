@@ -124,7 +124,7 @@ export function ClauseTemplatesCard({ canWrite }: { canWrite: boolean }) {
     }
     if (form.doc_types.length === 0) {
       // 后端 `normalize_doc_types` 要求非空（18 类子集）⇒ 前端先拦，避免白跑一次 422
-      setFormError("至少选择一个适用单证类型（后端要求 doc_types 非空）");
+      setFormError("至少选择一个适用单证类型");
       return;
     }
     const body: ClauseTemplateInput = {
@@ -201,8 +201,7 @@ export function ClauseTemplatesCard({ canWrite }: { canWrite: boolean }) {
             条款模板读取失败：{formatApiError(list.error)}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            若后端尚未部署该接口（`GET /api/v1/clause-templates`），此处会一直失败；
-            不影响开单，也不影响「自定义」直接输入。
+            读取失败不影响开单；开单时仍可「自定义」直接填写条款。
           </p>
         </div>
       ) : items.length === 0 ? (
@@ -301,7 +300,7 @@ export function ClauseTemplatesCard({ canWrite }: { canWrite: boolean }) {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm font-medium">适用单证 *</span>
                 <span className="text-[11px] text-muted-foreground">
-                  至少选一个（后端要求 18 类子集、非空）
+                  至少选一个单证类型
                 </span>
                 <div className="ml-auto flex gap-1">
                   <Button

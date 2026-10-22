@@ -25,6 +25,28 @@ import {
   useArchiveLogs,
 } from "../../hooks/use-archive-logs";
 
+/** 归档文件位置默认折叠：路径是内部存储位置，日常查看不需要看到（设计稿 §1/§7）。 */
+function ArchivePathCell({ path }: { path: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <td className="max-w-[28rem] p-2 text-xs">
+      <button
+        type="button"
+        className="text-muted-foreground underline decoration-dotted underline-offset-2"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        查看详情（一般不需要看）
+      </button>
+      {open && (
+        <span className="mt-1 block break-all font-mono text-[11px] text-muted-foreground">
+          {path}
+        </span>
+      )}
+    </td>
+  );
+}
+
 function formatArchivedAt(value: string | null): string {
   if (!value) return "—";
   // 后端给 ISO（带时区）。无法解析时原样显示，不吞掉数据
@@ -97,7 +119,7 @@ export function ArchiveLogsCard() {
                       归档月份
                     </th>
                     <th scope="col" className="p-2">
-                      对象路径
+                      归档文件
                     </th>
                     <th scope="col" className="p-2">
                       状态
@@ -116,9 +138,7 @@ export function ArchiveLogsCard() {
                       <td className="whitespace-nowrap p-2 font-medium">
                         {entry.month}
                       </td>
-                      <td className="max-w-[28rem] truncate p-2 font-mono text-xs">
-                        <span title={entry.path}>{entry.path}</span>
-                      </td>
+                      <ArchivePathCell path={entry.path} />
                       <td className="p-2">
                         <StatusBadge
                           tone={entry.status === "archived" ? "success" : "warning"}

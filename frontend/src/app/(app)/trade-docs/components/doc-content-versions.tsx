@@ -16,11 +16,12 @@
  * 与「上传 PDF 的文件版本链」不是一回事：那条链管**文件**（v1/v2 的 PDF），
  * 本面板管**内容**（sources + custom 快照），同一份单据可以"内容 v3 + 文件 v2"。
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, History, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { listCustomFields } from "@/lib/trade-doc/custom-fields";
 
 import {
   useRestoreTradeDocContentVersion,
@@ -48,18 +49,23 @@ function formatTime(iso: string | null): string {
   )}:${p(d.getMinutes())}`;
 }
 
-/** 值预览：对象/数组按 JSON、文本截断（完整内容在填写面板里看，不在这里堆长文） */
+/** 上游来源的中文说法（不把内部键名 order/quote 摆给用户） */
+const SOURCE_KEY_LABELS: Record<string, string> = {
+  order: "订单",
+  quote: "报价单",
+};
+
+/** 文本预览：长文本截断（完整内容在填写面板里看，不在这里堆长文） */
 function previewValue(value: unknown): string {
-  const text =
-    typeof value === "object" && value !== null
-      ? JSON.stringify(value)
-      : String(value);
+  const text = String(value);
   return text.length > 120 ? `${text.slice(0, 120)}…` : text;
 }
 
 function VersionPayloadView({
+  docType,
   payload,
 }: {
+  docType: string;
   payload?: Record<string, unknown>;
 }) {
   const custom = (payload?.custom ?? {}) as Record<string, unknown>;
@@ -67,6 +73,21 @@ function VersionPayloadView({
     (payload?.sources ?? {}) as Record<string, unknown>,
   );
   const entries = Object.entries(custom);
+
+  // 内容项中文名来自模板清单；未知键用通用说法兜底，不直接显示内部字段名
+  const labels = useMemo(() => {
+    try {
+      return new Map(
+        listCustomFields(docType).map((field) => [
+          field.name,
+          field.spec.description ?? "其他内容",
+        ]),
+      );
+    } catch {
+      return new Map<string, string>();
+    }
+  }, [docType]);
+
   if (entries.length === 0 && sources.length === 0) {
     return (
       <p className="text-xs text-muted-foreground">这一版没有填写任何内容。</p>
@@ -76,15 +97,27 @@ function VersionPayloadView({
     <div className="space-y-1">
       {sources.length > 0 && (
         <p className="text-[11px] text-muted-foreground">
-          上游来源：{sources.join("、")}
+          上游来源：
+          {sources.map((key) => SOURCE_KEY_LABELS[key] ?? "其他来源").join("、")}
         </p>
       )}
       {entries.map(([key, value]) => (
         <div key={key} className="flex gap-2 text-xs">
-          <span className="w-40 shrink-0 font-mono text-muted-foreground">
-            {key}
+          <span className="w-40 shrink-0 text-muted-foreground">
+            {labels.get(key) ?? "其他内容"}
           </span>
-          <span className="break-all">{previewValue(value)}</span>
+          {typeof value === "object" && value !== null ? (
+            <details className="min-w-0">
+              <summary className="cursor-pointer text-muted-foreground">
+                多项内容（查看详情）
+              </summary>
+              <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-muted p-1 font-mono text-[11px]">
+                {JSON.stringify(value, null, 2)}
+              </pre>
+            </details>
+          ) : (
+            <span className="break-all">{previewValue(value)}</span>
+          )}
         </div>
       ))}
     </div>
@@ -187,7 +220,7 @@ export function DocContentVersions({
                       时间
                     </th>
                     <th scope="col" className="px-2 py-1.5">
-                      字段
+                      内容项
                     </th>
                     <th scope="col" className="px-2 py-1.5 text-right">
                       操作
@@ -211,7 +244,7 @@ export function DocContentVersions({
                         title={item.custom_keys.join("、")}
                       >
                         {item.custom_keys.length
-                          ? `${item.custom_keys.length} 个字段`
+                          ? `${item.custom_keys.length} 项内容`
                           : "—"}
                       </td>
                       <td className="px-2 py-1.5">
@@ -262,7 +295,10 @@ export function DocContentVersions({
               ) : detail.isError ? (
                 <p className="text-xs text-destructive">读取失败</p>
               ) : (
-                <VersionPayloadView payload={detail.data?.raw_payload} />
+                <VersionPayloadView
+                  docType={docType}
+                  payload={detail.data?.raw_payload}
+                />
               )}
             </div>
           )}

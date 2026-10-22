@@ -12,8 +12,10 @@ test.describe('Knowledge Base', () => {
     ).toBeVisible();
 
     // Overview stats are rendered as plain tiles inside SectionCard（不再用旧 stat-card testid）
-    await expect(page.getByText('知识条目')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText('48')).toBeVisible();
+    await expect(page.getByText('知识条目', { exact: true })).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(page.getByText('48', { exact: true })).toBeVisible();
 
     // Placeholder area should mention 即将上线 or 建设中
     const badge = page.locator('text=/建设中|即将上线/i');

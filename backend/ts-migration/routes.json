@@ -3712,6 +3712,81 @@
    "auth": true,
    "ops": false,
    "domain": "quotes"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/orders/{order_id}/receipts",
+   "endpoint": "list_order_receipts",
+   "file": "worker/src/main.py",
+   "line": 4381,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/orders/{order_id}/receipts",
+   "endpoint": "create_order_receipt",
+   "file": "worker/src/main.py",
+   "line": 4393,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/orders/{order_id}/files",
+   "endpoint": "list_order_files",
+   "file": "worker/src/ws_files.py",
+   "line": 701,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/orders/{order_id}/files",
+   "endpoint": "upload_order_file",
+   "file": "worker/src/ws_files.py",
+   "line": 716,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/payment-receipts/{receipt_id}/files",
+   "endpoint": "upload_receipt_file",
+   "file": "worker/src/ws_files.py",
+   "line": 743,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "orders"
   }
  ],
  "builtin": [

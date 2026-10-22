@@ -7,10 +7,20 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildReceiptCreate,
   buildScheduleCreate,
   buildSchedulePatch,
+  effectiveScheduleStatus,
+  isHistoricalPaidNoReceipt,
+  receiptErrorText,
+  receiptsForSchedule,
+  receivedAmountForSchedule,
+  scheduleDifference,
   scheduleErrorText,
+  summarizeReceipts,
   summarizeSchedules,
+  unallocatedReceipts,
+  type PaymentReceipt,
   type PaymentSchedule,
 } from "../payment-schedules";
 
@@ -159,6 +169,187 @@ describe("summarizeSchedules", () => {
       pendingAmount: 300,
       paidCount: 1,
       pendingCount: 2,
+      partialCount: 0,
     });
+  });
+});
+
+function receipt(overrides: Partial<PaymentReceipt>): PaymentReceipt {
+  return {
+    id: 1,
+    order_id: 9,
+    schedule_id: 1,
+    amount: 100,
+    currency: "USD",
+    received_date: "2026-10-20",
+    fx_rate: null,
+    file_id: null,
+    notes: null,
+    created_at: "2026-10-20T00:00:00Z",
+    ...overrides,
+  };
+}
+
+describe("buildReceiptCreate（§13.3 实收登记）", () => {
+  it("合法输入：金额 + 日期必填；schedule_id/汇率/备注只带填了的", () => {
+    const result = buildReceiptCreate({
+      schedule_id: 3,
+      amount: " 848.06 ",
+      received_date: "2026-10-22",
+      fx_rate: "6.7029",
+      notes: "  第一笔到账  ",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.body).toEqual({
+      schedule_id: 3,
+      amount: 848.06,
+      received_date: "2026-10-22",
+      fx_rate: 6.7029,
+      notes: "第一笔到账",
+    });
+  });
+
+  it("不指定期次（未分配收款）时不传 schedule_id", () => {
+    const result = buildReceiptCreate({
+      schedule_id: null,
+      amount: "50",
+      received_date: "2026-10-22",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.body).toEqual({ amount: 50, received_date: "2026-10-22" });
+  });
+
+  it("金额必填且 >0、日期必填、汇率非法都本地拦", () => {
+    expect(
+      buildReceiptCreate({ amount: "", received_date: "2026-10-22" }).ok,
+    ).toBe(false);
+    expect(
+      buildReceiptCreate({ amount: "0", received_date: "2026-10-22" }).ok,
+    ).toBe(false);
+    expect(
+      buildReceiptCreate({ amount: "10", received_date: "" }).ok,
+    ).toBe(false);
+    expect(
+      buildReceiptCreate({
+        amount: "10",
+        received_date: "2026-10-22",
+        fx_rate: "0",
+      }).ok,
+    ).toBe(false);
+  });
+
+  it("后端校验错误翻成人话", () => {
+    expect(
+      receiptErrorText(
+        Object.assign(new Error("Unprocessable"), {
+          response: {
+            status: 422,
+            data: {
+              detail: {
+                error: "validation",
+                code: "SCHEDULE_NOT_IN_ORDER",
+              },
+            },
+          },
+        }),
+      ),
+    ).toContain("不属于这张订单");
+    expect(
+      receiptErrorText(
+        Object.assign(new Error("Unprocessable"), {
+          response: { status: 422, data: { detail: "amount 不合法" } },
+        }),
+      ),
+    ).toBe("amount 不合法");
+  });
+});
+
+describe("收款计划 × 实收记录", () => {
+  const schedulePaid = schedule({ id: 2, amount: 300, status: "paid" });
+
+  it("某期已收：receipts 合计优先；无 receipts 时历史 paid 取 amount", () => {
+    const receipts = [
+      receipt({ id: 1, schedule_id: 1, amount: 60 }),
+      receipt({ id: 2, schedule_id: 1, amount: 40 }),
+      receipt({ id: 3, schedule_id: 2, amount: 999 }),
+    ];
+    expect(receiptsForSchedule(receipts, 1)).toHaveLength(2);
+    expect(receivedAmountForSchedule(schedule({ id: 1 }), receipts)).toBe(100);
+    // schedulePaid 没 receipts：历史兼容，按该期 amount 计入
+    expect(receivedAmountForSchedule(schedulePaid, [])).toBe(300);
+    // 后端给了 received_amount 时优先用它
+    expect(
+      receivedAmountForSchedule(
+        schedule({ id: 1, received_amount: 55, status: "partial" }),
+        [],
+      ),
+    ).toBe(55);
+  });
+
+  it("期次状态推导：pending/partial/paid；已收满但后端仍 pending ⇒ paid", () => {
+    expect(effectiveScheduleStatus(schedule({ id: 1 }), [])).toBe("pending");
+    expect(
+      effectiveScheduleStatus(schedule({ id: 1, amount: 300 }), [
+        receipt({ schedule_id: 1, amount: 100 }),
+      ]),
+    ).toBe("partial");
+    expect(
+      effectiveScheduleStatus(schedule({ id: 1, amount: 300 }), [
+        receipt({ id: 1, schedule_id: 1, amount: 200 }),
+        receipt({ id: 2, schedule_id: 1, amount: 100 }),
+      ]),
+    ).toBe("paid");
+    expect(
+      effectiveScheduleStatus(schedule({ id: 1, status: "overdue" }), []),
+    ).toBe("overdue");
+  });
+
+  it("差异 = 实收 − 应收；应收为 null 时 null；多笔累加", () => {
+    expect(
+      scheduleDifference(schedule({ id: 1, amount: 300 }), [
+        receipt({ schedule_id: 1, amount: 280 }),
+      ]),
+    ).toBe(-20);
+    expect(scheduleDifference(schedule({ id: 1, amount: 300 }), [])).toBe(-300);
+    expect(
+      scheduleDifference(schedule({ id: 1, amount: null }), []),
+    ).toBeNull();
+  });
+
+  it("历史 paid 无截图 / 未分配收款 / 实收汇总", () => {
+    expect(isHistoricalPaidNoReceipt(schedulePaid, [])).toBe(true);
+    expect(
+      isHistoricalPaidNoReceipt(schedulePaid, [
+        receipt({ schedule_id: 2, amount: 300 }),
+      ]),
+    ).toBe(false);
+
+    const receipts = [
+      receipt({ id: 1, schedule_id: null, amount: 70 }),
+      receipt({ id: 2, schedule_id: 1, amount: 30 }),
+    ];
+    expect(unallocatedReceipts(receipts).map((r) => r.id)).toEqual([1]);
+    expect(summarizeReceipts(receipts)).toEqual({
+      count: 2,
+      totalAmount: 100,
+    });
+  });
+
+  it("列表汇总用实收口径：部分收款计入已收、待收按差额", () => {
+    const summary = summarizeSchedules(
+      [
+        schedule({ id: 1, amount: 300, status: "pending" }),
+        schedule({ id: 2, amount: 300, status: "paid" }),
+      ],
+      [receipt({ schedule_id: 1, amount: 100 })],
+    );
+    expect(summary.totalAmount).toBe(600);
+    expect(summary.paidAmount).toBe(400); // 100 实收 + 300 历史 paid
+    expect(summary.pendingAmount).toBe(200);
+    expect(summary.paidCount).toBe(1);
+    expect(summary.partialCount).toBe(1);
+    expect(summary.pendingCount).toBe(1);
   });
 });

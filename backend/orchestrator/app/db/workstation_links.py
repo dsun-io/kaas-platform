@@ -147,6 +147,10 @@ class Order(Base):
     status = Column(Text, nullable=False, default="pending")
     currency = Column(Text, nullable=False, default="USD")
     total_amount = Column(Numeric, nullable=True)
+    # ── 202610220001 订单金额构成（设计 §13.3）──
+    # 四项金额 {goods_amount, freight_amount, insurance_amount, other_amount}；
+    # 订单总额仍以 total_amount 为准，历史行为 NULL。
+    amount_breakdown = Column(JSONB, nullable=True)
     order_date = Column(DateTime(timezone=True), nullable=True)
     delivery_date = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)

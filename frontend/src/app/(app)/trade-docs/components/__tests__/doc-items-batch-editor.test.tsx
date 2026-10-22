@@ -185,7 +185,7 @@ describe("DocItemsBatchEditor · 多选 / 预览 / 一次保存 / 撤销", () =>
     expect(text()).toContain("25");
   });
 
-  it("保存失败 ⇒ 如实显示后端错误码，不出现「已保存」", async () => {
+  it("保存失败 ⇒ 如实显示原因（错误码翻成人话），不出现「已保存」", async () => {
     const onSave = vi.fn().mockRejectedValue({
       response: {
         status: 422,
@@ -208,7 +208,7 @@ describe("DocItemsBatchEditor · 多选 / 预览 / 一次保存 / 撤销", () =>
     });
 
     expect(text()).toContain("未保存");
-    expect(text()).toContain("ITEMS_OVERRIDE_DRAFT_ONLY");
+    expect(text()).toContain("这张单据已不是草稿，内容冻结，不能再批量修改");
     expect(text()).not.toContain("已保存 2");
   });
 
@@ -217,7 +217,7 @@ describe("DocItemsBatchEditor · 多选 / 预览 / 一次保存 / 撤销", () =>
     mount({ onSave });
     await click(rowCheckbox(1)!);
 
-    const select = container!.querySelector<HTMLSelectElement>('select[aria-label="批量字段"]')!;
+    const select = container!.querySelector<HTMLSelectElement>('select[aria-label="批量修改内容项"]')!;
     async function chooseField(value: string) {
       await act(async () => {
         select.value = value;

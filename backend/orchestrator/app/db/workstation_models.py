@@ -71,6 +71,13 @@ class CustInquiry(Base):
     # spec_snapshot：本次询价的产品/规格快照（JSONB），与报价行 spec_snapshot 同构
     inquiry_seq = Column(Integer, nullable=True)
     spec_snapshot = Column(JSONB, nullable=True)
+    # ── 202610220001 询盘多产品行（设计 §5 / §13.3）──
+    # 每行 {product_key?, product_name_raw, spec_text?, quantity?, quantity_unit?,
+    #       application?, notes?}；旧标量字段继续保留（第一行同步写入）。
+    # 历史行为空数组，读取时由共享序列化 inquiry_items() 用旧字段合成一行。
+    items = Column(
+        JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"),
+    )
     created_by = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
@@ -302,7 +309,8 @@ class PaymentSchedule(Base):
     currency = Column(Text, nullable=False, server_default='USD')
     due_date = Column(Date, nullable=True)
     actual_date = Column(Date, nullable=True)
-    status = Column(Text, nullable=False, server_default='pending')  # pending | paid | overdue
+    # pending 未收 | partial 部分实收（2026-10-22 设计 §13.3 新增）| paid 已收清 | overdue 逾期
+    status = Column(Text, nullable=False, server_default='pending')
     fx_rate = Column(Numeric(20, 8), nullable=True)
     exchange_gain_loss = Column(Numeric(14, 2), nullable=True)
     notes = Column(Text, nullable=True)
@@ -343,6 +351,41 @@ class Receivable(Base):
 
     __table_args__ = (
         Index('uq_receivables_order', 'tenant_id', 'order_id', unique=True),
+    )
+
+
+class PaymentReceipt(Base):
+    """实收登记（设计 §13.3，迁移 202610220001）。
+
+    一次收款一行：允许同一期多次收款、允许 schedule_id 为空（未分配收款）、
+    允许金额与期次金额不同（差异由页面展示，不静默改收款计划）。
+    `file_id` 指向到账截图（file_objects，owner_type='payment_receipt'）。
+    """
+    __tablename__ = 'payment_receipts'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False, server_default='default')
+    order_id = Column(
+        BigInteger, ForeignKey('orders.id', ondelete='CASCADE'), nullable=False)
+    # 可空：一笔款暂不指定期次；期次删除时保留收款记录（SET NULL）
+    schedule_id = Column(
+        BigInteger, ForeignKey('payment_schedules.id', ondelete='SET NULL'),
+        nullable=True)
+    amount = Column(Numeric(14, 2), nullable=False)
+    currency = Column(Text, nullable=False, server_default='USD')
+    received_date = Column(Date, nullable=False)
+    fx_rate = Column(Numeric(20, 8), nullable=True)
+    file_id = Column(BigInteger, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_by = Column(Text, nullable=True)
+    owner_id = Column(Text, nullable=True)
+    owner_scope = Column(Text, nullable=False, server_default='private')
+    team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index('idx_payment_receipts_order', 'tenant_id', 'order_id', 'received_date'),
+        Index('idx_payment_receipts_schedule', 'tenant_id', 'schedule_id'),
     )
 
 

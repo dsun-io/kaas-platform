@@ -179,9 +179,24 @@ type MockContact = {
   created_at?: string;
 };
 
+/** 询盘产品行（设计 §5 · 迁移 202610220001 的 items[] 元素）。 */
+type MockInquiryItem = {
+  product_key: string | null;
+  product_name_raw: string | null;
+  spec_text: string | null;
+  quantity: number | null;
+  quantity_unit: string | null;
+  application: string | null;
+  notes: string | null;
+};
+
 /** 询盘 —— 字段名照后端 `row_to_inquiry()`
  * （kaas_common/workstation/customer_serializers.py:73-104）。
- * 刻意**不含** `notes`：后端存了但序列化不返回（:37-49），前端也不读（page.tsx:71-81）。 */
+ * 刻意**不含** `notes`：后端存了但序列化不返回（:37-49），前端也不读（page.tsx:71-81）。
+ *
+ * 2026-10-22（设计 §5）：新增 `items` 多产品行。旧标量字段**保留**且由后端同步写入
+ * 第一行；items 为空时后端用旧字段合成一行，所以 mock 也走同一个 fallback（见
+ * `inquiryWithItems`），历史询盘照常显示。 */
 type MockInquiry = {
   id: number;
   customer_id: number;
@@ -194,6 +209,8 @@ type MockInquiry = {
   quantity: number | null;
   quantity_unit: string | null;
   application: string | null;
+  /** 多产品行（第一行同时写旧字段；空数组 ⇒ 读取时由旧字段合成一行） */
+  items?: MockInquiryItem[];
   status: string;
   /** 询盘阶段（F4 · `worker/src/inquiry_stage.py` 的 STAGE_*；列表/详情都带） */
   stage?: string | null;
@@ -258,6 +275,43 @@ type MockAccount = {
 
 const ordersStore: Array<Record<string, unknown> & { id: number }> = [];
 const docsStore: Array<Record<string, unknown> & { id: number }> = [];
+
+// ── 订单金额 / 收款计划 / 实收 / 随单附件 mock store（设计 §13.3）──────────
+// 声明放在 seedMockData 之前：bootstrapMockData() 在模块初始化时就会跑，
+// 晚声明会踩 TDZ（Cannot access before initialization）。
+/** 收款计划行（14 键 + 详情里附加 received_amount）。 */
+const mockSchedules: MockSchedule[] = [];
+let mockScheduleSeq = 1;
+let mockOrderItemSeq = 1;
+/** 订单行项（order_id → 11 键行）。 */
+const mockOrderItems = new Map<number, MockOrderItem[]>();
+/** 实收登记行（一次收款一行，允许 schedule_id 为空）。 */
+const mockReceipts: MockReceipt[] = [];
+let mockReceiptSeq = 1;
+/** 建单时生成的应收台账行（列表接口会与 RECEIVABLE_SEEDS 合并）。 */
+const orderReceivablesStore = new Map<number, Record<string, unknown>>();
+let mockReceivableSeq = 9500;
+
+// ── 外部单证（建单时导入已有单证；真源 = worker/src/ws_extras.py:330-424）────
+// 表 external_doc_uploads 的内存替身：文件字节同 store，下载接口回真实字节。
+type MockExternalDoc = {
+  id: number;
+  doc_type: string | null;
+  file_name: string;
+  content_type: string | null;
+  file_size: number;
+  order_id: number | null;
+  quote_order_id: number | null;
+  inquiry_id: number | null;
+  customer_id: string | null;
+  status: string;
+  notes: string | null;
+  uploaded_by: string;
+  created_at: string;
+  bytes: Uint8Array;
+};
+const externalDocsStore: MockExternalDoc[] = [];
+let mockExternalDocSeq = 1;
 
 // 单证**内容**版本链（TODO(TODO:A1)）：mock 内存版，按 docId 惰性种子 2 版。
 // 恢复 = 追加一条 restore 版本并回写单据 raw_payload —— 与服务端「只增不删」一致。
@@ -2302,6 +2356,54 @@ function seedContacts(): MockContact[] {
   ].map((c) => ({ ...c, id: nextChildId++ }));
 }
 
+/** 询盘 items 归一化（与后端 customer_serializers.normalize_inquiry_items 同键）。 */
+function normalizeMockInquiryItems(raw: unknown): MockInquiryItem[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(
+      (it): it is Record<string, unknown> =>
+        typeof it === "object" && it !== null,
+    )
+    .map((it) => {
+      const name = it.product_name_raw ?? it.product_name;
+      const qty = it.quantity;
+      return {
+        product_key: optStr(it.product_key),
+        product_name_raw: optStr(name),
+        spec_text: optStr(it.spec_text),
+        quantity:
+          qty === undefined || qty === null || qty === ""
+            ? null
+            : Number(qty),
+        quantity_unit: optStr(it.quantity_unit),
+        application: optStr(it.application),
+        notes: optStr(it.notes),
+      };
+    });
+}
+
+/** 读取时补齐 items：非空用 items；空则用旧字段合成一行（与后端同口径）。 */
+function inquiryWithItems(
+  inquiry: MockInquiry,
+): MockInquiry & { items: MockInquiryItem[] } {
+  const items = inquiry.items ?? [];
+  if (items.length > 0) return { ...inquiry, items };
+  const legacy: MockInquiryItem = {
+    product_key: null,
+    product_name_raw: inquiry.product_name_raw,
+    spec_text: null,
+    quantity: inquiry.quantity,
+    quantity_unit: inquiry.quantity_unit,
+    application: inquiry.application,
+    notes: null,
+  };
+  const hasLegacy =
+    inquiry.product_name_raw !== null ||
+    inquiry.quantity !== null ||
+    inquiry.application !== null;
+  return { ...inquiry, items: hasLegacy ? [legacy] : [] };
+}
+
 function seedInquiries(customerId: number): MockInquiry[] {
   const now = Date.now();
   return [
@@ -2317,6 +2419,27 @@ function seedInquiries(customerId: number): MockInquiry[] {
       quantity: 1000,
       quantity_unit: "m",
       application: "牧场围栏",
+      // 多产品行（设计 §5）：第一行与旧标量字段同步，第二行只在 items 里
+      items: [
+        {
+          product_key: "field_fence",
+          product_name_raw: "牛栏网 2.5mm × 1.5m",
+          spec_text: "2.5mm 热镀锌",
+          quantity: 1000,
+          quantity_unit: "m",
+          application: "牧场围栏",
+          notes: null,
+        },
+        {
+          product_key: "chain_link",
+          product_name_raw: "勾花网 1.8m 高",
+          spec_text: "1.8m 高",
+          quantity: 500,
+          quantity_unit: "m",
+          application: "围栏",
+          notes: null,
+        },
+      ],
       // 已报价的询盘（不是 open）—— 详见 PATCH /stage 处关于 409 二次确认的说明
       status: "quoted",
       stage: "quotation",
@@ -2381,7 +2504,8 @@ function customerDetail(customer: MockCustomer) {
   return {
     ...customer,
     contacts: contactsOf(customer.id),
-    inquiries: inquiriesOf(customer.id),
+    // 与后端同口径：items 为空时用旧字段合成一行（历史询盘照常显示）
+    inquiries: inquiriesOf(customer.id).map(inquiryWithItems),
     stage_log: stageLogsOf(customer.id),
   };
 }
@@ -2444,6 +2568,18 @@ function seedMockData(): void {
   Object.assign(featureFlagsStore, clone(defaultFlags));
   accountsStore.splice(0, accountsStore.length, ...clone(SEED_ACCOUNTS));
 
+  // 订单金额/实收/附件（设计 §13.3）：写操作真改 store ⇒ 重置回空
+  mockSchedules.length = 0;
+  mockScheduleSeq = 1;
+  mockOrderItems.clear();
+  mockOrderItemSeq = 1;
+  mockReceipts.length = 0;
+  mockReceiptSeq = 1;
+  orderReceivablesStore.clear();
+  mockReceivableSeq = 9500;
+  // 外部单证（建单时导入）：写操作真改 store ⇒ 重置回空
+  externalDocsStore.length = 0;
+  mockExternalDocSeq = 1;
   // P1 组 store（单证/产品/团队/税档/企业信息/公章/文件）一并回到种子
   seedP1Stores();
   // A7 单证加固 store（事实处置 / 收款登记 / 单证清单）
@@ -2927,12 +3063,19 @@ const MOCK_ORDER_STATUSES = [
   "completed",
   "cancelled",
 ];
-const MOCK_SCHEDULE_TYPES = ["deposit", "balance", "full"];
-const MOCK_SCHEDULE_STATUSES = ["pending", "paid", "overdue"];
+const MOCK_SCHEDULE_TYPES = ["deposit", "balance", "full", "other"];
+// 2026-10-22（设计 §13.3）：partial = 部分实收（共享枚举 SCHEDULE_STATUS 新增值）
+const MOCK_SCHEDULE_STATUSES = ["pending", "partial", "paid", "overdue"];
 
-/** 收款计划 mock 行：14 键（= `order_serializers.row_to_schedule`） */
+/** 收款计划 mock 行：14 键（= `order_serializers.row_to_schedule`）。
+ *  store 本体声明在文件靠前（seedMockData 之前，避免 TDZ），这里只放类型。 */
 type MockSchedule = Record<string, unknown> & { id: number };
-const mockSchedules: MockSchedule[] = [];
+
+/** 订单行项 mock（= `order_serializers.row_to_order_item` 11 键）。 */
+type MockOrderItem = Record<string, unknown> & { id: number };
+
+/** 实收登记 mock 行（= 共享 row_to_receipt 10 键，设计 §13.3）。 */
+type MockReceipt = Record<string, unknown> & { id: number };
 
 /** mock 里订单的锁定汇率（= 订单行的 fx_rate；没有就返回 null，不猜） */
 function order_fx_rate_of(orderId: number): number | null {
@@ -2941,7 +3084,83 @@ function order_fx_rate_of(orderId: number): number | null {
   return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
 }
 
-let mockScheduleSeq = 1;
+/** 某订单的实收登记行（按到账日期、id 排序，与后端一致）。 */
+function receiptsOfOrder(orderId: number): MockReceipt[] {
+  return mockReceipts
+    .filter((r) => r.order_id === orderId)
+    .sort((a, b) => {
+      const ad = String(a.received_date ?? "");
+      const bd = String(b.received_date ?? "");
+      if (ad === bd) return a.id - b.id;
+      return ad < bd ? -1 : 1;
+    });
+}
+
+/** 按 schedule_id 汇总实收（未分配收款不计入任何期次）。 */
+function receivedBySchedule(orderId: number): Map<number, number> {
+  const totals = new Map<number, number>();
+  for (const r of receiptsOfOrder(orderId)) {
+    const sid = r.schedule_id;
+    if (typeof sid !== "number") continue;
+    totals.set(sid, (totals.get(sid) ?? 0) + Number(r.amount ?? 0));
+  }
+  return totals;
+}
+
+/** 收款计划行 + received_amount（历史 paid 且无 receipts 的期次按金额显示）。 */
+function scheduleWithReceived(schedule: MockSchedule) {
+  const orderId = Number(schedule.order_id);
+  const received = receivedBySchedule(orderId).get(schedule.id) ?? 0;
+  const legacyPaid = received === 0 && schedule.status === "paid";
+  return {
+    ...schedule,
+    received_amount: Math.round(
+      (legacyPaid ? Number(schedule.amount ?? 0) : received) * 100,
+    ) / 100,
+  };
+}
+
+/** 重算期次状态 + 应收台账（与 worker _recompute_payment_state 同口径）。
+ *  - 0 < 已收 < 应收 ⇒ partial；已收 ≥ 应收 ⇒ paid；
+ *  - 无 receipts 且历史 paid ⇒ 保持 paid（历史收款，不强制补录）；
+ *  - 应收 received_amount = receipts 合计 + 历史 paid 无 receipts 的期次金额。 */
+function recomputeMockPayment(orderId: number): void {
+  const schedules = mockSchedules.filter((s) => s.order_id === orderId);
+  const receipts = receiptsOfOrder(orderId);
+  const per = new Map<number, number>();
+  let receiptsTotal = 0;
+  for (const r of receipts) {
+    const amount = Number(r.amount ?? 0);
+    receiptsTotal += amount;
+    const sid = r.schedule_id;
+    if (typeof sid === "number") per.set(sid, (per.get(sid) ?? 0) + amount);
+  }
+  let legacyPaidTotal = 0;
+  for (const s of schedules) {
+    const expected = Number(s.amount ?? 0);
+    const got = per.get(s.id) ?? 0;
+    if (got > 0) {
+      s.status = got >= expected - 0.005 ? "paid" : "partial";
+    } else if (s.status === "paid") {
+      legacyPaidTotal += expected;
+    } else if (s.status !== "overdue") {
+      s.status = "pending";
+    }
+  }
+  const received =
+    Math.round((receiptsTotal + legacyPaidTotal) * 100) / 100;
+  const recv = orderReceivablesStore.get(orderId);
+  if (recv) {
+    const total = Number(recv.total_amount ?? 0);
+    recv.received_amount = received;
+    recv.status =
+      total > 0 && received >= total - 0.005
+        ? "paid"
+        : received > 0
+          ? "partial"
+          : "unpaid";
+  }
+}
 
 /** 定价单位白名单（与 `main.py` 的 `_PRICING_UNIT_TO_COST_TYPE` 键逐字一致；传别的值后端 422） */
 const PRICING_UNIT_VALUES = new Set([
@@ -3789,6 +4008,11 @@ export const handlers = [
     const body = (await request.json()) as Record<string, unknown>;
     const at = nowIso();
     const rawQty = body.quantity;
+    // 多产品行（设计 §5）：items 是权威来源；**第一行同步写旧标量字段**，
+    // 只传旧标量的老表单照旧可用（items 落空数组，读取时后端/这里合成一行）。
+    const items = normalizeMockInquiryItems(body.items);
+    const firstItem = items[0];
+    const firstQty = firstItem?.quantity;
     const inquiry: MockInquiry = {
       id: nextChildId++,
       customer_id: customer.id,
@@ -3796,13 +4020,16 @@ export const handlers = [
       lead_id: null,
       channel: optStr(body.channel),
       category_id: null,
-      product_name_raw: optStr(body.product_name_raw),
+      product_name_raw: optStr(firstItem?.product_name_raw ?? body.product_name_raw),
       quantity:
-        rawQty === undefined || rawQty === null || rawQty === ""
-          ? null
-          : Number(rawQty),
-      quantity_unit: optStr(body.quantity_unit),
-      application: optStr(body.application),
+        firstQty !== undefined && firstQty !== null
+          ? firstQty
+          : rawQty === undefined || rawQty === null || rawQty === ""
+            ? null
+            : Number(rawQty),
+      quantity_unit: optStr(firstItem?.quantity_unit ?? body.quantity_unit),
+      application: optStr(firstItem?.application ?? body.application),
+      items,
       status: "unquoted",
       // 新询盘的阶段恒为 inquiry（后端 `inquiry_stage.STAGE_INQUIRY` 的起点）
       stage: "inquiry",
@@ -3811,7 +4038,7 @@ export const handlers = [
     };
     inquiriesOf(customer.id).push(inquiry);
     // 2026-10-18：询盘属于单据阶段，不再联动客户阶段。
-    return HttpResponse.json(inquiry, { status: 201 });
+    return HttpResponse.json(inquiryWithItems(inquiry), { status: 201 });
   }),
 
   // ── 客户往来记录（docs/CUSTOMER_DOCUMENTS_VIEW.md §3）─────────────
@@ -4627,9 +4854,9 @@ export const handlers = [
       Math.max(1, Number(url.searchParams.get("page_size")) || 20),
       200,
     );
-    let rows = RECEIVABLE_SEEDS.slice().sort(
-      (a, b) => Number(b.id) - Number(a.id),
-    );
+    let rows = [...RECEIVABLE_SEEDS, ...orderReceivablesStore.values()]
+      .slice()
+      .sort((a, b) => Number(b.id) - Number(a.id));
     if (status) rows = rows.filter((row) => row.status === status);
     const total = rows.length;
     return HttpResponse.json({
@@ -4668,10 +4895,37 @@ export const handlers = [
     return HttpResponse.json({ items, total, page, page_size: pageSize });
   }),
 
+  // POST /orders（设计 §13.3 增补）：amount_breakdown 四项 + payment_plan[]
+  // 在同一次请求里创建订单 / 行项 / 收款计划 / 应收台账（后端同一事务）。
   http.post("/api/v1/orders", async ({ request }) => {
     const body = (await request.json()) as {
       quote_order_id?: number;
       customer_id?: number;
+      currency?: string;
+      total_amount?: number;
+      order_date?: string;
+      delivery_date?: string;
+      incoterm?: string;
+      payment_terms?: string;
+      port_of_loading?: string;
+      port_of_destination?: string;
+      shipping_marks?: string;
+      country_of_origin?: string;
+      notes?: string;
+      items?: Array<Record<string, unknown>>;
+      amount_breakdown?: {
+        goods_amount?: number;
+        freight_amount?: number;
+        insurance_amount?: number;
+        other_amount?: number;
+      };
+      payment_plan?: Array<{
+        schedule_type?: string;
+        ratio?: number;
+        amount?: number;
+        due_date?: string;
+        notes?: string;
+      }>;
     };
     // 报价转单：客户/金额/贸易条款从报价单继承（与后端口径一致）
     const quote = body.quote_order_id
@@ -4680,6 +4934,78 @@ export const handlers = [
     const customer = customersStore.find(
       (c) => c.id === (quote?.customer_id ?? body.customer_id),
     );
+
+    // 收款安排先校验（非法时不能留下半张订单 —— 后端也是先校验再落库）
+    const rawPlan = Array.isArray(body.payment_plan) ? body.payment_plan : [];
+    const planRatioSum = rawPlan.reduce(
+      (sum, row) => sum + Number(row.ratio ?? 0),
+      0,
+    );
+    if (planRatioSum > 1 + 1e-6) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "PAYMENT_PLAN_RATIO_EXCEEDS",
+            field: "payment_plan",
+            detail: `收款比例合计 ${(planRatioSum * 100).toFixed(2)}% 超过 100%`,
+          },
+        },
+        { status: 422 },
+      );
+    }
+    for (const row of rawPlan) {
+      const stype = String(row.schedule_type ?? "").trim();
+      if (!MOCK_SCHEDULE_TYPES.includes(stype)) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "validation",
+              code: "INVALID_SCHEDULE_TYPE",
+              field: "payment_plan.schedule_type",
+              detail: `期次类型非法：${stype || "(空)"}`,
+            },
+          },
+          { status: 422 },
+        );
+      }
+    }
+
+    const rawItems = Array.isArray(body.items) ? body.items : [];
+    const itemsTotal = rawItems.reduce((sum, it) => {
+      const line = it.line_amount;
+      if (line !== undefined && line !== null) return sum + Number(line);
+      const qty = it.qty === undefined || it.qty === null ? 1 : Number(it.qty);
+      const price =
+        it.unit_price === undefined || it.unit_price === null
+          ? 0
+          : Number(it.unit_price);
+      return sum + qty * price;
+    }, 0);
+    // 金额构成：四项之和 = 订单总额（未传明细时回退报价/行项汇总）
+    const breakdownIn = body.amount_breakdown;
+    let amountBreakdown: Record<string, number> | null = null;
+    if (breakdownIn && typeof breakdownIn === "object") {
+      amountBreakdown = {
+        goods_amount: Number(breakdownIn.goods_amount ?? itemsTotal),
+        freight_amount: Number(breakdownIn.freight_amount ?? 0),
+        insurance_amount: Number(breakdownIn.insurance_amount ?? 0),
+        other_amount: Number(breakdownIn.other_amount ?? 0),
+      };
+    }
+    let totalAmount: number | null =
+      quote?.total_amount !== undefined && quote?.total_amount !== null
+        ? Number(quote.total_amount)
+        : null;
+    if (rawItems.length > 0) totalAmount = Math.round(itemsTotal * 100) / 100;
+    if (amountBreakdown) {
+      totalAmount =
+        Math.round(
+          Object.values(amountBreakdown).reduce((a, b) => a + b, 0) * 100,
+        ) / 100;
+    }
+    if (typeof body.total_amount === "number") totalAmount = body.total_amount;
+
     const nextId = Math.max(0, ...ordersStore.map((o) => o.id)) + 1;
     const order = {
       id: nextId,
@@ -4691,19 +5017,551 @@ export const handlers = [
         (customer as { company_name?: string })?.company_name ??
         null,
       status: "pending",
-      currency: quote?.currency ?? "USD",
-      total_amount: quote?.total_amount ?? null,
-      order_date: nowIso(),
-      delivery_date: null,
-      incoterm: null,
-      payment_terms: null,
-      port_of_loading: null,
-      port_of_destination: null,
-      shipping_marks: null,
-      country_of_origin: null,
+      currency: body.currency ?? quote?.currency ?? "USD",
+      total_amount: totalAmount,
+      amount_breakdown: amountBreakdown,
+      order_date: body.order_date
+        ? String(body.order_date).slice(0, 10)
+        : nowIso(),
+      delivery_date: body.delivery_date
+        ? String(body.delivery_date).slice(0, 10)
+        : null,
+      notes: body.notes ?? null,
+      fx_rate: null,
+      fx_rate_date: null,
+      created_at: nowIso(),
+      incoterm: body.incoterm ?? quote?.incoterm ?? null,
+      payment_terms: body.payment_terms ?? quote?.payment_terms ?? null,
+      port_of_loading: body.port_of_loading ?? null,
+      port_of_destination: body.port_of_destination ?? null,
+      shipping_marks: body.shipping_marks ?? null,
+      country_of_origin: body.country_of_origin ?? null,
     };
     ordersStore.push(order);
+
+    // 行项（11 键，与共享 row_to_order_item 一致）
+    const createdItems: MockOrderItem[] = rawItems.map((it, idx) => {
+      const qty = it.qty === undefined || it.qty === null ? 1 : Number(it.qty);
+      const unitPrice =
+        it.unit_price === undefined || it.unit_price === null
+          ? null
+          : Number(it.unit_price);
+      let lineAmount =
+        it.line_amount === undefined || it.line_amount === null
+          ? null
+          : Number(it.line_amount);
+      if (lineAmount === null && unitPrice !== null) {
+        lineAmount = Math.round((qty * unitPrice + Number.EPSILON) * 100) / 100;
+      }
+      return {
+        id: mockOrderItemSeq++,
+        sku_id: it.sku_id ?? null,
+        product_name: it.product_name ?? null,
+        spec_snapshot: it.spec_snapshot ?? null,
+        qty,
+        qty_unit: it.qty_unit ?? null,
+        unit_price: unitPrice,
+        currency: it.currency ?? order.currency,
+        line_amount: lineAmount,
+        sort_order: it.sort_order ?? idx,
+      };
+    });
+    mockOrderItems.set(nextId, createdItems);
+
+    // 收款计划：amount 缺省 = 总额 × ratio（两位小数）
+    for (const row of rawPlan) {
+      const ratio = row.ratio == null ? null : Number(row.ratio);
+      let amount = row.amount == null ? null : Number(row.amount);
+      if (amount === null && ratio !== null && totalAmount !== null) {
+        amount = Math.round((totalAmount * ratio + Number.EPSILON) * 100) / 100;
+      }
+      mockSchedules.push({
+        id: mockScheduleSeq++,
+        order_id: nextId,
+        trade_doc_id: null,
+        schedule_type: String(row.schedule_type ?? "").trim(),
+        ratio,
+        amount,
+        currency: order.currency,
+        due_date: row.due_date ? String(row.due_date).slice(0, 10) : null,
+        actual_date: null,
+        status: "pending",
+        fx_rate: null,
+        exchange_gain_loss: null,
+        notes: row.notes ? String(row.notes) : null,
+        created_at: nowIso(),
+      });
+    }
+
+    // 应收台账立即生成（status='unpaid'），不等「确认订单」
+    if (totalAmount !== null || rawPlan.length > 0) {
+      orderReceivablesStore.set(nextId, {
+        id: mockReceivableSeq++,
+        order_id: nextId,
+        currency: order.currency,
+        total_amount: totalAmount ?? 0,
+        received_amount: 0,
+        fx_rate: null,
+        fx_rate_date: null,
+        base_currency: "CNY",
+        base_amount: null,
+        exchange_gain_loss: null,
+        status: "unpaid",
+        created_at: nowIso(),
+        order_no: order.order_no,
+        customer_name: order.customer_name,
+      });
+    }
     return HttpResponse.json(order, { status: 201 });
+  }),
+
+  // GET /orders/{id}（设计 §13.3）：详情带 amount_breakdown / items /
+  // payment_schedules（每期 received_amount）/ receipts / receivable。
+  http.get("/api/v1/orders/:orderId", ({ params }) => {
+    const id = Number(params.orderId);
+    const order = ordersStore.find((o) => o.id === id);
+    if (!order) {
+      return HttpResponse.json({ detail: "ORDER_NOT_FOUND" }, { status: 404 });
+    }
+    const schedules = mockSchedules
+      .filter((s) => s.order_id === id)
+      .sort((a, b) => {
+        const ad = String(a.due_date ?? "");
+        const bd = String(b.due_date ?? "");
+        if (ad === bd) return a.id - b.id;
+        if (ad === "") return 1;
+        if (bd === "") return -1;
+        return ad < bd ? -1 : 1;
+      });
+    return HttpResponse.json({
+      ...order,
+      amount_breakdown: order.amount_breakdown ?? null,
+      items: mockOrderItems.get(id) ?? [],
+      quote_refs: [],
+      payment_schedules: schedules.map(scheduleWithReceived),
+      receipts: receiptsOfOrder(id).map((r) => ({ ...r })),
+      receivable: orderReceivablesStore.get(id) ?? null,
+    });
+  }),
+
+  // ── 实收登记（设计 §13.3）：GET/POST /orders/{id}/receipts ────────────────
+  http.get("/api/v1/orders/:orderId/receipts", ({ params }) => {
+    const id = Number(params.orderId);
+    if (!ordersStore.some((o) => o.id === id)) {
+      return HttpResponse.json(
+        { detail: { error: "order_not_found" } },
+        { status: 404 },
+      );
+    }
+    const items = receiptsOfOrder(id).map((r) => ({ ...r }));
+    return HttpResponse.json({ items, total: items.length });
+  }),
+
+  http.post("/api/v1/orders/:orderId/receipts", async ({ params, request }) => {
+    const id = Number(params.orderId);
+    const order = ordersStore.find((o) => o.id === id);
+    if (!order) {
+      return HttpResponse.json(
+        { detail: { error: "order_not_found" } },
+        { status: 404 },
+      );
+    }
+    const body = (await request.json().catch(() => ({}))) as {
+      schedule_id?: number | null;
+      amount?: number;
+      received_date?: string;
+      fx_rate?: number | null;
+      notes?: string;
+    };
+    const amount = Number(body.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "INVALID_RECEIPT_AMOUNT",
+            field: "amount",
+            detail: "实收金额必须是大于 0 的数字",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    if (!body.received_date) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "RECEIVED_DATE_REQUIRED",
+            field: "received_date",
+            detail: "收款日期必填（YYYY-MM-DD）",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const rawScheduleId = body.schedule_id;
+    const scheduleId =
+      rawScheduleId === undefined || rawScheduleId === null
+        ? null
+        : Number(rawScheduleId);
+    if (
+      scheduleId !== null &&
+      !mockSchedules.some(
+        (s) => s.id === scheduleId && s.order_id === id,
+      )
+    ) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "SCHEDULE_NOT_IN_ORDER",
+            field: "schedule_id",
+            detail: "该收款期次不属于当前订单",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const receipt: MockReceipt = {
+      id: mockReceiptSeq++,
+      order_id: id,
+      schedule_id: scheduleId,
+      amount,
+      currency: String(order.currency ?? "USD"),
+      received_date: String(body.received_date).slice(0, 10),
+      fx_rate: body.fx_rate == null ? null : Number(body.fx_rate),
+      file_id: null,
+      notes: optStr(body.notes),
+      created_at: nowIso(),
+    };
+    mockReceipts.push(receipt);
+    // 登记后重算期次状态 + 应收台账（不静默改计划金额）
+    recomputeMockPayment(id);
+    return HttpResponse.json(receipt, { status: 201 });
+  }),
+
+  // ── 订单随单附件（合同/PO/信用证扫描件；kind='other'）─────────────────────
+  http.get("/api/v1/orders/:orderId/files", ({ params }) => {
+    const id = Number(params.orderId);
+    if (!ordersStore.some((o) => o.id === id)) {
+      return HttpResponse.json(
+        { detail: { error: "order_not_found" } },
+        { status: 404 },
+      );
+    }
+    const items = fileObjectsStore
+      .filter(
+        (f) =>
+          f.owner_type === "order" &&
+          f.owner_id === String(id) &&
+          f.is_current,
+      )
+      .map(fileOut);
+    return HttpResponse.json({ items });
+  }),
+
+  http.post("/api/v1/orders/:orderId/files", async ({ params, request }) => {
+    const id = Number(params.orderId);
+    if (!ordersStore.some((o) => o.id === id)) {
+      return HttpResponse.json(
+        { detail: { error: "order_not_found" } },
+        { status: 404 },
+      );
+    }
+    const form = await request.formData();
+    const fileEntry = form.get("file");
+    if (!isBlobLike(fileEntry)) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "FILE_REQUIRED",
+            detail: "缺少上传文件",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const kindRaw = form.get("kind");
+    const kind =
+      typeof kindRaw === "string" && kindRaw.trim() ? kindRaw.trim() : "other";
+    if (kind !== "other") {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "BAD_FILE_KIND",
+            detail: "订单附件只接受 kind=other（合同/PO/信用证扫描件）",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const nameRaw = form.get("name");
+    const name =
+      (typeof nameRaw === "string" ? nameRaw.trim() : "") ||
+      fileEntry.name ||
+      "订单附件";
+    const bytes = new Uint8Array(await fileEntry.arrayBuffer());
+    const created = createMockFile({
+      owner_type: "order",
+      owner_id: String(id),
+      kind: "other",
+      name,
+      content_type: fileEntry.type || "application/octet-stream",
+      file_name: fileEntry.name || null,
+      file_size: bytes.byteLength,
+      bytes,
+    });
+    return HttpResponse.json(fileOut(created), { status: 201 });
+  }),
+
+  // ── 到账截图：POST /payment-receipts/{id}/files（multipart）───────────────
+  http.post(
+    "/api/v1/payment-receipts/:receiptId/files",
+    async ({ params, request }) => {
+      const receipt = mockReceipts.find(
+        (r) => r.id === Number(params.receiptId),
+      );
+      if (!receipt) {
+        return HttpResponse.json(
+          { detail: { error: "receipt_not_found" } },
+          { status: 404 },
+        );
+      }
+      const form = await request.formData();
+      const fileEntry = form.get("file");
+      if (!isBlobLike(fileEntry)) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "validation",
+              code: "FILE_REQUIRED",
+              detail: "缺少上传文件",
+            },
+          },
+          { status: 422 },
+        );
+      }
+      const nameRaw = form.get("name");
+      const name =
+        (typeof nameRaw === "string" ? nameRaw.trim() : "") ||
+        fileEntry.name ||
+        "到账截图";
+      const bytes = new Uint8Array(await fileEntry.arrayBuffer());
+      const created = createMockFile({
+        owner_type: "payment_receipt",
+        owner_id: String(receipt.id),
+        kind: "other",
+        name,
+        content_type: fileEntry.type || "application/octet-stream",
+        file_name: fileEntry.name || null,
+        file_size: bytes.byteLength,
+        bytes,
+      });
+      // 截图挂到实收登记（最新一次生效，旧文件保留可审计）
+      receipt.file_id = created.id;
+      return HttpResponse.json(fileOut(created), { status: 201 });
+    },
+  ),
+
+  // ── 外部单证（建单时导入已有单证；真源 = worker/src/ws_extras.py:330-424）──
+  // ⚠️ 形状以**生产**为准：GET 列表返回**裸数组**（ws_extras.py:381-389），
+  //    不是 {items}；POST 只回 {id, file_name}；下载回真实字节。
+  http.post("/api/v1/external-docs", async ({ request }) => {
+    const form = await request.formData();
+    const fileEntry = form.get("file");
+    if (!isBlobLike(fileEntry)) {
+      return HttpResponse.json(
+        {
+          detail: [
+            {
+              type: "missing",
+              loc: ["body", "file"],
+              msg: "Field required",
+              input: null,
+            },
+          ],
+        },
+        { status: 422 },
+      );
+    }
+    const bytes = new Uint8Array(await fileEntry.arrayBuffer());
+    if (bytes.byteLength === 0) {
+      return HttpResponse.json(
+        { detail: { error: "empty_file" } },
+        { status: 422 },
+      );
+    }
+    // worker MAX_FILE_SIZE = 20MB（ws_extras.py:332）
+    if (bytes.byteLength > 20 * 1024 * 1024) {
+      return HttpResponse.json(
+        { detail: { error: "file_too_large" } },
+        { status: 413 },
+      );
+    }
+    const text = (key: string): string | null => {
+      const value = form.get(key);
+      return typeof value === "string" && value.trim() ? value.trim() : null;
+    };
+    const intOrNull = (key: string): number | null => {
+      const value = text(key);
+      if (value === null) return null;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    const doc: MockExternalDoc = {
+      id: mockExternalDocSeq++,
+      doc_type: text("doc_type"),
+      file_name: fileEntry.name || "untitled",
+      content_type: fileEntry.type || null,
+      file_size: bytes.byteLength,
+      order_id: intOrNull("order_id"),
+      quote_order_id: intOrNull("quote_order_id"),
+      inquiry_id: intOrNull("inquiry_id"),
+      customer_id: text("customer_id"),
+      status: "draft",
+      notes: text("notes"),
+      uploaded_by: String(MOCK_ADMIN_USER.user_id),
+      created_at: nowIso(),
+      bytes,
+    };
+    externalDocsStore.push(doc);
+    return HttpResponse.json(
+      { id: doc.id, file_name: doc.file_name },
+      { status: 201 },
+    );
+  }),
+
+  http.get("/api/v1/external-docs", ({ request }) => {
+    const url = new URL(request.url);
+    const rawLimit = url.searchParams.get("limit");
+    let limit = 50;
+    if (rawLimit !== null && rawLimit !== "") {
+      const parsed = Number(rawLimit);
+      // worker: Query(default=50, ge=1, le=500) ⇒ 越界 422
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 500) {
+        return HttpResponse.json(
+          {
+            detail: [
+              {
+                type: "less_than_equal",
+                loc: ["query", "limit"],
+                msg: "Input should be less than or equal to 500",
+                input: rawLimit,
+              },
+            ],
+          },
+          { status: 422 },
+        );
+      }
+      limit = parsed;
+    }
+    const orderIdRaw = url.searchParams.get("order_id");
+    const docType = url.searchParams.get("doc_type");
+    let rows = externalDocsStore.slice();
+    if (orderIdRaw !== null && orderIdRaw !== "") {
+      const orderId = Number(orderIdRaw);
+      rows = rows.filter((doc) => doc.order_id === orderId);
+    }
+    if (docType) rows = rows.filter((doc) => doc.doc_type === docType);
+    rows.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+    // 裸数组（与生产一致）；content_type/file_size 等键名逐字对齐 ws_extras.py:381-389
+    return HttpResponse.json(
+      rows.slice(0, limit).map((doc) => ({
+        id: doc.id,
+        doc_type: doc.doc_type,
+        file_name: doc.file_name,
+        content_type: doc.content_type,
+        file_size: doc.file_size,
+        order_id: doc.order_id,
+        quote_order_id: doc.quote_order_id,
+        inquiry_id: doc.inquiry_id,
+        customer_id: doc.customer_id,
+        status: doc.status,
+        notes: doc.notes,
+        uploaded_by: doc.uploaded_by,
+        created_at: doc.created_at,
+      })),
+    );
+  }),
+
+  http.get("/api/v1/external-docs/:docId/download", ({ params }) => {
+    const doc = externalDocsStore.find((d) => d.id === Number(params.docId));
+    if (!doc) {
+      return HttpResponse.json(
+        { detail: { error: "not_found" } },
+        { status: 404 },
+      );
+    }
+    // 中文文件名不能直接进 HTTP 头（header 只能是 latin-1）：与 worker
+    // ws_extras.py:download_external_doc 同口径 —— ASCII 兜底名 + filename*=UTF-8''。
+    const asciiName =
+      doc.file_name.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_") ||
+      "download";
+    const disposition =
+      `attachment; filename="${asciiName}"; ` +
+      `filename*=UTF-8''${encodeURIComponent(doc.file_name)}`;
+    // BodyInit 只认 ArrayBuffer/Blob/字符串：Uint8Array 要先包 Blob
+    return new HttpResponse(
+      new Blob([doc.bytes as unknown as BlobPart], {
+        type: doc.content_type ?? "application/octet-stream",
+      }),
+      {
+        status: 200,
+        headers: {
+          "Content-Type": doc.content_type ?? "application/octet-stream",
+          "Content-Disposition": disposition,
+        },
+      },
+    );
+  }),
+
+  // PATCH ← ws_extras.py:405：status 是**必填 query**（draft|issued|void）
+  http.patch("/api/v1/external-docs/:docId", async ({ params, request }) => {
+    const url = new URL(request.url);
+    const doc = externalDocsStore.find((d) => d.id === Number(params.docId));
+    if (!doc) {
+      return HttpResponse.json(
+        { detail: { error: "not_found" } },
+        { status: 404 },
+      );
+    }
+    const status = url.searchParams.get("status");
+    if (status === null || status === "") {
+      return HttpResponse.json(
+        {
+          detail: [
+            {
+              type: "missing",
+              loc: ["query", "status"],
+              msg: "Field required",
+              input: null,
+            },
+          ],
+        },
+        { status: 422 },
+      );
+    }
+    if (!["draft", "issued", "void"].includes(status)) {
+      return HttpResponse.json(
+        { detail: { error: "invalid_status" } },
+        { status: 422 },
+      );
+    }
+    doc.status = status;
+    const notes = url.searchParams.get("notes");
+    if (notes !== null) doc.notes = notes || null;
+    return HttpResponse.json({ id: doc.id, status: doc.status });
+  }),
+
+  http.delete("/api/v1/external-docs/:docId", ({ params }) => {
+    const index = externalDocsStore.findIndex(
+      (d) => d.id === Number(params.docId),
+    );
+    if (index >= 0) externalDocsStore.splice(index, 1);
+    return new HttpResponse(null, { status: 204 });
   }),
 
   http.patch("/api/v1/orders/:id", async ({ params, request }) => {
@@ -6068,7 +6926,7 @@ export const handlers = [
     if (status) items = items.filter((i) => i.status === status);
     return HttpResponse.json({
       items: items.map((i) => ({
-        ...i,
+        ...inquiryWithItems(i),
         inquiry_no_editable: !inquiryHasQuote(i.id),
       })),
       total: items.length,
@@ -6185,6 +7043,26 @@ export const handlers = [
       }
     }
 
+    // 多产品行（设计 §5）：items 落库并**第一行同步写旧标量字段**
+    // （显式传了同名列时以显式值为准，与后端 ws_crm_ext 同序）。
+    if ("items" in body) {
+      const items = normalizeMockInquiryItems(body.items);
+      patch.items = items;
+      const first = items[0];
+      if (!("product_name_raw" in body)) {
+        patch.product_name_raw = first ? first.product_name_raw : null;
+      }
+      if (!("quantity" in body)) {
+        patch.quantity = first ? first.quantity : null;
+      }
+      if (!("quantity_unit" in body)) {
+        patch.quantity_unit = first ? first.quantity_unit : null;
+      }
+      if (!("application" in body)) {
+        patch.application = first ? first.application : null;
+      }
+    }
+
     // 其余可编辑列（ws_crm_ext.py:_INQUIRY_COLUMNS 的子集；notes 不在序列化里）
     for (const key of [
       "channel",
@@ -6196,7 +7074,7 @@ export const handlers = [
       if (key in body) patch[key] = body[key];
     }
     Object.assign(inquiry, patch);
-    return HttpResponse.json(inquiry);
+    return HttpResponse.json(inquiryWithItems(inquiry));
   }),
 
   // GET ← customers/components/inquiry-followups.tsx（F4 展开区「阶段历史」）
@@ -7879,6 +8757,13 @@ export const handlers = [
 
   // ── 产品工位「复制系统产品」用的原始定义 ─────────────────────────────────
   // GET ← products-definitions-tab.tsx:742；形状 = quote_api.py:export_quote_product_spec
+  //
+  // 2026-10-22：产品工位新版要**完整 spec** 才能显示规格参数/档位/包装，并判定
+  // 「已配置计算规则」（spec.derived 非空）。原先只回 key/name，导致 mock 模式下
+  // 所有产品都显示「待配置规则」。完整字段 = ProductSpec（models.py:196-244），
+  // 数据来源 = MOCK_EXPORT_FORMULAS 的真实 describe_product 输出（导出的描述层）
+  // + MOCK_EXPORT_PRODUCTS 的注册表字段；derived/numeric_inputs/columns/variants/
+  // hs_codes/packaging 都在里面。
   http.get("/api/v1/export-quote/products/:productKey/spec", ({ params }) => {
     const product = registryProduct(String(params.productKey));
     if (!product) {
@@ -7890,6 +8775,30 @@ export const handlers = [
         { status: 404 },
       );
     }
+    type SpecHints = {
+      cost?: { field?: string; basis?: string };
+      space?: {
+        axes?: unknown[];
+        variants?: unknown[];
+        combo_count?: number;
+        summary?: string;
+      };
+      // describe_product 把派生公式放在 calculations.derived（spec.derived 的真源）
+      calculations?: { derived?: unknown[] };
+      derived?: unknown[];
+      columns?: unknown[];
+      numeric_inputs?: unknown[];
+      piece_inputs?: unknown[];
+      pricing_key?: unknown[];
+      notes?: unknown[];
+      packaging?: unknown[];
+    };
+    const formula =
+      (MOCK_EXPORT_FORMULAS as unknown as Record<string, SpecHints | undefined>)[
+        product.key
+      ] ?? {};
+    const space = formula.space ?? {};
+    const cost = formula.cost ?? {};
     return HttpResponse.json({
       product_key: product.key,
       spec: {
@@ -7897,6 +8806,31 @@ export const handlers = [
         name: product.name,
         name_en: product.name_en,
         category_code: product.category_code,
+        cost_field: cost.field ?? "raw_price",
+        cost_basis: cost.basis ?? product.cost_basis ?? "pretax",
+        cost_unit: product.cost_unit ?? "",
+        constants: {},
+        // VariantGroup / Axis 都是「有 name/options 的对象」，描述层原样带过来
+        axes: space.axes ?? [],
+        variants: space.variants ?? [],
+        // 计算规则：derived 非空 = 已配置计算规则（产品工位据此禁用/放行报价）。
+        // 描述层里它在 calculations.derived（spec_to_dict 落库时拍平到 ProductSpec.derived）
+        derived: formula.calculations?.derived ?? formula.derived ?? [],
+        space_deduction: { mode: "ratio", value: 0.04 },
+        piece_metrics: [],
+        order_metrics: [],
+        columns: formula.columns ?? [],
+        invariants: [],
+        params: product.params ?? [],
+        piece_inputs: formula.piece_inputs ?? [],
+        numeric_inputs: formula.numeric_inputs ?? [],
+        pricing_key: formula.pricing_key ?? [],
+        notes: formula.notes ?? [],
+        hs_codes: product.hs_codes ?? [],
+        profit_mode: "margin_on_price",
+        profit_value: 0.06,
+        misc_fee_rate: 0.03,
+        packaging: formula.packaging ?? [],
       },
     });
   }),
@@ -8134,7 +9068,11 @@ export const handlers = [
         if (bd === "") return -1;
         return ad < bd ? -1 : 1;
       });
-    return HttpResponse.json({ items, total: items.length });
+    // 2026-10-22：每期带 received_amount（该期实收合计；历史 paid 无 receipts 按金额）
+    return HttpResponse.json({
+      items: items.map(scheduleWithReceived),
+      total: items.length,
+    });
   }),
 
   http.post(
@@ -8197,7 +9135,7 @@ export const handlers = [
         created_at: new Date().toISOString(),
       };
       mockSchedules.push(schedule);
-      return HttpResponse.json(schedule, { status: 201 });
+      return HttpResponse.json(scheduleWithReceived(schedule), { status: 201 });
     },
   ),
 
@@ -8264,7 +9202,9 @@ export const handlers = [
       if (body.notes !== undefined) {
         schedule.notes = body.notes ? String(body.notes) : null;
       }
-      return HttpResponse.json(schedule);
+      // 标记收款也走同一套重算（期次 + 应收台账口径只有一份）
+      recomputeMockPayment(Number(schedule.order_id));
+      return HttpResponse.json(scheduleWithReceived(schedule));
     },
   ),
 

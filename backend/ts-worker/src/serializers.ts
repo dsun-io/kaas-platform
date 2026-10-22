@@ -48,6 +48,89 @@ export function customerApi(row: Row): Record<string, unknown> {
   return rowToCustomer(row, (row.stage_display as string | null | undefined) ?? undefined);
 }
 
+// ── 询盘多产品行（设计 §5 / §13.3，customer_serializers.py:inquiry_items 直译）──
+
+/** 单行询盘产品（7 键，缺省 null）。 */
+export type InquiryItem = {
+  product_key: string | null;
+  product_name_raw: string | null;
+  spec_text: string | null;
+  quantity: number | null;
+  quantity_unit: string | null;
+  application: string | null;
+  notes: string | null;
+};
+
+function strOrNull(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text === "" ? null : text;
+}
+
+function floatOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+/** 单行归一化：只保留白名单键（unknown 键丢弃，与 Python 同口径）。 */
+export function normalizeInquiryItem(it: Row): InquiryItem {
+  const name = it.product_name_raw ?? it.product_name;
+  return {
+    product_key: strOrNull(it.product_key),
+    product_name_raw: strOrNull(name),
+    spec_text: strOrNull(it.spec_text),
+    quantity: floatOrNull(it.quantity),
+    quantity_unit: strOrNull(it.quantity_unit),
+    application: strOrNull(it.application),
+    notes: strOrNull(it.notes),
+  };
+}
+
+/** 入参 items（list / JSON 字符串）→ 落库前归一化（Python normalize_inquiry_items）。 */
+export function normalizeInquiryItems(raw: unknown): InquiryItem[] {
+  let value = raw;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value || "[]");
+    } catch {
+      value = [];
+    }
+  }
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((it): it is Row => typeof it === "object" && it !== null)
+    .map(normalizeInquiryItem);
+}
+
+/**
+ * 读取时补齐 items（Python inquiry_items）：非空用 items；空则用旧字段合成一行。
+ * 历史询盘（迁移前 items=[]）照常显示 —— 前端不需要自己判空分支。
+ */
+export function inquiryItems(row: Row): InquiryItem[] {
+  let raw = row.items;
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw || "[]");
+    } catch {
+      raw = [];
+    }
+  }
+  if (Array.isArray(raw) && raw.length > 0) return normalizeInquiryItems(raw);
+  const legacy: InquiryItem = {
+    product_key: null,
+    product_name_raw: strOrNull(row.product_name_raw),
+    spec_text: null,
+    quantity: floatOrNull(row.quantity),
+    quantity_unit: strOrNull(row.quantity_unit),
+    application: strOrNull(row.application),
+    notes: null,
+  };
+  const hasLegacy = legacy.product_name_raw !== null || legacy.quantity !== null
+    || legacy.quantity_unit !== null || legacy.application !== null;
+  return hasLegacy ? [legacy] : [];
+}
+
 /** 询盘行 → API 响应（customer_serializers.py:row_to_inquiry 逐键对齐）。 */
 export function rowToInquiry(i: Row): Record<string, unknown> {
   const qty = get(i, "quantity");
@@ -62,10 +145,29 @@ export function rowToInquiry(i: Row): Record<string, unknown> {
     quantity: qty === null || qty === undefined ? null : Number(qty),
     quantity_unit: get(i, "quantity_unit"),
     application: get(i, "application"),
+    // 多产品行（迁移 202610220001）：items 为空时用旧字段合成一行
+    items: inquiryItems(i),
     status: get(i, "status"),
     stage: get(i, "stage"),
     stage_updated_at: pyIso(get(i, "stage_updated_at")),
     created_at: pyIso(get(i, "created_at")),
+  };
+}
+
+/** 实收登记行 → API 响应（order_serializers.py:row_to_receipt 10 键直译）。 */
+export function rowToReceipt(r: Row): Record<string, unknown> {
+  return {
+    id: num(r.id),
+    order_id: num(r.order_id),
+    // 可空：一笔款暂不指定期次（未分配收款）
+    schedule_id: num(r.schedule_id),
+    amount: r.amount === null || r.amount === undefined ? null : Number(r.amount),
+    currency: r.currency,
+    received_date: pyIso(r.received_date),
+    fx_rate: r.fx_rate === null || r.fx_rate === undefined ? null : Number(r.fx_rate),
+    file_id: num(r.file_id),
+    notes: r.notes,
+    created_at: pyIso(r.created_at),
   };
 }
 

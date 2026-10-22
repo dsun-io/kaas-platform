@@ -52,6 +52,29 @@ interface UsageStat {
 
 const PROVIDERS = ["deepseek", "kimi", "zhipu"];
 
+/** 服务商显示名：界面上不出现英文技术标识（接口值仍是 deepseek/kimi/zhipu）。 */
+const PROVIDER_LABELS: Record<string, string> = {
+  deepseek: "DeepSeek",
+  kimi: "Kimi",
+  zhipu: "智谱",
+};
+const providerLabel = (name: string) => PROVIDER_LABELS[name] ?? name;
+
+/**
+ * 任务中文业务名：后端任务清单已带 name；这里给「用量记录」这类
+ * 只回 task_key 的场景兜底，避免界面出现任务代码。
+ */
+const TASK_LABELS: Record<string, string> = {
+  config_validation: "配置校验",
+  lead_scoring: "线索评分",
+  opening_line: "开场白生成",
+  email_generation: "邮件生成",
+  inquiry_classification: "询盘分类",
+  spec_extract: "规格结构化",
+  product_translate: "产品名翻译",
+};
+const taskLabel = (key: string) => TASK_LABELS[key] ?? "其他智能任务";
+
 const USAGE_TONES: Record<string, import("@/components/shared").StatusTone> = {
   success: "success",
   failed: "danger",
@@ -98,7 +121,7 @@ export default function AiProvidersPage() {
     recommended_provider: string;
   })[] = (bindingData?.items ?? []).map((b) => ({
     ...b,
-    name: taskMeta[b.task_key]?.name ?? b.task_key,
+    name: taskMeta[b.task_key]?.name ?? taskLabel(b.task_key),
     recommended_provider: taskMeta[b.task_key]?.recommended_provider ?? "",
   }));
 
@@ -116,7 +139,11 @@ export default function AiProvidersPage() {
     const v = keys[name] ?? "";
     try {
       await apiClient.put(`/ai/providers/${name}`, { api_key: v }); // "" clears
-      toast.success(v ? `${name} 密钥已保存` : `${name} 密钥已清除`);
+      toast.success(
+        v
+          ? `${providerLabel(name)} 密钥已保存`
+          : `${providerLabel(name)} 密钥已清除`,
+      );
       setKeys({ ...keys, [name]: "" });
       refetchProv();
     } catch {
@@ -132,8 +159,8 @@ export default function AiProvidersPage() {
         error?: string;
       }>(`/ai/providers/${name}/test`);
       data.ok
-        ? toast.success(`${name} 正常（${data.latency_ms} ms）`)
-        : toast.error(`${name} 失败：${data.error ?? ""}`);
+        ? toast.success(`${providerLabel(name)} 连接正常（${data.latency_ms} ms）`)
+        : toast.error(`${providerLabel(name)} 连接失败：${data.error ?? ""}`);
     } catch {
       toast.error("测试失败");
     }
@@ -143,7 +170,7 @@ export default function AiProvidersPage() {
     try {
       await apiClient.put(`/ai/task-bindings/${t.task_key}`, { enabled });
       toast.success(
-        `${t.task_key} ${enabled ? "已启用" : "已关闭"}（${enabled ? "AI" : "模板兜底"}）`,
+        `${taskLabel(t.task_key)} ${enabled ? "已启用 AI" : "已改为模板"}（${enabled ? "由 AI 生成" : "使用内置模板"}）`,
       );
       refetchBindings();
       refetchUsage();
@@ -167,7 +194,7 @@ export default function AiProvidersPage() {
     <RouteGuard adminOnly>
       <PageHeader
         title="AI 服务商"
-        description="自备密钥、为任务绑定服务商、审计每一次调用"
+        description="自备密钥、为任务绑定服务商、记录每一次调用"
       />
       <div className="space-y-6 p-6">
         {/* providers */}
@@ -182,19 +209,23 @@ export default function AiProvidersPage() {
               return (
                 <div key={name} className="rounded-md border p-4">
                   <div className="mb-2 flex items-center justify-between">
-                    <span className="font-semibold capitalize">{name}</span>
+                    <span className="font-semibold">{providerLabel(name)}</span>
                     <StatusBadge tone={p?.enabled ? "success" : "default"}>
                       {p?.enabled ? "已启用" : "关闭"}
                     </StatusBadge>
                   </div>
                   <div className="mb-2 text-xs text-muted-foreground">
-                    密钥：{p?.api_key_masked ?? "未设置"}{" "}
-                    {p?.has_key && <Badge variant="outline">已保存</Badge>}
+                    服务密钥：
+                    {p?.has_key ? (
+                      <Badge variant="outline">已配置</Badge>
+                    ) : (
+                      "未配置"
+                    )}
                   </div>
                   <div className="flex gap-1">
                     <Input
                       type="password"
-                      placeholder="粘贴 API 密钥…"
+                      placeholder="粘贴服务商密钥…"
                       value={keys[name] ?? ""}
                       onChange={(e) =>
                         setKeys({ ...keys, [name]: e.target.value })
@@ -205,8 +236,8 @@ export default function AiProvidersPage() {
                       size="sm"
                       onClick={() => saveKey(name)}
                       disabled={(keys[name] ?? "") === "" && !p?.has_key}
-                      aria-label={`保存 ${name} 密钥`}
-                      title={`保存 ${name} 密钥`}
+                      aria-label={`保存 ${providerLabel(name)}密钥`}
+                      title={`保存 ${providerLabel(name)}密钥`}
                     >
                       <Save className="h-4 w-4" />
                     </Button>
@@ -215,8 +246,8 @@ export default function AiProvidersPage() {
                       size="sm"
                       onClick={() => testProvider(name)}
                       disabled={!p?.has_key}
-                      aria-label={`测试 ${name} 连接`}
-                      title={`测试 ${name} 连接`}
+                      aria-label={`测试 ${providerLabel(name)}连接`}
+                      title={`测试 ${providerLabel(name)}连接`}
                     >
                       <FlaskConical className="h-4 w-4" />
                     </Button>
@@ -274,12 +305,7 @@ export default function AiProvidersPage() {
                 <tbody>
                   {tasks.map((t) => (
                     <tr key={t.task_key} className="border-b">
-                      <td className="p-2 font-medium">
-                        {t.name}
-                        <div className="text-xs text-muted-foreground">
-                          {t.task_key}
-                        </div>
-                      </td>
+                      <td className="p-2 font-medium">{t.name}</td>
                       <td className="p-2">
                         <label className="flex items-center gap-1">
                           <input
@@ -302,7 +328,7 @@ export default function AiProvidersPage() {
                         >
                           {PROVIDERS.map((p) => (
                             <option key={p} value={p}>
-                              {p}
+                              {providerLabel(p)}
                             </option>
                           ))}
                         </select>
@@ -317,7 +343,9 @@ export default function AiProvidersPage() {
                         />
                       </td>
                       <td className="p-2 text-xs text-muted-foreground">
-                        {t.recommended_provider}
+                        {t.recommended_provider
+                          ? providerLabel(t.recommended_provider)
+                          : "—"}
                       </td>
                     </tr>
                   ))}
@@ -330,10 +358,8 @@ export default function AiProvidersPage() {
         {/* 运行任务（C36 #13 · POST /ai/tasks/{key}/run） */}
         <SectionCard title="运行任务（调试/补跑）">
           <p className="mb-3 text-xs text-muted-foreground">
-            手动触发一次任务：未启用 AI
-            时走内置模板（结果不带耗时）；启用后走「绑定服务商 → 兜底链」。
-            每次调用都会记入下方用量审计；无权限(403)/冲突(409)
-            会如实透出后端错误码。
+            手动运行一次任务：未启用 AI 时使用内置模板；启用后按「绑定服务商 → 兜底」的顺序调用。
+            每次运行都会记入下方调用记录；无权限或任务正在运行时会给出明确原因。
           </p>
           {(taskData?.items ?? []).length === 0 ? (
             <EmptyState title="暂无任务" />
@@ -348,9 +374,6 @@ export default function AiProvidersPage() {
                 >
                   <Play className="mr-1 h-3.5 w-3.5" />
                   {t.name}
-                  <span className="ml-2 font-mono text-[11px] text-muted-foreground">
-                    {t.task_key}
-                  </span>
                 </Button>
               ))}
             </div>
@@ -358,7 +381,7 @@ export default function AiProvidersPage() {
         </SectionCard>
 
         {/* usage audit */}
-        <SectionCard title="用量审计">
+        <SectionCard title="调用记录">
           <div className="mb-2">
             <Button
               variant="outline"
@@ -374,7 +397,7 @@ export default function AiProvidersPage() {
           {(usageData?.stats ?? []).length === 0 ? (
             <EmptyState
               title="暂无 AI 用量"
-              description="每次 AI/模板调用都会在此记录 token 与费用"
+              description="每次 AI 或模板调用都会在此记录调用量与费用"
             />
           ) : (
             <div className="overflow-x-auto">
@@ -394,10 +417,10 @@ export default function AiProvidersPage() {
                       调用次数
                     </th>
                     <th scope="col" className="p-2">
-                      提示词 token
+                      用量（输入）
                     </th>
                     <th scope="col" className="p-2">
-                      输出 token
+                      用量（输出）
                     </th>
                     <th scope="col" className="p-2">
                       费用
@@ -407,8 +430,10 @@ export default function AiProvidersPage() {
                 <tbody>
                   {(usageData?.stats ?? []).map((s, i) => (
                     <tr key={i} className="border-b">
-                      <td className="p-2 font-medium">{s.task_key}</td>
-                      <td className="p-2">{s.provider}</td>
+                      <td className="p-2 font-medium">
+                        {taskLabel(s.task_key)}
+                      </td>
+                      <td className="p-2">{providerLabel(s.provider)}</td>
                       <td className="p-2">
                         <StatusBadge tone={USAGE_TONES[s.status] ?? "default"}>
                           {USAGE_LABELS[s.status] ?? s.status}

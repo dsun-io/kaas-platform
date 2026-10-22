@@ -33,6 +33,12 @@ JSONB_COLS: dict[str, set[str]] = {
     "quote_orders": {"tax_snapshot"},
     "product_sku_prices": {"tier_rules"},
     "order_items": {"spec_snapshot"},
+    # 2026-10-22（设计 §5 / §13.3）：
+    #   cust_inquiries.items 是询盘多产品行数组（前端按行渲染）；
+    #   orders.amount_breakdown 是金额构成四项（前端回显 + 合计校验）。
+    # 漏登记的表现同样是「字段在、但值是字符串」。
+    "cust_inquiries": {"items"},
+    "orders": {"amount_breakdown"},
     "business_events": {"payload"},
     "trade_docs": {"raw_payload"},
     "tax_archives": {"tax_values"},

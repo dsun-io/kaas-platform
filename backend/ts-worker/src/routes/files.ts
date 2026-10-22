@@ -42,7 +42,7 @@ const app = new Hono<{ Bindings: Env }>();
 const DEFAULT_TENANT = "default";
 
 /** 与 Python ws_files.py:120 _META_COLS 逐字一致（列表/详情输出列集）。 */
-const META_COLS =
+export const META_COLS =
   "id, tenant_id, team_id, owner_type, owner_id, kind, media_kind, name, storage, "
   + "object_key, file_name, content_type, file_size, sha256, version, supersedes_id, "
   + "is_current, is_primary, sort_order, uploaded_by, created_at";
@@ -113,6 +113,116 @@ export function prefixedKey(key: string, env: Env): string {
 export function r2Bucket(env: Env): R2Like | null {
   const bucket = env.FILES as unknown as R2Like | undefined;
   return bucket && typeof bucket.get === "function" ? bucket : null;
+}
+
+// ── 服务端代理上传（multipart → R2 binding / inline；对齐 ws_files.py:_create_file）──
+// 订单附件 / 到账截图等新归属类型走这条（前端不直传，服务端收字节再落文件管线）。
+
+/** 字节 → sha256 hex（对齐 ws_files.py:_create_file 的 hashlib.sha256）。 */
+async function sha256Hex(data: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", data as unknown as ArrayBuffer);
+  return [...new Uint8Array(digest)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+export async function createFileFromBytes(
+  env: Env,
+  user: CurrentUser,
+  input: {
+    ownerType: string;
+    ownerId: string | null;
+    kind: string;
+    mediaKind?: string | null;
+    name: string;
+    contentType: string;
+    fileName?: string | null;
+    bytes: Uint8Array;
+    supersede?: boolean;
+  },
+): Promise<Record<string, unknown>> {
+  try {
+    validateFileUpload({
+      ownerType: input.ownerType,
+      kind: input.kind,
+      mediaKind: input.mediaKind ?? null,
+      name: input.name,
+      contentType: input.contentType,
+      size: input.bytes.byteLength,
+    });
+  } catch (err) {
+    if (err instanceof RuleError) fileRule422(err);
+    throw err;
+  }
+  const sha = await sha256Hex(input.bytes);
+  const key = prefixedKey(fileObjectKey({
+    tenantId: DEFAULT_TENANT,
+    ownerType: input.ownerType,
+    ownerId: input.ownerId,
+    kind: input.kind,
+    mediaKind: input.mediaKind ?? null,
+    sha256: sha,
+    contentType: input.contentType,
+    fileName: input.fileName ?? null,
+  }), env);
+  // 字节落点如实记录：R2 binding 成功 = s3；失败/未绑定 = inline（不把上传变成 500）
+  let storage = "inline";
+  let objectKey: string | null = key;
+  let inline: Uint8Array | null = input.bytes;
+  const bucket = r2Bucket(env);
+  if (bucket) {
+    try {
+      await bucket.put(key, input.bytes, {
+        httpMetadata: { contentType: input.contentType },
+      });
+      storage = "s3";
+      inline = null;
+    } catch {
+      storage = "inline";
+      objectKey = key;
+      inline = input.bytes;
+    }
+  }
+  const row = await withDb(env, (sql: Db) => sql.begin(async (tx) => {
+    let version = 1;
+    let supersedesId: unknown = null;
+    if (input.supersede) {
+      const params: unknown[] = [
+        DEFAULT_TENANT, input.ownerType, input.ownerId, input.kind,
+      ];
+      let q = "SELECT " + META_COLS + " FROM file_objects WHERE tenant_id=$1 AND owner_type=$2"
+        + " AND coalesce(owner_id,'')=coalesce($3,'') AND kind=$4";
+      if (input.mediaKind !== null && input.mediaKind !== undefined) {
+        params.push(input.mediaKind);
+        q += " AND coalesce(media_kind,'')=coalesce($" + String(params.length) + ",'')";
+      }
+      const scope = teamScope(user, params.length + 1);
+      q += scope.frag;
+      params.push(...scope.extra);
+      q += " ORDER BY version DESC";
+      const current = currentFileOf(await tx.unsafe(q, params as never[]) as unknown as Row[]);
+      if (current) {
+        const next = nextFileVersion(current);
+        version = next[0];
+        supersedesId = next[1];
+        await tx.unsafe("UPDATE file_objects SET is_current=false, updated_at=now() WHERE id=$1",
+          [current.id] as never[]);
+      }
+    }
+    const rows = await tx.unsafe(
+      "INSERT INTO file_objects (tenant_id, team_id, owner_type, owner_id, kind,"
+      + " media_kind, name, storage, object_key, content, file_name, content_type,"
+      + " file_size, sha256, version, supersedes_id, is_current, uploaded_by)"
+      + " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,true,$17)"
+      + " RETURNING " + META_COLS,
+      [DEFAULT_TENANT, user.team_id, input.ownerType, input.ownerId, input.kind,
+        input.mediaKind ?? null, input.name.trim(), storage, objectKey, inline,
+        input.fileName ?? null, input.contentType, input.bytes.byteLength, sha,
+        version, supersedesId, String(user.id)] as never[],
+    );
+    return (rows as unknown as Row[])[0] as Row;
+  }));
+  return rowToFile(row);
 }
 
 // ── 端点 ─────────────────────────────────────────────────────────────────────

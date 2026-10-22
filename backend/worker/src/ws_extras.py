@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Optional
+from urllib.parse import quote as _url_quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, Query
 from fastapi.responses import Response
@@ -395,10 +396,22 @@ async def download_external_doc(request: Request, doc_id: int, user: dict = Depe
         r = await conn.fetchrow("SELECT * FROM external_doc_uploads WHERE id=$1", doc_id)
     if r is None:
         raise HTTPException(status_code=404, detail={"error": "not_found"})
+    # 中文文件名不能直接塞进 HTTP 头（header 只能是 latin-1，Starlette 会在
+    # 编码期抛 UnicodeEncodeError → 500）：按 RFC 6266/5987 给 ASCII 兜底名 +
+    # filename*=UTF-8'' 百分号编码，浏览器优先用后者。
+    file_name = r["file_name"] or "download"
+    ascii_name = "".join(
+        ch if 32 <= ord(ch) < 127 and ch not in '"\\' else "_"
+        for ch in file_name
+    ) or "download"
+    disposition = (
+        f'attachment; filename="{ascii_name}"; '
+        f"filename*=UTF-8''{_url_quote(file_name, safe='')}"
+    )
     return Response(
         content=bytes(r["content"]),
         media_type=r["content_type"] or "application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{r["file_name"]}"'},
+        headers={"Content-Disposition": disposition},
     )
 
 

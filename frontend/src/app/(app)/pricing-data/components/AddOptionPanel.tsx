@@ -117,13 +117,13 @@ export function AddOptionPanel({ matrix, busy, onSave }: Props) {
                   <div className="space-y-1.5">
                     <Label className="text-xs">
                       {dim.label}
-                      {variant ? " · 编码" : dim.unit ? `（${dim.unit}）` : ""}
+                      {variant ? " · 档位编码" : dim.unit ? `（${dim.unit}）` : ""}
                     </Label>
                     <Input
                       className="h-8 text-xs"
                       placeholder={
                         variant
-                          ? "如：zinc_60（查价键的一部分）"
+                          ? "如：zinc_60"
                           : `如：${dim.options.map((o) => o.label).join(" / ")} 之外的新值`
                       }
                       value={values[dim.field] ?? ""}

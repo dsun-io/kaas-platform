@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useToggleFeatureFlag } from "../hooks/use-feature-flags";
 import { useCreateEvent } from "@/lib/events/use-create-event";
+import { flagLabel } from "../flag-labels";
 
 interface Props {
   tenantId: string;
@@ -58,12 +59,9 @@ export function FlagToggle({ tenantId, tenantName, flagKey, enabled }: Props) {
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <div>
             <CardTitle className="text-sm">{tenantName}</CardTitle>
-            <p className="text-xs text-muted-foreground font-mono">
-              {tenantId}
-            </p>
           </div>
           <Badge variant={enabled ? "default" : "secondary"}>
-            {flagKey}: {enabled ? "ON" : "OFF"}
+            {flagLabel(flagKey)}：{enabled ? "已开启" : "已关闭"}
           </Badge>
         </CardHeader>
         <CardContent>
@@ -92,9 +90,9 @@ export function FlagToggle({ tenantId, tenantName, flagKey, enabled }: Props) {
           <DialogHeader>
             <DialogTitle>确认切换灰度开关</DialogTitle>
             <DialogDescription>
-              {flagKey}: {enabled ? "ON → OFF" : "OFF → ON"}
+              {flagLabel(flagKey)}：{enabled ? "已开启 → 将关闭" : "已关闭 → 将开启"}
               <br />
-              租户: {tenantName} ({tenantId})
+              空间：{tenantName}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">

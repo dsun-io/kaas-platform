@@ -1,6 +1,7 @@
 "use client";
 
 import { EVENT_PAYLOAD_SCHEMAS, type EventType } from "@contracts/events";
+import { payloadFieldLabel, payloadValueText } from "./event-labels";
 
 interface Props {
   event_type: string;
@@ -8,6 +9,12 @@ interface Props {
   payload: unknown;
 }
 
+/**
+ * 事件内容摘要（中文内容项 + 人话取值）。
+ *
+ * 原始数据结构不在这里铺开：详情页把它们收在「查看详情（一般不需要看）」里，
+ * 这里只负责让普通查看能看懂「这次发生了什么」。
+ */
 export function PayloadRenderer({
   event_type,
   schema_version,
@@ -21,9 +28,9 @@ export function PayloadRenderer({
 
   if (!schema) {
     return (
-      <pre className="max-h-64 overflow-auto rounded bg-muted p-3 text-xs">
-        {JSON.stringify(payload, null, 2)}
-      </pre>
+      <p className="rounded bg-muted p-3 text-xs text-muted-foreground">
+        这项事件暂无可读摘要，原始记录可在下方「查看详情（一般不需要看）」里核对。
+      </p>
     );
   }
 
@@ -42,9 +49,9 @@ export function PayloadRenderer({
 
   if (fieldNames === null) {
     return (
-      <pre className="max-h-64 overflow-auto rounded bg-muted p-3 text-xs">
-        {JSON.stringify(payload, null, 2)}
-      </pre>
+      <p className="rounded bg-muted p-3 text-xs text-muted-foreground">
+        这项事件暂无可读摘要，原始记录可在下方「查看详情（一般不需要看）」里核对。
+      </p>
     );
   }
 
@@ -56,20 +63,14 @@ export function PayloadRenderer({
         return (
           <div key={field} className="flex gap-2">
             <dt className="w-36 shrink-0 text-xs font-medium text-muted-foreground">
-              {field}
+              {payloadFieldLabel(field)}
             </dt>
             <dd className="text-xs">
               {hasValue ? (
-                typeof value === "object" ? (
-                  <code className="rounded bg-muted px-1">
-                    {JSON.stringify(value)}
-                  </code>
-                ) : (
-                  String(value)
-                )
+                payloadValueText(field, value)
               ) : (
                 <span className="italic text-muted-foreground">
-                  该字段在 v{schema_version} 之后引入
+                  这项内容当时还没有
                 </span>
               )}
             </dd>

@@ -2,6 +2,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { LoadingBlock } from "@/components/shared/loading-block";
+import { flagLabel } from "../flag-labels";
 
 interface AuditEntry {
   id: string;
@@ -34,9 +35,9 @@ export function AuditTimeline({ entries, loading, unavailable }: Props) {
       <div className="rounded-lg border border-dashed p-4 text-sm">
         <p className="font-medium">发布审计暂不可用</p>
         <p className="mt-1 text-muted-foreground">
-          该接口在当前环境不存在（生产按设计返回 404），因此这里不显示空时间线冒充「暂无记录」。
-          灰度开关的实际变更仍可在「审计日志」页查看；如需在本页恢复历史，需要后端补一个
-          发布审计端点。
+          当前环境还没有这项记录，所以不显示空时间线冒充「暂无记录」。
+          灰度开关的实际变更仍可在「审计日志」页查看；如需在本页恢复历史，
+          请联系平台管理员开通发布审计记录。
         </p>
       </div>
     );
@@ -56,12 +57,16 @@ export function AuditTimeline({ entries, loading, unavailable }: Props) {
         <div key={entry.id} className="relative">
           <div className="absolute -left-[calc(1.5rem+2px)] top-1 h-2 w-2 rounded-full bg-border" />
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-xs">
-              {entry.flag_key}
+            <Badge
+              variant="outline"
+              className="text-xs"
+              title={entry.flag_key}
+            >
+              {flagLabel(entry.flag_key)}
             </Badge>
             <span className="text-xs">
-              {entry.enabled_before ? "ON" : "OFF"} →{" "}
-              {entry.enabled_after ? "ON" : "OFF"}
+              {entry.enabled_before ? "已开启" : "已关闭"} →{" "}
+              {entry.enabled_after ? "已开启" : "已关闭"}
             </span>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">{entry.reason}</p>

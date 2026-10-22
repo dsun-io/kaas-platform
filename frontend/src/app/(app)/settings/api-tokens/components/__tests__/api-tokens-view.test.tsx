@@ -193,13 +193,18 @@ describe("ApiTokensView", () => {
     mount(<ApiTokensView />);
     await settle();
 
-    expect(document.body.textContent).toContain("还没有 API 令牌");
-    clickButton("创建第一个令牌");
+    expect(document.body.textContent).toContain("还没有系统对接密钥");
+    expect(document.body.textContent).toContain("外部系统");
+    clickButton("创建第一个密钥");
     await settle();
 
-    expect(document.body.textContent).toContain("创建 API 令牌");
-    expect(document.body.textContent).toContain("作用域");
-    expect(document.body.textContent).toContain("生成令牌");
+    expect(document.body.textContent).toContain("创建系统对接密钥");
+    expect(document.body.textContent).toContain("权限范围");
+    expect(document.body.textContent).toContain("生成密钥");
+    // 技术名词不出现在用户可见处
+    for (const vocab of ["REST", "MCP", "Bearer", "明文"]) {
+      expect(document.body.textContent).not.toContain(vocab);
+    }
   });
 
   it("创建令牌：POST 正确 body，明文只显示一次且必须手动关闭", async () => {
@@ -215,14 +220,14 @@ describe("ApiTokensView", () => {
 
     mount(<ApiTokensView />);
     await settle();
-    clickButton("创建令牌");
+    clickButton("创建密钥");
     await settle();
 
     setInput("api-token-name", "  CI 只读同步  ");
     toggleCheckbox("customers:read");
     setSelect("api-token-expiry", "30");
 
-    clickButton("生成令牌");
+    clickButton("生成密钥");
     await settle(12);
 
     expect(mocks.post).toHaveBeenCalledWith("/api-tokens", {
@@ -262,7 +267,7 @@ describe("ApiTokensView", () => {
 
     mount(<ApiTokensView />);
     await settle();
-    clickButton("撤销令牌 官网询盘同步");
+    clickButton("撤销密钥 官网询盘同步");
     await settle();
 
     expect(document.body.textContent).toContain("无法恢复");
@@ -271,7 +276,7 @@ describe("ApiTokensView", () => {
 
     expect(mocks.delete).toHaveBeenCalledWith("/api-tokens/1");
     expect(toastSuccess).toHaveBeenCalledWith(
-      expect.stringContaining("已撤销令牌「官网询盘同步」"),
+      expect.stringContaining("已撤销密钥「官网询盘同步」"),
     );
     expect(document.body.textContent).not.toContain("无法恢复");
   });
@@ -291,12 +296,12 @@ describe("ApiTokensView", () => {
 
     mount(<ApiTokensView />);
     await settle();
-    clickButton("撤销令牌 官网询盘同步");
+    clickButton("撤销密钥 官网询盘同步");
     await settle();
     clickButton("确认撤销");
     await settle();
 
-    expect(document.body.textContent).toContain("该令牌已经撤销");
+    expect(document.body.textContent).toContain("该系统对接密钥已经撤销");
     expect(toastError).not.toHaveBeenCalled();
   });
 });

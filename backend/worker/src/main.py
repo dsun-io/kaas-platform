@@ -43,7 +43,11 @@ logger = logging.getLogger(__name__)
 
 import json as _json
 
-from kaas_common.workstation.customer_serializers import row_to_customer, row_to_inquiry
+from kaas_common.workstation.customer_serializers import (
+    normalize_inquiry_items,
+    row_to_customer,
+    row_to_inquiry,
+)
 from kaas_common.workstation.customer_rules import validate_manual_stage
 from kaas_common.workstation.inquiry_rules import build_inquiry_no, normalize_abbr
 from kaas_common.domain.enums import SCHEDULE_TYPE, validate_enum
@@ -1153,6 +1157,20 @@ class ContactCreate(BaseModel):
     is_primary: bool = False
 
 
+class InquiryItem(BaseModel):
+    """询盘里的一个产品行（设计 §5 / §13.3，迁移 202610220001 的 items[] 元素）。"""
+
+    product_key: Optional[str] = None
+    # product_name 是旧前端/订单行项的叫法，落库统一成 product_name_raw
+    product_name: Optional[str] = None
+    product_name_raw: Optional[str] = None
+    spec_text: Optional[str] = None
+    quantity: Optional[float] = None
+    quantity_unit: Optional[str] = None
+    application: Optional[str] = None
+    notes: Optional[str] = None
+
+
 class InquiryCreate(BaseModel):
     # customer_id 由路径参数决定；保留可选字段仅为兼容旧客户端（orchestrator 契约里没有它）
     customer_id: Optional[int] = None
@@ -1161,10 +1179,13 @@ class InquiryCreate(BaseModel):
     lead_id: Optional[int] = None
     owner_scope: Optional[str] = None
     category_id: Optional[int] = None
+    # 旧标量字段：仍兼容（老客户端 / 历史按钮），有 items 时以 items 第一行为准
     product_name_raw: Optional[str] = None
     quantity: Optional[float] = None
     quantity_unit: Optional[str] = None
     application: Optional[str] = None
+    # 多产品行（设计 §5）：一个询盘可录多个产品；第一行同步写进上面四个旧字段。
+    items: List[InquiryItem] = []
     # 询盘三态：新建默认「未报价」；生成报价后自动「已报价」；「已关闭」仅手动
     status: str = "unquoted"
     notes: Optional[str] = None
@@ -1657,17 +1678,29 @@ async def add_inquiry(customer_id: int, request: Request, body: InquiryCreate, u
         channel = validate_enum("inquiry_channel", body.channel)
         owner_scope = validate_enum("owner_scope", body.owner_scope) or "private"
         inquiry_no = await _next_inquiry_no(conn, customer)
+        # 多产品行（设计 §5）：items 是权威来源，**第一行同步写旧标量字段**，
+        # 旧报表/链式分析（读 product_name_raw/quantity）不需要改。
+        # 只传旧标量的老客户端照旧可用：items 落空数组，读取时由
+        # inquiry_items() 用旧字段合成一行（历史询盘同一条路径）。
+        items = normalize_inquiry_items([it.model_dump() for it in body.items])
+        first = items[0] if items else {}
+        product_name_raw = body.product_name_raw or first.get("product_name_raw")
+        quantity = body.quantity if body.quantity is not None else first.get("quantity")
+        quantity_unit = body.quantity_unit or first.get("quantity_unit")
+        application = body.application or first.get("application")
         row = await conn.fetchrow(
             """INSERT INTO cust_inquiries
                (tenant_id, customer_id, inquiry_no, channel, lead_id, category_id,
                 product_name_raw, quantity, quantity_unit, application, status, notes,
-                created_by, owner_id, owner_scope, team_id)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'unquoted',$11,$12,$13,$14,$15)
+                created_by, owner_id, owner_scope, team_id, items)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'unquoted',$11,$12,$13,$14,$15,
+                       $16::jsonb)
                RETURNING *""",
             DEFAULT_TENANT, customer_id, inquiry_no, channel, body.lead_id, body.category_id,
-            body.product_name_raw,
-            body.quantity, body.quantity_unit, body.application, body.notes,
+            product_name_raw,
+            quantity, quantity_unit, application, body.notes,
             str(user["id"]), str(user["id"]), owner_scope, user.get("team_id"),
+            _json.dumps(items),
         )
         # 2026-10-18：询盘是**单据阶段**，不再联动改客户阶段（客户阶段只有
         # 活跃/沉寂/已下单，已下单只由开启中的订单推导）。
@@ -3336,6 +3369,37 @@ def _receivable_dict(row) -> dict:
     return row_to_receivable(dict(row))
 
 
+def _receipt_dict(row) -> dict:
+    """实收登记行 → 共享序列化 10 键（设计 §13.3）。"""
+    from kaas_common.workstation.order_serializers import row_to_receipt
+    return row_to_receipt(dict(row))
+
+
+def _receipts_by_schedule(receipts) -> dict:
+    """按 schedule_id 汇总实收（未分配收款 schedule_id 为空，不计入任何期次）。"""
+    totals: dict = {}
+    for r in receipts:
+        d = dict(r)
+        sid = d.get("schedule_id")
+        if sid is None:
+            continue
+        totals[sid] = round(totals.get(sid, 0.0) + float(d.get("amount") or 0), 2)
+    return totals
+
+
+def _schedule_with_received(row, received_by_schedule: dict) -> dict:
+    """收款计划 → 共享 14 键 + received_amount（该期实收合计）。"""
+    s = _schedule_dict(row)
+    d = dict(row)
+    received = received_by_schedule.get(d.get("id"), 0.0)
+    # 兼容历史：已标记 paid 但没有 receipts 的期次，实收按该期金额展示
+    # （设计 §13.3「历史收款（无截图）」；页面据此提示，不强制补录）。
+    if received == 0 and d.get("status") == "paid":
+        received = float(d.get("amount") or 0)
+    s["received_amount"] = round(received, 2)
+    return s
+
+
 async def _record_business_event(
     request, event_type: str, payload: dict, from_ws: str = None, to_ws: str = None
 ):
@@ -3468,6 +3532,64 @@ def _customer_name_snapshot(body: dict, quote, customer: dict) -> Optional[str]:
     return name or customer.get("name")
 
 
+def _normalize_payment_plan(raw_plan, total) -> list:
+    """建单时的收款安排（设计 §13.3）→ 待落库的计划行列表。
+
+    - schedule_type 必须过共享枚举（deposit/balance/full/other）；
+    - ratio 是**小数**（0.3 = 30%），所有行合计不得超过 1（容差 1e-6）；
+    - amount 显式优先，否则 = 订单总额 × ratio（两位小数）；
+    - due_date / notes 原样带过。
+    金额合计与订单总额不一致**不报错**（运费后补等真实业务），差异由页面展示。
+    """
+    if raw_plan in (None, ""):
+        return []
+    if not isinstance(raw_plan, list):
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "INVALID_PAYMENT_PLAN",
+            "field": "payment_plan", "detail": "payment_plan 必须是数组",
+        })
+    plan = []
+    ratio_sum = 0.0
+    for idx, row in enumerate(raw_plan):
+        if not isinstance(row, dict):
+            raise HTTPException(status_code=422, detail={
+                "error": "validation", "code": "INVALID_PAYMENT_PLAN",
+                "field": f"payment_plan[{idx}]", "detail": "收款安排每行必须是对象",
+            })
+        stype = str(row.get("schedule_type") or "").strip()
+        if stype not in SCHEDULE_TYPE:
+            raise HTTPException(status_code=422, detail={
+                "error": "validation", "code": "INVALID_SCHEDULE_TYPE",
+                "field": f"payment_plan[{idx}].schedule_type",
+                "detail": f"期次类型非法：{stype or '(空)'}，允许 {'/'.join(SCHEDULE_TYPE)}",
+            })
+        ratio = to_float(row.get("ratio"))
+        if ratio is not None and not (0 <= ratio <= 1):
+            raise HTTPException(status_code=422, detail={
+                "error": "validation", "code": "INVALID_SCHEDULE_RATIO",
+                "field": f"payment_plan[{idx}].ratio",
+                "detail": "比例必须是 0~1 的小数（0.3 = 30%）",
+            })
+        amount = to_float(row.get("amount"))
+        if amount is None and ratio is not None and total is not None:
+            amount = round(float(total) * ratio, 2)
+        ratio_sum += ratio or 0.0
+        plan.append({
+            "schedule_type": stype,
+            "ratio": ratio,
+            "amount": amount,
+            "due_date": parse_date(row.get("due_date")),
+            "notes": row.get("notes") or None,
+        })
+    if ratio_sum > 1.0 + 1e-6:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "PAYMENT_PLAN_RATIO_EXCEEDS",
+            "field": "payment_plan",
+            "detail": f"收款比例合计 {ratio_sum * 100:.2f}% 超过 100%",
+        })
+    return plan
+
+
 
 @app.post("/api/v1/orders", status_code=201)
 async def create_order_api(
@@ -3568,6 +3690,36 @@ async def create_order_api(
                     total += line
                 computed_lines.append(line)
 
+            # ── 金额构成 + 收款安排（设计 §13.3，迁移 202610220001）──────────────
+            # 订单总额的唯一真源仍是 orders.total_amount：
+            #   显式传 total_amount 优先；否则有 amount_breakdown 时 = 四项之和；
+            #   两者都没有时沿用「订单行汇总」（历史行为）。
+            # 四项明细落 orders.amount_breakdown；货物金额缺省 = 行项汇总。
+            from kaas_common.workstation.order_serializers import (
+                normalize_amount_breakdown as _normalize_breakdown,
+            )
+            raw_breakdown = body.get("amount_breakdown")
+            breakdown = _normalize_breakdown(raw_breakdown)
+            if breakdown is not None:
+                raw_goods = (
+                    raw_breakdown.get("goods_amount")
+                    if isinstance(raw_breakdown, dict) else None
+                )
+                if raw_goods in (None, ""):
+                    breakdown["goods_amount"] = round(float(total or 0), 2)
+                explicit_total = body.get("total_amount")
+                if explicit_total in (None, ""):
+                    total = round(sum(breakdown.values()), 2)
+                else:
+                    total = to_float(explicit_total)
+                    if total is None:
+                        raise HTTPException(status_code=422, detail={
+                            "error": "validation", "code": "INVALID_TOTAL_AMOUNT",
+                            "field": "total_amount",
+                            "detail": "订单总额必须是数字",
+                        })
+            payment_plan = _normalize_payment_plan(body.get("payment_plan"), total)
+
             # ── 报价/订单 1:N 业务校验（TODO(TODO:F5)，口径 A：**允许**一报价多订单）──────
             # 为什么不做 1:1 唯一约束：分批出货 / 改价后重复下单是真实业务，UI 已按 1:N
             # 分组展示（docs/UI_BACKEND_DEPENDENCIES_2026-10-20.md §5 选项 A，2026-10-20
@@ -3611,9 +3763,9 @@ async def create_order_api(
                         total_amount, order_date, delivery_date, notes, quote_id,
                         created_by, owner_id, owner_scope, team_id,
                         incoterm, payment_terms, port_of_loading, port_of_destination,
-                        shipping_marks, country_of_origin)
+                        shipping_marks, country_of_origin, amount_breakdown)
                    VALUES ($1,$2,$3,$4,'pending',$5,$6,$7,$8,$9,$10,$11,$11,$12,$13,
-                           $14,$15,$16,$17,$18,$19)
+                           $14,$15,$16,$17,$18,$19,$20::jsonb)
                    RETURNING *""",
                 DEFAULT_TENANT, order_no, customer["id"],
                 # 客户名快照：显式传入 > 报价上冻结的名字（开单当时）> 客户档案当前名。
@@ -3628,6 +3780,7 @@ async def create_order_api(
                 _term("incoterm"), _term("payment_terms"), _term("port_of_loading"),
                 _term("port_of_destination"), _term("shipping_marks"),
                 _term("country_of_origin"),
+                _json.dumps(breakdown) if breakdown is not None else None,
             )
             order_id = row["id"]
             # 询盘阶段（TODO(TODO:F4)）：订单创建 → order（沿报价的 inquiry_id 传递；
@@ -3652,6 +3805,34 @@ async def create_order_api(
                     it.get("qty") if it.get("qty") is not None else 1, it.get("qty_unit"),
                     it.get("unit_price"), (it.get("currency") or currency),
                     computed_lines[idx], it.get("sort_order") or idx,
+                )
+
+            # ── 收款计划 + 应收台账：与订单/行项**同一事务**（设计 §13.3）──────
+            # 用户口径：「应收按填写的金额和比例直接算」，创建成功即出现在应收页，
+            # 不再等到「确认订单」才建应收（旧 `_create_receivable_for_order` 在确认时
+            # 幂等补建，两条路都指向同一行，不会重复）。
+            order_team = customer.get("team_id")
+            for plan_row in payment_plan:
+                await conn.execute(
+                    """INSERT INTO payment_schedules
+                           (tenant_id, order_id, schedule_type, ratio, amount, currency,
+                            due_date, notes, status, owner_id, owner_scope, team_id)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',$9,$10,$11)""",
+                    DEFAULT_TENANT, order_id, plan_row["schedule_type"],
+                    plan_row["ratio"], plan_row["amount"], currency,
+                    plan_row["due_date"], plan_row["notes"],
+                    str(user["id"]), owner_scope, order_team,
+                )
+            if total is not None or payment_plan:
+                # 应收合计 = 订单总额（含运费/保险/其他）；后续实收只改 received_amount
+                await conn.execute(
+                    """INSERT INTO receivables
+                           (tenant_id, order_id, currency, total_amount, fx_rate,
+                            fx_rate_date, base_currency, base_amount, received_amount,
+                            status, owner_id, owner_scope, team_id)
+                       VALUES ($1,$2,$3,$4,NULL,NULL,'CNY',NULL,0,'unpaid',$5,$6,$7)""",
+                    DEFAULT_TENANT, order_id, currency, total or 0,
+                    str(user["id"]), owner_scope, order_team,
                 )
 
             if quote is not None:
@@ -3724,6 +3905,15 @@ async def get_order_api(
         "SELECT * FROM receivables WHERE tenant_id = $1 AND order_id = $2 LIMIT 1",
         DEFAULT_TENANT, order_id, table="receivables",
     )
+    # 实收登记（设计 §13.3）：订单详情直接带 receipts + 每期 received_amount，
+    # 前端不用再发第二个请求才能显示差异/未分配收款。
+    receipts = await db.fetch(
+        request,
+        "SELECT * FROM payment_receipts WHERE tenant_id = $1 AND order_id = $2"
+        " ORDER BY received_date, id",
+        DEFAULT_TENANT, order_id, table="payment_receipts",
+    )
+    received_by_schedule = _receipts_by_schedule(receipts)
     return {
         **_order_dict(row),
         # PARITY-QUOTE-19：行项走共享序列化 11 键（原先把 DB 全列原样吐出，
@@ -3733,7 +3923,10 @@ async def get_order_api(
             {"quote_order_id": r["quote_order_id"], "ref_type": r["rel_type"]}
             for r in quote_links
         ],
-        "payment_schedules": [_schedule_dict(s) for s in schedules],
+        "payment_schedules": [
+            _schedule_with_received(s, received_by_schedule) for s in schedules
+        ],
+        "receipts": [_receipt_dict(r) for r in receipts],
         "receivable": _receivable_dict(recv_rows[0]) if recv_rows else None,
     }
 
@@ -4100,6 +4293,157 @@ async def update_schedule(schedule_id: int, request: Request, body: dict,
     s2 = await db.fetchrow(request, "SELECT * FROM payment_schedules WHERE tenant_id=$1 AND id=$2",
                            DEFAULT_TENANT, schedule_id, table="payment_schedules")
     return _schedule_dict(s2)
+
+
+# ── 实收登记（设计 §13.3 · 2026-10-22）──────────────────────────────────────
+# 用户口径：应收按金额/比例先算，后期按「实际到账」登记实收；应收与实收可能对不上
+# （金额差异 / 一笔款不指定期次 / 同一期多次收款）—— 系统只记录事实并重算状态，
+# **绝不静默改收款计划金额**（差异由页面展示供财务核对）。
+
+async def _order_conn_or_404(conn, order_id, user: dict):
+    """订单可见性闸门（与两个 GET/POST 实收接口共用）。"""
+    row = await conn.fetchrow(
+        "SELECT * FROM orders WHERE tenant_id=$1 AND id=$2",
+        DEFAULT_TENANT, order_id)
+    if row is None or not _owner_visible(user, row):
+        raise HTTPException(status_code=404, detail={"error": "order_not_found"})
+    return row
+
+
+async def _recompute_payment_state(conn, order_id: int):
+    """重算某订单的期次状态 + 应收台账（实收登记后调用，同一事务内）。
+
+    口径（设计 §13.3）：
+      · 期次已收 = 该期所有 receipts 金额之和：
+        0 < 已收 < 应收 ⇒ partial；已收 >= 应收 ⇒ paid；
+        无 receipts 且历史状态 paid ⇒ **保持 paid**（历史收款，不强制补录）；
+        无 receipts 且历史 overdue ⇒ 保持 overdue；其余 ⇒ pending。
+      · 应收 received_amount = 所有 receipts 之和
+        + 历史已 paid 且无 receipts 的期次金额（兼容旧数据，不丢已收口径）；
+        status = unpaid / partial / paid（按分容差，与应收合计比较）。
+    返回重算后的应收台账行（订单没有台账时返回 None）。
+    """
+    schedules = await conn.fetch(
+        "SELECT id, amount, status FROM payment_schedules"
+        " WHERE tenant_id=$1 AND order_id=$2", DEFAULT_TENANT, order_id)
+    receipts = await conn.fetch(
+        "SELECT schedule_id, amount FROM payment_receipts"
+        " WHERE tenant_id=$1 AND order_id=$2", DEFAULT_TENANT, order_id)
+    per_schedule: dict = {}
+    receipts_total = 0.0
+    for r in receipts:
+        amount = float(r["amount"] or 0)
+        receipts_total += amount
+        sid = r["schedule_id"]
+        if sid is not None:
+            per_schedule[sid] = per_schedule.get(sid, 0.0) + amount
+    legacy_paid_total = 0.0
+    for s in schedules:
+        sid = s["id"]
+        expected = float(s["amount"] or 0)
+        got = per_schedule.get(sid, 0.0)
+        if got > 0:
+            target = "paid" if got >= expected - 0.005 else "partial"
+        elif s["status"] == "paid":
+            legacy_paid_total += expected
+            target = "paid"
+        elif s["status"] == "overdue":
+            target = "overdue"
+        else:
+            target = "pending"
+        if target != s["status"]:
+            await conn.execute(
+                "UPDATE payment_schedules SET status=$3, updated_at=now()"
+                " WHERE tenant_id=$1 AND id=$2",
+                DEFAULT_TENANT, sid, target)
+    received = round(receipts_total + legacy_paid_total, 2)
+    recv = await conn.fetchrow(
+        "SELECT id, total_amount FROM receivables"
+        " WHERE tenant_id=$1 AND order_id=$2 LIMIT 1",
+        DEFAULT_TENANT, order_id)
+    if recv is None:
+        return None
+    total = float(recv["total_amount"] or 0)
+    if total > 0 and received >= total - 0.005:
+        status = "paid"
+    elif received > 0:
+        status = "partial"
+    else:
+        status = "unpaid"
+    await conn.execute(
+        "UPDATE receivables SET received_amount=$3, status=$4, updated_at=now()"
+        " WHERE tenant_id=$1 AND id=$2",
+        DEFAULT_TENANT, recv["id"], received, status)
+    return {"id": recv["id"], "received_amount": received, "status": status}
+
+
+@app.get("/api/v1/orders/{order_id}/receipts")
+async def list_order_receipts(order_id: int, request: Request,
+                              user: dict = Depends(_get_current_user)):
+    """某订单的实收登记列表（含未分配收款：schedule_id=null）。"""
+    async with _acquire(request) as conn:
+        await _order_conn_or_404(conn, order_id, user)
+        rows = await conn.fetch(
+            "SELECT * FROM payment_receipts WHERE tenant_id=$1 AND order_id=$2"
+            " ORDER BY received_date, id", DEFAULT_TENANT, order_id)
+    return {"items": [_receipt_dict(r) for r in rows], "total": len(rows)}
+
+
+@app.post("/api/v1/orders/{order_id}/receipts", status_code=201)
+async def create_order_receipt(order_id: int, request: Request, body: dict,
+                               user: dict = Depends(_get_current_user)):
+    """登记一笔实收：一次收款一行，登记后同事务重算期次状态与应收台账。
+
+    允许：同一期多次收款、schedule_id 为空（未分配收款）、金额与期次金额不同。
+    必填：amount（>0）、received_date；选填：schedule_id / fx_rate / notes。
+    """
+    amount = to_float(body.get("amount"))
+    if amount is None or amount <= 0:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "INVALID_RECEIPT_AMOUNT",
+            "field": "amount", "detail": "实收金额必须是大于 0 的数字",
+        })
+    received_date = parse_date(body.get("received_date"))
+    if received_date is None:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "RECEIVED_DATE_REQUIRED",
+            "field": "received_date", "detail": "收款日期必填（YYYY-MM-DD）",
+        })
+    fx_rate = to_float(body.get("fx_rate"))
+    raw_schedule = body.get("schedule_id")
+    schedule_id = None
+    if raw_schedule not in (None, ""):
+        schedule_id = _as_bigint(raw_schedule, field="schedule_id",
+                                 code="INVALID_SCHEDULE_ID")
+    async with _acquire(request) as conn:
+        async with conn.transaction():
+            order = await _order_conn_or_404(conn, order_id, user)
+            _check_write_access(user, order)
+            if schedule_id is not None:
+                belongs = await conn.fetchval(
+                    "SELECT 1 FROM payment_schedules"
+                    " WHERE tenant_id=$1 AND id=$2 AND order_id=$3",
+                    DEFAULT_TENANT, schedule_id, order_id)
+                if not belongs:
+                    raise HTTPException(status_code=422, detail={
+                        "error": "validation", "code": "SCHEDULE_NOT_IN_ORDER",
+                        "field": "schedule_id",
+                        "detail": "该收款期次不属于当前订单",
+                    })
+            row = await conn.fetchrow(
+                """INSERT INTO payment_receipts
+                       (tenant_id, order_id, schedule_id, amount, currency,
+                        received_date, fx_rate, notes, created_by, owner_id,
+                        owner_scope, team_id)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+                   RETURNING *""",
+                DEFAULT_TENANT, order_id, schedule_id, amount,
+                order["currency"] or "USD", received_date,
+                fx_rate, body.get("notes"),
+                str(user["id"]), order["owner_id"],
+                order["owner_scope"] or "private", order["team_id"])
+            await _recompute_payment_state(conn, order_id)
+    return _receipt_dict(row)
 
 
 @app.get("/api/v1/receivables")

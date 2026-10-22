@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Eye } from "lucide-react";
+import { eventSourceLabel, eventTypeLabel } from "./event-labels";
 
 const EVENT_TYPE_VARIANT: Record<string, "default" | "secondary" | "outline"> =
   {
@@ -47,19 +48,18 @@ function EventRowCell({
 }) {
   return (
     <TableRow>
-      <TableCell className="hidden sm:table-cell font-mono text-xs">
-        {event.id}
-      </TableCell>
       <TableCell>
-        <Badge variant={EVENT_TYPE_VARIANT[event.event_type] ?? "default"}>
-          {event.event_type}
+        <Badge
+          variant={EVENT_TYPE_VARIANT[event.event_type] ?? "default"}
+          title={event.event_type}
+        >
+          {eventTypeLabel(event.event_type)}
         </Badge>
       </TableCell>
-      <TableCell className="hidden md:table-cell text-xs">
-        v{event.schema_version}
-      </TableCell>
       <TableCell>
-        <Badge variant="outline">{event.event_source}</Badge>
+        <Badge variant="outline" title={event.event_source}>
+          {eventSourceLabel(event.event_source)}
+        </Badge>
       </TableCell>
       <TableCell className="hidden md:table-cell text-xs">
         {event.actor_id}
@@ -67,7 +67,7 @@ function EventRowCell({
       <TableCell className="hidden sm:table-cell">
         {event.sampled && (
           <Badge variant="secondary" className="text-[10px]">
-            sampled
+            已采样
           </Badge>
         )}
       </TableCell>
@@ -133,9 +133,7 @@ export function EventTable({ events, onSelect, loading }: Props) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="hidden sm:table-cell">事件 ID</TableHead>
             <TableHead>类型</TableHead>
-            <TableHead className="hidden md:table-cell">版本</TableHead>
             <TableHead>来源</TableHead>
             <TableHead className="hidden md:table-cell">操作人</TableHead>
             <TableHead className="hidden sm:table-cell">采样</TableHead>
@@ -157,9 +155,7 @@ export function EventTable({ events, onSelect, loading }: Props) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="hidden sm:table-cell">事件 ID</TableHead>
             <TableHead>类型</TableHead>
-            <TableHead className="hidden md:table-cell">版本</TableHead>
             <TableHead>来源</TableHead>
             <TableHead className="hidden md:table-cell">操作人</TableHead>
             <TableHead className="hidden sm:table-cell">采样</TableHead>
@@ -169,7 +165,7 @@ export function EventTable({ events, onSelect, loading }: Props) {
         </TableHeader>
         <TableBody>
           <tr style={{ height: `${virtualizer.getTotalSize()}px` }}>
-            <td style={{ padding: 0 }} colSpan={8}>
+            <td style={{ padding: 0 }} colSpan={6}>
               <div style={{ position: "relative" }}>
                 {virtualizer.getVirtualItems().map((virtualItem) => {
                   const event = events[virtualItem.index]!;

@@ -19,6 +19,12 @@ import { FX_HISTORY_MAX, useFxHistory } from "@/lib/fx/use-fx-history";
 
 const LIMIT_OPTIONS = [30, 90, 365] as const;
 
+/** 来源显示文案（接口枚举仍是 manual/external）。 */
+const SOURCE_LABELS: Record<string, string> = {
+  manual: "手工录入",
+  external: "外部汇率源",
+};
+
 export function FxHistoryCard() {
   const [base, setBase] = useState("USD");
   const [quote, setQuote] = useState("CNY");
@@ -29,7 +35,7 @@ export function FxHistoryCard() {
   return (
     <SectionCard
       title="汇率历史"
-      description={`按币种对查历史汇率（时间倒序，最多返回 ${FX_HISTORY_MAX} 条；后端 limit 上限即 ${FX_HISTORY_MAX}）。`}
+      description={`按币种对查历史汇率（时间倒序，最多显示 ${FX_HISTORY_MAX} 条）。`}
     >
       <div className="mb-3 flex flex-wrap items-end gap-2">
         <label className="space-y-1">
@@ -112,12 +118,12 @@ export function FxHistoryCard() {
                   </td>
                   <td className="p-2 font-mono">{row.rate}</td>
                   <td className="p-2 text-xs text-muted-foreground">
-                    {row.source ?? "unknown"}
+                    {SOURCE_LABELS[row.source ?? ""] ?? "未知来源"}
                   </td>
                   <td className="p-2">
                     {row.is_stale ? (
                       <StatusBadge tone="warning">
-                        缓存（外部源不可用）
+                        备用数据（外部汇率源暂不可用）
                       </StatusBadge>
                     ) : (
                       <StatusBadge tone="success">正常</StatusBadge>
@@ -128,7 +134,7 @@ export function FxHistoryCard() {
             </tbody>
           </table>
           <p className="mt-2 text-xs text-muted-foreground">
-            共 {rows.length} 条（本次查询上限 {limit} 条 / 后端上限{" "}
+            共 {rows.length} 条（本次显示上限 {limit} 条 / 最多{" "}
             {FX_HISTORY_MAX} 条）。
           </p>
         </div>

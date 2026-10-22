@@ -2,9 +2,10 @@
  * W5 M2 · OpenAPI 3.1 文档机检。
  *
  * 口径与 tests/route-surface.test.ts 一致：
- * - 直接注册的 163 条业务路由必须逐条出现在 paths（method + path 精确匹配）；
+ * - 直接注册的 168 条业务路由必须逐条出现在 paths（method + path 精确匹配）；
  * - 86 条透传路由由 12 个前缀 mount 覆盖（mount 记录存在 + 每条路由的 method 都有占位操作）；
- * - 163 + 86 = 249（backend/ts-migration/routes.json 真源）。
+ * - 168 + 86 = 254（backend/ts-migration/routes.json 真源；2026-10-22 设计 §13.3 新增
+ *   实收登记/订单附件 5 条）。
  *
  * 另检：/openapi.json 响应头、security 声明、请求模型关联、operationId 唯一、/docs 静态页。
  */
@@ -119,16 +120,16 @@ describe("OpenAPI 3.1（W5 M2）", () => {
     ]);
   });
 
-  it("249 条业务路由全覆盖：163 直接 + 86 透传", async () => {
+  it("254 条业务路由全覆盖：168 直接 + 86 透传", async () => {
     const routes = loadPythonRoutes();
     const proxyCovered = routes.filter((r) =>
       PROXY_PREFIXES.some((p) => r.path.startsWith(p)),
     );
     const direct = routes.filter((r) => !PROXY_PREFIXES.some((p) => r.path.startsWith(p)));
 
-    expect(direct.length).toBe(163);
+    expect(direct.length).toBe(168);
     expect(proxyCovered.length).toBe(86);
-    expect(direct.length + proxyCovered.length).toBe(249);
+    expect(direct.length + proxyCovered.length).toBe(254);
 
     const doc = await fetchDocument();
 

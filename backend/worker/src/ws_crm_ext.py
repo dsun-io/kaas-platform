@@ -35,7 +35,8 @@
 """
 from __future__ import annotations
 
-from typing import Optional
+import json as _json
+from typing import List, Optional
 
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -43,6 +44,7 @@ from pydantic import BaseModel
 import main as _main
 import inquiry_stage as _inquiry_stage
 from kaas_common.domain.enums import validate_enum
+from kaas_common.workstation.customer_serializers import normalize_inquiry_items
 from kaas_common.workstation.number_rules import NumberError, normalize_number
 
 app = _main.app
@@ -109,6 +111,19 @@ class _CustomerUpdate(BaseModel):
     owner_scope: Optional[str] = None
 
 
+class _InquiryItem(BaseModel):
+    """询盘产品行（设计 §5）：与 main.InquiryItem 同键。"""
+
+    product_key: Optional[str] = None
+    product_name: Optional[str] = None
+    product_name_raw: Optional[str] = None
+    spec_text: Optional[str] = None
+    quantity: Optional[float] = None
+    quantity_unit: Optional[str] = None
+    application: Optional[str] = None
+    notes: Optional[str] = None
+
+
 class _InquiryUpdate(BaseModel):
     status: Optional[str] = None
     # 编号可改，但仅限「还没生成报价」时
@@ -118,6 +133,8 @@ class _InquiryUpdate(BaseModel):
     quantity: Optional[float] = None
     quantity_unit: Optional[str] = None
     application: Optional[str] = None
+    # 多产品行（PATCH /inquiries 支持改 items；第一行同步回旧标量字段）
+    items: Optional[List[_InquiryItem]] = None
     notes: Optional[str] = None
     owner_scope: Optional[str] = None
 
@@ -384,6 +401,21 @@ async def update_inquiry(
             validate_enum("inquiry_channel", data["channel"])
         if "owner_scope" in data:
             validate_enum("owner_scope", data["owner_scope"])
+        # 多产品行（设计 §5）：items 落 jsonb；**第一行同步写旧标量字段**
+        # （旧报表/链式分析读 product_name_raw/quantity，不能只更新 items）。
+        # 显式传了同名列时以显式值为准（与 main.add_inquiry 同序）。
+        if "items" in data:
+            # body.model_dump() 已把嵌套 model 转成 dict，直接归一化即可
+            items = normalize_inquiry_items(data.pop("items") or [])
+            params.append(_json.dumps(items))
+            sets.append(f"items = ${len(params)}::jsonb")
+            first = items[0] if items else {}
+            for column in ("product_name_raw", "quantity", "quantity_unit",
+                           "application"):
+                if column in data:
+                    continue
+                params.append(first.get(column))
+                sets.append(f"{column} = ${len(params)}")
         for column in _INQUIRY_COLUMNS:
             if column in data:
                 params.append(data[column])

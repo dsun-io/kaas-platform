@@ -107,7 +107,7 @@ export function DocTranslatePanel({
   if (renderData.isError) {
     return (
       <p className="py-6 text-sm text-destructive">
-        读取单据内容失败，无法列出可翻译字段。
+        读取单据内容失败，无法列出可翻译的内容。
       </p>
     );
   }
@@ -120,9 +120,9 @@ export function DocTranslatePanel({
   return (
     <div className="space-y-3">
       <div className="rounded-md border px-3 py-2 text-xs text-muted-foreground">
-        只翻译<b>手工内容</b>（`raw_payload.custom`）里<b>含中文的文本字段</b>
-        ；上游带入的 英文 / 日期 / 数字 / 图片不在此列。翻译由后端 AI 任务完成
-        —— 没配 AI 时会<b>原样返回</b>，请以结果区提示为准。
+        只翻译<b>手工填写的内容</b>里<b>含中文的文本内容项</b>
+        ；上游带入的英文 / 日期 / 数字 / 图片不在此列。翻译由系统自动完成
+        —— 未开通自动翻译时会<b>原样返回</b>，请以结果区提示为准。
       </div>
 
       {fields.length === 0 ? (
@@ -130,7 +130,7 @@ export function DocTranslatePanel({
           data-testid="translate-empty"
           className="rounded-md border px-3 py-6 text-center text-sm text-muted-foreground"
         >
-          当前没有需要翻译的中文字段（已填英文或尚未填写）。
+          当前没有需要翻译的中文内容（已填英文或尚未填写）。
         </p>
       ) : (
         <>
@@ -142,7 +142,8 @@ export function DocTranslatePanel({
                   <input
                     type="checkbox"
                     className="mt-1 h-4 w-4"
-                    aria-label={`选择翻译字段 ${field.name}`}
+                    data-field={field.name}
+                    aria-label={`选择翻译内容项 ${field.label}`}
                     checked={checked}
                     onChange={(event) =>
                       setUnchecked((prev) => ({
@@ -154,9 +155,6 @@ export function DocTranslatePanel({
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium">{field.label}</span>
-                      <span className="font-mono text-[11px] text-muted-foreground">
-                        {field.name}
-                      </span>
                     </div>
                     <p className="mt-0.5 whitespace-pre-wrap break-words text-xs text-muted-foreground">
                       {field.text}
@@ -178,12 +176,12 @@ export function DocTranslatePanel({
               ) : (
                 <Languages className="mr-1 h-4 w-4" />
               )}
-              翻译为英文（{selectedCount} 个字段）
+              翻译为英文（{selectedCount} 项内容）
             </Button>
             <span className="text-xs text-muted-foreground">
               {isDraft
                 ? "草稿态：翻译成功后会自动写回并记录一条内容版本"
-                : "非草稿：后端只返回译文、不写回（如实提示）"}
+                : "非草稿：只显示译文，不写回单据"}
             </span>
           </div>
         </>
@@ -222,7 +220,7 @@ export function DocTranslatePanel({
 
           {fallback ? (
             <p className="text-xs">
-              AI 不可用：后端已<b>原样返回原文</b>（模板降级），请
+              自动翻译暂不可用：系统已<b>原样返回原文</b>，请
               <b>人工翻译</b>后再填写。
               {isDraft
                 ? "草稿态会把这批原样值写回并记一条内容版本（值没变，等于没翻译）。"
@@ -231,7 +229,7 @@ export function DocTranslatePanel({
           ) : (
             <p className="text-xs">
               {isDraft
-                ? "已写回草稿（raw_payload.custom）并记录内容版本。"
+                ? "已写回草稿，并记录一条内容版本。"
                 : "未写回（非草稿）：译文仅供参考，如需保存请退回草稿或手工填写。"}
             </p>
           )}
@@ -248,9 +246,6 @@ export function DocTranslatePanel({
                 >
                   <div className="flex flex-wrap items-center gap-1 font-medium">
                     <span>{labelOf(name)}</span>
-                    <span className="font-mono text-[11px] opacity-70">
-                      {name}
-                    </span>
                     {unchanged && (
                       <StatusBadge tone="warning">
                         未翻译（回退原文）
@@ -261,7 +256,7 @@ export function DocTranslatePanel({
                     <span className="break-words opacity-80">{original}</span>
                     <ArrowRight className="h-3 w-3 opacity-60" />
                     <span className="break-words font-medium">
-                      {translated || "（后端未返回该字段）"}
+                      {translated || "（系统没有返回这一项的译文）"}
                     </span>
                   </div>
                 </li>
