@@ -1,167 +1,159 @@
-# 交接 · 排障：侧边栏点击"无响应/不跳转"（2026-10-21）
+# 交接 · 排障：侧边栏点击"无响应/不跳转"（2026-10-21 立案 → 2026-10-22 定案）
 
-> 触发：生产 `https://kaas.powervoy.com`，从 `/quotes?tab=pricing` 点侧边栏「产品」→ URL 不变、
-> 页面不变；用户同时观察到"接口调用正常"。
-> **本文只做取证与交接，未改任何代码**（用户 2026-10-21 指令："定位原因以后创建交接文档并推送，不用动手"）。
-> 上一手交接入口：[HANDOVER_2026-10-21_CUTOVER.md](./HANDOVER_2026-10-21_CUTOVER.md)。
+> 症状：生产 `https://kaas.powervoy.com`，从 `/quotes?tab=pricing` 点侧边栏「产品」→ URL 不变、页面不变；
+> 接口调用正常（用户原话）。**第二版：根因已用 A/B 实验证实并可复现**（第一版结论已作废，见 §0.2）。
+> 本文仍**只记录取证与复现**；用户 2026-10-21 指令是"定位原因以后创建交接文档并推送，不用动手"，
+> 因此代码保持原样（实验补丁已 `git checkout` 回滚）。修不修、何时发版由用户拍板。
 
 ## 0. 结论速览
 
-| 项 | 判定 | 证据强度 |
+### 0.1 根因（已证实，可 30 秒复现）
+
+**静态导出（`output:"export"`）+ 侧边栏 `<Link prefetch={true}>` ⇒ 点击导航永久挂死。**
+
+- 位置：`frontend/src/components/layout/sidebar.tsx:166`（`prefetch={true}`）
+- 现象链：点击 → Next 的 `linkClicked` 先 `preventDefault()` → 调 `navigate(href, 'push', …, prefetchIntent)`
+  → **此后 30 秒内零网络请求、零 history 调用、零 console 报错**，URL 不变。
+- A/B 实验（同一份源码、同一静态服务器、同一 Playwright 脚本）：
+
+| 变体 | 点击「产品」结果 | 点击后网络 |
 |---|---|---|
-| 生产前端产物 = **Windows 本机构建**的静态导出（逐字节相同） | ✅ 已证实 | SHA256/MD5 相同 + 段文件名特征 |
-| Next 16 静态导出的**逐段预取文件（per-segment）命名错误**：导出成 `__next.!KGFwcCk/products/__PAGE__.txt`（正斜杠→目录），客户端请求的是 `__next.!KGFwcCk.products.__PAGE__.txt`（点号）⇒ **全站逐段预取 404** | ✅ 已证实（5 条路由全中） | 线上 URL 探测 + Next 源码 |
-| 导航"整页 RSC"通道（`/xxx.txt?_rsc=…` + `next-router-state-tree`） | ✅ 正常：200 `text/plain`、build id 一致、ETag 与本地产物相同 | curl 实测 |
-| "点了完全不动"的直接根因 | ⚠️ **未定论**（缺浏览器侧证据：console / network / hydration） | 需下一步仪器 |
+| `prefetch={true}`（现状） | `/quotes` **不变**；2/5/10/20/30s 五次采样均不变 | **0 条** |
+| `prefetch={false}`（实验） | `/quotes` → **`/products`** | `GET /products.txt?_rsc=…` → 200 |
 
-**一句话**：产物层已经确证有一个真实缺陷（逐段预取全 404），它足以让客户端路由"看起来卡住/很慢"；
-但**是否就是"完全不跳转"的唯一原因尚未证实**——因为整页 RSC 回退通道是好的，
-按 Next 代码此时应退化为整页软导航。下一手请先按 §5 抓一次浏览器证据再动手改。
+- 对照（同一页面、同一会话）：页头普通 `<Link>`（`/settings/company-profile`，未写 prefetch）**点击即跳转**，
+  且同样走 `linkClicked` → `preventDefault`（已用 `Event.prototype.preventDefault` 打栈证实两条链路一致）。
+  ⇒ 不是 Link 坏了、不是 router 坏了，是**"带 prefetch 的 Link + 静态导出"这条组合**会挂。
+- 另一条对照：`window.next.router.push('/products')`（不经过 Link）在**未被点击污染**的页面上是**成功**的
+  （会发 `/products.txt?_rsc=…` 并改 URL）；但页面一旦发生上面那种"点了没反应"，后续 push 也会被一起卡住
+  ⇒ 那个未完成的路由动作把队列占住了。
 
-## 1. 现场与复跑命令
+### 0.2 第一版结论作废说明（如实记录）
+
+第一版把"Windows 构建导致逐段预取文件命名分叉（全站 404）"当作根因。**该缺陷真实存在，但不是本次根因**：
+把文件名改成 Linux 形态（点号）后，**点击依旧不跳转**（`nested-fresh` 与 `flat-fresh` 两个变体结果相同，见 §2）。
+它会带来 404 噪声与预取失效，属于**独立缺陷**，仍应修（见 §4 P1），但不要指望它能治"点不动"。
+
+### 0.3 已排除（都实测过，别再重复怀疑）
+
+| 排除项 | 怎么排除的 |
+|---|---|
+| 整页 RSC 通道坏 | `/products.txt?_rsc=…` 200、`text/plain`、build id `4Dmti-K92OFNDpa379m6W` 与 HTML 载荷一致、ETag 与本地产物相同 |
+| build id 不一致 | HTML 与 RSC 载荷内 build id 相同；`fetch-server-response` 的 MPA 回退分支未触发 |
+| 产物损坏/过期 | 从源码**重新完整构建**（`NEXT_EXPORT=1 next build`，39 条静态路由，exit 0）后症状**完全一致** |
+| 分块缺失 | 扫描 191 个 html/txt 的 5832 条 `/_next/static/*` 引用，**0 缺失** |
+| API/鉴权/工位订阅 | 全部 `/api/v1/*` 用 Playwright 打桩 200；`full_chain` 快照；页面能正常渲染 |
+| CF 缓存规则 | `*.txt` 实测 `Cache-Control: public, max-age=0, must-revalidate`，未被 `/_next/static/*` 规则覆盖 |
+| 路由守卫挡住 | 守卫只影响渲染，不阻止 URL 变化；实测 URL 根本没变 |
+| hydrate 失败 | 无 hydration 报错、无 pageerror；同页其它 Link 可正常跳 |
+
+## 1. 复现环境（本机，全离线，不依赖生产）
+
+脚本都在 `artifacts/nav-repro/`（gitignored，可随时重跑）：
+
+| 脚本 | 作用 |
+|---|---|
+| `serve.mjs <dir> <port>` | 静态服务器，模拟 Workers Assets + SPA 回退（无扩展名/目录 → `*.html`；仅 `Accept: text/html` 才回退 index） |
+| `flatten.mjs <src> <dest>` | 把 Windows 导出的 `__next.X\Y\Z.txt` 扁平化成 Linux 形态 `__next.X.Y.Z.txt`（验证 §0.2 用） |
+| `click7.cjs <base> <label>` | 打开 `/quotes`，等 6–8s，依次点侧边栏 `/products`→`/dashboard`→`/customers`，报 URL 与网络 |
+| `longwait.cjs <base>` | 点一次后 2/5/10/20/30s 采样（证明是"永久挂死"而非"慢"） |
+| `click5.cjs <base>` | 依次验证 `router.refresh()` / `push()` / `prefetch()` / 直写 history 的行为 |
+| `click8.cjs <base>` | 给 `Event.prototype.preventDefault` 打栈，看"谁吞了这次点击" |
 
 ```powershell
-# ① 生产页面/RSC 载荷 vs 本地导出产物（两者应逐字节相同 —— 实测就是相同）
-curl.exe -sS -o $env:TEMP/p.html https://kaas.powervoy.com/products
-Get-FileHash $env:TEMP/p.html -Algorithm SHA256
-Get-FileHash frontend/out/products.html -Algorithm SHA256     # 45FFD5A1…4494D（一致）
+# 1) 构建（工作区静止；NEXT_EXPORT=1 会产出 frontend/out）
+cd frontend; $env:NEXT_EXPORT='1'; node node_modules/next/dist/bin/next build; cd ..
 
-curl.exe -sS -o $env:TEMP/p.txt 'https://kaas.powervoy.com/products.txt?_rsc=raAVn0mdyfcSFU0T' ^
-  -H 'rsc: 1' -H 'next-url: /products'
-Get-FileHash $env:TEMP/p.txt -Algorithm MD5 -ErrorAction SilentlyContinue
-# 实测：prod_md5 = f18e2f1f3741be02b40644cbf390b5ff = 本地 frontend/out/products.txt
+# 2) 起静态服务
+node artifacts/nav-repro/serve.mjs frontend/out 4173             # 现状（nested 段文件名）
+node artifacts/nav-repro/flatten.mjs frontend/out artifacts/nav-repro/flat
+node artifacts/nav-repro/serve.mjs artifacts/nav-repro/flat 4175 # 段文件名已修正
 
-# ② 逐段预取文件：客户端请求的"点号"名字 vs 线上实际存在的"目录"形态
-curl.exe -sS -o NUL -w '%{http_code} %{size_download}
-' 'https://kaas.powervoy.com/products/__next.!KGFwcCk.products.__PAGE__.txt'   # 404 13
-curl.exe -sS -o NUL -w '%{http_code} %{size_download}
-' 'https://kaas.powervoy.com/products/__next.!KGFwcCk/products/__PAGE__.txt'  # 200 8072
+# 3) 点击实验
+node artifacts/nav-repro/click7.cjs http://127.0.0.1:4173 nested
+node artifacts/nav-repro/click7.cjs http://127.0.0.1:4175 flat
+node artifacts/nav-repro/longwait.cjs http://127.0.0.1:4173
 ```
 
-实测（2026-10-21 17:5x，LAX PoP，`CF-Cache-Status: HIT`）：
+> 实验时给 `/api/v1/*` 打桩（`page.route`）：`/auth/me`、`/me/workstations`(full_chain)、`/teams/me` 按真实形状返回，
+> 其余返回空列表；`has_token=1` cookie 让 `AuthGate` 放行。打桩形状不对会先崩页面（`terms.ladder.findIndex` 等），
+> 与导航问题无关——那是测试夹具问题，已被脚本里的 `shape()` 处理。
 
-| 路由 | 客户端请求（点号，**404**） | 线上实际存在（斜杠→目录，**200**） |
-|---|---|---|
-| /products | `/products/__next.!KGFwcCk.products.__PAGE__.txt` | `/products/__next.!KGFwcCk/products/__PAGE__.txt` (8072B) |
-| /quotes | `/quotes/__next.!KGFwcCk.quotes.__PAGE__.txt` | `/quotes/__next.!KGFwcCk/quotes/__PAGE__.txt` (8751B) |
-| /customers | 404 | 200 (8482B) |
-| /dashboard | 404 | 200 (9221B) |
-| /trade-docs | 404 | 200 (8483B) |
-| 任意路由 `__next._tree.txt` | — | 200（377B 等，正常） |
+## 2. 实验原始结果
 
-本地导出目录同样如此（`Get-ChildItem frontend/out/products -Recurse`）：
+**A. 点击侧边栏（两个变体都挂）**
 
 ```
-frontend/out/products/__next._full.txt
-frontend/out/products/__next._tree.txt
-frontend/out/products/__next.!KGFwcCk\products\__PAGE__.txt   <-- 名字里带反斜杠 = Windows 路径分隔符
+nested-fresh  /products  -> /quotes (不变)  seg: []
+              /dashboard -> /quotes (不变)  seg: []
+              /customers -> /quotes (不变)  seg: []
+flat-fresh    /products  -> /quotes (不变)  seg: []
+              /dashboard -> /quotes (不变)  seg: []
+              /customers -> /quotes (不变)  seg: []
 ```
 
-## 2. 机理（Next 16.4.2 源码三处，版本在 `node_modules/.pnpm/next@16.4.2…/node_modules/next/dist/`）
+**B. 关掉 prefetch 后同一目标一次成功**
 
-1. **导出侧写文件名**（`export/index.js:755-759`）：
-   ```js
-   const segmentPaths = await collectSegmentPaths(segmentsDir)      // path.relative() 得到分隔符
-   const segmentPath = '/' + segmentFileSrc.slice(0, -RSC_SEGMENT_SUFFIX.length)
-   const segmentFilename = convertSegmentPathToStaticExportFilename(segmentPath)
-   ```
-   `collectSegmentPathsImpl` 用的是 **`path.relative()`**（`export/index.js:807`）——
-   **在 Windows 上返回 `!KGFwcCk\products\__PAGE__`（反斜杠）**，Linux 上返回正斜杠。
-
-2. **文件名编码**（`shared/lib/segment-cache/segment-value-encoding.js:82-84`）：
-   ```js
-   function convertSegmentPathToStaticExportFilename(segmentPath) {
-     return `__next${segmentPath.replace(/\//g, '.')}.txt`   // 只替换 '/'，反斜杠原样保留
-   }
-   ```
-   ⇒ Windows 上生成的文件名里残留 `\`，落到磁盘就是**多级目录**，
-   与"点号扁平名"不是同一个文件。
-
-3. **客户端请求侧**（`client/components/segment-cache/cache.js:1417-1437, 2512-2520`）：
-   请求键由 `appendSegmentRequestKeyPart` 拼成（`/(app)` 段先被 base64url 成 `!KGFwcCk`），
-   再用**同一个** `convertSegmentPathToStaticExportFilename`，但入参里是 **`/`**：
-   ```
-   requestKey = '!KGFwcCk/products/__PAGE__'  ->  __next.!KGFwcCk.products.__PAGE__.txt
-   ```
-   ⇒ 导出侧与请求侧**只在 Windows 上分叉**。Linux/CI 构建（`deploy.yml` 的 ubuntu-latest）不会有这个问题。
-
-> 直观复算（本机 Node，依赖已就位）：
-> ```powershell
-> node -e "const e=require('./node_modules/.pnpm/next@16.4.2_@babel+core@7.2_a777e1e313661c9c0170134d548c3c6c/node_modules/next/dist/shared/lib/segment-cache/segment-value-encoding.js'); const r=e.ROOT_SEGMENT_REQUEST_KEY; const a=e.appendSegmentRequestKeyPart(r,'children','!KGFwcCk'); const p=e.appendSegmentRequestKeyPart(a,'children','products'); const g=e.appendSegmentRequestKeyPart(p,'children','__PAGE__'); console.log('client =',e.convertSegmentPathToStaticExportFilename(g)); console.log('export(Win) =',e.convertSegmentPathToStaticExportFilename('/!KGFwcCk\\\\products\\\\__PAGE__'));"
-> # client = __next.!KGFwcCk.products.__PAGE__.txt
-> # export(Win) = __next.!KGFwcCk\products\__PAGE__.txt
-> ```
-
-## 3. 为什么"接口正常却不跳转"还没定论
-
-Next 的客户端导航有**两条**通道：
-
-| 通道 | 触发 | 线上实测 |
-|---|---|---|
-| 逐段预取（per-segment，PPR 风格） | `<Link prefetch>` 悬停/挂载时；命中后**软导航几乎零成本** | ❌ 全部 404（§1） |
-| 整页 RSC 回退（`fetchServerResponse`） | 逐段缺失/被拒 → 直接拉整页 `.txt` | ✅ 200、`text/plain`、build id `4Dmti-K92OFNDpa379m6W` 与 HTML 载荷一致、ETag `91a2ada6…` 与本地文件相同 |
-
-按 `client/components/segment-cache/cache.js`：预取 404 ⇒ `rejectSegmentEntriesIfStillPending(...)` +
-`REJECTION_BACKOFF_MS` 退避；导航随后走 `navigateToUnknownRoute` → `fetchServerResponse` → 应**正常软导航**。
-所以：**"完全不跳转"还缺一环解释**。可能的补充原因（未验证，勿当结论）：
-
-- **H1 hydration 未成功**：客户端 chunk 出错 ⇒ Link 的 `onClick` 已 `preventDefault` 但路由更新抛错 ⇒
-  URL 完全不变（若未 hydrate，反而是原生跳转，会换页）。查 console 是否有 hydration/ChunkLoadError。
-- **H2 预取 404 风暴的连带效应**：侧边栏每个 `<Link prefetch={true}>`（`frontend/src/components/layout/sidebar.tsx:166`）
-  都会走逐段预取；首屏 20+ 个 404 + 退避可能让"点下去几秒内无反应"→ 用户体感为"无响应"。
-- **H3 老 Service Worker 残留**：`frontend/out/mockServiceWorker.js` 会随产物上线；历史上访问过
-  mock 模式的浏览器可能仍注册着 SW，拦截同源请求（prod 是 `NEXT_PUBLIC_API_MODE=real`，正常不会启动它）。
-- **H4 路由守卫"看起来没动"**：`WorkstationGate` 命中"该工位未开通"时渲染引导页——但 URL 会变，
-  与"URL 不变"现象不符，仅作排除项。
-
-## 4. 处置建议（让下一手照着做，不必重新取证）
-
-**优先级 P0（几乎肯定要修，且能立刻验证）——用 Linux 产物构建前端静态导出：**
-
-1. 首选：直接用 CI 的 `build-frontend` job 产物（`deploy.yml` = ubuntu-latest，天然正斜杠），
-   下载 artifact 后 `cd backend/ts-worker; pnpm wrangler deploy`；不要"本机 Windows 构建 + 直接 deploy"。
-2. 次选：本机用 WSL / 容器跑 `NEXT_EXPORT=1 pnpm build`。
-3. 验证口径（部署后应全部 200）：
-   ```powershell
-   curl.exe -sS -o NUL -w '%{http_code}\n' 'https://kaas.powervoy.com/products/__next.!KGFwcCk.products.__PAGE__.txt'
-   curl.exe -sS -o NUL -w '%{http_code}\n' 'https://kaas.powervoy.com/quotes/__next.!KGFwcCk.quotes.__PAGE__.txt'
-   ```
-   附带检查：`frontend/out` 下不应再出现任何名字里含 `\` 的文件。
-
-**P1（若部署后仍"完全不跳"）—— 抓浏览器证据，别再靠 curl 猜：**
-```ts
-// frontend/e2e/ 里临时加一条（或 playwright 脚本）：
-page.on('console', m => console.log('[console]', m.type(), m.text()));
-page.on('pageerror', e => console.log('[pageerror]', e.message));
-page.on('response', r => { if (r.url().includes('__next') || r.url().includes('.txt')) console.log('[resp]', r.status(), r.url()); });
-await page.goto('https://kaas.powervoy.com/login'); /* 登录 */
-await page.goto('https://kaas.powervoy.com/quotes?tab=pricing');
-await page.getByRole('link', { name: '产品' }).click();
-console.log('URL after click =', page.url());
 ```
-判定：(a) 有 `pageerror`/`ChunkLoadError` ⇒ 修 hydration/分块；(b) 只有 404 且 URL 变了 ⇒ 已修（P0 生效）；
-(c) 404 且 URL 不变且无报错 ⇒ 继续查 router 状态机与 SW。
+no-prefetch   /products  -> /products (跳转!)
+              seg: REQ /products.txt?_rsc=YE0JWx0soY2IZPl6 -> RES 200
+```
 
-**不建议的绕法**：把侧边栏 `Link` 改成 `prefetch={false}` 或 `window.location`。那只是掩盖
-"产物命名错误"，还丢掉 SPA 体验；根因在构建环境，改构建即可。
+**C. 同一页面里"普通 Link"与"侧边栏 Link"的差别（click8）**：两者 preventDefault 的调用栈**完全相同**
+（`chunk 1p19p_u-tojf4.js` 的 `linkClicked` → `onClick`），差别只在 `prefetch` 传参。
 
-## 5. 附：本次已核实"不是原因"的项
+**D. 长时间采样（longwait，prefetch=true）**：点击后 2/5/10/20/30 秒采样，URL 恒为 `/quotes`，
+网络恒为空 ⇒ **不是慢，是挂死**。
 
-- ❌ 不是 RSC 载荷缺失/内容错：`/products.txt` 与本地产物 MD5 相同。
-- ❌ 不是 build id 不匹配：HTML 与 RSC 载荷里都是 `4Dmti-K92OFNDpa379m6W`。
-- ❌ 不是 `text/plain` 不被认：Next 在 `output: "export"` 下显式接受 `text/plain`（`fetch-server-response.js:130-135`）。
-- ❌ 不是 API/鉴权/工位订阅：用户反馈接口正常；且 `/api/v1/*` 走 `kaas-edge` → `KERNEL` 透传，与页面路由无关。
-- ❌ 不是 CF 缓存规则误伤：`/_next/static/*` 规则不覆盖 `*.txt`（实测 `Cache-Control: public, max-age=0, must-revalidate`）。
+## 3. 机理（能确认的部分 / 未逐行确认的部分）
+
+- 能确认：`node_modules/next/dist/client/app-dir/link.js` 的 `linkClicked()` 在本地 URL 上先
+  `e.preventDefault()`，再 `require('../components/navigator').navigate(href, 'push', scroll, linkInstanceRef.current, transitionTypes, prefetchIntent)`。
+  `sequential-router-queue.js:73` 的 `navigate()` 用 `startTransition` 包住 `startRouterTransition(…, prefetchIntent)` +
+  `dispatchAppRouterAction(ACTION_NAVIGATE)`。实测 **dispatch 之后没有任何 fetch**，且随后 `router.push` 也被卡住
+  ⇒ 卡点在"等 prefetch 完成"的那一步（`ensurePrefetchThenNavigate` 路径），而静态导出下这条 prefetch **永远不会 resolve**，
+  也没有超时兜底。
+- 未逐行确认：为什么 export 模式下 prefetch 不 resolve（候选：`_tree` 响应缺 Next 期望的完成信号 / 逐段请求在
+  Windows 产物上是 404 导致 entry 一直被 reject 重试）。注意 §0.2：把段文件修正成 200 后**点击仍然挂**，
+  所以"404 导致"这条候选**已被削弱**，更像是 export 模式下 prefetch 完成信号本身缺失。
+
+## 4. 处置建议
+
+### P0（治"点不动"，一行 + 重建 + 部署；已本机验证）
+
+`frontend/src/components/layout/sidebar.tsx:166`：`prefetch={true}` → `prefetch={false}`。
+
+- 影响面只在本机验证过（静态服务器 + Playwright，prefetch=false 变体点击立即跳转）。
+- 代价：侧边栏失去预取（首次进入各页会多一次 `xxx.txt?_rsc=…` 请求，几十毫秒级），换来"点了能跳"。
+- 更好的替代（未验证）：升级 Next；或保留 prefetch 但加"点击兜底"（`onNavigate`/超时后 `window.location`）。
+  不建议把侧边栏整体换成 `window.location`（丢 SPA、丢状态）。
+
+### P1（治"全站逐段预取 404"，独立缺陷）
+
+静态导出改用 **Linux/CI 构建**（`deploy.yml` 的 ubuntu-latest 产物，或 WSL），不要"Windows 本机构建 + 直接 deploy"。
+判据：`frontend/out` 下不应再出现名字里带 `\` 的文件；部署后
+`/products/__next.!KGFwcCk.products.__PAGE__.txt` 应为 200。
+
+### P2（防复发）
+
+- 在 AGENTS.md 部署段立规：Windows 构建的静态导出不得直接 deploy；门禁可加一条"out/ 下不得有含反斜杠的文件名"。
+- 给"导出产物 + 点侧边栏 → URL 变化"补一条 e2e（当前 e2e 跑 dev server，抓不到导出态这类问题）。
+
+## 5. 影响面
+
+- 生产当前**所有**"带 `prefetch` 的 Link"都会这样：侧边栏全部入口（`sidebar.tsx:166` 是唯一显式写 `prefetch={true}` 的地方，
+  `grep -r "prefetch" frontend/src` 只此一处）；其它 `<Link>`（页头、卡片等，未写 prefetch）点击正常。
+- 用户能看到的表现就是"侧边栏点了没反应"，但站内其它链接、刷新、直接输入 URL 都正常。
 
 ## 6. 待办登记
 
 | 项 | 状态 | 触发点 |
 |---|---|---|
-| 前端导出改由 Linux/CI 构建并重新部署门面 | ⏳ 未做（等用户指令） | 用户确认后执行 §4 P0 |
-| 部署后按 §4 验证脚本复验 5 条路由 | ⏳ 未做 | 同上 |
-| 若仍不跳：按 §4 P1 抓浏览器证据 | ⏳ 未做 | P0 无效时 |
-| 立规：**Windows 构建的静态导出不得直接 deploy**（写进 AGENTS.md 部署段） | ⏳ 未做 | 下一次文档同步 |
+| P0：`prefetch={false}` + 重建 + 部署门面 | ⏳ **未做**（等用户拍板；改代码/发版按规则需确认） | 用户确认 |
+| P1：改 CI/Linux 构建静态导出并重新部署 | ⏳ 未做 | 与 P0 同批 |
+| P2：AGENTS.md 立规 + 导出态 e2e | ⏳ 未做 | P0 之后 |
+| 部署后补验证结果到本交接 | ⏳ 未做 | 部署后 |
 
 ---
 
-*取证与撰写：lead（DSH AI），2026-10-21 18:0x。仅文档，未改动代码；未部署。*
+*取证：lead（DSH AI），2026-10-21 立案 / 2026-10-22 定案。仅文档与 `artifacts/` 下本地实验脚本；`frontend/src` 已回滚为原样，未部署。*

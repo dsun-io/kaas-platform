@@ -50,7 +50,7 @@ backend/orchestrator/.venv/Scripts/python.exe backend/ts-migration/golden/diff_r
 | Notion 集成 token 吊销 | 用户在 Notion 后台操作（API 无端点） | 用户方便时 |
 | TS 门面已知差异 | 见 `backend/ts-worker/README.md`（422 措辞/时间戳精度/BigInt 类型/SigV4 TODO:TS5 等） | 各项 TODO 编号 |
 | 真源不一致 `ORDER_NEXT` | `TODO.md §F2` | 内核侧收敛时 |
-| **前端侧边栏点击不跳转（在办）** | 已取证：Windows 构建的静态导出把逐段预取文件写成目录 ⇒ 全站预取 404；整页 RSC 通道正常。待用户指令改用 Linux/CI 产物重部署 | [`HANDOVER_2026-10-21_NAV_STUCK.md`](./HANDOVER_2026-10-21_NAV_STUCK.md) |
+| **前端侧边栏点击不跳转（已定案，待修）** | 根因=`sidebar.tsx:166` 的 `prefetch={true}` + 静态导出 ⇒ 点击挂死（本机 A/B 已证实）；P0 一行修复 + 改用 Linux/CI 产物重建，均待用户拍板 | [`HANDOVER_2026-10-21_NAV_STUCK.md`](./HANDOVER_2026-10-21_NAV_STUCK.md) |
 
 ## 4. 接手注意（实测坑）
 
