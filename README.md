@@ -45,7 +45,7 @@
 | Hyperdrive | 本地直连 | 每 PR 独立 `kaas-preview-<num>`（`caching.disabled=true`） | `kaas-apac`（`68304207…`）→ 新加坡库 |
 | KV | 不用 | `KAAS_PREVIEW`，前缀 `pr-<num>:` | **无 KV 绑定** |
 | Worker | uvicorn | `kaas-preview-pr-<num>.workers.dev` | **`kaas-edge`（TS 门面，对外）+ `kaas`（Python 内核，仅 Service Binding）** |
-| 入口 | `docker compose up -d` + `pnpm dev` | PR 自动 / `workflow_dispatch` | push main 只跑 CI；**部署仅手动 dispatch** |
+| 入口 | `docker compose up -d` + `pnpm dev` | PR 打 `preview` label / `workflow_dispatch` | push main 只跑 CI（e2e 走 PR/夜间）；**部署仅手动 dispatch** |
 
 **原则**：环境物理隔离；开发默认不触云；预览之间共享预览资源、按 PR 前缀隔离。
 

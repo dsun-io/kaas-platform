@@ -1,7 +1,11 @@
 name: Frontend CI
 
+# 2026-10-22 CI 瘦身（口径见 docs/CI_OPTIMIZATION_2026-10-22.md）：
+#   · e2e 不再随 push 到 main 跑 —— 只在 PR / 每晚定时 / 手动触发（单次 ≈2.6min，是 CI 大头）
+#   · e2e 里的 `pnpm build` 已删：Playwright webServer 起的是 `next dev`，该产物从未被使用
+#   · 加 concurrency + cancel-in-progress：推送频繁时自动取消过期 commit 的 run（省分钟）
 on:
-  # 手动触发：CI 排障单跑（与 backend-test 同口径）；本文件在自身 push paths 内，改动即自触发。
+  # 手动触发：CI 排障单跑（与 backend-test 同口径）。
   workflow_dispatch:
   push:
     branches: [main]
@@ -15,6 +19,14 @@ on:
       - 'frontend/**'
       - 'shared/contracts/**'
       - '.github/workflows/frontend-ci.yml'
+  schedule:
+    # GitHub cron 只在默认分支生效；18:00 UTC = 02:00 Asia/Shanghai 夜间全量回归。
+    - cron: '0 18 * * *'
+
+# 过期运行取消（同 workflow + 同 ref）：push 密集时只保留最新一次。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 # 最小权限：本工作流只需要读代码（secrets 只在 job 内按 env 注入）
 permissions:
@@ -59,7 +71,9 @@ jobs:
 
       - run: pnpm test
 
+  # UI 回归只在 PR / 夜间定时 / 手动跑：push 到 main 不再触发（2026-10-22 瘦身）。
   e2e:
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -82,8 +96,8 @@ jobs:
 
       - run: npx playwright install chromium --with-deps
 
-      - run: pnpm build
-
+      # 不跑 `pnpm build`：webServer 起的是 `next dev`（frontend/playwright.config.ts），
+      # 该产物从未被 e2e 使用 —— 2026-10-22 实测纯浪费 ≈1.2min/次。
       - run: pnpm e2e
         env:
           NEXT_PUBLIC_API_MODE: mock

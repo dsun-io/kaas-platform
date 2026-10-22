@@ -1,4 +1,4 @@
-﻿name: contracts:check
+name: contracts:check
 
 # 触发条件必须覆盖【所有契约源】—— 否则改了契约却没人校验，规则形同虚设。
 # S4（2026-10-19）后契约源从 `backend/orchestrator/app/**`（已删壳）迁到：
@@ -9,37 +9,33 @@
 #   R4 线上 Worker 镜像 → backend/worker/src/**
 #   R5 admin 端点键集  → backend/kaas_common/contracts/admin.py + trade_doc_payload.py（冻结副本）
 #   R6 openapi 新鲜度  → **已退役**（单应用后无第二后端源码可基准；artifact 冻结，见 R6 skip 日志）
+# 2026-10-22 CI 瘦身（口径见 docs/CI_OPTIMIZATION_2026-10-22.md）：
+# 去掉落在 frontend-ci 触发面内的路径（`frontend/**` 与 `shared/contracts/**`）——
+# frontend-ci 的 check job 已经在跑**同一个** `pnpm contracts:check`，重复触发只是白跑。
+# 其余是 backend-only 契约源（frontend-ci 覆盖不到），必须留在这里。
 on:
   push:
     paths:
-      - 'shared/contracts/**'
       - 'backend/kaas_common/**'
       - 'backend/contracts_frozen/**'
       - 'backend/worker/src/**'
-      - 'frontend/src/lib/trade-doc/**'
       - 'backend/docs/schema-registry.md'
       - 'scripts/contracts-check.ts'
-      - 'frontend/src/app/(app)/settings/hooks/use-tenants.ts'
-      - 'frontend/src/app/(app)/settings/components/types.ts'
-      - 'frontend/src/app/(app)/admin/gray-release/hooks/use-feature-flags.ts'
-      - 'frontend/src/app/(app)/admin/gray-release/components/flag-toggle.tsx'
       - 'scripts/contracts-allowlist.txt'
       - 'backend/orchestrator/docs/openapi.json'
   pull_request:
     paths:
-      - 'shared/contracts/**'
       - 'backend/kaas_common/**'
       - 'backend/contracts_frozen/**'
       - 'backend/worker/src/**'
-      - 'frontend/src/lib/trade-doc/**'
       - 'backend/docs/schema-registry.md'
       - 'scripts/contracts-check.ts'
-      - 'frontend/src/app/(app)/settings/hooks/use-tenants.ts'
-      - 'frontend/src/app/(app)/settings/components/types.ts'
-      - 'frontend/src/app/(app)/admin/gray-release/hooks/use-feature-flags.ts'
-      - 'frontend/src/app/(app)/admin/gray-release/components/flag-toggle.tsx'
       - 'scripts/contracts-allowlist.txt'
       - 'backend/orchestrator/docs/openapi.json'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check:

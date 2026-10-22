@@ -14,6 +14,15 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-22 · CI 瘦身 ✅，不删门禁）** GitHub Actions 私有仓库免费额度 2,000 分钟/月长期吃紧
+> （实测按 job 计费口径月耗 ≈3,400–4,700 分钟；2026-10-17 曾因额度/账单被挡在任务启动前）。本次只瘦触发面：
+> ①Frontend CI 的 **e2e 从 push 移出**（仅 PR / 每晚 02:00 定时 / 手动），并删掉 e2e 里**从未被使用**的 `pnpm build`；
+> ②backend:test **push 限 main**、paths 收窄（去掉 `backend/**`/`scripts/**` 宽面），**真 PG 集成 job 只在 PR/定时跑**；
+> ③contracts:check 去掉与 frontend check job 重复的路径；④preview 改为 **PR 打 `preview` label 才构建**（close 仍无条件 teardown）；
+> ⑤4 个测试 workflow 加 `concurrency` cancel-in-progress。预计月耗降到 ≈1,500–2,000。
+> **`deploy.yml` 仍 `workflow_dispatch` only（2026-10-20 裁决不变）**；CF Workers Builds 未接。
+> 口径、验证方法、**self-hosted runner 规划（已批准、未实施）**见 [`CI_OPTIMIZATION_2026-10-22.md`](./CI_OPTIMIZATION_2026-10-22.md)。
+
 > **（2026-10-21 · W5 全部完成 ✅ 对外 MCP+REST 能力上线）** ①M4 对外文档：[`W5_EXTERNAL_USAGE_2026-10-21.md`](./W5_EXTERNAL_USAGE_2026-10-21.md)
 > （REST curl 示例 / MCP client 配置 / 21 项 scope 清单与默认拒绝 / 审计边界如实登记）；②**UI 令牌管理页上线**
 > `/settings/api-tokens`（列表/创建 21 scopes 多选/一次性明文强制手动关闭/撤销二次确认 409 展示；

@@ -24,8 +24,10 @@ on:
         required: false
         default: false
         type: boolean
+  # 2026-10-22 CI 瘦身：PR 预览只在 PR 带 `preview` label 时构建（由 labeled 事件触发）。
+  # 关闭 PR 仍无条件 teardown，避免资源泄漏。
   pull_request:
-    types: [opened, synchronize, reopened, closed]
+    types: [opened, synchronize, reopened, labeled, closed]
     paths:
       - "backend/**"
       - "frontend/**"
@@ -73,7 +75,11 @@ jobs:
         run: python3 scripts/preview/teardown.py --pr "${{ env.PR_NUMBER }}"
 
   preflight:
-    if: github.event.action != 'closed'
+    # workflow_dispatch 或 PR 打了 `preview` label 才构建；close 事件由 teardown 兜底。
+    if: >-
+      github.event.action != 'closed'
+      && (github.event_name == 'workflow_dispatch'
+          || contains(github.event.pull_request.labels.*.name, 'preview'))
     name: Preflight（CF token 权限校验）
     runs-on: ubuntu-latest
     steps:

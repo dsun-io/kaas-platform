@@ -45,6 +45,8 @@
 | B-3 | ~~C2/C10 打印视觉 QA~~ | ✅ 2026-10-21 用户确认打印 OK（`docs/acceptance/print-qa/` 3 份 A4） | — |
 | B-4 | ~~C36 拍板~~ | ✅ 2026-10-21 用户批准删 3 条（PATCH /spec/prices/{id}、POST /spec/skus/{id}/prices、POST /file-objects/upload）；13 条 owner 待后续统一确认 | — |
 | B-5 | ~~A6 合同 12 条双语条款抽查~~ | ✅ 2026-10-21 用户确认条款 OK（默认措辞可编辑，法务后续可改） | — |
+| B-6 | **CI self-hosted runner（已批准方向，未实施）** | 提供一台常开的 **Linux** 机器（或授权本机常驻），按 [`CI_OPTIMIZATION_2026-10-22.md`](./CI_OPTIMIZATION_2026-10-22.md) §6 注册 runner；之后把 e2e / backend 重 job 改 `runs-on: [self-hosted, linux-x64]` | 私有仓库免费额度只有 2,000 分钟/月，按当前推送频率仍会持续超额；runner 的分钟数免费且无上限 |
+
 ### C. 已按你裁决不做 / 暂缓（不再列为待办）
 
 - **C24** 客户触达「产品手册附件」——暂缓；**N10** 事件流联通——暂缓；

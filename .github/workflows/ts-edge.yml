@@ -15,6 +15,11 @@ on:
 permissions:
   contents: read
 
+# 2026-10-22：过期运行取消（同 workflow + 同 ref），避免连推时旧 run 白跑。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   gate:
     name: typecheck + test

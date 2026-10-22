@@ -1,6 +1,6 @@
 # 文档索引 · 交接从这里开始
 
-> 更新时间：**2026-10-21 切流收口** —— **生产已由 TS 门面 `kaas-edge` 承载（两层架构生效）**；
+> 更新时间：**2026-10-22 CI 瘦身**（见 [`CI_OPTIMIZATION_2026-10-22.md`](./CI_OPTIMIZATION_2026-10-22.md)）· 2026-10-21 切流收口 —— **生产已由 TS 门面 `kaas-edge` 承载（两层架构生效）**；
 > Python Worker `kaas` 退居内核（引擎/AI/cron，仅经 Service Binding）。门面冷启动 ~25ms（内核 4674ms）。
 > 门禁：ts-worker **99（17 文件）** / worker **1565+12skip** / orchestrator 247 / 前端 926 / e2e 27 / 四项静态门禁 PASS。
 > **完成后归档**：过时交接与历史计划已移入 [`archive/2026-10-21-cutover/`](./archive/2026-10-21-cutover/README.md)；
@@ -41,6 +41,7 @@
 | [PROBLEM_STATUS_2026-10-11.md](./PROBLEM_STATUS_2026-10-11.md) | 问题状态滚动口径 |
 | [TODO.md](./TODO.md) | 活跃待办唯一账本 |
 | [UNCERTAIN.md](./UNCERTAIN.md) | 决策账本（存疑/裁决落盘） |
+| [CI_OPTIMIZATION_2026-10-22.md](./CI_OPTIMIZATION_2026-10-22.md) | **CI 成本口径（2026-10-22）**：实测月耗、触发面瘦身清单、保留的门禁、验证/回滚方法、**self-hosted runner 规划（已批准、未实施）** |
 | [QA_TEST_ACCOUNTS.md](./QA_TEST_ACCOUNTS.md) | 测试账号与验收口径 |
 | [E2E_GUIDE.md](./E2E_GUIDE.md) | e2e 一键运行说明（2026-10-21 口径：27 条 = 27 passed + 0 skipped） |
 | [API_RESERVED_LIST.md](./API_RESERVED_LIST.md) | **后端先行 API 保留清单（C36）**：扫描基线 60 条未接分类（内部/REST 契约/待接 UI/可删候选）；**2026-10-21 删 3 + 接 21（本期 5 + 下期 12）后剩余约 36 条**（待接 UI 仅 3 条长期保留），证据与计数见该文 §0；新增端点/接 UI 后按 §4 维护 |

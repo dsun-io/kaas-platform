@@ -1,18 +1,57 @@
 name: backend:test
 
+# 2026-10-22 CI 瘦身（口径见 docs/CI_OPTIMIZATION_2026-10-22.md）：
+#   · push 只在 main 触发（分支推送不再与 pull_request 双跑）
+#   · paths 收窄：不再用宽泛的 `backend/**` / `scripts/**`，只列真正影响门禁的源与脚本
+#     （poc-*、ts-migration、scripts/archive 等改动不再触发）
+#   · 真 PG 集成 job 只在 PR / 每晚定时 / 手动跑（push 只跑快检查）
+#   · 加 concurrency + cancel-in-progress
 on:
-  # 手动触发：CI 排障时避免「每次 push 都触发生产部署/重复测试」，
-  # 可用 `POST /actions/workflows/backend-test.yml/dispatches {"ref":"main"}` 单跑测试。
+  # 手动触发：CI 排障单跑（与 frontend-ci 同口径）。
   workflow_dispatch:
 
   push:
+    branches: [main]
     paths:
-      - 'backend/**'
-      - 'scripts/**'
+      - 'backend/orchestrator/**'
+      - 'backend/worker/src/**'
+      - 'backend/worker/tests/**'
+      - 'backend/worker/pyproject.toml'
+      - 'backend/worker/pylock.toml'
+      - 'backend/worker/wrangler.jsonc'
+      - 'backend/kaas_common/**'
+      - 'backend/contracts_frozen/**'
+      - 'scripts/check-runtime-deps.py'
+      - 'scripts/check-schema-coverage.py'
+      - 'scripts/check-schema-drift.py'
+      - 'scripts/check-structural-debt.py'
+      - 'scripts/check-worker-bundle.py'
+      - 'scripts/sync-shared.ps1'
+      - '.github/workflows/backend-test.yml'
   pull_request:
     paths:
-      - 'backend/**'
-      - 'scripts/**'
+      - 'backend/orchestrator/**'
+      - 'backend/worker/src/**'
+      - 'backend/worker/tests/**'
+      - 'backend/worker/pyproject.toml'
+      - 'backend/worker/pylock.toml'
+      - 'backend/worker/wrangler.jsonc'
+      - 'backend/kaas_common/**'
+      - 'backend/contracts_frozen/**'
+      - 'scripts/check-runtime-deps.py'
+      - 'scripts/check-schema-coverage.py'
+      - 'scripts/check-schema-drift.py'
+      - 'scripts/check-structural-debt.py'
+      - 'scripts/check-worker-bundle.py'
+      - 'scripts/sync-shared.ps1'
+      - '.github/workflows/backend-test.yml'
+  schedule:
+    # GitHub cron 只在默认分支生效；18:30 UTC = 02:30 Asia/Shanghai 夜间全量（含真 PG 集成）。
+    - cron: '30 18 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   unit-tests:
@@ -114,7 +153,9 @@ jobs:
   # worker 用裸 asyncpg 手写 SQL，假 DB 测不出「NOT NULL 且无默认值 / 漏列」这类
   # 500（注册、创建客户、手动报价都在线上踩过）。这里起真 PG，用 orchestrator 的
   # alembic 建 schema，再跑 backend/worker/tests/integration 的写库用例。
+  # 真 PG 集成 + alembic 往返：只在 PR / 夜间定时 / 手动跑（push 省分钟，2026-10-22）。
   worker-db-tests:
+    if: github.event_name != 'push'
     name: "worker:integration（真 PG 写入路径）"
     runs-on: ubuntu-latest
     timeout-minutes: 20
