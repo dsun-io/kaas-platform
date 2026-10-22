@@ -50,7 +50,7 @@ backend/orchestrator/.venv/Scripts/python.exe backend/ts-migration/golden/diff_r
 | Notion 集成 token 吊销 | 用户在 Notion 后台操作（API 无端点） | 用户方便时 |
 | TS 门面已知差异 | 见 `backend/ts-worker/README.md`（422 措辞/时间戳精度/BigInt 类型/SigV4 TODO:TS5 等） | 各项 TODO 编号 |
 | 真源不一致 `ORDER_NEXT` | `TODO.md §F2` | 内核侧收敛时 |
-| **前端侧边栏点击不跳转** | ✅ **已修并上线（2026-10-22）**：根因=`sidebar.tsx:166` 的 `prefetch={true}` + 静态导出 ⇒ 点击导航永久挂死；改 `prefetch={false}` + 重建 + 部署 `kaas-edge`（version `fe855137-87ac-4c05-8238-9d5266d44567`），线上产物与本地逐字节一致。**遗留 P1**：Windows 产物导致逐段预取 404（不阻塞导航，待 Linux/CI 重建） | [`HANDOVER_2026-10-21_NAV_STUCK.md`](./HANDOVER_2026-10-21_NAV_STUCK.md) |
+| **前端侧边栏点击不跳转** | ✅ **已修并上线（2026-10-22，P0+P1 全闭环）**：P0=`sidebar.tsx:166` 的 `prefetch={true}`+静态导出使点击导航挂死 ⇒ 改 `prefetch={false}`；P1=Windows 构建使逐段预取 404 ⇒ 改 Docker `node:22` Linux 构建。两次部署 version `fe855137` → **`71be6dbb-56c7-4b78-b4cb-a0634abc5032`**；线上产物与本地 SHA256 一致、点号段文件 200 | [`HANDOVER_2026-10-21_NAV_STUCK.md`](./HANDOVER_2026-10-21_NAV_STUCK.md) |
 
 ## 4. 接手注意（实测坑）
 

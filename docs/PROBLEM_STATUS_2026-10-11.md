@@ -19,8 +19,9 @@
 > 点击后 **30s 零请求/零报错/URL 不变**（本机 A/B 证实：`prefetch={false}` 即恢复）。已改 `prefetch={false}` 并重建部署
 > 门面 `kaas-edge`（version `fe855137-87ac-4c05-8238-9d5266d44567`，线上 `quotes.html` 与本地产物 SHA256 一致；
 > 冒烟 `/health` 200 / 未带 token 401 / 页面 200；`pnpm typecheck` 0、`pnpm test` 934/110）。
-> **遗留 P1（未修）**：Windows 本机构建的静态导出把逐段预取文件写成目录（`__next.X\\Y.txt`），
-> 客户端请求点号名 `__next.X.Y.txt` ⇒ 全站预取 404（不阻塞导航，只损预取）；修法=改用 Linux/CI 构建产物再 deploy。
+> **P1 也已修（同日）**：Windows 本机构建把逐段预取文件写成目录（`__next.X\\Y.txt`），客户端请求点号名 ⇒ 全站预取 404；
+> 已改用 **Docker `node:22` 容器内 Linux 构建**（302 文件，点号名正确）并重新部署门面（version `71be6dbb-56c7-4b78-b4cb-a0634abc5032`），
+> 线上 `/products/__next.!KGFwcCk.products.__PAGE__.txt` 已由 404 变 **200**；**发版请走 Linux/CI 构建，勿用 Windows 产物直接 deploy**（P2 待立规）。
 > 取证/复现脚本/执行记录见 [`HANDOVER_2026-10-21_NAV_STUCK.md`](./HANDOVER_2026-10-21_NAV_STUCK.md)。
 
 > **（2026-10-22 · CI 瘦身 ✅，不删门禁）** GitHub Actions 私有仓库免费额度 2,000 分钟/月长期吃紧
