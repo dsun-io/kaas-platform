@@ -53,6 +53,7 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { useTeam } from "@/lib/team/team-context";
 import { Skeleton } from "@/components/ui/skeleton";
 import { visibleNavGroups, workstationByRoute } from "@contracts/workstations";
+import { usePendingApprovalsCount } from "@/lib/approvals/use-approvals";
 import { filterNavGroups } from "@/lib/workstation/visibility";
 
 /**
@@ -129,6 +130,9 @@ function SidebarNavSkeleton({ collapsed }: { collapsed: boolean }) {
 //   · status 控制可见性（planned/hidden 不上侧边栏）
 //   · 已开通工位再过滤一层（未开通的工位点了就是 404，入口不该出现）
 function SidebarNav({ collapsed }: { collapsed: boolean }) {
+  // 「待批」角标：与审批中心 GET /approvals?view=pending 的 total 同源。
+  // 注意：它与通知铃铛的「未读数」不是同一口径（已读/已处理不计入待批）。
+  const pendingApprovals = usePendingApprovalsCount();
   const pathname = usePathname();
   const { user, isLoading: authLoading } = useAuth();
   const { snapshot } = useTeam();
@@ -188,6 +192,23 @@ function SidebarNav({ collapsed }: { collapsed: boolean }) {
                       )}
                     />
                     {!collapsed && <span className="truncate">{w.name}</span>}
+                    {w.key === "approvals" && pendingApprovals > 0 ? (
+                      <span
+                        aria-label={`${pendingApprovals} 条待审批`}
+                        className={cn(
+                          "inline-flex items-center justify-center rounded-full bg-primary text-[11px] font-medium text-primary-foreground tabular-nums",
+                          collapsed
+                            ? "ml-0.5 size-1.5 p-0"
+                            : "ml-auto min-w-5 px-1.5",
+                        )}
+                      >
+                        {collapsed
+                          ? ""
+                          : pendingApprovals > 99
+                            ? "99+"
+                            : pendingApprovals}
+                      </span>
+                    ) : null}
                   </Link>
                 );
               })}

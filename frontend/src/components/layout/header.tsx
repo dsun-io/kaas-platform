@@ -18,6 +18,8 @@ import {
   workstationByRoute,
 } from "@contracts/workstations";
 
+import { NotificationBell } from "./notification-bell";
+
 interface Crumb {
   label: string;
   href?: string;
@@ -98,6 +100,8 @@ export function Header() {
         </BreadcrumbList>
       </Breadcrumb>
       <div className="ml-auto" />
+      {/* M2-C：站内通知铃铛（未读角标 / 通知抽屉）；只插入，不改面包屑结构 */}
+      <NotificationBell />
       {!snapshot.loading && teamName && (
         <span className="hidden items-center gap-1.5 rounded-full border border-white/70 bg-white/60 px-2.5 py-1 text-xs text-muted-foreground md:inline-flex">
           <Users className="size-3" />

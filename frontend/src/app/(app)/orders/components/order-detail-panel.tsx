@@ -11,7 +11,7 @@
  * 并明确提示「历史订单未拆费用」，不伪造运费/保险等四项。
  */
 import { useMemo, useState } from "react";
-import { AlertCircle, X } from "lucide-react";
+import { AlertCircle, PencilLine, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { SectionCard } from "@/components/shared/section-card";
@@ -28,7 +28,14 @@ import {
   type OrderDetail,
 } from "@/lib/orders/order-detail";
 
+import { orderItemsEditMode } from "@/lib/orders/item-change";
+
+import { useOrderChangeRequests } from "../hooks/use-order-items";
 import { useOrderDetail, useUpdateOrderTerms } from "../hooks/use-order-detail";
+
+import { OrderChangeBanner } from "./order-change-banner";
+import { OrderItemsEditor } from "./order-items-editor";
+import { OrderSourceChain } from "./order-source-chain";
 
 const STATUS_TONE: Record<
   string,
@@ -76,6 +83,8 @@ export function OrderDetailPanel({
 }) {
   const detail = useOrderDetail(orderId);
   const saveTerms = useUpdateOrderTerms(orderId);
+  const changeRequests = useOrderChangeRequests(orderId);
+  const [editingItems, setEditingItems] = useState(false);
 
   if (detail.isLoading) {
     return (
@@ -124,6 +133,13 @@ export function OrderDetailPanel({
           </Button>
         }
       >
+        <OrderSourceChain order={order} />
+        <OrderChangeBanner
+          orderId={order.id}
+          currency={currency}
+          requests={changeRequests.data?.items ?? []}
+        />
+
         <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
           <StatusBadge tone={STATUS_TONE[order.status] ?? "default"}>
             {ORDER_STATUS_LABEL[order.status] ?? order.status}
@@ -155,19 +171,25 @@ export function OrderDetailPanel({
               <div className="flex justify-between gap-4">
                 <dt className="text-muted-foreground">运费</dt>
                 <dd className="tabular-nums">
-                  {fallback ? "—" : formatOrderMoney(breakdown.freight_amount, currency)}
+                  {fallback
+                    ? "—"
+                    : formatOrderMoney(breakdown.freight_amount, currency)}
                 </dd>
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-muted-foreground">保险费</dt>
                 <dd className="tabular-nums">
-                  {fallback ? "—" : formatOrderMoney(breakdown.insurance_amount, currency)}
+                  {fallback
+                    ? "—"
+                    : formatOrderMoney(breakdown.insurance_amount, currency)}
                 </dd>
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-muted-foreground">其他费用</dt>
                 <dd className="tabular-nums">
-                  {fallback ? "—" : formatOrderMoney(breakdown.other_amount, currency)}
+                  {fallback
+                    ? "—"
+                    : formatOrderMoney(breakdown.other_amount, currency)}
                 </dd>
               </div>
               <div className="flex justify-between gap-4 border-t pt-1">
@@ -186,11 +208,34 @@ export function OrderDetailPanel({
           </div>
 
           <div className="min-w-0">
-            <h3 className="mb-2 text-sm font-medium">货物明细</h3>
-            {items.length === 0 ? (
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-medium">货物明细</h3>
+              {!editingItems && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ml-auto h-7 px-2 text-xs"
+                  onClick={() => setEditingItems(true)}
+                >
+                  <PencilLine className="mr-1 size-3.5" />
+                  {orderItemsEditMode(order.status) === "direct"
+                    ? "编辑明细"
+                    : "申请变更明细"}
+                </Button>
+              )}
+            </div>
+            {editingItems ? (
+              <OrderItemsEditor
+                orderId={order.id}
+                status={order.status}
+                currency={currency}
+                items={items}
+                onClose={() => setEditingItems(false)}
+              />
+            ) : items.length === 0 ? (
               <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
                 这张订单没有货物行（历史订单/线下成交可能只记了金额）。
-                需要明细时请在报价工位维护后转单。
+                线下单/历史单可直接点「编辑明细」补录；报价谈成的单也可以回到报价工位改后重新转单。
               </p>
             ) : (
               <div className="overflow-x-auto">
@@ -221,17 +266,26 @@ export function OrderDetailPanel({
                         className="border-b last:border-0"
                       >
                         <td className="p-2">{item.product_name ?? "—"}</td>
-                        <td className="p-2 max-w-[240px] truncate" title={orderItemSpecText(item)}>
+                        <td
+                          className="p-2 max-w-[240px] truncate"
+                          title={orderItemSpecText(item)}
+                        >
                           {orderItemSpecText(item) || "—"}
                         </td>
                         <td className="p-2 tabular-nums">
                           {item.qty ?? "—"} {item.qty_unit ?? ""}
                         </td>
                         <td className="p-2 tabular-nums">
-                          {formatOrderMoney(item.unit_price, item.currency ?? currency)}
+                          {formatOrderMoney(
+                            item.unit_price,
+                            item.currency ?? currency,
+                          )}
                         </td>
                         <td className="p-2 tabular-nums">
-                          {formatOrderMoney(item.line_amount, item.currency ?? currency)}
+                          {formatOrderMoney(
+                            item.line_amount,
+                            item.currency ?? currency,
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -278,7 +332,9 @@ function TermsCard({
     () =>
       Object.fromEntries(
         TERM_FIELDS.map((field) => {
-          const value = (order as unknown as Record<string, unknown>)[field.key];
+          const value = (order as unknown as Record<string, unknown>)[
+            field.key
+          ];
           return [field.key, typeof value === "string" ? value : ""];
         }),
       ),

@@ -54,6 +54,12 @@ def _order_out(row: Mapping[str, Any]) -> dict:
         "id": row["id"], "order_no": _get(row, "order_no"), "status": _get(row, "status"),
         "currency": _get(row, "currency"), "total_amount": _money(_get(row, "total_amount")),
         "created_at": _iso(_get(row, "created_at")),
+        # 2026-10-23（M2-B）：来源三元组 —— 客户详情 UnlinkedRecords 要显示
+        # 「直接下单 · 渠道」而不是笼统的「未关联」。查询未取这些列时为 None，
+        # 前端据此不显示徽标（不伪造"确定是直接下单"）。
+        "source_type": _get(row, "source_type"),
+        "source_channel": _get(row, "source_channel"),
+        "inquiry_id": _get(row, "inquiry_id"),
     }
 
 

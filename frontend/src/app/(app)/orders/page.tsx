@@ -6,9 +6,14 @@
  * 业务位置：报价谈成 → 转订单 → 建收款计划 → 备货出运 → 按订单开单证。
  * 订单上的**贸易条款**（贸易术语/付款方式/装卸港/唛头/原产国）是单证的核心输入，
  * 所以这里必须能看、能改；否则单证就只能手工重填，极易与合同不一致。
+ *
+ * TODO(M2-B/M2-C)：设计 §9.2 的列表「有变更待批」角标尚未接 —— `GET /orders`
+ * 未返回待批申请计数，逐单再查 item-change-requests 会变成 N+1。等后端补
+ * 列表字段（如 `pending_item_change_count`）后在此加角标；详情页横幅已实现。
  */
 import { useState } from "react";
 import Link from "next/link";
+import type { Route } from "next";
 import { AlertCircle, Bell, ChevronRight, Plus, Wallet } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -24,6 +29,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import apiClient from "@/lib/api/client";
 import { usePageView } from "@/lib/events/use-page-view";
 import { usePersistentState } from "@/lib/hooks/use-persistent-state";
+import {
+  ORDER_CHANNEL_FILTER_OPTIONS,
+  ORDER_SOURCE_FILTER_OPTIONS,
+  inquiryDeepLink,
+  orderSourceLabel,
+  orderSourceTone,
+  quoteRecordsDeepLink,
+} from "@/lib/orders/order-source";
 import { cn } from "@/lib/utils";
 import {
   useQuoteOptions,
@@ -67,6 +80,8 @@ const ORDER_COLUMNS = [
   { key: "order_no", label: "订单号" },
   { key: "customer", label: "客户" },
   { key: "status", label: "状态" },
+  { key: "source", label: "来源" },
+  { key: "links", label: "关联询盘/报价" },
   { key: "amount", label: "金额" },
   { key: "incoterm", label: "贸易术语" },
   { key: "payment_terms", label: "付款方式" },
@@ -79,7 +94,11 @@ export default function OrdersPage() {
   const qc = useQueryClient();
   // C25：列表走**分页**查询（下拉选择器仍用 useOrderOptions —— 那个只回 items）
   const [page, setPage] = useState(1);
-  const list = useOrdersList({ page });
+  // 来源筛选（设计 §8 / §9.2）：状态/来源/渠道/客户。客户筛选仍走客户页
+  // （订单列表的客户参数后端支持，但跨客户下拉这里不做——询盘工位才是客户维度入口）。
+  const [sourceType, setSourceType] = useState("");
+  const [sourceChannel, setSourceChannel] = useState("");
+  const list = useOrdersList({ page, sourceType, sourceChannel });
   const orders = list.data?.items ?? [];
   const quotes = useQuoteOptions();
   const [quoteId, setQuoteId] = useState("");
@@ -90,12 +109,15 @@ export default function OrdersPage() {
     "ui:orders:density",
     "cozy",
   );
+  // v2：新增「来源」「关联询盘/报价」两列。旧 key 里没有这两个 key，
+  // 沿用会让老用户永远看不到新列（分不清"用户隐藏了"与"版本升级新增"）⇒ 换 key。
   const [visibleCols, setVisibleCols] = usePersistentState<OrderColumnKey[]>(
-    "ui:orders:columns",
+    "ui:orders:columns:v2",
     ORDER_COLUMNS.map((c) => c.key),
   );
 
   const selected = orders.find((o) => o.id === selectedId) ?? null;
+  const hasSourceFilter = sourceType !== "" || sourceChannel !== "";
 
   const createFromQuote = useMutation({
     mutationFn: async () => {
@@ -130,8 +152,8 @@ export default function OrdersPage() {
       />
 
       <SectionCard
-        title="由报价单转订单"
-        description="转化会复制货物行项、币种与贸易条款（贸易术语/付款方式/装卸港/唛头/原产国）。"
+        title="新建订单 · 方式一：由报价单转订单"
+        description="转化会复制货物行项、币种与贸易条款（贸易术语/付款方式/装卸港/唛头/原产国），来源自动记为该报价的询盘。"
       >
         <div className="flex flex-wrap items-center gap-2">
           <select
@@ -163,8 +185,8 @@ export default function OrdersPage() {
       </SectionCard>
 
       <SectionCard
-        title="手工新建订单（五步向导）"
-        description="客户与来源 → 订单信息 → 货物与金额 → 收款计划 → 附件。历史订单 / 线下成交也走这里：客户必选，报价可选（有报价就按转单处理）。"
+        title="新建订单 · 方式二：直接新建订单（五步向导）"
+        description="客户与来源 → 订单信息 → 货物与金额 → 收款计划 → 附件。线下电话单/老客户返单也在这里建：客户必选，来源必须明确（询盘转化 / 直接下单），报价可选。"
       >
         <OrderCreateWizard onCreated={(order) => setSelectedId(order.id)} />
       </SectionCard>
@@ -216,7 +238,9 @@ export default function OrdersPage() {
                         type="checkbox"
                         checked={checked}
                         aria-disabled={locked || undefined}
-                        className={locked ? "cursor-not-allowed opacity-60" : undefined}
+                        className={
+                          locked ? "cursor-not-allowed opacity-60" : undefined
+                        }
                         onChange={() => {
                           if (locked) return;
                           const next = checked
@@ -235,6 +259,60 @@ export default function OrdersPage() {
           </div>
         }
       >
+        <div className="mb-3 flex flex-wrap items-end gap-2">
+          <label className="space-y-1">
+            <span className="block text-xs text-muted-foreground">来源</span>
+            <select
+              aria-label="来源筛选"
+              className="h-8 rounded-lg border border-input bg-background px-2 text-xs"
+              value={sourceType}
+              onChange={(e) => {
+                setSourceType(e.target.value);
+                setPage(1);
+              }}
+            >
+              {ORDER_SOURCE_FILTER_OPTIONS.map((option) => (
+                <option key={option.value || "all"} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1">
+            <span className="block text-xs text-muted-foreground">渠道</span>
+            <select
+              aria-label="渠道筛选"
+              className="h-8 rounded-lg border border-input bg-background px-2 text-xs"
+              value={sourceChannel}
+              onChange={(e) => {
+                setSourceChannel(e.target.value);
+                setPage(1);
+              }}
+            >
+              {ORDER_CHANNEL_FILTER_OPTIONS.map((option) => (
+                <option key={option.value || "all"} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {hasSourceFilter && (
+            <button
+              type="button"
+              className="text-xs text-primary underline-offset-2 hover:underline"
+              onClick={() => {
+                setSourceType("");
+                setSourceChannel("");
+                setPage(1);
+              }}
+            >
+              清除来源筛选
+            </button>
+          )}
+          <span className="ml-auto text-xs text-muted-foreground">
+            来源与渠道取自订单自身记录；历史单渠道未知时不伪造。
+          </span>
+        </div>
         {list.isLoading ? (
           <div
             className="space-y-2"
@@ -253,8 +331,12 @@ export default function OrdersPage() {
         ) : orders.length === 0 ? (
           <EmptyState
             icon={Bell}
-            title="还没有订单"
-            description="从上面的报价单转一张订单试试。"
+            title={hasSourceFilter ? "当前筛选没有订单" : "还没有订单"}
+            description={
+              hasSourceFilter
+                ? "换一个来源/渠道，或清除筛选看全部订单。"
+                : "从上面的报价单转一张订单，或直接新建订单试试。"
+            }
           />
         ) : (
           <>
@@ -302,6 +384,40 @@ export default function OrdersPage() {
                           >
                             {STATUS_LABEL[o.status] ?? o.status}
                           </StatusBadge>
+                        </td>
+                      )}
+                      {visibleCols.includes("source") && (
+                        <td className="p-2">
+                          <StatusBadge tone={orderSourceTone(o.source_type)}>
+                            {orderSourceLabel(o.source_type, o.source_channel)}
+                          </StatusBadge>
+                        </td>
+                      )}
+                      {visibleCols.includes("links") && (
+                        <td className="p-2 text-xs">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {inquiryDeepLink(o.inquiry_id) ? (
+                              <Link
+                                href={inquiryDeepLink(o.inquiry_id)! as Route}
+                                className="text-primary underline-offset-2 hover:underline"
+                              >
+                                询盘 #{o.inquiry_id}
+                              </Link>
+                            ) : null}
+                            {quoteRecordsDeepLink(o.quote_id) ? (
+                              <Link
+                                href={
+                                  quoteRecordsDeepLink(o.quote_id)! as Route
+                                }
+                                className="text-primary underline-offset-2 hover:underline"
+                              >
+                                报价单 #{o.quote_id}
+                              </Link>
+                            ) : null}
+                            {!o.inquiry_id && !o.quote_id && (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </div>
                         </td>
                       )}
                       {visibleCols.includes("amount") && (
@@ -382,6 +498,9 @@ export default function OrdersPage() {
                       <StatusBadge tone={STATUS_TONE[o.status] ?? "default"}>
                         {STATUS_LABEL[o.status] ?? o.status}
                       </StatusBadge>
+                      <StatusBadge tone={orderSourceTone(o.source_type)}>
+                        {orderSourceLabel(o.source_type, o.source_channel)}
+                      </StatusBadge>
                       <span className="text-xs text-muted-foreground">
                         {o.total_amount === null
                           ? "—"
@@ -459,4 +578,3 @@ export default function OrdersPage() {
     </div>
   );
 }
-

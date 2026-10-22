@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { apiClient } from "@/lib/api/client";
 import { useTeam } from "@/lib/team/team-context";
+import { channelLabel } from "@/lib/inquiries/format";
 import type { InquiryStage } from "./inquiry-stage";
 import {
   DocPreview,
@@ -669,7 +670,14 @@ export function InquiryStageHistory({ inquiryId }: { inquiryId: number }) {
   );
 }
 
-/** 未关联询盘的历史单据（导入 / 手工新建），默认折叠。 */
+/**
+ * 直接下单 / 未关联询盘的单据（设计 §9.4）。
+ *
+ * 语义已从「未关联异常」改为「**直接下单**（正常分类）」：
+ * 线下电话单、老客户返单、展会现场单都是正规业务路径（D-1），不是脏数据。
+ * 渠道能拿到就标渠道（订单 source_channel），拿不到不伪造。
+ * 默认**展开**：这是常规分类，不该藏在折叠条里；单据为空时不渲染整块。
+ */
 export function UnlinkedRecords({
   quotes,
   direct,
@@ -689,9 +697,12 @@ export function UnlinkedRecords({
   if (!loading && !unavailable && total === 0) return null;
 
   return (
-    <details className="rounded-xl border border-dashed border-border/80 bg-white/40 px-4 py-3">
+    <details
+      open
+      className="rounded-xl border border-border/70 bg-white/50 px-4 py-3"
+    >
       <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
-        未关联询盘的单据
+        直接下单（正常分类）
         <span className="ml-2 font-normal">
           {loading
             ? "读取中…"
@@ -701,7 +712,8 @@ export function UnlinkedRecords({
         </span>
       </summary>
       <p className="mt-2 text-[11px] text-muted-foreground">
-        历史导入或手工新建的单据没有询盘来源，单独放这里，不会丢失。
+        直接下单是正常业务路径（线下电话单 / 老客户返单 / 展会现场单）；
+        未关联询盘的报价与历史导入单据也归在这里，都是正常分类。
       </p>
       <div className="mt-3 space-y-2">
         {loading ? (
@@ -758,6 +770,21 @@ export function UnlinkedRecords({
                     order.status ??
                     "—"}
                 </StatusBadge>
+                {/* 后端 records 接口尚未返回 source_type 时不贴来源徽标：
+                    「查不到」不能画成「确定是直接下单」。 */}
+                {order.source_type ? (
+                  <StatusBadge
+                    tone={order.source_type === "inquiry" ? "info" : "default"}
+                    className="h-5 px-2 text-[11px]"
+                  >
+                    {order.source_type === "inquiry" ? "询盘转化" : "直接下单"}
+                  </StatusBadge>
+                ) : null}
+                {order.source_channel && (
+                  <StatusBadge tone="default" className="h-5 px-2 text-[11px]">
+                    {channelLabel(order.source_channel)}
+                  </StatusBadge>
+                )}
                 <span className="ml-auto tabular-nums text-muted-foreground">
                   {money(order.total_amount, order.currency)} ·{" "}
                   {formatDate(order.created_at)}

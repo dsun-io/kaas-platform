@@ -98,36 +98,59 @@ function authed(token: string, init: RequestInit = {}): RequestInit {
 
 beforeEach(() => resetDb(() => []));
 
-describe("POST /orders：金额构成 + 收款计划（同一事务）", () => {
-  it("amount_breakdown 四项 + 30/70 计划 → 订单/计划/应收三处写入", async () => {
+describe("POST /orders：金额构成 + 收款计划（M2-B：整单透传内核）", () => {
+  it("body（items / amount_breakdown / payment_plan）原样透传，201 与金额由内核返回", async () => {
     const { token, user } = await authToken();
-    resetDb((query) => {
-      if (query.includes("FROM users WHERE id")) return [user];
-      if (query.includes("FROM customers c WHERE")) return [CUSTOMER_ROW];
-      if (query.includes("SELECT 1 FROM orders WHERE tenant_id") && query.includes("order_no")) return [];
-      if (query.startsWith("INSERT INTO orders")) {
-        return [{ ...ORDER_ROW, order_no: "ORD-US-ACM-20261022000000" }];
-      }
-      return [];
+    const seen: Array<{ path: string; method: string; body: string; auth: string | null }> = [];
+    resetDb((query) => (query.includes("FROM users WHERE id") ? [user] : []));
+    const env = makeTestEnv({
+      KERNEL: {
+        fetch: async (input: Request) => {
+          seen.push({
+            path: new URL(input.url).pathname,
+            method: input.method,
+            body: await input.text(),
+            auth: input.headers.get("authorization"),
+          });
+          return new Response(
+            JSON.stringify({
+              id: 31,
+              total_amount: 10600,
+              amount_breakdown: {
+                goods_amount: 10000, freight_amount: 400,
+                insurance_amount: 100, other_amount: 100,
+              },
+              payment_schedules: [
+                { id: 41, schedule_type: "deposit", ratio: 0.3, amount: 3180 },
+                { id: 42, schedule_type: "balance", ratio: 0.7, amount: 7420 },
+              ],
+            }),
+            { status: 201, headers: { "content-type": "application/json" } },
+          );
+        },
+      },
     });
+    const payload = {
+      customer_id: 9,
+      currency: "USD",
+      items: [{ product_name: "牛栏网", qty: 10, qty_unit: "m", unit_price: 1000 }],
+      amount_breakdown: {
+        goods_amount: 10000, freight_amount: 400,
+        insurance_amount: 100, other_amount: 100,
+      },
+      payment_plan: [
+        { schedule_type: "deposit", ratio: 0.3 },
+        { schedule_type: "balance", ratio: 0.7 },
+      ],
+    };
+
     const res = await app.request("/api/v1/orders", authed(token, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        customer_id: 9,
-        currency: "USD",
-        items: [{ product_name: "牛栏网", qty: 10, qty_unit: "m", unit_price: 1000 }],
-        amount_breakdown: {
-          goods_amount: 10000, freight_amount: 400,
-          insurance_amount: 100, other_amount: 100,
-        },
-        payment_plan: [
-          { schedule_type: "deposit", ratio: 0.3 },
-          { schedule_type: "balance", ratio: 0.7 },
-        ],
-      }),
-    }), TEST_ENV);
+      body: JSON.stringify(payload),
+    }), env);
 
+    // 内核 status_code=201 + 金额构成形状原样透传（门面不再自己算）
     expect(res.status).toBe(201);
     const body = (await res.json()) as Record<string, unknown>;
     expect(body.total_amount).toBe(10600);
@@ -135,33 +158,30 @@ describe("POST /orders：金额构成 + 收款计划（同一事务）", () => {
       goods_amount: 10000, freight_amount: 400,
       insurance_amount: 100, other_amount: 100,
     });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.path).toBe("/api/v1/orders");
+    expect(seen[0]!.method).toBe("POST");
+    expect(seen[0]!.auth).toMatch(/^Bearer /);
+    expect(JSON.parse(seen[0]!.body)).toEqual(payload);
 
-    const orderInsert = dbCallsContaining("INSERT INTO orders")[0]!;
-    expect(orderInsert.query).toContain("amount_breakdown");
-    expect(orderInsert.query).toContain("$20::jsonb");
-    expect(JSON.parse(String(orderInsert.params[19])).freight_amount).toBe(400);
-    expect(orderInsert.params).toContain(10600);
-
-    const schedules = dbCallsContaining("INSERT INTO payment_schedules");
-    expect(schedules).toHaveLength(2);
-    expect(schedules[0]!.params[4]).toBe(3180); // 10600 × 0.3
-    expect(schedules[1]!.params[4]).toBe(7420);
-
-    const receivable = dbCallsContaining("INSERT INTO receivables");
-    expect(receivable).toHaveLength(1);
-    expect(receivable[0]!.params[3]).toBe(10600);
-    expect(receivable[0]!.query).toContain("'unpaid'");
+    // 建单 / 收款计划 / 应收三处写入全在内核：门面不再落库
+    expect(dbCallsContaining("INSERT INTO orders")).toHaveLength(0);
+    expect(dbCallsContaining("INSERT INTO payment_schedules")).toHaveLength(0);
+    expect(dbCallsContaining("INSERT INTO receivables")).toHaveLength(0);
   });
 
-  it("ratio 合计 > 100% → 422 PAYMENT_PLAN_RATIO_EXCEEDS 且不落库", async () => {
+  it("内核 422 PAYMENT_PLAN_RATIO_EXCEEDS 原样透传且门面不落库", async () => {
     const { token, user } = await authToken();
-    resetDb((query) => {
-      if (query.includes("FROM users WHERE id")) return [user];
-      if (query.includes("FROM customers c WHERE")) return [CUSTOMER_ROW];
-      if (query.includes("SELECT 1 FROM orders WHERE tenant_id") && query.includes("order_no")) return [];
-      if (query.includes("FROM quote_orders WHERE")) return [];
-      return [];
+    resetDb((query) => (query.includes("FROM users WHERE id") ? [user] : []));
+    const env = makeTestEnv({
+      KERNEL: {
+        fetch: async () => new Response(
+          JSON.stringify({ detail: { error: "validation", code: "PAYMENT_PLAN_RATIO_EXCEEDS", field: "payment_plan", detail: "收款比例合计 120.00% 超过 100%" } }),
+          { status: 422, headers: { "content-type": "application/json" } },
+        ),
+      },
     });
+
     const res = await app.request("/api/v1/orders", authed(token, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -172,7 +192,8 @@ describe("POST /orders：金额构成 + 收款计划（同一事务）", () => {
           { schedule_type: "balance", ratio: 0.6 },
         ],
       }),
-    }), TEST_ENV);
+    }), env);
+
     expect(res.status).toBe(422);
     const body = (await res.json()) as { detail: { code: string } };
     expect(body.detail.code).toBe("PAYMENT_PLAN_RATIO_EXCEEDS");

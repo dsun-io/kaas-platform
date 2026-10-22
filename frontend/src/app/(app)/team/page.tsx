@@ -50,6 +50,7 @@ import { TeamMembersPanel } from "./components/team-members-panel";
 import { TeamSetup } from "./components/team-setup";
 import { TeamSubscriptionsPanel } from "./components/team-subscriptions-panel";
 import { TeamApplicationsPanel } from "./components/team-applications-panel";
+import { TeamApproversPanel } from "./components/team-approvers-panel";
 import {
   TeamManageNav,
   type TeamManageTab,
@@ -209,7 +210,10 @@ export default function TeamPage() {
   // ── 团队管理侧边栏（2026-10-22）：仅团队管理员；待审计数已在上方取好，
   //    徽标与面板共用，避免两个组件各查各的。
   const manageTab: TeamManageTab =
-    tab === "members" || tab === "invites" || tab === "applications"
+    tab === "members" ||
+    tab === "invites" ||
+    tab === "applications" ||
+    tab === "approvers"
       ? tab
       : "subscriptions";
 
@@ -369,6 +373,9 @@ export default function TeamPage() {
                 teamId={team.id}
                 pending={pendingApplications}
               />
+            )}
+            {manageTab === "approvers" && (
+              <TeamApproversPanel teamId={team.id} />
             )}
           </div>
         </div>

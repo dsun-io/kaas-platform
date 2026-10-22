@@ -33,6 +33,15 @@ export interface RecordOrder {
   currency: string | null;
   total_amount: number | null;
   created_at: string | null;
+  /**
+   * 订单来源（设计 §3.2 / §9.4）：direct 单在客户详情里是**正常分类**，
+   * 需要带渠道标签；历史行可能没有这两列 ⇒ 可选。
+   * 注意：后端 `GET /customers/{id}/records` 目前 SELECT 未带这两列
+   * （ws_customer_records.py:50-53）⇒ 后端补齐前这里取不到值，界面不显示渠道标签
+   * （不把"没查到"画成"渠道未知"）。
+   */
+  source_type?: string | null;
+  source_channel?: string | null;
   documents: RecordDocument[];
 }
 
@@ -152,6 +161,8 @@ function normalizeOrder(raw: unknown): RecordOrder | null {
     currency: asNullableText(raw.currency),
     total_amount: asNumber(raw.total_amount),
     created_at: asNullableText(raw.created_at),
+    source_type: asNullableText(raw.source_type),
+    source_channel: asNullableText(raw.source_channel),
     documents,
   };
 }

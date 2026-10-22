@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { apiClient } from "@/lib/api/client";
+import { CHANNEL_LABEL } from "@/lib/inquiries/format";
 import { useProducts } from "@/lib/products/use-products";
 
 import { errMsg } from "./error-message";
@@ -40,20 +41,16 @@ import {
 } from "./inquiry-items";
 
 /**
- * 询盘渠道：**必须与后端枚举逐字一致**（kaas_common/domain/enums.py INQUIRY_CHANNEL：
- * email/whatsapp/alibaba/expo/website/quote/other）。2026-10-21（C28）修：此前这里是自由
- * 输入框（placeholder 写 Alibaba / Expo / Web），用户按提示填 Alibaba 会被后端
- * validate_enum 判 422 —— "按提示操作反而失败"。改用下拉，只发枚举值。
+ * 询盘渠道：**唯一来源** = `lib/inquiries/format.ts:CHANNEL_LABEL`
+ * （真源仍是 `kaas_common/domain/enums.py:INQUIRY_CHANNEL`）。
+ *
+ * 2026-10-23 修（M2 遗留）：本文件原先自己抄了一份渠道表，且停留在旧枚举
+ * （含已废弃的 `quote`、缺 2026-10-22 新增的 `phone`/`referral`）——
+ * 用户选「报价」会被后端 validate_enum 判 422。现在直接从 CHANNEL_LABEL 派生，
+ * 三处（询盘页/仪表盘/客户表单）共用一份，不再有第三份清单。
  */
-const INQUIRY_CHANNEL_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: "email", label: "邮件" },
-  { value: "whatsapp", label: "WhatsApp" },
-  { value: "alibaba", label: "阿里巴巴" },
-  { value: "expo", label: "展会" },
-  { value: "website", label: "官网" },
-  { value: "quote", label: "报价" },
-  { value: "other", label: "其他" },
-];
+const INQUIRY_CHANNEL_OPTIONS: ReadonlyArray<{ value: string; label: string }> =
+  Object.entries(CHANNEL_LABEL).map(([value, label]) => ({ value, label }));
 
 export function InquiryForm({
   customerId,
@@ -88,7 +85,10 @@ export function InquiryForm({
   };
   const addRow = () => {
     rowSeq.current += 1;
-    setRows((current) => [...current, emptyInquiryItemRow("row-" + rowSeq.current)]);
+    setRows((current) => [
+      ...current,
+      emptyInquiryItemRow("row-" + rowSeq.current),
+    ]);
   };
   const removeRow = (id: string) => {
     setRows((current) =>
@@ -125,7 +125,10 @@ export function InquiryForm({
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Select value={channel} onValueChange={(value) => setChannel(value ?? "")}>
+        <Select
+          value={channel}
+          onValueChange={(value) => setChannel(value ?? "")}
+        >
           <SelectTrigger aria-label="询盘渠道">
             <SelectValue placeholder="渠道（可留空）" />
           </SelectTrigger>
@@ -184,7 +187,10 @@ export function InquiryForm({
               onChange={(e) =>
                 updateRow(row.id, {
                   product: e.target.value,
-                  product_key: resolveProductKey(e.target.value, productOptions),
+                  product_key: resolveProductKey(
+                    e.target.value,
+                    productOptions,
+                  ),
                 })
               }
             />
@@ -203,7 +209,9 @@ export function InquiryForm({
                 aria-label={"数量 " + (index + 1)}
                 placeholder="数量"
                 value={row.quantity}
-                onChange={(e) => updateRow(row.id, { quantity: e.target.value })}
+                onChange={(e) =>
+                  updateRow(row.id, { quantity: e.target.value })
+                }
               />
               <Input
                 name={"item-" + index + "-unit"}
@@ -220,7 +228,9 @@ export function InquiryForm({
               aria-label={"用途 " + (index + 1)}
               placeholder="用途（如 围栏 / 牧场）"
               value={row.application}
-              onChange={(e) => updateRow(row.id, { application: e.target.value })}
+              onChange={(e) =>
+                updateRow(row.id, { application: e.target.value })
+              }
             />
           </div>
         </div>

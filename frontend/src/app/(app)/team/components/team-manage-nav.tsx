@@ -11,14 +11,22 @@
  * （docs/HANDOVER_2026-10-21_NAV_STUCK.md）。
  */
 import Link from "next/link";
-import { KeyRound, ListChecks, UserCog, Users } from "lucide-react";
+import {
+  KeyRound,
+  ListChecks,
+  ShieldCheck,
+  UserCog,
+  Users,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type TeamManageTab =
   | "subscriptions"
   | "members"
   | "invites"
-  | "applications";
+  | "applications"
+  // M2-C：审批设置（指定审批人，D-11/D-14）
+  | "approvers";
 
 interface TeamManageNavProps {
   teamId: number;
@@ -45,6 +53,12 @@ const NAV_ITEMS: {
     label: "加入申请",
     hint: "审核进入申请",
     icon: ListChecks,
+  },
+  {
+    value: "approvers",
+    label: "审批设置",
+    hint: "指定审批人",
+    icon: ShieldCheck,
   },
 ];
 

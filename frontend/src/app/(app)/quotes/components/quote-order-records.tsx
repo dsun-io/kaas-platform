@@ -12,6 +12,7 @@ import { LoadingBlock } from "@/components/shared/loading-block";
  * （后端对 customer 账号已按接口层剥除 cost_breakdown，前端再按账号类型守卫一次）。
  */
 import { useState } from "react";
+import { PencilLine } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -32,6 +33,9 @@ import {
 } from "../hooks/use-quote-orders";
 import { useRole } from "@/hooks/use-role";
 import type { QuoteOrder, QuoteOrderItem } from "@contracts/quote-order";
+
+import { QuoteOrderEditDialog } from "./quote-order-edit-dialog";
+import { quoteLockReason } from "./quote-order-edit";
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "草稿",
@@ -125,6 +129,8 @@ export function QuoteOrderRecords() {
   const update = useUpdateQuoteOrder();
   const [quoteNoEdit, setQuoteNoEdit] = useState<QuoteOrder | null>(null);
   const [quoteNoError, setQuoteNoError] = useState<string | null>(null);
+  // 编辑弹窗（设计 §9.3）：行项整批替换 + 条款 + 状态流转；锁定规则在弹窗内明示
+  const [editOpen, setEditOpen] = useState(false);
 
   const saveQuoteNo = async (value: string) => {
     if (!quoteNoEdit) return;
@@ -245,6 +251,23 @@ export function QuoteOrderRecords() {
             ? `${selected.customer_name ?? "—"} · ${fmtDate(selected.created_at)}`
             : undefined
         }
+        footer={
+          selected ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                disabled={detail.isLoading}
+                onClick={() => setEditOpen(true)}
+              >
+                <PencilLine className="mr-1 size-3.5" />
+                编辑报价单
+              </Button>
+              <span className="text-[11px] text-muted-foreground">
+                {quoteLockReason(selected) ?? "草稿：行项、条款、状态可改"}
+              </span>
+            </div>
+          ) : undefined
+        }
       >
         {selected ? (
           detail.isLoading ? (
@@ -278,6 +301,16 @@ export function QuoteOrderRecords() {
           )
         ) : null}
       </DetailDrawer>
+
+      {editOpen && selected ? (
+        <QuoteOrderEditDialog
+          key={selected.id}
+          open
+          quote={selected}
+          items={selectedItems}
+          onClose={() => setEditOpen(false)}
+        />
+      ) : null}
 
       <NumberEditDialog
         open={quoteNoEdit !== null}

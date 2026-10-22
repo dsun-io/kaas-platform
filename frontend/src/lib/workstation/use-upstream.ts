@@ -34,6 +34,19 @@ export interface OrderOption {
   port_of_destination: string | null;
   shipping_marks: string | null;
   country_of_origin: string | null;
+  // ── 来源链与确认痕迹（设计 §3.2 / §5.1，迁移 202610220004）──────────────
+  // 门面/内核的 row_to_order 已返回；缺省（历史行/旧 mock）按 direct 处理，
+  // 所以这里都是可选字段 —— 不让前端因为"老数据没有这几列"而崩。
+  /** inquiry=询盘转化（含经报价转化）/ direct=直接下单 */
+  source_type?: "inquiry" | "direct" | null;
+  /** 询盘/订单渠道（与询盘渠道同一份枚举；null = 渠道未知，历史单不伪造） */
+  source_channel?: string | null;
+  inquiry_id?: number | null;
+  quote_id?: number | null;
+  confirmed_at?: string | null;
+  confirmed_by?: string | number | null;
+  /** manual / deposit_receipt */
+  confirmed_source?: string | null;
 }
 
 export interface QuoteOption {

@@ -2,10 +2,11 @@
 
 > 更新时间：**2026-10-22 全项目性能优化审计**（见 [`PERFORMANCE_AUDIT_2026-10-22.md`](./PERFORMANCE_AUDIT_2026-10-22.md)）· 2026-10-22 团队加入申请模块收口（见 [`JOIN_APPLICATION_MODULE_2026-10-22.md`](./JOIN_APPLICATION_MODULE_2026-10-22.md)）· 2026-10-21 切流收口 —— **生产已由 TS 门面 `kaas-edge` 承载（两层架构生效）**；
 > Python Worker `kaas` 退居内核（引擎/AI/cron，仅经 Service Binding）。门面冷启动 ~25ms（内核 4674ms）。
-> 门禁（2026-10-23 实测）：ts-worker **267（24 文件）** / worker **1695+12skip**（3 条 `js` 模块缺失为本机环境问题）/
-> orchestrator **266** / 前端 **1184（135 文件）** / e2e **27** / 静态断言全 PASS；迁移头 **`202610220005`**。
+> 门禁（2026-10-23 实测）：ts-worker **272（24 文件）** / worker **1695+12skip**（3 条 `js` 模块缺失为本机环境问题）/
+> orchestrator **266** / 前端 **1309（155 文件）** / e2e **28** / 静态断言全 PASS；迁移头 **`202610220005`**。
 > 2026-10-23 已完成 M1-f（门面 12 条透传 + 273 路由对齐）、M3 后端（/dashboard/funnel cohort 口径）、
-> M2-A（/inquiries 工位 + 导航契约 R2=29）。
+> M2-A（/inquiries 工位 + 导航契约 R2=29）、M2-B（订单来源链/行项编辑/报价编辑）、M2-C（审批中心/通知铃铛/审批设置，
+> R2=30）、M3 前端（仪表盘漏斗看板）。
 > **完成后归档**：过时交接与历史计划已移入 [`archive/2026-10-21-cutover/`](./archive/2026-10-21-cutover/README.md)；
 > 当前交接= [`HANDOVER_2026-10-21_CUTOVER.md`](./HANDOVER_2026-10-21_CUTOVER.md)；**W5（MCP+REST）已设计待实施**；
 > 剩余窗口项（内核瘦身/旧 Neon 清理）已登记 [`TODO.md`](./TODO.md) 与 2026-11-04 / 2026-10-28 提醒。

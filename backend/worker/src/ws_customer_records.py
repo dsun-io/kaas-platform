@@ -48,7 +48,10 @@ async def customer_records(
             " ORDER BY created_at DESC",
             customer_id, DEFAULT_TENANT)
         orders = await conn.fetch(
-            "SELECT id, order_no, quote_id, status, currency, total_amount, created_at"
+            # 2026-10-23（M2-B）：来源三元组一并查出 —— 客户详情要区分
+            # 「询盘转化」与「直接下单 · 渠道」，不能再笼统归到"未关联"。
+            "SELECT id, order_no, quote_id, inquiry_id, source_type,"
+            " source_channel, status, currency, total_amount, created_at"
             " FROM orders WHERE customer_id=$1 AND tenant_id=$2 ORDER BY created_at",
             customer_id, DEFAULT_TENANT)
         docs = await conn.fetch(

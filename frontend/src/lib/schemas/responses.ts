@@ -1,25 +1,33 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const EventsResponseSchema = z.object({
-  items: z.array(z.object({
-    id: z.string(),
-    event_type: z.string(),
-    event_source: z.string(),
-    schema_version: z.number(),
-    actor_id: z.string().optional(),
-    tenant_id: z.string(),
-    session_id: z.string().optional(),
-    trace_id: z.string().optional(),
-    payload: z.record(z.unknown()),
-    created_at: z.string(),
-    sampled: z.boolean().optional(),
-    oss_url: z.string().nullable().optional(),
-  })),
+  items: z.array(
+    z.object({
+      id: z.string(),
+      event_type: z.string(),
+      event_source: z.string(),
+      schema_version: z.number(),
+      actor_id: z.string().optional(),
+      tenant_id: z.string(),
+      session_id: z.string().optional(),
+      trace_id: z.string().optional(),
+      payload: z.record(z.unknown()),
+      created_at: z.string(),
+      sampled: z.boolean().optional(),
+      oss_url: z.string().nullable().optional(),
+    }),
+  ),
   total: z.number(),
   page: z.number(),
   page_size: z.number(),
 });
 
+/**
+ * @deprecated M3（2026-10-22 设计 §7）起 `GET /dashboard/summary` 是**三表混计数**
+ * （报价数/客户数/事件数），回答不了「询盘后来怎样了」，dashboard 页已改用
+ * `DashboardFunnelResponseSchema`。schema 保留只为旧端点兼容与既有测试，
+ * 新代码不要再依赖它。
+ */
 export const DashboardResponseSchema = z.object({
   range: z.string(),
   quotations_total: z.number(),
@@ -33,47 +41,116 @@ export const DashboardResponseSchema = z.object({
   latency_sampled: z.number(),
 });
 
-export const CustomersResponseSchema = z.array(z.object({
-  customer_id: z.string(),
-  customer_name: z.string(),
-  category_count: z.number(),
-  updated_at: z.string(),
-  locale: z.string(),
-  region: z.string(),
-}));
+export const CustomersResponseSchema = z.array(
+  z.object({
+    customer_id: z.string(),
+    customer_name: z.string(),
+    category_count: z.number(),
+    updated_at: z.string(),
+    locale: z.string(),
+    region: z.string(),
+  }),
+);
 
-export const CapabilitiesResponseSchema = z.array(z.object({
-  id: z.string(),
-  product_category: z.string(),
-  spec_constraints: z.record(z.unknown()),
-  is_active: z.boolean(),
-}));
+export const CapabilitiesResponseSchema = z.array(
+  z.object({
+    id: z.string(),
+    product_category: z.string(),
+    spec_constraints: z.record(z.unknown()),
+    is_active: z.boolean(),
+  }),
+);
 
 export const QuotationsResponseSchema = z.object({
-  items: z.array(z.object({
-    id: z.string(),
-    quotation_id: z.string(),
-    customer_id: z.string(),
-    product_category: z.string(),
-    product_spec: z.record(z.unknown()),
-    quantity: z.number(),
-    unit_price: z.number().nullable(),
-    unit: z.string().nullable(),
-    confidence: z.string(),
-    source: z.string(),
-    status: z.string(),
-    discount: z.number().optional(),
-    notes: z.string().optional(),
-    spec_hash: z.string(),
-    effective_from: z.string(),
-    is_active: z.boolean(),
-    created_at: z.string(),
-  })),
+  items: z.array(
+    z.object({
+      id: z.string(),
+      quotation_id: z.string(),
+      customer_id: z.string(),
+      product_category: z.string(),
+      product_spec: z.record(z.unknown()),
+      quantity: z.number(),
+      unit_price: z.number().nullable(),
+      unit: z.string().nullable(),
+      confidence: z.string(),
+      source: z.string(),
+      status: z.string(),
+      discount: z.number().optional(),
+      notes: z.string().optional(),
+      spec_hash: z.string(),
+      effective_from: z.string(),
+      is_active: z.boolean(),
+      created_at: z.string(),
+    }),
+  ),
   total: z.number(),
+});
+
+/**
+ * 商机漏斗（M3 设计 §7 / D-6）—— `GET /api/v1/dashboard/funnel`。
+ *
+ * 形状真源 = 内核 `backend/kaas_common/workstation/funnel.py`（build_funnel /
+ * channel_conversion_rates）+ `backend/worker/src/main.py:dashboard_funnel`。
+ *
+ * 关键口径（不要"修正"）：
+ *  · `conversion_rates` 各项是 `float | None`：分母为 0 时后端回 **null**，
+ *    前端必须保留 null（渲染「—」），不能 default 成 0；
+ *  · `funnel.stages[3].amount` 只出现在「已成笔」阶段（成交金额汇总）；
+ *  · `channels` 已按 `composite_score` 降序，前端重排只为渲染确定性；
+ *  · `direct_orders` 是**直接下单**（source_type='direct'），不计入漏斗。
+ */
+export const DashboardFunnelStageSchema = z.object({
+  name: z.string(),
+  label: z.string(),
+  count: z.number(),
+  // 仅「已成笔」带金额；其余阶段无此键
+  amount: z.number().optional(),
+});
+
+export const DashboardFunnelResponseSchema = z.object({
+  range: z.string(),
+  // 时间窗起点（ISO 8601，带时区）
+  since: z.string(),
+  funnel: z.object({
+    stages: z.array(DashboardFunnelStageSchema),
+    conversion_rates: z.object({
+      inquiry_to_quote: z.number().nullable(),
+      quote_to_order: z.number().nullable(),
+      order_to_completed: z.number().nullable(),
+      inquiry_to_completed: z.number().nullable(),
+    }),
+    composite_score: z.number(),
+  }),
+  channels: z.array(
+    z.object({
+      channel: z.string(),
+      inquiry_count: z.number(),
+      quote_count: z.number(),
+      order_count: z.number(),
+      completed_count: z.number(),
+      conversion_rates: z.object({
+        inquiry_to_order: z.number().nullable(),
+        inquiry_to_completed: z.number().nullable(),
+      }),
+      composite_score: z.number(),
+    }),
+  ),
+  direct_orders: z.object({
+    count: z.number(),
+    amount: z.number(),
+  }),
+  // 旧 /dashboard/summary 的废弃标记（M3 起页面不再依赖 summary）
+  deprecated_summary: z.boolean().optional(),
 });
 
 export type EventsResponse = z.infer<typeof EventsResponseSchema>;
 export type DashboardResponse = z.infer<typeof DashboardResponseSchema>;
+export type DashboardFunnelResponse = z.infer<
+  typeof DashboardFunnelResponseSchema
+>;
+export type DashboardFunnelStage = z.infer<typeof DashboardFunnelStageSchema>;
+export type DashboardFunnelChannel =
+  DashboardFunnelResponse["channels"][number];
 export type CustomersResponse = z.infer<typeof CustomersResponseSchema>;
 export type CapabilitiesResponse = z.infer<typeof CapabilitiesResponseSchema>;
 export type QuotationsResponse = z.infer<typeof QuotationsResponseSchema>;

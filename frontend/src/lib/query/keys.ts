@@ -5,7 +5,8 @@ export const queryKeys = {
       ["events", "list", filters] as const,
   },
   dashboard: {
-    summary: (range: string) => ["dashboard", "summary", range] as const,
+    // M3（设计 §7）：商机漏斗取代旧的 /dashboard/summary（三表混计数已废弃）
+    funnel: (range: string) => ["dashboard", "funnel", range] as const,
   },
   admin: {
     tenants: ["admin", "tenants"] as const,
@@ -39,11 +40,9 @@ export const queryKeys = {
     recommended: ["proposals", "recommended"] as const,
   },
   intel: {
-    shipments: (filters: object) =>
-      ["intel", "shipments", filters] as const,
+    shipments: (filters: object) => ["intel", "shipments", filters] as const,
     shipment: (id: number) => ["intel", "shipment", id] as const,
-    tradeStats: (filters: object) =>
-      ["intel", "tradeStats", filters] as const,
+    tradeStats: (filters: object) => ["intel", "tradeStats", filters] as const,
     adapterRuns: ["intel", "adapterRuns"] as const,
     channels: ["intel", "channels"] as const,
   },

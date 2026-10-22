@@ -88,6 +88,7 @@ describe("RangeSelector · 单选组语义（A9）", () => {
       "今日",
       "近 7 天",
       "近 30 天",
+      "近 90 天",
     ]);
     expect(radios[0]!.getAttribute("aria-checked")).toBe("true");
     expect(radios[1]!.getAttribute("aria-checked")).toBe("false");

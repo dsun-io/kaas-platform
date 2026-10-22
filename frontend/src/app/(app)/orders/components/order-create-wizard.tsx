@@ -71,6 +71,17 @@ import {
 } from "@/lib/orders/order-create";
 import { formatOrderMoney } from "@/lib/orders/order-detail";
 import {
+  buildOrderSourcePayload,
+  ORDER_SOURCE_TYPE_LABEL,
+  orderSourceErrorHint,
+  validateOrderSourceDraft,
+  type OrderSourceType,
+} from "@/lib/orders/order-source";
+import { CHANNEL_LABEL, channelLabel } from "@/lib/inquiries/format";
+import { apiErrorCode } from "@/lib/api/api-error";
+
+import { useInquiryOptions } from "../hooks/use-inquiry-options";
+import {
   amountRatioHint,
   applyAmountChange,
   applyPaymentPlanTemplate,
@@ -102,6 +113,8 @@ interface QuoteDetailLite {
   id: number;
   customer_id?: string | number | null;
   customer_name?: string | null;
+  /** 报价的询盘来源：选中后自动把订单来源定为「询盘转化」（设计 §3.2） */
+  inquiry_id?: number | null;
   currency?: string | null;
   incoterm?: string | null;
   payment_terms?: string | null;
@@ -171,6 +184,10 @@ export function OrderCreateWizard({
   const [maxStep, setMaxStep] = useState(0);
   const [customer, setCustomer] = useState<CustomerPickerValue | null>(null);
   const [quoteId, setQuoteId] = useState("");
+  // 来源（设计 §3.2）：默认直接下单；选了带询盘的报价会自动切到「询盘转化」。
+  const [sourceType, setSourceType] = useState<OrderSourceType>("direct");
+  const [inquiryId, setInquiryId] = useState("");
+  const [channel, setChannel] = useState("");
   const [info, setInfo] = useState<OrderInfoDraft>({ ...EMPTY_ORDER_INFO });
   const [items, setItems] = useState<OrderItemDraft[]>([]);
   const [freight, setFreight] = useState("");
@@ -186,6 +203,13 @@ export function OrderCreateWizard({
   const [error, setError] = useState<string | null>(null);
 
   const quoteIdNum = quoteId ? Number(quoteId) : null;
+  // 只有选了「询盘转化」才去拉询盘下拉（不白打接口，也不给直接下单加负担）
+  const inquiries = useInquiryOptions(
+    customer?.id ?? null,
+    sourceType === "inquiry",
+  );
+  const selectedInquiry =
+    (inquiries.data ?? []).find((row) => String(row.id) === inquiryId) ?? null;
 
   const goodsAmount = useMemo(() => sumDraftItemsAmount(items), [items]);
   const total = useMemo(
@@ -233,12 +257,23 @@ export function OrderCreateWizard({
         }),
       );
       if (quote.customer_id !== null && quote.customer_id !== undefined) {
-        setCustomer((prev) =>
-          prev ?? {
-            id: String(quote.customer_id),
-            name: quote.customer_name ?? `#${quote.customer_id}`,
-          },
+        setCustomer(
+          (prev) =>
+            prev ?? {
+              id: String(quote.customer_id),
+              name: quote.customer_name ?? `#${quote.customer_id}`,
+            },
         );
+      }
+      // 报价自带询盘 ⇒ 订单来源自动定为「询盘转化」；没有询盘则回到直接下单
+      // （换报价时不能残留上一张报价的询盘，否则会挂错客户/询盘）。
+      if (quote.inquiry_id) {
+        setSourceType("inquiry");
+        setInquiryId(String(quote.inquiry_id));
+        setChannel("");
+      } else {
+        setSourceType("direct");
+        setInquiryId("");
       }
     } catch {
       setQuoteError("报价明细读取失败：仍然可以手工填后面的步骤。");
@@ -331,7 +366,10 @@ export function OrderCreateWizard({
     setError(null);
   };
 
-  const updateExternalDoc = (key: string, patch: Partial<PendingExternalDoc>) => {
+  const updateExternalDoc = (
+    key: string,
+    patch: Partial<PendingExternalDoc>,
+  ) => {
     setExternalDocs((prev) =>
       prev.map((item) => (item.key === key ? { ...item, ...patch } : item)),
     );
@@ -343,8 +381,12 @@ export function OrderCreateWizard({
 
   const validate = (index: number): string | null => {
     if (index === 0) {
-      if (!customer) return "请选择业务客户 —— 订单必须归属到客户，否则客户页查不到这张单";
-      return null;
+      if (!customer)
+        return "请选择业务客户 —— 订单必须归属到客户，否则客户页查不到这张单";
+      return validateOrderSourceDraft({
+        sourceType,
+        inquiryId: inquiryId ? Number(inquiryId) : null,
+      });
     }
     if (index === 1) {
       return validateOrderInfo(info)[0] ?? null;
@@ -387,6 +429,9 @@ export function OrderCreateWizard({
     setMaxStep(0);
     setCustomer(null);
     setQuoteId("");
+    setSourceType("direct");
+    setInquiryId("");
+    setChannel("");
     setInfo({ ...EMPTY_ORDER_INFO });
     setItems([]);
     setFreight("");
@@ -422,10 +467,18 @@ export function OrderCreateWizard({
       return;
     }
     setError(null);
+    const source = buildOrderSourcePayload({
+      sourceType,
+      inquiryId: inquiryId ? Number(inquiryId) : null,
+      sourceChannel: channel,
+    });
     const payload = buildOrderCreatePayload({
       customer_id: toCustomerIdPayload(customer.id),
       customer_name: customer.name,
       quote_order_id: quoteIdNum,
+      source_type: source.source_type,
+      inquiry_id: source.inquiry_id ?? null,
+      source_channel: source.source_channel ?? null,
       info,
       items,
       freight,
@@ -437,9 +490,13 @@ export function OrderCreateWizard({
     let order: OrderOption;
     try {
       order = await create.mutateAsync(payload);
-    } catch {
-      // 具体错误信息由 apiClient 响应拦截器统一提示，这里补业务口径
-      setError("建单失败：请确认所选客户存在、未删除且属于本团队，然后重试。");
+    } catch (err) {
+      // 来源类 422 有明确的操作指引（内核措辞 + 前端解释），必须让用户看到；
+      // 其它错误沿用原有业务口径（详细原因由 apiClient 拦截器统一 toast）。
+      const hint = orderSourceErrorHint(apiErrorCode(err));
+      setError(
+        hint ?? "建单失败：请确认所选客户存在、未删除且属于本团队，然后重试。",
+      );
       return;
     }
 
@@ -511,7 +568,9 @@ export function OrderCreateWizard({
       );
     }
     if (warnings.length > 0) {
-      toast.warning(`订单 ${order.order_no} 已创建，但${warnings.join("；")}。`);
+      toast.warning(
+        `订单 ${order.order_no} 已创建，但${warnings.join("；")}。`,
+      );
     } else {
       toast.success(
         quoteIdNum
@@ -575,6 +634,8 @@ export function OrderCreateWizard({
             value={customer}
             onChange={(next) => {
               setCustomer(next);
+              // 换客户必须重选询盘：询盘归属客户，跨客户选择会被内核 422
+              setInquiryId("");
               setError(null);
             }}
             required
@@ -608,10 +669,117 @@ export function OrderCreateWizard({
             )}
             {quoteError && <p className="text-xs text-warning">{quoteError}</p>}
           </div>
+          <fieldset className="space-y-2 rounded-lg border border-border/70 p-3 sm:col-span-2">
+            <legend className="px-1 text-xs font-medium">订单来源</legend>
+            <div className="flex flex-wrap gap-4">
+              {(["inquiry", "direct"] as const).map((value) => (
+                <label
+                  key={value}
+                  className="flex cursor-pointer items-center gap-1.5 text-xs"
+                >
+                  <input
+                    type="radio"
+                    name="order-source"
+                    value={value}
+                    checked={sourceType === value}
+                    onChange={() => {
+                      setSourceType(value);
+                      setInquiryId("");
+                      setChannel("");
+                      setError(null);
+                    }}
+                  />
+                  {ORDER_SOURCE_TYPE_LABEL[value]}
+                  <span className="text-muted-foreground">
+                    {value === "inquiry"
+                      ? "（询盘 → 报价 → 本订单，可回溯）"
+                      : "（线下电话单 / 老客户返单 / 展会现场单）"}
+                  </span>
+                </label>
+              ))}
+            </div>
+
+            {sourceType === "inquiry" ? (
+              <div className="space-y-1.5">
+                <Label className="text-xs">选择询盘（必选）</Label>
+                <select
+                  aria-label="选择询盘"
+                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                  value={inquiryId}
+                  onChange={(e) => {
+                    setInquiryId(e.target.value);
+                    setError(null);
+                  }}
+                  disabled={!customer || inquiries.isLoading}
+                >
+                  <option value="">— 选择该客户的询盘 —</option>
+                  {(inquiries.data ?? []).map((inquiry) => (
+                    <option key={inquiry.id} value={String(inquiry.id)}>
+                      {(inquiry.inquiry_no ?? "#" + inquiry.id) +
+                        " · " +
+                        (inquiry.product_name_raw ?? "未填产品") +
+                        (inquiry.channel
+                          ? " · " + channelLabel(inquiry.channel)
+                          : "")}
+                    </option>
+                  ))}
+                </select>
+                {!customer && (
+                  <p className="text-xs text-muted-foreground">
+                    先选客户，再选该客户的询盘（询盘必须属于本单客户）。
+                  </p>
+                )}
+                {customer && inquiries.isLoading && (
+                  <p className="text-xs text-muted-foreground">正在读取询盘…</p>
+                )}
+                {customer &&
+                  inquiries.isSuccess &&
+                  (inquiries.data ?? []).length === 0 && (
+                    <p className="text-xs text-warning">
+                      该客户还没有询盘：可改为「直接下单」，或先在询盘工位新建询盘再回来。
+                    </p>
+                  )}
+                {inquiries.isError && (
+                  <p className="text-xs text-warning">
+                    询盘列表读取失败：可改为「直接下单」继续建单，或稍后重试。
+                  </p>
+                )}
+                {selectedInquiry?.channel && (
+                  <p className="text-xs text-muted-foreground">
+                    渠道将继承询盘：{channelLabel(selectedInquiry.channel)}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label className="text-xs">来源渠道（可选，建议填写）</Label>
+                <select
+                  aria-label="来源渠道"
+                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                  value={channel}
+                  onChange={(e) => {
+                    setChannel(e.target.value);
+                    setError(null);
+                  }}
+                >
+                  <option value="">— 渠道未知（历史单可不填） —</option>
+                  {Object.entries(CHANNEL_LABEL).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  直接下单是正常业务分类（不是异常）：渠道用于后续分析各来源的转化。
+                </p>
+              </div>
+            )}
+          </fieldset>
           {customerMismatch && (
             <p className="text-xs text-warning sm:col-span-2">
-              提示：所选报价的客户是「{selectedQuote?.customer_name}」，与上面选的
-              「{customer?.name}」不一致。订单会按上面选的客户落库，请确认是不是同一家。
+              提示：所选报价的客户是「{selectedQuote?.customer_name}
+              」，与上面选的 「{customer?.name}
+              」不一致。订单会按上面选的客户落库，请确认是不是同一家。
             </p>
           )}
         </div>
@@ -702,7 +870,9 @@ export function OrderCreateWizard({
               aria-label="原产国"
               value={info.country_of_origin}
               placeholder="如 China"
-              onChange={(e) => setInfoField("country_of_origin", e.target.value)}
+              onChange={(e) =>
+                setInfoField("country_of_origin", e.target.value)
+              }
             />
           </label>
           <label className="space-y-1 sm:col-span-2">
@@ -754,7 +924,8 @@ export function OrderCreateWizard({
                       colSpan={8}
                       className="p-3 text-center text-xs text-muted-foreground"
                     >
-                      暂不填明细也可以继续（历史订单）—— 需要时点下面「添加货物行」。
+                      暂不填明细也可以继续（历史订单）——
+                      需要时点下面「添加货物行」。
                     </td>
                   </tr>
                 )}
@@ -778,104 +949,106 @@ export function OrderCreateWizard({
                         <SortableGrip label={`拖动排序 第 ${index + 1} 行`} />
                       </td>
                       <td className="p-1.5">
-                      <Input
-                        aria-label={`第 ${index + 1} 行产品名称`}
-                        className="h-8 text-xs"
-                        value={item.product_name}
-                        placeholder="如 勾花网 / Chain Link Fence"
-                        onChange={(e) =>
-                          updateItem(item.key, { product_name: e.target.value })
-                        }
-                      />
-                    </td>
-                    <td className="p-1.5">
-                      <Input
-                        aria-label={`第 ${index + 1} 行规格`}
-                        className="h-8 text-xs"
-                        value={item.spec_text}
-                        placeholder="如 2.5mm 热镀锌"
-                        onChange={(e) =>
-                          updateItem(item.key, { spec_text: e.target.value })
-                        }
-                      />
-                    </td>
-                    <td className="p-1.5">
-                      <Input
-                        aria-label={`第 ${index + 1} 行数量`}
-                        className="h-8 w-20 text-xs"
-                        inputMode="decimal"
-                        value={item.qty}
-                        onChange={(e) =>
-                          applyItems(
-                            items.map((row) =>
-                              row.key === item.key
-                                ? recalcItemAmount({
-                                    ...row,
-                                    qty: e.target.value,
-                                  })
-                                : row,
-                            ),
-                          )
-                        }
-                      />
-                    </td>
-                    <td className="p-1.5">
-                      <Input
-                        aria-label={`第 ${index + 1} 行单位`}
-                        className="h-8 w-20 text-xs"
-                        list="order-qty-units"
-                        value={item.qty_unit}
-                        onChange={(e) =>
-                          updateItem(item.key, { qty_unit: e.target.value })
-                        }
-                      />
-                    </td>
-                    <td className="p-1.5">
-                      <Input
-                        aria-label={`第 ${index + 1} 行单价`}
-                        className="h-8 w-24 text-xs"
-                        inputMode="decimal"
-                        value={item.unit_price}
-                        onChange={(e) =>
-                          applyItems(
-                            items.map((row) =>
-                              row.key === item.key
-                                ? recalcItemAmount({
-                                    ...row,
-                                    unit_price: e.target.value,
-                                  })
-                                : row,
-                            ),
-                          )
-                        }
-                      />
-                    </td>
-                    <td className="p-1.5">
-                      <Input
-                        aria-label={`第 ${index + 1} 行金额`}
-                        className="h-8 w-24 text-xs"
-                        inputMode="decimal"
-                        value={item.line_amount}
-                        placeholder={itemDraftAmount(item).toFixed(2)}
-                        onChange={(e) =>
-                          updateItem(item.key, {
-                            line_amount: e.target.value,
-                            amount_touched: true,
-                          })
-                        }
-                      />
-                    </td>
-                    <td className="p-1.5">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        aria-label={`删除第 ${index + 1} 行`}
-                        onClick={() => removeItem(item.key)}
-                      >
-                        <Trash2 className="size-3.5" />
-                      </Button>
-                    </td>
+                        <Input
+                          aria-label={`第 ${index + 1} 行产品名称`}
+                          className="h-8 text-xs"
+                          value={item.product_name}
+                          placeholder="如 勾花网 / Chain Link Fence"
+                          onChange={(e) =>
+                            updateItem(item.key, {
+                              product_name: e.target.value,
+                            })
+                          }
+                        />
+                      </td>
+                      <td className="p-1.5">
+                        <Input
+                          aria-label={`第 ${index + 1} 行规格`}
+                          className="h-8 text-xs"
+                          value={item.spec_text}
+                          placeholder="如 2.5mm 热镀锌"
+                          onChange={(e) =>
+                            updateItem(item.key, { spec_text: e.target.value })
+                          }
+                        />
+                      </td>
+                      <td className="p-1.5">
+                        <Input
+                          aria-label={`第 ${index + 1} 行数量`}
+                          className="h-8 w-20 text-xs"
+                          inputMode="decimal"
+                          value={item.qty}
+                          onChange={(e) =>
+                            applyItems(
+                              items.map((row) =>
+                                row.key === item.key
+                                  ? recalcItemAmount({
+                                      ...row,
+                                      qty: e.target.value,
+                                    })
+                                  : row,
+                              ),
+                            )
+                          }
+                        />
+                      </td>
+                      <td className="p-1.5">
+                        <Input
+                          aria-label={`第 ${index + 1} 行单位`}
+                          className="h-8 w-20 text-xs"
+                          list="order-qty-units"
+                          value={item.qty_unit}
+                          onChange={(e) =>
+                            updateItem(item.key, { qty_unit: e.target.value })
+                          }
+                        />
+                      </td>
+                      <td className="p-1.5">
+                        <Input
+                          aria-label={`第 ${index + 1} 行单价`}
+                          className="h-8 w-24 text-xs"
+                          inputMode="decimal"
+                          value={item.unit_price}
+                          onChange={(e) =>
+                            applyItems(
+                              items.map((row) =>
+                                row.key === item.key
+                                  ? recalcItemAmount({
+                                      ...row,
+                                      unit_price: e.target.value,
+                                    })
+                                  : row,
+                              ),
+                            )
+                          }
+                        />
+                      </td>
+                      <td className="p-1.5">
+                        <Input
+                          aria-label={`第 ${index + 1} 行金额`}
+                          className="h-8 w-24 text-xs"
+                          inputMode="decimal"
+                          value={item.line_amount}
+                          placeholder={itemDraftAmount(item).toFixed(2)}
+                          onChange={(e) =>
+                            updateItem(item.key, {
+                              line_amount: e.target.value,
+                              amount_touched: true,
+                            })
+                          }
+                        />
+                      </td>
+                      <td className="p-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          aria-label={`删除第 ${index + 1} 行`}
+                          onClick={() => removeItem(item.key)}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </td>
                     </>
                   )}
                 />
@@ -904,7 +1077,12 @@ export function OrderCreateWizard({
                   const value = e.target.value;
                   setFreight(value);
                   syncPlanTotal(
-                    draftOrderTotal({ items, freight: value, insurance, other }),
+                    draftOrderTotal({
+                      items,
+                      freight: value,
+                      insurance,
+                      other,
+                    }),
                   );
                 }}
               />
@@ -920,7 +1098,12 @@ export function OrderCreateWizard({
                   const value = e.target.value;
                   setInsurance(value);
                   syncPlanTotal(
-                    draftOrderTotal({ items, freight, insurance: value, other }),
+                    draftOrderTotal({
+                      items,
+                      freight,
+                      insurance: value,
+                      other,
+                    }),
                   );
                 }}
               />
@@ -936,7 +1119,12 @@ export function OrderCreateWizard({
                   const value = e.target.value;
                   setOther(value);
                   syncPlanTotal(
-                    draftOrderTotal({ items, freight, insurance, other: value }),
+                    draftOrderTotal({
+                      items,
+                      freight,
+                      insurance,
+                      other: value,
+                    }),
                   );
                 }}
               />
@@ -986,9 +1174,7 @@ export function OrderCreateWizard({
                 key={template.id}
                 type="button"
                 size="sm"
-                variant={
-                  planTemplate === template.id ? "secondary" : "outline"
-                }
+                variant={planTemplate === template.id ? "secondary" : "outline"}
                 onClick={() => chooseTemplate(template.id)}
               >
                 {template.label}
@@ -1016,12 +1202,11 @@ export function OrderCreateWizard({
             {plan.map((row, index) => {
               const hint = amountRatioHint(row, total);
               return (
-                <div
-                  key={row.key}
-                  className="space-y-2 rounded-lg border p-3"
-                >
+                <div key={row.key} className="space-y-2 rounded-lg border p-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-medium">第 {index + 1} 期</span>
+                    <span className="text-xs font-medium">
+                      第 {index + 1} 期
+                    </span>
                     <select
                       aria-label={`第 ${index + 1} 期类型`}
                       className="h-8 rounded-lg border border-input bg-background px-2 text-xs"
@@ -1252,7 +1437,8 @@ export function OrderCreateWizard({
           )}
           <p className="text-xs text-muted-foreground">
             类别会写进附件名（如「
-            {attachmentKindLabel("contract")} · 合同扫描件.pdf」），订单详情按名字展示。
+            {attachmentKindLabel("contract")} ·
+            合同扫描件.pdf」），订单详情按名字展示。
           </p>
 
           <div className="space-y-3 border-t pt-3">
@@ -1350,7 +1536,10 @@ export function OrderCreateWizard({
       )}
 
       {error && (
-        <p role="alert" className="flex items-center gap-1 text-xs text-destructive">
+        <p
+          role="alert"
+          className="flex items-center gap-1 text-xs text-destructive"
+        >
           <AlertTriangle className="size-3.5" />
           {error}
         </p>

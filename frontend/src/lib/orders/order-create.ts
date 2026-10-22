@@ -10,10 +10,7 @@
  * 后端契约见 `order-detail.ts` 头部注释（amount_breakdown 只传 4 键）。
  */
 import { buildAmountBreakdown, roundMoney } from "./order-detail";
-import {
-  buildPaymentPlanPayload,
-  type PaymentPlanRow,
-} from "./payment-plan";
+import { buildPaymentPlanPayload, type PaymentPlanRow } from "./payment-plan";
 
 /** 向导里的货物行（数字都是输入框字符串）。 */
 export interface OrderItemDraft {
@@ -197,10 +194,42 @@ export function validateOrderInfo(info: OrderInfoDraft): string[] {
  * 后端在缺 total_amount 时按四项之和兜底；前端不传 total_amount（避免与四项
  * 之和打架），由后端落 `orders.total_amount`。
  */
+/**
+ * 货物行草稿 → 请求体行项（`POST /orders` 与 `PATCH /orders/{id}` 的 `items`
+ * 是同一形状：整批替换语义，行金额由前端先算好，后端仍会重算校验）。
+ */
+export function buildOrderItemsPayload(
+  items: OrderItemDraft[],
+  currency: string,
+): Record<string, unknown>[] {
+  const code = currency.trim().toUpperCase();
+  return items.map((item, index) => {
+    const qty = Number(item.qty);
+    const price = Number(item.unit_price);
+    const line = itemDraftAmount(item);
+    const row: Record<string, unknown> = {
+      product_name: item.product_name.trim(),
+      qty: Number.isFinite(qty) ? qty : 0,
+      qty_unit: item.qty_unit.trim() || "ROLLS",
+      unit_price: Number.isFinite(price) ? price : 0,
+      currency: code,
+      line_amount: line,
+      sort_order: index,
+    };
+    const spec = item.spec_text.trim();
+    if (spec) row.spec_snapshot = { specification: spec };
+    return row;
+  });
+}
+
 export function buildOrderCreatePayload(input: {
   customer_id: number | string;
   customer_name: string;
   quote_order_id?: number | null;
+  /** 来源（设计 §3.2）：始终显式传 source_type，direct 可带渠道 */
+  source_type?: "inquiry" | "direct";
+  inquiry_id?: number | null;
+  source_channel?: string | null;
   info: OrderInfoDraft;
   items: OrderItemDraft[];
   freight: string;
@@ -222,6 +251,15 @@ export function buildOrderCreatePayload(input: {
     payment_plan: buildPaymentPlanPayload(input.plan),
   };
   if (input.quote_order_id) body.quote_order_id = input.quote_order_id;
+  // 来源三元组：内核按「显式 > 报价自带询盘 > direct」判定（main.py:3915-3986）。
+  // 前端始终显式给 source_type，避免"以为选了询盘、实际落成 direct"的静默降级。
+  if (input.source_type) body.source_type = input.source_type;
+  if (input.source_type === "inquiry" && input.inquiry_id) {
+    body.inquiry_id = input.inquiry_id;
+  }
+  if (input.source_type === "direct" && input.source_channel) {
+    body.source_channel = input.source_channel;
+  }
   const textFields: (keyof OrderInfoDraft)[] = [
     "order_date",
     "delivery_date",
@@ -238,23 +276,7 @@ export function buildOrderCreatePayload(input: {
     if (value) body[field] = value;
   }
   if (input.items.length > 0) {
-    body.items = input.items.map((item, index) => {
-      const qty = Number(item.qty);
-      const price = Number(item.unit_price);
-      const line = itemDraftAmount(item);
-      const row: Record<string, unknown> = {
-        product_name: item.product_name.trim(),
-        qty: Number.isFinite(qty) ? qty : 0,
-        qty_unit: item.qty_unit.trim() || "ROLLS",
-        unit_price: Number.isFinite(price) ? price : 0,
-        currency: info.currency.trim().toUpperCase(),
-        line_amount: line,
-        sort_order: index,
-      };
-      const spec = item.spec_text.trim();
-      if (spec) row.spec_snapshot = { specification: spec };
-      return row;
-    });
+    body.items = buildOrderItemsPayload(input.items, info.currency);
   }
   return body;
 }

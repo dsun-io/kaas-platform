@@ -313,6 +313,246 @@ type MockExternalDoc = {
 const externalDocsStore: MockExternalDoc[] = [];
 let mockExternalDocSeq = 1;
 
+// ── 审批 / 通知 / 指定审批人（M2-C；真源 backend/worker/src/ws_approvals.py）──
+// 设计 §6.1/§6.2：变更申请先留痕、批准才应用；通知逐人落行；审批人整表替换。
+type MockChangeRequest = {
+  id: number;
+  order_id: number;
+  requested_by: number;
+  reason: string | null;
+  items: Array<Record<string, unknown>>;
+  snapshot: Array<Record<string, unknown>>;
+  status: "pending" | "approved" | "rejected";
+  decided_by: number | null;
+  decided_at: string | null;
+  decision_reason: string | null;
+  team_id: number | null;
+  created_at: string;
+};
+const orderChangeRequestsStore: MockChangeRequest[] = [];
+let mockChangeRequestSeq = 1;
+
+type MockNotification = {
+  id: number;
+  user_id: number;
+  type: string;
+  title: string;
+  body: string | null;
+  link: string | null;
+  ref_type: string | null;
+  ref_id: number | null;
+  read_at: string | null;
+  created_at: string;
+};
+const notificationsStore: MockNotification[] = [];
+let mockNotificationSeq = 1;
+
+/** 指定审批人（D-11/D-14）：团队维度整表替换；空 = 团队管理员审批。 */
+const teamApproversStore: number[] = [];
+
+/** 审批/通知 store 回种子（bootstrap 与 resetMockData 共用；通知种子 1 未读 + 1 已读）。 */
+function resetApprovalMockState(): void {
+  orderChangeRequestsStore.length = 0;
+  mockChangeRequestSeq = 1;
+  teamApproversStore.length = 0;
+  notificationsStore.length = 0;
+  mockNotificationSeq = 3;
+  const now = Date.now();
+  notificationsStore.push(
+    {
+      id: 1,
+      user_id: MOCK_ADMIN_USER.user_id,
+      type: "approval_requested",
+      title: "订单明细变更待审批（示例）",
+      body: "已确认订单的货物明细有变更申请，批准后才生效。",
+      link: "/approvals",
+      ref_type: "order_item_change_request",
+      ref_id: 1,
+      read_at: null,
+      created_at: new Date(now - 10 * 60 * 1000).toISOString(),
+    },
+    {
+      id: 2,
+      user_id: MOCK_ADMIN_USER.user_id,
+      type: "approval_approved",
+      title: "变更申请已批准（示例）",
+      body: null,
+      link: "/orders",
+      ref_type: "order",
+      ref_id: 1,
+      read_at: new Date(now - 5 * 60 * 1000).toISOString(),
+      created_at: new Date(now - 30 * 60 * 1000).toISOString(),
+    },
+  );
+}
+resetApprovalMockState();
+
+/** 变更申请 → API 形状（= ws_approvals.py:_request_dict）。 */
+function mockChangeRequestOut(r: MockChangeRequest): Record<string, unknown> {
+  return {
+    id: r.id,
+    order_id: r.order_id,
+    order_no: null,
+    requested_by: r.requested_by,
+    reason: r.reason,
+    items: r.items,
+    snapshot: r.snapshot,
+    status: r.status,
+    decided_by: r.decided_by,
+    decided_at: r.decided_at,
+    decision_reason: r.decision_reason,
+    team_id: r.team_id,
+    created_at: r.created_at,
+  };
+}
+
+function mockUserName(userId: number | null): string | null {
+  if (userId === null) return null;
+  if (userId === MOCK_ADMIN_USER.user_id) return MOCK_ADMIN_USER.display_name;
+  const member = teamMembersStore.find((m) => m.user_id === userId);
+  return member?.display_name ?? `用户 #${userId}`;
+}
+
+/** 通知 → API 形状（= ws_approvals.py:_notification_dict）。 */
+function mockNotificationOut(n: MockNotification): Record<string, unknown> {
+  return {
+    id: n.id,
+    type: n.type,
+    title: n.title,
+    body: n.body,
+    link: n.link,
+    ref_type: n.ref_type,
+    ref_id: n.ref_id,
+    read_at: n.read_at,
+    created_at: n.created_at,
+  };
+}
+
+/** 订单的询盘归属（正列优先，报价传递兜底；与内核 SQL 同义）。 */
+function mockOrderInquiryId(order: Record<string, unknown>): number | null {
+  const direct = Number(order.inquiry_id);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const quoteId = Number(order.quote_id);
+  if (!Number.isFinite(quoteId)) return null;
+  const quote = quotesStore.find((q) => q.id === quoteId);
+  return quote?.inquiry_id ?? null;
+}
+
+/** 商机漏斗（= worker main.py dashboard_funnel：时间窗内询盘 cohort）。 */
+function mockDashboardFunnel(range: string): Record<string, unknown> {
+  const days: Record<string, number> = {
+    today: 1,
+    "7d": 7,
+    "30d": 30,
+    "90d": 90,
+  };
+  const since = new Date(Date.now() - (days[range] ?? 1) * 86_400_000);
+  const sinceIso = since.toISOString();
+  const allInquiries = [...inquiriesStore.values()].flat();
+  const cohort = allInquiries.filter((i) => i.created_at >= sinceIso);
+  const cohortIds = new Set(cohort.map((i) => i.id));
+  const cohortQuotes = quotesStore.filter(
+    (q) => q.inquiry_id !== null && cohortIds.has(q.inquiry_id),
+  );
+  const quotedIds = new Set(cohortQuotes.map((q) => q.inquiry_id));
+  const inquiryOrders = ordersStore.filter((o) => {
+    const source = String(o.source_type ?? "direct");
+    if (source !== "inquiry") return false;
+    const inquiryId = mockOrderInquiryId(o);
+    return inquiryId !== null && cohortIds.has(inquiryId);
+  });
+  const orderedIds = new Set(
+    inquiryOrders
+      .map((o) => mockOrderInquiryId(o))
+      .filter((v): v is number => v !== null),
+  );
+  const completed = inquiryOrders.filter(
+    (o) => String(o.status) === "completed",
+  );
+  const completedIds = new Set(
+    completed
+      .map((o) => mockOrderInquiryId(o))
+      .filter((v): v is number => v !== null),
+  );
+  const completedAmount = completed.reduce(
+    (sum, o) => sum + Number(o.total_amount ?? 0),
+    0,
+  );
+  const pct = (n: number, d: number) =>
+    d === 0 ? null : Math.round((n / d) * 10_000) / 100;
+
+  const channels = new Map<
+    string,
+    { inq: number; qte: number; ord: number; cmp: number }
+  >();
+  for (const inquiry of cohort) {
+    const key = inquiry.channel ?? "other";
+    const row = channels.get(key) ?? { inq: 0, qte: 0, ord: 0, cmp: 0 };
+    row.inq += 1;
+    if (quotedIds.has(inquiry.id)) row.qte += 1;
+    if (orderedIds.has(inquiry.id)) row.ord += 1;
+    if (completedIds.has(inquiry.id)) row.cmp += 1;
+    channels.set(key, row);
+  }
+  const composite = (inq: number, qte: number, ord: number) =>
+    inq * 1 + qte * 2 + ord * 10;
+  const direct = ordersStore.filter(
+    (o) =>
+      String(o.source_type ?? "direct") === "direct" &&
+      String(o.created_at ?? "") >= sinceIso,
+  );
+  return {
+    range,
+    since: since.toISOString(),
+    funnel: {
+      stages: [
+        { name: "inquiry", label: "询盘", count: cohort.length },
+        { name: "quoted", label: "已报价", count: quotedIds.size },
+        { name: "ordered", label: "已下单", count: orderedIds.size },
+        {
+          name: "completed",
+          label: "已成笔",
+          count: completedIds.size,
+          amount: Math.round(completedAmount * 100) / 100,
+        },
+      ],
+      conversion_rates: {
+        inquiry_to_quote: pct(quotedIds.size, cohort.length),
+        quote_to_order: pct(orderedIds.size, quotedIds.size),
+        order_to_completed: pct(completedIds.size, orderedIds.size),
+        inquiry_to_completed: pct(completedIds.size, cohort.length),
+      },
+      composite_score: composite(
+        cohort.length,
+        quotedIds.size,
+        orderedIds.size,
+      ),
+    },
+    channels: [...channels.entries()]
+      .map(([channel, row]) => ({
+        channel,
+        inquiry_count: row.inq,
+        quote_count: row.qte,
+        order_count: row.ord,
+        completed_count: row.cmp,
+        conversion_rates: {
+          inquiry_to_order: pct(row.ord, row.inq),
+          inquiry_to_completed: pct(row.cmp, row.inq),
+        },
+        composite_score: composite(row.inq, row.qte, row.ord),
+      }))
+      .sort((a, b) => b.composite_score - a.composite_score),
+    direct_orders: {
+      count: direct.length,
+      amount:
+        Math.round(
+          direct.reduce((sum, o) => sum + Number(o.total_amount ?? 0), 0) * 100,
+        ) / 100,
+    },
+    deprecated_summary: false,
+  };
+}
+
 // 单证**内容**版本链（TODO(TODO:A1)）：mock 内存版，按 docId 惰性种子 2 版。
 // 恢复 = 追加一条 restore 版本并回写单据 raw_payload —— 与服务端「只增不删」一致。
 interface MockContentVersion {
@@ -3069,6 +3309,8 @@ export function resetMockData(): void {
   // 品名对照是本次新增的写库（见 nameMappingStore）；重置时清空
   nameMappingStore.length = 0;
   nameMappingSeq = 1;
+  // M2-C：审批/通知/指定审批人 store 回种子（通知 1 未读 + 1 已读）
+  resetApprovalMockState();
   clearMockPersistence();
 }
 
@@ -4336,6 +4578,10 @@ export const handlers = [
               currency: "USD",
               total_amount: 12300,
               created_at: "2026-09-28T09:10:00Z",
+              // M2-B：来源三元组（该单由报价转来，询盘渠道 email）
+              source_type: "inquiry",
+              source_channel: "email",
+              inquiry_id: 1,
               documents: [
                 {
                   id: 3,
@@ -4390,6 +4636,10 @@ export const handlers = [
             currency: "USD",
             total_amount: 5400,
             created_at: "2026-09-20T08:00:00Z",
+            // M2-B：直接下单（电话单）—— 客户详情显示「直接下单 · 电话」
+            source_type: "direct",
+            source_channel: "phone",
+            inquiry_id: null,
             documents: [
               {
                 id: 21,
@@ -5127,8 +5377,69 @@ export const handlers = [
     );
     const status = url.searchParams.get("status") ?? "";
     const q = url.searchParams.get("q")?.trim().toLowerCase() ?? "";
+    // M2-B：来源筛选（非法枚举 422，与内核 validate_enum 同口径；不能静默返回空列表）
+    const sourceType = url.searchParams.get("source_type") ?? "";
+    const sourceChannel = url.searchParams.get("source_channel") ?? "";
+    const inquiryIdRaw = url.searchParams.get("inquiry_id") ?? "";
+    const ORDER_SOURCE_TYPES = ["inquiry", "direct"] as const;
+    if (sourceType && !ORDER_SOURCE_TYPES.includes(sourceType as never)) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "INVALID_ENUM",
+            field: "order_source_type",
+            value: sourceType,
+            allowed: [...ORDER_SOURCE_TYPES],
+          },
+        },
+        { status: 422 },
+      );
+    }
+    if (sourceChannel && !INQUIRY_CHANNELS.includes(sourceChannel)) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "INVALID_ENUM",
+            field: "source_channel",
+            value: sourceChannel,
+            allowed: [...INQUIRY_CHANNELS],
+          },
+        },
+        { status: 422 },
+      );
+    }
+    let inquiryId: number | null = null;
+    if (inquiryIdRaw) {
+      inquiryId = Number(inquiryIdRaw);
+      if (!Number.isInteger(inquiryId) || inquiryId <= 0) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "INVALID_INQUIRY_ID",
+              field: "inquiry_id",
+              value: inquiryIdRaw,
+            },
+          },
+          { status: 422 },
+        );
+      }
+    }
     let filtered = ordersStore.slice().sort((a, b) => b.id - a.id);
     if (status) filtered = filtered.filter((o) => o.status === status);
+    if (sourceType) {
+      // 存量行没有 source_type：迁移已回填为 direct，mock 同口径（不伪造 inquiry）
+      filtered = filtered.filter(
+        (o) => String(o.source_type ?? "direct") === sourceType,
+      );
+    }
+    if (sourceChannel) {
+      filtered = filtered.filter(
+        (o) => String(o.source_channel ?? "") === sourceChannel,
+      );
+    }
+    if (inquiryId !== null) {
+      filtered = filtered.filter((o) => Number(o.inquiry_id) === inquiryId);
+    }
     if (q) {
       filtered = filtered.filter((o) =>
         `${o.order_no ?? ""} ${o.customer_name ?? ""}`
@@ -5172,6 +5483,10 @@ export const handlers = [
         due_date?: string;
         notes?: string;
       }>;
+      // M1-a / M2-B：来源三元组（内核 create_order 解析后写库）
+      inquiry_id?: number | string | null;
+      source_type?: string | null;
+      source_channel?: string | null;
     };
     // 报价转单：客户/金额/贸易条款从报价单继承（与后端口径一致）
     const quote = body.quote_order_id
@@ -5180,6 +5495,161 @@ export const handlers = [
     const customer = customersStore.find(
       (c) => c.id === (quote?.customer_id ?? body.customer_id),
     );
+    // 来源三元组解析（与内核 main.py:3917-3986 同序）：
+    // ① 显式 inquiry_id → inquiry；② 报价自带询盘 → inquiry；③ 否则 direct。
+    // 校验不通过时按内核错误码 422，前端据此翻译成操作指引。
+    const allInquiries = [...inquiriesStore.values()].flat();
+    const explicitInquiryId =
+      body.inquiry_id === undefined ||
+      body.inquiry_id === null ||
+      body.inquiry_id === ""
+        ? null
+        : Number(body.inquiry_id);
+    if (explicitInquiryId !== null && !Number.isInteger(explicitInquiryId)) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "INVALID_INQUIRY_ID",
+            field: "inquiry_id",
+            detail: `inquiry_id 非法：${String(body.inquiry_id)}`,
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const orderCustomerId = quote?.customer_id ?? body.customer_id ?? null;
+    let inquiry =
+      explicitInquiryId === null
+        ? null
+        : (allInquiries.find((i) => i.id === explicitInquiryId) ?? null);
+    if (explicitInquiryId !== null && inquiry === null) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "not_found",
+            code: "INQUIRY_NOT_FOUND",
+            field: "inquiry_id",
+            detail: `询盘 #${explicitInquiryId} 不存在或不可见`,
+          },
+        },
+        { status: 422 },
+      );
+    }
+    if (
+      inquiry !== null &&
+      Number(inquiry.customer_id) !== Number(orderCustomerId)
+    ) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "INQUIRY_CUSTOMER_MISMATCH",
+            field: "inquiry_id",
+            detail: `询盘 #${inquiry.id} 属于客户 #${inquiry.customer_id}，本单客户是 #${String(orderCustomerId)}`,
+          },
+        },
+        { status: 422 },
+      );
+    }
+    if (
+      inquiry === null &&
+      quote?.inquiry_id !== null &&
+      quote?.inquiry_id !== undefined
+    ) {
+      const quoteInquiry = allInquiries.find(
+        (i) => i.id === Number(quote.inquiry_id),
+      );
+      if (
+        quoteInquiry !== undefined &&
+        Number(quoteInquiry.customer_id) !== Number(orderCustomerId)
+      ) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "validation",
+              code: "INQUIRY_CUSTOMER_MISMATCH",
+              field: "inquiry_id",
+              detail: `报价 #${quote.id} 的询盘属于客户 #${quoteInquiry.customer_id}，本单客户是 #${String(orderCustomerId)}`,
+            },
+          },
+          { status: 422 },
+        );
+      }
+      inquiry = quoteInquiry ?? null;
+    }
+    const rawSourceType =
+      body.source_type === undefined ||
+      body.source_type === null ||
+      body.source_type === ""
+        ? null
+        : String(body.source_type);
+    if (
+      rawSourceType !== null &&
+      !["inquiry", "direct"].includes(rawSourceType)
+    ) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "INVALID_ENUM",
+            field: "order_source_type",
+            value: rawSourceType,
+            allowed: ["inquiry", "direct"],
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const sourceType =
+      rawSourceType ?? (inquiry !== null ? "inquiry" : "direct");
+    if (sourceType === "inquiry" && inquiry === null) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "INQUIRY_REQUIRED",
+            field: "inquiry_id",
+            detail:
+              "询盘转化订单必须关联询盘；可在询盘选择器里「+ 新建询盘」，或把来源改为「直接下单」",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    if (sourceType === "direct" && inquiry !== null) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "DIRECT_ORDER_INQUIRY_CONFLICT",
+            field: "inquiry_id",
+            detail: "直接下单的订单不能再挂询盘；请把来源改为「询盘转化」",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const rawChannel =
+      body.source_channel === undefined ||
+      body.source_channel === null ||
+      body.source_channel === ""
+        ? null
+        : String(body.source_channel);
+    if (rawChannel !== null && !INQUIRY_CHANNELS.includes(rawChannel)) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "INVALID_ENUM",
+            field: "source_channel",
+            value: rawChannel,
+            allowed: [...INQUIRY_CHANNELS],
+          },
+        },
+        { status: 422 },
+      );
+    }
+    // 渠道：显式传 > 询盘渠道 > 空（历史/未知单不伪造，与内核同序）
+    const sourceChannel = rawChannel ?? inquiry?.channel ?? null;
 
     // 收款安排先校验（非法时不能留下半张订单 —— 后端也是先校验再落库）
     const rawPlan = Array.isArray(body.payment_plan) ? body.payment_plan : [];
@@ -5257,6 +5727,14 @@ export const handlers = [
       id: nextId,
       order_no: `ORD-2026${String(nextId).padStart(4, "0")}`,
       quote_order_id: quote?.id ?? null,
+      // 门面 row_to_order 返回 quote_id；mock 两个都存，来源链两版前端都能读
+      quote_id: quote?.id ?? null,
+      inquiry_id: inquiry?.id ?? null,
+      source_type: sourceType,
+      source_channel: sourceChannel,
+      confirmed_at: null,
+      confirmed_by: null,
+      confirmed_source: null,
       customer_id: quote?.customer_id ?? body.customer_id ?? null,
       customer_name:
         quote?.customer_name ??
@@ -5814,7 +6292,62 @@ export const handlers = [
         { status: 404 },
       );
     }
-    Object.assign(order, await request.json());
+    const body = (await request.json()) as Record<string, unknown>;
+    if (Array.isArray(body.items)) {
+      // M2-B：pending 直接整批替换；非 pending 必须走变更申请（内核同口径 409）
+      if (String(order.status) !== "pending") {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "conflict",
+              code: "ORDER_ITEMS_LOCKED",
+              detail:
+                "已确认订单的货物明细需走「变更申请 → 管理员审批」，不能直接改",
+              order_status: order.status,
+            },
+          },
+          { status: 409 },
+        );
+      }
+      const rawItems = body.items as Array<Record<string, unknown>>;
+      const replaced: MockOrderItem[] = rawItems.map((it, index) => {
+        const qty = Number(it.qty ?? 1);
+        const unitPrice =
+          it.unit_price === undefined || it.unit_price === null
+            ? null
+            : Number(it.unit_price);
+        const lineAmount =
+          it.line_amount === undefined || it.line_amount === null
+            ? Math.round(qty * (unitPrice ?? 0) * 100) / 100
+            : Number(it.line_amount);
+        return {
+          ...it,
+          id: mockOrderItemSeq,
+          order_id: Number(params.id),
+          qty,
+          unit_price: unitPrice,
+          line_amount: lineAmount,
+          sort_order: Number(it.sort_order ?? index),
+        } as MockOrderItem;
+      });
+      mockOrderItemSeq += 1;
+      mockOrderItems.set(Number(params.id), replaced);
+      const goodsAmount =
+        Math.round(
+          replaced.reduce(
+            (sum, item) => sum + Number(item.line_amount ?? 0),
+            0,
+          ) * 100,
+        ) / 100;
+      order.total_amount = goodsAmount;
+      const breakdown = order.amount_breakdown as Record<string, number> | null;
+      if (breakdown !== null && typeof breakdown === "object") {
+        order.amount_breakdown = { ...breakdown, goods_amount: goodsAmount };
+      }
+    }
+    const patch = { ...body };
+    delete patch.items;
+    Object.assign(order, patch);
     return HttpResponse.json(order);
   }),
 
@@ -9853,6 +10386,504 @@ export const handlers = [
       };
     });
     return HttpResponse.json(rows);
+  }),
+
+  // ── 审批中心 / 站内通知 / 指定审批人（M2-C，真源 ws_approvals.py）──────────
+  http.get("/api/v1/approvals", ({ request }) => {
+    const url = new URL(request.url);
+    const view = url.searchParams.get("view") ?? "pending";
+    if (!["pending", "mine", "done"].includes(view)) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "INVALID_VIEW",
+            field: "view",
+            value: view,
+            allowed: ["pending", "mine", "done"],
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const me = MOCK_ADMIN_USER.user_id;
+    let rows = [...orderChangeRequestsStore];
+    if (view === "pending") rows = rows.filter((r) => r.status === "pending");
+    else if (view === "mine") rows = rows.filter((r) => r.requested_by === me);
+    else
+      rows = rows.filter((r) => r.status !== "pending" && r.decided_by === me);
+    rows.sort(
+      (a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id,
+    );
+    const page = Math.max(Number(url.searchParams.get("page") ?? 1), 1);
+    const pageSize = Math.min(
+      Math.max(Number(url.searchParams.get("page_size") ?? 20), 1),
+      200,
+    );
+    const items = rows
+      .slice((page - 1) * pageSize, page * pageSize)
+      .map((r) => {
+        const order = ordersStore.find((o) => Number(o.id) === r.order_id);
+        return {
+          ...mockChangeRequestOut(r),
+          order_no: order?.order_no ?? null,
+          order_status: order?.status ?? null,
+          order_total_amount: order ? Number(order.total_amount ?? 0) : null,
+          order_currency: order?.currency ?? null,
+          requester_name: mockUserName(r.requested_by),
+        };
+      });
+    return HttpResponse.json({
+      items,
+      total: rows.length,
+      page,
+      page_size: pageSize,
+    });
+  }),
+
+  http.get("/api/v1/orders/:order_id/item-change-requests", ({ params }) => {
+    const orderId = Number(params.order_id);
+    const rows = orderChangeRequestsStore
+      .filter((r) => r.order_id === orderId)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id);
+    return HttpResponse.json({
+      items: rows.map(mockChangeRequestOut),
+      total: rows.length,
+    });
+  }),
+
+  http.post(
+    "/api/v1/orders/:order_id/item-change-requests",
+    async ({ params, request }) => {
+      const orderId = Number(params.order_id);
+      const order = ordersStore.find((o) => Number(o.id) === orderId);
+      if (!order) {
+        return HttpResponse.json(
+          { detail: { error: "not_found", code: "ORDER_NOT_FOUND" } },
+          { status: 404 },
+        );
+      }
+      if (String(order.status) === "pending") {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "conflict",
+              code: "ORDER_ITEMS_EDITABLE",
+              detail: "待确认订单可直接编辑货物明细，无需审批",
+              order_status: order.status,
+            },
+          },
+          { status: 409 },
+        );
+      }
+      const pending = orderChangeRequestsStore.find(
+        (r) => r.order_id === orderId && r.status === "pending",
+      );
+      if (pending) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "conflict",
+              code: "CHANGE_REQUEST_PENDING",
+              detail: `该订单已有一条待审的明细变更申请（#${pending.id}），请先处理它`,
+              request_id: pending.id,
+            },
+          },
+          { status: 409 },
+        );
+      }
+      const body = (await request.json().catch(() => null)) as {
+        items?: unknown;
+        reason?: unknown;
+      } | null;
+      if (!body || !Array.isArray(body.items) || body.items.length === 0) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "validation",
+              code: "INVALID_ITEMS",
+              field: "items",
+              detail: "items 必须是非空数组（整批替换）",
+            },
+          },
+          { status: 422 },
+        );
+      }
+      const record: MockChangeRequest = {
+        id: mockChangeRequestSeq,
+        order_id: orderId,
+        requested_by: MOCK_ADMIN_USER.user_id,
+        reason: typeof body.reason === "string" ? body.reason : null,
+        items: body.items as Array<Record<string, unknown>>,
+        snapshot: clone(mockOrderItems.get(orderId) ?? []),
+        status: "pending",
+        decided_by: null,
+        decided_at: null,
+        decision_reason: null,
+        team_id: teamStore.id,
+        created_at: new Date().toISOString(),
+      };
+      mockChangeRequestSeq += 1;
+      orderChangeRequestsStore.push(record);
+      // 逐人发通知（指定审批人优先；空名单 = 管理员兜底，与内核同义）
+      const recipients =
+        teamApproversStore.length > 0
+          ? [...teamApproversStore]
+          : [MOCK_ADMIN_USER.user_id];
+      for (const userId of recipients) {
+        notificationsStore.push({
+          id: mockNotificationSeq,
+          user_id: userId,
+          type: "approval_requested",
+          title: `订单 ${order.order_no ?? orderId} 的货物明细变更待审批`,
+          body: record.reason,
+          link: `/approvals?focus=${record.id}`,
+          ref_type: "order_item_change_request",
+          ref_id: record.id,
+          read_at: null,
+          created_at: new Date().toISOString(),
+        });
+        mockNotificationSeq += 1;
+      }
+      return HttpResponse.json(
+        { ...mockChangeRequestOut(record), notified_approvers: recipients },
+        { status: 201 },
+      );
+    },
+  ),
+
+  http.post(
+    "/api/v1/orders/:order_id/item-change-requests/:rid/approve",
+    async ({ params, request }) => {
+      const orderId = Number(params.order_id);
+      const rid = Number(params.rid);
+      const order = ordersStore.find((o) => Number(o.id) === orderId);
+      const record = orderChangeRequestsStore.find(
+        (r) => r.id === rid && r.order_id === orderId,
+      );
+      if (!order) {
+        return HttpResponse.json(
+          { detail: { error: "not_found", code: "ORDER_NOT_FOUND" } },
+          { status: 404 },
+        );
+      }
+      if (!record) {
+        return HttpResponse.json(
+          { detail: { error: "not_found", code: "CHANGE_REQUEST_NOT_FOUND" } },
+          { status: 404 },
+        );
+      }
+      if (record.status !== "pending") {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "conflict",
+              code: "CHANGE_REQUEST_ALREADY_DECIDED",
+              detail: `该申请已是 ${record.status} 状态，不能重复审批`,
+              status: record.status,
+            },
+          },
+          { status: 409 },
+        );
+      }
+      const body = (await request.json().catch(() => ({}))) as {
+        reason?: unknown;
+        decision_reason?: unknown;
+      };
+      const reason =
+        typeof body.reason === "string"
+          ? body.reason
+          : typeof body.decision_reason === "string"
+            ? body.decision_reason
+            : null;
+      // 批准：整批替换 + 重算（与内核 _replace_order_items 同语义）
+      const appliedItems: MockOrderItem[] = [];
+      let newTotal: number | null = null;
+      for (const [index, raw] of record.items.entries()) {
+        const item = raw as Record<string, unknown>;
+        const qty = Number(item.qty ?? 0);
+        const lineAmount = Number(
+          item.line_amount ?? qty * Number(item.unit_price ?? 0),
+        );
+        appliedItems.push({
+          ...item,
+          id: mockOrderItemSeq,
+          order_id: orderId,
+          qty,
+          line_amount: lineAmount,
+          sort_order: Number(item.sort_order ?? index),
+        });
+        mockOrderItemSeq += 1;
+      }
+      newTotal = appliedItems.reduce(
+        (sum, item) => sum + Number(item.line_amount ?? 0),
+        0,
+      );
+      mockOrderItems.set(orderId, appliedItems);
+      order.total_amount = newTotal;
+      const now = new Date().toISOString();
+      record.status = "approved";
+      record.decided_by = MOCK_ADMIN_USER.user_id;
+      record.decided_at = now;
+      record.decision_reason = reason;
+      notificationsStore.push({
+        id: mockNotificationSeq,
+        user_id: record.requested_by,
+        type: "approval_approved",
+        title: `订单 ${order.order_no ?? orderId} 的明细变更已批准`,
+        body: reason,
+        link: `/orders?id=${orderId}`,
+        ref_type: "order",
+        ref_id: orderId,
+        read_at: null,
+        created_at: now,
+      });
+      mockNotificationSeq += 1;
+      return HttpResponse.json({
+        ...mockChangeRequestOut(record),
+        applied: true,
+        affected_docs: [],
+        new_total_amount: newTotal,
+      });
+    },
+  ),
+
+  http.post(
+    "/api/v1/orders/:order_id/item-change-requests/:rid/reject",
+    async ({ params, request }) => {
+      const orderId = Number(params.order_id);
+      const rid = Number(params.rid);
+      const order = ordersStore.find((o) => Number(o.id) === orderId);
+      const record = orderChangeRequestsStore.find(
+        (r) => r.id === rid && r.order_id === orderId,
+      );
+      if (!order) {
+        return HttpResponse.json(
+          { detail: { error: "not_found", code: "ORDER_NOT_FOUND" } },
+          { status: 404 },
+        );
+      }
+      if (!record) {
+        return HttpResponse.json(
+          { detail: { error: "not_found", code: "CHANGE_REQUEST_NOT_FOUND" } },
+          { status: 404 },
+        );
+      }
+      if (record.status !== "pending") {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "conflict",
+              code: "CHANGE_REQUEST_ALREADY_DECIDED",
+              detail: `该申请已是 ${record.status} 状态，不能重复审批`,
+              status: record.status,
+            },
+          },
+          { status: 409 },
+        );
+      }
+      const body = (await request.json().catch(() => ({}))) as {
+        reason?: unknown;
+        decision_reason?: unknown;
+      };
+      const reason =
+        typeof body.reason === "string"
+          ? body.reason
+          : typeof body.decision_reason === "string"
+            ? body.decision_reason
+            : "";
+      if (!reason.trim()) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "validation",
+              code: "DECISION_REASON_REQUIRED",
+              field: "reason",
+              detail: "拒绝必须填写理由",
+            },
+          },
+          { status: 422 },
+        );
+      }
+      const now = new Date().toISOString();
+      record.status = "rejected";
+      record.decided_by = MOCK_ADMIN_USER.user_id;
+      record.decided_at = now;
+      record.decision_reason = reason.trim();
+      notificationsStore.push({
+        id: mockNotificationSeq,
+        user_id: record.requested_by,
+        type: "approval_rejected",
+        title: `订单 ${order.order_no ?? orderId} 的明细变更被拒绝`,
+        body: record.decision_reason,
+        link: `/orders?id=${orderId}`,
+        ref_type: "order",
+        ref_id: orderId,
+        read_at: null,
+        created_at: now,
+      });
+      mockNotificationSeq += 1;
+      return HttpResponse.json({
+        ...mockChangeRequestOut(record),
+        applied: false,
+        affected_docs: [],
+        new_total_amount: null,
+      });
+    },
+  ),
+
+  // ── 站内通知 ───────────────────────────────────────────────────────────
+  http.get("/api/v1/notifications", ({ request }) => {
+    const url = new URL(request.url);
+    const unreadOnly = ["1", "true"].includes(
+      url.searchParams.get("unread") ?? "",
+    );
+    const me = MOCK_ADMIN_USER.user_id;
+    let rows = notificationsStore.filter((n) => n.user_id === me);
+    if (unreadOnly) rows = rows.filter((n) => n.read_at === null);
+    rows.sort(
+      (a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id,
+    );
+    const page = Math.max(Number(url.searchParams.get("page") ?? 1), 1);
+    const pageSize = Math.min(
+      Math.max(Number(url.searchParams.get("page_size") ?? 20), 1),
+      200,
+    );
+    return HttpResponse.json({
+      items: rows
+        .slice((page - 1) * pageSize, page * pageSize)
+        .map(mockNotificationOut),
+      total: rows.length,
+      page,
+      page_size: pageSize,
+    });
+  }),
+
+  http.get("/api/v1/notifications/unread-count", () =>
+    HttpResponse.json({
+      unread: notificationsStore.filter(
+        (n) => n.user_id === MOCK_ADMIN_USER.user_id && n.read_at === null,
+      ).length,
+    }),
+  ),
+
+  http.post("/api/v1/notifications/:notification_id/read", ({ params }) => {
+    const id = Number(params.notification_id);
+    const row = notificationsStore.find(
+      (n) => n.id === id && n.user_id === MOCK_ADMIN_USER.user_id,
+    );
+    if (!row) {
+      return HttpResponse.json(
+        { detail: { error: "not_found", code: "NOTIFICATION_NOT_FOUND" } },
+        { status: 404 },
+      );
+    }
+    row.read_at ??= new Date().toISOString();
+    return HttpResponse.json(mockNotificationOut(row));
+  }),
+
+  http.post("/api/v1/notifications/read-all", () => {
+    let marked = 0;
+    for (const n of notificationsStore) {
+      if (n.user_id === MOCK_ADMIN_USER.user_id && n.read_at === null) {
+        n.read_at = new Date().toISOString();
+        marked += 1;
+      }
+    }
+    return HttpResponse.json({ marked });
+  }),
+
+  // ── 指定审批人（整表替换；空名单 = 团队管理员审批）─────────────────────
+  http.get("/api/v1/team/approvers", () =>
+    HttpResponse.json({
+      team_id: teamStore.id,
+      items: teamApproversStore.map((userId) => {
+        const member = teamMembersStore.find((m) => m.user_id === userId);
+        return {
+          user_id: userId,
+          display_name: member?.display_name ?? mockUserName(userId),
+          email: member?.email ?? null,
+          created_by: MOCK_ADMIN_USER.user_id,
+          created_at: new Date().toISOString(),
+        };
+      }),
+      fallback: "team_admins",
+    }),
+  ),
+
+  http.put("/api/v1/team/approvers", async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as {
+      user_ids?: unknown;
+    };
+    if (body.user_ids !== undefined && !Array.isArray(body.user_ids)) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "INVALID_USER_IDS",
+            field: "user_ids",
+            detail: "user_ids 必须是数组",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const raw = Array.isArray(body.user_ids) ? body.user_ids : [];
+    const ids: number[] = [];
+    for (const value of raw) {
+      const uid = Number(value);
+      if (!Number.isInteger(uid)) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "validation",
+              code: "INVALID_USER_ID",
+              field: "user_ids",
+              detail: `user_id 必须是数字：${String(value)}`,
+            },
+          },
+          { status: 422 },
+        );
+      }
+      if (!ids.includes(uid)) ids.push(uid);
+    }
+    const memberIds = new Set(teamMembersStore.map((m) => m.user_id));
+    const rejected = ids.filter((uid) => !memberIds.has(uid));
+    if (rejected.length > 0) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "APPROVER_NOT_IN_TEAM",
+            field: "user_ids",
+            detail: "指定审批人必须是本团队成员",
+            rejected,
+          },
+        },
+        { status: 422 },
+      );
+    }
+    teamApproversStore.splice(0, teamApproversStore.length, ...ids);
+    return HttpResponse.json({
+      team_id: teamStore.id,
+      items: teamApproversStore.map((userId) => {
+        const member = teamMembersStore.find((m) => m.user_id === userId);
+        return {
+          user_id: userId,
+          display_name: member?.display_name ?? mockUserName(userId),
+          email: member?.email ?? null,
+          created_by: MOCK_ADMIN_USER.user_id,
+          created_at: new Date().toISOString(),
+        };
+      }),
+      fallback: "team_admins",
+    });
+  }),
+
+  // ── Dashboard 漏斗（M3；口径 = worker dashboard_funnel）─────────────────
+  http.get("/api/v1/dashboard/funnel", ({ request }) => {
+    const range = new URL(request.url).searchParams.get("range") ?? "today";
+    return HttpResponse.json(mockDashboardFunnel(range));
   }),
 
   // 单独成模块：与 P1 组互不依赖，放一处便于按域维护（见文件头注释）。

@@ -72,6 +72,12 @@ WORKSTATIONS = [
         "admin_only": False, "status": "active", "subscription": None,
     },
     {
+        # 2026-10-23 M2-C（设计 §6.2）：审批中心独立入口；非计费工位。
+        "key": "approvals", "name": "审批", "route": "/approvals",
+        "group": "business", "order": 35,
+        "admin_only": False, "status": "active", "subscription": None,
+    },
+    {
         "key": "trade-docs", "name": "单证", "route": "/trade-docs",
         "group": "business", "order": 40,
         "admin_only": False, "status": "active", "subscription": None,

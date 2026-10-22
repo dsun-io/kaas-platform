@@ -205,6 +205,20 @@ export const WORKSTATIONS: readonly Workstation[] = [
     subscription: null,
   },
   {
+    // 2026-10-23 M2-C（设计 §6.2）：审批中心独立入口；待批角标由 Sidebar 读
+    // GET /approvals?view=pending 的 total 渲染。subscription=null 非计费。
+    // 注意：contracts-check 按对象花括号提取字段，注释里不要写花括号字面量。
+    key: 'approvals',
+    name: '审批',
+    route: '/approvals',
+    group: 'business',
+    order: 35,
+    icon: 'ClipboardCheck',
+    adminOnly: false,
+    status: 'active',
+    subscription: null,
+  },
+  {
     key: 'trade-docs',
     name: '单证',
     route: '/trade-docs',

@@ -14,6 +14,32 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-23 · M2-B / M2-C / M3 前端 三线收口 ✅）**
+> - **M2-B 订单与报价**：`/orders` 加「来源」「关联询盘/报价」列 + 来源/渠道筛选（真进 `GET /orders` 参数，
+>   空值不传避免非法枚举 422）；详情来源链横幅（询盘→报价→本订单可点跳，direct 显示渠道+确认痕迹）、
+>   「有变更待批」横幅（新旧对比/批准二次确认/拒绝必填理由/历史）、货物明细编辑（pending 直接 PATCH；confirmed 走变更申请）；
+>   建单向导第 1 步加来源三元组（选带询盘的报价自动转 inquiry，内核 422 翻译成操作指引）；报价记录编辑弹窗
+>   （行项整批替换保留成本分解 + 条款 + 状态流转 + 锁定明示）；客户详情 UnlinkedRecords 改「直接下单（正常分类）」默认展开。
+>   **门面**：POST /orders 删除 SQL 第二实现改透传（来源三元组不再静默丢弃）；GET /orders 补三筛选。**内核**：
+>   客户记录 orders 投影补 `source_type/source_channel/inquiry_id`（worker + 共享 `customer_records.py`）。
+> - **M2-C 审批与通知**：`/approvals` 三视图（待我审批/我发起的/已处理）+ `?focus=` 深链 + 分页；
+>   详情新旧明细对比、受影响单证预览（另拉 /trade-docs 并按 order_id 二次过滤）、批准/拒绝（拒绝必填理由）；
+>   顶部通知铃铛（未读角标 60s 轮询、单条已读/全部已读、深链归一）；团队页「审批设置」指定审批人；
+>   导航 `approvals` 双端登记（R2=30）+ sidebar 待批角标（与 `/approvals?view=pending` total 同源，区别于铃铛未读）。
+> - **M3 仪表盘**：占位页 → 商机漏斗看板（四阶段 + 阶段转化率 + 综合分徽标 + 分渠道表按分降序 + 直接下单卡 +
+>   应收概览「待补后端」明确空态）；range 扩 90d；旧 `/dashboard/summary` 页面依赖删除（schema 保留 deprecated）。
+> - **mocks 对齐**：GET/orders 来源筛选与 422、POST/orders 来源解析+内核错误码、PATCH/orders items 落库+非 pending 409 锁、
+>   客户记录订单节点来源字段、通知 type 改内核词汇（approval_*）、新增审批/通知/审批人/漏斗契约测试 6 条。
+> - **门禁**：前端 typecheck / lint 0 error / **1309 passed（155 文件）**；ts-worker **272 passed**；worker
+>   **1695 passed + 12 skipped**；orchestrator **266**；contracts R0–R6 PASS（R2=30）；mocks:check 未覆盖 2 ≤ 20；
+>   ui:standards / ui:contrast PASS；**e2e 28 passed**（a11y 自动发现 /approvals，dashboard 用例已改写）；
+>   sync-shared -Check / schema-coverage / schema-drift / runtime-deps / deploy-domains 全 PASS。
+> - **已知遗留**：①订单列表「有变更待批」角标缺后端计数（应加 `pending_item_change_count`，避免逐单 N+1）；
+>   ②批准前受影响单证只能另拉 /trade-docs（建议聚合行带 affected_docs）；③应收概览待后端
+>   `GET /dashboard/receivables` 聚合（按币种分组）；④`direct_orders.amount` 未分币种直接 SUM（页面已标注）；
+>   ⑤通知 link 内核写 `/orders/{id}` 而前端只有 `/orders?id=`，前端已归一，建议内核改可落地路径；
+>   ⑥报价编辑是 PUT items → PATCH header 两次调用（后端无合并端点，非原子，弹窗保留错误可重试）。
+>
 > **（2026-10-23 · M2-A `/inquiries` 询盘工位 ✅）**
 > - 新增独立一等工位 `/inquiries`（设计 §9.1）：跨客户列表（询盘号/客户/产品摘要/渠道/阶段徽标/报价数/订单数/
 >   最近报价/创建时间）+ 筛选（阶段/渠道/客户/时间/关键词；**客户端分页** —— 内核 `GET /inquiries` 当前无 page 参数，

@@ -12,7 +12,7 @@
  * 所以这里做**客户端分页**：请求不带任何分页参数，切片在本页完成。
  * 不伪造服务端翻页 —— 否则 mock 能翻、生产翻不动（这类"假功能"已踩过坑）。
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertCircle, Inbox } from "lucide-react";
 import { toast } from "sonner";
@@ -56,6 +56,15 @@ export default function InquiriesPage() {
   const [statusRow, setStatusRow] = useState<InquiryRow | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const update = useUpdateInquiry();
+
+  // 深链支持 /inquiries?inquiry_id=<id>：从订单来源链/客户页跳过来直接打开详情。
+  // 不用 useSearchParams（静态导出下需要 Suspense 包裹，quotes 页已踩过），
+  // 直接在挂载后读 location.search。
+  useEffect(() => {
+    const raw = new URLSearchParams(window.location.search).get("inquiry_id");
+    const id = raw === null ? Number.NaN : Number(raw);
+    if (Number.isInteger(id) && id > 0) setSelectedId(id);
+  }, []);
 
   const applyFilters = (next: InquiryFilters) => {
     setFilters(next);
