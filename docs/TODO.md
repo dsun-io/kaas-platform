@@ -278,6 +278,27 @@
 
 ---
 
+## U. UI 整改（2026-10-23 执行方案，唯一活跃 = [`UI_EXECUTION_PLAN_2026-10-23.md`](./UI_EXECUTION_PLAN_2026-10-23.md)）
+
+> 方案按**最新实现与设计**重写（用户 2026-10-23 口径，不是按 UI_STANDARDS 做条文合并）；
+> 旧审计 P0/P1 清单仍有效，旧 PRD「两条并行线」已被本表批次取代。
+
+| # | 批次 | 内容 | 状态 |
+|---|---|---|---|
+| U-P0A | 新实现口径收口（后端） | 订单 `pending_item_change_count` / 审批行 `affected_docs` / `GET /dashboard/receivables` / 通知 link 改 `/orders?id=` / funnel `direct_orders.by_currency` | ✅ 2026-10-23：worker **1709+12skip**、ts **278 passed**、路由 274=188+86（EXPECTED_TOTAL 278）；前端接线随 U-P0A-FE |
+| U-P0A-FE | 新实现口径收口（前端接线） | 订单待批角标 / 审批受影响单证改用聚合字段 / dashboard 应收真实数据 / direct 分币种展示 / 移除通知 link 归一兜底 | ⏳ |
+| U-P0C | 共享原语 + 门禁 | ErrorState / DataTable / FilterBar / AsyncButton + useDebouncedValue / useUrlState / useAsyncAction + status-tones + `pnpm ui:patterns`（shadow 134 违规；**2026-10-30 转强制**） | ✅ 原语与脚本落地（新增 39 测）；页面回填待 B 批 |
+| U-P0B1 | 危险操作确认 + 防重 | outreach 群发/测试邮件 / research 删除与保存 / ai-providers 清密钥+空输入禁用+模型失焦保存 / quotes 签发+批量建单 / trade-docs 作废 / settings 重载 / 产品税率删除（window.prompt→Dialog） | ✅ 2026-10-23：8 处确认弹窗 + pending 防重（新增 27 测） |
+| U-P0B2 | 失败反馈 | spec-config 向导、shipments×3、records 录入、gray-release、spec-proposals、leadgen 详情、quotes Q9/Q15、outreach setDefault | ⏳ |
+| U-P0B3 | 失败≠空态 | events、pricing-data、market 五 tab、gray-release flags、kb 假统计 | ⏳ |
+| U-P0B4 | 防重（剩余） | leadgen 批量抓取/扫描已回复、添加邮箱/创建活动 | ⏳ |
+| U-P0B5 | 页头/错误边界 | 8 个 error.tsx + loading + RouteGuard + WorkstationGate + 全局 not-found | ⏳ |
+| U-P0B6 | 行内展开迁移 | X1–X8 按默认范式迁 DetailDrawer/Dialog | ⏳ |
+| U-P1D | 结构债 | 拆 7 个巨型组件、幽灵 /quotations、FreightPanel、状态映射三份重复 | ⏳ |
+| U-P1E | 体验一致性 | 分页/URL 筛选/搜索防抖/FormField/键盘可达/aria-label | ⏳ |
+
+---
+
 ---
 
 ## H. 销账规则

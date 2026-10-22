@@ -13,6 +13,7 @@ __all__ = [
     "build_funnel",
     "compute_composite_score",
     "channel_conversion_rates",
+    "direct_currency_breakdown",
 ]
 
 # ── 权重常量（D-6 拍板）─────────────────────────────────────────────────────
@@ -74,6 +75,31 @@ def compute_composite_score(
         + quote_count * WEIGHT_QUOTE
         + order_count * WEIGHT_ORDER
     )
+
+
+def direct_currency_breakdown(rows: list[dict[str, Any]]) -> list[dict]:
+    """直接下单按币种拆账（P0-A A5）—— 多币种时不再用混加金额误导。
+
+    rows 每项形状（worker 的 GROUP BY currency 聚合结果）：
+      {"currency": <str|None>, "order_count": <int>, "amount": <number>}
+
+    返回按币种字典序的 `[{"currency","count","amount"}]`。
+    币种缺失 → `"—"`（与应收聚合同口径，不伪造 USD）。
+
+    为什么上层还保留 `count/amount`：字段是既有契约（旧卡片在用），
+    但 `amount` 是**跨币种原值相加**、仅规模参考 —— 精确金额只看本函数结果。
+    """
+    out: list[dict] = []
+    for row in rows or []:
+        raw = row.get("currency")
+        text = str(raw).strip() if raw is not None else ""
+        out.append({
+            "currency": text.upper() if text else "—",
+            "count": int(row.get("order_count") or 0),
+            "amount": round(float(row.get("amount") or 0), 2),
+        })
+    out.sort(key=lambda item: item["currency"])
+    return out
 
 
 def channel_conversion_rates(channels: list[dict[str, Any]]) -> list[dict]:

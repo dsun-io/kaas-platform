@@ -420,7 +420,10 @@ async def _decide_change_request(request: Request, order_id: int, rid: int,
                     type_=NOTIF_APPROVED if approve else NOTIF_REJECTED,
                     title=(f"订单 #{order_id} 的明细变更已{'批准' if approve else '被拒绝'}"),
                     body=(str(reason).strip() if reason else None),
-                    link=f"/orders/{order_id}",
+                    # A4（P0-A）：前端只有 /orders 列表路由（没有 /orders/{id} 页面），
+                    # 深链必须写成前端可落地的查询参数形式，否则点击通知 404。
+                    # 提交侧保持 /approvals?focus={rid}（审批中心定位到该申请）。
+                    link=f"/orders?id={order_id}",
                     ref_type="order_item_change_request", ref_id=rid,
                 )
             await _main._record_business_event(
@@ -531,9 +534,30 @@ async def list_approvals(
         f" LIMIT ${len(params) + 1} OFFSET ${len(params) + 2}",
         *params, page_size, (page - 1) * page_size,
     )
+    # A2（P0-A）：审批行直接带「受影响单证」清单 —— 详情抽屉不必再拉 /trade-docs
+    # （非管理员可能 403；静默降级会让"已开合同可能对不上货"的提示消失）。
+    # **整页一次 IN 查完**，禁止逐行再查（N+1）；形状与批准响应的 affected_docs 相同。
+    row_dicts = [dict(r) for r in rows]
+    order_ids = sorted({int(d["order_id"]) for d in row_dicts
+                        if d.get("order_id") is not None})
+    docs_by_order: dict[int, list[dict]] = {}
+    if order_ids:
+        doc_rows = await db.fetch(
+            request,
+            "SELECT order_id, id, doc_type, doc_no, status FROM trade_docs"
+            " WHERE tenant_id=$1 AND order_id = ANY($2::bigint[]) ORDER BY id",
+            DEFAULT_TENANT, order_ids,
+        )
+        for doc in doc_rows:
+            dd = dict(doc)
+            docs_by_order.setdefault(int(dd["order_id"]), []).append({
+                "id": dd.get("id"),
+                "doc_type": dd.get("doc_type"),
+                "doc_no": dd.get("doc_no"),
+                "status": dd.get("status"),
+            })
     items = []
-    for r in rows:
-        d = dict(r)
+    for d in row_dicts:
         items.append({
             **_request_dict(d, order_no=d.get("order_no")),
             "order_status": d.get("order_status"),
@@ -541,6 +565,9 @@ async def list_approvals(
                                    if d.get("total_amount") is not None else None),
             "order_currency": d.get("currency"),
             "requester_name": d.get("requester_name"),
+            # 无单证 = []（不是 None：前端直接 .length / 直接渲染空提示）
+            "affected_docs": (docs_by_order.get(int(d["order_id"]), [])
+                              if d.get("order_id") is not None else []),
         })
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 

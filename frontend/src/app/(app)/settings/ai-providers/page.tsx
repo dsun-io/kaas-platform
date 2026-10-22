@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { usePageView } from "@/lib/events/use-page-view";
 import { RouteGuard } from "@/components/route-guard";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -16,6 +16,8 @@ import {
 } from "@/components/shared";
 import { toast } from "sonner";
 import { KeyRound, FlaskConical, Play, Save } from "lucide-react";
+import { normalizeApiError } from "@/lib/api/api-error";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { RunTaskDialog } from "./components/run-task-dialog";
 
 /* ── types ─────────────────────────────────────────────────────────────── */
@@ -94,6 +96,24 @@ export default function AiProvidersPage() {
   const [keys, setKeys] = useState<Record<string, string>>({});
   // C36 #13：运行任务弹窗（null = 关闭）
   const [runTask, setRunTask] = useState<TaskMeta | null>(null);
+  // P0-B1/B4：提交中禁用 + 同 tick 连点去重（按操作 key 记账，见 begin/end）
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [testingKey, setTestingKey] = useState<string | null>(null);
+  const [savingBinding, setSavingBinding] = useState<string | null>(null);
+  const [modelDrafts, setModelDrafts] = useState<Record<string, string>>({});
+  // 清密钥是破坏性动作（清完该服务商的任务会掉到模板/兜底）⇒ 二次确认
+  const [clearTarget, setClearTarget] = useState<string | null>(null);
+  const [clearing, setClearing] = useState(false);
+  const [clearError, setClearError] = useState<string | null>(null);
+  const inFlight = useRef<Set<string>>(new Set());
+  const begin = (key: string) => {
+    if (inFlight.current.has(key)) return false;
+    inFlight.current.add(key);
+    return true;
+  };
+  const end = (key: string) => {
+    inFlight.current.delete(key);
+  };
 
   const { data: provData, refetch: refetchProv } = useQuery({
     queryKey: ["ai-providers"],
@@ -135,38 +155,81 @@ export default function AiProvidersPage() {
       ).data,
   });
 
+  /**
+   * 保存密钥。**空输入不再"顺手清密钥"**（P0-B1/C1）：
+   * 以前输入框留空点保存 = PUT api_key:""，一次误点就把密钥清了、且没有确认。
+   * 现在空输入时保存按钮直接禁用，清除只走「清除密钥」入口（带二次确认）。
+   */
   const saveKey = async (name: string) => {
-    const v = keys[name] ?? "";
+    const v = (keys[name] ?? "").trim();
+    if (v === "") return;
+    if (!begin(`save:${name}`)) return;
+    setSavingKey(name);
     try {
-      await apiClient.put(`/ai/providers/${name}`, { api_key: v }); // "" clears
-      toast.success(
-        v
-          ? `${providerLabel(name)} 密钥已保存`
-          : `${providerLabel(name)} 密钥已清除`,
-      );
-      setKeys({ ...keys, [name]: "" });
+      await apiClient.put(`/ai/providers/${name}`, { api_key: v });
+      toast.success(`${providerLabel(name)} 密钥已保存`);
+      setKeys((prev) => ({ ...prev, [name]: "" }));
       refetchProv();
-    } catch {
-      toast.error("保存失败");
+    } catch (err) {
+      toast.error(normalizeApiError(err).message || "保存失败");
+    } finally {
+      end(`save:${name}`);
+      setSavingKey(null);
     }
   };
 
   const testProvider = async (name: string) => {
+    if (!begin(`test:${name}`)) return;
+    setTestingKey(name);
     try {
       const { data } = await apiClient.post<{
         ok: boolean;
         latency_ms: number | null;
         error?: string;
       }>(`/ai/providers/${name}/test`);
-      data.ok
-        ? toast.success(`${providerLabel(name)} 连接正常（${data.latency_ms} ms）`)
-        : toast.error(`${providerLabel(name)} 连接失败：${data.error ?? ""}`);
+      if (data.ok) {
+        toast.success(
+          `${providerLabel(name)} 连接正常（${data.latency_ms} ms）`,
+        );
+      } else {
+        toast.error(`${providerLabel(name)} 连接失败：${data.error ?? ""}`);
+      }
     } catch {
       toast.error("测试失败");
+    } finally {
+      end(`test:${name}`);
+      setTestingKey(null);
+    }
+  };
+
+  /** 清除密钥：先弹二次确认，确认后才 PUT api_key:""（另一条清除路径同样确认）。 */
+  const requestClearKey = (name: string) => {
+    setClearError(null);
+    setClearTarget(name);
+  };
+
+  const confirmClearKey = async () => {
+    const name = clearTarget;
+    if (!name || !begin(`clear:${name}`)) return;
+    setClearing(true);
+    setClearError(null);
+    try {
+      await apiClient.put(`/ai/providers/${name}`, { api_key: "" });
+      toast.success(`${providerLabel(name)} 密钥已清除`);
+      setKeys((prev) => ({ ...prev, [name]: "" }));
+      setClearTarget(null);
+      refetchProv();
+    } catch (err) {
+      // 失败原因留在弹窗里（弹窗不关，可直接重试或取消）
+      setClearError(normalizeApiError(err).message);
+    } finally {
+      end(`clear:${name}`);
+      setClearing(false);
     }
   };
 
   const toggleTask = async (t: TaskBinding, enabled: boolean) => {
+    if (!begin(`toggle:${t.task_key}`)) return;
     try {
       await apiClient.put(`/ai/task-bindings/${t.task_key}`, { enabled });
       toast.success(
@@ -176,16 +239,33 @@ export default function AiProvidersPage() {
       refetchUsage();
     } catch {
       toast.error("更新失败");
+    } finally {
+      end(`toggle:${t.task_key}`);
     }
   };
 
+  /**
+   * 任务绑定的局部保存（服务商下拉即时保存；模型输入改为**失焦保存**，C3）。
+   * 失焦保存避免每敲一个字符就打一次 PUT（旧实现 onChange 直接发请求）。
+   */
   const saveBinding = async (t: TaskBinding, patch: Partial<TaskBinding>) => {
+    if (!begin(`binding:${t.task_key}`)) return;
+    setSavingBinding(t.task_key);
     try {
       await apiClient.put(`/ai/task-bindings/${t.task_key}`, patch);
       refetchBindings();
     } catch {
       toast.error("保存失败");
+    } finally {
+      end(`binding:${t.task_key}`);
+      setSavingBinding(null);
     }
+  };
+
+  const commitModel = (t: TaskBinding, raw: string) => {
+    const next = raw.trim();
+    if (next === (t.model ?? "")) return;
+    void saveBinding(t, { model: next });
   };
 
   // C27/D6：AI 配置读写全部 admin-only（后端 `_require_platform_ops` 同口径）。
@@ -202,6 +282,7 @@ export default function AiProvidersPage() {
           <p className="mb-3 text-xs text-muted-foreground">
             每个任务的优先链：绑定的服务商 → DeepSeek ↔ Kimi 互为兜底 → Zhipu →
             内置模板。任务关闭 AI 也是合法配置，将始终使用模板。
+            输入框留空并保存不会清除密钥；要清除请用「清除密钥」（会二次确认）。
           </p>
           <div className="grid gap-3 md:grid-cols-3">
             {PROVIDERS.map((name) => {
@@ -234,18 +315,20 @@ export default function AiProvidersPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => saveKey(name)}
-                      disabled={(keys[name] ?? "") === "" && !p?.has_key}
+                      onClick={() => void saveKey(name)}
+                      disabled={
+                        (keys[name] ?? "").trim() === "" || savingKey === name
+                      }
                       aria-label={`保存 ${providerLabel(name)}密钥`}
-                      title={`保存 ${providerLabel(name)}密钥`}
+                      title={`保存 ${providerLabel(name)}密钥（留空不会清密钥）`}
                     >
                       <Save className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => testProvider(name)}
-                      disabled={!p?.has_key}
+                      onClick={() => void testProvider(name)}
+                      disabled={!p?.has_key || testingKey === name}
                       aria-label={`测试 ${providerLabel(name)}连接`}
                       title={`测试 ${providerLabel(name)}连接`}
                     >
@@ -257,15 +340,8 @@ export default function AiProvidersPage() {
                       className="mt-2"
                       variant="ghost"
                       size="sm"
-                      onClick={() => {
-                        setKeys({ ...keys, [name]: "" });
-                        apiClient
-                          .put(`/ai/providers/${name}`, { api_key: "" })
-                          .then(() => {
-                            toast.success("密钥已清除");
-                            refetchProv();
-                          });
-                      }}
+                      onClick={() => requestClearKey(name)}
+                      disabled={clearing && clearTarget === name}
                     >
                       <KeyRound className="mr-1 h-3 w-3" /> 清除密钥
                     </Button>
@@ -336,10 +412,16 @@ export default function AiProvidersPage() {
                       <td className="p-2">
                         <Input
                           className="h-7 w-40 text-xs"
-                          value={t.model ?? ""}
+                          placeholder="默认模型"
+                          value={modelDrafts[t.task_key] ?? t.model ?? ""}
+                          disabled={savingBinding === t.task_key}
                           onChange={(e) =>
-                            saveBinding(t, { model: e.target.value })
+                            setModelDrafts((prev) => ({
+                              ...prev,
+                              [t.task_key]: e.target.value,
+                            }))
                           }
+                          onBlur={(e) => commitModel(t, e.target.value)}
                         />
                       </td>
                       <td className="p-2 text-xs text-muted-foreground">
@@ -358,7 +440,8 @@ export default function AiProvidersPage() {
         {/* 运行任务（C36 #13 · POST /ai/tasks/{key}/run） */}
         <SectionCard title="运行任务（调试/补跑）">
           <p className="mb-3 text-xs text-muted-foreground">
-            手动运行一次任务：未启用 AI 时使用内置模板；启用后按「绑定服务商 → 兜底」的顺序调用。
+            手动运行一次任务：未启用 AI 时使用内置模板；启用后按「绑定服务商 →
+            兜底」的顺序调用。
             每次运行都会记入下方调用记录；无权限或任务正在运行时会给出明确原因。
           </p>
           {(taskData?.items ?? []).length === 0 ? (
@@ -468,6 +551,23 @@ export default function AiProvidersPage() {
           }}
         />
       )}
+
+      {/* P0-B1：清除密钥二次确认（密钥一旦清除，相关任务会立即掉到兜底/模板） */}
+      <ConfirmDialog
+        open={clearTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !clearing) {
+            setClearTarget(null);
+            setClearError(null);
+          }
+        }}
+        title={`清除 ${providerLabel(clearTarget ?? "")} 的服务密钥？`}
+        description="清除后该服务商不再可用；绑定到它的 AI 任务会立即回落到兜底服务商或内置模板，直到重新填写密钥。此操作不可撤销。"
+        confirmLabel="确认清除"
+        pending={clearing}
+        error={clearError}
+        onConfirm={() => void confirmClearKey()}
+      />
     </RouteGuard>
   );
 }

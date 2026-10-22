@@ -117,6 +117,13 @@ readWrite("/api/v1/notifications", "orders:read", "orders:write");
 // 指定审批人（/api/v1/team/approvers）**故意不声明**：团队管理配置只走 UI 会话（JWT），
 // API token 请求按「未命中 = 拒绝」回 403 SCOPE_NOT_DECLARED —— 不拿 orders:write 越权放大。
 
+// ⑨ dashboard（看板聚合，P0-A A3 起含 /dashboard/receivables）
+// 只读域：聚合口径本身在内核（funnel/receivable_summary），没有可写端点。
+// 白名单里没有 dashboard:read，且看板数据主体是订单/应收 ⇒ 复用 orders:read
+// （与审批中心复用 orders:* 同一理由：不发明第二套 scope）。
+// 注意：写方法不命中任何规则 ⇒ 403 SCOPE_NOT_DECLARED（readOnly 只声明读方法）。
+readOnly("/api/v1/dashboard", "orders:read");
+
 /** 有序规则表（只读导出，供文档/测试核对）。 */
 export const SCOPE_RULES: readonly ScopeRule[] = rules;
 

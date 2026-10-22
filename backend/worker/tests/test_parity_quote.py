@@ -1165,9 +1165,13 @@ def test_list_orders_shape_and_scope():
     body = resp.json()
     assert set(body) == {"items", "total", "page", "page_size"}
     assert body["total"] == 1
-    assert set(body["items"][0]) == _ORDER_KEYS
+    # P0-A A1：列表行比详情多一个聚合键（待批明细变更数，列表角标用），
+    # 详情/创建/更新的公共契约仍是 row_to_order 原键集（见 test_get_order_*）。
+    assert set(body["items"][0]) == _ORDER_KEYS | {"pending_item_change_count"}
+    assert body["items"][0]["pending_item_change_count"] == 0
     assert isinstance(body["items"][0]["total_amount"], float)
-    list_sql, list_args = conn.first("FROM orders WHERE")
+    # 取**列表**语句（count 语句也是 "FROM orders WHERE"，故以带别名 o 的列表查询定位）
+    list_sql, list_args = conn.first("FROM orders o WHERE")
     assert "owner_id = $" in list_sql and "team_id = $" in list_sql
     assert "5" in [str(a) for a in list_args] and 2 in list_args
 
@@ -1178,7 +1182,7 @@ def test_list_orders_worker_q_search_extension():
     with _patched(conn, CUSTOMER):
         resp = client.get("/api/v1/orders?q=ACME")
     assert resp.status_code == 200
-    list_sql, list_args = conn.first("FROM orders WHERE")
+    list_sql, list_args = conn.first("FROM orders o WHERE")
     assert "customer_name ILIKE $" in list_sql and "order_no ILIKE $" in list_sql
     assert "%ACME%" in list_args
 
@@ -1196,7 +1200,7 @@ def test_parity_quote_9_list_orders_customer_filter():
     with _patched(conn, CUSTOMER):
         resp = client.get("/api/v1/orders?customer_id=3")
     assert resp.status_code == 200
-    assert "customer_id" in conn.first("FROM orders WHERE")[0]
+    assert "customer_id" in conn.first("FROM orders o WHERE")[0]
 
 
 def test_parity_quote_3_list_orders_rejects_out_of_range_pagination():

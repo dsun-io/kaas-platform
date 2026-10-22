@@ -11,12 +11,14 @@ import { LoadingBlock } from "@/components/shared/loading-block";
  *  · 同一产品只能有一条产品税率（已选过的产品不能再选）；
  *  · 税费变化后在一个页面统一管理，不用去每个产品页改。
  */
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Power, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import apiClient from "@/lib/api/client";
+import { normalizeApiError } from "@/lib/api/api-error";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -118,6 +120,10 @@ export default function TaxArchivesPage() {
   const [showForm, setShowForm] = useState(false);
   const [ptForm, setPtForm] = useState<PTForm>(EMPTY_PT);
   const [showPtForm, setShowPtForm] = useState(false);
+  // P0-B1：产品税率「停用」= DELETE 软删（影响报价自动带出的进项税/退税率）⇒ 二次确认
+  const [deleteTarget, setDeleteTarget] = useState<ProductTaxRate | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deletingRef = useRef(false);
 
   const list = useQuery({
     queryKey: KEY,
@@ -232,10 +238,25 @@ export default function TaxArchivesPage() {
     },
     onSuccess: () => {
       toast.success("产品税率已停用");
+      setDeleteTarget(null);
+      setDeleteError(null);
       void qc.invalidateQueries({ queryKey: PT_KEY });
     },
-    onError: (e) => toast.error(errText(e)),
+    // 失败原因留在确认弹窗里（403/404 原样透出），弹窗不关
+    onError: (e) => setDeleteError(normalizeApiError(e).message || errText(e)),
   });
+
+  /** 确认后停用产品税率；`deletingRef` 兜住同一 tick 连点两次。 */
+  const confirmDeleteProductTax = () => {
+    if (!deleteTarget || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleteError(null);
+    deleteProductTax.mutate(deleteTarget, {
+      onSettled: () => {
+        deletingRef.current = false;
+      },
+    });
+  };
 
   const submit = () => {
     if (!canWrite) {
@@ -617,7 +638,10 @@ export default function TaxArchivesPage() {
                             size="sm"
                             variant="ghost"
                             disabled={deleteProductTax.isPending}
-                            onClick={() => deleteProductTax.mutate(row)}
+                            onClick={() => {
+                              setDeleteError(null);
+                              setDeleteTarget(row);
+                            }}
                           >
                             <Trash2 className="mr-1 h-3 w-3" /> 停用
                           </Button>
@@ -639,6 +663,23 @@ export default function TaxArchivesPage() {
       {/* C36 #14/#5：手工汇率兜底 + 汇率历史（同一屏：写与查） */}
       <FxRateCard />
       <FxHistoryCard />
+
+      {/* P0-B1：产品税率停用二次确认（软删，但报价会自动改用其它税率） */}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(next) => {
+          if (!next && !deleteProductTax.isPending) {
+            setDeleteTarget(null);
+            setDeleteError(null);
+          }
+        }}
+        title={`停用产品「${deleteTarget ? (productName.get(deleteTarget.product_key) ?? deleteTarget.product_key) : ""}」的税率？`}
+        description="停用后该产品不再有进项税/退税率，报价时会回落到其它可用税率或需要重新配置；记录本身保留（软删，可审计）。"
+        confirmLabel="确认停用"
+        pending={deleteProductTax.isPending}
+        error={deleteError}
+        onConfirm={confirmDeleteProductTax}
+      />
     </div>
   );
 }

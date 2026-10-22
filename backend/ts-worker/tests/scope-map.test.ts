@@ -114,6 +114,11 @@ describe("resolveRequiredScope（有序规则）", () => {
     ["GET", "/api/v1/notifications/unread-count", "orders:read"],
     ["POST", "/api/v1/notifications/read-all", "orders:write"],
     ["GET", "/api/v1/team/approvers", null],
+    // P0-A A3：dashboard 只读聚合复用 orders:read（白名单无 dashboard:read）。
+    ["GET", "/api/v1/dashboard/receivables", "orders:read"],
+    ["GET", "/api/v1/dashboard/funnel", "orders:read"],
+    // 只读域：写方法未声明 ⇒ 403（readOnly 只登记 GET/HEAD/OPTIONS）
+    ["POST", "/api/v1/dashboard/receivables", null],
     // 未声明 → null（调用方必须 403）
     ["POST", "/api/v1/intel/shipments", null],
     ["POST", "/api/v1/market/name-mappings", null],

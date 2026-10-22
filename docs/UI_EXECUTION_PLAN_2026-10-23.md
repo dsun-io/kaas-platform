@@ -68,9 +68,12 @@
 | B5 页头/错误边界 | 8 个 `error.tsx`（含 dashboard/kb/settings）、loading 分支、RouteGuard 无权限（A1）、WorkstationGate 引导（W1）、新增全局 `not-found.tsx` | 错误/加载/无权限页均有 PageHeader/ErrorState + role=alert |
 | B6 行内展开迁移 | X1 customers 询盘详情、X2 leadgen 线索（200 行）、X3 outreach 邮件、X4 research 编辑、X5 shipments 编辑（兼数据丢失）、X7 quotes 记录堆叠、X8 pricing 单元格 | 按默认范式迁 DetailDrawer/Dialog；例外须有容器+键盘可达 |
 
-### P0-C · 共享原语与门禁（1 轮，B5/B2 的前置）
+### P0-C · 共享原语与门禁（1 轮，B5/B2 的前置）✅ 原语已落地（2026-10-23）
 - 新增 `ErrorState`（role=alert + 重试）、`DataTable`（声明式列 + 空态/加载/分页插槽）、`FilterBar` + `useDebouncedValue`、`useUrlState`（筛选入 URL）、`useAsyncAction`（pending + 错误出口）、`lib/status-tones.ts`。
-- `pnpm ui:patterns`：禁 `window.confirm/alert/prompt`、禁裸 `<table>`、禁数据区纯文本加载/空态、`useMutation` 缺 onError 报警、page_size 硬编码无分页报警。**先 shadow 一周再强制**。
+- `pnpm ui:patterns`：禁 `window.confirm/alert/prompt`、禁裸 `<table>`、禁数据区纯文本加载/空态、`useMutation` 缺 onError 报警、page_size 硬编码无分页报警。
+  **进度（2026-10-23）**：脚本已落地 `frontend/scripts/ui-patterns-check.cjs` + `pnpm ui:patterns` / `ui:patterns:test`，
+  shadow 首扫 284 文件命中 **134 条**（native-dialog 7 / bare-table 39 / plain-text-state 28 / mutation-on-error 55 / page-size 5）。
+  **2026-10-23 ~ 2026-10-30 shadow；2026-10-30 转强制**（CI 加 `pnpm ui:patterns --strict` + `pnpm ui:patterns:test`）。
 - 换用顺序：先 ErrorState（B5/B3 用），再 useAsyncAction（B2/B4 用），DataTable/FilterBar 随后。
 
 ### P1-D · 结构债（2 轮，随批次顺手做）
@@ -103,3 +106,6 @@
 | 日期 | 变更 |
 |---|---|
 | 2026-10-23 | 根据 M1/M2/M3 最新实现重写执行方案：旧 PRD「两条并行线」→ §3 分批；新增 P0-A（新实现小缺口）；旧审计条目状态校正见 §0.1 |
+| 2026-10-23 | **P0-A 后端（A1–A5）完成**：待批计数 / 审批 affected_docs / dashboard receivables / 通知 link / funnel 分币种；worker 1709+12skip、ts 278、路由 274=188+86 |
+| 2026-10-23 | **P0-C 原语落地**：ErrorState/DataTable/FilterBar/AsyncButton + use* hooks + status-tones + `pnpm ui:patterns` shadow（134 违规，2026-10-30 转强制） |
+| 2026-10-23 | **P0-B1/B4 止血完成**：8 处危险操作确认 + pending 防重（新增 27 测）；剩 U-P0A-FE 前端接线与 B2/B3/B4/B5/B6/P1 批次 |

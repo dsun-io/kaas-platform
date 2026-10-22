@@ -206,6 +206,15 @@ function rowToOrder(row: Row): Record<string, unknown> {
   };
 }
 
+/** 列表行 = row_to_order 28 键 + A1「待批明细变更数」（详情/创建/更新的公共契约不加）。 */
+function rowToListOrder(row: Row): Record<string, unknown> {
+  return {
+    ...rowToOrder(row),
+    // 列表 SQL 用相关子查询一次带出（禁止逐单再查 = N+1）；缺列按 0
+    pending_item_change_count: num0(row.pending_item_change_count),
+  };
+}
+
 /** row_to_order_item：11 键（不返回 tenant_id/owner_id 等内部列）。 */
 function rowToOrderItem(row: Row): Record<string, unknown> {
   return {
@@ -429,8 +438,13 @@ app.get("/api/v1/orders", (c) => respond(c, async () => {
     const totalRows = await sql.unsafe(
       "SELECT count(*) AS n FROM orders WHERE " + cond, params as never[],
     );
+    // A1（P0-A）：每单「待批明细变更数」与列表**同一次查询**取回（相关子查询），
+    // 禁止逐单再查；列表据此显示角标（>0）。
     const rows = await sql.unsafe(
-      "SELECT * FROM orders WHERE " + cond + " ORDER BY created_at DESC, id DESC"
+      "SELECT o.*, (SELECT count(*) FROM order_item_change_requests r"
+      + " WHERE r.tenant_id = o.tenant_id AND r.order_id = o.id"
+      + " AND r.status = 'pending') AS pending_item_change_count"
+      + " FROM orders o WHERE " + cond + " ORDER BY created_at DESC, id DESC"
       + " LIMIT $" + String(params.length + 1) + " OFFSET $" + String(params.length + 2),
       [...params, query.page_size, (query.page - 1) * query.page_size] as never[],
     );
@@ -440,7 +454,7 @@ app.get("/api/v1/orders", (c) => respond(c, async () => {
     };
   });
   return c.json({
-    items: payload.rows.map(rowToOrder),
+    items: payload.rows.map(rowToListOrder),
     total: payload.total,
     page: query.page,
     page_size: query.page_size,

@@ -13,6 +13,7 @@ from kaas_common.workstation.funnel import (
     build_funnel,
     channel_conversion_rates,
     compute_composite_score,
+    direct_currency_breakdown,
 )
 
 
@@ -65,6 +66,24 @@ def test_channel_conversion_rates_sorts_by_score():
     assert out[1]["composite_score"] == 34
 
 
+def test_direct_currency_breakdown_sorts_and_normalizes():
+    """P0-A A5：直接下单按币种拆账（多币种不再用混加金额误导）。"""
+    out = direct_currency_breakdown([
+        {"currency": "USD", "order_count": 3, "amount": "900.50"},
+        {"currency": "cny", "order_count": 1, "amount": 68000},
+    ])
+    assert out == [
+        {"currency": "CNY", "count": 1, "amount": 68000.0},
+        {"currency": "USD", "count": 3, "amount": 900.5},
+    ]
+
+
+def test_direct_currency_breakdown_unknown_currency_is_not_usd():
+    out = direct_currency_breakdown(
+        [{"currency": None, "order_count": 2, "amount": None}])
+    assert out == [{"currency": "—", "count": 2, "amount": 0.0}]
+
+
 def test_channel_conversion_rates_null_channel_becomes_other():
     out = channel_conversion_rates([
         {"channel": None, "inquiry_count": 5, "quote_count": 0,
@@ -114,7 +133,10 @@ def test_dashboard_funnel_endpoint_shape():
                    "completed_count": 10, "completed_amount": 50000.0},
                   {"ord": 5, "amt": 8000.0}],
         fetch=[[{"channel": "email", "inquiry_count": 50, "quote_count": 30,
-                 "order_count": 10, "completed_count": 3}]],
+                 "order_count": 10, "completed_count": 3}],
+               # 直接下单按币种（P0-A A5）：GROUP BY currency 一次取回
+               [{"currency": "USD", "order_count": 5, "amount": 8000.0},
+                {"currency": "CNY", "order_count": 2, "amount": 40000.0}]],
     )
 
     async def run():
@@ -144,6 +166,14 @@ def test_dashboard_funnel_endpoint_shape():
             assert body["funnel"]["composite_score"] == 100 + 120 + 300
             assert body["channels"][0]["channel"] == "email"
             assert body["direct_orders"]["count"] == 5
+            # A5：amount 保留（跨币种原值相加、仅规模参考），精确金额看 by_currency
+            assert body["direct_orders"]["amount"] == 8000.0
+            assert body["direct_orders"]["by_currency"] == [
+                {"currency": "CNY", "count": 2, "amount": 40000.0},
+                {"currency": "USD", "count": 5, "amount": 8000.0},
+            ]
+            # 一次 GROUP BY 取全部币种（不是逐币种/逐单查询）
+            assert any("GROUP BY currency" in c[0] for c in conn.calls)
             # cohort 口径：询盘查询带 created_at >= $2，且 since 作为参数传入
             cohort_calls = [c for c in conn.calls
                             if "cust_inquiries" in c[0] and "created_at >= $2" in c[0]]

@@ -185,10 +185,34 @@ describe("GET /api/v1/orders", () => {
       order_date: "2026-10-01T00:00:00.000+00:00",
       created_at: "2026-10-01T03:04:05.000+00:00",
       owner_scope: "private",
+      // A1（P0-A）：行上没有聚合列 ⇒ 0（不是 undefined，前端直接 >0 判角标）
+      pending_item_change_count: 0,
     });
     const listCall = dbCallsContaining("ORDER BY created_at DESC")[0]!;
     expect(listCall.query).toContain("(owner_id = $2 OR owner_scope = 'tenant' OR team_id = $3)");
+    // A1：待批计数与列表同一次查询（相关子查询），不是逐单再查一次
+    expect(listCall.query).toContain("order_item_change_requests");
+    expect(listCall.query).toContain("pending_item_change_count");
+    expect(dbCallsContaining("order_item_change_requests")).toHaveLength(1);
     expect(listCall.params).toEqual(["default", "5", 7, 20, 0]);
+  });
+
+  it("待批明细变更数：列表行带 pending_item_change_count（>0 显示角标）", async () => {
+    const user = userRow();
+    resetDb((query) => {
+      if (query.includes("FROM users WHERE id")) return [user];
+      if (query.includes("count(*) AS n FROM orders")) return [{ n: "1" }];
+      if (query.includes("FROM orders")) {
+        return [{ ...ORDER_ROW, pending_item_change_count: "2" }];
+      }
+      return [];
+    });
+
+    const res = await request("/api/v1/orders", user);
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { items: Array<Record<string, unknown>> };
+    expect(body.items[0]!.pending_item_change_count).toBe(2);
   });
 });
 

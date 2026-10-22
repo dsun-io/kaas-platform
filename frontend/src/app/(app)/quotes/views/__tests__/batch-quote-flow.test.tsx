@@ -25,9 +25,7 @@ import { BatchQuoteView } from "../batch-quote-view";
 const mocks = vi.hoisted(() => {
   // 稳定引用：不要在 hook mock 里内联对象字面量（见文件头说明）。
   const PRODUCTS = {
-    products: [
-      { key: "field_fence", name: "牛栏网", name_en: "Field Fence" },
-    ],
+    products: [{ key: "field_fence", name: "牛栏网", name_en: "Field Fence" }],
     total: 1,
   };
   const FORMULAS = {
@@ -197,6 +195,15 @@ function generateButton(): HTMLButtonElement {
   return btn;
 }
 
+/** P0-B1/Q10：点「生成报价单」只开确认弹窗，真正落库要点弹窗里的「确认生成」。 */
+function confirmGenerateButton(): HTMLButtonElement {
+  const btn = [...document.querySelectorAll("button")].find(
+    (b) => (b.textContent ?? "").trim() === "确认生成",
+  );
+  if (!btn) throw new Error("没找到「确认生成」按钮");
+  return btn;
+}
+
 /** 走到「已勾选 1 个询盘、成本已填」这一步（不含点击生成）。 */
 async function pickCustomerAndInquiry() {
   await waitFor(
@@ -300,6 +307,14 @@ describe("批量报价流程", () => {
 
     act(() => generateButton().click());
 
+    // P0-B1/Q10：未确认前不得落库（也不应发起算价循环）
+    expect(mocks.post.mock.calls.some((c) => c[0] === "/quotes/batch")).toBe(
+      false,
+    );
+    expect(document.body.textContent).toContain("批量生成报价单？");
+
+    act(() => confirmGenerateButton().click());
+
     await waitFor(
       () => mocks.post.mock.calls.some((c) => c[0] === "/quotes/batch"),
       undefined,
@@ -349,6 +364,7 @@ describe("批量报价流程", () => {
     await pickCustomerAndInquiry();
 
     act(() => generateButton().click());
+    act(() => confirmGenerateButton().click());
 
     await waitFor(
       () => mocks.toastError.mock.calls.length > 0,
@@ -358,11 +374,90 @@ describe("批量报价流程", () => {
     const message = String(mocks.toastError.mock.calls[0]![0] ?? "");
     expect(message).toContain("成本");
 
-    expect(
-      mocks.post.mock.calls.some((c) => c[0] === "/quotes/batch"),
-    ).toBe(false);
+    expect(mocks.post.mock.calls.some((c) => c[0] === "/quotes/batch")).toBe(
+      false,
+    );
     expect(
       mocks.post.mock.calls.some((c) => c[0] === "/export-quote/calculate"),
     ).toBe(false);
+  });
+
+  it("确认后只生成一批：pending 连点不重复调用；成功后清空勾选", async () => {
+    // /quotes/batch 挂起，用于验证 pending 期间重复点只发一次
+    let releaseBatch: (value: unknown) => void = () => {};
+    const batchGate = new Promise((resolve) => {
+      releaseBatch = resolve;
+    });
+    mocks.post.mockImplementation(async (url: string) => {
+      if (url === "/export-quote/calculate")
+        return { data: { meta: {}, customer: {}, customer_en: {} } };
+      if (url === "/quotes/batch") return batchGate;
+      throw new Error(`unexpected POST ${url}`);
+    });
+
+    mount(<BatchQuoteView />);
+    await pickCustomerAndInquiry();
+    act(() => setInput(costInput(), "9.1"));
+
+    await waitFor(
+      () =>
+        mocks.get.mock.calls.some((c) => c[0] === "/tax-archives") &&
+        mocks.get.mock.calls.some((c) => c[0] === "/product-tax-rates"),
+      undefined,
+      "税档查询已发出",
+    );
+
+    act(() => generateButton().click());
+    await waitFor(
+      () => (document.body.textContent ?? "").includes("确认生成"),
+      undefined,
+      "确认弹窗",
+    );
+
+    // 同一个 act 内连点两次：第二次必须被 ref 挡住（不重复建单）
+    act(() => {
+      confirmGenerateButton().click();
+      confirmGenerateButton().click();
+    });
+
+    await waitFor(
+      () => mocks.post.mock.calls.some((c) => c[0] === "/quotes/batch"),
+      undefined,
+      "POST /quotes/batch",
+    );
+    expect(
+      mocks.post.mock.calls.filter((c) => c[0] === "/quotes/batch"),
+    ).toHaveLength(1);
+    expect(
+      mocks.post.mock.calls.filter((c) => c[0] === "/export-quote/calculate"),
+    ).toHaveLength(1);
+    // pending：弹窗按钮变成「提交中…」
+    expect(document.body.textContent).toContain("提交中…");
+
+    await act(async () => {
+      releaseBatch({
+        data: {
+          created: [
+            {
+              inquiry_id: 10,
+              customer_id: "1",
+              quote_id: 99,
+              quote_no: "QUO-US-TEST-1",
+            },
+          ],
+          failed: [],
+          total: 1,
+        },
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(
+      () => document.body.textContent!.includes("QUO-US-TEST-1"),
+      undefined,
+      "结果行渲染",
+    );
+    // 成功后勾选被清空，避免"再点一次生成一批重复报价单"
+    expect(document.body.textContent).toContain("已选 0 个询盘");
   });
 });

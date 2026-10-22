@@ -18,6 +18,8 @@
     "e2e:export:only": "playwright test --config playwright.export.config.ts",
     "ui:contrast": "node scripts/ui-contrast-audit.cjs",
     "ui:standards": "node scripts/ui-standards-check.cjs",
+    "ui:patterns": "node scripts/ui-patterns-check.cjs",
+    "ui:patterns:test": "node --test scripts/__tests__/ui-patterns-check.test.cjs",
     "assets:check": "node ../scripts/check-export-assets.mjs"
   },
   "dependencies": {

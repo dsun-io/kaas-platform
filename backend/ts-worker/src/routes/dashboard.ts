@@ -1,7 +1,8 @@
 /**
- * KaaS TS 门面 · dashboard 域（1 条路由）。
+ * KaaS TS 门面 · dashboard 域（2 条显式透传 + 1 条门面自有 SQL 聚合）。
  *
- * 真源逐条对齐：backend/worker/src/main.py:1864-1917（dashboard_summary）。
+ * 真源逐条对齐：backend/worker/src/main.py:1864-1917（dashboard_summary）、
+ * main.py:dashboard_funnel、main.py:dashboard_receivables（P0-A A3）。
  *
  * 该端点全是 count(*) 聚合，无业务判定：range 只影响 events 的 since 窗口，
  * 其余计数是"当前总量"。sampled 字段当前恒等于 total（Python 注释：无采样层）。
@@ -98,6 +99,13 @@ app.get("/api/v1/dashboard/summary", (c) => respond(c, async () => {
 // 透传实现统一走 src/proxy.ts:forwardAuthenticatedKernelRequest（门面鉴权 + 原样转发，
 // query 原样带给内核，门面不做参数重写/裁剪）。
 app.get("/api/v1/dashboard/funnel", (c) =>
+  respond(c, async () => forwardAuthenticatedKernelRequest(c)));
+
+// ── GET /api/v1/dashboard/receivables（main.py:dashboard_receivables；P0-A A3）─
+// 应收台账按时间窗的**分币种**聚合（total/received/outstanding/count + by_status）。
+// 聚合口径在共享内核 kaas_common/workstation/receivable_summary.py，门面不重算、
+// 也不改 query（range 原样带给内核；未知 range 由内核落 today）。
+app.get("/api/v1/dashboard/receivables", (c) =>
   respond(c, async () => forwardAuthenticatedKernelRequest(c)));
 
 export default app;

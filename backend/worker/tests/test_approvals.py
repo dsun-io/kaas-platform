@@ -216,6 +216,10 @@ def test_submit_on_confirmed_order_notifies_routed_approvers():
     assert "UPDATE orders SET total_amount" not in sql
     assert "DELETE FROM order_items" not in sql
 
+    # A4（P0-A）：提交侧深链保持「审批中心定位到该申请」（前端有 /approvals?focus=）
+    notif = next(a for s, a in conn.calls if "INSERT INTO notifications" in s)
+    assert notif[6] == "/approvals?focus=5"
+
 
 def test_submit_on_pending_order_is_rejected_edit_directly():
     """待确认订单本来就能直接 PATCH，走审批反而多一道无谓流程。"""
@@ -410,6 +414,9 @@ def test_approve_notifies_requester_and_records_decision():
     # 收件人是申请人 3，不是审批人
     assert notif[2] == 3
     assert notif[3] == "approval_approved"
+    # A4（P0-A）：深链必须是前端真实存在的路由 —— /orders?id={order_id}
+    # （前端没有 /orders/{id} 页面，旧写法点通知会 404）
+    assert notif[6] == "/orders?id=21"
     event = next(a for s, a in conn.calls if "INSERT INTO business_events" in s)
     assert event[1] == "order.item_change_approved"
 
@@ -507,6 +514,8 @@ def test_reject_leaves_order_untouched_and_notifies_requester():
     assert "UPDATE orders SET total_amount" not in sql
     notif = next(a for s, a in conn.calls if "INSERT INTO notifications" in s)
     assert notif[3] == "approval_rejected"
+    # A4（P0-A）：拒绝通知同样指向前端可落地的订单列表深链
+    assert notif[6] == "/orders?id=21"
 
 
 def test_decide_already_decided_request_is_409():
@@ -592,6 +601,35 @@ def test_approvals_mine_and_done_views():
         assert client.get("/api/v1/approvals?view=done").status_code == 200
     assert "r.decided_by = $2" in db.sql()
     assert "r.status IN ('approved','rejected')" in db.sql()
+
+
+def test_approvals_list_carries_affected_docs_in_one_query():
+    """A2（P0-A）：审批行带受影响单证清单，整页**一次 IN 查完**（禁止 N+1）。
+
+    详情抽屉不再拉 /trade-docs（非管理员可能 403 ⇒ 静默降级会让
+    「已开合同可能对不上货」的提示消失）。形状与批准响应的 affected_docs 相同。
+    """
+    db = _StubDb(
+        fetchval=[2],
+        fetch=[
+            [_approval_row(), _approval_row(id=6, order_id=22)],
+            [{"order_id": 22, "id": 30, "doc_type": "contract",
+              "doc_no": "C-1", "status": "issued"}],
+        ],
+    )
+    with _patched(db=db, user=ADMIN):
+        resp = client.get("/api/v1/approvals")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    # 无单证 = []（不是 None；前端直接 .length）
+    assert body["items"][0]["affected_docs"] == []
+    assert body["items"][1]["affected_docs"] == [
+        {"id": 30, "doc_type": "contract", "doc_no": "C-1", "status": "issued"}]
+
+    docs_calls = [c for c in db.calls if "FROM trade_docs" in c[0]]
+    assert len(docs_calls) == 1, docs_calls          # 整页一次，不是逐行查
+    assert "order_id = ANY($2::bigint[])" in docs_calls[0][0]
+    assert docs_calls[0][1] == ("default", [21, 22])
 
 
 def test_approvals_rejects_unknown_view():

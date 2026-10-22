@@ -43,6 +43,7 @@ import { cn } from "@/lib/utils";
 import { getAvailableTemplates } from "@/lib/trade-doc/render";
 import { useCustomerName } from "@/lib/workstation/use-upstream";
 import type { ProductTaxRate, TaxArchive } from "@contracts/export-quote";
+import type { QuoteOrder } from "@contracts/quote-order";
 
 import {
   useExportProducts,
@@ -58,6 +59,7 @@ import {
   type LineDraft,
 } from "../components/quote-line-card";
 import { QuoteSummaryCard } from "../components/quote-summary-card";
+import { QuoteIssueButton } from "../components/quote-issue-button";
 import {
   useCreateQuoteOrder,
   useReplaceQuoteItems,
@@ -560,29 +562,20 @@ export function QuoteWorkbenchView() {
     }
   };
 
-  const onIssue = async () => {
-    if (!quoteOrderId) return;
-    setNotice(null);
-    try {
-      const updated = await update.mutateAsync({
-        id: quoteOrderId,
-        patch: { status: "sent" as const },
-      });
-      setSavedDoc({
-        id: updated.id,
-        quote_no: updated.quote_no,
-        status: updated.status,
-      });
-      setNotice({
-        tone: "info",
-        text: `${updated.quote_no} 已签发，并已向报价记录台账入账一条`,
-      });
-    } catch (err) {
-      setNotice({
-        tone: "error",
-        text: handleApiError(err as Parameters<typeof handleApiError>[0]),
-      });
-    }
+  /**
+   * 签发成功回调。签发本身（二次确认 + 防重复 PATCH）收敛在 `QuoteIssueButton`，
+   * 这里只负责把结果同步到界面（右侧汇总卡与底部吸底条共用同一个组件）。
+   */
+  const handleIssued = (updated: QuoteOrder) => {
+    setSavedDoc({
+      id: updated.id,
+      quote_no: updated.quote_no,
+      status: updated.status,
+    });
+    setNotice({
+      tone: "info",
+      text: `${updated.quote_no} 已签发，并已向报价记录台账入账一条`,
+    });
   };
 
   const onGenerateDocs = async () => {
@@ -657,7 +650,8 @@ export function QuoteWorkbenchView() {
         <div>
           <div className="text-sm font-medium">单条报价</div>
           <p className="text-xs text-muted-foreground">
-            逐行算价 → 汇总 → 存成报价单；客户直接给整张表格时，用右侧「批量导入表格」一次算完。
+            逐行算价 → 汇总 →
+            存成报价单；客户直接给整张表格时，用右侧「批量导入表格」一次算完。
           </p>
         </div>
         <BulkImportEntry />
@@ -790,7 +784,9 @@ export function QuoteWorkbenchView() {
                 }
                 onChange={(patch) =>
                   setLines((prev) =>
-                    prev.map((l) => (l.id === line.id ? { ...l, ...patch } : l)),
+                    prev.map((l) =>
+                      l.id === line.id ? { ...l, ...patch } : l,
+                    ),
                   )
                 }
                 onRemove={() =>
@@ -878,11 +874,10 @@ export function QuoteWorkbenchView() {
             onDocPickChange={setDocPick}
             onGenerateDocs={onGenerateDocs}
             onSave={onSave}
-            onIssue={onIssue}
+            onIssued={handleIssued}
             saving={
               create.isPending || update.isPending || replaceItems.isPending
             }
-            issuing={update.isPending}
             generating={generating}
             saved={savedDoc}
             notice={notice}
@@ -925,15 +920,15 @@ export function QuoteWorkbenchView() {
           >
             单证（{docPick.length}）
           </Button>
-          <Button
-            size="sm"
-            disabled={
-              !savedDoc || savedDoc.status !== "draft" || update.isPending
-            }
-            onClick={onIssue}
-          >
-            签发
-          </Button>
+          {/* P0-B1/Q2：与右侧汇总卡同一个签发组件（确认 + 防重一致） */}
+          <QuoteIssueButton
+            quoteOrderId={savedDoc?.id ?? null}
+            quoteNo={savedDoc?.quote_no ?? null}
+            status={savedDoc?.status ?? null}
+            onIssued={handleIssued}
+            label="签发"
+            className=""
+          />
         </div>
       </div>
     </>

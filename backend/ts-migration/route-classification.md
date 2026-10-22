@@ -9,12 +9,13 @@
 
 | 种类 | 域 | 路由数 | 处理 |
 |---|---|---|---|
-| **门面注册/移植** | auth 9 / customers 21 / teams 19 / orders 24 / files 9 / outreach 12 / admin 11 / workstations 35 / intel 34 / dashboard 2 / meta 1 / misc 10 | **187** | 业务端点逐条注册；其中 M1/M3 新增的 inquiries 详情、item-change、approvals、notifications、team/approvers、dashboard funnel 走**显式透传**（`forwardAuthenticatedKernelRequest`），业务仍在内核 |
+| **门面注册/移植** | auth 9 / customers 21 / teams 19 / orders 24 / files 9 / outreach 12 / admin 11 / workstations 35 / intel 34 / dashboard 3 / meta 1 / misc 10 | **188** | 业务端点逐条注册；其中 M1/M3/P0-A 新增的 inquiries 详情、item-change、approvals、notifications、team/approvers、dashboard funnel、dashboard receivables 走**显式透传**（`forwardAuthenticatedKernelRequest`），业务仍在内核 |
 | **内核透传（前缀 mount）** | quotes 38 / trade-docs 38 / ai 8 / cron 2 + 其它前缀覆盖 | **86** | 12 个前缀 mount（quotes/trade-docs/ai/clause-templates/events/export-quote/external-docs/fx-rates/pricing-data/product-tax-rates/quotations/tax-archives）→ KERNEL.fetch |
 | FastAPI 内置 | /openapi.json /docs /redoc 等 4 条 | 4 | 门面自实现（openapi）或不做（docs 内部用） |
 
-合计 **273 业务路由 + 4 内置 = 277**（与 route-inventory.md / routes.json 核对一致；
-2026-10-23 口径：M1 询盘/订单/审批通知 + M3 funnel 落地后由 249 增长）。
+合计 **274 业务路由 + 4 内置 = 278**（与 route-inventory.md / routes.json 核对一致；
+2026-10-23 口径：M1 询盘/订单/审批通知 + M3 funnel 落地后由 249 增长；
+P0-A A3 再加 1 条 dashboard 应收聚合 ⇐ 274）。
 
 ## 2. 为什么透传而不是移植
 
@@ -49,7 +50,7 @@ app.all('/api/v1/quotes/*', auth, async (c) => {
 
 - workstations(35) 与 intel(34) 中有 **26 条**按路径属该域、按语义属引擎（AI run/抓取/需求指数/ProductSpec 注册表/
   spec 校验与 fingerprint/价格生命周期/option overrides/difflib 近似名/PNG 校验）→ 归入**内核透传**，
-  不计入门面移植数。上表「门面移植 187」按路径口径统计，实际移植 = 187 − 26 = **161 条**，透传 = 86 + 26 = **112 条**。
+  不计入门面移植数。上表「门面移植 188」按路径口径统计，实际移植 = 188 − 26 = **162 条**，透传 = 86 + 26 = **112 条**。
 - 内核暴露 `/internal/{product-registry,spec-validate,price-lifecycle,rules/*}` 后，这 26 条可转为门面移植。
 
 ## 5. 待办

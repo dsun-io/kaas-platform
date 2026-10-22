@@ -63,6 +63,7 @@ import {
 } from "./components/doc-hardening-section";
 import { DocRenderCheckBadge } from "./components/doc-render-check-badge";
 import { DocStampReturn } from "./components/doc-stamp-return";
+import { DocVoidButton } from "./components/doc-void-button";
 import { DocPreview, renderMetaOf } from "./components/doc-preview";
 import { SamplePreview } from "./components/sample-preview";
 import { DOC_TYPE_GROUPS } from "./lib/doc-type-groups";
@@ -253,14 +254,11 @@ export default function TradeDocsPage() {
     }
   };
 
-  const changeStatus = (row: TradeDocRow, status: string) => {
-    if (status !== "issued") {
-      update.mutate(
-        { id: row.id, status },
-        { onSuccess: () => toast.success("已作废") },
-      );
-      return;
-    }
+  /**
+   * 签发：draft → issued（法律凭证，签发后冻结）。
+   * 「作废（issued → void）」是破坏性动作，统一走 `DocVoidButton`（二次确认 + 防重）。
+   */
+  const issueDoc = (row: TradeDocRow) => {
     // 签发即上传（TODO(TODO:F1) 方案 A）：把**预览用的同一份 HTML** 随 PATCH 一起提交，
     // 服务端出 PDF 并归档为 render_pdf —— 不再依赖"签发完成后再由前端单独上传"。
     // 失败不回滚签发：后端在响应里带 pdf_archive{ok:false}，这里如实提示并保留
@@ -274,7 +272,7 @@ export default function TradeDocsPage() {
         }>(`/trade-docs/${row.id}/render-data`);
         const html = renderTradeDoc(data.doc.doc_type, data.data);
         update.mutate(
-          { id: row.id, status, html, pdf_name: row.doc_no },
+          { id: row.id, status: "issued", html, pdf_name: row.doc_no },
           {
             onSuccess: (doc) => {
               setConfirmBlocked(null);
@@ -597,21 +595,16 @@ export default function TradeDocsPage() {
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => changeStatus(row, "issued")}
+                                onClick={() => issueDoc(row)}
                               >
                                 <ShieldCheck className="mr-1 h-3.5 w-3.5" />
                                 签发
                               </Button>
                             </>
                           )}
+                          {/* P0-B1/T1：作废已签发单证不可恢复 ⇒ 二次确认 + 防重 */}
                           {row.status === "issued" && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => changeStatus(row, "void")}
-                            >
-                              作废
-                            </Button>
+                            <DocVoidButton doc={row} />
                           )}
                         </div>
                       </td>
@@ -676,7 +669,7 @@ export default function TradeDocsPage() {
               {renderData.data?.doc.status === "draft" && (
                 <Button
                   size="sm"
-                  onClick={() => changeStatus(renderData.data!.doc, "issued")}
+                  onClick={() => issueDoc(renderData.data!.doc)}
                   disabled={update.isPending}
                 >
                   <ShieldCheck className="mr-1 h-4 w-4" />

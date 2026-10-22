@@ -154,3 +154,53 @@ describe("GET /api/v1/dashboard/funnel（M3：门面只透传内核）", () => {
     expect(await res.json()).toEqual({ detail: "UNAUTHORIZED" });
   });
 });
+
+describe("GET /api/v1/dashboard/receivables（P0-A A3：门面只透传内核）", () => {
+  it("无 token → 401（不触达内核）", async () => {
+    let called = false;
+    const env = makeTestEnv({
+      KERNEL: { fetch: async () => { called = true; return new Response("{}"); } },
+    });
+    const res = await request("/api/v1/dashboard/receivables", null, env);
+    expect(res.status).toBe(401);
+    expect(called).toBe(false);
+  });
+
+  it("带 range 原样转发内核并透传分币种聚合响应", async () => {
+    const user = userRow();
+    resetDb((query) => (query.includes("FROM users WHERE id") ? [user] : []));
+    const seen: string[] = [];
+    const payload = {
+      range: "30d",
+      since: "2026-09-23T00:00:00+00:00",
+      // 金额只在同币种内相加：USD / CNY 两行（门面不得把两者相加）
+      by_currency: [
+        { currency: "CNY", total: 68000, received: 0, outstanding: 68000, count: 1 },
+        { currency: "USD", total: 1000, received: 400, outstanding: 600, count: 2 },
+      ],
+      by_status: [
+        { status: "unpaid", count: 1, total: 68000 },
+        { status: "partial", count: 1, total: 1000 },
+      ],
+      totals: { count: 3 },
+    };
+    const env = makeTestEnv({
+      KERNEL: {
+        fetch: async (input: Request) => {
+          seen.push(new URL(input.url).pathname + new URL(input.url).search);
+          return new Response(JSON.stringify(payload), {
+            status: 200, headers: { "content-type": "application/json" },
+          });
+        },
+      },
+    });
+
+    const res = await request("/api/v1/dashboard/receivables?range=30d", user, env);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(payload);
+    // range 原样带给内核（门面不做参数重写/裁剪）
+    expect(seen).toEqual(["/api/v1/dashboard/receivables?range=30d"]);
+  });
+});
+

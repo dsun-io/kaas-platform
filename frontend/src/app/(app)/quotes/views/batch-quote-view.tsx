@@ -10,10 +10,11 @@
  *  · 已报价询盘也允许再次报价；
  *  · 某张报价生成后续单证后，同询盘其他报价自动 closed。
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Loader2, Play } from "lucide-react";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 
 import apiClient from "@/lib/api/client";
 import { useLatestFxRate } from "@/lib/fx/use-latest-fx";
@@ -74,6 +75,9 @@ export function BatchQuoteView() {
   const [variants, setVariants] = useState<Record<string, string>>({});
   const [cost, setCost] = useState("");
   const [result, setResult] = useState<BatchQuoteResponse | null>(null);
+  // P0-B1/Q10：批量建单是"一次生成 N 张正式报价单"，点一下即落库 ⇒ 先确认 + 防重
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const submittingRef = useRef(false);
 
   const customers = useQuery({
     queryKey: ["batch", "customers"],
@@ -287,10 +291,26 @@ export function BatchQuoteView() {
     },
     onSuccess: (data) => {
       setResult(data);
+      setConfirmOpen(false);
+      // 成功后清空勾选，避免"再点一次生成一批重复报价单"
+      setPicked({});
+      setCustomerIds([]);
+      setPiecesMap({});
       toast.success(`已生成 ${data.created.length} 张报价单`);
     },
     onError: (e) => toast.error(errText(e)),
   });
+
+  /** 确认后触发批量建单；`submittingRef` 兜住同一 tick 连点两次。 */
+  const confirmRun = () => {
+    if (submittingRef.current || run.isPending) return;
+    submittingRef.current = true;
+    run.mutate(undefined, {
+      onSettled: () => {
+        submittingRef.current = false;
+      },
+    });
+  };
 
   const toggleCustomer = (id: number) => {
     setCustomerIds((prev) =>
@@ -526,7 +546,10 @@ export function BatchQuoteView() {
           </div>
         )}
         <div className="mt-3 flex items-center gap-2">
-          <Button onClick={() => run.mutate()} disabled={run.isPending}>
+          <Button
+            onClick={() => setConfirmOpen(true)}
+            disabled={run.isPending || selectedRows.length === 0}
+          >
             {run.isPending ? (
               <Loader2 className="mr-1 h-4 w-4 animate-spin" />
             ) : (
@@ -574,6 +597,19 @@ export function BatchQuoteView() {
           </div>
         )}
       </SectionCard>
+
+      {/* P0-B1/Q10：批量建单二次确认 —— 一次落库 N 张正式报价单 */}
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={(next) => {
+          if (!next && !run.isPending) setConfirmOpen(false);
+        }}
+        title={`为 ${selectedRows.length} 个询盘批量生成报价单？`}
+        description={`将按当前产品 / 规格 / 成本，为选中的 ${selectedRows.length} 个询盘各生成 1 张报价单（共 ${selectedRows.length} 张，单批最多 200 行）。生成后立即落库为正式报价单（草稿态），无法整批撤回。`}
+        confirmLabel="确认生成"
+        pending={run.isPending}
+        onConfirm={confirmRun}
+      />
     </div>
   );
 }

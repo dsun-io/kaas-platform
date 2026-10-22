@@ -53,7 +53,13 @@ from kaas_common.workstation.inquiry_rules import build_inquiry_no, normalize_ab
 from kaas_common.domain.enums import SCHEDULE_TYPE, validate_enum
 from kaas_common.workstation.number_rules import build_number, NumberError, normalize_number
 from kaas_common.workstation.scope import can_view, can_write, is_admin_role
-from kaas_common.workstation.funnel import build_funnel, channel_conversion_rates
+from kaas_common.workstation.funnel import (
+    build_funnel,
+    channel_conversion_rates,
+    direct_currency_breakdown,
+)
+# P0-A A3：dashboard 应收聚合的**口径唯一实现**（禁止前端/适配层另写一份）
+from kaas_common.workstation.receivable_summary import summarize_receivables
 from kaas_common.workstation.teams import (
     TeamRuleError, invite_state, normalize_invite_token, validate_team_name,
     validate_application_message,
@@ -2153,6 +2159,15 @@ _FUNNEL_DIRECT_SQL = (
     " FROM orders WHERE tenant_id=$1 AND source_type='direct'"
     " AND created_at >= $2"
 )
+# P0-A A5：直接下单按币种拆账。旧 `amount` 是**跨币种原值相加**、只做规模参考，
+# 多币种时不能当金额用 ⇒ 列表页必须看 by_currency（聚合规则在共享内核
+# kaas_common/workstation/funnel.py:direct_currency_breakdown，SQL 只做 GROUP BY）。
+_FUNNEL_DIRECT_CURRENCY_SQL = (
+    "SELECT currency, count(*) AS order_count, COALESCE(SUM(total_amount),0) AS amount"
+    " FROM orders WHERE tenant_id=$1 AND source_type='direct'"
+    " AND created_at >= $2"
+    " GROUP BY currency ORDER BY currency"
+)
 
 
 @app.get("/api/v1/dashboard/funnel")
@@ -2173,6 +2188,9 @@ async def dashboard_funnel(
         funnel_row = await conn.fetchrow(_FUNNEL_SQL, DEFAULT_TENANT, since) or {}
         channel_rows = await conn.fetch(_FUNNEL_CHANNEL_SQL, DEFAULT_TENANT, since)
         direct_row = await conn.fetchrow(_FUNNEL_DIRECT_SQL, DEFAULT_TENANT, since) or {}
+        # 一次 GROUP BY 取完全部币种（不是逐行查询：与列表页同一条连接、无 N+1）
+        direct_currency_rows = await conn.fetch(
+            _FUNNEL_DIRECT_CURRENCY_SQL, DEFAULT_TENANT, since)
 
     def _int(row: dict, key: str) -> int:
         return int(row.get(key) or 0)
@@ -2194,12 +2212,71 @@ async def dashboard_funnel(
         "channels": channel_conversion_rates(
             [{k: r[k] for k in r.keys()} for r in channel_rows]),
         "direct_orders": {
+            # ⚠️ count 可跨币种相加（就是单数）；amount 是**跨币种原值相加**，
+            # 仅规模参考、不是金额（多币种时无意义）—— 精确金额只看 by_currency。
             "count": direct_count,
             "amount": round(direct_amount, 2),
+            "by_currency": direct_currency_breakdown(
+                [dict(r) for r in direct_currency_rows]),
         },
         # 废弃标记：旧 /dashboard/summary 的 quotations_total 混计数不再可靠
         "deprecated_summary": False,
     }
+
+# ── Dashboard 应收聚合（P0-A A3）──────────────────────────────────────────────
+# 为什么需要它：内核只有 GET /api/v1/receivables 分页台账（无时间窗汇总），
+# 前端自己拼会算出**只覆盖当前页**的假数字，还会忽略每行币种
+# （lib/receivables/summary.ts 已明确「应收金额不能跨币种相加」）。
+_DASHBOARD_RANGE_DAYS = {
+    "today": 1,
+    "7d": 7,
+    "30d": 30,
+    "90d": 90,
+}
+
+
+@app.get("/api/v1/dashboard/receivables")
+async def dashboard_receivables(
+    request: Request,
+    user: dict = Depends(_get_current_user),
+    range: str = Query("today"),
+):
+    """应收台账按时间窗聚合（按币种分组，禁止跨币种相加）。
+
+    口径：
+    - 行 = receivables 中 `created_at >= since` 的行；since 由 range 推导，
+      未知 range 落 today（与 /dashboard/funnel 同一套 range 语义，不 422）；
+    - 归属过滤必须与 `GET /api/v1/receivables` **逐条一致**（非管理员只能看
+      自己 / 本团队 / 显式共享的行）—— 否则 dashboard 会变成越权读全部应收的侧门；
+    - 聚合规则全部在共享内核 `kaas_common/workstation/receivable_summary.py`，
+      本端点只负责「按 tenant+窗口+归属取行」，业务口径不得在这层再写一遍。
+    """
+    days = _DASHBOARD_RANGE_DAYS.get(range, _DASHBOARD_RANGE_DAYS["today"])
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    cond = ""
+    params: list = [DEFAULT_TENANT, since]
+    if not _can_see_all(user):
+        parts = []
+        params.append(str(user["id"]))
+        parts.append(f"r.owner_id = ${len(params)}")
+        if user.get("team_id") is not None:
+            params.append(user["team_id"])
+            parts.append(f"r.team_id = ${len(params)}")
+        cond = " AND (r.owner_scope = 'tenant' OR " + " OR ".join(parts) + ")"
+    rows = await db.fetch(
+        request,
+        "SELECT r.currency, r.total_amount, r.received_amount, r.status"
+        " FROM receivables r"
+        f" WHERE r.tenant_id=$1 AND r.created_at >= $2{cond}",
+        *params,
+        table="receivables",
+    )
+    return {
+        "range": range,
+        "since": since.isoformat(),
+        **summarize_receivables(rows),
+    }
+
 
 # ── Health ──
 # 共享内核自检。降级保护：即使打包时未带上 kaas_common，也不影响 Worker 启动，
@@ -3771,15 +3848,29 @@ async def list_orders_api(
     )
     rows = await db.fetch(
         request,
-        f"SELECT * FROM orders WHERE {cond} ORDER BY created_at DESC, id DESC LIMIT $%d OFFSET $%d"
+        # A1（P0-A）：每单的「待批明细变更数」= order_item_change_requests 里
+        # status='pending' 的条数。相关子查询与列表**同一次往返**取回，
+        # 绝不逐单再查（禁止 N+1）；列表页据 >0 显示角标。
+        "SELECT o.*, (SELECT count(*) FROM order_item_change_requests r"
+        " WHERE r.tenant_id = o.tenant_id AND r.order_id = o.id"
+        " AND r.status = 'pending') AS pending_item_change_count"
+        f" FROM orders o WHERE {cond}"
+        " ORDER BY created_at DESC, id DESC LIMIT $%d OFFSET $%d"
         % (len(params) + 1, len(params) + 2),
         *params,
         page_size,
         (page - 1) * page_size,
         table="orders",
     )
+    items = []
+    for r in rows:
+        item = _order_dict(r)
+        # 不在 row_to_order 里加：那是详情/创建/更新的公共 28 键契约，
+        # 只有列表带这个聚合列（详情页不需要角标，缺列按 0）。
+        item["pending_item_change_count"] = int(r.get("pending_item_change_count") or 0)
+        items.append(item)
     return {
-        "items": [_order_dict(r) for r in rows],
+        "items": items,
         "total": total,
         "page": page,
         "page_size": page_size,

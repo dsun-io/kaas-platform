@@ -6,7 +6,7 @@
 > （auth 9 / customers 21 / teams 19 / orders 24 / files 9 / outreach 12 / admin 11 /
 > workstations 35 / intel 34 / dashboard 2 / misc 10 / meta 1）。
 > 透传实现统一为 `src/proxy.ts:forwardKernelRequest`（前缀 mount 与显式透传路由共用一份）。
-> 测试 **272 条 / 24 文件全绿**；route-surface 187 直接 0 缺 0 多；openapi 273 全覆盖。
+> 测试 **278 条 / 24 文件全绿**；route-surface **188 直接** 0 缺 0 多；openapi **274 = 188 + 86** 全覆盖。
 > 全部只做鉴权 / 参数校验 / 协议转换；业务规则仍在 Python 内核与 `backend/kaas_common/`。
 
 ## 铁纪律（违反即回退）

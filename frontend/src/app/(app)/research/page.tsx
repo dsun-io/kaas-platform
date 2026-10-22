@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { usePageView } from "@/lib/events/use-page-view";
 import { RouteGuard } from "@/components/route-guard";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -16,6 +16,8 @@ import {
   StatCard,
 } from "@/components/shared";
 import { toast } from "sonner";
+import { normalizeApiError } from "@/lib/api/api-error";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
   Globe2,
   ImageOff,
@@ -143,6 +145,16 @@ export default function ResearchPage() {
   const [picked, setPicked] = useState<number[]>([]);
   const [picking, setPicking] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  // P0-B1：移除调研产品不可恢复（深化数据一起没了）⇒ 二次确认 + 提交中禁用
+  const [deleteTarget, setDeleteTarget] = useState<ResearchProduct | null>(
+    null,
+  );
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deletingRef = useRef(false);
+  // P0-B4：深化记录保存的 pending 防重（R51）
+  const [savingEdit, setSavingEdit] = useState(false);
+  const savingEditRef = useRef(false);
 
   /* ── queries ── */
   const statsQuery = useQuery({
@@ -210,7 +222,9 @@ export default function ResearchPage() {
   };
 
   const saveEdit = async () => {
-    if (!editing) return;
+    if (!editing || savingEditRef.current) return;
+    savingEditRef.current = true;
+    setSavingEdit(true);
     try {
       await apiClient.patch(`/research/products/${editing.id}`, {
         product_name_cn: editing.product_name_cn || null,
@@ -226,16 +240,31 @@ export default function ResearchPage() {
       refresh();
     } catch {
       toast.error("保存失败");
+    } finally {
+      savingEditRef.current = false;
+      setSavingEdit(false);
     }
   };
 
-  const remove = async (id: number) => {
+  /**
+   * P0-B1：移除是**不可恢复**动作（深化数据：中文名/规格/税率/备注一起消失）。
+   * 先弹确认；`deletingRef` 兜住连点（`deleting` 状态要等下一次渲染才生效）。
+   */
+  const remove = async () => {
+    if (!deleteTarget || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
+    setDeleteError(null);
     try {
-      await apiClient.delete(`/research/products/${id}`);
+      await apiClient.delete(`/research/products/${deleteTarget.id}`);
       toast.success("已从调研集中移除");
+      setDeleteTarget(null);
       refresh();
-    } catch {
-      toast.error("删除失败");
+    } catch (err) {
+      setDeleteError(normalizeApiError(err).message);
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
     }
   };
 
@@ -532,7 +561,10 @@ export default function ResearchPage() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => remove(p.id)}
+                                onClick={() => {
+                                  setDeleteError(null);
+                                  setDeleteTarget(p);
+                                }}
                                 title="移除"
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -557,11 +589,16 @@ export default function ResearchPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => setEditing(null)}
+                      disabled={savingEdit}
                     >
                       取消
                     </Button>
-                    <Button size="sm" onClick={saveEdit}>
-                      保存
+                    <Button
+                      size="sm"
+                      onClick={() => void saveEdit()}
+                      disabled={savingEdit}
+                    >
+                      {savingEdit ? "保存中…" : "保存"}
                     </Button>
                   </div>
                 }
@@ -862,6 +899,23 @@ export default function ResearchPage() {
           refresh();
           setTab("products");
         }}
+      />
+
+      {/* P0-B1：移除调研产品的二次确认 —— 深化数据不可恢复 */}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !deletingRef.current) {
+            setDeleteTarget(null);
+            setDeleteError(null);
+          }
+        }}
+        title={`从调研集移除「${deleteTarget?.product_name_cn ?? deleteTarget?.product_name ?? ""}」？`}
+        description="移除后该产品的深化数据（中文名、规格、进项税/退税率、备注）会一并删除且不可恢复；如果只是暂时不需要，建议保留记录。"
+        confirmLabel="确认移除"
+        pending={deleting}
+        error={deleteError}
+        onConfirm={() => void remove()}
       />
     </RouteGuard>
   );

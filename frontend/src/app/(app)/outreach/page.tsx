@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { usePageView } from "@/lib/events/use-page-view";
 import { RouteGuard } from "@/components/route-guard";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
+import { normalizeApiError } from "@/lib/api/api-error";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +18,7 @@ import {
 } from "@/components/shared";
 import { toast } from "sonner";
 import { MailPlus, Send, Sparkles, RotateCcw } from "lucide-react";
+import { TestMailboxDialog } from "./components/test-mailbox-dialog";
 
 /* ── types ─────────────────────────────────────────────────────────────── */
 interface Mailbox {
@@ -107,6 +110,16 @@ export default function OutreachPage() {
   const [selectedLeads, setSelectedLeads] = useState<number[]>([]);
   const [msgFilter, setMsgFilter] = useState("");
   const [openMsg, setOpenMsg] = useState<Message | null>(null);
+  // P0-B1：批量外发二次确认 + 提交中禁用（防止连点重复发送）
+  const [sendConfirmOpen, setSendConfirmOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const sendingRef = useRef(false);
+  // P0-B4：AI 起草是外部 AI 调用，连点会重复计费/重复覆盖草稿 ⇒ pending 防重
+  const [generating, setGenerating] = useState(false);
+  const generatingRef = useRef(false);
+  // P0-B1：测试邮件收件人从 window.prompt 改为弹窗
+  const [testTarget, setTestTarget] = useState<Mailbox | null>(null);
 
   const { data: mbData, refetch: refetchMb } = useQuery({
     queryKey: ["outreach-mailboxes"],
@@ -169,22 +182,16 @@ export default function OutreachPage() {
     refetchMb();
   };
 
-  const testMailbox = async (m: Mailbox) => {
-    const to = window.prompt(`从 ${m.email} 发送测试邮件至：`);
-    if (!to) return;
-    try {
-      const { data } = await apiClient.post<{ status: string; error?: string }>(
-        `/outreach/mailboxes/${m.id}/test?to=${encodeURIComponent(to)}`,
-      );
-      data.status === "sent"
-        ? toast.success("测试邮件已发送")
-        : toast.error(`测试失败：${data.error ?? ""}`);
-    } catch {
-      toast.error("测试失败");
-    }
+  /** 测试邮件：只打开收件人弹窗，真实请求在弹窗里提交（可禁用、可显示原因）。 */
+  const testMailbox = (m: Mailbox) => {
+    setTestTarget(m);
   };
 
+  /** P0-B4：AI 起草待请求期间禁用按钮（`generatingRef` 兜住同一 tick 连点）。 */
   const aiGenerate = async () => {
+    if (generatingRef.current) return;
+    generatingRef.current = true;
+    setGenerating(true);
     try {
       const { data } = await apiClient.post<{
         result: { subject?: string; body?: string; text?: string };
@@ -205,6 +212,9 @@ export default function OutreachPage() {
       toast.success(`草稿已通过 ${data.path} 生成`);
     } catch {
       toast.error("AI 生成失败");
+    } finally {
+      generatingRef.current = false;
+      setGenerating(false);
     }
   };
 
@@ -223,8 +233,15 @@ export default function OutreachPage() {
     }
   };
 
-  const sendCampaign = async () => {
-    if (!sendingCampaign) return;
+  /**
+   * P0-B1：批量外发是不可撤回动作 —— 必须先确认，且提交中禁用按钮。
+   * `sendingRef` 兜住"同一 tick 连点两次"（此时 `sending` 还没随重渲染生效）。
+   */
+  const doSendCampaign = async () => {
+    if (!sendingCampaign || sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
+    setSendError(null);
     try {
       const { data } = await apiClient.post<{
         total: number;
@@ -234,13 +251,18 @@ export default function OutreachPage() {
         lead_ids: selectedLeads,
       });
       toast.success(`发送完成：成功 ${data.sent}，失败 ${data.failed}`);
+      setSendConfirmOpen(false);
       setSendingCampaign(null);
       setSelectedLeads([]);
       refetchCamp();
       refetchMsg();
       qc.invalidateQueries({ queryKey: ["leads"] });
-    } catch {
-      toast.error("发送失败");
+    } catch (err) {
+      // 失败如实透出在弹窗里，弹窗不关（用户可重试或取消）
+      setSendError(normalizeApiError(err).message);
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
     }
   };
 
@@ -375,8 +397,14 @@ export default function OutreachPage() {
                   setCampForm({ ...campForm, name: e.target.value })
                 }
               />
-              <Button variant="outline" size="sm" onClick={aiGenerate}>
-                <Sparkles className="mr-1 h-4 w-4" /> AI 起草
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void aiGenerate()}
+                disabled={generating}
+              >
+                <Sparkles className="mr-1 h-4 w-4" />{" "}
+                {generating ? "起草中…" : "AI 起草"}
               </Button>
             </div>
             <Input
@@ -437,6 +465,8 @@ export default function OutreachPage() {
                       onClick={() => {
                         setSendingCampaign(c);
                         setSelectedLeads([]);
+                        setSendError(null);
+                        setSendConfirmOpen(false);
                       }}
                     >
                       <Send className="mr-1 h-4 w-4" /> 发送…
@@ -510,8 +540,11 @@ export default function OutreachPage() {
               <Button
                 className="mt-3"
                 size="sm"
-                disabled={selectedLeads.length === 0}
-                onClick={sendCampaign}
+                disabled={selectedLeads.length === 0 || sending}
+                onClick={() => {
+                  setSendError(null);
+                  setSendConfirmOpen(true);
+                }}
               >
                 <Send className="mr-1 h-4 w-4" /> 发送给 {selectedLeads.length}{" "}
                 个潜在客户
@@ -635,6 +668,33 @@ export default function OutreachPage() {
           )}
         </SectionCard>
       </div>
+
+      {/* P0-B1：测试邮件收件人弹窗（替代 window.prompt） */}
+      <TestMailboxDialog
+        mailbox={testTarget}
+        onOpenChange={(open) => {
+          if (!open) setTestTarget(null);
+        }}
+      />
+
+      {/* P0-B1：批量群发二次确认 —— 批量外发不可撤回 */}
+      <ConfirmDialog
+        open={sendConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open && !sendingRef.current) {
+            setSendConfirmOpen(false);
+            setSendError(null);
+          } else if (open) {
+            setSendConfirmOpen(true);
+          }
+        }}
+        title={`向 ${selectedLeads.length} 个潜在客户群发邮件？`}
+        description={`将以「${sendingCampaign?.name ?? ""}」向选中的 ${selectedLeads.length} 个潜在客户批量外发邮件。批量外发不可撤回，请先确认收件人名单无误。`}
+        confirmLabel="确认发送"
+        pending={sending}
+        error={sendError}
+        onConfirm={() => void doSendCampaign()}
+      />
     </RouteGuard>
   );
 }

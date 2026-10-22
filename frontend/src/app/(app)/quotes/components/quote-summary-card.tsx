@@ -8,19 +8,15 @@
  * 三者必须逐分一致 —— 凡是在某一处先四舍五入再相加，就会差 1 分，
  * 而这种差异在界面上"看着完全正常"。
  */
-import {
-  AlertTriangle,
-  FileText,
-  Loader2,
-  Save,
-  ShieldCheck,
-} from "lucide-react";
+import { AlertTriangle, FileText, Loader2, Save } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import type { QuoteOrder } from "@contracts/quote-order";
 
 import type { QuoteSummary } from "../lib/line-to-item";
+import { QuoteIssueButton } from "./quote-issue-button";
 
 export interface DocTypeOption {
   value: string;
@@ -41,9 +37,9 @@ interface Props {
   onDocPickChange: (next: string[]) => void;
   onGenerateDocs: () => void;
   onSave: () => void;
-  onIssue: () => void;
+  /** 签发成功回调（工作台据此刷新单据状态/提示入账） */
+  onIssued?: (updated: QuoteOrder) => void;
   saving: boolean;
-  issuing: boolean;
   generating: boolean;
   saved: { id: number; quote_no: string; status: string } | null;
   notice: { tone: "info" | "error"; text: string } | null;
@@ -67,9 +63,8 @@ export function QuoteSummaryCard({
   onDocPickChange,
   onGenerateDocs,
   onSave,
-  onIssue,
+  onIssued,
   saving,
-  issuing,
   generating,
   saved,
   notice,
@@ -239,20 +234,14 @@ export function QuoteSummaryCard({
             )}
             生成所选单证（{docPick.length}）
           </Button>
-          <Button
-            type="button"
-            size="sm"
+          {/* P0-B1/Q2：签发二次确认 + 提交中防重（与窄屏吸底条同一组件） */}
+          <QuoteIssueButton
+            quoteOrderId={saved?.id ?? null}
+            quoteNo={saved?.quote_no ?? null}
+            status={saved?.status ?? null}
+            onIssued={onIssued}
             className="gap-1.5"
-            disabled={!saved || saved.status !== "draft" || issuing}
-            onClick={onIssue}
-          >
-            {issuing ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <ShieldCheck className="size-3.5" />
-            )}
-            签发报价单
-          </Button>
+          />
           {!hasLines && (
             <span className="text-[11px] text-muted-foreground">
               至少计算一行后才能保存

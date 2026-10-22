@@ -41,7 +41,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BACKEND = os.path.normpath(os.path.join(HERE, ".."))
 WORKER_SRC = os.path.join(BACKEND, "worker", "src")
 
-EXPECTED_TOTAL = 277  # 2026-10-22 M1（inquiries/approvals/notifications/来源字段）+ M3 funnel 后重算
+# 2026-10-23 P0-A A3：新增 GET /api/v1/dashboard/receivables ⇒ 273+1=274 业务路由
+# + 4 内置 = 278（277 → 278）
+EXPECTED_TOTAL = 278
 
 
 def _install_stubs() -> None:

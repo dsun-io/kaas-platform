@@ -14,6 +14,27 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-23 · UI 执行方案重写 + 首批 UI 整改（P0-A/P0-C/P0-B1）✅）**
+> - **执行方案重写**（用户口径：按最新实现与设计，不是按 UI_STANDARDS）：
+>   新增 [`UI_EXECUTION_PLAN_2026-10-23.md`](./UI_EXECUTION_PLAN_2026-10-23.md) 作为唯一活跃方案；
+>   `UI_SYSTEM_PRD` 退为设计依据、`UI_UX_AUDIT` §8 增 2026-10-23 复跑基线与旧条目状态校正（D1–D3 已取代；
+>   P0/P1 未做条目全部保留）。
+> - **P0-A 后端缺口（A1–A5）**：`GET /orders` 行加 `pending_item_change_count`（同一次往返，无 N+1）；
+>   `GET /approvals` 行加 `affected_docs`（整页一次 `order_id = ANY` 查询）；新增
+>   `GET /api/v1/dashboard/receivables?range=`（`kaas_common/workstation/receivable_summary.py`，金额只在同币种内聚合）；
+>   通知 link 改 `/orders?id=`；funnel `direct_orders.by_currency`。路由 **274 = 188 直接 + 86 透传**（EXPECTED_TOTAL 278）。
+> - **P0-C 共享原语 + 门禁**：ErrorState / DataTable / FilterBar / AsyncButton；`useDebouncedValue` /
+>   `useUrlState`（replaceState + popstate，SSR 安全）/ `useAsyncAction`（永不抛、默认不重复 toast）；
+>   `lib/status-tones.ts` 单一来源；`pnpm ui:patterns` shadow（284 文件 **134 违规**，2026-10-30 转强制）。
+> - **P0-B1/B4 止血**：8 处危险操作改 ConfirmDialog + pending 禁关闭 + ref 兜同 tick 连点——
+>   outreach 群发/测试邮件（window.prompt→Dialog）、research 删除、ai-providers 清密钥（空输入不再静默清）+模型失焦保存、
+>   quotes 签发/批量建单、trade-docs 作废、settings 重载、产品税率删除；新增 27 条「未确认不调用 / pending 连点不重复」测试。
+> - **门禁**：前端 typecheck / lint 0 error / **1375 passed（170 文件）**；ts-worker **278 passed**；worker
+>   **1709 passed + 12 skipped**；orchestrator **266**；contracts R0–R6；mocks:check 未覆盖 3 ≤ 20；
+>   ui:standards / ui:contrast / ui:patterns(shadow) PASS；静态断言全 PASS；e2e 需复跑（首轮与 typegen 并发导致
+>   `.next` 分块冲突，按 AGENTS 该轮数字作废）。
+> - **下一批**：U-P0A-FE（前端接 A1–A5）、U-P0B2/B3/B4/B5/B6、U-P1D/E；2026-10-30 把 ui:patterns 转强制。
+>
 > **（2026-10-23 · M2-B / M2-C / M3 前端 三线收口 ✅）**
 > - **M2-B 订单与报价**：`/orders` 加「来源」「关联询盘/报价」列 + 来源/渠道筛选（真进 `GET /orders` 参数，
 >   空值不传避免非法枚举 422）；详情来源链横幅（询盘→报价→本订单可点跳，direct 显示渠道+确认痕迹）、
