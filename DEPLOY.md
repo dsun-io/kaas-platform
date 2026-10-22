@@ -207,7 +207,9 @@ Cloudflare Hyperdrive **默认缓存只读查询 60 秒**（`stale_while_revalid
 cd backend/worker
 
 # 本地开发（Hyperdrive 本地模拟指向 Neon 分支 dev）
-$env:CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="postgres://neondb_owner:<pwd>@ep-wandering-frost-b5d9zoaq-pooler.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require"
+# 2026-10-22 脱敏：旧示例端点（所属 Neon 项目已于 2026-10-21 删除）已改为占位符。
+# 换成你当前 Neon 分支的连接串；密码只放环境变量，不要写进仓库。
+$env:CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="postgres://<user>:<pwd>@<neon-branch-host>/<db>?sslmode=require"
 uv run pywrangler dev
 
 # 生产密钥（一次性；Worker 更换后需重新设置并重新初始化管理员）
