@@ -90,6 +90,8 @@ const server = http.createServer((req, res) => {
   return send(res, 404, "404 Not Found");
 });
 
-server.listen(port, "127.0.0.1", () => {
+// 不指定 host ⇒ Node 绑定双栈（0.0.0.0 + ::）。CI 上 `localhost` 可能优先解析成 ::1，
+// 只绑 127.0.0.1 会让 Playwright 的就绪探测打不通（2026-10-22 预防性处理）。
+server.listen(port, () => {
   console.log(`[serve-export] serving ${root} on http://localhost:${port}`);
 });
