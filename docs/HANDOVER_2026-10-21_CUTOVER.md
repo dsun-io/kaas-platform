@@ -10,8 +10,8 @@
 
 | 层 | Worker | 版本 | 职责 | 入口 |
 |---|---|---|---|---|
-| 门面 | `kaas-edge`（TS/Hono） | `777b55a5` | 全部 UI 面路由（163 直接）+ 引擎域透传（86 前缀）+ 静态资产 | `kaas.powervoy.com` / `api.kaas.powervoy.com` |
-| 内核 | `kaas`（Python/FastAPI） | `25133623` | 报价/单证引擎、AI/数据能力、cron 3 条 | **无公网域名**，仅 Service Binding（`env.KERNEL`）；配置 `routes: []`（2026-10-22 修复 + 门禁） |
+| 门面 | `kaas-edge`（TS/Hono） | `c6163029`（2026-10-22） | 全部 UI 面路由（163 直接）+ 引擎域透传（86 前缀）+ 静态资产 | `kaas.powervoy.com` / `api.kaas.powervoy.com` |
+| 内核 | `kaas`（Python/FastAPI） | `974598f1`（2026-10-22） | 报价/单证引擎、AI/数据能力、cron 3 条 | **无公网域名**，仅 Service Binding（`env.KERNEL`）；配置 `routes: []`（2026-10-22 修复 + 门禁） |
 
 数据层：Neon **新加坡** `cold-king-20466417` + Hyperdrive `6830420703984a19a99a334afff6776e`（2026-10-21 从 us-east-2 迁入，RTT 245→75ms）；
 R2 `kaas-files`；Redis/队列仍不做（ADR-002）。
@@ -56,9 +56,10 @@ backend/orchestrator/.venv/Scripts/python.exe backend/ts-migration/golden/diff_r
 | TS 门面已知差异 | 见 `backend/ts-worker/README.md`（422 措辞/时间戳精度/BigInt 类型/SigV4 TODO:TS5 等） | 各项 TODO 编号 |
 | 真源不一致 `ORDER_NEXT` | `TODO.md §F2` | 内核侧收敛时 |
 | **前端侧边栏点击不跳转** | ✅ **已修并上线（2026-10-22，P0+P1 全闭环）**：P0=`sidebar.tsx:166` 的 `prefetch={true}`+静态导出使点击导航挂死 ⇒ 改 `prefetch={false}`；P1=Windows 构建使逐段预取 404 ⇒ 改 Docker `node:22` Linux 构建。两次部署 version `fe855137` → **`71be6dbb-56c7-4b78-b4cb-a0634abc5032`**；线上产物与本地 SHA256 一致、点号段文件 200 | [`HANDOVER_2026-10-21_NAV_STUCK.md`](./HANDOVER_2026-10-21_NAV_STUCK.md) |
-| **双 Worker 发布口径** | ✅ **2026-10-22 落地**：一条 deploy workflow、`deploy-kernel` → `deploy-edge` 两个部署 job、`target=both|kernel|edge`、`needs` 保证先内核后门面；域名门禁 `scripts/check-deploy-domains.py`（静态 + `--live`） | — |
+| **双 Worker 发布口径** | ✅ **2026-10-22 落地并端到端验证**：一条 deploy workflow、`deploy-kernel` → `deploy-edge` 两个部署 job、`target=both|kernel|edge`、`needs` 保证先内核后门面；域名门禁 `scripts/check-deploy-domains.py`（静态 + `--live`）；首次 dispatch **run 39722107904 success**（内核 `974598f1` / 门面 `c6163029`，深探针 `kernel.status=ok` + `shared_loaded=true`） | — |
 | 内核 `assets` 绑定退场 | 等 2 周回滚窗口结束；之后内核部署不再需要 `frontend/out`（需同步改 `main.py:3238` SPA 回退） | **2026-11-04** |
 | 自动部署恢复（push 触发） | 仍冻结；恢复条件见 `HANDOVER_2026-10-20` §10.1 + 用户下令 | 用户裁决 |
+| `/health?deep=1` 公开可触发内核 | 仅部署/排障用；未加鉴权/限流（可在 CF 侧加 rate limit，不新增 secret） | 按需 |
 
 ## 4. 接手注意（实测坑）
 

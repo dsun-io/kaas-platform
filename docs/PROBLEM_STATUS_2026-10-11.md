@@ -34,6 +34,13 @@
 > 发信/直传静默降级而流水线全绿）⇒ 流水线新增 edge 侧 RESEND/S3 同步 + 内核/门面 secret 存在性断言。
 > 顺带加固：JSONC 尾逗号字符串感知、`--live` 分页与 429/5xx 重试、smoke 改 jq（不依赖键序）、curl 重试、
 > 内核探针 JSON 校验、migrate `needs` build（确认没通过不碰生产库）、edge pnpm 10 顺序修正。
+>
+> **首次端到端 dispatch ✅（run 39722107904，2026-10-22 12:23 +08）**：build（ubuntu + `assets:check`）→
+> migrate（head `202610210002`，无 pending）→ deploy-kernel（version `974598f1`）→ deploy-edge（version
+> `c6163029`）→ 域名 live 断言 / 深度探针 / 401 / 资产 chunk / OpenAPI 全过。线上复核：`/health`=`kaas-edge`、
+> `/health?deep=1` 返回 `kernel.status=ok` + `shared_loaded=true`（service `kaas-intel-worker`）、两条域名仍归
+> `kaas-edge`、edge secrets 现有 `JWT_SECRET/RESEND_API_KEY/S3_ACCESS_KEY/S3_SECRET_KEY`。
+> 同一 commit `31b356f` 的 push CI：backend:test / ts-edge 均 **success**。
 
 > **（2026-10-22 · 侧边栏点击不跳转 ✅ 已修上线）** 根因 = `frontend/src/components/layout/sidebar.tsx:166` 的
 > `<Link prefetch={true}>` + 静态导出：`linkClicked` 先 `preventDefault`，随后卡在等 prefetch 完成（永不 resolve），
