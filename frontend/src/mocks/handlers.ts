@@ -1403,8 +1403,10 @@ const INQUIRY_NEXT: Record<string, readonly string[]> = {
 const INQUIRY_STATUSES: readonly string[] = ["unquoted", "quoted", "closed"];
 
 /** 询盘阶段变更历史（`GET /inquiries/{id}/stage-log` 的数据源）。
- *  形状 = `ws_crm_ext.py:414-451`：from_stage / to_stage / source_event / actor_id / note / created_at。 */
+ *  形状 = `ws_crm_ext.py:466-470`：id / from_stage / to_stage / source_event /
+ *  actor_id / note / created_at（**id 必须有**：详情抽屉用它当 React key）。 */
 type MockInquiryStageLog = {
+  id: number;
   from_stage: string | null;
   to_stage: string;
   source_event: string;
@@ -1413,6 +1415,14 @@ type MockInquiryStageLog = {
   created_at: string;
 };
 let inquiryStageLogStore = new Map<number, MockInquiryStageLog[]>();
+let inquiryStageLogSeq = 1;
+
+/** 阶段流水自增 id（种子在 seedP1Stores 里重置回 1）。 */
+function nextInquiryStageLogId(): number {
+  const id = inquiryStageLogSeq;
+  inquiryStageLogSeq += 1;
+  return id;
+}
 
 function inquiryStageLogsOf(inquiryId: number): MockInquiryStageLog[] {
   let rows = inquiryStageLogStore.get(inquiryId);
@@ -1971,10 +1981,12 @@ function seedP1Stores(): void {
     productTaxRatesStore.reduce((max, r) => Math.max(max, r.id), 0) + 1;
   // 询盘阶段历史：种子里每条询盘一条「进入当前阶段」的记录（F4 的入口数据）
   inquiryStageLogStore = new Map();
+  inquiryStageLogSeq = 1;
   for (const list of inquiriesStore.values()) {
     for (const inq of list) {
       inquiryStageLogStore.set(inq.id, [
         {
+          id: nextInquiryStageLogId(),
           from_stage: "inquiry",
           to_stage: inq.stage ?? "inquiry",
           source_event: "quote_created",
@@ -3381,6 +3393,172 @@ const RECEIVABLE_SEEDS: Array<Record<string, unknown>> = [
     customer_name: "安平联佳丝网",
   },
 ];
+
+// ── 询盘工位（设计 §8 / §9.1）—— 列表/详情投影 ──────────────────────────────
+// 真源：`backend/worker/src/ws_crm_ext.py:303-399`（列表）/:402-479（详情）。
+// 这里只做**投影**：聚合（quote_count / order_count / latest_quote_at）与详情的
+// quotes/orders/stage_log/counts 全部从现成 store 真算，不手编假数据 —— 否则
+// 「mock 下看得到、生产看不到」的假功能会骗过 e2e。
+
+/** 阶段取值（真源 = worker/src/inquiry_stage.py:30-34 ALL_STAGES）。 */
+const INQUIRY_STAGES: readonly string[] = [
+  "inquiry",
+  "quotation",
+  "order",
+  "shipment",
+  "completed",
+  "closed",
+];
+/** 渠道取值 = 共享枚举 ENUMS_MOCK.inquiry_channel（真源 kaas_common/domain/enums.py）。 */
+const INQUIRY_CHANNELS: readonly string[] = ENUMS_MOCK.inquiry_channel ?? [];
+
+/** 严格 YYYY-MM-DD（后端 `_parse_day` 非法值 422 INVALID_DATE，mock 同口径）。 */
+function isMockDay(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return (
+    !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+  );
+}
+
+/** 同一询盘的报价（后端按 created_at,id 正序 = 改价轨迹）。 */
+function mockInquiryQuotes(inquiryId: number): MockQuote[] {
+  return quotesStore
+    .filter((q) => q.inquiry_id === inquiryId)
+    .slice()
+    .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id - b.id);
+}
+
+/** 同一询盘的订单：正列 inquiry_id 优先，经报价传递兜底（与后端 SQL 同义）。 */
+function mockInquiryOrders(
+  inquiryId: number,
+): Array<Record<string, unknown> & { id: number }> {
+  const quoteIds = new Set(mockInquiryQuotes(inquiryId).map((q) => q.id));
+  return ordersStore.filter(
+    (order) =>
+      Number(order.inquiry_id) === inquiryId ||
+      (typeof order.quote_order_id === "number" &&
+        quoteIds.has(order.quote_order_id)),
+  );
+}
+
+/** 列表行 = row_to_inquiry + company_name + 三个聚合列（ws_crm_ext.py:390-398）。 */
+function inquiryRowOut(inquiry: MockInquiry) {
+  const customer = customersStore.find((c) => c.id === inquiry.customer_id);
+  const quotes = mockInquiryQuotes(inquiry.id);
+  const orders = mockInquiryOrders(inquiry.id);
+  const latestQuoteAt = quotes.reduce<string | null>((latest, quote) => {
+    const at = quote.created_at;
+    if (!at) return latest;
+    if (!latest) return at;
+    return at > latest ? at : latest;
+  }, null);
+  return {
+    ...inquiryWithItems(inquiry),
+    company_name: customer?.company_name ?? null,
+    quote_count: quotes.length,
+    order_count: orders.length,
+    latest_quote_at: latestQuoteAt,
+  };
+}
+
+/** 详情 quotes[] = row_to_quote 投影 + order_count（ws_crm_ext.py:445-448）。 */
+function inquiryQuoteOut(quote: MockQuote) {
+  const orderCount = ordersStore.filter(
+    (o) => Number(o.quote_order_id) === quote.id && o.status !== "cancelled",
+  ).length;
+  return {
+    id: quote.id,
+    quote_no: quote.quote_no,
+    customer_id: quote.customer_id,
+    customer_name: quote.customer_name,
+    inquiry_id: quote.inquiry_id,
+    status: quote.status,
+    currency: quote.currency,
+    total_amount: quote.total_amount,
+    valid_until: quote.valid_until,
+    notes: quote.notes,
+    fx_rate: quote.fx_rate,
+    fx_rate_date: quote.fx_rate_date,
+    tax_archive_id: quote.tax_archive_id,
+    tax_archive_code: quote.tax_archive_code,
+    tax_archive_name: quote.tax_archive_name,
+    tax_snapshot: quote.tax_snapshot,
+    created_at: quote.created_at,
+    created_by: quote.created_by,
+    owner_id: quote.owner_id,
+    owner_scope: quote.owner_scope,
+    item_count: quote.items.length,
+    incoterm: quote.incoterm,
+    payment_terms: quote.payment_terms,
+    port_of_loading: quote.port_of_loading,
+    port_of_destination: quote.port_of_destination,
+    shipping_marks: quote.shipping_marks,
+    country_of_origin: quote.country_of_origin,
+    // 报价行上没有这两列（历史/不同版本可能没有）—— 后端 row_to_quote 同样输出 null
+    destination_country: null,
+    destination_region: null,
+    carrier: quote.carrier,
+    freight_valid_from: quote.freight_valid_from,
+    freight_valid_to: quote.freight_valid_to,
+    order_count: orderCount,
+  };
+}
+
+/** 详情 orders[] = row_to_order 投影（共享 order_serializers.py:33-65）。 */
+function inquiryOrderOut(
+  order: Record<string, unknown> & { id: number },
+  inquiryId: number,
+  linkedQuoteIds: ReadonlySet<number>,
+) {
+  const quoteOrderId =
+    typeof order.quote_order_id === "number" ? order.quote_order_id : null;
+  const directInquiryId =
+    typeof order.inquiry_id === "number" ? order.inquiry_id : null;
+  return {
+    id: order.id,
+    order_no: order.order_no ?? `ORD-${order.id}`,
+    customer_id: order.customer_id ?? null,
+    customer_name: order.customer_name ?? null,
+    status: order.status ?? "pending",
+    currency: order.currency ?? "USD",
+    total_amount: order.total_amount ?? null,
+    // 后端 order_date 是 date → 序列化 ISO；mock 建单时写的是 nowIso()
+    order_date:
+      typeof order.order_date === "string"
+        ? order.order_date.slice(0, 10)
+        : null,
+    delivery_date:
+      typeof order.delivery_date === "string"
+        ? order.delivery_date.slice(0, 10)
+        : null,
+    created_at: order.created_at ?? null,
+    owner_id: null,
+    owner_scope: null,
+    incoterm: order.incoterm ?? null,
+    payment_terms: order.payment_terms ?? null,
+    port_of_loading: order.port_of_loading ?? null,
+    port_of_destination: order.port_of_destination ?? null,
+    shipping_marks: order.shipping_marks ?? null,
+    country_of_origin: order.country_of_origin ?? null,
+    // 两种来源都合法：正列 / 经报价传递（设计 §3.1）
+    source_type:
+      order.source_type ??
+      (quoteOrderId !== null && linkedQuoteIds.has(quoteOrderId)
+        ? "inquiry"
+        : "direct"),
+    source_channel: order.source_channel ?? null,
+    inquiry_id:
+      directInquiryId ??
+      (quoteOrderId !== null && linkedQuoteIds.has(quoteOrderId)
+        ? inquiryId
+        : null),
+    quote_id: quoteOrderId,
+    confirmed_at: null,
+    confirmed_by: null,
+    confirmed_source: null,
+  };
+}
 
 export const handlers = [
   // ── 工位订阅快照（原先没有 mock，是**真正的**缺口）─────────────────────
@@ -7096,6 +7274,7 @@ export const handlers = [
         if (target === "closed") {
           // 询盘阶段（TODO(TODO:F4)）：手动关闭 → closed（终态），并留一条阶段流水
           inquiryStageLogsOf(id).push({
+            id: nextInquiryStageLogId(),
             from_stage:
               typeof inquiry.stage === "string" ? inquiry.stage : "inquiry",
             to_stage: "closed",
@@ -7156,6 +7335,184 @@ export const handlers = [
       );
     }
     return HttpResponse.json({ items: inquiryStageLogsOf(id) });
+  }),
+
+  // ── 询盘工位 · 列表 / 详情（设计 §8 / §9.1，task-2）──────────────────────
+  // GET ← app/(app)/inquiries/page.tsx + hooks/use-inquiries.ts
+  // 参数/形状 = ws_crm_ext.py:303-399：status / customer_id / stage / channel /
+  // date_from / date_to / q → {items,total}。**没有 page/page_size**：内核一次返回
+  // 全部可见行，前端做客户端分页 —— mock 不提供后端没有的分页，否则会写出假功能。
+  http.get("/api/v1/inquiries", ({ request }) => {
+    const url = new URL(request.url);
+    const status = url.searchParams.get("status");
+    if (status && !INQUIRY_STATUSES.includes(status)) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "invalid_enum_value",
+            code: "INVALID_ENUM",
+            field: "status",
+            value: status,
+            allowed: [...INQUIRY_STATUSES],
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const stage = url.searchParams.get("stage");
+    if (stage && !INQUIRY_STAGES.includes(stage)) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "invalid_enum_value",
+            code: "INVALID_ENUM",
+            field: "stage",
+            value: stage,
+            allowed: [...INQUIRY_STAGES],
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const channel = url.searchParams.get("channel");
+    if (channel && !INQUIRY_CHANNELS.includes(channel)) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "invalid_enum_value",
+            code: "INVALID_ENUM",
+            field: "channel",
+            value: channel,
+            allowed: [...INQUIRY_CHANNELS],
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const customerIdRaw = url.searchParams.get("customer_id");
+    let customerId: number | null = null;
+    if (customerIdRaw) {
+      customerId = Number(customerIdRaw);
+      if (!Number.isInteger(customerId)) {
+        return HttpResponse.json(
+          {
+            detail: {
+              error: "validation",
+              code: "INVALID_CUSTOMER_ID",
+              field: "customer_id",
+              detail: "customer_id 必须是整数",
+            },
+          },
+          { status: 422 },
+        );
+      }
+    }
+    const dateFrom = url.searchParams.get("date_from");
+    if (dateFrom && !isMockDay(dateFrom)) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "INVALID_DATE",
+            field: "date_from",
+            detail: "date_from 必须是 YYYY-MM-DD",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const dateTo = url.searchParams.get("date_to");
+    if (dateTo && !isMockDay(dateTo)) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "INVALID_DATE",
+            field: "date_to",
+            detail: "date_to 必须是 YYYY-MM-DD",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const q = (url.searchParams.get("q") ?? "").trim().toLowerCase();
+
+    const rows: ReturnType<typeof inquiryRowOut>[] = [];
+    for (const list of inquiriesStore.values()) {
+      for (const inquiry of list) {
+        if (status && inquiry.status !== status) continue;
+        if (customerId !== null && inquiry.customer_id !== customerId) continue;
+        // 历史行 stage 可能为 null：与后端 SQL 比较语义一致（null 不匹配任何值）
+        if (stage && inquiry.stage !== stage) continue;
+        if (channel && inquiry.channel !== channel) continue;
+        const day = inquiry.created_at.slice(0, 10);
+        if (dateFrom && day < dateFrom) continue;
+        if (dateTo && day > dateTo) continue;
+        if (q) {
+          const customer = customersStore.find(
+            (c) => c.id === inquiry.customer_id,
+          );
+          const haystack = `${inquiry.product_name_raw ?? ""} ${
+            inquiry.inquiry_no ?? ""
+          } ${customer?.company_name ?? ""}`.toLowerCase();
+          if (!haystack.includes(q)) continue;
+        }
+        rows.push(inquiryRowOut(inquiry));
+      }
+    }
+    // 后端 ORDER BY i.customer_id, i.created_at DESC（ws_crm_ext.py:390）
+    rows.sort(
+      (a, b) =>
+        a.customer_id - b.customer_id ||
+        String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")),
+    );
+    return HttpResponse.json({ items: rows, total: rows.length });
+  }),
+
+  // GET ← app/(app)/inquiries/components/inquiry-detail-drawer.tsx
+  // 形状 = ws_crm_ext.py:402-479：row_to_inquiry + company_name + quotes[]（row_to_quote
+  // + order_count，created_at 正序）+ orders[]（row_to_order）+ stage_log[]
+  // + counts{quotes,orders,open_orders}。
+  http.get("/api/v1/inquiries/:id", ({ params }) => {
+    const id = Number(params.id);
+    const found = findInquiry(id);
+    if (!found) {
+      return HttpResponse.json(
+        { detail: { error: "not_found", code: "INQUIRY_NOT_FOUND" } },
+        { status: 404 },
+      );
+    }
+    const inquiry = found.inquiry;
+    const customer = customersStore.find((c) => c.id === inquiry.customer_id);
+    const quotes = mockInquiryQuotes(id);
+    const linkedQuoteIds = new Set(quotes.map((quote) => quote.id));
+    const orders = mockInquiryOrders(id)
+      .slice()
+      .sort(
+        (a, b) =>
+          String(b.created_at ?? "").localeCompare(
+            String(a.created_at ?? ""),
+          ) || b.id - a.id,
+      );
+    const projectedOrders = orders.map((order) =>
+      inquiryOrderOut(order, id, linkedQuoteIds),
+    );
+    return HttpResponse.json({
+      ...inquiryWithItems(inquiry),
+      company_name: customer?.company_name ?? null,
+      quotes: quotes.map(inquiryQuoteOut),
+      orders: projectedOrders,
+      // 阶段流水：与 /inquiries/{id}/stage-log 同一份 store（写操作真改它）
+      stage_log: inquiryStageLogsOf(id),
+      counts: {
+        quotes: quotes.length,
+        orders: projectedOrders.length,
+        open_orders: projectedOrders.filter(
+          (order) =>
+            order.status !== "completed" && order.status !== "cancelled",
+        ).length,
+      },
+    });
   }),
 
   // ── 客户 · 联系人更新 / 删除 ────────────────────────────────────────────

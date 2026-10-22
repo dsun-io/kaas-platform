@@ -14,6 +14,21 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-23 · M2-A `/inquiries` 询盘工位 ✅）**
+> - 新增独立一等工位 `/inquiries`（设计 §9.1）：跨客户列表（询盘号/客户/产品摘要/渠道/阶段徽标/报价数/订单数/
+>   最近报价/创建时间）+ 筛选（阶段/渠道/客户/时间/关键词；**客户端分页** —— 内核 `GET /inquiries` 当前无 page 参数，
+>   不伪造服务端翻页）+ 详情抽屉（基本信息、产品行/渠道编辑、**报价历史 1:N**（单号/时间/金额/状态/行项数/查看入口）、
+>   关联订单（可跳 /orders）、stage 时间线）+「为此询盘报价」深链 + 关闭/重开（二次确认，状态机口径）。
+> - 导航契约双端登记：`shared/contracts/workstations.ts` + `backend/kaas_common/domain/workstations.py` 各加
+>   `inquiries`（business / order=25 / icon MessageSquare / subscription=null），`contracts:check` R2 **28→29**；
+>   侧边栏图标接线（`sidebar.tsx`）。
+> - mocks：`GET /inquiries`、`GET /inquiries/{id}` 均由现成 store **真算投影**（quote_count/order_count/
+>   latest_quote_at/quotes/orders/stage_log/counts），stage_log 补自增 id（React key）；不手编假数据。
+> - 门禁：前端 typecheck / lint / **1184 passed（135 文件）** / contracts:check（R2=29）/ mocks:check（未覆盖 2 ≤ 20）/
+>   ui:standards / ui:contrast / e2e **27 passed**（a11y 自动发现 /inquiries）全 PASS。
+> - 已知遗留：①列表为客户端分页（内核加 page/page_size 后可切服务端，登记 TODO）；②`/api/v1/inquiries` 仍归
+>   customers 订阅，而 `/inquiries` 页面是非计费工位 —— 当前未启用付费墙，不构成拦截，登记为口径遗留。
+>
 > **（2026-10-23 · M1-f 门面收口 + M3 漏斗后端 ✅）**
 > 接上一棒的未提交半场（M1-f 上半场 + M3 端点雏形），本轮补齐并修正：
 > - **M1-f 门面收口**：TS 门面补 12 条显式透传（`GET /inquiries/{id}`、item-change 4、

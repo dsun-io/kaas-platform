@@ -65,6 +65,13 @@ WORKSTATIONS = [
         "admin_only": False, "status": "hidden", "subscription": None,
     },
     {
+        # 2026-10-22 询盘与订单模型重构（设计 §9.1）：询盘升为一等独立入口；
+        # 非计费工位（/api/v1/inquiries 仍归 customers 订阅，见 subscriptions.py）。
+        "key": "inquiries", "name": "询盘", "route": "/inquiries",
+        "group": "business", "order": 25,
+        "admin_only": False, "status": "active", "subscription": None,
+    },
+    {
         "key": "trade-docs", "name": "单证", "route": "/trade-docs",
         "group": "business", "order": 40,
         "admin_only": False, "status": "active", "subscription": None,

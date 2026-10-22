@@ -188,6 +188,23 @@ export const WORKSTATIONS: readonly Workstation[] = [
     subscription: null,
   },
   {
+    // 2026-10-22 询盘与订单模型重构（设计 §9.1）：询盘升为一等独立入口。
+    // 列表/详情（报价历史 1:N + 来源链 + stage 时间线）走内核 GET /inquiries
+    // 与详情端点（ws_crm_ext.py:303/402，门面透传）。
+    // 注意：contracts-check 按对象花括号提取字段，注释里不要写花括号字面量。
+    // subscription=null（非计费）：/api/v1/inquiries 已归 customers 工位订阅，
+    // 这里再挂计费会出「页面放行、API 被拦」的矛盾（登记为遗留项）。
+    key: 'inquiries',
+    name: '询盘',
+    route: '/inquiries',
+    group: 'business',
+    order: 25,
+    icon: 'MessageSquare',
+    adminOnly: false,
+    status: 'active',
+    subscription: null,
+  },
+  {
     key: 'trade-docs',
     name: '单证',
     route: '/trade-docs',
