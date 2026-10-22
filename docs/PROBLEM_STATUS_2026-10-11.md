@@ -14,6 +14,15 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-22 · 侧边栏点击不跳转 ✅ 已修上线）** 根因 = `frontend/src/components/layout/sidebar.tsx:166` 的
+> `<Link prefetch={true}>` + 静态导出：`linkClicked` 先 `preventDefault`，随后卡在等 prefetch 完成（永不 resolve），
+> 点击后 **30s 零请求/零报错/URL 不变**（本机 A/B 证实：`prefetch={false}` 即恢复）。已改 `prefetch={false}` 并重建部署
+> 门面 `kaas-edge`（version `fe855137-87ac-4c05-8238-9d5266d44567`，线上 `quotes.html` 与本地产物 SHA256 一致；
+> 冒烟 `/health` 200 / 未带 token 401 / 页面 200；`pnpm typecheck` 0、`pnpm test` 934/110）。
+> **遗留 P1（未修）**：Windows 本机构建的静态导出把逐段预取文件写成目录（`__next.X\\Y.txt`），
+> 客户端请求点号名 `__next.X.Y.txt` ⇒ 全站预取 404（不阻塞导航，只损预取）；修法=改用 Linux/CI 构建产物再 deploy。
+> 取证/复现脚本/执行记录见 [`HANDOVER_2026-10-21_NAV_STUCK.md`](./HANDOVER_2026-10-21_NAV_STUCK.md)。
+
 > **（2026-10-22 · CI 瘦身 ✅，不删门禁）** GitHub Actions 私有仓库免费额度 2,000 分钟/月长期吃紧
 > （实测按 job 计费口径月耗 ≈3,400–4,700 分钟；2026-10-17 曾因额度/账单被挡在任务启动前）。本次只瘦触发面：
 > ①Frontend CI 的 **e2e 从 push 移出**（仅 PR / 每晚 02:00 定时 / 手动），并删掉 e2e 里**从未被使用**的 `pnpm build`；
@@ -22,6 +31,10 @@
 > ⑤4 个测试 workflow 加 `concurrency` cancel-in-progress。预计月耗降到 ≈1,500–2,000。
 > **`deploy.yml` 仍 `workflow_dispatch` only（2026-10-20 裁决不变）**；CF Workers Builds 未接。
 > 口径、验证方法、**self-hosted runner 规划（已批准、未实施）**见 [`CI_OPTIMIZATION_2026-10-22.md`](./CI_OPTIMIZATION_2026-10-22.md)。
+>
+> **同日稍后：仓库已转 public** ⇒ GitHub-hosted 标准 runner 对 public 仓库**免费且无限**，额度/账单拦截解除
+> （转 public 后复跑被拦的 run，job 已正常启动）。瘦身仍保留（减冗余 job / 加速反馈），**self-hosted runner 降为可选**
+> （public 仓库接 self-hosted 有 fork PR 执行风险，见文档 §6.1）。
 
 > **（2026-10-21 · W5 全部完成 ✅ 对外 MCP+REST 能力上线）** ①M4 对外文档：[`W5_EXTERNAL_USAGE_2026-10-21.md`](./W5_EXTERNAL_USAGE_2026-10-21.md)
 > （REST curl 示例 / MCP client 配置 / 21 项 scope 清单与默认拒绝 / 审计边界如实登记）；②**UI 令牌管理页上线**

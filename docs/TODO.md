@@ -45,7 +45,7 @@
 | B-3 | ~~C2/C10 打印视觉 QA~~ | ✅ 2026-10-21 用户确认打印 OK（`docs/acceptance/print-qa/` 3 份 A4） | — |
 | B-4 | ~~C36 拍板~~ | ✅ 2026-10-21 用户批准删 3 条（PATCH /spec/prices/{id}、POST /spec/skus/{id}/prices、POST /file-objects/upload）；13 条 owner 待后续统一确认 | — |
 | B-5 | ~~A6 合同 12 条双语条款抽查~~ | ✅ 2026-10-21 用户确认条款 OK（默认措辞可编辑，法务后续可改） | — |
-| B-6 | **CI self-hosted runner（已批准方向，未实施）** | 提供一台常开的 **Linux** 机器（或授权本机常驻），按 [`CI_OPTIMIZATION_2026-10-22.md`](./CI_OPTIMIZATION_2026-10-22.md) §6 注册 runner；之后把 e2e / backend 重 job 改 `runs-on: [self-hosted, linux-x64]` | 私有仓库免费额度只有 2,000 分钟/月，按当前推送频率仍会持续超额；runner 的分钟数免费且无上限 |
+| B-6 | **CI self-hosted runner（可选，已降级；仓库已转 public）** | 仓转 public 后 GitHub-hosted 分钟免费无限，**不再是省钱必需**。仍想要更快反馈/自定义环境时：给一台常开 **Linux** 机器，按 [`CI_OPTIMIZATION_2026-10-22.md`](./CI_OPTIMIZATION_2026-10-22.md) §6 接（**public 仓库只给 push main / 手动 job 用**，别给 `pull_request`） | 不做也不影响额度；只是仍跑 GitHub 托管 runner（排队/无自定义环境） |
 
 ### C. 已按你裁决不做 / 暂缓（不再列为待办）
 

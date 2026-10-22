@@ -30,16 +30,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 顺序硬要求：pnpm 必须先装好，setup-node 的 `cache: pnpm` 才能解析——
+      # 反了会报 `Unable to locate executable file: pnpm`（2026-10-22 实测红）。
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: backend/ts-worker/pnpm-lock.yaml
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-          run_install: false
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

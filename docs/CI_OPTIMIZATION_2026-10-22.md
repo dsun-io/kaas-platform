@@ -7,14 +7,19 @@
 ## 0. 结论（TL;DR）
 
 - **不删门禁**，只瘦触发面：lint/typecheck/build/单测/worker 测试/契约/静态门禁全部保留。
-- 月耗从实测 ≈3,400–4,700 分钟（GitHub 按 job 计费口径）降到估算 **≈1,500–2,000 分钟**，回到私有仓库免费额度（2,000/月）以内。
+- 月耗从实测 ≈3,400–4,700 分钟（GitHub 按 job 计费口径）降到估算 **≈1,500–2,000 分钟**。
+- **2026-10-22 仓库已转 public** ⇒ GitHub-hosted 标准 runner 对 public 仓库**免费且无限**，额度问题解除；
+  本次瘦身仍保留（减少冗余 job / 加速反馈），但**不再是省钱必需**。若以后转回 private，本文件 §1 的额度口径立即恢复有效。
 - 花钱的三个大头已处理：**e2e 不再每次 push 跑**、**预置/部署链路不随 push 跑**、**过期 run 自动取消**。
 - `deploy.yml` **仍是 `workflow_dispatch` only**（2026-10-20 用户裁决不变，未恢复 push 自动部署）。
-- **self-hosted runner（已批准方向，未实施）**：见 §6；做完可让 CI 分钟数免费无限。
+- **self-hosted runner（已批准方向，未实施；public 后降为可选）**：见 §6；public 仓库接 self-hosted 有 fork PR 执行风险，见 §6.1 第 5 条。
 
 ## 1. 为什么改（额度与实测）
 
-- 仓库当前为 **private**：GitHub Actions 免费额度 = **2,000 分钟/月**（Free 计划；只有 public 仓库的标准 runner 才是无限免费）。
+- 额度时间线：**2026-10-22 之前仓库是 private**（GitHub Actions 免费额度 = **2,000 分钟/月**，Free 计划）；
+  **2026-10-22 已转 public** ⇒ public 仓库的标准 runner **免费且无限**（官方 billing 文档原文：
+  "GitHub Actions usage is free for self-hosted runners and for public repositories that use standard GitHub-hosted runners"）。
+  下文 §1 的实测数字是瘦身的**依据与收益记录**，在 public 下不再决定是否超额。
 - 历史：2026-10-17 私有仓库额度/账单把 job 挡在启动前（annotation：`recent payments have failed or your spending limit needs to be increased`），当时把仓库改 public 才恢复；后来按用户裁决改回 private（见 `PROBLEM_STATUS_2026-10-11.md` 2026-10-17 交接段）。
 - 2026-10-22 实测（GitHub API：`/actions/runs` + `/actions/runs/{id}/jobs`，按 job 相加 = GitHub 计费口径）：
 
@@ -30,7 +35,7 @@
 > 口径提醒：我早前用 `updated_at−created_at`（墙钟）估的 772 分钟/7 天会**低估约 40–50%**——
 > GitHub 按每个 job 的分钟相加计费，并行的 `check`+`e2e` 各算各的。本文一律用 job 相加口径。
 
-### 1.1 本次落地的当口，额度**已经用尽**（实测证据）
+### 1.1 落地当口的额度拦截（历史证据，public 后已解除）
 
 2026-10-22 推送瘦身提交后，三个 workflow 都正常触发、job 选择也正确（e2e / 真 PG 集成均 skipped），
 但**所有 job 在 0–3 秒内失败**，annotation 原文：
@@ -43,7 +48,11 @@ Please check the 'Billing & plans' section in your settings
 ⇒ 这是**额度/账单拦截，不是代码或 workflow 语法问题**（同一 annotation 在 2026-10-17 出现过一次）。
 恢复路径（三选一）：① GitHub → Settings → Billing and plans → Actions 提高 spending limit / 绑定支付方式；
 ② 等新计费周期免费分钟重置（Free 计划 2,000 分钟/月）；③ 按 §6 接 **self-hosted runner**（不吃 GitHub-hosted 分钟，
-通常也不受该 spending limit 拦截）——这也是它值得做的直接原因。
+通常也不受该 spending limit 拦截）。
+
+**2026-10-22 更新（已解决）**：仓库转 **public** 后复跑同一 run（`gh run rerun`），job 已**正常启动**
+（`Frontend CI / check` 进入 in_progress），证实拦截来自 **private 额度**，不是 workflow 本身。
+本条保留为历史证据；public 仓库的 GitHub-hosted 分钟免费无限，无需再处理 spending limit。
 
 ## 2. 本次改动（逐文件）
 
@@ -53,7 +62,7 @@ Please check the 'Billing & plans' section in your settings
 | `.github/workflows/backend-test.yml` | ①push 限 `main`；②paths 收窄：不再用 `backend/**`、`scripts/**`，只列门禁相关源/脚本（poc-*、ts-migration、scripts/archive 不再触发）；③真 PG 集成 job `worker-db-tests` 加 `if: github.event_name != 'push'`（只在 PR / 定时 / 手动跑）；④新增 `schedule`（18:30 UTC）；⑤`concurrency` | ≈600–900 |
 | `.github/workflows/contracts-check.yml` | 去掉落在 frontend-ci 触发面内的路径（`frontend/**`、`shared/contracts/**`）——frontend check job 已经在跑**同一个** `pnpm contracts:check`；加 `concurrency` | ≈100 |
 | `.github/workflows/preview.yml` | PR 预览改为 **PR 打 `preview` label** 才构建（`types` 增加 `labeled`）；close 仍无条件 teardown（防资源泄漏）；加 label 判定 | ≈150–300 |
-| `.github/workflows/ts-edge.yml` | 加 `concurrency` + `cancel-in-progress` | 小 |
+| `.github/workflows/ts-edge.yml` | 加 `concurrency` + `cancel-in-progress`；**修复 pnpm 安装顺序**（`pnpm/action-setup` 必须在 `setup-node(cache: pnpm)` 之前，否则 `Unable to locate executable file: pnpm`，2026-10-22 实测红） | 小 |
 | `.github/workflows/deploy.yml` | **不变**（仍 `workflow_dispatch` only） | — |
 
 ### 2.1 首次使用预览环境的准备
@@ -88,10 +97,13 @@ gh run list --workflow=preview.yml --limit 5          # 无 label 的 PR：run �
 - 恢复 **preview 随 PR 自动跑**：把 `preflight` 的 label 判定恢复为 `if: github.event.action != 'closed'`。
 - 其它改动均可 `git revert <本提交>` 回退；改动只在 workflow 文件，无代码/配置副作用。
 
-## 6. self-hosted runner（已批准方向，未实施）
+## 6. self-hosted runner（已批准方向，未实施；public 后降为可选）
 
-**为什么值得做**：self-hosted runner 的分钟数**免费且无上限**；本仓库私有 + 推送频率高（近 30 天 747 提交），
-这是最省钱的长期方案，也不需要把仓库改 public。
+> **2026-10-22 口径更新**：仓库已转 **public** ⇒ GitHub-hosted 标准 runner 免费无限，**省钱这一动因消失**。
+> 本方案降级为**可选优化**（价值点变为：更快的本机缓存/自定义环境；以及"以后若转回 private"的兜底）。
+
+**为什么仍值得留着**：self-hosted runner 的分钟数免费且无上限，且不排 GitHub 托管的队；本仓库推送频率高
+（近 30 天 747 提交），有机器时可显著缩短反馈时间。
 
 ### 6.1 实施步骤（草案）
 
@@ -103,8 +115,9 @@ gh run list --workflow=preview.yml --limit 5          # 无 label 的 PR：run �
 4. **按收益顺序**挑 job 改 `runs-on: [self-hosted, linux-x64]`：
    ① `Frontend CI / e2e`（最大头）→ ② `backend:test / 三个 job` → ③ `contracts:check`。
    保守做法：先只改 e2e，观察一周稳定性。
-5. 安全前提：仓库保持 private；self-hosted runner **不要把带 secrets 的 fork PR 跑到自己机器上**
-   （GitHub 默认不向 fork PR 提供 secrets，但仍建议只让 trusted 分支/手动跑）。
+5. **安全前提（public 仓库尤其重要）**：GitHub 官方**不建议**把 self-hosted runner 用于 public 仓库——fork PR 的代码会在
+   你的机器上执行。若要接：只把 `runs-on` 给 **push 到 main / workflow_dispatch** 的 job（不要给 `pull_request`），
+   敏感机器不要接。
 
 ### 6.2 验收
 
@@ -126,6 +139,8 @@ gh run list --workflow=preview.yml --limit 5          # 无 label 的 PR：run �
 ## 8. 变更记录
 
 - **2026-10-22**：首版。workflow 瘦身落地；self-hosted runner 登记为已批准、未实施。
+- **2026-10-22（稍后）**：仓库转 **public** ⇒ 额度问题解除（标准 runner 免费无限）；本口径更新：瘦身保留、self-hosted 降为可选；
+  顺手修复 `ts-edge` 的 pnpm 安装顺序（`pnpm/action-setup` 必须在 `setup-node(cache: pnpm)` 之前）。
 
 ---
 
