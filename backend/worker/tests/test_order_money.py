@@ -232,8 +232,12 @@ def test_create_order_with_breakdown_and_plan_creates_schedules_and_receivable()
 
     insert_order_sql, insert_order_args = conn.first("INSERT INTO orders")
     assert "$20::jsonb" in insert_order_sql
-    assert json.loads(insert_order_args[-1])["freight_amount"] == 400.0
+    # $20 是 amount_breakdown（0-based 19）；后面 $21/$22/$23 是来源三元组
+    # （source_type/source_channel/inquiry_id），别再按 [-1] 取。
+    assert json.loads(insert_order_args[19])["freight_amount"] == 400.0
     assert 10600.0 in insert_order_args          # total_amount 落订单总额
+    # 来源三元组：无询盘无报价的手动单 ⇒ direct / 渠道未知 / 不挂询盘
+    assert list(insert_order_args[20:23]) == ["direct", None, None]
 
     schedules = [(sql, args) for sql, args in conn.calls
                  if "INSERT INTO payment_schedules" in sql]

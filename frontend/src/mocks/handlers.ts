@@ -407,13 +407,27 @@ const ENUMS_MOCK: Record<string, string[]> = {
   doc_status: ["draft", "issued", "void"],
   currency: ["USD", "CNY", "EUR", "GBP", "JPY", "AUD", "CAD", "HKD"],
   owner_scope: ["private", "tenant"],
+  // 2026-10-22 渠道去掉 'quote'（那是来源类型不是渠道），新增 phone / referral。
   inquiry_channel: [
     "email",
     "whatsapp",
     "alibaba",
     "expo",
     "website",
-    "quote",
+    "phone",
+    "referral",
+    "other",
+  ],
+  order_source_type: ["inquiry", "direct"],
+  order_confirm_source: ["manual", "deposit_receipt"],
+  source_channel: [
+    "email",
+    "whatsapp",
+    "alibaba",
+    "expo",
+    "website",
+    "phone",
+    "referral",
     "other",
   ],
 };

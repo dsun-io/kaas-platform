@@ -136,8 +136,13 @@ const ENUMS: Record<string, readonly string[]> = {
   customer_stage: ["active", "inactive", "ordered"],
   quote_status: ["draft", "sent", "accepted", "rejected", "expired", "closed"],
   order_status: ["pending", "confirmed", "producing", "shipped", "completed", "cancelled"],
+  // 2026-10-22 订单来源（设计 §3.2）：inquiry=询盘转化（必须挂询盘） / direct=直接下单。
+  order_source_type: ["inquiry", "direct"],
+  order_confirm_source: ["manual", "deposit_receipt"],
   shipment_status: ["booking", "in_transit", "arrived", "customs", "delivered"],
-  inquiry_channel: ["email", "whatsapp", "alibaba", "expo", "website", "quote", "other"],
+  inquiry_channel: ["email", "whatsapp", "alibaba", "expo", "website", "phone", "referral", "other"],
+  // source_channel 与 inquiry_channel 同一份清单（渠道不因「是订单」而变）。
+  source_channel: ["email", "whatsapp", "alibaba", "expo", "website", "phone", "referral", "other"],
   doc_type: [
     "quotation", "pi", "contract", "ci", "pl",
     "shipping_advice", "draft", "beneficiary_cert", "beneficiary_decl",
@@ -149,8 +154,10 @@ const ENUMS: Record<string, readonly string[]> = {
   doc_status: ["draft", "issued", "void"],
   currency: ["USD", "CNY", "EUR", "GBP", "JPY", "AUD", "CAD", "HKD"],
   owner_scope: ["private", "tenant"],
-  schedule_type: ["deposit", "balance", "full"],
-  schedule_status: ["pending", "paid", "overdue"],
+  // 2026-10-22 顺手对齐真源：此前这两项漏了 'other' 与 'partial'，
+  // 前端从 /enums 取到的下拉会比后端少值（选了被 422 拒）。
+  schedule_type: ["deposit", "balance", "full", "other"],
+  schedule_status: ["pending", "partial", "paid", "overdue"],
   receivable_status: ["unpaid", "partial", "paid"],
   bl_type: ["original", "telex", "seaway"],
 };

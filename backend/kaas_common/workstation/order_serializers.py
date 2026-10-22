@@ -9,6 +9,13 @@ orchestrator 与 Worker 共用；任何适配层不得另写一份判定。
   订单总额仍以 `orders.total_amount` 为准（历史行没有 amount_breakdown ⇒ null）。
 - `payment_receipts`（一次收款一行）：`row_to_receipt` 输出前端消费的键；
   `schedule_id` 可空（未分配收款），`amount` 是实际到账金额（可与期次金额不同）。
+
+2026-10-22（设计 §3.2 / §5.1，迁移 202610220004）：订单来源与确认痕迹
+---------------------------------------------------------------
+- `row_to_order` 增加 `source_type` / `source_channel` / `inquiry_id` / `quote_id`
+  与 `confirmed_at` / `confirmed_by` / `confirmed_source`。
+  `source_type` 缺省输出 `direct`（迁移已给列设 server_default，但**读历史库**时
+  可能拿到 NULL，前端不该看到 null 再自己判）。
 """
 import json
 from typing import Any
@@ -43,6 +50,18 @@ def row_to_order(o: Any) -> dict:
         "port_of_destination": g("port_of_destination"),
         "shipping_marks": g("shipping_marks"),
         "country_of_origin": g("country_of_origin"),
+        # ── 来源三元组（迁移 202610220004，设计 §3.2）──────────────────────
+        # inquiry=询盘转化（含经报价转化）/ direct=直接下单。订单是一等公民，
+        # 两种来源都合法；`source_channel` 可空 = 渠道未知（历史单不伪造）。
+        "source_type": g("source_type") or "direct",
+        "source_channel": g("source_channel"),
+        "inquiry_id": g("inquiry_id"),
+        "quote_id": g("quote_id"),
+        # 确认痕迹（设计 §5.1）：三者同时为空 = 未确认；confirmed_source 区分
+        # 人工确认(manual)与定金到账联动(deposit_receipt)。
+        "confirmed_at": _iso(g("confirmed_at")),
+        "confirmed_by": g("confirmed_by"),
+        "confirmed_source": g("confirmed_source"),
     }
 
 

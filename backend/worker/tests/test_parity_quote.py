@@ -298,6 +298,9 @@ def _order_row(**over):
         "port_of_loading": None, "port_of_destination": None,
         "shipping_marks": None, "country_of_origin": None,
         "team_id": 2, "tenant_id": "default", "quote_id": None,
+        # 来源三元组 + 确认痕迹（迁移 202610220004）：默认 direct / 无询盘 / 未确认
+        "source_type": "direct", "source_channel": None, "inquiry_id": None,
+        "confirmed_at": None, "confirmed_by": None, "confirmed_source": None,
     }
     row.update(over)
     return row
@@ -1308,9 +1311,12 @@ def test_create_order_from_quote_inherits_and_accepts():
     quote = _quote_row(status="sent", incoterm="FOB", currency="EUR",
                        customer_id=3, quote_no="QUO-US-ACME-1")
     created = _order_row(currency="EUR", incoterm="FOB",
-                         total_amount=Decimal("25.00"))
+                         total_amount=Decimal("25.00"),
+                         source_type="inquiry", source_channel="alibaba",
+                         inquiry_id=9)
     conn = _FakeConn(
-        fetchrow=[quote, _customer_row(), created],
+        # 第 3 条 = 「报价自带询盘 → 查渠道」的查询（设计 §3.2）
+        fetchrow=[quote, _customer_row(), {"channel": "alibaba"}, created],
         fetchval=[None],
         fetch=[[_item_row()]],          # 未给行项 → 复制报价行项
     )
@@ -1320,6 +1326,10 @@ def test_create_order_from_quote_inherits_and_accepts():
     assert resp.status_code == 201, resp.text
     body = resp.json()
     assert body["currency"] == "EUR" and body["incoterm"] == "FOB"
+    # 询盘转化单的来源三元组（迁移 202610220004）
+    assert body["source_type"] == "inquiry"
+    assert body["source_channel"] == "alibaba"
+    assert body["inquiry_id"] == 9
     insert_sql, insert_args = conn.first("INSERT INTO orders")
     assert insert_args[4] == "EUR"                    # 继承币种
     assert insert_args[13] == "FOB"                   # 继承贸易条款（incoterm）

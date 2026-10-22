@@ -7,7 +7,7 @@
 from sqlalchemy import (
     Boolean,
     Column, BigInteger, Integer, Text, Numeric, DateTime, Date, Index, func,
-    ForeignKey, text,
+    ForeignKey, CheckConstraint, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from app.db.base import Base
@@ -180,9 +180,41 @@ class Order(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
+    # ── 202610220004 订单来源与确认（设计 OPTIMIZATION_PLAN_2026-10-22 §3.2/§5.1）──
+    # 订单是一等公民：inquiry / direct 两种来源都能独立存在。
+    #   source_type='inquiry' → 必须 inquiry_id（DB CHECK 兜底，见 __table_args__）；
+    #   source_type='direct'  → inquiry_id 必须为空（线下单不许挂个假询盘凑数）。
+    source_type = Column(Text, nullable=False, default="direct", server_default="direct")
+    # 渠道：复用询盘渠道清单（email/whatsapp/alibaba/expo/website/phone/referral/other）。
+    # 存量行为 NULL —— 前端展示「未知」，不伪造（设计 §4 回填说明）。
+    source_channel = Column(Text, nullable=True)
+    # 询盘来源（可空）：与 quote_id 各自独立，两个都可能为空（direct 单）、
+    # 也可能都有（询盘→报价→订单）。ON DELETE SET NULL：询盘被硬删时订单保留。
+    inquiry_id = Column(BigInteger, ForeignKey("cust_inquiries.id", ondelete="SET NULL"), nullable=True)
+    # 确认三件套（§5.1）：confirmed_at/by 是审计痕迹，confirmed_source 区分触发方式。
+    # 两者都是**人工**触发（D-17）：manual=人工点确认；deposit_receipt=人工登记定金到账联动。
+    confirmed_at = Column(DateTime(timezone=True), nullable=True)
+    confirmed_by = Column(Text, nullable=True)
+    confirmed_source = Column(Text, nullable=True)
+
     __table_args__ = (
         Index("idx_orders_tenant", "tenant_id", "status"),
         Index("idx_orders_customer", "tenant_id", "customer_id"),
+        # 来源筛选与「询盘详情页拉订单」都按 inquiry_id 走，必须有索引。
+        Index("idx_orders_inquiry", "tenant_id", "inquiry_id"),
+        # 设计 §3.3 R1（强制关联）：询盘转化单没有询盘 = 脏数据，DB 层直接拒。
+        CheckConstraint(
+            "source_type <> 'inquiry' OR inquiry_id IS NOT NULL",
+            name="ck_orders_source_inquiry",
+        ),
+        CheckConstraint(
+            "source_type IN ('inquiry','direct')",
+            name="ck_orders_source_type",
+        ),
+        CheckConstraint(
+            "confirmed_source IS NULL OR confirmed_source IN ('manual','deposit_receipt')",
+            name="ck_orders_confirm_source",
+        ),
     )
 
 

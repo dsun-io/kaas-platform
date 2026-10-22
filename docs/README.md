@@ -1,6 +1,6 @@
 # 文档索引 · 交接从这里开始
 
-> 更新时间：**2026-10-22 团队加入申请模块收口**（见 [`JOIN_APPLICATION_MODULE_2026-10-22.md`](./JOIN_APPLICATION_MODULE_2026-10-22.md)）· 2026-10-21 切流收口 —— **生产已由 TS 门面 `kaas-edge` 承载（两层架构生效）**；
+> 更新时间：**2026-10-22 全项目性能优化审计**（见 [`PERFORMANCE_AUDIT_2026-10-22.md`](./PERFORMANCE_AUDIT_2026-10-22.md)）· 2026-10-22 团队加入申请模块收口（见 [`JOIN_APPLICATION_MODULE_2026-10-22.md`](./JOIN_APPLICATION_MODULE_2026-10-22.md)）· 2026-10-21 切流收口 —— **生产已由 TS 门面 `kaas-edge` 承载（两层架构生效）**；
 > Python Worker `kaas` 退居内核（引擎/AI/cron，仅经 Service Binding）。门面冷启动 ~25ms（内核 4674ms）。
 > 门禁（2026-10-22 实测）：ts-worker **232（23 文件）** / worker **1616+12skip**（3 条 `js` 模块缺失为本机环境问题）/
 > orchestrator 258 / 前端 **1051（125 文件）** / e2e 27 / 静态断言全 PASS；迁移头 **`202610220003`**。
@@ -58,6 +58,7 @@
 | [QA_AUTHZ_AUDIT_2026-10-21.md](./QA_AUTHZ_AUDIT_2026-10-21.md) | **C27 越权审计留证（7 条）**：只读代码审计，逐条三选一结论（已有闸门/缺失/需修复）+ 账号前提核查 |
 | [QA_AUTHZ_VERIFY_2026-10-21.md](./QA_AUTHZ_VERIFY_2026-10-21.md) | **C27 越权修复验收矩阵 v2**：F1–F4 + R-1 的「该验什么/期望/证据在哪」；只定义验收，不执行 |
 | [PROD_PERFORMANCE_AUDIT_2026-10-21.md](./PROD_PERFORMANCE_AUDIT_2026-10-21.md) | **生产性能体检**：实测 Worker 冷启动为主瓶颈（/health 0.4–5.1s）、DB 无问题（最大表 304kB）；P0/P1 已部署、P2 已迁新加坡（RTT 245→75ms） |
+| [PERFORMANCE_AUDIT_2026-10-22.md](./PERFORMANCE_AUDIT_2026-10-22.md) | **全项目性能优化审计（2026-10-22）**：部署方式不变前提下的三维度（UX/响应速度/稳定性）分级行动清单；主瓶颈=内核每查询新连接+全串行（热点 450–600ms）、quotes 首屏 436KB gzip 含 31KB 死重、Sentry 全盲；P0 包 6 项 + P1 包 8 项 |
 | [OPTIMIZATION_PLAN_2026-10-21.md](./OPTIMIZATION_PLAN_2026-10-21.md) | **优化执行计划（活跃）**：W1 性能收尾 ✅ / W2 结构债（P0 ✅，P2 在途）/ W3 TS 门面+Python 内核（Phase 0·1 ✅，Phase 2 在途）/ W4 退役 / W5 MCP·REST |
 | [W5_EXTERNAL_USAGE_2026-10-21.md](./W5_EXTERNAL_USAGE_2026-10-21.md) | **对外使用文档（M4）**：REST curl 示例 / MCP client 配置 / scope 清单 / 审计边界 / 验收清单 |
 | [W5_MCP_REST_DESIGN_2026-10-21.md](./W5_MCP_REST_DESIGN_2026-10-21.md) | **W5 对外能力设计**（草案）：API token 模型（kaas_oat_/哈希存储/scope）+ REST OpenAPI 规整 + MCP tools/resources；建在 TS 门面 |

@@ -132,9 +132,13 @@ async def advance(
 
 async def inquiry_id_of_order(conn, *, tenant_id: str, order_id: int,
                               quote_id: Any = None) -> Optional[int]:
-    """订单 → 报价 → 询盘的传递链路（`orders.quote_id` 是唯一来源）。
+    """订单 → 询盘的传递链路。
 
-    优先用调用方已拿到的 `quote_id`（少一次查询）；否则联表查。
+    顺序（2026-10-22 设计 §3.1）：
+    ① 调用方已给的 `quote_id` → 报价的 `inquiry_id`（老链路，少一次查询）；
+    ② `orders.inquiry_id` 正列 —— 询盘转化单直挂询盘时它就是真源；
+    ③ 订单的 `quote_id` → 报价的 `inquiry_id`（调用方没给 quote_id 时的兜底）。
+    三条都查不到 ⇒ 该订单与询盘无关（直接下单），返回 None。
     """
     if quote_id is not None:
         quote_row = await conn.fetchrow(
@@ -145,13 +149,23 @@ async def inquiry_id_of_order(conn, *, tenant_id: str, order_id: int,
         if inquiry_id is not None:
             return int(inquiry_id)
     row = await conn.fetchrow(
-        "SELECT q.inquiry_id FROM orders o"
-        " JOIN quote_orders q ON q.tenant_id = o.tenant_id AND q.id = o.quote_id"
-        " WHERE o.tenant_id=$1 AND o.id=$2",
+        "SELECT inquiry_id, quote_id FROM orders WHERE tenant_id=$1 AND id=$2",
         tenant_id, order_id,
     )
     inquiry_id = _get(row, "inquiry_id")
-    return int(inquiry_id) if inquiry_id is not None else None
+    if inquiry_id is not None:
+        return int(inquiry_id)
+    if quote_id is None:
+        quote_id = _get(row, "quote_id")
+    if quote_id is not None:
+        quote_row = await conn.fetchrow(
+            "SELECT inquiry_id FROM quote_orders WHERE tenant_id=$1 AND id=$2",
+            tenant_id, int(quote_id),
+        )
+        inquiry_id = _get(quote_row, "inquiry_id")
+        if inquiry_id is not None:
+            return int(inquiry_id)
+    return None
 
 
 async def advance_for_order(

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KaaS 优化效果图 · 2026-10-22</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--line:#e3e6ea;--txt:#1a1d21;--muted:#6b7280;--blue:#185FA5;--blue-bg:#E6F1FB;--amber-bg:#FAEEDA;--amber:#854F0B;--teal-bg:#E1F5EE;--teal:#0F6E56;--red:#A32D2D;--red-bg:#FCEBEB}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:13px/1.65 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+.wrap{max-width:1080px;margin:0 auto;padding:36px 24px 60px}
+h1{font-size:22px;font-weight:600;margin:0 0 6px}
+h2{font-size:15px;font-weight:600;margin:34px 0 12px}
+p.sub{color:var(--muted);margin:0 0 18px}
+.frame{display:flex;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#f2f4f7;min-height:520px}
+.side{width:164px;flex:0 0 164px;background:var(--card);border-right:1px solid var(--line);padding:14px 10px}
+.logo{width:22px;height:22px;border-radius:6px;background:var(--blue)}
+.brand{font-size:13px;font-weight:600}
+.nav{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;font-size:12px;color:#4b5563;margin-top:2px}
+.nav.on{background:var(--blue-bg);color:var(--blue);font-weight:600}
+.dot{width:14px;height:14px;border-radius:4px;background:#e8ebef}
+.nav.on .dot{background:var(--blue)}
+.main{flex:1;min-width:0;position:relative;background:#f2f4f7}
+.top{display:flex;justify-content:space-between;align-items:center;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--card);font-size:12px;color:var(--muted)}
+.badge{font-size:11px;padding:3px 8px;border-radius:999px;background:var(--blue-bg);color:var(--blue)}
+.pad{padding:16px 18px}
+.row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.h1p{font-size:15px;font-weight:600}
+.muted{color:var(--muted)}
+.btn{font-size:12px;padding:6px 12px;border:1px solid #d5d9de;border-radius:8px;background:#fff}
+.btn.pri{background:var(--blue);color:#fff;border-color:var(--blue)}
+.btn.danger{background:var(--red);color:#fff;border-color:var(--red)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+.filters{display:flex;gap:8px;margin-bottom:10px;font-size:12px}
+.input{flex:1;border:1px solid var(--line);border-radius:8px;padding:6px 10px;color:#9ca3af;background:#fff}
+.sel{border:1px solid var(--line);border-radius:8px;padding:6px 10px;color:#4b5563;background:#fff}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{font-size:11px;color:var(--muted);text-align:left;padding:6px 8px;background:#f7f8fa;font-weight:500}
+td{padding:9px 8px;border-bottom:1px solid var(--line)}
+tr.sel td{background:var(--blue-bg)}
+tr.sel td:first-child{color:var(--blue);font-weight:600}
+.pill{font-size:11px;padding:1px 7px;border-radius:999px}
+.warn{background:var(--amber-bg);color:var(--amber)}
+.info{background:var(--blue-bg);color:var(--blue)}
+.ok{background:var(--teal-bg);color:var(--teal)}
+.done{background:#F1EFE8;color:#5F5E5A}
+.pager{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11px;color:var(--muted)}
+.drawer{position:absolute;top:0;right:0;bottom:0;width:480px;max-width:76%;background:var(--card);border-left:1px solid #c9ced5;display:flex;flex-direction:column}
+.mask{position:absolute;inset:0;background:rgba(15,23,42,.05)}
+.dh{padding:14px 16px;border-bottom:1px solid var(--line)}
+.db{flex:1;padding:14px 16px;overflow:hidden}
+.df{padding:12px 16px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px}
+.kv{display:flex;justify-content:space-between;font-size:12px;padding:4px 0}
+.lbl{font-size:11px;color:var(--muted);margin:12px 0 4px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media(max-width:820px){.grid3,.grid2{grid-template-columns:1fr}.side{display:none}.drawer{width:100%;max-width:100%}}
+.cap{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:10px}
+.field{border:1px solid var(--line);border-radius:7px;padding:6px 9px;font-size:12px;background:#fff}
+.field.err{border-color:#E24B4A}
+.err{color:var(--red);font-size:11px;margin-top:4px}
+.sk{height:10px;border-radius:4px;background:#e9ecef;margin-bottom:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>优化效果图 · 标准列表页与详情抽屉</h1>
+<p class="sub">2026-10-22 · 与 docs/UI_SYSTEM_PRD_2026-10-22.md 配套 · 浅色玻璃风保留，交互按契约收敛</p>
+
+<h2>一、列表页 + 详情抽屉（480px）</h2>
+<div class="frame">
+<div class="side">
+<div style="display:flex;align-items:center;gap:8px;padding:0 6px 16px"><div class="logo"></div><div class="brand">PowerVoy</div></div>
+<div style="font-size:11px;color:#9ca3af;padding:0 8px 6px">业务</div>
+<div class="nav"><div class="dot"></div>报价</div>
+<div class="nav on"><div class="dot"></div>订单</div>
+<div class="nav"><div class="dot"></div>单证</div>
+<div class="nav"><div class="dot"></div>客户</div>
+<div class="nav"><div class="dot"></div>设置</div>
+</div>
+<div class="main">
+<div class="top"><div>首页 / 订单 / 全部订单</div><div class="badge">河北慷逊 · 内部</div></div>
+<div class="pad">
+<div class="row">
+<div><div class="h1p">订单</div><div class="muted" style="font-size:12px;margin-top:2px">共 128 笔 · 本月新增 23</div></div>
+<div style="display:flex;gap:8px"><div class="btn">导出</div><div class="btn pri">新建订单</div></div>
+</div>
+<div class="card" style="margin-top:14px">
+<div class="filters"><div class="input">搜索订单号 / 客户</div><div class="sel">全部状态</div><div class="sel">近 30 天</div><div style="padding:6px 4px;color:#4b5563">重置</div></div>
+<table>
+<tr><th>订单号</th><th>客户</th><th>金额</th><th>状态</th><th>日期</th></tr>
+<tr class="sel"><td>ORD-2026-0182</td><td>河北慷逊</td><td>¥128,400</td><td><span class="pill warn">待收款</span></td><td class="muted">10-22</td></tr>
+<tr><td>ORD-2026-0181</td><td>天津金桥</td><td>¥64,200</td><td><span class="pill info">生产中</span></td><td class="muted">10-22</td></tr>
+<tr><td>ORD-2026-0179</td><td>青岛海纳</td><td>¥212,000</td><td><span class="pill ok">已发货</span></td><td class="muted">10-21</td></tr>
+<tr><td>ORD-2026-0176</td><td>苏州恒昌</td><td>¥38,900</td><td><span class="pill done">已完成</span></td><td class="muted">10-21</td></tr>
+<tr><td>ORD-2026-0172</td><td>广州泰和</td><td>¥96,500</td><td><span class="pill warn">待收款</span></td><td class="muted">10-20</td></tr>
+</table>
+<div class="pager"><div>共 128 条 · 第 1 / 13 页</div><div style="display:flex;gap:6px"><div class="btn">上一页</div><div class="btn">下一页</div></div></div>
+</div>
+</div>
+<div class="mask"></div>
+<div class="drawer">
+<div class="dh" style="display:flex;justify-content:space-between;align-items:flex-start">
+<div><div style="font-size:11px;color:#9ca3af">订单详情</div><div style="font-size:14px;font-weight:600;margin-top:2px">ORD-2026-0182 <span class="pill warn" style="font-weight:400">待收款</span></div></div>
+<div style="color:#9ca3af;font-size:14px">×</div>
+</div>
+<div class="db">
+<div class="lbl" style="margin-top:0">客户</div>
+<div>河北慷逊丝网制品有限公司</div>
+<div class="muted" style="font-size:11px">王经理 · 138****6621</div>
+<div class="lbl">金额构成</div>
+<div class="kv"><span class="muted">货款</span><span>¥118,400</span></div>
+<div class="kv"><span class="muted">运费</span><span>¥10,000</span></div>
+<div class="kv" style="border-top:1px solid var(--line);padding-top:6px"><span style="font-weight:600">合计</span><span style="font-weight:600">¥128,400</span></div>
+<div class="lbl">货物明细 · 3 项</div>
+<table style="font-size:11px"><tr><th>品名规格</th><th>数量</th><th>金额</th></tr>
+<tr><td>热镀锌电焊网 1/2"</td><td>200 卷</td><td>¥84,000</td></tr>
+<tr><td>PVC 涂塑网 3/4"</td><td>120 卷</td><td>¥37,200</td></tr>
+<tr><td>六角网 1"</td><td>80 卷</td><td>¥21,440</td></tr></table>
+<div class="lbl">收款计划</div>
+<div style="display:flex;justify-content:space-between;border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:11px"><span>定金 30%</span><span style="color:var(--amber)">待收款 · 10-25</span></div>
+</div>
+<div class="df"><div class="btn">关闭</div><div class="btn pri">编辑订单</div></div>
+</div>
+</div>
+<div class="cap"><span>抽屉 480px · 列表上下文保留</span><span>Esc / 遮罩关闭 · 焦点归还</span><span>内容超长内部滚动</span></div>
+<h2>二、危险操作确认 + 编辑对话框</h2>
+<div class="grid2">
+<div class="card" style="padding:16px">
+<div style="font-size:14px;font-weight:600">确认签发这张报价单？</div>
+<div class="muted" style="font-size:12px;margin-top:6px">QT-2026-0091 · 河北慷逊丝网制品有限公司</div>
+<div style="margin-top:12px;display:flex;flex-direction:column;gap:7px;font-size:12px">
+<div style="display:flex;gap:8px"><span style="width:5px;height:5px;border-radius:50%;background:var(--red);margin-top:7px;flex:0 0 5px"></span><span>签发后状态变为「已发出」，并写入报价台账</span></div>
+<div style="display:flex;gap:8px"><span style="width:5px;height:5px;border-radius:50%;background:var(--red);margin-top:7px;flex:0 0 5px"></span><span>客户将收到邮件通知，单证可据此生成</span></div>
+<div style="display:flex;gap:8px"><span style="width:5px;height:5px;border-radius:50%;background:var(--red);margin-top:7px;flex:0 0 5px"></span><span>签发后不可撤回，只能作废重开</span></div>
+</div>
+<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px"><div class="btn">取消</div><div class="btn danger">确认签发</div></div>
+<div class="muted" style="font-size:11px;margin-top:10px">ConfirmDialog · destructive · 后果写清 · pending 禁关闭</div>
+</div>
+<div class="card" style="padding:16px">
+<div style="font-size:14px;font-weight:600">编辑收货信息</div>
+<div style="font-size:11px;color:#9ca3af;margin-top:3px">ORD-2026-0182</div>
+<div style="margin-top:12px">
+<div style="font-size:11px;color:var(--muted);margin-bottom:4px">收件人</div>
+<div class="field">王经理</div>
+<div style="font-size:11px;color:var(--muted);margin:10px 0 4px">手机号</div>
+<div class="field err">138-6621</div>
+<div class="err">手机号格式不正确，请填写 11 位手机号</div>
+<div style="font-size:11px;color:var(--muted);margin:10px 0 4px">收货地址</div>
+<div class="field" style="height:44px">河北省衡水市安平县丝网工业园 8 号</div>
+<div style="font-size:11px;color:var(--muted);margin:10px 0 4px">备注 <span style="color:#9ca3af">选填</span></div>
+<div class="field" style="color:#9ca3af">如指定物流请注明</div>
+</div>
+<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px"><div class="btn">取消</div><div class="btn" style="background:#85B7EB;border-color:#85B7EB;color:#fff">保存中…</div></div>
+<div class="muted" style="font-size:11px;margin-top:10px">FormField · 字段级错误 + aria-invalid · pending 禁用</div>
+</div>
+</div>
+
+<h2>三、三态（加载 / 错误 / 空）</h2>
+<div class="grid3">
+<div class="card"><div class="muted" style="font-size:12px;margin-bottom:10px">加载 · LoadingBlock</div><div class="sk"></div><div class="sk" style="width:86%"></div><div class="sk" style="width:72%"></div><div class="sk" style="width:58%;margin-bottom:0"></div><div class="muted" style="font-size:11px;margin-top:12px">骨架屏，禁止纯文本“加载中”</div></div>
+<div class="card"><div class="muted" style="font-size:12px;margin-bottom:10px">错误 · ErrorState</div><div style="background:var(--red-bg);border-radius:8px;padding:10px"><div style="color:var(--red);font-weight:600;font-size:12px">订单加载失败</div><div style="color:var(--red);font-size:11px;margin-top:3px">网络异常，请检查后重试</div></div><div class="btn" style="margin-top:10px;display:inline-block">重试</div><div class="muted" style="font-size:11px;margin-top:10px">role=alert · 失败≠空态</div></div>
+<div class="card" style="text-align:center"><div class="muted" style="font-size:12px;margin-bottom:10px;text-align:left">空 · EmptyState</div><div style="width:30px;height:30px;border-radius:8px;background:var(--blue-bg);margin:2px auto 8px"></div><div style="font-weight:600;font-size:12px">暂无订单</div><div class="muted" style="font-size:11px;margin-top:3px">新建第一张订单开始</div><div class="btn pri" style="margin-top:10px;display:inline-block">新建订单</div></div>
+</div>
+
+<h2>四、改造前后：行内展开 → 抽屉</h2>
+<div class="grid2">
+<div>
+<div style="font-size:11px;color:var(--red);margin-bottom:8px">现状 · 行内展开（默认不采用）</div>
+<div class="card" style="padding:0;overflow:hidden">
+<table><tr><th>订单号</th><th>客户</th><th>金额</th></tr>
+<tr><td>ORD-0182</td><td>河北慷逊</td><td>¥128,400</td></tr></table>
+<div style="padding:10px;background:#FAFBFC;border-bottom:1px solid var(--line)">
+<div class="muted" style="font-size:11px">详情在数据下方展开 ↓</div>
+<div class="sk" style="margin-top:8px"></div><div class="sk" style="width:80%"></div><div class="sk" style="width:64%;margin-bottom:0"></div>
+</div>
+<table><tr><td>ORD-0181</td><td>天津金桥</td><td>¥64,200</td></tr></table>
+</div>
+<div class="muted" style="font-size:11px;margin-top:8px">区分弱 · 列表被下推 · 大数据量难操作</div>
+</div>
+<div>
+<div style="font-size:11px;color:var(--teal);margin-bottom:8px">目标 · 右侧抽屉（默认）</div>
+<div style="display:flex;gap:8px">
+<div class="card" style="flex:1;padding:0;overflow:hidden">
+<table><tr><th>订单号</th><th>客户</th></tr>
+<tr class="sel"><td>ORD-0182</td><td>河北慷逊</td></tr>
+<tr><td>ORD-0181</td><td>天津金桥</td></tr>
+<tr><td>ORD-0179</td><td>青岛海纳</td></tr></table>
+</div>
+<div class="card" style="width:118px;flex:0 0 118px;padding:8px">
+<div style="font-size:11px;font-weight:600">ORD-0182</div>
+<div style="font-size:11px;color:#9ca3af;margin-top:2px">详情 · 抽屉</div>
+<div class="sk" style="height:6px;margin-top:8px"></div><div class="sk" style="height:6px;width:82%;margin-top:5px"></div><div class="sk" style="height:6px;width:66%;margin-top:5px;margin-bottom:0"></div>
+</div>
+</div>
+<div class="muted" style="font-size:11px;margin-top:8px">列表不位移 · 层级清晰 · 大表可操作</div>
+</div>
+</div>
+
+<p class="sub" style="margin-top:34px">效果图仅示意交互形态，品牌玻璃质感与配色以现有 globals.css 为准；产品图片上传与拖拽排序由并行任务负责。</p>
+</div>
+</body>
+</html>

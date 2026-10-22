@@ -1442,6 +1442,108 @@ async def _order_source_quote(conn, quote_id: int, user: dict) -> dict:
     return quote
 
 
+def _validate_order_item_lines(items: list, *, currency: str) -> tuple[list, float]:
+    """订单行项数值校验（PARITY-QUOTE-10 同口径）→ (每行金额, 汇总金额)。
+
+    orchestrator 用 Pydantic Decimal（orders.py:58）⇒ 非法值 422；worker 原先裸
+    float() 会抛 ValueError → 500，前端只能看到"服务器内部错误"。
+    新建与整批替换**共用**这一个函数：两处口径必须一致，否则会出现
+    「建得进来、改不进来」的怪事。
+    """
+    total = 0.0
+    computed_lines: list = []
+    for it in items:
+        try:
+            line = it.get("line_amount")
+            line = float(line) if line is not None else None
+            unit_price = it.get("unit_price")
+            unit_price = float(unit_price) if unit_price is not None else None
+            if line is None and unit_price is not None:
+                qty = float(it.get("qty") if it.get("qty") is not None else 1)
+                line = round(qty * unit_price, 2)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail={
+                "error": "validation", "code": "INVALID_ITEM_NUMBER",
+                "field": "items",
+                "detail": "订单行项的 qty / unit_price / line_amount 必须是数字",
+            })
+        if line is not None:
+            total += line
+        computed_lines.append(line)
+    return computed_lines, total
+
+
+def _recompute_order_total(row: dict, lines_total: float) -> tuple[float, dict | None]:
+    """行项替换后重算订单总额（设计 §6：内核 update_order_api 重算 total/breakdown）。
+
+    真源仍是 `orders.total_amount`：
+      · 有 amount_breakdown（四项构成）→ 只把货物金额换成行项汇总，总额 = 四项之和，
+        运费/保险/其他按谈定值保留；
+      · 没有 breakdown → 总额 = 行项汇总（历史行为）。
+    """
+    breakdown = row.get("amount_breakdown")
+    if isinstance(breakdown, str):
+        try:
+            breakdown = _json.loads(breakdown)
+        except ValueError:
+            breakdown = None
+    if not isinstance(breakdown, dict):
+        return round(lines_total, 2), None
+    new_breakdown = dict(breakdown)
+    new_breakdown["goods_amount"] = round(lines_total, 2)
+    return round(sum(float(v or 0) for v in new_breakdown.values()), 2), new_breakdown
+
+
+async def _replace_order_items(conn, *, tenant_id: str, order_id: int,
+                               items: list, currency: str) -> float:
+    """整批替换订单货物行（删除 + 重插），返回新的行项汇总金额。"""
+    await conn.execute(
+        "DELETE FROM order_items WHERE tenant_id=$1 AND order_id=$2",
+        tenant_id, order_id,
+    )
+    computed_lines, total = _validate_order_item_lines(items, currency=currency)
+    for idx, it in enumerate(items):
+        await conn.execute(
+            """INSERT INTO order_items
+                   (tenant_id, order_id, sku_id, product_name, spec_snapshot,
+                    qty, qty_unit, unit_price, currency, line_amount, sort_order)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)""",
+            tenant_id, order_id, it.get("sku_id"), it.get("product_name"),
+            _json.dumps(it["spec_snapshot"])
+            if it.get("spec_snapshot") is not None else None,
+            it.get("qty") if it.get("qty") is not None else 1, it.get("qty_unit"),
+            it.get("unit_price"), (it.get("currency") or currency),
+            computed_lines[idx], it.get("sort_order") or idx,
+        )
+    return total
+
+
+async def _order_source_inquiry(conn, inquiry_id: int, customer: dict,
+                                user: dict) -> dict:
+    """询盘转化订单的来源闸门（设计 §3.3 R1）：询盘必须可见，且**属于本单客户**。
+
+    为什么必须校验客户一致：`inquiry_id` 是自由外键，挂错客户会让「询盘详情页」
+    列出别人的订单，漏斗与客户档案同时失真。
+    """
+    row = await conn.fetchrow(
+        "SELECT * FROM cust_inquiries WHERE tenant_id=$1 AND id=$2",
+        DEFAULT_TENANT, inquiry_id,
+    )
+    if row is None or not _owner_visible(user, row):
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "INQUIRY_NOT_FOUND"})
+    inquiry = dict(row)
+    if inquiry.get("customer_id") != customer.get("id"):
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "INQUIRY_CUSTOMER_MISMATCH",
+            "field": "inquiry_id",
+            "detail": (f"询盘 #{inquiry['id']} 属于客户 #{inquiry.get('customer_id')}，"
+                       f"本单客户是 #{customer.get('id')}；"
+                       "询盘转化必须挂在同一客户名下"),
+        })
+    return inquiry
+
+
 @app.get("/api/v1/customers")
 async def list_customers(
     request: Request,
@@ -3517,6 +3619,11 @@ async def list_orders_api(
     status: str = "",
     # PARITY-QUOTE-8：orchestrator 支持 ?customer_id= 过滤（orders.py:207-208）。
     customer_id: Optional[int] = None,
+    # 来源筛选（设计 §8）：?source_type=inquiry 只看询盘转化单；
+    # ?source_channel=phone 看某个渠道来的单。订单是一等公民，筛选要能按来源切。
+    source_type: Optional[str] = None,
+    source_channel: Optional[str] = None,
+    inquiry_id: Optional[int] = None,
     q: str = "",
     user: dict = Depends(_get_current_user),
 ):
@@ -3530,6 +3637,18 @@ async def list_orders_api(
     if customer_id:
         params.append(customer_id)
         where.append(f"customer_id = ${len(params)}")
+    if source_type:
+        # 与 status 同理：非法值先 422，别静默返回空列表
+        validate_enum("order_source_type", source_type)
+        params.append(source_type)
+        where.append(f"source_type = ${len(params)}")
+    if source_channel:
+        validate_enum("source_channel", source_channel)
+        params.append(source_channel)
+        where.append(f"source_channel = ${len(params)}")
+    if inquiry_id:
+        params.append(inquiry_id)
+        where.append(f"inquiry_id = ${len(params)}")
     if q:
         params.append(f"%{q}%")
         where.append(
@@ -3689,6 +3808,80 @@ async def create_order_api(
                 # 转订单继承报价的客户：客户是报价阶段定下来的，不该让用户再选一次
                 raw_customer = quote.get("customer_id")
             customer = await _doc_customer(conn, raw_customer, user, required=True)
+
+            # ── 订单来源三元组（设计 §3.2 / §3.3，迁移 202610220004）────────────
+            # 订单是一等公民：inquiry / direct 都能独立存在。判定顺序
+            # ① 显式 inquiry_id → inquiry；② 报价自带询盘 → inquiry；③ 否则 direct。
+            raw_inquiry = body.get("inquiry_id")
+            inquiry_ref = raw_inquiry if raw_inquiry not in (None, "") else None
+            inquiry = None
+            if inquiry_ref is not None:
+                inquiry = await _order_source_inquiry(
+                    conn,
+                    _as_bigint(inquiry_ref, field="inquiry_id",
+                               code="INVALID_INQUIRY_ID"),
+                    customer, user,
+                )
+            if inquiry is None and quote is not None:
+                quote_inquiry_id = quote.get("inquiry_id")
+                if quote_inquiry_id not in (None, ""):
+                    # 报价自带的询盘：客户一致性天然成立（报价的客户就是本单客户），
+                    # 不必再走一遍 `_order_source_inquiry` 的可见性闸门（报价都看得见，
+                    # 它的询盘没有理由看不见）。这里只补一个渠道查询，查不到就不继承。
+                    inquiry = {
+                        "id": int(quote_inquiry_id),
+                        "customer_id": quote.get("customer_id"),
+                        "channel": None,
+                    }
+                    if inquiry["customer_id"] != customer.get("id"):
+                        raise HTTPException(status_code=422, detail={
+                            "error": "validation",
+                            "code": "INQUIRY_CUSTOMER_MISMATCH",
+                            "field": "inquiry_id",
+                            "detail": (f"报价 #{quote['id']} 的询盘属于客户 "
+                                       f"#{inquiry['customer_id']}，本单客户是 "
+                                       f"#{customer.get('id')}"),
+                        })
+                    inq_row = await conn.fetchrow(
+                        "SELECT channel FROM cust_inquiries"
+                        " WHERE tenant_id=$1 AND id=$2",
+                        DEFAULT_TENANT, inquiry["id"],
+                    )
+                    # 用 `in` 而不是 ["channel"]：asyncpg Record 与 dict 都支持，
+                    # 且查询结果可能不含该列（视图/预留查询）。
+                    if inq_row is not None and "channel" in inq_row:
+                        inquiry["channel"] = inq_row["channel"]
+
+            source_type = validate_enum(
+                "order_source_type", body.get("source_type") or None)
+            if source_type is None:
+                source_type = "inquiry" if inquiry is not None else "direct"
+            if source_type == "inquiry":
+                if inquiry is None:
+                    raise HTTPException(status_code=422, detail={
+                        "error": "validation", "code": "INQUIRY_REQUIRED",
+                        "field": "inquiry_id",
+                        "detail": ("询盘转化订单必须关联询盘；"
+                                   "可在询盘选择器里「+ 新建询盘」，"
+                                   "或把来源改为「直接下单」"),
+                    })
+            elif inquiry is not None:
+                # direct 单挂询盘 = 两套真相：查询盘详情页会看到不属于它的订单，
+                # 漏斗的「询盘转化率」也会虚高。要溯源请改用 inquiry。
+                raise HTTPException(status_code=422, detail={
+                    "error": "validation", "code": "DIRECT_ORDER_INQUIRY_CONFLICT",
+                    "field": "inquiry_id",
+                    "detail": ("直接下单的订单不能再挂询盘；"
+                               "请把来源改为「询盘转化」"),
+                })
+
+            # 渠道：显式传 > 询盘渠道 > 空（历史/未知单不伪造）。
+            # direct 单建议填但不强制（T1 补录允许先落最小集）。
+            source_channel = validate_enum(
+                "source_channel", body.get("source_channel") or None)
+            if source_channel is None and inquiry is not None:
+                source_channel = inquiry.get("channel")
+
             order_no = await _next_customer_doc_no(
                 conn, "order", "orders", customer, "order_no")
 
@@ -3718,29 +3911,9 @@ async def create_order_api(
                 # 必须按表解码后再 json.dumps，否则会被二次编码
                 items = [row_to_dict(r, "quote_order_items") for r in rows]
 
-            total = 0.0
-            computed_lines = []
-            for it in items:
-                # PARITY-QUOTE-10：行项数值先做类型校验。orchestrator 用 Pydantic
-                # Decimal（orders.py:58）⇒ 非法值 422；worker 原先裸 float() 会抛
-                # ValueError → 500，前端只能看到"服务器内部错误"。
-                try:
-                    line = it.get("line_amount")
-                    line = float(line) if line is not None else None
-                    unit_price = it.get("unit_price")
-                    unit_price = float(unit_price) if unit_price is not None else None
-                    if line is None and unit_price is not None:
-                        qty = float(it.get("qty") if it.get("qty") is not None else 1)
-                        line = round(qty * unit_price, 2)
-                except (TypeError, ValueError):
-                    raise HTTPException(status_code=422, detail={
-                        "error": "validation", "code": "INVALID_ITEM_NUMBER",
-                        "field": "items",
-                        "detail": "订单行项的 qty / unit_price / line_amount 必须是数字",
-                    })
-                if line is not None:
-                    total += line
-                computed_lines.append(line)
+            # PARITY-QUOTE-10：行项数值先做类型校验（与整批替换共用同一函数）。
+            computed_lines, total = _validate_order_item_lines(
+                items, currency=currency)
 
             # ── 金额构成 + 收款安排（设计 §13.3，迁移 202610220001）──────────────
             # 订单总额的唯一真源仍是 orders.total_amount：
@@ -3815,9 +3988,10 @@ async def create_order_api(
                         total_amount, order_date, delivery_date, notes, quote_id,
                         created_by, owner_id, owner_scope, team_id,
                         incoterm, payment_terms, port_of_loading, port_of_destination,
-                        shipping_marks, country_of_origin, amount_breakdown)
+                        shipping_marks, country_of_origin, amount_breakdown,
+                        source_type, source_channel, inquiry_id)
                    VALUES ($1,$2,$3,$4,'pending',$5,$6,$7,$8,$9,$10,$11,$11,$12,$13,
-                           $14,$15,$16,$17,$18,$19,$20::jsonb)
+                           $14,$15,$16,$17,$18,$19,$20::jsonb,$21,$22,$23)
                    RETURNING *""",
                 DEFAULT_TENANT, order_no, customer["id"],
                 # 客户名快照：显式传入 > 报价上冻结的名字（开单当时）> 客户档案当前名。
@@ -3833,16 +4007,22 @@ async def create_order_api(
                 _term("port_of_destination"), _term("shipping_marks"),
                 _term("country_of_origin"),
                 _json.dumps(breakdown) if breakdown is not None else None,
+                source_type, source_channel,
+                inquiry["id"] if inquiry is not None else None,
             )
             order_id = row["id"]
-            # 询盘阶段（TODO(TODO:F4)）：订单创建 → order（沿报价的 inquiry_id 传递；
-            # 手动订单没有报价来源 ⇒ advance_for_order 返回 None，不影响主流程）
-            if quote is not None:
+            # 询盘阶段（TODO(TODO:F4)）：订单创建 → order。
+            # 两条来源都要推进：报价带询盘（quote_id 传递）与**直挂询盘**的
+            # 询盘转化单（orders.inquiry_id 是新列，inquiry_id_of_order 已认它）。
+            if quote is not None or inquiry is not None:
                 await _inquiry_stage.advance_for_order(
                     conn, tenant_id=DEFAULT_TENANT, order_id=order_id,
                     target_stage=_inquiry_stage.STAGE_ORDER,
                     source_event=_inquiry_stage.SOURCE_ORDER_CREATED,
-                    actor_id=str(user["id"]), quote_id=quote.get("id"),
+                    actor_id=str(user["id"]),
+                    # 没有报价来源（直挂询盘）时传 None：inquiry_id_of_order
+                    # 会转去读 orders.inquiry_id 正列。
+                    quote_id=quote.get("id") if quote is not None else None,
                 )
             # 2026-10-18：客户阶段读时由「开启中的订单」推导，不再在这里回写客户阶段。
             for idx, it in enumerate(items):
@@ -4032,6 +4212,62 @@ async def update_order_api(
         if value is not None:
             params.append(value)
             sets.append(f"{field} = ${len(params)}")
+
+    # ── 货物明细整批替换（设计 §6 / §6.1，迁移 202610220004）───────────────────
+    # 线下单补录（T1→T2）与"下单后才发现漏了配件"都靠这个入口：只读 + 「回报价工位
+    # 维护」的提示对线下单走不通（它们根本没有报价单）。
+    # pending：直接改并重算总额；confirmed 及以后：必须走变更审批（M1-e），
+    # 这里先拒 —— 已确认的金额是客户认过账的，静默改会与 PI/合同对不上。
+    items_patch = body.get("items")
+    if items_patch is not None:
+        if not isinstance(items_patch, list):
+            raise HTTPException(status_code=422, detail={
+                "error": "validation", "code": "INVALID_ITEMS",
+                "field": "items", "detail": "items 必须是数组（整批替换）",
+            })
+        if row.get("status") != "pending":
+            raise HTTPException(status_code=409, detail={
+                "error": "conflict", "code": "ORDER_ITEMS_LOCKED",
+                "detail": (f"订单状态 {row.get('status')} 的货物明细需走变更审批"
+                           "（POST /orders/{id}/item-change-requests），"
+                           "批准后自动应用"),
+                "order_status": row.get("status"),
+            })
+        async with _acquire(request) as conn:
+            async with conn.transaction():
+                lines_total = await _replace_order_items(
+                    conn, tenant_id=DEFAULT_TENANT, order_id=order_id,
+                    items=items_patch, currency=row.get("currency") or "USD",
+                )
+                new_total, new_breakdown = _recompute_order_total(row, lines_total)
+                updated = await conn.fetchrow(
+                    "UPDATE orders SET total_amount=$1, amount_breakdown=$2::jsonb"
+                    " WHERE tenant_id=$3 AND id=$4 RETURNING *",
+                    new_total,
+                    _json.dumps(new_breakdown) if new_breakdown is not None else None,
+                    DEFAULT_TENANT, order_id,
+                )
+                # 应收台账同步：**只在还没收到一分钱时**改。已收过钱的订单改总额会让
+                # received_amount > total_amount，宁可让财务看见不一致也不能悄悄改账。
+                recv = await conn.fetchrow(
+                    "SELECT id, received_amount FROM receivables"
+                    " WHERE tenant_id=$1 AND order_id=$2", DEFAULT_TENANT, order_id,
+                )
+                if recv is not None and float(recv.get("received_amount") or 0) == 0:
+                    await conn.execute(
+                        "UPDATE receivables SET total_amount=$1"
+                        " WHERE tenant_id=$2 AND order_id=$3",
+                        new_total, DEFAULT_TENANT, order_id,
+                    )
+        await _record_business_event(
+            request, "order.items_replaced",
+            {"order_id": str(order_id),
+             "items_count": str(len(items_patch)),
+             "total_amount": str(new_total),
+             "actor_id": str(user["id"])},
+            from_ws="order", to_ws="order",
+        )
+        return _order_dict(updated)
 
     if not sets:
         return _order_dict(row)

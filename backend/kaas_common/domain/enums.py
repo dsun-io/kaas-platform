@@ -25,11 +25,31 @@ QUOTE_STATUS = ("draft", "sent", "accepted", "rejected", "expired", "closed")
 # ── 订单状态 ─────────────────────────────────────────────────────────────────
 ORDER_STATUS = ("pending", "confirmed", "producing", "shipped", "completed", "cancelled")
 
+# ── 订单来源类型（2026-10-22 设计 §3.2 / D-1）────────────────────────────────
+#   inquiry：询盘转化（含经报价转化）—— 必须关联询盘，DB 层 CHECK
+#            ck_orders_source_inquiry 兜底；
+#   direct ：直接下单（线下电话单、老客户返单、展会现场单等），不要求询盘。
+# 订单是一等公民：两种来源都能独立存在，`inquiry` 只是多一条溯源链，不是存在前提。
+ORDER_SOURCE_TYPE = ("inquiry", "direct")
+
+# ── 订单确认来源（2026-10-22 设计 §5.1 / D-16）──────────────────────────────
+#   manual          ：人工点「确认订单」（先确认后打款 / 线下已确认）；
+#   deposit_receipt ：业务人工登记定金到账后**联动**确认。
+# ⚠️ 两者都是**人工触发**——定金收款登记本身没有自动识别能力（D-17）。
+ORDER_CONFIRM_SOURCE = ("manual", "deposit_receipt")
+
 # ── 出运状态 ─────────────────────────────────────────────────────────────────
 SHIPMENT_STATUS = ("booking", "in_transit", "arrived", "customs", "delivered")
 
-# ── 询盘渠道 ─────────────────────────────────────────────────────────────────
-INQUIRY_CHANNEL = ("email", "whatsapp", "alibaba", "expo", "website", "quote", "other")
+# ── 询盘渠道（= 订单 source_channel 复用同一份，2026-10-22 设计 §4 / D-7）──────
+# 2026-10-22：去掉 `quote`（那是「来源类型」不是「渠道」，与 source_type 重复表达），
+# 新增 `phone`（电话/线下电话单）与 `referral`（老客户转介绍）。
+# 存量 channel='quote' 的询盘由迁移 `202610220004` 回填为 `other`。
+INQUIRY_CHANNEL = ("email", "whatsapp", "alibaba", "expo", "website", "phone", "referral", "other")
+
+# 订单渠道与询盘渠道是同一份清单（同一客户可能先从邮件来、后从展会返单），
+# 不另立第二份，避免两处漂移；仅别名以便调用点语义清晰。
+ORDER_CHANNEL = INQUIRY_CHANNEL
 
 # ── 单证类型（§6.3 单证类型×生成阶段）────────────────────────────────────────
 # 必须与前端模板清单（frontend/src/lib/trade-doc/manifest.json）逐项一致：
@@ -77,8 +97,12 @@ ENUMS: dict[str, tuple[str, ...]] = {
     "customer_stage": CUSTOMER_STAGE,
     "quote_status": QUOTE_STATUS,
     "order_status": ORDER_STATUS,
+    "order_source_type": ORDER_SOURCE_TYPE,
+    "order_confirm_source": ORDER_CONFIRM_SOURCE,
     "shipment_status": SHIPMENT_STATUS,
     "inquiry_channel": INQUIRY_CHANNEL,
+    # 订单渠道与询盘渠道同源；前端 /api/v1/enums 两个 key 都能取到同一份清单。
+    "source_channel": ORDER_CHANNEL,
     "doc_type": DOC_TYPE,
     "doc_status": DOC_STATUS,
     "currency": CURRENCY,

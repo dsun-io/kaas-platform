@@ -50,7 +50,7 @@ const DEFAULT_TENANT = "default";
 const ENUMS: Record<string, readonly string[]> = {
   inquiry_status: ["unquoted", "quoted", "closed"],
   customer_stage: ["active", "inactive", "ordered"],
-  inquiry_channel: ["email", "whatsapp", "alibaba", "expo", "website", "quote", "other"],
+  inquiry_channel: ["email", "whatsapp", "alibaba", "expo", "website", "phone", "referral", "other"],
   owner_scope: ["private", "tenant"],
 };
 

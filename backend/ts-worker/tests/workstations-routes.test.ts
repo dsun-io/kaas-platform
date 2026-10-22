@@ -75,7 +75,9 @@ describe("GET /api/v1/enums", () => {
     const body = (await res.json()) as Record<string, string[]>;
     expect(Object.keys(body)).toEqual([
       "inquiry_status", "customer_stage", "quote_status", "order_status",
-      "shipment_status", "inquiry_channel", "doc_type", "doc_status",
+      "order_source_type", "order_confirm_source",
+      "shipment_status", "inquiry_channel", "source_channel",
+      "doc_type", "doc_status",
       "currency", "owner_scope", "schedule_type", "schedule_status",
       "receivable_status", "bl_type",
     ]);

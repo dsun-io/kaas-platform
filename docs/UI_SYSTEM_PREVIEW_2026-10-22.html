@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KaaS 前端设计系统 PRD · 总览</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--line:#e3e6ea;--txt:#1a1d21;--muted:#6b7280;--blue:#185FA5;--blue-bg:#E6F1FB;--teal:#0F6E56;--teal-bg:#E1F5EE;--purple:#534AB7;--purple-bg:#EEEDFE;--red:#A32D2D;--red-bg:#FCEBEB;--amber:#854F0B;--amber-bg:#FAEEDA}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.65 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+.wrap{max-width:980px;margin:0 auto;padding:40px 24px 64px}
+h1{font-size:24px;font-weight:600;margin:0 0 6px}
+h2{font-size:17px;font-weight:600;margin:40px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+h3{font-size:14px;font-weight:600;margin:20px 0 8px}
+.sub{color:var(--muted);font-size:13px;margin:0}
+.badges{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}
+.badge{font-size:12px;padding:3px 9px;border-radius:999px;background:var(--blue-bg);color:var(--blue)}
+.badge.warn{background:var(--amber-bg);color:var(--amber)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:12px 0}
+.grid{display:grid;gap:12px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media(max-width:760px){.g2,.g3{grid-template-columns:1fr}}
+table{width:100%;border-collapse:collapse;font-size:13px;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+th{background:#f2f4f7;text-align:left;font-weight:600;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+code{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:#f2f4f7;padding:1px 5px;border-radius:4px}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;margin-right:6px}
+.p0{background:var(--red-bg);color:var(--red)}
+.p1{background:var(--amber-bg);color:var(--amber)}
+.p2{background:#eef1f4;color:#5b6470}
+.metric{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.metric .n{font-size:26px;font-weight:600;line-height:1.2}
+.metric .l{font-size:12px;color:var(--muted)}
+ul{margin:8px 0 0;padding-left:20px}
+li{margin:4px 0}
+.muted{color:var(--muted)}
+.flow{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.foot{margin-top:40px;font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>KaaS 前端设计系统 PRD · 总览</h1>
+<p class="sub">组件契约与页面范式 v0.1 · 2026-10-22 · 依据全站 37 路由审计</p>
+<div class="badges">
+<span class="badge">一个模式一个正规实现</span>
+<span class="badge">12 修订 + 6 新增组件</span>
+<span class="badge">两条并行整改线</span>
+<span class="badge warn">不含图片上传 / 拖拽排序</span>
+</div>
+
+<h2>一、拍板记录</h2>
+<table>
+<tr><th style="width:56px">#</th><th style="width:180px">决策</th><th>结论</th></tr>
+<tr><td>1</td><td>DataTable 虚拟滚动</td><td><b>不做</b>。page_size≤100 + 分页足够；events 死代码虚拟化分支直接删除</td></tr>
+<tr><td>2</td><td>详情抽屉宽度</td><td><b>480 / 560 两档</b>，不设 720 大档</td></tr>
+<tr><td>3</td><td>整改顺序</td><td><b>两条线并行</b>：P0/P1 止血线 + 组件门禁线，互不依赖</td></tr>
+<tr><td>4</td><td>/market 与 /intel 重复入口</td><td><b>只出方案不执行</b>，避免与并行任务冲突</td></tr>
+</table>
+<h2>二、三层约束结构</h2>
+<div class="flow">
+<svg viewBox="0 0 680 498" width="100%" role="img" aria-label="设计系统三层约束结构">
+<title>设计系统三层约束结构</title>
+<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#888780" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<rect x="40" y="40" width="600" height="142" rx="20" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="60" y="66" font-size="14" font-weight="500" fill="#0C447C">页面范式 · 每种页面类型一个骨架（6 种）</text>
+<g font-size="12" fill="#0C447C" text-anchor="middle">
+<rect x="60" y="80" width="176" height="34" rx="8" fill="#fff" stroke="#85B7EB" stroke-width="0.5"/><text x="148" y="99" dominant-baseline="central">ListPage 标准列表</text>
+<rect x="252" y="80" width="176" height="34" rx="8" fill="#fff" stroke="#85B7EB" stroke-width="0.5"/><text x="340" y="99" dominant-baseline="central">Detail 详情抽屉</text>
+<rect x="444" y="80" width="176" height="34" rx="8" fill="#fff" stroke="#85B7EB" stroke-width="0.5"/><text x="532" y="99" dominant-baseline="central">Edit 编辑对话框</text>
+<rect x="60" y="120" width="176" height="34" rx="8" fill="#fff" stroke="#85B7EB" stroke-width="0.5"/><text x="148" y="139" dominant-baseline="central">FormPage 表单页</text>
+<rect x="252" y="120" width="176" height="34" rx="8" fill="#fff" stroke="#85B7EB" stroke-width="0.5"/><text x="340" y="139" dominant-baseline="central">Workbench 工作台</text>
+<rect x="444" y="120" width="176" height="34" rx="8" fill="#fff" stroke="#85B7EB" stroke-width="0.5"/><text x="532" y="139" dominant-baseline="central">占位页（禁假数据）</text>
+</g>
+<line x1="340" y1="182" x2="340" y2="202" stroke="#888780" stroke-width="1.5" marker-end="url(#ar)"/>
+<rect x="40" y="206" width="600" height="124" rx="20" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="60" y="232" font-size="14" font-weight="500" fill="#085041">交互合约 · 六条（所有页面遵守）</text>
+<g font-size="12" fill="#085041" text-anchor="middle">
+<rect x="60" y="246" width="176" height="30" rx="8" fill="#fff" stroke="#5DCAA5" stroke-width="0.5"/><text x="148" y="263" dominant-baseline="central">异步 pending + onError</text>
+<rect x="252" y="246" width="176" height="30" rx="8" fill="#fff" stroke="#5DCAA5" stroke-width="0.5"/><text x="340" y="263" dominant-baseline="central">危险操作必确认</text>
+<rect x="444" y="246" width="176" height="30" rx="8" fill="#fff" stroke="#5DCAA5" stroke-width="0.5"/><text x="532" y="263" dominant-baseline="central">三态分离（加载/错/空）</text>
+<rect x="60" y="284" width="176" height="30" rx="8" fill="#fff" stroke="#5DCAA5" stroke-width="0.5"/><text x="148" y="301" dominant-baseline="central">详情编辑默认范式</text>
+<rect x="252" y="284" width="176" height="30" rx="8" fill="#fff" stroke="#5DCAA5" stroke-width="0.5"/><text x="340" y="301" dominant-baseline="central">筛选状态入 URL</text>
+<rect x="444" y="284" width="176" height="30" rx="8" fill="#fff" stroke="#5DCAA5" stroke-width="0.5"/><text x="532" y="301" dominant-baseline="central">键盘可达 + 焦点管理</text>
+</g>
+<line x1="340" y1="330" x2="340" y2="350" stroke="#888780" stroke-width="1.5" marker-end="url(#ar)"/>
+<rect x="40" y="354" width="600" height="124" rx="20" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="60" y="380" font-size="14" font-weight="500" fill="#3C3489">组件契约 · 12 修订 + 6 新增 + 3 hooks</text>
+<g font-size="12" fill="#3C3489" text-anchor="middle">
+<rect x="60" y="392" width="176" height="30" rx="8" fill="#fff" stroke="#AFA9EC" stroke-width="0.5"/><text x="148" y="409" dominant-baseline="central">DataTable / FilterBar</text>
+<rect x="252" y="392" width="176" height="30" rx="8" fill="#fff" stroke="#AFA9EC" stroke-width="0.5"/><text x="340" y="409" dominant-baseline="central">ErrorState / ConfirmDialog</text>
+<rect x="444" y="392" width="176" height="30" rx="8" fill="#fff" stroke="#AFA9EC" stroke-width="0.5"/><text x="532" y="409" dominant-baseline="central">FormField 强制使用</text>
+<rect x="60" y="430" width="176" height="30" rx="8" fill="#fff" stroke="#AFA9EC" stroke-width="0.5"/><text x="148" y="447" dominant-baseline="central">useDebouncedValue</text>
+<rect x="252" y="430" width="176" height="30" rx="8" fill="#fff" stroke="#AFA9EC" stroke-width="0.5"/><text x="340" y="447" dominant-baseline="central">useUrlState / useAsyncAction</text>
+<rect x="444" y="430" width="176" height="30" rx="8" fill="#fff" stroke="#AFA9EC" stroke-width="0.5"/><text x="532" y="447" dominant-baseline="central">lib/status-tones.ts</text>
+</g>
+</svg>
+</div>
+
+<h2>三、页面范式</h2>
+<div class="grid g3">
+<div class="card"><h3>ListPage 标准列表</h3><p class="muted">PageHeader + FilterBar + DataTable + PaginationBar；搜索防抖、切筛选不闪骨架、空态三分支</p></div>
+<div class="card"><h3>Detail 详情</h3><p class="muted">默认右侧抽屉 480/560；深链需求才用独立页；禁止行内展开</p></div>
+<div class="card"><h3>Edit 编辑</h3><p class="muted">≤6 字段用对话框；长流程用独立页/向导；pending 中禁关闭</p></div>
+<div class="card"><h3>FormPage 表单页</h3><p class="muted">FormField + 脏检查导航拦截 + 错误定位到字段</p></div>
+<div class="card"><h3>Workbench 工作台</h3><p class="muted">左右分栏、右侧汇总 sticky；批量参数与单条同源</p></div>
+<div class="card"><h3>占位页</h3><p class="muted">建设中徽章 + 说明；禁止假数据；纯静态去 use client</p></div>
+</div>
+<h2>四、组件契约</h2>
+<h3>修订现有（12 个）</h3>
+<table>
+<tr><th style="width:170px">组件</th><th>契约要点</th></tr>
+<tr><td><code>PageHeader</code></td><td>全页唯一 h1；error / loading 分支也必须渲染</td></tr>
+<tr><td><code>SectionCard</code></td><td>主内容区唯一容器；禁业务页手写 card-base</td></tr>
+<tr><td><code>EmptyState</code></td><td>title + description + 可选 action；区分“无数据 / 筛选无结果”</td></tr>
+<tr><td><code>LoadingBlock</code></td><td>数据区加载唯一形式；禁纯文本“加载中”</td></tr>
+<tr><td><code>ErrorState</code>（新）</td><td>role=alert + 错误摘要 + 重试；收编 8 处“一行红字无重试”</td></tr>
+<tr><td><code>StatusBadge</code></td><td>文案+色双通道；tone 只能来自 lib/status-tones.ts</td></tr>
+<tr><td><code>StatCard</code></td><td>加载中显骨架不显 0；trend 图标 aria-hidden</td></tr>
+<tr><td><code>PaginationBar</code></td><td>服务端分页唯一组件；禁硬编码 page_size 无分页</td></tr>
+<tr><td><code>ConfirmDialog</code></td><td>危险操作唯一确认形式；文案写后果；pending 禁关闭；错误透出</td></tr>
+<tr><td><code>DetailDrawer</code></td><td>详情默认容器；size 480/560；内容超长内部滚动</td></tr>
+<tr><td><code>FormField</code></td><td>label+控件+错误+aria 三件套；所有新表单强制使用</td></tr>
+<tr><td><code>CopyButton</code></td><td>复制成功反馈；补 try/catch</td></tr>
+</table>
+
+<h3>新增（6 个）</h3>
+<table>
+<tr><th style="width:190px">组件 / Hook</th><th>作用</th></tr>
+<tr><td><code>DataTable</code></td><td>声明式列 + density + 空/错/加载插槽 + hideBelow 窄屏隐藏列</td></tr>
+<tr><td><code>FilterBar</code></td><td>筛选唯一实现；search 防抖 300ms；值受控于 URL</td></tr>
+<tr><td><code>ErrorState</code></td><td>失败态统一：role=alert + 重试按钮</td></tr>
+<tr><td><code>useDebouncedValue</code></td><td>收编 8 处零防抖搜索</td></tr>
+<tr><td><code>useUrlState</code></td><td>筛选/分页/tab 入 URL，刷新不丢、可分享</td></tr>
+<tr><td><code>useAsyncAction</code></td><td>mutation 统一 pending + onError + 防重复提交</td></tr>
+</table>
+
+<h2>五、交互合约（六条）</h2>
+<div class="grid g2">
+<div class="card"><h3>1. 异步操作</h3><ul><li>pending 禁用 + 文案</li><li>失败必 onError → toast</li><li>成功有反馈 + 正确 invalidate key</li><li>批量成功清空选择</li></ul></div>
+<div class="card"><h3>2. 危险操作</h3><ul><li>对外生效 / 不可逆 / 批量 / 影响下游</li><li>ConfirmDialog + 后果文案</li><li>pending 禁关闭</li><li>后端 403/409 原因透出</li></ul></div>
+<div class="card"><h3>3. 三态</h3><ul><li>加载：LoadingBlock</li><li>错误：ErrorState + 重试</li><li>空：EmptyState 分两种</li><li>失败 ≠ 空态</li></ul></div>
+<div class="card"><h3>4. 详情 / 编辑</h3><ul><li>详情默认抽屉</li><li>编辑默认对话框</li><li>轻量折叠可保留</li><li>例外需注释理由</li></ul></div>
+<div class="card"><h3>5. 筛选与导航</h3><ul><li>筛选/分页/tab 入 URL</li><li>tab 不丢状态</li><li>侧栏 prefetch=false</li><li>未开通工位双路径拦截</li></ul></div>
+<div class="card"><h3>6. 可访问性</h3><ul><li>icon-only 必 aria-label</li><li>label 关联 / aria-invalid</li><li>可展开行键盘可达</li><li>1366×768 无横向溢出</li></ul></div>
+</div>
+
+<h2>六、两条并行整改线</h2>
+<div class="flow">
+<svg viewBox="0 0 680 400" width="100%" role="img" aria-label="两条并行整改线">
+<title>两条并行整改线</title>
+<defs><marker id="ar2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#888780" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<rect x="40" y="50" width="290" height="40" rx="12" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="185" y="72" font-size="13" font-weight="500" fill="#0C447C" text-anchor="middle" dominant-baseline="central">线① P0/P1 止血（不依赖新组件）</text>
+<line x1="185" y1="90" x2="185" y2="100" stroke="#888780" stroke-width="1.5" marker-end="url(#ar2)"/>
+<g font-size="12" fill="#0C447C" text-anchor="middle">
+<rect x="40" y="104" width="290" height="36" rx="8" fill="#fff" stroke="#85B7EB" stroke-width="0.5"/><text x="185" y="124" dominant-baseline="central">危险操作补确认（7 处）</text>
+<line x1="185" y1="140" x2="185" y2="146" stroke="#888780" stroke-width="1.5" marker-end="url(#ar2)"/>
+<rect x="40" y="150" width="290" height="36" rx="8" fill="#fff" stroke="#85B7EB" stroke-width="0.5"/><text x="185" y="170" dominant-baseline="central">失败补 onError + toast（7 处）</text>
+<line x1="185" y1="186" x2="185" y2="192" stroke="#888780" stroke-width="1.5" marker-end="url(#ar2)"/>
+<rect x="40" y="196" width="290" height="36" rx="8" fill="#fff" stroke="#85B7EB" stroke-width="0.5"/><text x="185" y="216" dominant-baseline="central">失败≠空态（4 页）</text>
+<line x1="185" y1="232" x2="185" y2="238" stroke="#888780" stroke-width="1.5" marker-end="url(#ar2)"/>
+<rect x="40" y="242" width="290" height="36" rx="8" fill="#fff" stroke="#85B7EB" stroke-width="0.5"/><text x="185" y="262" dominant-baseline="central">防重 · 401 去重 · 分页 · error 页头</text>
+</g>
+<rect x="350" y="50" width="290" height="40" rx="12" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="495" y="72" font-size="13" font-weight="500" fill="#085041" text-anchor="middle" dominant-baseline="central">线② 组件与门禁</text>
+<line x1="495" y1="90" x2="495" y2="100" stroke="#888780" stroke-width="1.5" marker-end="url(#ar2)"/>
+<g font-size="12" fill="#085041" text-anchor="middle">
+<rect x="350" y="104" width="290" height="36" rx="8" fill="#fff" stroke="#5DCAA5" stroke-width="0.5"/><text x="495" y="124" dominant-baseline="central">DataTable / FilterBar / ErrorState</text>
+<line x1="495" y1="140" x2="495" y2="146" stroke="#888780" stroke-width="1.5" marker-end="url(#ar2)"/>
+<rect x="350" y="150" width="290" height="36" rx="8" fill="#fff" stroke="#5DCAA5" stroke-width="0.5"/><text x="495" y="170" dominant-baseline="central">useDebounced / useUrlState / useAsyncAction</text>
+<line x1="495" y1="186" x2="495" y2="192" stroke="#888780" stroke-width="1.5" marker-end="url(#ar2)"/>
+<rect x="350" y="196" width="290" height="36" rx="8" fill="#fff" stroke="#5DCAA5" stroke-width="0.5"/><text x="495" y="216" dominant-baseline="central">lib/status-tones.ts 单一来源</text>
+<line x1="495" y1="232" x2="495" y2="238" stroke="#888780" stroke-width="1.5" marker-end="url(#ar2)"/>
+<rect x="350" y="242" width="290" height="36" rx="8" fill="#fff" stroke="#5DCAA5" stroke-width="0.5"/><text x="495" y="262" dominant-baseline="central">ui:patterns 机检 shadow→强制</text>
+</g>
+<line x1="185" y1="278" x2="185" y2="296" stroke="#888780" stroke-width="1.5" marker-end="url(#ar2)"/>
+<line x1="495" y1="278" x2="495" y2="296" stroke="#888780" stroke-width="1.5" marker-end="url(#ar2)"/>
+<rect x="40" y="300" width="600" height="56" rx="12" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="340" y="322" font-size="13" font-weight="500" fill="#3C3489" text-anchor="middle">汇合：boy-scout 逐页回填 + 门禁强制</text>
+<text x="340" y="342" font-size="12" fill="#534AB7" text-anchor="middle">全部收尾 → 复跑审计，同步 UI_STANDARDS.md / README.md</text>
+</svg>
+</div>
+<h2>七、审计摘要</h2>
+<div class="grid g3">
+<div class="metric"><div class="n">37</div><div class="l">路由页面逐页审计</div></div>
+<div class="metric"><div class="n">3</div><div class="l">P0 行为缺陷</div></div>
+<div class="metric"><div class="n">≈20</div><div class="l">P1 重要缺陷</div></div>
+</div>
+<div class="card">
+<h3>P0（须立即修）</h3>
+<ul>
+<li><span class="tag p0">P0</span>群发邮件无确认、无 pending，连点重复发送 — <code>outreach/page.tsx:226-245</code></li>
+<li><span class="tag p0">P0</span>删除调研产品无确认，误触永久丢失 — <code>research/page.tsx:232-240</code></li>
+<li><span class="tag p0">P0</span>spec-config 向导提交失败零反馈 — <code>QuoteWizard.tsx:135</code></li>
+<li><span class="tag p0">P0</span>ai-providers 空输入“保存”实为清除密钥 — <code>ai-providers/page.tsx:234-243</code></li>
+</ul>
+</div>
+<div class="card">
+<h3>行内展开现存 8 处（默认改为抽屉/对话框）</h3>
+<ul>
+<li>leadgen 线索详情 200 行 · research 编辑表单 158 行 · shipments 编辑面板</li>
+<li>customers 询盘 · outreach 邮件预览 · audit-log 原始 JSON（轻量例外）</li>
+<li>quotes 记录页四层堆叠 · pricing-data 单元格内联改价</li>
+</ul>
+</div>
+<div class="card">
+<h3>根因（审计结论）</h3>
+<ul>
+<li>组件无公共约束：ConfirmDialog 4/10 页用、PaginationBar 4/10、FormField 零使用、DetailDrawer 1/10</li>
+<li>门禁只查静态项，不查复用与行为</li>
+<li>规范只有禁令、没有正面模板；前端无契约层（后端有 R0–R5）</li>
+</ul>
+</div>
+
+<h2>八、配套文档</h2>
+<ul>
+<li><code>docs/UI_SYSTEM_PRD_2026-10-22.md</code> — 本页完整版（含 TS API 草案、迁移映射表、门禁清单）</li>
+<li><code>docs/UI_UX_AUDIT_2026-10-22.md</code> — 37 路由逐页缺陷清单（P0/P1/P2 + 文件行号）</li>
+<li><code>docs/UI_STANDARDS.md</code> — 现行硬性规范（L1 契约拍板后并入）</li>
+<li><code>docs/TODO.md</code> — 复跑机制与整改待办已登记</li>
+</ul>
+
+<div class="foot">本页为设计稿总览（v0.1）。产品图片上传与拖拽排序由并行任务负责，本设计不涉及。</div>
+</div>
+</body>
+</html>

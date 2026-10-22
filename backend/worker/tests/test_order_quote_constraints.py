@@ -185,7 +185,9 @@ def test_order_partially_used_quote_rejected_when_exceeding_remainder():
 def test_order_within_quote_remainder_allowed():
     """报价 100，已下单 60，本单 30 ⇒ 放行（1:N 分批出货合法）。"""
     conn = _FakeConn(
-        fetchrow=[_quote_row(), _customer_row(), _created_order("30.00")],
+        # 第 3 条是「报价自带询盘 → 查渠道」的那次查询（设计 §3.2：inquiry 继承询盘渠道）
+        fetchrow=[_quote_row(), _customer_row(),
+                  {"channel": "email"}, _created_order("30.00")],
         fetchval=[None, Decimal("60.00")],
         fetch=[],
     )
@@ -196,6 +198,8 @@ def test_order_within_quote_remainder_allowed():
     assert resp.status_code == 201, resp.text
     insert_sql, insert_args = conn.first("INSERT INTO orders")
     assert insert_args[9] == 11                 # orders.quote_id 落库（1:N 靠列 + 边表）
+    # 询盘转化单：来源三元组 = inquiry + 继承来的渠道 + 询盘 id
+    assert list(insert_args[20:23]) == ["inquiry", "email", 9]
     # 累计只统计未取消订单（作废订单不该继续占额度）
     sum_sql, _ = next((s, a) for s, a in conn.calls if "SUM(total_amount)" in s)
     assert "status <> 'cancelled'" in sum_sql
