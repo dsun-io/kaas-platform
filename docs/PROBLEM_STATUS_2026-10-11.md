@@ -14,6 +14,18 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-22 · 内核域名配置债修复 + 双 Worker 发布流水线 ✅ 代码已入库）** 取证：2026-10-21 切流时
+> `backend/worker/wrangler.jsonc` 的 `routes → []` 只改在工作树、**未入库**（HEAD 仍声明 `kaas.powervoy.com` /
+> `api.kaas.powervoy.com` 两条 custom domain；线上域名在 `kaas-edge`）⇒ 任何一次内核部署（`pywrangler deploy`
+> 即 `npx wrangler deploy`）都会把域名抢回内核（wrangler 对已归属别的 Worker 的 custom domain 会 override，
+> 非交互环境静默）。修复（commit `e48700c`）：内核 `routes: []` + 注释纠正；新增
+> `scripts/check-deploy-domains.py`（静态 + `--live` 线上归属断言，接入 backend-test 与 deploy 前置）；
+> `deploy.yml` 改为**一条 workflow、两个部署 job**（`deploy-kernel` → `deploy-edge`，`target=both|kernel|edge`，
+> `needs` 保证先内核后门面，内核失败不更新门面）；门面 `/health?deep=1` 经 KERNEL binding 探内核（冒烟断言
+> `kernel.status=ok` + `shared_loaded=true`）。门禁：ts-worker **206 测 / 22 文件**（+3 deep health）、typecheck 0、
+> worker **1565 passed + 12 skipped**、`check-deploy-domains` 正/负控制通过。文档：HANDOVER §1–§4、runbook §7 补记、
+> AGENTS 双 Worker 发布纪律、ADR-008 附注、README §1/§4/§5。
+
 > **（2026-10-22 · 侧边栏点击不跳转 ✅ 已修上线）** 根因 = `frontend/src/components/layout/sidebar.tsx:166` 的
 > `<Link prefetch={true}>` + 静态导出：`linkClicked` 先 `preventDefault`，随后卡在等 prefetch 完成（永不 resolve），
 > 点击后 **30s 零请求/零报错/URL 不变**（本机 A/B 证实：`prefetch={false}` 即恢复）。已改 `prefetch={false}` 并重建部署

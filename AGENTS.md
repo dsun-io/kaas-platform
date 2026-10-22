@@ -70,6 +70,12 @@
   **铁纪律：业务规则只在 Python 内核一处实现；TS 门面只做鉴权/参数校验/协议转换，禁止写业务逻辑；**
   TS 侧 zod schema 从 Python pydantic 模型代码生成，禁止手抄；跨层契约变更必须同 PR + 金标 harness 全绿
   （backend/ts-migration/golden/）。优化全计划与进度唯一权威 = `docs/OPTIMIZATION_PLAN_2026-10-21.md`。
+- **双 Worker 发布纪律（2026-10-22 落盘，硬约束）**：生产自定义域名**只归 `kaas-edge`**；内核
+  `backend/worker/wrangler.jsonc` 的 `routes` 必须为 `[]`（新增域名/回填会被
+  `scripts/check-deploy-domains.py` 的静态断言和 `--live` 线上归属断言拦下，CI 与 deploy 前置都跑）。
+  发布唯一入口 = `.github/workflows/deploy.yml` 一次 `workflow_dispatch`（`target=both|kernel|edge`）：
+  `deploy-kernel` → `deploy-edge` 由 `needs` 保证先内核后门面，内核失败不更新门面，edge-only 不部署内核。
+  手工部署仅排障且必须内核→门面；自动部署仍冻结（用户裁决）。
 - **共享内核**：共享逻辑全部放 `backend/kaas_common/`（**S4 起含报价引擎 `export_quote/` 与
   `domain/enums.py`；orchestrator 不再是任何真源**）。改完必须跑
   `powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1`，否则 worker 端是旧的。
@@ -81,12 +87,13 @@
 - **门禁**（改完都要跑；**2026-10-21 收口实测口径**，工作区静止时数字才作数）：
   - orchestrator（仅迁移/模型/内核测试，**247** 条）：
     `cd backend/orchestrator; uv run --extra migrations pytest tests -q`
-  - TS 门面（对外唯一入口，切流后新增）：`cd backend/ts-worker; pnpm typecheck; pnpm test`（**203 测 / 22 文件**）；
+  - TS 门面（对外唯一入口，切流后新增）：`cd backend/ts-worker; pnpm typecheck; pnpm test`（**206 测 / 22 文件**）；
     路由面机检 `tests/route-surface.test.ts`（249 = 163 直接 + 86 透传，0 缺失 0 多余）；
   - worker（Python 内核，**1565 passed + 12 skipped**；12 条 db/integration 档按约定 skip，有 docker PG 时这 12 条会真跑、总数 1572）：`cd backend/worker; uv run --frozen --with pytest --with httpx2 python -m pytest tests -q`
   - 前端：`cd frontend; pnpm typecheck`（内含 `next typegen && tsc --noEmit`）`; pnpm lint; pnpm test`（**934 passed / 110 files**）`; pnpm contracts:check; pnpm mocks:check; pnpm ui:standards; pnpm ui:contrast; pnpm e2e`（**27 条 = 27 passed + 0 skipped**；a11y 路由自动发现）
   - 静态断言：`scripts/check-runtime-deps.py`、`scripts/check-schema-coverage.py`、
-    `scripts/check-schema-drift.py`、`scripts/check-worker-bundle.py`、`scripts/sync-shared.ps1 -Check`
+    `scripts/check-schema-drift.py`、`scripts/check-worker-bundle.py`、`scripts/check-deploy-domains.py`、
+    `scripts/sync-shared.ps1 -Check`
   - 构建：`cd frontend; $env:NEXT_EXPORT="1"; pnpm build` → **`frontend/out`**（门面 assets 伺服）
     —— **构建后必须 `pnpm assets:check` 通过**（Linux 产物校验，见上一条硬约束）
   - **静态导出产物口径（2026-10-22 实测，硬约束）**：**禁止用 Windows 本机构建的 `out/` 直接 deploy** ——
@@ -99,7 +106,8 @@
     跑 `e2e-export/*.spec.ts`：真实点侧边栏跳转 + RSC 200 + 无逐段 404 + 路由直达）。**dev 态 `pnpm e2e` 抓不到导出态缺陷**
     （2026-10-22 两个线上事故都在这个盲区）；CI 里是 `frontend-ci.yml` 的 `e2e-export` job，只在 schedule/手动跑。
   - **部署（2026-10-21 起两个 Worker）**：`kaas-edge`（TS 门面，对外域名）+ `kaas`（Python 内核，无公网域名）；
-    两者都必须带 `$env:CLOUDFLARE_API_TOKEN`（wrangler OAuth 已过期）；先内核后门面；
+    发布唯一入口 = GitHub Actions `deploy`（`target=both|kernel|edge`，先内核后门面，见上条纪律）；
+    本机手工部署仅排障（两者都必须带 `$env:CLOUDFLARE_API_TOKEN`，wrangler OAuth 已过期）；先内核后门面；
     详见 `docs/HANDOVER_2026-10-21_CUTOVER.md` §2
     （Next 16 下**不要**设 `NEXT_DIST_DIR`：静态导出会落到该目录，导致 `out/` 缺产物）
   - **已退役**（不要再跑/不要新增引用）：`route-parity.py`、`export_openapi.py`、contracts `R6`
@@ -235,4 +243,3 @@ git status --short                       # 自证：自家路径干净，别人�
 - **例外**：用户明确说"先算了/到此为止"时，按用户裁决停手并如实记录边界（≠ 自己放弃）。
 - **把这条规则本身写进本文档**就是一次教训：口头"记下了"不算数，用户下达的**长期行为准则**
   必须像规则 1–5 一样**当场落盘**，否则下一个会话不会自动遵守。
-

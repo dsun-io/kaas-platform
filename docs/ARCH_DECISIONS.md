@@ -96,3 +96,17 @@
 | 理由 | ① 体感速度由门面层决定，引擎端点本就以秒计（loading 呈现）；② 引擎零重写，语义漂移风险归零；③ 免费版配额按 Worker 独立计，多一个 Worker 不摊薄额度，内核 Worker 0 公网请求（service binding 不计请求配额）；④ 对外 MCP/REST 在 TS 生态是一等公民。 |
 | 重新评估条件 | ① Service Binding 契约漂移频繁出现且 harness 拦不住；② Python Worker 出现免费档跑不动的负载（CPU 10ms/请求超限）；③ Cloudflare 推出 Python 冷启动根治方案（原生 CPython/快照），届时可回归单运行时。 |
 | 防漂移铁纪律 | 业务规则只在 Python 内核一处实现；TS 门面只做鉴权/参数校验/协议转换，禁止业务 if；TS 侧 zod schema 从 Python pydantic 模型代码生成，禁止手抄；金标 harness（backend/ts-migration/golden/）常态化 diff。 |
+
+### ADR-008 附注（2026-10-22）
+
+- **配额口径更正**：Workers Free 的 100k 请求/天是**按账号**（不是按 Worker）——原文"配额按 Worker 独立计"
+  表述不准；但 Service Binding 调用在 Standard 计费下**不计额外请求费**（CPU 两边都算），因此
+  "多一个 Worker 不摊薄请求额度、内核 0 公网请求"的结论仍成立（CF Limits / Pricing 文档）。原条目保留不改。
+- **域名归属纪律（硬）**：生产自定义域名只归 `kaas-edge`；内核 `backend/worker/wrangler.jsonc` 的
+  `routes` 必须为 `[]`。2026-10-21 切流时该配置只改在工作树、**未入库** ⇒ 任何一次内核部署都会把域名
+  抢回内核（wrangler 对已属于别的 Worker 的 custom domain 会 override）。2026-10-22 已修复并加
+  `scripts/check-deploy-domains.py`（静态 + `--live`）双重门禁。
+- **发布纪律**：唯一入口 `.github/workflows/deploy.yml`（`target=both|kernel|edge`；`deploy-kernel` →
+  `deploy-edge` 由 `needs` 保证先内核后门面；内核失败不更新门面；自动部署仍冻结）。
+- **健康探针**：门面 `/health?deep=1` 经 KERNEL binding 探内核（部署冒烟断言 `kernel.status=ok` 且
+  `shared_loaded=true`）；默认 `/health` 不触发内核，避免监控放大 Python 冷启动。

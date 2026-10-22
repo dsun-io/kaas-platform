@@ -84,3 +84,9 @@ CF 不返回 secret 明文 ⇒ 无法直接复制到 kaas-edge。
 
 **遗留/待观察**：① 下一次 cron（*/15）执行后核对内核日志；② 门面 `workers_dev` 暂留 true（调试用），验收期后改 false；
 ③ 内核旧版本保留 2 周（W4 观察窗口），期间不回滚即清理；④ **旧 Neon 项目与旧 Hyperdrive 已于 2026-10-21 删除**（用户授权；回滚改为应用层回滚，见 ARCH_DECISIONS ADR-007 附注）。
+
+**2026-10-22 补记（配置债修复 + 发布纪律）**：§7「内核摘域名」当时只把 `routes → []` 改在**工作树**（部署 `25133623` 生效），
+**没有入库** —— 之后 HEAD 的 `backend/worker/wrangler.jsonc` 仍声明两条 custom domain，任何一次内核部署都会把域名从
+`kaas-edge` 抢回内核。已修复：内核 `routes: []`、新增 `scripts/check-deploy-domains.py`（静态 + `--live` 线上归属，
+接入 backend-test 与 deploy 前置）、`deploy.yml` 改为双 Worker 流水线（`deploy-kernel` → `deploy-edge`，
+`target=both|kernel|edge`，`needs` 保证先内核后门面）。提交见 2026-10-22 `git log`（`fix(deploy): ...`）。

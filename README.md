@@ -21,16 +21,15 @@
 ## 1. 当前架构
 
 ```
-                   一份 FastAPI app（backend/worker/src = 唯一运行时）
-                  /                                            \
-   本地开发：uvicorn local_run.py --reload          生产：Cloudflare Worker "kaas"
-                  │                                            ├─ kaas.powervoy.com（页面 + /api/v1/*）
-                  │                                            └─ api.kaas.powervoy.com（仅 API）
+   本地开发：uvicorn local_run.py（backend/worker/src）      生产：双 Worker（ADR-008）
+                  │                                            ├─ kaas-edge（TS 门面：域名 + UI + 鉴权 + MCP/REST）
+                  │                                            └─ kaas（Python 内核：无公网域名，Service Binding 调用）
                   └────────── backend/kaas_common（唯一"脑"）────► Neon / R2 / Hyperdrive
 ```
 
-- **单应用已落地**：不再有 orchestrator 业务壳。`backend/orchestrator` 只保留 `app/db`（ORM 模型）与
-  `alembic/`（迁移链）；本地生产跑同一份 `backend/worker/src/main.py`。
+- **两层架构已落地（ADR-008）**：`kaas-edge`（TS/Hono）= 对外唯一门面（UI 路由/鉴权/MCP/REST/静态资产）；
+  `kaas`（Python/FastAPI）= 内核（报价/单证引擎、AI/数据、cron）。`backend/orchestrator` 只保留
+  `app/db`（ORM 模型）与 `alembic/`（迁移链）；本地生产跑同一份 `backend/worker/src/main.py`。
 - **`backend/kaas_common/` 是唯一源**：参数化 SQL、纯函数规则、报价引擎、业务枚举；
   改完必须跑 `scripts/sync-shared.ps1`。
 - **生产运行时只用 asyncpg**：不得依赖 sqlalchemy/alembic/greenlet；ORM 只在迁移期加载。
@@ -49,7 +48,8 @@
 
 **原则**：环境物理隔离；开发默认不触云；预览之间共享预览资源、按 PR 前缀隔离。
 
-> 生产配置的事实源是 `backend/worker/wrangler.jsonc`，不是任何设计图。预览链路见
+> 生产配置的事实源是 `backend/worker/wrangler.jsonc`（内核）与 `backend/ts-worker/wrangler.jsonc`（门面）；
+> **生产域名只归门面，内核 routes 必须为 `[]`**（门禁 `scripts/check-deploy-domains.py`）。预览链路见
 > `scripts/preview/README.md` 与 `.github/workflows/preview.yml`。
 
 ## 3. 本地开发
@@ -98,7 +98,7 @@ cd backend/orchestrator
 uv run --extra migrations pytest tests -q
 
 # TS 门面（对外唯一入口）
-cd backend/ts-worker; pnpm typecheck; pnpm test      # 99 测 / 17 文件
+cd backend/ts-worker; pnpm typecheck; pnpm test      # 206 测 / 22 文件
 
 # worker（Python 内核）
 cd backend/worker
@@ -123,6 +123,7 @@ backend/orchestrator/.venv/Scripts/python.exe scripts/check-runtime-deps.py
 backend/orchestrator/.venv/Scripts/python.exe scripts/check-schema-coverage.py
 backend/orchestrator/.venv/Scripts/python.exe scripts/check-schema-drift.py
 backend/orchestrator/.venv/Scripts/python.exe scripts/check-worker-bundle.py
+backend/orchestrator/.venv/Scripts/python.exe scripts/check-deploy-domains.py   # 域名归属：只归 kaas-edge
 ```
 
 > 本机工具链/踩坑（pnpm 路径、CJK 用户名、PowerShell 版本、commitlint 等）见
@@ -131,9 +132,15 @@ backend/orchestrator/.venv/Scripts/python.exe scripts/check-worker-bundle.py
 ## 5. 数据库迁移与部署
 
 > **2026-10-21 切流后：生产分两个 Worker**——① `kaas-edge`（TS 门面，对外域名 + 静态资产）；
-> ② `kaas`（Python 内核，无公网域名，仅 Service Binding + cron）。部署顺序：先内核后门面；
-> 门面资产需先 `cd frontend; $env:NEXT_EXPORT="1"; pnpm build`。两者部署都必须带
-> `$env:CLOUDFLARE_API_TOKEN`（wrangler OAuth 已过期）：
+> ② `kaas`（Python 内核，无公网域名，仅 Service Binding + cron）。
+>
+> **发布唯一入口（2026-10-22 起）**：GitHub Actions → `deploy` → Run workflow，
+> `target=both|kernel|edge`（默认 both）；一条 workflow 内 `deploy-kernel` → `deploy-edge` 由 `needs`
+> 保证先内核后门面，内核失败不更新门面。构建固定 ubuntu（静态导出 + `pnpm assets:check`）。
+> 域名归属与顺序由 `scripts/check-deploy-domains.py`（静态 + `--live`）双重拦截；冒烟含
+> `/health?deep=1` 内核深探针。自动部署仍冻结，未收到用户明确部署指令不 dispatch。
+>
+> 本机手工部署仅排障（必须内核→门面，且两者都带 `$env:CLOUDFLARE_API_TOKEN`）：
 > ```
 > cd backend/worker;   uv run pywrangler deploy     # 内核
 > cd backend/ts-worker; pnpm wrangler deploy         # 门面（含 frontend/out 资产）
@@ -144,7 +151,8 @@ backend/orchestrator/.venv/Scripts/python.exe scripts/check-worker-bundle.py
 - **Alembic 是唯一 Schema 变更来源**；执行位置是 CI/独立 CLI，不在 Worker 请求路径中执行 DDL。
 - 开发迁移目标永远是**本地 Docker PG**；生产连接串只放本机环境变量 / `.env.local`，不提交。
 - **部署必须手动触发**：`deploy.yml` 只保留 `workflow_dispatch`；未收到用户明确部署指令不发布。
-- 生产发布顺序：迁移 → secrets → 前端静态导出 → `pywrangler deploy` → 冒烟/回滚检查；
+- 生产发布顺序（由 workflow 固化）：迁移 → secrets → 前端静态导出（ubuntu + assets:check）→
+  `deploy-kernel` → `deploy-edge` → 分层冒烟/回滚检查；
   详细检查单见 [`HANDOVER_2026-10-21_CUTOVER.md`](docs/HANDOVER_2026-10-21_CUTOVER.md) 与
 [切流 runbook](docs/W4_CUTOVER_RUNBOOK_2026-10-21.md)（2026-10-20 批次检查单已归档）。
 
