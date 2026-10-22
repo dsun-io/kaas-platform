@@ -114,4 +114,7 @@
 | 2026-10-23 | **U-P0B6 ✅**：X1–X8 行内展开全部迁 DetailDrawer/Dialog（X5 行快照消除数据丢失风险）；新增 11 测试 |
 | 2026-10-23 | **U-P1D 部分 ✅**：FreightPanel 289 行（0 引用）与 defaultSpecRow 删除；/quotations 确认无 page.tsx；status-tones 收敛延后 |
 | 2026-10-23 | **U-P1E 部分 ✅**：trade-docs 分页+URL 筛选+全量导出；events URL+防抖；market 三处防抖 |
-| 2026-10-23 | 待做：U-P0B4 剩余（批量抓取/添加邮箱/创建活动）、U-P1D 拆巨型文件与 /quotations 迁移、U-P1E 其余页、status-tones 收敛；2026-10-30 ui:patterns 转强制 |
+| 2026-10-23 | **U-P0B4 ✅ + tone 收敛 ✅**：leadgen 抓取/批量爬取、outreach 添加邮箱/创建活动 pending 防重；三页状态映射统一 status-tones（行为差异已登记） |
+| 2026-10-23 | **U-P1E 续 ✅**：customers 防抖/total/删联系人反馈、research 防抖+分页+全量导出、shipments 分页 |
+| 2026-10-23 | **U-P1F 小项 ✅**：pricing 恢复兜底确认、QuoteWizard 真实步骤数、orders O3/O4/O5、DetailDrawer barrel |
+| 2026-10-23 | 剩余 backlog：拆 7 个巨型组件（逐个 PR）、/quotations 迁移、customers 列表分页、FormField 收编、O5 原生 details、shipments detail mock、2026-10-30 ui:patterns 转强制 |

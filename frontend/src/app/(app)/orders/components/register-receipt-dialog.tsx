@@ -29,10 +29,7 @@ import {
   RECEIPT_IMAGE_ACCEPT,
   validateReceiptFile,
 } from "@/lib/orders/order-attachments";
-import {
-  formatOrderMoney,
-  formatOrderDate,
-} from "@/lib/orders/order-detail";
+import { formatOrderMoney, formatOrderDate } from "@/lib/orders/order-detail";
 import type { PaymentSchedule } from "@/lib/orders/payment-schedules";
 
 export interface ReceiptFormValues {
@@ -52,6 +49,7 @@ export function RegisterReceiptDialog({
   open,
   onOpenChange,
   schedule,
+  schedulePeriod = null,
   currency,
   receivedAmount,
   pending = false,
@@ -62,6 +60,13 @@ export function RegisterReceiptDialog({
   onOpenChange: (open: boolean) => void;
   /** null = 未指定期次的收款 */
   schedule: PaymentSchedule | null;
+  /**
+   * 该期在计划列表里的**期次序号**（1-based，O3）。
+   *
+   * 不能拿 `schedule.id` 当"第几期"：id 是数据库行号，删过计划/多单并行时会跳号，
+   * 与列表「期次」列的序号对不上。缺省回退 id 仅作兜底（正常调用方都会传）。
+   */
+  schedulePeriod?: number | null;
   currency: string | null;
   /** 该期已收合计（用于默认剩余应收） */
   receivedAmount: number;
@@ -120,7 +125,7 @@ export function RegisterReceiptDialog({
           <DialogTitle>登记收款</DialogTitle>
           <DialogDescription>
             {schedule
-              ? `第 ${schedule.id} 期 · 应收 ${formatOrderMoney(
+              ? `第 ${schedulePeriod ?? schedule.id} 期 · 应收 ${formatOrderMoney(
                   typeof schedule.amount === "number" ? schedule.amount : null,
                   currency,
                 )} · 已收 ${formatOrderMoney(receivedAmount, currency)}`
@@ -141,7 +146,8 @@ export function RegisterReceiptDialog({
             />
             {schedule && (
               <p className="text-[11px] text-muted-foreground">
-                剩余应收 {formatOrderMoney(remaining > 0 ? remaining : 0, currency)}
+                剩余应收{" "}
+                {formatOrderMoney(remaining > 0 ? remaining : 0, currency)}
                 ；实收与应收不一致时，订单详情会显示差异，不会改计划金额。
               </p>
             )}
@@ -222,7 +228,8 @@ export function RegisterReceiptDialog({
               />
             )}
             <p className="text-[11px] text-muted-foreground">
-              PNG / JPG / PDF，≤16MB；上传失败不影响收款登记，可稍后在实收记录里补传。
+              PNG / JPG /
+              PDF，≤16MB；上传失败不影响收款登记，可稍后在实收记录里补传。
             </p>
           </div>
           {shownError ? (

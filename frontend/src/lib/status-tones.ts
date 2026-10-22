@@ -55,6 +55,23 @@ export const RUN_STATUS_TONES: Readonly<Record<string, StatusTone>> = {
   failed: "danger",
 };
 
+/**
+ * 营销活动状态（outreach 活动列表）。
+ *
+ * 注意与单封邮件的 `sent` 语义不同：活动 `sent` = 整批已发完（success），
+ * 而单封邮件 `sent` 只是"已投递到网关"（info，后续还有 delivered/opened）。
+ *
+ * 未登记进 `STATUS_TONE_MAPS`：该注册表的键集合被 `components/shared` 的契约测试
+ * 断言（`status-tones.test.ts` 锁 4 个域），而 shared 不在本任务写范围；如需登记，
+ * 需同 PR 更新那条断言（属 shared 所有者）。
+ */
+export const CAMPAIGN_STATUS_TONES: Readonly<Record<string, StatusTone>> = {
+  draft: "default",
+  sending: "info",
+  sent: "success",
+  failed: "danger",
+};
+
 /** 按业务域取映射表（便于"某页所有状态"统一遍历/测试）。 */
 export const STATUS_TONE_MAPS = {
   outreach: OUTREACH_STATUS_TONES,

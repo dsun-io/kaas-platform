@@ -291,13 +291,15 @@
 | U-P0B1 | 危险操作确认 + 防重 | outreach 群发/测试邮件 / research 删除与保存 / ai-providers 清密钥+空输入禁用+模型失焦保存 / quotes 签发+批量建单 / trade-docs 作废 / settings 重载 / 产品税率删除（window.prompt→Dialog） | ✅ 2026-10-23：8 处确认弹窗 + pending 防重（新增 27 测） |
 | U-P0B2 | 失败反馈 | spec-config 向导/属性提议、shipments×3、gray-release、spec-proposals、leadgen 详情、quotes Q9/Q15（含 invalidate key 修正）、outreach setDefault | ✅ 2026-10-23：统一 useAsyncAction + 页内 role=alert（拦截器已 toast，不重复）；新增 24 测 |
 | U-P0B3 | 失败≠空态 | events、pricing-data、market 五 tab、kb 假统计、intel 四视图 | ✅ 2026-10-23：ErrorState/LoadingBlock/EmptyState 三态分离；kb 假统计下线；新增 38 测 |
-| U-P0B4 | 防重（剩余） | leadgen 扫描已回复 / outreach setDefault 已做；批量抓取、添加邮箱/创建活动未做 | 🔨 部分 |
+| U-P0B4 | 防重（剩余） | leadgen 扫描已回复/开始抓取/批量爬取、outreach setDefault/添加邮箱/创建活动 | ✅ 2026-10-23：全部 useAsyncAction + AsyncButton + 页内 role=alert（不重复 toast），pending 防重有测试 |
 | U-P0B5 | 页头/错误边界 | 7 个 error.tsx + 6 loading + RouteGuard + WorkstationGate + 全局 not-found + 剩余 window.confirm | ✅ 2026-10-23：原生确认清单内清零（ui:patterns native-dialog 7→3） |
 | U-P0B5 | 页头/错误边界 | 8 个 error.tsx + loading + RouteGuard + WorkstationGate + 全局 not-found | ⏳ |
 | U-P0B6 | 行内展开迁移 | X1–X8 按默认范式迁 DetailDrawer/Dialog | ⏳ |
 | U-P0B6 | 行内展开迁移 | X1 customers 询盘详情 / X2 leadgen 线索 / X3 outreach 邮件 / X4 research 编辑 / X5 shipments 编辑 / X6 audit-log 键盘 / X7 quotes 记录堆叠 / X8 pricing 单元格 | ✅ 2026-10-23：全部迁 DetailDrawer/Dialog（X5 用行快照，筛选变化不丢编辑现场）；新增 11 测 |
-| U-P1D | 结构债 | 死代码（FreightPanel/defaultSpecRow）、幽灵 /quotations、状态映射收敛、拆巨型文件 | 🔨 部分：FreightPanel 289 行（0 引用）+ defaultSpecRow 已删（文件未整删，termOptionLabel 仍被引用，登记后续）；/quotations 仅登记（无 page.tsx）；status-tones 收敛因页面并行延后 |
-| U-P1E | 体验一致性 | 分页/URL 筛选/搜索防抖/FormField/键盘可达/aria-label | 🔨 部分：trade-docs 分页+URL 筛选（导出改为全量筛选结果）、events 筛选入 URL+防抖、market 三处防抖；其余页分页/防抖/FormField 待后续 |
+| U-P1D | 结构债 | 死代码（FreightPanel/defaultSpecRow）、幽灵 /quotations、状态映射收敛、拆巨型文件 | 🔨 部分：FreightPanel 289 行 + defaultSpecRow 已删（freight-panel.tsx 保 41 行，termOptionLabel 仍被引用）；三页状态映射已收敛到 status-tones（含 CAMPAIGN_STATUS_TONES）；/quotations 仅登记（无 page.tsx）；**拆 7 个巨型文件仍未做**（单独 backlog） |
+| U-P1D2 | 结构债（拆巨型文件） | customers 1674 / order-create-wizard 1366 / product-spec-editor 1142 / quote-workbench 924 / leadgen 881 / research 868 / payment-schedules-panel 698 | ⏳ backlog：建议每文件单独 PR + 回归，不与功能批混做 |
+| U-P1E | 体验一致性 | 分页/URL 筛选/搜索防抖/FormField/键盘可达/aria-label | 🔨 大部分：trade-docs 分页+URL（导出全量）、events URL+防抖、market 三处防抖、customers 防抖+total+删联系人反馈、research 防抖+分页+导出全量、shipments 分页；**customers 列表分页、FormField 全面收编、O5 原生 details 统一** 待后续 |
+| U-P1F | 体验小项 | pricing 恢复兜底确认 / QuoteWizard 步骤数 / orders O3·O4·O5 / DetailDrawer barrel | ✅ 2026-10-23：全部完成（确认弹窗、真实步骤数、期次序号、LoadingBlock、Esc/外点、barrel） |
 
 ---
 

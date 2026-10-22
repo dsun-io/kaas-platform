@@ -14,6 +14,7 @@ import {
   PricingEditDialog,
   type PricingCellUpdate,
 } from "./components/PricingEditDialog";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { EmptyState, ErrorState, PageHeader } from "@/components/shared";
 import { LoadingBlock } from "@/components/shared/loading-block";
 import {
@@ -61,6 +62,9 @@ export function PricingDataManager({
   // C36 #11：改价弹窗（PATCH /pricing-data/{item_id}）
   const [editCell, setEditCell] = useState<PricingCell | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
+  // P1：恢复兜底（DELETE /pricing-data/{item_id}）走二次确认 —— 停用客户自定义成本
+  const [resetCell, setResetCell] = useState<PricingCell | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   // 权限降级（如登录态刷新）后不能继续停在 cross-customer 视图上
   useEffect(() => {
@@ -136,14 +140,24 @@ export function PricingDataManager({
     }
   }
 
-  async function handleReset(cell: PricingCell) {
+  /** 点「恢复兜底」只打开确认弹窗（P1：DELETE 前必须二次确认）。 */
+  function requestReset(cell: PricingCell) {
     if (cell.item_id == null) return;
+    setResetError(null);
+    setResetCell(cell);
+  }
+
+  /** 确认后才真的停用；失败把原因留在弹窗里（不关窗，可重试）。 */
+  async function handleResetConfirm() {
+    if (resetCell?.item_id == null) return;
+    setResetError(null);
     setNotice(null);
     try {
-      await deactivateCell.mutateAsync(cell.item_id);
+      await deactivateCell.mutateAsync(resetCell.item_id);
       setNotice("已停用自定义成本，该组合回退到产品定义的兜底值。");
-    } catch {
-      setNotice("停用失败");
+      setResetCell(null);
+    } catch (err) {
+      setResetError(normalizeApiError(err).message);
     }
   }
 
@@ -238,7 +252,7 @@ export function PricingDataManager({
               <PricingDataTable
                 matrix={matrix}
                 loading={isLoading}
-                onReset={handleReset}
+                onReset={requestReset}
                 onEdit={(cell) => {
                   setEditError(null);
                   setEditCell(cell);
@@ -256,6 +270,26 @@ export function PricingDataManager({
                 pending={updateCell.isPending || saveCell.isPending}
                 error={editError}
                 onSubmit={handleDialogSubmit}
+              />
+              {/* P1：恢复兜底 = 停用客户自定义成本（DELETE），先二次确认再执行 */}
+              <ConfirmDialog
+                open={resetCell !== null}
+                onOpenChange={(open) => {
+                  // 提交中禁止关闭（Esc / 点外面也会走这里，避免请求在飞时以为已取消）
+                  if (open || deactivateCell.isPending) return;
+                  setResetCell(null);
+                  setResetError(null);
+                }}
+                title={
+                  resetCell
+                    ? `恢复「${resetCell.labels.join(" · ")}」的产品兜底成本？`
+                    : "恢复产品兜底成本？"
+                }
+                description="恢复后这一行不再使用客户自定义成本，改按产品定义的兜底成本计算（下一张报价单起生效）。自定义成本记录会停用但保留，历史报价仍可按当时成本复现。"
+                confirmLabel="确认恢复兜底"
+                pending={deactivateCell.isPending}
+                error={resetError}
+                onConfirm={() => void handleResetConfirm()}
               />
             </>
           )}

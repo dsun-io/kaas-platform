@@ -237,6 +237,13 @@ describe("调研产品 · 编辑弹窗", () => {
       undefined,
       "取消关闭",
     );
+    // 焦点归还是 closeEdit 里的 setTimeout(0)：先等它真的发生再断言，
+    // 否则在并发跑测试（CPU 争用）时会在 timer 之前就断言 ⇒ 假红。
+    await waitFor(
+      () => document.activeElement === secondOpener,
+      undefined,
+      "焦点归还",
+    );
     expect(document.activeElement).toBe(secondOpener);
   });
 

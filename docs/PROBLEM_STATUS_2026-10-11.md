@@ -14,6 +14,23 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-23 · UI 整改第四批：P0-B4 剩余 + P1D/P1E 续 + 小项收口 ✅）**
+> - **U-P0B4 剩余**：leadgen「开始抓取 / 批量爬取」、outreach「添加邮箱 / 创建活动」全部
+>   `useAsyncAction` + AsyncButton + 页内 role=alert（与拦截器不重复 toast），pending 防重有测试。
+> - **状态 tone 收敛**：leadgen/outreach/research 三页本地映射删除，统一用 `lib/status-tones.ts`
+>   （新增 `CAMPAIGN_STATUS_TONES`）。行为差异已登记：leadgen 运行 pending 灰、外联 draft/sending/failed 不再全灰；
+>   outreach 活动 failed → danger；research running 红→蓝、pending 红→灰、未知不再一律红。
+> - **P1E 续**：customers 搜索防抖 + 计数用 total + 删联系人失败可见可重试；research 搜索防抖 +
+>   PaginationBar（page_size 20，替换 200）+ **CSV 导出改为逐页拉全量**（不再静默截断）+ 列表 placeholderData
+>   防焦点丢失；shipments 接入 PaginationBar（替换 100 硬编码）、标题带总数、筛选回第 1 页。
+> - **P1F 小项**：pricing「恢复兜底」ConfirmDialog（取消不 DELETE、pending 禁关、失败留窗）；QuoteWizard
+>   `totalSteps=activeGroups+2`（修复组数≠3 空白步骤）；orders O3 期次序号（不再用 DB 行号）、O4 LoadingBlock、
+>   O5 列配置 Esc/外点关闭；`components/shared` barrel 导出 DetailDrawer/ConfirmDialog。
+> - **门禁**：前端 typecheck 0 / lint 0 error / **1512 passed（206 文件）**；ui:standards / ui:contrast PASS；
+>   e2e 本轮复跑（DOM 变更：抽屉/对话框/分页/列配置浮层）。
+> - **剩余 backlog**：拆 7 个巨型组件（每文件单独 PR）、`/quotations` 目录迁移、customers 列表分页、
+>   FormField 全面收编、O5 原生 details 统一、shipments 真·detail（需补 mock）、ui:patterns 2026-10-30 转强制。
+>
 > **（2026-10-23 · UI 整改第三批：P0-B6 行内展开迁移 + P1D/P1E 部分 ✅）**
 > - **U-P0B6（审计 §1.5 用户裁定「默认不用行内展开」）**：
 >   X1 customers 询盘详情 → DetailDrawer（删除 80 行内联块）；X2 leadgen 200 行线索详情 → DetailDrawer；

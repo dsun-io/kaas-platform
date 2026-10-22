@@ -14,7 +14,14 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-const mocks = vi.hoisted(() => ({ post: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  post: vi.fn(),
+  /** 当前测试的分组数（决定真实步骤数：分组数 + 价格 + 确认） */
+  groups: [{ group_code: "identity", is_required: false }] as Array<{
+    group_code: string;
+    is_required: boolean;
+  }>,
+}));
 
 vi.mock("@/lib/api/client", () => {
   const client = { post: mocks.post, get: vi.fn(), patch: vi.fn() };
@@ -24,9 +31,9 @@ vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 vi.mock("../../hooks/use-bindings", () => ({
-  // 一组"非必填"属性：步骤 1 可直接下一步；步骤 2 是定价步骤（由 PricingGroupForm 桩填值）。
+  // 分组数由 mocks.groups 控制（每组 = 一步；之后是定价、确认两步）。
   useBindings: () => ({
-    data: [{ group_code: "identity", is_required: false }],
+    data: mocks.groups,
     isLoading: false,
   }),
 }));
@@ -132,9 +139,17 @@ async function click(el: HTMLElement) {
   await settle(2);
 }
 
-/** 推进到最后的「提交」步骤（步骤 1 组属性 → 步骤 2 定价 → … → 步骤 5 确认）。 */
+/**
+ * 推进到最后的「提交」步骤。
+ *
+ * 默认 mocks.groups 只有 1 个分组 ⇒ 真实步骤 = 1 组 + 定价 + 确认 = 3 步。
+ * （旧实现写死 5 步，这里以前要点 4 次"下一步"，第 4/5 步是空白页。）
+ */
 async function goToSubmitStep() {
   await settle(2);
+  for (let i = 1; i < mocks.groups.length; i += 1) {
+    await click(findButton("下一步")); // 组属性 → 下一组
+  }
   await click(findButton("下一步")); // → 定价步骤
   await waitFor(
     () => document.querySelector('[data-testid="fill-pricing"]') !== null,
@@ -142,9 +157,7 @@ async function goToSubmitStep() {
     "定价步骤渲染",
   );
   await click(document.querySelector('[data-testid="fill-pricing"]')!);
-  await click(findButton("下一步"));
-  await click(findButton("下一步"));
-  await click(findButton("下一步"));
+  await click(findButton("下一步")); // → 确认步骤（提交）
   await waitFor(
     () => document.body.textContent!.includes("提交"),
     undefined,
@@ -152,7 +165,11 @@ async function goToSubmitStep() {
   );
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // 默认单分组（步骤数 = 3）；需要多分组的用例自行覆盖
+  mocks.groups = [{ group_code: "identity", is_required: false }];
+});
 afterEach(() => {
   unmount();
   vi.restoreAllMocks();
@@ -205,5 +222,44 @@ describe("QuoteWizard · 向导提交", () => {
     await click(pendingButton);
     expect(mocks.post).toHaveBeenCalledTimes(1);
     expect(mocks.post.mock.calls[0]![0]).toBe("/spec/wizard/submit");
+  });
+
+  it("步骤数按实际分组推导：1 组 ⇒ 3 步（不是写死 5 步，末步只有提交）", async () => {
+    mocks.post.mockResolvedValue({ data: { sku_id: 1, spec_hash: "h" } });
+    mount();
+    await settle(2);
+
+    const label = () =>
+      document
+        .querySelector('[aria-label^="步骤"]')
+        ?.getAttribute("aria-label");
+    expect(label()).toBe("步骤 1 / 3");
+
+    await goToSubmitStep();
+    expect(label()).toBe("步骤 3 / 3");
+    // 最后一步只有「提交」：点不到"下一步"就不会走进空白步骤
+    expect(findButton("提交")).toBeTruthy();
+    expect(() => findButton("下一步")).toThrow();
+  });
+
+  it("2 个分组 ⇒ 4 步；末步是确认，不再出现第 5 步空白", async () => {
+    mocks.groups = [
+      { group_code: "identity", is_required: false },
+      { group_code: "variant", is_required: false },
+    ];
+    mocks.post.mockResolvedValue({ data: { sku_id: 2, spec_hash: "h2" } });
+    mount();
+    await settle(2);
+
+    const label = () =>
+      document
+        .querySelector('[aria-label^="步骤"]')
+        ?.getAttribute("aria-label");
+    expect(label()).toBe("步骤 1 / 4");
+
+    await goToSubmitStep();
+    expect(label()).toBe("步骤 4 / 4");
+    expect(findButton("提交")).toBeTruthy();
+    expect(() => findButton("下一步")).toThrow();
   });
 });

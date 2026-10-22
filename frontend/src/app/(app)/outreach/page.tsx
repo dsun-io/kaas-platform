@@ -16,7 +16,14 @@ import {
   StatusBadge,
   SectionCard,
   EmptyState,
+  AsyncButton,
 } from "@/components/shared";
+import { useAsyncAction } from "@/lib/hooks/use-async-action";
+import {
+  CAMPAIGN_STATUS_TONES,
+  OUTREACH_STATUS_TONES,
+  toneForStatus,
+} from "@/lib/status-tones";
 import { toast } from "sonner";
 import { MailPlus, Send, Sparkles, RotateCcw } from "lucide-react";
 import { TestMailboxDialog } from "./components/test-mailbox-dialog";
@@ -68,16 +75,18 @@ interface Lead {
   outreach_status: string;
 }
 
-const MSG_TONES: Record<string, import("@/components/shared").StatusTone> = {
-  pending: "default",
-  sending: "info",
-  sent: "info",
-  delivered: "info",
-  opened: "purple",
-  replied: "success",
-  bounced: "danger",
-  failed: "danger",
-};
+/* 状态 tone 单一来源：`@/lib/status-tones`。
+   这里只保留「消息状态筛选下拉」要枚举哪些 key（属于 UI 选项，不是 tone 映射）。 */
+const MESSAGE_FILTER_STATUSES = [
+  "pending",
+  "sending",
+  "sent",
+  "delivered",
+  "opened",
+  "replied",
+  "bounced",
+  "failed",
+] as const;
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "待发送",
@@ -164,20 +173,32 @@ export default function OutreachPage() {
   });
   const pickerLeads = leadData?.items ?? [];
 
-  const addMailbox = async () => {
-    try {
-      await apiClient.post("/outreach/mailboxes", {
+  /**
+   * P0-B4/O35-O40：添加邮箱 / 创建活动两个 mutation 原先无 pending、失败还会与
+   * apiClient 拦截器重复 toast。现在：useAsyncAction（pending 防重）+ 页内
+   * role="alert"（拦截器已 toast，不重复）。
+   */
+  const addMailboxAction = useAsyncAction(
+    async () => {
+      const { data } = await apiClient.post("/outreach/mailboxes", {
         email: mbForm.email,
         name: mbForm.name || null,
         api_key: mbForm.api_key || null,
         is_default: mbForm.is_default,
       });
-      toast.success("邮箱已保存");
-      setMbForm({ email: "", name: "", api_key: "", is_default: true });
-      refetchMb();
-    } catch {
-      toast.error("保存失败");
-    }
+      return data;
+    },
+    {
+      onSuccess: () => {
+        toast.success("邮箱已保存");
+        setMbForm({ email: "", name: "", api_key: "", is_default: true });
+        refetchMb();
+      },
+    },
+  );
+
+  const addMailbox = () => {
+    void addMailboxAction.run();
   };
 
   /**
@@ -238,19 +259,26 @@ export default function OutreachPage() {
     }
   };
 
-  const createCampaign = async () => {
-    try {
-      await apiClient.post("/outreach/campaigns", {
+  const createCampaignAction = useAsyncAction(
+    async () => {
+      const { data } = await apiClient.post("/outreach/campaigns", {
         name: campForm.name,
         subject_template: campForm.subject_template,
         body_template: campForm.body_template,
       });
-      toast.success("营销活动已创建");
-      setCampForm({ name: "", subject_template: "", body_template: "" });
-      refetchCamp();
-    } catch {
-      toast.error("创建失败");
-    }
+      return data;
+    },
+    {
+      onSuccess: () => {
+        toast.success("营销活动已创建");
+        setCampForm({ name: "", subject_template: "", body_template: "" });
+        refetchCamp();
+      },
+    },
+  );
+
+  const createCampaign = () => {
+    void createCampaignAction.run();
   };
 
   /**
@@ -352,10 +380,25 @@ export default function OutreachPage() {
               />
               默认
             </label>
-            <Button size="sm" onClick={addMailbox} disabled={!mbForm.email}>
+            <AsyncButton
+              size="sm"
+              onClick={addMailbox}
+              disabled={!mbForm.email}
+              pending={addMailboxAction.pending}
+              pendingLabel="保存中…"
+            >
               <MailPlus className="mr-1 h-4 w-4" /> 添加邮箱
-            </Button>
+            </AsyncButton>
           </div>
+          {/* P0-B4：添加邮箱失败要有出口（拦截器已 toast，不重复） */}
+          {addMailboxAction.error ? (
+            <p
+              role="alert"
+              className="mb-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+            >
+              保存邮箱失败：{addMailboxAction.error}
+            </p>
+          ) : null}
           {/* P0-B2：设为默认失败要有出口（拦截器已 toast，这里保留原因） */}
           {defaultError ? (
             <p
@@ -452,7 +495,7 @@ export default function OutreachPage() {
                 setCampForm({ ...campForm, body_template: e.target.value })
               }
             />
-            <Button
+            <AsyncButton
               size="sm"
               onClick={createCampaign}
               disabled={
@@ -460,10 +503,21 @@ export default function OutreachPage() {
                 !campForm.subject_template ||
                 !campForm.body_template
               }
+              pending={createCampaignAction.pending}
+              pendingLabel="创建中…"
             >
               创建活动
-            </Button>
+            </AsyncButton>
           </div>
+          {/* P0-B4：创建活动失败要有出口（拦截器已 toast，不重复） */}
+          {createCampaignAction.error ? (
+            <p
+              role="alert"
+              className="mb-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+            >
+              创建活动失败：{createCampaignAction.error}
+            </p>
+          ) : null}
           {campaigns.length === 0 ? (
             <EmptyState title="暂无活动" />
           ) : (
@@ -475,13 +529,7 @@ export default function OutreachPage() {
                 >
                   <span className="font-medium">{c.name}</span>
                   <StatusBadge
-                    tone={
-                      c.status === "sent"
-                        ? "success"
-                        : c.status === "sending"
-                          ? "info"
-                          : "default"
-                    }
+                    tone={toneForStatus(CAMPAIGN_STATUS_TONES, c.status)}
                   >
                     {STATUS_LABELS[c.status] ?? c.status}
                   </StatusBadge>
@@ -592,7 +640,7 @@ export default function OutreachPage() {
               onChange={(e) => setMsgFilter(e.target.value)}
             >
               <option value="">状态：全部</option>
-              {Object.keys(MSG_TONES).map((s) => (
+              {MESSAGE_FILTER_STATUSES.map((s) => (
                 <option key={s} value={s}>
                   {STATUS_LABELS[s] ?? s}
                 </option>
@@ -632,7 +680,9 @@ export default function OutreachPage() {
                       </td>
                       <td className="p-2 text-xs">{m.subject}</td>
                       <td className="p-2">
-                        <StatusBadge tone={MSG_TONES[m.status] ?? "default"}>
+                        <StatusBadge
+                          tone={toneForStatus(OUTREACH_STATUS_TONES, m.status)}
+                        >
                           {STATUS_LABELS[m.status] ?? m.status}
                         </StatusBadge>
                         {m.error && (
@@ -698,7 +748,9 @@ export default function OutreachPage() {
               <div className="flex gap-2">
                 <dt className="shrink-0">状态</dt>
                 <dd>
-                  <StatusBadge tone={MSG_TONES[openMsg.status] ?? "default"}>
+                  <StatusBadge
+                    tone={toneForStatus(OUTREACH_STATUS_TONES, openMsg.status)}
+                  >
                     {STATUS_LABELS[openMsg.status] ?? openMsg.status}
                   </StatusBadge>
                 </dd>

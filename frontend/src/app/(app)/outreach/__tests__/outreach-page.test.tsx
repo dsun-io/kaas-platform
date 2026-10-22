@@ -409,3 +409,212 @@ describe("邮件外联 · 设为默认发件人（P0-B2/O35-O40）", () => {
     expect(mocks.patch).toHaveBeenCalledTimes(1);
   });
 });
+describe("邮件外联 · 添加邮箱 / 创建活动（P0-B4 剩余）", () => {
+  async function clickElement(el: HTMLElement) {
+    await act(async () => {
+      el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await settle(2);
+  }
+
+  function setInput(placeholder: string, value: string) {
+    const el = document.querySelector<HTMLInputElement>(
+      `input[placeholder="${placeholder}"]`,
+    );
+    if (!el) throw new Error(`没找到输入框 placeholder=${placeholder}`);
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    act(() => {
+      setter?.call(el, value);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  function setTextarea(placeholder: string, value: string) {
+    const el = document.querySelector<HTMLTextAreaElement>(
+      `textarea[placeholder="${placeholder}"]`,
+    );
+    if (!el) throw new Error(`没找到文本域 placeholder=${placeholder}`);
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value",
+    )?.set;
+    act(() => {
+      setter?.call(el, value);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  it("添加邮箱失败 → 页内显示原因；pending 期间不重复提交", async () => {
+    mocks.post.mockRejectedValue(
+      Object.assign(new Error("Conflict"), {
+        response: {
+          status: 409,
+          data: {
+            detail: {
+              error: "conflict",
+              code: "MAILBOX_EXISTS",
+              message: "该发件邮箱已存在",
+            },
+          },
+        },
+      }),
+    );
+    mount();
+    await waitFor(
+      () => (document.body.textContent ?? "").includes(MAILBOX.email),
+      undefined,
+      "邮箱列表加载",
+    );
+    setInput("发件邮箱地址 *", "new@kaas.example");
+    await settle(2);
+    await click("添加邮箱");
+    await settle();
+
+    const alert = document.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain("保存邮箱失败");
+    expect(alert?.textContent).toContain("该发件邮箱已存在");
+    expect(mocks.post).toHaveBeenCalledWith("/outreach/mailboxes", {
+      email: "new@kaas.example",
+      name: null,
+      api_key: null,
+      is_default: true,
+    });
+
+    mocks.post.mockImplementation(() => new Promise(() => {}));
+    await click("添加邮箱");
+    await settle();
+    expect(mocks.post).toHaveBeenCalledTimes(2);
+    const pending = findButton("保存中…");
+    expect(pending.disabled).toBe(true);
+    await clickElement(pending);
+    expect(mocks.post).toHaveBeenCalledTimes(2);
+  });
+
+  it("创建活动失败 → 页内显示原因；pending 期间不重复提交", async () => {
+    mocks.post.mockRejectedValue(
+      Object.assign(new Error("Unprocessable"), {
+        response: {
+          status: 422,
+          data: {
+            detail: {
+              error: "validation",
+              code: "CAMPAIGN_TEMPLATE_INVALID",
+              message: "主题模板缺少必填变量 {{name}}",
+            },
+          },
+        },
+      }),
+    );
+    mount();
+    await waitFor(
+      () => (document.body.textContent ?? "").includes("营销活动"),
+      undefined,
+      "活动区渲染",
+    );
+    setInput("活动名称 *", "圣诞推广");
+    setInput(
+      "邮件主题模板 — 变量：{{name}} {{company}} {{city}} {{country}} {{region}} {{opening_line}} {{sender_name}}",
+      "hi {{name}}",
+    );
+    setTextarea("正文模板（变量同上）", "body");
+    await settle(2);
+    await click("创建活动");
+    await settle();
+
+    const alert = document.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain("创建活动失败");
+    expect(alert?.textContent).toContain("主题模板缺少必填变量");
+    expect(mocks.post).toHaveBeenCalledWith("/outreach/campaigns", {
+      name: "圣诞推广",
+      subject_template: "hi {{name}}",
+      body_template: "body",
+    });
+
+    mocks.post.mockImplementation(() => new Promise(() => {}));
+    await click("创建活动");
+    await settle();
+    expect(mocks.post).toHaveBeenCalledTimes(2);
+    const pending = findButton("创建中…");
+    expect(pending.disabled).toBe(true);
+    await clickElement(pending);
+    expect(mocks.post).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("邮件外联 · 状态 tone 收敛到 lib/status-tones", () => {
+  function badgeByText(text: string): HTMLElement {
+    const badge = Array.from(
+      document.querySelectorAll<HTMLElement>("span.badge"),
+    ).find((el) => (el.textContent ?? "").trim() === text);
+    if (!badge) throw new Error(`没找到徽标「${text}」`);
+    return badge;
+  }
+
+  it("活动 sent=success、消息 opened=purple；筛选下拉仍是 8 个消息状态", async () => {
+    const { CAMPAIGN_STATUS_TONES, OUTREACH_STATUS_TONES, toneForStatus } =
+      await import("@/lib/status-tones");
+    expect(toneForStatus(CAMPAIGN_STATUS_TONES, "sent")).toBe("success");
+    expect(toneForStatus(OUTREACH_STATUS_TONES, "opened")).toBe("purple");
+
+    mocks.get.mockImplementation(async (url: string) => {
+      if (url === "/outreach/mailboxes") return { data: { items: [MAILBOX] } };
+      if (url === "/outreach/campaigns")
+        return { data: { items: [{ ...CAMPAIGN, status: "sent" }] } };
+      if (String(url).startsWith("/outreach/messages"))
+        return {
+          data: {
+            items: [
+              {
+                id: 3,
+                campaign_id: 9,
+                lead_id: null,
+                to_email: "a@b.com",
+                to_name: null,
+                subject: "hi",
+                body_rendered: "",
+                status: "opened",
+                error: null,
+                sent_at: "2026-10-01T00:00:00Z",
+              },
+            ],
+          },
+        };
+      if (String(url).startsWith("/leads")) return { data: { items: [] } };
+      return { data: { items: [] } };
+    });
+
+    mount();
+    await waitFor(
+      () => (document.body.textContent ?? "").includes("秋季推广"),
+      undefined,
+      "活动列表加载",
+    );
+    await waitFor(
+      () => (document.body.textContent ?? "").includes("已打开"),
+      undefined,
+      "消息列表加载",
+    );
+
+    expect(badgeByText("已发送").className).toContain("badge-success");
+    expect(badgeByText("已打开").className).toContain("badge-purple");
+
+    // 消息状态筛选：枚举仍是 8 个消息状态（不因共享 map 带出 none/draft）
+    const filterSelect = Array.from(
+      document.querySelectorAll<HTMLSelectElement>("select"),
+    ).find((s) => (s.textContent ?? "").includes("状态：全部"))!;
+    const values = Array.from(filterSelect.options).map((o) => o.value);
+    expect(values.filter(Boolean)).toEqual([
+      "pending",
+      "sending",
+      "sent",
+      "delivered",
+      "opened",
+      "replied",
+      "bounced",
+      "failed",
+    ]);
+  });
+});

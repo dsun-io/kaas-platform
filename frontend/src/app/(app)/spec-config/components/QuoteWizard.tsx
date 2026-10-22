@@ -68,13 +68,16 @@ export function QuoteWizard({ categoryId, categoryName }: Props) {
     spec_hash: string;
   } | null>(null);
 
-  const totalSteps = 5; // G1 identity + G2 variant + G3 spec + G4 pricing + G5 confirm
-
   const activeGroups = useMemo(() => {
     if (!bindings) return [];
     const codes = new Set(bindings.map((b) => b.group_code));
     return GROUP_CONFIG.filter((g) => codes.has(g.code));
   }, [bindings]);
+
+  // P1（步骤数 bug）：步骤 = 实际生效的分组（identity/variant/spec 哪些有绑定）+ 价格 + 确认。
+  // 旧实现写死 5（假设恒有 3 个分组）：组数≠3 时"下一步"会走进不存在内容的空白步骤。
+  // 必须在 activeGroups 之后声明（依赖它的取值）。
+  const totalSteps = activeGroups.length + 2;
 
   function getGroupBindings(groupCode: string): BindingWithAttribute[] {
     return (bindings || []).filter((b) => b.group_code === groupCode);
@@ -190,11 +193,16 @@ export function QuoteWizard({ categoryId, categoryName }: Props) {
 
   return (
     <div className="space-y-6">
-      {/* Step indicator */}
-      <div className="flex items-center gap-2 text-sm">
+      {/* Step indicator（aria 文案随真实步骤数同步，读屏能听出「第几步 / 共几步」） */}
+      <div
+        className="flex items-center gap-2 text-sm"
+        role="group"
+        aria-label={"步骤 " + currentStep + " / " + totalSteps}
+      >
         {activeGroups.map((g, i) => (
           <div key={g.code} className="flex items-center gap-2">
             <div
+              aria-hidden="true"
               className={`w-8 h-8 rounded-full flex items-center justify-center ${
                 currentStep > i + 1
                   ? "bg-success text-white"
@@ -219,6 +227,7 @@ export function QuoteWizard({ categoryId, categoryName }: Props) {
         ))}
         <div className="flex items-center gap-2">
           <div
+            aria-hidden="true"
             className={`w-8 h-8 rounded-full flex items-center justify-center ${
               currentStep === stepOffset + 1
                 ? "bg-primary text-primary-foreground"
@@ -240,6 +249,7 @@ export function QuoteWizard({ categoryId, categoryName }: Props) {
           </span>
           <span className="text-muted-foreground">→</span>
           <div
+            aria-hidden="true"
             className={`w-8 h-8 rounded-full flex items-center justify-center ${
               currentStep === stepOffset + 2
                 ? "bg-primary text-primary-foreground"

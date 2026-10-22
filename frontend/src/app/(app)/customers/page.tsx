@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/select";
 import { NumberEditDialog } from "@/components/shared/number-edit-dialog";
 import { useCustomerRecords } from "@/lib/customer/use-customer-records";
+import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import {
   EMPTY_CUSTOMER_RECORDS,
   type RecordQuote,
@@ -782,6 +783,11 @@ function CustomerDetailPanel({
   const [inquiryNoPending, setInquiryNoPending] = useState(false);
   const [inquiryNoError, setInquiryNoError] = useState<string | null>(null);
   const [contactInfo, setContactInfo] = useState<Contact | null>(null);
+  // C3：删除联系人失败不能再静默（原来 catch{} 直接关确认行，用户以为删掉了）
+  const [contactDeleteId, setContactDeleteId] = useState<number | null>(null);
+  const [contactDeleteError, setContactDeleteError] = useState<string | null>(
+    null,
+  );
   // X1：询盘详情改为右侧抽屉（不再在卡片下方内联展开）
   const [inquiryDetailId, setInquiryDetailId] = useState<number | null>(null);
   const qc = useQueryClient();
@@ -866,14 +872,24 @@ function CustomerDetailPanel({
   };
 
   const handleDeleteContact = async (contactId: number) => {
+    if (contactDeleteId !== null) return; // pending 防重
+    setContactDeleteId(contactId);
+    setContactDeleteError(null);
     try {
-      await apiClient.delete(`/customers/${customer.id}/contacts/${contactId}`);
+      // silent：错误由本处页内 role=alert 统一展示（拦截器再 toast 会重复）
+      await apiClient.delete(
+        `/customers/${customer.id}/contacts/${contactId}`,
+        { silent: true },
+      );
       setConfirmDeleteContactId(null);
       qc.invalidateQueries({
         queryKey: ["customers", "detail", customer.id],
       });
-    } catch {
-      setConfirmDeleteContactId(null);
+    } catch (e) {
+      // C3：失败保留确认行 + 页内可读原因，用户能重试
+      setContactDeleteError(errMsg(e));
+    } finally {
+      setContactDeleteId(null);
     }
   };
 
@@ -1102,9 +1118,12 @@ function CustomerDetailPanel({
                                 <Button
                                   variant="destructive"
                                   size="sm"
-                                  onClick={() => handleDeleteContact(c.id)}
+                                  disabled={contactDeleteId === c.id}
+                                  onClick={() => void handleDeleteContact(c.id)}
                                 >
-                                  确认删除
+                                  {contactDeleteId === c.id
+                                    ? "删除中…"
+                                    : "确认删除"}
                                 </Button>
                                 <Button
                                   variant="ghost"
@@ -1131,6 +1150,14 @@ function CustomerDetailPanel({
                       </div>
                     ))}
                   </div>
+                  {contactDeleteError ? (
+                    <p
+                      role="alert"
+                      className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+                    >
+                      删除联系人失败：{contactDeleteError}
+                    </p>
+                  ) : null}
                 </div>
               )}
 
@@ -1406,8 +1433,10 @@ export default function CustomersPage() {
     null,
   );
 
+  // C5：搜索防抖（300ms）—— 输入即时回显，停止输入后才发请求
+  const debouncedSearchQ = useDebouncedValue(searchQ, 300);
   const { data: listData, isLoading } = useCustomerList(
-    searchQ || undefined,
+    debouncedSearchQ || undefined,
     stageFilter === "all" ? undefined : stageFilter,
   );
 
@@ -1473,7 +1502,8 @@ export default function CustomersPage() {
             </SelectContent>
           </Select>
           <div className="ml-auto text-xs text-muted-foreground">
-            共 {listData?.items?.length ?? 0} 家客户
+            {/* C6：计数用后端 total（items 只是当前页；用 items.length 会少报） */}
+            共 {listData?.total ?? 0} 家客户
           </div>
         </div>
 

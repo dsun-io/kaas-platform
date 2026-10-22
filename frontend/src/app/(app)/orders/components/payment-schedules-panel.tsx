@@ -22,14 +22,15 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LoadingBlock } from "@/components/shared/loading-block";
 import { SectionCard } from "@/components/shared/section-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import apiClient from "@/lib/api/client";
-import { validateReceiptFile, RECEIPT_IMAGE_ACCEPT } from "@/lib/orders/order-attachments";
 import {
-  formatOrderDate,
-  formatOrderMoney,
-} from "@/lib/orders/order-detail";
+  validateReceiptFile,
+  RECEIPT_IMAGE_ACCEPT,
+} from "@/lib/orders/order-attachments";
+import { formatOrderDate, formatOrderMoney } from "@/lib/orders/order-detail";
 import {
   effectiveScheduleStatus,
   isHistoricalPaidNoReceipt,
@@ -111,6 +112,8 @@ export function PaymentSchedulesPanel({
   const [payError, setPayError] = useState<string | null>(null);
   const [registerTarget, setRegisterTarget] = useState<{
     schedule: PaymentSchedule | null;
+    /** 该期在列表里的期次序号（1-based）——弹窗标题用它，不用 DB id（O3） */
+    period: number | null;
   } | null>(null);
   const [registerError, setRegisterError] = useState<string | null>(null);
 
@@ -241,7 +244,9 @@ export function PaymentSchedulesPanel({
     if (index < 0) return `#${receipt.schedule_id}`;
     const item = items[index];
     return `第 ${index + 1} 期（${
-      item ? SCHEDULE_TYPE_LABEL[item.schedule_type] ?? item.schedule_type : ""
+      item
+        ? (SCHEDULE_TYPE_LABEL[item.schedule_type] ?? item.schedule_type)
+        : ""
     }）`;
   };
 
@@ -266,7 +271,7 @@ export function PaymentSchedulesPanel({
             variant="outline"
             onClick={() => {
               setRegisterError(null);
-              setRegisterTarget({ schedule: null });
+              setRegisterTarget({ schedule: null, period: null });
             }}
           >
             <Receipt className="mr-1 h-4 w-4" />
@@ -368,9 +373,8 @@ export function PaymentSchedulesPanel({
       )}
 
       {list.isLoading ? (
-        <p className="py-6 text-center text-sm text-muted-foreground">
-          正在读取收款计划…
-        </p>
+        // O4：加载态用共享 LoadingBlock（不再是纯文本「正在读取…」）
+        <LoadingBlock rows={3} />
       ) : list.isError ? (
         <p className="py-6 text-center text-sm text-destructive">
           收款计划读取失败：{scheduleErrorText(list.error)}
@@ -384,7 +388,9 @@ export function PaymentSchedulesPanel({
         <>
           <div className="mb-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <span>共 {summary.count} 期</span>
-            <span>应收合计 {formatOrderMoney(summary.totalAmount, currency)}</span>
+            <span>
+              应收合计 {formatOrderMoney(summary.totalAmount, currency)}
+            </span>
             <span className="text-success">
               已收 {formatOrderMoney(summary.paidAmount, currency)}（
               {summary.paidCount} 期已收清
@@ -394,7 +400,8 @@ export function PaymentSchedulesPanel({
               ）
             </span>
             <span className="text-warning-muted-foreground">
-              待收 {formatOrderMoney(Math.max(0, summary.pendingAmount), currency)}
+              待收{" "}
+              {formatOrderMoney(Math.max(0, summary.pendingAmount), currency)}
             </span>
             <span>
               实收登记 {receiptSummary.count} 笔 ·{" "}
@@ -496,7 +503,10 @@ export function PaymentSchedulesPanel({
                             variant="ghost"
                             onClick={() => {
                               setRegisterError(null);
-                              setRegisterTarget({ schedule: item });
+                              setRegisterTarget({
+                                schedule: item,
+                                period: index + 1,
+                              });
                             }}
                           >
                             登记收款
@@ -538,7 +548,8 @@ export function PaymentSchedulesPanel({
         <div className="mt-5 space-y-2">
           <h3 className="text-sm font-medium">实收记录</h3>
           <p className="text-xs text-muted-foreground">
-            一次到账一行，支持同一期多次收款；差异 = 实收 − 该期应收，供财务核对。
+            一次到账一行，支持同一期多次收款；差异 = 实收 −
+            该期应收，供财务核对。
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -586,7 +597,10 @@ export function PaymentSchedulesPanel({
                     <td className="p-2">
                       {receipt.fx_rate === null ? "—" : receipt.fx_rate}
                     </td>
-                    <td className="p-2 max-w-[220px] truncate" title={receipt.notes ?? ""}>
+                    <td
+                      className="p-2 max-w-[220px] truncate"
+                      title={receipt.notes ?? ""}
+                    >
                       {receipt.notes || "—"}
                     </td>
                     <td className="p-2">
@@ -682,6 +696,7 @@ export function PaymentSchedulesPanel({
             if (!next) setRegisterTarget(null);
           }}
           schedule={registerTarget.schedule}
+          schedulePeriod={registerTarget.period}
           currency={currency}
           receivedAmount={
             registerTarget.schedule

@@ -14,10 +14,17 @@ import {
   SectionCard,
   EmptyState,
   StatCard,
+  ConfirmDialog,
 } from "@/components/shared";
 import { toast } from "sonner";
 import { normalizeApiError } from "@/lib/api/api-error";
-import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { PaginationBar } from "@/components/shared/pagination-bar";
+import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
+import {
+  CRAWL_STATUS_TONES,
+  RUN_STATUS_TONES,
+  toneForStatus,
+} from "@/lib/status-tones";
 import {
   Globe2,
   ImageOff,
@@ -114,6 +121,11 @@ const CAN_SUPPLY_OPTIONS: { value: string; label: string }[] = [
   { value: "unknown", label: "可供货：未填" },
 ];
 
+/** 调研产品分页大小（与后端默认 page_size 同口径；上限 200 由后端 Query 校验）。 */
+const RESEARCH_PAGE_SIZE = 20;
+/** 导出全部时的单页上限（后端 le=200），整批拉完再写 CSV，避免静默截断。 */
+const EXPORT_PAGE_SIZE = 200;
+
 function supplyBadge(v: boolean | null) {
   if (v === true) return <StatusBadge tone="success">可供货</StatusBadge>;
   if (v === false) return <StatusBadge tone="danger">不可供货</StatusBadge>;
@@ -142,9 +154,14 @@ export default function ResearchPage() {
 
   const [tab, setTab] = useState<TabKey>("products");
   const [search, setSearch] = useState("");
+  // R49：搜索防抖（300ms）—— 输入即时回显，但只有停止输入后才发请求
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [country, setCountry] = useState("");
   const [category, setCategory] = useState("");
   const [canSupply, setCanSupply] = useState("");
+  // R50：分页（后端 /research/products 支持 page/page_size；原来 page_size=200 硬编码无分页）
+  const [page, setPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
   const [editing, setEditing] = useState<ResearchProduct | null>(null);
   const [picked, setPicked] = useState<number[]>([]);
   const [picking, setPicking] = useState(false);
@@ -177,21 +194,43 @@ export default function ResearchPage() {
   });
   const categories = categoriesQuery.data?.items ?? [];
 
+  /** 当前筛选条件 → 查询参数（列表/导出全量共用同一份，避免两套口径漂移）。 */
+  const productQueryParams = (targetPage: number, pageSize: number) => {
+    const params = new URLSearchParams({
+      page: String(targetPage),
+      page_size: String(pageSize),
+    });
+    if (debouncedSearch) params.set("search", debouncedSearch);
+    if (country) params.set("country", country);
+    if (category) params.set("product_category", category);
+    // 服务端三态过滤：true / false / unknown(未填)
+    if (canSupply) params.set("can_supply", canSupply);
+    return params;
+  };
+
   const productsQuery = useQuery({
-    queryKey: ["research-products", search, country, category, canSupply],
+    queryKey: [
+      "research-products",
+      debouncedSearch,
+      country,
+      category,
+      canSupply,
+      page,
+    ],
     queryFn: async () => {
-      const params = new URLSearchParams({ page_size: "200" });
-      if (search) params.set("search", search);
-      if (country) params.set("country", country);
-      if (category) params.set("product_category", category);
-      // 服务端三态过滤：true / false / unknown(未填)
-      if (canSupply) params.set("can_supply", canSupply);
+      const params = productQueryParams(page, RESEARCH_PAGE_SIZE);
       return (
-        await apiClient.get<{ items: ResearchProduct[]; total: number }>(
-          `/research/products?${params}`,
-        )
+        await apiClient.get<{
+          items: ResearchProduct[];
+          total: number;
+          page: number;
+          page_size: number;
+        }>(`/research/products?${params}`)
       ).data;
     },
+    // 筛选/翻页时保留上一批数据：否则新 key 首帧 data=undefined ⇒ 整表卸载，
+    // 编辑弹窗的"焦点归还目标"（行内按钮）也跟着被换掉，键盘用户会丢焦点。
+    placeholderData: (previous) => previous,
   });
   const products = productsQuery.data?.items ?? [];
 
@@ -238,8 +277,13 @@ export default function ResearchPage() {
   const closeEdit = () => {
     setEditing(null);
     setSaveError(null);
+    // 焦点归还：对话框是被父组件直接卸载的（不是走 Dialog 的 close 生命周期），
+    // 所以不能依赖 Dialog 自身的焦点恢复；这里在下一 tick 把焦点还给触发按钮。
     const opener = editOpenerRef.current;
-    window.setTimeout(() => opener?.focus(), 0);
+    if (!opener) return;
+    window.setTimeout(() => {
+      if (opener.isConnected) opener.focus();
+    }, 0);
   };
 
   /** 保存弹窗里的草稿（失败写回弹窗内错误，不关闭弹窗）。 */
@@ -316,7 +360,8 @@ export default function ResearchPage() {
     }
   };
 
-  const exportCsv = () => {
+  /** CSV 写入（纯本地）：rowsToExport 决定导出范围（列表页 / 全量筛选结果）。 */
+  const writeCsv = (rowsToExport: ResearchProduct[]) => {
     const header = [
       "product_name",
       "product_name_cn",
@@ -341,7 +386,7 @@ export default function ResearchPage() {
       const s = v === null || v === undefined ? "" : String(v);
       return `"${s.replace(/"/g, '""')}"`;
     };
-    const rows = products.map((p) =>
+    const rows = rowsToExport.map((p) =>
       header
         .map((k) => {
           if (k === "can_supply") {
@@ -362,6 +407,43 @@ export default function ResearchPage() {
     a.download = `market-research-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  /**
+   * R48：导出**全部筛选结果**，不再静默截断成列表当前页。
+   * 后端 /research/products 支持 page/page_size（le=200）⇒ 这里逐页拉完再写 CSV。
+   * 失败如实提示（不能"点了没反应"）；导出量与列表页大小解耦。
+   */
+  const exportCsv = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const all: ResearchProduct[] = [];
+      let targetPage = 1;
+      let total = Number.POSITIVE_INFINITY;
+      while (all.length < total) {
+        const params = productQueryParams(targetPage, EXPORT_PAGE_SIZE);
+        const { data } = await apiClient.get<{
+          items: ResearchProduct[];
+          total: number;
+        }>(`/research/products?${params}`);
+        total = data.total;
+        if (data.items.length === 0) break;
+        all.push(...data.items);
+        targetPage += 1;
+      }
+      writeCsv(all);
+      if (all.length > products.length) {
+        // 说清"导出的是全部"而不是让人以为只有页面上这些
+        toast.success(
+          `已导出当前筛选的全部 ${all.length} 条（列表每页 ${RESEARCH_PAGE_SIZE} 条）`,
+        );
+      }
+    } catch (err) {
+      toast.error(normalizeApiError(err).message || "导出失败");
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -423,10 +505,13 @@ export default function ResearchPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={exportCsv}
-                    disabled={products.length === 0}
+                    onClick={() => void exportCsv()}
+                    disabled={
+                      exporting || (productsQuery.data?.total ?? 0) === 0
+                    }
                   >
-                    <Download className="mr-1 h-4 w-4" /> 导出 CSV
+                    <Download className="mr-1 h-4 w-4" />{" "}
+                    {exporting ? "导出中…" : "导出 CSV"}
                   </Button>
                 </div>
               }
@@ -436,12 +521,18 @@ export default function ResearchPage() {
                   className="w-56"
                   placeholder="搜索产品 / 店铺…"
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setPage(1);
+                  }}
                 />
                 <select
                   className="rounded-md border bg-background px-3 py-2 text-sm"
                   value={country}
-                  onChange={(e) => setCountry(e.target.value)}
+                  onChange={(e) => {
+                    setCountry(e.target.value);
+                    setPage(1);
+                  }}
                 >
                   <option value="">国家：全部</option>
                   {countryOptions.map((c) => (
@@ -453,7 +544,10 @@ export default function ResearchPage() {
                 <select
                   className="rounded-md border bg-background px-3 py-2 text-sm"
                   value={category}
-                  onChange={(e) => setCategory(e.target.value)}
+                  onChange={(e) => {
+                    setCategory(e.target.value);
+                    setPage(1);
+                  }}
                 >
                   <option value="">类目：全部</option>
                   {categories.map((c) => (
@@ -465,7 +559,10 @@ export default function ResearchPage() {
                 <select
                   className="rounded-md border bg-background px-3 py-2 text-sm"
                   value={canSupply}
-                  onChange={(e) => setCanSupply(e.target.value)}
+                  onChange={(e) => {
+                    setCanSupply(e.target.value);
+                    setPage(1);
+                  }}
                 >
                   {CAN_SUPPLY_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>
@@ -600,6 +697,15 @@ export default function ResearchPage() {
                   </table>
                 </div>
               )}
+              <PaginationBar
+                page={page}
+                pageSize={RESEARCH_PAGE_SIZE}
+                total={productsQuery.data?.total ?? 0}
+                currentCount={products.length}
+                loading={productsQuery.isFetching}
+                onPageChange={setPage}
+                ariaLabel="调研产品分页"
+              />
             </SectionCard>
           </>
         )}
@@ -680,14 +786,10 @@ export default function ResearchPage() {
                         </td>
                         <td className="p-2">
                           <StatusBadge
-                            tone={
-                              l.crawl_status === "success"
-                                ? "success"
-                                : l.crawl_status === "failed" ||
-                                    l.crawl_status === "blocked"
-                                  ? "danger"
-                                  : "default"
-                            }
+                            tone={toneForStatus(
+                              CRAWL_STATUS_TONES,
+                              l.crawl_status,
+                            )}
                           >
                             {CRAWL_STATUS_CN[l.crawl_status ?? "pending"] ??
                               l.crawl_status ??
@@ -726,7 +828,7 @@ export default function ResearchPage() {
                     className="flex flex-wrap items-center gap-3 rounded border px-3 py-2"
                   >
                     <StatusBadge
-                      tone={r.status === "succeeded" ? "success" : "danger"}
+                      tone={toneForStatus(RUN_STATUS_TONES, r.status)}
                     >
                       {RUN_STATUS_CN[r.status] ?? r.status}
                     </StatusBadge>

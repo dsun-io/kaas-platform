@@ -13,6 +13,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { AsyncButton } from "@/components/shared";
+import { PaginationBar } from "@/components/shared/pagination-bar";
 import { useAsyncAction } from "@/lib/hooks/use-async-action";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
@@ -78,6 +79,9 @@ const NEXT_STATUS: Record<string, string> = {
   customs: "delivered",
 };
 
+/** 出货列表分页大小（后端 page_size 默认 20；原来硬编码 100 且无分页）。 */
+const SHIPMENTS_PAGE_SIZE = 20;
+
 const EDIT_FIELDS: { key: keyof ShipmentRow; label: string; hint?: string }[] =
   [
     { key: "bl_no", label: "提单号", hint: "货代给的 B/L No." },
@@ -96,6 +100,8 @@ export default function ShipmentsPage() {
   usePageView({ resource_id: "/shipments" });
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState("");
+  // R50（shipments）：接 PaginationBar，不再 page_size=100 硬编码无翻页
+  const [page, setPage] = useState(1);
   /**
    * U-P0B6/X5：编辑对象改为**打开时的行快照**（editor 独立于当前筛选结果）。
    * 旧实现 `selected = rows.find(...)`：一改筛选/状态，选中行从 rows 消失 ⇒
@@ -107,13 +113,19 @@ export default function ShipmentsPage() {
   const orders = useOrderOptions();
 
   const list = useQuery({
-    queryKey: ["shipments", "list", statusFilter],
+    queryKey: ["shipments", "list", statusFilter, page],
     queryFn: async () => {
       const { data } = await apiClient.get<{
         items: ShipmentRow[];
         total: number;
+        page: number;
+        page_size: number;
       }>("/shipments", {
-        params: { status: statusFilter || undefined, page_size: 100 },
+        params: {
+          status: statusFilter || undefined,
+          page,
+          page_size: SHIPMENTS_PAGE_SIZE,
+        },
       });
       return data;
     },
@@ -245,12 +257,16 @@ export default function ShipmentsPage() {
       </SectionCard>
 
       <SectionCard
-        title="出货列表"
+        title={`出货列表（共 ${list.data?.total ?? 0} 条）`}
         action={
           <select
+            aria-label="状态筛选"
             className="h-9 rounded-md border border-input bg-background px-2 text-sm"
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setPage(1); // 筛选变化回第 1 页
+            }}
           >
             <option value="">全部状态</option>
             {Object.entries(STATUS_LABEL).map(([value, label]) => (
@@ -364,6 +380,15 @@ export default function ShipmentsPage() {
             </table>
           </div>
         )}
+        <PaginationBar
+          page={page}
+          pageSize={SHIPMENTS_PAGE_SIZE}
+          total={list.data?.total ?? 0}
+          currentCount={rows.length}
+          loading={list.isFetching}
+          onPageChange={setPage}
+          ariaLabel="出货列表分页"
+        />
         {advance.error ? (
           <p
             role="alert"

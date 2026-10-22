@@ -236,4 +236,77 @@ describe("定价矩阵 X8：选中行 + 弹窗改价", () => {
     await clickButton("取消选择");
     expect(container!.textContent).not.toContain("已选中");
   });
+
+  it("恢复兜底需二次确认：取消不调用 DELETE，确认后才停用", async () => {
+    vi.mocked(apiClient.delete).mockResolvedValue(ok({}) as never);
+
+    await mount();
+    await clickRow(0); // 已配置行
+    await clickButton("恢复兜底");
+
+    // 弹窗说明后果：恢复后按产品兜底成本计算、自定义成本停用
+    expect(document.body.textContent).toContain("的产品兜底成本？");
+    expect(document.body.textContent).toContain("兜底成本计算");
+
+    await clickButton("取消");
+    expect(vi.mocked(apiClient.delete)).not.toHaveBeenCalled();
+
+    await clickButton("恢复兜底");
+    await clickButton("确认恢复兜底");
+    await settle();
+
+    expect(vi.mocked(apiClient.delete)).toHaveBeenCalledWith("/pricing-data/1");
+    // 成功后关窗 + 顶部提示
+    expect(container!.textContent).toContain("已停用自定义成本");
+  });
+
+  it("恢复兜底提交中：按钮进 pending、取消被禁用（不能假装已取消）", async () => {
+    vi.mocked(apiClient.delete).mockImplementation(() => new Promise(() => {}));
+
+    await mount();
+    await clickRow(0);
+    await clickButton("恢复兜底");
+    await clickButton("确认恢复兜底");
+    await settle(2);
+
+    const pendingBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => (b.textContent ?? "").trim() === "提交中…",
+    ) as HTMLButtonElement | undefined;
+    expect(pendingBtn).toBeTruthy();
+    const cancelBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => (b.textContent ?? "").trim() === "取消",
+    ) as HTMLButtonElement | undefined;
+    expect(cancelBtn?.disabled).toBe(true);
+    // 仍停在确认弹窗上（不是"关掉弹窗但其实还在删"）
+    expect(document.body.textContent).toContain("兜底成本计算");
+  });
+
+  it("恢复兜底失败留在弹窗（可重试），成功后关窗", async () => {
+    vi.mocked(apiClient.delete)
+      .mockRejectedValueOnce({
+        response: { status: 409, data: { detail: "该成本记录正在被引用" } },
+      })
+      .mockResolvedValueOnce(ok({}) as never);
+
+    await mount();
+    await clickRow(0);
+    await clickButton("恢复兜底");
+    await clickButton("确认恢复兜底");
+    await settle();
+
+    // 失败：原因留在弹窗里，弹窗没关，可再点
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "该成本记录正在被引用",
+    );
+    expect(
+      Array.from(document.querySelectorAll("button")).some(
+        (b) => (b.textContent ?? "").trim() === "确认恢复兜底",
+      ),
+    ).toBe(true);
+
+    await clickButton("确认恢复兜底");
+    await settle();
+    expect(vi.mocked(apiClient.delete)).toHaveBeenCalledTimes(2);
+    expect(container!.textContent).toContain("已停用自定义成本");
+  });
 });

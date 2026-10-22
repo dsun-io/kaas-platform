@@ -17,10 +17,18 @@ import {
   EmptyState,
   ErrorState,
   AsyncButton,
+  DetailDrawer,
 } from "@/components/shared";
-import { DetailDrawer } from "@/components/shared/detail-drawer";
 import { LoadingBlock } from "@/components/shared/loading-block";
 import { useAsyncAction } from "@/lib/hooks/use-async-action";
+import {
+  CRAWL_STATUS_TONES,
+  INQUIRY_STATUS_TONES,
+  OUTREACH_STATUS_TONES,
+  RUN_STATUS_TONES,
+  scoreTone,
+  toneForStatus,
+} from "@/lib/status-tones";
 import { toast } from "sonner";
 import {
   Play,
@@ -31,6 +39,22 @@ import {
   CheckCircle2,
   XCircle,
 } from "lucide-react";
+
+/** 关闭抽屉/弹窗后把焦点还给触发按钮。
+ *  base-ui 在卸载 popup 时会执行自己的 finalFocus，可能与我们的 focus() 抢时序
+ *  （并发/动画下必现）⇒ 这里"重试到生效"，而不是一次性 setTimeout。 */
+function restoreFocus(target: HTMLElement | null) {
+  if (!target) return;
+  let attempts = 0;
+  const tick = () => {
+    target.focus();
+    if (document.activeElement !== target && attempts < 10) {
+      attempts += 1;
+      window.setTimeout(tick, 16);
+    }
+  };
+  window.setTimeout(tick, 0);
+}
 
 /* ── types ─────────────────────────────────────────────────────────────── */
 interface LeadgenRun {
@@ -88,41 +112,8 @@ interface LeadDetail extends Lead {
   inquiry_history: { id: number; status: string; created_at: string }[];
 }
 
-const OUTREACH_TONES: Record<string, import("@/components/shared").StatusTone> =
-  {
-    none: "default",
-    pending: "default",
-    sent: "info",
-    delivered: "info",
-    opened: "purple",
-    replied: "success",
-    bounced: "danger",
-  };
-const INQUIRY_TONES: Record<string, import("@/components/shared").StatusTone> =
-  {
-    none: "default",
-    new: "info",
-    following: "purple",
-    won: "success",
-    lost: "danger",
-  };
-
-function scoreTone(
-  score: number | null,
-): import("@/components/shared").StatusTone {
-  if (score == null) return "default";
-  if (score >= 75) return "success";
-  if (score >= 50) return "info";
-  return "default";
-}
-
-const CRAWL_TONES: Record<string, import("@/components/shared").StatusTone> = {
-  pending: "default",
-  success: "success",
-  failed: "danger",
-  blocked: "danger",
-  no_website: "default",
-};
+/* 状态 tone 单一来源：`@/lib/status-tones`（P1-D 三份重复映射合并）。
+   本页只保留中文文案映射（STATUS_CN），不再自建 tone 表 / 自写 scoreTone。 */
 
 /* 状态显示文案映射（仅改展示文本，不改枚举值与 tone） */
 const CRAWL_STATUS_CN: Record<string, string> = {
@@ -171,7 +162,6 @@ export default function LeadgenPage() {
     source: "demo",
   });
   const [validating, setValidating] = useState(false);
-  const [running, setRunning] = useState(false);
   const [validation, setValidation] = useState<{
     valid: boolean;
     issues: string[];
@@ -234,21 +224,20 @@ export default function LeadgenPage() {
         source: cfg.source,
       });
       setValidation({ ...data.result, path: data.path });
-    } catch (e) {
+    } catch {
       toast.error("校验失败");
     } finally {
       setValidating(false);
     }
   };
 
-  const run = async () => {
-    // CSV 数据源必须走 multipart 上传端点；JSON 端点收到 source=csv 会 422 CSV_REQUIRED
-    if (cfg.source === "csv") {
-      toast.error("CSV 数据源请用下方「导入 CSV 线索」上传文件");
-      return;
-    }
-    setRunning(true);
-    try {
+  /**
+   * P0-B4：「开始抓取」（批量抓取）原实现只有 try/finally + 重复 toast
+   * （拦截器已统一 toast），且没有 pending 防重 ⇒ 连点会重复发起抓取。
+   * 现在：useAsyncAction（pending 期间按钮禁用）+ 失败页内 role="alert"。
+   */
+  const runAction = useAsyncAction(
+    async () => {
       const { data } = await apiClient.post<LeadgenRun>("/leadgen/runs", {
         region: cfg.region,
         industry: cfg.industry,
@@ -256,15 +245,25 @@ export default function LeadgenPage() {
         quantity: cfg.quantity,
         source: cfg.source,
       });
-      if (data.deduplicated) toast.info("相同配置已跑过 — 返回上次结果");
-      else toast.success(`抓取完成：保留 ${data.leads_kept ?? 0} 条新线索`);
-      qc.invalidateQueries({ queryKey: ["leads"] });
-      refetchRuns();
-    } catch (e) {
-      toast.error("抓取失败");
-    } finally {
-      setRunning(false);
+      return data;
+    },
+    {
+      onSuccess: (data) => {
+        if (data.deduplicated) toast.info("相同配置已跑过 — 返回上次结果");
+        else toast.success(`抓取完成：保留 ${data.leads_kept ?? 0} 条新线索`);
+        qc.invalidateQueries({ queryKey: ["leads"] });
+        refetchRuns();
+      },
+    },
+  );
+
+  const run = () => {
+    // CSV 数据源必须走 multipart 上传端点；JSON 端点收到 source=csv 会 422 CSV_REQUIRED
+    if (cfg.source === "csv") {
+      toast.error("CSV 数据源请用下方「导入 CSV 线索」上传文件");
+      return;
     }
+    void runAction.run();
   };
 
   /**
@@ -316,9 +315,8 @@ export default function LeadgenPage() {
   const closeDetail = () => {
     setDetailOpen(false);
     setDetail(null);
-    // 等抽屉卸载后再归还焦点，避免被 base-ui 的 finalFocus 覆盖
-    const opener = detailOpenerRef.current;
-    window.setTimeout(() => opener?.focus(), 0);
+    // 抽屉卸载后归还焦点（处理 base-ui finalFocus 的时序竞争）
+    restoreFocus(detailOpenerRef.current);
   };
 
   /* ── 爬官网（产品信息唯一来源；Google Places 看不到产品）───────────── */
@@ -342,9 +340,12 @@ export default function LeadgenPage() {
     }
   };
 
-  const crawlPending = async () => {
-    setCrawling(-1);
-    try {
+  /**
+   * P0-B4：「爬取网站 (10)」= 批量爬取 mutation（非单行爬取 crawlOne）。
+   * 同样补 pending 防重 + 失败页内出口（拦截器已 toast，不重复）。
+   */
+  const crawlBatch = useAsyncAction(
+    async () => {
       const { data } = await apiClient.post<{
         crawled: number;
         success: number;
@@ -352,17 +353,18 @@ export default function LeadgenPage() {
         blocked: number;
         no_website: number;
       }>("/leads/crawl-batch", { only_pending: true, limit: 10 });
-      toast.success(
-        `已爬取 ${data.crawled}：成功 ${data.success}，失败 ${data.failed}，` +
-          `无官网 ${data.no_website}${data.blocked ? `，被拦截 ${data.blocked}` : ""}`,
-      );
-      qc.invalidateQueries({ queryKey: ["leads"] });
-    } catch {
-      toast.error("批量爬取失败");
-    } finally {
-      setCrawling(null);
-    }
-  };
+      return data;
+    },
+    {
+      onSuccess: (data) => {
+        toast.success(
+          `已爬取 ${data.crawled}：成功 ${data.success}，失败 ${data.failed}，` +
+            `无官网 ${data.no_website}${data.blocked ? `，被拦截 ${data.blocked}` : ""}`,
+        );
+        qc.invalidateQueries({ queryKey: ["leads"] });
+      },
+    },
+  );
 
   /* ── 能否提供：由用户判定，不由 AI 推断 ── */
   const setSupply = async (id: number, value: boolean | null) => {
@@ -434,10 +436,14 @@ export default function LeadgenPage() {
             >
               <ShieldCheck className="mr-1 h-4 w-4" /> 校验
             </Button>
-            <Button size="sm" onClick={run} disabled={running}>
-              <Play className="mr-1 h-4 w-4" />{" "}
-              {running ? "运行中…" : "开始抓取"}
-            </Button>
+            <AsyncButton
+              size="sm"
+              onClick={run}
+              pending={runAction.pending}
+              pendingLabel="运行中…"
+            >
+              <Play className="mr-1 h-4 w-4" /> 开始抓取
+            </AsyncButton>
             <AsyncButton
               variant="outline"
               size="sm"
@@ -451,15 +457,20 @@ export default function LeadgenPage() {
             >
               <RefreshCw className="mr-1 h-4 w-4" /> 扫描已回复 → 询盘
             </AsyncButton>
-            <Button
+            <AsyncButton
               variant="outline"
               size="sm"
-              onClick={crawlPending}
+              onClick={() => void crawlBatch.run()}
+              pending={crawlBatch.pending}
+              pendingLabel={
+                <>
+                  <Globe className="mr-1 h-4 w-4" /> 爬取中…
+                </>
+              }
               disabled={crawling !== null}
             >
-              <Globe className="mr-1 h-4 w-4" />{" "}
-              {crawling === -1 ? "爬取中…" : "爬取网站 (10)"}
-            </Button>
+              <Globe className="mr-1 h-4 w-4" /> 爬取网站 (10)
+            </AsyncButton>
             {validation && (
               <div className="flex items-center gap-2 text-sm">
                 {validation.valid ? (
@@ -475,6 +486,23 @@ export default function LeadgenPage() {
               </div>
             )}
           </div>
+          {/* P0-B4：开始抓取 / 批量爬取失败都有页内出口（拦截器已 toast，不重复） */}
+          {runAction.error ? (
+            <p
+              role="alert"
+              className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+            >
+              抓取失败：{runAction.error}（可修正配置后重试）
+            </p>
+          ) : null}
+          {crawlBatch.error ? (
+            <p
+              role="alert"
+              className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+            >
+              批量爬取失败：{crawlBatch.error}（可重试）
+            </p>
+          ) : null}
           {/* P0-B2/L4：扫描失败要有出口（拦截器已 toast，这里保留原因便于重试） */}
           {scan.error ? (
             <p
@@ -503,15 +531,7 @@ export default function LeadgenPage() {
                   key={r.id}
                   className="flex items-center gap-3 rounded border px-3 py-2"
                 >
-                  <StatusBadge
-                    tone={
-                      r.status === "succeeded"
-                        ? "success"
-                        : r.status === "failed"
-                          ? "danger"
-                          : "info"
-                    }
-                  >
+                  <StatusBadge tone={toneForStatus(RUN_STATUS_TONES, r.status)}>
                     {RUN_STATUS_CN[r.status] ?? r.status}
                   </StatusBadge>
                   <span className="text-muted-foreground">#{r.id}</span>
@@ -672,10 +692,10 @@ export default function LeadgenPage() {
                       <td className="p-2">
                         <div className="flex items-center gap-1">
                           <StatusBadge
-                            tone={
-                              CRAWL_TONES[l.crawl_status ?? "pending"] ??
-                              "default"
-                            }
+                            tone={toneForStatus(
+                              CRAWL_STATUS_TONES,
+                              l.crawl_status,
+                            )}
                           >
                             {CRAWL_STATUS_CN[l.crawl_status ?? "pending"] ??
                               l.crawl_status ??
@@ -704,7 +724,10 @@ export default function LeadgenPage() {
                       </td>
                       <td className="p-2">
                         <StatusBadge
-                          tone={OUTREACH_TONES[l.outreach_status] ?? "default"}
+                          tone={toneForStatus(
+                            OUTREACH_STATUS_TONES,
+                            l.outreach_status,
+                          )}
                         >
                           {OUTREACH_STATUS_CN[l.outreach_status] ??
                             l.outreach_status}
@@ -805,10 +828,10 @@ export default function LeadgenPage() {
                     </h4>
                     <div className="flex items-center gap-2">
                       <StatusBadge
-                        tone={
-                          CRAWL_TONES[detail.crawl_status ?? "pending"] ??
-                          "default"
-                        }
+                        tone={toneForStatus(
+                          CRAWL_STATUS_TONES,
+                          detail.crawl_status,
+                        )}
                       >
                         {CRAWL_STATUS_CN[detail.crawl_status ?? "pending"] ??
                           detail.crawl_status ??
@@ -920,7 +943,10 @@ export default function LeadgenPage() {
                       detail.outreach_history.map((m) => (
                         <div key={m.id} className="flex gap-2 text-xs">
                           <StatusBadge
-                            tone={OUTREACH_TONES[m.status] ?? "default"}
+                            tone={toneForStatus(
+                              OUTREACH_STATUS_TONES,
+                              m.status,
+                            )}
                           >
                             {OUTREACH_STATUS_CN[m.status] ?? m.status}
                           </StatusBadge>
@@ -944,7 +970,7 @@ export default function LeadgenPage() {
                       detail.inquiry_history.map((i) => (
                         <div key={i.id} className="flex gap-2 text-xs">
                           <StatusBadge
-                            tone={INQUIRY_TONES[i.status] ?? "default"}
+                            tone={toneForStatus(INQUIRY_STATUS_TONES, i.status)}
                           >
                             {INQUIRY_STATUS_CN[i.status] ?? i.status}
                           </StatusBadge>

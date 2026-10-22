@@ -31,8 +31,9 @@ vi.mock("sonner", () => ({
   },
 }));
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const SCHEDULES = [
   {
@@ -195,7 +196,10 @@ describe("PaymentSchedulesPanel", () => {
       if (path === "/orders/9/payment-schedules") {
         return {
           data: {
-            items: [SCHEDULES[0], { ...SCHEDULES[1], status: "pending", received_amount: 0 }],
+            items: [
+              SCHEDULES[0],
+              { ...SCHEDULES[1], status: "pending", received_amount: 0 },
+            ],
             total: 2,
           },
         };
@@ -293,7 +297,12 @@ describe("PaymentSchedulesPanel", () => {
         return {
           data: {
             items: [
-              receipt({ id: 3, schedule_id: null, amount: 55, notes: "客户多汇" }),
+              receipt({
+                id: 3,
+                schedule_id: null,
+                amount: 55,
+                notes: "客户多汇",
+              }),
             ],
             total: 1,
           },
@@ -311,10 +320,12 @@ describe("PaymentSchedulesPanel", () => {
   it("到账截图：有 file_id 可查看；没有时可补传（multipart file）", async () => {
     const createObjectURL = vi.fn(() => "blob:receipt");
     const revokeObjectURL = vi.fn();
-    (URL as unknown as { createObjectURL: typeof createObjectURL }).createObjectURL =
-      createObjectURL;
-    (URL as unknown as { revokeObjectURL: typeof revokeObjectURL }).revokeObjectURL =
-      revokeObjectURL;
+    (
+      URL as unknown as { createObjectURL: typeof createObjectURL }
+    ).createObjectURL = createObjectURL;
+    (
+      URL as unknown as { revokeObjectURL: typeof revokeObjectURL }
+    ).revokeObjectURL = revokeObjectURL;
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
 
     mocks.get.mockImplementation(async (url: string) => {
@@ -391,5 +402,52 @@ describe("PaymentSchedulesPanel", () => {
 
     const alert = document.querySelector('[role="alert"]');
     expect(alert?.textContent).toContain("不能改回");
+  });
+
+  it("O3：登记收款标题用「期次序号」，不是数据库 id（id 跳号时不误导）", async () => {
+    mocks.get.mockImplementation(async (url: string) => {
+      const path = String(url);
+      if (path === "/orders/9/payment-schedules") {
+        return {
+          data: {
+            // id 与序号故意不同：列表第 2 期是 id=12（删过计划会跳号）
+            items: [
+              { ...SCHEDULES[0], id: 11 },
+              { ...SCHEDULES[1], id: 12 },
+            ],
+            total: 2,
+          },
+        };
+      }
+      if (path === "/orders/9/receipts") {
+        return { data: { items: [], total: 0 } };
+      }
+      return { data: { items: [], total: 0 } };
+    });
+    mount(<PaymentSchedulesPanel orderId={9} currency="USD" />);
+    await settle();
+
+    // 按钮序：0=面板标题栏「登记收款」，1=第 1 行，2=第 2 行
+    clickButton("登记收款", 2);
+    await settle();
+
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("第 2 期");
+    expect(text).not.toContain("第 12 期");
+  });
+
+  it("O4：收款计划加载态用 LoadingBlock（不是纯文本「正在读取…」）", async () => {
+    mocks.get.mockImplementation((url: string) =>
+      String(url) === "/orders/9/payment-schedules"
+        ? new Promise(() => {})
+        : Promise.resolve({ data: { items: [], total: 0 } }),
+    );
+    mount(<PaymentSchedulesPanel orderId={9} currency="USD" />);
+    await settle(2);
+
+    expect(
+      document.querySelector('[aria-busy="true"][aria-label="加载中"]'),
+    ).not.toBeNull();
+    expect(document.body.textContent).not.toContain("正在读取收款计划");
   });
 });
