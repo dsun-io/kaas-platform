@@ -1,6 +1,6 @@
 # 询盘与订单模型重构 · 优化方案（2026-10-22）
 
-> 状态：**设计定稿，全部拍板完毕，M1 可开工**（用户 2026-10-22 拍板「落盘设计文档再实现」；D-1~D-15 见 §12.1）。
+> 状态：**设计定稿，全部拍板完毕，M1 可开工**（用户 2026-10-22 拍板「落盘设计文档再实现」；D-1~D-16 见 §12.1）。
 > 本文件是本次重构的**唯一设计基准**；实施进度在 [`TODO.md`](./TODO.md) §Q 销账。
 > 所有结论均经代码核实（附 `文件:行号`），非推测。
 
@@ -148,6 +148,7 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
    - 渠道枚举 `CHANNEL` 统一为 email/whatsapp/alibaba/expo/website/**phone/referral**/other（询盘 channel 去掉 `quote`——那是来源类型不是渠道；存量 `quote` 行回填为 `other` 并在 UI 标注）；
 2. **迁移**（orchestrator alembic，head 顺延）：
    - `orders` 加 `source_type`（默认 `direct`）、`source_channel`（可空）、`inquiry_id`（可空 + 索引 + FK）；
+   - `orders` 加 `confirmed_at`（timestamptz）、`confirmed_by`（text）、`confirmed_source`（`manual` | `deposit_receipt`，默认 `manual`）——见 §5.1；
    - 回填：`UPDATE orders SET source_type='inquiry', inquiry_id=q.inquiry_id FROM quote_orders q WHERE orders.quote_id=q.id AND q.inquiry_id IS NOT NULL`；其余维持 `direct`、`source_channel=NULL`（前端展示「未知」，不伪造）；
    - `entity_links` 触发器（`trg_orders_links`）扩展：`inquiry_id` 一落即派生 order→inquiry 边；
 3. **询盘 status 退场**：`status` 列保留兼容读，新写入由 `stage` 派生（inquiry→unquoted、quotation→quoted、closed→closed）；`_sync_lead_status` 映射不变。
@@ -157,6 +158,30 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 - **询盘**：只认 `stage` 六态（询盘/报价/订单/发货/完结/关闭，`inquiry_stage.py` 事件驱动）；删除前端 `deriveInquiryStage` 反推兜底（`inquiry-followups.tsx:121-198`），stage 缺失时才读 status 退化（与 `customer_serializers.py:73` 现口径一致）；
 - **订单**：六态不变（pending/confirmed/producing/shipped/completed/cancelled）；**TS6 收口**：门面 `completed` 时调内核 `inquiry_stage.advance_for_order`（消除 `orders.ts:973-975` 漂移）；
 - **报价**：draft→sent→accepted/rejected/expired/closed 不变；**前端补状态流转入口**（见 §6），已生成下游单证/订单的报价锁定关键字段（沿用 quote_no 锁定规则同款闸门）。
+
+### 5.1 订单状态触发事件（D-16，2026-10-22 拍板）
+
+用户口径：**业务上传定金到账（实收登记）之后，订单即为已确认**。
+
+| 迁移 | 触发事件 | 副作用 |
+|---|---|---|
+| `pending → confirmed` | ① **定金到账登记**（`POST /orders/{id}/receipts`，金额>0）自动确认；② 人工确认（保留：先确认后打款 / 线下已确认） | 锁汇率 + 生成应收 + 写 `confirmed_at`/`confirmed_by`/`confirmed_source` + 审计事件 |
+| `confirmed → producing` | 人工（内部排产） | — |
+| `producing → shipped` | 人工 / 出运台账 | `order.shipped` 业务事件 |
+| `shipped → completed` | 人工 | 联动询盘 stage（TS6 收口） |
+| 任意 → `cancelled` | 人工 | 审计 + 应收冲销（按现有口径） |
+
+**判定规则**：
+1. 定金期次优先：`payment_schedules.schedule_type='deposit'` 的期次收到任意金额（>0）即确认；
+2. 无定金期次的订单：**首笔任意期次实收**（>0）同样触发确认（否则没有定金结构的单永远等不到）；
+3. **部分到账也算确认**（人已上传打款凭证并登记，视为业务判断），但订单详情标注「定金部分到账（实收 X / 应收 Y）」；
+4. 已 `confirmed` 的订单再收款**不改状态**；
+5. **CI/SC 等单证签发不触发订单状态**——单证依赖订单数据生成，不能反向驱动（避免循环）；
+6. 通知：本期通知范围仅审批相关（D-13），确认事件只写审计 + 时间线，不发站内通知（后续需要再单独立项）。
+
+**数据**：`orders` 新增 `confirmed_at`（timestamptz）、`confirmed_by`（text）、`confirmed_source`（`manual` | `deposit_receipt`）。
+
+**接口行为**：`POST /orders/{id}/receipts` 登记成功后，若订单仍为 `pending` 且满足上述条件 → **同事务**执行确认（锁汇率、建应收），响应返回 `order_status` 与 `auto_confirmed: true`。
 
 ## 6. 编辑能力补齐矩阵（本方案新增重点）
 
@@ -239,6 +264,7 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 |---|---|---|
 | `POST /orders` | 接受 `inquiry_id`、`source_type`、`source_channel`；自动判定+显式覆盖；转化时冗余回写 inquiry_id | 内核 + 门面 |
 | `GET /orders` / `GET /orders/{id}` | 返回 `source_type`/`source_channel`/`inquiry_id`；列表支持 `source_type`/`source_channel` 筛选 | 内核 + 门面 |
+| `POST /orders/{id}/receipts` | 行为扩展：登记定金到账后若订单仍 pending → 同事务自动确认（锁汇率+建应收），返回 `auto_confirmed` | 内核 + 门面 |
 | `PATCH /orders/{id}` | 新增 `items` 整批替换 + 重算金额（pending 状态直接生效） | 内核 + 门面 |
 | `POST /orders/{id}/item-change-requests`（**新端点**） | confirmed 及以后的行项变更申请（新旧明细对比 + 原因）；管理员批准/拒绝后生效 | 内核 + 门面 |
 | `GET /orders/{id}/item-change-requests`（**新端点**） | 变更申请历史（含受影响单证清单） | 内核 + 门面 |
@@ -302,7 +328,7 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 
 | 阶段 | 内容 | 验收 |
 |---|---|---|
-| **M1 模型与内核** | 枚举/迁移/回填；orders 三新字段 + 写入逻辑 + `ck_orders_source_inquiry`；订单 items 增删改（内核+门面+契约）；`order_item_change_requests` 表 + 审批端点（D-8）；**`notifications` + `team_approvers` 表 + 通知端点 + 审批路由（指定审批人优先，否则管理员）+ 邮件开关（D-10/D-14）**；`GET /approvals` 聚合；`funnel.py` 统计（1/2/10）；`GET /inquiries` 列表/详情（含报价历史）；TS6 收口 | orchestrator/worker/ts-worker 测试 + contracts R0–R5 + 金标 + 回填 dry-run 留证 |
+| **M1 模型与内核** | 枚举/迁移/回填；orders 三新字段 + `confirmed_at/by/source` + 写入逻辑 + `ck_orders_source_inquiry`；订单 items 增删改（内核+门面+契约）；**定金到账自动确认（receipts 同事务联动，D-16）**；`order_item_change_requests` 表 + 审批端点（D-8）；**`notifications` + `team_approvers` 表 + 通知端点 + 审批路由（指定审批人优先，否则管理员）+ 邮件开关（D-10/D-14）**；`GET /approvals` 聚合；`funnel.py` 统计（1/2/10）；`GET /inquiries` 列表/详情（含报价历史）；TS6 收口 | orchestrator/worker/ts-worker 测试 + contracts R0–R5 + 金标 + 回填 dry-run 留证 |
 | **M2 门面与前端** | `/inquiries` 工位；`/orders` 来源列/筛选/详情来源链/货物行编辑 + 变更申请与审批入口；**`/approvals` 审批中心 + 通知铃铛/抽屉 + 团队页「审批设置」（指定审批人）+ 导航契约双端同步（D-12/D-14）**；报价记录编辑入口；询盘编辑入口；客户详情语义调整 | 前端全套（typecheck/lint/test/ui/e2e）+ mocks 同步 |
 | **M3 仪表盘** | dashboard 落地漏斗/分渠道转化/订单应收概览；`/dashboard/summary` 废弃混计数 | e2e + 与内核漏斗单测交叉验证 |
 
@@ -327,9 +353,10 @@ confirmed/producing/shipped/completed（带真实日期），不强制从 pendin
 | D-13 | 通知范围 | **只做审批相关**（申请/批准/拒绝三类）；不建设通用事件总线（`domain_events` 仍按 G-15 暂缓）→ 见 §6.2 |
 | D-14 | 指定审批人机制 | 团队可配多名指定审批人（`team_approvers`）；**有指定人则审批权与通知归指定人，否则归管理员**；配置入口在团队页，仅管理员可改 → 见 §6.2 |
 | D-15 | 报价单与报价单文件 | **一次报价 = 一张报价单**（`quote_orders`，业务真源）；报价单文件（`trade_docs.doc_type='quotation'`）同事务自动产出、`doc_no=quote_no`、编辑后自动同步；报价历史 = 多张报价单 → 见 §3 术语 |
+| D-16 | 「已确认」触发事件 | **定金到账登记（实收登记）即自动确认**（部分到账也算，详情标注）；人工确认保留；CI/SC 签发不触发；补 `confirmed_at/by/source` → 见 §5.1 |
 
 ### 12.2 仍待拍板
 
-**无。** 全部决策已拍板（D-1~D-15，2026-10-22），M1 可开工。
+**无。** 全部决策已拍板（D-1~D-16，2026-10-22），M1 可开工。
 
 > 拍板方式：`ask_user_question` 弹窗（AGENTS 规则 2）；拍板结果回填本文件并销 TODO §Q 对应条目。
