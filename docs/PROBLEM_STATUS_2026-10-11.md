@@ -5311,7 +5311,7 @@ worker `pytest` **257 passed / 0 failed**；route-parity **PASS**。
 - `backend/orchestrator`: `uv run --extra migrations pytest tests -q` —— **258 passed**。
 - `scripts/sync-shared.ps1` + `-Check` —— **PASS**（44/21/1 文件一致；worker 端镜像不入库）。
 - `backend/ts-worker`: `pnpm test` **219 tests / 23 files**、`pnpm typecheck` 0。
-- `frontend`: `pnpm test` **1045 tests / 124 files**、`pnpm typecheck` 0、`contracts:check` PASS（R2 = 28 workstations）、`mocks:check` PASS、`ui:standards` / `ui:contrast` PASS。
+- `frontend`: `pnpm test` **1045 tests / 124 files**、`pnpm typecheck` 0、`contracts:check` PASS（R2 = 28 workstations）、`mocks:check` PASS、`ui:standards` / `ui:contrast` PASS、`pnpm e2e` **27 passed**（a11y 路由自动发现覆盖新入口 `/settings/company-profile`）。
 - 静态：`check-schema-coverage` / `check-runtime-deps` / `check-worker-bundle`（11.77 MiB / 605 files）PASS；`check-schema-drift` PASS（列漂移 0 表；GBK 控制台需 `PYTHONUTF8=1` 才能打印 ⚠️ 行，否则末行编码崩——与本改动无关）。
 
 ### 5. 边界与后续（明确未做）
