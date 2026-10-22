@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20251021.0",
+    "@types/node": "22.10.0",
     "json-schema-to-zod": "^2.8.1",
     "typescript": "^6.0.3",
     "vitest": "^3.2.4",

@@ -141,6 +141,10 @@ gh run list --workflow=preview.yml --limit 5          # 无 label 的 PR：run �
 - **2026-10-22**：首版。workflow 瘦身落地；self-hosted runner 登记为已批准、未实施。
 - **2026-10-22（稍后）**：仓库转 **public** ⇒ 额度问题解除（标准 runner 免费无限）；本口径更新：瘦身保留、self-hosted 降为可选；
   顺手修复 `ts-edge` 的 pnpm 安装顺序（`pnpm/action-setup` 必须在 `setup-node(cache: pnpm)` 之前）。
+- **2026-10-22（再稍后）**：`ts-edge` 在 public 后首次真跑暴露 **两个长期红灯**：①pnpm 安装顺序（已修）；
+  ②`backend/ts-worker` 缺 `@types/node` 开发依赖——本地靠**仓库根 `node_modules` 的类型解析**侥幸通过，
+  CI 独立安装 `backend/ts-worker` 时 `node:crypto` / `Buffer` / `__dirname` 全部报 TS2591/TS2304。
+  已补 `@types/node@22.10.0` 并更新它自己的 `pnpm-lock.yaml`（本地验证：`pnpm typecheck` 0 error、`pnpm test` **203/203**）。
 
 ---
 
