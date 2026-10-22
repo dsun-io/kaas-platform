@@ -355,3 +355,42 @@
 2. **每批整改完成后**（§6 第 1–5 批）：对应条目标注"已修复+证据"，过时状态必须改掉（本项目铁律：宁可标注"未做"，不能让文档写着旧状态）；
 3. **全部收尾后**：按更改后的项目状态更新 `docs/UI_STANDARDS.md`（把 L1 契约条文正式并入）与 `docs/README.md` 索引（本报告入口）；
 4. 复跑方式：按本报告 §4 的范围重新逐页通读 + 门禁（`pnpm ui:standards` / `ui:contrast` / `e2e`）结果一并记录。
+
+## 8. 2026-10-23 复跑基线（M1/M2/M3 落地后）
+
+> 本轮复跑范围：**新实现**（M1-f 门面收口、M2-A /inquiries、M2-B 订单来源链/明细编辑、M2-C 审批中心/通知、
+> M3 dashboard 漏斗）+ 受影响旧页面的状态校正。**完整可执行方案已重写为
+> [`UI_EXECUTION_PLAN_2026-10-23.md`](./UI_EXECUTION_PLAN_2026-10-23.md)**；本报告保留为 2026-10-22 证据快照，
+> 其 P0/P1 清单**仍然有效**（未动过的旧页面一条都没修）。
+
+### 8.1 已取代 / 已变化（逐条可核）
+
+| 旧条目 | 现状 | 证据 |
+|---|---|---|
+| D1/D2/D3（dashboard 占位页、死代码 RangeSelector/useDashboard） | 占位页 → 漏斗看板；`use-dashboard.ts` 删除；RangeSelector 扩 90d 并被复用 | `dashboard/page.tsx`、`lib/dashboard/funnel.ts` |
+| Orders 组 | 新增来源列/筛选/来源链/明细编辑/变更审批入口；O1–O6 中 **O3/O4/O5/O6 仍在** | `orders/page.tsx`、`register-receipt-dialog.tsx:123` |
+| Quotes 记录 | 已加「编辑报价单」入口 + 锁定说明；Q13/Q17/Q18 仍在 | `quotes/components/quote-order-records.tsx` |
+| Customers | UnlinkedRecords 语义改为「直接下单（正常分类）」并默认展开；C7 巨型文件仍在 | `customers/components/inquiry-followups.tsx` |
+| 导航/外壳 | 新增 `/inquiries`、`/approvals`（R2=30）；新增通知铃铛（header）与审批待批角标（sidebar） | `shared/contracts/workstations.ts`、`components/layout/notification-bell.tsx` |
+| 新页面范式 | `/inquiries`、`/approvals` 已按 PageHeader/DetailDrawer/ConfirmDialog/EmptyState 实现，可直接作为整改参照 | 对应 `page.tsx` 与组件 |
+
+### 8.2 仍未做（本报告 §4 的 P0/P1，全部保留）
+
+- 危险操作确认：outreach 群发（O0 P0）、research 删除（R0 P0）、ai-providers 清密钥（C1/C2 P0/P1）、quotes 签发（Q2）、批量建单（Q10）、trade-docs 作废（T1）、settings 重载（A2）、tax 税率删除、window.prompt 收件人；
+- 失败静默：spec-config 向导（SC5）、shipments×3、records 录入、gray-release、spec-proposals、leadgen 详情（L3）、quotes Q9/Q15、outreach setDefault；
+- 失败当空态：events（E1）、pricing-data、market 五 tab（M4/M5）、gray-release flags、kb 假统计（K1）；
+- 防重：群发、AI 起草、批量抓取、扫描已回复（L4）、模型输入每键 PUT（C3）；
+- 页头/错误边界：8 个 error.tsx、loading 分支、RouteGuard（A1）、WorkstationGate（W1）、全局 not-found；
+- 行内展开迁移：X1–X8（用户已裁定默认不用行内展开）；
+- 结构债：7 个巨型组件、幽灵 /quotations、FreightPanel 死代码、状态 tone 三处重复。
+
+### 8.3 本轮新增发现（M1/M2/M3 自带的「最后一段」缺口）
+
+1. 订单列表「有变更待批」角标缺后端计数（避免逐单 N+1）——见新方案 P0-A/A1；
+2. 审批聚合行不含 `affected_docs`，详情需另拉 `/trade-docs`（403 时降级）——A2；
+3. dashboard 应收概览无后端聚合端点（当前为明确空态，不造假数字）——A3；
+4. 通知 link 内核用 `/orders/{id}` 而前端只有 `/orders?id=`（前端已归一，建议内核改）——A4；
+5. `direct_orders.amount` 未分币种直接 SUM——A5；
+6. 报价编辑 PUT items → PATCH header 两次调用非原子——A6；
+7. 订单明细无拖拽排序（全站排序规范=拖拽）——A7；
+8. 客户询盘表单渠道枚举老清单已修（本轮完成）——A8。

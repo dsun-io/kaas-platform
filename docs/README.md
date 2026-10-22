@@ -78,6 +78,9 @@
 |---|---|
 | [archive/2026-10-21-cutover/UI_UX_OPTIMIZATION_2026-10-20.md](./archive/2026-10-21-cutover/UI_UX_OPTIMIZATION_2026-10-20.md) | 全系统 UI/UX 方案；P0/P1/P2 已完成，§11 为终验结论 |
 | [UI_STANDARDS.md](./UI_STANDARDS.md) | **UI 设计规范硬性约束**：新增页面/组件必须遵守；`pnpm ui:standards` + `pnpm ui:contrast` + e2e a11y 自动发现路由 |
+| [UI_EXECUTION_PLAN_2026-10-23.md](./UI_EXECUTION_PLAN_2026-10-23.md) | **UI 整改唯一活跃执行方案**（2026-10-23 按最新实现重写）：P0-A 新实现缺口 / P0-B 全站 P0/P1 止血 / P0-C 共享原语与 ui:patterns / P1-D 结构债 / P1-E 体验一致性；含验收与写热点 |
+| [UI_SYSTEM_PRD_2026-10-22.md](./UI_SYSTEM_PRD_2026-10-22.md) | UI 设计依据（页面范式/组件契约/交互合约/门禁规则；执行切分已被上面的执行方案取代） |
+| [UI_UX_AUDIT_2026-10-22.md](./UI_UX_AUDIT_2026-10-22.md) | UI/UX 审计证据快照（2026-10-22）；§8 为 2026-10-23 复跑基线与旧条目状态校正 |
 
 > 已归档：`UI_BACKEND_DEPENDENCIES_2026-10-20.md`（后端 5 项历史验收基线）→ 见 §5
 > [`archive/2026-10-21-final-closeout/`](./archive/2026-10-21-final-closeout/README.md)；

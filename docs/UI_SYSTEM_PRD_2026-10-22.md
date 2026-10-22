@@ -266,6 +266,12 @@ frontend/src/components/
     hooks/use-async-action.ts      # 新增
 ```
 
+> **2026-10-23 更新**：执行切分已按最新实现（M1/M2/M3）重写，见
+> [`UI_EXECUTION_PLAN_2026-10-23.md`](./UI_EXECUTION_PLAN_2026-10-23.md)。
+> 本 PRD 继续作为**设计依据**（§3 页面范式 / §4 组件契约 / §5 交互合约 / §7 门禁规则）；
+> 其中「两条并行线的执行切分」由新方案的分批计划取代。已在 `/inquiries`、`/approvals`、dashboard、
+> orders 来源链等新页面落地可参照的范式实现。
+
 ## 10. 拍板记录（2026-10-22 用户已决）
 
 | # | 决策 | 结论 |
