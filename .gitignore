@@ -96,6 +96,14 @@ frontend/coverage/
 frontend/.turbo/
 frontend/out/
 
+# ─── 未跟踪垃圾（一律忽略，2026-10-22 用户口径）───
+# 实测：某次脚本把 `%SystemDrive%` 当字面路径，把 Windows 缓存目录写进了仓库根；
+# `git status` 会一直挂一个 `?? %SystemDrive%/`。这类未跟踪垃圾直接忽略，不入库。
+%SystemDrive%/
+# 补丁/合并残留（编辑器与 git 冲突工具会产生）
+*.orig
+*.rej
+
 # Backend test artifacts
 backend/orchestrator/.pytest_cache/
 backend/orchestrator/htmlcov/

@@ -88,6 +88,13 @@
   - 静态断言：`scripts/check-runtime-deps.py`、`scripts/check-schema-coverage.py`、
     `scripts/check-schema-drift.py`、`scripts/check-worker-bundle.py`、`scripts/sync-shared.ps1 -Check`
   - 构建：`cd frontend; $env:NEXT_EXPORT="1"; pnpm build` → **`frontend/out`**（门面 assets 伺服）
+    —— **构建后必须 `pnpm assets:check` 通过**（Linux 产物校验，见上一条硬约束）
+  - **静态导出产物口径（2026-10-22 实测，硬约束）**：**禁止用 Windows 本机构建的 `out/` 直接 deploy** ——
+    `path.relative()` 返回反斜杠、而 Next 只把 `/` 换成 `.`，逐段预取文件会被写成目录（`__next.X\Y.txt`），
+    客户端请求点号名 ⇒ **全站预取 404**。正解：CI（ubuntu）或 Docker `node:22` 容器内构建；发版前必须跑
+    `cd frontend; pnpm assets:check`（校验：无含 `\` 的文件名、无 `__next.*` 目录、`/_next/static/*` 引用全部可解析）。
+    另：**侧边栏等 `Link` 不要显式 `prefetch={true}`** —— 静态导出下点击导航会永久挂死（`linkClicked` 先 preventDefault、
+    随后等 prefetch 永不 resolve）；根因与取证见 `docs/HANDOVER_2026-10-21_NAV_STUCK.md`。
   - **部署（2026-10-21 起两个 Worker）**：`kaas-edge`（TS 门面，对外域名）+ `kaas`（Python 内核，无公网域名）；
     两者都必须带 `$env:CLOUDFLARE_API_TOKEN`（wrangler OAuth 已过期）；先内核后门面；
     详见 `docs/HANDOVER_2026-10-21_CUTOVER.md` §2

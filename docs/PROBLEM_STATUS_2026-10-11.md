@@ -23,6 +23,9 @@
 > 已改用 **Docker `node:22` 容器内 Linux 构建**（302 文件，点号名正确）并重新部署门面（version `71be6dbb-56c7-4b78-b4cb-a0634abc5032`），
 > 线上 `/products/__next.!KGFwcCk.products.__PAGE__.txt` 已由 404 变 **200**；**发版请走 Linux/CI 构建，勿用 Windows 产物直接 deploy**（P2 待立规）。
 > 取证/复现脚本/执行记录见 [`HANDOVER_2026-10-21_NAV_STUCK.md`](./HANDOVER_2026-10-21_NAV_STUCK.md)。
+> **P2 防复发（同日）**：AGENTS.md 立规「Windows 产物不得直接 deploy / Link 不显式 prefetch」+ 新增产物门禁
+> `cd frontend; pnpm assets:check`（校验反斜杠文件名、`__next.*` 目录、`/_next/static/*` 引用、`prefetch={true}`；
+> 已用违规样本做阳性对照 exit 1，当前 Linux 产物 PASS）；`.gitignore` 增加「未跟踪垃圾一律忽略」段。
 
 > **（2026-10-22 · CI 瘦身 ✅，不删门禁）** GitHub Actions 私有仓库免费额度 2,000 分钟/月长期吃紧
 > （实测按 job 计费口径月耗 ≈3,400–4,700 分钟；2026-10-17 曾因额度/账单被挡在任务启动前）。本次只瘦触发面：

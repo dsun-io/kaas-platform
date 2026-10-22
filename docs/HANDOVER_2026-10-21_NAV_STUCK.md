@@ -151,7 +151,7 @@ no-prefetch   /products  -> /products (跳转!)
 |---|---|---|
 | P0：`prefetch={false}` + 重建 + 部署门面 | ✅ **已完成（2026-10-22，用户弹窗批准）** | 见 §7 |
 | P1：改 CI/Linux 构建静态导出并重新部署 | ✅ **已完成（2026-10-22，Docker `node:22` 容器内构建）** | 见 §7.5 |
-| P2：AGENTS.md 立规 + 导出态 e2e | ⏳ 未做 | 待排期 |
+| P2：AGENTS.md 立规 + 产物门禁 + 垃圾忽略 | ✅ **已完成（2026-10-22）** | 见 §7.6（用静态门禁 `pnpm assets:check` 替代重型「导出态 e2e」，理由见该节） |
 
 ## 7. 执行记录（2026-10-22，P0）
 
@@ -187,7 +187,12 @@ Linux 构建（`path.relative()` 返回 `/`）直接产出正确点号名，故�
 
 核对结论：**双方内容都没有丢失**（对方的 CI 文档在 `c6da7ef`+`e972c78` 里都在；我的修复在 `432fec4`）。
 唯一问题是 `e972c78` 的 commit message 与内容不符（历史已推送，改写需 force-push 共享 main）。
-处置：不擅自改写历史；按 §7.4 记录在案，后续如需整洁可 `git rebase -i` reword 后**与所有会话约定**再 force-push。
+**处置（2026-10-22 已完成）**：用户确认「其他会话已暂停、仓库可正常改写」后，把 `e972c78` 的 message 改正：
+`git checkout --detach c6da7ef` → 依次 `cherry-pick -n <c>` + `git commit -C <c>`（`e972c78` 那步再 `--amend -m "docs(ci): 补额度用尽实证（job 0-3s 失败与恢复路径）"`）→
+`git checkout -B main` → `git push --force-with-lease origin main`。
+
+- 重写后：`e972c78` → **`6ef5a24`**，其后 5 个提交 hash 顺延（`432fec4`→`99c7648`、`0401bdf`→`7dc80e0` 等），**内容零变化**；
+- 自证：`git diff --stat backup/main-before-reword-20261022..main` **为空**（备份分支保留改写前 tip，可随时对照/回滚）。
 
 ### 7.5 执行记录（2026-10-22，P1：改用 Linux 构建产物）
 
@@ -210,7 +215,23 @@ Linux 构建（`path.relative()` 返回 `/`）直接产出正确点号名，故�
    - 产物一致性：线上 `/quotes` 与本地 `frontend/out/quotes.html` **SHA256 相同**（`73CDFC94E33C…`）；
      线上逐段文件与本地同名文件 **SHA256 相同**（`AAF42F842B7D…`）；
    - 冒烟：`/health` 200、`/api/v1/auth/me` 401、`/products` 200、`/login` 200。
-6. **结论**：P0（点击挂死）+ P1（逐段预取 404）**均已修复并上线**；后续发版请走 Linux/CI 构建，别再用 Windows 产物直接 deploy（P2 待立规）。
+6. **结论**：P0（点击挂死）+ P1（逐段预取 404）**均已修复并上线**；后续发版请走 Linux/CI 构建，别再用 Windows 产物直接 deploy（见 §7.6）。
+
+### 7.6 执行记录（2026-10-22，P2：防复发）
+
+1. **立规（AGENTS.md 门禁段）**：新增硬约束「**禁止用 Windows 本机构建的 `out/` 直接 deploy**」+「侧边栏等 `Link` 不要显式
+   `prefetch={true}`」，并把 `pnpm assets:check` 写进构建门禁行（构建后必须通过）。
+2. **产物门禁 `scripts/check-export-assets.mjs`**（`cd frontend; pnpm assets:check`）四类确定性检查：
+   - [A] `out/` 不允许名字含反斜杠的文件；
+   - [B] `out/` 不允许出现 `__next.*` **目录**（Windows 构建的实际表现；A 在 Windows 上造不出这种文件名，B 才是可观测形态）；
+   - [C] 191 个 html/txt 里 **5832 条** `/_next/static/*` 引用必须全部可解析（产物完整性）；
+   - [D] `frontend/src/**` 不允许 `prefetch={true}`（**跳过注释** —— 第一版把修复注释里的说明判成违规，已修）。
+3. **门禁自证（阳性对照，按测量纪律）**：在 `%TEMP%` 造违规样本（`out/products/__next.BAD/x.txt` + 非注释的 `prefetch={true}`），
+   门禁 **exit 1** 并逐条点名 `[B]`/`[D]`；对当前 Linux 产物跑 **PASS**（`badNames=0 nextDirs=0 missingRefs=0 prefetchTrue=0`）。
+4. **为什么不写「导出态 e2e」**：一次真实导出要 `next build`（分钟级）+ 静态服务 + 浏览器，CI 分钟成本与本仓库既有的
+   `frontend/.next` 硬冲突纪律都吃不消；而本次两个缺陷的根因特征都能**静态判定**（A/B/C/D），故用门禁代替。
+   代价（如实）：门禁只抓「已知形态」，抓不到新的未知交互类回归；真要做端到端，建议放 nightly 独立 job 再立项。
+5. **未跟踪垃圾**：`.gitignore` 新增「未跟踪垃圾一律忽略」段（含实测的 `%SystemDrive%/`、`*.orig`、`*.rej`）。
 
 ---
 

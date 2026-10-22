@@ -15,7 +15,8 @@
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui",
     "ui:contrast": "node scripts/ui-contrast-audit.cjs",
-    "ui:standards": "node scripts/ui-standards-check.cjs"
+    "ui:standards": "node scripts/ui-standards-check.cjs",
+    "assets:check": "node ../scripts/check-export-assets.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
