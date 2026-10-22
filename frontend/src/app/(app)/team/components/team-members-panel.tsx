@@ -11,10 +11,12 @@
  */
 import { useState } from "react";
 import { toast } from "sonner";
-import { AlertCircle, Crown, RefreshCw, UserMinus, Users } from "lucide-react";
+import { Crown, RefreshCw, UserMinus, Users } from "lucide-react";
 
 import apiClient from "@/lib/api/client";
 import { teamErrorMessage } from "@/lib/team/team-errors";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { ErrorState } from "@/components/shared/error-state";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
@@ -39,6 +41,18 @@ export function TeamMembersPanel({
 }: TeamMembersPanelProps) {
   const { items, loading, error, reload } = useTeamMembers(teamId, true);
   const [pendingId, setPendingId] = useState<number | null>(null);
+  /** 待确认的危险操作（null = 弹窗关闭）；移除/转让都走同一张 ConfirmDialog */
+  const [confirming, setConfirming] = useState<{
+    kind: "remove" | "transfer";
+    member: TeamMember;
+  } | null>(null);
+  /** 确认弹窗内的失败原因（原生 confirm 无法透出，这里补上） */
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+
+  const requestConfirm = (kind: "remove" | "transfer", member: TeamMember) => {
+    setConfirmError(null);
+    setConfirming({ kind, member });
+  };
 
   async function setConsoleAccess(member: TeamMember, allowed: boolean) {
     setPendingId(member.user_id);
@@ -63,23 +77,19 @@ export function TeamMembersPanel({
 
   async function removeMember(member: TeamMember) {
     const label = memberLabel(member);
-    if (
-      typeof window !== "undefined" &&
-      !window.confirm(
-        `确定把「${label}」移出团队？移除后需要重新凭邀请码加入。`,
-      )
-    ) {
-      return;
-    }
+    setConfirmError(null);
     setPendingId(member.user_id);
     try {
       await apiClient.delete(`/teams/${teamId}/members/${member.user_id}`, {
         silent: true,
       });
       toast.success(`已移除「${label}」`);
+      setConfirming(null);
       reload();
     } catch (err: unknown) {
-      toast.error(teamErrorMessage(err, "移除成员失败，请稍后重试"));
+      const message = teamErrorMessage(err, "移除成员失败，请稍后重试");
+      setConfirmError(message);
+      toast.error(message);
     } finally {
       setPendingId(null);
     }
@@ -99,16 +109,7 @@ export function TeamMembersPanel({
    */
   async function transferAdmin(member: TeamMember) {
     const label = memberLabel(member);
-    if (
-      typeof window !== "undefined" &&
-      !window.confirm(
-        `把团队管理权转让给「${label}」？\n\n` +
-          "转让后你将成为普通成员，不再能管理团队（成员/工位/邀请码）。\n" +
-          "要收回只能让对方再转回给你。",
-      )
-    ) {
-      return;
-    }
+    setConfirmError(null);
     setPendingId(member.user_id);
     try {
       await apiClient.post(
@@ -117,149 +118,184 @@ export function TeamMembersPanel({
         { silent: true },
       );
       toast.success(`已把团队管理权转让给「${label}」`);
+      setConfirming(null);
       reload();
     } catch (err: unknown) {
-      toast.error(teamErrorMessage(err, "转让失败，请稍后重试"));
+      const message = teamErrorMessage(err, "转让失败，请稍后重试");
+      setConfirmError(message);
+      toast.error(message);
     } finally {
       setPendingId(null);
     }
   }
 
   return (
-    <SectionCard
-      title="团队成员"
-      description="成员录入的客户/报价/单证在本团队内互相可见；官网数据后台权限按成员单独授予。"
-      action={
-        <div className="flex items-center gap-2">
-          <StatusBadge tone="default">{items.length} 人</StatusBadge>
-          <Button size="sm" variant="ghost" onClick={reload}>
-            <RefreshCw className="mr-1 size-3.5" />
-            刷新
-          </Button>
-        </div>
-      }
-    >
-      {loading ? (
-        <div className="space-y-2" aria-busy="true">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-12 w-full rounded-lg" />
-          ))}
-        </div>
-      ) : error ? (
-        <div className="flex flex-col items-start gap-2 py-4 text-sm">
-          <div className="flex items-center gap-2 text-destructive">
-            <AlertCircle className="size-4" />
-            {error}
+    <>
+      <SectionCard
+        title="团队成员"
+        description="成员录入的客户/报价/单证在本团队内互相可见；官网数据后台权限按成员单独授予。"
+        action={
+          <div className="flex items-center gap-2">
+            <StatusBadge tone="default">{items.length} 人</StatusBadge>
+            <Button size="sm" variant="ghost" onClick={reload}>
+              <RefreshCw className="mr-1 size-3.5" />
+              刷新
+            </Button>
           </div>
-          <Button size="sm" variant="outline" onClick={reload}>
-            重试
-          </Button>
-        </div>
-      ) : items.length === 0 ? (
-        <EmptyState
-          icon={Users}
-          title="还没有其他成员"
-          description="在下面的「邀请成员」里填同事邮箱，或生成一条通用邀请码发给他。"
-        />
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-muted-foreground">
-                <th scope="col" className="p-2">
-                  成员
-                </th>
-                <th scope="col" className="p-2">
-                  角色
-                </th>
-                <th scope="col" className="p-2">
-                  官网数据后台
-                </th>
-                <th scope="col" className="p-2">
-                  操作
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((member) => {
-                const isSelf = currentUserId === member.user_id;
-                const busy = pendingId === member.user_id;
-                return (
-                  <tr
-                    key={member.user_id}
-                    className="border-b last:border-0 hover:bg-muted/40"
-                  >
-                    <td className="p-2">
-                      <div className="font-medium">
-                        {memberLabel(member)}
-                        {isSelf && (
-                          <span className="ml-1 text-xs text-muted-foreground">
-                            （我）
-                          </span>
+        }
+      >
+        {loading ? (
+          <div className="space-y-2" aria-busy="true">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full rounded-lg" />
+            ))}
+          </div>
+        ) : error ? (
+          <ErrorState message={error} onRetry={reload} />
+        ) : items.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            title="还没有其他成员"
+            description="在下面的「邀请成员」里填同事邮箱，或生成一条通用邀请码发给他。"
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-muted-foreground">
+                  <th scope="col" className="p-2">
+                    成员
+                  </th>
+                  <th scope="col" className="p-2">
+                    角色
+                  </th>
+                  <th scope="col" className="p-2">
+                    官网数据后台
+                  </th>
+                  <th scope="col" className="p-2">
+                    操作
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((member) => {
+                  const isSelf = currentUserId === member.user_id;
+                  const busy = pendingId === member.user_id;
+                  return (
+                    <tr
+                      key={member.user_id}
+                      className="border-b last:border-0 hover:bg-muted/40"
+                    >
+                      <td className="p-2">
+                        <div className="font-medium">
+                          {memberLabel(member)}
+                          {isSelf && (
+                            <span className="ml-1 text-xs text-muted-foreground">
+                              （我）
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {member.email}
+                        </div>
+                      </td>
+                      <td className="p-2">
+                        {member.is_admin ? (
+                          <StatusBadge tone="purple">团队管理员</StatusBadge>
+                        ) : (
+                          <StatusBadge tone="default">成员</StatusBadge>
                         )}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {member.email}
-                      </div>
-                    </td>
-                    <td className="p-2">
-                      {member.is_admin ? (
-                        <StatusBadge tone="purple">团队管理员</StatusBadge>
-                      ) : (
-                        <StatusBadge tone="default">成员</StatusBadge>
-                      )}
-                    </td>
-                    <td className="p-2">
-                      <label className="flex cursor-pointer items-center gap-1.5 text-xs">
-                        <input
-                          type="checkbox"
-                          checked={member.console_access}
-                          disabled={busy}
-                          onChange={(e) =>
-                            void setConsoleAccess(member, e.target.checked)
-                          }
-                        />
-                        {member.console_access ? "已允许" : "未允许"}
-                      </label>
-                    </td>
-                    <td className="p-2">
-                      <div className="flex items-center gap-1">
-                        {/* 转让：只对**非管理员成员**显示 —— 转给现任管理员自己没意义 */}
-                        {!member.is_admin && (
+                      </td>
+                      <td className="p-2">
+                        <label className="flex cursor-pointer items-center gap-1.5 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={member.console_access}
+                            disabled={busy}
+                            onChange={(e) =>
+                              void setConsoleAccess(member, e.target.checked)
+                            }
+                          />
+                          {member.console_access ? "已允许" : "未允许"}
+                        </label>
+                      </td>
+                      <td className="p-2">
+                        <div className="flex items-center gap-1">
+                          {/* 转让：只对**非管理员成员**显示 —— 转给现任管理员自己没意义 */}
+                          {!member.is_admin && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={busy}
+                              title={`把团队管理权转让给 ${memberLabel(member)}（转让后你成为普通成员）`}
+                              onClick={() => requestConfirm("transfer", member)}
+                            >
+                              <Crown className="mr-1 size-3.5" />
+                              转让
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="ghost"
-                            disabled={busy}
-                            title={`把团队管理权转让给 ${memberLabel(member)}（转让后你成为普通成员）`}
-                            onClick={() => void transferAdmin(member)}
+                            disabled={busy || member.is_admin}
+                            title={
+                              member.is_admin
+                                ? "不能移除团队管理员本人（可先把管理权转让给其他成员）"
+                                : undefined
+                            }
+                            onClick={() => requestConfirm("remove", member)}
                           >
-                            <Crown className="mr-1 size-3.5" />
-                            转让
+                            <UserMinus className="mr-1 size-3.5" />
+                            移除
                           </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={busy || member.is_admin}
-                          title={
-                            member.is_admin
-                              ? "不能移除团队管理员本人（可先把管理权转让给其他成员）"
-                              : undefined
-                          }
-                          onClick={() => void removeMember(member)}
-                        >
-                          <UserMinus className="mr-1 size-3.5" />
-                          移除
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </SectionCard>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionCard>
+
+      <ConfirmDialog
+        open={confirming !== null}
+        onOpenChange={(nextOpen) => {
+          // 提交中禁止关闭（避免请求还在飞时用户以为已取消）
+          if (nextOpen) return;
+          const busy =
+            confirming !== null && pendingId === confirming.member.user_id;
+          if (!busy) {
+            setConfirming(null);
+            setConfirmError(null);
+          }
+        }}
+        title={
+          confirming?.kind === "transfer"
+            ? `把团队管理权转让给「${memberLabel(confirming.member)}」？`
+            : confirming
+              ? `把「${memberLabel(confirming.member)}」移出团队？`
+              : "确认操作？"
+        }
+        description={
+          confirming?.kind === "transfer"
+            ? "转让后你将成为普通成员，不再能管理团队（成员/工位/邀请码）。要收回只能让对方再转回给你。"
+            : "移除后该成员需要重新凭邀请码加入；他录入的客户/报价/单证仍留在团队。"
+        }
+        confirmLabel={confirming?.kind === "transfer" ? "确认转让" : "移除成员"}
+        cancelLabel="取消"
+        error={confirmError}
+        pending={confirming !== null && pendingId === confirming.member.user_id}
+        onConfirm={() => {
+          if (!confirming) return;
+          if (confirming.kind === "transfer") {
+            void transferAdmin(confirming.member);
+          } else {
+            void removeMember(confirming.member);
+          }
+        }}
+      />
+    </>
   );
 }

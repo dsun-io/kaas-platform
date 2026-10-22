@@ -4,12 +4,17 @@ import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, CheckCircle } from "lucide-react";
+import { AsyncButton } from "@/components/shared";
+import { useAsyncAction } from "@/lib/hooks/use-async-action";
 import { useBindings } from "../hooks/use-bindings";
 import { useWizardSubmit } from "../hooks/use-wizard-submit";
 import { DynamicSpecForm } from "./DynamicSpecForm";
 import { PricingGroupForm, type PricingFormValue } from "./PricingGroupForm";
 import { AttributeProposeDialog } from "./AttributeProposeDialog";
-import type { BindingWithAttribute } from "@contracts/spec-system";
+import type {
+  BindingWithAttribute,
+  WizardSubmitRequest,
+} from "@contracts/spec-system";
 
 interface Props {
   categoryId: number;
@@ -25,6 +30,18 @@ const GROUP_CONFIG = [
 export function QuoteWizard({ categoryId, categoryName }: Props) {
   const { data: bindings, isLoading } = useBindings(categoryId);
   const submitMutation = useWizardSubmit();
+  /**
+   * P0-B2/SC1：提交失败必须有出口（旧实现直接 `mutateAsync`，失败即未处理 rejection，
+   * 用户以为没点上、可无限重试）。`useAsyncAction` 默认不 toast：apiClient 拦截器
+   * 已统一提示错误，这里只补「页内错误 + 重试（再点提交即可）」与 pending 防重。
+   */
+  const submit = useAsyncAction(
+    (payload: WizardSubmitRequest) => submitMutation.mutateAsync(payload),
+    {
+      onSuccess: (data) =>
+        setResult({ sku_id: data.sku_id, spec_hash: data.spec_hash }),
+    },
+  );
 
   const [currentStep, setCurrentStep] = useState(1);
   const [specValues, setSpecValues] = useState<
@@ -132,8 +149,8 @@ export function QuoteWizard({ categoryId, categoryName }: Props) {
       description: description || undefined,
     };
 
-    const data = await submitMutation.mutateAsync(payload);
-    setResult({ sku_id: data.sku_id, spec_hash: data.spec_hash });
+    // 失败已被 `useAsyncAction` 捕获并写入 `submit.error`（不再抛未处理 rejection）
+    await submit.run(payload);
   }
 
   if (isLoading) {
@@ -334,6 +351,16 @@ export function QuoteWizard({ categoryId, categoryName }: Props) {
         </Card>
       )}
 
+      {/* P0-B2/SC1：提交失败的页内出口（拦截器已 toast，这里不重复 toast） */}
+      {submit.error ? (
+        <p
+          role="alert"
+          className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+        >
+          提交失败：{submit.error}（可修正后再次提交）
+        </p>
+      ) : null}
+
       {/* Navigation */}
       <div className="flex justify-between">
         <Button
@@ -351,16 +378,18 @@ export function QuoteWizard({ categoryId, categoryName }: Props) {
             下一步
           </Button>
         ) : (
-          <Button onClick={handleSubmit} disabled={submitMutation.isPending}>
-            {submitMutation.isPending ? (
+          <AsyncButton
+            onClick={() => void handleSubmit()}
+            pending={submit.pending}
+            pendingLabel={
               <>
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
                 提交中...
               </>
-            ) : (
-              "提交"
-            )}
-          </Button>
+            }
+          >
+            提交
+          </AsyncButton>
         )}
       </div>
 

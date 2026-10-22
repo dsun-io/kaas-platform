@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { queryKeys } from "@/lib/query/keys";
+import { AsyncButton } from "@/components/shared";
+import { useAsyncAction } from "@/lib/hooks/use-async-action";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -88,36 +91,49 @@ function SpecProposalsContent() {
     },
   });
 
-  const reviewMutation = useMutation({
-    mutationFn: async ({
-      id,
-      action,
-      note,
-      target_attribute_id,
-    }: {
+  /**
+   * P0-B2/SP1：审批 / 驳回 / 合并三个动作原本失败完全静默（mutation 无 onError）。
+   * 统一走 `useAsyncAction`：失败写进弹窗内 `role="alert"`（拦截器已 toast，不重复），
+   * pending 期间禁用确认/取消并禁止关窗（SP7：pending 中可关窗）。
+   */
+  const review = useAsyncAction(
+    async (input: {
       id: number;
       action: string;
       note?: string;
       target_attribute_id?: number;
     }) => {
       const { data } = await apiClient.patch(
-        `/admin/spec/attribute-proposals/${id}`,
-        { action, note, target_attribute_id },
+        `/admin/spec/attribute-proposals/${input.id}`,
+        {
+          action: input.action,
+          note: input.note,
+          target_attribute_id: input.target_attribute_id,
+        },
       );
       return data;
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.proposals.list("pending") });
-      qc.invalidateQueries({ queryKey: queryKeys.proposals.recommended });
-      setReviewDialog(null);
-      setReviewNote("");
-      setMergeTargetId("");
+    {
+      onSuccess: (_data, input) => {
+        toast.success(
+          input.action === "approve"
+            ? "提案已晋升"
+            : input.action === "merge"
+              ? "提案已合并"
+              : "提案已驳回",
+        );
+        qc.invalidateQueries({ queryKey: queryKeys.proposals.list("pending") });
+        qc.invalidateQueries({ queryKey: queryKeys.proposals.recommended });
+        setReviewDialog(null);
+        setReviewNote("");
+        setMergeTargetId("");
+      },
     },
-  });
+  );
 
   function handleReview() {
     if (!reviewDialog) return;
-    reviewMutation.mutate({
+    void review.run({
       id: reviewDialog.proposal.id,
       action: reviewDialog.action,
       note: reviewNote || undefined,
@@ -246,7 +262,12 @@ function SpecProposalsContent() {
 
       {/* Review Dialog */}
       {reviewDialog && (
-        <Dialog open onOpenChange={(v) => !v && setReviewDialog(null)}>
+        <Dialog
+          open
+          onOpenChange={(v) => {
+            if (!v && !review.pending) setReviewDialog(null);
+          }}
+        >
           <DialogContent>
             <DialogHeader>
               <DialogTitle>
@@ -289,33 +310,42 @@ function SpecProposalsContent() {
                 />
               </div>
             </div>
+            {review.error ? (
+              <p
+                role="alert"
+                className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+              >
+                操作失败：{review.error}（弹窗保留，可重试或取消）
+              </p>
+            ) : null}
             <DialogFooter>
-              <Button variant="outline" onClick={() => setReviewDialog(null)}>
+              <Button
+                variant="outline"
+                onClick={() => setReviewDialog(null)}
+                disabled={review.pending}
+              >
                 取消
               </Button>
-              <Button
+              <AsyncButton
                 variant={
                   reviewDialog.action === "reject" ? "destructive" : "default"
                 }
                 onClick={handleReview}
-                disabled={
-                  reviewMutation.isPending ||
-                  (reviewDialog.action === "merge" && !mergeTargetId)
-                }
-              >
-                {reviewMutation.isPending ? (
+                disabled={reviewDialog.action === "merge" && !mergeTargetId}
+                pending={review.pending}
+                pendingLabel={
                   <>
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
                     处理中...
                   </>
-                ) : reviewDialog.action === "approve" ? (
-                  "确认晋升"
-                ) : reviewDialog.action === "merge" ? (
-                  "确认合并"
-                ) : (
-                  "确认驳回"
-                )}
-              </Button>
+                }
+              >
+                {reviewDialog.action === "approve"
+                  ? "确认晋升"
+                  : reviewDialog.action === "merge"
+                    ? "确认合并"
+                    : "确认驳回"}
+              </AsyncButton>
             </DialogFooter>
           </DialogContent>
         </Dialog>

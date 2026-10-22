@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { EventFilters as EventFiltersType } from "../hooks/use-events";
-import { Search, X } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { eventTypeLabel } from "./event-labels";
 
 const EVENT_TYPES = ["audit.access", "capability.update"];
@@ -82,19 +82,15 @@ export function EventFilters({ filters, onChange }: Props) {
         </SelectContent>
       </Select>
 
-      <Button variant="ghost" size="sm" onClick={clear}>
-        <Search className="mr-1 size-3" />
-        搜索
-      </Button>
-
+      {/*
+       * E2（审计 §4）：这里原来是个「搜索」按钮 —— 实际动作却是 clear()，
+       * 名不对实。筛选本来就是**改即生效**（每个控件 onChange 都直接 set），
+       * 不需要搜索按钮，所以只保留真正存在的动作：清空筛选。
+       */}
       {hasFilters && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={clear}
-          aria-label="清除筛选条件"
-        >
-          <X className="size-4" />
+        <Button variant="ghost" size="sm" onClick={clear}>
+          <RotateCcw className="mr-1 size-3" />
+          清空筛选
         </Button>
       )}
     </div>

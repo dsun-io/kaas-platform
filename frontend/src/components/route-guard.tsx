@@ -1,6 +1,11 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Link from "next/link";
+
+import { ErrorState } from "@/components/shared/error-state";
+import { PageHeader } from "@/components/shared/page-header";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth/auth-context";
 
 /**
@@ -59,8 +64,22 @@ export function RouteGuard({
   if (!allowed) {
     return (
       fallback ?? (
-        <div className="py-16 text-center text-muted-foreground">
-          您没有访问此页面的权限
+        // A1（U-P0B5）：无权限不是"死白一行字" —— 保留页头 + 说明 + 返回入口，
+        // 让用户知道被什么挡住、下一步去哪（而不是以为页面坏了）。
+        <div className="space-y-6">
+          <PageHeader
+            title="无权限访问"
+            description="当前账号没有访问该页面的权限。"
+          />
+          <ErrorState
+            title="没有访问权限"
+            message="您没有访问此页面的权限。该能力按账号角色开放；如确需使用，请联系平台管理员为你的账号开通对应角色。"
+          />
+          <div>
+            <Link href="/">
+              <Button variant="outline">返回工作台</Button>
+            </Link>
+          </div>
         </div>
       )
     );

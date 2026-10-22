@@ -4,7 +4,6 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { QuoteRequestSchema } from "@contracts/quote";
 import type { z } from "zod";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import {
@@ -14,6 +13,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { toast } from "sonner";
+import { AsyncButton } from "@/components/shared";
+import { useAsyncAction } from "@/lib/hooks/use-async-action";
 import { useCreateQuotation } from "../hooks/use-quotations";
 import { Loader2 } from "lucide-react";
 import { ProductCategory } from "@contracts/categories";
@@ -55,24 +57,39 @@ export function NewQuotationForm({ onSuccess }: Props) {
     },
   });
 
-  const onSubmit = async (values: FormValues) => {
-    const item = values.items[0];
-    if (!item) return;
+  /**
+   * P0-B2/Q15：人工录入报价原本 `await mutateAsync` 无 try/catch（失败即未处理
+   * rejection、表单无任何说明）。`useAsyncAction` 默认不 toast（拦截器已提示），
+   * 这里补页内错误 + pending 防重 + 成功后 toast/重置。
+   */
+  const submit = useAsyncAction(
+    async (values: FormValues) => {
+      const item = values.items[0];
+      if (!item) throw new Error("请至少填写一行产品");
 
-    await createMutation.mutateAsync({
-      customer_id: values.customer_id,
-      product_category: item.product_category,
-      product_spec: item.product_spec as Record<string, unknown>,
-      quantity: item.quantity,
-      unit_price: item.unit_price ?? null,
-      status: item.unit_price != null ? "matched" : "estimated",
-      confidence: item.confidence,
-      discount: 0,
-      notes: "",
-    });
+      return createMutation.mutateAsync({
+        customer_id: values.customer_id,
+        product_category: item.product_category,
+        product_spec: item.product_spec as Record<string, unknown>,
+        quantity: item.quantity,
+        unit_price: item.unit_price ?? null,
+        status: item.unit_price != null ? "matched" : "estimated",
+        confidence: item.confidence,
+        discount: 0,
+        notes: "",
+      });
+    },
+    {
+      onSuccess: () => {
+        toast.success("报价已录入");
+        reset();
+        onSuccess?.();
+      },
+    },
+  );
 
-    reset();
-    onSuccess?.();
+  const onSubmit = (values: FormValues) => {
+    void submit.run(values);
   };
 
   const category = watch("items.0.product_category");
@@ -160,12 +177,27 @@ export function NewQuotationForm({ onSuccess }: Props) {
               </Select>
             </div>
           </div>
-          <Button type="submit" size="sm" disabled={createMutation.isPending}>
-            {createMutation.isPending && (
-              <Loader2 className="mr-1 size-3 animate-spin" />
-            )}
+          {submit.error ? (
+            <p
+              role="alert"
+              className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+            >
+              录入失败：{submit.error}
+            </p>
+          ) : null}
+          <AsyncButton
+            type="submit"
+            size="sm"
+            pending={submit.pending}
+            pendingLabel={
+              <>
+                <Loader2 className="mr-1 size-3 animate-spin" />
+                提交中…
+              </>
+            }
+          >
             提交报价
-          </Button>
+          </AsyncButton>
         </form>
       </CardContent>
     </Card>

@@ -1,5 +1,7 @@
 "use client";
 
+import { toast } from "sonner";
+
 import { LoadingBlock } from "@/components/shared/loading-block";
 
 import { useEffect, useRef, useState } from "react";
@@ -72,7 +74,11 @@ const STAGE_LABELS: Record<string, string> = {
 
 // 列表筛选可选值 = 后端 `CUSTOMER_STAGE` 全量（backend/kaas_common/domain/enums.py:20）：
 // ordered 是推导展示值，后端列表端点按「名下是否有开启中订单」过滤（worker main.py:1300-1310）。
-const CUSTOMER_STAGE_FILTER_OPTIONS = ["active", "inactive", "ordered"] as const;
+const CUSTOMER_STAGE_FILTER_OPTIONS = [
+  "active",
+  "inactive",
+  "ordered",
+] as const;
 
 // 历史阶段日志里可能还有旧值（lead/inquiry/quoted/won/lost）——只用于「历史」页签展示。
 const LEGACY_STAGE_LABELS: Record<string, string> = {
@@ -826,12 +832,18 @@ function CustomerDetailPanel({
   const toggleInquiryClosed = async (inq: Inquiry) => {
     const next = inq.status === "closed" ? "unquoted" : "closed";
     try {
-      await apiClient.patch(`/inquiries/${inq.id}`, { status: next });
+      // silent：失败由本处统一 toast 一次（拦截器再提示会变双弹）；
+      // 原先是 window.alert —— 阻塞、不可复制、与全站反馈不一致。
+      await apiClient.patch(
+        `/inquiries/${inq.id}`,
+        { status: next },
+        { silent: true },
+      );
       await qc.invalidateQueries({
         queryKey: ["customers", "detail", customer.id],
       });
     } catch (e) {
-      window.alert(errMsg(e));
+      toast.error(errMsg(e));
     }
   };
 
@@ -1287,7 +1299,9 @@ function CustomerDetailPanel({
                                       </div>
                                       <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-muted-foreground">
                                         <span>规格：{item.spec ?? "—"}</span>
-                                        <span>用途：{item.application ?? "—"}</span>
+                                        <span>
+                                          用途：{item.application ?? "—"}
+                                        </span>
                                       </div>
                                     </div>
                                   ))
@@ -1543,7 +1557,10 @@ export default function CustomersPage() {
                     新建客户
                   </Button>
                 ) : (
-                  <Button variant="outline" onClick={() => setStageFilter("all")}>
+                  <Button
+                    variant="outline"
+                    onClick={() => setStageFilter("all")}
+                  >
                     清除阶段筛选
                   </Button>
                 )

@@ -13,8 +13,9 @@
  * 「询盘后来怎样了」，且 token/p95 生产恒为 0 —— 把「没有数据」渲染成 0 比不显示更糟
  * （旧占位页注释里记过这条）。旧端点与 schema 保留兼容，页面不再依赖。
  *
- * 订单应收概览：后端暂无聚合端点，卡片给「待补后端」明确空态而非假数据
- * （见 `components/receivables-overview-card.tsx`）。
+ * 订单应收概览：P0-A A3 起接 `GET /dashboard/receivables` 真实聚合（按币种分组，
+ * 金额不跨币种相加）；与漏斗分开取数，各自 loading/error（卡片内部处理，
+ * 见 `components/receivables-overview-card.tsx`）。
  */
 import { useState } from "react";
 import { AlertCircle, CalendarRange } from "lucide-react";
@@ -115,7 +116,7 @@ export default function DashboardPage() {
 
           <div className="grid gap-6 lg:grid-cols-2">
             <DirectOrdersCard orders={data.direct_orders} />
-            <ReceivablesOverviewCard />
+            <ReceivablesOverviewCard range={range} />
           </div>
         </>
       ) : null}

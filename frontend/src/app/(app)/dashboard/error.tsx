@@ -1,5 +1,14 @@
 "use client";
 
+import { ErrorState, PageHeader } from "@/components/shared";
+
+/**
+ * 段级错误边界（U-P0B5）：页面抛错时**保留页头**（错误分支也必须有唯一 h1），
+ * 正文统一用共享 ErrorState（role="alert" + 重试），不再手写 h2 + 裸 button。
+ *
+ * 口径：`reset` 是 Next 提供的重试（重新渲染该段），比 window.location.reload()
+ * 温和；只有重试仍失败才由用户自行刷新。
+ */
 export default function DashboardError({
   error,
   reset,
@@ -7,16 +16,18 @@ export default function DashboardError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const detail = error?.message?.trim();
   return (
-    <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
-      <h2 className="text-xl font-semibold">仪表盘加载异常</h2>
-      <p className="text-muted-foreground">服务暂时繁忙，请稍后重试</p>
-      <button
-        onClick={reset}
-        className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground"
-      >
-        重试
-      </button>
+    <div className="space-y-6">
+      <PageHeader
+        title="仪表盘"
+        description="本页内容加载失败。重试会重新请求数据；若持续失败，请联系管理员。"
+      />
+      <ErrorState
+        title="仪表盘加载失败"
+        message={detail || "后端忙碌或网络异常，请稍后重试。"}
+        onRetry={reset}
+      />
     </div>
   );
 }

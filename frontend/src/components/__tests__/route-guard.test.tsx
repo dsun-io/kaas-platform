@@ -23,6 +23,22 @@ vi.mock("@/lib/auth/auth-context", () => ({
   useAuth: () => ({ user: authState.user }),
 }));
 
+// RouteGuard 的无权限兜底含"返回工作台"链接；jsdom 里没有 App Router 上下文，
+// next/link 直接渲染会抛错 ⇒ 用原生 a 替身（只关心 href/文案）。
+vi.mock("next/link", () => ({
+  default: ({
+    href,
+    children,
+  }: {
+    href: string | { pathname?: string };
+    children: ReactNode;
+  }) => (
+    <a href={typeof href === "string" ? href : (href?.pathname ?? "#")}>
+      {children}
+    </a>
+  ),
+}));
+
 import { RouteGuard, isPlatformOperator } from "../route-guard";
 
 (
@@ -95,6 +111,21 @@ describe("RouteGuard adminOnly", () => {
     expect(container!.querySelector('[data-testid="member-only"]')).toBeNull();
   });
 
+  it("无权限兜底保留页头 + role=alert + 返回入口（A1）", () => {
+    authState.user = { account_type: "customer", role: "owner" };
+    mount(
+      <RouteGuard adminOnly>
+        <div>管理员内容</div>
+      </RouteGuard>,
+    );
+    expect(container!.querySelector("h1")?.textContent).toBe("无权限访问");
+    expect(container!.querySelector('[role="alert"]')?.textContent).toContain(
+      "您没有访问此页面的权限",
+    );
+    const back = container!.querySelector('a[href="/"]');
+    expect(back?.textContent).toContain("返回工作台");
+  });
+
   it("internal 非管理员 → 拦（本次收紧：后端会 403）", () => {
     authState.user = { account_type: "internal", role: "user" };
     mount(
@@ -120,7 +151,10 @@ describe("RouteGuard adminOnly", () => {
   it("自定义 fallback 优先生效", () => {
     authState.user = { account_type: "customer", role: "owner" };
     mount(
-      <RouteGuard adminOnly fallback={<p data-testid="custom-fallback">无权限</p>}>
+      <RouteGuard
+        adminOnly
+        fallback={<p data-testid="custom-fallback">无权限</p>}
+      >
         <div>管理员内容</div>
       </RouteGuard>,
     );

@@ -107,6 +107,13 @@ export const DashboardFunnelStageSchema = z.object({
   amount: z.number().optional(),
 });
 
+/** 直接下单按币种拆账行（内核 `funnel.py:direct_currency_breakdown`）。 */
+export const DashboardDirectCurrencySchema = z.object({
+  currency: z.string(),
+  count: z.number(),
+  amount: z.number(),
+});
+
 export const DashboardFunnelResponseSchema = z.object({
   range: z.string(),
   // 时间窗起点（ISO 8601，带时区）
@@ -136,11 +143,52 @@ export const DashboardFunnelResponseSchema = z.object({
     }),
   ),
   direct_orders: z.object({
+    // 单数可跨币种相加（就是订单个数）
     count: z.number(),
+    // ⚠️ 跨币种**原值相加**，仅规模参考；精确金额只看 `by_currency`
     amount: z.number(),
+    // P0-A A5：按币种拆账（内核 funnel.py:direct_currency_breakdown）。
+    // optional：旧响应/旧 mock 可能还没有该字段，卡片需保持 count/amount 兼容。
+    by_currency: z.array(DashboardDirectCurrencySchema).optional(),
   }),
   // 旧 /dashboard/summary 的废弃标记（M3 起页面不再依赖 summary）
   deprecated_summary: z.boolean().optional(),
+});
+
+/**
+ * 应收概览（P0-A A3）—— `GET /api/v1/dashboard/receivables?range=`。
+ *
+ * 形状真源 = 内核 `backend/kaas_common/workstation/receivable_summary.py:summarize_receivables`
+ * （聚合口径只在后端；前端不得重算）+ `backend/worker/src/main.py:dashboard_receivables`。
+ *
+ * 关键口径（不要"修正"）：
+ *  · **金额只在同币种内相加**：`by_currency` 每币种一行，前端不做跨币种合计；
+ *  · `by_status[].total` 是**跨币种原值相加**，只作规模参考（卡片不把它当金额展示）；
+ *  · 未收 = max(0, 应收 − 已收)，逐行夹 0 后汇总（后端已算好）；
+ *  · 币种缺失 → "—"（内核 UNKNOWN_CURRENCY，不伪造 USD）。
+ */
+export const DashboardReceivablesCurrencySchema = z.object({
+  currency: z.string(),
+  total: z.number(),
+  received: z.number(),
+  outstanding: z.number(),
+  count: z.number(),
+});
+
+export const DashboardReceivablesStatusSchema = z.object({
+  status: z.string(),
+  count: z.number(),
+  // ⚠️ 跨币种原值相加，仅规模参考（不展示成金额）
+  total: z.number(),
+});
+
+export const DashboardReceivablesResponseSchema = z.object({
+  range: z.string(),
+  since: z.string(),
+  by_currency: z.array(DashboardReceivablesCurrencySchema),
+  by_status: z.array(DashboardReceivablesStatusSchema),
+  // 行数是唯一可跨状态/跨币种的计数
+  totals: z.object({ count: z.number() }),
 });
 
 export type EventsResponse = z.infer<typeof EventsResponseSchema>;
@@ -151,6 +199,18 @@ export type DashboardFunnelResponse = z.infer<
 export type DashboardFunnelStage = z.infer<typeof DashboardFunnelStageSchema>;
 export type DashboardFunnelChannel =
   DashboardFunnelResponse["channels"][number];
+export type DashboardDirectCurrency = z.infer<
+  typeof DashboardDirectCurrencySchema
+>;
+export type DashboardReceivablesResponse = z.infer<
+  typeof DashboardReceivablesResponseSchema
+>;
+export type DashboardReceivablesCurrency = z.infer<
+  typeof DashboardReceivablesCurrencySchema
+>;
+export type DashboardReceivablesStatus = z.infer<
+  typeof DashboardReceivablesStatusSchema
+>;
 export type CustomersResponse = z.infer<typeof CustomersResponseSchema>;
 export type CapabilitiesResponse = z.infer<typeof CapabilitiesResponseSchema>;
 export type QuotationsResponse = z.infer<typeof QuotationsResponseSchema>;

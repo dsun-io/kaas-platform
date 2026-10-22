@@ -3,9 +3,10 @@
 /**
  * 变更申请详情抽屉：新旧明细对比 / 原因 / 受影响单证 / 批准 / 拒绝。
  *
- * 数据来源：`GET /approvals` 或 `GET /orders/{id}/item-change-requests` 的行本身
- * 已带**新旧明细**（内核 `_request_dict` 同时回 items 与 snapshot），所以详情
- * 不再拉第二次申请；只有「受影响单证」需要按 order_id 查一次 `/trade-docs`。
+ * 数据来源：`GET /approvals` 的行本身已带**新旧明细**（内核 `_request_dict` 同时回
+ * items 与 snapshot）与**受影响单证**（A2 起 `affected_docs` 由聚合接口整页一次查完），
+ * 因此详情不再发任何额外请求。`affected_docs` 缺失（旧后端行）时，
+ * `useOrderAffectedDocs` 作为兜底改查 `GET /trade-docs?order_id=`。
  *
  * 权限：批准/拒绝按钮只在「待我审批」视图出现（后端再判一次权，前端不猜）；
  * 自批由内核裁决（默认禁、单人团队放行并标注），前端只给提示不隐藏按钮，
@@ -34,7 +35,7 @@ import {
   useDecideChangeRequest,
   useOrderAffectedDocs,
 } from "@/lib/approvals/use-approvals";
-import type { ApprovalItem } from "@/lib/approvals/types";
+import type { AffectedDoc, ApprovalItem } from "@/lib/approvals/types";
 
 import { ChangeDiffTable } from "./change-diff-table";
 import { RejectReasonDialog } from "./reject-reason-dialog";
@@ -52,7 +53,16 @@ export function ApprovalDetailDrawer({
   onClose: () => void;
 }) {
   const decide = useDecideChangeRequest();
-  const docs = useOrderAffectedDocs(item?.order_id ?? null);
+  // A2 优先：聚合行内 affected_docs（数组，可能是 []）就是权威答案；
+  // 只有字段缺失（Array.isArray === false：旧后端 undefined/null）才回退拉单证。
+  const rowAffectedDocs: AffectedDoc[] | null =
+    item !== null && Array.isArray(item.affected_docs)
+      ? item.affected_docs
+      : null;
+  const needsFallbackDocs = item !== null && rowAffectedDocs === null;
+  const docs = useOrderAffectedDocs(
+    needsFallbackDocs ? (item?.order_id ?? null) : null,
+  );
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [decisionError, setDecisionError] = useState<string | null>(null);
@@ -63,7 +73,9 @@ export function ApprovalDetailDrawer({
   const isPending = item.status === "pending";
   const selfSubmitted =
     currentUserId !== null && item.requested_by === currentUserId;
-  const affectedDocs = docs.data ?? [];
+  const affectedDocs = rowAffectedDocs ?? docs.data ?? [];
+  const docsLoading = needsFallbackDocs && docs.isLoading;
+  const docsError = needsFallbackDocs && docs.isError;
 
   const closeAll = () => {
     setConfirmOpen(false);
@@ -80,8 +92,13 @@ export function ApprovalDetailDrawer({
         requestId: item.id,
         action: "approve",
       });
+      // 批准响应里的 affected_docs 是"批准后真正受影响的单证"（与行内预览可能不同：
+      // 审批途中可能又开了新单证）。有就明说张数，提醒复核重开。
+      const affectedCount = result.affected_docs.length;
       toast.success(
-        `已批准：订单金额更新为 ${formatMoney(result.new_total_amount, item.order_currency)}`,
+        affectedCount > 0
+          ? `已批准：订单金额更新为 ${formatMoney(result.new_total_amount, item.order_currency)}；${affectedCount} 张已开单证需复核重开`
+          : `已批准：订单金额更新为 ${formatMoney(result.new_total_amount, item.order_currency)}`,
       );
       closeAll();
     } catch (error) {
@@ -108,8 +125,8 @@ export function ApprovalDetailDrawer({
   const confirmDescription = () => {
     const base =
       "批准后立即把新明细应用到订单并重算金额（已收到款的应收金额不会被改写）；此操作会留痕。";
-    if (docs.isLoading) return `${base} 正在读取受影响单证…`;
-    if (docs.isError)
+    if (docsLoading) return `${base} 正在读取受影响单证…`;
+    if (docsError)
       return `${base} 受影响单证读取失败：可在「单证」工位人工确认。`;
     if (affectedDocs.length === 0) {
       return `${base} 该订单没有已开单证，无需重开。`;
@@ -257,7 +274,7 @@ export function ApprovalDetailDrawer({
           <section>
             <h3 className="text-sm font-semibold">受影响单证</h3>
             <div className="mt-2">
-              {docs.isLoading ? (
+              {docsLoading ? (
                 <div
                   className="space-y-1.5"
                   aria-busy="true"
@@ -266,7 +283,7 @@ export function ApprovalDetailDrawer({
                   <Skeleton className="h-6 w-40" />
                   <Skeleton className="h-6 w-56" />
                 </div>
-              ) : docs.isError ? (
+              ) : docsError ? (
                 <p
                   role="alert"
                   className="flex items-center gap-2 text-sm text-destructive"

@@ -12,8 +12,8 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
+import { LoadingBlock } from "@/components/shared/loading-block";
 import { Eye } from "lucide-react";
 import { eventSourceLabel, eventTypeLabel } from "./event-labels";
 
@@ -109,13 +109,8 @@ export function EventTable({ events, onSelect, loading }: Props) {
   });
 
   if (loading) {
-    return (
-      <div className="space-y-2" aria-busy="true" aria-label="事件列表加载中">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-10 w-full rounded-md" />
-        ))}
-      </div>
-    );
+    // B3：加载态用共享 LoadingBlock（不再各页手写骨架屏）
+    return <LoadingBlock rows={6} />;
   }
 
   if (events.length === 0) {

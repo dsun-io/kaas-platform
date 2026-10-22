@@ -16,7 +16,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
+import { ErrorState } from "@/components/shared/error-state";
+import { LoadingBlock } from "@/components/shared/loading-block";
+import { normalizeApiError } from "@/lib/api/api-error";
 import { Search } from "lucide-react";
 
 export function TradeStatsView() {
@@ -28,7 +31,7 @@ export function TradeStatsView() {
     period: "",
   });
 
-  const { data, isLoading, error } = useIntelTradeStats(filters);
+  const { data, isLoading, error, refetch } = useIntelTradeStats(filters);
 
   const handleSearch = () => {
     setFilters({ ...searchInput });
@@ -92,15 +95,13 @@ export function TradeStatsView() {
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </div>
+          <LoadingBlock rows={5} />
         ) : error ? (
-          <div className="text-center py-8 text-muted-foreground">
-            加载失败，请稍后重试
-          </div>
+          <ErrorState
+            title="贸易统计读取失败"
+            message={normalizeApiError(error).message}
+            onRetry={() => void refetch()}
+          />
         ) : data && data.length > 0 ? (
           <>
             <div className="rounded-md border">
@@ -142,9 +143,11 @@ export function TradeStatsView() {
             </p>
           </>
         ) : (
-          <div className="text-center py-8 text-muted-foreground">
-            暂无贸易统计数据
-          </div>
+          <EmptyState
+            title="暂无贸易统计数据"
+            description="调整 HS 编码 / 伙伴国 / 期间后再试，或先采集贸易数据。"
+            className="border-0 py-8"
+          />
         )}
       </CardContent>
     </Card>

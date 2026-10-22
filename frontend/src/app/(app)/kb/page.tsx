@@ -1,7 +1,7 @@
 "use client";
 
 import { usePageView } from "@/lib/events/use-page-view";
-import { BookOpen, FileText, Layers, Clock } from "lucide-react";
+import { BookOpen } from "lucide-react";
 import { RouteGuard } from "@/components/route-guard";
 import {
   PageHeader,
@@ -10,13 +10,14 @@ import {
   EmptyState,
 } from "@/components/shared";
 
-const STATS = [
-  { label: "知识条目", value: 48, icon: FileText },
-  { label: "产品品类", value: 6, icon: Layers },
-  { label: "最近更新", value: "2 小时前", icon: Clock },
-  { label: "数据源", value: "工位能力网", icon: BookOpen },
-];
-
+/**
+ * 知识库管理（建设中）。
+ *
+ * K1（审计 §4）：这里原来有一组**硬编码假统计**
+ * （知识条目 48 / 产品品类 6 / 最近更新 2 小时前 / 数据源 工位能力网）——
+ * 没有任何接口支撑，页面一开就"看起来有数据"，比空白更误导。
+ * 现在改为**明确「未接入」**：不显示任何估算数字，等真实数据接口落地后再补统计。
+ */
 export default function KbPage() {
   usePageView({ resource_id: "/kb" });
 
@@ -30,20 +31,11 @@ export default function KbPage() {
         />
 
         <SectionCard title="概览">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {STATS.map((s) => (
-              <div
-                key={s.label}
-                className="rounded-lg border border-border/70 bg-muted/20 p-4"
-              >
-                <div className="flex items-center justify-between text-sm text-muted-foreground">
-                  <span>{s.label}</span>
-                  <s.icon className="size-4" />
-                </div>
-                <p className="mt-2 text-2xl font-semibold">{s.value}</p>
-              </div>
-            ))}
-          </div>
+          <EmptyState
+            icon={BookOpen}
+            title="知识库统计尚未接入"
+            description="知识库还没有数据接口：条目数 / 品类数 / 最近更新时间都无从统计，所以这里不显示估算数字。接口落地后本区展示真实统计。"
+          />
         </SectionCard>
 
         <SectionCard title="知识库内容">

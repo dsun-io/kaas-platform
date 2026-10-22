@@ -13,6 +13,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 
+import { EmptyState } from "@/components/shared/empty-state";
+import { ErrorState } from "@/components/shared/error-state";
 import { LoadingBlock } from "@/components/shared/loading-block";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -61,9 +63,10 @@ async function lookupMappings(
 /** 后端错误 → 可读文案；500 多半是唯一约束命中（后端未把它包成 409）。 */
 function describeWriteError(error: unknown): string {
   const info = normalizeApiError(error);
-  const text = info.message && info.message !== "请求失败，请稍后重试"
-    ? info.message
-    : "提交失败";
+  const text =
+    info.message && info.message !== "请求失败，请稍后重试"
+      ? info.message
+      : "提交失败";
   if (info.status === 500) {
     return `${text}：可能是重复对照（同一地区 + 语言 + 类目只能一条）；请先搜索确认，或联系后端补 409 语义`;
   }
@@ -97,7 +100,9 @@ export function NameMappingPanel() {
   });
 
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<NameMappingDraft>(EMPTY_NAME_MAPPING_DRAFT);
+  const [draft, setDraft] = useState<NameMappingDraft>(
+    EMPTY_NAME_MAPPING_DRAFT,
+  );
   const [errors, setErrors] = useState<string[]>([]);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -210,8 +215,9 @@ export function NameMappingPanel() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            后端目前只提供「关键词查询 + 新增」两个接口（无全量列表 / 修改 / 删除），
-            所以这里用搜索查看已有对照；编辑与删除需后端补接口（C36 审计 #19）。
+            后端目前只提供「关键词查询 + 新增」两个接口（无全量列表 / 修改 /
+            删除）， 所以这里用搜索查看已有对照；编辑与删除需后端补接口（C36
+            审计 #19）。
           </p>
         </CardContent>
       </Card>
@@ -223,13 +229,18 @@ export function NameMappingPanel() {
       ) : lookupQuery.isLoading ? (
         <LoadingBlock rows={3} />
       ) : lookupQuery.isError ? (
-        <p className="py-4 text-sm text-destructive">
-          查询失败：{normalizeApiError(lookupQuery.error).message}
-        </p>
+        // B3：查询失败必须可读、可重试 —— 不能与「未找到」混为一谈
+        <ErrorState
+          title="品名对照查询失败"
+          message={normalizeApiError(lookupQuery.error).message}
+          onRetry={() => void lookupQuery.refetch()}
+        />
       ) : (lookupQuery.data ?? []).length === 0 ? (
-        <p className="py-4 text-sm text-muted-foreground">
-          未找到匹配；可点「新增对照」录入。
-        </p>
+        <EmptyState
+          title="未找到匹配的品名对照"
+          description="换个关键词，或点「新增对照」录入。"
+          className="border-0 py-8"
+        />
       ) : (
         <div className="space-y-2">
           {(lookupQuery.data ?? []).map((r) => (
@@ -238,8 +249,8 @@ export function NameMappingPanel() {
                 <div>
                   <p className="font-medium">{r.local_name}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {r.lang === "zh" ? "中文" : "英文"} · {r.region_code} · 类目 #
-                    {r.category_id ?? "-"}
+                    {r.lang === "zh" ? "中文" : "英文"} · {r.region_code} · 类目
+                    #{r.category_id ?? "-"}
                     {r.hs_code ? ` · HS ${r.hs_code}` : ""}
                   </p>
                   {r.alt_names && r.alt_names.length > 0 && (
@@ -314,7 +325,9 @@ export function NameMappingPanel() {
               </label>
             </div>
             <label className="block space-y-1">
-              <span className="text-sm font-medium">别名（逗号分隔，可选）</span>
+              <span className="text-sm font-medium">
+                别名（逗号分隔，可选）
+              </span>
               <Input
                 value={draft.altNames}
                 placeholder="例如：malla, wire mesh fence"

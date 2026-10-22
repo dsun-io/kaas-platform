@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -8,6 +9,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { AsyncButton } from "@/components/shared";
+import { useAsyncAction } from "@/lib/hooks/use-async-action";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -46,15 +49,34 @@ export function AttributeProposeDialog({
   const [sampleValues, setSampleValues] = useState("");
 
   const propose = useProposeAttribute();
+  /**
+   * P0-B2/SC5：提交失败必须有出口（旧实现直接 `mutateAsync`，失败即未处理 rejection；
+   * 成功也没有 toast）。`useAsyncAction` 默认不 toast：拦截器已统一提示错误，
+   * 这里补「弹窗内错误 + 成功后 toast」；pending 期间禁用并禁止关窗。
+   */
+  const submit = useAsyncAction(
+    (input: Parameters<typeof propose.mutateAsync>[0]) =>
+      propose.mutateAsync(input),
+    {
+      onSuccess: () => {
+        toast.success("已提交属性提议，等待管理员审核");
+        setName("");
+        setDataType("text");
+        setUnit("");
+        setSampleValues("");
+        onClose();
+      },
+    },
+  );
 
-  async function handleSubmit() {
+  function handleSubmit() {
     if (!name.trim()) return;
     const samples = sampleValues
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
 
-    await propose.mutateAsync({
+    void submit.run({
       category_id: categoryId,
       group_code: groupCode,
       proposed_name: name.trim(),
@@ -62,16 +84,15 @@ export function AttributeProposeDialog({
       proposed_unit: unit || null,
       sample_values: samples.length > 0 ? samples : null,
     });
-
-    setName("");
-    setDataType("text");
-    setUnit("");
-    setSampleValues("");
-    onClose();
   }
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v && !submit.pending) onClose();
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>提议新属性</DialogTitle>
@@ -119,16 +140,27 @@ export function AttributeProposeDialog({
             />
           </div>
         </div>
+        {/* P0-B2/SC5：失败原因如实显示在弹窗里，弹窗不关、可直接重试 */}
+        {submit.error ? (
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+          >
+            提交失败：{submit.error}
+          </p>
+        ) : null}
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} disabled={submit.pending}>
             取消
           </Button>
-          <Button
+          <AsyncButton
             onClick={handleSubmit}
-            disabled={!name.trim() || propose.isPending}
+            disabled={!name.trim()}
+            pending={submit.pending}
+            pendingLabel="提交中..."
           >
-            {propose.isPending ? "提交中..." : "提交"}
-          </Button>
+            提交
+          </AsyncButton>
         </DialogFooter>
       </DialogContent>
     </Dialog>

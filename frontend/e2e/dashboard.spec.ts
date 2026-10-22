@@ -7,7 +7,8 @@ import { test, expect } from './fixtures';
  *  - 漏斗四阶段 + 综合商机分（询盘×1 / 报价×2 / 订单×10）；
  *  - 分渠道转化（按综合分降序）；
  *  - 直接下单单独统计（不进漏斗）；
- *  - 订单应收概览：后端暂无聚合端点 ⇒ 明确「待补后端」空态，不造 0/假数字。
+ *  - 订单应收概览：A3 后已接 `GET /dashboard/receivables`（按币种聚合，不跨币种相加）；
+ *    默认「今日」窗口没有应收种子 ⇒ 明确空态，不是 0 元假数字；近 90 天可见按币种表。
  *
  * 本文件不要再断言旧占位文案或旧 StatCard —— 那会要求把无意义指标重新渲染回来。
  */
@@ -23,8 +24,8 @@ test.describe('Dashboard', () => {
     await expect(page.getByText('分渠道转化', { exact: true })).toBeVisible();
     await expect(page.getByText('直接下单', { exact: true })).toBeVisible();
     await expect(page.getByText('订单应收概览', { exact: true })).toBeVisible();
-    // 应收缺口如实标注（不是 0 元假数字）
-    await expect(page.getByText('待补后端聚合接口')).toBeVisible();
+    // 应收接真实数据：默认 today 窗口无种子 ⇒ 明确空态（不是 0 元假数字）
+    await expect(page.getByText('本时间窗内没有应收')).toBeVisible();
 
     // 旧实现/占位页不得回归
     await expect(page.getByText('仪表盘改版中')).toHaveCount(0);
@@ -33,9 +34,13 @@ test.describe('Dashboard', () => {
 
   test('时间范围可切到近 90 天，请求真的带 range=90d', async ({ page }) => {
     const funnelRequests: string[] = [];
+    const receivableRequests: string[] = [];
     page.on('request', (request) => {
       if (request.url().includes('/api/v1/dashboard/funnel')) {
         funnelRequests.push(request.url());
+      }
+      if (request.url().includes('/api/v1/dashboard/receivables')) {
+        receivableRequests.push(request.url());
       }
     });
 
@@ -54,6 +59,16 @@ test.describe('Dashboard', () => {
       'aria-checked',
       'true',
     );
+    // 应收也按同一 range 重新请求；90 天窗口覆盖 mock 种子 ⇒ 出现按币种表（不出现跨币种假合计）
+    await expect
+      .poll(
+        () => receivableRequests.some((url) => url.includes('range=90d')),
+        { timeout: 15000 },
+      )
+      .toBe(true);
+    await expect(
+      page.getByRole('table', { name: '应收按币种' }),
+    ).toBeVisible({ timeout: 15000 });
   });
 
   test('外壳与侧边栏正常（面包屑 + 导航入口）', async ({ page }) => {

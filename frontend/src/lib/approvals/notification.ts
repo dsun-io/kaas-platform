@@ -7,9 +7,13 @@
  * （`order_item_change_requested|approved|rejected`）——两者都要认，
  * 否则 mock 模式下通知徽标全是"未知类型"（已列入交接报告，等 Lead 对齐）。
  *
- * 深链：直接使用后端 `link`（内核写 `/approvals?focus={rid}`、批准/拒绝写
- * `/orders/{order_id}`；mock 写 `/orders?id={order_id}`）。只接受站内相对路径，
- * 防 `//evil.com` / `javascript:` 这类内容被当成跳转目标。
+ * 深链：**以内核给的 `link` 为主路径** —— A4（P0-A）起内核批准/拒绝通知写
+ * `/orders?id={order_id}`（`ws_approvals.py:426`），与前端唯一可落地的订单工位
+ * 深链口径（`/inquiries` 的「关联订单」也用它）一致，原样透传即可。
+ * 提交侧仍是 `/approvals?focus={rid}`（审批中心定位到该申请）。
+ * 旧数据兼容：历史内核/mock 曾写 `/orders/{order_id}`，而订单工位没有
+ * `[id]` 动态路由 —— 这种形态**只为兼容历史**归一到 `/orders?id=`，不是主路径。
+ * 只接受站内相对路径，防 `//evil.com` / `javascript:` 被当成跳转目标。
  */
 import type { StatusTone } from "@/components/shared";
 
@@ -48,19 +52,22 @@ export function isSafeInternalLink(link: unknown): link is string {
 }
 
 /**
- * 内核给批准/拒绝通知写的 link 是 `/orders/{order_id}`（`ws_approvals.py:423`），
- * 但前端订单工位没有 `/orders/[id]` 路由 —— 照搬会 404。设计 §9.5 的深链口径是
- * `/orders?id=`，这里把路径形态归一成唯一能落地的写法。
+ * **仅兼容历史数据**：旧内核/mock 写的 `/orders/{order_id}`（前端没有 `[id]` 路由，
+ * 照搬会 404）。A4 起内核已改写 `/orders?id={order_id}`（见文件头），这里保留归一
+ * 只为让历史通知不失效；新增通知**不应**再产生该形态。
  */
-const ORDER_PATH_RE = /^\/orders\/([1-9]\d*)\/?$/;
+const LEGACY_ORDER_PATH_RE = /^\/orders\/([1-9]\d*)\/?$/;
 
-/** 点击通知的落点：后端 link 优先（订单路径归一化），缺失/不安全时回审批中心。 */
+/**
+ * 点击通知的落点：后端 link 优先（新形态 `/orders?id=` 原样透传），
+ * 仅对历史的 `/orders/{id}` 做兼容归一；缺失/不安全时回审批中心。
+ */
 export function resolveNotificationLink(
   notification: Pick<AppNotification, "link" | "type">,
 ): string {
   if (!isSafeInternalLink(notification.link)) return "/approvals";
-  const orderId = ORDER_PATH_RE.exec(notification.link)?.[1];
-  if (orderId) return `/orders?id=${orderId}`;
+  const legacyOrderId = LEGACY_ORDER_PATH_RE.exec(notification.link)?.[1];
+  if (legacyOrderId) return `/orders?id=${legacyOrderId}`;
   return notification.link;
 }
 

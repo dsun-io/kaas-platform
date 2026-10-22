@@ -15,7 +15,10 @@ import {
   StatusBadge,
   SectionCard,
   EmptyState,
+  ErrorState,
+  AsyncButton,
 } from "@/components/shared";
+import { useAsyncAction } from "@/lib/hooks/use-async-action";
 import { toast } from "sonner";
 import {
   Play,
@@ -177,6 +180,8 @@ export default function LeadgenPage() {
   const [inquiryFilter, setInquiryFilter] = useState("");
   const [sort, setSort] = useState("score");
   const [detail, setDetail] = useState<LeadDetail | null>(null);
+  /** 正在加载详情的线索 id（用于行级 pending 与重试） */
+  const [detailId, setDetailId] = useState<number | null>(null);
   const [manualLeadOpen, setManualLeadOpen] = useState(false);
   const [crawling, setCrawling] = useState<number | null>(null);
 
@@ -256,24 +261,47 @@ export default function LeadgenPage() {
     }
   };
 
-  const scanReplied = async () => {
-    try {
+  /**
+   * P0-B2/L4：「扫描已回复→询盘」原本无 pending，可重复提交（重复建询盘）。
+   * 走 `useAsyncAction`：pending 期间按钮禁用；失败写页内错误（拦截器已 toast，不重复）。
+   */
+  const scan = useAsyncAction(
+    async () => {
       const { data } = await apiClient.post<{
         scanned: number;
         created: number;
       }>("/leads/scan-replied");
-      toast.success(
-        `已扫描 ${data.scanned} 条已回复线索，创建 ${data.created} 条询盘`,
-      );
-      qc.invalidateQueries({ queryKey: ["leads"] });
-    } catch (e) {
-      toast.error("扫描失败");
-    }
+      return data;
+    },
+    {
+      onSuccess: (data) => {
+        toast.success(
+          `已扫描 ${data.scanned} 条已回复线索，创建 ${data.created} 条询盘`,
+        );
+        qc.invalidateQueries({ queryKey: ["leads"] });
+      },
+    },
+  );
+
+  /**
+   * P0-B2/L3：「详情」按钮原本失败即死路（裸 `apiClient.get` 无 catch/无状态，
+   * 用户只看到按钮没反应）。现在：pending 行级禁用 + 失败 ErrorState（含原因与重试）。
+   */
+  const detailAction = useAsyncAction(
+    async (id: number) => {
+      const { data } = await apiClient.get<LeadDetail>(`/leads/${id}`);
+      return data;
+    },
+    { onSuccess: (data) => setDetail(data) },
+  );
+
+  const openDetail = (id: number) => {
+    setDetailId(id);
+    void detailAction.run(id);
   };
 
-  const openDetail = async (id: number) => {
-    const { data } = await apiClient.get<LeadDetail>(`/leads/${id}`);
-    setDetail(data);
+  const retryDetail = () => {
+    if (detailId !== null) void detailAction.run(detailId);
   };
 
   /* ── 爬官网（产品信息唯一来源；Google Places 看不到产品）───────────── */
@@ -393,9 +421,19 @@ export default function LeadgenPage() {
               <Play className="mr-1 h-4 w-4" />{" "}
               {running ? "运行中…" : "开始抓取"}
             </Button>
-            <Button variant="outline" size="sm" onClick={scanReplied}>
+            <AsyncButton
+              variant="outline"
+              size="sm"
+              onClick={() => void scan.run()}
+              pending={scan.pending}
+              pendingLabel={
+                <>
+                  <RefreshCw className="mr-1 h-4 w-4" /> 扫描中…
+                </>
+              }
+            >
               <RefreshCw className="mr-1 h-4 w-4" /> 扫描已回复 → 询盘
-            </Button>
+            </AsyncButton>
             <Button
               variant="outline"
               size="sm"
@@ -420,6 +458,15 @@ export default function LeadgenPage() {
               </div>
             )}
           </div>
+          {/* P0-B2/L4：扫描失败要有出口（拦截器已 toast，这里保留原因便于重试） */}
+          {scan.error ? (
+            <p
+              role="alert"
+              className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+            >
+              扫描失败：{scan.error}（可重试）
+            </p>
+          ) : null}
           <p className="mt-2 text-xs text-muted-foreground">
             CSV 文件可直接导入线索；地图搜索等更多数据源正在规划中。
           </p>
@@ -651,8 +698,11 @@ export default function LeadgenPage() {
                           variant="ghost"
                           size="sm"
                           onClick={() => openDetail(l.id)}
+                          disabled={detailAction.pending && detailId === l.id}
                         >
-                          详情
+                          {detailAction.pending && detailId === l.id
+                            ? "加载中…"
+                            : "详情"}
                         </Button>
                       </td>
                     </tr>
@@ -661,6 +711,16 @@ export default function LeadgenPage() {
               </table>
             </div>
           )}
+
+          {/* P0-B2/L3：详情加载失败不再是死路 —— 给出原因 + 重试 */}
+          {detailAction.error ? (
+            <ErrorState
+              title="线索详情加载失败"
+              message={detailAction.error}
+              onRetry={retryDetail}
+              className="mt-4"
+            />
+          ) : null}
 
           {/* detail panel */}
           {detail && (

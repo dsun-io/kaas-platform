@@ -1,14 +1,17 @@
+import { PageHeader } from "@/components/shared/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 
 /**
  * 路由级加载骨架（服务端预取/首帧用）：与 M3 仪表盘结构一致 ——
- * 页头 + 四阶段漏斗 + 分渠道表 + 直接下单/应收两张卡。
+ * 页头（真实 h1，加载态也有标题）+ 四阶段漏斗 + 分渠道表 + 直接下单/应收两张卡。
  */
 export default function DashboardLoading() {
   return (
-    <div className="space-y-6 p-6">
-      <Skeleton className="h-8 w-48" />
-      <Skeleton className="h-4 w-full max-w-xl" />
+    <div className="space-y-6">
+      <PageHeader
+        title="仪表盘"
+        description="商机漏斗：按时间窗内创建的询盘看询盘→报价→下单→成笔的转化与渠道质量；直接下单单独统计。"
+      />
 
       <div className="rounded-xl border p-5">
         <Skeleton className="h-5 w-24" />

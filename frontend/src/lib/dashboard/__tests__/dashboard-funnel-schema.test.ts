@@ -73,6 +73,40 @@ describe("DashboardFunnelResponseSchema", () => {
     expect(DashboardFunnelResponseSchema.safeParse(data).success).toBe(false);
   });
 
+  it("direct_orders.by_currency（P0-A A5）：有则按币种解析，缺省仍兼容旧响应", () => {
+    // 旧响应（没有 by_currency）必须是合法形状 —— 兼容期不能把旧 mock/旧部署判红
+    expect(DashboardFunnelResponseSchema.safeParse(payload()).success).toBe(
+      true,
+    );
+
+    const withCurrency = payload();
+    (
+      withCurrency.direct_orders as {
+        by_currency?: unknown;
+      }
+    ).by_currency = [
+      { currency: "EUR", count: 1, amount: 5000 },
+      { currency: "USD", count: 2, amount: 20000 },
+    ];
+    const parsed = DashboardFunnelResponseSchema.safeParse(withCurrency);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.direct_orders.by_currency).toEqual([
+      { currency: "EUR", count: 1, amount: 5000 },
+      { currency: "USD", count: 2, amount: 20000 },
+    ]);
+  });
+
+  it("direct_orders.by_currency 项金额是字符串时判为漂移", () => {
+    const broken = payload();
+    (
+      broken.direct_orders as {
+        by_currency?: unknown;
+      }
+    ).by_currency = [{ currency: "USD", count: 2, amount: "20000" }];
+    expect(DashboardFunnelResponseSchema.safeParse(broken).success).toBe(false);
+  });
+
   it("直接下单缺金额 / 阶段计数为字符串时判为漂移", () => {
     const missingAmount: {
       direct_orders: { count: number; amount?: number };

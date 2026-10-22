@@ -7,6 +7,9 @@ export const queryKeys = {
   dashboard: {
     // M3（设计 §7）：商机漏斗取代旧的 /dashboard/summary（三表混计数已废弃）
     funnel: (range: string) => ["dashboard", "funnel", range] as const,
+    // P0-A A3：应收按时间窗聚合（与 funnel 分开取，互不拖累 loading/error）
+    receivables: (range: string) =>
+      ["dashboard", "receivables", range] as const,
   },
   admin: {
     tenants: ["admin", "tenants"] as const,

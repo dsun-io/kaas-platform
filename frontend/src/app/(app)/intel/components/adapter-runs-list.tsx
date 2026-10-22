@@ -11,10 +11,13 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
+import { ErrorState } from "@/components/shared/error-state";
+import { LoadingBlock } from "@/components/shared/loading-block";
+import { normalizeApiError } from "@/lib/api/api-error";
 
 export function AdapterRunsList() {
-  const { data, isLoading, error } = useIntelAdapterRuns();
+  const { data, isLoading, error, refetch } = useIntelAdapterRuns();
 
   const getStatusBadge = (status: string) => {
     const variants: Record<string, "default" | "secondary" | "destructive"> = {
@@ -43,15 +46,13 @@ export function AdapterRunsList() {
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </div>
+          <LoadingBlock rows={5} />
         ) : error ? (
-          <div className="text-center py-8 text-muted-foreground">
-            加载失败，请稍后重试
-          </div>
+          <ErrorState
+            title="采集任务读取失败"
+            message={normalizeApiError(error).message}
+            onRetry={() => void refetch()}
+          />
         ) : data && data.length > 0 ? (
           <>
             <div className="rounded-md border">
@@ -99,9 +100,11 @@ export function AdapterRunsList() {
             </p>
           </>
         ) : (
-          <div className="text-center py-8 text-muted-foreground">
-            暂无采集任务记录
-          </div>
+          <EmptyState
+            title="暂无采集任务记录"
+            description="还没有跑过数据采集任务；触发采集后这里会记录每次运行结果。"
+            className="border-0 py-8"
+          />
         )}
       </CardContent>
     </Card>

@@ -14,12 +14,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
+  patch: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
 }));
 
 vi.mock("@/lib/api/client", () => {
-  const client = { get: mocks.get, post: mocks.post };
+  const client = { get: mocks.get, post: mocks.post, patch: mocks.patch };
   return { default: client, apiClient: client };
 });
 vi.mock("@/components/route-guard", () => ({
@@ -331,5 +332,80 @@ describe("邮件外联 · 测试邮件收件人弹窗（替代 window.prompt）"
 
     expect(mocks.post).toHaveBeenCalledTimes(1);
     expect(document.body.textContent).toContain("发送中…");
+  });
+});
+describe("邮件外联 · 设为默认发件人（P0-B2/O35-O40）", () => {
+  const SECOND_MAILBOX = {
+    id: 2,
+    email: "ops@kaas.example",
+    name: "运营邮箱",
+    api_key_masked: null,
+    has_own_key: false,
+    is_default: false,
+    daily_limit: null,
+    sent_today: 0,
+    enabled: true,
+  };
+
+  beforeEach(() => {
+    mocks.get.mockImplementation(async (url: string) => {
+      if (url === "/outreach/mailboxes")
+        return { data: { items: [MAILBOX, SECOND_MAILBOX] } };
+      if (url === "/outreach/campaigns") return { data: { items: [CAMPAIGN] } };
+      if (String(url).startsWith("/outreach/messages"))
+        return { data: { items: [] } };
+      if (String(url).startsWith("/leads")) return { data: { items: [LEAD] } };
+      return { data: { items: [] } };
+    });
+  });
+
+  it("设为默认失败 → 页内显示原因", async () => {
+    mocks.patch.mockRejectedValue(
+      Object.assign(new Error("Forbidden"), {
+        response: {
+          status: 403,
+          data: {
+            detail: {
+              error: "forbidden",
+              code: "TEAM_ADMIN_REQUIRED",
+              message: "仅团队管理员可切换默认发件邮箱",
+            },
+          },
+        },
+      }),
+    );
+    mount();
+    await waitFor(
+      () => (document.body.textContent ?? "").includes(SECOND_MAILBOX.email),
+      undefined,
+      "邮箱列表加载",
+    );
+    await click("设为默认");
+    await settle();
+
+    const alert = document.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain("设为默认失败");
+    expect(alert?.textContent).toContain("仅团队管理员可切换默认发件邮箱");
+    expect(mocks.patch).toHaveBeenCalledWith("/outreach/mailboxes/2", {
+      is_default: true,
+    });
+  });
+
+  it("pending 期间不重复提交", async () => {
+    mocks.patch.mockImplementation(() => new Promise(() => {}));
+    mount();
+    await waitFor(
+      () => (document.body.textContent ?? "").includes(SECOND_MAILBOX.email),
+      undefined,
+      "邮箱列表加载",
+    );
+    await click("设为默认");
+    await settle();
+
+    expect(mocks.patch).toHaveBeenCalledTimes(1);
+    const pending = findButton("设置中…");
+    expect(pending.disabled).toBe(true);
+    await click("设置中…");
+    expect(mocks.patch).toHaveBeenCalledTimes(1);
   });
 });

@@ -22,12 +22,14 @@ import { QuotationDetailSheet } from "../../quotations/components/quotation-deta
 import { NewQuotationForm } from "../../quotations/components/new-quotation-form";
 import { QuoteOrderRecords } from "../components/quote-order-records";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { ErrorState } from "@/components/shared";
+import { normalizeApiError } from "@/lib/api/api-error";
 
 export function QuotationRecordsView() {
   const [filters, setFilters] = useState<QuotationFilters>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const { data, isLoading } = useQuotations(filters);
+  const { data, isLoading, isError, error, refetch } = useQuotations(filters);
 
   const quotations: Quotation[] = data?.items ?? [];
   const selectedQuotation = selectedId
@@ -40,8 +42,9 @@ export function QuotationRecordsView() {
           数量/价格，internal 另有成本/利润列）——历史报价的主视图 */}
       <QuoteOrderRecords />
 
-      {/* 旧台账（quotations 报价事实表）：手工补录 + 历史数据，保留共存 */}
-      <NewQuotationForm onSuccess={() => {}} />
+      {/* 旧台账（quotations 报价事实表）：手工补录 + 历史数据，保留共存。
+          Q15：录入成功后显式 refetch（key 已在 hooks 里统一，双保险），不再传空回调。 */}
+      <NewQuotationForm onSuccess={() => void refetch()} />
 
       <Card>
         <CardHeader className="pb-3">
@@ -64,11 +67,21 @@ export function QuotationRecordsView() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <QuotationTable
-            quotations={quotations}
-            onSelect={(q) => setSelectedId(q.id)}
-            loading={isLoading}
-          />
+          {/* P0-B2/Q15：列表失败不再伪装成"空列表"（另一批做全站三态；这里先给本页出口） */}
+          {isError ? (
+            <ErrorState
+              title="报价列表加载失败"
+              message={normalizeApiError(error).message}
+              onRetry={() => void refetch()}
+              className="border-0 py-6"
+            />
+          ) : (
+            <QuotationTable
+              quotations={quotations}
+              onSelect={(q) => setSelectedId(q.id)}
+              loading={isLoading}
+            />
+          )}
         </CardContent>
       </Card>
 

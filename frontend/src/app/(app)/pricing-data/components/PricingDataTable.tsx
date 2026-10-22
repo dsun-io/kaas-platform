@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
+import { LoadingBlock } from "@/components/shared/loading-block";
 import { Loader2, Pencil, RotateCcw, Save } from "lucide-react";
 import type {
   PricingCell,
@@ -44,24 +45,26 @@ export function PricingDataTable({
   const [draft, setDraft] = useState<Record<string, string>>({});
 
   if (loading) {
+    // B3：加载态 = LoadingBlock（共享），不再各组件手写骨架屏
     return (
       <Card>
-        <CardContent className="space-y-2 py-6">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-9 w-full rounded-md" />
-          ))}
+        <CardContent className="py-6">
+          <LoadingBlock rows={5} />
         </CardContent>
       </Card>
     );
   }
 
   if (!matrix || matrix.rows.length === 0) {
+    // 空态 ≠ 失败：这里是真的"该产品没有定价键"，用 EmptyState 明确说清
     return (
       <Card>
-        <CardContent className="py-8">
-          <p className="text-sm text-muted-foreground">
-            该产品未声明「定价键」，无法按规格组合配置成本。
-          </p>
+        <CardContent className="py-4">
+          <EmptyState
+            title="该产品未声明「定价键」"
+            description="没有定价键就无法按规格组合配置成本；请先到产品定义里补齐定价键。"
+            className="border-0 py-6"
+          />
         </CardContent>
       </Card>
     );
@@ -277,9 +280,11 @@ export function PricingAllCustomersTable({
       </CardHeader>
       <CardContent>
         {customers.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            本空间还没有客户配置过定价数据。
-          </p>
+          <EmptyState
+            title="还没有客户配置过定价数据"
+            description="客户在报价/定价页保存过成本后，这里会按客户汇总显示。"
+            className="border-0 py-6"
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

@@ -2,6 +2,8 @@
 
 import { LoadingBlock } from "@/components/shared/loading-block";
 import { EmptyState } from "@/components/shared/empty-state";
+import { ErrorState } from "@/components/shared/error-state";
+import { normalizeApiError } from "@/lib/api/api-error";
 
 // 由「产品市场对照」页面与「市场情报」工位共用。
 // 注意：这里不能放在 page.tsx 里 —— 页面文件不允许自定义 props。
@@ -124,9 +126,16 @@ function usePorts(countryCode?: string) {
 }
 
 function RegionTab() {
-  const { data: regions } = useRegions();
+  const regionsQuery = useRegions();
+  const regions = regionsQuery.data;
   const [selected, setSelected] = useState<string | null>(null);
-  const { data: products, isLoading } = useRegionProducts(selected);
+  const {
+    data: products,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useRegionProducts(selected);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -135,9 +144,21 @@ function RegionTab() {
           <CardTitle className="text-sm">选择地区</CardTitle>
         </CardHeader>
         <CardContent className="p-2">
-          {regions?.length === 0 && (
-            <p className="text-xs text-muted-foreground p-2">暂无地区数据</p>
-          )}
+          {regionsQuery.isLoading ? (
+            <LoadingBlock rows={3} className="p-2" />
+          ) : regionsQuery.isError ? (
+            <ErrorState
+              title="地区列表读取失败"
+              message={normalizeApiError(regionsQuery.error).message}
+              onRetry={() => void regionsQuery.refetch()}
+            />
+          ) : regions?.length === 0 ? (
+            <EmptyState
+              title="暂无地区数据"
+              description="市场对照还没有地区维度数据，请先录入。"
+              className="border-0 py-6"
+            />
+          ) : null}
           <div className="space-y-1">
             {regions?.map((r) => (
               <button
@@ -163,14 +184,22 @@ function RegionTab() {
         </CardHeader>
         <CardContent>
           {isLoading && <LoadingBlock rows={4} />}
-          {!isLoading && !selected && (
+          {!isLoading && isError ? (
+            // B3：读取失败必须显式可读、可重试 —— 不能落成「该地区暂无产品数据」
+            <ErrorState
+              title="该地区产品读取失败"
+              message={normalizeApiError(error).message}
+              onRetry={() => void refetch()}
+            />
+          ) : null}
+          {!isLoading && !isError && !selected && (
             <EmptyState
               title="选择地区后查看"
               description="从左侧选择一个地区，这里会显示在售产品、认证要求与常见规格。"
               className="border-0 py-10"
             />
           )}
-          {!isLoading && selected && products?.length === 0 && (
+          {!isLoading && !isError && selected && products?.length === 0 && (
             <EmptyState
               title="该地区暂无产品数据"
               description="换个地区看看，或到「按品名查询 / 按用途查询」继续查。"
@@ -178,53 +207,58 @@ function RegionTab() {
             />
           )}
           <div className="space-y-4">
-            {products?.map((p) => (
-              <div key={p.id} className="border rounded-md p-4 space-y-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-medium text-sm">
-                    品类 #{p.category_id ?? "-"}
-                  </span>
-                  {p.demand_level && (
-                    <Badge
-                      variant={
-                        p.demand_level === "high" ? "default" : "secondary"
-                      }
-                    >
-                      {p.demand_level}
-                    </Badge>
-                  )}
-                  {p.popularity_rank && (
-                    <span className="text-xs text-muted-foreground">
-                      热度 #{p.popularity_rank}
+            {!isError &&
+              products?.map((p) => (
+                <div key={p.id} className="border rounded-md p-4 space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-sm">
+                      品类 #{p.category_id ?? "-"}
                     </span>
-                  )}
-                </div>
-                {p.cert_requirements && p.cert_requirements.length > 0 && (
-                  <div className="flex gap-1 flex-wrap">
-                    {p.cert_requirements.map((c) => (
-                      <Badge key={c} variant="outline" className="text-xs">
-                        {c}
+                    {p.demand_level && (
+                      <Badge
+                        variant={
+                          p.demand_level === "high" ? "default" : "secondary"
+                        }
+                      >
+                        {p.demand_level}
                       </Badge>
-                    ))}
+                    )}
+                    {p.popularity_rank && (
+                      <span className="text-xs text-muted-foreground">
+                        热度 #{p.popularity_rank}
+                      </span>
+                    )}
                   </div>
-                )}
-                {p.specs.length > 0 && (
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">
-                      常见规格
-                    </p>
-                    <div className="flex gap-2 flex-wrap">
-                      {p.specs.map((s, i) => (
-                        <Badge key={i} variant="secondary" className="text-xs">
-                          {s.key}: {s.value}
-                          {s.unit ? ` ${s.unit}` : ""}
+                  {p.cert_requirements && p.cert_requirements.length > 0 && (
+                    <div className="flex gap-1 flex-wrap">
+                      {p.cert_requirements.map((c) => (
+                        <Badge key={c} variant="outline" className="text-xs">
+                          {c}
                         </Badge>
                       ))}
                     </div>
-                  </div>
-                )}
-              </div>
-            ))}
+                  )}
+                  {p.specs.length > 0 && (
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">
+                        常见规格
+                      </p>
+                      <div className="flex gap-2 flex-wrap">
+                        {p.specs.map((s, i) => (
+                          <Badge
+                            key={i}
+                            variant="secondary"
+                            className="text-xs"
+                          >
+                            {s.key}: {s.value}
+                            {s.unit ? ` ${s.unit}` : ""}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
           </div>
         </CardContent>
       </Card>
@@ -235,7 +269,13 @@ function RegionTab() {
 function ProductTab() {
   const [q, setQ] = useState("");
   const [region, setRegion] = useState("");
-  const { data: results, isLoading } = useNameLookup(q, region || undefined);
+  const {
+    data: results,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useNameLookup(q, region || undefined);
   const { data: regions } = useRegions();
 
   return (
@@ -261,44 +301,57 @@ function ProductTab() {
         </select>
       </div>
 
-      {isLoading && <p className="text-sm text-muted-foreground">搜索中…</p>}
-      {!isLoading && q && results?.length === 0 && (
-        <p className="text-sm text-muted-foreground">未找到匹配品名</p>
+      {isLoading && <LoadingBlock rows={3} />}
+      {!isLoading && isError ? (
+        // B3：查询失败 ≠ 未找到 —— 失败要可读、可重试
+        <ErrorState
+          title="品名查询失败"
+          message={normalizeApiError(error).message}
+          onRetry={() => void refetch()}
+        />
+      ) : null}
+      {!isLoading && !isError && q && results?.length === 0 && (
+        <EmptyState
+          title="未找到匹配品名"
+          description="换个关键词（中英文都可以），或到「品名对照」录入新的对照。"
+          className="border-0 py-8"
+        />
       )}
 
       <div className="space-y-3">
-        {results?.map((r) => (
-          <Card key={r.id}>
-            <CardContent className="pt-4">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="font-medium">{r.local_name}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {r.region_code} · {r.lang} · 品类 #{r.category_id ?? "-"}
-                    {r.hs_code && ` · HS ${r.hs_code}`}
-                  </p>
-                  {r.alt_names && r.alt_names.length > 0 && (
-                    <div className="flex gap-1 flex-wrap mt-2">
-                      {r.alt_names.map((a, i) => (
-                        <Badge key={i} variant="outline" className="text-xs">
-                          {a}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
+        {!isError &&
+          results?.map((r) => (
+            <Card key={r.id}>
+              <CardContent className="pt-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="font-medium">{r.local_name}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {r.region_code} · {r.lang} · 品类 #{r.category_id ?? "-"}
+                      {r.hs_code && ` · HS ${r.hs_code}`}
+                    </p>
+                    {r.alt_names && r.alt_names.length > 0 && (
+                      <div className="flex gap-1 flex-wrap mt-2">
+                        {r.alt_names.map((a, i) => (
+                          <Badge key={i} variant="outline" className="text-xs">
+                            {a}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {r.is_verified && <Badge>已核实</Badge>}
                 </div>
-                {r.is_verified && <Badge>已核实</Badge>}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          ))}
       </div>
     </div>
   );
 }
 
 function UsageTab() {
-  const { data: usages } = useQuery({
+  const usageQuery = useQuery({
     queryKey: ["market", "usages"],
     queryFn: async () => {
       const { data } = await apiClient.get<
@@ -312,33 +365,46 @@ function UsageTab() {
       return data;
     },
   });
+  const usages = usageQuery.data;
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
         按用途反查适用产品类别（数据来自市场对照工位）
       </p>
-      {usages?.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          暂无用途分类数据，请先录入
-        </p>
+      {/* M5：这一块原来什么都不渲染（整块空白）—— 补 LoadingBlock */}
+      {usageQuery.isLoading && <LoadingBlock rows={4} />}
+      {!usageQuery.isLoading && usageQuery.isError ? (
+        <ErrorState
+          title="用途分类读取失败"
+          message={normalizeApiError(usageQuery.error).message}
+          onRetry={() => void usageQuery.refetch()}
+        />
+      ) : null}
+      {!usageQuery.isLoading && !usageQuery.isError && usages?.length === 0 && (
+        <EmptyState
+          title="暂无用途分类数据"
+          description="市场对照还没有用途维度数据，请先录入。"
+          className="border-0 py-8"
+        />
       )}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        {usages?.map((u) => (
-          <Card key={u.id}>
-            <CardContent className="pt-4">
-              <p className="font-medium text-sm">{u.usage_name}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {u.usage_code}
-              </p>
-              {u.description && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  {u.description}
+        {!usageQuery.isError &&
+          usages?.map((u) => (
+            <Card key={u.id}>
+              <CardContent className="pt-4">
+                <p className="font-medium text-sm">{u.usage_name}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {u.usage_code}
                 </p>
-              )}
-            </CardContent>
-          </Card>
-        ))}
+                {u.description && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {u.description}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          ))}
       </div>
     </div>
   );
@@ -346,7 +412,13 @@ function UsageTab() {
 
 function PortsTab() {
   const [country, setCountry] = useState("");
-  const { data: ports, isLoading } = usePorts(country || undefined);
+  const {
+    data: ports,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = usePorts(country || undefined);
 
   return (
     <div className="space-y-4">
@@ -365,63 +437,75 @@ function PortsTab() {
       </div>
 
       {isLoading && <LoadingBlock rows={3} />}
-      {!isLoading && ports?.length === 0 && (
-        <p className="text-sm text-muted-foreground">暂无港口数据</p>
+      {!isLoading && isError ? (
+        <ErrorState
+          title="港口数据读取失败"
+          message={normalizeApiError(error).message}
+          onRetry={() => void refetch()}
+        />
+      ) : null}
+      {!isLoading && !isError && ports?.length === 0 && (
+        <EmptyState
+          title="暂无港口数据"
+          description="换个国家代码试试，或先录入港口情报。"
+          className="border-0 py-8"
+        />
       )}
 
       <div className="space-y-3">
-        {ports?.map((p) => (
-          <Card key={p.id}>
-            <CardContent className="pt-4">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="font-medium text-sm">
-                    {p.name_en} {p.name_cn !== p.name_en && `(${p.name_cn})`}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {p.country_code} · {p.city ?? "-"} · {p.un_locode ?? "-"}
-                    {p.port_type && ` · ${p.port_type}`}
-                  </p>
-                  {p.position_desc && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {p.position_desc}
+        {!isError &&
+          ports?.map((p) => (
+            <Card key={p.id}>
+              <CardContent className="pt-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="font-medium text-sm">
+                      {p.name_en} {p.name_cn !== p.name_en && `(${p.name_cn})`}
                     </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {p.country_code} · {p.city ?? "-"} · {p.un_locode ?? "-"}
+                      {p.port_type && ` · ${p.port_type}`}
+                    </p>
+                    {p.position_desc && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {p.position_desc}
+                      </p>
+                    )}
+                  </div>
+                  {p.congestion_level && (
+                    <Badge
+                      variant={
+                        p.congestion_level === "high"
+                          ? "destructive"
+                          : "secondary"
+                      }
+                    >
+                      拥堵: {p.congestion_level}
+                    </Badge>
                   )}
                 </div>
-                {p.congestion_level && (
-                  <Badge
-                    variant={
-                      p.congestion_level === "high"
-                        ? "destructive"
-                        : "secondary"
-                    }
-                  >
-                    拥堵: {p.congestion_level}
-                  </Badge>
-                )}
-              </div>
-              {p.suitable_cargo && p.suitable_cargo.length > 0 && (
-                <div className="flex gap-1 flex-wrap mt-3">
-                  {p.suitable_cargo.map((c) => (
-                    <Badge key={c} variant="outline" className="text-xs">
-                      {c}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-              {p.suitable_shipping_modes &&
-                p.suitable_shipping_modes.length > 0 && (
-                  <div className="flex gap-1 flex-wrap mt-2">
-                    {p.suitable_shipping_modes.map((m) => (
-                      <Badge key={m} variant="secondary" className="text-xs">
-                        {m}
+                {p.suitable_cargo && p.suitable_cargo.length > 0 && (
+                  <div className="flex gap-1 flex-wrap mt-3">
+                    {p.suitable_cargo.map((c) => (
+                      <Badge key={c} variant="outline" className="text-xs">
+                        {c}
                       </Badge>
                     ))}
                   </div>
                 )}
-            </CardContent>
-          </Card>
-        ))}
+                {p.suitable_shipping_modes &&
+                  p.suitable_shipping_modes.length > 0 && (
+                    <div className="flex gap-1 flex-wrap mt-2">
+                      {p.suitable_shipping_modes.map((m) => (
+                        <Badge key={m} variant="secondary" className="text-xs">
+                          {m}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+              </CardContent>
+            </Card>
+          ))}
       </div>
     </div>
   );

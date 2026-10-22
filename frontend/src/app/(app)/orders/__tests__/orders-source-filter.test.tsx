@@ -61,6 +61,8 @@ const INQUIRY_ORDER = {
   confirmed_by: 3,
   confirmed_source: "manual",
   created_at: "2026-10-01T00:00:00Z",
+  /** A1（P0-A）：列表行带待批明细变更数（本单 2 条 ⇒ 显示角标） */
+  pending_item_change_count: 2,
 };
 
 const DIRECT_ORDER = {
@@ -75,6 +77,7 @@ const DIRECT_ORDER = {
   confirmed_at: null,
   confirmed_by: null,
   confirmed_source: null,
+  pending_item_change_count: 0,
 };
 
 let root: Root | null = null;
@@ -131,6 +134,31 @@ async function mount() {
   await settle();
 }
 
+/** 深链目标单（不在列表第 1 页里）：详情面板按 id 单独 GET /orders/42。 */
+const DEEP_LINK_ORDER = {
+  ...INQUIRY_ORDER,
+  id: 42,
+  order_no: "ORD-202610-0042",
+  amount_breakdown: {
+    goods_amount: 1000,
+    freight_amount: 0,
+    insurance_amount: 0,
+    other_amount: 0,
+  },
+  items: [
+    {
+      id: 1,
+      product_name: "勾花网",
+      spec_snapshot: { specification: "2.5mm" },
+      qty: 10,
+      qty_unit: "ROLLS",
+      unit_price: 100,
+      line_amount: 1000,
+      currency: "USD",
+    },
+  ],
+};
+
 beforeEach(() => {
   vi.resetAllMocks();
   window.localStorage.clear();
@@ -143,6 +171,10 @@ beforeEach(() => {
         page: 1,
         page_size: 20,
       });
+    }
+    if (path === "/orders/42") return ok(DEEP_LINK_ORDER);
+    if (path === "/orders/42/item-change-requests") {
+      return ok({ items: [], total: 0 });
     }
     if (path === "/quotes")
       return ok({ items: [], total: 0, page: 1, page_size: 100 });
@@ -158,6 +190,8 @@ afterEach(() => {
   container = null;
   client?.clear();
   client = null;
+  // 深链用例会改 location.search，复位避免影响后续用例
+  window.history.replaceState(null, "", "/");
 });
 
 describe("订单列表 · 来源列", () => {
@@ -251,5 +285,69 @@ describe("新建订单入口平级", () => {
     expect(
       container!.querySelector('input[name="order-source"]'),
     ).not.toBeNull();
+  });
+});
+describe("待批角标（A1 / P0-A）", () => {
+  it("pending_item_change_count > 0 显示「有变更待批」，aria-label 含条数；0 不显示", async () => {
+    await mount();
+    // 宽屏表与窄屏卡（CSS 隐藏其一）都会渲染角标 ⇒ 按容器分别断言
+    const badges = Array.from(
+      container!.querySelectorAll('tbody [aria-label^="有变更待批"]'),
+    );
+    expect(badges).toHaveLength(1);
+    expect(badges[0]?.getAttribute("aria-label")).toBe("有变更待批 2 条");
+    expect(badges[0]?.textContent).toContain("有变更待批");
+
+    // 角标挂在有 2 条申请的订单行上；另一单（0 条）不显示
+    const rows = Array.from(container!.querySelectorAll("tbody tr"));
+    const withBadge = rows.find((row) =>
+      row.textContent?.includes("ORD-202610-0001"),
+    );
+    const withoutBadge = rows.find((row) =>
+      row.textContent?.includes("ORD-202610-0002"),
+    );
+    expect(withBadge?.textContent).toContain("有变更待批");
+    expect(withoutBadge?.textContent).not.toContain("有变更待批");
+  });
+
+  it("窄屏卡片同样显示角标（移动端不丢待批信号）", async () => {
+    await mount();
+    const mobile = container!.querySelector(".md\\:hidden");
+    expect(mobile).not.toBeNull();
+    expect(
+      mobile!.querySelector('[aria-label="有变更待批 2 条"]'),
+    ).not.toBeNull();
+  });
+});
+
+describe("通知深链 /orders?id=（通知链 A4）", () => {
+  it("按 ?id= 打开详情：拉 GET /orders/42 并显示订单详情", async () => {
+    window.history.replaceState(null, "", "/orders?id=42");
+    await mount();
+    // 详情单独拉取（不依赖当前页列表里有没有这条）
+    expect(
+      vi
+        .mocked(apiClient.get)
+        .mock.calls.some(([url]) => String(url) === "/orders/42"),
+    ).toBe(true);
+    expect(container!.textContent).toContain("订单详情 · ORD-202610-0042");
+  });
+
+  it("关闭详情时清掉 URL 上的 ?id=，刷新不会再把详情弹回来", async () => {
+    window.history.replaceState(null, "", "/orders?id=42");
+    await mount();
+    const close = Array.from(container!.querySelectorAll("button")).find(
+      (el) => (el.textContent ?? "").trim() === "关闭",
+    );
+    act(() => {
+      close!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await settle();
+    expect(window.location.search).not.toContain("id=");
+  });
+
+  it("无 ?id= 时不自动打开详情", async () => {
+    await mount();
+    expect(container!.textContent).not.toContain("订单详情 ·");
   });
 });

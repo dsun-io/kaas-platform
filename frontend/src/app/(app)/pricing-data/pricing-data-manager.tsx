@@ -14,7 +14,8 @@ import {
   PricingEditDialog,
   type PricingCellUpdate,
 } from "./components/PricingEditDialog";
-import { PageHeader } from "@/components/shared";
+import { EmptyState, ErrorState, PageHeader } from "@/components/shared";
+import { LoadingBlock } from "@/components/shared/loading-block";
 import {
   PricingAllCustomersTable,
   PricingDataTable,
@@ -34,8 +35,13 @@ import { normalizeApiError } from "@/lib/api/api-error";
 export function PricingDataManager({
   embedded = false,
 }: { embedded?: boolean } = {}) {
-  const { data: productsData, isLoading: loadingProducts } =
-    useExportProducts();
+  const {
+    data: productsData,
+    isLoading: loadingProducts,
+    isError: productsFailed,
+    error: productsError,
+    refetch: refetchProducts,
+  } = useExportProducts();
   const products = productsData?.products ?? [];
 
   // 跨客户查看是内部视图：只有租户管理员才看得到这个开关。
@@ -67,6 +73,8 @@ export function PricingDataManager({
     data: matrix,
     isLoading,
     error,
+    isError: matrixFailed,
+    refetch: refetchMatrix,
   } = usePricingMatrix(productKey, scope);
   const saveCell = useSavePricingCell(productKey);
   const deactivateCell = useDeactivatePricingCell(productKey);
@@ -161,11 +169,20 @@ export function PricingDataManager({
       </div>
 
       {loadingProducts ? (
-        <p className="text-sm text-muted-foreground">加载产品…</p>
+        // B3：加载态用共享 LoadingBlock（不再是「加载产品…」纯文本）
+        <LoadingBlock rows={3} />
+      ) : productsFailed ? (
+        <ErrorState
+          title="产品列表读取失败"
+          message={normalizeApiError(productsError).message}
+          onRetry={() => void refetchProducts()}
+        />
       ) : products.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          还没有可用的产品，先到产品工位添加产品，再来配置定价数据。
-        </p>
+        <EmptyState
+          title="还没有可用的产品"
+          description="先到产品工位添加产品，再来配置定价数据。"
+          className="border-0 py-8"
+        />
       ) : (
         <>
           {products.length > 1 && (
@@ -193,10 +210,21 @@ export function PricingDataManager({
             </p>
           )}
 
-          {forbidden ? (
-            <p className="text-sm text-muted-foreground">
-              只有空间管理员可以查看所有客户的定价数据。
-            </p>
+          {isLoading ? (
+            <LoadingBlock rows={4} />
+          ) : forbidden ? (
+            // 403 是**权限**不是"没数据"：显式说明，且不提供无意义的重试
+            <ErrorState
+              title="无权查看所有客户的定价数据"
+              message="只有空间管理员可以查看所有客户的定价数据。"
+            />
+          ) : matrixFailed ? (
+            // B3：读取失败 ≠ 未配置 —— 不能说成「该产品未声明定价键」
+            <ErrorState
+              title="定价数据读取失败"
+              message={normalizeApiError(error).message}
+              onRetry={() => void refetchMatrix()}
+            />
           ) : scope === "all" ? (
             <PricingAllCustomersTable matrix={matrix} />
           ) : (

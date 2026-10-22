@@ -9,9 +9,11 @@
  */
 import { useState } from "react";
 import { AlertCircle, Ship } from "lucide-react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { AsyncButton } from "@/components/shared";
+import { useAsyncAction } from "@/lib/hooks/use-async-action";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
@@ -103,23 +105,32 @@ export default function ShipmentsPage() {
     },
   });
 
-  const create = useMutation({
-    mutationFn: async () => {
+  /**
+   * P0-B2/S2：建单 / 保存 / 推进三个写操作原本全无 onError（失败零反馈），
+   * 统一走 `useAsyncAction`（pending + 归一化错误文案）并明确三件事：
+   * 1. 错误出口 —— 页内 `role="alert"`（拦截器已 toast，这里不重复 toast）；
+   * 2. pending 防重 —— `AsyncButton` 自动 disabled；
+   * 3. 成功 toast 区分「建单 / 保存 / 推进」，不再一律「已保存」。
+   */
+  const create = useAsyncAction(
+    async () => {
       const { data } = await apiClient.post<ShipmentRow>("/shipments", {
         order_id: Number(orderId),
       });
       return data;
     },
-    onSuccess: (s) => {
-      toast.success(`已建出货单 ${s.shipment_no}（客户与货物已从订单带入）`);
-      setOrderId("");
-      setSelectedId(s.id);
-      qc.invalidateQueries({ queryKey: ["shipments"] });
+    {
+      onSuccess: (s) => {
+        toast.success(`已建出货单 ${s.shipment_no}（客户与货物已从订单带入）`);
+        setOrderId("");
+        setSelectedId(s.id);
+        qc.invalidateQueries({ queryKey: ["shipments"] });
+      },
     },
-  });
+  );
 
-  const patch = useMutation({
-    mutationFn: async (body: Partial<ShipmentRow> & { id: number }) => {
+  const save = useAsyncAction(
+    async (body: Partial<ShipmentRow> & { id: number }) => {
       const { id, ...rest } = body;
       const { data } = await apiClient.patch<ShipmentRow>(
         `/shipments/${id}`,
@@ -127,11 +138,30 @@ export default function ShipmentsPage() {
       );
       return data;
     },
-    onSuccess: () => {
-      toast.success("已保存");
-      qc.invalidateQueries({ queryKey: ["shipments"] });
+    {
+      onSuccess: () => {
+        toast.success("已保存");
+        qc.invalidateQueries({ queryKey: ["shipments"] });
+      },
     },
-  });
+  );
+
+  const advance = useAsyncAction(
+    async ({ id, status }: { id: number; status: string }) => {
+      const { data } = await apiClient.patch<ShipmentRow>(`/shipments/${id}`, {
+        status,
+      });
+      return data;
+    },
+    {
+      onSuccess: (_data, args) => {
+        toast.success(
+          `已推进到「${STATUS_LABEL[args.status] ?? args.status}」`,
+        );
+        qc.invalidateQueries({ queryKey: ["shipments"] });
+      },
+    },
+  );
 
   const rows = list.data?.items ?? [];
   const selected = rows.find((s) => s.id === selectedId) ?? null;
@@ -161,19 +191,29 @@ export default function ShipmentsPage() {
               </option>
             ))}
           </select>
-          <Button
-            disabled={!orderId || create.isPending}
-            onClick={() => create.mutate()}
+          <AsyncButton
+            disabled={!orderId}
+            pending={create.pending}
+            pendingLabel="建单中…"
+            onClick={() => void create.run()}
           >
             <Ship className="mr-1 h-4 w-4" />
             建出货单
-          </Button>
+          </AsyncButton>
           {orders.data?.length === 0 && (
             <span className="text-xs text-warning">
               还没有订单 —— 请先在「订单」工位建单。
             </span>
           )}
         </div>
+        {create.error ? (
+          <p
+            role="alert"
+            className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+          >
+            建单失败：{create.error}
+          </p>
+        ) : null}
       </SectionCard>
 
       <SectionCard
@@ -272,12 +312,13 @@ export default function ShipmentsPage() {
                           编辑
                         </Button>
                         {NEXT_STATUS[s.status] && (
-                          <Button
+                          <AsyncButton
                             size="sm"
                             variant="ghost"
-                            disabled={patch.isPending}
+                            pending={advance.pending}
+                            pendingLabel="推进中…"
                             onClick={() =>
-                              patch.mutate({
+                              void advance.run({
                                 id: s.id,
                                 status: NEXT_STATUS[s.status] as string,
                               })
@@ -285,7 +326,7 @@ export default function ShipmentsPage() {
                           >
                             推进到「
                             {STATUS_LABEL[NEXT_STATUS[s.status] as string]}」
-                          </Button>
+                          </AsyncButton>
                         )}
                       </div>
                     </td>
@@ -295,6 +336,14 @@ export default function ShipmentsPage() {
             </table>
           </div>
         )}
+        {advance.error ? (
+          <p
+            role="alert"
+            className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+          >
+            状态推进失败：{advance.error}
+          </p>
+        ) : null}
       </SectionCard>
 
       {selected && (
@@ -314,8 +363,9 @@ export default function ShipmentsPage() {
           <ShipmentForm
             key={selected.id}
             shipment={selected}
-            saving={patch.isPending}
-            onSave={(body) => patch.mutate({ id: selected.id, ...body })}
+            saving={save.pending}
+            error={save.error}
+            onSave={(body) => void save.run({ id: selected.id, ...body })}
           />
         </SectionCard>
       )}
@@ -326,10 +376,13 @@ export default function ShipmentsPage() {
 function ShipmentForm({
   shipment,
   saving,
+  error,
   onSave,
 }: {
   shipment: ShipmentRow;
   saving: boolean;
+  /** 保存失败原因（拦截器已 toast，这里页内常驻，便于对照着改） */
+  error?: string | null;
   onSave: (body: Partial<ShipmentRow>) => void;
 }) {
   const [draft, setDraft] = useState<Record<string, string>>(() =>
@@ -357,12 +410,21 @@ function ShipmentForm({
           </label>
         ))}
       </div>
-      <Button
-        disabled={saving}
+      {error ? (
+        <p
+          role="alert"
+          className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+        >
+          保存失败：{error}
+        </p>
+      ) : null}
+      <AsyncButton
+        pending={saving}
+        pendingLabel="保存中…"
         onClick={() => onSave(draft as Partial<ShipmentRow>)}
       >
-        {saving ? "保存中…" : "保存"}
-      </Button>
+        保存
+      </AsyncButton>
     </div>
   );
 }

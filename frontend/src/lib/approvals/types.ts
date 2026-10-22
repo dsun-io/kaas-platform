@@ -29,7 +29,13 @@ export interface ChangeLine {
   sort_order?: number | null;
 }
 
-/** 变更申请（`_request_dict` + 审批中心聚合列表补的 5 个订单/申请人字段）。 */
+/**
+ * 变更申请（`_request_dict` + 审批中心聚合列表补的订单/申请人/单证字段）。
+ *
+ * `affected_docs` 自后端 A2（P0-A，0898ad69）起由 `GET /approvals` **整页一次 IN 查完**
+ * 直出（形状与批准响应的 affected_docs 相同；无单证 = `[]`，不是 null）。
+ * 旧版本后端的行没有该字段（`undefined`）——调用方据此回退 `GET /trade-docs` 兜底。
+ */
 export interface ApprovalItem {
   id: number;
   order_id: number;
@@ -50,6 +56,11 @@ export interface ApprovalItem {
   order_status: string | null;
   order_total_amount: number | null;
   order_currency: string | null;
+  /**
+   * 受影响单证（A2 起聚合列表行内直出）。`undefined` = 旧后端没这个字段 ⇒ 兜底查单证；
+   * `[]` = 后端明确回答"该订单没有已开单证"（不要当成缺字段再查一次）。
+   */
+  affected_docs?: AffectedDoc[] | null;
 }
 
 export interface ApprovalListPage {

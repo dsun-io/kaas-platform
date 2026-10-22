@@ -120,6 +120,9 @@ export default function OutreachPage() {
   const generatingRef = useRef(false);
   // P0-B1：测试邮件收件人从 window.prompt 改为弹窗
   const [testTarget, setTestTarget] = useState<Mailbox | null>(null);
+  // P0-B2：设为默认发件人的失败出口与行级 pending
+  const [defaultingId, setDefaultingId] = useState<number | null>(null);
+  const [defaultError, setDefaultError] = useState<string | null>(null);
 
   const { data: mbData, refetch: refetchMb } = useQuery({
     queryKey: ["outreach-mailboxes"],
@@ -176,10 +179,26 @@ export default function OutreachPage() {
     }
   };
 
+  /**
+   * P0-B2/O35-O40：设为默认发件人原本无 try/catch（失败即未处理 rejection、
+   * 按钮无 pending）。现在：pending 期间禁用该行按钮 + 失败页内说明（拦截器已 toast，
+   * 不重复 toast）。
+   */
   const setDefault = async (m: Mailbox) => {
-    await apiClient.patch(`/outreach/mailboxes/${m.id}`, { is_default: true });
-    toast.success(`${m.email} 已设为默认发件人`);
-    refetchMb();
+    if (defaultingId === m.id) return;
+    setDefaultingId(m.id);
+    setDefaultError(null);
+    try {
+      await apiClient.patch(`/outreach/mailboxes/${m.id}`, {
+        is_default: true,
+      });
+      toast.success(`${m.email} 已设为默认发件人`);
+      refetchMb();
+    } catch (err) {
+      setDefaultError(normalizeApiError(err).message);
+    } finally {
+      setDefaultingId(null);
+    }
   };
 
   /** 测试邮件：只打开收件人弹窗，真实请求在弹窗里提交（可禁用、可显示原因）。 */
@@ -336,6 +355,15 @@ export default function OutreachPage() {
               <MailPlus className="mr-1 h-4 w-4" /> 添加邮箱
             </Button>
           </div>
+          {/* P0-B2：设为默认失败要有出口（拦截器已 toast，这里保留原因） */}
+          {defaultError ? (
+            <p
+              role="alert"
+              className="mb-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+            >
+              设为默认失败：{defaultError}
+            </p>
+          ) : null}
           {mailboxes.length === 0 ? (
             <EmptyState
               title="暂无邮箱"
@@ -366,9 +394,10 @@ export default function OutreachPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setDefault(m)}
+                        onClick={() => void setDefault(m)}
+                        disabled={defaultingId === m.id}
                       >
-                        设为默认
+                        {defaultingId === m.id ? "设置中…" : "设为默认"}
                       </Button>
                     )}
                     <Button

@@ -47,6 +47,13 @@ export interface OrderOption {
   confirmed_by?: string | number | null;
   /** manual / deposit_receipt */
   confirmed_source?: string | null;
+  /**
+   * **仅列表行**（`GET /orders`）：该订单 pending 状态的明细变更申请数（A1 / P0-A）。
+   * 门面用一次相关子查询随列表取回（backend/ts-worker/src/routes/orders.ts →
+   * `rowToListOrder`），禁止逐单再查（N+1）。详情/创建/更新接口不带该字段
+   * ⇒ 可选、缺省按 0；>0 时订单列表显示「有变更待批」角标。
+   */
+  pending_item_change_count?: number;
 }
 
 export interface QuoteOption {

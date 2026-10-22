@@ -148,8 +148,6 @@ function restoreButtons(): HTMLButtonElement[] {
 describe("DocContentVersions", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    // 恢复前有确认弹窗：默认确认
-    vi.spyOn(window, "confirm").mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -190,15 +188,29 @@ describe("DocContentVersions", () => {
     expect(container!.textContent).toContain("内容冻结");
   });
 
-  it("草稿恢复：打对版本 URL，并带上 note", async () => {
+  it("草稿恢复：先弹共享确认框，未确认不调用；确认后打对版本 URL", async () => {
     await mount({ status: "draft", docType: "pi" });
     await waitFor(() => container!.textContent?.includes("共 2 版") ?? false);
     await expand();
     await waitFor(() => restoreButtons().length === 2);
 
     const buttons = restoreButtons();
-    await act(async () => {
+    act(() => {
       buttons[1]!.click(); // 第二行 = v1
+    });
+    await settle();
+
+    // 确认前：不得发请求（window.confirm 换成 ConfirmDialog 的核心收益）
+    expect(apiClient.post).not.toHaveBeenCalled();
+    // 弹窗在 portal（document.body），不在 container 里
+    expect(document.body.textContent).toContain("把内容恢复为 v1？");
+
+    const confirmButton = Array.from(
+      document.body.querySelectorAll("button"),
+    ).find((el) => (el.textContent ?? "").trim() === "确认恢复");
+    expect(confirmButton).toBeDefined();
+    await act(async () => {
+      confirmButton!.click();
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
@@ -206,5 +218,29 @@ describe("DocContentVersions", () => {
       `/trade-docs/${DOC_ID}/content-versions/1/restore`,
       {},
     );
+  });
+
+  it("取消确认：不发请求，弹窗关闭", async () => {
+    await mount({ status: "draft", docType: "pi" });
+    await waitFor(() => container!.textContent?.includes("共 2 版") ?? false);
+    await expand();
+    await waitFor(() => restoreButtons().length === 2);
+
+    act(() => {
+      restoreButtons()[1]!.click();
+    });
+    await settle();
+
+    const cancelButton = Array.from(
+      document.body.querySelectorAll("button"),
+    ).find((el) => (el.textContent ?? "").trim() === "取消");
+    expect(cancelButton).toBeDefined();
+    await act(async () => {
+      cancelButton!.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(apiClient.post).not.toHaveBeenCalled();
+    expect(document.body.textContent).not.toContain("把内容恢复为 v1？");
   });
 });

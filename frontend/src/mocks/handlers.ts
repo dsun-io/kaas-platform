@@ -501,6 +501,15 @@ function mockDashboardFunnel(range: string): Record<string, unknown> {
       String(o.source_type ?? "direct") === "direct" &&
       String(o.created_at ?? "") >= sinceIso,
   );
+  // U-P0A/A5：直接下单分币种（金额只在同币种内相加；count/amount 保留兼容）
+  const directByCurrency = new Map<string, { count: number; amount: number }>();
+  for (const order of direct) {
+    const currency = String(order.currency ?? "USD");
+    const row = directByCurrency.get(currency) ?? { count: 0, amount: 0 };
+    row.count += 1;
+    row.amount += Number(order.total_amount ?? 0);
+    directByCurrency.set(currency, row);
+  }
   return {
     range,
     since: since.toISOString(),
@@ -548,6 +557,13 @@ function mockDashboardFunnel(range: string): Record<string, unknown> {
         Math.round(
           direct.reduce((sum, o) => sum + Number(o.total_amount ?? 0), 0) * 100,
         ) / 100,
+      by_currency: [...directByCurrency.entries()]
+        .map(([currency, v]) => ({
+          currency,
+          count: v.count,
+          amount: Math.round(v.amount * 100) / 100,
+        }))
+        .sort((a, b) => a.currency.localeCompare(b.currency)),
     },
     deprecated_summary: false,
   };
@@ -5363,6 +5379,63 @@ export const handlers = [
     });
   }),
 
+  // ── Dashboard 应收聚合（U-P0A/A3；真源 worker main.py:dashboard_receivables）──
+  // 金额只在同币种内聚合（不跨币种相加）；by_status.total 是原值相加，仅供规模参考。
+  http.get("/api/v1/dashboard/receivables", ({ request }) => {
+    const range = new URL(request.url).searchParams.get("range") ?? "today";
+    const days: Record<string, number> = {
+      today: 1,
+      "7d": 7,
+      "30d": 30,
+      "90d": 90,
+    };
+    const since = new Date(
+      Date.now() - (days[range] ?? 1) * 86_400_000,
+    ).toISOString();
+    const rows = [
+      ...RECEIVABLE_SEEDS,
+      ...orderReceivablesStore.values(),
+    ].filter((row) => String(row.created_at ?? "") >= since);
+    const byCurrency = new Map<
+      string,
+      { total: number; received: number; outstanding: number; count: number }
+    >();
+    const byStatus = new Map<string, { count: number; total: number }>();
+    for (const row of rows) {
+      const currency = String(row.currency ?? "") || "—";
+      const total = Number(row.total_amount ?? 0);
+      const received = Number(row.received_amount ?? 0);
+      const cur = byCurrency.get(currency) ?? {
+        total: 0,
+        received: 0,
+        outstanding: 0,
+        count: 0,
+      };
+      cur.total += total;
+      cur.received += received;
+      cur.outstanding += Math.max(0, total - received);
+      cur.count += 1;
+      byCurrency.set(currency, cur);
+      const status = String(row.status ?? "unknown");
+      const st = byStatus.get(status) ?? { count: 0, total: 0 };
+      st.count += 1;
+      st.total += total;
+      byStatus.set(status, st);
+    }
+    return HttpResponse.json({
+      range,
+      since,
+      by_currency: [...byCurrency.entries()]
+        .map(([currency, v]) => ({ currency, ...v }))
+        .sort((a, b) => a.currency.localeCompare(b.currency)),
+      by_status: [...byStatus.entries()].map(([status, v]) => ({
+        status,
+        ...v,
+      })),
+      totals: { count: rows.length },
+    });
+  }),
+
   // ── 订单（orders）────────────────────────────────────────────────────────
   // 补洞主链（quote → order）：orders 页与报价转单在 mock 模式下此前全部无 handler。
   // 写操作真改 store：转单后订单列表/详情跟着变，e2e 才能断言。
@@ -5448,7 +5521,15 @@ export const handlers = [
       );
     }
     const total = filtered.length;
-    const items = filtered.slice((page - 1) * pageSize, page * pageSize);
+    // U-P0A/A1：行内待批计数（与内核 list_orders 的 pending_item_change_count 同口径）
+    const items = filtered
+      .slice((page - 1) * pageSize, page * pageSize)
+      .map((order) => ({
+        ...order,
+        pending_item_change_count: orderChangeRequestsStore.filter(
+          (r) => r.order_id === Number(order.id) && r.status === "pending",
+        ).length,
+      }));
     return HttpResponse.json({ items, total, page, page_size: pageSize });
   }),
 
@@ -10431,6 +10512,15 @@ export const handlers = [
           order_total_amount: order ? Number(order.total_amount ?? 0) : null,
           order_currency: order?.currency ?? null,
           requester_name: mockUserName(r.requested_by),
+          // U-P0A/A2：受影响单证清单（与批准响应同形状；详情不再额外拉 /trade-docs）
+          affected_docs: docsStore
+            .filter((doc) => Number(doc.order_id) === r.order_id)
+            .map((doc) => ({
+              id: doc.id,
+              doc_type: doc.doc_type,
+              doc_no: doc.doc_no,
+              status: doc.status,
+            })),
         };
       });
     return HttpResponse.json({

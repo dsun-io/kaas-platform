@@ -286,12 +286,13 @@
 | # | 批次 | 内容 | 状态 |
 |---|---|---|---|
 | U-P0A | 新实现口径收口（后端） | 订单 `pending_item_change_count` / 审批行 `affected_docs` / `GET /dashboard/receivables` / 通知 link 改 `/orders?id=` / funnel `direct_orders.by_currency` | ✅ 2026-10-23：worker **1709+12skip**、ts **278 passed**、路由 274=188+86（EXPECTED_TOTAL 278）；前端接线随 U-P0A-FE |
-| U-P0A-FE | 新实现口径收口（前端接线） | 订单待批角标 / 审批受影响单证改用聚合字段 / dashboard 应收真实数据 / direct 分币种展示 / 移除通知 link 归一兜底 | ⏳ |
+| U-P0A-FE | 新实现口径收口（前端接线） | 订单待批角标（±深链 `/orders?id=`）/ 审批受影响单证改用聚合字段 / dashboard 应收真实数据 / direct 分币种 / 通知 link 主路径 | ✅ 2026-10-23：`orders-source-filter` 12 测、approvals 8 测、dashboard 11 测；mock 已补 receivables/by_currency/affected_docs/pending_count |
 | U-P0C | 共享原语 + 门禁 | ErrorState / DataTable / FilterBar / AsyncButton + useDebouncedValue / useUrlState / useAsyncAction + status-tones + `pnpm ui:patterns`（shadow 134 违规；**2026-10-30 转强制**） | ✅ 原语与脚本落地（新增 39 测）；页面回填待 B 批 |
 | U-P0B1 | 危险操作确认 + 防重 | outreach 群发/测试邮件 / research 删除与保存 / ai-providers 清密钥+空输入禁用+模型失焦保存 / quotes 签发+批量建单 / trade-docs 作废 / settings 重载 / 产品税率删除（window.prompt→Dialog） | ✅ 2026-10-23：8 处确认弹窗 + pending 防重（新增 27 测） |
-| U-P0B2 | 失败反馈 | spec-config 向导、shipments×3、records 录入、gray-release、spec-proposals、leadgen 详情、quotes Q9/Q15、outreach setDefault | ⏳ |
-| U-P0B3 | 失败≠空态 | events、pricing-data、market 五 tab、gray-release flags、kb 假统计 | ⏳ |
-| U-P0B4 | 防重（剩余） | leadgen 批量抓取/扫描已回复、添加邮箱/创建活动 | ⏳ |
+| U-P0B2 | 失败反馈 | spec-config 向导/属性提议、shipments×3、gray-release、spec-proposals、leadgen 详情、quotes Q9/Q15（含 invalidate key 修正）、outreach setDefault | ✅ 2026-10-23：统一 useAsyncAction + 页内 role=alert（拦截器已 toast，不重复）；新增 24 测 |
+| U-P0B3 | 失败≠空态 | events、pricing-data、market 五 tab、kb 假统计、intel 四视图 | ✅ 2026-10-23：ErrorState/LoadingBlock/EmptyState 三态分离；kb 假统计下线；新增 38 测 |
+| U-P0B4 | 防重（剩余） | leadgen 扫描已回复 / outreach setDefault 已做；批量抓取、添加邮箱/创建活动未做 | 🔨 部分 |
+| U-P0B5 | 页头/错误边界 | 7 个 error.tsx + 6 loading + RouteGuard + WorkstationGate + 全局 not-found + 剩余 window.confirm | ✅ 2026-10-23：原生确认清单内清零（ui:patterns native-dialog 7→3） |
 | U-P0B5 | 页头/错误边界 | 8 个 error.tsx + loading + RouteGuard + WorkstationGate + 全局 not-found | ⏳ |
 | U-P0B6 | 行内展开迁移 | X1–X8 按默认范式迁 DetailDrawer/Dialog | ⏳ |
 | U-P1D | 结构债 | 拆 7 个巨型组件、幽灵 /quotations、FreightPanel、状态映射三份重复 | ⏳ |

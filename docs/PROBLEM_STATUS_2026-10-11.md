@@ -14,6 +14,26 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-23 · UI 整改第二批：P0-A-FE / P0-B2 / P0-B3 / P0-B5 ✅）**
+> - **U-P0A-FE**：订单列表「有变更待批」角标（aria-label 含条数；宽屏/窄屏各一份）+ `/orders?id=` 深链打开详情；
+>   审批详情优先用聚合 `affected_docs`（`[]` 视为权威，旧行才兜底拉 /trade-docs）；dashboard 应收概览接
+>   `GET /dashboard/receivables`（按币种一行、状态只展示笔数、明确不做跨币种合计）；direct 分币种展示；
+>   通知 link 以 `/orders?id=` 为主路径（旧格式仅兼容历史）。mock 同步：receivables 聚合、funnel by_currency、
+>   approvals affected_docs、orders pending_item_change_count。
+> - **U-P0B2 失败反馈**：spec-config 向导/属性提议、shipments 建单/保存/推进、gray-release 开关、spec-proposals 审批、
+>   leadgen 详情/扫描、quotes Q9/Q15（含 invalidate key 真失效修正）、outreach setDefault 全部改为
+>   `useAsyncAction` + 页内 role=alert + pending 禁用（成功才 toast，避免与拦截器双弹）。
+> - **U-P0B3 失败≠空态**：events / pricing-data / market 五 tab / intel 四视图 全部 ErrorState+重试与 LoadingBlock/EmptyState；
+>   **kb 硬编码假统计（48/6/2 小时前）下线**，改「尚未接入」明确空态。
+> - **U-P0B5 边界**：7 个 error.tsx + 6 个 loading.tsx 统一 PageHeader/ErrorState；RouteGuard 无权限兜底、
+>   WorkstationGate 引导页补 h1；新增全局 `not-found.tsx`；doc-content-versions / team-members-panel / customers alert
+>   三处原生确认清零（ui:patterns native-dialog 7→3，余 3 处另立批次）。
+> - **门禁**：前端 typecheck 0 / lint 0 error / **1457 passed（189 文件）**；ui:standards / ui:contrast 通过；
+>   e2e 已更新 dashboard 应收断言（待本轮结果）；worker/ts/contracts 本轮无后端改动（保持 1709+12 / 278）。
+> - **遗留**：U-P0B4 部分（批量抓取、添加邮箱/创建活动）、U-P0B6 行内展开迁移、U-P1D/E 未做；
+>   QuoteWizard `totalSteps=5` 写死（组数≠3 会出空白步骤）已登记建议单独立项；
+>   `useAsyncAction` 无同 tick 重入保护（按钮 disabled 已覆盖，建议后续加 pendingRef）。
+>
 > **（2026-10-23 · UI 执行方案重写 + 首批 UI 整改（P0-A/P0-C/P0-B1）✅）**
 > - **执行方案重写**（用户口径：按最新实现与设计，不是按 UI_STANDARDS）：
 >   新增 [`UI_EXECUTION_PLAN_2026-10-23.md`](./UI_EXECUTION_PLAN_2026-10-23.md) 作为唯一活跃方案；

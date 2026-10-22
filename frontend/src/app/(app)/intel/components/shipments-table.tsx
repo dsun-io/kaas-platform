@@ -13,8 +13,10 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
+import { ErrorState } from "@/components/shared/error-state";
+import { LoadingBlock } from "@/components/shared/loading-block";
+import { normalizeApiError } from "@/lib/api/api-error";
 import {
   useIntelShipments,
   type IntelShipmentFilters,
@@ -41,7 +43,7 @@ export function ShipmentsTable() {
     date_to: "",
   });
 
-  const { data, isLoading, error } = useIntelShipments(filters);
+  const { data, isLoading, error, refetch } = useIntelShipments(filters);
 
   const handleSearch = () => {
     setFilters((prev) => ({
@@ -156,15 +158,14 @@ export function ShipmentsTable() {
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </div>
+          <LoadingBlock rows={5} />
         ) : error ? (
-          <div className="text-center py-8 text-muted-foreground">
-            加载失败，请稍后重试
-          </div>
+          // B3：失败 ≠ 空态 —— 显示原因并给重试，不能落成「暂无货运记录数据」
+          <ErrorState
+            title="货运记录读取失败"
+            message={normalizeApiError(error).message}
+            onRetry={() => void refetch()}
+          />
         ) : data && data.items.length > 0 ? (
           <>
             <div className="rounded-md border">

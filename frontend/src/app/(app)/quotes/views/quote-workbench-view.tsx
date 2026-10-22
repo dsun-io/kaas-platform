@@ -38,6 +38,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { handleApiError } from "@/lib/api/error-handler";
+import { normalizeApiError } from "@/lib/api/api-error";
 import { useLatestFxRate } from "@/lib/fx/use-latest-fx";
 import { cn } from "@/lib/utils";
 import { getAvailableTemplates } from "@/lib/trade-doc/render";
@@ -154,6 +155,14 @@ export function QuoteWorkbenchView() {
       setInquiryId(String(data.id));
       void queryClient.invalidateQueries({
         queryKey: ["customer-inquiries", customer?.id],
+      });
+    },
+    // P0-B2/Q9：新建询盘失败原无 onError（点了没反应）⇒ 页内如实说明；
+    // 拦截器已经 toast 过，这里不重复 toast。
+    onError: (err) => {
+      setNotice({
+        tone: "error",
+        text: `新建询盘失败：${normalizeApiError(err).message}`,
       });
     },
   });

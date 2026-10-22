@@ -20,6 +20,7 @@ import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, History, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { listCustomFields } from "@/lib/trade-doc/custom-fields";
 
@@ -98,7 +99,9 @@ function VersionPayloadView({
       {sources.length > 0 && (
         <p className="text-[11px] text-muted-foreground">
           上游来源：
-          {sources.map((key) => SOURCE_KEY_LABELS[key] ?? "其他来源").join("、")}
+          {sources
+            .map((key) => SOURCE_KEY_LABELS[key] ?? "其他来源")
+            .join("、")}
         </p>
       )}
       {entries.map(([key, value]) => (
@@ -137,6 +140,8 @@ export function DocContentVersions({
   const restore = useRestoreTradeDocContentVersion(docId);
   const [open, setOpen] = useState(false);
   const [viewing, setViewing] = useState<number | null>(null);
+  /** 待确认恢复的版本号（null = 弹窗关闭） */
+  const [confirmVersion, setConfirmVersion] = useState<number | null>(null);
   const detail = useTradeDocContentVersion(docId, viewing);
 
   const total = list.data?.total ?? 0;
@@ -147,163 +152,194 @@ export function DocContentVersions({
         ? "报价单由报价自动同步生成，恢复内容会被下次报价更新覆盖"
         : null;
 
+  /**
+   * 点「恢复」先打开共享 ConfirmDialog（不再 window.confirm）：
+   * 原生弹窗无法展示 pending（点击中可重复触发）、也无法把失败原因放在弹窗里；
+   * 这里只负责"发起确认"，真正提交在 `confirmRestore`。
+   */
   const doRestore = (versionNo: number) => {
     if (restoreDisabledReason) return;
-    const ok = window.confirm(
-      `确定把内容恢复为 v${versionNo} 吗？恢复会生成一个新版本，历史版本不会丢失。`,
-    );
-    if (!ok) return;
+    setConfirmVersion(versionNo);
+  };
+
+  const confirmRestore = () => {
+    if (confirmVersion === null) return;
+    const versionNo = confirmVersion;
     restore.mutate(
       { versionNo },
       {
-        onSuccess: (data) =>
+        onSuccess: (data) => {
           toast.success(
             `已恢复至 v${data.restored_version_no}（新版本已留档）`,
-          ),
+          );
+          setConfirmVersion(null);
+        },
         onError: () => toast.error("恢复失败：单据可能已签发，或该版本不存在"),
       },
     );
   };
 
   return (
-    <div className="mb-3 rounded-md border">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium"
-      >
-        {open ? (
-          <ChevronDown className="h-4 w-4" />
-        ) : (
-          <ChevronRight className="h-4 w-4" />
-        )}
-        <History className="h-4 w-4" />
-        内容版本
-        <span className="text-xs font-normal text-muted-foreground">
-          {list.isLoading
-            ? "加载中…"
-            : total > 0
-              ? `共 ${total} 版`
-              : "暂无记录"}
-        </span>
-      </button>
-
-      {open && (
-        <div className="space-y-2 border-t px-3 py-2">
-          {restoreDisabledReason && (
-            <p className="text-[11px] text-muted-foreground">
-              {restoreDisabledReason}
-            </p>
-          )}
-
-          {list.isLoading ? (
-            <p className="text-xs text-muted-foreground">正在读取版本…</p>
-          ) : list.isError ? (
-            <p className="text-xs text-destructive">读取内容版本失败。</p>
-          ) : total === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              还没有内容版本记录 —— 草稿每次保存内容、重新带入上游或 AI
-              翻译都会自动留一版。
-            </p>
+    <>
+      <div className="mb-3 rounded-md border">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium"
+        >
+          {open ? (
+            <ChevronDown className="h-4 w-4" />
           ) : (
-            <div className="overflow-hidden rounded border">
-              <table className="w-full text-xs">
-                <thead className="bg-muted/40 text-left text-muted-foreground">
-                  <tr>
-                    <th scope="col" className="px-2 py-1.5">
-                      版本
-                    </th>
-                    <th scope="col" className="px-2 py-1.5">
-                      变更
-                    </th>
-                    <th scope="col" className="px-2 py-1.5">
-                      时间
-                    </th>
-                    <th scope="col" className="px-2 py-1.5">
-                      内容项
-                    </th>
-                    <th scope="col" className="px-2 py-1.5 text-right">
-                      操作
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.data?.items.map((item) => (
-                    <tr key={item.version_no} className="border-t">
-                      <td className="px-2 py-1.5 font-mono">
-                        v{item.version_no}
-                      </td>
-                      <td className="px-2 py-1.5">
-                        {SOURCE_LABEL[item.change_source] ?? item.change_source}
-                      </td>
-                      <td className="px-2 py-1.5 text-muted-foreground">
-                        {formatTime(item.created_at)}
-                      </td>
-                      <td
-                        className="px-2 py-1.5 text-muted-foreground"
-                        title={item.custom_keys.join("、")}
-                      >
-                        {item.custom_keys.length
-                          ? `${item.custom_keys.length} 项内容`
-                          : "—"}
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <div className="flex justify-end gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            type="button"
-                            onClick={() =>
-                              setViewing(
-                                viewing === item.version_no
-                                  ? null
-                                  : item.version_no,
-                              )
-                            }
-                          >
-                            {viewing === item.version_no ? "收起" : "查看"}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            type="button"
-                            disabled={
-                              restoreDisabledReason !== null ||
-                              restore.isPending
-                            }
-                            onClick={() => doRestore(item.version_no)}
-                          >
-                            <RotateCcw className="mr-1 h-3.5 w-3.5" />
-                            恢复
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ChevronRight className="h-4 w-4" />
           )}
+          <History className="h-4 w-4" />
+          内容版本
+          <span className="text-xs font-normal text-muted-foreground">
+            {list.isLoading
+              ? "加载中…"
+              : total > 0
+                ? `共 ${total} 版`
+                : "暂无记录"}
+          </span>
+        </button>
 
-          {viewing !== null && (
-            <div className="rounded border bg-muted/20 p-2">
-              <p className="mb-1 text-[11px] font-medium">
-                v{viewing} 的填写内容
+        {open && (
+          <div className="space-y-2 border-t px-3 py-2">
+            {restoreDisabledReason && (
+              <p className="text-[11px] text-muted-foreground">
+                {restoreDisabledReason}
               </p>
-              {detail.isLoading ? (
-                <p className="text-xs text-muted-foreground">读取中…</p>
-              ) : detail.isError ? (
-                <p className="text-xs text-destructive">读取失败</p>
-              ) : (
-                <VersionPayloadView
-                  docType={docType}
-                  payload={detail.data?.raw_payload}
-                />
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+            )}
+
+            {list.isLoading ? (
+              <p className="text-xs text-muted-foreground">正在读取版本…</p>
+            ) : list.isError ? (
+              <p className="text-xs text-destructive">读取内容版本失败。</p>
+            ) : total === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                还没有内容版本记录 —— 草稿每次保存内容、重新带入上游或 AI
+                翻译都会自动留一版。
+              </p>
+            ) : (
+              <div className="overflow-hidden rounded border">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/40 text-left text-muted-foreground">
+                    <tr>
+                      <th scope="col" className="px-2 py-1.5">
+                        版本
+                      </th>
+                      <th scope="col" className="px-2 py-1.5">
+                        变更
+                      </th>
+                      <th scope="col" className="px-2 py-1.5">
+                        时间
+                      </th>
+                      <th scope="col" className="px-2 py-1.5">
+                        内容项
+                      </th>
+                      <th scope="col" className="px-2 py-1.5 text-right">
+                        操作
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {list.data?.items.map((item) => (
+                      <tr key={item.version_no} className="border-t">
+                        <td className="px-2 py-1.5 font-mono">
+                          v{item.version_no}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          {SOURCE_LABEL[item.change_source] ??
+                            item.change_source}
+                        </td>
+                        <td className="px-2 py-1.5 text-muted-foreground">
+                          {formatTime(item.created_at)}
+                        </td>
+                        <td
+                          className="px-2 py-1.5 text-muted-foreground"
+                          title={item.custom_keys.join("、")}
+                        >
+                          {item.custom_keys.length
+                            ? `${item.custom_keys.length} 项内容`
+                            : "—"}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              type="button"
+                              onClick={() =>
+                                setViewing(
+                                  viewing === item.version_no
+                                    ? null
+                                    : item.version_no,
+                                )
+                              }
+                            >
+                              {viewing === item.version_no ? "收起" : "查看"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              type="button"
+                              disabled={
+                                restoreDisabledReason !== null ||
+                                restore.isPending
+                              }
+                              onClick={() => doRestore(item.version_no)}
+                            >
+                              <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                              恢复
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {viewing !== null && (
+              <div className="rounded border bg-muted/20 p-2">
+                <p className="mb-1 text-[11px] font-medium">
+                  v{viewing} 的填写内容
+                </p>
+                {detail.isLoading ? (
+                  <p className="text-xs text-muted-foreground">读取中…</p>
+                ) : detail.isError ? (
+                  <p className="text-xs text-destructive">读取失败</p>
+                ) : (
+                  <VersionPayloadView
+                    docType={docType}
+                    payload={detail.data?.raw_payload}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <ConfirmDialog
+        open={confirmVersion !== null}
+        onOpenChange={(nextOpen) => {
+          // pending 中禁止关闭：避免请求还在飞时用户以为已取消
+          if (!nextOpen && !restore.isPending) setConfirmVersion(null);
+        }}
+        title={
+          confirmVersion !== null
+            ? `把内容恢复为 v${confirmVersion}？`
+            : "恢复历史版本？"
+        }
+        description="恢复会生成一个新版本并留档，历史版本不会丢失；恢复后的内容成为当前草稿内容，可再次恢复回这一版。"
+        confirmLabel="确认恢复"
+        cancelLabel="取消"
+        danger={false}
+        pending={restore.isPending}
+        onConfirm={confirmRestore}
+      />
+    </>
   );
 }

@@ -9,19 +9,17 @@
  *      （快照可能过期，后端才是最终判定）。
  * 引导的落点是团队的工位开通区（`/team?tab=subscriptions`）——
  * 团队/订阅接口属于"永不锁死"的路径，被拦的用户始终能走得到那里。
+ *
+ * W1（U-P0B5）：引导页此前用 CardTitle（div）当标题、整页没有 h1；
+ * 现改为 PageHeader（唯一 h1）+ 卡片放操作，页面结构与其它页面一致。
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Lock, RefreshCw, Users } from "lucide-react";
 
+import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useTeam } from "@/lib/team/team-context";
 import { workstationName } from "@/lib/workstation/visibility";
 
@@ -41,8 +39,17 @@ function WorkstationLockedGuide({
   const name = workstationName(workstationKey);
 
   return (
-    <div className="flex min-h-[60vh] items-center justify-center py-10">
-      <Card className="w-full max-w-lg">
+    <div className="space-y-6">
+      <PageHeader
+        title={hasTeam ? "该工位未开通" : "你还没有加入团队"}
+        description={
+          hasTeam
+            ? `「${name}」还没有在你的团队开通，所以暂时用不了。`
+            : `工位订阅挂在团队上 —— 没有团队就没有订阅主体，所以「${name}」现在还不能使用。`
+        }
+      />
+
+      <Card className="mx-auto w-full max-w-lg">
         <CardHeader className="text-center">
           <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted">
             {hasTeam ? (
@@ -51,27 +58,15 @@ function WorkstationLockedGuide({
               <Users className="size-5 text-muted-foreground" />
             )}
           </div>
-          <CardTitle className="text-xl">
-            {hasTeam ? "该工位未开通" : "你还没有加入团队"}
-          </CardTitle>
-          <CardDescription>
-            {hasTeam ? (
-              <>
-                「{name}」还没有在你的团队开通，所以暂时用不了。
-                {isTeamAdmin
-                  ? "你是团队管理员，可以在「团队与工位」里直接开通。"
-                  : "请联系团队管理员在「团队与工位」里开通。"}
-              </>
-            ) : (
-              <>
-                工位订阅挂在团队上 —— 没有团队就没有订阅主体，所以「{name}
-                」现在还不能使用。
-                先创建一个团队（你会成为团队管理员），或凭邀请码加入同事的团队。
-              </>
-            )}
-          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
+          <p className="text-center text-sm text-muted-foreground">
+            {hasTeam
+              ? isTeamAdmin
+                ? "你是团队管理员，可以在「团队与工位」里直接开通。"
+                : "请联系团队管理员在「团队与工位」里开通。"
+              : "先创建一个团队（你会成为团队管理员），或凭邀请码加入同事的团队。"}
+          </p>
           <div className="flex flex-wrap justify-center gap-2">
             {hasTeam ? (
               <>

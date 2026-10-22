@@ -156,7 +156,44 @@ async function openDetail() {
   await settle();
 }
 
-function mockCommonGet(item: ReturnType<typeof approvalItem>) {
+type TradeDocRow = {
+  id: number;
+  order_id: number;
+  doc_type: string;
+  doc_no: string;
+  status: string;
+};
+
+/** 兜底路径（旧后端行没有 affected_docs）用 /trade-docs 返回这些行。 */
+const LEGACY_TRADE_DOCS: TradeDocRow[] = [
+  {
+    id: 71,
+    order_id: 9,
+    doc_type: "pi",
+    doc_no: "PI-202610-0001",
+    status: "draft",
+  },
+  {
+    id: 72,
+    order_id: 9,
+    doc_type: "ci",
+    doc_no: "CI-202610-0002",
+    status: "issued",
+  },
+  // 其他订单的单证不能算「受影响」——mock 忽略 order_id 过滤时必须由前端挡住
+  {
+    id: 73,
+    order_id: 5,
+    doc_type: "bl",
+    doc_no: "BL-OTHER-ORDER",
+    status: "issued",
+  },
+];
+
+function mockCommonGet(
+  item: ReturnType<typeof approvalItem>,
+  tradeDocs: TradeDocRow[] = LEGACY_TRADE_DOCS,
+) {
   vi.mocked(apiClient.get).mockImplementation(async (url: string) => {
     const path = String(url);
     if (path === "/approvals") {
@@ -164,37 +201,20 @@ function mockCommonGet(item: ReturnType<typeof approvalItem>) {
     }
     if (path === "/trade-docs") {
       return okGet({
-        items: [
-          {
-            id: 71,
-            order_id: 9,
-            doc_type: "pi",
-            doc_no: "PI-202610-0001",
-            status: "draft",
-          },
-          {
-            id: 72,
-            order_id: 9,
-            doc_type: "ci",
-            doc_no: "CI-202610-0002",
-            status: "issued",
-          },
-          // 其他订单的单证不能算「受影响」——mock 忽略 order_id 过滤时必须由前端挡住
-          {
-            id: 73,
-            order_id: 5,
-            doc_type: "bl",
-            doc_no: "BL-OTHER-ORDER",
-            status: "issued",
-          },
-        ],
-        total: 3,
+        items: tradeDocs,
+        total: tradeDocs.length,
         page: 1,
         page_size: 100,
       });
     }
     return okGet({ items: [], total: 0, page: 1, page_size: 20 });
   });
+}
+
+function tradeDocCalls() {
+  return vi
+    .mocked(apiClient.get)
+    .mock.calls.filter(([url]) => String(url) === "/trade-docs");
 }
 
 beforeEach(() => {
@@ -215,7 +235,8 @@ afterEach(() => {
 });
 
 describe("审批详情与决策", () => {
-  it("详情展示新旧明细对比、原因与受影响单证（只列本订单）", async () => {
+  it("旧行无 affected_docs：回退 GET /trade-docs（只列本订单）并展示详情", async () => {
+    // 旧后端行没有 affected_docs 字段 ⇒ 必须走 /trade-docs 兜底
     mockCommonGet(approvalItem());
     await openDetail();
 
@@ -230,6 +251,78 @@ describe("审批详情与决策", () => {
     expect(text).toContain("PI-202610-0001");
     expect(text).toContain("CI-202610-0002");
     expect(text).not.toContain("BL-OTHER-ORDER");
+    // 兜底请求参数：order_id 精确到本订单
+    const calls = tradeDocCalls();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[1]).toMatchObject({
+      params: { order_id: 9, page_size: 100 },
+      silent: true,
+    });
+  });
+
+  it("A2 聚合行带 affected_docs：直接渲染行内清单，不请求 /trade-docs（含批准确认）", async () => {
+    mockCommonGet(
+      approvalItem({
+        affected_docs: [
+          { id: 81, doc_type: "pi", doc_no: "PI-INLINE-0001", status: "draft" },
+          {
+            id: 82,
+            doc_type: "contract",
+            doc_no: "CT-INLINE-0002",
+            status: "issued",
+          },
+        ],
+      }),
+      // 如果误走兜底，会出现这张只有 /trade-docs 才有的单证
+      [
+        {
+          id: 99,
+          order_id: 9,
+          doc_type: "bl",
+          doc_no: "BL-LEGACY-FALLBACK",
+          status: "issued",
+        },
+      ],
+    );
+    await openDetail();
+
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("PI-INLINE-0001");
+    expect(text).toContain("CT-INLINE-0002");
+    // 类型 + 状态文案（DocChip）：形式发票 / 合同 / 草稿 / 已签发
+    expect(text).toContain("形式发票");
+    expect(text).toContain("合同");
+    expect(text).toContain("草稿");
+    expect(text).toContain("已签发");
+    expect(text).not.toContain("BL-LEGACY-FALLBACK");
+    expect(tradeDocCalls()).toHaveLength(0);
+
+    // 批准确认弹窗同样用行内清单，且不触发新的 /trade-docs 请求
+    click(buttonByText("批准"));
+    await settle();
+    const confirmText = document.body.textContent ?? "";
+    expect(confirmText).toContain("受影响单证需人工复核/重开");
+    expect(confirmText).toContain("PI-INLINE-0001");
+    expect(confirmText).toContain("CT-INLINE-0002");
+    expect(tradeDocCalls()).toHaveLength(0);
+  });
+
+  it("affected_docs=[]：后端明确回答没有已开单证，也不回退请求 /trade-docs", async () => {
+    mockCommonGet(approvalItem({ affected_docs: [] }), [
+      {
+        id: 99,
+        order_id: 9,
+        doc_type: "pi",
+        doc_no: "SHOULD-NOT-RENDER",
+        status: "draft",
+      },
+    ]);
+    await openDetail();
+
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("该订单还没有已开单证");
+    expect(text).not.toContain("SHOULD-NOT-RENDER");
+    expect(tradeDocCalls()).toHaveLength(0);
   });
 
   it("拒绝必填理由：空理由不提交，弹窗内提示；填写后才 POST reject", async () => {
@@ -302,6 +395,35 @@ describe("审批详情与决策", () => {
     );
     expect(toastSuccess).toHaveBeenCalledWith(
       expect.stringContaining("已批准"),
+    );
+  });
+
+  it("批准响应的 affected_docs 进成功提示（真正受影响的单证张数）", async () => {
+    mockCommonGet(approvalItem({ affected_docs: [] }));
+    vi.mocked(apiClient.post).mockResolvedValue(
+      okPost({
+        ...approvalItem({ status: "approved", decided_by: 1 }),
+        applied: true,
+        affected_docs: [
+          {
+            id: 90,
+            doc_type: "contract",
+            doc_no: "CT-202610-0003",
+            status: "issued",
+          },
+        ],
+        new_total_amount: 1200,
+      }),
+    );
+    await openDetail();
+
+    click(buttonByText("批准"));
+    await settle();
+    click(buttonByText("确认批准"));
+    await settle(6);
+
+    expect(toastSuccess).toHaveBeenCalledWith(
+      expect.stringContaining("1 张已开单证需复核重开"),
     );
   });
 

@@ -7,11 +7,14 @@
  * 订单上的**贸易条款**（贸易术语/付款方式/装卸港/唛头/原产国）是单证的核心输入，
  * 所以这里必须能看、能改；否则单证就只能手工重填，极易与合同不一致。
  *
- * TODO(M2-B/M2-C)：设计 §9.2 的列表「有变更待批」角标尚未接 —— `GET /orders`
- * 未返回待批申请计数，逐单再查 item-change-requests 会变成 N+1。等后端补
- * 列表字段（如 `pending_item_change_count`）后在此加角标；详情页横幅已实现。
+ * 列表「有变更待批」角标（设计 §9.2 / A1 P0-A）：`GET /orders` 每行返回
+ * `pending_item_change_count`（门面一次相关子查询取回，无 N+1），>0 显示角标；
+ * 详情页另有待批横幅（新旧对比 + 批准/拒绝）。
+ *
+ * 深链 `/orders?id={order_id}`：通知（内核 A4 起批准/拒绝写该 link）与询盘工位的
+ * 「关联订单」都指到这里，挂载后按 id 打开详情；目标单不在当前页时详情仍可单独拉取。
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { AlertCircle, Bell, ChevronRight, Plus, Wallet } from "lucide-react";
@@ -89,6 +92,29 @@ const ORDER_COLUMNS = [
 ] as const;
 type OrderColumnKey = (typeof ORDER_COLUMNS)[number]["key"];
 
+/**
+ * 「有变更待批」角标（A1 / P0-A）：仅 `pending_item_change_count > 0` 时出现。
+ * aria-label 带**条数**（读屏能听出有几条申请待批），可视文案保持设计稿四字；
+ * 颜色不是唯一信号（UI_STANDARDS §2：状态必须同时有文案）。
+ */
+function PendingChangeBadge({ count }: { count: number | undefined }) {
+  if (typeof count !== "number" || !Number.isFinite(count) || count <= 0) {
+    return null;
+  }
+  return (
+    <span
+      role="note"
+      aria-label={`有变更待批 ${count} 条`}
+      title={`有 ${count} 条明细变更申请待审批`}
+      className="inline-flex items-center"
+    >
+      <StatusBadge tone="warning" className="h-5 px-2 text-[11px]">
+        有变更待批
+      </StatusBadge>
+    </span>
+  );
+}
+
 export default function OrdersPage() {
   usePageView({ resource_id: "/orders" });
   const qc = useQueryClient();
@@ -116,8 +142,31 @@ export default function OrdersPage() {
     ORDER_COLUMNS.map((c) => c.key),
   );
 
+  // 深链：通知（`/orders?id=`，内核 A4）与询盘「关联订单」都指到这里。
+  // 静态导出下不用 useSearchParams（需要 Suspense 边界，quotes 页已踩过），
+  // 挂载后直接读 location.search。
+  useEffect(() => {
+    const raw = new URLSearchParams(window.location.search).get("id");
+    const id = raw === null ? Number.NaN : Number(raw);
+    if (Number.isInteger(id) && id > 0) setSelectedId(id);
+  }, []);
+
   const selected = orders.find((o) => o.id === selectedId) ?? null;
+  // 深链目标可能在其它页（列表只加载当前页）：详情面板按 id 单独 GET，
+  // 列表行只用来补币种等展示信息；找不到就传 null，不阻断详情。
+  const detailOrderId = selected?.id ?? selectedId;
   const hasSourceFilter = sourceType !== "" || sourceChannel !== "";
+
+  /** 关闭详情：同时清掉 `?id=`，否则刷新/后退会把已关闭的详情又弹出来。 */
+  const closeDetail = () => {
+    setSelectedId(null);
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("id")) {
+      url.searchParams.delete("id");
+      window.history.replaceState(null, "", url.toString());
+    }
+  };
 
   const createFromQuote = useMutation({
     mutationFn: async () => {
@@ -368,9 +417,12 @@ export default function OrdersPage() {
                     >
                       {visibleCols.includes("order_no") && (
                         <td className="p-2 font-medium">
-                          <span className="inline-flex items-center gap-1">
+                          <span className="inline-flex flex-wrap items-center gap-1">
                             {o.order_no}
                             <CopyButton value={o.order_no} label="复制订单号" />
+                            <PendingChangeBadge
+                              count={o.pending_item_change_count}
+                            />
                           </span>
                         </td>
                       )}
@@ -501,6 +553,7 @@ export default function OrdersPage() {
                       <StatusBadge tone={orderSourceTone(o.source_type)}>
                         {orderSourceLabel(o.source_type, o.source_channel)}
                       </StatusBadge>
+                      <PendingChangeBadge count={o.pending_item_change_count} />
                       <span className="text-xs text-muted-foreground">
                         {o.total_amount === null
                           ? "—"
@@ -533,27 +586,29 @@ export default function OrdersPage() {
         )}
       </SectionCard>
 
-      {/* §13.3 订单详情：金额构成 / 货物明细 / 贸易条款；收款计划与附件独立面板 */}
-      {selected && (
+      {/* §13.3 订单详情：金额构成 / 货物明细 / 贸易条款；收款计划与附件独立面板。
+          深链进来的订单可能不在当前页列表里 ⇒ 详情只依赖 detailOrderId（各自 GET），
+          币种取自列表行（拿不到就 null，面板按无币种展示）。 */}
+      {detailOrderId !== null && (
         <>
           <OrderDetailPanel
-            key={`detail-${selected.id}`}
-            orderId={selected.id}
-            onClose={() => setSelectedId(null)}
+            key={`detail-${detailOrderId}`}
+            orderId={detailOrderId}
+            onClose={closeDetail}
           />
           <PaymentSchedulesPanel
-            key={`schedules-${selected.id}`}
-            orderId={selected.id}
-            currency={selected.currency ?? null}
+            key={`schedules-${detailOrderId}`}
+            orderId={detailOrderId}
+            currency={selected?.currency ?? null}
           />
           <OrderAttachmentsPanel
-            key={`files-${selected.id}`}
-            orderId={selected.id}
+            key={`files-${detailOrderId}`}
+            orderId={detailOrderId}
           />
           {/* 已有单证台账（外部单证），与随单附件分开展示 */}
           <OrderExternalDocsPanel
-            key={`external-docs-${selected.id}`}
-            orderId={selected.id}
+            key={`external-docs-${detailOrderId}`}
+            orderId={detailOrderId}
           />
         </>
       )}

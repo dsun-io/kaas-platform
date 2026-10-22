@@ -109,3 +109,6 @@
 | 2026-10-23 | **P0-A 后端（A1–A5）完成**：待批计数 / 审批 affected_docs / dashboard receivables / 通知 link / funnel 分币种；worker 1709+12skip、ts 278、路由 274=188+86 |
 | 2026-10-23 | **P0-C 原语落地**：ErrorState/DataTable/FilterBar/AsyncButton + use* hooks + status-tones + `pnpm ui:patterns` shadow（134 违规，2026-10-30 转强制） |
 | 2026-10-23 | **P0-B1/B4 止血完成**：8 处危险操作确认 + pending 防重（新增 27 测）；剩 U-P0A-FE 前端接线与 B2/B3/B4/B5/B6/P1 批次 |
+| 2026-10-23 | **U-P0A-FE ✅**：订单待批角标+深链、审批聚合 affected_docs、dashboard 应收真实数据、direct 分币种、通知 link |
+| 2026-10-23 | **U-P0B2/B3/B5 ✅**：失败反馈统一（useAsyncAction）、失败≠空态（events/pricing/market/intel/kb 假统计下线）、7+6 边界页头与原生确认清零；全量前端 1457 passed |
+| 2026-10-23 | 待做：U-P0B4 剩余、U-P0B6 行内展开迁移、U-P1D 结构债、U-P1E 体验一致性；2026-10-30 ui:patterns 转强制 |

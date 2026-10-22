@@ -6,13 +6,14 @@
  * 契约真源：`backend/worker/src/ws_approvals.py`（门面 `routes/approvals.ts` 原样透传）。
  *  - `GET /approvals?view=pending|mine|done&page&page_size`
  *  - `POST /orders/{id}/item-change-requests/{rid}/approve|reject`
- *  - `GET /trade-docs?order_id=`（受影响单证清单：审批响应之外的**预览**来源）
+ *  - `GET /trade-docs?order_id=`（**降级兜底**：仅当 `GET /approvals` 行里没有
+ *    `affected_docs` —— 即后端 A2（0898ad69）之前的旧行 —— 才用它）
  *
- * 为什么受影响单证要另拉 `/trade-docs`：`GET /approvals` 的聚合行里没有单证清单
- * （内核只在**批准响应**里回 `affected_docs`）。审批人需要在点"批准"**之前**看到
- * "哪些已开单证会与货不对板"，所以详情抽屉用 order_id 拉一次单证列表。
- * mock 的 `GET /trade-docs` 目前忽略 order_id 过滤，因此**前端再按 order_id 过滤一遍**
- * ——否则 mock 模式下会把全站单证都算成"受影响"。
+ * A2 起 `GET /approvals` 的行内直接带 `affected_docs`（整页一次 IN 查完），
+ * 审批详情优先用它（见 approval-detail-drawer.tsx）；否则非管理员角色查单证
+ * 可能 403，会白白丢掉"已开合同可能对不上货"的提示。
+ * 兜底路径里 mock 的 `GET /trade-docs` 忽略 order_id 过滤，因此**前端再按 order_id
+ * 过滤一遍** —— 否则 mock 模式下会把全站单证都算成"受影响"。
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -137,8 +138,10 @@ function toAffectedDoc(row: TradeDocLite): AffectedDoc {
 }
 
 /**
- * 某订单已开单证（= 批准后"受影响单证"的预览）。失败降级为空清单 + error，
- * 由详情抽屉显示"单证清单读取失败"，绝不挡审批动作（后端批准时还会再算一次）。
+ * 某订单已开单证 —— **旧行兜底**：仅当聚合行缺 `affected_docs`（A2 之前的后端）时调用。
+ * 传 `null` 即禁用（正常情况：行内已有清单，不应再发这次请求）。
+ * 失败降级为空清单 + error，由详情抽屉显示"单证清单读取失败"，绝不挡审批动作
+ * （后端批准时还会再算一次并回 `affected_docs`）。
  */
 export function useOrderAffectedDocs(orderId: number | null) {
   return useQuery({
