@@ -3555,23 +3555,28 @@ def _schedule_with_received(row, received_by_schedule: dict) -> dict:
 
 
 async def _record_business_event(
-    request, event_type: str, payload: dict, from_ws: str = None, to_ws: str = None
+    request, event_type: str, payload: dict, from_ws: str = None, to_ws: str = None,
+    conn=None,
 ):
     """跨工位业务事件流水（阶段 6 · business_events）。
 
     2026-10-21 修复：`actor_id` 列是 text，而 payload 里的 actor_id 来自 JWT 是 int
     ⇒ asyncpg 抛「expected str, got int」；该调用在单据事务**提交之后**，于是表现为
     「单据已创建但接口 500」。这里统一转成 str（None 保持 None）。
+
+    2026-10-22：`conn` 非空时在调用方事务内写入（定金到账联动确认与实收登记必须
+    同生同灭，否则回滚了实收却留下"已确认"的审计痕迹）。
     """
     actor = payload.get("actor_id")
-    await db.execute(
-        request,
-        """INSERT INTO business_events
-               (tenant_id, event_type, from_workstation, to_workstation, payload, actor_id)
-           VALUES ($1, $2, $3, $4, $5, $6)""",
-        DEFAULT_TENANT, event_type, from_ws, to_ws,
-        _json.dumps(payload), None if actor is None else str(actor),
-    )
+    sql = ("INSERT INTO business_events"
+           " (tenant_id, event_type, from_workstation, to_workstation, payload, actor_id)"
+           " VALUES ($1, $2, $3, $4, $5, $6)")
+    args = (DEFAULT_TENANT, event_type, from_ws, to_ws,
+            _json.dumps(payload), None if actor is None else str(actor))
+    if conn is not None:
+        await conn.execute(sql, *args)
+    else:
+        await db.execute(request, sql, *args)
 
 
 def _can_see_all(user: dict) -> bool:
@@ -4283,34 +4288,41 @@ async def update_order_api(
 
 # ── 阶段 6 任务2：订单状态机 + 确认建应收 + order.shipped 跨工位事件 ──────
 
-async def _lock_fx_rate(request: Request, currency: str):
+async def _lock_fx_rate(request: Request, currency: str, conn=None):
     """锁定汇率（与 dev ws_common 对齐）：fx_rates 取 ≤今天的最近一条；
-    同币种=1.0；缺记录返回 (None, None)=汇率后补，单据照建。fx_rates 全局表无租户过滤。"""
+    同币种=1.0；缺记录返回 (None, None)=汇率后补，单据照建。fx_rates 全局表无租户过滤。
+
+    `conn` 非空时走调用方的事务连接（定金到账联动确认要在登记实收的同一事务里），
+    否则走连接池。两条路读的是同一条 SQL，不各写一份。
+    """
     from datetime import date as _date
     from decimal import Decimal
     cur = (currency or "USD").upper()
     if cur == "CNY":
         return Decimal("1"), _date.today()
-    row = await db.fetchrow(
-        request,
-        "SELECT rate, rate_date FROM fx_rates"
-        " WHERE base_currency=$1 AND quote_currency='CNY' AND rate_date<=CURRENT_DATE"
-        " ORDER BY rate_date DESC LIMIT 1",
-        cur, table="fx_rates",
-    )
+    sql = ("SELECT rate, rate_date FROM fx_rates"
+           " WHERE base_currency=$1 AND quote_currency='CNY' AND rate_date<=CURRENT_DATE"
+           " ORDER BY rate_date DESC LIMIT 1")
+    row = (await conn.fetchrow(sql, cur)) if conn is not None else (
+        await db.fetchrow(request, sql, cur, table="fx_rates"))
     if not row or row["rate"] is None:
         return None, None
     return row["rate"], row["rate_date"]
 
 
-async def _create_receivable_for_order(request: Request, o: dict):
+async def _create_receivable_for_order(request: Request, o: dict, conn=None):
     """确认时建应收台账（幂等：tenant+order 唯一，§10.2）。
-    汇率用订单锁定值（fx_rates 取得；缺汇率则 base_amount 空=汇率后补）。"""
-    existing = await db.fetchrow(
-        request,
+    汇率用订单锁定值（fx_rates 取得；缺汇率则 base_amount 空=汇率后补）。
+
+    `conn` 非空 = 在调用方的事务里执行（见 `_apply_order_confirmation`）。
+    """
+    existing = (await conn.fetchrow(
         "SELECT id FROM receivables WHERE tenant_id=$1 AND order_id=$2",
         DEFAULT_TENANT, o["id"],
-    )
+    )) if conn is not None else (await db.fetchrow(
+        request, "SELECT id FROM receivables WHERE tenant_id=$1 AND order_id=$2",
+        DEFAULT_TENANT, o["id"],
+    ))
     if existing:
         return
     total = o["total_amount"] or 0
@@ -4320,15 +4332,56 @@ async def _create_receivable_for_order(request: Request, o: dict):
         from decimal import Decimal, ROUND_HALF_UP
         base = (Decimal(str(total)) * Decimal(str(rate))).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP)
-    await db.execute(
-        request,
-        "INSERT INTO receivables (tenant_id, order_id, currency, total_amount,"
-        " fx_rate, fx_rate_date, base_currency, base_amount, received_amount,"
-        " status, owner_id, owner_scope, team_id)"
-        " VALUES ($1,$2,$3,$4,$5,$6,'CNY',$7,0,'unpaid',$8,$9,$10)",
-        DEFAULT_TENANT, o["id"], o.get("currency") or "USD", total,
-        float(rate) if rate is not None else None, o.get("fx_rate_date"), base,
-        o.get("owner_id"), o.get("owner_scope") or "private", o.get("team_id")
+    sql = ("INSERT INTO receivables (tenant_id, order_id, currency, total_amount,"
+           " fx_rate, fx_rate_date, base_currency, base_amount, received_amount,"
+           " status, owner_id, owner_scope, team_id)"
+           " VALUES ($1,$2,$3,$4,$5,$6,'CNY',$7,0,'unpaid',$8,$9,$10)")
+    args = (DEFAULT_TENANT, o["id"], o.get("currency") or "USD", total,
+            float(rate) if rate is not None else None, o.get("fx_rate_date"), base,
+            o.get("owner_id"), o.get("owner_scope") or "private", o.get("team_id"))
+    if conn is not None:
+        await conn.execute(sql, *args)
+    else:
+        await db.execute(request, sql, *args)
+
+
+async def _apply_order_confirmation(request: Request, o: dict, user: dict, *,
+                                    source: str, conn=None) -> None:
+    """订单确认的**唯一**实现（设计 §5.1）：锁汇率 + 置 confirmed 三件套 + 建应收。
+
+    `source`：
+      manual          —— 人工点「确认订单」（先确认后打款 / 线下已确认）；
+      deposit_receipt —— 业务人工登记定金到账后的**联动**确认。
+    两者都是**人工触发**（D-17）：系统没有任何自动识别收款的能力，
+    联动只是把"登记实收"这个已发生的人工动作顺带完成确认，不多做一步。
+
+    为什么人工确认与定金联动必须共用这一个函数：两处各写一遍就会出现
+    「点确认不锁汇率」/「定金到了不建应收」这类只有一半生效的漂移。
+    """
+    now = datetime.now(timezone.utc)
+    rate, rate_date = await _lock_fx_rate(
+        request, o.get("currency") or "USD", conn=conn)
+    sql = ("UPDATE orders SET status='confirmed', updated_at=$3, fx_rate=$4,"
+           " fx_rate_date=$5, confirmed_at=$6, confirmed_by=$7,"
+           " confirmed_source=$8 WHERE tenant_id=$1 AND id=$2")
+    args = (DEFAULT_TENANT, o["id"], now,
+            float(rate) if rate is not None else None, rate_date,
+            now, str(user["id"]), source)
+    if conn is not None:
+        await conn.execute(sql, *args)
+    else:
+        await db.execute(request, sql, *args)
+    o["fx_rate"] = rate
+    o["fx_rate_date"] = rate_date
+    o["confirmed_at"] = now
+    o["confirmed_by"] = str(user["id"])
+    o["confirmed_source"] = source
+    await _create_receivable_for_order(request, o, conn=conn)
+    await _record_business_event(
+        request, "order.confirmed",
+        {"order_id": str(o["id"]), "confirm_source": source,
+         "actor_id": str(user["id"])},
+        from_ws="order", to_ws="order", conn=conn,
     )
 
 
@@ -4369,23 +4422,16 @@ async def change_order_status(order_id: int, request: Request, body: dict,
         })
 
     now = datetime.now(timezone.utc)
-    await db.execute(
-        request,
-        "UPDATE orders SET status=$3, updated_at=$4 WHERE tenant_id=$1 AND id=$2",
-        DEFAULT_TENANT, order_id, target, now
-    )
-    # 2026-10-18：客户阶段 = 读时按「开启中的订单」推导，订单状态变化后无需回写。
     if target == "confirmed" and o["status"] == "pending":
-        rate, rate_date = await _lock_fx_rate(request, o.get("currency") or "USD")
+        # 人工确认：与「定金到账联动确认」走同一个 `_apply_order_confirmation`，
+        # 只差 source=manual。分开两套实现必然漂移（见该函数 docstring）。
+        await _apply_order_confirmation(request, o, user, source="manual")
+    else:
         await db.execute(
             request,
-            "UPDATE orders SET fx_rate=$3, fx_rate_date=$4 WHERE tenant_id=$1 AND id=$2",
-            DEFAULT_TENANT, order_id,
-            float(rate) if rate is not None else None, rate_date
+            "UPDATE orders SET status=$3, updated_at=$4 WHERE tenant_id=$1 AND id=$2",
+            DEFAULT_TENANT, order_id, target, now
         )
-        o["fx_rate"] = rate
-        o["fx_rate_date"] = rate_date
-        await _create_receivable_for_order(request, o)
     if target == "shipped":
         await _record_business_event(
             request, "order.shipped",
@@ -4731,6 +4777,14 @@ async def create_order_receipt(order_id: int, request: Request, body: dict,
                 str(user["id"]), order["owner_id"],
                 order["owner_scope"] or "private", order["team_id"])
             await _recompute_payment_state(conn, order_id)
+            # ── 定金到账 → 联动确认（设计 §5.1，D-16 / D-17）──────────────────
+            # 触发**永远是人**：登记这笔实收本身就是业务动作，系统不做任何自动识别。
+            # 只在 pending → confirmed 单向生效（已确认的订单重复登记只是记账）。
+            # 客户阶段读时由「开启中的订单」推导，这里同样不需要回写客户阶段。
+            if order.get("status") == "pending":
+                await _apply_order_confirmation(
+                    request, dict(order), user,
+                    source="deposit_receipt", conn=conn)
     return _receipt_dict(row)
 
 

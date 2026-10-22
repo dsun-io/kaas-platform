@@ -1484,11 +1484,17 @@ def test_order_status_same_status_is_noop_200():
 
 
 def test_order_status_pending_confirmed_locks_fx_and_creates_receivable():
-    """§10.2：pending→confirmed 重锁汇率 + 建应收台账（幂等，先查后插）。"""
+    """§10.2：pending→confirmed 重锁汇率 + 建应收台账（幂等，先查后插）。
+
+    2026-10-22（设计 §5.1）：确认改成**一条** UPDATE（status + fx + 确认三件套），
+    人工确认与「定金到账联动确认」共用同一个 `_apply_order_confirmation`。
+    """
     pending = _order_row(status="pending")
     confirmed = _order_row(status="confirmed", fx_rate=Decimal("7.1"),
-                           fx_rate_date=_TODAY)
+                           fx_rate_date=_TODAY,
+                           confirmed_source="manual", confirmed_by="3")
     conn = _FakeConn(
+        # ① 读订单 ② 锁汇率 ③ 查应收（无→建）④ 收尾重读订单
         fetchrow=[pending, {"rate": Decimal("7.1"), "rate_date": _TODAY}, None, confirmed],
         fetch={"": []},
     )
@@ -1498,7 +1504,12 @@ def test_order_status_pending_confirmed_locks_fx_and_creates_receivable():
     assert resp.json()["status"] == "confirmed"
     insert_sql, insert_args = conn.first("INSERT INTO receivables")
     assert insert_args[3] == Decimal("100.00")     # total_amount
-    assert "UPDATE orders SET fx_rate" in conn.sql()
+    # 确认痕迹：人工确认 ⇒ confirmed_source=manual（与定金联动的 deposit_receipt 区分）
+    # 参数序：$3 now / $4 fx_rate / $5 fx_rate_date / $6 confirmed_at /
+    #         $7 confirmed_by / $8 confirmed_source
+    confirm_sql, confirm_args = conn.first("UPDATE orders SET status='confirmed'")
+    assert confirm_args[7] == "manual"
+    assert "confirmed_at" in confirm_sql and "confirmed_by" in confirm_sql
 
 
 def test_order_status_pending_cancelled_does_not_create_receivable():

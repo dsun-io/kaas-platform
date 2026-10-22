@@ -344,7 +344,10 @@ def test_get_order_detail_legacy_paid_schedule_without_receipts():
 
 def test_post_receipt_partial_recomputes_schedule_and_receivable():
     conn = _FakeConn(
-        fetchrow=[_order_row(), _receipt_row(), _receivable_row()],
+        # ④⑤ = 定金到账联动确认的锁汇率 + 查应收（已存在 ⇒ 不重复建）
+        fetchrow=[_order_row(), _receipt_row(), _receivable_row(),
+                  {"rate": 7.1, "rate_date": date(2026, 10, 22)},
+                  _receivable_row()],
         fetchval=[1],                                  # schedule 属于该订单
         fetch=[
             [_schedule_row(amount=3180.0, status="pending")],   # 重算：期次
@@ -370,6 +373,8 @@ def test_post_receipt_partial_recomputes_schedule_and_receivable():
 def test_post_receipt_full_amount_marks_paid():
     conn = _FakeConn(
         fetchrow=[_order_row(), _receipt_row(amount=3180.0),
+                  _receivable_row(total_amount=3180.0),
+                  {"rate": 7.1, "rate_date": date(2026, 10, 22)},
                   _receivable_row(total_amount=3180.0)],
         fetchval=[1],
         fetch=[
@@ -389,6 +394,8 @@ def test_post_receipt_full_amount_marks_paid():
 def test_post_receipt_without_schedule_is_allowed_as_unallocated():
     conn = _FakeConn(
         fetchrow=[_order_row(), _receipt_row(schedule_id=None),
+                  _receivable_row(total_amount=3180.0),
+                  {"rate": 7.1, "rate_date": date(2026, 10, 22)},
                   _receivable_row(total_amount=3180.0)],
         fetchval=[],
         fetch=[[], [_receipt_row(schedule_id=None, amount=500.0)]],
