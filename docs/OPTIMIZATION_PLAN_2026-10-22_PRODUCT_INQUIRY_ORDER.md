@@ -419,4 +419,42 @@ created_by, owner_id, owner_scope, team_id, created_at
 - [ ] 选择 30/70 等比例后，收款计划金额自动算出；保存后应收台账立即出现在应收页。
 - [ ] 登记实收时可填实收金额、收款日期、到账截图；支持同一期多次收款与金额差异。
 - [ ] 应收/实收对应不上时，页面显示差异与“未分配收款”，不静默改计划金额。
-- [ ] 订单附件与正式单证分开：订单附件可补传，正式单证仍在单证工位生成。
+- [x] 订单附件与正式单证分开：订单附件可补传，正式单证仍在单证工位生成。
+
+---
+
+## 14. 实施状态（2026-10-22，已落库）
+
+### 14.1 已完成
+
+| 阶段 | 内容 | 状态 |
+|---|---|---|
+| P0 | 产品卡 + 详情、图片归入产品、隐藏 key、业务规格编辑器、管理员折叠高级设置、空白新建 + 计算方式 + 待配置规则提示 | ✅ |
+| P1 | 五步建单向导（金额构成/货物明细/收款计划）、订单详情、实收登记 + 到账截图、应收台账联动、订单附件 | ✅ |
+| P1+ | **建单时导入已有单证**：单证类型 + 文件 → `external-docs`；订单详情「已导入单证」列表、下载、补导入 | ✅ |
+| P2 | 询盘 `items` 多产品行：迁移 + Python 内核 + ts-worker 门面 + mock + 客户详情多产品展示 | ✅ |
+| P3 | 配置类页面去技术名词；审计/事件/灰度/账单/单证原始数据默认折叠 | ✅ |
+| 跨层 | ts-worker 门面补齐新接口（生产只走 kaas-edge；路由面 254 = 168 直接 + 86 透传） | ✅ |
+
+关键实现位置：
+- 产品：`frontend/src/app/(app)/products/**`、`frontend/src/lib/products/tenant-products.ts`
+- 订单/收款：`frontend/src/app/(app)/orders/**`、`frontend/src/lib/orders/**`
+- 询盘：`frontend/src/app/(app)/customers/**`、`backend/kaas_common/workstation/customer_serializers.py`
+- 后端：`backend/worker/src/main.py`、`ws_files.py`、`ws_crm_ext.py`、`ws_extras.py`；
+  `backend/ts-worker/src/routes/{orders,customers,files}.ts`；迁移 `202610220001_order_amount_receipts.py`
+
+### 14.2 验收记录（2026-10-22）
+
+- 前端：`pnpm typecheck` 通过；`pnpm test` **124 files / 1045 tests passed**（隔离提交树 **121 files / 1026 passed**）；
+  `pnpm e2e` **27 passed**；`ui:standards` / `ui:contrast` 通过；`mocks:check` / `contracts:check` 通过。
+- worker：**1593 passed**；orchestrator：**251 passed**；ts-worker：**23 files / 219 passed**（254 路由面）。
+- 迁移：`202610220001`（down_revision=`202610210002`）；worker 全量测试通过。
+- 提交：`9de3794 feat: 产品/询盘/订单傻瓜化与收款实收（2026-10-22）`。
+
+### 14.3 上线前还需要
+
+1. 迁移需随发布流程 apply 到生产库（当前仓库只提交迁移文件，不自动执行）。
+2. 生产前端只走 `kaas-edge`：ts-worker 新接口已补齐，发布仍需按双 Worker 流水线
+   `deploy(target=both|kernel|edge)` 先内核后门面。
+3. 合同/PO 等历史文件导入后，正式发票/装箱单仍在单证工位生成；两者不要混用。
+4. 现场核对：空白产品“待配置规则”提示、30/70 收款计划自动金额、实收截图上传与差异显示。
