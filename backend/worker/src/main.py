@@ -5896,6 +5896,11 @@ import ws_customer_records  # noqa: E402,F401
 import ws_files  # noqa: E402,F401
 import tax_archives  # noqa: E402,F401
 
+# ── 订单明细变更审批 + 通知（M1-e · 设计基线 D-11）──
+# 已确认订单的 items 只能走「申请 → 审批 → 落库」；待确认订单允许直接编辑。
+# 审批人路由：team_approvers → 团队管理员 → 租户系统管理员。
+import ws_approvals  # noqa: E402,F401
+
 # ── Cloudflare Cron 定时任务（APScheduler 迁移 · README §8 已知问题 #5）──
 # orchestrator 里那两个 APScheduler 任务（每 15 分钟 replied→询盘扫描、每日 events 归档）
 # 在生产从未执行过（orchestrator 不常驻）。这里用 CF Cron 重建：

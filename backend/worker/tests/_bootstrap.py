@@ -38,6 +38,8 @@ _SIBLING_MODULES = (
     "ws_quote_ext",
     "ws_crm_ext",
     "ws_teams",
+    # 订单明细变更审批 + 通知（2026-10-22，M1-e）
+    "ws_approvals",
     # 团队加入申请（2026-10-22）：注册时团队已存在 → 申请 + 管理员审核
     "ws_join_applications",
     "ws_workstations",

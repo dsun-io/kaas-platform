@@ -367,6 +367,11 @@ ORDER_ROUTES = {
     ("/api/v1/orders/{order_id}/receipts", "POST"),
     ("/api/v1/orders/{order_id}/files", "GET"),
     ("/api/v1/orders/{order_id}/files", "POST"),
+    # 2026-10-22（设计 §6.1）：已确认订单明细变更审批（M1-e）。
+    ("/api/v1/orders/{order_id}/item-change-requests", "GET"),
+    ("/api/v1/orders/{order_id}/item-change-requests", "POST"),
+    ("/api/v1/orders/{order_id}/item-change-requests/{rid}/approve", "POST"),
+    ("/api/v1/orders/{order_id}/item-change-requests/{rid}/reject", "POST"),
 }
 
 

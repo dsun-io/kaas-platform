@@ -553,3 +553,107 @@ class TradeDocFact(Base):
         Index("idx_trade_doc_facts_doc", "tenant_id", "trade_doc_id"),
         Index("idx_trade_doc_facts_key", "tenant_id", "fact_key"),
     )
+
+
+# ── 202610220005 已确认订单明细变更审批 + 站内通知 + 指定审批人（设计 §6.1/§6.2）──
+# 三张表都必须在这里登记：`create_all` 空库快径（worker 测试 / 本地起库）依赖
+# ORM metadata，漏一张就是"迁移里有、代码里没有"的漂移。
+
+
+class OrderItemChangeRequest(Base):
+    """已确认订单的货物明细变更申请（D-8：允许改、留痕、需审批）。
+
+    提交时订单本身**不变化**；审批通过后才应用整批替换 + 重算金额。
+    `items` 是新明细，`snapshot` 是提交时的旧明细快照 —— 审批页做新旧对比
+    不能依赖订单当前值（批准前别人可能又改过别的字段）。
+    """
+
+    __tablename__ = "order_item_change_requests"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    order_id = Column(BigInteger, ForeignKey("orders.id", ondelete="CASCADE"),
+                      nullable=False)
+    requested_by = Column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"),
+                          nullable=True)
+    reason = Column(Text, nullable=True)
+    items = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    snapshot = Column(JSONB, nullable=True)
+    status = Column(Text, nullable=False, default="pending", server_default="pending")
+    decided_by = Column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"),
+                        nullable=True)
+    decided_at = Column(DateTime(timezone=True), nullable=True)
+    decision_reason = Column(Text, nullable=True)
+    # 冗余团队：审批路由与「待我审批」按团队筛，避免每次 JOIN orders
+    team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="SET NULL"),
+                     nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("idx_oicr_order", "tenant_id", "order_id", "created_at"),
+        Index("idx_oicr_team_status", "tenant_id", "team_id", "status"),
+        CheckConstraint(
+            "status IN ('pending','approved','rejected')",
+            name="ck_order_item_change_status",
+        ),
+        # 拒绝必须留理由，否则被拒方不知道要改什么
+        CheckConstraint(
+            "status <> 'rejected' OR decision_reason IS NOT NULL",
+            name="ck_order_item_change_reject_reason",
+        ),
+    )
+
+
+class Notification(Base):
+    """站内通知（D-10：只做审批相关，不建通用事件总线）。
+
+    审批请求按路由**逐人**落行（不是一条群发）：已读是 per-user 的，
+    A 读了不影响 B 的未读角标。
+    """
+
+    __tablename__ = "notifications"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id = Column(Text, nullable=False)
+    team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="CASCADE"), nullable=True)
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    # approval_requested | approval_approved | approval_rejected
+    type = Column(Text, nullable=False)
+    title = Column(Text, nullable=False)
+    body = Column(Text, nullable=True)
+    link = Column(Text, nullable=True)
+    ref_type = Column(Text, nullable=True)
+    ref_id = Column(BigInteger, nullable=True)
+    read_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_notifications_user_unread", "user_id", "read_at", "created_at"),
+        CheckConstraint(
+            "type IN ('approval_requested','approval_approved','approval_rejected')",
+            name="ck_notifications_type",
+        ),
+    )
+
+
+class TeamApprover(Base):
+    """指定审批人（D-11 / D-14）：**有指定审批人 → 归他们；空 → 团队管理员**。
+
+    复合主键 (team_id, user_id)：同一个人在同一团队只应出现一次，
+    自增 id + 唯一索引也能表达，但复合主键让重复在 DB 层直接不可能。
+    """
+
+    __tablename__ = "team_approvers"
+
+    team_id = Column(BigInteger, ForeignKey("teams.id", ondelete="CASCADE"),
+                     primary_key=True)
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"),
+                     primary_key=True)
+    created_by = Column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"),
+                        nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_team_approvers_user", "user_id"),
+    )
