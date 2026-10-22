@@ -11,7 +11,7 @@
  *   不含任何业务判定；行投影对齐 dbjson.row_to_dict（jsonb 列 + iso 时间）。
  * · **内核透传**（8 条）：端点内部依赖**报价/抓取/AI 引擎**（run_ai_task、
  *   _run_pipeline、_crawl_one、_lead_indices 需求/空白指数），在 TS 重写即成
- *   "第二份实现" ⇒ 门面只鉴权后原样转发 KERNEL（见下方 forwardToKernel 注释）。
+ *   "第二份实现" ⇒ 门面只鉴权后原样转发 KERNEL（见 src/proxy.ts:forwardKernelRequest）。
  *   透传清单：POST /leadgen/validate、POST /leadgen/runs、
  *   POST /leadgen/runs/from-csv、GET /leads、GET /leads/{id}、
  *   POST /leads/scan-replied、POST /leads/{id}/crawl、POST /leads/crawl-batch。
@@ -35,6 +35,7 @@ import {
   main_ShipmentCreate,
 } from "../generated/schemas";
 import { httpError, num, num0, parseBody, parseQuery, pyIso, respond } from "../http";
+import { forwardKernelRequest } from "../proxy";
 import { requireUser } from "../session";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -140,42 +141,8 @@ function fromLeadgenConfigRepr(leadIds: number[]): string {
 }
 
 // ── 内核透传（引擎端点；禁止在门面重写引擎逻辑）──────────────────────────────
-const KERNEL_BASE = "https://kernel.internal";
+// 实现统一在 src/proxy.ts:forwardKernelRequest（单份；本文件不再复制）。
 type AppEnv = { Bindings: Env };
-
-/**
- * 原样转发到 Python 内核（保留 method / path / query / 头 / body）。
- * 错误信封与 src/proxy.ts 一致：内核不可达 → 502，内核 5xx → kernel_error（带原状态码），
- * 4xx/2xx 原样透传（形状由内核契约定，不在此改写）。
- */
-async function forwardToKernel(c: Context<AppEnv>): Promise<Response> {
-  const kernel = getEnv(c).KERNEL;
-  if (!kernel) {
-    return c.json({ error: "kernel_error", message: "kernel binding not configured", status: 503 }, 503);
-  }
-  const url = new URL(c.req.url);
-  const method = c.req.method;
-  const init: RequestInit = { method, headers: new Headers(c.req.raw.headers) };
-  if (method !== "GET" && method !== "HEAD") {
-    init.body = c.req.raw.body;
-    (init as { duplex?: string }).duplex = "half";
-  }
-  let upstream: Response;
-  try {
-    upstream = await kernel.fetch(new Request(KERNEL_BASE + url.pathname + url.search, init));
-  } catch (err) {
-    console.error("[intel] kernel fetch failed", err);
-    return c.json({ error: "kernel_error", message: "kernel unreachable", status: 502 }, 502);
-  }
-  if (upstream.status >= 500) {
-    const text = await upstream.text();
-    return c.json(
-      { error: "kernel_error", message: text.slice(0, 500), status: upstream.status },
-      upstream.status as never,
-    );
-  }
-  return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
-}
 
 // ── 复用的入参 schema（查询参数无 pydantic 真源，按 Python Query(...) 约束手写）──
 const pageQuery = z.object({
@@ -224,19 +191,19 @@ app.get("/api/v1/leadgen/regions", (c) => respond(c, async () => {
 // POST /api/v1/leadgen/validate（chain.py:978-983）→ 透传：run_ai_task(config_validation)
 app.post("/api/v1/leadgen/validate", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 
 // POST /api/v1/leadgen/runs（chain.py:1018-1021）→ 透传：_run_pipeline（抓取 + AI 打分）
 app.post("/api/v1/leadgen/runs", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 
 // POST /api/v1/leadgen/runs/from-csv（chain.py:1024-1030）→ 透传：同上（CSV 源）
 app.post("/api/v1/leadgen/runs/from-csv", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 
 // GET /api/v1/leadgen/runs（chain.py:1033-1047）
@@ -341,31 +308,31 @@ app.post("/api/v1/leads", (c) => respond(c, async () => {
 // GET /api/v1/leads（chain.py:1402-1434）→ 透传：_lead_indices（需求/空白指数）
 app.get("/api/v1/leads", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 
 // POST /api/v1/leads/scan-replied（chain.py:1437-1489）→ 透传：客户/询盘落库 + 编号规则
 app.post("/api/v1/leads/scan-replied", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 
 // POST /api/v1/leads/crawl-batch（chain.py:2079-2111）→ 透传：_crawl_one（抓取 + 产品提取）
 app.post("/api/v1/leads/crawl-batch", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 
 // GET /api/v1/leads/{lead_id}（chain.py:1489-1511）→ 透传：_lead_indices
 app.get("/api/v1/leads/:lead_id", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 
 // POST /api/v1/leads/{lead_id}/crawl（chain.py:2054-2070）→ 透传：_crawl_one
 app.post("/api/v1/leads/:lead_id/crawl", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 
 /** chain.py:_LEAD_PATCHABLE（可写列白名单，顺序即 Python 元组顺序）。 */

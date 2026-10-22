@@ -33,6 +33,7 @@ import {
   ws_workstations_SubscriptionIn,
 } from "../generated/schemas";
 import { bool, httpError, num, parseBody, parseQuery, pyIso, respond } from "../http";
+import { forwardKernelRequest } from "../proxy";
 import { allWorkstations, FULL_CHAIN, isAdminRole, isTeamAdmin } from "../rules";
 import { requireUser, type CurrentUser } from "../session";
 
@@ -41,8 +42,6 @@ const app = new Hono<{ Bindings: Env }>();
 const DEFAULT_TENANT = "default";
 type Row = Record<string, unknown>;
 type AppEnv = { Bindings: Env };
-
-const KERNEL_BASE = "https://kernel.internal";
 
 /** 有效订阅 SQL 片段（ws_workstations.py:47 / ws_products.py:56 同一条）。 */
 const LIVE_SUB = "active = true AND (expires_at IS NULL OR expires_at > now())";
@@ -84,34 +83,7 @@ function rowsOut(rows: Row[]): Row[] {
 }
 
 // ── 内核透传（引擎端点；禁止在门面重写引擎逻辑）──────────────────────────────
-async function forwardToKernel(c: Context<AppEnv>): Promise<Response> {
-  const kernel = getEnv(c).KERNEL;
-  if (!kernel) {
-    return c.json({ error: "kernel_error", message: "kernel binding not configured", status: 503 }, 503);
-  }
-  const url = new URL(c.req.url);
-  const method = c.req.method;
-  const init: RequestInit = { method, headers: new Headers(c.req.raw.headers) };
-  if (method !== "GET" && method !== "HEAD") {
-    init.body = c.req.raw.body;
-    (init as { duplex?: string }).duplex = "half";
-  }
-  let upstream: Response;
-  try {
-    upstream = await kernel.fetch(new Request(KERNEL_BASE + url.pathname + url.search, init));
-  } catch (err) {
-    console.error("[workstations] kernel fetch failed", err);
-    return c.json({ error: "kernel_error", message: "kernel unreachable", status: 502 }, 502);
-  }
-  if (upstream.status >= 500) {
-    const text = await upstream.text();
-    return c.json(
-      { error: "kernel_error", message: text.slice(0, 500), status: upstream.status },
-      upstream.status as never,
-    );
-  }
-  return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
-}
+// 实现统一在 src/proxy.ts:forwardKernelRequest（单份；本文件不再复制）。
 
 /** 查询参数压平（c.req.queries() 给的是 string[]；FastAPI 单值参数取首个值）。 */
 function queries(c: Context<AppEnv>): Record<string, string> {
@@ -824,84 +796,84 @@ app.post("/api/v1/tenant-product-status", (c) => respond(c, async () => {
 // 租户产品写侧（ws_products.py:269-409）：spec 深校验 / spec_fingerprint 在报价引擎。
 app.post("/api/v1/tenant-products", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 app.put("/api/v1/tenant-products/:product_id", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 app.delete("/api/v1/tenant-products/:product_id", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 
 // 产品注册表 / 产品档案 / 产品图（ws_files.py:378-495）—— ProductSpec 注册表在引擎。
 app.get("/api/v1/products", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 app.get("/api/v1/products/:product_key/profile", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 app.put("/api/v1/products/:product_key/profile", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 app.get("/api/v1/products/:product_key/media", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 app.post("/api/v1/products/:product_key/media", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 
 // 团队档位覆盖（ws_option_overrides.py:169-266）—— apply_option_overrides 在引擎。
 app.get("/api/v1/product-options/overrides", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 app.put("/api/v1/product-options/overrides", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 
 // 规格向导（main.py:2671-2780）—— _compute_sku_hash / _upsert_price 价格生命周期、
 // propose-attribute 的 difflib.get_close_matches 近似名建议都在引擎/内核实现。
 app.post("/api/v1/spec/wizard/submit", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 app.post("/api/v1/spec/wizard/propose-attribute", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 
 // 公章（ws_seals.py:125-330）—— PNG IHDR 校验（kaas_common.trade_doc.png）、
 // R2/blob 存储与 render-content 的令牌签名都不在门面重写。
 app.post("/api/v1/tenant/company-seals", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 app.get("/api/v1/tenant/company-seals", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 app.get("/api/v1/tenant/company-seals/:seal_id/image", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 // render-content 在 Python 侧**不挂 _get_current_user**（走令牌校验，ws_seals.py:239）：
 // 门面保持同一口径，不做门面鉴权、原样转发由内核裁决。
-app.get("/api/v1/tenant/company-seals/:seal_id/render-content", (c) => respond(c, async () => forwardToKernel(c)));
+app.get("/api/v1/tenant/company-seals/:seal_id/render-content", (c) => respond(c, async () => forwardKernelRequest(c)));
 app.put("/api/v1/tenant/company-seals/:seal_id/default", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 app.delete("/api/v1/tenant/company-seals/:seal_id", (c) => respond(c, async () => {
   await requireUser(c);
-  return forwardToKernel(c);
+  return forwardKernelRequest(c);
 }));
 
 export default app;

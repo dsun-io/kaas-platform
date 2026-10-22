@@ -1,10 +1,13 @@
 # kaas-edge（KaaS TS 门面）
 
 > **定位（ADR-008 两层架构）**：TS Worker(Hono) = 对外唯一门面；Python Worker = 内核。
-> 当前进度：Phase 1 工程骨架 + Phase 2 波 A/B/C 全部完成（**门面移植 163 条 + 引擎透传 86 条**，auth 9 / customers 20 / teams 15 / orders 16 / files 9 / outreach 12 / admin 11 / workstations 35 / intel 34 / dashboard 1；quotes/trade-docs/ai 走路由 proxy.ts 透传）。测试 94 条全绿。
-> + 波 B（**orders 16 / files 9 / outreach 12 / admin 11 = 48 条**）已接线，
-> 合计 **92 条门面路由**；全部只做鉴权 / 参数校验 / 协议转换；业务规则仍在 Python 内核与
-> `backend/kaas_common/`。
+> 当前进度（2026-10-23 复核）：Phase 1 工程骨架 + Phase 2 波 A/B/C 完成；M1-f/M3 收口后
+> **门面注册 187 条 + 内核透传 86 条（12 个前缀 mount）= 273 业务路由**
+> （auth 9 / customers 21 / teams 19 / orders 24 / files 9 / outreach 12 / admin 11 /
+> workstations 35 / intel 34 / dashboard 2 / misc 10 / meta 1）。
+> 透传实现统一为 `src/proxy.ts:forwardKernelRequest`（前缀 mount 与显式透传路由共用一份）。
+> 测试 **267 条 / 24 文件全绿**；route-surface 187 直接 0 缺 0 多；openapi 273 全覆盖。
+> 全部只做鉴权 / 参数校验 / 协议转换；业务规则仍在 Python 内核与 `backend/kaas_common/`。
 
 ## 铁纪律（违反即回退）
 

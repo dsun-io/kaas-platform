@@ -16,6 +16,7 @@ import { z } from "zod";
 import { withDb, type Db, type Tx } from "../db";
 import { getEnv, type Env } from "../env";
 import { httpError, num, num0, parseBody, parseQuery, pyIso, respond } from "../http";
+import { forwardAuthenticatedKernelRequest } from "../proxy";
 import {
   buildRecords,
   buildNumber,
@@ -24,7 +25,6 @@ import {
   customerStageSql,
   isAdminRole,
   normalizeAbbr,
-  normalizeNumber,
   NumberRuleError,
   validateManualStage,
 } from "../rules";
@@ -32,7 +32,6 @@ import {
   capabilityRow,
   contactApi,
   customerApi,
-  inquiryStageLogApi,
   normalizeInquiryItems,
   rowToCustomer,
   rowToInquiry,
@@ -647,269 +646,27 @@ app.get("/api/v1/customers/:customer_id/inquiries", (c) => respond(c, async () =
 }));
 
 // ── GET /api/v1/inquiries（ws_crm_ext.py:259-298）─────────────────────────────
-app.get("/api/v1/inquiries", (c) => respond(c, async () => {
-  const user = await requireUser(c);
-  const status = c.req.query("status");
-  const customerIdRaw = c.req.query("customer_id");
-  const payload = await withDb(getEnv(c), async (sql: Db) => {
-    let sqlText = (
-      "SELECT i.*, c.name AS company_name FROM cust_inquiries i"
-      + " JOIN customers c ON i.customer_id = c.id"
-      + " WHERE i.tenant_id = $1"
-    );
-    const params: unknown[] = [DEFAULT_TENANT];
-    if (!canSeeAll(user)) {
-      // §10.3 + 三层组织：自己名下 + 租户共享 + 本团队
-      params.push(String(user.id));
-      let scopeCond = `(i.owner_id = ${"$" + params.length} OR i.owner_scope = 'tenant'`;
-      if (user.team_id !== null) {
-        params.push(user.team_id);
-        scopeCond += ` OR i.team_id = ${"$" + params.length}`;
-      }
-      sqlText += ` AND ${scopeCond})`;
-    }
-    if (status) {
-      validateEnum("inquiry_status", status);
-      params.push(status);
-      sqlText += ` AND i.status = ${"$" + params.length}`;
-    }
-    if (customerIdRaw) {
-      params.push(Number(customerIdRaw));
-      sqlText += ` AND i.customer_id = ${"$" + params.length}`;
-    }
-    sqlText += " ORDER BY i.customer_id, i.created_at DESC";
-    const rows = await sql.unsafe(sqlText, params);
-    const items = (rows as Record<string, unknown>[]).map((r) => ({
-      ...rowToInquiry(r),
-      company_name: r.company_name,
-    }));
-    return { items, total: rows.length };
-  });
-  return c.json(payload);
-}));
+// 2026-10-22（M1-f）：改为透传内核 —— 内核 M1-d 已扩 quote_count/order_count/
+// latest_quote_at 与 stage/channel/date_from/date_to/q 筛选；门面不再写第二份 SQL。
+// 透传实现统一走 src/proxy.ts:forwardAuthenticatedKernelRequest。
+app.get("/api/v1/inquiries", (c) =>
+  respond(c, async () => forwardAuthenticatedKernelRequest(c)));
+
+// ── GET /api/v1/inquiries/{inquiry_id}（ws_crm_ext.py:402；M1-f 补齐）──────────
+// 询盘详情（含报价历史）形状全在内核；门面只鉴权 + 透传。
+app.get("/api/v1/inquiries/:inquiry_id", (c) =>
+  respond(c, async () => forwardAuthenticatedKernelRequest(c)));
 
 // ── PATCH /api/v1/inquiries/{inquiry_id}（ws_crm_ext.py:301-410）─────────────
-
-/** 询盘状态机（ws_crm_ext.py:_INQUIRY_NEXT，真源 = orchestrator allowed_flows）。 */
-const INQUIRY_NEXT: Record<string, readonly string[]> = {
-  unquoted: ["closed"],
-  quoted: ["closed"],
-  closed: ["unquoted", "quoted"],
-};
-
-/** 询盘状态 → 线索池 lead_candidates.inquiry_status（ws_crm_ext.py:_LEAD_INQUIRY_STATUS）。 */
-const LEAD_INQUIRY_STATUS: Record<string, string> = {
-  unquoted: "new", quoted: "following", closed: "lost",
-};
-
-/** 询盘可更新列（ws_crm_ext.py:_INQUIRY_COLUMNS；status/inquiry_no 单独处理）。 */
-const INQUIRY_COLUMNS = [
-  "channel", "product_name_raw", "quantity", "quantity_unit",
-  "application", "notes", "owner_scope",
-];
-
-const inquiryUpdateSchema = z.object({
-  status: z.string().nullish(),
-  inquiry_no: z.string().nullish(),
-  channel: z.string().nullish(),
-  product_name_raw: z.string().nullish(),
-  quantity: z.coerce.number().nullish(),
-  quantity_unit: z.string().nullish(),
-  application: z.string().nullish(),
-  // 多产品行（设计 §5）：PATCH 支持改 items，第一行同步回旧标量字段
-  items: z.array(z.record(z.unknown())).optional(),
-  notes: z.string().nullish(),
-  owner_scope: z.string().nullish(),
-});
-
-const inquiryParam = z.object({ inquiry_id: z.coerce.number().int() });
-
-app.patch("/api/v1/inquiries/:inquiry_id", (c) => respond(c, async () => {
-  const user = await requireUser(c);
-  const { inquiry_id: inquiryId } = parseQuery(inquiryParam, c.req.param(), "path");
-  const rawBody = await c.req.json().catch(() => httpErrorThrow422());
-  const body = await parseBody(c, inquiryUpdateSchema);
-  const payload = await withDb(getEnv(c), async (sql: Db) => {
-    return sql.begin(async (tx: Tx) => {
-      const found = await tx`
-        SELECT * FROM cust_inquiries WHERE id = ${inquiryId} AND tenant_id = ${DEFAULT_TENANT}`;
-      const inquiry = found[0] as Record<string, unknown> | undefined;
-      if (!inquiry || !ownerVisible(user, inquiry)) {
-        throw httpError(404, { error: "not_found", code: "INQUIRY_NOT_FOUND" });
-      }
-      checkWriteAccess(user, inquiry);
-
-      const provided = (key: string): boolean => (
-        rawBody !== null && typeof rawBody === "object" && key in (rawBody as Record<string, unknown>)
-      );
-      const newStatus = provided("status") ? (body.status ?? null) : null;
-      const newNo = provided("inquiry_no") ? (body.inquiry_no ?? null) : undefined;
-
-      const sets: string[] = [];
-      const params: unknown[] = [];
-      let current: Record<string, unknown> = inquiry;
-
-      if (newNo !== undefined && newNo !== inquiry.inquiry_no) {
-        let normalizedNo: string;
-        try {
-          normalizedNo = normalizeNumber(newNo);
-        } catch (e) {
-          if (e instanceof NumberRuleError) {
-            throw httpError(422, {
-              error: "validation", code: "INVALID_INQUIRY_NO", detail: e.message,
-            });
-          }
-          throw e;
-        }
-        const hasQuote = await tx`
-          SELECT 1 FROM quote_orders WHERE tenant_id=${DEFAULT_TENANT}
-          AND inquiry_id=${inquiryId} LIMIT 1`;
-        if (hasQuote.length > 0) {
-          throw httpError(409, {
-            error: "conflict", code: "INQUIRY_NO_LOCKED",
-            detail: "该询盘已生成报价单，编号已锁定；如需改号请先处理关联报价",
-          });
-        }
-        const taken = await tx`
-          SELECT 1 FROM cust_inquiries WHERE tenant_id=${DEFAULT_TENANT}
-          AND inquiry_no=${normalizedNo} AND id<>${inquiryId} LIMIT 1`;
-        if (taken.length > 0) {
-          throw httpError(409, {
-            error: "conflict", code: "INQUIRY_NO_TAKEN",
-            detail: `询盘编号「${normalizedNo}」已被占用，请换一个`,
-          });
-        }
-        current = { ...current, inquiry_no: normalizedNo };
-        params.push(normalizedNo);
-        sets.push(`inquiry_no = ${"$" + params.length}`);
-      }
-
-      if (newStatus !== null) {
-        validateEnum("inquiry_status", newStatus);
-        // 三态流转：只有「关闭」是手动动作；关闭后重开若已有报价则回到已报价
-        let target = newStatus;
-        if (newStatus === "unquoted") {
-          const hasQuote = await tx`
-            SELECT 1 FROM quote_orders WHERE tenant_id=${DEFAULT_TENANT}
-            AND inquiry_id=${inquiryId} LIMIT 1`;
-          if (hasQuote.length > 0) {
-            target = "quoted";
-          }
-        }
-        const currentStatus = current.status as string;
-        if (target !== currentStatus
-          && !(INQUIRY_NEXT[currentStatus] ?? []).includes(target)) {
-          throw httpError(409, {
-            error: "conflict", code: "ILLEGAL_TRANSITION",
-            detail: `询盘状态不允许从 ${currentStatus} 流转到 ${target}`,
-          });
-        }
-        if (target !== currentStatus) {
-          params.push(target);
-          sets.push(`status = ${"$" + params.length}`);
-          // 回写线索池 lead_candidates.inquiry_status（§7.2），值没变不写
-          const leadId = current.lead_id;
-          const mapped = LEAD_INQUIRY_STATUS[target];
-          if (leadId !== null && leadId !== undefined && mapped !== undefined) {
-            await tx`
-              UPDATE lead_candidates SET inquiry_status = ${mapped}, updated_at = now()
-              WHERE tenant_id = ${DEFAULT_TENANT} AND id = ${num(leadId)}
-              AND inquiry_status IS DISTINCT FROM ${mapped}`;
-          }
-        }
-      }
-
-      if (provided("channel")) {
-        validateEnum("inquiry_channel", body.channel);
-      }
-      if (provided("owner_scope")) {
-        validateEnum("owner_scope", body.owner_scope);
-      }
-      // 多产品行（设计 §5）：items 落 jsonb，**第一行同步写旧标量字段**
-      // （显式传了同名列时以显式值为准 —— 与 Python ws_crm_ext 同序）。
-      if (provided("items")) {
-        const items = normalizeInquiryItems(body.items ?? []);
-        params.push(JSON.stringify(items));
-        sets.push("items = $" + String(params.length) + "::jsonb");
-        const first = items[0];
-        const legacy: [string, unknown][] = [
-          ["product_name_raw", first?.product_name_raw ?? null],
-          ["quantity", first?.quantity ?? null],
-          ["quantity_unit", first?.quantity_unit ?? null],
-          ["application", first?.application ?? null],
-        ];
-        for (const [column, value] of legacy) {
-          if (provided(column)) continue;
-          params.push(value);
-          sets.push(column + " = $" + String(params.length));
-        }
-      }
-      for (const column of INQUIRY_COLUMNS) {
-        if (provided(column)) {
-          params.push((body as Record<string, unknown>)[column]);
-          sets.push(`${column} = ${"$" + params.length}`);
-        }
-      }
-
-      let row: Record<string, unknown>;
-      if (sets.length > 0) {
-        sets.push("updated_at = now()");
-        params.push(inquiryId);
-        const updated = await tx.unsafe(
-          `UPDATE cust_inquiries SET ${sets.join(", ")} WHERE id = ${"$" + params.length} RETURNING *`,
-          params,
-        );
-        row = updated[0] as Record<string, unknown>;
-      } else {
-        row = current; // 无变更：dev 也不会发 UPDATE，原样回显
-      }
-
-      // 询盘阶段（TODO(TODO:F4)，inquiry_stage.py 语义直译）：
-      // 手动关闭 → closed（终态；只前进不后退，重复事件 no-op）
-      if (newStatus === "closed" && inquiry.status !== "closed") {
-        const stageSequence = ["inquiry", "quotation", "order", "shipment", "completed"];
-        const allStages = [...stageSequence, "closed"];
-        let currentStage = allStages.includes(current.stage as string)
-          ? current.stage as string
-          : (current.status === "closed" ? "closed" : "inquiry");
-        if (currentStage !== "closed") {
-          const target = "closed";
-          await tx`
-            UPDATE cust_inquiries SET stage=${target}, stage_updated_at=now(), updated_at=now()
-            WHERE tenant_id=${DEFAULT_TENANT} AND id=${inquiryId}`;
-          await tx`
-            INSERT INTO inquiry_stage_log
-                   (tenant_id, inquiry_id, from_stage, to_stage, source_event, actor_id, note)
-            VALUES (${DEFAULT_TENANT}, ${inquiryId}, ${currentStage}, ${target},
-                    'inquiry_closed', ${String(user.id)}, ${null})`;
-          currentStage = target;
-        }
-      }
-      return rowToInquiry(row);
-    });
-  });
-  return c.json(payload);
-}));
+// 2026-10-22（M1-f）：改为透传内核 —— 状态机/编号锁定/线索池联动/多产品行全在内核
+// （门面旧实现是第二份 SQL + 状态机镜像，已删除；ADR-008 铁纪律）。
+app.patch("/api/v1/inquiries/:inquiry_id", (c) =>
+  respond(c, async () => forwardAuthenticatedKernelRequest(c)));
 
 // ── GET /api/v1/inquiries/{inquiry_id}/stage-log（ws_crm_ext.py:413-450）──────
-app.get("/api/v1/inquiries/:inquiry_id/stage-log", (c) => respond(c, async () => {
-  const user = await requireUser(c);
-  const { inquiry_id: inquiryId } = parseQuery(inquiryParam, c.req.param(), "path");
-  const payload = await withDb(getEnv(c), async (sql: Db) => {
-    const found = await sql`
-      SELECT id FROM cust_inquiries WHERE id=${inquiryId} AND tenant_id=${DEFAULT_TENANT}`;
-    const inquiry = found[0] as Record<string, unknown> | undefined;
-    if (!inquiry || !ownerVisible(user, inquiry)) {
-      throw httpError(404, { error: "not_found", code: "INQUIRY_NOT_FOUND" });
-    }
-    const rows = await sql`
-      SELECT from_stage, to_stage, source_event, actor_id, note, created_at
-        FROM inquiry_stage_log WHERE tenant_id=${DEFAULT_TENANT} AND inquiry_id=${inquiryId}
-       ORDER BY created_at, id`;
-    return { items: (rows as Record<string, unknown>[]).map(inquiryStageLogApi) };
-  });
-  return c.json(payload);
-}));
+// 2026-10-22（M1-f）：改为透传内核 —— 阶段日志的可见性/投影全在内核。
+app.get("/api/v1/inquiries/:inquiry_id/stage-log", (c) =>
+  respond(c, async () => forwardAuthenticatedKernelRequest(c)));
 
 // ── GET /api/v1/customers/{customer_id}/records（ws_customer_records.py:36-65）──
 app.get("/api/v1/customers/:customer_id/records", (c) => respond(c, async () => {

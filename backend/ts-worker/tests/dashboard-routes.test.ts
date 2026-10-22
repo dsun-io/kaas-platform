@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import dashboardRoutes from "../src/routes/dashboard";
 import { createToken } from "../src/session";
-import { FIXED_SECRET, resetDb, TEST_ENV, dbState, type DbRow } from "./helpers";
+import { FIXED_SECRET, makeTestEnv, resetDb, TEST_ENV, dbState, type DbRow } from "./helpers";
 
 vi.mock("../src/db", () => import("./db-mock"));
 
@@ -32,13 +32,17 @@ function userRow(overrides: Partial<DbRow> = {}): DbRow {
   };
 }
 
-async function request(path: string, user: DbRow | null): Promise<Response> {
+async function request(
+  path: string,
+  user: DbRow | null,
+  env: typeof TEST_ENV = TEST_ENV,
+): Promise<Response> {
   const headers = new Headers();
   if (user) {
     const token = await createToken(user.id as number, FIXED_SECRET);
     headers.set("Authorization", "Bearer " + token);
   }
-  return app.request(path, { headers }, TEST_ENV);
+  return app.request(path, { headers }, env);
 }
 
 beforeEach(() => {
@@ -88,5 +92,65 @@ describe("GET /api/v1/dashboard/summary", () => {
     const eventsCall = dbState.calls.find((call) => call.query.includes("FROM events"));
     const since = eventsCall?.params[1] as Date;
     expect(since instanceof Date).toBe(true);
+  });
+});
+
+describe("GET /api/v1/dashboard/funnel（M3：门面只透传内核）", () => {
+  it("无 token → 401（不触达内核）", async () => {
+    let called = false;
+    const env = makeTestEnv({
+      KERNEL: { fetch: async () => { called = true; return new Response("{}"); } },
+    });
+    const res = await request("/api/v1/dashboard/funnel", null, env);
+    expect(res.status).toBe(401);
+    expect(called).toBe(false);
+  });
+
+  it("带 range 原样转发内核并透传响应", async () => {
+    const user = userRow();
+    resetDb((query) => (query.includes("FROM users WHERE id") ? [user] : []));
+    const seen: string[] = [];
+    const payload = {
+      range: "7d",
+      since: "2026-10-15T00:00:00+00:00",
+      funnel: { stages: [], conversion_rates: {}, composite_score: 520 },
+      channels: [],
+      direct_orders: { count: 5, amount: 8000 },
+      deprecated_summary: false,
+    };
+    const env = makeTestEnv({
+      KERNEL: {
+        fetch: async (input: Request) => {
+          seen.push(new URL(input.url).pathname + new URL(input.url).search);
+          return new Response(JSON.stringify(payload), {
+            status: 200, headers: { "content-type": "application/json" },
+          });
+        },
+      },
+    });
+
+    const res = await request("/api/v1/dashboard/funnel?range=7d", user, env);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(payload);
+    expect(seen).toEqual(["/api/v1/dashboard/funnel?range=7d"]);
+  });
+
+  it("内核 4xx 原样透传（鉴权/参数错误不吞）", async () => {
+    const user = userRow();
+    resetDb((query) => (query.includes("FROM users WHERE id") ? [user] : []));
+    const env = makeTestEnv({
+      KERNEL: {
+        fetch: async () => new Response(
+          JSON.stringify({ detail: "UNAUTHORIZED" }),
+          { status: 401, headers: { "content-type": "application/json" } },
+        ),
+      },
+    });
+
+    const res = await request("/api/v1/dashboard/funnel", user, env);
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ detail: "UNAUTHORIZED" });
   });
 });

@@ -72,6 +72,7 @@ const TAG_BY_SEGMENT: Readonly<Record<string, string>> = {
   "capability-customers": "customers",
   // teams / auth
   teams: "teams",
+  team: "teams",
   auth: "auth",
   // orders
   orders: "orders",
@@ -79,6 +80,9 @@ const TAG_BY_SEGMENT: Readonly<Record<string, string>> = {
   receivables: "orders",
   shipments: "orders",
   "actual-costs": "orders",
+  // M1-e：订单明细变更审批链路（审批中心 / 站内通知；内核 ws_approvals.py）
+  approvals: "approvals",
+  notifications: "notifications",
   // files
   "file-objects": "files",
   // outreach / admin / dashboard
@@ -126,6 +130,8 @@ const TAG_ORDER = [
   "customers",
   "teams",
   "orders",
+  "approvals",
+  "notifications",
   "files",
   "outreach",
   "admin",
@@ -145,6 +151,8 @@ const TAG_DESCRIPTIONS: Readonly<Record<string, string>> = {
   customers: "客户、联系人、询盘、客户能力位",
   teams: "团队、成员、邀请、团队订阅",
   orders: "订单、收款、付款计划、发货、实际成本",
+  approvals: "订单明细变更审批中心（M1-e；透传 Python 内核）",
+  notifications: "站内通知（M1-e；审批相关；透传 Python 内核）",
   files: "文件对象（R2 直传 / 预签名 / 渲染）",
   outreach: "外联邮箱、活动、发信与回执 webhook",
   admin: "平台运维（账号、审计、租户、规格提案）",

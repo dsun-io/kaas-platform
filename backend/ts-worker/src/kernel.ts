@@ -40,8 +40,12 @@ export interface KernelCaller {
   fetch(input: Request | string, init?: RequestInit): Promise<Response>;
 }
 
-/** 内核内部基址（Service Binding 内 fetch 需要绝对 URL；host 段无意义但须合法）。 */
-const KERNEL_BASE = "https://kernel.internal";
+/**
+ * 内核内部基址（Service Binding 内 fetch 需要绝对 URL；host 段无意义但须合法）。
+ * 门面透传统一用这个基址重建 URL（见 src/proxy.ts:forwardKernelRequest）：
+ * Service Binding 按 path/query 派发，host 段不参与路由。
+ */
+export const KERNEL_BASE = "https://kernel.internal";
 
 export interface CallKernelOptions {
   method?: string;

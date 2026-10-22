@@ -1,4 +1,4 @@
-# 路由分类：门面移植 vs 内核透传（W3 Phase 2 执行口径，2026-10-21）
+# 路由分类：门面移植 vs 内核透传（W3 Phase 2 执行口径；2026-10-23 复核）
 
 > 依据：docs/OPTIMIZATION_PLAN_2026-10-21.md §2.0（ADR-008 两层架构）+ route-inventory.md（253 路由）。
 > 分类原则：**UI 面 CRUD/鉴权/配置类 → 门面（Hono）逐端点移植；引擎/渲染/AI/cron → Python 内核，
@@ -9,11 +9,12 @@
 
 | 种类 | 域 | 路由数 | 处理 |
 |---|---|---|---|
-| **门面移植** | auth 9 / customers 20 / teams 15 / orders 16 / files 9 / outreach 12 / admin 11 / workstations 35 / intel 34 / dashboard 1 / meta 1 | **≈163** | Hono 逐端点实现（业务规则经 KERNEL，不重写） |
-| **内核透传** | quotes 38 / trade-docs 38 / ai 8 / cron 2 | **≈86** | 门面 /api/v1/{quotes,trade-docs,ai}/* → KERNEL.fetch 透传 |
+| **门面注册/移植** | auth 9 / customers 21 / teams 19 / orders 24 / files 9 / outreach 12 / admin 11 / workstations 35 / intel 34 / dashboard 2 / meta 1 / misc 10 | **187** | 业务端点逐条注册；其中 M1/M3 新增的 inquiries 详情、item-change、approvals、notifications、team/approvers、dashboard funnel 走**显式透传**（`forwardAuthenticatedKernelRequest`），业务仍在内核 |
+| **内核透传（前缀 mount）** | quotes 38 / trade-docs 38 / ai 8 / cron 2 + 其它前缀覆盖 | **86** | 12 个前缀 mount（quotes/trade-docs/ai/clause-templates/events/export-quote/external-docs/fx-rates/pricing-data/product-tax-rates/quotations/tax-archives）→ KERNEL.fetch |
 | FastAPI 内置 | /openapi.json /docs /redoc 等 4 条 | 4 | 门面自实现（openapi）或不做（docs 内部用） |
 
-合计 249 业务路由 + 4 内置 = 253（与 route-inventory 核对一致）。
+合计 **273 业务路由 + 4 内置 = 277**（与 route-inventory.md / routes.json 核对一致；
+2026-10-23 口径：M1 询盘/订单/审批通知 + M3 funnel 落地后由 249 增长）。
 
 ## 2. 为什么透传而不是移植
 
@@ -48,11 +49,11 @@ app.all('/api/v1/quotes/*', auth, async (c) => {
 
 - workstations(35) 与 intel(34) 中有 **26 条**按路径属该域、按语义属引擎（AI run/抓取/需求指数/ProductSpec 注册表/
   spec 校验与 fingerprint/价格生命周期/option overrides/difflib 近似名/PNG 校验）→ 归入**内核透传**，
-  不计入门面移植数。上表「门面移植 ≈163」按路径口径统计，实际移植 = 163 − 26 = **137 条**，透传 = 86 + 26 = **112 条**。
+  不计入门面移植数。上表「门面移植 187」按路径口径统计，实际移植 = 187 − 26 = **161 条**，透传 = 86 + 26 = **112 条**。
 - 内核暴露 `/internal/{product-registry,spec-validate,price-lifecycle,rules/*}` 后，这 26 条可转为门面移植。
 
 ## 5. 待办
 
-- [ ] 透传层（proxy.ts）+ 3 个前缀挂载（quotes/trade-docs/ai）
-- [ ] golden harness 请求清单扩至全部门面域的只读端点（无副作用）
+- [x] 透传层（proxy.ts）唯一实现 + 12 个前缀挂载（2026-10-23：`forwardKernelRequest` 统一；intel/workstations 两份重复删除）
+- [ ] golden harness 请求清单扩至全部门面域的只读端点（无副作用；需双端环境）
 - [ ] W5：MCP server 建立在门面（暴露工位能力 → 映射到上述路由）

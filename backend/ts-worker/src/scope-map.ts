@@ -109,6 +109,14 @@ readOnly("/api/v1/market", "intel:read");
 // ⑦ 外联
 readWrite("/api/v1/outreach", "outreach:read", "outreach:write");
 
+// ⑧ 审批中心 / 站内通知（M1-e，ws_approvals.py）
+// 业务语义都在「已确认订单明细变更审批」链路上（模块 docstring：通知只做审批相关），
+// 复用 orders:*，不发明第二套 scope（白名单唯一真源 = tokens.ts:API_TOKEN_SCOPES）。
+readWrite("/api/v1/approvals", "orders:read", "orders:write");
+readWrite("/api/v1/notifications", "orders:read", "orders:write");
+// 指定审批人（/api/v1/team/approvers）**故意不声明**：团队管理配置只走 UI 会话（JWT），
+// API token 请求按「未命中 = 拒绝」回 403 SCOPE_NOT_DECLARED —— 不拿 orders:write 越权放大。
+
 /** 有序规则表（只读导出，供文档/测试核对）。 */
 export const SCOPE_RULES: readonly ScopeRule[] = rules;
 

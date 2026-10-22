@@ -108,6 +108,12 @@ describe("resolveRequiredScope（有序规则）", () => {
     ["GET", "/api/v1/intel/shipments", "intel:read"],
     ["GET", "/api/v1/market/regions", "intel:read"],
     ["GET", "/api/v1/outreach/messages", "outreach:read"],
+    // M1-e：审批中心 / 站内通知复用 orders:*（审批链路同域）；指定审批人故意未声明。
+    ["GET", "/api/v1/approvals", "orders:read"],
+    ["GET", "/api/v1/notifications", "orders:read"],
+    ["GET", "/api/v1/notifications/unread-count", "orders:read"],
+    ["POST", "/api/v1/notifications/read-all", "orders:write"],
+    ["GET", "/api/v1/team/approvers", null],
     // 未声明 → null（调用方必须 403）
     ["POST", "/api/v1/intel/shipments", null],
     ["POST", "/api/v1/market/name-mappings", null],

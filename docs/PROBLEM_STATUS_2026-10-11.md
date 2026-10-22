@@ -14,6 +14,28 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-23 · M1-f 门面收口 + M3 漏斗后端 ✅）**
+> 接上一棒的未提交半场（M1-f 上半场 + M3 端点雏形），本轮补齐并修正：
+> - **M1-f 门面收口**：TS 门面补 12 条显式透传（`GET /inquiries/{id}`、item-change 4、
+>   `GET /approvals`、notifications 4、team/approvers 2），逐条 method+path 注册；
+>   3 条 legacy inquiries 路由（列表/PATCH/stage-log）**删除门面第二份 SQL + 状态机镜像**改透传；
+>   透传实现统一为 `proxy.ts:forwardKernelRequest`（proxy mount 与显式路由共用一份；
+>   `intel.ts`/`workstations.ts` 各自复制的两份删除）。`kernel.ts` 导出 `KERNEL_BASE`。
+>   配套：`scope-map`（approvals/notifications→`orders:*`；team/approvers 对 API token 403）、`openapi` tags。
+> - **M3 后端漏斗**：`kaas_common/workstation/funnel.py`（权重 1/2/10、分渠道转化）；`GET /dashboard/funnel`
+>   口径修正为**时间窗内询盘 cohort**（range 真正生效、completed 只算源头 inquiry 且限 `source_type='inquiry'`、
+>   直接下单单独返回、补 `since`）。修正前一棒「range 算了不用 / completed 混入 direct 导致 order→completed 可能 >100%」两处缺陷。
+> - **路由面**：业务路由 **273 = 187 直接 + 86 透传（12 个 mount）**；`routes.json`/`route-inventory.md` 重新生成，
+>   `EXPECTED_TOTAL` 253→277。
+> - **门禁**：worker **1695 passed + 12 skipped**（ASCII basetemp 规避 CJK 临时目录 PermissionError）；
+>   orchestrator **266 passed**；ts-worker **267 passed / 24 文件**（typecheck 0 error）；
+>   route-surface 187 直接 **0 缺 0 多**；openapi 273 全覆盖；`contracts:check` R0–R6 PASS
+>   （R2=28；`/inquiries` 工位双端登记随 M2-A 页面同批提交后变 29）；
+>   `sync-shared -Check` / schema-coverage / schema-drift / runtime-deps / deploy-domains 全 PASS。
+> - **已知遗留**：①scope 口径（审批/通知复用 `orders:*`；team/approvers 对 API token 故意 403）待产品确认；
+>   ②golden harness 需双端环境未跑（本轮无跨层契约变更，透传语义用 mock KERNEL 单测覆盖）；
+>   ③`/inquiries` 前端工位、`/orders` 来源链与审批中心/通知 UI、dashboard 漏斗前端在 M2-A/B/C、M3 继续。
+>
 > **（2026-10-22 · 询盘与订单模型重构 M1 内核收口 ✅）** 设计基准 `OPTIMIZATION_PLAN_2026-10-22_INQUIRY_ORDER_MODEL.md`
 > 全部 17 条决策已拍板并逐条落地：
 > - **M1-a** 枚举与迁移：`ORDER_SOURCE_TYPE`/`ORDER_CONFIRM_SOURCE`/`ORDER_CHANNEL` 入共享内核；

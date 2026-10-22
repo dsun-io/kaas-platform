@@ -9,10 +9,10 @@
 
 | 指标 | 数量 | 期望 | 结论 |
 |---|---|---|---|
-| APIRoute 业务路由 | 260 | — | — |
+| APIRoute 业务路由 | 273 | — | — |
 | FastAPI 内置（openapi/docs/redoc） | 4 | — | — |
-| **app.routes 合计** | **264** | **253** | **⚠️ 仍不符（差 +11，需人工复查）** |
-| method×path 展开行数 | 260 | — | 仅供参考 |
+| **app.routes 合计** | **277** | **277** | **✅ 一致** |
+| method×path 展开行数 | 273 | — | 仅供参考 |
 
 > 核对说明：计划 §2 Phase 0 登记的 253 = app.routes 全部条目；其中 4 条是 FastAPI 默认
 > 挂载的文档路由（不参与业务迁移；TS 侧 Hono 是否镜像留给 Phase 1 决定）：
@@ -22,7 +22,7 @@
 > - GET, HEAD `/docs/oauth2-redirect`
 > - GET, HEAD `/redoc`
 
-> ⚠️ 仍有 3 条路由域归属为 misc，需人工确认规则。
+> ⚠️ 仍有 10 条路由域归属为 misc，需人工确认规则。
 
 ## 按域汇总（迁移排序用）
 
@@ -32,17 +32,17 @@
 | trade-docs | 38 |
 | workstations | 35 |
 | intel | 34 |
-| customers | 20 |
-| orders | 20 |
+| orders | 24 |
+| customers | 21 |
 | teams | 19 |
 | outreach | 12 |
 | admin | 11 |
+| misc | 10 |
 | auth | 9 |
 | files | 9 |
 | ai | 8 |
-| misc | 3 |
 | cron | 2 |
-| dashboard | 1 |
+| dashboard | 2 |
 | meta | 1 |
 
 ## 按文件分组明细
@@ -93,87 +93,88 @@
 | POST | `/api/v1/research/from-leadgen` | `research_from_leadgen` | :2378 | `_get_current_user` | ✅ | — | intel |
 | GET | `/api/v1/research/runs` | `research_runs` | :2420 | `_get_current_user` | ✅ | — | intel |
 
-### `worker/src/main.py`（77 条）
+### `worker/src/main.py`（78 条）
 
 | Method | Path | Endpoint | 行号 | Depends | 登录态 | 平台运营 | 域 |
 |---|---|---|---|---|---|---|---|
-| POST | `/api/v1/auth/bootstrap-admin` | `bootstrap_admin` | :303 | — | — | — | auth |
-| POST | `/api/v1/auth/login` | `login` | :343 | — | — | — | auth |
-| GET | `/api/v1/auth/me` | `get_me` | :395 | `_get_current_user` | ✅ | — | auth |
-| POST | `/api/v1/auth/logout` | `logout` | :414 | — | — | — | auth |
-| PATCH | `/api/v1/auth/me` | `update_me` | :455 | `_get_current_user` | ✅ | — | auth |
-| POST | `/api/v1/auth/change-password` | `change_password` | :487 | `_get_current_user` | ✅ | — | auth |
-| POST | `/api/v1/auth/forgot-password` | `forgot_password` | :677 | — | — | — | auth |
-| POST | `/api/v1/auth/reset-password` | `reset_password` | :713 | — | — | — | auth |
-| POST | `/api/v1/auth/register` | `register` | :809 | — | — | — | auth |
-| GET | `/api/v1/intel/shipments` | `list_shipments` | :1003 | `_get_current_user` | ✅ | — | intel |
-| GET | `/api/v1/intel/shipments/{shipment_id}` | `get_shipment` | :1037 | `_get_current_user` | ✅ | — | intel |
-| POST | `/api/v1/intel/shipments` | `create_shipment` | :1049 | `_get_current_user` | ✅ | — | intel |
-| POST | `/api/v1/intel/import/csv` | `import_csv` | :1064 | `_get_current_user` | ✅ | — | intel |
-| GET | `/api/v1/intel/trade-stats` | `list_trade_stats` | :1117 | `_get_current_user` | ✅ | — | intel |
-| GET | `/api/v1/intel/adapter-runs` | `list_adapter_runs` | :1141 | `_get_current_user` | ✅ | — | intel |
-| GET | `/api/v1/intel/channels` | `list_channels` | :1162 | `_get_current_user` | ✅ | — | intel |
-| GET | `/api/v1/customers` | `list_customers` | :1445 | `_get_current_user` | ✅ | — | customers |
-| POST | `/api/v1/customers` | `create_customer` | :1506 | `_get_current_user` | ✅ | — | customers |
-| GET | `/api/v1/customers/{customer_id}` | `get_customer` | :1579 | `_get_current_user` | ✅ | — | customers |
-| POST | `/api/v1/customers/{customer_id}/contacts` | `add_contact` | :1610 | `_get_current_user` | ✅ | — | customers |
-| PATCH | `/api/v1/customers/{customer_id}/contacts/{contact_id}` | `update_contact` | :1642 | `_get_current_user` | ✅ | — | customers |
-| DELETE | `/api/v1/customers/{customer_id}/contacts/{contact_id}` | `delete_contact` | :1674 | `_get_current_user` | ✅ | — | customers |
-| DELETE | `/api/v1/customers/{customer_id}` | `soft_delete_customer` | :1692 | `_get_current_user` | ✅ | — | customers |
-| POST | `/api/v1/customers/{customer_id}/inquiries` | `add_inquiry` | :1723 | `_get_current_user` | ✅ | — | customers |
-| PATCH | `/api/v1/customers/{customer_id}/stage` | `update_stage` | :1764 | `_get_current_user` | ✅ | — | customers |
-| GET | `/api/v1/market/regions` | `list_market_regions` | :1830 | `_get_current_user` | ✅ | — | intel |
-| GET | `/api/v1/market/regions/{region_code}/products` | `list_region_products` | :1840 | `_get_current_user` | ✅ | — | intel |
-| GET | `/api/v1/market/name-lookup` | `name_lookup` | :1863 | `_get_current_user` | ✅ | — | intel |
-| POST | `/api/v1/market/name-mappings` | `create_name_mapping` | :1883 | `_get_current_user` | ✅ | — | intel |
-| GET | `/api/v1/market/usages` | `list_usages` | :1898 | `_get_current_user` | ✅ | — | intel |
-| GET | `/api/v1/market/ports` | `list_ports` | :1907 | `_get_current_user` | ✅ | — | intel |
-| GET | `/api/v1/subscriptions` | `list_subscriptions` | :1930 | `_get_current_user` | ✅ | — | workstations |
-| GET | `/api/v1/subscriptions/bundles` | `list_bundles` | :1939 | `_get_current_user` | ✅ | — | workstations |
-| GET | `/api/v1/dashboard/summary` | `dashboard_summary` | :1949 | `_get_current_user` | ✅ | — | dashboard |
-| GET | `/health` | `health` | :2014 | — | — | — | meta |
-| POST | `/api/v1/events` | `create_event` | :2043 | `_get_current_user` | ✅ | — | cron |
-| GET | `/api/v1/quotations` | `list_quotations_api` | :2095 | `_get_current_user` | ✅ | — | quotes |
-| POST | `/api/v1/quotations` | `create_quotation_manual` | :2137 | `_get_current_user` | ✅ | — | quotes |
-| GET | `/api/v1/pricing-data` | `list_pricing_data` | :2246 | `_get_current_user` | ✅ | — | quotes |
-| POST | `/api/v1/pricing-data` | `create_pricing_data` | :2351 | `_get_current_user` | ✅ | — | quotes |
-| PATCH | `/api/v1/pricing-data/{item_id}` | `update_pricing_data` | :2459 | `_get_current_user` | ✅ | — | quotes |
-| DELETE | `/api/v1/pricing-data/{item_id}` | `delete_pricing_data` | :2527 | `_get_current_user` | ✅ | — | quotes |
-| GET | `/api/v1/spec/categories` | `list_spec_categories` | :2667 | `_get_current_user` | ✅ | — | workstations |
-| GET | `/api/v1/spec/categories/{category_id}` | `get_spec_category` | :2683 | `_get_current_user` | ✅ | — | workstations |
-| GET | `/api/v1/spec/categories/{category_id}/bindings` | `get_spec_category_bindings` | :2698 | `_get_current_user` | ✅ | — | workstations |
-| POST | `/api/v1/spec/wizard/submit` | `wizard_submit` | :2756 | `_get_current_user` | ✅ | — | workstations |
-| POST | `/api/v1/spec/wizard/propose-attribute` | `wizard_propose_attribute` | :2826 | `_get_current_user` | ✅ | — | workstations |
-| GET | `/api/v1/events` | `list_events_api` | :2869 | `_get_current_user` | ✅ | ✅ | cron |
-| GET | `/api/v1/admin/feature_flag` | `get_feature_flag` | :2909 | `_get_current_user` | ✅ | ✅ | admin |
-| POST | `/api/v1/admin/feature_flag` | `set_feature_flag` | :2943 | `_get_current_user` | ✅ | ✅ | admin |
-| GET | `/api/v1/admin/tenants` | `list_tenants` | :2995 | `_get_current_user` | ✅ | ✅ | admin |
-| POST | `/api/v1/admin/tenants/reload` | `reload_tenants` | :3012 | `_get_current_user` | ✅ | ✅ | admin |
-| GET | `/api/v1/admin/audit-log` | `get_audit_log` | :3041 | `_get_current_user` | ✅ | ✅ | admin |
-| GET | `/api/v1/admin/archive-logs` | `get_archive_logs` | :3109 | `_get_current_user` | ✅ | ✅ | admin |
-| GET | `/api/v1/capability-customers` | `list_capability_customers` | :3186 | `_get_current_user` | ✅ | — | customers |
-| GET | `/api/v1/capabilities` | `list_capabilities_api` | :3208 | `_get_current_user` | ✅ | — | customers |
-| POST | `/api/v1/capabilities` | `upsert_capability_api` | :3230 | `_get_current_user` | ✅ | — | customers |
-| GET | `/api/v1/customer/{customer_id}/capabilities` | `get_customer_capabilities` | :3270 | `_get_current_user` | ✅ | — | customers |
-| PATCH | `/api/v1/customer/{customer_id}/capabilities` | `patch_customer_capability` | :3288 | `_get_current_user` | ✅ | — | customers |
-| GET | `/api/v1/orders` | `list_orders_api` | :3510 | `_get_current_user` | ✅ | — | orders |
-| POST | `/api/v1/orders` | `create_order_api` | :3646 | `_get_current_user` | ✅ | — | orders |
-| GET | `/api/v1/orders/{order_id}` | `get_order_api` | :3921 | `_get_current_user` | ✅ | — | orders |
-| PATCH | `/api/v1/orders/{order_id}` | `update_order_api` | :3986 | `_get_current_user` | ✅ | — | orders |
-| POST | `/api/v1/orders/{order_id}/status` | `change_order_status` | :4099 | `_get_current_user` | ✅ | — | orders |
-| GET | `/api/v1/orders/{order_id}/payment-schedules` | `list_schedules` | :4191 | `_get_current_user` | ✅ | — | orders |
-| POST | `/api/v1/orders/{order_id}/payment-schedules` | `create_schedule` | :4209 | `_get_current_user` | ✅ | — | orders |
-| PATCH | `/api/v1/payment-schedules/{schedule_id}` | `update_schedule` | :4256 | `_get_current_user` | ✅ | — | orders |
-| GET | `/api/v1/orders/{order_id}/receipts` | `list_order_receipts` | :4432 | `_get_current_user` | ✅ | — | orders |
-| POST | `/api/v1/orders/{order_id}/receipts` | `create_order_receipt` | :4444 | `_get_current_user` | ✅ | — | orders |
-| GET | `/api/v1/receivables` | `list_receivables` | :4501 | `_get_current_user` | ✅ | — | orders |
-| GET | `/api/v1/trade-docs` | `list_trade_docs` | :4729 | `_get_current_user` | ✅ | — | trade-docs |
-| POST | `/api/v1/trade-docs` | `create_trade_doc` | :4892 | `_get_current_user` | ✅ | — | trade-docs |
-| GET | `/api/v1/trade-docs/{doc_id}` | `get_trade_doc` | :5036 | `_get_current_user` | ✅ | — | trade-docs |
-| PATCH | `/api/v1/trade-docs/{doc_id}` | `update_trade_doc` | :5061 | `_get_current_user` | ✅ | — | trade-docs |
-| GET | `/api/v1/tenant/company-profile` | `get_company_profile` | :5275 | `_get_current_user` | ✅ | — | workstations |
-| PUT | `/api/v1/tenant/company-profile` | `put_company_profile` | :5288 | `_get_current_user` | ✅ | — | workstations |
-| GET | `/api/v1/trade-docs/{doc_id}/render-data` | `get_trade_doc_render_data` | :5450 | `_get_current_user` | ✅ | — | trade-docs |
+| POST | `/api/v1/auth/bootstrap-admin` | `bootstrap_admin` | :304 | — | — | — | auth |
+| POST | `/api/v1/auth/login` | `login` | :344 | — | — | — | auth |
+| GET | `/api/v1/auth/me` | `get_me` | :396 | `_get_current_user` | ✅ | — | auth |
+| POST | `/api/v1/auth/logout` | `logout` | :415 | — | — | — | auth |
+| PATCH | `/api/v1/auth/me` | `update_me` | :456 | `_get_current_user` | ✅ | — | auth |
+| POST | `/api/v1/auth/change-password` | `change_password` | :488 | `_get_current_user` | ✅ | — | auth |
+| POST | `/api/v1/auth/forgot-password` | `forgot_password` | :678 | — | — | — | auth |
+| POST | `/api/v1/auth/reset-password` | `reset_password` | :714 | — | — | — | auth |
+| POST | `/api/v1/auth/register` | `register` | :810 | — | — | — | auth |
+| GET | `/api/v1/intel/shipments` | `list_shipments` | :1004 | `_get_current_user` | ✅ | — | intel |
+| GET | `/api/v1/intel/shipments/{shipment_id}` | `get_shipment` | :1038 | `_get_current_user` | ✅ | — | intel |
+| POST | `/api/v1/intel/shipments` | `create_shipment` | :1050 | `_get_current_user` | ✅ | — | intel |
+| POST | `/api/v1/intel/import/csv` | `import_csv` | :1065 | `_get_current_user` | ✅ | — | intel |
+| GET | `/api/v1/intel/trade-stats` | `list_trade_stats` | :1118 | `_get_current_user` | ✅ | — | intel |
+| GET | `/api/v1/intel/adapter-runs` | `list_adapter_runs` | :1142 | `_get_current_user` | ✅ | — | intel |
+| GET | `/api/v1/intel/channels` | `list_channels` | :1163 | `_get_current_user` | ✅ | — | intel |
+| GET | `/api/v1/customers` | `list_customers` | :1548 | `_get_current_user` | ✅ | — | customers |
+| POST | `/api/v1/customers` | `create_customer` | :1609 | `_get_current_user` | ✅ | — | customers |
+| GET | `/api/v1/customers/{customer_id}` | `get_customer` | :1682 | `_get_current_user` | ✅ | — | customers |
+| POST | `/api/v1/customers/{customer_id}/contacts` | `add_contact` | :1713 | `_get_current_user` | ✅ | — | customers |
+| PATCH | `/api/v1/customers/{customer_id}/contacts/{contact_id}` | `update_contact` | :1745 | `_get_current_user` | ✅ | — | customers |
+| DELETE | `/api/v1/customers/{customer_id}/contacts/{contact_id}` | `delete_contact` | :1777 | `_get_current_user` | ✅ | — | customers |
+| DELETE | `/api/v1/customers/{customer_id}` | `soft_delete_customer` | :1795 | `_get_current_user` | ✅ | — | customers |
+| POST | `/api/v1/customers/{customer_id}/inquiries` | `add_inquiry` | :1826 | `_get_current_user` | ✅ | — | customers |
+| PATCH | `/api/v1/customers/{customer_id}/stage` | `update_stage` | :1867 | `_get_current_user` | ✅ | — | customers |
+| GET | `/api/v1/market/regions` | `list_market_regions` | :1933 | `_get_current_user` | ✅ | — | intel |
+| GET | `/api/v1/market/regions/{region_code}/products` | `list_region_products` | :1943 | `_get_current_user` | ✅ | — | intel |
+| GET | `/api/v1/market/name-lookup` | `name_lookup` | :1966 | `_get_current_user` | ✅ | — | intel |
+| POST | `/api/v1/market/name-mappings` | `create_name_mapping` | :1986 | `_get_current_user` | ✅ | — | intel |
+| GET | `/api/v1/market/usages` | `list_usages` | :2001 | `_get_current_user` | ✅ | — | intel |
+| GET | `/api/v1/market/ports` | `list_ports` | :2010 | `_get_current_user` | ✅ | — | intel |
+| GET | `/api/v1/subscriptions` | `list_subscriptions` | :2033 | `_get_current_user` | ✅ | — | workstations |
+| GET | `/api/v1/subscriptions/bundles` | `list_bundles` | :2042 | `_get_current_user` | ✅ | — | workstations |
+| GET | `/api/v1/dashboard/summary` | `dashboard_summary` | :2052 | `_get_current_user` | ✅ | — | dashboard |
+| GET | `/api/v1/dashboard/funnel` | `dashboard_funnel` | :2158 | `_get_current_user` | ✅ | — | dashboard |
+| GET | `/health` | `health` | :2214 | — | — | — | meta |
+| POST | `/api/v1/events` | `create_event` | :2243 | `_get_current_user` | ✅ | — | cron |
+| GET | `/api/v1/quotations` | `list_quotations_api` | :2295 | `_get_current_user` | ✅ | — | quotes |
+| POST | `/api/v1/quotations` | `create_quotation_manual` | :2337 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/pricing-data` | `list_pricing_data` | :2446 | `_get_current_user` | ✅ | — | quotes |
+| POST | `/api/v1/pricing-data` | `create_pricing_data` | :2551 | `_get_current_user` | ✅ | — | quotes |
+| PATCH | `/api/v1/pricing-data/{item_id}` | `update_pricing_data` | :2659 | `_get_current_user` | ✅ | — | quotes |
+| DELETE | `/api/v1/pricing-data/{item_id}` | `delete_pricing_data` | :2727 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/spec/categories` | `list_spec_categories` | :2867 | `_get_current_user` | ✅ | — | workstations |
+| GET | `/api/v1/spec/categories/{category_id}` | `get_spec_category` | :2883 | `_get_current_user` | ✅ | — | workstations |
+| GET | `/api/v1/spec/categories/{category_id}/bindings` | `get_spec_category_bindings` | :2898 | `_get_current_user` | ✅ | — | workstations |
+| POST | `/api/v1/spec/wizard/submit` | `wizard_submit` | :2956 | `_get_current_user` | ✅ | — | workstations |
+| POST | `/api/v1/spec/wizard/propose-attribute` | `wizard_propose_attribute` | :3026 | `_get_current_user` | ✅ | — | workstations |
+| GET | `/api/v1/events` | `list_events_api` | :3069 | `_get_current_user` | ✅ | ✅ | cron |
+| GET | `/api/v1/admin/feature_flag` | `get_feature_flag` | :3109 | `_get_current_user` | ✅ | ✅ | admin |
+| POST | `/api/v1/admin/feature_flag` | `set_feature_flag` | :3143 | `_get_current_user` | ✅ | ✅ | admin |
+| GET | `/api/v1/admin/tenants` | `list_tenants` | :3195 | `_get_current_user` | ✅ | ✅ | admin |
+| POST | `/api/v1/admin/tenants/reload` | `reload_tenants` | :3212 | `_get_current_user` | ✅ | ✅ | admin |
+| GET | `/api/v1/admin/audit-log` | `get_audit_log` | :3241 | `_get_current_user` | ✅ | ✅ | admin |
+| GET | `/api/v1/admin/archive-logs` | `get_archive_logs` | :3309 | `_get_current_user` | ✅ | ✅ | admin |
+| GET | `/api/v1/capability-customers` | `list_capability_customers` | :3386 | `_get_current_user` | ✅ | — | customers |
+| GET | `/api/v1/capabilities` | `list_capabilities_api` | :3408 | `_get_current_user` | ✅ | — | customers |
+| POST | `/api/v1/capabilities` | `upsert_capability_api` | :3430 | `_get_current_user` | ✅ | — | customers |
+| GET | `/api/v1/customer/{customer_id}/capabilities` | `get_customer_capabilities` | :3470 | `_get_current_user` | ✅ | — | customers |
+| PATCH | `/api/v1/customer/{customer_id}/capabilities` | `patch_customer_capability` | :3488 | `_get_current_user` | ✅ | — | customers |
+| GET | `/api/v1/orders` | `list_orders_api` | :3715 | `_get_current_user` | ✅ | — | orders |
+| POST | `/api/v1/orders` | `create_order_api` | :3868 | `_get_current_user` | ✅ | — | orders |
+| GET | `/api/v1/orders/{order_id}` | `get_order_api` | :4204 | `_get_current_user` | ✅ | — | orders |
+| PATCH | `/api/v1/orders/{order_id}` | `update_order_api` | :4269 | `_get_current_user` | ✅ | — | orders |
+| POST | `/api/v1/orders/{order_id}/status` | `change_order_status` | :4486 | `_get_current_user` | ✅ | — | orders |
+| GET | `/api/v1/orders/{order_id}/payment-schedules` | `list_schedules` | :4571 | `_get_current_user` | ✅ | — | orders |
+| POST | `/api/v1/orders/{order_id}/payment-schedules` | `create_schedule` | :4589 | `_get_current_user` | ✅ | — | orders |
+| PATCH | `/api/v1/payment-schedules/{schedule_id}` | `update_schedule` | :4636 | `_get_current_user` | ✅ | — | orders |
+| GET | `/api/v1/orders/{order_id}/receipts` | `list_order_receipts` | :4812 | `_get_current_user` | ✅ | — | orders |
+| POST | `/api/v1/orders/{order_id}/receipts` | `create_order_receipt` | :4824 | `_get_current_user` | ✅ | — | orders |
+| GET | `/api/v1/receivables` | `list_receivables` | :4893 | `_get_current_user` | ✅ | — | orders |
+| GET | `/api/v1/trade-docs` | `list_trade_docs` | :5121 | `_get_current_user` | ✅ | — | trade-docs |
+| POST | `/api/v1/trade-docs` | `create_trade_doc` | :5284 | `_get_current_user` | ✅ | — | trade-docs |
+| GET | `/api/v1/trade-docs/{doc_id}` | `get_trade_doc` | :5428 | `_get_current_user` | ✅ | — | trade-docs |
+| PATCH | `/api/v1/trade-docs/{doc_id}` | `update_trade_doc` | :5453 | `_get_current_user` | ✅ | — | trade-docs |
+| GET | `/api/v1/tenant/company-profile` | `get_company_profile` | :5667 | `_get_current_user` | ✅ | — | workstations |
+| PUT | `/api/v1/tenant/company-profile` | `put_company_profile` | :5680 | `_get_current_user` | ✅ | — | workstations |
+| GET | `/api/v1/trade-docs/{doc_id}/render-data` | `get_trade_doc_render_data` | :5842 | `_get_current_user` | ✅ | — | trade-docs |
 
 ### `worker/src/quote_api.py`（19 条）
 
@@ -227,6 +228,22 @@
 | GET | `/api/v1/admin/spec/attribute-proposals/recommended` | `list_recommended_proposals` | :91 | `_get_current_user` | ✅ | ✅ | admin |
 | PATCH | `/api/v1/admin/spec/attribute-proposals/{proposal_id}` | `review_attribute_proposal` | :108 | `_get_current_user` | ✅ | ✅ | admin |
 
+### `worker/src/ws_approvals.py`（11 条）
+
+| Method | Path | Endpoint | 行号 | Depends | 登录态 | 平台运营 | 域 |
+|---|---|---|---|---|---|---|---|
+| POST | `/api/v1/orders/{order_id}/item-change-requests` | `create_item_change_request` | :220 | `_get_current_user` | ✅ | — | orders |
+| GET | `/api/v1/orders/{order_id}/item-change-requests` | `list_item_change_requests` | :295 | `_get_current_user` | ✅ | — | orders |
+| POST | `/api/v1/orders/{order_id}/item-change-requests/{rid}/approve` | `approve_item_change_request` | :453 | `_get_current_user` | ✅ | — | orders |
+| POST | `/api/v1/orders/{order_id}/item-change-requests/{rid}/reject` | `reject_item_change_request` | :463 | `_get_current_user` | ✅ | — | orders |
+| GET | `/api/v1/approvals` | `list_approvals` | :475 | `_get_current_user` | ✅ | — | misc |
+| GET | `/api/v1/notifications` | `list_notifications` | :564 | `_get_current_user` | ✅ | — | misc |
+| GET | `/api/v1/notifications/unread-count` | `unread_notification_count` | :591 | `_get_current_user` | ✅ | — | misc |
+| POST | `/api/v1/notifications/{notification_id}/read` | `mark_notification_read` | :605 | `_get_current_user` | ✅ | — | misc |
+| POST | `/api/v1/notifications/read-all` | `mark_all_notifications_read` | :623 | `_get_current_user` | ✅ | — | misc |
+| GET | `/api/v1/team/approvers` | `list_team_approvers` | :642 | `_get_current_user` | ✅ | — | misc |
+| PUT | `/api/v1/team/approvers` | `replace_team_approvers` | :666 | `_get_current_user` | ✅ | — | misc |
+
 ### `worker/src/ws_clause_templates.py`（4 条）
 
 | Method | Path | Endpoint | 行号 | Depends | 登录态 | 平台运营 | 域 |
@@ -236,15 +253,16 @@
 | PATCH | `/api/v1/clause-templates/{template_id}` | `update_clause_template` | :262 | `_get_current_user` | ✅ | — | trade-docs |
 | DELETE | `/api/v1/clause-templates/{template_id}` | `delete_clause_template` | :316 | `_get_current_user` | ✅ | — | trade-docs |
 
-### `worker/src/ws_crm_ext.py`（5 条）
+### `worker/src/ws_crm_ext.py`（6 条）
 
 | Method | Path | Endpoint | 行号 | Depends | 登录态 | 平台运营 | 域 |
 |---|---|---|---|---|---|---|---|
-| PATCH | `/api/v1/customers/{customer_id}` | `update_customer` | :183 | `_get_current_user` | ✅ | — | customers |
-| GET | `/api/v1/customers/{customer_id}/inquiries` | `list_customer_inquiries` | :233 | `_get_current_user` | ✅ | — | customers |
-| GET | `/api/v1/inquiries` | `list_inquiries` | :276 | `_get_current_user` | ✅ | — | customers |
-| PATCH | `/api/v1/inquiries/{inquiry_id}` | `update_inquiry` | :318 | `_get_current_user` | ✅ | — | customers |
-| GET | `/api/v1/inquiries/{inquiry_id}/stage-log` | `list_inquiry_stage_log` | :445 | `_get_current_user` | ✅ | — | customers |
+| PATCH | `/api/v1/customers/{customer_id}` | `update_customer` | :210 | `_get_current_user` | ✅ | — | customers |
+| GET | `/api/v1/customers/{customer_id}/inquiries` | `list_customer_inquiries` | :260 | `_get_current_user` | ✅ | — | customers |
+| GET | `/api/v1/inquiries` | `list_inquiries` | :303 | `_get_current_user` | ✅ | — | customers |
+| GET | `/api/v1/inquiries/{inquiry_id}` | `get_inquiry` | :402 | `_get_current_user` | ✅ | — | customers |
+| PATCH | `/api/v1/inquiries/{inquiry_id}` | `update_inquiry` | :482 | `_get_current_user` | ✅ | — | customers |
+| GET | `/api/v1/inquiries/{inquiry_id}/stage-log` | `list_inquiry_stage_log` | :609 | `_get_current_user` | ✅ | — | customers |
 
 ### `worker/src/ws_customer_records.py`（1 条）
 

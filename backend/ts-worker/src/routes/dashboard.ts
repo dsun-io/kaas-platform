@@ -15,6 +15,7 @@ import { z } from "zod";
 import { withDb, type Db } from "../db";
 import { getEnv, type Env } from "../env";
 import { num0, parseQuery, respond } from "../http";
+import { forwardAuthenticatedKernelRequest } from "../proxy";
 import { requireUser } from "../session";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -91,5 +92,12 @@ app.get("/api/v1/dashboard/summary", (c) => respond(c, async () => {
   });
   return c.json(payload);
 }));
+
+// ── GET /api/v1/dashboard/funnel（main.py:2108 dashboard_funnel；M3）─────────
+// 口径与 SQL 全在内核（kaas_common/workstation/funnel.py + worker），门面只透传：
+// 透传实现统一走 src/proxy.ts:forwardAuthenticatedKernelRequest（门面鉴权 + 原样转发，
+// query 原样带给内核，门面不做参数重写/裁剪）。
+app.get("/api/v1/dashboard/funnel", (c) =>
+  respond(c, async () => forwardAuthenticatedKernelRequest(c)));
 
 export default app;

@@ -32,6 +32,7 @@ import {
   validateEnum,
 } from "../rules";
 import { requireUser, type CurrentUser } from "../session";
+import { forwardAuthenticatedKernelRequest } from "../proxy";
 import { rowToReceipt } from "../serializers";
 import {
   META_COLS,
@@ -159,7 +160,8 @@ function asFloat(value: unknown): number | null {
   return Number(value);
 }
 
-/** row_to_order：21 键（金额一律 float，时间一律 isoformat）。 */
+/** row_to_order：28 键（金额一律 float，时间一律 isoformat）。
+ * 2026-10-22（迁移 202610220004）：补来源三元组 + 确认痕迹 7 键。 */
 function rowToOrder(row: Row): Record<string, unknown> {
   return {
     id: num(row.id), order_no: row.order_no, customer_id: num(row.customer_id),
@@ -175,6 +177,15 @@ function rowToOrder(row: Row): Record<string, unknown> {
     incoterm: row.incoterm, payment_terms: row.payment_terms,
     port_of_loading: row.port_of_loading, port_of_destination: row.port_of_destination,
     shipping_marks: row.shipping_marks, country_of_origin: row.country_of_origin,
+    // ── 来源三元组（迁移 202610220004，设计 §3.2）──────────────────────
+    source_type: row.source_type ?? "direct",
+    source_channel: row.source_channel ?? null,
+    inquiry_id: num(row.inquiry_id) ?? null,
+    quote_id: num(row.quote_id) ?? null,
+    // 确认痕迹（设计 §5.1）
+    confirmed_at: isoDate(row.confirmed_at),
+    confirmed_by: row.confirmed_by ?? null,
+    confirmed_source: row.confirmed_source ?? null,
   };
 }
 
@@ -856,131 +867,19 @@ app.get("/api/v1/orders/:order_id", (c) => respond(c, async () => {
   });
 }));
 
-// PATCH /api/v1/orders/{order_id}（main.py:3741 update_order_api）
-app.patch("/api/v1/orders/:order_id", (c) => respond(c, async () => {
-  const user = await requireUser(c);
-  const orderId = Number(c.req.param("order_id"));
-  const body = await parseBody(c, z.record(z.unknown()));
-  const updated = await withDb(getEnv(c), async (sql: Db) => {
-    const rows = await sql.unsafe(
-      "SELECT * FROM orders WHERE tenant_id = $1 AND id = $2",
-      [DEFAULT_TENANT, orderId] as never[],
-    );
-    const row = (rows as unknown as Row[])[0];
-    if (!row || !ownerVisible(user, row)) {
-      throw httpError(404, "ORDER_NOT_FOUND");
-    }
-    checkWriteAccess(user, row);
-    const params: unknown[] = [DEFAULT_TENANT, orderId];
-    const sets: string[] = [];
-    if (body.customer_id !== null && body.customer_id !== undefined) {
-      // 换客户走与新建订单同一道闸门；快照与团队一并跟着客户走
-      const customer = await docCustomer(sql, body.customer_id, user, true) as Row;
-      params.push(customer.id);
-      sets.push("customer_id = $" + String(params.length));
-      params.push(customer.team_id ?? null);
-      sets.push("team_id = $" + String(params.length));
-      if (body.customer_name === null || body.customer_name === undefined) {
-        params.push(customer.name ?? null);
-        sets.push("customer_name = $" + String(params.length));
-      }
-    }
-    if (body.customer_name !== null && body.customer_name !== undefined) {
-      params.push(body.customer_name);
-      sets.push("customer_name = $" + String(params.length));
-    }
-    if (body.delivery_date !== null && body.delivery_date !== undefined) {
-      params.push(parseDate(body.delivery_date));
-      sets.push("delivery_date = $" + String(params.length));
-    }
-    if (body.notes !== null && body.notes !== undefined) {
-      params.push(body.notes);
-      sets.push("notes = $" + String(params.length));
-    }
-    for (const field of ORDER_TERM_FIELDS) {
-      const value = body[field];
-      if (value !== null && value !== undefined) {
-        params.push(value);
-        sets.push(field + " = $" + String(params.length));
-      }
-    }
-    if (sets.length === 0) return row;
-    const result = await sql.unsafe(
-      "UPDATE orders SET " + sets.join(", ")
-      + " WHERE tenant_id = $1 AND id = $2 RETURNING *",
-      params as never[],
-    );
-    return (result as unknown as Row[])[0] as Row;
-  });
-  return c.json(rowToOrder(updated));
-}));
+// PATCH /api/v1/orders/{order_id}（main.py:4270 update_order_api）
+// 2026-10-22（M1-f）：改为透传内核 —— 内核已完整实现 items 整批替换 + 重算金额，
+// 门面不再重复实现业务规则（设计 §10「业务规则只在 Python 内核一处实现」）。
+// 透传实现统一走 src/proxy.ts:forwardAuthenticatedKernelRequest
+// （门面鉴权 + 原样转发；禁止在门面重写业务规则——含 body 解析/重算）。
+app.patch("/api/v1/orders/:order_id", (c) =>
+  respond(c, async () => forwardAuthenticatedKernelRequest(c)));
 
-// POST /api/v1/orders/{order_id}/status（main.py:3854 change_order_status；§10.4 状态机）
-app.post("/api/v1/orders/:order_id/status", (c) => respond(c, async () => {
-  const user = await requireUser(c);
-  const orderId = Number(c.req.param("order_id"));
-  const body = await parseBody(c, z.record(z.unknown()));
-  const updated = await withDb(getEnv(c), async (sql: Db) => {
-    const rows = await sql.unsafe(
-      "SELECT * FROM orders WHERE tenant_id=$1 AND id=$2",
-      [DEFAULT_TENANT, orderId] as never[],
-    );
-    const row = (rows as unknown as Row[])[0];
-    if (!row || !ownerVisible(user, row)) {
-      throw httpError(404, { error: "order_not_found" });
-    }
-    checkWriteAccess(user, row);
-    const current = String(row.status ?? "");
-    const rawTarget = body.status;
-    if (rawTarget === null || rawTarget === undefined || !String(rawTarget).trim()) {
-      // PARITY-QUOTE-13：缺 status 是 422（不是 409 ILLEGAL_TRANSITION）
-      throw httpError(422, {
-        error: "validation", code: "STATUS_REQUIRED", field: "status",
-        detail: "缺少目标状态 status",
-      });
-    }
-    const target = validateEnumField("order_status", String(rawTarget).trim());
-    const allowed = ORDER_NEXT[current] ?? [];
-    if (target !== current && !allowed.includes(target)) {
-      throw httpError(409, {
-        error: "conflict", code: "ILLEGAL_TRANSITION", field: "status",
-        from: current, to: target, allowed: [...allowed],
-      });
-    }
-    await sql.unsafe(
-      "UPDATE orders SET status=$3, updated_at=$4 WHERE tenant_id=$1 AND id=$2",
-      [DEFAULT_TENANT, orderId, target, new Date()] as never[],
-    );
-    if (target === "confirmed" && current === "pending") {
-      // 确认时锁定汇率并建应收台账（幂等：tenant+order）
-      const currency = String(row.currency ?? "USD");
-      const fx = await lockFxRate(sql, currency);
-      await sql.unsafe(
-        "UPDATE orders SET fx_rate=$3, fx_rate_date=$4 WHERE tenant_id=$1 AND id=$2",
-        [DEFAULT_TENANT, orderId, fx.rate, fx.rateDate] as never[],
-      );
-      await createReceivableForOrder(sql, {
-        ...row, status: "confirmed", fx_rate: fx.rate, fx_rate_date: fx.rateDate,
-      });
-    }
-    if (target === "shipped") {
-      await recordBusinessEvent(sql, "order.shipped", {
-        order_id: orderId,
-        shipment_ref: String(body.shipment_ref ?? ""),
-        actor_id: user.id,
-      }, "orders", "trade_docs");
-    }
-    // TODO(TODO:TS6)：target === "completed" 时 Python 还会调
-    // inquiry_stage.advance_for_order（询盘阶段联动）；该判定在内核模块内，
-    // 门面未镜像（登记见 README「语义差异登记」），此处 no-op。
-    const finalRows = await sql.unsafe(
-      "SELECT * FROM orders WHERE tenant_id=$1 AND id=$2",
-      [DEFAULT_TENANT, orderId] as never[],
-    );
-    return (finalRows as unknown as Row[])[0] as Row;
-  });
-  return c.json(rowToOrder(updated));
-}));
+// POST /api/v1/orders/{order_id}/status（main.py:4389 change_order_status；§10.4 状态机）
+// 2026-10-22（M1-f）：改为透传内核 —— 内核已完整实现确认痕迹（confirmed_at/by/source）
+// + TS6 询盘阶段联动；门面不再重复实现业务规则。
+app.post("/api/v1/orders/:order_id/status", (c) =>
+  respond(c, async () => forwardAuthenticatedKernelRequest(c)));
 
 /** main.py:3805 _lock_fx_rate：fx_rates 取 ≤今天最近一条；同币种=1.0；缺记录 → (null,null)。 */
 async function lockFxRate(

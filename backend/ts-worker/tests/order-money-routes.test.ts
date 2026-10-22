@@ -11,7 +11,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import app from "../src/index";
 import { createToken } from "../src/session";
-import { FIXED_SECRET, dbCallsContaining, resetDb, TEST_ENV, type DbRow } from "./helpers";
+import {
+  FIXED_SECRET,
+  dbCallsContaining,
+  makeTestEnv,
+  resetDb,
+  TEST_ENV,
+  type DbRow,
+} from "./helpers";
 
 vi.mock("../src/db", () => import("./db-mock"));
 
@@ -324,7 +331,7 @@ describe("multipart：订单附件 / 到账截图", () => {
   });
 });
 
-describe("询盘多产品（TS 门面）", () => {
+describe("询盘多产品（POST 门面直译；PATCH 透传内核）", () => {
   it("POST /customers/{id}/inquiries：items 落库 + 第一行同步旧字段", async () => {
     const { token, user } = await authToken();
     resetDb((query) => {
@@ -370,41 +377,45 @@ describe("询盘多产品（TS 门面）", () => {
     expect(JSON.parse(itemsParam)).toHaveLength(2);
   });
 
-  it("PATCH /inquiries/{id}：items 更新 + 旧字段同步", async () => {
+  it("PATCH /inquiries/{id}：整批 items 原样透传内核（M1-f 已删除门面第二份 SQL）", async () => {
     const { token, user } = await authToken();
-    const inquiryRow: DbRow = {
-      id: 81, customer_id: 9, inquiry_no: "INQ-US-ACM-1", lead_id: null,
-      channel: "email", category_id: null, product_name_raw: "旧产品",
-      quantity: "1", quantity_unit: null, application: null,
-      status: "unquoted", stage: "inquiry", created_at: new Date(),
-      items: [], owner_id: "5", owner_scope: "private", team_id: 7,
-    };
-    resetDb((query) => {
-      if (query.includes("FROM users WHERE id")) return [user];
-      if (query.includes("SELECT * FROM cust_inquiries WHERE id")) return [inquiryRow];
-      if (query.startsWith("UPDATE cust_inquiries SET")) {
-        return [{
-          ...inquiryRow, product_name_raw: "鹿网", quantity: "3",
-          items: [{ product_name_raw: "鹿网", quantity: 3, quantity_unit: "set" }],
-        }];
-      }
-      return [];
+    const seen: Array<{ method: string; path: string; body: string }> = [];
+    resetDb((query) => (query.includes("FROM users WHERE id") ? [user] : []));
+    const env = makeTestEnv({
+      KERNEL: {
+        fetch: async (input: Request) => {
+          seen.push({
+            method: input.method,
+            path: new URL(input.url).pathname,
+            body: await input.text(),
+          });
+          return new Response(
+            JSON.stringify({
+              id: 81,
+              items: [{ product_name_raw: "鹿网", quantity: 3, quantity_unit: "set" }],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        },
+      },
     });
+    const payload = {
+      items: [{ product_name_raw: "鹿网", quantity: 3, quantity_unit: "set" }],
+    };
     const res = await app.request("/api/v1/inquiries/81", authed(token, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        items: [{ product_name_raw: "鹿网", quantity: 3, quantity_unit: "set" }],
-      }),
-    }), TEST_ENV);
+      body: JSON.stringify(payload),
+    }), env);
+
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
     expect((body.items as Record<string, unknown>[])[0]!.product_name_raw).toBe("鹿网");
-
-    const update = dbCallsContaining("UPDATE cust_inquiries SET")[0]!;
-    expect(update.query).toContain("items = ");
-    expect(update.query).toContain("::jsonb");
-    expect(update.params).toContain("鹿网");
-    expect(update.params).toContain(3);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.method).toBe("PATCH");
+    expect(seen[0]!.path).toBe("/api/v1/inquiries/81");
+    expect(JSON.parse(seen[0]!.body)).toEqual(payload);
+    // 业务规则只在 Python 内核：门面不再写 cust_inquiries
+    expect(dbCallsContaining("cust_inquiries")).toHaveLength(0);
   });
 });

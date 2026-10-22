@@ -11,6 +11,7 @@ import { getEnv } from "./env";
 import { createMcpApp } from "./mcp";
 import { apiTokenScopeMiddleware } from "./scope-map";
 import adminRoutes from "./routes/admin";
+import approvalRoutes from "./routes/approvals";
 import apiTokenRoutes from "./routes/api-tokens";
 import authRoutes from "./routes/auth";
 import customerRoutes from "./routes/customers";
@@ -93,6 +94,8 @@ app.route("/", intelRoutes);
 app.route("/", workstationsRoutes);
 app.route("/", dashboardRoutes);
 app.route("/", orderRoutes);
+// M1-e：审批中心 / 站内通知 / 指定审批人（显式路由逐条注册，业务全在内核）
+app.route("/", approvalRoutes);
 app.route("/", fileRoutes);
 app.route("/", outreachRoutes);
 app.route("/", adminRoutes);

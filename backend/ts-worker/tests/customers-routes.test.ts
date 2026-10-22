@@ -10,6 +10,7 @@ import app from "../src/index";
 import { createToken } from "../src/session";
 import {
   FIXED_SECRET,
+  makeTestEnv,
   resetDb,
   TEST_ENV,
   dbCallsContaining,
@@ -120,5 +121,127 @@ describe("GET /api/v1/customers", () => {
     expect(total!.query).not.toContain("c.owner_id =");
     expect(total!.query).not.toContain("c.team_id =");
     expect(total!.params).toEqual(["default"]);
+  });
+});
+
+describe("inquiries（M1-f：门面只透传内核，不再有第二份 SQL）", () => {
+  interface Forwarded {
+    method: string;
+    path: string;
+    search: string;
+    body: string;
+    auth: string | null;
+  }
+
+  function installUserAndKernel(status = 200, payload: unknown = { items: [], total: 0 }) {
+    const seen: Forwarded[] = [];
+    const user = userRow();
+    resetDb((query) => (query.includes("FROM users WHERE id") ? [user] : []));
+    const env = makeTestEnv({
+      KERNEL: {
+        fetch: async (input: Request) => {
+          const url = new URL(input.url);
+          seen.push({
+            method: input.method,
+            path: url.pathname,
+            search: url.search,
+            body: await input.text(),
+            auth: input.headers.get("authorization"),
+          });
+          return new Response(JSON.stringify(payload), {
+            status,
+            headers: { "content-type": "application/json" },
+          });
+        },
+      },
+    });
+    return { seen, env };
+  }
+
+  it("GET /api/v1/inquiries/{id} 无 token → 401 且不触达内核", async () => {
+    const { seen, env } = installUserAndKernel();
+
+    const res = await app.request("/api/v1/inquiries/1", {}, env);
+
+    expect(res.status).toBe(401);
+    expect(seen).toHaveLength(0);
+  });
+
+  it("GET /api/v1/inquiries 原样转发 M1-d 筛选参数（门面不写第二份 SQL）", async () => {
+    const token = await createToken(2, FIXED_SECRET);
+    const { seen, env } = installUserAndKernel();
+    const search = "?stage=quoted&channel=email&q=acme&date_from=2026-10-01&date_to=2026-10-31";
+
+    const res = await app.request(
+      "/api/v1/inquiries" + search,
+      { headers: { Authorization: `Bearer ${token}` } },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    expect(seen[0]!.path).toBe("/api/v1/inquiries");
+    expect(seen[0]!.search).toBe(search);
+    expect(seen[0]!.auth).toMatch(/^Bearer /);
+    // 历史债已清：询盘列表不再由门面查库
+    expect(dbCallsContaining("FROM cust_inquiries")).toHaveLength(0);
+  });
+
+  it("GET /api/v1/inquiries/{id} 详情透传（报价历史形状由内核给）", async () => {
+    const token = await createToken(2, FIXED_SECRET);
+    const { seen, env } = installUserAndKernel();
+
+    const res = await app.request(
+      "/api/v1/inquiries/42?include_quotes=1",
+      { headers: { Authorization: `Bearer ${token}` } },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    expect(seen[0]!.method).toBe("GET");
+    expect(seen[0]!.path).toBe("/api/v1/inquiries/42");
+    expect(seen[0]!.search).toBe("?include_quotes=1");
+    expect(dbCallsContaining("FROM cust_inquiries")).toHaveLength(0);
+  });
+
+  it("PATCH /api/v1/inquiries/{id} 原样转发 body；内核 409 原样透传", async () => {
+    const token = await createToken(2, FIXED_SECRET);
+    const { seen, env } = installUserAndKernel(409, {
+      detail: { error: "conflict", code: "INQUIRY_NO_LOCKED" },
+    });
+    const body = { status: "quoted", items: [{ product_name: "A", quantity: 2 }] };
+
+    const res = await app.request(
+      "/api/v1/inquiries/42",
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ detail: { error: "conflict", code: "INQUIRY_NO_LOCKED" } });
+    expect(seen[0]!.method).toBe("PATCH");
+    expect(seen[0]!.path).toBe("/api/v1/inquiries/42");
+    expect(JSON.parse(seen[0]!.body)).toEqual(body);
+  });
+
+  it("GET /api/v1/inquiries/{id}/stage-log 原样转发（阶段日志全在内核）", async () => {
+    const token = await createToken(2, FIXED_SECRET);
+    const { seen, env } = installUserAndKernel();
+
+    const res = await app.request(
+      "/api/v1/inquiries/42/stage-log",
+      { headers: { Authorization: `Bearer ${token}` } },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    expect(seen[0]!.path).toBe("/api/v1/inquiries/42/stage-log");
+    expect(dbCallsContaining("FROM inquiry_stage_log")).toHaveLength(0);
   });
 });

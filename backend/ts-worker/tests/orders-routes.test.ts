@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import app from "../src/index";
 import { createToken } from "../src/session";
-import { FIXED_SECRET, dbCallsContaining, resetDb, TEST_ENV, type DbRow } from "./helpers";
+import { FIXED_SECRET, dbCallsContaining, makeTestEnv, resetDb, TEST_ENV, type DbRow } from "./helpers";
 
 vi.mock("../src/db", () => import("./db-mock"));
 
@@ -58,13 +58,13 @@ const ORDER_ROW: DbRow = {
   country_of_origin: null,
 };
 
-async function request(path: string, user: DbRow | null, init: RequestInit = {}): Promise<Response> {
+async function request(path: string, user: DbRow | null, init: RequestInit = {}, env?: typeof TEST_ENV): Promise<Response> {
   const headers = new Headers(init.headers);
   if (user !== null) {
     const token = await createToken(user.id as number, FIXED_SECRET);
     headers.set("Authorization", "Bearer " + token);
   }
-  return app.request(path, { ...init, headers }, TEST_ENV);
+  return app.request(path, { ...init, headers }, env ?? TEST_ENV);
 }
 
 beforeEach(() => {
@@ -174,17 +174,21 @@ describe("GET /api/v1/orders/{order_id}", () => {
 describe("POST /api/v1/orders/{order_id}/status", () => {
   it("非法流转 → 409 ILLEGAL_TRANSITION（allowed 只列 pending 的合法目标）", async () => {
     const user = userRow();
-    resetDb((query) => {
-      if (query.includes("FROM users WHERE id")) return [user];
-      if (query.includes("FROM orders")) return [ORDER_ROW];
-      return [];
+    resetDb((query) => (query.includes("FROM users WHERE id") ? [user] : []));
+    const env = makeTestEnv({
+      KERNEL: {
+        fetch: async () => new Response(
+          JSON.stringify({ detail: { error: "conflict", code: "ILLEGAL_TRANSITION", field: "status", from: "pending", to: "completed", allowed: ["confirmed", "cancelled"] } }),
+          { status: 409, headers: { "content-type": "application/json" } },
+        ),
+      },
     });
 
     const res = await request("/api/v1/orders/31/status", user, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ status: "completed" }),
-    });
+    }, env);
 
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({
@@ -201,17 +205,21 @@ describe("POST /api/v1/orders/{order_id}/status", () => {
 
   it("缺 status → 422 STATUS_REQUIRED（不是 409）", async () => {
     const user = userRow();
-    resetDb((query) => {
-      if (query.includes("FROM users WHERE id")) return [user];
-      if (query.includes("FROM orders")) return [ORDER_ROW];
-      return [];
+    resetDb((query) => (query.includes("FROM users WHERE id") ? [user] : []));
+    const env = makeTestEnv({
+      KERNEL: {
+        fetch: async () => new Response(
+          JSON.stringify({ detail: { error: "validation", code: "STATUS_REQUIRED", field: "status", detail: "缺少目标状态 status" } }),
+          { status: 422, headers: { "content-type": "application/json" } },
+        ),
+      },
     });
 
     const res = await request("/api/v1/orders/31/status", user, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({}),
-    });
+    }, env);
 
     expect(res.status).toBe(422);
     expect(await res.json()).toEqual({
@@ -222,6 +230,65 @@ describe("POST /api/v1/orders/{order_id}/status", () => {
         detail: "缺少目标状态 status",
       },
     });
+  });
+});
+
+describe("PATCH /api/v1/orders/{order_id}（M1-f：透传内核）", () => {
+  it("原样转发 Authorization/body 到内核并透传响应", async () => {
+    const user = userRow();
+    resetDb((query) => (query.includes("FROM users WHERE id") ? [user] : []));
+    const seen: { path: string; method: string; auth: string | null; body: string }[] = [];
+    const env = makeTestEnv({
+      KERNEL: {
+        fetch: async (input: Request) => {
+          seen.push({
+            path: new URL(input.url).pathname,
+            method: input.method,
+            auth: input.headers.get("authorization"),
+            body: await input.text(),
+          });
+          return new Response(JSON.stringify({ id: 31, source_type: "inquiry" }), {
+            status: 200, headers: { "content-type": "application/json" },
+          });
+        },
+      },
+    });
+
+    const res = await request("/api/v1/orders/31", user, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ items: [{ product_name: "A", quantity: 2 }] }),
+    }, env);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ id: 31, source_type: "inquiry" });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.path).toBe("/api/v1/orders/31");
+    expect(seen[0]!.method).toBe("PATCH");
+    expect(seen[0]!.auth).toMatch(/^Bearer /);
+    expect(JSON.parse(seen[0]!.body)).toEqual({ items: [{ product_name: "A", quantity: 2 }] });
+  });
+
+  it("内核 4xx 原样透传（不吞错、不改形状）", async () => {
+    const user = userRow();
+    resetDb((query) => (query.includes("FROM users WHERE id") ? [user] : []));
+    const env = makeTestEnv({
+      KERNEL: {
+        fetch: async () => new Response(
+          JSON.stringify({ detail: { error: "conflict", code: "ORDER_NOT_PENDING", detail: "订单已确认" } }),
+          { status: 409, headers: { "content-type": "application/json" } },
+        ),
+      },
+    });
+
+    const res = await request("/api/v1/orders/31", user, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ notes: "x" }),
+    }, env);
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ detail: { error: "conflict", code: "ORDER_NOT_PENDING", detail: "订单已确认" } });
   });
 });
 

@@ -53,6 +53,7 @@ from kaas_common.workstation.inquiry_rules import build_inquiry_no, normalize_ab
 from kaas_common.domain.enums import SCHEDULE_TYPE, validate_enum
 from kaas_common.workstation.number_rules import build_number, NumberError, normalize_number
 from kaas_common.workstation.scope import can_view, can_write, is_admin_role
+from kaas_common.workstation.funnel import build_funnel, channel_conversion_rates
 from kaas_common.workstation.teams import (
     TeamRuleError, invite_state, normalize_invite_token, validate_team_name,
     validate_application_message,
@@ -2102,6 +2103,103 @@ async def dashboard_summary(
         "latency_sampled": 0,
     }
 
+
+# ── Dashboard Funnel（M3，设计 §7 / D-6）──────────────────────────────────────
+# 口径：按时间窗内**创建的询盘**做 cohort —— 先取窗口内询盘，再统计其中有多少
+# 有报价 / 有订单 / 已成笔；成交金额只算这些询盘转化出的已成交订单。
+# 直接下单（source_type='direct'）不进漏斗，单独返回。统计规则只在 Python 内核一处实现。
+_FUNNEL_SQL = (
+    "WITH inq AS ("
+    "  SELECT id FROM cust_inquiries"
+    "  WHERE tenant_id=$1 AND created_at >= $2"
+    ")"
+    " SELECT"
+    "  (SELECT count(*) FROM inq) AS inquiry_count,"
+    "  (SELECT count(*) FROM inq i WHERE EXISTS ("
+    "     SELECT 1 FROM quote_orders q"
+    "     WHERE q.tenant_id=$1 AND q.inquiry_id=i.id)) AS quoted_count,"
+    "  (SELECT count(*) FROM inq i WHERE EXISTS ("
+    "     SELECT 1 FROM orders o WHERE o.tenant_id=$1"
+    "     AND o.inquiry_id=i.id AND o.source_type='inquiry')) AS ordered_count,"
+    "  (SELECT count(*) FROM inq i WHERE EXISTS ("
+    "     SELECT 1 FROM orders o WHERE o.tenant_id=$1"
+    "     AND o.inquiry_id=i.id AND o.source_type='inquiry'"
+    "     AND o.status='completed')) AS completed_count,"
+    "  (SELECT COALESCE(SUM(o.total_amount),0) FROM orders o"
+    "     WHERE o.tenant_id=$1 AND o.source_type='inquiry'"
+    "     AND o.status='completed'"
+    "     AND o.inquiry_id IN (SELECT id FROM inq)) AS completed_amount"
+)
+_FUNNEL_CHANNEL_SQL = (
+    "WITH inq AS ("
+    "  SELECT id, COALESCE(channel, 'other') AS channel FROM cust_inquiries"
+    "  WHERE tenant_id=$1 AND created_at >= $2"
+    ")"
+    " SELECT i.channel, count(*) AS inquiry_count,"
+    "  count(*) FILTER (WHERE EXISTS ("
+    "    SELECT 1 FROM quote_orders q"
+    "    WHERE q.tenant_id=$1 AND q.inquiry_id=i.id)) AS quote_count,"
+    "  count(*) FILTER (WHERE EXISTS ("
+    "    SELECT 1 FROM orders o WHERE o.tenant_id=$1"
+    "    AND o.inquiry_id=i.id AND o.source_type='inquiry')) AS order_count,"
+    "  count(*) FILTER (WHERE EXISTS ("
+    "    SELECT 1 FROM orders o WHERE o.tenant_id=$1"
+    "    AND o.inquiry_id=i.id AND o.source_type='inquiry'"
+    "    AND o.status='completed')) AS completed_count"
+    " FROM inq i GROUP BY i.channel ORDER BY inquiry_count DESC"
+)
+_FUNNEL_DIRECT_SQL = (
+    "SELECT count(*) AS ord, COALESCE(SUM(total_amount),0) AS amt"
+    " FROM orders WHERE tenant_id=$1 AND source_type='direct'"
+    " AND created_at >= $2"
+)
+
+
+@app.get("/api/v1/dashboard/funnel")
+async def dashboard_funnel(
+    request: Request,
+    user: dict = Depends(_get_current_user),
+    range: str = Query("today"),
+):
+    """商机漏斗 + 分渠道转化（M3；/dashboard/summary 的三表混计数废弃）。"""
+    since_map = {
+        "today": timedelta(days=1),
+        "7d": timedelta(days=7),
+        "30d": timedelta(days=30),
+        "90d": timedelta(days=90),
+    }
+    since = datetime.now(timezone.utc) - since_map.get(range, timedelta(days=1))
+    async with _acquire(request) as conn:
+        funnel_row = await conn.fetchrow(_FUNNEL_SQL, DEFAULT_TENANT, since) or {}
+        channel_rows = await conn.fetch(_FUNNEL_CHANNEL_SQL, DEFAULT_TENANT, since)
+        direct_row = await conn.fetchrow(_FUNNEL_DIRECT_SQL, DEFAULT_TENANT, since) or {}
+
+    def _int(row: dict, key: str) -> int:
+        return int(row.get(key) or 0)
+
+    inquiry_total = _int(funnel_row, "inquiry_count")
+    quoted_total = _int(funnel_row, "quoted_count")
+    ordered_total = _int(funnel_row, "ordered_count")
+    completed_count = _int(funnel_row, "completed_count")
+    completed_amount = float(funnel_row.get("completed_amount") or 0)
+    direct_count = _int(direct_row, "ord")
+    direct_amount = float(direct_row.get("amt") or 0)
+
+    return {
+        "range": range,
+        "since": since.isoformat(),
+        "funnel": build_funnel(
+            inquiry_total, quoted_total, ordered_total,
+            completed_count, completed_amount),
+        "channels": channel_conversion_rates(
+            [{k: r[k] for k in r.keys()} for r in channel_rows]),
+        "direct_orders": {
+            "count": direct_count,
+            "amount": round(direct_amount, 2),
+        },
+        # 废弃标记：旧 /dashboard/summary 的 quotations_total 混计数不再可靠
+        "deprecated_summary": False,
+    }
 
 # ── Health ──
 # 共享内核自检。降级保护：即使打包时未带上 kaas_common，也不影响 Worker 启动，

@@ -41,7 +41,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BACKEND = os.path.normpath(os.path.join(HERE, ".."))
 WORKER_SRC = os.path.join(BACKEND, "worker", "src")
 
-EXPECTED_TOTAL = 253  # docs/OPTIMIZATION_PLAN_2026-10-21.md §2 Phase 0 登记数
+EXPECTED_TOTAL = 277  # 2026-10-22 M1（inquiries/approvals/notifications/来源字段）+ M3 funnel 后重算
 
 
 def _install_stubs() -> None:

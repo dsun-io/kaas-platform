@@ -1,5 +1,8 @@
+import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 
+import type { AppEnv, ApiTokenActor } from "../src/actor";
+import { verifyToken } from "../src/auth";
 import { createProxyApp } from "../src/proxy";
 
 function makeEnv(overrides: Record<string, unknown> = {}) {
@@ -99,5 +102,81 @@ describe("proxy 透传层", () => {
     const app = createProxyApp("/api/v1/quotes");
     const res = await app.request("/api/v1/quotes/public-ok", {}, makeEnv());
     expect(res.status).toBe(200);
+  });
+
+  it("POST body / query 原样转发（path 与方法不变）", async () => {
+    const seen: Array<{ method: string; url: string; body: string }> = [];
+    const env = makeEnv({
+      KERNEL: {
+        fetch: async (input: Request) => {
+          seen.push({ method: input.method, url: input.url, body: await input.text() });
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        },
+      },
+    });
+    const app = createProxyApp("/api/v1/events");
+    const res = await app.request(
+      "/api/v1/events/ingest?batch=2",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ items: [1, 2] }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.method).toBe("POST");
+    const url = new URL(seen[0]!.url);
+    expect(url.hostname).toBe("kernel.internal");
+    expect(url.pathname).toBe("/api/v1/events/ingest");
+    expect(url.search).toBe("?batch=2");
+    expect(JSON.parse(seen[0]!.body)).toEqual({ items: [1, 2] });
+  });
+
+  it("API token 身份 → Authorization 换成短时效内部 JWT（不透传 kaas_oat_）", async () => {
+    const actor: ApiTokenActor = {
+      kind: "api_token",
+      tokenId: 7,
+      tenantId: "default",
+      teamId: 4,
+      scopes: ["quotes:read"],
+      name: "CI token",
+      createdBy: 5,
+    };
+    let seenAuth: string | null = null;
+    const env = makeEnv({
+      KERNEL: {
+        fetch: async (input: Request) => {
+          seenAuth = input.headers.get("authorization");
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        },
+      },
+    });
+    const app = new Hono<AppEnv>();
+    app.use("*", async (c, next) => {
+      c.set("apiTokenActor", actor);
+      await next();
+    });
+    app.route("/api/v1/quotes", createProxyApp("/api/v1/quotes"));
+
+    const res = await app.request(
+      "/api/v1/quotes/1",
+      { headers: { Authorization: "Bearer kaas_oat_plaintext-should-not-leak" } },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    expect(seenAuth).toMatch(/^Bearer /);
+    expect(seenAuth).not.toContain("kaas_oat_");
+    const payload = await verifyToken(seenAuth!.slice("Bearer ".length), "test-secret");
+    expect(payload.sub).toBe("5");
   });
 });
