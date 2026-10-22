@@ -20,6 +20,15 @@ export default defineConfig({
     // 2026-10-20 升级 Next 16 / Vitest 4 后：xlsx 模板用例整包并发跑时偶发超过默认
     // 5s（单跑 <0.5s，属环境抖动）。放宽到 15s，避免 CI 假红。
     testTimeout: 15000,
+    server: {
+      deps: {
+        // @dnd-kit/* 只有 main/module 字段、没有 exports 映射：vitest 默认把它们
+        // 外置成 CJS，命名导入（useSortable 等）在 CJS/ESM 互操作下拿到 undefined
+        // （实测报 "useSortable is not a function"）。inline 让 Vite 走 ESM 管线、
+        // 优先解析 module 字段，命名导出才可用。
+        inline: ['@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/modifiers'],
+      },
+    },
   },
   resolve: {
     alias: {

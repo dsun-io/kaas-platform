@@ -58,3 +58,24 @@ pnpm e2e            # 含全路由 a11y 冒烟：h1/scope/button名/横向溢出
 ```
 
 任何一项失败，不得合入。
+
+## 7. 排序交互（唯一实现：`SortableList`）
+
+> 2026-10-22 拍板：**全站排序一律拖拽**，不再有「上移/下移」按钮，也不再让用户手填排序数字。
+
+- 排序一律用 `@/components/shared/sortable-list`（`SortableList` + `SortableGrip`）。
+  **禁止**在业务页另写一套 dnd-kit、也**禁止**恢复箭头按钮或「排序（数字）」输入框。
+- 把手 `SortableGrip` 是唯一的拖拽入口；行内按钮/输入框不受影响
+  （pointer sensor 有 8px 激活距离，未超过即 click）。
+- 键盘等价操作必须保留：Tab 到把手 → Space/Enter 拾起 → 方向键移动 → Space/Enter 放下 → Esc 取消。
+  这是去掉箭头按钮后唯一的无障碍路径。
+- 拖拽播报文案是中文（组件内已本地化，含"第 N 项"位次）。
+- 表格行排序用 `containerAs="fragment"` + `itemAs="tr"`；**不要**给 `<tr>` 套 `<div>`。
+- 主键不叫 `id` 的数据用 `getItemId` 指定，不要为了拖拽去改数据模型。
+- 顺序的**落库方式由调用方负责**（产品图/条款模板 PATCH `sort_order`；
+  报价行/订单行随单保存、按下标重写 `sort_order`），组件不猜。
+- 已固化的业务口径：
+  - 产品图**主图固定第一位**（后端 `is_primary DESC, sort_order, id`）⇒ 主图行不给把手，
+    换主图用星标；拖动把它挤到后面时前端按同一口径收敛（`media-order.ts` 的 `pinPrimaryFirst`）。
+  - 新建条款模板**追加到末尾**（不再是 `sort_order=0` 抢到最前）。
+

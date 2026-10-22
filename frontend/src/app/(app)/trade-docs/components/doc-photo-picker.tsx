@@ -12,10 +12,15 @@
  * - 引用而非复制 ⇒ 产品图改名/换图，所有引用它的单证**同步生效**。
  *
  * 只在单证处于 draft（可编辑）时可用；已签发的单据内容冻结。
+ *
+ * 2026-10-22 补充：已引用的图**按出图顺序**排在这里，可以拖动把手调整、也可以
+ * 直接移除。原先只能靠手改 `product_photos` 的 JSON 调顺序 —— 那是让用户编辑
+ * 序列化数据，既容易写坏格式，也不知道"改完到底长什么样"。
  */
 import { useState } from "react";
-import { Images, Plus } from "lucide-react";
+import { Images, Plus, X } from "lucide-react";
 
+import { SortableGrip, SortableList } from "@/components/shared/sortable-list";
 import { Button } from "@/components/ui/button";
 import {
   useFileObjectUrl,
@@ -24,15 +29,31 @@ import {
   type ProductMedia,
 } from "@/lib/products/use-products";
 
+import type { PickedPhoto } from "./photo-entries";
+
+// 类型定义在 photo-entries（纯函数模块）里，这里只做转出，避免两处各写一份
+export type { PickedPhoto };
+
+/** 模块级：`SortableList` 会把它放进 memo 依赖，内联箭头函数会让 id 列表白算 */
+const pickedPhotoId = (photo: PickedPhoto): number => photo.file_id;
+
 export function DocPhotoPicker({
   onPick,
   disabled,
   pickedIds,
+  picked = [],
+  onReorder,
+  onRemove,
 }: {
   onPick: (entry: { file_id: number; caption: string }) => void;
   disabled?: boolean;
   /** 已在本单据里的 file_id（用于标记"已添加"，避免重复引用） */
   pickedIds?: number[];
+  /** 已引用的图（按出图顺序） */
+  picked?: PickedPhoto[];
+  /** 拖动后的新顺序（调用方负责写回 `product_photos`） */
+  onReorder?: (next: PickedPhoto[]) => void;
+  onRemove?: (fileId: number) => void;
 }) {
   const products = useProducts();
   const [productKey, setProductKey] = useState<string>("");
@@ -48,6 +69,50 @@ export function DocPhotoPicker({
           （产品图在「产品」工位维护一次，这里只做**引用**：改图/改名后所有单证同步生效）
         </span>
       </div>
+
+      {picked.length > 0 && (
+        <div className="mb-3 rounded-md border bg-background p-2">
+          <p className="mb-1.5 text-xs font-medium">
+            已引用 {picked.length} 张
+            <span className="ml-1 font-normal text-muted-foreground">
+              （按这个顺序出图，拖动把手可调整）
+            </span>
+          </p>
+          <SortableList
+            items={picked}
+            getItemId={pickedPhotoId}
+            onReorder={onReorder ?? (() => {})}
+            disabled={disabled || !onReorder}
+            className="space-y-1"
+            renderItem={(photo) => (
+              <div className="flex items-center gap-2 rounded border px-1.5 py-1">
+                <SortableGrip
+                  className="inline-flex h-6 w-5 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                  label={`拖动排序 ${photo.caption || `图片 ${photo.file_id}`}`}
+                />
+                <PickedPhotoThumb fileId={photo.file_id} caption={photo.caption} />
+                <span className="min-w-0 flex-1 truncate text-[11px]">
+                  {photo.caption || `#${photo.file_id}`}
+                </span>
+                {onRemove && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 w-6 shrink-0 p-0"
+                    aria-label={`移除引用 ${photo.caption || `图片 ${photo.file_id}`}`}
+                    disabled={disabled}
+                    onClick={() => onRemove(photo.file_id)}
+                  >
+                    <X className="size-3" />
+                  </Button>
+                )}
+              </div>
+            )}
+          />
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         <select
           className="h-8 rounded-md border border-input bg-background px-2 text-xs"
@@ -86,6 +151,23 @@ export function DocPhotoPicker({
         </p>
       )}
     </div>
+  );
+}
+
+/** 已引用图的缩略图（走 blob 鉴权取图，`<img src>` 带不上 Bearer） */
+function PickedPhotoThumb({ fileId, caption }: { fileId: number; caption: string }) {
+  const url = useFileObjectUrl(fileId);
+  return (
+    <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded bg-muted/40">
+      {url.data ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url.data} alt={caption || `图片 ${fileId}`} className="size-full object-cover" />
+      ) : (
+        <span className="text-[9px] text-muted-foreground">
+          {url.isError ? "×" : "…"}
+        </span>
+      )}
+    </span>
   );
 }
 

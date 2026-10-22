@@ -24,6 +24,45 @@ vi.mock("@/lib/api/client", () => ({
 }));
 
 /**
+ * 上传传输层替身（2026-10-22 起 hook 改用 XHR 拿进度）。
+ *
+ * 这里**不测 XHR 本身**（真实现的进度/头/错误形状在
+ * `lib/api/__tests__/xhr-upload.test.ts` 里单独钉），只把 `xhrSend`/`xhrPostForm`
+ * 映射回 fetch/axios 的既有形状 —— 这样本文件所有「字节到底发去哪、带了什么」的
+ * 契约断言（PUT 预签名 URL、multipart 三件套、回退标记）一行都不用改，
+ * 仍然在证明 hook 的分叉逻辑没走错。
+ */
+vi.mock("@/lib/api/xhr-upload", () => ({
+  xhrSend: async (opts: {
+    method: string;
+    url?: string;
+    path?: string;
+    body: BodyInit;
+    headers?: Record<string, string>;
+  }) => {
+    const res = await fetch(opts.url ?? opts.path ?? "", {
+      method: opts.method,
+      body: opts.body,
+      headers: opts.headers,
+    });
+    return { ok: res.ok, status: res.status, text: "" };
+  },
+  xhrPostForm: async (path: string, form: FormData) => {
+    const { data } = await apiClient.post(path, form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return data;
+  },
+  XhrHttpError: class XhrHttpError extends Error {
+    response: { status: number; data: unknown };
+    constructor(status: number, data: unknown, message: string) {
+      super(message);
+      this.response = { status, data };
+    }
+  },
+}));
+
+/**
  * 产品图上传的**双路径**守卫。
  *
  * 这是"字节过不过服务端"的唯一分叉点：

@@ -35,6 +35,7 @@ import {
   type CustomerPickerValue,
 } from "@/components/customer-picker";
 import { Button } from "@/components/ui/button";
+import { SortableGrip, SortableList } from "@/components/shared/sortable-list";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import apiClient from "@/lib/api/client";
@@ -149,6 +150,14 @@ function nextExternalDocKey(): string {
   externalDocSeq += 1;
   return `extdoc-${Date.now().toString(36)}-${externalDocSeq}`;
 }
+
+/**
+ * 明细行的拖拽 id。
+ *
+ * 定义在模块级（而不是内联箭头函数）是为了**引用稳定**：`SortableList` 会把它
+ * 放进 memo 依赖里，每次渲染换一个新函数会让 id 列表白算一遍。
+ */
+const orderItemId = (item: OrderItemDraft): string => item.key;
 
 export function OrderCreateWizard({
   onCreated,
@@ -714,6 +723,9 @@ export function OrderCreateWizard({
             <table className="w-full min-w-[720px] text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-muted-foreground">
+                  <th scope="col" className="w-8 p-2">
+                    <span className="sr-only">拖动排序</span>
+                  </th>
                   <th scope="col" className="p-2">
                     产品名称 *
                   </th>
@@ -739,16 +751,33 @@ export function OrderCreateWizard({
                 {items.length === 0 && (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       className="p-3 text-center text-xs text-muted-foreground"
                     >
                       暂不填明细也可以继续（历史订单）—— 需要时点下面「添加货物行」。
                     </td>
                   </tr>
                 )}
-                {items.map((item, index) => (
-                  <tr key={item.key} className="border-b last:border-0">
-                    <td className="p-1.5">
+                {/*
+                  货物行排序：拖拽（2026-10-22）。
+                  订单明细落库时按数组顺序写 `sort_order`，所以本地重排即"顺序已定"，
+                  不需要额外接口。`containerAs="fragment"` + `itemAs="tr"`
+                  是为了让行正好落在上面这个 `<tbody>` 里（包 div 会破坏表格布局）。
+                */}
+                <SortableList
+                  items={items}
+                  onReorder={setItems}
+                  // 明细草稿的主键叫 `key`（不是 `id`）——不改数据模型，交给调用方取
+                  getItemId={orderItemId}
+                  containerAs="fragment"
+                  itemAs="tr"
+                  itemClassName="border-b last:border-0"
+                  renderItem={(item, index) => (
+                    <>
+                      <td className="p-1.5 align-middle">
+                        <SortableGrip label={`拖动排序 第 ${index + 1} 行`} />
+                      </td>
+                      <td className="p-1.5">
                       <Input
                         aria-label={`第 ${index + 1} 行产品名称`}
                         className="h-8 text-xs"
@@ -847,8 +876,9 @@ export function OrderCreateWizard({
                         <Trash2 className="size-3.5" />
                       </Button>
                     </td>
-                  </tr>
-                ))}
+                    </>
+                  )}
+                />
               </tbody>
             </table>
           </div>

@@ -63,7 +63,12 @@ import { useUpdateTradeDoc } from "../hooks/use-trade-docs";
 import { effectivePayload } from "@/lib/trade-doc/amount-summary";
 
 import { AmountSummaryBar } from "./amount-summary-bar";
-import { DocPhotoPicker } from "./doc-photo-picker";
+import { DocPhotoPicker, type PickedPhoto } from "./doc-photo-picker";
+import {
+  parsePhotoEntries,
+  removePhotoEntry,
+  reorderPhotoEntries,
+} from "./photo-entries";
 
 /** 单据关联的产品 key 存在 custom 的这个键上（后端共享内核同一口径） */
 const PRODUCT_KEY = "product_key";
@@ -236,19 +241,39 @@ export function DocCustomForm({
   // `product_photos` 支持 `{"file_id": N, "caption": …}` 条目：引用产品图库里的图，
   // 由后端 render-data 装配层解析成 data URI（渲染器白名单不放开，也不需要放开）。
   const photosField = useMemo(() => fields.find((f) => f.name === "product_photos"), [fields]);
-  const pickedIds = useMemo(() => {
-    const raw = texts["product_photos"];
-    if (!raw?.trim()) return [] as number[];
-    try {
-      const arr: unknown = JSON.parse(raw);
-      if (!Array.isArray(arr)) return [] as number[];
-      return arr
-        .map((e) => (e && typeof e === "object" ? (e as { file_id?: number }).file_id : undefined))
-        .filter((n): n is number => typeof n === "number");
-    } catch {
-      return [] as number[]; // 用户正在手改 JSON 时不让选择器报错
+  /**
+   * 已引用的图（顺序 = 出图顺序）。
+   *
+   * 解析与写回都在 `./photo-entries`（纯函数、有单测）：那里钉住了两条约束 ——
+   * 重排只换位置不吃字段、遇到认不出来的条目宁可不动。这里只做状态搬运。
+   */
+  const pickedPhotos = useMemo(
+    () => parsePhotoEntries(texts["product_photos"]),
+    [texts],
+  );
+
+  const pickedIds = useMemo(
+    () => pickedPhotos.map((p) => p.file_id),
+    [pickedPhotos],
+  );
+
+  const reorderPhotos = (next: PickedPhoto[]) => {
+    const written = reorderPhotoEntries(texts["product_photos"], next);
+    if (written === null) {
+      toast.error("产品照片里有无法识别的条目，请先修正 JSON 后再拖动排序");
+      return;
     }
-  }, [texts]);
+    setText("product_photos", written);
+  };
+
+  const removePhoto = (fileId: number) => {
+    const written = removePhotoEntry(texts["product_photos"], fileId);
+    if (written === null) {
+      toast.error("现有内容格式无法识别，请先修正后再移除");
+      return;
+    }
+    setText("product_photos", written);
+  };
 
   const appendPhoto = (entry: { file_id: number; caption: string }) => {
     const current = texts["product_photos"] ?? "";
@@ -365,7 +390,14 @@ export function DocCustomForm({
           />
         ))}
         {photosField && (
-          <DocPhotoPicker onPick={appendPhoto} disabled={!editable} pickedIds={pickedIds} />
+          <DocPhotoPicker
+            onPick={appendPhoto}
+            disabled={!editable}
+            pickedIds={pickedIds}
+            picked={pickedPhotos}
+            onReorder={reorderPhotos}
+            onRemove={removePhoto}
+          />
         )}
       </div>
 

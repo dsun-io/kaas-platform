@@ -45,6 +45,7 @@
 | [CI_OPTIMIZATION_2026-10-22.md](./CI_OPTIMIZATION_2026-10-22.md) | **CI 成本口径（2026-10-22）**：实测月耗、触发面瘦身清单、保留的门禁、验证/回滚方法、**self-hosted runner 规划（已批准、未实施）** |
 | [JOIN_APPLICATION_MODULE_2026-10-22.md](./JOIN_APPLICATION_MODULE_2026-10-22.md) | **团队加入申请模块（2026-10-22 已实施，全门禁绿）**：设计 + 4 项决策结论（仅注册时 / 只回布尔不列团队 / 先站内通知 / 绿后推 main）+ 实施偏差 §10（4 模式单选卡、400ms、迁移号 `202610220003`、`_SIBLING_MODULES` 登记坑、邀请码 `FOR UPDATE`）+ 门禁实测 |
 | [OPTIMIZATION_PLAN_2026-10-22_PRODUCT_INQUIRY_ORDER.md](./OPTIMIZATION_PLAN_2026-10-22_PRODUCT_INQUIRY_ORDER.md) | **2026-10-22 优化方案（已实施，提交 9de3794）**：产品图片归位 / 隐藏产品 key / 规格傻瓜化 + 管理员高级设置 / 询盘多产品 / 手工订单信息与附件 / 全站配置页去技术名词；含数据迁移、验收与待拍板项 |
+| [OPTIMIZATION_PLAN_2026-10-22_IMAGE_UPLOAD_SORTING.md](./OPTIMIZATION_PLAN_2026-10-22_IMAGE_UPLOAD_SORTING.md) | **2026-10-22 图片上传 + 全站拖拽排序（已实施）**：上传区重做（拖/点/粘贴 → 队列 → 逐张进度 → 单张重试）、图库拖拽/大图/显式改名/确认移除、六处排序统一到 `SortableList`（产品图/条款模板/报价行/订单行/单证引用图）、主图固定第一位的收敛口径、单证 `product_photos` 的 JSON 安全重排；含落库口径与门禁结果 |
 | [OPTIMIZATION_PLAN_2026-10-22_INQUIRY_ORDER_MODEL.md](./OPTIMIZATION_PLAN_2026-10-22_INQUIRY_ORDER_MODEL.md) | **询盘与订单模型重构设计（2026-10-22，待实施）**：订单一等公民 + 询盘独立；orders 增 source_type/source_channel/inquiry_id；询盘/报价/订单编辑入口补齐（后端契约已验证齐全、前端零暴露）；漏斗+权重统计（询盘1/报价2/订单10）；分期 M1 模型 → M2 前端 → M3 仪表盘；实施进度在 TODO §Q |
 | [QA_TEST_ACCOUNTS.md](./QA_TEST_ACCOUNTS.md) | 测试账号与验收口径 |
 | [E2E_GUIDE.md](./E2E_GUIDE.md) | e2e 一键运行说明（2026-10-21 口径：27 条 = 27 passed + 0 skipped） |

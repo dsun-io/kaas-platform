@@ -77,6 +77,32 @@ export function useUpdateClauseTemplate() {
   });
 }
 
+/**
+ * 重排条款模板：把**期望的最终顺序**压成 0..n-1 逐条 PATCH。
+ *
+ * 为什么不是"交换两条的 sort_order"：新模板默认 `sort_order` 都是 0（表单默认值），
+ * 交换两个 0 等于没动。整体重排一次就把隐式顺序固化成显式顺序；
+ * 调用方只需交进最终顺序，位次没变的不用发请求。
+ *
+ * 后端 PATCH 是**局部更新**（`ws_clause_templates.py` 用 `exclude_unset` 合并），
+ * 所以只发 `{sort_order}` 不会把名称/条款内容清空。
+ */
+export function useReorderClauseTemplates() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (order: { id: number; sort_order: number }[]) => {
+      await Promise.all(
+        order.map(({ id, sort_order }) =>
+          apiClient.patch(`/clause-templates/${id}`, { sort_order }),
+        ),
+      );
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: clauseTemplateKeys.all });
+    },
+  });
+}
+
 export function useDeleteClauseTemplate() {
   const qc = useQueryClient();
   return useMutation({

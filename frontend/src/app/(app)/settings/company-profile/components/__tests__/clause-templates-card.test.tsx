@@ -212,10 +212,38 @@ describe("ClauseTemplatesCard", () => {
       name: "新模板",
       text_zh: "中文条款内容",
       text_en: "English clause text",
-      sort_order: 0,
+      // 新建追加到末尾：既有 10/20 ⇒ 30。
+      // （旧实现固定 0，导致"新建的模板总跑到最前面"，很反直觉 —— 2026-10-22 改）
+      sort_order: 30,
     });
     expect(body.doc_types).toContain("pi");
     expect(toastSuccess).toHaveBeenCalledWith("条款模板已创建");
+  });
+
+  it("排序靠拖拽：列表有把手，弹窗里没有「排序」数字框", async () => {
+    mount(<ClauseTemplatesCard canWrite />);
+    await settle();
+
+    expect(
+      document.querySelector('button[aria-label="拖动排序 T/T 30% 定金条款"]'),
+    ).not.toBeNull();
+    expect(
+      document.querySelector('button[aria-label="拖动排序 通用声明"]'),
+    ).not.toBeNull();
+
+    clickButton("新建模板");
+    await settle();
+    // 手填 sort_order 的输入框必须消失（让用户手工维护链表是原来的病根）
+    expect(document.body.textContent).not.toContain("数字越小越靠前");
+    expect(document.querySelector('input[type="number"]')).toBeNull();
+    expect(document.body.textContent).toContain("拖动左侧把手调整");
+  });
+
+  it("只读账号的把手禁用（不能拖）", async () => {
+    mount(<ClauseTemplatesCard canWrite={false} />);
+    await settle();
+    // 只读时干脆不渲染把手（避免"看起来能拖、拖了没反应"）
+    expect(document.querySelector('button[aria-label^="拖动排序"]')).toBeNull();
   });
 
   it("403：后端 message 如实透出，弹窗保留可改", async () => {

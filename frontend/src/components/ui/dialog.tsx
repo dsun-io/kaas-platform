@@ -43,13 +43,19 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  overlayClassName,
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
+  /**
+   * 遮罩层类名覆盖。默认遮罩是 `bg-black/10`（普通表单弹窗够用），
+   * 但大图预览这类"整屏内容"需要更实的底，否则背后的页面会透上来干扰看图。
+   */
+  overlayClassName?: string
 }) {
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(

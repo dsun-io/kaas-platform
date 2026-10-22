@@ -10,7 +10,7 @@
  * 例外是**加工利润**：不同产品的供货厂与竞争情况不同，利润常常不一样，
  * 所以它支持逐行覆盖（留空 = 继承整单默认）。这是唯一一个"整单默认 + 行内覆盖"的参数。
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, ChevronDown, Loader2, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -109,6 +109,14 @@ interface Props {
   onRemove: () => void;
   /** 整单报价信号：递增即触发本行计算（0/undefined = 不触发） */
   calcSignal?: number;
+  /**
+   * 排序把手（由调用方传入 `SortableGrip`）。
+   *
+   * 为什么用 ReactNode 而不是直接在本组件里写 `SortableGrip`：
+   * 本卡片在单测和"报价详情只读视图"里也会被渲染，那些场景没有 `SortableList`
+   * 提供上下文，直接写会把组件绑死在拖拽容器里。传进来则"有容器才有把手"。
+   */
+  grip?: ReactNode;
 }
 
 export function QuoteLineCard({
@@ -123,6 +131,7 @@ export function QuoteLineCard({
   onChange,
   onRemove,
   calcSignal = 0,
+  grip,
 }: Props) {
   const products = useExportProducts();
   const effectiveProduct =
@@ -417,6 +426,7 @@ export function QuoteLineCard({
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <CardTitle className="text-sm">
+            {grip}
             产品行 {index + 1}：
             <select
               value={effectiveProduct}

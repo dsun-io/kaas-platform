@@ -21,6 +21,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import apiClient from "@/lib/api/client";
+import {
+  xhrPostForm,
+  xhrSend,
+  type UploadProgressHandler,
+} from "@/lib/api/xhr-upload";
 
 export interface ProductMedia {
   id: number;
@@ -133,20 +138,22 @@ function describeUploadError(err: unknown): string {
  * 服务端代理上传（multipart）：字节经服务端中转。
  * Worker 侧 `_store_bytes` 在 S3 失败时会自己回退 R2 binding / inline ——
  * 也就是说**这条路比直传更耐配错**，所以直传用不了时它是兜底而不是降级。
+ *
+ * 走 XHR 而不是 apiClient：要 `upload.onprogress` 给队列显示单张进度；
+ * 鉴权头由 `xhr-upload.ts` 按 client.ts 同口径补上。
  */
 async function uploadViaProxy(
   productKey: string,
   file: File,
   name: string,
   mediaKind: string,
+  onProgress?: UploadProgressHandler,
 ): Promise<ProductMedia> {
   const form = new FormData();
   form.append("file", file);
   form.append("name", name);
   form.append("media_kind", mediaKind);
-  const { data } = await apiClient.post(`/products/${productKey}/media`, form, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+  const data = await xhrPostForm(`/products/${productKey}/media`, form, onProgress);
   return data as ProductMedia;
 }
 
@@ -173,9 +180,13 @@ export function useUploadProductMedia(productKey: string) {
       file: File;
       name: string;
       mediaKind: string;
+      /** 覆盖 content-type（浏览器给空类型时由前端按扩展名推断，见 media-validation.ts） */
+      contentType?: string;
+      /** 单张进度（0–100）；不给就不报进度 */
+      onProgress?: UploadProgressHandler;
     }): Promise<UploadedProductMedia> => {
-      const { file, name, mediaKind } = input;
-      const contentType = file.type || "application/octet-stream";
+      const { file, name, mediaKind, onProgress } = input;
+      const contentType = input.contentType || file.type || "application/octet-stream";
       const meta = {
         owner_type: "product",
         owner_id: productKey,
@@ -192,7 +203,7 @@ export function useUploadProductMedia(productKey: string) {
       // 而 register 缺它会 422（object_key 定键/去重都依赖它）⇒ 直传整条跳过，
       // 直接走服务端代传（服务端自己算哈希）——功能不缺失，只标记回退真相。
       if (sha256 === null) {
-        const data = await uploadViaProxy(productKey, file, name, mediaKind);
+        const data = await uploadViaProxy(productKey, file, name, mediaKind, onProgress);
         return {
           ...data,
           fellBackToProxy: true,
@@ -218,10 +229,14 @@ export function useUploadProductMedia(productKey: string) {
       if (presign?.configured && presign.upload_url) {
         let putOk = false;
         try {
-          const res = await fetch(presign.upload_url, {
+          // 直传走 XHR：fetch 拿不到上传进度。预签名 URL 是绝对地址，
+          // `xhrSend` 不会给它带我们的鉴权头（S3 会把多余头当成签名不符）。
+          const res = await xhrSend({
             method: "PUT",
+            url: presign.upload_url,
             body: file,
             headers: { "Content-Type": contentType },
+            onProgress,
           });
           if (res.ok) putOk = true;
           else fallbackReason = `直传被拒：HTTP ${res.status}`;
@@ -253,7 +268,7 @@ export function useUploadProductMedia(productKey: string) {
       }
 
       // ② 兜底：服务端代传（multipart）。功能不缺失，只是字节经服务端中转。
-      const media = await uploadViaProxy(productKey, file, name, mediaKind);
+      const media = await uploadViaProxy(productKey, file, name, mediaKind, onProgress);
       if (!fallbackReason) {
         // 没配对象存储 = 设计如此（本来就走服务端），不算"回退"
         return { ...media, fellBackToProxy: false };

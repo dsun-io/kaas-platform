@@ -23,6 +23,7 @@ import { Plus } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { SortableGrip, SortableList } from "@/components/shared/sortable-list";
 import {
   Card,
   CardContent,
@@ -760,28 +761,44 @@ export function QuoteWorkbenchView() {
             />
           )}
 
-          {lines.map((line, index) => (
-            <QuoteLineCard
-              key={line.id}
-              index={index}
-              line={line}
-              shared={shared}
-              view={view}
-              terms={termsByLine?.terms[index] ?? null}
-              lineCount={lines.length}
-              customerId={customer?.id ?? null}
-              productTaxMap={productTaxMap}
-              calcSignal={calcSignal}
-              onChange={(patch) =>
-                setLines((prev) =>
-                  prev.map((l) => (l.id === line.id ? { ...l, ...patch } : l)),
-                )
-              }
-              onRemove={() =>
-                setLines((prev) => prev.filter((l) => l.id !== line.id))
-              }
-            />
-          ))}
+          {/*
+            产品行排序：拖拽（2026-10-22）。
+            保存时 `items()` 会按数组下标重写 `sort_order: i`，所以"拖完即顺序"，
+            不需要额外接口 —— 这也是这里用本地重排而不是 PATCH 的原因。
+            注意 `termsByLine.terms` 也是按 lines 下标算的，重排后自动跟着对齐。
+          */}
+          <SortableList
+            items={lines}
+            onReorder={setLines}
+            className="space-y-5"
+            renderItem={(line, index) => (
+              <QuoteLineCard
+                index={index}
+                line={line}
+                shared={shared}
+                view={view}
+                terms={termsByLine?.terms[index] ?? null}
+                lineCount={lines.length}
+                customerId={customer?.id ?? null}
+                productTaxMap={productTaxMap}
+                calcSignal={calcSignal}
+                grip={
+                  <SortableGrip
+                    className="mr-1 inline-flex h-7 w-6 cursor-grab touch-none items-center justify-center rounded align-middle text-muted-foreground hover:bg-muted"
+                    label={`拖动排序 产品行 ${index + 1}`}
+                  />
+                }
+                onChange={(patch) =>
+                  setLines((prev) =>
+                    prev.map((l) => (l.id === line.id ? { ...l, ...patch } : l)),
+                  )
+                }
+                onRemove={() =>
+                  setLines((prev) => prev.filter((l) => l.id !== line.id))
+                }
+              />
+            )}
+          />
 
           <div className="flex flex-wrap items-center gap-2">
             <Button
