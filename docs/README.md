@@ -45,6 +45,8 @@
 |---|---|
 | [../README.md](../README.md) | 主交接（**唯一权威**） |
 | [HANDOVER_2026-10-23_PAUSE.md](./HANDOVER_2026-10-23_PAUSE.md) | **2026-10-23 09:00 暂停交接**：停止点/未提交改动按任务归属/已验证门禁/恢复步骤/剩余待办全景 |
+| [SECURITY_READONLY_AUDIT_2026-10-23.md](./SECURITY_READONLY_AUDIT_2026-10-23.md) | **只读安全审计**（N6+ 用户拍板只读）：147 文件 / 57 命中（公司名 40、金额 22、国际电话 17、邮箱 15；18 份真实样例最高风险），未删改任何文件 |
+| [QA_AUTHZ_AUDIT_EVIDENCE_2026-10-23.md](./QA_AUTHZ_AUDIT_EVIDENCE_2026-10-23.md) | A-10 真机越权留证：16/16 拒绝路径全拦；发现 CF UA 拦截、订阅闸门先于角色闸门 |
 | [archive/2026-10-21-cutover/HANDOVER_2026-10-20_FINAL.md](./archive/2026-10-21-cutover/HANDOVER_2026-10-20_FINAL.md) | 2026-10-20 最终交接（**§0.2 = 停止点与剩余工作**） |
 | [PROBLEM_STATUS_2026-10-11.md](./PROBLEM_STATUS_2026-10-11.md) | 问题状态滚动口径 |
 | [TODO.md](./TODO.md) | 活跃待办唯一账本 |

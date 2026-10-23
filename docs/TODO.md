@@ -27,8 +27,8 @@
 | A-7 | **A14 包装类事实（复用产品 packaging）** | 已实现（HEAD `80512d85`，2026-10-20）：facts 抽 `packing_method`/`packing_type`（wood/bag/carton/none/mixed/other）；2026-10-23 补边界测试（不传 packing ⇒ 仍 `TRIGGER_UNKNOWN_KEY`，旧金标零差异） | — | ✅ 2026-10-23（测试见 `test_trade_doc_packing.py`） |
 | A-8 | **A5-W3 金额摘要条** | ✅ 2026-10-21 已完成（只读、无输入控件；复用 `computeFxBreakdown`/`amountInWords`/`receiptTolerance`；17 测；真实样例应付 2,826.49 钉死） | — |
 | A-9 | **A5-W2 行项批量编辑** | ✅ 2026-10-21 已完成（前端多选/预览/一次 PATCH/撤销 + 后端 `custom.items_override` 受控通道；渲染副本覆盖、行金额重算、facts manual/unverified、签发闸门拦截；新增 35+27 测） | — |
-| A-10 | **C27 QA 越权审计 7 条留证** | ✅ 2026-10-23 真机完成：16/16 拒绝路径全拦（AI 403 / 订阅闸门 404 / admin 403 / 无 token 401），见 [`QA_AUTHZ_AUDIT_EVIDENCE_2026-10-23.md`](./QA_AUTHZ_AUDIT_EVIDENCE_2026-10-23.md)；QA 账号按设计补建、`scripts/seed_qa.py` 入库（修复 D-3）；发现：CF 拦非浏览器 UA（F-1）、订阅闸门先于角色闸门（F-3，角色层深度由代码级测试锁定） | — |
-| A-11 | **D6 冷启动基线收尾** | ⏳ **用户 2026-10-21 决定继续挂起**：Cloudflare 公开 Analytics/GraphQL 不暴露 Worker startup 指标（仅 CPU/请求/墙钟等），无法按原定义写 p50；保持 PENDING，等 CF 开放指标或另定口径 | — | ⏳（用户决定挂起） |
+| A-10 | **C27 QA 越权审计 7 条留证** | ✅ 2026-10-23 真机完成：16/16 拒绝路径全拦（AI 403 / 订阅闸门 404 / admin 403 / 无 token 401），见 [`QA_AUTHZ_AUDIT_EVIDENCE_2026-10-23.md`](./QA_AUTHZ_AUDIT_EVIDENCE_2026-10-23.md)；QA 账号按设计补建、`scripts/seed_qa.py` 入库（修复 D-3）；发现：CF 拦非浏览器 UA（F-1）、订阅闸门先于角色闸门（F-3，角色层深度由代码级测试锁定）；**2026-10-23 用户拍板：生产 QA 账号保留**（后续审计复用，口令存 ~/.dsh/secrets） | — |
+| A-11 | **D6 冷启动基线收尾** | **用户 2026-10-21 决定挂起、2026-10-23 再次确认保持挂起**：CF 公开 Analytics/GraphQL 不暴露 Worker startup 指标（仅 CPU/请求/墙钟），无法按原定义写 p50；等 CF 开放指标或另定口径 | — | ⏸ 挂起（用户确认） |
 | A-12 | **C12 PDF 归档真单证端到端** | ✅ 2026-10-21 完成：用 QA 账号走真实 API（注册→客户→23 类建单→渲染 HTML→PDF 归档），**22/23 类**产出真 PDF 并落 R2（大小 42–83KB，`file_objects.kind=render_pdf`、`trade_doc_files.role=render_pdf`）；过程中修 **2 个生产 bug**：①`business_events.actor_id` text 传 int ⇒ 建单 500（单据已落库）；②Browser Binding `quickAction` 返回 Response 的字节读取（`arrayBuffer` 不可用 → `bytes()`/`.to_py()`）；`other` 类因 Worker CPU 1102 待重试；证据与清理已留档（QA 数据/R2 对象已删） | — |
 | A-13 | **C36 审计后续** | ✅ 全部完成：审计 + 删 3 条 + 本期 5 + **下期 12 全部接上**（待接 24→3 长期保留；13 条 owner 确认待业务）；遗留缺口：品名对照编辑/删除（后端无 list/PATCH/DELETE，登记为后续后端项） | — |
 | A-14 | **A10：5 类扩展模板实现** | ✅ 全部完成（P1：`beneficiary_decl`/BD、`saso_coc`/COC；P2：`vessel_cert`/VC、`export_license`/EL、`ciq`/CIQ；金标 25→28、DOC_TYPE 23 类、contracts R3/R4 PASS）；无真实样例字段留空待填，未伪造 | — |
@@ -45,7 +45,7 @@
 | B-3 | ~~C2/C10 打印视觉 QA~~ | ✅ 2026-10-21 用户确认打印 OK（`docs/acceptance/print-qa/` 3 份 A4） | — |
 | B-4 | ~~C36 拍板~~ | ✅ 2026-10-21 用户批准删 3 条（PATCH /spec/prices/{id}、POST /spec/skus/{id}/prices、POST /file-objects/upload）；13 条 owner 待后续统一确认 | — |
 | B-5 | ~~A6 合同 12 条双语条款抽查~~ | ✅ 2026-10-21 用户确认条款 OK（默认措辞可编辑，法务后续可改） | — |
-| B-6 | **CI self-hosted runner（可选，已降级；仓库已转 public）** | 仓转 public 后 GitHub-hosted 分钟免费无限，**不再是省钱必需**。仍想要更快反馈/自定义环境时：给一台常开 **Linux** 机器，按 [`CI_OPTIMIZATION_2026-10-22.md`](./CI_OPTIMIZATION_2026-10-22.md) §6 接（**public 仓库只给 push main / 手动 job 用**，别给 `pull_request`） | 不做也不影响额度；只是仍跑 GitHub 托管 runner（排队/无自定义环境） |
+| B-6 | **CI self-hosted runner（可选，已降级；仓库已转 public）** | 仓转 public 后 GitHub-hosted 分钟免费无限，**不再是省钱必需**。仍想要更快反馈/自定义环境时：给一台常开 **Linux** 机器，按 [`CI_OPTIMIZATION_2026-10-22.md`](./CI_OPTIMIZATION_2026-10-22.md) §6 接（**public 仓库只给 push main / 手动 job 用**，别给 `pull_request`） | **2026-10-23 用户拍板：不做**（public 仓库 GitHub-hosted 免费无限，无必要） |
 
 ### C. 已按你裁决不做 / 暂缓（不再列为待办）
 
@@ -85,7 +85,7 @@
 |---|---|---|---|---|
 | A1 | 内容级版本 | 草稿期每次保存留历史（谁/何时/改了哪些字段），可回看/回滚 | — | ✅ 2026-10-20（迁移 `202610200001`；三端点 + 前端面板） |
 | A2 | 服务端签发兜底（方案 A） | 服务端唯一实现 `ws_files.archive_rendered_pdf`；`POST /trade-docs/{id}/confirm` 与 `PATCH /trade-docs/{id}`（draft→issued）两入口接线；失败不回滚签发 | — | ✅ 2026-10-20（旧账本 ⏳ 系未销账） |
-| **A2-B** | **方案 B：模板迁服务端** | 让"不带预览 HTML 的第三方客户端"也能出 PDF（模板现在在前端，是结构性限制）。需先定模板渲染归属（服务端 HTML 模板 vs 前端产物回传） | 方案讨论；与 A4/A7 渲染层同一片 | 🧭 需用户定要不要做（成本高、收益=第三方客户端/自动化） |
+| **A2-B** | **方案 B：模板迁服务端** | 让"不带预览 HTML 的第三方客户端"也能出 PDF（模板现在在前端，是结构性限制）。需先定模板渲染归属（服务端 HTML 模板 vs 前端产物回传） | 方案讨论；与 A4/A7 渲染层同一片 | 🧭 **2026-10-23 用户拍板：暂缓，登记 backlog**（等第三方客户端/自动化真实需求再启动方案评审；当前维持前端模板） |
 | A3 | 字段缺失可发现 | 渲染期 warning + 前端「缺失字段」标记 + 签发前清单 | — | ✅ 2026-10-20（`findBlankPlaceholders` + 预览状态栏；18 类模板无未登记占位符） |
 | A4 | 图片素材库 + 去 base64 | ✅ 2026-10-21（用户选 R2 直链方案）：新增 `kaas_common/files/token.py`（HMAC 短期令牌，TTL 900s，purpose+资源 id 绑定）；装配层 `resolve_photo_refs` / `_apply_default_seal` 改为**签名直链**（`/file-objects/{id}/render-content?t=`、`/company-seals/{id}/render-content?t=`），无密钥/取不到时回退原 data URI；渲染器白名单**未改**（本来就认 http(s)）；素材库=复用现有产品图库+公章库+picker（不新增表）。测试 +16（令牌 6 / 文件直链 6 / 公章直链 4） | G-4 已拍板 | ✅ |
 | A5 | 单证编辑体验 | **W1 条款模板已上线（2026-10-21）**：团队级条款库（迁移 `202610200006` + CRUD + 懒种子 6 类中英措辞）+ 设置→企业信息卡片 + 单证表单「选模板回填/覆盖二次确认」。W3 金额摘要条、W2 行项批量编辑见 §0 A-8/A-9 | — | ✅ W1/W3/W2 全部完成（W3 见 A-8、W2 见 A-9） |
@@ -192,13 +192,13 @@
 | # | 项 | 内容/证据 | 前置 | 状态 |
 |---|---|---|---|---|
 | C23 | **shipments 工位被过期上线门禁隐藏** | ✅ 2026-10-21 修复（用户拍板"改为 active 恢复入口"）：`shared/contracts/workstations.ts` 与 `kaas_common/domain/workstations.py` 同步 `status:'active'` + 注释改为"原 2026-09-28 门禁前提不成立"；契约 **R2 PASS（27 工位 ts↔py）**、workstation/visibility 定向测试 79 passed | G-12 已拍板 | ✅ |
-| C24 | 客户触达「产品手册附件」（P4 遗留） | ⏸ **用户 2026-10-21 拍板：暂不做**（等有真实手册素材/业务需要再做）；设计记录保留在 G-14 | — | ⏸ 暂缓 |
+| C24 | 客户触达「产品手册附件」（P4 遗留） | ⏸ **用户 2026-10-21 拍板暂不做、2026-10-23 确认继续保持挂起**（等有真实手册素材/业务需要再做）；设计记录保留在 G-14 | — | ⏸ 挂起（用户确认） |
 | C25 | 列表分页 UI（UI T7） | ✅ 2026-10-21：共享 `PaginationBar`（第 a–b 条/共 N 条、末页按真实条数、钳位不显示越界页、一屏不渲染）；orders 新增 `use-orders-list`（真分页，不再拿 100/页下拉源当列表）；events/audit 页码独立 state、筛选变化回第 1 页；三端点契约 `{items,total,page,page_size}` 均无 has_more。尾巴已销账（C39 audit-log 筛选后端已补） | — | ✅ |
 | C26 | a11y 深水项 | ✅ 2026-10-21：外壳加「跳到主内容」skip-link（sr-only、focus 可见）+ `main#main tabIndex=-1`；RangeSelector 改 `radiogroup/aria-checked`（单选组语义，非 aria-pressed）；订单列配置最后一列 `aria-disabled` + 动作守卫（不再静默 no-op）；+3 组件测。**尾巴**：未做方向键 roving、全站无 axe 扫描 | — | ✅（点状） |
 | C27 | QA 越权审计 7 条留证 + 修复 | ✅ 2026-10-21：审计（`QA_AUTHZ_AUDIT_2026-10-21.md`：3 已有闸门/4 缺失）+ 用户批准修全部 4 类 → 代码修复完成（AI 配置 admin-only、单证 team/owner 读、confirm/pdf 角色、公章读收紧 + R-1 PATCH；新增 105 测、worker 1523+12skip）；`QA_AUTHZ_VERIFY` v2 矩阵待 branch-audit 独立复核 | — | ✅（复核中） |
 | A10 | 模板扩展清单 | ✅ 2026-10-21：`TRADE_DOC_TEMPLATES.md` 新增 §6.1「待扩展模板清单」——SASO/COC、船公司证明、出口许可证、CIQ、受益人声明，逐类给用途/关键字段/数据来源/优先级/A6 依赖（先做 beneficiary_decl + saso_coc），并修正旧架构指针。**模板本身未实现**（等 A6 真实样例校准，属设计依赖非欠账） | A6 样例 | ✅（清单已出） |
 | N9 | = C23 的决策记录（避免两处编号漂移） | 见 C23/§G-12 | — | — |
-| N10 | 事件流联通 `domain_events` | ⏸ **用户 2026-10-21 拍板：暂缓，等未来功能成熟稳定再实现**；设计承诺保留在 `WORKSTATION_DESIGN` 并已标注"未实现、有需求再做"，不再作为当前欠账 | — | ⏸ 暂缓 |
+| N10 | 事件流联通 `domain_events` | ⏸ **用户 2026-10-21 拍板暂缓、2026-10-23 确认继续保持挂起**（等未来功能成熟稳定再实现）；设计承诺保留在 `WORKSTATION_DESIGN` 并已标注"未实现、有需求再做"，不再作为当前欠账 | — | ⏸ 挂起（用户确认） |
 | N11 | DEPLOY §0.4 清理脚本缺失 | ✅ 2026-10-21：新建 `scripts/cleanup_orphan_lead.py`（`.tools/` 被 gitignore，改放 tracked 的 scripts/；DEPLOY §0.4 命令同步改为该路径）；**默认 dry-run**、`--apply` 才删、只匹配 3 个 E2E 前缀、被 `outreach_messages`/`cust_inquiries` 引用的行跳过并列出、事务+`--limit`、`KAAS_DSN` 环境变量读 DSN）；本机空库 dry-run 实测 0 行/exit 0 | — | ✅ |
 | A14 | 包装类事实缺失（A12 的真落地前提） | 已实现（HEAD `80512d85`）：facts 从「本单选中的包装 method（`packaging_id` → 产品 packaging；缺省 `is_default`/首条；无配置 `none`）」抽 `packing_method`（原文）+ `packing_type`（wood/bag/carton/none/mixed/other），trust=confirmed + origin 四种标注；单证 facts 主路径全传 packing；触发词可写 `packing_type != 'wood'` 出「非木包装声明」 | — | ✅ 2026-10-23：实现已在 `80512d85`，本轮补边界测试销账 |
 | A11 | FACT_LABELS 未通过 API 返回 | ✅ 复核后**无需改**：`_fact_dict` 已逐条返回 `text_zh`/`text_en`（`ws_docs_hardening.py`），前端 `doc-facts-panel.tsx` 也按 `text_zh/text_en` 展示与编辑 ⇒ 全局 `FACT_LABELS` 只是内核兜底，不构成缺口 | — | ✅（复核销账） |
@@ -217,7 +217,7 @@
 | C36 | 约 60 条后端路由前端 0 调用 | ✅ 2026-10-21：重扫 247 路由 vs 183 FE 路径 → 实际未接 **60**（6 条假阴性已人工核出），产出 **`docs/API_RESERVED_LIST.md`**：保留 18（CI/运维/REST/兼容）、后端先行待接 UI 24（C30/A13/A4 等）、可删候选 18（**需 owner 确认，不授权删除**）；并入 docs/README 索引 | — | ✅ |
 | C37 | OSS 死分支 + 7 处过期注释 | ✅ 2026-10-21：删 `events/components/payload-renderer.tsx` 的 `_oss_key` 分支（state+JSX+3 import，118→81 行；依据：`/oss/presign` 后端 0 路由、mock 已删且有契约断言、调用方不依赖）；6 处"接口还没上线"注释按已实现路由（`ws_customer_records.py`/`ws_teams.py`/`ws_workstations.py`）更正；worker 测试注释同步 | — | ✅ |
 | C38 | 文档口径全面刷新（10+ 处） | ✅ 2026-10-21（docs-b，11 文件）：worker README 三处误导（自动部署/cron/订阅未激活）按代码与发布记录更正；DEPLOY 迁移 head→`202610200005`、部署冻结→已发布+回滚指针、上线门禁/分支改名标历史；AGENTS 门禁数字→247/1233+12/616/28；HANDOVER 发布状态与 §0.2.3 全量更新；TRADE_DOC_HARDENING「施工中」→已完成；PRODUCT_CONFIG 标题/坏路径/已完成项修正；PROBLEM_STATUS Protected 矛盾统一为"Free 不升级→未开启"、断链修复；WORKSTATION_DESIGN 8 处旧状态按现行改（含 ratio 0.96）；integration README env.py 已修；根 `archive/` 入 docs/README 索引 + master-exec 批次补 README。`sync-shared -Check` PASS、相对链接自检全通过 | — | ✅ |
-| N6+ | 安全范围扩展 | N6 ③ 只写 `docs/archive`，实测根 `archive/` 有 **45 个受控文件**（含 18 份真实业务样例），含公司名/电话/邮箱/报价；仓库 public ⇒ 评估范围扩到 `docs/archive/** + archive/**` | 安全批（最后） | ⏳ |
+| N6+ | 安全范围扩展 | N6 ③ 只写 `docs/archive`，实测根 `archive/` 有 **45 个受控文件**（含 18 份真实业务样例），含公司名/电话/邮箱/报价；仓库 public ⇒ 评估范围扩到 `docs/archive/** + archive/**` | — | ✅ 2026-10-23 用户拍板「只做只读审计」：报告 [`SECURITY_READONLY_AUDIT_2026-10-23.md`](./SECURITY_READONLY_AUDIT_2026-10-23.md)（147 文件 / 57 命中：公司名 40、金额 22、国际电话 17、邮箱 15；18 份真实样例最高风险）；**未删除/未轮换**，脱敏或迁移待后续单独拍板 |
 | C12+ | PDF 归档验收补 2 项 | ✅ 取证完成（2026-10-21）：生产库实测 `file_objects` **5 行 / render_pdf 0 / trade_doc_files(role=render_pdf) 0 / trade_doc_render_checks 0** ⇒ 生产尚无归档 PDF 样本（符合"未实际使用"预期）；`events_archive_log` 0 行（首次月度归档未到）。可执行验收步骤已由 docs-b 补入 `TRADE_DOC_PDF_ARCHIVAL.md` §五（体积/耗时测法 + 三处口径 SQL）；**真实 PDF 样本复核**待 P4 首单产生后执行（属人工复核，不是代码缺口） | 发布后样本 | ✅（步骤已补，样本待有） |
 | C40 | CI 部署门禁 S5-d 假红（token 缺 Hyperdrive 读权限） | 2026-10-21 第十二次部署实测：`deploy.yml` 的「S5-d 防污染断言」调 `GET /hyperdrive/configs` → **403 Authentication error**（repo secret `CLOUDFLARE_API_TOKEN` / CI 系统 token 没有 Hyperdrive 读取权限）。从 script settings 读到的 R2/KV/Hyperdrive 绑定断言全部 ✔，**Worker 部署本身成功**（版本 `acaa6415-146e-4f84-8412-63c2e390e11b`），但该步让 run 变红并跳过冒烟。**2026-10-21 已修（用户授权走 ①）**：用 CF API 给 `kaas-ci-system-20261021`（id `44f3c314…`）补 `Hyperdrive Read`（**只加读权限**，token 值不变、不轮换；改前 policy 备份在 `~/.dsh/secrets/cf-ci-token-policy-backup-20261021-094212.json`）；重跑 deploy run `39528856290` **全绿**（S5-d + Smoke test 均 ✓），Worker `56692255-bc87-48a3-a541-23b230ad05d5`。断言未降级 | 用户已授权 | ✅ |
 
@@ -289,7 +289,7 @@
 |---|---|---|---|
 | U-P0A | 新实现口径收口（后端） | 订单 `pending_item_change_count` / 审批行 `affected_docs` / `GET /dashboard/receivables` / 通知 link 改 `/orders?id=` / funnel `direct_orders.by_currency` | ✅ 2026-10-23：worker **1709+12skip**、ts **278 passed**、路由 274=188+86（EXPECTED_TOTAL 278）；前端接线随 U-P0A-FE |
 | U-P0A-FE | 新实现口径收口（前端接线） | 订单待批角标（±深链 `/orders?id=`）/ 审批受影响单证改用聚合字段 / dashboard 应收真实数据 / direct 分币种 / 通知 link 主路径 | ✅ 2026-10-23：`orders-source-filter` 12 测、approvals 8 测、dashboard 11 测；mock 已补 receivables/by_currency/affected_docs/pending_count |
-| U-P0C | 共享原语 + 门禁 | ErrorState / DataTable / FilterBar / AsyncButton + useDebouncedValue / useUrlState / useAsyncAction + status-tones + `pnpm ui:patterns`（shadow；**2026-10-30 转强制**） | ✅ 原语与脚本落地；**违规 134 → 0**（2026-10-23：mutation-onError 51 / bare-table 38 / plain-text 16 全部清零，13 条特殊表格/语义误报 allowlist 均带书面理由）；等 2026-10-30 转 strict |
+| U-P0C | 共享原语 + 门禁 | ErrorState / DataTable / FilterBar / AsyncButton + useDebouncedValue / useUrlState / useAsyncAction + status-tones + `pnpm ui:patterns`（shadow；**2026-10-30 转强制**） | ✅ 原语与脚本落地；**违规 134 → 0**（2026-10-23；13 条 allowlist 带书面理由）；**2026-10-23 用户确认按原计划 2026-10-30 转 strict**（不提前） |
 | U-P0B1 | 危险操作确认 + 防重 | outreach 群发/测试邮件 / research 删除与保存 / ai-providers 清密钥+空输入禁用+模型失焦保存 / quotes 签发+批量建单 / trade-docs 作废 / settings 重载 / 产品税率删除（window.prompt→Dialog） | ✅ 2026-10-23：8 处确认弹窗 + pending 防重（新增 27 测） |
 | U-P0B2 | 失败反馈 | spec-config 向导/属性提议、shipments×3、gray-release、spec-proposals、leadgen 详情、quotes Q9/Q15（含 invalidate key 修正）、outreach setDefault | ✅ 2026-10-23：统一 useAsyncAction + 页内 role=alert（拦截器已 toast，不重复）；新增 24 测 |
 | U-P0B3 | 失败≠空态 | events、pricing-data、market 五 tab、kb 假统计、intel 四视图 | ✅ 2026-10-23：ErrorState/LoadingBlock/EmptyState 三态分离；kb 假统计下线；新增 38 测 |
