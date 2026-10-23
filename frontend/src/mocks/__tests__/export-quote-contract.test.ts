@@ -1,4 +1,4 @@
-﻿/**
+/**
  * task-11 回归测试：**M1 最小集（P0）**的 4 个出口报价端点必须被 MSW 接住，不再放行到网络。
  *
  * ## 为什么"被接住"本身就是核心断言
@@ -85,7 +85,9 @@ describe("GET /export-quote/products/:key/formulas ← quote-line-card.tsx:110-1
     expect(Array.isArray(body.hs_codes)).toBe(true);
 
     // :244 体积扣减口径
-    expect(typeof (body.space_deduction as { mode?: unknown }).mode).toBe("string");
+    expect(typeof (body.space_deduction as { mode?: unknown }).mode).toBe(
+      "string",
+    );
 
     // :193 `makeColumnIndexer(formulas.data, view)` 依赖列定义（with_columns=true 时后端必给）
     expect(Array.isArray(body.columns)).toBe(true);
@@ -100,7 +102,7 @@ describe("GET /export-quote/products/:key/formulas ← quote-line-card.tsx:110-1
   });
 });
 
-describe("GET /export-quote/rate-sets ← quote-workbench-view.tsx:157,616-619", () => {
+describe("GET /export-quote/rate-sets ← quotes workbench（rate-sets 消费方）", () => {
   it("200 + `rate_sets[].code/name`（下拉只读这两个）+ `total`", async () => {
     const { status, body } = await getJson<{
       rate_sets: Array<{ code: string; name: string }>;
@@ -118,7 +120,7 @@ describe("GET /export-quote/rate-sets ← quote-workbench-view.tsx:157,616-619",
   });
 });
 
-describe("GET /export-quote/terms/template ← quote-workbench-view.tsx:158,188-204,849-866", () => {
+describe("GET /export-quote/terms/template ← quotes workbench（terms 消费方）", () => {
   it("200 + quote_as / items / ladder（terms-amortize.ts:67-83 逐项读取）", async () => {
     const { status, body } = await getJson<{
       base: string;
@@ -173,9 +175,7 @@ describe("GET /export-quote/terms/template ← quote-workbench-view.tsx:158,188-
       "DDP",
     ]);
     // label_en 用英文全称，界面据此显示 `DAP · 到门价（Delivered at Place）`
-    expect(
-      body.ladder.map((r) => [r.code, r.label_en]),
-    ).toEqual([
+    expect(body.ladder.map((r) => [r.code, r.label_en])).toEqual([
       ["EXW", "Ex Works"],
       ["FOB", "Free On Board"],
       ["CFR", "Cost and Freight"],
@@ -190,7 +190,9 @@ describe("P0 四件套一次性验证：全部被 handler 接住（无一个放�
   it("依次拿到 200/200/200/200，而不是未匹配请求的失败", async () => {
     const results = await Promise.all([
       fetch(`${BASE}/export-quote/products`),
-      fetch(`${BASE}/export-quote/products/chain_link/formulas?with_columns=true`),
+      fetch(
+        `${BASE}/export-quote/products/chain_link/formulas?with_columns=true`,
+      ),
       fetch(`${BASE}/export-quote/rate-sets`),
       fetch(`${BASE}/export-quote/terms/template`),
     ]);

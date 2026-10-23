@@ -297,7 +297,7 @@
 | U-P0B5 | 页头/错误边界 | 7 个 error.tsx + 6 loading + RouteGuard + WorkstationGate + 全局 not-found + 剩余 window.confirm | ✅ 2026-10-23：原生确认清单内清零（ui:patterns native-dialog 7→3） |
 | U-P0B6 | 行内展开迁移 | X1 customers 询盘详情 / X2 leadgen 线索 / X3 outreach 邮件 / X4 research 编辑 / X5 shipments 编辑 / X6 audit-log 键盘 / X7 quotes 记录堆叠 / X8 pricing 单元格 | ✅ 2026-10-23：全部迁 DetailDrawer/Dialog（X5 用行快照，筛选变化不丢编辑现场）；新增 11 测 |
 | U-P1D | 结构债 | 死代码（FreightPanel/defaultSpecRow）、幽灵 /quotations、状态映射收敛、拆巨型文件 | 🔨 部分：FreightPanel 289 行 + defaultSpecRow 已删（freight-panel.tsx 保 41 行，termOptionLabel 仍被引用）；三页状态映射已收敛到 status-tones（含 CAMPAIGN_STATUS_TONES）；/quotations 仅登记（无 page.tsx）；**拆 7 个巨型文件仍未做**（单独 backlog） |
-| U-P1D2 | 结构债（拆巨型文件） | customers 1674 / order-create-wizard 1366 / product-spec-editor 1142 / quote-workbench 924 / **leadgen ✅** / research 868 / payment-schedules-panel 698 | 🔨 leadgen 已拆（1000→350 行，6 组件 + 3 lib，17 测绿）；剩余 6 个 backlog（每文件单独提交） |
+| U-P1D2 | 结构债（拆巨型文件） | customers 1674 / order-create-wizard 1366 / product-spec-editor 1142 / quote-workbench 924 / **leadgen ✅** / research 868 / payment-schedules-panel 698 | 🔨 **5/7 已拆**（2026-10-23）：leadgen 1000→350、order-create-wizard 1585→105、product-spec-editor 1142→88、quote-workbench 945→41、payment-schedules-panel 713→337（全部行为不变、测试全绿）；**剩余 2 个**：customers 1674、research 868（先分页/FormField 后拆） |
 | U-P1E | 体验一致性 | 分页/URL 筛选/搜索防抖/FormField/键盘可达/aria-label | 🔨 大部分：trade-docs 分页+URL（导出全量）、events URL+防抖、market 三处防抖、customers 防抖+total+删联系人反馈、research 防抖+分页+导出全量、shipments 分页；**customers 列表分页、FormField 全面收编、O5 原生 details 统一** 待后续 |
 | U-P1F | 体验小项 | pricing 恢复兜底确认 / QuoteWizard 步骤数 / orders O3·O4·O5 / DetailDrawer barrel | ✅ 2026-10-23：全部完成（确认弹窗、真实步骤数、期次序号、LoadingBlock、Esc/外点、barrel） |
 

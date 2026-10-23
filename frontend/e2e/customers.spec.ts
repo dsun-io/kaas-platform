@@ -25,7 +25,8 @@ test.describe('Customers', () => {
     await page.getByRole('button', { name: '新建客户' }).click();
 
     const company = `e2e 客户 ${Date.now()}`;
-    await page.getByPlaceholder('公司名称（与联系人至少填一个）').fill(company);
+    // 2026-10-23 FormField 收编后：placeholder→真实 label（label[for] 关联）
+    await page.getByLabel('公司名称').fill(company);
     await page.getByRole('button', { name: '创建客户' }).click();
 
     // 新建后：列表卡片出现 + 详情面板打开
@@ -44,7 +45,7 @@ test.describe('Customers', () => {
       .click();
 
     await page.getByRole('button', { name: '编辑档案' }).click();
-    await page.getByPlaceholder('国家').fill('DE');
+    await page.getByLabel('国家').fill('DE');
     await page.getByRole('button', { name: '保存档案' }).click();
 
     // 信息页展示的是 detail 数据；保存后 invalidate 会重新拉取
@@ -74,7 +75,7 @@ test.describe('Customers', () => {
     await page.goto('/customers');
     await page.getByRole('button', { name: '新建客户' }).click();
     const company = `待删客户 ${Date.now()}`;
-    await page.getByPlaceholder('公司名称（与联系人至少填一个）').fill(company);
+    await page.getByLabel('公司名称').fill(company);
     await page.getByRole('button', { name: '创建客户' }).click();
     const card = page
       .getByTestId('customer-card')

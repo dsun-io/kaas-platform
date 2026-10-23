@@ -7748,7 +7748,7 @@ export const handlers = [
     },
   ),
 
-  // 消费方：`quote-workbench-view.tsx:157`；渲染只读 `code` / `name`（`:616-619`）
+  // 消费方：quotes workbench（use-workbench-state.ts；2026-10-23 拆分后原行号失效）；渲染只读 `code` / `name`
   http.get("/api/v1/export-quote/rate-sets", () => {
     return HttpResponse.json({
       rate_sets: MOCK_EXPORT_RATE_SETS,
@@ -7756,8 +7756,8 @@ export const handlers = [
     });
   }),
 
-  // 消费方：`quote-workbench-view.tsx:158` → `:188-189`（quote_as）、`:195`（items 键）、
-  // `:849-866`（ladder / items 渲染）+ `quotes/lib/terms-amortize.ts:67-83`
+  // 消费方：quotes workbench（use-workbench-state.ts：quote_as / items 键 / ladder 渲染；
+  // 2026-10-23 拆分后原行号失效）+ `quotes/lib/terms-amortize.ts:67-83`
   //（base / quote_as / weight_field / ladder / items）
   http.get("/api/v1/export-quote/terms/template", () => {
     return HttpResponse.json(MOCK_EXPORT_TERMS_TEMPLATE);
@@ -7773,7 +7773,7 @@ export const handlers = [
   // ══════════════════════════════════════════════════════════════════════════
 
   // ── 客户 · 询盘列表 / 询盘更新 ──────────────────────────────────────────
-  // GET  ← quotes/views/batch-quote-view.tsx:95、quote-workbench-view.tsx:121
+  // GET  ← quotes/views/batch-quote-view.tsx、quote-workbench-view（use-workbench-state.ts；2026-10-23 拆分后原行号失效）
   // 形状 = `{items,total}`（ws_crm_ext.py:248-257），每行比 `row_to_inquiry`
   // 多一个 `inquiry_no_editable`（worker 有意差异：已生成报价单后编号锁定）。
   http.get("/api/v1/customers/:id/inquiries", ({ params, request }) => {

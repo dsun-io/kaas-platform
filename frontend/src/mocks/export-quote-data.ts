@@ -2221,7 +2221,7 @@ export const MOCK_EXPORT_FORMULAS = {
 /**
  * 法定税务档案（`GET /export-quote/rate-sets`）。
  *
- * 页面只读 `code` / `name`（`quote-workbench-view.tsx:616-619`），其余字段按契约给全。
+ * 页面只读 `code` / `name`（quotes workbench 产品区；2026-10-23 拆分后行号见 use-workbench-state.ts），其余字段按契约给全。
  * `summary` 与 `warnings` 后端是算出来的（`RateSet.summary` / `.warnings()`），
  * 静态档案里没有 ⇒ 给契约默认值，**没有编内容**。
  */

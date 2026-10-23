@@ -117,4 +117,6 @@
 | 2026-10-23 | **U-P0B4 ✅ + tone 收敛 ✅**：leadgen 抓取/批量爬取、outreach 添加邮箱/创建活动 pending 防重；三页状态映射统一 status-tones（行为差异已登记） |
 | 2026-10-23 | **U-P1E 续 ✅**：customers 防抖/total/删联系人反馈、research 防抖+分页+全量导出、shipments 分页 |
 | 2026-10-23 | **U-P1F 小项 ✅**：pricing 恢复兜底确认、QuoteWizard 真实步骤数、orders O3/O4/O5、DetailDrawer barrel |
-| 2026-10-23 | 剩余 backlog：拆 7 个巨型组件（逐个 PR）、/quotations 迁移、customers 列表分页、FormField 收编、O5 原生 details、shipments detail mock、2026-10-30 ui:patterns 转强制 |
+| 2026-10-23 | **U-P1D2 拆分 5/7 ✅**：leadgen / order-create-wizard / product-spec-editor / quote-workbench / payment-schedules-panel（主文件 350/105/88/41/337 行，行为不变） |
+| 2026-10-23 | **U-P1E 收口 ✅**：customers 分页 + FormField 收编（customers/research/leadgen 28 个字段 label[for]+role=alert）；shipments 真·detail；O5 统一 PopoverPanel；CAMPAIGN_STATUS_TONES 登记；mocks 注释行号漂移修复 |
+| 2026-10-23 | 剩余 backlog：/quotations 迁移、customers/research 拆分、A-10 QA 越权留证（需生产 seed_qa 确认）、ui:patterns 剩余 105 违规（2026-10-30 转强制） |
