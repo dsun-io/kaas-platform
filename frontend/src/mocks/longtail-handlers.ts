@@ -15,7 +15,10 @@
  */
 import { http, HttpResponse } from "msw";
 
-import { MOCK_EXPORT_FORMULAS, MOCK_EXPORT_PRODUCTS } from "./export-quote-data";
+import {
+  MOCK_EXPORT_FORMULAS,
+  MOCK_EXPORT_PRODUCTS,
+} from "./export-quote-data";
 import { registerMockCollection } from "./persistence";
 
 const nowIso = () => new Date().toISOString();
@@ -170,9 +173,27 @@ const INTEL_ADAPTER_RUNS = [
 /** 通道：后端字段是 `is_enabled`（main.py:1024-1040），前端 interface 写的是 `enabled`
  * —— 这是**前端读错字段**，mock 仍按后端真源返回（不替它掩饰），页面显示"未开通"。 */
 const INTEL_CHANNELS = [
-  { id: 1, name: "海关公开数据", type: "customs", tier: "free", is_enabled: true },
-  { id: 2, name: "Google Places", type: "maps", tier: "free", is_enabled: true },
-  { id: 3, name: "ImportGenius", type: "trade", tier: "paid", is_enabled: false },
+  {
+    id: 1,
+    name: "海关公开数据",
+    type: "customs",
+    tier: "free",
+    is_enabled: true,
+  },
+  {
+    id: 2,
+    name: "Google Places",
+    type: "maps",
+    tier: "free",
+    is_enabled: true,
+  },
+  {
+    id: 3,
+    name: "ImportGenius",
+    type: "trade",
+    tier: "paid",
+    is_enabled: false,
+  },
   { id: 4, name: "Panjiva", type: "trade", tier: "paid", is_enabled: false },
 ];
 
@@ -317,8 +338,22 @@ const SPEC_CATEGORY_TREE: MockCategoryNode[] = [
     parent_id: null,
     sort_order: 1,
     children: [
-      { id: 2, code: "chain_link", name: "勾花网", parent_id: 1, sort_order: 1, children: [] },
-      { id: 3, code: "field_fence", name: "牛栏网", parent_id: 1, sort_order: 2, children: [] },
+      {
+        id: 2,
+        code: "chain_link",
+        name: "勾花网",
+        parent_id: 1,
+        sort_order: 1,
+        children: [],
+      },
+      {
+        id: 3,
+        code: "field_fence",
+        name: "牛栏网",
+        parent_id: 1,
+        sort_order: 2,
+        children: [],
+      },
     ],
   },
   {
@@ -328,7 +363,14 @@ const SPEC_CATEGORY_TREE: MockCategoryNode[] = [
     parent_id: null,
     sort_order: 2,
     children: [
-      { id: 5, code: "gabion", name: "石笼网", parent_id: 4, sort_order: 1, children: [] },
+      {
+        id: 5,
+        code: "gabion",
+        name: "石笼网",
+        parent_id: 4,
+        sort_order: 1,
+        children: [],
+      },
     ],
   },
 ];
@@ -464,22 +506,56 @@ const specSkuStore = new Map<string, { sku_id: number; revision: number }>();
 // 形状真源：chain.py:532-726
 // ════════════════════════════════════════════════════════════════════════════
 
-const AI_PROVIDER_DEFAULTS: Record<string, { model: string; base_url: string }> = {
+const AI_PROVIDER_DEFAULTS: Record<
+  string,
+  { model: string; base_url: string }
+> = {
   deepseek: { model: "deepseek-chat", base_url: "https://api.deepseek.com/v1" },
   kimi: { model: "moonshot-v1-8k", base_url: "https://api.moonshot.cn/v1" },
-  zhipu: { model: "glm-4-flash", base_url: "https://open.bigmodel.cn/api/paas/v4" },
+  zhipu: {
+    model: "glm-4-flash",
+    base_url: "https://open.bigmodel.cn/api/paas/v4",
+  },
 };
 
 const AI_TASKS = [
-  { task_key: "config_validation", name: "配置校验", recommended_provider: "deepseek" },
-  { task_key: "lead_scoring", name: "线索评分", recommended_provider: "deepseek" },
-  { task_key: "opening_line", name: "开场白生成", recommended_provider: "kimi" },
-  { task_key: "email_generation", name: "邮件生成", recommended_provider: "kimi" },
-  { task_key: "inquiry_classification", name: "询盘分类", recommended_provider: "kimi" },
+  {
+    task_key: "config_validation",
+    name: "配置校验",
+    recommended_provider: "deepseek",
+  },
+  {
+    task_key: "lead_scoring",
+    name: "线索评分",
+    recommended_provider: "deepseek",
+  },
+  {
+    task_key: "opening_line",
+    name: "开场白生成",
+    recommended_provider: "kimi",
+  },
+  {
+    task_key: "email_generation",
+    name: "邮件生成",
+    recommended_provider: "kimi",
+  },
+  {
+    task_key: "inquiry_classification",
+    name: "询盘分类",
+    recommended_provider: "kimi",
+  },
   // 真机核对（2026-10-21，`GET /api/v1/ai/tasks` 实测 7 个）：mock 原缺这两条，
   // 导致 AI 页「运行任务」在 mock 下看不到它们 —— 契约漂移本次一并修正。
-  { task_key: "spec_extract", name: "规格结构化", recommended_provider: "deepseek" },
-  { task_key: "product_translate", name: "产品名翻译", recommended_provider: "kimi" },
+  {
+    task_key: "spec_extract",
+    name: "规格结构化",
+    recommended_provider: "deepseek",
+  },
+  {
+    task_key: "product_translate",
+    name: "产品名翻译",
+    recommended_provider: "kimi",
+  },
 ];
 
 type MockAiProvider = {
@@ -845,16 +921,46 @@ export function seedLongtailMockData(): void {
     },
   ];
   leadsStore = [
-    leadSeed(1, "HANSA FENCE GMBH", "DE", "sales@hansa-fence.example", "https://hansa-fence.example", 90, "sent"),
-    leadSeed(2, "PACIFIC FENCE SUPPLY INC.", "US", "buyer@pacificfence.example", "https://pacificfence.example", 65, "none"),
+    leadSeed(
+      1,
+      "HANSA FENCE GMBH",
+      "DE",
+      "sales@hansa-fence.example",
+      "https://hansa-fence.example",
+      90,
+      "sent",
+    ),
+    leadSeed(
+      2,
+      "PACIFIC FENCE SUPPLY INC.",
+      "US",
+      "buyer@pacificfence.example",
+      "https://pacificfence.example",
+      65,
+      "none",
+    ),
     leadSeed(3, "SOUTHERN MESH PTY", "AU", null, null, 25, "replied"),
-    leadSeed(4, "NORTHWIND SECURITY", "GB", "info@northwind.example", "https://northwind.example", 50, "none"),
+    leadSeed(
+      4,
+      "NORTHWIND SECURITY",
+      "GB",
+      "info@northwind.example",
+      "https://northwind.example",
+      50,
+      "none",
+    ),
   ];
   leadgenRunsStore = [
     {
       id: 1,
       tenant_id: "default",
-      config: { region: "DE-NW", industry: "fence", icp: null, quantity: 10, source: "demo" },
+      config: {
+        region: "DE-NW",
+        industry: "fence",
+        icp: null,
+        quantity: 10,
+        source: "demo",
+      },
       config_hash: "mock-leadgen-1",
       status: "succeeded",
       leads_found: 12,
@@ -964,7 +1070,8 @@ export function registerLongtailMockCollections(): void {
     "intelShipments",
     () => clone(intelShipmentsStore),
     (value) => {
-      if (Array.isArray(value)) intelShipmentsStore = clone(value as MockIntelShipment[]);
+      if (Array.isArray(value))
+        intelShipmentsStore = clone(value as MockIntelShipment[]);
     },
   );
   registerMockCollection(
@@ -982,7 +1089,10 @@ export function registerLongtailMockCollections(): void {
       specSkuStore.clear();
       for (const entry of value) {
         if (Array.isArray(entry) && entry.length === 2) {
-          specSkuStore.set(String(entry[0]), entry[1] as { sku_id: number; revision: number });
+          specSkuStore.set(
+            String(entry[0]),
+            entry[1] as { sku_id: number; revision: number },
+          );
         }
       }
     },
@@ -991,14 +1101,16 @@ export function registerLongtailMockCollections(): void {
     "aiProviders",
     () => clone(aiProvidersStore),
     (value) => {
-      if (Array.isArray(value)) aiProvidersStore = clone(value as MockAiProvider[]);
+      if (Array.isArray(value))
+        aiProvidersStore = clone(value as MockAiProvider[]);
     },
   );
   registerMockCollection(
     "aiBindings",
     () => clone(aiBindingsStore),
     (value) => {
-      if (Array.isArray(value)) aiBindingsStore = clone(value as MockAiBinding[]);
+      if (Array.isArray(value))
+        aiBindingsStore = clone(value as MockAiBinding[]);
     },
   );
   registerMockCollection(
@@ -1012,14 +1124,16 @@ export function registerLongtailMockCollections(): void {
     "researchProducts",
     () => clone(researchProductsStore),
     (value) => {
-      if (Array.isArray(value)) researchProductsStore = clone(value as MockResearchProduct[]);
+      if (Array.isArray(value))
+        researchProductsStore = clone(value as MockResearchProduct[]);
     },
   );
   registerMockCollection(
     "researchRuns",
     () => clone(researchRunsStore),
     (value) => {
-      if (Array.isArray(value)) researchRunsStore = clone(value as typeof researchRunsStore);
+      if (Array.isArray(value))
+        researchRunsStore = clone(value as typeof researchRunsStore);
     },
   );
   registerMockCollection(
@@ -1033,7 +1147,8 @@ export function registerLongtailMockCollections(): void {
     "leadgenRuns",
     () => clone(leadgenRunsStore),
     (value) => {
-      if (Array.isArray(value)) leadgenRunsStore = clone(value as typeof leadgenRunsStore);
+      if (Array.isArray(value))
+        leadgenRunsStore = clone(value as typeof leadgenRunsStore);
     },
   );
   registerMockCollection(
@@ -1061,14 +1176,16 @@ export function registerLongtailMockCollections(): void {
     "pricingCells",
     () => clone(pricingCellsStore),
     (value) => {
-      if (Array.isArray(value)) pricingCellsStore = clone(value as MockPricingCell[]);
+      if (Array.isArray(value))
+        pricingCellsStore = clone(value as MockPricingCell[]);
     },
   );
   registerMockCollection(
     "fxRates",
     () => clone(fxRatesStore),
     (value) => {
-      if (Array.isArray(value)) fxRatesStore = clone(value as Array<Record<string, unknown>>);
+      if (Array.isArray(value))
+        fxRatesStore = clone(value as Array<Record<string, unknown>>);
     },
   );
   registerMockCollection(
@@ -1202,14 +1319,15 @@ type FormulaColumn = {
 };
 
 function formulasOf(productKey: string) {
-  return (
-    (MOCK_EXPORT_FORMULAS as Record<string, unknown>)[productKey] as
-      | Record<string, unknown>
-      | undefined
-  );
+  return (MOCK_EXPORT_FORMULAS as Record<string, unknown>)[productKey] as
+    | Record<string, unknown>
+    | undefined;
 }
 
-function columnsOf(formulas: Record<string, unknown>, view: "customer" | "internal") {
+function columnsOf(
+  formulas: Record<string, unknown>,
+  view: "customer" | "internal",
+) {
   const cols = (formulas.columns as FormulaColumn[] | undefined) ?? [];
   return view === "internal" ? cols : cols.filter((c) => c.internal !== true);
 }
@@ -1275,9 +1393,7 @@ function mockCalculateResponse(
           ? String(c.label_en ?? c.label ?? c.key ?? "")
           : String(c.label ?? c.key ?? ""),
       ),
-      rows: [
-        cols.map((c) => cellFor(String(c.key ?? ""), productName, spec)),
-      ],
+      rows: [cols.map((c) => cellFor(String(c.key ?? ""), productName, spec))],
       decimals: cols.map((c) =>
         typeof c.decimals === "number" ? c.decimals : null,
       ),
@@ -1287,7 +1403,9 @@ function mockCalculateResponse(
     };
   };
 
-  const quoteDate = String(body.quote_date ?? new Date().toISOString().slice(0, 10));
+  const quoteDate = String(
+    body.quote_date ?? new Date().toISOString().slice(0, 10),
+  );
   const validityDays =
     typeof body.validity_days === "number" ? body.validity_days : 30;
   const validUntil = new Date(
@@ -1355,7 +1473,9 @@ function importTemplateInfo(productKey: string) {
       note: "",
     })),
     headers,
-    required_headers: headers.filter((h) => h !== "产品" && h !== "单件重量(kg)"),
+    required_headers: headers.filter(
+      (h) => h !== "产品" && h !== "单件重量(kg)",
+    ),
     max_rows: 200,
     max_mb: 5,
     sheets: ["报价", "说明"],
@@ -1461,12 +1581,18 @@ export const longtailHandlers = [
     const hsCode = url.searchParams.get("hs_code");
     let items = intelShipmentsStore.slice();
     if (shipper)
-      items = items.filter((s) => String(s.shipper).toLowerCase().includes(shipper.toLowerCase()));
+      items = items.filter((s) =>
+        String(s.shipper).toLowerCase().includes(shipper.toLowerCase()),
+      );
     if (consignee)
-      items = items.filter((s) => String(s.consignee).toLowerCase().includes(consignee.toLowerCase()));
+      items = items.filter((s) =>
+        String(s.consignee).toLowerCase().includes(consignee.toLowerCase()),
+      );
     if (destCountry)
       items = items.filter((s) =>
-        String(s.dest_country).toLowerCase().includes(destCountry.toLowerCase()),
+        String(s.dest_country)
+          .toLowerCase()
+          .includes(destCountry.toLowerCase()),
       );
     if (hsCode) items = items.filter((s) => s.hs_code === hsCode);
     const page = parseIntParam(url.searchParams.get("page"), 1);
@@ -1475,9 +1601,14 @@ export const longtailHandlers = [
   }),
 
   http.get("/api/v1/intel/shipments/:shipmentId", ({ params }) => {
-    const row = intelShipmentsStore.find((s) => s.id === Number(params.shipmentId));
+    const row = intelShipmentsStore.find(
+      (s) => s.id === Number(params.shipmentId),
+    );
     if (!row) {
-      return HttpResponse.json({ detail: "Shipment not found" }, { status: 404 });
+      return HttpResponse.json(
+        { detail: "Shipment not found" },
+        { status: 404 },
+      );
     }
     return HttpResponse.json(row);
   }),
@@ -1508,10 +1639,12 @@ export const longtailHandlers = [
   http.get("/api/v1/intel/channels", () =>
     HttpResponse.json({
       free_channels: INTEL_CHANNELS.filter((c) => c.tier === "free"),
-      paid_channels: INTEL_CHANNELS.filter((c) => c.tier === "paid").map((c) => ({
-        ...c,
-        message: c.is_enabled ? "已开通" : "未开通",
-      })),
+      paid_channels: INTEL_CHANNELS.filter((c) => c.tier === "paid").map(
+        (c) => ({
+          ...c,
+          message: c.is_enabled ? "已开通" : "未开通",
+        }),
+      ),
     }),
   ),
 
@@ -1608,8 +1741,7 @@ export const longtailHandlers = [
       const cells = lines[index]!.split(",").map((cell) => cell.trim());
       const row: Record<string, string> = {};
       header.forEach((head, headIndex) => {
-        const mapped =
-          alias[head.toLowerCase()] ?? alias[head] ?? undefined;
+        const mapped = alias[head.toLowerCase()] ?? alias[head] ?? undefined;
         const value = cells[headIndex] ?? "";
         if (mapped && value !== "") row[mapped] = value;
       });
@@ -1682,7 +1814,8 @@ export const longtailHandlers = [
     const country = url.searchParams.get("country_code");
     const type = url.searchParams.get("port_type");
     let rows = MARKET_PORTS.slice();
-    if (country) rows = rows.filter((p) => p.country_code === country.toUpperCase());
+    if (country)
+      rows = rows.filter((p) => p.country_code === country.toUpperCase());
     if (type) rows = rows.filter((p) => p.port_type === type);
     return HttpResponse.json(rows);
   }),
@@ -1727,7 +1860,10 @@ export const longtailHandlers = [
     >;
     const categoryId = body.category_id;
     const specValues = asRecord(body.spec_values);
-    if (typeof categoryId !== "number" || Object.keys(specValues).length === 0) {
+    if (
+      typeof categoryId !== "number" ||
+      Object.keys(specValues).length === 0
+    ) {
       return HttpResponse.json(
         { detail: "category_id and spec_values are required" },
         { status: 422 },
@@ -1803,7 +1939,9 @@ export const longtailHandlers = [
   http.get("/api/v1/admin/spec/attribute-proposals/recommended", () => {
     const items = proposalsStore
       .filter((p) => p.recommended_for_promotion && p.status === "pending")
-      .sort((a, b) => (b.recommendation_score ?? 0) - (a.recommendation_score ?? 0))
+      .sort(
+        (a, b) => (b.recommendation_score ?? 0) - (a.recommendation_score ?? 0),
+      )
       .map((p) => ({
         id: p.id,
         tenant_id: p.tenant_id,
@@ -1888,7 +2026,7 @@ export const longtailHandlers = [
         )
       : undefined;
     const started = Date.now();
-    const latency = Math.max(1, (Date.now() - started) % 900 + 120);
+    const latency = Math.max(1, ((Date.now() - started) % 900) + 120);
     const result = provider
       ? { ok: true, task_key: taskKey, payload, provider: provider.provider }
       : { ok: true, task_key: taskKey, payload, template: true };
@@ -1907,7 +2045,12 @@ export const longtailHandlers = [
     });
     return HttpResponse.json(
       provider
-        ? { result, path: `ai:${provider.provider}`, task: taskKey, latency_ms: latency }
+        ? {
+            result,
+            path: `ai:${provider.provider}`,
+            task: taskKey,
+            latency_ms: latency,
+          }
         : { result, path: "template", task: taskKey },
     );
   }),
@@ -1986,43 +2129,40 @@ export const longtailHandlers = [
     HttpResponse.json({ items: aiBindingsStore.map(bindingOut) }),
   ),
 
-  http.put(
-    "/api/v1/ai/task-bindings/:taskKey",
-    async ({ params, request }) => {
-      const taskKey = String(params.taskKey);
-      if (!AI_TASKS.some((t) => t.task_key === taskKey)) {
-        return HttpResponse.json(
-          { detail: { error: "not_found", code: "UNKNOWN_TASK" } },
-          { status: 404 },
-        );
-      }
-      const body = (await request.json().catch(() => ({}))) as Record<
-        string,
-        unknown
-      >;
-      let binding = aiBindingsStore.find((b) => b.task_key === taskKey);
-      if (!binding) {
-        const meta = AI_TASKS.find((t) => t.task_key === taskKey);
-        binding = {
-          task_key: taskKey,
-          provider: meta?.recommended_provider ?? "deepseek",
-          model: null,
-          enabled: false,
-          config: null,
-        };
-        aiBindingsStore.push(binding);
-      }
-      if (typeof body.provider === "string") binding.provider = body.provider;
-      if (typeof body.model === "string") {
-        binding.model = body.model.trim() ? body.model.trim() : null;
-      }
-      if (typeof body.enabled === "boolean") binding.enabled = body.enabled;
-      if (typeof body.config === "object" && body.config !== null) {
-        binding.config = body.config as Record<string, unknown>;
-      }
-      return HttpResponse.json(bindingOut(binding));
-    },
-  ),
+  http.put("/api/v1/ai/task-bindings/:taskKey", async ({ params, request }) => {
+    const taskKey = String(params.taskKey);
+    if (!AI_TASKS.some((t) => t.task_key === taskKey)) {
+      return HttpResponse.json(
+        { detail: { error: "not_found", code: "UNKNOWN_TASK" } },
+        { status: 404 },
+      );
+    }
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    let binding = aiBindingsStore.find((b) => b.task_key === taskKey);
+    if (!binding) {
+      const meta = AI_TASKS.find((t) => t.task_key === taskKey);
+      binding = {
+        task_key: taskKey,
+        provider: meta?.recommended_provider ?? "deepseek",
+        model: null,
+        enabled: false,
+        config: null,
+      };
+      aiBindingsStore.push(binding);
+    }
+    if (typeof body.provider === "string") binding.provider = body.provider;
+    if (typeof body.model === "string") {
+      binding.model = body.model.trim() ? body.model.trim() : null;
+    }
+    if (typeof body.enabled === "boolean") binding.enabled = body.enabled;
+    if (typeof body.config === "object" && body.config !== null) {
+      binding.config = body.config as Record<string, unknown>;
+    }
+    return HttpResponse.json(bindingOut(binding));
+  }),
 
   http.get("/api/v1/ai/usage", ({ request }) => {
     const url = new URL(request.url);
@@ -2072,7 +2212,9 @@ export const longtailHandlers = [
     const body = (await request.json().catch(() => ({}))) as {
       email?: string;
     };
-    const email = String(body.email ?? "").trim().toLowerCase();
+    const email = String(body.email ?? "")
+      .trim()
+      .toLowerCase();
     if (!email || !email.includes("@")) {
       return HttpResponse.json(
         { detail: "validation_error: email is required" },
@@ -2121,7 +2263,10 @@ export const longtailHandlers = [
       );
     }
     lastResetToken = null;
-    return HttpResponse.json({ ok: true, message: "密码已重置，请用新密码登录" });
+    return HttpResponse.json({
+      ok: true,
+      message: "密码已重置，请用新密码登录",
+    });
   }),
 
   // POST /auth/bootstrap-admin ← auth-context.tsx:156 + setup-admin/page.tsx
@@ -2153,6 +2298,19 @@ export const longtailHandlers = [
     let rows = shipmentsStore.slice();
     if (status) rows = rows.filter((s) => s.status === status);
     return HttpResponse.json(paginate(rows, page, pageSize));
+  }),
+
+  // 单条出货详情（= ws_shipments.py:314 get_shipment；形状同 _row_to_shipment）。
+  // 编辑对话框按 id 独立查询时用，避免"改筛选/列表刷新即丢编辑现场"。
+  http.get("/api/v1/shipments/:shipmentId", ({ params }) => {
+    const row = shipmentsStore.find((s) => s.id === Number(params.shipmentId));
+    if (!row) {
+      return HttpResponse.json(
+        { detail: { error: "not_found", code: "SHIPMENT_NOT_FOUND" } },
+        { status: 404 },
+      );
+    }
+    return HttpResponse.json(row);
   }),
 
   http.post("/api/v1/shipments", async ({ request }) => {
@@ -2220,23 +2378,33 @@ export const longtailHandlers = [
       const q = search.toLowerCase();
       rows = rows.filter((r) =>
         ["product_name", "product_name_cn", "shop_name"].some((field) =>
-          String(r[field] ?? "").toLowerCase().includes(q),
+          String(r[field] ?? "")
+            .toLowerCase()
+            .includes(q),
         ),
       );
     }
     if (country) rows = rows.filter((r) => r.country === country);
     if (category) rows = rows.filter((r) => r.product_category === category);
     if (canSupply === "true") rows = rows.filter((r) => r.can_supply === true);
-    if (canSupply === "false") rows = rows.filter((r) => r.can_supply === false);
-    if (canSupply === "unknown") rows = rows.filter((r) => r.can_supply == null);
+    if (canSupply === "false")
+      rows = rows.filter((r) => r.can_supply === false);
+    if (canSupply === "unknown")
+      rows = rows.filter((r) => r.can_supply == null);
     const page = parseIntParam(url.searchParams.get("page"), 1);
     const pageSize = parseIntParam(url.searchParams.get("page_size"), 20);
     return HttpResponse.json(paginate(rows, page, pageSize));
   }),
 
   http.get("/api/v1/research/stats", () => {
-    const byCountry = new Map<string, { country: string; total: number; can_supply: number }>();
-    const byCategory = new Map<string, { product_category: string; total: number }>();
+    const byCountry = new Map<
+      string,
+      { country: string; total: number; can_supply: number }
+    >();
+    const byCategory = new Map<
+      string,
+      { product_category: string; total: number }
+    >();
     let canSupplyYes = 0;
     for (const row of researchProductsStore) {
       if (row.can_supply === true) canSupplyYes += 1;
@@ -2350,7 +2518,8 @@ export const longtailHandlers = [
       email: optStr(body.email),
       website: optStr(body.website),
       link_url: optStr(body.link_url),
-      price_local: typeof body.price_local === "number" ? body.price_local : null,
+      price_local:
+        typeof body.price_local === "number" ? body.price_local : null,
       price_currency: optStr(body.price_currency),
       market_note: optStr(body.market_note),
       can_supply: typeof body.can_supply === "boolean" ? body.can_supply : null,
@@ -2363,45 +2532,48 @@ export const longtailHandlers = [
     return HttpResponse.json(created, { status: 201 });
   }),
 
-  http.patch("/api/v1/research/products/:researchId", async ({ params, request }) => {
-    const row = researchProductsStore.find(
-      (p) => p.id === Number(params.researchId),
-    );
-    if (!row) return notFound("RESEARCH_NOT_FOUND");
-    const body = (await request.json().catch(() => ({}))) as Record<
-      string,
-      unknown
-    >;
-    // 白名单 = chain.py:ResearchPatch 的字段（不含 id/tenant_id）
-    for (const key of [
-      "product_name",
-      "product_name_cn",
-      "product_image_url",
-      "spec_raw",
-      "spec_normalized",
-      "product_category",
-      "country",
-      "region",
-      "city",
-      "shop_name",
-      "shop_type",
-      "address",
-      "phone",
-      "email",
-      "website",
-      "link_url",
-      "price_local",
-      "price_currency",
-      "market_note",
-      "can_supply",
-      "supply_notes",
-      "research_status",
-    ] as const) {
-      if (key in body) row[key] = body[key];
-    }
-    row.updated_at = nowIso();
-    return HttpResponse.json(row);
-  }),
+  http.patch(
+    "/api/v1/research/products/:researchId",
+    async ({ params, request }) => {
+      const row = researchProductsStore.find(
+        (p) => p.id === Number(params.researchId),
+      );
+      if (!row) return notFound("RESEARCH_NOT_FOUND");
+      const body = (await request.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
+      // 白名单 = chain.py:ResearchPatch 的字段（不含 id/tenant_id）
+      for (const key of [
+        "product_name",
+        "product_name_cn",
+        "product_image_url",
+        "spec_raw",
+        "spec_normalized",
+        "product_category",
+        "country",
+        "region",
+        "city",
+        "shop_name",
+        "shop_type",
+        "address",
+        "phone",
+        "email",
+        "website",
+        "link_url",
+        "price_local",
+        "price_currency",
+        "market_note",
+        "can_supply",
+        "supply_notes",
+        "research_status",
+      ] as const) {
+        if (key in body) row[key] = body[key];
+      }
+      row.updated_at = nowIso();
+      return HttpResponse.json(row);
+    },
+  ),
 
   http.delete("/api/v1/research/products/:researchId", ({ params }) => {
     const index = researchProductsStore.findIndex(
@@ -2500,7 +2672,16 @@ export const longtailHandlers = [
   // ── leadgen ──────────────────────────────────────────────────────────────
   http.get("/api/v1/leadgen/regions", () =>
     HttpResponse.json({
-      items: ["US-TX", "US-CA", "US-FL", "US-NY", "CA-ON", "AU-NSW", "GB-ENG", "DE-NW"],
+      items: [
+        "US-TX",
+        "US-CA",
+        "US-FL",
+        "US-NY",
+        "CA-ON",
+        "AU-NSW",
+        "GB-ENG",
+        "DE-NW",
+      ],
       regions: [
         { code: "US-TX", name: "Texas, USA" },
         { code: "US-CA", name: "California, USA" },
@@ -2629,14 +2810,19 @@ export const longtailHandlers = [
       return HttpResponse.json(
         {
           detail: [
-            { loc: ["body", "company_name"], msg: "Field required", type: "missing" },
+            {
+              loc: ["body", "company_name"],
+              msg: "Field required",
+              type: "missing",
+            },
           ],
         },
         { status: 422 },
       );
     }
     const duplicate = leadsStore.some(
-      (lead) => String(lead.company_name).toLowerCase() === company.toLowerCase(),
+      (lead) =>
+        String(lead.company_name).toLowerCase() === company.toLowerCase(),
     );
     if (duplicate) {
       return HttpResponse.json(
@@ -2674,8 +2860,7 @@ export const longtailHandlers = [
       product_image_url: null,
       spec_raw: optStr(body.spec_raw),
       link_url: optStr(body.link_url),
-      can_supply:
-        typeof body.can_supply === "boolean" ? body.can_supply : null,
+      can_supply: typeof body.can_supply === "boolean" ? body.can_supply : null,
       supply_notes: optStr(body.supply_notes),
       crawl_status: "no_website",
       fit_score: 0,
@@ -2713,9 +2898,13 @@ export const longtailHandlers = [
       }
     }
     if (sort === "recent") {
-      rows.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+      rows.sort((a, b) =>
+        String(b.created_at).localeCompare(String(a.created_at)),
+      );
     } else if (sort === "name") {
-      rows.sort((a, b) => String(a.company_name).localeCompare(String(b.company_name)));
+      rows.sort((a, b) =>
+        String(a.company_name).localeCompare(String(b.company_name)),
+      );
     } else {
       rows.sort((a, b) => Number(b.fit_score ?? 0) - Number(a.fit_score ?? 0));
     }
@@ -2883,32 +3072,36 @@ export const longtailHandlers = [
     return HttpResponse.json(mailboxOut(created), { status: 201 });
   }),
 
-  http.patch("/api/v1/outreach/mailboxes/:mailboxId", async ({ params, request }) => {
-    const mailbox = mailboxesStore.find(
-      (m) => m.id === Number(params.mailboxId),
-    );
-    if (!mailbox) {
-      return HttpResponse.json(
-        { error: "not_found", code: "MAILBOX_NOT_FOUND" },
-        { status: 404 },
+  http.patch(
+    "/api/v1/outreach/mailboxes/:mailboxId",
+    async ({ params, request }) => {
+      const mailbox = mailboxesStore.find(
+        (m) => m.id === Number(params.mailboxId),
       );
-    }
-    const body = (await request.json().catch(() => ({}))) as Record<
-      string,
-      unknown
-    >;
-    if (body.is_default === true) {
-      for (const m of mailboxesStore) m.is_default = false;
-      mailbox.is_default = true;
-    }
-    if (typeof body.name === "string") mailbox.name = body.name || null;
-    if (typeof body.enabled === "boolean") mailbox.enabled = body.enabled;
-    if (typeof body.daily_limit === "number") mailbox.daily_limit = body.daily_limit;
-    if (typeof body.api_key === "string") {
-      mailbox.api_key = body.api_key || null;
-    }
-    return HttpResponse.json(mailboxOut(mailbox));
-  }),
+      if (!mailbox) {
+        return HttpResponse.json(
+          { error: "not_found", code: "MAILBOX_NOT_FOUND" },
+          { status: 404 },
+        );
+      }
+      const body = (await request.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
+      if (body.is_default === true) {
+        for (const m of mailboxesStore) m.is_default = false;
+        mailbox.is_default = true;
+      }
+      if (typeof body.name === "string") mailbox.name = body.name || null;
+      if (typeof body.enabled === "boolean") mailbox.enabled = body.enabled;
+      if (typeof body.daily_limit === "number")
+        mailbox.daily_limit = body.daily_limit;
+      if (typeof body.api_key === "string") {
+        mailbox.api_key = body.api_key || null;
+      }
+      return HttpResponse.json(mailboxOut(mailbox));
+    },
+  ),
 
   http.post("/api/v1/outreach/mailboxes/:mailboxId/test", ({ params }) => {
     const mailbox = mailboxesStore.find(
@@ -2973,65 +3166,68 @@ export const longtailHandlers = [
     }),
   ),
 
-  http.post("/api/v1/outreach/campaigns/:campaignId/send", async ({ params, request }) => {
-    const campaign = campaignsStore.find(
-      (c) => c.id === Number(params.campaignId),
-    );
-    if (!campaign) {
-      return HttpResponse.json(
-        { error: "not_found", code: "CAMPAIGN_NOT_FOUND" },
-        { status: 404 },
+  http.post(
+    "/api/v1/outreach/campaigns/:campaignId/send",
+    async ({ params, request }) => {
+      const campaign = campaignsStore.find(
+        (c) => c.id === Number(params.campaignId),
       );
-    }
-    if (campaign.status === "sending") {
-      return HttpResponse.json(
-        { error: "conflict", code: "ALREADY_SENDING" },
-        { status: 409 },
-      );
-    }
-    const body = (await request.json().catch(() => ({}))) as {
-      lead_ids?: number[];
-    };
-    const leadIds = Array.isArray(body.lead_ids) ? body.lead_ids : [];
-    let sent = 0;
-    let failed = 0;
-    for (const leadId of leadIds) {
-      const lead = leadsStore.find((l) => l.id === leadId);
-      if (!lead) {
-        failed += 1;
-        continue;
+      if (!campaign) {
+        return HttpResponse.json(
+          { error: "not_found", code: "CAMPAIGN_NOT_FOUND" },
+          { status: 404 },
+        );
       }
-      const message: MockMessage = {
-        id: nextId(),
-        campaign_id: campaign.id,
-        lead_id: lead.id,
-        to_email: String(lead.email ?? "unknown@example.com"),
-        to_name: String(lead.company_name),
-        subject: campaign.subject_template,
-        body_rendered: campaign.body_template,
-        status: "sent",
-        error: null,
-        sent_at: nowIso(),
-        opened_at: null,
-        replied_at: null,
-        created_at: nowIso(),
+      if (campaign.status === "sending") {
+        return HttpResponse.json(
+          { error: "conflict", code: "ALREADY_SENDING" },
+          { status: 409 },
+        );
+      }
+      const body = (await request.json().catch(() => ({}))) as {
+        lead_ids?: number[];
       };
-      messagesStore.unshift(message);
-      lead.outreach_status = "sent";
-      sent += 1;
-    }
-    campaign.total_count += leadIds.length;
-    campaign.sent_count += sent;
-    campaign.failed_count += failed;
-    campaign.status = "sent";
-    // 形状 = chain.py:1519-1594 `{campaign_id,total,sent,failed}`
-    return HttpResponse.json({
-      campaign_id: campaign.id,
-      total: leadIds.length,
-      sent,
-      failed,
-    });
-  }),
+      const leadIds = Array.isArray(body.lead_ids) ? body.lead_ids : [];
+      let sent = 0;
+      let failed = 0;
+      for (const leadId of leadIds) {
+        const lead = leadsStore.find((l) => l.id === leadId);
+        if (!lead) {
+          failed += 1;
+          continue;
+        }
+        const message: MockMessage = {
+          id: nextId(),
+          campaign_id: campaign.id,
+          lead_id: lead.id,
+          to_email: String(lead.email ?? "unknown@example.com"),
+          to_name: String(lead.company_name),
+          subject: campaign.subject_template,
+          body_rendered: campaign.body_template,
+          status: "sent",
+          error: null,
+          sent_at: nowIso(),
+          opened_at: null,
+          replied_at: null,
+          created_at: nowIso(),
+        };
+        messagesStore.unshift(message);
+        lead.outreach_status = "sent";
+        sent += 1;
+      }
+      campaign.total_count += leadIds.length;
+      campaign.sent_count += sent;
+      campaign.failed_count += failed;
+      campaign.status = "sent";
+      // 形状 = chain.py:1519-1594 `{campaign_id,total,sent,failed}`
+      return HttpResponse.json({
+        campaign_id: campaign.id,
+        total: leadIds.length,
+        sent,
+        failed,
+      });
+    },
+  ),
 
   http.get("/api/v1/outreach/messages", ({ request }) => {
     const url = new URL(request.url);
@@ -3042,7 +3238,8 @@ export const longtailHandlers = [
     const pageSize = parseIntParam(url.searchParams.get("page_size"), 20);
     let rows = messagesStore.slice();
     if (status) rows = rows.filter((m) => m.status === status);
-    if (campaignId) rows = rows.filter((m) => m.campaign_id === Number(campaignId));
+    if (campaignId)
+      rows = rows.filter((m) => m.campaign_id === Number(campaignId));
     if (leadId) rows = rows.filter((m) => m.lead_id === Number(leadId));
     const items = rows.map((m) => ({
       ...messageOut(m),
@@ -3163,27 +3360,42 @@ export const longtailHandlers = [
     const productKey = String(body.product_key ?? "").trim();
     const product = MOCK_EXPORT_PRODUCTS.find((p) => p.key === productKey);
     if (!product) {
-      return HttpResponse.json({ detail: `未知产品: ${productKey}` }, { status: 404 });
+      return HttpResponse.json(
+        { detail: `未知产品: ${productKey}` },
+        { status: 404 },
+      );
     }
     const values = asRecord(body.values);
     if (Object.keys(values).length === 0) {
-      return HttpResponse.json({ detail: "values is required" }, { status: 422 });
+      return HttpResponse.json(
+        { detail: "values is required" },
+        { status: 422 },
+      );
     }
     const amount = body.amount;
     if (typeof amount !== "number" || amount <= 0) {
-      return HttpResponse.json({ detail: "amount must be > 0" }, { status: 422 });
+      return HttpResponse.json(
+        { detail: "amount must be > 0" },
+        { status: 422 },
+      );
     }
     const unit = String(body.unit ?? "").trim();
     if (!PRICING_UNITS.has(unit)) {
       return HttpResponse.json(
-        { detail: `unit 必须是以下之一: ${[...PRICING_UNITS].sort().join(", ")}` },
+        {
+          detail: `unit 必须是以下之一: ${[...PRICING_UNITS].sort().join(", ")}`,
+        },
         { status: 422 },
       );
     }
     const key = `wire_diameter=${String(values.wire_diameter ?? "")}`;
     // INSERT-only 语义：同 key 旧版本置 inactive（main.py:2255-2290 的 CTE）
     for (const cell of pricingCellsStore) {
-      if (cell.product_key === productKey && cell.key === key && cell.status === "active") {
+      if (
+        cell.product_key === productKey &&
+        cell.key === key &&
+        cell.status === "active"
+      ) {
         cell.status = "inactive";
       }
     }
@@ -3198,7 +3410,8 @@ export const longtailHandlers = [
       ),
       amount,
       unit,
-      effective_from: optStr(body.effective_from) ?? new Date().toISOString().slice(0, 10),
+      effective_from:
+        optStr(body.effective_from) ?? new Date().toISOString().slice(0, 10),
       status: "active",
     };
     pricingCellsStore.push(created);
@@ -3237,7 +3450,9 @@ export const longtailHandlers = [
   http.get("/api/v1/fx-rates/latest", ({ request }) => {
     const url = new URL(request.url);
     const base = (url.searchParams.get("base_currency") ?? "USD").toUpperCase();
-    const quote = (url.searchParams.get("quote_currency") ?? "CNY").toUpperCase();
+    const quote = (
+      url.searchParams.get("quote_currency") ?? "CNY"
+    ).toUpperCase();
     const stored = fxRatesStore.find(
       (r) => r.base_currency === base && r.quote_currency === quote,
     );
@@ -3268,7 +3483,10 @@ export const longtailHandlers = [
     const response = mockCalculateResponse(productKey, body, view);
     if (!response) {
       return HttpResponse.json(
-        { error: "unknown_product", message: `未注册的产品模型 '${productKey}'` },
+        {
+          error: "unknown_product",
+          message: `未注册的产品模型 '${productKey}'`,
+        },
         { status: 404 },
       );
     }
@@ -3323,7 +3541,8 @@ export const longtailHandlers = [
           row: 0,
           column: "",
           value: null,
-          message: "mock：未真正解析上传文件，下方为示例行（用于打通预览→计算链路）",
+          message:
+            "mock：未真正解析上传文件，下方为示例行（用于打通预览→计算链路）",
           severity: "warning",
         },
       ],
@@ -3342,7 +3561,12 @@ export const longtailHandlers = [
     const viewRaw = String(form.get("view") ?? "customer");
     if (viewRaw !== "customer" && viewRaw !== "internal") {
       return HttpResponse.json(
-        { detail: { error: "bad_view", message: "view 只能是 customer 或 internal" } },
+        {
+          detail: {
+            error: "bad_view",
+            message: "view 只能是 customer 或 internal",
+          },
+        },
         { status: 400 },
       );
     }
@@ -3369,7 +3593,10 @@ export const longtailHandlers = [
     const base = mockCalculateResponse(productKey, {}, view);
     if (!base) {
       return HttpResponse.json(
-        { error: "unknown_product", message: `未注册的产品模型 '${productKey}'` },
+        {
+          error: "unknown_product",
+          message: `未注册的产品模型 '${productKey}'`,
+        },
         { status: 404 },
       );
     }
@@ -3391,50 +3618,58 @@ export const longtailHandlers = [
 
   // POST /export-quote/products/:key/explain ← product-spec-tryout.tsx:125
   // 形状 = ws_quote_ext.py:285-297（steps + ok/errors/warnings；不跑价链）
-  http.post("/api/v1/export-quote/products/:productKey/explain", async ({ params, request }) => {
-    const productKey = String(params.productKey);
-    const product = MOCK_EXPORT_PRODUCTS.find((p) => p.key === productKey);
-    const body = (await request.json().catch(() => ({}))) as Record<
-      string,
-      unknown
-    >;
-    const spec = asRecord(body.spec);
-    const columns = (() => {
-      const formulas = formulasOf(productKey);
-      if (!formulas) return [] as FormulaColumn[];
-      return columnsOf(formulas, "customer");
-    })();
-    const steps = columns
-      .filter((c) => {
-        const key = String(c.key ?? "");
-        return key.startsWith("spec.") || key.startsWith("derived.");
-      })
-      .map((c) => {
-        const key = String(c.key ?? "");
-        const value = key.startsWith("spec.")
-          ? spec[key.slice("spec.".length)] ?? 0
-          : 0;
-        return {
-          key,
-          code: key,
-          name: String(c.label ?? key),
-          expr: key,
-          value: value as number | string,
-          unit: "",
-          label: String(c.label_en ?? c.label ?? key),
-          note: null,
-          error: null,
-        };
+  http.post(
+    "/api/v1/export-quote/products/:productKey/explain",
+    async ({ params, request }) => {
+      const productKey = String(params.productKey);
+      const product = MOCK_EXPORT_PRODUCTS.find((p) => p.key === productKey);
+      const body = (await request.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
+      const spec = asRecord(body.spec);
+      const columns = (() => {
+        const formulas = formulasOf(productKey);
+        if (!formulas) return [] as FormulaColumn[];
+        return columnsOf(formulas, "customer");
+      })();
+      const steps = columns
+        .filter((c) => {
+          const key = String(c.key ?? "");
+          return key.startsWith("spec.") || key.startsWith("derived.");
+        })
+        .map((c) => {
+          const key = String(c.key ?? "");
+          const value = key.startsWith("spec.")
+            ? (spec[key.slice("spec.".length)] ?? 0)
+            : 0;
+          return {
+            key,
+            code: key,
+            name: String(c.label ?? key),
+            expr: key,
+            value: value as number | string,
+            unit: "",
+            label: String(c.label_en ?? c.label ?? key),
+            note: null,
+            error: null,
+          };
+        });
+      return HttpResponse.json({
+        product_key: productKey,
+        product_name: product?.name ?? productKey,
+        steps,
+        ok: !product || steps.length >= 0,
+        errors: product
+          ? []
+          : [
+              {
+                code: "unknown_product",
+                error: `未注册的产品模型 '${productKey}'`,
+              },
+            ],
+        warnings: ["mock：逐步代入用产品定义的列结构占位，未跑真实表达式求值"],
       });
-    return HttpResponse.json({
-      product_key: productKey,
-      product_name: product?.name ?? productKey,
-      steps,
-      ok: !product || steps.length >= 0,
-      errors: product
-        ? []
-        : [{ code: "unknown_product", error: `未注册的产品模型 '${productKey}'` }],
-      warnings: ["mock：逐步代入用产品定义的列结构占位，未跑真实表达式求值"],
-    });
-  }),
+    },
+  ),
 ];

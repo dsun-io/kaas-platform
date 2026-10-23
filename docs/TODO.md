@@ -88,7 +88,7 @@
 | **A2-B** | **方案 B：模板迁服务端** | 让"不带预览 HTML 的第三方客户端"也能出 PDF（模板现在在前端，是结构性限制）。需先定模板渲染归属（服务端 HTML 模板 vs 前端产物回传） | 方案讨论；与 A4/A7 渲染层同一片 | 🧭 需用户定要不要做（成本高、收益=第三方客户端/自动化） |
 | A3 | 字段缺失可发现 | 渲染期 warning + 前端「缺失字段」标记 + 签发前清单 | — | ✅ 2026-10-20（`findBlankPlaceholders` + 预览状态栏；18 类模板无未登记占位符） |
 | A4 | 图片素材库 + 去 base64 | ✅ 2026-10-21（用户选 R2 直链方案）：新增 `kaas_common/files/token.py`（HMAC 短期令牌，TTL 900s，purpose+资源 id 绑定）；装配层 `resolve_photo_refs` / `_apply_default_seal` 改为**签名直链**（`/file-objects/{id}/render-content?t=`、`/company-seals/{id}/render-content?t=`），无密钥/取不到时回退原 data URI；渲染器白名单**未改**（本来就认 http(s)）；素材库=复用现有产品图库+公章库+picker（不新增表）。测试 +16（令牌 6 / 文件直链 6 / 公章直链 4） | G-4 已拍板 | ✅ |
-| A5 | 单证编辑体验 | **W1 条款模板已上线（2026-10-21）**：团队级条款库（迁移 `202610200006` + CRUD + 懒种子 6 类中英措辞）+ 设置→企业信息卡片 + 单证表单「选模板回填/覆盖二次确认」。**剩余 W3 金额摘要条、W2 行项批量编辑**（方案 W1→W3→W2，用户已拍板） | W3/W2 | 🔨 W1 ✅ / W3·W2 待做 |
+| A5 | 单证编辑体验 | **W1 条款模板已上线（2026-10-21）**：团队级条款库（迁移 `202610200006` + CRUD + 懒种子 6 类中英措辞）+ 设置→企业信息卡片 + 单证表单「选模板回填/覆盖二次确认」。W3 金额摘要条、W2 行项批量编辑见 §0 A-8/A-9 | — | ✅ W1/W3/W2 全部完成（W3 见 A-8、W2 见 A-9） |
 | A6 | 模板逐字段对照真实单据 | **2026-10-21 用户提供 3 份真实单据** → 校准矩阵 [`TRADE_DOC_A6_CALIBRATION.md`](./archive/2026-10-21-final-closeout/TRADE_DOC_A6_CALIBRATION.md)（已归档）。✅ A6-1：PI/CI **双币种金额块**（四列行项/汇率/舍入调整/运费/定金尾款/应付总额；旧 18 金标零差异 + 2 份 FX 金标；facts 增 total_payable）；✅ A6-2 数据层：合同 12 条中英双语条款（`contract-clauses.ts`，待模板集成）。**剩余**：G7 的 CI 银行区块、G8 引用链、G9 税号/联系方式、G10 BILL TO/CONSIGNED TO、G12 有效期/包装细则、A6-2 模板集成、校准 §4 三个口径待用户确认 | A6 后续 | 🔨 主体完成 |
 | A7 | 单证加固 P1/P2 | ✅ 2026-10-21 全部落地：①事实层+②一致性引擎内核（87 测）+ 事实表（迁移 `202610200004`）+ **10 个 Worker 端点**（34 测）+ **UI**（事实确认/一致性三档/收款/单证清单/签发闸门，面板 9 + 契约 12 测）。`confirm` 默认拦截未确认事实；`allow_lint_override` 未对前端开放。设计与 12 条裁决见 [`TRADE_DOC_HARDENING.md`](./TRADE_DOC_HARDENING.md)。尾巴：导出后自检 UI 需 PDF 文本抽取（C21） | — | ✅ |
 | A8 | PDF 归档尾巴 | ②③ 已完成（cron + 列表「已变更/模板已更新/待复核」标识）；①端到端真实跑一次 | ①需已部署环境 | ✅ ②③；①随发布后 P4 |
@@ -175,7 +175,7 @@
 |---|---|---|---|
 | N1 | **前后端对齐专项** | UI 重构后，前端调用 ↔ Worker 路由（`backend/worker/src/*.py`）↔ `shared/contracts` ↔ MSW handlers 全量比对；断点清单 + 修复 + 补测试（审计报告 `.tmp/align-report.md`：P0 断点 0、P1 三条、P2 五条） | ✅ 2026-10-21 分两批：**A**（/events 平台闸门、F4 stage 消费 + stage-log、路由守卫口径、写权限只读化）；**B**（MSW handlers **58→111**、`/oss/presign` 死代码删除、deployment_audit 如实 404 + 三态、`pnpm mocks:check` 防漂移门禁 P1 54/54） |
 | N2 | 环境隔离 | `.env.local` 生产 DSN 已加警示注释 + 本地开发指引；本地 compose 栈拉起（postgres/redis/minio/backend）；**新 clone 必须先 `sync-shared.ps1`**（镜像 gitignored，缺 `kaas_common.preview` 会崩）；本地库为空库快径重建（**106 表 / head `202610200005`**） | ✅ 2026-10-20（本机） |
-| N3 | H-2 用户复验 | 定价页刷新与注册（2026-10-19 已修复上线）等用户确认 | 🧭 需用户复验 |
+| N3 | H-2 用户复验 | 定价页刷新与注册（2026-10-19 已修复上线） | — | ✅ 2026-10-21 用户确认通过（见 B-1） |
 | N4 | P8 联调状态核对 | ✅ 2026-10-21 核对：设计文档「P8 联调+E2E+订阅编码 ⏳」已过时 —— 联调=CI 三条全绿 + 预览链路实测；E2E=28 条（24+4）；订阅编码=契约 R2 PASS（27 工位 ts↔py）+ B3 真机开通生效。已在 `WORKSTATION_DESIGN.md` 段位状态表标 ✅ | — | ✅ |
 | N5 | 文档口径收尾批 | PROBLEM_STATUS/UNCERTAIN/HANDOVER + UI 两份/PDF_ARCHIVAL/E2E/README/旧设计稿归档 | ✅ 2026-10-21 |
 | N6 | **安全 4 项（最后做）** | **用户 2026-10-21 决定：①口令轮换/②管理员改密/④filter-repo 均不做（仓库保持 public）**；③归档数据公开评估**已完成并脱敏**（`docs/archive/stowage_raw.json` 身份+成本/售价/利润 228 格；`archive/.../sample_docs/*` 姓名/电话/邮箱；公司名保留） | — | ✅（按用户口径） |
@@ -293,8 +293,6 @@
 | U-P0B3 | 失败≠空态 | events、pricing-data、market 五 tab、kb 假统计、intel 四视图 | ✅ 2026-10-23：ErrorState/LoadingBlock/EmptyState 三态分离；kb 假统计下线；新增 38 测 |
 | U-P0B4 | 防重（剩余） | leadgen 扫描已回复/开始抓取/批量爬取、outreach setDefault/添加邮箱/创建活动 | ✅ 2026-10-23：全部 useAsyncAction + AsyncButton + 页内 role=alert（不重复 toast），pending 防重有测试 |
 | U-P0B5 | 页头/错误边界 | 7 个 error.tsx + 6 loading + RouteGuard + WorkstationGate + 全局 not-found + 剩余 window.confirm | ✅ 2026-10-23：原生确认清单内清零（ui:patterns native-dialog 7→3） |
-| U-P0B5 | 页头/错误边界 | 8 个 error.tsx + loading + RouteGuard + WorkstationGate + 全局 not-found | ⏳ |
-| U-P0B6 | 行内展开迁移 | X1–X8 按默认范式迁 DetailDrawer/Dialog | ⏳ |
 | U-P0B6 | 行内展开迁移 | X1 customers 询盘详情 / X2 leadgen 线索 / X3 outreach 邮件 / X4 research 编辑 / X5 shipments 编辑 / X6 audit-log 键盘 / X7 quotes 记录堆叠 / X8 pricing 单元格 | ✅ 2026-10-23：全部迁 DetailDrawer/Dialog（X5 用行快照，筛选变化不丢编辑现场）；新增 11 测 |
 | U-P1D | 结构债 | 死代码（FreightPanel/defaultSpecRow）、幽灵 /quotations、状态映射收敛、拆巨型文件 | 🔨 部分：FreightPanel 289 行 + defaultSpecRow 已删（freight-panel.tsx 保 41 行，termOptionLabel 仍被引用）；三页状态映射已收敛到 status-tones（含 CAMPAIGN_STATUS_TONES）；/quotations 仅登记（无 page.tsx）；**拆 7 个巨型文件仍未做**（单独 backlog） |
 | U-P1D2 | 结构债（拆巨型文件） | customers 1674 / order-create-wizard 1366 / product-spec-editor 1142 / quote-workbench 924 / leadgen 881 / research 868 / payment-schedules-panel 698 | ⏳ backlog：建议每文件单独 PR + 回归，不与功能批混做 |

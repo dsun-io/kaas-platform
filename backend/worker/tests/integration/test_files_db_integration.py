@@ -284,9 +284,11 @@ def test_file_content_bytea_roundtrip_via_upload_and_get(client, db, admin_setup
 
     payload = b"\x89PNG\r\n\x1a\n" + bytes(range(256)) + b"\x00\xff\x00tail"
     # 单证上传要挂到一张单证上；直接插一张最小 draft 单证（本用例只关心文件字节）
+    # currency 在 202610110009 起是 NOT NULL（单证金额/币种为共享列）——
+    # nightly 2026-10-23 实测该 fixture 漏列 ⇒ NotNullViolation（测试夹具 bug，非产品缺陷）。
     doc_id = int(db.fetchval(
-        "INSERT INTO trade_docs (tenant_id, doc_no, doc_type, status, raw_payload)"
-        " VALUES ($1,$2,$3,'draft','{}'::jsonb) RETURNING id",
+        "INSERT INTO trade_docs (tenant_id, doc_no, doc_type, status, currency, raw_payload)"
+        " VALUES ($1,$2,$3,'draft','USD','{}'::jsonb) RETURNING id",
         "default", "IT-FILES-BYTEAL-1", "ci",
     ))
 
