@@ -14,6 +14,28 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-23 · 施工批：secret 门禁 + 品名对照 CRUD + F2-2/B6 核对 + 18 份样例脱敏 ✅）**
+> - **secret 扫描门禁落地**（STRUCTURAL_DEBT §6.4）：`scripts/check-secrets.mjs`（零依赖 10 规则，
+>   tree / `--staged` / `--files` 三模式；命中 exit 1、值不回显）+ `.husky/pre-commit` 前置 +
+>   `.github/workflows/secret-scan.yml`（push main + 所有 PR）+ allowlist（9 条带理由）+ 自测 12 条；
+>   实测全树 1449 文件 exit 0。
+> - **品名对照 CRUD 补全（C36 #19 遗留缺口）**：内核 `GET /market/name-mappings`（分页/筛选）+
+>   `PATCH`/`DELETE`（404/409、updated_at、model_fields_set）+ TS 门面直连 + zod 生成 + 前端面板
+>   编辑/删除/分页；业务路由 **274→277**（+4 内置 = 281）。
+>   门禁：worker **1727 passed + 12 skipped**；ts-worker **297 passed / 25 files**；
+>   前端 **1567 passed / 212 files**（typecheck 0 / lint 0 error / ui:patterns 0 违规 /
+>   mocks:check 未覆盖 3 / ui:contrast PASS / ui:standards PASS）。
+> - **F2-2 核对结论**：前端唯一落库金额 = 报价行 `line_amount`（协议字段，覆盖价语义由 parity 测试钉住），
+>   展示取服务端值；单证渲染属 A2-B 结构性限制；残余仅半分边界差 0.01、且报价/单证复用同一已存值
+>   ⇒ **不改业务规则**（结论见 `TODO.md` F2-2）。
+> - **B6 评估**：`/workstation-products` **保留**（前端 0 调用；内部/运维/CI 与 REST 契约），删除需先确认
+>   外部 token 调用方；两 POST 的 upsert SQL 重复登记待随删除收敛（见 `TODO.md` B6）。
+> - **归档脱敏（用户裁决：仅 18 份高危样例）**：18 文件 **148 处**（公司名/地址/电话/邮箱/银行账号/SWIFT/
+>   收件人）→ 占位符；金额/品名/单据号保留；新增回归门禁 `scripts/check-archive-pii.py`（PASS 0 命中）；
+>   `docs/archive` 中危未动（见 `SECURITY_READONLY_AUDIT_2026-10-23.md` §5）。
+> - 仍未动：A-11 / C24 / N10 / A2-B（挂起）、`ui:patterns` 2026-10-30 转 strict、Notion token 用户后台吊销、
+>   C29 批量导入（需先出设计）。
+>
 > **（2026-10-23 · 排除项拍板 + 只读安全审计 ✅）**
 > 用户 2026-10-23 对全部排除项做出决定，已按裁决落盘（本轮未做任何破坏性操作）：
 > - **A2-B 模板迁服务端**：暂缓，登记 backlog（等第三方客户端/自动化真实需求）。

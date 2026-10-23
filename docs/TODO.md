@@ -30,7 +30,7 @@
 | A-10 | **C27 QA 越权审计 7 条留证** | ✅ 2026-10-23 真机完成：16/16 拒绝路径全拦（AI 403 / 订阅闸门 404 / admin 403 / 无 token 401），见 [`QA_AUTHZ_AUDIT_EVIDENCE_2026-10-23.md`](./QA_AUTHZ_AUDIT_EVIDENCE_2026-10-23.md)；QA 账号按设计补建、`scripts/seed_qa.py` 入库（修复 D-3）；发现：CF 拦非浏览器 UA（F-1）、订阅闸门先于角色闸门（F-3，角色层深度由代码级测试锁定）；**2026-10-23 用户拍板：生产 QA 账号保留**（后续审计复用，口令存 ~/.dsh/secrets） | — |
 | A-11 | **D6 冷启动基线收尾** | **用户 2026-10-21 决定挂起、2026-10-23 再次确认保持挂起**：CF 公开 Analytics/GraphQL 不暴露 Worker startup 指标（仅 CPU/请求/墙钟），无法按原定义写 p50；等 CF 开放指标或另定口径 | — | ⏸ 挂起（用户确认） |
 | A-12 | **C12 PDF 归档真单证端到端** | ✅ 2026-10-21 完成：用 QA 账号走真实 API（注册→客户→23 类建单→渲染 HTML→PDF 归档），**22/23 类**产出真 PDF 并落 R2（大小 42–83KB，`file_objects.kind=render_pdf`、`trade_doc_files.role=render_pdf`）；过程中修 **2 个生产 bug**：①`business_events.actor_id` text 传 int ⇒ 建单 500（单据已落库）；②Browser Binding `quickAction` 返回 Response 的字节读取（`arrayBuffer` 不可用 → `bytes()`/`.to_py()`）；`other` 类因 Worker CPU 1102 待重试；证据与清理已留档（QA 数据/R2 对象已删） | — |
-| A-13 | **C36 审计后续** | ✅ 全部完成：审计 + 删 3 条 + 本期 5 + **下期 12 全部接上**（待接 24→3 长期保留；13 条 owner 确认待业务）；遗留缺口：品名对照编辑/删除（后端无 list/PATCH/DELETE，登记为后续后端项） | — |
+| A-13 | **C36 审计后续** | ✅ 全部完成：审计 + 删 3 条 + 本期 5 + **下期 12 全部接上**（待接 24→3 长期保留；13 条 owner 确认待业务）；遗留缺口：品名对照编辑/删除（后端无 list/PATCH/DELETE，登记为后续后端项）。**✅ 2026-10-23 已补齐**：内核 `GET/PATCH/DELETE /api/v1/market/name-mappings` + TS 门面直连 + 前端面板编辑/删除/分页（路由 274→277 业务） | — |
 | A-14 | **A10：5 类扩展模板实现** | ✅ 全部完成（P1：`beneficiary_decl`/BD、`saso_coc`/COC；P2：`vessel_cert`/VC、`export_license`/EL、`ciq`/CIQ；金标 25→28、DOC_TYPE 23 类、contracts R3/R4 PASS）；无真实样例字段留空待填，未伪造 | — |
 | A-15 | **A8①：归档任务端到端实跑** | ✅ 2026-10-21 已完成并验证：首窗口 cron 失败根因 = `events_archive_log.id` uuid NOT NULL 且现网无默认值（NotNullViolation，重试 3 次静默失败）→ worker 显式传 uuid + 迁移 `202610210001` 补默认；手动触发归档 2026-10-19：**archived=7 / version_count=1**，DB 新增 1 行（`kaas-files/events-archive/2026/10/19/v1.jsonl.gz`）+ R2 对象 326 bytes 实测可下载 | — | ✅ |
 | A-16 | **D2 后直传路径端到端复验** | ✅ 2026-10-21 已验证：临时 QA 账号 → `POST /file-objects/presign` 返回 `configured=true`（签名用系统 token `kaas-r2-system`）→ PUT 200 → GET 200（内容一致）→ DELETE 204；临时账号与对象已清理 | — |
@@ -113,7 +113,7 @@
 | B3 | 租户开通报价工位 UI | `team/components/team-subscriptions-panel.tsx`（管理员开通/撤销、PUT 后重拉列表）+ 产品页启用开关 | — | ✅ 2026-10-21 端到端验收：`PUT /teams/1/subscriptions/full_chain` 后**同一进程内** `/me/workstations` codes `[]→["full_chain"]`、中间件门从 404 变放行；DELETE 后立即回退（`_invalidate_all` 生效） |
 | B4 | **租户产品写路径团队隔离（P0 安全）** | ✅ 2026-10-21 修复并复验：PUT/DELETE 复用 `product_scope.is_same_team`（列表同一把尺），非本团队 **404**、零写入；管理员不受限；`team_id IS NULL` 历史行只有无团队者本人可写（写读对称）。20 条测试。原缺陷：只校验 tenant，team2 owner 可改/删 team1 产品（复现 200/204） | — | ✅ |
 | B5 | 租户产品 `/formulas`/`/explain` 回落 | ✅ 2026-10-21：拆 `_effective_product_raw`（团队谓词+override）→ `_product_or_404_tenant` 回落租户运行时产品，两路由共用；租户产品 200，系统产品/未知 key 行为不变，跨团队仍 404；DB 不可用时降级为只查注册表（不 500） | B4 | ✅ |
-| B6 | `/workstation-products` 假路由处置 | ✅ 2026-10-21：选「团队级 + 租户级兼容 union」——与 B3 同源、生产种子行不回归、`required_any:["full_chain","quotes"]`（保留门）；开通后成员 200/管理员 201，撤销订阅即 404。遗留建议：与 `/tenant-product-status` 功能重复（同表同冲突目标），后续收敛为一条再删路由器 | B3 | ✅（建议收敛见 §B 注） |
+| B6 | `/workstation-products` 假路由处置 | ✅ 2026-10-21：选「团队级 + 租户级兼容 union」——与 B3 同源、生产种子行不回归、`required_any:["full_chain","quotes"]`（保留门）；开通后成员 200/管理员 201，撤销订阅即 404。遗留建议：与 `/tenant-product-status` 功能重复（同表同冲突目标），后续收敛为一条再删路由器。**✅ 2026-10-23 评估：保留两条、暂不删除** —— 前端对 `/workstation-products` **0 命中**（只用 `/tenant-product-status`，`lib/products/tenant-products.ts`）；前者按 [`API_RESERVED_LIST.md`](./API_RESERVED_LIST.md) 定位为内部/运维/CI 与 REST 契约保留，删除前需确认外部 token 调用方。两 POST 的 upsert SQL 目前逐字重复（`ws_products.py:479-493` vs `:544-556`），收敛实现可随删除一起做。 | B3 | ✅（建议收敛见 §B 注） |
 
 ---
 
@@ -217,7 +217,7 @@
 | C36 | 约 60 条后端路由前端 0 调用 | ✅ 2026-10-21：重扫 247 路由 vs 183 FE 路径 → 实际未接 **60**（6 条假阴性已人工核出），产出 **`docs/API_RESERVED_LIST.md`**：保留 18（CI/运维/REST/兼容）、后端先行待接 UI 24（C30/A13/A4 等）、可删候选 18（**需 owner 确认，不授权删除**）；并入 docs/README 索引 | — | ✅ |
 | C37 | OSS 死分支 + 7 处过期注释 | ✅ 2026-10-21：删 `events/components/payload-renderer.tsx` 的 `_oss_key` 分支（state+JSX+3 import，118→81 行；依据：`/oss/presign` 后端 0 路由、mock 已删且有契约断言、调用方不依赖）；6 处"接口还没上线"注释按已实现路由（`ws_customer_records.py`/`ws_teams.py`/`ws_workstations.py`）更正；worker 测试注释同步 | — | ✅ |
 | C38 | 文档口径全面刷新（10+ 处） | ✅ 2026-10-21（docs-b，11 文件）：worker README 三处误导（自动部署/cron/订阅未激活）按代码与发布记录更正；DEPLOY 迁移 head→`202610200005`、部署冻结→已发布+回滚指针、上线门禁/分支改名标历史；AGENTS 门禁数字→247/1233+12/616/28；HANDOVER 发布状态与 §0.2.3 全量更新；TRADE_DOC_HARDENING「施工中」→已完成；PRODUCT_CONFIG 标题/坏路径/已完成项修正；PROBLEM_STATUS Protected 矛盾统一为"Free 不升级→未开启"、断链修复；WORKSTATION_DESIGN 8 处旧状态按现行改（含 ratio 0.96）；integration README env.py 已修；根 `archive/` 入 docs/README 索引 + master-exec 批次补 README。`sync-shared -Check` PASS、相对链接自检全通过 | — | ✅ |
-| N6+ | 安全范围扩展 | N6 ③ 只写 `docs/archive`，实测根 `archive/` 有 **45 个受控文件**（含 18 份真实业务样例），含公司名/电话/邮箱/报价；仓库 public ⇒ 评估范围扩到 `docs/archive/** + archive/**` | — | ✅ 2026-10-23 用户拍板「只做只读审计」：报告 [`SECURITY_READONLY_AUDIT_2026-10-23.md`](./SECURITY_READONLY_AUDIT_2026-10-23.md)（147 文件 / 57 命中：公司名 40、金额 22、国际电话 17、邮箱 15；18 份真实样例最高风险）；**未删除/未轮换**，脱敏或迁移待后续单独拍板 |
+| N6+ | 安全范围扩展 | N6 ③ 只写 `docs/archive`，实测根 `archive/` 有 **45 个受控文件**（含 18 份真实业务样例），含公司名/电话/邮箱/报价；仓库 public ⇒ 评估范围扩到 `docs/archive/** + archive/**` | — | ✅ 2026-10-23 用户拍板「只做只读审计」：报告 [`SECURITY_READONLY_AUDIT_2026-10-23.md`](./SECURITY_READONLY_AUDIT_2026-10-23.md)（147 文件 / 57 命中：公司名 40、金额 22、国际电话 17、邮箱 15；18 份真实样例最高风险）；**未删除/未轮换**，脱敏或迁移待后续单独拍板。**2026-10-23 后续：用户裁决「仅 18 份高危样例」→ 已脱敏 148 处 + 回归门禁 `scripts/check-archive-pii.py`（报告 §5）；`docs/archive` 中危项未动** |
 | C12+ | PDF 归档验收补 2 项 | ✅ 取证完成（2026-10-21）：生产库实测 `file_objects` **5 行 / render_pdf 0 / trade_doc_files(role=render_pdf) 0 / trade_doc_render_checks 0** ⇒ 生产尚无归档 PDF 样本（符合"未实际使用"预期）；`events_archive_log` 0 行（首次月度归档未到）。可执行验收步骤已由 docs-b 补入 `TRADE_DOC_PDF_ARCHIVAL.md` §五（体积/耗时测法 + 三处口径 SQL）；**真实 PDF 样本复核**待 P4 首单产生后执行（属人工复核，不是代码缺口） | 发布后样本 | ✅（步骤已补，样本待有） |
 | C40 | CI 部署门禁 S5-d 假红（token 缺 Hyperdrive 读权限） | 2026-10-21 第十二次部署实测：`deploy.yml` 的「S5-d 防污染断言」调 `GET /hyperdrive/configs` → **403 Authentication error**（repo secret `CLOUDFLARE_API_TOKEN` / CI 系统 token 没有 Hyperdrive 读取权限）。从 script settings 读到的 R2/KV/Hyperdrive 绑定断言全部 ✔，**Worker 部署本身成功**（版本 `acaa6415-146e-4f84-8412-63c2e390e11b`），但该步让 run 变红并跳过冒烟。**2026-10-21 已修（用户授权走 ①）**：用 CF API 给 `kaas-ci-system-20261021`（id `44f3c314…`）补 `Hyperdrive Read`（**只加读权限**，token 值不变、不轮换；改前 policy 备份在 `~/.dsh/secrets/cf-ci-token-policy-backup-20261021-094212.json`）；重跑 deploy run `39528856290` **全绿**（S5-d + Smoke test 均 ✓），Worker `56692255-bc87-48a3-a541-23b230ad05d5`。断言未降级 | 用户已授权 | ✅ |
 
@@ -230,7 +230,7 @@
 | # | 事项 | 现状与建议 |
 |---|---|---|
 | F2-1 | ORDER_NEXT 口径不一致 | **已收敛（2026-10-23）**：共享表 producing 去掉 cancelled（以 worker 生产行为为准）；worker 删除本地第二份表改 import 共享表（单一真源）；测试断言 `worker_main.ORDER_NEXT is SHARED_ORDER_NEXT` + producing→cancelled 409 allowed==["shipped"] | ✅ |
-| F2-2 | 报价/单证引擎 Decimal vs TS double | 门面金额用 double+round2（Python Decimal ROUND_HALF_UP），分边界可能差 0.01；TS 只做协议层展示，**引擎计算不受影响**（引擎仍在 Python）。清理项：确认前端显示不依赖 TS 计算值 |
+| F2-2 | 报价/单证引擎 Decimal vs TS double | ✅ **2026-10-23 核对完成**：① 前端唯一会落库的金额计算 = 报价行 `line_amount`（`quote-order-edit.ts::quoteDraftAmount`，Math.round 到 2 位）；内核 `quote_api.py::_build_items` **按既有口径优先采用**（注释「与单证 Amount 同源」；`test_parity_quote.py::_CREATE_QUOTE_BODY` 用 `line_amount=24.99` ≠ `qty×price=25.00` 钉住该语义 ⇒ 它是覆盖价/手工价的**协议字段**，不可服务端重算）；② 展示侧：报价/订单列表与合计取服务端返回；单证渲染的 `computeFxBreakdown` 属前端模板结构性限制（A2-B），由 23 份金标逐字节钉住；③ 残余风险仅在精确半分边界（double 舍入 vs ROUND_HALF_UP）可能差 0.01，且报价与单证复用同一已存 `line_amount`，**不会两处不一致**；消除绝对偏差需改协议（服务端重算 + 覆盖标记）⇒ 属产品裁决，核对批未擅改 | ✅ 2026-10-23（结论见左；不改业务规则） |
 
 ## G. 待用户拍板清单（集中登记；每条写明要定什么）
 
@@ -243,7 +243,7 @@
 | G-5 | C1 流失链路 / C3 CF agent / C4 自动沉寂 / C13 outreach 收紧 | 要不要做、优先级、口径。**已授权按推荐默认：不做/保持** |
 | G-6 | D3 Hyperdrive 生产缓存 / D4 生产测试数据清理 | 是否执行（D4 执行当次还要再确认）。**D3 已授权保持开启；D4 发布当次再确认** |
 | G-7 | 发布窗口下令 | **已下令（2026-10-21）：先发布窗口，安全项发布后做** |
-| G-8 | 安全 4 项 | 用户裁"最后做"；做之前需确认是否轮换 Neon 口令（历史泄露）与仓库最终可见性；**范围扩到根 `archive/`（见 P 组 N6+）** |
+| G-8 | 安全 4 项 | 用户裁"最后做"；做之前需确认是否轮换 Neon 口令（历史泄露）与仓库最终可见性；**范围扩到根 `archive/`（见 P 组 N6+）**。**2026-10-23：归档脱敏按「仅 18 份高危样例」执行完毕（审计报告 §5）；secret 扫描门禁已落地（STRUCTURAL_DEBT §6.4）；其余 4 项仍按'不做'口径** |
 | G-9 | `/tenant-product-status` 谁能操作 | 现状无角色校验（任意成员可停用产品）。选项：①保持现状（成员可管）②仅团队管理员/internal。**已授权按推荐默认：保持现状** |
 | G-10 | 批量导入上传 UI 放哪 | hooks/helpers 齐备但无入口。选项：①v2 报价工作台顶部（与单条报价并列）②批量报价页步骤内 ③产品页"导入报价表"。**已授权按推荐默认：①** |
 | G-11 | 主题切换入口 | **用户已拍板（2026-10-21）：不做**（跟随系统，`.dark` 令牌保留）。`UI_UX:395/675`；`next-themes`/ThemeProvider 0 命中 | ✅ 不做 |
