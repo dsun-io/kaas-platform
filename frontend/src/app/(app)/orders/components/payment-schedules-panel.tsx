@@ -3,50 +3,35 @@
 /**
  * 订单「收款计划 + 实收记录」面板（C36 下期 #6/#10/#20 → §13.3 扩展）。
  *
- * 覆盖四件事：
- * - 计划列表：`GET /orders/{id}/payment-schedules`（14 键 + received_amount）；
- * - 新建/修改计划：`POST /orders/{id}/payment-schedules` / `PATCH /payment-schedules/{id}`；
- * - **实收登记**：`POST /orders/{id}/receipts`（同一期可多次、可指定/不指定期次），
- *   到账截图走 `POST /payment-receipts/{id}/files`；
- * - 差异展示：该期 实收 − 应收（不静默改计划金额）；未指定期次的收款单独列在
- *   「未分配收款」区，供财务核对。
+ * 四件事：计划列表 / 新建与修改计划 / **实收登记**（可指定或不指定期次）/ 差异展示。
+ * 兼容历史：已标记 paid 但没有 receipts 的旧计划展示为「历史收款（无截图）」；
+ * 「标记收款」只留给这类旧计划（PATCH status=paid，走汇兑损益口径），新流程一律
+ * 用「登记收款」。
  *
- * 兼容历史：已标记 paid 但没有 receipts 的旧计划展示为「历史收款（无截图）」，
- * 实收金额取该期 amount，不强制补录；新登记才写 receipts。
- * 「标记收款」保留给没有 receipts 的旧计划（PATCH status=paid，走汇兑损益口径），
- * 新流程一律用「登记收款」。
+ * 结构（U-P1D2 拆分，行为不变）：本文件只留**数据 hooks + 状态 + 编排 + 弹窗挂载**，
+ * 展示拆到同目录子组件：
+ * - `ScheduleCreateForm` 新增计划内联表单；
+ * - `ScheduleSummaryBar` 汇总条；
+ * - `SchedulesTable` 计划表（O3 期次序号在行内操作里传递）；
+ * - `ReceiptsSection` 实收记录 + 未分配收款；
+ * - 弹窗 `ScheduleEditDialog` / `MarkPaidDialog` / `RegisterReceiptDialog`（已独立）。
+ *
+ * O3：登记收款弹窗标题用**列表期次序号**（第 N 期），不用 DB id（删计划会跳号）。
+ * O4：计划加载态用共享 `LoadingBlock`（不是纯文本「正在读取…」）。
  */
 import { useState } from "react";
-import { Plus, Receipt, Upload } from "lucide-react";
+import { Plus, Receipt } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { LoadingBlock } from "@/components/shared/loading-block";
 import { SectionCard } from "@/components/shared/section-card";
-import { StatusBadge } from "@/components/shared/status-badge";
 import apiClient from "@/lib/api/client";
+import { validateReceiptFile } from "@/lib/orders/order-attachments";
 import {
-  validateReceiptFile,
-  RECEIPT_IMAGE_ACCEPT,
-} from "@/lib/orders/order-attachments";
-import { formatOrderDate, formatOrderMoney } from "@/lib/orders/order-detail";
-import {
-  effectiveScheduleStatus,
-  isHistoricalPaidNoReceipt,
   receiptErrorText,
-  receiptsForSchedule,
   receivedAmountForSchedule,
-  scheduleDifference,
   scheduleErrorText,
-  SCHEDULE_STATUS_LABEL,
-  SCHEDULE_STATUS_TONE,
-  SCHEDULE_TYPES,
-  SCHEDULE_TYPE_LABEL,
-  summarizeReceipts,
-  summarizeSchedules,
-  unallocatedReceipts,
-  type PaymentReceipt,
   type PaymentSchedule,
 } from "@/lib/orders/payment-schedules";
 
@@ -65,21 +50,18 @@ import {
   RegisterReceiptDialog,
   type ReceiptFormValues,
 } from "./register-receipt-dialog";
+import { ReceiptsSection } from "./receipts-section";
 import {
   ScheduleEditDialog,
   type ScheduleEditValues,
 } from "./schedule-edit-dialog";
-
-function pct(value: number | null): string {
-  if (value === null || value === undefined) return "—";
-  return `${Number((value * 100).toFixed(2))}%`;
-}
-
-function diffText(diff: number | null, currency: string | null): string {
-  if (diff === null) return "—";
-  if (Math.abs(diff) < 0.005) return formatOrderMoney(0, currency);
-  return `${diff > 0 ? "+" : ""}${formatOrderMoney(diff, currency)}`;
-}
+import {
+  EMPTY_SCHEDULE_DRAFT,
+  ScheduleCreateForm,
+  type ScheduleDraft,
+} from "./schedule-create-form";
+import { ScheduleSummaryBar } from "./schedule-summary-bar";
+import { SchedulesTable } from "./schedules-table";
 
 export function PaymentSchedulesPanel({
   orderId,
@@ -97,12 +79,8 @@ export function PaymentSchedulesPanel({
 
   const [showCreate, setShowCreate] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [draft, setDraft] = useState({
-    schedule_type: "deposit",
-    ratio: "",
-    amount: "",
-    due_date: "",
-    notes: "",
+  const [draft, setDraft] = useState<ScheduleDraft>({
+    ...EMPTY_SCHEDULE_DRAFT,
   });
   const [editSchedule, setEditSchedule] = useState<PaymentSchedule | null>(
     null,
@@ -119,9 +97,6 @@ export function PaymentSchedulesPanel({
 
   const items = list.data?.items ?? [];
   const receipts = receiptsQuery.data?.items ?? [];
-  const summary = summarizeSchedules(items, receipts);
-  const receiptSummary = summarizeReceipts(receipts);
-  const unallocated = unallocatedReceipts(receipts);
   const hasReceipts = receipts.length > 0;
 
   const submitCreate = async () => {
@@ -129,13 +104,7 @@ export function PaymentSchedulesPanel({
     try {
       await create.mutateAsync(draft);
       setShowCreate(false);
-      setDraft({
-        schedule_type: "deposit",
-        ratio: "",
-        amount: "",
-        due_date: "",
-        notes: "",
-      });
+      setDraft({ ...EMPTY_SCHEDULE_DRAFT });
     } catch (err) {
       setCreateError(scheduleErrorText(err));
     }
@@ -238,25 +207,6 @@ export function PaymentSchedulesPanel({
     }
   };
 
-  const scheduleLabel = (receipt: PaymentReceipt): string => {
-    if (receipt.schedule_id === null) return "未分配";
-    const index = items.findIndex((item) => item.id === receipt.schedule_id);
-    if (index < 0) return `#${receipt.schedule_id}`;
-    const item = items[index];
-    return `第 ${index + 1} 期（${
-      item
-        ? (SCHEDULE_TYPE_LABEL[item.schedule_type] ?? item.schedule_type)
-        : ""
-    }）`;
-  };
-
-  const receiptDiff = (receipt: PaymentReceipt): number | null => {
-    if (receipt.schedule_id === null) return null;
-    const schedule = items.find((item) => item.id === receipt.schedule_id);
-    if (!schedule || typeof schedule.amount !== "number") return null;
-    return Math.round((receipt.amount - schedule.amount) * 100) / 100;
-  };
-
   const busy =
     createReceipt.isPending || uploadReceiptFile.isPending || update.isPending;
 
@@ -289,87 +239,13 @@ export function PaymentSchedulesPanel({
       }
     >
       {showCreate && (
-        <div className="mb-4 grid gap-3 rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-5">
-          <label className="space-y-1">
-            <span className="text-sm font-medium">类型 *</span>
-            <select
-              aria-label="收款类型"
-              className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm"
-              value={draft.schedule_type}
-              onChange={(e) =>
-                setDraft((prev) => ({ ...prev, schedule_type: e.target.value }))
-              }
-            >
-              {SCHEDULE_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {SCHEDULE_TYPE_LABEL[type]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1">
-            <span className="text-sm font-medium">比例（0~1）</span>
-            <Input
-              aria-label="比例"
-              value={draft.ratio}
-              inputMode="decimal"
-              placeholder="如 0.3"
-              onChange={(e) =>
-                setDraft((prev) => ({ ...prev, ratio: e.target.value }))
-              }
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="text-sm font-medium">金额</span>
-            <Input
-              aria-label="金额"
-              value={draft.amount}
-              inputMode="decimal"
-              placeholder="留空 = 按比例 × 订单总额"
-              onChange={(e) =>
-                setDraft((prev) => ({ ...prev, amount: e.target.value }))
-              }
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="text-sm font-medium">到期日</span>
-            <Input
-              aria-label="到期日"
-              type="date"
-              value={draft.due_date}
-              onChange={(e) =>
-                setDraft((prev) => ({ ...prev, due_date: e.target.value }))
-              }
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="text-sm font-medium">备注</span>
-            <Input
-              aria-label="备注"
-              value={draft.notes}
-              onChange={(e) =>
-                setDraft((prev) => ({ ...prev, notes: e.target.value }))
-              }
-            />
-          </label>
-          <div className="sm:col-span-2 lg:col-span-5">
-            <Button
-              size="sm"
-              onClick={() => void submitCreate()}
-              disabled={create.isPending}
-            >
-              {create.isPending ? "创建中…" : "创建收款计划"}
-            </Button>
-            {createError ? (
-              <p role="alert" className="mt-2 text-xs text-destructive">
-                {createError}
-              </p>
-            ) : null}
-            <p className="mt-2 text-xs text-muted-foreground">
-              后端以「金额优先、否则比例×订单总额」补算金额；比例与金额至少填一个（前端先拦）。
-            </p>
-          </div>
-        </div>
+        <ScheduleCreateForm
+          draft={draft}
+          onChange={(patch) => setDraft((prev) => ({ ...prev, ...patch }))}
+          onSubmit={() => void submitCreate()}
+          pending={create.isPending}
+          error={createError}
+        />
       )}
 
       {list.isLoading ? (
@@ -386,283 +262,42 @@ export function PaymentSchedulesPanel({
         </div>
       ) : (
         <>
-          <div className="mb-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-            <span>共 {summary.count} 期</span>
-            <span>
-              应收合计 {formatOrderMoney(summary.totalAmount, currency)}
-            </span>
-            <span className="text-success">
-              已收 {formatOrderMoney(summary.paidAmount, currency)}（
-              {summary.paidCount} 期已收清
-              {summary.partialCount > 0
-                ? ` / ${summary.partialCount} 期部分收款`
-                : ""}
-              ）
-            </span>
-            <span className="text-warning-muted-foreground">
-              待收{" "}
-              {formatOrderMoney(Math.max(0, summary.pendingAmount), currency)}
-            </span>
-            <span>
-              实收登记 {receiptSummary.count} 笔 ·{" "}
-              {formatOrderMoney(receiptSummary.totalAmount, currency)}
-            </span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th scope="col" className="p-2">
-                    期次
-                  </th>
-                  <th scope="col" className="p-2">
-                    类型
-                  </th>
-                  <th scope="col" className="p-2">
-                    比例
-                  </th>
-                  <th scope="col" className="p-2">
-                    应收金额
-                  </th>
-                  <th scope="col" className="p-2">
-                    已收
-                  </th>
-                  <th scope="col" className="p-2">
-                    差异
-                  </th>
-                  <th scope="col" className="p-2">
-                    到期日
-                  </th>
-                  <th scope="col" className="p-2">
-                    状态
-                  </th>
-                  <th scope="col" className="p-2">
-                    操作
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item, index) => {
-                  const received = receivedAmountForSchedule(item, receipts);
-                  const diff = scheduleDifference(item, receipts);
-                  const status = effectiveScheduleStatus(item, receipts);
-                  const historical = isHistoricalPaidNoReceipt(item, receipts);
-                  const ownReceipts = receiptsForSchedule(receipts, item.id);
-                  return (
-                    <tr key={item.id} className="border-b last:border-0">
-                      <td className="p-2">#{index + 1}</td>
-                      <td className="p-2">
-                        {SCHEDULE_TYPE_LABEL[item.schedule_type] ??
-                          item.schedule_type}
-                      </td>
-                      <td className="p-2">{pct(item.ratio)}</td>
-                      <td className="p-2">
-                        {formatOrderMoney(
-                          typeof item.amount === "number" ? item.amount : null,
-                          item.currency ?? currency,
-                        )}
-                      </td>
-                      <td className="p-2">
-                        <div className="flex flex-col">
-                          <span>
-                            {formatOrderMoney(
-                              received,
-                              item.currency ?? currency,
-                            )}
-                          </span>
-                          {historical && (
-                            <span className="text-[11px] text-muted-foreground">
-                              历史收款（无截图）
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="p-2">
-                        <span
-                          className={
-                            diff === null || Math.abs(diff) < 0.005
-                              ? "text-muted-foreground"
-                              : "text-warning"
-                          }
-                        >
-                          {diffText(diff, item.currency ?? currency)}
-                        </span>
-                      </td>
-                      <td className="p-2">{formatOrderDate(item.due_date)}</td>
-                      <td className="p-2">
-                        <StatusBadge
-                          tone={SCHEDULE_STATUS_TONE[status] ?? "default"}
-                        >
-                          {SCHEDULE_STATUS_LABEL[status] ?? status}
-                        </StatusBadge>
-                      </td>
-                      <td className="p-2">
-                        <div className="flex flex-wrap gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setRegisterError(null);
-                              setRegisterTarget({
-                                schedule: item,
-                                period: index + 1,
-                              });
-                            }}
-                          >
-                            登记收款
-                          </Button>
-                          {status !== "paid" && ownReceipts.length === 0 && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setPayError(null);
-                                setPaySchedule(item);
-                              }}
-                            >
-                              标记收款
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setEditError(null);
-                              setEditSchedule(item);
-                            }}
-                          >
-                            修改
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <ScheduleSummaryBar
+            items={items}
+            receipts={receipts}
+            currency={currency}
+          />
+          <SchedulesTable
+            items={items}
+            receipts={receipts}
+            currency={currency}
+            onRegister={(schedule, period) => {
+              setRegisterError(null);
+              setRegisterTarget({ schedule, period });
+            }}
+            onMarkPaid={(schedule) => {
+              setPayError(null);
+              setPaySchedule(schedule);
+            }}
+            onEdit={(schedule) => {
+              setEditError(null);
+              setEditSchedule(schedule);
+            }}
+          />
         </>
       )}
 
       {hasReceipts && (
-        <div className="mt-5 space-y-2">
-          <h3 className="text-sm font-medium">实收记录</h3>
-          <p className="text-xs text-muted-foreground">
-            一次到账一行，支持同一期多次收款；差异 = 实收 −
-            该期应收，供财务核对。
-          </p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th scope="col" className="p-2">
-                    收款日期
-                  </th>
-                  <th scope="col" className="p-2">
-                    实收金额
-                  </th>
-                  <th scope="col" className="p-2">
-                    对应期次
-                  </th>
-                  <th scope="col" className="p-2">
-                    差异
-                  </th>
-                  <th scope="col" className="p-2">
-                    汇率
-                  </th>
-                  <th scope="col" className="p-2">
-                    备注
-                  </th>
-                  <th scope="col" className="p-2">
-                    到账截图
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {receipts.map((receipt) => (
-                  <tr key={receipt.id} className="border-b last:border-0">
-                    <td className="p-2">
-                      {formatOrderDate(receipt.received_date)}
-                    </td>
-                    <td className="p-2">
-                      {formatOrderMoney(
-                        receipt.amount,
-                        receipt.currency ?? currency,
-                      )}
-                    </td>
-                    <td className="p-2">{scheduleLabel(receipt)}</td>
-                    <td className="p-2">
-                      {diffText(receiptDiff(receipt), currency)}
-                    </td>
-                    <td className="p-2">
-                      {receipt.fx_rate === null ? "—" : receipt.fx_rate}
-                    </td>
-                    <td
-                      className="p-2 max-w-[220px] truncate"
-                      title={receipt.notes ?? ""}
-                    >
-                      {receipt.notes || "—"}
-                    </td>
-                    <td className="p-2">
-                      {receipt.file_id ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() =>
-                            void openScreenshot(receipt.file_id as number)
-                          }
-                        >
-                          查看到账截图
-                        </Button>
-                      ) : (
-                        <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted/40">
-                          <Upload className="size-3" />
-                          补传截图
-                          <input
-                            type="file"
-                            className="sr-only"
-                            aria-label={`补传到账截图 #${receipt.id}`}
-                            accept={RECEIPT_IMAGE_ACCEPT}
-                            disabled={busy}
-                            onChange={(e) => {
-                              const file = e.target.files?.[0] ?? null;
-                              e.target.value = "";
-                              if (file) {
-                                void uploadScreenshot(receipt.id, file);
-                              }
-                            }}
-                          />
-                        </label>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {unallocated.length > 0 && (
-            <div className="rounded-lg border border-warning/40 bg-warning-muted p-3 text-xs text-warning-muted-foreground">
-              <p className="font-medium">
-                未分配收款 {unallocated.length} 笔（暂未指定期次）
-              </p>
-              <ul className="mt-1 space-y-0.5">
-                {unallocated.map((receipt) => (
-                  <li key={receipt.id}>
-                    {formatOrderDate(receipt.received_date)} ·{" "}
-                    {formatOrderMoney(
-                      receipt.amount,
-                      receipt.currency ?? currency,
-                    )}
-                    {receipt.notes ? ` · ${receipt.notes}` : ""}
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-1">
-                这些钱没有对应到某一期，页面不会静默摊到计划金额上；请财务与客户核对后调整计划或补指定期次。
-              </p>
-            </div>
-          )}
-        </div>
+        <ReceiptsSection
+          items={items}
+          receipts={receipts}
+          currency={currency}
+          busy={busy}
+          onOpenScreenshot={(fileId) => void openScreenshot(fileId)}
+          onUploadScreenshot={(receiptId, file) =>
+            void uploadScreenshot(receiptId, file)
+          }
+        />
       )}
 
       {editSchedule && (
