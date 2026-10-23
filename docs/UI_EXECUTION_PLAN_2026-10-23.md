@@ -121,4 +121,5 @@
 | 2026-10-23 | **U-P1E 收口 ✅**：customers 分页 + FormField 收编（customers/research/leadgen 28 个字段 label[for]+role=alert）；shipments 真·detail；O5 统一 PopoverPanel；CAMPAIGN_STATUS_TONES 登记；mocks 注释行号漂移修复 |
 | 2026-10-23 | **U-P1D2 全部 7/7 ✅**：customers 1752→323、research 897→350（连同先前 5 个全部行为不变拆分完成）；**/quotations 幽灵目录消除**（组件并入 quotes 树、termOptionLabel 平移、freight-panel 整删） |
 | 2026-10-23 | **A-10 真机留证 ✅**：16/16 拒绝路径全拦；`scripts/seed_qa.py` 入库（D-3 修复）；发现 CF UA 拦截 + 订阅闸门先于角色闸门（`QA_AUTHZ_AUDIT_EVIDENCE_2026-10-23.md`） |
-| 2026-10-23 | 剩余：ui:patterns 105 违规（2026-10-30 转强制前渐进清零）；quote 记录列表分页（白名单登记，转 strict 前必修） |
+| 2026-10-23 | **ui:patterns 违规 105 → 0 ✅**（mutation-onError 51 / bare-table 38 / plain-text 16 全清零；13 条特殊表格与语义误报 allowlist 均带书面理由）；**quote 记录列表分页已接 PaginationBar**（白名单删除，转 strict 无遗留） |
+| 2026-10-23 | 门禁：前端 typecheck 0 / lint 0 error / **1536 passed（211 文件）** / e2e **28 passed** / ui:patterns 违规 0；等 2026-10-30 转 strict |

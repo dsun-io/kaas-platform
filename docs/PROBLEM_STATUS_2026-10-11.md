@@ -14,6 +14,21 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-23 · backlog 清仓：7 个巨型组件全拆 + /quotations 消除 + A-10 真机留证 + ui:patterns 违规归零 ✅）**
+> - **巨型组件 7/7 拆分完成**（全部行为不变）：leadgen 1000→350、order-create-wizard 1585→105、product-spec-editor 1142→88、
+>   quote-workbench 945→41、payment-schedules-panel 713→337、customers 1752→323、research 897→350。
+> - **`/quotations` 幽灵目录消除**：组件/ hooks 并入 quotes 树、termOptionLabel 平移到 `quotes/lib`、freight-panel 整删；
+>   顺带修复一个长期静默失效的测试 mock（quote-line-card-reference 路径多一层 `..` 从未命中）。
+> - **A-10 真机越权留证**：生产补建 QA 账号（`scripts/seed_qa.py` 入库，修复审计 D-3），16/16 拒绝路径全拦
+>   （AI 403 / 订阅闸门 404 / admin 403 / 无 token 401）；发现 ①CF 拦非浏览器 UA（审计须带浏览器 UA）
+>   ②**工位订阅闸门先于角色闸门**（角色层深度由代码级测试锁定）。证据：`QA_AUTHZ_AUDIT_EVIDENCE_2026-10-23.md`。
+> - **ui:patterns 违规 105 → 0**：mutation-onError 51 / bare-table 38 / plain-text 16 清零；13 条 allowlist
+>   均带书面理由（特殊表格/语义误报）；quote 记录列表已接 PaginationBar（page_size:20 + total），白名单删除。
+> - **门禁**：前端 typecheck 0 / lint 0 error / **1536 passed（211 文件）** / e2e **28 passed** /
+>   ui:standards / ui:contrast / ui:patterns(0) / ui:patterns:test / mocks:check / contracts 全 PASS。
+> - **遗留（均为排除项）**：A2-B（需用户定方案）、N6+/G-8 安全批（需用户拍板）、B-6 runner（可选）、
+>   A-11/C24/N10（用户决定挂起）、ui:patterns 2026-10-30 转 strict（日期门禁）。
+>
 > **（2026-10-23 · UI 整改第四批：P0-B4 剩余 + P1D/P1E 续 + 小项收口 ✅）**
 > - **U-P0B4 剩余**：leadgen「开始抓取 / 批量爬取」、outreach「添加邮箱 / 创建活动」全部
 >   `useAsyncAction` + AsyncButton + 页内 role=alert（与拦截器不重复 toast），pending 防重有测试。
