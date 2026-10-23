@@ -246,7 +246,23 @@ const MARKET_REGION_PRODUCTS: Record<string, Array<Record<string, unknown>>> = {
   ],
 };
 
-const MARKET_NAME_MAPPINGS = [
+type MockNameMapping = {
+  id: number;
+  category_id: number | null;
+  region_code: string;
+  lang: string;
+  local_name: string;
+  alt_names: string[];
+  hs_code: string | null;
+  source: string;
+  confidence: string | null;
+  is_verified: boolean;
+  created_at: string;
+  updated_at?: string | null;
+};
+
+/** 品名对照种子：既是 `GET /market/name-mappings` 空 q 的"最近记录"，也是 name-lookup 的来源。 */
+const MARKET_NAME_MAPPINGS: MockNameMapping[] = [
   {
     id: 1,
     category_id: null,
@@ -255,8 +271,10 @@ const MARKET_NAME_MAPPINGS = [
     local_name: "Doppelstabmattenzaun",
     alt_names: ["Doppelstabzaun", "Stabmatte"],
     hs_code: "7314490000",
+    source: "seed",
     is_verified: true,
     confidence: "high",
+    created_at: "2026-09-02T08:00:00.000Z",
   },
   {
     id: 2,
@@ -266,10 +284,59 @@ const MARKET_NAME_MAPPINGS = [
     local_name: "chain link fence",
     alt_names: ["cyclone fence", "wire fence"],
     hs_code: "7314490000",
+    source: "seed",
     is_verified: true,
     confidence: "high",
+    created_at: "2026-09-01T08:00:00.000Z",
   },
 ];
+
+/**
+ * 品名对照写库（B2）：POST / PATCH / DELETE 真改这里，GET 列表与 name-lookup 都读这里
+ * —— 旧实现"列表读静态种子、写入另一个空数组"会让刚建的对照搜不到（假正向）。
+ * 重置走 `resetNameMappingStore()`（回到种子，不是清空）。
+ */
+let nameMappingStore: MockNameMapping[] = clone(MARKET_NAME_MAPPINGS);
+const nameMappingSeedSeq =
+  Math.max(0, ...MARKET_NAME_MAPPINGS.map((r) => r.id)) + 1;
+let nameMappingSeq = nameMappingSeedSeq;
+
+/** 给 `handlers.ts` 的 `resetMockData()` 用：回种子（含删除过的种子行）。 */
+export function resetNameMappingStore(): void {
+  nameMappingStore = clone(MARKET_NAME_MAPPINGS);
+  nameMappingSeq = nameMappingSeedSeq;
+}
+
+/** 新行 id（POST 用；与种子 id 不冲突，删除后也不回收）。 */
+export function nextNameMappingId(): number {
+  return nameMappingSeq++;
+}
+
+/** 品名/别名 ILIKE + region/lang 过滤（后端 `list_name_mappings` 的 WHERE 同口径）。 */
+function filterNameMappings(url: URL): MockNameMapping[] {
+  const q = (url.searchParams.get("q") ?? "").trim().toLowerCase();
+  const region = (url.searchParams.get("region_code") ?? "")
+    .trim()
+    .toUpperCase();
+  const lang = (url.searchParams.get("lang") ?? "").trim();
+  return nameMappingStore
+    .filter((row) => {
+      if (region && row.region_code !== region) return false;
+      if (lang && row.lang !== lang) return false;
+      if (!q) return true;
+      return [row.local_name, ...(row.alt_names ?? [])].some((name) =>
+        name.toLowerCase().includes(q),
+      );
+    })
+    .sort(compareNameMappings);
+}
+
+/** 排序照后端 `ORDER BY is_verified DESC, created_at DESC`（最近记录在前）。 */
+function compareNameMappings(a: MockNameMapping, b: MockNameMapping): number {
+  if (a.is_verified !== b.is_verified) return a.is_verified ? -1 : 1;
+  const byCreated = (b.created_at ?? "").localeCompare(a.created_at ?? "");
+  return byCreated !== 0 ? byCreated : b.id - a.id;
+}
 
 const MARKET_PORTS = [
   {
@@ -1067,6 +1134,17 @@ export function seedLongtailMockData(): void {
 /** 注册长尾域的可持久化集合（C5）。调用方：`handlers.ts` 的 bootstrap。 */
 export function registerLongtailMockCollections(): void {
   registerMockCollection(
+    "nameMappings",
+    () => clone(nameMappingStore),
+    (value) => {
+      if (!Array.isArray(value)) return;
+      nameMappingStore = clone(value as MockNameMapping[]);
+      // 恢复持久化后把 id 序号推到最大 id 之后，否则新建行会和恢复的行撞 id
+      nameMappingSeq =
+        Math.max(0, ...nameMappingStore.map((row) => row.id)) + 1;
+    },
+  );
+  registerMockCollection(
     "intelShipments",
     () => clone(intelShipmentsStore),
     (value) => {
@@ -1788,22 +1866,187 @@ export const longtailHandlers = [
     return HttpResponse.json(MARKET_REGION_PRODUCTS[code] ?? []);
   }),
 
+  // ── 品名对照（B2：分页列表 + 编辑 + 删除；契约 main.py:2030-2135）───────────
+  // 四口共用 `nameMappingStore`（种子 MARKET_NAME_MAPPINGS），避免"列表读种子、写入
+  // 另一个数组"的假正向；name-lookup 也读同一个 store（刚建的对照能被品名反查命中）。
+  //  · GET 列表 → `{items,total,page,page_size}`；空 q = 最近记录；q 对品名/别名 ILIKE；
+  //    region_code upper、lang 精确；排序 `is_verified DESC, created_at DESC`；
+  //  · POST 201（唯一冲突 409）；PATCH 部分字段（空 body 422、冲突 409、不存在 404）；
+  //  · DELETE 204（不存在 404）。
   http.get("/api/v1/market/name-lookup", ({ request }) => {
     const url = new URL(request.url);
-    const q = (url.searchParams.get("q") ?? "").trim().toLowerCase();
-    const region = url.searchParams.get("region_code");
+    const q = (url.searchParams.get("q") ?? "").trim();
     if (!q) {
       return HttpResponse.json({ detail: "q is required" }, { status: 422 });
     }
-    // 名字/别名任一命中即可（后端 ILIKE 口径，main.py:1696-1714）
-    const rows = MARKET_NAME_MAPPINGS.filter((row) => {
-      if (region && row.region_code !== region.toUpperCase()) return false;
-      const names = [row.local_name, ...(row.alt_names ?? [])].map((n) =>
-        n.toLowerCase(),
-      );
-      return names.some((n) => n.includes(q));
+    return HttpResponse.json(filterNameMappings(url));
+  }),
+
+  http.get("/api/v1/market/name-mappings", ({ request }) => {
+    const url = new URL(request.url);
+    const page = Math.max(1, Number(url.searchParams.get("page") ?? 1) || 1);
+    const pageSize = Math.min(
+      100,
+      Math.max(1, Number(url.searchParams.get("page_size") ?? 20) || 20),
+    );
+    const matched = filterNameMappings(url);
+    const start = (page - 1) * pageSize;
+    return HttpResponse.json({
+      items: matched.slice(start, start + pageSize),
+      total: matched.length,
+      page,
+      page_size: pageSize,
     });
-    return HttpResponse.json(rows);
+  }),
+
+  http.post("/api/v1/market/name-mappings", async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    const region = String(body.region_code ?? "")
+      .trim()
+      .toUpperCase();
+    const lang = String(body.lang ?? "").trim();
+    const localName = String(body.local_name ?? "").trim();
+    if (!region || !lang || !localName) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "NAME_MAPPING_REQUIRED",
+            detail: "region_code / lang / local_name 必填",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const categoryId =
+      body.category_id === null || body.category_id === undefined
+        ? null
+        : Number(body.category_id);
+    const conflict =
+      categoryId !== null &&
+      nameMappingStore.some(
+        (row) =>
+          row.category_id === categoryId &&
+          row.region_code === region &&
+          row.lang === lang,
+      );
+    if (conflict) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "conflict",
+            code: "NAME_MAPPING_CONFLICT",
+            detail: "同一地区 + 语言 + 类目已存在品名对照",
+          },
+        },
+        { status: 409 },
+      );
+    }
+    const row: MockNameMapping = {
+      id: nextNameMappingId(),
+      category_id: Number.isFinite(categoryId) ? categoryId : null,
+      region_code: region,
+      lang,
+      local_name: localName,
+      alt_names: Array.isArray(body.alt_names)
+        ? body.alt_names.map((a) => String(a))
+        : [],
+      hs_code: typeof body.hs_code === "string" ? body.hs_code : null,
+      source: typeof body.source === "string" ? body.source : "manual",
+      confidence: typeof body.confidence === "string" ? body.confidence : null,
+      is_verified: body.is_verified === true,
+      created_at: nowIso(),
+    };
+    nameMappingStore.push(row);
+    return HttpResponse.json(row, { status: 201 });
+  }),
+
+  http.patch(
+    "/api/v1/market/name-mappings/:id",
+    async ({ request, params }) => {
+      const id = Number(params.id);
+      const index = nameMappingStore.findIndex((row) => row.id === id);
+      if (index < 0) {
+        return HttpResponse.json(
+          { detail: { error: "not_found", code: "NAME_MAPPING_NOT_FOUND" } },
+          { status: 404 },
+        );
+      }
+      const body = (await request.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
+      const patch: Partial<MockNameMapping> = {};
+      // 只改 body 里出现的字段（pydantic model_fields_set 语义；空 body → 422）
+      if ("category_id" in body)
+        patch.category_id =
+          body.category_id === null || body.category_id === undefined
+            ? null
+            : Number(body.category_id);
+      if ("region_code" in body)
+        patch.region_code = String(body.region_code ?? "")
+          .trim()
+          .toUpperCase();
+      if ("lang" in body) patch.lang = String(body.lang ?? "").trim();
+      if ("local_name" in body)
+        patch.local_name = String(body.local_name ?? "").trim();
+      if ("alt_names" in body)
+        patch.alt_names = Array.isArray(body.alt_names)
+          ? body.alt_names.map((a) => String(a))
+          : [];
+      if ("hs_code" in body)
+        patch.hs_code = typeof body.hs_code === "string" ? body.hs_code : null;
+      if ("source" in body) patch.source = String(body.source ?? "");
+      if ("confidence" in body)
+        patch.confidence =
+          typeof body.confidence === "string" ? body.confidence : null;
+      if ("is_verified" in body) patch.is_verified = body.is_verified === true;
+      if (Object.keys(patch).length === 0) {
+        return HttpResponse.json(
+          { detail: "No fields to update" },
+          { status: 422 },
+        );
+      }
+      const next: MockNameMapping = {
+        ...nameMappingStore[index]!,
+        ...patch,
+        updated_at: nowIso(),
+      };
+      // 唯一键 (tenant, category_id, region_code, lang)；category_id 为 NULL 不参与唯一约束
+      if (
+        next.category_id !== null &&
+        nameMappingStore.some(
+          (row) =>
+            row.id !== id &&
+            row.category_id === next.category_id &&
+            row.region_code === next.region_code &&
+            row.lang === next.lang,
+        )
+      ) {
+        return HttpResponse.json(
+          { detail: { error: "conflict", code: "NAME_MAPPING_EXISTS" } },
+          { status: 409 },
+        );
+      }
+      nameMappingStore[index] = next;
+      return HttpResponse.json(next);
+    },
+  ),
+
+  http.delete("/api/v1/market/name-mappings/:id", ({ params }) => {
+    const id = Number(params.id);
+    const index = nameMappingStore.findIndex((row) => row.id === id);
+    if (index < 0) {
+      return HttpResponse.json(
+        { detail: { error: "not_found", code: "NAME_MAPPING_NOT_FOUND" } },
+        { status: 404 },
+      );
+    }
+    nameMappingStore.splice(index, 1);
+    return new HttpResponse(null, { status: 204 });
   }),
 
   // 注意：前端抽到的归一化路径是 `/market/ports*`（`/market/ports${params}`，

@@ -52,6 +52,7 @@ import {
   longtailHandlers,
   mockCostReference,
   registerLongtailMockCollections,
+  resetNameMappingStore,
   seedLongtailMockData,
 } from "./longtail-handlers";
 
@@ -81,29 +82,10 @@ capabilitiesStore.set(
   JSON.parse(JSON.stringify(MOCK_CAPABILITIES["cust-client-b"])),
 );
 
-/**
- * 品名对照（C36 #19）：`POST /market/name-mappings` 的 mock 写库 + 唯一冲突。
- *
- * 列表读取仍由 `longtail-handlers.ts` 的 `GET /market/name-lookup`（静态种子）提供；
- * 这里只保证**写路径不 404**、同 `(category_id, region_code, lang)` 唯一键命中时回 409
- * ——与后端唯一约束 `(tenant_id, category_id, region_code, lang)` 同口径
- * （迁移 `20260919_customers_market_subs.py`；PG 中 category_id 为 NULL 时不算冲突）。
- */
-type MockNameMapping = {
-  id: number;
-  category_id: number | null;
-  region_code: string;
-  lang: string;
-  local_name: string;
-  alt_names: string[];
-  hs_code: string | null;
-  source: string;
-  confidence: string | null;
-  is_verified: boolean;
-  created_at: string;
-};
-const nameMappingStore: MockNameMapping[] = [];
-let nameMappingSeq = 1;
+// 品名对照（C36 #19 → B2）的 mock 写库在 `longtail-handlers.ts` 的 market 段：
+// `GET /market/name-mappings`（分页/筛选）、`POST`、`PATCH /{id}`、`DELETE /{id}`
+// 四个 handler 共用同一个 store，避免"列表读种子、写入另一个数组"的假正向；
+// 重置走 `resetNameMappingStore()`（种子 = `MARKET_NAME_MAPPINGS`）。
 
 // Stateful store for feature flags (per-tenant, persists across HMR)
 //
@@ -3322,9 +3304,8 @@ function bootstrapMockData(): void {
  */
 export function resetMockData(): void {
   seedMockData();
-  // 品名对照是本次新增的写库（见 nameMappingStore）；重置时清空
-  nameMappingStore.length = 0;
-  nameMappingSeq = 1;
+  // 品名对照的写库（store 在 longtail-handlers.ts）：重置回种子，不是清空
+  resetNameMappingStore();
   // M2-C：审批/通知/指定审批人 store 回种子（通知 1 未读 + 1 已读）
   resetApprovalMockState();
   clearMockPersistence();
@@ -4139,77 +4120,6 @@ export const handlers = [
   // catch 后回退内联，看起来一切正常。
   // 现在前端已删掉该死代码路径（事件 payload 直接内联，理由见该文件注释），
   // mock 也一并移除 —— 不存在的接口不应继续被 mock 撑成"存在"。
-
-  // ── 品名对照（C36 #19 · 市场页「品名对照」新增）──────────────────────
-  // GET 列表/查询由 longtail-handlers.ts 的 `GET /market/name-lookup` 提供
-  // （静态种子）；本 handler 只补后端已有的写口 `POST /market/name-mappings`
-  // （main.py:1793-1805），并按唯一约束 (tenant, category_id, region_code, lang)
-  // 回 409 —— 后端现在实际会因未捕获唯一冲突而 500，前端对 500/409 都按
-  // "可能重复"如实提示（不改后端）。
-  http.post("/api/v1/market/name-mappings", async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as Record<
-      string,
-      unknown
-    >;
-    const region = String(body.region_code ?? "")
-      .trim()
-      .toUpperCase();
-    const lang = String(body.lang ?? "").trim();
-    const localName = String(body.local_name ?? "").trim();
-    if (!region || !lang || !localName) {
-      return HttpResponse.json(
-        {
-          detail: {
-            error: "validation",
-            code: "NAME_MAPPING_REQUIRED",
-            detail: "region_code / lang / local_name 必填",
-          },
-        },
-        { status: 422 },
-      );
-    }
-    const categoryId =
-      body.category_id === null || body.category_id === undefined
-        ? null
-        : Number(body.category_id);
-    const conflict =
-      categoryId !== null &&
-      nameMappingStore.some(
-        (r) =>
-          r.category_id === categoryId &&
-          r.region_code === region &&
-          r.lang === lang,
-      );
-    if (conflict) {
-      return HttpResponse.json(
-        {
-          detail: {
-            error: "conflict",
-            code: "NAME_MAPPING_CONFLICT",
-            detail: "同一地区 + 语言 + 类目已存在品名对照",
-          },
-        },
-        { status: 409 },
-      );
-    }
-    const row: MockNameMapping = {
-      id: nameMappingSeq++,
-      category_id: Number.isFinite(categoryId) ? categoryId : null,
-      region_code: region,
-      lang,
-      local_name: localName,
-      alt_names: Array.isArray(body.alt_names)
-        ? body.alt_names.map((a) => String(a))
-        : [],
-      hs_code: typeof body.hs_code === "string" ? body.hs_code : null,
-      source: typeof body.source === "string" ? body.source : "manual",
-      confidence: typeof body.confidence === "string" ? body.confidence : null,
-      is_verified: body.is_verified === true,
-      created_at: new Date().toISOString(),
-    };
-    nameMappingStore.push(row);
-    return HttpResponse.json(row, { status: 201 });
-  }),
 
   // ── Customers ────────────────────────────────────────────────────
   // ⚠️ 形状必须对齐后端 `GET /customers`

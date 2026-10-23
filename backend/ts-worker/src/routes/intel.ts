@@ -1,10 +1,10 @@
 /**
- * KaaS TS 门面 · intel 域（34 条路由：34 = 26 门面移植 + 8 内核透传）。
+ * KaaS TS 门面 · intel 域（37 条路由：37 = 29 门面移植 + 8 内核透传）。
  *
  * 真源逐条对齐：
  * - backend/worker/src/chain.py:761-2432（leadgen / leads / research）
  * - backend/worker/src/main.py:946-1120（intel shipments / trade-stats / adapter-runs / channels）
- * - backend/worker/src/main.py:1712-1841（market 6 条）
+ * - backend/worker/src/main.py:1962-2168（market 9 条）
  *
  * ── 移植口径（ADR-008 铁纪律）──────────────────────────────────────────────
  * · **门面移植**（26 条）：只做鉴权 / zod 入参 / SQL 参数化直译 / 出参投影，
@@ -32,6 +32,7 @@ import {
   chain_ResearchCreate,
   chain_ResearchPatch,
   main_NameMappingCreate,
+  main_NameMappingPatch,
   main_ShipmentCreate,
 } from "../generated/schemas";
 import { httpError, num, num0, parseBody, parseQuery, pyIso, respond } from "../http";
@@ -1027,7 +1028,7 @@ app.get("/api/v1/intel/channels", (c) => respond(c, async () => {
 }));
 
 // ══════════════════════════════════════════════════════════════════════════════
-// market（main.py:1712-1841）
+// market（main.py:1962-2168）
 // ══════════════════════════════════════════════════════════════════════════════
 
 // GET /api/v1/market/regions（main.py:1745-1752）
@@ -1073,7 +1074,7 @@ app.get("/api/v1/market/regions/:region_code/products", (c) => respond(c, async 
   return c.json(payload);
 }));
 
-// GET /api/v1/market/name-lookup（main.py:1778-1795）
+// GET /api/v1/market/name-lookup（main.py:1995-2012）
 const nameLookupQuery = z.object({
   q: z.string().min(1),
   region_code: z.string().nullish(),
@@ -1101,7 +1102,7 @@ app.get("/api/v1/market/name-lookup", (c) => respond(c, async () => {
   return c.json(payload);
 }));
 
-// POST /api/v1/market/name-mappings（main.py:1798-1810，201）
+// POST /api/v1/market/name-mappings（main.py:2015-2028，201）
 app.post("/api/v1/market/name-mappings", (c) => respond(c, async () => {
   await requireUser(c);
   const body = await parseBody(c, main_NameMappingCreate);
@@ -1119,7 +1120,143 @@ app.post("/api/v1/market/name-mappings", (c) => respond(c, async () => {
   return c.json(payload, 201);
 }));
 
-// GET /api/v1/market/usages（main.py:1813-1819）
+// GET /api/v1/market/name-mappings（main.py:2030-2069，C36 #19 分页 + 筛选）
+// page>=1、page_size 1..100（默认 20）；q = local_name/alt_names ILIKE；
+// region_code 大写归一、lang 精确；排序与 name-lookup 同口径。
+const nameMappingsQuery = pageQuery.extend({
+  q: z.string().nullish(),
+  region_code: z.string().nullish(),
+  lang: z.string().nullish(),
+});
+
+app.get("/api/v1/market/name-mappings", (c) => respond(c, async () => {
+  await requireUser(c);
+  const query = parseQuery(nameMappingsQuery, queries(c));
+  const where: string[] = ["tenant_id = $1"];
+  const params: unknown[] = [DEFAULT_TENANT];
+  if (query.q) {
+    params.push("%" + query.q + "%");
+    where.push(
+      "(local_name ILIKE $" + String(params.length)
+      + " OR EXISTS (SELECT 1 FROM jsonb_array_elements_text("
+      + "COALESCE(alt_names,'[]'::jsonb)) t WHERE t ILIKE $" + String(params.length) + "))",
+    );
+  }
+  if (query.region_code) {
+    params.push(query.region_code.toUpperCase());
+    where.push("region_code = $" + String(params.length));
+  }
+  if (query.lang) {
+    params.push(query.lang);
+    where.push("lang = $" + String(params.length));
+  }
+  const whereSql = where.join(" AND ");
+  const limitParam = params.length + 1;
+  const payload = await withDb(getEnv(c), async (sql: Db) => {
+    const totalRows = await sql.unsafe(
+      "SELECT COUNT(*) AS count FROM market_product_name_mappings WHERE " + whereSql, params);
+    const total = num0((totalRows[0] as Row | undefined)?.count);
+    const rows = await sql.unsafe(
+      "SELECT * FROM market_product_name_mappings WHERE " + whereSql
+      + " ORDER BY is_verified DESC, created_at DESC LIMIT $" + String(limitParam)
+      + " OFFSET $" + String(limitParam + 1),
+      [...params, query.page_size, (query.page - 1) * query.page_size]);
+    return {
+      items: rowsOut(rows as Row[]),
+      total,
+      page: query.page,
+      page_size: query.page_size,
+    };
+  });
+  return c.json(payload);
+}));
+
+/** main.py:NameMappingPatch 的列序（PATCH 的 UPDATE 列序，与 Python 白名单一致）。 */
+const NAME_MAPPING_PATCH_FIELDS = [
+  "category_id", "region_code", "lang", "local_name", "alt_names",
+  "hs_code", "source", "confidence", "is_verified",
+] as const;
+
+/** postgres.js 唯一约束冲突（23505）；测试桩可能只提供 duplicate key 文案。 */
+function isUniqueViolation(err: unknown): boolean {
+  if ((err as { code?: unknown } | null)?.code === "23505") return true;
+  const message = err instanceof Error ? err.message : String(err);
+  return message.includes("uq_market_name_mappings") || message.includes("duplicate key");
+}
+
+// PATCH /api/v1/market/name-mappings/{mapping_id}（main.py:2072-2118）
+// 只更新显式出现的字段（pydantic model_fields_set 语义：rawBody 键集 ∩ 白名单）；
+// 空 body → 422 "No fields to update"；不存在 → 404；唯一键冲突 → 409。
+app.patch("/api/v1/market/name-mappings/:mapping_id", (c) => respond(c, async () => {
+  await requireUser(c);
+  const { mapping_id: mappingId } = parseQuery(idParam("mapping_id"), c.req.param(), "path");
+  let rawBody: unknown;
+  try {
+    rawBody = await c.req.json();
+  } catch {
+    throw httpError(422, [
+      { type: "json_invalid", loc: ["body"], msg: "Invalid JSON", input: null },
+    ]);
+  }
+  await parseBody(c, main_NameMappingPatch); // zod 校验（pydantic 生成，禁止手写）
+  const incoming = (rawBody ?? {}) as Row;
+  const provided = NAME_MAPPING_PATCH_FIELDS.filter((key) => key in incoming);
+  if (provided.length === 0) {
+    throw httpError(422, "No fields to update");
+  }
+  const params: unknown[] = [DEFAULT_TENANT, mappingId];
+  const sets: string[] = [];
+  for (const key of provided) {
+    const value = incoming[key];
+    if (key === "region_code" && value !== null) {
+      params.push(String(value).toUpperCase());
+      sets.push("region_code = $" + String(params.length));
+    } else if (key === "alt_names") {
+      params.push(JSON.stringify(value ?? []));
+      sets.push("alt_names = $" + String(params.length) + "::jsonb");
+    } else {
+      params.push(value);
+      sets.push(key + " = $" + String(params.length));
+    }
+  }
+  const payload = await withDb(getEnv(c), async (sql: Db) => {
+    let rows: Row[];
+    try {
+      rows = await sql.unsafe(
+        "UPDATE market_product_name_mappings SET " + sets.join(", ") + ", updated_at = NOW()"
+        + " WHERE tenant_id=$1 AND id=$2 RETURNING *",
+        params) as Row[];
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        throw httpError(409, { error: "conflict", code: "NAME_MAPPING_EXISTS" });
+      }
+      throw err;
+    }
+    const row = rows[0];
+    if (!row) {
+      throw httpError(404, { error: "not_found", code: "NAME_MAPPING_NOT_FOUND" });
+    }
+    return rowOut(row);
+  });
+  return c.json(payload);
+}));
+
+// DELETE /api/v1/market/name-mappings/{mapping_id}（main.py:2121-2136，204）
+app.delete("/api/v1/market/name-mappings/:mapping_id", (c) => respond(c, async () => {
+  await requireUser(c);
+  const { mapping_id: mappingId } = parseQuery(idParam("mapping_id"), c.req.param(), "path");
+  await withDb(getEnv(c), async (sql: Db) => {
+    const rows = await sql.unsafe(
+      "DELETE FROM market_product_name_mappings WHERE id=$1 AND tenant_id=$2 RETURNING id",
+      [mappingId, DEFAULT_TENANT]);
+    if (rows.length === 0) {
+      throw httpError(404, { error: "not_found", code: "NAME_MAPPING_NOT_FOUND" });
+    }
+  });
+  return c.body(null, 204);
+}));
+
+// GET /api/v1/market/usages（main.py:2139-2145）
 app.get("/api/v1/market/usages", (c) => respond(c, async () => {
   await requireUser(c);
   const payload = await withDb(getEnv(c), async (sql: Db) => {

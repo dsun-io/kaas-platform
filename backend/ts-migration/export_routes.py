@@ -42,8 +42,10 @@ BACKEND = os.path.normpath(os.path.join(HERE, ".."))
 WORKER_SRC = os.path.join(BACKEND, "worker", "src")
 
 # 2026-10-23 P0-A A3：新增 GET /api/v1/dashboard/receivables ⇒ 273+1=274 业务路由
-# + 4 内置 = 278（277 → 278）
-EXPECTED_TOTAL = 278
+# 2026-10-23 C36 #19：新增品名对照 GET/PATCH/DELETE /api/v1/market/name-mappings
+#   ⇒ 274+3=277 业务路由
+# + 4 内置 = 281（278 → 281）
+EXPECTED_TOTAL = 281
 
 
 def _install_stubs() -> None:

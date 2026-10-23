@@ -122,6 +122,10 @@ describe("resolveRequiredScope（有序规则）", () => {
     // 未声明 → null（调用方必须 403）
     ["POST", "/api/v1/intel/shipments", null],
     ["POST", "/api/v1/market/name-mappings", null],
+    // C36 #19：品名对照读请求走 intel:read；写请求（PATCH/DELETE）有意未声明 → 403
+    ["GET", "/api/v1/market/name-mappings", "intel:read"],
+    ["PATCH", "/api/v1/market/name-mappings/1", null],
+    ["DELETE", "/api/v1/market/name-mappings/1", null],
     ["GET", "/api/v1/admin/feature_flag", null],
     ["GET", "/api/v1/api-tokens", null],
     ["GET", "/api/v1/enums", null],

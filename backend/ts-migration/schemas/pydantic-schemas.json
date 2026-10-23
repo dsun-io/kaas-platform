@@ -8002,5 +8002,123 @@
   ],
   "title": "QuotationCreateBody",
   "type": "object"
+ },
+ "main.NameMappingPatch": {
+  "description": "PATCH 全可选：只有 `model_fields_set` 里出现的字段才会更新。",
+  "properties": {
+   "category_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Category Id"
+   },
+   "region_code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Region Code"
+   },
+   "lang": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Lang"
+   },
+   "local_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Local Name"
+   },
+   "alt_names": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Alt Names"
+   },
+   "hs_code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Hs Code"
+   },
+   "source": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Source"
+   },
+   "confidence": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Confidence"
+   },
+   "is_verified": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Is Verified"
+   }
+  },
+  "title": "NameMappingPatch",
+  "type": "object"
  }
 }

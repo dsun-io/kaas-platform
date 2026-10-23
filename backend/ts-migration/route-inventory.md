@@ -9,10 +9,10 @@
 
 | 指标 | 数量 | 期望 | 结论 |
 |---|---|---|---|
-| APIRoute 业务路由 | 274 | — | — |
+| APIRoute 业务路由 | 277 | — | — |
 | FastAPI 内置（openapi/docs/redoc） | 4 | — | — |
-| **app.routes 合计** | **278** | **278** | **✅ 一致** |
-| method×path 展开行数 | 274 | — | 仅供参考 |
+| **app.routes 合计** | **281** | **281** | **✅ 一致** |
+| method×path 展开行数 | 277 | — | 仅供参考 |
 
 > 核对说明：计划 §2 Phase 0 登记的 253 = app.routes 全部条目；其中 4 条是 FastAPI 默认
 > 挂载的文档路由（不参与业务迁移；TS 侧 Hono 是否镜像留给 Phase 1 决定）：
@@ -30,8 +30,8 @@
 |---|---|
 | quotes | 38 |
 | trade-docs | 38 |
+| intel | 37 |
 | workstations | 35 |
-| intel | 34 |
 | orders | 24 |
 | customers | 21 |
 | teams | 19 |
@@ -93,7 +93,7 @@
 | POST | `/api/v1/research/from-leadgen` | `research_from_leadgen` | :2378 | `_get_current_user` | ✅ | — | intel |
 | GET | `/api/v1/research/runs` | `research_runs` | :2420 | `_get_current_user` | ✅ | — | intel |
 
-### `worker/src/main.py`（79 条）
+### `worker/src/main.py`（82 条）
 
 | Method | Path | Endpoint | 行号 | Depends | 登录态 | 平台运营 | 域 |
 |---|---|---|---|---|---|---|---|
@@ -122,60 +122,63 @@
 | DELETE | `/api/v1/customers/{customer_id}` | `soft_delete_customer` | :1804 | `_get_current_user` | ✅ | — | customers |
 | POST | `/api/v1/customers/{customer_id}/inquiries` | `add_inquiry` | :1835 | `_get_current_user` | ✅ | — | customers |
 | PATCH | `/api/v1/customers/{customer_id}/stage` | `update_stage` | :1876 | `_get_current_user` | ✅ | — | customers |
-| GET | `/api/v1/market/regions` | `list_market_regions` | :1942 | `_get_current_user` | ✅ | — | intel |
-| GET | `/api/v1/market/regions/{region_code}/products` | `list_region_products` | :1952 | `_get_current_user` | ✅ | — | intel |
-| GET | `/api/v1/market/name-lookup` | `name_lookup` | :1975 | `_get_current_user` | ✅ | — | intel |
-| POST | `/api/v1/market/name-mappings` | `create_name_mapping` | :1995 | `_get_current_user` | ✅ | — | intel |
-| GET | `/api/v1/market/usages` | `list_usages` | :2010 | `_get_current_user` | ✅ | — | intel |
-| GET | `/api/v1/market/ports` | `list_ports` | :2019 | `_get_current_user` | ✅ | — | intel |
-| GET | `/api/v1/subscriptions` | `list_subscriptions` | :2042 | `_get_current_user` | ✅ | — | workstations |
-| GET | `/api/v1/subscriptions/bundles` | `list_bundles` | :2051 | `_get_current_user` | ✅ | — | workstations |
-| GET | `/api/v1/dashboard/summary` | `dashboard_summary` | :2061 | `_get_current_user` | ✅ | — | dashboard |
-| GET | `/api/v1/dashboard/funnel` | `dashboard_funnel` | :2176 | `_get_current_user` | ✅ | — | dashboard |
-| GET | `/api/v1/dashboard/receivables` | `dashboard_receivables` | :2241 | `_get_current_user` | ✅ | — | dashboard |
-| GET | `/health` | `health` | :2294 | — | — | — | meta |
-| POST | `/api/v1/events` | `create_event` | :2323 | `_get_current_user` | ✅ | — | cron |
-| GET | `/api/v1/quotations` | `list_quotations_api` | :2375 | `_get_current_user` | ✅ | — | quotes |
-| POST | `/api/v1/quotations` | `create_quotation_manual` | :2417 | `_get_current_user` | ✅ | — | quotes |
-| GET | `/api/v1/pricing-data` | `list_pricing_data` | :2526 | `_get_current_user` | ✅ | — | quotes |
-| POST | `/api/v1/pricing-data` | `create_pricing_data` | :2631 | `_get_current_user` | ✅ | — | quotes |
-| PATCH | `/api/v1/pricing-data/{item_id}` | `update_pricing_data` | :2739 | `_get_current_user` | ✅ | — | quotes |
-| DELETE | `/api/v1/pricing-data/{item_id}` | `delete_pricing_data` | :2807 | `_get_current_user` | ✅ | — | quotes |
-| GET | `/api/v1/spec/categories` | `list_spec_categories` | :2947 | `_get_current_user` | ✅ | — | workstations |
-| GET | `/api/v1/spec/categories/{category_id}` | `get_spec_category` | :2963 | `_get_current_user` | ✅ | — | workstations |
-| GET | `/api/v1/spec/categories/{category_id}/bindings` | `get_spec_category_bindings` | :2978 | `_get_current_user` | ✅ | — | workstations |
-| POST | `/api/v1/spec/wizard/submit` | `wizard_submit` | :3036 | `_get_current_user` | ✅ | — | workstations |
-| POST | `/api/v1/spec/wizard/propose-attribute` | `wizard_propose_attribute` | :3106 | `_get_current_user` | ✅ | — | workstations |
-| GET | `/api/v1/events` | `list_events_api` | :3149 | `_get_current_user` | ✅ | ✅ | cron |
-| GET | `/api/v1/admin/feature_flag` | `get_feature_flag` | :3189 | `_get_current_user` | ✅ | ✅ | admin |
-| POST | `/api/v1/admin/feature_flag` | `set_feature_flag` | :3223 | `_get_current_user` | ✅ | ✅ | admin |
-| GET | `/api/v1/admin/tenants` | `list_tenants` | :3275 | `_get_current_user` | ✅ | ✅ | admin |
-| POST | `/api/v1/admin/tenants/reload` | `reload_tenants` | :3292 | `_get_current_user` | ✅ | ✅ | admin |
-| GET | `/api/v1/admin/audit-log` | `get_audit_log` | :3321 | `_get_current_user` | ✅ | ✅ | admin |
-| GET | `/api/v1/admin/archive-logs` | `get_archive_logs` | :3389 | `_get_current_user` | ✅ | ✅ | admin |
-| GET | `/api/v1/capability-customers` | `list_capability_customers` | :3466 | `_get_current_user` | ✅ | — | customers |
-| GET | `/api/v1/capabilities` | `list_capabilities_api` | :3488 | `_get_current_user` | ✅ | — | customers |
-| POST | `/api/v1/capabilities` | `upsert_capability_api` | :3510 | `_get_current_user` | ✅ | — | customers |
-| GET | `/api/v1/customer/{customer_id}/capabilities` | `get_customer_capabilities` | :3550 | `_get_current_user` | ✅ | — | customers |
-| PATCH | `/api/v1/customer/{customer_id}/capabilities` | `patch_customer_capability` | :3568 | `_get_current_user` | ✅ | — | customers |
-| GET | `/api/v1/orders` | `list_orders_api` | :3791 | `_get_current_user` | ✅ | — | orders |
-| POST | `/api/v1/orders` | `create_order_api` | :3958 | `_get_current_user` | ✅ | — | orders |
-| GET | `/api/v1/orders/{order_id}` | `get_order_api` | :4294 | `_get_current_user` | ✅ | — | orders |
-| PATCH | `/api/v1/orders/{order_id}` | `update_order_api` | :4359 | `_get_current_user` | ✅ | — | orders |
-| POST | `/api/v1/orders/{order_id}/status` | `change_order_status` | :4576 | `_get_current_user` | ✅ | — | orders |
-| GET | `/api/v1/orders/{order_id}/payment-schedules` | `list_schedules` | :4661 | `_get_current_user` | ✅ | — | orders |
-| POST | `/api/v1/orders/{order_id}/payment-schedules` | `create_schedule` | :4679 | `_get_current_user` | ✅ | — | orders |
-| PATCH | `/api/v1/payment-schedules/{schedule_id}` | `update_schedule` | :4726 | `_get_current_user` | ✅ | — | orders |
-| GET | `/api/v1/orders/{order_id}/receipts` | `list_order_receipts` | :4902 | `_get_current_user` | ✅ | — | orders |
-| POST | `/api/v1/orders/{order_id}/receipts` | `create_order_receipt` | :4914 | `_get_current_user` | ✅ | — | orders |
-| GET | `/api/v1/receivables` | `list_receivables` | :4983 | `_get_current_user` | ✅ | — | orders |
-| GET | `/api/v1/trade-docs` | `list_trade_docs` | :5211 | `_get_current_user` | ✅ | — | trade-docs |
-| POST | `/api/v1/trade-docs` | `create_trade_doc` | :5374 | `_get_current_user` | ✅ | — | trade-docs |
-| GET | `/api/v1/trade-docs/{doc_id}` | `get_trade_doc` | :5518 | `_get_current_user` | ✅ | — | trade-docs |
-| PATCH | `/api/v1/trade-docs/{doc_id}` | `update_trade_doc` | :5543 | `_get_current_user` | ✅ | — | trade-docs |
-| GET | `/api/v1/tenant/company-profile` | `get_company_profile` | :5757 | `_get_current_user` | ✅ | — | workstations |
-| PUT | `/api/v1/tenant/company-profile` | `put_company_profile` | :5770 | `_get_current_user` | ✅ | — | workstations |
-| GET | `/api/v1/trade-docs/{doc_id}/render-data` | `get_trade_doc_render_data` | :5932 | `_get_current_user` | ✅ | — | trade-docs |
+| GET | `/api/v1/market/regions` | `list_market_regions` | :1962 | `_get_current_user` | ✅ | — | intel |
+| GET | `/api/v1/market/regions/{region_code}/products` | `list_region_products` | :1972 | `_get_current_user` | ✅ | — | intel |
+| GET | `/api/v1/market/name-lookup` | `name_lookup` | :1995 | `_get_current_user` | ✅ | — | intel |
+| POST | `/api/v1/market/name-mappings` | `create_name_mapping` | :2015 | `_get_current_user` | ✅ | — | intel |
+| GET | `/api/v1/market/name-mappings` | `list_name_mappings` | :2030 | `_get_current_user` | ✅ | — | intel |
+| PATCH | `/api/v1/market/name-mappings/{mapping_id}` | `update_name_mapping` | :2072 | `_get_current_user` | ✅ | — | intel |
+| DELETE | `/api/v1/market/name-mappings/{mapping_id}` | `delete_name_mapping` | :2121 | `_get_current_user` | ✅ | — | intel |
+| GET | `/api/v1/market/usages` | `list_usages` | :2139 | `_get_current_user` | ✅ | — | intel |
+| GET | `/api/v1/market/ports` | `list_ports` | :2148 | `_get_current_user` | ✅ | — | intel |
+| GET | `/api/v1/subscriptions` | `list_subscriptions` | :2171 | `_get_current_user` | ✅ | — | workstations |
+| GET | `/api/v1/subscriptions/bundles` | `list_bundles` | :2180 | `_get_current_user` | ✅ | — | workstations |
+| GET | `/api/v1/dashboard/summary` | `dashboard_summary` | :2190 | `_get_current_user` | ✅ | — | dashboard |
+| GET | `/api/v1/dashboard/funnel` | `dashboard_funnel` | :2305 | `_get_current_user` | ✅ | — | dashboard |
+| GET | `/api/v1/dashboard/receivables` | `dashboard_receivables` | :2370 | `_get_current_user` | ✅ | — | dashboard |
+| GET | `/health` | `health` | :2423 | — | — | — | meta |
+| POST | `/api/v1/events` | `create_event` | :2452 | `_get_current_user` | ✅ | — | cron |
+| GET | `/api/v1/quotations` | `list_quotations_api` | :2504 | `_get_current_user` | ✅ | — | quotes |
+| POST | `/api/v1/quotations` | `create_quotation_manual` | :2546 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/pricing-data` | `list_pricing_data` | :2655 | `_get_current_user` | ✅ | — | quotes |
+| POST | `/api/v1/pricing-data` | `create_pricing_data` | :2760 | `_get_current_user` | ✅ | — | quotes |
+| PATCH | `/api/v1/pricing-data/{item_id}` | `update_pricing_data` | :2868 | `_get_current_user` | ✅ | — | quotes |
+| DELETE | `/api/v1/pricing-data/{item_id}` | `delete_pricing_data` | :2936 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/spec/categories` | `list_spec_categories` | :3076 | `_get_current_user` | ✅ | — | workstations |
+| GET | `/api/v1/spec/categories/{category_id}` | `get_spec_category` | :3092 | `_get_current_user` | ✅ | — | workstations |
+| GET | `/api/v1/spec/categories/{category_id}/bindings` | `get_spec_category_bindings` | :3107 | `_get_current_user` | ✅ | — | workstations |
+| POST | `/api/v1/spec/wizard/submit` | `wizard_submit` | :3165 | `_get_current_user` | ✅ | — | workstations |
+| POST | `/api/v1/spec/wizard/propose-attribute` | `wizard_propose_attribute` | :3235 | `_get_current_user` | ✅ | — | workstations |
+| GET | `/api/v1/events` | `list_events_api` | :3278 | `_get_current_user` | ✅ | ✅ | cron |
+| GET | `/api/v1/admin/feature_flag` | `get_feature_flag` | :3318 | `_get_current_user` | ✅ | ✅ | admin |
+| POST | `/api/v1/admin/feature_flag` | `set_feature_flag` | :3352 | `_get_current_user` | ✅ | ✅ | admin |
+| GET | `/api/v1/admin/tenants` | `list_tenants` | :3404 | `_get_current_user` | ✅ | ✅ | admin |
+| POST | `/api/v1/admin/tenants/reload` | `reload_tenants` | :3421 | `_get_current_user` | ✅ | ✅ | admin |
+| GET | `/api/v1/admin/audit-log` | `get_audit_log` | :3450 | `_get_current_user` | ✅ | ✅ | admin |
+| GET | `/api/v1/admin/archive-logs` | `get_archive_logs` | :3518 | `_get_current_user` | ✅ | ✅ | admin |
+| GET | `/api/v1/capability-customers` | `list_capability_customers` | :3595 | `_get_current_user` | ✅ | — | customers |
+| GET | `/api/v1/capabilities` | `list_capabilities_api` | :3617 | `_get_current_user` | ✅ | — | customers |
+| POST | `/api/v1/capabilities` | `upsert_capability_api` | :3639 | `_get_current_user` | ✅ | — | customers |
+| GET | `/api/v1/customer/{customer_id}/capabilities` | `get_customer_capabilities` | :3679 | `_get_current_user` | ✅ | — | customers |
+| PATCH | `/api/v1/customer/{customer_id}/capabilities` | `patch_customer_capability` | :3697 | `_get_current_user` | ✅ | — | customers |
+| GET | `/api/v1/orders` | `list_orders_api` | :3920 | `_get_current_user` | ✅ | — | orders |
+| POST | `/api/v1/orders` | `create_order_api` | :4087 | `_get_current_user` | ✅ | — | orders |
+| GET | `/api/v1/orders/{order_id}` | `get_order_api` | :4423 | `_get_current_user` | ✅ | — | orders |
+| PATCH | `/api/v1/orders/{order_id}` | `update_order_api` | :4488 | `_get_current_user` | ✅ | — | orders |
+| POST | `/api/v1/orders/{order_id}/status` | `change_order_status` | :4705 | `_get_current_user` | ✅ | — | orders |
+| GET | `/api/v1/orders/{order_id}/payment-schedules` | `list_schedules` | :4790 | `_get_current_user` | ✅ | — | orders |
+| POST | `/api/v1/orders/{order_id}/payment-schedules` | `create_schedule` | :4808 | `_get_current_user` | ✅ | — | orders |
+| PATCH | `/api/v1/payment-schedules/{schedule_id}` | `update_schedule` | :4855 | `_get_current_user` | ✅ | — | orders |
+| GET | `/api/v1/orders/{order_id}/receipts` | `list_order_receipts` | :5031 | `_get_current_user` | ✅ | — | orders |
+| POST | `/api/v1/orders/{order_id}/receipts` | `create_order_receipt` | :5043 | `_get_current_user` | ✅ | — | orders |
+| GET | `/api/v1/receivables` | `list_receivables` | :5112 | `_get_current_user` | ✅ | — | orders |
+| GET | `/api/v1/trade-docs` | `list_trade_docs` | :5340 | `_get_current_user` | ✅ | — | trade-docs |
+| POST | `/api/v1/trade-docs` | `create_trade_doc` | :5503 | `_get_current_user` | ✅ | — | trade-docs |
+| GET | `/api/v1/trade-docs/{doc_id}` | `get_trade_doc` | :5647 | `_get_current_user` | ✅ | — | trade-docs |
+| PATCH | `/api/v1/trade-docs/{doc_id}` | `update_trade_doc` | :5672 | `_get_current_user` | ✅ | — | trade-docs |
+| GET | `/api/v1/tenant/company-profile` | `get_company_profile` | :5886 | `_get_current_user` | ✅ | — | workstations |
+| PUT | `/api/v1/tenant/company-profile` | `put_company_profile` | :5899 | `_get_current_user` | ✅ | — | workstations |
+| GET | `/api/v1/trade-docs/{doc_id}/render-data` | `get_trade_doc_render_data` | :6061 | `_get_current_user` | ✅ | — | trade-docs |
 
 ### `worker/src/quote_api.py`（19 条）
 

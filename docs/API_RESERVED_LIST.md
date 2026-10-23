@@ -22,8 +22,8 @@
 > **✅ 2026-10-21 C36 下期 12 条全部接上（4 批）**：订单收款计划三件套（#6/#10/#20）/ 订单状态流转（#21）/
 > 汇率历史（#5）；应收台账（#7）/ AI 任务运行（#13）；情报 CSV+手工货运（#15/#16）/ 新建线索（#18）；
 > 品名对照（#19）/ 调研手工录入（#22）。⇒ 待接 UI 剩 **3 条**（长期保留的用户级订阅 #2/#9/#24）。
-> 接 UI **不改变路由数**（仍 244）。**遗留缺口**：#19 品名对照的编辑/删除因后端无全量列表/PATCH/DELETE 未做；
-> AI 任务运行因任务无统一 schema 用最小表单（详见审计顶部与 §1.1）。
+> 接 UI **不改变路由数**（当时 244）。**#19 缺口 2026-10-23 已补齐**：后端补 `GET` 列表 + `PATCH`/`DELETE`
+> （业务路由 274→277），面板接编辑/删除；AI 任务运行因任务无统一 schema 用最小表单（详见审计顶部与 §1.1）。
 
 ## 0. 结论
 
@@ -100,7 +100,7 @@ backend/worker/.venv/Scripts/python.exe .tmp/c36-docs.py                  # 补 
 | ✅ 已接 · 移出待接清单（C36 下期，2026-10-21） | `POST /api/v1/intel/shipments` | `main.py:913` | 入口：`intel/components/manual-shipment-dialog.tsx:65`（JSON），`shipments-table.tsx:250` 挂载 |
 | ✅ 已接 · 移出待接清单（C36，2026-10-21） | `POST /api/v1/leadgen/runs/from-csv` | `chain.py:1003` | 入口：`lib/leadgen/csv-import.ts` + `leadgen/components/csv-import-panel.tsx:54`（multipart 字段 `csv_file`），`leadgen/page.tsx:426` 挂载 |
 | ✅ 已接 · 移出待接清单（C36 下期，2026-10-21） | `POST /api/v1/leads` | `chain.py:1349` | 入口：`leadgen/components/manual-lead-dialog.tsx:66`（手工线索表单），`leadgen/page.tsx:860` 挂载 |
-| ✅ 已接 · 移出待接清单（C36 下期，2026-10-21） | `POST /api/v1/market/name-mappings` | `main.py:1793` | 入口：`market/components/name-mapping-panel.tsx`（市场页「品名对照」tab：关键词搜索 + 新增中英品名 + 重复预检）；**遗留缺口**：后端无全量列表/PATCH/DELETE ⇒ 编辑/删除未做（面板已标注，建议后续后端补接口） |
+| ✅ 已接 · 移出待接清单（C36 下期，2026-10-21） | `POST /api/v1/market/name-mappings` | `main.py` | 入口：`market/components/name-mapping-panel.tsx`（市场页「品名对照」tab：分页列表/搜索/地区筛选 + 新增 + **编辑/删除**）；2026-10-23 补 `GET` 列表 + `PATCH`/`DELETE`（业务路由 277） |
 | ✅ 已接 · 移出待接清单（C36 下期，2026-10-21） | `POST /api/v1/orders/*/payment-schedules` | `main.py:3961` | 入口：`orders/components/payment-schedules-panel.tsx`（新建表单）+ `use-order-schedules.ts:48` |
 | ✅ 已接 · 移出待接清单（C36 下期，2026-10-21） | `POST /api/v1/orders/*/status` | `main.py:3851` | 入口：`orders/components/order-status-dialog.tsx:66`（状态流转确认弹窗），`orders/page.tsx:460` 挂载 |
 | ✅ 已接 · 移出待接清单（C36 下期，2026-10-21） | `POST /api/v1/research/products` | `chain.py:2232` | 入口：`research/components/manual-research-dialog.tsx`（调研页「手工录入」：可从线索挑选 source_ref / 手工填字段；409 ALREADY_PICKED 透出），`research/page.tsx:827` 挂载 |
@@ -129,14 +129,14 @@ backend/worker/.venv/Scripts/python.exe .tmp/c36-docs.py                  # 补 
 
 | TODO | 相关路由（本清单） | 状态/说明 |
 |---|---|---|
-| **C36** | 本文件全部条目 | 删除部分：✅ 2026-10-21 用户批准删 3 条并**已执行**（#11/#16/#17，见 §2 ✅ 行）；**UI 接线部分：✅ 本期 5 条 + 下期 12 条已全部接上**（详见 §2 各行 ✅；下期 12 的入口见审计 §1.1 与 §2）；**遗留缺口**：#19 品名对照编辑/删除待后端补接口；其余 owner 确认项按审计 §4 待 owner 统一确认 |
+| **C36** | 本文件全部条目 | 删除部分：✅ 2026-10-21 用户批准删 3 条并**已执行**（#11/#16/#17，见 §2 ✅ 行）；**UI 接线部分：✅ 本期 5 条 + 下期 12 条已全部接上**（详见 §2 各行 ✅；下期 12 的入口见审计 §1.1 与 §2）；**#19 品名对照编辑/删除 ✅ 2026-10-23 已补齐**；其余 owner 确认项按审计 §4 待 owner 统一确认 |
 | **A2** | `POST /trade-docs/{id}/confirm` | A2 已完成（两入口）；confirm 保留为 REST/第三方入口 |
 | **A4 / G-4** | `GET /file-objects/{id}/render-content`、`GET /tenant/company-seals/{id}/render-content` | ✅ 已接（A4 渲染链路）：装配层返回短时效签名直链，浏览器 `<img>` 加载（不经 apiClient） |
 | **A7** | — | A7 的 facts/consistency/lint/receipts/doc-set/verify-export 均已由 FE 调用（不在本清单） |
 | **A9** | `GET /trade-docs/render-fingerprint-checks/batch` | A9 已完成（cron+列表标识）；批量口保留给运维/批处理 |
 | **A12** | `trigger_expr`（非路由） | A12 ⏳；与路由无关 |
 | **A13** | `POST /trade-docs/{id}/translate` | ✅ 已接（`trade-docs/hooks/use-trade-docs.ts:241` + `doc-translate-panel.tsx`） |
-| **B6** | `GET/POST /workstation-products` | B6 已完成（兼容 union）；建议与 `/tenant-product-status` 收敛后再删 |
+| **B6** | `GET/POST /workstation-products` | B6 已完成（兼容 union）；**2026-10-23 评估：保留两条、暂不删除**（前端 0 调用；删除需先确认外部 token 调用方），upsert SQL 重复待随删除收敛 |
 | **C1 / G-5** | `POST /file-objects/upload` | ✅ 2026-10-21 已按用户批准删除（C36）；C1 本身仍为"不做" |
 | **C9** | `GET /file-objects/_r2_debug`、`GET /fx-rates/_debug` | C9 已完成（admin 闸门）；保留运维 |
 | **C13 / G-5** | `POST /outreach/webhook` | C13 🧭 已授权“保持”；501 预留桩 |

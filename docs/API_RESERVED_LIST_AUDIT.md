@@ -16,9 +16,9 @@
 > 订单收款计划三件套（#6/#10/#20）/ 订单状态流转（#21）/ 汇率历史（#5）；
 > 应收台账（#7）/ AI 任务运行（#13）；情报 CSV+手工货运（#15/#16）/ 新建线索（#18）；
 > 品名对照（#19）/ 调研手工录入（#22）。⇒「待接 UI」**15 → 3 条**（只剩长期保留的 3 条用户级订阅），
-> 路由计数不变（仍 244）。**遗留缺口**：#19 品名对照的「编辑 / 删除」因后端**没有全量列表 / PATCH / DELETE**
-> 未做（面板已标注），建议后续后端补接口；AI 任务运行因任务 payload 无统一 schema，用最小表单
-> （`task_key` + JSON 文本）承载。
+> 路由计数不变（仍 244）。**#19 缺口已于 2026-10-23 补齐**：后端新增 `GET /market/name-mappings`（分页）+
+> `PATCH`/`DELETE /market/name-mappings/{id}`（业务路由 274→277），面板接编辑/删除；AI 任务运行因任务 payload
+> 无统一 schema，用最小表单（`task_key` + JSON 文本）承载。
 >
 > - 扫描基线：`docs/API_RESERVED_LIST.md` @ `17e87744`（2026-10-21）
 > - 复核基线：当前工作区 HEAD `62d2d2cb`（2026-10-21；并发改动只读扫描）
@@ -92,11 +92,11 @@
     （`leadgen/components/manual-lead-dialog.tsx:66`，`leadgen/page.tsx:860`）；
   - 批 4：品名对照 **#19**（`market/components/name-mapping-panel.tsx`，`market-view.tsx:451`）、
     调研手工录入 **#22**（`research/components/manual-research-dialog.tsx`，`research/page.tsx:827`）。
-  ⇒ **待接 UI = 3 条（长期保留的 #2/#9/#24）**；接 UI 不改变路由数（Worker 仍 244）。
+  ⇒ **待接 UI = 3 条（长期保留的 #2/#9/#24）**；接 UI 不改变路由数（当时 Worker 仍 244；2026-10-23 业务路由 277）。
 - **长期保留 3**：#2/#9/#24 用户级订阅（平台运维口；团队级订阅已是主路径，是否值得做 UI 需产品确认）。
-- **新登记缺口（建议后续处理）**：**#19 品名对照的「编辑 / 删除」** —— 后端目前**没有**全量列表 / PATCH / DELETE
-  端点（只有 `POST /market/name-mappings` + `GET /market/name-lookup`），面板已标注；建议后续后端补
-  列表/改/删接口后再接 UI（不影响本期"搜索+新增"可用）。
+- **#19 品名对照的「编辑 / 删除」** —— ✅ **2026-10-23 已补齐**：内核 `GET /market/name-mappings`（分页/筛选）
+  + `PATCH` / `DELETE /market/name-mappings/{id}`（404/409 语义），TS 门面同步直连实现，面板接编辑 Dialog +
+  删除 ConfirmDialog + 分页（详见 `TODO.md` A-13 销账与本次提交）。
 - **AI 任务运行的取舍**：任务 payload **无统一 schema**（每个 task 的入参不同）⇒ 运行弹窗用**最小表单**
   （`task_key` + JSON 文本 + 运行结果），不做逐任务动态表单；如需更友好体验，需任务 schema 进 `manifest`。
 - **未计入上表的 2 条**：审计 §4C 建议把 `GET/PUT /product-options/overrides` 从「可删候选」更正为

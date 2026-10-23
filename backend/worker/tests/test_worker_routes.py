@@ -185,6 +185,10 @@ NEW_ROUTES: set[tuple[str, str]] = {
     # 平台账号治理（列表/停用/恢复；**无物理删除**）
     ("/api/v1/admin/accounts", "GET"),
     ("/api/v1/admin/accounts/{user_id}", "PATCH"),
+    # C36 #19：品名对照 CRUD（列表分页/筛选 + 部分更新 + 删除）
+    ("/api/v1/market/name-mappings", "GET"),
+    ("/api/v1/market/name-mappings/{mapping_id}", "PATCH"),
+    ("/api/v1/market/name-mappings/{mapping_id}", "DELETE"),
 }
 
 # 公开路由（与 orchestrator 一致：静态常量、非敏感，前端登录前后都要取）
@@ -231,6 +235,7 @@ def test_new_routes_answer_auth_challenge():
         probe = path.replace("{shipment_id}", "1").replace("{customer_id}", "1")
         probe = (
             probe.replace("{item_id}", "1")
+            .replace("{mapping_id}", "1")
             .replace("{category_id}", "1")
             .replace("{order_id}", "1")
             .replace("{schedule_id}", "1")

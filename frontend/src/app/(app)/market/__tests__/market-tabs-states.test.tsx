@@ -183,7 +183,11 @@ describe("市场对照 · 其余四个 tab", () => {
     vi.mocked(apiClient.get).mockImplementation(async (url: string) => {
       const path = String(url);
       if (path === "/market/regions") return ok([]);
-      if (path.startsWith("/market/name-lookup")) {
+      // 品名反查 tab 与品名对照列表（B2 起走 /market/name-mappings）都要覆盖失败态
+      if (
+        path.startsWith("/market/name-lookup") ||
+        path.startsWith("/market/name-mappings")
+      ) {
         throw backendError("品名服务不可用");
       }
       if (path === "/market/usages") throw backendError("用途服务不可用");

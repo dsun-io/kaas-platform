@@ -1939,6 +1939,26 @@ class NameMappingCreate(BaseModel):
     is_verified: bool = False
 
 
+class NameMappingPatch(BaseModel):
+    """PATCH 全可选：只有 `model_fields_set` 里出现的字段才会更新。"""
+    category_id: Optional[int] = None
+    region_code: Optional[str] = None
+    lang: Optional[str] = None
+    local_name: Optional[str] = None
+    alt_names: Optional[List[str]] = None
+    hs_code: Optional[str] = None
+    source: Optional[str] = None
+    confidence: Optional[str] = None
+    is_verified: Optional[bool] = None
+
+
+# PATCH 可写列（顺序 = model_fields 声明顺序；唯一键冲突由 DB 唯一约束兜底 → 409）
+_NAME_MAPPING_PATCH_FIELDS = (
+    "category_id", "region_code", "lang", "local_name", "alt_names",
+    "hs_code", "source", "confidence", "is_verified",
+)
+
+
 @app.get("/api/v1/market/regions")
 async def list_market_regions(request: Request, user: dict = Depends(_get_current_user)):
     async with _acquire(request) as conn:
@@ -2005,6 +2025,115 @@ async def create_name_mapping(request: Request, body: NameMappingCreate, user: d
             body.source, body.confidence, body.is_verified,
         )
     return dict(row)
+
+
+@app.get("/api/v1/market/name-mappings")
+async def list_name_mappings(
+    request: Request,
+    user: dict = Depends(_get_current_user),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    q: Optional[str] = None,
+    region_code: Optional[str] = None,
+    lang: Optional[str] = None,
+):
+    """品名对照分页列表（C36 #19）。
+
+    q = local_name ILIKE 或 alt_names 任一 ILIKE（与 name-lookup 同口径）；
+    region_code 归一大写、lang 精确匹配；tenant 恒为 default。
+    排序与 name-lookup 一致：is_verified DESC, created_at DESC。
+    """
+    where = ["tenant_id = $1"]
+    params: list = [DEFAULT_TENANT]
+    idx = 2
+    if q:
+        where.append(
+            f"(local_name ILIKE ${idx} OR EXISTS (SELECT 1 FROM jsonb_array_elements_text("
+            f"COALESCE(alt_names,'[]'::jsonb)) t WHERE t ILIKE ${idx}))"
+        )
+        params.append(f"%{q}%"); idx += 1
+    if region_code:
+        where.append(f"region_code = ${idx}"); params.append(region_code.upper()); idx += 1
+    if lang:
+        where.append(f"lang = ${idx}"); params.append(lang); idx += 1
+    where_sql = " AND ".join(where)
+    async with _acquire(request) as conn:
+        total = await conn.fetchval(
+            f"SELECT COUNT(*) FROM market_product_name_mappings WHERE {where_sql}", *params)
+        rows = await conn.fetch(
+            f"""SELECT * FROM market_product_name_mappings WHERE {where_sql}
+                ORDER BY is_verified DESC, created_at DESC LIMIT ${idx} OFFSET ${idx + 1}""",
+            *params, page_size, (page - 1) * page_size,
+        )
+    return {"items": [_row_to_dict(r) for r in rows], "total": total,
+            "page": page, "page_size": page_size}
+
+
+@app.patch("/api/v1/market/name-mappings/{mapping_id}")
+async def update_name_mapping(
+    mapping_id: int,
+    request: Request,
+    body: NameMappingPatch,
+    user: dict = Depends(_get_current_user),
+):
+    """部分更新（pydantic model_fields_set 语义；空 body → 422）。
+
+    唯一键 (tenant_id, category_id, region_code, lang) 冲突由 DB 唯一约束兜底 → 409。
+    """
+    import json as _json
+    fields = body.model_fields_set & set(_NAME_MAPPING_PATCH_FIELDS)
+    if not fields:
+        raise HTTPException(status_code=422, detail="No fields to update")
+    set_parts: list = []
+    params: list = []
+    for col in _NAME_MAPPING_PATCH_FIELDS:
+        if col not in fields:
+            continue
+        value = getattr(body, col)
+        if col == "region_code" and value is not None:
+            value = value.upper()
+        if col == "alt_names":
+            value = _json.dumps(value or [])
+            set_parts.append(f"alt_names = ${len(params) + 1}::jsonb")
+        else:
+            set_parts.append(f"{col} = ${len(params) + 1}")
+        params.append(value)
+    n = len(params)
+    params += [mapping_id, DEFAULT_TENANT]
+    async with _acquire(request) as conn:
+        try:
+            row = await conn.fetchrow(
+                f"""UPDATE market_product_name_mappings SET {', '.join(set_parts)}, updated_at = NOW()
+                    WHERE id = ${n + 1} AND tenant_id = ${n + 2} RETURNING *""",
+                *params,
+            )
+        except Exception as exc:  # 唯一约束撞码：仅 23505 转 409，其余原样重抛
+            if getattr(exc, "sqlstate", None) == "23505" or "duplicate key" in str(exc):
+                raise HTTPException(status_code=409, detail={
+                    "error": "conflict", "code": "NAME_MAPPING_EXISTS"})
+            raise
+    if row is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "NAME_MAPPING_NOT_FOUND"})
+    return _row_to_dict(row)
+
+
+@app.delete("/api/v1/market/name-mappings/{mapping_id}", status_code=204)
+async def delete_name_mapping(
+    mapping_id: int,
+    request: Request,
+    user: dict = Depends(_get_current_user),
+):
+    """删除品名对照（不存在或非本 tenant → 404）。"""
+    async with _acquire(request) as conn:
+        deleted = await conn.fetchval(
+            "DELETE FROM market_product_name_mappings WHERE id=$1 AND tenant_id=$2 RETURNING id",
+            mapping_id, DEFAULT_TENANT,
+        )
+    if deleted is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "NAME_MAPPING_NOT_FOUND"})
+    return None
 
 
 @app.get("/api/v1/market/usages")
