@@ -9,7 +9,7 @@ TIM = Path(r"D:\projects\报价制作\Tim")
 OUT = Path(r"D:\projects\报价制作\.tools\img_tim2")
 OUT.mkdir(parents=True, exist_ok=True)
 
-xlsx = TIM / "Commercial Invoice - Tim - 20261012.xlsx"
+xlsx = TIM / "Commercial Invoice - Buyer - 20261012.xlsx"
 ws = openpyxl.load_workbook(xlsx).active
 print("== CI 末页行序（A 列 / F 列）==")
 for r in range(34, ws.max_row + 1):

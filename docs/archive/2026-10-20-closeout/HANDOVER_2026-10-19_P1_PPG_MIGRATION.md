@@ -103,7 +103,7 @@ worker = **303 passed**（`not integration`）；`route-parity.py` = **PASS**。
 > **`.env.local` 是 gitignored，不随仓库走。** 新设备需重新生成或从安全渠道拷贝。
 
 ### 4.1 Prisma（PPG）
-- 账号：**dspro0124@163.com**（GitHub 登录），workspace `Personal workspace`
+- 账号：**user@example.com**（GitHub 登录），workspace `Personal workspace`
 - 项目：`kaas-platform` = `proj_uwe01gaebpmbkxwiio388f8e`
 - 数据库：`kaas-prod` = `db_xe7ypplcbxq3ysghz93k3n8u`（PG **17.2**，`us-east-1`，ready）
 - 登录 CLI：`npx prisma@latest auth login`（浏览器 OAuth；本机已验证可用）
@@ -117,7 +117,7 @@ worker = **303 passed**（`not integration`）；`route-parity.py` = **PASS**。
 - 无浏览器环境：设 `PRISMA_SERVICE_TOKEN`（Console 生成）
 
 ### 4.2 Cloudflare
-- 账号：`Dspro0124@163.com's Account`，ID **`766f8d7eb5a7d20e272673073ec8c3fd`**
+- 账号：`user@example.com's Account`，ID **`766f8d7eb5a7d20e272673073ec8c3fd`**
 - 登录：`pywrangler login`（OAuth，等价 `wrangler login`）
 - Hyperdrive：**旧（Neon）`f53fed49705043008737032e4bfa2b8e`**；**新（PPG）`1733fcd80736482e8ec6e7648ed52286`**
 - 重建命令（如配置丢失）：
@@ -131,7 +131,7 @@ worker = **303 passed**（`not integration`）；`route-parity.py` = **PASS**。
 
 ### 4.4 本机工具链（原设备实测，新设备可参考）
 - 无 `pwsh`（只有 PowerShell 5.1）；`pnpm` 在
-  `C:\Users\河北慷逊公司\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pnpm\bin\pnpm.cjs`
+  `C:\Users\某某贸易公司\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pnpm\bin\pnpm.cjs`
   （⚠️ 不是旧文档写的 `node\pnpm\bin\pnpm.mjs`）
 - node：`...\dependencies\node\bin\node.exe`；npx：`C:\Program Files\nodejs\node_modules\npm\bin\npx-cli.js`
 - orchestrator venv：`backend/orchestrator/.venv`（psycopg2/alembic 都在）；worker 测试用**系统 python**（含 pytest 9.1.1）

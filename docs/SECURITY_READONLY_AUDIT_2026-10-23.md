@@ -88,7 +88,7 @@
 | 级别 | 范围 | 建议 |
 |---|---|---|
 | **高** | `archive/.../sample_docs/*.html`（18 份真实样例：公司/电话/金额） | 若要保 public：把真实值替换为占位符（如 `ACME TRADING CO.`、`+1 555 *** ****`），或迁出到私有存储；改动前需你确认。**✅ 2026-10-23 用户裁决「仅 18 份高危样例」→ 已脱敏，见 §5** |
-| **中** | `docs/archive/**` 审计/设计文档中的邮箱/电话/公司名；`templates.json` 的样例值 | 可批量脱敏（脚本替换为占位符）；同样需你确认。 |
+| **中** | `docs/archive/**` 审计/设计文档中的邮箱/电话/公司名；`templates.json` 的样例值 | 可批量脱敏（脚本替换为占位符）；同样需你确认。**✅ 2026-10-23 已按裁决执行（见 §5.2）** |
 | **低** | 金额/模板占位 | 金额本身不含个人身份信息；保留可读性即可。 |
 
 ## 3. 局限
@@ -128,6 +128,27 @@ Get-ChildItem -Recurse -File archive, docs/archive | Measure-Object   # 147
 **复核**：
 
 ```powershell
-backend/worker/.venv/Scripts/python.exe scripts/check-archive-pii.py   # 期望 PASS / exit 0
+backend/worker/.venv/Scripts/python.exe scripts/check-archive-pii.py   # 期望 PASS / exit 0（扫 120 个归档文本）
 git diff --stat HEAD~ -- archive/2026-09-trade-doc-xprime-python/sample_docs  # 18 files
 ```
+
+### 5.2 第二阶段：`docs/archive/**` 中危项脱敏（2026-10-23）
+
+**用户裁决**：「其他的设计执行方案，按计划执行」⇒ 中危项按审计建议批量脱敏（保留金额/品名/单据号/日期/地名/银行机构名）。
+
+| 项 | 结果 |
+|---|---|
+| 改动文件 | **32**（102 个归档文本中命中者） |
+| 替换处数 | **117**（邮箱 6 类、手机号 2 类、真实公司名 4 类、人名 2 类、Cloudflare 账号子域 1 类） |
+| 行级改动 | 104 行（替换为等长占位，未改文档结构） |
+| 保留 | 金额、单号（LJ-PI/CI/SC）、日期、地名（安平/天津）、银行机构名、SWIFT 分支码（公开银行标识） |
+| 回归门禁 | `scripts/check-archive-pii.py` 升级为**双目录**（sample_docs + docs/archive）→ **PASS：120 个文本 0 命中** |
+| 回滚 | `git checkout -- docs/archive`（纯文本替换，可整目录回退） |
+
+**口径与局限**：
+
+- 邮箱白名单（`example.com` / `localhost` / `.internal` / `.local` / 系统发件域 / 文档假值 `a@b.co` / SSRF 边界示例 `user@evil.com`）逐条写在脚本注释里，
+  **每条都能说明为什么不是真实凭据/身份**。
+- 中文公司名规则带「普通指代前缀」排除（本/该/贵/对方/买方/卖方/客户/别的/某…），脱敏后的 `某…` 形态自动放行。
+- **仍无法自动识别**：人名、地址、银行账号（脚本不覆盖）；本阶段的人名/账号类由一次性映射处理，映射脚本含真实值已删除。
+- 仓库仍 public；`templates.json` 等模板样例值（如仍在）属审计 §1 未列的高风险之外项，如有需要再单独拍板。

@@ -6,7 +6,7 @@ from pathlib import Path
 import pymupdf
 
 PDF = Path(sys.argv[1] if len(sys.argv) > 1
-           else r"D:\projects\报价制作\Tim\Sales Contract - Tim - 20261012.pdf")
+           else r"D:\projects\报价制作\Tim\Sales Contract - Buyer - 20261012.pdf")
 
 doc = pymupdf.open(PDF)
 print(f"{PDF.name}  共 {len(doc)} 页")

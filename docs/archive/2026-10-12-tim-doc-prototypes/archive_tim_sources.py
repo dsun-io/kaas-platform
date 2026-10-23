@@ -7,10 +7,10 @@ SRC = Path(r"D:\projects\报价制作")
 DST = SRC / "Tim"
 
 FILES = [
-    "Fence Quotation - Tim - 20260928.xlsx",
-    "Fence Quotation - Tim - 20260928.pdf",
-    "Proforma Invoice - Tim - 20260929.xlsx",
-    "Proforma Invoice - Tim - 20260929.pdf",
+    "Fence Quotation - Buyer - 20260928.xlsx",
+    "Fence Quotation - Buyer - 20260928.pdf",
+    "Proforma Invoice - Buyer - 20260929.xlsx",
+    "Proforma Invoice - Buyer - 20260929.pdf",
 ]
 
 for name in FILES:

@@ -256,7 +256,7 @@ SELECT count(*), count(*) FILTER (WHERE is_system) FROM tenant_products;
   "spec_version": 2,                    // 差异格式版本；未知版本一律 422 拒绝（不"尽力而为"）
   "base_spec_hash": "sha256:…",         // 写差异时的基线指纹；不匹配 → 拒绝合并并要求复核
   "scalars": {                          // ① 标量覆盖（顶层简单字段）
-    "name": "牛栏网（联佳）", "profit_value": 0.08, "misc_fee_rate": 0.03
+    "name": "牛栏网（某）", "profit_value": 0.08, "misc_fee_rate": 0.03
   },
   "options": {                          // ② 选项层：**直接复用 option_overrides 的三个键**
     "coating_code": { "rename": { "zinc_40": "40克锌层" }, "disabled": ["pvc_black"] }

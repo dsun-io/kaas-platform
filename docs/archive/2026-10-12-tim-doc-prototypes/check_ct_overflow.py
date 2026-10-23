@@ -5,7 +5,7 @@ from pathlib import Path
 import pymupdf
 
 TIM = Path(r"D:\projects\报价制作\Tim")
-PDF = TIM / "Sales Contract - Tim - 20261012.pdf"
+PDF = TIM / "Sales Contract - Buyer - 20261012.pdf"
 
 doc = pymupdf.open(PDF)
 issues = 0

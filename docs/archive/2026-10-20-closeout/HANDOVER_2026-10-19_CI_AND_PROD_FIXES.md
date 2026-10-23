@@ -83,7 +83,7 @@
 | ID | 事项 | 归属 | 备注 |
 |---|---|---|---|
 | H-1 | **Frontend CI 红**（`pnpm test` / `e2e`） | 总清单批次 0 · B0-1（teammate A） | 根因线索：`crypto.subtle.digest` 在 jsdom/CI 下缺失（`use-products.ts`）。工作区曾见该线未提交改动（`use-products.ts`/`quotes` 相关），我没碰 |
-| H-2 | 用户复验：刷新 `/quotes?tab=pricing`（白屏修复）；用 `david@lianjiafence.com` 注册 | 用户 | 注册已修复（能进 `/quotes` 即旁证） |
+| H-2 | 用户复验：刷新 `/quotes?tab=pricing`（白屏修复）；用 `user@example.com` 注册 | 用户 | 注册已修复（能进 `/quotes` 即旁证） |
 | H-3 | `3ada691` / `15997bd` 上的 `backend:test`、`Frontend CI`、`prisma-deploy` 失败 | `feat/convergence-aprime` 线 | **是功能分支上的状态**，不是 main；请以分支自己为准修绿后再合 |
 | H-4 | db 测试本地可跑（可选） | 任何人 | 解决 §4-1 的 initdb 中文 Windows 问题，或改用 CI 作为唯一 db 门禁（现状） |
 

@@ -5,7 +5,7 @@ from pathlib import Path
 import openpyxl
 
 TIM = Path(r"D:\projects\报价制作\Tim")
-ws = openpyxl.load_workbook(TIM / "Sales Contract - Tim - 20261012.xlsx").active
+ws = openpyxl.load_workbook(TIM / "Sales Contract - Buyer - 20261012.xlsx").active
 
 last = ws.max_row
 hs = {r: (ws.row_dimensions[r].height or 15) for r in range(1, last + 1)}

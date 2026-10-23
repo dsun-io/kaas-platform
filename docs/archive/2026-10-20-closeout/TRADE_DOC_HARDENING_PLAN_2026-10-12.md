@@ -20,7 +20,7 @@
 
 ## 1. 素材来源：Tim 单做了什么
 
-一单真实业务（澳洲客户 Tim Lyons，USD 2,826.49，DAP 江苏扬州交货、由买方供货商拼柜出运），
+一单真实业务（澳洲客户 John Doe，USD 2,826.49，DAP 江苏扬州交货、由买方供货商拼柜出运），
 从 PI 之后连续产出：**CI 商业发票 / Shipping Advice 装运通知 / ChAFTA COO 申报数据表 / Sales Contract 销售合同**
 （原还出过 Packing List 装箱单、Packing Declaration 木包装声明，**按事实判定后停用删除**）。
 
@@ -65,8 +65,8 @@
 | 2 | CI 写 `70% balance before dispatch`，SC 写 `upon dispatch (before delivery)` | 付款时点被"改述" | 付款条件作为**结构化 fact**（时点枚举 + 比例），不允许自由文本各写 |
 | 3 | 核对脚本把绝缘子单价写成 0.3253，实际 2.18/6.7029=0.3252 | 人工抄数 | 单价/金额一律**由汇率与数量推导**，不提供手抄入口 |
 | 4 | 客户反问"PI 中写的业务条款你不能更改" | 派生单可任意覆盖上游 | **基线优先 + 不可改写字段集**（PI 为客户签回基线） |
-| 5 | 我从邮箱域名 `oneatmosphere.com` 推出买方公司名 "One Atmosphere" 写进合同 → 被严厉批评 | 系统/助手**推断值直接落单** | **fact.source / trust 分级**；推断值不得进 issued，导出渲染为 TBC |
-| 6 | 我推断"整柜由钧骋报关"，写进 CI 的 Note → 用户：不要乱写 | 同上 | 同上 + **禁写"第三方动作"**白名单 |
+| 5 | 我从邮箱域名 `example.com` 推出买方公司名 "Example Trading" 写进合同 → 被严厉批评 | 系统/助手**推断值直接落单** | **fact.source / trust 分级**；推断值不得进 issued，导出渲染为 TBC |
+| 6 | 我推断"整柜由某报关"，写进 CI 的 Note → 用户：不要乱写 | 同上 | 同上 + **禁写"第三方动作"**白名单 |
 | 7 | 木托 ISPM-15 声明被我当成事实写进木包装声明 | 缺"包装材质"来源 | 材质/包装类 fact 必须来自 PO/PI 或人工确认 |
 | 8 | 装箱单我方并不该出（不负责装箱），却先出了一版 | 单证清单没有**责任方**概念 | **单证清单 checklist**：required/optional/not_by_us + issuer |
 | 9 | 无木包装却出了 Packing Declaration | 同上，缺前置条件 | 单证**触发条件**（有木质包装才需 ISPM-15 声明） |

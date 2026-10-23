@@ -120,7 +120,7 @@
 | 项 | 事实 |
 |---|---|
 | `pwsh` | **本机没有 PowerShell 7**（只有 5.1）⇒ AGENTS.md 里的 `pwsh scripts/sync-shared.ps1` 跑不了；改用 `powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1` |
-| node / pnpm | 实际用户名是 `河北慷逊公司`（**不是** AGENTS.md 里写的 `HJ`）：`C:\Users\河北慷逊公司\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\{node\bin\node.exe, pnpm\bin\pnpm.mjs}` |
+| node / pnpm | 实际用户名是 `某某贸易公司`（**不是** AGENTS.md 里写的 `HJ`）：`C:\Users\某某贸易公司\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\{node\bin\node.exe, pnpm\bin\pnpm.mjs}` |
 | husky hook | 仓库 `.husky/pre-commit` 调 `pnpm lint-staged`、`commit-msg` 走 commitlint ⇒ **提交时需把 pnpm bin + node bin 放进 PATH**，否则 pre-commit 报 `pnpm: command not found`（code 127） |
 | commitlint 规则 | `subject-case` 禁止句首/帕斯卡大小写 ⇒ 中文或**全小写** subject 才过（本会话踩过两次） |
 | worker 测试装法 | worker `.venv` 无 pytest ⇒ 用 CI 同款：`uv run --frozen --with pytest --with httpx2 python -m pytest tests -q` |

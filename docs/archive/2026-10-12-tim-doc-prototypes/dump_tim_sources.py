@@ -3,8 +3,8 @@
 import openpyxl
 
 FILES = [
-    r"D:\projects\报价制作\Proforma Invoice - Tim - 20260929.xlsx",
-    r"D:\projects\报价制作\Fence Quotation - Tim - 20260928.xlsx",
+    r"D:\projects\报价制作\Proforma Invoice - Buyer - 20260929.xlsx",
+    r"D:\projects\报价制作\Fence Quotation - Buyer - 20260928.xlsx",
 ]
 
 for path in FILES:

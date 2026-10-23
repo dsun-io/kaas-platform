@@ -21,13 +21,13 @@
 | 团队（`teams`） | 1 | **0** |
 
 **被删的 3 个账号**：`admin@kaas.dev`、`qa_user@qa.kaas.internal`、`qa_customer@qa.kaas.internal`
-**被删的 1 个团队**：原「安平县联佳丝网制品有限公司」
+**被删的 1 个团队**：原「某某网业有限公司」
 
 **新建的系统管理员**（唯一账号）：
 
 | 字段 | 值 |
 |---|---|
-| email | `david@powervoy.com` |
+| email | `user@example.com` |
 | 密码 | **不在仓库记录**（由用户当面指定；库里只存 bcrypt 哈希）。⚠️ 处置建议见 §⑥ |
 | account_type / role | `internal` / `system_admin` |
 | is_tenant_admin | `true` |
@@ -51,7 +51,7 @@
 ```
 deleted_users=3 deleted_teams=1
 remaining_users=1 remaining_teams=0
-{'id': 4, 'email': 'david@powervoy.com', 'account_type': 'internal',
+{'id': 4, 'email': 'user@example.com', 'account_type': 'internal',
  'role': 'system_admin', 'is_tenant_admin': True, 'status': 'active', 'team_id': None}
 ```
 
@@ -193,7 +193,7 @@ src/app/(app)/onboarding/page.tsx(80,17): error TS2322:
    ① `system_admin` 可列可停用可恢复；② `internal` 普通账号 403 且 UI 无入口；
    ③ `customer` 账号 403；④ 自停 → 409 `SELF_PROTECT`；⑤ 停最后一名管理员 → 409 `LAST_ADMIN`；
    ⑥ 停用后该账号**登录被拒**（`users.status` 闸门）、恢复后可登录。
-4. **确认 `david@powervoy.com` 能登录生产**（首次登录即改密口径由用户定；当前**未**实现强制改密）。
+4. **确认 `user@example.com` 能登录生产**（首次登录即改密口径由用户定；当前**未**实现强制改密）。
 5. 若要做团队清理的**常规化**能力：只做「停用」，不做删除（与账号同口径）。
 6. 复跑全套门禁的命令（本轮已实测可用）：
    ```powershell
@@ -224,14 +224,14 @@ src/app/(app)/onboarding/page.tsx(80,17): error TS2322:
   这 4 个文件属**历史遗留违规**，建议后续删除或按本文档保持"只读 env 变量"形态。
 - **不要 `os.environ["DATABASE_URL"]` 事后覆盖**：`app.db.session` 在 import 时已建 engine，
   必须在 import **之前**设好环境变量，或直接自建 `create_async_engine`（本轮做法）。
-- **口令**：`david@powervoy.com` 的初始口令由用户当面指定，**本文档不记录明文**
+- **口令**：`user@example.com` 的初始口令由用户当面指定，**本文档不记录明文**
   （库里只存 bcrypt 哈希）。⚠️ 本轮**早期版本的提交里曾出现该明文**（`ff9aa73` 的 §①，
   已在 `b75a055` 之后的提交中改为"不在仓库记录"）⇒ **建议连同 §⑥ 的 Neon 口令一起轮换**，
   或由用户拍板做一次历史重写。
 - **本机工具（2026-10-12 实测）**：
   - `node.exe`：`C:\Program Files\nodejs\node.exe`（在 PATH）；
   - **`pnpm` 不在 PATH**，自带一份在
-    `C:\Users\河北慷逊公司\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pnpm\bin\pnpm.mjs`
+    `C:\Users\某某贸易公司\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pnpm\bin\pnpm.mjs`
     （同目录 `dependencies\node\bin\node.exe`；**实测两个路径都存在**）。
     调用式：`& "<node.exe>" "<pnpm.mjs>" -C frontend <script>`。
     ⚠️ AGENTS.md 里旧写的 `C:\Users\HJ\…` **不存在**（已在该文档中更正）。
@@ -239,7 +239,7 @@ src/app/(app)/onboarding/page.tsx(80,17): error TS2322:
     请改用 `powershell -ExecutionPolicy Bypass -File scripts/…`。
   - **提交前把 pnpm/node 的 bin 放进 PATH**：`.husky/pre-commit` 会调 `pnpm lint-staged`，
     否则 `pnpm: command not found`（code 127）导致提交失败。
-  - `uv.exe`：`C:\Users\河北慷逊公司\.local\bin\uv.exe`（worker 测试可用它跑 pytest）。
+  - `uv.exe`：`C:\Users\某某贸易公司\.local\bin\uv.exe`（worker 测试可用它跑 pytest）。
   - **commitlint 的 `subject-case`** 禁止句首/Pascal 大小写 ⇒ subject 用**中文**或全小写才过。
 
 ***

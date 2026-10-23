@@ -15,11 +15,11 @@ import pymupdf
 
 D = Path(r"D:\projects\报价制作")
 TIM = D / "Tim"
-ROOT_PI_XLSX = D / "Proforma Invoice - Tim - 20260929.xlsx"
-TIM_PI_XLSX = TIM / "Proforma Invoice - Tim - 20260929.xlsx"
-PI_PDF = TIM / "Proforma Invoice - Tim - 20260929.pdf"
-SC_PDF = TIM / "Sales Contract - Tim - 20261012.pdf"
-CI_PDF = TIM / "Commercial Invoice - Tim - 20261012.pdf"
+ROOT_PI_XLSX = D / "Proforma Invoice - Buyer - 20260929.xlsx"
+TIM_PI_XLSX = TIM / "Proforma Invoice - Buyer - 20260929.xlsx"
+PI_PDF = TIM / "Proforma Invoice - Buyer - 20260929.pdf"
+SC_PDF = TIM / "Sales Contract - Buyer - 20261012.pdf"
+CI_PDF = TIM / "Commercial Invoice - Buyer - 20261012.pdf"
 
 
 def norm(s):
@@ -66,8 +66,8 @@ print("=" * 104)
 print("文件状态（PI 为冻结基线，本次核对不改任何文件）")
 print("=" * 104)
 for tag, p in (("PI xlsx（根目录，基线）", ROOT_PI_XLSX), ("PI xlsx（Tim 副本）", TIM_PI_XLSX),
-               ("PI pdf", PI_PDF), ("SC xlsx", TIM / "Sales Contract - Tim - 20261012.xlsx"),
-               ("SC pdf", SC_PDF), ("CI xlsx", TIM / "Commercial Invoice - Tim - 20261012.xlsx"),
+               ("PI pdf", PI_PDF), ("SC xlsx", TIM / "Sales Contract - Buyer - 20261012.xlsx"),
+               ("SC pdf", SC_PDF), ("CI xlsx", TIM / "Commercial Invoice - Buyer - 20261012.xlsx"),
                ("CI pdf", CI_PDF)):
     print(f"  {tag:<22} {dt.datetime.fromtimestamp(p.stat().st_mtime):%Y-%m-%d %H:%M:%S}")
 same = xlsx_text(ROOT_PI_XLSX) == xlsx_text(TIM_PI_XLSX)
@@ -113,8 +113,8 @@ CHECKS = [
     ("交货", "Incoterms 2020 版本", "incoterms2020", {"SC", "CI"}),
     ("交货", "交货地址 No.1 Guangling Road", "no.1guanglingroad", E),
     ("交货", "运输时效 4–5 days", "4–5daysafterdispatch", {"PI", "SC"}),
-    ("主体", "买方 Tim Lyons", "timlyons", E),
-    ("主体", "买方邮箱", "timlyons@oneatmosphere.com", E),
+    ("主体", "买方 John Doe", "timlyons", E),
+    ("主体", "买方邮箱", "buyer@example.com", E),
     ("主体", "收货/拼柜方 Jiangsu Juncheng", "jiangsu juncheng vehicle industry co., ltd.", E),
     ("主体", "卖方税号", "91131125ma0ga4242u", E),
     ("主体", "卖方中文名/地址", "anpingcounty", E),

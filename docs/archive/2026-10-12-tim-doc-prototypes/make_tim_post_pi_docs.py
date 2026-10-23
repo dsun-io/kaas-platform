@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-Tim 单 —— PI(LJ-PI-20260929-01) 之后的后续单证（卖方 联佳 出具）。
+Tim 单 —— PI(LJ-PI-20260929-01) 之后的后续单证（卖方 某 出具）。
 
   01 Commercial Invoice      商业发票                 LJ-CI-20261012-01
-  （02 装箱单 Packing List 已停用——联佳不负责装箱，装箱单由实际出口方出具）
+  （02 装箱单 Packing List 已停用——某不负责装箱，装箱单由实际出口方出具）
   03 Shipping Advice         装运通知                 LJ-SA-20261012-01
   （04 木包装 ISPM-15 声明 已停用——本单无木包装，不再生成）
   05 Certificate of Origin   ChAFTA COO 申报数据表     LJ-CO-20261012-01
   06 Sales Contract          销售合同                 LJ-SC-20261012-01
 
-数据源：Proforma Invoice - Tim - 20260929.xlsx（同一批货物，金额/规格/汇率/条款一致）
+数据源：Proforma Invoice - Buyer - 20260929.xlsx（同一批货物，金额/规格/汇率/条款一致）
 版式：沿用 PI（Calibri、#1F4E79 表头、#DDEBF7 浅蓝、#F2F7FC 斑马纹、细边框）
 输出：D:\\projects\\报价制作\\Tim\\
 公章：.tools\\stamp.png 自动盖到每份单证的卖方签章区
@@ -39,18 +39,18 @@ def q4(x):
 
 # ─────────────────────────────────────────────────────────── 主体信息
 SELLER = "Anping Lianjia Wire Mesh Products Co., Ltd."
-SELLER_ZH = "安平县联佳丝网制品有限公司"
+SELLER_ZH = "某某网业有限公司"
 SELLER_ADDR_ZH = "河北省衡水市安平县堤涡村村北 100 米处"
-SIGNER_ZH = "孙嘉泽"          # 签署人：中文名
+SIGNER_ZH = "张三"          # 签署人：中文名
 SIGNER_EN = "David Sun"       # 签署人：英文名（不用拼音）
 SELLER_ADDR = ("100 meters north of Diwo Village, Anping County, "
                "Hengshui City, Hebei Province, China")
-SELLER_CONTACT = ("Tel: +86 136 0318 1774  ·  E-mail: sales@lianjiafence.com  "
+SELLER_CONTACT = ("Tel: +86 000 0000 0000  ·  E-mail: sales@example.com  "
                   "·  Tax ID: 91131125MA0GA4242U")
-BUYER = "Tim Lyons"
-BUYER_CONTACT = "Tel: +61 438 381 068  ·  E-mail: timlyons@oneatmosphere.com"
-CONSIGNEE = "Jiangsu Juncheng Vehicle Industry Co., Ltd. (江苏钧骋车业有限公司)"
-CONSIGNEE_ZH = "江苏钧骋车业有限公司"
+BUYER = "John Doe"
+BUYER_CONTACT = "Tel: +61 000 000 000  ·  E-mail: buyer@example.com"
+CONSIGNEE = "Jiangsu Juncheng Vehicle Industry Co., Ltd. (某某车业有限公司)"
+CONSIGNEE_ZH = "某某车业有限公司"
 DELIVERY = ("No. 1 Guangling Road, Sheyanghu Industrial Park, Baoying County, "
             "Yangzhou City, Jiangsu Province, China")
 DELIVERY_ZH = "江苏省扬州市宝应县舍阳湖工业园区广陵路 1 号"
@@ -604,14 +604,14 @@ def build_ci():
     r += 1
 
     # 用户 2026-10-12：商业发票不写“谁报关 / 谁提供报关单证”——那是合同/报关层面的事，
-    # 且“由钧骋报关”属未经核实的推断，发票上不得断言。
+    # 且“由某报关”属未经核实的推断，发票上不得断言。
     r, _ = signature(ws, r + 1)
     finish(ws, r, sections=sections, forced=[pay_head - 1])
-    save(wb, f"Commercial Invoice - Tim - 20261012.xlsx")
+    save(wb, f"Commercial Invoice - Buyer - 20261012.xlsx")
 
 
 # ═══════════════════════════════════════════════ 02 装箱单 Packing List
-# 【已停用 2026-10-12】用户明确：联佳不负责装箱，装箱单不由卖方出具
+# 【已停用 2026-10-12】用户明确：某不负责装箱，装箱单不由卖方出具
 # （具体由谁出具未确认，单证中一律不点名）。
 # 因此不再生成该单证，其他单证中也不再引用；函数保留以便日后需要时恢复。
 def build_pl():
@@ -681,7 +681,7 @@ def build_pl():
     r = spacer(ws, r)
     r, _ = signature(ws, r)
     finish(ws, r, sections=sections)
-    save(wb, f"Packing List - Tim - 20261012.xlsx")
+    save(wb, f"Packing List - Buyer - 20261012.xlsx")
 
 
 # ═══════════════════════════════════════════════ 03 装运通知 Shipping Advice
@@ -771,7 +771,7 @@ def build_sa():
     r, _ = signature(ws, r, buyer_label="Acknowledged by (Buyer)",
                      seller_label="Issued by (Seller)")
     finish(ws, r, sections=sections)
-    save(wb, f"Shipping Advice - Tim - 20261012.xlsx")
+    save(wb, f"Shipping Advice - Buyer - 20261012.xlsx")
 
 
 # ═══════════════════════════════════════════════ 04 木包装声明 ISPM-15
@@ -849,7 +849,7 @@ def build_pd():
         "registered treatment facility; a copy of the treatment certificate is "
         "available on request."))
     finish(ws, r, sections=sections)
-    save(wb, f"Packing Declaration - Tim - 20261012.xlsx")
+    save(wb, f"Packing Declaration - Buyer - 20261012.xlsx")
 
 
 # ═══════════════════════════════════════════════ 05 原产地证 ChAFTA COO
@@ -942,7 +942,7 @@ def build_co():
                     "China Customs.  Certificate No. and date of issue are assigned "
                     "by the issuing authority."))
     finish(ws, r, sections=sections)
-    save(wb, f"Certificate of Origin (ChAFTA COO) - Tim - 20261012.xlsx")
+    save(wb, f"Certificate of Origin (ChAFTA COO) - Buyer - 20261012.xlsx")
 
 
 # ══════════════════════════════════════ 06 销售合同 Sales Contract
@@ -1089,7 +1089,7 @@ def build_ct_clause_form():
     r, _ = signature(ws, r, buyer_label="The Buyer (Signature & Stamp)",
                      seller_label="The Seller (Signature & Stamp)")
     finish(ws, r, sections=sections, forced=[terms_head - 1])
-    save(wb, f"Sales Contract (clause form) - Tim - 20261012.xlsx")
+    save(wb, f"Sales Contract (clause form) - Buyer - 20261012.xlsx")
 
 
 # ══════════════════════════ 06b 销售合同（正式版·中英对照，交银行审贸易背景）
@@ -1130,7 +1130,7 @@ CT_PORT_NOTE = (
     "Yangzhou, Jiangsu, and the consignment is consolidated and exported by the "
     "buyer's supplier, Jiangsu Juncheng Vehicle Industry Co., Ltd.\n"
     "装运港 / 目的港与卖方无关：货物以 DAP 条件交至买方指定的江苏扬州地址，"
-    "由买方供货商江苏钧骋车业有限公司负责拼柜出运。")
+    "由买方供货商某某车业有限公司负责拼柜出运。")
 
 CT_CLAUSES = (
     ("1. Quality 品质",
@@ -1277,10 +1277,10 @@ def build_ct_formal():
              f"{SELLER_ADDR_ZH}\n"
              "100 meters north of Diwo Village, Anping County,\n"
              "Hengshui City, Hebei Province, China\n"
-             "电话 Tel: +86 136 0318 1774  ·  邮箱 E-mail: sales@lianjiafence.com\n"
+             "电话 Tel: +86 000 0000 0000  ·  邮箱 E-mail: sales@example.com\n"
              "税号 Tax ID: 91131125MA0GA4242U")
     b_txt = (f"{BUYER} 澳大利亚 Australia\n"
-             "电话 Tel: +61 438 381 068  ·  邮箱 E-mail: timlyons@oneatmosphere.com\n"
+             "电话 Tel: +61 000 000 000  ·  邮箱 E-mail: buyer@example.com\n"
              f"收货地址 Delivery Address: {DELIVERY_ZH}\n"
              "No. 1 Guangling Road, Sheyanghu Industrial Park,\n"
              "Baoying County, Yangzhou City, Jiangsu Province, China")
@@ -1409,7 +1409,7 @@ def build_ct_formal():
     r, _ = simple_sign(
         ws, r,
         rows=(
-            ("Buyer's Representative 买方代表: Tim Lyons",
+            ("Buyer's Representative 买方代表: John Doe",
              f"Seller's Representative 卖方代表: {SIGNER_ZH} ({SIGNER_EN})"),
             ("Company Stamp / Signature 公司盖章 / 签字: ______________________",
              "Company Stamp / Signature 公司盖章 / 签字: ______________________"),
@@ -1418,14 +1418,14 @@ def build_ct_formal():
         ),
         stamp_w=230, stamp_row=1, stamp_col="G")
     finish(ws, r, sections=sections)
-    save(wb, f"Sales Contract - Tim - 20261012.xlsx")
+    save(wb, f"Sales Contract - Buyer - 20261012.xlsx")
 
 
 if __name__ == "__main__":
     os.makedirs(OUT_DIR, exist_ok=True)
     print("== 01 Commercial Invoice ==")
     build_ci()
-    # 02 装箱单 Packing List —— 已按用户要求停用（联佳不负责装箱，装箱单由出口方出具）
+    # 02 装箱单 Packing List —— 已按用户要求停用（某不负责装箱，装箱单由出口方出具）
     print("== 03 Shipping Advice ==")
     build_sa()
     # 04 木包装声明 ISPM-15 —— 已按用户要求停用（本单无木包装，不需要声明）

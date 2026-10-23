@@ -25,7 +25,7 @@ for pdf in sorted(TIM.glob("*.pdf")):
 
 print()
 # CO 文本失败定位
-pdf = TIM / "Certificate of Origin (ChAFTA COO) - Tim - 20261012.pdf"
+pdf = TIM / "Certificate of Origin (ChAFTA COO) - Buyer - 20261012.pdf"
 ws = openpyxl.load_workbook(pdf.with_suffix(".xlsx")).active
 pages = pymupdf.open(pdf)
 pdf_flat = norm("".join(p.get_text() for p in pages))

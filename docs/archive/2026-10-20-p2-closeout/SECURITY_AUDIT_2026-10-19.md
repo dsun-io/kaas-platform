@@ -60,7 +60,7 @@
     （4 个文件同源）；`git log --all -S'npg_'` 命中 37 个提交。
   - **与现用口令相同**：`docs/PROBLEM_STATUS_2026-10-11.md:3529` 记录"SHA256 已比对，未打印明文"，
     判定"历史仍可读，且与现用口令相同"。
-  - 管理员 `david@powervoy.com` 初始口令：`main` 历史 4 个提交的交接文档（`ff9aa73`…`bb5276e`），
+  - 管理员 `user@example.com` 初始口令：`main` 历史 4 个提交的交接文档（`ff9aa73`…`bb5276e`），
     `fbced671` 已从当前树删除（`docs/PROBLEM_STATUS_2026-10-11.md:3531`）。
   - **用户裁决（2026-10-17）**：不轮换 Neon 口令、不改管理员口令；计划"部署完成后把仓库改回 private"
     （`docs/PROBLEM_STATUS_2026-10-11.md:3562-3569`；`docs/UNCERTAIN.md:24` #18 亦记录同一裁决）。
@@ -427,7 +427,7 @@
 | 低-4 | `GET /api/v1/file-objects/_r2_debug` 诊断端点仍在生产 | `ws_files.py:890-900`（已限管理员） | 下线（注释自己写"排查完可删"） | ❌ |
 | 低-5 | Worker 未显式关闭 FastAPI docs/openapi | `main.py:200` `FastAPI(title=…)` 未传 `docs_url=None`；实际不可达（`wrangler.jsonc:83` `run_worker_first` 只含 `/api/*`、`/health`，其余走静态资产） | 显式 `docs_url=None, openapi_url=None` 消除"将来路由一变就暴露"的可能 | ❌ |
 | 低-6 | 文档/模板漂移 | ① `backend/worker/README.md:55` 仍写"push 到 main 自动部署"（与 `deploy.yml:16-19` 冻结矛盾）；② `backend/orchestrator/.env.production.template:20-25` 保留 `minioadmin/minioadmin` 弱默认值；③ `DEPLOY.md:177` 示例含真实 Neon 端点主机名（无口令，可接受） | 同步文档；模板值改 `<CHANGE-ME>` | ❌ |
-| 低-7 | 生产 QA `system_admin` 账号长期存在 | `docs/PROBLEM_STATUS_2026-10-11.md:3571-3583`（`qa.test@powervoy.com`, `users.id=5`, 团队 2） | 验收完成后停用（`PATCH /api/v1/admin/accounts/5` 或改库 `status='disabled'`） | ✅ 用户决定何时停用 |
+| 低-7 | 生产 QA `system_admin` 账号长期存在 | `docs/PROBLEM_STATUS_2026-10-11.md:3571-3583`（`qa@example.com`, `users.id=5`, 团队 2） | 验收完成后停用（`PATCH /api/v1/admin/accounts/5` 或改库 `status='disabled'`） | ✅ 用户决定何时停用 |
 | 低-8 | 归档业务数据在库 | `archive/.../sample_docs/*` 19 个文件（公司名/联系人/报价样例）；`docs/PROBLEM_STATUS_2026-10-11.md:3532` 记录 `docs/archive` 含真实姓名/成本（本轮 `stowage_raw` **已不在跟踪列表**，需再确认） | 业务方确认是否属商业秘密；若是，从当前树移除（历史仍在） | ✅ 用户/业务确认 |
 
 ---

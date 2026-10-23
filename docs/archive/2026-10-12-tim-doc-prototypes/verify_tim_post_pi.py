@@ -11,10 +11,10 @@ TIM = Path(r"D:\projects\报价制作\Tim")
 OUT = Path(r"D:\projects\报价制作\.tools\img_tim")
 
 PAIRS = [
-    ("Commercial Invoice - Tim - 20261012", False),
-    ("Shipping Advice - Tim - 20261012", False),
-    ("Certificate of Origin (ChAFTA COO) - Tim - 20261012", False),
-    ("Sales Contract - Tim - 20261012", False),
+    ("Commercial Invoice - Buyer - 20261012", False),
+    ("Shipping Advice - Buyer - 20261012", False),
+    ("Certificate of Origin (ChAFTA COO) - Buyer - 20261012", False),
+    ("Sales Contract - Buyer - 20261012", False),
 ]
 
 

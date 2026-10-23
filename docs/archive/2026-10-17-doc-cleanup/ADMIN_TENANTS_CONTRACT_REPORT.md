@@ -142,11 +142,11 @@ orchestrator 的 OpenAPI 只是**声明**（没有测试断言具体字段，
 
 ```jsonc
 // GET /api/v1/admin/tenants  → 200
-{ "tenants": [ { "tenant_id": "lianjia", "name": "联佳丝网", "is_active": true } ] }
+{ "tenants": [ { "tenant_id": "lianjia", "name": "某丝网", "is_active": true } ] }
 
 // POST /api/v1/admin/tenants/reload → 200
 { "reloaded_count": 2,
-  "active_tenants": [ { "tenant_id": "lianjia", "display_name": "联佳丝网",
+  "active_tenants": [ { "tenant_id": "lianjia", "display_name": "某丝网",
                         "locale": "zh-CN", "region": "cn-north", "is_active": true } ] }
 ```
 

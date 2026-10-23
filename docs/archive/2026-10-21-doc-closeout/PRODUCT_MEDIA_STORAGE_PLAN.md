@@ -22,7 +22,7 @@
 | 13 | 公章**上传界面**（此前前端**无任何入口**） | ✅ | `settings/company-profile` 的 `CompanySealCard`；5 个端点与两端后端一一对应；**Canvas→PNG 是后端契约**（`validate_seal_image` 只认 PNG 魔数） |
 | 14 | **默认公章自动带入**单据渲染（G1 单一真源） | ✅ | 共享内核 `kaas_common/files/seal.py`；两端 `apply_default_seal` 是**同一函数对象**（测试断言）；`sync-shared -Check` 共享内核 **27** 文件 |
 | 15 | 三个缺陷修复（坏 `file_id` 500 / PDF 让位 / 前端两处） | ✅ | 见下「产品图排序与公章」§4：`coerce_file_ref_id`、让位扩到 `("stamp_scan","render_pdf")`、版本链改按后继件 `supersedes_id` |
-| 16 | 生产**真实验收**（带登录 + 真直传尝试） | 🔶 **已执行；卡在密钥长度** | 经用户授权临时改 bcrypt 哈希 → 登录 → **立即改回**（复核：恢复后与备份**逐字一致**、新口令**不再匹配** ⇒ **生产数据最终未变**）；因 `PUT` 被拒**未创建任何测试记录**；生产 `users` 仅 **3 个账号**、**无联佳账号**、口令全为 bcrypt（不可还原） |
+| 16 | 生产**真实验收**（带登录 + 真直传尝试） | 🔶 **已执行；卡在密钥长度** | 经用户授权临时改 bcrypt 哈希 → 登录 → **立即改回**（复核：恢复后与备份**逐字一致**、新口令**不再匹配** ⇒ **生产数据最终未变**）；因 `PUT` 被拒**未创建任何测试记录**；生产 `users` 仅 **3 个账号**、**无某账号**、口令全为 bcrypt（不可还原） |
 | 17 | 直传失败**自动回退服务端代理**（不静默） | ✅ | 见下 §8：`fellBackToProxy: true` + `fallbackReason`；UI 显示「已上传（直传失败：<原因>；已走服务端兜底）」；**`PUT` 成功但 `register` 失败 ⇒ 抛错不回退**；`configured=false` **不算回退**；`pnpm test` 实测 **28 files / 354 passed**（use-products **13 条**；**lead 实测**：4 条新用例在旧实现下会红）。**未覆盖**：`products/page.tsx` 的 `doUpload` |
 
 > 字节落点的当前行为（按优先级）：① **S3 预签名**（配好 `S3_*` 时，浏览器直传，字节不过服务端）
@@ -108,7 +108,7 @@ orchestrator OpenAPI **实测 170 条路径**（此前记录 167）。
   **新口令不再匹配** ⇒ **生产数据最终未变**。
 - 因 `PUT` 被拒，**没有创建任何测试记录**（`register` 未执行）。
 - 核实到的事实：生产 `users` 只有 **3 个账号**（`admin@kaas.dev` / `qa_user@qa.kaas.internal` /
-  `qa_customer@qa.kaas.internal`），**没有联佳账号**；口令全为 **bcrypt（不可还原）**
+  `qa_customer@qa.kaas.internal`），**没有某账号**；口令全为 **bcrypt（不可还原）**
   ⇒ 「从库里取登录凭证」这个说法**在事实上不成立**。
 
 #### 5.3 ⏳ 唯一坏点：`S3_ACCESS_KEY` 只有 **13 位**，R2 要求 **32 位**

@@ -125,7 +125,7 @@ CI 增加产物审计：`worker/pylock.toml` 出现 local-only 名单即 FAIL + 
   `pywrangler deploy` 创建**独立 POC Worker**（`kaas-poc-sqlalchemy`、`kaas-poc-baseline`，
   `workers_dev: true`，无自定义路由，与生产同名风险为零），随后 `versions upload`
   共 16 次全部成功（不接管流量；其中 1 次首跑报"Worker 不存在"后按此流程修正）。
-- 真实边缘结果：`https://kaas-poc-sqlalchemy.dspro0124.workers.dev/health` → **200**，
+- 真实边缘结果：`https://kaas-poc-sqlalchemy.example.workers.dev/health` → **200**，
   body 与本地一致（sqlalchemy OK / greenlet ModuleNotFoundError / asyncio ImportError）；
   `/sqla/select1` → **500**（ImportError 未捕获，FastAPI/ASGI 桥返回 Internal Server Error）。
 - 生产 Worker `kaas`：只跑 `wrangler deploy --dry-run`（0 上传），未 deploy / 未 versions upload。

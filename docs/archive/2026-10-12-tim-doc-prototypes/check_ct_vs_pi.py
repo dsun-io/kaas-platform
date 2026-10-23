@@ -18,8 +18,8 @@ def norm(s):
     return re.sub(r"\s+", "", str(s))
 
 
-pi_ws = openpyxl.load_workbook(D / "Proforma Invoice - Tim - 20260929.xlsx").active
-ct_pdf = pymupdf.open(TIM / "Sales Contract - Tim - 20261012.pdf")
+pi_ws = openpyxl.load_workbook(D / "Proforma Invoice - Buyer - 20260929.xlsx").active
+ct_pdf = pymupdf.open(TIM / "Sales Contract - Buyer - 20261012.pdf")
 ct = norm("".join(p.get_text() for p in ct_pdf))
 
 # PI 条款区文本，打印出来供人工复核

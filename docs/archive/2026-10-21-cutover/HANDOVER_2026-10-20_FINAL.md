@@ -211,7 +211,7 @@ Neon 项目权限 · Resend 账号（`send.powervoy.com` 域名）· 生产域�
 
 用户点名的**后端 5 项 + 单证内容专项**已全部落地。PR #5 `mergeable_state=clean`，
 四条 workflow（backend:test / contracts:check / Frontend CI / preview）在合并后 head 全绿：
-预览 `https://kaas-preview-pr-5.dspro0124.workers.dev`。
+预览 `https://kaas-preview-pr-5.example.workers.dev`。
 
 | 项 | 落地要点 |
 |---|---|
@@ -288,7 +288,7 @@ kaas-preview-storage；KV = `KAAS_PREVIEW`；Workers = `kaas`。
   `PROD_HYPERDRIVE_ID=f53fed49…`。
 - **Cloudflare Worker secrets（生产 `kaas`）**：`ADMIN_SETUP_TOKEN`/`JWT_SECRET`/`S3_ACCESS_KEY`/
   `S3_SECRET_KEY`（4 个，缺 `RESEND_API_KEY` → 发布时补）。
-- 本地 wrangler OAuth 已登录 `dspro0124@163.com`；gh OAuth 已登录 `dsun-io`（scope: repo/workflow）。
+- 本地 wrangler OAuth 已登录 `user@example.com`；gh OAuth 已登录 `dsun-io`（scope: repo/workflow）。
 
 ## 4. 今日踩坑与结论（避免重做）
 
