@@ -40,6 +40,8 @@ _SIBLING_MODULES = (
     "ws_teams",
     # 订单明细变更审批 + 通知（2026-10-22，M1-e）
     "ws_approvals",
+    # 历史订单批量导入（2026-10-23，C29；main 末尾 import，路由挂 /api/v1/imports/*）
+    "imports_api",
     # 团队加入申请（2026-10-22）：注册时团队已存在 → 申请 + 管理员审核
     "ws_join_applications",
     "ws_workstations",

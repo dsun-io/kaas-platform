@@ -9,10 +9,10 @@
 
 | 指标 | 数量 | 期望 | 结论 |
 |---|---|---|---|
-| APIRoute 业务路由 | 277 | — | — |
+| APIRoute 业务路由 | 279 | — | — |
 | FastAPI 内置（openapi/docs/redoc） | 4 | — | — |
-| **app.routes 合计** | **281** | **281** | **✅ 一致** |
-| method×path 展开行数 | 277 | — | 仅供参考 |
+| **app.routes 合计** | **283** | **283** | **✅ 一致** |
+| method×path 展开行数 | 279 | — | 仅供参考 |
 
 > 核对说明：计划 §2 Phase 0 登记的 253 = app.routes 全部条目；其中 4 条是 FastAPI 默认
 > 挂载的文档路由（不参与业务迁移；TS 侧 Hono 是否镜像留给 Phase 1 决定）：
@@ -22,7 +22,7 @@
 > - GET, HEAD `/docs/oauth2-redirect`
 > - GET, HEAD `/redoc`
 
-> ⚠️ 仍有 10 条路由域归属为 misc，需人工确认规则。
+> ⚠️ 仍有 12 条路由域归属为 misc，需人工确认规则。
 
 ## 按域汇总（迁移排序用）
 
@@ -35,9 +35,9 @@
 | orders | 24 |
 | customers | 21 |
 | teams | 19 |
+| misc | 12 |
 | outreach | 12 |
 | admin | 11 |
-| misc | 10 |
 | auth | 9 |
 | files | 9 |
 | ai | 8 |
@@ -92,6 +92,13 @@
 | DELETE | `/api/v1/research/products/{research_id}` | `research_delete` | :2359 | `_get_current_user` | ✅ | — | intel |
 | POST | `/api/v1/research/from-leadgen` | `research_from_leadgen` | :2378 | `_get_current_user` | ✅ | — | intel |
 | GET | `/api/v1/research/runs` | `research_runs` | :2420 | `_get_current_user` | ✅ | — | intel |
+
+### `worker/src/imports_api.py`（2 条）
+
+| Method | Path | Endpoint | 行号 | Depends | 登录态 | 平台运营 | 域 |
+|---|---|---|---|---|---|---|---|
+| POST | `/api/v1/imports/orders/preview` | `preview_import_orders` | :338 | `_get_current_user` | ✅ | — | misc |
+| POST | `/api/v1/imports/orders` | `create_import_orders` | :368 | `_get_current_user` | ✅ | — | misc |
 
 ### `worker/src/main.py`（82 条）
 

@@ -17,12 +17,20 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
-import { AlertCircle, Bell, ChevronRight, Plus, Wallet } from "lucide-react";
+import {
+  AlertCircle,
+  Bell,
+  ChevronRight,
+  Plus,
+  Upload,
+  Wallet,
+} from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useMutationWithError } from "./hooks/use-mutation-with-error";
 import { toast } from "sonner";
 
+import { ImportExistingDataDialog } from "@/components/import-existing-data-dialog";
 import { CopyButton } from "@/components/shared/copy-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
@@ -134,6 +142,8 @@ export default function OrdersPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   // C36 下期 #21：状态流转弹窗（一次只开一个订单）
   const [statusOrder, setStatusOrder] = useState<OrderRow | null>(null);
+  // C29：历史订单批量导入（选客户 + CSV → 预览 → 全绿才可提交）
+  const [importOpen, setImportOpen] = useState(false);
   const [density, setDensity] = usePersistentState<"cozy" | "compact">(
     "ui:orders:density",
     "cozy",
@@ -191,14 +201,25 @@ export default function OrdersPage() {
         title="订单"
         description="报价谈成后转订单；订单上的贸易条款会一路传到单证，避免单证与合同不一致。"
         actions={
-          // C36 #7：应收台账入口放在订单页 —— 侧栏导航由共享契约 workstations.ts 驱动
-          // （R2 与后端共享内核逐条比对），加导航项属契约变更；应收由订单产生，此处进入最顺。
-          <Link href="/receivables">
-            <Button variant="outline" size="sm">
-              <Wallet className="mr-1 h-4 w-4" />
-              应收台账
+          <div className="flex flex-wrap items-center gap-2">
+            {/* C29：历史订单导入入口（设计 §4）。单证页**不挂**——单证导入见设计 §6。 */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setImportOpen(true)}
+            >
+              <Upload className="mr-1 h-4 w-4" />
+              导入已有数据
             </Button>
-          </Link>
+            {/* C36 #7：应收台账入口放在订单页 —— 侧栏导航由共享契约 workstations.ts 驱动
+                （R2 与后端共享内核逐条比对），加导航项属契约变更；应收由订单产生，此处进入最顺。 */}
+            <Link href="/receivables">
+              <Button variant="outline" size="sm">
+                <Wallet className="mr-1 h-4 w-4" />
+                应收台账
+              </Button>
+            </Link>
+          </div>
         }
       />
 
@@ -641,6 +662,14 @@ export default function OrdersPage() {
           }}
         />
       )}
+
+      {/* C29：导入已有数据（历史订单）。选客户 + CSV → 自动预览 → 全绿才可「确认导入」；
+          成功后弹窗内 toast 并刷新订单列表（见 hook 的 invalidate）。 */}
+      <ImportExistingDataDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        resource="订单"
+      />
     </div>
   );
 }

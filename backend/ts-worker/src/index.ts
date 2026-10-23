@@ -22,6 +22,7 @@ import teamRoutes from "./routes/teams";
 import intelRoutes from "./routes/intel";
 import workstationsRoutes from "./routes/workstations";
 import dashboardRoutes from "./routes/dashboard";
+import importRoutes from "./routes/imports";
 import { buildOpenApiDocument } from "./openapi";
 import { createProxyApp } from "./proxy";
 import { callKernel } from "./kernel";
@@ -94,6 +95,8 @@ app.route("/", intelRoutes);
 app.route("/", workstationsRoutes);
 app.route("/", dashboardRoutes);
 app.route("/", orderRoutes);
+// C29 历史订单批量导入：2 条显式透传（multipart 不解析不重写，CSV 校验/事务全在内核）
+app.route("/", importRoutes);
 // M1-e：审批中心 / 站内通知 / 指定审批人（显式路由逐条注册，业务全在内核）
 app.route("/", approvalRoutes);
 app.route("/", fileRoutes);

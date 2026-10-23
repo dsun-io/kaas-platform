@@ -38,6 +38,11 @@ import {
   MOCK_EXPORT_RATE_SETS,
   MOCK_EXPORT_TERMS_TEMPLATE,
 } from "./export-quote-data";
+// C29 历史订单导入：CSV 解析/逐行校验（纯函数，可单测；见文件头注释）
+import {
+  IMPORT_DB_DUPLICATE_MESSAGE,
+  validateImportOrdersCsv,
+} from "./import-orders";
 // C5：持久化（版本化 localStorage）+ C18 长尾 handler（见各文件头注释）
 import {
   clearMockPersistence,
@@ -3799,6 +3804,124 @@ function inquiryOrderOut(
   };
 }
 
+// ── C29 历史订单导入：multipart 表单读取 + 客户解析（预览/提交共用）──────────
+// 字段名 = 内核 `imports_api.py` 契约：`file`（CSV）+ `customer_id`（字符串数字）。
+// 失败一律返回 `{"detail":{error,code,…}}`（与其它 mock handler / 内核 HTTPException 同口径）。
+type ImportOrdersForm =
+  | { customer: MockCustomer; text: string }
+  | { response: Response };
+
+async function readImportOrdersForm(
+  request: Request,
+): Promise<ImportOrdersForm> {
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return {
+      response: HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "IMPORT_INVALID_FORM",
+            detail:
+              "请求必须是 multipart/form-data（字段：file + customer_id）",
+          },
+        },
+        { status: 422 },
+      ),
+    };
+  }
+
+  const rawCustomerId = form.get("customer_id");
+  const rawCustomerText =
+    typeof rawCustomerId === "string" ? rawCustomerId.trim() : "";
+  if (rawCustomerText === "") {
+    // 与内核 _doc_customer(required=True) 一致：**没选客户**与"客户不可见"分开说
+    return {
+      response: HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "CUSTOMER_REQUIRED",
+            field: "customer_id",
+            detail: "单据必须归属业务客户：请从已有业务客户里选择",
+          },
+        },
+        { status: 422 },
+      ),
+    };
+  }
+  if (!/^\d+$/.test(rawCustomerText)) {
+    // 内核 _as_bigint：非数字 id ⇒ 422，不静默取 0
+    return {
+      response: HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "INVALID_CUSTOMER_ID",
+            field: "customer_id",
+            value: rawCustomerText,
+            detail: "customer_id 必须是整数 id",
+          },
+        },
+        { status: 422 },
+      ),
+    };
+  }
+  const customerId = Number(rawCustomerText);
+  const customer = customersStore.find((c) => c.id === customerId);
+  if (!customer) {
+    // 与内核同码：客户不存在（被删/错号）⇒ 404，不是 422
+    return {
+      response: HttpResponse.json(
+        {
+          detail: {
+            error: "not_found",
+            code: "CUSTOMER_NOT_FOUND",
+            detail: "客户不存在或不属于你的团队",
+          },
+        },
+        { status: 404 },
+      ),
+    };
+  }
+
+  const file = form.get("file");
+  if (!isBlobLike(file)) {
+    return {
+      response: HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "IMPORT_EMPTY_FILE",
+            detail: "请上传要导入的 CSV 文件",
+          },
+        },
+        { status: 422 },
+      ),
+    };
+  }
+  const text = await file.text();
+  if (text === "") {
+    // 内核 _read_upload：**零字节**才叫空文件；只有空白字符的文件会被 csv 解析判成
+    // 缺表头（IMPORT_NO_HEADER）—— 两种错因不同，不能合并。
+    return {
+      response: HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "IMPORT_EMPTY_FILE",
+            detail: "上传的文件是空的",
+          },
+        },
+        { status: 422 },
+      ),
+    };
+  }
+  return { customer, text };
+}
+
 export const handlers = [
   // ── 工位订阅快照（原先没有 mock，是**真正的**缺口）─────────────────────
   // 形状**必须**照 `lib/workstation/visibility.ts` 的 `parseMyWorkstationsPayload()`：
@@ -5828,6 +5951,225 @@ export const handlers = [
       });
     }
     return HttpResponse.json(order, { status: 201 });
+  }),
+
+  // ── C29 历史订单导入：预览 / 提交 ────────────────────────────────────────
+  // 契约真源：docs/IMPORT_ORDERS_PLAN_2026-10-23.md §3 + backend/worker/src/imports_api.py
+  // （2026-10-23 逐条对照）；消费方 =
+  // app/(app)/orders/hooks/use-import-orders.ts + components/import-existing-data-dialog.tsx。
+  // 已知 mock 缺口（有意，登记而不是假装有）：内核还有两种 422 未在 mock 复现 ——
+  //   IMPORT_FILE_TOO_LARGE（>10MB）与 IMPORT_BAD_ENCODING（非 UTF-8）。
+  //   jsdom/Node 里造 10MB File 或非法编码字节既慢又不稳，且前端对两者只做"显示原因"，
+  //   没有可验证的分支差异 ⇒ 留空比造假阳性更诚实。
+  // 解析/逐行校验在 ./import-orders.ts（纯函数，可单测）；这里只做 HTTP 外壳 + store 写入。
+  // 预览**零写入**；提交**全有或全无**（校验全过才 push，与内核单事务同语义）。
+  http.post("/api/v1/imports/orders/preview", async ({ request }) => {
+    const parsed = await readImportOrdersForm(request);
+    if ("response" in parsed) return parsed.response;
+
+    const validated = validateImportOrdersCsv(
+      parsed.text,
+      ordersStore.map((order) => String(order.order_no ?? "")),
+      MOCK_ORDER_STATUSES,
+      CURRENCIES,
+    );
+    if (!validated.ok) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: validated.code,
+            detail: validated.message,
+            ...(validated.columns ? { columns: validated.columns } : {}),
+          },
+        },
+        { status: 422 },
+      );
+    }
+    if (validated.rows.length === 0) {
+      // 内核两个端点都是 `if not raw_rows` ⇒ 422 IMPORT_NO_ROWS（只有表头，没有数据行）
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "IMPORT_NO_ROWS",
+            detail: "CSV 只有表头，没有数据行",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    return HttpResponse.json({
+      customer: {
+        id: parsed.customer.id,
+        name: parsed.customer.company_name ?? null,
+      },
+      columns: validated.columns,
+      rows: validated.rows.map((row) => ({
+        index: row.index,
+        ok: row.errors.length === 0,
+        data: row.data,
+        errors: row.errors,
+      })),
+      summary: {
+        total: validated.rows.length,
+        ok: validated.rows.filter((row) => row.errors.length === 0).length,
+        error: validated.rows.filter((row) => row.errors.length > 0).length,
+        existing_order_nos: validated.existingOrderNos,
+      },
+      // 内核 preview 还回 warnings（未知列已忽略 / 表头列重复按第一次取值）
+      warnings: validated.warnings,
+    });
+  }),
+
+  http.post("/api/v1/imports/orders", async ({ request }) => {
+    const parsed = await readImportOrdersForm(request);
+    if ("response" in parsed) return parsed.response;
+
+    const validated = validateImportOrdersCsv(
+      parsed.text,
+      ordersStore.map((order) => String(order.order_no ?? "")),
+      MOCK_ORDER_STATUSES,
+      CURRENCIES,
+    );
+    if (!validated.ok) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: validated.code,
+            detail: validated.message,
+            ...(validated.columns ? { columns: validated.columns } : {}),
+          },
+        },
+        { status: 422 },
+      );
+    }
+    if (validated.rows.length === 0) {
+      // 内核两个端点都是 `if not raw_rows` ⇒ 422 IMPORT_NO_ROWS（只有表头，没有数据行）
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "IMPORT_NO_ROWS",
+            detail: "CSV 只有表头，没有数据行",
+          },
+        },
+        { status: 422 },
+      );
+    }
+
+    // 422 只装**非撞库**的行错误：撞库的下一步动作是「改号」，格式错的下一步是
+    // 「改 CSV」，两者混成一个 422，前端就没法告诉用户该改什么。
+    const brokenRows = validated.rows
+      .filter((row) =>
+        row.errors.some((error) => error !== IMPORT_DB_DUPLICATE_MESSAGE),
+      )
+      .map((row) => ({
+        index: row.index,
+        errors: row.errors.filter(
+          (error) => error !== IMPORT_DB_DUPLICATE_MESSAGE,
+        ),
+      }));
+    if (brokenRows.length > 0) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "IMPORT_HAS_ERRORS",
+            detail:
+              "有 " +
+              String(brokenRows.length) +
+              " 行校验未通过，未写入任何数据",
+            rows: brokenRows,
+          },
+        },
+        { status: 422 },
+      );
+    }
+
+    // 撞库复查：预览 → 提交之间可能已有同号订单落库（同批重放），提交前再查一遍；
+    // 命中即**整批回滚**（409），一个都不写。
+    const takenNos = validated.rows
+      .map((row) => row.data?.order_no ?? "")
+      .filter(
+        (orderNo) =>
+          orderNo !== "" &&
+          ordersStore.some((order) => String(order.order_no ?? "") === orderNo),
+      );
+    const conflictNos = [
+      ...new Set([...validated.existingOrderNos, ...takenNos]),
+    ];
+    if (conflictNos.length > 0) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "conflict",
+            code: "IMPORT_DUPLICATE_ORDER_NO",
+            detail:
+              "订单号在本租户已存在，整批未写入：" + conflictNos.join("、"),
+            order_nos: conflictNos,
+          },
+        },
+        { status: 409 },
+      );
+    }
+
+    // 校验全过：一次性写入（历史补录口径，设计 §1）
+    //   source_type='direct' / inquiry_id=NULL —— 历史单本来就没有询盘父对象；
+    //   order_no 保留 CSV 原值（不走 _next_customer_doc_no）；total_amount 缺省 NULL。
+    const customerId = parsed.customer.id;
+    const customerName = parsed.customer.company_name ?? null;
+    const now = nowIso();
+    let nextId = Math.max(0, ...ordersStore.map((order) => order.id)) + 1;
+    const ids: number[] = [];
+    const orderNos: string[] = [];
+    for (const row of validated.rows) {
+      const data = row.data;
+      if (!data) continue;
+      // 兜底：错误行已在上面 422 拦掉，所以走到这里的行 order_no 一定非空
+      // （内核有同样的隐含前提：行级校验通过才进 INSERT）。
+      const orderNo = data.order_no;
+      if (!orderNo) continue;
+      const created = {
+        id: nextId,
+        order_no: orderNo,
+        quote_order_id: null,
+        quote_id: null,
+        inquiry_id: null,
+        source_type: "direct",
+        source_channel: null,
+        confirmed_at: null,
+        confirmed_by: null,
+        confirmed_source: null,
+        customer_id: customerId,
+        customer_name: customerName,
+        status: data.status,
+        currency: data.currency,
+        total_amount: data.total_amount,
+        amount_breakdown: null,
+        order_date: data.order_date,
+        delivery_date: null,
+        notes: data.notes,
+        fx_rate: null,
+        fx_rate_date: null,
+        created_at: now,
+        incoterm: null,
+        payment_terms: null,
+        port_of_loading: null,
+        port_of_destination: null,
+        shipping_marks: null,
+        country_of_origin: null,
+      };
+      ordersStore.push(created);
+      ids.push(created.id);
+      orderNos.push(created.order_no);
+      nextId += 1;
+    }
+    return HttpResponse.json(
+      { created: ids.length, ids, order_nos: orderNos },
+      { status: 201 },
+    );
   }),
 
   // GET /orders/{id}（设计 §13.3）：详情带 amount_breakdown / items /

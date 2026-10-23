@@ -140,7 +140,7 @@ backend/worker/.venv/Scripts/python.exe .tmp/c36-docs.py                  # 补 
 | **C1 / G-5** | `POST /file-objects/upload` | ✅ 2026-10-21 已按用户批准删除（C36）；C1 本身仍为"不做" |
 | **C9** | `GET /file-objects/_r2_debug`、`GET /fx-rates/_debug` | C9 已完成（admin 闸门）；保留运维 |
 | **C13 / G-5** | `POST /outreach/webhook` | C13 🧭 已授权“保持”；501 预留桩 |
-| **C19 / C29** | — | 批量导入 UI 已接（v2 报价工作台）；`/import/template` 在用（§2 非死），C29 占位入口已隐藏 |
+| **C19 / C29** | — | 批量导入 UI 已接（v2 报价工作台）；`/import/template` 在用（§2 非死）。**C29 ✅ 2026-10-23**：新增 `POST /api/v1/imports/orders/preview` + `/imports/orders`（历史订单 CSV，旧占位入口已在订单页挂回并接成 预览→确认；见 `IMPORT_ORDERS_PLAN_2026-10-23.md`） |
 | **C30** | `GET /admin/archive-logs` | ✅ 已接（`admin/hooks/use-archive-logs.ts:54` + `archive-logs-card.tsx`，灰发页已挂载） |
 
 ## 4. 维护规则

@@ -6218,6 +6218,12 @@ import tax_archives  # noqa: E402,F401
 # 审批人路由：team_approvers → 团队管理员 → 租户系统管理员。
 import ws_approvals  # noqa: E402,F401
 
+# ── 历史订单批量导入（C29）：POST /api/v1/imports/orders{,/preview} ──
+# CSV（multipart）逐行校验 + 单事务全有全无；保留 CSV 的 order_no。
+# 业务规则全在本模块（复用 _doc_customer / parse_date / ORDER_STATUS / CURRENCY），
+# TS 门面只做鉴权 + 原样透传（backend/ts-worker/src/routes/imports.ts）。
+import imports_api  # noqa: E402,F401
+
 # ── Cloudflare Cron 定时任务（APScheduler 迁移 · README §8 已知问题 #5）──
 # orchestrator 里那两个 APScheduler 任务（每 15 分钟 replied→询盘扫描、每日 events 归档）
 # 在生产从未执行过（orchestrator 不常驻）。这里用 CF Cron 重建：

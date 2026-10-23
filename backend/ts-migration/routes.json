@@ -4130,6 +4130,36 @@
    "auth": true,
    "ops": false,
    "domain": "misc"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/imports/orders/preview",
+   "endpoint": "preview_import_orders",
+   "file": "worker/src/imports_api.py",
+   "line": 338,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "misc"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/imports/orders",
+   "endpoint": "create_import_orders",
+   "file": "worker/src/imports_api.py",
+   "line": 368,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "misc"
   }
  ],
  "builtin": [

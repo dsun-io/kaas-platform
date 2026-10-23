@@ -190,44 +190,104 @@ interface WriteRule {
 }
 
 const WRITE_RULES: readonly WriteRule[] = [
-  { match: /\/customers(\/|$)/, collections: ["customers", "contacts", "inquiries", "stageLog", "inquiryStageLog", "counters"] },
-  { match: /\/inquiries(\/|$)/, collections: ["inquiries", "inquiryStageLog", "counters"] },
+  {
+    match: /\/customers(\/|$)/,
+    collections: [
+      "customers",
+      "contacts",
+      "inquiries",
+      "stageLog",
+      "inquiryStageLog",
+      "counters",
+    ],
+  },
+  {
+    match: /\/inquiries(\/|$)/,
+    collections: ["inquiries", "inquiryStageLog", "counters"],
+  },
   { match: /\/quotes(\/|$)/, collections: ["quotes", "counters"] },
   { match: /\/quotations(\/|$)/, collections: ["quotations"] },
+  // C29 历史订单导入：提交真写 orders store ⇒ 刷新不丢。
+  // （预览路径 `/imports/orders/preview` 不以 `/imports/orders` 结尾，不会命中本规则 —— 零写入。）
+  { match: /\/imports\/orders$/, collections: ["orders"] },
   // A7 加固三集合（docFacts / docReceipts / docSet）都挂在 trade-docs 下：
   // 确认事实、登记收款、改单证清单都是单证域的写操作。
-  { match: /\/trade-docs(\/|$)/, collections: ["docs", "docFileLinks", "contentVersions", "docFacts", "docReceipts", "docSet", "counters"] },
+  {
+    match: /\/trade-docs(\/|$)/,
+    collections: [
+      "docs",
+      "docFileLinks",
+      "contentVersions",
+      "docFacts",
+      "docReceipts",
+      "docSet",
+      "counters",
+    ],
+  },
   { match: /\/file-objects(\/|$)/, collections: ["fileObjects", "counters"] },
-  { match: /\/tenant-products(\/|$)/, collections: ["tenantProducts", "tenantProductStatus", "productProfiles", "fileObjects", "counters"] },
+  {
+    match: /\/tenant-products(\/|$)/,
+    collections: [
+      "tenantProducts",
+      "tenantProductStatus",
+      "productProfiles",
+      "fileObjects",
+      "counters",
+    ],
+  },
   { match: /\/tenant-product-status$/, collections: ["tenantProductStatus"] },
-  { match: /\/products(\/|$)/, collections: ["fileObjects", "productProfiles", "counters"] },
-  { match: /\/teams(\/|$)/, collections: ["team", "teamMembers", "teamInvites", "teamSubscriptions"] },
+  {
+    match: /\/products(\/|$)/,
+    collections: ["fileObjects", "productProfiles", "counters"],
+  },
+  {
+    match: /\/teams(\/|$)/,
+    collections: ["team", "teamMembers", "teamInvites", "teamSubscriptions"],
+  },
   { match: /\/tax-archives(\/|$)/, collections: ["taxArchives"] },
   { match: /\/product-tax-rates(\/|$)/, collections: ["productTaxRates"] },
   { match: /\/tenant\/company-profile$/, collections: ["companyProfile"] },
   { match: /\/tenant\/company-seals(\/|$)/, collections: ["companySeals"] },
-  { match: /\/auth\//, collections: ["adminUser", "registeredEmails", "authResetToken"] },
-  { match: /\/admin\/feature_flag$/, collections: ["featureFlags", "deploymentAudits"] },
+  {
+    match: /\/auth\//,
+    collections: ["adminUser", "registeredEmails", "authResetToken"],
+  },
+  {
+    match: /\/admin\/feature_flag$/,
+    collections: ["featureFlags", "deploymentAudits"],
+  },
   { match: /\/admin\/accounts(\/|$)/, collections: ["accounts"] },
   { match: /\/customer\/[^/]+\/capabilities$/, collections: ["capabilities"] },
   { match: /\/pricing-data(\/|$)/, collections: ["pricingCells"] },
-  { match: /\/research(\/|$)/, collections: ["researchProducts", "researchRuns", "counters"] },
-  { match: /\/leadgen(\/|$)/, collections: ["leadgenRuns", "leads", "counters"] },
+  {
+    match: /\/research(\/|$)/,
+    collections: ["researchProducts", "researchRuns", "counters"],
+  },
+  {
+    match: /\/leadgen(\/|$)/,
+    collections: ["leadgenRuns", "leads", "counters"],
+  },
   { match: /\/leads(\/|$)/, collections: ["leads", "inquiries", "counters"] },
-  { match: /\/outreach(\/|$)/, collections: ["mailboxes", "campaigns", "messages", "counters"] },
-  { match: /\/ai\/(providers|task-bindings)/, collections: ["aiProviders", "aiBindings"] },
+  {
+    match: /\/outreach(\/|$)/,
+    collections: ["mailboxes", "campaigns", "messages", "counters"],
+  },
+  {
+    match: /\/ai\/(providers|task-bindings)/,
+    collections: ["aiProviders", "aiBindings"],
+  },
   { match: /\/shipments(\/|$)/, collections: ["shipments", "counters"] },
-  { match: /\/intel\/shipments(\/|$)/, collections: ["intelShipments", "counters"] },
+  {
+    match: /\/intel\/shipments(\/|$)/,
+    collections: ["intelShipments", "counters"],
+  },
   { match: /\/fx-rates$/, collections: ["fxRates"] },
   { match: /\/admin\/spec\/attribute-proposals/, collections: ["proposals"] },
   { match: /\/spec\/wizard/, collections: ["proposals", "skus", "counters"] },
 ];
 
 /** 写请求 → 受影响的集合名（无匹配 = 该请求不改任何持久化 store）。 */
-export function collectionsForRequest(
-  method: string,
-  url: string,
-): string[] {
+export function collectionsForRequest(method: string, url: string): string[] {
   const verb = method.toUpperCase();
   if (verb === "GET" || verb === "HEAD" || verb === "OPTIONS") return [];
   let path = url;
@@ -243,10 +303,7 @@ export function collectionsForRequest(
 }
 
 /** MSW 响应事件回调：把这次写请求碰到的集合落盘（resolver 已完成 ⇒ store 已是新值）。 */
-export function persistAfterMockedResponse(
-  method: string,
-  url: string,
-): void {
+export function persistAfterMockedResponse(method: string, url: string): void {
   const names = collectionsForRequest(method, url);
   if (names.length === 0) return;
   persistMockState(names);

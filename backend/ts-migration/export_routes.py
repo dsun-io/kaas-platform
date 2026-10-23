@@ -44,8 +44,10 @@ WORKER_SRC = os.path.join(BACKEND, "worker", "src")
 # 2026-10-23 P0-A A3：新增 GET /api/v1/dashboard/receivables ⇒ 273+1=274 业务路由
 # 2026-10-23 C36 #19：新增品名对照 GET/PATCH/DELETE /api/v1/market/name-mappings
 #   ⇒ 274+3=277 业务路由
-# + 4 内置 = 281（278 → 281）
-EXPECTED_TOTAL = 281
+# 2026-10-23 C29：新增历史订单批量导入 POST /api/v1/imports/orders/preview
+#   与 POST /api/v1/imports/orders（multipart CSV）⇒ 277+2=279 业务路由
+# + 4 内置 = 283（279 + 4）
+EXPECTED_TOTAL = 283
 
 
 def _install_stubs() -> None:

@@ -23,6 +23,7 @@
 | 2 | [archive/2026-10-21-cutover/HANDOVER_2026-10-20_FINAL.md](./archive/2026-10-21-cutover/HANDOVER_2026-10-20_FINAL.md) | **最新交接**：§0.2 停止点/剩余工作/恢复路径；**§0.3 新设备/新 agent 接手清单**；§2 三环境、§5 发布检查单、踩坑 |
 | 3 | [PROBLEM_STATUS_2026-10-11.md](./PROBLEM_STATUS_2026-10-11.md) | 滚动问题状态（顶部按时间倒序，含后端五项与 CI 记录） |
 | 4 | [TODO.md](./TODO.md) | **活跃待办唯一账本**（A 单证 / B 产品 / C 其他 / D 发布 / E UI） |
+| 4b | [IMPORT_ORDERS_PLAN_2026-10-23.md](./IMPORT_ORDERS_PLAN_2026-10-23.md) | **C29 历史订单批量导入**设计+执行方案：口径裁决 / CSV 列 / API 契约 / 分层落点 / DoD |
 | 5 | [archive/2026-10-21-cutover/UI_UX_OPTIMIZATION_2026-10-20.md](./archive/2026-10-21-cutover/UI_UX_OPTIMIZATION_2026-10-20.md) | UI 方案与终验：P0/P1/P2 已完成，§11 为终验结论（历史「未做」已逐处标注完成状态） |
 | 6 | [archive/2026-10-21-final-closeout/UI_BACKEND_DEPENDENCIES_2026-10-20.md](./archive/2026-10-21-final-closeout/UI_BACKEND_DEPENDENCIES_2026-10-20.md)（历史留档） | 后端 5 项**历史验收基线**（2026-10-20 全部完成并入 `main`）；**现行口径看根 README + HANDOVER §0.1**，不要据此判断现状 |
 

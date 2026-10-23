@@ -34,7 +34,15 @@
 >   银行账号/SWIFT/收件人）→ 占位符（报告 §5.1）；② `docs/archive` 中危项 **32 文件 117 处**（邮箱/手机号/真实公司名/
 >   人名/Cloudflare 账号子域）→ 占位符（报告 §5.2）；金额/品名/单据号/日期/地名/银行机构名保留。
 >   回归门禁 `scripts/check-archive-pii.py` 升级为**双目录**扫描 → **PASS：120 个归档文本 0 命中**。
-> - 仍未动：A-11 / C24 / N10 / A2-B（挂起）、`ui:patterns` 2026-10-30 转 strict、C29 批量导入（本轮出设计并施工）。
+> - **C29 历史订单批量导入 ✅ 2026-10-23 已施工**（设计见 `IMPORT_ORDERS_PLAN_2026-10-23.md`）：
+>   内核 `POST /api/v1/imports/orders/preview`（CSV、表头归一、逐行校验、**零写入**）+
+>   `/imports/orders`（单事务全有全无、**保留历史 order_no**、有错行 422 / 撞库 409 整批回滚）；
+>   门面 `forwardKernelRequest` 原样透传（multipart 不解析）；前端「导入已有数据」接成
+>   **预览 → 确认** 两段式并在订单页挂回入口；业务路由 **277→279**（193 直接 + 86 透传 + 4 内置 = 283）。
+>   门禁：worker **1743 passed + 12 skipped** / ts-worker **305 passed / 26 文件** /
+>   前端 **1610 passed / 216 文件**（lint 0 error / ui:patterns 0 / mocks:check 3 ≤20）/ e2e **28 passed**；
+>   静态断言与密钥/PII 门禁全 PASS。
+> - 仍未动：A-11 / C24 / N10 / A2-B（挂起）、`ui:patterns` **2026-10-30** 转 strict（已设本会话提醒）。
 > - ~~Notion token 吊销~~：**2026-10-23 用户裁决：忽略、不再提醒、划掉**（见 `TODO.md` G-9 与 `STRUCTURAL_DEBT.md` §6.6）。
 >
 > **（2026-10-23 · 排除项拍板 + 只读安全审计 ✅）**
