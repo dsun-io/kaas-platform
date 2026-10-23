@@ -24,7 +24,7 @@
 | A-4 | **A6 G9 税号与完整联系方式** | ✅ 2026-10-21 已完成（`renderAddressBlock` 支持 tax_id/tel/address/email，有值才显示） | — |
 | A-5 | **A6 G10 BILL TO / CONSIGNED TO 双栏** | ✅ 2026-10-21 已完成（CI `bill_to`/`consigned_to`，任一有值才渲染） | — |
 | A-6 | **A6 G12 有效期/包装细则/生产照片/第三方拼柜方/代表签署人** | ✅ 2026-10-21 已完成（PI P2 字段；`valid_until` 仅在其它 P2 字段存在时随块显示，保护旧金标） | — |
-| A-7 | **A14 包装类事实（复用产品 packaging）** | 求值器已就绪；按产品 `spec.packaging[].method` 抽 `packing_method`/`packing_type`（不新增字段）；align-b 施工中 | 0.5 天 |
+| A-7 | **A14 包装类事实（复用产品 packaging）** | 已实现（HEAD `80512d85`，2026-10-20）：facts 抽 `packing_method`/`packing_type`（wood/bag/carton/none/mixed/other）；2026-10-23 补边界测试（不传 packing ⇒ 仍 `TRIGGER_UNKNOWN_KEY`，旧金标零差异） | — | ✅ 2026-10-23（测试见 `test_trade_doc_packing.py`） |
 | A-8 | **A5-W3 金额摘要条** | ✅ 2026-10-21 已完成（只读、无输入控件；复用 `computeFxBreakdown`/`amountInWords`/`receiptTolerance`；17 测；真实样例应付 2,826.49 钉死） | — |
 | A-9 | **A5-W2 行项批量编辑** | ✅ 2026-10-21 已完成（前端多选/预览/一次 PATCH/撤销 + 后端 `custom.items_override` 受控通道；渲染副本覆盖、行金额重算、facts manual/unverified、签发闸门拦截；新增 35+27 测） | — |
 | A-10 | **C27 QA 越权审计 7 条留证** | 发布后跑一轮并留证（P4） | 0.5 天 |
@@ -179,7 +179,7 @@
 | N4 | P8 联调状态核对 | ✅ 2026-10-21 核对：设计文档「P8 联调+E2E+订阅编码 ⏳」已过时 —— 联调=CI 三条全绿 + 预览链路实测；E2E=28 条（24+4）；订阅编码=契约 R2 PASS（27 工位 ts↔py）+ B3 真机开通生效。已在 `WORKSTATION_DESIGN.md` 段位状态表标 ✅ | — | ✅ |
 | N5 | 文档口径收尾批 | PROBLEM_STATUS/UNCERTAIN/HANDOVER + UI 两份/PDF_ARCHIVAL/E2E/README/旧设计稿归档 | ✅ 2026-10-21 |
 | N6 | **安全 4 项（最后做）** | **用户 2026-10-21 决定：①口令轮换/②管理员改密/④filter-repo 均不做（仓库保持 public）**；③归档数据公开评估**已完成并脱敏**（`docs/archive/stowage_raw.json` 身份+成本/售价/利润 228 格；`archive/.../sample_docs/*` 姓名/电话/邮箱；公司名保留） | — | ✅（按用户口径） |
-| N7 | 分支/遗留清理 | convergence-aprime 打 tag 后删远端、删已合并分支、清 2 个 stash、POC 目录（`backend/worker/poc-*`） | ✅ 分支/stash；POC 目录 ⏳ |
+| N7 | 分支/遗留清理 | convergence-aprime 打 tag 后删远端、删已合并分支、清 2 个 stash、POC 目录（`backend/worker/poc-*`） | ✅ 分支/stash；**POC 目录已删**（2026-10-23，grep 0 引用；docs 历史引用加注记） |
 | N8 | A′（SQL/DDL 内核同源） | 原并行线遗留，是否重激活为在评方案 | **用户 2026-10-21 授权默认：不做**（保持现状） | ✅（不做） |
 
 ---
@@ -200,7 +200,7 @@
 | N9 | = C23 的决策记录（避免两处编号漂移） | 见 C23/§G-12 | — | — |
 | N10 | 事件流联通 `domain_events` | ⏸ **用户 2026-10-21 拍板：暂缓，等未来功能成熟稳定再实现**；设计承诺保留在 `WORKSTATION_DESIGN` 并已标注"未实现、有需求再做"，不再作为当前欠账 | — | ⏸ 暂缓 |
 | N11 | DEPLOY §0.4 清理脚本缺失 | ✅ 2026-10-21：新建 `scripts/cleanup_orphan_lead.py`（`.tools/` 被 gitignore，改放 tracked 的 scripts/；DEPLOY §0.4 命令同步改为该路径）；**默认 dry-run**、`--apply` 才删、只匹配 3 个 E2E 前缀、被 `outreach_messages`/`cust_inquiries` 引用的行跳过并列出、事务+`--limit`、`KAAS_DSN` 环境变量读 DSN）；本机空库 dry-run 实测 0 行/exit 0 | — | ✅ |
-| A14 | 包装类事实缺失（A12 的真落地前提） | 求值器已就绪，但 `extract_facts` 白名单**未抽包装信息**（如是否木包装）⇒ "无木包装不出声明" 只能得到 `TRIGGER_UNKNOWN_KEY` warning。**2026-10-21 用户指出：产品管理已有「包装方式+包装费」设计**（`spec.packaging[] = {id,name,method,is_default,mode,amount,ranges}`，引号/报价已用 `packaging_id` 选包装）⇒ **不新增字段**，A14 改为：facts 从「本单选中的包装 method（`packaging_id` → 产品 packaging；缺省取 `is_default`/首条；无配置=`none`）」抽 `packing_method`（原文）+ `packing_type`（枚举：`wood`/`bag`/`carton`/`none`/`mixed`/`other`，按 method 关键词归类）；触发词可写 `packing_type != 'wood'` 才出「非木包装声明」。需补：单证行怎么拿到 packaging（报价行有 `packaging_id`；单证若未带则回退产品默认并标注） | 产品 packaging 设计 | ⏳ |
+| A14 | 包装类事实缺失（A12 的真落地前提） | 已实现（HEAD `80512d85`）：facts 从「本单选中的包装 method（`packaging_id` → 产品 packaging；缺省 `is_default`/首条；无配置 `none`）」抽 `packing_method`（原文）+ `packing_type`（wood/bag/carton/none/mixed/other），trust=confirmed + origin 四种标注；单证 facts 主路径全传 packing；触发词可写 `packing_type != 'wood'` 出「非木包装声明」 | — | ✅ 2026-10-23：实现已在 `80512d85`，本轮补边界测试销账 |
 | A11 | FACT_LABELS 未通过 API 返回 | ✅ 复核后**无需改**：`_fact_dict` 已逐条返回 `text_zh`/`text_en`（`ws_docs_hardening.py`），前端 `doc-facts-panel.tsx` 也按 `text_zh/text_en` 展示与编辑 ⇒ 全局 `FACT_LABELS` 只是内核兜底，不构成缺口 | — | ✅（复核销账） |
 | A12 | `trigger_expr` 只存不求值 | ✅ 2026-10-21：新增 `kaas_common/trade_doc/trigger.py`（纯 stdlib 三层解析，**无 eval/exec**；禁函数调用/属性/下标/算术；长度/记号/深度上限）；GET doc-set 追加 `applicable/trigger_error`（不删项、无法求值按适用），PUT 坏表达式 422 不落库，lint 只 warning；内核 68 + API 7 测，worker 1316+12skip。**边界（→A14）**：facts 白名单无包装类事实，"wood_packing" 会以 `TRIGGER_UNKNOWN_KEY` 警告而非生效 | A7 | ✅（求值器就绪） |
 | A13 | 翻译端点无入口 | ✅ 2026-10-21：单证加固新增第 6 tab「中译英」——字段从模板 manifest 推导（只取含汉字 text 字段，不硬编码）；`path=template` 明示 AI 不可用/原样返回/请人工翻译（绝不冒充），非草稿明示未写回；+16 测 | — | ✅ |
@@ -229,7 +229,7 @@
 
 | # | 事项 | 现状与建议 |
 |---|---|---|
-| F2-1 | ORDER_NEXT 口径不一致 | `backend/worker/src/main.py` 中 producing 只允许 `shipped`；`kaas_common/workstation/state_machines.py` 还允许 `cancelled`。门面按 worker 实际行为镜像（409 allowed 是前端契约）。**建议内核侧收敛为单一真源**（先查前端契约再定哪边对） |
+| F2-1 | ORDER_NEXT 口径不一致 | **已收敛（2026-10-23）**：共享表 producing 去掉 cancelled（以 worker 生产行为为准）；worker 删除本地第二份表改 import 共享表（单一真源）；测试断言 `worker_main.ORDER_NEXT is SHARED_ORDER_NEXT` + producing→cancelled 409 allowed==["shipped"] | ✅ |
 | F2-2 | 报价/单证引擎 Decimal vs TS double | 门面金额用 double+round2（Python Decimal ROUND_HALF_UP），分边界可能差 0.01；TS 只做协议层展示，**引擎计算不受影响**（引擎仍在 Python）。清理项：确认前端显示不依赖 TS 计算值 |
 
 ## G. 待用户拍板清单（集中登记；每条写明要定什么）
@@ -282,6 +282,8 @@
 
 > 方案按**最新实现与设计**重写（用户 2026-10-23 口径，不是按 UI_STANDARDS 做条文合并）；
 > 旧审计 P0/P1 清单仍有效，旧 PRD「两条并行线」已被本表批次取代。
+> **2026-10-23 09:00 暂停点**：task-25（customers 分页 + FormField 收编）未完成；工作树有 50 项未提交改动
+> （含 task-23/24/26/27 已完成但未提交的成果）——恢复步骤见 [`HANDOVER_2026-10-23_PAUSE.md`](./HANDOVER_2026-10-23_PAUSE.md)。
 
 | # | 批次 | 内容 | 状态 |
 |---|---|---|---|
@@ -295,7 +297,7 @@
 | U-P0B5 | 页头/错误边界 | 7 个 error.tsx + 6 loading + RouteGuard + WorkstationGate + 全局 not-found + 剩余 window.confirm | ✅ 2026-10-23：原生确认清单内清零（ui:patterns native-dialog 7→3） |
 | U-P0B6 | 行内展开迁移 | X1 customers 询盘详情 / X2 leadgen 线索 / X3 outreach 邮件 / X4 research 编辑 / X5 shipments 编辑 / X6 audit-log 键盘 / X7 quotes 记录堆叠 / X8 pricing 单元格 | ✅ 2026-10-23：全部迁 DetailDrawer/Dialog（X5 用行快照，筛选变化不丢编辑现场）；新增 11 测 |
 | U-P1D | 结构债 | 死代码（FreightPanel/defaultSpecRow）、幽灵 /quotations、状态映射收敛、拆巨型文件 | 🔨 部分：FreightPanel 289 行 + defaultSpecRow 已删（freight-panel.tsx 保 41 行，termOptionLabel 仍被引用）；三页状态映射已收敛到 status-tones（含 CAMPAIGN_STATUS_TONES）；/quotations 仅登记（无 page.tsx）；**拆 7 个巨型文件仍未做**（单独 backlog） |
-| U-P1D2 | 结构债（拆巨型文件） | customers 1674 / order-create-wizard 1366 / product-spec-editor 1142 / quote-workbench 924 / leadgen 881 / research 868 / payment-schedules-panel 698 | ⏳ backlog：建议每文件单独 PR + 回归，不与功能批混做 |
+| U-P1D2 | 结构债（拆巨型文件） | customers 1674 / order-create-wizard 1366 / product-spec-editor 1142 / quote-workbench 924 / **leadgen ✅** / research 868 / payment-schedules-panel 698 | 🔨 leadgen 已拆（1000→350 行，6 组件 + 3 lib，17 测绿）；剩余 6 个 backlog（每文件单独提交） |
 | U-P1E | 体验一致性 | 分页/URL 筛选/搜索防抖/FormField/键盘可达/aria-label | 🔨 大部分：trade-docs 分页+URL（导出全量）、events URL+防抖、market 三处防抖、customers 防抖+total+删联系人反馈、research 防抖+分页+导出全量、shipments 分页；**customers 列表分页、FormField 全面收编、O5 原生 details 统一** 待后续 |
 | U-P1F | 体验小项 | pricing 恢复兜底确认 / QuoteWizard 步骤数 / orders O3·O4·O5 / DetailDrawer barrel | ✅ 2026-10-23：全部完成（确认弹窗、真实步骤数、期次序号、LoadingBlock、Esc/外点、barrel） |
 
