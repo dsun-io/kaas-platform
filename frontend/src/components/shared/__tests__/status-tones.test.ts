@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CAMPAIGN_STATUS_TONES,
   CRAWL_STATUS_TONES,
   INQUIRY_STATUS_TONES,
   OUTREACH_STATUS_TONES,
@@ -26,6 +27,17 @@ describe("status-tones", () => {
       bounced: "danger",
       failed: "danger",
     });
+  });
+
+  it("营销活动状态（campaign）：活动 sent=成功，与单封邮件 sent=info 区分", () => {
+    expect(CAMPAIGN_STATUS_TONES).toMatchObject({
+      draft: "default",
+      sending: "info",
+      sent: "success",
+      failed: "danger",
+    });
+    expect(toneForStatus(CAMPAIGN_STATUS_TONES, "sent")).toBe("success");
+    expect(toneForStatus(OUTREACH_STATUS_TONES, "sent")).toBe("info");
   });
 
   it("询盘/抓取/运行状态与三页现有口径一致", () => {
@@ -69,12 +81,15 @@ describe("status-tones", () => {
     expect(scoreTone(Number.NaN)).toBe("default");
   });
 
-  it("STATUS_TONE_MAPS 登记全部业务域（便于遍历/测试）", () => {
+  it("STATUS_TONE_MAPS 登记全部业务域（5 域固定：新增/删除都要改这条）", () => {
     expect(Object.keys(STATUS_TONE_MAPS).sort()).toEqual([
+      "campaign",
       "crawl",
       "inquiry",
       "outreach",
       "run",
     ]);
+    // 注册表里的每张表都必须是本文件导出的同一引用（防手抄第二份）
+    expect(STATUS_TONE_MAPS.campaign).toBe(CAMPAIGN_STATUS_TONES);
   });
 });

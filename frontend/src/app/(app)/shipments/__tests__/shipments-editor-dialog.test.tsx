@@ -152,6 +152,14 @@ function setStatusFilter(value: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.get.mockImplementation(async (url: string, config?: unknown) => {
+    // 编辑弹窗按 id 查详情（GET /shipments/{id}）—— 弹窗内容来自它，不是列表行快照
+    const detailMatch = /^\/shipments\/(\d+)$/.exec(url);
+    if (detailMatch) {
+      const row = [ROW_BOOKING, ROW_TRANSIT].find(
+        (r) => r.id === Number(detailMatch[1]),
+      );
+      return { data: row ?? ROW_BOOKING };
+    }
     if (url !== "/shipments") return { data: { items: [], total: 0 } };
     const params = (config as { params?: { status?: string } })?.params;
     const rows =
@@ -205,6 +213,13 @@ describe("出货工位 · 编辑弹窗", () => {
       "出货信息 · SH-202610-0001",
     );
 
+    // 等详情人回填后再保存（弹窗表单来自详情接口）
+    await waitFor(
+      () =>
+        document.querySelector('input[placeholder="货代给的 B/L No."]') !== null,
+      undefined,
+      "详情回填",
+    );
     await click(findExactButton("保存"));
     await waitFor(() => mocks.patch.mock.calls.length > 0, undefined, "PATCH");
     expect(mocks.patch.mock.calls[0]![0]).toBe("/shipments/5");
@@ -248,6 +263,12 @@ describe("出货工位 · 编辑弹窗", () => {
       "弹窗打开",
     );
 
+    await waitFor(
+      () =>
+        document.querySelector('input[placeholder="货代给的 B/L No."]') !== null,
+      undefined,
+      "详情回填",
+    );
     await click(findExactButton("保存"));
     await settle();
     const alert = document.querySelector('[role="alert"]');

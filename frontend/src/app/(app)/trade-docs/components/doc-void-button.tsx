@@ -32,7 +32,8 @@ export function DocVoidButton({
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
 
-  const confirm = async () => {
+  // 局部处理函数不叫 `confirm`：避免与全局 window.confirm 同名产生误读/误报。
+  const handleConfirm = async () => {
     if (inFlight.current) return;
     inFlight.current = true;
     setError(null);
@@ -76,7 +77,7 @@ export function DocVoidButton({
         confirmLabel="确认作废"
         pending={update.isPending}
         error={error}
-        onConfirm={() => void confirm()}
+        onConfirm={() => void handleConfirm()}
       />
     </>
   );

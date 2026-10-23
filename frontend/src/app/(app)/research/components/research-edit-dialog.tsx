@@ -24,6 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AsyncButton } from "@/components/shared";
+import { FormField } from "@/components/shared/form-field";
 
 /** 本弹窗需要编辑的字段（只是 ResearchProduct 的子集，保持结构兼容）。 */
 export interface ResearchEditValue {
@@ -75,21 +76,22 @@ export function ResearchEditDialog({
         </DialogHeader>
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <div>
-            <label className="text-xs text-muted-foreground">本地产品</label>
+          <FormField label="本地产品" htmlFor="research-edit-product-name">
             <Input value={draft.product_name ?? ""} disabled />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground">中文产品名</label>
+          </FormField>
+          <FormField
+            label="中文产品名"
+            htmlFor="research-edit-product-name-cn"
+          >
             <Input
+              placeholder="如：勾花围栏"
               value={draft.product_name_cn ?? ""}
               onChange={(e) =>
                 setDraft({ ...draft, product_name_cn: e.target.value })
               }
             />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground">类目</label>
+          </FormField>
+          <FormField label="类目" htmlFor="research-edit-product-category">
             <select
               className="w-full rounded-md border bg-background px-3 py-2 text-sm"
               value={draft.product_category ?? ""}
@@ -104,11 +106,11 @@ export function ResearchEditDialog({
                 </option>
               ))}
             </select>
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground">当地价格</label>
+          </FormField>
+          <FormField label="当地价格" htmlFor="research-edit-price-local">
             <Input
               type="number"
+              placeholder="如：12.5"
               value={draft.price_local ?? ""}
               onChange={(e) =>
                 setDraft({
@@ -118,18 +120,17 @@ export function ResearchEditDialog({
                 })
               }
             />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground">币种</label>
+          </FormField>
+          <FormField label="币种" htmlFor="research-edit-price-currency">
             <Input
+              placeholder="如：USD"
               value={draft.price_currency ?? ""}
               onChange={(e) =>
                 setDraft({ ...draft, price_currency: e.target.value })
               }
             />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground">可供货</label>
+          </FormField>
+          <FormField label="可供货" htmlFor="research-edit-can-supply">
             <select
               className="w-full rounded-md border bg-background px-3 py-2 text-sm"
               value={
@@ -151,27 +152,35 @@ export function ResearchEditDialog({
               <option value="true">是</option>
               <option value="false">否</option>
             </select>
-          </div>
-          <div className="md:col-span-2">
-            <label className="text-xs text-muted-foreground">供货备注</label>
+          </FormField>
+          <FormField
+            label="供货备注"
+            htmlFor="research-edit-supply-notes"
+            className="md:col-span-2"
+          >
             <Input
+              placeholder="如：可做 FOB，30% 定金"
               value={draft.supply_notes ?? ""}
               onChange={(e) =>
                 setDraft({ ...draft, supply_notes: e.target.value })
               }
             />
-          </div>
-          <div className="md:col-span-3">
-            <label className="text-xs text-muted-foreground">市场备注</label>
+          </FormField>
+          <FormField
+            label="市场备注"
+            htmlFor="research-edit-market-note"
+            className="md:col-span-3"
+          >
             <textarea
               className="w-full rounded-md border bg-background px-3 py-2 text-sm"
               rows={3}
+              placeholder="如：当地零售价 12-15 USD，热销季 Q3"
               value={draft.market_note ?? ""}
               onChange={(e) =>
                 setDraft({ ...draft, market_note: e.target.value })
               }
             />
-          </div>
+          </FormField>
         </div>
 
         {draft.spec_raw && (

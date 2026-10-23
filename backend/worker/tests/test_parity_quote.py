@@ -1415,16 +1415,16 @@ def test_parity_quote_12_patch_order_change_customer():
 # 13. POST /api/v1/orders/{order_id}/status —— 状态机
 # ════════════════════════════════════════════════════════════════════════════
 
-def test_order_status_machine_table_matches_orchestrator():
-    """状态机逐字一致（两端各自本地表相同；注意**都**落后于共享内核 PRODUCING→cancelled）。"""
-    assert worker_main.ORDER_NEXT == {
-        "pending": ("confirmed", "cancelled"),
-        "confirmed": ("producing", "cancelled"),
-        "producing": ("shipped",),
-        "shipped": ("completed",),
-    }
-    # 共享内核（真源）允许 producing→cancelled；两侧本地表都缺这一条，属共同存量问题。
-    assert "cancelled" in SHARED_ORDER_NEXT["producing"]
+def test_order_status_machine_uses_shared_table():
+    """F2-1：worker 直接用共享内核 ORDER_NEXT（单一真源），producing 只允许 → shipped。"""
+    # 同一个对象：worker 不再保留第二份本地表（此前两份内容不同 ⇒ 409 allowed 与共享表漂移）
+    assert worker_main.ORDER_NEXT is SHARED_ORDER_NEXT
+    assert SHARED_ORDER_NEXT["producing"] == ("shipped",)
+    assert "cancelled" not in SHARED_ORDER_NEXT["producing"]
+    # 其余档位未变（pending/confirmed 仍可取消）
+    assert SHARED_ORDER_NEXT["pending"] == ("confirmed", "cancelled")
+    assert SHARED_ORDER_NEXT["confirmed"] == ("producing", "cancelled")
+    assert SHARED_ORDER_NEXT["shipped"] == ("completed",)
     # 报价状态机：worker 本地表的**可流转项**与共享内核除 closed 外逐字一致 ——
     # closed 就是 Q2 差异根因（共享内核有 closed 键，worker 表没有）。
     assert quote_api._QUOTE_NEXT == {
@@ -1530,6 +1530,25 @@ def test_order_status_pending_cancelled_does_not_create_receivable():
         resp = client.post("/api/v1/orders/21/status", json={"status": "cancelled"})
     assert resp.status_code == 200
     assert "INSERT INTO receivables" not in conn.sql()
+
+
+def test_order_status_producing_cannot_be_cancelled():
+    """F2-1 口径收敛：producing 只允许 → shipped（与共享内核 ORDER_NEXT 一致）。
+
+    决策理由（任务 F2-1）：worker 是生产内核，它的行为就是前端 409 `allowed` 的契约；
+    共享表此前多放一条 producing→cancelled 却永远不生效 ⇒ 以 worker 为准对齐，
+    并把 worker 改为直接 import 共享表（以后要放开只改 kaas_common 一处）。
+    """
+    conn = _FakeConn(fetchrow=[_order_row(status="producing")])
+    with _patched(conn, CUSTOMER):
+        resp = client.post("/api/v1/orders/21/status", json={"status": "cancelled"})
+    assert resp.status_code == 409
+    detail = resp.json()["detail"]
+    assert detail["code"] == "ILLEGAL_TRANSITION"
+    assert detail["from"] == "producing" and detail["to"] == "cancelled"
+    assert detail["allowed"] == ["shipped"]
+    # 不允许的流转不得写库
+    assert "UPDATE orders SET status" not in conn.sql()
 
 
 def test_order_status_404():

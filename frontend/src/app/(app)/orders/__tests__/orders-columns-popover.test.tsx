@@ -2,10 +2,12 @@
  * 订单列表 · 列配置浮层（O5，U-P1 小项）。
  *
  * 原生 <details> 不会"点别处自动收起"：浮层会一直盖在表格上，且 Esc 也关不掉。
- * 钉住三条：
- *  1. Esc 收起浮层，并把焦点还给 summary（否则焦点落在已隐藏的复选项上）；
- *  2. 点浮层外面收起；
- *  3. 点浮层里面**不**收起（阳性对照，防"一律关闭"的假修复）。
+ * O5 起改用共享 `PopoverPanel`（一个模式一个正规实现）。本测试钉住：
+ *  1. trigger 的 aria-expanded 随开合变化，面板是 role="dialog"；
+ *  2. Esc 收起浮层，并把焦点还给 trigger（否则焦点落在已隐藏的复选项上）；
+ *  3. 点浮层外面收起；
+ *  4. 点浮层里面**不**收起（阳性对照，防"一律关闭"的假修复）；
+ *  5. 原有列配置功能保留：取消勾选后该列从表头消失。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, type ReactNode } from "react";
@@ -85,10 +87,30 @@ async function mount() {
   await settle();
 }
 
-function columnsPanel(): HTMLDetailsElement {
-  const el = container!.querySelector("details");
-  if (!el) throw new Error("没找到列配置 details");
-  return el as HTMLDetailsElement;
+/** 列配置 trigger（PopoverPanel 的按钮） */
+function columnsTrigger(): HTMLButtonElement {
+  const el = Array.from(container!.querySelectorAll("button")).find(
+    (b) => (b.textContent ?? "").trim() === "列配置",
+  );
+  if (!el) throw new Error("没找到列配置 trigger");
+  return el as HTMLButtonElement;
+}
+
+function columnsPanel(): HTMLElement | null {
+  return container!.querySelector('[data-slot="popover-panel"]');
+}
+
+async function openPanel() {
+  act(() => {
+    columnsTrigger().click();
+  });
+  await settle(1);
+}
+
+function headerLabels(): string[] {
+  return Array.from(container!.querySelectorAll("thead th")).map((th) =>
+    (th.textContent ?? "").trim(),
+  );
 }
 
 beforeEach(() => {
@@ -116,57 +138,80 @@ afterEach(() => {
   client = null;
 });
 
-describe("订单列表 · 列配置浮层（O5）", () => {
-  it("Esc 收起浮层，焦点回到 summary", async () => {
+describe("订单列表 · 列配置浮层（O5 · PopoverPanel）", () => {
+  it("点击 trigger 展开：aria-expanded + role=dialog + 9 列复选项", async () => {
     await mount();
-    const el = columnsPanel();
-    act(() => {
-      el.open = true;
-    });
-    expect(el.open).toBe(true);
+    expect(columnsTrigger().getAttribute("aria-expanded")).toBe("false");
 
-    const summary = el.querySelector("summary")!;
+    await openPanel();
+    expect(columnsTrigger().getAttribute("aria-expanded")).toBe("true");
+    expect(columnsPanel()?.getAttribute("role")).toBe("dialog");
+    expect(columnsPanel()?.getAttribute("aria-label")).toBe("列配置");
+    expect(
+      columnsPanel()!.querySelectorAll('input[type="checkbox"]').length,
+    ).toBe(9);
+  });
+
+  it("Esc 收起浮层，焦点回到 trigger", async () => {
+    await mount();
+    await openPanel();
+
     act(() => {
-      summary.dispatchEvent(
+      document.dispatchEvent(
         new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
       );
     });
+    await settle(1);
 
-    expect(el.open).toBe(false);
-    expect(document.activeElement).toBe(summary);
+    expect(columnsPanel()).toBeNull();
+    expect(columnsTrigger().getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(columnsTrigger());
   });
 
   it("点浮层外面收起", async () => {
     await mount();
-    const el = columnsPanel();
-    act(() => {
-      el.open = true;
-    });
+    await openPanel();
 
     act(() => {
       document.body.dispatchEvent(
         new MouseEvent("mousedown", { bubbles: true }),
       );
     });
+    await settle(1);
 
-    expect(el.open).toBe(false);
+    expect(columnsPanel()).toBeNull();
   });
 
   it("点浮层里面不收起（阳性对照）", async () => {
     await mount();
-    const el = columnsPanel();
+    await openPanel();
+
+    const checkbox = columnsPanel()!.querySelector("input")!;
     act(() => {
-      el.open = true;
+      checkbox.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
     });
 
-    const checkbox = el.querySelector<HTMLInputElement>(
-      'input[type="checkbox"]',
-    );
-    expect(checkbox).not.toBeNull();
-    act(() => {
-      checkbox!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-    });
+    expect(columnsPanel()).not.toBeNull();
+  });
 
-    expect(el.open).toBe(true);
+  it("列配置功能保留：取消勾选「订单号」后该列从表头消失", async () => {
+    await mount();
+    expect(headerLabels()).toContain("订单号");
+
+    await openPanel();
+    const label = Array.from(
+      columnsPanel()!.querySelectorAll("label"),
+    ).find((el) => (el.textContent ?? "").includes("订单号"));
+    const checkbox = label?.querySelector("input");
+    expect(checkbox).not.toBeUndefined();
+
+    act(() => {
+      checkbox!.click();
+    });
+    await settle(1);
+
+    expect(headerLabels()).not.toContain("订单号");
+    // 其它列还在（不是整表清空）
+    expect(headerLabels()).toContain("客户");
   });
 });

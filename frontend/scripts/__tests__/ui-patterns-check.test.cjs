@@ -66,6 +66,21 @@ test("R1 反例：字符串里的 window.confirm、类名 onConfirm 不应误报
     rulesOf("src/app/x/page.tsx", "export function P(){ onConfirm(); return null; }"),
     [],
   );
+  // 同名局部函数/导入不是原生弹窗（task-27：handleConfirm 早期就叫 confirm 导致误报）
+  assert.deepEqual(
+    rulesOf(
+      "src/app/x/page.tsx",
+      "const confirm = async () => {}; export function P(){ void confirm(); }",
+    ),
+    [],
+  );
+  assert.deepEqual(
+    rulesOf(
+      "src/app/x/page.tsx",
+      "import { confirm } from './confirm-helper'; export function P(){ confirm(); }",
+    ),
+    [],
+  );
 });
 
 test("R2 no-bare-table：原生 <table> 违规，共享 <Table> 与 ui/table.tsx 白名单不报", () => {
@@ -172,6 +187,30 @@ test("R5 page-size-without-pagination：硬编码 page_size 且无 PaginationBar
     ),
     [],
   );
+  // 注释/字符串里的 page_size 不是配置（task-27：orders hook 的注释曾误报）
+  assert.deepEqual(
+    rulesOf(
+      "src/app/x/page.tsx",
+      "// 历史写法固定 page_size: 100，现在走标准分页\nexport const x = 1;",
+    ),
+    [],
+  );
+  assert.deepEqual(
+    rulesOf(
+      "src/app/x/page.tsx",
+      'export const q = { page_size: "50" };',
+    ),
+    [],
+  );
+  // 显式白名单：语义误报（选择器取数上限）不再计入违规，但进入 allowed 可核对
+  const allowlisted = analyzeSource(
+    "src/app/(app)/quotes/views/batch-quote-view.tsx",
+    "export const q = { page_size: 100 };",
+  );
+  assert.deepEqual(allowlisted.violations.map((v) => v.rule), []);
+  assert.equal(allowlisted.allowed.length, 1);
+  assert.equal(allowlisted.allowed[0].rule, RULES.pageSizePagination);
+  assert.match(allowlisted.allowed[0].reason, /选择器/);
 });
 
 test("CLI shadow 模式：有违规也退出 0，并打印转强制时间点", (t) => {

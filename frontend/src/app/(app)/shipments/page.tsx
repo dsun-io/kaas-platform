@@ -9,7 +9,7 @@
  */
 import { useRef, useState } from "react";
 import { AlertCircle, Ship } from "lucide-react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { AsyncButton } from "@/components/shared";
@@ -30,28 +30,18 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { normalizeApiError } from "@/lib/api/api-error";
 import apiClient from "@/lib/api/client";
 import { usePageView } from "@/lib/events/use-page-view";
 import { useOrderOptions } from "@/lib/workstation/use-upstream";
 
-interface ShipmentRow {
-  id: number;
-  shipment_no: string;
-  order_id: number | null;
-  customer_name: string | null;
-  consignee: string | null;
-  cargo_desc: string | null;
-  bl_no: string | null;
-  bl_type: string | null;
-  pol_name: string | null;
-  pod_name: string | null;
-  vessel: string | null;
-  voyage: string | null;
-  container_no: string | null;
-  etd: string | null;
-  eta: string | null;
-  status: string;
-}
+import {
+  SHIPMENTS_PAGE_SIZE,
+  shipmentKeys,
+  useShipmentDetail,
+  useShipmentsList,
+} from "./hooks/use-shipments";
+import type { ShipmentRow } from "./types";
 
 const STATUS_LABEL: Record<string, string> = {
   booking: "已订舱",
@@ -79,9 +69,6 @@ const NEXT_STATUS: Record<string, string> = {
   customs: "delivered",
 };
 
-/** 出货列表分页大小（后端 page_size 默认 20；原来硬编码 100 且无分页）。 */
-const SHIPMENTS_PAGE_SIZE = 20;
-
 const EDIT_FIELDS: { key: keyof ShipmentRow; label: string; hint?: string }[] =
   [
     { key: "bl_no", label: "提单号", hint: "货代给的 B/L No." },
@@ -103,33 +90,23 @@ export default function ShipmentsPage() {
   // R50（shipments）：接 PaginationBar，不再 page_size=100 硬编码无翻页
   const [page, setPage] = useState(1);
   /**
-   * U-P0B6/X5：编辑对象改为**打开时的行快照**（editor 独立于当前筛选结果）。
-   * 旧实现 `selected = rows.find(...)`：一改筛选/状态，选中行从 rows 消失 ⇒
-   * 编辑面板连同未保存的输入一起消失（数据丢失）。现在筛选只影响列表，不影响编辑现场。
+   * 编辑对象：**打开时的行快照**（editor 独立于当前筛选结果）。
+   * 历史：旧实现 `selected = rows.find(...)`，一改筛选/状态行从 rows 消失 ⇒
+   * 编辑面板连同未保存输入一起消失（数据丢失）。U-P0B6/X5 起改为独立快照；
+   * 本任务再把表单数据源换成按 id 查的详情（见下 `detail`），筛选变化只重取列表。
    */
   const [editing, setEditing] = useState<ShipmentRow | null>(null);
   const editorOpenerRef = useRef<HTMLElement | null>(null);
   const [orderId, setOrderId] = useState("");
   const orders = useOrderOptions();
+  /**
+   * 编辑弹窗的**真数据源**：按 id 查详情（列表行只做标题/兜底快照）。
+   * 详情失败时用户可「重试」或显式退回列表快照继续编辑（不让接口抖动锁死业务）。
+   */
+  const detail = useShipmentDetail(editing?.id ?? null);
+  const [useSeedFallback, setUseSeedFallback] = useState(false);
 
-  const list = useQuery({
-    queryKey: ["shipments", "list", statusFilter, page],
-    queryFn: async () => {
-      const { data } = await apiClient.get<{
-        items: ShipmentRow[];
-        total: number;
-        page: number;
-        page_size: number;
-      }>("/shipments", {
-        params: {
-          status: statusFilter || undefined,
-          page,
-          page_size: SHIPMENTS_PAGE_SIZE,
-        },
-      });
-      return data;
-    },
-  });
+  const list = useShipmentsList(statusFilter, page);
 
   /**
    * P0-B2/S2：建单 / 保存 / 推进三个写操作原本全无 onError（失败零反馈），
@@ -149,7 +126,7 @@ export default function ShipmentsPage() {
       onSuccess: (s) => {
         toast.success(`已建出货单 ${s.shipment_no}（客户与货物已从订单带入）`);
         setOrderId("");
-        // 建单成功直接打开编辑弹窗（快照 = 刚创建的行）
+        // 建单成功直接打开编辑弹窗（弹窗会按 id 再拉一次详情，刚创建即最新）
         setEditing(s);
         qc.invalidateQueries({ queryKey: ["shipments"] });
       },
@@ -166,9 +143,12 @@ export default function ShipmentsPage() {
       return data;
     },
     {
-      onSuccess: () => {
+      onSuccess: (_saved, body) => {
         toast.success("已保存");
+        // 列表与**该单详情**一起失效：列表前缀已覆盖详情，这里再显式失效一次，
+        // 保证「保存后重新打开弹窗」拿到的是刚存的值而不是旧详情缓存。
         qc.invalidateQueries({ queryKey: ["shipments"] });
+        qc.invalidateQueries({ queryKey: shipmentKeys.detail(body.id) });
         // 保存成功关闭编辑弹窗（失败时由 error 留在弹窗内，见 onError/渲染）
         closeEditor();
       },
@@ -194,14 +174,19 @@ export default function ShipmentsPage() {
 
   const rows = list.data?.items ?? [];
 
-  /** 打开编辑弹窗（行快照 + 记下触发按钮，关闭归还焦点）。 */
+  /**
+   * 打开编辑弹窗：列表行只作为标题/兜底快照，表单数据来自 `GET /shipments/{id}`。
+   * 记下触发按钮，关闭时归还焦点（a11y）。
+   */
   const openEditor = (row: ShipmentRow, opener?: HTMLElement | null) => {
     editorOpenerRef.current = opener ?? null;
+    setUseSeedFallback(false);
     setEditing(row);
   };
 
   const closeEditor = () => {
     setEditing(null);
+    setUseSeedFallback(false);
     const opener = editorOpenerRef.current;
     window.setTimeout(() => opener?.focus(), 0);
   };
@@ -400,8 +385,9 @@ export default function ShipmentsPage() {
       </SectionCard>
 
       {/*
-        U-P0B6/X5：编辑面板迁入 Dialog，对象是**打开时的行快照**。
-        改筛选/推进状态只会重取列表，弹窗与未保存的输入都还在（旧实现会直接消失）。
+        编辑面板在 Dialog 里；列表行只做标题/兜底快照，表单数据来自
+        GET /shipments/{id}（真·detail 查询）。改筛选/推进状态只重取列表，
+        弹窗与未保存输入都还在（旧实现会直接消失）；详情失败可在窗内重试或退回快照。
       */}
       {editing && (
         <Dialog
@@ -415,15 +401,54 @@ export default function ShipmentsPage() {
               <DialogTitle>{"出货信息 · " + editing.shipment_no}</DialogTitle>
               <DialogDescription>
                 录全船名/航次/提单号/ETD/ETA，开提单与装运通知时就不用再问货代。
+                表单取该单最新详情（列表行只做兜底快照）。
               </DialogDescription>
             </DialogHeader>
-            <ShipmentForm
-              key={editing.id}
-              shipment={editing}
-              saving={save.pending}
-              error={save.error}
-              onSave={(body) => void save.run({ id: editing.id, ...body })}
-            />
+            {detail.isLoading && !detail.data && !useSeedFallback ? (
+              <div
+                className="space-y-2"
+                aria-busy="true"
+                aria-label="出货详情加载中"
+              >
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-9 w-full rounded-md" />
+                ))}
+              </div>
+            ) : detail.isError && !detail.data && !useSeedFallback ? (
+              <div className="space-y-3">
+                <p
+                  role="alert"
+                  className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+                >
+                  详情读取失败：
+                  {normalizeApiError(detail.error).message}
+                  （可重试；列表行快照可能已过期）
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <AsyncButton
+                    pending={detail.isFetching}
+                    pendingLabel="重试中…"
+                    onClick={() => void detail.refetch()}
+                  >
+                    重试
+                  </AsyncButton>
+                  <Button
+                    variant="outline"
+                    onClick={() => setUseSeedFallback(true)}
+                  >
+                    用列表快照继续编辑
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <ShipmentForm
+                key={(detail.data ?? editing).id}
+                shipment={detail.data ?? editing}
+                saving={save.pending}
+                error={save.error}
+                onSave={(body) => void save.run({ id: editing.id, ...body })}
+              />
+            )}
             <DialogFooter>
               <Button
                 variant="outline"

@@ -275,4 +275,27 @@ describe("调研产品 · 编辑弹窗", () => {
     await click(findExactButton("保存"));
     expect(mocks.patch).toHaveBeenCalledTimes(2);
   });
+
+  it("FormField 收编：每个字段都有 label 关联（可 getByLabelText）", async () => {
+    mount();
+    await openEdit();
+
+    /** 等价 testing-library 的 getByLabelText：label[for] → 控件 */
+    function byLabelText(text: string): HTMLElement | null {
+      const label = Array.from(document.querySelectorAll("label")).find(
+        (l) => (l.textContent ?? "").replace("*", "").trim() === text,
+      );
+      const id = label?.getAttribute("for");
+      return id ? document.getElementById(id) : null;
+    }
+
+    expect(byLabelText("本地产品")).toBeInstanceOf(HTMLInputElement);
+    expect(byLabelText("中文产品名")).toBeInstanceOf(HTMLInputElement);
+    expect(byLabelText("类目")).toBeInstanceOf(HTMLSelectElement);
+    expect(byLabelText("当地价格")).toBeInstanceOf(HTMLInputElement);
+    expect(byLabelText("币种")).toBeInstanceOf(HTMLInputElement);
+    expect(byLabelText("可供货")).toBeInstanceOf(HTMLSelectElement);
+    expect(byLabelText("供货备注")).toBeInstanceOf(HTMLInputElement);
+    expect(byLabelText("市场备注")).toBeInstanceOf(HTMLTextAreaElement);
+  });
 });

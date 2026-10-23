@@ -182,3 +182,30 @@ def test_packing_facts_do_not_break_other_extraction():
     assert facts["incoterm"].value == "FOB"
     assert facts["currency"].value == "USD"
     assert facts["packing_type"].value == "wood"
+
+
+def test_trigger_still_unknown_key_when_no_packing_facts():
+    """A14 边界（保护"旧金标零差异"）：不传 packing ⇒ 无包装事实 ⇒ 触发器仍是 UNKNOWN_KEY。
+
+    为什么必须保住：A12 的语义是「求值不了 ⇒ 按适用 + warning」，**不能**静默当成
+    "非木包装"（信息缺失时反而放行"非木包装声明"是危险方向）。所以只有
+    `_facts_of`（单证主路径）才会带上包装事实；其余仍不传 packing 的调用点语义不变。
+    """
+    from kaas_common.trade_doc.trigger import (  # noqa: PLC0415 - 局部导入：只此一处用到
+        TRIGGER_UNKNOWN_KEY,
+        TriggerError,
+        evaluate_trigger,
+    )
+
+    payload = {
+        "sources": {"order": {"status": "confirmed", "currency": "USD",
+                              "total_amount": 1200, "incoterm": "FOB"}},
+        "custom": {},
+    }
+    facts = {fact.key: fact.value for fact in extract_facts(payload, "pi")}
+    assert "packing_type" not in facts          # 没包装信息就不产生包装事实
+    assert facts["incoterm"] == "FOB"           # 其余事实照常
+    with pytest.raises(TriggerError) as excinfo:
+        evaluate_trigger("packing_type != 'wood'", facts)
+    assert excinfo.value.code == TRIGGER_UNKNOWN_KEY
+

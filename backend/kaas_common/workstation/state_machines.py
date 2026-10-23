@@ -20,10 +20,22 @@ QUOTE_NEXT = {
     "closed": (),
 }
 
-ORDER_NEXT = {
+#: 订单状态机（F2-1：与生产内核 worker 的实际行为一致）。
+#:
+#: 历史：本表曾允许 `producing → cancelled`，而 worker `main.py` 的本地表只允许
+#: `producing → shipped` —— 同一业务规则两份真相，前端 409 的 `allowed` 列表
+#: 取的是 worker 的行为，于是共享内核这一条**永远不会生效**（漂移）。
+#:
+#: 2026-10-23 决策（任务 F2-1）：**以 worker 实际行为为准**，理由：
+#:   ① worker 是生产内核（ADR-008），它的行为就是对外契约；改它 = 用户可见变更，
+#:      而本任务是「口径一致」而不是「扩业务能力」；
+#:   ② worker 已改为**直接 import 本表**（不再是第二份本地常量）—— 以后若业务
+#:      真要允许"生产中途取消"，只改这里一行，worker 与门面镜像同时生效。
+#: 门面 `ts-worker/src/rules.ts:ORDER_NEXT` 是逐条镜像（内容未变）。
+ORDER_NEXT: dict[str, tuple[str, ...]] = {
     "pending": ("confirmed", "cancelled"),
     "confirmed": ("producing", "cancelled"),
-    "producing": ("shipped", "cancelled"),
+    "producing": ("shipped",),
     "shipped": ("completed",),
     "completed": (),
     "cancelled": (),

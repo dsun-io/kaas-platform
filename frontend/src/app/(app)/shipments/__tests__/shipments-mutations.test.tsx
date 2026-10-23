@@ -151,7 +151,14 @@ function selectOrder(value: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.get.mockResolvedValue({ data: { items: [ROW], total: 1 } });
+  // 编辑弹窗打开时按 id 查详情（GET /shipments/{id}）；列表仍是分页接口。
+  mocks.get.mockImplementation(async (url: string) => {
+    if (String(url) === "/shipments/5") return { data: ROW };
+    if (String(url) === "/shipments") {
+      return { data: { items: [ROW], total: 1 } };
+    }
+    return { data: { items: [], total: 0 } };
+  });
 });
 
 afterEach(() => {
@@ -256,6 +263,13 @@ describe("出货工位 · 失败反馈与防重", () => {
     await click(findButton("编辑"));
     await settle();
     expect(document.body.textContent).toContain("出货信息 · SH-202610-0001");
+    // 表单来自详情接口；等它回填后再点保存
+    await waitFor(
+      () =>
+        document.querySelector('input[placeholder="货代给的 B/L No."]') !== null,
+      undefined,
+      "详情回填",
+    );
 
     await click(findButton("保存"));
     await settle();

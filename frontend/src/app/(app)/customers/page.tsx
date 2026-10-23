@@ -4,7 +4,7 @@ import { toast } from "sonner";
 
 import { LoadingBlock } from "@/components/shared/loading-block";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { usePageView } from "@/lib/events/use-page-view";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -13,7 +13,13 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { PageHeader, StatusBadge, EmptyState } from "@/components/shared";
+import {
+  PageHeader,
+  StatusBadge,
+  EmptyState,
+} from "@/components/shared";
+import { FormField } from "@/components/shared/form-field";
+import { PaginationBar } from "@/components/shared/pagination-bar";
 import {
   Plus,
   Search,
@@ -173,11 +179,17 @@ interface CustomerDetail extends Customer {
   stage_log: StageLog[];
 }
 
-function useCustomerList(q?: string, stage?: string) {
+/** 客户列表分页大小（后端 `GET /customers` 支持 page/page_size，默认 20）。 */
+const CUSTOMERS_PAGE_SIZE = 20;
+
+function useCustomerList(q: string | undefined, stage: string | undefined, page: number) {
   return useQuery({
-    queryKey: ["customers", "list", q, stage],
+    queryKey: ["customers", "list", q, stage, page],
     queryFn: async () => {
-      const params = new URLSearchParams();
+      const params = new URLSearchParams({
+        page: String(page),
+        page_size: String(CUSTOMERS_PAGE_SIZE),
+      });
       if (q) params.set("q", q);
       // 后端 `GET /customers` 已支持 stage（worker main.py:1290-1310；展示值语义：
       // ordered 由开启中订单推导，active/inactive 走手动列），这里只透传，不本地过滤。
@@ -185,6 +197,8 @@ function useCustomerList(q?: string, stage?: string) {
       const { data } = await apiClient.get<{
         items: Customer[];
         total: number;
+        page: number;
+        page_size: number;
       }>(`/customers?${params}`);
       return data;
     },
@@ -285,6 +299,10 @@ function CustomerForm({
   );
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
+  // FormField 收编（P0-C）：字段 id 用 useId 生成，避免「新建卡片 + 编辑弹窗」
+  // 同时存在时 id 撞车（标签关联会指错控件）。
+  const fieldId = useId();
+  const field = (key: string) => `${fieldId}-${key}`;
 
   // 公司名与联系人**至少填一个**（2026-10-17 用户口径）：只有个人联系人的客户也要能建。
   // 编辑模式不改联系人，因此以公司名或已有联系人为准，这里只校验公司名非空。
@@ -337,70 +355,98 @@ function CustomerForm({
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Input
-          placeholder={isEdit ? "公司名称 *" : "公司名称（与联系人至少填一个）"}
-          value={form.company_name}
-          onChange={set("company_name")}
-        />
-        {!isEdit && (
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <FormField
+          label="公司名称"
+          required={isEdit}
+          htmlFor={field("company-name")}
+        >
           <Input
-            placeholder="联系人（与公司名称至少填一个）"
-            value={form.contact_name}
-            onChange={set("contact_name")}
+            placeholder={isEdit ? "如：联佳丝网" : "与联系人至少填一个"}
+            value={form.company_name}
+            onChange={set("company_name")}
           />
+        </FormField>
+        {!isEdit && (
+          <FormField label="联系人" htmlFor={field("contact-name")}>
+            <Input
+              placeholder="与公司名称至少填一个"
+              value={form.contact_name}
+              onChange={set("contact_name")}
+            />
+          </FormField>
         )}
       </div>
       {!isEdit && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Input
-            placeholder="联系人电话"
-            value={form.contact_phone}
-            onChange={set("contact_phone")}
-          />
-          <Input
-            placeholder="联系人邮箱"
-            value={form.contact_email}
-            onChange={set("contact_email")}
-          />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <FormField label="联系人电话" htmlFor={field("contact-phone")}>
+            <Input
+              placeholder="如：+86 138…"
+              value={form.contact_phone}
+              onChange={set("contact_phone")}
+            />
+          </FormField>
+          <FormField label="联系人邮箱" htmlFor={field("contact-email")}>
+            <Input
+              placeholder="如：buyer@example.com"
+              value={form.contact_email}
+              onChange={set("contact_email")}
+            />
+          </FormField>
         </div>
       )}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Input
-          placeholder="国家"
-          value={form.country}
-          onChange={set("country")}
-        />
-        <Input
-          placeholder="客户缩写（2-6 位字母/数字，用于询盘编号）"
-          value={form.abbr}
-          maxLength={6}
-          onChange={(e) =>
-            setForm({ ...form, abbr: e.target.value.toUpperCase() })
-          }
-        />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <FormField label="国家" htmlFor={field("country")}>
+          <Input
+            placeholder="如：United States"
+            value={form.country}
+            onChange={set("country")}
+          />
+        </FormField>
+        <FormField label="客户缩写" htmlFor={field("abbr")}>
+          <Input
+            placeholder="2-6 位字母/数字（用于询盘编号）"
+            value={form.abbr}
+            maxLength={6}
+            onChange={(e) =>
+              setForm({ ...form, abbr: e.target.value.toUpperCase() })
+            }
+          />
+        </FormField>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Input
-          placeholder="默认港口"
-          value={form.default_port}
-          onChange={set("default_port")}
-        />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <FormField label="默认港口" htmlFor={field("port")}>
+          <Input
+            placeholder="如：Hamburg"
+            value={form.default_port}
+            onChange={set("default_port")}
+          />
+        </FormField>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Input
-          placeholder="地址"
-          value={form.address}
-          onChange={set("address")}
-        />
-        <Input
-          placeholder="信用等级"
-          value={form.credit_level}
-          onChange={set("credit_level")}
-        />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <FormField label="地址" htmlFor={field("address")}>
+          <Input
+            placeholder="街道 / 城市"
+            value={form.address}
+            onChange={set("address")}
+          />
+        </FormField>
+        <FormField label="信用等级" htmlFor={field("credit-level")}>
+          <Input
+            placeholder="如：A / B"
+            value={form.credit_level}
+            onChange={set("credit_level")}
+          />
+        </FormField>
       </div>
-      <Input placeholder="备注" value={form.notes} onChange={set("notes")} />
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      <FormField label="备注" htmlFor={field("notes")}>
+        <Input value={form.notes} onChange={set("notes")} />
+      </FormField>
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
       <div className="flex gap-2">
         <Button onClick={handleSubmit} disabled={!identityOk || isPending}>
           {isPending
@@ -462,6 +508,9 @@ function ContactForm({
   );
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
+  // 同一详情里可能同时挂「新增联系人」和「编辑联系人」两个表单 ⇒ id 必须唯一
+  const fieldId = useId();
+  const field = (key: string) => `${fieldId}-${key}`;
 
   const handleSubmit = async () => {
     setIsPending(true);
@@ -501,35 +550,45 @@ function ContactForm({
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Input
-          placeholder="姓名 *"
-          value={form.name}
-          onChange={(e) => setForm({ ...form, name: e.target.value })}
-        />
-        <Input
-          placeholder="职位"
-          value={form.position}
-          onChange={(e) => setForm({ ...form, position: e.target.value })}
-        />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <FormField label="姓名" required htmlFor={field("name")}>
+          <Input
+            placeholder="联系人姓名"
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+          />
+        </FormField>
+        <FormField label="职位" htmlFor={field("position")}>
+          <Input
+            placeholder="如：采购经理"
+            value={form.position}
+            onChange={(e) => setForm({ ...form, position: e.target.value })}
+          />
+        </FormField>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Input
-          placeholder="电话"
-          value={form.phone}
-          onChange={(e) => setForm({ ...form, phone: e.target.value })}
-        />
-        <Input
-          placeholder="邮箱"
-          value={form.email}
-          onChange={(e) => setForm({ ...form, email: e.target.value })}
-        />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <FormField label="电话" htmlFor={field("phone")}>
+          <Input
+            placeholder="如：+86 138…"
+            value={form.phone}
+            onChange={(e) => setForm({ ...form, phone: e.target.value })}
+          />
+        </FormField>
+        <FormField label="邮箱" htmlFor={field("email")}>
+          <Input
+            placeholder="如：buyer@example.com"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+          />
+        </FormField>
       </div>
-      <Input
-        placeholder="WhatsApp"
-        value={form.whatsapp}
-        onChange={(e) => setForm({ ...form, whatsapp: e.target.value })}
-      />
+      <FormField label="WhatsApp" htmlFor={field("whatsapp")}>
+        <Input
+          placeholder="如：+86 138…"
+          value={form.whatsapp}
+          onChange={(e) => setForm({ ...form, whatsapp: e.target.value })}
+        />
+      </FormField>
       <label className="flex items-center gap-2 text-sm">
         <input
           type="checkbox"
@@ -539,7 +598,11 @@ function ContactForm({
         />
         主要联系人
       </label>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
       <div className="flex gap-2">
         <Button onClick={handleSubmit} disabled={!form.name || isPending}>
           {isPending ? "提交中…" : isEdit ? "保存联系人" : "添加联系人"}
@@ -1433,11 +1496,14 @@ export default function CustomersPage() {
     null,
   );
 
+  // 列表分页（后端 page/page_size；筛选/搜索变化回第 1 页）
+  const [page, setPage] = useState(1);
   // C5：搜索防抖（300ms）—— 输入即时回显，停止输入后才发请求
   const debouncedSearchQ = useDebouncedValue(searchQ, 300);
   const { data: listData, isLoading } = useCustomerList(
     debouncedSearchQ || undefined,
     stageFilter === "all" ? undefined : stageFilter,
+    page,
   );
 
   // 权限口径（UNCERTAIN #21）：所有登录用户可用业务客户管理，
@@ -1478,13 +1544,19 @@ export default function CustomersPage() {
               placeholder="搜索客户…（按 / 聚焦）"
               aria-keyshortcuts="/"
               value={searchQ}
-              onChange={(e) => setSearchQ(e.target.value)}
+              onChange={(e) => {
+                setSearchQ(e.target.value);
+                setPage(1); // 搜索变化回第 1 页
+              }}
               className="h-9 rounded-full border-white/70 bg-white/80 pl-9"
             />
           </div>
           <Select
             value={stageFilter}
-            onValueChange={(value) => setStageFilter(value ?? "all")}
+            onValueChange={(value) => {
+              setStageFilter(value ?? "all");
+              setPage(1); // 阶段筛选变化回第 1 页
+            }}
           >
             <SelectTrigger
               aria-label="客户阶段筛选"
@@ -1654,6 +1726,16 @@ export default function CustomersPage() {
             </div>
           </>
         )}
+        <PaginationBar
+          page={page}
+          pageSize={CUSTOMERS_PAGE_SIZE}
+          total={listData?.total ?? 0}
+          currentCount={listData?.items?.length ?? 0}
+          loading={isLoading}
+          onPageChange={setPage}
+          ariaLabel="客户列表分页"
+          className="px-5 pb-4"
+        />
       </Card>
 
       {selectedCustomer && (

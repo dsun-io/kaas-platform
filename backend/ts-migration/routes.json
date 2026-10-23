@@ -7,7 +7,7 @@
    "path": "/api/v1/auth/bootstrap-admin",
    "endpoint": "bootstrap_admin",
    "file": "worker/src/main.py",
-   "line": 310,
+   "line": 313,
    "depends": [],
    "auth": false,
    "ops": false,
@@ -20,7 +20,7 @@
    "path": "/api/v1/auth/login",
    "endpoint": "login",
    "file": "worker/src/main.py",
-   "line": 350,
+   "line": 353,
    "depends": [],
    "auth": false,
    "ops": false,
@@ -33,7 +33,7 @@
    "path": "/api/v1/auth/me",
    "endpoint": "get_me",
    "file": "worker/src/main.py",
-   "line": 402,
+   "line": 405,
    "depends": [
     "_get_current_user"
    ],
@@ -48,7 +48,7 @@
    "path": "/api/v1/auth/logout",
    "endpoint": "logout",
    "file": "worker/src/main.py",
-   "line": 421,
+   "line": 424,
    "depends": [],
    "auth": false,
    "ops": false,
@@ -61,7 +61,7 @@
    "path": "/api/v1/auth/me",
    "endpoint": "update_me",
    "file": "worker/src/main.py",
-   "line": 462,
+   "line": 465,
    "depends": [
     "_get_current_user"
    ],
@@ -76,7 +76,7 @@
    "path": "/api/v1/auth/change-password",
    "endpoint": "change_password",
    "file": "worker/src/main.py",
-   "line": 494,
+   "line": 497,
    "depends": [
     "_get_current_user"
    ],
@@ -91,7 +91,7 @@
    "path": "/api/v1/auth/forgot-password",
    "endpoint": "forgot_password",
    "file": "worker/src/main.py",
-   "line": 684,
+   "line": 687,
    "depends": [],
    "auth": false,
    "ops": false,
@@ -104,7 +104,7 @@
    "path": "/api/v1/auth/reset-password",
    "endpoint": "reset_password",
    "file": "worker/src/main.py",
-   "line": 720,
+   "line": 723,
    "depends": [],
    "auth": false,
    "ops": false,
@@ -117,7 +117,7 @@
    "path": "/api/v1/auth/register",
    "endpoint": "register",
    "file": "worker/src/main.py",
-   "line": 816,
+   "line": 819,
    "depends": [],
    "auth": false,
    "ops": false,
@@ -130,7 +130,7 @@
    "path": "/api/v1/intel/shipments",
    "endpoint": "list_shipments",
    "file": "worker/src/main.py",
-   "line": 1010,
+   "line": 1013,
    "depends": [
     "_get_current_user"
    ],
@@ -145,7 +145,7 @@
    "path": "/api/v1/intel/shipments/{shipment_id}",
    "endpoint": "get_shipment",
    "file": "worker/src/main.py",
-   "line": 1044,
+   "line": 1047,
    "depends": [
     "_get_current_user"
    ],
@@ -160,7 +160,7 @@
    "path": "/api/v1/intel/shipments",
    "endpoint": "create_shipment",
    "file": "worker/src/main.py",
-   "line": 1056,
+   "line": 1059,
    "depends": [
     "_get_current_user"
    ],
@@ -175,7 +175,7 @@
    "path": "/api/v1/intel/import/csv",
    "endpoint": "import_csv",
    "file": "worker/src/main.py",
-   "line": 1071,
+   "line": 1074,
    "depends": [
     "_get_current_user"
    ],
@@ -190,7 +190,7 @@
    "path": "/api/v1/intel/trade-stats",
    "endpoint": "list_trade_stats",
    "file": "worker/src/main.py",
-   "line": 1124,
+   "line": 1127,
    "depends": [
     "_get_current_user"
    ],
@@ -205,7 +205,7 @@
    "path": "/api/v1/intel/adapter-runs",
    "endpoint": "list_adapter_runs",
    "file": "worker/src/main.py",
-   "line": 1148,
+   "line": 1151,
    "depends": [
     "_get_current_user"
    ],
@@ -220,7 +220,7 @@
    "path": "/api/v1/intel/channels",
    "endpoint": "list_channels",
    "file": "worker/src/main.py",
-   "line": 1169,
+   "line": 1172,
    "depends": [
     "_get_current_user"
    ],
@@ -235,7 +235,7 @@
    "path": "/api/v1/customers",
    "endpoint": "list_customers",
    "file": "worker/src/main.py",
-   "line": 1554,
+   "line": 1557,
    "depends": [
     "_get_current_user"
    ],
@@ -250,7 +250,7 @@
    "path": "/api/v1/customers",
    "endpoint": "create_customer",
    "file": "worker/src/main.py",
-   "line": 1615,
+   "line": 1618,
    "depends": [
     "_get_current_user"
    ],
@@ -265,7 +265,7 @@
    "path": "/api/v1/customers/{customer_id}",
    "endpoint": "get_customer",
    "file": "worker/src/main.py",
-   "line": 1688,
+   "line": 1691,
    "depends": [
     "_get_current_user"
    ],
@@ -280,7 +280,7 @@
    "path": "/api/v1/customers/{customer_id}/contacts",
    "endpoint": "add_contact",
    "file": "worker/src/main.py",
-   "line": 1719,
+   "line": 1722,
    "depends": [
     "_get_current_user"
    ],
@@ -295,7 +295,7 @@
    "path": "/api/v1/customers/{customer_id}/contacts/{contact_id}",
    "endpoint": "update_contact",
    "file": "worker/src/main.py",
-   "line": 1751,
+   "line": 1754,
    "depends": [
     "_get_current_user"
    ],
@@ -310,7 +310,7 @@
    "path": "/api/v1/customers/{customer_id}/contacts/{contact_id}",
    "endpoint": "delete_contact",
    "file": "worker/src/main.py",
-   "line": 1783,
+   "line": 1786,
    "depends": [
     "_get_current_user"
    ],
@@ -325,7 +325,7 @@
    "path": "/api/v1/customers/{customer_id}",
    "endpoint": "soft_delete_customer",
    "file": "worker/src/main.py",
-   "line": 1801,
+   "line": 1804,
    "depends": [
     "_get_current_user"
    ],
@@ -340,7 +340,7 @@
    "path": "/api/v1/customers/{customer_id}/inquiries",
    "endpoint": "add_inquiry",
    "file": "worker/src/main.py",
-   "line": 1832,
+   "line": 1835,
    "depends": [
     "_get_current_user"
    ],
@@ -355,7 +355,7 @@
    "path": "/api/v1/customers/{customer_id}/stage",
    "endpoint": "update_stage",
    "file": "worker/src/main.py",
-   "line": 1873,
+   "line": 1876,
    "depends": [
     "_get_current_user"
    ],
@@ -370,7 +370,7 @@
    "path": "/api/v1/market/regions",
    "endpoint": "list_market_regions",
    "file": "worker/src/main.py",
-   "line": 1939,
+   "line": 1942,
    "depends": [
     "_get_current_user"
    ],
@@ -385,7 +385,7 @@
    "path": "/api/v1/market/regions/{region_code}/products",
    "endpoint": "list_region_products",
    "file": "worker/src/main.py",
-   "line": 1949,
+   "line": 1952,
    "depends": [
     "_get_current_user"
    ],
@@ -400,7 +400,7 @@
    "path": "/api/v1/market/name-lookup",
    "endpoint": "name_lookup",
    "file": "worker/src/main.py",
-   "line": 1972,
+   "line": 1975,
    "depends": [
     "_get_current_user"
    ],
@@ -415,7 +415,7 @@
    "path": "/api/v1/market/name-mappings",
    "endpoint": "create_name_mapping",
    "file": "worker/src/main.py",
-   "line": 1992,
+   "line": 1995,
    "depends": [
     "_get_current_user"
    ],
@@ -430,7 +430,7 @@
    "path": "/api/v1/market/usages",
    "endpoint": "list_usages",
    "file": "worker/src/main.py",
-   "line": 2007,
+   "line": 2010,
    "depends": [
     "_get_current_user"
    ],
@@ -445,7 +445,7 @@
    "path": "/api/v1/market/ports",
    "endpoint": "list_ports",
    "file": "worker/src/main.py",
-   "line": 2016,
+   "line": 2019,
    "depends": [
     "_get_current_user"
    ],
@@ -460,7 +460,7 @@
    "path": "/api/v1/subscriptions",
    "endpoint": "list_subscriptions",
    "file": "worker/src/main.py",
-   "line": 2039,
+   "line": 2042,
    "depends": [
     "_get_current_user"
    ],
@@ -475,7 +475,7 @@
    "path": "/api/v1/subscriptions/bundles",
    "endpoint": "list_bundles",
    "file": "worker/src/main.py",
-   "line": 2048,
+   "line": 2051,
    "depends": [
     "_get_current_user"
    ],
@@ -490,7 +490,7 @@
    "path": "/api/v1/dashboard/summary",
    "endpoint": "dashboard_summary",
    "file": "worker/src/main.py",
-   "line": 2058,
+   "line": 2061,
    "depends": [
     "_get_current_user"
    ],
@@ -505,7 +505,7 @@
    "path": "/api/v1/dashboard/funnel",
    "endpoint": "dashboard_funnel",
    "file": "worker/src/main.py",
-   "line": 2173,
+   "line": 2176,
    "depends": [
     "_get_current_user"
    ],
@@ -520,7 +520,7 @@
    "path": "/api/v1/dashboard/receivables",
    "endpoint": "dashboard_receivables",
    "file": "worker/src/main.py",
-   "line": 2238,
+   "line": 2241,
    "depends": [
     "_get_current_user"
    ],
@@ -535,7 +535,7 @@
    "path": "/health",
    "endpoint": "health",
    "file": "worker/src/main.py",
-   "line": 2291,
+   "line": 2294,
    "depends": [],
    "auth": false,
    "ops": false,
@@ -548,7 +548,7 @@
    "path": "/api/v1/events",
    "endpoint": "create_event",
    "file": "worker/src/main.py",
-   "line": 2320,
+   "line": 2323,
    "depends": [
     "_get_current_user"
    ],
@@ -563,7 +563,7 @@
    "path": "/api/v1/quotations",
    "endpoint": "list_quotations_api",
    "file": "worker/src/main.py",
-   "line": 2372,
+   "line": 2375,
    "depends": [
     "_get_current_user"
    ],
@@ -578,7 +578,7 @@
    "path": "/api/v1/quotations",
    "endpoint": "create_quotation_manual",
    "file": "worker/src/main.py",
-   "line": 2414,
+   "line": 2417,
    "depends": [
     "_get_current_user"
    ],
@@ -593,7 +593,7 @@
    "path": "/api/v1/pricing-data",
    "endpoint": "list_pricing_data",
    "file": "worker/src/main.py",
-   "line": 2523,
+   "line": 2526,
    "depends": [
     "_get_current_user"
    ],
@@ -608,7 +608,7 @@
    "path": "/api/v1/pricing-data",
    "endpoint": "create_pricing_data",
    "file": "worker/src/main.py",
-   "line": 2628,
+   "line": 2631,
    "depends": [
     "_get_current_user"
    ],
@@ -623,7 +623,7 @@
    "path": "/api/v1/pricing-data/{item_id}",
    "endpoint": "update_pricing_data",
    "file": "worker/src/main.py",
-   "line": 2736,
+   "line": 2739,
    "depends": [
     "_get_current_user"
    ],
@@ -638,7 +638,7 @@
    "path": "/api/v1/pricing-data/{item_id}",
    "endpoint": "delete_pricing_data",
    "file": "worker/src/main.py",
-   "line": 2804,
+   "line": 2807,
    "depends": [
     "_get_current_user"
    ],
@@ -653,7 +653,7 @@
    "path": "/api/v1/spec/categories",
    "endpoint": "list_spec_categories",
    "file": "worker/src/main.py",
-   "line": 2944,
+   "line": 2947,
    "depends": [
     "_get_current_user"
    ],
@@ -668,7 +668,7 @@
    "path": "/api/v1/spec/categories/{category_id}",
    "endpoint": "get_spec_category",
    "file": "worker/src/main.py",
-   "line": 2960,
+   "line": 2963,
    "depends": [
     "_get_current_user"
    ],
@@ -683,7 +683,7 @@
    "path": "/api/v1/spec/categories/{category_id}/bindings",
    "endpoint": "get_spec_category_bindings",
    "file": "worker/src/main.py",
-   "line": 2975,
+   "line": 2978,
    "depends": [
     "_get_current_user"
    ],
@@ -698,7 +698,7 @@
    "path": "/api/v1/spec/wizard/submit",
    "endpoint": "wizard_submit",
    "file": "worker/src/main.py",
-   "line": 3033,
+   "line": 3036,
    "depends": [
     "_get_current_user"
    ],
@@ -713,7 +713,7 @@
    "path": "/api/v1/spec/wizard/propose-attribute",
    "endpoint": "wizard_propose_attribute",
    "file": "worker/src/main.py",
-   "line": 3103,
+   "line": 3106,
    "depends": [
     "_get_current_user"
    ],
@@ -728,7 +728,7 @@
    "path": "/api/v1/events",
    "endpoint": "list_events_api",
    "file": "worker/src/main.py",
-   "line": 3146,
+   "line": 3149,
    "depends": [
     "_get_current_user"
    ],
@@ -743,7 +743,7 @@
    "path": "/api/v1/admin/feature_flag",
    "endpoint": "get_feature_flag",
    "file": "worker/src/main.py",
-   "line": 3186,
+   "line": 3189,
    "depends": [
     "_get_current_user"
    ],
@@ -758,7 +758,7 @@
    "path": "/api/v1/admin/feature_flag",
    "endpoint": "set_feature_flag",
    "file": "worker/src/main.py",
-   "line": 3220,
+   "line": 3223,
    "depends": [
     "_get_current_user"
    ],
@@ -773,7 +773,7 @@
    "path": "/api/v1/admin/tenants",
    "endpoint": "list_tenants",
    "file": "worker/src/main.py",
-   "line": 3272,
+   "line": 3275,
    "depends": [
     "_get_current_user"
    ],
@@ -788,7 +788,7 @@
    "path": "/api/v1/admin/tenants/reload",
    "endpoint": "reload_tenants",
    "file": "worker/src/main.py",
-   "line": 3289,
+   "line": 3292,
    "depends": [
     "_get_current_user"
    ],
@@ -803,7 +803,7 @@
    "path": "/api/v1/admin/audit-log",
    "endpoint": "get_audit_log",
    "file": "worker/src/main.py",
-   "line": 3318,
+   "line": 3321,
    "depends": [
     "_get_current_user"
    ],
@@ -818,7 +818,7 @@
    "path": "/api/v1/admin/archive-logs",
    "endpoint": "get_archive_logs",
    "file": "worker/src/main.py",
-   "line": 3386,
+   "line": 3389,
    "depends": [
     "_get_current_user"
    ],
@@ -833,7 +833,7 @@
    "path": "/api/v1/capability-customers",
    "endpoint": "list_capability_customers",
    "file": "worker/src/main.py",
-   "line": 3463,
+   "line": 3466,
    "depends": [
     "_get_current_user"
    ],
@@ -848,7 +848,7 @@
    "path": "/api/v1/capabilities",
    "endpoint": "list_capabilities_api",
    "file": "worker/src/main.py",
-   "line": 3485,
+   "line": 3488,
    "depends": [
     "_get_current_user"
    ],
@@ -863,7 +863,7 @@
    "path": "/api/v1/capabilities",
    "endpoint": "upsert_capability_api",
    "file": "worker/src/main.py",
-   "line": 3507,
+   "line": 3510,
    "depends": [
     "_get_current_user"
    ],
@@ -878,7 +878,7 @@
    "path": "/api/v1/customer/{customer_id}/capabilities",
    "endpoint": "get_customer_capabilities",
    "file": "worker/src/main.py",
-   "line": 3547,
+   "line": 3550,
    "depends": [
     "_get_current_user"
    ],
@@ -893,7 +893,7 @@
    "path": "/api/v1/customer/{customer_id}/capabilities",
    "endpoint": "patch_customer_capability",
    "file": "worker/src/main.py",
-   "line": 3565,
+   "line": 3568,
    "depends": [
     "_get_current_user"
    ],
@@ -908,7 +908,7 @@
    "path": "/api/v1/orders",
    "endpoint": "list_orders_api",
    "file": "worker/src/main.py",
-   "line": 3792,
+   "line": 3791,
    "depends": [
     "_get_current_user"
    ],
@@ -923,7 +923,7 @@
    "path": "/api/v1/orders",
    "endpoint": "create_order_api",
    "file": "worker/src/main.py",
-   "line": 3959,
+   "line": 3958,
    "depends": [
     "_get_current_user"
    ],
@@ -938,7 +938,7 @@
    "path": "/api/v1/orders/{order_id}",
    "endpoint": "get_order_api",
    "file": "worker/src/main.py",
-   "line": 4295,
+   "line": 4294,
    "depends": [
     "_get_current_user"
    ],
@@ -953,7 +953,7 @@
    "path": "/api/v1/orders/{order_id}",
    "endpoint": "update_order_api",
    "file": "worker/src/main.py",
-   "line": 4360,
+   "line": 4359,
    "depends": [
     "_get_current_user"
    ],
@@ -968,7 +968,7 @@
    "path": "/api/v1/orders/{order_id}/status",
    "endpoint": "change_order_status",
    "file": "worker/src/main.py",
-   "line": 4577,
+   "line": 4576,
    "depends": [
     "_get_current_user"
    ],
@@ -983,7 +983,7 @@
    "path": "/api/v1/orders/{order_id}/payment-schedules",
    "endpoint": "list_schedules",
    "file": "worker/src/main.py",
-   "line": 4662,
+   "line": 4661,
    "depends": [
     "_get_current_user"
    ],
@@ -998,7 +998,7 @@
    "path": "/api/v1/orders/{order_id}/payment-schedules",
    "endpoint": "create_schedule",
    "file": "worker/src/main.py",
-   "line": 4680,
+   "line": 4679,
    "depends": [
     "_get_current_user"
    ],
@@ -1013,7 +1013,7 @@
    "path": "/api/v1/payment-schedules/{schedule_id}",
    "endpoint": "update_schedule",
    "file": "worker/src/main.py",
-   "line": 4727,
+   "line": 4726,
    "depends": [
     "_get_current_user"
    ],
@@ -1028,7 +1028,7 @@
    "path": "/api/v1/orders/{order_id}/receipts",
    "endpoint": "list_order_receipts",
    "file": "worker/src/main.py",
-   "line": 4903,
+   "line": 4902,
    "depends": [
     "_get_current_user"
    ],
@@ -1043,7 +1043,7 @@
    "path": "/api/v1/orders/{order_id}/receipts",
    "endpoint": "create_order_receipt",
    "file": "worker/src/main.py",
-   "line": 4915,
+   "line": 4914,
    "depends": [
     "_get_current_user"
    ],
@@ -1058,7 +1058,7 @@
    "path": "/api/v1/receivables",
    "endpoint": "list_receivables",
    "file": "worker/src/main.py",
-   "line": 4984,
+   "line": 4983,
    "depends": [
     "_get_current_user"
    ],
@@ -1073,7 +1073,7 @@
    "path": "/api/v1/trade-docs",
    "endpoint": "list_trade_docs",
    "file": "worker/src/main.py",
-   "line": 5212,
+   "line": 5211,
    "depends": [
     "_get_current_user"
    ],
@@ -1088,7 +1088,7 @@
    "path": "/api/v1/trade-docs",
    "endpoint": "create_trade_doc",
    "file": "worker/src/main.py",
-   "line": 5375,
+   "line": 5374,
    "depends": [
     "_get_current_user"
    ],
@@ -1103,7 +1103,7 @@
    "path": "/api/v1/trade-docs/{doc_id}",
    "endpoint": "get_trade_doc",
    "file": "worker/src/main.py",
-   "line": 5519,
+   "line": 5518,
    "depends": [
     "_get_current_user"
    ],
@@ -1118,7 +1118,7 @@
    "path": "/api/v1/trade-docs/{doc_id}",
    "endpoint": "update_trade_doc",
    "file": "worker/src/main.py",
-   "line": 5544,
+   "line": 5543,
    "depends": [
     "_get_current_user"
    ],
@@ -1133,7 +1133,7 @@
    "path": "/api/v1/tenant/company-profile",
    "endpoint": "get_company_profile",
    "file": "worker/src/main.py",
-   "line": 5758,
+   "line": 5757,
    "depends": [
     "_get_current_user"
    ],
@@ -1148,7 +1148,7 @@
    "path": "/api/v1/tenant/company-profile",
    "endpoint": "put_company_profile",
    "file": "worker/src/main.py",
-   "line": 5771,
+   "line": 5770,
    "depends": [
     "_get_current_user"
    ],
@@ -1163,7 +1163,7 @@
    "path": "/api/v1/trade-docs/{doc_id}/render-data",
    "endpoint": "get_trade_doc_render_data",
    "file": "worker/src/main.py",
-   "line": 5933,
+   "line": 5932,
    "depends": [
     "_get_current_user"
    ],

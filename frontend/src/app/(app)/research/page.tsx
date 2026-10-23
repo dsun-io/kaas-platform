@@ -675,6 +675,7 @@ export default function ResearchPage() {
                                 size="sm"
                                 onClick={(e) => openEdit(p, e.currentTarget)}
                                 title="深化"
+                                aria-label={`深化产品 ${p.product_name ?? p.id}`}
                               >
                                 <Pencil className="h-4 w-4" />
                               </Button>
@@ -686,6 +687,7 @@ export default function ResearchPage() {
                                   setDeleteTarget(p);
                                 }}
                                 title="移除"
+                                aria-label={`移除产品 ${p.product_name ?? p.id}`}
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>

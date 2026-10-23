@@ -14,7 +14,7 @@
  * 深链 `/orders?id={order_id}`：通知（内核 A4 起批准/拒绝写该 link）与询盘工位的
  * 「关联订单」都指到这里，挂载后按 id 打开详情；目标单不在当前页时详情仍可单独拉取。
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { AlertCircle, Bell, ChevronRight, Plus, Wallet } from "lucide-react";
@@ -25,6 +25,7 @@ import { CopyButton } from "@/components/shared/copy-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
 import { PaginationBar } from "@/components/shared/pagination-bar";
+import { PopoverPanel } from "@/components/shared/popover-panel";
 import { SectionCard } from "@/components/shared/section-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
@@ -141,22 +142,6 @@ export default function OrdersPage() {
     "ui:orders:columns:v2",
     ORDER_COLUMNS.map((c) => c.key),
   );
-  /** 列配置浮层（原生 details）：O5 需要程序化关闭（Esc / 点外面）。 */
-  const columnsPanelRef = useRef<HTMLDetailsElement | null>(null);
-
-  // O5：原生 <details> 点别处不会自己收起，浮层会一直盖住表格 ⇒ 补"外点关闭"。
-  // 用 mousedown（不是 click）：点表格行会先触发 click 打开详情，浮层应当已收起。
-  useEffect(() => {
-    const closeIfOutside = (event: MouseEvent) => {
-      const el = columnsPanelRef.current;
-      if (!el?.open) return;
-      if (event.target instanceof Node && el.contains(event.target)) return;
-      el.open = false;
-    };
-    document.addEventListener("mousedown", closeIfOutside);
-    return () => document.removeEventListener("mousedown", closeIfOutside);
-  }, []);
-
   // 深链：通知（`/orders?id=`，内核 A4）与询盘「关联订单」都指到这里。
   // 静态导出下不用 useSearchParams（需要 Suspense 边界，quotes 页已踩过），
   // 挂载后直接读 location.search。
@@ -281,23 +266,14 @@ export default function OrdersPage() {
                 紧凑
               </Button>
             </div>
-            <details
-              ref={columnsPanelRef}
-              className="relative"
-              onKeyDown={(event) => {
-                // O5：Esc 收起浮层并把焦点还给 summary（否则焦点落在已隐藏的复选项上）
-                if (event.key !== "Escape") return;
-                const el = columnsPanelRef.current;
-                if (!el?.open) return;
-                event.stopPropagation();
-                el.open = false;
-                el.querySelector("summary")?.focus();
-              }}
+            {/* O5：列配置浮层改用共享 PopoverPanel（Esc/外点/焦点归还由原语统一） */}
+            <PopoverPanel
+              trigger="列配置"
+              ariaLabel="列配置"
+              triggerClassName="cursor-pointer"
+              panelClassName="w-44"
             >
-              <summary className="cursor-pointer list-none rounded-md border px-2 py-1.5 text-xs hover:bg-muted">
-                列配置
-              </summary>
-              <div className="absolute right-0 z-20 mt-1 w-44 rounded-lg border bg-white p-2 shadow-lg">
+              <div className="space-y-1">
                 {ORDER_COLUMNS.map((c) => {
                   const checked = visibleCols.includes(c.key);
                   // a11y（C26/A4）：只剩最后一列时，该勾选框**保留可聚焦**但取消会清空表格 ⇒
@@ -331,7 +307,7 @@ export default function OrdersPage() {
                   );
                 })}
               </div>
-            </details>
+            </PopoverPanel>
           </div>
         }
       >

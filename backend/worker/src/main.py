@@ -60,6 +60,9 @@ from kaas_common.workstation.funnel import (
 )
 # P0-A A3：dashboard 应收聚合的**口径唯一实现**（禁止前端/适配层另写一份）
 from kaas_common.workstation.receivable_summary import summarize_receivables
+# F2-1：订单状态机**只有共享内核一份**（此前 worker 本地另有同内容表 ⇒ 与共享表漂移）。
+# 2026-10-23 口径收敛：producing 只允许 → shipped（与生产行为一致；要放开就改共享表一处）。
+from kaas_common.workstation.state_machines import ORDER_NEXT
 from kaas_common.workstation.teams import (
     TeamRuleError, invite_state, normalize_invite_token, validate_team_name,
     validate_application_message,
@@ -3669,12 +3672,8 @@ async def _next_customer_doc_no(conn, doc_type: str, table: str,
     return build_number(doc_type, customer) + "-X"
 
 
-ORDER_NEXT = {
-    "pending": ("confirmed", "cancelled"),
-    "confirmed": ("producing", "cancelled"),
-    "producing": ("shipped",),
-    "shipped": ("completed",),
-}
+# F2-1：ORDER_NEXT 由共享内核 import（见文件顶部）；本文件不再保留第二份本地表。
+# 端点用 `ORDER_NEXT.get(status, ())`，与共享表键集无关（completed/cancelled 为终态 ()）。
 
 
 def _order_dict(row) -> dict:

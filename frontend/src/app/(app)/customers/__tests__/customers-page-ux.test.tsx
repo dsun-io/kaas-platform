@@ -2,7 +2,7 @@
  * U-P1E（C5/C6/C3）：客户页搜索防抖、计数用 total、删联系人失败不再静默。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, type ReactNode } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 

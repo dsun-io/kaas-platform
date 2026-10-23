@@ -13,3 +13,4 @@ export { FilterBar, type FilterBarProps } from "./filter-bar";
 export { AsyncButton, type AsyncButtonProps } from "./async-button";
 export { DetailDrawer } from "./detail-drawer";
 export { ConfirmDialog } from "./confirm-dialog";
+export { PopoverPanel, type PopoverPanelProps } from "./popover-panel";

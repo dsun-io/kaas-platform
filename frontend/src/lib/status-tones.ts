@@ -61,9 +61,7 @@ export const RUN_STATUS_TONES: Readonly<Record<string, StatusTone>> = {
  * 注意与单封邮件的 `sent` 语义不同：活动 `sent` = 整批已发完（success），
  * 而单封邮件 `sent` 只是"已投递到网关"（info，后续还有 delivered/opened）。
  *
- * 未登记进 `STATUS_TONE_MAPS`：该注册表的键集合被 `components/shared` 的契约测试
- * 断言（`status-tones.test.ts` 锁 4 个域），而 shared 不在本任务写范围；如需登记，
- * 需同 PR 更新那条断言（属 shared 所有者）。
+ * 已登记进 `STATUS_TONE_MAPS.campaign`（task-27）；对应契约测试同步锁 5 个域。
  */
 export const CAMPAIGN_STATUS_TONES: Readonly<Record<string, StatusTone>> = {
   draft: "default",
@@ -78,6 +76,7 @@ export const STATUS_TONE_MAPS = {
   inquiry: INQUIRY_STATUS_TONES,
   crawl: CRAWL_STATUS_TONES,
   run: RUN_STATUS_TONES,
+  campaign: CAMPAIGN_STATUS_TONES,
 } as const;
 
 /** 从映射表取 tone；未知/空状态回落 default（唯一兜底点）。 */

@@ -585,12 +585,11 @@ export function validateEnum(field: string, value: string | null | undefined): s
 }
 
 /**
- * 订单状态机（真源 = backend/worker/src/main.py:3310 ORDER_NEXT，逐条对齐）。
+ * 订单状态机（真源 = backend/kaas_common/workstation/state_machines.py:ORDER_NEXT）。
  *
- * ⚠️ 已知上游不一致（本迁移发现，未擅自改口径）：内核
- * kaas_common/workstation/state_machines.py:ORDER_NEXT 的 "producing" 还允许 "cancelled"，
- * worker main.py 的本地常量不允许。门面以 **worker 实际行为**为准（409 的 allowed 列表
- * 是前端契约），差异登记在 README「语义差异登记」。
+ * 2026-10-23 F2-1：上游不一致已收敛 —— worker `main.py` 改为**直接 import 共享表**
+ * （不再有第二份本地常量），共享表的 "producing" 也改成只允许 "shipped"（以生产行为为准）。
+ * 本表内容与共享表逐条一致（门面镜像，409 的 allowed 列表是前端契约）。
  */
 export const ORDER_NEXT: Record<string, readonly string[]> = {
   pending: ["confirmed", "cancelled"],

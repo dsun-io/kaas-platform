@@ -61,6 +61,35 @@ const BARE_TABLE_WHITELIST = new Set([
   "src/components/ui/virtual-table.tsx",
 ]);
 
+/**
+ * 显式白名单：按「规则 + 文件」豁免，**必须写理由**（task-27 起）。
+ *
+ * 只允许两类：
+ *   ① **语义误报**——规则的字面命中在这个文件里不是同一个问题（例：page_size 是
+ *      下拉选择器的取数上限，不是分页列表）；
+ *   ② **真实遗留**——问题成立，但修复落点不在本批写入范围；理由里必须写排期。
+ * 白名单不是静默：报告单独打印「白名单 N 处 + 理由」，数字与原因都可以核对。
+ */
+const ALLOWLIST = {
+  [RULES.pageSizePagination]: [
+    {
+      file: "src/app/(app)/quotes/views/batch-quote-view.tsx",
+      reason:
+        "语义误报：page_size:100 是批量报价的客户选择器取数上限，不是分页列表",
+    },
+    {
+      file: "src/app/(app)/quotes/hooks/use-quote-orders.ts",
+      reason:
+        "真实遗留：报价记录列表尚未接 PaginationBar（UI 执行方案 P1-E 分页/URL 筛选）；文件不在 task-27 写范围，先登记、不静默",
+    },
+  ],
+};
+
+/** 取某文件在某规则下的白名单理由（无则 undefined）。 */
+function allowEntry(rel, rule) {
+  return (ALLOWLIST[rule] ?? []).find((entry) => entry.file === rel);
+}
+
 /** 扫描根（相对 root）。 */
 const SCAN_ROOTS = ["src/app", "src/components"];
 const SKIP_DIR_RE = /(node_modules|\.next|\.next-build|coverage|test-results|playwright-report|__tests__|mocks)[\\/]/;
@@ -104,21 +133,82 @@ function walk(dir, out) {
 }
 
 /**
- * 分析一段源码，返回违规与跳过项（纯函数，供 fixture 测试直接用）。
+ * R1 用：收集文件内**本地声明**的 confirm/alert/prompt 绑定。
+ *
+ * 只按"同名即本地"做文件级判断（不做作用域精度）：局部函数 `const confirm = …`
+ * 或 `import { confirm } from "./x"` 后调用 `confirm()` **不是**原生弹窗，
+ * 之前会误报（quote-issue-button / doc-void-button 的 handleConfirm 早期就叫 confirm）。
+ */
+function collectLocalBindings(source) {
+  const bound = new Set();
+  const addName = (node) => {
+    if (node && ts.isIdentifier(node)) bound.add(node.text);
+  };
+  const addPattern = (pattern) => {
+    if (!pattern) return;
+    if (ts.isIdentifier(pattern)) {
+      bound.add(pattern.text);
+      return;
+    }
+    if (ts.isObjectBindingPattern(pattern) || ts.isArrayBindingPattern(pattern)) {
+      for (const element of pattern.elements) {
+        if (ts.isBindingElement(element)) addPattern(element.name);
+      }
+    }
+  };
+  const visit = (node) => {
+    if (ts.isVariableDeclaration(node)) {
+      addPattern(node.name);
+    } else if (
+      (ts.isFunctionDeclaration(node) ||
+        ts.isClassDeclaration(node) ||
+        ts.isInterfaceDeclaration(node) ||
+        ts.isTypeAliasDeclaration(node) ||
+        ts.isEnumDeclaration(node)) &&
+      node.name
+    ) {
+      addName(node.name);
+    } else if (ts.isParameter(node)) {
+      addPattern(node.name);
+    } else if (ts.isCatchClause(node) && node.variableDeclaration) {
+      addPattern(node.variableDeclaration.name);
+    } else if (ts.isImportClause(node)) {
+      // 默认导入：`import confirm from "./x"`
+      addName(node.name);
+    } else if (
+      ts.isImportSpecifier(node) ||
+      ts.isNamespaceImport(node) ||
+      ts.isImportEqualsDeclaration(node)
+    ) {
+      addName(node.name);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return bound;
+}
+
+/**
+ * 分析一段源码，返回违规、跳过项与白名单豁免（纯函数，供 fixture 测试直接用）。
  * @param {string} rel 相对 frontend 根的 posix 路径
  * @param {string} text 源码
  */
 function analyzeSource(rel, text) {
   const violations = [];
   const skipped = [];
+  const allowed = [];
   if (!ts) {
     return {
       violations,
       skipped: [{ rule: RULES.mutationOnError, file: rel, reason: "缺少 typescript 依赖，R4 无法执行" }],
+      allowed,
     };
   }
   const scriptKind = rel.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
   const source = ts.createSourceFile(rel, text, ts.ScriptTarget.Latest, true, scriptKind);
+  const localBindings = collectLocalBindings(source);
+  /** R5 候选：AST 里的 `page_size: <数字字面量>`（注释/字符串里的不算）。 */
+  const pageSizeLiterals = [];
 
   const add = (offset, rule, message) => {
     const pos = lineOf(source, offset);
@@ -143,7 +233,9 @@ function analyzeSource(rel, text) {
         }
       } else if (
         ts.isIdentifier(callee) &&
-        ["confirm", "alert", "prompt"].includes(callee.text)
+        ["confirm", "alert", "prompt"].includes(callee.text) &&
+        // 同名局部函数/导入不是原生弹窗（例：早期 handleConfirm 叫 confirm）
+        !localBindings.has(callee.text)
       ) {
         add(
           node.getStart(source),
@@ -232,6 +324,21 @@ function analyzeSource(rel, text) {
       }
     }
 
+    // ── R5 候选：硬编码 page_size 字面量（AST，注释/字符串不误报）───
+    if (ts.isPropertyAssignment(node)) {
+      const nameNode = node.name;
+      const propName =
+        ts.isIdentifier(nameNode) || ts.isStringLiteral(nameNode)
+          ? nameNode.text
+          : null;
+      if (propName === "page_size" && ts.isNumericLiteral(node.initializer)) {
+        pageSizeLiterals.push({
+          offset: node.getStart(source),
+          value: node.initializer.text,
+        });
+      }
+    }
+
     ts.forEachChild(node, visit);
   };
 
@@ -239,17 +346,27 @@ function analyzeSource(rel, text) {
 
   // ── R5 硬编码 page_size 但没接 PaginationBar ─────────────────────
   const hasPaginationBar = /\bPaginationBar\b/.test(text);
-  for (const match of text.matchAll(/\bpage_size\s*:\s*(\d+)\b/g)) {
-    if (hasPaginationBar) continue;
-    const offset = match.index ?? 0;
-    add(
-      offset,
-      RULES.pageSizePagination,
-      `硬编码 page_size: ${match[1]} 但文件未使用 PaginationBar：列表只能看前 ${match[1]} 条`,
-    );
+  if (!hasPaginationBar && pageSizeLiterals.length > 0) {
+    const allow = allowEntry(rel, RULES.pageSizePagination);
+    for (const literal of pageSizeLiterals) {
+      if (allow) {
+        allowed.push({
+          rule: RULES.pageSizePagination,
+          file: rel,
+          line: lineOf(source, literal.offset).line,
+          reason: allow.reason,
+        });
+        continue;
+      }
+      add(
+        literal.offset,
+        RULES.pageSizePagination,
+        `硬编码 page_size: ${literal.value} 但文件未使用 PaginationBar：列表只能看前 ${literal.value} 条`,
+      );
+    }
   }
 
-  return { violations, skipped };
+  return { violations, skipped, allowed };
 }
 
 /** 扫描整棵树（默认 frontend 根）。 */
@@ -261,14 +378,16 @@ function checkTree(root) {
   }
   const violations = [];
   const skipped = [];
+  const allowed = [];
   for (const file of files) {
     const rel = toPosix(path.relative(root, file));
     const text = fs.readFileSync(file, "utf8");
     const result = analyzeSource(rel, text);
     violations.push(...result.violations);
     skipped.push(...result.skipped);
+    allowed.push(...result.allowed);
   }
-  return { root, scannedFiles: files.length, violations, skipped };
+  return { root, scannedFiles: files.length, violations, skipped, allowed };
 }
 
 function printReport(result, { strict }) {
@@ -296,6 +415,14 @@ function printReport(result, { strict }) {
       line(`  ${v.file}:${v.line}:${v.column}  ${v.message}`);
     }
     if (list.length > 300) line(`  … 其余 ${list.length - 300} 处省略（--json 可拿全量）`);
+    line();
+  }
+
+  if (result.allowed && result.allowed.length > 0) {
+    line(`ℹ 白名单豁免（${result.allowed.length} 处，理由可核对）：`);
+    for (const entry of result.allowed.slice(0, 50)) {
+      line(`  - [${entry.rule}] ${entry.file}:${entry.line ?? "?"} ${entry.reason}`);
+    }
     line();
   }
 
@@ -357,6 +484,7 @@ module.exports = {
   RULES,
   RULE_LABELS,
   BARE_TABLE_WHITELIST,
+  ALLOWLIST,
   analyzeSource,
   checkTree,
 };

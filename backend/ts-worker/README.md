@@ -202,7 +202,7 @@
 | 邀请码撞码重试 | 事务内重试 5 次（唯一约束冲突） | 同语义逐行直译（撞码概率可忽略，保留兜底） |
 | 重置密码请求 IP | `request.client.host` | Workers 无 client 对象，取 `CF-Connecting-IP` 头（同义数据源） |
 | **金额/汇率计算** | Python `Decimal` + `ROUND_HALF_UP` 到分 | TS 用 IEEE754 double + `round2()`（`Math.round(x*100)/100`）；同一数量级下误差 ≤1e-9，仅在「分」边界可能相差 0.01（登记为差异，未引入 decimal 库） |
-| **订单状态机 allowed 列表** | `main.py:3310` 本地 `ORDER_NEXT`：`producing → shipped`（不含 cancelled） | 门面按 **worker 实际行为**镜像（409 的 `allowed` 是前端契约）。⚠️ 上游不一致：`kaas_common/workstation/state_machines.py:ORDER_NEXT` 的 producing 还允许 cancelled —— 未擅自改口径，交内核侧收敛 |
+| **订单状态机 allowed 列表** | `kaas_common/workstation/state_machines.py:ORDER_NEXT`：`producing → shipped`（不含 cancelled）；worker `main.py` **直接 import 同一张表** | 门面按 worker 实际行为镜像（409 的 `allowed` 是前端契约）。**2026-10-23 F2-1 已收敛**：共享表去掉 producing→cancelled、worker 删除本地第二份表 |
 | **SigV4 预签名（files）** | `kaas_common/files/s3.py` 生成 PUT/GET 预签名 URL | **未实现**（`TODO(TODO:TS5)`）：`POST /file-objects/presign` 恒 `{configured:false}`、`GET /{id}/url` 回同形状 `{configured:false,reason}` ⇒ 前端回退代理上传；配了 S3 密钥时 Python 会返回真 URL |
 | **文件字节落点** | S3 预签名 → R2 binding → inline | R2 binding → inline（S3 段同上缺口）；`_load_bytes` 的读取优先级与失败兜底逐行对齐 |
 | **渲染直链令牌** | `kaas_common/files/token.py`（HMAC-SHA256，`<exp>.<hex>`） | `files.ts` 用 WebCrypto HMAC 逐行镜像（常量时间比较；同 `JWT_SECRET`，TTL 900s） |
@@ -275,8 +275,8 @@ npx wrangler secret put JWT_SECRET
 - forgot-password 接 Resend（TODO:TS2）。
 - 波 B 遗留三项：SigV4 预签名（TODO:TS5）、KERNEL 接线后的 outreach/generate（TODO:TS4）、
   询盘阶段联动（TODO:TS6）。
-- 上游一致性待内核侧收敛：`ORDER_NEXT` 在 `main.py` 与 `kaas_common/state_machines.py` 不一致
-  （见「语义差异登记」）。
+- ~~上游一致性待内核侧收敛：`ORDER_NEXT` 在 `main.py` 与 `kaas_common/state_machines.py` 不一致~~
+  —— **2026-10-23 F2-1 已收敛**：worker 改为 import 共享表，producing 只允许 → shipped（见「语义差异登记」）。
 
 ## Phase 2 波 C 语义差异登记（workstations / intel / dashboard，2026-10-21）
 

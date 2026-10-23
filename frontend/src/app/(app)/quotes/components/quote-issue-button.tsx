@@ -47,7 +47,9 @@ export function QuoteIssueButton({
   const canIssue = quoteOrderId !== null && status === "draft";
   const pending = update.isPending;
 
-  const confirm = async () => {
+  // 局部处理函数不叫 `confirm`：与全局 window.confirm 同名会让静态门禁/读代码的人
+  // 误以为这里还在用原生弹窗（实际 UI 是下面的 ConfirmDialog）。
+  const handleConfirm = async () => {
     if (quoteOrderId === null || inFlight.current) return;
     inFlight.current = true;
     setError(null);
@@ -99,7 +101,7 @@ export function QuoteIssueButton({
         confirmLabel="确认签发"
         pending={pending}
         error={error}
-        onConfirm={() => void confirm()}
+        onConfirm={() => void handleConfirm()}
       />
     </>
   );
