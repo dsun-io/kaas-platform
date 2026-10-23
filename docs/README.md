@@ -1,7 +1,7 @@
 # 文档索引 · 交接从这里开始
 
-> ⚠️ **2026-10-23 09:00 暂停交接**：先读 [`HANDOVER_2026-10-23_PAUSE.md`](./HANDOVER_2026-10-23_PAUSE.md) —— 停止点、
-> 工作树 50 项未提交改动、已验证门禁与恢复步骤全在其中。**工作树当前不是干净的**，恢复后先按它 §4 执行。
+> ⚠️ **2026-10-23 09:00 暂停交接**：[`HANDOVER_2026-10-23_PAUSE.md`](./HANDOVER_2026-10-23_PAUSE.md) 留档为**历史停止点**（当时的 50 项未提交改动与恢复步骤）。
+> **2026-10-23 下午复核**：那批改动已随后续提交收口（HEAD `6a585f3f`，工作树干净、与 origin 同步），暂停态解除。
 > 更新时间：**2026-10-22 全项目性能优化审计**（见 [`PERFORMANCE_AUDIT_2026-10-22.md`](./PERFORMANCE_AUDIT_2026-10-22.md)）· 2026-10-22 团队加入申请模块收口（见 [`JOIN_APPLICATION_MODULE_2026-10-22.md`](./JOIN_APPLICATION_MODULE_2026-10-22.md)）· 2026-10-21 切流收口 —— **生产已由 TS 门面 `kaas-edge` 承载（两层架构生效）**；
 > Python Worker `kaas` 退居内核（引擎/AI/cron，仅经 Service Binding）。门面冷启动 ~25ms（内核 4674ms）。
 > 门禁（2026-10-23 实测）：ts-worker **278（24 文件）** / worker **1709+12skip**（3 条 `js` 模块缺失为本机环境问题）/
@@ -10,6 +10,9 @@
 > 2026-10-23 已完成 M1-f（门面 12 条透传 + 273 路由对齐）、M3 后端（/dashboard/funnel cohort 口径）、
 > M2-A（/inquiries 工位 + 导航契约 R2=29）、M2-B（订单来源链/行项编辑/报价编辑）、M2-C（审批中心/通知铃铛/审批设置，
 > R2=30）、M3 前端（仪表盘漏斗看板）。
+> **2026-10-23 新增**：产品×报价重构方案定稿（用户反馈 14 条：产品表单收口 / 报价行重排 / 税务档案侧边栏 /
+> 批量导入整单化；3 处口径已弹窗拍板）——见 4c 行 `OPTIMIZATION_PLAN_2026-10-23_PRODUCT_QUOTE_REDESIGN.md`，
+> 批次状态挂 `TODO.md` §R，**待用户批准排期**。
 > **完成后归档**：过时交接与历史计划已移入 [`archive/2026-10-21-cutover/`](./archive/2026-10-21-cutover/README.md)；
 > 当前交接= [`HANDOVER_2026-10-21_CUTOVER.md`](./HANDOVER_2026-10-21_CUTOVER.md)；**W5（MCP+REST）已设计待实施**；
 > 剩余窗口项（内核瘦身/旧 Neon 清理）已登记 [`TODO.md`](./TODO.md) 与 2026-11-04 / 2026-10-28 提醒。
@@ -24,6 +27,7 @@
 | 3 | [PROBLEM_STATUS_2026-10-11.md](./PROBLEM_STATUS_2026-10-11.md) | 滚动问题状态（顶部按时间倒序，含后端五项与 CI 记录） |
 | 4 | [TODO.md](./TODO.md) | **活跃待办唯一账本**（A 单证 / B 产品 / C 其他 / D 发布 / E UI） |
 | 4b | [IMPORT_ORDERS_PLAN_2026-10-23.md](./IMPORT_ORDERS_PLAN_2026-10-23.md) | **C29 历史订单批量导入**设计+执行方案：口径裁决 / CSV 列 / API 契约 / 分层落点 / DoD |
+| 4c | [OPTIMIZATION_PLAN_2026-10-23_PRODUCT_QUOTE_REDESIGN.md](./OPTIMIZATION_PLAN_2026-10-23_PRODUCT_QUOTE_REDESIGN.md) | **产品×报价重构**（2026-10-23 用户反馈 14 条）：逐条定位（文件/行）/ 三处口径裁决 / 目标设计（产品表单收口、报价行三段布局、成本含税开关契约、税务档案侧边栏、批量导入整单化）/ 批次 A→D 与 DoD；状态挂 `TODO.md` §R |
 | 5 | [archive/2026-10-21-cutover/UI_UX_OPTIMIZATION_2026-10-20.md](./archive/2026-10-21-cutover/UI_UX_OPTIMIZATION_2026-10-20.md) | UI 方案与终验：P0/P1/P2 已完成，§11 为终验结论（历史「未做」已逐处标注完成状态） |
 | 6 | [archive/2026-10-21-final-closeout/UI_BACKEND_DEPENDENCIES_2026-10-20.md](./archive/2026-10-21-final-closeout/UI_BACKEND_DEPENDENCIES_2026-10-20.md)（历史留档） | 后端 5 项**历史验收基线**（2026-10-20 全部完成并入 `main`）；**现行口径看根 README + HANDOVER §0.1**，不要据此判断现状 |
 
