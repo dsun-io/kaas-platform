@@ -206,9 +206,7 @@ function renderPanel() {
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root!.render(
-      <BulkImportPanel onImported={onImported as () => void} />,
-    );
+    root!.render(<BulkImportPanel onImported={onImported as () => void} />);
   });
   return container;
 }

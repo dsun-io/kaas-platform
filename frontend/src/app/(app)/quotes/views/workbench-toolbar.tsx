@@ -6,7 +6,7 @@
  * C19：批量导入与单条报价并列（同一层的两种工作方式），入口放在顶部，
  * 不塞进任何产品行卡片里。
  */
-import { BulkImportEntry } from "../../quotations/v2-quote/components/bulk-import-dialog";
+import { BulkImportEntry } from "../components/bulk-import-dialog";
 
 export function WorkbenchToolbar() {
   return (

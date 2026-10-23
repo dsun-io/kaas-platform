@@ -1,17 +1,11 @@
-"use client";
-
 /**
- * 贸易术语显示格式（原 freight-panel 的唯一存活导出）。
+ * 贸易术语显示格式（U-P1D 从 `quotations/v2-quote/components/freight-panel.tsx` 平移）。
  *
- * 2026-10-23 U-P1D 审计 R2：这里原本还有一个 427 行的 `FreightPanel` 运费面板，
- * 全仓 **0 引用** —— 报价结果早改成引擎结果组件，那面板是历史 v2 报价页的残骸，
- * 已删除。
+ * 原 freight-panel 的 427 行运费面板早已 0 引用并删除；只剩这个纯函数：
+ * 报价参数卡（quotes/views/workbench-params-card）与单测共用同一份显示口径。
  *
- * ⚠️ 文件本身**没有整份删掉**：`termOptionLabel` 仍被
- * `app/(app)/quotes/views/workbench-params-card.tsx` 与
- * `quotations/v2-quote/components/__tests__/terms-option-label.test.ts` 引用，
- * 而前者属于报价工位（本轮并行任务在写），不在本批写入范围。
- * 后续把该函数移到共享展示层后即可整份删除本文件并在审计清单销账。
+ * 为什么放在 quotes/lib：它是**纯展示函数**（不依赖 React / 请求），
+ * 与 terms-amortize / line-to-item 同级，避免再挂在一条已废弃的目录下。
  */
 
 /** 下拉 / 档位标题的统一显示格式：**`代码 · 中文（English）`**。

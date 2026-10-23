@@ -11,7 +11,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { termOptionLabel } from "../freight-panel";
+import { termOptionLabel } from "../terms-option-label";
 
 describe("术语选项显示格式：代码 · 中文（English）", () => {
   it("DAP / DDP 按 `代码 · 中文（English）` 拼接，裁掉中文尾部的括号说明", () => {

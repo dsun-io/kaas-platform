@@ -76,11 +76,11 @@ vi.mock("@/lib/api/client", () => {
   return { default: client, apiClient: client };
 });
 
-vi.mock("../../../quotations/v2-quote/hooks/use-export-quote-import", () => ({
+vi.mock("../../hooks/use-export-quote-import", () => ({
   useExportProducts: () => ({ data: mocks.PRODUCTS, isLoading: false }),
 }));
 
-vi.mock("../../../quotations/v2-quote/hooks/use-export-quote-calc", () => ({
+vi.mock("../../hooks/use-export-quote-calc", () => ({
   useProductFormulas: () => ({ data: mocks.FORMULAS, isLoading: false }),
 }));
 

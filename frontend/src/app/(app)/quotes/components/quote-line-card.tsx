@@ -21,19 +21,15 @@ import { handleApiError } from "@/lib/api/error-handler";
 import { cn } from "@/lib/utils";
 import type { ExportQuoteResponse } from "@contracts/export-quote";
 
-import { useExportProducts } from "../../quotations/v2-quote/hooks/use-export-quote-import";
+import { useExportProducts } from "../hooks/use-export-quote-import";
 import { useProductCostReference } from "../hooks/use-cost-reference";
 import {
   useCalcQuote,
   useProductFormulas,
   type QuoteView,
-} from "../../quotations/v2-quote/hooks/use-export-quote-calc";
-import {
-  SpecPicker,
-  isSpecComplete,
-  type SpecRow,
-} from "../../quotations/v2-quote/components/spec-picker";
-import { EngineQuoteResult } from "../../quotations/v2-quote/components/engine-quote-result";
+} from "../hooks/use-export-quote-calc";
+import { SpecPicker, isSpecComplete, type SpecRow } from "./spec-picker";
+import { EngineQuoteResult } from "./engine-quote-result";
 import {
   buildLineRequest,
   pieceDefault,

@@ -23,7 +23,7 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("../../quotations/v2-quote/hooks/use-export-quote-import", () => ({
+vi.mock("../../hooks/use-export-quote-import", () => ({
   useExportProducts: () => ({
     data: {
       products: [
@@ -34,14 +34,27 @@ vi.mock("../../quotations/v2-quote/hooks/use-export-quote-import", () => ({
   }),
 }));
 
-vi.mock("../../quotations/v2-quote/hooks/use-export-quote-calc", () => ({
+vi.mock("../../hooks/use-export-quote-calc", () => ({
   useCalcQuote: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useProductFormulas: () => ({
     data: {
       name: "牛栏网",
       name_en: "Field Fence",
       hs_codes: ["73144100"],
-      space: { axes: [], variants: [] },
+      // 迁移后 mock 路径生效（原路径多一层 .. 一直没命中）——补上组件渲染必需的 cost
+      cost: {
+        field: "cost_cny_per_kg",
+        basis: "pretax",
+        unit: "CNY/kg",
+        note: "到厂未税成本",
+      },
+      space: {
+        axes: [],
+        variants: [],
+        combo_count: 0,
+        summary: "",
+        formula: "",
+      },
       piece_inputs: [],
       columns: [],
       space_deduction: null,

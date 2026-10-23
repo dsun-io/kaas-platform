@@ -27,8 +27,8 @@ import type { ProductTaxRate, TaxArchive } from "@contracts/export-quote";
 import {
   useExportProducts,
   useExportTermsTemplate,
-} from "../../quotations/v2-quote/hooks/use-export-quote-import";
-import type { QuoteView } from "../../quotations/v2-quote/hooks/use-export-quote-calc";
+} from "../hooks/use-export-quote-import";
+import type { QuoteView } from "../hooks/use-export-quote-calc";
 import { newLineDraft, type LineDraft } from "../components/quote-line-card";
 import type { DocTypeOption } from "../components/quote-summary-card";
 import {

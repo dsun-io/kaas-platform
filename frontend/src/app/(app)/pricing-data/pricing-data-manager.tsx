@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRole } from "@/hooks/use-role";
-import { useExportProducts } from "../quotations/v2-quote/hooks/use-export-quote-import";
+import { useExportProducts } from "../quotes/hooks/use-export-quote-import";
 import {
   useDeactivatePricingCell,
   usePricingMatrix,

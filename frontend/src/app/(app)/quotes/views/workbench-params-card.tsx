@@ -26,7 +26,7 @@ import {
   CustomerPicker,
   type CustomerPickerValue,
 } from "@/components/customer-picker";
-import { termOptionLabel } from "../../quotations/v2-quote/components/freight-panel";
+import { termOptionLabel } from "../lib/terms-option-label";
 import { requiredFeeKeysFor } from "../lib/terms-amortize";
 import type { ExportTermsTemplate, TaxArchive } from "@contracts/export-quote";
 

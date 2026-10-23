@@ -34,8 +34,8 @@ import type {
   QuoteOrderItemIn,
 } from "@contracts/quote-order";
 import type { ProductTaxRate, TaxArchive } from "@contracts/export-quote";
-import { useExportProducts } from "../../quotations/v2-quote/hooks/use-export-quote-import";
-import { useProductFormulas } from "../../quotations/v2-quote/hooks/use-export-quote-calc";
+import { useExportProducts } from "../hooks/use-export-quote-import";
+import { useProductFormulas } from "../hooks/use-export-quote-calc";
 import { buildLineItem } from "../lib/line-to-item";
 
 interface CustomerRow {

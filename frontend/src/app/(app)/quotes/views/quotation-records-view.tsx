@@ -32,11 +32,11 @@ import {
   useQuotations,
   type QuotationFilters,
   type Quotation,
-} from "../../quotations/hooks/use-quotations";
-import { QuotationTable } from "../../quotations/components/quotation-table";
-import { QuotationFilters as FiltersBar } from "../../quotations/components/quotation-filters";
-import { QuotationDetailSheet } from "../../quotations/components/quotation-detail";
-import { NewQuotationForm } from "../../quotations/components/new-quotation-form";
+} from "../hooks/use-quotations";
+import { QuotationTable } from "../components/quotation-table";
+import { QuotationFilters as FiltersBar } from "../components/quotation-filters";
+import { QuotationDetailSheet } from "../components/quotation-detail";
+import { NewQuotationForm } from "../components/new-quotation-form";
 import { QuoteOrderRecords } from "../components/quote-order-records";
 
 export function QuotationRecordsView() {

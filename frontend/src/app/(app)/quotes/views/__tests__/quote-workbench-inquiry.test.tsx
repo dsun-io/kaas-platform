@@ -30,7 +30,7 @@ vi.mock("@/lib/auth/auth-context", () => ({
     isLoading: false,
   }),
 }));
-vi.mock("../../../quotations/v2-quote/hooks/use-export-quote-import", () => ({
+vi.mock("../../hooks/use-export-quote-import", () => ({
   useExportProducts: () => ({ data: { products: [] }, isLoading: false }),
   useExportTermsTemplate: () => ({ data: null, isLoading: false }),
 }));
@@ -44,7 +44,7 @@ vi.mock("@/lib/workstation/use-upstream", () => ({
 vi.mock("@/lib/trade-doc/render", () => ({
   getAvailableTemplates: () => [],
 }));
-vi.mock("../../../quotations/v2-quote/components/bulk-import-dialog", () => ({
+vi.mock("../../components/bulk-import-dialog", () => ({
   BulkImportEntry: () => null,
 }));
 vi.mock("@/components/shared/sortable-list", () => ({
