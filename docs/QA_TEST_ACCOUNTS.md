@@ -85,6 +85,13 @@ QA_SEED_CONFIRM=yes QA_PASSWORD='<强密码>' \
 > 该文 §0 另列三处前提漂移（`scripts/seed_qa.py` 不在仓库、单租户常量 `default` 非 `qa_smoke` 独立租户、
 > 公章写闸门实际是 `403 TEAM_ADMIN_REQUIRED` 而非 `INTERNAL_ONLY`）——真机执行前先按 §0/§3 核对账号。
 
+> **2026-10-23 真机落地与口径校正**（详见 [`QA_AUTHZ_AUDIT_EVIDENCE_2026-10-23.md`](./QA_AUTHZ_AUDIT_EVIDENCE_2026-10-23.md)）：
+> - `scripts/seed_qa.py` **已入库**（修复 D-3）；生产实测创建成功（qa_smoke 客户行 id=2，账号 team_id=NULL）。
+> - **实际隔离口径 = 单租户 `default` + 「无团队 + owner_scope=private」**（不是独立租户；D-2 落地说明）。
+> - **工位订阅闸门先于角色闸门**：无团队账号访问 trade-docs / 公章先得 `404 WORKSTATION_NOT_SUBSCRIBED`
+>   （同样拒绝、不泄露存在性；角色层细分已由代码级测试锁定）。若要真机跑角色层矩阵，需给 QA 建团队并订阅工位（需用户拍板）。
+> - **真机请求必须带浏览器 UA**：Cloudflare 会拦 python-urllib 默认 UA（全端点 403，连登录都 403 ⇒ 证据无效）。
+
 ---
 
 ## 5. 与既有机制的关系

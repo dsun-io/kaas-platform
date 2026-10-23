@@ -119,4 +119,6 @@
 | 2026-10-23 | **U-P1F 小项 ✅**：pricing 恢复兜底确认、QuoteWizard 真实步骤数、orders O3/O4/O5、DetailDrawer barrel |
 | 2026-10-23 | **U-P1D2 拆分 5/7 ✅**：leadgen / order-create-wizard / product-spec-editor / quote-workbench / payment-schedules-panel（主文件 350/105/88/41/337 行，行为不变） |
 | 2026-10-23 | **U-P1E 收口 ✅**：customers 分页 + FormField 收编（customers/research/leadgen 28 个字段 label[for]+role=alert）；shipments 真·detail；O5 统一 PopoverPanel；CAMPAIGN_STATUS_TONES 登记；mocks 注释行号漂移修复 |
-| 2026-10-23 | 剩余 backlog：/quotations 迁移、customers/research 拆分、A-10 QA 越权留证（需生产 seed_qa 确认）、ui:patterns 剩余 105 违规（2026-10-30 转强制） |
+| 2026-10-23 | **U-P1D2 全部 7/7 ✅**：customers 1752→323、research 897→350（连同先前 5 个全部行为不变拆分完成）；**/quotations 幽灵目录消除**（组件并入 quotes 树、termOptionLabel 平移、freight-panel 整删） |
+| 2026-10-23 | **A-10 真机留证 ✅**：16/16 拒绝路径全拦；`scripts/seed_qa.py` 入库（D-3 修复）；发现 CF UA 拦截 + 订阅闸门先于角色闸门（`QA_AUTHZ_AUDIT_EVIDENCE_2026-10-23.md`） |
+| 2026-10-23 | 剩余：ui:patterns 105 违规（2026-10-30 转强制前渐进清零）；quote 记录列表分页（白名单登记，转 strict 前必修） |
