@@ -87,7 +87,7 @@
 
 | 级别 | 范围 | 建议 |
 |---|---|---|
-| **高** | `archive/.../sample_docs/*.html`（18 份真实样例：公司/电话/金额） | 若要保 public：把真实值替换为占位符（如 `ACME TRADING CO.`、`+1 555 *** ****`），或迁出到私有存储；改动前需你确认（本轮不动）。 |
+| **高** | `archive/.../sample_docs/*.html`（18 份真实样例：公司/电话/金额） | 若要保 public：把真实值替换为占位符（如 `ACME TRADING CO.`、`+1 555 *** ****`），或迁出到私有存储；改动前需你确认。**✅ 2026-10-23 用户裁决「仅 18 份高危样例」→ 已脱敏，见 §5** |
 | **中** | `docs/archive/**` 审计/设计文档中的邮箱/电话/公司名；`templates.json` 的样例值 | 可批量脱敏（脚本替换为占位符）；同样需你确认。 |
 | **低** | 金额/模板占位 | 金额本身不含个人身份信息；保留可读性即可。 |
 
@@ -102,4 +102,32 @@
 ```powershell
 # 重新扫描（只读；不修改文件）
 Get-ChildItem -Recurse -File archive, docs/archive | Measure-Object   # 147
+```
+
+## 5. 执行记录（2026-10-23 · 18 份高危样例已脱敏）
+
+**用户裁决**：仅处理 **18 份真实单据样例**（`archive/2026-09-trade-doc-xprime-python/sample_docs/*.html`），
+`docs/archive/**` 中危项**本轮不动**（留待单独拍板）。
+
+| 项 | 结果 |
+|---|---|
+| 改动文件 | 18（sample_docs 下全部 .html） |
+| 替换处数 | **148**（公司名/地址/电话/邮箱/**银行账号/SWIFT**/收件人姓名） |
+| 保留 | 金额、品名/HS 编码、单据号与日期、银行**机构名**（公开信息）、产品规格（按审计"金额低风险"口径） |
+| 回归门禁 | 新增 `scripts/check-archive-pii.py`（零依赖、只读；命中即 exit 1，输出打码值）→ **PASS：18 份 0 命中** |
+| 回滚 | `git checkout -- archive/2026-09-trade-doc-xprime-python/sample_docs`（脱敏为纯文本替换，可整目录回退） |
+| 口径说明 | 脱敏映射含真实值，**一次性执行后已删除**（未入库）；本仓库只保留占位符白名单的检查脚本 |
+
+**局限（必须知道）**：
+
+- 检查脚本基于正则 + 占位符白名单：能拦住邮箱/电话/银行账号/公司名（`CO., LTD.`/`Pty Ltd` 形态）/
+  中国公司名/手机号/18 位身份证；**人名与地址无法通用识别**（本次由一次性映射处理，脚本不覆盖未来新增文本）。
+- 仓库仍为 public，`docs/archive/**` 的中危命中（15 邮箱 / 17 国际电话 / 40 公司名关键词）仍在；
+  如要彻底清仓需再拍板执行。
+
+**复核**：
+
+```powershell
+backend/worker/.venv/Scripts/python.exe scripts/check-archive-pii.py   # 期望 PASS / exit 0
+git diff --stat HEAD~ -- archive/2026-09-trade-doc-xprime-python/sample_docs  # 18 files
 ```
