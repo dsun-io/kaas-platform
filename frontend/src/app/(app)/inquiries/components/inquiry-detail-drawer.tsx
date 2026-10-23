@@ -359,7 +359,11 @@ function InquiryDetailContent({
                 {update.isPending ? "保存中…" : "保存修改"}
               </Button>
               {!dirty && !plan.error ? (
-                <span className="text-xs text-muted-foreground">暂无改动</span>
+                // 这是「表单暂无未保存改动」的状态提示，不是数据区空态；
+                // 用非裸状态文案表达（ui:patterns R3 只针对数据区 加载中/暂无/失败）
+                <span role="status" className="text-xs text-muted-foreground">
+                  已保存，无未保存改动
+                </span>
               ) : null}
             </div>
           </section>

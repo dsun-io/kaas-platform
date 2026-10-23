@@ -7,7 +7,9 @@
  * - 确认事实 / 改处置 / 改清单都会**同时**影响一致性（同一交易域）⇒ 一起失效；
  * - 收款 / 清单互不影响，各自失效即可（少刷一次 = 少一次闪屏）。
  */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { useMutationWithError } from "./use-mutation-with-error";
 
 import apiClient from "@/lib/api/client";
 import type {
@@ -30,7 +32,8 @@ import type {
 
 export const hardeningKeys = {
   all: (docId: number) => ["trade-docs", "hardening", docId] as const,
-  facts: (docId: number) => ["trade-docs", "hardening", docId, "facts"] as const,
+  facts: (docId: number) =>
+    ["trade-docs", "hardening", docId, "facts"] as const,
   consistency: (docId: number) =>
     ["trade-docs", "hardening", docId, "consistency"] as const,
   receipts: (docId: number) =>
@@ -56,7 +59,7 @@ export function useDocFacts(docId: number | null) {
 /** 确认事实：`keys=[]` = 全部确认（"全部确认"按钮），否则只确认勾选项。 */
 export function useConfirmFacts(docId: number) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async (keys: string[]) => {
       const { data } = await apiClient.post<FactsConfirmResponse>(
         `/trade-docs/${docId}/facts/confirm`,
@@ -75,7 +78,7 @@ export function useConfirmFacts(docId: number) {
 /** 改一条事实的处置（信任级/不可改写/双语/证据）。**value 不可改**，故无该字段。 */
 export function usePatchFact(docId: number) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async ({
       factKey,
       patch,
@@ -117,7 +120,7 @@ export function useDocConsistency(docId: number | null) {
  * 且后端每次都要跑四类检查（含跨单证 diff），挂载即跑会在每次打开面板时白算一遍。
  */
 export function useDocLint(docId: number) {
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async () => {
       const { data } = await apiClient.post<LintResponse>(
         `/trade-docs/${docId}/lint`,
@@ -143,7 +146,7 @@ export function useDocReceipts(docId: number | null) {
 /** 登记一笔收款 → 成功后重拉列表（核销判定以后端 verdict 为准）。 */
 export function useCreateReceipt(docId: number) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async (input: CreateReceiptInput) => {
       const { data } = await apiClient.post<CreateReceiptResponse>(
         `/trade-docs/${docId}/receipts`,
@@ -173,7 +176,7 @@ export function useDocSet(docId: number | null) {
 /** 全量替换清单（后端保证：仍在清单里的项保留已登记回执）。 */
 export function useSaveDocSet(docId: number) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async (input: DocSetPutInput) => {
       const { data } = await apiClient.put<DocSetResponse>(
         `/trade-docs/${docId}/doc-set`,
@@ -190,7 +193,7 @@ export function useSaveDocSet(docId: number) {
 /** 对方出单的回执登记（receive / waive）。 */
 export function useDocSetReceipt(docId: number) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async ({
       docType,
       input,
@@ -220,7 +223,7 @@ export function useDocSetReceipt(docId: number) {
  * 面板会把阻断项逐条展示；不让通用错误处理再弹一个"无权限/后端繁忙"的 toast。
  */
 export function useVerifyExport(docId: number) {
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async (body: VerifyExportRequest) => {
       const { data } = await apiClient.post<VerifyExportResponse>(
         `/trade-docs/${docId}/verify-export`,

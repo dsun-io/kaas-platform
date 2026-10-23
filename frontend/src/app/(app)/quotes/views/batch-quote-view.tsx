@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DataTable } from "@/components/shared/data-table";
 import { EmptyState } from "@/components/shared/empty-state";
 import { SectionCard } from "@/components/shared/section-card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -502,48 +503,44 @@ export function BatchQuoteView() {
             className="border-0 py-8"
           />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th scope="col" className="p-2">
-                    询盘
-                  </th>
-                  <th scope="col" className="p-2">
-                    产品
-                  </th>
-                  <th scope="col" className="p-2">
-                    件数（卷）
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {selectedRows.map((r) => {
+          <DataTable
+            caption="已选询盘"
+            tableClassName="text-sm"
+            rows={selectedRows}
+            getRowKey={(r) => `${r.customer_id}:${r.id}`}
+            columns={[
+              {
+                key: "inquiry_no",
+                header: "询盘",
+                className: "font-mono text-xs",
+                render: (r) => r.inquiry_no ?? `#${r.id}`,
+              },
+              {
+                key: "product_name_raw",
+                header: "产品",
+                render: (r) => r.product_name_raw ?? "—",
+              },
+              {
+                key: "pieces",
+                header: "件数（卷）",
+                render: (r) => {
                   const key = `${r.customer_id}:${r.id}`;
                   return (
-                    <tr key={key} className="border-b last:border-0">
-                      <td className="p-2 font-mono text-xs">
-                        {r.inquiry_no ?? `#${r.id}`}
-                      </td>
-                      <td className="p-2">{r.product_name_raw ?? "—"}</td>
-                      <td className="p-2">
-                        <Input
-                          className="h-8 w-24"
-                          value={piecesMap[key] ?? "1"}
-                          onChange={(e) =>
-                            setPiecesMap((prev) => ({
-                              ...prev,
-                              [key]: e.target.value,
-                            }))
-                          }
-                        />
-                      </td>
-                    </tr>
+                    <Input
+                      className="h-8 w-24"
+                      value={piecesMap[key] ?? "1"}
+                      onChange={(e) =>
+                        setPiecesMap((prev) => ({
+                          ...prev,
+                          [key]: e.target.value,
+                        }))
+                      }
+                    />
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
+                },
+              },
+            ]}
+          />
         )}
         <div className="mt-3 flex items-center gap-2">
           <Button
@@ -573,27 +570,26 @@ export function BatchQuoteView() {
           </div>
         )}
         {result && result.created.length > 0 && (
-          <div className="mt-3 overflow-x-auto rounded-lg border">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  <th scope="col" className="p-2">
-                    询盘
-                  </th>
-                  <th scope="col" className="p-2">
-                    报价单号
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.created.map((c) => (
-                  <tr key={c.quote_id}>
-                    <td className="p-2">#{c.inquiry_id}</td>
-                    <td className="p-2 font-mono">{c.quote_no}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-3 rounded-lg border px-2">
+            <DataTable
+              caption="批量生成结果"
+              tableClassName="text-xs"
+              rows={result.created}
+              getRowKey={(c) => `created-${c.quote_id}`}
+              columns={[
+                {
+                  key: "inquiry_id",
+                  header: "询盘",
+                  render: (c) => `#${c.inquiry_id}`,
+                },
+                {
+                  key: "quote_no",
+                  header: "报价单号",
+                  className: "font-mono",
+                  render: (c) => c.quote_no,
+                },
+              ]}
+            />
           </div>
         )}
       </SectionCard>

@@ -374,9 +374,11 @@ function CustomerDetailPanel({
                   )}
                   <div className="space-y-2">
                     {detail?.contacts?.length === 0 && (
-                      <p className="text-sm text-muted-foreground">
-                        暂无联系人
-                      </p>
+                      <EmptyState
+                        title="暂无联系人"
+                        description="在下方「新增联系人」里补充主要联系人与电话/邮箱。"
+                        className="py-6"
+                      />
                     )}
                     {sortedContacts.map((c) => (
                       <div
@@ -656,9 +658,11 @@ function CustomerDetailPanel({
               {activeTab === "history" && (
                 <div className="space-y-2">
                   {detail?.stage_log?.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      暂无历史记录
-                    </p>
+                    <EmptyState
+                      title="暂无历史记录"
+                      description="阶段流转后，这里会按时间倒序记录变更来源与原因。"
+                      className="py-6"
+                    />
                   ) : (
                     detail?.stage_log?.map((log) => (
                       <div

@@ -9,7 +9,9 @@
  * `silent: true`：失败原因由面板自己展示（422 schedule_type 必填 / 409 已收款不可回退等），
  * 不让全局 toast 抢戏。
  */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { useMutationWithError } from "./use-mutation-with-error";
 
 import apiClient from "@/lib/api/client";
 import type {
@@ -18,11 +20,13 @@ import type {
   SchedulePatchInput,
   ScheduleListResponse,
 } from "@/lib/orders/payment-schedules";
-import { buildScheduleCreate, buildSchedulePatch } from "@/lib/orders/payment-schedules";
+import {
+  buildScheduleCreate,
+  buildSchedulePatch,
+} from "@/lib/orders/payment-schedules";
 
 export const scheduleKeys = {
-  list: (orderId: number) =>
-    ["orders", orderId, "payment-schedules"] as const,
+  list: (orderId: number) => ["orders", orderId, "payment-schedules"] as const,
 };
 
 export function useOrderSchedules(orderId: number | null) {
@@ -40,7 +44,7 @@ export function useOrderSchedules(orderId: number | null) {
 
 export function useCreateSchedule(orderId: number) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async (input: ScheduleCreateInput) => {
       const built = buildScheduleCreate(input);
       if (!built.ok) throw new Error(built.error);
@@ -60,7 +64,7 @@ export function useCreateSchedule(orderId: number) {
 
 export function useUpdateSchedule(orderId: number) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async ({
       scheduleId,
       input,

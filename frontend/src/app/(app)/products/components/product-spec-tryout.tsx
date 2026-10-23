@@ -1,5 +1,14 @@
 "use client";
 
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+
 /**
  * 公式试算（P16 · S6.3-b）—— 用 `/explain` 的 `spec_override` 做草稿定义的
  * 「逐步代入计算逻辑」自证。
@@ -252,38 +261,38 @@ export function ProductSpecTryout({
                   </p>
                 )}
                 <div className="max-h-72 overflow-y-auto rounded border">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b bg-muted/40 text-left">
-                        <th scope="col" className="p-2">
+                  <Table className="w-full text-xs">
+                    <TableHeader>
+                      <TableRow className="border-b bg-muted/40 text-left">
+                        <TableHead scope="col" className="p-2">
                           指标
-                        </th>
-                        <th scope="col" className="p-2">
+                        </TableHead>
+                        <TableHead scope="col" className="p-2">
                           公式
-                        </th>
-                        <th scope="col" className="p-2">
+                        </TableHead>
+                        <TableHead scope="col" className="p-2">
                           结果
-                        </th>
-                        <th scope="col" className="p-2">
+                        </TableHead>
+                        <TableHead scope="col" className="p-2">
                           单位
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {(result.steps ?? []).map((s, i) => (
-                        <tr
+                        <TableRow
                           key={i}
                           className={`border-b last:border-0 ${
                             s.error ? "bg-destructive/5" : ""
                           }`}
                         >
-                          <td className="p-2">
+                          <TableCell className="p-2">
                             {s.label || s.name || s.code || `#${i + 1}`}
-                          </td>
-                          <td className="p-2 font-mono text-[11px]">
+                          </TableCell>
+                          <TableCell className="p-2 font-mono text-[11px]">
                             {s.expr ?? ""}
-                          </td>
-                          <td className="p-2">
+                          </TableCell>
+                          <TableCell className="p-2">
                             {s.error ? (
                               <span className="text-destructive">
                                 {s.error}
@@ -291,12 +300,12 @@ export function ProductSpecTryout({
                             ) : (
                               String(s.value ?? "")
                             )}
-                          </td>
-                          <td className="p-2">{s.unit ?? ""}</td>
-                        </tr>
+                          </TableCell>
+                          <TableCell className="p-2">{s.unit ?? ""}</TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               </div>
             )}

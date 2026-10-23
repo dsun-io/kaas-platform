@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ErrorState } from "@/components/shared/error-state";
+import { normalizeApiError } from "@/lib/api/api-error";
 import {
   CustomerPicker,
   type CustomerPickerValue,
@@ -98,7 +100,7 @@ export interface WorkbenchParamsCardProps {
   validityDays: string;
   setValidityDays: (v: string) => void;
   termsTemplate: ExportTermsTemplate | null | undefined;
-  termsQuery: { isError: boolean };
+  termsQuery: { isError: boolean; error?: unknown; refetch: () => unknown };
   quoteAs: string;
   setQuoteAs: (v: string) => void;
   /** 船公司（CFR/CIF/DAP/DDP 时使用；值「中文名-英文缩写」） */
@@ -483,9 +485,12 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
 
         {/* 条款费用项：只显示所选条款累计需要的项 */}
         {termsQuery.isError && (
-          <p className="text-xs text-destructive">
-            出口费用模板加载失败，刷新重试
-          </p>
+          <ErrorState
+            title="出口费用模板加载失败"
+            message={normalizeApiError(termsQuery.error).message}
+            onRetry={() => void termsQuery.refetch()}
+            className="py-4"
+          />
         )}
         {termsTemplate && feeKeys.length > 0 && (
           <div className="space-y-2 rounded-lg border bg-muted/20 p-3">

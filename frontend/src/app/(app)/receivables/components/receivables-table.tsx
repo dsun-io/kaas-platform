@@ -7,6 +7,7 @@
  * （`use-order-due-dates.ts` 取数）。取不到到期日 ⇒ 显示「—」并标"未知"，
  * **不当作不逾期**（绿色会被读成"已核对过"）。
  */
+import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/shared/status-badge";
 import type { ReceivableRow } from "@/lib/receivables/summary";
 import {
@@ -120,7 +121,9 @@ export function ReceivablesTable({
                 </td>
                 <td className="p-2 font-mono text-xs">
                   {dueLoading ? (
-                    <span className="text-muted-foreground">加载中…</span>
+                    <span aria-label="到期日加载中">
+                      <Skeleton className="h-3 w-10" />
+                    </span>
                   ) : due ? (
                     String(due).slice(0, 10)
                   ) : (

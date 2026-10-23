@@ -26,8 +26,11 @@ import { Check, ChevronDown, Plus, Search, X } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { ErrorState } from "@/components/shared/error-state";
+import { LoadingBlock } from "@/components/shared/loading-block";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { normalizeApiError } from "@/lib/api/api-error";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/api/client";
 import {
@@ -265,22 +268,16 @@ export function CustomerPicker({
 
               <div className="max-h-56 overflow-y-auto py-1" role="listbox">
                 {list.isLoading && (
-                  <p className="px-3 py-2 text-xs text-muted-foreground">
-                    加载中…
-                  </p>
+                  <LoadingBlock rows={2} className="px-3 py-2" />
                 )}
 
                 {list.isError && (
-                  <div className="space-y-1 px-3 py-2 text-xs">
-                    <p className="text-destructive">客户列表加载失败。</p>
-                    <button
-                      type="button"
-                      className="text-muted-foreground underline"
-                      onClick={() => void list.refetch()}
-                    >
-                      重试
-                    </button>
-                  </div>
+                  <ErrorState
+                    title="客户列表加载失败"
+                    message={normalizeApiError(list.error).message}
+                    onRetry={() => void list.refetch()}
+                    className="m-2"
+                  />
                 )}
 
                 {!list.isLoading && !list.isError && options.length === 0 && (

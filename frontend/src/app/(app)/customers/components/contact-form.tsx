@@ -15,6 +15,7 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/shared/empty-state";
 import { FormField } from "@/components/shared/form-field";
 import apiClient from "@/lib/api/client";
 
@@ -237,8 +238,8 @@ function ContactInfoDialog({
             !contact?.phone &&
             !contact?.email &&
             !contact?.whatsapp && (
-              <dd className="col-span-2 text-muted-foreground">
-                暂无更多联系方式
+              <dd className="col-span-2">
+                <EmptyState title="暂无更多联系方式" className="py-2" />
               </dd>
             )}
         </dl>

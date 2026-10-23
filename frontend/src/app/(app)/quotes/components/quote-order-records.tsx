@@ -13,6 +13,10 @@ import { LoadingBlock } from "@/components/shared/loading-block";
  */
 import { useState } from "react";
 import { PencilLine } from "lucide-react";
+import { EmptyState } from "@/components/shared/empty-state";
+import { ErrorState } from "@/components/shared/error-state";
+import { PaginationBar } from "@/components/shared/pagination-bar";
+import { normalizeApiError } from "@/lib/api/api-error";
 import {
   Table,
   TableBody,
@@ -27,6 +31,7 @@ import { DetailDrawer } from "@/components/shared/detail-drawer";
 import { NumberEditDialog } from "@/components/shared/number-edit-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  QUOTE_ORDERS_PAGE_SIZE,
   useQuoteOrder,
   useQuoteOrders,
   useUpdateQuoteOrder,
@@ -115,7 +120,11 @@ function ItemRow({
 }
 
 export function QuoteOrderRecords() {
-  const { data, isLoading } = useQuoteOrders();
+  // P1-E：列表分页 —— 后端 GET /quotes 支持 page/page_size 并回 total；
+  // page 进 queryKey（见 hooks/use-quote-orders），翻页不与其他过滤条件互相覆盖。
+  const [page, setPage] = useState(1);
+  const { data, isLoading, isFetching, isError, error, refetch } =
+    useQuoteOrders({ page, page_size: QUOTE_ORDERS_PAGE_SIZE });
   const { user } = useRole();
   // 双视图守卫：与后端剥除同口径（internal 才看得到分解列）
   const internal = user?.account_type === "internal";
@@ -162,12 +171,21 @@ export function QuoteOrderRecords() {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {isLoading ? (
+        {isError ? (
+          <ErrorState
+            title="报价单记录读取失败"
+            message={normalizeApiError(error).message}
+            onRetry={() => void refetch()}
+            className="py-6"
+          />
+        ) : isLoading ? (
           <LoadingBlock rows={3} className="py-6" />
         ) : orders.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            暂无报价单 —— 在「产品报价」页保存后会出现在这里
-          </p>
+          <EmptyState
+            title="暂无报价单"
+            description="在「产品报价」页保存后会出现在这里。"
+            className="border-0 py-6"
+          />
         ) : (
           <Table>
             <TableHeader>
@@ -238,6 +256,17 @@ export function QuoteOrderRecords() {
             </TableBody>
           </Table>
         )}
+        {!isError && !isLoading && orders.length > 0 ? (
+          <PaginationBar
+            page={data?.page ?? page}
+            pageSize={data?.page_size ?? QUOTE_ORDERS_PAGE_SIZE}
+            total={data?.total ?? 0}
+            currentCount={orders.length}
+            loading={isFetching}
+            onPageChange={setPage}
+            ariaLabel="报价单记录分页"
+          />
+        ) : null}
       </CardContent>
 
       <DetailDrawer
@@ -271,7 +300,7 @@ export function QuoteOrderRecords() {
       >
         {selected ? (
           detail.isLoading ? (
-            <p className="text-sm text-muted-foreground">加载行项…</p>
+            <LoadingBlock rows={3} />
           ) : selectedItems.length > 0 ? (
             <Table>
               <TableHeader>
@@ -297,7 +326,11 @@ export function QuoteOrderRecords() {
               </TableBody>
             </Table>
           ) : (
-            <p className="text-sm text-muted-foreground">该报价单暂无行项</p>
+            <EmptyState
+              title="该报价单暂无行项"
+              description="保存报价时按行写入；为空说明这张单还没加产品。"
+              className="border-0 py-6"
+            />
           )
         ) : null}
       </DetailDrawer>

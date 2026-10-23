@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -23,10 +22,15 @@ import type { ReloadResult } from "./types";
  *
  * P0-B1 / 审计 A2：原实现点一下直接生效，是整站级变更（会影响所有空间的报价产品），
  * 且失败没有任何反馈（`mutateAsync` 没有 catch ⇒ 未处理的 rejection）。
- * 现在：二次确认 + 提交中禁用（防连点重复重载）+ 失败 toast 如实说明原因。
+ * 现在：二次确认 + 提交中禁用（防连点重复重载）+ 失败写进页内 role=alert
+ * （apiClient 拦截器已 toast，页面不再重复弹）。
  */
 export function ReloadButton() {
-  const reloadMutation = useReloadTenants();
+  /** 重载失败原因（role=alert；apiClient 已 toast，这里不重复弹） */
+  const [actionError, setActionError] = useState<string | null>(null);
+  const reloadMutation = useReloadTenants({
+    onError: (err) => setActionError(normalizeApiError(err).message),
+  });
   const createEvent = useCreateEvent();
   const [result, setResult] = useState<ReloadResult | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -36,6 +40,7 @@ export function ReloadButton() {
   const handleReload = async () => {
     if (inFlight.current) return;
     inFlight.current = true;
+    setActionError(null);
     try {
       const data = await reloadMutation.mutateAsync();
       setResult(data);
@@ -51,11 +56,9 @@ export function ReloadButton() {
           ip: null,
         },
       });
-    } catch (err) {
-      // 失败如实告诉用户（403 权限 / 网络等），弹窗保持打开可重试
-      toast.error(
-        `重载失败：${normalizeApiError(err).message || "请稍后重试"}`,
-      );
+    } catch {
+      // 失败原因由 reloadMutation 的 onError 写进页内 role=alert；
+      // 弹窗保持打开可重试（这里不再重复 toast）。
     } finally {
       inFlight.current = false;
     }
@@ -80,6 +83,15 @@ export function ReloadButton() {
           <RefreshCw className="mr-1 size-4" />
           重载产品配置
         </Button>
+
+        {actionError ? (
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+          >
+            重载失败：{actionError || "请稍后重试"}
+          </p>
+        ) : null}
 
         {result && (
           <div>

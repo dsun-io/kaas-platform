@@ -21,8 +21,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { apiErrorCode } from "@/lib/api/api-error";
-import type { AxiosError } from "axios";
+import { ErrorState } from "@/components/shared/error-state";
+import { EmptyState } from "@/components/shared/empty-state";
+import { apiErrorCode, normalizeApiError } from "@/lib/api/api-error";
 import {
   useAccounts,
   useUpdateAccountStatus,
@@ -68,27 +69,30 @@ function conflictMessage(error: unknown): string | null {
 }
 
 export function AccountManagement() {
-  const { data, isLoading, error } = useAccounts();
-  const updateStatus = useUpdateAccountStatus();
+  const { data, isLoading, error, refetch } = useAccounts();
+  /** 停用/恢复的失败原因（role=alert；apiClient 已 toast，这里不重复弹） */
+  const [actionError, setActionError] = useState<string | null>(null);
+  const updateStatus = useUpdateAccountStatus({
+    onError: (e) => {
+      // 403 给固定人话（后端该分支可能只有 error 码、没有 message）
+      const status = (e as { response?: { status?: number } } | null)?.response
+        ?.status;
+      setActionError(
+        status === 403
+          ? "无权限执行此操作"
+          : (conflictMessage(e) ?? normalizeApiError(e).message),
+      );
+    },
+  });
   const [pendingDisable, setPendingDisable] = useState<AdminAccount | null>(
     null,
   );
 
   const handleRestore = (account: AdminAccount) => {
+    setActionError(null);
     updateStatus.mutate(
       { userId: account.id, status: "active" },
-      {
-        onSuccess: () => toast.success(`已恢复 ${account.email} 的登录`),
-        onError: (e) => {
-          const msg = conflictMessage(e);
-          toast.error(
-            msg ??
-              ((e as AxiosError)?.response?.status === 403
-                ? "无权限执行此操作"
-                : "恢复失败，请稍后重试"),
-          );
-        },
-      },
+      { onSuccess: () => toast.success(`已恢复 ${account.email} 的登录`) },
     );
   };
 
@@ -96,20 +100,10 @@ export function AccountManagement() {
     if (!pendingDisable) return;
     const account = pendingDisable;
     setPendingDisable(null);
+    setActionError(null);
     updateStatus.mutate(
       { userId: account.id, status: "disabled" },
-      {
-        onSuccess: () => toast.success(`已停用 ${account.email}`),
-        onError: (e) => {
-          const msg = conflictMessage(e);
-          toast.error(
-            msg ??
-              ((e as AxiosError)?.response?.status === 403
-                ? "无权限执行此操作"
-                : "停用失败，请稍后重试"),
-          );
-        },
-      },
+      { onSuccess: () => toast.success(`已停用 ${account.email}`) },
     );
   };
 
@@ -125,16 +119,34 @@ export function AccountManagement() {
 
   if (error) {
     return (
-      <div className="py-8 text-center text-sm text-muted-foreground">
-        账号列表加载失败，请稍后重试
-      </div>
+      <ErrorState
+        title="账号列表加载失败"
+        message={normalizeApiError(error).message}
+        onRetry={() => void refetch()}
+      />
     );
   }
 
   const accounts = data?.accounts ?? [];
+  if (accounts.length === 0) {
+    return (
+      <EmptyState
+        title="暂无账号"
+        description="平台账号由注册流程创建；创建后会出现在这里。"
+      />
+    );
+  }
 
   return (
     <>
+      {actionError ? (
+        <p
+          role="alert"
+          className="mb-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+        >
+          {actionError}
+        </p>
+      ) : null}
       <div className="rounded-lg border">
         <Table>
           <TableHeader>
@@ -150,59 +162,46 @@ export function AccountManagement() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {accounts.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={8}
-                  className="py-8 text-center text-sm text-muted-foreground"
-                >
-                  暂无账号
+            {accounts.map((a) => (
+              <TableRow key={a.id}>
+                <TableCell className="font-medium">{a.email}</TableCell>
+                <TableCell>{a.display_name ?? "—"}</TableCell>
+                <TableCell className="text-xs">
+                  {accountTypeLabel(a.account_type)}
+                </TableCell>
+                <TableCell className="text-xs">{roleLabel(a.role)}</TableCell>
+                <TableCell>
+                  <Badge
+                    variant={a.status === "active" ? "default" : "secondary"}
+                  >
+                    {a.status === "active" ? "正常" : "已停用"}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-xs">{a.team_name ?? "—"}</TableCell>
+                <TableCell className="text-xs">
+                  {formatDate(a.created_at)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {a.status === "active" ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPendingDisable(a)}
+                    >
+                      停用
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRestore(a)}
+                    >
+                      恢复
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
-            ) : (
-              accounts.map((a) => (
-                <TableRow key={a.id}>
-                  <TableCell className="font-medium">{a.email}</TableCell>
-                  <TableCell>{a.display_name ?? "—"}</TableCell>
-                  <TableCell className="text-xs">
-                    {accountTypeLabel(a.account_type)}
-                  </TableCell>
-                  <TableCell className="text-xs">{roleLabel(a.role)}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={a.status === "active" ? "default" : "secondary"}
-                    >
-                      {a.status === "active" ? "正常" : "已停用"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-xs">
-                    {a.team_name ?? "—"}
-                  </TableCell>
-                  <TableCell className="text-xs">
-                    {formatDate(a.created_at)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {a.status === "active" ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setPendingDisable(a)}
-                      >
-                        停用
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleRestore(a)}
-                      >
-                        恢复
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
+            ))}
           </TableBody>
         </Table>
       </div>

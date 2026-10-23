@@ -13,6 +13,7 @@
 import { AlertTriangle, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DataTable } from "@/components/shared/data-table";
 import { cn } from "@/lib/utils";
 import type { ExportQuoteResponse, QuoteTable } from "@contracts/export-quote";
 import { triggerBlobDownload } from "@/lib/export-quote/import-file";
@@ -38,55 +39,48 @@ function formatCell(
   });
 }
 
-/** 单元格：数值右对齐（金额/数量/评分不应与文本左对齐混排）。 */
-function Cell({
-  value,
-  decimals,
-}: {
-  value: number | string | boolean | null;
-  decimals?: number | null;
-}) {
+/**
+ * 单元格内容：数值右对齐（金额/数量/评分不应与文本左对齐混排）。
+ * 用 `span` 而不是 `td` —— 外框由共享 DataTable 渲染（见 QuoteTableView）。
+ */
+function cellContent(
+  value: number | string | boolean | null,
+  decimals?: number | null,
+) {
   if (value === null || value === undefined) {
-    return <td className="px-2 py-1.5 text-right text-muted-foreground">—</td>;
+    return <span className="block text-right text-muted-foreground">—</span>;
   }
   if (typeof value === "number") {
     return (
-      <td className="px-2 py-1.5 text-right tabular-nums">
+      <span className="block text-right tabular-nums">
         {formatCell(value, decimals)}
-      </td>
+      </span>
     );
   }
-  return <td className="px-2 py-1.5 whitespace-nowrap">{String(value)}</td>;
+  return <span className="block whitespace-nowrap">{String(value)}</span>;
 }
 
 function QuoteTableView({ table }: { table: QuoteTable }) {
+  // 列由引擎返回的 `table.header` 动态决定（客户/内部视图列集合不同），
+  // 所以列定义在渲染时生成；行是纯数据数组，用下标作为稳定 key。
+  const rows = table.rows.map((cells, index) => ({ index, cells }));
+  const columns = table.header.map((header, i) => ({
+    key: `c${i}`,
+    header,
+    className: "whitespace-nowrap px-2 py-2 text-xs",
+    render: (row: { cells: (number | string | boolean | null)[] }) =>
+      cellContent(row.cells[i] ?? null, table.decimals?.[i]),
+  }));
+
   return (
-    <div className="overflow-x-auto rounded-lg border">
-      <table className="w-full border-collapse text-xs">
-        <thead className="bg-muted/50">
-          <tr>
-            {table.header.map((h, i) => (
-              <th
-                scope="col"
-                key={`${h}-${i}`}
-                className="whitespace-nowrap px-2 py-2 text-left font-medium text-muted-foreground"
-              >
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {table.rows.map((row, ri) => (
-            <tr key={ri} className="border-t hover:bg-muted/30">
-              {row.map((cell, ci) => (
-                <Cell key={ci} value={cell} decimals={table.decimals?.[ci]} />
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <DataTable
+      caption="算价结果明细"
+      className="overflow-x-auto rounded-lg border"
+      tableClassName="border-collapse text-xs"
+      rows={rows}
+      getRowKey={(row) => row.index}
+      columns={columns}
+    />
   );
 }
 

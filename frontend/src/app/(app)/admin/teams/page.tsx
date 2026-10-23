@@ -1,5 +1,14 @@
 "use client";
 
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+
 /**
  * 团队管理（`/admin/teams`）—— 平台管理员的**全量**团队视图。
  *
@@ -227,35 +236,35 @@ function AdminTeamsContent() {
             />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th scope="col" className="px-4 py-2.5 font-medium">
+              <Table className="w-full text-sm">
+                <TableHeader>
+                  <TableRow className="border-b text-left text-muted-foreground">
+                    <TableHead scope="col" className="px-4 py-2.5 font-medium">
                       团队
-                    </th>
-                    <th scope="col" className="px-4 py-2.5 font-medium">
+                    </TableHead>
+                    <TableHead scope="col" className="px-4 py-2.5 font-medium">
                       创建者
-                    </th>
-                    <th scope="col" className="px-4 py-2.5 font-medium">
+                    </TableHead>
+                    <TableHead scope="col" className="px-4 py-2.5 font-medium">
                       成员数
-                    </th>
-                    <th scope="col" className="px-4 py-2.5 font-medium">
+                    </TableHead>
+                    <TableHead scope="col" className="px-4 py-2.5 font-medium">
                       已开通工位
-                    </th>
-                    <th scope="col" className="px-4 py-2.5 font-medium">
+                    </TableHead>
+                    <TableHead scope="col" className="px-4 py-2.5 font-medium">
                       创建时间
-                    </th>
-                    <th
+                    </TableHead>
+                    <TableHead
                       scope="col"
                       className="px-4 py-2.5 text-right font-medium"
                     >
                       操作
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {items.map((team) => (
-                    <tr
+                    <TableRow
                       key={team.id}
                       tabIndex={0}
                       aria-label={`查看团队 ${team.name}`}
@@ -268,37 +277,37 @@ function AdminTeamsContent() {
                         }
                       }}
                     >
-                      <td className="px-4 py-3">
+                      <TableCell className="px-4 py-3">
                         <p className="font-medium text-foreground">
                           {team.name}
                         </p>
                         <p className="mt-0.5 text-xs text-muted-foreground">
                           #{team.id}
                         </p>
-                      </td>
-                      <td className="px-4 py-3">
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
                         <p>{creatorPrimary(team)}</p>
                         {creatorSecondary(team) && (
                           <p className="mt-0.5 text-xs text-muted-foreground">
                             {creatorSecondary(team)}
                           </p>
                         )}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-muted-foreground">
                         {team.member_count} 人
-                      </td>
-                      <td className="px-4 py-3">
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
                         <span
                           className="text-muted-foreground"
                           title={workstationsHint(team)}
                         >
                           {team.workstation_count} 个
                         </span>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-muted-foreground">
                         {formatDateTime(team.created_at)}
-                      </td>
-                      <td className="px-4 py-3 text-right">
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-right">
                         <Button
                           size="sm"
                           variant="outline"
@@ -310,11 +319,11 @@ function AdminTeamsContent() {
                         >
                           查看
                         </Button>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
         </CardContent>

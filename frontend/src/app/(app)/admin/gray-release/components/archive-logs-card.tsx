@@ -1,5 +1,14 @@
 "use client";
 
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+
 /**
  * 事件归档记录卡片（C30）
  *
@@ -29,7 +38,7 @@ import {
 function ArchivePathCell({ path }: { path: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <td className="max-w-[28rem] p-2 text-xs">
+    <TableCell className="max-w-[28rem] p-2 text-xs">
       <button
         type="button"
         className="text-muted-foreground underline decoration-dotted underline-offset-2"
@@ -43,7 +52,7 @@ function ArchivePathCell({ path }: { path: string }) {
           {path}
         </span>
       )}
-    </td>
+    </TableCell>
   );
 }
 
@@ -85,7 +94,11 @@ export function ArchiveLogsCard() {
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <div className="space-y-2" aria-busy="true" aria-label="归档记录加载中">
+          <div
+            className="space-y-2"
+            aria-busy="true"
+            aria-label="归档记录加载中"
+          >
             {Array.from({ length: 3 }).map((_, i) => (
               <Skeleton key={i} className="h-10 w-full rounded-md" />
             ))}
@@ -112,47 +125,49 @@ export function ArchiveLogsCard() {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th scope="col" className="p-2">
+              <Table className="w-full text-sm">
+                <TableHeader>
+                  <TableRow className="border-b text-left text-muted-foreground">
+                    <TableHead scope="col" className="p-2">
                       归档月份
-                    </th>
-                    <th scope="col" className="p-2">
+                    </TableHead>
+                    <TableHead scope="col" className="p-2">
                       归档文件
-                    </th>
-                    <th scope="col" className="p-2">
+                    </TableHead>
+                    <TableHead scope="col" className="p-2">
                       状态
-                    </th>
-                    <th scope="col" className="p-2">
+                    </TableHead>
+                    <TableHead scope="col" className="p-2">
                       归档时间
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {items.map((entry) => (
-                    <tr
+                    <TableRow
                       key={entry.id}
                       className="border-b last:border-0 hover:bg-muted/40"
                     >
-                      <td className="whitespace-nowrap p-2 font-medium">
+                      <TableCell className="whitespace-nowrap p-2 font-medium">
                         {entry.month}
-                      </td>
+                      </TableCell>
                       <ArchivePathCell path={entry.path} />
-                      <td className="p-2">
+                      <TableCell className="p-2">
                         <StatusBadge
-                          tone={entry.status === "archived" ? "success" : "warning"}
+                          tone={
+                            entry.status === "archived" ? "success" : "warning"
+                          }
                         >
                           {entry.status}
                         </StatusBadge>
-                      </td>
-                      <td className="whitespace-nowrap p-2 text-xs text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap p-2 text-xs text-muted-foreground">
                         {formatArchivedAt(entry.archived_at)}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
             <PaginationBar
               page={page}

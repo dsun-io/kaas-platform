@@ -8,7 +8,9 @@
  * 查询键前缀用 `["orders", orderId]`：收款、附件、条款任何一处写成功后，
  * 失效这个前缀就能一次刷新「详情 + 收款计划 + 实收 + 附件」。
  */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { useMutationWithError } from "./use-mutation-with-error";
 
 import apiClient from "@/lib/api/client";
 import type { OrderDetail } from "@/lib/orders/order-detail";
@@ -32,7 +34,7 @@ export function useOrderDetail(orderId: number | null) {
 /** 保存贸易条款（PATCH /orders/{id}）：只发用户改过的字段。 */
 export function useUpdateOrderTerms(orderId: number) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async (patch: Record<string, string>) => {
       const { data } = await apiClient.patch<OrderDetail>(
         `/orders/${orderId}`,

@@ -128,7 +128,10 @@ export function RunTaskDialog({
   const [rows, setRows] = useState<Row[]>([{ key: "", value: "" }]);
   const [result, setResult] = useState<AiTaskRunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const run = useRunAiTask();
+  // 请求是 silent 的（拦截器不 toast），失败原因由这里落弹窗内 role=alert
+  const run = useRunAiTask({
+    onError: (err) => setError(runErrorText(err)),
+  });
 
   const payload = rowsToPayload(rows);
   const payloadKeys = Object.keys(payload);
@@ -143,8 +146,8 @@ export function RunTaskDialog({
       const data = await run.mutateAsync({ taskKey, payload });
       setResult(data);
       onRan?.();
-    } catch (err) {
-      setError(runErrorText(err));
+    } catch {
+      // 错误文案已由 useRunAiTask 的 onError 写进 setError（含后端码/文案）
     }
   };
 
@@ -164,42 +167,42 @@ export function RunTaskDialog({
             高级参数（一般不需要修改）
           </summary>
           <div className="mt-2 space-y-2">
-          {rows.map((row, index) => (
-            <div key={index} className="flex items-center gap-2">
-              <Input
-                aria-label={`参数名 ${index + 1}`}
-                className="h-8 w-48 text-xs"
-                placeholder="参数名（如 product_name）"
-                value={row.key}
-                onChange={(e) => updateRow(index, { key: e.target.value })}
-              />
-              <Input
-                aria-label={`参数值 ${index + 1}`}
-                className="h-8 flex-1 text-xs"
-                placeholder='值（文本或数字，如 "Fence" / 30）'
-                value={row.value}
-                onChange={(e) => updateRow(index, { value: e.target.value })}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                aria-label={`删除参数 ${index + 1}`}
-                disabled={rows.length === 1}
-                onClick={() => setRows(rows.filter((_, i) => i !== index))}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          ))}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setRows([...rows, { key: "", value: "" }])}
-          >
-            <Plus className="mr-1 h-3.5 w-3.5" /> 添加参数
-          </Button>
+            {rows.map((row, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <Input
+                  aria-label={`参数名 ${index + 1}`}
+                  className="h-8 w-48 text-xs"
+                  placeholder="参数名（如 product_name）"
+                  value={row.key}
+                  onChange={(e) => updateRow(index, { key: e.target.value })}
+                />
+                <Input
+                  aria-label={`参数值 ${index + 1}`}
+                  className="h-8 flex-1 text-xs"
+                  placeholder='值（文本或数字，如 "Fence" / 30）'
+                  value={row.value}
+                  onChange={(e) => updateRow(index, { value: e.target.value })}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`删除参数 ${index + 1}`}
+                  disabled={rows.length === 1}
+                  onClick={() => setRows(rows.filter((_, i) => i !== index))}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setRows([...rows, { key: "", value: "" }])}
+            >
+              <Plus className="mr-1 h-3.5 w-3.5" /> 添加参数
+            </Button>
           </div>
           <div className="mt-2 border-t pt-2">
             <div className="mb-1 text-[11px] text-muted-foreground">

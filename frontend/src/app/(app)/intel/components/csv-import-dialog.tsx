@@ -1,5 +1,14 @@
 "use client";
 
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+
 /**
  * 情报货运 CSV 导入（C36 #15）。
  *
@@ -171,39 +180,48 @@ export function IntelCsvImportDialog({
                 预览前 {analysis.preview.length} 行 / 共 {analysis.totalRows} 行
               </p>
               <div className="overflow-x-auto rounded border">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b bg-muted/40 text-left">
-                      <th scope="col" className="p-2">
+                <Table className="w-full text-xs">
+                  <TableHeader>
+                    <TableRow className="border-b bg-muted/40 text-left">
+                      <TableHead scope="col" className="p-2">
                         行
-                      </th>
+                      </TableHead>
                       {analysis.columns
                         .filter((column) => column.field)
                         .map((column) => (
-                          <th scope="col" key={column.raw} className="p-2">
+                          <TableHead
+                            scope="col"
+                            key={column.raw}
+                            className="p-2"
+                          >
                             {column.field}
-                          </th>
+                          </TableHead>
                         ))}
-                    </tr>
-                  </thead>
-                  <tbody>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {analysis.preview.map((row) => (
-                      <tr key={row.row} className="border-b last:border-0">
-                        <td className="p-2 text-muted-foreground">{row.row}</td>
+                      <TableRow
+                        key={row.row}
+                        className="border-b last:border-0"
+                      >
+                        <TableCell className="p-2 text-muted-foreground">
+                          {row.row}
+                        </TableCell>
                         {analysis.columns
                           .filter((column) => column.field)
                           .map((column) => (
-                            <td
+                            <TableCell
                               key={column.raw}
                               className="max-w-48 truncate p-2"
                             >
                               {row.values[column.field as string] || "-"}
-                            </td>
+                            </TableCell>
                           ))}
-                      </tr>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </div>
           </div>

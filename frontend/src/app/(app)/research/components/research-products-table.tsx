@@ -1,5 +1,14 @@
 "use client";
 
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+
 /**
  * 调研产品表格 + 分页（从 page.tsx 拆出；列顺序/th scope/行内按钮 aria/空态文案不变）。
  *
@@ -48,40 +57,40 @@ export function ResearchProductsTable({
         />
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-xs text-muted-foreground">
-                <th scope="col" className="p-2">
+          <Table className="w-full text-sm">
+            <TableHeader>
+              <TableRow className="border-b text-left text-xs text-muted-foreground">
+                <TableHead scope="col" className="p-2">
                   图片
-                </th>
-                <th scope="col" className="p-2">
+                </TableHead>
+                <TableHead scope="col" className="p-2">
                   产品（本地 / 中文）
-                </th>
-                <th scope="col" className="p-2">
+                </TableHead>
+                <TableHead scope="col" className="p-2">
                   规格
-                </th>
-                <th scope="col" className="p-2">
+                </TableHead>
+                <TableHead scope="col" className="p-2">
                   地区
-                </th>
-                <th scope="col" className="p-2">
+                </TableHead>
+                <TableHead scope="col" className="p-2">
                   店铺
-                </th>
-                <th scope="col" className="p-2">
+                </TableHead>
+                <TableHead scope="col" className="p-2">
                   联系方式
-                </th>
-                <th scope="col" className="p-2">
+                </TableHead>
+                <TableHead scope="col" className="p-2">
                   价格
-                </th>
-                <th scope="col" className="p-2">
+                </TableHead>
+                <TableHead scope="col" className="p-2">
                   可供货
-                </th>
-                <th scope="col" className="p-2" />
-              </tr>
-            </thead>
-            <tbody>
+                </TableHead>
+                <TableHead scope="col" className="p-2" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {products.map((p) => (
-                <tr key={p.id} className="border-b hover:bg-muted/40">
-                  <td className="p-2">
+                <TableRow key={p.id} className="border-b hover:bg-muted/40">
+                  <TableCell className="p-2">
                     {p.product_image_url ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
@@ -95,26 +104,26 @@ export function ResearchProductsTable({
                         <ImageOff className="h-4 w-4 text-muted-foreground" />
                       </div>
                     )}
-                  </td>
-                  <td className="p-2">
+                  </TableCell>
+                  <TableCell className="p-2">
                     <div className="font-medium">{p.product_name ?? "—"}</div>
                     <div className="text-xs text-muted-foreground">
                       {p.product_name_cn ?? "—"}
                     </div>
-                  </td>
-                  <td className="p-2 max-w-[220px] truncate text-xs text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="p-2 max-w-[220px] truncate text-xs text-muted-foreground">
                     {p.spec_raw ?? "—"}
-                  </td>
-                  <td className="p-2 text-xs">
+                  </TableCell>
+                  <TableCell className="p-2 text-xs">
                     {[p.country, p.city].filter(Boolean).join(" / ") || "—"}
-                  </td>
-                  <td className="p-2 text-xs">
+                  </TableCell>
+                  <TableCell className="p-2 text-xs">
                     <div>{p.shop_name ?? "—"}</div>
                     <div className="text-muted-foreground">
                       {p.shop_type ?? ""}
                     </div>
-                  </td>
-                  <td className="p-2 text-xs">
+                  </TableCell>
+                  <TableCell className="p-2 text-xs">
                     <div>{p.phone ?? "—"}</div>
                     {p.website && (
                       <a
@@ -126,14 +135,16 @@ export function ResearchProductsTable({
                         官网
                       </a>
                     )}
-                  </td>
-                  <td className="p-2 text-xs">
+                  </TableCell>
+                  <TableCell className="p-2 text-xs">
                     {p.price_local != null
                       ? `${p.price_local} ${p.price_currency ?? ""}`
                       : "—"}
-                  </td>
-                  <td className="p-2">{supplyBadge(p.can_supply)}</td>
-                  <td className="p-2">
+                  </TableCell>
+                  <TableCell className="p-2">
+                    {supplyBadge(p.can_supply)}
+                  </TableCell>
+                  <TableCell className="p-2">
                     <div className="flex items-center gap-1">
                       <Button
                         variant="ghost"
@@ -154,11 +165,11 @@ export function ResearchProductsTable({
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
       <PaginationBar

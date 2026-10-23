@@ -14,7 +14,15 @@
  *    红/黄差异也可能随之变化。
  */
 import { useMemo, useState } from "react";
-import { BadgeCheck, FileWarning, Lock, PencilLine, ShieldQuestion } from "lucide-react";
+import {
+  BadgeCheck,
+  FileWarning,
+  Lock,
+  PencilLine,
+  ShieldQuestion,
+} from "lucide-react";
+
+import { EmptyState } from "@/components/shared/empty-state";
 import { toast } from "sonner";
 
 import { LoadingBlock } from "@/components/shared/loading-block";
@@ -138,9 +146,7 @@ export function DocFactsPanel({ docId, status }: Props) {
         <StatusBadge tone="danger">
           待确认 {summary?.unverified ?? 0}
         </StatusBadge>
-        <StatusBadge tone="warning">
-          推断 {summary?.inferred ?? 0}
-        </StatusBadge>
+        <StatusBadge tone="warning">推断 {summary?.inferred ?? 0}</StatusBadge>
         <span className="ml-auto flex gap-2">
           <Button
             size="sm"
@@ -169,7 +175,9 @@ export function DocFactsPanel({ docId, status }: Props) {
 
       <ul className="divide-y rounded-md border">
         {items.map((fact) => {
-          const meta = FACT_TRUST_META[fact.trust as FactTrust] ?? FACT_TRUST_META.inferred;
+          const meta =
+            FACT_TRUST_META[fact.trust as FactTrust] ??
+            FACT_TRUST_META.inferred;
           const unverified = fact.trust !== "confirmed";
           return (
             <li
@@ -310,8 +318,12 @@ export function DocFactsPanel({ docId, status }: Props) {
           );
         })}
         {items.length === 0 && (
-          <li className="px-3 py-6 text-center text-sm text-muted-foreground">
-            该单证暂无可核对的事实。
+          <li className="px-3 py-4">
+            <EmptyState
+              title="暂无可核对的事实"
+              description="该单证没有需要人工核对的事实项（或已全部核对）；新增事实后会出现在这里。"
+              className="py-4"
+            />
           </li>
         )}
       </ul>

@@ -6,7 +6,9 @@
  * queryKey 统一用 `["trade-docs", ...]` 前缀，便于跨页面精确失效
  * （例如在订单工位开单后，单证台账要刷新）。
  */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { useMutationWithError } from "./use-mutation-with-error";
 
 import apiClient from "@/lib/api/client";
 import { customerRecordsKeys } from "@/lib/customer/use-customer-records";
@@ -210,7 +212,7 @@ export interface CreateTradeDocInput {
 
 export function useCreateTradeDoc() {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async (input: CreateTradeDocInput) => {
       const { data } = await apiClient.post<TradeDocRow>("/trade-docs", input);
       return data;
@@ -237,7 +239,7 @@ export interface PdfArchiveResult {
 /** 更新手工填写内容（仅 draft 可改）或流转状态（draft → issued → void） */
 export function useUpdateTradeDoc() {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async ({
       id,
       ...body
@@ -266,7 +268,7 @@ export function useUpdateTradeDoc() {
 /** 从上游（订单/报价）重新带入快照；仅 draft 可用，已签发单据已冻结 */
 export function useRefreshSources() {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async (id: number) => {
       const { data } = await apiClient.post<{
         doc: TradeDocRow;
@@ -295,7 +297,7 @@ export function useRefreshSources() {
  */
 export function useTranslateTradeDoc(docId: number) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async (body: TranslateRequest) => {
       const { data } = await apiClient.post<TranslateResponse>(
         `/trade-docs/${docId}/translate`,
@@ -325,7 +327,7 @@ export function useCompanyProfile() {
 
 export function useSaveCompanyProfile() {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async (
       input: Partial<CompanyProfile> & { name_en: string },
     ) => {
@@ -398,7 +400,7 @@ export function useTradeDocFiles(docId: number | null) {
 /** 上传并挂到单证（客户盖章回传走这条：再次上传 = 新版本上位、旧版留档）。 */
 export function useUploadTradeDocFile(docId: number) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async (input: {
       file: File;
       role?: string;
@@ -429,7 +431,7 @@ export function useUploadTradeDocFile(docId: number) {
 /** 摘除引用（不删文件本身：文件是留档资料，只解绑） */
 export function useDetachTradeDocFile(docId: number) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async (linkId: number) => {
       await apiClient.delete(`/trade-docs/${docId}/files/${linkId}`);
     },
@@ -482,7 +484,7 @@ export interface RenderPdfResult {
  */
 export function useArchiveRenderedPdf(docId: number) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async (input: { html: string; name?: string }) => {
       const { data } = await apiClient.post<RenderPdfResult>(
         `/trade-docs/${docId}/pdf`,
@@ -538,7 +540,7 @@ export interface RenderFingerprintCheck {
  * 而它回答的是"现在跟签发时还一致吗"这种**按需**问题 —— 用户点一下再查。
  */
 export function useCheckTradeDocRenderFingerprint(docId: number) {
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async () => {
       const { data } = await apiClient.get<RenderFingerprintCheck>(
         `/trade-docs/${docId}/render-fingerprint-check`,
@@ -620,7 +622,7 @@ export function useTradeDocContentVersion(
 
 export function useRestoreTradeDocContentVersion(docId: number) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async ({
       versionNo,
       note,

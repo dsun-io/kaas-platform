@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DataTable } from "@/components/shared/data-table";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingBlock } from "@/components/shared/loading-block";
 import { Pencil, RotateCcw } from "lucide-react";
@@ -281,49 +282,47 @@ export function PricingAllCustomersTable({
             className="border-0 py-6"
           />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  <th scope="col" className="py-2 pr-4">
-                    客户
-                  </th>
-                  <th scope="col" className="py-2 pr-4">
-                    已配置
-                  </th>
-                  <th scope="col" className="py-2">
-                    已配置明细（{unitLabel}）
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {customers.map((c) => (
-                  <tr
-                    key={c.customer_id}
-                    className="border-b last:border-0 align-top"
-                  >
-                    <td className="py-2 pr-4">{c.customer_id}</td>
-                    <td className="py-2 pr-4">
-                      <span
-                        className={`text-xs px-1.5 py-0.5 rounded ${
-                          c.configured_count === total
-                            ? "bg-success-muted text-success-muted-foreground"
-                            : "bg-warning-muted text-warning-muted-foreground"
-                        }`}
-                      >
-                        {c.configured_count} / {total}
-                      </span>
-                    </td>
-                    <td className="py-2 text-muted-foreground">
-                      {c.rows
-                        .filter((r) => r.configured)
-                        .map((r) => `${r.labels.join(" · ")} = ${r.amount}`)
-                        .join("；") || "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div>
+            <DataTable
+              caption="各客户定价配置情况"
+              tableClassName="text-sm"
+              rows={customers}
+              getRowKey={(c) => c.customer_id}
+              columns={[
+                {
+                  key: "customer_id",
+                  header: "客户",
+                  className: "py-2 pr-4",
+                  render: (c) => c.customer_id,
+                },
+                {
+                  key: "configured",
+                  header: "已配置",
+                  className: "py-2 pr-4",
+                  render: (c) => (
+                    <span
+                      className={`text-xs px-1.5 py-0.5 rounded ${
+                        c.configured_count === total
+                          ? "bg-success-muted text-success-muted-foreground"
+                          : "bg-warning-muted text-warning-muted-foreground"
+                      }`}
+                    >
+                      {c.configured_count} / {total}
+                    </span>
+                  ),
+                },
+                {
+                  key: "rows",
+                  header: `已配置明细（${unitLabel}）`,
+                  className: "py-2 text-muted-foreground",
+                  render: (c) =>
+                    c.rows
+                      .filter((r) => r.configured)
+                      .map((r) => `${r.labels.join(" · ")} = ${r.amount}`)
+                      .join("；") || "—",
+                },
+              ]}
+            />
             <p className="mt-3 text-xs text-muted-foreground">
               未配置的组合（共 {dims.length} 个维度决定 {total}{" "}
               种组合）在报价时取产品定义的兜底成本。

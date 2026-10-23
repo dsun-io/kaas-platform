@@ -14,6 +14,10 @@ import { useMemo, useState } from "react";
 import { AlertCircle, PencilLine, X } from "lucide-react";
 import { toast } from "sonner";
 
+import {
+  DataTable,
+  type DataTableColumn,
+} from "@/components/shared/data-table";
 import { SectionCard } from "@/components/shared/section-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
@@ -120,6 +124,44 @@ export function OrderDetailPanel({
   const { breakdown, total, fallback } = resolveAmountBreakdown(order);
   const items = order.items ?? [];
   const currency = order.currency ?? null;
+  // U-P0C：货物明细列表改用共享 DataTable（no-bare-table）；行 key 兼容历史行无 id。
+  const itemRows = items.map((item, index) => ({
+    ...item,
+    rowKey: item.id != null ? String(item.id) : `item-${index}`,
+  }));
+  const itemColumns: DataTableColumn<(typeof itemRows)[number]>[] = [
+    {
+      key: "product_name",
+      header: "产品",
+      render: (row) => row.product_name ?? "—",
+    },
+    {
+      key: "spec",
+      header: "规格",
+      className: "max-w-[240px] truncate",
+      render: (row) => orderItemSpecText(row) || "—",
+    },
+    {
+      key: "qty",
+      header: "数量",
+      className: "tabular-nums",
+      render: (row) => `${row.qty ?? "—"} ${row.qty_unit ?? ""}`,
+    },
+    {
+      key: "unit_price",
+      header: "单价",
+      className: "tabular-nums",
+      render: (row) =>
+        formatOrderMoney(row.unit_price, row.currency ?? currency),
+    },
+    {
+      key: "line_amount",
+      header: "金额",
+      className: "tabular-nums",
+      render: (row) =>
+        formatOrderMoney(row.line_amount, row.currency ?? currency),
+    },
+  ];
 
   return (
     <>
@@ -238,60 +280,12 @@ export function OrderDetailPanel({
                 线下单/历史单可直接点「编辑明细」补录；报价谈成的单也可以回到报价工位改后重新转单。
               </p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-xs text-muted-foreground">
-                      <th scope="col" className="p-2">
-                        产品
-                      </th>
-                      <th scope="col" className="p-2">
-                        规格
-                      </th>
-                      <th scope="col" className="p-2">
-                        数量
-                      </th>
-                      <th scope="col" className="p-2">
-                        单价
-                      </th>
-                      <th scope="col" className="p-2">
-                        金额
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((item, index) => (
-                      <tr
-                        key={item.id ?? `item-${index}`}
-                        className="border-b last:border-0"
-                      >
-                        <td className="p-2">{item.product_name ?? "—"}</td>
-                        <td
-                          className="p-2 max-w-[240px] truncate"
-                          title={orderItemSpecText(item)}
-                        >
-                          {orderItemSpecText(item) || "—"}
-                        </td>
-                        <td className="p-2 tabular-nums">
-                          {item.qty ?? "—"} {item.qty_unit ?? ""}
-                        </td>
-                        <td className="p-2 tabular-nums">
-                          {formatOrderMoney(
-                            item.unit_price,
-                            item.currency ?? currency,
-                          )}
-                        </td>
-                        <td className="p-2 tabular-nums">
-                          {formatOrderMoney(
-                            item.line_amount,
-                            item.currency ?? currency,
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable
+                columns={itemColumns}
+                rows={itemRows}
+                getRowKey={(row) => row.rowKey}
+                caption="订单货物明细"
+              />
             )}
             {order.notes && (
               <p className="mt-2 text-xs text-muted-foreground">

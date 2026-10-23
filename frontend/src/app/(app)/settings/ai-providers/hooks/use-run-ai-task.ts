@@ -24,7 +24,10 @@ export interface AiTaskRunResult {
   note?: string;
 }
 
-export function useRunAiTask() {
+export function useRunAiTask(options?: {
+  /** 失败回调（弹窗内错误态用；该请求是 silent 的，拦截器不会 toast） */
+  onError?: (error: unknown) => void;
+}) {
   return useMutation({
     mutationFn: async ({
       taskKey,
@@ -39,6 +42,9 @@ export function useRunAiTask() {
         { silent: true },
       );
       return data;
+    },
+    onError: (error) => {
+      options?.onError?.(error);
     },
   });
 }

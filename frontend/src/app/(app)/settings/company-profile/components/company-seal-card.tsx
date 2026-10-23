@@ -27,8 +27,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ImageOff, Loader2, Stamp, Star, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
+import { ErrorState } from "@/components/shared/error-state";
 import { SectionCard } from "@/components/shared/section-card";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { normalizeApiError } from "@/lib/api/api-error";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -73,7 +75,7 @@ function useCompanySeals() {
   });
 }
 
-function useUploadCompanySeal() {
+function useUploadCompanySeal(onError?: (error: unknown) => void) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: {
@@ -93,10 +95,11 @@ function useUploadCompanySeal() {
       return data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: sealKeys.list }),
+    onError: (error) => onError?.(error),
   });
 }
 
-function useSetDefaultCompanySeal() {
+function useSetDefaultCompanySeal(onError?: (error: unknown) => void) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: number) => {
@@ -106,10 +109,11 @@ function useSetDefaultCompanySeal() {
       return data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: sealKeys.list }),
+    onError: (error) => onError?.(error),
   });
 }
 
-function useDeleteCompanySeal() {
+function useDeleteCompanySeal(onError?: (error: unknown) => void) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: number) => {
@@ -120,6 +124,7 @@ function useDeleteCompanySeal() {
       qc.removeQueries({ queryKey: sealKeys.image(id) });
       qc.invalidateQueries({ queryKey: sealKeys.list });
     },
+    onError: (error) => onError?.(error),
   });
 }
 
@@ -308,10 +313,15 @@ function formatTime(iso: string | null): string {
 // ─── 组件 ────────────────────────────────────────────────────────────────────
 
 export function CompanySealCard({ canWrite = true }: { canWrite?: boolean }) {
+  /** 上传/设默认/删除的失败原因（role=alert；apiClient 已 toast，这里不重复弹） */
+  const [actionError, setActionError] = useState<string | null>(null);
+  const reportActionError = (error: unknown) =>
+    setActionError(normalizeApiError(error).message);
+
   const seals = useCompanySeals();
-  const upload = useUploadCompanySeal();
-  const setDefault = useSetDefaultCompanySeal();
-  const remove = useDeleteCompanySeal();
+  const upload = useUploadCompanySeal(reportActionError);
+  const setDefault = useSetDefaultCompanySeal(reportActionError);
+  const remove = useDeleteCompanySeal(reportActionError);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
@@ -358,6 +368,7 @@ export function CompanySealCard({ canWrite = true }: { canWrite?: boolean }) {
       return;
     }
 
+    setActionError(null);
     upload.mutate(
       { blob: png, name: sealName, setDefault: makeDefault },
       {
@@ -391,64 +402,65 @@ export function CompanySealCard({ canWrite = true }: { canWrite?: boolean }) {
           {/* 上传（仅内部账号可写：后端 ws_seals.py:46 只允许内部账号管理公章） */}
           {canWrite ? (
             <div className="space-y-3 rounded-lg border border-dashed bg-muted/20 p-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="space-y-1">
-                <span className="text-sm font-medium">公章名称（必填）</span>
-                <Input
-                  value={name}
-                  maxLength={50}
-                  disabled={busy}
-                  placeholder="公章 / 财务章 / 合同章"
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </label>
-              <label className="flex items-start gap-2 text-sm sm:mt-6">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 h-4 w-4"
-                  checked={makeDefault}
-                  disabled={busy}
-                  onChange={(e) => setMakeDefault(e.target.checked)}
-                />
-                <span>
-                  上传后设为默认章
-                  <span className="block text-xs text-muted-foreground">
-                    首枚章会自动成为默认章；单据自动盖的就是默认章。
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1">
+                  <span className="text-sm font-medium">公章名称（必填）</span>
+                  <Input
+                    value={name}
+                    maxLength={50}
+                    disabled={busy}
+                    placeholder="公章 / 财务章 / 合同章"
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                </label>
+                <label className="flex items-start gap-2 text-sm sm:mt-6">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4"
+                    checked={makeDefault}
+                    disabled={busy}
+                    onChange={(e) => setMakeDefault(e.target.checked)}
+                  />
+                  <span>
+                    上传后设为默认章
+                    <span className="block text-xs text-muted-foreground">
+                      首枚章会自动成为默认章；单据自动盖的就是默认章。
+                    </span>
                   </span>
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  disabled={!name.trim() || busy}
+                  onClick={() => inputRef.current?.click()}
+                >
+                  {busy ? (
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="mr-1 h-4 w-4" />
+                  )}
+                  {converting
+                    ? "转换图片中…"
+                    : upload.isPending
+                      ? "上传中…"
+                      : "选择图片并上传"}
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  支持 PNG / JPG / WebP / BMP；浏览器会自动转成透明底
+                  PNG（≤5MB）
                 </span>
-              </label>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                disabled={!name.trim() || busy}
-                onClick={() => inputRef.current?.click()}
-              >
-                {busy ? (
-                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                ) : (
-                  <Upload className="mr-1 h-4 w-4" />
-                )}
-                {converting
-                  ? "转换图片中…"
-                  : upload.isPending
-                    ? "上传中…"
-                    : "选择图片并上传"}
-              </Button>
-              <span className="text-xs text-muted-foreground">
-                支持 PNG / JPG / WebP / BMP；浏览器会自动转成透明底 PNG（≤5MB）
-              </span>
-              <input
-                ref={inputRef}
-                type="file"
-                aria-label="选择公章图片"
-                className="hidden"
-                accept="image/png,image/jpeg,image/webp,image/bmp,.png,.jpg,.jpeg,.webp,.bmp"
-                onChange={(e) => {
-                  void handleFile(e.target.files?.[0]);
-                }}
-              />
-            </div>
+                <input
+                  ref={inputRef}
+                  type="file"
+                  aria-label="选择公章图片"
+                  className="hidden"
+                  accept="image/png,image/jpeg,image/webp,image/bmp,.png,.jpg,.jpeg,.webp,.bmp"
+                  onChange={(e) => {
+                    void handleFile(e.target.files?.[0]);
+                  }}
+                />
+              </div>
             </div>
           ) : (
             <p className="rounded-lg border border-dashed bg-muted/20 p-4 text-xs text-muted-foreground">
@@ -456,13 +468,24 @@ export function CompanySealCard({ canWrite = true }: { canWrite?: boolean }) {
             </p>
           )}
 
+          {actionError ? (
+            <p
+              role="alert"
+              className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+            >
+              {actionError}
+            </p>
+          ) : null}
+
           {/* 列表 */}
           {seals.isLoading ? (
             <LoadingBlock rows={3} className="py-6" />
           ) : seals.isError ? (
-            <p className="text-sm text-destructive">
-              公章列表读取失败。若数据库尚未执行本次新增的表结构迁移，请先在开发库执行迁移。
-            </p>
+            <ErrorState
+              title="公章列表读取失败"
+              message={normalizeApiError(seals.error).message}
+              onRetry={() => void seals.refetch()}
+            />
           ) : items.length === 0 ? (
             <div className="rounded-lg border border-dashed p-4 text-sm">
               <p className="font-medium">还没有公章</p>
@@ -487,6 +510,7 @@ export function CompanySealCard({ canWrite = true }: { canWrite?: boolean }) {
                     busy={mutatingId === seal.id}
                     canWrite={canWrite}
                     onSetDefault={() => {
+                      setActionError(null);
                       setDefault.mutate(seal.id, {
                         onSuccess: () =>
                           toast.success(
@@ -535,6 +559,7 @@ export function CompanySealCard({ canWrite = true }: { canWrite?: boolean }) {
               onClick={() => {
                 if (!pendingDelete) return;
                 const target = pendingDelete;
+                setActionError(null);
                 remove.mutate(target.id, {
                   onSuccess: () => {
                     toast.success(`已删除「${target.name}」`);

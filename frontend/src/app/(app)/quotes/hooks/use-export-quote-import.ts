@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import type {
   ExportProduct,
@@ -20,6 +20,8 @@ import {
   triggerBlobDownload,
 } from "@/lib/export-quote/import-file";
 import { buildImportTemplateXlsx } from "@/lib/export-quote/import-template-xlsx";
+
+import { useMutationWithError } from "./use-mutation-with-error";
 
 /** 已注册的产品模型（牛栏网…）。 */
 export function useExportProducts() {
@@ -105,7 +107,7 @@ export function useImportTemplateInfo(productKey: string | null) {
  */
 export function useDownloadTemplate() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async ({
       productKey,
       format,
@@ -156,7 +158,7 @@ export function useDownloadTemplate() {
 
 /** 只解析不计算：先让用户确认列名认对了、哪些行会被跳过。 */
 export function useImportPreview() {
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async ({
       file,
       productKey,
@@ -181,7 +183,7 @@ export function useImportPreview() {
 
 /** 整表一次算完。 */
 export function useImportCalculate() {
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async ({
       file,
       productKey,

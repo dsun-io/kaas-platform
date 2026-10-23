@@ -1,5 +1,14 @@
 "use client";
 
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+
 /**
  * 团队成员面板（仅团队管理员可见）。
  *
@@ -160,33 +169,33 @@ export function TeamMembersPanel({
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  <th scope="col" className="p-2">
+            <Table className="w-full text-sm">
+              <TableHeader>
+                <TableRow className="border-b text-left text-muted-foreground">
+                  <TableHead scope="col" className="p-2">
                     成员
-                  </th>
-                  <th scope="col" className="p-2">
+                  </TableHead>
+                  <TableHead scope="col" className="p-2">
                     角色
-                  </th>
-                  <th scope="col" className="p-2">
+                  </TableHead>
+                  <TableHead scope="col" className="p-2">
                     官网数据后台
-                  </th>
-                  <th scope="col" className="p-2">
+                  </TableHead>
+                  <TableHead scope="col" className="p-2">
                     操作
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {items.map((member) => {
                   const isSelf = currentUserId === member.user_id;
                   const busy = pendingId === member.user_id;
                   return (
-                    <tr
+                    <TableRow
                       key={member.user_id}
                       className="border-b last:border-0 hover:bg-muted/40"
                     >
-                      <td className="p-2">
+                      <TableCell className="p-2">
                         <div className="font-medium">
                           {memberLabel(member)}
                           {isSelf && (
@@ -198,15 +207,15 @@ export function TeamMembersPanel({
                         <div className="text-xs text-muted-foreground">
                           {member.email}
                         </div>
-                      </td>
-                      <td className="p-2">
+                      </TableCell>
+                      <TableCell className="p-2">
                         {member.is_admin ? (
                           <StatusBadge tone="purple">团队管理员</StatusBadge>
                         ) : (
                           <StatusBadge tone="default">成员</StatusBadge>
                         )}
-                      </td>
-                      <td className="p-2">
+                      </TableCell>
+                      <TableCell className="p-2">
                         <label className="flex cursor-pointer items-center gap-1.5 text-xs">
                           <input
                             type="checkbox"
@@ -218,8 +227,8 @@ export function TeamMembersPanel({
                           />
                           {member.console_access ? "已允许" : "未允许"}
                         </label>
-                      </td>
-                      <td className="p-2">
+                      </TableCell>
+                      <TableCell className="p-2">
                         <div className="flex items-center gap-1">
                           {/* 转让：只对**非管理员成员**显示 —— 转给现任管理员自己没意义 */}
                           {!member.is_admin && (
@@ -249,12 +258,12 @@ export function TeamMembersPanel({
                             移除
                           </Button>
                         </div>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
       </SectionCard>

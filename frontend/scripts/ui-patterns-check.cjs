@@ -71,16 +71,73 @@ const BARE_TABLE_WHITELIST = new Set([
  * 白名单不是静默：报告单独打印「白名单 N 处 + 理由」，数字与原因都可以核对。
  */
 const ALLOWLIST = {
+  [RULES.bareTable]: [
+    {
+      file: "src/app/(app)/customers/page.tsx",
+      reason:
+        "交互行表格：客户列表每行是 tabIndex+aria-label+onClick/onKeyDown 的键盘可达容器，共享 DataTable 不支持行级交互容器（需扩公共 API，超出 task-38 写范围）",
+    },
+    {
+      file: "src/app/(app)/orders/components/order-change-banner.tsx",
+      reason:
+        "特殊表格：变更申请的「字段级旧→新 diff 条」（每行是多字段对比，不是列表数据）；DataTable 无行级多值对比语义，改造成本高于收益（task-36 登记）",
+    },
+    {
+      file: "src/app/(app)/orders/components/order-create/step-items-amount.tsx",
+      reason:
+        "特殊表格：可编辑货物行（行内输入 + SortableList 拖拽排序）；DataTable 是只读渲染，需扩展行内编辑能力（task-36 登记）",
+    },
+    {
+      file: "src/app/(app)/orders/components/order-items-editor.tsx",
+      reason:
+        "特殊表格：可编辑货物行（行内输入/删除/新增，整批替换提交）；DataTable 是只读渲染（task-36 登记）",
+    },
+    {
+      file: "src/app/(app)/orders/page.tsx",
+      reason:
+        "特殊表格：订单列表带列显隐配置 + 密度切换 + 窄屏卡片双渲染（同一数据两套 DOM），且行内「状态/详情」动作依赖行上下文；DataTable 无列配置/行属性插槽，迁移需先扩展 shared（跨批次，task-36 登记）",
+    },
+    {
+      file: "src/app/(app)/receivables/components/receivables-table.tsx",
+      reason:
+        "特殊表格：逾期行需要行级 data-overdue 与背景高亮（测试与视觉都依赖），DataTable 无行属性插槽；逾期判据依赖页面按订单取到的到期日（task-36 登记）",
+    },
+    {
+      file: "src/app/(app)/trade-docs/page.tsx",
+      reason:
+        "特殊表格：单证列表带勾选（批量操作）+ 列显隐配置 + 密度切换 + 窄屏卡片双渲染；DataTable 无选择列/列配置能力（跨批次，task-36 登记）",
+    },
+    {
+      file: "src/app/(app)/trade-docs/components/doc-content-versions.tsx",
+      reason:
+        "特殊表格：版本 diff（每行 = 旧值/新值两列对比 + 选择动作），不是列表数据；DataTable 无行级对比语义（task-36 登记）",
+    },
+    {
+      file: "src/app/(app)/trade-docs/components/doc-items-batch-editor.tsx",
+      reason:
+        "特殊表格：批量行内编辑（多列可输入 + 行勾选 + 合计行），DataTable 是只读渲染（task-36 登记）",
+    },
+    {
+      file: "src/app/(app)/quotes/components/bulk-import-panel.tsx",
+      reason:
+        "特殊表格：报价导入结果预览（列由后端模板动态决定 + 吸顶表头 + 200 行截断），DataTable 的静态列定义表达不了动态列（task-35 登记）",
+    },
+    {
+      file: "src/app/(app)/quotes/components/quote-order-edit-dialog.tsx",
+      reason:
+        "特殊表格：报价行项可编辑表单（每个单元格是受控 Input + 逐行删除/新增），DataTable 只读渲染（task-35 登记）",
+    },
+    {
+      file: "src/app/(app)/pricing-data/components/PricingDataTable.tsx",
+      reason:
+        "特殊表格：定价矩阵（dims 动态列 + 行选中 aria-current/键盘操作 + 同页动作），DataTable 无动态列/行选中能力；同文件只读汇总表已改 DataTable（task-35 登记）",
+    },
+  ],
   [RULES.pageSizePagination]: [
     {
       file: "src/app/(app)/quotes/views/batch-quote-view.tsx",
       reason:
         "语义误报：page_size:100 是批量报价的客户选择器取数上限，不是分页列表",
-    },
-    {
-      file: "src/app/(app)/quotes/hooks/use-quote-orders.ts",
-      reason:
-        "真实遗留：报价记录列表尚未接 PaginationBar（UI 执行方案 P1-E 分页/URL 筛选）；文件不在 task-27 写范围，先登记、不静默",
     },
   ],
 };
@@ -253,11 +310,21 @@ function analyzeSource(rel, text) {
       const opening = ts.isJsxElement(node) ? node.openingElement : node;
       // 大小写敏感：`<table>` 是原生标签，`<Table>` 是共享 ui/table 组件（合法）
       if (opening.tagName.getText(source) === "table") {
-        add(
-          node.getStart(source),
-          RULES.bareTable,
-          "禁止裸 <table>（th scope/空态/分页会各写各的）；请用共享 DataTable",
-        );
+        const allow = allowEntry(rel, RULES.bareTable);
+        if (allow) {
+          allowed.push({
+            rule: RULES.bareTable,
+            file: rel,
+            line: lineOf(source, node.getStart(source)).line,
+            reason: allow.reason,
+          });
+        } else {
+          add(
+            node.getStart(source),
+            RULES.bareTable,
+            "禁止裸 <table>（th scope/空态/分页会各写各的）；请用共享 DataTable",
+          );
+        }
       }
     }
 

@@ -5,7 +5,8 @@
  * 1. 列表渲染白名单列（邮箱/显示名/账号类型/角色/状态/团队/创建时间）；
  * 2. 停用前二次确认弹窗（无法登录 / 可随时恢复 / 不删历史数据）；
  * 3. PATCH status 正确发出、成功后刷新列表；
- * 4. 409 SELF_PROTECT / LAST_ADMIN → 明确文案 toast；403 → 无权限。
+ * 4. 409 SELF_PROTECT / LAST_ADMIN → 页内 role=alert 明确文案；403 → 无权限
+ *    （apiClient 拦截器已 toast，页面不再重复弹 toast）。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, type ReactNode } from "react";
@@ -86,6 +87,10 @@ function unmount() {
   root = null;
   container = null;
   client = null;
+}
+
+function alertText(): string {
+  return document.querySelector('[role="alert"]')?.textContent ?? "";
 }
 
 function clickButton(text: string, scope: ParentNode = document) {
@@ -191,9 +196,8 @@ describe("AccountManagement", () => {
     await settle();
     clickButton("确认停用");
     await settle();
-    expect(toastError).toHaveBeenCalledWith(
-      expect.stringContaining("不能停用当前登录的账号"),
-    );
+    expect(alertText()).toContain("不能停用当前登录的账号");
+    expect(toastError).not.toHaveBeenCalled();
   });
 
   it("409 LAST_ADMIN → 明确文案阻止", async () => {
@@ -211,9 +215,8 @@ describe("AccountManagement", () => {
     await settle();
     clickButton("确认停用");
     await settle();
-    expect(toastError).toHaveBeenCalledWith(
-      expect.stringContaining("至少保留一名系统管理员"),
-    );
+    expect(alertText()).toContain("至少保留一名系统管理员");
+    expect(toastError).not.toHaveBeenCalled();
   });
 
   it("403 → 无权限文案", async () => {
@@ -228,6 +231,7 @@ describe("AccountManagement", () => {
     await settle();
     clickButton("确认停用");
     await settle();
-    expect(toastError).toHaveBeenCalledWith("无权限执行此操作");
+    expect(alertText()).toContain("无权限执行此操作");
+    expect(toastError).not.toHaveBeenCalled();
   });
 });

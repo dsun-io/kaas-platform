@@ -87,7 +87,10 @@ export function useTeamApprovers(enabled = true) {
   });
 }
 
-export function useSaveTeamApprovers() {
+export function useSaveTeamApprovers(
+  /** 失败回调通道：面板已有页内 role="alert"（catch mutateAsync）；apiClient 已 toast，不重复。 */
+  onMutationError?: (error: unknown) => void,
+) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (userIds: readonly number[]) => {
@@ -101,6 +104,9 @@ export function useSaveTeamApprovers() {
     onSuccess: (snapshot) => {
       // PUT 响应就是"保存后的名单"，直接回填，省一次 GET
       qc.setQueryData(teamApproverKeys.detail(), snapshot);
+    },
+    onError: (error) => {
+      onMutationError?.(error);
     },
   });
 }

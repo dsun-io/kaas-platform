@@ -10,8 +10,13 @@
  *
  * 保存语义：**行项整批替换**（`PUT /quotes/{id}/items`）。多产品工作台里
  * 增删改是**一次编辑动作**，逐行接口会在"改到一半失败"时留下前后不一致的报价单。
+ *
+ * 列表分页（P1-E）：`GET /api/v1/quotes` 本来就支持 `page` / `page_size`
+ * 并回 `{items,total,page,page_size}`；旧实现写死 `page_size:50` 且忽略 total
+ * ⇒ 列表永远只看得到前 50 张。现在由调用方传 page/page_size（默认 20），
+ * 分页条在 `components/quote-order-records.tsx`。
  */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import apiClient from "@/lib/api/client";
 import { customerRecordsKeys } from "@/lib/customer/use-customer-records";
@@ -23,7 +28,12 @@ import type {
   QuoteOrderPatch,
 } from "@contracts/quote-order";
 
+import { useMutationWithError } from "./use-mutation-with-error";
+
 const KEY = "quote-orders";
+
+/** 报价单记录默认每页条数（与后端默认一致）。 */
+export const QUOTE_ORDERS_PAGE_SIZE = 20;
 
 /** 单张报价单详情（含行项）。 */
 export function useQuoteOrder(id: number | null) {
@@ -37,21 +47,27 @@ export function useQuoteOrder(id: number | null) {
   });
 }
 
-/** 报价单列表（可按询盘/客户过滤；默认只取近期 50 张）。 */
+/** 报价单列表（可按询盘/客户/状态过滤 + 分页；默认第 1 页、每页 20 张）。 */
 export function useQuoteOrders(params?: {
   customer_id?: string;
   inquiry_id?: number;
   status?: string;
+  page?: number;
   page_size?: number;
 }) {
+  const page = params?.page ?? 1;
+  const pageSize = params?.page_size ?? QUOTE_ORDERS_PAGE_SIZE;
   return useQuery({
-    queryKey: [KEY, "list", params ?? {}],
+    // page 进 queryKey：翻页是不同一份数据；其余过滤条件同样入 key
+    queryKey: [KEY, "list", { ...params, page, page_size: pageSize }],
     queryFn: async () => {
       const { data } = await apiClient.get<QuoteOrderList>("/quotes", {
-        params: { page_size: 50, ...params },
+        params: { ...params, page, page_size: pageSize },
       });
       return data;
     },
+    // 翻页时保留上一页内容，避免表格闪成骨架屏（v5 的 keepPreviousData 等价写法）
+    placeholderData: (previous) => previous,
   });
 }
 
@@ -64,7 +80,7 @@ function invalidate(client: ReturnType<typeof useQueryClient>) {
 /** 新建报价单（可带多行）。空行集合也允许 —— 工作台"先建单、再逐行加产品"。 */
 export function useCreateQuoteOrder() {
   const client = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async (payload: QuoteOrderCreate) => {
       const { data } = await apiClient.post<QuoteOrder>("/quotes", payload);
       return data;
@@ -76,7 +92,7 @@ export function useCreateQuoteOrder() {
 /** 改单头 / 状态流转（draft→sent 即签发，后端会向台账补一条）。 */
 export function useUpdateQuoteOrder() {
   const client = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async ({
       id,
       patch,
@@ -97,7 +113,7 @@ export function useUpdateQuoteOrder() {
 /** 行项整批替换（工作台"保存"的语义）。 */
 export function useReplaceQuoteItems() {
   const client = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async ({
       id,
       items,

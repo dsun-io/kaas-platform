@@ -1,6 +1,7 @@
 "use client";
 
-import { LoadingBlock } from "@/components/shared/loading-block";
+import { DataTable } from "@/components/shared/data-table";
+import { EmptyState } from "@/components/shared/empty-state";
 
 /**
  * 税务管理（TAX-04）—— 企业税档 + 产品税率。
@@ -398,99 +399,95 @@ export default function TaxArchivesPage() {
       )}
 
       <SectionCard title="企业税档（销项税 / 杂税）">
-        {list.isLoading ? (
-          <LoadingBlock rows={3} className="py-6" />
-        ) : items.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            暂无企业税档。可新建一份，报价页会自动选中最新一份。
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th scope="col" className="p-2">
-                    名称
-                  </th>
-                  <th scope="col" className="p-2">
-                    编码
-                  </th>
-                  <th scope="col" className="p-2">
-                    生效日期
-                  </th>
-                  <th scope="col" className="p-2">
-                    销项
-                  </th>
-                  <th scope="col" className="p-2">
-                    杂税
-                  </th>
-                  <th scope="col" className="p-2">
-                    状态
-                  </th>
-                  <th scope="col" className="p-2">
-                    操作
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((a) => (
-                  <tr key={a.id} className="border-b last:border-0">
-                    <td className="p-2 font-medium">{a.name}</td>
-                    <td className="p-2 font-mono text-xs">{a.code ?? "—"}</td>
-                    <td className="p-2 text-xs">{a.effective_from ?? "—"}</td>
-                    <td className="p-2">
-                      {rateToPct(a.tax_values.output_vat_rate) || "—"}%
-                    </td>
-                    <td className="p-2">
-                      {rateToPct(a.tax_values.misc_fee_rate) || "—"}%
-                    </td>
-                    <td className="p-2">
-                      <StatusBadge
-                        tone={a.status === "active" ? "success" : "default"}
+        <DataTable
+          columns={[
+            {
+              key: "name",
+              header: "名称",
+              className: "font-medium",
+              render: (a) => a.name,
+            },
+            {
+              key: "code",
+              header: "编码",
+              className: "font-mono text-xs",
+              render: (a) => a.code ?? "—",
+            },
+            {
+              key: "effective_from",
+              header: "生效日期",
+              className: "text-xs",
+              render: (a) => a.effective_from ?? "—",
+            },
+            {
+              key: "output_vat",
+              header: "销项",
+              render: (a) =>
+                `${rateToPct(a.tax_values.output_vat_rate) || "—"}%`,
+            },
+            {
+              key: "misc",
+              header: "杂税",
+              render: (a) => `${rateToPct(a.tax_values.misc_fee_rate) || "—"}%`,
+            },
+            {
+              key: "status",
+              header: "状态",
+              render: (a) => (
+                <StatusBadge
+                  tone={a.status === "active" ? "success" : "default"}
+                >
+                  {a.status === "active" ? "启用" : "停用"}
+                </StatusBadge>
+              ),
+            },
+            {
+              key: "actions",
+              header: "操作",
+              render: (a) =>
+                canWrite ? (
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setForm(toForm(a));
+                        setShowForm(true);
+                      }}
+                    >
+                      <Pencil className="mr-1 h-3 w-3" /> 编辑
+                    </Button>
+                    {a.status === "active" ? (
+                      // C36 #1：停用走 DELETE 软删（二次确认 + 403/404 原样透出）；
+                      // 重新启用仍走 PATCH（后端 DELETE 只做 active→inactive）
+                      <TaxArchiveDeactivateButton archive={a} />
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={toggle.isPending}
+                        onClick={() => toggle.mutate(a)}
                       >
-                        {a.status === "active" ? "启用" : "停用"}
-                      </StatusBadge>
-                    </td>
-                    <td className="p-2">
-                      {canWrite ? (
-                        <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setForm(toForm(a));
-                              setShowForm(true);
-                            }}
-                          >
-                            <Pencil className="mr-1 h-3 w-3" /> 编辑
-                          </Button>
-                          {a.status === "active" ? (
-                            // C36 #1：停用走 DELETE 软删（二次确认 + 403/404 原样透出）；
-                            // 重新启用仍走 PATCH（后端 DELETE 只做 active→inactive）
-                            <TaxArchiveDeactivateButton archive={a} />
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={toggle.isPending}
-                              onClick={() => toggle.mutate(a)}
-                            >
-                              <Power className="mr-1 h-3 w-3" /> 启用
-                            </Button>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">
-                          只读
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                        <Power className="mr-1 h-3 w-3" /> 启用
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-xs text-muted-foreground">只读</span>
+                ),
+            },
+          ]}
+          rows={items}
+          getRowKey={(a) => a.id}
+          loading={list.isLoading}
+          emptySlot={
+            <EmptyState
+              title="暂无企业税档"
+              description="可新建一份，报价页会自动选中最新一份。"
+              className="py-6"
+            />
+          }
+        />
       </SectionCard>
 
       <SectionCard
@@ -576,88 +573,79 @@ export default function TaxArchivesPage() {
           </div>
         )}
 
-        {productTaxes.isLoading ? (
-          <LoadingBlock rows={3} className="py-4" />
-        ) : ptItems.length === 0 ? (
-          <p className="py-4 text-center text-sm text-muted-foreground">
-            暂无产品税率。新增后报价页按产品自动带出。
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th scope="col" className="p-2">
-                    产品
-                  </th>
-                  <th scope="col" className="p-2">
-                    进项增值税率
-                  </th>
-                  <th scope="col" className="p-2">
-                    出口退税率
-                  </th>
-                  <th scope="col" className="p-2">
-                    操作
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {ptItems.map((row) => (
-                  <tr key={row.id} className="border-b last:border-0">
-                    <td className="p-2">
-                      {productName.get(row.product_key) ?? row.product_key}
-                      <span className="ml-1 font-mono text-xs text-muted-foreground">
-                        {row.product_key}
-                      </span>
-                    </td>
-                    <td className="p-2">
-                      {rateToPct(row.input_vat_rate) || "—"}%
-                    </td>
-                    <td className="p-2">
-                      {rateToPct(row.rebate_rate) || "—"}%
-                    </td>
-                    <td className="p-2">
-                      {canWrite ? (
-                        <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setPtForm({
-                                id: row.id,
-                                product_key: row.product_key,
-                                input_vat: rateToPct(row.input_vat_rate),
-                                rebate: rateToPct(row.rebate_rate),
-                              });
-                              setShowPtForm(true);
-                            }}
-                          >
-                            <Pencil className="mr-1 h-3 w-3" /> 编辑
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={deleteProductTax.isPending}
-                            onClick={() => {
-                              setDeleteError(null);
-                              setDeleteTarget(row);
-                            }}
-                          >
-                            <Trash2 className="mr-1 h-3 w-3" /> 停用
-                          </Button>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">
-                          只读
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <DataTable
+          columns={[
+            {
+              key: "product",
+              header: "产品",
+              render: (row) => (
+                <>
+                  {productName.get(row.product_key) ?? row.product_key}
+                  <span className="ml-1 font-mono text-xs text-muted-foreground">
+                    {row.product_key}
+                  </span>
+                </>
+              ),
+            },
+            {
+              key: "input_vat",
+              header: "进项增值税率",
+              render: (row) => `${rateToPct(row.input_vat_rate) || "—"}%`,
+            },
+            {
+              key: "rebate",
+              header: "出口退税率",
+              render: (row) => `${rateToPct(row.rebate_rate) || "—"}%`,
+            },
+            {
+              key: "actions",
+              header: "操作",
+              render: (row) =>
+                canWrite ? (
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setPtForm({
+                          id: row.id,
+                          product_key: row.product_key,
+                          input_vat: rateToPct(row.input_vat_rate),
+                          rebate: rateToPct(row.rebate_rate),
+                        });
+                        setShowPtForm(true);
+                      }}
+                    >
+                      <Pencil className="mr-1 h-3 w-3" /> 编辑
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={deleteProductTax.isPending}
+                      onClick={() => {
+                        setDeleteError(null);
+                        setDeleteTarget(row);
+                      }}
+                    >
+                      <Trash2 className="mr-1 h-3 w-3" /> 停用
+                    </Button>
+                  </div>
+                ) : (
+                  <span className="text-xs text-muted-foreground">只读</span>
+                ),
+            },
+          ]}
+          rows={ptItems}
+          getRowKey={(row) => row.id}
+          loading={productTaxes.isLoading}
+          emptySlot={
+            <EmptyState
+              title="暂无产品税率"
+              description="新增后报价页按产品自动带出进项税与退税率。"
+              className="py-4"
+            />
+          }
+        />
       </SectionCard>
 
       {/* C36 #14/#5：手工汇率兜底 + 汇率历史（同一屏：写与查） */}

@@ -1,5 +1,14 @@
 "use client";
 
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+
 /**
  * 出货工位 —— 订舱、装箱、船期与提单信息；出运状态推进。
  *
@@ -285,53 +294,57 @@ export default function ShipmentsPage() {
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  <th scope="col" className="p-2">
+            <Table className="w-full text-sm">
+              <TableHeader>
+                <TableRow className="border-b text-left text-muted-foreground">
+                  <TableHead scope="col" className="p-2">
                     出货单号
-                  </th>
-                  <th scope="col" className="p-2">
+                  </TableHead>
+                  <TableHead scope="col" className="p-2">
                     客户
-                  </th>
-                  <th scope="col" className="p-2">
+                  </TableHead>
+                  <TableHead scope="col" className="p-2">
                     状态
-                  </th>
-                  <th scope="col" className="p-2">
+                  </TableHead>
+                  <TableHead scope="col" className="p-2">
                     船名/航次
-                  </th>
-                  <th scope="col" className="p-2">
+                  </TableHead>
+                  <TableHead scope="col" className="p-2">
                     提单号
-                  </th>
-                  <th scope="col" className="p-2">
+                  </TableHead>
+                  <TableHead scope="col" className="p-2">
                     ETD
-                  </th>
-                  <th scope="col" className="p-2">
+                  </TableHead>
+                  <TableHead scope="col" className="p-2">
                     ETA
-                  </th>
-                  <th scope="col" className="p-2" />
-                </tr>
-              </thead>
-              <tbody>
+                  </TableHead>
+                  <TableHead scope="col" className="p-2" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {rows.map((s) => (
-                  <tr
+                  <TableRow
                     key={s.id}
                     className="border-b last:border-0 hover:bg-muted/40"
                   >
-                    <td className="p-2 font-medium">{s.shipment_no}</td>
-                    <td className="p-2">{s.customer_name ?? "—"}</td>
-                    <td className="p-2">
+                    <TableCell className="p-2 font-medium">
+                      {s.shipment_no}
+                    </TableCell>
+                    <TableCell className="p-2">
+                      {s.customer_name ?? "—"}
+                    </TableCell>
+                    <TableCell className="p-2">
                       <StatusBadge tone={STATUS_TONE[s.status] ?? "default"}>
                         {STATUS_LABEL[s.status] ?? s.status}
                       </StatusBadge>
-                    </td>
-                    <td className="p-2">
+                    </TableCell>
+                    <TableCell className="p-2">
                       {[s.vessel, s.voyage].filter(Boolean).join(" / ") || "—"}
-                    </td>
-                    <td className="p-2">{s.bl_no ?? "—"}</td>
-                    <td className="p-2">{s.etd ?? "—"}</td>
-                    <td className="p-2">{s.eta ?? "—"}</td>
-                    <td className="p-2">
+                    </TableCell>
+                    <TableCell className="p-2">{s.bl_no ?? "—"}</TableCell>
+                    <TableCell className="p-2">{s.etd ?? "—"}</TableCell>
+                    <TableCell className="p-2">{s.eta ?? "—"}</TableCell>
+                    <TableCell className="p-2">
                       <div className="flex gap-1">
                         <Button
                           size="sm"
@@ -358,11 +371,11 @@ export default function ShipmentsPage() {
                           </AsyncButton>
                         )}
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
         <PaginationBar

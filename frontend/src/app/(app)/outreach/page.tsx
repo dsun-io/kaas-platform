@@ -1,5 +1,14 @@
 "use client";
 
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+
 import { useRef, useState } from "react";
 import { usePageView } from "@/lib/events/use-page-view";
 import { RouteGuard } from "@/components/route-guard";
@@ -651,35 +660,35 @@ export default function OutreachPage() {
             <EmptyState title="暂无消息" />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th scope="col" className="p-2">
+              <Table className="w-full text-sm">
+                <TableHeader>
+                  <TableRow className="border-b text-left text-muted-foreground">
+                    <TableHead scope="col" className="p-2">
                       收件人
-                    </th>
-                    <th scope="col" className="p-2">
+                    </TableHead>
+                    <TableHead scope="col" className="p-2">
                       主题
-                    </th>
-                    <th scope="col" className="p-2">
+                    </TableHead>
+                    <TableHead scope="col" className="p-2">
                       状态
-                    </th>
-                    <th scope="col" className="p-2">
+                    </TableHead>
+                    <TableHead scope="col" className="p-2">
                       发送时间
-                    </th>
-                    <th scope="col" className="p-2" />
-                  </tr>
-                </thead>
-                <tbody>
+                    </TableHead>
+                    <TableHead scope="col" className="p-2" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {messages.map((m) => (
-                    <tr key={m.id} className="border-b hover:bg-muted/40">
-                      <td className="p-2">
+                    <TableRow key={m.id} className="border-b hover:bg-muted/40">
+                      <TableCell className="p-2">
                         <div className="font-medium">{m.to_name ?? "—"}</div>
                         <div className="text-xs text-muted-foreground">
                           {m.to_email || "—"}
                         </div>
-                      </td>
-                      <td className="p-2 text-xs">{m.subject}</td>
-                      <td className="p-2">
+                      </TableCell>
+                      <TableCell className="p-2 text-xs">{m.subject}</TableCell>
+                      <TableCell className="p-2">
                         <StatusBadge
                           tone={toneForStatus(OUTREACH_STATUS_TONES, m.status)}
                         >
@@ -693,11 +702,11 @@ export default function OutreachPage() {
                             {m.error}
                           </div>
                         )}
-                      </td>
-                      <td className="p-2 text-xs text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="p-2 text-xs text-muted-foreground">
                         {m.sent_at?.slice(0, 19) ?? "—"}
-                      </td>
-                      <td className="p-2">
+                      </TableCell>
+                      <TableCell className="p-2">
                         <span className="flex gap-1">
                           <Button
                             variant="ghost"
@@ -717,11 +726,11 @@ export default function OutreachPage() {
                             </Button>
                           )}
                         </span>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
         </SectionCard>

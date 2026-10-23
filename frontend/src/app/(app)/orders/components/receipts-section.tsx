@@ -10,9 +10,16 @@
  *
  * 「对应期次」按**列表期次序号**显示（O3 同口径）：找不到该期（历史数据被删）时
  * 回退成 `#schedule_id`，不伪造期次。
+ *
+ * U-P0C：列表表格改用共享 `DataTable`（ui:patterns no-bare-table）。
  */
 import { Upload } from "lucide-react";
 
+import {
+  DataTable,
+  type DataTableColumn,
+} from "@/components/shared/data-table";
+import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { formatOrderDate, formatOrderMoney } from "@/lib/orders/order-detail";
 import { RECEIPT_IMAGE_ACCEPT } from "@/lib/orders/order-attachments";
@@ -62,99 +69,90 @@ export function ReceiptsSection({
 
   const unallocated = unallocatedReceipts(receipts);
 
+  const columns: DataTableColumn<PaymentReceipt>[] = [
+    {
+      key: "received_date",
+      header: "收款日期",
+      render: (receipt) => formatOrderDate(receipt.received_date),
+    },
+    {
+      key: "amount",
+      header: "实收金额",
+      render: (receipt) =>
+        formatOrderMoney(receipt.amount, receipt.currency ?? currency),
+    },
+    {
+      key: "schedule",
+      header: "对应期次",
+      render: (receipt) => scheduleLabel(receipt),
+    },
+    {
+      key: "diff",
+      header: "差异",
+      render: (receipt) => diffText(receiptDiff(receipt), currency),
+    },
+    {
+      key: "fx_rate",
+      header: "汇率",
+      render: (receipt) => (receipt.fx_rate === null ? "—" : receipt.fx_rate),
+    },
+    {
+      key: "notes",
+      header: "备注",
+      className: "max-w-[220px] truncate",
+      render: (receipt) => receipt.notes || "—",
+    },
+    {
+      key: "screenshot",
+      header: "到账截图",
+      render: (receipt) =>
+        receipt.file_id ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onOpenScreenshot(receipt.file_id as number)}
+          >
+            查看到账截图
+          </Button>
+        ) : (
+          <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted/40">
+            <Upload className="size-3" />
+            补传截图
+            <input
+              type="file"
+              className="sr-only"
+              aria-label={`补传到账截图 #${receipt.id}`}
+              accept={RECEIPT_IMAGE_ACCEPT}
+              disabled={busy}
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                event.target.value = "";
+                if (file) onUploadScreenshot(receipt.id, file);
+              }}
+            />
+          </label>
+        ),
+    },
+  ];
+
   return (
     <div className="mt-5 space-y-2">
       <h3 className="text-sm font-medium">实收记录</h3>
       <p className="text-xs text-muted-foreground">
         一次到账一行，支持同一期多次收款；差异 = 实收 − 该期应收，供财务核对。
       </p>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b text-left text-xs text-muted-foreground">
-              <th scope="col" className="p-2">
-                收款日期
-              </th>
-              <th scope="col" className="p-2">
-                实收金额
-              </th>
-              <th scope="col" className="p-2">
-                对应期次
-              </th>
-              <th scope="col" className="p-2">
-                差异
-              </th>
-              <th scope="col" className="p-2">
-                汇率
-              </th>
-              <th scope="col" className="p-2">
-                备注
-              </th>
-              <th scope="col" className="p-2">
-                到账截图
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {receipts.map((receipt) => (
-              <tr key={receipt.id} className="border-b last:border-0">
-                <td className="p-2">
-                  {formatOrderDate(receipt.received_date)}
-                </td>
-                <td className="p-2">
-                  {formatOrderMoney(
-                    receipt.amount,
-                    receipt.currency ?? currency,
-                  )}
-                </td>
-                <td className="p-2">{scheduleLabel(receipt)}</td>
-                <td className="p-2">
-                  {diffText(receiptDiff(receipt), currency)}
-                </td>
-                <td className="p-2">
-                  {receipt.fx_rate === null ? "—" : receipt.fx_rate}
-                </td>
-                <td
-                  className="p-2 max-w-[220px] truncate"
-                  title={receipt.notes ?? ""}
-                >
-                  {receipt.notes || "—"}
-                </td>
-                <td className="p-2">
-                  {receipt.file_id ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() =>
-                        onOpenScreenshot(receipt.file_id as number)
-                      }
-                    >
-                      查看到账截图
-                    </Button>
-                  ) : (
-                    <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted/40">
-                      <Upload className="size-3" />
-                      补传截图
-                      <input
-                        type="file"
-                        className="sr-only"
-                        aria-label={`补传到账截图 #${receipt.id}`}
-                        accept={RECEIPT_IMAGE_ACCEPT}
-                        disabled={busy}
-                        onChange={(event) => {
-                          const file = event.target.files?.[0] ?? null;
-                          event.target.value = "";
-                          if (file) onUploadScreenshot(receipt.id, file);
-                        }}
-                      />
-                    </label>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        columns={columns}
+        rows={receipts}
+        getRowKey={(receipt) => receipt.id}
+        caption="实收记录"
+        emptySlot={
+          <EmptyState
+            title="还没有实收记录"
+            description="登记收款后会出现在这里；同一期可以多次收款。"
+          />
+        }
+      />
       {unallocated.length > 0 && (
         <div className="rounded-lg border border-warning/40 bg-warning-muted p-3 text-xs text-warning-muted-foreground">
           <p className="font-medium">

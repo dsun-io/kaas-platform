@@ -1,8 +1,10 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { queryKeys } from "@/lib/query/keys";
+
+import { useMutationWithError } from "./use-mutation-with-error";
 
 export interface Quotation {
   id: string;
@@ -70,7 +72,7 @@ export function useQuotations(filters: QuotationFilters = {}) {
 export function useCreateQuotation() {
   const queryClient = useQueryClient();
 
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async (
       input: Omit<
         Quotation,

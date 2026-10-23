@@ -15,9 +15,11 @@ import { AlertTriangle, ChevronDown, Loader2, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ErrorState } from "@/components/shared/error-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { handleApiError } from "@/lib/api/error-handler";
+import { normalizeApiError } from "@/lib/api/api-error";
 import { cn } from "@/lib/utils";
 import type { ExportQuoteResponse } from "@contracts/export-quote";
 
@@ -714,7 +716,12 @@ export function QuoteLineCard({
             />
           )}
           {formulas.isError && (
-            <p className="text-xs text-destructive">规格加载失败，请刷新重试</p>
+            <ErrorState
+              title="规格加载失败"
+              message={normalizeApiError(formulas.error).message}
+              onRetry={() => void formulas.refetch()}
+              className="py-4"
+            />
           )}
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">

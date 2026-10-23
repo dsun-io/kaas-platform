@@ -1,8 +1,12 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import type { PricingMatrix, SavePricingCell } from "@contracts/export-quote";
+
+// 共享的「mutation + 页内错误文案」包装（本批写范围不含 src/lib/hooks；
+// 后续应提升为单一实现，届时改 import 路径即可）
+import { useMutationWithError } from "@/app/(app)/quotes/hooks/use-mutation-with-error";
 
 /**
  * 客户定价数据（成本表）。
@@ -31,7 +35,7 @@ export function usePricingMatrix(
 /** 保存某一格成本（后端 INSERT 新版本并停用旧版本，历史可追溯）。 */
 export function useSavePricingCell(productKey: string) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async (payload: SavePricingCell) => {
       const { data } = await apiClient.post("/pricing-data", payload);
       return data;
@@ -45,7 +49,7 @@ export function useSavePricingCell(productKey: string) {
 /** 停用某一格的自定义成本 → 回退到产品定义的兜底值。 */
 export function useDeactivatePricingCell(productKey: string) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async (itemId: number) => {
       await apiClient.delete(`/pricing-data/${itemId}`);
     },
@@ -78,7 +82,7 @@ export interface UpdatePricingCellInput {
  */
 export function useUpdatePricingCell(productKey: string) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async ({ itemId, ...body }: UpdatePricingCellInput) => {
       const { data } = await apiClient.patch(`/pricing-data/${itemId}`, body, {
         silent: true,

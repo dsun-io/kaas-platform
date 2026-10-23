@@ -27,6 +27,8 @@
  */
 import { useMemo, useState } from "react";
 import { FileJson2, ImageUp, Lock, Package, Save, Undo2 } from "lucide-react";
+
+import { ErrorState } from "@/components/shared/error-state";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -118,11 +120,16 @@ export function DocCustomForm({
   const products = useProducts();
 
   const [texts, setTexts] = useState<Record<string, string>>(() =>
-    Object.fromEntries(fields.map((f) => [f.name, toInputText(custom[f.name])])),
+    Object.fromEntries(
+      fields.map((f) => [f.name, toInputText(custom[f.name])]),
+    ),
   );
   // 关联产品（`custom.product_key`）：不是模板字段，所以单独一个状态，
   // 保存时并进同一份 `values` —— 清空即删掉该键（buildCustom 的 undefined 语义）。
-  const savedProductKey = typeof custom[PRODUCT_KEY] === "string" ? (custom[PRODUCT_KEY] as string) : "";
+  const savedProductKey =
+    typeof custom[PRODUCT_KEY] === "string"
+      ? (custom[PRODUCT_KEY] as string)
+      : "";
   const [productKey, setProductKey] = useState<string>(savedProductKey);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -135,7 +142,8 @@ export function DocCustomForm({
     for (const field of fields) {
       if (field.protected) continue;
       const parsed = parseInput(field.control, texts[field.name] ?? "");
-      if (parsed.ok && parsed.value !== undefined) values[field.name] = parsed.value;
+      if (parsed.ok && parsed.value !== undefined)
+        values[field.name] = parsed.value;
     }
     return values;
   }, [fields, texts]);
@@ -207,7 +215,9 @@ export function DocCustomForm({
 
   const reset = () => {
     setTexts(
-      Object.fromEntries(fields.map((f) => [f.name, toInputText(custom[f.name])])),
+      Object.fromEntries(
+        fields.map((f) => [f.name, toInputText(custom[f.name])]),
+      ),
     );
     setProductKey(savedProductKey);
     setErrors({});
@@ -229,10 +239,14 @@ export function DocCustomForm({
       return;
     }
     update.mutate(
-      { id: docId, raw_payload: buildPayloadPatch(payload, buildCustom(custom, values)) },
+      {
+        id: docId,
+        raw_payload: buildPayloadPatch(payload, buildCustom(custom, values)),
+      },
       {
         onSuccess: () => toast.success("单据内容已保存"),
-        onError: () => toast.error("保存失败（已签发的单据内容冻结，不可修改）"),
+        onError: () =>
+          toast.error("保存失败（已签发的单据内容冻结，不可修改）"),
       },
     );
   };
@@ -240,7 +254,10 @@ export function DocCustomForm({
   // ── 产品图引用（用户要求：单证直接调用产品管理页面的图片）────────────────
   // `product_photos` 支持 `{"file_id": N, "caption": …}` 条目：引用产品图库里的图，
   // 由后端 render-data 装配层解析成 data URI（渲染器白名单不放开，也不需要放开）。
-  const photosField = useMemo(() => fields.find((f) => f.name === "product_photos"), [fields]);
+  const photosField = useMemo(
+    () => fields.find((f) => f.name === "product_photos"),
+    [fields],
+  );
   /**
    * 已引用的图（顺序 = 出图顺序）。
    *
@@ -291,7 +308,14 @@ export function DocCustomForm({
         return;
       }
     }
-    if (arr.some((e) => e && typeof e === "object" && (e as { file_id?: number }).file_id === entry.file_id)) {
+    if (
+      arr.some(
+        (e) =>
+          e &&
+          typeof e === "object" &&
+          (e as { file_id?: number }).file_id === entry.file_id,
+      )
+    ) {
       toast.info("这张图已经在单据里了");
       return;
     }
@@ -309,11 +333,20 @@ export function DocCustomForm({
           手工填写**优先于**上游带入：只填要覆盖或补充的项，其余留空即用上游数据
         </span>
         <div className="ml-auto flex gap-2">
-          <Button size="sm" variant="ghost" onClick={reset} disabled={!editable}>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={reset}
+            disabled={!editable}
+          >
             <Undo2 className="mr-1 h-3.5 w-3.5" />
             还原
           </Button>
-          <Button size="sm" onClick={save} disabled={!editable || update.isPending}>
+          <Button
+            size="sm"
+            onClick={save}
+            disabled={!editable || update.isPending}
+          >
             <Save className="mr-1 h-3.5 w-3.5" />
             {update.isPending ? "保存中…" : "保存内容"}
           </Button>
@@ -356,11 +389,17 @@ export function DocCustomForm({
           <p className="text-[11px] text-muted-foreground">
             选定后，该产品在「产品」工位维护的基础信息会自动带入本单据：目前是
             <b> HS 编码</b>
-            （仅商业发票 / 原产地证 / 质量证明 / 报关信息表，且行项该栏为空时）。
+            （仅商业发票 / 原产地证 / 质量证明 /
+            报关信息表，且行项该栏为空时）。
             产品档案改了，所有关联单据同步生效，不必逐张重填。
           </p>
           {products.isError && (
-            <p className="text-[11px] text-destructive">产品列表加载失败，稍后重试</p>
+            <ErrorState
+              title="产品列表读取失败"
+              message="稍后重试即可；不影响本单其余字段的填写与保存。"
+              onRetry={() => void products.refetch()}
+              className="px-3 py-4"
+            />
           )}
         </div>
         {fields.map((field) => (
@@ -416,8 +455,8 @@ export function DocCustomForm({
               内容项「
               {pendingOverwrite?.field.spec.description ??
                 pendingOverwrite?.field.name}
-              」已有内容。用模板「{pendingOverwrite?.template.name}」回填会覆盖它
-              —— 默认只填空的内容项，请确认是否覆盖。
+              」已有内容。用模板「{pendingOverwrite?.template.name}
+              」回填会覆盖它 —— 默认只填空的内容项，请确认是否覆盖。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -513,7 +552,9 @@ function FieldRow({
             aria-label={`${label} 条款模板`}
             className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
             value=""
-            disabled={disabled || !clauseTemplates || clauseTemplates.length === 0}
+            disabled={
+              disabled || !clauseTemplates || clauseTemplates.length === 0
+            }
             onChange={(e) => {
               const template = clauseTemplates?.find(
                 (t) => String(t.id) === e.target.value,
@@ -624,14 +665,22 @@ function FieldRow({
 
       {(control === "text" || control === "date" || control === "number") && (
         <Input
-          type={control === "date" ? "date" : control === "number" ? "number" : "text"}
+          type={
+            control === "date"
+              ? "date"
+              : control === "number"
+                ? "number"
+                : "text"
+          }
           value={text}
           disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
         />
       )}
 
-      {error && <span className="block text-[11px] text-destructive">{error}</span>}
+      {error && (
+        <span className="block text-[11px] text-destructive">{error}</span>
+      )}
     </label>
   );
 }

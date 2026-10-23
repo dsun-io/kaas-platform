@@ -13,7 +13,7 @@
  * 写成功后失效 `["inquiries"]` 前缀：列表的 quote_count/order_count/阶段徽标与
  * 当前打开的详情抽屉一起刷新（否则出现「改了渠道、列表还是旧值」的假成功）。
  */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import apiClient from "@/lib/api/client";
 import {
@@ -21,6 +21,10 @@ import {
   type InquiryFilters,
 } from "@/lib/inquiries/filters";
 import type { InquiryDetail, InquiryListResponse } from "@/lib/inquiries/types";
+
+// 共享的「mutation + 页内错误文案」包装（本批写范围不含 src/lib/hooks；
+// 后续应提升为单一实现，届时改 import 路径即可）
+import { useMutationWithError } from "@/app/(app)/quotes/hooks/use-mutation-with-error";
 
 export const inquiryKeys = {
   all: ["inquiries"] as const,
@@ -63,7 +67,7 @@ export interface UpdateInquiryVariables {
 
 export function useUpdateInquiry() {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async ({ id, patch }: UpdateInquiryVariables) => {
       const { data } = await apiClient.patch<InquiryDetail>(
         `/inquiries/${id}`,

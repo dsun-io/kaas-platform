@@ -1,5 +1,14 @@
 "use client";
 
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+
 /**
  * 工位开通 / 撤销面板（仅团队管理员可见）。
  *
@@ -135,45 +144,45 @@ export function TeamSubscriptionsPanel({
           )}
 
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  <th scope="col" className="p-2">
+            <Table className="w-full text-sm">
+              <TableHeader>
+                <TableRow className="border-b text-left text-muted-foreground">
+                  <TableHead scope="col" className="p-2">
                     工位
-                  </th>
-                  <th scope="col" className="p-2">
+                  </TableHead>
+                  <TableHead scope="col" className="p-2">
                     状态
-                  </th>
-                  <th scope="col" className="p-2">
+                  </TableHead>
+                  <TableHead scope="col" className="p-2">
                     到期
-                  </th>
-                  <th scope="col" className="p-2">
+                  </TableHead>
+                  <TableHead scope="col" className="p-2">
                     来源
-                  </th>
-                  <th scope="col" className="p-2">
+                  </TableHead>
+                  <TableHead scope="col" className="p-2">
                     操作
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {/* 套餐行：一条顶九条，管理员常用的"全开"入口 */}
-                <tr className="border-b bg-muted/20">
-                  <td className="p-2 font-medium">全工位套餐</td>
-                  <td className="p-2">
+                <TableRow className="border-b bg-muted/20">
+                  <TableCell className="p-2 font-medium">全工位套餐</TableCell>
+                  <TableCell className="p-2">
                     {bundleActive ? (
                       <StatusBadge tone="success">已开通</StatusBadge>
                     ) : (
                       <StatusBadge tone="default">未开通</StatusBadge>
                     )}
-                  </td>
-                  <td className="p-2 text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="p-2 text-muted-foreground">
                     {formatTime(byCode.get("full_chain")?.expires_at ?? null)}
-                  </td>
-                  <td className="p-2 text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="p-2 text-muted-foreground">
                     {SOURCE_LABEL[byCode.get("full_chain")?.source ?? ""] ??
                       "—"}
-                  </td>
-                  <td className="p-2">
+                  </TableCell>
+                  <TableCell className="p-2">
                     {bundleActive ? (
                       <Button
                         size="sm"
@@ -195,25 +204,25 @@ export function TeamSubscriptionsPanel({
                         开通
                       </Button>
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
 
                 {stations.map((station) => {
                   const row = byCode.get(station.key);
                   const active = row?.active === true;
                   const viaBundle = !active && bundleActive;
                   return (
-                    <tr
+                    <TableRow
                       key={station.key}
                       className="border-b last:border-0 hover:bg-muted/40"
                     >
-                      <td className="p-2">
+                      <TableCell className="p-2">
                         <div className="font-medium">{station.name}</div>
                         <div className="font-mono text-xs text-muted-foreground">
                           {station.key}
                         </div>
-                      </td>
-                      <td className="p-2">
+                      </TableCell>
+                      <TableCell className="p-2">
                         {active ? (
                           <StatusBadge tone="success">
                             <Check className="mr-1 size-3" />
@@ -224,16 +233,16 @@ export function TeamSubscriptionsPanel({
                         ) : (
                           <StatusBadge tone="default">未开通</StatusBadge>
                         )}
-                      </td>
-                      <td className="p-2 text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="p-2 text-muted-foreground">
                         {active ? formatTime(row?.expires_at ?? null) : "—"}
-                      </td>
-                      <td className="p-2 text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="p-2 text-muted-foreground">
                         {active
                           ? (SOURCE_LABEL[row?.source ?? ""] ?? "—")
                           : "—"}
-                      </td>
-                      <td className="p-2">
+                      </TableCell>
+                      <TableCell className="p-2">
                         {active ? (
                           <Button
                             size="sm"
@@ -259,12 +268,12 @@ export function TeamSubscriptionsPanel({
                             开通
                           </Button>
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
 
           <p className="text-xs text-muted-foreground">

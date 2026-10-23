@@ -11,11 +11,17 @@
  */
 import { useState } from "react";
 
-import { Input } from "@/components/ui/input";
+import {
+  DataTable,
+  type DataTableColumn,
+} from "@/components/shared/data-table";
+import { EmptyState } from "@/components/shared/empty-state";
 import { SectionCard } from "@/components/shared/section-card";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { Input } from "@/components/ui/input";
 import { normalizeApiError } from "@/lib/api/api-error";
 import { FX_HISTORY_MAX, useFxHistory } from "@/lib/fx/use-fx-history";
+import type { FxRateHistoryRow } from "@/lib/fx/use-latest-fx";
 
 const LIMIT_OPTIONS = [30, 90, 365] as const;
 
@@ -24,6 +30,42 @@ const SOURCE_LABELS: Record<string, string> = {
   manual: "手工录入",
   external: "外部汇率源",
 };
+
+const COLUMNS: readonly DataTableColumn<FxRateHistoryRow>[] = [
+  {
+    key: "rate_date",
+    header: "日期",
+    className: "font-mono text-xs",
+    render: (row) => row.rate_date,
+  },
+  {
+    key: "pair",
+    header: "币种对",
+    render: (row) => `${row.base_currency}/${row.quote_currency}`,
+  },
+  {
+    key: "rate",
+    header: "汇率",
+    className: "font-mono",
+    render: (row) => row.rate,
+  },
+  {
+    key: "source",
+    header: "来源",
+    className: "text-xs text-muted-foreground",
+    render: (row) => SOURCE_LABELS[row.source ?? ""] ?? "未知来源",
+  },
+  {
+    key: "status",
+    header: "状态",
+    render: (row) =>
+      row.is_stale ? (
+        <StatusBadge tone="warning">备用数据（外部汇率源暂不可用）</StatusBadge>
+      ) : (
+        <StatusBadge tone="success">正常</StatusBadge>
+      ),
+  },
+];
 
 export function FxHistoryCard() {
   const [base, setBase] = useState("USD");
@@ -73,72 +115,31 @@ export function FxHistoryCard() {
         </label>
       </div>
 
-      {history.isLoading ? (
-        <p className="py-4 text-sm text-muted-foreground">正在读取汇率历史…</p>
-      ) : history.isError ? (
-        <p role="alert" className="py-4 text-sm text-destructive">
-          汇率历史读取失败：{normalizeApiError(history.error).message}
-        </p>
-      ) : rows.length === 0 ? (
-        <p className="py-4 text-sm text-muted-foreground">
-          该币种对还没有历史记录（{base}/{quote}
-          ）。外部源首次刷新或手工录入后会出现在这里。
-        </p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-xs text-muted-foreground">
-                <th scope="col" className="p-2">
-                  日期
-                </th>
-                <th scope="col" className="p-2">
-                  币种对
-                </th>
-                <th scope="col" className="p-2">
-                  汇率
-                </th>
-                <th scope="col" className="p-2">
-                  来源
-                </th>
-                <th scope="col" className="p-2">
-                  状态
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr
-                  key={`${row.base_currency}-${row.quote_currency}-${row.rate_date}`}
-                  className="border-b last:border-0"
-                >
-                  <td className="p-2 font-mono text-xs">{row.rate_date}</td>
-                  <td className="p-2">
-                    {row.base_currency}/{row.quote_currency}
-                  </td>
-                  <td className="p-2 font-mono">{row.rate}</td>
-                  <td className="p-2 text-xs text-muted-foreground">
-                    {SOURCE_LABELS[row.source ?? ""] ?? "未知来源"}
-                  </td>
-                  <td className="p-2">
-                    {row.is_stale ? (
-                      <StatusBadge tone="warning">
-                        备用数据（外部汇率源暂不可用）
-                      </StatusBadge>
-                    ) : (
-                      <StatusBadge tone="success">正常</StatusBadge>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <DataTable
+        columns={COLUMNS}
+        rows={rows}
+        getRowKey={(row) =>
+          `${row.base_currency}-${row.quote_currency}-${row.rate_date}`
+        }
+        loading={history.isLoading}
+        error={
+          history.isError ? normalizeApiError(history.error).message : null
+        }
+        onRetry={() => void history.refetch()}
+        emptySlot={
+          <EmptyState
+            title="还没有历史记录"
+            description={`该币种对（${base}/${quote}）首次刷新外部源或手工录入后会出现在这里。`}
+            className="py-4"
+          />
+        }
+        paginationSlot={
           <p className="mt-2 text-xs text-muted-foreground">
-            共 {rows.length} 条（本次显示上限 {limit} 条 / 最多{" "}
-            {FX_HISTORY_MAX} 条）。
+            共 {rows.length} 条（本次显示上限 {limit} 条 / 最多 {FX_HISTORY_MAX}{" "}
+            条）。
           </p>
-        </div>
-      )}
+        }
+      />
     </SectionCard>
   );
 }

@@ -14,6 +14,7 @@ import {
   SectionCard,
   EmptyState,
 } from "@/components/shared";
+import { DataTable } from "@/components/shared/data-table";
 import { toast } from "sonner";
 import { KeyRound, FlaskConical, Play, Save } from "lucide-react";
 import { normalizeApiError } from "@/lib/api/api-error";
@@ -354,87 +355,82 @@ export default function AiProvidersPage() {
 
         {/* task bindings */}
         <SectionCard title="任务绑定">
-          {tasks.length === 0 ? (
-            <EmptyState title="暂无任务" />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th scope="col" className="p-2">
-                      任务
-                    </th>
-                    <th scope="col" className="p-2">
-                      AI
-                    </th>
-                    <th scope="col" className="p-2">
-                      服务商
-                    </th>
-                    <th scope="col" className="p-2">
-                      模型
-                    </th>
-                    <th scope="col" className="p-2">
-                      推荐
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tasks.map((t) => (
-                    <tr key={t.task_key} className="border-b">
-                      <td className="p-2 font-medium">{t.name}</td>
-                      <td className="p-2">
-                        <label className="flex items-center gap-1">
-                          <input
-                            type="checkbox"
-                            checked={t.enabled}
-                            onChange={(e) => toggleTask(t, e.target.checked)}
-                          />
-                          <span className="text-xs">
-                            {t.enabled ? "AI 开启" : "仅模板"}
-                          </span>
-                        </label>
-                      </td>
-                      <td className="p-2">
-                        <select
-                          className="rounded border bg-background px-2 py-1 text-xs"
-                          value={t.provider}
-                          onChange={(e) =>
-                            saveBinding(t, { provider: e.target.value })
-                          }
-                        >
-                          {PROVIDERS.map((p) => (
-                            <option key={p} value={p}>
-                              {providerLabel(p)}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="p-2">
-                        <Input
-                          className="h-7 w-40 text-xs"
-                          placeholder="默认模型"
-                          value={modelDrafts[t.task_key] ?? t.model ?? ""}
-                          disabled={savingBinding === t.task_key}
-                          onChange={(e) =>
-                            setModelDrafts((prev) => ({
-                              ...prev,
-                              [t.task_key]: e.target.value,
-                            }))
-                          }
-                          onBlur={(e) => commitModel(t, e.target.value)}
-                        />
-                      </td>
-                      <td className="p-2 text-xs text-muted-foreground">
-                        {t.recommended_provider
-                          ? providerLabel(t.recommended_provider)
-                          : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <DataTable
+            columns={[
+              {
+                key: "name",
+                header: "任务",
+                className: "font-medium",
+                render: (t) => t.name,
+              },
+              {
+                key: "enabled",
+                header: "AI",
+                render: (t) => (
+                  <label className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={t.enabled}
+                      onChange={(e) => toggleTask(t, e.target.checked)}
+                    />
+                    <span className="text-xs">
+                      {t.enabled ? "AI 开启" : "仅模板"}
+                    </span>
+                  </label>
+                ),
+              },
+              {
+                key: "provider",
+                header: "服务商",
+                render: (t) => (
+                  <select
+                    className="rounded border bg-background px-2 py-1 text-xs"
+                    value={t.provider}
+                    onChange={(e) =>
+                      saveBinding(t, { provider: e.target.value })
+                    }
+                  >
+                    {PROVIDERS.map((p) => (
+                      <option key={p} value={p}>
+                        {providerLabel(p)}
+                      </option>
+                    ))}
+                  </select>
+                ),
+              },
+              {
+                key: "model",
+                header: "模型",
+                render: (t) => (
+                  <Input
+                    className="h-7 w-40 text-xs"
+                    placeholder="默认模型"
+                    value={modelDrafts[t.task_key] ?? t.model ?? ""}
+                    disabled={savingBinding === t.task_key}
+                    onChange={(e) =>
+                      setModelDrafts((prev) => ({
+                        ...prev,
+                        [t.task_key]: e.target.value,
+                      }))
+                    }
+                    onBlur={(e) => commitModel(t, e.target.value)}
+                  />
+                ),
+              },
+              {
+                key: "recommended",
+                header: "推荐",
+                className: "text-xs text-muted-foreground",
+                render: (t) =>
+                  t.recommended_provider
+                    ? providerLabel(t.recommended_provider)
+                    : "—",
+              },
+            ]}
+            rows={tasks}
+            getRowKey={(t) => t.task_key}
+            emptySlot={<EmptyState title="暂无任务" />}
+          />
         </SectionCard>
 
         {/* 运行任务（C36 #13 · POST /ai/tasks/{key}/run） */}
@@ -477,63 +473,57 @@ export default function AiProvidersPage() {
               刷新
             </Button>
           </div>
-          {(usageData?.stats ?? []).length === 0 ? (
-            <EmptyState
-              title="暂无 AI 用量"
-              description="每次 AI 或模板调用都会在此记录调用量与费用"
-            />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th scope="col" className="p-2">
-                      任务
-                    </th>
-                    <th scope="col" className="p-2">
-                      服务商
-                    </th>
-                    <th scope="col" className="p-2">
-                      状态
-                    </th>
-                    <th scope="col" className="p-2">
-                      调用次数
-                    </th>
-                    <th scope="col" className="p-2">
-                      用量（输入）
-                    </th>
-                    <th scope="col" className="p-2">
-                      用量（输出）
-                    </th>
-                    <th scope="col" className="p-2">
-                      费用
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(usageData?.stats ?? []).map((s, i) => (
-                    <tr key={i} className="border-b">
-                      <td className="p-2 font-medium">
-                        {taskLabel(s.task_key)}
-                      </td>
-                      <td className="p-2">{providerLabel(s.provider)}</td>
-                      <td className="p-2">
-                        <StatusBadge tone={USAGE_TONES[s.status] ?? "default"}>
-                          {USAGE_LABELS[s.status] ?? s.status}
-                        </StatusBadge>
-                      </td>
-                      <td className="p-2">{s.count}</td>
-                      <td className="p-2">{s.prompt_tokens}</td>
-                      <td className="p-2">{s.completion_tokens}</td>
-                      <td className="p-2">
-                        {s.cost_usd != null ? `$${s.cost_usd.toFixed(4)}` : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <DataTable
+            columns={[
+              {
+                key: "task",
+                header: "任务",
+                className: "font-medium",
+                render: (s) => taskLabel(s.task_key),
+              },
+              {
+                key: "provider",
+                header: "服务商",
+                render: (s) => providerLabel(s.provider),
+              },
+              {
+                key: "status",
+                header: "状态",
+                render: (s) => (
+                  <StatusBadge tone={USAGE_TONES[s.status] ?? "default"}>
+                    {USAGE_LABELS[s.status] ?? s.status}
+                  </StatusBadge>
+                ),
+              },
+              { key: "count", header: "调用次数", render: (s) => s.count },
+              {
+                key: "prompt_tokens",
+                header: "用量（输入）",
+                render: (s) => s.prompt_tokens,
+              },
+              {
+                key: "completion_tokens",
+                header: "用量（输出）",
+                render: (s) => s.completion_tokens,
+              },
+              {
+                key: "cost",
+                header: "费用",
+                render: (s) =>
+                  s.cost_usd != null ? `$${s.cost_usd.toFixed(4)}` : "—",
+              },
+            ]}
+            rows={usageData?.stats ?? []}
+            getRowKey={(s) =>
+              `${s.task_key}-${s.provider}-${s.status}-${s.count}`
+            }
+            emptySlot={
+              <EmptyState
+                title="暂无 AI 用量"
+                description="每次 AI 或模板调用都会在此记录调用量与费用"
+              />
+            }
+          />
         </SectionCard>
       </div>
 

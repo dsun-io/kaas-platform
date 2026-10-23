@@ -18,7 +18,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { AlertCircle, Bell, ChevronRight, Plus, Wallet } from "lucide-react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+
+import { useMutationWithError } from "./hooks/use-mutation-with-error";
 import { toast } from "sonner";
 
 import { CopyButton } from "@/components/shared/copy-button";
@@ -168,7 +170,7 @@ export default function OrdersPage() {
     }
   };
 
-  const createFromQuote = useMutation({
+  const createFromQuote = useMutationWithError({
     mutationFn: async () => {
       const { data } = await apiClient.post<OrderRow>("/orders", {
         quote_order_id: Number(quoteId),
@@ -231,6 +233,12 @@ export default function OrdersPage() {
             </span>
           )}
         </div>
+        {/* U-P0C：转为订单失败的原因落在页内（apiClient 已 toast，不重复） */}
+        {createFromQuote.errorMessage && (
+          <p role="alert" className="mt-2 text-xs text-destructive">
+            转为订单失败：{createFromQuote.errorMessage}
+          </p>
+        )}
       </SectionCard>
 
       <SectionCard

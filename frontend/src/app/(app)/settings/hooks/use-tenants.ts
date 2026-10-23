@@ -37,7 +37,10 @@ export function useTenants() {
   });
 }
 
-export function useReloadTenants() {
+export function useReloadTenants(options?: {
+  /** 失败回调（页内错误态用；apiClient 拦截器已 toast，这里不重复弹） */
+  onError?: (error: unknown) => void;
+}) {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -49,6 +52,9 @@ export function useReloadTenants() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin", "tenants"] });
+    },
+    onError: (error) => {
+      options?.onError?.(error);
     },
   });
 }

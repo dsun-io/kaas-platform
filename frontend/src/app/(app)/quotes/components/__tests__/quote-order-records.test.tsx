@@ -61,6 +61,10 @@ const mocks = vi.hoisted(() => {
     accountType: "internal" as string,
     LIST,
     DETAIL,
+    /** 当前总数（分页测试改它；默认 1 = 单页，不渲染分页条） */
+    total: 1,
+    /** useQuoteOrders 收到的参数（分页断言用） */
+    calls: [] as Array<{ page?: number; page_size?: number } | undefined>,
   };
 });
 
@@ -70,7 +74,28 @@ vi.mock("@/lib/api/client", () => ({
 }));
 
 vi.mock("../../hooks/use-quote-orders", () => ({
-  useQuoteOrders: () => ({ data: mocks.LIST, isLoading: false }),
+  QUOTE_ORDERS_PAGE_SIZE: 20,
+  useQuoteOrders: (params?: { page?: number; page_size?: number }) => {
+    mocks.calls.push(params);
+    const page = params?.page ?? 1;
+    const pageSize = params?.page_size ?? 20;
+    const total = Math.max(1, mocks.total);
+    const start = (page - 1) * pageSize;
+    const count = Math.max(0, Math.min(pageSize, total - start));
+    const items = Array.from({ length: count }, (_, i) => ({
+      ...mocks.LIST.items[0],
+      id: start + i + 1,
+      quote_no: `QUO-20261017-${String(start + i + 1).padStart(3, "0")}`,
+    }));
+    return {
+      data: { items, total, page, page_size: pageSize },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    };
+  },
   useQuoteOrder: (id: number | null) => ({
     data: id === 1 ? mocks.DETAIL : null,
     isLoading: false,
@@ -179,5 +204,72 @@ describe("QuoteOrderRecords 双视图", () => {
     expect(drawerText).not.toContain("税前成本");
     expect(drawerText).not.toContain("利润率");
     expect(drawerText).not.toContain("8.7500");
+  });
+});
+
+/** 改 mocks.total 后重挂（beforeEach 已挂过一次；分页断言要从第 1 页重新开始）。 */
+function remount() {
+  unmount();
+  mocks.calls.length = 0;
+  mount(<QuoteOrderRecords />);
+}
+
+describe("QuoteOrderRecords 分页（P1-E）", () => {
+  function nextButton() {
+    return Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("下一页"),
+    ) as HTMLButtonElement | undefined;
+  }
+
+  async function clickNext() {
+    await act(async () => {
+      nextButton()!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await settle();
+  }
+
+  it("默认请求 page=1 / page_size=20，并展示后端 total", async () => {
+    mocks.total = 45;
+    remount();
+    await settle();
+
+    expect(mocks.calls[0]).toMatchObject({ page: 1, page_size: 20 });
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("共 45 单");
+    expect(text).toContain("第 1–20 条 / 共 45 条");
+    expect(text).toContain("第 1 / 3 页");
+  });
+
+  it("点下一页 ⇒ 请求 page=2，显示第 21–40 条", async () => {
+    mocks.total = 45;
+    remount();
+    await settle();
+
+    await clickNext();
+
+    expect(mocks.calls.at(-1)).toMatchObject({ page: 2, page_size: 20 });
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("第 21–40 条 / 共 45 条");
+    expect(text).toContain("第 2 / 3 页");
+  });
+
+  it("末页按实际条数展示（45 条 ⇒ 第 41–45 条，下一页禁用）", async () => {
+    mocks.total = 45;
+    remount();
+    await settle();
+
+    await clickNext();
+    await clickNext();
+
+    expect(mocks.calls.at(-1)).toMatchObject({ page: 3 });
+    expect(document.body.textContent).toContain("第 41–45 条 / 共 45 条");
+    expect(nextButton()!.disabled).toBe(true);
+  });
+
+  it("只有一页（total ≤ page_size）时不渲染分页条", async () => {
+    mocks.total = 1;
+    remount();
+    await settle();
+    expect(document.body.textContent).not.toContain("上一页");
   });
 });

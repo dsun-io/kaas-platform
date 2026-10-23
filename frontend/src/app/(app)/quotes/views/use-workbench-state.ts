@@ -129,7 +129,12 @@ export interface WorkbenchState {
   freightTo: string;
   setFreightTo: (v: string) => void;
   termsTemplate: ReturnType<typeof useExportTermsTemplate>["data"];
-  termsQuery: { isError: boolean };
+  termsQuery: {
+    isError: boolean;
+    error?: unknown;
+    /** 模板加载失败时页内 ErrorState 的重试入口 */
+    refetch: () => unknown;
+  };
 
   // ── 税务档案（TAX-00：单下拉，选中自动填四税率）────────────────────────
   taxArchives: TaxArchive[];

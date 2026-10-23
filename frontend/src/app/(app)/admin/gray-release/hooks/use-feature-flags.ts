@@ -15,7 +15,10 @@ export function useFeatureFlags() {
   });
 }
 
-export function useToggleFeatureFlag() {
+export function useToggleFeatureFlag(
+  /** 失败回调通道：apiClient 拦截器已统一 toast，调用方只在本页需要时展示（不重复提示）。 */
+  onMutationError?: (error: unknown) => void,
+) {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -36,6 +39,9 @@ export function useToggleFeatureFlag() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin", "featureFlags"] });
+    },
+    onError: (error) => {
+      onMutationError?.(error);
     },
   });
 }

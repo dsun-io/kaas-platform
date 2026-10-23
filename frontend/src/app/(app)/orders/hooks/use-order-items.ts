@@ -12,7 +12,9 @@
  * `CHANGE_REQUEST_PENDING`、403 `NOT_APPROVER`/`SELF_APPROVAL`、422 都带 detail，
  * 组件据此展示**为什么没成功**，不自造文案。
  */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { useMutationWithError } from "./use-mutation-with-error";
 
 import apiClient from "@/lib/api/client";
 import type { OrderDetail } from "@/lib/orders/order-detail";
@@ -61,7 +63,7 @@ export function useOrderChangeRequests(orderId: number | null) {
 /** pending 订单：整批替换货物行（立即生效）。 */
 export function useReplaceOrderItems(orderId: number) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async (items: Record<string, unknown>[]) => {
       const { data } = await apiClient.patch<OrderDetail>(
         `/orders/${orderId}`,
@@ -78,7 +80,7 @@ export function useReplaceOrderItems(orderId: number) {
 /** 非 pending 订单：提交明细变更申请（订单不变，等待审批）。 */
 export function useCreateItemChangeRequest(orderId: number) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async ({
       items,
       reason,
@@ -98,7 +100,7 @@ export function useCreateItemChangeRequest(orderId: number) {
 /** 批准 / 拒绝（内核判权：指定审批人优先、否则管理员；申请人不能自批）。 */
 export function useDecideItemChangeRequest(orderId: number) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async ({
       requestId,
       decision,

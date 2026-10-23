@@ -7,7 +7,8 @@
  * 钉住：
  * 1. 点按钮只开确认弹窗，**不发 POST**；确认后才 POST /admin/tenants/reload；
  * 2. 提交中连点两次只发一次请求；
- * 3. 失败时 toast 如实说明原因，弹窗不关（可重试）。
+ * 3. 失败时页内 role=alert 如实说明原因（apiClient 拦截器已 toast，不重复弹），
+ *    弹窗不关（可重试）。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, type ReactNode } from "react";
@@ -144,7 +145,7 @@ describe("ReloadButton", () => {
     expect(document.body.textContent).toContain("提交中…");
   });
 
-  it("失败时 toast 如实说明原因，弹窗不关", async () => {
+  it("失败时页内 role=alert 如实说明原因，弹窗不关", async () => {
     mocks.post.mockRejectedValue(
       Object.assign(new Error("Forbidden"), {
         response: {
@@ -165,10 +166,11 @@ describe("ReloadButton", () => {
     await click(findButton("确认重载"));
     await settle();
 
-    expect(mocks.toastError).toHaveBeenCalledTimes(1);
-    const message = String(mocks.toastError.mock.calls[0]?.[0] ?? "");
+    const message = document.querySelector('[role="alert"]')?.textContent ?? "";
     expect(message).toContain("重载失败");
     expect(message).toContain("仅平台运营可重载产品配置");
+    // 拦截器已统一 toast，页面不再重复弹
+    expect(mocks.toastError).not.toHaveBeenCalled();
     // 弹窗仍在，可直接重试
     expect(document.body.textContent).toContain("确认重载");
     expect(document.body.textContent).not.toContain("已重载");

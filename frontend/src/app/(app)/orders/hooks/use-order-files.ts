@@ -7,7 +7,9 @@
  * `POST /orders/{id}/files`（multipart，file + 可选 name）→ 201 file 对象。
  * 类别（合同/PO/信用证）按后端口径编码在 name 里，见 `lib/orders/order-attachments.ts`。
  */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { useMutationWithError } from "./use-mutation-with-error";
 
 import apiClient from "@/lib/api/client";
 import { buildOrderAttachmentForm } from "@/lib/orders/order-attachments";
@@ -54,7 +56,7 @@ export function useOrderFiles(orderId: number | null) {
 
 export function useUploadOrderFile(orderId: number) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async ({ file, name }: { file: File; name: string }) => {
       const { data } = await apiClient.post<OrderAttachmentFile>(
         `/orders/${orderId}/files`,

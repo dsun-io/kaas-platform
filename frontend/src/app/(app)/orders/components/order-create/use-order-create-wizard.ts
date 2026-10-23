@@ -8,7 +8,9 @@
  * 返回值即 `WizardApi`，步骤组件通过 context 读取（见 wizard-context.tsx）。
  */
 import { useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+
+import { useMutationWithError } from "../../hooks/use-mutation-with-error";
 import { toast } from "sonner";
 
 import type { CustomerPickerValue } from "@/components/customer-picker";
@@ -179,7 +181,7 @@ export function useOrderCreateWizard({
     [plan, total],
   );
 
-  const create = useMutation({
+  const create = useMutationWithError({
     mutationFn: async (payload: Record<string, unknown>) => {
       const { data } = await apiClient.post<OrderOption>("/orders", payload);
       return data;

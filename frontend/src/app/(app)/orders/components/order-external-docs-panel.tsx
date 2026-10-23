@@ -11,6 +11,10 @@ import { useState } from "react";
 import { Download, FileText, Upload } from "lucide-react";
 import { toast } from "sonner";
 
+import {
+  DataTable,
+  type DataTableColumn,
+} from "@/components/shared/data-table";
 import { EmptyState } from "@/components/shared/empty-state";
 import { SectionCard } from "@/components/shared/section-card";
 import { Button } from "@/components/ui/button";
@@ -20,6 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   EXTERNAL_DOC_ACCEPT,
   EXTERNAL_DOC_TYPES,
+  type ExternalDoc,
   externalDocTypeLabel,
   formatExternalDocSize,
   validateExternalDocFile,
@@ -77,6 +82,51 @@ export function OrderExternalDocsPanel({ orderId }: { orderId: number }) {
       toast.error("下载单证失败，请稍后重试");
     }
   };
+
+  const columns: DataTableColumn<ExternalDoc>[] = [
+    {
+      key: "doc_type",
+      header: "类型",
+      render: (doc) => externalDocTypeLabel(doc.doc_type),
+    },
+    {
+      key: "file_name",
+      header: "文件名",
+      className: "max-w-[260px] truncate",
+      render: (doc) => doc.file_name,
+    },
+    {
+      key: "file_size",
+      header: "大小",
+      render: (doc) => formatExternalDocSize(doc.file_size),
+    },
+    {
+      key: "created_at",
+      header: "上传时间",
+      render: (doc) => formatOrderDate(doc.created_at),
+    },
+    {
+      key: "notes",
+      header: "备注",
+      className: "max-w-[200px] truncate",
+      render: (doc) => doc.notes || "—",
+    },
+    {
+      key: "actions",
+      header: "操作",
+      render: (doc) => (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => void download(doc.id, doc.file_name)}
+          aria-label={`下载单证 ${doc.file_name}`}
+        >
+          <Download className="mr-1 size-3.5" />
+          下载
+        </Button>
+      ),
+    },
+  ];
 
   return (
     <SectionCard
@@ -137,86 +187,33 @@ export function OrderExternalDocsPanel({ orderId }: { orderId: number }) {
         )}
       </div>
 
-      {list.isLoading ? (
-        <div className="space-y-2" aria-busy="true" aria-label="已导入单证加载中">
-          {Array.from({ length: 2 }).map((_, index) => (
-            <Skeleton key={index} className="h-9 w-full rounded-md" />
-          ))}
-        </div>
-      ) : list.isError ? (
-        <div className="flex items-center gap-2 py-4 text-sm text-destructive">
-          <FileText className="h-4 w-4" />
-          已导入单证读取失败。
-          <Button size="sm" variant="outline" onClick={() => void list.refetch()}>
-            重试
-          </Button>
-        </div>
-      ) : (list.data ?? []).length === 0 ? (
-        <EmptyState
-          icon={FileText}
-          title="还没有导入已有单证"
-          description="客户已经开好的合同、PO、发票、装箱单、原产地证可以导入这里，单证台账与订单附件分开管理。"
-        />
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-xs text-muted-foreground">
-                <th scope="col" className="p-2">
-                  类型
-                </th>
-                <th scope="col" className="p-2">
-                  文件名
-                </th>
-                <th scope="col" className="p-2">
-                  大小
-                </th>
-                <th scope="col" className="p-2">
-                  上传时间
-                </th>
-                <th scope="col" className="p-2">
-                  备注
-                </th>
-                <th scope="col" className="p-2">
-                  操作
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {(list.data ?? []).map((doc) => (
-                <tr key={doc.id} className="border-b last:border-0">
-                  <td className="p-2">{externalDocTypeLabel(doc.doc_type)}</td>
-                  <td
-                    className="max-w-[260px] truncate p-2"
-                    title={doc.file_name}
-                  >
-                    {doc.file_name}
-                  </td>
-                  <td className="p-2">{formatExternalDocSize(doc.file_size)}</td>
-                  <td className="p-2">{formatOrderDate(doc.created_at)}</td>
-                  <td
-                    className="max-w-[200px] truncate p-2"
-                    title={doc.notes ?? ""}
-                  >
-                    {doc.notes || "—"}
-                  </td>
-                  <td className="p-2">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => void download(doc.id, doc.file_name)}
-                      aria-label={`下载单证 ${doc.file_name}`}
-                    >
-                      <Download className="mr-1 size-3.5" />
-                      下载
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable
+        columns={columns}
+        rows={list.data ?? []}
+        getRowKey={(doc) => doc.id}
+        caption="已导入单证"
+        loading={list.isLoading}
+        loadingSlot={
+          <div
+            className="space-y-2"
+            aria-busy="true"
+            aria-label="已导入单证加载中"
+          >
+            {Array.from({ length: 2 }).map((_, index) => (
+              <Skeleton key={index} className="h-9 w-full rounded-md" />
+            ))}
+          </div>
+        }
+        error={list.isError ? "已导入单证读取失败。" : null}
+        onRetry={() => void list.refetch()}
+        emptySlot={
+          <EmptyState
+            icon={FileText}
+            title="还没有导入已有单证"
+            description="客户已经开好的合同、PO、发票、装箱单、原产地证可以导入这里，单证台账与订单附件分开管理。"
+          />
+        }
+      />
     </SectionCard>
   );
 }

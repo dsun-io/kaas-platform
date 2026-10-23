@@ -1,5 +1,14 @@
 "use client";
 
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+
 /**
  * 产品规格 · 业务层编辑器（2026-10-22 傻瓜化）。
  *
@@ -119,17 +128,27 @@ export function BusinessSpecEditor({
           </p>
         ) : (
           <div className="mt-3 overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th scope="col" className="p-2">参数</th>
-                  <th scope="col" className="p-2">单位</th>
-                  <th scope="col" className="p-2">默认值</th>
-                  <th scope="col" className="p-2">最小值</th>
-                  <th scope="col" className="p-2">最大值</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table className="w-full min-w-[640px] text-sm">
+              <TableHeader>
+                <TableRow className="border-b text-left text-xs text-muted-foreground">
+                  <TableHead scope="col" className="p-2">
+                    参数
+                  </TableHead>
+                  <TableHead scope="col" className="p-2">
+                    单位
+                  </TableHead>
+                  <TableHead scope="col" className="p-2">
+                    默认值
+                  </TableHead>
+                  <TableHead scope="col" className="p-2">
+                    最小值
+                  </TableHead>
+                  <TableHead scope="col" className="p-2">
+                    最大值
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {numericInputs.map((n, i) => {
                   const scale = Number(n.ui_scale ?? 1) || 1;
                   const unit = n.ui_unit || n.unit || "—";
@@ -144,47 +163,57 @@ export function BusinessSpecEditor({
                     return scale === 1 ? num : num / scale;
                   };
                   return (
-                    <tr key={n.key} className="border-b last:border-0">
-                      <td className="p-2 font-medium">{n.label || n.key}</td>
-                      <td className="p-2 text-muted-foreground">{unit}</td>
-                      <td className="p-2">
+                    <TableRow key={n.key} className="border-b last:border-0">
+                      <TableCell className="p-2 font-medium">
+                        {n.label || n.key}
+                      </TableCell>
+                      <TableCell className="p-2 text-muted-foreground">
+                        {unit}
+                      </TableCell>
+                      <TableCell className="p-2">
                         <Input
                           aria-label={(n.label || n.key) + " 默认值"}
                           inputMode="decimal"
                           value={toUi(n.default)}
                           onChange={(e) =>
-                            updateNumeric(i, { default: fromUi(e.target.value) })
+                            updateNumeric(i, {
+                              default: fromUi(e.target.value),
+                            })
                           }
                           className="h-8 w-24 text-xs"
                         />
-                      </td>
-                      <td className="p-2">
+                      </TableCell>
+                      <TableCell className="p-2">
                         <Input
                           aria-label={(n.label || n.key) + " 最小值"}
                           inputMode="decimal"
                           value={toUi(n.min_value)}
                           onChange={(e) =>
-                            updateNumeric(i, { min_value: fromUi(e.target.value) })
+                            updateNumeric(i, {
+                              min_value: fromUi(e.target.value),
+                            })
                           }
                           className="h-8 w-24 text-xs"
                         />
-                      </td>
-                      <td className="p-2">
+                      </TableCell>
+                      <TableCell className="p-2">
                         <Input
                           aria-label={(n.label || n.key) + " 最大值"}
                           inputMode="decimal"
                           value={toUi(n.max_value)}
                           onChange={(e) =>
-                            updateNumeric(i, { max_value: fromUi(e.target.value) })
+                            updateNumeric(i, {
+                              max_value: fromUi(e.target.value),
+                            })
                           }
                           className="h-8 w-24 text-xs"
                         />
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
       </div>
@@ -202,9 +231,7 @@ export function BusinessSpecEditor({
                   {group.label || group.name}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {group.options.length > 0
-                    ? "客户选一个"
-                    : "还没有可选值"}
+                  {group.options.length > 0 ? "客户选一个" : "还没有可选值"}
                 </span>
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -274,7 +301,9 @@ export function BusinessSpecEditor({
                   aria-label="包装方式"
                   value={String(p.method ?? "")}
                   placeholder="包装方式（如 编织袋+钢带）"
-                  onChange={(e) => updatePackaging(i, { method: e.target.value })}
+                  onChange={(e) =>
+                    updatePackaging(i, { method: e.target.value })
+                  }
                   className="h-8 w-56 text-xs"
                 />
                 <label className="flex items-center gap-1 text-xs">
@@ -300,7 +329,9 @@ export function BusinessSpecEditor({
                     inputMode="decimal"
                     value={String(p.amount ?? 0)}
                     onChange={(e) =>
-                      updatePackaging(i, { amount: Number(e.target.value) || 0 })
+                      updatePackaging(i, {
+                        amount: Number(e.target.value) || 0,
+                      })
                     }
                     className="h-8 w-24 text-xs"
                   />

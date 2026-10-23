@@ -1,5 +1,14 @@
 "use client";
 
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+
 /**
  * 线索池表格（从 page.tsx 拆出，DOM/列顺序/aria 不变）。
  * 行为回调（打开详情 / 单行爬取）仍由页面持有。
@@ -42,55 +51,52 @@ export function LeadgenTable({
 }) {
   if (leads.length === 0) {
     return (
-      <EmptyState
-        title="暂无线索"
-        description="先运行一次抓取来填充线索池"
-      />
+      <EmptyState title="暂无线索" description="先运行一次抓取来填充线索池" />
     );
   }
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b text-left text-muted-foreground">
-            <th scope="col" className="p-2">
+      <Table className="w-full text-sm">
+        <TableHeader>
+          <TableRow className="border-b text-left text-muted-foreground">
+            <TableHead scope="col" className="p-2">
               图片
-            </th>
-            <th scope="col" className="p-2">
+            </TableHead>
+            <TableHead scope="col" className="p-2">
               公司
-            </th>
-            <th scope="col" className="p-2">
+            </TableHead>
+            <TableHead scope="col" className="p-2">
               地区
-            </th>
-            <th scope="col" className="p-2">
+            </TableHead>
+            <TableHead scope="col" className="p-2">
               店铺类型
-            </th>
-            <th scope="col" className="p-2">
+            </TableHead>
+            <TableHead scope="col" className="p-2">
               产品（本地 / 中文）
-            </th>
-            <th scope="col" className="p-2">
+            </TableHead>
+            <TableHead scope="col" className="p-2">
               规格
-            </th>
-            <th scope="col" className="p-2">
+            </TableHead>
+            <TableHead scope="col" className="p-2">
               爬取
-            </th>
-            <th scope="col" className="p-2">
+            </TableHead>
+            <TableHead scope="col" className="p-2">
               可供货
-            </th>
-            <th scope="col" className="p-2">
+            </TableHead>
+            <TableHead scope="col" className="p-2">
               评分
-            </th>
-            <th scope="col" className="p-2">
+            </TableHead>
+            <TableHead scope="col" className="p-2">
               触达
-            </th>
-            <th scope="col" className="p-2" />
-          </tr>
-        </thead>
-        <tbody>
+            </TableHead>
+            <TableHead scope="col" className="p-2" />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {leads.map((l) => (
-            <tr key={l.id} className="border-b hover:bg-muted/40">
-              <td className="p-2">
+            <TableRow key={l.id} className="border-b hover:bg-muted/40">
+              <TableCell className="p-2">
                 {l.product_image_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -104,27 +110,30 @@ export function LeadgenTable({
                     <ImageOff className="h-3.5 w-3.5 text-muted-foreground" />
                   </div>
                 )}
-              </td>
-              <td className="p-2">
+              </TableCell>
+              <TableCell className="p-2">
                 <div className="font-medium">{l.company_name}</div>
                 <div className="text-xs text-muted-foreground">
                   {l.email ?? "—"}
                 </div>
-              </td>
-              <td className="p-2 text-xs">
-                {[l.city, l.region, l.country].filter(Boolean).join(", ") || "—"}
-              </td>
-              <td className="p-2 text-xs">{l.shop_type ?? l.industry ?? "—"}</td>
-              <td className="p-2 text-xs">
+              </TableCell>
+              <TableCell className="p-2 text-xs">
+                {[l.city, l.region, l.country].filter(Boolean).join(", ") ||
+                  "—"}
+              </TableCell>
+              <TableCell className="p-2 text-xs">
+                {l.shop_type ?? l.industry ?? "—"}
+              </TableCell>
+              <TableCell className="p-2 text-xs">
                 <div>{l.product_name ?? "—"}</div>
                 <div className="text-muted-foreground">
                   {l.product_name_cn ?? ""}
                 </div>
-              </td>
-              <td className="p-2 max-w-[180px] truncate text-xs text-muted-foreground">
+              </TableCell>
+              <TableCell className="p-2 max-w-[180px] truncate text-xs text-muted-foreground">
                 {l.spec_raw ?? "—"}
-              </td>
-              <td className="p-2">
+              </TableCell>
+              <TableCell className="p-2">
                 <div className="flex items-center gap-1">
                   <StatusBadge
                     tone={toneForStatus(CRAWL_STATUS_TONES, l.crawl_status)}
@@ -147,22 +156,21 @@ export function LeadgenTable({
                       </Button>
                     )}
                 </div>
-              </td>
-              <td className="p-2">{supplyCell(l.can_supply)}</td>
-              <td className="p-2">
+              </TableCell>
+              <TableCell className="p-2">{supplyCell(l.can_supply)}</TableCell>
+              <TableCell className="p-2">
                 <StatusBadge tone={scoreTone(l.fit_score)}>
                   {l.fit_score ?? "—"}
                 </StatusBadge>
-              </td>
-              <td className="p-2">
+              </TableCell>
+              <TableCell className="p-2">
                 <StatusBadge
                   tone={toneForStatus(OUTREACH_STATUS_TONES, l.outreach_status)}
                 >
-                  {OUTREACH_STATUS_CN[l.outreach_status] ??
-                    l.outreach_status}
+                  {OUTREACH_STATUS_CN[l.outreach_status] ?? l.outreach_status}
                 </StatusBadge>
-              </td>
-              <td className="p-2">
+              </TableCell>
+              <TableCell className="p-2">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -171,11 +179,11 @@ export function LeadgenTable({
                 >
                   {detailPending && detailId === l.id ? "加载中…" : "详情"}
                 </Button>
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

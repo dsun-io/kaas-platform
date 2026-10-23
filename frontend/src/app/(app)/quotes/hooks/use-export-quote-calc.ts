@@ -12,7 +12,7 @@
  *     税务档案的法定默认值计算，并把「退税率未核实」等提示回给前端，
  *     由业务确认 —— 前端不得替业务猜税率。
  */
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { EXPORT_QUOTE_BASE } from "@/lib/export-quote/import-file";
 import type {
@@ -20,6 +20,8 @@ import type {
   ExportQuoteResponse,
   ProductFormulasResponse,
 } from "@contracts/export-quote";
+
+import { useMutationWithError } from "./use-mutation-with-error";
 
 export type QuoteView = "customer" | "internal";
 
@@ -52,7 +54,7 @@ export function useProductFormulas(
 
 /** 单笔试算。**试算不写台账** —— 台账只在报价单签发/订单成交时写入。 */
 export function useCalcQuote() {
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async ({
       payload,
       view,

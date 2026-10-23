@@ -9,7 +9,9 @@
  *
  * 与订单附件（`use-order-files`）完全分开：这里进单证台账，附件只是随单文件。
  */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { useMutationWithError } from "./use-mutation-with-error";
 
 import apiClient from "@/lib/api/client";
 import {
@@ -41,7 +43,7 @@ export function useExternalDocs(orderId: number | null) {
 /** 导入已有单证（建单时导入与详情补导入共用这一条）。 */
 export function useUploadExternalDoc(orderId: number) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async (input: {
       file: File;
       doc_type: string;

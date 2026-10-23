@@ -15,6 +15,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/shared/empty-state";
 import { SectionCard } from "@/components/shared/section-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { normalizeApiError } from "@/lib/api/api-error";
@@ -84,15 +85,19 @@ export function FxRateCard() {
               {current.rate_date} · {current.source ?? "unknown"}
             </span>
             {current.is_stale ? (
-              <StatusBadge tone="warning">缓存已过期（外部源不可用）</StatusBadge>
+              <StatusBadge tone="warning">
+                缓存已过期（外部源不可用）
+              </StatusBadge>
             ) : (
               <StatusBadge tone="success">正常</StatusBadge>
             )}
           </>
         ) : (
-          <span className="text-xs text-muted-foreground">
-            暂无汇率（外部源不可用时可手工录入）
-          </span>
+          <EmptyState
+            title="暂无汇率"
+            description="外部源不可用时可手工录入"
+            className="py-2"
+          />
         )}
       </div>
 

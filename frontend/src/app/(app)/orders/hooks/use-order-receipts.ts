@@ -9,7 +9,9 @@
  *
  * 失败原因由弹窗/面板自己展示（`silent: true`），不让全局 toast 抢戏。
  */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { useMutationWithError } from "./use-mutation-with-error";
 
 import apiClient from "@/lib/api/client";
 import {
@@ -37,7 +39,10 @@ export function useOrderReceipts(orderId: number | null) {
   });
 }
 
-function invalidateOrder(qc: ReturnType<typeof useQueryClient>, orderId: number) {
+function invalidateOrder(
+  qc: ReturnType<typeof useQueryClient>,
+  orderId: number,
+) {
   void qc.invalidateQueries({ queryKey: ["orders", orderId] });
   void qc.invalidateQueries({ queryKey: ["upstream", "orders"] });
   // 登记实收后应收台账的 received_amount/status 会变
@@ -46,7 +51,7 @@ function invalidateOrder(qc: ReturnType<typeof useQueryClient>, orderId: number)
 
 export function useCreateReceipt(orderId: number) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async (input: ReceiptCreateInput) => {
       const built = buildReceiptCreate(input);
       if (!built.ok) throw new Error(built.error);
@@ -64,7 +69,7 @@ export function useCreateReceipt(orderId: number) {
 /** 上传到账截图（登记收款时选传；失败不回滚已登记的收款，可后续补传）。 */
 export function useUploadReceiptFile(orderId: number) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutationWithError({
     mutationFn: async ({
       receiptId,
       file,

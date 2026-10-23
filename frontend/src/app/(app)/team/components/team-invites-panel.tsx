@@ -1,5 +1,14 @@
 "use client";
 
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+
 /**
  * 邀请成员面板（仅团队管理员可见）。
  *
@@ -202,42 +211,42 @@ export function TeamInvitesPanel({ teamId }: TeamInvitesPanelProps) {
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  <th scope="col" className="p-2">
+            <Table className="w-full text-sm">
+              <TableHeader>
+                <TableRow className="border-b text-left text-muted-foreground">
+                  <TableHead scope="col" className="p-2">
                     邀请对象
-                  </th>
-                  <th scope="col" className="p-2">
+                  </TableHead>
+                  <TableHead scope="col" className="p-2">
                     状态
-                  </th>
-                  <th scope="col" className="p-2">
+                  </TableHead>
+                  <TableHead scope="col" className="p-2">
                     到期时间
-                  </th>
-                  <th scope="col" className="p-2">
+                  </TableHead>
+                  <TableHead scope="col" className="p-2">
                     操作
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {items.map((invite) => {
                   const actionable = isInviteActionable(
                     invite.status,
                     invite.expires_at,
                   );
                   return (
-                    <tr
+                    <TableRow
                       key={invite.id}
                       className="border-b last:border-0 hover:bg-muted/40"
                     >
-                      <td className="p-2">
+                      <TableCell className="p-2">
                         {invite.email ?? (
                           <span className="text-muted-foreground">
                             通用邀请码
                           </span>
                         )}
-                      </td>
-                      <td className="p-2">
+                      </TableCell>
+                      <TableCell className="p-2">
                         <StatusBadge
                           tone={
                             invite.status === "accepted"
@@ -254,11 +263,11 @@ export function TeamInvitesPanel({ teamId }: TeamInvitesPanelProps) {
                         >
                           {inviteStateLabel(invite.status, invite.expires_at)}
                         </StatusBadge>
-                      </td>
-                      <td className="p-2 text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="p-2 text-muted-foreground">
                         {formatTime(invite.expires_at)}
-                      </td>
-                      <td className="p-2">
+                      </TableCell>
+                      <TableCell className="p-2">
                         <div className="flex flex-wrap gap-1">
                           <Button
                             size="sm"
@@ -281,12 +290,12 @@ export function TeamInvitesPanel({ teamId }: TeamInvitesPanelProps) {
                             撤销
                           </Button>
                         </div>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
       </div>
