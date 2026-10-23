@@ -1,1 +1,5 @@
+# 2026-10-23：commit 前扫**暂存区**明文凭据（STRUCTURAL_DEBT.md §6.4「防再犯」）。
+# 命中即拒绝 commit（exit 1）；allowlist 见 scripts/secret-scan-allowlist.txt（每条必须写理由）。
+# 注意：husky 走 Git Bash，node 必须在 PATH 里（本机实测 /c/Program Files/nodejs/node v24 可解析）。
+node scripts/check-secrets.mjs --staged
 pnpm lint-staged

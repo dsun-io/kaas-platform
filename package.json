@@ -9,7 +9,8 @@
     "prettier": "^3.0.0"
   },
   "scripts": {
-    "prepare": "husky"
+    "prepare": "husky",
+    "secret:scan": "node scripts/check-secrets.mjs"
   },
   "lint-staged": {
     "frontend/src/**/*.{ts,tsx}": [

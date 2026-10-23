@@ -214,7 +214,11 @@ backend/orchestrator/.venv/Scripts/python.exe scripts/check-structural-debt.py -
 | AWS Access Key（`AKIA` 开头） | 仅命中测试文件（`test_files_s3.py`、`test_ws_files_storage.py`），值为明显假值（`AKIAIOSFODNN7` 是 AWS 官方文档示例 key） | 无需处理 | 已排除 |
 | Resend API Key（`re_` 开头） | `.github/workflows/deploy.yml` 等，值为 `${{ secrets.RESEND_API_KEY }}` 引用而非明文 | 无需处理 | 已排除 |
 
-### 6.2 待补审计：全历史凭据扫描
+### 6.2 全历史凭据扫描（✅ 2026-10-21 已执行，保留为方法记录）
+
+> **状态（2026-10-23 复核）**：本节建议的扫描**已于 2026-10-21 执行完毕**（blob 级 5039 个 blob，
+> 真实泄露仅 Notion token + Neon 旧 DSN），随后完成历史重写与凭据轮换，重写后对 4 个真实泄露值全历史 0 命中 ——
+> 完整执行记录见 **§6.6**。本节保留为「当时为什么需要、用什么方法」的留档，不是未办事项。
 
 **为什么需要**：`SECURITY_AUDIT_2026-10-19.md` 是**静态树审计**（只看当前 commit 的文件内容），没有做「全 git 历史 blob 扫描」——Notion 令牌和 Neon 口令能被发现是因为它们**碰巧在当前树里还能搜到残留**，但可能还有「早已从当前树删除、只存在于历史 commit」的凭据没被发现。
 
@@ -240,10 +244,18 @@ trufflehog git file://. --only-verified --json > .tmp/trufflehog-full-history.js
 
 ### 6.4 「防止未来再泄露」的约束（无论选哪条路径都要做）
 
-1. **pre-commit hook**：`.husky/pre-commit` 现在只跑 `pnpm lint-staged`（前端），不检查后端密钥。补一条：commit 前用 `gitleaks protect --staged` 扫描暂存区，命中即拒绝 commit。
-2. **CI 门禁**：`.github/workflows/backend-test.yml` / `frontend-ci.yml` 各加一步 `gitleaks detect --source . --redact`（只扫当前树，不扫历史，避免 CI 超时），命中即 fail。
-3. **`.gitignore` 加固**：确认 `.codex/`、`.env*`、`~/.dsh/secrets/` 相关路径已在 `.gitignore`（`.codex/` 已在，2026-10-21 实测）；新增「密钥文件一律走环境变量、不入仓」的纪律写入 `AGENTS.md`。
+1. **pre-commit hook**：✅ **2026-10-23 已落地** —— `.husky/pre-commit` 在 `pnpm lint-staged` 之前跑
+   `node scripts/check-secrets.mjs --staged`（扫暂存区 index blob，命中 exit 1 拒绝 commit）。
+2. **CI 门禁**：✅ **2026-10-23 已落地** —— 新增 `.github/workflows/secret-scan.yml`（push main / 所有 PR / 手动，
+   ubuntu + node 22，只扫当前树；仅 `contents: read`，无第三方 Action、无 secrets）。
+3. **`.gitignore` 加固**：✅ 2026-10-23 复核：`.env` / `.env.*` / `.env.local` / `.codex/` 均已在；
+   「密钥文件一律走环境变量、不入仓」已在 `AGENTS.md` §0 铁律。
 4. **凭据命名纪律**（`AGENTS.md` §0 已有）：`kaas-*-system-*` 一个密钥只用于一个地方——继续强化，新增凭据时先查 `~/.dsh/secrets/inventory.md` 确认命名归属。
+
+> **实现口径说明（2026-10-23）**：本轮用**零依赖 Node 脚本**（`scripts/check-secrets.mjs`，10 条规则）
+> 代替文档原建议的 gitleaks：本机未装 gitleaks、public 仓库避免第三方 Action 供应链面、规则可自测
+> （`scripts/__tests__/check-secrets.test.mjs` 12 条）。允许清单 `scripts/secret-scan-allowlist.txt`
+> 按「规则 + 文件」收窄，每条必须写理由；扫描器与清单的格式/边界见脚本头注释。
 
 
 ### 6.6 执行记录（2026-10-21 · 用户新裁决：清理，推翻 2026-10-20「接受风险」）
@@ -260,12 +272,13 @@ trufflehog git file://. --only-verified --json > .tmp/trufflehog-full-history.js
 
 **2026-10-22 复核（仓库已转 public）**：当前树扫描无明文凭据（GitHub PAT / 私钥 / OpenAI / Resend 均 0 命中；DSN 类命中均为本地 `localhost` 占位）；`DEPLOY.md` 里残留的**旧 Neon 端点示例**已改为 `<user>:<pwd>@<neon-branch-host>` 占位符——该端点所属项目已于 2026-10-21 删除、角色口令已轮换，属于**失效引用**的清理。
 
-### 6.5 本次不执行，待用户拍板
+### 6.5 拍板项状态（2026-10-23 复核后更新）
 
-- [ ] 是否执行 §6.2 全历史扫描（需先安装 gitleaks/trufflehog）
-- [ ] 三条路径（A/B/C）选哪条（用户 2026-10-20 已口头选 A，是否维持）
-- [ ] 若选 B/C：轮换清单逐项授权（Neon 口令、Notion 令牌、GitHub PAT）
-- [ ] §6.4 四项「防再犯」约束是否本批落地（建议做，零成本）
+- [x] 全历史扫描 —— ✅ 2026-10-21 已执行（§6.6，blob 级 5039 个）
+- [x] 三条路径 —— ✅ 用户 2026-10-21 拍板走「C. 轮换 + filter-repo 重写」并已执行（§6.6）
+- [x] 轮换清单 —— ✅ Neon 旧口令已轮换、Hyperdrive 已同步；**Notion token 仍待用户在 Notion 后台吊销**（外部操作）
+- [x] §6.4「防再犯」—— ✅ 2026-10-23 已落地 1）pre-commit + 2）CI secret-scan（零依赖实现，见 §6.4 注记）；
+      3）`.gitignore` 复核通过；4）命名纪律沿用 `AGENTS.md` §0
 
 ---
 
