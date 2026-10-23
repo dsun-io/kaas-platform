@@ -39,6 +39,9 @@ JSONB_COLS: dict[str, set[str]] = {
     # 漏登记的表现同样是「字段在、但值是字符串」。
     "cust_inquiries": {"items"},
     "orders": {"amount_breakdown"},
+    # 2026-10-23（F2-2 同批遗留）：品名对照 alt_names 是 jsonb 别名数组。
+    # 门面（postgres.js）自动解码为数组，内核此前未登记 ⇒ 返回字符串，两端形状不一致。
+    "market_product_name_mappings": {"alt_names"},
     "business_events": {"payload"},
     "trade_docs": {"raw_payload"},
     "tax_archives": {"tax_values"},
