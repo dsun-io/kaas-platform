@@ -298,7 +298,7 @@ export function WorkbenchParamsCard(props: WorkbenchParamsCardProps) {
           </div>
         </div>
 
-        {/* 利润 / 杂税 / 让利（进项税、退税率按产品在税务管理里维护） */}
+        {/* 利润 / 杂税 / 让利（进项税、退税率按产品在税务档案里维护） */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <div className="space-y-1.5">
             <Label

@@ -149,9 +149,11 @@ WORKSTATIONS = [
     {
         # 与 shared/contracts/workstations.ts 的 key='tax-archives' 逐字段镜像。
         # 团队级配置；团队管理员写、成员读 ⇒ admin_only=False。
-        "key": "tax-archives", "name": "税务管理",
+        # 2026-10-23 用户要求：改名「税务管理」→「税务档案」；admin→account 组
+        # （admin 组 internalOnly，外部账号侧边栏看不到 → 移到账号组让成员可见）。
+        "key": "tax-archives", "name": "税务档案",
         "route": "/settings/tax-archives",
-        "group": "admin", "order": 22,
+        "group": "account", "order": 2,
         "admin_only": False, "status": "active", "subscription": None,
     },
     # 企业信息（团队级：团队管理员可改、成员只读）

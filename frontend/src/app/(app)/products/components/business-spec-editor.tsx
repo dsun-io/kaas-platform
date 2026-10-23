@@ -10,13 +10,14 @@ import {
 } from "@/components/ui/table";
 
 /**
- * 产品规格 · 业务层编辑器（2026-10-22 傻瓜化）。
+ * 产品规格 · 业务层编辑器（2026-10-22 傻瓜化；2026-10-23 收口）。
  *
  * 只暴露业务同事需要关心的内容：
- *  - 规格参数：客户报价时要填的参数（名称/单位/默认值/范围）；
- *  - 可选档位：如表面处理，客户从这些值里选；
- *  - 包装费：默认包装与金额；
- *  - HS 编码。
+ *  - 规格参数：客户报价时要填的参数（名称/单位/默认值/最小值/最大值）；
+ *  - 包装：包装方式 / 是否默认 / 金额。
+ *
+ * 2026-10-23：「可选档位」（表面处理）与「HS 编码」已移入产品「基本信息」区
+ * （OPTIMIZATION_PLAN_2026-10-23_PRODUCT_QUOTE_REDESIGN §3.1）；变体数据仍是 spec.variants。
  *
  * 公式/列/校验/JSON 等底层结构**不在这里**，由平台管理员在折叠的高级设置里维护。
  * 这里只 patch 业务字段，未涉及的底层字段原样保留。
@@ -29,7 +30,6 @@ import type {
   NumericInputItem,
   PackagingItem,
   ProductSpec,
-  VariantGroupItem,
 } from "@/lib/products/tenant-products";
 
 export function BusinessSpecEditor({
@@ -42,9 +42,9 @@ export function BusinessSpecEditor({
   const numericInputs = Array.isArray(spec.numeric_inputs)
     ? spec.numeric_inputs
     : [];
-  const variants = Array.isArray(spec.variants) ? spec.variants : [];
+  // 2026-10-23：表面处理档位与 HS 编码已移入产品「基本信息」（OptionChips/合一字段），
+  // 本组件只剩规格参数（min/max）与包装；variants 数据仍是 spec.variants（算价真源）。
   const packaging = Array.isArray(spec.packaging) ? spec.packaging : [];
-  const hsCodes = Array.isArray(spec.hs_codes) ? spec.hs_codes : [];
 
   const patch = (next: Partial<ProductSpec>) => onChange({ ...spec, ...next });
 
@@ -56,39 +56,15 @@ export function BusinessSpecEditor({
     });
   };
 
-  const updateVariant = (index: number, next: VariantGroupItem) => {
-    patch({
-      variants: variants.map((g, i) => (i === index ? next : g)),
-    });
-  };
-
-  const addOption = (groupIndex: number, text: string) => {
-    const group = variants[groupIndex];
-    const value = text.trim();
-    if (!group || !value) return;
-    if (group.options.some((o) => (o.label ?? o.name) === value)) return;
-    updateVariant(groupIndex, {
-      ...group,
-      options: [...group.options, { name: value, label: value }],
-    });
-  };
-
-  const removeOption = (groupIndex: number, optionIndex: number) => {
-    const group = variants[groupIndex];
-    if (!group) return;
-    updateVariant(groupIndex, {
-      ...group,
-      options: group.options.filter((_, i) => i !== optionIndex),
-    });
-  };
-
   const addPackaging = () => {
     patch({
       packaging: [
         ...packaging,
         {
           id: "pkg-" + Date.now(),
-          name: "包装 " + (packaging.length + 1),
+          // 2026-10-23：不再生成「包装 N」这种人造名（用户要求去掉名称字段）。
+          // name 字段保留但由 method 回填（旧报价快照兼容：packaging_name 一直有值）。
+          name: "",
           method: "",
           is_default: packaging.length === 0,
           mode: "per_piece",
@@ -102,7 +78,16 @@ export function BusinessSpecEditor({
 
   const updatePackaging = (index: number, next: Partial<PackagingItem>) => {
     patch({
-      packaging: packaging.map((p, i) => (i === index ? { ...p, ...next } : p)),
+      packaging: packaging.map((p, i) =>
+        i === index
+          ? {
+              ...p,
+              ...next,
+              // 包装方式是唯一真名：改方式时同步回填 name（展示/旧快照兼容）。
+              ...(next.method !== undefined ? { name: next.method } : {}),
+            }
+          : p,
+      ),
     });
   };
 
@@ -218,60 +203,17 @@ export function BusinessSpecEditor({
         )}
       </div>
 
-      <div>
-        <h3 className="text-sm font-semibold">可选档位</h3>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          客户报价时从这些值里选，例如表面处理：热镀锌 / 电镀锌 / PVC 浸塑。
-        </p>
-        <div className="mt-3 space-y-3">
-          {variants.map((group, gi) => (
-            <div key={group.name} className="rounded-lg border p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium">
-                  {group.label || group.name}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {group.options.length > 0 ? "客户选一个" : "还没有可选值"}
-                </span>
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                {group.options.map((option, oi) => (
-                  <span
-                    key={option.name}
-                    className="inline-flex items-center gap-1 rounded-full border bg-muted/40 px-2 py-1 text-xs"
-                  >
-                    {option.label || option.name}
-                    <button
-                      type="button"
-                      aria-label={"删除 " + (option.label || option.name)}
-                      className="text-muted-foreground hover:text-destructive"
-                      onClick={() => removeOption(gi, oi)}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-                <OptionAdder
-                  groupLabel={group.label || group.name}
-                  onAdd={(text) => addOption(gi, text)}
-                />
-              </div>
-            </div>
-          ))}
-          {variants.length === 0 && (
-            <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-              这个产品没有可选档位，报价时按固定规格计算。
-            </p>
-          )}
-        </div>
-      </div>
+      {/* 2026-10-23：原「可选档位」区删除——表面处理档位已并入产品「基本信息」chips
+          （OPTIMIZATION_PLAN §3.1）；变体数据（spec.variants）仍是算价真源，不变。 */}
 
       <div>
         <div className="flex items-center justify-between gap-2">
           <div>
-            <h3 className="text-sm font-semibold">包装费</h3>
+            <h3 className="text-sm font-semibold">包装</h3>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              默认包装在报价时自动选中；未设默认时用最早创建的一套。
+              每行 =
+              一种包装方式（含是否默认与金额）。默认包装在报价时自动选中；
+              未设默认时用最早创建的一套。
             </p>
           </div>
           <Button size="sm" variant="outline" onClick={addPackaging}>
@@ -281,7 +223,7 @@ export function BusinessSpecEditor({
         </div>
         {packaging.length === 0 ? (
           <p className="mt-2 rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-            还没有包装费（报价时按 0 计）。
+            还没有包装（报价时按 0 计）。
           </p>
         ) : (
           <div className="mt-3 space-y-2">
@@ -290,13 +232,6 @@ export function BusinessSpecEditor({
                 key={String(p.id ?? i)}
                 className="flex flex-wrap items-center gap-2 rounded-lg border p-2"
               >
-                <Input
-                  aria-label="包装名称"
-                  value={String(p.name ?? "")}
-                  placeholder="包装名称"
-                  onChange={(e) => updatePackaging(i, { name: e.target.value })}
-                  className="h-8 w-40 text-xs"
-                />
                 <Input
                   aria-label="包装方式"
                   value={String(p.method ?? "")}
@@ -350,69 +285,6 @@ export function BusinessSpecEditor({
           </div>
         )}
       </div>
-
-      <div>
-        <h3 className="text-sm font-semibold">HS 编码</h3>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          一行可填多个，用逗号分隔；报价和单证优先取第一个。
-        </p>
-        <Input
-          aria-label="HS 编码"
-          value={hsCodes.join(", ")}
-          placeholder="如：7314410000（多个用逗号分隔）"
-          onChange={(e) =>
-            patch({
-              hs_codes: e.target.value
-                .split(/[,，\s]+/)
-                .map((s) => s.trim())
-                .filter(Boolean),
-            })
-          }
-          className="mt-2"
-        />
-      </div>
     </div>
-  );
-}
-
-function OptionAdder({
-  groupLabel,
-  onAdd,
-}: {
-  groupLabel: string;
-  onAdd: (text: string) => void;
-}) {
-  // 用受控 input + 回车/按钮添加，避免 window.prompt（移动端/测试都不友好）
-  return (
-    <span className="inline-flex items-center gap-1">
-      <input
-        aria-label={"给 " + groupLabel + " 添加可选值"}
-        placeholder="加一个值"
-        className="h-7 w-24 rounded-md border border-input bg-background px-2 text-xs"
-        onKeyDown={(e) => {
-          if (e.key !== "Enter") return;
-          e.preventDefault();
-          const value = e.currentTarget.value;
-          if (value.trim()) {
-            onAdd(value);
-            e.currentTarget.value = "";
-          }
-        }}
-      />
-      <button
-        type="button"
-        className="rounded-md border px-1.5 py-1 text-xs text-muted-foreground hover:bg-muted"
-        onClick={(e) => {
-          const input = e.currentTarget
-            .previousElementSibling as HTMLInputElement | null;
-          if (input && input.value.trim()) {
-            onAdd(input.value);
-            input.value = "";
-          }
-        }}
-      >
-        添加
-      </button>
-    </span>
   );
 }

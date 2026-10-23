@@ -14,6 +14,16 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-23 17:05 · 交接批：R-C2 + R-A 完成并推送，R-C1/B/D 待续 ✅）**
+> - **R-C2 税务档案**：根因=工位挂 `admin` 组（internalOnly）⇒ 外部账号侧边栏不可见；已移 `account` 组
+>   + 「税务管理」→「税务档案」双端改名（契约 + Python 镜像 + 页面标题/文案/README）；contracts R2=30 PASS。
+> - **R-A 产品页收口**：包装去名称（name 回填 method 兼容旧快照）/ 表面处理 chips 并入基本信息（绑定 spec.variants
+>   coating 组）/ 材质 chips（存 profile.info.material_options，不算价）/ HS 编码合一（spec.hs_codes）/
+>   删「价格与利润」区（利润率/综合税费/成本口径改在报价工作台；产品级字段留引擎兜底）。
+> - 门禁：typecheck 0 / lint 0 error / 前端全量 **1610 passed·216 files** / ui:standards + ui:contrast PASS / sync-shared 已同步。
+> - **未做**：R-C1（request 级 `cost_basis` 契约+引擎+金标）、R-B（报价行三段布局/包装显示 method/含税开关）、
+>   R-D（批量导入整单化）。恢复步骤与口径见 [`HANDOVER_2026-10-23_PRODUCT_QUOTE_REDESIGN.md`](./HANDOVER_2026-10-23_PRODUCT_QUOTE_REDESIGN.md)。
+
 > **（2026-10-23 · 方案批：产品×报价重构方案定稿 🧭 待排期）**
 > - 用户 2026-10-23 反馈 14 条（产品表单 / 报价行 / 税务档案 / 批量导入）已完成**全量代码定位**并落盘
 >   [`OPTIMIZATION_PLAN_2026-10-23_PRODUCT_QUOTE_REDESIGN.md`](./OPTIMIZATION_PLAN_2026-10-23_PRODUCT_QUOTE_REDESIGN.md)

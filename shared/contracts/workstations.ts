@@ -90,7 +90,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
  */
 export const SUB_ROUTE_LABELS: Record<string, string> = {
   'company-profile': '企业信息',
-  'tax-archives': '税务管理',
+  'tax-archives': '税务档案',
   'ai-providers': 'AI Providers',
   'tenant-products': '产品定义管理',
   'spec-proposals': '属性提案审核',
@@ -351,11 +351,14 @@ export const WORKSTATIONS: readonly Workstation[] = [
   {
     // 税务档案（TAX-00 新口径）：团队级档案，团队管理员写、成员只读。
     // 因此 adminOnly=false，成员也能进入查看/用于报价，只是保存按钮按权限禁用。
+    // 2026-10-23 用户要求：改名「税务管理」→「税务档案」（报价参数卡口径一致）；
+    // 并从 admin 组（internalOnly ⇒ 外部账号整组隐藏）移到 account 组——
+    // 此前页面对外可达但侧边栏永远看不见（用户报「税务管理侧边栏没看到」）。
     key: 'tax-archives',
-    name: '税务管理',
+    name: '税务档案',
     route: '/settings/tax-archives',
-    group: 'admin',
-    order: 22,
+    group: 'account',
+    order: 2,
     icon: 'ReceiptText',
     adminOnly: false,
     status: 'active',

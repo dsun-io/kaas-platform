@@ -201,7 +201,7 @@ export function BatchQuoteView() {
       );
       if (!productTax) {
         throw new Error(
-          "该产品还没有配置进项税/出口退税率，请先到「税务管理 → 产品税率」配置",
+          "该产品还没有配置进项税/出口退税率，请先到「税务档案 → 产品税率」配置",
         );
       }
       const enterpriseTax = (taxArchives.data ?? [])[0];

@@ -4,7 +4,7 @@ import { DataTable } from "@/components/shared/data-table";
 import { EmptyState } from "@/components/shared/empty-state";
 
 /**
- * 税务管理（TAX-04）—— 企业税档 + 产品税率。
+ * 税务档案（TAX-04）—— 企业税档 + 产品税率。
  *
  * 用户口径（2026-10-18 修正）：
  *  · 销项增值税、杂税是**企业级**，按团队维护档案；
@@ -307,8 +307,8 @@ export default function TaxArchivesPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="税务管理"
-        description="企业税档管销项税和杂税；进项税、出口退税率按产品在下方单独维护。"
+        title="税务档案"
+        description="企业税档管销项税和杂税；进项税、出口退税率按产品在下方单独维护。报价时整单参数直接引用这里的档案。"
         actions={
           canWrite ? (
             <Button
