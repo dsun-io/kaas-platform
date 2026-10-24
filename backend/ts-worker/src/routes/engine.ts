@@ -72,6 +72,8 @@ export const ENGINE_QUOTE_IMPORT_TEMPLATE_RPC =
   "/api/v1/internal/engine/quote/import-template";
 export const ENGINE_QUOTE_ORDER_TEMPLATE_INFO_RPC =
   "/api/v1/internal/engine/quote/order-template-info";
+/** 第七批：定价数据矩阵（报价工位主视图）。 */
+export const ENGINE_PRICING_DATA_RPC = "/api/v1/internal/engine/quote/pricing-data";
 
 /**
  * 同族只读切片的路由 id（AUTH_DB_SPLIT_ROUTES 白名单条目，口径 <域>.<端点>）。
@@ -92,6 +94,7 @@ export const ENGINE_ROUTE_IDS = {
   namePreference: "quotes.product-name-preference",
   importTemplate: "export-quote.import-template",
   orderTemplateInfo: "export-quote.order-template-info",
+  pricingData: "pricing-data.list",
 } as const;
 
 /** 与 Python quote_api._PRICING_SEPARATOR 一致：定价数据 spec_hash 的「产品前缀」分隔符。 */
@@ -113,12 +116,46 @@ export const TENANT_PRODUCTS_SQL =
  * ⚠️ left(spec_hash, length($2))=$2 不能用 LIKE：产品 key 里有下划线（field_fence），
  *    LIKE 会把下划线当通配符（真源注释同款警告）。
  */
-export const CUSTOMER_COST_ITEMS_SQL =
-  "SELECT id, customer_id, product_spec_json, spec_hash, amount, unit,"
-  + " effective_from, source, notes, created_at"
-  + " FROM customer_cost_items"
-  + " WHERE tenant_id=$1 AND left(spec_hash, length($2))=$2 AND status='active'"
-  + " AND customer_id=$3 ORDER BY id DESC";
+function customerCostItemsSql(withCustomer: boolean): string {
+  return "SELECT id, customer_id, product_spec_json, spec_hash, amount, unit,"
+    + " effective_from, source, notes, created_at"
+    + " FROM customer_cost_items"
+    + " WHERE tenant_id=$1 AND left(spec_hash, length($2))=$2 AND status='active'"
+    + (withCustomer ? " AND customer_id=$3" : "")
+    + " ORDER BY id DESC";
+}
+
+export const CUSTOMER_COST_ITEMS_SQL = customerCostItemsSql(true);
+
+/**
+ * 定价数据矩阵（GET /pricing-data）的取数：与 _pricing_key_items 同一条 SQL，
+ * customer_id 谓词按 scope 有无；时间戳用 tsIsoSql 条件式（内核要 isoformat 口径，
+ * postgres.js 的 JS Date 只有毫秒且不会省略零微秒的小数，docs §8.9）。
+ */
+export function pricingKeyItemsSql(withCustomer: boolean): string {
+  return "SELECT id, customer_id, product_spec_json, spec_hash, amount, unit, "
+    + tsIsoSql("effective_from") + ", source, notes, " + tsIsoSql("created_at")
+    + " FROM customer_cost_items"
+    + " WHERE tenant_id=$1 AND left(spec_hash, length($2))=$2 AND status='active'"
+    + (withCustomer ? " AND customer_id=$3" : "")
+    + " ORDER BY id DESC";
+}
+
+/** 定价数据行 → dataset 行（id/amount 归一；时间是已转好的 Python 口径文本）。 */
+function pricingKeyItemRow(row: Row): Row {
+  return {
+    id: num(row.id),
+    customer_id: row.customer_id ?? null,
+    product_spec_json: row.product_spec_json ?? null,
+    spec_hash: row.spec_hash ?? null,
+    amount: row.amount === null || row.amount === undefined ? null : Number(row.amount),
+    unit: row.unit ?? null,
+    effective_from: row.effective_from ?? null,
+    source: row.source ?? null,
+    notes: row.notes ?? null,
+    created_at: row.created_at ?? null,
+  };
+}
 
 /** Python _tenant_of(user)：users 行没有 tenant_id 列 ⇒ 恒 "default"。 */
 function tenantOf(): string {
@@ -1681,6 +1718,59 @@ export async function quoteOrderTemplateInfoWithKernel(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// 第七批切片：GET /api/v1/pricing-data（定价数据矩阵 / 历史，报价工位主视图）
+// ══════════════════════════════════════════════════════════════════════════════
+// 设计 = docs/P2_COUPLING_ENGINE_2026-10-24.md §6/§8；真源 main.py:2669 list_pricing_data。
+// 供数 = 旧 _pricing_key_items 的同一条 SQL（scope=own 带 customer_id 谓词、all 不带）；
+// 其余全是共享内核纯计算（_extensions_from_items / extend_product / describe_pricing_key /
+// _matrix_rows / _pricing_history / _pricing_reference），内核与旧 handler 共用同一份。
+// 有意差异：时间戳用 tsIsoSql 条件式下发文本（内核 fromisoformat 还原后 .isoformat()
+// 与旧路径逐字一致；JS Date 只有毫秒、且不会省略零微秒小数）。旧 handler 对同一份数据
+// 查两次（档位 + 成本表）⇒ 这里只下发一份 dataset、两处复用（查询之间无写，等价）。
+
+export const PRICING_DATA_RPC_QUERY_KEYS = ["product_key", "scope"] as const;
+
+/** 定价数据矩阵供数：customer_id 谓词按 scope（own 有、all 无）；product_key 空则不查。 */
+async function supplyPricingDatasets(
+  env: Env,
+  user: CurrentUser,
+  productKey: string,
+  scope: string,
+): Promise<Row> {
+  const withCustomer = scope !== "all";
+  const params: unknown[] = [tenantOf(), productKey + PRICING_SEPARATOR];
+  if (withCustomer) params.push(customerOf(user));
+  if (!productKey) return { customer_cost_items: [] };
+  return withDb(env, async (sql: Db) => {
+    const rows = (await sql.unsafe(
+      pricingKeyItemsSql(withCustomer), params as never[],
+    )) as unknown as Row[];
+    return { customer_cost_items: rows.map(pricingKeyItemRow) };
+  });
+}
+
+/** GET /api/v1/pricing-data 的「供数 + RPC」实现（开关 on 时）。 */
+export async function pricingDataWithKernel(
+  c: Context<{ Bindings: Env }>,
+  user: CurrentUser,
+): Promise<Response> {
+  const env = getEnv(c);
+  const secret = requireSecret(env, "JWT_SECRET");
+  const productKey = (c.req.query("product_key") ?? "").trim();
+  const scope = (c.req.query("scope") ?? "own").trim();
+  const query: Record<string, string | null> = {
+    product_key: c.req.query("product_key") ?? null,
+    scope: c.req.query("scope") ?? null,
+  };
+  const datasets = await supplyPricingDatasets(env, user, productKey, scope);
+  const jwt = await mintEngineJwt(engineActorOf(user), secret);
+  return engineQuoteRpc(
+    c, ENGINE_PRICING_DATA_RPC, jwt,
+    JSON.stringify({ request: { query }, actor: actorPayloadOf(user), datasets }),
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // 路由注册（由 src/index.ts 挂载；必须在 /api/v1/export-quote 透传 mount **之前**）
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -1830,6 +1920,16 @@ app.get("/api/v1/export-quote/import/order/template-info", (c) => {
   return respond(c, async () => {
     const user = await requireUser(c);
     return directDb(c, () => quoteOrderTemplateInfoWithKernel(c, user));
+  });
+});
+
+app.get("/api/v1/pricing-data", (c) => {
+  if (!useDirectRoute(getEnv(c), ENGINE_ROUTE_IDS.pricingData)) {
+    return forwardKernelRequest(c);
+  }
+  return respond(c, async () => {
+    const user = await requireUser(c);
+    return directDb(c, () => pricingDataWithKernel(c, user));
   });
 });
 

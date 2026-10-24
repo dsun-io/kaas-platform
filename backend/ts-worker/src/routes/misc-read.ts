@@ -236,6 +236,204 @@ export async function listDocFilesDirect(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// GET /api/v1/events（main.py:3292-3328）—— 事件审计列表（平台运营专用）
+//
+// 闸门 = main._require_platform_ops（internal + 管理员），与 6 个 /api/v1/admin/* 同口径。
+// 分页参数是**普通 int**（非 Query 约束）⇒ 非整数 422；越界在 handler 内钳位：
+// page=max(page,1)、page_size=min(max(page_size,1),100)。筛选 event_type 为真值判断。
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** main.py:173-187 _require_platform_ops：internal 账号 + 管理员角色。 */
+function requirePlatformOps(user: CurrentUser): void {
+  if (user.account_type !== "internal" || !isAdminRole(user.role)) {
+    throw httpError(403, { error: "forbidden", message: "Platform operator required" });
+  }
+}
+
+const eventsQuery = z.object({
+  page: INT_QUERY.optional(),
+  page_size: INT_QUERY.optional(),
+  event_type: z.string().optional(),
+});
+
+/**
+ * events 表的列（DDL 顺序 = f82ac951b473_intel_workstation_v1.py:139-151）。
+ * `payload` 显式取 ::text：内核 _row_to_dict(row) **未登记** events 的 jsonb 解码，
+ * asyncpg 返回的是 jsonb 文本串 ⇒ 响应里 payload 就是字符串。这里取同一份文本以保持
+ * 两侧形状逐字一致（详见交付说明：前端按对象读 payload 是既有缺陷，修复应在内核一处）。
+ */
+const EVENTS_COLS = "id, schema_version, tenant_id, event_type, event_source,"
+  + " actor_id, session_id, payload::text AS payload, trace_id, sampled, created_at";
+
+export async function listEventsDirect(
+  c: Context,
+  user: CurrentUser,
+): Promise<Response> {
+  requirePlatformOps(user);
+  const query = parseQuery(eventsQuery, c.req.query());
+  const page = Math.max(query.page ?? 1, 1);
+  const pageSize = Math.min(Math.max(query.page_size ?? 20, 1), 100);
+  const where: string[] = ["tenant_id = $1"];
+  const params: unknown[] = [DEFAULT_TENANT];
+  if (query.event_type) {
+    params.push(query.event_type);
+    where.push("event_type = $" + String(params.length));
+  }
+  const whereSql = where.join(" AND ");
+  const limitIndex = params.length + 1;
+  const offsetIndex = params.length + 2;
+  const payload = await withDb(getEnv(c), async (sql: Db) => {
+    const totalRows = (await sql.unsafe(
+      "SELECT count(*) FROM events WHERE " + whereSql,
+      params as never[],
+    )) as unknown as Row[];
+    const rows = (await sql.unsafe(
+      "SELECT " + EVENTS_COLS + " FROM events WHERE " + whereSql
+      + " ORDER BY id DESC LIMIT $" + String(limitIndex)
+      + " OFFSET $" + String(offsetIndex),
+      [...params, pageSize, (page - 1) * pageSize] as never[],
+    )) as unknown as Row[];
+    return { totalRows, rows };
+  });
+  return c.json({
+    items: payload.rows.map((row) => ({
+      id: num(row.id),
+      schema_version: num0(row.schema_version),
+      tenant_id: row.tenant_id ?? null,
+      event_type: row.event_type ?? null,
+      event_source: row.event_source ?? null,
+      actor_id: row.actor_id ?? null,
+      session_id: row.session_id ?? null,
+      payload: row.payload ?? null,
+      trace_id: row.trace_id ?? null,
+      sampled: bool(row.sampled),
+      created_at: pyIso(row.created_at ?? null),
+    })),
+    total: num0(payload.totalRows[0]?.count),
+    page,
+    page_size: pageSize,
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 单证内容级版本（ws_docs_ext.py:625-687）—— 纯 SQL 只读
+//
+// 可见性收口 = doc_payload.get_doc_or_404(db, request, doc_id, user)（doc_payload.py:183-215）：
+// 先按 tenant+id 取单证（404 DOC_NOT_FOUND），再按团队/owner 可见性过滤（不可见同样 404，
+// 不泄露存在性）；internal 账号或管理员免过滤。
+// ══════════════════════════════════════════════════════════════════════════════
+
+const contentVersionsParam = z.object({ doc_id: INT_QUERY });
+const contentVersionParam = z.object({ doc_id: INT_QUERY, version_no: INT_QUERY });
+
+/** doc_payload.py:183-215 get_doc_or_404 的团队/owner 可见性（逐字镜像）。 */
+async function loadDocOr404(
+  env: Env,
+  user: CurrentUser,
+  docId: number,
+): Promise<Row> {
+  const rows = (await withDb(env, (sql: Db) => sql.unsafe(
+    "SELECT * FROM trade_docs WHERE tenant_id=$1 AND id=$2",
+    [DEFAULT_TENANT, docId] as never[],
+  ))) as unknown as Row[];
+  const row = rows[0];
+  if (!row) {
+    throw httpError(404, { error: "not_found", code: "DOC_NOT_FOUND" });
+  }
+  const privileged = user.account_type === "internal" || isAdminRole(user.role);
+  if (!privileged) {
+    const rowTeam = row.team_id;
+    const viewerTeam = user.team_id;
+    const sameTeam = rowTeam !== null && rowTeam !== undefined
+      && viewerTeam !== null && viewerTeam !== undefined
+      && String(rowTeam) === String(viewerTeam);
+    const visible = row.owner_scope === "tenant"
+      || (row.owner_id !== null && row.owner_id !== undefined
+        && String(row.owner_id) === String(user.id))
+      || sameTeam;
+    if (viewerTeam === null || viewerTeam === undefined || !visible) {
+      throw httpError(404, { error: "not_found", code: "DOC_NOT_FOUND" });
+    }
+  }
+  return row;
+}
+
+/** ws_docs_ext.py:612-622 _decode_payload：字符串尝试 json.loads，非 dict 一律 {}。 */
+export function decodeTradeDocPayload(raw: unknown): Row {
+  if (typeof raw === "string") {
+    try {
+      const loaded: unknown = JSON.parse(raw);
+      return typeof loaded === "object" && loaded !== null && !Array.isArray(loaded)
+        ? (loaded as Row) : {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) return raw as Row;
+  return {};
+}
+
+export async function listContentVersionsDirect(
+  c: Context,
+  user: CurrentUser,
+): Promise<Response> {
+  const { doc_id: docId } = parseQuery(contentVersionsParam, c.req.param(), "path");
+  const doc = await loadDocOr404(getEnv(c), user, docId);
+  const rows = (await withDb(getEnv(c), (sql: Db) => sql.unsafe(
+    "SELECT v.version_no, v.change_source, v.actor_id, v.note, v.created_at,"
+    + " COALESCE(("
+    + "   SELECT jsonb_agg(k ORDER BY k)"
+    + "     FROM (SELECT jsonb_object_keys("
+    + "       COALESCE(v.raw_payload->'custom', '{}'::jsonb)) AS k) AS keys"
+    + " ), '[]'::jsonb)::text AS custom_keys"
+    + " FROM trade_doc_content_versions v"
+    + " WHERE v.tenant_id=$1 AND v.trade_doc_id=$2"
+    + " ORDER BY v.version_no DESC",
+    [DEFAULT_TENANT, doc.id] as never[],
+  ))) as unknown as Row[];
+  const items = rows.map((row) => ({
+    version_no: num0(row.version_no),
+    change_source: row.change_source ?? null,
+    actor_id: row.actor_id ?? null,
+    note: row.note ?? null,
+    created_at: pyIso(row.created_at ?? null),
+    // 内核 `r.get("custom_keys") or []`：jsonb_agg 文本串恒为真 ⇒ 原样返回字符串
+    // （dbjson 未登记该计算列，asyncpg 返回文本；此处同样取 ::text 保持形状一致）
+    custom_keys: row.custom_keys ? row.custom_keys : [],
+  }));
+  return c.json({ doc_id: num(doc.id), total: items.length, items });
+}
+
+export async function getContentVersionDirect(
+  c: Context,
+  user: CurrentUser,
+): Promise<Response> {
+  const params = parseQuery(contentVersionParam, c.req.param(), "path");
+  const doc = await loadDocOr404(getEnv(c), user, params.doc_id);
+  const rows = (await withDb(getEnv(c), (sql: Db) => sql.unsafe(
+    "SELECT version_no, raw_payload, change_source, actor_id, note, created_at"
+    + " FROM trade_doc_content_versions"
+    + " WHERE tenant_id=$1 AND trade_doc_id=$2 AND version_no=$3",
+    [DEFAULT_TENANT, doc.id, params.version_no] as never[],
+  ))) as unknown as Row[];
+  const row = rows[0];
+  if (!row) {
+    throw httpError(404, {
+      error: "not_found", code: "VERSION_NOT_FOUND",
+      detail: "内容版本 v" + String(params.version_no) + " 不存在",
+    });
+  }
+  return c.json({
+    version_no: num0(row.version_no),
+    change_source: row.change_source ?? null,
+    actor_id: row.actor_id ?? null,
+    note: row.note ?? null,
+    created_at: pyIso(row.created_at ?? null),
+    raw_payload: decodeTradeDocPayload(row.raw_payload),
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // 路由注册（由 src/index.ts 挂载在对应 createProxyApp 透传 mount **之前**）：
 // 每请求判定灰度开关；off 时是**原样** forwardKernelRequest（与 createProxyApp 同一句）。
 // ══════════════════════════════════════════════════════════════════════════════
@@ -267,6 +465,36 @@ app.get("/api/v1/trade-docs/:doc_id/files", (c) => {
     return respond(c, async () => {
       const user = await requireUser(c);
       return directDb(c, () => listDocFilesDirect(c, user));
+    });
+  }
+  return forwardKernelRequest(c);
+});
+
+app.get("/api/v1/events", (c) => {
+  if (useDirectRoute(getEnv(c), "events.list")) {
+    return respond(c, async () => {
+      const user = await requireUser(c);
+      return directDb(c, () => listEventsDirect(c, user));
+    });
+  }
+  return forwardKernelRequest(c);
+});
+
+app.get("/api/v1/trade-docs/:doc_id/content-versions", (c) => {
+  if (useDirectRoute(getEnv(c), "trade-docs.content-versions.list")) {
+    return respond(c, async () => {
+      const user = await requireUser(c);
+      return directDb(c, () => listContentVersionsDirect(c, user));
+    });
+  }
+  return forwardKernelRequest(c);
+});
+
+app.get("/api/v1/trade-docs/:doc_id/content-versions/:version_no", (c) => {
+  if (useDirectRoute(getEnv(c), "trade-docs.content-versions.get")) {
+    return respond(c, async () => {
+      const user = await requireUser(c);
+      return directDb(c, () => getContentVersionDirect(c, user));
     });
   }
   return forwardKernelRequest(c);

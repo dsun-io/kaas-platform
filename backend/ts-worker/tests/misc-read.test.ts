@@ -100,12 +100,27 @@ function dbStub(rows: {
   fxRates?: DbRow[];
   externalDocs?: DbRow[];
   docFiles?: DbRow[];
+  eventsTotal?: DbRow[];
+  events?: DbRow[];
+  tradeDoc?: DbRow | null;
+  contentVersions?: DbRow[];
+  contentVersion?: DbRow | null;
 }): (query: string) => DbRow[] {
   return (query: string): DbRow[] => {
     if (query.includes("FROM users WHERE id")) return rows.user ? [rows.user] : [];
     if (query.includes("FROM fx_rates")) return rows.fxRates ?? [];
     if (query.includes("FROM external_doc_uploads")) return rows.externalDocs ?? [];
     if (query.includes("FROM trade_doc_files")) return rows.docFiles ?? [];
+    if (query.includes("count(*) FROM events")) return rows.eventsTotal ?? [{ count: "0" }];
+    if (query.includes("ORDER BY id DESC LIMIT")) return rows.events ?? [];
+    if (query.includes("FROM trade_docs WHERE")) {
+      return rows.tradeDoc === undefined || rows.tradeDoc === null ? [] : [rows.tradeDoc];
+    }
+    if (query.includes("FROM trade_doc_content_versions v")) return rows.contentVersions ?? [];
+    if (query.includes("FROM trade_doc_content_versions")) {
+      return rows.contentVersion === undefined || rows.contentVersion === null
+        ? [] : [rows.contentVersion];
+    }
     return [];
   };
 }
@@ -566,6 +581,406 @@ describe("401：开关 on 时未鉴权不触达 DB / 内核", () => {
         detail: { error: "unauthorized", message: "Authentication required" },
       });
       expect(dbState.calls).toHaveLength(0);
+      expect(spy.fetch).not.toHaveBeenCalled();
+    });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GET /api/v1/events（main.py:3292-3328）
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** 平台运营 = internal + 管理员（main._require_platform_ops）。 */
+const OPS_ROW: DbRow = userRow({ role: "admin" });
+
+const EVENT_ROW: DbRow = {
+  id: "11",
+  schema_version: 1,
+  tenant_id: "default",
+  event_type: "page_view",
+  event_source: "web",
+  actor_id: "9",
+  session_id: "s1",
+  // 内核未登记 events 的 jsonb 解码 ⇒ asyncpg 返回 jsonb 文本串；门面用 ::text 取同一份文本
+  payload: '{"ok": true, "path": "/events"}',
+  trace_id: "t-1",
+  sampled: false,
+  created_at: new Date("2026-10-20T10:00:00Z"),
+};
+
+const EVENTS_COUNT_SQL = "SELECT count(*) FROM events WHERE tenant_id = $1";
+const EVENTS_PAGE_SQL =
+  "SELECT id, schema_version, tenant_id, event_type, event_source,"
+  + " actor_id, session_id, payload::text AS payload, trace_id, sampled, created_at"
+  + " FROM events WHERE tenant_id = $1"
+  + " ORDER BY id DESC LIMIT $2 OFFSET $3";
+
+describe("GET /api/v1/events（P3 直连）", () => {
+  it("开关 on（平台运营）：分页投影 + SQL/参数逐字 + 不触内核", async () => {
+    resetDb(dbStub({ user: OPS_ROW, eventsTotal: [{ count: "7" }], events: [EVENT_ROW] }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/events", OPS_ROW, spy.env);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      items: [{
+        id: 11,
+        schema_version: 1,
+        tenant_id: "default",
+        event_type: "page_view",
+        event_source: "web",
+        actor_id: "9",
+        session_id: "s1",
+        // 两侧同形状：jsonb 文本串（非对象）
+        payload: '{"ok": true, "path": "/events"}',
+        trace_id: "t-1",
+        sampled: false,
+        created_at: "2026-10-20T10:00:00.000+00:00",
+      }],
+      total: 7,
+      page: 1,
+      page_size: 20,
+    });
+    const count = dbCallsContaining("count(*) FROM events")[0]!;
+    expect(count.query).toBe(EVENTS_COUNT_SQL);
+    expect(count.params).toEqual(["default"]);
+    const pageCall = dbCallsContaining("ORDER BY id DESC LIMIT")[0]!;
+    expect(pageCall.query).toBe(EVENTS_PAGE_SQL);
+    expect(pageCall.params).toEqual(["default", 20, 0]);
+    expect(spy.fetch).not.toHaveBeenCalled();
+  });
+
+  it("event_type 筛选 + page/page_size 钳位（0→1、500→100）", async () => {
+    resetDb(dbStub({ user: OPS_ROW, eventsTotal: [{ count: "0" }] }));
+    const spy = onEnv();
+
+    await request("/api/v1/events?event_type=page_view&page=0&page_size=500", OPS_ROW, spy.env);
+
+    const count = dbCallsContaining("count(*) FROM events")[0]!;
+    expect(count.query).toBe(
+      "SELECT count(*) FROM events WHERE tenant_id = $1 AND event_type = $2",
+    );
+    expect(count.params).toEqual(["default", "page_view"]);
+    const pageCall = dbCallsContaining("ORDER BY id DESC LIMIT")[0]!;
+    expect(pageCall.params).toEqual(["default", "page_view", 100, 0]);
+    expect(spy.fetch).not.toHaveBeenCalled();
+  });
+
+  it("非平台运营（internal + 普通角色）→ 403 Platform operator required（不查库）", async () => {
+    resetDb(dbStub({ user: userRow() }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/events", userRow(), spy.env);
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      detail: { error: "forbidden", message: "Platform operator required" },
+    });
+    expect(dbCallsContaining("FROM events")).toHaveLength(0);
+    expect(spy.fetch).not.toHaveBeenCalled();
+  });
+
+  it("page 非整数 → 422（不查库）", async () => {
+    resetDb(dbStub({ user: OPS_ROW }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/events?page=abc", OPS_ROW, spy.env);
+
+    expect(res.status).toBe(422);
+    expect(dbCallsContaining("FROM events")).toHaveLength(0);
+  });
+
+  it("开关 off（默认）：原样透传（query 逐字）", async () => {
+    const spy = kernelSpy();
+
+    const res = await request("/api/v1/events?event_type=page_view&page=2", OPS_ROW, spy.env);
+
+    expect(res.status).toBe(200);
+    expect(spy.seen).toEqual([{
+      method: "GET", path: "/api/v1/events",
+      search: "?event_type=page_view&page=2",
+    }]);
+    expect(dbState.calls).toHaveLength(0);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GET /api/v1/trade-docs/{id}/content-versions（ws_docs_ext.py:625-687）
+// ══════════════════════════════════════════════════════════════════════════════
+
+const DOC_ROW: DbRow = {
+  id: "12",
+  tenant_id: "default",
+  team_id: "4",
+  owner_id: "9",
+  owner_scope: "owner",
+  status: "draft",
+  doc_type: "proforma_invoice",
+};
+
+const VERSION_LIST_SQL =
+  "SELECT v.version_no, v.change_source, v.actor_id, v.note, v.created_at,"
+  + " COALESCE(("
+  + "   SELECT jsonb_agg(k ORDER BY k)"
+  + "     FROM (SELECT jsonb_object_keys("
+  + "       COALESCE(v.raw_payload->'custom', '{}'::jsonb)) AS k) AS keys"
+  + " ), '[]'::jsonb)::text AS custom_keys"
+  + " FROM trade_doc_content_versions v"
+  + " WHERE v.tenant_id=$1 AND v.trade_doc_id=$2"
+  + " ORDER BY v.version_no DESC";
+
+const VERSION_ROW: DbRow = {
+  version_no: 3,
+  change_source: "custom_update",
+  actor_id: "9",
+  note: "改了备注",
+  created_at: new Date("2026-10-21T09:00:00Z"),
+  custom_keys: '["payment_terms", "remarks"]',
+};
+
+describe("GET /api/v1/trade-docs/{id}/content-versions（P3 直连）", () => {
+  it("开关 on（成员，本团队单证）：版本列表 + custom_keys 文本串 + SQL/参数逐字", async () => {
+    resetDb(dbStub({ user: userRow(), tradeDoc: DOC_ROW, contentVersions: [VERSION_ROW] }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/trade-docs/12/content-versions", userRow(), spy.env);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      doc_id: 12,
+      total: 1,
+      items: [{
+        version_no: 3,
+        change_source: "custom_update",
+        actor_id: "9",
+        note: "改了备注",
+        created_at: "2026-10-21T09:00:00.000+00:00",
+        custom_keys: '["payment_terms", "remarks"]',
+      }],
+    });
+    // 先取单证（可见性），再取版本
+    const docCall = dbCallsContaining("FROM trade_docs WHERE")[0]!;
+    expect(docCall.query).toBe("SELECT * FROM trade_docs WHERE tenant_id=$1 AND id=$2");
+    expect(docCall.params).toEqual(["default", 12]);
+    const listCall = dbCallsContaining("FROM trade_doc_content_versions v")[0]!;
+    expect(listCall.query).toBe(VERSION_LIST_SQL);
+    expect(listCall.params).toEqual(["default", "12"]);
+    expect(spy.fetch).not.toHaveBeenCalled();
+  });
+
+  it("跨团队单证（客户账号）→ 404 DOC_NOT_FOUND（不查版本）", async () => {
+    // internal 账号在 get_doc_or_404 里是 privileged（免可见性过滤）⇒ 用 customer 账号验隔离
+    const customer = userRow({ account_type: "customer", team_id: 4 });
+    resetDb(dbStub({
+      user: customer,
+      tradeDoc: { ...DOC_ROW, team_id: "8", owner_scope: "owner", owner_id: "77" },
+    }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/trade-docs/12/content-versions", customer, spy.env);
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({
+      detail: { error: "not_found", code: "DOC_NOT_FOUND" },
+    });
+    expect(dbCallsContaining("FROM trade_doc_content_versions v")).toHaveLength(0);
+  });
+
+  it("无团队的客户账号 → 404（即使 owner 匹配也不行，与内核同口径）", async () => {
+    const customer = userRow({ account_type: "customer", team_id: null });
+    resetDb(dbStub({ user: customer, tradeDoc: DOC_ROW }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/trade-docs/12/content-versions", customer, spy.env);
+
+    expect(res.status).toBe(404);
+    expect(dbCallsContaining("FROM trade_doc_content_versions v")).toHaveLength(0);
+  });
+
+  it("internal/管理员免可见性过滤（别团队单证也能读）", async () => {
+    const admin = userRow({ account_type: "internal", role: "admin" });
+    resetDb(dbStub({
+      user: admin,
+      tradeDoc: { ...DOC_ROW, team_id: "8", owner_id: "77" },
+      contentVersions: [VERSION_ROW],
+    }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/trade-docs/12/content-versions", admin, spy.env);
+
+    expect(res.status).toBe(200);
+    expect(spy.fetch).not.toHaveBeenCalled();
+  });
+
+  it("单证不存在 → 404 DOC_NOT_FOUND", async () => {
+    resetDb(dbStub({ user: userRow(), tradeDoc: null }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/trade-docs/12/content-versions", userRow(), spy.env);
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({
+      detail: { error: "not_found", code: "DOC_NOT_FOUND" },
+    });
+  });
+
+  it("开关 off（默认）：原样透传", async () => {
+    const spy = kernelSpy();
+
+    const res = await request("/api/v1/trade-docs/12/content-versions", userRow(), spy.env);
+
+    expect(res.status).toBe(200);
+    expect(spy.seen).toEqual([{
+      method: "GET", path: "/api/v1/trade-docs/12/content-versions", search: "",
+    }]);
+    expect(dbState.calls).toHaveLength(0);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GET /api/v1/trade-docs/{id}/content-versions/{version_no}
+// ══════════════════════════════════════════════════════════════════════════════
+
+const VERSION_DETAIL_SQL =
+  "SELECT version_no, raw_payload, change_source, actor_id, note, created_at"
+  + " FROM trade_doc_content_versions"
+  + " WHERE tenant_id=$1 AND trade_doc_id=$2 AND version_no=$3";
+
+function versionDetail(overrides: DbRow = {}): DbRow {
+  return {
+    version_no: 3,
+    // postgres.js 已解码 jsonb ⇒ 对象形态
+    raw_payload: { custom: { remarks: "x" }, base: { buyer_name: "ACME" } },
+    change_source: "custom_update",
+    actor_id: "9",
+    note: null,
+    created_at: new Date("2026-10-21T09:00:00Z"),
+    ...overrides,
+  };
+}
+
+describe("GET /api/v1/trade-docs/{id}/content-versions/{no}（P3 直连）", () => {
+  it("开关 on：整份 payload + SQL/参数逐字", async () => {
+    resetDb(dbStub({ user: userRow(), tradeDoc: DOC_ROW, contentVersion: versionDetail() }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/trade-docs/12/content-versions/3", userRow(), spy.env);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      version_no: 3,
+      change_source: "custom_update",
+      actor_id: "9",
+      note: null,
+      created_at: "2026-10-21T09:00:00.000+00:00",
+      raw_payload: { custom: { remarks: "x" }, base: { buyer_name: "ACME" } },
+    });
+    const call = dbCallsContaining("FROM trade_doc_content_versions")[0]!;
+    expect(call.query).toBe(VERSION_DETAIL_SQL);
+    expect(call.params).toEqual(["default", "12", 3]);
+    expect(spy.fetch).not.toHaveBeenCalled();
+  });
+
+  it("payload 是字符串时按 _decode_payload 解析；非对象 JSON → {}", async () => {
+    resetDb(dbStub({
+      user: userRow(),
+      tradeDoc: DOC_ROW,
+      contentVersion: versionDetail({ raw_payload: '{"base": {"a": 1}}' }),
+    }));
+    const spy = onEnv();
+    const asStr = await request("/api/v1/trade-docs/12/content-versions/3", userRow(), spy.env);
+    expect(((await asStr.json()) as DbRow).raw_payload).toEqual({ base: { a: 1 } });
+
+    resetDb(dbStub({
+      user: userRow(),
+      tradeDoc: DOC_ROW,
+      contentVersion: versionDetail({ raw_payload: "[1, 2]" }),
+    }));
+    const asArray = await request("/api/v1/trade-docs/12/content-versions/3", userRow(), spy.env);
+    expect(((await asArray.json()) as DbRow).raw_payload).toEqual({});
+    expect(spy.fetch).not.toHaveBeenCalled();
+  });
+
+  it("版本不存在 → 404 VERSION_NOT_FOUND（文案逐字）", async () => {
+    resetDb(dbStub({ user: userRow(), tradeDoc: DOC_ROW, contentVersion: null }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/trade-docs/12/content-versions/9", userRow(), spy.env);
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({
+      detail: {
+        error: "not_found", code: "VERSION_NOT_FOUND",
+        detail: "内容版本 v9 不存在",
+      },
+    });
+    expect(spy.fetch).not.toHaveBeenCalled();
+  });
+
+  it("单证不可见（客户账号，跨团队）→ 404 DOC_NOT_FOUND（不查版本）", async () => {
+    const customer = userRow({ account_type: "customer", team_id: 4 });
+    resetDb(dbStub({
+      user: customer,
+      tradeDoc: { ...DOC_ROW, team_id: "8", owner_id: "77" },
+    }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/trade-docs/12/content-versions/3", customer, spy.env);
+
+    expect(res.status).toBe(404);
+    expect(dbCallsContaining("FROM trade_doc_content_versions")).toHaveLength(0);
+  });
+
+  it("开关 off（默认）：原样透传", async () => {
+    const spy = kernelSpy();
+
+    const res = await request("/api/v1/trade-docs/12/content-versions/3", userRow(), spy.env);
+
+    expect(res.status).toBe(200);
+    expect(spy.seen).toEqual([{
+      method: "GET", path: "/api/v1/trade-docs/12/content-versions/3", search: "",
+    }]);
+    expect(dbState.calls).toHaveLength(0);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 本批新增端点的 401 / 503
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe("本批新增端点：401 与 DB 失败 503", () => {
+  const cases: Array<[string, string, DbRow]> = [
+    ["GET /api/v1/events", "/api/v1/events", OPS_ROW],
+    ["GET /api/v1/trade-docs/12/content-versions", "/api/v1/trade-docs/12/content-versions", userRow()],
+    ["GET /api/v1/trade-docs/12/content-versions/3", "/api/v1/trade-docs/12/content-versions/3", userRow()],
+  ];
+  for (const [name, path, user] of cases) {
+    it(`${name} 无 token → 401`, async () => {
+      const spy = onEnv();
+      const res = await request(path, null, spy.env);
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({
+        detail: { error: "unauthorized", message: "Authentication required" },
+      });
+      expect(dbState.calls).toHaveLength(0);
+      expect(spy.fetch).not.toHaveBeenCalled();
+    });
+
+    it(`${name}：DB 抛错 → 503`, async () => {
+      resetDb((query) => {
+        if (query.includes("FROM users WHERE id")) return [user];
+        throw new Error("hyperdrive down");
+      });
+      const spy = onEnv();
+      const res = await request(path, user, spy.env);
+      expect(res.status).toBe(503);
+      expect(await res.json()).toEqual({
+        error: "db_unavailable",
+        message: DB_UNAVAILABLE_MESSAGE,
+        status: 503,
+        retryable: true,
+      });
       expect(spy.fetch).not.toHaveBeenCalled();
     });
   }

@@ -406,3 +406,16 @@ async def engine_quote_order_template_info(request: Request, body: dict):
     return await _dispatch(
         _quote.order_template_info_from_datasets, datasets,
         _query_object(request_body), user)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 第七批切片：GET /api/v1/pricing-data（定价数据矩阵，报价工位主视图）
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@app.post("/api/v1/internal/engine/quote/pricing-data")
+async def engine_quote_pricing_data(request: Request, body: dict):
+    """定价数据矩阵 RPC：query = {product_key, scope}（原始字符串，判定/校验在内核）。"""
+    user, request_body, datasets = _payload(request, body)
+    return await _dispatch(
+        _main.pricing_data_from_datasets, datasets, _query_object(request_body), user)

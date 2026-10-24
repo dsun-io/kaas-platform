@@ -96,6 +96,13 @@ export const DIRECT_ROUTE_IDS = {
   exportQuoteImportTemplate: "export-quote.import-template",
   /** GET /api/v1/export-quote/import/order/template-info —— 导入模板列（引擎切片） */
   exportQuoteOrderTemplateInfo: "export-quote.order-template-info",
+  /** GET /api/v1/pricing-data —— 定价矩阵（引擎切片） */
+  pricingDataList: "pricing-data.list",
+  /** GET /api/v1/events —— 事件日志（纯 SQL，平台运营可见） */
+  eventsList: "events.list",
+  /** GET /api/v1/trade-docs/{id}/content-versions[/{no}] —— 单证内容版本 */
+  tradeDocsContentVersionsList: "trade-docs.content-versions.list",
+  tradeDocsContentVersionsGet: "trade-docs.content-versions.get",
 } as const;
 
 export type DirectRouteId = (typeof DIRECT_ROUTE_IDS)[keyof typeof DIRECT_ROUTE_IDS];

@@ -1,0 +1,141 @@
+{
+  "_comment": "P3 第七批金标：GET /api/v1/pricing-data（定价数据矩阵 / 历史）。old_sql = 旧路径实际执行的查询（同一份数据查两次：客户自建档位 + 成本表）；facade = 门面供数契约（一次 dataset、内核复用两份）；response = 旧路径真实响应。**生成期冻结了 datetime.now**（_pricing_reference 的 30 天窗口依赖 now）⇒ 两侧测试也必须冻结到同一时刻，否则 avg_30d 会漂。时间戳同时覆盖零/非零微秒。",
+  "endpoint": {
+    "method": "GET",
+    "path": "/api/v1/pricing-data",
+    "query_string": "product_key=field_fence&scope=own"
+  },
+  "rpc": "/api/v1/internal/engine/quote/pricing-data",
+  "frozen_now": "2026-10-24T21:00:00+00:00",
+  "request": {
+    "query": {
+      "product_key": "field_fence",
+      "scope": "own"
+    }
+  },
+  "actor": {
+    "id": 5,
+    "account_type": "customer",
+    "role": "owner",
+    "team_id": 2,
+    "is_tenant_admin": false
+  },
+  "datasets": {
+    "customer_cost_items": [
+      {
+        "id": 101,
+        "customer_id": "default",
+        "product_spec_json": {
+          "values": {
+            "de": "2.0",
+            "coating_code": "zinc_40"
+          },
+          "labels": {}
+        },
+        "spec_hash": "field_fence:de=2|coating_code=zinc_40",
+        "amount": 12.5,
+        "unit": "kg",
+        "effective_from": "2026-10-20T10:00:00.123456+00:00",
+        "source": "manual",
+        "notes": "fixture 行",
+        "created_at": "2026-10-20T10:00:00.123456+00:00"
+      },
+      {
+        "id": 102,
+        "customer_id": "default",
+        "product_spec_json": {
+          "values": {
+            "de": "3.0",
+            "coating_code": "zinc_200"
+          },
+          "labels": {}
+        },
+        "spec_hash": "field_fence:de=3|coating_code=zinc_200",
+        "amount": 9.0,
+        "unit": "kg",
+        "effective_from": "2025-01-01T08:00:00+00:00",
+        "source": "manual",
+        "notes": null,
+        "created_at": "2025-01-01T08:00:00+00:00"
+      }
+    ]
+  },
+  "old_sql": [
+    {
+      "sql": "SELECT id, customer_id, product_spec_json, spec_hash, amount, unit, effective_from, source, notes, created_at FROM customer_cost_items WHERE tenant_id=$1 AND left(spec_hash, length($2))=$2 AND status='active' AND customer_id=$3 ORDER BY id DESC",
+      "params": [
+        "default",
+        "field_fence:",
+        "default"
+      ]
+    },
+    {
+      "sql": "SELECT id, customer_id, product_spec_json, spec_hash, amount, unit, effective_from, source, notes, created_at FROM customer_cost_items WHERE tenant_id=$1 AND left(spec_hash, length($2))=$2 AND status='active' AND customer_id=$3 ORDER BY id DESC",
+      "params": [
+        "default",
+        "field_fence:",
+        "default"
+      ]
+    }
+  ],
+  "facade": {
+    "customer_cost_items": {
+      "sql": "SELECT id, customer_id, product_spec_json, spec_hash, amount, unit, CASE WHEN to_char(effective_from AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(effective_from AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(effective_from AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS effective_from, source, notes, CASE WHEN to_char(created_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS created_at FROM customer_cost_items WHERE tenant_id=$1 AND left(spec_hash, length($2))=$2 AND status='active' AND customer_id=$3 ORDER BY id DESC",
+      "params": [
+        "default",
+        "field_fence:",
+        "default"
+      ]
+    }
+  },
+  "response": {
+    "product_key": "field_fence",
+    "product_name": "牛栏网",
+    "cost_unit": "CNY/kg",
+    "scope": "own",
+    "dims": [
+      {
+        "field": "de",
+        "label": "边丝径",
+        "unit": "mm",
+        "kind": "numeric",
+        "options": [],
+        "ui_unit": "",
+        "ui_scale": 1.0
+      },
+      {
+        "field": "coating_code",
+        "label": "镀锌量",
+        "unit": "",
+        "kind": "variant",
+        "options": [
+          {
+            "value": "zinc_40",
+            "label": "热镀锌 40g/㎡"
+          },
+          {
+            "value": "zinc_200",
+            "label": "热镀锌 200g/㎡"
+          },
+          {
+            "value": "zinc_260",
+            "label": "热镀锌 260g/㎡"
+          },
+          {
+            "value": "elec_galv",
+            "label": "电镀锌"
+          },
+          {
+            "value": "pvc_black",
+            "label": "PVC涂塑(黑色)"
+          },
+          {
+            "value": "pvc_green",
+            "label": "PVC涂塑(绿色)"
+          }
+        ]
+      }
+    ],
+    "rows": []
+  }
+}

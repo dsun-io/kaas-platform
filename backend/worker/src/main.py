@@ -2666,51 +2666,15 @@ def _pricing_reference(rows: list) -> dict:
     }
 
 
-@app.get("/api/v1/pricing-data")
-async def list_pricing_data(
-    request: Request,
-    user: dict = Depends(_get_current_user),
-):
-    """某产品定价键的**完整矩阵**（与 orchestrator app/api/pricing_data.py 同语义）。
+def _pricing_data_payload(product, extended, scope: str, customer_id, items: list) -> dict:
+    """定价数据响应（**纯投影**；旧 handler 与供数 RPC 共用同一份）。
 
-    - `scope=own`（默认）：当前客户自己的配置。身份与算价接口**同一口径**
-      （quote_api._customer_of —— 保证「这里配的价 = 算价用的价」）。
-    - `scope=all`（仅内部管理员）：本租户所有客户的配置，按客户分组。
-    - 客户自己在定价数据里加过的档位会并入规格空间（与算价看到的选项一致）。
+    入参 extended = 并入客户自建档位后的产品定义；items = customer_cost_items 行
+    （按 id 倒序，已含客户过滤口径）。旧路径对同一份数据查两次（客户自建档位 +
+    成本表），供数路径只下发一次 dataset、由同一份行复用（两次查询之间无写，语义等价）。
     """
-    quote_api._require_engine()
-    product_key = (request.query_params.get("product_key") or "").strip()
-    if not product_key:
-        raise HTTPException(status_code=422, detail="product_key is required")
-    try:
-        product = quote_api.get_product(product_key)
-    except (KeyError, TypeError):  # 引擎对未注册产品抛 KeyError；TypeError=引擎符号缺失（已先 _require_engine）
-        raise HTTPException(status_code=404, detail=f"未知产品: {product_key}")
-
-    scope = (request.query_params.get("scope") or "own").strip()
-    if scope not in ("own", "all"):
-        raise HTTPException(status_code=422, detail="scope must be own or all")
-
-    tenant = quote_api._tenant_of(user)
-    if scope == "all":
-        # 跨客户查看属内部视图，必须内部管理员（orchestrator: require_tenant_admin）
-        if not quote_api._is_internal_admin(user):
-            raise HTTPException(status_code=403, detail="跨客户查看仅管理员可用")
-        extended = quote_api.extend_product(
-            product,
-            await quote_api._load_option_extensions(request, tenant, None, product),
-        )
-        customer_id = None
-    else:
-        customer_id = quote_api._customer_of(user)
-        extended = quote_api.extend_product(
-            product,
-            await quote_api._load_option_extensions(request, tenant, customer_id, product),
-        )
-
     dims = quote_api.describe_pricing_key(extended)
     rows = quote_api._matrix_rows(extended)
-    items = await quote_api._pricing_key_items(request, tenant, customer_id, product.key)
 
     prefix = f"{product.key}:"
     by_customer: dict = {}
@@ -2770,6 +2734,120 @@ async def list_pricing_data(
         "customers": customers,
     }
 
+
+
+#: customer_cost_items 的两列时间戳在 dataset 里是文本（门面用 to_char/isoformat 口径）
+_PRICING_ITEM_TS_FIELDS = ("effective_from", "created_at")
+
+
+def _pricing_item_from_dataset(row: dict) -> dict:
+    """dataset 的 customer_cost_items 行 → 旧 asyncpg 行形状（时间戳还原）。"""
+    out = dict(row)
+    for field in _PRICING_ITEM_TS_FIELDS:
+        value = out.get(field)
+        if isinstance(value, str) and value:
+            try:
+                out[field] = datetime.fromisoformat(value)
+            except ValueError:
+                raise HTTPException(status_code=400, detail={
+                    "error": "engine_rpc_payload_invalid",
+                    "message": "datasets.customer_cost_items 的时间戳不是 ISO 8601：" + field,
+                })
+    return out
+
+
+def _pricing_dataset_rows(datasets: dict, name: str) -> list:
+    """payload.datasets[name] → 行数组（形状错误 = 实现 bug ⇒ 400；缺省 = 空）。"""
+    rows = datasets.get(name)
+    if rows is None:
+        return []
+    if not isinstance(rows, list):
+        raise HTTPException(status_code=400, detail={
+            "error": "engine_rpc_payload_invalid",
+            "message": "datasets.%s 必须是数组" % name,
+        })
+    return rows
+
+
+def pricing_data_from_datasets(datasets: dict, params: dict, user: dict) -> dict:
+    """P2 引擎 RPC：GET /api/v1/pricing-data 的供数版（**同一份**判定与投影）。
+
+    datasets.customer_cost_items = 旧 _pricing_key_items 的同一条 SQL 结果：
+    scope=own 时带 customer_id 谓词（门面按 _customer_of 供数），scope=all 时不过滤。
+    旧 handler 对同一份数据查两次（客户自建档位 + 成本表）⇒ 这里一份行复用到两处。
+    """
+    quote_api._require_engine()
+    product_key = ((params or {}).get("product_key") or "").strip()
+    if not product_key:
+        raise HTTPException(status_code=422, detail="product_key is required")
+    try:
+        product = quote_api.get_product(product_key)
+    except (KeyError, TypeError):  # 引擎对未注册产品抛 KeyError；TypeError=引擎符号缺失
+        raise HTTPException(status_code=404, detail="未知产品: %s" % product_key)
+
+    scope = ((params or {}).get("scope") or "own").strip()
+    if scope not in ("own", "all"):
+        raise HTTPException(status_code=422, detail="scope must be own or all")
+
+    if scope == "all":
+        # 跨客户查看属内部视图，必须内部管理员（与旧 handler 同一份判定）
+        if not quote_api._is_internal_admin(user):
+            raise HTTPException(status_code=403, detail="跨客户查看仅管理员可用")
+        customer_id = None
+    else:
+        customer_id = quote_api._customer_of(user)
+
+    items = [_pricing_item_from_dataset(r)
+             for r in _pricing_dataset_rows(datasets, "customer_cost_items")
+             if isinstance(r, dict)]
+    extended = quote_api.extend_product(
+        product, quote_api._extensions_from_items(items, product))
+    return _pricing_data_payload(product, extended, scope, customer_id, items)
+
+@app.get("/api/v1/pricing-data")
+async def list_pricing_data(
+    request: Request,
+    user: dict = Depends(_get_current_user),
+):
+    """某产品定价键的**完整矩阵**（与 orchestrator app/api/pricing_data.py 同语义）。
+
+    - `scope=own`（默认）：当前客户自己的配置。身份与算价接口**同一口径**
+      （quote_api._customer_of —— 保证「这里配的价 = 算价用的价」）。
+    - `scope=all`（仅内部管理员）：本租户所有客户的配置，按客户分组。
+    - 客户自己在定价数据里加过的档位会并入规格空间（与算价看到的选项一致）。
+    """
+    quote_api._require_engine()
+    product_key = (request.query_params.get("product_key") or "").strip()
+    if not product_key:
+        raise HTTPException(status_code=422, detail="product_key is required")
+    try:
+        product = quote_api.get_product(product_key)
+    except (KeyError, TypeError):  # 引擎对未注册产品抛 KeyError；TypeError=引擎符号缺失（已先 _require_engine）
+        raise HTTPException(status_code=404, detail=f"未知产品: {product_key}")
+
+    scope = (request.query_params.get("scope") or "own").strip()
+    if scope not in ("own", "all"):
+        raise HTTPException(status_code=422, detail="scope must be own or all")
+
+    tenant = quote_api._tenant_of(user)
+    if scope == "all":
+        # 跨客户查看属内部视图，必须内部管理员（orchestrator: require_tenant_admin）
+        if not quote_api._is_internal_admin(user):
+            raise HTTPException(status_code=403, detail="跨客户查看仅管理员可用")
+        extended = quote_api.extend_product(
+            product,
+            await quote_api._load_option_extensions(request, tenant, None, product),
+        )
+        customer_id = None
+    else:
+        customer_id = quote_api._customer_of(user)
+        extended = quote_api.extend_product(
+            product,
+            await quote_api._load_option_extensions(request, tenant, customer_id, product),
+        )
+
+    items = await quote_api._pricing_key_items(request, tenant, customer_id, product.key)
+    return _pricing_data_payload(product, extended, scope, customer_id, items)
 
 @app.post("/api/v1/pricing-data", status_code=201)
 async def create_pricing_data(
