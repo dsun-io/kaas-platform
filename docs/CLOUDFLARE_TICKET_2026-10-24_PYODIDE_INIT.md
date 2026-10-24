@@ -220,7 +220,8 @@ docker run --rm -v "<repo>/.tmp-kc2:/w" -e CLOUDFLARE_API_TOKEN=*** \
 成功请求 `wallTimeP50` 最低 5987 ms。**我们不断言「每次请求都在付完整 init」**（缺逐 isolate 证据），
 只说「低流量期 + isolate 频繁回收 ⇒ 大量请求落在冷启动」这一更弱的表述，并将在 A8 补冷/热对照。
 
-**时间形态**：10-22 全天 0 错误；10-23 起成簇（单小时最高 247）；**10-24 06:49Z 我们部署新内核版本后，07:00Z 单小时达 993（4×）**。
+**时间形态**（以 A2/A8 CSV 为准）：10-22 全天 0 错误；10-23 起成簇（单小时最高 247）；
+**10-24T06:42Z 我们开始部署新内核版本，07:00Z 单小时 `scriptThrewException` 达 2562/2750 ≈ 93%（全窗口峰值）**。
 
 ### 4.1 部署与错误率对齐（A3/A9）
 
@@ -288,17 +289,30 @@ CLOUDFLARE_API_TOKEN=... npx wrangler tail kaas --format json
 
 ## 9. 附件清单
 
-| 编号 | 内容 | 状态 |
-|---|---|---|
-| A1 | tail JSONL：24 条失败 + 100+ 对照（含 rayId/时间戳/scriptVersion/colo 若可得） | 待补 |
-| A2 | GraphQL 查询原文 + 结果 JSON/CSV（三个窗口、按小时序列） | 待整理 |
-| A3 | 版本与部署清单（UTC）+ compat 设置 | 已有（§4.1） |
-| A4 | **最小复现 Worker 源码 + wrangler + 压测脚本** | **pending（7A）** |
-| A5 | 依赖与包体清单（pylock sha256、`python_modules` 体积/文件数、dry-run bundle、wrangler/pywrangler/uv 版本） | 待整理 |
-| A6 | 对照实验矩阵（E1–E5）与结果 | pending |
-| A7 | 影响面（门面 502 计数/端点/去重用户/重试换算） | 待整理 |
-| A8 | 内存/CPU/wallTime 分位按小时序列（含冷/热对照） | 待整理 |
-| A9 | 事故时间线（UTC，含我方部署与缓解动作） | 已有（§4.1 + 事故文档） |
+> 工件已落盘在 **`docs/ticket-2026-10-24/`**（含 README 索引与重新生成方式）。
+
+| 编号 | 内容 | 文件 | 状态 |
+|---|---|---|---|
+| A1 | tail 原始样本（含 rayId/colo/时间戳/版本） | `A1_tail_excerpt.md` | ⚠️ **仅摘录**（原始 JSONL 未持久化，已在文件里说明；抓取工具见 `scripts/capture-kernel-tail.ps1`） |
+| A2 | GraphQL 按小时聚合（requests/errors/scriptThrewException/错误率） | `A2_hourly_error_rate.csv` | ✅ 85 小时 |
+| A3 | 版本与部署清单（UTC）+ compat 设置 | 正文 §4.1 / §9 追加段 | ✅ |
+| A4 | **最小复现 Worker**（零依赖）+ **真实内核克隆探针** + 压测脚本 | `scripts/pyinit-probe/`、`scripts/pyinit-probe-kernel/`、`pressure.py` | ✅ 已部署并实测 |
+| A5 | 依赖与包体清单（pylock sha256 / 源码规模 / 各变体体积与 startup / 工具版本） | `A5_dependency_inventory.md` | ✅ |
+| A6 | 对照实验矩阵 E1–E5（含未完成项如实标注） | 正文 §3A / §3C / §3D / §3F | ⚠️ E1/E2/E2b/E3 已跑（均未复现）；E4/E5 未做 |
+| A7 | 门面对照（`kaas-edge` 按小时 requests/errors/wallTime） | `A7_edge_hourly.csv` | ✅ 72 行 |
+| A8 | `kaas` 按小时 × status，含 cpu/wallTime/memory 的 P50/P99 | `A8_kaas_hourly.csv` | ✅ 109 行 |
+| A9 | 事故时间线（UTC，含**我们自己的部署**与实验动作） | `A9_timeline.md` | ✅ |
+
+### 9.1 本次重查修正的两个数字（以 CSV 为准）
+
+- **峰值小时**：`2026-10-24T07:00Z` 的 `scriptThrewException` = **2562 / 2750 请求 ≈ 93%**（此前正文引用的 993 是更早查询口径，已作废）；
+- 该峰值**紧跟 `2026-10-24T06:42:07Z` 开始的 deploy**（run 40071240322，commit `c25ffe36`）——见 A9；
+- 事故**起点是 10-23T00:00Z**（早于该部署）⇒ 该部署不是起因，但可能加剧。
+
+### 9.2 当前健康状态（对工单有用）
+
+2026-10-24T14:55Z 查询：**最近 90 分钟 45 请求 / 0 错误**（内核健康）⇒ 我们无法即时抓到新鲜的 A1；
+下次复现时用 `scripts/capture-kernel-tail.ps1` 立刻抓 `rayId`/`colo`，可补齐真正的 A1。
 
 ## 10. 提交用英文正文
 
