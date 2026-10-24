@@ -30,10 +30,15 @@ from main import (  # noqa: E402
 from kaas_common.workstation.tax_archive_rules import (  # noqa: E402
     clean_tax_values,
     ensure_archive_team,
+    ensure_at_least_one_rate,
+    ensure_known_product,
     normalize_code,
     normalize_name,
+    normalize_product_key,
     parse_effective_date,
     resolve_patch,
+    resolve_rate_patch,
+    validate_tax_rate,
 )
 
 
@@ -267,18 +272,6 @@ async def delete_tax_archive(
 
 # ── 产品税率（进项税 / 出口退税率，按产品维护）────────────────────────────
 
-def _rate_or_422(value: Optional[float], label: str) -> Optional[float]:
-    if value is None:
-        return None
-    number = float(value)
-    if not (0 <= number <= 1):
-        raise HTTPException(status_code=422, detail={
-            "error": "validation", "code": "INVALID_TAX_RATE",
-            "detail": f"{label} 必须在 0~1 之间（10% 请填 0.1）",
-        })
-    return number
-
-
 def _product_tax_out(row) -> dict:
     d = dict(row)
     for key in ("created_at", "updated_at"):
@@ -341,20 +334,12 @@ async def create_product_tax_rate(
     user: dict = Depends(_get_current_user),
 ):
     team_id = await _team_id(request, user, write=True)
-    product_key = body.product_key.strip()
-    from kaas_common.export_quote.products import has as has_product
-    if not has_product(product_key):
-        raise HTTPException(status_code=422, detail={
-            "error": "validation", "code": "UNKNOWN_PRODUCT",
-            "detail": f"产品 {product_key} 不存在",
-        })
-    input_rate = _rate_or_422(body.input_vat_rate, "进项增值税率")
-    rebate_rate = _rate_or_422(body.rebate_rate, "出口退税率")
-    if input_rate is None and rebate_rate is None:
-        raise HTTPException(status_code=422, detail={
-            "error": "validation", "code": "TAX_VALUES_REQUIRED",
-            "detail": "进项增值税率、出口退税率至少填一个",
-        })
+    # 纯校验统一在共享内核（tax_archive_rules）：产品键归一/白名单 + 两档税率范围 + 至少一项
+    product_key = normalize_product_key(body.product_key)
+    ensure_known_product(product_key)
+    input_rate = validate_tax_rate(body.input_vat_rate, "进项增值税率")
+    rebate_rate = validate_tax_rate(body.rebate_rate, "出口退税率")
+    ensure_at_least_one_rate(input_rate, rebate_rate)
     existing = await db.fetchrow(
         request,
         "SELECT * FROM product_tax_rates WHERE tenant_id=$1 AND team_id=$2"
@@ -397,14 +382,10 @@ async def update_product_tax_rate(
 ):
     await _team_id(request, user, write=True)
     row = await _product_tax_or_404(request, user, rate_id)
-    input_rate = (float(row["input_vat_rate"]) if row.get("input_vat_rate") is not None
-                  else None)
-    rebate_rate = (float(row["rebate_rate"]) if row.get("rebate_rate") is not None
-                   else None)
-    if body.input_vat_rate is not None:
-        input_rate = _rate_or_422(body.input_vat_rate, "进项增值税率")
-    if body.rebate_rate is not None:
-        rebate_rate = _rate_or_422(body.rebate_rate, "出口退税率")
+    # 合并语义（只覆盖显式给出的那一档，另一档沿用旧值）+ 0~1 校验，都在共享内核同一份
+    rates = resolve_rate_patch(body.model_dump(), row)
+    input_rate = rates["input_vat_rate"]
+    rebate_rate = rates["rebate_rate"]
     row = await db.fetchrow(
         request,
         """UPDATE product_tax_rates SET input_vat_rate=$3, rebate_rate=$4,

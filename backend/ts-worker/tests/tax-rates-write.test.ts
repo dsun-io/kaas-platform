@@ -16,10 +16,15 @@ import type { Env } from "../src/env";
 import { DB_UNAVAILABLE_MESSAGE } from "../src/hot-read";
 import taxRatesWriteRoutes, {
   cleanTaxValues,
+  ensureAtLeastOneRate,
+  ensureKnownProduct,
   normalizeCode,
   normalizeName,
+  normalizeProductKey,
   parseEffectiveDate,
+  resolveRatePatch,
   validateStatus,
+  validateTaxRate,
 } from "../src/routes/tax-rates-write";
 import { createToken } from "../src/session";
 import {
@@ -123,6 +128,10 @@ type StubOptions = {
   taken?: string[];
   inserted?: DbRow;
   updated?: DbRow;
+  // 产品税率（product_tax_rates）侧
+  rateRow?: DbRow | null;
+  existingRate?: DbRow | null;
+  rateInserted?: DbRow;
 };
 
 function dbStub(options: StubOptions): (query: string) => DbRow[] {
@@ -151,9 +160,68 @@ function dbStub(options: StubOptions): (query: string) => DbRow[] {
       return [options.updated ?? archiveRow()];
     }
     if (query.includes("UPDATE tax_archives SET status='inactive'")) return [];
+    // ── 产品税率（顺序：写语句先判，再判定位/存在性查询）──
+    if (query.includes("INSERT INTO product_tax_rates")) {
+      return [options.rateInserted ?? rateRow({
+        id: 5, product_key: String(params[2]), input_vat_rate: params[3],
+        rebate_rate: params[4],
+      })];
+    }
+    if (query.includes("UPDATE product_tax_rates SET input_vat_rate=$3, rebate_rate=$4, status='active'")) {
+      return [rateRow({
+        id: Number(params[1]), input_vat_rate: params[2], rebate_rate: params[3],
+        status: "active",
+      })];
+    }
+    if (query.includes("UPDATE product_tax_rates SET input_vat_rate=$3, rebate_rate=$4,")) {
+      return [rateRow({
+        id: Number(params[1]), input_vat_rate: params[2], rebate_rate: params[3],
+      })];
+    }
+    if (query.includes("UPDATE product_tax_rates SET status='inactive'")) return [];
+    if (query.includes("SELECT * FROM product_tax_rates") && query.includes("AND id = $")) {
+      const row = options.rateRow;
+      if (row === undefined || row === null) return [];
+      // 复刻定位 SQL 的团队过滤（别团队 ⇒ 查不到 ⇒ 404 不泄露存在性）
+      if (query.includes("AND team_id = $") && Number(params[1]) !== Number(row.team_id)) {
+        return [];
+      }
+      return [row];
+    }
+    if (query.includes("FROM product_tax_rates WHERE tenant_id=$1 AND team_id=$2")) {
+      return options.existingRate === undefined || options.existingRate === null
+        ? [] : [options.existingRate];
+    }
     return [];
   };
 }
+
+/** 产品税率行 fixture（_product_tax_out 的 7 键来源）。 */
+function rateRow(overrides: DbRow = {}): DbRow {
+  return {
+    id: 5, tenant_id: "default", team_id: 4, product_key: "field_fence",
+    input_vat_rate: "0.130000", rebate_rate: "0.130000", status: "active",
+    created_by: "9", created_at: new Date("2026-10-24T08:00:00Z"),
+    updated_at: new Date("2026-10-24T08:00:00Z"), ...overrides,
+  };
+}
+
+const PRODUCT_INSERT_SQL =
+  "INSERT INTO product_tax_rates"
+  + " (tenant_id, team_id, product_key, input_vat_rate, rebate_rate,"
+  + "  status, created_by)"
+  + " VALUES ($1,$2,$3,$4,$5,'active',$6) RETURNING *";
+const PRODUCT_PATCH_SQL =
+  "UPDATE product_tax_rates SET input_vat_rate=$3, rebate_rate=$4,"
+  + " updated_at=now()"
+  + " WHERE tenant_id=$1 AND id=$2 RETURNING *";
+const PRODUCT_REACTIVATE_SQL =
+  "UPDATE product_tax_rates SET input_vat_rate=$3, rebate_rate=$4,"
+  + " status='active', updated_at=now()"
+  + " WHERE tenant_id=$1 AND id=$2 RETURNING *";
+const PRODUCT_SOFT_DELETE_SQL =
+  "UPDATE product_tax_rates SET status='inactive', updated_at=now()"
+  + " WHERE tenant_id=$1 AND id=$2";
 
 beforeEach(() => {
   resetDb(() => []);
@@ -535,6 +603,11 @@ describe("401：开关 on 时未鉴权不触达 DB / 内核", () => {
     ["POST /api/v1/tax-archives", "/api/v1/tax-archives", jsonInit("POST", { name: "x", tax_values: { output_vat_rate: 0.1 } })],
     ["PATCH /api/v1/tax-archives/7", "/api/v1/tax-archives/7", jsonInit("PATCH", { name: "x" })],
     ["DELETE /api/v1/tax-archives/7", "/api/v1/tax-archives/7", { method: "DELETE" }],
+    ["POST /api/v1/product-tax-rates", "/api/v1/product-tax-rates",
+      jsonInit("POST", { product_key: "field_fence", input_vat_rate: 0.1 })],
+    ["PATCH /api/v1/product-tax-rates/5", "/api/v1/product-tax-rates/5",
+      jsonInit("PATCH", { input_vat_rate: 0.2 })],
+    ["DELETE /api/v1/product-tax-rates/5", "/api/v1/product-tax-rates/5", { method: "DELETE" }],
   ];
   for (const [name, path, init] of cases) {
     it(`${name} 无 token → 401 Authentication required`, async () => {
@@ -571,5 +644,324 @@ describe("TS-DB 失败 → 503 db_unavailable", () => {
       retryable: true,
     });
     expect(spy.fetch).not.toHaveBeenCalled();
+  });
+
+  it("POST /api/v1/product-tax-rates：写库抛错 → 503", async () => {
+    resetDb((query) => {
+      if (query.includes("FROM users WHERE id")) return [userRow(ADMIN_ROW)];
+      throw new Error("hyperdrive down");
+    });
+    const spy = onEnv();
+
+    const res = await request("/api/v1/product-tax-rates", userRow(ADMIN_ROW), spy.env,
+      jsonInit("POST", { product_key: "field_fence", input_vat_rate: 0.13 }));
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      error: "db_unavailable",
+      message: DB_UNAVAILABLE_MESSAGE,
+      status: 503,
+      retryable: true,
+    });
+    expect(spy.fetch).not.toHaveBeenCalled();
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 5. 产品税率（product_tax_rates）写路径
+//    parity：backend/worker/tests/test_tax_archive_write.py 的
+//    TestProductRateSharedRules / *ProductRate*Regression 用同一批 code/文案。
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe("产品税率共享纯校验落点", () => {
+  it("产品键/白名单/两档税率/至少一项/合并语义，错误码与文案逐字一致", () => {
+    expect(normalizeProductKey("  field_fence  ")).toBe("field_fence");
+    expect(normalizeProductKey(null)).toBe("");
+    expect(() => ensureKnownProduct("field_fence")).not.toThrow();
+    expect(() => ensureKnownProduct("nope")).toThrowError(/UNKNOWN_PRODUCT/);
+
+    expect(validateTaxRate(null, "进项增值税率")).toBeNull();
+    expect(validateTaxRate(0, "进项增值税率")).toBe(0);
+    expect(validateTaxRate("0.13", "进项增值税率")).toBe(0.13);
+    expect(() => validateTaxRate(1.5, "出口退税率")).toThrowError(/INVALID_TAX_RATE/);
+
+    expect(() => ensureAtLeastOneRate(0.13, null)).not.toThrow();
+    expect(() => ensureAtLeastOneRate(null, 0)).not.toThrow();
+    expect(() => ensureAtLeastOneRate(null, null)).toThrowError(/TAX_VALUES_REQUIRED/);
+
+    expect(resolveRatePatch({ input_vat_rate: 0.2 }, rateRow())).toEqual({
+      input_vat_rate: 0.2, rebate_rate: 0.13,
+    });
+    expect(resolveRatePatch({}, rateRow())).toEqual({
+      input_vat_rate: 0.13, rebate_rate: 0.13,
+    });
+    expect(resolveRatePatch({}, rateRow({ input_vat_rate: null, rebate_rate: null }))).toEqual({
+      input_vat_rate: null, rebate_rate: null,
+    });
+    expect(() => resolveRatePatch({ rebate_rate: 2 }, rateRow())).toThrowError(/INVALID_TAX_RATE/);
+  });
+});
+
+describe("POST /api/v1/product-tax-rates（P3 直连）", () => {
+  it("开关 on（管理员）：201 + 7 键投影 + INSERT 参数逐字 + 不经内核", async () => {
+    resetDb(dbStub({ user: userRow(ADMIN_ROW) }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/product-tax-rates", userRow(ADMIN_ROW), spy.env,
+      jsonInit("POST", { product_key: "  field_fence  ", input_vat_rate: 0.13, rebate_rate: null }));
+
+    expect(res.status).toBe(201);
+    expect(await res.json()).toEqual({
+      id: 5,
+      product_key: "field_fence",
+      input_vat_rate: 0.13,
+      rebate_rate: null,
+      status: "active",
+      created_at: "2026-10-24T08:00:00.000+00:00",
+      updated_at: "2026-10-24T08:00:00.000+00:00",
+    });
+    // 存在性查询 → INSERT
+    const existing = dbCallsContaining("AND product_key=$3")[0]!;
+    expect(existing.query).toBe(
+      "SELECT * FROM product_tax_rates WHERE tenant_id=$1 AND team_id=$2"
+      + " AND product_key=$3 LIMIT 1",
+    );
+    expect(existing.params).toEqual(["default", 4, "field_fence"]);
+    const insert = dbCallsContaining("INSERT INTO product_tax_rates")[0]!;
+    expect(insert.query).toBe(PRODUCT_INSERT_SQL);
+    expect(insert.params).toEqual(["default", 4, "field_fence", 0.13, null, "9"]);
+    expect(spy.fetch).not.toHaveBeenCalled();
+  });
+
+  it("成员（团队管理员）：走 teams 闸门，created_by = 自己 id", async () => {
+    resetDb(dbStub({ user: userRow() }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/product-tax-rates", userRow(), spy.env,
+      jsonInit("POST", { product_key: "field_fence", input_vat_rate: 0.13 }));
+
+    expect(res.status).toBe(201);
+    const teamCall = dbCallsContaining("created_by FROM teams")[0]!;
+    expect(teamCall.params).toEqual([4]);
+    expect(dbCallsContaining("INSERT INTO product_tax_rates")[0]!.params[5]).toBe("9");
+    expect(spy.fetch).not.toHaveBeenCalled();
+  });
+
+  it("未知产品 → 422 UNKNOWN_PRODUCT（文案逐字，不写库）", async () => {
+    resetDb(dbStub({ user: userRow() }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/product-tax-rates", userRow(), spy.env,
+      jsonInit("POST", { product_key: "nope", input_vat_rate: 0.13 }));
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      detail: {
+        error: "validation", code: "UNKNOWN_PRODUCT", detail: "产品 nope 不存在",
+      },
+    });
+    expect(dbCallsContaining("INSERT INTO product_tax_rates")).toHaveLength(0);
+  });
+
+  it("两档都空 → 422 TAX_VALUES_REQUIRED", async () => {
+    resetDb(dbStub({ user: userRow() }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/product-tax-rates", userRow(), spy.env,
+      jsonInit("POST", { product_key: "field_fence" }));
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      detail: {
+        error: "validation", code: "TAX_VALUES_REQUIRED",
+        detail: "进项增值税率、出口退税率至少填一个",
+      },
+    });
+    expect(dbCallsContaining("INSERT INTO product_tax_rates")).toHaveLength(0);
+  });
+
+  it("税率越界 → 422 INVALID_TAX_RATE（带中文标签）", async () => {
+    resetDb(dbStub({ user: userRow() }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/product-tax-rates", userRow(), spy.env,
+      jsonInit("POST", { product_key: "field_fence", rebate_rate: 2 }));
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      detail: {
+        error: "validation", code: "INVALID_TAX_RATE",
+        detail: "出口退税率 必须在 0~1 之间（10% 请填 0.1）",
+      },
+    });
+  });
+
+  it("已存在且启用 → 409 PRODUCT_TAX_EXISTS（不写库）", async () => {
+    resetDb(dbStub({ user: userRow(), existingRate: rateRow() }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/product-tax-rates", userRow(), spy.env,
+      jsonInit("POST", { product_key: "field_fence", input_vat_rate: 0.13 }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      detail: {
+        error: "conflict", code: "PRODUCT_TAX_EXISTS",
+        detail: "产品 field_fence 已配置税率，请直接修改",
+      },
+    });
+    expect(dbCallsContaining("INSERT INTO product_tax_rates")).toHaveLength(0);
+  });
+
+  it("已存在但停用 → 走 UPDATE 复活，不 INSERT（参数逐字）", async () => {
+    resetDb(dbStub({ user: userRow(), existingRate: rateRow({ status: "inactive" }) }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/product-tax-rates", userRow(), spy.env,
+      jsonInit("POST", { product_key: "field_fence", input_vat_rate: 0.09, rebate_rate: 0.05 }));
+
+    expect(res.status).toBe(201);
+    const reactivate = dbCallsContaining("SET input_vat_rate=$3, rebate_rate=$4, status='active'")[0]!;
+    expect(reactivate.query).toBe(PRODUCT_REACTIVATE_SQL);
+    expect(reactivate.params).toEqual(["default", 5, 0.09, 0.05]);
+    expect(dbCallsContaining("INSERT INTO product_tax_rates")).toHaveLength(0);
+  });
+
+  it("开关 off（默认）：原样透传", async () => {
+    const spy = kernelSpy();
+
+    const res = await request("/api/v1/product-tax-rates", userRow(), spy.env,
+      jsonInit("POST", { product_key: "field_fence", input_vat_rate: 0.13 }));
+
+    expect(res.status).toBe(200);
+    expect(spy.seen).toEqual([
+      { method: "POST", path: "/api/v1/product-tax-rates", search: "" },
+    ]);
+    expect(dbState.calls).toHaveLength(0);
+  });
+});
+
+describe("PATCH /api/v1/product-tax-rates/{id}（P3 直连）", () => {
+  it("开关 on：只覆盖给出的那档（另一档数值化沿用）+ UPDATE 参数逐字", async () => {
+    resetDb(dbStub({ user: userRow(), rateRow: rateRow() }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/product-tax-rates/5", userRow(), spy.env,
+      jsonInit("PATCH", { input_vat_rate: 0.2 }));
+
+    expect(res.status).toBe(200);
+    const out = (await res.json()) as DbRow;
+    expect(out.input_vat_rate).toBe(0.2);
+    expect(out.rebate_rate).toBe(0.13);
+    // 定位查询：tenant + status='active' + 团队过滤 + id
+    const lookup = dbCallsContaining("FROM product_tax_rates WHERE tenant_id = $1")[0]!;
+    expect(lookup.query).toBe(
+      "SELECT * FROM product_tax_rates WHERE tenant_id = $1 AND status = 'active'"
+      + " AND team_id = $2 AND id = $3",
+    );
+    expect(lookup.params).toEqual(["default", 4, 5]);
+    const update = dbCallsContaining("UPDATE product_tax_rates SET input_vat_rate=$3")[0]!;
+    expect(update.query).toBe(PRODUCT_PATCH_SQL);
+    expect(update.params).toEqual(["default", 5, 0.2, 0.13]);
+    expect(spy.fetch).not.toHaveBeenCalled();
+  });
+
+  it("不存在或已停用（定位查不到）→ 404 PRODUCT_TAX_NOT_FOUND（不写库）", async () => {
+    resetDb(dbStub({ user: userRow(), rateRow: null }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/product-tax-rates/5", userRow(), spy.env,
+      jsonInit("PATCH", { input_vat_rate: 0.2 }));
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({
+      detail: { error: "not_found", code: "PRODUCT_TAX_NOT_FOUND" },
+    });
+    expect(dbCallsContaining("UPDATE product_tax_rates SET input_vat_rate=$3")).toHaveLength(0);
+  });
+
+  it("跨团队产品税率（定位 SQL 团队过滤）→ 404 不泄露存在性", async () => {
+    resetDb(dbStub({ user: userRow(), rateRow: rateRow({ team_id: 8 }) }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/product-tax-rates/5", userRow(), spy.env,
+      jsonInit("PATCH", { input_vat_rate: 0.2 }));
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({
+      detail: { error: "not_found", code: "PRODUCT_TAX_NOT_FOUND" },
+    });
+    expect(dbCallsContaining("UPDATE product_tax_rates SET input_vat_rate=$3")).toHaveLength(0);
+  });
+
+  it("税率越界 → 422（不写库）", async () => {
+    resetDb(dbStub({ user: userRow(), rateRow: rateRow() }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/product-tax-rates/5", userRow(), spy.env,
+      jsonInit("PATCH", { rebate_rate: 2 }));
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      detail: {
+        error: "validation", code: "INVALID_TAX_RATE",
+        detail: "出口退税率 必须在 0~1 之间（10% 请填 0.1）",
+      },
+    });
+    expect(dbCallsContaining("UPDATE product_tax_rates SET input_vat_rate=$3")).toHaveLength(0);
+  });
+
+  it("开关 off（默认）：原样透传", async () => {
+    const spy = kernelSpy();
+
+    const res = await request("/api/v1/product-tax-rates/5", userRow(), spy.env,
+      jsonInit("PATCH", { input_vat_rate: 0.2 }));
+
+    expect(res.status).toBe(200);
+    expect(spy.seen).toEqual([
+      { method: "PATCH", path: "/api/v1/product-tax-rates/5", search: "" },
+    ]);
+    expect(dbState.calls).toHaveLength(0);
+  });
+});
+
+describe("DELETE /api/v1/product-tax-rates/{id}（P3 直连，软删）", () => {
+  it("开关 on：200 {id,status:inactive} + 软删 SQL/参数逐字", async () => {
+    resetDb(dbStub({ user: userRow(), rateRow: rateRow() }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/product-tax-rates/5", userRow(), spy.env,
+      { method: "DELETE" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ id: 5, status: "inactive" });
+    const call = dbCallsContaining("UPDATE product_tax_rates SET status='inactive'")[0]!;
+    expect(call.query).toBe(PRODUCT_SOFT_DELETE_SQL);
+    expect(call.params).toEqual(["default", 5]);
+    expect(spy.fetch).not.toHaveBeenCalled();
+  });
+
+  it("定位查不到 → 404（不执行软删）", async () => {
+    resetDb(dbStub({ user: userRow(), rateRow: null }));
+    const spy = onEnv();
+
+    const res = await request("/api/v1/product-tax-rates/5", userRow(), spy.env,
+      { method: "DELETE" });
+
+    expect(res.status).toBe(404);
+    expect(dbCallsContaining("UPDATE product_tax_rates SET status='inactive'")).toHaveLength(0);
+  });
+
+  it("开关 off（默认）：原样透传", async () => {
+    const spy = kernelSpy();
+
+    const res = await request("/api/v1/product-tax-rates/5", userRow(), spy.env,
+      { method: "DELETE" });
+
+    expect(res.status).toBe(200);
+    expect(spy.seen).toEqual([
+      { method: "DELETE", path: "/api/v1/product-tax-rates/5", search: "" },
+    ]);
+    expect(dbState.calls).toHaveLength(0);
   });
 });

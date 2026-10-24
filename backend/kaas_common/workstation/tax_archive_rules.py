@@ -26,6 +26,7 @@ from fastapi import HTTPException
 __all__ = [
     "TAX_KEYS",
     "ARCHIVE_STATUSES",
+    "PRODUCT_RATE_LABELS",
     "normalize_name",
     "normalize_code",
     "clean_tax_values",
@@ -33,6 +34,11 @@ __all__ = [
     "validate_status",
     "resolve_patch",
     "ensure_archive_team",
+    "normalize_product_key",
+    "ensure_known_product",
+    "validate_tax_rate",
+    "ensure_at_least_one_rate",
+    "resolve_rate_patch",
 ]
 
 # 档案里只允许这两类税（tax_models.py:TaxArchive.tax_values 的键白名单）：
@@ -41,6 +47,10 @@ TAX_KEYS = ("output_vat_rate", "misc_fee_rate")
 
 # 档案状态：active（启用）/ inactive（停用；DELETE = 软删到 inactive）。
 ARCHIVE_STATUSES = ("active", "inactive")
+
+# 产品税率两档的**报错用标签**（product_tax_rates：进项税 / 出口退税，按产品维护）：
+# 422 文案里用的是中文标签，不是列名 —— 与迁移前逐字一致。
+PRODUCT_RATE_LABELS = {"input_vat_rate": "进项增值税率", "rebate_rate": "出口退税率"}
 
 
 def _get(raw: Any, key: str) -> Any:
@@ -167,3 +177,69 @@ def ensure_archive_team(row: Mapping, team_id: Any, detail: str) -> None:
         raise HTTPException(status_code=403, detail={
             "error": "forbidden", "code": "TEAM_ADMIN_REQUIRED", "detail": detail,
         })
+
+
+# ── 产品税率（product_tax_rates）写路径的纯校验 ──────────────────────────────
+# 与 tax_archives 同域（tax_archives.py 一并维护两张税表）；迁移前这些判定写在
+# POST/PATCH handler 里，P3 门面直连前先收敛到这一份（ADR-008：不得出现第二份）。
+
+
+def normalize_product_key(raw: Any) -> str:
+    """产品键归一：strip（迁移前就是这个口径；空/未知都落到 ensure_known_product 的 422）。"""
+    return str(raw).strip() if raw is not None else ""
+
+
+def ensure_known_product(product_key: str) -> None:
+    """产品必须在共享注册表里（kaas_common.export_quote.products.has）；否则 422 UNKNOWN_PRODUCT。
+
+    惰性 import：注册表模块导入即注册三个产品，顶层 import 会与 export_quote 形成环。
+    """
+    from kaas_common.export_quote.products import has as has_product
+
+    if not has_product(product_key):
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "UNKNOWN_PRODUCT",
+            "detail": f"产品 {product_key} 不存在",
+        })
+
+
+def validate_tax_rate(value: Any, label: str) -> Optional[float]:
+    """单档税率：None → None；其余转 float 且必须在 [0,1]，否则 422 INVALID_TAX_RATE。
+
+    label 用中文（"进项增值税率"/"出口退税率"），文案与迁移前逐字一致。
+    """
+    if value is None:
+        return None
+    number = float(value)
+    if not (0 <= number <= 1):
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "INVALID_TAX_RATE",
+            "detail": f"{label} 必须在 0~1 之间（10% 请填 0.1）",
+        })
+    return number
+
+
+def ensure_at_least_one_rate(input_rate: Optional[float], rebate_rate: Optional[float]) -> None:
+    """POST 专用：两档税率至少填一个（PATCH 允许两档都为空，故不在此校验）。"""
+    if input_rate is None and rebate_rate is None:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "TAX_VALUES_REQUIRED",
+            "detail": "进项增值税率、出口退税率至少填一个",
+        })
+
+
+def resolve_rate_patch(body: Mapping, row: Mapping) -> dict:
+    """PATCH 的合并语义：只覆盖**显式给出（非 None）**的那一档，另一档沿用旧值。
+
+    与迁移前 handler 逐条一致：旧值先 float(...)，新值走 validate_tax_rate（同样 0~1 校验）。
+    """
+    input_rate = float(row["input_vat_rate"]) if row.get("input_vat_rate") is not None else None
+    rebate_rate = float(row["rebate_rate"]) if row.get("rebate_rate") is not None else None
+    if body.get("input_vat_rate") is not None:
+        input_rate = validate_tax_rate(
+            body.get("input_vat_rate"), PRODUCT_RATE_LABELS["input_vat_rate"])
+    if body.get("rebate_rate") is not None:
+        rebate_rate = validate_tax_rate(
+            body.get("rebate_rate"), PRODUCT_RATE_LABELS["rebate_rate"])
+    return {"input_vat_rate": input_rate, "rebate_rate": rebate_rate}
+

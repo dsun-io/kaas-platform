@@ -47,6 +47,9 @@ WORKSTATION_PATHS: dict[str, tuple[str, ...]] = {
         #   /calculate（首个切片）、/verify、/formulas、/spec —— 新增 action 无需再改本表，
         #   但**禁止**把 RPC 迁到别的前缀而不回来登记（那等于拆掉商业闸门）。
         "/api/v1/internal/engine/quote",
+        # 报价单（quotes 域）列表/详情的 RPC 入口（P3 第四批切片，复数路径）。
+        # 同样必须登记：否则未开通 quotes 工位的账号可绕过商业限制读报价单（§8.5.2 同款）。
+        "/api/v1/internal/engine/quotes",
     ),
     "orders": ("/api/v1/orders", "/api/v1/payment-schedules", "/api/v1/receivables"),
     "trade-docs": (

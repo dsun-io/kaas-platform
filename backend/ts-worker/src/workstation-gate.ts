@@ -40,6 +40,8 @@ export const WORKSTATION_PATHS: Record<string, readonly string[]> = {
     "/api/v1/quotes", "/api/v1/quotations", "/api/v1/export-quote",
     "/api/v1/quote-profiles", "/api/v1/pricing-data", "/api/v1/spec",
     "/api/v1/internal/engine/quote",
+    // P3 第四批（报价单列表/详情）内部 RPC 前缀 —— 与订阅真源同步登记，否则直连绕过闸门
+    "/api/v1/internal/engine/quotes",
   ],
   orders: ["/api/v1/orders", "/api/v1/payment-schedules", "/api/v1/receivables"],
   "trade-docs": [

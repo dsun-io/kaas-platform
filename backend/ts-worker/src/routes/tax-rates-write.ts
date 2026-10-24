@@ -17,9 +17,15 @@ import { Hono, type Context } from "hono";
 import { useDirectRoute } from "../boot-flag";
 import { withDb, type Db } from "../db";
 import { getEnv, type Env } from "../env";
-import { tax_archives_TaxArchiveCreate, tax_archives_TaxArchivePatch } from "../generated/schemas";
+import {
+  tax_archives_ProductTaxRateIn,
+  tax_archives_ProductTaxRatePatch,
+  tax_archives_TaxArchiveCreate,
+  tax_archives_TaxArchivePatch,
+} from "../generated/schemas";
 import { directDb } from "../hot-read";
-import { httpError, parseBody, respond } from "../http";
+import { httpError, parseBody, pyIso, respond } from "../http";
+import { PRODUCT_KEYS } from "../product-registry";
 import { forwardKernelRequest } from "../proxy";
 import { isAdminRole, isTeamAdmin } from "../rules";
 import { requireUser, type CurrentUser } from "../session";
@@ -158,6 +164,86 @@ export function ensureArchiveTeam(row: Row, teamId: unknown, detail: string): vo
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// 产品税率（product_tax_rates）写路径的**门面落点**
+// 真源同共享内核 kaas_common/workstation/tax_archive_rules.py（同域并入）：
+// 产品键归一 + 注册表白名单、两档税率范围、至少一项、PATCH 合并语义。
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** 产品键归一：strip（迁移前就是这个口径；空/未知都落到 ensureKnownProduct 的 422）。 */
+export function normalizeProductKey(raw: unknown): string {
+  return raw === null || raw === undefined ? "" : String(raw).trim();
+}
+
+/** 产品必须在共享注册表里（真源 kaas_common.export_quote.products.has；TS 侧 = PRODUCT_KEYS）。 */
+export function ensureKnownProduct(productKey: string): void {
+  if (!PRODUCT_KEYS.includes(productKey)) {
+    throw httpError(422, {
+      error: "validation", code: "UNKNOWN_PRODUCT",
+      detail: "产品 " + productKey + " 不存在",
+    });
+  }
+}
+
+/** 单档税率：null → null；其余转数且必须在 [0,1]，否则 422 INVALID_TAX_RATE（label 用中文）。 */
+export function validateTaxRate(value: unknown, label: string): number | null {
+  if (value === null || value === undefined) return null;
+  const number = Number(value);
+  if (!(number >= 0 && number <= 1)) {
+    throw httpError(422, {
+      error: "validation", code: "INVALID_TAX_RATE",
+      detail: label + " 必须在 0~1 之间（10% 请填 0.1）",
+    });
+  }
+  return number;
+}
+
+/** POST 专用：两档至少填一项（PATCH 允许两档都为空，故不在此校验）。 */
+export function ensureAtLeastOneRate(
+  inputRate: number | null,
+  rebateRate: number | null,
+): void {
+  if (inputRate === null && rebateRate === null) {
+    throw httpError(422, {
+      error: "validation", code: "TAX_VALUES_REQUIRED",
+      detail: "进项增值税率、出口退税率至少填一个",
+    });
+  }
+}
+
+/** PATCH 合并语义：只覆盖显式给出的那一档，另一档沿用旧值（旧值数值化，同内核 float(...)）。 */
+export function resolveRatePatch(
+  body: Record<string, unknown>,
+  row: Row,
+): { input_vat_rate: number | null; rebate_rate: number | null } {
+  let inputRate = row.input_vat_rate === null || row.input_vat_rate === undefined
+    ? null : Number(row.input_vat_rate);
+  let rebateRate = row.rebate_rate === null || row.rebate_rate === undefined
+    ? null : Number(row.rebate_rate);
+  if (body.input_vat_rate !== null && body.input_vat_rate !== undefined) {
+    inputRate = validateTaxRate(body.input_vat_rate, "进项增值税率");
+  }
+  if (body.rebate_rate !== null && body.rebate_rate !== undefined) {
+    rebateRate = validateTaxRate(body.rebate_rate, "出口退税率");
+  }
+  return { input_vat_rate: inputRate, rebate_rate: rebateRate };
+}
+
+/** _product_tax_out：7 键投影（与 quotes-read.ts 的 GET 投影同一份真源 tax_archives.py:282）。 */
+export function productTaxRateOut(row: Row): Row {
+  return {
+    id: row.id === null || row.id === undefined ? null : Number(row.id),
+    product_key: row.product_key ?? null,
+    input_vat_rate: row.input_vat_rate === null || row.input_vat_rate === undefined
+      ? null : Number(row.input_vat_rate),
+    rebate_rate: row.rebate_rate === null || row.rebate_rate === undefined
+      ? null : Number(row.rebate_rate),
+    status: row.status ?? null,
+    created_at: pyIso(row.created_at ?? null),
+    updated_at: pyIso(row.updated_at ?? null),
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // DB 侧（单表语义）：团队闸门 / 唯一性 / 取号 / 读写 —— 与内核逐条对应
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -252,6 +338,30 @@ async function archiveOr404(env: Env, user: CurrentUser, archiveId: number): Pro
   return row;
 }
 
+/** _product_tax_or_404：tenant + status='active'（+ 本团队过滤）+ id；查不到一律 404。 */
+async function productRateOr404(
+  env: Env, user: CurrentUser, rateId: number,
+): Promise<Row> {
+  const where: string[] = ["tenant_id = $1", "status = 'active'"];
+  const params: unknown[] = [DEFAULT_TENANT];
+  if (user.team_id !== null && user.team_id !== undefined) {
+    params.push(user.team_id);
+    where.push("team_id = $" + String(params.length));
+  }
+  params.push(rateId);
+  const text = "SELECT * FROM product_tax_rates WHERE " + where.join(" AND ")
+    + " AND id = $" + String(params.length);
+  const rows = await withDb(env, (sql: Db) =>
+    sql.unsafe(text, params as never[])) as unknown as Row[];
+  const row = rows[0];
+  if (!row) {
+    throw httpError(404, {
+      error: "not_found", code: "PRODUCT_TAX_NOT_FOUND",
+    });
+  }
+  return row;
+}
+
 // ── 三个写端点（与内核 handler 逐条对应）────────────────────────────────────
 
 /** POST /api/v1/tax-archives（tax_archives.py:218-245）→ 201 + _row_out。 */
@@ -323,6 +433,83 @@ export async function deleteTaxArchiveDirect(
   return c.json({ id: archiveId, status: "inactive" });
 }
 
+// ── 产品税率（product_tax_rates）三个写端点（tax_archives.py:337/391/419）────
+
+async function createProductTaxRateDirect(
+  c: Context, user: CurrentUser,
+): Promise<Response> {
+  const env = getEnv(c);
+  const body = await parseBody(c, tax_archives_ProductTaxRateIn) as Record<string, unknown>;
+  const teamId = await requireTeamContext(env, user);
+  const productKey = normalizeProductKey(body.product_key);
+  ensureKnownProduct(productKey);
+  const inputRate = validateTaxRate(body.input_vat_rate, "进项增值税率");
+  const rebateRate = validateTaxRate(body.rebate_rate, "出口退税率");
+  ensureAtLeastOneRate(inputRate, rebateRate);
+  const existingRows = await withDb(env, (sql: Db) => sql.unsafe(
+    "SELECT * FROM product_tax_rates WHERE tenant_id=$1 AND team_id=$2"
+    + " AND product_key=$3 LIMIT 1",
+    [DEFAULT_TENANT, teamId, productKey] as never[],
+  )) as unknown as Row[];
+  const existing = existingRows[0];
+  if (existing !== undefined && existing.status === "active") {
+    throw httpError(409, {
+      error: "conflict", code: "PRODUCT_TAX_EXISTS",
+      detail: "产品 " + productKey + " 已配置税率，请直接修改",
+    });
+  }
+  if (existing !== undefined) {
+    const rows = await withDb(env, (sql: Db) => sql.unsafe(
+      "UPDATE product_tax_rates SET input_vat_rate=$3, rebate_rate=$4,"
+      + " status='active', updated_at=now()"
+      + " WHERE tenant_id=$1 AND id=$2 RETURNING *",
+      [DEFAULT_TENANT, existing.id, inputRate, rebateRate] as never[],
+    )) as unknown as Row[];
+    return c.json(productTaxRateOut(rows[0]!), 201);
+  }
+  const rows = await withDb(env, (sql: Db) => sql.unsafe(
+    "INSERT INTO product_tax_rates"
+    + " (tenant_id, team_id, product_key, input_vat_rate, rebate_rate,"
+    + "  status, created_by)"
+    + " VALUES ($1,$2,$3,$4,$5,'active',$6) RETURNING *",
+    [DEFAULT_TENANT, teamId, productKey, inputRate, rebateRate, String(user.id)] as never[],
+  )) as unknown as Row[];
+  return c.json(productTaxRateOut(rows[0]!), 201);
+}
+
+async function updateProductTaxRateDirect(
+  c: Context, user: CurrentUser,
+): Promise<Response> {
+  const env = getEnv(c);
+  const rateId = Number(c.req.param("rate_id"));
+  const body = await parseBody(c, tax_archives_ProductTaxRatePatch) as Record<string, unknown>;
+  await requireTeamContext(env, user);
+  const row = await productRateOr404(env, user, rateId);
+  const rates = resolveRatePatch(body, row);
+  const rows = await withDb(env, (sql: Db) => sql.unsafe(
+    "UPDATE product_tax_rates SET input_vat_rate=$3, rebate_rate=$4,"
+    + " updated_at=now()"
+    + " WHERE tenant_id=$1 AND id=$2 RETURNING *",
+    [DEFAULT_TENANT, rateId, rates.input_vat_rate, rates.rebate_rate] as never[],
+  )) as unknown as Row[];
+  return c.json(productTaxRateOut(rows[0]!));
+}
+
+async function deleteProductTaxRateDirect(
+  c: Context, user: CurrentUser,
+): Promise<Response> {
+  const env = getEnv(c);
+  const rateId = Number(c.req.param("rate_id"));
+  await requireTeamContext(env, user);
+  await productRateOr404(env, user, rateId);
+  await withDb(env, (sql: Db) => sql.unsafe(
+    "UPDATE product_tax_rates SET status='inactive', updated_at=now()"
+    + " WHERE tenant_id=$1 AND id=$2",
+    [DEFAULT_TENANT, rateId] as never[],
+  ));
+  return c.json({ id: rateId, status: "inactive" });
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // 路由注册（由 src/index.ts 挂载在 /api/v1/tax-archives 透传 mount **之前**）：
 // 只注册这三条写方法 —— GET 仍由 quotes-read.ts 的 tax-archives.list 管；
@@ -356,6 +543,36 @@ app.delete("/api/v1/tax-archives/:archive_id", (c) => {
     return respond(c, async () => {
       const user = await requireUser(c);
       return directDb(c, () => deleteTaxArchiveDirect(c, user));
+    });
+  }
+  return forwardKernelRequest(c);
+});
+
+app.post("/api/v1/product-tax-rates", (c) => {
+  if (useDirectRoute(getEnv(c), "product-tax-rates.create")) {
+    return respond(c, async () => {
+      const user = await requireUser(c);
+      return directDb(c, () => createProductTaxRateDirect(c, user));
+    });
+  }
+  return forwardKernelRequest(c);
+});
+
+app.patch("/api/v1/product-tax-rates/:rate_id", (c) => {
+  if (useDirectRoute(getEnv(c), "product-tax-rates.update")) {
+    return respond(c, async () => {
+      const user = await requireUser(c);
+      return directDb(c, () => updateProductTaxRateDirect(c, user));
+    });
+  }
+  return forwardKernelRequest(c);
+});
+
+app.delete("/api/v1/product-tax-rates/:rate_id", (c) => {
+  if (useDirectRoute(getEnv(c), "product-tax-rates.delete")) {
+    return respond(c, async () => {
+      const user = await requireUser(c);
+      return directDb(c, () => deleteProductTaxRateDirect(c, user));
     });
   }
   return forwardKernelRequest(c);

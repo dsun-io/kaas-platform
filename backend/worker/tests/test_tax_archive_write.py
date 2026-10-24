@@ -14,6 +14,7 @@ import asyncio
 import json
 import sys
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -145,14 +146,22 @@ class TestSharedRules:
 class _FakeDB:
     """按 SQL 前缀分派的假库；taken_values 决定唯一性/取号的命中集合。"""
 
-    def __init__(self, *, team_created_by=9, archive=None, taken_values=None):
+    def __init__(self, *, team_created_by=9, archive=None, taken_values=None,
+                 rate_existing=None, rate_row=None):
         self.team_created_by = team_created_by
         self.archive = archive
         self.taken = set(taken_values or [])
+        self.rate_existing = rate_existing
+        self.rate_row = rate_row
         self.calls = []
         self.insert_params = None
         self.update_params = None
         self.executed = []
+        # 产品税率（product_tax_rates）侧记录
+        self.rate_insert_params = None
+        self.rate_update_params = None
+        self.rate_reactivate_params = None
+        self.rate_soft_deleted = None
 
     async def fetchrow(self, request, sql, *params, table=None):
         text = " ".join(str(sql).split())
@@ -185,6 +194,32 @@ class _FakeDB:
                 "effective_to": eff_to, "tax_values": json.loads(values),
                 "source": source, "status": status, "created_at": NOW, "updated_at": NOW,
             }
+        if text.startswith("SELECT * FROM product_tax_rates") and "AND id =" in text:
+            return self.rate_row
+        if "FROM product_tax_rates WHERE tenant_id=$1 AND team_id=$2" in text:
+            return self.rate_existing
+        if text.startswith("INSERT INTO product_tax_rates"):
+            self.rate_insert_params = params
+            tenant, team_id, product_key, input_rate, rebate_rate, created_by = params
+            return {
+                "id": 5, "tenant_id": tenant, "team_id": team_id,
+                "product_key": product_key, "input_vat_rate": input_rate,
+                "rebate_rate": rebate_rate, "status": "active",
+                "created_by": created_by, "created_at": NOW, "updated_at": NOW,
+            }
+        if text.startswith("UPDATE product_tax_rates SET input_vat_rate="):
+            tenant, target_id, input_rate, rebate_rate = params
+            if "status='active'" in text:
+                self.rate_reactivate_params = params
+            else:
+                self.rate_update_params = params
+            return {
+                "id": target_id, "tenant_id": tenant,
+                "team_id": (self.rate_row or {}).get("team_id", 4),
+                "product_key": (self.rate_row or {}).get("product_key", "field_fence"),
+                "input_vat_rate": input_rate, "rebate_rate": rebate_rate,
+                "status": "active", "created_at": NOW, "updated_at": NOW,
+            }
         raise AssertionError("未预期的 fetchrow: " + text)
 
     async def fetchval(self, request, sql, *params):
@@ -198,6 +233,8 @@ class _FakeDB:
     async def execute(self, request, sql, *params):
         text = " ".join(str(sql).split())
         self.executed.append((text, params))
+        if "product_tax_rates" in text:
+            self.rate_soft_deleted = params
         return "UPDATE 1"
 
 
@@ -414,3 +451,247 @@ class TestDeleteRegression:
         out, db, exc = self._delete(monkeypatch, user=ADMIN, archive=_archive(team_id=8))
         assert exc.status_code == 404
         assert db.executed == []
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 三、产品税率写路径（product_tax_rates）：共享校验单测 + handler 回归
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _rate_row(**overrides):
+    row = {
+        "id": 5, "tenant_id": "default", "team_id": 4, "product_key": "field_fence",
+        "input_vat_rate": Decimal("0.13"), "rebate_rate": Decimal("0.13"),
+        "status": "active", "created_by": "9", "created_at": NOW, "updated_at": NOW,
+    }
+    row.update(overrides)
+    return row
+
+
+def _rate_body(**overrides):
+    data = {"product_key": "field_fence", "input_vat_rate": 0.13, "rebate_rate": None}
+    data.update(overrides)
+    return tax_archives.ProductTaxRateIn(**data)
+
+
+def _rate_patch(**overrides):
+    return tax_archives.ProductTaxRatePatch(**overrides)
+
+
+class TestProductRateSharedRules:
+    def test_产品键归一与白名单(self):
+        assert rules.normalize_product_key("  field_fence  ") == "field_fence"
+        assert rules.normalize_product_key(None) == ""
+        rules.ensure_known_product("field_fence")   # 不抛
+
+        exc = _err(lambda: rules.ensure_known_product("nope"))
+        assert exc.status_code == 422
+        assert exc.detail == {
+            "error": "validation", "code": "UNKNOWN_PRODUCT",
+            "detail": "产品 nope 不存在",
+        }
+
+    def test_单档税率_范围与标签文案(self):
+        assert rules.validate_tax_rate(None, "进项增值税率") is None
+        assert rules.validate_tax_rate(0, "进项增值税率") == 0.0
+        assert rules.validate_tax_rate("0.13", "进项增值税率") == 0.13
+
+        exc = _err(lambda: rules.validate_tax_rate(1.5, "出口退税率"))
+        assert exc.status_code == 422
+        assert exc.detail == {
+            "error": "validation", "code": "INVALID_TAX_RATE",
+            "detail": "出口退税率 必须在 0~1 之间（10% 请填 0.1）",
+        }
+
+    def test_两档至少一项(self):
+        rules.ensure_at_least_one_rate(0.13, None)   # 不抛
+        rules.ensure_at_least_one_rate(None, 0.0)    # 不抛（0 也算填了）
+        exc = _err(lambda: rules.ensure_at_least_one_rate(None, None))
+        assert exc.status_code == 422
+        assert exc.detail == {
+            "error": "validation", "code": "TAX_VALUES_REQUIRED",
+            "detail": "进项增值税率、出口退税率至少填一个",
+        }
+
+    def test_PATCH合并_只覆盖显式给出的那档(self):
+        row = {"input_vat_rate": Decimal("0.13"), "rebate_rate": Decimal("0.09")}
+        # 只给 input ⇒ rebate 沿用旧值（并 float 化）
+        merged = rules.resolve_rate_patch({"input_vat_rate": 0.2}, row)
+        assert merged == {"input_vat_rate": 0.2, "rebate_rate": 0.09}
+        # 两档都不给 ⇒ 都沿用
+        assert rules.resolve_rate_patch({}, row) == {
+            "input_vat_rate": 0.13, "rebate_rate": 0.09,
+        }
+        # 旧值为 None 时保持 None
+        assert rules.resolve_rate_patch({}, {"input_vat_rate": None, "rebate_rate": None}) == {
+            "input_vat_rate": None, "rebate_rate": None,
+        }
+        bad = _err(lambda: rules.resolve_rate_patch({"rebate_rate": 2}, row))
+        assert bad.detail["code"] == "INVALID_TAX_RATE"
+        assert bad.detail["detail"] == "出口退税率 必须在 0~1 之间（10% 请填 0.1）"
+
+
+class TestProductRateCreateRegression:
+    def test_成功_INSERT参数与响应_逐字(self, monkeypatch):
+        db = _install(monkeypatch, _FakeDB())
+        out = asyncio.run(tax_archives.create_product_tax_rate(
+            object(), _rate_body(product_key="  field_fence  "), user=ADMIN))
+        assert set(out.keys()) == {
+            "id", "product_key", "input_vat_rate", "rebate_rate",
+            "status", "created_at", "updated_at",
+        }
+        assert out["product_key"] == "field_fence"     # strip 后入库/回显
+        assert out["input_vat_rate"] == 0.13
+        assert out["rebate_rate"] is None
+        assert out["status"] == "active"
+        assert db.rate_insert_params == (
+            "default", 4, "field_fence", 0.13, None, "1",
+        )
+
+    def test_未知产品_422_UNKNOWN_PRODUCT_且不写库(self, monkeypatch):
+        db = _install(monkeypatch, _FakeDB())
+        exc = _err(lambda: asyncio.run(tax_archives.create_product_tax_rate(
+            object(), _rate_body(product_key="nope"), user=ADMIN)))
+        assert exc.status_code == 422
+        assert exc.detail == {
+            "error": "validation", "code": "UNKNOWN_PRODUCT",
+            "detail": "产品 nope 不存在",
+        }
+        assert db.rate_insert_params is None
+
+    def test_两档都空_422_TAX_VALUES_REQUIRED_且不写库(self, monkeypatch):
+        db = _install(monkeypatch, _FakeDB())
+        exc = _err(lambda: asyncio.run(tax_archives.create_product_tax_rate(
+            object(), _rate_body(input_vat_rate=None, rebate_rate=None), user=ADMIN)))
+        assert exc.status_code == 422
+        assert exc.detail["code"] == "TAX_VALUES_REQUIRED"
+        assert exc.detail["detail"] == "进项增值税率、出口退税率至少填一个"
+        assert db.rate_insert_params is None
+
+    def test_税率越界_422_文案带中文标签(self, monkeypatch):
+        db = _install(monkeypatch, _FakeDB())
+        exc = _err(lambda: asyncio.run(tax_archives.create_product_tax_rate(
+            object(), _rate_body(rebate_rate=2), user=ADMIN)))
+        assert exc.status_code == 422
+        assert exc.detail == {
+            "error": "validation", "code": "INVALID_TAX_RATE",
+            "detail": "出口退税率 必须在 0~1 之间（10% 请填 0.1）",
+        }
+        assert db.rate_insert_params is None
+
+    def test_已存在且启用_409_PRODUCT_TAX_EXISTS_且不写库(self, monkeypatch):
+        db = _install(monkeypatch, _FakeDB(rate_existing=_rate_row()))
+        exc = _err(lambda: asyncio.run(tax_archives.create_product_tax_rate(
+            object(), _rate_body(), user=ADMIN)))
+        assert exc.status_code == 409
+        assert exc.detail == {
+            "error": "conflict", "code": "PRODUCT_TAX_EXISTS",
+            "detail": "产品 field_fence 已配置税率，请直接修改",
+        }
+        assert db.rate_insert_params is None
+        assert db.rate_reactivate_params is None
+
+    def test_已存在但停用_走UPDATE复活不INSERT(self, monkeypatch):
+        db = _install(monkeypatch, _FakeDB(rate_existing=_rate_row(status="inactive")))
+        out = asyncio.run(tax_archives.create_product_tax_rate(
+            object(), _rate_body(input_vat_rate=0.09, rebate_rate=0.05), user=ADMIN))
+        assert out["status"] == "active"
+        assert out["input_vat_rate"] == 0.09
+        assert db.rate_insert_params is None
+        assert db.rate_reactivate_params == ("default", 5, 0.09, 0.05)
+
+    def test_无团队_403_TEAM_REQUIRED(self, monkeypatch):
+        db = _install(monkeypatch, _FakeDB())
+        exc = _err(lambda: asyncio.run(tax_archives.create_product_tax_rate(
+            object(), _rate_body(), user=NO_TEAM)))
+        assert exc.status_code == 403
+        assert exc.detail["code"] == "TEAM_REQUIRED"
+        assert db.rate_insert_params is None
+
+    def test_非团队管理员_403_TEAM_ADMIN_REQUIRED(self, monkeypatch):
+        db = _install(monkeypatch, _FakeDB(team_created_by=777))
+        exc = _err(lambda: asyncio.run(tax_archives.create_product_tax_rate(
+            object(), _rate_body(), user=MEMBER)))
+        assert exc.status_code == 403
+        assert exc.detail["code"] == "TEAM_ADMIN_REQUIRED"
+        assert db.rate_insert_params is None
+
+
+class TestProductRateUpdateRegression:
+    def _patch(self, monkeypatch, body, *, rate_row=_UNSET, **db_kwargs):
+        db = _install(monkeypatch, _FakeDB(
+            rate_row=_rate_row() if rate_row is _UNSET else rate_row, **db_kwargs))
+        try:
+            out = asyncio.run(tax_archives.update_product_tax_rate(
+                5, object(), body, user=MEMBER))
+            return out, db, None
+        except HTTPException as exc:
+            return None, db, exc
+
+    def test_成功_只覆盖给出的那档_UPDATE参数逐字(self, monkeypatch):
+        out, db, exc = self._patch(monkeypatch, _rate_patch(input_vat_rate=0.2))
+        assert exc is None
+        assert out["input_vat_rate"] == 0.2
+        assert out["rebate_rate"] == 0.13           # 未给 ⇒ 沿用旧值（Decimal → float）
+        assert db.rate_update_params == ("default", 5, 0.2, 0.13)
+
+    def test_两档都不给_沿用旧值(self, monkeypatch):
+        out, db, exc = self._patch(monkeypatch, _rate_patch())
+        assert exc is None
+        assert (out["input_vat_rate"], out["rebate_rate"]) == (0.13, 0.13)
+        assert db.rate_update_params == ("default", 5, 0.13, 0.13)
+
+    def test_定位查询_带租户与启用状态与团队过滤(self, monkeypatch):
+        out, db, exc = self._patch(monkeypatch, _rate_patch(input_vat_rate=0.2))
+        assert exc is None
+        lookup = next(c for c in db.calls
+                      if c[0].startswith("SELECT * FROM product_tax_rates"))
+        assert lookup[0] == (
+            "SELECT * FROM product_tax_rates WHERE tenant_id = $1"
+            " AND status = 'active' AND team_id = $2 AND id = $3"
+        )
+        assert lookup[1] == ("default", 4, 5)
+
+    def test_不存在或已停用_404_且不写库(self, monkeypatch):
+        out, db, exc = self._patch(monkeypatch, _rate_patch(input_vat_rate=0.2), rate_row=None)
+        # rate_row=None 在 _FakeDB 里表示"查不到"
+        assert exc.status_code == 404
+        assert exc.detail == {"error": "not_found", "code": "PRODUCT_TAX_NOT_FOUND"}
+        assert db.rate_update_params is None
+
+    def test_税率越界_422_且不写库(self, monkeypatch):
+        out, db, exc = self._patch(monkeypatch, _rate_patch(rebate_rate=2))
+        assert exc.status_code == 422
+        assert exc.detail == {
+            "error": "validation", "code": "INVALID_TAX_RATE",
+            "detail": "出口退税率 必须在 0~1 之间（10% 请填 0.1）",
+        }
+        assert db.rate_update_params is None
+
+
+class TestProductRateDeleteRegression:
+    def _delete(self, monkeypatch, *, rate_row=_UNSET):
+        db = _install(monkeypatch, _FakeDB(
+            rate_row=_rate_row() if rate_row is _UNSET else rate_row))
+        try:
+            return asyncio.run(tax_archives.delete_product_tax_rate(
+                5, object(), user=MEMBER)), db, None
+        except HTTPException as exc:
+            return None, db, exc
+
+    def test_成功软删_且SQL参数逐字(self, monkeypatch):
+        out, db, exc = self._delete(monkeypatch)
+        assert exc is None
+        assert out == {"id": 5, "status": "inactive"}
+        assert db.rate_soft_deleted == ("default", 5)
+        assert db.executed == [(
+            "UPDATE product_tax_rates SET status='inactive', updated_at=now()"
+            " WHERE tenant_id=$1 AND id=$2",
+            ("default", 5),
+        )]
+
+    def test_不存在或已停用_404_且不写库(self, monkeypatch):
+        out, db, exc = self._delete(monkeypatch, rate_row=None)
+        assert exc.status_code == 404
+        assert exc.detail == {"error": "not_found", "code": "PRODUCT_TAX_NOT_FOUND"}
+        assert db.rate_soft_deleted is None
+

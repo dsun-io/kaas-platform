@@ -11,7 +11,8 @@
  * - GET  /api/v1/export-quote/products/{key}/spec     → /internal/engine/quote/spec
  * - POST /api/v1/export-quote/products/{key}/explain  → /internal/engine/quote/explain
  * - GET  /api/v1/trade-docs/{doc_id}/render-data      → /internal/engine/trade-docs/render-data
- * 六条共用**同一份**供数契约与回放逻辑；差异只在「查哪些 dataset + request 段形状」。
+ * - GET  /api/v1/quotes（列表） / /quotes/{quote_id}（详情） → /internal/engine/quotes/{list|detail}
+ * 八条共用**同一份**供数契约与回放逻辑；差异只在「查哪些 dataset + request 段形状」。
  *
  * 真源（SQL 谓词 / 排序 / 绑定参数**逐条直译**，禁止顺手"优化"）：
  * - backend/worker/src/quote_api.py  _effective_product_raw 的 tenant_products 查询
@@ -32,7 +33,7 @@ import { DIRECT_ROUTE_IDS, useDirectRoute } from "../boot-flag";
 import { withDb, type Db } from "../db";
 import { getEnv, requireSecret, type Env } from "../env";
 import { directDb } from "../hot-read";
-import { num, pyIso, respond } from "../http";
+import { num, num0, pyIso, respond } from "../http";
 import { fetchKernelWithRetry, KERNEL_BASE, planKernelRetry } from "../kernel";
 import {
   forwardKernelRequest,
@@ -53,6 +54,9 @@ export const ENGINE_QUOTE_EXPLAIN_RPC = "/api/v1/internal/engine/quote/explain";
 /** 第三个切片：单证渲染数据装配链（7 张表，GET /trade-docs/{doc_id}/render-data）。 */
 export const ENGINE_TRADE_DOCS_RENDER_DATA_RPC =
   "/api/v1/internal/engine/trade-docs/render-data";
+/** 第四批：报价单列表 / 详情（控制台高频读，纯投影）。 */
+export const ENGINE_QUOTES_LIST_RPC = "/api/v1/internal/engine/quotes/list";
+export const ENGINE_QUOTES_DETAIL_RPC = "/api/v1/internal/engine/quotes/detail";
 
 /**
  * 同族只读切片的路由 id（AUTH_DB_SPLIT_ROUTES 白名单条目，口径 <域>.<端点>）。
@@ -65,6 +69,8 @@ export const ENGINE_ROUTE_IDS = {
   spec: "export-quote.spec",
   explain: "export-quote.explain",
   renderData: "trade-docs.render-data",
+  quotesList: "quotes.list",
+  quotesDetail: "quotes.detail",
 } as const;
 
 /** 与 Python quote_api._PRICING_SEPARATOR 一致：定价数据 spec_hash 的「产品前缀」分隔符。 */
@@ -807,6 +813,339 @@ export async function renderDataWithKernel(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// 第四批切片：GET /api/v1/quotes（列表）+ GET /api/v1/quotes/{quote_id}（详情）
+// ══════════════════════════════════════════════════════════════════════════════
+// 设计 = docs/P2_COUPLING_ENGINE_2026-10-24.md §6（契约）/ §8（切片范式）；内核入口
+// POST /api/v1/internal/engine/quotes/{list,detail}（engine_api.py）。
+//
+// 真源（SQL 谓词/排序/分页**逐字直译**，禁止顺手优化）：
+// - quote_api.py:2023 list_quote_orders / :2454 get_quote_order
+// - quote_api.py:_scope_sql（可见性谓词；纯函数真源 = kaas_common.workstation.scope.can_view）
+// 与旧路径的**有意差异**（fixture.facade 锁定，语义等价）：
+// - quote_orders 用**显式列**而非 SELECT *：BIGINT/NUMERIC 归一成 number；时间戳用
+//   tsIsoSql 条件式（零微秒无小数，docs §8.9）；DATE 列用 to_char(col,'YYYY-MM-DD')
+//   （Python date.isoformat 口径）。postgres.js 的 JS Date 只有毫秒、DATE 会给午夜时间串，
+//   直接透传都会与内核序列化口径不一致；
+// - COUNT(*) 加 AS count（dataset 需要一个列名）；
+// - 行数 GROUP BY / 两条锁定查询的谓词与旧路径逐字一致（列表：ANY 批量；详情：C 类形态
+//   —— trade_docs 有行就不再查 orders，门面按同一条件取数）；
+// - 可见性谓词下推（门面按 _scope_sql 直译）**并且**内核用共享 can_view 再判一次
+//   （防御纵深：门面漏滤不会变成越权，见 quote_api._quote_row_visible）。
+
+/** Python date.isoformat() 口径（DATE 列：无时间、无时区）。 */
+export function dateIsoSql(col: string): string {
+  return "to_char(" + col + ", 'YYYY-MM-DD') AS " + col;
+}
+
+/** quote_orders 显式列清单（与表结构一致；时间戳/日期按 Python isoformat 口径转文本）。 */
+export const QUOTE_ORDER_COLUMNS =
+  "id, tenant_id, quote_no, customer_id, customer_name, inquiry_id, status, currency,"
+  + " total_amount, " + tsIsoSql("valid_until") + ", notes, fx_rate, " + dateIsoSql("fx_rate_date")
+  + ", tax_archive_id, tax_archive_code, tax_archive_name, tax_snapshot, incoterm, payment_terms,"
+  + " port_of_loading, port_of_destination, shipping_marks, country_of_origin, destination_country,"
+  + " destination_region, carrier, " + dateIsoSql("freight_valid_from")
+  + ", " + dateIsoSql("freight_valid_to")
+  + ", created_by, owner_id, owner_scope, team_id, " + tsIsoSql("created_at")
+  + ", " + tsIsoSql("updated_at");
+
+/** quote_order_items 显式列清单（行项详情用）。 */
+export const QUOTE_ITEM_COLUMNS =
+  "id, tenant_id, quote_order_id, sku_id, product_name, spec_snapshot, qty, qty_unit,"
+  + " unit_price, currency, line_amount, sort_order, policy_override, price_source,"
+  + " cost_override, price_override, weight_override, volume_override, image_url,"
+  + " cost_breakdown, " + tsIsoSql("created_at");
+
+/** 列表总行数（旧路径 SELECT COUNT(*)；门面多给列名以便下发 dataset）。 */
+export function quoteOrdersCountSql(cond: string): string {
+  return "SELECT COUNT(*) AS count FROM quote_orders WHERE " + cond;
+}
+
+/** 列表当前页（排序/分页与旧路径逐字一致；condParamCount = WHERE 参数个数）。 */
+export function quoteOrdersListSql(cond: string, condParamCount: number): string {
+  return "SELECT " + QUOTE_ORDER_COLUMNS + " FROM quote_orders WHERE " + cond
+    + " ORDER BY created_at DESC, id DESC LIMIT $" + String(condParamCount + 1)
+    + " OFFSET $" + String(condParamCount + 2);
+}
+
+/** 详情单头（可见性谓词由 quoteScopeCond 拼进 cond）。 */
+export function quoteOrdersDetailSql(cond: string): string {
+  return "SELECT " + QUOTE_ORDER_COLUMNS + " FROM quote_orders WHERE " + cond;
+}
+
+/** 列表行数（一次 GROUP BY，不做 N+1；与 quote_api._item_count_map 逐字同义）。 */
+export const QUOTE_ITEM_COUNTS_SQL = "SELECT quote_order_id, COUNT(*) AS n FROM quote_order_items"
+  + " WHERE tenant_id=$1 AND quote_order_id = ANY($2::bigint[]) GROUP BY quote_order_id";
+
+/** 详情行项（与 quote_api._items_of 逐字同义）。 */
+export const QUOTE_ORDERS_ITEMS_DETAIL_SQL = "SELECT " + QUOTE_ITEM_COLUMNS
+  + " FROM quote_order_items WHERE tenant_id=$1 AND quote_order_id=$2 ORDER BY sort_order, id";
+
+/** 列表：下游单证锁定（非 quotation 的单证）。 */
+export const TRADE_DOCS_LOCKED_LIST_SQL = "SELECT DISTINCT quote_id FROM trade_docs"
+  + " WHERE tenant_id=$1 AND quote_id = ANY($2::bigint[]) AND doc_type <> 'quotation'";
+
+/** 列表：下游订单锁定。 */
+export const ORDERS_LOCKED_LIST_SQL = "SELECT DISTINCT quote_id FROM orders"
+  + " WHERE tenant_id=$1 AND quote_id = ANY($2::bigint[])";
+
+/** 详情：下游单证锁定（旧路径 SELECT 1，这里给列名以便下发 dataset）。 */
+export const TRADE_DOCS_LOCK_DETAIL_SQL = "SELECT 1 AS locked FROM trade_docs"
+  + " WHERE tenant_id=$1 AND quote_id=$2 AND doc_type <> 'quotation' LIMIT 1";
+
+/** 详情：下游订单锁定（**只在上一查无行时**才发，同旧路径）。 */
+export const ORDERS_LOCK_DETAIL_SQL = "SELECT 1 AS locked FROM orders"
+  + " WHERE tenant_id=$1 AND quote_id=$2 LIMIT 1";
+
+/**
+ * query 原始字符串 → 宽松整数（**只用于拼 SQL 参数**）。
+ *
+ * 校验（422 int_parsing / ge / le）一律在内核用同一份 pydantic 做 —— 门面不写第二份判定；
+ * 非法值在这里退化成 null/默认值，内核随后 422 ⇒ 用户看到的响应与旧路径逐字一致。
+ */
+function lenientInt(raw: string | null | undefined): number | null {
+  if (raw === null || raw === undefined) return null;
+  const text = raw.trim();
+  if (!/^[+-]?\d+$/.test(text)) return null;
+  return Number(text);
+}
+
+/** 可见性谓词（quote_api._scope_sql 逐字直译）：管理员不加；否则 owner/tenant共享/本团队。 */
+function quoteScopeCond(user: CurrentUser, params: unknown[]): string {
+  if (isAdminRole(user.role)) return "";
+  params.push(String(user.id));
+  let cond = "(owner_id = $" + String(params.length) + " OR owner_scope = 'tenant'";
+  if (user.team_id !== null && user.team_id !== undefined) {
+    params.push(user.team_id);
+    cond += " OR team_id = $" + String(params.length);
+  }
+  return " AND " + cond + ")";
+}
+
+interface QuoteListFilter {
+  cond: string;
+  params: unknown[];
+  page: number;
+  pageSize: number;
+}
+
+/** 列表筛选/分页 → 与旧 handler **同一 SQL 谓词、同一参数顺序**（status → customer → inquiry）。 */
+function quoteListFilter(user: CurrentUser, query: Record<string, string | null>): QuoteListFilter {
+  const where = ["tenant_id = $1"];
+  const params: unknown[] = [tenantOf()];
+  const status = query.status ?? "";
+  if (status) {
+    params.push(status);
+    where.push("status = $" + String(params.length));
+  }
+  const customerId = lenientInt(query.customer_id);
+  if (customerId) {
+    params.push(customerId);
+    where.push("customer_id = $" + String(params.length));
+  }
+  const inquiryId = lenientInt(query.inquiry_id);
+  if (inquiryId !== null) {
+    params.push(inquiryId);
+    where.push("inquiry_id = $" + String(params.length));
+  }
+  const cond = where.join(" AND ") + quoteScopeCond(user, params);
+  const page = Math.max(1, lenientInt(query.page) ?? 1);
+  const pageSize = Math.min(200, Math.max(1, lenientInt(query.page_size) ?? 20));
+  return { cond, params, page, pageSize };
+}
+
+/** quote_orders 行 → dataset 行（BIGINT/NUMERIC 归一；时间戳/日期已是 Python 口径文本）。 */
+export function quoteOrderDatasetRow(row: Row): Row {
+  const numberOrNull = (value: unknown): number | null =>
+    value === null || value === undefined ? null : Number(value);
+  return {
+    id: num(row.id),
+    tenant_id: row.tenant_id ?? null,
+    quote_no: row.quote_no ?? null,
+    customer_id: num(row.customer_id),
+    customer_name: row.customer_name ?? null,
+    inquiry_id: num(row.inquiry_id),
+    status: row.status ?? null,
+    currency: row.currency ?? null,
+    total_amount: numberOrNull(row.total_amount),
+    valid_until: row.valid_until ?? null,
+    notes: row.notes ?? null,
+    fx_rate: numberOrNull(row.fx_rate),
+    fx_rate_date: row.fx_rate_date ?? null,
+    tax_archive_id: num(row.tax_archive_id),
+    tax_archive_code: row.tax_archive_code ?? null,
+    tax_archive_name: row.tax_archive_name ?? null,
+    tax_snapshot: row.tax_snapshot ?? null,
+    incoterm: row.incoterm ?? null,
+    payment_terms: row.payment_terms ?? null,
+    port_of_loading: row.port_of_loading ?? null,
+    port_of_destination: row.port_of_destination ?? null,
+    shipping_marks: row.shipping_marks ?? null,
+    country_of_origin: row.country_of_origin ?? null,
+    destination_country: row.destination_country ?? null,
+    destination_region: row.destination_region ?? null,
+    carrier: row.carrier ?? null,
+    freight_valid_from: row.freight_valid_from ?? null,
+    freight_valid_to: row.freight_valid_to ?? null,
+    created_by: row.created_by ?? null,
+    owner_id: row.owner_id ?? null,
+    owner_scope: row.owner_scope ?? null,
+    team_id: num(row.team_id),
+    created_at: row.created_at ?? null,
+    updated_at: row.updated_at ?? null,
+  };
+}
+
+/** quote_order_items 行 → dataset 行。 */
+export function quoteItemDatasetRow(row: Row): Row {
+  const numberOrNull = (value: unknown): number | null =>
+    value === null || value === undefined ? null : Number(value);
+  return {
+    id: num(row.id),
+    tenant_id: row.tenant_id ?? null,
+    quote_order_id: num(row.quote_order_id),
+    sku_id: num(row.sku_id),
+    product_name: row.product_name ?? null,
+    spec_snapshot: row.spec_snapshot ?? null,
+    qty: numberOrNull(row.qty),
+    qty_unit: row.qty_unit ?? null,
+    unit_price: numberOrNull(row.unit_price),
+    currency: row.currency ?? null,
+    line_amount: numberOrNull(row.line_amount),
+    sort_order: num(row.sort_order),
+    policy_override: row.policy_override ?? null,
+    price_source: row.price_source ?? null,
+    cost_override: numberOrNull(row.cost_override),
+    price_override: numberOrNull(row.price_override),
+    weight_override: numberOrNull(row.weight_override),
+    volume_override: numberOrNull(row.volume_override),
+    image_url: row.image_url ?? null,
+    cost_breakdown: row.cost_breakdown ?? null,
+    created_at: row.created_at ?? null,
+  };
+}
+
+/** 列表供数（**唯一 DB 访问点**）：COUNT → 当前页 → 行数 → 两条锁定查询（后三步仅 ids 非空）。 */
+async function supplyQuoteList(
+  env: Env,
+  user: CurrentUser,
+  query: Record<string, string | null>,
+): Promise<Row> {
+  const filter = quoteListFilter(user, query);
+  const tenant = tenantOf();
+  return withDb(env, async (sql: Db) => {
+    const totalRows = (await sql.unsafe(
+      quoteOrdersCountSql(filter.cond),
+      filter.params as never[],
+    )) as unknown as Row[];
+    const rows = (await sql.unsafe(
+      quoteOrdersListSql(filter.cond, filter.params.length),
+      [...filter.params, filter.pageSize, (filter.page - 1) * filter.pageSize] as never[],
+    )) as unknown as Row[];
+    const ids = rows.map((row) => Number(row.id));
+    let countRows: Row[] = [];
+    let tradeRows: Row[] = [];
+    let orderRows: Row[] = [];
+    if (ids.length > 0) {
+      countRows = (await sql.unsafe(QUOTE_ITEM_COUNTS_SQL, [tenant, ids] as never[])) as unknown as Row[];
+      tradeRows = (await sql.unsafe(
+        TRADE_DOCS_LOCKED_LIST_SQL, [tenant, ids] as never[])) as unknown as Row[];
+      orderRows = (await sql.unsafe(
+        ORDERS_LOCKED_LIST_SQL, [tenant, ids] as never[])) as unknown as Row[];
+    }
+    return {
+      quote_orders_total: totalRows.map((row) => ({ count: num0(row.count) })),
+      quote_orders: rows.map(quoteOrderDatasetRow),
+      quote_order_item_counts: countRows.map((row) => ({
+        quote_order_id: num(row.quote_order_id),
+        n: num0(row.n),
+      })),
+      trade_docs_locked: tradeRows.map((row) => ({ quote_id: num(row.quote_id) })),
+      orders_locked: orderRows.map((row) => ({ quote_id: num(row.quote_id) })),
+    };
+  });
+}
+
+/** 详情供数：单头 → 行项 → 锁定两查（同旧路径 C 类形态：第一查有行就不再查第二查）。 */
+async function supplyQuoteDetail(
+  env: Env,
+  user: CurrentUser,
+  quoteId: number,
+): Promise<Row> {
+  const tenant = tenantOf();
+  const condParams: unknown[] = [tenant, quoteId];
+  const cond = "tenant_id = $1 AND id = $2" + quoteScopeCond(user, condParams);
+  return withDb(env, async (sql: Db) => {
+    const rows = (await sql.unsafe(
+      quoteOrdersDetailSql(cond), condParams as never[])) as unknown as Row[];
+    let items: Row[] = [];
+    let tradeLocked: Row[] = [];
+    let orderLocked: Row[] = [];
+    if (rows.length > 0) {
+      items = (await sql.unsafe(
+        QUOTE_ORDERS_ITEMS_DETAIL_SQL, [tenant, quoteId] as never[])) as unknown as Row[];
+      tradeLocked = (await sql.unsafe(
+        TRADE_DOCS_LOCK_DETAIL_SQL, [tenant, quoteId] as never[])) as unknown as Row[];
+      if (tradeLocked.length === 0) {
+        orderLocked = (await sql.unsafe(
+          ORDERS_LOCK_DETAIL_SQL, [tenant, quoteId] as never[])) as unknown as Row[];
+      }
+    }
+    return {
+      quote_orders: rows.map(quoteOrderDatasetRow),
+      quote_order_items: items.map(quoteItemDatasetRow),
+      trade_docs_locked: tradeLocked,
+      orders_locked: orderLocked,
+    };
+  });
+}
+
+/** GET /api/v1/quotes 的「供数 + RPC」实现（开关 on 时）。 */
+export async function quoteListWithKernel(
+  c: Context<{ Bindings: Env }>,
+  user: CurrentUser,
+): Promise<Response> {
+  const env = getEnv(c);
+  const secret = requireSecret(env, "JWT_SECRET");
+  const query: Record<string, string | null> = {
+    status: c.req.query("status") ?? null,
+    customer_id: c.req.query("customer_id") ?? null,
+    inquiry_id: c.req.query("inquiry_id") ?? null,
+    page: c.req.query("page") ?? null,
+    page_size: c.req.query("page_size") ?? null,
+  };
+  const datasets = await supplyQuoteList(env, user, query);
+  const jwt = await mintEngineJwt(engineActorOf(user), secret);
+  return engineQuoteRpc(
+    c,
+    ENGINE_QUOTES_LIST_RPC,
+    jwt,
+    JSON.stringify({ request: { query }, actor: actorPayloadOf(user), datasets }),
+  );
+}
+
+/** GET /api/v1/quotes/{quote_id} 的「供数 + RPC」实现（开关 on 时）。 */
+export async function quoteDetailWithKernel(
+  c: Context<{ Bindings: Env }>,
+  user: CurrentUser,
+): Promise<Response> {
+  const env = getEnv(c);
+  const secret = requireSecret(env, "JWT_SECRET");
+  const quoteId = intOrNull(c.req.param("quote_id") ?? "");
+  if (quoteId === null) {
+    // 非整数 quote_id：旧路径（FastAPI path 参数）会 422 —— 交给旧路径裁决，不自拼错误体
+    return forwardKernelRequest(c);
+  }
+  const datasets = await supplyQuoteDetail(env, user, quoteId);
+  const jwt = await mintEngineJwt(engineActorOf(user), secret);
+  return engineQuoteRpc(
+    c,
+    ENGINE_QUOTES_DETAIL_RPC,
+    jwt,
+    JSON.stringify({ request: { quote_id: quoteId }, actor: actorPayloadOf(user), datasets }),
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // 路由注册（由 src/index.ts 挂载；必须在 /api/v1/export-quote 透传 mount **之前**）
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -874,6 +1213,26 @@ app.post("/api/v1/export-quote/products/:product_key/explain", (c) => {
   return respond(c, async () => {
     const user = await requireUser(c);
     return directDb(c, () => explainWithKernel(c, user));
+  });
+});
+
+app.get("/api/v1/quotes", (c) => {
+  if (!useDirectRoute(getEnv(c), ENGINE_ROUTE_IDS.quotesList)) {
+    return forwardKernelRequest(c);
+  }
+  return respond(c, async () => {
+    const user = await requireUser(c);
+    return directDb(c, () => quoteListWithKernel(c, user));
+  });
+});
+
+app.get("/api/v1/quotes/:quote_id", (c) => {
+  if (!useDirectRoute(getEnv(c), ENGINE_ROUTE_IDS.quotesDetail)) {
+    return forwardKernelRequest(c);
+  }
+  return respond(c, async () => {
+    const user = await requireUser(c);
+    return directDb(c, () => quoteDetailWithKernel(c, user));
   });
 });
 

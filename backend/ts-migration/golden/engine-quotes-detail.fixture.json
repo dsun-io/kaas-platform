@@ -1,0 +1,333 @@
+{
+  "_comment": "P3 第四批切片金标（docs/P2_COUPLING_ENGINE_2026-10-24.md §6/§8）：GET /api/v1/quotes/{quote_id}（详情）。同目录同脚本用旧路径真实生成；注意旧路径「锁定」查询是 C 类形态：trade_docs 有行就不再查 orders —— 门面按同一条件取数（datasets.trade_docs_locked 为空时才查 orders）。行项时间戳同样覆盖零微秒（id=2 的 created_at）与非零微秒（id=1）。",
+  "endpoint": {
+    "method": "GET",
+    "path": "/api/v1/quotes/11",
+    "query_string": ""
+  },
+  "rpc": "/api/v1/internal/engine/quotes/detail",
+  "request": {
+    "quote_id": 11
+  },
+  "actor": {
+    "id": 5,
+    "account_type": "customer",
+    "role": "owner",
+    "team_id": 2,
+    "is_tenant_admin": false
+  },
+  "datasets": {
+    "quote_orders": [
+      {
+        "id": 11,
+        "tenant_id": "default",
+        "quote_no": "QUO-US-ACME-20261019000000",
+        "customer_id": 3,
+        "customer_name": "ACME 贸易",
+        "inquiry_id": 9,
+        "status": "draft",
+        "currency": "USD",
+        "total_amount": 100.0,
+        "valid_until": "2026-10-26T00:00:00+00:00",
+        "notes": "首批试单",
+        "fx_rate": 7.1,
+        "fx_rate_date": "2026-10-19",
+        "tax_archive_id": 21,
+        "tax_archive_code": "TAX-2026",
+        "tax_archive_name": "出口退税档案",
+        "tax_snapshot": {
+          "output_vat_rate": 0.13,
+          "rebate_rate": 0.09
+        },
+        "incoterm": "FOB",
+        "payment_terms": "T/T",
+        "port_of_loading": "Tianjin",
+        "port_of_destination": "Hamburg",
+        "shipping_marks": "N/M",
+        "country_of_origin": "China",
+        "destination_country": "Germany",
+        "destination_region": "Hamburg",
+        "carrier": "COSCO",
+        "freight_valid_from": "2026-10-20",
+        "freight_valid_to": "2026-11-20",
+        "created_by": "5",
+        "owner_id": "5",
+        "owner_scope": "private",
+        "team_id": 2,
+        "created_at": "2026-10-19T10:00:00.123456+00:00",
+        "updated_at": "2026-10-19T10:05:00+00:00"
+      }
+    ],
+    "quote_order_items": [
+      {
+        "id": 1,
+        "tenant_id": "default",
+        "quote_order_id": 11,
+        "sku_id": null,
+        "product_name": "field_fence",
+        "spec_snapshot": {
+          "de": 2.0,
+          "coating_code": "zinc_40"
+        },
+        "qty": 10.0,
+        "qty_unit": "ROLLS",
+        "unit_price": 2.5,
+        "currency": "USD",
+        "line_amount": 25.0,
+        "sort_order": 0,
+        "policy_override": {
+          "profit_mode": "fixed"
+        },
+        "price_source": "auto",
+        "cost_override": 1.2,
+        "price_override": null,
+        "weight_override": null,
+        "volume_override": null,
+        "image_url": null,
+        "cost_breakdown": {
+          "profit": 3.0
+        },
+        "created_at": "2026-10-19T10:00:00.123456+00:00"
+      },
+      {
+        "id": 2,
+        "tenant_id": "default",
+        "quote_order_id": 11,
+        "sku_id": null,
+        "product_name": "chain_link",
+        "spec_snapshot": {
+          "wire": "2.0"
+        },
+        "qty": 5.0,
+        "qty_unit": "ROLLS",
+        "unit_price": 4.0,
+        "currency": "USD",
+        "line_amount": 20.0,
+        "sort_order": 1,
+        "policy_override": null,
+        "price_source": "manual",
+        "cost_override": null,
+        "price_override": 4.0,
+        "weight_override": null,
+        "volume_override": null,
+        "image_url": null,
+        "cost_breakdown": null,
+        "created_at": "2026-10-19T10:05:00+00:00"
+      }
+    ],
+    "trade_docs_locked": [],
+    "orders_locked": [
+      {
+        "locked": 1
+      }
+    ]
+  },
+  "old_sql": [
+    {
+      "sql": "SELECT * FROM quote_orders WHERE tenant_id=$1 AND id=$2 AND (owner_id = $3 OR owner_scope = 'tenant' OR team_id = $4)",
+      "params": [
+        "default",
+        11,
+        "5",
+        2
+      ]
+    },
+    {
+      "sql": "SELECT * FROM quote_order_items WHERE tenant_id=$1 AND quote_order_id=$2 ORDER BY sort_order, id",
+      "params": [
+        "default",
+        11
+      ]
+    },
+    {
+      "sql": "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND quote_id=$2 AND doc_type <> 'quotation' LIMIT 1",
+      "params": [
+        "default",
+        11
+      ]
+    },
+    {
+      "sql": "SELECT 1 FROM orders WHERE tenant_id=$1 AND quote_id=$2 LIMIT 1",
+      "params": [
+        "default",
+        11
+      ]
+    }
+  ],
+  "facade": {
+    "quote_orders_total": {
+      "sql": "SELECT COUNT(*) AS count FROM quote_orders WHERE tenant_id = $1 AND (owner_id = $2 OR owner_scope = 'tenant' OR team_id = $3)",
+      "params": [
+        "default",
+        "5",
+        2
+      ]
+    },
+    "quote_orders": {
+      "columns": "id, tenant_id, quote_no, customer_id, customer_name, inquiry_id, status, currency, total_amount, CASE WHEN to_char(valid_until AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(valid_until AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(valid_until AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS valid_until, notes, fx_rate, to_char(fx_rate_date, 'YYYY-MM-DD') AS fx_rate_date, tax_archive_id, tax_archive_code, tax_archive_name, tax_snapshot, incoterm, payment_terms, port_of_loading, port_of_destination, shipping_marks, country_of_origin, destination_country, destination_region, carrier, to_char(freight_valid_from, 'YYYY-MM-DD') AS freight_valid_from, to_char(freight_valid_to, 'YYYY-MM-DD') AS freight_valid_to, created_by, owner_id, owner_scope, team_id, CASE WHEN to_char(created_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS created_at, CASE WHEN to_char(updated_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS updated_at",
+      "sql": "SELECT id, tenant_id, quote_no, customer_id, customer_name, inquiry_id, status, currency, total_amount, CASE WHEN to_char(valid_until AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(valid_until AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(valid_until AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS valid_until, notes, fx_rate, to_char(fx_rate_date, 'YYYY-MM-DD') AS fx_rate_date, tax_archive_id, tax_archive_code, tax_archive_name, tax_snapshot, incoterm, payment_terms, port_of_loading, port_of_destination, shipping_marks, country_of_origin, destination_country, destination_region, carrier, to_char(freight_valid_from, 'YYYY-MM-DD') AS freight_valid_from, to_char(freight_valid_to, 'YYYY-MM-DD') AS freight_valid_to, created_by, owner_id, owner_scope, team_id, CASE WHEN to_char(created_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS created_at, CASE WHEN to_char(updated_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS updated_at FROM quote_orders WHERE tenant_id = $1 AND (owner_id = $2 OR owner_scope = 'tenant' OR team_id = $3) ORDER BY created_at DESC, id DESC LIMIT $4 OFFSET $5",
+      "params": [
+        "default",
+        "5",
+        2,
+        20,
+        0
+      ]
+    },
+    "quote_order_item_counts": {
+      "columns": "id, tenant_id, quote_order_id, sku_id, product_name, spec_snapshot, qty, qty_unit, unit_price, currency, line_amount, sort_order, policy_override, price_source, cost_override, price_override, weight_override, volume_override, image_url, cost_breakdown, CASE WHEN to_char(created_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS created_at",
+      "sql": "SELECT quote_order_id, COUNT(*) AS n FROM quote_order_items WHERE tenant_id=$1 AND quote_order_id = ANY($2::bigint[]) GROUP BY quote_order_id",
+      "params": [
+        "default",
+        [
+          11,
+          12,
+          13
+        ]
+      ]
+    },
+    "trade_docs_locked": {
+      "sql": "SELECT DISTINCT quote_id FROM trade_docs WHERE tenant_id=$1 AND quote_id = ANY($2::bigint[]) AND doc_type <> 'quotation'",
+      "params": [
+        "default",
+        [
+          11,
+          12,
+          13
+        ]
+      ]
+    },
+    "orders_locked": {
+      "sql": "SELECT DISTINCT quote_id FROM orders WHERE tenant_id=$1 AND quote_id = ANY($2::bigint[])",
+      "params": [
+        "default",
+        [
+          11,
+          12,
+          13
+        ]
+      ]
+    },
+    "quote_orders_detail": {
+      "columns": "id, tenant_id, quote_no, customer_id, customer_name, inquiry_id, status, currency, total_amount, CASE WHEN to_char(valid_until AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(valid_until AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(valid_until AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS valid_until, notes, fx_rate, to_char(fx_rate_date, 'YYYY-MM-DD') AS fx_rate_date, tax_archive_id, tax_archive_code, tax_archive_name, tax_snapshot, incoterm, payment_terms, port_of_loading, port_of_destination, shipping_marks, country_of_origin, destination_country, destination_region, carrier, to_char(freight_valid_from, 'YYYY-MM-DD') AS freight_valid_from, to_char(freight_valid_to, 'YYYY-MM-DD') AS freight_valid_to, created_by, owner_id, owner_scope, team_id, CASE WHEN to_char(created_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS created_at, CASE WHEN to_char(updated_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS updated_at",
+      "sql": "SELECT id, tenant_id, quote_no, customer_id, customer_name, inquiry_id, status, currency, total_amount, CASE WHEN to_char(valid_until AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(valid_until AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(valid_until AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS valid_until, notes, fx_rate, to_char(fx_rate_date, 'YYYY-MM-DD') AS fx_rate_date, tax_archive_id, tax_archive_code, tax_archive_name, tax_snapshot, incoterm, payment_terms, port_of_loading, port_of_destination, shipping_marks, country_of_origin, destination_country, destination_region, carrier, to_char(freight_valid_from, 'YYYY-MM-DD') AS freight_valid_from, to_char(freight_valid_to, 'YYYY-MM-DD') AS freight_valid_to, created_by, owner_id, owner_scope, team_id, CASE WHEN to_char(created_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS created_at, CASE WHEN to_char(updated_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS updated_at FROM quote_orders WHERE tenant_id = $1 AND id = $2 AND (owner_id = $3 OR owner_scope = 'tenant' OR team_id = $4)",
+      "params": [
+        "default",
+        11,
+        "5",
+        2
+      ]
+    },
+    "quote_order_items_detail": {
+      "columns": "id, tenant_id, quote_order_id, sku_id, product_name, spec_snapshot, qty, qty_unit, unit_price, currency, line_amount, sort_order, policy_override, price_source, cost_override, price_override, weight_override, volume_override, image_url, cost_breakdown, CASE WHEN to_char(created_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS created_at",
+      "sql": "SELECT id, tenant_id, quote_order_id, sku_id, product_name, spec_snapshot, qty, qty_unit, unit_price, currency, line_amount, sort_order, policy_override, price_source, cost_override, price_override, weight_override, volume_override, image_url, cost_breakdown, CASE WHEN to_char(created_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS created_at FROM quote_order_items WHERE tenant_id=$1 AND quote_order_id=$2 ORDER BY sort_order, id",
+      "params": [
+        "default",
+        11
+      ]
+    },
+    "trade_docs_lock_detail": {
+      "sql": "SELECT 1 AS locked FROM trade_docs WHERE tenant_id=$1 AND quote_id=$2 AND doc_type <> 'quotation' LIMIT 1",
+      "params": [
+        "default",
+        11
+      ]
+    },
+    "orders_lock_detail": {
+      "sql": "SELECT 1 AS locked FROM orders WHERE tenant_id=$1 AND quote_id=$2 LIMIT 1",
+      "params": [
+        "default",
+        11
+      ]
+    }
+  },
+  "response": {
+    "id": 11,
+    "quote_no": "QUO-US-ACME-20261019000000",
+    "customer_id": 3,
+    "customer_name": "ACME 贸易",
+    "inquiry_id": 9,
+    "status": "draft",
+    "currency": "USD",
+    "total_amount": 100.0,
+    "valid_until": "2026-10-26T00:00:00+00:00",
+    "notes": "首批试单",
+    "fx_rate": 7.1,
+    "fx_rate_date": "2026-10-19",
+    "tax_archive_id": 21,
+    "tax_archive_code": "TAX-2026",
+    "tax_archive_name": "出口退税档案",
+    "tax_snapshot": {
+      "output_vat_rate": 0.13,
+      "rebate_rate": 0.09
+    },
+    "created_at": "2026-10-19T10:00:00.123456+00:00",
+    "created_by": "5",
+    "owner_id": "5",
+    "owner_scope": "private",
+    "item_count": 2,
+    "incoterm": "FOB",
+    "payment_terms": "T/T",
+    "port_of_loading": "Tianjin",
+    "port_of_destination": "Hamburg",
+    "shipping_marks": "N/M",
+    "country_of_origin": "China",
+    "destination_country": "Germany",
+    "destination_region": "Hamburg",
+    "carrier": "COSCO",
+    "freight_valid_from": "2026-10-20",
+    "freight_valid_to": "2026-11-20",
+    "quote_no_editable": false,
+    "items": [
+      {
+        "id": 1,
+        "quote_order_id": 11,
+        "sku_id": null,
+        "product_name": "field_fence",
+        "spec_snapshot": {
+          "de": 2.0,
+          "coating_code": "zinc_40"
+        },
+        "qty": 10.0,
+        "qty_unit": "ROLLS",
+        "unit_price": 2.5,
+        "currency": "USD",
+        "line_amount": 25.0,
+        "sort_order": 0,
+        "policy_override": {
+          "profit_mode": "fixed"
+        },
+        "price_source": "auto",
+        "cost_override": 1.2,
+        "price_override": null,
+        "weight_override": null,
+        "volume_override": null,
+        "image_url": null,
+        "created_at": "2026-10-19T10:00:00.123456+00:00"
+      },
+      {
+        "id": 2,
+        "quote_order_id": 11,
+        "sku_id": null,
+        "product_name": "chain_link",
+        "spec_snapshot": {
+          "wire": "2.0"
+        },
+        "qty": 5.0,
+        "qty_unit": "ROLLS",
+        "unit_price": 4.0,
+        "currency": "USD",
+        "line_amount": 20.0,
+        "sort_order": 1,
+        "policy_override": null,
+        "price_source": "manual",
+        "cost_override": null,
+        "price_override": 4.0,
+        "weight_override": null,
+        "volume_override": null,
+        "image_url": null,
+        "created_at": "2026-10-19T10:05:00+00:00"
+      }
+    ]
+  }
+}

@@ -296,3 +296,31 @@ async def engine_trade_docs_render_data(request: Request, body: dict):
     _require_asset_signing(url_request)
     return await _dispatch(
         _main.render_data_from_datasets, datasets, user, url_request)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 第四批切片：报价单 列表 / 详情（控制台高频读，纯投影）
+# ═══════════════════════════════════════════════════════════════════════════════
+# 设计 = docs/P2_COUPLING_ENGINE_2026-10-24.md §6/§8。门面按旧 SQL 谓词/排序/分页供数，
+# 内核只做协议校验 + **同一份**纯投影（quote_api._quote_list_payload /
+# _quote_detail_payload），并对行级可见性用共享内核 can_view 再判一次（防御纵深）。
+
+
+@app.post("/api/v1/internal/engine/quotes/list")
+async def engine_quotes_list(request: Request, body: dict):
+    """报价单列表 RPC：request.query = 旧端点的**原始 query 字符串**（解析/校验在内核）。"""
+    user, request_body, datasets = _payload(request, body)
+    params = request_body.get("query")
+    if params is None:
+        params = {}
+    if not isinstance(params, dict):
+        raise _payload_invalid("request.query 必须是对象")
+    return await _dispatch(_quote.quote_list_from_datasets, params, datasets, user)
+
+
+@app.post("/api/v1/internal/engine/quotes/detail")
+async def engine_quotes_detail(request: Request, body: dict):
+    """报价单详情 RPC：request.quote_id = 路径上的 id；datasets 见 quote_detail_from_datasets。"""
+    user, request_body, datasets = _payload(request, body)
+    quote_id = _request_int(request_body, "quote_id")
+    return await _dispatch(_quote.quote_detail_from_datasets, quote_id, datasets, user)

@@ -154,6 +154,16 @@
 > - **`trade-docs.render-data` 已放量**：时间戳 parity 修复后上线；带 JWT 请求 `GET /trade-docs/1/render-data` → 404 `WORKSTATION_NOT_SUBSCRIBED`（工位闸门，**内核 0 调用**）；
 > - **tax-archives 写路径接线完成但未放量**：GET（已放量）200；POST 走旧透传（内核返回 422 pydantic —— tail 证实内核收到 `/api/v1/tax-archives`），行为与今天一致；
 > - 门禁：worker **1980+12skip** / ts-worker **40 文件 610 测** / orchestrator **273** / sync-shared 47 文件一致。
+>
+> **第八批（2026-10-24 20:35，commit 见下）**
+> - **第四批引擎切片**：`GET /api/v1/quotes`（列表 5 dataset）+ `GET /api/v1/quotes/{id}`（详情 4 dataset，C 类条件取数）—— 行为不变提取 + 金标 0 diff + **真库只读核对 PASS**（ANY 数组 / GROUP BY over ANY / 条件式时间戳 / DATE 口径），已放量；
+> - **product-tax-rates 写路径**迁移（校验下沉 `tax_archive_rules.py` + 门面直连），与 tax-archives 写一样**暂未放量**；
+> - **工位闸门**补 `/api/v1/internal/engine/quotes` 前缀（漂移机检通过）；
+> - **线上端到端验证（用户批准种子后）**：给 QA 账号种订阅 + QA 团队后，收费工位直连全部 **200**（inquiries/quotations/tax-archives/external-docs），
+>   render-data 真实返回 404 `DOC_NOT_FOUND`（生产 trade_docs 0 行，属预期）；写路径 403→201 验证团队管理员判定链路；
+> - **门禁**：worker **2029+12skip** / ts-worker **41 文件 650 测** / orchestrator **273**；
+> - ⚠️ **事故（已修复，详见 docs/INCIDENT_2026-10-24_COMPANY_PROFILE_OVERWRITE.md）**：写冒烟时误用 `PUT /tenant/company-profile`（整行覆盖语义）清空了生产企业抬头；
+>   已用 **Neon PITR 时间点分支**逐字段精确还原（含 updated_at）+ 删除临时分支；窗口约 1 分钟、无单证受影响。
 > - ~~新安全发现~~ → **已修并放量（见上）**：`/fx-rates` 与 `/external-docs` 内核 SQL **无 tenant/team 谓词**（后者=跨团队元数据可见）⇒ 已登记 P2 §8.8，
 >   另立任务修内核（新旧路径一起改）；`misc-read.ts` 已实现接线但这两条**不进白名单**。
 > - ~~放量前置（已登记 P2 §8.7）~~：**已完成** —— 门面缺「工位闸门」中间件，直连收费工位端点会绕过商业限制 ⇒ 本轮已在门面实现该闸门

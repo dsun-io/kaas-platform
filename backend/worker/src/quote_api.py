@@ -38,7 +38,7 @@ import json
 from datetime import date, datetime
 from decimal import Decimal
 from itertools import product as _cartesian
-from typing import Any, List, Literal, Optional
+from typing import Annotated, Any, List, Literal, Optional
 
 from fastapi import Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
@@ -2007,6 +2007,155 @@ async def _record_quote_issued(conn, q: dict, user: dict) -> None:
     )
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# P2 引擎 RPC：报价单 列表 / 详情（门面供数 → 内核纯投影）
+# ═════════════════════════════════════════════════════════════════════════════
+# 设计 = docs/P2_COUPLING_ENGINE_2026-10-24.md §6（契约）/ §8（切片范式）。
+# 纪律（与 export-quote/render-data 同款）：
+# - 旧 handler 与 RPC 调用**同一份**纯投影（_quote_list_payload / _quote_detail_payload）；
+# - RPC 不碰 DB（tests 用「零 DB 炸弹」锁死）；取数谓词由门面按原 SQL 执行；
+# - 行级可见性在**内核再判一次**（防御纵深；同一把尺 = kaas_common.workstation.scope.can_view，
+#   它就是 _scope_sql 的纯函数真源），门面 SQL 谓词只是下推，不是唯一安全边界。
+
+#: 列表 query 参数（声明顺序 = FastAPI handler 的声明顺序，422 的 error 顺序由它决定）
+_LIST_QUERY_ADAPTERS = (
+    ("customer_id", TypeAdapter(Optional[int])),
+    ("inquiry_id", TypeAdapter(Optional[int])),
+    ("page", TypeAdapter(Annotated[int, Field(ge=1)])),
+    ("page_size", TypeAdapter(Annotated[int, Field(ge=1, le=200)])),
+)
+
+
+def _quote_dataset_rows(datasets: dict, name: str) -> list:
+    """payload.datasets[name] → 行数组（形状错误 = 实现 bug ⇒ 400）。"""
+    rows = datasets.get(name)
+    if rows is None:
+        return []
+    if not isinstance(rows, list):
+        raise HTTPException(status_code=400, detail={
+            "error": "engine_rpc_payload_invalid",
+            "message": "datasets.%s 必须是数组" % name,
+        })
+    return rows
+
+
+def _quote_row_visible(user: dict, row: dict) -> bool:
+    """行级可见性（防御纵深）：与 _scope_sql 同一把尺（共享内核纯函数 can_view）。"""
+    from kaas_common.workstation.scope import can_view
+
+    return can_view(
+        role=user.get("role"),
+        owner_id=row.get("owner_id"),
+        owner_scope=row.get("owner_scope"),
+        team_id=row.get("team_id"),
+        viewer_id=user.get("id"),
+        viewer_team_id=user.get("team_id"),
+    )
+
+
+def _quote_list_query(params: dict) -> dict:
+    """query 原始字符串 → 与旧端点**同一份** FastAPI/pydantic 校验结果（含 422 形状）。
+
+    - 客户/询盘/分页参数的 422 与旧路径逐字一致（int_parsing / greater_than_equal /
+      less_than_equal，含 ctx；按 handler 声明顺序累计错误）；
+    - status 的枚举校验在 handler 内（旧路径也是 handler 内）⇒ 放在 query 校验之后。
+    """
+    raw = params if isinstance(params, dict) else {}
+    out = {"status": raw.get("status"), "customer_id": None, "inquiry_id": None,
+           "page": 1, "page_size": 20}
+    errors: list = []
+    for name, adapter in _LIST_QUERY_ADAPTERS:
+        value = raw.get(name)
+        if value is None:
+            continue
+        try:
+            out[name] = adapter.validate_python(value)
+        except ValidationError as exc:
+            for item in exc.errors(include_url=False):
+                err = dict(item)
+                err["loc"] = ("query", name) + tuple(item.get("loc") or ())
+                errors.append(err)
+    if errors:
+        raise RequestValidationError(errors)
+    if out["status"]:
+        _validate_enum("quote_status", out["status"], _QUOTE_STATUS)
+    return out
+
+
+def _quote_list_payload(rows: list, total: int, page: int, page_size: int,
+                        counts: dict, locked: set) -> dict:
+    """列表响应（**纯投影**；旧 handler 与供数 RPC 共用同一份）。"""
+    return {
+        "items": [
+            {**_quote_json(r, counts.get(r["id"], 0)),
+             "quote_no_editable": r["id"] not in locked}
+            for r in rows
+        ],
+        "total": total, "page": page, "page_size": page_size,
+    }
+
+
+def _quote_detail_payload(q: dict, items: list, locked, user: dict) -> dict:
+    """详情响应（**纯投影**；旧 handler 与供数 RPC 共用同一份）。"""
+    payload = _quote_json(q, len(items))
+    payload["quote_no_editable"] = not bool(locked)
+    payload["items"] = [_quote_item_json(i, user) for i in items]
+    return payload
+
+
+def quote_list_from_datasets(params: dict, datasets: dict, user: dict) -> dict:
+    """P2 引擎 RPC：GET /api/v1/quotes 的供数版（**同一份投影**）。
+
+    datasets（门面按旧 SQL 谓词/排序/分页查好）：
+      quote_orders           当前页报价行（已按 created_at DESC, id DESC LIMIT/OFFSET）
+      quote_orders_total     [{count: N}]（旧路径的 COUNT(*)）
+      quote_order_item_counts [{quote_order_id, n}]（行数 GROUP BY；列表专用）
+      trade_docs_locked      [{quote_id}]（非 quotation 的下游单证）
+      orders_locked          [{quote_id}]（下游订单）
+    不碰 DB：query 校验只做协议层，行级可见性用共享内核纯函数再判一次。
+    """
+    q = _quote_list_query(params)
+    rows = [r for r in _quote_dataset_rows(datasets, "quote_orders")
+            if isinstance(r, dict) and _quote_row_visible(user, r)]
+    total = 0
+    total_rows = _quote_dataset_rows(datasets, "quote_orders_total")
+    if total_rows and isinstance(total_rows[0], dict):
+        total = int(total_rows[0].get("count") or 0)
+    counts: dict = {}
+    for row in _quote_dataset_rows(datasets, "quote_order_item_counts"):
+        if isinstance(row, dict) and row.get("quote_order_id") is not None:
+            counts[int(row["quote_order_id"])] = int(row.get("n") or 0)
+    locked: set = set()
+    for name in ("trade_docs_locked", "orders_locked"):
+        for row in _quote_dataset_rows(datasets, name):
+            if isinstance(row, dict) and row.get("quote_id") is not None:
+                locked.add(int(row["quote_id"]))
+    return _quote_list_payload(rows, total, q["page"], q["page_size"], counts, locked)
+
+
+def quote_detail_from_datasets(quote_id: int, datasets: dict, user: dict) -> dict:
+    """P2 引擎 RPC：GET /api/v1/quotes/{quote_id} 的供数版（**同一份投影**）。
+
+    门禁与旧路径同码同体：无行 / 不可见 ⇒ 404 {"error":"not_found","code":"QUOTE_NOT_FOUND"}
+    （不泄露存在性）。可见性用同一把尺 can_view 再判一次（防御纵深）。
+    """
+    rows = _quote_dataset_rows(datasets, "quote_orders")
+    row = rows[0] if rows and isinstance(rows[0], dict) else None
+    if row is None or not _quote_row_visible(user, row):
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "QUOTE_NOT_FOUND"})
+    # 供数一致性交叉核对（契约违约 = 实现 bug，不是用户错误）
+    if row.get("id") is not None and int(row["id"]) != int(quote_id):
+        raise HTTPException(status_code=400, detail={
+            "error": "engine_rpc_payload_invalid",
+            "message": "datasets.quote_orders 与 request.quote_id 不一致",
+        })
+    items = _quote_dataset_rows(datasets, "quote_order_items")
+    locked = bool(_quote_dataset_rows(datasets, "trade_docs_locked")) \
+        or bool(_quote_dataset_rows(datasets, "orders_locked"))
+    return _quote_detail_payload(row, items, locked, user)
+
+
 async def _quote_or_404(conn, tenant: str, quote_id: int, user: dict) -> dict:
     params: list = [tenant, quote_id]
     row = await conn.fetchrow(
@@ -2075,14 +2224,7 @@ async def list_quote_orders(
             tenant, ids,
         )
         locked.update(r["quote_id"] for r in locked_orders)
-    return {
-        "items": [
-            {**_quote_json(r, counts.get(r["id"], 0)),
-             "quote_no_editable": r["id"] not in locked}
-            for r in rows
-        ],
-        "total": total, "page": page, "page_size": page_size,
-    }
+    return _quote_list_payload(rows, total, page, page_size, counts, locked)
 
 
 @app.post("/api/v1/quotes", status_code=201)
@@ -2459,7 +2601,6 @@ async def get_quote_order(quote_id: int, request: Request,
     async with _db.acquire(request) as conn:
         q = await _quote_or_404(conn, tenant, quote_id, user)
         items = await _items_of(conn, tenant, q["id"])
-    payload = _quote_json(q, len(items))
     locked = await _db.fetchval(
         request,
         "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND quote_id=$2"
@@ -2472,9 +2613,7 @@ async def get_quote_order(quote_id: int, request: Request,
             "SELECT 1 FROM orders WHERE tenant_id=$1 AND quote_id=$2 LIMIT 1",
             tenant, quote_id,
         )
-    payload["quote_no_editable"] = not bool(locked)
-    payload["items"] = [_quote_item_json(i, user) for i in items]
-    return payload
+    return _quote_detail_payload(q, items, locked, user)
 
 
 @app.patch("/api/v1/quotes/{quote_id}")
