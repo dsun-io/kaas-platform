@@ -40,7 +40,16 @@
 >   带 JWT `GET /products` **顺序 10/10 = 200**、**并发 8/8 = 200**（并发模拟页面加载，这是事故时最容易成片 502 的场景）；
 >   热端点 `/products/v_posts/profile` 200、`/notifications/unread-count` 200、`/approvals?view=pending` 200；
 >   **5xx 数量 = 0**；`/products/v_posts/media` 返回 403 `{"detail":{"error":"forbidden","code":"NO_TEAM"}}` —— 属 `ws_files.py` §1.5「无团队」既定口径（QA 账号 team_id=null），**非回归**。
-> - **进度**：P0（热读搬 TS 直连 DB）实施中（task-4）；P1（认证域）已登记并被 P0 阻塞（task-5）；P2/P3 已登记（task-6/7）。
+> - **进度**：P0 ✅ 已上线（commit `c78ba164`，deploy run `40078205483` 全绿）；P1 进行中（**事实修正：auth 9 条自 `c80f894c` 起即门面直连 DB，P1 实际剩余 = 对齐缺口 + 测试**）；P2/P3 已登记（task-6/7）。
+>
+> **P0 灰度上线与线上证据（2026-10-24 16:40）**
+> - 灰度机制：`AUTH_DB_SPLIT=on` + `AUTH_DB_SPLIT_ROUTES` 白名单（按路由 id 前缀段匹配）；off/缺失 = 原样透传（一键回退，无需改代码）。
+> - **首批 4 条**（notifications.unread-count / approvals.list / products.profile / products.media）线上验证：
+>   带 JWT 请求响应形状与内核口径一致（`{"product_key":"v_posts","info":{},"updated_at":null}` / `{"unread":0}` / `{"items":[],"total":0,...}`；
+>   media 仍 `403 NO_TEAM` 符合「无团队」既定口径）；
+>   **内核 tail 同期只收到 1 个请求 = `/api/v1/products`（未放行的对照项），4 条白名单端点 0 次触达内核** ⇒ 页面热读确实不再依赖 Pyodide。
+> - **第二批**：放行 `products.list`（首屏最关键），部署后同样做 tail 证明。
+> - 两批均保留回退路径；`AUTH_DB_SPLIT_ROUTES` 可随时收缩。
 > - **Cloudflare 工单证据包**：见 [CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md](./CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md)（可直接提交）。
 
 > **（2026-10-24 下午 · 第三轮 A/B/C/D ✅：按客户选英文名 / token 只读预览 / 路由计数 / workstation-products）**

@@ -62,11 +62,11 @@
     // AUTH_DB_SPLIT=on 时，下面白名单内的**只读热路径**走门面直连 Hyperdrive；
     // 其余值/缺失 = off = 原样透传 Python 内核（一键回退，无需改代码）。
     // 白名单按路由 id 的 '.' 前缀段匹配（见 src/boot-flag.ts）。
-    // 首批只放行「结构最简单」的 3 条：unread-count（单表 count）、approvals.list（只读列表）、
-    // products.profile / products.media（单产品维度）；products.list 依赖注册表镜像，
-    // 单独在第二批放量（先验证前 3 条线上真实流量）。
+    // 第二批（2026-10-24 16:40）：首批 4 条线上验证通过（tail 证明内核 0 调用）后放行 products.list。
+    // 至此 P0 的 5 条热读全部走门面直连：页面首屏不再依赖 Python 冷启动。
+    // 回退：把 AUTH_DB_SPLIT 改成 "off"（或从白名单删条目）再发版；行为即回到全透传。
     "AUTH_DB_SPLIT": "on",
-    "AUTH_DB_SPLIT_ROUTES": "notifications.unread-count,approvals.list,products.profile,products.media"
+    "AUTH_DB_SPLIT_ROUTES": "notifications.unread-count,approvals.list,products.profile,products.media,products.list"
   }
   // 无 triggers（门面不跑 cron）
 }
