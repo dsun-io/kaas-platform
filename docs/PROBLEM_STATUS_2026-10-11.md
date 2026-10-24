@@ -170,6 +170,18 @@
 >
 >
 >
+>
+> **第十七批（2026-10-24 23:15）· P3 步骤 3：删除双份 handler（用户已批准）**
+> - **从内核删除 25 个已迁移路由的旧 GET handler**：源码净删 **1021 行**、含测试共 **2537 行**（27 文件）；
+>   唯一例外 `ws_files.get_profile`（PUT 仍调用它）⇒ 只删 `@app.get` 装饰器、函数保留；**同路径写方法全部保留**；
+> - **RPC 依赖的共享纯函数零误删**（已抽样核验：`render_data_from_datasets`/`_quote_list_payload`/`_quote_detail_payload`/`_trade_doc_list_payload`/`_facts_payload`/`_consistency_payload`/`_quotable_specs_from_rows`/`pricing_data_from_datasets` 均在）；
+> - **DB 基线 340 → 313（-27）**，`check-kernel-db-allowlist.py` 门禁 PASS（防回潮继续生效）；
+> - 门禁：worker **1995+12skip**（测试数由 2114 下降，因删掉 3 个只测被删 handler 的文件 + 裁剪 12 个文件的 119 个用例，**已如实记录**）、`-k engine_rpc` **175 passed**、orchestrator 273、sync-shared 一致；
+> - **已接受的取舍**：删后 `AUTH_DB_SPLIT=off` 对这批路由返回 404（回退 = 回滚代码 + 重部署），用户已明确批准；
+> - 部署 run `40105659005` **全绿**；**生产验证按用户指示跳过**（2026-10-24 23:15 明确要求「部署之后不用验证生产环境了」）——此处如实记录，避免后人误以为已验证。
+> - **工单提交包就绪**：`docs/CLOUDFLARE_TICKET_SUBMIT_PACKAGE.md`（操作步骤/优先级/附件打包/24h 追问脚本/回填区）；用户已决定**立即提交**（提交动作由用户执行）。
+> - 两个探针 worker（`kaas-pyinit-probe` / `kaas-pyinit-kernelclone`）按用户决定**保留**，供 Cloudflare 复现。
+>
 > **第十六批（2026-10-24 23:20）· P3 覆盖率机检 + 收益量化 + 文档索引**
 > - **覆盖率机检**（`docs/P3_COVERAGE_AND_BENEFIT_2026-10-24.md`）：87 条 passthrough 全部归类 ——
 >   **32 已覆盖（门面直连/切片）/ 14 留内核（业务元数据·字节·写副作用）/ 41 方案 A 例外 / 未归类 0** ⇒ 「可迁清单已清空」有了机检证据（不再是文档自述）；
