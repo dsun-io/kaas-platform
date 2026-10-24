@@ -1,0 +1,13 @@
+# 最小 Python Worker 探针（Cloudflare 工单 A4）—— 故意零业务依赖。
+[project]
+name = "kaas-pyinit-probe"
+version = "0.1.0"
+description = "Minimal Python Worker probe: reproduce Pyodide init failure without our application code"
+requires-python = ">=3.13"
+dependencies = []
+
+[dependency-groups]
+dev = ["workers-py"]
+
+[tool.uv]
+package = false

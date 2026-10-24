@@ -1,0 +1,139 @@
+# 工单 A4/A6：最小 Python Worker 探针实验（E1 / E3）
+#
+# 为什么放在 CI：本机（Windows + CJK 路径）跑 pywrangler deploy 会在创建
+# .venv-workers/pyodide-venv 时失败；CI 是 ubuntu，pywrangler 已被内核部署验证可用。
+#
+# 只手动触发，不参与日常门禁；它做的事：
+#   1) 部署最小 probe worker（零业务依赖、无 routes、无 cron，仅 workers_dev）
+#   2) 串行冷启动 10 次、并发冷启动 10 次（E3）
+#   3) 采 tail 日志，汇总成 job summary（E1 判据：probe 是否也抛 init 异常）
+#
+# 判据（写进工单 §3A/A6）：
+#   · probe 也出现 initPyInstance 异常 ⇒ 平台侧缺陷（与我们代码无关）
+#   · 只有并发组异常 ⇒ 支持「并发 init 重入竞态」
+#   · 两组都 0 异常 ⇒ 指向我们的依赖面/包体（转 E2 依赖二分）
+name: pyinit-probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      n:
+        description: '每组请求数'
+        required: false
+        default: '10'
+      keep_worker:
+        description: '实验后是否保留 probe worker（true/false）'
+        required: false
+        default: 'true'
+
+concurrency:
+  group: pyinit-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Show toolchain
+        run: |
+          uv --version
+          python3 --version
+
+      - name: Deploy minimal probe worker
+        working-directory: ./scripts/pyinit-probe
+        run: |
+          uv run pywrangler deploy 2>&1 | tee deploy.log
+
+      - name: Resolve workers.dev hostname
+        id: host
+        run: |
+          host=$(grep -Eo 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -1 || true)
+          if [ -z "$host" ]; then
+            # pywrangler 输出可能不含 URL：用 API 查子域 + worker 名拼
+            sub=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["subdomain"])')
+            host="https://kaas-pyinit-probe.$sub.workers.dev"
+          fi
+          echo "host=$host" >> "$GITHUB_OUTPUT"
+          echo "probe host: $host"
+
+      - name: Warm-up (single request)
+        run: curl -s -o /dev/null -w 'warmup %{http_code}\n' "${{ steps.host.outputs.host }}"
+
+      - name: E3 serial (10 sequential, 1s apart)
+        working-directory: ./scripts/pyinit-probe
+        run: |
+          python3 pressure.py "${{ steps.host.outputs.host }}" --mode serial --n "${{ github.event.inputs.n }}" \
+            | tee serial.json
+
+      - name: E3 concurrent (10 at once)
+        working-directory: ./scripts/pyinit-probe
+        run: |
+          python3 pressure.py "${{ steps.host.outputs.host }}" --mode concurrent --n "${{ github.event.inputs.n }}" \
+            | tee concurrent.json
+
+      - name: Tail probe worker during pressure (best effort)
+        working-directory: ./scripts/pyinit-probe
+        continue-on-error: true
+        run: |
+          (uv run npx --yes wrangler tail kaas-pyinit-probe --format json > tail.jsonl 2>tail.err &) || true
+          sleep 2
+          python3 pressure.py "${{ steps.host.outputs.host }}" --mode concurrent --n 20 > concurrent2.json || true
+          sleep 3
+          pkill -f "wrangler tail" || true
+          echo "--- tail lines: $(wc -l < tail.jsonl 2>/dev/null || echo 0)"
+
+      - name: Summarize
+        if: always()
+        working-directory: ./scripts/pyinit-probe
+        run: |
+          {
+            echo "## pyinit-probe 结果（工单 A6）"
+            echo ""
+            echo "- probe host: ${{ steps.host.outputs.host }}"
+            echo ""
+            echo '### serial'
+            echo '\`\`\`json'
+            cat serial.json 2>/dev/null || echo '{}'
+            echo '\`\`\`'
+            echo '### concurrent'
+            echo '\`\`\`json'
+            cat concurrent.json 2>/dev/null || echo '{}'
+            echo '\`\`\`'
+            echo ""
+            echo "### tail 里的异常签名（E1 判据）"
+            echo '\`\`\`'
+            grep -Eo '"message": *"[^"]{0,160}"' tail.jsonl 2>/dev/null | sort | uniq -c | sort -rn | head -20 || echo "（无 tail 数据）"
+            echo '\`\`\`'
+            echo ""
+            echo "> 判据：probe 也抛 initPyInstance 异常 ⇒ 平台侧；只有并发组异常 ⇒ 并发重入；两组全绿 ⇒ 指向我们的依赖面（转 E2）。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup probe worker (optional)
+        if: always() && github.event.inputs.keep_worker != 'true'
+        working-directory: ./scripts/pyinit-probe
+        continue-on-error: true
+        run: uv run npx --yes wrangler delete kaas-pyinit-probe --force
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyinit-probe-results
+          path: |
+            scripts/pyinit-probe/serial.json
+            scripts/pyinit-probe/concurrent.json
+            scripts/pyinit-probe/concurrent2.json
+            scripts/pyinit-probe/tail.jsonl
+            scripts/pyinit-probe/deploy.log
+          if-no-files-found: warn

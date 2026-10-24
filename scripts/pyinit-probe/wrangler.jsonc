@@ -1,0 +1,10 @@
+{
+  // 工单 A4 用：最小 python_workers Worker。
+  // 与生产内核同 compatibility_date / compatibility_flags，但**零业务依赖、无 routes、无 cron**。
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kaas-pyinit-probe",
+  "main": "src/entry.py",
+  "compatibility_date": "2026-09-18",
+  "compatibility_flags": ["python_workers"],
+  "workers_dev": true
+}
