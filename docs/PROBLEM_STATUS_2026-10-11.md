@@ -167,6 +167,16 @@
 >
 >
 >
+>
+> **第十四批（2026-10-24 22:40）· E2b 真实内核克隆（决定性阴性结果）**
+> - 用 Docker（`node:22-bookworm`）绕开 Windows 建 pyodide venv 的限制，把**生产内核同一份 `backend/worker/src`（209 文件）+ 同一份依赖** 克隆部署为 `kaas-pyinit-kernelclone`；
+>   **Worker Startup Time 3580ms**（与生产 2.6–3.9s 同量级）、上传 13.2 MiB；
+> - 压测 `/health`（不触库）：单请求 200、**串行 6/6 成功（23.4s，≈3.9s/次）**、**并发 15/15 成功（4.2s）**，**零异常**；
+> - **结论（阴性但有信息量）**：排除「源码/模块图规模」与「并发 init 必然重入」两个假设；剩余变量只剩 **生产 bindings（HYPERDRIVE/DB 连接）**、事故当时的特定版本、真实流量形态；
+>   据此把工单问题收敛为「**init 失败是否与 bindings 初始化在 Pyodide 内的时序有关**」（唯一无法在隔离环境复现的部分）；
+> - 已把**容器构建配方 + 踩坑清单**写进工单 §3G（uv≥0.13.4 / node≥22 / 容器本地磁盘构建 / build-essential），以后任何人可复跑；
+> - 新增资源：worker `kaas-pyinit-kernelclone`（探针，非生产路径，可随时删）。
+>
 > **第十三批（2026-10-24 22:25）· E2 依赖二分（工单 A6）**
 > - 同一 probe 源码逐档加重依赖后重新部署压测：
 >   V1（仅 workers SDK）**112.85 KiB / 427ms** → V2（+fastapi/pydantic）**10.1 MiB / 620ms** → V3（+asyncpg/pyjwt/bcrypt/multipart）**12.4 MiB / 943ms**；
