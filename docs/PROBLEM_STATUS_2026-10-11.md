@@ -149,6 +149,11 @@
 > - **tax-archives 写路径迁移（校验下沉 + 门面直连，暂未放量）**：新增 `kaas_common/workstation/tax_archive_rules.py`（纯校验单一实现，fastapi.HTTPException 保证信封逐字）；
 >   内核 3 个写 handler 改调同一份（行为逐字不变）+ 25 测；门面 `tax-rates-write.ts`（POST/PATCH/DELETE 直连，单表无跨表事务）+ 24 测；
 >   **放量等待**：需先用真实订阅账号做一次线上写冒烟（qa 账号未开通 trade-docs 工位 ⇒ 只能到闸门 404，验证不到写路径）。
+>
+> **第七批放量与线上验证（2026-10-24 20:15，commit `98f3330c`，deploy run `40092398445` 全绿）**
+> - **`trade-docs.render-data` 已放量**：时间戳 parity 修复后上线；带 JWT 请求 `GET /trade-docs/1/render-data` → 404 `WORKSTATION_NOT_SUBSCRIBED`（工位闸门，**内核 0 调用**）；
+> - **tax-archives 写路径接线完成但未放量**：GET（已放量）200；POST 走旧透传（内核返回 422 pydantic —— tail 证实内核收到 `/api/v1/tax-archives`），行为与今天一致；
+> - 门禁：worker **1980+12skip** / ts-worker **40 文件 610 测** / orchestrator **273** / sync-shared 47 文件一致。
 > - ~~新安全发现~~ → **已修并放量（见上）**：`/fx-rates` 与 `/external-docs` 内核 SQL **无 tenant/team 谓词**（后者=跨团队元数据可见）⇒ 已登记 P2 §8.8，
 >   另立任务修内核（新旧路径一起改）；`misc-read.ts` 已实现接线但这两条**不进白名单**。
 > - ~~放量前置（已登记 P2 §8.7）~~：**已完成** —— 门面缺「工位闸门」中间件，直连收费工位端点会绕过商业限制 ⇒ 本轮已在门面实现该闸门
