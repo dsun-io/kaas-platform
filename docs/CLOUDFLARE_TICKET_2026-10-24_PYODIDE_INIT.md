@@ -66,12 +66,27 @@
 
 | # | 实验 | 目的 | 状态 |
 |---|---|---|---|
-| E1 | 最小 `python_workers` Worker（同账号/compat_date/flags、无业务依赖）并发冷启动压测 | **去掉我们的代码是否仍崩**（决定「平台缺陷 vs 我们的包体」） | **pending（下一步优先做）** |
+| E1 | 最小 `python_workers` Worker（同账号/compat_date/flags、无业务依赖）并发冷启动压测 | **去掉我们的代码是否仍崩**（决定「平台缺陷 vs 我们的包体」） | **pending — 本机工具链阻塞（见下）** |
 | E2 | 依赖二分：hello-world → +fastapi/pydantic → +asyncpg → +PyJWT/bcrypt → 全量 `python_modules` | init 崩溃是否依赖我们的依赖面 | pending |
 | E3 | 冷启动后**串行** 10 次（间隔 1s）vs **并发** 10 次 | 验证 `promising task` 的**重入**假设 | pending |
 | E4 | 把内核回滚到事故前版本观察 24h | 控制「我们 06:49Z 部署」这个混淆因子 | **未做（如实披露，见 §8.1）** |
 | E5 | 同版本、同 5 分钟窗口内：失败 5 条 + 成功 5 条（含 ray ID） | 证明「同代码既有失败也有成功」 | pending（A1 已有 24 失败，缺成功对照） |
 
+
+### 3B. E1 本机阻塞记录（如实记录，避免以后重复踩坑）
+
+我们已经把最小 probe Worker 写好（`.tmp-pyinit-probe/`：`pyproject.toml` + `wrangler.jsonc`（name `kaas-pyinit-probe`、
+`compatibility_date=2026-09-18`、flags `[\"python_workers\"]`、只开 `workers_dev`）+ `src/entry.py`（只 `from js import Response`，零依赖）），
+但**部署侧**在本地环境遇到三层阻塞：
+
+| # | 路径 | 结果 |
+|---|---|---|
+| 1 | `uv run pywrangler deploy`（uv 0.13.3） | 报「uv version at least 0.13.4 required」→ 已 `uv self update` 到 **0.13.5** |
+| 2 | `uv run pywrangler deploy`（uv 0.13.5） | `Failed to inspect Python interpreter ... .venv-workers\pyodide-venv\Scripts\python.exe`（pyodide-venv 创建失败；清 `.venv-workers`、先 `pywrangler sync` 均复现） |
+| 3 | `wrangler deploy`（原生 Python 支持，wrangler 4.151.2） | 上传成功但服务端构建失败：`introspection.py: from workers import (...)` ⇒ 原生路径要求 `python_modules` 内含 `workers` SDK，而该 SDK 正是由 pywrangler 安装的 |
+
+⇒ **E1 需要在 CI（ubuntu，pywrangler 可正常工作）或已装好 pyodide 工具链的机器上跑**；本机今天不硬凑。
+代码与配置已备好，下轮可直接搬进 workflow 或用 CI runner 部署后压测。
 ## 4. 量化数据（2026-10-24T13:5xZ 重新查询，script=`kaas`）
 
 **三个窗口（分子分母都写清，避免混用）**：
