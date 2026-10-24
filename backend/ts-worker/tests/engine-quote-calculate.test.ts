@@ -219,6 +219,21 @@ describe("P2 切片 · 开关 on：TS 供数 → 内核纯算 → 原样回放",
     expect(await res.json()).toEqual(detail);
   });
 
+  it("工位订阅闸门（中间件 404，非信封形状）⇒ 原样回放 404 与 body", async () => {
+    // 真实形状来自 ws_workstations.py 的全局中间件（handler 之前返回，故不是 {status,body} 信封）。
+    // 2026-10-24 灰度实测：新 RPC 路径未登记 WORKSTATION_PATHS ⇒ 闸门不生效 ⇒ 未开通工位可算价。
+    const gate = {
+      error: "not_found",
+      code: "WORKSTATION_NOT_SUBSCRIBED",
+      workstation: "quotes",
+      detail: "该工位未开通，请在“工位开通”里启用",
+    };
+    const kernel = kernelSpy(() => new Response(JSON.stringify(gate), { status: 404 }));
+    const res = await post(envWith(ON, kernel.fetch));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual(gate);
+  });
+
   it("内核 5xx ⇒ kernel_error（与透传同口径）", async () => {
     const kernel = kernelSpy(() => new Response("kernel exploded", { status: 500 }));
     const res = await post(envWith(ON, kernel.fetch));

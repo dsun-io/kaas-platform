@@ -220,6 +220,24 @@ export async function calculateWithKernel(
     );
   }
 
+  // ── 4xx 原样回放（与 proxy 同口径）────────────────────────────────────
+  // 内核的**工位订阅闸门是全局中间件**，它在 handler 之前就返回 404
+  // {error:"not_found",code:"WORKSTATION_NOT_SUBSCRIBED",...} —— 形状不是 RPC 信封。
+  // 这类"内核对已鉴权身份的裁决"必须逐字回放给用户（否则会变成 502 信封格式错误）。
+  // 判据：非 2xx 一律按「原样透传」处理，与 /api 透传路径行为一致。
+  if (upstream.status !== 200) {
+    const text = await upstream.text();
+    const status = upstream.status;
+    try {
+      return c.json(JSON.parse(text) as never, status as never);
+    } catch {
+      return c.json(
+        { error: "kernel_error", message: "engine rpc non-JSON body (status " + String(status) + "): " + text.slice(0, 200), status },
+        status as never,
+      );
+    }
+  }
+
   let envelope: unknown;
   try {
     envelope = await upstream.json();

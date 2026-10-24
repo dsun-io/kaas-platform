@@ -118,6 +118,10 @@ def test_workstation_path_mapping():
     assert workstation_of("/api/v1/orders-x") is None
     # 不属于任何收费工位
     assert workstation_of("/api/v1/healthcheck") is None
+    # P2 内部 RPC 入口必须被**同一张映射表**覆盖（否则工位闸门放过未开通账号，
+    # 2026-10-24 灰度实测踩到：新路径未登记 ⇒ 直接算出报价，绕过商业限制）。
+    assert workstation_of("/api/v1/internal/engine/quote/calculate") == "quotes"
+    assert workstation_of("/api/v1/internal/engine/quote/verify") == "quotes"
 
 
 def test_always_allowed_paths_never_blocked():

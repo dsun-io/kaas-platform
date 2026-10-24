@@ -39,6 +39,11 @@ WORKSTATION_PATHS: dict[str, tuple[str, ...]] = {
     "quotes": (
         "/api/v1/quotes", "/api/v1/quotations", "/api/v1/export-quote",
         "/api/v1/quote-profiles", "/api/v1/pricing-data", "/api/v1/spec",
+        # 门面供数 → 内核纯算的 RPC 入口（P2 切片）。**必须在此登记**：
+        # 工位闸门是"按路径映射"的全局中间件（backend/worker/src/ws_workstations.py），
+        # 内部路径不登记 ⇒ 闸门不放行/不拦截 = 未开通工位的账号可绕过商业限制算价
+        # （2026-10-24 灰度实测踩到过，见 docs/P2_COUPLING_ENGINE_2026-10-24.md §8.5.2）。
+        "/api/v1/internal/engine/quote",
     ),
     "orders": ("/api/v1/orders", "/api/v1/payment-schedules", "/api/v1/receivables"),
     "trade-docs": (
