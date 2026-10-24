@@ -112,6 +112,19 @@
 >   超阈值 exit 1、样本不足自动 SKIP（不误报）；实测：10 小时窗内核 **71.4%** → 拦下；门面 0.0% → 放行；20 分钟低流量 → SKIP；
 > - 新增 `.github/workflows/kernel-health.yml`：**每 15 分钟**跑一次（内核阈值 30%、门面 5%），失败即 GitHub 告警；
 > - `deploy.yml` 部署后新增「错误率观测」步骤（`continue-on-error`，窗口含部署前流量故不阻塞发布）。
+>
+> **批次 A/B 交付（2026-10-24 18:45，commit `e144aa09`，deploy run `40087199942` 全绿）** —— 两批并行，写作用域分离：
+> - **批次 A（门面读直连）**：3 条询盘读（`/inquiries`、`/{id}`、`/{id}/stage-log`，真源 `ws_crm_ext.py`）+
+>   3 条 quotes/tax 读（`/quotations`、`/tax-archives`、`/product-tax-rates`）走门面直连；6 个 route id 登记 `AUTH_DB_SPLIT`；
+>   顺带修正 **3 处 DATE 列序列化 parity 缺口**（`orders.fx_rate_date`、`payment_schedules.due_date/actual_date`、`receivables.fx_rate_date`：DATE 只出 `YYYY-MM-DD`，timestamptz 不动）。
+> - **批次 B（引擎切片）**：`export-quote/{verify,formulas,spec,explain}` 4 条按 P2 契约落地（真实路径以 Python 为准），
+>   每片金标「旧==新==fixture 0 diff」+ 零 DB 炸弹 + 负例逐字一致；`verify` 的角色闸门复用**同一份** `_require_internal_admin`（403 先于 422）；
+>   工位闸门靠 `WORKSTATION_PATHS` 前缀覆盖整族（补注释并 sync-shared）。
+> - **门禁**：worker **1901+12skip** / ts-worker **36 文件 532 测** / orchestrator **273** / sync-shared 一致。
+> - **线上为中性部署**（新 route id 均未进白名单 ⇒ 默认 off）：验证 products·notifications 200、
+>   `/inquiries`·`/quotations`·`/export-quote/verify` 仍 404 `WORKSTATION_NOT_SUBSCRIBED`（与部署前逐字一致）。
+> - **放量前置（已登记 P2 §8.7）**：门面缺「工位闸门」中间件，直连收费工位端点会绕过商业限制 ⇒ 下一轮先在门面实现该闸门
+>   （路径映射与 `kaas_common` 同源 + 契约测试），再逐条放量。
 > - **P3 剩余（未完成，需后续轮次）**：① 15 条写路径的事务归属需拍板（取号/状态机/多表同事务，A=保留内核 / B=搬到门面 / C=长期例外）；
 >   ② 「无 Python 计算」的 33 条**指 quotes/trade-docs 域的 proxy-mount 端点**（quotations/pricing-data/fx-rates/tax-archives/external-docs/clause-templates/product-tax-rates…），
 >      **不含** orders/customers/teams（那三域自 phase-2 起就是门面直连，别再去"迁移"它们）；③ 25 条只读引擎切片仅完成 1 条。

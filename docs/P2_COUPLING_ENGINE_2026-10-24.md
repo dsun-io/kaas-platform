@@ -472,6 +472,20 @@ class Default(WorkerEntrypoint):
    修它属于行为变更，需新旧路径一起改，单独立项。
 3. **`orders.fx_rate_date`（DATE 列）序列化偏差已修**：内核 `row_to_order` 的 `_iso(date)` 只出 `YYYY-MM-DD`，
    门面 `rowToOrder` 原用 `pyIso` 出时间串 ⇒ 改为 DATE 列专用格式化（其余 timestamptz 列不变），并用单测锁定。
+
+#### 8.7 开启前置条件（2026-10-24 18:50，**重要：这些路由当前必须保持 off**）
+
+批次 A 新增的 3 条询盘读与 3 条 quotes/tax 读（route id：`inquiries.*`、`quotations.list`、`tax-archives.list`、
+`product-tax-rates.list`）**默认 off、保持透传**，原因：
+
+1. 它们的路径属**收费工位**（`WORKSTATION_PATHS`：`/api/v1/inquiries`→customers、`/api/v1/quotations`→quotes、
+   `/api/v1/tax-archives`→trade-docs）；
+2. 工位闸门目前**只存在于内核中间件**（`backend/worker/src/ws_workstations.py`）；
+3. 门面**没有**同等闸门（只有 `workstations.ts` 的 `has_workstation` 纯函数与 `team_subscriptions` 查询，未做成路由中间件）；
+4. ⇒ 一旦开 `AUTH_DB_SPLIT` 让这些直连生效，就会**绕过商业限制**（与 P2 §8.5.2 同一类事故）。
+
+**开启前置**（下一轮）：在门面实现工位闸门中间件（用**同一份**路径映射，加契约测试断言 TS 映射 == `kaas_common` 的 `WORKSTATION_PATHS`），
+再逐条放量；放量后同前缀仍需保留内核闸门作为纵深防御，直到所有路由直连、闸门统一收敛到门面。
 ## 9. 未完成清单（交后续轮次）
 
 | # | 事项 | 说明 / 前置 |
