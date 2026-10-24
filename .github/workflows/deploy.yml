@@ -486,3 +486,21 @@ jobs:
             echo "::error::/openapi.json 不是有效 OpenAPI JSON（可能是 SPA 回退 200）"; exit 1
           fi
           echo "✅ smoke test passed（edge + kernel + assets）"
+
+      # 2026-10-24 事故驱动的补充观测：上面的探针是**匿名**请求，当日内核错误率 56% 时它全程返回 ok
+      # （失败是概率性的、且探针请求不在用户路径上）。这里拉一次真实调用错误率做**观测**。
+      # 用 continue-on-error：20 分钟窗口必然包含"部署前"的旧版本流量，不应该因此阻塞发布；
+      # 持续、阻塞式的告警在 .github/workflows/kernel-health.yml（每 15 分钟）。
+      - name: Kernel error-rate observation (post-deploy, non-blocking)
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set +e
+          python3 scripts/check-kernel-error-rate.py --minutes 20 --max-error-rate 0.30 --script kaas
+          code=$?
+          if [ "$code" != "0" ]; then
+            echo "::warning::内核错误率超阈值（窗口含部署前流量，仅观测）—— 持续监控见 kernel-health.yml"
+          fi
+          exit 0

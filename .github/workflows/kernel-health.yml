@@ -1,0 +1,34 @@
+# 内核健康监控（2026-10-24 事故驱动）
+#
+# 为什么需要单独一个 workflow：
+#   2026-10-24 生产事故中，Python 内核（Pyodide）初始化间歇失败，当日错误率约 56%，
+#   而部署探针 / 健康探针**全程 ok**（匿名、且不在失败路径上）⇒ 事故被监控掩盖了 6+ 小时。
+#   这里按固定频率拉真实调用错误率，超阈值直接让 run 失败（GitHub 通知即告警）。
+name: kernel-health
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: kernel-health
+  cancel-in-progress: false
+
+jobs:
+  error-rate:
+    name: kernel error-rate (last 15m)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 内核错误率（超 30% 即失败；样本 <50 自动跳过不误报）
+        run: python3 scripts/check-kernel-error-rate.py --minutes 15 --max-error-rate 0.30 --script kaas
+
+      # 门面自身应当**零错误**：它有独立的重试/错误信封，出现非 0 错误率说明门面代码或绑定出问题。
+      - name: 门面错误率（超 5% 即失败）
+        run: python3 scripts/check-kernel-error-rate.py --minutes 15 --max-error-rate 0.05 --script kaas-edge
