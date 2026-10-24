@@ -16,8 +16,8 @@
 |---|---|---|
 | 已迁移并放量 | 24 | quotes 列表/详情、quotations、tax-archives、product-tax-rates、external-docs 列表、trade-docs files、render-data、fx-rates（本轮）、P0 五条、引擎 6 切片 |
 | 已迁移未放量 | 5 | tax-archives 写 3 条 + product-tax-rates 写 2 条（等分支环境冒烟） |
-| 可迁·引擎切片（只读需计算） | 约 18 | trade-docs 列表/详情/事实/一致性/内容版本、pricing-data、export-quote products/template-info、quotes 三个参考读、render-fingerprint |
-| 可迁·纯 SQL（门面直连） | 约 8 | AI 四读、fx-rates/latest、_debug、clause-templates（含懒种子写，需显式保留） |
+| 可迁·引擎切片（只读需计算） | 剩约 6 | trade-docs 列表/详情/事实/一致性/内容版本、pricing-data、export-quote products/template-info、quotes 三个参考读、render-fingerprint |
+| 可迁·纯 SQL（门面直连） | 剩约 4 | AI 四读、fx-rates/latest、_debug、clause-templates（含懒种子写，需显式保留） |
 | **方案 A 例外**（跨表事务写） | 49 写 − 8 已迁 = 41 | 取号/状态机/多表同事务（见 P2 §7） |
 | **保持 Python** | 4 | `/external-docs/{id}/download`（字节流）、`/trade-docs/{id}/receipts`、`/doc-set`（Python 计算）、cron 2 条 |
 
@@ -28,18 +28,19 @@
 | GET /quotations | main.py:2504 | 门面直连 | ✅ 已放量 |
 | GET /pricing-data | main.py:2655 | 引擎切片 | ⏳ 待排期 |
 | GET /events | main.py:3278 | 纯 SQL | ⏳ 待审计 |
-| GET /trade-docs | main.py:5340 | 引擎切片 | 🔄 第五批（进行中） |
-| GET /trade-docs/{id} | main.py:5718 | 引擎切片 | 🔄 第五批（进行中） |
+| GET /trade-docs | main.py:5340 | 引擎切片 | ✅ 已放量（第五批） |
+| GET /trade-docs/{id} | main.py:5718 | 引擎切片 | ✅ 已放量（第五批） |
 | GET /trade-docs/{id}/render-data | main.py:6225 | 引擎切片 | ✅ 已放量 |
-| GET /ai/tasks · /ai/providers · /ai/task-bindings · /ai/usage | chain.py | 纯 SQL（待审计） | 🔄 本轮（p3-reads） |
-| GET /export-quote/products | quote_api.py:444 | 引擎切片（3 表） | 🔄 本轮（p3-reads 审计） |
+| GET /ai/providers · /ai/usage | chain.py | 纯 SQL | ✅ 已放量（ai-read） |
+| GET /ai/tasks · /ai/task-bindings | chain.py | **留内核**（TASKS 目录=业务元数据，ADR-008） | — |
+| GET /export-quote/products | quote_api.py:444 | 引擎切片 | ✅ 已放量（catalog 批） |
 | GET /export-quote/products/{key}/formulas | quote_api.py:477 | 引擎切片 | ✅ 已放量 |
-| GET /export-quote/terms/template | quote_api.py:510 | 纯 SQL/常量 | 🔄 本轮（p3-reads 审计） |
-| GET /export-quote/products/{key}/import-template | quote_api.py:1070 | 引擎切片（可能生成文件） | 🔄 本轮（p3-reads 审计） |
-| GET /export-quote/import/order/template-info | quote_api.py:1118 | 引擎切片 | 🔄 本轮（p3-reads 审计） |
+| GET /export-quote/terms/template | quote_api.py:510 | **留内核**（条款模板=业务知识，ADR-008） | — |
+| GET /export-quote/products/{key}/import-template | quote_api.py:1070 | 引擎切片（JSON 分支） | ✅ 已放量；**产文件分支留内核** |
+| GET /export-quote/import/order/template-info | quote_api.py:1118 | 引擎切片 | ✅ 已放量（catalog 批） |
 | GET /quotes · /quotes/{id} | quote_api.py:1771/2202 | 引擎切片 | ✅ 已放量 |
-| GET /quotes/product-name-preference | quote_api.py:1955 | 引擎切片（含偏好合并判定） | 🔄 本轮（p3-reads 审计） |
-| GET /quotes/reference-price · /cost-reference | quote_api.py:2026/2121 | 纯 SQL（2 表） | 🔄 本轮（p3-reads 审计） |
+| GET /quotes/product-name-preference | quote_api.py:1955 | 引擎切片（候选集+内核同序首命中） | ✅ 已放量（catalog 批） |
+| GET /quotes/reference-price · /cost-reference | quote_api.py:2026/2121 | 纯 SQL（中位数 TS 函数） | ✅ 已放量（ai-read 批） |
 | GET /export-quote/products/{key}/spec | quote_api.py:2409 | 引擎切片 | ✅ 已放量 |
 | GET /fx-rates | ws_extras.py:163 | 门面直连 | ✅ 本轮放量（A 决策） |
 | GET /fx-rates/latest | ws_extras.py:180 | 纯 SQL（含回填写） | ⏳ 待排期（写副作用需显式保留） |
@@ -79,3 +80,12 @@
 1. 每轮挑 1–2 组「可迁」项做完并放量，把状态改成 ✅；
 2. 当「可迁」只剩 0 条时，P3 进入收尾：白名单默认 on → 删透传 mount → 删内核已迁 handler → 删 `platform/db.py`/`get_current_user`；
 3. 方案 A 例外清单（41 条）与保持 Python 清单（4 条）要在 P3 收尾时**写进内核的 README/docs**，避免后人误删。
+## 5. 进度快照（2026-10-24 21:10）
+- **本轮再放量 8 条**：fx-rates（A 决策）、ai.providers、ai.usage、quotes.reference-price、quotes.cost-reference、
+  trade-docs.list、trade-docs.detail、export-quote.{products,import-template,order-template-info}、quotes.product-name-preference（合计 10 条 route id）。
+- **线上证据**：内核 tail 只收到 6 条 `/api/v1/internal/engine/*` 纯计算 RPC —— 无任何业务查询打到内核。
+- **剩余可迁**：引擎切片约 6 条（pricing-data、facts、consistency、render-fingerprint ×2、content-versions ×2 视审计）、
+  纯 SQL 约 4 条（events、content-versions、fx-rates/latest、_debug、clause-templates 含懒种子）。
+- **保持 Python / 留内核**：external-docs 下载（字节）、receipts、doc-set、ai/tasks、ai/task-bindings、terms/template、
+  import-template 产文件分支、cron 2 条。
+- **方案 A 例外**：41 条写事务（内核长期保留 DB）。
