@@ -93,19 +93,24 @@ startup); successful ones show `wallTimeP50` >= 5987 ms. We do not assert that "
 cost" - we only observe that in this low-traffic period isolates appear to be recycled frequently, so a large
 share of requests are cold. A8 will include a per-hour series and a cold/warm comparison.
 
-Time shape: 2026-10-22 = 0 errors; errors start 2026-10-23 in clusters (peak 247/hour); **at
-2026-10-24T06:49Z we deployed a new kernel version and the 07:00Z hour reached 993 (4x)** - see "Deploy
-correlation" below.
+Time shape (authoritative series in A2/A8 CSV): 2026-10-22 = 0 errors; errors start 2026-10-23 in clusters
+(peak 247/hour); **we began deploying a new kernel version at 2026-10-24T06:42Z, and the 07:00Z hour reached
+2562 of 2750 invocations with `scriptThrewException` (about 93%, the peak of the whole window)** - see
+"Deploy correlation" below.
 
 ### Deploy correlation (we are flagging this ourselves)
 
 | UTC | Event |
 |---|---|
 | 2026-10-24T06:41:25Z | our commit `c25ffe36` (37 files) |
+| 2026-10-24T06:42:07Z | **deploy workflow started** (run 40071240322, took 8m26s) |
 | 2026-10-24T06:48:06Z-06:48:19Z | we ran a DB migration (alembic upgrade head) |
 | 2026-10-24T06:48:22Z-06:49:46Z | **kernel `kaas` deployed** (new version) |
 | 2026-10-24T06:49:48Z-06:50:32Z | **edge `kaas-edge` deployed** |
-| 2026-10-24T07:00Z | hourly errors 993 (previous peak 247) |
+| 2026-10-24T07:00Z | **2562 / 2750 invocations failed (about 93%)**; previous peak 247 |
+
+Note that the incident **starts on 2026-10-23T00:00Z, before this deploy** (see A9), so we do not claim the
+deploy is the cause - only that it correlates with the largest spike.
 
 Until we finish the rollback control (E4 in A6) we do **not** claim the deploy is unrelated.
 
@@ -188,12 +193,25 @@ Our own black-box reproduction (through our front-end) is in A7 for reference on
 
 ## Attachments
 
-- **A1** tail JSONL: 24 failures + 100+ control events (rayId / timestamp / scriptVersion / colo where available)
-- **A2** GraphQL query + raw JSON/CSV (three windows + hourly series)
-- **A3** version/deploy manifest (UTC) + compatibility settings
-- **A4** minimal reproduction Worker (source + wrangler config + deploy/pressure scripts) - *pending*
-- **A5** dependency & bundle inventory (pylock sha256, `python_modules` size/count, dry-run bundle, tool versions)
-- **A6** control experiment matrix (E1-E5) and results
-- **A7** impact data (edge 502 counts, endpoints, distinct users, retry-adjusted requests) + our black-box repro
-- **A8** memory/CPU/wallTime quantiles per hour (+ cold/warm comparison)
-- **A9** incident timeline (UTC) including our deploys and mitigations
+All machine-readable artifacts live in `docs/ticket-2026-10-24/` (index + regeneration commands in its README).
+
+- **A1** tail samples - `A1_tail_excerpt.md`: **excerpt only**. We captured a single `wrangler tail` session at
+  incident time and kept the two stack traces, but the raw JSONL with ray IDs was **not persisted** (Logpush was
+  not enabled). We state this rather than provide unverifiable logs. Capture tool for next occurrence:
+  `scripts/capture-kernel-tail.ps1` (records rayId / colo / eventTimestamp / scriptVersion).
+- **A2** hourly aggregation - `A2_hourly_error_rate.csv` (85 hours: requests / errors / scriptThrewException / rate)
+- **A3** version & deploy manifest (UTC) + compatibility settings - section above
+- **A4** minimal reproduction: `scripts/pyinit-probe/` (zero-dependency Worker + `pressure.py`) and
+  `scripts/pyinit-probe-kernel/` (clone of the real kernel source). Both were **deployed and measured** (E1/E2b).
+- **A5** dependency & bundle inventory - `A5_dependency_inventory.md`
+- **A6** control experiment matrix (E1-E5) - sections above. **E1, E2, E2b and E3 ran and did NOT reproduce;
+  E4 (rollback control) and E5 (same-version failure/success pairs) are not done and are marked as such.**
+- **A7** edge-side control series - `A7_edge_hourly.csv` (requests / errors / wallTime quantiles per hour)
+- **A8** kernel series by hour and status - `A8_kaas_hourly.csv` (cpu / wallTime / memory P50 and P99)
+- **A9** incident timeline (UTC), including our own deploys and experiments - `A9_timeline.md`
+
+### Current health (context for why A1 is thin)
+
+Query at 2026-10-24T14:55Z: the Python Worker served **45 invocations with 0 errors in the last 90 minutes**.
+The failure is intermittent and is not reproducible on demand, which is exactly why we are asking you to trace
+one of the historical failing invocations from your side.
