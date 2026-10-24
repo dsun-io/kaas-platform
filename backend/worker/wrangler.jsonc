@@ -75,8 +75,12 @@
     // 历史上正是那条隐式路径让 /health 被 SPA 回退返回 index.html（状态码 200 但内容不是
     // 健康检查结果），使 CI 冒烟测试形同虚设、Worker 已挂仍“通过”。
     // 2026-10-24 同类坑第二次踩到：P2 的 /internal/engine/* RPC 没登记在这里 ⇒ 请求被资产层
-    // SPA 回退成 index.html（HTML）⇒ 门面 upstream.json() 解析失败，报
+    // SPA 回退成 index.html（HTML）/ 非 GET 返回 405 空体 ⇒ 门面 upstream.json() 解析失败，报
     // 「engine rpc returned non-JSON body」502（内核 outcome 却是 success，极易误判为代码 bug）。
-    "run_worker_first": ["/api/*", "/health", "/internal/*"]
+    //
+    // 修法取**最彻底的一种**：内核没有公网域名（只经 Service Binding + cron 被调用），
+    // 静态资产对它本来就多余（前端由 kaas-edge 伺服）⇒ 直接 true，所有请求进 FastAPI。
+    // 这样以后新增任何内部前缀（/internal/*、/mcp、将来的 RPC 域）都不必再改这一行。
+    "run_worker_first": true
   }
 }
