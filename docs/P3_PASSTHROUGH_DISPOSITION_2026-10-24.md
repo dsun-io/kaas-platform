@@ -89,3 +89,47 @@
 - **保持 Python / 留内核**：external-docs 下载（字节）、receipts、doc-set、ai/tasks、ai/task-bindings、terms/template、
   import-template 产文件分支、cron 2 条。
 - **方案 A 例外**：41 条写事务（内核长期保留 DB）。
+## 6. 迁移进度终局评估（2026-10-24 21:35）
+
+### 已完成（本任务内新增 40+ 条 route id 直连/切片）
+P0 五条热读、认证域 parity、**引擎切片 12 条**（calculate / verify / formulas / spec / explain / render-data /
+quotes.list / quotes.detail / trade-docs.list / trade-docs.detail / export-quote.products / import-template /
+order-template-info / quotes.product-name-preference / pricing-data / trade-docs.facts / trade-docs.consistency）、
+**纯 SQL 直连 10 条**（quotations / tax-archives / product-tax-rates / external-docs / trade-docs.files / fx-rates /
+ai.providers / ai.usage / quotes.reference-price / quotes.cost-reference / events / trade-docs.content-versions×2）、
+**写路径 6 条**（tax-archives / product-tax-rates 的 create/update/delete）。
+
+### 剩余（全部属三种终点之一，无「待定」）
+| 类别 | 条数 | 处置 |
+|---|---|---|
+| 方案 A 例外（跨表事务写） | 41 | **永久保留内核 DB**（取号/状态机/多表同事务），登记后不再迁 |
+| 保持 Python（字节/PDF/AI 执行/cron/出站探针） | ~10 | external-docs 下载、receipts、doc-set、ai/tasks、ai/task-bindings、terms/template、fx-rates/latest（含回填）、fx-rates/_debug（出站探针）、clause-templates（懒种子）、cron ×2 |
+| 低价值待定 | 1 | render-fingerprint-check 单张（依赖完整 render 装配 + 时间相关，价值/成本比最差）⇒ **按决策留内核** |
+| batch 指纹 | 1 | render-fingerprint-checks/batch（50×7 dataset = 新批量契约）⇒ **留内核/另立项** |
+
+> 结论：**「可迁」清单已清空**。P3 剩下的不是「再迁几条」，而是**收尾四步**（下文 §7）。
+
+## 7. P3 收尾执行手册（下一步，需按顺序）
+
+### 步骤 1：观察期（当前所处位置）
+- 所有已迁路由已在生产运行；观察错误率（`scripts/check-kernel-error-rate.py` + GitHub 每 15 分钟 kernel-health）与用户反馈；
+- 判据：连续 24h 无「迁移相关」回归（对照 tail / 5xx / 前端报错）。
+
+### 步骤 2：例外清单落盘（可立即做，无风险）
+- 把「方案 A 41 条 + 保持 Python ~10 条」写进 `backend/worker/src/README` 或 docs 的**内核 DB 使用白名单**，
+  并在内核 CI 加一条静态断言：**除白名单外不允许新增 `_acquire`/`db.fetch` 调用**（防回潮）。
+
+### 步骤 3：删双份（迁移后清理）
+- 对**已放量且稳定**的 route id：删除内核对应 handler（否则永远有两份实现，漂移风险）；
+- 每删一批必须：先确认白名单里该 id 是 on（否则 off 回退会 404）、跑 worker 全量、观察一轮线上；
+- 删除顺序建议：只读直连 → 引擎切片（handler 改为只保留 RPC 入口）→ 写路径。
+
+### 步骤 4：删依赖（最终目标）
+- 当内核剩余 DB 调用**全部落在例外白名单内**时：
+  1. 删 `platform/db.py` 之外的所有非白名单调用点；
+  2. `get_current_user` 仍需保留（例外清单里的端点仍要鉴权）⇒ **P3 的终点不是「零 DB」，而是「DB 只服务例外清单」**；
+  3. 因此真正的收益是：**90%+ 的请求路径不再触发 Pyodide 里的 DB/鉴权初始化**，冷启动面大幅缩小。
+
+> ⚠️ 重要澄清（避免误判完成）：P3 原目标写「删除 platform/db.py、get_current_user、bcrypt/jwt 依赖」，
+> 但按方案 A 的裁决，**41 条写事务 + 10 条保持 Python 的端点永远需要 DB 与鉴权** ⇒ 该目标要修订为
+> 「DB/鉴权只在内核的例外清单内出现」。这个修订必须写进 ARCH 文档，否则交接时会以为目标没达成。
