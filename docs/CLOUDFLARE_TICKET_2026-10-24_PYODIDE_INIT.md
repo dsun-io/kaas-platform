@@ -98,6 +98,34 @@
 **对工单诉求的影响**：第 1/3 问仍然成立（是否已知缺陷、两类异常是否同根因），但我们在正文中**不再暗示**「任意 Python Worker 必现」；
 改为请 Cloudflare 判定「**init 成本/依赖面到何种程度会触发**」，并给出 128 MB 与 init 峰值的关系（第 4 问）。
 
+
+### 3D. E2 依赖二分（2026-10-24T14:05Z，本地 wrangler 部署同一 probe）
+
+同一份 probe 源码（handler 在模块导入期**尽力 import** 生产内核的主要依赖，缺包则跳过并回报），逐档加重后重新部署压测：
+
+| 档 | `python_modules` 内容 | 上传体积 | **Worker Startup Time** | 串行 | 并发 20 | 实际 import 成功 |
+|---|---|---|---|---|---|---|
+| V1 | 仅 `workers-runtime-sdk` | 112.85 KiB | **427 ms** | 8/8 | 20/20 | jwt、multipart 都没有 |
+| V2 | + fastapi + pydantic | 10372.94 KiB (~10.1 MiB) | **620 ms** | — | — | 见下 |
+| V3 | + asyncpg + pyjwt + bcrypt + python-multipart | 12673.16 KiB (~12.4 MiB) | **943 ms** | 8/8 | **20/20** | ⚠️ 只有 `jwt`、`multipart` |
+
+**结论（含重要的自我限制）**：
+1. 包体从 113 KiB → **12.4 MiB（已超过生产内核的 11.79 MiB）**，startup 从 427 ms → 943 ms，
+   **并发 20 依然 20/20 成功、零异常** ⇒ 单靠「包体大 + 并发」不足以复现；
+2. ⚠️ **但这档实验并不完整**：部署后 worker 内 `loaded` 只有 `jwt`/`multipart`，
+   `fastapi`/`pydantic`/`asyncpg`/`bcrypt` 全部 `missing` —— 因为本地用 `uv pip install --target` 装的是**本机平台 wheel**，
+   Pyodide 里加载不了（正确做法是 `pywrangler` 安装 pyodide wheel）。
+   ⇒ **真正的「重 pure-python 依赖面」对照还没做到**，E2 不能就此结案。
+3. 下一步（E2b）：把**真实内核源码**克隆部署（`scripts/pyinit-probe-kernel/`，CI 运行时从 `backend/worker/src` 同步、用 pywrangler 装 pyodide 依赖），
+   压它的 `/health`（不触库）—— 这能区分「源码/模块图规模」与「生产 bindings」两个假设。
+   **当前阻塞**：CI 的 `CLOUDFLARE_API_TOKEN` 似乎**没有创建新 worker 的权限**（本地用 DSH-Admin token 部署 probe 成功；CI 在 API 层失败且无 Python 错误；
+   而 CI 部署 `kaas`/`kaas-edge` 一直成功，那是因为这两个 worker **已存在**）。E2b 需要在有创建权限的凭据下跑（或先手工创建一个同名空 worker）。
+
+### 3E. 本轮新增的可复现资产（都在仓库里）
+- `scripts/pyinit-probe/`：最小零依赖 probe（A4）+ `pressure.py`（E1/E3 压测，带 UA 绕 1010）
+- `scripts/pyinit-probe-kernel/`：真实内核源码克隆探针（E2b，CI 同步源码）
+- `.github/workflows/pyinit-probe.yml`：手动触发，`target=probe|kernelclone`
+
 ### 3B. E1 本机阻塞记录（已解决，留档避免重复踩坑）
 
 我们已经把最小 probe Worker 写好（`.tmp-pyinit-probe/`：`pyproject.toml` + `wrangler.jsonc`（name `kaas-pyinit-probe`、
