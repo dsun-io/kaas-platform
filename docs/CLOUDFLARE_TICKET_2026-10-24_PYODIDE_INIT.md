@@ -66,14 +66,39 @@
 
 | # | 实验 | 目的 | 状态 |
 |---|---|---|---|
-| E1 | 最小 `python_workers` Worker（同账号/compat_date/flags、无业务依赖）并发冷启动压测 | **去掉我们的代码是否仍崩**（决定「平台缺陷 vs 我们的包体」） | **pending — 本机工具链阻塞（见下）** |
-| E2 | 依赖二分：hello-world → +fastapi/pydantic → +asyncpg → +PyJWT/bcrypt → 全量 `python_modules` | init 崩溃是否依赖我们的依赖面 | pending |
-| E3 | 冷启动后**串行** 10 次（间隔 1s）vs **并发** 10 次 | 验证 `promising task` 的**重入**假设 | pending |
+| E1 | 最小 `python_workers` Worker（同账号/compat_date/flags、**零业务依赖**）压测 | **去掉我们的代码是否仍崩**（决定「平台缺陷 vs 我们的包体」） | ✅ **已跑**：见 §3C（结果：**不复现**） |
+| E2 | 依赖二分：hello-world → +fastapi/pydantic → +asyncpg → +PyJWT/bcrypt → 全量 `python_modules` | init 崩溃是否依赖我们的依赖面 | **下一步（E1 结果指向这里）** |
+| E3 | 串行 vs 并发冷启动 | 验证 `promising task` 的**重入**假设 | ✅ **已跑**：见 §3C（结果：**不复现**） |
 | E4 | 把内核回滚到事故前版本观察 24h | 控制「我们 06:49Z 部署」这个混淆因子 | **未做（如实披露，见 §8.1）** |
 | E5 | 同版本、同 5 分钟窗口内：失败 5 条 + 成功 5 条（含 ray ID） | 证明「同代码既有失败也有成功」 | pending（A1 已有 24 失败，缺成功对照） |
 
 
-### 3B. E1 本机阻塞记录（如实记录，避免以后重复踩坑）
+### 3C. E1/E3 实测结果（2026-10-24T13:52Z，**零业务依赖的最小 probe**）
+
+**probe 配置**（源码与会话已入库：`scripts/pyinit-probe/`，可作附件 A4）：
+- worker 名 `kaas-pyinit-probe`；`compatibility_date=2026-09-18`；`compatibility_flags=["python_workers"]`；
+- `dependencies = []`（**不 import 任何 kaas 模块**），handler = `WorkerEntrypoint.Default.fetch` 返回一行 JSON；
+- 无 routes / 无 cron / 仅 `workers_dev`；部署后 **Worker Startup Time 465 ms**、上传 111.78 KiB（gzip 31.87 KiB）。
+
+**压测结果**（`scripts/pyinit-probe/pressure.py`，带稳定 UA 绕过 workers.dev 的 1010 拦截）：
+
+| 组别 | 请求数 | 成功 | 失败 | 耗时 | 异常签名 |
+|---|---|---|---|---|---|
+| **串行**（间隔 1s） | 8 | **8** | 0 | 12.7 s | 无 |
+| **并发**（同一瞬间） | 20 | **20** | 0 | 1.4 s | 无 |
+
+**结论（必须谨慎表述）**：
+1. 在**零业务依赖 + 小包体（111 KiB）**的 Python Worker 上，串行与并发压测**都没有复现** `initPyInstance` 类异常；
+2. 因此本工单**不能**断言「任何 `python_workers` Worker 在初始化时必现该缺陷」；
+   更可能的解释是：**触发条件与 init 的重量/依赖面有关**（我们生产内核：`python_modules` 11.79 MiB / 606 文件、~800 KB 源码、冷启动 2.6–3.9 s，
+   而 probe 仅 111 KiB / 465 ms 启动）⇒ 下一步是 **E2 依赖二分**，找出从哪一档开始出现异常。
+3. **方法学边界（我们主动说明）**：本轮并发压测的 isolate 可能已被 warmup 预热，「严格冷启动」需要等 isolate 回收（分钟级）后再打；
+   我们会补一组「长时间空闲 → 首请求」的对照，并在 E2 里同时记录每档的 startup 时间与失败率。
+
+**对工单诉求的影响**：第 1/3 问仍然成立（是否已知缺陷、两类异常是否同根因），但我们在正文中**不再暗示**「任意 Python Worker 必现」；
+改为请 Cloudflare 判定「**init 成本/依赖面到何种程度会触发**」，并给出 128 MB 与 init 峰值的关系（第 4 问）。
+
+### 3B. E1 本机阻塞记录（已解决，留档避免重复踩坑）
 
 我们已经把最小 probe Worker 写好（`.tmp-pyinit-probe/`：`pyproject.toml` + `wrangler.jsonc`（name `kaas-pyinit-probe`、
 `compatibility_date=2026-09-18`、flags `[\"python_workers\"]`、只开 `workers_dev`）+ `src/entry.py`（只 `from js import Response`，零依赖）），
