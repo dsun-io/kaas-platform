@@ -5500,6 +5500,130 @@ def _doc_with_seal(body: dict) -> bool:
     return body.get("with_seal", True) not in (False, 0, "false", "0")
 
 
+async def _require_upstream_visible(conn, order_id, quote_id, inquiry_id,
+                                    user: dict) -> None:
+    """预览端点的上游闸门：订单 / 报价 / 询盘必须对调用者可见，否则 404。
+
+    为什么单独一道、为什么不改 create：create 的越权上游本来也开不出单
+    （客户继承 + 客户闸门 + CUSTOMER_MISMATCH 会挡住），但错误码可能被用来
+    探测「那个 id 存在、属于别的客户」（422 暴露存在性）。预览是用户可以反复
+    点的只读入口，按任务口径统一收成 404（不泄露存在性）；create 的既有契约
+    不动（已有测试钉着 CUSTOMER_MISMATCH / 422 的形状）。
+    """
+    if order_id is not None:
+        row = await conn.fetchrow(
+            "SELECT * FROM orders WHERE tenant_id=$1 AND id=$2",
+            DEFAULT_TENANT, order_id,
+        )
+        if row is None or not _owner_visible(user, row):
+            raise HTTPException(status_code=404, detail={
+                "error": "not_found", "code": "ORDER_NOT_FOUND"})
+    if quote_id is not None:
+        row = await conn.fetchrow(
+            "SELECT * FROM quote_orders WHERE tenant_id=$1 AND id=$2",
+            DEFAULT_TENANT, quote_id,
+        )
+        if row is None or not _owner_visible(user, row):
+            raise HTTPException(status_code=404, detail={
+                "error": "not_found", "code": "QUOTE_NOT_FOUND"})
+    if inquiry_id is not None:
+        row = await conn.fetchrow(
+            "SELECT * FROM cust_inquiries WHERE tenant_id=$1 AND id=$2",
+            DEFAULT_TENANT, inquiry_id,
+        )
+        if row is None or not _owner_visible(user, row):
+            raise HTTPException(status_code=404, detail={
+                "error": "not_found", "code": "INQUIRY_NOT_FOUND"})
+
+
+async def _assemble_doc_inputs(request: Request, body: dict, user: dict, conn,
+                               *, check_upstream_visibility: bool = False) -> dict:
+    """开单 / 预览共用的装配（纯读）：请求体规范化 + 上游快照 + 客户闸门。
+
+    为什么抽出来：create 与 preview 必须「同源同形状」—— 两套各写一遍，
+    迟早出现「预览有行项、开单没行项」或金额取错上游这类漂移。这里只发 SELECT
+    （快照走 platform db、客户闸门走调用方给的连接）：create 在事务里拿到结果后
+    再 INSERT；preview 一个写操作都不做（零写库靠这个边界保证）。
+
+    check_upstream_visibility=True（仅 preview）时先过上游可见性闸门，
+    越权 / 不存在 → 404（不泄露存在性）。
+    """
+    doc_type = (body.get("doc_type") or "").strip()
+    if doc_type not in DOC_TYPE_SET:
+        raise HTTPException(status_code=422, detail={"error": "bad_doc_type"})
+    currency = (body.get("currency") or "USD").strip().upper() or "USD"
+    validate_enum("currency", currency)
+    # 盖章开关：开单时未勾选 ⇒ 存 False，渲染阶段不注入默认章
+    with_seal = _doc_with_seal(body)
+
+    order_id = _as_bigint(body.get("order_id"), field="order_id",
+                          code="INVALID_ORDER_ID")
+    # quote_order_id 是 dev/前端既有的入参名（报价工作台就用它），
+    # quote_id 是迁移 010 的列名/任务书叫法 —— 指向同一个对象，取任意一个。
+    quote_ref = body.get("quote_id")
+    if quote_ref in (None, ""):
+        quote_ref = body.get("quote_order_id")
+    quote_id = _as_bigint(quote_ref, field="quote_id", code="INVALID_QUOTE_ID")
+    inquiry_id = _as_bigint(body.get("inquiry_id"), field="inquiry_id",
+                            code="INVALID_INQUIRY_ID")
+    if order_id is not None and quote_id is not None:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "PARENT_CONFLICT",
+            "detail": ("单证只能挂一个父对象：order_id 与 quote_id 不能同时给"
+                       "（约束 ck_doc_single_parent 要求二选一）"),
+        })
+
+    if check_upstream_visibility:
+        await _require_upstream_visible(conn, order_id, quote_id, inquiry_id, user)
+
+    # 上游快照仍走 platform/db：读的是已提交数据，与本事务的写入无关
+    # （快照助手只认 db 的 (request, sql, ...) 形状，见 doc_payload.py）。
+    payload = {"sources": {}, "custom": body.get("raw_payload") or {}}
+    total_amount = None
+    customer_id = body.get("customer_id")
+    parent_customer_id = None
+    if order_id:
+        payload["sources"]["order"] = await _dp.order_snapshot(
+            db, request, order_id)
+        total_amount = payload["sources"]["order"]["total_amount"]
+        parent_customer_id = payload["sources"]["order"].get("customer_id")
+        if customer_id in (None, ""):
+            customer_id = parent_customer_id
+    if quote_id:
+        payload["sources"]["quote"] = await _dp.quote_snapshot(
+            db, request, quote_id)
+        if total_amount is None:
+            total_amount = payload["sources"]["quote"]["total_amount"]
+        parent_customer_id = (parent_customer_id
+                              or payload["sources"]["quote"].get("customer_id"))
+        if customer_id in (None, ""):
+            customer_id = parent_customer_id
+    if inquiry_id:
+        payload["sources"]["inquiry"] = await _dp.inquiry_snapshot(
+            db, request, inquiry_id)
+
+    # 客户闸门放在所有继承之后：手工传的、快照继承来的都要过同一道闸门
+    _reject_protected_custom(payload.get("custom"))
+    customer = await _doc_customer(conn, customer_id, user, required=True)
+
+    # 一致性：显式客户与父对象的客户必须同一个 —— 否则这张单会
+    # 「挂在 A 客户名下、却指向 B 客户的订单」，客户页的树就错位了
+    if (parent_customer_id is not None
+            and str(parent_customer_id) != str(customer["id"])):
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "CUSTOMER_MISMATCH",
+            "detail": ("所选客户与上游单据的客户不一致："
+                       f"上游属于客户 {parent_customer_id}，"
+                       f"请求给的是客户 {customer['id']}"),
+        })
+
+    return {
+        "doc_type": doc_type, "currency": currency, "with_seal": with_seal,
+        "order_id": order_id, "quote_id": quote_id, "inquiry_id": inquiry_id,
+        "payload": payload, "total_amount": total_amount, "customer": customer,
+    }
+
+
 @app.post("/api/v1/trade-docs", status_code=201)
 async def create_trade_doc(request: Request, body: dict,
                            user: dict = Depends(_get_current_user)):
@@ -5517,73 +5641,20 @@ async def create_trade_doc(request: Request, body: dict,
     - 客户未显式给时从上游快照继承（继承来的同样过闸门 ——
       否则一张别家团队的报价单可以顺着继承把单证建到别家客户名下）。
     """
-    doc_type = (body.get("doc_type") or "").strip()
-    if doc_type not in DOC_TYPE_SET:
-        raise HTTPException(status_code=422, detail={"error": "bad_doc_type"})
-    currency = (body.get("currency") or "USD").strip().upper() or "USD"
-    validate_enum("currency", currency)
-    # 盖章开关：开单时未勾选 ⇒ 存 False，渲染阶段不注入默认章
-    with_seal = _doc_with_seal(body)
-
-    order_id = _as_bigint(body.get("order_id"), field="order_id",
-                          code="INVALID_ORDER_ID")
-    # `quote_order_id` 是 dev/前端既有的入参名（报价工作台就用它），
-    # `quote_id` 是迁移 010 的列名/任务书叫法 —— 指向同一个对象，取任意一个。
-    quote_ref = body.get("quote_id")
-    if quote_ref in (None, ""):
-        quote_ref = body.get("quote_order_id")
-    quote_id = _as_bigint(quote_ref, field="quote_id", code="INVALID_QUOTE_ID")
-    inquiry_id = _as_bigint(body.get("inquiry_id"), field="inquiry_id",
-                            code="INVALID_INQUIRY_ID")
-    if order_id is not None and quote_id is not None:
-        raise HTTPException(status_code=422, detail={
-            "error": "validation", "code": "PARENT_CONFLICT",
-            "detail": ("单证只能挂一个父对象：order_id 与 quote_id 不能同时给"
-                       "（约束 ck_doc_single_parent 要求二选一）"),
-        })
-
     async with _acquire(request) as conn:
         async with conn.transaction():
-            # 上游快照仍走 platform/db：读的是已提交数据，与本事务的写入无关
-            # （快照助手只认 `db` 的 (request, sql, ...) 形状，见 doc_payload.py）。
-            payload = {"sources": {}, "custom": body.get("raw_payload") or {}}
-            total_amount = None
-            customer_id = body.get("customer_id")
-            parent_customer_id = None
-            if order_id:
-                payload["sources"]["order"] = await _dp.order_snapshot(
-                    db, request, order_id)
-                total_amount = payload["sources"]["order"]["total_amount"]
-                parent_customer_id = payload["sources"]["order"].get("customer_id")
-                if customer_id in (None, ""):
-                    customer_id = parent_customer_id
-            if quote_id:
-                payload["sources"]["quote"] = await _dp.quote_snapshot(
-                    db, request, quote_id)
-                if total_amount is None:
-                    total_amount = payload["sources"]["quote"]["total_amount"]
-                parent_customer_id = (parent_customer_id
-                                      or payload["sources"]["quote"].get("customer_id"))
-                if customer_id in (None, ""):
-                    customer_id = parent_customer_id
-            if inquiry_id:
-                payload["sources"]["inquiry"] = await _dp.inquiry_snapshot(
-                    db, request, inquiry_id)
-
-            # 客户闸门放在**所有继承之后**：手工传的、快照继承来的都要过同一道闸门
-            _reject_protected_custom(payload.get("custom"))
-            customer = await _doc_customer(conn, customer_id, user, required=True)
-
-            # 一致性：显式客户与父对象的客户必须同一个 —— 否则这张单会
-            # 「挂在 A 客户名下、却指向 B 客户的订单」，客户页的树就错位了
-            if (parent_customer_id is not None
-                    and str(parent_customer_id) != str(customer["id"])):
-                raise HTTPException(status_code=422, detail={
-                    "error": "validation", "code": "CUSTOMER_MISMATCH",
-                    "detail": ("所选客户与上游单据的客户不一致："
-                               f"上游属于客户 {parent_customer_id}，"
-                               f"请求给的是客户 {customer['id']}"),
-                })
+            # 请求体校验 / 上游快照 / 客户闸门与预览端点共用同一份（只读，见
+            # _assemble_doc_inputs）；本函数只负责把结果落库。
+            asm = await _assemble_doc_inputs(request, body, user, conn)
+            doc_type = asm["doc_type"]
+            currency = asm["currency"]
+            with_seal = asm["with_seal"]
+            order_id = asm["order_id"]
+            quote_id = asm["quote_id"]
+            inquiry_id = asm["inquiry_id"]
+            payload = asm["payload"]
+            total_amount = asm["total_amount"]
+            customer = asm["customer"]
 
             if doc_type == "quotation" and quote_id is not None:
                 # 报价单与报价是 1:1（生成报价时已自动产出一张）。
@@ -6058,6 +6129,99 @@ async def _apply_product_defaults(request: Request, doc_type: str, data: dict, c
     return apply_product_defaults(data, custom, doc_type, info)
 
 
+async def _buyer_block_of_doc(request: Request, customer_id) -> dict:
+    """买方区块（客户 + 主联系人）：render-data 与开单预览共用同一组查询。"""
+    if not customer_id:
+        return {}
+    try:
+        cid_int = int(customer_id)
+    except (TypeError, ValueError):
+        return {}
+    customer = await db.fetchrow(
+        request,
+        "SELECT id, name, address FROM customers WHERE tenant_id=$1 AND id=$2",
+        DEFAULT_TENANT, cid_int, table="customers",
+    )
+    contact = await db.fetchrow(
+        request,
+        "SELECT name, phone, email FROM cust_contacts"
+        " WHERE tenant_id=$1 AND customer_id=$2 ORDER BY is_primary DESC, id LIMIT 1",
+        DEFAULT_TENANT, cid_int,
+    )
+    return _dp.buyer_block_of(customer, contact)
+
+
+async def _render_bundle_of_doc(request: Request, doc: dict, *, user: dict = None) -> dict:
+    """单据（doc_dict 投影 / 预览虚拟单据）→ {doc, data, company_profile_configured}。
+
+    **唯一装配点**：GET /trade-docs/{id}/render-data（已落库）与
+    POST /trade-docs/preview-render-data（未落库预览）都走这里 ——
+    字段来源与装配顺序（照片 → 默认章 → 产品档案默认值）只有一处，
+    预览与开单后的渲染结果不会因为两个入口而漂移。
+    """
+    payload = doc.get("raw_payload") or {}
+    if isinstance(payload, str):
+        payload = _json.loads(payload)
+    # 预览的 payload 直接来自请求体、render-data 的来自库，两条路都不能因为
+    # 手写内容类型畸形（custom/sources 不是对象）把整张单据打成 500 ——
+    # 取不到就按空处理，与"照片解析失败就跳过"同一口径。
+    if not isinstance(payload, dict):
+        payload = {}
+    sources = payload.get("sources")
+    sources = sources if isinstance(sources, dict) else {}
+    custom = payload.get("custom")
+    custom = custom if isinstance(custom, dict) else {}
+    upstream = sources.get("order") or sources.get("quote") or {}
+    if not isinstance(upstream, dict):
+        upstream = {}
+
+    profile = await db.fetchrow(
+        request, "SELECT * FROM tenant_company_profile WHERE tenant_id=$1",
+        DEFAULT_TENANT, table="tenant_company_profile",
+    )
+    profile_dict = dict(profile) if profile else {}
+
+    data = _build_render_data(
+        doc_type=doc["doc_type"], doc_no=doc["doc_no"],
+        # doc_status 是共享内核的**必填**关键字参数（无默认值）：漏传就是
+        # TypeError → render-data 生产 500。orchestrator 传的是 d.status。
+        doc_status=doc.get("status"),
+        currency=doc.get("currency") or "USD",
+        total_amount=doc.get("total_amount"),
+        created_at=doc.get("created_at"), issued_at=doc.get("issued_at"),
+        seller=_dp.seller_block(profile),
+        buyer=await _buyer_block_of_doc(request, doc.get("customer_id")),
+        bank_info=_dp.bank_block(profile),
+        sources=sources,
+        trade_terms={f: upstream.get(f) for f in TRADE_TERM_FIELDS
+                     if _dp.clean(upstream.get(f)) is not None},
+        custom=custom,
+        defaults={
+            "incoterm": profile_dict.get("default_incoterm"),
+            "payment_terms": profile_dict.get("default_payment_terms"),
+            "country_of_origin": profile_dict.get("default_country_of_origin"),
+        },
+    )
+    # 单证引用产品图：把 {file_id} 解析成图片源（装配层做，渲染器一行不改）
+    import ws_files as _ws_files  # 模块在文件末尾导入，函数内惰性引用
+    data = await _ws_files.resolve_photo_refs(request, data, user=user)
+    # 单据没显式给 company_stamp → 自动带出租户默认公章（同样转 data URI）。
+    # with_seal=False（开单时未勾选盖章）⇒ 不注入默认章。
+    doc_with_seal = doc.get("with_seal")
+    if doc_with_seal is None:
+        doc_with_seal = True
+    data = await _apply_default_seal(request, user, data, custom,
+                                     with_seal=bool(doc_with_seal))
+    # 单据关联了产品 → 把产品档案的基础信息补进仍为空的行项（见共享内核 product_defaults）
+    data = await _apply_product_defaults(request, doc["doc_type"], data, custom, user=user)
+    return {
+        "doc": doc,
+        "data": data,
+        # 企业主体未配置时明确告知，避免用户对着空白抬头单据猜原因
+        "company_profile_configured": bool(profile_dict.get("name_en")),
+    }
+
+
 @app.get("/api/v1/trade-docs/{doc_id}/render-data")
 async def get_trade_doc_render_data(doc_id: int, request: Request,
                                     user: dict = Depends(_get_current_user)):
@@ -6073,78 +6237,69 @@ async def get_trade_doc_render_data(doc_id: int, request: Request,
     _require_doc_visible(user, d)
     doc = _dp.doc_dict(d)
 
-    payload = doc.get("raw_payload") or {}
-    if isinstance(payload, str):
-        payload = _json.loads(payload)
-    sources = payload.get("sources") or {}
-    custom = payload.get("custom") or {}
-    upstream = sources.get("order") or sources.get("quote") or {}
+    # 装配（含照片 / 默认章 / 产品档案默认值）只有一份：见 _render_bundle_of_doc
+    return await _render_bundle_of_doc(request, doc, user=user)
 
-    profile = await db.fetchrow(
-        request, "SELECT * FROM tenant_company_profile WHERE tenant_id=$1",
-        DEFAULT_TENANT, table="tenant_company_profile",
-    )
-    profile_dict = dict(profile) if profile else {}
 
-    buyer = {}
-    cid = doc.get("customer_id")
-    if cid:
-        try:
-            cid_int = int(cid)
-        except (TypeError, ValueError):
-            cid_int = None
-        if cid_int is not None:
-            customer = await db.fetchrow(
-                request,
-                "SELECT id, name, address FROM customers WHERE tenant_id=$1 AND id=$2",
-                DEFAULT_TENANT, cid_int, table="customers",
+@app.post("/api/v1/trade-docs/preview-render-data")
+async def preview_trade_doc_render_data(request: Request, body: dict,
+                                        user: dict = Depends(_get_current_user)):
+    """开单前完整成品预览：**只读端点**（不 INSERT/UPDATE/DELETE，不签发/归档/上传）。
+
+    请求体与 POST /api/v1/trade-docs 同一形状（单张 doc_type）；响应与
+    GET /api/v1/trade-docs/{id}/render-data 同形状
+    {doc, data, company_profile_configured}，前端用同一套
+    renderTradeDoc(doc_type, data) 渲染 ⇒「预览所见 = 开单所得」。
+
+    doc 是**虚拟单据**：id=null、status='draft'、doc_no=按当前时刻算出的下一个
+    编号（只读计算，不占用、不落库）；data 与已落库单据的 render-data 同源同形状
+    （真实买方/卖方/银行/条款/行项/金额）。没有上游（只挂客户）时货物为空、
+    金额自然为空 —— 不塞样板数据。
+    doc_type='quotation' 且该报价已有 1:1 报价单时，与 create 的语义保持一致：
+    返回已存在的那一张（doc.id 非空）—— 否则预览的编号/内容会和开单结果对不上。
+    """
+    async with _acquire(request) as conn:
+        asm = await _assemble_doc_inputs(request, body, user, conn,
+                                         check_upstream_visibility=True)
+        # 与 create 的「报价单 1:1」口径一致（只读查询）：已存在就预览那一张。
+        existing = None
+        if asm["doc_type"] == "quotation" and asm["quote_id"] is not None:
+            existing = await conn.fetchrow(
+                "SELECT * FROM trade_docs WHERE tenant_id=$1"
+                " AND doc_type='quotation' AND quote_id=$2 ORDER BY id LIMIT 1",
+                DEFAULT_TENANT, asm["quote_id"],
             )
-            contact = await db.fetchrow(
-                request,
-                "SELECT name, phone, email FROM cust_contacts"
-                " WHERE tenant_id=$1 AND customer_id=$2 ORDER BY is_primary DESC, id LIMIT 1",
-                DEFAULT_TENANT, cid_int,
-            )
-            buyer = _dp.buyer_block_of(customer, contact)
+        doc_no = None
+        if existing is None:
+            # 只读编号计算（SELECT 查重）：显示"现在开单会拿到"的编号，不占用段号
+            doc_no = await _next_customer_doc_no(
+                conn, asm["doc_type"], "trade_docs", asm["customer"])
 
-    data = _build_render_data(
-        doc_type=doc["doc_type"], doc_no=doc["doc_no"],
-        # doc_status 是共享内核的**必填**关键字参数（无默认值）：漏传就是
-        # TypeError → render-data 生产 500。orchestrator 传的是 d.status。
-        doc_status=doc.get("status"),
-        currency=doc.get("currency") or "USD",
-        total_amount=doc.get("total_amount"),
-        created_at=doc.get("created_at"), issued_at=doc.get("issued_at"),
-        seller=_dp.seller_block(profile), buyer=buyer,
-        bank_info=_dp.bank_block(profile),
-        sources=sources,
-        trade_terms={f: upstream.get(f) for f in TRADE_TERM_FIELDS
-                     if _dp.clean(upstream.get(f)) is not None},
-        custom=custom,
-        defaults={
-            "incoterm": profile_dict.get("default_incoterm"),
-            "payment_terms": profile_dict.get("default_payment_terms"),
-            "country_of_origin": profile_dict.get("default_country_of_origin"),
-        },
-    )
-    # 单证引用产品图：把 `{file_id}` 解析成图片源（装配层做，渲染器一行不改）
-    import ws_files as _ws_files  # 模块在文件末尾导入，函数内惰性引用
-    data = await _ws_files.resolve_photo_refs(request, data, user=user)
-    # 单据没显式给 company_stamp → 自动带出租户默认公章（同样转 data URI）。
-    # `trade_docs.with_seal=False`（开单时未勾选盖章）⇒ 不注入默认章。
-    doc_with_seal = doc.get("with_seal")
-    if doc_with_seal is None:
-        doc_with_seal = True
-    data = await _apply_default_seal(request, user, data, custom,
-                                     with_seal=bool(doc_with_seal))
-    # 单据关联了产品 → 把产品档案的基础信息补进仍为空的行项（见共享内核 product_defaults）
-    data = await _apply_product_defaults(request, doc["doc_type"], data, custom, user=user)
-    return {
-        "doc": doc,
-        "data": data,
-        # 企业主体未配置时明确告知，避免用户对着空白抬头单据猜原因
-        "company_profile_configured": bool(profile_dict.get("name_en")),
+    # 连接已关闭：后续装配只走 platform db（与 render-data 同一组只读查询）
+    if existing is not None:
+        _require_doc_visible(user, existing)
+        return await _render_bundle_of_doc(
+            request, _dp.doc_dict(existing), user=user)
+
+    virtual_doc = {
+        "id": None,
+        "tenant_id": DEFAULT_TENANT,
+        "doc_no": doc_no,
+        "doc_type": asm["doc_type"],
+        "order_id": asm["order_id"],
+        "quote_id": asm["quote_id"],
+        "customer_id": asm["customer"]["id"],
+        "status": "draft",
+        "currency": asm["currency"],
+        "total_amount": asm["total_amount"],
+        "raw_payload": asm["payload"],
+        "team_id": asm["customer"].get("team_id"),
+        "with_seal": asm["with_seal"],
+        # 预览日期 = 现在（开单后 created_at 就是此刻）⇒ 日期栏不至于空白
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "issued_at": None,
     }
+    return await _render_bundle_of_doc(request, virtual_doc, user=user)
 
 
 import chain  # noqa: E402,F401

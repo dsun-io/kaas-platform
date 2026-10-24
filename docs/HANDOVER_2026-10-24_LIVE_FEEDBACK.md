@@ -140,3 +140,47 @@
 4. **`/workstation-products` 旧路由**仍按 DB 行判定产品存在（前端已不用它；旧 REST 客户端对注册表产品可能 404）——
    本批只修用户实际触发的 `/tenant-product-status`，该路由建议后续收敛/下线。
 5. 管理员视角同一系统产品多团队 profile 时取最近更新一行（团队用户只看自己团队）。
+
+---
+
+## 7. 第二轮补充反馈（2026-10-24 下午，同日执行）
+
+> 用户在第一轮上线后的补充：① 英文名不要"地区叫法"表述、多个英文名都要能匹配；② 单证样板预览放回顶部（仍收纳）；③ **正式生成单证前要完整预览**（真实货物/金额/条款，不是样板）；④ 产品图上传/通知接口出现 502 kernel unreachable；⑤ 历史快照不回改口径确认正确。
+
+### 7.1 英文名去地区化 + 全量匹配
+- UI：`name-en-editor.tsx` 统一「英文名（可添加多个）」；第 1 条徽标「默认（报价/单证使用）」；删除「地区别名」「欧洲客户叫…」文案；占位改「如：Cattle Fence」。
+- 存储不变（团队级 `product_profiles.info.name_en_list` + `name_en_primary`）。
+- 新增 `ProductSpec.name_en_aliases: list[str] = []`（纯增量、旧 spec 缺键 = []）：`_quotable_specs` 用内核 `name_en_list_from_info` → 主名进 `name_en`、其余进 `name_en_aliases`；`GET /export-quote/products` 回该字段；`shared/contracts/export-quote.ts` 加**可选**字段（R1/R5 未变，未改冻结快照）。
+- 匹配：`kaas_common/export_quote/importers.py` 的「产品」列 token = key + 中文名 + `name_en` + 全部 aliases（沿用 `_order_compact` 大小写/空白/连字符归一）；客户询盘表单 datalist + `resolveProductKey` 也支持任一英文名反查 `product_key`。
+- 排查结论：quote 产品下拉/R-D 导入面板是原生 select，无 name 过滤；后端按名匹配的唯一入口 = 整单导入产品列（已覆盖）。
+
+### 7.2 单证：正式生成前的完整预览
+- **内核新端点**（只读、零写库）：`POST /api/v1/trade-docs/preview-render-data`
+  - 请求与开单同形：`{doc_type, customer_id, currency, with_seal?, order_id? | quote_order_id?, inquiry_id?, raw_payload?}`；
+  - 响应 `{doc, data, company_profile_configured}`；`data` 与 `GET /trade-docs/{id}/render-data` **同源同形状**（同一个 `_render_bundle_of_doc`）：真实买方/卖方/银行/贸易条款/行项/金额/默认公章/产品档案默认值；
+  - `doc` 为虚拟单据（id=null、status=draft、doc_no=只读算出的预计编号，不占用段号）；quotation 已有 1:1 单据时返回既有那张；
+  - 越权/不存在上游 → 404（不泄露存在性）；缺参/冲突 → 422；`with_seal=false` 不查章不注入；
+  - create 与 preview 共用 `_assemble_doc_inputs`（纯读装配），render-data 与 preview 共用唯一装配点 —— 预览与落库后的成品不会漂移。
+- **前端**：`DocCreatePreview` 打开才请求（`use-preview-render-data`），多类型可切换、每类单独请求；`renderTradeDoc` iframe 只读渲染；错误码→中文原因（含只有 `error` 的 `bad_doc_type`）优先取 `detail.detail`；失败显示可重试错误、**绝不退回样板占位**；"字段为空"按"如实反映开单结果、可在开单后补"表述；删除旧本地占位装配 `lib/trade-doc/create-preview.ts`（死代码）与 MSW mock 同步（不 push docsStore）。
+- **布局**（补充反馈 2）：PageHeader → **SamplePreviewEntry（顶部、默认收起的一行入口）** → 「开单（第一步）」→ 台账 → 已选单证预览。
+
+### 7.3 生产 502 kernel unreachable（产品图上传 / 通知计数）
+- **根因**：Python 内核每次部署后，新版本 isolate 的第一批冷启动偶发 `scriptThrewException / exceededResources`（Cloudflare 侧 Python 启动失败；GraphQL 显示本轮部署前后均有此类记录，**不是本批代码引入**），Service Binding 的 `fetch` 直接 reject ⇒ 门面 502 `kernel unreachable`。用户侧表现 = 部署后第一下上传图片/通知计数失败，刷新/重试即可。
+- **修复**：
+  1. `backend/ts-worker/src/proxy.ts`：仅对 **fetch 抛错**做有限重试（GET/HEAD 最多 3 次；有 body 的请求先 clone、重试 1 次；上传按 sha256 定键不会重复对象）；内核已返回的 5xx 一律不重试（可能已有副作用）。
+  2. `kernel.ts` `callKernel`：GET/HEAD 同样有限重试（deep health / 监控不再因冷启动误报）。
+  3. deploy.yml：内核 liveness 改为**连续 2 次** `/health?deep=1` 全绿才算通过（兼做部署后预热）。
+- **附带修复（e2e 抓到的真问题）**：预览 MSW handler 里 `.replace(/[-:TZ.]/g, "")` 被 Tailwind 当成类名候选，生成非法 CSS `.\[-\:TZ\.\] { -: TZ.; }` ⇒ `next dev`/`next build` 的 CSS 解析 500（e2e webServer 超时）。改为 `/[^0-9]/g`（只保留数字，行为等价）。**这条如果不跑 e2e/build 会直接挂 CI 构建**。
+
+### 7.4 本轮门禁与验证（2026-10-24 实测）
+| 门禁 | 结果 |
+|---|---|
+| worker pytest | **1825 passed + 12 skipped**（+1 新端点 17 测、+ route 登记、parity 键集更新） |
+| orchestrator pytest | **273 passed** |
+| ts-worker | typecheck 0 / **310 passed（26 文件）**（+3 冷启动重试测试） |
+| 前端 | typecheck 0 / lint 0 error（75 存量 warning）/ **225 files · 1647 passed** |
+| e2e | **28 passed**（57.8s，CSS 修复后） |
+| contracts R0–R6 / mocks / ui:standards / ui:contrast / trade-doc:check | 全 PASS |
+| 静态断言 + sync-shared -Check | 全 PASS（46/22/1 一致） |
+| `NEXT_EXPORT=1 pnpm build` | exit 0（Windows 本机 `assets:check` 仍是已知平台产物缺陷，以 CI ubuntu gate 为准） |
+| Test Pilot | 本工作区未配置 runner（`no-tests`），以上均为显式命令实测 |

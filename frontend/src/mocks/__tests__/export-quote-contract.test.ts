@@ -39,7 +39,11 @@ async function getJson<T>(path: string): Promise<{ status: number; body: T }> {
 describe("GET /export-quote/products ← quote-line-card.tsx:107-109（useExportProducts）", () => {
   it("200 + `products[].key/name` + `total`（页面用 products[0].key 兜底默认产品）", async () => {
     const { status, body } = await getJson<{
-      products: Array<{ key: string; name: string }>;
+      products: Array<{
+        key: string;
+        name: string;
+        name_en_aliases?: string[];
+      }>;
       total: number;
     }>("/export-quote/products");
 
@@ -54,6 +58,9 @@ describe("GET /export-quote/products ← quote-line-card.tsx:107-109（useExport
       expect(p.key.length).toBeGreaterThan(0);
       expect(typeof p.name).toBe("string");
       expect(p.name.length).toBeGreaterThan(0);
+      // 与内核 `/export-quote/products` 同口径：别名一定是数组（没有别名 = 空表），
+      // 前端导入/搜索按 name_en + aliases 一起匹配。
+      expect(Array.isArray(p.name_en_aliases)).toBe(true);
     }
   });
 });

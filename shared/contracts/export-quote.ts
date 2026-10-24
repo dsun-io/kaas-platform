@@ -237,6 +237,14 @@ export const ExportProductSchema = z.object({
   key: z.string(),
   name: z.string(),
   name_en: z.string().default(''),
+  /**
+   * 该产品的**其它**英文名（不含 `name_en` 默认名）。
+   *
+   * 产品可以有多个英文名（团队资料 `name_en_list` 去掉默认名）；导入 / 搜索时
+   * 任何一个都要能认出产品。**可选**：旧后端不返回时按「没有别名」处理，
+   * 这样契约是纯增量、不改变已有必填项。
+   */
+  name_en_aliases: z.array(z.string()).optional(),
   category_code: z.string().default(''),
   combo_count: z.number().int(),
   spec_summary: z.string().default(''),

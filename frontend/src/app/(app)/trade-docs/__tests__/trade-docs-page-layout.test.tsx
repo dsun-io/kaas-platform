@@ -1,10 +1,11 @@
 /**
- * 单证页布局（问题 6）：开单升为一等公民、样板预览收编成一行按需入口。
+ * 单证页布局（2026-10-24，用户补充 2）：样板预览回到顶部但仍"已收纳"，
+ * 开单紧随其后、仍是第一屏主体。
  *
  * 钉住三件事：
- * 1. **顺序**：PageHeader → 开单（第一步）→ 样板预览入口 → 单证台账；
- * 2. 样板预览**默认收起**（页面里没有对话框/iframe，不再占顶部大块空间）；
- * 3. 开单表单里带「成品预览」入口（开单前检查成品）。
+ * 1. **顺序**：PageHeader → 样板预览入口（顶部、一行）→ 开单（第一步）→ 单证台账；
+ * 2. 样板预览**默认收起**（页面里没有对话框/iframe，不占大块空间）；
+ * 3. 开单表单里带「完整预览」入口（开单前用真实数据检查成品）。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
@@ -116,19 +117,20 @@ afterEach(() => {
   container = null;
 });
 
-describe("单证页布局 · 开单是一等公民", () => {
-  it("顺序：开单（第一步）→ 样板预览入口 → 单证台账", async () => {
+describe("单证页布局 · 样板预览在顶部且开单紧随其后", () => {
+  it("顺序：样板预览入口（顶部）→ 开单（第一步）→ 单证台账", async () => {
     mount();
     await settle();
 
     const text = document.body.textContent ?? "";
-    const createIdx = text.indexOf("开单（第一步）");
     const sampleIdx = text.indexOf("样板预览");
+    const createIdx = text.indexOf("开单（第一步）");
     const ledgerIdx = text.indexOf("单证台账");
 
-    expect(createIdx).toBeGreaterThan(-1);
-    expect(sampleIdx).toBeGreaterThan(createIdx);
-    expect(ledgerIdx).toBeGreaterThan(sampleIdx);
+    expect(sampleIdx).toBeGreaterThan(-1);
+    // 用户补充 2：样板预览回到顶部 —— 在开单之前
+    expect(createIdx).toBeGreaterThan(sampleIdx);
+    expect(ledgerIdx).toBeGreaterThan(createIdx);
   });
 
   it("样板预览默认收起：页面里没有对话框、没有样例 iframe", async () => {
@@ -144,13 +146,13 @@ describe("单证页布局 · 开单是一等公民", () => {
     expect(document.querySelector("iframe")).toBeNull();
   });
 
-  it("开单表单里有「成品预览」入口（开单前先看成品）", async () => {
+  it("开单表单里有「完整预览」入口（开单前先看真实成品）", async () => {
     mount();
     await settle();
 
     expect(
       Array.from(document.querySelectorAll("button")).some((b) =>
-        (b.textContent ?? "").includes("成品预览"),
+        (b.textContent ?? "").includes("完整预览"),
       ),
     ).toBe(true);
     // 只渲染页面不该产生任何写请求

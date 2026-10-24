@@ -243,6 +243,29 @@ class TestParseMultiProductRows:
         assert [r["product_key"] for r in body["rows"]] == ["field_fence", "field_fence"]
         assert [r["product_name"] for r in body["rows"]] == ["牛栏网", "牛栏网"]
 
+    def test_product_matched_by_any_english_name(self):
+        """产品列填**任意一个**英文名都能定位产品（团队资料一名多写法）。
+
+        第 2/3 个英文名由 Worker 写进 `ProductSpec.name_en_aliases`；
+        大小写 / 空格 / 下划线 / 连字符在 `_order_compact` 统一归一。
+        """
+        spec = replace(
+            get_product("field_fence"),
+            name_en="Cattle Fence",
+            name_en_aliases=["Field Fence", "Pasture Fence"],
+        )
+        body = parse(
+            [
+                complete_field_row(**{"产品": "pasture  fence"}),  # 第 3 个 + 多空格
+                complete_field_row(**{"产品": "CATTLE FENCE"}),   # 主名 + 大写
+                complete_field_row(**{"产品": "field_fence"}),    # key
+            ],
+            specs=[spec],
+        ).to_dict()
+        assert body["error_count"] == 0
+        assert body["usable_rows"] == 3
+        assert [r["product_key"] for r in body["rows"]] == ["field_fence"] * 3
+
     def test_alias_header_is_still_recognised(self):
         """不是模板表头的别名列（「网高」）也能按产品认出来 —— 复用单产品别名表。"""
         hs = ["网高" if h == "网高(m)" else h for h in headers_of()]
@@ -488,20 +511,28 @@ MEMBER = {"id": 3, "account_type": "internal", "role": "member", "team_id": 2,
 
 
 class _FakeDb:
-    """quote_api._db 的最小替身：可报价产品发现层用不到真库（返回空即可）。"""
+    """quote_api._db 的最小替身：其余表返回空；product_profiles 可按需注入。"""
 
-    def __init__(self):
+    def __init__(self, profiles: dict | None = None):
         self.queries: list[str] = []
+        #: product_key -> product_profiles.info（测团队级英文名 → 导入匹配用）
+        self.profiles = profiles or {}
 
     async def fetch(self, request, sql, *args, table=None):
         self.queries.append(sql)
+        if "FROM product_profiles" in sql:
+            return [
+                {"product_key": key, "info": info, "team_id": None,
+                 "updated_at": None}
+                for key, info in self.profiles.items()
+            ]
         return []
 
 
 @contextmanager
-def quotable_db(user: dict = MEMBER):
+def quotable_db(user: dict = MEMBER, profiles: dict | None = None):
     """替换 quote_api._db 与鉴权（两份模块对象都 patch，见 test_tenant_products_team_scope）。"""
-    db = _FakeDb()
+    db = _FakeDb(profiles)
     targets = {id(quote_api): quote_api}
     live = sys.modules.get("quote_api")
     if live is not None:
@@ -540,6 +571,30 @@ class TestOrderImportEndpoints:
             "header": "网高(m)", "kind": "spec", "products": ["牛栏网"],
             "unit": "m", "options": [], "note": spec_column["note"],
         }
+
+    def test_preview_接受任意一个英文名(self):
+        """团队资料多个英文名 → 整单预览「产品」列填**任意一个**都能认出（HTTP 全链路）。
+
+        覆盖 `_quotable_specs`（profiles → ProductSpec.name_en_aliases）→
+        `parse_order_table`（别名归一匹配）这条链路，不只是内核单测。
+        """
+        csv_bytes = make_csv(
+            [complete_field_row(**{"产品": "pasture fence"})])
+        admin = {"id": 1, "account_type": "internal", "role": "system_admin",
+                 "team_id": None, "status": "active"}
+        with quotable_db(user=admin, profiles={"field_fence": {
+                "name_en_list": ["Cattle Fence", "Field Fence",
+                                 "Pasture Fence"]}}):
+            resp = client.post(
+                f"{BASE}/import/order/preview",
+                files={"file": ("整单表.csv", csv_bytes, "text/csv")},
+            )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["error_count"] == 0, body["issues"]
+        assert body["rows"][0]["product_key"] == "field_fence"
+        # 对外展示名仍是中文名（英文名只用于匹配/单据落库，不改中文展示）
+        assert body["rows"][0]["product_name"] == "牛栏网"
 
     def test_template_info_subset_and_unknown(self):
         with quotable_db():

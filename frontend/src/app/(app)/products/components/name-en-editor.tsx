@@ -1,13 +1,14 @@
 "use client";
 
 /**
- * 产品英文名编辑器（一名多写法 / 主名）。
+ * 产品英文名编辑器（可添加多个 / 默认英文名）。
  *
- * 用户诉求（2026-10-24 生产验收）：一个产品在不同地区叫法不同 ⇒ 英文名要能加多条，
- * 并且能指定**主英文名**（报价 / 订单 / 单证只用主名）。
+ * 用户诉求（2026-10-24 生产验收）：一个产品可以有多个英文名，
+ * 只需要支持添加多个、都能匹配，不用说明每种叫法的来源；
+ * 报价 / 订单 / 单证用**默认英文名**，其余英文名在导入 / 搜索时同样能匹配到该产品。
  *
  * 交互口径：
- * - 列表顺序即主次：**第 1 行是主英文名**（左侧单选按钮可换主名，换完立刻挪到第 1 行）；
+ * - 列表顺序即主次：**第 1 行是默认英文名**（左侧单选按钮可换默认，换完立刻挪到第 1 行）；
  * - 增删都在这里做；空值/重复（大小写不敏感）由保存时统一清掉（内核还会再归一化一次）；
  * - 系统产品（无 tenant_products 行）同样可编辑 —— 英文名存在团队级
  *   `product_profiles.info`，不需要先「按我们的规格自定义」。
@@ -59,9 +60,9 @@ export function NameEnEditor({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-sm font-medium">英文名（可多个）</span>
+        <span className="text-sm font-medium">英文名（可添加多个）</span>
         <span className="text-xs text-muted-foreground">
-          第 1 个是主英文名，报价 / 单证用它
+          第 1 个是默认英文名，报价 / 单证用它
         </span>
       </div>
 
@@ -76,8 +77,8 @@ export function NameEnEditor({
               <input
                 type="radio"
                 name={PRIMARY_RADIO_NAME}
-                aria-label={`把「${name || "未命名"}」设为主英文名`}
-                title="设为主英文名"
+                aria-label={`把「${name || "未命名"}」设为默认英文名`}
+                title="设为默认英文名"
                 checked={index === 0}
                 disabled={disabled}
                 onChange={() => setPrimary(index)}
@@ -90,13 +91,9 @@ export function NameEnEditor({
                 className="h-8 min-w-0 flex-1 text-sm"
                 onChange={(e) => rename(index, e.target.value)}
               />
-              {index === 0 ? (
+              {index === 0 && (
                 <span className="shrink-0 rounded-full border border-primary/40 bg-primary/5 px-2 py-0.5 text-xs text-primary">
-                  主英文名
-                </span>
-              ) : (
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  地区别名
+                  默认（报价/单证使用）
                 </span>
               )}
               <button
@@ -119,7 +116,7 @@ export function NameEnEditor({
           value={draft}
           disabled={disabled}
           aria-label="新增英文名"
-          placeholder="如：欧洲客户叫 Cattle Fence"
+          placeholder="如：Cattle Fence"
           className="h-8 flex-1 text-xs"
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {

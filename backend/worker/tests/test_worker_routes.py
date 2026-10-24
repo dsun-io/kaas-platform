@@ -119,6 +119,8 @@ NEW_ROUTES: set[tuple[str, str]] = {
     ("/api/v1/trade-docs", "POST"),
     ("/api/v1/trade-docs/{doc_id}", "GET"),
     ("/api/v1/trade-docs/{doc_id}", "PATCH"),
+    # 开单前完整成品预览（只读、零写库；2026-10-24）
+    ("/api/v1/trade-docs/preview-render-data", "POST"),
     # 产品定义配置化（租户级）+ 报价工位权限矩阵：此前只在 orchestrator 有，
     # 前端 /settings/tenant-products 一上生产就 404。
     ("/api/v1/tenant-products", "GET"),

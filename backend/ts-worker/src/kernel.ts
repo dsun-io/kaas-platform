@@ -64,18 +64,35 @@ export async function callKernel(
   options: CallKernelOptions = {},
 ): Promise<Response> {
   const url = new URL(path, KERNEL_BASE);
-  let res: Response;
-  try {
-    res = await kernel.fetch(
-      new Request(url, {
-        method: options.method ?? "GET",
-        headers: options.headers,
-        body: options.body ?? null,
-      }),
-    );
-  } catch (err) {
+  const method = options.method ?? "GET";
+  // 内核冷启动容错（2026-10-24）：GET/HEAD 无副作用，对 Service Binding
+  // 的 fetch 抛错（isolation 启动失败）做有限重试；有 body 的调用不重试。
+  const maxAttempts = method === "GET" || method === "HEAD" ? 3 : 1;
+  const backoffMs = 150;
+  let res: Response | null = null;
+  let lastErr: unknown = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      res = await kernel.fetch(
+        new Request(url, {
+          method,
+          headers: options.headers,
+          body: options.body ?? null,
+        }),
+      );
+      break;
+    } catch (err) {
+      lastErr = err;
+      if (attempt >= maxAttempts) break;
+      console.warn(
+        `[kernel] fetch failed (attempt ${attempt}/${maxAttempts}), retrying: ${String(err)}`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, backoffMs * attempt));
+    }
+  }
+  if (!res) {
     throw new KernelError(
-      `kernel unreachable: ${err instanceof Error ? err.message : String(err)}`,
+      `kernel unreachable: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
       503,
     );
   }

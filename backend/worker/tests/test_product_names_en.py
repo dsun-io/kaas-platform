@@ -332,19 +332,22 @@ class TestQuoteProductsPrimaryName:
         assert resp.status_code == 200, resp.text
         by_key = {p["key"]: p for p in resp.json()["products"]}
         assert by_key["field_fence"]["name_en"] == "Cattle Fence"
-        # 没配的产品原样（注册表英文名）
+        # 其余英文名（不含主名）一并回给前端/导入解析 —— 任何一个都要能匹配到产品
+        assert by_key["field_fence"]["name_en_aliases"] == ["Field Fence EU"]
+        # 没配的产品原样（注册表英文名，没有别名 = 空表，不是缺键）
         assert by_key["deer_net"]["name_en"] == "Deer Net"
+        assert by_key["deer_net"]["name_en_aliases"] == []
 
-    def test_响应键集不因英文名而变(self, monkeypatch):
-        """只覆盖展示名：键集必须与 orchestrator 对等口径一致（12 键）。"""
+    def test_响应键集只多name_en_aliases(self, monkeypatch):
+        """键集 = 原 12 键 + name_en_aliases（可选字段，不改已有必填项）。"""
         resp = self._quote_products(monkeypatch, {
             "field_fence": {"info": {"name_en_list": ["Cattle Fence"]},
                             "team_id": TEAM},
         })
         assert set(resp.json()["products"][0]) == {
-            "key", "name", "name_en", "category_code", "combo_count",
-            "spec_summary", "hs_codes", "cost_basis", "cost_unit", "params",
-            "metric_count", "invariant_count",
+            "key", "name", "name_en", "name_en_aliases", "category_code",
+            "combo_count", "spec_summary", "hs_codes", "cost_basis",
+            "cost_unit", "params", "metric_count", "invariant_count",
         }
 
     def test_普通成员查资料带团队谓词_管理员不带(self, monkeypatch):
@@ -368,3 +371,34 @@ class TestQuoteProductsPrimaryName:
             _clear()
         sql2 = next(c for c in db2.calls if "FROM product_profiles" in c[0])[0]
         assert "team_id=" not in sql2, sql2
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# 5. 共享内核模型：ProductSpec.name_en_aliases 是**可选**字段（旧 spec dict 照常加载）
+# ════════════════════════════════════════════════════════════════════════════
+
+class TestProductSpecEnglishAliases:
+    def test_默认空表_旧spec_dict缺键也能加载(self):
+        from kaas_common.export_quote.models import ProductSpec
+        from kaas_common.export_quote.tenant_products import spec_from_dict
+        from kaas_common.export_quote.tenant_products import spec_to_dict
+
+        assert ProductSpec(key="x").name_en_aliases == []
+
+        old_dict = {"key": "field_fence", "name": "牛栏网", "name_en": "Field Fence"}
+        spec = spec_from_dict(old_dict)
+        assert spec.name_en_aliases == []
+        # 回环也不炸（新键只是多一个空列表，旧读者忽略即可）
+        assert spec_from_dict(spec_to_dict(spec)).name_en_aliases == []
+
+    def test_别名随spec_dict加载并回环(self):
+        from kaas_common.export_quote.tenant_products import spec_from_dict
+        from kaas_common.export_quote.tenant_products import spec_to_dict
+
+        spec = spec_from_dict({
+            "key": "field_fence", "name": "牛栏网", "name_en": "Cattle Fence",
+            "name_en_aliases": ["Field Fence", "Pasture Fence"],
+        })
+        assert spec.name_en_aliases == ["Field Fence", "Pasture Fence"]
+        assert spec_to_dict(spec)["name_en_aliases"] == [
+            "Field Fence", "Pasture Fence"]

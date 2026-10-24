@@ -393,16 +393,18 @@ async def _quotable_specs(request: Request, user: dict) -> dict:
     )
     disabled = {r["product_key"] for r in disabled_rows}
 
-    # ── 英文名（2026-10-24）：主英文名覆盖 spec.name_en ──────────────────────
+    # ── 英文名（2026-10-24）：主英文名覆盖 spec.name_en，其余英文名进 aliases ──
     # 为什么在这里：报价行 `product_name = name_en || name`
     # （frontend/src/app/(app)/quotes/lib/line-to-item.ts），并随报价落到订单/单证快照。
     # 团队资料（`product_profiles.info` 的 name_en_list / name_en_primary）是用户唯一能改
     # 英文名的入口（系统产品没有 tenant_products 行）；此处不覆盖，改完的英文名就到不了
     # 对外单据。只改**展示名**，算价字段一律不动；没配英文名的产品原样返回（旧口径不变）。
+    # 全量英文名（主名 + 别名）都要参与「产品列/产品名」解析（R-D 整单导入），
+    # 所以除 name_en 外还要把其余名字写进 `name_en_aliases`（ProductSpec 可选字段）。
     # 归一化口径在共享内核 `kaas_common.export_quote.product_names`（与 ws_files 同一份）。
     from dataclasses import replace as _replace  # noqa: PLC0415
     from kaas_common.export_quote.product_names import (  # noqa: PLC0415
-        primary_name_en_from_info,
+        name_en_list_from_info,
     )
 
     prof_sql = "SELECT product_key, info FROM product_profiles WHERE tenant_id=$1"
@@ -430,9 +432,11 @@ async def _quotable_specs(request: Request, user: dict) -> dict:
                 info = {}
         profiles[pkey] = info if isinstance(info, dict) else {}
     for pkey, spec in list(specs.items()):
-        primary = primary_name_en_from_info(profiles.get(pkey))
-        if primary and primary != spec.name_en:
-            specs[pkey] = _replace(spec, name_en=primary)
+        names = name_en_list_from_info(profiles.get(pkey))
+        if not names:
+            continue
+        # 主名 = 对外单据上的英文名；其余 = 导入/搜索可匹配的别名（不含主名）。
+        specs[pkey] = _replace(spec, name_en=names[0], name_en_aliases=names[1:])
 
     return {key: spec for key, spec in specs.items() if spec.key not in disabled}
 
@@ -454,6 +458,8 @@ async def export_quote_products(request: Request, user: dict = Depends(_get_curr
             "key": spec.key,
             "name": spec.name,
             "name_en": spec.name_en,
+            # 该产品的其它英文名（不含 name_en）；前端选择器/导入提示与导入解析共用
+            "name_en_aliases": list(spec.name_en_aliases),
             "category_code": spec.category_code,
             "combo_count": spec.combo_count,
             "spec_summary": spec.summary(),
@@ -1147,7 +1153,7 @@ async def export_quote_import_order_template_info(
         "max_mb": _IMPORT_MAX_MB,
         "data_sheet": "整单表",
         "notes": [
-            "一行 = 订单里的一个产品行；「产品」列填产品名称或 key。",
+            "一行 = 订单里的一个产品行；「产品」列填产品中文名 / 任一英文名，或 key。",
             "规格列 = 所选产品模板列的并集：某行的产品用不上的列留空即可。",
             "「成本口径」可留空（默认不含税）；「包装方式」留空 = 用产品默认包装；"
             "「本行利润率（%）」留空 = 继承整单默认。",

@@ -309,19 +309,28 @@ jobs:
         run: |
           set +e
           API=https://api.kaas.powervoy.com
-          body=$(curl -sS --retry 3 --retry-connrefused --retry-delay 2 --max-time 60 "$API/health?deep=1" 2>/dev/null)
-          echo "$body"
-          if ! printf '%s' "$body" | jq -e '.service=="kaas-edge"' >/dev/null 2>&1; then
-            echo "::error::门面 /health 不是 kaas-edge（域名可能被抢或门面异常）"; exit 1
-          fi
-          if printf '%s' "$body" | jq -e 'has("kernel")' >/dev/null 2>&1; then
-            if ! printf '%s' "$body" | jq -e '.kernel.status=="ok" and .kernel.shared_loaded==true' >/dev/null 2>&1; then
-              echo "::error::内核探活失败（kernel.status!=ok 或 shared_loaded!=true）"; exit 1
+          # 2026-10-24：Python 内核每次部署后第一批冷启动偶发 scriptThrewException /
+          # exceededResources（CF isolate 启动失败，用户侧表现为 502 kernel unreachable）。
+          # 这里连续探到 **2 次** deep health 全绿才算通过：既做部署门禁，也顺手把新版
+          # isolate 暖起来；门面侧另有 fetch 重试兜底（backend/ts-worker/src/proxy.ts）。
+          consecutive=0
+          passed=0
+          for i in $(seq 1 10); do
+            body=$(curl -sS --retry 2 --retry-connrefused --retry-delay 2 --max-time 60 "$API/health?deep=1" 2>/dev/null)
+            if printf '%s' "$body" | jq -e '.service=="kaas-edge" and .kernel.status=="ok" and .kernel.shared_loaded==true' >/dev/null 2>&1; then
+              consecutive=$((consecutive+1))
+              echo "attempt $i: OK ($consecutive/2) $body"
+              if [ "$consecutive" -ge 2 ]; then passed=1; break; fi
+            else
+              consecutive=0
+              echo "attempt $i: kernel not ready: $body"
             fi
-            echo "✅ kernel liveness passed"
-          else
-            echo "::warning::门面尚未支持 /health?deep=1，跳过内核探活（首次部署带 deep 探针的门面后自动生效）"
+            sleep 5
+          done
+          if [ "$passed" != "1" ]; then
+            echo "::error::内核探活失败（需要连续 2 次 kernel.status=ok + shared_loaded=true）"; exit 1
           fi
+          echo "✅ kernel liveness passed（连续 2 次）"
 
   deploy-edge:
     name: Deploy edge kaas-edge (public domains)

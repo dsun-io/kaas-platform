@@ -72,11 +72,20 @@ export function InquiryForm({
   const [isPending, setIsPending] = useState(false);
 
   // 产品库（GET /products）：选中名称后反查 product_key 一并提交；取不到不影响手输。
+  // 英文名有多条（团队资料 name_en_list，主名在前 + aliases）：**任一写法**都要能反查。
   const { data: productsData } = useProducts();
-  const productOptions = (productsData?.items ?? []).map((item) => ({
-    product_key: item.product_key,
-    name: item.name,
-  }));
+  const productOptions = (productsData?.items ?? []).map((item) => {
+    const englishNames = [
+      ...(item.name_en_list ?? []),
+      item.name_en ?? "",
+      ...(item.name_en_aliases ?? []),
+    ];
+    return {
+      product_key: item.product_key,
+      name: item.name,
+      names: [...new Set(englishNames.map((n) => n.trim()).filter(Boolean))],
+    };
+  });
 
   const updateRow = (id: string, patch: Partial<InquiryItemFormRow>) => {
     setRows((current) =>
@@ -148,11 +157,14 @@ export function InquiryForm({
         />
       </div>
 
-      {/* 产品库候选：native datalist ⇒ 同一个输入框既能下拉选、也能自由手输 */}
+      {/* 产品库候选：native datalist ⇒ 同一个输入框既能下拉选、也能自由手输。
+          中文名 + 全部英文名都列为候选：任选一个写法都会反查到同一个 product_key。 */}
       <datalist id={productListId}>
-        {productOptions.map((option) => (
-          <option key={option.product_key} value={option.name} />
-        ))}
+        {productOptions.flatMap((option) =>
+          [...new Set([option.name, ...(option.names ?? [])])].map((value) => (
+            <option key={option.product_key + ":" + value} value={value} />
+          )),
+        )}
       </datalist>
 
       {rows.map((row, index) => (

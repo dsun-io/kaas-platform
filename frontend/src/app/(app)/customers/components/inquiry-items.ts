@@ -63,10 +63,17 @@ export interface InquiryItemFormRow {
   application: string;
 }
 
-/** 产品库选项（GET /products 里前端需要的两个字段）。 */
+/** 产品库选项（GET /products 里前端需要的字段）。 */
 export interface InquiryProductOption {
   product_key: string;
   name: string;
+  /**
+   * 中文名之外的**全部**英文名（默认英文名 + 其它英文名 / aliases）。
+   *
+   * 产品可以有多个英文名（团队资料 `name_en_list`）；业务手输任一写法时
+   * 也要能反查出 product_key。可选字段：旧调用方只给 name 时行为不变。
+   */
+  names?: string[];
 }
 
 export const EMPTY_INQUIRY_ITEM_NAME = "未填写产品";
@@ -92,7 +99,8 @@ export function splitProductName(raw: string | null | undefined): {
   name: string;
   spec: string | null;
 } {
-  if (!raw || raw.trim() === "") return { name: EMPTY_INQUIRY_ITEM_NAME, spec: null };
+  if (!raw || raw.trim() === "")
+    return { name: EMPTY_INQUIRY_ITEM_NAME, spec: null };
   const value = raw.trim();
   const specRe =
     /\d+(?:\.\d+)?\s*(?:mm|cm|m2|m²|㎡|目|卷|吨|kg|g|inch|in)\b|\s*[×xX*]\s*\d/i;
@@ -120,7 +128,9 @@ function numberOf(value: unknown): number | null {
  * 读取一条询盘的展示行：**items 优先**；items 为空时用旧标量字段合成一行。
  * 返回空数组 = 历史上「什么都没填」的询盘（卡片显示「未填写产品」）。
  */
-export function displayInquiryItems(inquiry: InquiryItemsSource): InquiryItemView[] {
+export function displayInquiryItems(
+  inquiry: InquiryItemsSource,
+): InquiryItemView[] {
   const rawItems = Array.isArray(inquiry.items) ? inquiry.items : [];
   const items = rawItems.filter(
     (item): item is InquiryItem => Boolean(item) && typeof item === "object",
@@ -135,7 +145,11 @@ export function displayInquiryItems(inquiry: InquiryItemsSource): InquiryItemVie
         productKey: key,
         // 显式 spec_text 存在时：名称直接用原文（不再二次拆，避免把用户写进
         // 名称里的型号当规格吞掉）；没有 spec_text 的新/旧数据才按旧式拆分兜底。
-        name: raw ? (specText ? raw : split.name) : (key ?? EMPTY_INQUIRY_ITEM_NAME),
+        name: raw
+          ? specText
+            ? raw
+            : split.name
+          : (key ?? EMPTY_INQUIRY_ITEM_NAME),
         spec: specText || split.spec || null,
         quantity: numberOf(item.quantity),
         quantityUnit: textOf(item.quantity_unit) || null,
@@ -148,7 +162,12 @@ export function displayInquiryItems(inquiry: InquiryItemsSource): InquiryItemVie
   const legacyQuantity = numberOf(inquiry.quantity);
   const legacyUnit = textOf(inquiry.quantity_unit);
   const legacyApplication = textOf(inquiry.application);
-  if (!legacyRaw && legacyQuantity === null && !legacyUnit && !legacyApplication) {
+  if (
+    !legacyRaw &&
+    legacyQuantity === null &&
+    !legacyUnit &&
+    !legacyApplication
+  ) {
     return [];
   }
   const split = splitProductName(legacyRaw);
@@ -172,15 +191,34 @@ export function inquiryProductSummary(views: InquiryItemView[]): string {
   return `${names[0]}、${names[1]} 等 ${names.length} 个产品`;
 }
 
-/** 产品库名称 → product_key（精确匹配；手输产品返回 null，不猜）。 */
+/**
+ * 产品名归一：去两端空白、连续空白并成一个、大小写不敏感。
+ *
+ * 为什么不能只 `=== name`：英文名有多条（默认名 + 别名），业务手输时大小写
+ * （`cattle fence` / `Cattle Fence`）或多余空格很常见，不该因此丢 product_key。
+ */
+function normalizeProductName(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/**
+ * 产品名（中文名 / 任一英文名）→ product_key；手输的自由文本返回 null，不猜。
+ */
 export function resolveProductKey(
   name: string,
   options: ReadonlyArray<InquiryProductOption>,
 ): string | null {
-  const value = name.trim();
+  const value = normalizeProductName(name);
   if (!value) return null;
-  const hit = options.find((option) => option.name.trim() === value);
-  return hit?.product_key ?? null;
+  for (const option of options) {
+    const candidates = [option.name, ...(option.names ?? [])];
+    if (
+      candidates.some((candidate) => normalizeProductName(candidate) === value)
+    ) {
+      return option.product_key;
+    }
+  }
+  return null;
 }
 
 export interface InquiryFormPayload {

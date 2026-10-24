@@ -21,7 +21,9 @@ vi.mock("@/lib/api/client", () => ({
   apiClient: { get: mocks.get, post: mocks.post },
 }));
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
@@ -29,7 +31,8 @@ let client: QueryClient | null = null;
 
 async function settle(times = 8) {
   await act(async () => {
-    for (let i = 0; i < times; i += 1) await new Promise((r) => setTimeout(r, 0));
+    for (let i = 0; i < times; i += 1)
+      await new Promise((r) => setTimeout(r, 0));
   });
 }
 function mount(element: ReactNode) {
@@ -40,7 +43,9 @@ function mount(element: ReactNode) {
   });
   root = createRoot(container);
   act(() =>
-    root!.render(<QueryClientProvider client={client!}>{element}</QueryClientProvider>),
+    root!.render(
+      <QueryClientProvider client={client!}>{element}</QueryClientProvider>,
+    ),
   );
 }
 function clickButton(text: string) {
@@ -55,7 +60,10 @@ function clickButton(text: string) {
 function setInput(name: string, value: string) {
   const el = document.querySelector<HTMLInputElement>(`[name="${name}"]`);
   if (!el) throw new Error("没找到输入框 " + name);
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )!.set!;
   act(() => {
     setter.call(el, value);
     el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -70,8 +78,24 @@ beforeEach(() => {
   mocks.get.mockResolvedValue({
     data: {
       items: [
-        { product_key: "chain-link", name: "勾花网", media_count: 0, profile: {} },
-        { product_key: "cattle-fence", name: "牛栏网", media_count: 0, profile: {} },
+        {
+          product_key: "chain-link",
+          name: "勾花网",
+          name_en: "Chain Link Fence",
+          name_en_list: ["Chain Link Fence", "Chainlink Mesh"],
+          name_en_aliases: ["Chainlink Mesh"],
+          media_count: 0,
+          profile: {},
+        },
+        {
+          product_key: "cattle-fence",
+          name: "牛栏网",
+          name_en: "Cattle Fence",
+          name_en_list: ["Cattle Fence"],
+          name_en_aliases: [],
+          media_count: 0,
+          profile: {},
+        },
       ],
       media_kinds: {},
     },
@@ -158,6 +182,36 @@ describe("InquiryForm 多产品行", () => {
       application: "围栏",
     });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("产品库候选含全部英文名；手输英文别名也能反查 product_key", async () => {
+    mount(<InquiryForm customerId={7} onClose={vi.fn()} />);
+    await settle();
+
+    // 中文名 + 默认英文名 + 其它英文名都进候选（任一写法都能选/输）
+    const options = Array.from(
+      document.querySelectorAll<HTMLOptionElement>("datalist option"),
+    ).map((o) => o.value);
+    expect(options).toContain("勾花网");
+    expect(options).toContain("Chain Link Fence");
+    expect(options).toContain("Chainlink Mesh");
+    expect(options).toContain("Cattle Fence");
+
+    // 手输别名（大小写 + 连续空格归一）⇒ 仍能反查到同一个 product_key
+    setInput("item-0-product", "  chainlink   mesh ");
+    clickButton("添加询盘");
+    await settle();
+    expect(mocks.post).toHaveBeenCalledWith(
+      "/customers/7/inquiries",
+      expect.objectContaining({
+        items: [
+          expect.objectContaining({
+            product_key: "chain-link",
+            product_name_raw: "chainlink   mesh",
+          }),
+        ],
+      }),
+    );
   });
 
   it("只填渠道/备注也能提交（不发明细，保持旧行为）", async () => {

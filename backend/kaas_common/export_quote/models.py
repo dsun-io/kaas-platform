@@ -198,7 +198,11 @@ class ProductSpec:
 
     key: str
     name: str = ""
+    #: 默认英文名（报价/订单/单证落库用；团队资料的主名会覆盖它）
     name_en: str = ""
+    #: 该产品的**其它**英文名（不含 name_en 本身）。同一产品可以有多个英文写法，
+    #: 导入/匹配时**任何一个都能认出产品**；展示仍只用 name_en。
+    name_en_aliases: list = field(default_factory=list)
     category_code: str = ""
     cost_field: str = "raw_price"
     cost_basis: str = "pretax"  # pretax | incl_tax

@@ -6,8 +6,10 @@
  *    英文名根本没进请求体 ⇒「看起来能改、关掉就没了」）；
  * 2. 系统产品（鹿网/牛栏网，无 tenant_products 行）也必须能改 —— 保存走团队资料，
  *    不能因为没租户行就禁用输入框；
- * 3. 一个产品可有多个英文名，第一个是主英文名；保存时 `name_en_list` 主名在前，
- *    租户行 `product_name_en` 跟主名一致（报价/订单/单证用主名）。
+ * 3. 一个产品可有多个英文名，第一个是默认英文名；保存时 `name_en_list` 默认名在前，
+ *    租户行 `product_name_en` 跟默认名一致（报价/订单/单证用默认名）。
+ * 4. UI 只说「英文名（可添加多个）」+「默认（报价/单证使用）」，
+ *    **不出现**"地区 / 欧洲客户叫…"这类叫法来源文案。
  *
  * 写法照 `product-images.test.tsx`：`@/lib/api/client` 打桩 + 真 QueryClient + act。
  */
@@ -320,12 +322,12 @@ describe("产品英文名 · 租户产品（多值 + 主名）", () => {
     );
     await settle();
 
-    // 两条英文名都在（主名 + 地区别名）
+    // 两条英文名都在（默认英文名 + 其它英文名）
     expect(inputByLabel("英文名 1").value).toBe("Our Chain Link");
     expect(inputByLabel("英文名 2").value).toBe("Chain Link Fence");
 
-    // 换主名：第 2 条顶到第 1 位
-    click(inputByLabel("把「Chain Link Fence」设为主英文名"));
+    // 换默认名：第 2 条顶到第 1 位
+    click(inputByLabel("把「Chain Link Fence」设为默认英文名"));
     await settle();
     expect(inputByLabel("英文名 1").value).toBe("Chain Link Fence");
     expect(inputByLabel("英文名 2").value).toBe("Our Chain Link");
@@ -387,5 +389,68 @@ describe("产品英文名 · 租户产品（多值 + 主名）", () => {
     if (tenantBody) {
       expect(tenantBody.product_name_en).toBeNull();
     }
+  });
+});
+
+describe("产品英文名 · 文案去地区化", () => {
+  it("只说「可添加多个 / 默认名」，不出现地区 / 欧洲客户叫法", async () => {
+    const product = systemProduct();
+    mockReads(product);
+    mount(
+      <ProductDetail
+        product={product}
+        candidates={[product]}
+        onChanged={vi.fn()}
+        onDeleted={vi.fn()}
+      />,
+    );
+    await settle();
+
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("英文名（可添加多个）");
+    expect(text).toContain("第 1 个是默认英文名，报价 / 单证用它");
+    expect(text).toContain("默认（报价/单证使用）");
+    expect(text).not.toContain("地区");
+    expect(text).not.toContain("欧洲客户");
+    expect(text).not.toContain("主英文名");
+    // 占位文案只给写法示例，不绑定"哪个地区怎么叫"
+    expect(inputByLabel("新增英文名").placeholder).toBe("如：Cattle Fence");
+  });
+});
+
+describe("产品英文名 · 添加多个英文名", () => {
+  it("在编辑器里再加一条并保存：name_en_list 三条、默认英文名不变", async () => {
+    const product = tenantProduct();
+    mockReads(product);
+    mount(
+      <ProductDetail
+        product={product}
+        candidates={[product]}
+        onChanged={vi.fn()}
+        onDeleted={vi.fn()}
+      />,
+    );
+    await settle();
+
+    setInputValue(inputByLabel("新增英文名"), "Cattle Fence EU");
+    click(buttonByText("添加"));
+    await settle();
+    expect(inputByLabel("英文名 3").value).toBe("Cattle Fence EU");
+
+    click(buttonByText("保存"));
+    await settle();
+
+    const profileBody = lastPut("/products/chain_link/profile") as {
+      info: Record<string, unknown>;
+    };
+    expect(profileBody.info.name_en_list).toEqual([
+      "Our Chain Link",
+      "Chain Link Fence",
+      "Cattle Fence EU",
+    ]);
+    // 新增的不抢默认名：报价/单证仍用原默认名
+    expect(profileBody.info.name_en_primary).toBe("Our Chain Link");
+    const tenantBody = lastPut("/tenant-products/7") as Record<string, unknown>;
+    expect(tenantBody.product_name_en).toBe("Our Chain Link");
   });
 });

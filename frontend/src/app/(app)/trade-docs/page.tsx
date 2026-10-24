@@ -327,18 +327,19 @@ export default function TradeDocsPage() {
       />
 
       {/*
-        页面层级（2026-10-24，问题 6）：开单是**一等公民** —— 紧跟页头、第一屏可见；
-        样板预览不常用，收成一行入口（默认收起，点开才是对话框），不再占顶部大块空间。
+        页面层级（2026-10-24，用户补充 2）：样板预览**放回顶部**，但仍保持"已收纳"形态 ——
+        只占一行入口、默认收起，点开才是对话框，不占顶部大块空间；
+        紧随其后是「开单（第一步）」（一等公民、第一屏可见），再下面是台账与已选单证预览。
       */}
+      <SamplePreviewEntry />
+
       <SectionCard
         title="开单（第一步）"
-        description="先开单：选单证类型 + 上游，货物、金额与贸易条款会自动带入；开单前可用「成品预览」检查版式。"
+        description="先开单：选单证类型 + 上游，货物、金额与贸易条款会自动带入；开单前可用「完整预览」检查成品。"
         className="border-primary/40"
       >
         <DocCreateForm onCreated={(id) => setSelectedId(id)} />
       </SectionCard>
-
-      <SamplePreviewEntry />
 
       <SectionCard
         title="单证台账"

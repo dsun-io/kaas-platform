@@ -1982,7 +1982,7 @@ def test_verify_requires_admin_and_returns_report_shape():
 
 
 def test_export_quote_products_shape_matches_orchestrator():
-    """产品下拉：12 键/项（与 orchestrator 逐字一致；引擎真身 + 发现层合并）。"""
+    """产品下拉：12 键 + name_en_aliases（2026-10-24 多英文名；其余与 orchestrator 逐字一致）。"""
     with _patched_db_fetch([]):
         _as(CUSTOMER)
         resp = client.get("/api/v1/export-quote/products")
@@ -1991,9 +1991,9 @@ def test_export_quote_products_shape_matches_orchestrator():
     assert set(body) == {"products", "total"}
     assert body["total"] == len(body["products"]) > 0
     assert set(body["products"][0]) == {
-        "key", "name", "name_en", "category_code", "combo_count",
-        "spec_summary", "hs_codes", "cost_basis", "cost_unit", "params",
-        "metric_count", "invariant_count",
+        "key", "name", "name_en", "name_en_aliases", "category_code",
+        "combo_count", "spec_summary", "hs_codes", "cost_basis", "cost_unit",
+        "params", "metric_count", "invariant_count",
     }
 
 

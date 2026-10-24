@@ -104,7 +104,10 @@ describe("displayInquiryItems（items 优先）", () => {
   });
 
   it("没有 items 字段时同样回退旧字段", () => {
-    const views = displayInquiryItems({ product_name_raw: "勾花网", quantity: 20 });
+    const views = displayInquiryItems({
+      product_name_raw: "勾花网",
+      quantity: 20,
+    });
     expect(views).toHaveLength(1);
     expect(views[0]?.name).toBe("勾花网");
     expect(views[0]?.quantity).toBe(20);
@@ -112,7 +115,9 @@ describe("displayInquiryItems（items 优先）", () => {
 
   it("历史询盘什么都没填时返回空数组", () => {
     expect(displayInquiryItems({})).toEqual([]);
-    expect(displayInquiryItems({ items: null, product_name_raw: null })).toEqual([]);
+    expect(
+      displayInquiryItems({ items: null, product_name_raw: null }),
+    ).toEqual([]);
   });
 
   it("items 里的脏元素被跳过（不因单条坏数据白屏）", () => {
@@ -128,13 +133,34 @@ describe("inquiryProductSummary", () => {
   it("单个 / 两个产品直接列名", () => {
     expect(
       inquiryProductSummary([
-        { productKey: null, name: "勾花网", spec: null, quantity: null, quantityUnit: null, application: null },
+        {
+          productKey: null,
+          name: "勾花网",
+          spec: null,
+          quantity: null,
+          quantityUnit: null,
+          application: null,
+        },
       ]),
     ).toBe("勾花网");
     expect(
       inquiryProductSummary([
-        { productKey: null, name: "勾花网", spec: null, quantity: null, quantityUnit: null, application: null },
-        { productKey: null, name: "牛栏网", spec: null, quantity: null, quantityUnit: null, application: null },
+        {
+          productKey: null,
+          name: "勾花网",
+          spec: null,
+          quantity: null,
+          quantityUnit: null,
+          application: null,
+        },
+        {
+          productKey: null,
+          name: "牛栏网",
+          spec: null,
+          quantity: null,
+          quantityUnit: null,
+          application: null,
+        },
       ]),
     ).toBe("勾花网、牛栏网");
   });
@@ -171,6 +197,27 @@ describe("resolveProductKey", () => {
   it("手输产品不猜 key", () => {
     expect(resolveProductKey("勾花网 2.5mm", options)).toBeNull();
     expect(resolveProductKey("", options)).toBeNull();
+  });
+
+  it("默认英文名与其它英文名都能反查（大小写 / 连续空白归一）", () => {
+    const bilingual = [
+      {
+        product_key: "chain-link",
+        name: "勾花网",
+        names: ["Chain Link Fence", "Chainlink Mesh"],
+      },
+      { product_key: "cattle-fence", name: "牛栏网", names: ["Cattle Fence"] },
+    ];
+    // 默认英文名 / 其它英文名
+    expect(resolveProductKey("Chain Link Fence", bilingual)).toBe("chain-link");
+    expect(resolveProductKey("chainlink mesh", bilingual)).toBe("chain-link");
+    expect(resolveProductKey("  CATTLE   FENCE  ", bilingual)).toBe(
+      "cattle-fence",
+    );
+    // 中文名照旧
+    expect(resolveProductKey("牛栏网", bilingual)).toBe("cattle-fence");
+    // 不是完整名字（带规格）⇒ 仍不猜
+    expect(resolveProductKey("cattle fence 1.2m", bilingual)).toBeNull();
   });
 });
 
@@ -227,10 +274,7 @@ describe("buildInquiryPayload", () => {
     const { payload } = buildInquiryPayload({
       channel: "",
       notes: "",
-      rows: [
-        row({ product: "勾花网", quantity: "10" }),
-        row({ id: "row-2" }),
-      ],
+      rows: [row({ product: "勾花网", quantity: "10" }), row({ id: "row-2" })],
     });
     expect(payload.items).toHaveLength(1);
     expect(payload.items?.[0]?.product_name_raw).toBe("勾花网");

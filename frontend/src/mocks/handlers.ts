@@ -6782,6 +6782,127 @@ export const handlers = [
     return HttpResponse.json(doc, { status: 201 });
   }),
 
+  // 开单前「完整成品预览」（用户需求 1；内核只读端点，见 task-5 契约）。
+  // 入参 = 开单 `POST /trade-docs` 同形状（单张）；响应 = `render-data` 同形状。
+  // **不写库**：这里不 push docsStore —— mock 也要守住「预览不产生记录」，
+  // 否则开发/联调时预览一下就凭空多一张单证（假成功）。
+  // 装配口径尽量「真实优先」：买方名取 customersStore、币种/贸易条款/总金额取上游
+  // 订单/报价；货物行项的真实装配属内核业务规则（前端不复刻），mock 用样板底稿补齐，
+  // 仅用于版式校验。
+  http.post("/api/v1/trade-docs/preview-render-data", async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    const docType =
+      typeof body.doc_type === "string" ? body.doc_type.trim() : "";
+    const customerId = body.customer_id;
+    if (
+      !docType ||
+      customerId === undefined ||
+      customerId === null ||
+      customerId === ""
+    ) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "unprocessable_entity",
+            message: "缺少必填：doc_type / customer_id",
+          },
+        },
+        { status: 422 },
+      );
+    }
+
+    const sample = tradeDocSample as unknown as {
+      base: Record<string, unknown>;
+      other_extra?: Record<string, unknown>;
+    };
+    const customer = customersStore.find(
+      (c) => String(c.id) === String(customerId),
+    );
+    const orderId = Number(body.order_id ?? 0);
+    const quoteId = Number(body.quote_order_id ?? body.quote_id ?? 0);
+    const order = orderId
+      ? ordersStore.find((o) => o.id === orderId)
+      : undefined;
+    const quote = quoteId
+      ? quotesStore.find((q) => q.id === quoteId)
+      : undefined;
+    const upstream = (order ?? quote ?? null) as Record<string, unknown> | null;
+
+    const data: Record<string, unknown> = {
+      ...sample.base,
+      ...(docType === "other" ? (sample.other_extra ?? {}) : {}),
+    };
+    // 买方：真实客户名（该客户不在 mock 客户表里就保留样板底稿，不编造）
+    if (customer) {
+      const buyer =
+        typeof data.buyer === "object" && data.buyer !== null
+          ? (data.buyer as Record<string, unknown>)
+          : {};
+      data.buyer = { ...buyer, company: customer.company_name };
+    }
+    // 币种 / 总金额 / 贸易条款：有上游就用上游的值（与内核 create 的继承口径同序）
+    if (typeof body.currency === "string" && body.currency.trim() !== "") {
+      data.currency = body.currency.trim();
+    } else if (typeof upstream?.currency === "string") {
+      data.currency = upstream.currency;
+    }
+    if (typeof upstream?.total_amount === "number") {
+      data.total_amount = upstream.total_amount;
+    }
+    // 无上游（只挂客户）：与内核同口径 —— data 里**没有** items / total_amount，
+    // 前端渲染空格子。mock 不能塞样板货物冒充"真实行项"（否则开发时看到的是假齐全）。
+    if (upstream === null) {
+      delete data.items;
+      delete data.total_amount;
+    }
+    for (const field of [
+      "incoterm",
+      "payment_terms",
+      "port_of_loading",
+      "port_of_destination",
+      "shipping_marks",
+      "country_of_origin",
+    ]) {
+      const value = upstream?.[field];
+      if (typeof value === "string" && value.trim() !== "") {
+        data[field] = value;
+      }
+    }
+
+    // 与内核同口径：bool(profile.name_en)（中文名不算"已配置"）
+    const configured =
+      companyProfileStore !== null && Boolean(companyProfileStore.name_en);
+
+    // 预览单号 = 内核"按当前时刻算出的下一个编号"（只读计算、不占用段号）的同口径近似
+    const stamp = new Date()
+      .toISOString()
+      // 只保留数字：避免 Tailwind 把正则里的 "-:TZ." 当成类名候选并生成非法 CSS
+      // （2026-10-24 实测：dev/build 的 CSS 解析会因此 500）
+      .replace(/[^0-9]/g, "")
+      .slice(0, 14);
+    const docNo = `${docType.toUpperCase()}-PREVIEW-${stamp}`;
+    return HttpResponse.json({
+      doc: {
+        // 预览不落库：虚拟单据（id=null）；doc_no 只读计算，真实开单时会重新取号
+        id: null,
+        doc_no: docNo,
+        doc_type: docType,
+        order_id: orderId || null,
+        quote_id: quoteId || null,
+        customer_id: customer?.id ?? customerId,
+        status: "draft",
+        currency: data.currency,
+        total_amount:
+          typeof data.total_amount === "number" ? data.total_amount : null,
+        with_seal: typeof body.with_seal === "boolean" ? body.with_seal : true,
+        created_at: nowIso(),
+        issued_at: null,
+      },
+      data,
+      company_profile_configured: configured,
+    });
+  }),
+
   http.get("/api/v1/trade-docs/:id", ({ params }) => {
     const doc = docsStore.find((d) => d.id === Number(params.id));
     if (!doc) {
@@ -7995,13 +8116,13 @@ export const handlers = [
   //
   // 形状与数值全部来自后端真源（见 `./export-quote-data.ts` 头部说明），不是手编。
   http.get("/api/v1/export-quote/products", () => {
-    // 主英文名覆盖（与内核 `_quotable_specs` 同口径）：报价行
-    // `product_name = name_en || name`，不覆盖的话团队改的英文名到不了报价/单证。
+    // 英文名（与内核 `_quotable_specs` 同口径）：主名覆盖 `name_en`（报价行
+    // `product_name = name_en || name`）；其余英文名回 `name_en_aliases`，
+    // 导入/搜索要能按**任意一个**英文名匹配到产品。
     const products = MOCK_EXPORT_PRODUCTS.map((p) => {
-      const primary = primaryNameEnFromInfo(
-        productProfilesStore.get(p.key) ?? {},
-      );
-      return primary && primary !== p.name_en ? { ...p, name_en: primary } : p;
+      const names = nameEnListFromInfo(productProfilesStore.get(p.key) ?? {});
+      if (names.length === 0) return { ...p, name_en_aliases: [] };
+      return { ...p, name_en: names[0], name_en_aliases: names.slice(1) };
     });
     return HttpResponse.json({
       products,

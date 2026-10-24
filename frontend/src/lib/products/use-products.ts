@@ -45,7 +45,12 @@ export interface ProductMedia {
 export interface ProductRow {
   product_key: string;
   name: string;
+  /** 默认英文名（团队资料主名优先；报价/单证用） */
   name_en?: string;
+  /** 其它英文名（不含 name_en）—— 询盘产品输入等匹配也要认 */
+  name_en_aliases?: string[];
+  /** 全部英文名（默认名在前；编辑框/匹配的唯一回填源） */
+  name_en_list?: string[];
   category_code?: string;
   media_count: number;
   profile: Record<string, unknown>;
@@ -63,9 +68,10 @@ export function useProducts() {
   return useQuery({
     queryKey: productKeys.list,
     queryFn: async () => {
-      const { data } = await apiClient.get<{ items: ProductRow[]; media_kinds: Record<string, string> }>(
-        "/products",
-      );
+      const { data } = await apiClient.get<{
+        items: ProductRow[];
+        media_kinds: Record<string, string>;
+      }>("/products");
       return data;
     },
   });
@@ -76,9 +82,10 @@ export function useProductProfile(productKey: string | null) {
     queryKey: productKeys.profile(productKey ?? ""),
     enabled: Boolean(productKey),
     queryFn: async () => {
-      const { data } = await apiClient.get<{ product_key: string; info: Record<string, unknown> }>(
-        `/products/${productKey}/profile`,
-      );
+      const { data } = await apiClient.get<{
+        product_key: string;
+        info: Record<string, unknown>;
+      }>(`/products/${productKey}/profile`);
       return data;
     },
   });
@@ -88,7 +95,9 @@ export function useSaveProductProfile(productKey: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (info: Record<string, unknown>) => {
-      const { data } = await apiClient.put(`/products/${productKey}/profile`, { info });
+      const { data } = await apiClient.put(`/products/${productKey}/profile`, {
+        info,
+      });
       return data;
     },
     onSuccess: () => {
@@ -102,9 +111,10 @@ export function useProductMedia(productKey: string | null) {
     queryKey: productKeys.media(productKey ?? ""),
     enabled: Boolean(productKey),
     queryFn: async () => {
-      const { data } = await apiClient.get<{ items: ProductMedia[]; media_kinds: Record<string, string> }>(
-        `/products/${productKey}/media`,
-      );
+      const { data } = await apiClient.get<{
+        items: ProductMedia[];
+        media_kinds: Record<string, string>;
+      }>(`/products/${productKey}/media`);
       return data;
     },
   });
@@ -153,7 +163,11 @@ async function uploadViaProxy(
   form.append("file", file);
   form.append("name", name);
   form.append("media_kind", mediaKind);
-  const data = await xhrPostForm(`/products/${productKey}/media`, form, onProgress);
+  const data = await xhrPostForm(
+    `/products/${productKey}/media`,
+    form,
+    onProgress,
+  );
   return data as ProductMedia;
 }
 
@@ -186,7 +200,8 @@ export function useUploadProductMedia(productKey: string) {
       onProgress?: UploadProgressHandler;
     }): Promise<UploadedProductMedia> => {
       const { file, name, mediaKind, onProgress } = input;
-      const contentType = input.contentType || file.type || "application/octet-stream";
+      const contentType =
+        input.contentType || file.type || "application/octet-stream";
       const meta = {
         owner_type: "product",
         owner_id: productKey,
@@ -203,11 +218,18 @@ export function useUploadProductMedia(productKey: string) {
       // 而 register 缺它会 422（object_key 定键/去重都依赖它）⇒ 直传整条跳过，
       // 直接走服务端代传（服务端自己算哈希）——功能不缺失，只标记回退真相。
       if (sha256 === null) {
-        const data = await uploadViaProxy(productKey, file, name, mediaKind, onProgress);
+        const data = await uploadViaProxy(
+          productKey,
+          file,
+          name,
+          mediaKind,
+          onProgress,
+        );
         return {
           ...data,
           fellBackToProxy: true,
-          fallbackReason: "当前环境不支持 crypto.subtle，无法预计算 sha256，跳过直传",
+          fallbackReason:
+            "当前环境不支持 crypto.subtle，无法预计算 sha256，跳过直传",
         };
       }
 
@@ -268,7 +290,13 @@ export function useUploadProductMedia(productKey: string) {
       }
 
       // ② 兜底：服务端代传（multipart）。功能不缺失，只是字节经服务端中转。
-      const media = await uploadViaProxy(productKey, file, name, mediaKind, onProgress);
+      const media = await uploadViaProxy(
+        productKey,
+        file,
+        name,
+        mediaKind,
+        onProgress,
+      );
       if (!fallbackReason) {
         // 没配对象存储 = 设计如此（本来就走服务端），不算"回退"
         return { ...media, fellBackToProxy: false };
@@ -280,7 +308,9 @@ export function useUploadProductMedia(productKey: string) {
 }
 
 /** 取短时效直链（预签名 GET）；未配对象存储时返回 null。 */
-export async function fetchFileDirectUrl(fileId: number): Promise<string | null> {
+export async function fetchFileDirectUrl(
+  fileId: number,
+): Promise<string | null> {
   const { data } = await apiClient.get<{ configured: boolean; url?: string }>(
     `/file-objects/${fileId}/url`,
   );
@@ -316,7 +346,9 @@ export function useReorderProductMedia() {
   return useMutation({
     mutationFn: async (order: { id: number; sort_order: number }[]) => {
       await Promise.all(
-        order.map(({ id, sort_order }) => apiClient.patch(`/file-objects/${id}`, { sort_order })),
+        order.map(({ id, sort_order }) =>
+          apiClient.patch(`/file-objects/${id}`, { sort_order }),
+        ),
       );
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: productKeys.all }),
@@ -340,7 +372,9 @@ export function useFileObjectUrl(fileId: number | null) {
     enabled: fileId !== null,
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
-      const res = await apiClient.get(`/file-objects/${fileId}/content`, { responseType: "blob" });
+      const res = await apiClient.get(`/file-objects/${fileId}/content`, {
+        responseType: "blob",
+      });
       return URL.createObjectURL(res.data as Blob);
     },
   });

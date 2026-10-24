@@ -85,6 +85,25 @@ describe("GET /health", () => {
     expect(body.kernel.shared_loaded).toBe(false);
   });
 
+  it("?deep=1 内核冷启动失败一次 → 自动重试成功（部署门禁不再误红）", async () => {
+    let calls = 0;
+    const env = makeTestEnv({
+      KERNEL: {
+        fetch: async () => {
+          calls += 1;
+          if (calls === 1) throw new Error("isolate booting");
+          return new Response(
+            JSON.stringify({ status: "ok", service: "kaas", shared: { loaded: true } }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        },
+      },
+    });
+    const res = await app.request("/health?deep=1", {}, env);
+    expect(res.status).toBe(200);
+    expect(calls).toBe(2);
+  });
+
   it("?deep=1 内核不可达 → 503 且给出 unreachable（流水线据此判失败）", async () => {
     const env = makeTestEnv({
       KERNEL: {

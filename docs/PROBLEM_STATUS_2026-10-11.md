@@ -14,6 +14,22 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-24 下午 · 第二轮补充反馈 ✅：英文名全量匹配 / 单证正式生成前完整预览 / 内核冷启动 502）**
+> 明细追加在 [`HANDOVER_2026-10-24_LIVE_FEEDBACK.md`](./HANDOVER_2026-10-24_LIVE_FEEDBACK.md) §7，待办挂 `TODO.md` §S。
+> - **英文名去地区化 + 全量匹配**：UI 删除「地区别名 / 欧洲客户叫…」文案，统一「英文名（可添加多个）」+ 第 1 条「默认（报价/单证使用）」；
+>   `ProductSpec.name_en_aliases`（可选、默认 []）携带其余英文名，整单导入「产品」列与客户询盘 datalist/`resolveProductKey` 都能用任一英文名命中；
+>   `/export-quote/products` 回 aliases（shared 契约加可选字段，R1/R5 未变）。
+> - **单证正式生成前完整预览**：内核新增只读 `POST /api/v1/trade-docs/preview-render-data`（零写库；与 `render-data` 共用唯一装配点 ⇒ 真实行项/金额/条款/公章；
+>   虚拟单据 id=null + 预计编号；越权 404、缺参 422）；前端对话框按类型请求真实数据 + `renderTradeDoc` iframe 只读展示，
+>   失败明确中文原因且**不回退样板**；删除旧本地占位装配。布局：样板预览回到顶部（仍默认收起一行）→「开单（第一步）」→ 台账。
+> - **生产 502「kernel unreachable」（产品图上传/通知）**：根因 = 内核每次部署后新 isolate 冷启动偶发 `scriptThrewException/exceededResources`，
+>   Service Binding fetch reject ⇒ 门面 502（部署前已有同类记录，非本批代码引入）。修复：门面/内核调用对 fetch 抛错做有限重试
+>   （GET/HEAD 3 次；带 body 先 clone 重试 1 次；内核已返回 5xx 不重试）+ 部署门禁连续 2 次 deep health 全绿（兼预热）。
+>   附带修掉 e2e 抓到的问题：预览 mock 的正则 `/[-:TZ.]/` 被 Tailwind 当类名候选生成非法 CSS ⇒ dev/build 500，已改 `/[^0-9]/`。
+> - **门禁（2026-10-24 下午实测）**：worker **1825+12skip** / orchestrator **273** / ts-worker **310（26 文件）** /
+>   前端 **225 files·1647 passed** / e2e **28 passed** / contracts、mocks、ui 双门禁、trade-doc:check、静态断言、sync-shared 全 PASS；
+>   `NEXT_EXPORT=1 pnpm build` exit 0（Windows `assets:check` 已知平台缺陷，以 CI ubuntu 为准）。
+
 > **（2026-10-24 · 线上反馈六项 ✅：产品英文名 / 在报价中显示 404 / 客户询盘·订单 / 单证页）**
 > 明细见 [`HANDOVER_2026-10-24_LIVE_FEEDBACK.md`](./HANDOVER_2026-10-24_LIVE_FEEDBACK.md)，待办挂 `TODO.md` §S。
 > - **英文名不能保存（#1/#3/#4）**：产品基本信息「保存」只 PUT `/products/{key}/profile` 的 usage/origin/material_options，

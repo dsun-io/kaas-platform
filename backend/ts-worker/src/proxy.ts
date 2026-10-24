@@ -128,17 +128,60 @@ export async function forwardKernelRequest(c: Context): Promise<Response> {
   const url = new URL(c.req.url);
   const method = c.req.method;
   const init: RequestInit & { duplex?: "half" } = { method, headers };
-  if (method !== "GET" && method !== "HEAD" && c.req.raw.body !== null) {
+  const hasBody = method !== "GET" && method !== "HEAD" && c.req.raw.body !== null;
+  if (hasBody) {
     // Workers/undici：流式 body 必须显式声明半双工（Node 测试环境要求，Workers 忽略该字段）。
     init.body = c.req.raw.body;
     init.duplex = "half";
   }
 
-  let upstream: Response;
-  try {
-    upstream = await kernel.fetch(new Request(KERNEL_BASE + url.pathname + url.search, init));
-  } catch (err) {
-    console.error("[proxy] kernel fetch failed", err);
+  const target = KERNEL_BASE + url.pathname + url.search;
+  let upstream: Response | null = null;
+  let lastErr: unknown = null;
+
+  // ── 内核冷启动容错（2026-10-24 生产事故）──────────────────────────────
+  // 现象：内核每次部署后，新版本 isolate 的第一批冷启动偶发
+  // scriptThrewException / exceededResources（Cloudflare 侧 Python 启动失败），
+  // Service Binding 的 fetch 直接 reject ⇒ 门面 502「kernel unreachable」。
+  // 用户侧表现 = 部署后第一下「上传产品图 / 通知计数 / 报价下拉」就报错，刷新/重试即可。
+  // 这里仅对 **fetch 抛错**（没拿到任何响应）做有限重试；内核已返回的 5xx 一律不重试
+  // （请求可能已产生副作用）。有 body 的请求先 clone 一份用于重试（1 次；
+  // GET/HEAD 等无 body 可安全重试 2 次）。上传类 POST 的落库按 sha256 定键，重试不产生重复对象。
+  const KERNEL_FETCH_MAX_ATTEMPTS = 3;
+  const KERNEL_FETCH_BACKOFF_MS = 150;
+  const firstRequest = new Request(target, init);
+  let replayRequest: Request | null = null;
+  if (hasBody) {
+    try {
+      replayRequest = firstRequest.clone();
+    } catch {
+      replayRequest = null; // 某些运行时不允许 clone 流式 body ⇒ 退化为不重试
+    }
+  }
+  const maxAttempts = hasBody ? (replayRequest ? 2 : 1) : KERNEL_FETCH_MAX_ATTEMPTS;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const outgoing =
+      attempt === 1
+        ? firstRequest
+        : hasBody
+          ? replayRequest!
+          : new Request(target, init);
+    try {
+      upstream = await kernel.fetch(outgoing);
+      break;
+    } catch (err) {
+      lastErr = err;
+      if (attempt >= maxAttempts) break;
+      console.warn(
+        `[proxy] kernel fetch failed (attempt ${attempt}/${maxAttempts}), retrying: ${String(err)}`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, KERNEL_FETCH_BACKOFF_MS * attempt));
+    }
+  }
+
+  if (!upstream) {
+    console.error("[proxy] kernel fetch failed after retries", lastErr);
     return c.json({ error: "kernel_error", message: "kernel unreachable", status: 502 }, 502);
   }
 

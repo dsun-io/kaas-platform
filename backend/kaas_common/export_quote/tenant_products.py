@@ -44,6 +44,8 @@ def spec_from_dict(data: dict) -> ProductSpec:
         key=data["key"],
         name=data.get("name", ""),
         name_en=data.get("name_en", ""),
+        # 缺键 = 旧数据（没有多英文名概念）⇒ 空表；不能因为多了这个可选键就拒载
+        name_en_aliases=list(data.get("name_en_aliases") or []),
         category_code=data.get("category_code", ""),
         cost_field=data.get("cost_field", "raw_price"),
         cost_basis=data.get("cost_basis", "pretax"),

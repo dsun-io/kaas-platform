@@ -58,10 +58,12 @@ describe("proxy 透传层", () => {
     expect(body.status).toBe(500);
   });
 
-  it("内核不可达 → 502 kernel_error", async () => {
+  it("内核不可达 → 重试后仍失败才 502 kernel_error", async () => {
+    let calls = 0;
     const env = makeEnv({
       KERNEL: {
         fetch: async () => {
+          calls += 1;
           throw new Error("binding down");
         },
       },
@@ -69,8 +71,61 @@ describe("proxy 透传层", () => {
     const app = createProxyApp("/api/v1/quotes");
     const res = await app.request("/api/v1/quotes/x", {}, env);
     expect(res.status).toBe(502);
+    // 无 body 的 GET 允许重试 2 次（共 3 次尝试），冷启动抖动能自愈
+    expect(calls).toBe(3);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("kernel_error");
+  });
+
+  it("内核冷启动失败一次 → 自动重试成功（不再把 502 抛给用户）", async () => {
+    let calls = 0;
+    const env = makeEnv({
+      KERNEL: {
+        fetch: async () => {
+          calls += 1;
+          if (calls === 1) throw new Error("isolate booting");
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        },
+      },
+    });
+    const app = createProxyApp("/api/v1/export-quote");
+    const res = await app.request("/api/v1/export-quote/products", {}, env);
+    expect(res.status).toBe(200);
+    expect(calls).toBe(2);
+  });
+
+  it("POST 带 body：冷启动失败后重试仍能重放 body（不会变成空请求）", async () => {
+    const bodies: string[] = [];
+    let calls = 0;
+    const env = makeEnv({
+      KERNEL: {
+        fetch: async (input: Request) => {
+          calls += 1;
+          if (calls === 1) throw new Error("isolate booting");
+          bodies.push(await input.text());
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        },
+      },
+    });
+    const app = createProxyApp("/api/v1/products");
+    const res = await app.request(
+      "/api/v1/products/chain_link/media",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ hello: "media" }),
+      },
+      env,
+    );
+    expect(res.status).toBe(200);
+    expect(calls).toBe(2);
+    expect(bodies).toEqual([JSON.stringify({ hello: "media" })]);
   });
 
   it("KERNEL binding 缺失 → 503", async () => {

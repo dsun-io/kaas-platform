@@ -992,7 +992,7 @@ def _order_common_columns(specs: list[ProductSpec]) -> list[OrderTemplateColumn]
     return [
         OrderTemplateColumn(
             "产品", "common",
-            note="必填。填产品名称或产品 key（不是规格列）"),
+            note="必填。填产品中文名 / 任一英文名，或产品 key（不是规格列）"),
         OrderTemplateColumn(
             "件数（卷）", "common",
             note="必填。该行产品的件数（卷），必须大于 0"),
@@ -1052,11 +1052,18 @@ def order_template_headers(products: Iterable[ProductSpec]) -> list[str]:
 
 
 def _order_product_lookup(products: Iterable[ProductSpec]) -> dict[str, list[ProductSpec]]:
-    """归一化 token（key / 名称 / 英文名）→ 产品。同名多产品时由匹配时报"不唯一"。"""
+    """归一化 token（key / 名称 / **全部**英文名）→ 产品。同名多产品时由匹配时报"不唯一"。
+
+    英文名不止一个（团队资料 `name_en_list` 去掉主名后经 Worker 写进
+    `name_en_aliases`）：客户/业务填的是哪个写法，都要能认出同一个产品。
+    归一化由 `_order_compact` 统一做（大小写 / 空格 / 下划线 / 连字符不敏感）。
+    """
     lookup: dict[str, list[ProductSpec]] = {}
     for spec in products:
         seen: set[str] = set()
-        for token in (spec.key, spec.name, spec.name_en):
+        tokens = [spec.key, spec.name, spec.name_en]
+        tokens.extend(getattr(spec, "name_en_aliases", None) or [])
+        for token in tokens:
             compact = _order_compact(token)
             if not compact or compact in seen:
                 continue
@@ -1072,7 +1079,7 @@ def _order_match_product(
     lookup: Mapping[str, list[ProductSpec]],
     available: str,
 ) -> tuple[ProductSpec | None, str | None]:
-    """「产品」单元格 → 产品定义（名称 / key / 英文名，大小写与空白不敏感）。"""
+    """「产品」单元格 → 产品定义（key / 名称 / 全部英文名，大小写与空白不敏感）。"""
     text = str(raw or "").strip()
     if not text:
         return None, "缺少「产品」：请填产品名称或 key"

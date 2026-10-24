@@ -30,7 +30,6 @@ import {
 } from "@/components/customer-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { buildCreatePreviewData } from "@/lib/trade-doc/create-preview";
 import { getAvailableTemplates } from "@/lib/trade-doc/render";
 import {
   toCustomerIdPayload,
@@ -38,9 +37,13 @@ import {
   useQuoteOptions,
 } from "@/lib/workstation/use-upstream";
 
+import type { PreviewRenderDataRequest } from "../hooks/use-preview-render-data";
 import { useCreateTradeDoc } from "../hooks/use-trade-docs";
 import { DOC_TYPE_GROUPS, THIRD_PARTY_TYPES } from "../lib/doc-type-groups";
-import { DocCreatePreview } from "./doc-create-preview";
+import {
+  DocCreatePreview,
+  type DocPreviewTypeOption,
+} from "./doc-create-preview";
 
 /** 父对象类型：`none` = 直接挂客户（手动新建 / 导入历史单据的正规路径）。 */
 type SourceKind = "none" | "order" | "quote" | "inquiry";
@@ -67,7 +70,7 @@ export function DocCreateForm({
   const create = useCreateTradeDoc();
 
   /**
-   * 「成品预览」的可用性 = 开单必填是否齐全（与 submit() 的校验同一口径；
+   * 「完整预览」的可用性 = 开单必填是否齐全（与 submit() 的校验同一口径；
    * 差别只在这里不弹 toast，而是把入口禁用并把缺项列出来）。
    */
   const previewBlockers = useMemo(() => {
@@ -79,44 +82,43 @@ export function DocCreateForm({
     if (sourceKind === "inquiry" && !sourceId.trim()) missing.push("询盘编号");
     return missing;
   }, [docTypes, customer, sourceKind, sourceId]);
-  const previewBlocked = previewBlockers.length > 0;
 
-  // 多选类型时预览第一张（开单后其余类型可在台账里逐张预览）
-  const previewType = docTypes[0] ?? "";
-  const previewDocLabel = useMemo(
+  /** 可切换的完整预览类型 = 已勾选类型（中文名来自模板清单，顺序 = 勾选顺序）。 */
+  const previewOptions = useMemo<DocPreviewTypeOption[]>(
     () =>
-      templates.find((t) => t.doc_type === previewType)?.name_zh ?? previewType,
-    [templates, previewType],
+      docTypes.map((docType) => ({
+        docType,
+        label:
+          templates.find((t) => t.doc_type === docType)?.name_zh ?? docType,
+      })),
+    [docTypes, templates],
   );
 
   /**
-   * 成品预览数据：样板底稿 + 当前表单已填值（客户/币种/上游贸易条款）。
-   * **纯前端本地装配、不发任何请求、不写库**（边界见 lib/trade-doc/create-preview.ts）。
+   * 完整预览的公共入参：与 submit() 送给 `POST /trade-docs` 的字段**同一来源**
+   * （客户/币种/盖章/上游 id）—— 预览与开单不各算一套，才不会"预览一套、开单另一套"。
+   * 没选客户时为 null（入口禁用），不在这里造假数据。
    */
-  const preview = useMemo(() => {
-    if (previewBlocked || !previewType) return null;
-    const upstream =
-      sourceKind === "order"
-        ? (orders.data?.find((o) => String(o.id) === sourceId) ?? null)
-        : sourceKind === "quote"
-          ? (quotes.data?.find((q) => String(q.id) === sourceId) ?? null)
-          : null;
-    return buildCreatePreviewData({
-      docType: previewType,
+  const previewBase = useMemo<Omit<
+    PreviewRenderDataRequest,
+    "doc_type"
+  > | null>(() => {
+    if (!customer) return null;
+    const source =
+      sourceKind === "order" && sourceId
+        ? { order_id: Number(sourceId) }
+        : sourceKind === "quote" && sourceId
+          ? { quote_order_id: Number(sourceId) }
+          : sourceKind === "inquiry" && sourceId.trim()
+            ? { inquiry_id: Number(sourceId) }
+            : {};
+    return {
+      customer_id: toCustomerIdPayload(customer.id),
       currency,
-      customerName: customer?.name ?? null,
-      upstream,
-    });
-  }, [
-    previewBlocked,
-    previewType,
-    sourceKind,
-    sourceId,
-    orders.data,
-    quotes.data,
-    currency,
-    customer,
-  ]);
+      with_seal: withSeal,
+      ...source,
+    };
+  }, [customer, sourceKind, sourceId, currency, withSeal]);
 
   const toggleType = (value: string) =>
     setDocTypes((prev) =>
@@ -353,10 +355,10 @@ export function DocCreateForm({
           <FilePlus2 className="mr-1 h-4 w-4" />
           {create.isPending ? "开单中…" : `开单（${docTypes.length} 张）`}
         </Button>
-        {/* 开单前成品预览：本地渲染、不写库（问题 6） */}
+        {/* 开单前完整成品预览：调内核只读端点、不写库（用户需求 1） */}
         <DocCreatePreview
-          preview={preview}
-          docLabel={previewDocLabel}
+          options={previewOptions}
+          base={previewBase}
           blockers={previewBlockers}
         />
       </div>
