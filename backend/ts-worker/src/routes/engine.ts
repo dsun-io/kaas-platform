@@ -74,6 +74,10 @@ export const ENGINE_QUOTE_ORDER_TEMPLATE_INFO_RPC =
   "/api/v1/internal/engine/quote/order-template-info";
 /** 第七批：定价数据矩阵（报价工位主视图）。 */
 export const ENGINE_PRICING_DATA_RPC = "/api/v1/internal/engine/quote/pricing-data";
+/** 第八批：单证加固读端点（事实清单 / 跨单证一致性）。 */
+export const ENGINE_TRADE_DOCS_FACTS_RPC = "/api/v1/internal/engine/trade-docs/facts";
+export const ENGINE_TRADE_DOCS_CONSISTENCY_RPC =
+  "/api/v1/internal/engine/trade-docs/consistency";
 
 /**
  * 同族只读切片的路由 id（AUTH_DB_SPLIT_ROUTES 白名单条目，口径 <域>.<端点>）。
@@ -95,6 +99,8 @@ export const ENGINE_ROUTE_IDS = {
   importTemplate: "export-quote.import-template",
   orderTemplateInfo: "export-quote.order-template-info",
   pricingData: "pricing-data.list",
+  docsFacts: "trade-docs.facts",
+  docsConsistency: "trade-docs.consistency",
 } as const;
 
 /** 与 Python quote_api._PRICING_SEPARATOR 一致：定价数据 spec_hash 的「产品前缀」分隔符。 */
@@ -1771,6 +1777,176 @@ export async function pricingDataWithKernel(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// 第八批切片：GET /trade-docs/{doc_id}/facts + /consistency（单证加固读端点）
+// ══════════════════════════════════════════════════════════════════════════════
+// 设计 = docs/P2_COUPLING_ENGINE_2026-10-24.md §6/§8；真源 ws_docs_hardening.py:600/770。
+// 门面按旧 SQL 逐字供数；内核复用同一份纯函数（facts：_packing_snapshot_of +
+// _packing_from_product + _facts_from_parts + _facts_payload；consistency：
+// _domain_docs_from_parts + _consistency_payload），读闸门复用 main._require_doc_visible。
+// 有意差异（fixture.facade 锁定）：
+// - trade_docs 用显式列（TRADE_DOC_COLUMNS），时间戳 tsIsoSql 条件式；
+// - facts 恒下发 tenant_products（全量 active）：旧路径只在「行项快照带 product_key」
+//   时才查产品定义；多下发一份只读数据、语义等价（产品解析失败照旧降级）；
+// - consistency 的域判定是数据依赖的三处查询（order 列 → 边表 order → quote 链 → 自身），
+//   门面按同一条件发查询，内核 _domain_docs_from_parts 再判一次（防御纵深）。
+
+export const TRADE_DOC_BY_ID_SQL =
+  "SELECT " + TRADE_DOC_COLUMNS + " FROM trade_docs WHERE tenant_id=$1 AND id=$2";
+
+/** 事实处置行（旧 _SQL_FACT_ROWS 逐字同义；confirmed_at 用 tsIsoSql 条件式）。 */
+export function tradeDocFactsSql(): string {
+  return "SELECT fact_key, trust, immutable, confirmed_by, " + tsIsoSql("confirmed_at")
+    + ", text_zh, text_en, source, evidence_ref FROM trade_doc_facts"
+    + " WHERE tenant_id=$1 AND trade_doc_id=$2 ORDER BY fact_key";
+}
+
+/** 包装解析用的产品定义（旧 _effective_product_raw 的 SQL；全部 active 行）。 */
+export const FACTS_TENANT_PRODUCTS_SQL =
+  "SELECT spec, override, team_id FROM tenant_products WHERE tenant_id=$1 AND is_active";
+
+export const LINKED_ORDER_SQL =
+  "SELECT dst_id FROM entity_links WHERE tenant_id=$1 AND src_type='trade_doc'"
+  + " AND src_id=$2 AND dst_type='order' AND deleted_at IS NULL ORDER BY id LIMIT 1";
+export const LINKED_QUOTE_SQL =
+  "SELECT dst_id FROM entity_links WHERE tenant_id=$1 AND src_type='trade_doc'"
+  + " AND src_id=$2 AND dst_type='quote' AND deleted_at IS NULL ORDER BY id LIMIT 1";
+
+export function tradeDocsByOrderSql(): string {
+  return "SELECT " + TRADE_DOC_COLUMNS + " FROM trade_docs WHERE tenant_id=$1"
+    + " AND order_id=$2 AND status <> 'void' ORDER BY id";
+}
+
+export function tradeDocsByQuoteSql(): string {
+  return "SELECT " + TRADE_DOC_COLUMNS + " FROM trade_docs WHERE tenant_id=$1"
+    + " AND quote_id=$2 AND status <> 'void' ORDER BY id";
+}
+
+/** 事实处置行 → dataset 行（immutable 布尔化；时间为已转好的 Python 口径文本）。 */
+export function factDatasetRow(row: Row): Row {
+  return {
+    fact_key: row.fact_key ?? null,
+    trust: row.trust ?? null,
+    immutable: row.immutable === null || row.immutable === undefined
+      ? null
+      : Boolean(row.immutable),
+    confirmed_by: row.confirmed_by ?? null,
+    confirmed_at: row.confirmed_at ?? null,
+    text_zh: row.text_zh ?? null,
+    text_en: row.text_en ?? null,
+    source: row.source ?? null,
+    evidence_ref: row.evidence_ref ?? null,
+  };
+}
+
+/** tenant_products 行（包装解析用）→ dataset 行。 */
+export function factsProductRow(row: Row): Row {
+  return {
+    spec: row.spec ?? null,
+    override: row.override ?? null,
+    team_id: num(row.team_id),
+  };
+}
+
+function linkedIdRow(row: Row): Row {
+  return { dst_id: num(row.dst_id) };
+}
+
+/** 取单证行（facts / consistency 共用）。 */
+async function fetchTradeDocRows(env: Env, docId: number): Promise<Row[]> {
+  return withDb(env, async (sql: Db) => (
+    await sql.unsafe(TRADE_DOC_BY_ID_SQL, [tenantOf(), docId] as never[])
+  ) as unknown as Row[]);
+}
+
+/** GET /api/v1/trade-docs/{doc_id}/facts 的「供数 + RPC」实现。 */
+export async function tradeDocFactsWithKernel(
+  c: Context<{ Bindings: Env }>,
+  user: CurrentUser,
+): Promise<Response> {
+  const env = getEnv(c);
+  const secret = requireSecret(env, "JWT_SECRET");
+  const docId = intOrNull(c.req.param("doc_id") ?? "");
+  if (docId === null) return forwardKernelRequest(c);
+  const datasets = await withDb(env, async (sql: Db) => {
+    const docRows = (await sql.unsafe(
+      TRADE_DOC_BY_ID_SQL, [tenantOf(), docId] as never[])) as unknown as Row[];
+    const factRows = (await sql.unsafe(
+      tradeDocFactsSql(), [tenantOf(), docId] as never[])) as unknown as Row[];
+    const productRows = (await sql.unsafe(
+      FACTS_TENANT_PRODUCTS_SQL, [tenantOf()] as never[])) as unknown as Row[];
+    return {
+      trade_docs: docRows.map(tradeDocDatasetRow),
+      trade_doc_facts: factRows.map(factDatasetRow),
+      tenant_products: productRows.map(factsProductRow),
+    };
+  });
+  const jwt = await mintEngineJwt(engineActorOf(user), secret);
+  return engineQuoteRpc(
+    c, ENGINE_TRADE_DOCS_FACTS_RPC, jwt,
+    JSON.stringify({ request: { doc_id: docId }, actor: actorPayloadOf(user), datasets }),
+  );
+}
+
+/** GET /api/v1/trade-docs/{doc_id}/consistency 的「供数 + RPC」实现。 */
+export async function tradeDocConsistencyWithKernel(
+  c: Context<{ Bindings: Env }>,
+  user: CurrentUser,
+): Promise<Response> {
+  const env = getEnv(c);
+  const secret = requireSecret(env, "JWT_SECRET");
+  const docId = intOrNull(c.req.param("doc_id") ?? "");
+  if (docId === null) return forwardKernelRequest(c);
+  const tenant = tenantOf();
+  const datasets = await withDb(env, async (sql: Db) => {
+    const docRows = (await sql.unsafe(
+      TRADE_DOC_BY_ID_SQL, [tenant, docId] as never[])) as unknown as Row[];
+    const out: Row = {
+      trade_docs: docRows.map(tradeDocDatasetRow),
+      linked_order_links: [],
+      trade_docs_by_order: [],
+      linked_quote_links: [],
+      trade_docs_by_quote: [],
+    };
+    if (docRows.length === 0) return out;
+    const docRow = docRows[0]!;
+    let orderId: number | null = (docRow.order_id === null || docRow.order_id === undefined)
+      ? null : Number(docRow.order_id);
+    if (orderId === null) {
+      const linked = (await sql.unsafe(
+        LINKED_ORDER_SQL, [tenant, docId] as never[])) as unknown as Row[];
+      out.linked_order_links = linked.map(linkedIdRow);
+      if (linked.length > 0) orderId = Number(linked[0]!.dst_id);
+    }
+    if (orderId !== null) {
+      const byOrder = (await sql.unsafe(
+        tradeDocsByOrderSql(), [tenant, orderId] as never[])) as unknown as Row[];
+      out.trade_docs_by_order = byOrder.map(tradeDocDatasetRow);
+    }
+    if ((out.trade_docs_by_order as Row[]).length === 0) {
+      let quoteId: number | null = (docRow.quote_id === null || docRow.quote_id === undefined)
+        ? null : Number(docRow.quote_id);
+      if (quoteId === null) {
+        const linked = (await sql.unsafe(
+          LINKED_QUOTE_SQL, [tenant, docId] as never[])) as unknown as Row[];
+        out.linked_quote_links = linked.map(linkedIdRow);
+        if (linked.length > 0) quoteId = Number(linked[0]!.dst_id);
+      }
+      if (quoteId !== null) {
+        const byQuote = (await sql.unsafe(
+          tradeDocsByQuoteSql(), [tenant, quoteId] as never[])) as unknown as Row[];
+        out.trade_docs_by_quote = byQuote.map(tradeDocDatasetRow);
+      }
+    }
+    return out;
+  });
+  const jwt = await mintEngineJwt(engineActorOf(user), secret);
+  return engineQuoteRpc(
+    c, ENGINE_TRADE_DOCS_CONSISTENCY_RPC, jwt,
+    JSON.stringify({ request: { doc_id: docId }, actor: actorPayloadOf(user), datasets }),
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // 路由注册（由 src/index.ts 挂载；必须在 /api/v1/export-quote 透传 mount **之前**）
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -1930,6 +2106,26 @@ app.get("/api/v1/pricing-data", (c) => {
   return respond(c, async () => {
     const user = await requireUser(c);
     return directDb(c, () => pricingDataWithKernel(c, user));
+  });
+});
+
+app.get("/api/v1/trade-docs/:doc_id/facts", (c) => {
+  if (!useDirectRoute(getEnv(c), ENGINE_ROUTE_IDS.docsFacts)) {
+    return forwardKernelRequest(c);
+  }
+  return respond(c, async () => {
+    const user = await requireUser(c);
+    return directDb(c, () => tradeDocFactsWithKernel(c, user));
+  });
+});
+
+app.get("/api/v1/trade-docs/:doc_id/consistency", (c) => {
+  if (!useDirectRoute(getEnv(c), ENGINE_ROUTE_IDS.docsConsistency)) {
+    return forwardKernelRequest(c);
+  }
+  return respond(c, async () => {
+    const user = await requireUser(c);
+    return directDb(c, () => tradeDocConsistencyWithKernel(c, user));
   });
 });
 

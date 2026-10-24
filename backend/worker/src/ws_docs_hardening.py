@@ -360,35 +360,14 @@ _PACKING_ORIGIN_SNAPSHOT = "inferred:snapshot"
 _PACKING_ORIGIN_NONE = "inferred:none"
 
 
-async def _packing_of_doc(
-    request: Request,
-    d: dict,
-    user: Optional[dict] = None,
-) -> dict:
-    """解析**本单**包装方式（A14）—— 不新增 DB 字段，只复用既有设计。
+def _packing_snapshot_of(d: dict) -> Optional[dict]:
+    """本单行项里第一个带包装信息的 spec_snapshot（**纯函数**；旧 handler 与供数 RPC 共用）。
 
-    数据路径（按优先级）：
-    1. `raw_payload.sources.{order|quote|pi|contract}.items[].spec_snapshot`
-       —— 报价行落库时把 `packaging_id` 写进 `spec_snapshot`（前端 `line-to-item.ts`），
-       订单/单证快照原样继承；
-    2. `spec_snapshot.product_key` → 产品定义（`tenant_products` 优先、回退注册表，
-       与 `/formulas`、算价同一解析器 `quote_api._effective_product_raw`）；
-    3. 产品 `spec.packaging[]` 里按 `id` 命中本单 `packaging_id`；未带 id ⇒
-       `is_default` > 最早 `created_at` > 首条（与引擎 `_pick_packaging` 同口径）；
-    4. 产品无包装配置 / 产品解析不到 ⇒ `method="none"`；若快照里只有包装名（无 id）
-       则退回包装名（`inferred:snapshot`），至少让触发器有值可判。
-
-    返回内核 `extract_facts(packing=...)` 的契约：
-    `{method, origin, packaging_id, packaging_name}`。
-    `origin` 是**来源标注**（任务要求）：本单行命中 = `row`；回退产品默认 =
-    `inferred:product_default`；快照名/无配置 = `inferred:snapshot` / `inferred:none`。
-    解析失败一律降级为 `none`（facts 是加固增强，不能因为它把 `/facts` 打 500）。
+    数据路径（按优先级）：raw_payload.sources.{order|quote|pi|contract}.items[].spec_snapshot。
     """
     payload = _fact_source_payload(d)
     raw_sources = payload.get("sources")
     sources = raw_sources if isinstance(raw_sources, dict) else {}
-
-    snapshot: Optional[dict] = None
     for kind in ("order", "quote", "pi", "contract"):
         snap = sources.get(kind)
         if not isinstance(snap, dict):
@@ -405,29 +384,25 @@ async def _packing_of_doc(
             if (str(spec_snapshot.get("packaging_id") or "").strip()
                     or str(spec_snapshot.get("product_key") or "").strip()
                     or str(spec_snapshot.get("packaging_name") or "").strip()):
-                snapshot = spec_snapshot
-                break
-        if snapshot is not None:
-            break
+                return spec_snapshot
+    return None
 
+
+def _packing_from_product(snapshot: Optional[dict], product) -> dict:
+    """snapshot + 产品定义 → extract_facts 的 packing 契约（**纯函数**）。
+
+    返回 {method, origin, packaging_id, packaging_name}；origin 是来源标注：
+    本单行命中 = row；回退产品默认 = inferred:product_default；快照名/无配置 =
+    inferred:snapshot / inferred:none。解析失败一律降级（facts 是加固增强）。
+    """
     if snapshot is None:
         return {
             "method": "none", "origin": _PACKING_ORIGIN_NONE,
             "packaging_id": None, "packaging_name": None,
         }
 
-    product_key = str(snapshot.get("product_key") or "").strip()
     packaging_id = str(snapshot.get("packaging_id") or "").strip()
     snapshot_name = str(snapshot.get("packaging_name") or "").strip()
-
-    product = None
-    if product_key:
-        try:
-            from quote_api import _effective_product_raw  # 惰性导入：避免 main 导入期循环
-
-            product = await _effective_product_raw(request, user or {}, product_key)
-        except Exception:  # noqa: BLE001 - 有意兜底：产品解析失败按"无配置"降级（见 docstring）
-            product = None
 
     raw_packaging = None
     if product is not None:
@@ -473,6 +448,35 @@ async def _packing_of_doc(
     }
 
 
+async def _packing_of_doc(
+    request: Request,
+    d: dict,
+    user: Optional[dict] = None,
+) -> dict:
+    """解析**本单**包装方式（A14）—— 不新增 DB 字段，只复用既有设计。
+
+    快照识别与包装选择是纯函数（_packing_snapshot_of / _packing_from_product）；本函数
+    只负责「产品定义」这一处取数：tenant_products 优先、回退注册表，与 /formulas、算价
+    同一解析器 quote_api._effective_product_raw。失败一律降级（facts 不能把 /facts 打 500）。
+    """
+    snapshot = _packing_snapshot_of(d)
+    if snapshot is None:
+        return _packing_from_product(None, None)
+
+    product = None
+    product_key = str(snapshot.get("product_key") or "").strip()
+    if product_key:
+        try:
+            # 按名字取「当前」模块（全量跑时路由模块可能来自更早的代际；
+            # test_trade_doc_packing_api 的补丁口径就是 patch 当前 sys.modules 里的 quote_api）
+            from quote_api import _effective_product_raw  # noqa: PLC0415
+
+            product = await _effective_product_raw(request, user or {}, product_key)
+        except Exception:  # noqa: BLE001 - 有意兜底：产品解析失败按"无配置"降级
+            product = None
+    return _packing_from_product(snapshot, product)
+
+
 def _baseline_facts(d: dict) -> list[Fact]:
     """**上游基线**事实：同一 payload 去掉手工层后抽取。
 
@@ -515,23 +519,44 @@ def _apply_overlay(facts: list[Fact], rows: dict[str, dict]) -> list[Fact]:
     return merged
 
 
-async def _facts_of(
-    request: Request,
-    d: dict,
-    user: Optional[dict] = None,
-) -> list[Fact]:
-    """单证事实 = 内核抽取 + 表内处置（其它端点都走这一个入口）。
+def _facts_from_parts(d: dict, packing: dict, fact_rows) -> list[Fact]:
+    """内核抽取 + 表内处置（**纯函数**；旧 handler 与供数 RPC 共用同一份）。
 
-    A14：额外解析本单包装并作为 `packing=` 传给内核（`packing_method` /
-    `packing_type` 两条事实）；产品解析失败按"无配置"降级，不影响其余事实。
+    A14：packing 由调用方解析好并作为 packing= 传给内核（packing_method /
+    packing_type 两条事实）；产品解析失败按"无配置"降级，不影响其余事实。
     """
-    packing = await _packing_of_doc(request, d, user)
     facts = extract_facts(
         _fact_source_payload(d),
         d.get("doc_type") or "other",
         packing=packing,
     )
-    return _apply_overlay(facts, await _fact_rows(request, d["id"]))
+    if isinstance(fact_rows, dict):
+        overlay = fact_rows
+    else:
+        overlay = {str(dict(row)["fact_key"]): dict(row) for row in fact_rows or []}
+    return _apply_overlay(facts, overlay)
+
+
+async def _facts_of(
+    request: Request,
+    d: dict,
+    user: Optional[dict] = None,
+) -> list[Fact]:
+    """单证事实 = 内核抽取 + 表内处置（其它端点都走这一个入口）。"""
+    packing = await _packing_of_doc(request, d, user)
+    return _facts_from_parts(d, packing, await _fact_rows(request, d["id"]))
+
+
+def _facts_payload(d: dict, doc_id: int, facts: list[Fact]) -> dict:
+    """事实清单响应（**纯投影**；旧 handler 与供数 RPC 共用同一份）。"""
+    return {
+        "doc_id": doc_id,
+        "doc_type": d.get("doc_type"),
+        "doc_no": d.get("doc_no"),
+        "status": d.get("status"),
+        "items": [_fact_dict(fact) for fact in facts],
+        "summary": _summary(facts),
+    }
 
 
 def _summary(facts: list[Fact]) -> dict:
@@ -609,15 +634,7 @@ async def list_trade_doc_facts(
     未确认事实的导出占位由内核 `render_tbc` 在渲染侧处理（TBC/待确认，不猜值）。
     """
     d = await _doc_404(request, doc_id, user)
-    facts = await _facts_of(request, d, user)
-    return {
-        "doc_id": doc_id,
-        "doc_type": d.get("doc_type"),
-        "doc_no": d.get("doc_no"),
-        "status": d.get("status"),
-        "items": [_fact_dict(fact) for fact in facts],
-        "summary": _summary(facts),
-    }
+    return _facts_payload(d, doc_id, await _facts_of(request, d, user))
 
 
 # ─── 2) 确认事实（gate_trust 的回写路径）──────────────────────────────────
@@ -734,28 +751,64 @@ async def _linked_id(request: Request, doc_id: int, dst_type: str) -> Optional[i
     return int(dict(rows[0])["dst_id"]) if rows else None
 
 
-async def _domain_docs(request: Request, d: dict) -> tuple[str, list[dict]]:
-    """交易域 = 同一 `order`（`UNCERTAIN #17 ①` 裁决）；退化顺序见下。
+def _domain_docs_from_parts(d: dict, linked_order_rows, order_rows,
+                            linked_quote_rows, quote_rows) -> tuple[str, list[dict]]:
+    """交易域判定（**纯函数**；旧 handler 与供数 RPC 共用同一份）。
 
-    1. `trade_docs.order_id` 列（权威主归属）；
-    2. 列空 → `entity_links` 的 order 边（历史行）；
-    3. 无订单 → 同一 `quote` 链（报价工作台直接生成单证）；
-    4. 都没有 → 只比自身。
+    退化顺序：order 列 → 边表 order 边 → quote 链 → 仅自身。行由供数方按旧 SQL
+    （tenant + order_id/quote_id + status<>'void' ORDER BY id）查好；本函数只做判定。
     """
     doc_id = d["id"]
-    order_id = d.get("order_id") or await _linked_id(request, doc_id, "order")
+    order_id = d.get("order_id")
+    if not order_id:
+        order_id = (int(dict(linked_order_rows[0])["dst_id"])
+                    if linked_order_rows else None)
     if order_id:
-        rows = await _db().fetch(request, _SQL_DOCS_BY_ORDER, DEFAULT_TENANT, order_id,
-                              table="trade_docs")
+        rows = [_dp.doc_dict(_main._trade_doc_row_from_dataset(dict(row)))
+                for row in order_rows or []]
         if rows:
-            return f"order:{order_id}", [_dp.doc_dict(dict(row)) for row in rows]
-    quote_id = d.get("quote_id") or await _linked_id(request, doc_id, "quote")
+            return f"order:{order_id}", rows
+    quote_id = d.get("quote_id")
+    if not quote_id:
+        quote_id = (int(dict(linked_quote_rows[0])["dst_id"])
+                    if linked_quote_rows else None)
     if quote_id:
-        rows = await _db().fetch(request, _SQL_DOCS_BY_QUOTE, DEFAULT_TENANT, quote_id,
-                              table="trade_docs")
+        rows = [_dp.doc_dict(_main._trade_doc_row_from_dataset(dict(row)))
+                for row in quote_rows or []]
         if rows:
-            return f"quote:{quote_id}", [_dp.doc_dict(dict(row)) for row in rows]
+            return f"quote:{quote_id}", rows
     return f"doc:{doc_id}", [d]
+
+
+async def _domain_docs(request: Request, d: dict) -> tuple[str, list[dict]]:
+    """交易域取数（旧 handler 用）：列/边表/quote 链三处查询后交给纯判定。"""
+    doc_id = d["id"]
+    order_id = d.get("order_id")
+    linked_order_rows = []
+    order_rows = []
+    if not order_id:
+        linked_order_rows = await _db().fetch(request, _SQL_LINKED_ORDER,
+                                              DEFAULT_TENANT, doc_id)
+        order_id = (int(dict(linked_order_rows[0])["dst_id"])
+                    if linked_order_rows else None)
+    if order_id:
+        order_rows = await _db().fetch(request, _SQL_DOCS_BY_ORDER,
+                                       DEFAULT_TENANT, order_id, table="trade_docs")
+    quote_id = None
+    linked_quote_rows = []
+    quote_rows = []
+    if not order_id or not order_rows:
+        quote_id = d.get("quote_id")
+        if not quote_id:
+            linked_quote_rows = await _db().fetch(request, _SQL_LINKED_QUOTE,
+                                                  DEFAULT_TENANT, doc_id)
+            quote_id = (int(dict(linked_quote_rows[0])["dst_id"])
+                        if linked_quote_rows else None)
+        if quote_id:
+            quote_rows = await _db().fetch(request, _SQL_DOCS_BY_QUOTE,
+                                           DEFAULT_TENANT, quote_id, table="trade_docs")
+    return _domain_docs_from_parts(d, linked_order_rows, order_rows,
+                                   linked_quote_rows, quote_rows)
 
 
 def _baseline_key(docs: list[dict], facts_by_doc: dict[str, list[Fact]]) -> Optional[str]:
@@ -767,21 +820,8 @@ def _baseline_key(docs: list[dict], facts_by_doc: dict[str, list[Fact]]) -> Opti
     return None
 
 
-@app.get("/api/v1/trade-docs/{doc_id}/consistency")
-async def get_trade_doc_consistency(
-    doc_id: int,
-    request: Request,
-    user: dict = Depends(_get_current_user),
-):
-    """跨单证事实矩阵（§4-B）：`diff_facts` + 对基线的 `lint_pair`。
-
-    返回的 `items` 里 `severity` 三档对应产品形态：
-    - `error`（✗ 冲突）→ 阻断导出/签发；
-    - `warning`（⚠ 等价措辞 / 缺失）→ 可见但不阻断（"绝不静默吞差异"）；
-    - `info`（✓ 一致）不逐条返回（只有差异才回来，否则一屏都是 ✓）。
-    """
-    d = await _doc_404(request, doc_id, user)
-    root, docs = await _domain_docs(request, d)
+def _consistency_payload(d: dict, doc_id: int, root: str, docs: list[dict]) -> dict:
+    """跨单证事实矩阵（**纯投影**；旧 handler 与供数 RPC 共用同一份）。"""
     facts_by_doc: dict[str, list[Fact]] = {}
     for row in docs:
         key = str(row["id"])
@@ -808,10 +848,6 @@ async def get_trade_doc_consistency(
 
     current = str(doc_id)
     if current != baseline and facts_by_doc.get(current) and facts_by_doc.get(baseline):
-        # 同一 key 只报一次：diff 已经报过的冲突不再由承继核对报一遍。
-        # 冲突码保持 diff 的 `FACT_CONFLICT`（§8-1 的验收断言就是按这个码写的）；
-        # "不可改写"的精确结论（带原值/新值、`FACT_IMMUTABLE`）在 `/lint` 端点给出
-        # —— 那里没有 diff 干扰，是"这张单能不能签"的单一答案。
         error_keys = {item["key"] for item in items if item["severity"] == "error"}
         for check in lint_pair(facts_by_doc[baseline], facts_by_doc[current]):
             if check.ok or check.key in error_keys:
@@ -830,6 +866,121 @@ async def get_trade_doc_consistency(
     return {"ok": ok,
             "domain": {"root": root, "doc_ids": [str(row["id"]) for row in docs]},
             "items": items}
+
+
+@app.get("/api/v1/trade-docs/{doc_id}/consistency")
+async def get_trade_doc_consistency(
+    doc_id: int,
+    request: Request,
+    user: dict = Depends(_get_current_user),
+):
+    """跨单证事实矩阵（§4-B）：`diff_facts` + 对基线的 `lint_pair`。
+
+    返回的 `items` 里 `severity` 三档对应产品形态：
+    - `error`（✗ 冲突）→ 阻断导出/签发；
+    - `warning`（⚠ 等价措辞 / 缺失）→ 可见但不阻断（"绝不静默吞差异"）；
+    - `info`（✓ 一致）不逐条返回（只有差异才回来，否则一屏都是 ✓）。
+    """
+    d = await _doc_404(request, doc_id, user)
+    root, docs = await _domain_docs(request, d)
+    return _consistency_payload(d, doc_id, root, docs)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# P2 引擎 RPC：facts / consistency 的供数版（门面供数 → 内核纯算 → 原样回放）
+# ════════════════════════════════════════════════════════════════════════════
+# 纪律（与前面各批一致）：
+# - 旧 handler 与 RPC 调用**同一份**纯函数（_facts_from_parts/_facts_payload、
+#   _domain_docs_from_parts/_consistency_payload）；
+# - RPC 不碰 DB（「零 DB 调用」由 tests 锁死）；
+# - 读闸门复用 main 的 _require_doc_visible（404 DOC_NOT_FOUND，不泄露存在性）；
+# - 产品解析降级路径与旧 _packing_of_doc 同一份（异常 ⇒ 按"无配置"降级）。
+
+
+def _hardening_dataset_rows(datasets: dict, name: str) -> list:
+    """payload.datasets[name] → 行数组（形状错误 = 实现 bug ⇒ 400；缺省 = 空）。"""
+    rows = datasets.get(name)
+    if rows is None:
+        return []
+    if not isinstance(rows, list):
+        raise HTTPException(status_code=400, detail={
+            "error": "engine_rpc_payload_invalid",
+            "message": "datasets.%s 必须是数组" % name,
+        })
+    return rows
+
+
+def _packing_from_datasets(snapshot: Optional[dict], datasets: dict, user: dict) -> dict:
+    """供数版产品解析：tenant_products 行 → 有效定义 → 包装选择。
+
+    与 _packing_of_doc 的降级口径完全相同：解析失败（引擎不可用 / 409 上游已变 /
+    未知产品）一律按"无配置"降级，不影响其余事实。
+    """
+    if snapshot is None:
+        return _packing_from_product(None, None)
+    product = None
+    product_key = str(snapshot.get("product_key") or "").strip()
+    if product_key:
+        try:
+            from quote_api import _resolve_effective_raw  # noqa: PLC0415
+
+            product = _resolve_effective_raw(
+                _hardening_dataset_rows(datasets, "tenant_products"), user, product_key)
+        except Exception:  # noqa: BLE001 - 有意兜底：与旧路径同一口径
+            product = None
+    return _packing_from_product(snapshot, product)
+
+
+def facts_from_datasets(doc_id: int, datasets: dict, user: dict) -> dict:
+    """P2 引擎 RPC：GET /trade-docs/{doc_id}/facts 的供数版（**同一份**判定与投影）。
+
+    datasets：trade_docs（1 行）+ trade_doc_facts（处置行）+ tenant_products（全量 active，
+    供包装解析用；旧路径按数据形状才查，多下发一份只读数据、语义等价）。
+    """
+    rows = _hardening_dataset_rows(datasets, "trade_docs")
+    row = rows[0] if rows and isinstance(rows[0], dict) else None
+    if row is None:
+        _main._doc_not_found()
+    d = _dp.doc_dict(_main._trade_doc_row_from_dataset(row))
+    _main._require_doc_visible(user, d)
+    if d.get("id") is not None and int(d["id"]) != int(doc_id):
+        raise HTTPException(status_code=400, detail={
+            "error": "engine_rpc_payload_invalid",
+            "message": "datasets.trade_docs 与 request.doc_id 不一致",
+        })
+    snapshot = _packing_snapshot_of(d)
+    packing = _packing_from_datasets(snapshot, datasets, user)
+    fact_rows = [r for r in _hardening_dataset_rows(datasets, "trade_doc_facts")
+                 if isinstance(r, dict)]
+    return _facts_payload(d, doc_id, _facts_from_parts(d, packing, fact_rows))
+
+
+def consistency_from_datasets(doc_id: int, datasets: dict, user: dict) -> dict:
+    """P2 引擎 RPC：GET /trade-docs/{doc_id}/consistency 的供数版（**同一份**判定）。
+
+    datasets：trade_docs（1 行）+ linked_order_links/linked_quote_links（边表兜底行）
+    + trade_docs_by_order/trade_docs_by_quote（域内单证行，按旧 SQL 语义）。
+    域判定由 _domain_docs_from_parts 重判一次（门面只是把三处查询按同一条件发出来）。
+    """
+    rows = _hardening_dataset_rows(datasets, "trade_docs")
+    row = rows[0] if rows and isinstance(rows[0], dict) else None
+    if row is None:
+        _main._doc_not_found()
+    d = _dp.doc_dict(_main._trade_doc_row_from_dataset(row))
+    _main._require_doc_visible(user, d)
+    if d.get("id") is not None and int(d["id"]) != int(doc_id):
+        raise HTTPException(status_code=400, detail={
+            "error": "engine_rpc_payload_invalid",
+            "message": "datasets.trade_docs 与 request.doc_id 不一致",
+        })
+    root, docs = _domain_docs_from_parts(
+        d,
+        _hardening_dataset_rows(datasets, "linked_order_links"),
+        _hardening_dataset_rows(datasets, "trade_docs_by_order"),
+        _hardening_dataset_rows(datasets, "linked_quote_links"),
+        _hardening_dataset_rows(datasets, "trade_docs_by_quote"),
+    )
+    return _consistency_payload(d, doc_id, root, docs)
 
 
 _CHECK_CODE = {

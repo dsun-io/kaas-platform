@@ -1,0 +1,211 @@
+{
+  "_comment": "P3 第八批金标：GET /trade-docs/{doc_id}/consistency（跨单证事实矩阵）。old_sql = 旧路径实际执行的查询（doc → 同 order 链的单证行）；domain 退化顺序：order 列 → 边表 order → quote 链 → 自身（门面按同一条件发查询，内核 _domain_docs_from_parts 再判一次）。",
+  "endpoint": {
+    "method": "GET",
+    "path": "/api/v1/trade-docs/12/consistency",
+    "query_string": ""
+  },
+  "rpc": "/api/v1/internal/engine/trade-docs/consistency",
+  "request": {
+    "doc_id": 12
+  },
+  "actor": {
+    "id": 5,
+    "account_type": "customer",
+    "role": "owner",
+    "team_id": 2,
+    "is_tenant_admin": false
+  },
+  "datasets": {
+    "trade_docs": [
+      {
+        "id": 12,
+        "tenant_id": "default",
+        "doc_no": "CI-US-ACME-20261020000002",
+        "doc_type": "ci",
+        "order_id": 1,
+        "customer_id": 3,
+        "quote_id": null,
+        "status": "draft",
+        "currency": "USD",
+        "total_amount": 100.0,
+        "issued_at": null,
+        "issued_by": "5",
+        "raw_payload": {
+          "sources": {
+            "order": {
+              "order_no": "ORD-US-ACME-20261019",
+              "customer_name": "ACME 贸易",
+              "items": [
+                {
+                  "product_name": "Field Fence",
+                  "spec_snapshot": {
+                    "product_key": "field_fence",
+                    "packaging_id": "pk_1"
+                  }
+                }
+              ]
+            }
+          },
+          "custom": {
+            "incoterm": "DAP Yangzhou",
+            "payment_terms": "T/T 30%"
+          }
+        },
+        "owner_id": "5",
+        "owner_scope": "private",
+        "team_id": 2,
+        "with_seal": true,
+        "created_at": "2026-10-19T09:00:00+00:00",
+        "updated_at": "2026-10-20T10:00:00.123456+00:00"
+      }
+    ],
+    "linked_order_links": [],
+    "trade_docs_by_order": [
+      {
+        "id": 11,
+        "tenant_id": "default",
+        "doc_no": "PI-US-ACME-20261019000001",
+        "doc_type": "pi",
+        "order_id": 1,
+        "customer_id": 3,
+        "quote_id": null,
+        "status": "issued",
+        "currency": "USD",
+        "total_amount": 100.0,
+        "issued_at": "2026-10-21T08:00:00+00:00",
+        "issued_by": "5",
+        "raw_payload": {
+          "sources": {
+            "order": {
+              "order_no": "ORD-US-ACME-20261019",
+              "customer_name": "ACME 贸易",
+              "items": [
+                {
+                  "product_name": "Field Fence",
+                  "spec_snapshot": {
+                    "product_key": "field_fence",
+                    "packaging_id": "pk_1"
+                  }
+                }
+              ]
+            }
+          },
+          "custom": {
+            "incoterm": "DAP Yangzhou, Jiangsu, China",
+            "payment_terms": "T/T 30%"
+          }
+        },
+        "owner_id": "5",
+        "owner_scope": "private",
+        "team_id": 2,
+        "with_seal": true,
+        "created_at": "2026-10-20T10:00:00.123456+00:00",
+        "updated_at": "2026-10-19T09:00:00+00:00"
+      },
+      {
+        "id": 12,
+        "tenant_id": "default",
+        "doc_no": "CI-US-ACME-20261020000002",
+        "doc_type": "ci",
+        "order_id": 1,
+        "customer_id": 3,
+        "quote_id": null,
+        "status": "draft",
+        "currency": "USD",
+        "total_amount": 100.0,
+        "issued_at": null,
+        "issued_by": "5",
+        "raw_payload": {
+          "sources": {
+            "order": {
+              "order_no": "ORD-US-ACME-20261019",
+              "customer_name": "ACME 贸易",
+              "items": [
+                {
+                  "product_name": "Field Fence",
+                  "spec_snapshot": {
+                    "product_key": "field_fence",
+                    "packaging_id": "pk_1"
+                  }
+                }
+              ]
+            }
+          },
+          "custom": {
+            "incoterm": "DAP Yangzhou",
+            "payment_terms": "T/T 30%"
+          }
+        },
+        "owner_id": "5",
+        "owner_scope": "private",
+        "team_id": 2,
+        "with_seal": true,
+        "created_at": "2026-10-19T09:00:00+00:00",
+        "updated_at": "2026-10-20T10:00:00.123456+00:00"
+      }
+    ],
+    "linked_quote_links": [],
+    "trade_docs_by_quote": []
+  },
+  "old_sql": [
+    {
+      "sql": "SELECT * FROM trade_docs WHERE tenant_id=$1 AND id=$2",
+      "params": [
+        "default",
+        12
+      ]
+    },
+    {
+      "sql": "SELECT * FROM trade_docs WHERE tenant_id=$1 AND order_id=$2 AND status <> 'void' ORDER BY id",
+      "params": [
+        "default",
+        1
+      ]
+    }
+  ],
+  "facade": {
+    "trade_docs": {
+      "columns": "id, tenant_id, doc_no, doc_type, order_id, customer_id, quote_id, status, currency, total_amount, CASE WHEN to_char(issued_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS issued_at, issued_by, raw_payload, owner_id, owner_scope, team_id, with_seal, CASE WHEN to_char(created_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS created_at, CASE WHEN to_char(updated_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS updated_at",
+      "sql": "SELECT id, tenant_id, doc_no, doc_type, order_id, customer_id, quote_id, status, currency, total_amount, CASE WHEN to_char(issued_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS issued_at, issued_by, raw_payload, owner_id, owner_scope, team_id, with_seal, CASE WHEN to_char(created_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS created_at, CASE WHEN to_char(updated_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS updated_at FROM trade_docs WHERE tenant_id=$1 AND id=$2",
+      "params": [
+        "default",
+        12
+      ]
+    },
+    "trade_docs_by_order": {
+      "columns": "id, tenant_id, doc_no, doc_type, order_id, customer_id, quote_id, status, currency, total_amount, CASE WHEN to_char(issued_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS issued_at, issued_by, raw_payload, owner_id, owner_scope, team_id, with_seal, CASE WHEN to_char(created_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS created_at, CASE WHEN to_char(updated_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS updated_at",
+      "sql": "SELECT id, tenant_id, doc_no, doc_type, order_id, customer_id, quote_id, status, currency, total_amount, CASE WHEN to_char(issued_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS issued_at, issued_by, raw_payload, owner_id, owner_scope, team_id, with_seal, CASE WHEN to_char(created_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS created_at, CASE WHEN to_char(updated_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS updated_at FROM trade_docs WHERE tenant_id=$1 AND order_id=$2 AND status <> 'void' ORDER BY id",
+      "params": [
+        "default",
+        1
+      ]
+    },
+    "linked_order_sql": "SELECT dst_id FROM entity_links WHERE tenant_id=$1 AND src_type='trade_doc' AND src_id=$2 AND dst_type='order' AND deleted_at IS NULL ORDER BY id LIMIT 1",
+    "linked_quote_sql": "SELECT dst_id FROM entity_links WHERE tenant_id=$1 AND src_type='trade_doc' AND src_id=$2 AND dst_type='quote' AND deleted_at IS NULL ORDER BY id LIMIT 1"
+  },
+  "response": {
+    "ok": true,
+    "domain": {
+      "root": "order:1",
+      "doc_ids": [
+        "11",
+        "12"
+      ]
+    },
+    "items": [
+      {
+        "severity": "warning",
+        "code": "FACT_EQUIVALENT_WORDING",
+        "key": "incoterm",
+        "status": "equivalent",
+        "baseline_doc": "11",
+        "values": {
+          "11": "DAP Yangzhou, Jiangsu, China",
+          "12": "DAP Yangzhou"
+        },
+        "detail": "「贸易术语」措辞不同但按等价词表/格式归一视为同一事实：11='DAP Yangzhou, Jiangsu, China'、12='DAP Yangzhou'"
+      }
+    ]
+  }
+}

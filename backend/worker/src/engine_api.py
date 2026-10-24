@@ -31,6 +31,7 @@ from fastapi.exceptions import RequestValidationError
 
 import main as _main
 import quote_api as _quote
+import ws_docs_hardening as _docs_hardening
 
 app = _main.app
 
@@ -419,3 +420,26 @@ async def engine_quote_pricing_data(request: Request, body: dict):
     user, request_body, datasets = _payload(request, body)
     return await _dispatch(
         _main.pricing_data_from_datasets, datasets, _query_object(request_body), user)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 第八批切片：GET /trade-docs/{doc_id}/facts + /consistency（单证加固读端点）
+# ═══════════════════════════════════════════════════════════════════════════════
+# 设计 = docs/P2_COUPLING_ENGINE_2026-10-24.md §6/§8。取数由门面按旧 SQL 逐字做，
+# 内核只做协议校验 + **同一份**纯函数（ws_docs_hardening._facts_* / _domain_docs_*）。
+
+
+@app.post("/api/v1/internal/engine/trade-docs/facts")
+async def engine_trade_docs_facts(request: Request, body: dict):
+    """事实清单 RPC：request.doc_id = 路径 id；datasets 见 facts_from_datasets。"""
+    user, request_body, datasets = _payload(request, body)
+    doc_id = _request_int(request_body, "doc_id")
+    return await _dispatch(_docs_hardening.facts_from_datasets, doc_id, datasets, user)
+
+
+@app.post("/api/v1/internal/engine/trade-docs/consistency")
+async def engine_trade_docs_consistency(request: Request, body: dict):
+    """跨单证一致性 RPC：request.doc_id = 路径 id；datasets 见 consistency_from_datasets。"""
+    user, request_body, datasets = _payload(request, body)
+    doc_id = _request_int(request_body, "doc_id")
+    return await _dispatch(_docs_hardening.consistency_from_datasets, doc_id, datasets, user)

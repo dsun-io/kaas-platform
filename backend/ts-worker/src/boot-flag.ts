@@ -103,6 +103,9 @@ export const DIRECT_ROUTE_IDS = {
   /** GET /api/v1/trade-docs/{id}/content-versions[/{no}] —— 单证内容版本 */
   tradeDocsContentVersionsList: "trade-docs.content-versions.list",
   tradeDocsContentVersionsGet: "trade-docs.content-versions.get",
+  /** GET /api/v1/trade-docs/{id}/facts · /consistency —— 单证事实与一致性（引擎切片） */
+  tradeDocsFacts: "trade-docs.facts",
+  tradeDocsConsistency: "trade-docs.consistency",
 } as const;
 
 export type DirectRouteId = (typeof DIRECT_ROUTE_IDS)[keyof typeof DIRECT_ROUTE_IDS];
