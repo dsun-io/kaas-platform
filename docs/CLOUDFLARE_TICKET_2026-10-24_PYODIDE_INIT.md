@@ -117,3 +117,44 @@ CLOUDFLARE_API_TOKEN=... npx wrangler tail kaas --format json
 - 门面 Side 对 `env.KERNEL.fetch` 抛错按幂等性做指数退避重试（GET 5 次、窗口≈4.4s），把单次初始化失败对用户的影响吸收掉一部分；
 - 正在把**认证与数据库访问**从 Python Worker 移到 TS 门面（Hyperdrive 直连），使"用户能否打开页面"不再取决于 Pyodide 初始化；
 - 增加**带真实 JWT 的合成探针**（匿名探针掩盖了该故障）。
+## 9. 迁移完成后的架构证据（2026-10-24 21:45 补充，强化「影响面」论证）
+
+为把「Pyodide 初始化失败」从**影响全站**降级为**影响局部**，我们在这两天把请求路径重构成两层，并留下了可复核的线上证据：
+
+### 9.1 当前形态
+```
+用户/前端 ──► kaas-edge（TS Worker, Hono + Hyperdrive 直连 Neon）
+                ├─ 认证 / 热读 / 大部分只读 / 配置类写  ──► 直接查库（不经过 Python）
+                └─ 需要 Python 计算的少数端点 ──► KERNEL.fetch (Service Binding)
+                                                     └─ /api/v1/internal/engine/* 纯算 RPC
+                                                        （内核此时**不连库**，只做投影/算法）
+```
+
+- **已迁移到门面的实路由数（本任务内新增）**：40+ 条（热读 5 + 纯 SQL 只读 12 + 引擎切片 14 + 写路径 6 + 其余批次）
+- **内核保留连库的端点**：只剩 41 条跨表事务写 + 约 10 条「保持 Python」（字节流/PDF/AI 执行/出站探针/cron/懒种子），
+  已用 `backend/worker/src/kernel_db_allowlist.txt` + `scripts/kernel-db-baseline.json` **静态锁死**（除清单外不得新增连库端点）。
+
+### 9.2 线上证据：内核现在只收到「纯算 RPC」
+多轮 `wrangler tail kaas --format json` 抽样（每次带真实 JWT 打 5–7 个业务端点）：
+```
+内核收到请求数: 6
+  /api/v1/internal/engine/quote/import-template
+  /api/v1/internal/engine/quote/order-template-info
+  /api/v1/internal/engine/quote/products
+  /api/v1/internal/engine/trade-docs/list
+  /api/v1/internal/engine/trade-docs/detail
+  /health
+```
+⇒ **业务查询已不再落入 Python Worker**；内核收到的是「门面已取好数据、只要算术」的 RPC。
+
+### 9.3 为什么这对你们的缺陷诊断有帮助
+1. Pyodide 初始化（preparePython / initPyInstance）**仍然会**在这类 RPC 调用时触发 —— 所以我们的 502 观测依然有效、仍可复现；
+2. 但**影响面**已从「所有页面都可能 502」缩到「少数需要 Python 计算的端点」；
+3. 这也**排除了「我们的用法问题」**这一解释：我们已把 Python 侧的 DB 访问几乎全部移除（连库只剩例外清单），
+   内核初始化仍然失败 ⇒ 故障点在 **Pyodide 初始化本身**，与「Python Worker 里做重活」无关。
+
+### 9.4 我们可以配合提供的材料
+- Worker 名称 / account id / 采样时间窗 / 具体 colo（可从 GraphQL 取）；
+- 完整 `wrangler tail --format json` 原始行（含 `outcome: scriptThrewException` 与两段堆栈）；
+- 我们的 wrangler 版本、`compatibility_date`、`compatibility_flags`（是否 python_workers）、依赖锁（uv lock）；
+- 复现脚本（§7）与对照组数据（匿名 vs 带 JWT 的成功率差异）。

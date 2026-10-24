@@ -133,3 +133,48 @@ ai.providers / ai.usage / quotes.reference-price / quotes.cost-reference / event
 > ⚠️ 重要澄清（避免误判完成）：P3 原目标写「删除 platform/db.py、get_current_user、bcrypt/jwt 依赖」，
 > 但按方案 A 的裁决，**41 条写事务 + 10 条保持 Python 的端点永远需要 DB 与鉴权** ⇒ 该目标要修订为
 > 「DB/鉴权只在内核的例外清单内出现」。这个修订必须写进 ARCH 文档，否则交接时会以为目标没达成。
+## 8. 步骤 3 精确清单：25 个可删的内核 GET handler（2026-10-24 21:50 生成）
+
+> 生成口径：`routes.json`（280 业务路由）× `wrangler.jsonc` 白名单里**已放量的只读 route id**，取同名路径的 GET handler。
+> 未在内核找到 0 条（口径自洽）。**同路径的写方法必须保留**（下表的「同路径其它方法」列为 `-` 才可整段删除）。
+
+| # | route id | 端点 | 内核位置 | 同路径其它方法 |
+|---|---|---|---|---|
+| 1 | notifications.unread-count | GET /api/v1/notifications/unread-count | ws_approvals.py:618 | - |
+| 2 | approvals.list | GET /api/v1/approvals | ws_approvals.py:478 | - |
+| 3 | products.list | GET /api/v1/products | ws_files.py:385 | - |
+| 4 | products.profile | GET /api/v1/products/{key}/profile | ws_files.py:438 | PUT（保留） |
+| 5 | products.media | GET /api/v1/products/{key}/media | ws_files.py:503 | POST（保留） |
+| 6 | inquiries.list | GET /api/v1/inquiries | ws_crm_ext.py:303 | - |
+| 7 | inquiries.detail | GET /api/v1/inquiries/{id} | ws_crm_ext.py:402 | PATCH（保留） |
+| 8 | inquiries.stage-log | GET /api/v1/inquiries/{id}/stage-log | ws_crm_ext.py:609 | - |
+| 9 | quotations.list | GET /api/v1/quotations | main.py:2504 | - |
+| 10 | tax-archives.list | GET /api/v1/tax-archives | tax_archives.py:202 | POST/PATCH/DELETE（**已迁移到门面但内核保留 off 回退**，见下 ⚠️） |
+| 11 | product-tax-rates.list | GET /api/v1/product-tax-rates | tax_archives.py:372 | POST/PATCH/DELETE（同上） |
+| 12 | external-docs.list | GET /api/v1/external-docs | ws_extras.py:363 | POST/PATCH/DELETE（保留） |
+| 13 | fx-rates.list | GET /api/v1/fx-rates | ws_extras.py:163 | POST（保留） |
+| 14 | ai.providers | GET /api/v1/ai/providers | chain.py:583 | - |
+| 15 | ai.usage | GET /api/v1/ai/usage | chain.py:710 | - |
+| 16 | quotes.reference-price | GET /api/v1/quotes/reference-price | quote_api.py | - |
+| 17 | quotes.cost-reference | GET /api/v1/quotes/cost-reference | quote_api.py | - |
+| 18 | events.list | GET /api/v1/events | main.py:3292 | - |
+| 19 | quotes.list | GET /api/v1/quotes | quote_api.py:1771 | POST/POST-batch（保留） |
+| 20 | quotes.detail | GET /api/v1/quotes/{id} | quote_api.py:2202 | PATCH/PUT-items（保留） |
+| 21 | trade-docs.list | GET /api/v1/trade-docs | main.py:5340 | POST（保留） |
+| 22 | trade-docs.detail | GET /api/v1/trade-docs/{id} | main.py:5718 | PATCH（保留） |
+| 23 | trade-docs.files | GET /api/v1/trade-docs/{id}/files | ws_files.py:642 | - |
+| 24 | trade-docs.content-versions.list | GET .../content-versions | ws_docs_ext.py:625 | - |
+| 25 | trade-docs.content-versions.get | GET .../content-versions/{no} | ws_docs_ext.py:659 | - |
+
+另有 **13 个引擎切片**（calculate/verify/formulas/spec/explain/products/import-template/order-template-info/
+render-data/facts/consistency/pricing-data/product-name-preference）的**旧 GET/POST handler** 也可删，但注意：
+它们的 kernel handler 现已改为「门面供数 → 纯算 RPC」共用同一份投影，删除时要保留 `engine_api.py` 的 RPC 入口与共享纯函数。
+
+### ⚠️ 删除前必须接受的一个取舍（重要）
+**删掉内核 handler 后，`AUTH_DB_SPLIT=off` 的回退对该路由不再成立**（off 会 404）。
+也就是说：回退手段从「改一个 flag」变成「回滚内核代码 + 重新部署」。
+⇒ 建议顺序：
+1. 观察期通过（连续 24h 无迁移相关回归）→ 2. 先删**只读直连**（25 条里风险最低的一批，如 products/notifications/approvals）
+→ 3. 每删一批：worker 全量 + 线上抽验 + 观察 1 天 → 4. 再删引擎切片的旧 handler → 5. 最后处理写路径。
+若你不接受「off 不再可回退」，那就**永远不删 handler**，只保留这份清单作为「已知双份」记录 —— 这时 P3 的收益只剩「请求不再打内核」，
+内核启动成本不会因删除代码而进一步下降（Pyodide 仍要加载这些模块）。
