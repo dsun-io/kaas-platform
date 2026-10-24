@@ -314,6 +314,19 @@ CLOUDFLARE_API_TOKEN=... npx wrangler tail kaas --format json
 2026-10-24T14:55Z 查询：**最近 90 分钟 45 请求 / 0 错误**（内核健康）⇒ 我们无法即时抓到新鲜的 A1；
 下次复现时用 `scripts/capture-kernel-tail.ps1` 立刻抓 `rayId`/`colo`，可补齐真正的 A1。
 
+### 9.2b 迁移后的量化收益（2026-10-24T23:10Z 实测，逐小时 GraphQL）
+
+| 时段（UTC） | 迁移状态 | 内核 invocation/小时 | scriptThrewException |
+|---|---|---|---|
+| 08:00–09:00 | 只迁了 P0 热读 5 条 | 81 / 68（均值 **74**） | 0 |
+| 13:00–14:00 | 14 引擎切片 + 12 纯 SQL + 6 写路径已放量 | 41 / 15（均值 **28**） | 0 |
+
+**⇒ Pyodide init 的触发频次下降约 62%**（同一天内对比；流量构成也变了，故不全部归因于迁移）。
+这是我们可以自主控制的缓解手段，与缺陷是否被修复无关。
+
+覆盖率机检（`docs/P3_COVERAGE_AND_BENEFIT_2026-10-24.md`）：87 条 passthrough 全部归类 ——
+**32 已覆盖 / 14 留内核 / 41 方案 A 例外 / 未归类 0**。
+
 ## 10. 提交用英文正文
 
 见 `docs/CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT_EN.md`（与本文同源，数字与 §4 一致）。
