@@ -18,7 +18,12 @@
  * 为什么图片要经过 blob：`/file-objects/{id}/content` 需要 Bearer 鉴权，
  * `<img src>` 带不上头，所以统一用 axios 取 blob 再 `URL.createObjectURL`。
  */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 
 import apiClient from "@/lib/api/client";
 import {
@@ -26,6 +31,9 @@ import {
   xhrSend,
   type UploadProgressHandler,
 } from "@/lib/api/xhr-upload";
+
+import { insertUploadedMedia } from "./media-order";
+import { queryConfig, type ProductQueryOptions } from "./query-options";
 
 export interface ProductMedia {
   id: number;
@@ -64,20 +72,23 @@ export const productKeys = {
   fileUrl: (id: number) => ["file-url", id] as const,
 };
 
-export function useProducts() {
+export function useProducts(opts?: ProductQueryOptions) {
   return useQuery({
     queryKey: productKeys.list,
     queryFn: async () => {
       const { data } = await apiClient.get<{
         items: ProductRow[];
         media_kinds: Record<string, string>;
-      }>("/products");
+      }>("/products", queryConfig(opts));
       return data;
     },
   });
 }
 
-export function useProductProfile(productKey: string | null) {
+export function useProductProfile(
+  productKey: string | null,
+  opts?: ProductQueryOptions,
+) {
   return useQuery({
     queryKey: productKeys.profile(productKey ?? ""),
     enabled: Boolean(productKey),
@@ -85,7 +96,7 @@ export function useProductProfile(productKey: string | null) {
       const { data } = await apiClient.get<{
         product_key: string;
         info: Record<string, unknown>;
-      }>(`/products/${productKey}/profile`);
+      }>(`/products/${productKey}/profile`, queryConfig(opts));
       return data;
     },
   });
@@ -106,7 +117,10 @@ export function useSaveProductProfile(productKey: string) {
   });
 }
 
-export function useProductMedia(productKey: string | null) {
+export function useProductMedia(
+  productKey: string | null,
+  opts?: ProductQueryOptions,
+) {
   return useQuery({
     queryKey: productKeys.media(productKey ?? ""),
     enabled: Boolean(productKey),
@@ -114,7 +128,7 @@ export function useProductMedia(productKey: string | null) {
       const { data } = await apiClient.get<{
         items: ProductMedia[];
         media_kinds: Record<string, string>;
-      }>(`/products/${productKey}/media`);
+      }>(`/products/${productKey}/media`, queryConfig(opts));
       return data;
     },
   });
@@ -186,6 +200,63 @@ export type UploadedProductMedia = ProductMedia & {
   /** 回退原因（`预签名失败…` / `直传被拒：HTTP 400` / `直传异常…`）；未回退为 undefined */
   fallbackReason?: string;
 };
+
+/** `GET /products/{key}/media` 的缓存形状（必须与 `useProductMedia` 完全一致） */
+type ProductMediaListData = {
+  items: ProductMedia[];
+  media_kinds: Record<string, string>;
+};
+
+/** `GET /products` 的缓存形状（与 `useProducts` 一致） */
+type ProductListData = {
+  items: ProductRow[];
+  media_kinds: Record<string, string>;
+};
+
+/**
+ * 上传成功 ⇒ **立刻**把服务端返回的那张图写进媒体缓存，不再只等 `invalidateQueries`。
+ *
+ * 为什么（2026-10-24 用户反馈「上传成功后图片不显示」）：后端内核冷启动间歇 502，
+ * 上传本身走通了、紧接着的 `GET /products/{key}/media` 却 502 ⇒ React Query 保留
+ * 旧列表 ⇒ 新图永远不出现，界面连一句提示都没有。服务端已经把这张图的元数据
+ * 返回了，直接写缓存是唯一不依赖网络的展示路径。
+ *
+ * 注意：**列表缓存不存在时也写**（哪怕只有这一张）——"媒体列表那次加载失败了、
+ * 但上传成功了"正是最需要这张图出现的场景；`media_kinds` 缺失由调用方回落默认文案。
+ */
+function writeUploadedMediaToCache(
+  qc: QueryClient,
+  productKey: string,
+  media: ProductMedia,
+) {
+  let inserted = false;
+  qc.setQueryData<ProductMediaListData>(
+    productKeys.media(productKey),
+    (old) => {
+      const items = old?.items ?? [];
+      // 重试上传 / 重复触发时服务端可能回同一 id：去重，别出现两张一模一样的卡
+      if (items.some((m) => m.id === media.id)) return old;
+      inserted = true;
+      return {
+        items: insertUploadedMedia(items, media),
+        media_kinds: old?.media_kinds ?? {},
+      };
+    },
+  );
+  if (!inserted) return;
+  // 产品卡上的「图片 N 张」也要跟上：列表那次重拉如果失败，数字不能停在旧值
+  qc.setQueryData<ProductListData>(productKeys.list, (old) => {
+    if (!old) return old;
+    return {
+      ...old,
+      items: old.items.map((row) =>
+        row.product_key === productKey
+          ? { ...row, media_count: row.media_count + 1 }
+          : row,
+      ),
+    };
+  });
+}
 
 export function useUploadProductMedia(productKey: string) {
   const qc = useQueryClient();
@@ -303,7 +374,19 @@ export function useUploadProductMedia(productKey: string) {
       }
       return { ...media, fellBackToProxy: true, fallbackReason };
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: productKeys.all }),
+    onSuccess: (media) => {
+      // ① 先写缓存：用户立刻看到新图（不依赖网络，重拉 502 也还在）
+      writeUploadedMediaToCache(qc, productKey, media);
+      // ② 再拉服务端真值：其它查询（列表的 media_count、其它页面）要更新。
+      //    这次重拉若 502，React Query 会保留已有 data（`isRefetchError=true`），
+      //    ① 写进去的图不会消失。
+      void qc.invalidateQueries({ queryKey: productKeys.all });
+    },
+    onError: () => {
+      // 失败时**不写缓存**：图只在服务端确认后才出现，所以没有"乐观值要回滚"。
+      // 失败原因由上传队列行内展示（`uploadErrorMessage` 会把 502 翻译成可恢复提示），
+      // 这里不再弹全局 toast —— 多张失败只该有一条汇总提示。
+    },
   });
 }
 
@@ -365,8 +448,17 @@ export function useRetireFile() {
   });
 }
 
-/** 图片取 blob → objectURL（鉴权头带不上 `<img>`，只能这样取） */
-export function useFileObjectUrl(fileId: number | null) {
+/**
+ * 图片取 blob → objectURL（鉴权头带不上 `<img>`，只能这样取）。
+ *
+ * 失败重试：**不在这一层写死次数**，统一走 `lib/query/retry` 的全站口径
+ * （5xx/网络错误最多 2 次退避；4xx 不重试）。重试都失败后由调用方显示
+ * 「读取失败 + 点此重试」——2026-10-24 之前这里只显示"读取失败"，用户没有任何出路。
+ */
+export function useFileObjectUrl(
+  fileId: number | null,
+  opts?: ProductQueryOptions,
+) {
   return useQuery({
     queryKey: productKeys.fileUrl(fileId ?? 0),
     enabled: fileId !== null,
@@ -374,6 +466,7 @@ export function useFileObjectUrl(fileId: number | null) {
     queryFn: async () => {
       const res = await apiClient.get(`/file-objects/${fileId}/content`, {
         responseType: "blob",
+        silent: opts?.silent,
       });
       return URL.createObjectURL(res.data as Blob);
     },

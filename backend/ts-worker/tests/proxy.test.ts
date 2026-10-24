@@ -1,9 +1,13 @@
 import { Hono } from "hono";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AppEnv, ApiTokenActor } from "../src/actor";
 import { verifyToken } from "../src/auth";
-import { createProxyApp } from "../src/proxy";
+import { createProxyApp, KERNEL_UNAVAILABLE_MESSAGE } from "../src/proxy";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function makeEnv(overrides: Record<string, unknown> = {}) {
   return {
@@ -27,26 +31,34 @@ describe("proxy 透传层", () => {
     expect(await res.json()).toEqual({ echo: "/api/v1/quotes/123", method: "GET" });
   });
 
-  it("4xx 原样透传（不改信封）", async () => {
+  it("4xx 原样透传（不改信封、不重试）", async () => {
+    let calls = 0;
     const env = makeEnv({
       KERNEL: {
-        fetch: async () =>
-          new Response(JSON.stringify({ detail: { error: "not_found", code: "X" } }), {
+        fetch: async () => {
+          calls += 1;
+          return new Response(JSON.stringify({ detail: { error: "not_found", code: "X" } }), {
             status: 404,
             headers: { "Content-Type": "application/json" },
-          }),
+          });
+        },
       },
     });
     const app = createProxyApp("/api/v1/quotes");
     const res = await app.request("/api/v1/quotes/nope", {}, env);
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ detail: { error: "not_found", code: "X" } });
+    expect(calls).toBe(1); // 4xx 是业务结果，重试没有意义
   });
 
-  it("5xx 归一为 kernel_error", async () => {
+  it("内核返回 5xx → 归一 kernel_error，且不重试（可能已有副作用）", async () => {
+    let calls = 0;
     const env = makeEnv({
       KERNEL: {
-        fetch: async () => new Response("boom: engine exploded", { status: 500 }),
+        fetch: async () => {
+          calls += 1;
+          return new Response("boom: engine exploded", { status: 500 });
+        },
       },
     });
     const app = createProxyApp("/api/v1/quotes");
@@ -56,9 +68,11 @@ describe("proxy 透传层", () => {
     expect(body.error).toBe("kernel_error");
     expect(body.message).toContain("boom");
     expect(body.status).toBe(500);
+    expect(calls).toBe(1);
   });
 
-  it("内核不可达 → 重试后仍失败才 502 kernel_error", async () => {
+  it("GET 全部 reject → 5 次尝试后 502 kernel_unavailable（可诊断信封 + Retry-After）", async () => {
+    vi.useFakeTimers();
     let calls = 0;
     const env = makeEnv({
       KERNEL: {
@@ -69,12 +83,114 @@ describe("proxy 透传层", () => {
       },
     });
     const app = createProxyApp("/api/v1/quotes");
-    const res = await app.request("/api/v1/quotes/x", {}, env);
+
+    const pending = app.request("/api/v1/quotes/x", {}, env);
+    // 走完 200/500/1200/2500ms 的退避序列（假时钟，不真等 4.4s）
+    await vi.advanceTimersByTimeAsync(10_000);
+    const res = await pending;
+
     expect(res.status).toBe(502);
-    // 无 body 的 GET 允许重试 2 次（共 3 次尝试），冷启动抖动能自愈
+    expect(calls).toBe(5); // 1 首发 + 4 重试：窗口必须能覆盖 1–3s 冷启动
+    expect(res.headers.get("Retry-After")).toBe("1");
+    const body = (await res.json()) as {
+      error: string;
+      message: string;
+      status: number;
+      retryable: boolean;
+      attempts: number;
+      elapsed_ms: number;
+    };
+    expect(body).toMatchObject({
+      error: "kernel_unavailable",
+      message: KERNEL_UNAVAILABLE_MESSAGE,
+      status: 502,
+      retryable: true,
+      attempts: 5,
+    });
+    // elapsed_ms 是诊断字段：假时钟推进过，必须 > 0 才说明真的量过耗时
+    expect(typeof body.elapsed_ms).toBe("number");
+    expect(body.elapsed_ms).toBeGreaterThan(0);
+    // 不是内部异常串泄漏给前端
+    expect(body.message).not.toContain("binding down");
+  });
+
+  it("POST 带 body 全部 reject → 至多 2 次尝试（非幂等不无限重试）", async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const env = makeEnv({
+      KERNEL: {
+        fetch: async () => {
+          calls += 1;
+          throw new Error("binding down");
+        },
+      },
+    });
+    const app = createProxyApp("/api/v1/products");
+
+    const pending = app.request(
+      "/api/v1/products/chain_link/media",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ hello: "media" }),
+      },
+      env,
+    );
+    await vi.advanceTimersByTimeAsync(10_000);
+    const res = await pending;
+
+    expect(res.status).toBe(502);
+    expect(calls).toBe(2); // 副作用请求：1 首发 + 至多 1 次重放
+    const body = (await res.json()) as { error: string; attempts: number; retryable: boolean };
+    expect(body).toMatchObject({ error: "kernel_unavailable", attempts: 2, retryable: true });
+  });
+
+  it("GET 前两次 reject → 第三次成功（冷启动抖动自愈，不把 502 抛给用户）", async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const env = makeEnv({
+      KERNEL: {
+        fetch: async () => {
+          calls += 1;
+          if (calls < 3) throw new Error("isolate booting");
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        },
+      },
+    });
+    const app = createProxyApp("/api/v1/export-quote");
+
+    const pending = app.request("/api/v1/export-quote/products", {}, env);
+    await vi.advanceTimersByTimeAsync(10_000);
+    const res = await pending;
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
     expect(calls).toBe(3);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("kernel_error");
+  });
+
+  it("OPTIONS 预检同样按幂等重试（CORS 预检不应被冷启动打断）", async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const env = makeEnv({
+      KERNEL: {
+        fetch: async () => {
+          calls += 1;
+          if (calls === 1) throw new Error("isolate booting");
+          return new Response(null, { status: 204 });
+        },
+      },
+    });
+    const app = createProxyApp("/api/v1/quotes");
+
+    const pending = app.request("/api/v1/quotes/x", { method: "OPTIONS" }, env);
+    await vi.advanceTimersByTimeAsync(10_000);
+    const res = await pending;
+
+    expect(res.status).toBe(204);
+    expect(calls).toBe(2);
   });
 
   it("内核冷启动失败一次 → 自动重试成功（不再把 502 抛给用户）", async () => {

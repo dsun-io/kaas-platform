@@ -14,6 +14,8 @@ import { toast } from "sonner";
 import { AlertTriangle, Save, Trash2 } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { ErrorState } from "@/components/shared/error-state";
+import { LoadingBlock } from "@/components/shared/loading-block";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useRole } from "@/hooks/use-role";
@@ -149,14 +151,16 @@ export function ProductDetail({
   onDeleted: () => void;
 }) {
   const { isSystemAdmin } = useRole();
+  // silent：这一块自己渲染错误态（ErrorState + 重试），不让每个失败请求各弹一条 toast
   const registrySpec = useRegistryProductSpec(
     product.tenant ? null : product.key,
+    { silent: true },
   );
   const save = useSaveTenantProduct();
   const remove = useDeleteTenantProduct();
-  const statuses = useProductQuoteStatus();
+  const statuses = useProductQuoteStatus({ silent: true });
   const setQuoteEnabled = useSetProductQuoteEnabled();
-  const profile = useProductProfile(product.key);
+  const profile = useProductProfile(product.key, { silent: true });
   const saveProfile = useSaveProductProfile(product.key);
 
   const baseSpec: ProductSpec | null =
@@ -241,6 +245,15 @@ export function ProductDetail({
 
   const saving = save.isPending || saveProfile.isPending;
 
+  /**
+   * 团队资料（`GET /products/{key}/profile`）没取到。
+   *
+   * 为什么必须挡住保存：`info` 草稿是用 `profile.data` 初始化的，资料 502 时草稿是空的，
+   * 这时点保存会 `PUT` 一份空资料回去 —— 把真实的用途/产地/材质**覆盖成空**。
+   * 502 是可恢复的，覆盖是不可恢复的，宁可禁用保存并引导重试。
+   */
+  const profileUnavailable = profile.isError && !profile.data;
+
   /** 编辑器里的多英文名 → 送后端的规范形状（主名在前；空行丢掉）。 */
   const namesToSave = () => {
     const names = nameEnList.map((n) => n.trim()).filter(Boolean);
@@ -257,6 +270,12 @@ export function ProductDetail({
    */
   const saveAll = async (activeOverride?: boolean) => {
     if (!spec) return;
+    if (profileUnavailable) {
+      toast.error(
+        "团队资料还没取到（服务暂时不可用），请先点「重试」再保存，避免把已有资料覆盖成空",
+      );
+      return;
+    }
     if (!name.trim()) {
       toast.error("产品名称不能为空");
       return;
@@ -369,13 +388,18 @@ export function ProductDetail({
   );
 
   if (!spec) {
-    return (
-      <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
-        {registrySpec.isError
-          ? "产品规格读取失败，请刷新页面重试；如果一直失败，请联系平台管理员。"
-          : "正在读取产品规格…"}
-      </div>
-    );
+    // 失败**不能**伪装成"正在读取…"（无限骨架）：给明确错误态 + 立即重试入口
+    if (registrySpec.isError) {
+      return (
+        <ErrorState
+          title="产品规格暂时加载不了"
+          message="后台服务暂时不可用（内核正在启动），已自动重试。稍后点「重试」再取一次；如果一直失败，请联系平台管理员。"
+          onRetry={() => void registrySpec.refetch()}
+          retryLabel="重试"
+        />
+      );
+    }
+    return <LoadingBlock rows={3} />;
   }
 
   return (
@@ -401,7 +425,15 @@ export function ProductDetail({
           </label>
           {/* 「保存」对**所有产品**可用（系统产品保存的是团队资料：英文名/用途/产地…）。
               2026-10-24 前系统产品这里只有「按我们的规格自定义」，英文名根本没有保存入口。 */}
-          <Button onClick={() => void saveAll()} disabled={saving}>
+          <Button
+            onClick={() => void saveAll()}
+            disabled={saving || profileUnavailable}
+            title={
+              profileUnavailable
+                ? "团队资料还没取到，保存已暂时禁用（先重试）"
+                : undefined
+            }
+          >
             <Save className="mr-1 h-4 w-4" />
             {saving ? "保存中…" : "保存"}
           </Button>
@@ -495,12 +527,40 @@ export function ProductDetail({
           <Button
             size="sm"
             variant="outline"
-            disabled={saving}
+            disabled={saving || profileUnavailable}
+            title={
+              profileUnavailable
+                ? "团队资料还没取到，保存已暂时禁用（先重试）"
+                : undefined
+            }
             onClick={() => void saveAll()}
           >
             {saving ? "保存中…" : isTenant ? "保存产品信息" : "保存基本信息"}
           </Button>
         </div>
+        {profileUnavailable ? (
+          <div
+            role="alert"
+            className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm"
+          >
+            <AlertTriangle
+              className="size-4 shrink-0 text-destructive"
+              aria-hidden
+            />
+            <span>
+              团队资料暂时没取到（服务不可用），已自动重试。为避免把已有资料覆盖成空，
+              保存已暂时禁用；点「重试」取回资料后再改。
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="ml-auto"
+              onClick={() => void profile.refetch()}
+            >
+              重试
+            </Button>
+          </div>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <label className="space-y-1">
             <span className="text-sm font-medium">产品名称</span>

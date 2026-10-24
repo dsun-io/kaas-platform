@@ -26,10 +26,11 @@ export function ProductCard({
   quoteEnabled: boolean;
   onSelect: () => void;
 }) {
-  const media = useProductMedia(product.key);
+  // 产品列表一屏十来张卡：缩略图/媒体失败不弹全局 toast（错误的可见入口在详情页图库）
+  const media = useProductMedia(product.key, { silent: true });
   const items = media.data?.items ?? [];
   const primary = items.find((m) => m.is_primary) ?? items[0] ?? null;
-  const url = useFileObjectUrl(primary?.id ?? null);
+  const url = useFileObjectUrl(primary?.id ?? null, { silent: true });
 
   return (
     <button
@@ -53,18 +54,27 @@ export function ProductCard({
             className="size-full object-cover"
           />
         ) : (
-          <ImagePlus className="size-6 text-muted-foreground/60" aria-hidden="true" />
+          <ImagePlus
+            className="size-6 text-muted-foreground/60"
+            aria-hidden="true"
+          />
         )}
       </div>
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex items-center gap-1.5">
           <span className="truncate font-medium">{product.name}</span>
           {!rulesReady ? (
-            <StatusBadge tone="warning" className="shrink-0 whitespace-nowrap">待配置规则</StatusBadge>
+            <StatusBadge tone="warning" className="shrink-0 whitespace-nowrap">
+              待配置规则
+            </StatusBadge>
           ) : quoteEnabled ? (
-            <StatusBadge tone="success" className="shrink-0 whitespace-nowrap">报价中</StatusBadge>
+            <StatusBadge tone="success" className="shrink-0 whitespace-nowrap">
+              报价中
+            </StatusBadge>
           ) : (
-            <StatusBadge tone="default" className="shrink-0 whitespace-nowrap">已停用</StatusBadge>
+            <StatusBadge tone="default" className="shrink-0 whitespace-nowrap">
+              已停用
+            </StatusBadge>
           )}
         </div>
         <p className="truncate text-xs text-muted-foreground">

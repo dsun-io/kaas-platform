@@ -15,6 +15,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import apiClient from "@/lib/api/client";
 import { nameEnListFromInfo } from "@/lib/products/product-names";
+import {
+  queryConfig,
+  type ProductQueryOptions,
+} from "@/lib/products/query-options";
 
 export interface NumericInputItem {
   key: string;
@@ -136,18 +140,24 @@ export const tenantProductKeys = {
   status: ["tenant-product-status", "quote"] as const,
 };
 
-export function useTenantProducts() {
+export function useTenantProducts(opts?: ProductQueryOptions) {
   return useQuery({
     queryKey: tenantProductKeys.list,
     queryFn: async () => {
-      const { data } = await apiClient.get<TenantProduct[]>("/tenant-products");
+      const { data } = await apiClient.get<TenantProduct[]>(
+        "/tenant-products",
+        queryConfig(opts),
+      );
       return data ?? [];
     },
   });
 }
 
 /** 系统产品完整规格（只在没有租户行时用）。 */
-export function useRegistryProductSpec(productKey: string | null) {
+export function useRegistryProductSpec(
+  productKey: string | null,
+  opts?: ProductQueryOptions,
+) {
   return useQuery({
     queryKey: tenantProductKeys.spec(productKey ?? ""),
     enabled: Boolean(productKey),
@@ -156,6 +166,7 @@ export function useRegistryProductSpec(productKey: string | null) {
         "/export-quote/products/" +
           encodeURIComponent(productKey ?? "") +
           "/spec",
+        queryConfig(opts),
       );
       return data.spec;
     },
@@ -200,13 +211,16 @@ export interface ProductStatusRow {
   is_enabled: boolean;
 }
 
-export function useProductQuoteStatus() {
+export function useProductQuoteStatus(opts?: ProductQueryOptions) {
   return useQuery({
     queryKey: tenantProductKeys.status,
     queryFn: async () => {
       const { data } = await apiClient.get<{ items: ProductStatusRow[] }>(
         "/tenant-product-status",
-        { params: { workstation: "quote" } },
+        {
+          params: { workstation: "quote" },
+          ...(queryConfig(opts) ?? {}),
+        },
       );
       return data.items ?? [];
     },

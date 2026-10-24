@@ -18,11 +18,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   Check,
   ChevronLeft,
   ChevronRight,
   ImagePlus,
   Link2,
+  Loader2,
+  RotateCw,
   Star,
   Trash2,
   X,
@@ -31,16 +34,14 @@ import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
+import { ErrorState } from "@/components/shared/error-state";
 import { LoadingBlock } from "@/components/shared/loading-block";
 import { SectionCard } from "@/components/shared/section-card";
 import { SortableGrip, SortableList } from "@/components/shared/sortable-list";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { pinPrimaryFirst, reorderPatches } from "@/lib/products/media-order";
 import {
   fetchFileDirectUrl,
   productKeys,
@@ -52,9 +53,12 @@ import {
   type ProductMedia,
 } from "@/lib/products/use-products";
 
-import { MEDIA_NAME_MAX, formatBytes, validateMediaName } from "../media-validation";
-import { pinPrimaryFirst, reorderPatches } from "../media-order";
-import { apiErrorParts, sortErrorMessage } from "../upload-errors";
+import {
+  MEDIA_NAME_MAX,
+  formatBytes,
+  validateMediaName,
+} from "../media-validation";
+import { actionErrorMessage, sortErrorMessage } from "../upload-errors";
 import { MediaUploadZone } from "./media-upload-zone";
 
 const MEDIA_KIND_FALLBACK: Record<string, string> = {
@@ -65,25 +69,35 @@ const MEDIA_KIND_FALLBACK: Record<string, string> = {
   other: "其它",
 };
 
-/** 非上传类写操作（改名/设主图/移除）的失败提示：后端有可执行原因就透出来 */
-function actionError(err: unknown, fallback: string): string {
-  const detail = apiErrorParts(err).detail;
-  return detail ? `${fallback}：${detail}` : fallback;
-}
-
 /**
  * 主图恒排最前 —— 规则本体在 `../media-order`（纯函数，可单测），
  * 这里只负责把它接进拖拽落点。
  */
 export function ProductImagesSection({ productKey }: { productKey: string }) {
   const qc = useQueryClient();
-  const media = useProductMedia(productKey);
+  // silent：图库自己渲染 ErrorState + 重试，不让每个失败请求各弹一条全局 toast
+  const media = useProductMedia(productKey, { silent: true });
   const reorder = useReorderProductMedia();
   const retire = useRetireFile();
 
-  const mediaKinds = media.data?.media_kinds ?? MEDIA_KIND_FALLBACK;
+  // 乐观缓存（上传成功直接写的那份）可能没有 media_kinds：空对象要回落到默认文案，
+  // 否则类型标签会显示成 "production" 这种内部代号。
+  const mediaKinds =
+    media.data?.media_kinds && Object.keys(media.data.media_kinds).length > 0
+      ? media.data.media_kinds
+      : MEDIA_KIND_FALLBACK;
   // 必须 memo：`?? []` 每次渲染都是新数组，会让 SortableList 的 id 列表白算
   const items = useMemo(() => media.data?.items ?? [], [media.data]);
+
+  /**
+   * 失败后是否仍在自动重试。
+   *
+   * React Query 在重试期间**不会**把 `isError` 清掉（status 仍是 error，只有
+   * `fetchStatus` 变 fetching），所以不能只看 `isFetching`，否则首次加载重试时
+   * 会误显示"重试中"。`failureCount` 是这一轮已经失败了几次。
+   */
+  const retrying =
+    media.isFetching && (media.failureCount > 0 || media.isError);
 
   const [lightboxId, setLightboxId] = useState<number | null>(null);
   const [retireTarget, setRetireTarget] = useState<ProductMedia | null>(null);
@@ -97,10 +111,13 @@ export function ProductImagesSection({ productKey }: { productKey: string }) {
       if (patches.length === 0) return;
 
       // 乐观：先把拖出来的顺序写进缓存，卡片立刻稳住；失败再拉回服务端真相
-      qc.setQueryData<{ items: ProductMedia[]; media_kinds: Record<string, string> }>(
-        productKeys.media(productKey),
-        (old) =>
-          old ? { ...old, items: ordered.map((m, i) => ({ ...m, sort_order: i })) } : old,
+      qc.setQueryData<{
+        items: ProductMedia[];
+        media_kinds: Record<string, string>;
+      }>(productKeys.media(productKey), (old) =>
+        old
+          ? { ...old, items: ordered.map((m, i) => ({ ...m, sort_order: i })) }
+          : old,
       );
 
       reorder.mutate(patches, {
@@ -116,7 +133,8 @@ export function ProductImagesSection({ productKey }: { productKey: string }) {
   );
 
   const lightboxIndex = useMemo(
-    () => (lightboxId === null ? -1 : items.findIndex((m) => m.id === lightboxId)),
+    () =>
+      lightboxId === null ? -1 : items.findIndex((m) => m.id === lightboxId),
     [items, lightboxId],
   );
 
@@ -144,7 +162,49 @@ export function ProductImagesSection({ productKey }: { productKey: string }) {
     >
       <MediaUploadZone productKey={productKey} mediaKinds={mediaKinds} />
 
-      {media.isLoading ? (
+      {/* 失败后仍在自动重试：先说清楚"在重试"，别让用户对着空白骨架干等 */}
+      {retrying ? (
+        <div
+          role="status"
+          className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-warning/40 bg-warning-muted px-3 py-2 text-sm text-warning-muted-foreground"
+        >
+          <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden />
+          <span>服务暂时不可用（后台内核正在启动），正在自动重试…</span>
+        </div>
+      ) : null}
+
+      {/* 刷新失败但手里有上次的数据：明确说"这是旧的"，别让用户以为列表就是最新真相 */}
+      {media.isRefetchError ? (
+        <div
+          role="alert"
+          className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm"
+        >
+          <AlertTriangle
+            className="size-4 shrink-0 text-destructive"
+            aria-hidden
+          />
+          <span>
+            图片列表刷新失败（服务暂时不可用），下面显示的是上次加载的内容，新上传的图仍在。
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="ml-auto"
+            onClick={() => void media.refetch()}
+          >
+            重试
+          </Button>
+        </div>
+      ) : null}
+
+      {media.isError && items.length === 0 ? (
+        <ErrorState
+          title="产品图片暂时加载不了"
+          message="后台服务暂时不可用（内核正在启动），已自动重试。图片本身没有丢，稍后点「重试」再取一次。"
+          onRetry={() => void media.refetch()}
+          retryLabel="重试"
+        />
+      ) : media.isLoading ? (
         <LoadingBlock rows={3} className="py-6" />
       ) : items.length === 0 ? (
         <EmptyState
@@ -166,7 +226,11 @@ export function ProductImagesSection({ productKey }: { productKey: string }) {
             <MediaCard
               media={item}
               position={index + 1}
-              kindLabel={mediaKinds[item.media_kind ?? "other"] ?? item.media_kind ?? "其它"}
+              kindLabel={
+                mediaKinds[item.media_kind ?? "other"] ??
+                item.media_kind ??
+                "其它"
+              }
               onOpen={() => setLightboxId(item.id)}
               onRequestRemove={() => {
                 setRetireError(null);
@@ -204,7 +268,8 @@ export function ProductImagesSection({ productKey }: { productKey: string }) {
               toast.success("已移除（存档保留，可恢复）");
               setRetireTarget(null);
             },
-            onError: (err) => setRetireError(actionError(err, "移除失败")),
+            onError: (err) =>
+              setRetireError(actionErrorMessage(err, "移除失败")),
           });
         }}
       />
@@ -225,7 +290,8 @@ function MediaCard({
   onOpen: () => void;
   onRequestRemove: () => void;
 }) {
-  const url = useFileObjectUrl(media.id);
+  // 缩略图一次加载一整屏：失败不能各弹一条 toast（图库自己给"点此重试"）
+  const url = useFileObjectUrl(media.id, { silent: true });
   const patch = usePatchFile();
   /**
    * 草稿 = 「基于哪个服务端名称改的」+「改成什么」。
@@ -235,7 +301,9 @@ function MediaCard({
    * 这里把基准名一起存下来，**纯派生**：服务端名字一变，草稿自动作废回到服务端值，
    * 改名成功后也不会出现"输入框里还留着旧草稿"。
    */
-  const [edit, setEdit] = useState<{ base: string; value: string } | null>(null);
+  const [edit, setEdit] = useState<{ base: string; value: string } | null>(
+    null,
+  );
   const draft = edit && edit.base === media.name ? edit.value : media.name;
 
   const trimmed = draft.trim();
@@ -253,7 +321,7 @@ function MediaCard({
       {
         onSuccess: () => toast.success("已改名"),
         onError: (err) => {
-          toast.error(actionError(err, "改名失败"));
+          toast.error(actionErrorMessage(err, "改名失败"));
           setEdit(null);
         },
       },
@@ -265,7 +333,7 @@ function MediaCard({
       { id: media.id, is_primary: true },
       {
         onSuccess: () => toast.success("已设为主图（固定排第一位）"),
-        onError: (err) => toast.error(actionError(err, "设置失败")),
+        onError: (err) => toast.error(actionErrorMessage(err, "设置失败")),
       },
     );
   };
@@ -280,7 +348,7 @@ function MediaCard({
       await navigator.clipboard.writeText(directUrl);
       toast.success("已复制图片链接（15 分钟内有效）");
     } catch (err) {
-      toast.error(actionError(err, "复制失败，请检查浏览器剪贴板权限"));
+      toast.error(actionErrorMessage(err, "复制失败，请检查浏览器剪贴板权限"));
     }
   };
 
@@ -289,8 +357,17 @@ function MediaCard({
       <div className="relative">
         <button
           type="button"
-          onClick={onOpen}
-          aria-label={`查看大图 ${media.name}`}
+          // 取不到图时这一块就是「重试」入口（里面不能再嵌一个 button：
+          // button 套 button 是非法 HTML，屏幕阅读器会读错）
+          onClick={url.isError ? () => void url.refetch() : onOpen}
+          aria-label={
+            url.isError
+              ? `${media.name} 图片未取到，点击重试`
+              : `查看大图 ${media.name}`
+          }
+          title={
+            url.isError ? "图片读取失败（服务暂时不可用），点击重试" : undefined
+          }
           className="block aspect-[4/3] w-full overflow-hidden bg-muted/30"
         >
           {url.data ? (
@@ -301,8 +378,17 @@ function MediaCard({
               className="size-full object-cover transition-transform duration-200 hover:scale-[1.03]"
             />
           ) : (
-            <span className="flex size-full items-center justify-center text-xs text-muted-foreground">
-              {url.isError ? "读取失败" : "加载中…"}
+            <span className="flex size-full flex-col items-center justify-center gap-1 px-2 text-xs text-muted-foreground">
+              {url.isError ? (
+                <>
+                  <RotateCw className="size-3.5" aria-hidden />
+                  图片暂时取不到，点此重试
+                </>
+              ) : url.isFetching && url.failureCount > 0 ? (
+                "正在重试…"
+              ) : (
+                "加载中…"
+              )}
             </span>
           )}
         </button>
@@ -336,7 +422,9 @@ function MediaCard({
             maxLength={MEDIA_NAME_MAX}
             aria-label={`图片名称 ${media.name}`}
             aria-invalid={dirty && nameError !== null ? true : undefined}
-            onChange={(e) => setEdit({ base: media.name, value: e.target.value })}
+            onChange={(e) =>
+              setEdit({ base: media.name, value: e.target.value })
+            }
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
@@ -409,7 +497,9 @@ function MediaCard({
             <Trash2 aria-hidden />
           </Button>
           {patch.isPending && (
-            <span className="ml-auto text-[11px] text-muted-foreground">保存中…</span>
+            <span className="ml-auto text-[11px] text-muted-foreground">
+              保存中…
+            </span>
           )}
         </div>
       </div>
@@ -437,7 +527,7 @@ function MediaLightbox({
   onNavigate: (delta: number) => void;
 }) {
   const current = index >= 0 ? items[index] : undefined;
-  const url = useFileObjectUrl(current?.id ?? null);
+  const url = useFileObjectUrl(current?.id ?? null, { silent: true });
 
   useEffect(() => {
     if (!current) return;
@@ -455,7 +545,9 @@ function MediaLightbox({
   }, [current, onNavigate]);
 
   const kindLabel = current
-    ? kindLabels[current.media_kind ?? "other"] ?? current.media_kind ?? "其它"
+    ? (kindLabels[current.media_kind ?? "other"] ??
+      current.media_kind ??
+      "其它")
     : "";
 
   return (
@@ -465,7 +557,9 @@ function MediaLightbox({
         overlayClassName="bg-black/70 backdrop-blur-sm"
         className="max-w-[min(96vw,64rem)] gap-0 overflow-hidden p-0 ring-foreground/20 sm:max-w-[min(96vw,64rem)]"
       >
-        <DialogTitle className="sr-only">{current?.name ?? "图片预览"}</DialogTitle>
+        <DialogTitle className="sr-only">
+          {current?.name ?? "图片预览"}
+        </DialogTitle>
 
         <div className="relative flex min-h-0 items-center justify-center bg-muted/40 p-2">
           {url.data && current ? (
@@ -476,8 +570,24 @@ function MediaLightbox({
               className="max-h-[74vh] w-auto max-w-full object-contain"
             />
           ) : (
-            <span className="py-24 text-sm text-muted-foreground">
-              {url.isError ? "图片读取失败" : "加载中…"}
+            <span className="flex flex-col items-center gap-3 py-24 text-sm text-muted-foreground">
+              {url.isError ? (
+                <>
+                  <span>图片暂时取不到（服务不可用），已自动重试</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void url.refetch()}
+                  >
+                    <RotateCw className="mr-1 size-3.5" aria-hidden />
+                    重试
+                  </Button>
+                </>
+              ) : url.isFetching && url.failureCount > 0 ? (
+                "正在重试…"
+              ) : (
+                "加载中…"
+              )}
             </span>
           )}
 
@@ -509,7 +619,9 @@ function MediaLightbox({
 
         <div className="flex flex-wrap items-center gap-2 border-t px-3 py-2 text-xs">
           <span className="font-medium">{current?.name}</span>
-          <span className="rounded bg-muted px-1 text-muted-foreground">{kindLabel}</span>
+          <span className="rounded bg-muted px-1 text-muted-foreground">
+            {kindLabel}
+          </span>
           <span className="tabular-nums text-muted-foreground">
             {index + 1} / {items.length}
           </span>

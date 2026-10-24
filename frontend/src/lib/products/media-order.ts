@@ -1,6 +1,11 @@
 /**
  * 产品图库的**排序规则**（纯函数）。
  *
+ * 2026-10-24 从 `app/(app)/products/media-order.ts` 移到 `lib/products/`：
+ * 上传 hook（`use-products.ts`，在 lib 里）成功后要把新图**立刻写进媒体缓存**，
+ * 就必须复用同一套排序口径；lib 再回头 import app 目录会把依赖方向倒过来
+ * （单证工位也要用这些 hook），所以规则本体跟着数据层进 lib。
+ *
  * 单独成文件而不是塞进 `product-images.tsx`：
  *  · 规则本身与 React 无关，放进组件文件里会让单测被迫拉起
  *    dnd-kit / react-query / axios 整条依赖链，测一个数组变换不值这个价；
@@ -50,7 +55,37 @@ export function reorderPatches(
 ): { id: number; sort_order: number }[] {
   const patches: { id: number; sort_order: number }[] = [];
   items.forEach((media, index) => {
-    if (media.sort_order !== index) patches.push({ id: media.id, sort_order: index });
+    if (media.sort_order !== index)
+      patches.push({ id: media.id, sort_order: index });
   });
   return patches;
+}
+
+/**
+ * 上传成功 ⇒ 把服务端返回的那张图**并进当前列表**（乐观缓存用）。
+ *
+ * 为什么必须在前端并一次、而不是只 `invalidateQueries` 等重拉（2026-10-24 用户反馈
+ * 「上传成功后图片不显示」）：紧接着的 `GET /products/{key}/media` 只要撞上一次 502，
+ * React Query 会保留旧列表 ⇒ 新图**永远不出现**，而界面又没有任何提示。
+ * 服务端已经把这张图的元数据（id / 名称 / sort_order）返回了，直接写缓存即可。
+ *
+ * 口径与后端一致：
+ * - 同 id 去重（重试上传/重复触发不能出现两张一模一样的卡）；
+ * - 主图恒排最前（`pinPrimaryFirst`）——空图库上传的第一张会被后端自动设为主图，
+ *   若只 append 到末尾就会和服务端顺序撕裂；
+ * - `sort_order` 重建成 0..n-1（与服务端把"整个顺序压平"的落库方式同口径）。
+ */
+export function insertUploadedMedia(
+  items: ProductMedia[],
+  uploaded: ProductMedia,
+): ProductMedia[] {
+  const rest = items.filter((m) => m.id !== uploaded.id);
+  // 新图本身是主图时**新主图优先**：不能交给 pinPrimaryFirst —— 老列表里已经有主图时
+  // 它 index===0 会直接原样返回，新主图就被压在末尾，与服务端顺序撕裂。
+  const ordered = uploaded.is_primary
+    ? [uploaded, ...rest]
+    : pinPrimaryFirst([...rest, uploaded]);
+  return ordered.map((media, index) =>
+    media.sort_order === index ? media : { ...media, sort_order: index },
+  );
 }

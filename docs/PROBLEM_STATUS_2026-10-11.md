@@ -14,6 +14,26 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-24 傍晚 · 第四轮：生产内核 502 事故（用户报「上传成功不显示 / 刷新后产品加载失败」）——根因已定位、止血已落地、架构拆分方案已出，⚠️ 未部署）**
+> 取证：[INCIDENT_2026-10-24_KERNEL_502.md](./INCIDENT_2026-10-24_KERNEL_502.md)；拆分方案：[ARCH_AUTH_DB_SPLIT_2026-10-24.md](./ARCH_AUTH_DB_SPLIT_2026-10-24.md)。
+> - **根因（不是业务代码）**：Cloudflare Python Worker 的 Pyodide 在 **Python 实例初始化**阶段崩溃 ——
+>   wrangler tail 抓到 `NoGilError: Attempted to use PyProxy when Python GIL not held`（preparePython）与
+>   `PythonError: SystemError: Cannot enter a promising task from inside another running promising task. This is a bug in Pyodide`（initPyInstance），
+>   **24/24 异常全在 initPyInstance**；当日内核 `scriptThrewException` 3030 次（错误率约 56%），门面 `kaas-edge` 1821 请求 0 错误；
+>   内存 P99 达 **137.5MB**（Workers 上限 128MB）。反证：匿名 `GET /products`=401、`POST /auth/login`=200，带 JWT 同端点先 502×6、十分钟后 200×6 ⇒ **与鉴权无关，是间歇性初始化失败**。
+> - **教训（已写进方案 §9）**：`/health`、`/health?deep=1` 是匿名探针，事故全程返回 ok —— **健康探针必须含带真实 JWT 的业务请求**。
+> - **门面止血（✅ 已实现，345 测）**：仅对「fetch 抛错/无响应」重试；幂等 GET/HEAD/OPTIONS 5 次、退避 200/500/1200/2500ms ±20%（窗口≈4.4s）；
+>   有 body 请求最多 2 次且须 body 可重建；502 信封改 `kernel_unavailable`+`retryable`+`Retry-After`（业务 5xx 仍 `kernel_error`，4xx/2xx 不变）。
+> - **前端止血（✅ 已实现，1685 测）**：上传成功**立刻把返回的媒体写进 React Query 缓存**（`insertUploadedMedia`，不再依赖可能撞 502 的重拉）；
+>   5xx 有限退避重试；多张失败只提示一次 + 队列内联原因；可恢复提示替代「加载失败」死路。
+> - **回退记录（纪律）**：内核队友的 `kaas_common/*/__init__.py` 惰性导出一半成品导致 worker **25 测红**（`render_fingerprint` 变 module 不可调用），
+>   已全部回退 + `scripts/sync-shared.ps1` 重同步；worker 恢复 **1842 passed + 12 skipped**。
+> - **门禁（2026-10-24 第四轮实测，工作区静止）**：ts-worker `typecheck` 0 error / **345 测（28 文件）**；
+>   前端 `typecheck` 0 error / `lint` 0 error（75 warning 历史项）/ **1685 测（228 文件）**；worker **1842 + 12 skip**；
+>   orchestrator 未触碰（kaas_common 源已回退到 HEAD）；**未提交、未部署**（等用户确认）。
+> - **待批准**：① 部署止血包；② 认证+数据库连接拆到 TS 网关的分阶段实施（P0 热读 1–2 天 / P1 认证域 2–3 天 / P2 引擎供数 3–5 天 / P3 内核摘库 1 天）；
+>   ③ 是否向 Cloudflare 报 Pyodide init 缺陷（证据包已备）。
+
 > **（2026-10-24 下午 · 第三轮 A/B/C/D ✅：按客户选英文名 / token 只读预览 / 路由计数 / workstation-products）**
 > 明细见 [`HANDOVER_2026-10-24_LIVE_FEEDBACK.md`](./HANDOVER_2026-10-24_LIVE_FEEDBACK.md) §8；待办 `TODO.md` §S 的 S-7/S-9/S-15/S-16 已勾销。
 > - **A 按客户选英文名**：报价行仅当产品英文名 >1 时显示「客户英文名（本单使用）」；

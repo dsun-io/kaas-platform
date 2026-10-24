@@ -204,6 +204,9 @@ const ANY_JSON = { type: "object", additionalProperties: true } as const;
 
 const ERROR_REF = { $ref: "#/components/schemas/ErrorEnvelope" } as const;
 const KERNEL_ERROR_REF = { $ref: "#/components/schemas/KernelErrorEnvelope" } as const;
+const KERNEL_UNAVAILABLE_REF = {
+  $ref: "#/components/schemas/KernelUnavailableEnvelope",
+} as const;
 
 const HEALTH_SCHEMA = {
   type: "object",
@@ -233,13 +236,32 @@ const ERROR_ENVELOPE_SCHEMA = {
 
 const KERNEL_ERROR_ENVELOPE_SCHEMA = {
   type: "object",
-  description: "门面透传内核失败时的归一错误（proxy.ts 铁纪律：5xx/不可达统一包装）。",
+  description:
+    "门面透传内核失败时的归一错误（proxy.ts：内核返回的 5xx / 内核绑定未配置）。冷启动不可达走 KernelUnavailableEnvelope（502），不要混用。",
   properties: {
     error: { type: "string", example: "kernel_error" },
     message: { type: "string" },
     status: { type: "integer" },
   },
   required: ["error", "message", "status"],
+} as const;
+
+const KERNEL_UNAVAILABLE_ENVELOPE_SCHEMA = {
+  type: "object",
+  description:
+    "门面内核不可达信封（proxy.ts：内核冷启动/Service Binding 故障导致 fetch 无响应，按幂等性退避重试耗尽后才返回；retryable=true 表示可安全重试）。与业务 5xx 的 kernel_error 区分。",
+  properties: {
+    error: { type: "string", example: "kernel_unavailable" },
+    message: {
+      type: "string",
+      example: "内核服务正在启动或暂时不可用，请稍后重试",
+    },
+    status: { type: "integer", example: 502 },
+    retryable: { type: "boolean", example: true },
+    attempts: { type: "integer", example: 5, description: "实际尝试次数（含首发）" },
+    elapsed_ms: { type: "integer", example: 4412, description: "首发到放弃的墙钟耗时（ms）" },
+  },
+  required: ["error", "message", "status", "retryable"],
 } as const;
 
 // ── 类型 ────────────────────────────────────────────────────────────────
@@ -608,8 +630,23 @@ function defaultResponses(method: string, isProxy: boolean): Record<string, unkn
     responses["422"] = errorResponse("参数校验失败（FastAPI 风格 detail）");
   }
   if (isProxy) {
-    responses["502"] = { description: "内核不可达（kernel_error）", content: jsonContent(KERNEL_ERROR_REF) };
-    responses["503"] = { description: "内核未配置 / 暂不可用（kernel_error）", content: jsonContent(KERNEL_ERROR_REF) };
+    // 502 只表示「内核不可达/冷启动失败且重试耗尽」：可重试，信封是 kernel_unavailable；
+    // 503 是绑定未配置（重试也没用），仍是 kernel_error。
+    responses["502"] = {
+      description:
+        "内核不可达（冷启动 / Service Binding 故障；门面已按幂等性退避重试，仍失败才返回；retryable=true）",
+      headers: {
+        "Retry-After": {
+          description: "建议客户端重试间隔（秒）",
+          schema: { type: "string", example: "1" },
+        },
+      },
+      content: jsonContent(KERNEL_UNAVAILABLE_REF),
+    };
+    responses["503"] = {
+      description: "内核绑定未配置（kernel_error，重试无效）",
+      content: jsonContent(KERNEL_ERROR_REF),
+    };
   }
   return responses;
 }
@@ -637,6 +674,7 @@ export function buildOpenApiDocument(routes: ReadonlyArray<RouteLike>): OpenApiD
   const components: Record<string, Record<string, unknown>> = {
     ErrorEnvelope: { ...ERROR_ENVELOPE_SCHEMA },
     KernelErrorEnvelope: { ...KERNEL_ERROR_ENVELOPE_SCHEMA },
+    KernelUnavailableEnvelope: { ...KERNEL_UNAVAILABLE_ENVELOPE_SCHEMA },
   };
   const seenRoutes = new Set<string>();
   const mounts: ProxyMount[] = [];

@@ -4,8 +4,12 @@
  * 铁纪律（AGENTS.md 口径区 + ADR-008）：
  * - 不逐端点重写引擎域（禁止第二份实现）；本层只做三件事：
  *   ① 复用门面鉴权（JWT 校验，防御纵深）；② 原样转发请求；③ 错误信封归一。
- * - 禁止改写业务语义：不压缩/重试/换参数；4xx 原样透传，5xx/不可达统一包成
+ * - 禁止改写业务语义：不压缩/换参数；4xx 原样透传，内核返回的 5xx 统一包成
  *   { error: "kernel_error", message, status }（见 docs/EXECUTION_PLAYBOOK §2）。
+ * - 唯一例外：**内核冷启动期 fetch 抛错（拿不到任何响应）**按方法幂等性做有限次指数
+ *   退避重试（策略与 callKernel 共用：见 kernel.ts 的 KERNEL_RETRY_*）；重试耗尽返回 502
+ *   { error: "kernel_unavailable", message, status: 502, retryable: true, attempts, elapsed_ms }
+ *   —— 与业务 5xx（kernel_error）分开，前端/运维一眼判断「不是业务失败、可以重试」。
  * - 鉴权策略：token 存在则校验（非法 token 直接 401，与 Python envelope 一致）；
  *   token 缺失则原样转发由内核裁决（保持与 Python 端点行为一致——有些端点公开放行）。
  * - **全门面只有这一份透传实现**：createProxyApp 的 app.all("*")（前缀 mount）与
@@ -18,7 +22,7 @@ import { SignJWT } from "jose";
 import type { ApiTokenActor, AppEnv } from "./actor";
 import { extractBearer, JWT_ALGORITHM, verifyToken } from "./auth";
 import { getEnv } from "./env";
-import { KERNEL_BASE } from "./kernel";
+import { fetchKernelWithRetry, KERNEL_BASE, planKernelRetry } from "./kernel";
 import { requireUser } from "./session";
 
 export type ProxyEnv = AppEnv;
@@ -71,6 +75,21 @@ function unauthorized(c: Context): Response {
   return c.json({ detail: { error: "unauthorized", code: "INVALID_TOKEN" } }, 401);
 }
 
+/** 502 不可达信封：比 kernel_error 多出 retryable/attempts/elapsed_ms，便于前端与运维判断。 */
+export interface KernelUnavailableEnvelope {
+  error: "kernel_unavailable";
+  message: string;
+  status: 502;
+  retryable: true;
+  attempts: number;
+  elapsed_ms: number;
+}
+
+/** 给用户看的兜底文案（不带内部错误串，诊断信息留在 console.error 与结构化字段）。 */
+export const KERNEL_UNAVAILABLE_MESSAGE = "内核服务正在启动或暂时不可用，请稍后重试";
+/** 建议客户端重试间隔（秒）：重试预算已在门面侧用完，别让前端立刻再打一轮。 */
+export const KERNEL_UNAVAILABLE_RETRY_AFTER_SECONDS = 1;
+
 /**
  * 原样转发当前请求给 Python 内核（**门面唯一透传实现**）。
  *
@@ -78,7 +97,8 @@ function unauthorized(c: Context): Response {
  * - 无 API token 身份时：JWT 存在则校验（非法 → 401，不触达内核）；缺失交给内核裁决；
  * - 有 API token 身份时：铸短时效内部 JWT 替换 Authorization（kaas_oat_ 明文绝不外传）；
  * - 方法 / path / query / body / 其余头原样；基址固定 KERNEL_BASE（Service Binding 忽略 host）；
- * - 2xx / 4xx 原样透传（形状由内核契约定）；5xx / 不可达归一为 kernel_error；
+ * - 2xx / 4xx 原样透传（形状由内核契约定）；内核返回的 5xx 归一为 kernel_error；
+ * - fetch 抛错（无响应）按幂等性有限重试，耗尽后 502 kernel_unavailable（retryable）；
  * - CORS 头由 index.ts 外层中间件统一补。
  */
 export async function forwardKernelRequest(c: Context): Promise<Response> {
@@ -136,54 +156,41 @@ export async function forwardKernelRequest(c: Context): Promise<Response> {
   }
 
   const target = KERNEL_BASE + url.pathname + url.search;
-  let upstream: Response | null = null;
-  let lastErr: unknown = null;
-
-  // ── 内核冷启动容错（2026-10-24 生产事故）──────────────────────────────
-  // 现象：内核每次部署后，新版本 isolate 的第一批冷启动偶发
-  // scriptThrewException / exceededResources（Cloudflare 侧 Python 启动失败），
-  // Service Binding 的 fetch 直接 reject ⇒ 门面 502「kernel unreachable」。
-  // 用户侧表现 = 部署后第一下「上传产品图 / 通知计数 / 报价下拉」就报错，刷新/重试即可。
-  // 这里仅对 **fetch 抛错**（没拿到任何响应）做有限重试；内核已返回的 5xx 一律不重试
-  // （请求可能已产生副作用）。有 body 的请求先 clone 一份用于重试（1 次；
-  // GET/HEAD 等无 body 可安全重试 2 次）。上传类 POST 的落库按 sha256 定键，重试不产生重复对象。
-  const KERNEL_FETCH_MAX_ATTEMPTS = 3;
-  const KERNEL_FETCH_BACKOFF_MS = 150;
+  // 首发只建一次 Request；有 body 时再 clone 一份专门用于有限次重放（流只能被消费一次）。
   const firstRequest = new Request(target, init);
   let replayRequest: Request | null = null;
   if (hasBody) {
     try {
       replayRequest = firstRequest.clone();
     } catch {
-      replayRequest = null; // 某些运行时不允许 clone 流式 body ⇒ 退化为不重试
+      replayRequest = null; // 运行时不允许 clone 流式 body ⇒ 非幂等请求退化为不重试
     }
   }
-  const maxAttempts = hasBody ? (replayRequest ? 2 : 1) : KERNEL_FETCH_MAX_ATTEMPTS;
+  const plan = planKernelRetry(method, !hasBody || replayRequest !== null);
+  const result = await fetchKernelWithRetry(kernel, plan, (attempt) =>
+    attempt === 1 ? firstRequest : replayRequest ?? new Request(target, init),
+  );
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const outgoing =
-      attempt === 1
-        ? firstRequest
-        : hasBody
-          ? replayRequest!
-          : new Request(target, init);
-    try {
-      upstream = await kernel.fetch(outgoing);
-      break;
-    } catch (err) {
-      lastErr = err;
-      if (attempt >= maxAttempts) break;
-      console.warn(
-        `[proxy] kernel fetch failed (attempt ${attempt}/${maxAttempts}), retrying: ${String(err)}`,
-      );
-      await new Promise((resolve) => setTimeout(resolve, KERNEL_FETCH_BACKOFF_MS * attempt));
-    }
+  if (!result.response) {
+    // 运维据此区分「冷启动抖动（可重试）」与「内核真的挂了」：方法/路径/尝试次数/耗时/
+    // 最后一个错误全部进日志；响应体只保留安全字段（不把内部异常串甩给用户）。
+    console.error(
+      `[proxy] kernel_unavailable method=${method} path=${url.pathname} attempts=${result.attempts} elapsed_ms=${result.elapsedMs} last_error=${String(result.lastError)}`,
+    );
+    const envelope: KernelUnavailableEnvelope = {
+      error: "kernel_unavailable",
+      message: KERNEL_UNAVAILABLE_MESSAGE,
+      status: 502,
+      retryable: true,
+      attempts: result.attempts,
+      elapsed_ms: result.elapsedMs,
+    };
+    return c.json(envelope, 502, {
+      "Retry-After": String(KERNEL_UNAVAILABLE_RETRY_AFTER_SECONDS),
+    });
   }
 
-  if (!upstream) {
-    console.error("[proxy] kernel fetch failed after retries", lastErr);
-    return c.json({ error: "kernel_error", message: "kernel unreachable", status: 502 }, 502);
-  }
+  const upstream = result.response;
 
   if (upstream.status >= 500) {
     const text = await upstream.text();

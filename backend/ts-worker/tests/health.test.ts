@@ -1,8 +1,12 @@
 /** /health 探针单测（默认浅探针 + ?deep=1 内核深探针）。 */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import app from "../src/index";
 import { makeTestEnv } from "./helpers";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("GET /health", () => {
   it("返回 200 {status:'ok', service:'kaas-edge'}", async () => {
@@ -105,6 +109,7 @@ describe("GET /health", () => {
   });
 
   it("?deep=1 内核不可达 → 503 且给出 unreachable（流水线据此判失败）", async () => {
+    vi.useFakeTimers(); // callKernel 现在与 proxy 共用 ≈4.4s 冷启动窗口，假时钟跑完
     const env = makeTestEnv({
       KERNEL: {
         fetch: async () => {
@@ -112,7 +117,9 @@ describe("GET /health", () => {
         },
       },
     });
-    const res = await app.request("/health?deep=1", {}, env);
+    const pending = app.request("/health?deep=1", {}, env);
+    await vi.advanceTimersByTimeAsync(10_000);
+    const res = await pending;
 
     expect(res.status).toBe(503);
     const body = (await res.json()) as {
