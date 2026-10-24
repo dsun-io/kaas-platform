@@ -29,6 +29,10 @@
 > - **门禁（2026-10-24 下午实测）**：worker **1825+12skip** / orchestrator **273** / ts-worker **310（26 文件）** /
 >   前端 **225 files·1647 passed** / e2e **28 passed** / contracts、mocks、ui 双门禁、trade-doc:check、静态断言、sync-shared 全 PASS；
 >   `NEXT_EXPORT=1 pnpm build` exit 0（Windows `assets:check` 已知平台缺陷，以 CI ubuntu 为准）。
+> - **部署与线上验证（13:57，commit `01f49eb4`）**：deploy run 全绿（build→migrate→kernel 连续 2 次 deep health→edge）；
+>   `/health?deep=1` 连续 3 次 ok；预览端点无 token 401、无工位账号 404（闸门生效）；
+>   用户报 502 的两条路径恢复：notifications 200、products/media 403 NO_TEAM（可达、不再 502）；
+>   生产 `/trade-docs`、`/products`、`/customers` HTML 与 deploy artifact 逐字节一致。
 
 > **（2026-10-24 · 线上反馈六项 ✅：产品英文名 / 在报价中显示 404 / 客户询盘·订单 / 单证页）**
 > 明细见 [`HANDOVER_2026-10-24_LIVE_FEEDBACK.md`](./HANDOVER_2026-10-24_LIVE_FEEDBACK.md)，待办挂 `TODO.md` §S。

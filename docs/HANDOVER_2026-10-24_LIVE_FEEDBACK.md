@@ -184,3 +184,14 @@
 | 静态断言 + sync-shared -Check | 全 PASS（46/22/1 一致） |
 | `NEXT_EXPORT=1 pnpm build` | exit 0（Windows 本机 `assets:check` 仍是已知平台产物缺陷，以 CI ubuntu gate 为准） |
 | Test Pilot | 本工作区未配置 runner（`no-tests`），以上均为显式命令实测 |
+
+### 7.5 部署与线上验证（2026-10-24 13:57，commit `01f49eb4`）
+- GitHub Actions：backend:test / contracts:check / ts-edge / Frontend CI / deploy 全绿（deploy run `40067341248`；
+  build-frontend ubuntu + assets:check → migrate → deploy-kernel（**连续 2 次 deep health 全绿**才算通过）→ deploy-edge）。
+- `GET /health?deep=1` 连续 3 次 200：`kernel.status=ok`、`shared_loaded=true`（新内核包已生效）。
+- **新端点可达性**：`POST /api/v1/trade-docs/preview-render-data` 无 token → 401（路由存在且鉴权生效）；
+  已登录但未开通 trade-docs 工位的 QA 账号 → 404 `WORKSTATION_NOT_SUBSCRIBED`（与既有工位闸门同口径）。
+- **用户报 502 的两条路径已恢复**：`GET /notifications/unread-count` → **200 `{"unread":0}`**；
+  `GET /products/chain_link/media` → **403 NO_TEAM**（可达、走到鉴权闸门，不再是 502）。
+- **前端产物**：生产 `/trade-docs`、`/products`、`/customers` 的 HTML 与 deploy artifact（`frontend-out`，同上 commit）
+  **逐字节一致**；chunk 内已含「完整预览」「英文名（可添加多个）」「默认（报价/单证使用）」「预览编号（只读计算、未占用）」「询盘/订单」。
