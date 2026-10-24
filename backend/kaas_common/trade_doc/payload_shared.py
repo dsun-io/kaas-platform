@@ -135,9 +135,19 @@ def _spec_to_text(spec):
         value = _clean(spec.get(key))
         if value is not None:
             parts.append(str(value))
+    # 2026-10-24 用户裁决：行材质并入 Specification 文本（单据为英文口径），
+    # 追加在既有 parts 之后；不新增 item.material 字段/列（模板没有材质列）。
+    material = _clean(spec.get("material"))
     if parts:
+        if material is not None:
+            parts.append(f"Material: {material}")
         return ", ".join(parts)
-    fallback = [f"{k}: {v}" for k, v in spec.items() if _clean(v) is not None]
+    # 无可识别的规格键时沿用旧兜底（逐键输出，旧行为不变）；
+    # material 不参与兜底的键序，单独按英文口径追加在末尾。
+    fallback = [f"{k}: {v}" for k, v in spec.items()
+                if k != "material" and _clean(v) is not None]
+    if material is not None:
+        fallback.append(f"Material: {material}")
     return ", ".join(fallback) or None
 
 

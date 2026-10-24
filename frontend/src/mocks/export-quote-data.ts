@@ -1171,10 +1171,10 @@ export const MOCK_EXPORT_FORMULAS = {
         internal: false,
       },
       {
-        key: "derived.width_mm",
-        label: "宽度(mm)",
-        label_en: "Width (mm)",
-        decimals: 0,
+        key: "spec.height_m",
+        label: "宽度(m)",
+        label_en: "Width (m)",
+        decimals: 2,
         internal: false,
       },
       {

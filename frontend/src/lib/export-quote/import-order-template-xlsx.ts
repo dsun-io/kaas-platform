@@ -45,7 +45,7 @@ const REQUIRED_COMMON_HEADERS = ["产品", "件数（卷）", "成本"];
 
 /**
  * exceljs 4.4 的 d.ts 漏了 `worksheet.dataValidations`（运行时是公开 API），
- * 用最小结构声明补上（与 import-template-xlsx.ts 同口径）。
+ * 用最小结构声明补上（与前端其它 exceljs 生成器同口径）。
  */
 interface DataValidationsHost {
   dataValidations?: {

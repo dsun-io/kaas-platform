@@ -10,7 +10,15 @@
  * `onUnhandledRequest:"error"` ⇒ 拿到 200/201 就是"没有放行到网络"的证明。
  * 第二个断言目标是**形状**（每个 describe 标了后端真源）与**写操作真的改 store**。
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { setupServer } from "msw/node";
 
 import { handlers, resetMockData } from "../handlers";
@@ -75,11 +83,14 @@ describe("intel ← hooks/use-intel.ts（main.py:867-1040）", () => {
     const missing = await getJson<{ detail: string }>("/intel/shipments/999");
     expect(missing.status).toBe(404);
 
-    const stats = await getJson<Array<{ hs_code: string }>>("/intel/trade-stats");
+    const stats =
+      await getJson<Array<{ hs_code: string }>>("/intel/trade-stats");
     expect(Array.isArray(stats.body)).toBe(true);
     expect(stats.body.length).toBe(2);
 
-    const runs = await getJson<Array<{ status: string }>>("/intel/adapter-runs");
+    const runs = await getJson<Array<{ status: string }>>(
+      "/intel/adapter-runs",
+    );
     expect(runs.body.length).toBe(2);
 
     const channels = await getJson<{
@@ -115,9 +126,8 @@ describe("market ← market-view.tsx（main.py:1663-1745）", () => {
     expect(noQuery.status).toBe(422);
 
     // 前端拼的是 `/market/ports${params}`（空串或 ?country_code=）—— 两种都要被接住
-    const portsAll = await getJson<Array<{ country_code: string }>>(
-      "/market/ports",
-    );
+    const portsAll =
+      await getJson<Array<{ country_code: string }>>("/market/ports");
     expect(portsAll.body.length).toBe(2);
     const portsDe = await getJson<Array<{ country_code: string }>>(
       "/market/ports?country_code=DE",
@@ -125,7 +135,8 @@ describe("market ← market-view.tsx（main.py:1663-1745）", () => {
     expect(portsDe.body.length).toBe(1);
     expect(portsDe.body[0]?.country_code).toBe("DE");
 
-    const usages = await getJson<Array<{ usage_code: string }>>("/market/usages");
+    const usages =
+      await getJson<Array<{ usage_code: string }>>("/market/usages");
     expect(usages.body.length).toBe(2);
   });
 });
@@ -134,9 +145,9 @@ describe("market ← market-view.tsx（main.py:1663-1745）", () => {
 
 describe("spec-config ← use-categories / use-bindings / use-wizard-submit", () => {
   it("品类树 / 详情 / 绑定；向导提交幂等；提案进入管理员列表并可审核", async () => {
-    const tree = await getJson<{ items: Array<{ id: number; children: unknown[] }> }>(
-      "/spec/categories",
-    );
+    const tree = await getJson<{
+      items: Array<{ id: number; children: unknown[] }>;
+    }>("/spec/categories");
     expect(tree.body.items.length).toBe(2);
     expect(tree.body.items[0]?.children.length).toBe(2);
 
@@ -188,9 +199,9 @@ describe("spec-config ← use-categories / use-bindings / use-wizard-submit", ()
     const pending = await getJson<{ items: Array<{ proposed_name: string }> }>(
       "/admin/spec/attribute-proposals?status=pending",
     );
-    expect(
-      pending.body.items.some((p) => p.proposed_name === "锌层克重"),
-    ).toBe(true);
+    expect(pending.body.items.some((p) => p.proposed_name === "锌层克重")).toBe(
+      true,
+    );
     const recommended = await getJson<{ items: Array<{ id: number }> }>(
       "/admin/spec/attribute-proposals/recommended",
     );
@@ -199,9 +210,13 @@ describe("spec-config ← use-categories / use-bindings / use-wizard-submit", ()
     const approve = await sendJson<{
       status: string;
       promoted_attribute_id: number;
-    }>(`/admin/spec/attribute-proposals/${recommended.body.items[0]?.id}`, "PATCH", {
-      action: "approve",
-    });
+    }>(
+      `/admin/spec/attribute-proposals/${recommended.body.items[0]?.id}`,
+      "PATCH",
+      {
+        action: "approve",
+      },
+    );
     expect(approve.body.status).toBe("promoted");
     expect(typeof approve.body.promoted_attribute_id).toBe("number");
   });
@@ -353,11 +368,11 @@ describe("shipments ← shipments/page.tsx（ws_shipments.py:134-156）", () => 
     );
     expect(list.body.items.length).toBe(2);
 
-    const created = await sendJson<{ id: number; shipment_no: string; status: string }>(
-      "/shipments",
-      "POST",
-      { order_id: 1 },
-    );
+    const created = await sendJson<{
+      id: number;
+      shipment_no: string;
+      status: string;
+    }>("/shipments", "POST", { order_id: 1 });
     expect(created.status).toBe(201);
     expect(created.body.shipment_no).toMatch(/^SH-/);
     expect(created.body.status).toBe("planned");
@@ -381,7 +396,9 @@ describe("research ← research/page.tsx（chain.py:1830-2130）", () => {
     expect(stats.body.total).toBe(2);
     expect(stats.body.can_supply_yes).toBe(1);
 
-    const categories = await getJson<{ items: string[] }>("/research/categories");
+    const categories = await getJson<{ items: string[] }>(
+      "/research/categories",
+    );
     expect(categories.body.items.length).toBe(10);
 
     const filtered = await getJson<{ items: Array<{ country: string }> }>(
@@ -432,11 +449,9 @@ describe("leadgen ← leadgen/page.tsx（chain.py:940-1250/1751-1808）", () => 
     const regions = await getJson<{ items: string[] }>("/leadgen/regions");
     expect(regions.body.items.length).toBeGreaterThan(0);
 
-    const valid = await sendJson<{ result: { valid: boolean; issues: string[] } }>(
-      "/leadgen/validate",
-      "POST",
-      { region: "", industry: "", quantity: 0 },
-    );
+    const valid = await sendJson<{
+      result: { valid: boolean; issues: string[] };
+    }>("/leadgen/validate", "POST", { region: "", industry: "", quantity: 0 });
     expect(valid.body.result.valid).toBe(false);
     expect(valid.body.result.issues.length).toBe(3);
 
@@ -521,9 +536,10 @@ describe("leadgen ← leadgen/page.tsx（chain.py:940-1250/1751-1808）", () => 
 
 describe("outreach ← outreach/page.tsx（chain.py:1374-1660）", () => {
   it("邮箱/活动/生成/发送/消息/重试", async () => {
-    const mailboxes = await getJson<{ items: Array<{ id: number }>; total: number }>(
-      "/outreach/mailboxes",
-    );
+    const mailboxes = await getJson<{
+      items: Array<{ id: number }>;
+      total: number;
+    }>("/outreach/mailboxes");
     expect(mailboxes.body.total).toBe(2);
 
     const duplicate = await sendJson<{ error: string; code: string }>(
@@ -582,11 +598,13 @@ describe("outreach ← outreach/page.tsx（chain.py:1374-1660）", () => {
     expect(generated.body.result.subject).toBeTruthy();
     expect(generated.body.path).toBe("template");
 
-    const sent = await sendJson<{ total: number; sent: number; failed: number }>(
-      `/outreach/campaigns/${campaign.body.id}/send`,
-      "POST",
-      { lead_ids: [1, 2] },
-    );
+    const sent = await sendJson<{
+      total: number;
+      sent: number;
+      failed: number;
+    }>(`/outreach/campaigns/${campaign.body.id}/send`, "POST", {
+      lead_ids: [1, 2],
+    });
     expect(sent.body).toMatchObject({ total: 2, sent: 2, failed: 0 });
 
     const messages = await getJson<{ items: Array<{ status: string }> }>(
@@ -791,7 +809,7 @@ describe("export-quote calculate / import / explain（contracts/export-quote.ts�
     expect(calc.body.customer.rows[0]).toContain(301.03);
   });
 
-  it("import-template / preview / calculate / explain 形状可驱动页面", async () => {
+  it("import-template / explain 形状可驱动页面", async () => {
     const info = await getJson<{
       product_key: string;
       columns: Array<{ header: string; target: string }>;
@@ -800,35 +818,6 @@ describe("export-quote calculate / import / explain（contracts/export-quote.ts�
     }>("/export-quote/products/field_fence/import-template");
     expect(info.body.columns.length).toBeGreaterThan(0);
     expect(info.body.download.csv).toContain("import-template");
-
-    const preview = await postForm(
-      "/export-quote/import/preview",
-      { product_key: "field_fence" },
-      new File([new Uint8Array([1, 2, 3])], "sample.xlsx"),
-    );
-    expect(preview.status).toBe(200);
-    const previewBody = (await preview.json()) as {
-      usable_rows: number;
-      rows: Array<Record<string, unknown>>;
-      issues: Array<{ severity: string }>;
-    };
-    expect(previewBody.usable_rows).toBe(1);
-    expect(previewBody.issues[0]?.severity).toBe("warning");
-
-    const calc = await postForm(
-      "/export-quote/import/calculate",
-      { product_key: "field_fence", view: "customer" },
-      new File([new Uint8Array([1, 2, 3])], "sample.xlsx"),
-    );
-    expect(calc.status).toBe(200);
-    const calcBody = (await calc.json()) as {
-      meta: { product_key: string };
-      import: { usable_rows: number };
-      spec_rows: { computed: number };
-    };
-    expect(calcBody.meta.product_key).toBe("field_fence");
-    expect(calcBody.import.usable_rows).toBe(1);
-    expect(calcBody.spec_rows.computed).toBe(1);
 
     const explain = await sendJson<{
       steps: Array<{ key: string; expr: string }>;
@@ -840,10 +829,34 @@ describe("export-quote calculate / import / explain（contracts/export-quote.ts�
     expect(explain.body.steps[0]).toHaveProperty("expr");
   });
 
-  it("导入上传的服务端校验：空文件/.xls/超限/坏 payload 都明确 400（不假装成功）", async () => {
+  it("整单导入预览：返回可驱动 bulk-import 面板的行形状", async () => {
+    const preview = await postForm(
+      "/export-quote/import/order/preview",
+      {},
+      new File([new Uint8Array([1, 2, 3])], "order.xlsx"),
+    );
+    expect(preview.status).toBe(200);
+    const body = (await preview.json()) as {
+      usable_rows: number;
+      products: Array<{ product_key: string; rows: number }>;
+      rows: Array<{
+        row: number;
+        product_key: string;
+        spec: Record<string, unknown>;
+      }>;
+      issues: Array<{ severity: string }>;
+    };
+    expect(body.usable_rows).toBeGreaterThan(0);
+    expect(body.products.length).toBe(body.usable_rows);
+    expect(body.rows[0]?.row).toBe(1);
+    expect(body.rows[0]?.product_key.length).toBeGreaterThan(0);
+    expect(body.issues[0]?.severity).toBe("warning");
+  });
+
+  it("整单导入上传的服务端校验：空文件/.xls/超限都明确 400（不假装成功）", async () => {
     const empty = await postForm(
-      "/export-quote/import/preview",
-      { product_key: "field_fence" },
+      "/export-quote/import/order/preview",
+      {},
       new File([new Uint8Array(0)], "empty.xlsx"),
     );
     expect(empty.status).toBe(400);
@@ -852,8 +865,8 @@ describe("export-quote calculate / import / explain（contracts/export-quote.ts�
     ).toBe("empty_file");
 
     const xls = await postForm(
-      "/export-quote/import/preview",
-      { product_key: "field_fence" },
+      "/export-quote/import/order/preview",
+      {},
       new File([new Uint8Array([1, 2, 3])], "old.xls"),
     );
     expect(xls.status).toBe(400);
@@ -862,33 +875,13 @@ describe("export-quote calculate / import / explain（contracts/export-quote.ts�
     ).toBe("parse_error");
 
     const tooLarge = await postForm(
-      "/export-quote/import/preview",
-      { product_key: "field_fence" },
+      "/export-quote/import/order/preview",
+      {},
       new File([new Uint8Array(2 * 1024 * 1024 + 1)], "big.xlsx"),
     );
     expect(tooLarge.status).toBe(400);
     expect(
       ((await tooLarge.json()) as { detail: { error: string } }).detail.error,
     ).toBe("file_too_large");
-
-    const badPayload = await postForm(
-      "/export-quote/import/calculate",
-      { product_key: "field_fence", view: "customer", payload: "{bad-json" },
-      new File([new Uint8Array([1, 2, 3])], "sample.xlsx"),
-    );
-    expect(badPayload.status).toBe(400);
-    expect(
-      ((await badPayload.json()) as { detail: { error: string } }).detail.error,
-    ).toBe("bad_payload");
-
-    const badView = await postForm(
-      "/export-quote/import/calculate",
-      { product_key: "field_fence", view: "nope", payload: "{}" },
-      new File([new Uint8Array([1, 2, 3])], "sample.xlsx"),
-    );
-    expect(badView.status).toBe(400);
-    expect(
-      ((await badView.json()) as { detail: { error: string } }).detail.error,
-    ).toBe("bad_view");
   });
 });

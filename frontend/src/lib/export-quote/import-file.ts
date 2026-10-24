@@ -1,70 +1,15 @@
 /**
- * 表格批量导入的前端纯逻辑：拼表单、下模板、摘要、结果导出。
+ * 表格批量导入的前端纯逻辑：上传预检、问题清单摘要、结果导出、浏览器下载。
  *
  * 抽出来单独放，是因为这些是**可测的规则**，不该埋在 JSX 里：
- *   · 模板下载地址怎么拼（必须与后端路由一致，改一处不能漏另一处）
  *   · 上传用 multipart，必须清掉实例默认的 application/json
  *     —— axios 见到 JSON 默认头会把 FormData 转成 JSON，文件就传丢了
- *   · 结果表的摘要口径（行数/总净重/总售价/美元）要能独立核对
+ *   · 问题清单的分组/排序口径（先按行、整表级问题排最后）要能独立核对
+ *   · 结果表 CSV 的转义与 BOM 口径要能独立核对
  */
-import type {
-  ImportIssue,
-  ImportPreviewResponse,
-  ImportCalculateResponse,
-  ImportTemplateFormat,
-} from "@contracts/export-quote";
+import type { ImportIssue } from "@contracts/export-quote";
 
 export const EXPORT_QUOTE_BASE = "/export-quote";
-
-/** 模板下载地址。后端路由：GET /import/template?product_key=…&format=… */
-export function templateUrl(
-  productKey: string,
-  format: ImportTemplateFormat,
-  extra: Record<string, string | number> = {},
-): string {
-  const params = new URLSearchParams({
-    product_key: productKey,
-    format,
-    ...Object.fromEntries(
-      Object.entries(extra).map(([k, v]) => [k, String(v)]),
-    ),
-  });
-  return `${EXPORT_QUOTE_BASE}/import/template?${params.toString()}`;
-}
-
-/** 模板文件名。与后端 Content-Disposition 的口径一致，仅作兜底。 */
-export function templateFilename(
-  productKey: string,
-  format: ImportTemplateFormat,
-): string {
-  return `${productKey}-import-template.${format}`;
-}
-
-/**
- * 上传用的 multipart 表单。
- *
- * `payload` 是计算参数（税率档案、汇率、订单量…）的 JSON 字符串 ——
- * 与文件一起作为表单字段传，所以前端不需要把两者拼成一个请求体。
- */
-export function buildImportFormData(
-  file: File,
-  payload: Record<string, unknown>,
-  opts: {
-    productKey: string;
-    view?: "customer" | "internal";
-    sheet?: string;
-  } = {
-    productKey: "field_fence",
-  },
-): FormData {
-  const fd = new FormData();
-  fd.append("file", file);
-  fd.append("product_key", opts.productKey);
-  fd.append("payload", JSON.stringify(payload));
-  if (opts.view) fd.append("view", opts.view);
-  if (opts.sheet) fd.append("sheet", opts.sheet);
-  return fd;
-}
 
 /**
  * multipart 请求的 axios 配置。
@@ -139,9 +84,10 @@ export function describeIssue(issue: ImportIssue): string {
 export function issuesToText(issues: ImportIssue[]): string {
   return groupIssues(issues)
     .map((group) =>
-      [`[${group.label}]`, ...group.items.map((it) => `- ${describeIssue(it)}`)].join(
-        "\n",
-      ),
+      [
+        `[${group.label}]`,
+        ...group.items.map((it) => `- ${describeIssue(it)}`),
+      ].join("\n"),
     )
     .join("\n");
 }
@@ -160,65 +106,6 @@ export function issuesToCsv(issues: ImportIssue[]): string {
     it.message,
   ]);
   return resultToCsv(header, rows);
-}
-
-/** 预览是否可以直接算：至少有一行可用。 */
-export function canCalculate(preview: ImportPreviewResponse | null): boolean {
-  return !!preview && preview.usable_rows > 0;
-}
-
-function num(v: unknown): number | null {
-  if (v === null || v === undefined || v === "") return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
-export interface ImportSummaryView {
-  rows: number;
-  errors: number;
-  warnings: number;
-  /** 总净重（kg）与总售价，取结果里的合计；没有合计就是 null */
-  totalWeightKg: number | null;
-  totalPrice: number | null;
-  totalPriceFx: number | null;
-}
-
-/**
- * 结果摘要 —— 直接读结果里的合计，不自己重算一遍。
- *
- * 报价的真值只在引擎里有一份；前端再算一遍就等于立了第二个口径。
- */
-export function summarizeResult(
-  result: ImportCalculateResponse | null,
-  fallbackRows = 0,
-): ImportSummaryView {
-  const empty: ImportSummaryView = {
-    rows: fallbackRows,
-    errors: 0,
-    warnings: 0,
-    totalWeightKg: null,
-    totalPrice: null,
-    totalPriceFx: null,
-  };
-  if (!result) return empty;
-
-  const sum = result.import;
-  const meta = result.meta as unknown as Record<string, unknown> | undefined;
-  const totals = (meta?.totals ?? {}) as Record<string, unknown>;
-  const orders = (meta?.orders ?? []) as { total_weight_kg?: unknown }[];
-
-  return {
-    rows: sum?.usable_rows ?? fallbackRows,
-    errors: (sum?.issues ?? []).filter((i) => i.severity === "error").length,
-    warnings: (sum?.issues ?? []).filter((i) => i.severity !== "error").length,
-    totalWeightKg:
-      num(totals.total_weight_kg) ??
-      (orders.length
-        ? orders.reduce((acc, o) => acc + (num(o.total_weight_kg) ?? 0), 0)
-        : null),
-    totalPrice: num(totals.total_price) ?? num(totals.total_amount),
-    totalPriceFx: num(totals.total_price_fx) ?? num(totals.total_amount_fx),
-  };
 }
 
 function csvCell(v: unknown): string {
@@ -249,28 +136,4 @@ export function triggerBlobDownload(blob: Blob, filename: string): void {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-}
-
-/**
- * 从 Content-Disposition 里取文件名。
- *
- * 跨域时该响应头要先被 `Access-Control-Expose-Headers` 放行才看得到，
- * 所以拿不到就退回本地拼的名字，不让下载因为一个文件名失败。
- */
-export function filenameFromDisposition(
-  disposition: string | undefined,
-  fallback: string,
-): string {
-  if (!disposition) return fallback;
-  const star = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(disposition);
-  if (star && star[1]) {
-    try {
-      return decodeURIComponent(star[1].trim().replace(/^"|"$/g, ""));
-    } catch {
-      /* 格式不对就继续试着取普通 filename */
-    }
-  }
-  const plain = /filename="?([^";]+)"?/i.exec(disposition);
-  if (plain && plain[1]) return plain[1].trim();
-  return fallback;
 }

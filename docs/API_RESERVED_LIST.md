@@ -6,6 +6,11 @@
 > 可删候选 **可删 3（已执行删除）/ 保留 2 / 需 owner 确认 13**
 > （其中 `GET/PUT /product-options/overrides` 被本清单误判为可删，审计已更正为现行能力）。
 >
+> **✅ 2026-10-24 下线（用户裁决）**：旧单产品导入三端点
+> `GET /api/v1/export-quote/import/template`、`POST .../import/preview`、`POST .../import/calculate`
+> 已删除（前端零调用；UI 已改走整单导入）；保留 `GET /products/{key}/import-template`。
+> 当前路由基线：**282 = 278 业务（193 直接 + 85 透传）+ 4 内置**。
+>
 > **用途**：登记「Worker 有路由、前端没有任何调用」的接口，避免下一轮审计把它们误判成“欠账”。
 > 本文件**只登记**，不授权删除；「可删候选」删前需 owner/Lead 确认（后端可能被第三方或自动化脚本使用）。
 >
@@ -37,6 +42,8 @@
   ⇒ **待接 UI 剩 3 条**（仅长期保留的 #2/#9/#24 用户级订阅）；可删候选已删 **3 条** ⇒ **剩 15 条**；
   **当前实际未接 ≈ 36 条**（18 REST + 3 待接 + 15 可删），与路由 244 对得上。
 - 与 `docs/TODO.md` 的对应关系见 §3；**本文件不修改 TODO**（C36 是否销账由 Lead 决定）。
+- **2026-10-24 变更**：旧单产品导入 3 条端点下线（用户裁决；见 A-18）⇒ 当前业务路由 **278 = 193 直接 + 85 透传**
+  （+4 内置 = 282）。本表第 61 行与 §3 C19 行已同步；其余为 2026-10-21 扫描基线快照，不回填。
 
 ## 1. 方法（可复现）
 
@@ -58,7 +65,7 @@ backend/worker/.venv/Scripts/python.exe .tmp/c36-docs.py                  # 补 
 
 | 判定 | 方法 路径 | 模块:行 | 依据 / 对应 TODO |
 |---|---|---|---|
-| 非死路由（本次扫描假阴性，FE 确实在用） | `GET /api/v1/export-quote/import/template` | `quote_api.py:1002` | FE 走下载而非 apiClient 轻调用：`import-file.ts:32` + `use-export-quote-import.ts:139`（responseType blob） |
+| ✅ **已下线（2026-10-24，用户裁决）** | `GET /api/v1/export-quote/import/template` | 原 `quote_api.py:1002` | 单产品导入 3 端点一并删除（前端已改走整单导入，零调用）；保留 `GET /products/{key}/import-template`（download 改指自身）。见 A-18 |
 | 非死路由（本次扫描假阴性，FE 确实在用） | `GET /api/v1/market/ports` | `main.py:1740` | FE 模板串带 query：`market-view.tsx:116`（`/market/ports${params}`，归一化漏判） |
 | 非死路由（本次扫描假阴性，FE 确实在用） | `GET /api/v1/teams/*/invites` | `ws_teams.py:359` | FE 动态拼路径：`use-team-admin.ts:198` |
 | 非死路由（本次扫描假阴性，FE 确实在用） | `GET /api/v1/teams/*/members` | `ws_teams.py:272` | FE 动态拼路径：`team/hooks/use-team-admin.ts:186`（`/teams/${teamId}/members`） |
@@ -140,7 +147,7 @@ backend/worker/.venv/Scripts/python.exe .tmp/c36-docs.py                  # 补 
 | **C1 / G-5** | `POST /file-objects/upload` | ✅ 2026-10-21 已按用户批准删除（C36）；C1 本身仍为"不做" |
 | **C9** | `GET /file-objects/_r2_debug`、`GET /fx-rates/_debug` | C9 已完成（admin 闸门）；保留运维 |
 | **C13 / G-5** | `POST /outreach/webhook` | C13 🧭 已授权“保持”；501 预留桩 |
-| **C19 / C29** | — | 批量导入 UI 已接（v2 报价工作台）；`/import/template` 在用（§2 非死）。**C29 ✅ 2026-10-23**：新增 `POST /api/v1/imports/orders/preview` + `/imports/orders`（历史订单 CSV，旧占位入口已在订单页挂回并接成 预览→确认；见 `IMPORT_ORDERS_PLAN_2026-10-23.md`） |
+| **C19 / C29** | — | 批量导入 UI 已接（v2 报价工作台整单导入）。**2026-10-24 变更**：旧单产品导入 3 端点（`/import/template|preview|calculate`）已下线，UI 改为「整单模板 → 解析预览 → 填入工作台」（见 A-18）。**C29 ✅ 2026-10-23**：新增 `POST /api/v1/imports/orders/preview` + `/imports/orders`（历史订单 CSV，旧占位入口已在订单页挂回并接成 预览→确认；见 `IMPORT_ORDERS_PLAN_2026-10-23.md`） |
 | **C30** | `GET /admin/archive-logs` | ✅ 已接（`admin/hooks/use-archive-logs.ts:54` + `archive-logs-card.tsx`，灰发页已挂载） |
 
 ## 4. 维护规则

@@ -14,6 +14,27 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-24 · 遗留批：deer_net 列定义 / 单证材质 / 旧单产品导入端点下线 ✅）**
+> - **deer_net 列定义（只改产品定义）**：`products/deer_net.py` 的 `Column("derived.width_mm","宽度(mm)")`
+>   改为 `Column("spec.height_m","宽度(m)","Width (m)",2)`（derived `width_mm` 公式保留）⇒ `template_columns`
+>   只出「宽度(m)」并按 m 解析，不再把 derived 列当可填参数、不再 factor=1 撞 `height_m` 上界 6；整单并集模板同步。
+>   **残余**：历史遗留的含「宽度(mm)」表头文件仍按「去单位基名」解析到 `height_m`（factor=1）——新模板不再产出该表头；
+>   彻底按单位区分需改引擎（超出「只改产品列定义」裁决）。
+> - **单证「材质」排版**：`trade_doc/payload_shared._spec_to_text` 把行快照 `spec_snapshot.material` 并入
+>   Specification 文本末尾（`Material: <值>`，英文单据口径），**不新增列/字段、不改 render.ts**；无材质时输出逐字不变
+>   （orchestrator 7 + worker 7 用例）。**残余**：材质值目前多为中文，英文单据里标签英文、值原样（值级翻译另开任务）；
+>   已签发单据的落库快照不回溯。
+> - **旧单产品导入端点下线（用户裁决）**：删除 `GET /import/template`、`POST /import/preview`、
+>   `POST /import/calculate`（含 TS scope 规则、前端死 hook/mocks/测试）；保留 `GET /products/{key}/import-template`
+>   （download URL 已改指自身）。路由 **282 = 278 业务（193 直接 + 85 透传）+ 4 内置**；
+>   整单导入（`/import/order/template-info` + `/imports/orders`）不受影响。
+>   **残余**：`backend/orchestrator/docs/openapi.json` 为冻结 artifact（R6 已退役）仍列 3 条旧路径；
+>   旧 `ImportPreviewResponse/ImportCalculateResponse` 契约类型保留（仅类型/测试，无端点消费）。
+> - **门禁（2026-10-24 实测，工作区静止）**：worker **1783 passed + 12 skipped** / orchestrator **273** /
+>   ts-worker **305（26 文件）** / 前端 **1607 passed·218 files** / e2e **28 passed** / contracts R0–R6 PASS /
+>   mocks:check PASS / ui:standards + ui:contrast PASS / trade-doc:check PASS / 静态断言（runtime-deps / schema-coverage /
+>   schema-drift / worker-bundle / deploy-domains）PASS / sync-shared `-Check` 一致（46/21/1）。
+>
 > **（2026-10-24 · 收尾批：R-C1 + R-B + R-D 完成，产品×报价重构四批全绿 ✅）**
 > - **R-C1 成本含税开关（契约）**：`ExportQuoteRequest.cost_basis`（enum pretax|incl_tax）请求级覆盖 ——
 >   `shared/contracts` + `QuoteRequest` + `engine.py`（请求级优先、缺省回落产品定义）+ `_CalculateIn`（Literal）
@@ -27,8 +48,8 @@
 >   `routes.json`/`route-inventory.md` 已重生成、openapi/route-surface 机检同步。
 > - **门禁（2026-10-24 实测）**：worker **1778 passed + 12 skipped** / orchestrator **266** / ts-worker **305（26 文件）** /
 >   前端 **1626 passed·219 files** / contracts R0–R6 PASS / ui:standards + ui:contrast PASS / 静态断言 PASS（drift 需 UTF-8 控制台）。
-> - **遗留（单开任务）**：`deer_net` 产品定义把 derived「宽度(mm)」当可填列并映射到 `height_m`（单产品导入既有问题，
->   R-D 并集模板会把它带给鹿网用户）；建议修产品列定义（derived 不进模板）。
+> - ~~**遗留（单开任务）**~~ **✅ 2026-10-24 已修**：`deer_net` 列定义改为 `spec.height_m`「宽度(m)」（derived
+>   `width_mm` 公式保留）⇒ 模板不再把 derived「宽度(mm)」当可填列、不再映射 `height_m`（factor=1）；整单并集模板同步。
 
 > **（2026-10-23 17:05 · 交接批：R-C2 + R-A 完成并推送，R-C1/B/D 待续 ✅）**
 > - **R-C2 税务档案**：根因=工位挂 `admin` 组（internalOnly）⇒ 外部账号侧边栏不可见；已移 `account` 组

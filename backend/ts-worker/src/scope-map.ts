@@ -66,8 +66,6 @@ function readOnly(prefix: string, read: string): void {
 //    quotes_calculate / quotes_verify 两个 MCP tool 也走这里（透传 KERNEL）。
 rule("POST", "/api/v1/export-quote/calculate*", "quotes:calc");
 rule("POST", "/api/v1/export-quote/verify", "quotes:calc");
-rule("POST", "/api/v1/export-quote/import/calculate*", "quotes:calc");
-rule("POST", "/api/v1/export-quote/import/preview", "quotes:calc");
 // export-quote 其余端点：读产品/条款模板用 quotes:read；写/解释/导入用 quotes:calc。
 readWrite("/api/v1/export-quote", "quotes:read", "quotes:calc");
 

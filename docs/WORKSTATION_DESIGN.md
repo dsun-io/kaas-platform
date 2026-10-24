@@ -553,15 +553,20 @@ QuoteRequest(spec_rows=[
 漏掉了「网高(m)」「竖丝间距(cm)」两个规格轴，下载的模板根本填不出规格；
 现在有一条反向断言盯着这件事（`test_no_recognised_export_column_is_dropped`）。
 
-**Excel 模板**（默认，给人填）含三个工作表：
+**整单表**（2026-10-23 R-D 起，唯一批量导入口径）：**单表 + 产品列**，一行 = 订单里的一个
+产品行；规格列 = 所选产品 `template_columns` 的**并集**（某行用不上的列留空即可）。
+产品列识别完全复用上面那套 `_norm_header / _build_header_map / _resolve_column`；
+单产品订单也走整单表（一行一产品）。模板列定义由后端 `GET /import/order/template-info`
+给出，Excel 由**前端 exceljs 现生成**（线上 Worker 不产 xlsx）。
+
+**Excel 整单模板**含两张工作表：
 
 | 工作表 | 内容 | 会不会被上传计算 |
 |--------|------|------------------|
-| 规格表 | 表头 + 可选值**下拉框** + 冻结首行 | **只认这个**（解析器读第一个工作表） |
-| 示例 | 3 行填好的示例，可复制到「规格表」 | 不会 |
-| 填写说明 | 逐列说明：必填与否、单位、可选值、留空规则、容错规则 | 不会 |
+| 整单表（`data_sheet`，必须第一张） | 表头 + 可选值**下拉框** + 冻结首行 + 一行空白数据行 | **只认这个**（解析器读第一个工作表） |
+| 填写说明 | 逐列说明：必填与否、单位、可选值/适用产品、留空规则、容错规则 | 不会 |
 
-示例刻意放在单独的表里：放在「规格表」下方会被连带算进去，
+示例值刻意不放在数据表里：放在数据表下方会被连带算进去，
 用户加了行再上传就凭空多出几行重量与金额。
 
 示例值按**表头单位**给 —— 内部 100mm 的竖丝间距，在 `竖丝间距(cm)` 列里写 `10`。
@@ -571,16 +576,16 @@ QuoteRequest(spec_rows=[
 候选值太长（内联下拉串超过 240 字符）时自动改用隐藏的 `lists` 表 + 区域引用，
 不会因为某个产品的取值名太长就生不出模板。
 
-**CSV 模板**（给脚本化生成用）：默认只出表头，带 BOM。
+**CSV 模板**（给脚本化生成用）：保留端点 `/products/{key}/import-template?format=csv`
+仍可下载（仅表头，带 BOM）；整单 xlsx 只在浏览器端生成。
 
 #### 接口
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/import/template` | 下载模板；`format=xlsx`（默认，带下拉与说明表）或 `csv`；`examples=N` 控示例行数 |
-| GET | `/products/{key}/import-template` | 只回报模板**长什么样**：列名、必填、单位、可选值、下载链接（先讲清再下载） |
-| POST | `/import/preview` | 只解析不计算：回报列映射、可用行、逐行问题 |
-| POST | `/import/calculate` | 解析 + 一次性批量计算（`view=customer\|internal`） |
+| GET | `/products/{key}/import-template` | 单产品模板列定义：列名、必填、单位、可选值、下载链接；带 `format=csv` 时下载 CSV 表头（xlsx 由前端生成，501） |
+| GET | `/import/order/template-info` | 整单模板：公共列 + 所选产品模板列的**并集**（含每列适用产品） |
+| POST | `/import/order/preview` | 上传整单表：只解析 + 行级校验，**不落库、不算价**；结果填入报价工作台 |
 
 模板响应另带两个响应头：`X-Template-Columns`（列名 JSON）、
 `X-Template-Spec`（带 `include_spec=true` 时的完整列定义），
@@ -588,40 +593,39 @@ QuoteRequest(spec_rows=[
 跨域时用 `Access-Control-Expose-Headers` 放行。
 **头值一律 ASCII 转义** —— HTTP 头只能 latin-1，中文直接塞进去会让请求 500。
 
-`/calculate` 与 `/calculate-internal` 也接受直接传 `spec_rows`，
-便于「先预览→人工改→再算」的两步流程与 API 自动化。
+> **2026-10-24 下线（用户裁决）**：旧单产品导入三端点 `GET /import/template`、
+> `POST /import/preview`、`POST /import/calculate` 已删除；导入不再在端点里算价/落库，
+> 统一走「解析预览 → 填入工作台 → 工作台既有算价/保存链路」。整单导入不受影响。
 
 **容错与限额**：单文件上限 2MB、单表上限 2000 数据行；重复行自动跳过并提示；
 空文件/只有表头/无规格列/`.xls` 老格式都会给出明确原因而不是 500。
-内部视图沿用与 `/calculate-internal` 相同的管理员权限要求。
 
 #### 前端流程
 
 ```
-报价工位 ·「批量导入」页签
-   ①  选产品 → 看到该产品模板的列清单（必填列标 *）
-       点「下载 Excel 模板」/「CSV（只有表头）」
-   ②  填好表 → 选择文件（本地先查格式与大小，明显不对就不占用一次往返）
-       可填订单量 / 汇率 / 税务档案 / 进项票税点 / 让利比例 / 报价日期
-   ③  先预览         → 列映射、可用 38 行 / 3 行有问题、逐条问题清单
-   ④  批量计算        → 摘要（行数、总净重、总售价、外币总价）+ 结果表
-   ⑤  导出 CSV       → 带 BOM，中文列名在 Excel 里不乱码
+报价工位 ·「批量导入」弹窗（BulkImportPanel）
+   ①  点「下载 Excel 整单模板」→ 前端 exceljs 按后端并集列定义现生成
+   ②  填好表 → 选文件（本地先查格式与大小，明显不对就不占用一次往返）
+   ③  上传解析预览     → 行级校验（可用行 / 问题清单），零写入
+   ④  点「填入工作台」 → 生成 N 个产品行草稿（保留工作台已填的非空行）
+   ⑤  在工作台看算价 → 整单保存报价单（算价/落库复用工作台既有链路）
 ```
 
 前端与后端的分工：**报价的真值只在引擎里有一份，前端不重算**。
 摘要里的总净重/总价直接读结果里的合计，避免前后端各算一遍而对不上。
 前端只负责「该拦的先拦」（文件格式/大小）、「该说的说清」（列清单与问题清单）。
 
-前端纯逻辑抽在 `frontend/src/lib/export-quote/import-file.ts`：
-下载地址拼接、multipart 表单、预检、问题分组、摘要、CSV 导出、文件名解析。
+前端纯逻辑抽在 `frontend/src/lib/export-quote/import-order-template-xlsx.ts`（整单模板生成）
+与 `import-file.ts`（文件格式/大小预检、问题分组、CSV 导出、下载触发）。
 上传必须显式声明 `multipart/form-data` —— `apiClient` 默认带
 `application/json`，而 axios 见到 JSON 默认头会把 `FormData` 转成 JSON，
 **文件就传丢了**；这是最容易踩且最难查的一个坑，所以单独写了一条测试盯着。
 
-契约见 `shared/contracts/export-quote.ts` 的
-`ImportPreviewResponseSchema` / `ImportCalculateResponseSchema` /
-`ImportIssueSchema` / `SpecRowsReportSchema` / `ImportTemplateInfoSchema` /
-`ImportTemplateColumnSchema`。
+契约见 `shared/contracts/export-quote.ts` 的 `OrderImportTemplateInfoSchema` /
+`OrderImportPreviewResponseSchema` / `OrderImportRowSchema` / `ImportIssueSchema` /
+`ImportTemplateInfoSchema` / `ImportTemplateColumnSchema`（旧
+`ImportPreviewResponseSchema` / `ImportCalculateResponseSchema` 已无端点消费，
+仅留契约类型/测试兼容）。
 
 前端侧另有一份牛栏网规格的静态镜像 `shared/contracts/niulanwang.ts`
 （5 个 SKU 轴、48 组合、两个体积口径、派生量代号），

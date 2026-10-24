@@ -69,11 +69,19 @@
 
 ## 3. 遗留与后续（非本批）
 
-1. **deer_net 产品定义遗留（既有，非 R-D 新增）**：derived「宽度(mm)」被 `template_columns` 当可填列、
-   且被 `_resolve_column` 解析到 `height_m`（factor=1）⇒ 用户按 mm 填 1500 会撞 `height_m` 上界 6。
-   单产品导入就有；R-D 并集模板会把它带给鹿网用户。**建议单开任务**：derived 列不进模板，或修 `deer_net` 列定义。
-2. 单证（trade-docs）模板对「材质」的排版：本批只保证快照有值，模板渲染下一批。
-3. 旧单产品导入端点（`/import/template|preview|calculate`）保留兼容，未下线。
+1. ~~**deer_net 产品定义遗留（既有，非 R-D 新增）**~~ **✅ 2026-10-24 已修（只改产品列定义）**：
+   `products/deer_net.py` 的 `Column("derived.width_mm","宽度(mm)")` 改为
+   `Column("spec.height_m","宽度(m)","Width (m)",2)`（derived `width_mm` 公式保留）⇒ `template_columns` 只出
+   「宽度(m)」并按 m 解析，不再把 derived 列当可填参数、不再 factor=1 撞 `height_m` 上界 6；整单并集模板同步。
+   **残余边界**：历史遗留的含「宽度(mm)」表头的文件仍会按「去单位基名」解析到 `height_m`（factor=1）——
+   新模板/整单模板已不产出该表头；彻底按单位区分需改引擎，超出「只改产品列定义」裁决。
+2. 单证（trade-docs）模板对「材质」的排版：**✅ 2026-10-24 已做**：行快照 `spec_snapshot.material` 由
+   `trade_doc/payload_shared._spec_to_text` 并入 Specification 文本末尾（`Material: <值>`，英文单据口径），
+   **不新增列/字段、不改 render.ts**；无材质时输出逐字不变。
+3. ~~旧单产品导入端点保留兼容~~ **✅ 2026-10-24 已下线（用户裁决）**：删除
+   `GET /import/template`、`POST /import/preview`、`POST /import/calculate`（含 TS scope 规则、前端死
+   hook/mocks/测试）；保留 `GET /products/{key}/import-template`（download URL 已改指自身）；
+   整单导入（`/import/order/template-info` + `/imports/orders`）不受影响。路由 **282 = 278 业务 + 4 内置**。
 4. R-C1 含税开关默认显式 `pretax`：内置产品定义 basis 均为 pretax ⇒ 行为不变；若将来租户产品改 basis，
    可改为默认跟随产品定义（`formulas.data.cost.basis` 回显）。
 5. `/api/v1/export-quote` 属 TS 门面透传前缀：新端点无需在 ts-edge 逐条注册；MCP 工具 schema 已随 zod 生成同步。

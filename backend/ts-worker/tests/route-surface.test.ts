@@ -1,7 +1,8 @@
 /**
  * 路由面覆盖机检（2026-10-21 波 C 后加入；2026-10-22 M1-f 重新对齐；2026-10-23 P0-A A3 加 dashboard/receivables；
  * 2026-10-23 C36 #19 加品名对照 GET/PATCH/DELETE；2026-10-23 C29 加历史订单导入 2 条；
- * 2026-10-24 R-D 加整单导入 template-info/preview 2 条透传）：Python 281 业务路由 vs TS 门面注册路由。
+ * 2026-10-24 R-D 加整单导入 template-info/preview 2 条透传；
+ * 2026-10-24 旧单产品导入 3 条端点下线）：Python 278 业务路由 vs TS 门面注册路由。
  *
  * 规则：
  * - 引擎透传前缀（quotes/trade-docs/ai）由 proxy mount 覆盖，不逐条注册，单独计数；

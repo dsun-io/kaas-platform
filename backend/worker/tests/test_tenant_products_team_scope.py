@@ -406,7 +406,7 @@ def test_explain_draft_override_does_not_touch_db():
     assert db.queries == []
 
 # ═════════════════════════════════════════════════════════════════════════════
-# C20 · 导入模板/预览也回落租户运行时产品（2026-10-21）
+# C20 · 导入模板（/products/{key}/import-template）回落租户运行时产品（2026-10-21）
 # ═════════════════════════════════════════════════════════════════════════════
 
 def _tenant_fence_row():
@@ -432,12 +432,16 @@ def test_import_template_info_resolves_tenant_runtime_product():
     assert body["headers"], "模板列定义不能为空（克隆自 field_fence）"
 
 
-def test_import_template_file_resolves_tenant_runtime_product():
-    """下载 CSV 模板也走同一解析（否则"能算价却下不了模板"）。"""
+def test_import_template_csv_download_resolves_tenant_runtime_product():
+    """下载 CSV 模板也走同一解析（否则"能算价却下不了模板"）。
+
+    旧单产品端点 `GET /import/template` 已于 2026-10-24 下线：下载走本路由的
+    `format=csv`（与前端 mock/文档同口径，见 quote_api 该 handler docstring）。
+    """
     with _patched_quote([_TENANT_SPEC_ROW], TEAM1_OWNER):
         resp = client.get(
-            "/api/v1/export-quote/import/template",
-            params={"product_key": "accept_fence_01", "format": "csv"})
+            "/api/v1/export-quote/products/accept_fence_01/import-template",
+            params={"format": "csv"})
     assert resp.status_code == 200
     assert "text/csv" in resp.headers.get("content-type", "")
     assert "accept_fence_01" in resp.headers.get("content-disposition", "")

@@ -3736,7 +3736,7 @@ export const longtailHandlers = [
     return HttpResponse.json(response);
   }),
 
-  // GET /export-quote/products/:key/import-template ← use-export-quote-import.ts:69
+  // GET /export-quote/products/:key/import-template（端点保留；旧单产品导入 hook 已删，此处供整单模板列定义复用）
   http.get(
     "/api/v1/export-quote/products/:productKey/import-template",
     ({ params }) => {
@@ -3750,114 +3750,6 @@ export const longtailHandlers = [
       return HttpResponse.json(info);
     },
   ),
-
-  // POST /export-quote/import/preview ← use-export-quote-import.ts:172
-  // 真实后端会解析上传的 xlsx/csv；mock 不解析二进制，固定回 1 行示例并**明确标注**，
-  // 让"预览 → 计算"这条 UI 链路能走通（不发网络、不挂起）。
-  // 但**服务端能先拒的错**按真源拒掉：空文件 / .xls / 超 2MB（quote_api.py:943-963），
-  // 否则「明显错的文件也返回 200」会让 UI 的空态/错误态无从验证。
-  http.post("/api/v1/export-quote/import/preview", async ({ request }) => {
-    const form = await request.formData();
-    const uploadError = importUploadError(form);
-    if (uploadError) {
-      return HttpResponse.json(uploadError, { status: 400 });
-    }
-    const productKey = String(MOCK_EXPORT_PRODUCTS[0]?.key ?? "chain_link");
-    const info = importTemplateInfo(productKey);
-    const columns = (info?.columns ?? []) as Array<Record<string, unknown>>;
-    const row = sampleSpecRow(columns);
-    const uploaded = form.get("file") as File | null;
-    return HttpResponse.json({
-      product_key: productKey,
-      product_name: info?.product_name ?? productKey,
-      source_name: uploaded?.name || "mock-sample.xlsx",
-      total_data_rows: 1,
-      usable_rows: 1,
-      error_count: 0,
-      warning_count: 1,
-      mapping: Object.fromEntries(
-        (info?.headers ?? []).map((h: string) => [h, h]),
-      ),
-      ignored_columns: [],
-      issues: [
-        {
-          row: 0,
-          column: "",
-          value: null,
-          message:
-            "mock：未真正解析上传文件，下方为示例行（用于打通预览→计算链路）",
-          severity: "warning",
-        },
-      ],
-      rows: [row],
-      expected_columns: info?.headers ?? [],
-    });
-  }),
-
-  // POST /export-quote/import/calculate ← use-export-quote-import.ts:203
-  http.post("/api/v1/export-quote/import/calculate", async ({ request }) => {
-    const form = await request.formData();
-    const uploadError = importUploadError(form);
-    if (uploadError) {
-      return HttpResponse.json(uploadError, { status: 400 });
-    }
-    const viewRaw = String(form.get("view") ?? "customer");
-    if (viewRaw !== "customer" && viewRaw !== "internal") {
-      return HttpResponse.json(
-        {
-          detail: {
-            error: "bad_view",
-            message: "view 只能是 customer 或 internal",
-          },
-        },
-        { status: 400 },
-      );
-    }
-    const payloadRaw = form.get("payload");
-    if (payloadRaw !== null && typeof payloadRaw === "string") {
-      try {
-        JSON.parse(payloadRaw);
-      } catch {
-        return HttpResponse.json(
-          {
-            detail: {
-              error: "bad_payload",
-              message: "payload 不是合法 JSON",
-            },
-          },
-          { status: 400 },
-        );
-      }
-    }
-    const productKey = String(
-      form.get("product_key") ?? MOCK_EXPORT_PRODUCTS[0]?.key ?? "",
-    );
-    const view = viewRaw;
-    const base = mockCalculateResponse(productKey, {}, view);
-    if (!base) {
-      return HttpResponse.json(
-        {
-          error: "unknown_product",
-          message: `未注册的产品模型 '${productKey}'`,
-        },
-        { status: 404 },
-      );
-    }
-    const uploaded = form.get("file") as File | null;
-    return HttpResponse.json({
-      ...base,
-      import: {
-        source_name: uploaded?.name || "mock-sample.xlsx",
-        total_data_rows: 1,
-        usable_rows: 1,
-        skipped_rows: 0,
-        mapping: {},
-        ignored_columns: [],
-        issues: [],
-      },
-      spec_rows: { submitted: 1, computed: 1, skipped: 0 },
-    });
-  }),
 
   // ── 整单批量导入（R-D，2026-10-23）─────────────────────────────────────────
   // GET /export-quote/import/order/template-info ← bulk-import-panel.tsx

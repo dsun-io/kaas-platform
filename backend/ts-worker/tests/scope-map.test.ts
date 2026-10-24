@@ -94,7 +94,8 @@ describe("resolveRequiredScope（有序规则）", () => {
     ["POST", "/api/v1/export-quote/calculate", "quotes:calc"],
     ["POST", "/api/v1/export-quote/calculate-internal", "quotes:calc"],
     ["POST", "/api/v1/export-quote/verify", "quotes:calc"],
-    ["POST", "/api/v1/export-quote/import/calculate", "quotes:calc"],
+    // 旧单产品导入端点已下线（2026-10-24）；整单导入仍走 export-quote 泛前缀。
+    ["POST", "/api/v1/export-quote/import/order/preview", "quotes:calc"],
     ["GET", "/api/v1/export-quote/products", "quotes:read"],
     ["GET", "/api/v1/quotes/1", "quotes:read"],
     ["POST", "/api/v1/quotes", "quotes:calc"],

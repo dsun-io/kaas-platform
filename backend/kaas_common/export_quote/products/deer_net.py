@@ -234,7 +234,7 @@ def build_spec() -> ProductSpec:
                    1, width=16),
             Column("spec.dt", "拧花丝径(mm)", "Twisted Wire Dia. (mm)",
                    1, width=14),
-            Column("derived.width_mm", "宽度(mm)", "Width (mm)", 0, width=11),
+            Column("spec.height_m", "宽度(m)", "Width (m)", 2, width=11),
             Column("spec.n", "横丝根数", "No. of Horizontal Wires", 0, width=11),
             Column("spec.mesh_mm", "网孔/刺尖间距(mm)", "Mesh Opening (mm)",
                    0, width=16),

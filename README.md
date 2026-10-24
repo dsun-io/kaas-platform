@@ -10,12 +10,11 @@
 
 > 📌 **交接先看 [docs/README.md](docs/README.md)**（当前权威 / 运行手册 / 归档分层）。
 > 本文只保留：架构、环境、命令、门禁、业务规则；历史决策与已完成计划在 `docs/archive/`。
-> **当前状态（2026-10-22 团队加入申请模块收口）**：新增「团队加入申请」子模块（注册时团队已存在可
-> **直接申请加入**、管理员侧边栏**审核**）+ 邀请码**单次使用并发加固**（两处兑换路径加 `FOR UPDATE`）。
-> 迁移头 **`202610220003`**（`team_join_applications`，纯新增表）。A 组除 **A-11（D6 冷启动，用户决定挂起）**
-> 外全部完成；**B 组用户已确认关闭**。生产版本 **`83647f7a`**（本模块待部署）。
-> 门禁：worker **1616+12skip**（3 条 `js` 模块缺失为本机环境问题）/ orchestrator **258** /
-> ts-worker **232（23 文件）** / 前端 **1051（125 文件）** / e2e **27=27+0**；静态断言全 PASS。
+> **当前状态（2026-10-24 遗留批收口）**：产品×报价重构 R-A/B/C1/C2/D 五批 + 遗留三件套已全部收口——
+> deer_net 列定义修正（derived「宽度(mm)」不再进模板）、单证行项材质并入 Specification 文本、
+> 旧单产品导入 3 端点下线（路由 **282 = 278 业务 + 4 内置**）。生产版本以 CI `deploy` 为准。
+> 门禁（2026-10-24 实测）：worker **1783+12skip** / orchestrator **273** /
+> ts-worker **305（26 文件）** / 前端 **1607（218 文件）** / e2e **28=28+0**；静态断言全 PASS。
 
 ---
 
@@ -99,7 +98,7 @@ cd backend/orchestrator
 uv run --extra migrations pytest tests -q
 
 # TS 门面（对外唯一入口）
-cd backend/ts-worker; pnpm typecheck; pnpm test      # 232 测 / 23 文件
+cd backend/ts-worker; pnpm typecheck; pnpm test      # 305 测 / 26 文件
 
 # worker（Python 内核）
 cd backend/worker

@@ -93,7 +93,7 @@ _ENGINE_SYMBOLS = (
     "TermsError", "build", "build_customer_view",
     "build_internal_view", "build_template_csv", "describe_product",
     "describe_pricing_key", "get_product", "ladder_from_dict",
-    "make_request_from_config", "parse_table", "product_keys",
+    "make_request_from_config", "product_keys",
     "template_columns", "template_headers", "verify_all", "extend_product",
     "pricing_key_defined_values", "pricing_key_of", "pricing_key_value",
     "quote_meta", "default_terms_template",
@@ -122,7 +122,6 @@ def _ensure_engine_loaded() -> bool:
             get_product,
             ladder_from_dict,
             make_request_from_config,
-            parse_table,
             product_keys,
             template_columns,
             template_headers,
@@ -961,7 +960,7 @@ _IMPORT_MAX_MB = 2
 
 
 async def _read_upload(file: UploadFile) -> bytes:
-    """读上传字节 + 空文件/大小上限（类型分派交给 parse_table）。"""
+    """读上传字节 + 空文件/大小上限（类型分派交给内核 importers）。"""
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail={
@@ -972,15 +971,6 @@ async def _read_upload(file: UploadFile) -> bytes:
             "error": "file_too_large",
             "message": "文件过大（%.1f MB），上限 %d MB" % (len(data) / 1048576, _IMPORT_MAX_MB)})
     return data
-
-
-def _parse_or_400(data: bytes, spec, filename: str = "", sheet: Optional[str] = None):
-    """解析上传表；整表级失败统一 400 `parse_error`（CSV 与 xlsx 同一条通路）。"""
-    try:
-        return parse_table(data, spec, filename=filename, sheet=sheet)
-    except ImportError_ as exc:
-        raise HTTPException(status_code=400, detail={
-            "error": "parse_error", "message": str(exc)})
 
 
 def _parse_order_or_400(data: bytes, specs, filename: str = "",
@@ -1029,24 +1019,6 @@ def _template_response(spec, fmt: str, examples: Optional[int], include_spec: bo
                     headers=_template_headers(spec, include_spec))
 
 
-@app.get("/api/v1/export-quote/import/template")
-async def export_quote_import_template(
-    request: Request,
-    product_key: str = Query("field_fence", description="产品模型 key"),
-    format: str = Query("xlsx", description="csv；xlsx 返回 501（Excel 模板由前端生成）"),
-    examples: Optional[int] = Query(None, ge=0, le=50),
-    include_spec: bool = Query(False, description="是否随附列定义（JSON 头）"),
-    user: dict = Depends(_get_current_user),
-):
-    """下载批量导入模板（服务端只出 csv；Excel 模板由浏览器端生成）。
-
-    2026-10-21（C20）：与 `/formulas`、`/explain` 同口径 —— 先解析**租户运行时产品**，
-    未命中才回落注册表；否则编辑器里新建的产品"能选、能算"却导不出模板。
-    """
-    spec = await _product_or_404_tenant(request, user, product_key)
-    return _template_response(spec, format, examples, include_spec)
-
-
 @app.get("/api/v1/export-quote/products/{product_key}/import-template")
 async def export_quote_import_template_info(
     product_key: str,
@@ -1061,7 +1033,8 @@ async def export_quote_import_template_info(
     为什么一个路由兼两职：前端只用这一个 URL（`useImportTemplateInfo` 不带
     `format`、下载时带 `format`），而 dev 侧拆成了 `/products/{key}/import-template`
     （说明）与 `/import/template`（文件）两个 —— 线上把 dev 的"文件"那一路
-    也映射到这里，使前端两条调用都能命中同一个后端语义，不必改前端。
+    也收敛到本路由（旧 `/import/template` 已于 2026-10-24 下线），使前端两类调用
+    都能命中同一个后端语义。
     """
     spec = await _product_or_404_tenant(request, user, product_key)
     if format:
@@ -1079,10 +1052,10 @@ async def export_quote_import_template_info(
         "sheets": ["规格表", "示例", "填写说明"],
         "data_sheet": "规格表",
         "download": {
-            "xlsx": ("/api/v1/export-quote/import/template"
-                     "?product_key=%s&format=xlsx" % spec.key),
-            "csv": ("/api/v1/export-quote/import/template"
-                    "?product_key=%s&format=csv" % spec.key),
+            "xlsx": ("/api/v1/export-quote/products/%s/import-template"
+                     "?format=xlsx" % spec.key),
+            "csv": ("/api/v1/export-quote/products/%s/import-template"
+                    "?format=csv" % spec.key),
         },
         "notes": [
             "模板表头与导出的报价表一致：导出 → 改 → 再导入，不用另对照列名。",
@@ -1092,28 +1065,6 @@ async def export_quote_import_template_info(
             "列名括号里的就是该列单位，按单位填原值即可，不要自己换算。",
         ],
     }
-
-
-@app.post("/api/v1/export-quote/import/preview")
-async def export_quote_import_preview(
-    request: Request,
-    file: UploadFile = File(description="规格表：.xlsx（首选）或 .csv"),
-    product_key: str = Form("field_fence"),
-    sheet: Optional[str] = Form(default=None),
-    user: dict = Depends(_get_current_user),
-):
-    """先看清解析成了什么，再决定要不要算（支持 .xlsx 与 CSV）。
-
-    2026-10-21（C20）：产品解析回落租户运行时产品（与算价/模板同口径）。
-    """
-    spec = await _product_or_404_tenant(request, user, product_key)
-    data = await _read_upload(file)
-    parsed = _parse_or_400(data, spec, file.filename or "", sheet)
-    payload = parsed.to_dict()
-    payload["product_key"] = spec.key
-    payload["product_name"] = spec.name
-    payload["expected_columns"] = template_headers(spec)
-    return payload
 
 
 @app.get("/api/v1/export-quote/import/order/template-info")
@@ -1181,69 +1132,6 @@ async def export_quote_import_order_preview(
     parsed = _parse_order_or_400(
         data, list(specs.values()), file.filename or "", sheet)
     return parsed.to_dict()
-
-
-@app.post("/api/v1/export-quote/import/calculate")
-async def export_quote_import_calculate(
-    request: Request,
-    file: UploadFile = File(description="规格表：.xlsx（首选）或 .csv"),
-    payload: str = Form(description="计算参数（_CalculateIn 的 JSON 字符串）"),
-    product_key: str = Form("field_fence"),
-    sheet: Optional[str] = Form(default=None),
-    view: str = Form("customer", description="customer | internal"),
-    user: dict = Depends(_get_current_user),
-):
-    """把整张表的规格一次算完（支持 .xlsx 与 CSV）。坏行跳过并随结果一起回报。"""
-    if view not in ("customer", "internal"):
-        raise HTTPException(status_code=400, detail={
-            "error": "bad_view", "message": "view 只能是 customer 或 internal"})
-    if view == "internal":
-        _require_internal_admin(user)
-
-    spec = await _product_or_404_tenant(request, user, product_key)
-    try:
-        raw = json.loads(payload or "{}")
-        if not isinstance(raw, dict):
-            raise ValueError("payload 必须是一个 JSON 对象")
-    except (json.JSONDecodeError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail={
-            "error": "bad_payload", "message": "payload 不是合法 JSON: %s" % exc})
-    # product_key 走表单字段（与文件一起传更顺手），payload 里可省略
-    raw.setdefault("product_key", product_key)
-    try:
-        body = _CalculateIn(**raw)
-    except ValueError as exc:  # pydantic ValidationError 是 ValueError 子类
-        # 用 pydantic 自己的 JSON 序列化再 loads：`exc.errors()` 的 ctx 里可能带
-        # 原始异常对象，直接塞进 detail 会让 422 变成 500（FastAPI 编不出来）。
-        try:
-            detail = json.loads(exc.json())[:5]  # type: ignore[attr-defined]
-        except (ValueError, TypeError, AttributeError):
-            detail = str(exc)
-        raise HTTPException(status_code=422, detail={"error": "invalid_payload", "message": detail})
-
-    data = await _read_upload(file)
-    parsed = _parse_or_400(data, spec, file.filename or "", sheet)
-    if not parsed.rows:
-        raise HTTPException(status_code=400, detail={
-            "error": "no_usable_rows",
-            "message": "表里没有可计算的规格行；请先看 /import/preview 的问题清单",
-            "issues": [i.to_dict() for i in parsed.issues]})
-
-    body.product_key = product_key
-    body.spec_rows = parsed.rows
-    # dev 这里**不注入客户成本表**（保持与导入场景一致：表格给的是规格，不是价）
-    out = _run_calculation(body, user, view)
-    out["import"] = {
-        "source_name": parsed.source_name,
-        "total_data_rows": parsed.total_data_rows,
-        "usable_rows": len(parsed.rows),
-        "skipped_rows": parsed.total_data_rows - len(parsed.rows),
-        "mapping": parsed.mapping,
-        "ignored_columns": parsed.ignored_columns,
-        "issues": [i.to_dict() for i in parsed.issues],
-    }
-    return out
-
 
 
 # ═════════════════════════════════════════════════════════════════════════════

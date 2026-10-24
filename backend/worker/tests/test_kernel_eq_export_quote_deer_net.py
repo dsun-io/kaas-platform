@@ -29,6 +29,7 @@ from kaas_common.export_quote.engine import (
     spec_from_partial,
 )
 from kaas_common.export_quote.formulas import describe_product, worked_example
+from kaas_common.export_quote.importers import template_columns
 from kaas_common.export_quote.models import extend_product
 from kaas_common.export_quote.numeric import DECIMAL
 from kaas_common.export_quote.products import get
@@ -142,3 +143,42 @@ class TestProductShape:
         """文档必须写明"没有真实数据可核对"，否则后人会以为已用数据验过。"""
         joined = " ".join(get("deer_net").notes)
         assert "没有真实数据可核对" in joined
+
+
+class TestTemplateColumns:
+    """模板列回归：derived 的「宽度(mm)」曾被当成可填参数（2026-10-24）。
+
+    根因：`template_columns` 会拿产品输出列的 label 去问解析器
+    「这个表头认得吗」；「宽度(mm)」归一后基名是「宽度」，命中 height_m 的
+    label「宽度(m)」⇒ 这条 **计算列** 被当成可填参数，目标 height_m、单位
+    mm，但换算因子 = 1 ⇒ 用户按 mm 填 1500 会撞 height_m 的上界 6（整单
+    并集模板还会把它带给鹿网用户）。
+
+    修法是**只改产品列定义**（不动 importers 引擎）：宽度列直接声明为可填的
+    `spec.height_m`、米口径；derived 里的 width_mm 公式保留（重量公式仍在用）。
+    """
+
+    def test_width_column_is_fillable_in_meters(self):
+        cols = template_columns(get("deer_net"))
+        by_header = {c.header: c for c in cols}
+        # 旧缺陷：模板里出现「宽度(mm)」⇒ 按毫米填会撞 height_m 上界
+        assert "宽度(mm)" not in by_header
+        col = by_header["宽度(m)"]
+        assert col.kind == "numeric"
+        assert col.target == "height_m"
+        assert col.unit == "m"
+        # default 取 numeric_input 的默认值（1.5 m）
+        assert float(col.default) == 1.5
+
+    def test_width_mm_stays_a_derived_formula(self):
+        """「宽度(mm)」仍要作为**计算列**存在，否则重量公式的 W 就没了。"""
+        derived = {f.name: f for f in get("deer_net").derived}
+        assert derived["width_mm"].expr == "height_m * 1000"
+        assert "width_mm" in derived["weight_base_kg"].expr
+
+    def test_export_columns_still_carry_width(self):
+        """导出报价表仍要出宽度列——现在是「宽度(m)」，不再是 derived 计算列。"""
+        cols = list(get("deer_net").columns)
+        width = [c for c in cols if c.label in ("宽度(m)", "宽度(mm)")]
+        assert [c.key for c in width] == ["spec.height_m"]
+        assert width[0].decimals == 2

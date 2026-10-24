@@ -1,11 +1,13 @@
-"""C7：批量导入支持 .xlsx —— 纯标准库读取器 + 端点接线。
+"""C7：批量导入支持 .xlsx —— 纯标准库读取器。
 
 背景
 ----
 上传侧此前显式拒绝 xlsx（`400 xlsx_not_supported`），理由是 openpyxl 依赖 C 扩展、
 打不进 Cloudflare Python Workers（Pyodide）。但 xlsx 本质是「zip + XML」，
 标准库 `zipfile` + `xml.etree.ElementTree` 足够把值读出来 —— 本文件用**手写的最小
-xlsx**（zipfile 写 XML，不依赖 openpyxl）钉死读取器行为，再测两个导入端点。
+xlsx**（zipfile 写 XML，不依赖 openpyxl）钉死读取器行为。
+（原先还覆盖 `/import/preview`、`/import/calculate` 两个 HTTP 端点；这两个旧单产品
+导入端点已于 2026-10-24 下线，端点用例随之删除，解析器覆盖原样保留。）
 
 覆盖
 ----
@@ -15,13 +17,11 @@ xlsx**（zipfile 写 XML，不依赖 openpyxl）钉死读取器行为，再测�
 - 合并单元格：区域内每格取左上角的值；
 - 日期：内置 numFmtId=14 / 自定义 numFmtId=164 → ISO；纯时间格式；未知 numFmt → 数值 + warning；
 - 上限与坏文件：行数超限、列数超限、非 zip、zip 里没有 workbook、老 .xls 指路；
-- 回归：CSV 行为不变；xlsx 与 CSV 共用同一个 `parse_table` 字段映射；
-- 端点：`/import/preview`、`/import/calculate` 对 xlsx 返回 200 且字段正确。
+- 回归：CSV 行为不变；xlsx 与 CSV 共用同一个 `parse_table` 字段映射。
 """
 from __future__ import annotations
 
 import io
-import json
 import sys
 import zipfile
 from pathlib import Path
@@ -29,13 +29,7 @@ from xml.sax.saxutils import escape
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from _bootstrap import load_main  # noqa: E402
-
-worker_main = load_main()
-
-from fastapi.testclient import TestClient  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from kaas_common.export_quote import (  # noqa: E402
     ImportError_,
@@ -43,8 +37,6 @@ from kaas_common.export_quote import (  # noqa: E402
     read_xlsx,
 )
 from kaas_common.export_quote.importers import MAX_ROWS  # noqa: E402
-
-client = TestClient(worker_main.app, raise_server_exceptions=False)
 
 _MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 _REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -495,145 +487,3 @@ class TestParseTable:
         )
         assert len(fallback.rows) == 12
         assert any(i.severity != "error" for i in fallback.issues)
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# 端点：preview / calculate 接受 .xlsx
-# ═════════════════════════════════════════════════════════════════════════════
-CUSTOMER = {
-    "id": 5, "email": "buyer@qa.test", "display_name": "买家",
-    "account_type": "customer", "role": "owner", "status": "active",
-    "team_id": 2, "console_access": False,
-}
-
-
-def _as(user: dict) -> None:
-    worker_main.app.dependency_overrides[worker_main._get_current_user] = lambda: user
-
-
-def _cleanup() -> None:
-    worker_main.app.dependency_overrides.pop(worker_main._get_current_user, None)
-
-
-def _calculate_payload() -> str:
-    return json.dumps({
-        "fx_rate": 6.7019,
-        "orders": [{"total": 30000, "unit": "m"}],
-        "quote_date": "2026-09-24",
-    })
-
-
-class TestImportEndpoints:
-    def test_preview_accepts_xlsx(self):
-        _as(CUSTOMER)
-        try:
-            resp = client.post(
-                "/api/v1/export-quote/import/preview",
-                files={"file": (
-                    "规格表.xlsx", xlsx_of_rows(),
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )},
-                data={"product_key": "field_fence"},
-            )
-        finally:
-            _cleanup()
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
-        assert body["usable_rows"] == 2
-        assert body["total_data_rows"] == 2
-        assert body["product_key"] == "field_fence"
-        assert body["mapping"]["网高(m)"] == "height_m"
-        assert body["expected_columns"]
-
-    def test_calculate_accepts_xlsx(self):
-        _as(CUSTOMER)
-        try:
-            resp = client.post(
-                "/api/v1/export-quote/import/calculate",
-                files={"file": (
-                    "规格表.xlsx", xlsx_of_rows(),
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )},
-                data={"product_key": "field_fence", "payload": _calculate_payload()},
-            )
-        finally:
-            _cleanup()
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
-        assert body["import"]["usable_rows"] == 2
-        assert body["import"]["total_data_rows"] == 2
-        assert body["meta"]["product_key"] == "field_fence"
-        assert len(body["customer"]["rows"]) == 2
-
-    def test_preview_rejects_broken_xlsx_as_parse_error(self):
-        _as(CUSTOMER)
-        try:
-            resp = client.post(
-                "/api/v1/export-quote/import/preview",
-                files={"file": ("坏文件.xlsx", b"PK\x03\x04broken", "application/octet-stream")},
-                data={"product_key": "field_fence"},
-            )
-        finally:
-            _cleanup()
-        assert resp.status_code == 400, resp.text
-        detail = resp.json()["detail"]
-        assert detail["error"] == "parse_error"
-        assert "zip" in detail["message"] or "xlsx" in detail["message"]
-
-    def test_preview_old_xls_gives_guidance(self):
-        _as(CUSTOMER)
-        ole2 = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 64
-        try:
-            resp = client.post(
-                "/api/v1/export-quote/import/preview",
-                files={"file": ("旧表.xls", ole2, "application/vnd.ms-excel")},
-                data={"product_key": "field_fence"},
-            )
-        finally:
-            _cleanup()
-        assert resp.status_code == 400, resp.text
-        detail = resp.json()["detail"]
-        assert detail["error"] == "parse_error"
-        assert "xlsx" in detail["message"]
-
-    def test_preview_csv_still_works(self):
-        _as(CUSTOMER)
-        csv_text = ("网高(m),竖丝间距(cm),边丝径(mm),表面处理,工艺\n"
-                    "1.2,10,2.0,热镀锌 40g/㎡,无波款\n").encode("utf-8")
-        try:
-            resp = client.post(
-                "/api/v1/export-quote/import/preview",
-                files={"file": ("表.csv", csv_text, "text/csv")},
-                data={"product_key": "field_fence"},
-            )
-        finally:
-            _cleanup()
-        assert resp.status_code == 200, resp.text
-        assert resp.json()["usable_rows"] == 1
-
-    def test_preview_honours_sheet_form_field(self):
-        """`sheet=` 表单字段要真的透传到读取器（多表模板：说明表在前、数据表在后）。"""
-        blob = make_xlsx([
-            sheet("填写说明", [["说明"], ["只读这张会被判为没有规格列"]]),
-            sheet("规格表", [HEADERS] + ROWS),
-        ])
-        _as(CUSTOMER)
-        try:
-            first = client.post(
-                "/api/v1/export-quote/import/preview",
-                files={"file": ("模板.xlsx", blob, "application/octet-stream")},
-                data={"product_key": "field_fence"},
-            )
-            explicit = client.post(
-                "/api/v1/export-quote/import/preview",
-                files={"file": ("模板.xlsx", blob, "application/octet-stream")},
-                data={"product_key": "field_fence", "sheet": "规格表"},
-            )
-        finally:
-            _cleanup()
-        # 默认读第一张（说明表）→ 认不出规格列，给出可执行提示
-        assert first.status_code == 400, first.text
-        assert first.json()["detail"]["error"] == "parse_error"
-        # 显式指定数据表 → 正常解析
-        assert explicit.status_code == 200, explicit.text
-        assert explicit.json()["usable_rows"] == 2

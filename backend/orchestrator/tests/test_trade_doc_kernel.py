@@ -298,3 +298,50 @@ class TestCustomBoundary:
                                    actor_id="u", before_custom={"n": i},
                                    after_custom={"n": i + 1}, at=f"t{i}")
         assert len(payload["_audit"]) == 20
+
+
+# ─── 行项材质并入 Specification 文本（2026-10-24 用户裁决）────────────────────
+
+class TestSpecificationMaterial:
+    """材质写在该行 `spec_snapshot.material`（frontend line-to-item.ts:280），
+    但单证模板没有材质列 ⇒ 并入 Specification 文本末尾（英文单据口径
+    `Material: <值>`），不新增字段/列、不改 render.ts。"""
+
+    @staticmethod
+    def _render(spec_snapshot):
+        return build_render_data(
+            doc_type="pi", doc_no="PI-1", doc_status="draft", currency="USD",
+            total_amount=100,
+            sources={"quote": {"items": [{
+                "product_name": "Chain Link Fence", "qty": 1, "unit_price": 100,
+                "line_amount": 100, "spec_snapshot": spec_snapshot,
+            }]}},
+        )
+
+    def test_material_appended_to_specification_tail(self):
+        data = self._render({"specification": "2m x 25m", "material": "低碳钢丝"})
+        spec = data["items"][0]["specification"]
+        assert spec == "2m x 25m, Material: 低碳钢丝"
+        assert spec.endswith(", Material: 低碳钢丝")
+
+    def test_without_material_output_unchanged(self):
+        """既有口径：无 material 时逐字保持旧输出（parts 顺序 + 逗号分隔）。"""
+        data = self._render({"specification": "2m x 25m", "size": "2m", "material": None})
+        assert data["items"][0]["specification"] == "2m x 25m, 2m"
+
+    @pytest.mark.parametrize("material", ["", "   ", None])
+    def test_blank_material_not_appended(self, material):
+        data = self._render({"specification": "2m x 25m", "material": material})
+        assert data["items"][0]["specification"] == "2m x 25m"
+
+    def test_non_dict_spec_snapshot_behaviour_unchanged(self):
+        for snapshot, expected in [("2m x 25m", "2m x 25m"), (None, None)]:
+            data = self._render(snapshot)
+            assert data["items"][0].get("specification") == expected
+
+    def test_material_appended_after_legacy_fallback_parts(self):
+        """没有可识别规格键时旧兜底逐键输出不变，Material 仍追加在末尾。"""
+        data = self._render({"product_key": "field_fence", "material": "低碳钢丝"})
+        assert data["items"][0]["specification"] == (
+            "product_key: field_fence, Material: 低碳钢丝"
+        )

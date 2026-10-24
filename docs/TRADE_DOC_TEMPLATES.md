@@ -107,6 +107,9 @@ raw_payload = {
 - 渲染器自动派生（无需调用方计算）：
   - `total_amount_words` / `insured_amount_words`：金额英文大写
   - `total_qty` / `total_packages` / `total_gross_weight` / `total_net_weight` / `total_volume`：行项自动汇总
+  - **行项材质**（2026-10-24 用户裁决）：`spec_snapshot.material` 非空时，装配层
+    （`backend/kaas_common/trade_doc/payload_shared.py::_spec_to_text`）把它以 `Material: <值>`
+    追加到该行 `specification` 文本末尾 —— **不新增表格列**；材质为空/缺失时输出与旧版逐字一致。
   - `seller_name`：卖方名称（签章区提示语）
   - `fx_block`：**双币种金额块**（仅 PI/CI 且给了 `fx_rate` 时；见 §十一）
   - `contract_clauses_block`（G11 合同条款块）/ `ci_bank_block`（G7 CI 收款账户）/

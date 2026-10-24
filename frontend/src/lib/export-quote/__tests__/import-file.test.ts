@@ -1,74 +1,22 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import {
-  buildImportFormData,
-  canCalculate,
   describeIssue,
-  filenameFromDisposition,
   groupIssues,
   issuesToCsv,
   issuesToText,
   MULTIPART_CONFIG,
   resultToCsv,
-  summarizeResult,
-  templateFilename,
-  templateUrl,
   triggerBlobDownload,
   validateFile,
 } from "@/lib/export-quote/import-file";
 import { ImportTemplateInfoSchema } from "@contracts/export-quote";
-import type {
-  ImportCalculateResponse,
-  ImportIssue,
-  ImportPreviewResponse,
-} from "@contracts/export-quote";
+import type { ImportIssue } from "@contracts/export-quote";
 
 function fileOf(name: string, bytes = 1024, type = ""): File {
   return new File([new Uint8Array(bytes)], name, { type });
 }
 
-describe("模板下载地址", () => {
-  it("拼出与后端路由一致、且带产品与格式的地址", () => {
-    expect(templateUrl("field_fence", "xlsx")).toBe(
-      "/export-quote/import/template?product_key=field_fence&format=xlsx",
-    );
-  });
-
-  it("能附加示例行数等额外参数", () => {
-    const url = templateUrl("field_fence", "csv", { examples: 0 });
-    expect(url).toContain("format=csv");
-    expect(url).toContain("examples=0");
-    expect(url).toContain("product_key=field_fence");
-  });
-
-  it("兜底文件名与后端 Content-Disposition 口径一致", () => {
-    expect(templateFilename("field_fence", "xlsx")).toBe(
-      "field_fence-import-template.xlsx",
-    );
-  });
-});
-
-describe("上传表单", () => {
-  it("文件与计算参数一起走 multipart", () => {
-    const fd = buildImportFormData(
-      fileOf("specs.xlsx"),
-      { fx_rate: 6.7019, orders: [{ total: 30000, unit: "m" }] },
-      { productKey: "field_fence", view: "internal" },
-    );
-    expect(fd.get("file")).toBeInstanceOf(File);
-    expect(fd.get("product_key")).toBe("field_fence");
-    expect(fd.get("view")).toBe("internal");
-    expect(JSON.parse(String(fd.get("payload")))).toEqual({
-      fx_rate: 6.7019,
-      orders: [{ total: 30000, unit: "m" }],
-    });
-  });
-
-  it("没给视图时不塞空字段", () => {
-    const fd = buildImportFormData(fileOf("a.csv"), {}, { productKey: "p" });
-    expect(fd.get("view")).toBeNull();
-    expect(fd.get("sheet")).toBeNull();
-  });
-
+describe("multipart 配置", () => {
   it("显式声明 multipart，否则 axios 会把 FormData 转成 JSON（文件传丢）", () => {
     expect(MULTIPART_CONFIG.headers["Content-Type"]).toBe(
       "multipart/form-data",
@@ -138,89 +86,6 @@ describe("问题清单", () => {
   });
 });
 
-describe("可算判断", () => {
-  const preview = (usable: number) =>
-    ({ usable_rows: usable }) as ImportPreviewResponse;
-
-  it("至少要有一行可用", () => {
-    expect(canCalculate(null)).toBe(false);
-    expect(canCalculate(preview(0))).toBe(false);
-    expect(canCalculate(preview(3))).toBe(true);
-  });
-});
-
-describe("结果摘要", () => {
-  const result = (over: Record<string, unknown> = {}) =>
-    ({
-      meta: {
-        totals: { total_weight_kg: "19620.6000", total_price: "90309.00" },
-        orders: [],
-        ...(over.meta as object),
-      },
-      import: {
-        source_name: "a.xlsx",
-        total_data_rows: 50,
-        usable_rows: 48,
-        skipped_rows: 2,
-        mapping: {},
-        ignored_columns: [],
-        issues: [
-          {
-            row: 3,
-            column: "工艺",
-            value: "x",
-            message: "m",
-            severity: "error",
-          },
-          {
-            row: 4,
-            column: "工艺",
-            value: "y",
-            message: "m",
-            severity: "warning",
-          },
-        ],
-      },
-      ...over,
-    }) as unknown as ImportCalculateResponse;
-
-  it("行数与错误数取自导入摘要", () => {
-    const s = summarizeResult(result());
-    expect(s.rows).toBe(48);
-    expect(s.errors).toBe(1);
-    expect(s.warnings).toBe(1);
-  });
-
-  it("总净重与总价直接读合计，不前端重算", () => {
-    const s = summarizeResult(result());
-    expect(s.totalWeightKg).toBeCloseTo(19620.6, 6);
-    expect(s.totalPrice).toBeCloseTo(90309, 6);
-  });
-
-  it("没有合计时退回按订单量累加，仍不自己乘算", () => {
-    const s = summarizeResult(
-      result({
-        meta: {
-          orders: [{ total_weight_kg: "100.5" }, { total_weight_kg: "200" }],
-        },
-      }),
-    );
-    expect(s.totalWeightKg).toBeCloseTo(300.5, 6);
-  });
-
-  it("结果为空时给可展示的零值而不是崩", () => {
-    const s = summarizeResult(null, 7);
-    expect(s).toEqual({
-      rows: 7,
-      errors: 0,
-      warnings: 0,
-      totalWeightKg: null,
-      totalPrice: null,
-      totalPriceFx: null,
-    });
-  });
-});
-
 describe("结果导出 CSV", () => {
   it("带 BOM，中文列名在 Excel 里不乱码", () => {
     const csv = resultToCsv(["网高(m)", "单卷售价(元/卷)"], [[1.2, 305.25]]);
@@ -237,31 +102,6 @@ describe("结果导出 CSV", () => {
 
   it("空值导出为空单元格，不是 null", () => {
     expect(resultToCsv(["a", "b"], [[null, undefined]])).toContain(",\r\n");
-  });
-});
-
-describe("文件名解析", () => {
-  it("优先用 filename*（UTF-8 中文名）", () => {
-    expect(
-      filenameFromDisposition(
-        "attachment; filename=\"t.xlsx\"; filename*=UTF-8''%E7%89%9B%E6%A0%8F%E7%BD%91.xlsx",
-        "fallback.xlsx",
-      ),
-    ).toBe("牛栏网.xlsx");
-  });
-
-  it("退回普通 filename", () => {
-    expect(
-      filenameFromDisposition(
-        'attachment; filename="field_fence-import-template.xlsx"',
-        "f.xlsx",
-      ),
-    ).toBe("field_fence-import-template.xlsx");
-  });
-
-  it("跨域看不到该响应头时用本地兜底名，不让下载失败", () => {
-    expect(filenameFromDisposition(undefined, "f.xlsx")).toBe("f.xlsx");
-    expect(filenameFromDisposition("attachment", "f.csv")).toBe("f.csv");
   });
 });
 
@@ -322,7 +162,7 @@ describe("模板说明契约", () => {
       sheets: ["规格表", "示例", "填写说明"],
       data_sheet: "规格表",
       download: {
-        xlsx: "/api/v1/export-quote/import/template?product_key=field_fence&format=xlsx",
+        xlsx: "/api/v1/export-quote/products/field_fence/import-template?format=xlsx",
       },
       notes: ["模板表头与导出的报价表一致"],
     });

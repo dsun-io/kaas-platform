@@ -140,6 +140,20 @@ class TestOrderTemplateColumns:
         assert by_header["丝径/线径(mm)"].products == ["勾花网"]
         assert by_header["件数（卷）"].kind == "common"
 
+    def test_deer_net_width_never_leaks_as_millimeters(self):
+        """整单并集模板不得出现「宽度(mm)」（2026-10-24 回归）。
+
+        鹿网的 derived 计算列「宽度(mm)」曾被 `template_columns` 当成可填
+        参数（目标 height_m、因子 1），整单模板把它带给鹿网用户 ⇒ 按毫米填
+        1500 会撞 height_m 的上界 6。产品列定义改成 spec.height_m / 米口径后
+        并集里只能有「宽度(m)」。
+        """
+        headers = headers_of(products())
+        assert "宽度(mm)" not in headers
+        by_header = {c.header: c for c in order_template_columns(products())}
+        assert by_header["宽度(m)"].unit == "m"
+        assert "鹿网" in by_header["宽度(m)"].products
+
     def test_cost_basis_options_are_chinese_aliases(self):
         by_header = {c.header: c for c in order_template_columns(products())}
         assert by_header["成本口径（含税/不含税）"].options == ["不含税", "含税"]
