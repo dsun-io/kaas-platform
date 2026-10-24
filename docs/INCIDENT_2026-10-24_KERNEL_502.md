@@ -72,6 +72,7 @@ Workers 内存上限 128MB ⇒ 内核长期贴着上限运行。
 | 内核 | 降低启动内存/时间（惰性 import）——**因架构拆分指令暂缓**，半成品已回退 | ⏸ 并入拆分 P3 |
 | 架构 | **认证 + 数据库连接移出 Python 内核**（见 docs/ARCH_AUTH_DB_SPLIT_2026-10-24.md） | 📐 设计完成，待批准 |
 | 平台 | 向 Cloudflare 报 Pyodide init 缺陷（证据包=本文 §1.3/§1.4） | 待用户决定 |
+| 监控 | **错误率门禁**（治「匿名探针掩盖故障」）：`scripts/check-kernel-error-rate.py` + 每 15 分钟 `kernel-health.yml` | ✅ 已上线（commit `c9490cec`） |
 
 ## 3. 复现/取证方法（下次可直接复用）
 

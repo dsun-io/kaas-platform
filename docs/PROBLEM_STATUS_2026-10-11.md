@@ -107,10 +107,16 @@
 >   内核透传 `export-quote/formulas`、`trade-docs` 返回 404 `WORKSTATION_NOT_SUBSCRIBED`（闸门正确，说明内核仍在服务 /api）；
 >   内部 RPC 闸门 parity：404 响应 sha256 与旧路径基线逐字节一致；
 > - 门禁：worker 1855+12skip / ts-worker 437 / orchestrator 273 / 静态断言（bundle·runtime-deps·sync-shared）全 PASS。
+> **监控盲区已补（2026-10-24 18:35，commit `c9490cec`）** —— 事故教训落成机制：
+> - 新增 `scripts/check-kernel-error-rate.py`（只读）：拉 Cloudflare GraphQL `workersInvocationsAdaptive` 按 status 聚合，
+>   超阈值 exit 1、样本不足自动 SKIP（不误报）；实测：10 小时窗内核 **71.4%** → 拦下；门面 0.0% → 放行；20 分钟低流量 → SKIP；
+> - 新增 `.github/workflows/kernel-health.yml`：**每 15 分钟**跑一次（内核阈值 30%、门面 5%），失败即 GitHub 告警；
+> - `deploy.yml` 部署后新增「错误率观测」步骤（`continue-on-error`，窗口含部署前流量故不阻塞发布）。
 > - **P3 剩余（未完成，需后续轮次）**：① 15 条写路径的事务归属需拍板（取号/状态机/多表同事务，A=保留内核 / B=搬到门面 / C=长期例外）；
->   ② 33 条「无 Python 计算」端点尚未迁 TS-DB（现仅 6 条：P0 五条 + 引擎切片）；③ 25 条只读引擎切片仅完成 1 条。
+>   ② 「无 Python 计算」的 33 条**指 quotes/trade-docs 域的 proxy-mount 端点**（quotations/pricing-data/fx-rates/tax-archives/external-docs/clause-templates/product-tax-rates…），
+>      **不含** orders/customers/teams（那三域自 phase-2 起就是门面直连，别再去"迁移"它们）；③ 25 条只读引擎切片仅完成 1 条。
 > - （历史记录）**17:30–18:05 曾回退**，抓到 3 个问题（详见 P2 文档 §8.5）：
->   ① RPC 走 `/internal/*` 被内核**静态资产层**拦截（405 空体 / GET 回退 index.html；`run_worker_first` 两种改法实测均无效）
+>   ① RPC 走 `/internal/*` 被**入口分流**拦截（405 空体 / GET 回退 index.html；`run_worker_first` 两种改法实测均无效 —— **真因见 P2 §8.5.1：`Default.fetch` 里自己把非 /api 交给 ASSETS**）
 >      ⇒ 已改为 **`POST /api/v1/internal/engine/quote/calculate`**（/api 前缀已验证可达），RPC 返回 200 真实算价；
 >   ② **商业闸门缺失（阻塞项）**：旧路径对未开通 quotes 工位的账号返回 `404 WORKSTATION_NOT_SUBSCRIBED`，新路径直接算出报价
 >      —— 闸门在旧路由层、未随计算入口搬迁。**修法：把闸门提取成 kaas_common 单一函数，新旧入口共用**，
