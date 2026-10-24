@@ -1,0 +1,1183 @@
+{
+  "_comment": "P3 第六批金标：GET /api/v1/export-quote/import/order/template-info。产品集合与产品目录同一份；列并集 = order_template_columns(所选产品)（共享内核）。",
+  "endpoint": {
+    "method": "GET",
+    "path": "/api/v1/export-quote/import/order/template-info",
+    "query_string": "product_keys=field_fence"
+  },
+  "rpc": "/api/v1/internal/engine/quote/order-template-info",
+  "request": {
+    "query": {
+      "product_keys": "field_fence"
+    }
+  },
+  "actor": {
+    "id": 5,
+    "account_type": "customer",
+    "role": "owner",
+    "team_id": 2,
+    "is_tenant_admin": false
+  },
+  "datasets": {
+    "tenant_products": [
+      {
+        "product_key": "field_fence",
+        "spec": {
+          "key": "field_fence",
+          "name": "牛栏网",
+          "name_en": "Field Fence",
+          "name_en_aliases": [],
+          "category_code": "niulanwang",
+          "cost_field": "raw_price",
+          "cost_basis": "pretax",
+          "cost_unit": "CNY/kg",
+          "constants": {
+            "product_name": "牛栏网",
+            "product_name_en": "Field Fence",
+            "surface_treatment": "热镀锌",
+            "surface_treatment_en": "Hot-dip galvanized",
+            "packing": "无包装",
+            "packing_en": "No packing",
+            "wave_add_per_100m": 3,
+            "pi": "3.14159265358979323846"
+          },
+          "axes": [],
+          "variants": [
+            {
+              "name": "coating",
+              "options": [
+                {
+                  "code": "zinc_40",
+                  "name": "热镀锌 40g/㎡",
+                  "raw_price": 4.4,
+                  "zinc_g_m2": 40,
+                  "name_en": "Hot-dip galvanized 40 g/m²"
+                },
+                {
+                  "code": "zinc_200",
+                  "name": "热镀锌 200g/㎡",
+                  "raw_price": 5.6,
+                  "zinc_g_m2": 200,
+                  "name_en": "Hot-dip galvanized 200 g/m²"
+                },
+                {
+                  "code": "zinc_260",
+                  "name": "热镀锌 260g/㎡",
+                  "raw_price": 5.9,
+                  "zinc_g_m2": 260,
+                  "name_en": "Hot-dip galvanized 260 g/m²"
+                },
+                {
+                  "code": "elec_galv",
+                  "name": "电镀锌",
+                  "raw_price": 4.8,
+                  "zinc_g_m2": 0,
+                  "name_en": "Electro-galvanized"
+                },
+                {
+                  "code": "pvc_black",
+                  "name": "PVC涂塑(黑色)",
+                  "raw_price": 6.4,
+                  "zinc_g_m2": 0,
+                  "color": "black",
+                  "name_en": "PVC coated (black)"
+                },
+                {
+                  "code": "pvc_green",
+                  "name": "PVC涂塑(绿色)",
+                  "raw_price": 6.4,
+                  "zinc_g_m2": 0,
+                  "color": "green",
+                  "name_en": "PVC coated (green)"
+                }
+              ],
+              "label": "表面处理",
+              "label_en": "Surface Treatment"
+            },
+            {
+              "name": "wave",
+              "options": [
+                {
+                  "code": "no_wave",
+                  "name": "无波款",
+                  "wave_factor": 0,
+                  "name_en": "Without wave bend"
+                },
+                {
+                  "code": "wave_bend",
+                  "name": "波弯款",
+                  "wave_factor": 1,
+                  "name_en": "With wave bend"
+                }
+              ],
+              "label": "工艺",
+              "label_en": "Wave Bend"
+            }
+          ],
+          "derived": [
+            {
+              "name": "height_mm",
+              "expr": "height_m * 1000",
+              "decimals": null,
+              "integer": false,
+              "label": "网高(mm)",
+              "label_en": "Net Height (mm)",
+              "unit": "mm",
+              "note": "统一到毫米参与重量公式，避免量纲混用。"
+            },
+            {
+              "name": "mesh_cm",
+              "expr": "mesh_mm / 10",
+              "decimals": null,
+              "integer": false,
+              "label": "竖丝间距(cm)",
+              "label_en": "Vertical Wire Spacing (cm)",
+              "unit": "cm",
+              "note": "对外按厘米表述（10cm / 15cm），内部按毫米计算。"
+            },
+            {
+              "name": "wire_count",
+              "expr": "n",
+              "decimals": null,
+              "integer": false,
+              "label": "横丝数(根)",
+              "label_en": "No. of Horizontal Wires",
+              "unit": "根",
+              "note": "牛栏网固定 10 根横丝（径丝），即重量公式中的 n。"
+            },
+            {
+              "name": "roll_dia_cm",
+              "expr": "roll_dia_m * 100",
+              "decimals": null,
+              "integer": false,
+              "label": "卷径(cm)",
+              "label_en": "Roll Diameter (cm)",
+              "unit": "cm",
+              "note": "100 米卷 30cm、50 米卷 25cm，随丝径方案联动。"
+            },
+            {
+              "name": "weight_base_kg",
+              "expr": "0.00617 * roll_len_m * (2*de**2 + (n-2)*dm**2 + dv**2 * (height_mm + (n-1)*50) / mesh_mm)",
+              "decimals": null,
+              "integer": false,
+              "label": "单卷基础净重(kg)",
+              "label_en": "Base Net Weight per Roll (kg)",
+              "unit": "kg",
+              "note": "整卷净重(kg) = 0.00617 × L × [2·d边² + (n−2)·d横² + d竖² × (w + (n−1)×50) / s]；L=卷长(m)，n=横丝根数，w=网高(mm)，s=竖丝间距(mm)，(n−1)×50 为每个铰接结的缠绕余量(mm)。此处的 0.00617 是钢丝截面积→重量的换算系数（含钢密度与圆周率）。"
+            },
+            {
+              "name": "edge_weight_kg",
+              "expr": "0.01234 * roll_len_m * de**2",
+              "decimals": 4,
+              "integer": false,
+              "label": "单卷边丝重(kg)",
+              "label_en": "Edge Wire Weight per Roll (kg)",
+              "unit": "kg",
+              "note": "边丝重量(kg) = 0.01234 × L × d边²（两侧边丝合计，故系数是 0.00617 的两倍）。"
+            },
+            {
+              "name": "wave_add_kg",
+              "expr": "wave_factor * wave_add_per_100m * roll_len_m / 100",
+              "decimals": null,
+              "integer": false,
+              "label": "波弯增重(kg)",
+              "label_en": "Wave Bend Extra Weight (kg)",
+              "unit": "kg",
+              "note": "波弯款按每 100 米增重 3kg 折算：增重 = wave_factor × 3 × 卷长 ÷ 100。无波款 wave_factor=0 故增重为 0；100 米卷 +3kg，50 米卷只 +1.5kg。"
+            },
+            {
+              "name": "weight_per_piece_kg",
+              "expr": "weight_base_kg + wave_add_kg",
+              "decimals": 4,
+              "integer": false,
+              "label": "单卷净重(kg)",
+              "label_en": "Net Weight per Roll (kg)",
+              "unit": "kg",
+              "note": "单卷净重 = 基础净重 + 波弯增重。此处按 4 位小数落定，下游总重由落定值乘卷数，以保证表上「单卷重 × 卷数 = 总重」能对上。"
+            },
+            {
+              "name": "volume_per_piece_m3",
+              "expr": "pi / 4 * roll_dia_m**2 * height_m",
+              "decimals": 4,
+              "integer": false,
+              "label": "单卷净体积(m³)",
+              "label_en": "Net Volume per Roll (m³)",
+              "unit": "m³",
+              "note": "按**实际圆柱体**计：单卷净体积 = π/4 × 卷径² × 网高，即 π × (卷径/2)² × 网高。这是钢材本身的占用体积。"
+            },
+            {
+              "name": "volume_box_per_piece_m3",
+              "expr": "roll_dia_m**2 * height_m",
+              "decimals": 4,
+              "integer": false,
+              "label": "单卷长方体体积(m³)",
+              "label_en": "Box Volume per Roll (m³)",
+              "unit": "m³",
+              "note": "按**外接长方体**计：单卷长方体体积 = 卷径² × 网高（把卷看作以卷径为边长的方柱）。堆码/报运价用这个口径。"
+            }
+          ],
+          "space_deduction": {
+            "mode": "ratio",
+            "value": "0.04",
+            "range": null,
+            "expr": "",
+            "note": "实际占用体积 = 长方体累计总体积 × (1 − 扣减比例)，即 × 装柜系数 0.96。扣减的由来是卷与卷之间并非完美网格堆叠，边界余量堆不到满箱。**按比例而非固定 m³**：固定值不随数量缩放，小单会算出负体积。取值来源：**企微智能表格「客户询盘跟进表 → 明细表」实测值** —— 21 行数据里「装柜系数」全部为 0.96（即扣减 4%）。与工厂经验也对得上：满柜（约 630 卷、长方体约 68 m³）按 4% 扣 2.72 m³，正落在「满柜减 2~3 m³」区间内。"
+          },
+          "piece_metrics": [
+            {
+              "name": "price_per_piece",
+              "expr": "main_price_incl if terms_enabled else unit_price * weight_per_piece_kg",
+              "decimals": 2,
+              "integer": false,
+              "label": "单卷售价(元/卷)",
+              "label_en": "Price per Roll (CNY)",
+              "unit": "元/卷",
+              "note": "单卷售价 = 单价(元/kg) × 单卷净重。启用贸易术语时取主术语（含税）单件价，否则取 EXW 价链输出。"
+            },
+            {
+              "name": "price_per_meter",
+              "expr": "price_per_piece / roll_len_m",
+              "decimals": 4,
+              "integer": false,
+              "label": "单价(元/米)",
+              "label_en": "Unit Price (CNY/m)",
+              "unit": "元/米",
+              "note": "每米价 = 单卷售价 ÷ 卷长。与单卷价同源，因此「每米价 × 总米数」与「单卷价 × 卷数」必然相等。"
+            },
+            {
+              "name": "price_per_piece_fx",
+              "expr": "price_per_piece / fx_rate",
+              "decimals": 4,
+              "integer": false,
+              "label": "单卷美元售价(USD/卷)",
+              "label_en": "Price per Roll (USD/roll)",
+              "unit": "USD/卷",
+              "note": "外币价由**已展示的人民币单卷价**除以汇率得到，保证客户拿表上数字复算一致。"
+            }
+          ],
+          "order_metrics": [
+            {
+              "name": "pieces",
+              "expr": "total / roll_len_m",
+              "decimals": 0,
+              "integer": true,
+              "label": "卷数",
+              "label_en": "Rolls",
+              "unit": "卷",
+              "note": "卷数 = 订单总长度 ÷ 每卷长度。全丝2.5 每卷 50 米、其余每卷 100 米，故卷数随丝径方案变化。"
+            },
+            {
+              "name": "total_net_weight_kg",
+              "expr": "pieces * weight_per_piece_kg",
+              "decimals": 4,
+              "integer": false,
+              "label": "总净重(kg)",
+              "label_en": "Total Net Weight (kg)",
+              "unit": "kg",
+              "note": "总净重 = 单卷净重（落定值）× 卷数。"
+            },
+            {
+              "name": "volume_box_m3",
+              "expr": "pieces * volume_box_per_piece_m3",
+              "decimals": 4,
+              "integer": false,
+              "label": "长方体总体积(m³)",
+              "label_en": "Total Box Volume (m³)",
+              "unit": "m³",
+              "note": "长方体总体积 = 单卷**外接长方体**体积（落定值）× 卷数，即全部卷按方柱直接累加、**尚未扣减**的体积。"
+            },
+            {
+              "name": "volume_effective_m3",
+              "expr": "volume_box_m3 * (1 - space_deduction_ratio) - space_deduction",
+              "decimals": 4,
+              "integer": false,
+              "label": "实际占用体积(m³)",
+              "label_en": "Effective Occupied Volume (m³)",
+              "unit": "m³",
+              "note": "实际占用体积 = 长方体总体积 × (1 − 扣减比例) − 固定扣减。本项目只按比例扣 4%（装柜系数 0.96），固定扣减为 0。这是对外报运价/报关用的体积，与「长方体总体积」是两个口径，不要把未扣减的总体积报给货代。"
+            },
+            {
+              "name": "total_price",
+              "expr": "pieces * price_per_piece",
+              "decimals": 2,
+              "integer": false,
+              "label": "总售价(元)",
+              "label_en": "Total Price (CNY)",
+              "unit": "元",
+              "note": "总售价 = 单卷售价 × 卷数，严格满足「单价 × 数量 = 总价」。"
+            },
+            {
+              "name": "total_price_fx",
+              "expr": "pieces * price_per_piece_fx",
+              "decimals": 4,
+              "integer": false,
+              "label": "总美元售价(USD)",
+              "label_en": "Total Price (USD)",
+              "unit": "USD",
+              "note": "总美元售价 = 单卷美元售价 × 卷数。"
+            }
+          ],
+          "columns": [
+            {
+              "key": "index",
+              "label": "序号",
+              "label_en": "No.",
+              "decimals": 0,
+              "internal": false,
+              "width": 6
+            },
+            {
+              "key": "spec.product_name",
+              "label": "产品",
+              "label_en": "Product",
+              "decimals": null,
+              "internal": false,
+              "width": 10
+            },
+            {
+              "key": "spec.height_m",
+              "label": "网高(m)",
+              "label_en": "Net Height (m)",
+              "decimals": null,
+              "internal": false,
+              "width": 10
+            },
+            {
+              "key": "derived.mesh_cm",
+              "label": "竖丝间距(cm)",
+              "label_en": "Vertical Wire Spacing (cm)",
+              "decimals": null,
+              "internal": false,
+              "width": 14
+            },
+            {
+              "key": "derived.wire_count",
+              "label": "横丝数(根)",
+              "label_en": "No. of Horizontal Wires",
+              "decimals": null,
+              "internal": false,
+              "width": 12
+            },
+            {
+              "key": "spec.de",
+              "label": "边丝径(mm)",
+              "label_en": "Edge Wire Dia. (mm)",
+              "decimals": 1,
+              "internal": false,
+              "width": 12
+            },
+            {
+              "key": "spec.dm",
+              "label": "内横丝径(mm)",
+              "label_en": "Inner Horizontal Wire Dia. (mm)",
+              "decimals": 1,
+              "internal": false,
+              "width": 15
+            },
+            {
+              "key": "spec.dv",
+              "label": "竖丝径(mm)",
+              "label_en": "Vertical Wire Dia. (mm)",
+              "decimals": 1,
+              "internal": false,
+              "width": 12
+            },
+            {
+              "key": "spec.wave",
+              "label": "工艺",
+              "label_en": "Wave Bend",
+              "decimals": null,
+              "internal": false,
+              "width": 10
+            },
+            {
+              "key": "spec.coating",
+              "label": "表面处理",
+              "label_en": "Surface Treatment",
+              "decimals": null,
+              "internal": false,
+              "width": 18
+            },
+            {
+              "key": "spec.packing",
+              "label": "包装",
+              "label_en": "Packing",
+              "decimals": null,
+              "internal": false,
+              "width": 10
+            },
+            {
+              "key": "spec.roll_len_m",
+              "label": "卷长(m/卷)",
+              "label_en": "Roll Length (m/roll)",
+              "decimals": null,
+              "internal": false,
+              "width": 12
+            },
+            {
+              "key": "derived.roll_dia_cm",
+              "label": "卷径(cm)",
+              "label_en": "Roll Diameter (cm)",
+              "decimals": null,
+              "internal": false,
+              "width": 11
+            },
+            {
+              "key": "derived.edge_weight_kg",
+              "label": "单卷边丝重(kg)",
+              "label_en": "Edge Wire Weight per Roll (kg)",
+              "decimals": 4,
+              "internal": false,
+              "width": 15
+            },
+            {
+              "key": "derived.weight_per_piece_kg",
+              "label": "单卷净重(kg)",
+              "label_en": "Net Weight per Roll (kg)",
+              "decimals": 4,
+              "internal": false,
+              "width": 14
+            },
+            {
+              "key": "derived.volume_per_piece_m3",
+              "label": "单卷净体积(m³)",
+              "label_en": "Net Volume per Roll (m³)",
+              "decimals": 4,
+              "internal": false,
+              "width": 15
+            },
+            {
+              "key": "derived.volume_box_per_piece_m3",
+              "label": "单卷长方体体积(m³)",
+              "label_en": "Box Volume per Roll (m³)",
+              "decimals": 4,
+              "internal": false,
+              "width": 16
+            },
+            {
+              "key": "piece.price_per_piece",
+              "label": "单卷售价(元/卷)",
+              "label_en": "Price per Roll (CNY)",
+              "decimals": 2,
+              "internal": false,
+              "width": 14
+            },
+            {
+              "key": "piece.price_per_meter",
+              "label": "单价(元/米)",
+              "label_en": "Unit Price (CNY/m)",
+              "decimals": 4,
+              "internal": false,
+              "width": 12
+            },
+            {
+              "key": "piece.price_per_piece_fx",
+              "label": "单卷美元售价(USD/卷)",
+              "label_en": "Price per Roll (USD/roll)",
+              "decimals": 4,
+              "internal": false,
+              "width": 16
+            },
+            {
+              "key": "price.cost_pretax",
+              "label": "税前成本(元/kg)",
+              "label_en": null,
+              "decimals": 4,
+              "internal": true,
+              "width": 14
+            },
+            {
+              "key": "price.cost_incl",
+              "label": "含税采购价(元/kg)",
+              "label_en": null,
+              "decimals": 4,
+              "internal": true,
+              "width": 16
+            },
+            {
+              "key": "price.profit_amount",
+              "label": "加工利润(元/kg)",
+              "label_en": null,
+              "decimals": 4,
+              "internal": true,
+              "width": 14
+            },
+            {
+              "key": "price.pretax_quote",
+              "label": "税前报价(元/kg)",
+              "label_en": null,
+              "decimals": 4,
+              "internal": true,
+              "width": 14
+            },
+            {
+              "key": "price.base_quote",
+              "label": "基础报价(元/kg)",
+              "label_en": null,
+              "decimals": 4,
+              "internal": true,
+              "width": 14
+            },
+            {
+              "key": "price.input_vat",
+              "label": "进项税额(元/kg)",
+              "label_en": null,
+              "decimals": 4,
+              "internal": true,
+              "width": 14
+            },
+            {
+              "key": "price.refund_ratio_used",
+              "label": "可退税比例",
+              "label_en": null,
+              "decimals": 6,
+              "internal": true,
+              "width": 12
+            },
+            {
+              "key": "price.refundable_input_vat",
+              "label": "可退进项增值税税额(元/kg)",
+              "label_en": null,
+              "decimals": 4,
+              "internal": true,
+              "width": 20
+            },
+            {
+              "key": "price.non_refundable_input_vat",
+              "label": "不可退进项税额(元/kg)",
+              "label_en": null,
+              "decimals": 4,
+              "internal": true,
+              "width": 18
+            },
+            {
+              "key": "price.give_amount",
+              "label": "让利额(元/kg)",
+              "label_en": null,
+              "decimals": 4,
+              "internal": true,
+              "width": 13
+            },
+            {
+              "key": "price.retained_refundable",
+              "label": "自留可退税额(元/kg)",
+              "label_en": null,
+              "decimals": 4,
+              "internal": true,
+              "width": 17
+            },
+            {
+              "key": "price.stamp_duty",
+              "label": "综合税费(元/kg)",
+              "label_en": null,
+              "decimals": 4,
+              "internal": true,
+              "width": 13
+            },
+            {
+              "key": "price.quote_excl_vat",
+              "label": "不含税售价(元/kg)",
+              "label_en": null,
+              "decimals": 4,
+              "internal": true,
+              "width": 16
+            },
+            {
+              "key": "price.output_vat_rate_used",
+              "label": "销项税率",
+              "label_en": null,
+              "decimals": 4,
+              "internal": true,
+              "width": 10
+            },
+            {
+              "key": "price.output_vat",
+              "label": "销项税额(元/kg)",
+              "label_en": null,
+              "decimals": 4,
+              "internal": true,
+              "width": 14
+            },
+            {
+              "key": "price.quote_incl_vat",
+              "label": "含税售价(元/kg)",
+              "label_en": null,
+              "decimals": 4,
+              "internal": true,
+              "width": 15
+            },
+            {
+              "key": "price.vat_payable",
+              "label": "应缴增值税(元/kg)",
+              "label_en": null,
+              "decimals": 4,
+              "internal": true,
+              "width": 15
+            },
+            {
+              "key": "price.refund_receivable",
+              "label": "可退/留抵税额(元/kg)",
+              "label_en": null,
+              "decimals": 4,
+              "internal": true,
+              "width": 17
+            }
+          ],
+          "invariants": [
+            {
+              "name": "总价 = 单件价 × 件数",
+              "expr": "total_price == round(pieces * price_per_piece, 2)",
+              "severity": "error"
+            },
+            {
+              "name": "总价 = 每米价 × 总米数",
+              "expr": "total_price == round(price_per_meter * total, 2)",
+              "severity": "error"
+            },
+            {
+              "name": "总重 = 单卷重 × 卷数",
+              "expr": "total_net_weight_kg == round(pieces * weight_per_piece_kg, 4)",
+              "severity": "error"
+            },
+            {
+              "name": "长方体总体积 = 单卷长方体体积 × 卷数",
+              "expr": "volume_box_m3 == round(pieces * volume_box_per_piece_m3, 4)",
+              "severity": "error"
+            },
+            {
+              "name": "单卷净体积 = π/4 × 卷径² × 网高（圆柱体）",
+              "expr": "volume_per_piece_m3 == round(pi / 4 * roll_dia_m**2 * height_m, 4)",
+              "severity": "error"
+            },
+            {
+              "name": "单卷长方体体积 = 卷径² × 网高（外接方柱）",
+              "expr": "volume_box_per_piece_m3 == round(roll_dia_m**2 * height_m, 4)",
+              "severity": "error"
+            },
+            {
+              "name": "实际占用 = 总体积 × 装柜系数",
+              "expr": "volume_effective_m3 == round(volume_box_m3 * (1 - space_deduction_ratio) - space_deduction, 4)",
+              "severity": "error"
+            },
+            {
+              "name": "总外币价 = 单卷外币价 × 卷数",
+              "expr": "total_price_fx == round(pieces * price_per_piece_fx, 4)",
+              "severity": "error"
+            },
+            {
+              "name": "单卷外币价 = 人民币价 ÷ 汇率",
+              "expr": "price_per_piece_fx == round(price_per_piece / fx_rate, 4)",
+              "severity": "error"
+            },
+            {
+              "name": "零税率时销项税额为 0",
+              "expr": "output_vat_rate_used != 0 or output_vat == 0",
+              "severity": "error"
+            },
+            {
+              "name": "含税售价 = 不含税售价 + 销项税额",
+              "expr": "quote_incl_vat == round(quote_excl_vat + output_vat, 4)",
+              "severity": "error"
+            },
+            {
+              "name": "进项税额 = 含税采购价 − 税前成本",
+              "expr": "input_vat == round(cost_incl - cost_pretax, 4)",
+              "severity": "error"
+            },
+            {
+              "name": "可退进项增值税税额 = 进项税额 × 可退税比例",
+              "expr": "refundable_input_vat == round(input_vat * refund_ratio_used, 4)",
+              "severity": "error"
+            },
+            {
+              "name": "不可退进项税额 = 进项税额 − 可退进项增值税税额",
+              "expr": "non_refundable_input_vat == round(input_vat - refundable_input_vat, 4)",
+              "severity": "error"
+            },
+            {
+              "name": "让利额 = 可退进项增值税税额 × 让利比例",
+              "expr": "give_amount == round(refundable_input_vat * give_ratio, 4)",
+              "severity": "error"
+            },
+            {
+              "name": "自留可退税额 = 可退进项增值税税额 − 让利额",
+              "expr": "retained_refundable == round(refundable_input_vat - give_amount, 4)",
+              "severity": "error"
+            },
+            {
+              "name": "综合税费 = 基础报价 × 综合税费系数（fixed/ratio；margin 模式并入售价分母不单列）",
+              "expr": "profit_mode == 'margin_on_price' or stamp_duty == round(base_quote * misc_fee_rate, 4)",
+              "severity": "error"
+            },
+            {
+              "name": "应缴增值税 = max(0, 销项税额 − 可退进项增值税税额)",
+              "expr": "vat_payable == round(max(0, output_vat - refundable_input_vat), 4)",
+              "severity": "error"
+            },
+            {
+              "name": "可退/留抵 = max(0, 可退进项增值税税额 − 销项税额)",
+              "expr": "vat_carryforward == round(max(0, refundable_input_vat - output_vat), 4)",
+              "severity": "error"
+            },
+            {
+              "name": "不含税售价 = 成本 + 利润 + 不可退进项税额 + 自留可退税额 + 综合税费附加额",
+              "expr": "quote_excl_vat == round(cost_pretax + profit_amount + non_refundable_input_vat + retained_refundable + stamp_duty, 4)",
+              "severity": "error"
+            }
+          ],
+          "params": [
+            [
+              "原材料税前成本",
+              "4.4（普锌）/ 5.6（重镀锌）",
+              "元/kg",
+              "客户给定口径：已含 0.1 元/kg 加工利润，故税前成本为 4.4 / 5.6"
+            ],
+            [
+              "加工利润",
+              0.1,
+              "元/kg",
+              "100 元/t，全表仅计一次"
+            ],
+            [
+              "进项票税点",
+              0.1,
+              "比例",
+              "丝厂开票 10 个点；含税采购价 = 税前成本 ÷ 0.9"
+            ],
+            [
+              "综合税费系数（杂税）",
+              0.03,
+              "比例",
+              "含已并入的印花税；fixed/ratio 按基础报价计征，margin 模式并入售价公式（该值来自税务档案，可覆盖）"
+            ],
+            [
+              "横丝（径丝）根数",
+              "默认 10（可改）",
+              "根",
+              "重量公式中的 n。现在是**自由数值参数**，客户可填任意值"
+            ],
+            [
+              "波弯款增重",
+              3,
+              "kg/100m",
+              "100 米卷 +3kg、50 米卷 +1.5kg"
+            ],
+            [
+              "占用空间扣减比例",
+              "0.04（= 装柜系数 0.96）",
+              "比例",
+              "实际占用 = 长方体总体积 × (1 − 0.04)。按**比例**而非固定 m³ —— 固定值在小单上会算出负体积（实测 < 2314 米时为负）。取值来源：智能表格「明细表」21 行的装柜系数实测值 0.96；与工厂经验一致（满柜约 68 m³ × 4% = 2.72 m³，落在「2~3 m³」内）"
+            ],
+            [
+              "卷径 / 卷长",
+              "默认 30cm / 100m（可改）",
+              "cm / m",
+              "**自由数值参数**，客户按实际装箱填；不再与丝径方案联动"
+            ]
+          ],
+          "piece_inputs": [],
+          "numeric_inputs": [
+            {
+              "key": "de",
+              "label": "边丝径(mm)",
+              "label_en": "Edge Wire Dia. (mm)",
+              "unit": "mm",
+              "ui_unit": "",
+              "ui_scale": 1.0,
+              "default": 2.0,
+              "min_value": 0.3,
+              "max_value": 8,
+              "decimals": 2,
+              "unit_factors": null,
+              "note": "两侧边丝直径，重量公式里的 d边。"
+            },
+            {
+              "key": "dm",
+              "label": "内横丝径(mm)",
+              "label_en": "Inner Horizontal Wire Dia. (mm)",
+              "unit": "mm",
+              "ui_unit": "",
+              "ui_scale": 1.0,
+              "default": 2.0,
+              "min_value": 0.3,
+              "max_value": 8,
+              "decimals": 2,
+              "unit_factors": null,
+              "note": "内横丝（径丝）直径，重量公式里的 d横。"
+            },
+            {
+              "key": "dv",
+              "label": "竖丝径(mm)",
+              "label_en": "Vertical Wire Dia. (mm)",
+              "unit": "mm",
+              "ui_unit": "",
+              "ui_scale": 1.0,
+              "default": 2.0,
+              "min_value": 0.3,
+              "max_value": 8,
+              "decimals": 2,
+              "unit_factors": null,
+              "note": "竖丝直径，重量公式里的 d竖。"
+            },
+            {
+              "key": "height_m",
+              "label": "网高(m)",
+              "label_en": "Net Height (m)",
+              "unit": "m",
+              "ui_unit": "",
+              "ui_scale": 1.0,
+              "default": 1.2,
+              "min_value": 0.3,
+              "max_value": 3,
+              "decimals": 2,
+              "unit_factors": null,
+              "note": "网高；体积口径按它算。"
+            },
+            {
+              "key": "mesh_mm",
+              "label": "竖丝间距(mm)",
+              "label_en": "Vertical Wire Spacing (mm)",
+              "unit": "mm",
+              "ui_unit": "",
+              "ui_scale": 1.0,
+              "default": 100,
+              "min_value": 10,
+              "max_value": 1000,
+              "decimals": null,
+              "unit_factors": null,
+              "note": "对外按厘米表述（10cm/15cm），内部按毫米参与公式。"
+            },
+            {
+              "key": "n",
+              "label": "横丝根数",
+              "label_en": "No. of Horizontal Wires",
+              "unit": "根",
+              "ui_unit": "",
+              "ui_scale": 1.0,
+              "default": 10,
+              "min_value": 2,
+              "max_value": 100,
+              "decimals": null,
+              "unit_factors": null,
+              "note": "重量公式里的 n。默认 10 根。"
+            },
+            {
+              "key": "roll_len_m",
+              "label": "卷长(m)",
+              "label_en": "Roll Length (m)",
+              "unit": "m",
+              "ui_unit": "",
+              "ui_scale": 1.0,
+              "default": 100,
+              "min_value": 1,
+              "max_value": 1000,
+              "decimals": null,
+              "unit_factors": null,
+              "note": "每卷多少米，直接进重量公式。"
+            },
+            {
+              "key": "roll_dia_m",
+              "label": "卷径",
+              "label_en": "Roll Diameter",
+              "unit": "m",
+              "ui_unit": "公分",
+              "ui_scale": 100,
+              "default": 0.3,
+              "min_value": 0.05,
+              "max_value": 2,
+              "decimals": null,
+              "unit_factors": null,
+              "note": "决定体积（π/4 × 卷径² × 网高），是对外报运价/报关的口径。"
+            }
+          ],
+          "pricing_key": [
+            {
+              "field": "de",
+              "label": "边丝径",
+              "unit": "mm"
+            },
+            {
+              "field": "coating_code",
+              "label": "镀锌量",
+              "label_field": "coating"
+            }
+          ],
+          "notes": [
+            "1. 整卷净重(kg) = 0.00617 × L × [2·d边² + (n−2)·d横² + d竖² × (w + (n−1)×50) / s]；L=卷长(m)，n=横丝根数，w=网高(mm)，s=竖丝间距(mm)，(n−1)×50 为铰接结每道缠绕余量(mm)。",
+            "2. 边丝重量(kg) = 0.01234 × L × d边²（两侧边丝合计）。",
+            "3. 波弯款在无波款基础上每 100 米增加 3kg。",
+            "4. 体积分两个口径：**单卷净体积**按实际圆柱体计 = π/4 × 卷径² × 网高；**单卷长方体体积**按外接方柱计 = 卷径² × 网高。总实际占用体积 = 长方体体积 × 卷数 × 装柜系数 0.96（= 1 − 4%），这是对外报运价/报关用的口径。按比例而不是固定扣减：发得越少扣得越少，也不会出现负体积。",
+            "5. 卷径与卷长是**自由数值**（默认 30cm / 100m），客户按实际装箱填，不再与丝径方案联动 —— 丝径同样是自由值，不是「方案」。",
+            "5. 销项增值税为价外税：税额 = 不含税售价 × 销项税率（基数是售价，不是成本）。出口零税率时税额为 0。",
+            "6. 退税退的是进项增值税额；可退进项增值税税额 = 进项税额 × (出口退税率 ÷ 征税率)，差额为不可退进项税额，属实际成本。",
+            "7. 单卷售价 = 单价 × 单卷净重；总售价 = 单卷售价 × 卷数；严格满足 单价 × 数量 = 总价。",
+            "8. 表面处理均为热镀锌，包装均为无包装，网孔分布均为拧编型上疏下密（横丝间距上疏下密，不参与重量与计价）。"
+          ],
+          "hs_codes": [
+            "7314410000"
+          ],
+          "profit_mode": "margin_on_price",
+          "profit_value": 0.06,
+          "misc_fee_rate": 0.03,
+          "packaging": []
+        },
+        "team_id": 2
+      }
+    ],
+    "tenant_workstation_products": [
+      {
+        "product_key": "chain_link"
+      }
+    ],
+    "product_profiles": [
+      {
+        "product_key": "field_fence",
+        "info": {
+          "name_en_list": [
+            "Field Fence",
+            "Fence Panel"
+          ]
+        }
+      }
+    ]
+  },
+  "old_sql": [
+    {
+      "sql": "SELECT product_key, spec, team_id FROM tenant_products WHERE tenant_id=$1 AND is_active",
+      "params": [
+        "default"
+      ]
+    },
+    {
+      "sql": "SELECT product_key FROM tenant_workstation_products WHERE tenant_id=$1 AND workstation='quote' AND is_enabled=false AND (team_id IS NULL OR team_id=$2)",
+      "params": [
+        "default",
+        2
+      ]
+    },
+    {
+      "sql": "SELECT product_key, info FROM product_profiles WHERE tenant_id=$1 AND team_id=$2 ORDER BY updated_at DESC",
+      "params": [
+        "default",
+        2
+      ]
+    }
+  ],
+  "facade": {
+    "tenant_products": {
+      "sql": "SELECT product_key, spec, team_id FROM tenant_products WHERE tenant_id=$1 AND is_active",
+      "params": [
+        "default"
+      ]
+    },
+    "tenant_workstation_products": {
+      "sql": "SELECT product_key FROM tenant_workstation_products WHERE tenant_id=$1 AND workstation='quote' AND is_enabled=false AND (team_id IS NULL OR team_id=$2)",
+      "params": [
+        "default",
+        2
+      ]
+    },
+    "product_profiles": {
+      "sql": "SELECT product_key, info FROM product_profiles WHERE tenant_id=$1 AND team_id=$2 ORDER BY updated_at DESC",
+      "params": [
+        "default",
+        2
+      ]
+    }
+  },
+  "response": {
+    "product_keys": [
+      "field_fence"
+    ],
+    "headers": [
+      "产品",
+      "件数（卷）",
+      "成本",
+      "成本口径（含税/不含税）",
+      "包装方式",
+      "本行利润率（%）",
+      "网高(m)",
+      "竖丝间距(cm)",
+      "边丝径(mm)",
+      "内横丝径(mm)",
+      "竖丝径(mm)",
+      "工艺",
+      "表面处理",
+      "卷长(m/卷)",
+      "卷径(cm)",
+      "横丝根数"
+    ],
+    "columns": [
+      {
+        "header": "产品",
+        "kind": "common",
+        "products": [],
+        "unit": "",
+        "options": [],
+        "note": "必填。填产品中文名 / 任一英文名，或产品 key（不是规格列）"
+      },
+      {
+        "header": "件数（卷）",
+        "kind": "common",
+        "products": [],
+        "unit": "",
+        "options": [],
+        "note": "必填。该行产品的件数（卷），必须大于 0"
+      },
+      {
+        "header": "成本",
+        "kind": "common",
+        "products": [],
+        "unit": "",
+        "options": [],
+        "note": "必填。该行产品的单卷成本，口径见「成本口径」列"
+      },
+      {
+        "header": "成本口径（含税/不含税）",
+        "kind": "common",
+        "products": [],
+        "unit": "",
+        "options": [
+          "不含税",
+          "含税"
+        ],
+        "note": "可留空，默认「不含税」（pretax）"
+      },
+      {
+        "header": "包装方式",
+        "kind": "common",
+        "products": [],
+        "unit": "",
+        "options": [],
+        "note": "可留空 = 用产品默认包装；按产品 packaging[].method 匹配"
+      },
+      {
+        "header": "本行利润率（%）",
+        "kind": "common",
+        "products": [],
+        "unit": "",
+        "options": [],
+        "note": "可留空 = 继承整单默认利润率"
+      },
+      {
+        "header": "网高(m)",
+        "kind": "spec",
+        "products": [
+          "牛栏网"
+        ],
+        "unit": "m",
+        "options": [],
+        "note": "网高；体积口径按它算。"
+      },
+      {
+        "header": "竖丝间距(cm)",
+        "kind": "spec",
+        "products": [
+          "牛栏网"
+        ],
+        "unit": "cm",
+        "options": [],
+        "note": "对外按厘米表述（10cm/15cm），内部按毫米参与公式。"
+      },
+      {
+        "header": "边丝径(mm)",
+        "kind": "spec",
+        "products": [
+          "牛栏网"
+        ],
+        "unit": "mm",
+        "options": [],
+        "note": "两侧边丝直径，重量公式里的 d边。"
+      },
+      {
+        "header": "内横丝径(mm)",
+        "kind": "spec",
+        "products": [
+          "牛栏网"
+        ],
+        "unit": "mm",
+        "options": [],
+        "note": "内横丝（径丝）直径，重量公式里的 d横。"
+      },
+      {
+        "header": "竖丝径(mm)",
+        "kind": "spec",
+        "products": [
+          "牛栏网"
+        ],
+        "unit": "mm",
+        "options": [],
+        "note": "竖丝直径，重量公式里的 d竖。"
+      },
+      {
+        "header": "工艺",
+        "kind": "spec",
+        "products": [
+          "牛栏网"
+        ],
+        "unit": "",
+        "options": [
+          "无波款",
+          "波弯款"
+        ],
+        "note": "工艺"
+      },
+      {
+        "header": "表面处理",
+        "kind": "spec",
+        "products": [
+          "牛栏网"
+        ],
+        "unit": "",
+        "options": [
+          "热镀锌 40g/㎡",
+          "热镀锌 200g/㎡",
+          "热镀锌 260g/㎡",
+          "电镀锌",
+          "PVC涂塑(黑色)",
+          "PVC涂塑(绿色)"
+        ],
+        "note": "表面处理"
+      },
+      {
+        "header": "卷长(m/卷)",
+        "kind": "spec",
+        "products": [
+          "牛栏网"
+        ],
+        "unit": "m",
+        "options": [],
+        "note": "每卷多少米，直接进重量公式。"
+      },
+      {
+        "header": "卷径(cm)",
+        "kind": "spec",
+        "products": [
+          "牛栏网"
+        ],
+        "unit": "cm",
+        "options": [],
+        "note": "决定体积（π/4 × 卷径² × 网高），是对外报运价/报关的口径。"
+      },
+      {
+        "header": "横丝根数",
+        "kind": "spec",
+        "products": [
+          "牛栏网"
+        ],
+        "unit": "根",
+        "options": [],
+        "note": "重量公式里的 n。默认 10 根。"
+      }
+    ],
+    "max_rows": 2000,
+    "max_mb": 2,
+    "data_sheet": "整单表",
+    "notes": [
+      "一行 = 订单里的一个产品行；「产品」列填产品中文名 / 任一英文名，或 key。",
+      "规格列 = 所选产品模板列的并集：某行的产品用不上的列留空即可。",
+      "「成本口径」可留空（默认不含税）；「包装方式」留空 = 用产品默认包装；「本行利润率（%）」留空 = 继承整单默认。",
+      "表头请逐字照用（导入器按列名识别，别加 *、别换单位）。"
+    ]
+  }
+}

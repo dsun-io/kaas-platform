@@ -1,0 +1,286 @@
+{
+  "_comment": "P3 第五批切片金标（docs/P2_COUPLING_ENGINE_2026-10-24.md §6/§8）：GET /api/v1/trade-docs（列表）。由 gen_engine_trade_docs_read_fixtures.py 用内核旧路径真实跑一遍生成：response = 旧路径真实响应体；old_sql = 旧路径实际执行的 SQL 与绑定参数（按执行顺序，含逐行的链路更晚单证检查 N 次）；facade = 门面供数契约；datasets = 门面下发给内核的行。两侧测试共用本文件。时间戳同时覆盖零微秒（11 的 issued_at/updated_at、12 的 created_at）与非零微秒。",
+  "endpoint": {
+    "method": "GET",
+    "path": "/api/v1/trade-docs",
+    "query_string": "doc_type=packing_list&status=issued"
+  },
+  "rpc": "/api/v1/internal/engine/trade-docs/list",
+  "request": {
+    "query": {
+      "doc_type": "packing_list",
+      "status": "issued",
+      "order_id": null,
+      "page": null,
+      "page_size": null
+    }
+  },
+  "actor": {
+    "id": 5,
+    "account_type": "customer",
+    "role": "owner",
+    "team_id": 2,
+    "is_tenant_admin": false
+  },
+  "datasets": {
+    "trade_docs_total": [
+      {
+        "count": 2
+      }
+    ],
+    "trade_docs": [
+      {
+        "id": 11,
+        "tenant_id": "default",
+        "doc_no": "PACKING-US-ACME-20261020000001",
+        "doc_type": "packing_list",
+        "order_id": 21,
+        "customer_id": 3,
+        "quote_id": null,
+        "status": "issued",
+        "currency": "USD",
+        "total_amount": 100.0,
+        "issued_at": "2026-10-21T08:00:00+00:00",
+        "issued_by": "5",
+        "raw_payload": {
+          "sources": {
+            "order": {
+              "order_no": "ORD-US-ACME-20261019",
+              "customer_name": "ACME 贸易"
+            }
+          },
+          "custom": {
+            "shipping_marks": "N/M",
+            "incoterm": "FOB"
+          }
+        },
+        "owner_id": "5",
+        "owner_scope": "private",
+        "team_id": 2,
+        "with_seal": true,
+        "created_at": "2026-10-20T10:00:00.123456+00:00",
+        "updated_at": "2026-10-19T09:00:00+00:00"
+      },
+      {
+        "id": 12,
+        "tenant_id": "default",
+        "doc_no": "PACKING-US-ACME-20261019000002",
+        "doc_type": "packing_list",
+        "order_id": 21,
+        "customer_id": 3,
+        "quote_id": null,
+        "status": "issued",
+        "currency": "USD",
+        "total_amount": 250.5,
+        "issued_at": "2026-10-20T10:30:00.987654+00:00",
+        "issued_by": "9",
+        "raw_payload": null,
+        "owner_id": "9",
+        "owner_scope": "tenant",
+        "team_id": 3,
+        "with_seal": false,
+        "created_at": "2026-10-19T09:00:00+00:00",
+        "updated_at": "2026-10-20T10:00:00.123456+00:00"
+      }
+    ],
+    "later_docs": [
+      {
+        "doc_id": 11
+      }
+    ],
+    "render_checks": [
+      {
+        "trade_doc_id": 11,
+        "matches": false,
+        "reason": "data_changed",
+        "render_version_drift": true,
+        "checked_at": "2026-10-20T10:00:00.123456+00:00"
+      }
+    ]
+  },
+  "old_sql": [
+    {
+      "sql": "SELECT COUNT(*) FROM trade_docs WHERE tenant_id = $1 AND doc_type = $2 AND status = $3 AND (team_id = $4 OR owner_id = $5 OR owner_scope = 'tenant')",
+      "params": [
+        "default",
+        "packing_list",
+        "issued",
+        2,
+        "5"
+      ]
+    },
+    {
+      "sql": "SELECT * FROM trade_docs WHERE tenant_id = $1 AND doc_type = $2 AND status = $3 AND (team_id = $4 OR owner_id = $5 OR owner_scope = 'tenant') ORDER BY created_at DESC, id DESC LIMIT $6 OFFSET $7",
+      "params": [
+        "default",
+        "packing_list",
+        "issued",
+        2,
+        "5",
+        20,
+        0
+      ]
+    },
+    {
+      "sql": "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND order_id=$2 AND id>$3 LIMIT 1",
+      "params": [
+        "default",
+        21,
+        11
+      ]
+    },
+    {
+      "sql": "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND order_id=$2 AND id>$3 LIMIT 1",
+      "params": [
+        "default",
+        21,
+        12
+      ]
+    },
+    {
+      "sql": "SELECT trade_doc_id, matches, reason, render_version_drift, checked_at FROM trade_doc_render_checks WHERE tenant_id=$1 AND trade_doc_id = ANY($2::bigint[])",
+      "params": [
+        "default",
+        [
+          11,
+          12
+        ]
+      ]
+    }
+  ],
+  "facade": {
+    "trade_docs_total": {
+      "sql": "SELECT COUNT(*) AS count FROM trade_docs WHERE tenant_id = $1 AND doc_type = $2 AND status = $3 AND (team_id = $4 OR owner_id = $5 OR owner_scope = 'tenant')",
+      "params": [
+        "default",
+        "packing_list",
+        "issued",
+        2,
+        "5"
+      ]
+    },
+    "trade_docs": {
+      "columns": "id, tenant_id, doc_no, doc_type, order_id, customer_id, quote_id, status, currency, total_amount, CASE WHEN to_char(issued_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS issued_at, issued_by, raw_payload, owner_id, owner_scope, team_id, with_seal, CASE WHEN to_char(created_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS created_at, CASE WHEN to_char(updated_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS updated_at",
+      "sql": "SELECT id, tenant_id, doc_no, doc_type, order_id, customer_id, quote_id, status, currency, total_amount, CASE WHEN to_char(issued_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS issued_at, issued_by, raw_payload, owner_id, owner_scope, team_id, with_seal, CASE WHEN to_char(created_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS created_at, CASE WHEN to_char(updated_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS updated_at FROM trade_docs WHERE tenant_id = $1 AND doc_type = $2 AND status = $3 AND (team_id = $4 OR owner_id = $5 OR owner_scope = 'tenant') ORDER BY created_at DESC, id DESC LIMIT $6 OFFSET $7",
+      "params": [
+        "default",
+        "packing_list",
+        "issued",
+        2,
+        "5",
+        20,
+        0
+      ]
+    },
+    "later_docs": {
+      "sql": "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND order_id=$2 AND id>$3 LIMIT 1",
+      "params": [
+        "default",
+        21,
+        11
+      ]
+    },
+    "render_checks": {
+      "sql": "SELECT trade_doc_id, matches, reason, render_version_drift, checked_at FROM trade_doc_render_checks WHERE tenant_id=$1 AND trade_doc_id = ANY($2::bigint[])",
+      "params": [
+        "default",
+        [
+          11,
+          12
+        ]
+      ]
+    },
+    "trade_docs_detail": {
+      "columns": "id, tenant_id, doc_no, doc_type, order_id, customer_id, quote_id, status, currency, total_amount, CASE WHEN to_char(issued_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS issued_at, issued_by, raw_payload, owner_id, owner_scope, team_id, with_seal, CASE WHEN to_char(created_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS created_at, CASE WHEN to_char(updated_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS updated_at",
+      "sql": "SELECT id, tenant_id, doc_no, doc_type, order_id, customer_id, quote_id, status, currency, total_amount, CASE WHEN to_char(issued_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS issued_at, issued_by, raw_payload, owner_id, owner_scope, team_id, with_seal, CASE WHEN to_char(created_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS created_at, CASE WHEN to_char(updated_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS updated_at FROM trade_docs WHERE tenant_id = $1 AND id = $2",
+      "params": [
+        "default",
+        11
+      ]
+    },
+    "entity_links": {
+      "sql": "SELECT dst_type, dst_id, rel_type, meta FROM entity_links WHERE tenant_id=$1 AND src_type='trade_doc' AND src_id=$2 AND deleted_at IS NULL ORDER BY id",
+      "params": [
+        "default",
+        11
+      ]
+    },
+    "later_docs_detail": {
+      "sql": "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND order_id=$2 AND id>$3 LIMIT 1",
+      "params": [
+        "default",
+        21,
+        11
+      ]
+    }
+  },
+  "response": {
+    "items": [
+      {
+        "id": 11,
+        "tenant_id": "default",
+        "doc_no": "PACKING-US-ACME-20261020000001",
+        "doc_type": "packing_list",
+        "order_id": 21,
+        "customer_id": 3,
+        "quote_id": null,
+        "status": "issued",
+        "currency": "USD",
+        "total_amount": 100.0,
+        "issued_at": "2026-10-21T08:00:00+00:00",
+        "issued_by": "5",
+        "raw_payload": {
+          "sources": {
+            "order": {
+              "order_no": "ORD-US-ACME-20261019",
+              "customer_name": "ACME 贸易"
+            }
+          },
+          "custom": {
+            "shipping_marks": "N/M",
+            "incoterm": "FOB"
+          }
+        },
+        "owner_id": "5",
+        "owner_scope": "private",
+        "team_id": 2,
+        "with_seal": true,
+        "created_at": "2026-10-20T10:00:00.123456+00:00",
+        "updated_at": "2026-10-19T09:00:00+00:00",
+        "doc_no_editable": false,
+        "render_check": {
+          "matches": false,
+          "reason": "data_changed",
+          "render_version_drift": true,
+          "checked_at": "2026-10-20T10:00:00.123456+00:00"
+        }
+      },
+      {
+        "id": 12,
+        "tenant_id": "default",
+        "doc_no": "PACKING-US-ACME-20261019000002",
+        "doc_type": "packing_list",
+        "order_id": 21,
+        "customer_id": 3,
+        "quote_id": null,
+        "status": "issued",
+        "currency": "USD",
+        "total_amount": 250.5,
+        "issued_at": "2026-10-20T10:30:00.987654+00:00",
+        "issued_by": "9",
+        "raw_payload": null,
+        "owner_id": "9",
+        "owner_scope": "tenant",
+        "team_id": 3,
+        "with_seal": false,
+        "created_at": "2026-10-19T09:00:00+00:00",
+        "updated_at": "2026-10-20T10:00:00.123456+00:00",
+        "doc_no_editable": true,
+        "render_check": null
+      }
+    ],
+    "total": 2,
+    "page": 1,
+    "page_size": 20
+  }
+}

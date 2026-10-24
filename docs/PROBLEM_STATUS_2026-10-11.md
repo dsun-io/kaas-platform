@@ -162,6 +162,14 @@
 > - **线上端到端验证（用户批准种子后）**：给 QA 账号种订阅 + QA 团队后，收费工位直连全部 **200**（inquiries/quotations/tax-archives/external-docs），
 >   render-data 真实返回 404 `DOC_NOT_FOUND`（生产 trade_docs 0 行，属预期）；写路径 403→201 验证团队管理员判定链路；
 > - **门禁**：worker **2029+12skip** / ts-worker **41 文件 650 测** / orchestrator **273**；
+>
+> **第九批（2026-10-24 21:00）**
+> - **fx-rates 放量**（用户拍板 **A：汇率是全局基线表**，不做团队隔离；决策与理由写进 P2 §8.8）；线上 200 返回真实汇率；
+> - **AI 两读 + quotes 两参考读放量**（ai.providers / ai.usage / quotes.reference-price / quotes.cost-reference）：纯 SQL（聚合全在 SQL；30 天中位数在 TS 纯函数逐字镜像）；
+>   AI 两读保持内核同款「平台运营」403（线上实测与内核 `/ai/tasks` 逐字一致）；
+> - **3 条常量目录类留在内核**（ai/tasks、ai/task-bindings、export-quote/terms/template）—— 业务元数据只在内核一处（ADR-008），不做第二份镜像；
+> - **第五批引擎切片**：trade-docs **列表 + 详情**（「逐行更晚单证检查」的 N-query 原样保留、`doc_no_editable`、渲染对账标识 null/false 口径）—— 金标 0 diff + 真库只读核对 PASS（含生产表结构逐列核对）；
+> - **新增 `docs/P3_PASSTHROUGH_DISPOSITION_2026-10-24.md`**：87 条剩余 passthrough 的逐条处置表（可迁 / 方案 A 例外 / 保持 Python），P3 收尾的唯一待办清单；
 > - ⚠️ **事故（已修复，详见 docs/INCIDENT_2026-10-24_COMPANY_PROFILE_OVERWRITE.md）**：写冒烟时误用 `PUT /tenant/company-profile`（整行覆盖语义）清空了生产企业抬头；
 >   已用 **Neon PITR 时间点分支**逐字段精确还原（含 updated_at）+ 删除临时分支；窗口约 1 分钟、无单证受影响。
 > - ~~新安全发现~~ → **已修并放量（见上）**：`/fx-rates` 与 `/external-docs` 内核 SQL **无 tenant/team 谓词**（后者=跨团队元数据可见）⇒ 已登记 P2 §8.8，

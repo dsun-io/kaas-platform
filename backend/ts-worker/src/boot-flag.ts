@@ -65,6 +65,37 @@ export const DIRECT_ROUTE_IDS = {
   taxArchivesList: "tax-archives.list",
   /** GET /api/v1/product-tax-rates —— 产品税率列表（tax_archives.py:372） */
   productTaxRatesList: "product-tax-rates.list",
+  // ── 后续批次（2026-10-24 汇总）：为「直连 route id 的单一清单」补齐 ──────────────
+  // 注：真源模块里部分用本地常量（如 engine.ts 的 ENGINE_ROUTE_IDS），这里只做**清单/类型**登记，
+  // 便于审计「哪些 id 已是直连」；放量仍以 wrangler.jsonc 的 AUTH_DB_SPLIT_ROUTES 为准。
+  /** GET /api/v1/fx-rates —— 汇率（ws_extras.py:163；用户拍板「全局基线表」不按团队隔离） */
+  fxRatesList: "fx-rates.list",
+  /** GET /api/v1/external-docs —— 外部单证列表（ws_extras.py:363，已修跨租隔离） */
+  externalDocsList: "external-docs.list",
+  /** GET /api/v1/trade-docs/{doc_id}/files —— 单证文件链接（ws_files.py:642） */
+  tradeDocsFiles: "trade-docs.files",
+  /** GET /api/v1/ai/providers · /ai/usage —— AI 目录与用量（chain.py; 纯 SQL） */
+  aiProviders: "ai.providers",
+  aiUsage: "ai.usage",
+  /** GET /api/v1/quotes/reference-price · /quotes/cost-reference —— 参考价（quote_api.py） */
+  quotesReferencePrice: "quotes.reference-price",
+  quotesCostReference: "quotes.cost-reference",
+  /** GET /api/v1/quotes · /quotes/{id} —— 报价单列表/详情（引擎切片） */
+  quotesList: "quotes.list",
+  quotesDetail: "quotes.detail",
+  /** GET /api/v1/trade-docs · /trade-docs/{id} —— 单证列表/详情（引擎切片） */
+  tradeDocsList: "trade-docs.list",
+  tradeDocsDetail: "trade-docs.detail",
+  /** GET /api/v1/trade-docs/{id}/render-data —— 单证渲染数据（引擎切片） */
+  tradeDocsRenderData: "trade-docs.render-data",
+  /** GET /api/v1/export-quote/products —— 产品目录（引擎切片；quote_api.py:445） */
+  exportQuoteProducts: "export-quote.products",
+  /** GET /api/v1/quotes/product-name-preference —— 产品名偏好（引擎切片） */
+  quotesProductNamePreference: "quotes.product-name-preference",
+  /** GET /api/v1/export-quote/products/{key}/import-template（JSON 分支，引擎切片） */
+  exportQuoteImportTemplate: "export-quote.import-template",
+  /** GET /api/v1/export-quote/import/order/template-info —— 导入模板列（引擎切片） */
+  exportQuoteOrderTemplateInfo: "export-quote.order-template-info",
 } as const;
 
 export type DirectRouteId = (typeof DIRECT_ROUTE_IDS)[keyof typeof DIRECT_ROUTE_IDS];

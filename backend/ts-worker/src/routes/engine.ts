@@ -12,7 +12,11 @@
  * - POST /api/v1/export-quote/products/{key}/explain  → /internal/engine/quote/explain
  * - GET  /api/v1/trade-docs/{doc_id}/render-data      → /internal/engine/trade-docs/render-data
  * - GET  /api/v1/quotes（列表） / /quotes/{quote_id}（详情） → /internal/engine/quotes/{list|detail}
- * 八条共用**同一份**供数契约与回放逻辑；差异只在「查哪些 dataset + request 段形状」。
+ * - GET  /api/v1/trade-docs（列表） / /trade-docs/{doc_id}（详情） → /internal/engine/trade-docs/{list|detail}
+ * - GET  /api/v1/export-quote/products、/quotes/product-name-preference、
+ *        /export-quote/products/{key}/import-template（JSON 分支）、
+ *        /export-quote/import/order/template-info → /internal/engine/quote/{…}
+ * 十四条共用**同一份**供数契约与回放逻辑；差异只在「查哪些 dataset + request 段形状」。
  *
  * 真源（SQL 谓词 / 排序 / 绑定参数**逐条直译**，禁止顺手"优化"）：
  * - backend/worker/src/quote_api.py  _effective_product_raw 的 tenant_products 查询
@@ -57,6 +61,17 @@ export const ENGINE_TRADE_DOCS_RENDER_DATA_RPC =
 /** 第四批：报价单列表 / 详情（控制台高频读，纯投影）。 */
 export const ENGINE_QUOTES_LIST_RPC = "/api/v1/internal/engine/quotes/list";
 export const ENGINE_QUOTES_DETAIL_RPC = "/api/v1/internal/engine/quotes/detail";
+/** 第五批：单证列表 / 详情（控制台主入口，纯投影）。 */
+export const ENGINE_TRADE_DOCS_LIST_RPC = "/api/v1/internal/engine/trade-docs/list";
+export const ENGINE_TRADE_DOCS_DETAIL_RPC = "/api/v1/internal/engine/trade-docs/detail";
+/** 第六批：4 条「需要内核计算」的只读端点（产品目录 / 产品名偏好 / 模板列定义）。 */
+export const ENGINE_QUOTE_PRODUCTS_RPC = "/api/v1/internal/engine/quote/products";
+export const ENGINE_QUOTE_NAME_PREFERENCE_RPC =
+  "/api/v1/internal/engine/quote/product-name-preference";
+export const ENGINE_QUOTE_IMPORT_TEMPLATE_RPC =
+  "/api/v1/internal/engine/quote/import-template";
+export const ENGINE_QUOTE_ORDER_TEMPLATE_INFO_RPC =
+  "/api/v1/internal/engine/quote/order-template-info";
 
 /**
  * 同族只读切片的路由 id（AUTH_DB_SPLIT_ROUTES 白名单条目，口径 <域>.<端点>）。
@@ -71,6 +86,12 @@ export const ENGINE_ROUTE_IDS = {
   renderData: "trade-docs.render-data",
   quotesList: "quotes.list",
   quotesDetail: "quotes.detail",
+  tradeDocsList: "trade-docs.list",
+  tradeDocsDetail: "trade-docs.detail",
+  products: "export-quote.products",
+  namePreference: "quotes.product-name-preference",
+  importTemplate: "export-quote.import-template",
+  orderTemplateInfo: "export-quote.order-template-info",
 } as const;
 
 /** 与 Python quote_api._PRICING_SEPARATOR 一致：定价数据 spec_hash 的「产品前缀」分隔符。 */
@@ -1146,6 +1167,520 @@ export async function quoteDetailWithKernel(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// 第五批切片：GET /api/v1/trade-docs（列表）+ GET /api/v1/trade-docs/{doc_id}（详情）
+// ══════════════════════════════════════════════════════════════════════════════
+// 设计 = docs/P2_COUPLING_ENGINE_2026-10-24.md §6（契约）/ §8（切片范式）；内核入口
+// POST /api/v1/internal/engine/trade-docs/{list,detail}（engine_api.py）。
+//
+// 真源（SQL 谓词/排序/分页**逐字直译**，禁止顺手优化）：
+// - main.py:5343 list_trade_docs / :5721 get_trade_doc
+// - main.py:_doc_scope_sql（列表作用域谓词）、_require_doc_visible / _doc_visible（读闸门）
+// 与旧路径的**有意差异**（fixture.facade 锁定，语义等价）：
+// - trade_docs 用**显式列**而非 SELECT *：BIGINT/NUMERIC 归一成 number、时间戳用
+//   tsIsoSql 条件式（零微秒无小数，docs §8.9）。postgres.js 的 JS Date 只有毫秒，
+//   直接透传会静默截断微秒；
+// - COUNT(*) 加 AS count（dataset 需要列名）；
+// - 列表的**逐行「链路更晚单证」检查**是旧路径的 N 次查询（quote_id 优先、否则 order_id）：
+//   门面按同一条件逐行发同一条 SQL，只在命中时下发 later_docs 行；
+// - 列表作用域谓词下推（非管理员且**无团队**时旧路径在拼谓词前就 403 NO_TEAM ⇒ 门面
+//   不查库、空供数，由内核同一份判定返回 403）；详情 SQL **没有**作用域谓词 ——
+//   可见性是行级纯判定，门面只按 id 取行、内核 _require_doc_visible 判 404（不泄露存在性）；
+// - 内核行级再判一次 _doc_visible（防御纵深：门面漏滤不会变成越权）。
+
+/** trade_docs 显式列清单（与表结构 19 列一致；时间戳按 Python isoformat 口径转文本）。 */
+export const TRADE_DOC_COLUMNS =
+  "id, tenant_id, doc_no, doc_type, order_id, customer_id, quote_id, status,"
+  + " currency, total_amount, " + tsIsoSql("issued_at") + ", issued_by, raw_payload,"
+  + " owner_id, owner_scope, team_id, with_seal, " + tsIsoSql("created_at")
+  + ", " + tsIsoSql("updated_at");
+
+/** 列表总行数（旧路径 SELECT COUNT(*)；门面多给列名以便下发 dataset）。 */
+export function tradeDocsCountSql(cond: string): string {
+  return "SELECT COUNT(*) AS count FROM trade_docs WHERE " + cond;
+}
+
+/** 列表当前页（排序/分页与旧路径逐字一致；condParamCount = WHERE 参数个数）。 */
+export function tradeDocsListSql(cond: string, condParamCount: number): string {
+  return "SELECT " + TRADE_DOC_COLUMNS + " FROM trade_docs WHERE " + cond
+    + " ORDER BY created_at DESC, id DESC LIMIT $" + String(condParamCount + 1)
+    + " OFFSET $" + String(condParamCount + 2);
+}
+
+/** 详情单头（**无**作用域谓词：可见性由内核行级判定）。 */
+export function tradeDocsDetailSql(cond: string): string {
+  return "SELECT " + TRADE_DOC_COLUMNS + " FROM trade_docs WHERE " + cond;
+}
+
+/** 列表/详情共用的「链路更晚单证」检查（两条与旧路径逐字一致，按行数据二选一）。 */
+export const TRADE_DOC_LATER_QUOTE_SQL =
+  "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND quote_id=$2 AND id>$3 LIMIT 1";
+export const TRADE_DOC_LATER_ORDER_SQL =
+  "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND order_id=$2 AND id>$3 LIMIT 1";
+
+/** 列表：定时对账结论（ANY 批量；无记录 = 从未巡到 ⇒ null）。 */
+export const TRADE_DOC_CHECKS_SQL =
+  "SELECT trade_doc_id, matches, reason, render_version_drift, checked_at"
+  + " FROM trade_doc_render_checks WHERE tenant_id=$1"
+  + " AND trade_doc_id = ANY($2::bigint[])";
+
+/** 详情：上游 refs（列优先 + entity_links 兜底；与 main._doc_upstream_links 同义）。 */
+export const TRADE_DOC_LINKS_SQL =
+  "SELECT dst_type, dst_id, rel_type, meta FROM entity_links"
+  + " WHERE tenant_id=$1 AND src_type='trade_doc' AND src_id=$2"
+  + " AND deleted_at IS NULL ORDER BY id";
+
+/**
+ * internal 账号（含非管理员）或平台管理员 —— main._internal_or_platform_admin 逐字直译。
+ *
+ * 单证域的可见性口径比 quotes 宽：internal 非管理员也能跨团队看（与 D1 同源），
+ * 所以这里必须复用 main 的同一条规则，不能套 isAdminRole。
+ */
+function isInternalOrPlatformAdmin(user: CurrentUser): boolean {
+  return user.account_type === "internal" || isAdminRole(user.role);
+}
+
+/** 列表作用域谓词（main._doc_scope_sql 逐字直译）；返回以 " AND " 开头的片段。 */
+function tradeDocListScope(user: CurrentUser, params: unknown[], idx: number): string {
+  if (isInternalOrPlatformAdmin(user)) return "";
+  params.push(user.team_id);
+  params.push(String(user.id));
+  return " AND (team_id = $" + String(idx) + " OR owner_id = $" + String(idx + 1)
+    + " OR owner_scope = 'tenant')";
+}
+
+/**
+ * 列表筛选/分页 → 与旧 handler **同一 SQL 谓词、同一参数顺序**（doc_type → status → order_id）。
+ *
+ * 注意旧签名没有 ge/le 约束（与 quotes 不同），分页非法值由内核 422；门面这里只用宽松值拼 SQL。
+ */
+function tradeDocListFilter(user: CurrentUser, query: Record<string, string | null>): {
+  cond: string;
+  params: unknown[];
+  page: number;
+  pageSize: number;
+} {
+  const where = ["tenant_id = $1"];
+  const params: unknown[] = [tenantOf()];
+  let idx = 2;
+  const docType = query.doc_type ?? "";
+  if (docType) {
+    where.push("doc_type = $" + String(idx));
+    params.push(docType);
+    idx += 1;
+  }
+  const status = query.status ?? "";
+  if (status) {
+    where.push("status = $" + String(idx));
+    params.push(status);
+    idx += 1;
+  }
+  const orderId = lenientInt(query.order_id);
+  if (orderId) {   // 旧路径是「if order_id」：0 视为未给
+    where.push("order_id = $" + String(idx));
+    params.push(orderId);
+    idx += 1;
+  }
+  const cond = where.join(" AND ") + tradeDocListScope(user, params, idx);
+  const page = lenientInt(query.page) ?? 1;
+  const pageSize = lenientInt(query.page_size) ?? 20;
+  return { cond, params, page, pageSize };
+}
+
+/** trade_docs 行 → dataset 行（BIGINT/NUMERIC 归一；时间戳已是 Python 口径文本）。 */
+export function tradeDocDatasetRow(row: Row): Row {
+  const numberOrNull = (value: unknown): number | null =>
+    value === null || value === undefined ? null : Number(value);
+  return {
+    id: num(row.id),
+    tenant_id: row.tenant_id ?? null,
+    doc_no: row.doc_no ?? null,
+    doc_type: row.doc_type ?? null,
+    order_id: num(row.order_id),
+    customer_id: num(row.customer_id),
+    quote_id: num(row.quote_id),
+    status: row.status ?? null,
+    currency: row.currency ?? null,
+    total_amount: numberOrNull(row.total_amount),
+    issued_at: row.issued_at ?? null,
+    issued_by: row.issued_by ?? null,
+    raw_payload: row.raw_payload ?? null,
+    owner_id: row.owner_id ?? null,
+    owner_scope: row.owner_scope ?? null,
+    team_id: num(row.team_id),
+    with_seal: row.with_seal === null || row.with_seal === undefined
+      ? null
+      : Boolean(row.with_seal),
+    created_at: row.created_at ?? null,
+    updated_at: row.updated_at ?? null,
+  };
+}
+
+/** 列表供数（**唯一 DB 访问点**）：COUNT → 当前页 → 逐行 later 检查 → 对账结论。 */
+async function supplyTradeDocList(
+  env: Env,
+  user: CurrentUser,
+  query: Record<string, string | null>,
+): Promise<Row> {
+  // 无团队客户：旧路径在拼谓词前就 403 NO_TEAM（不查库）⇒ 门面空供数，判定留内核
+  if (!isInternalOrPlatformAdmin(user)
+      && (user.team_id === null || user.team_id === undefined)) {
+    return { trade_docs_total: [], trade_docs: [], later_docs: [], render_checks: [] };
+  }
+  const filter = tradeDocListFilter(user, query);
+  const tenant = tenantOf();
+  return withDb(env, async (sql: Db) => {
+    const totalRows = (await sql.unsafe(
+      tradeDocsCountSql(filter.cond), filter.params as never[])) as unknown as Row[];
+    const rows = (await sql.unsafe(
+      tradeDocsListSql(filter.cond, filter.params.length),
+      [...filter.params, filter.pageSize, (Math.max(1, filter.page) - 1) * filter.pageSize] as never[],
+    )) as unknown as Row[];
+    const laterDocs: Row[] = [];
+    for (const row of rows) {
+      const docId = Number(row.id);
+      let later: Row[] = [];
+      if (row.quote_id !== null && row.quote_id !== undefined) {
+        later = (await sql.unsafe(TRADE_DOC_LATER_QUOTE_SQL,
+          [tenant, Number(row.quote_id), docId] as never[])) as unknown as Row[];
+      } else if (row.order_id !== null && row.order_id !== undefined) {
+        later = (await sql.unsafe(TRADE_DOC_LATER_ORDER_SQL,
+          [tenant, Number(row.order_id), docId] as never[])) as unknown as Row[];
+      }
+      if (later.length > 0) laterDocs.push({ doc_id: docId });
+    }
+    let checks: Row[] = [];
+    if (rows.length > 0) {
+      checks = (await sql.unsafe(TRADE_DOC_CHECKS_SQL,
+        [tenant, rows.map((row) => Number(row.id))] as never[])) as unknown as Row[];
+    }
+    return {
+      trade_docs_total: totalRows.map((row) => ({ count: num0(row.count) })),
+      trade_docs: rows.map(tradeDocDatasetRow),
+      later_docs: laterDocs,
+      render_checks: checks.map((row) => ({
+        trade_doc_id: num(row.trade_doc_id),
+        matches: Boolean(row.matches),
+        reason: row.reason ?? null,
+        render_version_drift: Boolean(row.render_version_drift),
+        checked_at: row.checked_at ?? null,
+      })),
+    };
+  });
+}
+
+/** 详情供数：单头（无谓词）→ 有行时才查 entity_links / later（同旧路径顺序）。 */
+async function supplyTradeDocDetail(
+  env: Env,
+  user: CurrentUser,
+  docId: number,
+): Promise<Row> {
+  const tenant = tenantOf();
+  return withDb(env, async (sql: Db) => {
+    const rows = (await sql.unsafe(
+      tradeDocsDetailSql("tenant_id = $1 AND id = $2"), [tenant, docId] as never[],
+    )) as unknown as Row[];
+    let links: Row[] = [];
+    let later: Row[] = [];
+    if (rows.length > 0) {
+      links = (await sql.unsafe(TRADE_DOC_LINKS_SQL, [tenant, docId] as never[])) as unknown as Row[];
+      const row = rows[0]!;
+      if (row.quote_id !== null && row.quote_id !== undefined) {
+        later = (await sql.unsafe(TRADE_DOC_LATER_QUOTE_SQL,
+          [tenant, Number(row.quote_id), docId] as never[])) as unknown as Row[];
+      } else if (row.order_id !== null && row.order_id !== undefined) {
+        later = (await sql.unsafe(TRADE_DOC_LATER_ORDER_SQL,
+          [tenant, Number(row.order_id), docId] as never[])) as unknown as Row[];
+      }
+    }
+    return {
+      trade_docs: rows.map(tradeDocDatasetRow),
+      entity_links: links.map((row) => ({
+        dst_type: row.dst_type ?? null,
+        dst_id: num(row.dst_id),
+        rel_type: row.rel_type ?? null,
+        meta: row.meta ?? null,
+      })),
+      later_docs: later.length > 0 ? [{ locked: 1 }] : [],
+    };
+  });
+}
+
+/** GET /api/v1/trade-docs 的「供数 + RPC」实现（开关 on 时）。 */
+export async function tradeDocListWithKernel(
+  c: Context<{ Bindings: Env }>,
+  user: CurrentUser,
+): Promise<Response> {
+  const env = getEnv(c);
+  const secret = requireSecret(env, "JWT_SECRET");
+  const query: Record<string, string | null> = {
+    doc_type: c.req.query("doc_type") ?? null,
+    status: c.req.query("status") ?? null,
+    order_id: c.req.query("order_id") ?? null,
+    page: c.req.query("page") ?? null,
+    page_size: c.req.query("page_size") ?? null,
+  };
+  const datasets = await supplyTradeDocList(env, user, query);
+  const jwt = await mintEngineJwt(engineActorOf(user), secret);
+  return engineQuoteRpc(
+    c,
+    ENGINE_TRADE_DOCS_LIST_RPC,
+    jwt,
+    JSON.stringify({ request: { query }, actor: actorPayloadOf(user), datasets }),
+  );
+}
+
+/** GET /api/v1/trade-docs/{doc_id} 的「供数 + RPC」实现（开关 on 时）。 */
+export async function tradeDocDetailWithKernel(
+  c: Context<{ Bindings: Env }>,
+  user: CurrentUser,
+): Promise<Response> {
+  const env = getEnv(c);
+  const secret = requireSecret(env, "JWT_SECRET");
+  const docId = intOrNull(c.req.param("doc_id") ?? "");
+  if (docId === null) {
+    // 非整数 doc_id：旧路径（FastAPI path 参数）会 422 —— 交给旧路径裁决
+    return forwardKernelRequest(c);
+  }
+  const datasets = await supplyTradeDocDetail(env, user, docId);
+  const jwt = await mintEngineJwt(engineActorOf(user), secret);
+  return engineQuoteRpc(
+    c,
+    ENGINE_TRADE_DOCS_DETAIL_RPC,
+    jwt,
+    JSON.stringify({ request: { doc_id: docId }, actor: actorPayloadOf(user), datasets }),
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 第六批切片：4 条「需要内核计算」的只读端点
+// ══════════════════════════════════════════════════════════════════════════════
+// 设计 = docs/P2_COUPLING_ENGINE_2026-10-24.md §6/§8；内核入口
+// POST /api/v1/internal/engine/quote/{products|product-name-preference|import-template|
+// order-template-info}（engine_api.py）。
+//
+// 真源（SQL 逐字直译，禁止顺手优化）：
+// - quote_api.py:445 export_quote_products（_require_engine + _quotable_specs + 投影循环）
+// - quote_api.py:2349 quote_product_name_preference（_quotable_specs + 客户闸门 + 偏好查询）
+// - quote_api.py:1322 export_quote_import_template_info（**只切 JSON 分支**）
+// - quote_api.py:1370 export_quote_import_order_template_info（_quotable_specs + 列并集）
+// 与旧路径的**有意差异**（fixture.facade 锁定）：
+// - 产品目录/模板的取数走**显式列**（key/spec/team_id、key/info）而非 SELECT *；
+//   这些表的其余列不参与计算，且 jsonb 由 postgres.js 直接解码；
+// - 产品名偏好的 SQL 改成**候选集**（同客户、product_key 命中或历史行），谓词
+//   （lower(name)=ANY(名字列表)）在内核按**同一行顺序**首命中应用 —— 名字列表由
+//   产品定义派生、只有内核知道；让门面派生就是第二份实现（ADR-008）。等价性：
+//   被过滤掉的行既不在旧 WHERE 里、也不改变剩余行相对顺序 ⇒ 与旧 SQL LIMIT 1 同解；
+// - import-template 的**产文件分支（带 format）保持旧路径**：门面按 format 是否存在路由。
+
+export const CATALOG_TENANT_PRODUCTS_SQL =
+  "SELECT product_key, spec, team_id FROM tenant_products"
+  + " WHERE tenant_id=$1 AND is_active";
+export const CATALOG_DISABLED_SQL =
+  "SELECT product_key FROM tenant_workstation_products"
+  + " WHERE tenant_id=$1 AND workstation='quote' AND is_enabled=false"
+  + " AND (team_id IS NULL OR team_id=$2)";
+
+/** 团队资料（英文名来源）：与 quote_api._quotable_specs 的 prof_sql 逐字同义。 */
+export function catalogProfilesSql(admin: boolean): string {
+  let sql = "SELECT product_key, info FROM product_profiles WHERE tenant_id=$1";
+  if (!admin) sql += " AND team_id=$2";
+  return sql + " ORDER BY updated_at DESC";
+}
+
+/** 客户闸门取数：只取判定需要的列（旧 SQL 的投影含 stage_display 计算列，与判定无关）。 */
+export const CUSTOMER_GATE_SQL =
+  "SELECT id, owner_id, owner_scope, team_id FROM customers"
+  + " WHERE id=$1 AND tenant_id=$2 AND is_deleted = false";
+
+/** 单产品模板：产品解析用的 tenant_products 查询（与 _effective_product_raw 逐字同义）。 */
+export const IMPORT_TEMPLATE_PRODUCT_SQL =
+  "SELECT spec, override, team_id FROM tenant_products"
+  + " WHERE tenant_id=$1 AND product_key=$2 AND is_active";
+
+/**
+ * 产品名偏好的**候选集**（顺序与旧 SQL 的 ORDER BY 逐字一致）。
+ *
+ * 旧 SQL 的 WHERE 里还有「lower(product_name) = ANY(名字列表)」——名字列表由产品定义派生，
+ * 门面无法复制（不许第二份实现）⇒ 候选集只按 product_key 命中 / 历史行取，谓词在内核
+ * 按同一行顺序应用（首命中即旧 LIMIT 1 的结果）。
+ */
+export function preferenceCandidatesSql(scope: string): string {
+  return "SELECT i.product_name, i.spec_snapshot->>'product_key' AS product_key"
+    + " FROM quote_order_items i JOIN quote_orders q"
+    + "   ON q.tenant_id = i.tenant_id AND q.id = i.quote_order_id"
+    + " WHERE i.tenant_id=$1 AND q.customer_id=$2"
+    + "   AND i.product_name IS NOT NULL AND i.product_name <> ''"
+    + "   AND (i.spec_snapshot->>'product_key' = $3"
+    + "        OR i.spec_snapshot->>'product_key' IS NULL)"
+    + scope
+    + " ORDER BY q.created_at DESC, i.id DESC";
+}
+
+/** 产品集合的 3 个 dataset（目录 / 模板列定义 / 产品名偏好共用）。 */
+async function supplyCatalogDatasets(env: Env, user: CurrentUser): Promise<Row> {
+  const tenant = tenantOf();
+  const admin = isAdminRole(user.role);
+  const profileParams: unknown[] = admin ? [tenant] : [tenant, user.team_id ?? null];
+  return withDb(env, async (sql: Db) => {
+    const tenantRows = (await sql.unsafe(
+      CATALOG_TENANT_PRODUCTS_SQL, [tenant] as never[])) as unknown as Row[];
+    const disabledRows = (await sql.unsafe(
+      CATALOG_DISABLED_SQL, [tenant, user.team_id ?? null] as never[])) as unknown as Row[];
+    const profileRows = (await sql.unsafe(
+      catalogProfilesSql(admin), profileParams as never[])) as unknown as Row[];
+    return {
+      tenant_products: tenantRows.map((row) => ({
+        product_key: row.product_key ?? null,
+        spec: row.spec ?? null,
+        team_id: num(row.team_id),
+      })),
+      tenant_workstation_products: disabledRows.map((row) => ({
+        product_key: row.product_key ?? null,
+      })),
+      product_profiles: profileRows.map((row) => ({
+        product_key: row.product_key ?? null,
+        info: row.info ?? null,
+      })),
+    };
+  });
+}
+
+/** GET /api/v1/export-quote/products：产品目录（供数 → 内核纯计算 → 回放）。 */
+export async function quoteProductsWithKernel(
+  c: Context<{ Bindings: Env }>,
+  user: CurrentUser,
+): Promise<Response> {
+  const env = getEnv(c);
+  const secret = requireSecret(env, "JWT_SECRET");
+  const datasets = await supplyCatalogDatasets(env, user);
+  const jwt = await mintEngineJwt(engineActorOf(user), secret);
+  return engineQuoteRpc(
+    c, ENGINE_QUOTE_PRODUCTS_RPC, jwt,
+    JSON.stringify({ request: {}, actor: actorPayloadOf(user), datasets }),
+  );
+}
+
+/** GET /api/v1/quotes/product-name-preference：产品名偏好。 */
+export async function quoteNamePreferenceWithKernel(
+  c: Context<{ Bindings: Env }>,
+  user: CurrentUser,
+): Promise<Response> {
+  const env = getEnv(c);
+  const secret = requireSecret(env, "JWT_SECRET");
+  const query: Record<string, string | null> = {
+    customer_id: c.req.query("customer_id") ?? null,
+    product_key: c.req.query("product_key") ?? null,
+  };
+  const datasets = await supplyCatalogDatasets(env, user);
+  const customerId = lenientInt(query.customer_id);
+  const key = (query.product_key ?? "").trim();
+  const tenant = tenantOf();
+  // 非整数 customer_id / 空 product_key：旧路径是 422（query 校验 / PRODUCT_KEY_REQUIRED）
+  // ⇒ 门面不查这两张表，空供数，由内核同一份判定返回 422。
+  if (customerId !== null && key) {
+    const pairs = await withDb(env, async (sql: Db) => {
+      const customerRows = (await sql.unsafe(
+        CUSTOMER_GATE_SQL, [customerId, tenant] as never[])) as unknown as Row[];
+      const scopeParams: unknown[] = [];
+      let scope = "";
+      if (!isAdminRole(user.role)) {
+        scopeParams.push(String(user.id));
+        scope = " AND (q.owner_id = $" + String(4) + " OR q.owner_scope = 'tenant'";
+        if (user.team_id !== null && user.team_id !== undefined) {
+          scopeParams.push(user.team_id);
+          // 参数序号 = tenant/customer/key 之后的第几个（scopeParams.length 已含本次压入）
+          scope += " OR q.team_id = $" + String(4 + scopeParams.length - 1);
+        }
+        scope += ")";
+      }
+      const rows = (await sql.unsafe(
+        preferenceCandidatesSql(scope),
+        [tenant, customerId, key, ...scopeParams] as never[],
+      )) as unknown as Row[];
+      return { customerRows, rows };
+    });
+    datasets.customers = pairs.customerRows.map((row) => ({
+      id: num(row.id),
+      owner_id: row.owner_id ?? null,
+      owner_scope: row.owner_scope ?? null,
+      team_id: num(row.team_id),
+    }));
+    datasets.preference_candidates = pairs.rows.map((row) => ({
+      product_name: row.product_name ?? null,
+      product_key: row.product_key ?? null,
+    }));
+  } else {
+    datasets.customers = [];
+    datasets.preference_candidates = [];
+  }
+  const jwt = await mintEngineJwt(engineActorOf(user), secret);
+  return engineQuoteRpc(
+    c, ENGINE_QUOTE_NAME_PREFERENCE_RPC, jwt,
+    JSON.stringify({ request: { query }, actor: actorPayloadOf(user), datasets }),
+  );
+}
+
+/** GET /api/v1/export-quote/products/{key}/import-template（**只切 JSON 分支**）。 */
+export async function quoteImportTemplateWithKernel(
+  c: Context<{ Bindings: Env }>,
+  user: CurrentUser,
+): Promise<Response> {
+  const env = getEnv(c);
+  const secret = requireSecret(env, "JWT_SECRET");
+  const format = c.req.query("format") ?? "";
+  if (format) {
+    // 产文件分支（csv / xlsx 501 / 非法 format 422）保持旧路径：不在供数切片范围内
+    return forwardKernelRequest(c);
+  }
+  const productKey = c.req.param("product_key") ?? "";
+  const query: Record<string, string | null> = {
+    format,
+    examples: c.req.query("examples") ?? null,
+    include_spec: c.req.query("include_spec") ?? null,
+  };
+  const tenant = tenantOf();
+  const datasets = await withDb(env, async (sql: Db) => {
+    const rows = (await sql.unsafe(
+      IMPORT_TEMPLATE_PRODUCT_SQL, [tenant, productKey] as never[],
+    )) as unknown as Row[];
+    return {
+      tenant_products: rows.map((row) => ({
+        spec: row.spec ?? null,
+        override: row.override ?? null,
+        team_id: num(row.team_id),
+      })),
+    };
+  });
+  const jwt = await mintEngineJwt(engineActorOf(user), secret);
+  return engineQuoteRpc(
+    c, ENGINE_QUOTE_IMPORT_TEMPLATE_RPC, jwt,
+    JSON.stringify({
+      request: { product_key: productKey, query },
+      actor: actorPayloadOf(user),
+      datasets,
+    }),
+  );
+}
+
+/** GET /api/v1/export-quote/import/order/template-info：整单模板列定义。 */
+export async function quoteOrderTemplateInfoWithKernel(
+  c: Context<{ Bindings: Env }>,
+  user: CurrentUser,
+): Promise<Response> {
+  const env = getEnv(c);
+  const secret = requireSecret(env, "JWT_SECRET");
+  const query: Record<string, string | null> = {
+    product_keys: c.req.query("product_keys") ?? null,
+  };
+  const datasets = await supplyCatalogDatasets(env, user);
+  const jwt = await mintEngineJwt(engineActorOf(user), secret);
+  return engineQuoteRpc(
+    c, ENGINE_QUOTE_ORDER_TEMPLATE_INFO_RPC, jwt,
+    JSON.stringify({ request: { query }, actor: actorPayloadOf(user), datasets }),
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // 路由注册（由 src/index.ts 挂载；必须在 /api/v1/export-quote 透传 mount **之前**）
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -1226,6 +1761,18 @@ app.get("/api/v1/quotes", (c) => {
   });
 });
 
+app.get("/api/v1/quotes/product-name-preference", (c) => {
+  // 必须注册在 /api/v1/quotes/:quote_id 之前：否则会被详情路由按 :quote_id 吃掉
+  // （详情对非整数 id 会转旧路径，功能不坏但本切片永远不走 on 分支）。
+  if (!useDirectRoute(getEnv(c), ENGINE_ROUTE_IDS.namePreference)) {
+    return forwardKernelRequest(c);
+  }
+  return respond(c, async () => {
+    const user = await requireUser(c);
+    return directDb(c, () => quoteNamePreferenceWithKernel(c, user));
+  });
+});
+
 app.get("/api/v1/quotes/:quote_id", (c) => {
   if (!useDirectRoute(getEnv(c), ENGINE_ROUTE_IDS.quotesDetail)) {
     return forwardKernelRequest(c);
@@ -1233,6 +1780,56 @@ app.get("/api/v1/quotes/:quote_id", (c) => {
   return respond(c, async () => {
     const user = await requireUser(c);
     return directDb(c, () => quoteDetailWithKernel(c, user));
+  });
+});
+
+app.get("/api/v1/trade-docs", (c) => {
+  if (!useDirectRoute(getEnv(c), ENGINE_ROUTE_IDS.tradeDocsList)) {
+    return forwardKernelRequest(c);
+  }
+  return respond(c, async () => {
+    const user = await requireUser(c);
+    return directDb(c, () => tradeDocListWithKernel(c, user));
+  });
+});
+
+app.get("/api/v1/trade-docs/:doc_id", (c) => {
+  if (!useDirectRoute(getEnv(c), ENGINE_ROUTE_IDS.tradeDocsDetail)) {
+    return forwardKernelRequest(c);
+  }
+  return respond(c, async () => {
+    const user = await requireUser(c);
+    return directDb(c, () => tradeDocDetailWithKernel(c, user));
+  });
+});
+
+app.get("/api/v1/export-quote/products", (c) => {
+  if (!useDirectRoute(getEnv(c), ENGINE_ROUTE_IDS.products)) {
+    return forwardKernelRequest(c);
+  }
+  return respond(c, async () => {
+    const user = await requireUser(c);
+    return directDb(c, () => quoteProductsWithKernel(c, user));
+  });
+});
+
+app.get("/api/v1/export-quote/products/:product_key/import-template", (c) => {
+  if (!useDirectRoute(getEnv(c), ENGINE_ROUTE_IDS.importTemplate)) {
+    return forwardKernelRequest(c);
+  }
+  return respond(c, async () => {
+    const user = await requireUser(c);
+    return directDb(c, () => quoteImportTemplateWithKernel(c, user));
+  });
+});
+
+app.get("/api/v1/export-quote/import/order/template-info", (c) => {
+  if (!useDirectRoute(getEnv(c), ENGINE_ROUTE_IDS.orderTemplateInfo)) {
+    return forwardKernelRequest(c);
+  }
+  return respond(c, async () => {
+    const user = await requireUser(c);
+    return directDb(c, () => quoteOrderTemplateInfoWithKernel(c, user));
   });
 });
 

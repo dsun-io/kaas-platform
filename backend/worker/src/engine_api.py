@@ -324,3 +324,85 @@ async def engine_quotes_detail(request: Request, body: dict):
     user, request_body, datasets = _payload(request, body)
     quote_id = _request_int(request_body, "quote_id")
     return await _dispatch(_quote.quote_detail_from_datasets, quote_id, datasets, user)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 第五批切片：单证 列表 / 详情（控制台主入口，纯投影）
+# ═══════════════════════════════════════════════════════════════════════════════
+# 设计 = docs/P2_COUPLING_ENGINE_2026-10-24.md §6/§8。门面按旧 SQL 谓词/排序/分页供数，
+# 内核只做协议校验 + **同一份**纯投影（main._trade_doc_list_payload /
+# _trade_doc_detail_payload），读闸门复用旧路径同一份判定（403 NO_TEAM / 404 DOC_NOT_FOUND /
+# _doc_visible 行级再判一次）。
+
+
+@app.post("/api/v1/internal/engine/trade-docs/list")
+async def engine_trade_docs_list(request: Request, body: dict):
+    """单证列表 RPC：request.query = 旧端点的**原始 query 字符串**（解析/校验在内核）。"""
+    user, request_body, datasets = _payload(request, body)
+    params = request_body.get("query")
+    if params is None:
+        params = {}
+    if not isinstance(params, dict):
+        raise _payload_invalid("request.query 必须是对象")
+    return await _dispatch(_main.trade_doc_list_from_datasets, params, datasets, user)
+
+
+@app.post("/api/v1/internal/engine/trade-docs/detail")
+async def engine_trade_docs_detail(request: Request, body: dict):
+    """单证详情 RPC：request.doc_id = 路径上的 id；datasets 见 trade_doc_detail_from_datasets。"""
+    user, request_body, datasets = _payload(request, body)
+    doc_id = _request_int(request_body, "doc_id")
+    return await _dispatch(_main.trade_doc_detail_from_datasets, doc_id, datasets, user)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 第六批切片：4 条「需要内核计算」的只读端点（产品目录 / 产品名偏好 / 模板列定义）
+# ═══════════════════════════════════════════════════════════════════════════════
+# 设计 = docs/P2_COUPLING_ENGINE_2026-10-24.md §6/§8。全部是「取数 + 纯计算」：
+# 门面按旧 SQL 供数，内核复用同一份 _quotable_specs_from_rows / _resolve_effective_raw /
+# _product_or_404_from_rows / _import_template_payload / _order_template_info_payload。
+
+
+def _query_object(request_body: dict) -> dict:
+    """payload.request.query → dict（原始 query 字符串；缺省 = {}）。"""
+    params = request_body.get("query")
+    if params is None:
+        return {}
+    if not isinstance(params, dict):
+        raise _payload_invalid("request.query 必须是对象")
+    return params
+
+
+@app.post("/api/v1/internal/engine/quote/products")
+async def engine_quote_products(request: Request, body: dict):
+    """产品目录 RPC：→ 与 GET /export-quote/products 同结果（同一份产品集合与投影）。"""
+    user, _request_body, datasets = _payload(request, body)
+    return await _dispatch(_quote.products_from_datasets, datasets, user)
+
+
+@app.post("/api/v1/internal/engine/quote/product-name-preference")
+async def engine_quote_product_name_preference(request: Request, body: dict):
+    """产品名偏好 RPC：query = {customer_id, product_key}（原始字符串，解析/校验在内核）。"""
+    user, request_body, datasets = _payload(request, body)
+    return await _dispatch(
+        _quote.quote_name_preference_from_datasets, datasets,
+        _query_object(request_body), user)
+
+
+@app.post("/api/v1/internal/engine/quote/import-template")
+async def engine_quote_import_template(request: Request, body: dict):
+    """单产品导入模板 RPC（**只接 JSON 分支**；带 format 的产文件分支留旧路径）。"""
+    user, request_body, datasets = _payload(request, body)
+    product_key = _request_str(request_body, "product_key")
+    return await _dispatch(
+        _quote.import_template_from_datasets, product_key,
+        _query_object(request_body), datasets, user)
+
+
+@app.post("/api/v1/internal/engine/quote/order-template-info")
+async def engine_quote_order_template_info(request: Request, body: dict):
+    """整单导入模板列定义 RPC：query = {product_keys}（逗号分隔，原始字符串）。"""
+    user, request_body, datasets = _payload(request, body)
+    return await _dispatch(
+        _quote.order_template_info_from_datasets, datasets,
+        _query_object(request_body), user)

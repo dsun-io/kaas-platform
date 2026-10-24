@@ -14,7 +14,8 @@ from typing import Optional, List
 import asyncpg
 import jwt
 from fastapi import FastAPI, Request, HTTPException, Query, UploadFile, File, Depends
-from pydantic import BaseModel
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from workers import WorkerEntrypoint, asgi
 
 from dbjson import row_to_dict
@@ -1352,10 +1353,28 @@ async def _customer_or_404(conn, customer_id: int, user: dict) -> dict:
         " WHERE c.id=$1 AND c.tenant_id=$2 AND c.is_deleted = false",
         customer_id, DEFAULT_TENANT,
     )
+    _customer_visible_or_404(row, user)
+    return dict(row)
+
+
+def _customer_visible_or_404(row, user: dict) -> None:
+    """客户存在 + 未软删 + 三层可见（**纯判定**；旧 handler 与供数 RPC 共用同一份）。"""
     if row is None or not _owner_visible(user, row):
         raise HTTPException(status_code=404, detail={
             "error": "not_found", "code": "CUSTOMER_NOT_FOUND"})
-    return dict(row)
+
+
+def _customer_team_ok_or_404(customer: dict, user: dict) -> None:
+    """单据归属闸门的**团队一致**判定（纯函数；与 _doc_customer 同一份）。
+
+    管理员豁免（客户域本来就全租户可见）；不一致回 404 不泄露存在性。
+    """
+    if not _can_see_all(user) and not _same_team(customer.get("team_id"),
+                                                user.get("team_id")):
+        # 与"客户不存在"同样回 404：不泄露别家客户是否存在
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "CUSTOMER_NOT_FOUND",
+            "detail": "客户不存在或不属于你的团队"})
 
 
 # ── 单据归属闸门：单据必须挂在**已有业务客户**上（手动新建 / 导入也要选）──────
@@ -1421,12 +1440,7 @@ async def _doc_customer(conn, raw_id, user: dict, *, required: bool) -> Optional
             })
         return None
     customer = await _customer_or_404(conn, customer_id, user)
-    if not _can_see_all(user) and not _same_team(customer.get("team_id"),
-                                                user.get("team_id")):
-        # 与"客户不存在"同样回 404：不泄露别家客户是否存在
-        raise HTTPException(status_code=404, detail={
-            "error": "not_found", "code": "CUSTOMER_NOT_FOUND",
-            "detail": "客户不存在或不属于你的团队"})
+    _customer_team_ok_or_404(customer, user)
     return customer
 
 
@@ -5294,6 +5308,19 @@ def _require_doc_visible(user: dict, d) -> None:
         _doc_not_found()
 
 
+def _require_doc_list_scope(user: dict) -> None:
+    """列表读闸门的前置判定（**唯一一份**）：无团队客户 ⇒ 403 `NO_TEAM`。
+
+    旧列表靠 `_doc_scope_sql` 在拼谓词前抛 403；供数 RPC（内核）不拼 SQL，但仍要
+    同一判决 ⇒ 抽出本函数，两条路径都调它（禁止各写一份）。
+    """
+    if _internal_or_platform_admin(user):
+        return
+    if user.get("team_id") is None:
+        raise HTTPException(status_code=403, detail={
+            "error": "forbidden", "code": "NO_TEAM"})
+
+
 def _doc_scope_sql(user: dict, next_index: int) -> tuple[str, list]:
     """列表用 SQL 谓词（**必须在 SQL 里过滤**，否则 total 会泄露别团队行数）。
 
@@ -5301,12 +5328,10 @@ def _doc_scope_sql(user: dict, next_index: int) -> tuple[str, list]:
     - 无团队客户：403 `NO_TEAM`（与其它工位一致）；
     - 有团队客户：`team_id=本团队 OR owner_id=我 OR owner_scope='tenant'`。
     """
+    _require_doc_list_scope(user)
     if _internal_or_platform_admin(user):
         return "", []
     team = user.get("team_id")
-    if team is None:
-        raise HTTPException(status_code=403, detail={
-            "error": "forbidden", "code": "NO_TEAM"})
     return (
         f" AND (team_id = ${next_index} OR owner_id = ${next_index + 1}"
         " OR owner_scope = 'tenant')",
@@ -5363,13 +5388,8 @@ async def list_trade_docs(request: Request, doc_type: str = None, status: str = 
             f"SELECT * FROM trade_docs WHERE {where_sql} ORDER BY created_at DESC, id DESC LIMIT ${idx} OFFSET ${idx+1}",
             *params, page_size, (max(1, page) - 1) * page_size,
         )
-        items = []
+        later_ids: set = set()
         for r in rows:
-            # 注意：main 里的 `_row_to_dict` 是**1 参**兼容壳（只按 market_ports 解 jsonb），
-            # 带表名的精确解码要走 `row_to_dict(row, "表名")`。
-            # 这里曾写成 `_row_to_dict(r, "trade_docs")` ⇒ TypeError ⇒ 列表接口运行期 500
-            # （2026-10-20 由 test_trade_doc_render_check_list.py 抓出并锁死）。
-            item = row_to_dict(r, "trade_docs")
             if r["quote_id"] is not None:
                 later = await conn.fetchval(
                     "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND quote_id=$2"
@@ -5380,10 +5400,11 @@ async def list_trade_docs(request: Request, doc_type: str = None, status: str = 
                     " AND id>$3 LIMIT 1", DEFAULT_TENANT, r["order_id"], r["id"])
             else:
                 later = None
-            item["doc_no_editable"] = not bool(later)
-            items.append(item)
+            if later:
+                later_ids.add(int(r["id"]))
         # 定时对账结论（TODO(TODO:A8/A9)）：每页多一条查询，让列表能一眼标出「已变更」。
         # 没有对账记录 = 从未巡到（null），界面不显示任何标识（不冒充"没问题"）。
+        checks: list = []
         if rows:
             checks = await conn.fetch(
                 "SELECT trade_doc_id, matches, reason, render_version_drift, checked_at"
@@ -5391,25 +5412,7 @@ async def list_trade_docs(request: Request, doc_type: str = None, status: str = 
                 " AND trade_doc_id = ANY($2::bigint[])",
                 DEFAULT_TENANT, [r["id"] for r in rows],
             )
-            check_by_doc = {
-                int(c["trade_doc_id"]): {
-                    "matches": bool(c["matches"]),
-                    "reason": c["reason"],
-                    "render_version_drift": bool(c["render_version_drift"]),
-                    "checked_at": (
-                        c["checked_at"].isoformat()
-                        if hasattr(c["checked_at"], "isoformat")
-                        else c["checked_at"]
-                    ),
-                }
-                for c in checks
-            }
-            for item in items:
-                item["render_check"] = check_by_doc.get(int(item["id"]))
-    return {
-        "items": items,
-        "total": total, "page": page, "page_size": page_size,
-    }
+    return _trade_doc_list_payload(rows, total, page, page_size, later_ids, checks)
 
 
 # ── 单证关系（边表 entity_links）─────────────────────────────────────────────
@@ -5448,19 +5451,14 @@ def _link_ref_type(rel_type, meta) -> str:
     return rel_type
 
 
-async def _doc_upstream_links(conn, doc: dict) -> dict:
-    """单证详情用的上游 refs（字段名与旧 refs 表读取**逐字相同**，前端契约不变）。
+def _doc_link_refs(link_rows, doc: dict) -> dict:
+    """entity_links 行 → 详情 refs（**纯函数**；旧 handler 与供数 RPC 共用同一份）。
 
     优先级：**列**（主归属，权威）> 边表（历史行：迁移 012 刻意跳过了
     `customer_id IS NULL` 的行，它们的报价归属只在边表里，只读列会让关系消失）。
     """
-    rows = await conn.fetch(
-        "SELECT dst_type, dst_id, rel_type, meta FROM entity_links"
-        " WHERE tenant_id=$1 AND src_type='trade_doc' AND src_id=$2"
-        "   AND deleted_at IS NULL ORDER BY id",
-        DEFAULT_TENANT, doc["id"],
-    )
     refs = {"orders": [], "quotes": [], "inquiries": []}
+    rows = list(link_rows)
     for r in rows:
         ref_type = _link_ref_type(r["rel_type"], r["meta"])
         if r["dst_type"] == "order":
@@ -5479,6 +5477,17 @@ async def _doc_upstream_links(conn, doc: dict) -> dict:
         refs[key] = [{id_key: col_value,
                       "ref_type": current["ref_type"] if current else "generated_from"}]
     return refs
+
+
+async def _doc_upstream_links(conn, doc: dict) -> dict:
+    """单证详情用的上游 refs（字段名与旧 refs 表读取**逐字相同**，前端契约不变）。"""
+    rows = await conn.fetch(
+        "SELECT dst_type, dst_id, rel_type, meta FROM entity_links"
+        " WHERE tenant_id=$1 AND src_type='trade_doc' AND src_id=$2"
+        "   AND deleted_at IS NULL ORDER BY id",
+        DEFAULT_TENANT, doc["id"],
+    )
+    return _doc_link_refs(rows, doc)
 
 
 async def _doc_quote_id(conn, doc: dict):
@@ -5739,8 +5748,7 @@ async def get_trade_doc(doc_id: int, request: Request,
                 " AND id>$3 LIMIT 1", DEFAULT_TENANT, d["order_id"], doc_id)
         else:
             later = None
-    return {**_dp.doc_dict(d), "refs": refs,
-            "doc_no_editable": not bool(later)}
+    return _trade_doc_detail_payload(d, refs, later)
 
 
 @app.patch("/api/v1/trade-docs/{doc_id}")
@@ -6510,6 +6518,159 @@ async def preview_trade_doc_render_data(request: Request, body: dict,
     }
     return await _render_bundle_of_doc(request, virtual_doc, user=user)
 
+
+# ═════════════════════════════════════════════════════════════════════════════
+# P2 引擎 RPC：单证 列表 / 详情（门面供数 → 内核纯投影）
+# ═════════════════════════════════════════════════════════════════════════════
+# 设计 = docs/P2_COUPLING_ENGINE_2026-10-24.md §6（契约）/ §8（切片范式）。
+# 纪律（与 export-quote / render-data / quotes 同款）：
+# - 旧 handler 与 RPC 调用**同一份**纯投影（_trade_doc_list_payload / _trade_doc_detail_payload）；
+# - RPC 不碰 DB（tests 用「零 DB 炸弹」锁死）；取数谓词由门面按原 SQL 执行；
+# - 读闸门复用旧的**同一份**判定：_require_doc_list_scope（列表 403 NO_TEAM）、
+#   _require_doc_visible（详情 404 DOC_NOT_FOUND）、_doc_visible（行级再判一次，防御纵深）。
+
+#: 列表 query 参数（声明顺序 = FastAPI handler 的声明顺序，422 的 error 顺序由它决定）。
+#: 注意旧签名**没有** ge/le 约束（与 quotes 不同）⇒ 这里也不能加。
+_TRADE_DOC_LIST_ADAPTERS = (
+    ("order_id", TypeAdapter(Optional[int])),
+    ("page", TypeAdapter(int)),
+    ("page_size", TypeAdapter(int)),
+)
+
+
+def _trade_doc_dataset_rows(datasets: dict, name: str) -> list:
+    """payload.datasets[name] → 行数组（形状错误 = 实现 bug ⇒ 400）。"""
+    rows = datasets.get(name)
+    if rows is None:
+        return []
+    if not isinstance(rows, list):
+        raise HTTPException(status_code=400, detail={
+            "error": "engine_rpc_payload_invalid",
+            "message": "datasets.%s 必须是数组" % name,
+        })
+    return rows
+
+
+def _trade_doc_list_query(params: dict) -> dict:
+    """query 原始字符串 → 与旧端点**同一份** FastAPI/pydantic 校验结果（含 422 形状）。
+
+    旧列表签名：doc_type/status 是裸 str（无枚举校验）、order_id/page/page_size 是 int
+    （无 ge/le）⇒ 只有 int_parsing 一种 422，且按声明顺序累计。
+    """
+    raw = params if isinstance(params, dict) else {}
+    out = {"doc_type": raw.get("doc_type"), "status": raw.get("status"),
+           "order_id": None, "page": 1, "page_size": 20}
+    errors: list = []
+    for name, adapter in _TRADE_DOC_LIST_ADAPTERS:
+        value = raw.get(name)
+        if value is None:
+            continue
+        try:
+            out[name] = adapter.validate_python(value)
+        except ValidationError as exc:
+            for item in exc.errors(include_url=False):
+                err = dict(item)
+                err["loc"] = ("query", name) + tuple(item.get("loc") or ())
+                errors.append(err)
+    if errors:
+        raise RequestValidationError(errors)
+    return out
+
+
+def _trade_doc_list_payload(rows: list, total: int, page: int, page_size: int,
+                           later_ids: set, checks: list) -> dict:
+    """列表响应（**纯投影**；旧 handler 与供数 RPC 共用同一份）。
+
+    注意：必须用 row_to_dict(r, "trade_docs") 精确解码 jsonb —— 1 参兼容壳
+    _row_to_dict 只按 market_ports 解，写成它会让 raw_payload 变字符串
+    （2026-10-20 由 test_trade_doc_render_check_list.py 抓出并锁死）。
+    """
+    check_by_doc = {
+        int(c["trade_doc_id"]): {
+            "matches": bool(c["matches"]),
+            "reason": c["reason"],
+            "render_version_drift": bool(c["render_version_drift"]),
+            "checked_at": (
+                c["checked_at"].isoformat()
+                if hasattr(c["checked_at"], "isoformat")
+                else c["checked_at"]
+            ),
+        }
+        for c in checks
+    }
+    items = []
+    for r in rows:
+        item = row_to_dict(r, "trade_docs")
+        # NUMERIC 归一：旧路径由 FastAPI 把 Decimal 序列化成 float，供数路径必须在
+        # 投影里做同一手，否则 dataset 的 number 会被输出成整数（"100" vs "100.0"）。
+        amount = item.get("total_amount")
+        item["total_amount"] = float(amount) if amount is not None else None
+        item["doc_no_editable"] = int(r["id"]) not in later_ids
+        items.append(item)
+    for item in items:
+        item["render_check"] = check_by_doc.get(int(item["id"]))
+    return {
+        "items": items,
+        "total": total, "page": page, "page_size": page_size,
+    }
+
+
+def _trade_doc_detail_payload(d, refs: dict, later) -> dict:
+    """详情响应（**纯投影**；旧 handler 与供数 RPC 共用同一份）。"""
+    return {**_dp.doc_dict(d), "refs": refs, "doc_no_editable": not bool(later)}
+
+
+def trade_doc_list_from_datasets(params: dict, datasets: dict, user: dict) -> dict:
+    """P2 引擎 RPC：GET /api/v1/trade-docs 的供数版（**同一份投影**）。
+
+    datasets（门面按旧 SQL 谓词/排序/分页查好）：
+      trade_docs         当前页单证行（ORDER BY created_at DESC, id DESC + LIMIT/OFFSET）
+      trade_docs_total   [{count: N}]（旧路径的 COUNT(*)）
+      later_docs         [{doc_id}]（同链路上存在更晚单证的 id 集合）
+      render_checks      trade_doc_render_checks 行（ANY 批量，可能为空）
+    不碰 DB：query 校验只做协议层；403/行级可见性都用旧路径同一份判定。
+    """
+    q = _trade_doc_list_query(params)
+    _require_doc_list_scope(user)                     # 无团队客户 ⇒ 403 NO_TEAM（先于一切）
+    rows = [r for r in _trade_doc_dataset_rows(datasets, "trade_docs")
+            if isinstance(r, dict) and _doc_visible(user, r)]
+    total = 0
+    total_rows = _trade_doc_dataset_rows(datasets, "trade_docs_total")
+    if total_rows and isinstance(total_rows[0], dict):
+        total = int(total_rows[0].get("count") or 0)
+    later_ids = set()
+    for row in _trade_doc_dataset_rows(datasets, "later_docs"):
+        if isinstance(row, dict) and row.get("doc_id") is not None:
+            later_ids.add(int(row["doc_id"]))
+    checks = [c for c in _trade_doc_dataset_rows(datasets, "render_checks")
+              if isinstance(c, dict)]
+    return _trade_doc_list_payload(rows, total, q["page"], q["page_size"],
+                                   later_ids, checks)
+
+
+def trade_doc_detail_from_datasets(doc_id: int, datasets: dict, user: dict) -> dict:
+    """P2 引擎 RPC：GET /api/v1/trade-docs/{doc_id} 的供数版（**同一份投影**）。
+
+    门禁与旧路径同码同体：无行 / 不可见 / 客户无团队 ⇒ 404 DOC_NOT_FOUND
+    （不泄露存在性）。判定调用**旧的同一份** _require_doc_visible。
+    """
+    rows = _trade_doc_dataset_rows(datasets, "trade_docs")
+    row = rows[0] if rows and isinstance(rows[0], dict) else None
+    if row is None:
+        _doc_not_found()
+    d = _trade_doc_row_from_dataset(row)
+    _require_doc_visible(user, d)
+    # 供数一致性交叉核对（契约违约 = 实现 bug，不是用户错误）
+    if d.get("id") is not None and int(d["id"]) != int(doc_id):
+        raise HTTPException(status_code=400, detail={
+            "error": "engine_rpc_payload_invalid",
+            "message": "datasets.trade_docs 与 request.doc_id 不一致",
+        })
+    links = [r for r in _trade_doc_dataset_rows(datasets, "entity_links")
+             if isinstance(r, dict)]
+    refs = _doc_link_refs(links, d)
+    later = bool(_trade_doc_dataset_rows(datasets, "later_docs"))
+    return _trade_doc_detail_payload(d, refs, later)
 
 import chain  # noqa: E402,F401
 

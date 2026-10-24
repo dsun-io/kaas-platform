@@ -51,6 +51,8 @@ from main import (  # noqa: E402
     _can_see_all,
     _check_write_access,
     _compute_spec_hash,
+    _customer_team_ok_or_404,
+    _customer_visible_or_404,
     _doc_customer,
     _get_current_user,
     _lock_fx_rate,
@@ -354,20 +356,56 @@ async def _quotable_specs(request: Request, user: dict) -> dict:
     from kaas_common.workstation.scope import is_admin_role
     from kaas_common.export_quote.tenant_products import spec_from_dict
 
-    specs: dict = {}
-    for key in product_keys():
-        specs[key] = get_product(key)
-
     tenant = _tenant_of(user)
-    rows = await _db.fetch(  # noqa: SLF001 - 同模块既有用法
+    from kaas_common.workstation.scope import is_admin_role  # noqa: PLC0415
+
+    tenant_rows = await _db.fetch(  # noqa: SLF001 - 同模块既有用法
         request,
         "SELECT product_key, spec, team_id FROM tenant_products"
         " WHERE tenant_id=$1 AND is_active",
         tenant,
         table="tenant_products",
     )
+    disabled_rows = await _db.fetch(
+        request,
+        "SELECT product_key FROM tenant_workstation_products"
+        " WHERE tenant_id=$1 AND workstation='quote' AND is_enabled=false"
+        " AND (team_id IS NULL OR team_id=$2)",
+        tenant, user.get("team_id"),
+        table="tenant_workstation_products",
+    )
+
+    prof_sql = "SELECT product_key, info FROM product_profiles WHERE tenant_id=$1"
+    prof_args: list = [tenant]
+    if not is_admin_role(user.get("role")):
+        # 与 `ws_files._team_scope_soft` 同口径：非管理员只看得到本团队的资料行
+        # （无团队 ⇒ 谓词 = NULL ⇒ 没命中，回落注册表名，不泄露别家英文名）。
+        prof_sql += " AND team_id=$2"
+        prof_args.append(user.get("team_id"))
+    prof_sql += " ORDER BY updated_at DESC"
+    prof_rows = await _db.fetch(  # noqa: SLF001 - 同模块既有用法
+        request, prof_sql, *prof_args, table="product_profiles")
+    return _quotable_specs_from_rows(tenant_rows, disabled_rows, prof_rows, user)
+
+
+def _quotable_specs_from_rows(tenant_rows: list, disabled_rows: list,
+                              profile_rows: list, user: dict) -> dict:
+    """「可报价产品」集合的**纯函数**（= _quotable_specs 的供数版）。
+
+    注册表 ∪ 团队可见 tenant_products（本团队行优先；历史 NULL 行仅管理员），
+    再去掉被本团队停用的；最后用团队资料（product_profiles.info）覆盖英文名。
+    与 /export-quote/products、整单导入模板、产品名偏好**同一口径**（R-D 复用）。
+    """
+    from kaas_common.workstation.product_scope import is_same_team  # noqa: PLC0415
+    from kaas_common.workstation.scope import is_admin_role  # noqa: PLC0415
+    from kaas_common.export_quote.tenant_products import spec_from_dict  # noqa: PLC0415
+
+    specs: dict = {}
+    for key in product_keys():
+        specs[key] = get_product(key)
+
     best: dict = {}
-    for r in rows:
+    for r in tenant_rows or []:
         key = r["product_key"]
         row_team = r["team_id"]
         if row_team is not None and is_same_team(
@@ -383,16 +421,7 @@ async def _quotable_specs(request: Request, user: dict) -> dict:
         except Exception:  # noqa: BLE001 - 有意兜底：单条坏定义跳过，不拖垮整个列表
             continue
 
-    # 需求 16：被本团队停用的产品不出现在报价下拉（复用 tenant_workstation_products）
-    disabled_rows = await _db.fetch(
-        request,
-        "SELECT product_key FROM tenant_workstation_products"
-        " WHERE tenant_id=$1 AND workstation='quote' AND is_enabled=false"
-        " AND (team_id IS NULL OR team_id=$2)",
-        tenant, user.get("team_id"),
-        table="tenant_workstation_products",
-    )
-    disabled = {r["product_key"] for r in disabled_rows}
+    disabled = {r["product_key"] for r in disabled_rows or []}
 
     # ── 英文名（2026-10-24）：主英文名覆盖 spec.name_en，其余英文名进 aliases ──
     # 为什么在这里：报价行 `product_name = name_en || name`
@@ -402,24 +431,13 @@ async def _quotable_specs(request: Request, user: dict) -> dict:
     # 对外单据。只改**展示名**，算价字段一律不动；没配英文名的产品原样返回（旧口径不变）。
     # 全量英文名（主名 + 别名）都要参与「产品列/产品名」解析（R-D 整单导入），
     # 所以除 name_en 外还要把其余名字写进 `name_en_aliases`（ProductSpec 可选字段）。
-    # 归一化口径在共享内核 `kaas_common.export_quote.product_names`（与 ws_files 同一份）。
     from dataclasses import replace as _replace  # noqa: PLC0415
     from kaas_common.export_quote.product_names import (  # noqa: PLC0415
         name_en_list_from_info,
     )
 
-    prof_sql = "SELECT product_key, info FROM product_profiles WHERE tenant_id=$1"
-    prof_args: list = [tenant]
-    if not is_admin_role(user.get("role")):
-        # 与 `ws_files._team_scope_soft` 同口径：非管理员只看得到本团队的资料行
-        # （无团队 ⇒ 谓词 = NULL ⇒ 没命中，回落注册表名，不泄露别家英文名）。
-        prof_sql += " AND team_id=$2"
-        prof_args.append(user.get("team_id"))
-    prof_sql += " ORDER BY updated_at DESC"
-    prof_rows = await _db.fetch(  # noqa: SLF001 - 同模块既有用法
-        request, prof_sql, *prof_args, table="product_profiles")
     profiles: dict = {}
-    for r in prof_rows:
+    for r in profile_rows or []:
         if not isinstance(r, dict):
             continue
         pkey = r.get("product_key")
@@ -442,17 +460,8 @@ async def _quotable_specs(request: Request, user: dict) -> dict:
     return {key: spec for key, spec in specs.items() if spec.key not in disabled}
 
 
-@app.get("/api/v1/export-quote/products")
-async def export_quote_products(request: Request, user: dict = Depends(_get_current_user)):
-    """已注册的产品模型（前端产品下拉的唯一来源）。
-
-    发现层合并（2026-10-17，与 dev 同口径）：Python 注册表 ∪ tenant_products
-    中调用者可见的行（本团队行优先；历史 NULL 行仅管理员），同 key tenant 行覆盖
-    Python 定义 —— 运行时新增的产品在下拉里可见、可选、可算价。
-    """
-    _require_engine()
-    specs = await _quotable_specs(request, user)
-
+def _product_catalog_payload(specs: dict) -> dict:
+    """产品下拉响应（**纯投影**；旧 handler 与供数 RPC 共用同一份）。"""
     out = []
     for spec in specs.values():
         out.append({
@@ -473,6 +482,36 @@ async def export_quote_products(request: Request, user: dict = Depends(_get_curr
             "invariant_count": len(spec.invariants),
         })
     return {"products": out, "total": len(out)}
+
+
+def products_from_datasets(datasets: dict, user: dict) -> dict:
+    """P2 引擎 RPC：GET /export-quote/products 的供数版（**同一份**产品集合与投影）。
+
+    datasets（门面按旧 SQL 逐字查）：
+      tenant_products              启用中的租户产品行（key/spec/team_id）
+      tenant_workstation_products  被停用的 key（团队谓词在 SQL 里）
+      product_profiles             团队资料（key/info，按 updated_at DESC）
+    不碰 DB；团队优先级 / 停用过滤 / 英文名覆盖都在同一份纯函数里。
+    """
+    _require_engine()
+    return _product_catalog_payload(_quotable_specs_from_rows(
+        _rpc_dataset(datasets, "tenant_products"),
+        _rpc_dataset(datasets, "tenant_workstation_products"),
+        _rpc_dataset(datasets, "product_profiles"),
+        user,
+    ))
+
+
+@app.get("/api/v1/export-quote/products")
+async def export_quote_products(request: Request, user: dict = Depends(_get_current_user)):
+    """已注册的产品模型（前端产品下拉的唯一来源）。
+
+    发现层合并（2026-10-17，与 dev 同口径）：Python 注册表 ∪ tenant_products
+    中调用者可见的行（本团队行优先；历史 NULL 行仅管理员），同 key tenant 行覆盖
+    Python 定义 —— 运行时新增的产品在下拉里可见、可选、可算价。
+    """
+    _require_engine()
+    return _product_catalog_payload(await _quotable_specs(request, user))
 
 
 @app.get("/api/v1/export-quote/products/{product_key}/formulas")
@@ -1044,6 +1083,19 @@ def _rpc_model(model, request_body: dict):
         raise _rpc_validation_error(exc, ("body",))
 
 
+def _rpc_dataset(datasets: dict, name: str) -> list:
+    """payload.datasets[name] → 行数组；形状错误 = 实现 bug ⇒ 400（缺省 = 空数组）。"""
+    rows = datasets.get(name)
+    if rows is None:
+        return []
+    if not isinstance(rows, list):
+        raise HTTPException(status_code=400, detail={
+            "error": "engine_rpc_payload_invalid",
+            "message": "datasets.%s 必须是数组" % name,
+        })
+    return rows
+
+
 def _rpc_datasets(datasets: dict) -> tuple:
     """payload.datasets → (tenant_products 行, customer_cost_items 行)。
 
@@ -1319,27 +1371,12 @@ def _template_response(spec, fmt: str, examples: Optional[int], include_spec: bo
                     headers=_template_headers(spec, include_spec))
 
 
-@app.get("/api/v1/export-quote/products/{product_key}/import-template")
-async def export_quote_import_template_info(
-    product_key: str,
-    request: Request,
-    format: str = Query("", description="给了就下载文件（csv；xlsx 501），不给则返回列定义 JSON"),
-    examples: Optional[int] = Query(None, ge=0, le=50),
-    include_spec: bool = Query(False),
-    user: dict = Depends(_get_current_user),
-):
-    """模板说明（有哪些列、哪些必填、单位、可选值）；带 `format` 时改为下载文件。
+def _import_template_payload(spec) -> dict:
+    """单产品导入模板的**列定义 JSON**（纯投影；旧 handler 与供数 RPC 共用同一份）。
 
-    为什么一个路由兼两职：前端只用这一个 URL（`useImportTemplateInfo` 不带
-    `format`、下载时带 `format`），而 dev 侧拆成了 `/products/{key}/import-template`
-    （说明）与 `/import/template`（文件）两个 —— 线上把 dev 的"文件"那一路
-    也收敛到本路由（旧 `/import/template` 已于 2026-10-24 下线），使前端两类调用
-    都能命中同一个后端语义。
+    注意：带 format 时旧 handler 走 _template_response（产文件）。**产文件分支保持 Python，
+    不切供数路径**（门面按 format 是否存在路由）—— 本函数只负责 JSON 那一支。
     """
-    spec = await _product_or_404_tenant(request, user, product_key)
-    if format:
-        return _template_response(spec, format, examples, include_spec)
-
     cols = template_columns(spec)
     return {
         "product_key": spec.key,
@@ -1367,21 +1404,54 @@ async def export_quote_import_template_info(
     }
 
 
-@app.get("/api/v1/export-quote/import/order/template-info")
-async def export_quote_import_order_template_info(
-    request: Request,
-    keys_query: str = Query(
-        "", alias="product_keys",
-        description="逗号分隔的产品 key；空 = 全部可报价产品"),
-    user: dict = Depends(_get_current_user),
-):
-    """整单批量导入模板的列定义（6 个公共列 + 各产品模板列的并集）。
+_IMPORT_EXAMPLES_ADAPTER = TypeAdapter(Annotated[int, Field(ge=0, le=50)])
 
-    前端据此：① 逐列说明「该填什么 / 适用哪些产品」；② 用 exceljs 现生成 xlsx 模板
-    （线上 Worker 没有 openpyxl，服务端不产 xlsx —— 与单产品模板同一口径）。
+
+def _import_template_query(params: dict) -> dict:
+    """query 原始字符串 → 与旧端点**同一份** FastAPI/pydantic 校验（format/examples/include_spec）。
+
+    声明顺序 = 旧 handler：format（裸 str）→ examples（Optional[int] ge0 le50）→ include_spec(bool)。
+    """
+    raw = params if isinstance(params, dict) else {}
+    out = {"format": raw.get("format") or "", "examples": None, "include_spec": False}
+    errors: list = []
+    if raw.get("examples") is not None:
+        try:
+            out["examples"] = _IMPORT_EXAMPLES_ADAPTER.validate_python(raw["examples"])
+        except ValidationError as exc:
+            for item in exc.errors(include_url=False):
+                err = dict(item)
+                err["loc"] = ("query", "examples") + tuple(item.get("loc") or ())
+                errors.append(err)
+    if raw.get("include_spec") is not None:
+        try:
+            out["include_spec"] = _BOOL_ADAPTER.validate_python(raw["include_spec"])
+        except ValidationError as exc:
+            for item in exc.errors(include_url=False):
+                err = dict(item)
+                err["loc"] = ("query", "include_spec") + tuple(item.get("loc") or ())
+                errors.append(err)
+    if errors:
+        raise RequestValidationError(errors)
+    return out
+
+
+def import_template_from_datasets(product_key: str, params: dict, datasets: dict,
+                                  user: dict) -> dict:
+    """P2 引擎 RPC：GET /products/{key}/import-template 的**JSON 分支**供数版。
+
+    datasets.tenant_products = 旧路径 _effective_product_raw 的同一条 SQL 结果；
+    产品解析复用同一份 _product_or_404_from_rows（404 unknown_product 文案相同）。
     """
     _require_engine()
-    specs = await _quotable_specs(request, user)
+    _import_template_query(params or {})
+    spec = _product_or_404_from_rows(
+        _rpc_dataset(datasets, "tenant_products"), user, product_key)
+    return _import_template_payload(spec)
+
+
+def _order_template_info_payload(specs: dict, keys_query: str) -> dict:
+    """整单导入模板列定义（**纯投影**；旧 handler 与供数 RPC 共用同一份）。"""
     wanted = [k.strip() for k in (keys_query or "").split(",") if k.strip()]
     if wanted:
         unknown = [k for k in wanted if k not in specs]
@@ -1412,6 +1482,59 @@ async def export_quote_import_order_template_info(
             "表头请逐字照用（导入器按列名识别，别加 *、别换单位）。",
         ],
     }
+
+
+def order_template_info_from_datasets(datasets: dict, params: dict, user: dict) -> dict:
+    """P2 引擎 RPC：GET /import/order/template-info 的供数版（**同一份**产品集合与并集）。"""
+    _require_engine()
+    specs = _quotable_specs_from_rows(
+        _rpc_dataset(datasets, "tenant_products"),
+        _rpc_dataset(datasets, "tenant_workstation_products"),
+        _rpc_dataset(datasets, "product_profiles"),
+        user,
+    )
+    keys_query = (params or {}).get("product_keys") or ""
+    return _order_template_info_payload(specs, keys_query)
+
+
+@app.get("/api/v1/export-quote/products/{product_key}/import-template")
+async def export_quote_import_template_info(
+    product_key: str,
+    request: Request,
+    format: str = Query("", description="给了就下载文件（csv；xlsx 501），不给则返回列定义 JSON"),
+    examples: Optional[int] = Query(None, ge=0, le=50),
+    include_spec: bool = Query(False),
+    user: dict = Depends(_get_current_user),
+):
+    """模板说明（有哪些列、哪些必填、单位、可选值）；带 `format` 时改为下载文件。
+
+    为什么一个路由兼两职：前端只用这一个 URL（`useImportTemplateInfo` 不带
+    `format`、下载时带 `format`），而 dev 侧拆成了 `/products/{key}/import-template`
+    （说明）与 `/import/template`（文件）两个 —— 线上把 dev 的"文件"那一路
+    也收敛到本路由（旧 `/import/template` 已于 2026-10-24 下线），使前端两类调用
+    都能命中同一个后端语义。
+    """
+    spec = await _product_or_404_tenant(request, user, product_key)
+    if format:
+        return _template_response(spec, format, examples, include_spec)
+    return _import_template_payload(spec)
+
+
+@app.get("/api/v1/export-quote/import/order/template-info")
+async def export_quote_import_order_template_info(
+    request: Request,
+    keys_query: str = Query(
+        "", alias="product_keys",
+        description="逗号分隔的产品 key；空 = 全部可报价产品"),
+    user: dict = Depends(_get_current_user),
+):
+    """整单批量导入模板的列定义（6 个公共列 + 各产品模板列的并集）。
+
+    前端据此：① 逐列说明「该填什么 / 适用哪些产品」；② 用 exceljs 现生成 xlsx 模板
+    （线上 Worker 没有 openpyxl，服务端不产 xlsx —— 与单产品模板同一口径）。
+    """
+    _require_engine()
+    return _order_template_info_payload(await _quotable_specs(request, user), keys_query)
 
 
 @app.post("/api/v1/export-quote/import/order/preview")
@@ -2346,6 +2469,146 @@ async def create_quote_batch(request: Request, body: _BatchQuoteIn,
             "total": len(created) + len(failed)}
 
 
+def _product_key_required() -> HTTPException:
+    """product_key 为空的 422（同一份错误体；旧 handler 与供数 RPC 共用）。"""
+    return HTTPException(status_code=422, detail={
+        "error": "validation", "code": "PRODUCT_KEY_REQUIRED",
+        "field": "product_key", "detail": "product_key 不能为空",
+    })
+
+
+def spec_names_for(spec) -> list[str]:
+    """产品的「全部名字」折叠序列（主英文名 + 团队别名 + 中文名；去重、casefold）。"""
+    if spec is None:
+        return []
+    names: list[str] = [
+        spec.name_en,
+        *list(getattr(spec, "name_en_aliases", None) or []),
+    ]
+    if spec.name:
+        names.append(spec.name)
+    folded: list[str] = []
+    for raw in names:
+        name = (raw or "").strip().casefold()
+        if name and name not in folded:
+            folded.append(name)
+    return folded
+
+
+async def _require_customer_for_doc(request: Request, customer_id: int, user: dict) -> dict:
+    """客户闸门（旧 handler 用；供数 RPC 直接对 dataset 行调两个纯判定）。"""
+    async with _db.acquire(request) as conn:
+        return await _doc_customer(conn, customer_id, user, required=True)
+
+
+async def _name_preference_row(request: Request, user: dict, folded: list,
+                               customer_id: int, key: str):
+    """客户 + 产品**最近一次报价行**的英文名（旧 handler 的查询部分）。"""
+    tenant = _tenant_of(user)
+    params: list = [tenant, customer_id, key, folded]
+    async with _db.acquire(request) as conn:
+        return await conn.fetchrow(
+            "SELECT i.product_name FROM quote_order_items i"
+            " JOIN quote_orders q"
+            "   ON q.tenant_id = i.tenant_id AND q.id = i.quote_order_id"
+            " WHERE i.tenant_id=$1 AND q.customer_id=$2"
+            "   AND i.product_name IS NOT NULL AND i.product_name <> ''"
+            "   AND (i.spec_snapshot->>'product_key' = $3"
+            "        OR (i.spec_snapshot->>'product_key' IS NULL"
+            "            AND lower(i.product_name) = ANY($4::text[])))"
+            + _scope_sql(user, params, "q")
+            + " ORDER BY q.created_at DESC, i.id DESC LIMIT 1",
+            *params,
+        )
+
+
+def _require_product_in_specs(specs: dict, key: str) -> None:
+    """产品可见性闸门（**唯一一份**）：不可见的产品按"不存在"回 404。"""
+    if specs.get(key) is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "PRODUCT_NOT_FOUND",
+            "message": "产品不存在或当前团队不可见: %s" % key,
+        })
+
+
+def _name_preference_disambiguate(candidates: list, spec, key: str) -> dict:
+    """从「候选行」里按**旧 SQL 的同一谓词与同一行顺序**选出该客户上次用的英文名。
+
+    为什么用候选集而不是让 SQL 直接带名字列表：名字列表由产品定义派生
+    （注册表 + 团队资料），只有内核知道；门面自己派生就是第二份实现。
+    所以供数 SQL 只做「同客户、product_key 命中或历史行」的候选集，ORDER BY 与旧 SQL
+    逐字一致；谓词在这里按同一行顺序首命中应用 —— 与
+    WHERE(pk=$3 OR (pk IS NULL AND lower(name)=ANY($4))) LIMIT 1 等价
+    （被过滤掉的行既不在旧 WHERE 里，也不改变剩余行的相对顺序）。
+    """
+    folded = spec_names_for(spec)
+    for row in candidates or []:
+        name = row.get("product_name")
+        if not isinstance(name, str) or not name:
+            continue
+        pk = row.get("product_key")
+        if pk == key:
+            return {"product_name": name}
+        # 历史行没有 product_key：按「该产品全部英文名」匹配（旧 SQL 的 lower(name)=ANY）
+        if pk is None and name.casefold() in folded:
+            return {"product_name": name}
+    return {"product_name": None}
+
+
+def _name_preference_payload(row) -> dict:
+    """产品名偏好响应（**纯投影**；旧 handler 与供数 RPC 共用同一份）。"""
+    return {"product_name": (row["product_name"] if row else None)}
+
+
+_PREF_CUSTOMER_ADAPTER = TypeAdapter(int)
+
+
+def _name_pref_query(params: dict) -> tuple:
+    """query 原始字符串 → (customer_id, product_key)，与旧端点**同一份** 422 口径。
+
+    customer_id 是**必填** query int（FastAPI：缺失 = missing / 非法 = int_parsing）；
+    product_key 是普通 str（默认空）。
+    """
+    raw = params.get("customer_id")
+    if raw is None:
+        raise RequestValidationError([{
+            "type": "missing", "loc": ("query", "customer_id"),
+            "msg": "Field required", "input": None,
+        }])
+    try:
+        customer_id = _PREF_CUSTOMER_ADAPTER.validate_python(raw)
+    except ValidationError as exc:
+        raise _rpc_validation_error(exc, ("query", "customer_id"))
+    return customer_id, (params.get("product_key") or "")
+
+
+def quote_name_preference_from_datasets(datasets: dict, params: dict, user: dict) -> dict:
+    """P2 引擎 RPC：GET /quotes/product-name-preference 的供数版（**同一份**判定）。
+
+    datasets：tenant_products / tenant_workstation_products / product_profiles（产品集合）
+    + customers（客户闸门行，0/1）+ quote_order_items（偏好行，0/1）。
+    """
+    _require_engine()
+    customer_id, key = _name_pref_query(params or {})
+    key = (key or "").strip()
+    if not key:
+        raise _product_key_required()
+    specs = _quotable_specs_from_rows(
+        _rpc_dataset(datasets, "tenant_products"),
+        _rpc_dataset(datasets, "tenant_workstation_products"),
+        _rpc_dataset(datasets, "product_profiles"),
+        user,
+    )
+    _require_product_in_specs(specs, key)
+    customer_rows = [r for r in _rpc_dataset(datasets, "customers") if isinstance(r, dict)]
+    customer = customer_rows[0] if customer_rows else None
+    _customer_visible_or_404(customer, user)
+    _customer_team_ok_or_404(customer, user)
+    candidates = [r for r in _rpc_dataset(datasets, "preference_candidates")
+                  if isinstance(r, dict)]
+    return _name_preference_disambiguate(candidates, specs.get(key), key)
+
+
 @app.get("/api/v1/quotes/product-name-preference")
 async def quote_product_name_preference(
     request: Request,
@@ -2370,51 +2633,12 @@ async def quote_product_name_preference(
     _require_engine()
     key = (product_key or "").strip()
     if not key:
-        raise HTTPException(status_code=422, detail={
-            "error": "validation", "code": "PRODUCT_KEY_REQUIRED",
-            "field": "product_key", "detail": "product_key 不能为空",
-        })
-
-    # 产品可见性 / 团队隔离与产品下拉、模板同一口径（注册表 ∪ 团队可见租户产品，
-    # 并套用团队资料里的多英文名）；不可见的产品按"不存在"回 404。
+        raise _product_key_required()
     specs = await _quotable_specs(request, user)
-    spec = specs.get(key)
-    if spec is None:
-        raise HTTPException(status_code=404, detail={
-            "error": "not_found", "code": "PRODUCT_NOT_FOUND",
-            "message": "产品不存在或当前团队不可见: %s" % key,
-        })
-    names: list[str] = [
-        spec.name_en,
-        *list(getattr(spec, "name_en_aliases", None) or []),
-    ]
-    if spec.name:
-        names.append(spec.name)
-    folded: list[str] = []
-    for raw in names:
-        name = (raw or "").strip().casefold()
-        if name and name not in folded:
-            folded.append(name)
-
-    tenant = _tenant_of(user)
-    params: list = [tenant, customer_id, key, folded]
-    async with _db.acquire(request) as conn:
-        # 客户闸门：不存在 / 已软删 / 别团队 ⇒ 404（不泄露存在性）。
-        await _doc_customer(conn, customer_id, user, required=True)
-        row = await conn.fetchrow(
-            "SELECT i.product_name FROM quote_order_items i"
-            " JOIN quote_orders q"
-            "   ON q.tenant_id = i.tenant_id AND q.id = i.quote_order_id"
-            " WHERE i.tenant_id=$1 AND q.customer_id=$2"
-            "   AND i.product_name IS NOT NULL AND i.product_name <> ''"
-            "   AND (i.spec_snapshot->>'product_key' = $3"
-            "        OR (i.spec_snapshot->>'product_key' IS NULL"
-            "            AND lower(i.product_name) = ANY($4::text[])))"
-            + _scope_sql(user, params, "q")
-            + " ORDER BY q.created_at DESC, i.id DESC LIMIT 1",
-            *params,
-        )
-    return {"product_name": (row["product_name"] if row else None)}
+    _require_product_in_specs(specs, key)
+    await _require_customer_for_doc(request, customer_id, user)
+    row = await _name_preference_row(request, user, spec_names_for(specs.get(key)), customer_id, key)
+    return _name_preference_payload(row)
 
 
 @app.get("/api/v1/quotes/reference-price")
