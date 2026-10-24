@@ -169,6 +169,14 @@
 >
 >
 >
+>
+> **第十六批（2026-10-24 23:20）· P3 覆盖率机检 + 收益量化 + 文档索引**
+> - **覆盖率机检**（`docs/P3_COVERAGE_AND_BENEFIT_2026-10-24.md`）：87 条 passthrough 全部归类 ——
+>   **32 已覆盖（门面直连/切片）/ 14 留内核（业务元数据·字节·写副作用）/ 41 方案 A 例外 / 未归类 0** ⇒ 「可迁清单已清空」有了机检证据（不再是文档自述）；
+> - **收益量化**（GraphQL 逐小时）：内核 invocation **08-09Z 均值 74/h → 13-14Z 均值 28/h（-62%）**，且 08:00Z 之后每小时 `scriptThrewException` **均为 0**；
+> - 工单新增 §9.2b（同样数据），作为「我们可自主控制的缓解手段」证据；
+> - **文档索引**（`docs/README.md` 3d–3j）补齐本轮所有新文档（工单中英双版、附件目录、P3 三件、事故记录），交接可检索。
+>
 > **第十五批（2026-10-24 23:00）· 工单附件工件齐套（A2/A5/A7/A8/A9）**
 > - **新建 `docs/ticket-2026-10-24/`**（含 README 索引与重生成方式）：`A2_hourly_error_rate.csv`（85 小时）、`A5_dependency_inventory.md`、`A7_edge_hourly.csv`（72 行）、`A8_kaas_hourly.csv`（109 行，含 cpu/wallTime/memory 的 P50/P99）、`A9_timeline.md`、`A1_tail_excerpt.md`；
 > - **修正一个关键数字**：峰值小时 `2026-10-24T07:00Z` 实际是 **scriptThrewException 2562 / 2750 ≈ 93%**（之前正文引用 993 是更早查询口径，已作废）；
