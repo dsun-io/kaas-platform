@@ -163,6 +163,18 @@
 >   render-data 真实返回 404 `DOC_NOT_FOUND`（生产 trade_docs 0 行，属预期）；写路径 403→201 验证团队管理员判定链路；
 > - **门禁**：worker **2029+12skip** / ts-worker **41 文件 650 测** / orchestrator **273**；
 >
+>
+> **第十批（2026-10-24 21:25）· 写路径首次放量**
+> - **写路径放量**（tax-archives / product-tax-rates 的 create/update/delete 共 6 条 route id）。放量依据三级证据：
+>   ① 校验已下沉 `kaas_common/workstation/tax_archive_rules.py`（新旧共用一份）；② 内核 44 + 门面 45 条写测试（SQL/参数逐字）；
+>   ③ **生产库事务内验证**：TS 写 SQL 原样在生产 PG18 执行（INSERT / UPDATE / 软删 / **停用行复活分支**），与内核同语义列集合一致，**执行后 ROLLBACK 零残留**。
+> - **线上写冒烟通过**（QA 团队账号）：POST 档案 **201** → DB 出现行 → DELETE **200**（status=inactive）；
+>   POST 产品税率 **201** → PATCH **200**（DB 里 `input_vat_rate` 真变成 0.11）→ DELETE **200**；越界税率 **422** 文案逐字。冒烟数据已清理。
+> - **又放量 4 条只读**：`events.list`、`trade-docs.content-versions.{list,get}`（纯 SQL；payload/custom_keys 按内核现状用 `::text` 保 parity）、`pricing-data.list`（引擎切片）。
+> - **两条既有缺陷（非本批引入，已登记）**：① 内核未登记 `events.payload` / content-versions `custom_keys` 的 jsonb 解码 ⇒ 响应是文本串，前端按对象/数组读会恒空；
+>   ② pricing-data 矩阵恒空行（产品定义里 pricing_key 维度只声明字段不声明选项）⇒ `rows` 恒 `[]`，cell/历史参考价是死代码。
+> - **门禁**：worker **2098+12skip** / ts-worker **46 文件 742 测** / orchestrator **273**。
+>
 > **第九批（2026-10-24 21:00）**
 > - **fx-rates 放量**（用户拍板 **A：汇率是全局基线表**，不做团队隔离；决策与理由写进 P2 §8.8）；线上 200 返回真实汇率；
 > - **AI 两读 + quotes 两参考读放量**（ai.providers / ai.usage / quotes.reference-price / quotes.cost-reference）：纯 SQL（聚合全在 SQL；30 天中位数在 TS 纯函数逐字镜像）；
