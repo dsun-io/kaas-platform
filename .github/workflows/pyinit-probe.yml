@@ -52,6 +52,29 @@ jobs:
           uv --version
           python3 --version
 
+      # 诊断：CI 的 token 到底能不能「创建新 worker」？（pywrangler 会把 API 错误体吞掉）
+      # 结果写进 summary，避免以后再靠猜。
+      - name: Token capability diagnostic (create script)
+        continue-on-error: true
+        run: |
+          echo 'export default { async fetch() { return new Response("ok"); } };' > /tmp/w.js
+          printf '{"main_module":"w.js"}' > /tmp/meta.json
+          code=$(curl -sS -o /tmp/resp.json -w '%{http_code}' -X PUT \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/kaas-token-probe-diag" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -F "metadata=@/tmp/meta.json;type=application/json" \
+            -F "w.js=@/tmp/w.js;type=application/javascript+module")
+          echo "create-script http=$code"
+          cat /tmp/resp.json || true
+          {
+            echo "### Token capability diagnostic"
+            echo "- create-script http status: \`$code\`"
+            echo '\`\`\`json'
+            head -c 800 /tmp/resp.json || true
+            echo ''
+            echo '\`\`\`'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # E2b：把真实内核源码同步进克隆探针目录（不在仓库里存副本，避免与内核漂移）
       - name: Sync kernel source into kernelclone probe
         if: github.event.inputs.target == 'kernelclone'
