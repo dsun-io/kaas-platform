@@ -168,6 +168,15 @@
 >
 >
 >
+>
+> **第十五批（2026-10-24 23:00）· 工单附件工件齐套（A2/A5/A7/A8/A9）**
+> - **新建 `docs/ticket-2026-10-24/`**（含 README 索引与重生成方式）：`A2_hourly_error_rate.csv`（85 小时）、`A5_dependency_inventory.md`、`A7_edge_hourly.csv`（72 行）、`A8_kaas_hourly.csv`（109 行，含 cpu/wallTime/memory 的 P50/P99）、`A9_timeline.md`、`A1_tail_excerpt.md`；
+> - **修正一个关键数字**：峰值小时 `2026-10-24T07:00Z` 实际是 **scriptThrewException 2562 / 2750 ≈ 93%**（之前正文引用 993 是更早查询口径，已作废）；
+> - **时间线证实**：该峰值紧跟 **06:42:07Z 开始的 deploy**（run 40071240322，commit c25ffe36）；但**事故起点是 10-23T00:00Z（早于该部署）** ⇒ 部署不是起因、可能加剧；
+> - **A1 如实处理**：原始 JSONL 未持久化（未接 Logpush），只保留两类异常栈摘录；已在附件里写明该限制，并新增 `scripts/capture-kernel-tail.ps1`（下次复现可立即抓 rayId/colo/scriptVersion）；
+> - 当前健康：最近 90 分钟 **45 请求 / 0 错误** ⇒ 无法即时抓新鲜失败样本（也正是请 CF 内部 trace 的理由）；
+> - 中英双版工单均已同步（数字口径 + 附件映射）。
+>
 > **第十四批（2026-10-24 22:40）· E2b 真实内核克隆（决定性阴性结果）**
 > - 用 Docker（`node:22-bookworm`）绕开 Windows 建 pyodide venv 的限制，把**生产内核同一份 `backend/worker/src`（209 文件）+ 同一份依赖** 克隆部署为 `kaas-pyinit-kernelclone`；
 >   **Worker Startup Time 3580ms**（与生产 2.6–3.9s 同量级）、上传 13.2 MiB；
