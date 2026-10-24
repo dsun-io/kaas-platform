@@ -499,7 +499,11 @@ class Default(WorkerEntrypoint):
 **处置**：本轮**不放量**这两条（`misc-read.ts` 已实现并接线，`AUTH_DB_SPLIT_ROUTES` 暂不加 `fx-rates`/`external-docs`）。
 修法（另立任务，新旧路径一起改，避免 parity 撕裂）：
 1. `external-docs`：加 `tenant_id=$1` + `_team_scope` 谓词（与 `trade-doc-files` 同一把硬尺）；补跨团队隔离用例；
-2. `fx-rates`：先与产品确认「汇率是否应全局共享」——若共享，在文档与响应里明确（并保留无谓词）；若按团队隔离，则加谓词 + 迁移表结构（fx_rates 目前无 team_id 列）。
+2. `fx-rates`：**用户 2026-10-24 拍板 = A（全局共享）**。
+   - 汇率是**对外报价的全局基线**（同一时点对所有团队一致），按团队隔离没有业务意义；
+   - `fx_rates` 表保持无 `team_id` 列、SQL 保留无团队谓词，**这是有意决策不是缺陷**（已在 §8.8 记录）；
+   - 已放量 `fx-rates.list`（门面直连）；`/fx-rates/latest`（含回填写）与 `_debug` 仍在内核，待排期；
+   - 若将来需要"团队自定义汇率"，那是**新增覆盖层**（新表 + 合并规则），不是给基线表加团队列。
 
 `GET /api/v1/trade-docs/{doc_id}/files` 有 `_team_scope` 硬尺（管理员全见 / 成员本团队 / 无团队 403），**可放量**。
 
