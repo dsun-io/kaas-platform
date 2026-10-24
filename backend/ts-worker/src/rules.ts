@@ -2,7 +2,8 @@
  * KaaS TS 门面 · 共享内核纯函数的**逐行镜像**（临时，非第二份实现）。
  *
  * ⚠️ TODO(TODO:TS3)：本文件全部内容 = backend/kaas_common/workstation/{scope,teams,
- * customer_rules,inquiry_rules,number_rules,subscriptions,customer_records}.py 的
+ * product_scope,customer_rules,inquiry_rules,number_rules,subscriptions,customer_records}.py
+ * 与 backend/kaas_common/export_quote/product_names.py（读侧）的
  * **机械直译**（逐行对齐，不改任何判定）。KERNEL（backend/worker）目前没有任何
  * /internal 规则端点可供 Service Binding 调用；按 W3 Phase 2 执行口径
  * （「KERNEL 该端点尚不可用 → 镜像 + 登记 + 测试锁死，待内核暴露 /internal/rules/*
@@ -742,4 +743,191 @@ export function currentFileOf(rows: Record<string, unknown>[]): Record<string, u
   return rows.reduce((best, row) =>
     Number(row.version ?? 0) > Number(best.version ?? 0) ? row : best);
 }
+// ══════════════════════════════════════════════════════════════════════════════
+// 产品域：可见性尺 + 英文名读时投影（2026-10-24 P0 热读直连所需）
+// 真源：kaas_common/workstation/product_scope.py（128-159）与
+//       kaas_common/export_quote/product_names.py（读侧 52-175）。
+// ⚠️ 仍是**机械直译**（不改任何判定，逐行对齐）；待内核暴露 /internal/rules/* 后删除。
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** 判定原因（product_scope.py:81-85 逐字）。 */
+export const PRODUCT_ACCESS_REASON = {
+  OK: "ok",
+  ADMIN: "admin",
+  NO_TEAM: "no_team",
+  LEGACY_UNATTRIBUTED: "legacy_unattributed",
+  OTHER_TEAM: "other_team",
+} as const;
+
+export type ProductAccessReason =
+  (typeof PRODUCT_ACCESS_REASON)[keyof typeof PRODUCT_ACCESS_REASON];
+
+/** 一次可见性判定的完整结论（product_scope.py:97-110 ProductInfoAccess）。 */
+export interface ProductInfoAccess {
+  allowed: boolean;
+  reason: ProductAccessReason;
+  /** 建议状态码（product_scope.py:88-94 _STATUS_BY_REASON；401 归鉴权层） */
+  httpStatus: number;
+}
+
+/** product_scope.py:113-123 _same_non_null：两侧都非空且字符串相等。 */
+function sameNonNullTeam(a: unknown, b: unknown): boolean {
+  if (a === null || a === undefined || b === null || b === undefined) return false;
+  const sa = String(a);
+  const sb = String(b);
+  if (sa === "" || sb === "") return false;
+  return sa === sb;
+}
+
+/**
+ * product_scope.py:128-159 `product_info_access`：产品**相关信息**（图片 /
+ * product_profiles 基础信息）对该访问者可见吗。
+ *
+ * 判定顺序（三条分支的先后都有意义）：
+ * 1. 平台管理员 ⇒ allowed/admin/200（运维兜底）；
+ * 2. 访问者无团队 ⇒ no_team/**403**（不是"这条数据不可见"，而是"你没有团队"）；
+ * 3. 行无团队（历史无法归因）⇒ legacy_unattributed/**404**（Q1=B + D3/D4）；
+ * 4. 团队不同 ⇒ other_team/**404**（**不泄露存在性**）；
+ * 5. 否则 allowed/ok/200。
+ *
+ * ⚠️ 刻意**没有** is_system 参数：Q1=B 明确"系统级也不例外"，不存在系统级后门。
+ */
+export function productInfoAccess(input: {
+  role: string | null | undefined;
+  viewerTeamId: unknown;
+  rowTeamId: unknown;
+}): ProductInfoAccess {
+  if (isAdminRole(input.role)) {
+    return { allowed: true, reason: PRODUCT_ACCESS_REASON.ADMIN, httpStatus: 200 };
+  }
+  const viewer = input.viewerTeamId;
+  if (viewer === null || viewer === undefined || String(viewer) === "") {
+    return { allowed: false, reason: PRODUCT_ACCESS_REASON.NO_TEAM, httpStatus: 403 };
+  }
+  const row = input.rowTeamId;
+  if (row === null || row === undefined || String(row) === "") {
+    return {
+      allowed: false,
+      reason: PRODUCT_ACCESS_REASON.LEGACY_UNATTRIBUTED,
+      httpStatus: 404,
+    };
+  }
+  if (!sameNonNullTeam(row, viewer)) {
+    return { allowed: false, reason: PRODUCT_ACCESS_REASON.OTHER_TEAM, httpStatus: 404 };
+  }
+  return { allowed: true, reason: PRODUCT_ACCESS_REASON.OK, httpStatus: 200 };
+}
+
+// ── 产品英文名（product_names.py 读侧；写侧归一化仍在 Python）────────────────
+
+/** product_names.py:45-49 `LIST_KEY`。 */
+export const NAME_EN_LIST_KEY = "name_en_list";
+/** product_names.py:47 `PRIMARY_KEY`。 */
+export const NAME_EN_PRIMARY_KEY = "name_en_primary";
+/** product_names.py:49 `LEGACY_SINGLE_KEY`（历史单值，只读兼容）。 */
+export const NAME_EN_LEGACY_KEY = "name_en";
+
+/** product_names.py:52-58 `clean_name`：只去两端空白；None → ""。 */
+export function cleanNameEn(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  return (typeof value === "string" ? value : String(value)).trim();
+}
+
+/**
+ * product_names.py:61-84 `normalize_names`：保序、去空、按大小写不敏感去重
+ * （Python 用 casefold()，英文名场景 toLowerCase() 等价；差异只涉非拉丁连字）。
+ */
+export function normalizeNameEnList(values: unknown): string[] {
+  let list = values;
+  if (list === null || list === undefined) return [];
+  if (typeof list === "string") list = [list];
+  if (!Array.isArray(list)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of list as unknown[]) {
+    const name = cleanNameEn(raw);
+    if (!name) continue;
+    const folded = name.toLowerCase();
+    if (seen.has(folded)) continue;
+    seen.add(folded);
+    out.push(name);
+  }
+  return out;
+}
+
+/** product_names.py:87-91 `_as_info`：非 Mapping（含数组/字符串/None）一律 {}。 */
+function asInfo(info: unknown): Record<string, unknown> {
+  if (info === null || typeof info !== "object" || Array.isArray(info)) return {};
+  return { ...(info as Record<string, unknown>) };
+}
+
+/**
+ * product_names.py:94-110 `name_en_list_from_info`：读全部英文名（主名在前）。
+ * 兼容三种历史形状：只有 list / 只有 primary / 只有单值 name_en。
+ */
+export function nameEnListFromInfo(info: unknown): string[] {
+  const data = asInfo(info);
+  let names = normalizeNameEnList(data[NAME_EN_LIST_KEY]);
+  if (!names.length) {
+    const legacy = cleanNameEn(data[NAME_EN_LEGACY_KEY]);
+    if (legacy) names = [legacy];
+  }
+  const primary = cleanNameEn(data[NAME_EN_PRIMARY_KEY]);
+  if (primary) {
+    const matched = names.find((n) => n.toLowerCase() === primary.toLowerCase());
+    if (matched === undefined) {
+      names = [primary, ...names];
+    } else {
+      names = [matched, ...names.filter((n) => n !== matched)];
+    }
+  }
+  return names;
+}
+
+/** product_names.py:113-116 `primary_name_en_from_info`：没配 → ""（调用方回落注册表）。 */
+export function primaryNameEnFromInfo(info: unknown): string {
+  const names = nameEnListFromInfo(info);
+  return names.length ? names[0]! : "";
+}
+
+/** product_names.py:119-124 `has_name_en_info`：出现过任何形式的英文名（含历史单值）。 */
+export function hasNameEnInfo(info: unknown): boolean {
+  const data = asInfo(info);
+  if (NAME_EN_LIST_KEY in data || NAME_EN_PRIMARY_KEY in data) return true;
+  return Boolean(cleanNameEn(data[NAME_EN_LEGACY_KEY]));
+}
+
+/**
+ * product_names.py:169-175 `normalized_info`（**读侧**投影）：有英文名时补出规范形状
+ * （`name_en_list` 主名在前 + `name_en_primary`），其它键原样返回；完全没配英文名时
+ * **一个键都不加**（保持旧响应逐字不变）。
+ *
+ * 内部与 127-166 `apply_name_en_info` 的读侧等价（names/primary 都不显式给）。
+ */
+export function normalizedProductInfo(info: unknown): Record<string, unknown> {
+  const data = asInfo(info);
+  if (!hasNameEnInfo(data)) return data;
+  const current = nameEnListFromInfo(data);
+  const wanted = cleanNameEn(data[NAME_EN_PRIMARY_KEY]);
+  if (wanted && current.length) {
+    const matched = current.find((n) => n.toLowerCase() === wanted.toLowerCase());
+    if (matched !== undefined) {
+      current.splice(current.indexOf(matched), 1);
+      current.unshift(matched);
+    }
+  }
+  // product_names.py:158-159：完全没配英文名且不是显式改名 ⇒ 一个键都不加（此处不可达，
+  // 进入前 hasNameEnInfo 已保证出现过英文名键；保留以逐行对齐）。
+  const hadKeys = [NAME_EN_LIST_KEY, NAME_EN_PRIMARY_KEY, NAME_EN_LEGACY_KEY].some(
+    (key) => key in data,
+  );
+  if (!current.length && !hadKeys) return data;
+  data[NAME_EN_LIST_KEY] = current;
+  data[NAME_EN_PRIMARY_KEY] = current.length ? current[0]! : "";
+  if (NAME_EN_LEGACY_KEY in data) {
+    data[NAME_EN_LEGACY_KEY] = current.length ? current[0]! : "";
+  }
+  return data;
+}
+
 

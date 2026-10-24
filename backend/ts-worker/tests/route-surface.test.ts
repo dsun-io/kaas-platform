@@ -5,6 +5,11 @@
  * 2026-10-24 旧单产品导入 3 条端点下线；2026-10-24 第二轮 preview-render-data +
  * 第三轮 A 客户英文名偏好 2 条透传）：Python **280** 业务路由（193 直接 + 87 透传）vs TS 门面注册路由。
  *
+ * 2026-10-24 P0（AUTH_DB_SPLIT，docs/ARCH_AUTH_DB_SPLIT_2026-10-24.md §3.2）**只改实现分布，
+ * 不改路由面**：products 3 条 GET + notifications/unread-count + approvals 列表共 **5 条只读
+ * GET** 由「显式透传内核」改为「开关 on 时门面直连 Hyperdrive（off 仍透传）」。路径/method
+ * 一个字没动 ⇒ 280 业务路由 + 4 内置 = 284 的口径不变（193 直接注册里 5 条换实现，87 前缀透传不变）。
+ *
  * 规则：
  * - 引擎透传前缀（quotes/trade-docs/ai）由 proxy mount 覆盖，不逐条注册，单独计数；
  * - 其余路由必须一条不少、一条不多（method+path 全等，参数语法归一 {id} 与 :id 等价）。
@@ -71,6 +76,25 @@ describe("路由面覆盖（Python到TS门面）", () => {
       )
       .map((r) => r.methods.join("/") + " " + r.path + "  (" + r.file + ":" + r.line + ")");
     expect(missing, "缺失路由: " + missing.join(" | ")).toEqual([]);
+  });
+
+  it("P0 热读 5 条只读 GET 仍逐条注册（改实现不改路由面，各恰好 1 次）", () => {
+    const p0Routes = [
+      "GET /api/v1/products",
+      "GET /api/v1/products/:p/profile",
+      "GET /api/v1/products/:p/media",
+      "GET /api/v1/notifications/unread-count",
+      "GET /api/v1/approvals",
+    ];
+    for (const route of p0Routes) {
+      const hits = ts.filter((r) => r.method + " " + r.path === route);
+      expect(hits, "应恰好注册一次（重复注册会让 Hono 先注册者吞掉后者）: " + route).toHaveLength(1);
+    }
+    // 它们都不在引擎前缀透传组里：分类属于「门面注册」（P0 起其中 5 条走直连 SQL）
+    for (const route of p0Routes) {
+      const path = route.split(" ")[1]!;
+      expect(PROXY_PREFIXES.some((p) => path.startsWith(p))).toBe(false);
+    }
   });
 
   it("TS 侧没有多余路由", () => {

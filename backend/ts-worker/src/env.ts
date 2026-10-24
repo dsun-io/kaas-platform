@@ -37,6 +37,17 @@ export interface Env {
   S3_PRESIGN_EXPIRES: string;
   /** 前端基址（重置密码链接用；对齐 Python _binding("FRONTEND_BASE_URL")，未配则回退官方域名）。 */
   FRONTEND_BASE_URL?: string;
+  /**
+   * P0 灰度开关（docs/ARCH_AUTH_DB_SPLIT_2026-10-24.md §8）：控制台热读端点走
+   * 「门面直连 Hyperdrive」还是「原样透传 Python 内核」。
+   * **默认 off**（变量缺失 = off）⇒ 行为与今天完全一致，即一键回退路径。
+   */
+  AUTH_DB_SPLIT?: string;
+  /**
+   * 逗号白名单：只让列出的路由 id 走直连（如 `products,notifications`）。
+   * 空/缺失 = 全部受 AUTH_DB_SPLIT 控制；条目按 id 前缀匹配（见 boot-flag.ts）。
+   */
+  AUTH_DB_SPLIT_ROUTES?: string;
 
   // ── secrets（占位：wrangler secret put 写入，绝不入仓/打印）──
   /** JWT HS256 签名密钥。缺失 = 503（对齐 Python _jwt_secret）。 */

@@ -4,7 +4,9 @@
  * 口径（ADR-008 铁纪律）：门面只做鉴权 + 原样透传，审批路由/自批判定/通知语义全在 Python 内核。
  * 覆盖：
  * - 无 token / 坏 token → 401，且不触达内核；
- * - 11 条路由逐条原样转发（method / path / query / body / Authorization 头）；
+ * - 10 条路由逐条原样转发（method / path / query / body / Authorization 头）；
+ *   `GET /notifications/unread-count` 自 2026-10-24 P0 起由 src/routes/notifications.ts 注册
+ *   （开关 on 直连 DB、off 仍透传），其透传/直连行为见 tests/p0-hot-reads.test.ts；
  * - 内核 4xx 原样透传、5xx 归一 kernel_error；
  * - API token 身份 → 铸短时效内部 JWT（绝不透传 kaas_oat_ 明文）+ 无 scope 403。
  */
@@ -165,7 +167,6 @@ describe("逐条显式路由原样透传（method / path / query / body）", () 
     },
     { method: "GET", path: "/api/v1/approvals?view=pending&page=2" },
     { method: "GET", path: "/api/v1/notifications?unread=1" },
-    { method: "GET", path: "/api/v1/notifications/unread-count" },
     { method: "POST", path: "/api/v1/notifications/5/read" },
     { method: "POST", path: "/api/v1/notifications/read-all" },
     { method: "GET", path: "/api/v1/team/approvers" },

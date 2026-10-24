@@ -1,5 +1,6 @@
 /**
- * KaaS TS 门面 · workstations 域（35 条路由：14 门面移植 + 21 内核透传）。
+ * KaaS TS 门面 · workstations 域（32 条路由：14 门面移植 + 18 内核透传）。
+ * 2026-10-24 P0：产品清单/资料/图 3 条只读 GET 迁到 src/routes/products.ts（直连 DB，开关控制）。
  *
  * 真源逐条对齐：
  * - backend/worker/src/ws_workstations.py（我的工位 / 个人订阅 / 生效编码判定）
@@ -17,7 +18,7 @@
  *   校验与指纹 / 档位覆盖合并 apply_option_overrides）、**价格生命周期**
  *   （_compute_sku_hash / _upsert_price）、**difflib 近似名建议**、**PNG 校验与
  *   R2 存储**（公章）—— 在 TS 重写即"第二份实现"，故门面只鉴权后原样转发。
- *   清单：tenant-products 写 3 条、products 5 条、product-options/overrides 2 条、
+ *   清单：tenant-products 写 3 条、products 写侧 2 条、product-options/overrides 2 条、
  *   spec/wizard 2 条、company-seals 6 条。
  *
  * SQL 风格：一律 sql.unsafe + 位置参数（$n），与 Python 侧 f-string + $n 逐条对照。
@@ -684,7 +685,7 @@ app.post("/api/v1/tenant-product-status", (c) => respond(c, async () => {
 }));
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 内核透传（21 条）
+// 内核透传（18 条）
 // ══════════════════════════════════════════════════════════════════════════════
 
 // 租户产品写侧（ws_products.py:269-409）：spec 深校验 / spec_fingerprint 在报价引擎。
@@ -701,20 +702,11 @@ app.delete("/api/v1/tenant-products/:product_id", (c) => respond(c, async () => 
   return forwardKernelRequest(c);
 }));
 
-// 产品注册表 / 产品档案 / 产品图（ws_files.py:378-495）—— ProductSpec 注册表在引擎。
-app.get("/api/v1/products", (c) => respond(c, async () => {
-  await requireUser(c);
-  return forwardKernelRequest(c);
-}));
-app.get("/api/v1/products/:product_key/profile", (c) => respond(c, async () => {
-  await requireUser(c);
-  return forwardKernelRequest(c);
-}));
+// 产品档案写 / 产品图上传（ws_files.py:466-526）—— ProductSpec 注册表在引擎，写侧全部透传。
+// 2026-10-24 P0：三条只读 GET（/products、/products/{key}/profile、/products/{key}/media）
+// 已迁到 src/routes/products.ts（AUTH_DB_SPLIT=on 时直连 Hyperdrive；off 仍透传），
+// 因此本文件不再注册它们（路由面覆盖由 tests/route-surface.test.ts 机检）。
 app.put("/api/v1/products/:product_key/profile", (c) => respond(c, async () => {
-  await requireUser(c);
-  return forwardKernelRequest(c);
-}));
-app.get("/api/v1/products/:product_key/media", (c) => respond(c, async () => {
   await requireUser(c);
   return forwardKernelRequest(c);
 }));

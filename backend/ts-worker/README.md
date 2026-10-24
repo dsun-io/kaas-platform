@@ -3,11 +3,17 @@
 > **定位（ADR-008 两层架构）**：TS Worker(Hono) = 对外唯一门面；Python Worker = 内核。
 > 当前进度（2026-10-24 复核）：Phase 1 工程骨架 + Phase 2 波 A/B/C 完成；M1-f/M3/P0-A/C29/R-D 收口、
 > 旧单产品导入 3 条端点下线后
-> **门面注册 193 条 + 内核透传 85 条（12 个前缀 mount）= 278 业务路由**（+4 内置 = **282**）
+> **门面注册 193 条 + 内核透传 87 条（12 个前缀 mount）= 280 业务路由**（+4 内置 = **284**）
 > （auth 9 / customers 21 / teams 19 / orders 24 / files 9 / outreach 12 / admin 11 /
-> workstations 35 / intel 37 / dashboard 3 / misc 12 / meta 1）。
+> workstations 32 / intel 37 / dashboard 3 / misc 12 / meta 1）。
 > 透传实现统一为 `src/proxy.ts:forwardKernelRequest`（前缀 mount 与显式透传路由共用一份）。
-> 测试 **305 条 / 26 文件全绿**；route-surface **193 直接** 0 缺 0 多；openapi **278 = 193 + 85** 全覆盖。
+> 测试 **387 条 / 31 文件全绿**；route-surface **193 直接** 0 缺 0 多；openapi **280 = 193 + 87** 全覆盖。
+>
+> **2026-10-24 P0（认证/DB 拆分第一阶段）**：`GET /products`、`/products/{key}/profile`、
+> `/products/{key}/media`、`/notifications/unread-count`、`/approvals` 已具备**门面直连 Hyperdrive**
+> 实现；由 `AUTH_DB_SPLIT` + `AUTH_DB_SPLIT_ROUTES` 灰度控制（**off = 原样透传内核，一键回退**）。
+> 开关 on 时这些端点**不再调用内核**（页面首屏不依赖 Python 冷启动）。
+> 设计见 `docs/ARCH_AUTH_DB_SPLIT_2026-10-24.md`。
 > 全部只做鉴权 / 参数校验 / 协议转换；业务规则仍在 Python 内核与 `backend/kaas_common/`。
 
 ## 铁纪律（违反即回退）

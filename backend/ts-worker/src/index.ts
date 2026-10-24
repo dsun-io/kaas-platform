@@ -20,6 +20,8 @@ import orderRoutes from "./routes/orders";
 import outreachRoutes from "./routes/outreach";
 import teamRoutes from "./routes/teams";
 import intelRoutes from "./routes/intel";
+import notificationRoutes from "./routes/notifications";
+import productRoutes from "./routes/products";
 import workstationsRoutes from "./routes/workstations";
 import dashboardRoutes from "./routes/dashboard";
 import importRoutes from "./routes/imports";
@@ -92,6 +94,13 @@ app.route("/", teamRoutes);
 // 波 C：intel（leadgen/leads/research/shipments/market）+ workstations（enums/spec/products/tenant/subscriptions）+ dashboard
 // 注意：Hono 先注册先命中；workstations.ts 含 /api/v1/products* 5 条透传，后续 files 域若注册同路径需调整顺序。
 app.route("/", intelRoutes);
+// ── P0 热读（docs/ARCH_AUTH_DB_SPLIT_2026-10-24.md §3.2 / §8）─────────────────
+// 产品清单 / 产品资料 / 产品图：AUTH_DB_SPLIT=on ⇒ 门面直连 Hyperdrive（无 Python 冷启动）；
+// 默认 off ⇒ 与原透传逐字一致（一键回退）。开关判定在 handler 内**每请求**求值
+// （src/boot-flag.ts），路由注册保持静态，故路由面计数不变。
+app.route("/", productRoutes);
+// 站内通知未读数（铃铛角标）：同上，开关 on 直连，off 透传内核。
+app.route("/", notificationRoutes);
 app.route("/", workstationsRoutes);
 app.route("/", dashboardRoutes);
 app.route("/", orderRoutes);
