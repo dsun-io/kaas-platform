@@ -621,6 +621,13 @@ QuoteRequest(spec_rows=[
 `application/json`，而 axios 见到 JSON 默认头会把 `FormData` 转成 JSON，
 **文件就传丢了**；这是最容易踩且最难查的一个坑，所以单独写了一条测试盯着。
 
+> ⚠️ **这条只对 axios 成立**：axios 浏览器适配器对 `FormData` 会把这行头删掉
+> （"let the browser set it"），浏览器才补得上 `; boundary=…`。
+> **裸 `XMLHttpRequest` 禁止照抄**：作者设过的 `Content-Type` 会被原样发出，
+> 浏览器不再补 boundary ⇒ 内核 400「Missing boundary in multipart.」
+> （2026-10-24 线上产品图上传事故）。裸 XHR 一律不设该头，兜底见
+> `frontend/src/lib/api/xhr-upload.ts` 的 `xhrSend`。
+
 契约见 `shared/contracts/export-quote.ts` 的 `OrderImportTemplateInfoSchema` /
 `OrderImportPreviewResponseSchema` / `OrderImportRowSchema` / `ImportIssueSchema` /
 `ImportTemplateInfoSchema` / `ImportTemplateColumnSchema`（旧

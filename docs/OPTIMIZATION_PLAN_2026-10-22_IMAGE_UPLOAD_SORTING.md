@@ -4,6 +4,13 @@
 > 追加要求：**「上移下移的箭头不要，改为鼠标拖动排列」**、**「所有排序的部分都设计为拖拽排序」**。
 > 性质：**已实施**（本文是设计与落地记录，不是待办设计稿）。
 
+
+> **2026-10-24 线上修复（回归）**：第 3 条的进度条改走**裸 XHR** 后，`xhrPostForm` 手写了
+> `Content-Type: multipart/form-data` —— 浏览器只在作者没设该头时才补 `; boundary=…`，
+> 于是内核解析表单直接 400「Missing boundary in multipart.」（axios 那条路不受影响，
+> axios 浏览器适配器会自己删掉该头）。修复：`frontend/src/lib/api/xhr-upload.ts` 不再设该头，
+> `xhrSend` 对 `FormData` 兜底删除任何 `Content-Type`（大小写不敏感）；回归单测在
+> `frontend/src/lib/api/__tests__/xhr-upload.test.ts`。详见 `docs/PROBLEM_STATUS_2026-10-11.md` 交接摘要。
 ## 0. 一句话结论
 
 痛点全在**交互层**，后端能力早就齐了：直传+代理回退、软删可恢复、改名、重排、按 sha256 去重都在。

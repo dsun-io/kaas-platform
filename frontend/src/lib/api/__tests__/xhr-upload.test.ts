@@ -11,7 +11,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const sessionMock = vi.hoisted(() => ({ accessToken: "tok-123" as string | null }));
+const sessionMock = vi.hoisted(() => ({
+  accessToken: "tok-123" as string | null,
+}));
 const useV2Mock = vi.hoisted(() => ({ value: true }));
 
 vi.mock("@/lib/auth/session-cache", () => ({
@@ -38,7 +40,9 @@ class FakeXhr {
   timeout = 0;
   status = 0;
   responseText = "";
-  upload: { onprogress: ((e: ProgressEvent) => void) | null } = { onprogress: null };
+  upload: { onprogress: ((e: ProgressEvent) => void) | null } = {
+    onprogress: null,
+  };
   onload: (() => void) | null = null;
   onerror: (() => void) | null = null;
   ontimeout: (() => void) | null = null;
@@ -93,7 +97,11 @@ afterEach(() => {
 
 describe("xhrSend", () => {
   it("站内路径自动补 baseURL，并带 Bearer 与 X-Use-V2（与 client.ts 同口径）", async () => {
-    const p = xhrSend({ method: "POST", path: "/products/x/media", body: new FormData() });
+    const p = xhrSend({
+      method: "POST",
+      path: "/products/x/media",
+      body: new FormData(),
+    });
     const xhr = FakeXhr.last!;
     expect(xhr.method).toBe("POST");
     expect(xhr.url).toBe("https://api.example.com/api/v1/products/x/media");
@@ -123,6 +131,35 @@ describe("xhrSend", () => {
     await expect(p).resolves.toMatchObject({ ok: true, status: 200 });
   });
 
+  it("FormData body 时删掉作者设的 Content-Type —— boundary 只能由浏览器补", async () => {
+    // 2026-10-24 线上事故：手写 "Content-Type: multipart/form-data" ⇒ XHR 不再补
+    // "; boundary=…" ⇒ 内核 Starlette 400「Missing boundary in multipart.」。
+    // 这里钉住兜底：即使调用方传了这个头，也不许发出去。
+    const form = new FormData();
+    const p = xhrSend({
+      method: "POST",
+      url: "https://r2.example.com/put",
+      body: form,
+      headers: { "Content-Type": "multipart/form-data", "X-Custom": "1" },
+    });
+    const xhr = FakeXhr.last!;
+    expect(xhr.headers["Content-Type"]).toBeUndefined();
+    expect(xhr.headers["X-Custom"]).toBe("1");
+    xhr.finish(200);
+    await p;
+
+    // 大小写不敏感：小写形式同样删掉
+    const p2 = xhrSend({
+      method: "POST",
+      url: "https://r2.example.com/put",
+      body: new FormData(),
+      headers: { "content-type": "multipart/form-data" },
+    });
+    expect(FakeXhr.last!.headers["content-type"]).toBeUndefined();
+    FakeXhr.last!.finish(200);
+    await p2;
+  });
+
   it("没有 token 时不发 Authorization", async () => {
     sessionMock.accessToken = null;
     const p = xhrSend({ method: "POST", path: "/x", body: new FormData() });
@@ -150,13 +187,25 @@ describe("xhrSend", () => {
   });
 
   it("HTTP 非 2xx 不 reject（交给调用方决定回退还是报错）", async () => {
-    const p = xhrSend({ method: "PUT", url: "https://r2.example.com/put", body: new Blob(["x"]) });
+    const p = xhrSend({
+      method: "PUT",
+      url: "https://r2.example.com/put",
+      body: new Blob(["x"]),
+    });
     FakeXhr.last!.finish(400, "InvalidArgument");
-    await expect(p).resolves.toMatchObject({ ok: false, status: 400, text: "InvalidArgument" });
+    await expect(p).resolves.toMatchObject({
+      ok: false,
+      status: 400,
+      text: "InvalidArgument",
+    });
   });
 
   it("网络错误 reject TypeError（hook 据此判定「直传异常」并回退）", async () => {
-    const p = xhrSend({ method: "PUT", url: "https://r2.example.com/put", body: new Blob(["x"]) });
+    const p = xhrSend({
+      method: "PUT",
+      url: "https://r2.example.com/put",
+      body: new Blob(["x"]),
+    });
     FakeXhr.last!.onerror?.();
     await expect(p).rejects.toBeInstanceOf(TypeError);
   });
@@ -180,11 +229,25 @@ describe("xhrPostForm", () => {
     await expect(p).resolves.toEqual({ id: 7, name: "主图" });
   });
 
+  it("不手写 Content-Type：浏览器才会补 boundary（线上 400 的根因回归）", async () => {
+    const form = new FormData();
+    const p = xhrPostForm("/products/x/media", form);
+    const xhr = FakeXhr.last!;
+    expect(xhr.headers["Content-Type"]).toBeUndefined();
+    // 鉴权头不受影响（别为了修这个把整条路弄丢）
+    expect(xhr.headers.Authorization).toBe("Bearer tok-123");
+    expect(xhr.body).toBe(form);
+    xhr.finish(201, "{}");
+    await p;
+  });
+
   it("非 2xx 抛 XhrHttpError，且 response.data 带后端错误体（upload-errors 依赖这个形状）", async () => {
     const p = xhrPostForm("/products/x/media", new FormData());
     FakeXhr.last!.finish(
       422,
-      JSON.stringify({ detail: { code: "FILE_TOO_LARGE", detail: "超过上限 8MB" } }),
+      JSON.stringify({
+        detail: { code: "FILE_TOO_LARGE", detail: "超过上限 8MB" },
+      }),
     );
     const err = await p.catch((e: unknown) => e);
     expect(err).toBeInstanceOf(XhrHttpError);

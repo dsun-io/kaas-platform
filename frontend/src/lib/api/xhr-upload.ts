@@ -98,7 +98,21 @@ export function xhrSend({
     xhr.open(method, target, true);
     xhr.timeout = timeoutMs;
 
-    const allHeaders = url ? { ...headers } : { ...authHeaders(), ...headers };
+    const baseHeaders = url ? { ...headers } : { ...authHeaders(), ...headers };
+    // FormData 的 Content-Type **只能由浏览器补**（它要生成 boundary）：
+    // 作者设过的值 XHR 会原样发出去，服务端收到的就是没有 boundary 的
+    // `multipart/form-data` ⇒ FastAPI/Starlette 直接 400「Missing boundary in multipart.」
+    // （2026-10-24 线上产品图上传事故的根因）。口径与 axios 浏览器适配器一致：
+    // isFormData ⇒ headers.setContentType(undefined)（"Let the browser set it"）。
+    const isFormData =
+      typeof FormData !== "undefined" && body instanceof FormData;
+    const allHeaders = isFormData
+      ? Object.fromEntries(
+          Object.entries(baseHeaders).filter(
+            ([key]) => key.toLowerCase() !== "content-type",
+          ),
+        )
+      : baseHeaders;
     for (const [key, value] of Object.entries(allHeaders)) {
       xhr.setRequestHeader(key, value);
     }
@@ -109,16 +123,24 @@ export function xhrSend({
         onProgress({
           loaded: event.loaded,
           total,
-          percent: total > 0 ? Math.min(100, Math.round((event.loaded / total) * 100)) : null,
+          percent:
+            total > 0
+              ? Math.min(100, Math.round((event.loaded / total) * 100))
+              : null,
         });
       };
     }
 
     xhr.onload = () => {
-      resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, text: xhr.responseText });
+      resolve({
+        ok: xhr.status >= 200 && xhr.status < 300,
+        status: xhr.status,
+        text: xhr.responseText,
+      });
     };
     xhr.onerror = () => reject(new TypeError("Network Error"));
-    xhr.ontimeout = () => reject(new TypeError(`上传超时（${Math.round(timeoutMs / 1000)}s）`));
+    xhr.ontimeout = () =>
+      reject(new TypeError(`上传超时（${Math.round(timeoutMs / 1000)}s）`));
     xhr.onabort = () => reject(new TypeError("上传已取消"));
 
     xhr.send(body);
@@ -128,6 +150,11 @@ export function xhrSend({
 /**
  * 站内 multipart 上传（服务端代传兜底）：非 2xx 抛 `XhrHttpError`，
  * 2xx 返回解析后的 JSON。
+ *
+ * **这里不设 `Content-Type`**（历史 bug，2026-10-24 线上事故）：
+ * 一旦设成 `multipart/form-data`，浏览器就不再补 `; boundary=…`，
+ * 请求头与请求体不匹配 ⇒ 内核 400「Missing boundary in multipart.」。
+ * boundary 只能由发送方（浏览器）生成，调用方也不该传这个头。
  */
 export async function xhrPostForm(
   path: string,
@@ -138,7 +165,6 @@ export async function xhrPostForm(
     method: "POST",
     path,
     body: form,
-    headers: { "Content-Type": "multipart/form-data" },
     onProgress,
   });
   const data = parseJson(result.text);

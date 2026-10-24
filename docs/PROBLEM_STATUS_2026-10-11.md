@@ -14,6 +14,24 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-24 · 线上修复：产品图上传 400「Missing boundary in multipart.」✅）**
+> - **根因**：`frontend/src/lib/api/xhr-upload.ts` 的 `xhrPostForm` 给 `FormData` 手写
+>   `Content-Type: multipart/form-data` —— 浏览器**只在作者没设该头时**才补 `; boundary=…`，
+>   所以请求头没有 boundary、请求体却有；内核 Starlette `MultiPartParser` 取不到 boundary
+>   ⇒ `HTTPException(400, "Missing boundary in multipart.")`（`formparsers.py:257` → `requests.py:292-294`）。
+>   **只影响这条裸 XHR**（产品图/单证照片的「服务端代传」兜底）：axios 浏览器适配器对 FormData 会删掉该头
+>   （"let the browser set it"）⇒ 同一个手写头在 axios 路径上是死代码、从没出过事。
+>   门面不背锅：`forwardKernelRequest` 原样转发头与流（`proxy.ts:106/130-139`），有 boundary 会保留。
+> - **修复**：`xhrPostForm` 不再设该头；`xhrSend` 兜底 —— body 是 `FormData` 时删掉调用方传入的任何
+>   `Content-Type`（大小写不敏感，口径同 axios）。
+> - **证据（真实 Chromium 147 回环实测）**：手写头 ⇒ 服务端收到 `multipart/form-data`（无 boundary）；
+>   不写头 ⇒ 收到 `multipart/form-data; boundary=----WebKitFormBoundary…`。
+> - **回归**：`xhr-upload.test.ts` +2 条（xhrPostForm 不设头 / xhrSend 删掉 FormData 的 Content-Type）。
+> - **门禁（2026-10-24 实测，工作区静止）**：前端 `pnpm typecheck` PASS / `pnpm lint` 0 error（74 条既有 warning）/
+>   `pnpm test` **1609 passed / 218 files**（= 1607 + 2 条新增）。内核与门面未改，无需重跑 worker/ts-worker。
+> - **残余**：已缓存旧 HTML 的浏览器仍会加载旧 bundle（`0ng_-mn1z4ger.js`），需刷新/缓存过期才拿到新 chunk；
+>   服务端不做兼容（没有 boundary 物理上无法解析，只能由发送方生成）。
+
 > **（2026-10-24 · 遗留批：deer_net 列定义 / 单证材质 / 旧单产品导入端点下线 ✅）**
 > - **deer_net 列定义（只改产品定义）**：`products/deer_net.py` 的 `Column("derived.width_mm","宽度(mm)")`
 >   改为 `Column("spec.height_m","宽度(m)","Width (m)",2)`（derived `width_mm` 公式保留）⇒ `template_columns`
