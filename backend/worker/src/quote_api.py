@@ -38,7 +38,7 @@ import json
 from datetime import date, datetime
 from decimal import Decimal
 from itertools import product as _cartesian
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 
 from fastapi import Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, Field
@@ -97,6 +97,8 @@ _ENGINE_SYMBOLS = (
     "template_columns", "template_headers", "verify_all", "extend_product",
     "pricing_key_defined_values", "pricing_key_of", "pricing_key_value",
     "quote_meta", "default_terms_template",
+    # R-D 整单批量导入（2026-10-23）：多产品单表解析 + 并集列定义
+    "order_template_columns", "order_template_headers", "parse_order_table",
 )
 
 
@@ -129,6 +131,12 @@ def _ensure_engine_loaded() -> bool:
         # 这几个没进包的 __all__，按子模块取（与 dev 的 import 路径一致）。
         from kaas_common.export_quote.formulas import describe_pricing_key  # noqa: E402
         from kaas_common.export_quote.importers import MAX_ROWS as _MAX_ROWS  # noqa: E402
+        # R-D 整单导入：新增函数没进包的 __all__，按子模块取（同 dev 的 import 路径）。
+        from kaas_common.export_quote.importers import (  # noqa: E402
+            order_template_columns,
+            order_template_headers,
+            parse_order_table,
+        )
         from kaas_common.export_quote.models import (  # noqa: E402
             extend_product,
             pricing_key_defined_values,
@@ -336,15 +344,12 @@ def _product_or_404(product_key: str):
             "error": "unknown_product", "message": str(exc)})
 
 
-@app.get("/api/v1/export-quote/products")
-async def export_quote_products(request: Request, user: dict = Depends(_get_current_user)):
-    """已注册的产品模型（前端产品下拉的唯一来源）。
+async def _quotable_specs(request: Request, user: dict) -> dict:
+    """「可报价产品」集合：注册表 ∪ 团队可见 tenant_products，再去掉被停用的。
 
-    发现层合并（2026-10-17，与 dev 同口径）：Python 注册表 ∪ tenant_products
-    中调用者可见的行（本团队行优先；历史 NULL 行仅管理员），同 key tenant 行覆盖
-    Python 定义 —— 运行时新增的产品在下拉里可见、可选、可算价。
+    与 `/export-quote/products` **同一口径**（R-D 整单导入复用）：模板/预览看到的
+    必须和产品下拉是同一批产品，否则会出现「下拉能选、导入说未识别」或反过来。
     """
-    _require_engine()
     from kaas_common.workstation.product_scope import is_same_team
     from kaas_common.workstation.scope import is_admin_role
     from kaas_common.export_quote.tenant_products import spec_from_dict
@@ -388,11 +393,22 @@ async def export_quote_products(request: Request, user: dict = Depends(_get_curr
         table="tenant_workstation_products",
     )
     disabled = {r["product_key"] for r in disabled_rows}
+    return {key: spec for key, spec in specs.items() if spec.key not in disabled}
+
+
+@app.get("/api/v1/export-quote/products")
+async def export_quote_products(request: Request, user: dict = Depends(_get_current_user)):
+    """已注册的产品模型（前端产品下拉的唯一来源）。
+
+    发现层合并（2026-10-17，与 dev 同口径）：Python 注册表 ∪ tenant_products
+    中调用者可见的行（本团队行优先；历史 NULL 行仅管理员），同 key tenant 行覆盖
+    Python 定义 —— 运行时新增的产品在下拉里可见、可选、可算价。
+    """
+    _require_engine()
+    specs = await _quotable_specs(request, user)
 
     out = []
     for spec in specs.values():
-        if spec.key in disabled:
-            continue
         out.append({
             "key": spec.key,
             "name": spec.name,
@@ -748,6 +764,9 @@ class _CalculateIn(BaseModel):
     variant_overrides: Optional[dict] = Field(default=None, description="变体数值覆盖")
     # 本单选用的包装（产品 packaging[].id）；缺省 = 默认包装/最早创建的包装
     packaging_id: Optional[str] = None
+    # 本单成本口径：pretax（默认，税前价）| incl_tax（含税价，引擎按进项票税点还原）
+    cost_basis: Optional[Literal["pretax", "incl_tax"]] = Field(
+        default=None, description="成本口径 pretax|incl_tax；缺省=产品定义值")
     spec_rows: Optional[List[dict]] = Field(
         default=None, description="只算这些规格行；不传则展开产品的全部组合")
     constants_override: Optional[dict] = None
@@ -846,6 +865,7 @@ def _assemble_request(body: _CalculateIn, user: dict, cost_table: Optional[dict]
     req.product = product
     req.cost_table = cost_table or {}
     req.packaging_id = body.packaging_id or ""
+    req.cost_basis = (body.cost_basis or "").strip()
     req.spec_rows = [dict(r) for r in body.spec_rows] if body.spec_rows else None
     req.quote_date = body.quote_date
     return req
@@ -958,6 +978,16 @@ def _parse_or_400(data: bytes, spec, filename: str = "", sheet: Optional[str] = 
     """解析上传表；整表级失败统一 400 `parse_error`（CSV 与 xlsx 同一条通路）。"""
     try:
         return parse_table(data, spec, filename=filename, sheet=sheet)
+    except ImportError_ as exc:
+        raise HTTPException(status_code=400, detail={
+            "error": "parse_error", "message": str(exc)})
+
+
+def _parse_order_or_400(data: bytes, specs, filename: str = "",
+                        sheet: Optional[str] = None):
+    """解析整单表（多产品）；整表级失败统一 400 `parse_error`（与单产品同一错误体）。"""
+    try:
+        return parse_order_table(data, specs, filename=filename, sheet=sheet)
     except ImportError_ as exc:
         raise HTTPException(status_code=400, detail={
             "error": "parse_error", "message": str(exc)})
@@ -1084,6 +1114,73 @@ async def export_quote_import_preview(
     payload["product_name"] = spec.name
     payload["expected_columns"] = template_headers(spec)
     return payload
+
+
+@app.get("/api/v1/export-quote/import/order/template-info")
+async def export_quote_import_order_template_info(
+    request: Request,
+    keys_query: str = Query(
+        "", alias="product_keys",
+        description="逗号分隔的产品 key；空 = 全部可报价产品"),
+    user: dict = Depends(_get_current_user),
+):
+    """整单批量导入模板的列定义（6 个公共列 + 各产品模板列的并集）。
+
+    前端据此：① 逐列说明「该填什么 / 适用哪些产品」；② 用 exceljs 现生成 xlsx 模板
+    （线上 Worker 没有 openpyxl，服务端不产 xlsx —— 与单产品模板同一口径）。
+    """
+    _require_engine()
+    specs = await _quotable_specs(request, user)
+    wanted = [k.strip() for k in (keys_query or "").split(",") if k.strip()]
+    if wanted:
+        unknown = [k for k in wanted if k not in specs]
+        if unknown:
+            raise HTTPException(status_code=404, detail={
+                "error": "unknown_product",
+                "message": "未找到产品: %s；可选: %s" % (
+                    "、".join(unknown), "、".join(specs)),
+            })
+        # 去重但保留调用方给的顺序（列顺序 = 按产品顺序并集）
+        chosen = {key: specs[key] for key in dict.fromkeys(wanted)}
+    else:
+        chosen = specs
+
+    cols = order_template_columns(list(chosen.values()))
+    return {
+        "product_keys": list(chosen),
+        "headers": [c.header for c in cols],
+        "columns": [c.to_dict() for c in cols],
+        "max_rows": MAX_ROWS,
+        "max_mb": _IMPORT_MAX_MB,
+        "data_sheet": "整单表",
+        "notes": [
+            "一行 = 订单里的一个产品行；「产品」列填产品名称或 key。",
+            "规格列 = 所选产品模板列的并集：某行的产品用不上的列留空即可。",
+            "「成本口径」可留空（默认不含税）；「包装方式」留空 = 用产品默认包装；"
+            "「本行利润率（%）」留空 = 继承整单默认。",
+            "表头请逐字照用（导入器按列名识别，别加 *、别换单位）。",
+        ],
+    }
+
+
+@app.post("/api/v1/export-quote/import/order/preview")
+async def export_quote_import_order_preview(
+    request: Request,
+    file: UploadFile = File(description="整单表：.xlsx（首选）或 .csv"),
+    sheet: Optional[str] = Form(default=None),
+    user: dict = Depends(_get_current_user),
+):
+    """整单表预览：解析 + 行级校验，**不落库、不算价**（结果直接填工作台）。
+
+    产品集合 = 可报价产品（注册表 ∪ 团队可见租户产品，与 `/export-quote/products` 同源）。
+    坏行不阻断其它行：行仍返回、`row_errors` 说明原因（只用 error，warning 在 issues 里）。
+    """
+    _require_engine()
+    specs = await _quotable_specs(request, user)
+    data = await _read_upload(file)
+    parsed = _parse_order_or_400(
+        data, list(specs.values()), file.filename or "", sheet)
+    return parsed.to_dict()
 
 
 @app.post("/api/v1/export-quote/import/calculate")

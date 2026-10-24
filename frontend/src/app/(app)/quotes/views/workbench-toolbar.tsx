@@ -6,9 +6,16 @@
  * C19：批量导入与单条报价并列（同一层的两种工作方式），入口放在顶部，
  * 不塞进任何产品行卡片里。
  */
+import type { OrderImportRow } from "@contracts/export-quote";
+
 import { BulkImportEntry } from "../components/bulk-import-dialog";
 
-export function WorkbenchToolbar() {
+export function WorkbenchToolbar({
+  onFillRows,
+}: {
+  /** 整单导入解析成功后，把产品行填进工作台 */
+  onFillRows: (rows: OrderImportRow[]) => void;
+}) {
   return (
     <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
       <div>
@@ -18,7 +25,7 @@ export function WorkbenchToolbar() {
           存成报价单；客户直接给整张表格时，用右侧「批量导入表格」一次算完。
         </p>
       </div>
-      <BulkImportEntry />
+      <BulkImportEntry onFillRows={onFillRows} />
     </div>
   );
 }

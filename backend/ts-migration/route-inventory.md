@@ -9,10 +9,10 @@
 
 | 指标 | 数量 | 期望 | 结论 |
 |---|---|---|---|
-| APIRoute 业务路由 | 279 | — | — |
+| APIRoute 业务路由 | 281 | — | — |
 | FastAPI 内置（openapi/docs/redoc） | 4 | — | — |
-| **app.routes 合计** | **283** | **283** | **✅ 一致** |
-| method×path 展开行数 | 279 | — | 仅供参考 |
+| **app.routes 合计** | **285** | **283** | **⚠️ 仍不符（差 +2，需人工复查）** |
+| method×path 展开行数 | 281 | — | 仅供参考 |
 
 > 核对说明：计划 §2 Phase 0 登记的 253 = app.routes 全部条目；其中 4 条是 FastAPI 默认
 > 挂载的文档路由（不参与业务迁移；TS 侧 Hono 是否镜像留给 Phase 1 决定）：
@@ -28,7 +28,7 @@
 
 | 域 | 路由数 |
 |---|---|
-| quotes | 38 |
+| quotes | 40 |
 | trade-docs | 38 |
 | intel | 37 |
 | workstations | 35 |
@@ -187,29 +187,31 @@
 | PUT | `/api/v1/tenant/company-profile` | `put_company_profile` | :5899 | `_get_current_user` | ✅ | — | workstations |
 | GET | `/api/v1/trade-docs/{doc_id}/render-data` | `get_trade_doc_render_data` | :6061 | `_get_current_user` | ✅ | — | trade-docs |
 
-### `worker/src/quote_api.py`（19 条）
+### `worker/src/quote_api.py`（21 条）
 
 | Method | Path | Endpoint | 行号 | Depends | 登录态 | 平台运营 | 域 |
 |---|---|---|---|---|---|---|---|
-| GET | `/api/v1/export-quote/products` | `export_quote_products` | :339 | `_get_current_user` | ✅ | — | quotes |
-| GET | `/api/v1/export-quote/products/{product_key}/formulas` | `export_quote_product_formulas` | :414 | `_get_current_user` | ✅ | — | quotes |
-| GET | `/api/v1/export-quote/terms/template` | `export_quote_terms_template` | :447 | `_get_current_user` | ✅ | — | quotes |
-| POST | `/api/v1/export-quote/calculate` | `export_quote_calculate` | :886 | `_get_current_user` | ✅ | — | quotes |
-| POST | `/api/v1/export-quote/calculate-internal` | `export_quote_calculate_internal` | :899 | `_require_internal_admin_dep` | ✅ | — | quotes |
-| POST | `/api/v1/export-quote/verify` | `export_quote_verify` | :909 | `_require_internal_admin_dep` | ✅ | — | quotes |
-| GET | `/api/v1/export-quote/import/template` | `export_quote_import_template` | :1002 | `_get_current_user` | ✅ | — | quotes |
-| GET | `/api/v1/export-quote/products/{product_key}/import-template` | `export_quote_import_template_info` | :1020 | `_get_current_user` | ✅ | — | quotes |
-| POST | `/api/v1/export-quote/import/preview` | `export_quote_import_preview` | :1067 | `_get_current_user` | ✅ | — | quotes |
-| POST | `/api/v1/export-quote/import/calculate` | `export_quote_import_calculate` | :1089 | `_get_current_user` | ✅ | — | quotes |
-| GET | `/api/v1/quotes` | `list_quote_orders` | :1738 | `_get_current_user` | ✅ | — | quotes |
-| POST | `/api/v1/quotes` | `create_quote_order` | :1803 | `_get_current_user` | ✅ | — | quotes |
-| POST | `/api/v1/quotes/batch` | `create_quote_batch` | :1881 | `_get_current_user` | ✅ | — | quotes |
-| GET | `/api/v1/quotes/reference-price` | `quote_reference_price` | :1922 | `_get_current_user` | ✅ | — | quotes |
-| GET | `/api/v1/quotes/cost-reference` | `quote_cost_reference` | :1974 | `_get_current_user` | ✅ | — | quotes |
-| GET | `/api/v1/quotes/{quote_id}` | `get_quote_order` | :2055 | `_get_current_user` | ✅ | — | quotes |
-| PATCH | `/api/v1/quotes/{quote_id}` | `update_quote_order` | :2081 | `_get_current_user` | ✅ | — | quotes |
-| PUT | `/api/v1/quotes/{quote_id}/items` | `replace_quote_items` | :2214 | `_get_current_user` | ✅ | — | quotes |
-| GET | `/api/v1/export-quote/products/{product_key}/spec` | `export_quote_product_spec` | :2262 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/export-quote/products` | `export_quote_products` | :399 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/export-quote/products/{product_key}/formulas` | `export_quote_product_formulas` | :430 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/export-quote/terms/template` | `export_quote_terms_template` | :463 | `_get_current_user` | ✅ | — | quotes |
+| POST | `/api/v1/export-quote/calculate` | `export_quote_calculate` | :906 | `_get_current_user` | ✅ | — | quotes |
+| POST | `/api/v1/export-quote/calculate-internal` | `export_quote_calculate_internal` | :919 | `_require_internal_admin_dep` | ✅ | — | quotes |
+| POST | `/api/v1/export-quote/verify` | `export_quote_verify` | :929 | `_require_internal_admin_dep` | ✅ | — | quotes |
+| GET | `/api/v1/export-quote/import/template` | `export_quote_import_template` | :1032 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/export-quote/products/{product_key}/import-template` | `export_quote_import_template_info` | :1050 | `_get_current_user` | ✅ | — | quotes |
+| POST | `/api/v1/export-quote/import/preview` | `export_quote_import_preview` | :1097 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/export-quote/import/order/template-info` | `export_quote_import_order_template_info` | :1119 | `_get_current_user` | ✅ | — | quotes |
+| POST | `/api/v1/export-quote/import/order/preview` | `export_quote_import_order_preview` | :1166 | `_get_current_user` | ✅ | — | quotes |
+| POST | `/api/v1/export-quote/import/calculate` | `export_quote_import_calculate` | :1186 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/quotes` | `list_quote_orders` | :1835 | `_get_current_user` | ✅ | — | quotes |
+| POST | `/api/v1/quotes` | `create_quote_order` | :1900 | `_get_current_user` | ✅ | — | quotes |
+| POST | `/api/v1/quotes/batch` | `create_quote_batch` | :1978 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/quotes/reference-price` | `quote_reference_price` | :2019 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/quotes/cost-reference` | `quote_cost_reference` | :2071 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/quotes/{quote_id}` | `get_quote_order` | :2152 | `_get_current_user` | ✅ | — | quotes |
+| PATCH | `/api/v1/quotes/{quote_id}` | `update_quote_order` | :2178 | `_get_current_user` | ✅ | — | quotes |
+| PUT | `/api/v1/quotes/{quote_id}/items` | `replace_quote_items` | :2311 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/export-quote/products/{product_key}/spec` | `export_quote_product_spec` | :2359 | `_get_current_user` | ✅ | — | quotes |
 
 ### `worker/src/tax_archives.py`（8 条）
 

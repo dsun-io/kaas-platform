@@ -28,6 +28,9 @@
  *  · `workbench-summary-panel`    —— 右侧整单汇总（≥xl）
  *  · `workbench-sticky-actions`   —— <xl 吸底动作条
  */
+import type { OrderImportRow } from "@contracts/export-quote";
+
+import { newLineDraft } from "../components/quote-line-card";
 import { useQuoteWorkbench } from "./use-quote-workbench";
 import { WorkbenchParamsSection } from "./workbench-params-section";
 import { WorkbenchProductSection } from "./workbench-product-section";
@@ -38,9 +41,29 @@ import { WorkbenchToolbar } from "./workbench-toolbar";
 export function QuoteWorkbenchView() {
   const wb = useQuoteWorkbench();
 
+  /** 整单导入 → 行草稿（R-D）：保留用户已填的非空行，去掉空白初稿后追加导入行。 */
+  const fillImportedRows = (rows: OrderImportRow[]) => {
+    const drafts = rows.map((row) => ({
+      ...newLineDraft(row.product_key),
+      spec: row.spec as Record<string, unknown>,
+      pieces: String(row.pieces),
+      costOverride: String(row.cost),
+      // 成本口径：导入表里选的「含税/不含税」随行带入（R-C1 请求级 cost_basis）
+      costBasis: row.cost_basis,
+      // 材质是产品资料选项（不算价）：导入表没有该列 ⇒ 默认空，用户可在行内再选
+      material: "",
+      packagingId: row.packaging_id ?? "",
+      profitPctOverride: row.profit_pct == null ? "" : String(row.profit_pct),
+    }));
+    wb.setLines((prev) => [
+      ...prev.filter((line) => line.productKey !== "" || line.pieces !== ""),
+      ...drafts,
+    ]);
+  };
+
   return (
     <>
-      <WorkbenchToolbar />
+      <WorkbenchToolbar onFillRows={fillImportedRows} />
 
       <div className="grid gap-5 pb-24 xl:grid-cols-[minmax(0,1fr)_380px] xl:pb-0">
         <div className="min-w-0 space-y-5">

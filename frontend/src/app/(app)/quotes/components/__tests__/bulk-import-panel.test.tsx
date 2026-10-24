@@ -1,188 +1,175 @@
 /**
- * C19：批量导入面板主链路（上传 → 预览/校验 → 确认导入/计算 → 结果汇总）。
+ * R-D：整单批量导入面板（下载整单模板 → 上传解析预览 → 填入工作台）。
  *
  * 为什么 mock hooks 而不是走真实 MSW：
- *  - 导入接口是 multipart。jsdom 的 `FormData`/`File` 与 Node(undici) 的
- *    fetch 品牌不兼容，真实 multipart 在 jsdom 测试里会挂起/断言失败
- *    （C18 的 `p1-handlers-contract.test.ts` 因此用 vitest 的 environment 指令切到 node）。
- *  - 端点行为本身已在 **node 环境**的 MSW 契约测试里覆盖：
- *    `src/mocks/__tests__/longtail-handlers-contract.test.ts`（preview/calculate +
- *    空文件/.xls/超限 400）。
- * 所以这里专注 UI 状态机与纯函数复用，文件/网络层各由对应测试兜。
+ *  - 导入接口是 multipart，jsdom 的 FormData/File 与 Node(undici) fetch 品牌不兼容；
+ *  - 端点行为本身在 node 环境的 MSW 契约测试里覆盖（longtail-handlers-contract）。
+ * 这里专注 UI 状态机：文件预检 / 预览摘要 / 问题清单 / 填入回调。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import type {
-  ImportCalculateResponse,
-  ImportPreviewResponse,
+  OrderImportPreviewResponse,
+  OrderImportRow,
 } from "@contracts/export-quote";
 
 const mocks = vi.hoisted(() => {
-  const PRODUCTS = {
-    products: [{ key: "field_fence", name: "牛栏网", combo_count: 48 }],
-    total: 1,
-  };
   const TEMPLATE = {
-    product_key: "field_fence",
-    product_name: "牛栏网",
+    product_keys: [] as string[],
+    headers: ["产品", "件数（卷）", "成本", "竖丝间距(cm)"],
     columns: [
       {
+        header: "产品",
+        kind: "common" as const,
+        products: [],
+        unit: "",
+        options: [],
+        note: "",
+      },
+      {
+        header: "件数（卷）",
+        kind: "common" as const,
+        products: [],
+        unit: "",
+        options: [],
+        note: "",
+      },
+      {
+        header: "成本",
+        kind: "common" as const,
+        products: [],
+        unit: "",
+        options: [],
+        note: "",
+      },
+      {
         header: "竖丝间距(cm)",
-        kind: "scalar",
-        target: "spec.mesh_mm",
-        required: true,
+        kind: "spec" as const,
+        products: ["牛栏网"],
         unit: "cm",
-        options: ["10"],
-        note: "单位 cm",
+        options: ["10", "15"],
+        note: "",
       },
     ],
-    headers: ["竖丝间距(cm)"],
-    required_headers: ["竖丝间距(cm)"],
     max_rows: 2000,
     max_mb: 2,
-    sheets: ["规格表"],
-    data_sheet: "规格表",
-    download: {},
+    data_sheet: "整单表",
     notes: [],
   };
-  const state: {
-    preview: ImportPreviewResponse | null;
-    calculate: ImportCalculateResponse | null;
-  } = { preview: null, calculate: null };
+  const state: { preview: OrderImportPreviewResponse | null } = {
+    preview: null,
+  };
   return {
-    PRODUCTS,
     TEMPLATE,
     state,
     download: vi.fn(),
     previewMutate: vi.fn(async () => state.preview),
-    calculateMutate: vi.fn(async () => state.calculate),
     writeText: vi.fn<(text: string) => Promise<void>>(async () => undefined),
     toastSuccess: vi.fn(),
     toastError: vi.fn(),
   };
 });
 
-const PREVIEW_OK = {
-  product_key: "field_fence",
-  product_name: "牛栏网",
-  source_name: "specs.xlsx",
+const ROWS: OrderImportRow[] = [
+  {
+    row: 1,
+    product_key: "field_fence",
+    product_name: "牛栏网",
+    spec: { mesh_mm: 100 },
+    pieces: 10,
+    cost: 4.8,
+    cost_basis: "pretax",
+    packaging_method: null,
+    packaging_id: null,
+    profit_pct: null,
+    row_errors: [],
+  },
+  {
+    row: 2,
+    product_key: "chain_link",
+    product_name: "勾花网",
+    spec: { wire: 2.0 },
+    pieces: 4,
+    cost: 5.2,
+    cost_basis: "incl_tax",
+    packaging_method: "编织袋+钢带",
+    packaging_id: "pkg-1",
+    profit_pct: 8,
+    row_errors: [],
+  },
+];
+
+const PREVIEW_OK: OrderImportPreviewResponse = {
+  source_name: "order.xlsx",
+  sheet: "整单表",
   total_data_rows: 3,
   usable_rows: 2,
   error_count: 1,
   warning_count: 1,
-  mapping: { "竖丝间距(cm)": "spec.mesh_mm" },
+  products: [
+    { product_key: "field_fence", product_name: "牛栏网", rows: 1 },
+    { product_key: "chain_link", product_name: "勾花网", rows: 1 },
+  ],
+  mapping: {},
   ignored_columns: [],
   issues: [
     {
-      row: 2,
-      column: "竖丝间距(cm)",
-      value: "abc",
-      message: "不是数字",
-      severity: "error" as const,
+      row: 3,
+      column: "件数（卷）",
+      value: "-2",
+      message: "件数必须为正数",
+      severity: "error",
     },
     {
       row: 0,
       column: "",
       value: null,
-      message: "重复行已跳过",
-      severity: "warning" as const,
+      message: "第 3 行已跳过",
+      severity: "warning",
     },
   ],
-  rows: [],
-  expected_columns: ["竖丝间距(cm)"],
-} satisfies ImportPreviewResponse;
+  rows: ROWS,
+  expected_columns: ["产品", "件数（卷）", "成本"],
+};
 
-const PREVIEW_EMPTY = {
+const PREVIEW_EMPTY: OrderImportPreviewResponse = {
   ...PREVIEW_OK,
-  total_data_rows: 2,
+  total_data_rows: 1,
   usable_rows: 0,
-  error_count: 2,
+  error_count: 1,
   warning_count: 0,
+  products: [],
+  rows: [],
   issues: [
     {
       row: 1,
-      column: "竖丝间距(cm)",
-      value: "x",
-      message: "取值不在可选值内",
-      severity: "error" as const,
-    },
-    {
-      row: 2,
-      column: "",
-      value: null,
-      message: "整表只有表头，没有数据行",
-      severity: "error" as const,
+      column: "产品",
+      value: "不存在",
+      message: "未找到该产品",
+      severity: "error",
     },
   ],
-} satisfies ImportPreviewResponse;
-
-const CALC_RESULT = {
-  meta: {
-    product_key: "field_fence",
-    product_name: "牛栏网",
-    currency: "CNY",
-    quote_currency: "USD",
-    quote_date: "2026-10-20",
-    validity_days: 30,
-    valid_until: "2026-11-19",
-    diagnostics: ["示例诊断"],
-    totals: { total_weight_kg: 85, total_price: 1234.5, total_price_fx: 171.9 },
-    orders: [{ total_weight_kg: 85 }],
-  },
-  view: "customer",
-  customer: {
-    header: ["规格", "总净重(kg)"],
-    rows: [["全丝2.0", 42.5]],
-  },
-  internal: {
-    header: ["规格", "总净重(kg)"],
-    rows: [["全丝2.0", 42.5]],
-  },
-  import: {
-    source_name: "specs.xlsx",
-    total_data_rows: 3,
-    usable_rows: 2,
-    skipped_rows: 1,
-    mapping: {},
-    ignored_columns: [],
-    issues: [],
-  },
-  spec_rows: { submitted: 3, computed: 2, skipped: 1 },
-} as unknown as ImportCalculateResponse;
+};
 
 vi.mock("../../hooks/use-export-quote-import", () => ({
-  useExportProducts: () => ({ data: mocks.PRODUCTS, isLoading: false }),
-  useImportTemplateInfo: () => ({ data: mocks.TEMPLATE }),
-  useDownloadTemplate: () => ({
+  useOrderImportTemplateInfo: () => ({ data: mocks.TEMPLATE }),
+  useDownloadOrderTemplate: () => ({
     mutate: mocks.download,
     isPending: false,
     isSuccess: false,
+    data: undefined,
   }),
-  useImportPreview: () => ({
+  useImportOrderPreview: () => ({
     mutateAsync: mocks.previewMutate,
     isPending: false,
   }),
-  useImportCalculate: () => ({
-    mutateAsync: mocks.calculateMutate,
-    isPending: false,
-  }),
 }));
 
-vi.mock("@/lib/fx/use-latest-fx", () => ({
-  useLatestFxRate: () => ({
-    data: { rate: 7.18, is_stale: false, rate_date: "2026-10-20" },
-    isPending: false,
-  }),
-}));
-
-vi.mock("@/lib/auth/auth-context", () => ({
-  useAuth: () => ({ user: { account_type: "customer" } }),
-}));
-
-vi.mock("@/lib/export-quote/import-template-xlsx", () => ({
-  IMPORT_TEMPLATE_NOTES_SHEET: "填写说明",
+vi.mock("@/lib/export-quote/import-order-template-xlsx", () => ({
+  ORDER_TEMPLATE_NOTES_SHEET: "填写说明",
 }));
 
 vi.mock("sonner", () => ({
@@ -190,8 +177,6 @@ vi.mock("sonner", () => ({
 }));
 
 import { BulkImportPanel } from "../bulk-import-panel";
-import { BulkImportEntry } from "../bulk-import-dialog";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -199,14 +184,24 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
-let onImported: ReturnType<typeof vi.fn>;
+let client: QueryClient | null = null;
+let onFillRows: ReturnType<typeof vi.fn>;
 
 function renderPanel() {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
+  client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
   act(() => {
-    root!.render(<BulkImportPanel onImported={onImported as () => void} />);
+    root!.render(
+      <QueryClientProvider client={client!}>
+        <BulkImportPanel
+          onFillRows={onFillRows as (rows: OrderImportRow[]) => void}
+        />
+      </QueryClientProvider>,
+    );
   });
   return container;
 }
@@ -247,11 +242,9 @@ async function click(text: string) {
 }
 
 beforeEach(() => {
-  onImported = vi.fn();
+  onFillRows = vi.fn();
   mocks.state.preview = PREVIEW_OK;
-  mocks.state.calculate = CALC_RESULT;
   mocks.previewMutate.mockClear();
-  mocks.calculateMutate.mockClear();
   mocks.writeText.mockClear();
   mocks.toastSuccess.mockClear();
   mocks.toastError.mockClear();
@@ -271,10 +264,11 @@ afterEach(() => {
   container?.remove();
   root = null;
   container = null;
+  client = null;
   vi.restoreAllMocks();
 });
 
-describe("C19 批量导入面板", () => {
+describe("R-D 整单批量导入面板", () => {
   it("不支持的格式：本地拦下并明确提示，不发预览请求", () => {
     renderPanel();
     chooseFile("old.xls");
@@ -291,78 +285,56 @@ describe("C19 批量导入面板", () => {
     expect(mocks.previewMutate).not.toHaveBeenCalled();
   });
 
-  it("预览校验失败（可用 0 行）：逐行展示问题，且不能确认导入", async () => {
-    mocks.state.preview = PREVIEW_EMPTY;
+  it("预览成功：整单摘要 + 产品徽章 + 行表 + 填入工作台回调", async () => {
     renderPanel();
-    chooseFile("bad.xlsx");
-    await click("先预览解析结果");
+    chooseFile("order.xlsx");
+    await click("解析预览");
 
-    expect(container!.textContent).toContain("没有可用行");
-    expect(container!.textContent).toContain("第 1 行");
-    expect(container!.textContent).toContain("取值不在可选值内");
-    expect(container!.textContent).toContain("整表只有表头");
-    // 可用 0 行 ⇒ 确认按钮禁用（不让用户对着坏表发起计算）
-    expect(buttonByText("确认导入").disabled).toBe(true);
-    expect(mocks.calculateMutate).not.toHaveBeenCalled();
+    expect(mocks.previewMutate).toHaveBeenCalledTimes(1);
+    expect(container!.textContent).toContain("共 3 行 / 可用 2 行");
+    expect(container!.textContent).toContain("1 处错误");
+    expect(container!.textContent).toContain("牛栏网 × 1");
+    expect(container!.textContent).toContain("勾花网 × 1");
+    // 行表：含税/不含税与包装方式按行展示
+    expect(container!.textContent).toContain("不含税");
+    expect(container!.textContent).toContain("含税");
+    expect(container!.textContent).toContain("编织袋+钢带");
+    // 问题清单
+    expect(container!.textContent).toContain("第 3 行");
+    expect(container!.textContent).toContain("件数必须为正数");
+
+    await click("填入工作台");
+
+    expect(onFillRows).toHaveBeenCalledTimes(1);
+    expect(onFillRows.mock.calls[0]?.[0]).toHaveLength(2);
+    expect(mocks.toastSuccess).toHaveBeenCalledTimes(1);
   });
 
-  it("预览 → 确认导入成功：汇总/结果表出现，刷新回调触发", async () => {
+  it("可用 0 行：填入按钮禁用", async () => {
+    mocks.state.preview = PREVIEW_EMPTY;
     renderPanel();
-    chooseFile("specs.xlsx");
-    await click("先预览解析结果");
+    chooseFile("order.xlsx");
+    await click("解析预览");
 
-    expect(container!.textContent).toContain("解析到 2 行可用规格");
-    expect(container!.textContent).toContain("第 2 行");
-    expect(container!.textContent).toContain("不是数字");
-
-    await click("确认导入（批量计算）");
-
-    expect(mocks.calculateMutate).toHaveBeenCalledTimes(1);
-    expect(container!.textContent).toContain("已计算 2 行");
-    expect(container!.textContent).toContain("规格行数");
-    expect(container!.textContent).toContain("总售价（USD）");
-    expect(container!.textContent).toContain("规格");
-    expect(container!.textContent).toContain("客户视图（不含成本列）");
-    expect(onImported).toHaveBeenCalledTimes(1);
+    expect(container!.textContent).toContain("没有可用行");
+    const fill = buttonByText("填入工作台");
+    expect(fill.disabled).toBe(true);
+    await click("填入工作台");
+    expect(onFillRows).not.toHaveBeenCalled();
   });
 
   it("问题清单可复制、可下载 CSV", async () => {
     renderPanel();
-    chooseFile("specs.xlsx");
-    await click("先预览解析结果");
+    chooseFile("order.xlsx");
+    await click("解析预览");
 
     await click("复制");
     expect(mocks.writeText).toHaveBeenCalledTimes(1);
     const copied = mocks.writeText.mock.calls[0]?.[0];
-    expect(copied).toContain("[第 2 行]");
-    expect(copied).toContain("不是数字");
+    expect(copied).toContain("[第 3 行]");
+    expect(copied).toContain("件数必须为正数");
 
     await click("下载 CSV");
-    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
-    expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledTimes(1);
-  });
-
-  it("入口按钮打开导入弹窗（C19 顶部入口接线）", () => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    container = document.createElement("div");
-    document.body.appendChild(container);
-    root = createRoot(container);
-    act(() => {
-      root!.render(
-        <QueryClientProvider client={queryClient}>
-          <BulkImportEntry />
-        </QueryClientProvider>,
-      );
-    });
-
-    expect(container.textContent).toContain("批量导入表格");
-    act(() => {
-      buttonByText("批量导入表格").dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
-    });
-    expect(document.body.textContent).toContain("批量导入报价表");
+    expect(URL.createObjectURL).toHaveBeenCalled();
   });
 });

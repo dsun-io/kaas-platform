@@ -3859,6 +3859,142 @@ export const longtailHandlers = [
     });
   }),
 
+  // ── 整单批量导入（R-D，2026-10-23）─────────────────────────────────────────
+  // GET /export-quote/import/order/template-info ← bulk-import-panel.tsx
+  // 规格列 = 各产品模板列的并集；公共列在前（与后端约定顺序一致）。
+  http.get("/api/v1/export-quote/import/order/template-info", ({ request }) => {
+    const url = new URL(request.url);
+    const wanted = (url.searchParams.get("product_keys") ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const keys =
+      wanted.length > 0
+        ? wanted
+        : MOCK_EXPORT_PRODUCTS.map((p) => String(p.key));
+    const infos = keys
+      .map((k) => importTemplateInfo(k))
+      .filter(
+        (i): i is NonNullable<ReturnType<typeof importTemplateInfo>> =>
+          i !== null,
+      );
+    const commonHeaders = [
+      "产品",
+      "件数（卷）",
+      "成本",
+      "成本口径（含税/不含税）",
+      "包装方式",
+      "本行利润率（%）",
+    ];
+    const seen = new Set<string>();
+    const specHeaders: string[] = [];
+    const specProducts = new Map<string, string[]>();
+    for (const info of infos) {
+      for (const header of info.headers) {
+        if (seen.has(header)) {
+          specProducts.get(header)?.push(info.product_name);
+          continue;
+        }
+        seen.add(header);
+        specHeaders.push(header);
+        specProducts.set(header, [info.product_name]);
+      }
+    }
+    const headers = [...commonHeaders, ...specHeaders];
+    return HttpResponse.json({
+      product_keys: keys,
+      headers,
+      columns: [
+        ...commonHeaders.map((header) => ({
+          header,
+          kind: "common" as const,
+          products: [] as string[],
+          unit: "",
+          options: [] as string[],
+          note: "",
+        })),
+        ...specHeaders.map((header) => ({
+          header,
+          kind: "spec" as const,
+          products: specProducts.get(header) ?? [],
+          unit: "",
+          options: [] as string[],
+          note: "",
+        })),
+      ],
+      max_rows: 2000,
+      max_mb: IMPORT_MAX_MB,
+      data_sheet: "整单表",
+      notes: [
+        "mock：列定义取自各产品公式定义（示例）；模板下载由前端 exceljs 生成",
+        "每行一个产品；与该行产品无关的规格列留空",
+      ],
+    });
+  }),
+
+  // POST /export-quote/import/order/preview ← bulk-import-panel.tsx
+  // 真实后端解析整单表；mock 不解析二进制，固定回 2 行（2 个产品）示例并明确标注。
+  http.post(
+    "/api/v1/export-quote/import/order/preview",
+    async ({ request }) => {
+      const form = await request.formData();
+      const uploadError = importUploadError(form);
+      if (uploadError) {
+        return HttpResponse.json(uploadError, { status: 400 });
+      }
+      const uploaded = form.get("file") as File | null;
+      const picks = MOCK_EXPORT_PRODUCTS.slice(0, 2);
+      const products = picks.map((p) => ({
+        product_key: String(p.key),
+        product_name: String(p.name),
+        rows: 1,
+      }));
+      const rows = picks.map((p, index) => {
+        const info = importTemplateInfo(String(p.key));
+        const columns = (info?.columns ?? []) as Array<Record<string, unknown>>;
+        return {
+          row: index + 1,
+          product_key: String(p.key),
+          product_name: String(p.name),
+          spec: sampleSpecRow(columns),
+          pieces: 10,
+          cost: 4.8,
+          cost_basis: index === 1 ? "incl_tax" : "pretax",
+          packaging_method: null,
+          packaging_id: null,
+          profit_pct: null,
+          row_errors: [],
+        };
+      });
+      const info0 = importTemplateInfo(String(picks[0]?.key ?? ""));
+      return HttpResponse.json({
+        source_name: uploaded?.name || "mock-order.xlsx",
+        sheet: "整单表",
+        total_data_rows: rows.length,
+        usable_rows: rows.length,
+        error_count: 0,
+        warning_count: 1,
+        products,
+        mapping: Object.fromEntries(
+          (info0?.headers ?? []).map((h: string) => [h, h]),
+        ),
+        ignored_columns: [],
+        issues: [
+          {
+            row: 0,
+            column: "",
+            value: null,
+            message:
+              "mock：未真正解析上传文件，下方为示例行（用于打通预览→填入工作台链路）",
+            severity: "warning",
+          },
+        ],
+        rows,
+        expected_columns: info0?.headers ?? [],
+      });
+    },
+  ),
+
   // POST /export-quote/products/:key/explain ← product-spec-tryout.tsx:125
   // 形状 = ws_quote_ext.py:285-297（steps + ok/errors/warnings；不跑价链）
   http.post(

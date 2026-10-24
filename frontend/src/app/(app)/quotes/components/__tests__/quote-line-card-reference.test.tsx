@@ -67,6 +67,12 @@ vi.mock("../../hooks/use-reference-price", () => ({
   useReferencePrice: () => ({ data: mocks.referenceData }),
 }));
 
+// 产品资料接口不在这里验证（另有布局用例）；统一 mock 掉，避免真实请求把
+// 单测变成网络依赖。空资料 = 不渲染材质下拉。
+vi.mock("@/lib/products/use-products", () => ({
+  useProductProfile: () => ({ data: undefined }),
+}));
+
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;

@@ -47,7 +47,7 @@ WORKER_SRC = os.path.join(BACKEND, "worker", "src")
 # 2026-10-23 C29：新增历史订单批量导入 POST /api/v1/imports/orders/preview
 #   与 POST /api/v1/imports/orders（multipart CSV）⇒ 277+2=279 业务路由
 # + 4 内置 = 283（279 + 4）
-EXPECTED_TOTAL = 283
+EXPECTED_TOTAL = 285
 
 
 def _install_stubs() -> None:

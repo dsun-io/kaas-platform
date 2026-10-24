@@ -134,6 +134,9 @@ class QuoteRequest:
     cost_table: Mapping[str, Any] = field(default_factory=dict)
     # 本单选用的包装（产品 packaging[].id）；缺省 = 默认包装/最早创建的包装
     packaging_id: str = ""
+    # 本单成本口径覆盖：pretax | incl_tax；空 = 用产品定义的 cost_basis。
+    # 报价行「按含税价」勾选时由接口层传入（同价随商品不同，成本口径也应逐行可选）。
+    cost_basis: str = ""
     currency: str = "CNY"
     quote_currency: str = "USD"
     customer_id: str = ""
@@ -797,12 +800,14 @@ def build(request: QuoteRequest, mode=DECIMAL) -> QuoteResult:
                     )
                 raw_cost = mode.convert(scope[product.cost_field])
             vat = mode.convert(policy.input_vat_rate)
-            if product.cost_basis == "incl_tax":
+            # 成本口径：请求级（报价行「按含税价」）优先，缺省回落到产品定义值。
+            basis = request.cost_basis or product.cost_basis
+            if basis == "incl_tax":
                 cost_pretax = mode.quantize(raw_cost * (mode.convert(1) - vat), 6)
-            elif product.cost_basis == "pretax":
+            elif basis == "pretax":
                 cost_pretax = raw_cost
             else:
-                raise EngineError(f"cost_basis 只能是 pretax 或 incl_tax（当前 {product.cost_basis}）")
+                raise EngineError(f"cost_basis 只能是 pretax 或 incl_tax（当前 {basis}）")
 
             # 包装费：按当前规格解析（元/卷），计入税前成本后再算利润/税。
             pkg_fee, _pkg, _pkg_range = _packaging_fee(

@@ -513,3 +513,30 @@ def _all_strings(payload) -> list:
         for v in payload:
             out.extend(_all_strings(v))
     return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 请求级成本口径覆盖（R-C1，2026-10-23）
+# 报价行「按含税价」勾选 ⇒ 接口层传 cost_basis="incl_tax"，引擎按进项票税点还原税前成本。
+# 产品定义仍是 pretax ⇒ 不传/空串时结果必须与旧行为逐字节一致。
+# ─────────────────────────────────────────────────────────────────────────────
+class TestRequestCostBasisOverride:
+    def test_incl_tax_request_restores_pretax_cost(self):
+        base = build(request())
+        incl = build(request(cost_basis="incl_tax"))
+        assert len(base.rows) == len(incl.rows)
+        for b, i in zip(base.rows, incl.rows):
+            # 产品定义 pretax：基线成本 = 原始值；含税请求按 (1 − 进项税点 10%) 还原
+            assert float(i.price["cost_pretax"]) == pytest.approx(
+                float(b.price["cost_pretax"]) * 0.9, abs=1e-5
+            )
+
+    def test_empty_basis_keeps_product_default(self):
+        """不传/空串 ⇒ 回落产品定义（旧请求结果不变）。"""
+        base = build(request())
+        empty = build(request(cost_basis=""))
+        assert [r.price for r in base.rows] == [r.price for r in empty.rows]
+
+    def test_unknown_basis_raises_engine_error(self):
+        with pytest.raises(EngineError):
+            build(request(cost_basis="bogus"))

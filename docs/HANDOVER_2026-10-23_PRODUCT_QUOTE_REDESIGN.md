@@ -1,143 +1,105 @@
-# 交接文档 · 产品×报价重构（2026-10-23 收尾）
+# 交接文档 · 产品×报价重构（2026-10-24 收尾终版）
 
-> **用途**：用户 2026-10-23 17:05 要求「交接并生成文档、全部推送远程、关电脑」。
-> 本文件记录**停止时刻的全部事实**：已完成批次、门禁实测、未完成事项与**在新设备恢复任务的步骤**。
-> 恢复时先读本文件 + `git log` + `git status`，**不要假设工作树干净**。
+> **用途**：产品管理 × 报价重构（用户 2026-10-23 反馈 14 条）已全部落地（R-A / R-B / R-C1 / R-C2 / R-D），
+> 本文件记录**最终事实**：改动范围、门禁实测、遗留项与恢复步骤。恢复时先读本文件 + `git log` + `git status`。
 >
 > 关联文档：
 > - 方案（唯一真源）：[`OPTIMIZATION_PLAN_2026-10-23_PRODUCT_QUOTE_REDESIGN.md`](./OPTIMIZATION_PLAN_2026-10-23_PRODUCT_QUOTE_REDESIGN.md)
 > - 批次状态账本：[`TODO.md`](./TODO.md) §R
-> - 历史停止点（上一轮）：[`HANDOVER_2026-10-23_PAUSE.md`](./HANDOVER_2026-10-23_PAUSE.md)（已解除，仅留档）
+> - 历史停止点：[`HANDOVER_2026-10-23_PAUSE.md`](./HANDOVER_2026-10-23_PAUSE.md)（已解除，仅留档）
 
-## 0. 停止点快照
+## 0. 快照
 
 | 项 | 值 |
 |---|---|
 | 分支/HEAD | `main` @ 本文件同批提交（见 `git log -1`） |
 | 工作树 | **干净**（本文件所在提交已含全部改动） |
-| 用户要求 | 交接文档 ✅ / 全部推远程 ✅ / 关机 ✅ |
-| 测试环境 | 本机 Windows + PowerShell 5.1（无 pwsh 7）；node v24.20.0 |
+| 测试环境 | Windows + PowerShell 5.1（无 pwsh 7）；node v24.20.0；worker/orchestrator 用 uv + 各自 venv |
 
-## 1. 本轮做完了什么（代码已落）
+## 1. 四批全部完成
 
-### ✅ R-C2 税务档案：侧边栏可见 + 改名（用户反馈 10/11）
+### ✅ R-A 产品页收口（反馈 1/2/3/5/6/7）
+- 基本信息：表面处理 = `spec.variants` coating 组（chips 多选项，label/别名识别，未配置时首个选项即建组）；
+  材质 = `product_profiles.info.material_options`（**仅资料，不算价**）；HS 编码唯一入口（`spec.hs_codes`）。
+- 删「价格与利润」区（利润率/综合税费/成本口径在报价工作台配置；产品级字段留引擎兜底）。
+- 删「可选档位」区（数据保留，入口收口到基本信息）；包装区去「包装 N」名称（改方式时 name 回填 method 兼容旧快照）。
 
-**根因**：页面早已建成（企业税档：销项增值税/杂税；产品税率：进项增值税/出口退税率），
-但工位挂在 `admin` 组（`internalOnly: true`），侧边栏对**外部团队账号整组隐藏** ⇒ 用户永远看不到。
+### ✅ R-B 报价行重排（反馈 8/9/10）
+- 行卡三段：`<section aria-label="产品信息|件数|金额">`，DOM 顺序固定；折叠摘要三行（产品信息/件数/金额）。
+- 包装下拉 `{p.method || p.name}`；材质下拉（有 `material_options` 才渲染，选中进快照）；成本旁「按含税价」checkbox。
+- `line-to-item` 快照增记 `packaging_method`、`material`。
 
-**改动**（6 处 + 后端镜像 + 文案）：
-| 文件 | 改动 |
-|---|---|
-| `shared/contracts/workstations.ts` | tax-archives：`group: 'admin' → 'account'`、`order: 22 → 2`、`name: 税务管理 → 税务档案`；`SUB_ROUTE_LABELS` 同步 |
-| `backend/kaas_common/domain/workstations.py` | 逐字段镜像同步（R2 契约要求） |
-| `frontend/.../settings/tax-archives/page.tsx` | 页面标题/描述「税务档案」+ 说明整单参数引用 |
-| `quotes/views/workbench-params-card.tsx`、`batch-quote-view.tsx` | 提示文案「税务管理」→「税务档案」 |
-| `tax-archives/components/fx-rate-card.tsx`、`fx-history-card.tsx` | 注释同步 |
-| 根 `README.md` | 工位表行更新 |
-| `tax-archives/__tests__/tax-archives-page.test.tsx` | 测试注释同步 |
+### ✅ R-C1 成本含税开关（跨层契约）
+- `ExportQuoteRequest.cost_basis`（`z.enum(['pretax','incl_tax'])`，可选）；
+- Python：`QuoteRequest.cost_basis` 请求级覆盖产品定义（空 = 产品定义），引擎按 `含税价 × (1 − 进项税点)` 还原；
+- `quote_api._CalculateIn.cost_basis: Optional[Literal["pretax","incl_tax"]]` → `pydantic-schemas.json` 同步 →
+  `backend/ts-worker/src/generated/schemas.ts` 重生成（MCP 工具 schema 同步为 enum）。
+- 旧请求（不带 cost_basis）结果逐字节不变（engine 测 `test_empty_basis_keeps_product_default` 钉住）。
 
-**影响**：外部账号侧边栏「账号」组现在可见「税务档案」（与「企业信息」同组）；写权限不变
-（团队管理员写、成员只读，页面自带只读降级）；报价整单参数的档案下拉**本来就已实现**（选档案自动填税率），未改。
+### ✅ R-C2 税务档案（反馈 10/11）
+- 工位 `tax-archives`：`admin` 组 → `account` 组（此前 internalOnly 导致外部账号侧边栏不可见）；
+  「税务管理」→「税务档案」双端改名（契约 + Python 镜像 + 页面标题/文案 + 根 README）；R2=30 PASS。
 
-### ✅ R-A 产品页收口（用户反馈 1/2/3/5/6/7）——代码完成
+### ✅ R-D 批量导入整单化（反馈 13）
+- 后端：`GET /api/v1/export-quote/import/order/template-info`（并集列定义）+
+  `POST /api/v1/export-quote/import/order/preview`（单表 + 产品列；每行先定位产品再用该产品列映射解析；
+  行级容错；`packaging_id` 服务端按 method 解析；`cost_basis/profit_pct` 随行返回）。
+  **实施裁决**：不新增 calculate 端点（算价/落库复用工作台链路，避免第二套算价口径）。
+- 前端：`bulk-import-panel` 三步（下载整单模板 → 上传预览 → 填入工作台）；`bulk-import-dialog`/`workbench-toolbar`
+  接线 `onFillRows` → `quote-workbench-view` 生成行草稿（含 costBasis/packagingId/profitPct）。
+- 模板：`frontend/src/lib/export-quote/import-order-template-xlsx.ts`（exceljs 现生成，表头/说明页标注适用产品）。
+- 路由清单：283 → 285（281 业务 = 193 直接 + 88 透传），`routes.json`/`route-inventory.md` 已重生成，
+  `openapi.test.ts`/`route-surface.test.ts` 计数同步。
 
-**A1 包装去名称**（反馈 6）：
-- `products/components/business-spec-editor.tsx`：删除「包装名称」输入；`addPackaging` 不再生成 `name: "包装 N"`；
-  改「包装方式」时**自动回填 name = method**（旧报价快照 `packaging_name` 兼容）；空态文案「还没有包装」。
-- 包装区标题「包装费」→「包装」，说明改为「每行 = 一种包装方式（含是否默认与金额）」。
-
-**A2 表面处理并入基本信息**（反馈 1/5）：
-- 新增 `OptionChips` 组件（chips 多选项，可加/删，回车即加）。
-- 表面处理 chips **绑定 `spec.variants` 的 coating 组**（算价真源不变；识别规则 label='表面处理' 优先、
-  `surface/coating/surface_treatment` 别名兜底）；未配置时添加第一个选项即创建
-  `{ name: 'coating', label: '表面处理', options } `。
-- `business-spec-editor.tsx` 的「可选档位」整块删除（数据未删，只是入口收口）。
-
-**A3 材质 chips**（反馈 1；口径 D-1：仅资料不算价）：
-- 基本信息新增材质 chips，存 `product_profiles.info.material_options: string[]`
-  （profile 是自由 dict，PUT 全量保存，**零后端改动**）。
-- 报价行选材质写入快照 → 属 R-B（未做）。
-
-**A4 HS 编码合一**（反馈 2）：
-- 基本信息新增唯一「HS 编码」输入（`spec.hs_codes`，逗号分隔多值，报价/单证取第一个）。
-- `business-spec-editor.tsx` 的 HS 块删除；`PROFILE_FIELDS` 删除 `hs_code` 展示副本。
-
-**A5 删「价格与利润」区**（反馈 3）：
-- `product-detail.tsx` 删除利润率/综合税费/成本口径三个控件与对应 state；
-  section 改名「规格与包装」，标题说明「利润率/综合税费/成本口径在报价工作台配置」。
-- 保存时 `cost_basis/profit_value/misc_fee_rate` **原样保留 spec 现值**（引擎兜底默认，不再由产品页改）。
-
-**A4 附带**：`PROFILE_FIELDS` 只剩「用途 / 产地」；文件头注释与测试断言同步更新。
-
-## 2. 门禁实测（2026-10-23 17:05，工作区静止）
+## 2. 门禁实测（2026-10-24，工作区静止）
 
 | 门禁 | 结果 |
 |---|---|
-| 前端 typecheck（`tsc --noEmit`） | ✅ 0 error |
-| 前端 lint（改动目录） | ✅ 0 error（12 warning 均为 `use-workbench-state.ts` 既有） |
-| 前端定向测试（products/quotes/settings） | ✅ **207 passed / 34 files** |
-| 前端全量测试 | ✅ **1610 passed / 216 files**（全绿） |
-| `contracts:check`（R0–R6） | ✅ **PASS R2: 30 workstations consistent** 等全 PASS |
-| `sync-shared` | ✅ 46 + 21 + 1 文件已同步（worker 镜像） |
-| UI 标准 `ui:standards` | ✅ 通过 |
-| UI 对比度 `ui:contrast` | ✅ light/dark 全部 ≥ 4.5 |
+| worker pytest（全量） | ✅ **1778 passed + 12 skipped** |
+| orchestrator pytest | ✅ **266 passed** |
+| ts-worker typecheck / vitest | ✅ 0 error / **305 passed（26 files）** |
+| 前端 typecheck / lint | ✅ 0 error / 0 error（既有 warning 不计） |
+| 前端全量 vitest | ✅ **1626 passed（219 files）** |
+| contracts:check | ✅ R0–R6 全 PASS（R2=30） |
+| ui:standards / ui:contrast | ✅ PASS（对比度 light/dark ≥4.5） |
+| mocks:check | ✅ 通过（未覆盖 3 ≤ 20） |
+| 静态断言 | ✅ schema-coverage / runtime-deps / deploy-domains PASS；schema-drift PASS（需 `PYTHONIOENCODING=utf-8`，否则 GBK 打印 emoji 崩） |
+| sync-shared `-Check` | ✅ 一致（46 / 21 / 1） |
+| e2e（playwright） | 见提交说明；本机 UI 改动后应跑 `cd frontend; pnpm e2e`（a11y 自动发现路由） |
 
-## 3. 没做完的（按方案 §4 顺序，交给下一台设备继续）
+## 3. 遗留与后续（非本批）
 
-> 方案文档 [`OPTIMIZATION_PLAN_2026-10-23_PRODUCT_QUOTE_REDESIGN.md`](./OPTIMIZATION_PLAN_2026-10-23_PRODUCT_QUOTE_REDESIGN.md)
-> §3 有每项的**目标设计与数据落点**，§4 有批次依赖。以下按建议实施顺序：
+1. **deer_net 产品定义遗留（既有，非 R-D 新增）**：derived「宽度(mm)」被 `template_columns` 当可填列、
+   且被 `_resolve_column` 解析到 `height_m`（factor=1）⇒ 用户按 mm 填 1500 会撞 `height_m` 上界 6。
+   单产品导入就有；R-D 并集模板会把它带给鹿网用户。**建议单开任务**：derived 列不进模板，或修 `deer_net` 列定义。
+2. 单证（trade-docs）模板对「材质」的排版：本批只保证快照有值，模板渲染下一批。
+3. 旧单产品导入端点（`/import/template|preview|calculate`）保留兼容，未下线。
+4. R-C1 含税开关默认显式 `pretax`：内置产品定义 basis 均为 pretax ⇒ 行为不变；若将来租户产品改 basis，
+   可改为默认跟随产品定义（`formulas.data.cost.basis` 回显）。
+5. `/api/v1/export-quote` 属 TS 门面透传前缀：新端点无需在 ts-edge 逐条注册；MCP 工具 schema 已随 zod 生成同步。
 
-### R-C1（下一个该做）：成本含税开关（跨层契约，唯一引擎改动）
-- 契约：`ExportQuoteRequest` 增 `cost_basis?: "pretax" | "incl_tax"`（缺省回落 `product.cost_basis`）。
-- 落点：`shared/contracts/export-quote.ts` + `backend/kaas_common/export_quote/models.py`（`QuoteRequest`）
-  + `engine.py`（约 :800-805 处 request 级覆盖产品级）。
-- **铁律**：同 PR 同步 TS zod（从 pydantic 生成，禁止手抄）+ `backend/ts-migration/golden/` 金标全绿 + worker pytest。
-- 语义：勾「含税」⇒ 引擎按现行公式 `税前 = 含税价 × (1 − 进项税率)` 还原，**不引入新换算**。
-
-### R-B：报价行卡重排（依赖 A3 的材质选项）
-- `quotes/components/quote-line-card.tsx`：三段布局（产品信息上 / 件数中 / 金额下，类型各自换行；
-  折叠摘要同样三行）；包装下拉 `{p.method || p.name}`（现在显示「包装 1」）；
-  成本旁加「按含税价」开关（接 R-C1）；材质选择写入行快照 `spec_snapshot.material`。
-- `quotes/lib/line-to-item.ts`：快照增记 `packaging_method`（`packaging_name` 保留兼容，值 = method）。
-
-### R-D：批量导入整单化（依赖 C1 + B）
-- 口径已拍板：**单表 + 产品列**（规格列并集）；**导入结果 = 直接生成工作台报价单**。
-- 后端：`backend/worker/src/quote_api.py`（现 template/preview/calculate 三端点 `product_key` 必填，
-  单产品链路 :1002-1130）+ `kaas_common/export_quote/importers.py`；新 `import/order/preview|calculate`。
-- 前端：`quotes/components/bulk-import-panel.tsx` 去掉「先选产品」，下载整单模板 → 预览 → 「填入工作台」生成 N 行。
-
-### 收尾未做
-- 文档销账：TODO §R 的 R-A/R-C2 状态、PROBLEM_STATUS 交接摘要（本次提交已含，若后续改代码需再更新）。
-- 产品基本信息新结构的专项测试（OptionChips 行为 / 表面处理写回 variants / HS 合一）——
-  当前靠 typecheck + 既有测试兜底，**建议下一轮补**。
-
-## 4. 下一台设备恢复步骤（照做即可）
+## 4. 恢复/继续步骤（新设备）
 
 ```powershell
 git clone <repo> ; cd kaas-platform
-# 1) 共享内核镜像（gitignored，必须）
-powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1
-# 2) 前端依赖
-cd frontend; pnpm install    # 本机若 pnpm 被策略拦，用 bundled node + pnpm.cjs
-# 3) 起活
-pnpm dev                     # 或按 docs/E2E_GUIDE.md
-# 4) 门禁基线（工作区静止时跑）
-pnpm typecheck ; pnpm lint ; pnpm test ; pnpm contracts:check ; pnpm ui:standards ; pnpm ui:contrast
-# 5) 从 R-C1 继续（见 §3）
+powershell -ExecutionPolicy Bypass -File scripts/sync-shared.ps1     # 共享内核镜像（gitignored，必须）
+cd frontend; pnpm install
+# 门禁基线（工作区静止时跑）
+pnpm typecheck ; pnpm lint ; pnpm test ; pnpm contracts:check ; pnpm mocks:check
+pnpm ui:standards ; pnpm ui:contrast ; pnpm e2e
+cd ../backend/worker; $env:UV_CACHE_DIR='D:\tools\uv-cache'; uv run --frozen --with pytest --with httpx2 python -m pytest tests -q
+cd ../orchestrator; uv run --extra migrations pytest tests -q
+cd ../ts-worker; pnpm typecheck ; pnpm test
 ```
 
-- 本机工具链备忘（Windows）：PowerShell 5.1 无 pwsh 7；PATH 上 `python` 是 WindowsApps 占位符 ⇒
-  静态脚本用 `backend/orchestrator/.venv/Scripts/python.exe`；uv 需 `$env:UV_CACHE_DIR='D:\tools\uv-cache'`。
-- **提交纪律**（AGENTS.md §4）：多会话并发时用私有 `GIT_INDEX_FILE` 提交，提交后新进程里
-  `git add -- <自家路径>` 归位共享 index，并 `git status --short` 自证。
-- **commitlint**：subject 用中文或全小写；**body 每行 ≤ 100 字符**（本轮实测被拒过一次）。
+- 提交纪律（AGENTS.md §4）：多会话并发时用私有 `GIT_INDEX_FILE` 提交，提交后新进程 `git add -- <路径>` 归位共享 index。
+- commitlint：subject 用中文或全小写；**body 每行 ≤ 100 字符**。
 
-## 5. 关键口径备忘（本批已定，勿回退）
+## 5. 关键口径备忘（已定，勿回退）
 
 1. **材质 = 仅资料选项**（不算价、不进规格空间、不增定价行数）；报价行选值进快照/单证。
-2. **表面处理 = 算价真源 `spec.variants`**（coating 组），基本信息 chips 只是入口；
-   「定价数据」页的 AddOptionPanel 与它是**同一份数据两处入口**（加档位+成本仍在那里）。
-3. **批量导入 = 单表+产品列；结果直接进工作台报价单**（原「只算不落库」废止）。
+2. **表面处理 = 算价真源 `spec.variants`**（coating 组），基本信息 chips 只是入口；定价数据页 AddOptionPanel 同一份数据。
+3. **批量导入 = 单表+产品列；结果直接进工作台报价单**（原「只算不落库」废止；无 calculate 端点）。
 4. **税务档案 = 团队级**（企业税档 + 产品税率），侧边栏「账号」组可见，管理员写/成员读。
-5. **产品页不再有**：价格与利润区、可选档位区、第二个 HS 编码、包装名称。
-6. 产品级 `profit_value/misc_fee_rate/cost_basis` **字段保留**（引擎兜底），只是 UI 收口。
+5. **成本口径逐行可选**（`cost_basis` 请求级覆盖，缺省回落产品定义）。
+6. 产品级 `profit_value/misc_fee_rate/cost_basis` 字段保留（引擎兜底），产品 UI 不再暴露。

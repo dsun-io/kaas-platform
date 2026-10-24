@@ -312,10 +312,10 @@
 | # | 批次 | 内容 | 状态 |
 |---|---|---|---|
 | R-A | 产品页收口 | 包装去名称 / 表面处理 chips 并入基本信息 / 材质 chips（资料选项）/ HS 合一 / 删「价格与利润」区 | ✅ 2026-10-23（typecheck 0 / lint 0 error / 全量 **1610 passed·216 files** / ui 双门禁 PASS；明细见 `HANDOVER_2026-10-23_PRODUCT_QUOTE_REDESIGN.md` §1） |
-| R-B | 报价行重排 | 行卡三段布局（产品信息上·件数中·金额下，类型换行）/ 包装下拉显示具体方式 / 材质入行快照 | ⏳ 依赖 R-A ✅（下一步可做） |
-| R-C1 | 成本含税开关（契约） | `ExportQuoteRequest.cost_basis` request 级覆盖 + 引擎/金标/zod 同 PR | ⏳ **建议下一批**（先于 R-B 接线） |
+| R-B | 报价行重排 | 行卡三段布局（产品信息上·件数中·金额下，类型换行）/ 包装下拉显示具体方式 / 材质入行快照 | ✅ 2026-10-24（三段容器 + 折叠摘要三行 + method 优先 + 材质/含税开关；行情套件 **87 passed·18 files**，typecheck 0） |
+| R-C1 | 成本含税开关（契约） | `ExportQuoteRequest.cost_basis` request 级覆盖 + 引擎/金标/zod 同 PR | ✅ 2026-10-24（引擎请求级覆盖 + API 透传 + 契约/JSON/zod 同步；engine 测 **45 passed**、contracts R0–R6 PASS、ts-worker typecheck 0） |
 | R-C2 | 税务档案侧边栏+改名 | workstations 双端 admin 组→account 组、税务管理→税务档案、R2 契约 | ✅ 2026-10-23（contracts R2=30 PASS / 定向 26 测全绿 / sync-shared 已同步） |
-| R-D | 批量导入整单化 | 整单模板（产品列+并集规格列）/ import/order preview+calculate / 「填入工作台」 | ⏳ 依赖 R-C1+R-B |
+| R-D | 批量导入整单化 | 整单模板（产品列+并集规格列）/ import/order template-info+preview / 「填入工作台」 | ✅ 2026-10-24（后端 32 测 + worker 全量 1778 passed·12skip；前端 panel 5 测并入全量 1626 passed·219 files；**裁决**：不新增 calculate 端点，算价/落库复用工作台链路） |
 
 ---
 

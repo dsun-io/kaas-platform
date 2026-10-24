@@ -9,7 +9,10 @@ import type {
   ImportPreviewResponse,
   ImportTemplateInfo,
   ImportTemplateFormat,
+  OrderImportPreviewResponse,
+  OrderImportTemplateInfo,
 } from "@contracts/export-quote";
+import { buildOrderImportTemplateXlsx } from "@/lib/export-quote/import-order-template-xlsx";
 import {
   EXPORT_QUOTE_BASE,
   MULTIPART_CONFIG,
@@ -204,6 +207,83 @@ export function useImportCalculate() {
       });
       const { data } = await apiClient.post<ImportCalculateResponse>(
         `${EXPORT_QUOTE_BASE}/import/calculate`,
+        fd,
+        MULTIPART_CONFIG,
+      );
+      return data;
+    },
+  });
+}
+
+// ── 整单批量导入（R-D，2026-10-23）──────────────────────────────────────────
+// 口径：单表 + 产品列，规格列 = 各产品模板列并集；导入结果**直接填入报价工作台**
+//（不再「只算不落库」，也不在导入端点里算价——算价/落库都走工作台既有链路）。
+
+function fetchOrderImportTemplateInfo(
+  productKeys: string[],
+): Promise<OrderImportTemplateInfo> {
+  return apiClient
+    .get<OrderImportTemplateInfo>(
+      `${EXPORT_QUOTE_BASE}/import/order/template-info`,
+      {
+        params:
+          productKeys.length > 0 ? { product_keys: productKeys.join(",") } : {},
+      },
+    )
+    .then(({ data }) => data);
+}
+
+/** 整单模板信息的 query key（按产品集合区分缓存）。 */
+export function orderImportTemplateQueryKey(productKeys: string[]) {
+  return [
+    "export-quote",
+    "import-order-template",
+    [...productKeys].sort(),
+  ] as const;
+}
+
+/** 整单模板说明：并集列（含每列适用产品）。 */
+export function useOrderImportTemplateInfo(productKeys: string[]) {
+  return useQuery({
+    queryKey: orderImportTemplateQueryKey(productKeys),
+    queryFn: () => fetchOrderImportTemplateInfo(productKeys),
+    staleTime: IMPORT_TEMPLATE_STALE_MS,
+  });
+}
+
+/** 下载整单模板（前端 exceljs 生成；列定义来自后端）。 */
+export function useDownloadOrderTemplate() {
+  const queryClient = useQueryClient();
+  return useMutationWithError({
+    mutationFn: async ({ productKeys }: { productKeys: string[] }) => {
+      const info = await queryClient.ensureQueryData({
+        queryKey: orderImportTemplateQueryKey(productKeys),
+        queryFn: () => fetchOrderImportTemplateInfo(productKeys),
+        staleTime: IMPORT_TEMPLATE_STALE_MS,
+      });
+      let blob: Blob;
+      try {
+        blob = await buildOrderImportTemplateXlsx(info);
+      } catch (err) {
+        throw new Error(
+          `生成 Excel 模板失败：${err instanceof Error ? err.message : "未知错误"}`,
+        );
+      }
+      triggerBlobDownload(blob, "整单报价导入模板.xlsx");
+      return "整单报价导入模板.xlsx";
+    },
+  });
+}
+
+/** 上传整单表：只解析 + 行级校验，不落库、不算价。 */
+export function useImportOrderPreview() {
+  return useMutationWithError({
+    mutationFn: async ({ file, sheet }: { file: File; sheet?: string }) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      if (sheet) fd.append("sheet", sheet);
+      const { data } = await apiClient.post<OrderImportPreviewResponse>(
+        `${EXPORT_QUOTE_BASE}/import/order/preview`,
         fd,
         MULTIPART_CONFIG,
       );

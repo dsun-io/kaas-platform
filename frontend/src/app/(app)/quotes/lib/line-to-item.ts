@@ -160,8 +160,12 @@ export interface BuildLineItemInput {
   packaging?: {
     id?: string | null;
     name?: string | null;
+    /** 包装方式（产品 `packaging[].method`）：界面按它展示、快照按它留档 */
+    method?: string | null;
     fee_per_piece?: number | null;
   } | null;
+  /** 材质（产品资料 `info.material_options` 里的选项）；空 = 不指定。不参与算价 */
+  material?: string | null;
 }
 
 /** 单证/台账要的申报要素（与后端 `_SPEC_FIELDS` 的键名保持一致）。 */
@@ -208,6 +212,8 @@ export function buildLineItem(input: BuildLineItemInput): BuiltLineItem {
   const { product, formulas, spec, pieceBase, result, view, pieces } = input;
   const costOverride = input.costOverride ?? null;
   const packaging = input.packaging ?? null;
+  /** 材质只是随行留档（用户 2026-10-24：材质不算价），空值不写进快照 */
+  const material = (input.material ?? "").trim();
   const indexOf = makeColumnIndexer(formulas, view);
 
   const unitPriceFx = readCell(result, view, indexOf, COL.unitPriceFx) ?? 0;
@@ -260,10 +266,18 @@ export function buildLineItem(input: BuildLineItemInput): BuiltLineItem {
     ...(packaging
       ? {
           packaging_id: packaging.id ?? null,
+          /** 包装名仅为留档（界面对用户展示的是 method，见下一行） */
           packaging_name: packaging.name ?? null,
+          /**
+           * 包装方式（用户 2026-10-24：「直接展示具体什么包装，而不是包装1这种名字」）：
+           * 产品资料里 method 才是业务口径，name 只是商户自己起的档位名；
+           * method 缺失的旧数据才退回 name，保证快照里总有一句人能读懂的话。
+           */
+          packaging_method: packaging.method || packaging.name || null,
           packaging_fee_per_piece: packaging.fee_per_piece ?? null,
         }
       : {}),
+    ...(material ? { material } : {}),
   };
 
   // 内部分解快照（UNCERTAIN #19）：internal 视图把算价引擎的成本/利润列一并

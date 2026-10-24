@@ -1836,7 +1836,7 @@
    "path": "/api/v1/export-quote/products",
    "endpoint": "export_quote_products",
    "file": "worker/src/quote_api.py",
-   "line": 339,
+   "line": 399,
    "depends": [
     "_get_current_user"
    ],
@@ -1851,7 +1851,7 @@
    "path": "/api/v1/export-quote/products/{product_key}/formulas",
    "endpoint": "export_quote_product_formulas",
    "file": "worker/src/quote_api.py",
-   "line": 414,
+   "line": 430,
    "depends": [
     "_get_current_user"
    ],
@@ -1866,7 +1866,7 @@
    "path": "/api/v1/export-quote/terms/template",
    "endpoint": "export_quote_terms_template",
    "file": "worker/src/quote_api.py",
-   "line": 447,
+   "line": 463,
    "depends": [
     "_get_current_user"
    ],
@@ -1881,7 +1881,7 @@
    "path": "/api/v1/export-quote/calculate",
    "endpoint": "export_quote_calculate",
    "file": "worker/src/quote_api.py",
-   "line": 886,
+   "line": 906,
    "depends": [
     "_get_current_user"
    ],
@@ -1896,7 +1896,7 @@
    "path": "/api/v1/export-quote/calculate-internal",
    "endpoint": "export_quote_calculate_internal",
    "file": "worker/src/quote_api.py",
-   "line": 899,
+   "line": 919,
    "depends": [
     "_require_internal_admin_dep"
    ],
@@ -1911,7 +1911,7 @@
    "path": "/api/v1/export-quote/verify",
    "endpoint": "export_quote_verify",
    "file": "worker/src/quote_api.py",
-   "line": 909,
+   "line": 929,
    "depends": [
     "_require_internal_admin_dep"
    ],
@@ -1926,7 +1926,7 @@
    "path": "/api/v1/export-quote/import/template",
    "endpoint": "export_quote_import_template",
    "file": "worker/src/quote_api.py",
-   "line": 1002,
+   "line": 1032,
    "depends": [
     "_get_current_user"
    ],
@@ -1941,7 +1941,7 @@
    "path": "/api/v1/export-quote/products/{product_key}/import-template",
    "endpoint": "export_quote_import_template_info",
    "file": "worker/src/quote_api.py",
-   "line": 1020,
+   "line": 1050,
    "depends": [
     "_get_current_user"
    ],
@@ -1956,7 +1956,37 @@
    "path": "/api/v1/export-quote/import/preview",
    "endpoint": "export_quote_import_preview",
    "file": "worker/src/quote_api.py",
-   "line": 1067,
+   "line": 1097,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/export-quote/import/order/template-info",
+   "endpoint": "export_quote_import_order_template_info",
+   "file": "worker/src/quote_api.py",
+   "line": 1119,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/export-quote/import/order/preview",
+   "endpoint": "export_quote_import_order_preview",
+   "file": "worker/src/quote_api.py",
+   "line": 1166,
    "depends": [
     "_get_current_user"
    ],
@@ -1971,7 +2001,7 @@
    "path": "/api/v1/export-quote/import/calculate",
    "endpoint": "export_quote_import_calculate",
    "file": "worker/src/quote_api.py",
-   "line": 1089,
+   "line": 1186,
    "depends": [
     "_get_current_user"
    ],
@@ -1986,7 +2016,7 @@
    "path": "/api/v1/quotes",
    "endpoint": "list_quote_orders",
    "file": "worker/src/quote_api.py",
-   "line": 1738,
+   "line": 1835,
    "depends": [
     "_get_current_user"
    ],
@@ -2001,7 +2031,7 @@
    "path": "/api/v1/quotes",
    "endpoint": "create_quote_order",
    "file": "worker/src/quote_api.py",
-   "line": 1803,
+   "line": 1900,
    "depends": [
     "_get_current_user"
    ],
@@ -2016,7 +2046,7 @@
    "path": "/api/v1/quotes/batch",
    "endpoint": "create_quote_batch",
    "file": "worker/src/quote_api.py",
-   "line": 1881,
+   "line": 1978,
    "depends": [
     "_get_current_user"
    ],
@@ -2031,7 +2061,7 @@
    "path": "/api/v1/quotes/reference-price",
    "endpoint": "quote_reference_price",
    "file": "worker/src/quote_api.py",
-   "line": 1922,
+   "line": 2019,
    "depends": [
     "_get_current_user"
    ],
@@ -2046,7 +2076,7 @@
    "path": "/api/v1/quotes/cost-reference",
    "endpoint": "quote_cost_reference",
    "file": "worker/src/quote_api.py",
-   "line": 1974,
+   "line": 2071,
    "depends": [
     "_get_current_user"
    ],
@@ -2061,7 +2091,7 @@
    "path": "/api/v1/quotes/{quote_id}",
    "endpoint": "get_quote_order",
    "file": "worker/src/quote_api.py",
-   "line": 2055,
+   "line": 2152,
    "depends": [
     "_get_current_user"
    ],
@@ -2076,7 +2106,7 @@
    "path": "/api/v1/quotes/{quote_id}",
    "endpoint": "update_quote_order",
    "file": "worker/src/quote_api.py",
-   "line": 2081,
+   "line": 2178,
    "depends": [
     "_get_current_user"
    ],
@@ -2091,7 +2121,7 @@
    "path": "/api/v1/quotes/{quote_id}/items",
    "endpoint": "replace_quote_items",
    "file": "worker/src/quote_api.py",
-   "line": 2214,
+   "line": 2311,
    "depends": [
     "_get_current_user"
    ],
@@ -2106,7 +2136,7 @@
    "path": "/api/v1/export-quote/products/{product_key}/spec",
    "endpoint": "export_quote_product_spec",
    "file": "worker/src/quote_api.py",
-   "line": 2262,
+   "line": 2359,
    "depends": [
     "_get_current_user"
    ],

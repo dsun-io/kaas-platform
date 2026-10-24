@@ -151,10 +151,12 @@
   - 规格列头沿用各产品模板列头（与导出报价表一致的口径，`quote_api.py:1057-1058` 既有约定）；
     模板说明页（IMPORT_TEMPLATE_NOTES_SHEET）标注每列适用产品。
 - **后端**（`quote_api.py` + `importers.py`）：
-  - `POST /api/v1/export-quote/import/order/preview`：多产品解析（按行选 spec → `spec_from_partial`），
+  - `GET /api/v1/export-quote/import/order/template-info`：整单模板列定义（并集；每列标注适用产品）。
+  - `POST /api/v1/export-quote/import/order/preview`：多产品解析（按「产品」列定位 → 该产品自己的列映射），
     行级问题清单（未知产品/缺必填/超范围），不阻断其他行（沿用 `engine.py:516-518` 逐行容错口径）。
-  - `POST /api/v1/export-quote/import/order/calculate`：rows[]（product_key + spec + 件数 + 成本 + cost_basis），
-    逐行算价 + 整单汇总；**不在导入端点落库**（落库走工作台保存链路，见下）。
+  - **实施裁决（2026-10-23）**：**不新增 calculate 端点**——D-3 拍板的落点是「填入工作台」，
+    算价/落库全部复用工作台既有链路（每行 `calculate` + `quote_orders` 保存），避免第二套算价口径。
+    `OrderImportRow` 里带 `cost_basis`/`packaging_id`/`profit_pct`，工作台行草稿直接用。
 - **前端**（`bulk-import-panel.tsx` 重做）：
   - 去掉「第一步选产品」；下载整单模板（列并集由前端汇总各产品模板信息接口生成，延续 exceljs 方案）。
   - 预览确认 → **「填入工作台」**：把 N 行映射为 N 个 `LineDraft`（`quote-line-card.tsx:50-85`），

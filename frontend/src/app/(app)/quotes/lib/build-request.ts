@@ -7,6 +7,14 @@
  *  - 贸易条款由界面直选（默认 EXW），`terms.quote_as` 必须等于所选条款；
  *  - 包装按行选（缺省 = 产品默认包装），`packaging_id` 随请求下发；
  *  - 汇率语义 = **1 报价币 = ? CNY**（引擎 `price_per_piece / fx_rate`）。
+ *
+ * 2026-10-24 补充（用户：「产品成本就在报价中配置，可以选择是否含税」）：
+ *  - 成本口径 `cost_basis` 支持**逐行**下发：`pretax`（税前价）/ `incl_tax`（含税价）。
+ *    引擎收到 `incl_tax` 时按 (1 − 进项税点) 还原税前成本再参与价链；
+ *    缺省 = 产品定义的 `cost_basis`（内置产品均为 pretax）。
+ *  - 为什么调用方（报价行卡）**总是显式传**：界面上的勾选状态必须与引擎口径
+ *    一一对应，不能让"未勾选"悄悄落回产品定义 —— 产品定义改了口径，界面又不能
+ *    跟着变，会出现"看着是税前、算的是含税"的静默错价。
  */
 import type {
   ExportQuoteRequest,
@@ -18,6 +26,13 @@ import type { BuiltTerms } from "./terms-amortize";
 
 /** 加工利润只保留「利润率」一种口径（售价毛利）。 */
 export type ProfitMode = "margin_on_price";
+
+/**
+ * 成本口径（本行覆盖）：
+ *  - `pretax`   = 报价人填的是税前价（默认）；
+ *  - `incl_tax` = 报价人填的是含税价，引擎按进项税点 (1 − input_vat_rate) 还原税前成本。
+ */
+export type CostBasis = "pretax" | "incl_tax";
 
 /** 整单级共享参数：所有产品行共用。 */
 export interface SharedQuoteParams {
@@ -60,14 +75,24 @@ export function buildLineRequest(args: {
   terms?: BuiltTerms | null;
   /** 本行包装（产品 packaging[].id）；空 = 默认包装 */
   packagingId?: string;
+  /**
+   * 本行成本口径覆盖。调用方（报价行卡）应**总是**传：勾选「按含税价」= `incl_tax`，
+   * 否则 `pretax`。留空（undefined）= 不下发该字段，引擎回落到产品定义的 cost_basis。
+   */
+  costBasis?: CostBasis;
   /** 产品税率（进项/退税按产品走）；缺省才回落到整单共享值 */
-  productTax?: { input_vat_rate?: number | null; rebate_rate?: number | null } | null;
+  productTax?: {
+    input_vat_rate?: number | null;
+    rebate_rate?: number | null;
+  } | null;
   shared: SharedQuoteParams;
 }): ExportQuoteRequest {
   const { shared } = args;
   const override = (args.profitPctOverride ?? "").trim();
   const useOverride = override !== "";
-  const profitPct = useOverride ? Number(override) : Number(shared.profitPct) || 0;
+  const profitPct = useOverride
+    ? Number(override)
+    : Number(shared.profitPct) || 0;
   const inputVat =
     args.productTax?.input_vat_rate != null
       ? args.productTax.input_vat_rate
@@ -95,6 +120,9 @@ export function buildLineRequest(args: {
     quote_date: shared.quoteDate || undefined,
     terms: (args.terms ?? null) as Record<string, unknown> | null,
     packaging_id: args.packagingId || null,
+    // 成本口径逐行下发（见文件头 2026-10-24 说明）：只有调用方明确给了才发，
+    // 这样「未选过口径」的历史行仍旧跟随产品定义，不会被前端强行改写。
+    ...(args.costBasis ? { cost_basis: args.costBasis } : {}),
     policy: {
       input_vat_rate: inputVat,
       give_ratio: pct(shared.giveRatioPct),

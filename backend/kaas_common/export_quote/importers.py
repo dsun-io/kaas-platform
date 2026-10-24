@@ -477,30 +477,83 @@ def _read_xlsx(
     return read_xlsx(data, sheet=sheet, warnings=warnings)
 
 
+def _xlsx_sheet_name(data: bytes, sheet: str | None) -> str:
+    """xlsx **实际会读取**的工作表名（与 `xlsx._pick_sheet` 同口径）。
+
+    指定了表名且命中就用它；没命中时 xlsx 读取器会静默回落第一张表（并记 warning），
+    这里也回落第一张 —— 免得响应里的 sheet 名与实际解析对象不一致。
+    只解析 `xl/workbook.xml` 的 `<sheet name>`，不做关系解析：调用点已经成功读完整张表，
+    这里只用于回显。任何异常都退回入参（显示用的名字不该把预览弄挂）。
+    """
+    import zipfile
+    from xml.etree import ElementTree
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            blob = zf.read("xl/workbook.xml")
+        root = ElementTree.fromstring(blob)
+        names = [
+            el.get("name") or ""
+            for el in root.iter()
+            if el.tag.rsplit("}", 1)[-1] == "sheet"
+        ]
+    except Exception:  # noqa: BLE001 - 仅回显用，读不出来就退回调用方给的名字
+        return str(sheet or "")
+    if not names:
+        return str(sheet or "")
+    if sheet:
+        for name in names:
+            if name == sheet:
+                return name
+        wanted = str(sheet).strip().lower()
+        for name in names:
+            if name.strip().lower() == wanted:
+                return name
+    return names[0]
+
+
 def read_table(
     data: bytes,
     filename: str = "",
     sheet: str | None = None,
     *,
     warnings: list[str] | None = None,
+    sheet_out: dict | None = None,
 ) -> list[list[Any]]:
+    """上传文件 → 行列表（CSV / xlsx 共用同一份表头识别，见模块说明）。
+
+    `sheet_out`（可选出参）：把**实际读取的工作表名**写进 `sheet_out["name"]`
+    （CSV 记 `"CSV"`）。整单导入预览要把「实际读了哪张表」回报给用户，
+    而 xlsx 读取器在表名不命中时会回落第一张，调用方无从得知 —— 所以由这里回填。
+    """
+
+    def _mark_read(sheet_name: str) -> None:
+        if sheet_out is not None:
+            sheet_out["name"] = sheet_name
+
     if len(data) > MAX_BYTES:
         raise ImportError_(
             "文件过大（%.1f MB），上限 %d MB" % (len(data) / 1048576, MAX_BYTES // 1048576)
         )
     name = (filename or "").lower()
     if name.endswith(".xlsx") or name.endswith(".xlsm"):
-        return _read_xlsx(data, sheet, warnings)
+        rows = _read_xlsx(data, sheet, warnings)
+        _mark_read(_xlsx_sheet_name(data, sheet))
+        return rows
     if name.endswith(".xls"):
         raise ImportError_("不支持老的 .xls 格式，请另存为 .xlsx 或 .csv")
     if name.endswith(".csv") or name.endswith(".txt"):
+        _mark_read("CSV")
         return _read_csv(data)
     # 没给后缀：先按 xlsx 的魔数（zip）试探；OLE2 是老的 .xls，指路另存为；
     # 其余一律按 CSV 处理（与旧行为一致）。
     if data[:2] == b"PK":
-        return _read_xlsx(data, sheet, warnings)
+        rows = _read_xlsx(data, sheet, warnings)
+        _mark_read(_xlsx_sheet_name(data, sheet))
+        return rows
     if data[:8] == _OLE2_MAGIC:
         raise ImportError_("不支持老的 .xls 格式，请另存为 .xlsx 或 .csv")
+    _mark_read("CSV")
     return _read_csv(data)
 
 
@@ -769,6 +822,722 @@ def template_columns(product: ProductSpec) -> list[TemplateColumn]:
 def template_headers(product: ProductSpec) -> list[str]:
     """模板表头 —— 与导出文件的列名一致，保证「导出→改→再导入」闭环。"""
     return [c.header for c in template_columns(product)]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 整单批量导入（R-D，2026-10-23）
+# ─────────────────────────────────────────────────────────────────────────────
+# 口径（用户弹窗拍板）：**单表 + 产品列**，一行 = 订单里的一个产品行；
+# 规格列 = 所选产品 `template_columns` 的**并集**（某行只填它自己产品的列，其余留空）。
+# 列名识别**完全复用**单产品那套（`_norm_header / _build_header_map / _resolve_column`）：
+# 多产品不是另写一套表头别名，而是「先按产品列定位产品，再用该产品自己的列映射解析规格」。
+#
+# 与单产品 `parse_table` 的差异只有三点，且都是整单化本身带来的：
+#   1. 多了 4 个公共列（件数 / 成本 / 成本口径 / 包装方式 / 本行利润率）；
+#   2. 规格列按行产品的映射解析（不同产品的同名列可能落到不同字段）；
+#   3. **坏行不丢**：解析结果行都返回（`row_errors` 非空 = 该行不可用），
+#      这样前端能逐行显示「第几行为什么不能用」，而不是只看到一个总数。
+#
+# 本模块**不落库、不算价**：整单预览只做解析 + 行级校验，填工作台后走工作台既有算价链路。
+
+#: 整单公共列（模板列顺序）。kind=common，不进产品规格并集。
+ORDER_COMMON_HEADERS: tuple[str, ...] = (
+    "产品",
+    "件数（卷）",
+    "成本",
+    "成本口径（含税/不含税）",
+    "包装方式",
+    "本行利润率（%）",
+)
+
+#: 公共列表头别名（比较前先归一化：小写、去空白/下划线/连字符/中点）。
+#: 带括号单位的表头会被 `_norm_header` 拆掉括号，所以这里登记的是**基名**。
+_ORDER_COMMON_ALIASES: dict[str, str] = {
+    # 产品
+    "产品": "product", "产品名称": "product", "产品名": "product", "品名": "product",
+    "产品编码": "product", "产品代码": "product", "产品key": "product", "sku": "product",
+    "product": "product", "productkey": "product", "productname": "product",
+    # 件数（卷）
+    "件数": "pieces", "卷数": "pieces", "数量": "pieces", "件数卷": "pieces",
+    "pieces": "pieces", "quantity": "pieces", "qty": "pieces",
+    # 成本
+    "成本": "cost", "成本价": "cost", "单卷成本": "cost", "成本单价": "cost",
+    "cost": "cost", "unitcost": "cost", "costprice": "cost",
+    # 成本口径（含税/不含税）
+    "成本口径": "cost_basis", "价格口径": "cost_basis", "口径": "cost_basis",
+    "成本是否含税": "cost_basis", "costbasis": "cost_basis", "taxbasis": "cost_basis",
+    # 包装方式
+    "包装方式": "packaging", "包装方法": "packaging", "包装方案": "packaging",
+    "包装": "packaging", "packaging": "packaging", "packagingmethod": "packaging",
+    # 本行利润率（%）
+    "本行利润率": "profit_pct", "利润率": "profit_pct", "本行利润": "profit_pct",
+    "profitpct": "profit_pct", "profitrate": "profit_pct", "profitmargin": "profit_pct",
+}
+
+#: 公共列 → 落点名（预览 `mapping` 的右侧文案）。
+_ORDER_COMMON_MAPPING: dict[str, str] = {
+    "product": "产品",
+    "pieces": "件数",
+    "cost": "成本",
+    "cost_basis": "成本口径",
+    "packaging": "包装方式",
+    "profit_pct": "利润率",
+}
+
+#: 「成本口径」取值别名（归一化后比较）→ 引擎口径 pretax | incl_tax。
+_ORDER_COST_BASIS: dict[str, str] = {
+    "不含税": "pretax", "不含税价": "pretax", "不含税成本": "pretax",
+    "税前": "pretax", "税前价": "pretax", "未税": "pretax", "未含税": "pretax",
+    "pretax": "pretax", "excl": "pretax", "excltax": "pretax",
+    "excludedtax": "pretax", "withouttax": "pretax",
+    "含税": "incl_tax", "含税价": "incl_tax", "含税成本": "incl_tax", "已含税": "incl_tax",
+    "incltax": "incl_tax", "incl": "incl_tax", "includedtax": "incl_tax",
+    "withtax": "incl_tax",
+}
+
+
+@dataclass
+class OrderTemplateColumn:
+    """整单模板的一列：common（整单公共）或 spec（规格列，多产品并集）。"""
+
+    header: str
+    kind: str  # common | spec
+    products: list[str] = field(default_factory=list)  # 适用产品名（spec 列才有意义）
+    unit: str = ""
+    options: list[str] = field(default_factory=list)
+    note: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "header": self.header,
+            "kind": self.kind,
+            "products": list(self.products),
+            "unit": self.unit,
+            "options": list(self.options),
+            "note": self.note,
+        }
+
+
+@dataclass
+class OrderParsedTable:
+    """整单解析结果：归一化的产品行 + 行级问题 + 列映射。
+
+    `rows` 包含**所有非空数据行**（含不可用行）：不可用行的 `row_errors` 非空，
+    前端据此逐行显示原因；`usable_rows` 才是「可直接填入工作台」的行数。
+    """
+
+    rows: list[dict] = field(default_factory=list)
+    issues: list[Issue] = field(default_factory=list)
+    mapping: dict[str, str] = field(default_factory=dict)
+    ignored_columns: list[str] = field(default_factory=list)
+    total_data_rows: int = 0
+    source_name: str = ""
+    sheet: str = ""
+    expected_columns: list[str] = field(default_factory=list)
+    products: list[dict] = field(default_factory=list)
+
+    @property
+    def errors(self) -> list[Issue]:
+        return [i for i in self.issues if i.severity == "error"]
+
+    @property
+    def warnings(self) -> list[Issue]:
+        return [i for i in self.issues if i.severity != "error"]
+
+    @property
+    def usable_rows(self) -> int:
+        return sum(1 for row in self.rows if not row.get("row_errors"))
+
+    def to_dict(self) -> dict:
+        return {
+            "source_name": self.source_name,
+            "sheet": self.sheet,
+            "total_data_rows": self.total_data_rows,
+            "usable_rows": self.usable_rows,
+            "error_count": len(self.errors),
+            "warning_count": len(self.warnings),
+            "products": [dict(p) for p in self.products],
+            "mapping": dict(self.mapping),
+            "ignored_columns": list(self.ignored_columns),
+            "issues": [i.to_dict() for i in self.issues],
+            "rows": [
+                dict(row, spec=dict(row["spec"]), row_errors=list(row["row_errors"]))
+                for row in self.rows
+            ],
+            "expected_columns": list(self.expected_columns),
+        }
+
+
+def _order_compact(value: Any) -> str:
+    text = "" if value is None else str(value)
+    return re.sub(r"[\s_\-·.]", "", text).lower()
+
+
+def _order_out_number(value: Decimal) -> Any:
+    """Decimal → 契约里的 JSON number（整数值给 int，其余给 float）。"""
+    if value == value.to_integral_value():
+        return int(value)
+    return float(value)
+
+
+def _order_common_columns(specs: list[ProductSpec]) -> list[OrderTemplateColumn]:
+    methods: list[str] = []
+    for spec in specs:
+        for item in (spec.packaging or []):
+            if not isinstance(item, Mapping):
+                continue
+            method = str(item.get("method") or "").strip()
+            if method and method not in methods:
+                methods.append(method)
+    return [
+        OrderTemplateColumn(
+            "产品", "common",
+            note="必填。填产品名称或产品 key（不是规格列）"),
+        OrderTemplateColumn(
+            "件数（卷）", "common",
+            note="必填。该行产品的件数（卷），必须大于 0"),
+        OrderTemplateColumn(
+            "成本", "common",
+            note="必填。该行产品的单卷成本，口径见「成本口径」列"),
+        OrderTemplateColumn(
+            "成本口径（含税/不含税）", "common", options=["不含税", "含税"],
+            note="可留空，默认「不含税」（pretax）"),
+        OrderTemplateColumn(
+            "包装方式", "common", options=methods,
+            note="可留空 = 用产品默认包装；按产品 packaging[].method 匹配"),
+        OrderTemplateColumn(
+            "本行利润率（%）", "common",
+            note="可留空 = 继承整单默认利润率"),
+    ]
+
+
+def order_template_columns(products: Iterable[ProductSpec]) -> list[OrderTemplateColumn]:
+    """整单模板的列定义：6 个公共列 + 各产品模板列的**并集**（按首次出现排序）。
+
+    并集规则：表头文字相同即视为同一列（同一套引擎表头，单位也一致）；
+    `products` 记录该列适用于哪些产品（前端「填写说明」据此告诉用户哪行该填它）。
+    """
+    specs = [p for p in (products or []) if p is not None]
+    cols = _order_common_columns(specs)
+    by_header: dict[str, OrderTemplateColumn] = {}
+    for spec in specs:
+        product_name = spec.name or spec.key
+        for col in template_columns(spec):
+            existing = by_header.get(col.header)
+            if existing is None:
+                existing = OrderTemplateColumn(
+                    header=col.header,
+                    kind="spec",
+                    products=[product_name],
+                    unit=col.unit,
+                    options=list(col.options),
+                    note=col.note,
+                )
+                by_header[col.header] = existing
+                cols.append(existing)
+                continue
+            if product_name not in existing.products:
+                existing.products.append(product_name)
+            for option in col.options:
+                if option not in existing.options:
+                    existing.options.append(option)
+            if not existing.note and col.note:
+                existing.note = col.note
+    return cols
+
+
+def order_template_headers(products: Iterable[ProductSpec]) -> list[str]:
+    """整单模板表头 —— 与 `order_template_columns` 同序，可直接写进模板首行。"""
+    return [c.header for c in order_template_columns(products)]
+
+
+def _order_product_lookup(products: Iterable[ProductSpec]) -> dict[str, list[ProductSpec]]:
+    """归一化 token（key / 名称 / 英文名）→ 产品。同名多产品时由匹配时报"不唯一"。"""
+    lookup: dict[str, list[ProductSpec]] = {}
+    for spec in products:
+        seen: set[str] = set()
+        for token in (spec.key, spec.name, spec.name_en):
+            compact = _order_compact(token)
+            if not compact or compact in seen:
+                continue
+            seen.add(compact)
+            bucket = lookup.setdefault(compact, [])
+            if all(spec.key != other.key for other in bucket):
+                bucket.append(spec)
+    return lookup
+
+
+def _order_match_product(
+    raw: Any,
+    lookup: Mapping[str, list[ProductSpec]],
+    available: str,
+) -> tuple[ProductSpec | None, str | None]:
+    """「产品」单元格 → 产品定义（名称 / key / 英文名，大小写与空白不敏感）。"""
+    text = str(raw or "").strip()
+    if not text:
+        return None, "缺少「产品」：请填产品名称或 key"
+    hits = lookup.get(_order_compact(text)) or []
+    if len(hits) == 1:
+        return hits[0], None
+    if hits:
+        return None, "产品 %r 不唯一（匹配到 %s）；请改用产品 key" % (
+            text, "、".join("%s(%s)" % (p.name or p.key, p.key) for p in hits))
+    return None, "未识别的产品 %r；可选: %s" % (text, available)
+
+
+def _order_check_bounds(ni: Any, value: Decimal, column: str, raw: Any,
+                        add_error: Any) -> None:
+    """自由数值列的上下界校验（与引擎 `_numeric_value` 同口径，提前到预览阶段）。"""
+    try:
+        low = None if ni.min_value is None else _to_decimal(ni.min_value)
+        high = None if ni.max_value is None else _to_decimal(ni.max_value)
+    except (InvalidOperation, TypeError, ValueError):
+        return
+    label = ni.label or ni.key
+    if low is not None and value < low:
+        add_error(column, raw, "「%s」=%s 小于下界 %s" % (label, value, ni.min_value))
+    elif high is not None and value > high:
+        add_error(column, raw, "「%s」=%s 大于上界 %s" % (label, value, ni.max_value))
+
+
+def _order_known_targets(product: ProductSpec) -> set[str]:
+    """产品能接受的规格字段集合（与引擎 `spec_from_partial` 的 known 同口径）。
+
+    **为什么必须有这一步**：整单表的规格列是多个产品模板列的并集，
+    同一个表头在别的产品下可能被 `_resolve_column` 认成一个该产品并不存在的字段
+    （如「网高(m)」在勾花网里会退化成语义角色 `height`）。若不筛掉，
+    用户把值填错列时预览看不出问题，到工作台算价才炸「无法识别的规格字段」——
+    那正是预览端点要提前拦住的。所以「本产品不认识的落点」直接视为该产品不适用。
+    """
+    known = set(product.constants or {})
+    known.update(ax.name for ax in product.axes)
+    known.update(vg.name for vg in product.variants)
+    known.update(ni.key for ni in product.numeric_inputs)
+    for vg in product.variants:
+        for opt in vg.options:
+            known.update(k for k in opt if k not in ("name", "name_en", "code"))
+        known.add(f"{vg.name}_code")
+        known.add(f"{vg.name}_en")
+    return known
+
+
+def _parse_order_row(
+    r_i: int,
+    raw_row: list[Any],
+    *,
+    headers: Mapping[int, str],
+    common_idx: Mapping[str, int],
+    spec_columns: set[int],
+    applicable_idx: Mapping[str, set[int]],
+    product_targets: Mapping[str, Mapping[int, tuple[str, str, dict]]],
+    lookup: Mapping[str, list[ProductSpec]],
+    available: str,
+) -> tuple[dict, list[Issue], ProductSpec | None]:
+    """解析整单表的一行 → (归一化行, 本行 issues, 命中的产品定义)。
+
+    单独成函数（不塞在 `parse_order_table` 的循环里）：行内错误要能"就地"记进
+    `row_errors`，而循环级的闭包会让代码难读、也会踩 ruff B023（循环变量进闭包）。
+    坏行不抛异常 —— 问题都变成 issues 返回，由调用方决定哪些行可用。
+    """
+    issues: list[Issue] = []
+    row: dict[str, Any] = {
+        "row": r_i,
+        "product_key": "",
+        "product_name": "",
+        "spec": {},
+        "pieces": 0,
+        "cost": 0,
+        "cost_basis": "pretax",
+        "packaging_method": None,
+        "packaging_id": None,
+        "profit_pct": None,
+        "row_errors": [],
+    }
+    row_errors: list[str] = row["row_errors"]
+    spec_values: dict[str, Any] = row["spec"]
+
+    def cell(slug: str) -> Any:
+        idx = common_idx.get(slug)
+        if idx is None:
+            return None
+        return raw_row[idx] if idx < len(raw_row) else None
+
+    def column_of(slug: str, fallback: str) -> str:
+        idx = common_idx.get(slug)
+        return headers.get(idx, fallback) if idx is not None else fallback
+
+    def add_error(column: str, value: Any, message: str) -> None:
+        issues.append(Issue(r_i, column, value, message))
+        row_errors.append(message)
+
+    def read_required(slug: str, label: str) -> Decimal | None:
+        raw = cell(slug)
+        column = column_of(slug, label)
+        if raw is None or str(raw).strip() == "":
+            add_error(column, None, "缺少「%s」" % label)
+            return None
+        try:
+            return _to_decimal(raw)
+        except ValueError:
+            add_error(column, raw, "「%s」不是数字: %r" % (label, raw))
+            return None
+
+    # 1) 产品（决定后面的规格列怎么解析）
+    spec: ProductSpec | None = None
+    raw_product = cell("product")
+    if raw_product is None or str(raw_product).strip() == "":
+        add_error(column_of("product", "产品"), None,
+                  "缺少「产品」：请填产品名称或 key")
+    else:
+        spec, problem = _order_match_product(raw_product, lookup, available)
+        if spec is None:
+            add_error(column_of("product", "产品"), raw_product,
+                      problem or "未识别的产品")
+        else:
+            row["product_key"] = spec.key
+            row["product_name"] = spec.name
+
+    # 2) 公共数值列
+    pieces = read_required("pieces", "件数（卷）")
+    if pieces is not None:
+        if pieces <= 0:
+            add_error(column_of("pieces", "件数（卷）"), cell("pieces"),
+                      "「件数（卷）」必须大于 0")
+        else:
+            row["pieces"] = _order_out_number(pieces)
+
+    cost = read_required("cost", "成本")
+    if cost is not None:
+        if cost < 0:
+            add_error(column_of("cost", "成本"), cell("cost"), "「成本」不能为负")
+        else:
+            row["cost"] = _order_out_number(cost)
+
+    raw_profit = cell("profit_pct")
+    if raw_profit is not None and str(raw_profit).strip() != "":
+        try:
+            row["profit_pct"] = _order_out_number(_to_decimal(raw_profit))
+        except ValueError:
+            add_error(column_of("profit_pct", "本行利润率（%）"), raw_profit,
+                      "「本行利润率（%）」不是数字: %r" % (raw_profit,))
+
+    raw_basis = cell("cost_basis")
+    if raw_basis is not None and str(raw_basis).strip() != "":
+        basis = _ORDER_COST_BASIS.get(_order_compact(raw_basis))
+        if basis is None:
+            add_error(column_of("cost_basis", "成本口径（含税/不含税）"), raw_basis,
+                      "「成本口径」只能是 含税 / 不含税（或 incl_tax / pretax）")
+        else:
+            row["cost_basis"] = basis
+
+    # 3) 包装方式：按产品 packaging[].method 匹配 id（方法名原文回填供回显）
+    raw_packaging = cell("packaging")
+    if raw_packaging is not None and str(raw_packaging).strip() != "":
+        method = str(raw_packaging).strip()
+        row["packaging_method"] = method
+        if spec is not None:
+            matched = None
+            for item in (spec.packaging or []):
+                if (isinstance(item, Mapping)
+                        and _loose_str_eq(item.get("method"), method)):
+                    matched = item  # 多个同名 method：取第一个（与引擎 _pick_packaging 一致）
+                    break
+            if matched is not None:
+                pid = matched.get("id")
+                row["packaging_id"] = None if pid is None else str(pid)
+            else:
+                known = "、".join(
+                    str(item.get("method") or item.get("name") or item.get("id"))
+                    for item in (spec.packaging or [])
+                    if isinstance(item, Mapping)
+                )
+                issues.append(Issue(
+                    r_i, column_of("packaging", "包装方式"), method,
+                    "产品「%s」没有 packaging[].method = %r 的包装方案%s；"
+                    "将使用产品默认包装"
+                    % (spec.name or spec.key, method,
+                       ("（可选: %s）" % known) if known else "（该产品未配置包装）"),
+                    severity="warning",
+                ))
+
+    # 4) 规格列：用**该行产品自己的**列映射解析
+    if spec is not None:
+        targets = product_targets.get(spec.key, {})
+        for idx, (kind, target, meta) in targets.items():
+            value = raw_row[idx] if idx < len(raw_row) else None
+            if value is None or str(value).strip() == "":
+                continue  # 允许留空：其它产品的列本行本来就该空
+            column = headers.get(idx, target)
+            try:
+                if kind == "variant":
+                    spec_values[target] = _coerce_variant(spec, target, value)
+                else:
+                    number = _to_decimal(value)
+                    unit = meta.get("unit")
+                    factor = meta.get("factor") or {}
+                    if unit and unit in factor:
+                        number = number * Decimal(str(factor[unit]))
+                    if kind == "numeric":
+                        ni = next(
+                            (n for n in spec.numeric_inputs if n.key == target),
+                            None,
+                        )
+                        if ni is not None:
+                            _order_check_bounds(ni, number, column, value, add_error)
+                    spec_values[target] = number
+            except ValueError as exc:
+                add_error(column, value, str(exc))
+
+        # 有可选档位的变体包必须填（空档位包由定价数据补，引擎允许不填）
+        for vg in spec.variants:
+            if not vg.options or vg.name in spec_values:
+                continue
+            column = next(
+                (headers[idx] for idx, (kind, target, _m) in targets.items()
+                 if kind == "variant" and target == vg.name),
+                vg.label or vg.name,
+            )
+            add_error(
+                column, None,
+                "缺少「%s」；可选: %s" % (
+                    vg.label or vg.name,
+                    ", ".join(str(o.get("name")) for o in vg.options)))
+
+        # 独立规格轴必须给全（当前产品都是自由数值，保留通用性）
+        for ax in spec.axes:
+            if ax.name in spec_values:
+                continue
+            column = next(
+                (headers[idx] for idx, (_kind, target, _m) in targets.items()
+                 if target == ax.name),
+                ax.label or ax.name,
+            )
+            add_error(
+                column, None,
+                "缺少规格轴「%s」；可选值: %s" % (
+                    ax.label or ax.name,
+                    ", ".join(str(o) for o in ax.options)))
+
+        # 自由数值参数：没填就用产品默认值（与引擎 spec_from_partial 同口径），
+        # 这样返回的行是**完整规格**，工作台不必再补默认值。
+        for ni in spec.numeric_inputs:
+            if ni.key in spec_values or ni.default is None:
+                continue
+            try:
+                spec_values[ni.key] = _to_decimal(ni.default)
+            except (InvalidOperation, TypeError, ValueError):
+                continue
+
+        # 填了**别的产品的规格列**：不阻断（可能只是复制粘贴），但要明确说"已忽略"，
+        # 否则用户以为这一列生效了，算出来的价却按默认值走。
+        applicable = applicable_idx.get(spec.key, set())
+        for idx in spec_columns:
+            if idx in applicable:
+                continue
+            value = raw_row[idx] if idx < len(raw_row) else None
+            if value is None or str(value).strip() == "":
+                continue
+            column = headers.get(idx, "")
+            issues.append(Issue(
+                r_i, column, value,
+                "列「%s」不适用于产品「%s」，该值已忽略" % (
+                    column, spec.name or spec.key),
+                severity="warning",
+            ))
+
+    return row, issues, spec
+
+
+def parse_order_table(
+    data: bytes,
+    products: Iterable[ProductSpec],
+    filename: str = "",
+    sheet: str | None = None,
+) -> OrderParsedTable:
+    """把「整单表」（单表 + 产品列）解析成归一化的产品行。
+
+    :param products: **可报价产品**集合（由 Worker 传入注册表 ∪ 团队可见租户产品）。
+        解析器不查产品库 —— 与单产品 `parse_table` 一样只认传进来的定义。
+    :raises ImportError_: 整表级失败（空表 / 超行数 / 缺「产品」「件数」「成本」列 / 无数据行）。
+
+    逐行策略：坏行**不阻断**其它行。产品认不出来、必填列缺失、数值超范围、变体包没填，
+    都记成**该行**的 error（`row_errors`），行仍返回给前端展示；包装方式匹配不上、
+    重复行等只记 warning，不阻断。
+    """
+    specs = [p for p in (products or []) if p is not None]
+    xlsx_warnings: list[str] = []
+    sheet_out: dict = {}
+    grid = read_table(
+        data, filename, sheet, warnings=xlsx_warnings, sheet_out=sheet_out,
+    )
+    out = OrderParsedTable(
+        source_name=filename or "",
+        sheet=str(sheet_out.get("name") or sheet or ""),
+        expected_columns=order_template_headers(specs),
+    )
+    for message in xlsx_warnings:
+        out.issues.append(Issue(0, "", None, message, severity="warning"))
+    if not grid:
+        raise ImportError_("表格是空的")
+    if len(grid) > MAX_ROWS + 1:
+        raise ImportError_(
+            "数据行 %d 超过上限 %d 行，请拆分后再传" % (len(grid) - 1, MAX_ROWS)
+        )
+
+    # ── 表头分派：公共列 vs 规格列 ──
+    header_row = grid[0]
+    headers: dict[int, str] = {}
+    common_idx: dict[str, int] = {}
+    spec_idx: list[int] = []
+    for idx, raw in enumerate(header_row):
+        if raw is None or not str(raw).strip():
+            continue
+        text = str(raw)
+        headers[idx] = text
+        base, _unit = _norm_header(text)
+        slug = _ORDER_COMMON_ALIASES.get(_order_compact(base))
+        if slug is None:
+            spec_idx.append(idx)
+        elif slug in common_idx:
+            # 同一个公共列出现两次：第一列生效，其余记 ignored（不静默覆盖）
+            out.ignored_columns.append(text)
+        else:
+            common_idx[slug] = idx
+            out.mapping[text] = _ORDER_COMMON_MAPPING[slug]
+
+    missing_required = [
+        label for slug, label in (
+            ("product", "产品"), ("pieces", "件数（卷）"), ("cost", "成本"),
+        ) if slug not in common_idx
+    ]
+    if missing_required:
+        raise ImportError_(
+            "缺少必需列：%s。整单导入至少需要「产品」「件数（卷）」「成本」三列"
+            % "、".join(missing_required)
+        )
+
+    # ── 每个产品各自的规格列映射（同一表头在不同产品下可能落到不同字段）──
+    #
+    # 两条判定，顺序不能反：
+    #   1. **模板表头按归属产品分派**：若这个表头出现在某个产品的 `template_headers`
+    #      里，就只对那个产品生效。否则「网孔/刺尖间距(cm)」（勾花网自己的列）会通过
+    #      别名基名命中鹿网的 mesh_mm，把 cm 值当 mm 收下 —— 差十倍且**静默**。
+    #   2. 不是任何产品模板表头的列（用户改成别名写法）：按 `_resolve_column` 认，
+    #      但落点必须是该产品真实存在的字段（`_order_known_targets`），否则不算数。
+    template_owners: dict[str, set[str]] = {
+        spec.key: set(template_headers(spec)) for spec in specs
+    }
+    all_template_headers: set[str] = set()
+    for owner_headers in template_owners.values():
+        all_template_headers |= owner_headers
+
+    product_targets: dict[str, dict[int, tuple[str, str, dict]]] = {}
+    applicable_idx: dict[str, set[int]] = {}
+    header_targets: dict[int, dict[str, str]] = {idx: {} for idx in spec_idx}
+    for spec in specs:
+        maps = _build_header_map(spec)
+        known = _order_known_targets(spec)
+        own_headers = template_owners[spec.key]
+        targets: dict[int, tuple[str, str, dict]] = {}
+        for idx in spec_idx:
+            header = headers[idx]
+            if header in all_template_headers and header not in own_headers:
+                # 属于别的产品的列：本产品不适用（见上面第 1 条）
+                continue
+            resolved = _resolve_column(spec, header, maps)
+            if resolved is None:
+                continue
+            kind, target, meta, unit = resolved
+            if target not in known:
+                # 该表头落到本产品不存在的字段 → 本产品不适用（上面第 2 条）
+                continue
+            if kind == "variant":
+                targets[idx] = ("variant", target, {})
+            elif kind == "numeric":
+                targets[idx] = ("numeric", target, {
+                    "unit": unit, "factor": meta["factor"]})
+            else:
+                targets[idx] = ("scalar", target, {
+                    "unit": unit, "factor": meta["factor"]})
+            header_targets[idx][spec.key] = target
+        product_targets[spec.key] = targets
+        applicable_idx[spec.key] = set(targets)
+
+    # 至少对一个产品有落点的规格列：用于提示「填了不适用本行产品的列」
+    spec_columns: set[int] = {idx for idx, per in header_targets.items() if per}
+
+    for idx in spec_idx:
+        text = headers[idx]
+        per_product = header_targets[idx]
+        if not per_product:
+            out.ignored_columns.append(text)
+            continue
+        unique = set(per_product.values())
+        if len(unique) == 1:
+            out.mapping[text] = "规格:" + next(iter(unique))
+        else:
+            # 同名列对多产品落到不同字段：逐个标出，避免用户以为只有一个落点
+            out.mapping[text] = "规格:" + " / ".join(
+                "%s@%s" % (target, key) for key, target in per_product.items())
+
+    # ── 逐行解析 ──
+    lookup = _order_product_lookup(specs)
+    available = "、".join("%s(%s)" % (p.name or p.key, p.key) for p in specs) or "（无）"
+    seen_rows: dict[tuple, int] = {}
+    product_stats: dict[str, dict] = {}
+    consumed_any = False
+
+    for r_i, raw_row in enumerate(grid[1:], start=1):
+        if raw_row is None or all(
+            c is None or str(c).strip() == "" for c in raw_row
+        ):
+            continue  # 跳过空行
+        consumed_any = True
+        out.total_data_rows += 1
+        row, row_issues, spec = _parse_order_row(
+            r_i, raw_row,
+            headers=headers,
+            common_idx=common_idx,
+            spec_columns=spec_columns,
+            applicable_idx=applicable_idx,
+            product_targets=product_targets,
+            lookup=lookup,
+            available=available,
+        )
+        out.issues.extend(row_issues)
+        if spec is not None:
+            stat = product_stats.setdefault(spec.key, {
+                "product_key": spec.key,
+                "product_name": spec.name,
+                "rows": 0,
+            })
+            stat["rows"] += 1
+
+        # 重复行：同产品 + 同规格 → 提示（可能是误重复，也可能是两行同规格）
+        if row["product_key"] and not row["row_errors"]:
+            signature = (
+                row["product_key"],
+                tuple(sorted((str(k), str(v)) for k, v in row["spec"].items())),
+            )
+            first = seen_rows.get(signature)
+            if first is None:
+                seen_rows[signature] = r_i
+            else:
+                product_idx = common_idx.get("product")
+                out.issues.append(Issue(
+                    r_i,
+                    headers.get(product_idx, "产品") if product_idx is not None else "产品",
+                    row["product_name"],
+                    "与第 %d 行的产品+规格重复（如确为两行请保留）" % first,
+                    severity="warning",
+                ))
+
+        out.rows.append(row)
+
+    if not consumed_any:
+        raise ImportError_("表格里没有数据行")
+    out.products = list(product_stats.values())
+    return out
 
 
 def _example_rows(product: ProductSpec, columns: list[TemplateColumn],

@@ -268,6 +268,69 @@ describe("体积扣减（口径由产品定义声明，不写死）", () => {
   });
 });
 
+describe("spec_snapshot · 包装方式与材质（用户 2026-10-24）", () => {
+  const base = {
+    product: product(),
+    formulas: formulas(),
+    spec: { height_m: 1.5 },
+    pieceBase: { roll_len_m: 100 },
+    result: result(),
+    view: "customer" as const,
+    rollLengthM: 100,
+  };
+
+  it("包装方式按 method 留档（「包装1」这种档位名不再是唯一信息）", () => {
+    const { item } = buildLineItem({
+      ...base,
+      pieces: 1,
+      packaging: {
+        id: "p1",
+        name: "包装1",
+        method: "托盘装",
+        fee_per_piece: 5,
+      },
+    });
+    const snap = item.spec_snapshot as Record<string, unknown>;
+    expect(snap.packaging_id).toBe("p1");
+    expect(snap.packaging_name).toBe("包装1");
+    expect(snap.packaging_method).toBe("托盘装");
+    expect(snap.packaging_fee_per_piece).toBe(5);
+  });
+
+  it("method 缺失的旧数据退回 name（快照里总有一句人能读懂的话）", () => {
+    const { item } = buildLineItem({
+      ...base,
+      pieces: 1,
+      packaging: { id: "p2", name: "包装2", method: "", fee_per_piece: 8 },
+    });
+    const snap = item.spec_snapshot as Record<string, unknown>;
+    expect(snap.packaging_method).toBe("包装2");
+  });
+
+  it("没选包装时不写包装键（不塞 null 占位）", () => {
+    const { item } = buildLineItem({ ...base, pieces: 1 });
+    const snap = item.spec_snapshot as Record<string, unknown>;
+    expect(snap).not.toHaveProperty("packaging_id");
+    expect(snap).not.toHaveProperty("packaging_method");
+  });
+
+  it("材质有值才进快照；空白值不写", () => {
+    const withMaterial = buildLineItem({
+      ...base,
+      pieces: 1,
+      material: "镀锌",
+    });
+    expect(
+      (withMaterial.item.spec_snapshot as Record<string, unknown>).material,
+    ).toBe("镀锌");
+
+    const blank = buildLineItem({ ...base, pieces: 1, material: "   " });
+    expect(
+      (blank.item.spec_snapshot as Record<string, unknown>).material,
+    ).toBeUndefined();
+  });
+});
+
 describe("cost_breakdown 内部分解快照（UNCERTAIN #19）", () => {
   const internalResult = {
     meta: {

@@ -14,6 +14,22 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-24 · 收尾批：R-C1 + R-B + R-D 完成，产品×报价重构四批全绿 ✅）**
+> - **R-C1 成本含税开关（契约）**：`ExportQuoteRequest.cost_basis`（enum pretax|incl_tax）请求级覆盖 ——
+>   `shared/contracts` + `QuoteRequest` + `engine.py`（请求级优先、缺省回落产品定义）+ `_CalculateIn`（Literal）
+>   + `pydantic-schemas.json` + zod 重生成；engine 测 45 passed，旧请求逐字节不变。
+> - **R-B 报价行重排**：行卡三段（产品信息上·件数中·金额下，`section[aria-label]` DOM 顺序钉住）+ 折叠摘要三行 +
+>   包装下拉 `method || name` + 材质下拉（`profile.info.material_options`，不算价）+ 含税 checkbox；
+>   快照增记 `packaging_method`/`material`；行情套件 87 passed·18 files。
+> - **R-D 批量导入整单化**：`GET /import/order/template-info` + `POST /import/order/preview`（单表+产品列、
+>   规格列并集、行级容错、`packaging_id` 服务端解析）；前端 panel 三步（下载整单模板→预览→填入工作台）；
+>   **不新增 calculate 端点**（算价/落库复用工作台既有链路）。路由 283→285（281 业务=193 直接+88 透传），
+>   `routes.json`/`route-inventory.md` 已重生成、openapi/route-surface 机检同步。
+> - **门禁（2026-10-24 实测）**：worker **1778 passed + 12 skipped** / orchestrator **266** / ts-worker **305（26 文件）** /
+>   前端 **1626 passed·219 files** / contracts R0–R6 PASS / ui:standards + ui:contrast PASS / 静态断言 PASS（drift 需 UTF-8 控制台）。
+> - **遗留（单开任务）**：`deer_net` 产品定义把 derived「宽度(mm)」当可填列并映射到 `height_m`（单产品导入既有问题，
+>   R-D 并集模板会把它带给鹿网用户）；建议修产品列定义（derived 不进模板）。
+
 > **（2026-10-23 17:05 · 交接批：R-C2 + R-A 完成并推送，R-C1/B/D 待续 ✅）**
 > - **R-C2 税务档案**：根因=工位挂 `admin` 组（internalOnly）⇒ 外部账号侧边栏不可见；已移 `account` 组
 >   + 「税务管理」→「税务档案」双端改名（契约 + Python 镜像 + 页面标题/文案/README）；contracts R2=30 PASS。

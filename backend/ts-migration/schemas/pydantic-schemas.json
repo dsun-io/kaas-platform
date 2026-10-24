@@ -1899,6 +1899,23 @@
     "default": null,
     "title": "Packaging Id"
    },
+   "cost_basis": {
+    "anyOf": [
+     {
+      "enum": [
+       "pretax",
+       "incl_tax"
+      ],
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "description": "成本口径 pretax|incl_tax；缺省=产品定义值",
+    "title": "Cost Basis"
+   },
    "spec_rows": {
     "anyOf": [
      {

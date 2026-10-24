@@ -164,6 +164,11 @@ export const ExportQuoteRequestSchema = z.object({
   price_inputs: z.record(z.unknown()).nullable().optional(),
   /** 本单选用的包装（产品 packaging[].id）；缺省 = 默认包装/最早创建的包装 */
   packaging_id: z.string().nullable().optional(),
+  /**
+   * 本单成本口径覆盖：pretax（默认，税前价）| incl_tax（含税价，引擎按进项票税点还原）；
+   * 缺省 = 产品定义的 cost_basis。报价行「按含税价」勾选时逐单下发。
+   */
+  cost_basis: z.enum(['pretax', 'incl_tax']).optional(),
   variant_overrides: z.record(z.unknown()).nullable().optional(),
   constants_override: z.record(z.unknown()).nullable().optional(),
   /**
@@ -853,6 +858,97 @@ export const ImportTemplateInfoSchema = z.object({
   notes: z.array(z.string()).default([]),
 });
 export type ImportTemplateInfo = z.infer<typeof ImportTemplateInfoSchema>;
+
+// ── 整单批量导入（R-D，2026-10-23）────────────────────────────────────────────
+//
+// 口径（用户弹窗拍板）：**单表 + 产品列**，规格列为各产品模板列的并集；
+// 一行 = 订单里的一个产品行；导入结果**直接填入报价工作台**（由工作台逐行算价/落库），
+// 因此后端只提供「解析 + 行级校验」的预览端点，不在这里落库、也不再逐行算价。
+
+/** 整单导入的一行（解析 + 校验后的归一化结果）。 */
+export const OrderImportRowSchema = z.object({
+  /** 数据行号，从 1 开始（不含表头） */
+  row: z.number().int(),
+  product_key: z.string(),
+  product_name: z.string(),
+  /** 规格（numeric + variant 取值；键为引擎字段名） */
+  spec: z.record(z.unknown()),
+  /** 件数（卷） */
+  pieces: z.number(),
+  /** 成本（口径见 cost_basis；税前价或含税价） */
+  cost: z.number(),
+  cost_basis: z.enum(['pretax', 'incl_tax']).default('pretax'),
+  /** 包装方式（按产品 packaging[].method 匹配；原文回显用） */
+  packaging_method: z.string().nullable().default(null),
+  /** 包装方式解析成的产品 packaging[].id（前端行草稿直接用；空 = 默认包装） */
+  packaging_id: z.string().nullable().default(null),
+  /** 本行利润率（%）；空 = 继承整单默认 */
+  profit_pct: z.number().nullable().default(null),
+  /** 该行问题（有 error 时该行不可用） */
+  row_errors: z.array(z.string()).default([]),
+});
+export type OrderImportRow = z.infer<typeof OrderImportRowSchema>;
+
+/** 整单导入预览：解析结果 + 行级问题 + 涉及产品清单。 */
+export const OrderImportPreviewResponseSchema = z.object({
+  source_name: z.string().default(''),
+  /** 实际读取的工作表 */
+  sheet: z.string().default(''),
+  total_data_rows: z.number().int(),
+  usable_rows: z.number().int(),
+  error_count: z.number().int(),
+  warning_count: z.number().int(),
+  /** 本单涉及的产品（含行数） */
+  products: z
+    .array(
+      z.object({
+        product_key: z.string(),
+        product_name: z.string(),
+        rows: z.number().int(),
+      }),
+    )
+    .default([]),
+  /** 表头 → 落点（`产品` / `规格:字段` / `件数` / `成本` / …） */
+  mapping: z.record(z.string()).default({}),
+  ignored_columns: z.array(z.string()).default([]),
+  issues: z.array(ImportIssueSchema).default([]),
+  /** 归一化后的行（可直接填入工作台） */
+  rows: z.array(OrderImportRowSchema).default([]),
+  /** 模板期望列（各产品模板列并集） */
+  expected_columns: z.array(z.string()).default([]),
+});
+export type OrderImportPreviewResponse = z.infer<
+  typeof OrderImportPreviewResponseSchema
+>;
+
+/** 整单导入模板的列定义（并集；每列标注适用产品）。 */
+export const OrderImportTemplateInfoSchema = z.object({
+  /** 空 = 全部可报价产品 */
+  product_keys: z.array(z.string()).default([]),
+  headers: z.array(z.string()),
+  /** 表头 → 适用产品名列表（规格列才有多产品；产品/件数/成本等为整单公共列） */
+  columns: z
+    .array(
+      z.object({
+        header: z.string(),
+        /** common = 整单公共列；spec = 规格列 */
+        kind: z.enum(['common', 'spec']),
+        /** 适用产品（spec 列才有意义） */
+        products: z.array(z.string()).default([]),
+        unit: z.string().default(''),
+        options: z.array(z.string()).default([]),
+        note: z.string().default(''),
+      }),
+    )
+    .default([]),
+  max_rows: z.number().int(),
+  max_mb: z.number(),
+  data_sheet: z.string(),
+  notes: z.array(z.string()).default([]),
+});
+export type OrderImportTemplateInfo = z.infer<
+  typeof OrderImportTemplateInfoSchema
+>;
 
 /** 模板可下载的格式。xlsx 给人填（带下拉与说明），csv 给脚本生成。 */
 export const IMPORT_TEMPLATE_FORMATS = ['xlsx', 'csv'] as const;
