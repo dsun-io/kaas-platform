@@ -295,11 +295,31 @@
 | sync-shared -Check | PASS（共享内核 46 / 报价引擎 22 / 枚举 1 一致） |
 | Test Pilot | 本工作区未配置 runner（no-tests）；以上均为显式命令实测 |
 
-### 8.6 部署与生产验证
+### 8.6 部署与生产验证（2026-10-24 14:50，commit `c25ffe36`）
 
-> 代码+文档同批提交后由 `deploy.yml` 自动发布（push main 触发 CI→deploy）；部署完成后在 docs-only
-> 跟进提交回填 run id 与黑盒证据（避免把"待验证"写成"已验证"）。
-
-- 待回填：deploy run、`/health?deep=1` ×3、新 preference 端点口径、preview 端点可达性、
-  `/workstation-products` 401/403/404 口径、生产 HTML 与 deploy artifact 逐字节比对、chunk 新文案。
+- **提交**：`c25ffe36`（37 文件；私有 `GIT_INDEX_FILE` 提交、共享 index 已归位；工作树干净、与 origin 同步）。
+- **CI（同 SHA 全绿）**：backend:test `40071240413` / contracts:check `40071240227` /
+  Frontend CI `40071240175` / ts-edge `40071240159` / secret:scan `40071240290` 全部 success。
+- **deploy run `40071240322`（headSha `c25ffe36`）全绿**，5 个 job 依次：
+  Wait for same-SHA CI（06:42:10→06:46:56）→ Build frontend (Linux static export，06:46:58→06:48:04，
+  `assets:check` PASS：files=322 / badNames=0 nextDirs=0 missingRefs=0 prefetchTrue=0)
+  → DB migration（06:48:06→06:48:19）→ Deploy kernel（06:48:22→06:49:46，
+  `attempt 1: OK (1/2)` / `attempt 2: OK (2/2)` … `shared_loaded:true` ⇒
+  `✅ kernel liveness passed（连续 2 次）`）→ Deploy edge（06:49:48→06:50:32）。
+- **生产黑盒（只读；未建任何报价/订单）**：
+  - `GET /health?deep=1` 连续 3 次：均 `kernel.status=ok`、`shared_loaded=true`、`http_status=200`。
+  - **新 preference 端点**：`GET /api/v1/quotes/product-name-preference`（带/不带 product_key）
+    无 token → **401** `{"detail":{"error":"unauthorized","message":"Authentication required"}}`
+    （鉴权先于业务；路由经 `/api/v1/quotes/*` 透传可达。无 QA 团队账号，按 401 口径记录）。
+  - **预览端点**：`POST /api/v1/trade-docs/preview-render-data` 无 token → **401**（仍可达）。
+  - `GET /api/v1/workstation-products` 无 token → **401**（旧实现 404 的前提已消除；
+    行为修复由内核测试 + 本批发布覆盖，无 QA 账号无法做带 token 真机写入验证）。
+  - **前端产物逐字节一致**：生产 `/trade-docs`（16635 B）、`/quotes`（16875 B）、
+    `/products`（15638 B）HTML 与 deploy artifact `frontend-out` 同路径文件 **sha256 全相等**；
+    `/quotes.html` 引用的 chunk `3errb_dp7qv7s.js` 生产取回后 **sha256 与 artifact 一致**
+    （152907 bytes），且该 chunk 内含「客户英文名（本单使用）」「product-name-preference」
+    「默认英文名」三处新文案。
+- **遗留风险**：生产验证为只读（按用户要求未在生产建单）⇒ A 的「客户最近用名」真机链路目前只有
+  内核测试 + 前端单测 + MSW 覆盖，需下次真实报价操作做端到端确认；旧行无 `product_key` 的回落
+  口径见 §8.1（历史快照不回改）。
 

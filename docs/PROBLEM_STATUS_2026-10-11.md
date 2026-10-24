@@ -29,7 +29,10 @@
 > - **门禁（2026-10-24 第三轮实测）**：worker **1842+12skip** / orchestrator **273** / ts-worker **323（26 文件）** /
 >   前端 **1678（228 文件）** / e2e **28 passed** / contracts·mocks·ui 双门禁·trade-doc:check·静态断言·sync-shared 全 PASS；
 >   `NEXT_EXPORT=1 pnpm build` exit 0（Windows `assets:check` 已知平台缺陷，以 CI ubuntu 为准）。
-> - **发布与生产验证**：见 HANDOVER §8.6（部署后回填 run id 与黑盒证据）。
+> - **发布与生产验证（2026-10-24 14:50，commit `c25ffe36`）**：CI 5 项全绿；deploy run `40071240322` 全绿
+>   （build→migrate→kernel 连续 2 次 deep health→edge）；`/health?deep=1` ×3 均 kernel ok + shared_loaded；
+>   新 preference / preview / workstation-products 无 token 均 401（路由可达）；生产 `/trade-docs`、`/quotes`、
+>   `/products` HTML 与 deploy artifact 逐字节一致，chunk 内含「客户英文名（本单使用）」等新文案（详见 HANDOVER §8.6）。
 
 > **（2026-10-24 下午 · 第二轮补充反馈 ✅：英文名全量匹配 / 单证正式生成前完整预览 / 内核冷启动 502）**
 > 明细追加在 [`HANDOVER_2026-10-24_LIVE_FEEDBACK.md`](./HANDOVER_2026-10-24_LIVE_FEEDBACK.md) §7，待办挂 `TODO.md` §S。
