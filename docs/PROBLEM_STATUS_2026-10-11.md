@@ -31,8 +31,17 @@
 > - **门禁（2026-10-24 第四轮实测，工作区静止）**：ts-worker `typecheck` 0 error / **345 测（28 文件）**；
 >   前端 `typecheck` 0 error / `lint` 0 error（75 warning 历史项）/ **1685 测（228 文件）**；worker **1842 + 12 skip**；
 >   orchestrator 未触碰（kaas_common 源已回退到 HEAD）；**未提交、未部署**（等用户确认）。
-> - **待批准**：① 部署止血包；② 认证+数据库连接拆到 TS 网关的分阶段实施（P0 热读 1–2 天 / P1 认证域 2–3 天 / P2 引擎供数 3–5 天 / P3 内核摘库 1 天）；
->   ③ 是否向 Cloudflare 报 Pyodide init 缺陷（证据包已备）。
+> - **用户已批准（2026-10-24 16:25）**：① 部署止血包 ② **P0→P3 全阶段执行** ③ 整理 Cloudflare 工单证据包。
+>
+> **部署与线上验证（2026-10-24，commit `e39ea3be`，deploy run `40077422570` 全绿）**
+> - 流水线 5 个 job 全 success：Wait same-SHA CI → Build frontend(Linux) → DB migration → **Deploy kernel kaas** → **Deploy edge kaas-edge**；
+> - 生效版本（Cloudflare UTC）：`kaas` modified **08:24:02Z**、`kaas-edge` modified **08:24:44Z**；
+> - **带 JWT 线上验证（真实登录 + 真实业务请求）**：`POST /auth/login` 200；匿名 `GET /products` 401（鉴权口径未变）；
+>   带 JWT `GET /products` **顺序 10/10 = 200**、**并发 8/8 = 200**（并发模拟页面加载，这是事故时最容易成片 502 的场景）；
+>   热端点 `/products/v_posts/profile` 200、`/notifications/unread-count` 200、`/approvals?view=pending` 200；
+>   **5xx 数量 = 0**；`/products/v_posts/media` 返回 403 `{"detail":{"error":"forbidden","code":"NO_TEAM"}}` —— 属 `ws_files.py` §1.5「无团队」既定口径（QA 账号 team_id=null），**非回归**。
+> - **进度**：P0（热读搬 TS 直连 DB）实施中（task-4）；P1（认证域）已登记并被 P0 阻塞（task-5）；P2/P3 已登记（task-6/7）。
+> - **Cloudflare 工单证据包**：见 [CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md](./CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md)（可直接提交）。
 
 > **（2026-10-24 下午 · 第三轮 A/B/C/D ✅：按客户选英文名 / token 只读预览 / 路由计数 / workstation-products）**
 > 明细见 [`HANDOVER_2026-10-24_LIVE_FEEDBACK.md`](./HANDOVER_2026-10-24_LIVE_FEEDBACK.md) §8；待办 `TODO.md` §S 的 S-7/S-9/S-15/S-16 已勾销。
