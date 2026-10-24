@@ -58,17 +58,28 @@ PythonError: SystemError: Cannot enter a promising task from inside another runn
 
 分类口径：**TS-DB** = 门面直连 Hyperdrive 完成（鉴权+SQL+序列化）；**Py-RPC** = 保留 Python 计算，门面供数、内核返回结果；**保持** = 本期不动。
 
-### 3.1 认证域（全部 → TS-DB）
+### 3.1 认证域（**2026-10-24 事实修正：已全部是 TS-DB，本表不是待办**）
 
-| 路由 | 现在 | 目标 | 备注 |
-|---|---|---|---|
-| `POST /auth/login` | 内核（bcrypt 校验 + 签发 JWT） | **TS-DB** | 需在 TS 侧校验 bcrypt 哈希，见 §7 决策 D1 |
-| `GET /auth/me` | 内核心（`_get_current_user` + DB） | **TS-DB** | 门面已可解析 claims，补一条 users 查询 |
-| `POST /auth/logout` | 内核 | **TS-DB** | 仅会话/审计写 |
-| `POST /auth/change-password` | 内核（bcrypt） | **TS-DB** | 同上 D1 |
-| `POST /auth/forgot-password` / `reset-password` | 内核（bcrypt + Resend） | **TS-DB** | Resend 门面已有绑定 |
-| `POST /auth/register` | 内核 | **TS-DB** | 含客户编码生成，需把编码规则单源化（见 §7 D2） |
-| `POST /auth/bootstrap-admin` | 内核（ADMIN_SETUP_TOKEN） | **TS-DB** | 门面已有该 secret |
+> ⚠️ 2026-10-24 P1 执行时核实：这 9 条自 `c80f894c`（"ts 门面 phase 2 波 a：auth/customers/teams 44 条"）
+> **起就已经是门面直连 DB**（`src/routes/auth.ts` 541 行，全部 `withDb` + postgres.js，**零 KERNEL.fetch**），
+> 且 `route-surface` 把它算在「193 条直接注册」里。本节早先写的「现在：内核」是过时口径。
+> P1 的实际剩余工作 = **对齐缺口 + 测试**（见 §10 表注），不是搬迁。
+
+| 路由 | 实际状态 | P1 做了什么 |
+|---|---|---|
+| `POST /auth/login` | TS-DB（既有） | 补测试：成功/密码错/用户不存在/禁用 + JWT claims 断言（仅 sub/iat/exp） |
+| `GET /auth/me` / `PATCH /auth/me` | TS-DB（既有） | **修平**：PATCH 缺 `team_name`（Python `main.py:492-494` 有） |
+| `POST /auth/logout` | TS-DB（既有） | 测试锁定「无写库」语义 |
+| `POST /auth/change-password` | TS-DB（既有，bcryptjs） | 测试：重哈希 `$2b$12$` / 403 / 422 / 401 |
+| `POST /auth/forgot-password` | TS-DB 但**不发信**（TODO:TS2） | **补 Resend 发信**（逐字直译 `main.py:576-675`，HTML/text 与 Python 原件 **sha256 相同**） |
+| `POST /auth/reset-password` | TS-DB（既有） | 测试：token 只存哈希、单次使用、旧密码失效 |
+| `POST /auth/register` | TS-DB（既有） | 核实「客户编码」在 Python 侧是**死代码**、register 不建 customers 行 ⇒ 无需 RPC/无第二份实现 |
+| `POST /auth/bootstrap-admin` | TS-DB（既有） | 测试：一次性语义、已初始化 403/409 |
+
+**决策 A（P1 期间定）**：auth **不接** `AUTH_DB_SPLIT` 开关，保持恒直连 —— 把「能否登录」绑回 Pyodide 冷启动
+与本次止血目标相反；回退手段用 `wrangler versions deploy`（不发版回退）。
+
+**其余两处修平**：`plan` 回落 `??`→`||`（Python 用 `or`，空串回落 `free`）。
 
 ### 3.2 控制台热路径（P0，本次事故里刷屏的端点）
 

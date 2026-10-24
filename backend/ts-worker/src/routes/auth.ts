@@ -2,9 +2,11 @@
  * KaaS TS 门面 · auth 域（9 条路由，对齐 backend/worker/src/main.py Auth 段 :295-943）。
  *
  * 协议层本职：密码校验 / JWT 签发 / 会话装载 / 参数校验。
- * 发信本波不接 Resend（TODO(TODO:TS2)：RESEND_API_KEY 未配到 edge，
- * 接入列入切流前检查单）—— forgot-password 落库 token 并记录日志，
- * 响应形状与 Python 完全相同。
+ *
+ * 9 条路由**全部直连 Hyperdrive（TS-DB）**，不调用 KERNEL.fetch —— 登录/改密/重置
+ * 不再依赖 Python 内核冷启动（2026-10-24 事故止血主线，见 docs/ARCH_AUTH_DB_SPLIT...）。
+ * forgot-password 的 Resend 发信已接（src/reset-email.ts，逐字直译 main.py:654-675）；
+ * RESEND_API_KEY 缺失时与 Python 同口径：静默不发、响应不变。
  */
 import { Hono } from "hono";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
@@ -14,6 +16,7 @@ import { verifyPassword } from "../auth";
 import { withDb, type Db, type Tx } from "../db";
 import { getEnv, requireSecret, type Env } from "../env";
 import { httpError, parseBody, respond } from "../http";
+import { RESET_TTL_MINUTES, sendResetEmail } from "../reset-email";
 import {
   createToken,
   hashPassword,
@@ -34,9 +37,6 @@ import {
 const app = new Hono<{ Bindings: Env }>();
 
 // 入参 schema 当前手写（TODO(TODO:TS1)：待 pydantic→zod 生成器覆盖本域后替换）。
-
-/** token 只存哈希，30 分钟过期，用后即废（main.py:_RESET_TTL_MINUTES）。 */
-const RESET_TTL_MINUTES = 30;
 
 /** 重置 token 存储哈希（main.py:_hash_reset_token：secrets.token_urlsafe(32) 的 sha256 hex）。 */
 function hashResetToken(raw: string): string {
@@ -196,7 +196,10 @@ app.patch("/me", (c) => respond(c, async () => {
     console_access: row.console_access === true,
     is_tenant_admin: row.is_tenant_admin === true,
   };
-  return c.json(profilePayload(merged));
+  // Python update_me（main.py:492-494）：_profile_payload(...) 之后再补团队名
+  return c.json(profilePayload(merged, {
+    team_name: await teamNameOf(getEnv(c), merged.team_id),
+  }));
 }));
 
 // ── POST /api/v1/auth/change-password（main.py:479-508）─────────────────────
@@ -257,14 +260,9 @@ app.post("/forgot-password", (c) => respond(c, async () => {
                 ${c.req.header("CF-Connecting-IP") ?? null}, NOW())`;
       const base = (env.FRONTEND_BASE_URL || DEFAULT_FRONTEND_BASE).replace(/\/+$/, "");
       const resetLink = `${base}/reset-password?token=${rawToken}`;
-      // TODO(TODO:TS2)：接入 Resend 发信。RESEND_API_KEY 未配到 edge（切流前检查单），
-      // 本波只记录日志、不发信；响应形状与 Python 相同（发信失败本就不影响响应）。
-      console.log(JSON.stringify({
-        event: "password_reset_email_deferred",
-        to: row.email,
-        reset_link: resetLink,
-        reason: "RESEND_API_KEY not configured on kaas-edge (TODO:TS2)",
-      }));
+      // 与 Python 同口径（main.py:719）：发信在事务内、失败只记日志不影响响应；
+      // RESEND_API_KEY 缺失时 sendResetEmail 直接返回 false（main.py:656-658）。
+      await sendResetEmail(env, String(row.email), resetLink);
     }
   }));
   return c.json({ ok: true, message: "如果该邮箱已注册，重置链接已发送" });

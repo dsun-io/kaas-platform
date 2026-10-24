@@ -48,8 +48,17 @@
 >   带 JWT 请求响应形状与内核口径一致（`{"product_key":"v_posts","info":{},"updated_at":null}` / `{"unread":0}` / `{"items":[],"total":0,...}`；
 >   media 仍 `403 NO_TEAM` 符合「无团队」既定口径）；
 >   **内核 tail 同期只收到 1 个请求 = `/api/v1/products`（未放行的对照项），4 条白名单端点 0 次触达内核** ⇒ 页面热读确实不再依赖 Pyodide。
-> - **第二批**：放行 `products.list`（首屏最关键），部署后同样做 tail 证明。
+> - **第二批**：放行 `products.list`（commit `2505b9e`，deploy run `40078649281` 全绿）——线上验证
+>   `GET /products` 200（3 产品 / 8 字段 / media_kinds 5 类齐全），**同期内核 tail 收到请求数 = 0**
+>   （登录 + products.list + profile + notifications + approvals 全部未触达内核）⇒ **P0 目标完成：控制台首屏热读彻底脱离 Python 冷启动**。
+>   `/products/chain_link/profile` 返回 403 `NO_TEAM`，与 Python `ws_files.py:446-447`「行存在才判可见性」逐字一致（非回归）。
 > - 两批均保留回退路径；`AUTH_DB_SPLIT_ROUTES` 可随时收缩。
+>
+> **P1 完成（2026-10-24 16:38，task-5）**——**事实修正：auth 9 条自 `c80f894c` 起即门面直连 DB**，P1 实际交付为对齐缺口 + 测试：
+> - 补 `forgot-password` 的 Resend 发信（`src/reset-email.ts`，正文/HTML 与 Python 原件 **sha256 字节级一致**）；
+> - 修平 2 处 parity：`PATCH /auth/me` 缺 `team_name`、`plan` 回落用 `??` 而非 Python 的 `or`；
+> - 核实并登记：JWT 只有 `sub/iat/exp`（tenant/team/scope 属内部 JWT）、auth 域 Python 侧无审计写入、客户编码为死代码；
+> - 新增 `tests/auth-p1-direct.test.ts` 36 测（含 9 条路由 **KERNEL.fetch 0 次**、on/off 两态）；门禁 ts-worker **32 文件 / 423 测**、前端 auth 12 测、contracts:check PASS。
 > - **Cloudflare 工单证据包**：见 [CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md](./CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md)（可直接提交）。
 
 > **（2026-10-24 下午 · 第三轮 A/B/C/D ✅：按客户选英文名 / token 只读预览 / 路由计数 / workstation-products）**

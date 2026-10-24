@@ -172,7 +172,8 @@ export function authPayload(row: AuthUserRow, token: string, teamName?: string |
     display_name: row.display_name,
     account_type: row.account_type,
     role: row.role,
-    plan: row.plan ?? "free",
+    // Python: row.get("plan") or "free" —— 空串也回落 free（?? 只兜 null/undefined）
+    plan: row.plan || "free",
     team_id: row.team_id ?? null,
     team_name: teamName ?? null,
     console_access: row.console_access === true,
@@ -187,7 +188,8 @@ export function profilePayload(user: CurrentUser, extra: Record<string, unknown>
     ...user,
     ...extra,
     user_id: user.id,
-    plan: user.plan ?? "free",
+    // Python: merged.get("plan") or "free"（main.py:459）—— 空串同回落
+    plan: user.plan || "free",
     effective_role: effectiveRole(user.role),
     tenant_id: "default",
   };

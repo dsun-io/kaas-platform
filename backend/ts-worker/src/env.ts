@@ -37,6 +37,8 @@ export interface Env {
   S3_PRESIGN_EXPIRES: string;
   /** 前端基址（重置密码链接用；对齐 Python _binding("FRONTEND_BASE_URL")，未配则回退官方域名）。 */
   FRONTEND_BASE_URL?: string;
+  /** 重置密码邮件发件人（对齐 Python _binding("RESET_FROM_EMAIL")；未配则 noreply@send.powervoy.com）。 */
+  RESET_FROM_EMAIL?: string;
   /**
    * P0 灰度开关（docs/ARCH_AUTH_DB_SPLIT_2026-10-24.md §8）：控制台热读端点走
    * 「门面直连 Hyperdrive」还是「原样透传 Python 内核」。
