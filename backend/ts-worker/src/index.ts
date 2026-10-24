@@ -24,6 +24,7 @@ import notificationRoutes from "./routes/notifications";
 import productRoutes from "./routes/products";
 import quotesReadRoutes from "./routes/quotes-read";
 import taxRatesWriteRoutes from "./routes/tax-rates-write";
+import aiReadRoutes from "./routes/ai-read";
 import miscReadRoutes from "./routes/misc-read";
 import workstationsRoutes from "./routes/workstations";
 import dashboardRoutes from "./routes/dashboard";
@@ -151,6 +152,11 @@ app.route("/", taxRatesWriteRoutes);
 // ⚠️ 其中 fx-rates / external-docs **暂不放量**（内核 SQL 无 tenant/team 谓词 = 既有越权面，
 // 见 docs/P2_COUPLING_ENGINE_2026-10-24.md §8.8）；misc-read 已接好，放量只差白名单一条目。
 app.route("/", miscReadRoutes);
+
+// ── AI 只读两条（providers / usage）：纯 SQL（聚合全在 SQL），**必须挂在 /api/v1/ai 透传之前**。
+// /ai/* 其余（tasks / task-bindings / run / 绑定写）仍透传内核：tasks 目录与默认 provider 属**业务元数据**，
+// 只在 chain.py 一处维护（ADR-008：业务规则只在内核一处实现）。
+app.route("/", aiReadRoutes);
 
 // ── 引擎域透传（quotes / trade-docs / ai）：门面只鉴权+协议转换，不重写业务（ADR-008）──
 // 详见 backend/ts-migration/route-classification.md 与 AGENTS.md 铁纪律。

@@ -244,6 +244,236 @@ export async function listProductTaxRatesDirect(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// quotes 参考读（纯 SQL）：reference-price / cost-reference
+// 真源 quote_api.py:2420-2512 / :2515-2593（前者聚合全在 SQL；后者是 SQL + 纯中位数算法）。
+// 两者都套 _scope_sql（owner + owner_scope=tenant + 本团队）——与报价列表同一可见范围。
+// ══════════════════════════════════════════════════════════════════════════════
+
+const INT_QUERY = z.string()
+  .regex(/^-?\d+$/, "Input should be a valid integer")
+  .transform(Number);
+
+/** quote_api.py:246-262 _scope_sql：管理员不加谓词；否则 owner=我 / 租户共享 / 本团队。 */
+export function quoteScopeSql(
+  user: CurrentUser,
+  params: unknown[],
+  tableAlias = "",
+): string {
+  if (isAdminRole(user.role)) return "";
+  params.push(String(user.id));
+  const p = "$" + String(params.length);
+  const col = (name: string): string => (tableAlias ? tableAlias + "." + name : name);
+  let cond = "(" + col("owner_id") + " = " + p + " OR " + col("owner_scope") + " = 'tenant'";
+  if (user.team_id !== null && user.team_id !== undefined) {
+    params.push(user.team_id);
+    cond += " OR " + col("team_id") + " = $" + String(params.length);
+  }
+  return " AND " + cond + ")";
+}
+
+/** float 化（Python float(x)；None 保持 None）。 */
+function floatOrNull(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  return Number(value);
+}
+
+const referencePriceQuery = z.object({
+  customer_id: INT_QUERY,
+  product_name: z.string().optional(),
+  product_key: z.string().optional(),
+  spec: z.string().optional(),
+  days: INT_QUERY.optional(),
+});
+
+/** GET /api/v1/quotes/reference-price（quote_api.py:2420-2512）—— 历史参考价聚合。 */
+export async function referencePriceDirect(
+  c: Context,
+  user: CurrentUser,
+): Promise<Response> {
+  const query = parseQuery(referencePriceQuery, c.req.query());
+  const days = query.days ?? 180;
+  if (days < 1 || days > 730) {
+    throw httpError(422, [{
+      type: days < 1 ? "greater_than_equal" : "less_than_equal",
+      loc: ["query", "days"],
+      msg: days < 1
+        ? "Input should be greater than or equal to 1"
+        : "Input should be less than or equal to 730",
+      input: String(days),
+    }]);
+  }
+  const wantedName = (query.product_name ?? "").trim();
+  const wantedKey = (query.product_key ?? "").trim();
+  if (!wantedName && !wantedKey) {
+    throw httpError(422, {
+      error: "validation_error",
+      message: "product_name 或 product_key 至少给一个",
+    });
+  }
+
+  const params: unknown[] = [DEFAULT_TENANT, query.customer_id];
+  let identityClause = "";
+  if (wantedKey) {
+    params.push(wantedKey);
+    const keyIdx = params.length;
+    // 旧行（无 product_key）回落：① 本单所选英文名；② 该产品身份下任何历史行用过的英文名
+    let fallback = "";
+    if (wantedName) {
+      params.push(wantedName);
+      fallback = " OR i.product_name = $" + String(params.length);
+    }
+    identityClause = (
+      " AND (i.spec_snapshot->>'product_key' = $" + String(keyIdx)
+      + " OR (i.spec_snapshot->>'product_key' IS NULL"
+      + "     AND (i.product_name IN ("
+      + "           SELECT j.product_name FROM quote_order_items j"
+      + "           WHERE j.tenant_id = $1"
+      + "             AND j.spec_snapshot->>'product_key' = $" + String(keyIdx)
+      + "             AND j.product_name IS NOT NULL)" + fallback + ")))"
+    );
+  } else {
+    params.push(wantedName);
+    identityClause = " AND i.product_name = $3";
+  }
+  params.push(days);
+  const daysIdx = params.length;
+  let specClause = "";
+  if (query.spec) {
+    try {
+      JSON.parse(query.spec);
+    } catch {
+      throw httpError(422, {
+        error: "validation_error", message: "spec must be a JSON object",
+      });
+    }
+    params.push(query.spec);
+    specClause = " AND i.spec_snapshot = $" + String(params.length) + "::jsonb";
+  }
+  const rows = (await withDb(getEnv(c), (sql: Db) => sql.unsafe(
+    "SELECT count(*) AS n,"
+    + " avg(i.unit_price) AS avg, min(i.unit_price) AS min, max(i.unit_price) AS max,"
+    + " percentile_cont(0.5) WITHIN GROUP (ORDER BY i.unit_price) AS median,"
+    + " max(q.created_at) AS last_at"
+    + " FROM quote_order_items i JOIN quote_orders q"
+    + "   ON q.tenant_id = i.tenant_id AND q.id = i.quote_order_id"
+    + " WHERE i.tenant_id=$1 AND q.customer_id=$2"
+    + " AND i.unit_price IS NOT NULL"
+    + identityClause
+    + " AND q.created_at >= now() - ($" + String(daysIdx) + " || ' days')::interval"
+    + specClause
+    + quoteScopeSql(user, params, "q"),
+    params as never[],
+  ))) as unknown as Row[];
+  const row = rows[0];
+  return c.json({
+    customer_id: query.customer_id,
+    product_name: wantedName,
+    days,
+    spec_matched: query.spec !== undefined && query.spec !== null,
+    count: row && row.n !== null && row.n !== undefined ? Number(row.n) : 0,
+    avg: floatOrNull(row?.avg),
+    min: floatOrNull(row?.min),
+    max: floatOrNull(row?.max),
+    median: floatOrNull(row?.median),
+    last_at: pyIso(row?.last_at ?? null),
+  });
+}
+
+const costReferenceQuery = z.object({
+  product_key: z.string(),
+  spec: z.string(),
+});
+
+/** GET /api/v1/quotes/cost-reference（quote_api.py:2515-2593）—— 成本参考价（SQL + 纯中位数）。 */
+export async function costReferenceDirect(
+  c: Context,
+  user: CurrentUser,
+): Promise<Response> {
+  const query = parseQuery(costReferenceQuery, c.req.query());
+  let specs: unknown;
+  try {
+    specs = JSON.parse(query.spec);
+  } catch {
+    throw httpError(422, {
+      error: "validation", code: "INVALID_SPEC", detail: "spec 必须是 JSON 对象",
+    });
+  }
+  if (typeof specs !== "object" || specs === null || Array.isArray(specs)) {
+    throw httpError(422, {
+      error: "validation", code: "INVALID_SPEC", detail: "spec 必须是 JSON 对象",
+    });
+  }
+  const productKey = query.product_key;
+  const selectClause =
+    "SELECT i.cost_override, i.spec_snapshot, q.quote_no, q.created_at"
+    + " FROM quote_order_items i JOIN quote_orders q"
+    + "   ON q.tenant_id = i.tenant_id AND q.id = i.quote_order_id";
+
+  // ① 同产品 + 同规格：取最近一次成本（specs 走 jsonb 语义相等，与 Python json.dumps 等价）
+  const params: unknown[] = [DEFAULT_TENANT, productKey, JSON.stringify(specs)];
+  const sameRows = (await withDb(getEnv(c), (sql: Db) => sql.unsafe(
+    selectClause
+    + " WHERE i.tenant_id=$1 AND i.spec_snapshot->>'product_key'=$2"
+    + "   AND i.cost_override IS NOT NULL"
+    + "   AND i.spec_snapshot->'specs' = $3::jsonb"
+    + quoteScopeSql(user, params, "q")
+    + " ORDER BY q.created_at DESC, i.id DESC LIMIT 1",
+    params as never[],
+  ))) as unknown as Row[];
+  const same = sameRows[0];
+  const snapshotOf = (row: Row | undefined): Row => {
+    const snapshot = row?.spec_snapshot;
+    return typeof snapshot === "object" && snapshot !== null && !Array.isArray(snapshot)
+      ? (snapshot as Row) : {};
+  };
+  if (same) {
+    const snapshot = snapshotOf(same);
+    return c.json({
+      reference: {
+        cost: floatOrNull(same.cost_override),
+        cost_unit: snapshot.cost_unit ? String(snapshot.cost_unit) : "",
+        source: "latest",
+        sample_count: 1,
+        as_of: pyIso(same.created_at ?? null),
+        quote_no: same.quote_no ?? null,
+        spec_snapshot: snapshot,
+      },
+    });
+  }
+
+  // ② 近 30 天：中位数按 Python 同一算法在门面算（偶数取中间两值均值）
+  const params30: unknown[] = [DEFAULT_TENANT, productKey];
+  const rows = (await withDb(getEnv(c), (sql: Db) => sql.unsafe(
+    selectClause
+    + " WHERE i.tenant_id=$1 AND i.spec_snapshot->>'product_key'=$2"
+    + "   AND i.cost_override IS NOT NULL"
+    + "   AND q.created_at >= now() - interval '30 days'"
+    + quoteScopeSql(user, params30, "q")
+    + " ORDER BY q.created_at DESC, i.id DESC",
+    params30 as never[],
+  ))) as unknown as Row[];
+  if (rows.length === 0) return c.json({ reference: null });
+  const costs = rows.map((row) => Number(row.cost_override)).sort((a, b) => a - b);
+  const n = costs.length;
+  const median = n % 2 === 1
+    ? costs[Math.floor(n / 2)]!
+    : (costs[n / 2 - 1]! + costs[n / 2]!) / 2;
+  const latest = rows[0]!;
+  const snapshot = snapshotOf(latest);
+  return c.json({
+    reference: {
+      cost: median,
+      cost_unit: snapshot.cost_unit ? String(snapshot.cost_unit) : "",
+      source: "median_30d",
+      sample_count: n,
+      as_of: pyIso(latest.created_at ?? null),
+      quote_no: latest.quote_no ?? null,
+      spec_snapshot: snapshot,
+    },
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // 路由注册（由 src/index.ts 挂载在三条 createProxyApp 透传 mount **之前**）：
 // 每请求判定灰度开关；off 时是**原样** forwardKernelRequest（与 createProxyApp 同一句）。
 // ══════════════════════════════════════════════════════════════════════════════
@@ -275,6 +505,26 @@ app.get("/api/v1/product-tax-rates", (c) => {
     return respond(c, async () => {
       const user = await requireUser(c);
       return directDb(c, () => listProductTaxRatesDirect(c, user));
+    });
+  }
+  return forwardKernelRequest(c);
+});
+
+app.get("/api/v1/quotes/reference-price", (c) => {
+  if (useDirectRoute(getEnv(c), "quotes.reference-price")) {
+    return respond(c, async () => {
+      const user = await requireUser(c);
+      return directDb(c, () => referencePriceDirect(c, user));
+    });
+  }
+  return forwardKernelRequest(c);
+});
+
+app.get("/api/v1/quotes/cost-reference", (c) => {
+  if (useDirectRoute(getEnv(c), "quotes.cost-reference")) {
+    return respond(c, async () => {
+      const user = await requireUser(c);
+      return directDb(c, () => costReferenceDirect(c, user));
     });
   }
   return forwardKernelRequest(c);
