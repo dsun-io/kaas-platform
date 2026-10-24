@@ -38,7 +38,13 @@
 | 3a | [INCIDENT_2026-10-24_KERNEL_502.md](./INCIDENT_2026-10-24_KERNEL_502.md) | **2026-10-24 生产内核 502 事故**：Pyodide 初始化期崩溃（NoGilError / promising-task SystemError）取证、错误率/内存分位、复现与抓 tail 方法 |
 | 3b | [ARCH_AUTH_DB_SPLIT_2026-10-24.md](./ARCH_AUTH_DB_SPLIT_2026-10-24.md) | **认证与数据库连接从 Pyodide 内核拆到 TS 网关**：职责拆分表 / 耦合点 / D1–D6 决策 / 灰度回退 / 迁移指标 / P0–P3 阶段 |
 | 3c | [P2_COUPLING_ENGINE_2026-10-24.md](./P2_COUPLING_ENGINE_2026-10-24.md) | **引擎端点耦合清单（77/77 全覆盖）**：25 只读可拆 / 33 应走 TS-DB / 15 不宜拆（写事务）/ 3 保持 Python；含 `/internal/engine/*` 契约草案与金标方法 |
-| 3d | [CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md](./CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md) | 可直接提交的 Cloudflare 工单证据包（异常栈/时间线/内存分位/复现脚本） |
+| 3d | [CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md](./CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md) | **可直接提交的 Cloudflare 工单（v2，中文母版）**：异常栈 / 三窗口量化 / 对照实验 E1–E5（含两个阴性结果）/ 8 条主动披露 / A1–A9 附件 |
+| 3e | [CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT_EN.md](./CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT_EN.md) | 工单**英文提交正文**（与 3d 同源，可直接粘贴） |
+| 3f | [ticket-2026-10-24/README.md](./ticket-2026-10-24/README.md) | 工单**附件工件索引**：A2 小时序列 / A5 依赖包体 / A7 门面对照 / A8 分位 / A9 时间线 / A1 摘录（附限制说明） |
+| 3g | [P3_PASSTHROUGH_DISPOSITION_2026-10-24.md](./P3_PASSTHROUGH_DISPOSITION_2026-10-24.md) | **87 条 passthrough 逐条处置表** + P3 收尾四步 + 25 个可删内核 handler 清单（含「删后 off 回退失效」取舍） |
+| 3h | [P3_CLOSEOUT_INVENTORY_2026-10-24.md](./P3_CLOSEOUT_INVENTORY_2026-10-24.md) | 内核 DB/鉴权依赖全量盘点（318 路由 / 389 DB 调用 / 269 auth）+ P3 目标修订 |
+| 3i | [P3_COVERAGE_AND_BENEFIT_2026-10-24.md](./P3_COVERAGE_AND_BENEFIT_2026-10-24.md) | **机检覆盖率与收益**：87 条全部归类（32 已覆盖 / 14 留内核 / 41 例外 / 未归类 0）+ init 暴露面 **-62%** |
+| 3j | [INCIDENT_2026-10-24_COMPANY_PROFILE_OVERWRITE.md](./INCIDENT_2026-10-24_COMPANY_PROFILE_OVERWRITE.md) | **企业抬头误覆盖事故（已 PITR 复原）**：根因 / 3 分钟窗口 / 防再犯三原则 |
 | 4 | [TODO.md](./TODO.md) | **活跃待办唯一账本**（A 单证 / B 产品 / C 其他 / D 发布 / E UI） |
 | 4b | [IMPORT_ORDERS_PLAN_2026-10-23.md](./IMPORT_ORDERS_PLAN_2026-10-23.md) | **C29 历史订单批量导入**设计+执行方案：口径裁决 / CSV 列 / API 契约 / 分层落点 / DoD |
 | 4c | [OPTIMIZATION_PLAN_2026-10-23_PRODUCT_QUOTE_REDESIGN.md](./OPTIMIZATION_PLAN_2026-10-23_PRODUCT_QUOTE_REDESIGN.md) | **产品×报价重构**（2026-10-23 用户反馈 14 条）：逐条定位（文件/行）/ 三处口径裁决 / 目标设计（产品表单收口、报价行三段布局、成本含税开关契约、税务档案侧边栏、批量导入整单化）/ 批次 A→D 与 DoD；状态挂 `TODO.md` §R |
