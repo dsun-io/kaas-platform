@@ -79,8 +79,11 @@
     // kaas_common 真源同源 + 漂移机检）⇒ 可以安全放行收费工位上的直连路由：
     //   · 引擎同族 4 切片：export-quote.{verify,formulas,spec,explain}
     //   · 批次 A 六条读：inquiries.{list,detail,stage-log} / quotations.list / tax-archives.list / product-tax-rates.list
+    // 2026-10-24 19:25 第五批：trade-docs/{id}/files（单条 JOIN，**有硬团队尺** _team_scope ⇒ 安全）。
+    // ⚠️ fx-rates 与 external-docs **暂不放量**：内核 SQL 无隔离谓词（既有越权面，见 P2 §8.8），
+    //    待内核 + 门面一起补 tenant/team 谓词并补测试后再放。
     // 回退：删条目或 AUTH_DB_SPLIT=off（行为立即回到全透传）。
-    "AUTH_DB_SPLIT_ROUTES": "notifications.unread-count,approvals.list,products.profile,products.media,products.list,export-quote.calculate,export-quote.verify,export-quote.formulas,export-quote.spec,export-quote.explain,inquiries.list,inquiries.detail,inquiries.stage-log,quotations.list,tax-archives.list,product-tax-rates.list"
+    "AUTH_DB_SPLIT_ROUTES": "notifications.unread-count,approvals.list,products.profile,products.media,products.list,export-quote.calculate,export-quote.verify,export-quote.formulas,export-quote.spec,export-quote.explain,inquiries.list,inquiries.detail,inquiries.stage-log,quotations.list,tax-archives.list,product-tax-rates.list,trade-docs.files"
   }
   // 无 triggers（门面不跑 cron）
 }
