@@ -83,7 +83,7 @@
     // 2026-10-24 19:35 第六批：external-docs.list（隔离已修：内核 + 门面都补了 tenant_id + 行级谓词，
     // 下载端点也在内核侧一并修好；见 P2 §8.8）。fx-rates 仍不放量（汇率是全局基线表，等产品拍板）。
     // 回退：删条目或 AUTH_DB_SPLIT=off（行为立即回到全透传）。
-    "AUTH_DB_SPLIT_ROUTES": "notifications.unread-count,approvals.list,products.profile,products.media,products.list,export-quote.calculate,export-quote.verify,export-quote.formulas,export-quote.spec,export-quote.explain,inquiries.list,inquiries.detail,inquiries.stage-log,quotations.list,tax-archives.list,product-tax-rates.list,trade-docs.files,external-docs.list"
+    "AUTH_DB_SPLIT_ROUTES": "notifications.unread-count,approvals.list,products.profile,products.media,products.list,export-quote.calculate,export-quote.verify,export-quote.formulas,export-quote.spec,export-quote.explain,inquiries.list,inquiries.detail,inquiries.stage-log,quotations.list,tax-archives.list,product-tax-rates.list,trade-docs.files,external-docs.list,trade-docs.render-data"
   }
   // 无 triggers（门面不跑 cron）
 }

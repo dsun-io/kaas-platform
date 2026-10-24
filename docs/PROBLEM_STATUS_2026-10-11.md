@@ -144,8 +144,11 @@
 > - 门禁：worker **1915+12skip** / ts-worker **38 文件 566 测** / orchestrator **273**；`external-docs.list` 已放量，`fx-rates` 仍待产品拍板（全局基线表）。
 > - **遗留同源风险** → **已修（2026-10-24 19:45）**：`PATCH/DELETE /external-docs/{id}` 已加 tenant + 同一谓词（0 行 ⇒ 404，不做「先查后改」，不泄露存在性）；
 >   测试 14 → **26 测**（跨团队改/删 404 且库无变化、阳性对照、管理员跨租户仍 404、SQL/参数逐字）。**有意行为变化**：DELETE 不存在/越权由 204 → 404（前端 mock 已同步对齐，前端 1685 测全绿）。
-> - **render-data 切片（第三个引擎切片，未放量）**：实现完成（`main.py`/`ws_files.py` 行为不变提取 + 金标 0 diff + 零 DB 炸弹 + 签名 host 白名单）；
->   **真库核对发现 1 处 golden 漏掉的 parity 缺口**（`to_char(...US)` 恒 6 位 vs Python `isoformat()` 省略零微秒）⇒ 已登记 P2 §8.9，修完并补零微秒 fixture 样本后再放量。
+> - **render-data 切片** → **时间戳 parity 已修 + 已放量（2026-10-24 20:10）**：`tsIsoSql` 改条件式（`AT TIME ZONE 'UTC'` + 零微秒无小数分支）、fixture 双口径样本、两侧直接断言；
+>   **真库复验 PASS**（零微秒：旧写法 26/26 不一致 / 新写法 26/26 一致；非零：均一致）；白名单已加 `trade-docs.render-data`。
+> - **tax-archives 写路径迁移（校验下沉 + 门面直连，暂未放量）**：新增 `kaas_common/workstation/tax_archive_rules.py`（纯校验单一实现，fastapi.HTTPException 保证信封逐字）；
+>   内核 3 个写 handler 改调同一份（行为逐字不变）+ 25 测；门面 `tax-rates-write.ts`（POST/PATCH/DELETE 直连，单表无跨表事务）+ 24 测；
+>   **放量等待**：需先用真实订阅账号做一次线上写冒烟（qa 账号未开通 trade-docs 工位 ⇒ 只能到闸门 404，验证不到写路径）。
 > - ~~新安全发现~~ → **已修并放量（见上）**：`/fx-rates` 与 `/external-docs` 内核 SQL **无 tenant/team 谓词**（后者=跨团队元数据可见）⇒ 已登记 P2 §8.8，
 >   另立任务修内核（新旧路径一起改）；`misc-read.ts` 已实现接线但这两条**不进白名单**。
 > - ~~放量前置（已登记 P2 §8.7）~~：**已完成** —— 门面缺「工位闸门」中间件，直连收费工位端点会绕过商业限制 ⇒ 本轮已在门面实现该闸门

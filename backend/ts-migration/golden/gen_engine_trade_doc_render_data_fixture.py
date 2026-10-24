@@ -98,7 +98,8 @@ TRADE_DOC = {
     "team_id": 2,
     "with_seal": None,
     "created_at": "2026-10-20T02:30:00.123456+00:00",
-    "updated_at": "2026-10-21T09:15:00.987654+00:00",
+    # 零微秒样本（Python isoformat 省略小数；docs §8.9 的 parity 缺口回归点）
+    "updated_at": "2026-10-24T03:04:05+00:00",
     "raw_payload": {
         "sources": {
             "order": {
@@ -189,13 +190,20 @@ DATASETS = {
 # - product_profiles：整表（租户内一行/产品）下发，由内核按 product_key_of 选行；
 # - file_objects：按 id 批量（ANY），列不含 content 字节；
 # - customers/cust_contacts 旧路径按需查，门面在「customer_id 可转正整数」时查（同一条件）。
-#: 时间戳列显式 to_char 成 Python isoformat 口径（微秒 + +00:00）——JS Date 只有毫秒，
+#: 时间戳列显式 to_char 成 Python `datetime.isoformat()` 口径 —— JS Date 只有毫秒，
 #: 直接下发会在真实数据下把 doc.updated_at 之类的字段静默截断（本切片最重要的类型边界）。
-_TS = "to_char(%s AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"+00:00\"') AS %s"
+#: ⚠️ 微秒为 0 时 Python isoformat **省略**小数（docs §8.9 真库核对抓到的 parity 缺口）⇒
+#: 必须**条件式**：先判 US 再选「带/不带小数」的格式，统一拼 +00:00。
+_TS = (
+    "CASE WHEN to_char(%(c)s AT TIME ZONE 'UTC', 'US') = '000000'"
+    " THEN to_char(%(c)s AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS')"
+    " ELSE to_char(%(c)s AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US')"
+    " END || '+00:00' AS %(c)s"
+)
 
 
 def _ts(col: str) -> str:
-    return _TS % (col, col)
+    return _TS % {"c": col}
 
 
 FACADE_SQL = {
@@ -320,6 +328,9 @@ def main() -> None:
             "⚠️ 签名直链含时间戳（token 的 exp = time.time() + 900）⇒ **只在生成器与两侧测试"
             "进程内**把 kaas_common.files.token.time 冻结到 asset_time，保证 fixture 可复现；"
             "生产代码零改动（无任何时钟注入/全局开关）。"
+            "⚠️ 时间戳样本同时覆盖「零微秒」（issued_at / updated_at ⇒ Python isoformat **无小数**）"
+            "与「非零微秒」（created_at ⇒ 6 位小数）：门面 SQL 必须用条件式 to_char 才能两边都对"
+            "（docs §8.9 的真库核对缺口）。"
         ),
         "endpoint": {
             "method": "GET",

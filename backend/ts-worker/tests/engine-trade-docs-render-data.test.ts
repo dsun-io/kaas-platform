@@ -31,6 +31,7 @@ import {
   PRODUCT_PROFILES_RENDER_SQL,
   TENANT_PROFILE_RENDER_SQL,
   TRADE_DOCS_RENDER_SQL,
+  tsIsoSql,
 } from "../src/routes/engine";
 import { createToken } from "../src/session";
 import {
@@ -403,6 +404,37 @@ describe("P2 render-data · 开关 on：TS 供数（7 张表）→ 内核纯装�
     expect(kernel.calls).toHaveLength(1);
     expect(kernel.calls[0]!.path).toBe("/api/v1/trade-docs/abc/render-data");
     expectRenderDataQueries(0);
+  });
+});
+
+describe("P2 render-data · 时间戳口径（docs §8.9：零微秒 ⇒ 无小数）", () => {
+  it("门面 SQL 对**每个**时间列都用条件式片段（不能只改一处）", () => {
+    // 三列各一个 CASE，且同时包含「无小数」与「6 位小数」两个分支
+    expect(TRADE_DOCS_RENDER_SQL.split("CASE WHEN to_char(")).toHaveLength(4);
+    for (const col of ["issued_at", "created_at", "updated_at"]) {
+      const fragment = tsIsoSql(col);
+      expect(TRADE_DOCS_RENDER_SQL).toContain(fragment);
+      expect(fragment).toContain("to_char(" + col + " AT TIME ZONE 'UTC', 'US') = '000000'");
+      expect(fragment).toContain("'YYYY-MM-DD\"T\"HH24:MI:SS')");
+      expect(fragment).toContain("'YYYY-MM-DD\"T\"HH24:MI:SS.US')");
+      expect(fragment).toContain("END || '+00:00' AS " + col);
+    }
+    // 旧的恒 6 位写法不得残留（§8.9 的缺陷形态）
+    expect(TRADE_DOCS_RENDER_SQL).not.toContain("'YYYY-MM-DD\"T\"HH24:MI:SS.US\"+00:00\"'");
+  });
+
+  it("fixture 覆盖零微秒与非零微秒样本（两侧共享，回放同样是 Python isoformat 口径）", () => {
+    const datasetDoc = FIXTURE.datasets.trade_docs[0]!;
+    const responseDoc = (FIXTURE.response as { doc: Record<string, unknown> }).doc;
+    // 非零微秒 ⇒ 6 位小数；零微秒 ⇒ 无小数
+    for (const doc of [datasetDoc, responseDoc]) {
+      expect(doc.created_at).toBe("2026-10-20T02:30:00.123456+00:00");
+      expect(doc.issued_at).toBe("2026-10-21T08:00:00+00:00");
+      expect(doc.updated_at).toBe("2026-10-24T03:04:05+00:00");
+      expect(String(doc.created_at)).toMatch(/T\d{2}:\d{2}:\d{2}\.\d{6}\+00:00$/);
+      expect(String(doc.issued_at)).toMatch(/T\d{2}:\d{2}:\d{2}\+00:00$/);
+      expect(String(doc.updated_at)).toMatch(/T\d{2}:\d{2}:\d{2}\+00:00$/);
+    }
   });
 });
 

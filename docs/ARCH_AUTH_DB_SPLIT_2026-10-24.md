@@ -242,12 +242,15 @@ P2 耦合清单标出 **15 条不宜拆**的写路径（读后写 / 多表同事
 
 ## 10. 分阶段计划（每阶段独立可交付、可回退）
 
-| 阶段 | 内容 | 预估 | 风险 |
-|---|---|---|---|
-| **P0** | products / notifications / approvals 热读走 TS-DB + 灰度开关 + 四类错误映射 + 带 JWT 合成探针 | 1–2 天 | 低（只读，形状由 golden 锁） |
-| **P1** | 认证域全部（D1 方案 A）+ customers/teams/orders 剩余显式透传项 | 2–3 天 | 中（口令/编码规则，需兼容测试） |
-| **P2** | quotes/trade-docs 改"TS 供数 → Python 算 → TS 落库"；内核移除对应 DB 访问 | 3–5 天 | 中高（引擎契约，需 golden 全绿） |
-| **P3** | 内核删除 `platform/db.py`、`get_current_user`、bcrypt/jwt 依赖 → 内存/启动成本大降 | 1 天 | 中（需确认无残留调用） |
+| 阶段 | 内容 | 预估 | 风险 | **实际进度（2026-10-24 20:00 核对）** |
+|---|---|---|---|---|
+| **P0** | products / notifications / approvals 热读走 TS-DB + 灰度开关 + 四类错误映射 + 带 JWT 合成探针 | 1–2 天 | 低（只读，形状由 golden 锁） | **✅ 完成**：5 条已放量；**内核 tail 0 业务请求**；错误率门禁 + 每 15 分钟监控已上线（取代"合成探针"的更彻底做法） |
+| **P1** | 认证域全部（D1 方案 A）+ customers/teams/orders 剩余显式透传项 | 2–3 天 | 中（口令/编码规则，需兼容测试） | **✅ 完成**（事实修正：auth 9 条早已直连，本轮只补 parity：forgot-password 发信 / team_name / plan 回落 + 36 测） |
+| **P2** | quotes/trade-docs 改"TS 供数 → Python 算 → TS 落库"；内核移除对应 DB 访问 | 3–5 天 | 中高（引擎契约，需 golden 全绿） | **🔶 部分**：4 个只读引擎切片已放量（calculate/verify/formulas/spec/explain）+ **render-data 已实现待放量**（真库核对发现时间戳 parity 缺口，修复中）；**TS 落库（写路径）未开始** |
+| **P3** | 内核删除 `platform/db.py`、`get_current_user`、bcrypt/jwt 依赖 → 内存/启动成本大降 | 1 天 | 中（需确认无残留调用） | **🔶 部分**：内核已摘静态资产与入口分流（部署体积/一类坑消除）；DB/鉴权依赖仍在（剩余 passthrough 端点 + 15 条写事务按**方案 A**保留） |
+
+> 阶段定义没变；上表最后一列是**执行后的真实状态**（写在这张表里，避免"文档写着旧状态"再次误导后来者）。
+> 放量路由清单（白名单）与每批线上证据见 `docs/PROBLEM_STATUS_2026-10-11.md` 顶部交接摘要。
 
 ## 11. 明确未改动的 Python/AI 业务代码
 

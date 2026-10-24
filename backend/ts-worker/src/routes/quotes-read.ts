@@ -159,8 +159,9 @@ export async function listQuotationsDirect(
 
 // ── GET /api/v1/tax-archives（tax_archives.py:202-215）───────────────────────
 
-/* tax_archives.py:101-118 `_row_out`：10 键；tax_values 是 JSONB（缺省 {}）。 */
-function taxArchiveOut(row: Row): Row {
+/* tax_archives.py:101-118 `_row_out`：10 键；tax_values 是 JSONB（缺省 {}）。
+ * 导出给 tax-rates-write.ts 写路径复用（同一份投影，避免 GET/POST/PATCH 三处各写一份）。 */
+export function taxArchiveOut(row: Row): Row {
   return {
     id: num(row.id),
     code: row.code ?? null,

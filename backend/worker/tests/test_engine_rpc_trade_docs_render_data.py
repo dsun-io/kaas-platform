@@ -250,6 +250,54 @@ def test_old_path_response_and_sql_match_fixture(old_path_db):
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# 1b. 时间戳口径（docs §8.9 真库核对抓到的 parity 缺口）：零微秒 ⇒ **无小数**
+# ════════════════════════════════════════════════════════════════════════════
+
+_TS_NONZERO = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}\+00:00$")
+_TS_ZERO_US = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00$")
+
+
+def _assert_python_isoformat_precision(doc: dict) -> None:
+    """fixture 必须同时覆盖两种口径；两种口径都必须与 Python isoformat 逐字一致。"""
+    # 非零微秒 ⇒ 6 位小数
+    assert _TS_NONZERO.match(doc["created_at"]), doc["created_at"]
+    assert doc["created_at"] == "2026-10-20T02:30:00.123456+00:00"
+    # 零微秒 ⇒ 无小数（这是 §8.9 的缺口：to_char 'US' 恒输出 .000000）
+    assert _TS_ZERO_US.match(doc["issued_at"]), doc["issued_at"]
+    assert doc["issued_at"] == "2026-10-21T08:00:00+00:00"
+    assert _TS_ZERO_US.match(doc["updated_at"]), doc["updated_at"]
+    assert doc["updated_at"] == "2026-10-24T03:04:05+00:00"
+
+
+def test_fixture_response_timestamps_zero_and_nonzero_precision():
+    """旧路径响应（= fixture.response）的时间戳口径。"""
+    _assert_python_isoformat_precision(FIXTURE["response"]["doc"])
+
+
+def test_dataset_timestamps_roundtrip_to_python_isoformat():
+    """供数 dataset（门面 to_char 产物）→ 内核行形状还原 → 与 Python isoformat 逐字一致。
+
+    注意 doc_dict 只对 created_at/issued_at 调 isoformat，updated_at 仍是 datetime ——
+    与旧端点响应一致的口径是「FastAPI 序列化之后」的文本（jsonable_encoder），
+    所以这里按响应口径断言，而不是按 dict 内部类型断言。
+    """
+    from fastapi.encoders import jsonable_encoder
+
+    row = worker_main._trade_doc_row_from_dataset(
+        json.loads(json.dumps(FIXTURE["datasets"]["trade_docs"][0])))
+    doc = jsonable_encoder(worker_main._dp.doc_dict(row))
+    _assert_python_isoformat_precision(doc)
+
+
+def test_new_path_timestamps_zero_and_nonzero_precision():
+    """端到端（供数 RPC）：零微秒无小数 / 非零 6 位，且与旧路径响应逐字相同。"""
+    envelope = _post_rpc().json()
+    assert envelope["status"] == 200
+    _assert_python_isoformat_precision(envelope["body"]["doc"])
+    assert envelope["body"]["doc"] == FIXTURE["response"]["doc"]
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # 2. 新路径（门面供数）：同一输入 → 与旧路径逐字段一致，且零 DB 调用
 # ════════════════════════════════════════════════════════════════════════════
 

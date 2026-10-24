@@ -23,6 +23,7 @@ import intelRoutes from "./routes/intel";
 import notificationRoutes from "./routes/notifications";
 import productRoutes from "./routes/products";
 import quotesReadRoutes from "./routes/quotes-read";
+import taxRatesWriteRoutes from "./routes/tax-rates-write";
 import miscReadRoutes from "./routes/misc-read";
 import workstationsRoutes from "./routes/workstations";
 import dashboardRoutes from "./routes/dashboard";
@@ -141,6 +142,10 @@ app.route("/", engineRoutes);
 // **必须在三条 createProxyApp 之前注册**（Hono 先注册先命中），且只注册 GET ——
 // 同前缀的 POST/PATCH/DELETE 仍落到下面的透传 mount（业务全在内核）。
 app.route("/", quotesReadRoutes);
+// tax-archives **写**路径（POST/PATCH/DELETE）：校验已下沉 kaas_common（tax_archive_rules.py，
+// 新旧路径共用同一份）；off ⇒ 原样透传。**必须在 /api/v1/tax-archives 的透传 mount 之前**。
+// 只注册写方法，GET 仍归 quotes-read.ts（tax-archives.list）。
+app.route("/", taxRatesWriteRoutes);
 // 下一批只读（fx-rates / external-docs / trade-docs/{id}/files）：同样只注册 GET，
 // 必须在下面 /api/v1/trade-docs、/api/v1/external-docs、/api/v1/fx-rates 三条透传 mount 之前。
 // ⚠️ 其中 fx-rates / external-docs **暂不放量**（内核 SQL 无 tenant/team 谓词 = 既有越权面，

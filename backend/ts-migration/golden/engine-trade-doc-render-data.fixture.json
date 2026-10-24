@@ -1,5 +1,5 @@
 {
-  "_comment": "P2 第三个切片金标（docs/P2_COUPLING_ENGINE_2026-10-24.md §6.3/§8.3/§9#2）：GET /trade-docs/{doc_id}/render-data（7 张表的装配链）。由同目录 gen_engine_trade_doc_render_data_fixture.py 用内核**旧路径**真实跑一遍生成：response = 旧路径真实响应体；old_sql = 旧路径实际执行的 SQL 与绑定参数（按执行顺序）；facade = 门面**供数契约**（查哪些 dataset / SQL 文本 / 绑定参数）——TS 侧逐字断言；datasets = 门面下发给内核的行（Python 侧当 DB 返回、TS 侧当 payload 断言）；⚠️ 签名直链含时间戳（token 的 exp = time.time() + 900）⇒ **只在生成器与两侧测试进程内**把 kaas_common.files.token.time 冻结到 asset_time，保证 fixture 可复现；生产代码零改动（无任何时钟注入/全局开关）。",
+  "_comment": "P2 第三个切片金标（docs/P2_COUPLING_ENGINE_2026-10-24.md §6.3/§8.3/§9#2）：GET /trade-docs/{doc_id}/render-data（7 张表的装配链）。由同目录 gen_engine_trade_doc_render_data_fixture.py 用内核**旧路径**真实跑一遍生成：response = 旧路径真实响应体；old_sql = 旧路径实际执行的 SQL 与绑定参数（按执行顺序）；facade = 门面**供数契约**（查哪些 dataset / SQL 文本 / 绑定参数）——TS 侧逐字断言；datasets = 门面下发给内核的行（Python 侧当 DB 返回、TS 侧当 payload 断言）；⚠️ 签名直链含时间戳（token 的 exp = time.time() + 900）⇒ **只在生成器与两侧测试进程内**把 kaas_common.files.token.time 冻结到 asset_time，保证 fixture 可复现；生产代码零改动（无任何时钟注入/全局开关）。⚠️ 时间戳样本同时覆盖「零微秒」（issued_at / updated_at ⇒ Python isoformat **无小数**）与「非零微秒」（created_at ⇒ 6 位小数）：门面 SQL 必须用条件式 to_char 才能两边都对（docs §8.9 的真库核对缺口）。",
   "endpoint": {
     "method": "GET",
     "path": "/api/v1/trade-docs/1/render-data",
@@ -42,7 +42,7 @@
         "team_id": 2,
         "with_seal": null,
         "created_at": "2026-10-20T02:30:00.123456+00:00",
-        "updated_at": "2026-10-21T09:15:00.987654+00:00",
+        "updated_at": "2026-10-24T03:04:05+00:00",
         "raw_payload": {
           "sources": {
             "order": {
@@ -218,7 +218,7 @@
   ],
   "facade": {
     "trade_docs": {
-      "sql": "SELECT id, tenant_id, doc_no, doc_type, order_id, customer_id, quote_id, status, currency, total_amount, to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"+00:00\"') AS issued_at, issued_by, raw_payload, owner_id, owner_scope, team_id, with_seal, to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"+00:00\"') AS created_at, to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"+00:00\"') AS updated_at FROM trade_docs WHERE tenant_id=$1 AND id=$2",
+      "sql": "SELECT id, tenant_id, doc_no, doc_type, order_id, customer_id, quote_id, status, currency, total_amount, CASE WHEN to_char(issued_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS issued_at, issued_by, raw_payload, owner_id, owner_scope, team_id, with_seal, CASE WHEN to_char(created_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS created_at, CASE WHEN to_char(updated_at AT TIME ZONE 'UTC', 'US') = '000000' THEN to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS') ELSE to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') END || '+00:00' AS updated_at FROM trade_docs WHERE tenant_id=$1 AND id=$2",
       "params": [
         "default",
         1
@@ -287,7 +287,7 @@
       "team_id": 2,
       "with_seal": null,
       "created_at": "2026-10-20T02:30:00.123456+00:00",
-      "updated_at": "2026-10-21T09:15:00.987654+00:00",
+      "updated_at": "2026-10-24T03:04:05+00:00",
       "raw_payload": {
         "sources": {
           "order": {

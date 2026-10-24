@@ -528,15 +528,15 @@ END || '+00:00'
 ```
 并在 fixture 里加入**零微秒样本**（生成器需能造这种行）+ 一条直接断言；改完重新生成 fixture（两侧共享）。
 
-**当前状态**：render-data 切片**未放量**（白名单不含 `trade-docs.render-data`），代码已在库里但开关关闭 ⇒ 缺陷目前**不影响生产**。
+**修复（2026-10-24 20:05，task-14 已完成）**：门面 `tsIsoSql(col)` 改为**条件式片段**（三列共用同一函数；显式 `AT TIME ZONE 'UTC'` 让格式化与会话时区无关）；fixture 样本改为**双口径**（created_at 非零 ⇒ 6 位；issued_at/updated_at 零微秒 ⇒ 无小数），幂等重生成（sha256 CBDF8E0A…）；两侧测试各加直接断言（Python +3 / TS +2）；**真库复验 PASS**：零微秒样本旧写法 26/26 不一致、新写法 26/26 一致；非零样本两写法均一致。已放量（白名单加 `trade-docs.render-data`）。
 ## 9. 未完成清单（交后续轮次）
 
 | # | 事项 | 说明 / 前置 |
 |---|---|---|
-| 1 | 第二个切片：/export-quote/{verify,formulas,spec,explain} | 与 calculate 同族（同 2–3 个 dataset），可复用同一契约与 fixture 骨架 |
-| 2 | 第三个切片：GET /trade-docs/{id}/render-data | 需定义 7 个 dataset（含 file_objects 按 file_id 批量、公章按 with_seal）；属 §7.2 |
-| 3 | 写路径拆分 | 需先拍板「取号 / 状态机 / 事务」三类语义归属（D2 同理），否则必然出现第二份实现 |
-| 4 | tax-archives 校验下沉 | 现在校验写在 handler 内，未在 kaas_common；TS-DB 前必须先下沉，否则第二份实现 |
+| 1 | ~~第二个切片：/export-quote/{verify,formulas,spec,explain}~~ | **✅ 已完成并放量**（2026-10-24 批次B；金标 0 diff） |
+| 2 | ~~第三个切片：GET /trade-docs/{id}/render-data~~ | **✅ 已完成并放量**（2026-10-24 批次B2；7 dataset + 提取不变性 + 时间戳 parity 修复 + 真库复验 PASS） |
+| 3 | 写路径拆分 | 需先拍板「取号 / 状态机 / 事务」三类语义归属（D2 同理），否则必然出现第二份实现；**tax-archives 三条写已完成迁移（校验下沉 + 门面直连），暂未放量** |
+| 4 | ~~tax-archives 校验下沉~~ | **✅ 已完成**（2026-10-24：`kaas_common/workstation/tax_archive_rules.py`，新旧路径共用同一份；门面直连实现 + 49 测） |
 | 5 | override JSONB 解码口径 | 旧路径 dbjson 未登记 tenant_products.override；新契约传对象。放量前用真实数据核对（§6.3 边界） |
 | 6 | API token 的 team_id 边界 | 新路径以 **token 的 team_id** 为团队边界（门面全站一致），旧路径用 token 创建人当前 team；两者在「签发后换团队」时不同 —— 属有意口径，需放量前确认可接受（或切片只放行 JWT 会话） |
 | 7 | routes.json 口径 | 新增的 /internal/engine/* **不进入** backend/ts-migration/routes.json（外部业务路由清单），因此不要重跑 export_routes.py，否则 193/87/280 计数会变红；若要纳入请先给生成器加 /internal/ 过滤 |

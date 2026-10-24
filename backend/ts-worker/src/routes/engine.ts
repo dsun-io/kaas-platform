@@ -531,10 +531,24 @@ export async function explainWithKernel(
 //   无 JWT_SECRET 时内核明确 503（已登记边界：生产/测试都有 secret）。
 // - 时间戳列用 to_char 生成 Python isoformat 口径（微秒 + +00:00）：postgres.js 的
 //   JS Date 只有毫秒，直接下发会在真实数据下把 doc.updated_at 等字段静默截断。
+// - ⚠️ 微秒为 0 时 Python isoformat **省略小数部分**（2026-10-24T03:04:05+00:00），
+//   而 to_char 的 'US' 恒输出 .000000（docs §8.9 真库核对抓到的 parity 缺口）⇒
+//   时间戳片段必须**条件式**，见 tsIsoSql()（唯一一处格式化契约）。
 
-/** 时间戳列 → Python isoformat 口径文本（微秒 + '+00:00'）。 */
-function tsIsoSql(col: string): string {
-  return "to_char(" + col + " AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"+00:00\"') AS " + col;
+/**
+ * 时间戳列 → Python `datetime.isoformat()` 口径文本（**唯一一处**格式化契约）。
+ *
+ * 两条真实口径（docs §8.9）：
+ * - 微秒非 0：`2026-10-24T03:04:05.123456+00:00`（6 位小数）；
+ * - 微秒为 0：`2026-10-24T03:04:05+00:00`（**无**小数；Python isoformat 省略）。
+ * 所以不能直接 `to_char(... 'US')`（恒 6 位）—— 先判 US 再选格式，统一拼 +00:00。
+ */
+export function tsIsoSql(col: string): string {
+  const utc = col + " AT TIME ZONE 'UTC'";
+  return "CASE WHEN to_char(" + utc + ", 'US') = '000000'"
+    + " THEN to_char(" + utc + ", 'YYYY-MM-DD\"T\"HH24:MI:SS')"
+    + " ELSE to_char(" + utc + ", 'YYYY-MM-DD\"T\"HH24:MI:SS.US')"
+    + " END || '+00:00' AS " + col;
 }
 
 /** trade_docs 行（列清单与 SELECT 逐字对应；BIGINT/NUMERIC 归一，见契约 §6.3）。 */
