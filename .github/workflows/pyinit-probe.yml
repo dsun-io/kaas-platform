@@ -51,7 +51,12 @@ jobs:
       - name: Deploy minimal probe worker
         working-directory: ./scripts/pyinit-probe
         run: |
-          uv run pywrangler deploy 2>&1 | tee deploy.log
+          set -o pipefail
+          uv run pywrangler deploy 2>&1 | tee deploy.log || {
+            echo "::error::pywrangler deploy 失败，末尾日志："
+            tail -60 deploy.log
+            exit 1
+          }
 
       - name: Resolve workers.dev hostname
         id: host
@@ -66,6 +71,8 @@ jobs:
           fi
           echo "host=$host" >> "$GITHUB_OUTPUT"
           echo "probe host: $host"
+          echo "=== deploy.log 末尾（含 workers.dev host 与体积信息）==="
+          tail -25 deploy.log
 
       - name: Warm-up (single request)
         run: curl -s -o /dev/null -w 'warmup %{http_code}\n' "${{ steps.host.outputs.host }}"
