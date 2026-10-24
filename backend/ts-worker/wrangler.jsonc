@@ -66,11 +66,11 @@
     // 至此 P0 的 5 条热读全部走门面直连：页面首屏不再依赖 Python 冷启动。
     // 回退：把 AUTH_DB_SPLIT 改成 "off"（或从白名单删条目）再发版；行为即回到全透传。
     "AUTH_DB_SPLIT": "on",
-    // ⚠️ 2026-10-24 17:35 第三批**已回退**：线上灰度对比发现新路径返回
-    //    502 "engine rpc returned non-JSON body"（旧路径为 404 WORKSTATION_NOT_SUBSCRIBED），
-    //    按设计好的回退路径先把 export-quote.calculate 从白名单移除（行为立即回到全透传），
-    //    根因定位后再放量。详见 docs/PROBLEM_STATUS_2026-10-11.md。
-    "AUTH_DB_SPLIT_ROUTES": "notifications.unread-count,approvals.list,products.profile,products.media,products.list"
+    // 2026-10-24 17:40 第三批重放：先前 502 "engine rpc returned non-JSON body" 的根因是
+    // **内核 assets.run_worker_first 未含 /internal/***（RPC 被 SPA 回退成 index.html），
+    // 已在内核 wrangler 修复（commit e275aa39）；回退验证确认旧路径响应 sha256 不变后再放量。
+    // 回退：删掉该条目（或 AUTH_DB_SPLIT=off）再发版。
+    "AUTH_DB_SPLIT_ROUTES": "notifications.unread-count,approvals.list,products.profile,products.media,products.list,export-quote.calculate"
   }
   // 无 triggers（门面不跑 cron）
 }
