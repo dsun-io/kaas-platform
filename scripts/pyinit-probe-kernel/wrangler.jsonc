@@ -1,0 +1,13 @@
+{
+  // E2b：真实内核源码的克隆探针（工单 A6）。
+  // 与生产 kaas **同一份 src/**（CI 运行时从 backend/worker/src 同步），但：
+  //   · 不同 worker 名（kaas-pyinit-kernelclone）
+  //   · 无 routes、无 cron、无自定义域名，仅 workers_dev
+  //   · 不绑定生产 HYPERDRIVE / Service Binding（因此只能压 /health 这类无 DB 路径）
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kaas-pyinit-kernelclone",
+  "main": "src/main.py",
+  "compatibility_date": "2026-09-18",
+  "compatibility_flags": ["python_workers"],
+  "workers_dev": true
+}

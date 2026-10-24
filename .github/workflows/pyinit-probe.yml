@@ -25,6 +25,10 @@ on:
         description: '实验后是否保留 probe worker（true/false）'
         required: false
         default: 'true'
+      target:
+        description: 'probe = 最小零依赖探针（E1/E2 轻档）；kernelclone = 真实内核源码克隆（E2b）'
+        required: false
+        default: 'probe'
 
 concurrency:
   group: pyinit-probe
@@ -48,8 +52,26 @@ jobs:
           uv --version
           python3 --version
 
+      # E2b：把真实内核源码同步进克隆探针目录（不在仓库里存副本，避免与内核漂移）
+      - name: Sync kernel source into kernelclone probe
+        if: github.event.inputs.target == 'kernelclone'
+        run: |
+          rm -rf scripts/pyinit-probe-kernel/src
+          cp -r backend/worker/src scripts/pyinit-probe-kernel/src
+          cp backend/worker/pylock.toml scripts/pyinit-probe-kernel/ 2>/dev/null || true
+          echo "synced $(find scripts/pyinit-probe-kernel/src -name '*.py' | wc -l) python files"
+
+      - name: Pick probe dir
+        id: dir
+        run: |
+          if [ "${{ github.event.inputs.target }}" = "kernelclone" ]; then
+            echo "path=scripts/pyinit-probe-kernel" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=scripts/pyinit-probe" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Deploy minimal probe worker
-        working-directory: ./scripts/pyinit-probe
+        working-directory: ./${{ steps.dir.outputs.path }}
         run: |
           set -o pipefail
           uv run pywrangler deploy 2>&1 | tee deploy.log || {

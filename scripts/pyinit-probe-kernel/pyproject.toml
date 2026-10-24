@@ -1,0 +1,22 @@
+# E2b：真实内核代码的克隆探针（工单 A6）。
+# 依赖面与生产内核**完全一致** —— 运行时由 CI 把 backend/worker/pyproject.toml 的内容同步过来，
+# 这里保留一份等价声明，确保本地也能独立跑。
+[project]
+name = "kaas-pyinit-kernelclone"
+version = "0.1.0"
+description = "Clone of the production Python kernel, deployed as an isolated probe"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi",
+    "asyncpg",
+    "pydantic",
+    "pyjwt",
+    "python-multipart",
+    "bcrypt>=5.0.0",
+]
+
+[dependency-groups]
+dev = ["workers-py"]
+
+[tool.uv]
+package = false
