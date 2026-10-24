@@ -6039,28 +6039,30 @@ def _seal_tenant_of(user) -> str:
     return tid if isinstance(tid, str) and tid else DEFAULT_TENANT
 
 
-async def _apply_default_seal(request: Request, user: dict, data: dict, custom,
-                              *, with_seal: bool = True) -> dict:
-    """装配层最后一步：只在单据**没**显式给 `company_stamp` 时才查库（省无谓查询）。
+def _default_seal_needed(custom, with_seal: bool) -> bool:
+    """**是否需要**默认章（纯判定：P2 旧路径与供数路径共用同一份）。
 
-    2026-10-21（A4）：优先填**短期签名直链**（`/company-seals/{id}/render-content?t=`），
-    不再把 PNG 内联成 data URI；签名不可用（无 JWT_SECRET/测试）时回退内核的 data URI。
-
-    `with_seal=False`（开单时未勾选盖章）⇒ **不注入**默认章、也不查库；
-    单据显式给的 `custom.company_stamp` 已由 build_render_data 带进 data，行为不变。
+    `with_seal=False`（开单时未勾选盖章）⇒ 不注入、也不查库；
+    单据显式给的 `custom.company_stamp`（含空串）⇒ 不覆盖（已由 build_render_data 带进 data）。
     """
     if not with_seal:
-        return data
+        return False
     if isinstance(custom, dict) and "company_stamp" in custom:
+        return False
+    return True
+
+
+def _apply_default_seal_pure(data: dict, custom, row, request,
+                             *, with_seal: bool = True) -> dict:
+    """默认章装配（**纯**；P2 旧路径与供数路径共用同一份）。
+
+    原 `_apply_default_seal` 的后半段逐字搬出：判定在 `_default_seal_needed`，
+    装配在这里（优先签名直链 → 回退 `kaas_common.files.seal.apply_default_seal` 的 data URI）。
+    """
+    if not _default_seal_needed(custom, with_seal):
         return data
     from ws_files import _asset_url  # 模块在文件末尾导入，函数内惰性引用
 
-    row = await db.fetchrow(
-        request,
-        "SELECT id, png_bytes, mime FROM tenant_company_seals"
-        " WHERE tenant_id=$1 AND is_default ORDER BY id LIMIT 1",
-        _seal_tenant_of(user),
-    )
     if row is not None:
         seal_id = row.get("id") if hasattr(row, "get") else row["id"]
         url = _asset_url(request, "seal", seal_id)
@@ -6068,6 +6070,32 @@ async def _apply_default_seal(request: Request, user: dict, data: dict, custom,
             data["company_stamp"] = url
             return data
     return apply_default_seal(data, custom, row)
+
+
+async def _fetch_default_seal_row(request: Request, user: dict):
+    """默认章那一行（**唯一** SQL；旧包装与供数取数共用同一份）。"""
+    return await db.fetchrow(
+        request,
+        "SELECT id, png_bytes, mime FROM tenant_company_seals"
+        " WHERE tenant_id=$1 AND is_default ORDER BY id LIMIT 1",
+        _seal_tenant_of(user),
+    )
+
+
+async def _apply_default_seal(request: Request, user: dict, data: dict, custom,
+                              *, with_seal: bool = True) -> dict:
+    """[旧装配入口/A4 回归测试用] 只在单据**没**显式给 `company_stamp` 时才查库（省无谓查询）。
+
+    2026-10-21（A4）：优先填**短期签名直链**（`/company-seals/{id}/render-content?t=`），
+    不再把 PNG 内联成 data URI；签名不可用（无 JWT_SECRET/测试）时回退内核的 data URI。
+
+    装配本身在 `_apply_default_seal_pure`（render-data 的旧路径与供数 RPC 调用同一份）；
+    本函数只负责取那一行（与 _fetch_render_datasets 共用 _fetch_default_seal_row）。
+    """
+    if not _default_seal_needed(custom, with_seal):
+        return data
+    row = await _fetch_default_seal_row(request, user)
+    return _apply_default_seal_pure(data, custom, row, request, with_seal=with_seal)
 
 
 # ── 产品基础信息带入（一次维护、重复使用）────────────────────────────────────
@@ -6082,22 +6110,13 @@ from kaas_common.trade_doc.product_defaults import (  # noqa: E402
 )
 
 
-async def _product_info_of(request: Request, product_key: str, user: dict = None):
-    """产品档案 `info`；产品不在注册表 / 没维护过 / 无权看 → None。
+def _product_info_from_row(row, user: dict = None):
+    """产品档案行 → `info`（**纯**；旧路径与供数路径共用同一份可见性/解码判定）。
 
-    团队谓词（2026-10-12，task-6）：按 `product_info_access`（共享内核
-    `kaas_common/workstation/product_scope.py`）判定可见性 ——
-    本团队行可读 / 别团队行 404 / 历史 `team_id IS NULL` 仅管理员。
-    与 orchestrator 的 `trade_docs.py` 同款谓词同源，不另写一套。
+    - 行不存在 / 团队可见性不放行（`product_info_access`，与 orchestrator 同源）→ None；
+    - Workers 的 asyncpg 会把 jsonb 返回成 str（`product_profiles` **未**登记进
+      dbjson.JSONB_COLS，`table=` 解码对它不生效）—— 两种形状都收。
     """
-    from kaas_common.export_quote.products import has as _has_product  # 惰性：不拖累模块加载
-    if not _has_product(product_key):
-        return None
-    row = await db.fetchrow(
-        request,
-        "SELECT info, team_id FROM product_profiles WHERE tenant_id=$1 AND product_key=$2",
-        DEFAULT_TENANT, product_key, table="product_profiles",
-    )
     if row is None:
         return None
     # 团队可见性判定（复用共享内核，与 orchestrator/files.py 同源）
@@ -6111,9 +6130,6 @@ async def _product_info_of(request: Request, product_key: str, user: dict = None
         if not decision.allowed:
             return None
     info = row["info"]
-    # Workers 环境的 asyncpg 会把 jsonb 返回成 str（`product_profiles` 目前**未**登记进
-    # dbjson.JSONB_COLS，`table=` 解码对它不生效）—— 两种形状都收，避免"字段在、
-    # 值是字符串"导致本功能静默不生效。
     if isinstance(info, str):
         try:
             info = _json.loads(info)
@@ -6122,46 +6138,30 @@ async def _product_info_of(request: Request, product_key: str, user: dict = None
     return dict(info) if isinstance(info, dict) else None
 
 
-async def _apply_product_defaults(request: Request, doc_type: str, data: dict, custom,
-                                  user: dict = None) -> dict:
-    """装配层：单据**显式关联了产品**才查档案（没关联 → 一次查询都不发，回归旧行为）。"""
-    key = product_key_of(custom)
-    if not key:
-        return data
-    info = await _product_info_of(request, key, user=user)
-    return apply_product_defaults(data, custom, doc_type, info)
+def _product_info_from_rows(rows, product_key: str, user: dict = None):
+    """供数路径：从 datasets.product_profiles（租户全部行）里**按同一个 key 选行**，
+    再走同一份 `_product_info_from_row`（注册表校验/可见性/解码判定一行不改）。"""
+    from kaas_common.export_quote.products import has as _has_product
+
+    if not product_key or not _has_product(product_key):
+        return None
+    picked = None
+    for row in rows or []:
+        if isinstance(row, dict) and row.get("product_key") == product_key:
+            picked = row
+            break
+    return _product_info_from_row(picked, user)
 
 
-async def _buyer_block_of_doc(request: Request, customer_id) -> dict:
-    """买方区块（客户 + 主联系人）：render-data 与开单预览共用同一组查询。"""
-    if not customer_id:
-        return {}
-    try:
-        cid_int = int(customer_id)
-    except (TypeError, ValueError):
-        return {}
-    customer = await db.fetchrow(
-        request,
-        "SELECT id, name, address FROM customers WHERE tenant_id=$1 AND id=$2",
-        DEFAULT_TENANT, cid_int, table="customers",
-    )
-    contact = await db.fetchrow(
-        request,
-        "SELECT name, phone, email FROM cust_contacts"
-        " WHERE tenant_id=$1 AND customer_id=$2 ORDER BY is_primary DESC, id LIMIT 1",
-        DEFAULT_TENANT, cid_int,
-    )
-    return _dp.buyer_block_of(customer, contact)
+#: 渲染装配需要的 dataset 名（契约 §6.3；每个 dataset 是行数组）
+RENDER_DATASETS = (
+    "trade_docs", "tenant_company_profile", "customers", "cust_contacts",
+    "tenant_company_seals", "product_profiles", "file_objects",
+)
 
 
-async def _render_bundle_of_doc(request: Request, doc: dict, *, user: dict = None) -> dict:
-    """单据（doc_dict 投影 / 预览虚拟单据）→ {doc, data, company_profile_configured}。
-
-    **唯一装配点**：GET /trade-docs/{id}/render-data（已落库）与
-    POST /trade-docs/preview-render-data（未落库预览）都走这里 ——
-    字段来源与装配顺序（照片 → 默认章 → 产品档案默认值）只有一处，
-    预览与开单后的渲染结果不会因为两个入口而漂移。
-    """
+def _render_payload_parts(doc: dict) -> tuple:
+    """doc.raw_payload → (sources, custom, upstream)（原 _render_bundle_of_doc 开头逐字搬出）。"""
     payload = doc.get("raw_payload") or {}
     if isinstance(payload, str):
         payload = _json.loads(payload)
@@ -6177,11 +6177,153 @@ async def _render_bundle_of_doc(request: Request, doc: dict, *, user: dict = Non
     upstream = sources.get("order") or sources.get("quote") or {}
     if not isinstance(upstream, dict):
         upstream = {}
+    return sources, custom, upstream
+
+
+def _customer_id_int(doc: dict):
+    """doc.customer_id 的整数口径（旧 _buyer_block_of_doc 的 int() 容错，纯函数）。"""
+    customer_id = doc.get("customer_id")
+    if not customer_id:
+        return None
+    try:
+        return int(customer_id)
+    except (TypeError, ValueError):
+        return None
+
+
+def _render_dataset_plan(doc: dict) -> dict:
+    """装配这张单据**最少**需要哪些 dataset（门面供数契约；可多给，**不可少给**）。
+
+    - tenant_company_profile：恒需要（卖方/银行/默认条款）；
+    - customers / cust_contacts：仅当 customer_id 可转正整数（旧路径同一口径）；
+    - tenant_company_seals：仅当真的会用到默认章（with_seal 且单据没显式给 company_stamp）；
+    - product_profiles：仅当单据关联的产品**在注册表里**（旧路径先 has_product 再查库）；
+    - file_objects：仅当 custom.product_photos 里存在**可解析的 file_id** 引用（按 id 取行）。
+
+    供数方可以多给（内核按数据判定是否使用，多给无害）；**少给会让响应不同**。
+    """
+    _sources, custom, _upstream = _render_payload_parts(doc)
+    with_seal = doc.get("with_seal")
+    if with_seal is None:
+        with_seal = True
+    customer_id = _customer_id_int(doc)
+    from kaas_common.export_quote.products import has as _has_product
+    from kaas_common.files import is_file_ref
+    product_key = product_key_of(custom)
+    photos = custom.get("product_photos")
+    file_ids: list = []
+    if isinstance(photos, list):
+        for entry in photos:
+            if is_file_ref(entry):
+                file_ids.append(int(entry["file_id"]))
+    return {
+        "trade_docs": {"id": doc.get("id")},
+        "tenant_company_profile": {},
+        "customers": {"id": customer_id} if customer_id is not None else None,
+        "cust_contacts": {"customer_id": customer_id} if customer_id is not None else None,
+        "tenant_company_seals": {} if _default_seal_needed(custom, bool(with_seal)) else None,
+        "product_profiles": (
+            {"product_key": product_key}
+            if product_key and _has_product(product_key) else None
+        ),
+        "file_objects": {"file_ids": file_ids},
+    }
+
+
+def _first_row(datasets: dict, name: str):
+    rows = datasets.get(name) or []
+    return rows[0] if rows else None
+
+
+async def _fetch_render_datasets(request: Request, doc: dict, *, user: dict = None) -> dict:
+    """按 _render_dataset_plan 取数（**SQL 文本/参数/执行顺序与改造前逐字一致**）。
+
+    只负责「怎么取到行」；装配在 _render_bundle_pure（旧路径与供数 RPC 共用同一份）。
+    改造前的执行顺序：企业主体 → 客户/联系人 → 产品图逐张 → 默认章 → 产品档案。
+    """
+    from kaas_common.files import is_file_ref
+
+    plan = _render_dataset_plan(doc)
+    _sources, custom, _upstream = _render_payload_parts(doc)
+    datasets: dict = {name: [] for name in RENDER_DATASETS}
 
     profile = await db.fetchrow(
         request, "SELECT * FROM tenant_company_profile WHERE tenant_id=$1",
         DEFAULT_TENANT, table="tenant_company_profile",
     )
+    if profile:
+        datasets["tenant_company_profile"] = [dict(profile)]
+
+    if plan["customers"] is not None:
+        customer_id = plan["customers"]["id"]
+        customer = await db.fetchrow(
+            request,
+            "SELECT id, name, address FROM customers WHERE tenant_id=$1 AND id=$2",
+            DEFAULT_TENANT, customer_id, table="customers",
+        )
+        if customer:
+            datasets["customers"] = [dict(customer)]
+        contact = await db.fetchrow(
+            request,
+            "SELECT name, phone, email FROM cust_contacts"
+            " WHERE tenant_id=$1 AND customer_id=$2 ORDER BY is_primary DESC, id LIMIT 1",
+            DEFAULT_TENANT, customer_id,
+        )
+        if contact:
+            datasets["cust_contacts"] = [dict(contact)]
+
+    # 单证引用产品图：把 {file_id} 解析成图片源（逐张取行，与改造前同一 SQL/顺序）
+    photos = custom.get("product_photos")
+    if isinstance(photos, list):
+        team_frag, team_extra = ws_files._team_scope(user, 3) if user is not None else ("", [])
+        for entry in photos:
+            if not is_file_ref(entry):
+                continue
+            row = await db.fetchrow(
+                request,
+                "SELECT name, content_type, file_name, content, object_key, storage"
+                " FROM file_objects"
+                " WHERE tenant_id=$1 AND id=$2 AND is_current" + team_frag,
+                DEFAULT_TENANT, int(entry["file_id"]), *team_extra,
+                table=None)
+            if row:
+                datasets["file_objects"].append(dict(row))
+
+    if plan["tenant_company_seals"] is not None:
+        seal = await _fetch_default_seal_row(request, user)
+        if seal:
+            datasets["tenant_company_seals"] = [dict(seal)]
+
+    if plan["product_profiles"] is not None:
+        product_key = plan["product_profiles"]["product_key"]
+        product = await db.fetchrow(
+            request,
+            "SELECT info, team_id FROM product_profiles WHERE tenant_id=$1 AND product_key=$2",
+            DEFAULT_TENANT, product_key, table="product_profiles",
+        )
+        if product:
+            # dataset 行带上 product_key：供数契约里门面下发的是**整表**（内核按 key 选行），
+            # 旧路径由 SQL 谓词筛选、行上没有该列 —— 这里补齐，使两条路径喂给
+            # _product_info_from_rows 的行形状一致（SQL 文本/参数不变）。
+            datasets["product_profiles"] = [dict(product, product_key=product_key)]
+
+    return datasets
+
+
+async def _render_bundle_pure(doc: dict, datasets: dict, *, user: dict = None,
+                              url_request=None, load_bytes=None) -> dict:
+    """装配（**纯**；GET render-data / 预览 / 供数 RPC 共用同一份）。
+
+    字段来源与装配顺序（照片 → 默认章 → 产品档案默认值）只有一处，预览/已落库/供数
+    三条入口不会漂移。本函数**不碰 DB**（data 全部来自 doc + datasets）。
+
+    url_request：签名直链用的「请求视图」（旧路径就是 request 本身；供数 RPC 用门面
+    下发的 host/proto 视图）—— 只影响签名 URL 的 host，不影响任何装配判定。
+    load_bytes：仅在**签名不可用**时回退 data URI 用（旧路径传 ws_files._load_bytes；
+    供数 RPC 不传 —— RPC 要求签名可用，见 engine_api 的前置检查）。
+    """
+    sources, custom, upstream = _render_payload_parts(doc)
+    profile = _first_row(datasets, "tenant_company_profile")
     profile_dict = dict(profile) if profile else {}
 
     data = _build_render_data(
@@ -6192,9 +6334,10 @@ async def _render_bundle_of_doc(request: Request, doc: dict, *, user: dict = Non
         currency=doc.get("currency") or "USD",
         total_amount=doc.get("total_amount"),
         created_at=doc.get("created_at"), issued_at=doc.get("issued_at"),
-        seller=_dp.seller_block(profile),
-        buyer=await _buyer_block_of_doc(request, doc.get("customer_id")),
-        bank_info=_dp.bank_block(profile),
+        seller=_dp.seller_block(profile_dict),
+        buyer=_dp.buyer_block_of(_first_row(datasets, "customers"),
+                                 _first_row(datasets, "cust_contacts")),
+        bank_info=_dp.bank_block(profile_dict),
         sources=sources,
         trade_terms={f: upstream.get(f) for f in TRADE_TERM_FIELDS
                      if _dp.clean(upstream.get(f)) is not None},
@@ -6206,23 +6349,86 @@ async def _render_bundle_of_doc(request: Request, doc: dict, *, user: dict = Non
         },
     )
     # 单证引用产品图：把 {file_id} 解析成图片源（装配层做，渲染器一行不改）
-    import ws_files as _ws_files  # 模块在文件末尾导入，函数内惰性引用
-    data = await _ws_files.resolve_photo_refs(request, data, user=user)
+    rows_by_id = {row.get("id"): row for row in (datasets.get("file_objects") or [])}
+    data = await ws_files._photo_entries_from_rows(
+        data, rows_by_id, url_request, load_bytes=load_bytes)
     # 单据没显式给 company_stamp → 自动带出租户默认公章（同样转 data URI）。
     # with_seal=False（开单时未勾选盖章）⇒ 不注入默认章。
     doc_with_seal = doc.get("with_seal")
     if doc_with_seal is None:
         doc_with_seal = True
-    data = await _apply_default_seal(request, user, data, custom,
-                                     with_seal=bool(doc_with_seal))
+    data = _apply_default_seal_pure(
+        data, custom, _first_row(datasets, "tenant_company_seals"), url_request,
+        with_seal=bool(doc_with_seal))
     # 单据关联了产品 → 把产品档案的基础信息补进仍为空的行项（见共享内核 product_defaults）
-    data = await _apply_product_defaults(request, doc["doc_type"], data, custom, user=user)
+    data = apply_product_defaults(
+        data, custom, doc["doc_type"],
+        _product_info_from_rows(datasets.get("product_profiles") or [],
+                                product_key_of(custom) or "", user),
+    )
     return {
         "doc": doc,
         "data": data,
         # 企业主体未配置时明确告知，避免用户对着空白抬头单据猜原因
         "company_profile_configured": bool(profile_dict.get("name_en")),
     }
+
+
+async def _render_bundle_of_doc(request: Request, doc: dict, *, user: dict = None) -> dict:
+    """单据（doc_dict 投影 / 预览虚拟单据）→ {doc, data, company_profile_configured}。
+
+    **唯一装配点**：GET /trade-docs/{id}/render-data（已落库）与
+    POST /trade-docs/preview-render-data（未落库预览）都走这里 ——
+    取数按 _render_dataset_plan（SQL 与改造前逐字一致），装配在 _render_bundle_pure
+    （与供数 RPC 同一份）；预览与开单后的渲染结果不会因为两个入口而漂移。
+    """
+    datasets = await _fetch_render_datasets(request, doc, user=user)
+    return await _render_bundle_pure(
+        doc, datasets, user=user, url_request=request,
+        load_bytes=lambda row: ws_files._load_bytes(request, row))
+
+
+def _trade_doc_row_from_dataset(row: dict) -> dict:
+    """dataset 的 trade_docs 行 → 旧路径行形状（供数 RPC 用，**零 DB**）。
+
+    时间戳在契约里是 ISO 字符串（门面用 to_char 生成，微秒不丢）；doc_dict 只对
+    created_at/issued_at 调 isoformat，但 updated_at 也必须还原成 datetime ——
+    否则 FastAPI 会按字符串原样输出，与旧路径的 Python datetime 序列化口径不一致。
+    """
+    out = dict(row)
+    for field in ("created_at", "issued_at", "updated_at"):
+        value = out.get(field)
+        if isinstance(value, str) and value:
+            try:
+                out[field] = datetime.fromisoformat(value)
+            except ValueError:
+                raise HTTPException(status_code=400, detail={
+                    "error": "engine_rpc_payload_invalid",
+                    "message": "datasets.trade_docs 的时间戳不是 ISO 8601：" + field,
+                })
+    return out
+
+
+async def render_data_from_datasets(datasets: dict, user: dict, url_request=None) -> dict:
+    """P2 内核 RPC（render-data）：供数 datasets → 与旧端点**同一份**装配结果（零 DB）。
+
+    门禁与装配都是旧路径同一份函数：_require_doc_visible（404 DOC_NOT_FOUND）→
+    _dp.doc_dict → _render_bundle_pure。本函数只做「dataset 行 → 旧路径行形状」的还原；
+    不得出现 _db/_acquire（「零 DB 调用」由 tests/test_engine_rpc_trade_docs_render_data.py 锁死）。
+    """
+    for name in RENDER_DATASETS:
+        if name in datasets and not isinstance(datasets.get(name), list):
+            raise HTTPException(status_code=400, detail={
+                "error": "engine_rpc_payload_invalid",
+                "message": "datasets.%s 必须是数组" % name,
+            })
+    rows = datasets.get("trade_docs") or []
+    if not rows:
+        _doc_not_found()
+    row = _trade_doc_row_from_dataset(rows[0])
+    _require_doc_visible(user, row)
+    doc = _dp.doc_dict(row)
+    return await _render_bundle_pure(doc, datasets, user=user, url_request=url_request)
 
 
 @app.get("/api/v1/trade-docs/{doc_id}/render-data")

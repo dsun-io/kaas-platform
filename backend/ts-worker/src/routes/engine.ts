@@ -10,7 +10,8 @@
  * - GET  /api/v1/export-quote/products/{key}/formulas → /internal/engine/quote/formulas
  * - GET  /api/v1/export-quote/products/{key}/spec     → /internal/engine/quote/spec
  * - POST /api/v1/export-quote/products/{key}/explain  → /internal/engine/quote/explain
- * 五条共用**同一份**供数契约与回放逻辑；差异只在「查哪些 dataset + request 段形状」。
+ * - GET  /api/v1/trade-docs/{doc_id}/render-data      → /internal/engine/trade-docs/render-data
+ * 六条共用**同一份**供数契约与回放逻辑；差异只在「查哪些 dataset + request 段形状」。
  *
  * 真源（SQL 谓词 / 排序 / 绑定参数**逐条直译**，禁止顺手"优化"）：
  * - backend/worker/src/quote_api.py  _effective_product_raw 的 tenant_products 查询
@@ -49,6 +50,9 @@ export const ENGINE_QUOTE_VERIFY_RPC = "/api/v1/internal/engine/quote/verify";
 export const ENGINE_QUOTE_FORMULAS_RPC = "/api/v1/internal/engine/quote/formulas";
 export const ENGINE_QUOTE_SPEC_RPC = "/api/v1/internal/engine/quote/spec";
 export const ENGINE_QUOTE_EXPLAIN_RPC = "/api/v1/internal/engine/quote/explain";
+/** 第三个切片：单证渲染数据装配链（7 张表，GET /trade-docs/{doc_id}/render-data）。 */
+export const ENGINE_TRADE_DOCS_RENDER_DATA_RPC =
+  "/api/v1/internal/engine/trade-docs/render-data";
 
 /**
  * 同族只读切片的路由 id（AUTH_DB_SPLIT_ROUTES 白名单条目，口径 <域>.<端点>）。
@@ -60,6 +64,7 @@ export const ENGINE_ROUTE_IDS = {
   formulas: "export-quote.formulas",
   spec: "export-quote.spec",
   explain: "export-quote.explain",
+  renderData: "trade-docs.render-data",
 } as const;
 
 /** 与 Python quote_api._PRICING_SEPARATOR 一致：定价数据 spec_hash 的「产品前缀」分隔符。 */
@@ -508,6 +513,286 @@ export async function explainWithKernel(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// 第三个切片：GET /api/v1/trade-docs/{doc_id}/render-data（7 张表的装配链）
+// ══════════════════════════════════════════════════════════════════════════════
+// 设计 = docs/P2_COUPLING_ENGINE_2026-10-24.md §6.3 / §9 第 2 项；内核入口
+// POST /api/v1/internal/engine/trade-docs/render-data（engine_api.py）。
+//
+// 与 quotes 同族切片的差异（**契约**，由 golden fixture 的 facade 段锁定）：
+// - 装配链是「读一步、按结果再决定读什么」（P2 §7.2 的 C 类形态）⇒ 门面按
+//   main.py._render_dataset_plan 的**最小集合**供数；条件只依赖**数据形状**
+//   （customer_id 是否整数、有没有照片引用），业务判定（with_seal / company_stamp /
+//   product_key_of / 团队可见性）全部留在内核同一份纯装配里；
+// - product_profiles 下发**整表**（租户内一行/产品），由内核按 product_key_of 选行
+//   —— 门面不复制 product_key_of 判定；
+// - tenant_company_seals 恒下发 1 行（是否使用由内核 with_seal/company_stamp 判定）；
+// - 图片/公章是**短期签名直链**：host 由门面从用户请求带进 payload.request.request_context，
+//   内核按白名单校验后用 OriginalHost 签名（否则链接会指向内核 host）。
+//   无 JWT_SECRET 时内核明确 503（已登记边界：生产/测试都有 secret）。
+// - 时间戳列用 to_char 生成 Python isoformat 口径（微秒 + +00:00）：postgres.js 的
+//   JS Date 只有毫秒，直接下发会在真实数据下把 doc.updated_at 等字段静默截断。
+
+/** 时间戳列 → Python isoformat 口径文本（微秒 + '+00:00'）。 */
+function tsIsoSql(col: string): string {
+  return "to_char(" + col + " AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"+00:00\"') AS " + col;
+}
+
+/** trade_docs 行（列清单与 SELECT 逐字对应；BIGINT/NUMERIC 归一，见契约 §6.3）。 */
+export const TRADE_DOCS_RENDER_SQL =
+  "SELECT id, tenant_id, doc_no, doc_type, order_id, customer_id, quote_id,"
+  + " status, currency, total_amount, " + tsIsoSql("issued_at")
+  + ", issued_by, raw_payload, owner_id, owner_scope, team_id, with_seal, "
+  + tsIsoSql("created_at") + ", " + tsIsoSql("updated_at")
+  + " FROM trade_docs WHERE tenant_id=$1 AND id=$2";
+
+export const TENANT_PROFILE_RENDER_SQL =
+  "SELECT * FROM tenant_company_profile WHERE tenant_id=$1";
+
+export const CUSTOMERS_RENDER_SQL =
+  "SELECT id, name, address FROM customers WHERE tenant_id=$1 AND id=$2";
+
+export const CUST_CONTACTS_RENDER_SQL =
+  "SELECT name, phone, email FROM cust_contacts"
+  + " WHERE tenant_id=$1 AND customer_id=$2 ORDER BY is_primary DESC, id LIMIT 1";
+
+/** 默认公章：**不下发 png_bytes**（字节列不进 JSON；签名直链可用时不需要）。 */
+export const DEFAULT_SEAL_RENDER_SQL =
+  "SELECT id, mime FROM tenant_company_seals"
+  + " WHERE tenant_id=$1 AND is_default ORDER BY id LIMIT 1";
+
+/** 产品档案：**整表**下发（旧路径按 key 查；哪一行参与由内核 product_key_of 决定）。 */
+export const PRODUCT_PROFILES_RENDER_SQL =
+  "SELECT product_key, info, team_id FROM product_profiles WHERE tenant_id=$1";
+
+/**
+ * 产品图文件行：按 id **批量**（旧路径逐张查）。
+ * 列不含 content（字节）；多下发 id（旧路径 id 在谓词里，供数路径要按 id 对回引用）。
+ * 团队谓词与 ws_files._team_scope 同一把尺（见 renderFileTeamScope）。
+ */
+export const FILE_OBJECTS_RENDER_SQL =
+  "SELECT id, name, content_type, file_name, object_key, storage, team_id"
+  + " FROM file_objects WHERE tenant_id=$1 AND id = ANY($2) AND is_current";
+
+/** Python int() 的可转口径（BIGINT 经 postgres.js 是 string）。 */
+function intOrNull(value: unknown): number | null {
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  if (typeof value === "string" && /^-?\d+$/.test(value.trim())) return Number(value.trim());
+  return null;
+}
+
+/**
+ * doc.raw_payload.custom.product_photos 里**可解析的 file_id**（供数用，允许超集）。
+ *
+ * 内核仍用 kaas_common.files.is_file_ref 做最终判定：这里只把「像 id 的」都带上
+ * （含带 image/src 的条目），多给无害、少给会让内核缺行。
+ */
+function photoFileIds(docRow: Row | undefined): number[] {
+  const payload = isRecord(docRow?.raw_payload) ? docRow.raw_payload : {};
+  const custom = isRecord(payload.custom) ? payload.custom : {};
+  const photos = Array.isArray(custom.product_photos) ? custom.product_photos : [];
+  const ids = new Set<number>();
+  for (const entry of photos) {
+    if (!isRecord(entry)) continue;
+    const id = intOrNull(entry.file_id);
+    if (id !== null && id > 0) ids.add(id);
+  }
+  return [...ids];
+}
+
+/**
+ * 产品图文件行的团队谓词（逐行镜像 ws_files._team_scope(user, 3)）。
+ *
+ * - 管理员 ⇒ 不加谓词（含历史 team_id IS NULL 行）；
+ * - 有团队 ⇒ AND team_id=$3；
+ * - **无团队 ⇒ 不下发**：render-data 对无团队客户一律 404（D3，内核 _require_doc_visible
+ *   判定），照片行不会被用到。**不能**在这里抛 403 —— 那是列表端点的 NO_TEAM 口径，
+ *   会在内核 404 之前改变状态码。
+ */
+function renderFileTeamScope(user: CurrentUser): {
+  frag: string;
+  extra: unknown[];
+  skip: boolean;
+} {
+  if (isAdminRole(user.role)) return { frag: "", extra: [], skip: false };
+  if (user.team_id === null || user.team_id === undefined) {
+    return { frag: "", extra: [], skip: true };
+  }
+  return { frag: " AND team_id=$3", extra: [user.team_id], skip: false };
+}
+
+/** trade_docs 行 → dataset 行（BIGINT/NUMERIC 归一；时间戳已是 Python 口径文本）。 */
+function tradeDocRenderRow(row: Row): Row {
+  const boolOrNull = (value: unknown): boolean | null => {
+    if (value === null || value === undefined) return null;
+    return value === true || value === "t" || value === "true";
+  };
+  const numberOrNull = (value: unknown): number | null => {
+    if (value === null || value === undefined) return null;
+    return Number(value);
+  };
+  return {
+    id: num(row.id),
+    tenant_id: row.tenant_id ?? null,
+    doc_no: row.doc_no ?? null,
+    doc_type: row.doc_type ?? null,
+    order_id: num(row.order_id),
+    customer_id: num(row.customer_id),
+    quote_id: num(row.quote_id),
+    status: row.status ?? null,
+    currency: row.currency ?? null,
+    total_amount: numberOrNull(row.total_amount),
+    issued_at: row.issued_at ?? null,
+    issued_by: row.issued_by ?? null,
+    raw_payload: row.raw_payload ?? null,
+    owner_id: row.owner_id ?? null,
+    owner_scope: row.owner_scope ?? null,
+    team_id: num(row.team_id),
+    with_seal: boolOrNull(row.with_seal),
+    created_at: row.created_at ?? null,
+    updated_at: row.updated_at ?? null,
+  };
+}
+
+/** 供数契约（§6.3 + 本切片 facade 段）：7 个 dataset，每个只出现一次。 */
+interface RenderDataDatasets {
+  trade_docs: Row[];
+  tenant_company_profile: Row[];
+  customers: Row[];
+  cust_contacts: Row[];
+  tenant_company_seals: Row[];
+  product_profiles: Row[];
+  file_objects: Row[];
+}
+
+/**
+ * render-data 供数（**唯一 DB 访问点**）：7 个 dataset，条件只依赖**数据形状**。
+ *
+ * 顺序与旧路径一致（单证 → 企业主体 → 客户/联系人 → 产品图 → 默认章 → 产品档案），
+ * 便于与 kernel 侧的「旧路径 SQL 不变」断言对照；判定一律留在内核。
+ */
+async function supplyRenderDatasets(
+  env: Env,
+  user: CurrentUser,
+  docId: number,
+): Promise<RenderDataDatasets> {
+  const tenant = tenantOf();
+  return withDb(env, async (sql: Db) => {
+    const docRows = (await sql.unsafe(
+      TRADE_DOCS_RENDER_SQL,
+      [tenant, docId] as never[],
+    )) as unknown as Row[];
+    const docRow = docRows[0];
+    const profileRows = (await sql.unsafe(
+      TENANT_PROFILE_RENDER_SQL,
+      [tenant] as never[],
+    )) as unknown as Row[];
+
+    let customerRows: Row[] = [];
+    let contactRows: Row[] = [];
+    const customerId = docRow ? intOrNull(docRow.customer_id) : null;
+    if (customerId !== null) {
+      customerRows = (await sql.unsafe(
+        CUSTOMERS_RENDER_SQL,
+        [tenant, customerId] as never[],
+      )) as unknown as Row[];
+      contactRows = (await sql.unsafe(
+        CUST_CONTACTS_RENDER_SQL,
+        [tenant, customerId] as never[],
+      )) as unknown as Row[];
+    }
+
+    let fileRows: Row[] = [];
+    const fileIds = docRow ? photoFileIds(docRow) : [];
+    const scope = renderFileTeamScope(user);
+    if (fileIds.length > 0 && !scope.skip) {
+      fileRows = (await sql.unsafe(
+        FILE_OBJECTS_RENDER_SQL + scope.frag,
+        [tenant, fileIds, ...scope.extra] as never[],
+      )) as unknown as Row[];
+    }
+
+    const sealRows = (await sql.unsafe(
+      DEFAULT_SEAL_RENDER_SQL,
+      [tenant] as never[],
+    )) as unknown as Row[];
+    const productRows = (await sql.unsafe(
+      PRODUCT_PROFILES_RENDER_SQL,
+      [tenant] as never[],
+    )) as unknown as Row[];
+
+    return {
+      trade_docs: docRows.map(tradeDocRenderRow),
+      // tenant_company_profile：只取文本字段（卖方/银行/默认条款），数值列类型不影响响应
+      tenant_company_profile: profileRows.map((row) => ({ ...row })),
+      customers: customerRows.map((row) => ({
+        id: num(row.id),
+        name: row.name ?? null,
+        address: row.address ?? null,
+      })),
+      cust_contacts: contactRows.map((row) => ({
+        name: row.name ?? null,
+        phone: row.phone ?? null,
+        email: row.email ?? null,
+      })),
+      tenant_company_seals: sealRows.map((row) => ({
+        id: num(row.id),
+        mime: row.mime ?? null,
+      })),
+      product_profiles: productRows.map((row) => ({
+        product_key: row.product_key ?? null,
+        info: row.info ?? null,
+        team_id: num(row.team_id),
+      })),
+      file_objects: fileRows.map((row) => ({
+        id: num(row.id),
+        name: row.name ?? null,
+        content_type: row.content_type ?? null,
+        file_name: row.file_name ?? null,
+        object_key: row.object_key ?? null,
+        storage: row.storage ?? null,
+        team_id: num(row.team_id),
+      })),
+    };
+  });
+}
+
+/**
+ * GET /api/v1/trade-docs/{doc_id}/render-data 的「供数 + RPC」实现（开关 on 时）。
+ *
+ * 门禁全在**内核**（_require_doc_visible：单证不存在/无团队/不可见一律 404 DOC_NOT_FOUND）——
+ * 门面不自建第二份可见性判定；未授权请求确实会先多读若干行（响应仍是 404，已登记）。
+ */
+export async function renderDataWithKernel(
+  c: Context<{ Bindings: Env }>,
+  user: CurrentUser,
+): Promise<Response> {
+  const env = getEnv(c);
+  const secret = requireSecret(env, "JWT_SECRET");
+  const docId = intOrNull(c.req.param("doc_id") ?? "");
+  if (docId === null) {
+    // 非整数 doc_id：旧路径（FastAPI path 参数）会 422，交给旧路径裁决（不自拼错误体）
+    return forwardKernelRequest(c);
+  }
+  const datasets = await supplyRenderDatasets(env, user, docId);
+  const jwt = await mintEngineJwt(engineActorOf(user), secret);
+  const url = new URL(c.req.url);
+  const requestContext = {
+    host: c.req.header("host") ?? url.host,
+    x_forwarded_proto: (c.req.header("x-forwarded-proto") ?? url.protocol.replace(":", "")).toLowerCase(),
+  };
+  return engineQuoteRpc(
+    c,
+    ENGINE_TRADE_DOCS_RENDER_DATA_RPC,
+    jwt,
+    JSON.stringify({
+      request: { doc_id: docId, request_context: requestContext },
+      actor: actorPayloadOf(user),
+      datasets,
+    }),
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // 路由注册（由 src/index.ts 挂载；必须在 /api/v1/export-quote 透传 mount **之前**）
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -555,6 +840,16 @@ app.get("/api/v1/export-quote/products/:product_key/spec", (c) => {
   return respond(c, async () => {
     const user = await requireUser(c);
     return directDb(c, () => specWithKernel(c, user));
+  });
+});
+
+app.get("/api/v1/trade-docs/:doc_id/render-data", (c) => {
+  if (!useDirectRoute(getEnv(c), ENGINE_ROUTE_IDS.renderData)) {
+    return forwardKernelRequest(c);
+  }
+  return respond(c, async () => {
+    const user = await requireUser(c);
+    return directDb(c, () => renderDataWithKernel(c, user));
   });
 });
 

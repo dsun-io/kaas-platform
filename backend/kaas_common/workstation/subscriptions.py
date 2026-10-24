@@ -53,6 +53,10 @@ WORKSTATION_PATHS: dict[str, tuple[str, ...]] = {
         "/api/v1/trade-docs", "/api/v1/tenant/company-profile",
         "/api/v1/tenant/company-seals", "/api/v1/external-docs",
         "/api/v1/fx-rates", "/api/v1/actual-costs",
+        # 门面供数 → 内核纯装配的 RPC 入口（P2 第三个切片，render-data）。同样**必须登记**：
+        # 不登记 ⇒ 未开通 trade-docs 工位的账号可绕过商业限制拿单证渲染数据（§8.5.2 同款事故）。
+        # 前缀登记覆盖同族全部 action（如后续 /render-data、/render-fingerprint 等）。
+        "/api/v1/internal/engine/trade-docs",
     ),
     "shipments": ("/api/v1/shipments",),
     "leadgen": ("/api/v1/leadgen", "/api/v1/leads"),

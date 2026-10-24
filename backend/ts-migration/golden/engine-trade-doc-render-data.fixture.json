@@ -1,0 +1,435 @@
+{
+  "_comment": "P2 第三个切片金标（docs/P2_COUPLING_ENGINE_2026-10-24.md §6.3/§8.3/§9#2）：GET /trade-docs/{doc_id}/render-data（7 张表的装配链）。由同目录 gen_engine_trade_doc_render_data_fixture.py 用内核**旧路径**真实跑一遍生成：response = 旧路径真实响应体；old_sql = 旧路径实际执行的 SQL 与绑定参数（按执行顺序）；facade = 门面**供数契约**（查哪些 dataset / SQL 文本 / 绑定参数）——TS 侧逐字断言；datasets = 门面下发给内核的行（Python 侧当 DB 返回、TS 侧当 payload 断言）；⚠️ 签名直链含时间戳（token 的 exp = time.time() + 900）⇒ **只在生成器与两侧测试进程内**把 kaas_common.files.token.time 冻结到 asset_time，保证 fixture 可复现；生产代码零改动（无任何时钟注入/全局开关）。",
+  "endpoint": {
+    "method": "GET",
+    "path": "/api/v1/trade-docs/1/render-data",
+    "query_string": ""
+  },
+  "rpc": "/api/v1/internal/engine/trade-docs/render-data",
+  "request": {
+    "doc_id": 1,
+    "request_context": {
+      "host": "testserver",
+      "x_forwarded_proto": "http"
+    }
+  },
+  "asset_time": 1761264000.0,
+  "asset_ttl": 900,
+  "actor": {
+    "id": 5,
+    "account_type": "customer",
+    "role": "owner",
+    "team_id": 2,
+    "is_tenant_admin": false
+  },
+  "datasets": {
+    "trade_docs": [
+      {
+        "id": 1,
+        "tenant_id": "default",
+        "doc_no": "PI-2026-0001",
+        "doc_type": "pi",
+        "order_id": 3,
+        "customer_id": 9,
+        "quote_id": null,
+        "status": "draft",
+        "currency": "USD",
+        "total_amount": 12345.67,
+        "issued_at": "2026-10-21T08:00:00+00:00",
+        "issued_by": "ops@kaas.io",
+        "owner_id": "99",
+        "owner_scope": "private",
+        "team_id": 2,
+        "with_seal": null,
+        "created_at": "2026-10-20T02:30:00.123456+00:00",
+        "updated_at": "2026-10-21T09:15:00.987654+00:00",
+        "raw_payload": {
+          "sources": {
+            "order": {
+              "order_no": "SO-2026-0007",
+              "currency": "USD",
+              "items": [
+                {
+                  "product_name": "牛栏网",
+                  "qty": 100,
+                  "qty_unit": "roll",
+                  "unit_price": 12.5,
+                  "line_amount": 1250,
+                  "spec_snapshot": {
+                    "specification": "1.8m x 30m"
+                  }
+                }
+              ],
+              "incoterm": "FOB",
+              "payment_terms": "T/T 30% deposit",
+              "port_of_loading": "Tianjin",
+              "port_of_destination": "Hamburg",
+              "country_of_origin": "China"
+            }
+          },
+          "custom": {
+            "product_key": "field_fence",
+            "product_photos": [
+              {
+                "file_id": 12,
+                "caption": "成品图"
+              },
+              {
+                "file_id": 13
+              },
+              {
+                "image": "https://example.invalid/offline.png",
+                "caption": "离线图"
+              },
+              {
+                "file_id": "abc"
+              }
+            ],
+            "shipping_marks": "N/M"
+          }
+        }
+      }
+    ],
+    "tenant_company_profile": [
+      {
+        "tenant_id": "default",
+        "name_en": "HEBEI KAAS TRADING CO., LTD",
+        "address_en": "No.1 Industry Road, Anping, Hebei, China",
+        "phone": "+86 318 000 0000",
+        "email": "sales@kaas.example",
+        "bank_name": "Bank of China",
+        "bank_account": "6217 0000 0000 0000",
+        "swift_code": "BKCHCNBJ",
+        "bank_address_en": "Bank of China, Shijiazhuang Branch",
+        "tax_id": "91130000XXXXXXXX",
+        "default_incoterm": "CIF",
+        "default_payment_terms": "L/C",
+        "default_country_of_origin": "China"
+      }
+    ],
+    "customers": [
+      {
+        "id": 9,
+        "name": "ACME GMBH",
+        "address": "Hamburg, Germany"
+      }
+    ],
+    "cust_contacts": [
+      {
+        "name": "Hans Muller",
+        "phone": "+49 40 000000",
+        "email": "hans@acme.example"
+      }
+    ],
+    "tenant_company_seals": [
+      {
+        "id": 7,
+        "mime": "image/png"
+      }
+    ],
+    "product_profiles": [
+      {
+        "product_key": "field_fence",
+        "info": {
+          "hs_code": "7314.41.00",
+          "material": "Galvanized steel"
+        },
+        "team_id": 2
+      }
+    ],
+    "file_objects": [
+      {
+        "id": 12,
+        "name": "成品图.png",
+        "content_type": "image/png",
+        "file_name": "product.png",
+        "object_key": "files/12.png",
+        "storage": "r2",
+        "team_id": 2
+      },
+      {
+        "id": 13,
+        "name": "包装图.jpg",
+        "content_type": "image/jpeg",
+        "file_name": "pack.jpg",
+        "object_key": "files/13.jpg",
+        "storage": "r2",
+        "team_id": 2
+      }
+    ]
+  },
+  "old_sql": [
+    {
+      "sql": "SELECT * FROM trade_docs WHERE tenant_id=$1 AND id=$2",
+      "params": [
+        "default",
+        1
+      ]
+    },
+    {
+      "sql": "SELECT * FROM tenant_company_profile WHERE tenant_id=$1",
+      "params": [
+        "default"
+      ]
+    },
+    {
+      "sql": "SELECT id, name, address FROM customers WHERE tenant_id=$1 AND id=$2",
+      "params": [
+        "default",
+        9
+      ]
+    },
+    {
+      "sql": "SELECT name, phone, email FROM cust_contacts WHERE tenant_id=$1 AND customer_id=$2 ORDER BY is_primary DESC, id LIMIT 1",
+      "params": [
+        "default",
+        9
+      ]
+    },
+    {
+      "sql": "SELECT name, content_type, file_name, content, object_key, storage FROM file_objects WHERE tenant_id=$1 AND id=$2 AND is_current AND team_id=$3",
+      "params": [
+        "default",
+        12,
+        2
+      ]
+    },
+    {
+      "sql": "SELECT name, content_type, file_name, content, object_key, storage FROM file_objects WHERE tenant_id=$1 AND id=$2 AND is_current AND team_id=$3",
+      "params": [
+        "default",
+        13,
+        2
+      ]
+    },
+    {
+      "sql": "SELECT id, png_bytes, mime FROM tenant_company_seals WHERE tenant_id=$1 AND is_default ORDER BY id LIMIT 1",
+      "params": [
+        "default"
+      ]
+    },
+    {
+      "sql": "SELECT info, team_id FROM product_profiles WHERE tenant_id=$1 AND product_key=$2",
+      "params": [
+        "default",
+        "field_fence"
+      ]
+    }
+  ],
+  "facade": {
+    "trade_docs": {
+      "sql": "SELECT id, tenant_id, doc_no, doc_type, order_id, customer_id, quote_id, status, currency, total_amount, to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"+00:00\"') AS issued_at, issued_by, raw_payload, owner_id, owner_scope, team_id, with_seal, to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"+00:00\"') AS created_at, to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"+00:00\"') AS updated_at FROM trade_docs WHERE tenant_id=$1 AND id=$2",
+      "params": [
+        "default",
+        1
+      ]
+    },
+    "tenant_company_profile": {
+      "sql": "SELECT * FROM tenant_company_profile WHERE tenant_id=$1",
+      "params": [
+        "default"
+      ]
+    },
+    "customers": {
+      "sql": "SELECT id, name, address FROM customers WHERE tenant_id=$1 AND id=$2",
+      "params": [
+        "default",
+        9
+      ]
+    },
+    "cust_contacts": {
+      "sql": "SELECT name, phone, email FROM cust_contacts WHERE tenant_id=$1 AND customer_id=$2 ORDER BY is_primary DESC, id LIMIT 1",
+      "params": [
+        "default",
+        9
+      ]
+    },
+    "tenant_company_seals": {
+      "sql": "SELECT id, mime FROM tenant_company_seals WHERE tenant_id=$1 AND is_default ORDER BY id LIMIT 1",
+      "params": [
+        "default"
+      ]
+    },
+    "product_profiles": {
+      "sql": "SELECT product_key, info, team_id FROM product_profiles WHERE tenant_id=$1",
+      "params": [
+        "default"
+      ]
+    },
+    "file_objects": {
+      "sql": "SELECT id, name, content_type, file_name, object_key, storage, team_id FROM file_objects WHERE tenant_id=$1 AND id = ANY($2) AND is_current AND team_id=$3",
+      "params": [
+        "default",
+        [
+          12,
+          13
+        ],
+        2
+      ]
+    }
+  },
+  "response": {
+    "doc": {
+      "id": 1,
+      "tenant_id": "default",
+      "doc_no": "PI-2026-0001",
+      "doc_type": "pi",
+      "order_id": 3,
+      "customer_id": 9,
+      "quote_id": null,
+      "status": "draft",
+      "currency": "USD",
+      "total_amount": 12345.67,
+      "issued_at": "2026-10-21T08:00:00+00:00",
+      "issued_by": "ops@kaas.io",
+      "owner_id": "99",
+      "owner_scope": "private",
+      "team_id": 2,
+      "with_seal": null,
+      "created_at": "2026-10-20T02:30:00.123456+00:00",
+      "updated_at": "2026-10-21T09:15:00.987654+00:00",
+      "raw_payload": {
+        "sources": {
+          "order": {
+            "order_no": "SO-2026-0007",
+            "currency": "USD",
+            "items": [
+              {
+                "product_name": "牛栏网",
+                "qty": 100,
+                "qty_unit": "roll",
+                "unit_price": 12.5,
+                "line_amount": 1250,
+                "spec_snapshot": {
+                  "specification": "1.8m x 30m"
+                }
+              }
+            ],
+            "incoterm": "FOB",
+            "payment_terms": "T/T 30% deposit",
+            "port_of_loading": "Tianjin",
+            "port_of_destination": "Hamburg",
+            "country_of_origin": "China"
+          }
+        },
+        "custom": {
+          "product_key": "field_fence",
+          "product_photos": [
+            {
+              "file_id": 12,
+              "caption": "成品图"
+            },
+            {
+              "file_id": 13
+            },
+            {
+              "image": "https://example.invalid/offline.png",
+              "caption": "离线图"
+            },
+            {
+              "file_id": "abc"
+            }
+          ],
+          "shipping_marks": "N/M"
+        }
+      }
+    },
+    "data": {
+      "incoterm": "FOB",
+      "payment_terms": "T/T 30% deposit",
+      "country_of_origin": "China",
+      "items": [
+        {
+          "product_name": "牛栏网",
+          "qty": 100,
+          "qty_unit": "roll",
+          "unit_price": 12.5,
+          "line_amount": 1250,
+          "specification": "1.8m x 30m",
+          "hs_code": "7314.41.00"
+        }
+      ],
+      "currency": "USD",
+      "port_of_loading": "Tianjin",
+      "port_of_destination": "Hamburg",
+      "seller": {
+        "company": "HEBEI KAAS TRADING CO., LTD",
+        "address": "No.1 Industry Road, Anping, Hebei, China",
+        "phone": "+86 318 000 0000",
+        "email": "sales@kaas.example",
+        "bank": "Bank of China",
+        "account": "6217 0000 0000 0000",
+        "swift": "BKCHCNBJ",
+        "tax_id": "91130000XXXXXXXX"
+      },
+      "shipper": {
+        "company": "HEBEI KAAS TRADING CO., LTD",
+        "address": "No.1 Industry Road, Anping, Hebei, China",
+        "phone": "+86 318 000 0000",
+        "email": "sales@kaas.example",
+        "bank": "Bank of China",
+        "account": "6217 0000 0000 0000",
+        "swift": "BKCHCNBJ",
+        "tax_id": "91130000XXXXXXXX"
+      },
+      "exporter": {
+        "company": "HEBEI KAAS TRADING CO., LTD",
+        "address": "No.1 Industry Road, Anping, Hebei, China",
+        "phone": "+86 318 000 0000",
+        "email": "sales@kaas.example",
+        "bank": "Bank of China",
+        "account": "6217 0000 0000 0000",
+        "swift": "BKCHCNBJ",
+        "tax_id": "91130000XXXXXXXX"
+      },
+      "buyer": {
+        "name": "ACME GMBH",
+        "address": "Hamburg, Germany",
+        "contact": "Hans Muller"
+      },
+      "consignee": {
+        "name": "ACME GMBH",
+        "address": "Hamburg, Germany",
+        "contact": "Hans Muller"
+      },
+      "insured": {
+        "name": "ACME GMBH",
+        "address": "Hamburg, Germany",
+        "contact": "Hans Muller"
+      },
+      "bank_info": {
+        "beneficiary": "HEBEI KAAS TRADING CO., LTD",
+        "beneficiary_address": "No.1 Industry Road, Anping, Hebei, China",
+        "beneficiary_tax_id": "91130000XXXXXXXX",
+        "bank": "Bank of China",
+        "bank_address": "Bank of China, Shijiazhuang Branch",
+        "account_no": "6217 0000 0000 0000",
+        "swift": "BKCHCNBJ"
+      },
+      "pi_no": "PI-2026-0001",
+      "pi_date": "2026-10-21T08:00:00+00:00",
+      "total_amount": 12345.67,
+      "product_key": "field_fence",
+      "product_photos": [
+        {
+          "image": "http://testserver/api/v1/file-objects/12/render-content?t=1761264900.837cdca339596bd2d21c0266b486df6db0cfaa28a4b6b4b6e87a976585a08fd5",
+          "caption": "成品图"
+        },
+        {
+          "image": "http://testserver/api/v1/file-objects/13/render-content?t=1761264900.5757f0df1fb8b1198861c17398ac8626d5dd6fa0fb5445c95cc327de239b228f",
+          "caption": "包装图.jpg"
+        },
+        {
+          "image": "https://example.invalid/offline.png",
+          "caption": "离线图"
+        },
+        {
+          "file_id": "abc"
+        }
+      ],
+      "shipping_marks": "N/M",
+      "company_stamp": "http://testserver/api/v1/tenant/company-seals/7/render-content?t=1761264900.d73bb098bbb6693493ed45e15ce8d031efdfe7a5eecc0beeb0761e6759e28dab"
+    },
+    "company_profile_configured": true
+  }
+}

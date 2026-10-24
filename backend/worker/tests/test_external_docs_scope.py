@@ -87,11 +87,12 @@ EXPECTED = {
 }
 
 
-def _simulate(*, tenant, is_admin, uid=None, team=None, order_id=None, doc_type=None):
+def _simulate(*, tenant, is_admin, uid=None, team=None, order_id=None, doc_type=None,
+              rows=None):
     """把「本应写进 SQL 的谓词」用参照实现求值 —— **只用于行为断言**；
     真正的守卫是下方对 SQL 文本/参数的逐字断言（谓词必须在 SQL 里，不是在这里）。"""
     out = []
-    for r in ROWS:
+    for r in (rows if rows is not None else ROWS):
         if r["tenant_id"] != tenant:
             continue
         if order_id is not None and r["order_id"] != order_id:
@@ -114,21 +115,24 @@ def _simulate(*, tenant, is_admin, uid=None, team=None, order_id=None, doc_type=
 
 
 class _Conn:
-    """假连接：记录 SQL/参数，并按**canonical 参数位置**求值可见行。"""
+    """假连接：记录 SQL/参数，并按 **canonical 参数位置** 求值可见行。
 
-    def __init__(self, user, is_admin, mode):
+    mode：list（可见行列表）/ download（按 id 取可见行）/ patch（UPDATE 语义）/
+    delete（DELETE 语义）—— 后两者会在 self.rows 上真正改/删，用于断言"库无变化"。
+    """
+
+    def __init__(self, user, is_admin, mode, rows=None):
         self.user = user
         self.is_admin = is_admin
-        self.mode = mode  # "list" | "download"
+        self.mode = mode
+        self.rows = [dict(r) for r in (rows if rows is not None else ROWS)]
         self.calls: list[tuple[str, tuple]] = []
 
     def _scope_from(self, text, params):
         if self.mode == "list":
-            tenant = params[0]
-            idx = 1
+            tenant, idx = params[0], 1
         else:
-            tenant = params[1]
-            idx = 2
+            tenant, idx = params[1], 2
         uid = team = None
         if not self.is_admin:
             uid = params[idx]
@@ -136,29 +140,55 @@ class _Conn:
             if "team_id = $" in text:
                 team = params[idx]
                 idx += 3
-        remaining = list(params[idx:-1]) if self.mode == "list" else []
-        order_filter = doc_filter = None
-        if remaining:
-            if "AND order_id=$" in text:
-                order_filter = remaining.pop(0)
-            if remaining and "AND doc_type=$" in text:
-                doc_filter = remaining.pop(0)
-        return tenant, uid, team, order_filter, doc_filter
+        return tenant, uid, team, idx
+
+    def _visible(self, text, params):
+        tenant, uid, team, _idx = self._scope_from(text, params)
+        return _simulate(tenant=tenant, is_admin=self.is_admin, uid=uid, team=team,
+                         rows=self.rows)
+
+    def _hit(self, text, params):
+        doc_id = params[0]
+        hit = [r for r in self._visible(text, params) if r["id"] == doc_id]
+        return hit[0] if hit else None
 
     async def fetch(self, sql, *params):
         text = " ".join(str(sql).split())
         self.calls.append((text, params))
-        tenant, uid, team, order_filter, doc_filter = self._scope_from(text, params)
+        assert self.mode == "list", "fetch 只用于列表端点"
+        tenant, uid, team, idx = self._scope_from(text, params)
+        remaining = list(params[idx:-1])
+        order_filter = doc_filter = None
+        if remaining and "AND order_id=$" in text:
+            order_filter = remaining.pop(0)
+        if remaining and "AND doc_type=$" in text:
+            doc_filter = remaining.pop(0)
         return _simulate(tenant=tenant, is_admin=self.is_admin, uid=uid, team=team,
-                         order_id=order_filter, doc_type=doc_filter)
+                         order_id=order_filter, doc_type=doc_filter, rows=self.rows)
 
     async def fetchrow(self, sql, *params):
         text = " ".join(str(sql).split())
         self.calls.append((text, params))
-        tenant, uid, team, _order, _doc = self._scope_from(text, params)
-        visible = _simulate(tenant=tenant, is_admin=self.is_admin, uid=uid, team=team)
-        hit = [r for r in visible if r["id"] == params[0]]
-        return hit[0] if hit else None
+        row = self._hit(text, params)
+        if self.mode == "download":
+            return row
+        if self.mode == "patch":
+            if row is None:
+                return None
+            new_status, new_notes = params[-2], params[-1]
+            row["status"] = new_status
+            if new_notes is not None:
+                row["notes"] = new_notes
+            return {"id": row["id"], "status": row["status"]}
+        if self.mode == "delete":
+            if row is None:
+                return None
+            self.rows = [r for r in self.rows if r["id"] != row["id"]]
+            return {"id": row["id"]}
+        raise AssertionError("未预期的 fetchrow 模式：" + self.mode)
+
+    async def execute(self, sql, *params):
+        raise AssertionError("PATCH/DELETE 必须用 RETURNING 判定命中，不应再调用 execute")
 
 
 class _CM:
@@ -172,8 +202,8 @@ class _CM:
         return False
 
 
-def _install(monkeypatch, user, is_admin, mode):
-    conn = _Conn(user, is_admin, mode)
+def _install(monkeypatch, user, is_admin, mode, rows=None):
+    conn = _Conn(user, is_admin, mode, rows)
     monkeypatch.setattr(ws_extras, "_acquire", lambda request: _CM(conn))
     return conn
 
@@ -329,3 +359,143 @@ def test_可见集合矩阵与门面一致():
             tenant=TENANT, is_admin=False, uid="11", team=None)},
     }
     assert computed == EXPECTED
+
+# ── 4. PATCH / DELETE：同源越权面收口（task-13）──────────────────────────────
+# 与列表/下载同一把尺（复用 _external_doc_scope）：tenant 恒在 + 行级谓词；
+# 越权/跨租户/不存在统一 404 {"error":"not_found"}（不泄露存在性）。
+
+_PATCH_PREFIX = "UPDATE external_doc_uploads SET status="
+_PATCH_WHERE = " WHERE id=$1 AND tenant_id=$2"
+_PATCH_RETURNING = " RETURNING id, status"
+_DELETE_PREFIX = "DELETE FROM external_doc_uploads WHERE id=$1 AND tenant_id=$2"
+_RETURNING_ID = " RETURNING id"
+
+
+class TestPatchIsolation:
+    def _patch(self, monkeypatch, user, doc_id, *, is_admin, status="issued", notes="OK"):
+        conn = _install(monkeypatch, user, is_admin, "patch")
+        try:
+            out = asyncio.run(ws_extras.update_external_doc(
+                object(), doc_id, status, notes=notes, user=user))
+            return out, conn
+        except HTTPException as exc:
+            return exc, conn
+
+    def test_本团队可改_且SQL带租户与谓词(self, monkeypatch):
+        out, conn = self._patch(monkeypatch, MEMBER, 3, is_admin=False)
+        assert out == {"id": 3, "status": "issued"}
+        row = next(r for r in conn.rows if r["id"] == 3)
+        assert row["status"] == "issued"
+        assert row["notes"] == "OK"
+        sql, params = conn.calls[0]
+        assert sql == (_PATCH_PREFIX + "$7, notes=COALESCE($8, notes)"
+                       + _PATCH_WHERE + _DL_SCOPE + _PATCH_RETURNING)
+        assert params == (3, TENANT, "9", 4, 4, 4, "issued", "OK")
+
+    def test_跨团队_404_且数据库无变化(self, monkeypatch):
+        before = dict(next(r for r in ROWS if r["id"] == 2))
+        exc, conn = self._patch(monkeypatch, MEMBER, 2, is_admin=False, status="void")
+        assert isinstance(exc, HTTPException)
+        assert exc.status_code == 404
+        assert exc.detail == {"error": "not_found"}
+        # 行完全没变（status/notes 都是原值），且**只有那一条 UPDATE**（没有先查后改）
+        assert next(r for r in conn.rows if r["id"] == 2) == before
+        assert len(conn.calls) == 1
+
+    def test_未挂载且非本人上传_404_且库无变化(self, monkeypatch):
+        before = dict(next(r for r in ROWS if r["id"] == 6))
+        exc, conn = self._patch(monkeypatch, MEMBER, 6, is_admin=False)
+        assert exc.status_code == 404
+        assert next(r for r in conn.rows if r["id"] == 6) == before
+
+    def test_无团队非管理员_404_且SQL只剩uploaded_by(self, monkeypatch):
+        before = dict(next(r for r in ROWS if r["id"] == 3))
+        exc, conn = self._patch(monkeypatch, NO_TEAM, 3, is_admin=False)
+        assert exc.status_code == 404
+        sql, params = conn.calls[0]
+        assert "team_id =" not in sql
+        assert sql == (_PATCH_PREFIX + "$4, notes=COALESCE($5, notes)"
+                       + _PATCH_WHERE + " AND (uploaded_by = $3::text)"
+                       + _PATCH_RETURNING)
+        assert params == (3, TENANT, "11", "issued", "OK")
+        assert next(r for r in conn.rows if r["id"] == 3) == before
+
+    def test_管理员_本租户可改_跨租户仍404(self, monkeypatch):
+        out, conn = self._patch(monkeypatch, ADMIN, 2, is_admin=True, status="void")
+        assert out == {"id": 2, "status": "void"}
+        sql, params = conn.calls[0]
+        assert sql == (_PATCH_PREFIX + "$3, notes=COALESCE($4, notes)"
+                       + _PATCH_WHERE + _PATCH_RETURNING)
+        assert params == (2, TENANT, "void", "OK")
+
+        before = dict(next(r for r in ROWS if r["id"] == 7))
+        exc, conn2 = self._patch(monkeypatch, ADMIN, 7, is_admin=True)
+        assert exc.status_code == 404
+        assert next(r for r in conn2.rows if r["id"] == 7) == before
+
+    def test_非法状态_422_且不触库(self, monkeypatch):
+        exc, conn = self._patch(monkeypatch, MEMBER, 3, is_admin=False, status="bogus")
+        assert isinstance(exc, HTTPException)
+        assert exc.status_code == 422
+        assert exc.detail == {"error": "invalid_status"}
+        assert conn.calls == []
+
+
+class TestDeleteIsolation:
+    def _delete(self, monkeypatch, user, doc_id, *, is_admin):
+        conn = _install(monkeypatch, user, is_admin, "delete")
+        try:
+            out = asyncio.run(ws_extras.delete_external_doc(object(), doc_id, user=user))
+            return out, conn
+        except HTTPException as exc:
+            return exc, conn
+
+    def test_本团队可删_且SQL带租户与谓词(self, monkeypatch):
+        out, conn = self._delete(monkeypatch, MEMBER, 3, is_admin=False)
+        assert out is None
+        assert 3 not in {r["id"] for r in conn.rows}
+        sql, params = conn.calls[0]
+        assert sql == _DELETE_PREFIX + _DL_SCOPE + _RETURNING_ID
+        assert params == (3, TENANT, "9", 4, 4, 4)
+
+    def test_跨团队_404_且行仍在(self, monkeypatch):
+        exc, conn = self._delete(monkeypatch, MEMBER, 2, is_admin=False)
+        assert isinstance(exc, HTTPException)
+        assert exc.status_code == 404
+        assert exc.detail == {"error": "not_found"}
+        # 行仍在，且只有那一条 DELETE（没有先查后删）
+        assert 2 in {r["id"] for r in conn.rows}
+        assert len(conn.calls) == 1
+
+    def test_无团队非管理员_404_且行仍在(self, monkeypatch):
+        exc, conn = self._delete(monkeypatch, NO_TEAM, 3, is_admin=False)
+        assert exc.status_code == 404
+        assert 3 in {r["id"] for r in conn.rows}
+        sql, params = conn.calls[0]
+        assert "team_id =" not in sql
+        assert sql == (_DELETE_PREFIX + " AND (uploaded_by = $3::text)"
+                       + _RETURNING_ID)
+        assert params == (3, TENANT, "11")
+
+    def test_管理员_本租户可删_跨租户仍404(self, monkeypatch):
+        out, conn = self._delete(monkeypatch, ADMIN, 2, is_admin=True)
+        assert out is None
+        assert 2 not in {r["id"] for r in conn.rows}
+        sql, params = conn.calls[0]
+        assert sql == _DELETE_PREFIX + _RETURNING_ID
+        assert params == (2, TENANT)
+
+        exc, conn2 = self._delete(monkeypatch, ADMIN, 7, is_admin=True)
+        assert exc.status_code == 404
+        assert 7 in {r["id"] for r in conn2.rows}
+
+    def test_未挂载且非本人_404_且行仍在(self, monkeypatch):
+        exc, conn = self._delete(monkeypatch, MEMBER, 6, is_admin=False)
+        assert exc.status_code == 404
+        assert 6 in {r["id"] for r in conn.rows}
+
+    def test_不存在_404(self, monkeypatch):
+        exc, conn = self._delete(monkeypatch, ADMIN, 999, is_admin=True)
+        assert exc.status_code == 404
+        assert exc.detail == {"error": "not_found"}
+        assert {r["id"] for r in conn.rows} == {r["id"] for r in ROWS}

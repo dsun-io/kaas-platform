@@ -1008,17 +1008,16 @@ async def render_doc_pdf(doc_id: int, body: RenderPdfIn, request: Request,
     return await archive_rendered_pdf(request, doc_id, body.html, user, body.name)
 
 
-async def resolve_photo_refs(request: Request, data: dict, user: dict = None) -> dict:
-    """把单证 `product_photos` 里的 `{file_id}` 引用解析成**可渲染图片源**。
+async def _photo_entries_from_rows(data: dict, rows_by_id: dict, request,
+                                   load_bytes=None) -> dict:
+    """把 `product_photos` 的 `{file_id}` 引用**装配**成可渲染条目（纯装配，不查库）。
 
-    2026-10-21（A4）：优先给**短期签名直链**（`.../render-content?t=<token>`，默认 900s），
-    不再把字节内联成 data URI —— 一张 PI 曾因内联 ≈1.4MB。回退顺序：
-    ①签名 URL（生产有 JWT_SECRET 时）→ ②data URI（旧行为，测试/无密钥环境）。
-    渲染器白名单只认 `data:` 与 `http(s)` 绝对地址，所以 URL 用请求 host 拼绝对地址；
-    取不到行/字节就跳过该条，不印坏图。
+    P2 第三个切片（render-data，docs/P2_COUPLING_ENGINE_2026-10-24.md §9 第 2 项）：
+    旧路径与门面供数 RPC 共用本函数 —— 旧路径把「逐 id 取行」留在 resolve_photo_refs
+    （SQL/团队谓词不变），供数路径直接把行喂进来，装配判定只此一份。
 
-    团队谓词（2026-10-12，task-6）：把 `user` 传进来，按 `file_objects.team_id` 过滤
-    —— 本团队取图，别团队跳过不印坏图。`user=None` 时跳过团队判定（兼容旧调用方）。
+    load_bytes：仅在**签名不可用**时回退 data URI 用（旧路径传 `_load_bytes`；
+    供数路径不传 —— 生产/测试都有 JWT_SECRET，签名直链可用；无签名属已登记降级边界）。
     """
     from kaas_common.files import is_file_ref, to_data_uri
 
@@ -1030,6 +1029,52 @@ async def resolve_photo_refs(request: Request, data: dict, user: dict = None) ->
         if not is_file_ref(entry):
             resolved.append(entry)
             continue
+        file_id = int(entry["file_id"])
+        row = rows_by_id.get(file_id)
+        if not row:
+            continue
+        caption = entry.get("caption") or row.get("name") or ""
+        url = _asset_url(request, "file", file_id)
+        if url:
+            resolved.append({"image": url, "caption": caption})
+            continue
+        if load_bytes is None:
+            continue
+        blob = await load_bytes(row)
+        if blob is None:
+            continue
+        resolved.append({
+            "image": to_data_uri(row.get("content_type"), blob, row.get("file_name")),
+            "caption": caption,
+        })
+    data["product_photos"] = resolved
+    return data
+
+
+async def resolve_photo_refs(request: Request, data: dict, user: dict = None) -> dict:
+    """把单证 `product_photos` 里的 `{file_id}` 引用解析成**可渲染图片源**。
+
+    2026-10-21（A4）：优先给**短期签名直链**（`.../render-content?t=<token>`，默认 900s），
+    不再把字节内联成 data URI —— 一张 PI 曾因内联 ≈1.4MB。回退顺序：
+    ①签名 URL（生产有 JWT_SECRET 时）→ ②data URI（旧行为，测试/无密钥环境）。
+    渲染器白名单只认 `data:` 与 `http(s)` 绝对地址，所以 URL 用请求 host 拼绝对地址；
+    取不到行/字节就跳过该条，不印坏图。
+
+    团队谓词（2026-10-12，task-6）：把 `user` 传进来，按 `file_objects.team_id` 过滤
+    —— 本团队取图，别团队跳过不印坏图。`user=None` 时跳过团队判定（兼容旧调用方）。
+
+    本函数只负责「怎么取到行」（逐 id 取行，SQL/团队谓词与改造前逐字一致）；
+    装配在 `_photo_entries_from_rows`（供数路径调用同一份）。
+    """
+    from kaas_common.files import is_file_ref
+
+    photos = data.get("product_photos")
+    if not isinstance(photos, list) or not photos:
+        return data
+    rows_by_id: dict = {}
+    for entry in photos:
+        if not is_file_ref(entry):
+            continue
         # 团队谓词：user=None 时跳过判定（兼容旧调用方）
         team_frag, team_extra = _team_scope(user, 3) if user is not None else ("", [])
         row = await db.fetchrow(
@@ -1040,20 +1085,9 @@ async def resolve_photo_refs(request: Request, data: dict, user: dict = None) ->
             table=None)
         if not row:
             continue
-        caption = entry.get("caption") or row.get("name") or ""
-        url = _asset_url(request, "file", int(entry["file_id"]))
-        if url:
-            resolved.append({"image": url, "caption": caption})
-            continue
-        blob = await _load_bytes(request, row)
-        if blob is None:
-            continue
-        resolved.append({
-            "image": to_data_uri(row.get("content_type"), blob, row.get("file_name")),
-            "caption": caption,
-        })
-    data["product_photos"] = resolved
-    return data
+        rows_by_id[int(entry["file_id"])] = row
+    return await _photo_entries_from_rows(
+        data, rows_by_id, request, load_bytes=lambda row: _load_bytes(request, row))
 
 
 # ── A4：渲染图片直链（短期签名 URL，替代 data URI 内联）──────────────────────

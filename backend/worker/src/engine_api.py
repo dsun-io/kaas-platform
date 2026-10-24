@@ -5,11 +5,12 @@ docs/ARCH_AUTH_DB_SPLIT_2026-10-24.md §3.4 / §10。
 
 铁纪律（AGENTS.md + ADR-008）：
 - 本模块**只做接线**：验内部 JWT → 把 payload 的 request 交给与旧路径**同一个**
-  pydantic 模型 → 调 quote_api 里**同一个**算子（calculate/verify/formulas/spec/
-  explain 五个 action 各自的"自取数 handler + 供数 RPC"共用同一份实现；explain 是
-  直接复用既有 async handler + 请求级产品定义注入，见 quote_api.explain_from_datasets）。
-  不新增任何业务判定，连**角色闸门**（verify 的管理员判定）也是调用
-  quote_api._require_internal_admin —— 禁止在新入口另写一份（docs §8.5.2 的教训）。
+  pydantic 模型 → 调内核里**同一个**算子。已落地两组：
+  · quotes 域（calculate/verify/formulas/spec/explain）→ quote_api 的 *_from_datasets；
+  · trade-docs 域（render-data）→ main.render_data_from_datasets（装配 = 旧 handler
+    同一份 _render_bundle_pure；见 main.py 的「P2 第三个切片」注释）。
+  不新增任何业务判定，连**角色/可见性闸门**（verify 的管理员判定、render-data 的
+  _require_doc_visible）也是调用既有那一份 —— 禁止在新入口另写一份（docs §8.5.2 的教训）。
 - 数据一律来自 payload["datasets"]（门面已按旧 SQL 谓词/排序查好）；本模块**禁止**
   使用 main._acquire / platform.db / asyncpg（tests 里用「零 DB 调用」用例锁死）。
 - 鉴权沿用 mintInternalJwt 口径（HS256 / 同一把 JWT_SECRET / TTL 60s），另加 claim
@@ -21,6 +22,8 @@ docs/ARCH_AUTH_DB_SPLIT_2026-10-24.md §3.4 / §10。
 from __future__ import annotations
 
 import inspect
+import logging
+from types import SimpleNamespace
 
 from fastapi import HTTPException, Request
 from fastapi.encoders import jsonable_encoder
@@ -199,3 +202,97 @@ async def engine_quote_explain(request: Request, body: dict):
         raise _payload_invalid("request.body 必须是对象")
     return await _dispatch(
         _quote.explain_from_datasets, product_key, explain_body, datasets, user, request)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 第三个切片：GET /api/v1/trade-docs/{doc_id}/render-data（7 张表的装配链）
+# ═══════════════════════════════════════════════════════════════════════════════
+# 设计 = docs/P2_COUPLING_ENGINE_2026-10-24.md §6.3/§9 第 2 项。
+# 契约要点（与 quotes 域不同）：
+# - datasets 由门面按 main._render_dataset_plan 的**最小集合**供数；条件取数（有无客户/
+#   照片/公章/产品档案）由门面按**数据形状**决定，判定本身仍在内核同一份纯装配里；
+# - 图片/公章是短期签名直链 ⇒ 需要「原请求的 host/proto」参与签名：门面放在
+#   payload.request.request_context（host / x_forwarded_proto）；
+# - 签名不可用（无 JWT_SECRET）⇒ 明确 503，绝不静默返回与旧路径不同的图片（已登记边界）。
+
+#: 签名直链的 host 白名单（host 参与签名 ⇒ 不能让任意 Host 进 payload）
+_TRUSTED_HOSTS = frozenset({
+    "kaas.powervoy.com", "api.kaas.powervoy.com",
+    # dev / 测试宿主（TestClient 的默认 host 是 testserver；生产不可达）
+    "localhost", "127.0.0.1", "testserver",
+})
+_TRUSTED_HOST_SUFFIXES = (".kaas.powervoy.com",)
+#: 白名单外回落的默认 host（生产门面域名）
+_DEFAULT_ASSET_HOST = "kaas.powervoy.com"
+
+
+class _UrlRequestView:
+    """只提供 _public_base / _asset_url / _jwt_secret 需要的请求视图（签名 URL 用）。
+
+    为什么需要：签名直链的 host 必须是**用户实际访问的门面域名**，而 RPC 的请求
+    是 Service Binding 打到内核的（host 是内核）—— 不能直接拿它去签名。
+    """
+
+    def __init__(self, request: Request, host: str, proto: str):
+        self.headers = {"host": host, "x-forwarded-proto": proto}
+        self.url = SimpleNamespace(scheme=proto)
+        self.scope = dict(getattr(request, "scope", {}) or {})
+
+
+def _host_allowed(host: str) -> bool:
+    name = host.strip().lower()
+    if ":" in name:                     # 带端口（dev 的 localhost:8787）
+        name = name.rsplit(":", 1)[0]
+    if not name:
+        return False
+    if name in _TRUSTED_HOSTS:
+        return True
+    return any(name.endswith(suffix) for suffix in _TRUSTED_HOST_SUFFIXES)
+
+
+def _engine_url_request(request: Request, request_context) -> _UrlRequestView:
+    """payload.request.request_context → 签名用的请求视图（白名单外回落默认 host）。"""
+    context = request_context if isinstance(request_context, dict) else {}
+    host = str(context.get("host") or "").strip()
+    proto = str(context.get("x_forwarded_proto") or "").strip().lower()
+    if not host or not _host_allowed(host):
+        logger.warning("[engine] render-data host 不在白名单，回落默认 host: %r", host)
+        host = _DEFAULT_ASSET_HOST
+    if proto not in ("http", "https"):
+        proto = "https"
+    return _UrlRequestView(request, host, proto)
+
+
+def _require_asset_signing(url_request: _UrlRequestView) -> None:
+    """render-data 的图片/公章是签名直链 ⇒ 没有 JWT_SECRET 就不能保证与旧路径一致。"""
+    try:
+        _main._jwt_secret(url_request)
+    except HTTPException:
+        raise HTTPException(status_code=503, detail={
+            "error": "engine_rpc_asset_signing_unavailable",
+            "message": "render-data 的图片/公章需要签名直链（JWT_SECRET 缺失）；"
+                       "请保持 AUTH_DB_SPLIT=off 走旧路径",
+        })
+
+
+def _request_int(request_body: dict, key: str) -> int:
+    value = request_body.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise _payload_invalid("request." + key + " 必须是整数")
+    return value
+
+
+logger = logging.getLogger(__name__)
+
+@app.post("/api/v1/internal/engine/trade-docs/render-data")
+async def engine_trade_docs_render_data(request: Request, body: dict):
+    """单证渲染数据 RPC：7 张表的供数 → 与 GET render-data **同一份**装配（零 DB）。
+
+    request = {"doc_id": int, "request_context": {"host": str, "x_forwarded_proto": str}}；
+    datasets 见 main.RENDER_DATASETS（契约 §6.3 + 本切片 facade 段）。
+    """
+    user, request_body, datasets = _payload(request, body)
+    _request_int(request_body, "doc_id")     # 形状/审计用；装配只依赖 datasets
+    url_request = _engine_url_request(request, request_body.get("request_context"))
+    _require_asset_signing(url_request)
+    return await _dispatch(
+        _main.render_data_from_datasets, datasets, user, url_request)

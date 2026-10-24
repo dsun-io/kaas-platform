@@ -46,6 +46,9 @@ export const WORKSTATION_PATHS: Record<string, readonly string[]> = {
     "/api/v1/trade-docs", "/api/v1/tenant/company-profile",
     "/api/v1/tenant/company-seals", "/api/v1/external-docs",
     "/api/v1/fx-rates", "/api/v1/actual-costs",
+    // 内核内部 RPC 前缀（P2 引擎切片）—— **必须与订阅真源同步登记**，
+    // 否则直连路径绕过工位闸门（P2 §8.5.2 踩过）。前缀覆盖同族全部 action。
+    "/api/v1/internal/engine/trade-docs",
   ],
   shipments: ["/api/v1/shipments"],
   leadgen: ["/api/v1/leadgen", "/api/v1/leads"],

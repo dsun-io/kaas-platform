@@ -468,10 +468,22 @@ async def update_external_doc(request: Request, doc_id: int, status: str,
                               user: dict = Depends(_get_current_user)):
     if status not in ("draft", "issued", "void"):
         raise HTTPException(status_code=422, detail={"error": "invalid_status"})
+    # 与列表/下载同一把尺：tenant 恒在 + 行级可见性谓词（复用 _external_doc_scope）。
+    # 定位与更新是**同一条** UPDATE：WHERE 不匹配 ⇒ 0 行 ⇒ 404，不做"先查后改"的二次往返，
+    # 越权/跨租户/不存在同一信封（不泄露存在性）。
+    params: list = [doc_id, _main.DEFAULT_TENANT]
+    scope_frag, scope_params = _external_doc_scope(user, len(params) + 1, tenant_index=2)
+    params.extend(scope_params)
+    params.append(status)
+    status_idx = len(params)
+    params.append(notes)
+    notes_idx = len(params)
     async with _acquire(request) as conn:
         r = await conn.fetchrow(
-            "UPDATE external_doc_uploads SET status=$2, notes=COALESCE($3, notes)"
-            " WHERE id=$1 RETURNING id, status", doc_id, status, notes)
+            f"UPDATE external_doc_uploads SET status=${status_idx},"
+            f" notes=COALESCE(${notes_idx}, notes)"
+            f" WHERE id=$1 AND tenant_id=$2{scope_frag} RETURNING id, status",
+            *params)
     if r is None:
         raise HTTPException(status_code=404, detail={"error": "not_found"})
     return {"id": r["id"], "status": r["status"]}
@@ -479,6 +491,15 @@ async def update_external_doc(request: Request, doc_id: int, status: str,
 
 @app.delete("/api/v1/external-docs/{doc_id}", status_code=204)
 async def delete_external_doc(request: Request, doc_id: int, user: dict = Depends(_get_current_user)):
+    # 同一把尺：tenant + 行级谓词。用 RETURNING id 判定命中（0 行 ⇒ 404，且行原样保留）。
+    params: list = [doc_id, _main.DEFAULT_TENANT]
+    scope_frag, scope_params = _external_doc_scope(user, len(params) + 1, tenant_index=2)
+    params.extend(scope_params)
     async with _acquire(request) as conn:
-        await conn.execute("DELETE FROM external_doc_uploads WHERE id=$1", doc_id)
+        r = await conn.fetchrow(
+            f"DELETE FROM external_doc_uploads WHERE id=$1 AND tenant_id=$2{scope_frag}"
+            " RETURNING id",
+            *params)
+    if r is None:
+        raise HTTPException(status_code=404, detail={"error": "not_found"})
     return None

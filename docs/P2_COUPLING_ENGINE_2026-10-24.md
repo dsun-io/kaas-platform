@@ -502,6 +502,33 @@ class Default(WorkerEntrypoint):
 2. `fx-rates`：先与产品确认「汇率是否应全局共享」——若共享，在文档与响应里明确（并保留无谓词）；若按团队隔离，则加谓词 + 迁移表结构（fx_rates 目前无 team_id 列）。
 
 `GET /api/v1/trade-docs/{doc_id}/files` 有 `_team_scope` 硬尺（管理员全见 / 成员本团队 / 无团队 403），**可放量**。
+
+#### 8.9 render-data 真库核对（2026-10-24 19:50，**发现 1 处 golden 漏掉的 parity 缺陷**）
+
+用生产 Neon **只读**连接核对了 p3-engine 标出的三项放量前置（一次性脚本，未入库）：
+
+| 检查项 | 结果 |
+|---|---|
+| `id = ANY($1::bigint[])` 数组参数 | ✅ 通过（3 个 id 全部命中、顺序无关） |
+| 批量取 `file_objects` vs 逐 id 取行 | ✅ 等价（同集合、同投影、同 `object_key`/`file_size`/`tenant_id`） |
+| BIGINT/NUMERIC 类型归一 | ✅ `id`/`file_size` 在 asyncpg 下均为 int，与门面 number 一致 |
+| **时间戳 `to_char(... 'US')` vs Python `isoformat()`** | ❌ **不一致（仅当微秒为 0 时）** |
+
+**缺陷细节**：`to_char(ts, 'YYYY-MM-DD"T"HH24:MI:SS.US"+00:00"')` 恒输出 6 位小数，例如
+`2026-10-24T03:04:05.000000+00:00`；而 Python `datetime.isoformat()` 在微秒为 0 时**省略**小数部分 ⇒
+`2026-10-24T03:04:05+00:00`。真实数据里「整秒」时间戳并不罕见（迁移/批量写入、`date_trunc` 产物），
+所以这是**真实 parity 缺口**，只是 golden fixture 恰好没覆盖零微秒样本。
+
+**修法（下一轮，属 render-data 切片）**：门面 SQL 改成
+```sql
+CASE WHEN to_char(ts,'US') = '000000'
+     THEN to_char(ts,'YYYY-MM-DD"T"HH24:MI:SS')
+     ELSE to_char(ts,'YYYY-MM-DD"T"HH24:MI:SS.US')
+END || '+00:00'
+```
+并在 fixture 里加入**零微秒样本**（生成器需能造这种行）+ 一条直接断言；改完重新生成 fixture（两侧共享）。
+
+**当前状态**：render-data 切片**未放量**（白名单不含 `trade-docs.render-data`），代码已在库里但开关关闭 ⇒ 缺陷目前**不影响生产**。
 ## 9. 未完成清单（交后续轮次）
 
 | # | 事项 | 说明 / 前置 |

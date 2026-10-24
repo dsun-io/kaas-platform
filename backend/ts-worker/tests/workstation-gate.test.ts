@@ -88,6 +88,8 @@ describe("路径映射（与 kaas_common 真源逐条一致）", () => {
     // 内部 RPC 前缀必须覆盖整族（P2 灰度踩坑点）
     expect(workstationOfPath("/api/v1/internal/engine/quote/calculate")).toBe("quotes");
     expect(workstationOfPath("/api/v1/internal/engine/quote/verify")).toBe("quotes");
+    // trade-docs 域的内部 RPC 前缀同样覆盖整族（render-data 等）
+    expect(workstationOfPath("/api/v1/internal/engine/trade-docs/render-data")).toBe("trade-docs");
     expect(workstationOfPath("/api/v1/fx-rates")).toBe("trade-docs");
   });
 

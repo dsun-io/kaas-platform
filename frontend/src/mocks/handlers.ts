@@ -6796,7 +6796,15 @@ export const handlers = [
     const index = externalDocsStore.findIndex(
       (d) => d.id === Number(params.docId),
     );
-    if (index >= 0) externalDocsStore.splice(index, 1);
+    // 2026-10-24：与内核对齐 —— 不存在 / 越权 / 跨租户统一 404（不泄露存在性）；
+    // 修前是无条件 204（那也是越权面：任何人都能"删"到 204，看不出行是否真被删）。
+    if (index < 0) {
+      return HttpResponse.json(
+        { detail: { error: "not_found" } },
+        { status: 404 },
+      );
+    }
+    externalDocsStore.splice(index, 1);
     return new HttpResponse(null, { status: 204 });
   }),
 
