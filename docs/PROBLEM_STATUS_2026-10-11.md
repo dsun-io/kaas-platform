@@ -165,6 +165,16 @@
 >
 >
 >
+>
+> **第十二批（2026-10-24 22:20）· E1/E3 对照实验（工单判定性证据）**
+> - **最小 probe Worker 已部署并跑通**（`scripts/pyinit-probe/`，工单附件 A4）：同 `compatibility_date=2026-09-18` / flags `[python_workers]`、**零业务依赖**、无 routes/cron、仅 workers_dev；
+>   部署统计：上传 **111.78 KiB**、**Worker Startup Time 465 ms**（vs 生产内核 `python_modules` 11.79 MiB / 606 文件、冷启动 2.6–3.9s）；
+> - **实测结果**：串行 8/8 成功、**并发 20 并发 20/20 成功（1.4s）**，**未复现** `initPyInstance` 类异常；
+> - **结论（已写进工单，且刻意保守）**：不能断言「任意 Python Worker 必现」；触发条件更可能与 **init 重量/依赖面**相关 ⇒ 下一步是 **E2 依赖二分**；
+> - **方法学边界主动披露**：warmup 已预热，严格冷启动需等 isolate 回收；会补「长空闲后首请求」对照；
+> - 踩坑记录（已入库，省得重踩）：pywrangler 要求 uv ≥0.13.4；本机 CJK 路径下 pyodide-venv 创建失败；`wrangler` 原生 Python 构建需 `python_modules` 含 `workers` SDK；handler 必须是 `WorkerEntrypoint.Default.fetch(self, request)` 否则报 **10068 no registered event handlers**；workers.dev 按 UA 拦机器人（**Error 1010**）⇒ 压测脚本固定带 UA。
+> - 工单中英双版均已回填 E1/E3 结果与「不复现」的诚实表述；probe worker 保留在线（CF 可用它复现），删除方式见 README。
+>
 > **第十一批（2026-10-24 22:05）· P3 收尾门禁 + 工单 v2**
 > - **内核 DB 使用门禁上线**（`scripts/check-kernel-db-allowlist.py` + `kernel-db-baseline.json` + `kernel_db_allowlist.txt`，接入 backend-test CI）：
 >   基线 23 模块 / **340 处 DB 调用**；规则 = 清单外不得新增连库端点、清单内**只减不增**；已做**阳性对照**（把基线改小 ⇒ 门禁变红 ⇒ 恢复 ⇒ 通过），CI 日志已确认 `PASS: 内核 DB 使用未回潮`。
