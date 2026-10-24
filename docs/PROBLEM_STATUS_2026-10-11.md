@@ -166,6 +166,17 @@
 >
 >
 >
+>
+> **第十三批（2026-10-24 22:25）· E2 依赖二分（工单 A6）**
+> - 同一 probe 源码逐档加重依赖后重新部署压测：
+>   V1（仅 workers SDK）**112.85 KiB / 427ms** → V2（+fastapi/pydantic）**10.1 MiB / 620ms** → V3（+asyncpg/pyjwt/bcrypt/multipart）**12.4 MiB / 943ms**；
+>   **V3 并发 20 仍 20/20 成功、零异常**（包体已超生产内核 11.79 MiB）；
+> - ⚠️ **自我限制（已写进工单）**：V3 部署后 worker 内 `loaded` 仅 `jwt`/`multipart`，fastapi/pydantic/asyncpg/bcrypt 全部 `missing` ——
+>   本地 `uv pip install --target` 装的是本机 wheel，Pyodide 加载不了；真正的「重 pure-python 依赖面」对照还没做到 ⇒ **E2 不能结案**；
+> - 下一步 **E2b**：把真实内核源码克隆部署（`scripts/pyinit-probe-kernel/`，CI 同步源码 + pywrangler 装 pyodide 依赖）压 `/health`；
+>   **当前阻塞**：CI 的 `CLOUDFLARE_API_TOKEN` 无「创建新 worker」权限（本地 DSH-Admin 可部署 probe；CI 在 API 层失败且无 Python 错误；CI 能部署 `kaas`/`kaas-edge` 因其已存在）。
+> - 新增可复现资产：`scripts/pyinit-probe/`（A4 + 压测脚本）、`scripts/pyinit-probe-kernel/`（E2b 脚手架）、`.github/workflows/pyinit-probe.yml`（手动触发，target=probe|kernelclone）。
+>
 > **第十二批（2026-10-24 22:20）· E1/E3 对照实验（工单判定性证据）**
 > - **最小 probe Worker 已部署并跑通**（`scripts/pyinit-probe/`，工单附件 A4）：同 `compatibility_date=2026-09-18` / flags `[python_workers]`、**零业务依赖**、无 routes/cron、仅 workers_dev；
 >   部署统计：上传 **111.78 KiB**、**Worker Startup Time 465 ms**（vs 生产内核 `python_modules` 11.79 MiB / 606 文件、冷启动 2.6–3.9s）；
