@@ -4,7 +4,7 @@
 
 本文件锁三件事（**同一输入下改造前后响应 JSON 必须逐字段一致**）：
 1. 旧路径（内核自取数）响应 == fixture.response，且它实际执行的 SQL / 绑定参数 == fixture.sql/params；
-2. 新路径（POST /internal/engine/quote/calculate，门面供 datasets）响应 == fixture.response；
+2. 新路径（POST /api/v1/internal/engine/quote/calculate，门面供 datasets）响应 == fixture.response；
    并且**零 DB 调用**（把 db.fetch 换成炸弹，仍然返回同一结果）；
 3. 旧/新两条路径在错误分支上同样一致（422 pydantic / 400 engine_error / 409 spec_upstream_changed）。
 

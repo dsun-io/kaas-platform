@@ -82,7 +82,7 @@ def _error_envelope(exc: HTTPException) -> dict:
     return {"status": exc.status_code, "body": {"detail": exc.detail}}
 
 
-@app.post("/internal/engine/quote/calculate")
+@app.post("/api/v1/internal/engine/quote/calculate")
 async def engine_quote_calculate(request: Request, body: dict):
     """算价 RPC：payload.request + payload.datasets → 与 /export-quote/calculate 同结果。
 

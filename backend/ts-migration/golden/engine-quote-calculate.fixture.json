@@ -4,7 +4,7 @@
     "method": "POST",
     "path": "/api/v1/export-quote/calculate"
   },
-  "rpc": "/internal/engine/quote/calculate",
+  "rpc": "/api/v1/internal/engine/quote/calculate",
   "request": {
     "product_key": "field_fence",
     "fx_rate": 7.1,

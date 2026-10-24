@@ -34,7 +34,7 @@ import { requireUser, type CurrentUser } from "../session";
 
 const DEFAULT_TENANT = "default";
 /** 内核 RPC 路径（与 backend/worker/src/engine_api.py 的注册路径逐字一致）。 */
-export const ENGINE_QUOTE_CALCULATE_RPC = "/internal/engine/quote/calculate";
+export const ENGINE_QUOTE_CALCULATE_RPC = "/api/v1/internal/engine/quote/calculate";
 /** 与 Python quote_api._PRICING_SEPARATOR 一致：定价数据 spec_hash 的「产品前缀」分隔符。 */
 const PRICING_SEPARATOR = ":";
 

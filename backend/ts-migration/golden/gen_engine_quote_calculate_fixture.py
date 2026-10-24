@@ -133,7 +133,7 @@ fixture = {
         "TS 断言门面发出的 SQL==sql、发给内核的 datasets==datasets、回放==response。"
     ),
     "endpoint": {"method": "POST", "path": "/api/v1/export-quote/calculate"},
-    "rpc": "/internal/engine/quote/calculate",
+    "rpc": "/api/v1/internal/engine/quote/calculate",
     "request": REQUEST,
     "actor": {k: ACTOR[k] for k in ("id", "account_type", "role", "team_id", "is_tenant_admin")},
     "datasets": {"tenant_products": TENANT_ROWS, "customer_cost_items": COST_ROWS},
