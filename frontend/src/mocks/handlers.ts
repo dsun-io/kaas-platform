@@ -5131,21 +5131,178 @@ export const handlers = [
     });
   }),
 
+  // 客户 × 产品上次使用的英文名（A 项 2026-10-24）← hooks/use-product-name-preference.ts
+  //
+  // 口径同内核 quote_api.py:quote_product_name_preference：
+  //  · customer_id 缺失/非整数 ⇒ 422（参数校验先于业务查询）；
+  //  · product_key 空 ⇒ 422 PRODUCT_KEY_REQUIRED；
+  //  · 未知/当前团队不可见产品 ⇒ 404 PRODUCT_NOT_FOUND；
+  //  · 客户不存在 ⇒ 404 CUSTOMER_NOT_FOUND（不泄露存在性）；
+  //  · 取该客户**最近一条**相关行项（created_at 最大、同日取行项 id 大）的 product_name：
+  //    有 product_key 的行按身份匹配；旧行（无 product_key）按产品当前全部英文名 + 中文名
+  //    大小写不敏感回落；无历史 ⇒ { product_name: null }（前端回落默认名，不报错）。
+  http.get("/api/v1/quotes/product-name-preference", ({ request }) => {
+    const url = new URL(request.url);
+    const rawCustomerId = url.searchParams.get("customer_id");
+    const customerId = Number(rawCustomerId);
+    if (
+      rawCustomerId === null ||
+      rawCustomerId === "" ||
+      !Number.isInteger(customerId)
+    ) {
+      return HttpResponse.json(
+        {
+          detail: [
+            {
+              type: "missing",
+              loc: ["query", "customer_id"],
+              msg: "Field required",
+            },
+          ],
+        },
+        { status: 422 },
+      );
+    }
+    const productKey = (url.searchParams.get("product_key") ?? "").trim();
+    if (!productKey) {
+      // 与内核同形：空 product_key 是入参错误（422），不是「产品不存在」（404）。
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "validation",
+            code: "PRODUCT_KEY_REQUIRED",
+            field: "product_key",
+            detail: "product_key 不能为空",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    const product = MOCK_EXPORT_PRODUCTS.find((p) => p.key === productKey);
+    if (!product) {
+      return HttpResponse.json(
+        {
+          detail: {
+            error: "not_found",
+            code: "PRODUCT_NOT_FOUND",
+            message: `产品不存在或当前团队不可见: ${productKey}`,
+          },
+        },
+        { status: 404 },
+      );
+    }
+    if (!customersStore.some((c) => c.id === customerId)) {
+      return HttpResponse.json(
+        { detail: { error: "not_found", code: "CUSTOMER_NOT_FOUND" } },
+        { status: 404 },
+      );
+    }
+
+    // 产品当前全部名字（团队资料优先，回落注册表默认名）+ 中文名（旧行可能存中文）
+    const registered = nameEnListFromInfo(
+      productProfilesStore.get(productKey) ?? {},
+    );
+    const currentNames =
+      registered.length > 0
+        ? registered
+        : product.name_en
+          ? [product.name_en]
+          : [];
+    const foldedNames = new Set(
+      [...currentNames, product.name]
+        .map((name) =>
+          String(name ?? "")
+            .trim()
+            .toLowerCase(),
+        )
+        .filter(Boolean),
+    );
+
+    let best: { createdAt: string; itemId: number; name: string } | null = null;
+    for (const quote of quotesStore) {
+      if (quote.customer_id !== customerId) continue;
+      for (const item of quote.items) {
+        const name = (item.product_name ?? "").trim();
+        if (!name) continue;
+        const snapKey = item.spec_snapshot?.product_key;
+        const rowKey = typeof snapKey === "string" ? snapKey.trim() : "";
+        const matched = rowKey
+          ? rowKey === productKey
+          : foldedNames.has(name.toLowerCase());
+        if (!matched) continue;
+        if (
+          !best ||
+          quote.created_at > best.createdAt ||
+          (quote.created_at === best.createdAt && item.id > best.itemId)
+        ) {
+          best = { createdAt: quote.created_at, itemId: item.id, name };
+        }
+      }
+    }
+    return HttpResponse.json({ product_name: best ? best.name : null });
+  }),
+
   // 历史参考价：从报价单 store 真实聚合（同客户 + 同产品行项的单价统计）
+  //
+  // A 项（2026-10-24）：产品身份按行项 spec_snapshot.product_key 匹配 —— 同一产品换英文名
+  // 后历史价仍命中；旧行（无 product_key）回落到该产品**用过的任何英文名**（本单所选名 +
+  // 有 product_key 的历史行的 product_name）。口径同内核 quote_api.py:quote_reference_price。
+  // 只传 product_name 的旧调用方行为不变（精确匹配）。
   http.get("/api/v1/quotes/reference-price", ({ request }) => {
     const url = new URL(request.url);
     const customerId = Number(url.searchParams.get("customer_id"));
     const productName = url.searchParams.get("product_name") ?? "";
+    const productKey = (url.searchParams.get("product_key") ?? "").trim();
     const days = Math.min(
       Math.max(Number(url.searchParams.get("days")) || 180, 1),
       730,
     );
+
+    // 该产品身份下**出现过的全部名字**（本单所选名 + 当前配置名 + 历史行的 product_name）
+    const knownNames = new Set<string>();
+    const addName = (name: unknown) => {
+      const folded = String(name ?? "")
+        .trim()
+        .toLowerCase();
+      if (folded) knownNames.add(folded);
+    };
+    addName(productName);
+    if (productKey) {
+      const product = MOCK_EXPORT_PRODUCTS.find((p) => p.key === productKey);
+      const registered = nameEnListFromInfo(
+        productProfilesStore.get(productKey) ?? {},
+      );
+      const current =
+        registered.length > 0
+          ? registered
+          : product?.name_en
+            ? [product.name_en]
+            : [];
+      for (const name of current) addName(name);
+      addName(product?.name);
+      for (const q of quotesStore) {
+        for (const it of q.items) {
+          if (it.spec_snapshot?.product_key === productKey) {
+            addName(it.product_name);
+          }
+        }
+      }
+    }
+
     const prices: number[] = [];
     let lastAt: string | null = null;
     for (const q of quotesStore) {
       if (q.customer_id !== customerId) continue;
       for (const it of q.items) {
-        if (it.product_name !== productName || it.unit_price == null) continue;
+        const rowKey =
+          typeof it.spec_snapshot?.product_key === "string"
+            ? it.spec_snapshot.product_key
+            : "";
+        const matched = productKey
+          ? rowKey === productKey ||
+            (!rowKey && knownNames.has(it.product_name.trim().toLowerCase()))
+          : it.product_name === productName;
+        if (!matched || it.unit_price == null) continue;
         prices.push(it.unit_price);
         if (!lastAt || q.created_at > lastAt) lastAt = q.created_at;
       }

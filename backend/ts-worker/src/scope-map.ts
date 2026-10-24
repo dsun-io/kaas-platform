@@ -75,6 +75,11 @@ readWrite("/api/v1/quotes", "quotes:read", "quotes:calc");
 readWrite("/api/v1/quotations", "quotes:read", "quotes:calc");
 
 // ③ 单证 / 文件
+// **预览是只读语义**：POST /trade-docs/preview-render-data 只装配渲染数据、**不落库**，
+// 必须映射 trade_docs:read 而不是 write。按 method 一刀切（readWrite 的 POST→write）
+// 会让只读 token 调预览被 403 —— 规则表顺序即优先级，故这条**具体前缀必须排在
+// trade-docs 泛前缀之前**。其余 POST /trade-docs*（建单/签发等）仍是 write。
+rule("POST", "/api/v1/trade-docs/preview-render-data*", "trade_docs:read");
 readWrite("/api/v1/trade-docs", "trade_docs:read", "trade_docs:write");
 readWrite("/api/v1/files", "files:read", "files:write");
 readWrite("/api/v1/file-objects", "files:read", "files:write");

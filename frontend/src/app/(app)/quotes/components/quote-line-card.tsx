@@ -10,7 +10,7 @@
  * 例外是**加工利润**：不同产品的供货厂与竞争情况不同，利润常常不一样，
  * 所以它支持逐行覆盖（留空 = 继承整单默认）。这是唯一一个"整单默认 + 行内覆盖"的参数。
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AlertTriangle, ChevronDown, Loader2, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -48,10 +48,23 @@ import {
   type BuiltLineItem,
 } from "../lib/line-to-item";
 import { useReferencePrice } from "../hooks/use-reference-price";
+import { useProductNamePreference } from "../hooks/use-product-name-preference";
+import {
+  dedupeNameOptions,
+  resolveDefaultNameEn,
+} from "../lib/product-name-selection";
 /** 工作台里的一行（新增/删除/编辑都作用在它身上）。 */
 export interface LineDraft {
   id: string;
   productKey: string;
+  /**
+   * 本单使用的英文名（A 项 2026-10-24）：同一产品可配置多个英文名，报价行按客户选
+   * 其中一个，随「报价行 → 订单 → 单证」快照走。`""` = **按默认解析** —— 客户上次
+   * 给同一产品用过的英文名优先，没有历史则用产品默认英文名（见行内解析 effect）。
+   */
+  nameEn: string;
+  /** 是否由用户**手动**选过英文名：`true` ⇒ 换客户不清空、默认解析不再覆盖 */
+  nameEnManual: boolean;
   spec: SpecRow;
   /** 用户按件改写的值（**界面单位**的字符串；空 = 跟随规格默认） */
   pieceOverrides: Record<string, string>;
@@ -84,6 +97,8 @@ export function newLineDraft(productKey = ""): LineDraft {
   return {
     id: Math.random().toString(36).slice(2, 10),
     productKey,
+    nameEn: "",
+    nameEnManual: false,
     spec: {},
     pieceOverrides: {},
     pieces: "",
@@ -150,15 +165,51 @@ export function QuoteLineCard({
     line.productKey || products.data?.products[0]?.key || "";
   const formulas = useProductFormulas(effectiveProduct || null, true);
   const calc = useCalcQuote();
+
+  // 产品**全部英文名**（默认名在前、去空/大小写去重）：只有 >1 个才显示下拉。
+  // 来源优先 products 列表（含 `name_en_aliases`）；列表还没加载/没有该产品时退回
+  // formulas 里的默认英文名 —— 这时只有一个选项，不渲染下拉（避免噪音）。
+  const productFromList = (products.data?.products ?? []).find(
+    (p) => p.key === effectiveProduct,
+  );
+  const primaryNameEn =
+    productFromList?.name_en || formulas.data?.name_en || "";
+  const nameAliases = productFromList?.name_en_aliases;
+  const nameOptions = useMemo(
+    () => dedupeNameOptions(primaryNameEn, nameAliases),
+    [primaryNameEn, nameAliases],
+  );
+
+  // 客户 × 产品上次用过的英文名（默认解析的来源；查询未结束前不写默认，见下方 effect）。
+  const preference = useProductNamePreference(
+    customerId,
+    effectiveProduct || null,
+  );
+
+  /**
+   * 当前生效英文名（标题/摘要展示）：已解析/手动选的名 → 产品默认名 → formulas 里的
+   * 默认名 → 中文名。`line.nameEn` 若已不在当前选项里（产品英文名被改过）不算数，
+   * 否则下拉会显示一个列表里没有的值。
+   */
+  const effectiveNameEn =
+    (line.nameEn && nameOptions.includes(line.nameEn)
+      ? line.nameEn
+      : nameOptions[0]) ||
+    formulas.data?.name_en ||
+    formulas.data?.name ||
+    "";
+
   // 历史参考价（实时报价的回落参考）：同客户+同产品近 N 天已落库报价区间。
   // product_name 用「英文名优先」——与保存进行项的口径（buildLineItem）一致，
-  // 否则参考价聚合键与落库键对不上，永远查不到。
+  // 否则参考价聚合键与落库键对不上，永远查不到；product_key 是产品身份，
+  // 换英文名后历史价仍命中同一产品（后端按 `spec_snapshot.product_key` 聚合）。
   const refProductName = formulas.data
     ? formulas.data.name_en || formulas.data.name
     : null;
   const reference = useReferencePrice(
     customerId,
     effectiveProduct && refProductName ? refProductName : null,
+    effectiveProduct || null,
   );
   // 产品资料（租户可编辑）：材质**只是选项**，来自 `info.material_options`（产品资料里维护）。
   // 未加载 / 没有选项时返回空数组 → 界面不渲染材质下拉（不塞"暂无"占位）。
@@ -175,9 +226,17 @@ export function QuoteLineCard({
 
   // 换产品 → 规格空间变了 → 回到"未选择"。
   // 不预置第一组取值：预置会让人不填就报价，而规格决定成本/重量/体积。
+  // 英文名同理回到"按默认解析"：选项是**按产品**配置的，换产品后上一条的选择没有意义。
   useEffect(() => {
     if (formulas.data)
-      onChange({ spec: {}, result: null, built: null, error: null });
+      onChange({
+        spec: {},
+        result: null,
+        built: null,
+        error: null,
+        nameEn: "",
+        nameEnManual: false,
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formulas.data]);
 
@@ -186,6 +245,53 @@ export function QuoteLineCard({
     onChange({ pieceOverrides: {} });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [line.spec]);
+
+  /** 已有算价结果时只换 product_name（单价/金额与名字无关 ⇒ **不重算价格**）。 */
+  const patchBuiltName = (name: string): Partial<LineDraft> =>
+    line.built
+      ? {
+          built: {
+            ...line.built,
+            item: { ...line.built.item, product_name: name },
+          },
+        }
+      : {};
+
+  // 默认英文名解析（A 项 2026-10-24）：
+  //  ① 手动选过（nameEnManual）⇒ 不覆盖；
+  //  ② 客户+产品的偏好查询**未结束** ⇒ 先不写（否则默认名会先闪一下再被历史名覆盖）；
+  //  ③ 偏好名必须命中本产品英文名才采用，否则用产品默认英文名（resolveDefaultNameEn）；
+  //  ④ 已算好本行时同步 `built.item.product_name`，价格不重算。
+  const preferenceSettled = preference.isFetched || preference.isError;
+  useEffect(() => {
+    if (line.nameEnManual) return;
+    if (nameOptions.length === 0) return;
+    if (customerId && effectiveProduct && !preferenceSettled) return;
+    const next = resolveDefaultNameEn(
+      nameOptions,
+      preference.data?.product_name ?? null,
+    );
+    if (!next || next === line.nameEn) return;
+    onChange({ nameEn: next, ...patchBuiltName(next) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    customerId,
+    effectiveProduct,
+    preferenceSettled,
+    preference.data?.product_name,
+    line.nameEn,
+    line.nameEnManual,
+    line.built,
+    nameOptions,
+  ]);
+
+  /** 用户手选英文名：本单固定用这个名（换客户也不清），并同步已算好行的 product_name。 */
+  const onPickNameEn = (value: string) =>
+    onChange({
+      nameEn: value,
+      nameEnManual: true,
+      ...patchBuiltName(value),
+    });
 
   const groups = [
     ...(formulas.data?.space.axes ?? []),
@@ -428,6 +534,8 @@ export function QuoteLineCard({
           : null,
         // 材质不算价，只随行落进 spec_snapshot（空值不写，见 buildLineItem）
         material: line.material ?? "",
+        // 本单选中的英文名 → 行项 product_name（空 = 回落产品默认英文名）
+        nameEn: line.nameEn,
       });
       onChange({
         result,
@@ -478,6 +586,9 @@ export function QuoteLineCard({
                   costOverride: "",
                   // 材质选项是**按产品**给的，换产品必须清空，否则会留上一款的材质
                   material: "",
+                  // 英文名同样是按产品配置的：换产品回到"按默认解析"
+                  nameEn: "",
+                  nameEnManual: false,
                 })
               }
               disabled={products.isLoading}
@@ -494,6 +605,15 @@ export function QuoteLineCard({
                 </option>
               ))}
             </select>
+            {/* 本单使用的英文名（title/摘要都要能一眼看到，见下方产品信息段的同名下拉） */}
+            {effectiveNameEn ? (
+              <span
+                data-testid="line-name-en"
+                className="ml-2 text-xs font-normal text-muted-foreground"
+              >
+                {effectiveNameEn}
+              </span>
+            ) : null}
             {line.pieces && Number(line.pieces) > 0 && (
               <span className="ml-2 text-xs font-normal text-muted-foreground">
                 {line.pieces} 卷
@@ -535,6 +655,7 @@ export function QuoteLineCard({
                 {Object.values(line.spec).filter(Boolean).join(" × ") || "—"}
               </span>
               {line.material ? <span>材质 {line.material}</span> : null}
+              {effectiveNameEn ? <span>英文名 {effectiveNameEn}</span> : null}
               <span>包装 {packagingLabel(effectivePackaging)}</span>
             </div>
             <div
@@ -667,6 +788,34 @@ export function QuoteLineCard({
                   </select>
                   <p className="text-[11px] text-muted-foreground">
                     产品资料里的材质选项，只随行记录、不参与算价
+                  </p>
+                </div>
+              )}
+
+              {/* 客户英文名（本单使用）：同一产品可配置多个英文名，按客户选一个。
+                  仅 >1 个时才出现（只有一个名时不制造噪音）；默认取该客户上次用的名。 */}
+              {nameOptions.length > 1 && (
+                <div className="space-y-1.5">
+                  <Label
+                    className="text-xs"
+                    htmlFor={`line-${line.id}-name-en`}
+                  >
+                    客户英文名（本单使用）
+                  </Label>
+                  <select
+                    id={`line-${line.id}-name-en`}
+                    value={effectiveNameEn}
+                    onChange={(e) => onPickNameEn(e.target.value)}
+                    className="h-8 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {nameOptions.map((name, i) => (
+                      <option key={name} value={name}>
+                        {i === 0 ? `${name}（默认）` : name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-muted-foreground">
+                    默认沿用该客户上次给同一产品用的英文名；没有历史时用默认英文名
                   </p>
                 </div>
               )}

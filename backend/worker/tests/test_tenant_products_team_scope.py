@@ -265,9 +265,12 @@ def test_cross_tenant_still_404_before_team_check():
 # P1-1 · /workstation-products 订阅门：团队级（与 B3 同源）+ 租户级兼容
 # ═════════════════════════════════════════════════════════════════════════════
 
+#: 代码注册表 3 个系统产品（system 在前、按 key 升序）+ 1 条租户行覆盖 field_fence。
+#: 2026-10-24（D 项）：`_matrix_rows` = 注册表产品 ∪ 本租户 active 租户行；
+#: 生产 `tenant_products` 没有 is_system=true 行，旧实现会让空表团队 GET 回 []。
 def _workstation_get_rows():
     return [
-        [{"product_key": "field_fence", "product_name": "牛栏网", "is_system": True}],
+        [{"product_key": "field_fence", "product_name": "牛栏网", "is_system": False}],
         [{"product_key": "field_fence", "is_enabled": False}],
     ]
 
@@ -278,14 +281,60 @@ def test_workstation_products_unlocked_by_team_subscription():
     with _patched_products(conn, TEAM1_OWNER):
         resp = client.get("/api/v1/workstation-products", params={"workstation": "quote"})
     assert resp.status_code == 200
-    assert resp.json() == [{"product_key": "field_fence", "product_name": "牛栏网",
-                            "is_system": True, "is_enabled": False}]
+    assert resp.json() == [
+        # 注册表系统产品（没有 DB 行也必须出现）
+        {"product_key": "chain_link", "product_name": "勾花网",
+         "is_system": True, "is_enabled": True},
+        {"product_key": "deer_net", "product_name": "鹿网",
+         "is_system": True, "is_enabled": True},
+        # 同 key 租户行覆盖注册表（既有语义：租户自定义产品优先）
+        {"product_key": "field_fence", "product_name": "牛栏网",
+         "is_system": False, "is_enabled": False},
+    ]
     # 门必须**同时**看团队级与（兼容用的）租户级表
     gate_sql = conn.calls[0][1]
     assert "team_subscriptions" in gate_sql
     assert "tenant_subscriptions" in gate_sql
     # 参数：调用者团队、工位编码、默认租户
     assert conn.calls[0][2] == (1, ["full_chain", "quotes"], "default")
+
+
+def test_workstation_products_get_empty_tenant_table_still_returns_registry():
+    """D 项：空 tenant_products 团队 GET 仍返回注册表 3 个产品（旧实现回 []）。"""
+    conn = _FakeConn(fetchval=[1], fetch=[[], []])
+    with _patched_products(conn, TEAM1_OWNER):
+        resp = client.get("/api/v1/workstation-products", params={"workstation": "quote"})
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert [p["product_key"] for p in rows] == ["chain_link", "deer_net", "field_fence"]
+    assert all(p["is_system"] is True for p in rows)
+    assert all(p["is_enabled"] is True for p in rows)   # 未登记 = 默认启用
+
+
+def test_workstation_products_post_registry_product_without_db_row():
+    """D 项：DB 查不到行时回落注册表 → field_fence 开关 201（旧实现 404）。"""
+    conn = _FakeConn(
+        fetchval=[1],
+        fetchrow=[None, {"product_key": "field_fence", "is_enabled": True}],
+    )
+    with _patched_products(conn, TEAM1_OWNER):
+        resp = client.post("/api/v1/workstation-products",
+                           json={"product_key": "field_fence", "is_enabled": True})
+    assert resp.status_code == 201, resp.text
+    assert resp.json() == {"product_key": "field_fence", "product_name": "牛栏网",
+                           "is_system": True, "is_enabled": True}
+    assert "INSERT INTO tenant_workstation_products" in conn.sql_calls()
+
+
+def test_workstation_products_post_unknown_key_still_404_and_no_write():
+    """D 项：真正未知的 key 仍 404，且不写库（不能把 404 整体拆掉）。"""
+    conn = _FakeConn(fetchval=[1], fetchrow=[None])
+    with _patched_products(conn, TEAM1_OWNER):
+        resp = client.post("/api/v1/workstation-products",
+                           json={"product_key": "not_a_product", "is_enabled": True})
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["code"] == "PRODUCT_NOT_FOUND"
+    assert "INSERT INTO tenant_workstation_products" not in conn.sql_calls()
 
 
 def test_workstation_products_upsert_unlocked_by_team_subscription():

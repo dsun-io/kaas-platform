@@ -331,3 +331,52 @@ describe("POST /api/v1/tenant-product-status（系统产品 404 修复，2026-10
     expect(res.status).toBe(401);
   });
 });
+
+describe("GET/POST /api/v1/workstation-products（D 项：门面转内核，2026-10-24）", () => {
+  it("GET 转发内核：门面不再直连 tenant_products / tenant_workstation_products", async () => {
+    const user = userRow();
+    resetDb((query) => (query.includes("FROM users WHERE id") ? [user] : []));
+
+    const res = await request("/api/v1/workstation-products?workstation=quote", user);
+
+    // 响应由内核契约决定（测试 KERNEL 桩返回 200）；关键是门面没有第二份 SQL 判定。
+    expect(res.status).toBe(200);
+    expect(
+      dbState.calls.some((call) => call.query.includes("tenant_products")),
+    ).toBe(false);
+    expect(
+      dbState.calls.some((call) => call.query.includes("tenant_workstation_products")),
+    ).toBe(false);
+  });
+
+  it("POST 转发内核：注册表产品（DB 无行）不再在门面 404，且门面不写库", async () => {
+    const user = userRow();
+    resetDb((query) => (query.includes("FROM users WHERE id") ? [user] : []));
+
+    const res = await request("/api/v1/workstation-products?workstation=quote", user, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ product_key: "field_fence", is_enabled: true }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(
+      dbState.calls.some((call) => call.query.includes("tenant_products")),
+    ).toBe(false);
+    expect(
+      dbState.calls.some((call) => call.query.includes("tenant_workstation_products")),
+    ).toBe(false);
+  });
+
+  it("无 token → 401（GET / POST 鉴权仍在门面）", async () => {
+    resetDb(() => []);
+    expect((await request("/api/v1/workstation-products", null)).status).toBe(401);
+    const post = await request("/api/v1/workstation-products", null, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ product_key: "field_fence", is_enabled: false }),
+    });
+    expect(post.status).toBe(401);
+  });
+});
+

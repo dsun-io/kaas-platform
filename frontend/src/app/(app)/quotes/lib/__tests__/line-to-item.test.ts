@@ -393,3 +393,58 @@ describe("cost_breakdown 内部分解快照（UNCERTAIN #19）", () => {
     expect(item.cost_breakdown).toBeUndefined();
   });
 });
+
+describe("本单使用的英文名（nameEn → item.product_name，A 项 2026-10-24）", () => {
+  const base = {
+    product: product(),
+    formulas: formulas(),
+    spec: { height_m: 1.5 },
+    pieceBase: { roll_len_m: 100 },
+    result: result(),
+    view: "customer" as const,
+    rollLengthM: 100,
+    pieces: 1,
+  };
+
+  it("传了 nameEn → 用它（本单选中的英文名）", () => {
+    expect(
+      buildLineItem({ ...base, nameEn: "Cattle Fence" }).item.product_name,
+    ).toBe("Cattle Fence");
+  });
+
+  it("nameEn 为空/空白/null → 回落产品默认英文名 name_en", () => {
+    expect(buildLineItem({ ...base, nameEn: "" }).item.product_name).toBe(
+      "Field Fence",
+    );
+    expect(buildLineItem({ ...base, nameEn: "   " }).item.product_name).toBe(
+      "Field Fence",
+    );
+    expect(buildLineItem({ ...base, nameEn: null }).item.product_name).toBe(
+      "Field Fence",
+    );
+  });
+
+  it("产品没有 name_en → 再回落中文名（旧产品/旧后端）", () => {
+    const noEn = product();
+    noEn.name_en = "";
+    expect(
+      buildLineItem({ ...base, product: noEn, nameEn: "" }).item.product_name,
+    ).toBe("牛栏网");
+    // 显式给了本单英文名时，仍以选择为准
+    expect(
+      buildLineItem({ ...base, product: noEn, nameEn: "Cattle Fence" }).item
+        .product_name,
+    ).toBe("Cattle Fence");
+  });
+
+  it("名字只影响 product_name：单价/金额/规格快照不变", () => {
+    const a = buildLineItem({ ...base, pieces: 3, nameEn: "Cattle Fence" });
+    const b = buildLineItem({ ...base, pieces: 3, nameEn: "Field Fence" });
+    expect(a.item.unit_price).toBe(b.item.unit_price);
+    expect(a.item.line_amount).toBe(b.item.line_amount);
+    expect(a.item.spec_snapshot).toEqual(b.item.spec_snapshot);
+    expect((a.item.spec_snapshot as Record<string, unknown>).product_key).toBe(
+      "field_fence",
+    );
+  });
+});

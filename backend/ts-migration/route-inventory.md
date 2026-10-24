@@ -9,10 +9,10 @@
 
 | 指标 | 数量 | 期望 | 结论 |
 |---|---|---|---|
-| APIRoute 业务路由 | 278 | — | — |
+| APIRoute 业务路由 | 280 | — | — |
 | FastAPI 内置（openapi/docs/redoc） | 4 | — | — |
-| **app.routes 合计** | **282** | **282** | **✅ 一致** |
-| method×path 展开行数 | 278 | — | 仅供参考 |
+| **app.routes 合计** | **284** | **284** | **✅ 一致** |
+| method×path 展开行数 | 280 | — | 仅供参考 |
 
 > 核对说明：计划 §2 Phase 0 登记的 253 = app.routes 全部条目；其中 4 条是 FastAPI 默认
 > 挂载的文档路由（不参与业务迁移；TS 侧 Hono 是否镜像留给 Phase 1 决定）：
@@ -28,9 +28,9 @@
 
 | 域 | 路由数 |
 |---|---|
-| trade-docs | 38 |
+| trade-docs | 39 |
+| quotes | 38 |
 | intel | 37 |
-| quotes | 37 |
 | workstations | 35 |
 | orders | 24 |
 | customers | 21 |
@@ -100,7 +100,7 @@
 | POST | `/api/v1/imports/orders/preview` | `preview_import_orders` | :338 | `_get_current_user` | ✅ | — | misc |
 | POST | `/api/v1/imports/orders` | `create_import_orders` | :368 | `_get_current_user` | ✅ | — | misc |
 
-### `worker/src/main.py`（82 条）
+### `worker/src/main.py`（83 条）
 
 | Method | Path | Endpoint | 行号 | Depends | 登录态 | 平台运营 | 域 |
 |---|---|---|---|---|---|---|---|
@@ -180,35 +180,37 @@
 | POST | `/api/v1/orders/{order_id}/receipts` | `create_order_receipt` | :5043 | `_get_current_user` | ✅ | — | orders |
 | GET | `/api/v1/receivables` | `list_receivables` | :5112 | `_get_current_user` | ✅ | — | orders |
 | GET | `/api/v1/trade-docs` | `list_trade_docs` | :5340 | `_get_current_user` | ✅ | — | trade-docs |
-| POST | `/api/v1/trade-docs` | `create_trade_doc` | :5503 | `_get_current_user` | ✅ | — | trade-docs |
-| GET | `/api/v1/trade-docs/{doc_id}` | `get_trade_doc` | :5647 | `_get_current_user` | ✅ | — | trade-docs |
-| PATCH | `/api/v1/trade-docs/{doc_id}` | `update_trade_doc` | :5672 | `_get_current_user` | ✅ | — | trade-docs |
-| GET | `/api/v1/tenant/company-profile` | `get_company_profile` | :5886 | `_get_current_user` | ✅ | — | workstations |
-| PUT | `/api/v1/tenant/company-profile` | `put_company_profile` | :5899 | `_get_current_user` | ✅ | — | workstations |
-| GET | `/api/v1/trade-docs/{doc_id}/render-data` | `get_trade_doc_render_data` | :6061 | `_get_current_user` | ✅ | — | trade-docs |
+| POST | `/api/v1/trade-docs` | `create_trade_doc` | :5627 | `_get_current_user` | ✅ | — | trade-docs |
+| GET | `/api/v1/trade-docs/{doc_id}` | `get_trade_doc` | :5718 | `_get_current_user` | ✅ | — | trade-docs |
+| PATCH | `/api/v1/trade-docs/{doc_id}` | `update_trade_doc` | :5743 | `_get_current_user` | ✅ | — | trade-docs |
+| GET | `/api/v1/tenant/company-profile` | `get_company_profile` | :5957 | `_get_current_user` | ✅ | — | workstations |
+| PUT | `/api/v1/tenant/company-profile` | `put_company_profile` | :5970 | `_get_current_user` | ✅ | — | workstations |
+| GET | `/api/v1/trade-docs/{doc_id}/render-data` | `get_trade_doc_render_data` | :6225 | `_get_current_user` | ✅ | — | trade-docs |
+| POST | `/api/v1/trade-docs/preview-render-data` | `preview_trade_doc_render_data` | :6244 | `_get_current_user` | ✅ | — | trade-docs |
 
-### `worker/src/quote_api.py`（18 条）
+### `worker/src/quote_api.py`（19 条）
 
 | Method | Path | Endpoint | 行号 | Depends | 登录态 | 平台运营 | 域 |
 |---|---|---|---|---|---|---|---|
-| GET | `/api/v1/export-quote/products` | `export_quote_products` | :398 | `_get_current_user` | ✅ | — | quotes |
-| GET | `/api/v1/export-quote/products/{product_key}/formulas` | `export_quote_product_formulas` | :429 | `_get_current_user` | ✅ | — | quotes |
-| GET | `/api/v1/export-quote/terms/template` | `export_quote_terms_template` | :462 | `_get_current_user` | ✅ | — | quotes |
-| POST | `/api/v1/export-quote/calculate` | `export_quote_calculate` | :905 | `_get_current_user` | ✅ | — | quotes |
-| POST | `/api/v1/export-quote/calculate-internal` | `export_quote_calculate_internal` | :918 | `_require_internal_admin_dep` | ✅ | — | quotes |
-| POST | `/api/v1/export-quote/verify` | `export_quote_verify` | :928 | `_require_internal_admin_dep` | ✅ | — | quotes |
-| GET | `/api/v1/export-quote/products/{product_key}/import-template` | `export_quote_import_template_info` | :1022 | `_get_current_user` | ✅ | — | quotes |
-| GET | `/api/v1/export-quote/import/order/template-info` | `export_quote_import_order_template_info` | :1070 | `_get_current_user` | ✅ | — | quotes |
-| POST | `/api/v1/export-quote/import/order/preview` | `export_quote_import_order_preview` | :1117 | `_get_current_user` | ✅ | — | quotes |
-| GET | `/api/v1/quotes` | `list_quote_orders` | :1723 | `_get_current_user` | ✅ | — | quotes |
-| POST | `/api/v1/quotes` | `create_quote_order` | :1788 | `_get_current_user` | ✅ | — | quotes |
-| POST | `/api/v1/quotes/batch` | `create_quote_batch` | :1866 | `_get_current_user` | ✅ | — | quotes |
-| GET | `/api/v1/quotes/reference-price` | `quote_reference_price` | :1907 | `_get_current_user` | ✅ | — | quotes |
-| GET | `/api/v1/quotes/cost-reference` | `quote_cost_reference` | :1959 | `_get_current_user` | ✅ | — | quotes |
-| GET | `/api/v1/quotes/{quote_id}` | `get_quote_order` | :2040 | `_get_current_user` | ✅ | — | quotes |
-| PATCH | `/api/v1/quotes/{quote_id}` | `update_quote_order` | :2066 | `_get_current_user` | ✅ | — | quotes |
-| PUT | `/api/v1/quotes/{quote_id}/items` | `replace_quote_items` | :2199 | `_get_current_user` | ✅ | — | quotes |
-| GET | `/api/v1/export-quote/products/{product_key}/spec` | `export_quote_product_spec` | :2247 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/export-quote/products` | `export_quote_products` | :444 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/export-quote/products/{product_key}/formulas` | `export_quote_product_formulas` | :477 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/export-quote/terms/template` | `export_quote_terms_template` | :510 | `_get_current_user` | ✅ | — | quotes |
+| POST | `/api/v1/export-quote/calculate` | `export_quote_calculate` | :953 | `_get_current_user` | ✅ | — | quotes |
+| POST | `/api/v1/export-quote/calculate-internal` | `export_quote_calculate_internal` | :966 | `_require_internal_admin_dep` | ✅ | — | quotes |
+| POST | `/api/v1/export-quote/verify` | `export_quote_verify` | :976 | `_require_internal_admin_dep` | ✅ | — | quotes |
+| GET | `/api/v1/export-quote/products/{product_key}/import-template` | `export_quote_import_template_info` | :1070 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/export-quote/import/order/template-info` | `export_quote_import_order_template_info` | :1118 | `_get_current_user` | ✅ | — | quotes |
+| POST | `/api/v1/export-quote/import/order/preview` | `export_quote_import_order_preview` | :1165 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/quotes` | `list_quote_orders` | :1771 | `_get_current_user` | ✅ | — | quotes |
+| POST | `/api/v1/quotes` | `create_quote_order` | :1836 | `_get_current_user` | ✅ | — | quotes |
+| POST | `/api/v1/quotes/batch` | `create_quote_batch` | :1914 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/quotes/product-name-preference` | `quote_product_name_preference` | :1955 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/quotes/reference-price` | `quote_reference_price` | :2026 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/quotes/cost-reference` | `quote_cost_reference` | :2121 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/quotes/{quote_id}` | `get_quote_order` | :2202 | `_get_current_user` | ✅ | — | quotes |
+| PATCH | `/api/v1/quotes/{quote_id}` | `update_quote_order` | :2228 | `_get_current_user` | ✅ | — | quotes |
+| PUT | `/api/v1/quotes/{quote_id}/items` | `replace_quote_items` | :2361 | `_get_current_user` | ✅ | — | quotes |
+| GET | `/api/v1/export-quote/products/{product_key}/spec` | `export_quote_product_spec` | :2409 | `_get_current_user` | ✅ | — | quotes |
 
 ### `worker/src/tax_archives.py`（8 条）
 
@@ -336,28 +338,28 @@
 
 | Method | Path | Endpoint | 行号 | Depends | 登录态 | 平台运营 | 域 |
 |---|---|---|---|---|---|---|---|
-| GET | `/api/v1/products` | `list_products` | :378 | `_get_current_user` | ✅ | — | workstations |
-| GET | `/api/v1/products/{product_key}/profile` | `get_profile` | :415 | `_get_current_user` | ✅ | — | workstations |
-| PUT | `/api/v1/products/{product_key}/profile` | `put_profile` | :440 | `_get_current_user` | ✅ | — | workstations |
-| GET | `/api/v1/products/{product_key}/media` | `list_media` | :461 | `_get_current_user` | ✅ | — | workstations |
-| POST | `/api/v1/products/{product_key}/media` | `upload_media` | :473 | `_get_current_user` | ✅ | — | workstations |
-| PATCH | `/api/v1/file-objects/{file_id}` | `patch_file` | :496 | `_get_current_user` | ✅ | — | files |
-| DELETE | `/api/v1/file-objects/{file_id}` | `retire_file` | :545 | `_get_current_user` | ✅ | — | files |
-| GET | `/api/v1/file-objects/{file_id}/content` | `get_file_content` | :558 | `_get_current_user` | ✅ | — | files |
-| GET | `/api/v1/file-objects` | `list_files` | :574 | `_get_current_user` | ✅ | — | files |
-| GET | `/api/v1/trade-docs/{doc_id}/files` | `list_doc_files` | :600 | `_get_current_user` | ✅ | — | trade-docs |
-| POST | `/api/v1/trade-docs/{doc_id}/files` | `attach_doc_file` | :620 | `_get_current_user` | ✅ | — | trade-docs |
-| DELETE | `/api/v1/trade-docs/{doc_id}/files/{link_id}` | `detach_doc_file` | :651 | `_get_current_user` | ✅ | — | trade-docs |
-| POST | `/api/v1/trade-docs/{doc_id}/files/upload` | `upload_doc_file` | :663 | `_get_current_user` | ✅ | — | trade-docs |
-| GET | `/api/v1/orders/{order_id}/files` | `list_order_files` | :700 | `_get_current_user` | ✅ | — | orders |
-| POST | `/api/v1/orders/{order_id}/files` | `upload_order_file` | :715 | `_get_current_user` | ✅ | — | orders |
-| POST | `/api/v1/payment-receipts/{receipt_id}/files` | `upload_receipt_file` | :742 | `_get_current_user` | ✅ | — | misc |
-| POST | `/api/v1/trade-docs/{doc_id}/pdf` | `render_doc_pdf` | :946 | `_get_current_user` | ✅ | — | trade-docs |
-| GET | `/api/v1/file-objects/{file_id}/render-content` | `get_file_render_content` | :1072 | — | — | — | files |
-| POST | `/api/v1/file-objects/presign` | `presign_upload` | :1132 | `_get_current_user` | ✅ | — | files |
-| POST | `/api/v1/file-objects/register` | `register_upload` | :1148 | `_get_current_user` | ✅ | — | files |
-| GET | `/api/v1/file-objects/_r2_debug` | `r2_debug` | :1161 | `_get_current_user` | ✅ | — | files |
-| GET | `/api/v1/file-objects/{file_id}/url` | `get_file_url` | :1206 | `_get_current_user` | ✅ | — | files |
+| GET | `/api/v1/products` | `list_products` | :385 | `_get_current_user` | ✅ | — | workstations |
+| GET | `/api/v1/products/{product_key}/profile` | `get_profile` | :438 | `_get_current_user` | ✅ | — | workstations |
+| PUT | `/api/v1/products/{product_key}/profile` | `put_profile` | :466 | `_get_current_user` | ✅ | — | workstations |
+| GET | `/api/v1/products/{product_key}/media` | `list_media` | :503 | `_get_current_user` | ✅ | — | workstations |
+| POST | `/api/v1/products/{product_key}/media` | `upload_media` | :515 | `_get_current_user` | ✅ | — | workstations |
+| PATCH | `/api/v1/file-objects/{file_id}` | `patch_file` | :538 | `_get_current_user` | ✅ | — | files |
+| DELETE | `/api/v1/file-objects/{file_id}` | `retire_file` | :587 | `_get_current_user` | ✅ | — | files |
+| GET | `/api/v1/file-objects/{file_id}/content` | `get_file_content` | :600 | `_get_current_user` | ✅ | — | files |
+| GET | `/api/v1/file-objects` | `list_files` | :616 | `_get_current_user` | ✅ | — | files |
+| GET | `/api/v1/trade-docs/{doc_id}/files` | `list_doc_files` | :642 | `_get_current_user` | ✅ | — | trade-docs |
+| POST | `/api/v1/trade-docs/{doc_id}/files` | `attach_doc_file` | :662 | `_get_current_user` | ✅ | — | trade-docs |
+| DELETE | `/api/v1/trade-docs/{doc_id}/files/{link_id}` | `detach_doc_file` | :693 | `_get_current_user` | ✅ | — | trade-docs |
+| POST | `/api/v1/trade-docs/{doc_id}/files/upload` | `upload_doc_file` | :705 | `_get_current_user` | ✅ | — | trade-docs |
+| GET | `/api/v1/orders/{order_id}/files` | `list_order_files` | :742 | `_get_current_user` | ✅ | — | orders |
+| POST | `/api/v1/orders/{order_id}/files` | `upload_order_file` | :757 | `_get_current_user` | ✅ | — | orders |
+| POST | `/api/v1/payment-receipts/{receipt_id}/files` | `upload_receipt_file` | :784 | `_get_current_user` | ✅ | — | misc |
+| POST | `/api/v1/trade-docs/{doc_id}/pdf` | `render_doc_pdf` | :988 | `_get_current_user` | ✅ | — | trade-docs |
+| GET | `/api/v1/file-objects/{file_id}/render-content` | `get_file_render_content` | :1114 | — | — | — | files |
+| POST | `/api/v1/file-objects/presign` | `presign_upload` | :1174 | `_get_current_user` | ✅ | — | files |
+| POST | `/api/v1/file-objects/register` | `register_upload` | :1190 | `_get_current_user` | ✅ | — | files |
+| GET | `/api/v1/file-objects/_r2_debug` | `r2_debug` | :1203 | `_get_current_user` | ✅ | — | files |
+| GET | `/api/v1/file-objects/{file_id}/url` | `get_file_url` | :1248 | `_get_current_user` | ✅ | — | files |
 
 ### `worker/src/ws_join_applications.py`（6 条）
 
@@ -385,10 +387,10 @@
 | POST | `/api/v1/tenant-products` | `create_tenant_product` | :269 | `_get_current_user` | ✅ | — | workstations |
 | PUT | `/api/v1/tenant-products/{product_id}` | `update_tenant_product` | :306 | `_get_current_user` | ✅ | — | workstations |
 | DELETE | `/api/v1/tenant-products/{product_id}` | `delete_tenant_product` | :374 | `_get_current_user` | ✅ | — | workstations |
-| GET | `/api/v1/workstation-products` | `list_workstation_products` | :426 | `_get_current_user` | ✅ | — | workstations |
-| POST | `/api/v1/workstation-products` | `set_workstation_product` | :458 | `_get_current_user` | ✅ | — | workstations |
-| GET | `/api/v1/tenant-product-status` | `list_tenant_product_status` | :502 | `_get_current_user` | ✅ | — | workstations |
-| POST | `/api/v1/tenant-product-status` | `set_tenant_product_status` | :525 | `_get_current_user` | ✅ | — | workstations |
+| GET | `/api/v1/workstation-products` | `list_workstation_products` | :471 | `_get_current_user` | ✅ | — | workstations |
+| POST | `/api/v1/workstation-products` | `set_workstation_product` | :503 | `_get_current_user` | ✅ | — | workstations |
+| GET | `/api/v1/tenant-product-status` | `list_tenant_product_status` | :567 | `_get_current_user` | ✅ | — | workstations |
+| POST | `/api/v1/tenant-product-status` | `set_tenant_product_status` | :590 | `_get_current_user` | ✅ | — | workstations |
 
 ### `worker/src/ws_quote_ext.py`（1 条）
 

@@ -10,11 +10,12 @@
 
 > 📌 **交接先看 [docs/README.md](docs/README.md)**（当前权威 / 运行手册 / 归档分层）。
 > 本文只保留：架构、环境、命令、门禁、业务规则；历史决策与已完成计划在 `docs/archive/`。
-> **当前状态（2026-10-24 遗留批收口）**：产品×报价重构 R-A/B/C1/C2/D 五批 + 遗留三件套已全部收口——
-> deer_net 列定义修正（derived「宽度(mm)」不再进模板）、单证行项材质并入 Specification 文本、
-> 旧单产品导入 3 端点下线（路由 **282 = 278 业务 + 4 内置**）。生产版本以 CI `deploy` 为准。
-> 门禁（2026-10-24 实测）：worker **1783+12skip** / orchestrator **273** /
-> ts-worker **305（26 文件）** / 前端 **1607（218 文件）** / e2e **28=28+0**；静态断言全 PASS。
+> **当前状态（2026-10-24 第三轮 A/B/C/D 收口）**：按客户选产品英文名（零迁移偏好端点 + 参考价按产品身份）、
+> API token 只读预览映射 `trade_docs:read`、路由清单 **284 = 280 业务（193 直接 + 87 透传）+ 4 内置**、
+> `/workstation-products` 对代码注册表产品不再 404（内核唯一判定 + 门面透传）。生产版本以 CI `deploy` 为准。
+> 门禁（2026-10-24 第三轮实测）：worker **1842+12skip** / orchestrator **273** /
+> ts-worker **323（26 文件）** / 前端 **1678（228 文件）** / e2e **28=28+0**；静态断言全 PASS。
+> 明细见 [docs/HANDOVER_2026-10-24_LIVE_FEEDBACK.md](docs/HANDOVER_2026-10-24_LIVE_FEEDBACK.md) §8。
 
 ---
 
@@ -98,7 +99,7 @@ cd backend/orchestrator
 uv run --extra migrations pytest tests -q
 
 # TS 门面（对外唯一入口）
-cd backend/ts-worker; pnpm typecheck; pnpm test      # 305 测 / 26 文件
+cd backend/ts-worker; pnpm typecheck; pnpm test      # 323 测 / 26 文件
 
 # worker（Python 内核）
 cd backend/worker

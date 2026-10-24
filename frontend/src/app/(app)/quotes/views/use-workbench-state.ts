@@ -30,6 +30,7 @@ import {
 } from "../hooks/use-export-quote-import";
 import type { QuoteView } from "../hooks/use-export-quote-calc";
 import { newLineDraft, type LineDraft } from "../components/quote-line-card";
+import { resetNameOnCustomerChange } from "../lib/product-name-selection";
 import type { DocTypeOption } from "../components/quote-summary-card";
 import {
   useCreateQuoteOrder,
@@ -187,7 +188,20 @@ export function useWorkbenchState(): WorkbenchState {
   // ── 整单共享参数 ─────────────────────────────────────────────────────────
   // 客户是**必选**的：报价是所有单据的唯一根入口，客户空着的话
   // 客户页的「往来记录」树就找不到这张报价，台账也统计不到。
-  const [customer, setCustomer] = useState<CustomerPickerValue | null>(null);
+  const [customer, setCustomerState] = useState<CustomerPickerValue | null>(
+    null,
+  );
+  /**
+   * 换客户（A 项 2026-10-24）：英文名是**按客户**选的 —— 手动选过的行保留（那是业务对
+   * 那个客户的明确选择），其余行清空 nameEn，由行卡按新客户的历史偏好重新解析默认名。
+   *
+   * 只在这里（用户换客户）调用；草稿初始化/恢复不要走这个包装，否则会误清已解析的名。
+   * 签名保持 (next) => void（UI 的 CustomerPicker 只传值）。
+   */
+  const setCustomer = (next: CustomerPickerValue | null) => {
+    setCustomerState(next);
+    setLines((prev) => resetNameOnCustomerChange(prev));
+  };
   const [customerError, setCustomerError] = useState<string | null>(null);
   /** 整单参数默认收起：首屏优先产品行与右侧汇总；点「选择客户/调整参数」展开。 */
   const [paramsOpen, setParamsOpen] = useState(false);

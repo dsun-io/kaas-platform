@@ -346,6 +346,9 @@ QUOTE_ROUTES = {
     ("/api/v1/quotes/batch", "POST"),
     ("/api/v1/quotes/reference-price", "GET"),
     ("/api/v1/quotes/cost-reference", "GET"),
+    # 2026-10-24（A 项）：内核新增「某客户+某产品最近一次报价行英文名」只读端点。
+    # orchestrator 无对应实现（零迁移偏好查询，前端默认值用）；按 worker 实际注册登记。
+    ("/api/v1/quotes/product-name-preference", "GET"),
     ("/api/v1/quotes/{quote_id}", "GET"),
     ("/api/v1/quotes/{quote_id}", "PATCH"),
     ("/api/v1/quotes/{quote_id}/items", "PUT"),
@@ -376,7 +379,8 @@ ORDER_ROUTES = {
 
 
 def test_quote_route_surface_matches_orchestrator():
-    """报价单恰好这 8 条（orchestrator `quote_orders.py` 全量；多/少都是漂移）。"""
+    """报价单恰好这 9 条（orchestrator `quote_orders.py` 8 条 + 内核新增英文名偏好 1 条；
+    多/少都是漂移）。"""
     assert {p for p in _routes() if p[0].startswith("/api/v1/quotes")} == QUOTE_ROUTES
 
 
@@ -690,6 +694,28 @@ def test_create_quote_success_shape_amount_and_ledger_doc():
     assert "ON CONFLICT (doc_no) DO NOTHING" in trade_doc_sql
     # 行项落库走 quote_order_items（两行两条）
     assert sum("INSERT INTO quote_order_items" in s for s in conn.statements()) == 2
+
+
+def test_create_quote_persists_selected_english_name_into_quotation_items():
+    """A 项：用户本单选中的英文名原样落 quote_order_items，并进 quotation 的
+    trade_doc_items（同一事务）；快照里的 product_key 是产品身份，不是名字。"""
+    conn = _create_quote_conn()
+    body = {**_CREATE_QUOTE_BODY, "items": [{
+        "product_name": "Field Fence",
+        "qty": 10, "unit_price": 2.5, "line_amount": 25,
+        "cost_override": 1.2,
+        "spec_snapshot": {"product_key": "field_fence", "specification": "2m x 3m"},
+    }]}
+    with _patched(conn, CUSTOMER):
+        resp = client.post("/api/v1/quotes", json=body)
+    assert resp.status_code == 201, resp.text
+
+    _, item_args = conn.first("INSERT INTO quote_order_items")
+    # (tenant_id, quote_order_id, sku_id, product_name, spec_snapshot, ...)
+    assert item_args[3] == "Field Fence"
+    # 报价单（quotation）行项同源：英文名跟着进单证快照，不改写
+    _, doc_args = conn.first("INSERT INTO trade_doc_items")
+    assert doc_args[2] == "Field Fence"
 
 
 def test_create_quote_empty_items_allowed_total_null():
@@ -1133,6 +1159,32 @@ def test_parity_quote_7_reference_price_days_bounds():
         ).status_code == 422
 
 
+def test_parity_quote_7b_reference_price_by_product_key_matches_alias():
+    """A 项：按 product_key 查参考价时，product_name 是别名也命中同一产品；
+    旧行（无 product_key）按该产品历史用过的任意英文名回落。"""
+    conn = _FakeConn(fetchrow=[{"n": 1, "avg": Decimal("2.5"),
+                                "min": Decimal("2.5"), "max": Decimal("2.5"),
+                                "median": Decimal("2.5"), "last_at": None}])
+    with _patched(conn, CUSTOMER):
+        resp = client.get(
+            "/api/v1/quotes/reference-price?customer_id=3"
+            "&product_name=Field+Fence&product_key=field_fence")
+    assert resp.status_code == 200, resp.text
+    sql, args = conn.first("FROM quote_order_items")
+    assert "i.spec_snapshot->>'product_key' = $3" in sql
+    assert "SELECT j.product_name FROM quote_order_items j" in sql
+    assert "i.product_name = $4" in sql
+    assert args[2] == "field_fence" and args[3] == "Field Fence"
+
+
+def test_reference_price_without_name_or_key_is_422():
+    """A 项：product_name 与 product_key 都不给 ⇒ 422（不默默匹配空名）。"""
+    _as(CUSTOMER)
+    resp = client.get("/api/v1/quotes/reference-price?customer_id=3")
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["error"] == "validation_error"
+
+
 def test_cost_reference_invalid_spec_422():
     """两端一致：spec 非 JSON / 非对象 → 422 INVALID_SPEC（同一错误体）。"""
     _as(CUSTOMER)
@@ -1345,6 +1397,24 @@ def test_create_order_from_quote_inherits_and_accepts():
     assert insert_args[9] == 11                       # orders.quote_id
     assert "UPDATE quote_orders SET status='accepted'" in conn.sql()
     assert "INSERT INTO order_items" in conn.sql()
+
+
+def test_create_order_from_quote_inherits_selected_english_name():
+    """A 项：报价转订单时 product_name 原样继承（用户选的英文名，不回退默认名）。"""
+    quote = _quote_row(status="sent", customer_id=3, currency="USD")
+    created = _order_row(currency="USD")
+    conn = _FakeConn(
+        fetchrow=[quote, _customer_row(), {"channel": None}, created],
+        fetchval=[None],
+        fetch=[[_item_row(product_name="Field Fence",
+                          spec_snapshot={"product_key": "field_fence"})]],
+    )
+    with _patched(conn, CUSTOMER):
+        resp = client.post("/api/v1/orders", json={"quote_order_id": 11})
+    assert resp.status_code == 201, resp.text
+    _, insert_args = conn.first("INSERT INTO order_items")
+    # (tenant_id, order_id, sku_id, product_name, ...)
+    assert insert_args[3] == "Field Fence"
 
 
 def test_parity_quote_10_create_order_bad_item_qty_is_422():

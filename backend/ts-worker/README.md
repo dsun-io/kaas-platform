@@ -214,6 +214,7 @@
 | **审计筛选分页** | `page/page_size` 越界**钳位**（audit-log/archive-logs） | 同钳位；但 `accounts` 的 `limit/offset` 越界按 Python 的 `Query(ge/le)` 走 **422** |
 | **admin 提案审核错误** | 提案不存在 / action 非法 → **200 + `{error:...}`** | 逐字对齐（不是 4xx —— 前端按 body.error 分支） |
 | **query 数值参数的宽容度** | FastAPI `int` 解析：`?page=` / `?campaign_id=` 空串 → **422** | `z.coerce.number()` 把空串读成 0：`page` 类被钳位回 1（结果等价），`campaign_id/lead_id` 则退化为「过滤 0」⇒ 空列表。登记为输入宽容度差异 |
+| **API token scope 映射** | （门面自有鉴权元数据，无 Python 对应） | `scope-map.ts` 有序规则（method + path 前缀），未声明路径 = 403 `SCOPE_NOT_DECLARED`；**读/写按端点语义、不按 method 一刀切**：预览 `POST /trade-docs/preview-render-data` → `trade_docs:read`（不落库），其余 `POST /trade-docs*` → `trade_docs:write` |
 
 ## TODO 标记位置
 

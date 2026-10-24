@@ -14,6 +14,23 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-24 下午 · 第三轮 A/B/C/D ✅：按客户选英文名 / token 只读预览 / 路由计数 / workstation-products）**
+> 明细见 [`HANDOVER_2026-10-24_LIVE_FEEDBACK.md`](./HANDOVER_2026-10-24_LIVE_FEEDBACK.md) §8；待办 `TODO.md` §S 的 S-7/S-9/S-15/S-16 已勾销。
+> - **A 按客户选英文名**：报价行仅当产品英文名 >1 时显示「客户英文名（本单使用）」；
+>   默认 = 该客户 + 该产品最近一次报价行用名（**零迁移**只读端点 `GET /api/v1/quotes/product-name-preference`，
+>   按 `spec_snapshot.product_key` 身份 + 旧行英文名回落），无历史回产品默认名；换产品重置、换客户时手动行保留；
+>   参考价改按产品身份（换英文名后历史价仍命中）；报价→订单→单证 `product_name` 原样继承（只加测试，历史快照不回改）。
+> - **B**：`scope-map.ts` 在 trade-docs 泛前缀前加 `POST /trade-docs/preview-render-data* → trade_docs:read`（预览不落库）；
+>   其余 `POST /trade-docs*` 仍要求 write；`scope-map.test.ts` +10。
+> - **C**：路由重生成 **284 = 280 业务（193 直接 + 87 透传）+ 4 内置**（preview + A 偏好端点共 +2），
+>   `EXPECTED_TOTAL=284`，`routes.json`/`route-inventory.md`/`route-surface`/`openapi` 计数全部同步且生成器幂等 OK。
+> - **D**：`/workstation-products` 内核矩阵 = 代码注册表产品 ∪ 本租户 active 租户行（同 key 租户行覆盖）、
+>   POST 回落注册表（未知 key 仍 404）；TS 门面删第二份 SQL 改内核透传；订阅闸门（404 不写库）与团队隔离不变。
+> - **门禁（2026-10-24 第三轮实测）**：worker **1842+12skip** / orchestrator **273** / ts-worker **323（26 文件）** /
+>   前端 **1678（228 文件）** / e2e **28 passed** / contracts·mocks·ui 双门禁·trade-doc:check·静态断言·sync-shared 全 PASS；
+>   `NEXT_EXPORT=1 pnpm build` exit 0（Windows `assets:check` 已知平台缺陷，以 CI ubuntu 为准）。
+> - **发布与生产验证**：见 HANDOVER §8.6（部署后回填 run id 与黑盒证据）。
+
 > **（2026-10-24 下午 · 第二轮补充反馈 ✅：英文名全量匹配 / 单证正式生成前完整预览 / 内核冷启动 502）**
 > 明细追加在 [`HANDOVER_2026-10-24_LIVE_FEEDBACK.md`](./HANDOVER_2026-10-24_LIVE_FEEDBACK.md) §7，待办挂 `TODO.md` §S。
 > - **英文名去地区化 + 全量匹配**：UI 删除「地区别名 / 欧洲客户叫…」文案，统一「英文名（可添加多个）」+ 第 1 条「默认（报价/单证使用）」；
@@ -104,8 +121,8 @@
 >   快照增记 `packaging_method`/`material`；行情套件 87 passed·18 files。
 > - **R-D 批量导入整单化**：`GET /import/order/template-info` + `POST /import/order/preview`（单表+产品列、
 >   规格列并集、行级容错、`packaging_id` 服务端解析）；前端 panel 三步（下载整单模板→预览→填入工作台）；
->   **不新增 calculate 端点**（算价/落库复用工作台既有链路）。路由 283→285（281 业务=193 直接+88 透传），
->   `routes.json`/`route-inventory.md` 已重生成、openapi/route-surface 机检同步。
+>   **不新增 calculate 端点**（算价/落库复用工作台既有链路）。**当时预估**路由 283→285（281 业务=193 直接+88 透传）；
+>   实际最终清单见 2026-10-24 第三轮 C：**284 = 280 业务（193 直接 + 87 透传）+ 4 内置**（`routes.json`/`route-inventory.md` 已重生成、机检同步）。
 > - **门禁（2026-10-24 实测）**：worker **1778 passed + 12 skipped** / orchestrator **266** / ts-worker **305（26 文件）** /
 >   前端 **1626 passed·219 files** / contracts R0–R6 PASS / ui:standards + ui:contrast PASS / 静态断言 PASS（drift 需 UTF-8 控制台）。
 > - ~~**遗留（单开任务）**~~ **✅ 2026-10-24 已修**：`deer_net` 列定义改为 `spec.height_m`「宽度(m)」（derived

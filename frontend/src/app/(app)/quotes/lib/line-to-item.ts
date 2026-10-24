@@ -166,6 +166,12 @@ export interface BuildLineItemInput {
   } | null;
   /** 材质（产品资料 `info.material_options` 里的选项）；空 = 不指定。不参与算价 */
   material?: string | null;
+  /**
+   * **本单使用的英文名**（A 项 2026-10-24）：同一产品可配置多个英文名，报价行按客户
+   * 选择其中一个。空 = 回落产品默认英文名 `name_en`（再退中文名）——旧调用方不传
+   * 时行为不变。
+   */
+  nameEn?: string | null;
 }
 
 /** 单证/台账要的申报要素（与后端 `_SPEC_FIELDS` 的键名保持一致）。 */
@@ -214,6 +220,8 @@ export function buildLineItem(input: BuildLineItemInput): BuiltLineItem {
   const packaging = input.packaging ?? null;
   /** 材质只是随行留档（用户 2026-10-24：材质不算价），空值不写进快照 */
   const material = (input.material ?? "").trim();
+  /** 本单选中的英文名（空 = 回落产品默认名；见 BuildLineItemInput.nameEn） */
+  const chosenNameEn = (input.nameEn ?? "").trim();
   const indexOf = makeColumnIndexer(formulas, view);
 
   const unitPriceFx = readCell(result, view, indexOf, COL.unitPriceFx) ?? 0;
@@ -290,7 +298,9 @@ export function buildLineItem(input: BuildLineItemInput): BuiltLineItem {
 
   return {
     item: {
-      product_name: product.name_en || product.name,
+      // 本单使用的英文名优先；没选/选择为空才回落产品默认英文名 → 中文名。
+      // 落库后随「报价行 → 订单 → 单证」快照走，历史快照不回改。
+      product_name: chosenNameEn || product.name_en || product.name,
       // 数量口径：卷数 + ROLLS（见文件头 D3 说明）
       qty: pieces,
       qty_unit: QTY_UNIT_ROLLS,

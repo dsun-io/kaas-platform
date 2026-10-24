@@ -90,10 +90,10 @@
 - **门禁**（改完都要跑；**2026-10-24 收口实测口径**，工作区静止时数字才作数）：
   - orchestrator（仅迁移/模型/内核测试，**273** 条）：
     `cd backend/orchestrator; uv run --extra migrations pytest tests -q`
-  - TS 门面（对外唯一入口，切流后新增）：`cd backend/ts-worker; pnpm typecheck; pnpm test`（**305 测 / 26 文件**）；
-    路由面机检 `tests/route-surface.test.ts`（278 = 193 直接 + 85 透传，0 缺失 0 多余）；
-  - worker（Python 内核，**1783 passed + 12 skipped**；12 条 db/integration 档按约定 skip，有 docker PG 时这 12 条会真跑、总数 1795）：`cd backend/worker; uv run --frozen --with pytest --with httpx2 python -m pytest tests -q`
-  - 前端：`cd frontend; pnpm typecheck`（内含 `next typegen && tsc --noEmit`）`; pnpm lint; pnpm test`（**1607 passed / 218 files**）`; pnpm contracts:check; pnpm mocks:check; pnpm ui:standards; pnpm ui:contrast; pnpm trade-doc:check; pnpm e2e`（**28 条 = 28 passed + 0 skipped**；a11y 路由自动发现）
+  - TS 门面（对外唯一入口，切流后新增）：`cd backend/ts-worker; pnpm typecheck; pnpm test`（**323 测 / 26 文件**）；
+    路由面机检 `tests/route-surface.test.ts`（280 = 193 直接 + 87 透传，0 缺失 0 多余）；
+  - worker（Python 内核，**1842 passed + 12 skipped**；12 条 db/integration 档按约定 skip，有 docker PG 时这 12 条会真跑、总数 1854）：`cd backend/worker; uv run --frozen --with pytest --with httpx2 python -m pytest tests -q`
+  - 前端：`cd frontend; pnpm typecheck`（内含 `next typegen && tsc --noEmit`）`; pnpm lint; pnpm test`（**1678 passed / 228 files**）`; pnpm contracts:check; pnpm mocks:check; pnpm ui:standards; pnpm ui:contrast; pnpm trade-doc:check; pnpm e2e`（**28 条 = 28 passed + 0 skipped**；a11y 路由自动发现）
   - 静态断言：`scripts/check-runtime-deps.py`、`scripts/check-schema-coverage.py`、
     `scripts/check-schema-drift.py`、`scripts/check-worker-bundle.py`、`scripts/check-deploy-domains.py`、
     `scripts/sync-shared.ps1 -Check`

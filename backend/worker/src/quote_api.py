@@ -1952,9 +1952,84 @@ async def create_quote_batch(request: Request, body: _BatchQuoteIn,
             "total": len(created) + len(failed)}
 
 
+@app.get("/api/v1/quotes/product-name-preference")
+async def quote_product_name_preference(
+    request: Request,
+    customer_id: int,
+    product_key: str = Query("", description="产品 key（产品身份，不用英文名）"),
+    user: dict = Depends(_get_current_user),
+):
+    """某客户 + 某产品**最近一次报价行**使用的英文名（只读；零迁移）。
+
+    A 项（2026-10-24）：同一产品可配置多个英文名（团队资料 name_en_list，主名在前）。
+    报价时按**当前客户**选择本单使用的那一个；下次给同一客户报同一产品时默认沿用
+    上次选择 —— 这里提供那个"上次选择"。
+
+    产品身份用 `product_key`（行项 `spec_snapshot.product_key`），**不用
+    `product_name`**：英文名本身就是本接口要查的变量，拿它当身份会在换名后失真。
+    回落口径：旧行没有 `spec_snapshot.product_key` 时，按该产品**当前全部英文名**
+    （默认名 + 团队别名 + 中文名）匹配；没命中返回 `null`，前端回落到产品默认名。
+
+    只读：不改任何历史报价/订单/单证的 `product_name` 快照；团队隔离与报价读权限
+    同源（客户闸门 + `_scope_sql`）。
+    """
+    _require_engine()
+    key = (product_key or "").strip()
+    if not key:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation", "code": "PRODUCT_KEY_REQUIRED",
+            "field": "product_key", "detail": "product_key 不能为空",
+        })
+
+    # 产品可见性 / 团队隔离与产品下拉、模板同一口径（注册表 ∪ 团队可见租户产品，
+    # 并套用团队资料里的多英文名）；不可见的产品按"不存在"回 404。
+    specs = await _quotable_specs(request, user)
+    spec = specs.get(key)
+    if spec is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "not_found", "code": "PRODUCT_NOT_FOUND",
+            "message": "产品不存在或当前团队不可见: %s" % key,
+        })
+    names: list[str] = [
+        spec.name_en,
+        *list(getattr(spec, "name_en_aliases", None) or []),
+    ]
+    if spec.name:
+        names.append(spec.name)
+    folded: list[str] = []
+    for raw in names:
+        name = (raw or "").strip().casefold()
+        if name and name not in folded:
+            folded.append(name)
+
+    tenant = _tenant_of(user)
+    params: list = [tenant, customer_id, key, folded]
+    async with _db.acquire(request) as conn:
+        # 客户闸门：不存在 / 已软删 / 别团队 ⇒ 404（不泄露存在性）。
+        await _doc_customer(conn, customer_id, user, required=True)
+        row = await conn.fetchrow(
+            "SELECT i.product_name FROM quote_order_items i"
+            " JOIN quote_orders q"
+            "   ON q.tenant_id = i.tenant_id AND q.id = i.quote_order_id"
+            " WHERE i.tenant_id=$1 AND q.customer_id=$2"
+            "   AND i.product_name IS NOT NULL AND i.product_name <> ''"
+            "   AND (i.spec_snapshot->>'product_key' = $3"
+            "        OR (i.spec_snapshot->>'product_key' IS NULL"
+            "            AND lower(i.product_name) = ANY($4::text[])))"
+            + _scope_sql(user, params, "q")
+            + " ORDER BY q.created_at DESC, i.id DESC LIMIT 1",
+            *params,
+        )
+    return {"product_name": (row["product_name"] if row else None)}
+
+
 @app.get("/api/v1/quotes/reference-price")
 async def quote_reference_price(request: Request, customer_id: int,
-                                product_name: str, spec: Optional[str] = None,
+                                # A 项（2026-10-24）：产品身份改为 product_key 优先；
+                                # product_name 保留为可选（旧调用方/响应键不变）。
+                                product_name: Optional[str] = None,
+                                product_key: Optional[str] = None,
+                                spec: Optional[str] = None,
                                 # PARITY-QUOTE-3：orchestrator 是 Query(180, ge=1, le=730)
                                 # （quote_orders.py:639）⇒ 越界 422；静默钳位会让
                                 # "取 0 天"这类坏参数看起来像成功。
@@ -1962,10 +2037,48 @@ async def quote_reference_price(request: Request, customer_id: int,
                                 user: dict = Depends(_get_current_user)):
     """历史参考价（UNCERTAIN #19 · 实时报价的回落参考）——与 dev 同口径。
 
-    聚合同客户+同产品近 N 天已落库报价行项的单价；spec 给 JSON 字符串时按
+    聚合同客户 + **同产品**近 N 天已落库报价行项的单价；spec 给 JSON 字符串时按
     spec_snapshot 语义相等精确匹配。可见范围与报价单列表同口径（_scope_sql）。
+
+    A 项（2026-10-24）：产品身份用 `product_key`（行项 `spec_snapshot.product_key`），
+    **不再只看 product_name** —— 同一产品可以有多个英文名，按名字精确匹配会在换名后
+    查不到历史价。旧行没有 product_key 时按「本单所选名 + 该产品历史上用过的任何
+    英文名」回落；只传 product_name 的旧调用方行为不变。
     """
-    params: list = [_tenant_of(user), customer_id, product_name, days]
+    wanted_name = (product_name or "").strip()
+    wanted_key = (product_key or "").strip()
+    if not wanted_name and not wanted_key:
+        raise HTTPException(status_code=422, detail={
+            "error": "validation_error",
+            "message": "product_name 或 product_key 至少给一个"})
+
+    params: list = [_tenant_of(user), customer_id]
+    identity_clause = ""
+    if wanted_key:
+        params.append(wanted_key)
+        key_idx = len(params)
+        # 旧行（无 product_key）回落：① 本单所选英文名；② 该产品身份下**任何**
+        # 历史行用过的英文名（换名后旧名仍能命中同一产品）。
+        fallback = ""
+        if wanted_name:
+            params.append(wanted_name)
+            fallback = " OR i.product_name = $%d" % len(params)
+        identity_clause = (
+            " AND (i.spec_snapshot->>'product_key' = $%d"
+            "       OR (i.spec_snapshot->>'product_key' IS NULL"
+            "           AND (i.product_name IN ("
+            "                 SELECT j.product_name FROM quote_order_items j"
+            "                 WHERE j.tenant_id = $1"
+            "                   AND j.spec_snapshot->>'product_key' = $%d"
+            "                   AND j.product_name IS NOT NULL)%s)))"
+            % (key_idx, key_idx, fallback)
+        )
+    else:
+        params.append(wanted_name)
+        identity_clause = " AND i.product_name = $3"
+
+    params.append(days)
+    days_idx = len(params)
     spec_clause = ""
     if spec:
         try:
@@ -1975,7 +2088,6 @@ async def quote_reference_price(request: Request, customer_id: int,
                 "error": "validation_error", "message": "spec must be a JSON object"})
         params.append(spec)
         spec_clause = f" AND i.spec_snapshot = ${len(params)}::jsonb"
-    tenant = params[0]
     row = await _db.fetchrow(
         request,
         "SELECT count(*) AS n,"
@@ -1984,15 +2096,17 @@ async def quote_reference_price(request: Request, customer_id: int,
         " max(q.created_at) AS last_at"
         " FROM quote_order_items i JOIN quote_orders q"
         "   ON q.tenant_id = i.tenant_id AND q.id = i.quote_order_id"
-        " WHERE i.tenant_id=$1 AND q.customer_id=$2 AND i.product_name=$3"
+        " WHERE i.tenant_id=$1 AND q.customer_id=$2"
         " AND i.unit_price IS NOT NULL"
-        f" AND q.created_at >= now() - ($4 || ' days')::interval{spec_clause}"
+        + identity_clause
+        + f" AND q.created_at >= now() - (${days_idx} || ' days')::interval"
+        + spec_clause
         + _scope_sql(user, params, "q"),
         *params,
     )
     return {
         "customer_id": customer_id,
-        "product_name": product_name,
+        "product_name": wanted_name,
         "days": days,
         "spec_matched": spec is not None,
         "count": row["n"] if row else 0,

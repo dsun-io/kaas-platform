@@ -3,6 +3,8 @@
  *
  * 覆盖：
  * - 有序规则命中（读/写方法、具体前缀优先、未命中 = null）；
+ * - **预览类 POST 按只读语义映射**：`POST /trade-docs/preview-render-data` → `trade_docs:read`
+ *   （不落库；B 项 2026-10-24），其余 `POST /trade-docs*` 仍要求 `trade_docs:write`；
  * - 规则只使用 tokens.ts 白名单 scope（不发明 scope）；
  * - 全局中间件：合法 token 通过、缺 scope 403、未声明路径 403、无效 token 401；
  * - JWT 语义零改动（非 kaas_oat_ 不查 api_tokens）；
@@ -101,6 +103,13 @@ describe("resolveRequiredScope（有序规则）", () => {
     ["POST", "/api/v1/quotes", "quotes:calc"],
     ["GET", "/api/v1/quotations", "quotes:read"],
     ["GET", "/api/v1/trade-docs", "trade_docs:read"],
+    // B 项（2026-10-24）：**预览是只读语义** —— POST 但映射 trade_docs:read；
+    // 具体前缀必须排在 trade-docs 泛前缀之前（规则表顺序 = 优先级）。
+    ["POST", "/api/v1/trade-docs/preview-render-data", "trade_docs:read"],
+    ["POST", "/api/v1/trade-docs/preview-render-data?doc_type=pi", "trade_docs:read"],
+    // 其余 POST /trade-docs* 仍是 write（不能顺手放宽）。
+    ["POST", "/api/v1/trade-docs", "trade_docs:write"],
+    ["POST", "/api/v1/trade-docs/1/issue", "trade_docs:write"],
     ["DELETE", "/api/v1/file-objects/1", "files:write"],
     ["GET", "/api/v1/files/1/content", "files:read"],
     ["GET", "/api/v1/leadgen/runs", "leadgen:read"],
@@ -128,6 +137,10 @@ describe("resolveRequiredScope（有序规则）", () => {
     ["PATCH", "/api/v1/market/name-mappings/1", null],
     ["DELETE", "/api/v1/market/name-mappings/1", null],
     ["GET", "/api/v1/admin/feature_flag", null],
+    // 未声明路径 = 拒绝：段匹配下 "/trade-docs-extra" 不误命中 trade-docs 规则。
+    ["POST", "/api/v1/trade-docs-extra", null],
+    // 规则表用的是尾部 * 原始前缀：preview-render-data 的后缀变体同样按 read。
+    ["POST", "/api/v1/trade-docs/preview-render-data-extra", "trade_docs:read"],
     ["GET", "/api/v1/api-tokens", null],
     ["GET", "/api/v1/enums", null],
     ["GET", "/health", null],
@@ -192,6 +205,78 @@ describe("apiTokenScopeMiddleware（全局 /api/* 闸门）", () => {
   it("未声明路径（/api/v1/admin/*）→ 403 SCOPE_NOT_DECLARED", async () => {
     const token = installToken(["customers:read"]);
     const res = await app.request("/api/v1/admin/feature_flag", bearer(token), TEST_ENV);
+
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { detail: { code: string } };
+    expect(body.detail.code).toBe("SCOPE_NOT_DECLARED");
+  });
+
+  // ── B 项（2026-10-24）：预览端点只读 scope 映射 ──────────────────────────
+  it("只读 token 调 POST /trade-docs/preview-render-data → 通过（读语义）", async () => {
+    const token = installToken(["trade_docs:read"]);
+    const res = await app.request(
+      "/api/v1/trade-docs/preview-render-data",
+      bearer(token, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ doc_type: "pi", quote_order_id: 1 }),
+      }),
+      TEST_ENV,
+    );
+
+    // 通过 scope 闸门后由 KERNEL 桩返回 200；关键断言是**没有** 403 SCOPE_NOT_DECLARED。
+    expect(res.status).toBe(200);
+    if (res.headers.get("content-type")?.includes("json")) {
+      const body = (await res.json()) as { detail?: { code?: string } };
+      expect(body.detail?.code).not.toBe("SCOPE_NOT_DECLARED");
+    }
+  });
+
+  it("trade_docs:write token 调其它 POST /trade-docs 仍可用（写映射未被改动）", async () => {
+    const token = installToken(["trade_docs:write"]);
+    const res = await app.request(
+      "/api/v1/trade-docs",
+      bearer(token, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ doc_type: "pi" }),
+      }),
+      TEST_ENV,
+    );
+
+    expect(res.status).toBe(200);
+    expect(dbCallsContaining("FROM api_tokens")).not.toHaveLength(0);
+  });
+
+  it("只读 token 调其它 POST /trade-docs → 403（预览特例不能顺手放宽）", async () => {
+    const token = installToken(["trade_docs:read"]);
+    const res = await app.request(
+      "/api/v1/trade-docs",
+      bearer(token, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ doc_type: "pi" }),
+      }),
+      TEST_ENV,
+    );
+
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { detail: { code: string; message: string } };
+    expect(body.detail.code).toBe("SCOPE_NOT_DECLARED");
+    expect(body.detail.message).toContain("trade_docs:write");
+  });
+
+  it("无 scope token 调预览仍 403", async () => {
+    const token = installToken([]);
+    const res = await app.request(
+      "/api/v1/trade-docs/preview-render-data",
+      bearer(token, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ doc_type: "pi" }),
+      }),
+      TEST_ENV,
+    );
 
     expect(res.status).toBe(403);
     const body = (await res.json()) as { detail: { code: string } };

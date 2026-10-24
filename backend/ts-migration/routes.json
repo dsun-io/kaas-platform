@@ -1133,7 +1133,7 @@
    "path": "/api/v1/trade-docs",
    "endpoint": "create_trade_doc",
    "file": "worker/src/main.py",
-   "line": 5503,
+   "line": 5627,
    "depends": [
     "_get_current_user"
    ],
@@ -1148,7 +1148,7 @@
    "path": "/api/v1/trade-docs/{doc_id}",
    "endpoint": "get_trade_doc",
    "file": "worker/src/main.py",
-   "line": 5647,
+   "line": 5718,
    "depends": [
     "_get_current_user"
    ],
@@ -1163,7 +1163,7 @@
    "path": "/api/v1/trade-docs/{doc_id}",
    "endpoint": "update_trade_doc",
    "file": "worker/src/main.py",
-   "line": 5672,
+   "line": 5743,
    "depends": [
     "_get_current_user"
    ],
@@ -1178,7 +1178,7 @@
    "path": "/api/v1/tenant/company-profile",
    "endpoint": "get_company_profile",
    "file": "worker/src/main.py",
-   "line": 5886,
+   "line": 5957,
    "depends": [
     "_get_current_user"
    ],
@@ -1193,7 +1193,7 @@
    "path": "/api/v1/tenant/company-profile",
    "endpoint": "put_company_profile",
    "file": "worker/src/main.py",
-   "line": 5899,
+   "line": 5970,
    "depends": [
     "_get_current_user"
    ],
@@ -1208,7 +1208,22 @@
    "path": "/api/v1/trade-docs/{doc_id}/render-data",
    "endpoint": "get_trade_doc_render_data",
    "file": "worker/src/main.py",
-   "line": 6061,
+   "line": 6225,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "trade-docs"
+  },
+  {
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/trade-docs/preview-render-data",
+   "endpoint": "preview_trade_doc_render_data",
+   "file": "worker/src/main.py",
+   "line": 6244,
    "depends": [
     "_get_current_user"
    ],
@@ -1836,7 +1851,7 @@
    "path": "/api/v1/export-quote/products",
    "endpoint": "export_quote_products",
    "file": "worker/src/quote_api.py",
-   "line": 398,
+   "line": 444,
    "depends": [
     "_get_current_user"
    ],
@@ -1851,7 +1866,7 @@
    "path": "/api/v1/export-quote/products/{product_key}/formulas",
    "endpoint": "export_quote_product_formulas",
    "file": "worker/src/quote_api.py",
-   "line": 429,
+   "line": 477,
    "depends": [
     "_get_current_user"
    ],
@@ -1866,7 +1881,7 @@
    "path": "/api/v1/export-quote/terms/template",
    "endpoint": "export_quote_terms_template",
    "file": "worker/src/quote_api.py",
-   "line": 462,
+   "line": 510,
    "depends": [
     "_get_current_user"
    ],
@@ -1881,7 +1896,7 @@
    "path": "/api/v1/export-quote/calculate",
    "endpoint": "export_quote_calculate",
    "file": "worker/src/quote_api.py",
-   "line": 905,
+   "line": 953,
    "depends": [
     "_get_current_user"
    ],
@@ -1896,7 +1911,7 @@
    "path": "/api/v1/export-quote/calculate-internal",
    "endpoint": "export_quote_calculate_internal",
    "file": "worker/src/quote_api.py",
-   "line": 918,
+   "line": 966,
    "depends": [
     "_require_internal_admin_dep"
    ],
@@ -1911,7 +1926,7 @@
    "path": "/api/v1/export-quote/verify",
    "endpoint": "export_quote_verify",
    "file": "worker/src/quote_api.py",
-   "line": 928,
+   "line": 976,
    "depends": [
     "_require_internal_admin_dep"
    ],
@@ -1926,7 +1941,7 @@
    "path": "/api/v1/export-quote/products/{product_key}/import-template",
    "endpoint": "export_quote_import_template_info",
    "file": "worker/src/quote_api.py",
-   "line": 1022,
+   "line": 1070,
    "depends": [
     "_get_current_user"
    ],
@@ -1941,7 +1956,7 @@
    "path": "/api/v1/export-quote/import/order/template-info",
    "endpoint": "export_quote_import_order_template_info",
    "file": "worker/src/quote_api.py",
-   "line": 1070,
+   "line": 1118,
    "depends": [
     "_get_current_user"
    ],
@@ -1956,7 +1971,7 @@
    "path": "/api/v1/export-quote/import/order/preview",
    "endpoint": "export_quote_import_order_preview",
    "file": "worker/src/quote_api.py",
-   "line": 1117,
+   "line": 1165,
    "depends": [
     "_get_current_user"
    ],
@@ -1971,7 +1986,7 @@
    "path": "/api/v1/quotes",
    "endpoint": "list_quote_orders",
    "file": "worker/src/quote_api.py",
-   "line": 1723,
+   "line": 1771,
    "depends": [
     "_get_current_user"
    ],
@@ -1986,7 +2001,7 @@
    "path": "/api/v1/quotes",
    "endpoint": "create_quote_order",
    "file": "worker/src/quote_api.py",
-   "line": 1788,
+   "line": 1836,
    "depends": [
     "_get_current_user"
    ],
@@ -2001,7 +2016,22 @@
    "path": "/api/v1/quotes/batch",
    "endpoint": "create_quote_batch",
    "file": "worker/src/quote_api.py",
-   "line": 1866,
+   "line": 1914,
+   "depends": [
+    "_get_current_user"
+   ],
+   "auth": true,
+   "ops": false,
+   "domain": "quotes"
+  },
+  {
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/quotes/product-name-preference",
+   "endpoint": "quote_product_name_preference",
+   "file": "worker/src/quote_api.py",
+   "line": 1955,
    "depends": [
     "_get_current_user"
    ],
@@ -2016,7 +2046,7 @@
    "path": "/api/v1/quotes/reference-price",
    "endpoint": "quote_reference_price",
    "file": "worker/src/quote_api.py",
-   "line": 1907,
+   "line": 2026,
    "depends": [
     "_get_current_user"
    ],
@@ -2031,7 +2061,7 @@
    "path": "/api/v1/quotes/cost-reference",
    "endpoint": "quote_cost_reference",
    "file": "worker/src/quote_api.py",
-   "line": 1959,
+   "line": 2121,
    "depends": [
     "_get_current_user"
    ],
@@ -2046,7 +2076,7 @@
    "path": "/api/v1/quotes/{quote_id}",
    "endpoint": "get_quote_order",
    "file": "worker/src/quote_api.py",
-   "line": 2040,
+   "line": 2202,
    "depends": [
     "_get_current_user"
    ],
@@ -2061,7 +2091,7 @@
    "path": "/api/v1/quotes/{quote_id}",
    "endpoint": "update_quote_order",
    "file": "worker/src/quote_api.py",
-   "line": 2066,
+   "line": 2228,
    "depends": [
     "_get_current_user"
    ],
@@ -2076,7 +2106,7 @@
    "path": "/api/v1/quotes/{quote_id}/items",
    "endpoint": "replace_quote_items",
    "file": "worker/src/quote_api.py",
-   "line": 2199,
+   "line": 2361,
    "depends": [
     "_get_current_user"
    ],
@@ -2091,7 +2121,7 @@
    "path": "/api/v1/export-quote/products/{product_key}/spec",
    "endpoint": "export_quote_product_spec",
    "file": "worker/src/quote_api.py",
-   "line": 2247,
+   "line": 2409,
    "depends": [
     "_get_current_user"
    ],
@@ -2346,7 +2376,7 @@
    "path": "/api/v1/workstation-products",
    "endpoint": "list_workstation_products",
    "file": "worker/src/ws_products.py",
-   "line": 426,
+   "line": 471,
    "depends": [
     "_get_current_user"
    ],
@@ -2361,7 +2391,7 @@
    "path": "/api/v1/workstation-products",
    "endpoint": "set_workstation_product",
    "file": "worker/src/ws_products.py",
-   "line": 458,
+   "line": 503,
    "depends": [
     "_get_current_user"
    ],
@@ -2376,7 +2406,7 @@
    "path": "/api/v1/tenant-product-status",
    "endpoint": "list_tenant_product_status",
    "file": "worker/src/ws_products.py",
-   "line": 502,
+   "line": 567,
    "depends": [
     "_get_current_user"
    ],
@@ -2391,7 +2421,7 @@
    "path": "/api/v1/tenant-product-status",
    "endpoint": "set_tenant_product_status",
    "file": "worker/src/ws_products.py",
-   "line": 525,
+   "line": 590,
    "depends": [
     "_get_current_user"
    ],
@@ -3510,7 +3540,7 @@
    "path": "/api/v1/products",
    "endpoint": "list_products",
    "file": "worker/src/ws_files.py",
-   "line": 378,
+   "line": 385,
    "depends": [
     "_get_current_user"
    ],
@@ -3525,7 +3555,7 @@
    "path": "/api/v1/products/{product_key}/profile",
    "endpoint": "get_profile",
    "file": "worker/src/ws_files.py",
-   "line": 415,
+   "line": 438,
    "depends": [
     "_get_current_user"
    ],
@@ -3540,7 +3570,7 @@
    "path": "/api/v1/products/{product_key}/profile",
    "endpoint": "put_profile",
    "file": "worker/src/ws_files.py",
-   "line": 440,
+   "line": 466,
    "depends": [
     "_get_current_user"
    ],
@@ -3555,7 +3585,7 @@
    "path": "/api/v1/products/{product_key}/media",
    "endpoint": "list_media",
    "file": "worker/src/ws_files.py",
-   "line": 461,
+   "line": 503,
    "depends": [
     "_get_current_user"
    ],
@@ -3570,7 +3600,7 @@
    "path": "/api/v1/products/{product_key}/media",
    "endpoint": "upload_media",
    "file": "worker/src/ws_files.py",
-   "line": 473,
+   "line": 515,
    "depends": [
     "_get_current_user"
    ],
@@ -3585,7 +3615,7 @@
    "path": "/api/v1/file-objects/{file_id}",
    "endpoint": "patch_file",
    "file": "worker/src/ws_files.py",
-   "line": 496,
+   "line": 538,
    "depends": [
     "_get_current_user"
    ],
@@ -3600,7 +3630,7 @@
    "path": "/api/v1/file-objects/{file_id}",
    "endpoint": "retire_file",
    "file": "worker/src/ws_files.py",
-   "line": 545,
+   "line": 587,
    "depends": [
     "_get_current_user"
    ],
@@ -3615,7 +3645,7 @@
    "path": "/api/v1/file-objects/{file_id}/content",
    "endpoint": "get_file_content",
    "file": "worker/src/ws_files.py",
-   "line": 558,
+   "line": 600,
    "depends": [
     "_get_current_user"
    ],
@@ -3630,7 +3660,7 @@
    "path": "/api/v1/file-objects",
    "endpoint": "list_files",
    "file": "worker/src/ws_files.py",
-   "line": 574,
+   "line": 616,
    "depends": [
     "_get_current_user"
    ],
@@ -3645,7 +3675,7 @@
    "path": "/api/v1/trade-docs/{doc_id}/files",
    "endpoint": "list_doc_files",
    "file": "worker/src/ws_files.py",
-   "line": 600,
+   "line": 642,
    "depends": [
     "_get_current_user"
    ],
@@ -3660,7 +3690,7 @@
    "path": "/api/v1/trade-docs/{doc_id}/files",
    "endpoint": "attach_doc_file",
    "file": "worker/src/ws_files.py",
-   "line": 620,
+   "line": 662,
    "depends": [
     "_get_current_user"
    ],
@@ -3675,7 +3705,7 @@
    "path": "/api/v1/trade-docs/{doc_id}/files/{link_id}",
    "endpoint": "detach_doc_file",
    "file": "worker/src/ws_files.py",
-   "line": 651,
+   "line": 693,
    "depends": [
     "_get_current_user"
    ],
@@ -3690,7 +3720,7 @@
    "path": "/api/v1/trade-docs/{doc_id}/files/upload",
    "endpoint": "upload_doc_file",
    "file": "worker/src/ws_files.py",
-   "line": 663,
+   "line": 705,
    "depends": [
     "_get_current_user"
    ],
@@ -3705,7 +3735,7 @@
    "path": "/api/v1/orders/{order_id}/files",
    "endpoint": "list_order_files",
    "file": "worker/src/ws_files.py",
-   "line": 700,
+   "line": 742,
    "depends": [
     "_get_current_user"
    ],
@@ -3720,7 +3750,7 @@
    "path": "/api/v1/orders/{order_id}/files",
    "endpoint": "upload_order_file",
    "file": "worker/src/ws_files.py",
-   "line": 715,
+   "line": 757,
    "depends": [
     "_get_current_user"
    ],
@@ -3735,7 +3765,7 @@
    "path": "/api/v1/payment-receipts/{receipt_id}/files",
    "endpoint": "upload_receipt_file",
    "file": "worker/src/ws_files.py",
-   "line": 742,
+   "line": 784,
    "depends": [
     "_get_current_user"
    ],
@@ -3750,7 +3780,7 @@
    "path": "/api/v1/trade-docs/{doc_id}/pdf",
    "endpoint": "render_doc_pdf",
    "file": "worker/src/ws_files.py",
-   "line": 946,
+   "line": 988,
    "depends": [
     "_get_current_user"
    ],
@@ -3765,7 +3795,7 @@
    "path": "/api/v1/file-objects/{file_id}/render-content",
    "endpoint": "get_file_render_content",
    "file": "worker/src/ws_files.py",
-   "line": 1072,
+   "line": 1114,
    "depends": [],
    "auth": false,
    "ops": false,
@@ -3778,7 +3808,7 @@
    "path": "/api/v1/file-objects/presign",
    "endpoint": "presign_upload",
    "file": "worker/src/ws_files.py",
-   "line": 1132,
+   "line": 1174,
    "depends": [
     "_get_current_user"
    ],
@@ -3793,7 +3823,7 @@
    "path": "/api/v1/file-objects/register",
    "endpoint": "register_upload",
    "file": "worker/src/ws_files.py",
-   "line": 1148,
+   "line": 1190,
    "depends": [
     "_get_current_user"
    ],
@@ -3808,7 +3838,7 @@
    "path": "/api/v1/file-objects/_r2_debug",
    "endpoint": "r2_debug",
    "file": "worker/src/ws_files.py",
-   "line": 1161,
+   "line": 1203,
    "depends": [
     "_get_current_user"
    ],
@@ -3823,7 +3853,7 @@
    "path": "/api/v1/file-objects/{file_id}/url",
    "endpoint": "get_file_url",
    "file": "worker/src/ws_files.py",
-   "line": 1206,
+   "line": 1248,
    "depends": [
     "_get_current_user"
    ],

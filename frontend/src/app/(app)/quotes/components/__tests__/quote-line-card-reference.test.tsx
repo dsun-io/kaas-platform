@@ -67,6 +67,16 @@ vi.mock("../../hooks/use-reference-price", () => ({
   useReferencePrice: () => ({ data: mocks.referenceData }),
 }));
 
+// 英文名偏好（A 项）：这一层不验证偏好本身（另有 quote-line-card-name-en 用例），
+// 统一给「无历史、查询已结束」——行卡据此用产品默认英文名。
+vi.mock("../../hooks/use-product-name-preference", () => ({
+  useProductNamePreference: () => ({
+    data: { product_name: null },
+    isFetched: true,
+    isError: false,
+  }),
+}));
+
 // 产品资料接口不在这里验证（另有布局用例）；统一 mock 掉，避免真实请求把
 // 单测变成网络依赖。空资料 = 不渲染材质下拉。
 vi.mock("@/lib/products/use-products", () => ({

@@ -9,7 +9,7 @@
 > **✅ 2026-10-24 下线（用户裁决）**：旧单产品导入三端点
 > `GET /api/v1/export-quote/import/template`、`POST .../import/preview`、`POST .../import/calculate`
 > 已删除（前端零调用；UI 已改走整单导入）；保留 `GET /products/{key}/import-template`。
-> 当前路由基线：**282 = 278 业务（193 直接 + 85 透传）+ 4 内置**。
+> 当前路由基线：**284 = 280 业务（193 直接 + 87 透传）+ 4 内置**。
 >
 > **用途**：登记「Worker 有路由、前端没有任何调用」的接口，避免下一轮审计把它们误判成“欠账”。
 > 本文件**只登记**，不授权删除；「可删候选」删前需 owner/Lead 确认（后端可能被第三方或自动化脚本使用）。
@@ -42,8 +42,11 @@
   ⇒ **待接 UI 剩 3 条**（仅长期保留的 #2/#9/#24 用户级订阅）；可删候选已删 **3 条** ⇒ **剩 15 条**；
   **当前实际未接 ≈ 36 条**（18 REST + 3 待接 + 15 可删），与路由 244 对得上。
 - 与 `docs/TODO.md` 的对应关系见 §3；**本文件不修改 TODO**（C36 是否销账由 Lead 决定）。
-- **2026-10-24 变更**：旧单产品导入 3 条端点下线（用户裁决；见 A-18）⇒ 当前业务路由 **278 = 193 直接 + 85 透传**
-  （+4 内置 = 282）。本表第 61 行与 §3 C19 行已同步；其余为 2026-10-21 扫描基线快照，不回填。
+- **2026-10-24 变更**：旧单产品导入 3 条端点下线（用户裁决；见 A-18）⇒ 业务路由 278；
+  第二轮新增 POST /api/v1/trade-docs/preview-render-data（单证完整预览）⇒ 279；
+  第三轮 A 新增 GET /api/v1/quotes/product-name-preference（客户英文名偏好）⇒
+  **当前业务路由 280 = 193 直接 + 87 透传（+4 内置 = 284）**。本表第 61 行与 §3 C19 行已同步；
+  其余为 2026-10-21 扫描基线快照，不回填。
 
 ## 1. 方法（可复现）
 
@@ -83,12 +86,12 @@ backend/worker/.venv/Scripts/python.exe .tmp/c36-docs.py                  # 补 
 | 保留 · 内部/运维/CI 与 REST 契约 | `GET /api/v1/subscriptions/bundles` | `main.py:1772` | 同上（套餐包） |
 | 保留 · 内部/运维/CI 与 REST 契约 | `GET /api/v1/trade-docs/*` | `main.py:4495` | 标准 REST 读；前端走 `/trade-docs/{id}/render-data` |
 | 保留 · 内部/运维/CI 与 REST 契约 | `GET /api/v1/trade-docs/render-fingerprint-checks/batch` | `ws_docs_ext.py:432` | A9 批量只读对账口；前端只调单张 `render-fingerprint-check` |
-| 保留 · 内部/运维/CI 与 REST 契约 | `GET /api/v1/workstation-products` | `ws_products.py:426` | B6 兼容 union（前端用 `/tenant-product-status`；建议后续收敛后删） |
+| 保留 · 内部/运维/CI 与 REST 契约 | `GET /api/v1/workstation-products` | `ws_products.py:471` | B6 兼容 union；**2026-10-24（D 项）修复**：内核矩阵 = 代码注册表产品 ∪ 本租户 active 租户行（同 key 租户行覆盖），门面改为鉴权后内核透传 —— 前端用 `/tenant-product-status`；建议后续收敛后删 |
 | 保留 · 内部/运维/CI 与 REST 契约 | `POST /api/v1/export-quote/verify` | `quote_api.py:909` | 管理员核验 API（三遍核验）；无 UI，保留为工具口 |
 | 保留 · 内部/运维/CI 与 REST 契约 | `POST /api/v1/outreach/webhook` | `chain.py:1955` | inbound 预留桩（501）；C13/G-5 已授权“不做/保持” |
 | 保留 · 内部/运维/CI 与 REST 契约 | `POST /api/v1/trade-docs/*/confirm` | `ws_docs_ext.py:234` | A2 明示两条签发入口；前端走 `PATCH /trade-docs/{id}` |
 | 保留 · 内部/运维/CI 与 REST 契约 | `POST /api/v1/trade-docs/*/files` | `ws_files.py:617` | REST 附件引用；前端上传走 `/files/upload`（服务端归档走内部函数） |
-| 保留 · 内部/运维/CI 与 REST 契约 | `POST /api/v1/workstation-products` | `ws_products.py:458` | B6 兼容写口（同上） |
+| 保留 · 内部/运维/CI 与 REST 契约 | `POST /api/v1/workstation-products` | `ws_products.py:503` | B6 兼容写口；**2026-10-24（D 项）**：DB 无行时回落代码注册表（真正未知 key 仍 404），门面鉴权后内核透传（不再有第二份 SQL 判定） |
 | ✅ 已接 · 移出待接清单（C36，2026-10-21） | `DELETE /api/v1/tax-archives/*` | `tax_archives.py:295` | 入口：`settings/tax-archives/components/tax-archive-deactivate-button.tsx:39`（确认后软删）+ `page.tsx:434` 挂载 |
 | 后端先行 · UI 未接 | `DELETE /api/v1/users/*/subscriptions/*` | `ws_workstations.py:271` | 同上 |
 | ✅ 已接 · 移出待接清单（C30） | `GET /api/v1/admin/archive-logs` | `main.py:3032` | 入口：`admin/hooks/use-archive-logs.ts:54` + `archive-logs-card.tsx`，`admin/gray-release/page.tsx:80` 挂载（审计更正：原「前端 0 调用」已过时） |
@@ -143,7 +146,7 @@ backend/worker/.venv/Scripts/python.exe .tmp/c36-docs.py                  # 补 
 | **A9** | `GET /trade-docs/render-fingerprint-checks/batch` | A9 已完成（cron+列表标识）；批量口保留给运维/批处理 |
 | **A12** | `trigger_expr`（非路由） | A12 ⏳；与路由无关 |
 | **A13** | `POST /trade-docs/{id}/translate` | ✅ 已接（`trade-docs/hooks/use-trade-docs.ts:241` + `doc-translate-panel.tsx`） |
-| **B6** | `GET/POST /workstation-products` | B6 已完成（兼容 union）；**2026-10-23 评估：保留两条、暂不删除**（前端 0 调用；删除需先确认外部 token 调用方），upsert SQL 重复待随删除收敛 |
+| **B6** | `GET/POST /workstation-products` | B6 已完成（兼容 union）；**2026-10-23 评估：保留两条、暂不删除**（前端 0 调用；删除需先确认外部 token 调用方）。**2026-10-24（D 项）行为修复**：内核 `_matrix_rows` = 注册表产品 ∪ 租户行（空 tenant_products 团队不再回 `[]`）、`set_workstation_product` 回落注册表；TS 门面删掉第二份 matrixRows/SQL，GET/POST 改为 `requireUser + forwardKernelRequest`（路由计数不变） |
 | **C1 / G-5** | `POST /file-objects/upload` | ✅ 2026-10-21 已按用户批准删除（C36）；C1 本身仍为"不做" |
 | **C9** | `GET /file-objects/_r2_debug`、`GET /fx-rates/_debug` | C9 已完成（admin 闸门）；保留运维 |
 | **C13 / G-5** | `POST /outreach/webhook` | C13 🧭 已授权“保持”；501 预留桩 |

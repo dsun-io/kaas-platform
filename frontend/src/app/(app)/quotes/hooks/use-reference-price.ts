@@ -26,10 +26,22 @@ export interface ReferencePrice {
 export function useReferencePrice(
   customerId: string | null | undefined,
   productName: string | null | undefined,
+  /**
+   * 产品身份（A 项 2026-10-24）：后端按行项 `spec_snapshot.product_key` 聚合，
+   * 换英文名后历史价仍命中同一产品；`product_name` 保留（旧行无 product_key 时回落）。
+   */
+  productKey: string | null | undefined = null,
   days = 180,
 ) {
   return useQuery({
-    queryKey: ["quotes", "reference-price", customerId, productName, days],
+    queryKey: [
+      "quotes",
+      "reference-price",
+      customerId,
+      productName,
+      productKey,
+      days,
+    ],
     queryFn: async () => {
       const { data } = await apiClient.get<ReferencePrice>(
         "/quotes/reference-price",
@@ -37,6 +49,7 @@ export function useReferencePrice(
           params: {
             customer_id: customerId,
             product_name: productName,
+            product_key: productKey,
             days,
           },
         },

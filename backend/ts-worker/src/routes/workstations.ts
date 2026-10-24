@@ -1,5 +1,5 @@
 /**
- * KaaS TS 门面 · workstations 域（35 条路由：16 门面移植 + 19 内核透传）。
+ * KaaS TS 门面 · workstations 域（35 条路由：14 门面移植 + 21 内核透传）。
  *
  * 真源逐条对齐：
  * - backend/worker/src/ws_workstations.py（我的工位 / 个人订阅 / 生效编码判定）
@@ -10,10 +10,10 @@
  * - backend/worker/src/main.py:4833-4911（企业抬头）
  *
  * ── 移植口径（ADR-008 铁纪律）──────────────────────────────────────────────
- * · **门面移植**（16 条）：鉴权 + zod 入参 + SQL 参数化直译 + 出参投影，无业务 if。
+ * · **门面移植**（14 条）：鉴权 + zod 入参 + SQL 参数化直译 + 出参投影，无业务 if。
  *   小型纯函数镜像（normalize_swift / normalize_codes / has_workstation /
  *   is_same_team 之外的判定）均标出 Python 行号，TODO(TODO:TS3) 换 KERNEL 规则端点。
- * · **内核透传**（18 条）：端点依赖**报价引擎**（产品注册表 ProductSpec / spec
+ * · **内核透传**（21 条）：端点依赖**报价引擎**（产品注册表 ProductSpec / spec
  *   校验与指纹 / 档位覆盖合并 apply_option_overrides）、**价格生命周期**
  *   （_compute_sku_hash / _upsert_price）、**difflib 近似名建议**、**PNG 校验与
  *   R2 存储**（公章）—— 在 TS 重写即"第二份实现"，故门面只鉴权后原样转发。
@@ -27,10 +27,7 @@ import { z } from "zod";
 
 import { withDb, type Db } from "../db";
 import { getEnv, type Env } from "../env";
-import {
-  ws_products_WorkstationProductIn,
-  ws_workstations_SubscriptionIn,
-} from "../generated/schemas";
+import { ws_workstations_SubscriptionIn } from "../generated/schemas";
 import { bool, httpError, num, parseBody, parseQuery, pyIso, respond } from "../http";
 import { forwardKernelRequest } from "../proxy";
 import { allWorkstations, FULL_CHAIN, isAdminRole, isTeamAdmin } from "../rules";
@@ -560,33 +557,10 @@ app.put("/api/v1/tenant/company-profile", (c) => respond(c, async () => {
 // 租户产品 / 工位启停矩阵（ws_products.py:180-556）
 // ══════════════════════════════════════════════════════════════════════════════
 
-/** 报价工位订阅编码（ws_products.py:52）。 */
-const QUOTE_SUB_CODES = ["full_chain", "quotes"];
-
 /** ws_products.py:69-73 _tenant_of（单租户部署回落到 default）。 */
 function tenantOf(user: CurrentUser): string {
   const tid = user.tenant_id;
   return typeof tid === "string" && tid ? tid : DEFAULT_TENANT;
-}
-
-/** ws_products.py:148-177 _require_quote_subscription（团队 ∪ 历史租户级订阅）。 */
-async function requireQuoteSubscription(sql: Db, user: CurrentUser): Promise<void> {
-  const rows = await sql.unsafe(
-    "SELECT 1 AS ok FROM ("
-    + "  SELECT 1 FROM team_subscriptions"
-    + "   WHERE team_id=$1 AND code=ANY($2) AND " + LIVE_SUB
-    + "  UNION ALL"
-    + "  SELECT 1 FROM tenant_subscriptions"
-    + "   WHERE tenant_id=$3 AND code=ANY($2) AND active=true"
-    + ") AS live LIMIT 1",
-    [user.team_id, QUOTE_SUB_CODES, DEFAULT_TENANT]);
-  if (rows.length === 0) {
-    throw httpError(404, {
-      error: "not_found", code: "SUBSCRIPTION_REQUIRED",
-      workstation: "quote", required_any: QUOTE_SUB_CODES,
-      detail: "未订阅该工位，请先开通对应订阅编码",
-    });
-  }
 }
 
 /** ws_products.py:180-204 _product_out（字段与默认值逐条对齐）。 */
@@ -608,16 +582,6 @@ function productOut(row: Row): Row {
     is_active: bool(row.is_active),
     created_at: pyIso(row.created_at),
   };
-}
-
-/** ws_products.py:415-422 _matrix_rows（系统级 + 本租户启用中的产品）。 */
-async function matrixRows(sql: Db, tenantId: string): Promise<Row[]> {
-  return await sql.unsafe(
-    "SELECT product_key, product_name, is_system FROM tenant_products"
-    + " WHERE is_system = true"
-    + "    OR (tenant_id = $1 AND is_system = false AND is_active = true)"
-    + " ORDER BY is_system DESC, product_key",
-    [tenantId]) as Row[];
 }
 
 /** 可选布尔查询参数（FastAPI 口径：true/1/yes/on / false/0/no/off）。 */
@@ -665,72 +629,27 @@ app.get("/api/v1/tenant-products", (c) => respond(c, async () => {
   return c.json(payload);
 }));
 
-// GET /api/v1/workstation-products（ws_products.py:426-455）
+// GET /api/v1/workstation-products（ws_products.py:471-500）
 const workstationQuery = z.object({ workstation: z.string().default("quote") });
 
+// 2026-10-24（D 项）：改为**内核透传**。产品矩阵 = 代码注册表产品 ∪ 本租户 active
+// 租户行；系统产品（鹿网/牛栏网/勾花网）真源是 Python 代码注册表，生产
+// `tenant_products` 没有 is_system=true 行 ⇒ 门面直连 SQL 是第二份判定，空表团队
+// GET 回 []、POST 注册表产品恒 404。"产品是否存在/矩阵有哪些"是业务判定，按 ADR-008
+// 只在内核一处实现；订阅闸门（404 SUBSCRIPTION_REQUIRED，不写库）也在内核。
 app.get("/api/v1/workstation-products", (c) => respond(c, async () => {
-  const user = await requireUser(c);
-  const query = parseQuery(workstationQuery, queries(c));
-  const workstation = query.workstation ?? "quote";
-  const tenantId = tenantOf(user);
-  const payload = await withDb(getEnv(c), async (sql: Db) => {
-    await requireQuoteSubscription(sql, user);
-    const products = await matrixRows(sql, tenantId);
-    const enabledRows = await sql.unsafe(
-      "SELECT product_key, is_enabled FROM tenant_workstation_products"
-      + " WHERE tenant_id=$1 AND workstation=$2", [tenantId, workstation]);
-    const enabledMap = new Map<string, boolean>();
-    for (const row of enabledRows as Row[]) {
-      enabledMap.set(String(row.product_key), bool(row.is_enabled));
-    }
-    return products.map((product) => ({
-      product_key: product.product_key,
-      product_name: product.product_name,
-      is_system: bool(product.is_system),
-      // 未显式登记过的产品默认「启用」（orchestrator: enabled_map.get(key, True)）
-      is_enabled: enabledMap.get(String(product.product_key)) ?? true,
-    }));
-  });
-  return c.json(payload);
+  await requireUser(c);
+  return forwardKernelRequest(c);
 }));
 
-// POST /api/v1/workstation-products（ws_products.py:458-493，201）
+// POST /api/v1/workstation-products（ws_products.py:503-538，201）
+// 同上：注册表回落 + 未知 key 404 + 订阅闸门全部由内核裁决；门面只鉴权/转发。
 app.post("/api/v1/workstation-products", (c) => respond(c, async () => {
-  const user = await requireUser(c);
-  const body = await parseBody(c, ws_products_WorkstationProductIn);
-  const query = parseQuery(workstationQuery, queries(c));
-  const workstation = query.workstation ?? "quote";
-  const tenantId = tenantOf(user);
-  const payload = await withDb(getEnv(c), async (sql: Db) => {
-    await requireQuoteSubscription(sql, user);
-    const products = await sql.unsafe(
-      "SELECT product_key, product_name, is_system FROM tenant_products"
-      + " WHERE product_key=$1 AND (tenant_id=$2 OR is_system = true)"
-      + " ORDER BY is_system DESC LIMIT 1", [body.product_key, tenantId]);
-    const product = products[0] as Row | undefined;
-    if (!product) {
-      throw httpError(404, { error: "not_found", code: "PRODUCT_NOT_FOUND" });
-    }
-    const rows = await sql.unsafe(
-      "INSERT INTO tenant_workstation_products"
-      + " (tenant_id, team_id, workstation, product_key, is_enabled)"
-      + " VALUES ($1,$2,$3,$4,$5)"
-      + " ON CONFLICT (tenant_id, (COALESCE(team_id, 0)), workstation, product_key)"
-      + " DO UPDATE SET is_enabled = EXCLUDED.is_enabled, updated_at = now()"
-      + " RETURNING product_key, is_enabled",
-      [tenantId, user.team_id, workstation, body.product_key, body.is_enabled]);
-    const row = rows[0] as Row;
-    return {
-      product_key: row.product_key,
-      product_name: product.product_name,
-      is_system: bool(product.is_system),
-      is_enabled: bool(row.is_enabled),
-    };
-  });
-  return c.json(payload, 201);
+  await requireUser(c);
+  return forwardKernelRequest(c);
 }));
 
-// GET /api/v1/tenant-product-status（ws_products.py:502-522）
+// GET /api/v1/tenant-product-status（ws_products.py:567-587）
 app.get("/api/v1/tenant-product-status", (c) => respond(c, async () => {
   const user = await requireUser(c);
   const query = parseQuery(workstationQuery, queries(c));
@@ -753,7 +672,7 @@ app.get("/api/v1/tenant-product-status", (c) => respond(c, async () => {
   return c.json(payload);
 }));
 
-// POST /api/v1/tenant-product-status（ws_products.py:525-556）
+// POST /api/v1/tenant-product-status（ws_products.py:590-629）
 // 2026-10-24：改为**内核透传**。原门面直连 SQL 在 tenant_products 查不到产品就 404，
 // 但系统产品（鹿网/牛栏网/勾花网…）的真源是 Python 代码注册表，生产库里没有
 // is_system=true 行 ⇒ 「在报价中显示」开关对它们恒 404（生产实测）。
@@ -765,7 +684,7 @@ app.post("/api/v1/tenant-product-status", (c) => respond(c, async () => {
 }));
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 内核透传（18 条）
+// 内核透传（21 条）
 // ══════════════════════════════════════════════════════════════════════════════
 
 // 租户产品写侧（ws_products.py:269-409）：spec 深校验 / spec_fingerprint 在报价引擎。

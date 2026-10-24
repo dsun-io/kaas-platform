@@ -21,6 +21,7 @@
     不能按包导入），stub 在 sys.modules 里同样生效，不受影响。
 
 产物：
+    backend/ts-migration/routes.json —— 机器可读路由清单（TS 门面 route-surface 机检的基准）；
     backend/ts-migration/route-inventory.md —— 按文件分组的表格 + 域归属 + 总数核对。
 
 解释器说明：须用 backend/worker/.venv 的 python（含 fastapi/pydantic/jwt）。
@@ -50,8 +51,11 @@ WORKER_SRC = os.path.join(BACKEND, "worker", "src")
 #   POST /import/order/preview ⇒ 279+2=281 业务路由
 # 2026-10-24 旧单产品导入端点下线：GET /import/template、POST /import/preview、
 #   POST /import/calculate ⇒ 281-3=278 业务路由
-# + 4 内置 = 282（278 + 4）
-EXPECTED_TOTAL = 282
+# 2026-10-24 第二轮：新增 POST /api/v1/trade-docs/preview-render-data
+#   ⇒ 278+1=279 业务路由 + 4 内置 = 283
+# 2026-10-24 第三轮 A：新增 GET /api/v1/quotes/product-name-preference（客户英文名偏好）
+#   ⇒ 279+1=280 业务路由 + 4 内置 = 284
+EXPECTED_TOTAL = 284
 
 
 def _install_stubs() -> None:

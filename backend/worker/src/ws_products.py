@@ -413,14 +413,59 @@ async def delete_tenant_product(
 # ── 报价工位权限矩阵（启用/停用产品）─────────────────────────────────────────
 
 async def _matrix_rows(conn, tid: str, workstation: str):
-    """系统级产品（全部可见）+ 本租户启用中的租户级产品。"""
-    return await conn.fetch(
+    """报价工位产品矩阵 = **代码注册表产品** ∪ 本租户启用中的租户级产品。
+
+    为什么不能只读 `tenant_products`（2026-10-24 生产实测）：
+    系统产品（鹿网 / 牛栏网 / 勾花网）的真源是 Python 代码注册表
+    `kaas_common/export_quote/products/`，生产 `tenant_products` **没有**
+    `is_system=true` 行 ⇒ 只读 DB 的旧实现让空表团队 GET 回 `[]`、
+    对注册表产品 POST 回 404 PRODUCT_NOT_FOUND。
+
+    合并口径（保持既有语义）：
+    - 注册表产品视为 `is_system=true`，`product_name` 取注册表（对外英文名/中文名同源）；
+    - 同 key 时**租户行覆盖注册表**（租户自定义产品优先，`is_system` 也取行值）；
+    - 排序与旧 SQL 一致：系统产品在前、按 product_key 升序，租户行在后。
+
+    `workstation` 参数保留（矩阵按工位隔离；当前唯一工位是 quote）。
+    """
+    rows = await conn.fetch(
         "SELECT product_key, product_name, is_system FROM tenant_products"
         " WHERE is_system = true"
         "    OR (tenant_id = $1 AND is_system = false AND is_active = true)"
         " ORDER BY is_system DESC, product_key",
         tid,
     )
+    merged: dict[str, dict] = {}
+    # ① 代码注册表（系统产品真源）；引擎未随包时降级为只读 DB 行（同 _validate_spec）。
+    try:
+        from kaas_common.export_quote.products import (  # noqa: PLC0415
+            get as _registered_get,
+            keys as _registered_keys,
+        )
+    except ImportError:
+        _registered_get = None
+        _registered_keys = None
+    if _registered_keys is not None and _registered_get is not None:
+        for key in _registered_keys():
+            try:
+                spec = _registered_get(key)
+            except Exception:  # noqa: BLE001 - 单个坏产品不拖垮整个矩阵
+                continue
+            merged[key] = {
+                "product_key": key,
+                "product_name": spec.name,
+                "is_system": True,
+            }
+    # ② 租户行覆盖（同 key 优先：租户自定义名称/停用状态）
+    for row in rows:
+        key = row["product_key"]
+        merged[key] = {
+            "product_key": key,
+            "product_name": row["product_name"],
+            "is_system": bool(row["is_system"]),
+        }
+    return sorted(
+        merged.values(), key=lambda r: (not r["is_system"], r["product_key"]))
 
 
 @app.get("/api/v1/workstation-products")
@@ -473,9 +518,15 @@ async def set_workstation_product(
             body.product_key, tid,
         )
         if product is None:
-            raise HTTPException(status_code=404, detail={
-                "error": "not_found", "code": "PRODUCT_NOT_FOUND",
-            })
+            # 2026-10-24（D 项）：系统产品真源是代码注册表 —— 生产 tenant_products
+            # 没有 is_system=true 行，不能据此判"产品不存在"（旧行为：对空表团队
+            # 开关鹿网/牛栏网恒 404）。真正未知的 key 仍 404，不写任何数据。
+            registered = _registered_product_or_none(body.product_key)
+            if registered is None:
+                raise HTTPException(status_code=404, detail={
+                    "error": "not_found", "code": "PRODUCT_NOT_FOUND",
+                })
+            product = {"product_name": registered.name, "is_system": True}
         r = await conn.fetchrow(
             "INSERT INTO tenant_workstation_products"
             " (tenant_id, team_id, workstation, product_key, is_enabled)"

@@ -28,6 +28,14 @@
 | 管理入口 | UI 设置页「API 令牌」：创建（一次性显示）/吊销/看 last_used；对应门面 REST `/api/v1/api-tokens` |
 | 铁律 | token 明文只显示一次、不入日志；破坏性操作（吊销）在 UI 内自我服务，不需 DSH 干预 |
 
+**scope 映射实现口径（M3；2026-10-24 补充）**：规则表在 `backend/ts-worker/src/scope-map.ts`，
+按「method + path 前缀」**有序**匹配（更具体的前缀必须排在泛前缀之前），**未命中任何规则
+= 403 `SCOPE_NOT_DECLARED`**。注意**读/写语义按端点是否落库判断，不能按 method 一刀切**：
+`POST /api/v1/trade-docs/preview-render-data` 只装配渲染数据、**不落库**，所以映射
+`trade_docs:read`（否则只读 token 调预览会被误判为写操作而 403）；其余
+`POST /api/v1/trade-docs*`（建单/签发等）仍是 `trade_docs:write`。新增端点时先确认
+它是否写库，再决定映射哪个 scope。
+
 ## 3. REST 规整（OpenAPI 真源）
 
 - 用 `@hono/zod-openapi` 从**生成的 zod schema**（`src/generated/schemas.ts`）产出 OpenAPI 3.1；

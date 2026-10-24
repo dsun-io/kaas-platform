@@ -332,16 +332,16 @@
 | S-4 | 产品英文名支持多个（地区叫法） | ✅ 2026-10-24：`name_en_list`（主名在前）+ `name_en_primary`；`/products` 回主名/别名；报价·单证用主名 |
 | S-5 | 客户「询盘」tab 计数含订单 / 改名 | ✅ 2026-10-24：改名「询盘/订单 (N)」，N=询盘+records 树订单（去重）；未关联订单单独列出；未知显示 `N+` |
 | S-6 | 单证样板预览收编 / 开单一等公民 / 开单前成品预览 | ✅ 2026-10-24：开单页头后第一区块；样板预览默认收起 Dialog；成品预览本地渲染零后端零写库 |
-| S-7 | 残留：按客户/地区逐单选择英文名 | ⏳ 未做（当前自动用默认英文名；需报价行 UI + 快照字段，另开任务） |
+| S-7 | 残留：按客户/地区逐单选择英文名 | ✅ 2026-10-24 第三轮 A：报价行「客户英文名（本单使用）」下拉（仅 >1 个英文名时显示）+ 行级手动标记；默认 = 该客户最近同产品名（零迁移偏好端点 `GET /quotes/product-name-preference`，按 `spec_snapshot.product_key` 身份 + 旧行英文名回落）/ 无历史回产品默认名；换产品重置、换客户手动行保留；参考价改按产品身份（换名仍命中）；历史快照不回改。**按用户明确口径不做地区/国家自动映射**（见 `HANDOVER_2026-10-24_LIVE_FEEDBACK.md` §8.1） |
 | S-8 | ~~成品预览真实货物明细~~ | ✅ 2026-10-24 下午：内核只读 `POST /trade-docs/preview-render-data` + 前端真实数据 iframe 预览（不写库） |
-| S-9 | 残留：`/workstation-products` 旧路由对注册表产品仍可能 404 | ⏳ 未做（前端已不用；建议收敛/下线，勿与新 `/tenant-product-status` 混淆） |
+| S-9 | 残留：`/workstation-products` 旧路由对注册表产品仍可能 404 | ✅ 2026-10-24 第三轮 D：内核 `ws_products._matrix_rows` = 代码注册表产品（is_system=true，名称取注册表）∪ 本租户 active 租户行（同 key 租户行覆盖）；`set_workstation_product` 查不到 DB 行回落注册表（未知 key 仍 404、不写库）；TS 门面删除第二份 matrixRows/SQL，GET/POST 改 `requireUser + forwardKernelRequest`。订阅闸门（404 SUBSCRIPTION_REQUIRED 不写库）与团队隔离不变；**路由未删**（下线另议）。测试：worker +4 / TS +3（见 §8.4） |
 | S-10 | 历史报价/订单/单证快照不回改英文名 | 📌 口径（法律凭证快照，只影响新单据） |
 | S-11 | 英文名去地区化 + 所有英文名可匹配（补充 1） | ✅ 2026-10-24 下午：UI 去「地区别名/欧洲客户」；`name_en_aliases` 进 ProductSpec/导出产品/整单导入匹配/客户询盘 datalist |
 | S-12 | 单证样板预览放回顶部（仍收纳） | ✅ 2026-10-24 下午：PageHeader → SamplePreviewEntry（默认收起 Dialog）→「开单（第一步）」→ 台账 |
 | S-13 | 正式生成单证前完整预览（真实数据） | ✅ 2026-10-24 下午：内核只读预览端点 + 前端多类型切换/中文错误映射/不退回样板；零写库有测试钉住 |
 | S-14 | 产品图上传/通知接口 502 kernel unreachable | ✅ 2026-10-24 下午：根因=内核部署后冷启动偶发启动失败（fetch reject）；门面/内核调用有限重试 + 部署连续 2 次 deep health 预热 |
-| S-15 | 残留：API token 只读场景预览需 `trade_docs:write` | ⏳ 待拍板（门面 `scope-map.ts` 加更具体前缀映射即可；JWT 前端不受影响） |
-| S-16 | 残留：内核业务路由 +1（preview 端点）而 `ts-migration/routes.json` 仍 278 | ⏳ 未做（`/api/v1/trade-docs/*` 前缀透传已覆盖，门面无需逐条注册；将来重生成 export_routes.py 需 bump EXPECTED_TOTAL 并同步 route-inventory/README 计数） |
+| S-15 | 残留：API token 只读场景预览需 `trade_docs:write` | ✅ 2026-10-24 第三轮 B：`scope-map.ts` 在 trade-docs 泛前缀**之前**加 `rule("POST", "/api/v1/trade-docs/preview-render-data*", "trade_docs:read")`（预览不落库 = 只读语义）；只读 token 通过、其它 POST /trade-docs 仍要求 write；JWT 前端不受影响。测试 `scope-map.test.ts` +10；W5 设计文档 §2 + ts-worker README 写明「按是否落库判断读/写，不能按 method 一刀切」（§8.2） |
+| S-16 | 残留：内核业务路由 +1（preview 端点）而 `ts-migration/routes.json` 仍 278 | ✅ 2026-10-24 第三轮 C：worker venv 重生成 ⇒ **284 = 280 业务（193 直接 + 87 透传）+ 4 内置**；`EXPECTED_TOTAL 282→284`（preview + A 项偏好端点共 +2，按实际清单而非任务书预估的 283）；`routes.json`/`route-inventory.md` 重生成且再跑一次字节不变（幂等 OK）；`route-surface.test.ts`/`openapi.test.ts` 断言同步 280/193/87，`AGENTS.md`/`docs/README.md`/`API_RESERVED_LIST.md` 计数同步（§8.3） |
 
 ---
 

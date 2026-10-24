@@ -95,6 +95,16 @@ vi.mock("../../hooks/use-reference-price", () => ({
   useReferencePrice: () => ({ data: null }),
 }));
 
+// 英文名偏好（A 项）：这一层不验证偏好本身（另有 quote-line-card-name-en 用例），
+// 统一给「无历史、查询已结束」——行卡据此用产品默认英文名。
+vi.mock("../../hooks/use-product-name-preference", () => ({
+  useProductNamePreference: () => ({
+    data: { product_name: null },
+    isFetched: true,
+    isError: false,
+  }),
+}));
+
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;

@@ -195,3 +195,111 @@
   `GET /products/chain_link/media` → **403 NO_TEAM**（可达、走到鉴权闸门，不再是 502）。
 - **前端产物**：生产 `/trade-docs`、`/products`、`/customers` 的 HTML 与 deploy artifact（`frontend-out`，同上 commit）
   **逐字节一致**；chunk 内已含「完整预览」「英文名（可添加多个）」「默认（报价/单证使用）」「预览编号（只读计算、未占用）」「询盘/订单」。
+---
+
+## 8. 第三轮收口（2026-10-24 下午，A/B/C/D 四项）
+
+> 用户一次下达 4 项遗留：A 按客户选择产品英文名（主功能）、B API token 只读预览权限映射、
+> C 路由清单/计数收口、D `/workstation-products` 对代码注册表产品 404。按 A→B→C→D 顺序做，
+> 每项独立可测；**前一项不绿不开始下一项**。历史报价/订单/单证的 `product_name` 快照一律不回改。
+
+### 8.1 A · 按客户选择产品英文名（主功能）
+
+口径：同一产品可配多个英文名（团队级 `product_profiles.info.name_en_list`，主名在前 + `name_en_primary`）。
+报价行只在本单为**当前客户**选一个英文名；该名随「报价行 → 订单 → 单证」快照走；下次给同一客户报
+同一产品默认沿用上次选择；历史快照不回改。
+
+- **产品身份**：用 `spec_snapshot.product_key`（前端 `buildLineItem` 早已写入），**不用 product_name**
+  —— 英文名本身是要选的变量，拿它当身份会在换名后失真。旧行缺 key 向后兼容（见回落口径）。
+- **行级选择 UI**：`quote-line-card.tsx` 仅当产品英文名 > 1 个时显示下拉（默认名 + 全部 aliases，
+  默认项标「（默认）」）；文案中性：「客户英文名（本单使用）」「默认英文名」，无地区/国家措辞。
+- **默认值解析**（`lib/product-name-selection.ts` 纯函数 + 行内 effect）：
+  ① 当前客户 + 当前产品最近一条报价行用过的英文名（必须命中该产品当前任一英文名才采用）；
+  ② 否则产品默认英文名。偏好查询未结束前不写默认（避免闪一下再被覆盖）。
+- **手动选择**：写入行 `nameEn` + `nameEnManual=true`，只换 `built.item.product_name`（价格不重算）；
+  **换产品**重置为新产品的默认解析；**换客户**手动行保留、未手动行清空后按新客户偏好重新解析。
+- **零迁移偏好端点**（内核唯一）：`GET /api/v1/quotes/product-name-preference?customer_id=&product_key=`
+  → `{product_name: string | null}`。SQL 用 `spec_snapshot->>'product_key'` 身份匹配；旧行（无 key）按该产品
+  **当前全部英文名**（默认名 + 团队别名 + 中文名，大小写不敏感）回落；团队隔离与报价读权限同源
+  （客户闸门 + `_scope_sql`）。product_key 空 → **422 PRODUCT_KEY_REQUIRED**；未知/不可见产品 →
+  **404 PRODUCT_NOT_FOUND**；别团队客户 → **404 CUSTOMER_NOT_FOUND**；无历史 → `null`。
+- **参考价按产品身份**（`GET /api/v1/quotes/reference-price`）：优先 `spec_snapshot->>'product_key'`，
+  旧行回落「本单所选名 + 该产品历史用过的任何英文名」；只传 `product_name` 的旧调用方行为不变；
+  两者都不传 → 422（不再默默按空名匹配）。
+- **继承链（只加测试、不改代码）**：用户选的 `product_name` 原样进 `quote_order_items` →
+  quotation 的 `trade_doc_items`；报价转订单复制进 `order_items`；`doc_payload.order_snapshot` 原样带出。
+- 文件：`backend/worker/src/quote_api.py`（新端点 + 参考价身份匹配）、
+  `frontend/src/app/(app)/quotes/{components/quote-line-card.tsx,lib/line-to-item.ts,lib/product-name-selection.ts,hooks/use-product-name-preference.ts,hooks/use-reference-price.ts,views/use-workbench-state.ts}`、
+  `frontend/src/mocks/handlers.ts`（偏好端点 + 参考价身份匹配的 MSW handler）。
+- 测试：前端新增 27 条（行卡 12 / 纯函数 12 / hook 3）+ line-to-item 4；内核新增
+  `tests/test_quote_product_name_preference.py`（10 条：偏好/参考价身份/单证快照继承）+
+  `test_parity_quote.py` +5（落库、订单继承、参考价身份/422、路由面登记）。
+
+### 8.2 B · API token 只读预览权限映射
+
+- `backend/ts-worker/src/scope-map.ts`：在 trade-docs 泛前缀（readWrite：POST→write）**之前**加
+  `rule("POST", "/api/v1/trade-docs/preview-render-data*", "trade_docs:read")` —— 预览只装配渲染数据、
+  **不落库**，是只读语义；规则表顺序即优先级。其余 `POST /trade-docs*` 仍要求 `trade_docs:write`。
+- 注释/文档写清「读/写按端点是否落库判断，不能按 method 一刀切」：`scope-map.ts` 注释、
+  `docs/W5_MCP_REST_DESIGN_2026-10-21.md` §2、`backend/ts-worker/README.md` 对照表。
+- 测试（`tests/scope-map.test.ts` +10）：只读 token 调预览通过；写 token 调其它 POST /trade-docs 仍可用；
+  只读 token 调其它 POST /trade-docs → 403 SCOPE_NOT_DECLARED（不能顺手放宽）；无 scope token → 403；
+  「未声明路径 = 拒绝」边界（`/trade-docs-extra` → null）。
+
+### 8.3 C · 路由清单/计数收口（内核 +2 条业务路由）
+
+- 用 worker venv 重新生成：`backend/worker/.venv/Scripts/python.exe backend/ts-migration/export_routes.py`
+  → **280 业务路由 + 4 内置 = 284**（脚本自检 OK）。
+- `backend/ts-migration/export_routes.py`：`EXPECTED_TOTAL 282→284`，按既有注释风格补两行（见文件头）：
+  第二轮 `POST /api/v1/trade-docs/preview-render-data` ⇒ 279 业务（+4=283）；
+  第三轮 A `GET /api/v1/quotes/product-name-preference` ⇒ 280 业务（+4=284）。
+  说明：任务书 C 只预期 preview 的 282→283；**A 项新增的偏好端点也是一条业务路由**，故按实际清单收到
+  284（用户口径「以路由清单实际分类为准」）。`routes.json` / `route-inventory.md` 已重生成；
+  再跑一次生成器输出 OK 且产物字节不变（幂等）。
+- 同步计数：`tests/route-surface.test.ts` 头注释 `278→280`；`tests/openapi.test.ts` 断言
+  `278/193/85 → 280/193/87`；`AGENTS.md` 门禁段；`docs/API_RESERVED_LIST.md` 基线；
+  `docs/README.md` 路由行；`docs/TODO.md` §S S-16。
+- 分类：**280 = 193 直接 + 87 透传**（新增 2 条都在透传前缀内，门面无需逐条注册；路由面机检不受影响）。
+
+### 8.4 D · `/workstation-products` 对代码注册表产品 404（同类隐患）
+
+- 根因：系统产品真源是代码注册表（`kaas_common/export_quote/products/`），生产 `tenant_products`
+  没有 `is_system=true` 行；旧实现只读 DB ⇒ 空表团队 GET 回 `[]`、POST 注册表产品恒 404。
+- 内核（唯一判定）：`ws_products._matrix_rows` = **注册表产品（is_system=true，名称取注册表）∪ 本租户
+  active 租户行**，同 key 时租户行覆盖（保持"租户自定义产品优先"）；`set_workstation_product` 查不到 DB 行
+  时回落注册表，真正未知 key 仍 404（不写库）。
+- TS 门面：删除第二份 `matrixRows`/SQL 判定，GET/POST `/api/v1/workstation-products` 改为
+  `requireUser + forwardKernelRequest`（与 `/tenant-product-status` 同模式）；路由仍逐条注册 ⇒ routes.json 计数不变。
+- 订阅闸门保留：未开通报价工位仍 **404 SUBSCRIPTION_REQUIRED 且不写库**；团队隔离口径不变（内核一处）。
+- 测试：worker `test_tenant_products_team_scope.py` 期望改为「注册表 3 个产品 + 租户行并集」
+  （field_fence 租户行覆盖名称/is_system），新增「空表团队 GET 仍返回注册表产品」「POST field_fence 201」
+  「未知 key 404 不写库」；TS `workstations-routes.test.ts` 新增 GET/POST 转发内核、无 token 401、
+  门面不再直连 `tenant_products`/`tenant_workstation_products`（15 条）。
+
+### 8.5 门禁（2026-10-24 第三轮实测，工作区静止）
+
+| 门禁 | 结果 |
+|---|---|
+| worker pytest | **1842 passed + 12 skipped**（1842+12=1854 全跑完，0 failed） |
+| orchestrator pytest | **273 passed** |
+| ts-worker typecheck / test | 0 error / **323 passed（26 文件）** |
+| 路由面机检 | `route-surface` + `openapi` 10 passed（280 = 193 直接 + 87 透传；0 缺失 0 多余） |
+| 前端 typecheck / lint | 0 / **0 errors（75 warnings 全存量）** |
+| 前端 test | **228 files / 1678 passed** |
+| contracts / mocks | PASS（R0–R6）/ PASS（前端调用 245 / MSW handler 262 / 未覆盖 3 ≤ 20 / P1 54/54） |
+| ui:standards / ui:contrast | PASS / PASS（24 条 light+dark 全 ≥ 4.5） |
+| trade-doc:check | PASS（23 类型：15 OK / 8 WARN 均为「manifest 声明但模板未直接用」） |
+| e2e | **28 passed / 0 failed / 0 skipped**（--list Total 28，对平） |
+| build（Windows 本机） | `NEXT_EXPORT=1 pnpm build` exit 0（out 322 files / 8.9 MB）；`assets:check` 本机**已知红**（仅 `__next.*` 目录 39 条，badNames/missingRefs/prefetchTrue 全 0）⇒ 以 CI ubuntu 产物为准 |
+| 静态断言 | runtime-deps / schema-coverage / worker-bundle / deploy-domains 全 PASS；schema-drift 在 PS5.1/cp936 下因打印 ⚠️ 编码报错（非漂移），`PYTHONUTF8=1` 重跑 PASS（生产表 109 / 模型表 111，列漂移 0） |
+| sync-shared -Check | PASS（共享内核 46 / 报价引擎 22 / 枚举 1 一致） |
+| Test Pilot | 本工作区未配置 runner（no-tests）；以上均为显式命令实测 |
+
+### 8.6 部署与生产验证
+
+> 代码+文档同批提交后由 `deploy.yml` 自动发布（push main 触发 CI→deploy）；部署完成后在 docs-only
+> 跟进提交回填 run id 与黑盒证据（避免把"待验证"写成"已验证"）。
+
+- 待回填：deploy run、`/health?deep=1` ×3、新 preference 端点口径、preview 端点可达性、
+  `/workstation-products` 401/403/404 口径、生产 HTML 与 deploy artifact 逐字节比对、chunk 新文案。
+
