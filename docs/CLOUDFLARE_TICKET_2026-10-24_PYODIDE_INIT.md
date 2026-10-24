@@ -1,160 +1,190 @@
-# Cloudflare 工单证据包：Python Workers 初始化期崩溃（NoGilError / Pyodide promising-task SystemError）
+# Cloudflare 工单证据包（v2，2026-10-24 22:00 重写）
 
-> 用途：可直接作为 Cloudflare Support 工单正文提交。整理时间 2026-10-24。
-> 涉及账号：`766f8d7eb5a7d20e272673073ec8c3fd`（Dspro0124@163.com's Account）
-> 涉及 Worker：`kaas`（Python，`compatibility_date=2026-09-18`，`compatibility_flags=["python_workers"]`）
-> 相关脚本版本：`f6bf1a83-a254-45b6-8fee-7dee57787b2c`
+> Python Workers 初始化期崩溃（NoGilError / Pyodide promising-task SystemError）
+> **v2 修订说明**：按独立审阅意见重写了数字口径（原文 §1 的 56% 与 §4 表的 4456/4475 混用，是两个不同窗口且数据已增长）、
+> 把「复现」拆成「Cloudflare 可执行的最小复现」与「我方黑盒复现」、补 §3A 对照实验与 §8 主动披露、
+> 内存改为「风险因子」而非因果、删掉 §9.3 的逆否误推。**所有数字均由 2026-10-24T13:5xZ 重新查询 GraphQL 得到（见 §4）。**
+
+## 0. 环境与影响面（工单第一屏）
+
+| 项 | 值 |
+|---|---|
+| Account ID | `766f8d7eb5a7d20e272673073ec8c3fd` |
+| Python Worker | `kaas`（template `python_workers`，**无公网域名** `routes: []`） |
+| 调用路径 | `kaas-edge`（TS Worker）→ **Service Binding** → `kaas`（binding URL `https://kernel.internal`） |
+| compatibility_date / flags | `2026-09-18` / `["python_workers"]` |
+| Workers 套餐 | Paid（内存上限 128 MB） |
+| cron triggers（内核） | `*/15 * * * *`、`30 16 * * *`、`40 17 * * *`（**cron 也会触发 Pyodide init 并计入下文数字**） |
+| 影响面 | 前端**需要调用 Python Worker** 的请求成片 502；认证与大部分读已由 TS 门面承担，全程健康 |
+| 我们的 workaround | ① 门面对幂等 GET 做最多 5 次退避重试（窗口 ≈4.4s）；② 持续把端点从 Python Worker 迁到门面（本周期已迁 40+ 条） |
+| 期望响应 | 是否**已知缺陷** + 官方规避手段 + 修复窗口；请求转 Python Workers 运行时团队 |
 
 ## 1. 一句话描述
 
-我们的 Python Worker 在生产上对**带 Authorization 头的正常业务请求**间歇性返回 502；Workers 侧记录的 outcome 是
-`scriptThrewException`，异常发生在 **Pyodide 实例初始化**（`initPyInstance` / `preparePython`），
-异常消息自身声明 *"This is a bug in Pyodide"*。当日内核错误率约 **56%**（3030/4456 次调用），
-同一时刻同一门面的其他请求 0 错误。
+生产 Python Worker 在**实例初始化阶段**（`initPyInstance` / `preparePython`）间歇抛错，栈里**没有任何应用代码帧**，
+运行时自己报 `This is a bug in Pyodide`；同一分钟、同一 URL 的请求 502 与 200 交替出现，约 10 分钟后自愈无部署。
 
-## 2. 复现
+## 2. 我们看到的现象
 
-**稳定复现路径**（同一分钟内、同一出口 IP、交替发）：
+1. **两类异常，都发生在 init 阶段**：
+   - `NoGilError: Attempted to use PyProxy when Python GIL not held`（`preparePython` → `python_getattr`）
+   - `PythonError/SystemError: Cannot enter a promising task from inside another running promising task. This is a bug in Pyodide.`（`doPyCallHelper` → `initPyInstance`）
+   - 两者是否同根因**我们不知道**，请协助判定（第二类读起来像**重入**）。
+2. **同版本、同分钟、同 URL 成败交替**：`GET https://kernel.internal/api/v1/products` 在一分钟内 502/200 交替，10 分钟后无部署自愈。
+   ⇒ 这排除了「代码逻辑必定失败」。
+3. **匿名健康探针全程 200**（`GET /health`），所以我们的监控当时没报警 —— 这也是我们要补的监控盲区（已加真实 JWT 的错误率门禁）。
+4. **采集方法（诚实边界）**：§3 的样本来自**单次 `wrangler tail` 会话**，且当时门面重试正在放大流量；
+   24 条是**观察到的全部**异常（并非抽样后挑出的），但样本量小、时窗短 —— 我们会在 A1 补 100+ 条对照与更大样本。
 
-1. 匿名 `GET /api/v1/products` → **401**（内核正常响应）
-2. `POST /api/v1/auth/login` → **200**（数据库正常，返回 JWT）
-3. 带 `Authorization: Bearer <jwt>` 再 `GET /api/v1/products` → **502 `{"error":"kernel_error","message":"kernel unreachable"}`**
-4. 约 10 分钟后再发同一请求 → **200**（自愈）
-
-⇒ 失败与鉴权逻辑无关，是 **isolate 初始化失败后，落到该 isolate 的所有请求都 502**，直到它被替换。
-
-**注**：匿名健康探针 `GET /health` 与 `/health?deep=1` **全程返回 200/ok**（不触发鉴权路径），因此平台侧监控未报警。
-
-## 3. 真实异常（wrangler tail，`--format json`）
-
-24 个异常事件**全部** `outcome=exception`、`scriptName=kaas`、请求 URL `https://kernel.internal/api/v1/products`。
-两类异常各 12 次（每次失败重试中各出现一次）：
+## 3. 异常原文（完整 JSON 行见 A1）
 
 ```json
 {
-  "name": "NoGilError",
-  "message": "Attempted to use PyProxy when Python GIL not held",
-  "stack": "    at throw_no_gil (pyodideRuntime-internal:emscriptenSetup:22096:11)\n    at wasm://wasm/0249d42a:wasm-function[450]:0x6e2e7\n    at python_getattr (pyodideRuntime-internal:emscriptenSetup:24657:11)\n    at Object.get (pyodideRuntime-internal:emscriptenSetup:24731:119)\n    at async preparePython (pyodide:python-entrypoint-helper:230:28)\n    at async initPyInstance (pyodide:python-entrypoint-helper:286:24)\n    at async Proxy.<anonymous> (pyodide:python-entrypoint-helper:328:36)"
+  "outcome": "scriptThrewException",
+  "scriptName": "kaas",
+  "eventTimestamp": "<A1 内逐条>",
+  "event": { "request": { "url": "https://kernel.internal/api/v1/products" } },
+  "exceptions": [{
+    "name": "NoGilError",
+    "message": "Attempted to use PyProxy when Python GIL not held",
+    "stack": "throw_no_gil (pyodideRuntime-internal) -> python_getattr -> preparePython -> initPyInstance"
+  }]
 }
 ```
-
 ```json
 {
   "name": "PythonError",
   "message": "SystemError: Cannot enter a promising task from inside another running promising task. This is a bug in Pyodide.",
-  "stack": "    at new_error (pyodideRuntime-internal:emscriptenSetup:21276:12)\n    at wasm://wasm/0249d42a:wasm-function[275]:0x65562\n    at wasm://wasm/0249d42a:wasm-function[276]:0x6562a\n    at callPyObjectKwargsPromising (pyodideRuntime-internal:emscriptenSetup:24011:97)\n    at async doPyCallHelper (pyodide:python-entrypoint-helper:245:20)\n    at async initPyInstance (pyodide:python-entrypoint-helper:291:17)"
+  "stack": "new_error (pyodideRuntime-internal:emscriptenSetup) -> wasm-function[275] -> callPyObjectKwargsPromising -> doPyCallHelper -> initPyInstance"
 }
 ```
+```
+两类栈的共同点：**入口都是 `initPyInstance`，终点都在 pyodideRuntime-internal**，中间无 `kaas_common/**`、无 `main.py` 帧。
+```
 
-两条栈里**没有任何应用代码帧**，全在 Pyodide/Workers 运行时初始化路径。
+## 3A. 对照实验（A6；**未完成项如实标 pending**）
 
-## 4. 量化数据（Cloudflare GraphQL `workersInvocationsAdaptive`）
+| # | 实验 | 目的 | 状态 |
+|---|---|---|---|
+| E1 | 最小 `python_workers` Worker（同账号/compat_date/flags、无业务依赖）并发冷启动压测 | **去掉我们的代码是否仍崩**（决定「平台缺陷 vs 我们的包体」） | **pending（下一步优先做）** |
+| E2 | 依赖二分：hello-world → +fastapi/pydantic → +asyncpg → +PyJWT/bcrypt → 全量 `python_modules` | init 崩溃是否依赖我们的依赖面 | pending |
+| E3 | 冷启动后**串行** 10 次（间隔 1s）vs **并发** 10 次 | 验证 `promising task` 的**重入**假设 | pending |
+| E4 | 把内核回滚到事故前版本观察 24h | 控制「我们 06:49Z 部署」这个混淆因子 | **未做（如实披露，见 §8.1）** |
+| E5 | 同版本、同 5 分钟窗口内：失败 5 条 + 成功 5 条（含 ray ID） | 证明「同代码既有失败也有成功」 | pending（A1 已有 24 失败，缺成功对照） |
 
-**按状态聚合（2026-10-23T00:00Z 起，script=kaas）**
+## 4. 量化数据（2026-10-24T13:5xZ 重新查询，script=`kaas`）
 
-| status | requests | errors |
-|---|---|---|
-| `scriptThrewException` | **3030** | 3030 |
-| `success` | 1426 | 0 |
-| `exceededResources` | 15 | 15 |
-| `clientDisconnected` | 4 | 0 |
+**三个窗口（分子分母都写清，避免混用）**：
 
-**门面对照（script=kaas-edge）**：`success` 1821，`errors 0`。
+| 窗口 | 起（UTC） | 止（UTC） | 合计 invocations | scriptThrewException | 错误率 |
+|---|---|---|---|---|---|
+| **A** | 2026-10-23T00:00Z | 2026-10-24T12:00Z | **4752** | **3063** | **64.5%** |
+| B | 2026-10-22T00:00Z | 2026-10-24T12:00Z | 5158 | 3063 | 59.4% |
+| C | 2026-10-21T00:00Z | 2026-10-24T12:00Z | 5566 | 3064 | 55.0% |
 
-**内存分位（同脚本，按状态）**
+窗口 A 明细：`scriptThrewException 3063` / `success 1670` / `exceededResources 15` / `clientDisconnected 4`。
+（原文 v1 写过 3030/4456=「56%」与 3030/4475 — 前者是更早窗口、后者是更早时点的表，**两个数都不是错数，是本稿混用**；v2 统一到上表。）
 
-| status | memoryUsageBytes P50 | memoryUsageBytes P99 |
+**必须声明的分母口径（否则会被质疑流量口径）**：
+- **invocation ≠ 用户请求**：门面对幂等 GET 最多重试 5 次（≈4.4s），1 次用户动作最多产生 5 次 invocation ⇒ 3063 含重试放大；
+- 我们同时承认：重试**也真实增加了 init 压力**（重试发生在冷启动失败的 isolate 上），这是双刃。
+- **cron 计入**：内核 3 条 cron 也会初始化实例，包含在上表里。
+
+**内存：只作风险因子，不作因果**（原文把它写成因果是错的）：
+| status | memory P50 | memory P99 |
 |---|---|---|
 | success | 95–118 MB | **137.5 MB** |
 | scriptThrewException | 96–101 MB | 119.6 MB |
 | exceededResources | 96–119 MB | 138.9 MB |
 
-Workers 内存上限 128 MB ⇒ 初始化期长期贴上限（P99 已超）。`wasmMemoryBytesP99` 稳定 52–62 MB。
+> **反直觉点必须自己先说**：失败的请求内存**低于**成功的请求（119.6 < 137.5）。
+> 这与「init 期就 abort、WASM 堆还没长满就被统计」一致，所以我们在 v2 里**不主张 OOM 是主因**；
+> 真正的 OOM 证据只有 `exceededResources` 那 15 次。128 MB 上限 + P99 137.5 MB 只说明**余量很小**。
 
-**失败请求的耗时特征**：`cpuTimeP50` 仅 **274–1293 µs**、`wallTimeP50` 651–1895 ms（启动期即失败）；
-成功请求 `wallTimeP50` 最低 **5987 ms**（每次请求都在付完整 Python 初始化成本）。
-tail 事件里 `executionModel: "stateless"`。
+**耗时特征**：失败请求 `cpuTimeP50` 274–1293 µs、`wallTimeP50` 651–1895 ms（启动期即失败）；
+成功请求 `wallTimeP50` 最低 5987 ms。**我们不断言「每次请求都在付完整 init」**（缺逐 isolate 证据），
+只说「低流量期 + isolate 频繁回收 ⇒ 大量请求落在冷启动」这一更弱的表述，并将在 A8 补冷/热对照。
 
-**时间线（小时）**：10-22 全天 0 错误；10-23 00:00Z 起成簇（单小时最高 247 次）；10-24 06:49Z 部署后 07:00Z 单小时 **993 次**。
+**时间形态**：10-22 全天 0 错误；10-23 起成簇（单小时最高 247）；**10-24 06:49Z 我们部署新内核版本后，07:00Z 单小时达 993（4×）**。
 
-## 5. 我们的排查已排除的可能
+### 4.1 部署与错误率对齐（A3/A9）
 
-- ❌ 不是业务代码异常：栈无应用帧，且同版本代码在失败前后均能成功处理同样的请求。
-- ❌ 不是鉴权/DB 故障：匿名 401 与 login 200 均正常，DB（Hyperdrive）健康。
-- ❌ 不是绑定额度：`exceededResources` 仅 15/4475，主要失败是 `scriptThrewException`。
-- ❌ 不是我们并发打爆：失败集中出现，且重试（200/500/1200/2500ms 退避）后大量仍失败。
-- ✅ 与"部署后新版本 isolate 首次初始化"以及"运行中 isolate 被替换后重新初始化"高度相关。
+| UTC 时间 | 事件 |
+|---|---|
+| 2026-10-24T06:41:25Z | commit `c25ffe36`（第三轮收口，37 文件） |
+| 2026-10-24T06:48:06Z→06:48:19Z | **我们跑了 DB migration**（alembic upgrade head） |
+| 2026-10-24T06:48:22Z→06:49:46Z | **内核 kaas 部署**（新版本） |
+| 2026-10-24T06:49:48Z→06:50:32Z | **门面 kaas-edge 部署** |
+| 2026-10-24T07:00Z | 该小时错误数 993（此前峰值 247）⇒ **紧跟我们自己的部署** |
 
-## 6. 我们希望 Cloudflare 确认/修复的点
+> 我们**主动标注**这个相关性：在未完成 E4（回滚 24h 对照）之前，我们**不声称**部署与该尖峰无关。
 
-1. `initPyInstance` 阶段出现 `NoGilError` 与 `SystemError: Cannot enter a promising task ...` 是否为已知缺陷？
-   是否有已知的触发条件（并发首次请求？某类模块导入？`python_workers` flag 组合？）
-2. 是否有**推荐的规避手段**（例如特定 `compatibility_date`、关闭某优化、调整 snapshot/prewarm 设置、限制并发首次请求）。
-3. Python Worker 的**启动内存**是否有官方调优建议（我们的 P99 已到 137MB / 128MB 上限）。
-4. 是否有可观测手段能在**初始化失败**时给出更明确的错误（目前只看到 scriptThrewException）。
+## 5. 我们已排除 / 未排除
 
-## 7. 复现脚本（供你们内部验证）
+**已排除**（有对照数据）：
+- ❌ 业务代码异常：栈无应用帧；**同版本代码在事故前后都能成功处理同一请求**；
+- ❌ 绑定/额度：`exceededResources` 仅 15/4752，主失败是 `scriptThrewException`；
+- ❌ 门面侧故障：同窗口 `kaas-edge` 1821 次调用 **0 错误**；
+- ⚠️ 鉴权逻辑：我们**不能**用「匿名 401 正常」来证明与鉴权无关（那是另一次成功的 init）。只能说「同 URL 同分钟成败交替」，并把「鉴权分支会让请求更晚进入 init 路径」列为**未排除的假设**。
 
+**未排除**（见 §8 披露）：我们自己的部署、重试放大、拓扑变更（10-22 起无公网域名）、init 本身很重（~800KB 源码/isolate、`python_modules` 11.79 MiB / 606 文件、冷启动实测 2.6–3.9s）。
+
+## 6. 我们需要 Cloudflare 确认/修复的点（按优先级）
+
+1. **是否已知缺陷**：`initPyInstance` 上出现 `NoGilError`（preparePython）与 `Cannot enter a promising task`（doPyCallHelper）是否为 Python Workers / Pyodide 的已知问题？若有：issue 号、受影响 runtime/Pyodide 版本、预计修复窗口。
+2. **官方规避**：是否推荐「把冷启动串行化」（前置 Durable Object / Queue），或有可用的 `compatibility_date` / `compatibility_flags` 组合规避？
+3. **两类异常是否同根因**：第二类读起来像**并发重入 init**，请确认或排除（这直接决定我们是否该把内核调用串行化）。
+4. **内存口径**：128 MB 是否含 host 堆？init 期 OOM 是否应记为 `exceededResources` 而非 `scriptThrewException`？
+5. **内部 trace**：能否用 A1 里的 `rayId`（及 colo）反查失败路径？
+
+## 7. 复现
+
+### 7A 给 Cloudflare 的最小复现（**pending，下一步产出 A4**）
+- 一个最小 `python_workers` Worker：同账号、`compatibility_date=2026-09-18`、`compatibility_flags=["python_workers"]`；
+- 两个变体：① hello-world（无依赖）② 代表性依赖面（fastapi/pydantic/asyncpg）；
+- 压测脚本：并发冷启动 N 次（每次间隔 > isolate 回收窗口），打印 status/rayId；
+- 判据：若 hello-world 同样出现 `initPyInstance` 异常 ⇒ 平台侧；若仅重依赖变体出现 ⇒ 指向包体。
+
+### 7B 我方黑盒复现（仅供对照，CF 无法执行）
+打我们的 edge 域名需要我们的 JWT 与 DB，且内核无公网域名（只能经 Service Binding 调用）⇒ 仅作现象记录：
 ```bash
-# 1) 取 token
-curl -s -X POST https://<our-host>/api/v1/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"<qa-user>","password":"<qa-pass>"}'
-
-# 2) 交替发匿名 / 带 JWT 请求，观察 502 簇
+# 1) 登录拿 JWT（需我方 QA 账号）
+curl -s -X POST https://api.kaas.powervoy.com/api/v1/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"<qa-user>","password":"<qa-pass>"}' | jq -r .access_token > /tmp/t
+# 2) 交替打（历史现象：同分钟 502/200 交替）
 for i in $(seq 1 20); do
-  curl -s -o /dev/null -w "anon %{http_code}\n" https://<our-host>/api/v1/products
-  curl -s -o /dev/null -w "jwt  %{http_code}\n" -H "Authorization: Bearer $TOKEN" https://<our-host>/api/v1/products
+  curl -s -o /dev/null -w "%{http_code} " -H "Authorization: Bearer $(cat /tmp/t)" https://api.kaas.powervoy.com/api/v1/products
   sleep 0.5
 done
-
-# 3) 抓 tail（Python Worker）
+# 3) 抓内核 tail
 CLOUDFLARE_API_TOKEN=... npx wrangler tail kaas --format json
 ```
 
-## 8. 我们的临时缓解（供参考）
+## 8. 主动披露（可能被用来解释故障的事实，我们不等你问）
 
-- 门面 Side 对 `env.KERNEL.fetch` 抛错按幂等性做指数退避重试（GET 5 次、窗口≈4.4s），把单次初始化失败对用户的影响吸收掉一部分；
-- 正在把**认证与数据库访问**从 Python Worker 移到 TS 门面（Hyperdrive 直连），使"用户能否打开页面"不再取决于 Pyodide 初始化；
-- 增加**带真实 JWT 的合成探针**（匿名探针掩盖了该故障）。
-## 9. 迁移完成后的架构证据（2026-10-24 21:45 补充，强化「影响面」论证）
+1. **10-24T06:48–06:50Z 是我们自己的部署**（见 §4.1），4× 尖峰紧跟其后；**回滚对照（E4）尚未做**，我们不宣称与该部署无关。
+2. **重试放大**：门面对幂等 GET 最多重试 5 次/≈4.4s ⇒ 3063 含重试，且重试本身增加了 init 压力。
+3. **拓扑变更**：10-22 起内核 `routes: []`、只能经 Service Binding 调用；此前有公网域名 ⇒ **缺少前后可比阶段**。
+4. **我们的 init 本就重**：~800KB Python 源码/isolate、`python_modules` 11.79 MiB / 606 文件、冷启动实测 2.6–3.9s（个别 PoP ~10s）；事故前试过懒加载降内存，**已回退**。
+5. **事故期间我们在把读流量迁出内核** ⇒ 内核 invocation 大幅下降 ⇒ isolate 更易回收 ⇒ 冷启动更频繁 ⇒ **可能反而放大**该缺陷的暴露面（假设，非结论）。
+6. **内核 3 条 cron** 也触发 init 并计入 §4 数字。
+7. **窗口内 502 信封变更过**（`kernel_error` → 新的 `kernel_unavailable`），A1 样本会标注对应门面版本。
+8. **24 条 tail 样本来自单次会话**、且在重试风暴期间采集，样本量小；A1 会补更大样本与成功对照。
 
-为把「Pyodide 初始化失败」从**影响全站**降级为**影响局部**，我们在这两天把请求路径重构成两层，并留下了可复核的线上证据：
+## 9. 附件清单
 
-### 9.1 当前形态
-```
-用户/前端 ──► kaas-edge（TS Worker, Hono + Hyperdrive 直连 Neon）
-                ├─ 认证 / 热读 / 大部分只读 / 配置类写  ──► 直接查库（不经过 Python）
-                └─ 需要 Python 计算的少数端点 ──► KERNEL.fetch (Service Binding)
-                                                     └─ /api/v1/internal/engine/* 纯算 RPC
-                                                        （内核此时**不连库**，只做投影/算法）
-```
+| 编号 | 内容 | 状态 |
+|---|---|---|
+| A1 | tail JSONL：24 条失败 + 100+ 对照（含 rayId/时间戳/scriptVersion/colo 若可得） | 待补 |
+| A2 | GraphQL 查询原文 + 结果 JSON/CSV（三个窗口、按小时序列） | 待整理 |
+| A3 | 版本与部署清单（UTC）+ compat 设置 | 已有（§4.1） |
+| A4 | **最小复现 Worker 源码 + wrangler + 压测脚本** | **pending（7A）** |
+| A5 | 依赖与包体清单（pylock sha256、`python_modules` 体积/文件数、dry-run bundle、wrangler/pywrangler/uv 版本） | 待整理 |
+| A6 | 对照实验矩阵（E1–E5）与结果 | pending |
+| A7 | 影响面（门面 502 计数/端点/去重用户/重试换算） | 待整理 |
+| A8 | 内存/CPU/wallTime 分位按小时序列（含冷/热对照） | 待整理 |
+| A9 | 事故时间线（UTC，含我方部署与缓解动作） | 已有（§4.1 + 事故文档） |
 
-- **已迁移到门面的实路由数（本任务内新增）**：40+ 条（热读 5 + 纯 SQL 只读 12 + 引擎切片 14 + 写路径 6 + 其余批次）
-- **内核保留连库的端点**：只剩 41 条跨表事务写 + 约 10 条「保持 Python」（字节流/PDF/AI 执行/出站探针/cron/懒种子），
-  已用 `backend/worker/src/kernel_db_allowlist.txt` + `scripts/kernel-db-baseline.json` **静态锁死**（除清单外不得新增连库端点）。
+## 10. 提交用英文正文
 
-### 9.2 线上证据：内核现在只收到「纯算 RPC」
-多轮 `wrangler tail kaas --format json` 抽样（每次带真实 JWT 打 5–7 个业务端点）：
-```
-内核收到请求数: 6
-  /api/v1/internal/engine/quote/import-template
-  /api/v1/internal/engine/quote/order-template-info
-  /api/v1/internal/engine/quote/products
-  /api/v1/internal/engine/trade-docs/list
-  /api/v1/internal/engine/trade-docs/detail
-  /health
-```
-⇒ **业务查询已不再落入 Python Worker**；内核收到的是「门面已取好数据、只要算术」的 RPC。
-
-### 9.3 为什么这对你们的缺陷诊断有帮助
-1. Pyodide 初始化（preparePython / initPyInstance）**仍然会**在这类 RPC 调用时触发 —— 所以我们的 502 观测依然有效、仍可复现；
-2. 但**影响面**已从「所有页面都可能 502」缩到「少数需要 Python 计算的端点」；
-3. 这也**排除了「我们的用法问题」**这一解释：我们已把 Python 侧的 DB 访问几乎全部移除（连库只剩例外清单），
-   内核初始化仍然失败 ⇒ 故障点在 **Pyodide 初始化本身**，与「Python Worker 里做重活」无关。
-
-### 9.4 我们可以配合提供的材料
-- Worker 名称 / account id / 采样时间窗 / 具体 colo（可从 GraphQL 取）；
-- 完整 `wrangler tail --format json` 原始行（含 `outcome: scriptThrewException` 与两段堆栈）；
-- 我们的 wrangler 版本、`compatibility_date`、`compatibility_flags`（是否 python_workers）、依赖锁（uv lock）；
-- 复现脚本（§7）与对照组数据（匿名 vs 带 JWT 的成功率差异）。
+见 `docs/CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT_EN.md`（与本文同源，数字与 §4 一致）。
