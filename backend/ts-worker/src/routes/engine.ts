@@ -224,8 +224,20 @@ export async function calculateWithKernel(
   try {
     envelope = await upstream.json();
   } catch {
+    // 诊断增强（2026-10-24）：非 JSON 响应必须能看出「谁、什么状态码、什么内容」，
+    // 否则只能猜（本次先被误判为资产层 SPA 回退）。只回传前 200 字符，且控制台留全量。
+    const text = await upstream.text().catch(() => "");
+    const head = text.slice(0, 200);
+    console.error(
+      "[engine] rpc non-JSON status=" + String(upstream.status) + " path=" + ENGINE_QUOTE_CALCULATE_RPC
+      + " body_head=" + head,
+    );
     return c.json(
-      { error: "kernel_error", message: "engine rpc returned non-JSON body", status: 502 },
+      {
+        error: "kernel_error",
+        message: "engine rpc returned non-JSON body (status " + String(upstream.status) + "): " + head,
+        status: 502,
+      },
       502,
     );
   }
