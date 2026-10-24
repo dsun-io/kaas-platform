@@ -164,6 +164,20 @@
 > - **门禁**：worker **2029+12skip** / ts-worker **41 文件 650 测** / orchestrator **273**；
 >
 >
+>
+> **第十一批（2026-10-24 22:05）· P3 收尾门禁 + 工单 v2**
+> - **内核 DB 使用门禁上线**（`scripts/check-kernel-db-allowlist.py` + `kernel-db-baseline.json` + `kernel_db_allowlist.txt`，接入 backend-test CI）：
+>   基线 23 模块 / **340 处 DB 调用**；规则 = 清单外不得新增连库端点、清单内**只减不增**；已做**阳性对照**（把基线改小 ⇒ 门禁变红 ⇒ 恢复 ⇒ 通过），CI 日志已确认 `PASS: 内核 DB 使用未回潮`。
+> - **P3 删除清单**：精确算出 **25 个可删的内核 GET handler**（附同路径其它方法需保留的标注），并写明关键取舍——**删 handler 后 `off` 回退不再成立**（回退变成「回滚内核代码 + 重部署」）。
+> - **工单证据包 v2 重写**（`docs/CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md` + `_EN.md`）：
+>   · **修正数字口径**（原稿 56% 与 3030/4456/4475 混用）→ 重新查询 GraphQL 得三个窗口：A 3063/4752=**64.5%**、B 59.4%、C 55.0%；
+>   · **内存改为风险因子而非因果**（失败请求内存反而低于成功：119.6 < 137.5 MB，自行先说明这点）；
+>   · **主动披露 8 条**（含「10-24 06:48–06:50Z 是我们自己的部署、回滚对照未做」、重试放大、拓扑变更、init 本就重、迁流量可能放大暴露、cron 计入、信封变更、单次 tail 样本小）；
+>   · **复现拆分**：7A Cloudflare 可执行的最小复现 Worker（pending）/ 7B 我方黑盒（仅供对照）；对照实验 E1–E5 矩阵（未完成如实标 pending）；
+>   · 英文正文单独成文件，可直接粘贴提交。
+> - 已派 **E1/E3 实验**（最小 probe Worker + 串行 vs 并发冷启动）—— 这是「平台缺陷 vs 我们的包体」「是否并发重入」的判定性证据。
+> - **门禁**：worker **2114+12skip** / ts-worker **47 文件 752 测** / orchestrator **273** / 新增 DB 门禁 PASS。
+>
 > **第十批（2026-10-24 21:25）· 写路径首次放量**
 > - **写路径放量**（tax-archives / product-tax-rates 的 create/update/delete 共 6 条 route id）。放量依据三级证据：
 >   ① 校验已下沉 `kaas_common/workstation/tax_archive_rules.py`（新旧共用一份）；② 内核 44 + 门面 45 条写测试（SQL/参数逐字）；
