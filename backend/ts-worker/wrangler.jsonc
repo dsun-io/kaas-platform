@@ -84,8 +84,12 @@
     // 2026-10-24 19:25 第五批：trade-docs/{id}/files（单条 JOIN，**有硬团队尺** _team_scope ⇒ 安全）。
     // 2026-10-24 19:35 第六批：external-docs.list（隔离已修：内核 + 门面都补了 tenant_id + 行级谓词，
     // 下载端点也在内核侧一并修好；见 P2 §8.8）。fx-rates 仍不放量（汇率是全局基线表，等产品拍板）。
+    // 2026-10-24 21:20 **写路径首次放量**（tax-archives / product-tax-rates 的 create/update/delete）：
+    // 放量依据 = ①校验已下沉 kaas_common 单一实现（新旧共用）；②内核 44 + 门面 45 条写测试（SQL/参数逐字）；
+    // ③**生产库事务内验证** TS 写 SQL 在真实 schema 可执行且与内核列集合/语义一致，执行后 ROLLBACK 零残留
+    // （含 product_tax_rates 的「停用行复活」分支）。回退 = 删这 6 个条目或 AUTH_DB_SPLIT=off。
     // 回退：删条目或 AUTH_DB_SPLIT=off（行为立即回到全透传）。
-    "AUTH_DB_SPLIT_ROUTES": "notifications.unread-count,approvals.list,products.profile,products.media,products.list,export-quote.calculate,export-quote.verify,export-quote.formulas,export-quote.spec,export-quote.explain,inquiries.list,inquiries.detail,inquiries.stage-log,quotations.list,tax-archives.list,product-tax-rates.list,trade-docs.files,external-docs.list,trade-docs.render-data,quotes.list,quotes.detail,fx-rates.list,ai.providers,ai.usage,quotes.reference-price,quotes.cost-reference,trade-docs.list,trade-docs.detail,export-quote.products,quotes.product-name-preference,export-quote.import-template,export-quote.order-template-info"
+    "AUTH_DB_SPLIT_ROUTES": "notifications.unread-count,approvals.list,products.profile,products.media,products.list,export-quote.calculate,export-quote.verify,export-quote.formulas,export-quote.spec,export-quote.explain,inquiries.list,inquiries.detail,inquiries.stage-log,quotations.list,tax-archives.list,product-tax-rates.list,trade-docs.files,external-docs.list,trade-docs.render-data,quotes.list,quotes.detail,fx-rates.list,ai.providers,ai.usage,quotes.reference-price,quotes.cost-reference,trade-docs.list,trade-docs.detail,export-quote.products,quotes.product-name-preference,export-quote.import-template,export-quote.order-template-info,tax-archives.create,tax-archives.update,tax-archives.delete,product-tax-rates.create,product-tax-rates.update,product-tax-rates.delete"
   }
   // 无 triggers（门面不跑 cron）
 }
