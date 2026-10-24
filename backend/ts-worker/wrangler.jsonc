@@ -66,11 +66,13 @@
     // 至此 P0 的 5 条热读全部走门面直连：页面首屏不再依赖 Python 冷启动。
     // 回退：把 AUTH_DB_SPLIT 改成 "off"（或从白名单删条目）再发版；行为即回到全透传。
     "AUTH_DB_SPLIT": "on",
-    // 2026-10-24 17:40 第三批重放：先前 502 "engine rpc returned non-JSON body" 的根因是
-    // **内核 assets.run_worker_first 未含 /internal/***（RPC 被 SPA 回退成 index.html），
-    // 已在内核 wrangler 修复（commit e275aa39）；回退验证确认旧路径响应 sha256 不变后再放量。
-    // 回退：删掉该条目（或 AUTH_DB_SPLIT=off）再发版。
-    "AUTH_DB_SPLIT_ROUTES": "notifications.unread-count,approvals.list,products.profile,products.media,products.list,export-quote.calculate"
+    // ⚠️ 2026-10-24 17:58 第三批**再次回退**（P2 切片暂不放量）：
+    //    链路已打通（RPC 改 /api/v1 前缀后返回 200 真实算价），但灰度对比发现**商业闸门缺失**：
+    //    旧路径对未开通 quotes 工位的账号返回 404 WORKSTATION_NOT_SUBSCRIBED，
+    //    新路径（门面供数 → 内核纯算）直接算出报价 ⇒ 绕过了「工位未开通」闸门。
+    //    根因：闸门在旧路由层（export_routes.py），没有随计算入口一起搬迁。
+    //    修复前不得放量；详见 docs/P2_COUPLING_ENGINE_2026-10-24.md §9。
+    "AUTH_DB_SPLIT_ROUTES": "notifications.unread-count,approvals.list,products.profile,products.media,products.list"
   }
   // 无 triggers（门面不跑 cron）
 }
