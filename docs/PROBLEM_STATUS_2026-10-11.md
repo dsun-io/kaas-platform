@@ -132,7 +132,18 @@
 >   收费（inquiries/quotations/verify/fx-rates）由**门面闸门**返回 404 `WORKSTATION_NOT_SUBSCRIBED`；
 >   即直连路由不再有「绕过商业限制」的风险。
 > - 门禁：ts-worker **38 文件 / 561 测**、typecheck 0；worker/orchestrator 未受影响。
-> - **新安全发现（未修未放量）**：`/fx-rates` 与 `/external-docs` 内核 SQL **无 tenant/team 谓词**（后者=跨团队元数据可见）⇒ 已登记 P2 §8.8，
+>
+> **安全修复：外部单证跨租隔离（2026-10-24 19:35）**
+> - 内核 `ws_extras.py`：`list_external_docs` 由 `WHERE 1=1` 改为**恒带 tenant_id + 行级谓词**；
+>   `download_external_doc` 由 `WHERE id=$1` 改为 `WHERE id=$1 AND tenant_id=$2` + 同一谓词（越权/跨租户统一 404，不泄露存在性）；
+>   谓词：管理员仅受租户约束；非管理员 = `uploaded_by=我` **或** 挂载对象（orders / quote_orders / cust_inquiries 的 team_id）属本团队；无团队者只剩 `uploaded_by`。
+> - 门面 `misc-read.ts` 的 `external-docs.list` 直连实现逐字镜像同一谓词；两侧用**同一份 parity 矩阵**（构造数据 + 期望可见集合）。
+> - 测试：内核新增 `test_external_docs_scope.py` **14 测**（含下载 7 条：本人/团队件可下、跨团队 404、无团队 404、**管理员跨租户仍 404**）；门面 +4 测。
+> - **闸门补漏（Lead）**：工位闸门原用 `verifyToken` 解身份 ⇒ **API token（`kaas_oat_`）解不开就放行 = 绕过商业限制**；
+>   已改为 API token 走「创建人身份 + users 行取角色/团队」判定，并补 4 条用例（未开通 404 / 已开通放行 / 管理员放行 / 用户行缺失兜底）。
+> - 门禁：worker **1915+12skip** / ts-worker **38 文件 566 测** / orchestrator **273**；`external-docs.list` 已放量，`fx-rates` 仍待产品拍板（全局基线表）。
+> - **遗留同源风险（下一轮）**：`PATCH/DELETE /external-docs/{id}` 仍只 `WHERE id=$1`（可跨租户改状态/删件），同型补 tenant + 谓词。
+> - ~~新安全发现~~ → **已修并放量（见上）**：`/fx-rates` 与 `/external-docs` 内核 SQL **无 tenant/team 谓词**（后者=跨团队元数据可见）⇒ 已登记 P2 §8.8，
 >   另立任务修内核（新旧路径一起改）；`misc-read.ts` 已实现接线但这两条**不进白名单**。
 > - ~~放量前置（已登记 P2 §8.7）~~：**已完成** —— 门面缺「工位闸门」中间件，直连收费工位端点会绕过商业限制 ⇒ 本轮已在门面实现该闸门
 >   （路径映射与 `kaas_common` 同源 + 契约测试），再逐条放量。

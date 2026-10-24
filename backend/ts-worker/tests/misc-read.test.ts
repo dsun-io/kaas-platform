@@ -200,7 +200,67 @@ describe("GET /api/v1/fx-rates（P3 直连）", () => {
 
 // ══════════════════════════════════════════════════════════════════════════════
 // GET /api/v1/external-docs（ws_extras.py:363-390）
+//
+// 2026-10-24 安全修复：本轮之前内核 `WHERE 1=1`（连 tenant 都不过滤）。现在两边同一条尺：
+// tenant 恒在 + 行级可见性（管理员放行；否则 uploaded_by=我 或 挂载对象属本团队；无团队只剩
+// uploaded_by）。**parity 锁**：本文件的 DOC_MATRIX / EXPECTED_VISIBLE 与
+// backend/worker/tests/test_external_docs_scope.py 的 ROWS / EXPECTED **逐行一致**，
+// 两侧各自断言自己发出的 SQL 与参数等于同一份 canonical 形状。
 // ══════════════════════════════════════════════════════════════════════════════
+
+const LIST_SELECT =
+  "SELECT id, doc_type, file_name, content_type, file_size, order_id,"
+  + " quote_order_id, inquiry_id, customer_id, status, notes, uploaded_by, created_at"
+  + " FROM external_doc_uploads WHERE 1=1";
+const LIST_SCOPE =
+  " AND (uploaded_by = $2::text"
+  + " OR order_id IN (SELECT id FROM orders WHERE tenant_id = $1 AND team_id = $3)"
+  + " OR quote_order_id IN (SELECT id FROM quote_orders WHERE tenant_id = $1 AND team_id = $4)"
+  + " OR inquiry_id IN (SELECT id FROM cust_inquiries WHERE tenant_id = $1 AND team_id = $5))";
+const LIST_TAIL = " ORDER BY created_at DESC LIMIT ";
+
+// ── 构造数据矩阵（与 backend/worker/tests/test_external_docs_scope.py:ROWS 逐行一致）──
+const ORDER_TEAM: Record<number, number> = { 31: 4, 32: 8 };
+const QUOTE_TEAM: Record<number, number> = { 41: 4, 42: 8 };
+const INQUIRY_TEAM: Record<number, number> = { 51: 4, 52: 8 };
+const DOC_MATRIX = [
+  { id: 1, tenant_id: "default", uploaded_by: "9", order_id: null, quote_order_id: null, inquiry_id: null },
+  { id: 2, tenant_id: "default", uploaded_by: "12", order_id: 32, quote_order_id: null, inquiry_id: null },
+  { id: 3, tenant_id: "default", uploaded_by: "12", order_id: 31, quote_order_id: null, inquiry_id: null },
+  { id: 4, tenant_id: "default", uploaded_by: "12", order_id: null, quote_order_id: 41, inquiry_id: null },
+  { id: 5, tenant_id: "default", uploaded_by: "12", order_id: null, quote_order_id: null, inquiry_id: 51 },
+  { id: 6, tenant_id: "default", uploaded_by: "12", order_id: null, quote_order_id: null, inquiry_id: null },
+  { id: 7, tenant_id: "other", uploaded_by: "9", order_id: null, quote_order_id: null, inquiry_id: null },
+];
+// 与内核测试 EXPECTED 完全相同的期望可见集合
+const EXPECTED_VISIBLE: Record<string, number[]> = {
+  admin: [1, 2, 3, 4, 5, 6],
+  member: [1, 3, 4, 5],
+  other: [2],
+  no_team: [],
+};
+
+/** 参照实现（只用于行为断言；真正的守卫是 SQL/参数逐字断言）。 */
+function simulateVisible(input: {
+  isAdmin: boolean;
+  uid?: string;
+  team?: number | null;
+  tenant?: string;
+}): number[] {
+  const tenant = input.tenant ?? "default";
+  const teamOf = (id: number | null, map: Record<number, number>): number | null =>
+    id === null ? null : map[id] ?? null;
+  return DOC_MATRIX.filter((row) => {
+    if (row.tenant_id !== tenant) return false;
+    if (input.isAdmin) return true;
+    if (String(row.uploaded_by) === String(input.uid)) return true;
+    const team = input.team;
+    if (team === null || team === undefined) return false;
+    return teamOf(row.order_id, ORDER_TEAM) === team
+      || teamOf(row.quote_order_id, QUOTE_TEAM) === team
+      || teamOf(row.inquiry_id, INQUIRY_TEAM) === team;
+  }).map((row) => row.id);
+}
 
 describe("GET /api/v1/external-docs（P3 直连）", () => {
   const DOC_ROW: DbRow = {
@@ -244,12 +304,9 @@ describe("GET /api/v1/external-docs（P3 直连）", () => {
       },
     ]);
     const call = dbCallsContaining("FROM external_doc_uploads")[0]!;
-    expect(call.query).toBe(
-      "SELECT id, doc_type, file_name, content_type, file_size, order_id,"
-      + " quote_order_id, inquiry_id, customer_id, status, notes, uploaded_by, created_at"
-      + " FROM external_doc_uploads WHERE 1=1 ORDER BY created_at DESC LIMIT $1",
-    );
-    expect(call.params).toEqual([50]);
+    // 修复后：tenant 恒在 + 行级可见性谓词（member id 9 / team 4）⇒ LIMIT 落到 $6
+    expect(call.query).toBe(LIST_SELECT + " AND tenant_id=$1" + LIST_SCOPE + LIST_TAIL + "$6");
+    expect(call.params).toEqual(["default", "9", 4, 4, 4, 50]);
     expect(spy.fetch).not.toHaveBeenCalled();
   });
 
@@ -259,20 +316,16 @@ describe("GET /api/v1/external-docs（P3 直连）", () => {
 
     await request("/api/v1/external-docs?order_id=7&doc_type=pi&limit=10", userRow(), spy.env);
     const filtered = dbCallsContaining("FROM external_doc_uploads")[0]!;
-    expect(filtered.query).toBe(
-      "SELECT id, doc_type, file_name, content_type, file_size, order_id,"
-      + " quote_order_id, inquiry_id, customer_id, status, notes, uploaded_by, created_at"
-      + " FROM external_doc_uploads WHERE 1=1 AND order_id=$1 AND doc_type=$2"
-      + " ORDER BY created_at DESC LIMIT $3",
-    );
-    expect(filtered.params).toEqual([7, "pi", 10]);
+    expect(filtered.query).toBe(LIST_SELECT + " AND tenant_id=$1" + LIST_SCOPE
+      + " AND order_id=$6 AND doc_type=$7" + LIST_TAIL + "$8");
+    expect(filtered.params).toEqual(["default", "9", 4, 4, 4, 7, "pi", 10]);
 
     resetDb(dbStub({ user: userRow() }));
     await request("/api/v1/external-docs?order_id=0", userRow(), spy.env);
     const zero = dbCallsContaining("FROM external_doc_uploads")[0]!;
     // order_id=0 在 Python 是 is not None ⇒ 照样进谓词（不能当假值丢掉）
-    expect(zero.query).toContain(" AND order_id=$1");
-    expect(zero.params).toEqual([0, 50]);
+    expect(zero.query).toContain(" AND order_id=$6");
+    expect(zero.params).toEqual(["default", "9", 4, 4, 4, 0, 50]);
     expect(spy.fetch).not.toHaveBeenCalled();
   });
 
@@ -297,6 +350,73 @@ describe("GET /api/v1/external-docs（P3 直连）", () => {
     expect(spy.seen).toEqual([
       { method: "GET", path: "/api/v1/external-docs", search: "?order_id=7&limit=10" },
     ]);
+  });
+
+  it("管理员：只受 tenant 约束（不加行级谓词）", async () => {
+    resetDb(dbStub({ user: userRow(ADMIN_ROW) }));
+    const spy = onEnv();
+
+    await request("/api/v1/external-docs", userRow(ADMIN_ROW), spy.env);
+
+    const call = dbCallsContaining("FROM external_doc_uploads")[0]!;
+    expect(call.query).toBe(LIST_SELECT + " AND tenant_id=$1" + LIST_TAIL + "$2");
+    expect(call.params).toEqual(["default", 50]);
+    // 注意：SELECT 列清单里本来就有 uploaded_by（元数据列），断言的是 WHERE 里没有谓词
+    expect(call.query).not.toContain("uploaded_by = $");
+    expect(spy.fetch).not.toHaveBeenCalled();
+  });
+
+  it("无团队的非管理员：只剩 uploaded_by（未挂载/非本人上传的件不可见）", async () => {
+    const user = userRow({ id: 11, team_id: null });
+    resetDb(dbStub({ user }));
+    const spy = onEnv();
+
+    await request("/api/v1/external-docs", user, spy.env);
+
+    const call = dbCallsContaining("FROM external_doc_uploads")[0]!;
+    expect(call.query).toBe(LIST_SELECT + " AND tenant_id=$1"
+      + " AND (uploaded_by = $2::text)" + LIST_TAIL + "$3");
+    expect(call.query).not.toContain("team_id = $");
+    expect(call.params).toEqual(["default", "11", 50]);
+    expect(spy.fetch).not.toHaveBeenCalled();
+  });
+
+  it("别团队成员（id 10 / team 8）：谓词参数换成该身份与本团队", async () => {
+    const user = userRow({ id: 10, team_id: 8 });
+    resetDb(dbStub({ user }));
+    const spy = onEnv();
+
+    await request("/api/v1/external-docs", user, spy.env);
+
+    const call = dbCallsContaining("FROM external_doc_uploads")[0]!;
+    expect(call.query).toBe(LIST_SELECT + " AND tenant_id=$1" + LIST_SCOPE + LIST_TAIL + "$6");
+    expect(call.params).toEqual(["default", "10", 8, 8, 8, 50]);
+    expect(spy.fetch).not.toHaveBeenCalled();
+  });
+
+  it("parity 矩阵：与内核测试同一份构造数据 ⇒ 同一份可见集合", async () => {
+    // 从**实际发出的参数**里解出谓词用到的身份/团队（位置是 canonical 的），再求值：
+    // 任何一侧把 uid/team 写错、或谓词位置漂移，这里都会与 EXPECTED_VISIBLE 不符。
+    const cases = [
+      { key: "admin", user: userRow(ADMIN_ROW), isAdmin: true },
+      { key: "member", user: userRow(), isAdmin: false },
+      { key: "other", user: userRow({ id: 10, team_id: 8 }), isAdmin: false },
+      { key: "no_team", user: userRow({ id: 11, team_id: null }), isAdmin: false },
+    ];
+    for (const item of cases) {
+      resetDb(dbStub({ user: item.user }));
+      const spy = onEnv();
+      await request("/api/v1/external-docs", item.user, spy.env);
+      const call = dbCallsContaining("FROM external_doc_uploads")[0]!;
+      const params = call.params as unknown[];
+      const uid = item.isAdmin ? undefined : String(params[1]);
+      const team = !item.isAdmin && call.query.includes("team_id = $")
+        ? Number(params[2])
+        : null;
+      expect(simulateVisible({ isAdmin: item.isAdmin, uid, team })).toEqual(
+        EXPECTED_VISIBLE[item.key],
+      );
+    }
   });
 });
 

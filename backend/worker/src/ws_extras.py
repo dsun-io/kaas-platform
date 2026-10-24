@@ -360,19 +360,59 @@ async def upload_external_doc(request: Request, file: UploadFile = File(...),
     return {"id": r["id"], "file_name": r["file_name"]}
 
 
+def _external_doc_scope(user: dict, next_index: int, tenant_index: int = 1) -> tuple[str, list]:
+    """外部单证的**行级可见性谓词**（表里没有 team_id 列 ⇒ 用保守代理，不动 schema）。
+
+    为什么不能用 team_scope：`external_doc_uploads` 只有 tenant_id / uploaded_by /
+    order_id / quote_order_id / inquiry_id / customer_id（orchestrator/app/db/external_docs.py），
+    没有 team_id；本轮不做迁移（Lead 明示）。
+
+    规则（与门面 `backend/ts-worker/src/routes/misc-read.ts:externalDocScope` **逐字同义**）：
+    - 管理员（`_can_see_all`）：不加谓词（tenant 仍恒在）；
+    - 非管理员：`uploaded_by = 我` **或** 挂载对象属本团队 —— 三条挂载列各自查
+      orders / quote_orders / cust_inquiries 的 team_id（三表都有 team_id，且写入时取
+      创建者/客户的团队：main.py:1866、quote_api.py:2157、orders 同源）；
+    - 无团队的非管理员：只剩 `uploaded_by = 我` ⇒ 未挂载/非本人上传的件不可见
+      （不抛 403：列表按谓词过滤、下载按 404 不泄露存在性）。
+
+    参数占位符从 `next_index` 起；子查询里的 tenant 占位符由 `tenant_index` 指定
+    （列表 = $1，下载 = $2）。返回 (frag, params)，params 只含本谓词用到的值。
+    """
+    if _main._can_see_all(user):
+        return "", []
+
+    params: list = [str(user.get("id"))]
+    frag = f" AND (uploaded_by = ${next_index}::text"
+    team_id = user.get("team_id")
+    if team_id is not None:
+        idx = next_index
+        for col, table in (("order_id", "orders"),
+                           ("quote_order_id", "quote_orders"),
+                           ("inquiry_id", "cust_inquiries")):
+            idx += 1
+            params.append(team_id)
+            frag += (f" OR {col} IN (SELECT id FROM {table}"
+                     f" WHERE tenant_id = ${tenant_index} AND team_id = ${idx})")
+    return frag + ")", params
+
+
 @app.get("/api/v1/external-docs")
 async def list_external_docs(request: Request, order_id: Optional[int] = None,
                              doc_type: Optional[str] = None,
                              limit: int = Query(default=50, ge=1, le=500),
                              user: dict = Depends(_get_current_user)):
-    cond = ""
-    params: list = []
+    # 恒加 tenant_id（本轮之前**连租户都不过滤**）；随后是行级可见性谓词（见上方 helper）。
+    cond = " AND tenant_id=$1"
+    params: list = [_main.DEFAULT_TENANT]
+    scope_frag, scope_params = _external_doc_scope(user, len(params) + 1)
+    cond += scope_frag
+    params.extend(scope_params)
     if order_id is not None:
-        cond += " AND order_id=$1"
         params.append(order_id)
+        cond += f" AND order_id=${len(params)}"
     if doc_type:
-        cond += f" AND doc_type=${len(params)+1}"
         params.append(doc_type)
+        cond += f" AND doc_type=${len(params)}"
     async with _acquire(request) as conn:
         rows = await conn.fetch(
             f"SELECT id, doc_type, file_name, content_type, file_size, order_id,"
@@ -392,8 +432,15 @@ async def list_external_docs(request: Request, order_id: Optional[int] = None,
 
 @app.get("/api/v1/external-docs/{doc_id}/download")
 async def download_external_doc(request: Request, doc_id: int, user: dict = Depends(_get_current_user)):
+    # 与列表同一把尺：tenant 恒在 + 行级可见性谓词。
+    # 越权/不存在/跨租户一律 404 {"error":"not_found"} —— 不泄露存在性（与既有 404 同形）。
+    params: list = [doc_id, _main.DEFAULT_TENANT]
+    scope_frag, scope_params = _external_doc_scope(user, len(params) + 1, tenant_index=2)
+    params.extend(scope_params)
     async with _acquire(request) as conn:
-        r = await conn.fetchrow("SELECT * FROM external_doc_uploads WHERE id=$1", doc_id)
+        r = await conn.fetchrow(
+            f"SELECT * FROM external_doc_uploads WHERE id=$1 AND tenant_id=$2{scope_frag}",
+            *params)
     if r is None:
         raise HTTPException(status_code=404, detail={"error": "not_found"})
     # 中文文件名不能直接塞进 HTTP 头（header 只能是 latin-1，Starlette 会在

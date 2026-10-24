@@ -104,19 +104,44 @@ export function workstationGate(): MiddlewareHandler {
     if (workstation === null) return next();
 
     const token = extractBearer(c.req.header("Authorization") ?? null);
-    if (!token) return next(); // 认证交给路由自身（与内核同口径）
+    // 身份解析（两种认证都要判，否则 API token 会成为绕过口）：
+    // · JWT：claims 里带 sub/role/team_id（会话身份）；
+    // · API token（kaas_oat_）：门面 scope 中间件已认证并写入 apiTokenActor，但**它不是 JWT** ——
+    //   旧实现会 verifyToken 失败 → catch → 放行 ⇒ **API token 直接绕过商业闸门**。
+    //   这里改为用「token 创建人」的身份（与内核 proxy.mintInternalJwt 的 sub=created_by 同口径），
+    //   并从 users 表取角色/团队（管理员仍放行）。
+    const apiTokenActor = c.get("apiTokenActor") as
+      | { createdBy?: number; teamId?: number | null }
+      | undefined;
+    if (apiTokenActor === undefined && !token) return next(); // 未认证：认证交给路由自身
 
     try {
-      const secret = env.JWT_SECRET;
-      if (!secret) return next();
-      const payload = (await verifyToken(token, secret)) as Record<string, unknown>;
-      const userId = Number(payload.sub);
-      if (!Number.isFinite(userId)) return next();
-      const user = {
-        id: userId,
-        role: (payload.role as string | null | undefined) ?? null,
-        team_id: payload.team_id === undefined || payload.team_id === null ? null : Number(payload.team_id),
-      };
+      let user: { id: number; role: string | null; team_id: number | null } | null = null;
+      if (apiTokenActor) {
+        const createdBy = Number(apiTokenActor.createdBy);
+        if (!Number.isFinite(createdBy)) return next();
+        const rows = await withDb(env, (sql) =>
+          sql.unsafe("SELECT id, role, team_id FROM users WHERE id=$1", [createdBy]));
+        const row = (rows as Array<Record<string, unknown>>)[0];
+        if (!row) return next();
+        user = {
+          id: Number(row.id),
+          role: (row.role as string | null | undefined) ?? null,
+          team_id: row.team_id === null || row.team_id === undefined ? null : Number(row.team_id),
+        };
+      } else {
+        const secret = env.JWT_SECRET;
+        if (!secret) return next();
+        const payload = (await verifyToken(token as string, secret)) as Record<string, unknown>;
+        const userId = Number(payload.sub);
+        if (!Number.isFinite(userId)) return next();
+        user = {
+          id: userId,
+          role: (payload.role as string | null | undefined) ?? null,
+          team_id: payload.team_id === undefined || payload.team_id === null ? null : Number(payload.team_id),
+        };
+      }
+      if (user === null) return next();
       const codes = await withDb(env, (sql) => codesForUser(sql, user as never, "gate"));
       if (!hasWorkstation(codes, workstation)) {
         return c.json(

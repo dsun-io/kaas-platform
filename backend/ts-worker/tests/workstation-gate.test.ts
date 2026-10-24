@@ -131,6 +131,56 @@ describe("路径映射（与 kaas_common 真源逐条一致）", () => {
   });
 });
 
+
+// ══════════════════════════════════════════════════════════════════════════════
+// API token（kaas_oat_）路径：**不能用 JWT 的 verifyToken 判身份**，否则会静默绕过闸门
+// （旧实现：verifyToken 抛错 → catch → 放行 ⇒ API token 不判订阅，属真实绕过口）。
+// 这里用「token 创建人」身份（与内核 mintInternalJwt 的 sub=created_by 同口径）重建最小 app 验证。
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe("闸门 · API token 身份", () => {
+  async function withApiToken(
+    userRow: DbRow | null,
+    env: ReturnType<typeof makeTestEnv>,
+    subscriptionCodes: string[] = [],
+  ): Promise<Response> {
+    const { Hono } = await import("hono");
+    const { workstationGate } = await import("../src/workstation-gate");
+    type MiniVars = { Variables: { apiTokenActor: unknown } };
+    const mini = new Hono<{ Bindings: ReturnType<typeof makeTestEnv> } & MiniVars>();
+    mini.use("*", async (c, next) => {
+      // 模拟 scope-map 中间件：API token 已认证，写入 actor（无 JWT claims）。
+      c.set("apiTokenActor", { createdBy: 7, teamId: 3, scopes: ["products:read"], tokenId: 1 } as never);
+      await next();
+    });
+    mini.use("*", workstationGate());
+    mini.get("/api/v1/quotations", (c) => c.json({ ok: true }));
+    resetDb((query) => (query.includes("FROM users WHERE id") && userRow ? [userRow] : []));
+    // 注意顺序：resetDb 会把订阅桩复位成「已开通」，所以订阅必须在它之后再设。
+    resetSubscriptions(subscriptionCodes);
+    return mini.request("/api/v1/quotations", { headers: { Authorization: "Bearer kaas_oat_fake" } }, env);
+  }
+
+  it("未开通 ⇒ 404（不再绕过）；已开通 ⇒ 放行；管理员 ⇒ 放行；用户行缺失 ⇒ 兜底放行", async () => {
+    const env = makeTestEnv({ AUTH_DB_SPLIT: "on" });
+
+    const denied = await withApiToken(USER, env, []);
+    expect(denied.status).toBe(404);
+    expect(await denied.json()).toEqual(gateBody);
+
+    const allowed = await withApiToken(USER, env, ["quotes"]);
+    expect(allowed.status).toBe(200);
+
+    // 管理员：codesForUser 直接给 full_chain（不看订阅表）
+    const admin = await withApiToken({ ...USER, role: "system_admin", account_type: "internal" }, env, []);
+    expect(admin.status).toBe(200);
+
+    // 创建人用户行不存在 ⇒ 无从判定 ⇒ 兜底放行（与"工位门控尽力而为"一致）
+    const missing = await withApiToken(null, env, []);
+    expect(missing.status).toBe(200);
+  });
+});
+
 describe("闸门行为", () => {
   beforeEach(() => {
     resetDb((query) => (query.includes("FROM users WHERE id") ? [USER] : []));

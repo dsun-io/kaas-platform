@@ -31,6 +31,7 @@ import { getEnv, type Env } from "../env";
 import { directDb } from "../hot-read";
 import { bool, httpError, num, num0, parseQuery, pyIso, respond } from "../http";
 import { forwardKernelRequest } from "../proxy";
+import { isAdminRole } from "../rules";
 import { requireUser, type CurrentUser } from "../session";
 import { META_COLS, rowToFile, teamScope } from "./files";
 
@@ -124,12 +125,40 @@ function externalDocOut(row: Row): Row {
   };
 }
 
+// 外部单证的行级可见性谓词 —— backend/worker/src/ws_extras.py:_external_doc_scope 的**逐字镜像**。
+// 表 external_doc_uploads 没有 team_id 列（orchestrator/app/db/external_docs.py），本轮不做迁移，
+// 因此团队隔离用保守代理：管理员放行；否则 uploaded_by = 我 或 挂载对象（order/quote/inquiry）
+// 属本团队；无团队的非管理员只剩 uploaded_by 一条（未挂载/非本人上传的件不可见）。
+function externalDocScope(
+  user: CurrentUser,
+  nextIndex: number,
+  tenantIndex = 1,
+): { frag: string; extra: unknown[] } {
+  if (isAdminRole(user.role)) return { frag: "", extra: [] };
+  const extra: unknown[] = [String(user.id)];
+  let frag = " AND (uploaded_by = $" + String(nextIndex) + "::text";
+  let idx = nextIndex;
+  if (user.team_id !== null && user.team_id !== undefined) {
+    for (const [col, table] of [
+      ["order_id", "orders"],
+      ["quote_order_id", "quote_orders"],
+      ["inquiry_id", "cust_inquiries"],
+    ] as const) {
+      idx += 1;
+      extra.push(user.team_id);
+      frag += " OR " + col + " IN (SELECT id FROM " + table
+        + " WHERE tenant_id = $" + String(tenantIndex) + " AND team_id = $" + String(idx) + ")";
+    }
+  }
+  return { frag: frag + ")", extra };
+}
+
 // GET /api/v1/external-docs —— 外部单证列表（order_id/doc_type 可选筛选，LIMIT 作末参）。
 // 注意内核口径：order_id 用 `is not None`（**0 也算筛**），doc_type 用真值判断（空串不算）。
 // limit 是 Query(50, ge=1, le=500) ⇒ 越界 422（不是夹取）。
 export async function listExternalDocsDirect(
   c: Context,
-  _user: CurrentUser,
+  user: CurrentUser,
 ): Promise<Response> {
   const query = parseQuery(externalDocsQuery, c.req.query());
   const limit = query.limit ?? 50;
@@ -141,15 +170,19 @@ export async function listExternalDocsDirect(
       input: String(limit),
     }]);
   }
-  let cond = "";
-  const params: unknown[] = [];
+  // 恒加 tenant_id（本轮之前**连租户都不过滤**）+ 行级可见性谓词（与内核同一把尺）
+  let cond = " AND tenant_id=$1";
+  const params: unknown[] = [DEFAULT_TENANT];
+  const scope = externalDocScope(user, params.length + 1);
+  cond += scope.frag;
+  params.push(...scope.extra);
   if (query.order_id !== undefined) {
-    cond += " AND order_id=$1";
     params.push(query.order_id);
+    cond += " AND order_id=$" + String(params.length);
   }
   if (query.doc_type) {
-    cond += " AND doc_type=$" + String(params.length + 1);
     params.push(query.doc_type);
+    cond += " AND doc_type=$" + String(params.length);
   }
   const rows = (await withDb(getEnv(c), (sql: Db) =>
     sql.unsafe(
