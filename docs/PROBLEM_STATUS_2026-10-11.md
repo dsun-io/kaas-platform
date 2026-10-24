@@ -32,6 +32,9 @@
 >   前端 **226 files·1641 passed**（typecheck 0 / lint 0 error·75 存量 warning）/ e2e **28 passed** /
 >   contracts R0–R6、mocks、ui 双门禁、trade-doc:check、6 项静态断言全 PASS；`NEXT_EXPORT=1 pnpm build` exit 0
 >   （Windows 本机 `assets:check` 的 `nextDirs=39` 属已知平台产物缺陷，以 CI ubuntu gate 为准）。
+> - **部署与线上验证（12:43，commit `947b0bc4`）**：deploy 全绿（ubuntu build + assets:check → migrate → kernel → edge）；
+>   `/health?deep=1` kernel ok + shared_loaded；生产 QA 实测 `POST /tenant-product-status` 对 deer_net/field_fence **200**
+>   （修前 404）、未知 key 404、无 token 401；`/customers`、`/trade-docs`、`/products` 生产 HTML 与 deploy artifact 逐字节一致。
 
 > **（2026-10-24 · 线上修复：产品图上传 400「Missing boundary in multipart.」✅）**
 > - **根因**：`frontend/src/lib/api/xhr-upload.ts` 的 `xhrPostForm` 给 `FormData` 手写

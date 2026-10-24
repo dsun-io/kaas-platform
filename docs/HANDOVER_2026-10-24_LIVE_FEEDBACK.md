@@ -110,6 +110,19 @@
 | 静态断言 | runtime-deps / schema-coverage / schema-drift / worker-bundle / deploy-domains / sync-shared -Check 全 PASS |
 | build（Windows 本机） | `NEXT_EXPORT=1 pnpm build` exit 0；`pnpm assets:check` 在本机**必然红**（`nextDirs=39`，Windows `path.relative` 反斜杠已知产物缺陷，见 AGENTS）⇒ 以 CI ubuntu 的 `build-frontend` + assets gate 为准 |
 
+### 发布与线上验证（2026-10-24 12:43 部署完成，commit `947b0bc4`）
+
+- GitHub Actions：backend:test / contracts:check / ts-edge / Frontend CI / deploy 全绿；
+  deploy = build-frontend（ubuntu 静态导出 + `assets:check`）→ migrate → deploy-kernel → deploy-edge。
+- 线上健康：`GET /health?deep=1` → `kernel.status=ok`、`shared_loaded=true`（新 `product_names.py` 已进内核包）。
+- **404 修复真机回归（生产，QA 账号）**：
+  `GET /tenant-product-status` 修前 `items:[]`；`POST deer_net/field_fence is_enabled=true` → **200**
+  （修复前是 404 PRODUCT_NOT_FOUND）；未知 key 仍 **404**、无 token 仍 **401**。
+  写入的是 `is_enabled=true`（= 默认值，对所有团队行为不变）。
+- 前端产物：生产 `/customers`、`/trade-docs`、`/products` 的 HTML 与 deploy artifact（`frontend-out`，
+  commit `947b0bc4` 的 ubuntu 构建）**逐字节一致**；chunk 内已含「询盘/订单」「成品预览」「主英文名」。
+  （本机 `git status` 干净；Cloudflare 缓存已 purge 一次。）
+
 新增回归测试（文件）：
 - 内核：`backend/worker/tests/test_product_names_en.py`（18）、`test_tenant_products_team_scope.py` +3（status 404 修复）。
 - 门面：`backend/ts-worker/tests/workstations-routes.test.ts` +2（转发内核 200 / 无 token 401）。
