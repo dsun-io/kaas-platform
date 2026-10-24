@@ -23,6 +23,7 @@ import intelRoutes from "./routes/intel";
 import notificationRoutes from "./routes/notifications";
 import productRoutes from "./routes/products";
 import quotesReadRoutes from "./routes/quotes-read";
+import miscReadRoutes from "./routes/misc-read";
 import workstationsRoutes from "./routes/workstations";
 import dashboardRoutes from "./routes/dashboard";
 import importRoutes from "./routes/imports";
@@ -140,6 +141,11 @@ app.route("/", engineRoutes);
 // **必须在三条 createProxyApp 之前注册**（Hono 先注册先命中），且只注册 GET ——
 // 同前缀的 POST/PATCH/DELETE 仍落到下面的透传 mount（业务全在内核）。
 app.route("/", quotesReadRoutes);
+// 下一批只读（fx-rates / external-docs / trade-docs/{id}/files）：同样只注册 GET，
+// 必须在下面 /api/v1/trade-docs、/api/v1/external-docs、/api/v1/fx-rates 三条透传 mount 之前。
+// ⚠️ 其中 fx-rates / external-docs **暂不放量**（内核 SQL 无 tenant/team 谓词 = 既有越权面，
+// 见 docs/P2_COUPLING_ENGINE_2026-10-24.md §8.8）；misc-read 已接好，放量只差白名单一条目。
+app.route("/", miscReadRoutes);
 
 // ── 引擎域透传（quotes / trade-docs / ai）：门面只鉴权+协议转换，不重写业务（ADR-008）──
 // 详见 backend/ts-migration/route-classification.md 与 AGENTS.md 铁纪律。

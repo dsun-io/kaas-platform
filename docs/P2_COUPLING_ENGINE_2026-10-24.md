@@ -486,6 +486,22 @@ class Default(WorkerEntrypoint):
 
 **开启前置**（下一轮）：在门面实现工位闸门中间件（用**同一份**路径映射，加契约测试断言 TS 映射 == `kaas_common` 的 `WORKSTATION_PATHS`），
 再逐条放量；放量后同前缀仍需保留内核闸门作为纵深防御，直到所有路由直连、闸门统一收敛到门面。
+
+#### 8.8 安全发现（2026-10-24 19:10，**未修、未放量**）
+
+迁移 `GET /fx-rates` 与 `GET /external-docs` 时核对真源发现**既有越权面**（与新路径无关，内核现状如此）：
+
+| 端点 | 内核 SQL | 影响 |
+|---|---|---|
+| `GET /api/v1/fx-rates` | `ws_extras.py:163-177`：`SELECT * FROM fx_rates WHERE base_currency=$1 AND quote_currency=$2` —— **无 tenant/team 谓词** | 汇率表是全局基线表，任何登录用户可读全部行（**可能是有意**：汇率对所有租户一致） |
+| `GET /api/v1/external-docs` | `ws_extras.py:363-390`：`WHERE 1=1` + 可选 order_id/doc_type —— **无 tenant/team 谓词** | ⚠️ 任何登录用户可读**所有团队**上传件元数据（文件名/大小/订单号）⇒ 真实的跨团队信息泄露面 |
+
+**处置**：本轮**不放量**这两条（`misc-read.ts` 已实现并接线，`AUTH_DB_SPLIT_ROUTES` 暂不加 `fx-rates`/`external-docs`）。
+修法（另立任务，新旧路径一起改，避免 parity 撕裂）：
+1. `external-docs`：加 `tenant_id=$1` + `_team_scope` 谓词（与 `trade-doc-files` 同一把硬尺）；补跨团队隔离用例；
+2. `fx-rates`：先与产品确认「汇率是否应全局共享」——若共享，在文档与响应里明确（并保留无谓词）；若按团队隔离，则加谓词 + 迁移表结构（fx_rates 目前无 team_id 列）。
+
+`GET /api/v1/trade-docs/{doc_id}/files` 有 `_team_scope` 硬尺（管理员全见 / 成员本团队 / 无团队 403），**可放量**。
 ## 9. 未完成清单（交后续轮次）
 
 | # | 事项 | 说明 / 前置 |

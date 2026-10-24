@@ -123,7 +123,18 @@
 > - **门禁**：worker **1901+12skip** / ts-worker **36 文件 532 测** / orchestrator **273** / sync-shared 一致。
 > - **线上为中性部署**（新 route id 均未进白名单 ⇒ 默认 off）：验证 products·notifications 200、
 >   `/inquiries`·`/quotations`·`/export-quote/verify` 仍 404 `WORKSTATION_NOT_SUBSCRIBED`（与部署前逐字一致）。
-> - **放量前置（已登记 P2 §8.7）**：门面缺「工位闸门」中间件，直连收费工位端点会绕过商业限制 ⇒ 下一轮先在门面实现该闸门
+>
+> **门面工位闸门上线 + 第四批放量（2026-10-24 19:05，commit `e36cd38f`，deploy run `40088249998` 全绿）**
+> - 新增 `src/workstation-gate.ts`：与内核 `ws_workstations.py` **同语义**的工位闸门（映射 = `kaas_common/workstation/subscriptions.py` 同源，
+>   由 `tests/workstation-gate.test.ts` 的**漂移机检**直接解析 Python 真源逐条比对；无 token/开关 off/DB 异常一律放行，与内核兜底一致）；
+> - 放量 16 条 route id（引擎 5 切片 + 批次 A 六条读 + P0 五条）；
+> - **线上证据**：带 JWT 打 7 个端点，**内核 tail 收到请求数 = 0** —— 非收费（products/notifications）200；
+>   收费（inquiries/quotations/verify/fx-rates）由**门面闸门**返回 404 `WORKSTATION_NOT_SUBSCRIBED`；
+>   即直连路由不再有「绕过商业限制」的风险。
+> - 门禁：ts-worker **38 文件 / 561 测**、typecheck 0；worker/orchestrator 未受影响。
+> - **新安全发现（未修未放量）**：`/fx-rates` 与 `/external-docs` 内核 SQL **无 tenant/team 谓词**（后者=跨团队元数据可见）⇒ 已登记 P2 §8.8，
+>   另立任务修内核（新旧路径一起改）；`misc-read.ts` 已实现接线但这两条**不进白名单**。
+> - ~~放量前置（已登记 P2 §8.7）~~：**已完成** —— 门面缺「工位闸门」中间件，直连收费工位端点会绕过商业限制 ⇒ 本轮已在门面实现该闸门
 >   （路径映射与 `kaas_common` 同源 + 契约测试），再逐条放量。
 > - **P3 剩余（未完成，需后续轮次）**：① 15 条写路径的事务归属需拍板（取号/状态机/多表同事务，A=保留内核 / B=搬到门面 / C=长期例外）；
 >   ② 「无 Python 计算」的 33 条**指 quotes/trade-docs 域的 proxy-mount 端点**（quotations/pricing-data/fx-rates/tax-archives/external-docs/clause-templates/product-tax-rates…），
