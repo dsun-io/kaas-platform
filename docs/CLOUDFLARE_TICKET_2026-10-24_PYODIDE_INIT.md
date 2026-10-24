@@ -126,6 +126,53 @@
 - `scripts/pyinit-probe-kernel/`：真实内核源码克隆探针（E2b，CI 同步源码）
 - `.github/workflows/pyinit-probe.yml`：手动触发，`target=probe|kernelclone`
 
+
+### 3F. E2b 真实内核源码克隆（2026-10-24T14:35Z）—— **决定性阴性结果**
+
+为排除「我们的模块图/源码规模」这个变量，把**生产内核的同一份 `backend/worker/src/**`（209 个文件）** 原样克隆，
+用**同一份 pyproject 依赖**（fastapi/asyncpg/pydantic/pyjwt/python-multipart/bcrypt）经 `pywrangler` 部署成隔离探针：
+
+| 项 | 克隆探针 | 生产内核 |
+|---|---|---|
+| 源码 | 同一份 209 文件 | 同一份 |
+| 依赖 | 同 pyproject（pyodide wheel） | 同 |
+| 上传体积 | **13171 KiB（gzip 3388 KiB）** | 同量级 |
+| **Worker Startup Time** | **3580 ms** | 冷启动实测 2.6–3.9 s |
+| 差异 | 无 routes/cron、**不绑 HYPERDRIVE/DB/Service Binding** | 有生产 bindings |
+
+**压测结果（打 `/health`，不触库）**：
+
+| 组别 | 请求 | 成功 | 失败 | 耗时 | 备注 |
+|---|---|---|---|---|---|
+| 单请求 | 1 | 200 | 0 | — | 响应含 `shared.core=kaas_common, loaded=true` |
+| 串行（间隔 1.5s） | 6 | **6** | **0** | 23.4 s | ≈3.9 s/次 ⇒ 几乎每次都付冷启动成本 |
+| **并发 15** | 15 | **15** | **0** | 4.2 s | 无异常 |
+
+**这个阴性结果告诉我们什么（老实说）**：
+1. **不是**「源码规模/模块图」单独导致的 —— 同一份代码、同一份 pyodide 依赖、同样重的 init（3580ms），
+   在隔离环境里串行/并发都不失败；
+2. **也不是**「任意并发 init 必然重入崩溃」—— 15 并发同时冷启动没触发 `promising task` 异常；
+3. 因此**剩余变量只剩**：生产 bindings（HYPERDRIVE/DB 连接）、事故当时的特定版本、或真实流量形态（长时间 isolate 频繁回收 + 重试放大）；
+4. 对工单的影响：我们把「**已排除项**」又扩充了一条（源码/依赖面），并据此向 Cloudflare 提出更具体的问题 ——
+   **init 失败是否与 bindings 初始化（Hyperdrive/DB 连接创建）在 Pyodide 内的时序有关**（这是我们唯一无法在隔离环境复现的部分）。
+
+### 3G. 可复现配方（容器内构建，本机 Windows 可直接跑）
+
+本机 Windows 上 `pywrangler` 会因 CJK 路径/pyodide venv 失败；用 Linux 容器绕开（已实测）：
+
+```bash
+# 1) 准备克隆目录：拷贝 backend/worker/src + pyproject（改 name）+ wrangler.jsonc（新 worker 名、只在 workers_dev）
+# 2) 在 node:22-bookworm 里装 uv 后部署（需要 node≥22 + build-essential，因为 workers-py 的 pyjson5 要编译）
+docker run --rm -v "<repo>/.tmp-kc2:/w" -e CLOUDFLARE_API_TOKEN=*** \
+  -e CLOUDFLARE_ACCOUNT_ID=*** node:22-bookworm bash /w/run.sh
+# 3) run.sh 内：apt install curl build-essential；装 uv；cp -r /w /build（**不要**在 bind mount 上建 venv，符号链接会坏）；
+#    uv sync；uv run pywrangler deploy
+# 4) 压测：python scripts/pyinit-probe/pressure.py https://<worker>.workers.dev/health --mode concurrent --n 15
+```
+
+> 踩坑清单（都已实测）：容器里的 uv 必须 ≥0.13.4；`pywrangler` 需要 node（pyodide venv 用 node 查询解释器）且 **node ≥22**（wrangler 4.151 要求）；
+> bind mount（Windows）上建 `.venv-workers` 会因符号链接失败 ⇒ 必须复制到容器本地磁盘构建；`workers-py` 的 pyjson5 需要 `build-essential`。
+
 ### 3B. E1 本机阻塞记录（已解决，留档避免重复踩坑）
 
 我们已经把最小 probe Worker 写好（`.tmp-pyinit-probe/`：`pyproject.toml` + `wrangler.jsonc`（name `kaas-pyinit-probe`、
