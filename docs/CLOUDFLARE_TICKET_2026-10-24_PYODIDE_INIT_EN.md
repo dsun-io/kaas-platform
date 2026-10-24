@@ -113,12 +113,37 @@ Until we finish the rollback control (E4 in A6) we do **not** claim the deploy i
 
 | # | Experiment | Purpose | Status |
 |---|---|---|---|
-| E1 | Minimal `python_workers` Worker (same account / `compatibility_date` / flags, **no app imports**), hammered with parallel cold-start requests | Is the defect reproducible **without our code**? | pending (next step) |
-| E2 | Dependency bisect: hello-world -> +fastapi/pydantic -> +asyncpg -> +PyJWT/bcrypt -> our full `python_modules` | Is our init surface required to trigger it? | pending |
-| E3 | 10 sequential cold requests (1 s apart) vs 10 concurrent cold requests | Tests the re-entrancy hypothesis behind the `promising task` SystemError | pending |
+| E1 | Minimal `python_workers` Worker (same account / `compatibility_date` / flags, **no app imports**), hammered with parallel requests | Is the defect reproducible **without our code**? | **done - did NOT reproduce** (see below) |
+| E2 | Dependency bisect: hello-world -> +fastapi/pydantic -> +asyncpg -> +PyJWT/bcrypt -> our full `python_modules` | Is our init surface required to trigger it? | **next step** |
+| E3 | serial vs concurrent requests on the minimal Worker | Tests the re-entrancy hypothesis behind the `promising task` SystemError | **done - did NOT reproduce** (see below) |
 | E4 | Roll the Python Worker back to the previous version and watch 24 h | Controls for our 2026-10-24T06:49Z deploy | **not done - disclosed** |
 | E5 | Same version, same 5-minute window: 5 failures + 5 successes with ray IDs | Shows the same code both fails and succeeds | pending (A1 has failures; needs success control) |
 
+
+### E1/E3 results (2026-10-24T13:52Z) - important, read with the caveat
+
+Minimal probe (source committed at `scripts/pyinit-probe/`, usable as attachment A4): worker `kaas-pyinit-probe`, same
+`compatibility_date=2026-09-18` and `compatibility_flags=["python_workers"]`, **zero application dependencies**
+(`dependencies = []`), one handler returning JSON, no routes, no cron, workers.dev only.
+Deploy stats: upload 111.78 KiB (gzip 31.87 KiB), **Worker Startup Time 465 ms**.
+
+| Group | Requests | Success | Failures | Elapsed |
+|---|---|---|---|---|
+| serial (1 s apart) | 8 | **8** | 0 | 12.7 s |
+| concurrent (all at once) | 20 | **20** | 0 | 1.4 s |
+
+So the minimal Worker did **not** reproduce the `initPyInstance` failures. We therefore do **not** claim that any
+`python_workers` Worker always fails at init. The more likely explanation is that the trigger depends on the
+**weight/surface of the init**: our production kernel has `python_modules` = 11.79 MiB / 606 files, ~800 KB of Python
+source per isolate and a measured cold start of 2.6-3.9 s, versus this probe's 111 KiB and 465 ms.
+
+**Methodological caveat we want to state ourselves**: warmup already ran before the concurrent batch, so some
+requests may have hit a warm isolate; a strict cold-start test requires waiting for isolate eviction (minutes)
+between batches. We are adding that, and E2 (dependency bisect) will record startup time and failure rate per step.
+
+Impact on our questions: Q1/Q3 still stand, but we no longer imply "any Python Worker reproduces it". Instead we ask
+you to help us determine **how much init cost/dependency surface is required to trigger it**, and how the 128 MB
+limit relates to the init peak (Q4).
 ## What we need from you
 
 1. Is this `initPyInstance` failure signature (`NoGilError` in `preparePython`; `SystemError: Cannot enter a
