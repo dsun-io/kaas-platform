@@ -90,6 +90,14 @@
 > - 首个切片 `POST /api/v1/export-quote/calculate`：门面 `src/routes/engine.ts` 供数 → 内核 `src/engine_api.py` 纯算（同 pydantic 模型、同算子、**零 DB 调用**）→ 门面原样回放；
 >   `kaas_common/export_quote/**`、`trade_doc/**` **零 diff**；金标 fixture（旧路径真实生成，生成器幂等）：**旧 == 新 == fixture，0 diff**（Python 13 测 + TS 12 测）。
 > - 灰度：`AUTH_DB_SPLIT_ROUTES` 未含 `export-quote.calculate` ⇒ **本次部署行为与今天逐字一致**（切片默认 off，待线上验证后再放量）。
+> - **线上灰度实测（17:30–18:05）：切片已回退，未放量**，抓到 3 个问题（详见 P2 文档 §8.5）：
+>   ① RPC 走 `/internal/*` 被内核**静态资产层**拦截（405 空体 / GET 回退 index.html；`run_worker_first` 两种改法实测均无效）
+>      ⇒ 已改为 **`POST /api/v1/internal/engine/quote/calculate`**（/api 前缀已验证可达），RPC 返回 200 真实算价；
+>   ② **商业闸门缺失（阻塞项）**：旧路径对未开通 quotes 工位的账号返回 `404 WORKSTATION_NOT_SUBSCRIBED`，新路径直接算出报价
+>      —— 闸门在旧路由层、未随计算入口搬迁。**修法：把闸门提取成 kaas_common 单一函数，新旧入口共用**，
+>      并用"未开通必须 404 同码同体"金标锁死；在此之前不得放量（已回退，回退后响应 sha256 与基线一致）；
+>   ③ 诊断缺口已修：门面 502 现在带 `status` + 响应体头部。
+>   另记发布流程副作用：回退提交的 deploy 曾因 CI 被后续 push 取消而失败 ⇒ **开关会保持上一版（ON）直到下次成功部署**，回退必须确认 deploy 真绿。
 > - 门禁：worker **1855 passed + 12 skipped** / ts-worker **33 文件 436 测** / orchestrator **273**。
 > - **Cloudflare 工单证据包**：见 [CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md](./CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md)（可直接提交）。
 

@@ -403,6 +403,39 @@ GET /trade-docs/{id}/render-data 与 POST /trade-docs/preview-render-data 是「
 - 本次未改 kaas_common/** ⇒ 无需跑 scripts/sync-shared.ps1（若后续切片改了镜像内 helper，
   必须跑；worker 内 src/kaas_common 是 build artifact、不入库）。
 
+## 8.5 线上灰度实测发现（2026-10-24 17:30–18:05，**切片已回退，未放量**）
+
+首个切片按"灰度 → 用同一真实请求对比旧/新路径"的方式上线验证，抓到 **3 个问题**（这是本次灰度的主要价值）：
+
+### 8.5.1 RPC 路径被静态资产层拦截（已解决）
+
+- 现象：新路径恒返回 502 `engine rpc returned non-JSON body`；内核 tail 显示请求**到达** Worker，但 `status=405` 且**响应体为空**。
+- 定位：`/internal/engine/quote/calculate` 被内核的**静态资产层**接管 —— 非 GET 请求返回 405（空体），GET 走 SPA 回退返回 `index.html`；
+  FastAPI 的 405 会带 `Method Not Allowed` 文本，**空体 + 405 是资产层特征**（且当时内核 outcome=success、无异常，极易误判为代码 bug）。
+- 试过并**无效**：`assets.run_worker_first: ["/api/*","/health","/internal/*"]`、乃至 `run_worker_first: true`（均已部署成功但行为未变，原因待查）。
+- **生效解法**：把内部 RPC 放在**已验证可达的 `/api/` 前缀**下 —— RPC 路径改为
+  `POST /api/v1/internal/engine/quote/calculate`（内核仍无公网域名、只经 Service Binding 可达，安全性不变）。改动后 RPC 返回 200 与真实算价结果。
+- 经验：**内核新增任何"非 /api 前缀"的入口，都必须先验证资产层是否放行**（本项目同类坑已第二次：第一次是 /health 被 SPA 回退）。
+
+### 8.5.2 商业闸门缺失（**阻塞放量**，必须先修）
+
+- 对比结果：同一请求、qa_user（未开通 quotes 工位）
+  · 旧路径：`404 {"error":"not_found","code":"WORKSTATION_NOT_SUBSCRIBED",...}`
+  · 新路径：`200` + **完整算价结果**（meta/product_name/amount 全有）。
+- 根因：`WORKSTATION_NOT_SUBSCRIBED` 闸门位于**旧路由层**（`export_routes.py` 的 handler），本次切片只搬了「取数 + 计算入口」，**闸门没有随行**。
+- 结论：**在闸门补齐之前不得放量**（否则未开通工位的账号可绕过商业限制算价）。
+- 修法（下一轮）：把闸门**从旧 handler 里提取成 kaas_common 的单一函数**，让旧端点与新 RPC **调用同一处**，
+  再用"未开通账号必须 404 同码同体"的金标用例锁死。**禁止在门面/新入口另写一份判定**。
+
+### 8.5.3 诊断能力缺口（已修）
+
+- 原实现只报 `non-JSON body`，看不出状态码与内容 ⇒ 首轮排查被误导到资产层之外的猜测。
+- 已改：`src/routes/engine.ts` 现返回 `... (status <code>): <body 前 200 字符>` 并 `console.error` 全量。
+
+### 8.5.4 发布流程副作用（记录）
+
+- 回退提交的 deploy run 曾因 **CI 被后续 push 取消（cancelled）** 而在 "Wait for same-SHA CI" 失败 ⇒
+  **开关会继续保持上一版（ON）状态**，直到下一次成功部署。回退必须确认 deploy run 真正绿，不能只看 commit 已推。
 ## 9. 未完成清单（交后续轮次）
 
 | # | 事项 | 说明 / 前置 |
