@@ -460,6 +460,18 @@ class Default(WorkerEntrypoint):
 
 - 回退提交的 deploy run 曾因 **CI 被后续 push 取消（cancelled）** 而在 "Wait for same-SHA CI" 失败 ⇒
   **开关会继续保持上一版（ON）状态**，直到下一次成功部署。回退必须确认 deploy run 真正绿，不能只看 commit 已推。
+
+#### 8.6 P3 执行期对分类的两处修正（2026-10-24 18:45）
+
+1. **`GET /api/v1/pricing-data` 从「33 条 TS-DB」移出，归入引擎切片类**：其 handler 依赖
+   `quote_api._require_engine / get_product / extend_product / _load_option_extensions / describe_pricing_key /
+   _matrix_rows / _pricing_history / _pricing_reference` —— 即**产品注册表 + 客户档位扩展 + 历史回退**（Python 引擎状态），
+   不是纯 SQL；搬来就是第二份业务规则（违反 ADR-008）。
+2. **`GET /api/v1/inquiries/{id}/stage-log` 存在既有缺陷（保留 parity，不改）**：内核只 `SELECT id` 再判可见性，
+   行上没有 owner/team 字段 ⇒ **非管理员恒 404**（前端表现为静默隐藏）。门面直连按原样实现（parity 优先）；
+   修它属于行为变更，需新旧路径一起改，单独立项。
+3. **`orders.fx_rate_date`（DATE 列）序列化偏差已修**：内核 `row_to_order` 的 `_iso(date)` 只出 `YYYY-MM-DD`，
+   门面 `rowToOrder` 原用 `pyIso` 出时间串 ⇒ 改为 DATE 列专用格式化（其余 timestamptz 列不变），并用单测锁定。
 ## 9. 未完成清单（交后续轮次）
 
 | # | 事项 | 说明 / 前置 |

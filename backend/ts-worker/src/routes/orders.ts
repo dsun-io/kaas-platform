@@ -172,14 +172,24 @@ function isoDate(value: unknown): unknown {
   return value instanceof Date ? pyIso(value) : value;
 }
 
+/** DATE 列转 YYYY-MM-DD：Python row_to_order 用的是 _iso，对 date 只出日期；
+ * postgres.js 把 DATE 也解析成 Date，所以这里必须显式截断（不是 timestamptz）。 */
+function dateOnly(value: unknown): unknown {
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return value;
+}
+
 function asFloat(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   return Number(value);
 }
 
 /** row_to_order：28 键（金额一律 float，时间一律 isoformat）。
- * 2026-10-22（迁移 202610220004）：补来源三元组 + 确认痕迹 7 键。 */
-function rowToOrder(row: Row): Record<string, unknown> {
+ * 2026-10-22（迁移 202610220004）：补来源三元组 + 确认痕迹 7 键。
+ * 2026-10-24（P3 批次A）：导出给 customers.ts 的询盘详情复用（GET /inquiries/{id} 的
+ * orders[] 真源 = main.py:459 _main._order_dict → 同一份 row_to_order，不另写投影）。 */
+export function rowToOrder(row: Row): Record<string, unknown> {
   return {
     id: num(row.id), order_no: row.order_no, customer_id: num(row.customer_id),
     customer_name: row.customer_name, status: row.status, currency: row.currency,
@@ -188,7 +198,9 @@ function rowToOrder(row: Row): Record<string, unknown> {
     amount_breakdown: row.amount_breakdown ?? null,
     order_date: isoDate(row.order_date), delivery_date: isoDate(row.delivery_date),
     notes: row.notes,
-    fx_rate: asFloat(row.fx_rate), fx_rate_date: isoDate(row.fx_rate_date),
+    // orders.fx_rate_date 是 Date 列（orchestrator/app/db/workstation_links.py:159）：
+    // 内核 row_to_order 的 _iso 只出 YYYY-MM-DD；其余时间列是 timestamptz，仍走 pyIso。
+    fx_rate: asFloat(row.fx_rate), fx_rate_date: dateOnly(row.fx_rate_date),
     created_at: isoDate(row.created_at),
     owner_id: row.owner_id, owner_scope: row.owner_scope,
     incoterm: row.incoterm, payment_terms: row.payment_terms,
@@ -232,8 +244,10 @@ function rowToSchedule(row: Row): Record<string, unknown> {
     id: num(row.id), order_id: num(row.order_id), trade_doc_id: num(row.trade_doc_id),
     schedule_type: row.schedule_type,
     ratio: asFloat(row.ratio), amount: asFloat(row.amount),
-    currency: row.currency, due_date: isoDate(row.due_date),
-    actual_date: isoDate(row.actual_date), status: row.status,
+    // payment_schedules.due_date / actual_date 是 Date 列（workstation_models.py:316-317），
+    // 内核 row_to_schedule 的 _iso 只出 YYYY-MM-DD；created_at 是 timestamptz，仍走 pyIso。
+    currency: row.currency, due_date: dateOnly(row.due_date),
+    actual_date: dateOnly(row.actual_date), status: row.status,
     fx_rate: asFloat(row.fx_rate),
     exchange_gain_loss: asFloat(row.exchange_gain_loss),
     notes: row.notes, created_at: isoDate(row.created_at),
@@ -245,7 +259,8 @@ function rowToReceivable(row: Row): Record<string, unknown> {
   return {
     id: num(row.id), order_id: num(row.order_id), currency: row.currency,
     total_amount: asFloat(row.total_amount),
-    fx_rate: asFloat(row.fx_rate), fx_rate_date: isoDate(row.fx_rate_date),
+    // receivables.fx_rate_date 是 Date 列（workstation_models.py:345）：同上，只出日期。
+    fx_rate: asFloat(row.fx_rate), fx_rate_date: dateOnly(row.fx_rate_date),
     base_currency: row.base_currency, base_amount: asFloat(row.base_amount),
     received_amount: asFloat(row.received_amount),
     exchange_gain_loss: asFloat(row.exchange_gain_loss),

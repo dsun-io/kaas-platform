@@ -203,6 +203,16 @@ const res = await kernel.fetch(new Request("https://kernel.internal/internal/quo
 
 **D2 · 客户编码生成等"规则类"逻辑**：内核 `build_number`/`build_inquiry_no` 等来自 `kaas_common`（唯一实现）。这类规则若要 TS 直连写库，必须决定是"下沉 TS 并在迁移完成后删除 Python 版（单源迁移）"还是"调 RPC 生成"。**建议**：规则仍留 Python（纯函数、无 DB），TS 只负责落库。
 
+**D2-bis · 15 条写路径的事务归属（2026-10-24 决策：默认取 A，等用户确认）**
+P2 耦合清单标出 **15 条不宜拆**的写路径（读后写 / 多表同事务 / 取号 + 状态机 + 同步单证）。三条路：
+- **A（默认执行）**：写路径**保留在内核**；P3 只删「已迁到门面」的读路径 DB 依赖。内核仍持 DB，但**只服务这 15 条写事务** + cron。
+  代价：内核仍有 asyncpg/Hyperdrive 依赖（启动成本降不下来）；收益：零事务跨 HTTP 风险。
+- **B**：把写事务搬到门面（TS 直接开事务），内核彻底无 DB。代价：多表事务 + 取号 + 状态机全部要在 TS 重写一遍 ⇒ **与「业务规则只在 Python 一处」冲突**，需要先把这些规则下沉到 SQL/共享纯函数，工作量最大。
+- **C**：内核保留最小 DB 连接，仅写路径使用，**明确登记为长期例外**（等同于 A 但写进架构例外清单，不再计划移除）。
+
+执行顺序（不论 A/B/C）：① 先把剩余只读端点迁走（33 条 proxy-mount + 24 条引擎切片）；② 再处理写路径归属；③ 最后才删 `platform/db.py`。
+**在用户明确选 B 之前，一律按 A 推进**（可逆、风险最低）。
+
 **D3 · 口径唯一实现类聚合**（`receivable_summary`、`funnel`、`channel_conversion_rates`）：本期**不重写**，TS 取数 → Python 算 → TS 返回；待口径稳定后再评估是否下沉 TS（须先扩 golden harness）。**这是"禁止第二份实现"铁纪律的边界，必须用户知情。**
 
 **D4 · 单证 PDF/文件字节**：Python 侧用 Browser Rendering binding 出 PDF。门面也有 `BROWSER` 绑定，可后置迁移；本期保持 Python。

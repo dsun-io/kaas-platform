@@ -45,6 +45,26 @@ export const DIRECT_ROUTE_IDS = {
    * 详见 docs/P2_COUPLING_ENGINE_2026-10-24.md §6/§8。
    */
   exportQuoteCalculate: "export-quote.calculate",
+  // ── P3 批次A：询盘读端点（customers 域里仅剩的「仍在打内核」的只读 GET）──────────
+  // 口径修正（2026-10-24 事实核对）：orders 列表/详情、customers 列表/详情、teams
+  // 列表/详情**自「门面注册/移植」（route-classification 193 条）起就是直连 DB**，
+  // 都不经过内核 ⇒ 不需要（也不应）挂本开关：给已直连的端点挂 off=透传会把默认行为
+  // 退回依赖 Pyodide 冷启动，与本次事故的止血方向相反。询盘这三条才是这三域里
+  // 真正还在 forwardAuthenticatedKernelRequest 的 GET（真源 ws_crm_ext.py:303/402/609）。
+  /** GET /api/v1/inquiries —— 询盘总表（ws_crm_ext.py:303） */
+  inquiriesList: "inquiries.list",
+  /** GET /api/v1/inquiries/{id} —— 询盘详情（报价历史/关联订单/阶段流水，ws_crm_ext.py:402） */
+  inquiriesDetail: "inquiries.detail",
+  /** GET /api/v1/inquiries/{id}/stage-log —— 询盘阶段流水（ws_crm_ext.py:609） */
+  inquiriesStageLog: "inquiries.stage-log",
+  // ── P3 批次A（扩权）：quotes / tax 域只读端点（index.ts 里仍是 createProxyApp 透传的）──
+  // 真源 = main.py:2504 / tax_archives.py:202 / tax_archives.py:372（源码核对为纯 SQL）。
+  /** GET /api/v1/quotations —— 旧报价事实表台账（main.py:2504） */
+  quotationsList: "quotations.list",
+  /** GET /api/v1/tax-archives —— 税务档案列表（tax_archives.py:202） */
+  taxArchivesList: "tax-archives.list",
+  /** GET /api/v1/product-tax-rates —— 产品税率列表（tax_archives.py:372） */
+  productTaxRatesList: "product-tax-rates.list",
 } as const;
 
 export type DirectRouteId = (typeof DIRECT_ROUTE_IDS)[keyof typeof DIRECT_ROUTE_IDS];

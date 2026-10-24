@@ -257,6 +257,97 @@ describe("GET /api/v1/orders/{order_id}", () => {
       receivable: null,
     });
   });
+
+  it("DATE 列序列化：fx_rate_date 只出 YYYY-MM-DD，其余时间列仍是 timestamptz 的 isoformat", async () => {
+    // 真源 main.py:3811 _order_dict → kaas_common row_to_order：fx_rate_date 是 Date 列，
+    // `_iso(date)` 只出日期；order_date/delivery_date/created_at/confirmed_at 是 timestamptz。
+    const user = userRow();
+    const row: DbRow = {
+      ...ORDER_ROW,
+      fx_rate: "7.1",
+      fx_rate_date: new Date("2026-09-30T00:00:00Z"),
+      order_date: new Date("2026-10-01T00:00:00Z"),
+      delivery_date: new Date("2026-10-05T00:00:00Z"),
+      created_at: new Date("2026-10-01T03:04:05Z"),
+      confirmed_at: new Date("2026-10-02T10:11:12Z"),
+    };
+    resetDb((query) => {
+      if (query.includes("FROM users WHERE id")) return [user];
+      if (query.includes("FROM orders")) return [row];
+      return [];
+    });
+
+    const res = await request("/api/v1/orders/31", user);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as DbRow;
+    // DATE 列：只出日期（本次修正；修正前是含时间串，与内核 row_to_order 不一致）
+    expect(body.fx_rate_date).toBe("2026-09-30");
+    // timestamptz 列：格式与修正前逐字一致（不受本次改动影响）
+    expect(body.order_date).toBe("2026-10-01T00:00:00.000+00:00");
+    expect(body.delivery_date).toBe("2026-10-05T00:00:00.000+00:00");
+    expect(body.created_at).toBe("2026-10-01T03:04:05.000+00:00");
+    expect(body.confirmed_at).toBe("2026-10-02T10:11:12.000+00:00");
+    expect(body.fx_rate).toBe(7.1);
+  });
+
+  it("DATE 列序列化：payment_schedules.due_date/actual_date 只出 YYYY-MM-DD，created_at 仍是 isoformat", async () => {
+    // 真源 kaas_common row_to_schedule：due_date/actual_date 是 Date 列
+    // （workstation_models.py:316-317），`_iso(date)` 只出日期；created_at 是 timestamptz。
+    const user = userRow();
+    const schedule: DbRow = {
+      id: 71, order_id: 31, trade_doc_id: null, schedule_type: "deposit",
+      ratio: "0.3", amount: "300.00", currency: "USD",
+      due_date: new Date("2026-10-10T00:00:00Z"),
+      actual_date: new Date("2026-10-11T00:00:00Z"),
+      status: "paid", fx_rate: null, exchange_gain_loss: null, notes: null,
+      created_at: new Date("2026-10-01T03:04:05Z"),
+    };
+    resetDb((query) => {
+      if (query.includes("FROM users WHERE id")) return [user];
+      if (query.includes("FROM orders")) return [ORDER_ROW];
+      if (query.includes("FROM payment_schedules")) return [schedule];
+      return [];
+    });
+
+    const res = await request("/api/v1/orders/31", user);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { payment_schedules: DbRow[] };
+    const s = body.payment_schedules[0]!;
+    // DATE 列：只出日期（修正前是含时间串）
+    expect(s.due_date).toBe("2026-10-10");
+    expect(s.actual_date).toBe("2026-10-11");
+    // timestamptz 列与「历史 paid 无 receipts 按金额显示」的兼容口径都不受影响
+    expect(s.created_at).toBe("2026-10-01T03:04:05.000+00:00");
+    expect(s.received_amount).toBe(300);
+  });
+
+  it("DATE 列序列化：receivables.fx_rate_date 只出 YYYY-MM-DD，created_at 仍是 isoformat", async () => {
+    // 真源 row_to_receivable：fx_rate_date 是 Date 列（workstation_models.py:345）。
+    const user = userRow();
+    const receivable: DbRow = {
+      id: 55, order_id: 31, currency: "USD", total_amount: "300.00",
+      fx_rate: "7.1", fx_rate_date: new Date("2026-09-30T00:00:00Z"),
+      base_currency: "CNY", base_amount: "2130.00", received_amount: "0",
+      exchange_gain_loss: null, status: "unpaid",
+      created_at: new Date("2026-10-01T03:04:05Z"),
+    };
+    resetDb((query) => {
+      if (query.includes("FROM users WHERE id")) return [user];
+      if (query.includes("FROM orders")) return [ORDER_ROW];
+      if (query.includes("FROM receivables")) return [receivable];
+      return [];
+    });
+
+    const res = await request("/api/v1/orders/31", user);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { receivable: DbRow };
+    expect(body.receivable.fx_rate_date).toBe("2026-09-30");
+    expect(body.receivable.created_at).toBe("2026-10-01T03:04:05.000+00:00");
+    expect(body.receivable.fx_rate).toBe(7.1);
+  });
 });
 
 describe("POST /api/v1/orders/{order_id}/status", () => {

@@ -9,12 +9,14 @@
  *
  * 可见性/写权限/枚举/编号规则判定在 rules.ts（kaas_common 镜像，TODO(TODO:TS3) 换 KERNEL）。
  */
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import type postgres from "postgres";
 import { z } from "zod";
 
+import { DIRECT_ROUTE_IDS, useDirectRoute } from "../boot-flag";
 import { withDb, type Db, type Tx } from "../db";
 import { getEnv, type Env } from "../env";
+import { directDb } from "../hot-read";
 import { httpError, num, num0, parseBody, parseQuery, pyIso, respond } from "../http";
 import { forwardAuthenticatedKernelRequest } from "../proxy";
 import {
@@ -32,18 +34,23 @@ import {
   capabilityRow,
   contactApi,
   customerApi,
+  inquiryStageLogApi,
   normalizeInquiryItems,
   rowToCustomer,
   rowToInquiry,
   stageLogApi,
 } from "../serializers";
 import { requireUser, type CurrentUser } from "../session";
+import { rowToOrder } from "./orders";
 
 const app = new Hono<{ Bindings: Env }>();
 
 // 入参 schema 当前手写（TODO(TODO:TS1)：待 pydantic→zod 生成器覆盖本域后替换）。
 
 const DEFAULT_TENANT = "default";
+
+/** 行别名（与 orders.ts / products.ts 同风格；只按列名读取）。 */
+type Row = Record<string, unknown>;
 
 // ── 业务枚举（kaas_common/domain/enums.py:ENUMS 的镜像子集；TODO(TODO:TS3) 换 KERNEL 字典端点）──
 const ENUMS: Record<string, readonly string[]> = {
@@ -645,17 +652,377 @@ app.get("/api/v1/customers/:customer_id/inquiries", (c) => respond(c, async () =
   return c.json(payload);
 }));
 
-// ── GET /api/v1/inquiries（ws_crm_ext.py:259-298）─────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// P3 批次A · 询盘读端点门面直连（AUTH_DB_SPLIT=on 时启用；off = 与今天逐字一致）
+//
+// 为什么是这三条：customers 域剩下的读**早已**在门面直连（列表 main.py:1372 起、
+// 详情 main.py:1506、records ws_customer_records.py:36 都走 withDb）；M1-f 因
+// 「形状全在内核」而把这三条询盘 GET 留成 forwardAuthenticatedKernelRequest。
+// 内核 Pyodide 冷启动失败（2026-10-24 事故）时，询盘工位 /inquiries 与客户页
+// 询盘抽屉因此整块不可用 —— 迁到门面直连后不再依赖内核冷启动。
+//
+// 真源逐条直译（SQL 文本、参数顺序、排序、响应键一律照抄，禁止顺手优化）：
+// - backend/worker/src/ws_crm_ext.py:303-399  list_inquiries
+// - backend/worker/src/ws_crm_ext.py:402-479  get_inquiry
+// - backend/worker/src/ws_crm_ext.py:609-646  list_inquiry_stage_log
+// 序列化复用 src/serializers.ts（rowToInquiry / inquiryStageLogApi = kaas_common 镜像）
+// 与 src/routes/orders.ts 的 rowToOrder（= main.py:3811 _order_dict → row_to_order）。
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** inquiry_stage.py:30-34：阶段序 + 终态 closed（只用于 stage 筛选值校验，不做计算）。 */
+const INQUIRY_STAGES = ["inquiry", "quotation", "order", "shipment", "completed", "closed"] as const;
+
+/** ws_crm_ext.py:111-125 `_parse_day`：空 → null；非法 → 422 INVALID_DATE。
+ * 静默忽略比报错更糟（用户以为筛了某月，实际拿到全量）。 */
+function parseDay(raw: string | undefined, field: string): string | null {
+  if (raw === null || raw === undefined || raw === "") return null;
+  const text = String(raw).slice(0, 10);
+  const ok = /^\d{4}-\d{2}-\d{2}$/.test(text)
+    && !Number.isNaN(new Date(text + "T00:00:00Z").getTime())
+    && new Date(text + "T00:00:00Z").toISOString().slice(0, 10) === text;
+  if (!ok) {
+    throw httpError(422, {
+      error: "validation", code: "INVALID_DATE",
+      field, detail: field + " 必须是 YYYY-MM-DD",
+    });
+  }
+  return text;
+}
+
+/** Python `dict.get` 口径：缺列/None 一律 null —— 保证响应键**不会**因
+ * JSON.stringify 丢掉 undefined 而少一个（内核响应逐字段对齐）。 */
+function at(row: Row, key: string): unknown {
+  const value = row[key];
+  return value === undefined ? null : value;
+}
+
+/** kaas_common/workstation/quote_serializers.py:102 `_float`：None → None，其余 float。 */
+function quoteFloat(value: unknown): number | null {
+  return value === null || value === undefined ? null : Number(value);
+}
+
+/** DATE 列 → 'YYYY-MM-DD'（Python 侧是 `date`，`.isoformat()` 只出日期；不是 timestamptz）。 */
+function pyDate(value: unknown): unknown {
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return value;
+}
+
+/** quote_serializers.py:11-44 `row_to_quote`：32 键逐字直译（只读投影）。
+ * 询盘详情的报价历史直接复用它 —— 不在这里定义第二份「报价是什么」的判定。 */
+function rowToQuote(q: Row, itemCount: number): Record<string, unknown> {
+  const v = (key: string): unknown => at(q, key);
+  return {
+    id: num(v("id")), quote_no: v("quote_no"),
+    customer_id: num(v("customer_id")), customer_name: v("customer_name"),
+    inquiry_id: num(v("inquiry_id")),
+    status: v("status"), currency: v("currency"),
+    total_amount: quoteFloat(v("total_amount")),
+    valid_until: pyIso(v("valid_until")),
+    notes: v("notes"),
+    fx_rate: quoteFloat(v("fx_rate")),
+    // DATE 列（quote_orders.fx_rate_date 是 Date，不是 timestamptz）：Python `.isoformat()` 只出日期
+    fx_rate_date: pyDate(v("fx_rate_date")),
+    tax_archive_id: v("tax_archive_id"),
+    tax_archive_code: v("tax_archive_code"),
+    tax_archive_name: v("tax_archive_name"),
+    tax_snapshot: v("tax_snapshot"),
+    created_at: pyIso(v("created_at")),
+    created_by: v("created_by"),
+    owner_id: v("owner_id"), owner_scope: v("owner_scope"),
+    item_count: itemCount,
+    incoterm: v("incoterm"), payment_terms: v("payment_terms"),
+    port_of_loading: v("port_of_loading"),
+    port_of_destination: v("port_of_destination"),
+    shipping_marks: v("shipping_marks"),
+    country_of_origin: v("country_of_origin"),
+    destination_country: v("destination_country"),
+    destination_region: v("destination_region"),
+    carrier: v("carrier"),
+    // 同上：Date 列 ⇒ 只出日期（freight_valid_from/to 均为 Date）
+    freight_valid_from: pyDate(v("freight_valid_from")),
+    freight_valid_to: pyDate(v("freight_valid_to")),
+  };
+}
+
+/** FastAPI 侧 `list_inquiries` 的查询参数（Optional[str]/Optional[int]，空串视为未传）。 */
+const inquiryListQuery = z.object({
+  status: z.string().optional(),
+  // FastAPI 的 Optional[int]：空串/非整数 → 422（不是静默 coerce 成 0）
+  customer_id: z.string().regex(/^-?\d+$/, "Input should be a valid integer").transform(Number).optional(),
+  stage: z.string().optional(),
+  channel: z.string().optional(),
+  date_from: z.string().optional(),
+  date_to: z.string().optional(),
+  q: z.string().optional(),
+});
+
+/** GET /api/v1/inquiries —— ws_crm_ext.py:303-399 `list_inquiries` 逐字直译。
+ *
+ * SQL 三段结构与原函数一致：① 相关子查询带 quote_count / order_count /
+ * latest_quote_at（一次查询取回，禁止逐行 N+1）；② WHERE i.tenant_id=$1 + 三层可见性
+ * 谓词 + 各筛选（参数顺序：scope → status → customer_id → stage → channel →
+ * date_from → date_to → q，与 Python params.append 顺序逐条对应）；③ 排序
+ * `ORDER BY i.customer_id, i.created_at DESC`（按客户归类、客户内时间倒序）。
+ * 没有分页：内核返回全部，total = len(rows)。 */
+export async function listInquiriesDirect(
+  c: Context,
+  user: CurrentUser,
+): Promise<Response> {
+  const query = parseQuery(inquiryListQuery, c.req.query());
+  // FastAPI 的 Optional[str]：?status=（空串）在 Python 里是假值 ⇒ 等同未传
+  const text = (raw: string | undefined): string => (raw === undefined ? "" : raw);
+  const status = text(query.status);
+  const stage = text(query.stage);
+  const channel = text(query.channel);
+  const q = text(query.q);
+
+  const params: unknown[] = [DEFAULT_TENANT];
+  let statement =
+    "SELECT i.*, c.name AS company_name,"
+    // 报价数：一个询盘可以多次报价（改价重报），所以是计数不是布尔
+    + " (SELECT count(*) FROM quote_orders q"
+    + "    WHERE q.tenant_id = i.tenant_id AND q.inquiry_id = i.id) AS quote_count,"
+    // 订单数：正列 inquiry_id + 经报价传递的历史单**都算**（迁移前的订单只有后者）
+    + " (SELECT count(*) FROM orders o"
+    + "    WHERE o.tenant_id = i.tenant_id"
+    + "      AND (o.inquiry_id = i.id"
+    + "           OR o.quote_id IN (SELECT q2.id FROM quote_orders q2"
+    + "                              WHERE q2.tenant_id = i.tenant_id"
+    + "                                AND q2.inquiry_id = i.id))) AS order_count,"
+    // 最近一次报价时间：报价历史的入口提示
+    + " (SELECT max(q3.created_at) FROM quote_orders q3"
+    + "    WHERE q3.tenant_id = i.tenant_id AND q3.inquiry_id = i.id)"
+    + "   AS latest_quote_at"
+    + " FROM cust_inquiries i"
+    + " JOIN customers c ON i.customer_id = c.id"
+    + " WHERE i.tenant_id = $1";
+  if (!canSeeAll(user)) {
+    // §10.3 + 三层组织：自己名下 + 租户共享 + **本团队**（与 dev scope_filter 同序）
+    params.push(String(user.id));
+    let scopeCond = "(i.owner_id = $" + params.length + " OR i.owner_scope = 'tenant'";
+    if (user.team_id !== null && user.team_id !== undefined) {
+      params.push(user.team_id);
+      scopeCond += " OR i.team_id = $" + params.length;
+    }
+    statement += " AND " + scopeCond + ")";
+  }
+  if (status) {
+    validateEnum("inquiry_status", status);
+    params.push(status);
+    statement += " AND i.status = $" + params.length;
+  }
+  if (query.customer_id) {
+    params.push(query.customer_id);
+    statement += " AND i.customer_id = $" + params.length;
+  }
+  if (stage) {
+    // 阶段与 status 是两层语义（流程进度 vs 报价三态）：非法值先 422，
+    // 否则会被当成「没有询盘」静默返回空列表（ws_crm_ext.py:364-372）。
+    if (!(INQUIRY_STAGES as readonly string[]).includes(stage)) {
+      throw httpError(422, {
+        error: "invalid_enum_value", code: "INVALID_ENUM",
+        field: "stage", value: stage, allowed: [...INQUIRY_STAGES],
+      });
+    }
+    params.push(stage);
+    statement += " AND i.stage = $" + params.length;
+  }
+  if (channel) {
+    validateEnum("inquiry_channel", channel);
+    params.push(channel);
+    statement += " AND i.channel = $" + params.length;
+  }
+  if (query.date_from) {
+    params.push(parseDay(query.date_from, "date_from"));
+    statement += " AND i.created_at::date >= $" + params.length;
+  }
+  if (query.date_to) {
+    params.push(parseDay(query.date_to, "date_to"));
+    statement += " AND i.created_at::date <= $" + params.length;
+  }
+  if (q) {
+    params.push("%" + q.trim() + "%");
+    statement += " AND (i.product_name_raw ILIKE $" + params.length
+      + " OR i.inquiry_no ILIKE $" + params.length
+      + " OR c.name ILIKE $" + params.length + ")";
+  }
+  statement += " ORDER BY i.customer_id, i.created_at DESC";
+
+  const rows = (await withDb(getEnv(c), (sql: Db) =>
+    sql.unsafe(statement, params as never[]))) as unknown as Row[];
+  return c.json({
+    items: rows.map((r) => ({
+      ...rowToInquiry(r),
+      company_name: at(r, "company_name"),
+      quote_count: num0(at(r, "quote_count")),
+      order_count: num0(at(r, "order_count")),
+      latest_quote_at: pyIso(at(r, "latest_quote_at")),
+    })),
+    total: rows.length,
+  });
+}
+
+/** GET /api/v1/inquiries/{inquiry_id} —— ws_crm_ext.py:402-479 `get_inquiry` 直译。
+ *
+ * 响应 = row_to_inquiry 全键 + company_name + quotes[]（报价历史：时间正序，每张带
+ * item_count 与 order_count）+ orders[]（正列 inquiry_id 优先、经报价传递的历史单兜底）
+ * + stage_log[]（含 id，与本文件 stage-log 端点形状不同，逐字照抄）+ counts{}。
+ * 不可见与不存在一律 404 INQUIRY_NOT_FOUND（不泄露存在性）。
+ * 只读：Python 侧虽用 `_acquire` 事务，但全程 SELECT，这里等价用 withDb。 */
+export async function getInquiryDirect(
+  c: Context,
+  user: CurrentUser,
+): Promise<Response> {
+  const { inquiry_id: inquiryId } = parseQuery(
+    z.object({ inquiry_id: z.coerce.number().int() }),
+    c.req.param(),
+    "path",
+  );
+  const payload = await withDb(getEnv(c), async (sql: Db) => {
+    const inqRows = (await sql.unsafe(
+      "SELECT i.*, c.name AS company_name FROM cust_inquiries i"
+      + " JOIN customers c ON i.customer_id = c.id"
+      + " WHERE i.tenant_id = $1 AND i.id = $2",
+      [DEFAULT_TENANT, inquiryId] as never[],
+    )) as unknown as Row[];
+    const inq = inqRows[0];
+    if (!inq || !ownerVisible(user, inq)) {
+      throw httpError(404, { error: "not_found", code: "INQUIRY_NOT_FOUND" });
+    }
+    const detail: Record<string, unknown> = {
+      ...rowToInquiry(inq),
+      company_name: at(inq, "company_name"),
+    };
+
+    // 报价历史：时间正序（看改价轨迹），带行项数与该次报价金额
+    const quotes = (await sql.unsafe(
+      "SELECT * FROM quote_orders WHERE tenant_id=$1 AND inquiry_id=$2"
+      + " ORDER BY created_at, id",
+      [DEFAULT_TENANT, inquiryId] as never[],
+    )) as unknown as Row[];
+    const quoteItems: Record<string, unknown>[] = [];
+    for (const quote of quotes) {
+      const itemCount = (await sql.unsafe(
+        "SELECT count(*) FROM quote_order_items"
+        + " WHERE tenant_id=$1 AND quote_order_id=$2",
+        [DEFAULT_TENANT, num(quote.id)] as never[],
+      )) as unknown as Row[];
+      const orderCount = (await sql.unsafe(
+        "SELECT count(*) FROM orders"
+        + " WHERE tenant_id=$1 AND quote_id=$2 AND status <> 'cancelled'",
+        [DEFAULT_TENANT, num(quote.id)] as never[],
+      )) as unknown as Row[];
+      quoteItems.push({
+        ...rowToQuote(quote, num0(itemCount[0]?.count)),
+        order_count: num0(orderCount[0]?.count),
+      });
+    }
+    detail.quotes = quoteItems;
+
+    // 关联订单：正列 inquiry_id 优先，经报价传递的历史单补上
+    const orderRows = (await sql.unsafe(
+      "SELECT * FROM orders WHERE tenant_id=$1"
+      + "   AND (inquiry_id = $2"
+      + "        OR quote_id IN (SELECT id FROM quote_orders"
+      + "                        WHERE tenant_id=$1 AND inquiry_id=$2))"
+      + " ORDER BY created_at DESC, id DESC",
+      [DEFAULT_TENANT, inquiryId] as never[],
+    )) as unknown as Row[];
+    detail.orders = orderRows.map((row) => rowToOrder(row));
+
+    // 阶段流水（TODO(F4) 落库口径）：谁 / 哪个事件 / 从哪到哪
+    const stageRows = (await sql.unsafe(
+      "SELECT * FROM inquiry_stage_log WHERE tenant_id=$1 AND inquiry_id=$2"
+      + " ORDER BY created_at, id",
+      [DEFAULT_TENANT, inquiryId] as never[],
+    )) as unknown as Row[];
+    detail.stage_log = stageRows.map((row) => ({
+      id: num(at(row, "id")),
+      from_stage: at(row, "from_stage"),
+      to_stage: at(row, "to_stage"),
+      source_event: at(row, "source_event"),
+      actor_id: at(row, "actor_id"),
+      note: at(row, "note"),
+      created_at: pyIso(at(row, "created_at")),
+    }));
+
+    detail.counts = {
+      quotes: quoteItems.length,
+      orders: orderRows.length,
+      open_orders: orderRows.filter(
+        (row) => row.status !== "completed" && row.status !== "cancelled",
+      ).length,
+    };
+    return detail;
+  });
+  return c.json(payload);
+}
+
+/** GET /api/v1/inquiries/{inquiry_id}/stage-log —— ws_crm_ext.py:609-646 直译。
+ *
+ * 响应 `{items:[{from_stage,to_stage,source_event,actor_id,note,created_at}]}`：**没有 id**
+ * （与详情里的 stage_log[] 不同，逐字照抄），故复用 serializers.inquiryStageLogApi。
+ * 可见性：Python 这条只 SELECT id，再交给 `_owner_visible` —— 行上没有 owner_id/
+ * owner_scope/team_id ⇒ 非管理员恒 404（前端「失败静默隐藏」）。这是内核**现状**，
+ * 逐字保留以免门面与内核行为分叉；是否修内核另议（见交付疑问 Q1）。 */
+export async function listInquiryStageLogDirect(
+  c: Context,
+  user: CurrentUser,
+): Promise<Response> {
+  const { inquiry_id: inquiryId } = parseQuery(
+    z.object({ inquiry_id: z.coerce.number().int() }),
+    c.req.param(),
+    "path",
+  );
+  const payload = await withDb(getEnv(c), async (sql: Db) => {
+    const inqRows = (await sql.unsafe(
+      "SELECT id FROM cust_inquiries WHERE id=$1 AND tenant_id=$2",
+      [inquiryId, DEFAULT_TENANT] as never[],
+    )) as unknown as Row[];
+    const inq = inqRows[0];
+    if (!inq || !ownerVisible(user, inq)) {
+      throw httpError(404, { error: "not_found", code: "INQUIRY_NOT_FOUND" });
+    }
+    const rows = (await sql.unsafe(
+      "SELECT from_stage, to_stage, source_event, actor_id, note, created_at"
+      + " FROM inquiry_stage_log WHERE tenant_id=$1 AND inquiry_id=$2"
+      + " ORDER BY created_at, id",
+      [DEFAULT_TENANT, inquiryId] as never[],
+    )) as unknown as Row[];
+    return { items: rows.map(inquiryStageLogApi) };
+  });
+  return c.json(payload);
+}
+
+// ── GET /api/v1/inquiries（ws_crm_ext.py:303-399）────────────────────────────
 // 2026-10-22（M1-f）：改为透传内核 —— 内核 M1-d 已扩 quote_count/order_count/
 // latest_quote_at 与 stage/channel/date_from/date_to/q 筛选；门面不再写第二份 SQL。
-// 透传实现统一走 src/proxy.ts:forwardAuthenticatedKernelRequest。
+// 2026-10-24（P3 批次A）：AUTH_DB_SPLIT=on ⇒ 走上面的 listInquiriesDirect（SQL 逐字
+// 直译回门面，询盘工位不再依赖内核冷启动）；**off（默认）⇒ 仍是 M1-f 那一句**
+// forwardAuthenticatedKernelRequest，行为与今天逐字一致（一键回退）。
+// 判定次序：先看开关（纯 var 读，不触 DB/内核）⇒ 命中才 requireUser；未命中直接调
+// 原函数（它自己做的就是 requireUser + 原样转发，401 同样不打 DB/内核）。
 app.get("/api/v1/inquiries", (c) =>
-  respond(c, async () => forwardAuthenticatedKernelRequest(c)));
+  respond(c, async () => {
+    if (useDirectRoute(getEnv(c), DIRECT_ROUTE_IDS.inquiriesList)) {
+      const user = await requireUser(c);
+      return directDb(c, () => listInquiriesDirect(c, user));
+    }
+    return forwardAuthenticatedKernelRequest(c);
+  }));
 
-// ── GET /api/v1/inquiries/{inquiry_id}（ws_crm_ext.py:402；M1-f 补齐）──────────
-// 询盘详情（含报价历史）形状全在内核；门面只鉴权 + 透传。
+// ── GET /api/v1/inquiries/{inquiry_id}（ws_crm_ext.py:402-479）────────────────
+// 询盘详情（含报价历史/关联订单/阶段流水）：2026-10-24（P3 批次A）起开关 on 走
+// getInquiryDirect；off（默认）仍是下面这一句透传，行为逐字不变。
 app.get("/api/v1/inquiries/:inquiry_id", (c) =>
-  respond(c, async () => forwardAuthenticatedKernelRequest(c)));
+  respond(c, async () => {
+    if (useDirectRoute(getEnv(c), DIRECT_ROUTE_IDS.inquiriesDetail)) {
+      const user = await requireUser(c);
+      return directDb(c, () => getInquiryDirect(c, user));
+    }
+    return forwardAuthenticatedKernelRequest(c);
+  }));
 
 // ── PATCH /api/v1/inquiries/{inquiry_id}（ws_crm_ext.py:301-410）─────────────
 // 2026-10-22（M1-f）：改为透传内核 —— 状态机/编号锁定/线索池联动/多产品行全在内核
@@ -663,10 +1030,17 @@ app.get("/api/v1/inquiries/:inquiry_id", (c) =>
 app.patch("/api/v1/inquiries/:inquiry_id", (c) =>
   respond(c, async () => forwardAuthenticatedKernelRequest(c)));
 
-// ── GET /api/v1/inquiries/{inquiry_id}/stage-log（ws_crm_ext.py:413-450）──────
+// ── GET /api/v1/inquiries/{inquiry_id}/stage-log（ws_crm_ext.py:609-646）──────
 // 2026-10-22（M1-f）：改为透传内核 —— 阶段日志的可见性/投影全在内核。
+// 2026-10-24（P3 批次A）：开关 on 走 listInquiryStageLogDirect；off（默认）仍透传。
 app.get("/api/v1/inquiries/:inquiry_id/stage-log", (c) =>
-  respond(c, async () => forwardAuthenticatedKernelRequest(c)));
+  respond(c, async () => {
+    if (useDirectRoute(getEnv(c), DIRECT_ROUTE_IDS.inquiriesStageLog)) {
+      const user = await requireUser(c);
+      return directDb(c, () => listInquiryStageLogDirect(c, user));
+    }
+    return forwardAuthenticatedKernelRequest(c);
+  }));
 
 // ── GET /api/v1/customers/{customer_id}/records（ws_customer_records.py:36-65）──
 app.get("/api/v1/customers/:customer_id/records", (c) => respond(c, async () => {

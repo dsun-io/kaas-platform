@@ -42,7 +42,7 @@ from typing import Any, List, Literal, Optional
 
 from fastapi import Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 # 复用 main 的 app / 鉴权 / 连接封装 / 段号取号 / 汇率锁定 / 归属隔离。
 # 这些**都已经在 main.py 里**且与 dev 的 ws_common 对齐，重写一遍就会有两份口径。
@@ -777,6 +777,17 @@ async def _effective_product(request: Request, user: dict, product_key: str):
     return await _with_customer_options(request, user, product)
 
 
+# P2 引擎 RPC（供数路径）的产品定义注入槽（**读来源注入**，不是判定）：
+# 旧路径的 /explain handler 把「产品解析」和「150 行逐步代入」写在同一个 handler 里，
+# 而本批不允许改 ws_quote_ext.py（写入范围）+ 禁止复制第二份实现（ADR-008）⇒
+# 供数 RPC 直接复用同一个 handler，只把它内部**唯一的一次 DB 读取**
+# （_product_or_404_tenant）换成"已由 datasets 解析好的产品定义"。
+# 挂点选**请求对象**（不是模块全局/contextvar）：天然 per-request（无并发串值、
+# 无需 reset），也不依赖哪个模块实例读到它 —— 未挂载时（所有既有调用方）行为逐字节不变。
+_PRODUCT_OVERRIDE_ATTR = "_p2_product_override"
+_PRODUCT_OVERRIDE_UNSET = object()
+
+
 async def _product_or_404_tenant(request: Request, user: dict, product_key: str):
     """产品定义解析：Python 注册表 ∪ **租户运行时产品**（团队隔离 + is_active）。
 
@@ -796,6 +807,11 @@ async def _product_or_404_tenant(request: Request, user: dict, product_key: str)
     "引擎缺失就不校验"、`_load_cost_table` "读不到就空表"同一口径。
     `HTTPException` 必须原样抛：503 引擎不可用 / 409 override 上游已变是**业务**错误。
     """
+    injected = getattr(request, _PRODUCT_OVERRIDE_ATTR, _PRODUCT_OVERRIDE_UNSET)
+    if injected is not _PRODUCT_OVERRIDE_UNSET:
+        # P2 供数路径已按同一份 _product_or_404_from_rows 解析好（含 404/409 判定），
+        # 这里直接返回 ⇒ 本次请求不再读库。未注入时（所有既有调用方）逐字不变。
+        return injected
     _require_engine()
     try:
         spec = await _effective_product_raw(request, user, product_key)
@@ -991,6 +1007,189 @@ def _run_calculation(body: _CalculateIn, user: dict, view: str,
     return payload
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# P2 引擎 RPC 公共纯函数（门面供数 → 内核纯算）
+# ═════════════════════════════════════════════════════════════════════════════
+# 设计 = docs/P2_COUPLING_ENGINE_2026-10-24.md §6（契约）/ §8（首个切片）。
+# 纪律：本节的函数**只做接线** —— 把 payload 交给既有 pydantic 模型 + 既有纯函数；
+# 不新增/不修改任何判定；不得出现 _db / _acquire（「零 DB 调用」由测试锁死）。
+
+_BOOL_ADAPTER = TypeAdapter(bool)
+
+
+def _rpc_validation_error(exc: ValidationError, loc_prefix: tuple) -> RequestValidationError:
+    """pydantic 校验错误 → FastAPI 请求校验错误的**同一形状**（四键 type/loc/msg/input）。
+
+    旧路径由框架解析请求体/query 参数，FastAPI 的 422 元素恰好四个键（pydantic
+    errors() 里的 url/ctx 不出现在响应里）—— 逐键重建，保证新旧两条路径的 422
+    body 逐字相同。
+    """
+    errors = [
+        {
+            "type": item.get("type"),
+            "loc": tuple(loc_prefix) + tuple(item.get("loc") or ()),
+            "msg": item.get("msg"),
+            "input": item.get("input"),
+        }
+        for item in exc.errors()
+    ]
+    return RequestValidationError(errors)
+
+
+def _rpc_model(model, request_body: dict):
+    """payload.request → 该端点**同一份** pydantic 模型；失败抛 FastAPI 自己的异常类型。"""
+    try:
+        return model.model_validate(request_body)
+    except ValidationError as exc:
+        raise _rpc_validation_error(exc, ("body",))
+
+
+def _rpc_datasets(datasets: dict) -> tuple:
+    """payload.datasets → (tenant_products 行, customer_cost_items 行)。
+
+    形状错误属于**实现 bug**（门面契约违约），不是用户输入错误 ⇒ 400
+    engine_rpc_payload_invalid。每个 dataset 只出现一次（契约 §6.3 规则 1）：旧路径
+    对同一条定价数据查询两次，内核按同一份行复用 —— 两次查询之间无写，语义等价。
+    """
+    rows = datasets.get("tenant_products") or []
+    items = datasets.get("customer_cost_items") or []
+    if not isinstance(rows, list) or not isinstance(items, list):
+        raise HTTPException(status_code=400, detail={
+            "error": "engine_rpc_payload_invalid",
+            "message": "datasets.tenant_products / customer_cost_items 必须是数组",
+        })
+    return rows, items
+
+
+def _query_bool(params: dict, name: str, default: bool) -> bool:
+    """query 布尔参数 —— 与旧路径 FastAPI/pydantic v2 **逐字同一口径**。
+
+    门面把 query 原始字符串原样透传（门面不自己解析/校验，否则就是第二份实现）；
+    这里用同一个 pydantic TypeAdapter 解析，非法值抛 FastAPI 的
+    RequestValidationError（loc 前缀 query），422 信封因此与旧路径逐字相同。
+    """
+    raw = params.get(name)
+    if raw is None:
+        return default
+    try:
+        return _BOOL_ADAPTER.validate_python(raw)
+    except ValidationError as exc:
+        raise _rpc_validation_error(exc, ("query", name))
+
+
+def _product_or_404_from_rows(rows: list, user: dict, product_key: str):
+    """tenant_products 行 → 产品定义（**纯函数**；= _product_or_404_tenant 的供数版）。"""
+    _require_engine()
+    spec = _resolve_effective_raw(rows, user, product_key)
+    if spec is not None:
+        return spec
+    return _product_or_404(product_key)
+
+
+def _effective_product_from_items(rows: list, items: list, user: dict, product_key: str):
+    """tenant_products 行 + 定价数据行 → 有效定义（**纯函数**；= _effective_product 的供数版）。"""
+    product = _resolve_effective_raw(rows, user, product_key)
+    if product is None:
+        return None
+    return _apply_customer_options(product, items)
+
+
+def _verify_payload(body: "_CalculateIn", user: dict, cost_table: Optional[dict] = None,
+                    product=None) -> dict:
+    """三遍核验的响应体（**纯函数**；P2 供数路径与自取数路径共用）。
+
+    从 export_quote_verify 的 handler 里**原样提取**（与 §8.2 的纯提取同款）：
+    不新增/不修改任何判定，with_verification 标记与「跑三遍 → 汇总」序列都不变。
+    """
+    body.with_verification = True
+    req = _assemble_request(body, user, cost_table, product)
+    try:
+        result = build(req)
+    except (EngineError, PricingError, TermsError) as exc:
+        raise HTTPException(status_code=400, detail={"error": "engine_error", "message": str(exc)})
+    rep = verify_all(result)
+    return {
+        "ok": rep.ok,
+        "checks": rep.checks,
+        "passes": rep.passes,
+        "errors": [{"row": i.row, "field": i.field, "detail": i.detail} for i in rep.errors()],
+        "warnings": [{"row": i.row, "field": i.field, "detail": i.detail} for i in rep.warnings()],
+    }
+
+
+def verify_from_datasets(request_body: dict, datasets: dict, user: dict) -> dict:
+    """P2 引擎 RPC：/export-quote/verify 的供数版（**与自取数路径同一个算子**）。
+
+    **角色闸门随行**（否则不放量）：旧端点由 _require_internal_admin_dep 在 body
+    解析**之前**判定（非管理员发坏 body 得 403 而不是 422，PARITY-QUOTE-22）。
+    这里第一行就调**同一个** _require_internal_admin —— 同一优先级、同一 403 信封，
+    不在门面/新入口另写一份判定（§8.5.2 的教训）。
+    """
+    _require_internal_admin(user)
+    body = _rpc_model(_CalculateIn, request_body)
+    rows, items = _rpc_datasets(datasets)
+    raw = _resolve_effective_raw(rows, user, body.product_key)
+    product = _apply_customer_options(raw, items) if raw is not None else None
+    cost_table = _cost_table_from_items(items, product)
+    return _verify_payload(body, user, cost_table, product)
+
+
+def formulas_from_datasets(product_key: str, params: dict, datasets: dict, user: dict) -> dict:
+    """P2 引擎 RPC：GET /export-quote/products/{key}/formulas 的供数版。
+
+    params = 旧端点的**原始 query 字符串**（with_columns / with_customer_options /
+    customer_id）；customer_id 的「只允许管理员指定」判定发生在供数方（SQL 谓词责任，
+    契约 §6.3 规则 1），内核按 datasets 行应用 —— 与旧路径同一份
+    _apply_customer_options，不新造判据。
+    """
+    rows, items = _rpc_datasets(datasets)
+    with_columns = _query_bool(params, "with_columns", False)
+    with_customer_options = _query_bool(params, "with_customer_options", True)
+    spec = _product_or_404_from_rows(rows, user, product_key)
+    if with_customer_options:
+        spec = _apply_customer_options(spec, items)
+    return describe_product(spec, with_columns=with_columns)
+
+
+async def explain_from_datasets(
+    product_key: str, request_body: dict, datasets: dict, user: dict, request: Request,
+) -> dict:
+    """P2 引擎 RPC：POST /export-quote/products/{key}/explain 的供数版。
+
+    为什么这样接线（而不是另写一份）："规格取值组装 + worked_example 逐步代入"（约
+    150 行判定）写在 ws_quote_ext.export_quote_explain_product 的 handler 内；本批
+    写入范围不含 ws_quote_ext.py ⇒ 既不能把它拆成纯函数，也**禁止**在别处复制第二份
+    实现（ADR-008 铁纪律）。因此这里**直接调用同一个 handler**，只用「供数路径已解析
+    的产品定义」注入（_PRODUCT_OVERRIDE）替掉它内部唯一的一次 DB 读取；判定一行不改。
+
+    旧路径在 spec_override 分支**完全不读库**；供数路径同样不读、也不注入
+    （草稿定义优先于产品注册表，与 handler 内的分支一致）。
+    """
+    import ws_quote_ext
+
+    body = _rpc_model(ws_quote_ext._ExplainIn, request_body)
+    rows, _items = _rpc_datasets(datasets)
+    if body.spec_override is None:
+        # 与旧路径**同一份**函数解析（404 unknown_product 文案 / 409 上游已变都相同）；
+        # 解析结果挂在本请求对象上，handler 内部的 _product_or_404_tenant 直接取用。
+        setattr(request, _PRODUCT_OVERRIDE_ATTR,
+                _product_or_404_from_rows(rows, user, product_key))
+    return await ws_quote_ext.export_quote_explain_product(
+        product_key, body, request, user)
+
+
+def spec_from_datasets(product_key: str, datasets: dict, user: dict) -> dict:
+    """P2 引擎 RPC：GET /export-quote/products/{key}/spec 的供数版。"""
+    from kaas_common.export_quote.tenant_products import spec_to_dict
+
+    rows, items = _rpc_datasets(datasets)
+    spec = _effective_product_from_items(rows, items, user, product_key)
+    if spec is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "unknown_product", "message": f"未知产品 {product_key}"})
+    return {"product_key": product_key, "spec": spec_to_dict(spec)}
+
+
 def calculate_from_datasets(request_body: dict, datasets: dict, user: dict) -> dict:
     """P2 引擎 RPC：门面供数 → 纯算（**与自取数路径同一个算子**）。
 
@@ -1003,31 +1202,8 @@ def calculate_from_datasets(request_body: dict, datasets: dict, user: dict) -> d
     tests/test_engine_rpc_quote_calculate.py 的「零 DB 调用」用例锁死。
     """
     _require_engine()
-    try:
-        body = _CalculateIn.model_validate(request_body)
-    except ValidationError as exc:
-        # 与「旧路径 FastAPI 解析请求体」同一 422 形状（loc 前缀 body）：
-        # 用框架自己的异常类型，保证同一份 pydantic 模型产出同一份错误体。
-        # FastAPI 请求体校验的 422 元素恰好四个键（type/loc/msg/input；不含 pydantic
-        # errors() 里的 url/ctx）—— 逐键重建，保证新旧两条路径的 422 body 逐字相同。
-        errors = [
-            {
-                "type": item.get("type"),
-                "loc": ("body",) + tuple(item.get("loc") or ()),
-                "msg": item.get("msg"),
-                "input": item.get("input"),
-            }
-            for item in exc.errors()
-        ]
-        raise RequestValidationError(errors, body=request_body)
-
-    rows = datasets.get("tenant_products") or []
-    items = datasets.get("customer_cost_items") or []
-    if not isinstance(rows, list) or not isinstance(items, list):
-        raise HTTPException(status_code=400, detail={
-            "error": "engine_rpc_payload_invalid",
-            "message": "datasets.tenant_products / customer_cost_items 必须是数组",
-        })
+    body = _rpc_model(_CalculateIn, request_body)
+    rows, items = _rpc_datasets(datasets)
 
     raw = _resolve_effective_raw(rows, user, body.product_key)
     product = _apply_customer_options(raw, items) if raw is not None else None
@@ -1061,23 +1237,14 @@ async def export_quote_calculate_internal(request: Request, body: _CalculateIn,
 @app.post("/api/v1/export-quote/verify")
 async def export_quote_verify(request: Request, body: _CalculateIn,
                               user: dict = Depends(_require_internal_admin_dep)):
-    """对一次报价跑三遍核验（管理员）。"""
-    body.with_verification = True
+    """对一次报价跑三遍核验（管理员）。
+
+    取数 + 三遍核验的**响应组装**在 _verify_payload（纯函数）—— 供数 RPC
+    （/api/v1/internal/engine/quote/verify）调用的是**同一份**算子与同一份角色闸门。
+    """
     product = await _effective_product(request, user, body.product_key)
-    req = _assemble_request(
+    return _verify_payload(
         body, user, await _load_cost_table(request, user, body, product), product)
-    try:
-        result = build(req)
-    except (EngineError, PricingError, TermsError) as exc:
-        raise HTTPException(status_code=400, detail={"error": "engine_error", "message": str(exc)})
-    rep = verify_all(result)
-    return {
-        "ok": rep.ok,
-        "checks": rep.checks,
-        "passes": rep.passes,
-        "errors": [{"row": i.row, "field": i.field, "detail": i.detail} for i in rep.errors()],
-        "warnings": [{"row": i.row, "field": i.field, "detail": i.detail} for i in rep.warnings()],
-    }
 
 
 # ═════════════════════════════════════════════════════════════════════════════

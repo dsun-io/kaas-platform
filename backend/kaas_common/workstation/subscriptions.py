@@ -43,6 +43,9 @@ WORKSTATION_PATHS: dict[str, tuple[str, ...]] = {
         # 工位闸门是"按路径映射"的全局中间件（backend/worker/src/ws_workstations.py），
         # 内部路径不登记 ⇒ 闸门不放行/不拦截 = 未开通工位的账号可绕过商业限制算价
         # （2026-10-24 灰度实测踩到过，见 docs/P2_COUPLING_ENGINE_2026-10-24.md §8.5.2）。
+        # 前缀登记**覆盖同族全部 action**（_match_prefix 按路径边界匹配子路径）：
+        #   /calculate（首个切片）、/verify、/formulas、/spec —— 新增 action 无需再改本表，
+        #   但**禁止**把 RPC 迁到别的前缀而不回来登记（那等于拆掉商业闸门）。
         "/api/v1/internal/engine/quote",
     ),
     "orders": ("/api/v1/orders", "/api/v1/payment-schedules", "/api/v1/receivables"),

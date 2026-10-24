@@ -110,6 +110,28 @@ describe("路由面覆盖（Python到TS门面）", () => {
     }
   });
 
+  it("P3 批次A 6 条只读 GET 逐条注册（改实现不改路由面，各恰好 1 次且都有 Python 真源）", () => {
+    // docs/ARCH_AUTH_DB_SPLIT_2026-10-24.md §8 / task-9：询盘 3 条 + quotes/tax 域 3 条。
+    // 后三条原本只由 PROXY_PREFIXES 的 createProxyApp 覆盖；现在显式注册 GET（其余方法仍走透传）。
+    const p3Routes = [
+      "GET /api/v1/inquiries",
+      "GET /api/v1/inquiries/:p",
+      "GET /api/v1/inquiries/:p/stage-log",
+      "GET /api/v1/quotations",
+      "GET /api/v1/tax-archives",
+      "GET /api/v1/product-tax-rates",
+    ];
+    for (const route of p3Routes) {
+      const hits = ts.filter((r) => r.method + " " + r.path === route);
+      expect(hits, "应恰好注册一次（重复注册会让 Hono 先注册者吞掉后者）: " + route).toHaveLength(1);
+      const [method, path] = route.split(" ");
+      const source = raw.routes.some(
+        (r) => r.methods.includes(method!) && normParam(r.path) === path,
+      );
+      expect(source, "P3 直连端点必须有 Python 真源: " + route).toBe(true);
+    }
+  });
+
   it("TS 侧没有多余路由", () => {
     // 门面自有路由（Python 无对应真源）：存活探针 / OpenAPI / W5 M1 API token 管理面。
     // 管理面是 TS 域（docs/W5_MCP_REST_DESIGN_2026-10-21.md §2），不来自 routes.json。

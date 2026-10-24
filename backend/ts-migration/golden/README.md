@@ -13,6 +13,8 @@ W3 Phase 0 交付物之二：迁移质量主门禁的原型（计划 §2 Phase 0
 | `smoke-vs-prod.report.md` | 2026-10-21 首次 smoke 对生产基线的报告存档（左端未起服务，5 条全记录为连接失败，右端基线形状全部符合预期） |
 | `engine-quote-calculate.fixture.json` | **P2 离线金标**（2026-10-24）：/export-quote/calculate 的 request/actor/datasets/sql/sql_params/response；Python 与 TS 两侧测试共读同一份，见 docs/P2_COUPLING_ENGINE_2026-10-24.md §6.6/§8.3 |
 | `gen_engine_quote_calculate_fixture.py` | 上述 fixture 的**唯一**生成器（用内核旧路径真实跑一遍落盘；幂等）。仅在故意改响应形状时重跑，PR 须人工 review response diff；测试禁止自更新 |
+| `engine-quote-verify.fixture.json` / `engine-quote-formulas.fixture.json` / `engine-quote-spec.fixture.json` | **P2 同族只读切片离线金标**（2026-10-24，task-10）：/export-quote/{verify}、GET /export-quote/products/{key}/{formulas,spec} 的 request/actor/datasets/sql/sql_params/response（GET 端点没有请求体 ⇒ request 段 = product_key + 原始 query 字符串）。两侧测试：`backend/worker/tests/test_engine_rpc_quote_readonly.py` 与 `backend/ts-worker/tests/engine-quote-readonly.test.ts` |
+| `gen_engine_quote_readonly_fixtures.py` | 上述三份 fixture 的**唯一**生成器（同一脚本按切片依次用旧路径真实跑一遍落盘；幂等：重跑 sha256 不变）。纪律同 calculate 生成器 |
 
 ## 用法
 
