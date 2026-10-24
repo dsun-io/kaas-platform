@@ -35,6 +35,10 @@
 | 1b | [HANDOVER_2026-10-21_NAV_STUCK.md](./HANDOVER_2026-10-21_NAV_STUCK.md) | **已闭环排障（2026-10-22，P0/P1/P2 全完成）**：P0=`<Link prefetch={true}>`+静态导出使点击导航挂死 → 改 `prefetch={false}`；P1=Windows 构建使逐段预取 404 → 改 Docker `node:22` Linux 构建（version `71be6dbb` 上线）；P2=AGENTS 立规 + 产物门禁 `pnpm assets:check` + `.gitignore` 垃圾段；P3=导出态 e2e（`pnpm e2e:export`，真实导出产物上 6 条用例，接 nightly）。含离线复现脚本与全部执行记录 |
 | 2 | [archive/2026-10-21-cutover/HANDOVER_2026-10-20_FINAL.md](./archive/2026-10-21-cutover/HANDOVER_2026-10-20_FINAL.md) | **最新交接**：§0.2 停止点/剩余工作/恢复路径；**§0.3 新设备/新 agent 接手清单**；§2 三环境、§5 发布检查单、踩坑 |
 | 3 | [PROBLEM_STATUS_2026-10-11.md](./PROBLEM_STATUS_2026-10-11.md) | 滚动问题状态（顶部按时间倒序，含后端五项与 CI 记录） |
+| 3a | [INCIDENT_2026-10-24_KERNEL_502.md](./INCIDENT_2026-10-24_KERNEL_502.md) | **2026-10-24 生产内核 502 事故**：Pyodide 初始化期崩溃（NoGilError / promising-task SystemError）取证、错误率/内存分位、复现与抓 tail 方法 |
+| 3b | [ARCH_AUTH_DB_SPLIT_2026-10-24.md](./ARCH_AUTH_DB_SPLIT_2026-10-24.md) | **认证与数据库连接从 Pyodide 内核拆到 TS 网关**：职责拆分表 / 耦合点 / D1–D6 决策 / 灰度回退 / 迁移指标 / P0–P3 阶段 |
+| 3c | [P2_COUPLING_ENGINE_2026-10-24.md](./P2_COUPLING_ENGINE_2026-10-24.md) | **引擎端点耦合清单（77/77 全覆盖）**：25 只读可拆 / 33 应走 TS-DB / 15 不宜拆（写事务）/ 3 保持 Python；含 `/internal/engine/*` 契约草案与金标方法 |
+| 3d | [CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md](./CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md) | 可直接提交的 Cloudflare 工单证据包（异常栈/时间线/内存分位/复现脚本） |
 | 4 | [TODO.md](./TODO.md) | **活跃待办唯一账本**（A 单证 / B 产品 / C 其他 / D 发布 / E UI） |
 | 4b | [IMPORT_ORDERS_PLAN_2026-10-23.md](./IMPORT_ORDERS_PLAN_2026-10-23.md) | **C29 历史订单批量导入**设计+执行方案：口径裁决 / CSV 列 / API 契约 / 分层落点 / DoD |
 | 4c | [OPTIMIZATION_PLAN_2026-10-23_PRODUCT_QUOTE_REDESIGN.md](./OPTIMIZATION_PLAN_2026-10-23_PRODUCT_QUOTE_REDESIGN.md) | **产品×报价重构**（2026-10-23 用户反馈 14 条）：逐条定位（文件/行）/ 三处口径裁决 / 目标设计（产品表单收口、报价行三段布局、成本含税开关契约、税务档案侧边栏、批量导入整单化）/ 批次 A→D 与 DoD；状态挂 `TODO.md` §R |

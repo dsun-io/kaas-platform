@@ -25,6 +25,7 @@ import productRoutes from "./routes/products";
 import workstationsRoutes from "./routes/workstations";
 import dashboardRoutes from "./routes/dashboard";
 import importRoutes from "./routes/imports";
+import engineRoutes from "./routes/engine";
 import { buildOpenApiDocument } from "./openapi";
 import { createProxyApp } from "./proxy";
 import { callKernel } from "./kernel";
@@ -112,6 +113,12 @@ app.route("/", fileRoutes);
 app.route("/", outreachRoutes);
 app.route("/", adminRoutes);
 app.route("/", apiTokenRoutes);
+
+// ── P2 首个引擎切片（docs/P2_COUPLING_ENGINE_2026-10-24.md §6/§8）──────────────
+// POST /api/v1/export-quote/calculate：AUTH_DB_SPLIT=on ⇒「门面供数 → 内核 /internal/engine/*
+// 纯算 → 原样回放」；off（默认）⇒ 仍原样透传（旧路径，内核自取数）。**必须在下面的
+// /api/v1/export-quote 透传 mount 之前注册**（Hono 先注册先命中）。
+app.route("/", engineRoutes);
 
 // ── 引擎域透传（quotes / trade-docs / ai）：门面只鉴权+协议转换，不重写业务（ADR-008）──
 // 详见 backend/ts-migration/route-classification.md 与 AGENTS.md 铁纪律。

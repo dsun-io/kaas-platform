@@ -53,6 +53,8 @@ _SIBLING_MODULES = (
     "tax_archives",
     # Cloudflare Cron 任务（main 末尾 import；scheduled 钩子调它）
     "ws_cron",
+    # P2 引擎 RPC（main 末尾 import；门面供数 → 内核纯算，/internal/engine/*）
+    "engine_api",
 )
 
 

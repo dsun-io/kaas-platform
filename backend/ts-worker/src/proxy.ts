@@ -22,7 +22,12 @@ import { SignJWT } from "jose";
 import type { ApiTokenActor, AppEnv } from "./actor";
 import { extractBearer, JWT_ALGORITHM, verifyToken } from "./auth";
 import { getEnv } from "./env";
-import { fetchKernelWithRetry, KERNEL_BASE, planKernelRetry } from "./kernel";
+import {
+  fetchKernelWithRetry,
+  KERNEL_BASE,
+  planKernelRetry,
+  type KernelFetchAttemptResult,
+} from "./kernel";
 import { requireUser } from "./session";
 
 export type ProxyEnv = AppEnv;
@@ -38,23 +43,73 @@ export const INTERNAL_JWT_TTL_SECONDS = 60;
  * - 用门面与内核共享的 JWT_SECRET + HS256 签名，exp = now + 60s；
  * - **不把 kaas_oat_ 明文转发给 KERNEL**（token 只应存在于门面与调用方之间）。
  */
+/** 内部令牌的唯一签名口径（HS256 / JWT_SECRET / TTL 60s）：mintInternalJwt 与 mintEngineJwt 共用。 */
+async function signInternalJwt(
+  claims: Record<string, unknown>,
+  subject: string,
+  secret: string,
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  return new SignJWT(claims)
+    .setProtectedHeader({ alg: JWT_ALGORITHM })
+    .setSubject(subject)
+    .setIssuedAt(now)
+    .setExpirationTime(now + INTERNAL_JWT_TTL_SECONDS)
+    .sign(new TextEncoder().encode(secret));
+}
+
 export async function mintInternalJwt(
   actor: Pick<ApiTokenActor, "createdBy" | "tenantId" | "teamId" | "tokenId" | "scopes">,
   secret: string,
 ): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
-  return new SignJWT({
-    tenant_id: actor.tenantId,
-    team_id: actor.teamId,
-    created_by: actor.createdBy,
-    token_id: actor.tokenId,
-    scope: actor.scopes.join(" "),
-  })
-    .setProtectedHeader({ alg: JWT_ALGORITHM })
-    .setSubject(String(actor.createdBy))
-    .setIssuedAt(now)
-    .setExpirationTime(now + INTERNAL_JWT_TTL_SECONDS)
-    .sign(new TextEncoder().encode(secret));
+  return signInternalJwt(
+    {
+      tenant_id: actor.tenantId,
+      team_id: actor.teamId,
+      created_by: actor.createdBy,
+      token_id: actor.tokenId,
+      scope: actor.scopes.join(" "),
+    },
+    String(actor.createdBy),
+    secret,
+  );
+}
+
+/**
+ * P2 引擎 RPC 的内部令牌（docs/P2_COUPLING_ENGINE_2026-10-24.md §6.2）。
+ *
+ * 与 mintInternalJwt **同一口径**（HS256 / 同一把 JWT_SECRET / TTL 60s / sub = 用户 id），
+ * 只多两件事：
+ * ① 带上**角色快照** claims（role/account_type/is_tenant_admin/team_id）——内核要做
+ *    团队优先级与管理员判定，但 RPC 路径**不查 users 表**，判定依据必须由签名保护；
+ * ② 带 kaas_internal="engine"——普通用户会话 JWT 与内部 JWT 同一把 secret，
+ *    没有这个 claim 就区分不了（内核会拒绝无该 claim 的令牌）。
+ */
+export const ENGINE_INTERNAL_CLAIM = "kaas_internal";
+export const ENGINE_INTERNAL_VALUE = "engine";
+
+export interface EngineActor {
+  id: number;
+  tenantId: string;
+  teamId: number | null;
+  role: string;
+  accountType: string;
+  isTenantAdmin: boolean;
+}
+
+export async function mintEngineJwt(actor: EngineActor, secret: string): Promise<string> {
+  return signInternalJwt(
+    {
+      tenant_id: actor.tenantId,
+      team_id: actor.teamId,
+      role: actor.role,
+      account_type: actor.accountType,
+      is_tenant_admin: actor.isTenantAdmin,
+      [ENGINE_INTERNAL_CLAIM]: ENGINE_INTERNAL_VALUE,
+    },
+    String(actor.id),
+    secret,
+  );
 }
 
 /** 校验（仅当请求带 token）：非法 → invalid；合法 → ok；缺失 → absent（由内核裁决） */
@@ -89,6 +144,23 @@ export interface KernelUnavailableEnvelope {
 export const KERNEL_UNAVAILABLE_MESSAGE = "内核服务正在启动或暂时不可用，请稍后重试";
 /** 建议客户端重试间隔（秒）：重试预算已在门面侧用完，别让前端立刻再打一轮。 */
 export const KERNEL_UNAVAILABLE_RETRY_AFTER_SECONDS = 1;
+
+/**
+ * 502 不可达信封（**唯一构造点**）：透传（本文件）与引擎 RPC 载波（routes/engine.ts）
+ * 共用同一形状，避免两处各写一份字段而漂移。
+ */
+export function kernelUnavailableEnvelope(
+  result: Pick<KernelFetchAttemptResult, "attempts" | "elapsedMs">,
+): KernelUnavailableEnvelope {
+  return {
+    error: "kernel_unavailable",
+    message: KERNEL_UNAVAILABLE_MESSAGE,
+    status: 502,
+    retryable: true,
+    attempts: result.attempts,
+    elapsed_ms: result.elapsedMs,
+  };
+}
 
 /**
  * 原样转发当前请求给 Python 内核（**门面唯一透传实现**）。
@@ -177,15 +249,7 @@ export async function forwardKernelRequest(c: Context): Promise<Response> {
     console.error(
       `[proxy] kernel_unavailable method=${method} path=${url.pathname} attempts=${result.attempts} elapsed_ms=${result.elapsedMs} last_error=${String(result.lastError)}`,
     );
-    const envelope: KernelUnavailableEnvelope = {
-      error: "kernel_unavailable",
-      message: KERNEL_UNAVAILABLE_MESSAGE,
-      status: 502,
-      retryable: true,
-      attempts: result.attempts,
-      elapsed_ms: result.elapsedMs,
-    };
-    return c.json(envelope, 502, {
+    return c.json(kernelUnavailableEnvelope(result), 502, {
       "Retry-After": String(KERNEL_UNAVAILABLE_RETRY_AFTER_SECONDS),
     });
   }

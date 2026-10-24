@@ -78,6 +78,19 @@ describe("路由面覆盖（Python到TS门面）", () => {
     expect(missing, "缺失路由: " + missing.join(" | ")).toEqual([]);
   });
 
+  it("P2 引擎切片逐条注册（改实现不改路由面，且必须命中 Python 真源）", () => {
+    const engineRoutes = ["POST /api/v1/export-quote/calculate"];
+    for (const route of engineRoutes) {
+      const hits = ts.filter((r) => r.method + " " + r.path === route);
+      expect(hits, "应恰好注册一次（重复注册会让 Hono 先注册者吞掉后者）: " + route).toHaveLength(1);
+      const [method, p] = route.split(" ");
+      const source = raw.routes.some(
+        (r) => r.methods.includes(method!) && normParam(r.path) === p,
+      );
+      expect(source, "引擎切片必须有 Python 真源: " + route).toBe(true);
+    }
+  });
+
   it("P0 热读 5 条只读 GET 仍逐条注册（改实现不改路由面，各恰好 1 次）", () => {
     const p0Routes = [
       "GET /api/v1/products",
@@ -114,8 +127,15 @@ describe("路由面覆盖（Python到TS门面）", () => {
       "GET /mcp",
     ]);
     const pyPaths = new Set(direct.map((r) => normParam(r.path)));
+    // P2（docs/P2_COUPLING_ENGINE_2026-10-24.md §8）：代理前缀内允许**显式注册**的引擎切片
+    // —— 它的实现从「透传」改成「门面供数 → 内核纯算」，但路径/method 仍是 Python 真源。
+    // 判据不是「放行任意路径」：必须在 routes.json 里能找到同 method+path 的真源。
+    const pyAll = new Set(
+      raw.routes.flatMap((r) => r.methods.map((m) => m.toUpperCase() + " " + normParam(r.path))),
+    );
     const extra = ts
       .filter((r) => !pyPaths.has(r.path))
+      .filter((r) => !pyAll.has(r.method + " " + r.path))
       .filter((r) => !allowedExtra.has(r.method + " " + r.path))
       .filter((r) =>
         !PROXY_PREFIXES.some((p) => r.path.startsWith(p + "/*") || r.path === p + "/*"),

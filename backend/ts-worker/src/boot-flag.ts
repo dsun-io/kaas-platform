@@ -39,6 +39,12 @@ export const DIRECT_ROUTE_IDS = {
   notificationsUnreadCount: "notifications.unread-count",
   /** GET /api/v1/approvals —— 审批中心列表（ws_approvals.py:478） */
   approvalsList: "approvals.list",
+  /**
+   * POST /api/v1/export-quote/calculate —— 报价计算（quote_api.py:953）。
+   * P2：不是「门面直连返回」，而是「门面供数 → 内核 /internal/engine/* 纯算 → 原样回放」，
+   * 详见 docs/P2_COUPLING_ENGINE_2026-10-24.md §6/§8。
+   */
+  exportQuoteCalculate: "export-quote.calculate",
 } as const;
 
 export type DirectRouteId = (typeof DIRECT_ROUTE_IDS)[keyof typeof DIRECT_ROUTE_IDS];

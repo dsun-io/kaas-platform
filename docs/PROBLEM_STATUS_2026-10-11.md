@@ -80,6 +80,17 @@
 >
 > 结论：**用户端「上传成功不显示 / 刷新后产品加载失败」的直接病根（页面热读依赖 Pyodide 冷启动）已消除**；
 > 引擎端点（quotes/trade-docs）仍走内核，属 P2 范围。
+>
+> **P2 完成（2026-10-24 17:00，task-6）——先出清单与方案，只落地 1 个最简只读切片**
+> - 耦合清单：[P2_COUPLING_ENGINE_2026-10-24.md](./P2_COUPLING_ENGINE_2026-10-24.md)（417 行，AST 做「端点→helper 传递闭包」DB 扫描，**77/77 条引擎路由全覆盖**）：
+>   **25 条**只读纯算可拆 / **1 条**可拆需 TS 落库 / **33 条**应走 TS-DB（无 Python 计算）/ **15 条不宜拆**（读后写、多表同事务、取号+状态机）/ **3 条保持 Python**（字节/PDF/AI）。
+>   另记录 2 处「GET 也写库」（clause-templates 懒种子、fx-rates/latest 回填）与 1 处既有缺口（409 SPEC_UPSTREAM_CHANGED 分支实际不可达，算法冻结未修）。
+> - 契约：统一 `POST /internal/engine/<domain>/<action>`（只读也 POST、数据走 body、仅 Service Binding 可达），datasets 三条硬规则（门面执行谓词+ORDER BY / JSONB 已解码 / BIGINT→number）；
+>   内部 JWT 沿用 `mintInternalJwt` 口径 + `kaas_internal=engine` + 角色快照 ⇒ **内核只验签、不查 users 表**；普通用户 JWT 无该 claim ⇒ 401（已测）。
+> - 首个切片 `POST /api/v1/export-quote/calculate`：门面 `src/routes/engine.ts` 供数 → 内核 `src/engine_api.py` 纯算（同 pydantic 模型、同算子、**零 DB 调用**）→ 门面原样回放；
+>   `kaas_common/export_quote/**`、`trade_doc/**` **零 diff**；金标 fixture（旧路径真实生成，生成器幂等）：**旧 == 新 == fixture，0 diff**（Python 13 测 + TS 12 测）。
+> - 灰度：`AUTH_DB_SPLIT_ROUTES` 未含 `export-quote.calculate` ⇒ **本次部署行为与今天逐字一致**（切片默认 off，待线上验证后再放量）。
+> - 门禁：worker **1855 passed + 12 skipped** / ts-worker **33 文件 436 测** / orchestrator **273**。
 > - **Cloudflare 工单证据包**：见 [CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md](./CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md)（可直接提交）。
 
 > **（2026-10-24 下午 · 第三轮 A/B/C/D ✅：按客户选英文名 / token 只读预览 / 路由计数 / workstation-products）**

@@ -41,7 +41,8 @@ from itertools import product as _cartesian
 from typing import Any, List, Literal, Optional
 
 from fastapi import Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
-from pydantic import BaseModel, Field
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 # 复用 main 的 app / 鉴权 / 连接封装 / 段号取号 / 汇率锁定 / 归属隔离。
 # 这些**都已经在 main.py 里**且与 dev 的 ws_common 对齐，重写一遍就会有两份口径。
@@ -569,18 +570,16 @@ def _matrix_rows(product) -> list:
     return rows
 
 
-async def _load_option_extensions(request: Request, tenant: str, customer_id: Optional[str],
-                                  product) -> dict:
-    """从客户定价数据反推「客户自己加的档位」（dev 同源实现）。
+def _extensions_from_items(items: list, product) -> dict:
+    """从客户定价数据行反推「客户自己加的档位」（**纯函数**，不碰 DB）。
 
-    定价数据就是档位的来源，不另建表：库里出现过一个产品定义没有的取值，
-    就说明客户要用这个档位 —— 规格下拉里也就该多出这一项。这样"加档位"只有
-    一步（录成本），不会出现"成本录了、选项忘了加"的裂缝。
+    P2 切片（docs/P2_COUPLING_ENGINE_2026-10-24.md §6）：本函数是
+    _load_option_extensions 的后半段。门面供数路径（/internal/engine/quote/calculate）
+    走同一份判定 —— 禁止在 engine_api / TS 侧复制。
     """
     fields = [d["field"] for d in (product.pricing_key or []) if d.get("field")]
     if not fields:
         return {}
-    items = await _pricing_key_items(request, tenant, customer_id, product.key)
     defined = pricing_key_defined_values(product)
     out: dict = {}
     seen: dict = {}
@@ -607,6 +606,27 @@ async def _load_option_extensions(request: Request, tenant: str, customer_id: Op
     return out
 
 
+async def _load_option_extensions(request: Request, tenant: str, customer_id: Optional[str],
+                                  product) -> dict:
+    """从客户定价数据反推「客户自己加的档位」（dev 同源实现）。
+
+    定价数据就是档位的来源，不另建表：库里出现过一个产品定义没有的取值，
+    就说明客户要用这个档位 —— 规格下拉里也就该多出这一项。这样"加档位"只有
+    一步（录成本），不会出现"成本录了、选项忘了加"的裂缝。
+    """
+    if not [d["field"] for d in (product.pricing_key or []) if d.get("field")]:
+        return {}
+    items = await _pricing_key_items(request, tenant, customer_id, product.key)
+    return _extensions_from_items(items, product)
+
+
+def _apply_customer_options(product, items: list):
+    """把客户自建档位并入产品定义（**纯函数**；P2 供数路径与自取数路径共用）。"""
+    if product is None or not product.pricing_key:
+        return product
+    return extend_product(product, _extensions_from_items(items, product))
+
+
 async def _with_customer_options(request: Request, user: dict, product,
                                  customer_id: Optional[str] = None):
     """把「客户自己在定价数据里加的档位」并入产品定义。
@@ -617,8 +637,31 @@ async def _with_customer_options(request: Request, user: dict, product,
     if not product.pricing_key:
         return product
     cid = customer_id or _customer_of(user)
-    exts = await _load_option_extensions(request, _tenant_of(user), cid, product)
-    return extend_product(product, exts)
+    items = await _pricing_key_items(request, _tenant_of(user), cid, product.key)
+    return _apply_customer_options(product, items)
+
+
+def _cost_table_from_items(items: list, product) -> dict:
+    """定价数据行 → 引擎成本表（**纯函数**；P2 供数路径与自取数路径共用）。"""
+    if product is None or not product.pricing_key:
+        return {}
+    table: dict = {}
+    for item in items:
+        spec_hash = item.get("spec_hash") or ""
+        if not spec_hash.startswith(_pricing_prefix(product.key)):
+            continue
+        key = spec_hash.split(_PRICING_SEPARATOR, 1)[1]
+        if key in table:
+            continue  # 已有更新的版本（查询按 id 倒序）
+        amount = item.get("amount")
+        if amount is not None and float(amount) > 0:
+            table[key] = float(amount)
+    # 只保留产品当前仍存在的组合：产品改了档位之后，库里残留的旧键不该继续参与
+    # 报价 —— 否则会出现"界面上没有、报价里却在用"的价。
+    valid = {row["key"] for row in _matrix_rows(product)}
+    if valid:
+        table = {k: v for k, v in table.items() if k in valid}
+    return table
 
 
 async def _load_cost_table(request: Request, user: dict, body: "_CalculateIn",
@@ -640,23 +683,7 @@ async def _load_cost_table(request: Request, user: dict, body: "_CalculateIn",
         return {}
     items = await _pricing_key_items(request, _tenant_of(user),
                                      _customer_of(user), product.key)
-    table: dict = {}
-    for item in items:
-        spec_hash = item.get("spec_hash") or ""
-        if not spec_hash.startswith(_pricing_prefix(product.key)):
-            continue
-        key = spec_hash.split(_PRICING_SEPARATOR, 1)[1]
-        if key in table:
-            continue  # 已有更新的版本（查询按 id 倒序）
-        amount = item.get("amount")
-        if amount is not None and float(amount) > 0:
-            table[key] = float(amount)
-    # 只保留产品当前仍存在的组合：产品改了档位之后，库里残留的旧键不该继续参与
-    # 报价 —— 否则会出现"界面上没有、报价里却在用"的价。
-    valid = {row["key"] for row in _matrix_rows(product)}
-    if valid:
-        table = {k: v for k, v in table.items() if k in valid}
-    return table
+    return _cost_table_from_items(items, product)
 
 
 async def _effective_product_raw(request: Request, user: dict, product_key: str):
@@ -678,13 +705,6 @@ async def _effective_product_raw(request: Request, user: dict, product_key: str)
     _require_engine()
     if not product_key:
         return None
-    from kaas_common.workstation.product_scope import is_same_team
-    from kaas_common.workstation.scope import is_admin_role
-    from kaas_common.export_quote.effective_spec import (
-        SpecUpstreamChanged,
-        resolve_effective_product,
-    )
-
     tenant = _tenant_of(user)
     rows = await _db.fetch(  # noqa: SLF001 - 同模块既有用法
         request,
@@ -693,6 +713,27 @@ async def _effective_product_raw(request: Request, user: dict, product_key: str)
         tenant, product_key,
         table="tenant_products",
     )
+    return _resolve_effective_raw(rows, user, product_key)
+
+
+def _resolve_effective_raw(rows: list, user: dict, product_key: str):
+    """tenant_products 行 → 有效产品定义（**纯函数**，不碰 DB）。
+
+    P2 切片（docs/P2_COUPLING_ENGINE_2026-10-24.md §6）：本函数是
+    _effective_product_raw 的后半段。门面供数路径（/internal/engine/quote/calculate）
+    与自取数路径共用**同一份**团队优先级 / 409 上游变更 / 注册表回退判定。
+    行必须由供数方按原 SQL 谓词与来源排好序（团队优先级在下面重新应用一遍）。
+    """
+    from kaas_common.workstation.product_scope import is_same_team
+    from kaas_common.workstation.scope import is_admin_role
+    from kaas_common.export_quote.effective_spec import (
+        SpecUpstreamChanged,
+        resolve_effective_product,
+    )
+
+    _require_engine()
+    if not product_key:
+        return None
     # 与 dev _fetch_tenant_product 同优先级：本团队行 > 历史 NULL 行（仅管理员）
     picked = None
     for r in rows:
@@ -948,6 +989,50 @@ def _run_calculation(body: _CalculateIn, user: dict, view: str,
             "skipped": result.request.skipped_spec_rows,
         }
     return payload
+
+
+def calculate_from_datasets(request_body: dict, datasets: dict, user: dict) -> dict:
+    """P2 引擎 RPC：门面供数 → 纯算（**与自取数路径同一个算子**）。
+
+    设计 = docs/P2_COUPLING_ENGINE_2026-10-24.md §6/§8。本函数**不新增任何判定**：
+    产品解析 / 客户自建档位 / 成本表 / 算价全部调用上面既有函数，唯一区别是
+    **数据来源**是 payload["datasets"] 而不是 _db.fetch。调用方（门面）必须先按
+    旧 SQL 的谓词与 ORDER BY 查好行，见契约 §6.3 的三条硬规则。
+
+    不碰 DB：本函数（及其调用的纯函数）不得出现 _db/_acquire —— 由
+    tests/test_engine_rpc_quote_calculate.py 的「零 DB 调用」用例锁死。
+    """
+    _require_engine()
+    try:
+        body = _CalculateIn.model_validate(request_body)
+    except ValidationError as exc:
+        # 与「旧路径 FastAPI 解析请求体」同一 422 形状（loc 前缀 body）：
+        # 用框架自己的异常类型，保证同一份 pydantic 模型产出同一份错误体。
+        # FastAPI 请求体校验的 422 元素恰好四个键（type/loc/msg/input；不含 pydantic
+        # errors() 里的 url/ctx）—— 逐键重建，保证新旧两条路径的 422 body 逐字相同。
+        errors = [
+            {
+                "type": item.get("type"),
+                "loc": ("body",) + tuple(item.get("loc") or ()),
+                "msg": item.get("msg"),
+                "input": item.get("input"),
+            }
+            for item in exc.errors()
+        ]
+        raise RequestValidationError(errors, body=request_body)
+
+    rows = datasets.get("tenant_products") or []
+    items = datasets.get("customer_cost_items") or []
+    if not isinstance(rows, list) or not isinstance(items, list):
+        raise HTTPException(status_code=400, detail={
+            "error": "engine_rpc_payload_invalid",
+            "message": "datasets.tenant_products / customer_cost_items 必须是数组",
+        })
+
+    raw = _resolve_effective_raw(rows, user, body.product_key)
+    product = _apply_customer_options(raw, items) if raw is not None else None
+    cost_table = _cost_table_from_items(items, product)
+    return _run_calculation(body, user, "customer", cost_table, product)
 
 
 @app.post("/api/v1/export-quote/calculate")

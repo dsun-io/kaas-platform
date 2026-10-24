@@ -6388,3 +6388,9 @@ import imports_api  # noqa: E402,F401
 # 注意：ws_cron 在「文件末尾」import，是 sibling 路由模块的同一挂载约定；scheduled
 # 方法体内是调用期引用，不受 import 顺序影响。
 import ws_cron  # noqa: E402,F401
+
+# ── P2 引擎 RPC（门面供数 → Python 纯算；内核不再自取数）──
+# 设计 = docs/P2_COUPLING_ENGINE_2026-10-24.md §6/§8：/internal/engine/* 只允许
+# Service Binding 调用（内核 wrangler routes=[]，无公网域名）；本模块不连库，
+# 取数由门面按旧 SQL 谓词/排序完成后随 payload 传入。
+import engine_api  # noqa: E402,F401

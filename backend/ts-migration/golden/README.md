@@ -11,6 +11,8 @@ W3 Phase 0 交付物之二：迁移质量主门禁的原型（计划 §2 Phase 0
 |---|---|
 | `diff_responses.py` | harness 本体，纯标准库（urllib），两个 venv 的解释器都能跑 |
 | `smoke-vs-prod.report.md` | 2026-10-21 首次 smoke 对生产基线的报告存档（左端未起服务，5 条全记录为连接失败，右端基线形状全部符合预期） |
+| `engine-quote-calculate.fixture.json` | **P2 离线金标**（2026-10-24）：/export-quote/calculate 的 request/actor/datasets/sql/sql_params/response；Python 与 TS 两侧测试共读同一份，见 docs/P2_COUPLING_ENGINE_2026-10-24.md §6.6/§8.3 |
+| `gen_engine_quote_calculate_fixture.py` | 上述 fixture 的**唯一**生成器（用内核旧路径真实跑一遍落盘；幂等）。仅在故意改响应形状时重跑，PR 须人工 review response diff；测试禁止自更新 |
 
 ## 用法
 
