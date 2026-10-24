@@ -71,9 +71,12 @@
     "directory": "../../frontend/out",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    // /api/* 与 /health 显式交给 Worker，不再依赖「资产未命中才落到 Worker」的隐式行为。
+    // /api/*、/health 与 **/internal/*** 显式交给 Worker，不再依赖「资产未命中才落到 Worker」的隐式行为。
     // 历史上正是那条隐式路径让 /health 被 SPA 回退返回 index.html（状态码 200 但内容不是
     // 健康检查结果），使 CI 冒烟测试形同虚设、Worker 已挂仍“通过”。
-    "run_worker_first": ["/api/*", "/health"]
+    // 2026-10-24 同类坑第二次踩到：P2 的 /internal/engine/* RPC 没登记在这里 ⇒ 请求被资产层
+    // SPA 回退成 index.html（HTML）⇒ 门面 upstream.json() 解析失败，报
+    // 「engine rpc returned non-JSON body」502（内核 outcome 却是 success，极易误判为代码 bug）。
+    "run_worker_first": ["/api/*", "/health", "/internal/*"]
   }
 }
