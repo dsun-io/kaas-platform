@@ -1,0 +1,39 @@
+# 内核「允许长期使用 DB」的模块例外清单（P3 收尾，2026-10-24）
+#
+# 规则（scripts/check-kernel-db-allowlist.py）：
+#   · 本清单之外的模块**不得新增** _acquire / db.fetch* / db.execute；
+#   · 清单内模块的调用数**只减不增**（基线见 scripts/kernel-db-baseline.json）；
+#   · 每行格式：<相对路径> # <为什么必须留 DB>
+#
+# 为什么需要这份清单：按 P2 §7 / ARCH P3 目标修订，41 条跨表事务写 + 约 10 条
+# 「保持 Python」端点（字节流/PDF/AI 执行/出站探针/cron/懒种子）**永远需要 DB 与鉴权**；
+# P3 的终点是「DB 只出现在这份清单内」，不是「内核零 DB」。
+
+backend/worker/src/main.py # 单据/企业信息/审批等 15 条跨表事务写 + 未迁的保持 Python 端点（PDF/渲染/上传），基数最大
+backend/worker/src/quote_api.py # 报价单写事务（POST/POST-batch/PATCH/PUT-items：取号+行项+单证多表同事务）
+backend/worker/src/chain.py # AI 任务执行/抓取/编排（保持 Python：模型调用与抓取逻辑）
+backend/worker/src/ws_files.py # 文件字节流与 R2/PDF 路径（保持 Python）+ 元数据读写
+backend/worker/src/ws_docs_hardening.py # 单证确认/签发/作废状态机（跨表单证事务）
+backend/worker/src/ws_docs_ext.py # 单证批处理/生成/回滚（含 Python 计算）
+backend/worker/src/ws_extras.py # external-docs 上传与下载字节流、fx-rates/latest 回填写、_debug 出站探针
+backend/worker/src/ws_clause_templates.py # 懒种子写（首次访问插 6 条默认条款）
+backend/worker/src/ws_approvals.py # 审批动作（approve/reject 状态机事务）
+backend/worker/src/ws_teams.py # 团队管理事务（成员/管理员转让）
+backend/worker/src/ws_products.py # 产品矩阵写
+backend/worker/src/ws_seals.py # 公章 PNG 校验/写入（字节）
+backend/worker/src/ws_workstations.py # 工位订阅写（开通/关闭）
+backend/worker/src/ws_crm_ext.py # 询盘写（PATCH 状态机）
+backend/worker/src/ws_join_applications.py # 加入申请审批写
+backend/worker/src/ws_shipments.py # 舱单写
+backend/worker/src/ws_cron.py # 3 条定时任务（后台作业，天然在内核）
+backend/worker/src/ws_admin_proposals.py # 管理员提案写
+backend/worker/src/ws_admin_accounts.py # 账号管理写
+backend/worker/src/ws_option_overrides.py # 选项覆盖写
+backend/worker/src/ws_customer_records.py # 客户档案写
+backend/worker/src/ws_quote_ext.py # 报价扩展（引擎侧写）
+backend/worker/src/ws_enums.py # 枚举读（前端下拉，轻量）
+backend/worker/src/imports_api.py # CSV 批量导入事务（multipart + 校验 + 落库）
+backend/worker/src/tax_archives.py # 已迁移到门面但内核保留 off 回退实现（删除时机见 P3 §7 步骤 3）
+backend/worker/src/doc_payload.py # 单证 payload 装配辅助（被上述 handler 复用）
+backend/worker/src/content_versions.py # 内容版本写（回滚事务）
+backend/worker/src/local_run.py # 本地开发入口（非生产路径）

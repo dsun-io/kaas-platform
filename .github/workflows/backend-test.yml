@@ -28,6 +28,9 @@ on:
       - 'scripts/check-structural-debt.py'
       - 'scripts/check-worker-bundle.py'
       - 'scripts/check-deploy-domains.py'
+      - 'scripts/check-kernel-db-allowlist.py'
+      - 'scripts/kernel-db-baseline.json'
+      - 'backend/worker/src/kernel_db_allowlist.txt'
       - 'scripts/sync-shared.ps1'
       - '.github/workflows/backend-test.yml'
   pull_request:
@@ -47,6 +50,9 @@ on:
       - 'scripts/check-structural-debt.py'
       - 'scripts/check-worker-bundle.py'
       - 'scripts/check-deploy-domains.py'
+      - 'scripts/check-kernel-db-allowlist.py'
+      - 'scripts/kernel-db-baseline.json'
+      - 'backend/worker/src/kernel_db_allowlist.txt'
       - 'scripts/sync-shared.ps1'
       - '.github/workflows/backend-test.yml'
   schedule:
@@ -117,6 +123,13 @@ jobs:
       - name: Deploy topology gate
         working-directory: ./backend/orchestrator
         run: uv run --no-project python ../../scripts/check-deploy-domains.py
+
+      # 2026-10-24 P3 收尾防回潮：内核除「例外清单」外不得新增连库端点
+      # （迁移方向是「门面直连 / 纯算 RPC」，内核自己连库的端点只允许减少）。
+      # 例外清单：backend/worker/src/kernel_db_allowlist.txt；基线：scripts/kernel-db-baseline.json
+      - name: Kernel DB allowlist gate
+        working-directory: ./backend/orchestrator
+        run: uv run --no-project python ../../scripts/check-kernel-db-allowlist.py
 
       # 说明：route-parity 已于 S4 退役（worker 是唯一后端，没有第二实现可比），
       # 脚本移入 scripts/archive/ 留档；S3 的 parity 测试是退役判据。
