@@ -99,6 +99,16 @@
 >   ③ 诊断增强：门面 502 带 `status` + 响应体头部；
 >   ④ **P3 增量**：内核 `Default.fetch` 去掉资产分流 + `wrangler.jsonc` 移除 `assets` 整块（前端由门面伺服），
 >      彻底消除该类坑；门禁：worker 1855+12skip / ts-worker 437 / orchestrator 273 / 静态断言全 PASS。
+>
+> **P3 增量（2026-10-24 18:25，commit `70e6bfb7`，deploy run `40085337420` 全绿）**：内核摘除静态资产与入口分流
+> - `main.py`：`Default.fetch` 去掉「非 /api 非 /health → env.ASSETS.fetch」分支（该类拦截曾让 `/internal/*` RPC 被 SPA 回退/405）；
+> - `wrangler.jsonc`：移除 `assets` 整块（前端由 kaas-edge 伺服；内核无公网域名）⇒ 消除同类坑 + 降部署体积；
+> - 线上验证：`/health?deep=1` kernel ok / shared_loaded true；门面直连 products·notifications·approvals 全 200；
+>   内核透传 `export-quote/formulas`、`trade-docs` 返回 404 `WORKSTATION_NOT_SUBSCRIBED`（闸门正确，说明内核仍在服务 /api）；
+>   内部 RPC 闸门 parity：404 响应 sha256 与旧路径基线逐字节一致；
+> - 门禁：worker 1855+12skip / ts-worker 437 / orchestrator 273 / 静态断言（bundle·runtime-deps·sync-shared）全 PASS。
+> - **P3 剩余（未完成，需后续轮次）**：① 15 条写路径的事务归属需拍板（取号/状态机/多表同事务，A=保留内核 / B=搬到门面 / C=长期例外）；
+>   ② 33 条「无 Python 计算」端点尚未迁 TS-DB（现仅 6 条：P0 五条 + 引擎切片）；③ 25 条只读引擎切片仅完成 1 条。
 > - （历史记录）**17:30–18:05 曾回退**，抓到 3 个问题（详见 P2 文档 §8.5）：
 >   ① RPC 走 `/internal/*` 被内核**静态资产层**拦截（405 空体 / GET 回退 index.html；`run_worker_first` 两种改法实测均无效）
 >      ⇒ 已改为 **`POST /api/v1/internal/engine/quote/calculate`**（/api 前缀已验证可达），RPC 返回 200 真实算价；
